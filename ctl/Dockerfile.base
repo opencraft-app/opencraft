@@ -1,6 +1,0 @@
-FROM alpine:3
-
-RUN apk add --no-cache tzdata curl
-
-ENV TZ=Asia/Shanghai
-ENV LC_ALL=en_US.utf8

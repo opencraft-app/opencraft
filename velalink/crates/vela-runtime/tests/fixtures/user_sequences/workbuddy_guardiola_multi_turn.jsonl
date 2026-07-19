@@ -1,8 +1,0 @@
-{"source":"WorkBuddyApp/test/fixtures/event_log_replays/guardiola_history_replay.jsonl","idempotency_key":"wb-guardiola-1","content":"分析法国今年世界杯夺冠概率","expect_status":"accepted","expect_replay":false}
-{"source":"WorkBuddyApp/test/fixtures/event_log_replays/guardiola_history_replay.jsonl","idempotency_key":"wb-guardiola-2","content":"你喜欢姆巴佩吗","expect_status":"accepted","expect_replay":false}
-{"source":"WorkBuddyApp/test/fixtures/event_log_replays/guardiola_history_replay.jsonl","idempotency_key":"wb-guardiola-3","content":"你觉得登贝莱怎么样","expect_status":"accepted","expect_replay":false}
-{"source":"WorkBuddyApp/test/fixtures/event_log_replays/guardiola_history_replay.jsonl","idempotency_key":"wb-guardiola-4","content":"我喜欢登贝莱","expect_status":"accepted","expect_replay":false}
-{"source":"WorkBuddyApp/test/fixtures/event_log_replays/guardiola_history_replay.jsonl","idempotency_key":"wb-guardiola-5","content":"你觉得姆巴佩会拿金球奖吗","expect_status":"accepted","expect_replay":false}
-{"source":"WorkBuddyApp/test/fixtures/event_log_replays/guardiola_history_replay.jsonl","idempotency_key":"wb-guardiola-6","content":"分析一下伊涅斯塔的技术特点","expect_status":"accepted","expect_replay":false}
-{"source":"WorkBuddyApp/test/fixtures/event_log_replays/guardiola_history_replay.jsonl","idempotency_key":"wb-guardiola-7","content":"分析哈维的技术特点","expect_status":"accepted","expect_replay":false}
-{"source":"WorkBuddyApp/test/fixtures/event_log_replays/guardiola_history_replay.jsonl","idempotency_key":"wb-guardiola-8","content":"分析瓜迪奥拉执教特点","expect_status":"accepted","expect_replay":false}

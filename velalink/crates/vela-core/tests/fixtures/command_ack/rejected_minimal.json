@@ -1,5 +1,0 @@
-{
-  "status": "rejected",
-  "code": "duplicate_command",
-  "message": "idempotency key was reused with different command content"
-}

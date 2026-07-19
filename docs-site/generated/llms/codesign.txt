@@ -1,9 +1,0 @@
-# codesign
-
-Component ID: codesign
-Source path: codesign
-Docs contract level: 0
-
-## Key documentation
-- Codesign 文档约定: codesign/AGENTS.md
-- Codesign 文档入口: codesign/README.md

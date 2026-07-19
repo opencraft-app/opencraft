@@ -1,9 +1,0 @@
-.git
-.DS_Store
-**/dist
-**/node_modules
-**/.turbo
-**/.cache
-**/coverage
-**/*.test
-**/*_test.go

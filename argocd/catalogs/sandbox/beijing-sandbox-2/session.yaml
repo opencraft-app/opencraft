@@ -1,6 +1,0 @@
-service: session
-env: beijing-sandbox-2
-project: beijing-sandbox-2
-destinationName: beijing-sandbox-2
-namespace: user-auth
-sourcePath: argocd/services/session/beijing-sandbox-2

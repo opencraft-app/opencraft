@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: lightvela-playground-sandbox-bj-7
-  labels:
-    lightclaw.dev/environment-model: playground
-    lightclaw.dev/environment-name: sandbox-bj-7

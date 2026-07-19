@@ -1,5 +1,0 @@
-{"source":"~/.codex*/sessions/*.jsonl","timestamp":"2026-06-18T00:00:00.000Z","type":"session_meta","payload":{"schema":"codex-session","cwd":"<redacted>"}}
-{"source":"~/.codex*/sessions/*.jsonl","timestamp":"2026-06-18T00:00:01.000Z","type":"turn_context","payload":{"item_count":3,"working_directory":"<redacted>"}}
-{"source":"~/.codex*/sessions/*.jsonl","timestamp":"2026-06-18T00:00:02.000Z","type":"event_msg","payload":{"role":"user","content_shape":"text","content_length":31}}
-{"source":"~/.codex*/sessions/*.jsonl","timestamp":"2026-06-18T00:00:03.000Z","type":"response_item","payload":{"item_type":"message","role":"assistant","content_shape":"text_delta"}}
-{"source":"~/.codex*/sessions/*.jsonl","timestamp":"2026-06-18T00:00:04.000Z","type":"response_item","payload":{"item_type":"tool_call","tool_name":"shell","status":"completed"}}

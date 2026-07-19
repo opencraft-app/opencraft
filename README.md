@@ -1,819 +1,551 @@
-# mono
+# llmgateway
 
+`llmgateway` 是构建在 `new-api` 之外的多租户、多 Set 大模型网关。它不修改
+`new-api`，而是复用其模型接入、渠道路由、额度和订阅能力，在外层补齐租户分片、
+统一流量入口、BYOK、渠道一致性、自动扩容和跨 Set 版本发布。
 
-⚠️ **必读**：clone 后请执行 `make setup` 启用编译检查门禁，防止编译不通过的代码被提交。
+## 架构定位
 
-## 这是什么项目
+系统遵循四个核心边界：
 
-这是 `LightVela` 的主 monorepo。
+1. **new-api 负责 Set 内能力**：模型渠道、API token、订阅额度、计费和实际推理转发。
+2. **LLMGateway 负责跨 Set 能力**：租户归属、外部 key、Set/Shard、BYOK 意图、渠道包和版本发布。
+3. **控制面与流量面分离**：控制面使用 MySQL；流量面只依赖 Redis 路由快照，不回源 MySQL。
+4. **Kubernetes 负责运行资源，不负责业务发布决策**：KRO/LLMFleet 渲染 Pod 和 Service，发布顺序由 LLMGateway 的持久化状态机控制。
 
-`LightVela` 当前是一套围绕“用户申请机器人实例 -> 分配 sandbox 运行环境 -> 通过 gateway 对外提供能力 -> 前后台分别管理和使用”的完整系统。这个仓库承载的不是单个服务，而是整条主链路：
+```mermaid
+flowchart TB
+    operator["运营人员 / ctl / trade"]
+    caller["Agent / OpenAI-compatible client"]
 
-- 用户前台与营销站点：`frontend`
-- 用户认证、邀请与账户体系：`user/auth`
-- 用户实例 / bot 生命周期编排：`ctl`
-- sandbox 资源池、实例库存与 ingress proxy：`sandbox`
-- 对外统一 API / 管理 API 入口：`service-gateway`、`admin-gateway`
-- 管理后台与运维面板：`gateway-dashboard`、`nextgen-dashboard`
-- AI 兼容代理能力：`ai-gateway`
-- 云资源、集群、仓库、监控等基础设施：`infra_pulumi`
+    control["llmgateway-control<br/>管理 API 与运营控制台"]
+    coreWorker["worker-core<br/>Set、渠道与容量任务"]
+    byokWorker["worker-byok<br/>用户 BYOK 同步"]
+    observerWorker["worker-observer<br/>租户观测投影"]
+    setManager["llmgateway-set-manager<br/>LLMFleet 资源协调"]
+    traffic["llmgateway-traffic<br/>Redis-only /v1/*"]
 
-如果只想用一句话理解：
+    mysql[("LLMGateway MySQL<br/>控制面真源")]
+    redis[("Route Redis<br/>流量路由快照")]
+    kube["Kubernetes / KRO / LLMFleet"]
 
-- `ctl` 决定“给谁分什么实例”
-- `sandbox` 决定“实例怎么创建、回收、路由和执行”
-- `gateway` 决定“外部怎么访问这些能力”
-- `dashboard` 决定“运营和研发怎么管理系统”
-- `infra_pulumi` 决定“这些东西跑在哪些云资源上”
+    subgraph fleet["一个 Fleet"]
+        shardA["Shard A<br/>MySQL + Redis"]
+        shardB["Shard B<br/>MySQL + Redis"]
+        setA["Set A<br/>1 master + N slaves"]
+        setB["Set B<br/>1 master + N slaves"]
+        setN["Set N<br/>1 master + N slaves"]
+        shardA --> setA
+        shardA --> setB
+        shardB --> setN
+    end
 
-当前主要外网地址：
+    operator --> control
+    control --> mysql
+    coreWorker --> mysql
+    byokWorker --> mysql
+    observerWorker --> mysql
+    setManager --> mysql
+    setManager --> kube
+    kube --> fleet
 
-- 北京测试：
-  - `https://lightclaw.tech`
-  - `https://admin.lightclaw.tech`
-- 上海 `shprod`：
-  - `https://api.lightclaw.cn`
-  - `https://admin.lightclaw.cn`
-  - `https://preview.lightclaw.cn`
+    caller --> traffic
+    traffic --> redis
+    traffic --> setA
+    traffic --> setB
+    traffic --> setN
+    control -. "路由 outbox" .-> redis
+```
 
-当前主线已经比较明确：
+## 核心组件
 
-- 用户前台：`frontend`
-- 用户与订阅：`user/auth`
-- 外网统一入口：`service-gateway`
-- 沙箱资源池：`sandbox`
-- 管理终端：`nextgen-dashboard`
-- 环境与云资源：`infra_pulumi`
+| 组件 | 职责 | 是否访问 LLMGateway MySQL |
+| --- | --- | --- |
+| `llmgateway-control` | 管理 API、运营控制台、租户/订阅兼容层、Set/Shard、渠道和版本发布 | 是 |
+| `llmgateway-traffic` | 校验外部 key、定位 Set、替换上游 key、透明代理 `/v1/*` 和 SSE | **否，只访问 Redis** |
+| `llmgateway-worker` `core` | Set facts、容量水位、渠道漂移、准入检查和控制面后台任务 | 是 |
+| `llmgateway-worker` `byok` | 合并同一用户的最新 BYOK 意图并异步下发目标 Set | 是 |
+| `llmgateway-worker` `observer` | 分页刷新租户、权益和用量观测投影 | 是 |
+| `llmgateway-set-manager` | 消费 Set provision/upgrade 状态，协调 LLMFleet 资源 | 是 |
+| `llmgateway-runtime-cleaner` | 在蓝绿排空窗口后清理旧 traffic runtime | 是 |
+| `new-api master/slave` | Set 内管理、计费、渠道选择和模型转发 | 使用所属 Shard 数据源 |
 
-## Agent 自动化玩法
+## 资源模型
 
-仓库已经内置工蜂和蓝盾 Skill。用户只需要说明目标，并通过当前本机会话安全提供对应凭据，Agent 就可以按仓库规范完成自动化操作，无需用户手工拼 API 请求。
+### Fleet、Shard 与 Set
 
-### 自动创建和管理 MR
+- **Fleet** 是一套完整服务集群的逻辑边界。
+- **Shard** 是数据资源边界，描述一组 MySQL/Redis 容量；一个 Shard 可以承载多个 Set。
+- **Set** 是租户分片和故障隔离单元。租户首次分配后固定归属一个 Set，常规请求不进行动态一致性哈希迁移。
+- 每个 Set 拥有独立 new-api 数据库名和 Redis DB，不允许两个 Set 复用同一份 Redis 逻辑空间。
+- Set 水位通过 `max_users / warn_users / reserved_users` 描述；新租户选择健康且水位最低的 Set，容量不足时生成新的 provision request。
+- Shard 扩容从运营台提交意图，不直接手填事实。Terraform/Agent 创建 MySQL、Redis 和 Secret，set-manager 从 LLMFleet 回传真实投影，worker 核对资源并等待冒烟验证；只有完整流程结束的 Shard 才应加入容量策略。
 
-- Skill：`.skills/gongfeng/SKILL.md`
-- 能力：创建分支、查询提交、提交并推送代码、创建/查询/评审/合并 MR、管理 MR 评论
-- 所需凭据：工蜂个人访问令牌
-- 典型指令：`提交当前改动，创建 MR 到 master，通过检查后合入`
+### 租户、密钥与权益
 
-Agent 会通过 `mcporter-internal call gongfeng.*` 调用工蜂能力，并在执行提交、推送、创建 MR 等不可逆操作前展示变更范围和 MR 信息供用户确认。
+- LLMGateway 保存租户归属、new-api 用户绑定和外部 key；new-api 保存实际用户、token、订阅和额度。
+- 外部 key 使用固定长度的 `sk-<Base64URL payload>` v2 格式；payload 内含版本、稳定路由槽、256 bit Key ID 和 256 bit Secret。Redis 按路由槽分片保存路由快照；中央 MySQL 只保存 Key ID、哈希、路由槽和状态，完整 key 仅在签发成功时返回一次。
+- `ctl/trade` 通过兼容 API 创建或续发权益；LLMGateway 只负责命令幂等和周期 overlay，实际额度由 new-api subscription 承担。
+- 余额查询聚合用户当前 active subscriptions，不维护另一份完整余额账本。
 
-### 管理蓝盾流水线
+### 渠道与 BYOK
 
-- Skill：`.skills/devops-pipeline/SKILL.md`
-- 能力：查询流水线和构建历史、读取启动参数、启动/停止构建、查询构建状态、修改流水线参数
-- 所需凭据：`BK_CI_ACCESS_TOKEN`
-- 典型指令：`查询 trade 发布流水线，展示启动参数，确认后启动并跟踪到结束`
+- 平台渠道以不可变渠道包 revision 表达，支持跨 Set 检查漂移、批量发布、失败停止和回滚上一版。
+- LLMGateway 保存期望状态，new-api 只是下发目标；不会反向读取某个 Set 的内存 JSON 参与全局合并。
+- 用户 BYOK 保存为本地意图，通过独立 worker 异步同步到用户所属 Set。
+- 当前支持 `byok_first` 和 `platform_first` 两种简单策略；用户私有渠道进入私有 group，并使用零倍率避免平台计费。
 
-凭据只应在当前本机会话或本地环境中临时注入，例如：
+## 两条关键请求路径
+
+### 模型流量
 
 ```text
-工蜂令牌：<GONGFENG_PERSONAL_ACCESS_TOKEN>
-BK_CI_ACCESS_TOKEN：<BK_CI_ACCESS_TOKEN>
+客户端 sk-* → llmgateway-traffic
+             → Redis key route snapshot
+             → Redis Set runtime snapshot
+             → 替换为 new-api upstream key
+             → 目标 Set newapi-traffic Service
+             → 模型上游
 ```
 
-安全约束：
+该路径不解析模型请求正文，不承担格式转换。它只理解 HTTP、鉴权 header、流式转发和连接生命周期；MySQL 故障不会使已有路由立即失效。
 
-- 不要把真实令牌写入 README、脚本、提交信息、流水线参数示例或其他版本控制文件
-- 蓝盾令牌优先通过本地环境变量 `BK_CI_ACCESS_TOKEN` 提供
-- 工蜂令牌只用于当前会话的 `mcporter-internal` 鉴权
-- 启动/停止流水线或修改流水线参数前，Agent 必须展示完整目标和参数并获得用户明确确认
-- 凭据一旦误入提交、日志或公开会话，应立即撤销并重新生成
-
-## Infra 与 Deploy 标准链路
-
-如果是新 agent / 新同学，只记这几条就够了：
-
-1. `infra_pulumi` 只管 infra，不管 workload 正式发布
-2. 北京 / 上海当前正式 workload 发布真源是当前 repo 的 `gitops` 分支上的 `argocd/`
-3. `scripts/deploy-k8s.sh` 仍可作为服务级渲染 / 手工 apply / 迁移阶段工具，但不是北京 / 上海主链正式发布入口
-4. `ENV=<env>` 必须显式传，不允许默认北京
-5. `deploy/envs/<env>/platform.env` 是生成物，来自 `infra_pulumi sync/up`，不手改
-6. 服务私有密钥放 `.secret/<service>/test.env`
-7. 公共发布行为优先改：
-   - [`scripts/lib/kustomize-deploy-common.sh`](scripts/lib/kustomize-deploy-common.sh)
-   不要每个服务各改一遍
-
-## Agent 发布约定
-
-这段不是泛泛而谈的“理想流程”，而是当前已经实际跑过的发布方式，供后续 agents 直接复用。
-
-### 1. 当前发布真源
-
-- WOA 远端是：
-  - `origin git@git.woa.com:wisp/mono2.git`
-- 当前 GitOps 真源远端是：
-  - `origin git@git.woa.com:wisp/mono2.git`
-- 历史 deploy-only 远端已废弃，不再作为正式发布目标
-- 默认推送分支：
-  - `master`
-- 标准代码提交动作：
-
-```bash
-git add <scoped paths>
-git commit -m "<中文说明 / English summary>"
-git push origin master
-```
-
-约束：
-
-- 不要把 `.omx/` 状态文件、临时缓存、构建 cache 一起提交
-- 优先按目录收窄提交范围，不要一锅端整个工作树
-- 提交信息遵守仓库里的 Lore commit protocol
-
-当前口径：
-
-- `origin`：日常代码协作主远端，也是北京 / 上海当前 GitOps 真源仓库
-
-不要默认把“push 到 WOA”当成“发布已经完成”。
-
-### 2. Velalink subtree 协作模型
-
-`velalink/` 是 `git@git.woa.com:wisp/velalink.git` 的完整 subtree。它的目标是让
-AI 和开发者可以在 mono2 里直接读、改、测、review velalink 代码，同时仍保留向
-velalink 上游贡献的标准路径。
-
-长期协作规则：
-
-- 在 mono2 内开发时，可以直接修改 `velalink/` 目录。
-- 需要贡献回 velalink 上游时，用 `git subtree split --prefix=velalink` 切出上游分支，再推到 `wisp/velalink.git`。
-- `frontend` 的 `velachat` 依赖必须 pin 到 `wisp/velalink.git` 的真实上游 commit。
-- 不要通过前端 deep import 绕过 velalink 包导出问题；应在 `velalink` 上游修复 public export，再更新前端 pin。
-- 拉取 velalink 上游更新时，按 `velalink/MONO2_SUBTREE.md` 执行 subtree merge，并同步 `velalink/.mono2-subtree`。
-
-常用命令：
-
-```bash
-# 拉取 velalink 上游到 mono2 subtree
-git remote add velalink git@git.woa.com:wisp/velalink.git
-git fetch velalink master
-git merge -s recursive -Xsubtree=velalink --no-commit velalink/master
-
-# 从 mono2/velalink 切出可推给 velalink 上游的分支
-git subtree split --prefix=velalink -b velalink/from-mono2-topic
-git push git@git.woa.com:wisp/velalink.git \
-  velalink/from-mono2-topic:codex/from-mono2-topic
-```
-
-详细说明见 [`velalink/MONO2_SUBTREE.md`](velalink/MONO2_SUBTREE.md)。
-
-### 3. LLMGateway subtree 协作模型
-
-`velagw/` 是 `git@git.woa.com:wisp/velagw.git` 的完整 squash-style subtree。
-mono2 可以直接开发和 review LLMGateway，同时用标准 subtree 命令与独立上游双向同步。
-
-常用命令：
-
-```bash
-# 拉取 velagw 上游 master 到 mono2/velagw
-git subtree pull --prefix=velagw \
-  git@git.woa.com:wisp/velagw.git master --squash
-
-# 从 mono2/velagw 切出可推给 velagw 上游的分支
-git subtree split --prefix=velagw -b velagw/from-mono2-topic
-git push git@git.woa.com:wisp/velagw.git \
-  velagw/from-mono2-topic:codex/from-mono2-topic
-```
-
-源码嵌入不等于发布迁移完成。`velagw/` 接入 mono2 统一 Argo/CD 入口前，仍按其目录内现有发布定义维护。
-详细说明见 [`velagw/MONO2_SUBTREE.md`](velagw/MONO2_SUBTREE.md)。
-
-### 4. Frontend 发布到 Cloudflare Pages
-
-当前 `frontend` 的 Cloudflare Pages 实战发布方式是：
-
-```bash
-cd frontend
-pnpm install
-VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm build
-CLOUDFLARE_PAGES_PROJECT_NAME=lightclaw pnpm deploy:cf
-```
-
-补充约束：
-
-- 发布前先跑 `npx wrangler whoami`，确认有 `pages (write)` 权限
-- 这条链必须先 build，再 deploy，不允许跳过构建
-- 如果刚 `git pull` 过，先补一次 `pnpm install`
-- 当前生产后端基址用：
-  - `https://lightclaw.tech`
-- Pages 项目名当前用：
-  - `lightclaw`
-
-### 4. Frontend 分支自动预览
-
-当前已经支持基于 StaticPages 的 frontend 自动预览。
-
-推送到 `master` 且命中 `frontend/**` 时，CI 会自动构建 `frontend/dist-cn` 和 `frontend/dist-global` 并上传到稳定预览地址：
+### 管控与权益
 
 ```text
-https://master.preview.lightclaw.tech/
-https://intl-master.preview.lightclaw.tech/
+ctl/trade/运营台 → llmgateway-control
+                 → 租户 assignment / 幂等命令
+                 → 目标 Set newapi-admin Service
+                 → new-api 用户、token、subscription API
+                 → 本地观测投影与 Redis 路由 outbox
 ```
 
-也可以把分支推送到 `frontsandbox/` 前缀生成按分支命名的预览：
+## new-api 版本发布
 
-```bash
-git push origin <local-branch>:frontsandbox/<preview-name>
-```
+版本发布分成两个层次：
 
-预览地址规则：
+1. **单 Set 数据库感知蓝绿**：先暂停管理写并以 `Recreate` 升级唯一 admin/master，由它完成 Schema 迁移；旧 Blue traffic 在新 Schema 上通过兼容性探针后，再创建 Green。Green 连续探针成功后通过 Redis `route_revision` 原子切流，Blue 固定排空后删除。
+2. **跨 Set Release Campaign**：一个 Fleet 长期维护 Canary、Early、Stable 等 Ring；Campaign 按 Ring 顺序自动推进，Ring 内固定 `max_parallel=1`，逐个 Set 发布，完成完整 soak 和健康门禁后才进入下一 Ring，任一失败立即暂停。
+
+Release 镜像必须固定到 `@sha256:<digest>`。Rollout 创建会在一个 MySQL 事务中锁定 Ring 和目标 Set，同时写入发布快照、Set 目标版本和单 Set upgrade runs，避免多个 control 实例并发发布或产生孤儿状态。
 
 ```text
-frontsandbox/<preview-name> -> https://<preview-name>.preview.lightclaw.tech/
-frontsandbox/<preview-name> -> https://intl-<preview-name>.preview.lightclaw.tech/
+Fleet
+├── Canary  → release-v3 → set-01
+├── Early   → release-v2 → set-02, set-03
+└── Stable  → release-v1 → set-04 ... set-40
+
+Stable rollout to v2:
+set-04 完整蓝绿升级 → set-05 → set-06 → ...
 ```
 
-示例：
+新扩容 Set 会固化健康且允许准入的 Ring、Release ID 和镜像 digest，不依赖修改 Fleet 全局镜像触发升级。详细设计见 [`docs/release-rings.md`](docs/release-rings.md) 和 [`docs/set-blue-green-upgrade.md`](docs/set-blue-green-upgrade.md)。
 
-```bash
-git push origin HEAD:frontsandbox/codex-staticpages-smoke
+## 数据真源与故障边界
+
+| 数据 | 真源 | 说明 |
+| --- | --- | --- |
+| 租户归属、外部 key、Set/Shard、任务、渠道包、Release Ring | LLMGateway MySQL | 控制面持久化状态 |
+| 用户、上游 token、subscription、额度、渠道实例 | 各 Set 的 new-api 数据库 | 通过 new-api API 管理，不直接改库 |
+| 外部 key 与 Set runtime 路由 | Redis | traffic 热路径唯一依赖；MySQL outbox 负责可靠发布 |
+| Deployment、Service、Secret 引用 | Kubernetes `LLMFleet` | 运行资源事实，不承担业务发布顺序 |
+
+系统不承诺在 Redis 完全不可用时继续接收模型流量，而是快速失败；也不会在 traffic Redis miss 时回源 MySQL，避免数据库故障演变为流量雪崩。
+
+## 当前能力边界
+
+- 不修改 new-api，不直接写 new-api 业务数据库。
+- 不引入 Kafka、Temporal、Service Mesh 或 ArgoCD per Set；后台任务使用 MySQL job/lease。
+- traffic 生产模式为 Redis-only；control、worker 和 set-manager 可以独立扩缩。
+- 多 Set 发布编排由 LLMGateway 状态机完成，不要求自定义 Kubernetes Controller。
+- 本地可使用内存 store 快速开发；生产必须使用 MySQL、Redis 和拆分进程部署。
+
+## Runtime Topology: Traffic, Master, And Slave
+
+生产拓扑中有三类容易混淆、但职责不同的运行角色：
+
+| 角色 | 作用域 | 数量与职责 |
+| --- | --- | --- |
+| `llmgateway-traffic` | 整个 LLMGateway 集群 | 全局无状态流量入口。解析外部 `sk-*`，从 Redis 路由快照定位 Set，替换上游 key，然后把 `/v1/*` 转发到目标 Set。它不是 `new-api` 节点。 |
+| `new-api master` | 每个 Set | 固定 1 个，使用 `NODE_TYPE=master`。只通过 admin Service 承接管理写、后台任务和 Schema 迁移，不进入生产 traffic Service。 |
+| `new-api slave` | 每个 Set | N 个，使用 `NODE_TYPE=slave`。通过版本代际组成纯 traffic 运行面，不执行 master 专属后台任务。 |
+
+```mermaid
+flowchart LR
+    caller["外部模型调用方"]
+    operator["运营后台 / 内部系统"]
+
+    traffic["llmgateway-traffic<br/>全局流量入口<br/>只暴露 /v1/*"]
+    control["llmgateway-control / worker<br/>全局控制面"]
+
+    subgraph managedSet["一个 new-api Set"]
+        trafficService["newapi-traffic Service<br/>ClusterIP，不对公网暴露"]
+        adminService["newapi-admin Service<br/>ClusterIP，不对公网暴露"]
+        master["new-api master<br/>NODE_TYPE=master"]
+        slave1["new-api slave 1<br/>NODE_TYPE=slave"]
+        slaveN["new-api slave N<br/>NODE_TYPE=slave"]
+
+        trafficService --> slave1
+        trafficService --> slaveN
+        adminService --> master
+    end
+
+    caller -->|"sk-* · /v1/*"| traffic
+    traffic -->|"按 key 定位目标 Set"| trafficService
+    operator --> control
+    control -->|"管理写入"| adminService
 ```
 
-约 2 分钟后可访问：
+slave 不在 `llmgateway-traffic` 进程内部，而是在它后面的目标 Set 中。公网只暴露
+`llmgateway-traffic`，后者只注册和转发 `/v1/*`；new-api 的内部 Service 不配置
+Ingress 或公网负载均衡。因此 slave 虽然仍由同一个 new-api 二进制注册 `/api/*`，
+普通模型调用方无法从公网到达这些管理路由。
+
+`new-api` 自身只识别 `master` 和 `slave` 两种 `NODE_TYPE`。Kubernetes 中名为
+`<fleet>-<set>-newapi-traffic` 的 Deployment 运行的是 **new-api slave**；这里的
+`traffic` 是工作负载用途名称，并不是第三种 `new-api` 节点类型。
+
+每个 Set 暴露两个内部 Service：
+
+- `<fleet>-<set>-newapi-admin` 只选择该 Set 的单个 master，保证管理写入固定进入
+  同一进程。
+- `<fleet>-<set>-g<generation>-newapi-traffic` 只选择对应版本代际的 slave。Set runtime
+  路由指向当前 active generation；master 即使具备 relay 能力也不承载生产推理流量。
+
+`LLMFleet.spec.sets[].replicas` 只表示每个 Set 的 **new-api slave 数量**。因此单个
+Set 的生产推理端点数是 `replicas slaves`；单个 master 独立存在于管理面，这两个值
+都不包含全局 `llmgateway-traffic` Deployment 的副本数。
+
+## Production Caller Surface
+
+当前北京生产入口：
 
 ```text
-https://codex-staticpages-smoke.preview.lightclaw.tech/
-https://intl-codex-staticpages-smoke.preview.lightclaw.tech/
+管理面：https://llmgw-control.lightvela.com
+流量面：https://llmgw-inner.lightvela.com
 ```
 
-补充约束：
-
-- `<preview-name>` 会作为子域名前缀使用，建议只用小写字母、数字和 `-`
-- `intl-<preview-name>` 固定对应国际版 `dist-global`；不带 `intl-` 的地址对应国内版 `dist-cn`
-- 这条链路只用于分支预览，不创建 GitOps MR，也不代表正式发布
-- 如果预览站短时间返回 `502`，通常是 CI 仍在构建或上传，等待流水线完成后再刷新
-
-### 5. 当前正式环境发布方式
-
-当前北京 / 上海正式链路统一按 GitOps 发布：
-
-1. 构建并推镜像
-2. 更新 `argocd/services/<service>/<env>/` 下的 deploy-facing 文件
-3. 提交到 GitOps 发布分支 `gitops`
-4. 让 Argo 自动收敛或显式 sync
-5. 验证 live app 的：
-   - `repoURL`
-   - `targetRevision`
-   - `revision`
-   - `image`
-   - `Synced / Healthy`
-
-当前北京 / 上海 live app 已统一切到：
-
-- `git@git.woa.com:wisp/mono2.git`
-- `gitops`
-
-最常见的正式发版动作示例：
+模型调用面兼容 OpenAI `/v1/*`，调用方使用自己的模型访问密钥：
 
 ```bash
-python3 .ci/runtime/commands/build_release_image.py --service sandbox --env shprod --tag <tag>
-# 更新 argocd/services/sandbox/shprod/sandbox-platform.env
-git add argocd/services/sandbox/shprod/sandbox-platform.env
-git commit -m "<中文说明 / English summary>"
-git push origin HEAD:gitops
+curl -sS https://llmgw-inner.lightvela.com/v1/chat/completions \
+  -H 'authorization: Bearer sk-...' \
+  -H 'content-type: application/json' \
+  -d '{"model":"auto","messages":[{"role":"user","content":"你好"}]}'
 ```
 
-说明：
+管理 API 属于 control 面，不使用用户模型 key，也不通过 traffic 域名承载。内部系统接入管理面使用 `https://llmgw-control.lightvela.com`；如果直接调用 `/api/admin/*`，当前仍需要 `Authorization: Bearer <CLUSTER_ADMIN_TOKEN>` 或后续替换成上层服务身份。内部系统接入时看 [`docs/operator-p0.md`](docs/operator-p0.md)；生产域名、证书和 TKE Service 绑定细节看 [`deploy/k8s/prod/README.md`](deploy/k8s/prod/README.md)。
 
-- `argocd/apps/<env>/`
-- `argocd/root/*.yaml`
-- `argocd/services/<service>/<env>/`
+甲方和 Agent 可以使用 Go 命令行客户端模拟 trade/ctl、运营管理和模型调用，见
+[`CLIENT.md`](CLIENT.md)。客户端不落地 profile，所有地址和凭证均由本次命令显式传入。
 
-是当前正式发布入口。
+## Run Locally
 
-`deploy-k8s.sh` 现在主要用于：
-
-- 本地渲染
-- 手工 apply
-- 迁移阶段排障
-- 尚未完全纳入 Argo 的场景
-
-### 6. 北京集群公网 Endpoint 操作
-
-关闭北京 TKE 集群公网访问时，当前实战约定是：
+For a fresh Mac setup, including Docker/OrbStack dependencies, two local
+`new-api` sets, split control/traffic processes, and the React console, see
+[`docs/mac-local-setup.md`](docs/mac-local-setup.md).
 
 ```bash
-tccli tke DeleteClusterEndpoint --region "$TENCENT_REGION" --ClusterId "$TKE_CLUSTER_ID" --IsExtranet true
+cd /Users/skipzhang/code/mono2newapi/llmgateway
+
+PORT=18080 \
+CLUSTER_ADMIN_USERNAME=cluster-admin \
+CLUSTER_ADMIN_PASSWORD='Qq373866172!' \
+CLUSTER_ADMIN_TOKEN=dev-cluster-token \
+INTERNAL_SERVICE_TOKEN=dev-internal-token \
+LEGACY_SUBSCRIPTION_CLIENT_COMPAT=false \
+NEWAPI_SET_ROOT_USERNAME=set-root \
+NEWAPI_SET_ROOT_PASSWORD='Qq373866172!' \
+go run ./cmd/llmgateway
 ```
 
-关键点：
+The default command starts the full local surface: control APIs, embedded admin
+console, console proxy, and `/v1/*` traffic. Production deployments should split
+that surface into a control pod and a traffic pod.
 
-- `IsExtranet=true` 必须显式带上
-- 如果返回：
-  - `same type task in execution`
-  说明 TKE 后台还有同类 endpoint 任务在跑，先查状态再重试
-
-状态查询：
+Control-only process:
 
 ```bash
-tccli tke DescribeClusterEndpointStatus --region "$TENCENT_REGION" --ClusterId "$TKE_CLUSTER_ID" --IsExtranet true
-tccli tke DescribeClusterEndpoints --region "$TENCENT_REGION" --ClusterId "$TKE_CLUSTER_ID"
+PORT=18080 \
+LLMGATEWAY_SQL_DSN='user:pass@tcp(mysql:3306)/llmgateway?parseTime=true' \
+LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:password@redis:6379/0' \
+LLMGATEWAY_TRAFFIC_BASE_URL='http://llmgateway-traffic' \
+go run ./cmd/llmgateway-control
 ```
 
-## 工程思想与实操标准
-
-这套 mono repo 当前已经收敛到一套明确的工程模型。后续 agent 或新同学改动时，优先遵守下面这些原则，而不是沿用历史习惯各自发挥。
-
-### 1. 单一事实来源
-
-- 云资源事实以 `infra_pulumi` 为准
-- 环境运行时事实以 `deploy/envs/<env>/platform.env` 为准
-- 服务自身敏感配置以 `.secret/<service>/test.env` 为准
-- `k8s/overlays/<env>/generated/*` 只是发布中间产物，不是事实来源
-
-不要手改：
-
-- `deploy/envs/<env>/platform.env`
-- `k8s/overlays/<env>/generated/*`
-
-如果这两类文件不对，正确修法是：
-
-- 改 `infra_pulumi`
-- 或改服务自己的 `deploy-k8s.sh`
-- 或改 `.secret/<service>/test.env`
-
-### 2. 控制面与工作负载边界
-
-- `infra_pulumi` 负责：
-  - 腾讯云资源
-  - TKE/TCR/TDSQL/监控等基础设施
-  - 环境差异
-  - 集群级能力
-  - 回写 `platform.env`
-- 各服务目录负责：
-  - workload manifest
-  - 镜像构建
-  - migration / seed
-  - rollout 与运行时配置
-
-不要把 workload 发布逻辑塞回 `infra_pulumi`，也不要在服务目录里重新发明一套 infra 事实来源。
-
-### 3. 收敛优先，不保留双轨
-
-- 新链路一旦跑通，就直接收敛到单一实现
-- 不再长期保留：
-  - `deploy-test.sh`
-  - 单文件 `k8s/manifests.yaml`
-  - 项目内私有 `imagePullSecrets` 方案
-  - 写死北京地址、旧域名、旧 registry 的模板
-
-这里的原则不是“兼容一切历史”，而是“尽快消灭双轨”。
-
-### 4. 生成物与源码严格分层
-
-- 源码应可 review、可复现、可迁移
-- 生成物只为发布服务，不应进入长期版本管理
-
-当前默认约定：
-
-- `platform.env` 不提交
-- `generated/*` 不提交
-- 真实变更应落在：
-  - `infra_pulumi`
-  - `k8s/base`
-  - `k8s/overlays/<env>`
-  - `scripts/deploy-k8s.sh`
-  - 文档
-
-### 5. 发布是显式动作，不允许隐式默认
-
-- 所有正式发布都必须显式带 `ENV=<env>`
-- 不允许“默认北京”或“默认某个 kubeconfig”
-- 域名、registry、CLS、DB 地址都应来自当前环境输入，而不是代码里的默认常量
-
-一个发布动作至少应满足：
-
-1. 环境是显式的
-2. 镜像地址是显式的或可从 `platform.env` 推导
-3. rollout 结果有显式验证
-
-### 6. 数据库按三段式治理
-
-有数据库的服务，统一按下面的职责分层：
-
-1. `bootstrap`
-   - 建库
-   - 建用户
-   - 授权
-2. `migration`
-   - 只执行 schema 迁移
-3. `seed`
-   - 只写默认业务数据
-   - 必须幂等
-
-不要再把：
-
-- 建库
-- 跑 schema
-- 写默认数据
-
-混成一个黑盒 `db-init-vN`。
-
-同样，不要把 seed 偷偷藏进应用启动路径里；seed 必须是显式动作。
-
-### 6.1 数据库时间统一按 UTC 存储
-
-- UTC 不是“实现细节”，而是本仓库的时间语义底线：
-  - 数据库里的时间字段必须代表同一个全球时间轴上的事实
-  - 不能依赖部署机器、本地开发机、容器默认时区来解释时间
-  - 不能让“今天/昨天/过期/出生顺序”这类语义随着运行节点时区漂移
-- 选择 UTC 的原因是：
-  - 多 region、多集群、多机器下语义唯一
-  - 分库分表、异步任务、补偿重放、报表聚合时更容易收敛
-  - 排障时可以先信任 DB 中的时间事实，再决定展示层怎么转时区
-- 因此默认原则是：
-  - **存储层只存 UTC**
-  - **业务展示层按需要转时区**
-  - **中国自然日、born card、日报这类概念都属于读时派生语义，不属于底层持久化语义**
-- 所有数据库内部时间统一按 UTC 存储
-- MySQL 连接层应统一满足：
-  - DSN 开启 `parseTime=true`
-  - DSN 级别显式设置 `time_zone='+00:00'`，保证连接池新建连接也保持 UTC
-  - 如果使用 GORM，`NowFunc` 统一返回 `time.Now().UTC()`
-- 显式写库时间统一使用 `time.Now().UTC()`
-- 展示层若需要中国自然日或本地时间，再在读时做 `UTC -> +8` 转换
-- 不再使用 `loc=Local` 作为数据库连接默认值，也不要把“本地 wall clock”写进持久化表
-
-### 7. 先统一模式，再迁服务
-
-后续新服务或旧服务整改，优先顺序是：
-
-1. 先统一目录形态：`k8s/base + k8s/overlays/<env> + scripts/deploy-k8s.sh`
-2. 再统一配置来源：`platform.env` + `.secret/<service>/test.env`
-3. 再统一数据库模型：`bootstrap / migration / seed`
-4. 再统一发布行为：显式 `ENV`、显式 rollout、显式校验
-5. 最后删除旧入口和旧脚本
-
-### 8. 上海公网 TLS 证书的边界
-
-- `shprod` 的公网 `Ingress` 继续由 IaC 管理：
-  - host
-  - path
-  - upstream service
-  - tls secret name
-- 但 `qcloud_cert_id` 不再属于日常 workload 发布的一部分
-- 原因是上海证书由腾讯云云端托管并自动轮转，日常 `deploy-k8s.sh apply` 如果继续覆盖 `qcloud_cert_id`，就会和云端轮转后的新 cert id 打架
-- 当前约定：
-  - `frontend/service-gateway/admin-gateway` 的 `shprod` overlay 默认不会 apply `tls-secrets.yaml`
-  - 这些文件只保留作“首次绑定证书 / 显式切换证书”的手工入口
-  - 日常服务发布只更新 workload 和 ingress 结构，不覆盖现网 `qcloud_cert_id`
-
-不要反过来先做“局部补丁”，否则技术债会继续扩散。
-
-### Agent 最短路径
-
-如果目标是“把某个服务发到某个环境”，优先按这个顺序：
+Traffic-only process. It only exposes `/healthz`, `/readyz`, optional e2e hooks,
+and `/v1/*`; admin APIs and console proxy routes return 404.
 
 ```bash
-cd infra_pulumi
-GOWORK=off go run ./cmd/infractl up --stack <env>
-
-cd ..
-python3 .ci/runtime/commands/build_release_image.py --service <service> --env <env> --tag <tag>
-# 更新 argocd/services/<service>/<env>/*
-git add <scoped paths>
-git commit -m "<中文说明 / English summary>"
-git push origin HEAD:gitops
+PORT=18082 \
+LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:password@redis:6379/0' \
+go run ./cmd/llmgateway-traffic
 ```
 
-如果本机没有 `platform.env`，不要手抄，直接：
+Worker processes do not expose HTTP. The same binary runs three independently
+scalable pools selected by `LLMGATEWAY_WORKER_POOL`: `core` for Set/Fleet jobs,
+`byok` for user BYOK synchronization, and `observer` for tenant projections.
+Production should run separate Deployments for all three pools.
 
 ```bash
-cd infra_pulumi
-GOWORK=off go run ./cmd/infractl sync --stack <env>
+LLMGATEWAY_SQL_DSN='user:pass@tcp(mysql:3306)/llmgateway?parseTime=true' \
+LLMGATEWAY_WORKER_POOL=core \
+LLMGATEWAY_WORKER_POLL_INTERVAL=5s \
+LLMGATEWAY_WORKER_LEASE_TTL=1m \
+go run ./cmd/llmgateway-worker
+
+LLMGATEWAY_SQL_DSN='user:pass@tcp(mysql:3306)/llmgateway?parseTime=true' \
+LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:password@redis:6379/0' \
+LLMGATEWAY_WORKER_POOL=byok \
+go run ./cmd/llmgateway-worker
+
+LLMGATEWAY_SQL_DSN='user:pass@tcp(mysql:3306)/llmgateway?parseTime=true' \
+LLMGATEWAY_WORKER_POOL=observer \
+go run ./cmd/llmgateway-worker
 ```
 
-当前推荐的标准链路是：
+The first P0 operator loop, APIs, UI, metrics, and alert rules are documented in
+[`docs/operator-p0.md`](docs/operator-p0.md).
 
-1. `infra_pulumi` 管腾讯云基础设施
-2. `infra_pulumi` 回写 `deploy/envs/<env>/platform.env`
-3. source-facing workload 侧通过 `k8s/base + k8s/overlays/<env>` 消费环境事实
-4. deploy-facing 正式发布入口统一落在 `argocd/`
-5. 运行时敏感值通过 Kustomize / ksops 下发到集群
-
-关键约束：
-
-- `infractl` 只管 infra，不管 workload 正式发布。
-- `deploy/envs/<env>/platform.env` 是部署事实来源，由 `infra_pulumi` 自动回写，不手改、不提交。
-- `platform.env` 现在在 `.gitignore` 里统一忽略；如果某个历史环境文件仍污染工作树，说明它曾被 Git 跟踪过，需要额外 `git rm --cached` 一次。
-- 北京 / 上海当前正式发布以当前 repo 的 `gitops` 分支上的 `argocd/` 为准。
-- `sandbox`、`ctl`、`user/auth`、`payment`、`subscription`、`service-gateway`、`admin-gateway`、`gateway-dashboard`、`ai-gateway`、`frontend` 的北京 / 上海主链都已经迁到这套模式。
-- `frontend` 的正式构建仍按 `cd frontend && pnpm install && pnpm build` 执行，再更新 GitOps pin。
-- 各服务的 `deploy-k8s.sh` 现在共用：
-  - [kustomize-deploy-common.sh](scripts/lib/kustomize-deploy-common.sh)
-  里面统一收敛了命令检查、overlay 检查、`EOF -> --validate=false` 回退、监控 CRD 缺失兼容等行为。
-- 不建议把所有服务压成一个超大总脚本；推荐形态是：
-  - 每个服务保留自己的 `deploy-k8s.sh`
-  - 公共行为收进 `scripts/lib/`
-- 但不要再把这些脚本写成“北京 / 上海正式发版唯一入口”。
-- 对于新创建的 workload namespace，默认 `ServiceAccount` 也应显式挂标准集群 pull secret，不能只假设 TKE addon 会自动把引用补到位。
-- 集群级镜像拉取凭据应由 `infra_pulumi` 在建集群时统一下发，不再把“给某个项目单独补 imagePullSecrets”当成长期方案。
-- 开公网的 TCR 不只要 `open_public_operation=true`，还要同时下发公网访问白名单；否则公网域名可能存在但外部机器仍然无法 `docker push/pull`。
-
-### 现在的域名分层
-
-当前推荐域名模型：
-
-- 根域/前台：
-  - 北京测试：`lightclaw.tech`
-  - 上海 `shprod`：`preview.lightclaw.cn`
-- 公网 API：
-  - 北京测试：`lightclaw.tech`
-  - 上海 `shprod`：`api.lightclaw.cn`
-- 管理后台：
-  - 北京测试：`admin.lightclaw.tech`
-  - 上海 `shprod`：`admin.lightclaw.cn`
-
-这意味着后续 agent 改配置时，不要再默认“根域就是 API”。上海已经正式分离成：
-
-- `preview.lightclaw.cn`
-- `api.lightclaw.cn`
-- `admin.lightclaw.cn`
-
-## 新服务发布改造模板
-
-后续如果要把别的服务也迁到这套标准链路，统一按下面这个模板做，不要再回到“单个 `manifests.yaml` + 手写脚本替换变量”的旧方式。
-
-### 目录结构
-
-推荐结构：
-
-```text
-<service>/
-  k8s/
-    base/
-      manifests.yaml
-      kustomization.yaml
-    overlays/
-      beijing-sandbox/
-        kustomization.yaml
-      shprod/
-        kustomization.yaml
-  scripts/
-    deploy-k8s.sh
-  secret-templates/
-    test.env.example
-  AGENTS.md
-```
-
-### 输入边界
-
-- `infra_pulumi` 负责回写 `deploy/envs/<env>/platform.env`
-- 服务自己的敏感值放本地未跟踪文件：
-  - `.secret/<service>/test.env`
-- 发布脚本在 `k8s/overlays/<env>/generated/` 下生成中间输入：
-  - `platform.env`
-  - `<service>-runtime-secrets.env`
-
-这些 `generated/` 文件都是本地生成物，必须忽略，不提交 Git。
-
-### Kustomize 约束
-
-- `base/` 里放稳定的 Deployment/Service/Job/ServiceAccount 等资源
-- `overlays/<env>/` 只放环境差异和 generator 配置
-- 非敏感运行时事实通过 `configMapGenerator` 下发
-- 敏感值通过 `secretGenerator` 下发
-- workload 默认通过 `envFrom` 读取运行时 ConfigMap/Secret
-- 不再把 `MYSQL_DSN` 这类整条连接串作为跨环境主输入；优先用 `HOST/PORT + Secret password`
-
-### 默认 ServiceAccount 约束
-
-对新 namespace，不要只假设集群 addon 会自动兜底。服务清单里应显式声明默认 `ServiceAccount`，并挂上标准 pull secret：
-
-- `tcr.ipsqcloudregistrykey`
-- `tcr.ipstcr-regcred`
-- `tcr.ipstcr-lightclaw-secret`
-
-这样新 namespace 第一次部署也能稳定拉私有镜像。
-
-### deploy-k8s.sh 约束
-
-服务自己的 `deploy-k8s.sh` 应统一提供：
-
-- `apply`
-- `build`
-- `status`
-
-标准职责：
-
-1. 读取 `deploy/envs/<env>/platform.env`
-2. 读取 `.secret/<service>/test.env`
-3. 生成 overlay 下的 `generated/*`
-4. `kubectl apply -k`
-5. 如果上海公网 API 遇到 `failed to download openapi: ... EOF`，自动回退到：
+Optional production-oriented storage and key-route cache knobs:
 
 ```bash
-kubectl kustomize <overlay> | kubectl apply --validate=false -f -
+LLMGATEWAY_SQL_DSN='user:pass@tcp(mysql:3306)/llmgateway?parseTime=true'
+LLMGATEWAY_KEY_ROUTE_CACHE_ENABLE=true
+LLMGATEWAY_KEY_ROUTE_CACHE_TTL=1m
+LLMGATEWAY_KEY_ROUTE_CACHE_CAPACITY=100000
+LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:password@redis:6379/0'
+LLMGATEWAY_KEY_ROUTE_CACHE_NAMESPACE=llmgateway
 ```
 
-这个回退已经在 `sandbox`、`payment`、`subscription` 中验证过，后续新服务继续沿用。
+When `LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL` is set, Redis is used as the shared
+route snapshot store. This is required for `llmgateway-traffic`: Redis miss or
+Redis failure never falls back to MySQL. New keys are fixed-length
+`sk-<Base64URL payload>` v2 keys. Their payload contains a stable 32-bit route
+slot, and route snapshots use Redis keys such as
+`llmgateway:route:{kr-00000007}:key:<external_key_id>`. Redis Cluster sharding is
+therefore driven by the route slot rather than by MySQL lookups. Route snapshots are persistent Redis
+records rather than short-TTL cache entries: key revoke and tenant disable remove
+them, while Set disable marks matching snapshots disabled so traffic returns 503
+without losing the key secret needed for a later re-enable.
 
-### 镜像地址规则
+Key issuance is fail-closed: reserve the v2 identity in central MySQL with a pure
+insert, create the upstream new-api token, publish the Redis route, and only then
+mark the key active and return it. MySQL stores the complete key for fixed probe
+reuse and disaster recovery, alongside the Key ID, full-key hash,
+domain-separated Secret hash, route slot and state. Redis, logs and metrics never
+store or emit the complete key. Random identity collisions retry at most five
+times; user/purpose conflicts do not retry. `crypto/rand` failure aborts issuance.
 
-- 北京沿用当前既有 registry/path 时，可以先兼容现状
-- 新环境应优先收敛到 `lightclaw` namespace
-- 对 `shprod` 这类环境，镜像地址应从 `platform.env` 提供的真实 `REGISTRY_SERVER` 派生，而不是在 yaml 里写死 registry 域名
+LLMGateway only recognizes keys issued into its own new-api Set inventory.
+Unknown keys return `401`; there is no traffic or control-plane fallback to any
+external gateway. Existing users must be provisioned through the explicit
+migration/provisioning API before switching their base URL and key.
 
-### 数据库标准
+Set `LEGACY_SUBSCRIPTION_CLIENT_COMPAT=true` only when an existing
+`subscription` service still calls the old `ai-gateway`
+`/api/internal/subscriptions/apply|cancel` endpoints without an internal bearer
+token. In that mode, only those two POST endpoints accept no Authorization, and
+`apply` returns the naked subscription JSON shape expected by that legacy
+client.
 
-当前 repo 推荐统一成：
+Current ctl callers should send `idempotency_key`. Paid delivery uses
+`trade:<deal_name>` and trial delivery uses `trial:<user_id>:<bundle_id>`.
+Different keys create independent active new-api subscriptions whose remaining
+quota is aggregated. Legacy callers may omit the key; those requests are not
+deduplicated and every call is treated as a separate delivery. LLMGateway does
+not retry an `unknown` keyed upstream outcome.
 
-1. `bootstrap`
-   - 只负责建库、建用户、授权
-   - 可以作为 migration Job 的 `initContainer`
-2. `migration`
-   - 只负责执行 `migrations/*.sql`
-   - Job 名用 `service-db-migrate-<UTC时间戳>`
-   - 不允许再依赖固定 `db-init-vN`
-3. `seed`
-   - 只负责默认业务数据
-   - 必须幂等
-   - 不允许藏在应用启动路径里
-
-当前可作为样板的服务：
-
-- `sandbox`
-  - 已拆成 `db-migrate` + `db-seed`
-- `ctl`
-  - 已有 timestamp migration Job + schema guard
-
-已经收敛到新模型的服务：
-
-- `user/auth`
-  - `db-migrate-<timestamp>` + `db-seed-<timestamp>`
-  - 应用启动不再对 MySQL store 偷偷 seed
-- `payment`
-  - `db-migrate-<timestamp>`
-- `subscription`
-  - `db-migrate-<timestamp>`
-- `ai-gateway`
-  - `db-migrate-<timestamp>`
-  - 不再在 deploy 脚本里动态生成 `apply-migrations.sh`
-
-### 北京 TCR 特殊说明
-
-北京测试环境当前有一个容易踩的差异：
-
-- 本地习惯上还能向 `ccr.ccs.tencentyun.com/clawhub/...` 推镜像
-- 但 `beijing-sandbox` 集群里 workload namespace 默认挂的 pull secret，实际认证的是 `lightclaw-bj8.tencentcloudcr.com`
-
-这会导致一种很迷惑的现象：
-
-- 旧 Pod 继续跑没问题
-- 新 tag 本地 push 也成功
-- 但集群一拉新镜像就会报：
-  - `failed to fetch anonymous token: 401 Unauthorized`
-
-原因不是镜像没推成功，而是：
-
-- kubelet 对 `ccr.ccs.tencentyun.com` 没有命中的 registry 凭据
-- 于是会退回匿名拉取
-
-所以当前北京环境发布镜像时，应该优先使用：
-
-```text
-lightclaw-bj8.tencentcloudcr.com/lightclaw/<service>:<tag>
-```
-
-对 `sandbox`、`gateway-dashboard` 这类已经切到统一 Kustomize 发布流的服务，发布时也应显式对齐到北京私有 TCR，例如：
+## Local Smoke Flow
 
 ```bash
-ENV=beijing-sandbox \
-REGISTRY_SERVER=lightclaw-bj8.tencentcloudcr.com \
-bash sandbox/scripts/deploy-k8s.sh
+curl -sS -X POST http://localhost:18080/api/admin/login \
+  -H 'content-type: application/json' \
+  -d '{"username":"cluster-admin","password":"Qq373866172!"}'
 
-ENV=beijing-sandbox \
-GATEWAY_DASHBOARD_IMAGE=lightclaw-bj8.tencentcloudcr.com/lightclaw/gateway-dashboard:<tag> \
-bash gateway-dashboard/scripts/deploy-k8s.sh
+curl -sS -X POST http://localhost:18080/api/sets \
+  -H 'authorization: Bearer dev-cluster-token' \
+  -H 'content-type: application/json' \
+  -d '{"id":"set-a","name":"local set A","base_url":"http://localhost:13001","status":"active"}'
+
+curl -sS -X POST http://localhost:18080/api/sets/set-a/bootstrap \
+  -H 'authorization: Bearer dev-cluster-token'
+
+curl -sS -X POST http://localhost:18080/api/users/user-1/keys \
+  -H 'authorization: Bearer dev-cluster-token'
 ```
 
-不要默认沿用：
+## Reproducible E2E
 
-```text
-ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
+发布前的统一回归入口位于 [`test/regression/`](test/regression/README.md)。它用同一套 Go Case/Scenario
+覆盖租户准入、渠道交付、普通推理、SSE，以及 `llmgateway-traffic` 的真实滚动升级；完整场景必须以集群内 Job 运行。
+
+The E2E suite does not depend on an already-running developer machine setup. It
+creates a disposable Docker Compose cluster with:
+
+- one `llmgateway`
+- two isolated `new-api` sets
+- one MySQL and Redis pair per set
+- one test runner container
+
+Run it from this directory:
+
+```bash
+bash test/e2e/run.sh
 ```
 
-至少在 `beijing-sandbox` 这套集群里，前者才是和 namespace pull secret 对齐的地址。
+The runner always starts from a clean slate with `docker compose down -v`, waits
+for container health checks, and then executes the integration tests inside the
+Compose network:
 
-另一个和这条链路相关的小坑是：
+```bash
+docker compose -p llmgateway-e2e -f test/e2e/compose.yaml run --rm e2e
+```
 
-- 当因为公网 API 校验失败而退回到
-  - `kubectl kustomize <overlay> | kubectl apply --validate=false -f -`
-- 如果里面包含 `Job` 且模板内容变了（例如镜像地址变了）
-- `apply` 会因为 `spec.template` immutable 报错
+`test/e2e/cluster.compose.yaml` is the checked-in cluster inventory consumed by
+the tests. It uses Compose service DNS names, so it does not require fixed
+localhost ports on the host. If you need a local host-based variant, copy it to
+`test/e2e/cluster.local.yaml`; that file is intentionally ignored.
 
-这时应先显式删除旧 `Job`，再重新 apply，而不是误以为整个发布失败。
+The Compose cluster also starts a local OpenAI-compatible fake upstream through
+[`kagent-dev/mockllm`](https://github.com/kagent-dev/mockllm). The fixture lives
+at `test/e2e/mockllm/config.json`, and `cluster.compose.yaml` exposes it as:
 
-## 当前主线
+```yaml
+mock_llm:
+  api_key: sk-mockllm-local
+  base_url: http://mockllm:8080
+  model: llmgw-mock-chat
+```
 
-### 1. 用户侧
+The E2E suite syncs that provider into every managed `new-api` Set through the
+channel bundle engine. The bundle carries both pricing options such as
+`ModelRatio`/`CompletionRatio` and channel desired state, so the test verifies
+that model pricing is present before both non-streaming and streaming
+`/v1/chat/completions` go through `llmgateway`. Real provider keys are now
+optional for local correctness checks; use them only when you explicitly want
+to compare against an outside model service.
 
-- [frontend](frontend)
-  - 面向用户的 Web 前端
-  - 当前承载营销页、登录入口、计划选择、Dashboard 外壳
-- [user/auth](user/auth)
-  - 用户、登录、QQ OAuth、session、subscription
-  - 其他服务可通过 `/auth/session` 做 token introspection
+The same Compose network includes an optional Go load runner behind the `load`
+profile. Its default profile models 1000 users, one new user every 500ms, each
+user calling chat every 3s, each user configuring two BYOK providers one second
+apart, and four platform channels backed by `mockllm`.
 
-### 2. 服务侧
+Smoke run:
 
-- [service-gateway](service-gateway)
-  - 对外统一 API 入口
-  - 负责路径转发、白名单、鉴权透传、用户上下文注入
-- [sandbox](sandbox)
-  - 沙箱资源池系统
-  - 负责 pool、inventory、预创建 CVM、分配、回收、重装、clientproxy、worker
-  - 当前也已经接入 Prometheus 业务指标
+```bash
+docker compose -p llmgateway-load -f test/e2e/compose.yaml --profile load run --build --rm \
+  -e LOAD_USERS=5 \
+  -e LOAD_RUN_DURATION=20s \
+  -e LOAD_USER_ARRIVAL_INTERVAL=100ms \
+  -e LOAD_CHAT_INTERVAL=1s \
+  load-runner
+```
 
-### 3. 运维侧
+Full default profile:
 
-- [nextgen-dashboard](nextgen-dashboard)
-  - `/admin` 对应的 shell-first 管理台
-  - Go 托管静态前端，浏览器里是终端
-- [gateway-dashboard](gateway-dashboard)
-  - 当前主线管理后台
-  - 负责 auth users、providers/routing、sandbox pools、ctl bots 等后台管理页
-- [nextgen-dashboard-client](nextgen-dashboard-client)
-  - 本地终端客户端
-  - 通过 websocket + Basic Auth 连接 `nextgen-dashboard`
+```bash
+docker compose -p llmgateway-load -f test/e2e/compose.yaml --profile load run --build --rm load-runner
+```
 
-### 4. 基础设施
+Set `LOAD_PREPARE=false` to reuse an already prepared cluster and skip Set
+bootstrap, platform channel sync, and plan creation.
 
-- [infra_pulumi](infra_pulumi)
-  - 腾讯云基础设施、TKE、数据库、监控的当前控制面
-- [beijing-sandbox env docs](infra_pulumi/envs/tencentcloud/beijing-sandbox/AGENTS.md)
-  - 北京测试环境的环境级文档入口
-- 北京测试环境已经购买托管 Grafana，可通过腾讯云 OAuth 登录：
-  - 控制台入口：`https://console.cloud.tencent.com/monitor/grafana`
-  - 环境文档： [README.md](infra_pulumi/observability/beijing-sandbox/README.md)
+The default `new-api` image is pinned by digest in `test/e2e/compose.yaml` so
+the test cluster is not affected by a moving `latest` tag. To validate a newer
+upstream build without changing the checked-in scenario, override it explicitly:
 
-## 顶层目录说明
+```bash
+NEWAPI_IMAGE=calciumion/new-api:latest bash test/e2e/run.sh
+```
 
-- [AGENTS.md](AGENTS.md)
-  - 仓库级协作规则，重点约束 migration 和 schema 变更
-- [docs](docs)
-  - 设计文档、开发说明、计划文档
-- [infra_pulumi](infra_pulumi)
-  - 当前云资源控制面和 observability 资产
-- [deploy](deploy)
-  - 环境部署事实目录，承接 `infra_pulumi` 回写的 `platform.env`
-- [sandbox](sandbox)
-  - 沙箱池系统主仓
-- [user](user)
-  - 用户域，目前核心是 `user/auth`
-- [frontend](frontend)
-  - 用户前台 Web 项目
-- [service-gateway](service-gateway)
-  - 公网服务网关
-- [nextgen-dashboard](nextgen-dashboard)
-  - 浏览器终端式管理台
-- [nextgen-dashboard-client](nextgen-dashboard-client)
-  - 管理台的本地客户端
-- [images](images)
-  - 镜像辅助内容、envd daemon 源码、agent/helper、小工具镜像
-- [ctl](ctl)
-  - 当前 LightVela 主链路的一部分
-  - 负责实例资源、bot 归属事实等控制面能力
-- [ai-gateway](ai-gateway)
-  - 独立 AI 网关方向服务
-- [gateway-dashboard](gateway-dashboard)
-  - 当前后台主线，不再是旧原型
-- [_bmad](_bmad) / [_bmad-output](_bmad-output)
-  - 规划、分析、backlog、实现产物，不是运行时服务
+## ctl/trade API Coverage
 
-## 怎么理解这个仓库
+`llmgateway` currently targets the backend compatibility surface used by `ctl`
+and services that reach model entitlement through `ctl`.
 
-一句话：
+| Caller | Requirement | E2E coverage |
+|---|---|---|
+| `ctl` bundle/pass/instance | internal plan lookup, ensure user, apply/get/extend/cancel subscription, admin create/revoke key, admin usage, credit lookup | `TestReproducibleComposeClusterDropInScenario` subtests for ctl bundle validation, pass subscription lifecycle, renewal/rollback alignment, key lifecycle, credit facade, usage, and disabled-set routing |
+| `trade` | no direct `ai-gateway` HTTP client; it completes paid pass delivery through `ctl` | covered indirectly by the `ctl` apply/extend/cancel contract |
 
-`frontend + user/auth + service-gateway + sandbox + nextgen-dashboard + infra_pulumi`
+During migration, callers can query or set the thin user assignment:
 
-构成了当前线上主链路。
+```bash
+curl -sS http://localhost:18080/api/internal/users/usr_123/assignment \
+  -H 'authorization: Bearer dev-internal-token'
 
-其余目录里有一部分是：
+curl -sS -X POST http://localhost:18080/api/internal/users/usr_123/assignment \
+  -H 'authorization: Bearer dev-internal-token' \
+  -H 'content-type: application/json' \
+  -d '{"backend":"new","set_id":"set-a"}'
+```
 
-- 平台模板
-- 旧原型
-- 独立旁支服务
-- 镜像与运维辅助材料
+Unknown users default to `pending`. Provisioning or creating a new key through
+`llmgateway` marks the user as `new` for the selected Set. Renewal/apply/cancel
+requests for pending users fail explicitly until provisioning completes.
 
-所以这个仓库不是“一个应用”，而是一个以 `LightVela` 为中心的小型平台仓库。
-# 测试环境 user-assets 桶
+Credit lookup is exposed as:
 
-资源由 [infra_pulumi](infra_pulumi) 纳管：
+```bash
+curl -sS http://localhost:18080/api/internal/users/usr_123/credit \
+  -H 'authorization: Bearer dev-internal-token'
+```
 
-- COS 桶：`lightclawuser-1388575217`
-- 桶地址：`lightclawuser-1388575217.cos.ap-beijing.myqcloud.com`
-- 桶权限：`private`
-- CAM 用户：`lightclawuser-cos`
+The response includes both the compatibility field `token_balance` and the
+business-facing `credit_available`. `llmgateway` does not persist a complete
+credit projection; it aggregates active `new-api` subscriptions for provisioned
+users and returns a pending error for users that are not yet provisioned.
 
-说明：
+User-level BYOK settings are a two-step flow: save desired state locally, then
+explicitly sync it to the user's target `new-api` set. The provider key is never
+returned in API responses. After sync, `/v1/*` chooses the BYOK upstream token
+for `byok_first`; `platform_first` keeps using the platform upstream token. The
+platform token is pinned to the `default` group, while the BYOK token and
+private channels are pinned to the user's private BYOK group with zero ratio.
 
-- 这套 IaC 负责 bucket 和受限 CAM API 用户。
-- 凭据本身不写入仓库，只通过本地状态或安全分发渠道管理。
+```bash
+curl -sS -X PUT http://localhost:18080/api/internal/users/usr_123/llm-settings \
+  -H 'authorization: Bearer dev-internal-token' \
+  -H 'content-type: application/json' \
+  -d "{
+    \"routing\":{\"mode\":\"byok_first\"},
+    \"providers\":[{
+      \"id\":\"tencent-maas\",
+      \"name\":\"Tencent MaaS\",
+      \"protocol\":\"openai_compatible\",
+      \"base_url\":\"https://tokenhub.tencentmaas.com\",
+      \"api_key\":\"${USER_BYOK_API_KEY}\",
+      \"model_mappings\":{\"auto\":\"minimax-m2.7\"},
+      \"enabled\":true
+    }]
+  }"
 
+curl -sS -X POST http://localhost:18080/api/internal/users/usr_123/llm-settings/sync \
+  -H 'authorization: Bearer dev-internal-token'
+```
 
+The optional no-auth `POST /api/internal/subscriptions/apply|cancel` client is
+guarded by
+`LEGACY_SUBSCRIPTION_CLIENT_COMPAT=true`. The E2E subtest
+`subscription service legacy client can apply and cancel without internal auth`
+keeps that migration path explicit without making it part of the core contract.
 
+## Controlled Resource Admin
 
-### 凭据配置和密钥
-为了安全，我们的凭据和密钥都防止在单独的repo中，这个repo由 vaultbox 文件夹管理。
-vaultbox 是一个由本地启动的服务器，
+The cluster console can inspect and low-frequency maintain selected
+LLMGateway-owned tables through:
+
+```bash
+curl -sS http://localhost:18080/api/admin/resources \
+  -H 'authorization: Bearer dev-cluster-token'
+
+curl -sS 'http://localhost:18080/api/admin/resources/tenants/rows?limit=50' \
+  -H 'authorization: Bearer dev-cluster-token'
+```
+
+This is intentionally not a generic database browser. The service exposes only a
+fixed resource whitelist, masks secret fields, allows `PATCH` only on
+`editable=true` columns, and routes stateful changes through actions such as
+`tenants.disable`, `tenants.route_new`, `sets.bootstrap`, and
+`user_bindings.clear_error`.

@@ -1,6 +1,0 @@
-service: subscription
-env: beijing-sandbox-2
-project: beijing-sandbox-2
-destinationName: beijing-sandbox-2
-namespace: user-auth
-sourcePath: argocd/services/subscription/beijing-sandbox-2

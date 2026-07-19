@@ -1,9 +1,0 @@
-{
-    "mkdir": [
-        {
-            "dir": "${PRJ_HOME}/tmp",
-            "mask": "777",
-            "sudo": false
-        }
-    ]
-}
