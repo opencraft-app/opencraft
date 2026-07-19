@@ -19,6 +19,12 @@ rules:
     verbs: [get, list, create, delete]
   - apiGroups: [apps]
     resources: [deployments]
+    verbs: [get]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get]
+  - apiGroups: [apps]
+    resources: [deployments]
     resourceNames:
       - llmgateway-control
       - llmgateway-worker-admin
@@ -26,7 +32,7 @@ rules:
       - llmgateway-worker-core
       - llmgateway-worker-maintenance
       - llmgateway-worker-observer
-    verbs: [get, patch]
+    verbs: [patch]
   - apiGroups: [""]
     resources: [pods]
     verbs: [delete]

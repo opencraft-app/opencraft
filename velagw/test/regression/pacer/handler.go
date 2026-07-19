@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -128,6 +129,9 @@ func NewHandlerWithFaultControl(upstreamBaseURL string, streamDuration time.Dura
 			}
 			return true
 		}
+		if !writeEvent(routeIdentityEvent(longStreamModel, r.RemoteAddr)) {
+			return
+		}
 		for index, event := range events {
 			if index > 0 && !waitWithKeepalives(r.Context(), interval, keepaliveInterval, func() bool {
 				return writeEvent(keepalive)
@@ -139,6 +143,18 @@ func NewHandlerWithFaultControl(upstreamBaseURL string, streamDuration time.Dura
 			}
 		}
 	}), nil
+}
+
+func routeIdentityEvent(model, remoteAddr string) []byte {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(remoteAddr))
+	if err != nil {
+		host = strings.Trim(strings.TrimSpace(remoteAddr), "[]")
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"id": "chatcmpl-llmgateway-regression-route", "object": "chat.completion.chunk", "created": 0, "model": model,
+		"choices": []map[string]any{{"index": 0, "delta": map[string]any{"content": "llmgateway-regression-source-ip=" + host}, "finish_reason": nil}},
+	})
+	return append(append([]byte("data: "), payload...), '\n', '\n')
 }
 
 func requestModel(body []byte) string {

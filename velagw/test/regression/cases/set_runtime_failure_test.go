@@ -31,6 +31,9 @@ func TestSetRuntimePodFailureRestoresCapacityAndReconnectsStream(t *testing.T) {
 	if cluster.deletedName != "pod-a" {
 		t.Fatalf("deleted Pod = %q", cluster.deletedName)
 	}
+	if len(traffic.streamURLs) < 2 || traffic.streamURLs[0] != cfg.TrafficURL {
+		t.Fatalf("stream URLs = %v", traffic.streamURLs)
+	}
 	if cluster.acquireCalls != 1 || cluster.releaseCalls != 1 {
 		t.Fatalf("lease acquire=%d release=%d", cluster.acquireCalls, cluster.releaseCalls)
 	}
@@ -39,6 +42,25 @@ func TestSetRuntimePodFailureRestoresCapacityAndReconnectsStream(t *testing.T) {
 	}
 	if observations["max_consecutive_errors"] != 0 {
 		t.Fatalf("observations = %+v", observations)
+	}
+}
+
+func TestSetRuntimePodFailureRefusesUnknownStreamSource(t *testing.T) {
+	cluster := newFakeSetFailureCluster()
+	traffic := &fakeSetFailureTraffic{deleted: cluster.deleted, sourceIP: "10.0.0.99"}
+	cfg := rolloutTestConfig()
+	cfg.TargetSets = []string{"set-a"}
+	cfg.MinPreSamples = 1
+	cfg.RequestInterval = time.Millisecond
+	cfg.RolloutPollInterval = time.Millisecond
+	cfg.RolloutTimeout = time.Second
+
+	_, err := NewSetRuntimeFailureCases(cfg, SetRuntimeFailureDependencies{Cluster: cluster, Traffic: traffic})[0].Run(t.Context(), rolloutRunContext())
+	if err == nil || !strings.Contains(err.Error(), "does not match a ready Set traffic Pod") {
+		t.Fatalf("error = %v", err)
+	}
+	if cluster.deletedName != "" {
+		t.Fatalf("unexpected deleted Pod = %q", cluster.deletedName)
 	}
 }
 
@@ -158,7 +180,9 @@ func setFailurePod(name, uid, node, ip string) clients.Pod {
 }
 
 type fakeSetFailureTraffic struct {
-	deleted <-chan struct{}
+	deleted    <-chan struct{}
+	streamURLs []string
+	sourceIP   string
 }
 
 func (f *fakeSetFailureTraffic) Chat(context.Context, string, framework.Secret, string, string) (clients.ChatResult, error) {
@@ -166,9 +190,14 @@ func (f *fakeSetFailureTraffic) Chat(context.Context, string, framework.Secret, 
 }
 
 func (f *fakeSetFailureTraffic) Stream(ctx context.Context, baseURL string, _ framework.Secret, _ string, _ string, onEvent func(clients.StreamEvent)) (clients.StreamResult, error) {
-	if strings.Contains(baseURL, "10.0.0.1") {
+	f.streamURLs = append(f.streamURLs, baseURL)
+	if len(f.streamURLs) == 1 {
+		sourceIP := f.sourceIP
+		if sourceIP == "" {
+			sourceIP = "10.0.0.1"
+		}
 		if onEvent != nil {
-			onEvent(clients.StreamEvent{At: time.Now(), Payload: []byte(`{}`)})
+			onEvent(clients.StreamEvent{At: time.Now(), Payload: []byte(`{}`), SourceIP: sourceIP})
 		}
 		select {
 		case <-ctx.Done():

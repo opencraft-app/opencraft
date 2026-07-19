@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -28,9 +29,10 @@ type ChatResult struct {
 }
 
 type StreamEvent struct {
-	At      time.Time
-	Payload json.RawMessage
-	Done    bool
+	At       time.Time
+	Payload  json.RawMessage
+	SourceIP string
+	Done     bool
 }
 
 type StreamResult struct {
@@ -141,7 +143,7 @@ func (c *TrafficClient) Stream(ctx context.Context, baseURL string, key framewor
 			result.MarkerFound = true
 		}
 		if onEvent != nil {
-			onEvent(StreamEvent{At: now, Payload: payload})
+			onEvent(StreamEvent{At: now, Payload: payload, SourceIP: regressionSourceIP(payload)})
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -156,6 +158,29 @@ func (c *TrafficClient) Stream(ctx context.Context, baseURL string, key framewor
 		return result, fmt.Errorf("stream response did not contain expected marker")
 	}
 	return result, nil
+}
+
+func regressionSourceIP(payload []byte) string {
+	var event struct {
+		Choices []struct {
+			Delta struct {
+				Content string `json:"content"`
+			} `json:"delta"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal(payload, &event) != nil || len(event.Choices) == 0 {
+		return ""
+	}
+	const prefix = "llmgateway-regression-source-ip="
+	content := strings.TrimSpace(event.Choices[0].Delta.Content)
+	if !strings.HasPrefix(content, prefix) {
+		return ""
+	}
+	candidate := strings.TrimPrefix(content, prefix)
+	if net.ParseIP(candidate) == nil {
+		return ""
+	}
+	return candidate
 }
 
 func (c *TrafficClient) chatRequest(ctx context.Context, baseURL string, key framework.Secret, model string, stream bool) (*http.Request, error) {

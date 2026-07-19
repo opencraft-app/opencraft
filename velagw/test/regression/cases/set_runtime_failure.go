@@ -3,9 +3,6 @@ package cases
 import (
 	"context"
 	"fmt"
-	"net"
-	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -13,8 +10,6 @@ import (
 	"git.woa.com/wisp/mono2/llmgateway/test/regression/clients"
 	"git.woa.com/wisp/mono2/llmgateway/test/regression/framework"
 )
-
-const setTrafficPort = 3000
 
 type SetRuntimeFailureCluster interface {
 	LeaseCluster
@@ -111,32 +106,41 @@ func setRuntimeSurvivesPodFailure(ctx context.Context, run *framework.RunContext
 		return nil, err
 	}
 
-	victim := ready[0]
-	directURL := (&url.URL{Scheme: "http", Host: net.JoinHostPort(victim.Status.PodIP, strconv.Itoa(setTrafficPort))}).String()
-	firstEvent := make(chan struct{})
-	directOutcome := make(chan error, 1)
-	directCtx, stopDirect := context.WithCancel(testCtx)
-	defer stopDirect()
+	sourceIP := make(chan string, 1)
+	pinnedOutcome := make(chan error, 1)
+	pinnedCtx, stopPinned := context.WithCancel(testCtx)
+	defer stopPinned()
 	go func() {
 		var once sync.Once
-		_, streamErr := deps.Traffic.Stream(directCtx, directURL, key, cfg.LongStreamModel, cfg.Marker, func(event clients.StreamEvent) {
-			if !event.Done {
-				once.Do(func() { close(firstEvent) })
+		_, streamErr := deps.Traffic.Stream(pinnedCtx, cfg.TrafficURL, key, cfg.LongStreamModel, cfg.Marker, func(event clients.StreamEvent) {
+			if event.SourceIP != "" {
+				once.Do(func() { sourceIP <- event.SourceIP })
 			}
 		})
-		directOutcome <- streamErr
+		pinnedOutcome <- streamErr
 	}()
+	var victim clients.Pod
 	select {
 	case <-testCtx.Done():
 		return nil, testCtx.Err()
-	case streamErr := <-directOutcome:
+	case streamErr := <-pinnedOutcome:
 		if streamErr == nil {
 			return nil, fmt.Errorf("pinned SSE completed before Pod failure was injected")
 		}
 		return nil, fmt.Errorf("pinned SSE ended before Pod failure was injected: %w", streamErr)
 	case leaseErr := <-renewErr:
 		return nil, leaseErr
-	case <-firstEvent:
+	case observedIP := <-sourceIP:
+		var found bool
+		for _, pod := range ready {
+			if pod.Status.PodIP == observedIP {
+				victim, found = pod, true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("pinned SSE source IP %s does not match a ready Set traffic Pod", observedIP)
+		}
 	}
 
 	baselineSamples := sampler.stats().total
@@ -186,11 +190,11 @@ func setRuntimeSurvivesPodFailure(ctx context.Context, run *framework.RunContext
 		return nil, fmt.Errorf("SSE reconnect after Set traffic Pod failure did not complete")
 	}
 
-	stopDirect()
-	directInterrupted := false
+	stopPinned()
+	pinnedInterrupted := false
 	select {
-	case streamErr := <-directOutcome:
-		directInterrupted = streamErr != nil
+	case streamErr := <-pinnedOutcome:
+		pinnedInterrupted = streamErr != nil
 	case <-time.After(2 * cfg.RolloutPollInterval):
 	}
 	stopSampler()
@@ -211,7 +215,7 @@ func setRuntimeSurvivesPodFailure(ctx context.Context, run *framework.RunContext
 		"baseline_ready_pods": len(ready), "restored_ready_pods": 2,
 		"ordinary_requests": stats.total, "ordinary_errors": stats.errors,
 		"max_consecutive_errors":    stats.maxConsecutiveErrors,
-		"pinned_stream_interrupted": directInterrupted, "reconnected_stream_done": reconnected.Done,
+		"pinned_stream_interrupted": pinnedInterrupted, "reconnected_stream_done": reconnected.Done,
 		"baseline_zone_count": len(baselineZones), "restored_zone_count": len(restoredZones),
 		"zone_spread_contract": "topology.kubernetes.io/zone/DoNotSchedule",
 	}, nil

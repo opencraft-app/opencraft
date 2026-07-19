@@ -38,6 +38,9 @@ func TestHandlerPacesUpstreamSSEWithoutChangingEvents(t *testing.T) {
 		t.Fatalf("elapsed = %s", elapsed)
 	}
 	body := string(raw)
+	if !strings.Contains(body, `"content":"llmgateway-regression-source-ip=127.0.0.1"`) {
+		t.Fatalf("body did not identify the new-api source Pod: %q", body)
+	}
 	if strings.Count(body, "llmgateway-regression-keepalive") < 4 {
 		t.Fatalf("body did not contain periodic keepalives: %q", body)
 	}

@@ -282,7 +282,10 @@ The new-api runtime has one consistency and bootstrap constraint:
 - Changes to the Set runtime topology must keep the
   `set_traffic_pod_failure_gate` regression: force-delete one active traffic
   Pod, preserve ordinary request continuity, allow SSE reconnect, and restore
-  the declared replica and cross-zone contract.
+  the declared replica and cross-zone contract. The pinned SSE must enter via
+  the stable LLMGateway traffic endpoint; the regression pacer reports the
+  actual new-api source Pod IP, and the runner may delete only the matching
+  Ready Pod. Never bypass key translation by calling a new-api Pod directly.
 - new-api Option updates mutate the receiving process immediately, while other
   processes reload them from MySQL on `SYNC_FREQUENCY`. Online configuration
   changes still require a propagation wait and verification barrier.

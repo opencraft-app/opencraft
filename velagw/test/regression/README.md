@@ -65,7 +65,7 @@ test/regression/run.sh
 - `set_upgrade_rollback_gate`：Green Pod 先通过真实推理功能就绪检查，允许 new-api 在有界时间内加载定价缓存；随后主动让探针连续失败，证明未切流。第一段清障后重试原 failed run；第二段在切流后的回滚窗口注入失败并回到旧 runtime，清障后必须创建新 batch 完成发布，不能改写已经 `rolled_back` 的历史。
 - `set_manager_takeover_gate`：分别在 `preparing`、`switching`、`draining` 终止持有租约的 manager Job，等待 10 秒测试租约过期，再由新 Job 接管。受控 Job 使用自身名称作为租约 owner，门禁会拒绝普通 CronJob 抢占造成的假通过；每轮只允许增加一个 generation。
 - `control_plane_outage_gate`：暂停 Set Manager，将五类 worker 和 control 真实缩容到 0，持续 90 秒使用停机前签发的 Key 采样推理流量。恢复后要求预先排队的 `refresh_set_capacity` 恰好产生一个成功 run、lease 清空，并恢复所有原始副本数。该场景不会缩容 `llmgateway-traffic` 或任何 new-api runtime。
-- `set_traffic_pod_failure_gate`：目标 Set 必须处于单 generation、双 Ready 副本稳态，两个副本必须实际分布在两个 `topology.kubernetes.io/zone`。门禁与流量滚动共用互斥 Lease，直连其中一个 Pod 建立 SSE 后执行零宽限删除，同时通过稳定流量入口持续采样；要求普通请求不连续失败、不同 UID 的替补 Pod 恢复双副本跨区，SSE 重连后完整结束。硬故障下原 TCP/SSE 允许中断一次。
+- `set_traffic_pod_failure_gate`：目标 Set 必须处于单 generation、双 Ready 副本稳态，两个副本必须实际分布在两个 `topology.kubernetes.io/zone`。门禁与流量滚动共用互斥 Lease，并通过稳定流量入口建立真实用户 SSE；专用 pacer 在长流首帧回报连接来源 Pod IP，runner 只会零宽限删除与该 IP 精确匹配的 Ready Pod，身份不匹配时禁止制造故障。要求普通请求不连续失败、不同 UID 的替补 Pod 恢复双副本跨区，SSE 重连后完整结束。硬故障下原 TCP/SSE 允许中断一次。
 
 ```bash
 LLMGATEWAY_REGRESSION_SCENARIO=set_upgrade_rollback_gate \

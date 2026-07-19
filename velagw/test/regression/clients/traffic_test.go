@@ -26,6 +26,8 @@ func TestTrafficClientCompletesChatAndStrictSSEWithoutReconnect(t *testing.T) {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
 			flusher := w.(http.Flusher)
+			_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"llmgateway-regression-source-ip=10.0.0.7\"}}]}\n\n")
+			flusher.Flush()
 			_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"regression-marker\"}}]}\n\n")
 			flusher.Flush()
 			time.Sleep(20 * time.Millisecond)
@@ -46,8 +48,12 @@ func TestTrafficClientCompletesChatAndStrictSSEWithoutReconnect(t *testing.T) {
 		t.Fatalf("chat=%+v err=%v", chat, err)
 	}
 	var callbackEvents, doneEvents int
+	var sourceIP string
 	stream, err := client.Stream(t.Context(), server.URL, key, "llmgw-regression-chat", "regression-marker", func(event StreamEvent) {
 		callbackEvents++
+		if event.SourceIP != "" {
+			sourceIP = event.SourceIP
+		}
 		if event.Done {
 			doneEvents++
 		}
@@ -55,11 +61,11 @@ func TestTrafficClientCompletesChatAndStrictSSEWithoutReconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !stream.MarkerFound || !stream.Done || stream.RequestCount != 1 || stream.EventCount != 1 {
+	if !stream.MarkerFound || !stream.Done || stream.RequestCount != 1 || stream.EventCount != 2 {
 		t.Fatalf("stream = %+v", stream)
 	}
-	if callbackEvents != 2 || doneEvents != 1 {
-		t.Fatalf("callback events=%d done=%d", callbackEvents, doneEvents)
+	if callbackEvents != 3 || doneEvents != 1 || sourceIP != "10.0.0.7" {
+		t.Fatalf("callback events=%d done=%d source_ip=%q", callbackEvents, doneEvents, sourceIP)
 	}
 	if requests.Load() != 2 {
 		t.Fatalf("requests = %d", requests.Load())

@@ -73,7 +73,7 @@ Set 销毁绝不隐式级联删除租户。调用方必须先 preview，并显�
 
 ```text
 materializing -> previewed -> claiming -> queued -> running -> succeeded
-                         |
+                         |  
                          +-> paused  -> queued（显式恢复）
                          +-> partial -> queued（显式重试失败项）
                          +-> error   -> queued（显式重试）

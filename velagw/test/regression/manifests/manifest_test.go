@@ -43,6 +43,8 @@ func TestDisruptiveRBACIsSeparatedFromDefaultRunner(t *testing.T) {
 	for _, required := range []string{
 		"name: llmgateway-regression-disruptive", "resources: [cronjobs]", "resourceNames: [llmgateway-set-manager]",
 		"resources: [jobs]", "verbs: [get, list, create, delete]", "name: llmgateway-regression-runner",
+		"resources: [deployments]\n    verbs: [get]",
+		"apiGroups: [policy]\n    resources: [poddisruptionbudgets]\n    verbs: [get]",
 		"resources: [deployments]", "llmgateway-control", "llmgateway-worker-admin", "llmgateway-worker-observer",
 		"resources: [pods]", "verbs: [delete]",
 		"kind: ClusterRole", "resources: [nodes]", "kind: ClusterRoleBinding", "${NODE_READER_NAME}",
@@ -53,6 +55,9 @@ func TestDisruptiveRBACIsSeparatedFromDefaultRunner(t *testing.T) {
 	}
 	if strings.Contains(manifest, "resourceNames: [llmgateway-traffic]") {
 		t.Fatal("control-plane outage RBAC must not scale the traffic deployment")
+	}
+	if strings.Contains(manifest, "resources: [deployments]\n    verbs: [get, patch]") {
+		t.Fatal("disruptive runner may read dynamic Set deployments but must not patch them")
 	}
 }
 

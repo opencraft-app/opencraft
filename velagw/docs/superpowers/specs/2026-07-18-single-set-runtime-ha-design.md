@@ -55,8 +55,8 @@ max_sets_per_shard = 24
 
 1. 目标 Set 必须恰好一个，且至少有两个 Ready traffic Pod。
 2. 两个 Pod 必须位于不同 `topology.kubernetes.io/zone`。
-3. 持续发送普通聊天请求，并直连待删除 Pod 建立一条长 SSE。
-4. 对一个 active traffic Pod 执行零宽限删除，等待不同 UID 的替代 Pod Ready。
+3. 持续发送普通聊天请求，并通过稳定 Gateway 入口建立一条真实用户长 SSE。专用 pacer 在首帧回报发起上游连接的 new-api Pod IP。
+4. 只有当来源 IP 精确匹配当前两个 Ready traffic Pod 之一时，才对命中的 Pod 执行零宽限删除；否则在故障注入前失败。随后等待不同 UID 的替代 Pod Ready。
 5. 普通请求允许孤立失败，但禁止连续失败；恢复窗口内必须达到最小成功样本数。
 6. 原 SSE 可以完整结束或中断；中断的流必须重新建立并完整完成。
 7. 替代 Pod 仍须满足双副本、跨区和 PDB 健康（`expectedPods=2`、`currentHealthy=2`、`disruptionsAllowed>=1`）。
