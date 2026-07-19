@@ -758,6 +758,7 @@ export type OperationalOverview = {
     available_user_slots?: number
     full_sets?: number
     channel_drifts: number
+    runtime_ha_degraded_sets?: number
   }
   sets: Array<{
     id: string
@@ -776,6 +777,13 @@ export type OperationalOverview = {
     admission_status?: string
     admission_error?: string
     admission_checked_at?: string
+    runtime_ha_status?: string
+    runtime_ha_desired_replicas?: number
+    runtime_ha_ready_replicas?: number
+    runtime_ha_pdb_healthy?: boolean
+    runtime_ha_topology_key?: string
+    runtime_ha_error?: string
+    runtime_ha_checked_at?: string
     last_error?: string
     last_error_at?: string
     last_reconciled_at?: string

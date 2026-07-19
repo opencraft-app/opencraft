@@ -485,6 +485,9 @@ func setReadyForServing(set Set) bool {
 	if set.AdminHealthStatus == SetAdminHealthUnhealthy {
 		return false
 	}
+	if set.RuntimeHADesiredReplicas > 0 && set.RuntimeHAStatus != SetRuntimeHAHealthy {
+		return false
+	}
 	switch set.AdmissionStatus {
 	case SetAdmissionStatusPassed:
 		return true

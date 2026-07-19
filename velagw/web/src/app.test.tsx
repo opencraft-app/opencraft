@@ -100,7 +100,11 @@ describe("OperatorOverviewPage", () => {
       totals: { sets: 2, active_sets: 1, users: 10, channel_drifts: 1 },
       sets: [
         { id: "set-a", name: "Set A", status: "active", setup: true, user_count: 8, ready: true },
-        { id: "set-b", name: "Set B", status: "disabled", setup: false, user_count: 2, ready: false, last_error: "bootstrap failed" },
+        {
+          id: "set-b", name: "Set B", status: "disabled", setup: false, user_count: 2, ready: false,
+          runtime_ha_status: "degraded", runtime_ha_desired_replicas: 2, runtime_ha_ready_replicas: 1,
+          runtime_ha_error: "跨区副本未就绪", last_error: "bootstrap failed",
+        },
       ],
       channel_bundles: [{ bundle_id: "golden", name: "生产模型渠道模板", drift_sets: 1, synced_sets: 1, error_sets: 0 }],
       alerts: [{ kind: "channel_drift", severity: "warning", message: "渠道存在漂移" }],
@@ -119,6 +123,8 @@ describe("OperatorOverviewPage", () => {
     expect(html).toContain("容量水位")
     expect(html).not.toContain("Set A")
     expect(html).toContain("Set B")
+    expect(html).toContain("推理 1/2")
+    expect(html).toContain("跨区副本未就绪")
     expect(html).toContain("生产模型渠道模板")
     expect(html).toContain("渠道存在漂移")
     expect(html).toContain("服务集群")

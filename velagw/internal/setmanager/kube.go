@@ -35,6 +35,7 @@ type LLMFleet struct {
 		ResourceVersion string `json:"resourceVersion"`
 	} `json:"metadata"`
 	Spec struct {
+		Availability    LLMFleetAvailability     `json:"availability,omitempty"`
 		NewAPI          LLMFleetNewAPI           `json:"newapi"`
 		NewAPIImage     string                   `json:"newapiImage"`
 		Shards          []LLMFleetShard          `json:"shards"`
@@ -43,9 +44,42 @@ type LLMFleet struct {
 		Cleanups        []LLMFleetCleanup        `json:"cleanups,omitempty"`
 	} `json:"spec"`
 	Status struct {
-		Conditions []LLMFleetCondition     `json:"conditions"`
-		Cleanups   []LLMFleetCleanupStatus `json:"cleanups,omitempty"`
+		Conditions                  []LLMFleetCondition               `json:"conditions"`
+		Cleanups                    []LLMFleetCleanupStatus           `json:"cleanups,omitempty"`
+		TrafficDeployments          []LLMFleetTrafficDeploymentStatus `json:"trafficDeployments,omitempty"`
+		TrafficPodDisruptionBudgets []LLMFleetTrafficPDBStatus        `json:"trafficPodDisruptionBudgets,omitempty"`
 	} `json:"status"`
+}
+
+type LLMFleetAvailability struct {
+	Traffic LLMFleetTrafficAvailability `json:"traffic,omitempty"`
+}
+
+type LLMFleetTrafficAvailability struct {
+	MinReplicas     int    `json:"minReplicas,omitempty"`
+	TopologyKey     string `json:"topologyKey,omitempty"`
+	PDBMinAvailable int    `json:"pdbMinAvailable,omitempty"`
+}
+
+type LLMFleetTrafficDeploymentStatus struct {
+	SetID              string `json:"setID"`
+	Generation         int64  `json:"generation"`
+	Name               string `json:"name"`
+	ObjectGeneration   int64  `json:"objectGeneration"`
+	ObservedGeneration int64  `json:"observedGeneration"`
+	DesiredReplicas    int    `json:"desiredReplicas"`
+	ReadyReplicas      int    `json:"readyReplicas"`
+	AvailableReplicas  int    `json:"availableReplicas"`
+}
+
+type LLMFleetTrafficPDBStatus struct {
+	SetID              string `json:"setID"`
+	Generation         int64  `json:"generation"`
+	Name               string `json:"name"`
+	MinAvailable       int    `json:"minAvailable"`
+	ExpectedPods       int    `json:"expectedPods"`
+	CurrentHealthy     int    `json:"currentHealthy"`
+	DisruptionsAllowed int    `json:"disruptionsAllowed"`
 }
 
 type LLMFleetDatabasePool struct {

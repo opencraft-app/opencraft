@@ -260,6 +260,19 @@ The new-api runtime has one consistency and bootstrap constraint:
 - Provision status describes runtime construction; admission status separately
   controls user assignment and traffic. Admission must not pass before the
   provision request is `managed`.
+- Set traffic high availability is a declarative invariant. Production
+  `LLMFleet.spec.availability.traffic` declares the replica floor, topology key,
+  and PDB minimum. KRO projects Deployment and PDB observations into
+  `LLMFleet.status`; set-manager must keep its CR-only RBAC boundary and derive
+  Set health from that projection instead of listing child resources.
+- A Set with a declared HA policy is eligible for new tenant assignment only
+  while its runtime HA projection is `healthy`. Replica shortfall, stale
+  Deployment generation, or unhealthy PDB must fail closed for new admission
+  while existing traffic continues on the remaining replicas.
+- Changes to the Set runtime topology must keep the
+  `set_traffic_pod_failure_gate` regression: force-delete one active traffic
+  Pod, preserve ordinary request continuity, allow SSE reconnect, and restore
+  the declared replica and cross-zone contract.
 - new-api Option updates mutate the receiving process immediately, while other
   processes reload them from MySQL on `SYNC_FREQUENCY`. Online configuration
   changes still require a propagation wait and verification barrier.

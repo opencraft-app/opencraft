@@ -63,9 +63,9 @@ if [[ -z "$TARGET_SETS" ]]; then
 fi
 MANAGER_IMAGE=$IMAGE
 SERVICE_ACCOUNT=llmgateway-regression-runner
-if [[ "$SCENARIO" == "set_upgrade_rollback_gate" || "$SCENARIO" == "set_manager_takeover_gate" || "$SCENARIO" == "control_plane_outage_gate" ]]; then
+if [[ "$SCENARIO" == "set_upgrade_rollback_gate" || "$SCENARIO" == "set_manager_takeover_gate" || "$SCENARIO" == "control_plane_outage_gate" || "$SCENARIO" == "set_traffic_pod_failure_gate" ]]; then
   SERVICE_ACCOUNT=llmgateway-regression-disruptive
-  if [[ "$SCENARIO" != "control_plane_outage_gate" && -z "$TARGET_IMAGE" ]]; then
+  if [[ "$SCENARIO" == "set_upgrade_rollback_gate" || "$SCENARIO" == "set_manager_takeover_gate" ]] && [[ -z "$TARGET_IMAGE" ]]; then
     echo "LLMGATEWAY_REGRESSION_TARGET_IMAGE is required for disruptive scenarios and must use @sha256" >&2
     exit 2
   fi
@@ -96,7 +96,9 @@ if [[ "$SERVICE_ACCOUNT" == "llmgateway-regression-disruptive" ]]; then
   python3 - "$REGRESSION_DIR/manifests/disruptive-rbac.yaml" "$TMP_DIR/disruptive-rbac.yaml" <<'PY'
 import json, os, sys
 from pathlib import Path
-content = Path(sys.argv[1]).read_text().replace("${NAMESPACE}", json.dumps(os.environ["NAMESPACE"]))
+content = Path(sys.argv[1]).read_text()
+content = content.replace("${NAMESPACE}", json.dumps(os.environ["NAMESPACE"]))
+content = content.replace("${NODE_READER_NAME}", json.dumps(os.environ["NAMESPACE"] + "-llmgateway-regression-node-reader"))
 Path(sys.argv[2]).write_text(content)
 PY
 fi

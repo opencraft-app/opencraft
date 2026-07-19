@@ -181,6 +181,29 @@ func TestEnsureUserBindingSkipsSetBeforeAdmissionPassed(t *testing.T) {
 	}
 }
 
+func TestEnsureUserBindingSkipsRuntimeHADegradedSet(t *testing.T) {
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	mustSaveSet(t, store, Set{
+		ID: "set-degraded", Name: "Degraded", BaseURL: "http://set-degraded", Status: SetStatusActive,
+		Setup: true, AdminUserID: 1, AdminAccessToken: "admin", AdmissionStatus: SetAdmissionStatusPassed,
+		RuntimeHAStatus: SetRuntimeHADegraded, RuntimeHADesiredReplicas: 2, RuntimeHAReadyReplicas: 1,
+	})
+	mustSaveSet(t, store, Set{
+		ID: "set-healthy", Name: "Healthy", BaseURL: "http://set-healthy", Status: SetStatusActive,
+		Setup: true, AdminUserID: 1, AdminAccessToken: "admin", AdmissionStatus: SetAdmissionStatusPassed,
+		RuntimeHAStatus: SetRuntimeHAHealthy, RuntimeHADesiredReplicas: 2, RuntimeHAReadyReplicas: 2,
+	})
+
+	binding, err := svc.EnsureUserBinding(t.Context(), "user-ha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding.SetID != "set-healthy" {
+		t.Fatalf("set id = %s, want runtime-healthy set", binding.SetID)
+	}
+}
+
 func TestEnsureUserBindingSkipsCapacityManagedSetBeforeAdmissionCheck(t *testing.T) {
 	store := NewMemoryStore()
 	svc := NewService(store, nil, Options{})

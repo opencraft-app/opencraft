@@ -117,7 +117,7 @@ func (c Config) Validate(inCluster bool) error {
 	if c.Scenario == "" {
 		return fmt.Errorf("scenario is required")
 	}
-	if c.Scenario != "tenant_onboarding_gate" && c.Scenario != "model_delivery_gate" && c.Scenario != "preprod_release_gate" && c.Scenario != "fleet_release_campaign_gate" && c.Scenario != "set_upgrade_rollback_gate" && c.Scenario != "set_manager_takeover_gate" && c.Scenario != "control_plane_outage_gate" {
+	if c.Scenario != "tenant_onboarding_gate" && c.Scenario != "model_delivery_gate" && c.Scenario != "preprod_release_gate" && c.Scenario != "fleet_release_campaign_gate" && c.Scenario != "set_upgrade_rollback_gate" && c.Scenario != "set_manager_takeover_gate" && c.Scenario != "control_plane_outage_gate" && c.Scenario != "set_traffic_pod_failure_gate" {
 		return fmt.Errorf("unknown scenario %q", c.Scenario)
 	}
 	if requiresClusterScenario(c.Scenario) && !inCluster {
@@ -158,6 +158,12 @@ func (c Config) Validate(inCluster bool) error {
 		if c.Scenario == "control_plane_outage_gate" {
 			return validateControlPlaneOutageConfig(c)
 		}
+		if len(c.Target.TargetSets) != 1 {
+			return fmt.Errorf("disruptive regression requires exactly one isolated target Set")
+		}
+		if c.Scenario == "set_traffic_pod_failure_gate" {
+			return nil
+		}
 		if strings.TrimSpace(c.Disruption.TargetImage) == "" {
 			return fmt.Errorf("disruption.targetImage is required")
 		}
@@ -166,9 +172,6 @@ func (c Config) Validate(inCluster bool) error {
 		}
 		if !regexp.MustCompile(`@sha256:[0-9a-fA-F]{64}$`).MatchString(c.Disruption.ManagerImage) {
 			return fmt.Errorf("disruption.managerImage must be pinned by sha256 digest")
-		}
-		if len(c.Target.TargetSets) != 1 {
-			return fmt.Errorf("disruptive regression requires exactly one isolated target Set")
 		}
 	}
 	return nil
@@ -200,7 +203,7 @@ func requiresClusterScenario(name string) bool {
 }
 
 func isDisruptiveScenario(name string) bool {
-	return name == "set_upgrade_rollback_gate" || name == "set_manager_takeover_gate" || name == "control_plane_outage_gate"
+	return name == "set_upgrade_rollback_gate" || name == "set_manager_takeover_gate" || name == "control_plane_outage_gate" || name == "set_traffic_pod_failure_gate"
 }
 
 func applyDefaults(cfg *Config) {

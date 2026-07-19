@@ -86,9 +86,16 @@ type ReplicaSet struct {
 type PodTemplate struct {
 	Metadata ObjectMeta `json:"metadata"`
 	Spec     struct {
-		TerminationGracePeriodSeconds int64       `json:"terminationGracePeriodSeconds"`
-		Containers                    []Container `json:"containers"`
+		TerminationGracePeriodSeconds int64                      `json:"terminationGracePeriodSeconds"`
+		Containers                    []Container                `json:"containers"`
+		TopologySpreadConstraints     []TopologySpreadConstraint `json:"topologySpreadConstraints"`
 	} `json:"spec"`
+}
+
+type TopologySpreadConstraint struct {
+	MaxSkew           int    `json:"maxSkew"`
+	TopologyKey       string `json:"topologyKey"`
+	WhenUnsatisfiable string `json:"whenUnsatisfiable"`
 }
 
 type Container struct {
@@ -113,7 +120,10 @@ type EnvVar struct {
 
 type Pod struct {
 	Metadata ObjectMeta `json:"metadata"`
-	Status   PodStatus  `json:"status"`
+	Spec     struct {
+		NodeName string `json:"nodeName"`
+	} `json:"spec"`
+	Status PodStatus `json:"status"`
 }
 
 type PodStatus struct {
@@ -121,6 +131,10 @@ type PodStatus struct {
 	PodIP             string            `json:"podIP"`
 	Ready             bool              `json:"-"`
 	ContainerStatuses []ContainerStatus `json:"containerStatuses"`
+}
+
+type Node struct {
+	Metadata ObjectMeta `json:"metadata"`
 }
 
 type CronJob struct {
@@ -467,6 +481,29 @@ func (c *KubernetesClient) ListPods(ctx context.Context, namespace, labelSelecto
 	}
 	err := c.do(ctx, http.MethodGet, path, "", nil, &result)
 	return result.Items, err
+}
+
+func (c *KubernetesClient) DeletePodNow(ctx context.Context, namespace, name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("pod name is required")
+	}
+	err := c.do(ctx, http.MethodDelete, corePath(namespace, "pods/"+url.PathEscape(name)), "application/json", map[string]any{
+		"apiVersion": "v1", "kind": "DeleteOptions", "gracePeriodSeconds": 0, "propagationPolicy": "Background",
+	}, nil)
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) && httpErr.Status == http.StatusNotFound {
+		return nil
+	}
+	return err
+}
+
+func (c *KubernetesClient) GetNode(ctx context.Context, name string) (Node, error) {
+	if strings.TrimSpace(name) == "" {
+		return Node{}, fmt.Errorf("node name is required")
+	}
+	var result Node
+	err := c.do(ctx, http.MethodGet, "/api/v1/nodes/"+url.PathEscape(name), "", nil, &result)
+	return result, err
 }
 
 func (c *KubernetesClient) ListReplicaSets(ctx context.Context, namespace, labelSelector string) ([]ReplicaSet, error) {

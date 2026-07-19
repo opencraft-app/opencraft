@@ -168,6 +168,12 @@ const (
 	SetAdminHealthUnhealthy = "unhealthy"
 )
 
+const (
+	SetRuntimeHAPending  = "pending"
+	SetRuntimeHAHealthy  = "healthy"
+	SetRuntimeHADegraded = "degraded"
+)
+
 type Set struct {
 	ID                             string    `json:"id"`
 	Name                           string    `json:"name"`
@@ -196,6 +202,13 @@ type Set struct {
 	TrafficSQLMaxIdleConns         int       `json:"traffic_sql_max_idle_conns,omitempty"`
 	TrafficSQLMaxLifetimeSeconds   int       `json:"traffic_sql_max_lifetime_seconds,omitempty"`
 	SubscriptionWriteConcurrency   int       `json:"subscription_write_concurrency,omitempty"`
+	RuntimeHAStatus                string    `json:"runtime_ha_status,omitempty"`
+	RuntimeHADesiredReplicas       int       `json:"runtime_ha_desired_replicas,omitempty"`
+	RuntimeHAReadyReplicas         int       `json:"runtime_ha_ready_replicas,omitempty"`
+	RuntimeHAPDBHealthy            bool      `json:"runtime_ha_pdb_healthy,omitempty"`
+	RuntimeHATopologyKey           string    `json:"runtime_ha_topology_key,omitempty"`
+	RuntimeHAError                 string    `json:"runtime_ha_error,omitempty"`
+	RuntimeHACheckedAt             time.Time `json:"runtime_ha_checked_at,omitempty"`
 	AdminHealthStatus              string    `json:"admin_health_status,omitempty"`
 	AdminHealthConsecutiveFailures int       `json:"admin_health_consecutive_failures,omitempty"`
 	AdminHealthError               string    `json:"admin_health_error,omitempty"`
@@ -810,6 +823,13 @@ type SetReconcileFact struct {
 	TrafficSQLMaxIdleConns       int       `json:"traffic_sql_max_idle_conns,omitempty"`
 	TrafficSQLMaxLifetimeSeconds int       `json:"traffic_sql_max_lifetime_seconds,omitempty"`
 	SubscriptionWriteConcurrency int       `json:"subscription_write_concurrency,omitempty"`
+	RuntimeHAStatus              string    `json:"runtime_ha_status,omitempty"`
+	RuntimeHADesiredReplicas     int       `json:"runtime_ha_desired_replicas,omitempty"`
+	RuntimeHAReadyReplicas       int       `json:"runtime_ha_ready_replicas,omitempty"`
+	RuntimeHAPDBHealthy          bool      `json:"runtime_ha_pdb_healthy,omitempty"`
+	RuntimeHATopologyKey         string    `json:"runtime_ha_topology_key,omitempty"`
+	RuntimeHAError               string    `json:"runtime_ha_error,omitempty"`
+	RuntimeHACheckedAt           time.Time `json:"runtime_ha_checked_at,omitempty"`
 	DesiredHash                  string    `json:"desired_hash"`
 	Status                       string    `json:"status"`
 	LastError                    string    `json:"last_error,omitempty"`
@@ -820,22 +840,29 @@ type SetReconcileFact struct {
 }
 
 type SetReconcileFactInput struct {
-	SetID                        string `json:"set_id"`
-	Name                         string `json:"name"`
-	BaseURL                      string `json:"base_url"`
-	TrafficBaseURL               string `json:"traffic_base_url,omitempty"`
-	RuntimeGeneration            int64  `json:"runtime_generation,omitempty"`
-	RuntimeImage                 string `json:"runtime_image,omitempty"`
-	ShardRef                     string `json:"shard_ref,omitempty"`
-	DatabaseName                 string `json:"database_name,omitempty"`
-	RedisDB                      string `json:"redis_db,omitempty"`
-	SQLMaxOpenConns              int    `json:"sql_max_open_conns,omitempty"`
-	SQLMaxIdleConns              int    `json:"sql_max_idle_conns,omitempty"`
-	SQLMaxLifetimeSeconds        int    `json:"sql_max_lifetime_seconds,omitempty"`
-	TrafficSQLMaxOpenConns       int    `json:"traffic_sql_max_open_conns,omitempty"`
-	TrafficSQLMaxIdleConns       int    `json:"traffic_sql_max_idle_conns,omitempty"`
-	TrafficSQLMaxLifetimeSeconds int    `json:"traffic_sql_max_lifetime_seconds,omitempty"`
-	SubscriptionWriteConcurrency int    `json:"subscription_write_concurrency,omitempty"`
+	SetID                        string    `json:"set_id"`
+	Name                         string    `json:"name"`
+	BaseURL                      string    `json:"base_url"`
+	TrafficBaseURL               string    `json:"traffic_base_url,omitempty"`
+	RuntimeGeneration            int64     `json:"runtime_generation,omitempty"`
+	RuntimeImage                 string    `json:"runtime_image,omitempty"`
+	ShardRef                     string    `json:"shard_ref,omitempty"`
+	DatabaseName                 string    `json:"database_name,omitempty"`
+	RedisDB                      string    `json:"redis_db,omitempty"`
+	SQLMaxOpenConns              int       `json:"sql_max_open_conns,omitempty"`
+	SQLMaxIdleConns              int       `json:"sql_max_idle_conns,omitempty"`
+	SQLMaxLifetimeSeconds        int       `json:"sql_max_lifetime_seconds,omitempty"`
+	TrafficSQLMaxOpenConns       int       `json:"traffic_sql_max_open_conns,omitempty"`
+	TrafficSQLMaxIdleConns       int       `json:"traffic_sql_max_idle_conns,omitempty"`
+	TrafficSQLMaxLifetimeSeconds int       `json:"traffic_sql_max_lifetime_seconds,omitempty"`
+	SubscriptionWriteConcurrency int       `json:"subscription_write_concurrency,omitempty"`
+	RuntimeHAStatus              string    `json:"runtime_ha_status,omitempty"`
+	RuntimeHADesiredReplicas     int       `json:"runtime_ha_desired_replicas,omitempty"`
+	RuntimeHAReadyReplicas       int       `json:"runtime_ha_ready_replicas,omitempty"`
+	RuntimeHAPDBHealthy          bool      `json:"runtime_ha_pdb_healthy,omitempty"`
+	RuntimeHATopologyKey         string    `json:"runtime_ha_topology_key,omitempty"`
+	RuntimeHAError               string    `json:"runtime_ha_error,omitempty"`
+	RuntimeHACheckedAt           time.Time `json:"runtime_ha_checked_at,omitempty"`
 }
 
 type RecordSetReconcileFactsInput struct {
@@ -1821,13 +1848,14 @@ type OperationalOverview struct {
 }
 
 type OperationalOverviewTotals struct {
-	Sets               int `json:"sets"`
-	ActiveSets         int `json:"active_sets"`
-	ReadySets          int `json:"ready_sets"`
-	Users              int `json:"users"`
-	AvailableUserSlots int `json:"available_user_slots,omitempty"`
-	FullSets           int `json:"full_sets,omitempty"`
-	ChannelDrifts      int `json:"channel_drifts"`
+	Sets                  int `json:"sets"`
+	ActiveSets            int `json:"active_sets"`
+	ReadySets             int `json:"ready_sets"`
+	Users                 int `json:"users"`
+	AvailableUserSlots    int `json:"available_user_slots,omitempty"`
+	FullSets              int `json:"full_sets,omitempty"`
+	ChannelDrifts         int `json:"channel_drifts"`
+	RuntimeHADegradedSets int `json:"runtime_ha_degraded_sets,omitempty"`
 }
 
 type BackgroundJobsOverview struct {
@@ -1838,30 +1866,37 @@ type BackgroundJobsOverview struct {
 }
 
 type SetOverview struct {
-	ID                   string    `json:"id"`
-	Name                 string    `json:"name"`
-	Status               string    `json:"status"`
-	Setup                bool      `json:"setup"`
-	Ready                bool      `json:"ready"`
-	UserCount            int       `json:"user_count"`
-	MaxUsers             int       `json:"max_users,omitempty"`
-	WarnUsers            int       `json:"warn_users,omitempty"`
-	ReservedUsers        int       `json:"reserved_users,omitempty"`
-	FreeUsers            int       `json:"free_users,omitempty"`
-	AcceptingNewUsers    bool      `json:"accepting_new_users"`
-	CapacityStatus       string    `json:"capacity_status,omitempty"`
-	CapacityUpdatedAt    time.Time `json:"capacity_updated_at,omitempty"`
-	AdmissionStatus      string    `json:"admission_status,omitempty"`
-	AdmissionError       string    `json:"admission_error,omitempty"`
-	AdmissionCheckedAt   time.Time `json:"admission_checked_at,omitempty"`
-	AdminHealthStatus    string    `json:"admin_health_status,omitempty"`
-	AdminHealthError     string    `json:"admin_health_error,omitempty"`
-	AdminHealthCheckedAt time.Time `json:"admin_health_checked_at,omitempty"`
-	LastError            string    `json:"last_error,omitempty"`
-	LastErrorAt          time.Time `json:"last_error_at,omitempty"`
-	LastReconciledAt     time.Time `json:"last_reconciled_at,omitempty"`
-	LastProvisionStatus  string    `json:"last_provision_status,omitempty"`
-	UpdatedAt            time.Time `json:"updated_at,omitempty"`
+	ID                       string    `json:"id"`
+	Name                     string    `json:"name"`
+	Status                   string    `json:"status"`
+	Setup                    bool      `json:"setup"`
+	Ready                    bool      `json:"ready"`
+	UserCount                int       `json:"user_count"`
+	MaxUsers                 int       `json:"max_users,omitempty"`
+	WarnUsers                int       `json:"warn_users,omitempty"`
+	ReservedUsers            int       `json:"reserved_users,omitempty"`
+	FreeUsers                int       `json:"free_users,omitempty"`
+	AcceptingNewUsers        bool      `json:"accepting_new_users"`
+	CapacityStatus           string    `json:"capacity_status,omitempty"`
+	CapacityUpdatedAt        time.Time `json:"capacity_updated_at,omitempty"`
+	AdmissionStatus          string    `json:"admission_status,omitempty"`
+	AdmissionError           string    `json:"admission_error,omitempty"`
+	AdmissionCheckedAt       time.Time `json:"admission_checked_at,omitempty"`
+	AdminHealthStatus        string    `json:"admin_health_status,omitempty"`
+	AdminHealthError         string    `json:"admin_health_error,omitempty"`
+	AdminHealthCheckedAt     time.Time `json:"admin_health_checked_at,omitempty"`
+	RuntimeHAStatus          string    `json:"runtime_ha_status,omitempty"`
+	RuntimeHADesiredReplicas int       `json:"runtime_ha_desired_replicas,omitempty"`
+	RuntimeHAReadyReplicas   int       `json:"runtime_ha_ready_replicas,omitempty"`
+	RuntimeHAPDBHealthy      bool      `json:"runtime_ha_pdb_healthy,omitempty"`
+	RuntimeHATopologyKey     string    `json:"runtime_ha_topology_key,omitempty"`
+	RuntimeHAError           string    `json:"runtime_ha_error,omitempty"`
+	RuntimeHACheckedAt       time.Time `json:"runtime_ha_checked_at,omitempty"`
+	LastError                string    `json:"last_error,omitempty"`
+	LastErrorAt              time.Time `json:"last_error_at,omitempty"`
+	LastReconciledAt         time.Time `json:"last_reconciled_at,omitempty"`
+	LastProvisionStatus      string    `json:"last_provision_status,omitempty"`
+	UpdatedAt                time.Time `json:"updated_at,omitempty"`
 }
 
 type ChannelBundleOverview struct {

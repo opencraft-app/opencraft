@@ -63,7 +63,7 @@ func transitionSeverity(to string) otellog.Severity {
 	switch strings.ToLower(strings.TrimSpace(to)) {
 	case "error", "failed", "failure", "unknown":
 		return otellog.SeverityError
-	case "blocked", "conflict", "drift", "partial", "retry":
+	case "blocked", "conflict", "degraded", "drift", "partial", "retry":
 		return otellog.SeverityWarn
 	default:
 		return otellog.SeverityInfo

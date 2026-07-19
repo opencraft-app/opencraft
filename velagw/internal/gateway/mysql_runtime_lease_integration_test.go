@@ -599,6 +599,8 @@ func TestMySQLSetRuntimeProjectionRoundTrips(t *testing.T) {
 		ShardID: "shard-a", SQLMaxOpenConns: 32, SQLMaxIdleConns: 2, SQLMaxLifetimeSeconds: 60,
 		TrafficSQLMaxOpenConns: 24, TrafficSQLMaxIdleConns: 2, TrafficSQLMaxLifetimeSeconds: 90,
 		SubscriptionWriteConcurrency: 8, AdminHealthStatus: SetAdminHealthHealthy,
+		RuntimeHAStatus: SetRuntimeHAHealthy, RuntimeHADesiredReplicas: 2, RuntimeHAReadyReplicas: 2,
+		RuntimeHAPDBHealthy: true, RuntimeHATopologyKey: "topology.kubernetes.io/zone", RuntimeHACheckedAt: now,
 		AdminHealthCheckedAt: now, AdminHealthLastSuccessAt: now,
 		AdminWritesPaused: true, AdminWritesPauseReason: "set upgrade run-a", AdminWritesPausedAt: now,
 	}
@@ -614,6 +616,9 @@ func TestMySQLSetRuntimeProjectionRoundTrips(t *testing.T) {
 	}
 	if got.AdminHealthStatus != SetAdminHealthHealthy || !got.AdminHealthCheckedAt.Equal(now) || !got.AdminHealthLastSuccessAt.Equal(now) {
 		t.Fatalf("health projection = %+v", got)
+	}
+	if got.RuntimeHAStatus != SetRuntimeHAHealthy || got.RuntimeHADesiredReplicas != 2 || got.RuntimeHAReadyReplicas != 2 || !got.RuntimeHAPDBHealthy || got.RuntimeHATopologyKey != "topology.kubernetes.io/zone" || !got.RuntimeHACheckedAt.Equal(now) {
+		t.Fatalf("runtime HA projection = %+v", got)
 	}
 	if !got.AdminWritesPaused || got.AdminWritesPauseReason != "set upgrade run-a" || !got.AdminWritesPausedAt.Equal(now) {
 		t.Fatalf("admin write pause projection = %+v", got)
@@ -681,7 +686,10 @@ func TestMySQLFleetRuntimeFactsAndShardProjectionRoundTrip(t *testing.T) {
 		BaseURL: "http://set-a", TrafficBaseURL: "http://set-a-traffic", ShardRef: "shard-a",
 		SQLMaxOpenConns: 32, SQLMaxIdleConns: 2, SQLMaxLifetimeSeconds: 60,
 		TrafficSQLMaxOpenConns: 24, TrafficSQLMaxIdleConns: 2, TrafficSQLMaxLifetimeSeconds: 90,
-		SubscriptionWriteConcurrency: 8, DesiredHash: strings.Repeat("a", 64), Status: SetReconcileStatusPending,
+		SubscriptionWriteConcurrency: 8,
+		RuntimeHAStatus: SetRuntimeHAHealthy, RuntimeHADesiredReplicas: 2, RuntimeHAReadyReplicas: 2,
+		RuntimeHAPDBHealthy: true, RuntimeHATopologyKey: "topology.kubernetes.io/zone", RuntimeHACheckedAt: time.Now().UTC().Truncate(time.Microsecond),
+		DesiredHash: strings.Repeat("a", 64), Status: SetReconcileStatusPending,
 	}
 	if err := store.SaveSetReconcileFact(t.Context(), fact); err != nil {
 		t.Fatal(err)
@@ -692,6 +700,9 @@ func TestMySQLFleetRuntimeFactsAndShardProjectionRoundTrip(t *testing.T) {
 	}
 	if gotFact.SQLMaxOpenConns != 32 || gotFact.TrafficSQLMaxOpenConns != 24 || gotFact.SubscriptionWriteConcurrency != 8 {
 		t.Fatalf("fact projection = %+v", gotFact)
+	}
+	if gotFact.RuntimeHAStatus != SetRuntimeHAHealthy || gotFact.RuntimeHAReadyReplicas != 2 || !gotFact.RuntimeHAPDBHealthy || gotFact.RuntimeHATopologyKey != "topology.kubernetes.io/zone" || !gotFact.RuntimeHACheckedAt.Equal(fact.RuntimeHACheckedAt) {
+		t.Fatalf("runtime HA fact projection = %+v", gotFact)
 	}
 }
 

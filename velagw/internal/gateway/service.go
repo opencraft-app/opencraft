@@ -415,8 +415,11 @@ func buildShardDetail(shard Shard, sets []Set, leaseBySet map[string]SetRuntimeL
 		if set.ShardID != shard.ID {
 			continue
 		}
-		logical := 0
-		if set.NewAPIReplicas > 0 && set.SQLMaxOpenConns > 0 {
+		logical := set.SQLMaxOpenConns
+		if set.NewAPIReplicas > 0 && set.TrafficSQLMaxOpenConns > 0 {
+			logical += set.NewAPIReplicas * set.TrafficSQLMaxOpenConns
+		} else if set.NewAPIReplicas > 0 && set.SQLMaxOpenConns > 0 {
+			// Older projections stored one shared pool value for every new-api Pod.
 			logical = set.NewAPIReplicas * set.SQLMaxOpenConns
 		}
 		detail.LogicalConnections += logical

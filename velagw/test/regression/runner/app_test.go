@@ -28,9 +28,10 @@ func TestFleetCampaignScenarioEndsAtCampaignConvergence(t *testing.T) {
 
 func TestDisruptiveScenarioNamesMapToTheirP0Outcome(t *testing.T) {
 	tests := map[string]string{
-		"set_upgrade_rollback_gate": cases.CasePostSwitchRollback,
-		"set_manager_takeover_gate": cases.CaseManagerTakeover,
-		"control_plane_outage_gate": cases.CaseControlPlaneOutage,
+		"set_upgrade_rollback_gate":    cases.CasePostSwitchRollback,
+		"set_manager_takeover_gate":    cases.CaseManagerTakeover,
+		"control_plane_outage_gate":    cases.CaseControlPlaneOutage,
+		"set_traffic_pod_failure_gate": cases.CaseSetPodFailure,
 	}
 	for name, finalCase := range tests {
 		scenario, err := scenarioForName(name)

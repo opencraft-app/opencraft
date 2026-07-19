@@ -192,6 +192,10 @@ checker 按“最后稳定 applied revision”做强校验：
 `/metrics` 已包含：
 
 - `llmgateway_set_ready`
+- `llmgateway_set_runtime_ha_ready`
+- `llmgateway_set_runtime_ha_desired_replicas`
+- `llmgateway_set_runtime_ha_ready_replicas`
+- `llmgateway_set_runtime_ha_pdb_ready`
 - `llmgateway_set_users`
 - `llmgateway_set_max_users`
 - `llmgateway_set_free_users`

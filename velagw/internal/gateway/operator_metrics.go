@@ -33,6 +33,32 @@ func (s *Service) storePrometheusMetrics(ctx context.Context) string {
 			fmt.Fprintf(&b, "llmgateway_set_ready{set_id=\"%s\",status=\"%s\",admission=\"%s\"} %d\n", prometheusLabelValue(set.ID), prometheusLabelValue(set.Status), prometheusLabelValue(firstNonEmpty(set.AdmissionStatus, SetAdmissionStatusPending)), ready)
 			fmt.Fprintf(&b, "llmgateway_set_admin_health{set_id=\"%s\",status=\"%s\"} 1\n", prometheusLabelValue(set.ID), prometheusLabelValue(firstNonEmpty(set.AdminHealthStatus, "unknown")))
 		}
+		b.WriteString("# HELP llmgateway_set_runtime_ha_ready Whether the declared Set traffic HA policy is currently satisfied.\n")
+		b.WriteString("# TYPE llmgateway_set_runtime_ha_ready gauge\n")
+		b.WriteString("# HELP llmgateway_set_runtime_ha_desired_replicas Declared minimum traffic replicas for each Set.\n")
+		b.WriteString("# TYPE llmgateway_set_runtime_ha_desired_replicas gauge\n")
+		b.WriteString("# HELP llmgateway_set_runtime_ha_ready_replicas Ready traffic replicas observed through LLMFleet status.\n")
+		b.WriteString("# TYPE llmgateway_set_runtime_ha_ready_replicas gauge\n")
+		b.WriteString("# HELP llmgateway_set_runtime_ha_pdb_ready Whether the Set traffic PodDisruptionBudget currently permits one disruption.\n")
+		b.WriteString("# TYPE llmgateway_set_runtime_ha_pdb_ready gauge\n")
+		for _, set := range sets {
+			if set.RuntimeHADesiredReplicas <= 0 {
+				continue
+			}
+			haReady := 0
+			if set.RuntimeHAStatus == SetRuntimeHAHealthy {
+				haReady = 1
+			}
+			pdbReady := 0
+			if set.RuntimeHAPDBHealthy {
+				pdbReady = 1
+			}
+			setID := prometheusLabelValue(set.ID)
+			fmt.Fprintf(&b, "llmgateway_set_runtime_ha_ready{set_id=\"%s\",status=\"%s\"} %d\n", setID, prometheusLabelValue(firstNonEmpty(set.RuntimeHAStatus, SetRuntimeHAPending)), haReady)
+			fmt.Fprintf(&b, "llmgateway_set_runtime_ha_desired_replicas{set_id=\"%s\"} %d\n", setID, set.RuntimeHADesiredReplicas)
+			fmt.Fprintf(&b, "llmgateway_set_runtime_ha_ready_replicas{set_id=\"%s\"} %d\n", setID, set.RuntimeHAReadyReplicas)
+			fmt.Fprintf(&b, "llmgateway_set_runtime_ha_pdb_ready{set_id=\"%s\"} %d\n", setID, pdbReady)
+		}
 		b.WriteString("# HELP llmgateway_set_users Number of llmgateway users assigned to each Set.\n")
 		b.WriteString("# TYPE llmgateway_set_users gauge\n")
 		b.WriteString("# HELP llmgateway_set_max_users Configured user capacity for each Set; 0 means unlimited.\n")

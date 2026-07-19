@@ -119,6 +119,9 @@ func Execute(ctx context.Context, cfg Config, credentials Credentials, kube *cli
 		allCases = append(allCases, cases.NewControlPlaneOutageCases(caseConfig, cases.ControlPlaneOutageDependencies{
 			Control: control, Cluster: kube, Traffic: traffic,
 		})...)
+		allCases = append(allCases, cases.NewSetRuntimeFailureCases(caseConfig, cases.SetRuntimeFailureDependencies{
+			Cluster: kube, Traffic: traffic,
+		})...)
 	}
 	scenario, err := scenarioForName(cfg.Scenario)
 	if err != nil {
@@ -160,6 +163,8 @@ func scenarioForName(name string) (framework.Scenario, error) {
 		return cases.SetManagerTakeoverGate(), nil
 	case "control_plane_outage_gate":
 		return cases.ControlPlaneOutageGate(), nil
+	case "set_traffic_pod_failure_gate":
+		return cases.SetTrafficPodFailureGate(), nil
 	default:
 		return framework.Scenario{}, fmt.Errorf("unknown scenario %q", name)
 	}

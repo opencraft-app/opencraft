@@ -117,6 +117,13 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 			traffic_sql_max_idle_conns BIGINT NOT NULL DEFAULT 0,
 			traffic_sql_max_lifetime_seconds BIGINT NOT NULL DEFAULT 0,
 			subscription_write_concurrency BIGINT NOT NULL DEFAULT 0,
+			runtime_ha_status VARCHAR(32) NOT NULL DEFAULT '',
+			runtime_ha_desired_replicas BIGINT NOT NULL DEFAULT 0,
+			runtime_ha_ready_replicas BIGINT NOT NULL DEFAULT 0,
+			runtime_ha_pdb_healthy TINYINT(1) NOT NULL DEFAULT 0,
+			runtime_ha_topology_key VARCHAR(191) NOT NULL DEFAULT '',
+			runtime_ha_error TEXT NOT NULL,
+			runtime_ha_checked_at DATETIME(6) NULL,
 			admin_health_status VARCHAR(32) NOT NULL DEFAULT '',
 			admin_health_consecutive_failures BIGINT NOT NULL DEFAULT 0,
 			admin_health_error TEXT NOT NULL,
@@ -226,6 +233,13 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 			traffic_sql_max_idle_conns BIGINT NOT NULL DEFAULT 0,
 			traffic_sql_max_lifetime_seconds BIGINT NOT NULL DEFAULT 0,
 			subscription_write_concurrency BIGINT NOT NULL DEFAULT 0,
+			runtime_ha_status VARCHAR(32) NOT NULL DEFAULT '',
+			runtime_ha_desired_replicas BIGINT NOT NULL DEFAULT 0,
+			runtime_ha_ready_replicas BIGINT NOT NULL DEFAULT 0,
+			runtime_ha_pdb_healthy TINYINT(1) NOT NULL DEFAULT 0,
+			runtime_ha_topology_key VARCHAR(191) NOT NULL DEFAULT '',
+			runtime_ha_error TEXT NOT NULL,
+			runtime_ha_checked_at DATETIME(6) NULL,
 			desired_hash CHAR(64) NOT NULL DEFAULT '',
 			status VARCHAR(32) NOT NULL DEFAULT 'pending',
 			last_error TEXT NOT NULL,
@@ -981,6 +995,9 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 	if err := s.migrateSetRuntimeConfigColumns(ctx); err != nil {
 		return err
 	}
+	if err := s.migrateSetRuntimeHAColumns(ctx); err != nil {
+		return err
+	}
 	if err := s.migrateSetAdminHealthColumns(ctx); err != nil {
 		return err
 	}
@@ -1388,6 +1405,29 @@ func (s *MySQLStore) migrateSetRuntimeConfigColumns(ctx context.Context) error {
 	return nil
 }
 
+func (s *MySQLStore) migrateSetRuntimeHAColumns(ctx context.Context) error {
+	columns := []struct {
+		name       string
+		definition string
+	}{
+		{name: "runtime_ha_status", definition: "VARCHAR(32) NOT NULL DEFAULT ''"},
+		{name: "runtime_ha_desired_replicas", definition: "BIGINT NOT NULL DEFAULT 0"},
+		{name: "runtime_ha_ready_replicas", definition: "BIGINT NOT NULL DEFAULT 0"},
+		{name: "runtime_ha_pdb_healthy", definition: "TINYINT(1) NOT NULL DEFAULT 0"},
+		{name: "runtime_ha_topology_key", definition: "VARCHAR(191) NOT NULL DEFAULT ''"},
+		{name: "runtime_ha_error", definition: "TEXT NOT NULL"},
+		{name: "runtime_ha_checked_at", definition: "DATETIME(6) NULL"},
+	}
+	for _, table := range []string{"llmgateway_sets", "llmgateway_set_reconcile_facts"} {
+		for _, column := range columns {
+			if err := s.ensureMySQLColumn(ctx, table, column.name, column.definition); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (s *MySQLStore) migrateSetAdminHealthColumns(ctx context.Context) error {
 	for _, column := range []struct {
 		name       string
@@ -1757,13 +1797,15 @@ func (s *MySQLStore) SaveSet(ctx context.Context, set Set) error {
 			shard_id, newapi_replicas, sql_max_open_conns, sql_max_idle_conns, sql_max_lifetime_seconds,
 			traffic_sql_max_open_conns, traffic_sql_max_idle_conns, traffic_sql_max_lifetime_seconds,
 			subscription_write_concurrency,
+			runtime_ha_status, runtime_ha_desired_replicas, runtime_ha_ready_replicas,
+			runtime_ha_pdb_healthy, runtime_ha_topology_key, runtime_ha_error, runtime_ha_checked_at,
 			admin_health_status, admin_health_consecutive_failures, admin_health_error,
 			admin_health_checked_at, admin_health_last_success_at,
 			admin_writes_paused, admin_writes_pause_reason, admin_writes_paused_at,
 			admission_status, admission_error, admission_checked_at, lifecycle_generation,
 			admin_image, release_ring_id, current_release_id, target_release_id,
 			active_runtime_generation, route_revision, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			name = VALUES(name),
 			base_url = VALUES(base_url),
@@ -1791,6 +1833,13 @@ func (s *MySQLStore) SaveSet(ctx context.Context, set Set) error {
 			traffic_sql_max_idle_conns = VALUES(traffic_sql_max_idle_conns),
 			traffic_sql_max_lifetime_seconds = VALUES(traffic_sql_max_lifetime_seconds),
 			subscription_write_concurrency = VALUES(subscription_write_concurrency),
+			runtime_ha_status = VALUES(runtime_ha_status),
+			runtime_ha_desired_replicas = VALUES(runtime_ha_desired_replicas),
+			runtime_ha_ready_replicas = VALUES(runtime_ha_ready_replicas),
+			runtime_ha_pdb_healthy = VALUES(runtime_ha_pdb_healthy),
+			runtime_ha_topology_key = VALUES(runtime_ha_topology_key),
+			runtime_ha_error = VALUES(runtime_ha_error),
+			runtime_ha_checked_at = VALUES(runtime_ha_checked_at),
 			admin_health_status = VALUES(admin_health_status),
 			admin_health_consecutive_failures = VALUES(admin_health_consecutive_failures),
 			admin_health_error = VALUES(admin_health_error),
@@ -1813,6 +1862,8 @@ func (s *MySQLStore) SaveSet(ctx context.Context, set Set) error {
 		set.ShardID, set.NewAPIReplicas, set.SQLMaxOpenConns, set.SQLMaxIdleConns, set.SQLMaxLifetimeSeconds,
 		set.TrafficSQLMaxOpenConns, set.TrafficSQLMaxIdleConns, set.TrafficSQLMaxLifetimeSeconds,
 		set.SubscriptionWriteConcurrency,
+		set.RuntimeHAStatus, set.RuntimeHADesiredReplicas, set.RuntimeHAReadyReplicas,
+		set.RuntimeHAPDBHealthy, set.RuntimeHATopologyKey, set.RuntimeHAError, nullableTime(set.RuntimeHACheckedAt),
 		set.AdminHealthStatus, set.AdminHealthConsecutiveFailures, set.AdminHealthError,
 		nullableTime(set.AdminHealthCheckedAt), nullableTime(set.AdminHealthLastSuccessAt),
 		set.AdminWritesPaused, set.AdminWritesPauseReason, nullableTime(set.AdminWritesPausedAt),
@@ -1855,6 +1906,8 @@ func (s *MySQLStore) GetSet(ctx context.Context, id string) (Set, bool, error) {
 			shard_id, newapi_replicas, sql_max_open_conns, sql_max_idle_conns, sql_max_lifetime_seconds,
 			traffic_sql_max_open_conns, traffic_sql_max_idle_conns, traffic_sql_max_lifetime_seconds,
 			subscription_write_concurrency,
+			runtime_ha_status, runtime_ha_desired_replicas, runtime_ha_ready_replicas,
+			runtime_ha_pdb_healthy, runtime_ha_topology_key, runtime_ha_error, runtime_ha_checked_at,
 			admin_health_status, admin_health_consecutive_failures, admin_health_error,
 			admin_health_checked_at, admin_health_last_success_at,
 			admin_writes_paused, admin_writes_pause_reason, admin_writes_paused_at,
@@ -1881,6 +1934,8 @@ func (s *MySQLStore) ListSets(ctx context.Context) ([]Set, error) {
 			shard_id, newapi_replicas, sql_max_open_conns, sql_max_idle_conns, sql_max_lifetime_seconds,
 			traffic_sql_max_open_conns, traffic_sql_max_idle_conns, traffic_sql_max_lifetime_seconds,
 			subscription_write_concurrency,
+			runtime_ha_status, runtime_ha_desired_replicas, runtime_ha_ready_replicas,
+			runtime_ha_pdb_healthy, runtime_ha_topology_key, runtime_ha_error, runtime_ha_checked_at,
 			admin_health_status, admin_health_consecutive_failures, admin_health_error,
 			admin_health_checked_at, admin_health_last_success_at,
 			admin_writes_paused, admin_writes_pause_reason, admin_writes_paused_at,
@@ -2044,6 +2099,7 @@ func (s *MySQLStore) TryReserveSetUserSlot(ctx context.Context, setID string) (b
 			AND admin_user_id > 0
 			AND admin_access_token <> ''
 			AND admission_status = 'passed'
+			AND (runtime_ha_desired_replicas <= 0 OR runtime_ha_status = 'healthy')
 			AND (
 				max_users <= 0
 				OR observed_user_count < CASE
@@ -2085,9 +2141,12 @@ func (s *MySQLStore) SaveSetReconcileFact(ctx context.Context, fact SetReconcile
 			source, namespace_name, fleet, set_id, name, base_url, traffic_base_url, runtime_generation, runtime_image, shard_ref,
 			sql_max_open_conns, sql_max_idle_conns, sql_max_lifetime_seconds,
 			traffic_sql_max_open_conns, traffic_sql_max_idle_conns, traffic_sql_max_lifetime_seconds,
-			subscription_write_concurrency, desired_hash,
+			subscription_write_concurrency,
+			runtime_ha_status, runtime_ha_desired_replicas, runtime_ha_ready_replicas,
+			runtime_ha_pdb_healthy, runtime_ha_topology_key, runtime_ha_error, runtime_ha_checked_at,
+			desired_hash,
 			status, last_error, last_observed_at, last_reconciled_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			name = VALUES(name),
 			base_url = VALUES(base_url),
@@ -2102,6 +2161,13 @@ func (s *MySQLStore) SaveSetReconcileFact(ctx context.Context, fact SetReconcile
 			traffic_sql_max_idle_conns = VALUES(traffic_sql_max_idle_conns),
 			traffic_sql_max_lifetime_seconds = VALUES(traffic_sql_max_lifetime_seconds),
 			subscription_write_concurrency = VALUES(subscription_write_concurrency),
+			runtime_ha_status = VALUES(runtime_ha_status),
+			runtime_ha_desired_replicas = VALUES(runtime_ha_desired_replicas),
+			runtime_ha_ready_replicas = VALUES(runtime_ha_ready_replicas),
+			runtime_ha_pdb_healthy = VALUES(runtime_ha_pdb_healthy),
+			runtime_ha_topology_key = VALUES(runtime_ha_topology_key),
+			runtime_ha_error = VALUES(runtime_ha_error),
+			runtime_ha_checked_at = VALUES(runtime_ha_checked_at),
 			desired_hash = VALUES(desired_hash),
 			status = VALUES(status),
 			last_error = VALUES(last_error),
@@ -2111,7 +2177,10 @@ func (s *MySQLStore) SaveSetReconcileFact(ctx context.Context, fact SetReconcile
 	`, fact.Source, fact.Namespace, fact.Fleet, fact.SetID, fact.Name, fact.BaseURL, fact.TrafficBaseURL, fact.RuntimeGeneration, fact.RuntimeImage, fact.ShardRef,
 		fact.SQLMaxOpenConns, fact.SQLMaxIdleConns, fact.SQLMaxLifetimeSeconds,
 		fact.TrafficSQLMaxOpenConns, fact.TrafficSQLMaxIdleConns, fact.TrafficSQLMaxLifetimeSeconds,
-		fact.SubscriptionWriteConcurrency, fact.DesiredHash,
+		fact.SubscriptionWriteConcurrency,
+		fact.RuntimeHAStatus, fact.RuntimeHADesiredReplicas, fact.RuntimeHAReadyReplicas,
+		fact.RuntimeHAPDBHealthy, fact.RuntimeHATopologyKey, fact.RuntimeHAError, nullableTime(fact.RuntimeHACheckedAt),
+		fact.DesiredHash,
 		fact.Status, fact.LastError, fact.LastObservedAt, lastReconciledAt, fact.CreatedAt, fact.UpdatedAt)
 	return err
 }
@@ -2121,7 +2190,10 @@ func (s *MySQLStore) GetSetReconcileFact(ctx context.Context, source string, nam
 		SELECT source, namespace_name, fleet, set_id, name, base_url, COALESCE(traffic_base_url, ''), runtime_generation, COALESCE(runtime_image, ''), shard_ref,
 			sql_max_open_conns, sql_max_idle_conns, sql_max_lifetime_seconds,
 			traffic_sql_max_open_conns, traffic_sql_max_idle_conns, traffic_sql_max_lifetime_seconds,
-			subscription_write_concurrency, desired_hash,
+			subscription_write_concurrency,
+			runtime_ha_status, runtime_ha_desired_replicas, runtime_ha_ready_replicas,
+			runtime_ha_pdb_healthy, runtime_ha_topology_key, runtime_ha_error, runtime_ha_checked_at,
+			desired_hash,
 			status, last_error, last_observed_at, last_reconciled_at, created_at, updated_at
 		FROM llmgateway_set_reconcile_facts
 		WHERE source = ? AND namespace_name = ? AND fleet = ? AND set_id = ?
@@ -2141,7 +2213,10 @@ func (s *MySQLStore) ListSetReconcileFacts(ctx context.Context, opts SetReconcil
 		SELECT source, namespace_name, fleet, set_id, name, base_url, COALESCE(traffic_base_url, ''), runtime_generation, COALESCE(runtime_image, ''), shard_ref,
 			sql_max_open_conns, sql_max_idle_conns, sql_max_lifetime_seconds,
 			traffic_sql_max_open_conns, traffic_sql_max_idle_conns, traffic_sql_max_lifetime_seconds,
-			subscription_write_concurrency, desired_hash,
+			subscription_write_concurrency,
+			runtime_ha_status, runtime_ha_desired_replicas, runtime_ha_ready_replicas,
+			runtime_ha_pdb_healthy, runtime_ha_topology_key, runtime_ha_error, runtime_ha_checked_at,
+			desired_hash,
 			status, last_error, last_observed_at, last_reconciled_at, created_at, updated_at
 		FROM llmgateway_set_reconcile_facts`
 	where := []string{}
@@ -4220,6 +4295,7 @@ type scanner interface {
 func scanSet(row scanner) (Set, error) {
 	var set Set
 	var capacityUpdatedAt sql.NullTime
+	var runtimeHACheckedAt sql.NullTime
 	var adminHealthCheckedAt sql.NullTime
 	var adminHealthLastSuccessAt sql.NullTime
 	var adminWritesPauseReason sql.NullString
@@ -4232,6 +4308,8 @@ func scanSet(row scanner) (Set, error) {
 		&set.ShardID, &set.NewAPIReplicas, &set.SQLMaxOpenConns, &set.SQLMaxIdleConns, &set.SQLMaxLifetimeSeconds,
 		&set.TrafficSQLMaxOpenConns, &set.TrafficSQLMaxIdleConns, &set.TrafficSQLMaxLifetimeSeconds,
 		&set.SubscriptionWriteConcurrency,
+		&set.RuntimeHAStatus, &set.RuntimeHADesiredReplicas, &set.RuntimeHAReadyReplicas,
+		&set.RuntimeHAPDBHealthy, &set.RuntimeHATopologyKey, &set.RuntimeHAError, &runtimeHACheckedAt,
 		&set.AdminHealthStatus, &set.AdminHealthConsecutiveFailures, &set.AdminHealthError,
 		&adminHealthCheckedAt, &adminHealthLastSuccessAt,
 		&set.AdminWritesPaused, &adminWritesPauseReason, &adminWritesPausedAt,
@@ -4242,6 +4320,9 @@ func scanSet(row scanner) (Set, error) {
 	set.AdminImage = adminImage.String
 	if capacityUpdatedAt.Valid {
 		set.CapacityUpdatedAt = capacityUpdatedAt.Time.UTC()
+	}
+	if runtimeHACheckedAt.Valid {
+		set.RuntimeHACheckedAt = runtimeHACheckedAt.Time.UTC()
 	}
 	if admissionCheckedAt.Valid {
 		set.AdmissionCheckedAt = admissionCheckedAt.Time.UTC()
@@ -4291,6 +4372,7 @@ func scanShard(row scanner) (Shard, error) {
 func scanSetReconcileFact(row scanner) (SetReconcileFact, error) {
 	var fact SetReconcileFact
 	var lastReconciledAt sql.NullTime
+	var runtimeHACheckedAt sql.NullTime
 	err := row.Scan(
 		&fact.Source,
 		&fact.Namespace,
@@ -4309,6 +4391,13 @@ func scanSetReconcileFact(row scanner) (SetReconcileFact, error) {
 		&fact.TrafficSQLMaxIdleConns,
 		&fact.TrafficSQLMaxLifetimeSeconds,
 		&fact.SubscriptionWriteConcurrency,
+		&fact.RuntimeHAStatus,
+		&fact.RuntimeHADesiredReplicas,
+		&fact.RuntimeHAReadyReplicas,
+		&fact.RuntimeHAPDBHealthy,
+		&fact.RuntimeHATopologyKey,
+		&fact.RuntimeHAError,
+		&runtimeHACheckedAt,
 		&fact.DesiredHash,
 		&fact.Status,
 		&fact.LastError,
@@ -4322,6 +4411,9 @@ func scanSetReconcileFact(row scanner) (SetReconcileFact, error) {
 	}
 	if lastReconciledAt.Valid {
 		fact.LastReconciledAt = lastReconciledAt.Time.UTC()
+	}
+	if runtimeHACheckedAt.Valid {
+		fact.RuntimeHACheckedAt = runtimeHACheckedAt.Time.UTC()
 	}
 	fact.LastObservedAt = fact.LastObservedAt.UTC()
 	fact.CreatedAt = fact.CreatedAt.UTC()

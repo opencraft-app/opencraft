@@ -4994,6 +4994,29 @@
           "newapi_replicas": {
             "type": "integer"
           },
+          "runtime_ha_status": {
+            "type": "string",
+            "enum": ["pending", "healthy", "degraded"]
+          },
+          "runtime_ha_desired_replicas": {
+            "type": "integer"
+          },
+          "runtime_ha_ready_replicas": {
+            "type": "integer"
+          },
+          "runtime_ha_pdb_healthy": {
+            "type": "boolean"
+          },
+          "runtime_ha_topology_key": {
+            "type": "string"
+          },
+          "runtime_ha_error": {
+            "type": "string"
+          },
+          "runtime_ha_checked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
           "sql_max_open_conns": {
             "type": "integer"
           },

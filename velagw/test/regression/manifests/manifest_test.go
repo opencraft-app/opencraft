@@ -44,6 +44,8 @@ func TestDisruptiveRBACIsSeparatedFromDefaultRunner(t *testing.T) {
 		"name: llmgateway-regression-disruptive", "resources: [cronjobs]", "resourceNames: [llmgateway-set-manager]",
 		"resources: [jobs]", "verbs: [get, list, create, delete]", "name: llmgateway-regression-runner",
 		"resources: [deployments]", "llmgateway-control", "llmgateway-worker-admin", "llmgateway-worker-observer",
+		"resources: [pods]", "verbs: [delete]",
+		"kind: ClusterRole", "resources: [nodes]", "kind: ClusterRoleBinding", "${NODE_READER_NAME}",
 	} {
 		if !strings.Contains(manifest, required) {
 			t.Fatalf("disruptive RBAC missing %q", required)

@@ -83,6 +83,49 @@ func TestKubernetesClientSuspendsAndDeletesControlledManagerJob(t *testing.T) {
 	}
 }
 
+func TestKubernetesClientForceDeletesOnlyTheNamedPod(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/api/v1/namespaces/llmgateway/pods/set-pod-a" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"Success"}`))
+	}))
+	defer server.Close()
+	client := NewKubernetesClient(server.URL, framework.Secret{}, server.Client(), framework.NewSanitizer())
+
+	if err := client.DeletePodNow(t.Context(), "llmgateway", "set-pod-a"); err != nil {
+		t.Fatal(err)
+	}
+	if body["gracePeriodSeconds"] != float64(0) || body["propagationPolicy"] != "Background" {
+		t.Fatalf("delete options = %+v", body)
+	}
+}
+
+func TestKubernetesClientReadsNodeTopology(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/nodes/node-a" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"metadata":{"name":"node-a","labels":{"topology.kubernetes.io/zone":"zone-a"}}}`))
+	}))
+	defer server.Close()
+	client := NewKubernetesClient(server.URL, framework.Secret{}, server.Client(), framework.NewSanitizer())
+
+	node, err := client.GetNode(t.Context(), "node-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node.Metadata.Labels["topology.kubernetes.io/zone"] != "zone-a" {
+		t.Fatalf("node = %+v", node)
+	}
+}
+
 func TestKubernetesClientListsOnlyActiveJobsOwnedByCronJob(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/jobs") {

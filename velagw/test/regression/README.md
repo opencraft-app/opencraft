@@ -1,6 +1,6 @@
 # 预发布统一回归
 
-这套回归用同一个 Go runner 验证租户准入、套餐发放、渠道同步、普通请求、SSE、流量面滚动、Fleet Campaign、自动回滚和 set-manager 接管。Case 名描述要证明的结果，Scenario 只组合 Case。
+这套回归用同一个 Go runner 验证租户准入、套餐发放、渠道同步、普通请求、SSE、流量面滚动、单 Set 意外 Pod 故障、Fleet Campaign、自动回滚和 set-manager 接管。Case 名描述要证明的结果，Scenario 只组合 Case。
 
 ## 环境前提
 
@@ -60,11 +60,12 @@ test/regression/run.sh
 
 ## 破坏性 P0 门禁
 
-下面两个 Scenario 只能针对一个明确隔离的 Set。`TARGET_IMAGE` 必须是 new-api 的不可变 digest，可以与当前镜像相同；runner 镜像也必须是 digest，并会覆盖受控 manager Job 从 CronJob 继承的旧镜像，确保测试的是本次代码。目的在于验证升级状态机，而不是引入业务版本变化。
+`set_upgrade_rollback_gate`、`set_manager_takeover_gate` 和 `set_traffic_pod_failure_gate` 只能针对一个明确隔离的 Set；`control_plane_outage_gate` 也建议只选一个代表 Set。runner 镜像必须使用不可变 digest；升级类场景还要求 `TARGET_IMAGE` 是 new-api 的不可变 digest，可以与当前镜像相同。目的在于验证运行时状态机，而不是引入业务版本变化。
 
 - `set_upgrade_rollback_gate`：Green Pod 先通过真实推理功能就绪检查，允许 new-api 在有界时间内加载定价缓存；随后主动让探针连续失败，证明未切流。第一段清障后重试原 failed run；第二段在切流后的回滚窗口注入失败并回到旧 runtime，清障后必须创建新 batch 完成发布，不能改写已经 `rolled_back` 的历史。
 - `set_manager_takeover_gate`：分别在 `preparing`、`switching`、`draining` 终止持有租约的 manager Job，等待 10 秒测试租约过期，再由新 Job 接管。受控 Job 使用自身名称作为租约 owner，门禁会拒绝普通 CronJob 抢占造成的假通过；每轮只允许增加一个 generation。
 - `control_plane_outage_gate`：暂停 Set Manager，将五类 worker 和 control 真实缩容到 0，持续 90 秒使用停机前签发的 Key 采样推理流量。恢复后要求预先排队的 `refresh_set_capacity` 恰好产生一个成功 run、lease 清空，并恢复所有原始副本数。该场景不会缩容 `llmgateway-traffic` 或任何 new-api runtime。
+- `set_traffic_pod_failure_gate`：目标 Set 必须处于单 generation、双 Ready 副本稳态，两个副本必须实际分布在两个 `topology.kubernetes.io/zone`。门禁与流量滚动共用互斥 Lease，直连其中一个 Pod 建立 SSE 后执行零宽限删除，同时通过稳定流量入口持续采样；要求普通请求不连续失败、不同 UID 的替补 Pod 恢复双副本跨区，SSE 重连后完整结束。硬故障下原 TCP/SSE 允许中断一次。
 
 ```bash
 LLMGATEWAY_REGRESSION_SCENARIO=set_upgrade_rollback_gate \
@@ -80,6 +81,11 @@ LLMGATEWAY_REGRESSION_TARGET_IMAGE='<new-api@sha256:digest>' \
 test/regression/run.sh
 
 LLMGATEWAY_REGRESSION_SCENARIO=control_plane_outage_gate \
+LLMGATEWAY_REGRESSION_IMAGE='<llmgateway-runner@sha256:digest>' \
+LLMGATEWAY_REGRESSION_TARGET_SETS='<isolated-set>' \
+test/regression/run.sh
+
+LLMGATEWAY_REGRESSION_SCENARIO=set_traffic_pod_failure_gate \
 LLMGATEWAY_REGRESSION_IMAGE='<llmgateway-runner@sha256:digest>' \
 LLMGATEWAY_REGRESSION_TARGET_SETS='<isolated-set>' \
 test/regression/run.sh

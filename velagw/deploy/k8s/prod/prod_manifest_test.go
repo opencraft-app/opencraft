@@ -283,13 +283,6 @@ func TestTrafficServiceTemplateExposesHTTPSWithTencentCertificateSecret(t *testi
 	}
 }
 
-func TestProductionTrafficRequiresCurrentSetRuntimeRoute(t *testing.T) {
-	raw := readFile(t, "llmgateway-app.yaml.template")
-	docs := decodeYAMLDocuments(t, raw)
-	traffic := deploymentContainer(t, docs, "llmgateway-traffic", "traffic")
-	requireEnv(t, traffic, "LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED", "true")
-}
-
 func TestProductionTrafficDeploymentSupportsLongLivedRollingUpgrades(t *testing.T) {
 	docs := decodeYAMLDocuments(t, readFile(t, "llmgateway-app.yaml.template"))
 	deployment := resourceByName(t, docs, "Deployment", "llmgateway-traffic")
@@ -327,6 +320,45 @@ func TestProductionTrafficDeploymentSupportsLongLivedRollingUpgrades(t *testing.
 	matchLabels, _ := selector["matchLabels"].(map[string]any)
 	if matchLabels["app"] != "llmgateway-traffic" {
 		t.Fatalf("traffic PDB selector = %+v", selector)
+	}
+}
+
+func TestProductionSetTrafficRuntimeHasRegionalHighAvailability(t *testing.T) {
+	manager := string(readFile(t, "llmgateway-set-manager.yaml.template"))
+	if !strings.Contains(manager, "name: LLMGATEWAY_SET_MANAGER_NEW_SET_REPLICAS\n                  value: \"2\"") {
+		t.Fatal("production set-manager must create and scale Set traffic runtimes to two replicas")
+	}
+
+	app := decodeYAMLDocuments(t, readFile(t, "llmgateway-app.yaml.template"))
+	traffic := deploymentContainer(t, app, "llmgateway-traffic", "traffic")
+	requireEnv(t, traffic, "LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED", "true")
+
+	fleet := string(readFile(t, "llmfleet.yaml.template"))
+	for _, want := range []string{
+		"availability:\n    traffic:\n      minReplicas: 2\n      topologyKey: topology.kubernetes.io/zone\n      pdbMinAvailable: 1",
+		"admin:\n        maxOpenConns: 16",
+		"traffic:\n        maxOpenConns: 8",
+		"maxSets: 24",
+	} {
+		if !strings.Contains(fleet, want) {
+			t.Fatalf("production LLMFleet connection budget missing %q", want)
+		}
+	}
+
+	rgd := string(readFile(t, "llmfleet-rgd.yaml"))
+	for _, want := range []string{
+		"id: newapiVersionedTrafficPodDisruptionBudgets",
+		"trafficDeployments:",
+		"trafficPodDisruptionBudgets:",
+		"topologySpreadConstraints:",
+		"topologyKey: ${schema.spec.availability.traffic.topologyKey}",
+		"whenUnsatisfiable: DoNotSchedule",
+		"minAvailable: ${schema.spec.availability.traffic.pdbMinAvailable}",
+		"name: ${schema.metadata.name + '-' + rt.setID + '-g' + string(rt.generation) + '-newapi-traffic'}",
+	} {
+		if !strings.Contains(rgd, want) {
+			t.Fatalf("production LLMFleet runtime HA contract missing %q", want)
+		}
 	}
 }
 

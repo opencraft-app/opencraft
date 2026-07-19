@@ -885,7 +885,8 @@ function OperationalSetsCard({ overview, loading }: { overview?: OperationalOver
   const sets = overview?.sets || []
   const attentionSets = sets.filter((set) =>
     !set.ready ||
-    Boolean(set.last_error || set.admission_error) ||
+    Boolean(set.last_error || set.admission_error || set.runtime_ha_error) ||
+    (set.runtime_ha_desired_replicas || 0) > 0 && set.runtime_ha_status !== "healthy" ||
     ["warning", "warn", "full", "critical"].includes(set.capacity_status || "") ||
     set.accepting_new_users === false,
   )
@@ -939,12 +940,17 @@ function OperationalSetsCard({ overview, loading }: { overview?: OperationalOver
                     <TableCell className="px-4 py-3">
                       <div className="flex flex-wrap gap-1.5">
                         <StatusBadge status={set.status} setup={set.setup} />
+                        <RuntimeHAStatusBadge
+                          status={set.runtime_ha_status}
+                          ready={set.runtime_ha_ready_replicas}
+                          desired={set.runtime_ha_desired_replicas}
+                        />
                         <CapacityStatusBadge status={set.capacity_status} accepting={set.accepting_new_users} />
                       </div>
                     </TableCell>
                     <TableCell className="max-w-[260px] px-4 py-3">
                       <span className={cn("block truncate", set.last_error ? "text-destructive" : "text-muted-foreground")}>
-                        {set.last_error || set.admission_error || "-"}
+                        {set.runtime_ha_error || set.last_error || set.admission_error || "-"}
                       </span>
                     </TableCell>
                   </TableRow>
@@ -5596,6 +5602,19 @@ function CapacityStatusBadge({ status, accepting }: { status?: string; accepting
     return <Badge variant="secondary">暂停接人</Badge>
   }
   return <Badge variant="outline">可接人</Badge>
+}
+
+function RuntimeHAStatusBadge({ status, ready, desired }: { status?: string; ready?: number; desired?: number }) {
+  if (!desired) {
+    return null
+  }
+  if (status === "healthy") {
+    return <Badge variant="outline">推理 {ready ?? desired}/{desired}</Badge>
+  }
+  if (status === "pending") {
+    return <Badge variant="secondary">推理副本准备中</Badge>
+  }
+  return <Badge variant="destructive">推理 {ready ?? 0}/{desired}</Badge>
 }
 
 function AdmissionBadge({ status }: { status?: string }) {

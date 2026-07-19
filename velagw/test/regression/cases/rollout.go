@@ -17,14 +17,18 @@ import (
 
 const rolloutLeaseName = clients.RegressionRolloutLease
 
+type LeaseCluster interface {
+	AcquireLease(context.Context, string, string, string, time.Duration) (clients.Lease, error)
+	RenewLease(context.Context, string, string, string, time.Duration) (clients.Lease, error)
+	ReleaseLease(context.Context, string, string, string) error
+}
+
 type RolloutCluster interface {
+	LeaseCluster
 	GetDeployment(context.Context, string, string) (clients.Deployment, error)
 	ListReplicaSets(context.Context, string, string) ([]clients.ReplicaSet, error)
 	GetPDB(context.Context, string, string) (clients.PodDisruptionBudget, error)
 	ListPods(context.Context, string, string) ([]clients.Pod, error)
-	AcquireLease(context.Context, string, string, string, time.Duration) (clients.Lease, error)
-	RenewLease(context.Context, string, string, string, time.Duration) (clients.Lease, error)
-	ReleaseLease(context.Context, string, string, string) error
 	PatchTrafficRollout(context.Context, string, string, string, bool, string) (clients.Deployment, error)
 }
 
@@ -479,7 +483,7 @@ func selectBaselinePod(pods []clients.Pod) (clients.Pod, error) {
 	return clients.Pod{}, fmt.Errorf("no ready traffic Pod with an IP is available")
 }
 
-func startLeaseRenewal(ctx context.Context, cluster RolloutCluster, cfg Config, holder string) <-chan error {
+func startLeaseRenewal(ctx context.Context, cluster LeaseCluster, cfg Config, holder string) <-chan error {
 	result := make(chan error, 1)
 	interval := cfg.LeaseTTL / 3
 	if interval <= 0 {

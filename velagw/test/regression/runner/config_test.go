@@ -128,6 +128,21 @@ func TestDisruptiveScenariosRequireOneSetAndPinnedTargetImage(t *testing.T) {
 	}
 }
 
+func TestSetTrafficPodFailureRequiresOneSetButNoUpgradeImage(t *testing.T) {
+	cfg := validConfig()
+	cfg.Scenario = "set_traffic_pod_failure_gate"
+	if err := cfg.Validate(true); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Target.TargetSets = []string{"set-a", "set-b"}
+	if err := cfg.Validate(true); err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("multiple Sets error = %v", err)
+	}
+	if err := cfg.Validate(false); err == nil || !strings.Contains(err.Error(), "in-cluster") {
+		t.Fatalf("outside cluster error = %v", err)
+	}
+}
+
 func validConfig() Config {
 	return Config{
 		Scenario: "preprod_release_gate",

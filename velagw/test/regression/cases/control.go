@@ -22,6 +22,7 @@ const (
 	CaseKeyStreamsChat   = "issued_key_can_stream_chat"
 	CaseActiveRollout    = "active_requests_survive_traffic_rollout"
 	CasePlatformHealthy  = "platform_returns_to_healthy_state"
+	CaseSetPodFailure    = "set_traffic_survives_an_unplanned_pod_failure"
 
 	stateBundle      = "channel_bundle"
 	stateTargetSetID = "target_set_id"

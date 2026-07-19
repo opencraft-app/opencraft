@@ -4,6 +4,11 @@ metadata:
   name: fleet-demo
   namespace: llmgateway-kro-demo
 spec:
+  availability:
+    traffic:
+      minReplicas: 2
+      topologyKey: topology.kubernetes.io/zone
+      pdbMinAvailable: 1
   runtimeCleanerImage: llmgateway:local
   newapi:
     databasePool:

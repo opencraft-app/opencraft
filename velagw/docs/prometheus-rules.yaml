@@ -2,13 +2,22 @@ groups:
   - name: llmgateway.p0.operator
     rules:
       - alert: LLMGatewaySetUnavailable
-        expr: llmgateway_set_ready == 0
+        expr: (llmgateway_set_ready == 0) unless on(set_id) (llmgateway_set_runtime_ha_ready == 0)
         for: 2m
         labels:
           severity: critical
         annotations:
           summary: "LLMGateway Set 不可用"
           description: "Set {{ $labels.set_id }} 当前不可服务，状态为 {{ $labels.status }}。"
+
+      - alert: LLMGatewaySetRuntimeHADegraded
+        expr: llmgateway_set_runtime_ha_ready == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Set 推理运行时高可用降级"
+          description: "Set {{ $labels.set_id }} 未满足双副本、跨可用区或 PDB 保护要求，已停止接收新租户。"
 
       - alert: LLMGatewaySetCapacityFull
         expr: llmgateway_set_accepting_new_users{status="full"} == 0

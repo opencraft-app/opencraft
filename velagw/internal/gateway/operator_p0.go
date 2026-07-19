@@ -81,6 +81,9 @@ func (s *Service) GetOperationalOverview(ctx context.Context) (OperationalOvervi
 		if ready {
 			overview.Totals.ReadySets++
 		}
+		if set.RuntimeHADesiredReplicas > 0 && set.RuntimeHAStatus != SetRuntimeHAHealthy {
+			overview.Totals.RuntimeHADegradedSets++
+		}
 		users := userCounts[set.ID]
 		overview.Totals.Users += users
 		capacity := setCapacitySnapshot(set, users, 0)
@@ -91,30 +94,42 @@ func (s *Service) GetOperationalOverview(ctx context.Context) (OperationalOvervi
 			overview.Totals.FullSets++
 		}
 		item := SetOverview{
-			ID:                   set.ID,
-			Name:                 set.Name,
-			Status:               set.Status,
-			Setup:                set.Setup,
-			Ready:                ready,
-			UserCount:            users,
-			MaxUsers:             capacity.MaxUsers,
-			WarnUsers:            capacity.WarnUsers,
-			ReservedUsers:        capacity.ReservedUsers,
-			FreeUsers:            capacity.FreeUsers,
-			AcceptingNewUsers:    ready && capacity.AcceptingNewUsers,
-			CapacityStatus:       capacity.Status,
-			CapacityUpdatedAt:    set.CapacityUpdatedAt,
-			AdmissionStatus:      firstNonEmpty(set.AdmissionStatus, SetAdmissionStatusPending),
-			AdmissionError:       set.AdmissionError,
-			AdmissionCheckedAt:   set.AdmissionCheckedAt,
-			AdminHealthStatus:    firstNonEmpty(set.AdminHealthStatus, "unknown"),
-			AdminHealthError:     set.AdminHealthError,
-			AdminHealthCheckedAt: set.AdminHealthCheckedAt,
-			UpdatedAt:            set.UpdatedAt,
+			ID:                       set.ID,
+			Name:                     set.Name,
+			Status:                   set.Status,
+			Setup:                    set.Setup,
+			Ready:                    ready,
+			UserCount:                users,
+			MaxUsers:                 capacity.MaxUsers,
+			WarnUsers:                capacity.WarnUsers,
+			ReservedUsers:            capacity.ReservedUsers,
+			FreeUsers:                capacity.FreeUsers,
+			AcceptingNewUsers:        ready && capacity.AcceptingNewUsers,
+			CapacityStatus:           capacity.Status,
+			CapacityUpdatedAt:        set.CapacityUpdatedAt,
+			AdmissionStatus:          firstNonEmpty(set.AdmissionStatus, SetAdmissionStatusPending),
+			AdmissionError:           set.AdmissionError,
+			AdmissionCheckedAt:       set.AdmissionCheckedAt,
+			AdminHealthStatus:        firstNonEmpty(set.AdminHealthStatus, "unknown"),
+			AdminHealthError:         set.AdminHealthError,
+			AdminHealthCheckedAt:     set.AdminHealthCheckedAt,
+			RuntimeHAStatus:          set.RuntimeHAStatus,
+			RuntimeHADesiredReplicas: set.RuntimeHADesiredReplicas,
+			RuntimeHAReadyReplicas:   set.RuntimeHAReadyReplicas,
+			RuntimeHAPDBHealthy:      set.RuntimeHAPDBHealthy,
+			RuntimeHATopologyKey:     set.RuntimeHATopologyKey,
+			RuntimeHAError:           set.RuntimeHAError,
+			RuntimeHACheckedAt:       set.RuntimeHACheckedAt,
+			UpdatedAt:                set.UpdatedAt,
 		}
 		if set.AdminHealthStatus == SetAdminHealthUnhealthy {
 			overview.Alerts = append(overview.Alerts, OperationalAlert{
 				Kind: "set_admin_unhealthy", Severity: "critical", Message: set.AdminHealthError, SetID: set.ID, CreatedAt: set.AdminHealthCheckedAt,
+			})
+		}
+		if set.RuntimeHADesiredReplicas > 0 && set.RuntimeHAStatus != SetRuntimeHAHealthy {
+			overview.Alerts = append(overview.Alerts, OperationalAlert{
+				Kind: "set_runtime_ha_degraded", Severity: "critical", Message: firstNonEmpty(set.RuntimeHAError, "Set traffic runtime 高可用未就绪"), SetID: set.ID, CreatedAt: firstNonZeroTime(set.RuntimeHACheckedAt, now),
 			})
 		}
 		if fact, ok := lastFactError[set.ID]; ok {
