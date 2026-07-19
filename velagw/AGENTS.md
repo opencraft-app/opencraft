@@ -269,6 +269,11 @@ The new-api runtime has one consistency and bootstrap constraint:
   while its runtime HA projection is `healthy`. Replica shortfall, stale
   Deployment generation, or unhealthy PDB must fail closed for new admission
   while existing traffic continues on the remaining replicas.
+- Runtime HA, admin bootstrap, and admission-check failures are repair signals,
+  not scale-out signals. The capacity planner must keep structurally
+  provisioned active Sets in its capacity inventory while separately excluding
+  them from tenant assignment. Only user-watermark pressure or an explicit
+  disabled/draining lifecycle state may create replacement capacity.
 - Changes to the Set runtime topology must keep the
   `set_traffic_pod_failure_gate` regression: force-delete one active traffic
   Pod, preserve ordinary request continuity, allow SSE reconnect, and restore

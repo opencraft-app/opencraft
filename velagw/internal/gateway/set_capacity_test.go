@@ -387,6 +387,82 @@ func TestReconcileSetCapacityCreatesProvisionRequestBelowWatermark(t *testing.T)
 	}
 }
 
+func TestReconcileSetCapacityDoesNotScaleForRuntimeHADegradation(t *testing.T) {
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	mustSaveSet(t, store, Set{
+		ID: "set-degraded", BaseURL: "http://set-degraded", Status: SetStatusActive,
+		Setup: true, AdminUserID: 1, AdminAccessToken: "admin", AdmissionStatus: SetAdmissionStatusPassed,
+		MaxUsers: 10, ObservedUserCount: 2,
+		RuntimeHAStatus: SetRuntimeHADegraded, RuntimeHADesiredReplicas: 2, RuntimeHAReadyReplicas: 1,
+	})
+
+	result, err := svc.ReconcileSetCapacity(t.Context(), SetCapacityPolicy{
+		Source: "prod", Namespace: "llmgateway", Fleet: "prod", ShardRefs: []string{"shard-a"},
+		MaxUsersPerSet: 10, MinReadyFreeUsers: 5, MinWarmSets: 1, MaxScaleUpPerCycle: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CreatedRequests != 0 || result.DeficitUsers != 0 {
+		t.Fatalf("transient runtime HA degradation must not create capacity: %+v", result)
+	}
+	if result.ReadySets != 0 || result.ReadyFreeUsers != 0 {
+		t.Fatalf("degraded Set must remain unavailable for assignment: %+v", result)
+	}
+	if result.CapacitySets != 1 || result.CapacityFreeUsers != 8 {
+		t.Fatalf("degraded Set must remain in capacity inventory: %+v", result)
+	}
+}
+
+func TestReconcileSetCapacityDoesNotScaleForAdmissionFailure(t *testing.T) {
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	mustSaveSet(t, store, Set{
+		ID: "set-admission-failed", BaseURL: "http://set-admission-failed", Status: SetStatusActive,
+		Setup: true, AdminUserID: 1, AdminAccessToken: "admin", AdmissionStatus: SetAdmissionStatusFailed,
+		AdmissionError: "channel bundle drift", MaxUsers: 10, ObservedUserCount: 2,
+	})
+
+	result, err := svc.ReconcileSetCapacity(t.Context(), SetCapacityPolicy{
+		Source: "prod", Namespace: "llmgateway", Fleet: "prod", ShardRefs: []string{"shard-a"},
+		MaxUsersPerSet: 10, MinReadyFreeUsers: 5, MinWarmSets: 1, MaxScaleUpPerCycle: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CreatedRequests != 0 || result.DeficitUsers != 0 || result.CapacitySets != 1 {
+		t.Fatalf("admission failure must be repaired instead of copied into a new Set: %+v", result)
+	}
+	if result.ReadySets != 0 {
+		t.Fatalf("admission-failed Set must remain unavailable for assignment: %+v", result)
+	}
+}
+
+func TestReconcileSetCapacityDoesNotScaleForAdminHealthFailure(t *testing.T) {
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	mustSaveSet(t, store, Set{
+		ID: "set-admin-unhealthy", BaseURL: "http://set-admin-unhealthy", Status: SetStatusActive,
+		Setup: true, AdminUserID: 1, AdminAccessToken: "admin", AdmissionStatus: SetAdmissionStatusPassed,
+		AdminHealthStatus: SetAdminHealthUnhealthy, MaxUsers: 10, ObservedUserCount: 2,
+	})
+
+	result, err := svc.ReconcileSetCapacity(t.Context(), SetCapacityPolicy{
+		Source: "prod", Namespace: "llmgateway", Fleet: "prod", ShardRefs: []string{"shard-a"},
+		MaxUsersPerSet: 10, MinReadyFreeUsers: 5, MinWarmSets: 1, MaxScaleUpPerCycle: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CreatedRequests != 0 || result.DeficitUsers != 0 || result.CapacitySets != 1 {
+		t.Fatalf("admin health failure must be repaired instead of copied into a new Set: %+v", result)
+	}
+	if result.ReadySets != 0 {
+		t.Fatalf("admin-unhealthy Set must remain unavailable for assignment: %+v", result)
+	}
+}
+
 func TestReconcileSetCapacityPinsNewSetToServingReleaseRing(t *testing.T) {
 	store := NewMemoryStore()
 	svc := NewService(store, nil, Options{})

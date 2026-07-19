@@ -25,6 +25,7 @@
 - set-manager 只读取和修正 `LLMFleet` CR，不扩展对子 Deployment、Pod 或 PDB 的 RBAC。
 - set-manager 将每个 Set 的期望副本、Ready 副本和 PDB 状态作为 reconcile fact 写入控制面 MySQL。
 - 声明过 HA 策略的 Set 只有在状态为 `healthy` 时才能接收新租户；`pending` 或 `degraded` 不影响剩余副本继续承载存量流量，但必须停止新准入。
+- 健康门禁与容量库存必须分开：运行时 HA、管理面初始化或准入检查失败只触发修复，不得被容量控制器解释为缺少 Set。已完成结构化纳管的 active Set 仍计入容量库存；只有用户水位不足，或 Set 明确进入 disabled/draining 生命周期，才允许创建替代容量。
 - 运营总览展示副本水位和失败原因，并为 `degraded` 生成紧急告警。
 
 ## MySQL 连接预算

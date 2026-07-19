@@ -5947,6 +5947,14 @@
           "ready_free_users": {
             "type": "integer"
           },
+          "capacity_sets": {
+            "type": "integer",
+            "description": "已完成结构化纳管、计入扩容规划的 Set 数；临时健康故障不会从容量库存移除。"
+          },
+          "capacity_free_users": {
+            "type": "integer",
+            "description": "容量规划使用的剩余用户位；与当前可准入用户位分开计算。"
+          },
           "required_free_users": {
             "type": "integer"
           },

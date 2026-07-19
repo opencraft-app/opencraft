@@ -1,5 +1,5 @@
 upstream_repo=git@git.woa.com:wisp/velagw.git
 upstream_branch=master
-upstream_commit=1da77b4ec6d9d687dede1ca90917b7820a4b0483
+upstream_commit=e5f2d780b55bb5f5eff70161bdf4bbe0e821068d
 prefix=velagw
 mode=squash-subtree

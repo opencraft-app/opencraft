@@ -701,6 +701,8 @@ export type SetCapacityResult = {
   policy: SetCapacityPolicy
   ready_sets: number
   ready_free_users: number
+  capacity_sets: number
+  capacity_free_users: number
   required_free_users: number
   inflight_requests: number
   inflight_free_users: number

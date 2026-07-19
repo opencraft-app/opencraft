@@ -1311,7 +1311,7 @@ function CapacityWatermarkResult({ result }: { result?: SetCapacityResult }) {
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
-        <StateField label="当前空位" value={formatNumber(result.ready_free_users)} />
+        <StateField label="规划空位" value={formatNumber(result.capacity_free_users ?? result.ready_free_users)} />
         <StateField label="目标空位" value={formatNumber(result.required_free_users)} />
         <StateField label="缺口" value={formatNumber(Math.max(result.deficit_users, 0))} />
         <StateField label="新增意图" value={`${formatNumber(result.created_requests)} 个`} />

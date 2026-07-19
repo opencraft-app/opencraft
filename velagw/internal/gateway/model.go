@@ -981,6 +981,8 @@ type SetCapacityResult struct {
 	Policy            SetCapacityPolicy        `json:"policy"`
 	ReadySets         int                      `json:"ready_sets"`
 	ReadyFreeUsers    int                      `json:"ready_free_users"`
+	CapacitySets      int                      `json:"capacity_sets"`
+	CapacityFreeUsers int                      `json:"capacity_free_users"`
 	RequiredFreeUsers int                      `json:"required_free_users"`
 	InflightRequests  int                      `json:"inflight_requests"`
 	InflightFreeUsers int                      `json:"inflight_free_users"`

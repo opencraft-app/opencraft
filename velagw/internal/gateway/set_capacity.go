@@ -98,11 +98,15 @@ func (s *Service) ReconcileSetCapacity(ctx context.Context, policy SetCapacityPo
 	result := SetCapacityResult{Policy: normalized}
 	for _, set := range sets {
 		userCount := counts[set.ID]
-		ready := setReadyForCapacity(set)
+		ready := setReadyForServing(set)
 		capacity := setCapacitySnapshot(set, userCount, normalized.MaxUsersPerSet)
 		if ready {
 			result.ReadySets++
 			result.ReadyFreeUsers += capacity.FreeUsers
+		}
+		if setCountsTowardCapacityInventory(set) {
+			result.CapacitySets++
+			result.CapacityFreeUsers += capacity.FreeUsers
 		}
 		result.Sets = append(result.Sets, SetCapacitySetSnapshot{
 			SetID:             set.ID,
@@ -123,8 +127,8 @@ func (s *Service) ReconcileSetCapacity(ctx context.Context, policy SetCapacityPo
 	inflightSetIDs := inflightSetProvisionIDs(requests, sets)
 	result.InflightRequests = len(inflightSetIDs)
 	result.InflightFreeUsers = result.InflightRequests * normalized.MaxUsersPerSet
-	result.RequiredFreeUsers = requiredSetFreeUsers(normalized, result.ReadySets)
-	result.DeficitUsers = result.RequiredFreeUsers - result.ReadyFreeUsers - result.InflightFreeUsers
+	result.RequiredFreeUsers = requiredSetFreeUsers(normalized, result.CapacitySets)
+	result.DeficitUsers = result.RequiredFreeUsers - result.CapacityFreeUsers - result.InflightFreeUsers
 	if result.DeficitUsers < 0 {
 		result.DeficitUsers = 0
 	}
@@ -133,7 +137,7 @@ func (s *Service) ReconcileSetCapacity(ctx context.Context, policy SetCapacityPo
 	if result.DeficitUsers > 0 {
 		capacityRequestCount = int(math.Ceil(float64(result.DeficitUsers) / float64(normalized.MaxUsersPerSet)))
 	}
-	warmSetRequestCount := normalized.MinWarmSets - result.ReadySets - result.InflightRequests
+	warmSetRequestCount := normalized.MinWarmSets - result.CapacitySets - result.InflightRequests
 	if warmSetRequestCount < 0 {
 		warmSetRequestCount = 0
 	}
@@ -463,16 +467,23 @@ func requiredSetFreeUsers(policy SetCapacityPolicy, readySets int) int {
 func setCapacityProvisionReason(result SetCapacityResult, warmSetDeficit int) string {
 	reasons := make([]string, 0, 2)
 	if result.DeficitUsers > 0 {
-		reasons = append(reasons, fmt.Sprintf("ready free users %d below required %d", result.ReadyFreeUsers, result.RequiredFreeUsers))
+		reasons = append(reasons, fmt.Sprintf("capacity free users %d below required %d", result.CapacityFreeUsers, result.RequiredFreeUsers))
 	}
 	if warmSetDeficit > 0 {
-		reasons = append(reasons, fmt.Sprintf("ready and inflight sets %d below minimum %d", result.ReadySets+result.InflightRequests, result.Policy.MinWarmSets))
+		reasons = append(reasons, fmt.Sprintf("capacity and inflight sets %d below minimum %d", result.CapacitySets+result.InflightRequests, result.Policy.MinWarmSets))
 	}
 	return strings.Join(reasons, "; ")
 }
 
 func setReadyForCapacity(set Set) bool {
 	return setReadyForServing(set)
+}
+
+func setCountsTowardCapacityInventory(set Set) bool {
+	if set.Status != SetStatusActive || !set.Setup || set.AdminUserID <= 0 || set.AdminAccessToken == "" {
+		return false
+	}
+	return set.AdmissionStatus != SetAdmissionStatusPending && set.AdmissionStatus != SetAdmissionStatusChecking
 }
 
 func setReadyForServing(set Set) bool {

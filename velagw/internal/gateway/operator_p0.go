@@ -465,7 +465,7 @@ func (s *Service) runWorkerJobBody(ctx context.Context, job *WorkerJob) (string,
 			return "disabled", nil
 		}
 		result, err := s.ReconcileSetCapacity(ctx, s.options.WorkerSetCapacityPolicy)
-		return fmt.Sprintf("ready_sets=%d ready_free=%d required_free=%d inflight=%d created=%d deficit=%d", result.ReadySets, result.ReadyFreeUsers, result.RequiredFreeUsers, result.InflightRequests, result.CreatedRequests, result.DeficitUsers), err
+		return fmt.Sprintf("ready_sets=%d ready_free=%d capacity_sets=%d capacity_free=%d required_free=%d inflight=%d created=%d deficit=%d", result.ReadySets, result.ReadyFreeUsers, result.CapacitySets, result.CapacityFreeUsers, result.RequiredFreeUsers, result.InflightRequests, result.CreatedRequests, result.DeficitUsers), err
 	case WorkerJobCheckChannelDrift:
 		checked, failed, err := s.checkChannelDriftJob(ctx, job)
 		return fmt.Sprintf("checked=%d failed=%d", checked, failed), err
