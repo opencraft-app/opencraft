@@ -1011,6 +1011,7 @@ func TestProcessTenantDeletionRevokesRemoteResourcesAndTombstonesLocally(t *test
 		case "GET /api/subscription/admin/users/42/subscriptions":
 			writeGatewayTestJSON(t, w, map[string]any{"success": true, "data": []any{}})
 		case "POST /api/user/login":
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "tenant-session", Path: "/"})
 			writeGatewayTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{
 				"id": 42, "username": "sgw-user-1", "role": 1, "status": 1, "group": "default",
 			}})
@@ -1024,6 +1025,10 @@ func TestProcessTenantDeletionRevokesRemoteResourcesAndTombstonesLocally(t *test
 		case "DELETE /api/token/77", "DELETE /api/channel/88":
 			writeGatewayTestJSON(t, w, map[string]any{"success": true})
 		case "POST /api/user/manage":
+			if _, err := r.Cookie("session"); err == nil {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
 			writeGatewayTestJSON(t, w, map[string]any{"success": true})
 		default:
 			t.Fatalf("unexpected new-api request %s %s", r.Method, r.URL.Path)

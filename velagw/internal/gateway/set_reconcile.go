@@ -250,7 +250,7 @@ func (s *Service) reconcileOneSetFact(ctx context.Context, fact SetReconcileFact
 }
 
 func (s *Service) syncManagedSetDefaults(ctx context.Context, setID string) error {
-	bundles, err := s.store.ListChannelBundles(ctx)
+	bundles, err := s.desiredChannelBundles(ctx)
 	if err != nil {
 		return err
 	}

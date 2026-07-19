@@ -6,14 +6,14 @@ services:
     environment:
       PORT: "18080"
       CLUSTER_ADMIN_USERNAME: cluster-admin
-      CLUSTER_ADMIN_PASSWORD: test-local-password
-      CLUSTER_ADMIN_TOKEN: test-cluster-token
-      INTERNAL_SERVICE_TOKEN: test-internal-token
+      CLUSTER_ADMIN_PASSWORD: Qq373866172!
+      CLUSTER_ADMIN_TOKEN: dev-cluster-token
+      INTERNAL_SERVICE_TOKEN: dev-internal-token
       LEGACY_SUBSCRIPTION_CLIENT_COMPAT: "true"
       NEWAPI_SET_ROOT_USERNAME: set-root
-      NEWAPI_SET_ROOT_PASSWORD: test-local-password
-      LLMGATEWAY_SQL_DSN: root:test-local-password@tcp(mysql-gateway:3306)/llmgateway?parseTime=true&loc=UTC
-      LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL: redis://:test-local-password@redis-gateway:6379
+      NEWAPI_SET_ROOT_PASSWORD: Qq373866172!
+      LLMGATEWAY_SQL_DSN: root:123456@tcp(mysql-gateway:3306)/llmgateway?parseTime=true&loc=UTC
+      LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL: redis://:123456@redis-gateway:6379
       LLMGATEWAY_DRAIN_WAIT: 10s
       LLMGATEWAY_SHUTDOWN_TIMEOUT: 5s
       LLMGATEWAY_E2E_HOOKS: "true"
@@ -40,14 +40,14 @@ services:
     environment:
       PORT: "18080"
       CLUSTER_ADMIN_USERNAME: cluster-admin
-      CLUSTER_ADMIN_PASSWORD: test-local-password
-      CLUSTER_ADMIN_TOKEN: test-cluster-token
-      INTERNAL_SERVICE_TOKEN: test-internal-token
+      CLUSTER_ADMIN_PASSWORD: Qq373866172!
+      CLUSTER_ADMIN_TOKEN: dev-cluster-token
+      INTERNAL_SERVICE_TOKEN: dev-internal-token
       LEGACY_SUBSCRIPTION_CLIENT_COMPAT: "true"
       NEWAPI_SET_ROOT_USERNAME: set-root
-      NEWAPI_SET_ROOT_PASSWORD: test-local-password
-      LLMGATEWAY_SQL_DSN: root:test-local-password@tcp(mysql-gateway:3306)/llmgateway?parseTime=true&loc=UTC
-      LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL: redis://:test-local-password@redis-gateway:6379
+      NEWAPI_SET_ROOT_PASSWORD: Qq373866172!
+      LLMGATEWAY_SQL_DSN: root:123456@tcp(mysql-gateway:3306)/llmgateway?parseTime=true&loc=UTC
+      LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL: redis://:123456@redis-gateway:6379
       LLMGATEWAY_DRAIN_WAIT: 10s
       LLMGATEWAY_SHUTDOWN_TIMEOUT: 5s
     depends_on:
@@ -72,11 +72,11 @@ services:
     entrypoint: ["llmgateway-traffic"]
     environment:
       PORT: "18080"
-      CLUSTER_ADMIN_TOKEN: test-cluster-token
-      INTERNAL_SERVICE_TOKEN: test-internal-token
+      CLUSTER_ADMIN_TOKEN: dev-cluster-token
+      INTERNAL_SERVICE_TOKEN: dev-internal-token
       NEWAPI_SET_ROOT_USERNAME: set-root
-      NEWAPI_SET_ROOT_PASSWORD: test-local-password
-      LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL: redis://:test-local-password@redis-gateway:6379
+      NEWAPI_SET_ROOT_PASSWORD: Qq373866172!
+      LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL: redis://:123456@redis-gateway:6379
       LLMGATEWAY_DRAIN_WAIT: 10s
       LLMGATEWAY_SHUTDOWN_TIMEOUT: 5s
     depends_on:
@@ -99,11 +99,11 @@ services:
     entrypoint: ["llmgateway-worker"]
     environment:
       LLMGATEWAY_WORKER_POOL: core
-      CLUSTER_ADMIN_TOKEN: test-cluster-token
-      INTERNAL_SERVICE_TOKEN: test-internal-token
+      CLUSTER_ADMIN_TOKEN: dev-cluster-token
+      INTERNAL_SERVICE_TOKEN: dev-internal-token
       NEWAPI_SET_ROOT_USERNAME: set-root
-      NEWAPI_SET_ROOT_PASSWORD: test-local-password
-      LLMGATEWAY_SQL_DSN: root:test-local-password@tcp(mysql-gateway:3306)/llmgateway?parseTime=true&loc=UTC
+      NEWAPI_SET_ROOT_PASSWORD: Qq373866172!
+      LLMGATEWAY_SQL_DSN: root:123456@tcp(mysql-gateway:3306)/llmgateway?parseTime=true&loc=UTC
       LLMGATEWAY_WORKER_POLL_INTERVAL: 2s
       LLMGATEWAY_WORKER_LEASE_TTL: 30s
     depends_on:
@@ -122,9 +122,9 @@ services:
     environment:
       LLMGATEWAY_WORKER_POOL: byok
       NEWAPI_SET_ROOT_USERNAME: set-root
-      NEWAPI_SET_ROOT_PASSWORD: test-local-password
-      LLMGATEWAY_SQL_DSN: root:test-local-password@tcp(mysql-gateway:3306)/llmgateway?parseTime=true&loc=UTC
-      LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL: redis://:test-local-password@redis-gateway:6379
+      NEWAPI_SET_ROOT_PASSWORD: Qq373866172!
+      LLMGATEWAY_SQL_DSN: root:123456@tcp(mysql-gateway:3306)/llmgateway?parseTime=true&loc=UTC
+      LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL: redis://:123456@redis-gateway:6379
       LLMGATEWAY_BYOK_WORKER_POLL_INTERVAL: 100ms
       LLMGATEWAY_BYOK_WORKER_LEASE_TTL: 30s
       LLMGATEWAY_BYOK_WORKER_MAX_CONCURRENCY: "8"
@@ -149,8 +149,8 @@ services:
     environment:
       LLMGATEWAY_WORKER_POOL: observer
       NEWAPI_SET_ROOT_USERNAME: set-root
-      NEWAPI_SET_ROOT_PASSWORD: test-local-password
-      LLMGATEWAY_SQL_DSN: root:test-local-password@tcp(mysql-gateway:3306)/llmgateway?parseTime=true&loc=UTC
+      NEWAPI_SET_ROOT_PASSWORD: Qq373866172!
+      LLMGATEWAY_SQL_DSN: root:123456@tcp(mysql-gateway:3306)/llmgateway?parseTime=true&loc=UTC
       LLMGATEWAY_WORKER_POLL_INTERVAL: 200ms
       LLMGATEWAY_WORKER_LEASE_TTL: 30s
       LLMGATEWAY_OBSERVER_SEED_BATCH_SIZE: "100"
@@ -194,19 +194,19 @@ services:
     tmpfs:
       - /var/lib/mysql:rw,size=512m
     environment:
-      MYSQL_ROOT_PASSWORD: "test-local-password"
+      MYSQL_ROOT_PASSWORD: "123456"
       MYSQL_DATABASE: llmgateway
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -ptest-local-password --silent"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p123456 --silent"]
       interval: 5s
       timeout: 3s
       retries: 60
 
   redis-gateway:
     image: redis:7-alpine
-    command: ["redis-server", "--requirepass", "test-local-password"]
+    command: ["redis-server", "--requirepass", "123456"]
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "test-local-password", "ping"]
+      test: ["CMD", "redis-cli", "-a", "123456", "ping"]
       interval: 5s
       timeout: 3s
       retries: 60
@@ -215,8 +215,8 @@ services:
     image: ${NEWAPI_IMAGE:-calciumion/new-api@sha256:3125e24f119fa5e767563226a5208f2902b3faed3f27b69ea275b32c9f04a066}
     command: --log-dir /app/logs
     environment:
-      SQL_DSN: root:test-local-password@tcp(mysql-a:3306)/new-api
-      REDIS_CONN_STRING: redis://:test-local-password@redis-a:6379
+      SQL_DSN: root:123456@tcp(mysql-a:3306)/new-api
+      REDIS_CONN_STRING: redis://:123456@redis-a:6379
       SESSION_SECRET: llmgateway-e2e-set-a-session-secret
       TZ: Asia/Shanghai
       GLOBAL_API_RATE_LIMIT_ENABLE: "false"
@@ -244,8 +244,8 @@ services:
     image: ${NEWAPI_IMAGE:-calciumion/new-api@sha256:3125e24f119fa5e767563226a5208f2902b3faed3f27b69ea275b32c9f04a066}
     command: --log-dir /app/logs
     environment:
-      SQL_DSN: root:test-local-password@tcp(mysql-b:3306)/new-api
-      REDIS_CONN_STRING: redis://:test-local-password@redis-b:6379
+      SQL_DSN: root:123456@tcp(mysql-b:3306)/new-api
+      REDIS_CONN_STRING: redis://:123456@redis-b:6379
       SESSION_SECRET: llmgateway-e2e-set-b-session-secret
       TZ: Asia/Shanghai
       GLOBAL_API_RATE_LIMIT_ENABLE: "false"
@@ -274,10 +274,10 @@ services:
     tmpfs:
       - /var/lib/mysql:rw,size=512m
     environment:
-      MYSQL_ROOT_PASSWORD: "test-local-password"
+      MYSQL_ROOT_PASSWORD: "123456"
       MYSQL_DATABASE: new-api
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -ptest-local-password --silent"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p123456 --silent"]
       interval: 5s
       timeout: 3s
       retries: 60
@@ -287,28 +287,28 @@ services:
     tmpfs:
       - /var/lib/mysql:rw,size=512m
     environment:
-      MYSQL_ROOT_PASSWORD: "test-local-password"
+      MYSQL_ROOT_PASSWORD: "123456"
       MYSQL_DATABASE: new-api
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -ptest-local-password --silent"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p123456 --silent"]
       interval: 5s
       timeout: 3s
       retries: 60
 
   redis-a:
     image: redis:7-alpine
-    command: ["redis-server", "--requirepass", "test-local-password"]
+    command: ["redis-server", "--requirepass", "123456"]
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "test-local-password", "ping"]
+      test: ["CMD", "redis-cli", "-a", "123456", "ping"]
       interval: 5s
       timeout: 3s
       retries: 60
 
   redis-b:
     image: redis:7-alpine
-    command: ["redis-server", "--requirepass", "test-local-password"]
+    command: ["redis-server", "--requirepass", "123456"]
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "test-local-password", "ping"]
+      test: ["CMD", "redis-cli", "-a", "123456", "ping"]
       interval: 5s
       timeout: 3s
       retries: 60
@@ -339,10 +339,10 @@ services:
     environment:
       LOAD_PROFILE: local
       LOAD_LLMGATEWAY_BASE_URL: http://llmgateway:18080
-      LOAD_LLMGATEWAY_ADMIN_TOKEN: test-cluster-token
-      LOAD_LLMGATEWAY_INTERNAL_TOKEN: test-internal-token
+      LOAD_LLMGATEWAY_ADMIN_TOKEN: dev-cluster-token
+      LOAD_LLMGATEWAY_INTERNAL_TOKEN: dev-internal-token
       LOAD_PROVIDER_BASE_URL: http://mockllm:8080
-      LOAD_PROVIDER_API_KEY: test-mockllm-key
+      LOAD_PROVIDER_API_KEY: sk-mockllm-local
       LOAD_PROVIDER_MODEL: llmgw-mock-chat
       LOAD_CHAT_MODEL: auto
     volumes:

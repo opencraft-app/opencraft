@@ -458,6 +458,9 @@ func (s *Service) planChannelBundleSnapshotForSet(ctx context.Context, bundle Ch
 
 	client := s.newAPIClient(set.BaseURL)
 	auth := adminAuthForSet(set)
+	if err := s.addChannelBundleOptionPlan(ctx, client, auth, bundle, state, opts, &plan); err != nil {
+		return ChannelBundlePlan{}, s.failChannelBundlePlan(ctx, state, err)
+	}
 	desired := channelBundleDesiredSpecs(bundle)
 	remoteChannels, err := client.ListChannels(ctx, auth)
 	if err != nil {
@@ -467,7 +470,10 @@ func (s *Service) planChannelBundleSnapshotForSet(ctx context.Context, bundle Ch
 	if err != nil {
 		return ChannelBundlePlan{}, s.failChannelBundlePlan(ctx, state, err)
 	}
-	plan.Actual = channelBundleSpecFromRemoteChannels(remoteChannels)
+	actualChannels := channelBundleSpecFromRemoteChannels(remoteChannels)
+	plan.Actual.Version = actualChannels.Version
+	plan.Actual.Kind = actualChannels.Kind
+	plan.Actual.Channels = actualChannels.Channels
 
 	remoteByName := map[string]newapi.Channel{}
 	remoteNameCounts := map[string]int{}
@@ -535,7 +541,7 @@ func (s *Service) planChannelBundleSnapshotForSet(ctx context.Context, bundle Ch
 	}
 	sortChannelBundlePlan(&plan)
 
-	plan.ActualFingerprint = channelBundleActualFingerprint(remoteChannels)
+	plan.ActualFingerprint = channelBundleActualStateFingerprint(plan.Actual)
 	state.ActualFingerprint = plan.ActualFingerprint
 	state.DiffJSON = mustCompactJSON(plan.Diff)
 	state.RemoteResourcesJSON = mustCompactJSON(remoteResources)
@@ -548,6 +554,57 @@ func (s *Service) planChannelBundleSnapshotForSet(ctx context.Context, bundle Ch
 	}
 	s.emitChannelBundleSyncTransition(ctx, previousStatus, state)
 	return plan, nil
+}
+
+func (s *Service) addChannelBundleOptionPlan(ctx context.Context, client *newapi.Client, auth newapi.AdminAuth, bundle ChannelBundle, state ChannelBundleSyncState, opts ChannelBundlePlanOptions, plan *ChannelBundlePlan) error {
+	if len(bundle.Spec.Options) == 0 {
+		return nil
+	}
+	remoteOptions, err := client.GetOptions(ctx, auth)
+	if err != nil {
+		return err
+	}
+	remoteByKey := make(map[string]string, len(remoteOptions))
+	for _, option := range remoteOptions {
+		remoteByKey[option.Key] = option.Value
+	}
+	var appliedOptions map[string]ChannelBundleOption
+	if strings.TrimSpace(state.AppliedFingerprint) != "" {
+		applied, err := s.appliedChannelBundleRevision(ctx, bundle, state.AppliedFingerprint)
+		if err != nil {
+			return err
+		}
+		appliedOptions = make(map[string]ChannelBundleOption, len(applied.Spec.Options))
+		for _, option := range applied.Spec.Options {
+			appliedOptions[option.Key] = option
+		}
+	}
+	for _, desired := range bundle.Spec.Options {
+		remoteValue, exists := remoteByKey[desired.Key]
+		if exists {
+			plan.Actual.Options = append(plan.Actual.Options, ChannelBundleOption{Key: desired.Key, Value: remoteValue})
+		}
+		if exists && channelBundleOptionValuesEqualForKey(desired.Key, remoteValue, desired.Value) {
+			plan.Steps = append(plan.Steps, ChannelBundleStep{Kind: ChannelBundleStepNoop, ResourceID: desired.Key, Action: "noop"})
+			plan.Diff.Synced = append(plan.Diff.Synced, ChannelBundleResourceDiff{ID: desired.Key, Name: desired.Key})
+			continue
+		}
+		requiresForce := false
+		if appliedOptions != nil {
+			applied, managedBefore := appliedOptions[desired.Key]
+			requiresForce = (managedBefore && (!exists || !channelBundleOptionValuesEqualForKey(desired.Key, remoteValue, applied.Value))) || (!managedBefore && exists)
+		}
+		action := "update"
+		if requiresForce && !opts.ForceDrift {
+			action = ChannelSyncStatusDrift
+		}
+		plan.Steps = append(plan.Steps, ChannelBundleStep{
+			Kind: ChannelBundleStepUpdateOption, ResourceID: desired.Key, Action: action,
+			RequiresForce: requiresForce && !opts.ForceDrift, Reason: "remote global option differs from desired state",
+		})
+		plan.Diff.Changed = append(plan.Diff.Changed, ChannelBundleResourceDiff{ID: desired.Key, Name: desired.Key, Reason: "remote global option differs from desired state"})
+	}
+	return nil
 }
 
 func (s *Service) includeDesiredRemoteChannels(ctx context.Context, client *newapi.Client, auth newapi.AdminAuth, remoteChannels []newapi.Channel, desired []ChannelSpec) ([]newapi.Channel, error) {
@@ -610,7 +667,7 @@ func (s *Service) applyChannelBundleSnapshotToSet(ctx context.Context, bundle Ch
 		state.DesiredFingerprint = bundle.Fingerprint
 		return s.failChannelBundleApply(ctx, state, bundle, err)
 	}
-	if plan.Status == ChannelSyncStatusSkipped || plan.Status == ChannelSyncStatusConflict {
+	if plan.Status == ChannelSyncStatusSkipped || plan.Status == ChannelSyncStatusConflict || (plan.Status == ChannelSyncStatusDrift && !opts.ForceDrift) {
 		return plan.State, nil
 	}
 	if err := s.applyChannelBundleOptions(ctx, bundle, setID); err != nil {
@@ -1447,6 +1504,10 @@ func channelBundleActualFingerprint(channels []newapi.Channel) string {
 	}
 	sort.Slice(payload, func(i, j int) bool { return payload[i].Name < payload[j].Name })
 	return fingerprintJSON(payload)
+}
+
+func channelBundleActualStateFingerprint(spec ChannelBundleSpec) string {
+	return fingerprintJSON(spec)
 }
 
 func channelBundlePlanStatus(plan ChannelBundlePlan) string {

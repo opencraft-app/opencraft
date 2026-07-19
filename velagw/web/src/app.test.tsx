@@ -8,6 +8,7 @@ import {
   ConsoleShell,
   OperatorOverviewPage,
   PlanManagementPage,
+  ReleaseManagementPage,
   ResourceAdminPage,
   SetWorkspace,
   ShardManagementPage,
@@ -46,6 +47,48 @@ describe("SetWorkspace", () => {
     expect(html).toContain('aria-label="放大控制台"')
     expect(html).not.toContain("Open native console")
     expect(html).not.toContain('target="_blank"')
+  })
+})
+
+describe("ReleaseManagementPage", () => {
+  it("makes the fleet campaign the primary release workflow", () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(["newapi-releases"], [
+      { id: "release-v2", version: "v2", image: "registry/new-api@sha256:abc", status: "verified" },
+    ])
+    queryClient.setQueryData(["release-rings"], [
+      { id: "canary", name: "Canary", ordinal: 0, serving_release_id: "release-v1", status: "steady", admission_enabled: false, max_parallel: 1, soak_seconds: 1800, set_count: 1 },
+      { id: "stable", name: "Stable", ordinal: 20, serving_release_id: "release-v1", status: "steady", admission_enabled: true, max_parallel: 1, soak_seconds: 1800, set_count: 3 },
+    ])
+    queryClient.setQueryData(["release-rollouts"], [])
+    queryClient.setQueryData(["release-campaigns"], [{
+      id: "release-campaign-1",
+      target_release_id: "release-v2",
+      status: "paused",
+      current_ring_id: "canary",
+      total_rings: 2,
+      completed_rings: 0,
+      last_error: "健康门禁未通过",
+      rings: [
+        { campaign_id: "release-campaign-1", sequence: 1, ring_id: "canary", status: "paused", rollout_id: "rollout-1" },
+        { campaign_id: "release-campaign-1", sequence: 2, ring_id: "stable", status: "pending" },
+      ],
+    }])
+    const api = new LLMGatewayAPI((async () =>
+      new Response(JSON.stringify({ success: true, data: [] }), {
+        headers: { "content-type": "application/json" },
+      })) as typeof fetch)
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={queryClient}>
+        <ReleaseManagementPage api={api} sets={[readySet]} />
+      </QueryClientProvider>,
+    )
+
+    expect(html).toContain("全量发布")
+    expect(html).toContain("Canary → Early → Stable")
+    expect(html).toContain("0 / 2 个发布环")
+    expect(html).toContain("健康门禁未通过")
+    expect(html).toContain("恢复发布")
   })
 })
 
@@ -177,9 +220,6 @@ describe("PlanManagementPage", () => {
       { plan_id: "starter-2026-07", set_id: "set-a", upstream_plan_id: 42, status: "ready" },
       { plan_id: "starter-2026-07", set_id: "set-b", status: "pending" },
     ])
-    queryClient.setQueryData(["plan-periods", "starter-2026-07"], [
-      { plan_id: "starter-2026-07", period_value: 14, period_unit: "days" },
-    ])
     const api = new LLMGatewayAPI((async () =>
       new Response(JSON.stringify({ success: true, data: [] }), {
         headers: { "content-type": "application/json" },
@@ -196,9 +236,6 @@ describe("PlanManagementPage", () => {
     expect(html).toContain("复制模板")
     expect(html).toContain("入门型")
     expect(html).toContain("10,000")
-    expect(html).toContain("周期变体")
-    expect(html).toContain("14 天")
-    expect(html).not.toContain("starter-2026-07:14:days")
     expect(html).toContain("集群下发")
     expect(html).toContain("1 个集群已就绪")
     expect(html).toContain("待下发")

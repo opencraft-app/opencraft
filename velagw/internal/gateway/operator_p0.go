@@ -28,6 +28,7 @@ var defaultWorkerJobs = []WorkerJob{
 	{Name: WorkerJobRefreshTenantStatistics, Kind: WorkerJobRefreshTenantStatistics, Enabled: true, IntervalSeconds: 600},
 	{Name: WorkerJobPublishAPIKeyRoutes, Kind: WorkerJobPublishAPIKeyRoutes, Enabled: true, IntervalSeconds: 30},
 	{Name: WorkerJobReconcileShardExpansions, Kind: WorkerJobReconcileShardExpansions, Enabled: true, IntervalSeconds: 30},
+	{Name: WorkerJobReconcileReleaseCampaigns, Kind: WorkerJobReconcileReleaseCampaigns, Enabled: true, IntervalSeconds: 10},
 }
 
 const defaultBYOKSyncBatchSize = 1000
@@ -49,7 +50,7 @@ func (s *Service) GetOperationalOverview(ctx context.Context) (OperationalOvervi
 	if err != nil {
 		return OperationalOverview{}, err
 	}
-	bundles, err := s.store.ListChannelBundles(ctx)
+	bundles, err := s.desiredChannelBundles(ctx)
 	if err != nil {
 		return OperationalOverview{}, err
 	}
@@ -289,6 +290,29 @@ func (s *Service) QueueWorkerJobNow(ctx context.Context, name string) (WorkerJob
 	}, nil
 }
 
+func (s *Service) ListWorkerJobRuns(ctx context.Context, name string, startedAtOrAfter time.Time, limit int) ([]WorkerJobRun, bool, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, false, nil
+	}
+	if err := s.ensureDefaultWorkerJobs(ctx); err != nil {
+		return nil, false, err
+	}
+	if _, ok, err := s.store.GetWorkerJob(ctx, name); err != nil || !ok {
+		return nil, ok, err
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	runs, err := s.store.ListWorkerJobRuns(ctx, WorkerJobRunListOptions{
+		JobName: name, StartedAtOrAfter: startedAtOrAfter.UTC(), Limit: limit,
+	})
+	return runs, true, err
+}
+
 func (s *Service) RetryFailedBYOKSyncTasks(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {
 		limit = defaultBYOKSyncBatchSize
@@ -475,6 +499,13 @@ func (s *Service) runWorkerJobBody(ctx context.Context, job *WorkerJob) (string,
 	case WorkerJobPublishAPIKeyRoutes:
 		published, failed, err := s.publishAPIKeyRoutesJob(ctx, 200)
 		return fmt.Sprintf("published=%d failed=%d", published, failed), err
+	case WorkerJobReconcileReleaseCampaigns:
+		soaks, soakErr := s.ReconcileReleaseRolloutSoaks(ctx, 50)
+		campaigns, campaignErr := s.ReconcileReleaseCampaigns(ctx, 25)
+		if soakErr != nil {
+			return fmt.Sprintf("soaks=%d campaigns=%d", soaks, campaigns), soakErr
+		}
+		return fmt.Sprintf("soaks=%d campaigns=%d", soaks, campaigns), campaignErr
 	default:
 		return "", fmt.Errorf("unknown worker job %q", job.Name)
 	}
@@ -760,7 +791,7 @@ func decodeChannelDriftCursor(value string) (channelDriftCursor, bool) {
 }
 
 func (s *Service) checkChannelDriftJob(ctx context.Context, job *WorkerJob) (int, int, error) {
-	bundles, err := s.store.ListChannelBundles(ctx)
+	bundles, err := s.desiredChannelBundles(ctx)
 	if err != nil {
 		return 0, 0, err
 	}

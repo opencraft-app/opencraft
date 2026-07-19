@@ -2,7 +2,7 @@
 
 ## 目标
 
-LLMGateway 使用一个 Fleet 管理全部 Set。Fleet 内包含长期存在的发布环（Release Ring），不同发布环可以同时运行不同的 new-api Release：
+LLMGateway 使用一个 Fleet 管理全部 Set。Fleet 内包含长期存在的发布环（Release Ring），全量发布由一个持久化 Campaign 按顺序推进：
 
 ```text
 Fleet
@@ -17,6 +17,7 @@ Release Ring 只负责编排多个 Set，不理解单 Set 内部切流。单 Set
 
 - MySQL 是 Release、Ring、Rollout 和 Set 版本归属的真源。
 - `llmgateway-release-rollout` 复用现有 `set_upgrade_batch/run`，不另建执行队列。
+- `llmgateway_release_campaigns` 和 `llmgateway_release_campaign_rings` 保存一场 Fleet 发布及其不可变 Ring 快照。
 - Rollout 固定 `max_parallel=1`、`stop_on_failure=true`。
 - KRO 只渲染已经解析好的 admin/traffic 镜像，不负责发布顺序。
 - new-api 不需要修改。
@@ -55,6 +56,21 @@ Ring rollout
 
 任一 run 失败或回滚，Rollout 进入 `paused`，Ring 进入 `degraded`，后续 pending run 不会被领取。重试成功后状态会从现有 run 自动重新聚合，不依赖管理页面轮询才能推进。
 
+### Campaign
+
+Campaign 是生产发布的默认入口。创建时按 Ring 的 `ordinal,id` 生成不可变执行快照，同一 Fleet 同时只能存在一个非完成 Campaign：
+
+```text
+Campaign
+→ Canary rollout → 完整 soak → 健康门禁
+→ Early rollout  → 完整 soak → 健康门禁
+→ Stable rollout → 完整 soak → 健康门禁
+```
+
+Ring 内严格一次只升级一个 Set，Campaign 同时只运行一个 Ring。所有 Set 完成不等于 Ring 完成：Ring 先进入 `soaking`，到达持久化的 `soak_deadline` 后检查 Set 版本收敛、管理写恢复、admin 健康和 Set 准入门禁。失败会把 Rollout、Ring 和 Campaign 暂停；人工恢复健康后调用 resume，会从当时重新计算完整 soak 窗口，不继承失败前已等待的时间。
+
+`llmgateway-worker-core` 每 10 秒运行 `reconcile_release_campaigns`。worker 重启后按 `(campaign_id,campaign_sequence)` 索引恢复当前 Rollout，不扫描全部发布历史，也不会重复创建 Set upgrade run。活动 Campaign 和 soak 在有界查询中优先于历史完成记录，长期运行不会被历史第一页饿死。
+
 ## 新 Set
 
 容量控制器创建 provision request 时会选择同 Fleet 中 ordinal 最大且允许准入的健康 Ring：
@@ -73,9 +89,13 @@ GET/POST /api/admin/newapi-releases
 GET/POST /api/admin/release-rings
 GET/POST /api/admin/release-rollouts
 GET      /api/admin/release-rollouts/{id}
+GET/POST /api/admin/release-campaigns
+GET      /api/admin/release-campaigns/{id}
+POST     /api/admin/release-campaigns/{id}/pause
+POST     /api/admin/release-campaigns/{id}/resume
 ```
 
-管理台「基础设施 → 版本发布」提供版本登记、Ring 建立、Set 分组、逐个发布和进度查看。
+管理台「基础设施 → 版本发布」以“全量发布”为主入口，展示当前 Ring、完成进度、暂停原因和恢复操作。单 Ring 发布仅用于排障或定向变更。
 
 ## 生产迁移
 
@@ -84,6 +104,6 @@ GET      /api/admin/release-rollouts/{id}
 3. 创建 Canary、Early、Stable Ring，并显式分配存量 Set。
 4. 确认所有 Set 已回填 `current_release_id`，所有 provision request 能固化 Release image。
 5. 再删除 KRO 中 `adminImage/legacyTrafficImage` 为空时回退 Fleet 全局镜像的兼容逻辑。
-6. 使用新 digest 按 Canary → Early → Stable 创建 Rollout；每个 Ring 内保持 one by one。
+6. 使用新 digest 创建一个 Campaign；由 worker 按 Canary → Early → Stable 自动推进，每个 Ring 内保持 one by one。
 
 删除全局镜像 fallback 是单独的生产迁移门禁，本期模型上线不会自动修改已有 LLMFleet。

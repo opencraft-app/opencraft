@@ -252,7 +252,7 @@ func TestConsoleFallbackRefreshesInvalidAdminAccessToken(t *testing.T) {
 	defer upstream.Close()
 
 	store := gateway.NewMemoryStore()
-	svc := gateway.NewService(store, nil, gateway.Options{RootPassword: "test-local-password"})
+	svc := gateway.NewService(store, nil, gateway.Options{RootPassword: "Qq373866172!"})
 	if err := store.SaveSet(t.Context(), gateway.Set{
 		ID:               "set-a",
 		BaseURL:          upstream.URL,
@@ -335,7 +335,7 @@ func TestConsoleProxyReplaysSessionOnlyAPIWithManagedDashboardSession(t *testing
 	defer upstream.Close()
 
 	store := gateway.NewMemoryStore()
-	svc := gateway.NewService(store, nil, gateway.Options{RootUsername: "set-root", RootPassword: "test-local-password"})
+	svc := gateway.NewService(store, nil, gateway.Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
 	if err := store.SaveSet(t.Context(), gateway.Set{
 		ID:               "set-a",
 		BaseURL:          upstream.URL,

@@ -28,7 +28,7 @@ kubectl logs -n "$NAMESPACE" "job/$MANAGER_JOB"
 
 deadline=$(( $(date +%s) + 180 ))
 until kubectl run llmgateway-autoscale-ready-check --rm -i --restart=Never -n "$NAMESPACE" --image=curlimages/curl:8.8.0 --command -- \
-  sh -c "curl -fsS -H 'Authorization: Bearer test-cluster-token' http://llmgateway-control:18080/api/sets | grep -Eq '\"id\":\"$SET_PREFIX-[^\"]*\"[^}]*\"setup\":true'"; do
+  sh -c "curl -fsS -H 'Authorization: Bearer dev-cluster-token' http://llmgateway-control:18080/api/sets | grep -Eq '\"id\":\"$SET_PREFIX-[^\"]*\"[^}]*\"setup\":true'"; do
   if [ "$(date +%s)" -ge "$deadline" ]; then
     echo "timed out waiting for autoscaled set to become managed" >&2
     exit 1

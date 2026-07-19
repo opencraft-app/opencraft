@@ -1070,17 +1070,15 @@ func TestChannelDriftJobUsesPersistentCursorBatches(t *testing.T) {
 
 	store := NewMemoryStore()
 	svc := NewService(store, upstream.Client().Transport, Options{})
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 12; i++ {
 		saveReadySet(t, store, fmt.Sprintf("set-%02d", i), upstream.URL)
 	}
-	for _, bundleID := range []string{"bundle-a", "bundle-b"} {
-		if _, err := svc.UpsertChannelBundle(context.Background(), ChannelBundle{
-			ID: bundleID, Name: bundleID, Spec: ChannelBundleSpec{Version: 1, Kind: ChannelBundleKind, Channels: []ChannelBundleChannel{{
-				ID: "channel", Name: "Channel", Type: 1, Key: "sk-test", BaseURL: "http://mock", Models: "m1", Group: "default", Status: ChannelSpecStatusEnabled,
-			}}},
-		}); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := svc.UpsertChannelBundle(context.Background(), ChannelBundle{
+		ID: "golden-channels", Name: "Golden", Spec: ChannelBundleSpec{Version: 1, Kind: ChannelBundleKind, Channels: []ChannelBundleChannel{{
+			ID: "channel", Name: "Channel", Type: 1, Key: "sk-test", BaseURL: "http://mock", Models: "m1", Group: "default", Status: ChannelSpecStatusEnabled,
+		}}},
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	first, err := svc.RunWorkerJobNow(context.Background(), WorkerJobCheckChannelDrift)
@@ -1773,5 +1771,33 @@ func mustSaveSet(t *testing.T, store Store, set Set) {
 	t.Helper()
 	if err := store.SaveSet(context.Background(), set); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestListWorkerJobRunsFiltersByStartedAtWatermark(t *testing.T) {
+	store := NewMemoryStore()
+	jobName := WorkerJobRefreshSetCapacity
+	watermark := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	for _, run := range []WorkerJobRun{
+		{ID: "before", JobName: jobName, Status: WorkerJobStatusSuccess, StartedAt: watermark.Add(-time.Second)},
+		{ID: "at", JobName: jobName, Status: WorkerJobStatusSuccess, StartedAt: watermark},
+		{ID: "after", JobName: jobName, Status: WorkerJobStatusSuccess, StartedAt: watermark.Add(time.Second)},
+		{ID: "other", JobName: WorkerJobCheckChannelDrift, Status: WorkerJobStatusSuccess, StartedAt: watermark.Add(2 * time.Second)},
+	} {
+		if err := store.SaveWorkerJobRun(t.Context(), run); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	runs, err := store.ListWorkerJobRuns(t.Context(), WorkerJobRunListOptions{
+		JobName:          jobName,
+		StartedAtOrAfter: watermark,
+		Limit:            10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 2 || runs[0].ID != "after" || runs[1].ID != "at" {
+		t.Fatalf("runs = %+v", runs)
 	}
 }

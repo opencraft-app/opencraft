@@ -80,7 +80,7 @@ func TestClientBootstrapAndCreateUserTokenFlow(t *testing.T) {
 		case "POST /api/setup":
 			var req SetupRequest
 			decodeJSON(t, r, &req)
-			if req.Username != "set-root" || req.Password != "test-local-password" || req.ConfirmPassword != "test-local-password" {
+			if req.Username != "set-root" || req.Password != "Qq373866172!" || req.ConfirmPassword != "Qq373866172!" {
 				t.Fatalf("unexpected setup request: %+v", req)
 			}
 			writeJSON(t, w, map[string]any{"success": true})
@@ -124,10 +124,10 @@ func TestClientBootstrapAndCreateUserTokenFlow(t *testing.T) {
 	if setup.Status {
 		t.Fatalf("setup status = true, want false")
 	}
-	if err := client.Setup(t.Context(), SetupRequest{Username: "set-root", Password: "test-local-password", ConfirmPassword: "test-local-password"}); err != nil {
+	if err := client.Setup(t.Context(), SetupRequest{Username: "set-root", Password: "Qq373866172!", ConfirmPassword: "Qq373866172!"}); err != nil {
 		t.Fatal(err)
 	}
-	adminSession, err := client.Login(t.Context(), "set-root", "test-local-password")
+	adminSession, err := client.Login(t.Context(), "set-root", "Qq373866172!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestClientConfirmPaymentComplianceUsesDashboardSession(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, server.Client())
-	if _, err := client.Login(t.Context(), "set-root", "test-local-password"); err != nil {
+	if _, err := client.Login(t.Context(), "set-root", "Qq373866172!"); err != nil {
 		t.Fatal(err)
 	}
 	if err := client.ConfirmPaymentCompliance(t.Context(), 1); err != nil {

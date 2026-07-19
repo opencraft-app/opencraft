@@ -32,9 +32,9 @@ spec:
             - name: LLMGATEWAY_WORKER_POOL
               value: maintenance
             - name: LLMGATEWAY_SQL_DSN
-              value: root:test-local-password@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
+              value: root:123456@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
             - name: LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL
-              value: redis://:test-local-password@shared-redis-a:6379/0
+              value: redis://:123456@shared-redis-a:6379/0
             - name: NEWAPI_SET_ROOT_USERNAME
               valueFrom:
                 secretKeyRef: {name: llmgateway-control-admin, key: set-root-username}
@@ -92,9 +92,9 @@ spec:
             - name: LLMGATEWAY_WORKER_POOL
               value: core
             - name: LLMGATEWAY_SQL_DSN
-              value: root:test-local-password@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
+              value: root:123456@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
             - name: LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL
-              value: redis://:test-local-password@shared-redis-a:6379/0
+              value: redis://:123456@shared-redis-a:6379/0
             - name: CLUSTER_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -185,7 +185,7 @@ spec:
             - name: LLMGATEWAY_WORKER_POOL
               value: admin
             - name: LLMGATEWAY_SQL_DSN
-              value: root:test-local-password@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
+              value: root:123456@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
             - name: LLMGATEWAY_ADMIN_WORKER_POLL_INTERVAL
               value: 1s
             - name: LLMGATEWAY_ADMIN_WORKER_LEASE_TTL
@@ -229,9 +229,9 @@ spec:
             - name: LLMGATEWAY_WORKER_POOL
               value: byok
             - name: LLMGATEWAY_SQL_DSN
-              value: root:test-local-password@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
+              value: root:123456@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
             - name: LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL
-              value: redis://:test-local-password@shared-redis-a:6379/0
+              value: redis://:123456@shared-redis-a:6379/0
             - name: NEWAPI_SET_ROOT_USERNAME
               valueFrom:
                 secretKeyRef: {name: llmgateway-control-admin, key: set-root-username}
@@ -285,7 +285,7 @@ spec:
             - name: LLMGATEWAY_WORKER_POOL
               value: observer
             - name: LLMGATEWAY_SQL_DSN
-              value: root:test-local-password@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
+              value: root:123456@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
             - name: NEWAPI_SET_ROOT_USERNAME
               valueFrom:
                 secretKeyRef: {name: llmgateway-control-admin, key: set-root-username}

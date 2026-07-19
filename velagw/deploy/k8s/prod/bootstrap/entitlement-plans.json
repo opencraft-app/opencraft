@@ -45,12 +45,6 @@
     "monthly_tokens": 1000000,
     "period_value": 1,
     "period_unit": "months",
-    "is_active": true,
-    "periods": [
-      {
-        "period_value": 14,
-        "period_unit": "days"
-      }
-    ]
+    "is_active": true
   }
 ]

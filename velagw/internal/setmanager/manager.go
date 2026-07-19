@@ -16,20 +16,22 @@ import (
 )
 
 type Config struct {
-	Namespace       string
-	ControlURL      string
-	AdminToken      string
-	InternalToken   string
-	Source          string
-	Fleet           string
-	RequestLimit    int
-	NewSetReplicas  int
-	WaitTimeout     time.Duration
-	UpgradeLeaseTTL time.Duration
-	ProbeTimeout    time.Duration
-	ProbeInterval   time.Duration
-	ProbeModel      string
-	UpgradeEnabled  bool
+	Namespace                   string
+	ControlURL                  string
+	AdminToken                  string
+	InternalToken               string
+	Source                      string
+	Fleet                       string
+	RequestLimit                int
+	NewSetReplicas              int
+	WaitTimeout                 time.Duration
+	UpgradeLeaseTTL             time.Duration
+	ProbeTimeout                time.Duration
+	ProbeInterval               time.Duration
+	ProbeModel                  string
+	UpgradeEnabled              bool
+	RegressionHoldUpgradeStatus string
+	RegressionUpgradeOwner      string
 }
 
 type ProvisionRequest struct {
@@ -149,20 +151,22 @@ func PruneOrphanTrafficRuntimes(fleet *LLMFleet) int {
 
 func LoadConfigFromEnv() Config {
 	return Config{
-		Namespace:       envString("POD_NAMESPACE", readServiceAccountNamespace()),
-		ControlURL:      strings.TrimRight(envString("LLMGATEWAY_CONTROL_URL", "http://llmgateway-control"), "/"),
-		AdminToken:      os.Getenv("LLMGATEWAY_ADMIN_TOKEN"),
-		InternalToken:   os.Getenv("LLMGATEWAY_INTERNAL_TOKEN"),
-		Source:          envString("LLMGATEWAY_SET_MANAGER_SOURCE", "prod"),
-		Fleet:           envString("LLMGATEWAY_SET_MANAGER_FLEET", "prod"),
-		RequestLimit:    envInt("LLMGATEWAY_SET_MANAGER_REQUEST_LIMIT", 20),
-		NewSetReplicas:  envInt("LLMGATEWAY_SET_MANAGER_NEW_SET_REPLICAS", 1),
-		WaitTimeout:     time.Duration(envInt("LLMGATEWAY_SET_MANAGER_WAIT_TIMEOUT_SECONDS", 300)) * time.Second,
-		UpgradeLeaseTTL: time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_LEASE_SECONDS", 90)) * time.Second,
-		ProbeTimeout:    time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_PROBE_TIMEOUT_SECONDS", 180)) * time.Second,
-		ProbeInterval:   time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_PROBE_INTERVAL_SECONDS", 10)) * time.Second,
-		ProbeModel:      envString("LLMGATEWAY_SET_UPGRADE_PROBE_MODEL", "auto"),
-		UpgradeEnabled:  true,
+		Namespace:                   envString("POD_NAMESPACE", readServiceAccountNamespace()),
+		ControlURL:                  strings.TrimRight(envString("LLMGATEWAY_CONTROL_URL", "http://llmgateway-control"), "/"),
+		AdminToken:                  os.Getenv("LLMGATEWAY_ADMIN_TOKEN"),
+		InternalToken:               os.Getenv("LLMGATEWAY_INTERNAL_TOKEN"),
+		Source:                      envString("LLMGATEWAY_SET_MANAGER_SOURCE", "prod"),
+		Fleet:                       envString("LLMGATEWAY_SET_MANAGER_FLEET", "prod"),
+		RequestLimit:                envInt("LLMGATEWAY_SET_MANAGER_REQUEST_LIMIT", 20),
+		NewSetReplicas:              envInt("LLMGATEWAY_SET_MANAGER_NEW_SET_REPLICAS", 1),
+		WaitTimeout:                 time.Duration(envInt("LLMGATEWAY_SET_MANAGER_WAIT_TIMEOUT_SECONDS", 300)) * time.Second,
+		UpgradeLeaseTTL:             time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_LEASE_SECONDS", 90)) * time.Second,
+		ProbeTimeout:                time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_PROBE_TIMEOUT_SECONDS", 180)) * time.Second,
+		ProbeInterval:               time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_PROBE_INTERVAL_SECONDS", 10)) * time.Second,
+		ProbeModel:                  envString("LLMGATEWAY_SET_UPGRADE_PROBE_MODEL", "auto"),
+		UpgradeEnabled:              true,
+		RegressionHoldUpgradeStatus: strings.TrimSpace(os.Getenv("LLMGATEWAY_REGRESSION_HOLD_UPGRADE_STATUS")),
+		RegressionUpgradeOwner:      strings.TrimSpace(os.Getenv("LLMGATEWAY_REGRESSION_UPGRADE_OWNER")),
 	}
 }
 

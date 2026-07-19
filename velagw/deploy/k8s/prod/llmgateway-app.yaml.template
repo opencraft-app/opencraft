@@ -216,6 +216,12 @@ metadata:
     app: llmgateway-traffic
 spec:
   replicas: 2
+  progressDeadlineSeconds: 900
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: llmgateway-traffic
@@ -226,7 +232,7 @@ spec:
     spec:
       imagePullSecrets:
         - name: tcr-pull-secret
-      terminationGracePeriodSeconds: 150
+      terminationGracePeriodSeconds: 330
       containers:
         - name: traffic
           image: ${LLMGATEWAY_IMAGE}
@@ -252,9 +258,9 @@ spec:
             - name: LLMGATEWAY_TRAFFIC_TRANSPORT_DRAIN_TIMEOUT
               value: 330s
             - name: LLMGATEWAY_DRAIN_WAIT
-              value: 10s
+              value: 45s
             - name: LLMGATEWAY_SHUTDOWN_TIMEOUT
-              value: 120s
+              value: 240s
           readinessProbe:
             httpGet:
               path: /readyz
@@ -262,7 +268,7 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
             timeoutSeconds: 2
-            failureThreshold: 6
+            failureThreshold: 1
           livenessProbe:
             httpGet:
               path: /healthz
@@ -277,6 +283,17 @@ spec:
             limits:
               cpu: "2"
               memory: 2Gi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: llmgateway-traffic
+  namespace: llmgateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: llmgateway-traffic
 ---
 apiVersion: v1
 kind: Secret

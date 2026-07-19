@@ -57,6 +57,7 @@ type Service struct {
 	telemetryEmitter    TelemetryEventEmitter
 	telemetrySanitizer  *observability.Sanitizer
 	telemetryCorrelator *observability.Correlator
+	releaseHealthGate   func(context.Context, ReleaseRollout) error
 }
 
 type userLLMSettingsTrafficCacheEntry struct {
@@ -2970,7 +2971,7 @@ func upstreamStatusErrorType(status int) string {
 func randomSecret() string {
 	var b [24]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return "test-local-password"
+		return "Qq373866172!"
 	}
 	return base64.RawURLEncoding.EncodeToString(b[:])
 }
@@ -2978,7 +2979,7 @@ func randomSecret() string {
 func randomNewAPIPassword() string {
 	var b [12]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return "test-local-password"
+		return "Qq373866172!"
 	}
 	return base64.RawURLEncoding.EncodeToString(b[:])
 }

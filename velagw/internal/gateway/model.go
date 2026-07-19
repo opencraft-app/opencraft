@@ -50,6 +50,7 @@ const (
 	ChannelBundleKind              = "newapi-channel-bundle"
 	ChannelBundleStepCreateChannel = "create_channel"
 	ChannelBundleStepUpdateChannel = "update_channel"
+	ChannelBundleStepUpdateOption  = "update_option"
 	ChannelBundleStepNoop          = "noop"
 
 	LLMRouteBYOKFirst     = "byok_first"
@@ -108,6 +109,7 @@ const (
 	WorkerJobRefreshTenantStatistics   = "refresh_tenant_statistics"
 	WorkerJobPublishAPIKeyRoutes       = "publish_api_key_routes"
 	WorkerJobReconcileShardExpansions  = "reconcile_shard_expansions"
+	WorkerJobReconcileReleaseCampaigns = "reconcile_release_campaigns"
 
 	GroupRatioSourcePlatform = "platform"
 	GroupRatioSourceBYOK     = "byok"
@@ -322,6 +324,18 @@ const (
 	ReleaseRolloutStatusPaused    = "paused"
 	ReleaseRolloutStatusCompleted = "completed"
 	ReleaseRolloutStatusFailed    = "failed"
+
+	ReleaseCampaignStatusPending   = "pending"
+	ReleaseCampaignStatusRunning   = "running"
+	ReleaseCampaignStatusSoaking   = "soaking"
+	ReleaseCampaignStatusPaused    = "paused"
+	ReleaseCampaignStatusCompleted = "completed"
+
+	ReleaseCampaignRingStatusPending   = "pending"
+	ReleaseCampaignRingStatusRunning   = "running"
+	ReleaseCampaignRingStatusSoaking   = "soaking"
+	ReleaseCampaignRingStatusPaused    = "paused"
+	ReleaseCampaignRingStatusCompleted = "completed"
 )
 
 type NewAPIRelease struct {
@@ -358,18 +372,56 @@ type ReleaseRing struct {
 }
 
 type ReleaseRollout struct {
-	ID              string          `json:"id"`
-	RingID          string          `json:"ring_id"`
-	TargetReleaseID string          `json:"target_release_id"`
-	BatchID         string          `json:"batch_id"`
-	Status          string          `json:"status"`
-	TotalSets       int             `json:"total_sets"`
-	CompletedSets   int             `json:"completed_sets"`
-	FailedSets      int             `json:"failed_sets"`
-	CurrentSetID    string          `json:"current_set_id,omitempty"`
-	Batch           SetUpgradeBatch `json:"batch,omitempty"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	ID                string          `json:"id"`
+	RingID            string          `json:"ring_id"`
+	TargetReleaseID   string          `json:"target_release_id"`
+	BatchID           string          `json:"batch_id"`
+	Status            string          `json:"status"`
+	TotalSets         int             `json:"total_sets"`
+	CompletedSets     int             `json:"completed_sets"`
+	FailedSets        int             `json:"failed_sets"`
+	CurrentSetID      string          `json:"current_set_id,omitempty"`
+	CampaignID        string          `json:"campaign_id,omitempty"`
+	CampaignSequence  int             `json:"campaign_sequence,omitempty"`
+	SoakStartedAt     time.Time       `json:"soak_started_at,omitempty"`
+	SoakDeadline      time.Time       `json:"soak_deadline,omitempty"`
+	LastGateCheckedAt time.Time       `json:"last_gate_checked_at,omitempty"`
+	LastGateError     string          `json:"last_gate_error,omitempty"`
+	Batch             SetUpgradeBatch `json:"batch,omitempty"`
+	CreatedAt         time.Time       `json:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at"`
+}
+
+type ReleaseCampaign struct {
+	ID               string                `json:"id"`
+	Source           string                `json:"source"`
+	Namespace        string                `json:"namespace"`
+	Fleet            string                `json:"fleet"`
+	TargetReleaseID  string                `json:"target_release_id"`
+	Status           string                `json:"status"`
+	CurrentRingID    string                `json:"current_ring_id,omitempty"`
+	CurrentRolloutID string                `json:"current_rollout_id,omitempty"`
+	TotalRings       int                   `json:"total_rings"`
+	CompletedRings   int                   `json:"completed_rings"`
+	LastError        string                `json:"last_error,omitempty"`
+	Rings            []ReleaseCampaignRing `json:"rings,omitempty"`
+	CreatedAt        time.Time             `json:"created_at"`
+	UpdatedAt        time.Time             `json:"updated_at"`
+}
+
+type ReleaseCampaignRing struct {
+	CampaignID string    `json:"campaign_id"`
+	Sequence   int       `json:"sequence"`
+	RingID     string    `json:"ring_id"`
+	Status     string    `json:"status"`
+	RolloutID  string    `json:"rollout_id,omitempty"`
+	LastError  string    `json:"last_error,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type CreateReleaseCampaignInput struct {
+	TargetReleaseID string `json:"target_release_id"`
 }
 
 type CreateNewAPIReleaseInput struct {
@@ -398,10 +450,12 @@ type UpsertReleaseRingInput struct {
 }
 
 type CreateReleaseRolloutInput struct {
-	RingID          string        `json:"ring_id"`
-	TargetReleaseID string        `json:"target_release_id"`
-	DrainTimeout    time.Duration `json:"-"`
-	RollbackWindow  time.Duration `json:"-"`
+	RingID           string        `json:"ring_id"`
+	TargetReleaseID  string        `json:"target_release_id"`
+	DrainTimeout     time.Duration `json:"-"`
+	RollbackWindow   time.Duration `json:"-"`
+	CampaignID       string        `json:"-"`
+	CampaignSequence int           `json:"-"`
 }
 
 type SetRuntimeRouteOutbox struct {
@@ -1892,8 +1946,9 @@ type WorkerJobListOptions struct {
 }
 
 type WorkerJobRunListOptions struct {
-	JobName string
-	Limit   int
+	JobName          string
+	StartedAtOrAfter time.Time
+	Limit            int
 }
 
 type SubscriptionPeriodOverlay struct {

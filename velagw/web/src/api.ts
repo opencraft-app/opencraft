@@ -93,7 +93,41 @@ export type ReleaseRollout = {
   completed_sets: number
   failed_sets: number
   current_set_id?: string
+  campaign_id?: string
+  campaign_sequence?: number
+  soak_started_at?: string
+  soak_deadline?: string
+  last_gate_checked_at?: string
+  last_gate_error?: string
   batch?: SetUpgradeBatch
+  created_at: string
+  updated_at: string
+}
+
+export type ReleaseCampaignRing = {
+  campaign_id: string
+  sequence: number
+  ring_id: string
+  status: string
+  rollout_id?: string
+  last_error?: string
+  created_at: string
+  updated_at: string
+}
+
+export type ReleaseCampaign = {
+  id: string
+  source: string
+  namespace: string
+  fleet: string
+  target_release_id: string
+  status: string
+  current_ring_id?: string
+  current_rollout_id?: string
+  total_rings: number
+  completed_rings: number
+  last_error?: string
+  rings: ReleaseCampaignRing[]
   created_at: string
   updated_at: string
 }
@@ -223,14 +257,6 @@ export type EntitlementPlan = {
   updated_at?: string
 }
 
-export type PlanPeriod = {
-  plan_id: string
-  period_value: number
-  period_unit: string
-  created_at?: string
-  updated_at?: string
-}
-
 export type CreateEntitlementPlanInput = {
   id?: string
   name: string
@@ -249,11 +275,6 @@ export type SetPlanState = {
   last_error?: string
   synced_at?: string
   updated_at?: string
-}
-
-export type SetPlanPeriodState = SetPlanState & {
-  period_value: number
-  period_unit: string
 }
 
 export type CreateExternalKeyResult = {
@@ -1050,6 +1071,32 @@ export class LLMGatewayAPI {
     })
   }
 
+  listReleaseCampaigns() {
+    return this.request<ReleaseCampaign[]>("/api/admin/release-campaigns?limit=50", { auth: true })
+  }
+
+  createReleaseCampaign(input: { target_release_id: string }) {
+    return this.request<ReleaseCampaign>("/api/admin/release-campaigns", {
+      method: "POST",
+      auth: true,
+      body: JSON.stringify(input),
+    })
+  }
+
+  pauseReleaseCampaign(campaignID: string) {
+    return this.request<ReleaseCampaign>(`/api/admin/release-campaigns/${encodeURIComponent(campaignID)}/pause`, {
+      method: "POST",
+      auth: true,
+    })
+  }
+
+  resumeReleaseCampaign(campaignID: string) {
+    return this.request<ReleaseCampaign>(`/api/admin/release-campaigns/${encodeURIComponent(campaignID)}/resume`, {
+      method: "POST",
+      auth: true,
+    })
+  }
+
   listShards() {
     return this.request<ShardDetail[]>("/api/admin/shards", {
       auth: true,
@@ -1072,18 +1119,6 @@ export class LLMGatewayAPI {
 
   listPlanSetStates(planID: string) {
     return this.request<SetPlanState[]>(`/api/plans/${encodeURIComponent(planID)}/sets`, {
-      auth: true,
-    })
-  }
-
-  listPlanPeriods(planID: string) {
-    return this.request<PlanPeriod[]>(`/api/plans/${encodeURIComponent(planID)}/periods`, {
-      auth: true,
-    })
-  }
-
-  listPlanPeriodSetStates(planID: string) {
-    return this.request<SetPlanPeriodState[]>(`/api/plans/${encodeURIComponent(planID)}/periods/sets`, {
       auth: true,
     })
   }

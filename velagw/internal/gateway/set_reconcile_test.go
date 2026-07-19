@@ -121,7 +121,7 @@ func TestReconcileSetReconcileFactsRegistersAndBootstrapsPendingSet(t *testing.T
 	defer upstream.Close()
 
 	store := NewMemoryStore()
-	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "test-local-password"})
+	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
 	if _, err := svc.RecordSetReconcileFacts(t.Context(), RecordSetReconcileFactsInput{
 		Source:    "kro",
 		Namespace: "llmgateway-kro-demo",
@@ -165,7 +165,7 @@ func TestReconcileSetFactsInitializesGenerationOneRuntimeRoute(t *testing.T) {
 	store := NewMemoryStore()
 	routeCache := NewMemoryAPIKeyRouteCache(0, 100)
 	svc := NewService(store, nil, Options{
-		RootUsername: "set-root", RootPassword: "test-local-password", KeyRouteCache: routeCache,
+		RootUsername: "set-root", RootPassword: "Qq373866172!", KeyRouteCache: routeCache,
 	})
 	image := "registry/new-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	if _, err := svc.RecordSetReconcileFacts(t.Context(), RecordSetReconcileFactsInput{
@@ -204,7 +204,7 @@ func TestReconcileSetReconcileFactsAppliesExistingBundlesToNewManagedSet(t *test
 	defer upstream.Close()
 
 	store := NewMemoryStore()
-	svc := NewService(store, upstream.Client().Transport, Options{RootUsername: "set-root", RootPassword: "test-local-password"})
+	svc := NewService(store, upstream.Client().Transport, Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
 	if _, err := svc.UpsertChannelBundle(t.Context(), ChannelBundle{
 		ID:   "golden",
 		Name: "Golden config",
@@ -266,7 +266,7 @@ func TestReconcileSetReconcileFactsCreatesUpstreamPlansForNewManagedSet(t *testi
 	defer upstream.Close()
 
 	store := NewMemoryStore()
-	svc := NewService(store, upstream.Client().Transport, Options{RootUsername: "set-root", RootPassword: "test-local-password"})
+	svc := NewService(store, upstream.Client().Transport, Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
 	if err := svc.RegisterPlan(t.Context(), Plan{
 		ID:            "plan-pro",
 		Name:          "Plan Pro",
@@ -312,7 +312,7 @@ func TestReconcileSetReconcileFactsMarksMatchingProvisionRequestConfiguredWithou
 	defer upstream.Close()
 
 	store := NewMemoryStore()
-	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "test-local-password"})
+	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
 	if err := store.SaveSetProvisionRequest(t.Context(), SetProvisionRequest{
 		ID:             "kro/llmgateway-kro-demo/fleet-demo/set-auto-000001",
 		Source:         "kro",
@@ -519,6 +519,8 @@ func newAutoManagedSetTestServer(t *testing.T, optionKeys *[]string, channelCrea
 				})
 			}
 			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"items": items, "total": len(items)}})
+		case "GET /api/option/":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": []any{}})
 		case "POST /api/channel/":
 			*channelCreated = true
 			writeTestJSON(t, w, map[string]any{"success": true})
@@ -607,5 +609,57 @@ func TestRecordSetFactsProjectsRuntimeConfigWithoutReconcile(t *testing.T) {
 	}
 	if set.ShardID != "shard-a" || set.SQLMaxOpenConns != 32 || set.TrafficSQLMaxOpenConns != 32 || set.SubscriptionWriteConcurrency != 8 {
 		t.Fatalf("runtime projection = %+v", set)
+	}
+}
+
+func TestSyncManagedSetDefaultsAppliesOnlyGoldenDesiredConfig(t *testing.T) {
+	remoteModelRatio := `{"initial":1}`
+	putCount := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/channel/search":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"items": []any{}, "total": 0}})
+		case "GET /api/option/":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": []map[string]any{{"key": "ModelRatio", "value": remoteModelRatio}}})
+		case "PUT /api/option/":
+			var req struct {
+				Key   string `json:"key"`
+				Value string `json:"value"`
+			}
+			decodeGatewayChannelJSON(t, r, &req)
+			if req.Key != "ModelRatio" {
+				t.Fatalf("updated option = %q, want ModelRatio", req.Key)
+			}
+			putCount++
+			remoteModelRatio = req.Value
+			writeTestJSON(t, w, map[string]any{"success": true})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	store := NewMemoryStore()
+	svc := NewService(store, upstream.Client().Transport, Options{})
+	saveReadySet(t, store, "set-a", upstream.URL)
+	for _, bundle := range []ChannelBundle{
+		{ID: "golden-channels", Name: "Current desired config", Spec: ChannelBundleSpec{Options: []ChannelBundleOption{{Key: "ModelRatio", Value: `{"golden":1}`}}}},
+		{ID: "z-history", Name: "Archived snapshot", Spec: ChannelBundleSpec{Options: []ChannelBundleOption{{Key: "ModelRatio", Value: `{"stale":1}`}}}},
+	} {
+		if _, err := svc.UpsertChannelBundle(t.Context(), bundle); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := svc.syncManagedSetDefaults(t.Context(), "set-a"); err != nil {
+		t.Fatal(err)
+	}
+	if putCount != 1 || remoteModelRatio != `{"golden":1}` {
+		t.Fatalf("automatic desired config writes = %d final=%s, want one golden write", putCount, remoteModelRatio)
+	}
+	historyState, ok, err := store.GetChannelBundleSyncState(t.Context(), "z-history", "set-a")
+	if err != nil || !ok || historyState.AppliedFingerprint != "" {
+		t.Fatalf("archived bundle unexpectedly participated in automatic sync: state=%+v ok=%v err=%v", historyState, ok, err)
 	}
 }

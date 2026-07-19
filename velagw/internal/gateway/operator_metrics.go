@@ -88,6 +88,22 @@ func (s *Service) storePrometheusMetrics(ctx context.Context) string {
 			}
 		}
 	}
+	campaigns, err := s.store.ListReleaseCampaigns(ctx, 100)
+	if err == nil {
+		sort.Slice(campaigns, func(i, j int) bool { return campaigns[i].ID < campaigns[j].ID })
+		b.WriteString("# HELP llmgateway_release_campaign_state Fleet release campaign state; value is always 1 for the current state.\n")
+		b.WriteString("# TYPE llmgateway_release_campaign_state gauge\n")
+		b.WriteString("# HELP llmgateway_release_campaign_ring_state Release ring step state inside a Fleet campaign.\n")
+		b.WriteString("# TYPE llmgateway_release_campaign_ring_state gauge\n")
+		for _, campaign := range campaigns {
+			fmt.Fprintf(&b, "llmgateway_release_campaign_state{campaign_id=\"%s\",fleet=\"%s\",target_release_id=\"%s\",status=\"%s\"} 1\n",
+				prometheusLabelValue(campaign.ID), prometheusLabelValue(campaign.Fleet), prometheusLabelValue(campaign.TargetReleaseID), prometheusLabelValue(campaign.Status))
+			for _, ring := range campaign.Rings {
+				fmt.Fprintf(&b, "llmgateway_release_campaign_ring_state{campaign_id=\"%s\",ring_id=\"%s\",status=\"%s\"} 1\n",
+					prometheusLabelValue(campaign.ID), prometheusLabelValue(ring.RingID), prometheusLabelValue(ring.Status))
+			}
+		}
+	}
 	outbox, err := s.store.ListSetRuntimeRouteOutbox(ctx, SetRuntimeRouteOutboxStatusPending, 0)
 	if err == nil {
 		b.WriteString("# HELP llmgateway_set_runtime_route_outbox_pending Pending durable runtime route publications.\n")

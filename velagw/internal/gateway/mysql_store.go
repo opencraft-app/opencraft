@@ -377,10 +377,53 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 			completed_sets BIGINT NOT NULL DEFAULT 0,
 			failed_sets BIGINT NOT NULL DEFAULT 0,
 			current_set_id VARCHAR(128) NOT NULL DEFAULT '',
+			campaign_id VARCHAR(191) NOT NULL DEFAULT '',
+			campaign_sequence BIGINT NOT NULL DEFAULT 0,
+			soak_started_at DATETIME(6) NULL,
+			soak_deadline DATETIME(6) NULL,
+			last_gate_checked_at DATETIME(6) NULL,
+			last_gate_error TEXT NOT NULL,
 			created_at DATETIME(6) NOT NULL,
 			updated_at DATETIME(6) NOT NULL,
 			UNIQUE INDEX uk_llmgateway_release_rollout_batch (batch_id),
+			INDEX idx_llmgateway_release_rollout_campaign (campaign_id, campaign_sequence),
 			INDEX idx_llmgateway_release_rollout_ring (ring_id, created_at)
+		)`,
+		`CREATE TABLE IF NOT EXISTS llmgateway_release_campaigns (
+			id VARCHAR(191) PRIMARY KEY,
+			source VARCHAR(64) NOT NULL,
+			namespace_name VARCHAR(191) NOT NULL,
+			fleet VARCHAR(191) NOT NULL,
+			target_release_id VARCHAR(191) NOT NULL,
+			status VARCHAR(32) NOT NULL,
+			current_ring_id VARCHAR(191) NOT NULL DEFAULT '',
+			current_rollout_id VARCHAR(191) NOT NULL DEFAULT '',
+			total_rings BIGINT NOT NULL DEFAULT 0,
+			completed_rings BIGINT NOT NULL DEFAULT 0,
+			last_error TEXT NOT NULL,
+			created_at DATETIME(6) NOT NULL,
+			updated_at DATETIME(6) NOT NULL,
+			INDEX idx_llmgateway_release_campaign_scope (source, namespace_name, fleet, status, created_at)
+		)`,
+		`CREATE TABLE IF NOT EXISTS llmgateway_release_campaign_scopes (
+			source VARCHAR(64) NOT NULL,
+			namespace_name VARCHAR(191) NOT NULL,
+			fleet VARCHAR(191) NOT NULL,
+			active_campaign_id VARCHAR(191) NOT NULL DEFAULT '',
+			updated_at DATETIME(6) NOT NULL,
+			PRIMARY KEY (source, namespace_name, fleet)
+		)`,
+		`CREATE TABLE IF NOT EXISTS llmgateway_release_campaign_rings (
+			campaign_id VARCHAR(191) NOT NULL,
+			sequence_no BIGINT NOT NULL,
+			ring_id VARCHAR(191) NOT NULL,
+			status VARCHAR(32) NOT NULL,
+			rollout_id VARCHAR(191) NOT NULL DEFAULT '',
+			last_error TEXT NOT NULL,
+			created_at DATETIME(6) NOT NULL,
+			updated_at DATETIME(6) NOT NULL,
+			PRIMARY KEY (campaign_id, sequence_no),
+			UNIQUE INDEX uk_llmgateway_release_campaign_ring (campaign_id, ring_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS llmgateway_set_runtime_route_outbox (
 			id VARCHAR(191) PRIMARY KEY,
@@ -1172,13 +1215,19 @@ func (s *MySQLStore) migrateReleaseRingColumns(ctx context.Context) error {
 		{"llmgateway_set_provision_requests", "release_ring_id", "VARCHAR(191) NOT NULL DEFAULT ''"},
 		{"llmgateway_set_provision_requests", "release_id", "VARCHAR(191) NOT NULL DEFAULT ''"},
 		{"llmgateway_set_provision_requests", "release_image", "TEXT NULL"},
+		{"llmgateway_release_rollouts", "soak_started_at", "DATETIME(6) NULL"},
+		{"llmgateway_release_rollouts", "soak_deadline", "DATETIME(6) NULL"},
+		{"llmgateway_release_rollouts", "last_gate_checked_at", "DATETIME(6) NULL"},
+		{"llmgateway_release_rollouts", "last_gate_error", "TEXT NULL"},
+		{"llmgateway_release_rollouts", "campaign_id", "VARCHAR(191) NOT NULL DEFAULT ''"},
+		{"llmgateway_release_rollouts", "campaign_sequence", "BIGINT NOT NULL DEFAULT 0"},
 	}
 	for _, column := range columns {
 		if err := s.ensureMySQLColumn(ctx, column.table, column.name, column.definition); err != nil {
 			return err
 		}
 	}
-	return nil
+	return s.ensureMySQLIndex(ctx, "llmgateway_release_rollouts", "idx_llmgateway_release_rollout_campaign", "campaign_id, campaign_sequence")
 }
 
 func (s *MySQLStore) migrateSetRuntimeLeases(ctx context.Context) error {

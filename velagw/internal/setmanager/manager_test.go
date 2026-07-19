@@ -65,6 +65,37 @@ func TestRunOnceAlwaysUsesLLMFleetBackend(t *testing.T) {
 	}
 }
 
+func TestRegressionUpgradeHoldIsDisabledUnlessStatusMatches(t *testing.T) {
+	cfg := Config{RegressionHoldUpgradeStatus: "switching"}
+	if err := holdUpgradeAtRegressionPoint(t.Context(), cfg, "preparing"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRegressionUpgradeOwnerOverrideIsExplicit(t *testing.T) {
+	cfg := Config{RegressionUpgradeOwner: "regression-manager-job-01"}
+	if got := setUpgradeOwner(cfg, "run-1"); got != "regression-manager-job-01" {
+		t.Fatalf("owner=%q", got)
+	}
+}
+
+func TestRegressionUpgradeHoldBlocksUntilManagerIsTerminated(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		done <- holdUpgradeAtRegressionPoint(ctx, Config{RegressionHoldUpgradeStatus: "switching"}, "switching")
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("hold returned before cancellation: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	cancel()
+	if err := <-done; err == nil || err != context.Canceled {
+		t.Fatalf("hold error = %v", err)
+	}
+}
+
 func TestControlClientUsesInternalTokenForScopedSetManagerEndpoints(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer internal-token" {
@@ -981,6 +1012,37 @@ func TestWaitSetUpgradeRuntimeReadyDoesNotCountStartupFailures(t *testing.T) {
 	}
 	if calls != 3 {
 		t.Fatalf("status calls=%d, want 3", calls)
+	}
+}
+
+func TestWaitSetUpgradeRuntimeFunctionalReadyWaitsForPricingCache(t *testing.T) {
+	chatCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/status":
+			w.WriteHeader(http.StatusOK)
+		case "/v1/chat/completions":
+			chatCalls++
+			if chatCalls < 3 {
+				http.Error(w, "model price cache is still loading", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	err := WaitSetUpgradeRuntimeFunctionalReady(
+		t.Context(), server.Client(), server.URL, "sk-probe", "llmgw-regression-upgrade-probe", time.Second, time.Millisecond,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chatCalls != 3 {
+		t.Fatalf("chat calls=%d, want 3", chatCalls)
 	}
 }
 

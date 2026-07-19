@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -55,6 +56,50 @@ func TestOperatorOverviewJobsAndTenantDetailEndpoints(t *testing.T) {
 	}
 	if !strings.Contains(runRec.Body.String(), `"status":"queued"`) {
 		t.Fatalf("manual job run response should queue worker job: %s", runRec.Body.String())
+	}
+}
+
+func TestAdminWorkerJobRunsFiltersByWatermarkAndBoundsLimit(t *testing.T) {
+	store := gateway.NewMemoryStore()
+	svc := gateway.NewService(store, nil, gateway.Options{})
+	handler := NewServer(svc, Config{AdminToken: "cluster-token"})
+	jobName := gateway.WorkerJobRefreshSetCapacity
+	if err := store.SaveWorkerJob(t.Context(), gateway.WorkerJob{Name: jobName, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	watermark := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	for _, run := range []gateway.WorkerJobRun{
+		{ID: "before", JobName: jobName, Status: gateway.WorkerJobStatusSuccess, StartedAt: watermark.Add(-time.Second)},
+		{ID: "after", JobName: jobName, Status: gateway.WorkerJobStatusSuccess, StartedAt: watermark.Add(time.Second)},
+	} {
+		if err := store.SaveWorkerJobRun(t.Context(), run); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	path := "/api/admin/jobs/refresh_set_capacity/runs?after=" + url.QueryEscape(watermark.Format(time.RFC3339Nano)) + "&limit=500"
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Header.Set("Authorization", "Bearer cluster-token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"after"`) || strings.Contains(rec.Body.String(), `"id":"before"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	badAfter := httptest.NewRequest(http.MethodGet, "/api/admin/jobs/refresh_set_capacity/runs?after=not-a-time", nil)
+	badAfter.Header.Set("Authorization", "Bearer cluster-token")
+	badAfterRec := httptest.NewRecorder()
+	handler.ServeHTTP(badAfterRec, badAfter)
+	if badAfterRec.Code != http.StatusBadRequest {
+		t.Fatalf("bad after status=%d body=%s", badAfterRec.Code, badAfterRec.Body.String())
+	}
+
+	missing := httptest.NewRequest(http.MethodGet, "/api/admin/jobs/missing/runs", nil)
+	missing.Header.Set("Authorization", "Bearer cluster-token")
+	missingRec := httptest.NewRecorder()
+	handler.ServeHTTP(missingRec, missing)
+	if missingRec.Code != http.StatusNotFound {
+		t.Fatalf("missing status=%d body=%s", missingRec.Code, missingRec.Body.String())
 	}
 }
 

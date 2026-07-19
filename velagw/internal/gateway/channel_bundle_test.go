@@ -535,6 +535,114 @@ func TestChannelBundlePlanReportsManualRemoteDrift(t *testing.T) {
 	}
 }
 
+func TestChannelBundlePlanReportsGlobalOptionDrift(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/channel/search":
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"items": []any{}, "total": 0}})
+		case "GET /api/option/":
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": []map[string]any{
+				{"key": "ModelRatio", "value": `{"existing":1}`},
+			}})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	store := NewMemoryStore()
+	svc := NewService(store, upstream.Client().Transport, Options{})
+	saveReadySet(t, store, "set-a", upstream.URL)
+	bundle, err := svc.UpsertChannelBundle(t.Context(), ChannelBundle{
+		ID: "golden-channels", Name: "Golden", Spec: ChannelBundleSpec{
+			Options: []ChannelBundleOption{{Key: "ModelRatio", Value: `{"existing":1,"regression":1}`}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveChannelBundleSyncState(t.Context(), ChannelBundleSyncState{
+		BundleID: bundle.ID, SetID: "set-a", Status: ChannelSyncStatusSynced,
+		DesiredFingerprint: bundle.Fingerprint, AppliedFingerprint: bundle.Fingerprint,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := svc.PlanChannelBundleForSet(t.Context(), bundle.ID, "set-a", ChannelBundlePlanOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Status != ChannelSyncStatusDrift {
+		t.Fatalf("plan status = %q, want drift for remote global option mismatch: %+v", plan.Status, plan)
+	}
+	if len(plan.Actual.Options) != 1 || plan.Actual.Options[0].Key != "ModelRatio" {
+		t.Fatalf("actual options = %+v, want remote ModelRatio snapshot", plan.Actual.Options)
+	}
+	if len(plan.Steps) != 1 || plan.Steps[0].Kind != "update_option" || !plan.Steps[0].RequiresForce {
+		t.Fatalf("option drift step = %+v, want force-required update_option", plan.Steps)
+	}
+}
+
+func TestChannelBundleApplyRequiresForceForGlobalOptionDrift(t *testing.T) {
+	remoteModelRatio := `{"manual":1}`
+	updateCount := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/channel/search":
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"items": []any{}, "total": 0}})
+		case "GET /api/option/":
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": []map[string]any{{"key": "ModelRatio", "value": remoteModelRatio}}})
+		case "PUT /api/option/":
+			var req struct {
+				Key   string `json:"key"`
+				Value string `json:"value"`
+			}
+			decodeGatewayChannelJSON(t, r, &req)
+			updateCount++
+			remoteModelRatio = req.Value
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	store := NewMemoryStore()
+	svc := NewService(store, upstream.Client().Transport, Options{})
+	saveReadySet(t, store, "set-a", upstream.URL)
+	bundle, err := svc.UpsertChannelBundle(t.Context(), ChannelBundle{
+		ID: "golden-channels", Name: "Golden", Spec: ChannelBundleSpec{
+			Options: []ChannelBundleOption{{Key: "ModelRatio", Value: `{"golden":1}`}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveChannelBundleSyncState(t.Context(), ChannelBundleSyncState{
+		BundleID: bundle.ID, SetID: "set-a", Status: ChannelSyncStatusSynced,
+		DesiredFingerprint: bundle.Fingerprint, AppliedFingerprint: bundle.Fingerprint,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := svc.ApplyChannelBundleToSet(t.Context(), bundle.ID, "set-a", ChannelBundleApplyOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Status != ChannelSyncStatusDrift || updateCount != 0 || remoteModelRatio != `{"manual":1}` {
+		t.Fatalf("non-forced apply state=%+v updates=%d remote=%s", state, updateCount, remoteModelRatio)
+	}
+	state, err = svc.ApplyChannelBundleToSet(t.Context(), bundle.ID, "set-a", ChannelBundleApplyOptions{ForceDrift: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Status != ChannelSyncStatusSynced || updateCount != 1 || remoteModelRatio != `{"golden":1}` {
+		t.Fatalf("forced apply state=%+v updates=%d remote=%s", state, updateCount, remoteModelRatio)
+	}
+}
+
 func TestChannelBundleApplySkipsDisabledSetWithoutCallingRemote(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatalf("disabled set should not call remote new-api, got %s %s", r.Method, r.URL.Path)
@@ -865,6 +973,8 @@ func TestChannelBundleApplySyncsOptionsBeforeChannels(t *testing.T) {
 				})
 			}
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"items": items, "total": len(items)}})
+		case "GET /api/option/":
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": []any{}})
 		case "PUT /api/option/":
 			if r.Header.Get("Authorization") != "" || !optionSessionLoggedIn {
 				t.Fatalf("bundle options must use dashboard session auth, authorization=%q logged_in=%v", r.Header.Get("Authorization"), optionSessionLoggedIn)
@@ -891,7 +1001,7 @@ func TestChannelBundleApplySyncsOptionsBeforeChannels(t *testing.T) {
 	defer upstream.Close()
 
 	store := NewMemoryStore()
-	svc := NewService(store, upstream.Client().Transport, Options{RootUsername: "set-root", RootPassword: "test-local-password"})
+	svc := NewService(store, upstream.Client().Transport, Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
 	if err := store.SaveSet(t.Context(), Set{
 		ID:               "set-a",
 		Name:             "set-a",
@@ -1063,6 +1173,8 @@ func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 				})
 			}
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"items": items, "total": len(items)}})
+		case "GET /api/option/":
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": []any{}})
 		case "PUT /api/option/":
 			if r.Header.Get("Authorization") != "" || !twoFACompleted {
 				t.Fatalf("bundle options must use completed dashboard session, authorization=%q twoFACompleted=%v", r.Header.Get("Authorization"), twoFACompleted)
@@ -1081,7 +1193,7 @@ func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 	defer upstream.Close()
 
 	store := NewMemoryStore()
-	svc := NewService(store, upstream.Client().Transport, Options{RootUsername: "set-root", RootPassword: "test-local-password"})
+	svc := NewService(store, upstream.Client().Transport, Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
 	if err := store.SaveSet(t.Context(), Set{
 		ID:               "set-a",
 		Name:             "set-a",

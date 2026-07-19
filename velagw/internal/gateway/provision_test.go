@@ -117,7 +117,7 @@ func TestBootstrapSetInitializesEmptyNewAPIAndStoresAdminToken(t *testing.T) {
 	defer upstream.Close()
 
 	store := NewMemoryStore()
-	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "test-local-password"})
+	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: upstream.URL, Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestBootstrapSetInitializesWhenNewAPIReportsRootNotInitialized(t *testing.T
 	defer upstream.Close()
 
 	store := NewMemoryStore()
-	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "test-local-password"})
+	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: upstream.URL, Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestBootstrapSetContinuesWhenSetupIsAlreadyInitialized(t *testing.T) {
 	defer upstream.Close()
 
 	store := NewMemoryStore()
-	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "test-local-password"})
+	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: upstream.URL, Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func TestBootstrapSetCompletesTwoFALoginWhenManagedRootAlreadyRequiresIt(t *test
 	defer upstream.Close()
 
 	store := NewMemoryStore()
-	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "test-local-password"})
+	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: upstream.URL, Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}

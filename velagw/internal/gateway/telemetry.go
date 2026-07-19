@@ -95,4 +95,27 @@ func (s *Service) emitSetUpgradeTransition(ctx context.Context, previous, curren
 	)
 }
 
+func (s *Service) emitReleaseCampaignTransition(ctx context.Context, previous, current ReleaseCampaign) {
+	s.emitCommittedTransition(ctx, observability.ScopeSetLifecycle, "llmgateway.release.state_changed",
+		"release_campaign", current.ID, previous.Status, current.Status,
+		attribute.String("llmgateway.run.id", current.ID),
+		attribute.String("llmgateway.release.id", current.TargetReleaseID),
+		attribute.String("llmgateway.fleet", current.Fleet),
+		attribute.String("llmgateway.ring.id", current.CurrentRingID),
+	)
+}
+
+func (s *Service) emitReleaseCampaignRingTransition(ctx context.Context, previous, current ReleaseCampaignRing) {
+	if current.CampaignID == "" {
+		return
+	}
+	s.emitCommittedTransition(ctx, observability.ScopeSetLifecycle, "llmgateway.release.state_changed",
+		"release_campaign_ring", current.CampaignID+":"+current.RingID, previous.Status, current.Status,
+		attribute.String("llmgateway.run.id", current.CampaignID),
+		attribute.String("llmgateway.ring.id", current.RingID),
+		attribute.Int("llmgateway.ring.sequence", current.Sequence),
+		attribute.String("llmgateway.rollout.id", current.RolloutID),
+	)
+}
+
 const timeRFC3339Nano = "2006-01-02T15:04:05.999999999Z07:00"

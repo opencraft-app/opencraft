@@ -2,15 +2,15 @@ llmgateway:
   base_url: http://llmgateway:18080
   control_base_url: http://llmgateway-control:18080
   traffic_base_url: http://llmgateway-traffic:18080
-  admin_token: test-cluster-token
-  internal_token: test-internal-token
+  admin_token: dev-cluster-token
+  internal_token: dev-internal-token
 
 newapi_root:
   username: set-root
-  password: test-local-password
+  password: Qq373866172!
 
 mock_llm:
-  api_key: test-mockllm-key
+  api_key: sk-mockllm-local
   base_url: http://mockllm:8080
   model: llmgw-mock-chat
 

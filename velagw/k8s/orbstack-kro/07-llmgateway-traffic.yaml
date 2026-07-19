@@ -27,16 +27,24 @@ metadata:
     app.kubernetes.io/part-of: llmgateway-kro-demo
 spec:
   replicas: 2
+  progressDeadlineSeconds: 900
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: llmgateway-traffic
   template:
     metadata:
       labels:
+        app: llmgateway-traffic
         app.kubernetes.io/name: llmgateway-traffic
         app.kubernetes.io/component: data-plane
         app.kubernetes.io/part-of: llmgateway-kro-demo
     spec:
+      terminationGracePeriodSeconds: 330
       containers:
         - name: traffic
           image: llmgateway:local
@@ -47,11 +55,11 @@ spec:
             - name: PORT
               value: "18080"
             - name: LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL
-              value: redis://:test-local-password@shared-redis-a:6379/0
+              value: redis://:123456@shared-redis-a:6379/0
             - name: LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED
               value: "true"
             - name: LLMGATEWAY_TRAFFIC_TRANSPORT_DRAIN_TIMEOUT
-              value: 15s
+              value: 330s
             - name: CLUSTER_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -77,9 +85,9 @@ spec:
             - name: LLMGATEWAY_KEY_ROUTE_CACHE_CAPACITY
               value: "100000"
             - name: LLMGATEWAY_DRAIN_WAIT
-              value: 10s
+              value: 45s
             - name: LLMGATEWAY_SHUTDOWN_TIMEOUT
-              value: 30s
+              value: 240s
             - name: LLMGATEWAY_UPSTREAM_MAX_IDLE_CONNS
               value: "500"
             - name: LLMGATEWAY_UPSTREAM_MAX_IDLE_CONNS_PER_HOST
@@ -96,7 +104,7 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
             timeoutSeconds: 3
-            failureThreshold: 30
+            failureThreshold: 1
           livenessProbe:
             httpGet:
               path: /healthz
@@ -105,3 +113,14 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 6
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: llmgateway-traffic
+  namespace: llmgateway-kro-demo
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: llmgateway-traffic
