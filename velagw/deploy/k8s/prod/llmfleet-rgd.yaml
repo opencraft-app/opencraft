@@ -271,10 +271,17 @@ spec:
             spec:
               imagePullSecrets:
                 - name: tcr-pull-secret
+              nodeSelector:
+                llmgateway.io/runtime: serverless
+              tolerations:
+                - key: eks.tke.cloud.tencent.com/eklet
+                  operator: Exists
+                  effect: NoSchedule
               topologySpreadConstraints:
                 - maxSkew: 1
                   topologyKey: ${schema.spec.availability.traffic.topologyKey}
                   whenUnsatisfiable: DoNotSchedule
+                  matchLabelKeys: [pod-template-hash]
                   labelSelector:
                     matchLabels:
                       app.kubernetes.io/name: ${schema.metadata.name + '-' + rt.setID + '-g' + string(rt.generation) + '-newapi-traffic'}

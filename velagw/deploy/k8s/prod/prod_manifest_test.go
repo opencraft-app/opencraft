@@ -350,9 +350,12 @@ func TestProductionSetTrafficRuntimeHasRegionalHighAvailability(t *testing.T) {
 		"id: newapiVersionedTrafficPodDisruptionBudgets",
 		"trafficDeployments:",
 		"trafficPodDisruptionBudgets:",
+		"nodeSelector:\n                llmgateway.io/runtime: serverless",
+		"key: eks.tke.cloud.tencent.com/eklet",
 		"topologySpreadConstraints:",
 		"topologyKey: ${schema.spec.availability.traffic.topologyKey}",
 		"whenUnsatisfiable: DoNotSchedule",
+		"matchLabelKeys: [pod-template-hash]",
 		"minAvailable: ${schema.spec.availability.traffic.pdbMinAvailable}",
 		"name: ${schema.metadata.name + '-' + rt.setID + '-g' + string(rt.generation) + '-newapi-traffic'}",
 	} {

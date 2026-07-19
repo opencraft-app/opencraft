@@ -265,6 +265,11 @@ The new-api runtime has one consistency and bootstrap constraint:
   and PDB minimum. KRO projects Deployment and PDB observations into
   `LLMFleet.status`; set-manager must keep its CR-only RBAC boundary and derive
   Set health from that projection instead of listing child resources.
+- Production Set traffic explicitly selects TKE Serverless nodes and tolerates
+  the `eks.tke.cloud.tencent.com/eklet` taint. Its topology spread constraint
+  includes `matchLabelKeys: [pod-template-hash]`, so each rollout revision is
+  spread independently; without this, old Pods can make both replacement Pods
+  land in the same zone after a rolling update.
 - A Set with a declared HA policy is eligible for new tenant assignment only
   while its runtime HA projection is `healthy`. Replica shortfall, stale
   Deployment generation, or unhealthy PDB must fail closed for new admission

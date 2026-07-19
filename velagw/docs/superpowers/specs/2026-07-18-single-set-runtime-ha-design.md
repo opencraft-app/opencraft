@@ -15,6 +15,8 @@
 - `LLMFleet.spec.availability.traffic` 是唯一声明源，显式保存副本水位、拓扑键和 PDB 最小可用数。
 - 每个 Set 的目标 traffic 副本数固定为 2。
 - versioned traffic Deployment 使用 `topology.kubernetes.io/zone` 的强制拓扑分散，两个副本不能落在同一可用区。
+- TKE Serverless 运行时显式选择 `llmgateway.io/runtime=serverless` 节点并容忍 `eks.tke.cloud.tencent.com/eklet` taint，确保 Kubernetes 调度器能把两个超级节点视为可选拓扑域。
+- 拓扑分散使用 `matchLabelKeys: [pod-template-hash]`，每个滚动版本独立计算分布；旧版本 Pod 不得参与新版本的跨区计数，避免滚动完成后两个新副本聚到同一可用区。
 - 每个 runtime generation 生成独立的 `PodDisruptionBudget`，`minAvailable=1`。
 - admin master 仍是单副本 `Recreate`；它不承载 `/v1/*`，不参与 traffic 高可用计算。
 - LLMGateway traffic 必须启用 `LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED=true`，runtime route 缺失时禁止回退到 Key 快照中的历史地址。
