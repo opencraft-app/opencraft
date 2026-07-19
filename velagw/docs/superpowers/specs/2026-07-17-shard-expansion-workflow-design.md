@@ -102,4 +102,3 @@ Shard 页面分为两部分：
 - set-manager 测试覆盖 MySQL/Redis 投影完整性。
 - 前端测试覆盖扩容表单、四阶段进度、错误和重试，以及 Shard Redis 水位。
 - compose E2E 使用假的 Terraform 回填和真实 LLMFleet 投影，验证流程不会产生幽灵 Shard。
-
