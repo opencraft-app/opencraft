@@ -15,8 +15,10 @@ import {
   BookOpen,
   Briefcase,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Compass,
   Flame,
   FileText,
@@ -45,6 +47,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { useTranslation } from "react-i18next";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -57,6 +60,7 @@ import type { ExpertsExecDebugCommand } from "../hermes-agent-experts-panel";
 import {
   createSkillsDataLayer,
   getPopularityTier,
+  installSkillsSequentially,
   mergeSkills,
   REGISTRY_LABEL,
   SKILLS_DEMO_LIVE,
@@ -65,6 +69,7 @@ import {
   sortByName,
   type InstalledSkill,
   type Registry,
+  type SearchRegistry,
   type Skill,
 } from "./skill-registries";
 import {
@@ -80,11 +85,33 @@ import {
   type CuratedSkillOverview,
 } from "./curated-skill-overviews";
 
-type RegistryFilter = "all" | Registry;
+type RegistryFilter = "all" | Exclude<Registry, "hermes">;
+type InstalledSourceFilter = "all" | `registry:${Registry}` | `native:${string}`;
+type InstalledCategoryFilter = "all" | `category:${string}`;
+
+type InstalledSourceDescriptor = {
+  key: Exclude<InstalledSourceFilter, "all">;
+  label: string;
+  registry?: Registry;
+};
+
+type Translate = ReturnType<typeof useT>;
 type SortMode = "popular" | "name";
+type SearchInstallRowStatus = {
+  status: "pending" | "installing" | "retrying" | "done" | "failed" | "skipped";
+  message?: string;
+};
+type BatchInstallProgress = { index: number; total: number; currentName: string };
 export type SkillsDemoTab = "discover" | "experts" | "create" | "installed";
 
 const SEARCH_RESULTS_PREVIEW_LIMIT = 12;
+const INSTALLED_PAGE_SIZE = 10;
+const UNCATEGORIZED_INSTALLED_CATEGORY = "__uncategorized__";
+const INSTALLED_SOURCE_ORDER: Partial<Record<Exclude<InstalledSourceFilter, "all">, number>> = {
+  "registry:skillhub": 0,
+  "native:builtin": 1,
+  "native:local": 2,
+};
 const FEATURED_BATCH_SIZE = 3;
 const SKILL_ICON_FALLBACK = "/assets/skills/gemini.svg";
 const KNOWN_INSTALLED_IDS_STORAGE_PREFIX = "lightvela-skills-demo-known-installed";
@@ -122,6 +149,37 @@ function rememberedIdMatchesSkill(id: string, skill: Pick<Skill, "registry" | "r
   if (!id.startsWith(prefix)) return false;
   const rawId = id.slice(prefix.length);
   return rawId === skill.rawId.trim().toLowerCase() || rawId.split("/").pop() === skill.slug.trim().toLowerCase();
+}
+
+function rememberedIdExistsInInstalledList(id: string, skills: InstalledSkill[]): boolean {
+  const separatorIndex = id.indexOf(":");
+  if (separatorIndex <= 0) return false;
+  const registry = id.slice(0, separatorIndex);
+  if (registry !== "clawhub" && registry !== "skills-sh" && registry !== "skillhub" && registry !== "hermes") {
+    return false;
+  }
+  const rawId = id.slice(separatorIndex + 1).trim().toLowerCase();
+  const shortSlug = rawId.split("/").pop();
+  const matchesIdentity = (skill: InstalledSkill) => {
+    const candidates = [skill.rawId, skill.slug, ...(skill.nativeAliases ?? [])]
+      .map((value) => value.trim().toLowerCase());
+    return candidates.includes(rawId) || (shortSlug ? candidates.includes(shortSlug) : false);
+  };
+
+  if (skills.some((skill) => skill.registries.includes(registry) && matchesIdentity(skill))) return true;
+
+  const matchingMarketplaceSkills = skills.filter((skill) => (
+    skill.registry !== "hermes" && matchesIdentity(skill)
+  ));
+  if (matchingMarketplaceSkills.length > 0) return false;
+
+  return skills.filter((skill) => skill.registry === "hermes" && matchesIdentity(skill)).length === 1;
+}
+
+function getSearchInstallRowStatus(message?: string): SearchInstallRowStatus {
+  return /skip|跳过/i.test(message ?? "")
+    ? { status: "skipped", message }
+    : { status: "failed", message };
 }
 
 type FeaturedSkillId =
@@ -688,6 +746,7 @@ export type LearnSkillTriggerOptions = {
 function RegistryBadge({ registry }: { registry: Registry }) {
   const isSkillsSh = registry === "skills-sh";
   const isSkillHub = registry === "skillhub";
+  const isHermes = registry === "hermes";
   return (
     <span
       className={cn(
@@ -696,12 +755,87 @@ function RegistryBadge({ registry }: { registry: Registry }) {
           ? "bg-[#FFF6E6] text-[#B26A00]"
           : isSkillHub
             ? "bg-[#EAF6F1] text-[#287458]"
-            : "bg-[#EAF1FF] text-[#2F6BFF]",
+            : isHermes
+              ? "bg-black/[0.06] text-black/60"
+              : "bg-[#EAF1FF] text-[#2F6BFF]",
       )}
     >
       {REGISTRY_LABEL[registry]}
     </span>
   );
+}
+
+function getInstalledSources(skill: InstalledSkill): InstalledSourceDescriptor[] {
+  const registries = Array.from(new Set(skill.registries));
+  const marketplaceRegistries = registries.filter((registry) => registry !== "hermes");
+  if (marketplaceRegistries.length > 0) {
+    return marketplaceRegistries.map((registry) => ({
+      key: `registry:${registry}`,
+      label: REGISTRY_LABEL[registry],
+      registry,
+    }));
+  }
+  const nativeSource = skill.nativeSource?.trim().toLowerCase() || "other";
+  return [{
+    key: `native:${nativeSource}`,
+    label: skill.sourceLabel || "其他",
+  }];
+}
+
+function translateInstalledSourceLabel(t: Translate, label: string): string {
+  if (label === "系统预置") return t("系统预置");
+  if (label === "本地安装") return t("本地安装");
+  if (label === "其他") return t("其他");
+  if (label === "未知来源") return t("未知来源");
+  if (label === "来源暂不可用") return t("来源暂不可用");
+  return label;
+}
+
+function getInstalledCategoryKey(category?: string): InstalledCategoryFilter {
+  return `category:${category?.trim().toLowerCase() || UNCATEGORIZED_INSTALLED_CATEGORY}`;
+}
+
+function InstalledSourceBadge({ source }: { source: InstalledSourceDescriptor }) {
+  const t = useT();
+  if (source.registry) return <RegistryBadge registry={source.registry} />;
+  return (
+    <span className="inline-flex h-5 items-center rounded-[5px] bg-black/[0.06] px-1.5 text-[10px] font-semibold leading-none text-black/60">
+      {translateInstalledSourceLabel(t, source.label)}
+    </span>
+  );
+}
+
+function getInstalledCategoryLabel(t: Translate, category?: string): string {
+  const normalized = category?.trim().toLowerCase();
+  if (!normalized) return t("未分类");
+  switch (normalized) {
+    case "autonomous-ai-agents": return t("自主智能体");
+    case "creative": return t("创意");
+    case "data-science": return t("数据科学");
+    case "devops": return t("运维");
+    case "email": return t("邮件");
+    case "gaming": return t("游戏");
+    case "github": return "GitHub";
+    case "mcp": return "MCP";
+    case "media": return t("媒体");
+    case "mlops": return t("机器学习运维");
+    case "note-taking": return t("笔记");
+    case "productivity": return t("效率工具");
+    case "red-teaming": return t("红队测试");
+    case "research": return t("研究");
+    case "smart-home": return t("智能家居");
+    case "social-media": return t("社交媒体");
+    case "software-development": return t("软件开发");
+    default: return category?.trim() || t("未分类");
+  }
+}
+
+function getInstalledStatusLabel(t: Translate, status?: string): string | null {
+  const normalized = status?.trim().toLowerCase();
+  if (!normalized || normalized === "installed" || normalized === "enabled") return null;
+  if (normalized === "disabled") return t("已禁用");
+  if (normalized === "failed") return t("失败");
+  return status?.trim() || null;
 }
 
 function SkillIcon({
@@ -731,6 +865,40 @@ function SkillIcon({
   );
 }
 
+function BatchSelectButton({
+  skill,
+  selected,
+  disabled,
+  onToggle,
+}: {
+  skill: Skill;
+  selected: boolean;
+  disabled: boolean;
+  onToggle: (skill: Skill) => void;
+}) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(skill)}
+      disabled={disabled}
+      aria-pressed={selected}
+      aria-label={selected
+        ? t("取消批量安装 {{name}}", { name: skill.name })
+        : t("选择批量安装 {{name}}", { name: skill.name })}
+      title={selected ? t("取消选择") : t("选择")}
+      className={cn(
+        "inline-flex size-5 items-center justify-center rounded-[4px] border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:opacity-55",
+        selected
+          ? "border-black bg-black text-white"
+          : "border-black/20 bg-white text-transparent hover:border-black/40",
+      )}
+    >
+      <Check className="size-3" strokeWidth={2.5} aria-hidden="true" />
+    </button>
+  );
+}
+
 function SkillCard({
   skill,
   installed,
@@ -738,6 +906,9 @@ function SkillCard({
   onInstall,
   onOpenDetails,
   description,
+  selected = false,
+  disabled = false,
+  onToggleSelected,
 }: {
   skill: Skill;
   installed: boolean;
@@ -745,6 +916,9 @@ function SkillCard({
   onInstall: (skill: Skill) => void;
   onOpenDetails?: (skill: Skill) => void;
   description?: string;
+  selected?: boolean;
+  disabled?: boolean;
+  onToggleSelected?: (skill: Skill) => void;
 }) {
   const t = useT();
   const popularityTier = getPopularityTier(skill);
@@ -764,7 +938,7 @@ function SkillCard({
           ) : null}
         </div>
         <div className="mt-1 flex items-center gap-2 text-[11px] text-black/55">
-          <RegistryBadge registry={skill.sourceRegistry ?? skill.registry} />
+          <RegistryBadge registry={skill.registry} />
           {popularityTier ? (
             <span className="inline-flex items-center gap-1 text-[#C66A1A]" aria-label={t("热门")} title={t("热门")}>
               <Flame className="size-3.5" aria-hidden="true" />
@@ -787,7 +961,7 @@ function SkillCard({
         />
       ) : null}
       <div className="pointer-events-none flex min-w-0 flex-1 items-start gap-3">{content}</div>
-      <div className="relative z-10 shrink-0 self-center">
+      <div className="relative z-10 flex shrink-0 items-center gap-1 self-center">
         {installed ? (
           <span
             className="inline-flex size-9 items-center justify-center text-[#82BDAE]"
@@ -797,13 +971,132 @@ function SkillCard({
             <Check className="size-5" aria-hidden="true" />
           </span>
         ) : (
+          <>
+            {onToggleSelected ? (
+              <BatchSelectButton
+                skill={skill}
+                selected={selected}
+                disabled={disabled || installing}
+                onToggle={onToggleSelected}
+              />
+            ) : null}
+            <button
+              type="button"
+              onClick={() => onInstall(skill)}
+              disabled={disabled || installing}
+              aria-label={t("安装")}
+              title={t("安装")}
+              className="inline-flex size-9 items-center justify-center border-0 bg-transparent text-[#4B5563] shadow-none transition-colors hover:text-[#374151] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-55"
+            >
+              {installing ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Plus className="size-5" strokeWidth={2.25} aria-hidden="true" />}
+            </button>
+          </>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function SearchSkillRow({
+  skill,
+  installed,
+  installing,
+  selected,
+  disabled,
+  rowStatus,
+  onInstall,
+  onToggleSelected,
+}: {
+  skill: Skill;
+  installed: boolean;
+  installing: boolean;
+  selected: boolean;
+  disabled: boolean;
+  rowStatus?: SearchInstallRowStatus;
+  onInstall: (skill: Skill) => void;
+  onToggleSelected: (skill: Skill) => void;
+}) {
+  const t = useT();
+  const statusLabel = rowStatus ? {
+    pending: t("等待中"),
+    installing: t("安装中..."),
+    retrying: t("重试中..."),
+    done: t("已安装"),
+    failed: t("失败"),
+    skipped: t("已跳过"),
+  }[rowStatus.status] : null;
+  const statusInProgress = rowStatus?.status === "installing" || rowStatus?.status === "retrying";
+  const statusRetryable = rowStatus?.status === "failed" || rowStatus?.status === "skipped";
+
+  return (
+    <li className="flex min-w-0 items-start gap-3 border-b border-black/[0.07] bg-white px-4 py-3.5 transition-colors last:border-b-0 hover:bg-black/[0.02]">
+      {installed ? (
+        <span className="mt-2 size-5 shrink-0" aria-hidden="true" />
+      ) : (
+        <span className="mt-2 shrink-0">
+          <BatchSelectButton
+            skill={skill}
+            selected={selected}
+            disabled={disabled || installing}
+            onToggle={onToggleSelected}
+          />
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="truncate text-sm font-semibold text-black/90">{skill.name}</span>
+          <span className="max-w-full truncate rounded-sm border border-black/[0.07] bg-black/[0.025] px-1.5 py-0.5 font-mono text-[10px] text-black/40">
+            {skill.rawId}
+          </span>
+        </div>
+        {skill.description ? (
+          <p className="mt-1 line-clamp-1 text-pretty text-xs leading-5 text-black/45">{skill.description}</p>
+        ) : null}
+        {skill.author ? <div className="mt-1 text-[11px] text-black/40">@{skill.author}</div> : null}
+      </div>
+      <div className="flex min-h-9 shrink-0 self-center items-center justify-center">
+        {installed ? (
+          <span className="inline-flex size-9 items-center justify-center text-[#82BDAE]" aria-label={t("已安装")} title={t("已安装")}>
+            <Check className="size-5" aria-hidden="true" />
+          </span>
+        ) : rowStatus ? (
+          <div className="flex shrink-0 items-center gap-2">
+            <span
+              aria-label={statusLabel ?? undefined}
+              className={cn(
+                "inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-xs font-medium",
+                rowStatus.status === "failed"
+                  ? "bg-red-50 text-red-600"
+                  : rowStatus.status === "done"
+                    ? "bg-[#EAF6F1] text-[#237A64]"
+                    : statusInProgress
+                      ? "bg-blue-50 text-blue-600"
+                      : "bg-black/[0.04] text-black/50",
+              )}
+              title={rowStatus.message}
+            >
+              {statusInProgress ? <Loader2 className="size-3 animate-spin" aria-hidden="true" /> : null}
+              {statusLabel}
+            </span>
+            {statusRetryable ? (
+              <button
+                type="button"
+                onClick={() => onInstall(skill)}
+                disabled={disabled || installing}
+                className="inline-flex h-7 items-center justify-center rounded-sm border border-black/10 px-2 text-xs font-medium text-black/60 transition-colors hover:border-black/20 hover:text-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-55"
+              >
+                {t("重试")}
+              </button>
+            ) : null}
+          </div>
+        ) : (
           <button
             type="button"
             onClick={() => onInstall(skill)}
-            disabled={installing}
+            disabled={disabled || installing}
             aria-label={t("安装")}
             title={t("安装")}
-            className="inline-flex size-9 items-center justify-center border-0 bg-transparent text-[#4B5563] shadow-none transition-colors hover:text-[#374151] disabled:opacity-55"
+            className="inline-flex size-9 items-center justify-center border-0 bg-transparent text-[#4B5563] shadow-none transition-colors hover:text-[#374151] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-55"
           >
             {installing ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Plus className="size-5" strokeWidth={2.25} aria-hidden="true" />}
           </button>
@@ -943,6 +1236,7 @@ function FeaturedSkillCard({
   installing,
   onInstall,
   onOpenDetails,
+  disabled,
 }: {
   entry: FeaturedSkillEntry;
   title: string;
@@ -952,6 +1246,7 @@ function FeaturedSkillCard({
   installing: boolean;
   onInstall: (skill: Skill) => void;
   onOpenDetails: (skill: Skill) => void;
+  disabled: boolean;
 }) {
   const t = useT();
 
@@ -1003,66 +1298,94 @@ function FeaturedSkillCard({
             <Check className="size-5" aria-hidden="true" />
           </span>
         ) : (
-          <button
-            type="button"
-            onClick={() => onInstall(entry.skill)}
-            disabled={installing}
-            aria-label={t("安装")}
-            title={t("安装")}
-            className="pointer-events-auto inline-flex size-8 shrink-0 items-center justify-center border-0 bg-transparent text-[#4B5563] shadow-none transition-colors hover:text-[#374151] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:opacity-55"
-          >
-            {installing ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <Plus className="size-5" strokeWidth={2.25} aria-hidden="true" />
-            )}
-          </button>
+          <div className="pointer-events-auto flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onInstall(entry.skill)}
+              disabled={disabled || installing}
+              aria-label={t("安装")}
+              title={t("安装")}
+              className="inline-flex size-8 items-center justify-center border-0 bg-transparent text-[#4B5563] shadow-none transition-colors hover:text-[#374151] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:opacity-55"
+            >
+              {installing ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Plus className="size-5" strokeWidth={2.25} aria-hidden="true" />
+              )}
+            </button>
+          </div>
         )}
       </div>
     </li>
   );
 }
 
-function InstalledSkillCard({
+function InstalledSkillRow({
   skill,
+  disabled,
   uninstalling,
   onUninstall,
 }: {
   skill: InstalledSkill;
+  disabled: boolean;
   uninstalling: boolean;
   onUninstall: (skill: InstalledSkill) => void;
 }) {
   const t = useT();
+  const sources = getInstalledSources(skill);
+  const statusLabel = getInstalledStatusLabel(t, skill.status);
+  const canUninstall = skill.uninstallable !== false && !skill.sourceUncertain;
   return (
-    <li className="flex items-start gap-3 rounded-md border border-black/[0.06] bg-white px-3.5 py-3 transition-colors hover:border-black/[0.12] hover:bg-black/[0.025]">
-      <SkillIcon skill={skill} className="mt-0.5 size-9 shrink-0 object-contain" />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold text-black/90">{skill.name}</div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-black/45">
-          <span className="truncate">{skill.rawId}</span>
+    <li className="grid grid-cols-[minmax(0,1fr)_2.25rem] items-center gap-x-3 gap-y-2 bg-white px-3.5 py-3 transition-colors hover:bg-black/[0.025] md:grid-cols-[minmax(0,1.3fr)_minmax(110px,0.65fr)_minmax(120px,0.7fr)_minmax(64px,0.35fr)_2.25rem]">
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-semibold text-black/90">{skill.name}</span>
+          {statusLabel ? (
+            <span className="shrink-0 rounded-[5px] bg-[#FFF3F2] px-1.5 py-0.5 text-[10px] font-semibold text-[#B42318]">
+              {statusLabel}
+            </span>
+          ) : null}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-black/45">
-          {skill.registries.map((registry) => (
-            <RegistryBadge key={registry} registry={registry} />
-          ))}
-          {skill.version ? <span>v{skill.version}</span> : null}
-        </div>
+        <div className="mt-1 truncate font-mono text-[11px] text-black/45">{skill.rawId}</div>
       </div>
-      <div className="shrink-0 self-center">
-        <button
-          type="button"
-          onClick={() => onUninstall(skill)}
-          disabled={uninstalling}
-          aria-label={t("删除技能 {{name}}", { name: skill.name })}
-          title={t("删除")}
-          className="inline-flex size-9 items-center justify-center rounded-md text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-55"
-        >
-          {uninstalling ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <Trash2 className="size-4" aria-hidden="true" />
-          )}
-        </button>
+      <div className="col-start-1 row-start-2 min-w-0 truncate text-xs text-black/55 md:col-start-2 md:row-start-1">
+        <span className="mr-1 text-[11px] text-black/40 md:hidden">{t("分类")}</span>
+        {getInstalledCategoryLabel(t, skill.category)}
+      </div>
+      <div className="col-start-1 row-start-3 flex min-w-0 flex-wrap items-center gap-1.5 md:col-start-3 md:row-start-1">
+        <span className="mr-0.5 text-[11px] text-black/40 md:hidden">{t("技能来源")}</span>
+        {sources.map((source) => (
+          <InstalledSourceBadge key={source.key} source={source} />
+        ))}
+      </div>
+      <div className="col-start-1 row-start-4 text-xs tabular-nums text-black/50 md:col-start-4 md:row-start-1">
+        <span className="mr-1 text-[11px] text-black/40 md:hidden">{t("版本")}</span>
+        {skill.version ? `v${skill.version}` : "—"}
+      </div>
+      <div className="col-start-2 row-span-4 row-start-1 shrink-0 self-center md:col-start-5 md:row-span-1 md:row-start-1">
+        {canUninstall ? (
+          <button
+            type="button"
+            onClick={() => onUninstall(skill)}
+            disabled={disabled}
+            aria-label={t("删除技能 {{name}}", { name: skill.name })}
+            title={t("删除")}
+            className="inline-flex size-9 items-center justify-center rounded-md text-black/40 transition-colors hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-55"
+          >
+            {uninstalling ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Trash2 className="size-4" aria-hidden="true" />
+            )}
+          </button>
+        ) : (
+          <span
+            className="inline-flex size-9 items-center justify-center text-xs text-black/30"
+            title={skill.sourceUncertain ? t("来源确认后才能删除") : t("系统预置技能不可删除")}
+          >
+            —
+          </span>
+        )}
       </div>
     </li>
   );
@@ -1491,13 +1814,31 @@ export function SkillsDemoPanel({
   const [skillsshResults, setSkillsshResults] = useState<Skill[]>([]);
   const [skillhubResults, setSkillhubResults] = useState<Skill[]>([]);
   const [searching, setSearching] = useState(false);
+  const [searchFailedSources, setSearchFailedSources] = useState<SearchRegistry[]>([]);
+  const [searchRetryNonce, setSearchRetryNonce] = useState(0);
   const [installed, setInstalled] = useState<InstalledSkill[]>([]);
   const [installedLoading, setInstalledLoading] = useState(true);
+  const [installedError, setInstalledError] = useState<string | null>(null);
+  const [installedFailedSources, setInstalledFailedSources] = useState<SearchRegistry[]>([]);
+  const [installedSearchQuery, setInstalledSearchQuery] = useState("");
+  const [installedCategoryFilter, setInstalledCategoryFilter] = useState<InstalledCategoryFilter>("all");
+  const [installedSourceFilter, setInstalledSourceFilter] = useState<InstalledSourceFilter>("all");
+  const [installedPage, setInstalledPage] = useState(1);
   const [installingId, setInstallingId] = useState<string | null>(null);
+  const [batchInstalling, setBatchInstalling] = useState(false);
+  const [batchCancelRequested, setBatchCancelRequested] = useState(false);
+  const [batchInstallProgress, setBatchInstallProgress] = useState<BatchInstallProgress | null>(null);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(() => new Set());
+  const [searchInstallRowStatuses, setSearchInstallRowStatuses] = useState<Map<string, SearchInstallRowStatus>>(() => new Map());
   const [uninstallingKey, setUninstallingKey] = useState<string | null>(null);
+  const [pendingUninstall, setPendingUninstall] = useState<InstalledSkill | null>(null);
   const [knownInstalledIds, setKnownInstalledIds] = useState<Set<string>>(() => readKnownInstalledIds(botId));
   const [featuredBatch, setFeaturedBatch] = useState(0);
   const [selectedSkillDetails, setSelectedSkillDetails] = useState<SkillDetailsEntry | null>(null);
+  const batchCancelRequestedRef = useRef(false);
+  const installedRequestIdRef = useRef(0);
+  const activeBotIdRef = useRef(botId);
+  activeBotIdRef.current = botId;
 
   useEffect(() => {
     if (!selectedSkillDetails) return;
@@ -1514,25 +1855,49 @@ export function SkillsDemoPanel({
 
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
-  const refreshInstalled = useCallback(async () => {
+  const refreshInstalled = useCallback(async (): Promise<boolean> => {
+    const requestId = installedRequestIdRef.current + 1;
+    installedRequestIdRef.current = requestId;
+    const requestBotId = botId;
     setInstalledLoading(true);
+    setInstalledError(null);
     try {
-      const list = await dataLayer.listInstalled();
-      setInstalled(list);
-    } catch {
-      setInstalled([]);
+      const result = await dataLayer.listInstalled();
+      if (installedRequestIdRef.current !== requestId || activeBotIdRef.current !== requestBotId) return false;
+      setInstalled(result.skills);
+      setInstalledFailedSources(result.failedSources);
+      setKnownInstalledIds((current) => {
+        const next = new Set(
+          [...current].filter((id) => rememberedIdExistsInInstalledList(id, result.skills)),
+        );
+        writeKnownInstalledIds(botId, next);
+        return next;
+      });
+      return true;
+    } catch (error) {
+      if (installedRequestIdRef.current !== requestId || activeBotIdRef.current !== requestBotId) return false;
+      setInstalledError(error instanceof Error ? error.message : "已安装技能加载失败");
+      setInstalledFailedSources([]);
+      return false;
     } finally {
-      setInstalledLoading(false);
+      if (installedRequestIdRef.current === requestId && activeBotIdRef.current === requestBotId) {
+        setInstalledLoading(false);
+      }
     }
-  }, [dataLayer]);
+  }, [botId, dataLayer]);
 
   useEffect(() => {
-    void refreshInstalled();
-  }, [refreshInstalled]);
-
-  useEffect(() => {
+    installedRequestIdRef.current += 1;
+    setInstalled([]);
+    setInstalledError(null);
+    setInstalledFailedSources([]);
+    setInstalledSearchQuery("");
+    setInstalledCategoryFilter("all");
+    setInstalledSourceFilter("all");
+    setInstalledPage(1);
     setKnownInstalledIds(readKnownInstalledIds(botId));
-  }, [botId]);
+    void refreshInstalled();
+  }, [botId, refreshInstalled]);
 
   // 防抖搜索
   useEffect(() => {
@@ -1546,42 +1911,118 @@ export function SkillsDemoPanel({
   }, [keyword]);
 
   useEffect(() => {
-    let cancelled = false;
+    const abortController = new AbortController();
     const kw = debounced.trim();
     if (!kw) {
       setClawhubResults([]);
       setSkillsshResults([]);
       setSkillhubResults([]);
+      setSearchFailedSources([]);
+      setSearching(false);
       return;
     }
     setSearching(true);
+    setSearchFailedSources([]);
     dataLayer
-      .search(kw, { sortBy: isDomestic && sortMode === "popular" ? "downloads" : "score" })
+      .search(kw, {
+        sortBy: isDomestic && sortMode === "popular" ? "downloads" : "score",
+        signal: abortController.signal,
+      })
       .then((res) => {
-        if (cancelled) return;
+        if (abortController.signal.aborted) return;
         setClawhubResults(res.clawhub);
         setSkillsshResults(res.skillssh);
         setSkillhubResults(res.skillhub);
+        setSearchFailedSources(res.failedSources);
       })
       .catch(() => {
-        if (cancelled) return;
+        if (abortController.signal.aborted) return;
         setClawhubResults([]);
         setSkillsshResults([]);
         setSkillhubResults([]);
+        setSearchFailedSources(isDomestic ? ["skillhub"] : ["clawhub", "skills-sh"]);
       })
       .finally(() => {
-        if (!cancelled) setSearching(false);
+        if (!abortController.signal.aborted) setSearching(false);
       });
     return () => {
-      cancelled = true;
+      abortController.abort();
     };
-  }, [dataLayer, debounced, isDomestic, sortMode]);
+  }, [dataLayer, debounced, isDomestic, searchRetryNonce, sortMode]);
 
   const installedIdentitySet = useMemo(() => {
     const set = new Set<string>();
     installed.forEach((skill) => set.add(skillIdentity(skill)));
     return set;
   }, [installed]);
+
+  const installedSourceOptions = useMemo(() => {
+    const counts = new Map<string, { source: InstalledSourceDescriptor; count: number }>();
+    installed.forEach((skill) => {
+      getInstalledSources(skill).forEach((source) => {
+        const current = counts.get(source.key);
+        counts.set(source.key, { source, count: (current?.count ?? 0) + 1 });
+      });
+    });
+    return Array.from(counts.values())
+      .sort((a, b) => {
+        const priorityDifference = (INSTALLED_SOURCE_ORDER[a.source.key] ?? Number.MAX_SAFE_INTEGER)
+          - (INSTALLED_SOURCE_ORDER[b.source.key] ?? Number.MAX_SAFE_INTEGER);
+        return priorityDifference || a.source.label.localeCompare(b.source.label);
+      });
+  }, [installed]);
+
+  const installedCategoryOptions = useMemo(() => {
+    const counts = new Map<InstalledCategoryFilter, { label: string; count: number }>();
+    installed.forEach((skill) => {
+      const key = getInstalledCategoryKey(skill.category);
+      const current = counts.get(key);
+      counts.set(key, {
+        label: current?.label || getInstalledCategoryLabel(t, skill.category),
+        count: (current?.count ?? 0) + 1,
+      });
+    });
+    return Array.from(counts.entries())
+      .map(([value, item]) => ({ value, ...item }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [installed, t]);
+
+  const filteredInstalledSkills = useMemo(() => {
+    const keyword = installedSearchQuery.trim().toLocaleLowerCase();
+    return installed.filter((skill) => {
+      const sources = getInstalledSources(skill);
+      if (installedSourceFilter !== "all" && !sources.some((source) => source.key === installedSourceFilter)) return false;
+      if (installedCategoryFilter !== "all" && getInstalledCategoryKey(skill.category) !== installedCategoryFilter) {
+        return false;
+      }
+      if (!keyword) return true;
+      return [
+        skill.name,
+        skill.rawId,
+        skill.category ?? "",
+        getInstalledCategoryLabel(t, skill.category),
+        skill.version ?? "",
+        ...sources.flatMap((source) => [source.label, translateInstalledSourceLabel(t, source.label)]),
+      ].some((value) => value.toLocaleLowerCase().includes(keyword));
+    });
+  }, [installed, installedCategoryFilter, installedSearchQuery, installedSourceFilter, t]);
+
+  const installedFiltersActive = installedSearchQuery.trim().length > 0
+    || installedCategoryFilter !== "all"
+    || installedSourceFilter !== "all";
+  const installedTotalPages = Math.max(1, Math.ceil(filteredInstalledSkills.length / INSTALLED_PAGE_SIZE));
+  const pagedInstalledSkills = filteredInstalledSkills.slice(
+    (installedPage - 1) * INSTALLED_PAGE_SIZE,
+    installedPage * INSTALLED_PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    setInstalledPage(1);
+  }, [installedCategoryFilter, installedSearchQuery, installedSourceFilter]);
+
+  useEffect(() => {
+    setInstalledPage((current) => Math.min(current, installedTotalPages));
+  }, [installedTotalPages]);
 
   const curatedIdentityByShortSlug = useMemo(() => {
     const configuredSkills = [
@@ -1620,10 +2061,10 @@ export function SkillsDemoPanel({
       registryFilter === "all"
         ? mergeSkills(clawhubResults, skillsshResults, skillhubResults)
         : registryFilter === "clawhub"
-          ? mergeSkills(clawhubResults, [], skillhubResults.filter((skill) => (skill.sourceRegistry ?? skill.registry) === "clawhub"))
+          ? clawhubResults
           : registryFilter === "skills-sh"
             ? skillsshResults
-            : skillhubResults.filter((skill) => (skill.sourceRegistry ?? skill.registry) === "skillhub");
+            : skillhubResults;
     return sortMode === "popular" ? sortByPopular(pool) : sortByName(pool);
   }, [clawhubResults, skillhubResults, skillsshResults, registryFilter, sortMode]);
 
@@ -1632,14 +2073,38 @@ export function SkillsDemoPanel({
   }, [debounced, registryFilter, sortMode]);
 
   const hasSearch = debounced.trim().length > 0;
+  const operationBusy = Boolean(installingId) || batchInstalling;
+  const searchQueryPending = keyword.trim() !== debounced.trim();
   const shouldShowAllSearchResults = searchResultsExpanded && visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT;
   const displayedSearchResults = shouldShowAllSearchResults
     ? visibleResults
     : visibleResults.slice(0, SEARCH_RESULTS_PREVIEW_LIMIT);
 
-  const featuredEntries: readonly FeaturedSkillEntry[] = useMemo(() => {
-    return isDomestic ? DOMESTIC_FEATURED_SKILLS : FEATURED_SKILLS;
-  }, [isDomestic]);
+  const featuredEntries: readonly FeaturedSkillEntry[] = useMemo(() => (
+    isDomestic ? DOMESTIC_FEATURED_SKILLS : FEATURED_SKILLS
+  ), [isDomestic]);
+  const skillCategories = useMemo(() => (
+    isDomestic ? DOMESTIC_SKILL_CATEGORIES : CURATED_SKILL_CATEGORIES
+  ), [isDomestic]);
+
+  const selectableSkillsByIdentity = useMemo(() => {
+    const byIdentity = new Map<string, Skill>();
+    visibleResults.forEach((skill) => {
+      if (!isInstalled(skill)) byIdentity.set(skillIdentity(skill), skill);
+    });
+    return byIdentity;
+  }, [isInstalled, visibleResults]);
+
+  const selectedSkills = useMemo(() => (
+    Array.from(selectedSkillIds)
+      .map((id) => selectableSkillsByIdentity.get(id))
+      .filter((skill): skill is Skill => skill !== undefined && !isInstalled(skill))
+  ), [isInstalled, selectableSkillsByIdentity, selectedSkillIds]);
+
+  useEffect(() => {
+    setSelectedSkillIds(new Set());
+    setSearchInstallRowStatuses(new Map());
+  }, [debounced, registryFilter, sortMode]);
 
   const featuredBatchCount = Math.max(1, Math.ceil(featuredEntries.length / FEATURED_BATCH_SIZE));
   const featuredBatchIndex = Math.min(featuredBatch, featuredBatchCount - 1);
@@ -1658,34 +2123,142 @@ export function SkillsDemoPanel({
 
   const handleInstall = useCallback(
     async (skill: Skill) => {
-      if (installingId) return;
+      if (installingId || batchInstalling || searchQueryPending) return;
       const id = skillIdentity(skill);
+      setSearchInstallRowStatuses((current) => {
+        const next = new Map(current);
+        const currentStatus = next.get(id)?.status;
+        if (currentStatus === "failed" || currentStatus === "skipped") {
+          next.set(id, { status: "retrying" });
+        } else {
+          next.delete(id);
+        }
+        return next;
+      });
       setInstallingId(id);
       try {
         const result = await dataLayer.install(skill);
         if (result.ok) {
+          setSearchInstallRowStatuses((current) => new Map(current).set(id, { status: "done" }));
           setKnownInstalledIds((current) => {
             const next = new Set(current).add(id);
             writeKnownInstalledIds(botId, next);
             return next;
           });
-          toast.success(t("下载成功"));
+          setSelectedSkillIds((current) => {
+            const next = new Set(current);
+            next.delete(id);
+            return next;
+          });
+          toast.success(t("安装成功"));
           await refreshInstalled();
         } else {
+          setSearchInstallRowStatuses((current) => new Map(current).set(id, getSearchInstallRowStatus(result.message)));
           toast.error(result.message || t("安装失败"));
         }
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : t("安装失败"));
+        const message = error instanceof Error ? error.message : t("安装失败");
+        setSearchInstallRowStatuses((current) => new Map(current).set(id, getSearchInstallRowStatus(message)));
+        toast.error(message);
       } finally {
         setInstallingId(null);
       }
     },
-    [botId, dataLayer, installingId, refreshInstalled, t],
+    [batchInstalling, botId, dataLayer, installingId, refreshInstalled, searchQueryPending, t],
   );
+
+  const handleToggleSelected = useCallback((skill: Skill) => {
+    if (installingId || batchInstalling || searchQueryPending) return;
+    const id = skillIdentity(skill);
+    setSelectedSkillIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, [batchInstalling, installingId, searchQueryPending]);
+
+  const handleBatchInstall = useCallback(async () => {
+    if (batchInstalling || installingId || searchQueryPending || selectedSkills.length === 0) return;
+    batchCancelRequestedRef.current = false;
+    setBatchCancelRequested(false);
+    setBatchInstalling(true);
+    setBatchInstallProgress(null);
+    setSearchInstallRowStatuses((current) => {
+      const next = new Map(current);
+      selectedSkills.forEach((skill) => next.set(skillIdentity(skill), { status: "pending" }));
+      return next;
+    });
+    try {
+      const result = await installSkillsSequentially(dataLayer, selectedSkills, ({ index, total, skill, status, message }) => {
+        const id = skillIdentity(skill);
+        if (status === "installing") {
+          setBatchInstallProgress({ index, total, currentName: skill.name });
+          setSearchInstallRowStatuses((current) => new Map(current).set(id, { status: "installing" }));
+          return;
+        }
+        setSearchInstallRowStatuses((current) => new Map(current).set(id,
+          status === "succeeded"
+            ? { status: "done" }
+            : status === "skipped"
+              ? { status: "skipped" }
+              : getSearchInstallRowStatus(message),
+        ));
+      }, { shouldCancel: () => batchCancelRequestedRef.current });
+      const succeededIds = new Set(result.succeeded.map((skill) => skillIdentity(skill)));
+      if (succeededIds.size > 0) {
+        setKnownInstalledIds((current) => {
+          const next = new Set(current);
+          succeededIds.forEach((id) => next.add(id));
+          writeKnownInstalledIds(botId, next);
+          return next;
+        });
+        setSelectedSkillIds((current) => {
+          const next = new Set(current);
+          succeededIds.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
+      await refreshInstalled();
+      if (result.skipped.length > 0) {
+        toast.error(t("已取消安装：成功 {{success}} 个，失败 {{failed}} 个，跳过 {{skipped}} 个", {
+          success: result.succeeded.length,
+          failed: result.failed.length,
+          skipped: result.skipped.length,
+        }));
+      } else if (result.failed.length > 0) {
+        toast.error(t("批量安装完成：成功 {{success}} 个，失败 {{failed}} 个", {
+          success: result.succeeded.length,
+          failed: result.failed.length,
+        }));
+      } else {
+        toast.success(t("批量安装成功，共 {{count}} 个", { count: result.succeeded.length }));
+      }
+    } finally {
+      setBatchInstallProgress(null);
+      setBatchInstalling(false);
+      setBatchCancelRequested(false);
+      batchCancelRequestedRef.current = false;
+    }
+  }, [batchInstalling, botId, dataLayer, installingId, refreshInstalled, searchQueryPending, selectedSkills, t]);
+
+  useEffect(() => {
+    if (!batchInstalling) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [batchInstalling]);
 
   const handleUninstall = useCallback(
     async (skill: InstalledSkill) => {
       if (uninstallingKey) return;
+      if (skill.uninstallable === false || skill.sourceUncertain) {
+        toast.error(skill.sourceUncertain ? t("来源确认后才能删除") : t("系统预置技能不可删除"));
+        return;
+      }
       // 卸载按 registry + rawId 识别；旧版 list 若只返回 slug，只能按该返回值下发。
       const key = skillIdentity(skill);
       setUninstallingKey(key);
@@ -1700,8 +2273,9 @@ export function SkillsDemoPanel({
             writeKnownInstalledIds(botId, next);
             return next;
           });
-          toast.success(t("卸载成功"));
-          await refreshInstalled();
+          const refreshed = await refreshInstalled();
+          if (refreshed) toast.success(t("卸载成功"));
+          else toast.error(t("卸载已确认，但列表刷新失败，请重试"));
         } else {
           toast.error(result.message || t("删除失败"));
         }
@@ -1713,6 +2287,8 @@ export function SkillsDemoPanel({
     },
     [botId, dataLayer, refreshInstalled, t, uninstallingKey],
   );
+
+  const uninstallBusy = Boolean(uninstallingKey);
 
   return (
     <div className={`${CLS} pb-12`}>
@@ -1731,46 +2307,97 @@ export function SkillsDemoPanel({
         onClose={() => setSelectedSkillDetails(null)}
       />
 
+      <Dialog
+        open={pendingUninstall !== null}
+        onOpenChange={(open) => {
+          if (!open && !uninstallBusy) setPendingUninstall(null);
+        }}
+      >
+        <DialogContent className="!rounded-md md:w-[28rem]">
+          <DialogHeader className="mb-5">
+            <DialogTitle>{t("删除技能？")}</DialogTitle>
+            <DialogDescription>
+              {pendingUninstall
+                ? t("这会从智能体中永久删除 {{name}}。", { name: pendingUninstall.name })
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <DialogClose asChild>
+              <button
+                type="button"
+                disabled={uninstallBusy}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-black/10 bg-white px-4 text-sm font-semibold text-black/65 hover:bg-black/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-55"
+              >
+                {t("取消")}
+              </button>
+            </DialogClose>
+            <button
+              type="button"
+              disabled={uninstallBusy || pendingUninstall === null}
+              aria-label={pendingUninstall
+                ? t("确认删除 {{name}}", { name: pendingUninstall.name })
+                : t("确认删除")}
+              onClick={() => {
+                if (!pendingUninstall) return;
+                void handleUninstall(pendingUninstall).finally(() => setPendingUninstall(null));
+              }}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:opacity-55"
+            >
+              {uninstallBusy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+              {t("删除")}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Tabs
         value={activeTab}
         onValueChange={(value) => {
+          if (operationBusy) return;
           if (value !== "discover" && value !== "experts" && value !== "installed") return;
           const nextTab = value as SkillsDemoTab;
+          if (nextTab === "installed" && activeTab !== "installed") void refreshInstalled();
           setActiveTab(nextTab);
           onTabChange?.(nextTab);
         }}
         className="min-w-0"
       >
-        <TabsList
-          aria-label={t("技能市场页面切换")}
-          className="mb-4 !h-9 w-full !justify-start gap-7 !rounded-none !border-0 !border-b !border-black/[0.08] !bg-transparent !p-0 !shadow-none"
-        >
-          <TabsTrigger
-            value="discover"
-            className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
+        <div className="mb-4 flex min-w-0 items-end gap-4 border-b border-black/[0.08]">
+          <TabsList
+            aria-label={t("技能市场页面切换")}
+            className="!h-9 min-w-0 flex-1 !justify-start gap-4 !rounded-none !border-0 !bg-transparent !p-0 !shadow-none sm:gap-7"
           >
-            {t("技能")}
-          </TabsTrigger>
-          {expertsPanel ? (
             <TabsTrigger
-              value="experts"
+              value="discover"
+              disabled={operationBusy}
               className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
             >
-              {t("技能包")}
+              {t("技能")}
             </TabsTrigger>
-          ) : null}
-          <TabsTrigger
-            value="installed"
-            className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
-          >
-            {t("已安装")}
-            {!installedLoading ? (
-              <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-black/[0.06] px-1.5 text-[11px] font-medium text-black/45 tabular-nums">
-                {installed.length}
-              </span>
+            {expertsPanel ? (
+              <TabsTrigger
+                value="experts"
+                disabled={operationBusy}
+                className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
+              >
+                {t("技能包")}
+              </TabsTrigger>
             ) : null}
-          </TabsTrigger>
-        </TabsList>
+            <TabsTrigger
+              value="installed"
+              disabled={operationBusy}
+              className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
+            >
+              {t("已安装")}
+              {!installedLoading ? (
+                <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-black/[0.06] px-1.5 text-[11px] font-medium text-black/45 tabular-nums">
+                  {installed.length}
+                </span>
+              ) : null}
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="discover" className="mt-0">
           <div className="space-y-6">
@@ -1779,15 +2406,24 @@ export function SkillsDemoPanel({
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-black/35" aria-hidden="true" />
                 <input
                   type="text"
+                  aria-label={t("搜索技能")}
                   value={keyword}
-                  onChange={(e) => setKeyword(e.target.value)}
-                  placeholder={isDomestic ? "搜索 SkillHub 中的技能" : t("搜索 ClawHub / skills.sh 中的技能")}
+                  disabled={operationBusy}
+                  onChange={(e) => {
+                    if (operationBusy) return;
+                    setKeyword(e.target.value);
+                  }}
+                  placeholder={isDomestic ? "搜索 SkillHub 中的技能" : t("搜索 Skills.sh / Clawhub 中的技能")}
                   className="lv-skills-search-input h-10 w-full rounded-md border border-black/10 bg-white pl-9 pr-9 text-sm text-black/90 outline-none transition-colors placeholder:text-black/35 focus:border-[#2F6BFF]"
                 />
                 {keyword ? (
                   <button
                     type="button"
-                    onClick={() => setKeyword("")}
+                    disabled={operationBusy}
+                    onClick={() => {
+                      if (operationBusy) return;
+                      setKeyword("");
+                    }}
                     aria-label={t("清除搜索")}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-black/35 hover:text-black/60"
                   >
@@ -1795,44 +2431,67 @@ export function SkillsDemoPanel({
                   </button>
                 ) : null}
               </div>
-              <Select
-                value={registryFilter}
-                onValueChange={(value) => {
-                  if (value !== "all" && value !== "skills-sh" && value !== "clawhub" && value !== "skillhub") return;
-                  setRegistryFilter(value);
-                }}
-              >
-                  <SelectTrigger
-                    aria-label={t("来源")}
-                    className="lv-skills-source-select-trigger !h-10 w-[132px] shrink-0 !rounded-[12px] !border-black/10 !bg-white !px-3 text-xs font-semibold text-black/75 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-shadow hover:!border-black/16 hover:shadow-[0_2px_7px_rgba(0,0,0,0.07)] data-[state=open]:!border-black/20 data-[state=open]:shadow-[0_3px_10px_rgba(0,0,0,0.09)]"
+              {!isDomestic ? (
+                <div className="flex shrink-0 items-center gap-2">
+                  <Select
+                    value={registryFilter}
+                    disabled={operationBusy}
+                    onValueChange={(value) => {
+                      if (operationBusy) return;
+                      if (value !== "all" && value !== "skills-sh" && value !== "clawhub") return;
+                      setRegistryFilter(value);
+                    }}
                   >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent
-                    position="popper"
-                    align="end"
-                    sideOffset={4}
-                    className="!min-w-[var(--radix-select-trigger-width)] !rounded-md !border-black/10 bg-white shadow-[0_10px_24px_-12px_rgba(0,0,0,0.32),0_3px_8px_rgba(0,0,0,0.06)]"
-                  >
-                    <SelectItem value="all" className="!rounded-sm py-2 text-xs font-medium data-[highlighted]:bg-black/[0.04] data-[highlighted]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=checked]:bg-black/[0.035]">
-                      {t("所有来源")}
-                    </SelectItem>
-                    <SelectSeparator className="mx-1" />
-                    {!isDomestic ? (
+                    <SelectTrigger
+                      aria-label={t("来源")}
+                      className="lv-skills-source-select-trigger !h-10 w-[132px] shrink-0 !justify-center gap-1 !rounded-[12px] !border-black/10 !bg-white !px-3 text-xs font-semibold text-black/75 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-shadow hover:!border-black/16 hover:shadow-[0_2px_7px_rgba(0,0,0,0.07)] data-[state=open]:!border-black/20 data-[state=open]:shadow-[0_3px_10px_rgba(0,0,0,0.09)]"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent
+                      position="popper"
+                      align="end"
+                      sideOffset={4}
+                      className="!min-w-[var(--radix-select-trigger-width)] !rounded-md !border-black/10 bg-white shadow-[0_10px_24px_-12px_rgba(0,0,0,0.32),0_3px_8px_rgba(0,0,0,0.06)]"
+                    >
+                      <SelectItem value="all" className="!rounded-sm py-2 text-xs font-medium data-[highlighted]:bg-black/[0.04] data-[highlighted]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=checked]:bg-black/[0.035]">
+                        {t("所有来源")}
+                      </SelectItem>
+                      <SelectSeparator className="mx-1" />
                       <SelectItem value="skills-sh" className="!rounded-sm py-2 text-xs font-medium data-[highlighted]:bg-black/[0.04] data-[highlighted]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=checked]:bg-black/[0.035]">
                         skills.sh
                       </SelectItem>
-                    ) : null}
-                    {isDomestic ? (
-                      <SelectItem value="skillhub" className="!rounded-sm py-2 text-xs font-medium data-[highlighted]:bg-black/[0.04] data-[highlighted]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=checked]:bg-black/[0.035]">
-                        SkillHub
+                      <SelectItem value="clawhub" className="!rounded-sm py-2 text-xs font-medium data-[highlighted]:bg-black/[0.04] data-[highlighted]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=checked]:bg-black/[0.035]">
+                        ClawHub
                       </SelectItem>
-                    ) : null}
-                    <SelectItem value="clawhub" className="!rounded-sm py-2 text-xs font-medium data-[highlighted]:bg-black/[0.04] data-[highlighted]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=checked]:bg-black/[0.035]">
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+              {!isDomestic ? (
+                <p className="shrink-0 text-right text-[10px] font-medium text-black/45 sm:text-xs">
+                  <>
+                    {t("技能来源于")} {" "}
+                    <a
+                      href="https://skills.sh"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-sm text-black/65 underline decoration-black/20 underline-offset-2 hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    >
+                      Skills.sh
+                    </a>{" "}
+                    {t("与")}{" "}
+                    <a
+                      href="https://clawhub.ai/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-sm text-black/65 underline decoration-black/20 underline-offset-2 hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    >
                       ClawHub
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                    </a>
+                  </>
+                </p>
+              ) : null}
             </div>
 
             {hasSearch ? (
@@ -1846,63 +2505,172 @@ export function SkillsDemoPanel({
                       <div className="lv-skills-sort-control flex h-9 shrink-0 items-center gap-1 rounded-[12px] bg-black/[0.04] p-0.5">
                       <button
                         type="button"
-                        onClick={() => setSortMode("popular")}
+                        disabled={operationBusy}
+                        onClick={() => {
+                          if (operationBusy) return;
+                          setSortMode("popular");
+                        }}
                         className={cn(
-                          "h-8 rounded-[12px] px-2 text-[11px] font-semibold transition-all",
+                          "h-8 rounded-[12px] px-2 text-[11px] font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-45",
                           sortMode === "popular"
                             ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]"
                             : "text-black/45 hover:text-black/70",
                         )}
                       >
-                        {t("热门")}
+                        {t("按热度")}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setSortMode("name")}
+                        disabled={operationBusy}
+                        onClick={() => {
+                          if (operationBusy) return;
+                          setSortMode("name");
+                        }}
                         className={cn(
-                          "h-8 rounded-[12px] px-2 text-[11px] font-semibold transition-all",
+                          "h-8 rounded-[12px] px-2 text-[11px] font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-45",
                           sortMode === "name"
                             ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]"
                             : "text-black/45 hover:text-black/70",
                         )}
                       >
-                        {t("名称")}
+                        {t("按名称")}
                       </button>
                       </div>
                     ) : null}
-                    {visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT ? (
-                      <button
-                        type="button"
-                        onClick={() => setSearchResultsExpanded((expanded) => !expanded)}
-                        className="shrink-0 whitespace-nowrap text-sm font-semibold text-black/50 transition-colors hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
-                      >
-                        {shouldShowAllSearchResults ? t("收起全部") : t("查看全部")}
-                      </button>
+                    {!searching && selectableSkillsByIdentity.size > 0 ? (
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="whitespace-nowrap text-xs text-black/45">
+                          {t("已选 {{n}} / {{m}}", {
+                            n: selectedSkills.length,
+                            m: selectableSkillsByIdentity.size,
+                          })}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void handleBatchInstall()}
+                          disabled={selectedSkills.length === 0 || operationBusy || searchQueryPending}
+                          aria-busy={batchInstalling}
+                          aria-label={t("安装已选技能")}
+                          title={selectedSkills.length === 0 ? t("请先选择要安装的技能") : t("安装已选技能")}
+                          className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-[12px] bg-black px-6 text-sm font-semibold text-white transition-colors hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-black/[0.08] disabled:text-black/30"
+                        >
+                          {batchInstalling ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+                          <span>{t("安装")}</span>
+                        </button>
+                      </div>
                     ) : null}
                   </div>
                 </div>
+                {batchInstallProgress ? (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="mb-2 flex min-h-9 items-center gap-2 rounded-md border border-blue-100 bg-blue-50/50 px-3 py-2 text-xs font-medium text-blue-700"
+                  >
+                    <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {t("正在安装 ({{index}}/{{total}})：{{name}}", {
+                        index: batchInstallProgress.index,
+                        total: batchInstallProgress.total,
+                        name: batchInstallProgress.currentName,
+                      })}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={batchCancelRequested}
+                      onClick={() => {
+                        batchCancelRequestedRef.current = true;
+                        setBatchCancelRequested(true);
+                      }}
+                      className="shrink-0 rounded-sm px-2 py-1 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-wait disabled:opacity-55"
+                    >
+                      {batchCancelRequested ? t("取消中...") : t("取消剩余任务")}
+                    </button>
+                  </div>
+                ) : null}
+                {!searching && searchFailedSources.length > 0 ? (
+                  <div
+                    role="alert"
+                    className="mb-2 flex min-h-10 items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                  >
+                    <span>
+                      {searchFailedSources.length === (isDomestic ? 1 : 2)
+                        ? t("技能搜索失败，请重试")
+                        : t("{{sources}} 搜索失败，当前结果可能不完整", {
+                            sources: searchFailedSources.map((source) => REGISTRY_LABEL[source]).join("、"),
+                          })}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={operationBusy}
+                      onClick={() => {
+                        if (operationBusy) return;
+                        setSearchRetryNonce((current) => current + 1);
+                      }}
+                      className="shrink-0 rounded-sm border border-amber-300 bg-white px-2.5 py-1 font-semibold text-amber-800 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-55"
+                    >
+                      {t("重试")}
+                    </button>
+                  </div>
+                ) : null}
                 {searching ? (
                   <div className="flex items-center gap-2 rounded-md bg-white px-4 py-6 text-sm text-black/45">
                     <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                     {t("搜索中...")}
                   </div>
                 ) : visibleResults.length === 0 ? (
-                  <div className="rounded-md bg-white px-4 py-8 text-center text-sm text-black/40">
-                    {t("没有找到匹配的技能")}
-                  </div>
+                  searchFailedSources.length === 0 ? (
+                    <div className="rounded-md bg-white px-4 py-8 text-center text-sm text-black/40">
+                      {t("没有找到匹配的技能")}
+                    </div>
+                  ) : null
                 ) : (
-                  <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <ul className="overflow-hidden rounded-md border border-black/[0.08] bg-white">
                     {displayedSearchResults.map((skill) => (
-                      <SkillCard
+                      <SearchSkillRow
                         key={`search:${skill.registry}:${skill.rawId}`}
                         skill={skill}
                         installed={isInstalled(skill)}
                         installing={installingId === skillIdentity(skill)}
                         onInstall={handleInstall}
+                        selected={selectedSkillIds.has(skillIdentity(skill))}
+                        disabled={operationBusy || searchQueryPending}
+                        rowStatus={searchInstallRowStatuses.get(skillIdentity(skill))}
+                        onToggleSelected={handleToggleSelected}
                       />
                     ))}
                   </ul>
                 )}
+                {!searching && visibleResults.length > 0 && (isDomestic || visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT) ? (
+                  <div className="mt-3 grid min-h-8 grid-cols-[1fr_auto_1fr] items-center">
+                    {visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT ? (
+                      <button
+                        type="button"
+                        onClick={() => setSearchResultsExpanded((expanded) => !expanded)}
+                        aria-expanded={shouldShowAllSearchResults}
+                        className="col-start-2 inline-flex h-8 min-w-28 items-center justify-center gap-1.5 rounded-full border border-black/[0.08] bg-transparent px-3 text-xs font-semibold text-black/60 transition-colors hover:border-black/15 hover:text-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
+                      >
+                        <span>{shouldShowAllSearchResults ? t("收起") : t("查看更多")}</span>
+                        {shouldShowAllSearchResults ? (
+                          <ChevronUp className="size-3.5" strokeWidth={2.25} aria-hidden="true" />
+                        ) : (
+                          <ChevronDown className="size-3.5" strokeWidth={2.25} aria-hidden="true" />
+                        )}
+                      </button>
+                    ) : null}
+                    {isDomestic ? (
+                      <a
+                        href="https://skillhub.cn"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="col-start-3 inline-flex h-8 justify-self-end items-center gap-[3px] rounded-sm text-[13px] font-normal text-[#2563EB] underline-offset-2 transition-colors hover:text-[#1D4ED8] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                      >
+                        源自 SkillHub
+                        <span aria-hidden="true">↗</span>
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
               </section>
             ) : null}
 
@@ -1957,8 +2725,12 @@ export function SkillsDemoPanel({
                             subtitle={copy.subtitle}
                             description={copy.description}
                             installed={isInstalled(entry.skill)}
-                            installing={installingId === skillIdentity(entry.skill)}
+                            installing={
+                              installingId === skillIdentity(entry.skill)
+                              || (batchInstalling && selectedSkillIds.has(skillIdentity(entry.skill)))
+                            }
                             onInstall={handleInstall}
+                            disabled={batchInstalling || Boolean(installingId)}
                             onOpenDetails={(skill) => setSelectedSkillDetails({
                               skill,
                               overview: getSkillOverview(skill, isChinese),
@@ -1973,7 +2745,7 @@ export function SkillsDemoPanel({
             </section>
 
             <div className="space-y-6">
-              {(isDomestic ? DOMESTIC_SKILL_CATEGORIES : CURATED_SKILL_CATEGORIES).map((category) => (
+              {skillCategories.map((category) => (
                 <section key={category.id}>
                   <SectionTitle className="mb-2 text-base">
                     {isChinese ? category.label.zh : category.label.en}
@@ -1987,8 +2759,12 @@ export function SkillsDemoPanel({
                         key={`discover:${skillIdentity(skill)}`}
                         skill={skill}
                         installed={isInstalled(skill)}
-                        installing={installingId === skillIdentity(skill)}
+                        installing={
+                          installingId === skillIdentity(skill)
+                          || (batchInstalling && selectedSkillIds.has(skillIdentity(skill)))
+                        }
                         onInstall={handleInstall}
+                        disabled={batchInstalling || Boolean(installingId)}
                         onOpenDetails={() => setSelectedSkillDetails({
                           skill,
                           overview: getSkillOverview(skill, isChinese),
@@ -2011,28 +2787,178 @@ export function SkillsDemoPanel({
         ) : null}
 
         <TabsContent value="installed" className="mt-0">
-          <SectionTitle count={installedLoading ? undefined : installed.length}>{t("已安装")}</SectionTitle>
-          {installedLoading ? (
+          <div className="mb-3 flex min-h-10 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <SectionTitle className="mb-0">
+              {t("已安装")}
+              {!installedLoading ? (
+                <span className="text-xs font-normal tabular-nums text-black/40">
+                  ({installedFiltersActive ? `${filteredInstalledSkills.length}/${installed.length}` : installed.length})
+                </span>
+              ) : null}
+            </SectionTitle>
+            {!installedLoading && installed.length > 0 ? (
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="relative min-w-0 sm:w-60">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-black/35" aria-hidden="true" />
+                  <Input
+                    type="search"
+                    value={installedSearchQuery}
+                    onChange={(event) => setInstalledSearchQuery(event.target.value)}
+                    aria-label={t("搜索已安装技能")}
+                    placeholder={t("搜索已安装技能")}
+                    className="h-9 rounded-[12px] border-black/10 bg-white pl-9 pr-9 text-xs shadow-none placeholder:text-black/35 focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  />
+                  {installedSearchQuery ? (
+                    <button
+                      type="button"
+                      onClick={() => setInstalledSearchQuery("")}
+                      aria-label={t("清除已安装技能搜索")}
+                      className="absolute right-2 top-1/2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-black/35 transition-colors hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    >
+                      <X className="size-3.5" aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
+                <Select
+                  value={installedCategoryFilter}
+                  onValueChange={(value) => setInstalledCategoryFilter(value as InstalledCategoryFilter)}
+                >
+                  <SelectTrigger
+                    aria-label={t("筛选技能分类")}
+                    className="h-9 w-full rounded-[12px] border-black/10 bg-white px-3 text-xs font-medium text-black/70 shadow-none sm:w-40"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end" className="rounded-md border-black/10 bg-white p-1 shadow-xl">
+                    <SelectItem value="all" className="rounded-sm py-2 text-xs">
+                      {t("全部分类")} ({installed.length})
+                    </SelectItem>
+                    {installedCategoryOptions.map(({ value, label, count }) => (
+                      <SelectItem key={value} value={value} className="rounded-sm py-2 text-xs">
+                        {label} ({count})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={installedSourceFilter}
+                  onValueChange={(value) => setInstalledSourceFilter(value as InstalledSourceFilter)}
+                >
+                  <SelectTrigger
+                    aria-label={t("筛选技能来源")}
+                    className="h-9 w-full rounded-[12px] border-black/10 bg-white px-3 text-xs font-medium text-black/70 shadow-none sm:w-40"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end" className="rounded-md border-black/10 bg-white p-1 shadow-xl">
+                    <SelectItem value="all" className="rounded-sm py-2 text-xs">
+                      {t("全部来源")} ({installed.length})
+                    </SelectItem>
+                    {installedSourceOptions.map(({ source, count }) => (
+                      <SelectItem key={source.key} value={source.key} className="rounded-sm py-2 text-xs">
+                        {translateInstalledSourceLabel(t, source.label)} ({count})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+          </div>
+          {(installedError && installed.length > 0) || installedFailedSources.length > 0 ? (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#F2D38A] bg-[#FFF8E6] px-3 py-2 text-xs text-[#7A5200]">
+              <span>
+                {installedError
+                  ? t("已安装技能加载失败，当前列表可能不是最新状态")
+                  : t("部分技能来源暂不可用，相关技能暂时不能删除")}
+              </span>
+              <button
+                type="button"
+                onClick={() => void refreshInstalled()}
+                disabled={installedLoading}
+                className="inline-flex h-7 items-center justify-center rounded-md border border-[#D8B45B] bg-white px-2.5 text-xs font-semibold text-[#7A5200] hover:border-[#B88B2A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-55"
+              >
+                {t("重试")}
+              </button>
+            </div>
+          ) : null}
+          {installedLoading && installed.length === 0 ? (
             <div className="flex items-center gap-2 rounded-md bg-white px-4 py-6 text-sm text-black/45">
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               {t("加载中...")}
+            </div>
+          ) : installedError && installed.length === 0 ? (
+            <div className="rounded-md border border-black/[0.08] bg-white px-4 py-8 text-center">
+              <p className="text-sm text-black/45">{t("无法获取已安装技能")}</p>
+              <button
+                type="button"
+                onClick={() => void refreshInstalled()}
+                className="mt-3 inline-flex h-8 items-center justify-center rounded-md border border-black/10 px-3 text-xs font-medium text-black/60 hover:border-black/20 hover:text-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              >
+                {t("重试")}
+              </button>
             </div>
           ) : installed.length === 0 ? (
             <div className="rounded-md bg-white px-4 py-8 text-center text-sm text-black/40">
               {t("还没有已安装的技能")}
             </div>
+          ) : filteredInstalledSkills.length === 0 ? (
+            <div className="rounded-md border border-black/[0.08] bg-white px-4 py-8 text-center">
+              <p className="text-sm text-black/45">{t("没有匹配的已安装技能")}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setInstalledSearchQuery("");
+                  setInstalledCategoryFilter("all");
+                  setInstalledSourceFilter("all");
+                }}
+                className="mt-3 inline-flex h-8 items-center justify-center rounded-md border border-black/10 px-3 text-xs font-medium text-black/60 transition-colors hover:border-black/20 hover:text-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              >
+                {t("清除筛选")}
+              </button>
+            </div>
           ) : (
-            <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              {installed.map((skill) => (
-                <InstalledSkillCard
-                  key={skillIdentity(skill)}
-                  skill={skill}
-                  uninstalling={uninstallingKey === skillIdentity(skill)}
-                  onUninstall={handleUninstall}
-                />
-              ))}
-            </ul>
+            <div className="overflow-hidden rounded-md border border-black/[0.08] bg-white">
+              <div className="hidden grid-cols-[minmax(0,1.3fr)_minmax(110px,0.65fr)_minmax(120px,0.7fr)_minmax(64px,0.35fr)_2.25rem] items-center gap-x-3 border-b border-black/[0.08] bg-black/[0.025] px-3.5 py-2.5 text-xs font-semibold text-black/45 md:grid">
+                <span>{t("名称/Slug")}</span>
+                <span>{t("分类")}</span>
+                <span>{t("来源")}</span>
+                <span>{t("版本")}</span>
+                <span className="sr-only">{t("操作")}</span>
+              </div>
+              <ul aria-label={t("已安装技能列表")} className="divide-y divide-black/[0.06]">
+                {pagedInstalledSkills.map((skill) => (
+                  <InstalledSkillRow
+                    key={skillIdentity(skill)}
+                    skill={skill}
+                    disabled={uninstallBusy}
+                    uninstalling={uninstallingKey === skillIdentity(skill)}
+                    onUninstall={setPendingUninstall}
+                  />
+                ))}
+              </ul>
+            </div>
           )}
+          {!installedLoading && filteredInstalledSkills.length > INSTALLED_PAGE_SIZE ? (
+            <div className="mt-3 flex items-center justify-center gap-3 text-xs text-black/50">
+              <button
+                type="button"
+                onClick={() => setInstalledPage((page) => Math.max(1, page - 1))}
+                disabled={installedPage <= 1}
+                className="inline-flex h-8 items-center justify-center rounded-md border border-black/10 bg-white px-3 font-medium hover:border-black/20 hover:text-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-40"
+              >
+                {t("上一页")}
+              </button>
+              <span className="tabular-nums">{t("{{page}} / {{total}} 页", { page: installedPage, total: installedTotalPages })}</span>
+              <button
+                type="button"
+                onClick={() => setInstalledPage((page) => Math.min(installedTotalPages, page + 1))}
+                disabled={installedPage >= installedTotalPages}
+                className="inline-flex h-8 items-center justify-center rounded-md border border-black/10 bg-white px-3 font-medium hover:border-black/20 hover:text-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-40"
+              >
+                {t("下一页")}
+              </button>
+            </div>
+          ) : null}
         </TabsContent>
 
       </Tabs>
