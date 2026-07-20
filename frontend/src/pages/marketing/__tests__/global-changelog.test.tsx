@@ -82,6 +82,11 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-launch-global-zh.webp"),
     );
+    expect(
+      screen.getByText(
+        "支持一键创建云端 Hermes Agent，支持快速接入 Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。",
+      ),
+    ).toBeInTheDocument();
 
     cleanup();
     await i18n.changeLanguage("en-US");
@@ -93,6 +98,11 @@ describe("global changelog skill package entry", () => {
 
     expect(screen.getByRole("heading", { name: "The Skills Page, Reimagined" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "LightVela Supports Skill Packages" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Install skill combinations quickly, helping your Agent move from individual Skills to complete workflows.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByAltText("LightVela Supports Skill Packages")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-skill-packages-global-en.webp"),

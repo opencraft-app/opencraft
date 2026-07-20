@@ -162,7 +162,7 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       : variant === "skillsRevamp"
       ? isGlobal
         ? useGlobalChineseAsset ? "1279 / 867" : "1285 / 863"
-        : "1459 / 988"
+        : "1161 / 785"
       : variant === "skillPackagesRevamp"
       ? useGlobalChineseAsset ? "1279 / 635" : "1275 / 666"
       : variant === "diagnosticsCenter"
@@ -216,7 +216,7 @@ function ChangelogContent() {
   /* 数据驱动；每条文案直接通过翻译函数调用字面量，以便被 i18n-extract 扫描。
      国内站与国际站的渠道事实不同，使用 isGlobal 编译期分支分别维护。 */
   const launchDesc = isGlobal
-    ? t("支持一键创建云端 Hermes Agent，支持快速接入Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")
+    ? t("支持一键创建云端 Hermes Agent，支持快速接入 Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")
     : t("支持一键创建云端 Hermes Agent，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。");
   const skillsPageDesc = isGlobal
     ? t("支持从 ClawHub 和 skills.sh 搜索并一键安装技能；在精选技能页面浏览热门推荐和场景分类、查看技能详情。")

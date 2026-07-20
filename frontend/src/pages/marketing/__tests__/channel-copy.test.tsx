@@ -64,10 +64,12 @@ describe("marketing channel copy", () => {
 
     expect(screen.getByText("2026 年 7 月")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "自动任务支持调用技能" })).toBeInTheDocument();
-    expect(screen.getByAltText("技能页面全新升级")).toHaveAttribute(
+    const skillsPageImage = screen.getByAltText("技能页面全新升级");
+    expect(skillsPageImage).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-skills-page-domestic-zh.webp"),
     );
+    expect(skillsPageImage.parentElement).toHaveStyle({ aspectRatio: "1161 / 785" });
     expect(
       screen.getByText(
         "创建或编辑自动任务时，可以选择需要调用的技能。Agent 会在执行任务前加载该技能，帮助自动任务更稳定地调用技能。",

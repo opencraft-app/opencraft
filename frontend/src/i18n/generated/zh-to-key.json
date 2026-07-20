@@ -1003,7 +1003,7 @@
   "支付完成后，需等待约15秒完成下单": "k_4de13410",
   "支持 Hermes 导出的 .zip 备份包。": "k_f21d0fa9",
   "支持一键创建云端 Hermes Agent，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。": "k_db08929d",
-  "支持一键创建云端 Hermes Agent，支持快速接入Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。": "k_44d82b73",
+  "支持一键创建云端 Hermes Agent，支持快速接入 Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。": "k_1fe18314",
   "支持从 ClawHub 和 skills.sh 搜索并一键安装技能；在精选技能页面浏览热门推荐和场景分类、查看技能详情。": "k_45fc0259",
   "支持从 SkillHub 搜索并一键安装技能；在精选技能页面浏览热门推荐和场景分类、查看技能详情。": "k_670704fe",
   "支持通过默认的 home 对话或指定 Chat ID 发送通知": "k_cfe381df",
