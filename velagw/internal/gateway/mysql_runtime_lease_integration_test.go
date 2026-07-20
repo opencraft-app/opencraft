@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -687,7 +688,7 @@ func TestMySQLFleetRuntimeFactsAndShardProjectionRoundTrip(t *testing.T) {
 		SQLMaxOpenConns: 32, SQLMaxIdleConns: 2, SQLMaxLifetimeSeconds: 60,
 		TrafficSQLMaxOpenConns: 24, TrafficSQLMaxIdleConns: 2, TrafficSQLMaxLifetimeSeconds: 90,
 		SubscriptionWriteConcurrency: 8,
-		RuntimeHAStatus: SetRuntimeHAHealthy, RuntimeHADesiredReplicas: 2, RuntimeHAReadyReplicas: 2,
+		RuntimeHAStatus:              SetRuntimeHAHealthy, RuntimeHADesiredReplicas: 2, RuntimeHAReadyReplicas: 2,
 		RuntimeHAPDBHealthy: true, RuntimeHATopologyKey: "topology.kubernetes.io/zone", RuntimeHACheckedAt: time.Now().UTC().Truncate(time.Microsecond),
 		DesiredHash: strings.Repeat("a", 64), Status: SetReconcileStatusPending,
 	}
@@ -853,6 +854,44 @@ func TestMySQLAPIKeyReservationOmitsPlaintextAndPersistsRecoverableRoute(t *test
 	}
 	if _, ok, err := cache.GetRoute(ctx, parseTrafficRouteLookup(material.ExternalKey)); err != nil || !ok {
 		t.Fatalf("rebuilt route from recovered key: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestMySQLAPIKeyRouteRecoveryUsesKeysetPageAndJoinsTrafficPolicy(t *testing.T) {
+	store := newIsolatedMySQLStore(t)
+	defer func() { _ = store.Close() }()
+	ctx := t.Context()
+	if err := store.SaveTenant(ctx, Tenant{ExternalUserID: "user-1", Backend: UserBackendNew, SetID: "set-a", Status: TenantStatusActive}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveUserLLMSettings(ctx, UserLLMSettings{
+		ExternalUserID: "user-1", Routing: UserLLMRouting{Mode: LLMRouteBYOKFirst},
+		BYOKUpstreamKey: "sk-byok", BYOKUpstreamKeyID: 31,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	bindings := []APIKeyBinding{
+		saveRecoverableAPIKey(t, store, 31, "user-1", "set-a", APIKeyStatusActive),
+		saveRecoverableAPIKey(t, store, 32, "user-1", "set-a", APIKeyStatusActive),
+		saveRecoverableAPIKey(t, store, 33, "user-1", "set-a", APIKeyStatusRoutePending),
+	}
+	sort.Slice(bindings[:2], func(i, j int) bool { return bindings[i].ExternalKeyID < bindings[j].ExternalKeyID })
+	watermark, err := store.GetAPIKeyRouteRecoveryWatermark(ctx)
+	if err != nil || watermark != bindings[1].ExternalKeyID {
+		t.Fatalf("watermark=%q err=%v, want %q", watermark, err, bindings[1].ExternalKeyID)
+	}
+	first, err := store.ListAPIKeyRouteRecoveryRecords(ctx, "", watermark, 1)
+	if err != nil || len(first) != 1 {
+		t.Fatalf("first page=%+v err=%v", first, err)
+	}
+	second, err := store.ListAPIKeyRouteRecoveryRecords(ctx, first[0].Binding.ExternalKeyID, watermark, 1)
+	if err != nil || len(second) != 1 || second[0].Binding.ExternalKeyID != bindings[1].ExternalKeyID {
+		t.Fatalf("second page=%+v err=%v", second, err)
+	}
+	for _, record := range append(first, second...) {
+		if record.TenantStatus != TenantStatusActive || record.BYOKRoutingMode != LLMRouteBYOKFirst || record.BYOKUpstreamKey != "sk-byok" || record.BYOKUpstreamKeyID != 31 {
+			t.Fatalf("joined recovery record=%+v", record)
+		}
 	}
 }
 

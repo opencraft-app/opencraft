@@ -4738,6 +4738,8 @@ function friendlyJobName(name: string) {
       return "下发权益模板"
     case "refresh_tenant_statistics":
       return "统计租户数量"
+	case "rebuild_api_key_routes":
+		return "恢复密钥路由"
     case "reconcile_set_facts":
       return "消费 Set 事实"
     case "retry_byok_sync":

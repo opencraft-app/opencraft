@@ -424,6 +424,9 @@ func TestProductionEnablesStdoutTracingForControlAndWorkerOnly(t *testing.T) {
 		requireEnv(t, worker, "OTEL_SERVICE_NAME", item.deployment)
 		requireEnv(t, worker, "LLMGATEWAY_ENVIRONMENT", "prod")
 		requireEnv(t, worker, "LLMGATEWAY_SQL_MAX_OPEN_CONNS", map[string]string{"core": "12", "byok": "16", "observer": "16", "maintenance": "12"}[item.pool])
+		if item.pool == "core" {
+			requireEnv(t, worker, "LLMGATEWAY_KEY_ROUTE_REBUILD_BATCH_SIZE", "1000")
+		}
 	}
 
 	traffic := deploymentContainer(t, docs, "llmgateway-traffic", "traffic")

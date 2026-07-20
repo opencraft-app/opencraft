@@ -1,3 +1,17 @@
+data "tencentcloud_availability_zones_by_product" "redis" {
+  product = "redis"
+}
+
+locals {
+  redis_zone_ids_by_name = {
+    for zone in data.tencentcloud_availability_zones_by_product.redis.zones : zone.name => tonumber(zone.id)
+  }
+  control_redis_replica_zone_ids = [
+    for zone_index in var.control_redis.replica_zone_indexes :
+    local.redis_zone_ids_by_name[var.availability_zones[zone_index]]
+  ]
+}
+
 resource "tencentcloud_mysql_instance" "control" {
   instance_name     = "${local.name_prefix}-control-mysql"
   engine_version    = "8.0"
@@ -36,12 +50,25 @@ resource "tencentcloud_redis_instance" "control" {
   mem_size           = var.control_redis.mem_size
   redis_shard_num    = var.control_redis.redis_shard_num
   redis_replicas_num = var.control_redis.redis_replicas_num
+  replica_zone_ids   = local.control_redis_replica_zone_ids
+  replicas_read_only = false
   port               = 6379
   password           = var.redis_password
   vpc_id             = tencentcloud_vpc.main.id
   subnet_id          = local.data_subnet_ids[0]
   security_groups    = [tencentcloud_security_group.redis.id]
   tags               = local.common_tags
+
+  lifecycle {
+    precondition {
+      condition     = length(var.control_redis.replica_zone_indexes) == var.control_redis.redis_replicas_num
+      error_message = "control_redis.replica_zone_indexes must contain exactly one zone index per Redis replica."
+    }
+    precondition {
+      condition     = length(distinct(concat([0], var.control_redis.replica_zone_indexes))) >= 2
+      error_message = "control Redis replicas must span at least two availability zones."
+    }
+  }
 }
 
 resource "tencentcloud_mysql_instance" "shard" {

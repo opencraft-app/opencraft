@@ -517,6 +517,7 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 			INDEX idx_llmgateway_api_key_user_id (user_id),
 			INDEX idx_llmgateway_api_key_set_id (set_id),
 			INDEX idx_llmgateway_api_key_status_updated (status, updated_at),
+			INDEX idx_llmgateway_api_key_status_key_id (status, external_key_id),
 			INDEX idx_llmgateway_api_key_route_slot (route_slot, external_key_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS llmgateway_user_llm_settings (
@@ -1569,6 +1570,7 @@ func tenantListCompositeIndexes() []mysqlIndexSpec {
 		{Table: "llmgateway_tenants", Name: "idx_llmgateway_tenants_set_page", Columns: []string{"set_id", "updated_at", "external_user_id"}},
 		{Table: "llmgateway_tenants", Name: "idx_llmgateway_tenants_backend_status", Columns: []string{"backend", "status"}},
 		{Table: "llmgateway_user_bindings", Name: "idx_llmgateway_user_bindings_username_user", Columns: []string{"username", "external_user_id"}},
+		{Table: "llmgateway_api_key_bindings", Name: "idx_llmgateway_api_key_status_key_id", Columns: []string{"status", "external_key_id"}},
 	}
 }
 
@@ -3273,6 +3275,56 @@ func (s *MySQLStore) ListAPIKeyBindingsByStatus(ctx context.Context, status stri
 	return bindings, rows.Err()
 }
 
+func (s *MySQLStore) GetAPIKeyRouteRecoveryWatermark(ctx context.Context) (string, error) {
+	var watermark sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT MAX(external_key_id)
+		FROM llmgateway_api_key_bindings
+		WHERE status = ?
+	`, APIKeyStatusActive).Scan(&watermark)
+	if err != nil {
+		return "", err
+	}
+	if !watermark.Valid {
+		return "", nil
+	}
+	return watermark.String, nil
+}
+
+func (s *MySQLStore) ListAPIKeyRouteRecoveryRecords(ctx context.Context, afterKeyID, throughKeyID string, limit int) ([]TrafficRouteRecoveryRecord, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 1000
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT k.external_key_id, k.external_key, k.external_key_hash, k.secret_hash,
+			k.key_version, k.route_slot, k.purpose, k.set_id, k.user_id,
+			k.upstream_key, k.upstream_key_id, k.status, k.last_error,
+			k.created_at, k.updated_at,
+			COALESCE(tenants.backend, ''), COALESCE(tenants.status, ''),
+			COALESCE(settings.routing_mode, ''), COALESCE(settings.byok_upstream_key, ''),
+			COALESCE(settings.byok_upstream_key_id, 0)
+		FROM llmgateway_api_key_bindings k
+		LEFT JOIN llmgateway_tenants tenants ON tenants.external_user_id = k.user_id
+		LEFT JOIN llmgateway_user_llm_settings settings ON settings.external_user_id = k.user_id
+		WHERE k.status = ? AND k.external_key_id > ? AND k.external_key_id <= ?
+		ORDER BY k.external_key_id
+		LIMIT ?
+	`, APIKeyStatusActive, strings.TrimSpace(afterKeyID), strings.TrimSpace(throughKeyID), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	records := make([]TrafficRouteRecoveryRecord, 0, limit)
+	for rows.Next() {
+		record, err := scanTrafficRouteRecoveryRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, rows.Err()
+}
+
 func (s *MySQLStore) GetAPIKeyBindingByExternalKey(ctx context.Context, externalKey string) (APIKeyBinding, bool, error) {
 	hash := hashExternalKey(externalKey)
 	row := s.db.QueryRowContext(ctx, `
@@ -4525,6 +4577,47 @@ func scanAPIKeyBinding(row scanner) (APIKeyBinding, error) {
 	}
 	binding.RouteSlot = uint32(routeSlot)
 	return binding, err
+}
+
+func scanTrafficRouteRecoveryRecord(row scanner) (TrafficRouteRecoveryRecord, error) {
+	var record TrafficRouteRecoveryRecord
+	var purpose sql.NullString
+	var lastError sql.NullString
+	var updatedAt sql.NullTime
+	var routeSlot uint64
+	err := row.Scan(
+		&record.Binding.ExternalKeyID,
+		&record.Binding.ExternalKey,
+		&record.Binding.ExternalKeyHash,
+		&record.Binding.SecretHash,
+		&record.Binding.KeyVersion,
+		&routeSlot,
+		&purpose,
+		&record.Binding.SetID,
+		&record.Binding.UserID,
+		&record.Binding.UpstreamKey,
+		&record.Binding.UpstreamKeyID,
+		&record.Binding.Status,
+		&lastError,
+		&record.Binding.CreatedAt,
+		&updatedAt,
+		&record.TenantBackend,
+		&record.TenantStatus,
+		&record.BYOKRoutingMode,
+		&record.BYOKUpstreamKey,
+		&record.BYOKUpstreamKeyID,
+	)
+	if purpose.Valid {
+		record.Binding.Purpose = purpose.String
+	}
+	if lastError.Valid {
+		record.Binding.LastError = lastError.String
+	}
+	if updatedAt.Valid {
+		record.Binding.UpdatedAt = updatedAt.Time.UTC()
+	}
+	record.Binding.RouteSlot = uint32(routeSlot)
+	return record, err
 }
 
 func scanUserLLMSettings(row scanner) (UserLLMSettings, error) {

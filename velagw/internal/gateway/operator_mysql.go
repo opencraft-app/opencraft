@@ -723,6 +723,33 @@ func (s *MySQLStore) ListWorkerJobs(ctx context.Context, opts WorkerJobListOptio
 	return jobs, rows.Err()
 }
 
+func (s *MySQLStore) QueueWorkerJob(ctx context.Context, name string, resetCursor bool, _ time.Time) (WorkerJob, bool, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return WorkerJob{}, false, fmt.Errorf("job name is required")
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE llmgateway_worker_jobs
+		SET next_run_at = UTC_TIMESTAMP(6),
+			scan_cursor = CASE WHEN ? THEN '' ELSE scan_cursor END,
+			updated_at = UTC_TIMESTAMP(6)
+		WHERE name = ? AND enabled = TRUE
+			AND (status <> ? OR lease_until IS NULL OR lease_until <= UTC_TIMESTAMP(6))
+	`, resetCursor, name, WorkerJobStatusRunning)
+	if err != nil {
+		return WorkerJob{}, false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return WorkerJob{}, false, err
+	}
+	job, ok, err := s.GetWorkerJob(ctx, name)
+	if err != nil || !ok || affected == 0 {
+		return job, false, err
+	}
+	return job, true, nil
+}
+
 func (s *MySQLStore) TryAcquireWorkerJobLease(ctx context.Context, name string, owner string, ttl time.Duration, _ time.Time) (WorkerJob, bool, error) {
 	name = strings.TrimSpace(name)
 	owner = strings.TrimSpace(owner)
