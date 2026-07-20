@@ -91,8 +91,8 @@ describe("global changelog skill package entry", () => {
     );
 
     expect(screen.getByRole("heading", { name: "The Skills Page, Reimagined" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "LightVela supports Skill Packages" })).toBeInTheDocument();
-    expect(screen.getByAltText("LightVela supports Skill Packages")).toHaveAttribute(
+    expect(screen.getByRole("heading", { name: "LightVela Supports Skill Packages" })).toBeInTheDocument();
+    expect(screen.getByAltText("LightVela Supports Skill Packages")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-skill-packages-global-en.webp"),
     );
@@ -101,8 +101,8 @@ describe("global changelog skill package entry", () => {
       "src",
       expect.stringContaining("/assets/changelog/lightvela-diagnostics-global-en.webp"),
     );
-    expect(screen.getByRole("heading", { name: "Soul personas are now available" })).toBeInTheDocument();
-    expect(screen.getByAltText("Soul personas are now available")).toHaveAttribute(
+    expect(screen.getByRole("heading", { name: "Soul Personas Are Now Available" })).toBeInTheDocument();
+    expect(screen.getByAltText("Soul Personas Are Now Available")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/soul-persona-global-en.webp"),
     );
