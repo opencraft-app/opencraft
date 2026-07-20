@@ -1453,3 +1453,19 @@ Not-tested: 待实现后填写
 - [x] 切换 Agent 时重置技能与技能包页面操作状态，旧 Agent 的异步任务不回写新 Agent 界面。
 - [x] 批量安装期间禁用搜索失败提示中的“重试”，事件处理函数同时增加忙碌状态保护。
 - [x] 目标 Vitest 93 条、`pnpm check`、`pnpm i18n:check`、浏览器三页签回验和 `git diff --check` 均通过；浏览器控制台无错误。
+
+### Task 70: 处理已安装技能来源与删除命令 CR
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/hermes-skills-client.ts`
+- Modify: `frontend/src/lib/__tests__/hermes-skills-client.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+
+- [x] 多市场同 slug 时保留各市场独立记录，不再额外展示无法确定归属的 Hermes 镜像记录。
+- [x] Hermes 删除命令在 `rm` 失败时立即返回失败，并继续保留删除后的存在性校验。
+- [x] Hermes 来源文案使用映射表，保持 builtin / local / other / clawhub 及未知来源回退行为。
+- [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
+- [x] 提交并推送现有 MR。

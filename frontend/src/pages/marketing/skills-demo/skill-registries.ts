@@ -111,6 +111,13 @@ export const REGISTRY_LABEL: Record<Registry, string> = {
   hermes: "Hermes",
 };
 
+const HERMES_SOURCE_LABELS: Record<string, string> = {
+  builtin: "系统预置",
+  local: "本地安装",
+  other: "其他",
+  clawhub: REGISTRY_LABEL.clawhub,
+};
+
 // ─── 命令构造 ────────────────────────────────────────────────────────────────
 
 export function buildClawhubSearchCommand(keyword: string, sortBy = "installs"): string {
@@ -466,16 +473,9 @@ export function parseSkillhubList(raw: string): InstalledSkill[] {
 
 export function parseHermesInstalledSkills(raw: string): InstalledSkill[] {
   return parseInstalledSkills(raw).map(({ slug, category, source, status }) => {
-    const normalizedSource = source?.trim().toLowerCase();
-    const sourceLabel = normalizedSource === "builtin"
-      ? "系统预置"
-      : normalizedSource === "local"
-        ? "本地安装"
-        : normalizedSource === "other"
-          ? "其他"
-          : normalizedSource === "clawhub"
-            ? REGISTRY_LABEL.clawhub
-            : source?.trim() || "其他";
+    const trimmedSource = source?.trim() ?? "";
+    const normalizedSource = trimmedSource.toLowerCase();
+    const sourceLabel = HERMES_SOURCE_LABELS[normalizedSource] ?? (trimmedSource || "其他");
     return {
       registry: "hermes",
       rawId: slug,
@@ -599,6 +599,12 @@ export function mergeInstalledWithHermes(
       matches[0].category = matches[0].category ?? hermesSkill.category;
       matches[0].status = matches[0].status ?? hermesSkill.status;
       matches[0].sourceLabel = matches[0].registries.map((registry) => REGISTRY_LABEL[registry]).join(" / ");
+      continue;
+    }
+    if (matches.length > 1) {
+      // Hermes reports the runtime directory, not a third marketplace install.
+      // When more than one marketplace record shares the slug, keep those records
+      // separate and avoid rendering an unattributable Hermes duplicate.
       continue;
     }
     merged.push({

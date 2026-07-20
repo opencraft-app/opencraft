@@ -95,11 +95,10 @@ describe("skills.sh command builders", () => {
       hermesSkills,
     );
 
-    expect(installed).toHaveLength(3);
+    expect(installed).toHaveLength(2);
     expect(installed).toEqual(expect.arrayContaining([
       expect.objectContaining({ registry: "clawhub", rawId: "okx-sentiment-tracker" }),
       expect.objectContaining({ registry: "skills-sh", rawId: "okx/agent-skills/okx-sentiment-tracker" }),
-      expect.objectContaining({ registry: "hermes", rawId: "okx-sentiment-tracker" }),
     ]));
   });
 
@@ -273,6 +272,17 @@ describe("Hermes native installed skills", () => {
     ]);
   });
 
+  it("maps known Hermes source labels and preserves unknown source text", () => {
+    expect(parseHermesInstalledSkills([
+      "│ Name │ Category │ Source │ Status │",
+      "│ claw-tool │ utility │ clawhub │ enabled │",
+      "│ custom-tool │ utility │ custom-channel │ enabled │",
+    ].join("\n"))).toEqual([
+      expect.objectContaining({ rawId: "claw-tool", sourceLabel: "ClawHub" }),
+      expect.objectContaining({ rawId: "custom-tool", sourceLabel: "custom-channel" }),
+    ]);
+  });
+
   it("maps non-bundled skills stored under the Hermes skills root to other", () => {
     expect(parseHermesInstalledSkills(
       "│ Name │ Category │ Source │ Status │\n"
@@ -305,6 +315,38 @@ describe("Hermes native installed skills", () => {
         rawId: "team/repo/finance-news",
         registries: ["skills-sh", "hermes"],
         uninstallable: true,
+      }),
+    ]);
+  });
+
+  it("keeps same-slug marketplace records separate without duplicating an ambiguous Hermes record", () => {
+    const registrySkills: InstalledSkill[] = [{
+      registry: "clawhub",
+      rawId: "shared-skill",
+      slug: "shared-skill",
+      name: "ClawHub Shared Skill",
+      registries: ["clawhub"],
+      sourceLabel: "ClawHub",
+    }, {
+      registry: "skills-sh",
+      rawId: "team/repository/shared-skill",
+      slug: "shared-skill",
+      name: "skills.sh Shared Skill",
+      registries: ["skills-sh"],
+      sourceLabel: "skills.sh",
+    }];
+    const hermesSkills = parseHermesInstalledSkills("shared-skill");
+
+    expect(mergeInstalledWithHermes(registrySkills, hermesSkills)).toEqual([
+      expect.objectContaining({
+        registry: "clawhub",
+        rawId: "shared-skill",
+        registries: ["clawhub"],
+      }),
+      expect.objectContaining({
+        registry: "skills-sh",
+        rawId: "team/repository/shared-skill",
+        registries: ["skills-sh"],
       }),
     ]);
   });

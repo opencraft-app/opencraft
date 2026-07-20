@@ -113,7 +113,7 @@ export function buildHermesSkillDeleteCommand(slug: string): string {
   const skillsRoot = "$HOME/.hermes/skills";
   const findSkill = `find "${skillsRoot}" -mindepth 1 -type d -name "${normalized}" -exec test -f "{}/SKILL.md" \\; -print -quit`;
   const deleteSkill = `find "${skillsRoot}" -mindepth 1 -type d -name "${normalized}" -exec test -f "{}/SKILL.md" \\; -prune -exec rm -rf -- {} +`;
-  return `cd "$HOME" && test -d "${skillsRoot}" && ${findSkill} | grep -q . || { echo "Hermes skill not found: ${normalized}" >&2; exit 1; }; ${deleteSkill}; ! ${findSkill} | grep -q .`;
+  return `cd "$HOME" && test -d "${skillsRoot}" && ${findSkill} | grep -q . || { echo "Hermes skill not found: ${normalized}" >&2; exit 1; }; ${deleteSkill} && ! ${findSkill} | grep -q .`;
 }
 
 export function getUniqueSkillSlugs(skillSlugs: string[]): string[] {

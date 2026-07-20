@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -59,6 +59,31 @@ describe("hermes skills client", () => {
       await expect(execFileAsync("/bin/sh", ["-c", command], { env })).resolves.toBeDefined();
       await expect(access(skillDir)).rejects.toBeDefined();
       await expect(execFileAsync("/bin/sh", ["-c", command], { env })).rejects.toMatchObject({ code: 1 });
+    } finally {
+      await rm(taskTempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails the Hermes delete command when rm reports an error even if the target disappeared", async () => {
+    const taskTempDir = await mkdtemp(join(tmpdir(), "hermes-skill-delete-rm-error-"));
+    const skillDir = join(taskTempDir, ".hermes", "skills", "utility", "failing-delete");
+    const fakeBinDir = join(taskTempDir, "bin");
+    const fakeRmPath = join(fakeBinDir, "rm");
+    const command = buildHermesSkillDeleteCommand("failing-delete");
+    const env = {
+      ...process.env,
+      HOME: taskTempDir,
+      PATH: `${fakeBinDir}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+    };
+    try {
+      await mkdir(skillDir, { recursive: true });
+      await mkdir(fakeBinDir, { recursive: true });
+      await writeFile(join(skillDir, "SKILL.md"), "# Failing Delete\n", "utf8");
+      await writeFile(fakeRmPath, "#!/bin/sh\n/bin/rm \"$@\"\nexit 1\n", "utf8");
+      await chmod(fakeRmPath, 0o755);
+
+      await expect(execFileAsync("/bin/sh", ["-c", command], { env })).rejects.toMatchObject({ code: 1 });
+      await expect(access(skillDir)).rejects.toBeDefined();
     } finally {
       await rm(taskTempDir, { recursive: true, force: true });
     }
