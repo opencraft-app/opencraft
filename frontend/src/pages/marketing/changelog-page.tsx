@@ -60,7 +60,7 @@ type ChangelogMonthGroup = {
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "soul" | "schedule" | "automationSkill" | "chat" | "memory" | "skill-package" }) {
+export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "soul" | "schedule" | "automationSkill" | "chat" | "memory" | "skill-package" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
@@ -84,9 +84,11 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
           : "/assets/changelog/lightvela-skills-page-global-en.webp"
         : "/assets/changelog/lightvela-skills-page-domestic-zh.webp"
       : variant === "skillPackagesRevamp"
-      ? useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-skill-packages-global-zh.webp"
-        : "/assets/changelog/lightvela-skill-packages-global-en.webp"
+      ? isGlobal
+        ? useGlobalChineseAsset
+          ? "/assets/changelog/lightvela-skill-packages-global-zh.webp"
+          : "/assets/changelog/lightvela-skill-packages-global-en.webp"
+        : "/assets/changelog/lightvela-skill-package-cn.webp"
       : variant === "diagnosticsCenter"
       ? isGlobal
         ? useGlobalChineseAsset
@@ -164,7 +166,9 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
         ? useGlobalChineseAsset ? "1279 / 867" : "1285 / 863"
         : "1161 / 785"
       : variant === "skillPackagesRevamp"
-      ? useGlobalChineseAsset ? "1279 / 635" : "1275 / 666"
+      ? isGlobal
+        ? useGlobalChineseAsset ? "1279 / 635" : "1275 / 666"
+        : "1166 / 680"
       : variant === "diagnosticsCenter"
       ? isGlobal
         ? useGlobalChineseAsset ? "1281 / 615" : "1283 / 638"

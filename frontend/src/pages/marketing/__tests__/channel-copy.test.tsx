@@ -4,7 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import i18n from "@/i18n";
-import { ChangelogPage } from "@/pages/marketing/changelog-page";
+import { ChangelogPage, VisualCard } from "@/pages/marketing/changelog-page";
 import { WhereToUseSection } from "@/pages/marketing/landing/where-to-use-section";
 
 vi.mock("framer-motion", () => ({
@@ -55,6 +55,17 @@ afterEach(() => {
 });
 
 describe("marketing channel copy", () => {
+  it("uses the domestic skill package visual when the revamped card is reused on the domestic site", () => {
+    render(<VisualCard variant="skillPackagesRevamp" />);
+
+    const skillPackageImage = screen.getByAltText("LightVela 支持技能包");
+    expect(skillPackageImage).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-skill-package-cn.webp"),
+    );
+    expect(skillPackageImage.parentElement).toHaveStyle({ aspectRatio: "1166 / 680" });
+  });
+
   it("announces reliable Skill invocation for automations in the July changelog", () => {
     render(
       <MemoryRouter>
