@@ -64,6 +64,25 @@ PROD_DB_MIGRATION_WORKFLOWS = {
 }
 
 
+def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
+    service_root = REPO_ROOT / "argocd/services/velagw/shprod"
+    kustomization = yaml.safe_load((service_root / "kustomization.yaml").read_text())
+    docs = []
+    for resource in kustomization.get("resources", []):
+        docs.extend(doc for doc in yaml.safe_load_all((service_root / resource).read_text()) if doc)
+    return kustomization, docs
+
+
+def load_velagw_shprod_platform_values() -> dict[str, str]:
+    values = {}
+    path = REPO_ROOT / "argocd/services/velagw/shprod/velagw-platform.env"
+    for line in path.read_text().splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            values[key] = value
+    return values
+
+
 class ReleaseBundleContractTests(unittest.TestCase):
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
         rendered = dump_manifest(merge_bundle_sources(RUNTIME_DIR / "bundles"))
@@ -310,23 +329,20 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("argocd/clusters/shanghai-llmgateway-prod.yaml", bundle.publish_paths)
         self.assertIn("argocd/services/velagw/shprod/**", bundle.publish_paths)
 
-        rendered = subprocess.run(
-            ["kustomize", "build", "argocd/services/velagw/shprod"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout
-        rendered_docs = [doc for doc in yaml.safe_load_all(rendered) if doc]
-        kinds = {doc.get("kind") for doc in rendered_docs}
+        kustomization, resource_docs = load_velagw_shprod_resources()
+        kinds = {doc.get("kind") for doc in resource_docs}
         self.assertNotIn("Secret", kinds)
         self.assertNotIn("Namespace", kinds)
         self.assertNotIn("LLMFleet", kinds)
         self.assertIn("ResourceGraphDefinition", kinds)
+        self.assertEqual(
+            kustomization.get("resources"),
+            ["workloads.yaml", "set-manager.yaml", "llmfleet-rgd.yaml"],
+        )
 
         traffic = next(
             doc
-            for doc in rendered_docs
+            for doc in resource_docs
             if doc.get("kind") == "Deployment"
             and (doc.get("metadata") or {}).get("name") == "llmgateway-traffic"
         )
@@ -340,7 +356,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         set_manager = next(
             doc
-            for doc in rendered_docs
+            for doc in resource_docs
             if doc.get("kind") == "CronJob"
             and (doc.get("metadata") or {}).get("name") == "llmgateway-set-manager"
         )
@@ -354,6 +370,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         }
         self.assertEqual(
             set_manager_env.get("LLMGATEWAY_SET_MANAGER_RUNTIME_CLEANER_IMAGE"),
+            set_manager_container.get("image"),
+        )
+        self.assertEqual(
+            load_velagw_shprod_platform_values().get("VELAGW_IMAGE"),
             set_manager_container.get("image"),
         )
 
@@ -394,15 +414,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 marker[key] = value
         expected_version = marker["upstream_commit"][:7]
 
-        rendered = subprocess.run(
-            ["kustomize", "build", "argocd/services/velagw/shprod"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout
+        _, resource_docs = load_velagw_shprod_resources()
         actual_versions = {}
-        for workload in yaml.safe_load_all(rendered):
+        for workload in resource_docs:
             if not workload or workload.get("kind") not in {"Deployment", "CronJob"}:
                 continue
             if workload["kind"] == "CronJob":
