@@ -357,8 +357,55 @@ def validate_direct_apps(repo_root: Path, env: str) -> list[str]:
             errors.append(f"{rel_file}: spec.source.path must point at argocd/services/<service>/{env}")
         elif not (repo_root / source_path / "kustomization.yaml").is_file():
             errors.append(f"{rel_file}: missing kustomization.yaml under {source_path}")
-        if destination.get("name") != env:
-            errors.append(f"{rel_file}: spec.destination.name must be {env}")
+        errors.extend(validate_direct_app_destination(repo_root, rel_file, spec, env))
+    return errors
+
+
+def validate_direct_app_destination(repo_root: Path, rel_file: str, spec: dict[str, Any], env: str) -> list[str]:
+    destination = spec.get("destination") or {}
+    destination_name = str(destination.get("name") or "").strip()
+    if destination_name == env:
+        return []
+    if not re.fullmatch(r"[a-z0-9][a-z0-9.-]*", destination_name):
+        return [f"{rel_file}: invalid spec.destination.name: {destination_name or '<empty>'}"]
+
+    cluster_rel = f"argocd/clusters/{destination_name}.yaml"
+    cluster_path = repo_root / cluster_rel
+    if not cluster_path.is_file():
+        return [f"{rel_file}: missing cluster declaration {cluster_rel} for spec.destination.name"]
+
+    errors: list[str] = []
+    try:
+        cluster = load_mapping(cluster_path)
+    except Exception as exc:  # noqa: BLE001
+        return [f"{rel_file}: failed to parse cluster declaration {cluster_rel}: {exc}"]
+    if cluster.get("kind") != "ArgoTargetCluster":
+        errors.append(f"{cluster_rel}: kind must be ArgoTargetCluster")
+    if (cluster.get("metadata") or {}).get("name") != destination_name:
+        errors.append(f"{cluster_rel}: metadata.name must be {destination_name}")
+
+    cluster_spec = cluster.get("spec") or {}
+    project_path = str(cluster_spec.get("projectPath") or "").strip()
+    if not project_path.startswith("argocd/projects/") or not project_path.endswith(".yaml"):
+        errors.append(f"{cluster_rel}: spec.projectPath must point at argocd/projects/*.yaml")
+    else:
+        project_file = repo_root / project_path
+        if not project_file.is_file():
+            errors.append(f"{cluster_rel}: missing project declaration {project_path}")
+        else:
+            try:
+                project = load_mapping(project_file)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{cluster_rel}: failed to parse project declaration {project_path}: {exc}")
+            else:
+                app_project = str(spec.get("project") or "").strip()
+                if (project.get("metadata") or {}).get("name") != app_project:
+                    errors.append(f"{rel_file}: spec.project must match {project_path} metadata.name")
+
+    allowed_namespaces = cluster_spec.get("namespaces") or []
+    namespace = str(destination.get("namespace") or "").strip()
+    if allowed_namespaces and namespace not in allowed_namespaces:
+        errors.append(f"{rel_file}: destination namespace {namespace or '<empty>'} is not allowed by {cluster_rel}")
     return errors
 
 

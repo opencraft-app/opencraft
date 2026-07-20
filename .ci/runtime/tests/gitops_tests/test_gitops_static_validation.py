@@ -215,6 +215,85 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
             self.assertEqual(errors, [])
 
+    def test_shprod_direct_app_allows_declared_dedicated_cluster(self) -> None:
+        with self.repo() as tmp:
+            repo = Path(tmp)
+            (repo / "argocd/apps/shprod").mkdir(parents=True)
+            (repo / "argocd/services/velagw/shprod").mkdir(parents=True)
+            (repo / "argocd/services/velagw/shprod/kustomization.yaml").write_text(
+                "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n"
+            )
+            (repo / "argocd/projects").mkdir(parents=True)
+            (repo / "argocd/projects/shprod-velagw.yaml").write_text(
+                "apiVersion: argoproj.io/v1alpha1\nkind: AppProject\nmetadata:\n  name: shprod-velagw\n"
+            )
+            (repo / "argocd/clusters").mkdir(parents=True)
+            (repo / "argocd/clusters/shanghai-llmgateway-prod.yaml").write_text(
+                textwrap.dedent(
+                    """\
+                    apiVersion: lightclaw.dev/v1alpha1
+                    kind: ArgoTargetCluster
+                    metadata:
+                      name: shanghai-llmgateway-prod
+                    spec:
+                      projectPath: argocd/projects/shprod-velagw.yaml
+                      namespaces:
+                        - llmgateway
+                    """
+                )
+            )
+            (repo / "argocd/apps/shprod/velagw.yaml").write_text(
+                textwrap.dedent(
+                    """\
+                    apiVersion: argoproj.io/v1alpha1
+                    kind: Application
+                    spec:
+                      project: shprod-velagw
+                      source:
+                        repoURL: git@git.woa.com:wisp/mono2.git
+                        targetRevision: gitops
+                        path: argocd/services/velagw/shprod
+                      destination:
+                        name: shanghai-llmgateway-prod
+                        namespace: llmgateway
+                    """
+                )
+            )
+
+            errors = validate(repo, "shprod", repo / ".ci/runtime/release-bundles.manifest")
+
+            self.assertEqual(errors, [])
+
+    def test_shprod_direct_app_rejects_undeclared_dedicated_cluster(self) -> None:
+        with self.repo() as tmp:
+            repo = Path(tmp)
+            (repo / "argocd/apps/shprod").mkdir(parents=True)
+            (repo / "argocd/services/velagw/shprod").mkdir(parents=True)
+            (repo / "argocd/services/velagw/shprod/kustomization.yaml").write_text(
+                "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n"
+            )
+            (repo / "argocd/apps/shprod/velagw.yaml").write_text(
+                textwrap.dedent(
+                    """\
+                    apiVersion: argoproj.io/v1alpha1
+                    kind: Application
+                    spec:
+                      project: shprod-velagw
+                      source:
+                        repoURL: git@git.woa.com:wisp/mono2.git
+                        targetRevision: gitops
+                        path: argocd/services/velagw/shprod
+                      destination:
+                        name: missing-cluster
+                        namespace: llmgateway
+                    """
+                )
+            )
+
+            errors = validate(repo, "shprod", repo / ".ci/runtime/release-bundles.manifest")
+
+            self.assertTrue(any("missing cluster declaration" in error for error in errors), errors)
+
     def test_tkex_direct_app_passes(self) -> None:
         with self.repo() as tmp:
             repo = Path(tmp)
