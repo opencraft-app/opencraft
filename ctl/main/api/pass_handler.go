@@ -171,17 +171,7 @@ func (h *passHandler) handleAdminPassBillingMigration(w http.ResponseWriter, r *
 		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
 		return
 	}
-	var req transport.PassBillingMigrationRequest
-	if err := decodeJSONBody(r, &req); err != nil {
-		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
-		return
-	}
-	result, err := h.logic.MigrateFreeTrialPassToBilling(&req)
-	if err != nil {
-		writeHTTPError(w, r, err)
-		return
-	}
-	writeSuccess(w, r, http.StatusOK, result)
+	h.handlePassBillingMigration(w, r)
 }
 
 // describePasses GET /v1/passes — 用户可见
@@ -723,6 +713,10 @@ func (h *passHandler) internalPassBillingMigration(w http.ResponseWriter, r *htt
 		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
 		return
 	}
+	h.handlePassBillingMigration(w, r)
+}
+
+func (h *passHandler) handlePassBillingMigration(w http.ResponseWriter, r *http.Request) {
 	var req transport.PassBillingMigrationRequest
 	if err := decodeJSONBody(r, &req); err != nil {
 		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))

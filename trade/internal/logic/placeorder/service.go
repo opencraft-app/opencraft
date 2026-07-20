@@ -122,7 +122,7 @@ type MoveInOrderRequest struct {
 	AppID          string
 	BundleID       string
 	ResourceID     string
-	CurDeadline    time.Time
+	CurDeadline    string
 }
 
 // trade 内部固定的 region/zone 常量已收敛到 trade/internal/region 包（11C 抽取 2026-05-12）。
@@ -1465,7 +1465,7 @@ func buildMoveInGoodsDetail(def *store.BundleDefinition, req MoveInOrderRequest)
 		"resourceId":     strings.TrimSpace(req.ResourceID),
 		"bundleId":       strings.TrimSpace(req.BundleID),
 		"externalUserId": strings.TrimSpace(req.ExternalUserID),
-		"curDeadline":    formatJifeiDeadline(req.CurDeadline),
+		"curDeadline":    strings.TrimSpace(req.CurDeadline),
 		"billingParam": map[string]interface{}{
 			"resourcesSource": "lightvela",
 		},
@@ -1498,8 +1498,11 @@ func validateMoveInOrderRequest(req *MoveInOrderRequest) error {
 	if strings.TrimSpace(req.ResourceID) == "" {
 		return fmt.Errorf("%w: resource_id is required", ErrInvalidInput)
 	}
-	if req.CurDeadline.IsZero() {
+	if strings.TrimSpace(req.CurDeadline) == "" {
 		return fmt.Errorf("%w: cur_deadline is required", ErrInvalidInput)
+	}
+	if _, err := jifei.ParseCurDeadline(strings.TrimSpace(req.CurDeadline)); err != nil {
+		return fmt.Errorf("%w: cur_deadline must match %s in CST: %v", ErrInvalidInput, jifei.CurDeadlineLayout, err)
 	}
 	return nil
 }

@@ -1139,7 +1139,6 @@ func TestPlaceOrderAndPay_HappyPath(t *testing.T) {
 
 func TestMoveInOrderAndPay_HappyPath(t *testing.T) {
 	d := newStdDeps()
-	deadline := time.Date(2026, 7, 20, 4, 0, 0, 0, time.UTC)
 	d.jifei.generateDealsAndPayFn = func(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
 		return &jifeiclient.GenerateDealsAndPayResponse{
 			DealNames:  []string{"20260720000000001-001"},
@@ -1153,7 +1152,7 @@ func TestMoveInOrderAndPay_HappyPath(t *testing.T) {
 		AppID:          "251202221",
 		BundleID:       "bundle_launch_01",
 		ResourceID:     "pass-free-1",
-		CurDeadline:    deadline,
+		CurDeadline:    "2026-07-20 12:00:00",
 	})
 	if err != nil {
 		t.Fatalf("MoveInOrderAndPay: %v", err)
@@ -1189,6 +1188,44 @@ func TestMoveInOrderAndPay_HappyPath(t *testing.T) {
 	billingParam, ok := detail["billingParam"].(map[string]interface{})
 	if !ok || billingParam["resourcesSource"] != "lightvela" {
 		t.Fatalf("billingParam mismatch: %+v", detail["billingParam"])
+	}
+}
+
+func TestMoveInOrderAndPay_InvalidInput(t *testing.T) {
+	base := MoveInOrderRequest{
+		ExternalUserID: "usr_migrate",
+		Uin:            "700000164995",
+		AppID:          "251202221",
+		BundleID:       "bundle_launch_01",
+		ResourceID:     "pass-free-1",
+		CurDeadline:    "2026-07-20 12:00:00",
+	}
+	cases := []struct {
+		name string
+		mut  func(*MoveInOrderRequest)
+		want string
+	}{
+		{"missing external_user_id", func(req *MoveInOrderRequest) { req.ExternalUserID = "" }, "external_user_id"},
+		{"missing uin", func(req *MoveInOrderRequest) { req.Uin = "" }, "uin"},
+		{"missing app_id", func(req *MoveInOrderRequest) { req.AppID = "" }, "app_id"},
+		{"missing bundle_id", func(req *MoveInOrderRequest) { req.BundleID = "" }, "bundle_id"},
+		{"missing resource_id", func(req *MoveInOrderRequest) { req.ResourceID = "" }, "resource_id"},
+		{"missing cur_deadline", func(req *MoveInOrderRequest) { req.CurDeadline = "" }, "cur_deadline"},
+		{"bad cur_deadline", func(req *MoveInOrderRequest) { req.CurDeadline = "2026-07-20T12:00:00Z" }, "cur_deadline"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newStdDeps()
+			req := base
+			tc.mut(&req)
+			_, err := d.service.MoveInOrderAndPay(context.Background(), req)
+			if !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("expected ErrInvalidInput, got %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %q, want contains %q", err.Error(), tc.want)
+			}
+		})
 	}
 }
 

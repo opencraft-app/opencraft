@@ -101,12 +101,12 @@ type PlaceRenewOrderRequest struct {
 
 // MoveInOrderRequest 与 trade /internal/trade/orders/move-in 入参对齐。
 type MoveInOrderRequest struct {
-	ExternalUserID string    `json:"externalUserId"`
-	Uin            string    `json:"uin,omitempty"`
-	AppID          string    `json:"appId,omitempty"`
-	BundleID       string    `json:"bundleId"`
-	ResourceID     string    `json:"resourceId"`
-	CurDeadline    time.Time `json:"curDeadline"`
+	ExternalUserID string `json:"externalUserId"`
+	Uin            string `json:"uin,omitempty"`
+	AppID          string `json:"appId,omitempty"`
+	BundleID       string `json:"bundleId"`
+	ResourceID     string `json:"resourceId"`
+	CurDeadline    string `json:"curDeadline"`
 }
 
 // PayURLResult 与 trade payURLResponse 字段集对齐（v1.7.30 R-D-2 扩展，2026-05-23）。

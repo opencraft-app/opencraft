@@ -28,6 +28,7 @@ import (
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func trialSubscriptionIdempotencyKey(userID, bundleID string) string {
@@ -658,16 +659,40 @@ func (l *logic) MigrateFreeTrialPassToBilling(req *transport.PassBillingMigratio
 	if _, err := l.bundleLogic.GetBundleByID(billingMigrationTargetBundleID); err != nil {
 		return nil, err
 	}
-	record := passmigrationmodel.New(candidate.PassID, userID, allowedFreeTrialBundleID, billingMigrationTargetBundleID, req.Uin, req.AppID, passmigrationmodel.StatusPassMigrated)
-	if err := migrationDao.Upsert(record); err != nil {
-		return nil, fmt.Errorf("pass billing migration upsert state: %w", err)
-	}
-	if err := passDao.UpdateByPassID(candidate.PassID, map[string]interface{}{
-		passmodel.ColumnBundleID: billingMigrationTargetBundleID,
-		passmodel.ColumnUin:      req.Uin,
-		passmodel.ColumnAppID:    req.AppID,
+	if err := resource.GormDB.Transaction(func(tx *gorm.DB) error {
+		record := passmigrationmodel.New(candidate.PassID, userID, allowedFreeTrialBundleID, billingMigrationTargetBundleID, req.Uin, req.AppID, passmigrationmodel.StatusPassMigrated)
+		if err := tx.Table(passmigrationmodel.TableName).Clauses(clause.OnConflict{
+			Columns: []clause.Column{
+				{Name: passmigrationmodel.ColumnPassID},
+				{Name: passmigrationmodel.ColumnTargetBundleID},
+			},
+			DoUpdates: clause.AssignmentColumns([]string{
+				passmigrationmodel.ColumnUserID,
+				passmigrationmodel.ColumnSourceBundleID,
+				passmigrationmodel.ColumnUin,
+				passmigrationmodel.ColumnAppID,
+				passmigrationmodel.ColumnStatus,
+				passmigrationmodel.ColumnLastError,
+			}),
+		}).Create(record).Error; err != nil {
+			return fmt.Errorf("upsert state: %w", err)
+		}
+		result := tx.Table(passmodel.TableName).
+			Where(passmodel.ColumnPassID+" = ?", candidate.PassID).
+			Updates(map[string]interface{}{
+				passmodel.ColumnBundleID: billingMigrationTargetBundleID,
+				passmodel.ColumnUin:      req.Uin,
+				passmodel.ColumnAppID:    req.AppID,
+			})
+		if result.Error != nil {
+			return fmt.Errorf("update pass: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("update pass: %w", gorm.ErrRecordNotFound)
+		}
+		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("pass billing migration update pass: %w", err)
+		return nil, fmt.Errorf("pass billing migration persist state: %w", err)
 	}
 	candidate.BundleID = billingMigrationTargetBundleID
 	candidate.Uin = req.Uin
@@ -720,7 +745,7 @@ func (l *logic) callTradeMoveInAndRecord(candidate *passmodel.Entity, req *trans
 		AppID:          strconv.FormatInt(req.AppID, 10),
 		BundleID:       billingMigrationTargetBundleID,
 		ResourceID:     candidate.PassID,
-		CurDeadline:    candidate.ExpiredTime,
+		CurDeadline:    formatCurDeadlineForJifei(candidate.ExpiredTime),
 	})
 	if err != nil {
 		msg := truncateString(err.Error(), 1024)

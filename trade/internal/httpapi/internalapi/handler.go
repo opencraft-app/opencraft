@@ -39,6 +39,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"git.woa.com/wisp/mono/trade/internal/jifei"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
 	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
 	"git.woa.com/wisp/mono/trade/internal/logic/orderstatus"
@@ -566,12 +567,12 @@ type placeRenewOrderRequest struct {
 }
 
 type moveInOrderRequest struct {
-	ExternalUserID string    `json:"externalUserId"`
-	Uin            string    `json:"uin"`
-	AppID          string    `json:"appId"`
-	BundleID       string    `json:"bundleId"`
-	ResourceID     string    `json:"resourceId"`
-	CurDeadline    time.Time `json:"curDeadline"`
+	ExternalUserID string `json:"externalUserId"`
+	Uin            string `json:"uin"`
+	AppID          string `json:"appId"`
+	BundleID       string `json:"bundleId"`
+	ResourceID     string `json:"resourceId"`
+	CurDeadline    string `json:"curDeadline"`
 }
 
 // moveInOrderHandler 处理存量 pass 外部资源迁入计费端点。
@@ -582,6 +583,13 @@ func moveInOrderHandler(svc *placeorder.Service) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    "InvalidRequest",
 				"message": "decode JSON: " + err.Error(),
+			})
+			return
+		}
+		if err := validateMoveInOrderHTTPRequest(req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "InvalidRequest",
+				"message": err.Error(),
 			})
 			return
 		}
@@ -606,6 +614,26 @@ func moveInOrderHandler(svc *placeorder.Service) gin.HandlerFunc {
 			BigOrderID: res.BigOrderID,
 		})
 	}
+}
+
+func validateMoveInOrderHTTPRequest(req moveInOrderRequest) error {
+	required := map[string]string{
+		"externalUserId": req.ExternalUserID,
+		"uin":            req.Uin,
+		"appId":          req.AppID,
+		"bundleId":       req.BundleID,
+		"resourceId":     req.ResourceID,
+		"curDeadline":    req.CurDeadline,
+	}
+	for field, value := range required {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s is required", field)
+		}
+	}
+	if _, err := jifei.ParseCurDeadline(strings.TrimSpace(req.CurDeadline)); err != nil {
+		return fmt.Errorf("curDeadline must match %s in CST: %w", jifei.CurDeadlineLayout, err)
+	}
+	return nil
 }
 
 // placeRenewOrderHandler 处理续费下单端点（R-C-7）。

@@ -74,9 +74,16 @@ func (n *httpPassBillingMigrationNotifier) NotifyShadowBound(ctx context.Context
 		return fmt.Errorf("call ctl pass billing migration: %w", err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, readErr := io.ReadAll(resp.Body)
+	responseBody := strings.TrimSpace(string(raw))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("ctl pass billing migration status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		if readErr != nil {
+			return fmt.Errorf("ctl pass billing migration status=%d body=%s read_body_error=%v", resp.StatusCode, responseBody, readErr)
+		}
+		return fmt.Errorf("ctl pass billing migration status=%d body=%s", resp.StatusCode, responseBody)
+	}
+	if readErr != nil {
+		return fmt.Errorf("read ctl pass billing migration response: %w", readErr)
 	}
 	return nil
 }
