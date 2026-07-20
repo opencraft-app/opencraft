@@ -617,10 +617,15 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
   it("limits batch selection to search results", async () => {
     renderPanel(mode);
     const featuredSection = screen.getByText("精选").closest("section") as HTMLElement;
+    const previousFeaturedButton = within(featuredSection).getByRole("button", { name: "上一批" });
+    const nextFeaturedButton = within(featuredSection).getByRole("button", { name: "下一批" });
+    const featuredViewport = previousFeaturedButton.nextElementSibling as HTMLElement;
     const categorySection = screen
       .getByText(mode === "domestic" ? "理财分析" : "市场分析")
       .closest("section") as HTMLElement;
 
+    expect(featuredViewport).toHaveClass("min-w-0", "flex-1", "overflow-hidden");
+    expect(featuredViewport.nextElementSibling).toBe(nextFeaturedButton);
     expect(within(featuredSection).queryByRole("button", { name: /选择批量安装/ })).not.toBeInTheDocument();
     expect(within(categorySection).queryByRole("button", { name: /选择批量安装/ })).not.toBeInTheDocument();
     expect(within(featuredSection).getAllByRole("button", { name: "安装" }).length).toBeGreaterThan(0);

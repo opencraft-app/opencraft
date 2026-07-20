@@ -1,5 +1,11 @@
 # Frontend Design Notes
 
+本文档用于维护前端跨页面、跨业务复用的组件设计规范，包括组件的视觉样式、布局、交互、响应式行为和可访问性约束。
+
+- 规则应面向一类可复用组件或交互模式，不针对某个页面、功能、接口或临时需求单独定制。
+- 具体业务流程、数据规则和功能验收标准应记录在对应的 OpenSpec、PRD 或功能文档中，不写入本文档。
+- 新增规则前应先确认它能被多个场景复用；仅对单一功能成立的实现细节应留在该功能的代码或规格中。
+
 ## Corner Radius
 
 页面内的卡片、面板、列表项和表单容器默认使用 `rounded-md`。除非是头像、圆形图标按钮、胶囊标签、弹窗外壳或明确需要强调柔和感的特殊组件，不要随手使用 `rounded-lg` / `rounded-xl` / `rounded-2xl`。
@@ -50,14 +56,15 @@ Skills 搜索与安装必须显式区分“无结果”和“请求失败”。�
 - 按钮必须保留清晰的键盘焦点样式，并通过 `aria-expanded={true | false}` 暴露当前展开状态。
 - 推荐完整样式：`inline-flex h-8 min-w-28 items-center justify-center gap-1.5 rounded-full border border-black/[0.08] bg-transparent px-3 text-xs font-semibold text-black/60 transition-colors hover:border-black/15 hover:text-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2`。
 
-## Skill Packages
+## Carousel Navigation
 
-技能包默认使用单列列表，并在搜索框右侧提供列表 / 卡片图标切换；用户选择写入本地偏好，刷新后继续沿用。列表与卡片必须展示同一组名称、角色、简介和安装状态，切换视图不能触发额外的数据请求。
+横向轮播或分批展示卡片时，上一项 / 下一项按钮必须贴近它们控制的内容，并分别位于内容视口左右两侧；不要把两个方向按钮并排放在标题行右侧。用户应能从按钮位置直接判断移动方向和受控区域。
 
-- 技能包安装状态以 Hermes 成功返回的实际已安装技能集合为准；本地和 Vibebase 的包级记录只用于查询失败时的降级展示，不能覆盖已确认缺少组成技能的事实。
-- 包列表不预取全部包详情，也不逐个查询包内技能。只有缓存标记为已安装但列表响应缺少组成信息时，才补查对应包详情以校准状态。
-- 包列表接口已经一次性拉取完整结果时，不保留虚假的分页、加载更多或 IntersectionObserver 状态。
-- 技能包安装、SkillHub CLI 自升级和 Hermes 已安装技能查询都必须设置有限超时，超时后恢复可操作状态并按失败流程提示。
+- 标题独占一行，轮播操作区下一行使用“左按钮 / 内容视口 / 右按钮”的顺序；内容视口使用 `min-w-0 flex-1 overflow-hidden`，两侧按钮使用 `shrink-0`，避免挤压或遮挡卡片。
+- 左按钮使用 `ChevronLeft` 并表达“上一批 / 上一项”，右按钮使用 `ChevronRight` 并表达“下一批 / 下一项”；按钮必须提供与动作一致的 `aria-label`。
+- 两侧按钮应在卡片组高度方向居中对齐，不悬浮在标题、角标或某一张卡片上方，避免方向按钮看起来只控制局部内容。
+- 到达首项或末项时保留对应按钮位置并进入禁用态，不能直接隐藏按钮导致卡片组宽度或位置跳动。
+- 调整按钮位置时不得改变原有分页状态、切换动画、减弱动态效果设置和键盘可访问性。
 
 ## Installed Skills Table
 
@@ -72,14 +79,6 @@ Skills 搜索与安装必须显式区分“无结果”和“请求失败”。�
 - `installed` / `enabled` 等正常状态不额外占一列；仅在名称旁提示 `disabled` / `failed` 等异常状态。
 - 加载失败不能显示成“还没有已安装的技能”，必须显示就近错误和“重试”。部分 registry 来源不可用时使用浅黄色行内提示，来源无法确认的行显示“来源暂不可用”且禁用删除。
 - 系统预置技能不提供删除入口；其他技能只有在卸载命令执行并重新查询确认已移除后，才显示“卸载成功”。
-
-## Skill Source Link
-
-Skills 页的市场来源按站点区分位置：国际站来源说明位于搜索框所在行最右侧；国内站“源自 SkillHub”放在搜索结果列表底部右侧。国内站底部工具栏使用 `grid-cols-[1fr_auto_1fr]`，让“查看更多 / 收起”保持整体居中，来源链接位于第三列右对齐，两者统一为 `h-8`。链接整段复用技能包详情页的轻量外链样式：使用 `text-[13px] font-normal text-[#2563EB]`，右侧保留紧凑的 `↗`，hover 时切换为 `text-[#1D4ED8]` 并显示下划线；不要拆分灰色前缀或使用灰色常驻下划线。
-
-- 外链使用 `inline-flex items-center gap-[3px]`，箭头标记为 `aria-hidden="true"`，避免重复朗读。
-- 保留 `focus-visible` ring，不能只依赖颜色或 hover 表达可点击状态。
-- 同一 Skills 页面内出现相同市场来源入口时，应优先复用这套样式，不新增相似但不一致的颜色或下划线规则。
 
 ## Hover Tooltip
 

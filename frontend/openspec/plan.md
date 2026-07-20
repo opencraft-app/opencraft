@@ -1,3 +1,22 @@
+# 精选技能轮播按钮位置调整
+
+**Goal:** 将精选技能轮播的上一批、下一批按钮分别放在卡片组左右两侧。
+
+## 任务清单
+
+- [ ] 1. 调整精选技能轮播布局并完成回归验证。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/DESIGN.md`、`frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`、`frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+  - 验收方式：上一批按钮位于卡片组左侧，下一批按钮位于卡片组右侧；原有切换、动画和禁用逻辑不变；交互规则同步到设计规范；聚焦测试、类型检查与 `git diff --check` 通过。
+
+## 规划门禁
+
+- 规模：S；执行模式：single_agent。
+- 不新增依赖、接口或组件，不改变技能数据与安装逻辑。
+- 规划门禁结论：通过。
+
+---
+
 # 2026-07-16 Hermes Agent 今晚升级公告
 
 **Goal:** 基于最新 master 更新首页 Hermes Agent 升级公告，让国内站和国际站今晚继续展示升级窗口提醒。

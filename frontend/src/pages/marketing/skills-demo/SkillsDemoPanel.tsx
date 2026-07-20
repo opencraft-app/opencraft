@@ -2675,72 +2675,70 @@ export function SkillsDemoPanel({
             ) : null}
 
             <section>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <SectionTitle className="mb-0 text-base">{t("精选")}</SectionTitle>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setFeaturedBatch((current) => Math.max(current - 1, 0))}
-                    disabled={featuredBatchIndex === 0}
-                    aria-label={t("上一批")}
-                    title={t("上一批")}
-                    className="inline-flex size-8 items-center justify-center rounded-full border border-black/10 bg-white text-black/60 transition-colors hover:bg-black/[0.03] hover:text-black disabled:cursor-default disabled:border-black/[0.06] disabled:bg-transparent disabled:text-black/20"
-                  >
-                    <ChevronLeft className="size-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFeaturedBatch((current) => Math.min(current + 1, featuredBatchCount - 1))}
-                    disabled={featuredBatchIndex >= featuredBatchCount - 1}
-                    aria-label={t("下一批")}
-                    title={t("下一批")}
-                    className="inline-flex size-8 items-center justify-center rounded-full border border-black/10 bg-white text-black/60 transition-colors hover:bg-black/[0.03] hover:text-black disabled:cursor-default disabled:border-black/[0.06] disabled:bg-transparent disabled:text-black/20"
-                  >
-                    <ChevronRight className="size-4" aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-              <div className="min-w-0 overflow-hidden">
-                <motion.div
-                  animate={{ x: `${-(featuredBatchIndex * 100) / featuredBatchCount}%` }}
-                  transition={{ duration: shouldReduceMotion ? 0 : 0.2, ease: "easeOut" }}
-                  className="flex"
-                  style={{ width: `${featuredBatchCount * 100}%` }}
+              <SectionTitle className="mb-2 text-base">{t("精选")}</SectionTitle>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFeaturedBatch((current) => Math.max(current - 1, 0))}
+                  disabled={featuredBatchIndex === 0}
+                  aria-label={t("上一批")}
+                  title={t("上一批")}
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/60 transition-colors hover:bg-black/[0.03] hover:text-black disabled:cursor-default disabled:border-black/[0.06] disabled:bg-transparent disabled:text-black/20"
                 >
-                  {featuredBatches.map((batch, index) => (
-                    <ul
-                      key={`featured:${index}`}
-                      aria-hidden={index !== featuredBatchIndex}
-                      inert={index !== featuredBatchIndex}
-                      className="grid shrink-0 grid-cols-1 gap-3 md:grid-cols-3"
-                      style={{ width: `${100 / featuredBatchCount}%` }}
-                    >
-                      {batch.map((entry) => {
-                        const copy = getFeaturedCopy(entry);
-                        return (
-                          <FeaturedSkillCard
-                            key={entry.id}
-                            entry={entry}
-                            title={copy.title}
-                            subtitle={copy.subtitle}
-                            description={copy.description}
-                            installed={isInstalled(entry.skill)}
-                            installing={
-                              installingId === skillIdentity(entry.skill)
-                              || (batchInstalling && selectedSkillIds.has(skillIdentity(entry.skill)))
-                            }
-                            onInstall={handleInstall}
-                            disabled={batchInstalling || Boolean(installingId)}
-                            onOpenDetails={(skill) => setSelectedSkillDetails({
-                              skill,
-                              overview: getSkillOverview(skill, isChinese),
-                            })}
-                          />
-                        );
-                      })}
-                    </ul>
-                  ))}
-                </motion.div>
+                  <ChevronLeft className="size-4" aria-hidden="true" />
+                </button>
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <motion.div
+                    animate={{ x: `${-(featuredBatchIndex * 100) / featuredBatchCount}%` }}
+                    transition={{ duration: shouldReduceMotion ? 0 : 0.2, ease: "easeOut" }}
+                    className="flex"
+                    style={{ width: `${featuredBatchCount * 100}%` }}
+                  >
+                    {featuredBatches.map((batch, index) => (
+                      <ul
+                        key={`featured:${index}`}
+                        aria-hidden={index !== featuredBatchIndex}
+                        inert={index !== featuredBatchIndex}
+                        className="grid shrink-0 grid-cols-1 gap-3 md:grid-cols-3"
+                        style={{ width: `${100 / featuredBatchCount}%` }}
+                      >
+                        {batch.map((entry) => {
+                          const copy = getFeaturedCopy(entry);
+                          return (
+                            <FeaturedSkillCard
+                              key={entry.id}
+                              entry={entry}
+                              title={copy.title}
+                              subtitle={copy.subtitle}
+                              description={copy.description}
+                              installed={isInstalled(entry.skill)}
+                              installing={
+                                installingId === skillIdentity(entry.skill)
+                                || (batchInstalling && selectedSkillIds.has(skillIdentity(entry.skill)))
+                              }
+                              onInstall={handleInstall}
+                              disabled={batchInstalling || Boolean(installingId)}
+                              onOpenDetails={(skill) => setSelectedSkillDetails({
+                                skill,
+                                overview: getSkillOverview(skill, isChinese),
+                              })}
+                            />
+                          );
+                        })}
+                      </ul>
+                    ))}
+                  </motion.div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFeaturedBatch((current) => Math.min(current + 1, featuredBatchCount - 1))}
+                  disabled={featuredBatchIndex >= featuredBatchCount - 1}
+                  aria-label={t("下一批")}
+                  title={t("下一批")}
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/60 transition-colors hover:bg-black/[0.03] hover:text-black disabled:cursor-default disabled:border-black/[0.06] disabled:bg-transparent disabled:text-black/20"
+                >
+                  <ChevronRight className="size-4" aria-hidden="true" />
+                </button>
               </div>
             </section>
 
