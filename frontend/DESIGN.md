@@ -50,6 +50,16 @@ Skills 搜索与安装必须显式区分“无结果”和“请求失败”。�
 - 按钮必须保留清晰的键盘焦点样式，并通过 `aria-expanded={true | false}` 暴露当前展开状态。
 - 推荐完整样式：`inline-flex h-8 min-w-28 items-center justify-center gap-1.5 rounded-full border border-black/[0.08] bg-transparent px-3 text-xs font-semibold text-black/60 transition-colors hover:border-black/15 hover:text-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2`。
 
+## Carousel Navigation
+
+横向轮播或分批展示卡片时，上一项 / 下一项按钮必须贴近它们控制的内容，并分别位于内容视口左右两侧；不要把两个方向按钮并排放在标题行右侧。用户应能从按钮位置直接判断移动方向和受控区域。
+
+- 标题独占一行，轮播操作区下一行使用“左按钮 / 内容视口 / 右按钮”的顺序；内容视口使用 `min-w-0 flex-1 overflow-hidden`，两侧按钮使用 `shrink-0`，避免挤压或遮挡卡片。
+- 左按钮使用 `ChevronLeft` 并表达“上一批 / 上一项”，右按钮使用 `ChevronRight` 并表达“下一批 / 下一项”；按钮必须提供与动作一致的 `aria-label`。
+- 两侧按钮应在卡片组高度方向居中对齐，不悬浮在标题、角标或某一张卡片上方，避免方向按钮看起来只控制局部内容。
+- 到达首项或末项时保留对应按钮位置并进入禁用态，不能直接隐藏按钮导致卡片组宽度或位置跳动。
+- 调整按钮位置时不得改变原有分页状态、切换动画、减弱动态效果设置和键盘可访问性。
+
 ## Skill Packages
 
 技能包默认使用单列列表，并在搜索框右侧提供列表 / 卡片图标切换；用户选择写入本地偏好，刷新后继续沿用。列表与卡片必须展示同一组名称、角色、简介和安装状态，切换视图不能触发额外的数据请求。
