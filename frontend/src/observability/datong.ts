@@ -135,6 +135,7 @@ export const DATONG_PAGE_IDS = {
   AGENT_MEMORY: "agent_memory",
   AGENT_FILES: "agent_files",
   AGENT_DIAGNOSTICS: "agent_diagnostics",
+  AGENT_ACHIEVEMENT: "agent_achievement",
 } as const;
 
 export type DatongPageId = (typeof DATONG_PAGE_IDS)[keyof typeof DATONG_PAGE_IDS];
@@ -170,6 +171,7 @@ const PAGE_NAME_MAP: Record<string, string> = {
   agent_memory: "记忆页",
   agent_files: "云存储页",
   agent_diagnostics: "诊断页",
+  agent_achievement: "成就页",
 };
 
 /** 根据 pgid 解析中文页面名，未匹配时回退为 pgid 英文原值。 */
