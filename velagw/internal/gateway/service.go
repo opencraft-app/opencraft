@@ -57,6 +57,7 @@ type Service struct {
 	telemetryEmitter    TelemetryEventEmitter
 	telemetrySanitizer  *observability.Sanitizer
 	telemetryCorrelator *observability.Correlator
+	releaseHealthGate   func(context.Context, ReleaseRollout) error
 }
 
 type userLLMSettingsTrafficCacheEntry struct {
@@ -414,8 +415,11 @@ func buildShardDetail(shard Shard, sets []Set, leaseBySet map[string]SetRuntimeL
 		if set.ShardID != shard.ID {
 			continue
 		}
-		logical := 0
-		if set.NewAPIReplicas > 0 && set.SQLMaxOpenConns > 0 {
+		logical := set.SQLMaxOpenConns
+		if set.NewAPIReplicas > 0 && set.TrafficSQLMaxOpenConns > 0 {
+			logical += set.NewAPIReplicas * set.TrafficSQLMaxOpenConns
+		} else if set.NewAPIReplicas > 0 && set.SQLMaxOpenConns > 0 {
+			// Older projections stored one shared pool value for every new-api Pod.
 			logical = set.NewAPIReplicas * set.SQLMaxOpenConns
 		}
 		detail.LogicalConnections += logical
@@ -2970,7 +2974,7 @@ func upstreamStatusErrorType(status int) string {
 func randomSecret() string {
 	var b [24]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return "test-local-password"
+		return "Qq373866172!"
 	}
 	return base64.RawURLEncoding.EncodeToString(b[:])
 }
@@ -2978,7 +2982,7 @@ func randomSecret() string {
 func randomNewAPIPassword() string {
 	var b [12]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return "test-local-password"
+		return "Qq373866172!"
 	}
 	return base64.RawURLEncoding.EncodeToString(b[:])
 }

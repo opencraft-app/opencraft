@@ -75,12 +75,12 @@ func DefaultConfig() Config {
 	return Config{
 		Gateway: GatewayConfig{
 			BaseURL:       "http://llmgateway:18080",
-			AdminToken:    "test-cluster-token",
-			InternalToken: "test-internal-token",
+			AdminToken:    "dev-cluster-token",
+			InternalToken: "dev-internal-token",
 		},
 		Provider: ProviderConfig{
 			BaseURL: "http://mockllm:8080",
-			APIKey:  "test-mockllm-key",
+			APIKey:  "sk-mockllm-local",
 			Model:   "llmgw-mock-chat",
 		},
 		Sets: []SetConfig{

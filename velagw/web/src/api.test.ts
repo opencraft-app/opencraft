@@ -15,7 +15,7 @@ afterEach(() => {
 
 describe("LLMGatewayAPI", () => {
   it("uses the configured cluster admin token by default", async () => {
-    vi.stubEnv("VITE_CLUSTER_ADMIN_TOKEN", "test-cluster-token")
+    vi.stubEnv("VITE_CLUSTER_ADMIN_TOKEN", "dev-cluster-token")
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ success: true, data: [] }))
 
     const api = new LLMGatewayAPI(fetcher)
@@ -24,7 +24,7 @@ describe("LLMGatewayAPI", () => {
     expect(fetcher).toHaveBeenCalledWith(
       "/api/admin/resources",
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer test-cluster-token" }),
+        headers: expect.objectContaining({ Authorization: "Bearer dev-cluster-token" }),
       }),
     )
   })
@@ -37,7 +37,7 @@ describe("LLMGatewayAPI", () => {
     const api = new LLMGatewayAPI(fetcher)
 
     await expect(
-      api.login({ username: "cluster-admin", password: "test-local-password" }),
+      api.login({ username: "cluster-admin", password: "Qq373866172!" }),
     ).resolves.toEqual({ token: "cluster-token" })
     expect(fetcher).toHaveBeenCalledWith(
       "/api/admin/login",
@@ -45,7 +45,7 @@ describe("LLMGatewayAPI", () => {
         method: "POST",
         body: JSON.stringify({
           username: "cluster-admin",
-          password: "test-local-password",
+          password: "Qq373866172!",
         }),
       }),
     )
@@ -181,44 +181,6 @@ describe("LLMGatewayAPI", () => {
           is_active: true,
         }),
       }),
-    )
-  })
-
-  it("loads a plan's additional periods and their delivery states", async () => {
-    const periods = [
-      {
-        plan_id: "starter-2026-07",
-        period_value: 14,
-        period_unit: "days",
-      },
-    ]
-    const states = [
-      {
-        plan_id: "starter-2026-07",
-        period_value: 14,
-        period_unit: "days",
-        set_id: "set-a",
-        upstream_plan_id: 7,
-        status: "ready",
-      },
-    ]
-    const fetcher = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ success: true, data: periods }))
-      .mockResolvedValueOnce(jsonResponse({ success: true, data: states }))
-    const api = new LLMGatewayAPI(fetcher, () => "cluster-token")
-
-    await expect(api.listPlanPeriods("starter-2026-07")).resolves.toEqual(periods)
-    await expect(api.listPlanPeriodSetStates("starter-2026-07")).resolves.toEqual(states)
-    expect(fetcher).toHaveBeenNthCalledWith(
-      1,
-      "/api/plans/starter-2026-07/periods",
-      expect.objectContaining({ auth: true }),
-    )
-    expect(fetcher).toHaveBeenNthCalledWith(
-      2,
-      "/api/plans/starter-2026-07/periods/sets",
-      expect.objectContaining({ auth: true }),
     )
   })
 

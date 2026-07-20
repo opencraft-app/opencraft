@@ -4,6 +4,11 @@ metadata:
   name: fleet-demo
   namespace: llmgateway-kro-demo
 spec:
+  availability:
+    traffic:
+      minReplicas: 2
+      topologyKey: topology.kubernetes.io/zone
+      pdbMinAvailable: 1
   runtimeCleanerImage: llmgateway:local
   newapi:
     databasePool:
@@ -15,10 +20,10 @@ spec:
       mysqlHost: shared-mysql-a
       mysqlPort: "3306"
       mysqlUser: root
-      mysqlPassword: "test-local-password"
+      mysqlPassword: "123456"
       redisHost: shared-redis-a
       redisPort: "6379"
-      redisPassword: "test-local-password"
+      redisPassword: "123456"
       maxSets: 32
       redisDBStart: 10
       redisDBLimit: 16
@@ -26,10 +31,10 @@ spec:
       mysqlHost: shared-mysql-b
       mysqlPort: "3306"
       mysqlUser: root
-      mysqlPassword: "test-local-password"
+      mysqlPassword: "123456"
       redisHost: shared-redis-b
       redisPort: "6379"
-      redisPassword: "test-local-password"
+      redisPassword: "123456"
       maxSets: 32
       redisDBStart: 10
       redisDBLimit: 16

@@ -237,6 +237,7 @@ func (s *Service) CreateReleaseRollout(ctx context.Context, input CreateReleaseR
 	ring.UpdatedAt = now
 	rollout := ReleaseRollout{
 		ID: rolloutID, RingID: ring.ID, TargetReleaseID: release.ID, BatchID: batch.ID,
+		CampaignID: strings.TrimSpace(input.CampaignID), CampaignSequence: input.CampaignSequence,
 		Status: ReleaseRolloutStatusRunning, TotalSets: len(batch.Runs), Batch: batch,
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -298,52 +299,58 @@ func (s *Service) decorateReleaseRollout(ctx context.Context, rollout ReleaseRol
 			}
 		}
 	}
-	switch {
-	case rollout.FailedSets > 0:
-		rollout.Status = ReleaseRolloutStatusPaused
-	case rollout.TotalSets > 0 && rollout.CompletedSets == rollout.TotalSets:
-		rollout.Status = ReleaseRolloutStatusCompleted
-	default:
-		rollout.Status = ReleaseRolloutStatusRunning
-	}
-	if rollout.Status != previous.Status || rollout.CompletedSets != previous.CompletedSets ||
-		rollout.FailedSets != previous.FailedSets || rollout.CurrentSetID != previous.CurrentSetID {
-		rollout.UpdatedAt = s.nowUTC()
-		if err := s.store.SaveReleaseRollout(ctx, rollout); err != nil {
-			return ReleaseRollout{}, err
-		}
-	}
 	ring, found, err := s.store.GetReleaseRing(ctx, rollout.RingID)
 	if err != nil {
 		return ReleaseRollout{}, err
 	}
-	if found {
-		ringChanged := false
-		switch rollout.Status {
-		case ReleaseRolloutStatusCompleted:
-			if ring.ServingReleaseID != rollout.TargetReleaseID || ring.TargetReleaseID != "" || ring.Status != ReleaseRingStatusSteady {
-				ring.ServingReleaseID = rollout.TargetReleaseID
-				ring.TargetReleaseID = ""
-				ring.Status = ReleaseRingStatusSteady
-				ringChanged = true
-			}
-		case ReleaseRolloutStatusPaused, ReleaseRolloutStatusFailed:
-			if ring.Status != ReleaseRingStatusDegraded {
-				ring.Status = ReleaseRingStatusDegraded
-				ringChanged = true
-			}
-		case ReleaseRolloutStatusRunning:
-			if ring.Status != ReleaseRingStatusRolling {
-				ring.Status = ReleaseRingStatusRolling
-				ringChanged = true
-			}
+	if !found {
+		return ReleaseRollout{}, fmt.Errorf("release ring %q not found", rollout.RingID)
+	}
+	now := s.nowUTC()
+	switch {
+	case previous.Status == ReleaseRolloutStatusCompleted:
+		rollout.Status = ReleaseRolloutStatusCompleted
+	case previous.Status == ReleaseRolloutStatusPaused && previous.LastGateError != "":
+		rollout.Status = ReleaseRolloutStatusPaused
+		ring.Status = ReleaseRingStatusDegraded
+	case rollout.FailedSets > 0:
+		rollout.Status = ReleaseRolloutStatusPaused
+		ring.Status = ReleaseRingStatusDegraded
+	case rollout.TotalSets > 0 && rollout.CompletedSets == rollout.TotalSets:
+		rollout.Status = ReleaseRolloutStatusSoaking
+		if rollout.SoakStartedAt.IsZero() {
+			rollout.SoakStartedAt = now
+			rollout.SoakDeadline = now.Add(ring.SoakDuration)
+			rollout.LastGateError = ""
 		}
-		if ringChanged {
-			ring.UpdatedAt = s.nowUTC()
-			if err := s.store.SaveReleaseRing(ctx, ring); err != nil {
-				return ReleaseRollout{}, err
-			}
+		ring.Status = ReleaseRingStatusSoaking
+	default:
+		rollout.Status = ReleaseRolloutStatusRunning
+		ring.Status = ReleaseRingStatusRolling
+	}
+	changed := rollout.Status != previous.Status || rollout.CompletedSets != previous.CompletedSets ||
+		rollout.FailedSets != previous.FailedSets || rollout.CurrentSetID != previous.CurrentSetID ||
+		!rollout.SoakStartedAt.Equal(previous.SoakStartedAt) || !rollout.SoakDeadline.Equal(previous.SoakDeadline) ||
+		ring.Status != releaseRingStatusForRollout(previous.Status)
+	if changed {
+		rollout.UpdatedAt = now
+		ring.UpdatedAt = now
+		if err := s.store.SaveReleaseRolloutAndRing(ctx, rollout, ring); err != nil {
+			return ReleaseRollout{}, err
 		}
 	}
 	return rollout, nil
+}
+
+func releaseRingStatusForRollout(status string) string {
+	switch status {
+	case ReleaseRolloutStatusCompleted:
+		return ReleaseRingStatusSteady
+	case ReleaseRolloutStatusSoaking:
+		return ReleaseRingStatusSoaking
+	case ReleaseRolloutStatusPaused, ReleaseRolloutStatusFailed:
+		return ReleaseRingStatusDegraded
+	default:
+		return ReleaseRingStatusRolling
+	}
 }

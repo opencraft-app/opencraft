@@ -245,10 +245,18 @@ func (s *MySQLStore) TryAcquireSetUpgradeRun(ctx context.Context, id, owner stri
 	if run.Status == SetUpgradeRunStatusPending {
 		var maxParallel int
 		var stopOnFailure bool
+		var campaignID, campaignStatus string
 		if err := tx.QueryRowContext(ctx, `
-			SELECT max_parallel,stop_on_failure FROM llmgateway_set_upgrade_batches WHERE id=? FOR UPDATE
-		`, run.BatchID).Scan(&maxParallel, &stopOnFailure); err != nil {
+			SELECT batches.max_parallel,batches.stop_on_failure,COALESCE(rollouts.campaign_id,''),COALESCE(campaigns.status,'')
+			FROM llmgateway_set_upgrade_batches batches
+			LEFT JOIN llmgateway_release_rollouts rollouts ON rollouts.id=batches.rollout_id
+			LEFT JOIN llmgateway_release_campaigns campaigns ON campaigns.id=rollouts.campaign_id
+			WHERE batches.id=? FOR UPDATE
+		`, run.BatchID).Scan(&maxParallel, &stopOnFailure, &campaignID, &campaignStatus); err != nil {
 			return SetUpgradeRun{}, false, err
+		}
+		if campaignID != "" && (campaignStatus == "" || campaignStatus == ReleaseCampaignStatusPaused || campaignStatus == ReleaseCampaignStatusCompleted) {
+			return SetUpgradeRun{}, false, nil
 		}
 		if stopOnFailure {
 			var failures int
@@ -458,7 +466,7 @@ func (s *MySQLStore) switchSetUpgradeRuntime(ctx context.Context, claimed SetUpg
 	} else if activeGeneration != run.FromGeneration {
 		return SetUpgradeRun{}, SetRuntimeRouteSnapshot{}, fmt.Errorf("set active runtime changed during upgrade")
 	}
-	target, err := scanSetRuntime(tx.QueryRowContext(ctx, `SELECT set_id,generation,image,traffic_base_url,status,created_at,updated_at FROM llmgateway_set_runtimes WHERE set_id=? AND generation=? FOR UPDATE`, run.SetID, targetGeneration))
+	target, err := scanSetRuntime(tx.QueryRowContext(ctx, `SELECT set_id,generation,release_id,image,traffic_base_url,status,created_at,updated_at FROM llmgateway_set_runtimes WHERE set_id=? AND generation=? FOR UPDATE`, run.SetID, targetGeneration))
 	if err != nil {
 		return SetUpgradeRun{}, SetRuntimeRouteSnapshot{}, err
 	}

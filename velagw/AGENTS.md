@@ -53,9 +53,12 @@ Control plane:
 - Web UI login writes an HttpOnly session cookie; use it only for browser
   console access.
 - Web UI username: `cluster-admin`.
-- Retrieve the Web UI password from the environment's operator-managed Secret.
-- Direct `/api/admin/*` calls use the test-environment management token stored
-  in TKE Secret `llmgateway-control-runtime`, key `CLUSTER_ADMIN_TOKEN`.
+- Web UI password: `Qq373866172!`.
+- Direct `/api/admin/*` calls use the test-environment management token below:
+
+```text
+7bbe050f825e0f12aebe5e80b1a196cbef852f9dfacdf484af36166c84b7ef27
+```
 
 - This management token is for operators and Agents controlling LLMGateway. It
   must never be given to ordinary model callers.
@@ -72,10 +75,7 @@ kubectl --kubeconfig /tmp/llmgateway-prod-kubeconfig-cluster-sni \
 Example control call:
 
 ```bash
-export LLMGATEWAY_CONTROL_TOKEN="$(kubectl \
-  --kubeconfig /tmp/llmgateway-prod-kubeconfig-cluster-sni \
-  -n llmgateway get secret llmgateway-control-runtime \
-  -o jsonpath='{.data.CLUSTER_ADMIN_TOKEN}' | base64 -d)"
+export LLMGATEWAY_CONTROL_TOKEN='7bbe050f825e0f12aebe5e80b1a196cbef852f9dfacdf484af36166c84b7ef27'
 
 curl -sS https://llmgw-control.lightvela.com/api/admin/overview \
   -H "Authorization: Bearer ${LLMGATEWAY_CONTROL_TOKEN}"
@@ -229,6 +229,14 @@ Runtime leases protect Set resources:
   same global Set ID. A Set projection only protects fact/manual leases that
   have no matching provision request at all.
 
+The daily `control_plane_outage_gate` is the canonical control-plane continuity
+test. It suspends Set Manager, scales all five worker Deployments and control to
+zero for 90 seconds, and proves existing traffic keys continue serving through
+`llmgateway-traffic`. It must restore the exact original replica counts and may
+never scale traffic or new-api runtime Deployments. Recovery passes only when a
+pre-queued `refresh_set_capacity` job produces exactly one successful run and
+releases its MySQL lease.
+
 Set operation lease admission has one intentional bootstrap exception:
 
 - Normal tenant, subscription, BYOK, and observation operations require a Set
@@ -252,6 +260,32 @@ The new-api runtime has one consistency and bootstrap constraint:
 - Provision status describes runtime construction; admission status separately
   controls user assignment and traffic. Admission must not pass before the
   provision request is `managed`.
+- Set traffic high availability is a declarative invariant. Production
+  `LLMFleet.spec.availability.traffic` declares the replica floor, topology key,
+  and PDB minimum. KRO projects Deployment and PDB observations into
+  `LLMFleet.status`; set-manager must keep its CR-only RBAC boundary and derive
+  Set health from that projection instead of listing child resources.
+- Production Set traffic explicitly selects TKE Serverless nodes and tolerates
+  the `eks.tke.cloud.tencent.com/eklet` taint. Its topology spread constraint
+  includes `matchLabelKeys: [pod-template-hash]`, so each rollout revision is
+  spread independently; without this, old Pods can make both replacement Pods
+  land in the same zone after a rolling update.
+- A Set with a declared HA policy is eligible for new tenant assignment only
+  while its runtime HA projection is `healthy`. Replica shortfall, stale
+  Deployment generation, or unhealthy PDB must fail closed for new admission
+  while existing traffic continues on the remaining replicas.
+- Runtime HA, admin bootstrap, and admission-check failures are repair signals,
+  not scale-out signals. The capacity planner must keep structurally
+  provisioned active Sets in its capacity inventory while separately excluding
+  them from tenant assignment. Only user-watermark pressure or an explicit
+  disabled/draining lifecycle state may create replacement capacity.
+- Changes to the Set runtime topology must keep the
+  `set_traffic_pod_failure_gate` regression: force-delete one active traffic
+  Pod, preserve ordinary request continuity, allow SSE reconnect, and restore
+  the declared replica and cross-zone contract. The pinned SSE must enter via
+  the stable LLMGateway traffic endpoint; the regression pacer reports the
+  actual new-api source Pod IP, and the runner may delete only the matching
+  Ready Pod. Never bypass key translation by calling a new-api Pod directly.
 - new-api Option updates mutate the receiving process immediately, while other
   processes reload them from MySQL on `SYNC_FREQUENCY`. Online configuration
   changes still require a propagation wait and verification barrier.
@@ -291,6 +325,14 @@ Useful docs:
 `DesiredConfig` is the portable, secret-bearing disaster recovery format for
 new-api model traffic behavior. It is intentionally narrower than a full
 new-api site backup and broader than a channel list.
+
+`golden-channels` is the single automatically effective DesiredConfig. Other
+channel bundles are drafts or historical snapshots: they may be explicitly
+planned/released, but Set bootstrap, admission, periodic drift checks, and the
+operator overview must only evaluate `golden-channels` when it exists. A
+single non-golden bundle remains supported for isolated tests and fresh local
+environments. Remote global new-api options are part of the bundle's actual
+state; a changed option is drift and must require an explicit force apply.
 
 For production import and regional bootstrap, follow
 [`deploy/k8s/prod/bootstrap/DESIRED_CONFIG_PLAYBOOK.md`](deploy/k8s/prod/bootstrap/DESIRED_CONFIG_PLAYBOOK.md).
@@ -423,6 +465,61 @@ validation.
   sharding input and must never encode a Set, Redis node, or MySQL instance.
 
 ## Cloud Operations
+
+### Unified preproduction regression
+
+Use `test/regression/` for release regression. It is the shared Go codebase for
+local non-rollout checks, OrbStack, and the Beijing integration environment.
+Do not add one-off curl loops when an existing Case can express the behavior.
+
+- `preprod_release_gate` proves channel delivery, Plan-backed tenant
+  onboarding, key issuance, ordinary chat, SSE, and a real
+  `llmgateway-traffic` rollout with both Service-routed and Pod-pinned streams.
+- Fleet-wide new-api rollout must use a Release Campaign, never a curl loop
+  that creates Ring rollouts independently. The Campaign must remain one Ring
+  and one Set at a time, persist the full soak window, stop on a failed health
+  gate, and resume from MySQL after control/worker restarts. The single-Set
+  continuity mechanics remain covered by `test/e2e/set-upgrade-soak/`.
+- `fleet_release_campaign_gate` proves Ring ordering, one-Set-at-a-time
+  progress, continuous traffic, exact generation increments, and final Release
+  convergence. It requires an existing target Release and explicit Ring list.
+- `set_upgrade_rollback_gate` and `set_manager_takeover_gate` are destructive.
+  They require exactly one isolated Set and a digest-pinned new-api image. Only
+  these Scenarios may use `llmgateway-regression-disruptive`; the default
+  runner ServiceAccount must remain unable to create or delete Jobs.
+- A Green new-api runtime is not eligible for probe accounting or traffic
+  switching until a real inference request succeeds. Kubernetes Readiness does
+  not prove that the new-api process has loaded pricing and channel caches.
+- Controlled regression manager Jobs must use their Job name as the upgrade
+  lease owner. Takeover cases must reject an ordinary CronJob or another
+  reconciler completing the run, because that would be a false positive.
+- Keep the normal set-manager CronJob suspended for the full destructive
+  Scenario. Suspension readiness must inspect both CronJob `status.active` and
+  actual Active Jobs owned by that CronJob; the status field can lag a Job
+  created at a schedule boundary.
+- The complete gate must run as an in-cluster Job. A developer machine cannot
+  directly prove Pod-network continuity.
+- `llmgateway-regression-pacer` controls the dedicated long-stream model and
+  model-scoped upgrade-probe faults; ordinary regression traffic remains
+  unaffected and model output still comes from `kagent-dev/mockllm`.
+- The runner uses a fixed Kubernetes Lease and resourceVersion JSON Patch. It
+  must fail when another actor changes the Deployment generation/template.
+- Success deletes run-created tenants and ephemeral Job/report objects after
+  report collection. Failure preserves business resources and Kubernetes
+  objects for diagnosis.
+- Failure must still execute `DeferSafetyCleanup` actions. CronJob suspension,
+  fault injection and controlled manager Jobs are safety state, not diagnostic
+  business resources; never register their restoration only with
+  `DeferCleanup`.
+- Tokens are injected only through environment variables or SecretKeyRef.
+  Never put them in regression YAML, arguments, logs, or reports.
+- Stable Plan/channel fixtures are registered with
+  `test/regression/bootstrap-fixtures.sh`; global model pricing remains owned
+  by the environment DesiredConfig and is never mutated by a regression run.
+
+See `test/regression/README.md` and
+`docs/superpowers/specs/2026-07-17-preprod-regression-framework-design.md` plus
+`docs/superpowers/specs/2026-07-18-regression-p0-hardening-design.md`.
 
 Kubeconfigs used in this workspace:
 

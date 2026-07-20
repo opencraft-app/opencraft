@@ -41,6 +41,16 @@ type bundleState struct {
 	AppliedFingerprint string `json:"applied_fingerprint"`
 }
 
+type channelBundleSnapshot struct {
+	ID   string `json:"id"`
+	Spec struct {
+		Options []struct {
+			Key   string `json:"key"`
+			Value any    `json:"value"`
+		} `json:"options"`
+	} `json:"spec"`
+}
+
 type upgradeBatch struct {
 	ID     string       `json:"id"`
 	Status string       `json:"status"`
@@ -194,17 +204,17 @@ func (c apiClient) grantQuota(ctx context.Context, key apiKey, quota int64) erro
 }
 
 func (c apiClient) upsertBundle(ctx context.Context, cfg config) error {
-	ratio, _ := json.Marshal(map[string]int{cfg.Model: 1})
+	options, err := c.soakPricingOptions(ctx, cfg.Model)
+	if err != nil {
+		return err
+	}
 	mapping, _ := json.Marshal(map[string]string{cfg.Model: cfg.UpstreamModel})
 	return c.do(ctx, http.MethodPost, "/api/channel-bundles", map[string]any{
 		"id": cfg.BundleID, "name": "Set upgrade soak mock channel",
 		"description": "Controlled E2E channel backed by kagent mockllm through the SSE pacer.",
 		"spec": map[string]any{
 			"version": 1, "kind": "newapi-channel-bundle",
-			"options": []map[string]string{
-				{"key": "CompletionRatio", "value": string(ratio)},
-				{"key": "ModelRatio", "value": string(ratio)},
-			},
+			"options": options,
 			"channels": []map[string]any{{
 				"id": "upgrade-soak-openai", "name": "Set upgrade soak mock channel", "type": 1,
 				"key": cfg.UpstreamKey, "base_url": cfg.PacerPublicURL,
@@ -213,6 +223,64 @@ func (c apiClient) upsertBundle(ctx context.Context, cfg config) error {
 			}},
 		},
 	}, nil)
+}
+
+func (c apiClient) soakPricingOptions(ctx context.Context, model string) ([]map[string]string, error) {
+	var bundles []channelBundleSnapshot
+	if err := c.do(ctx, http.MethodGet, "/api/channel-bundles", nil, &bundles); err != nil {
+		return nil, fmt.Errorf("read golden channel bundle: %w", err)
+	}
+	var golden *channelBundleSnapshot
+	for index := range bundles {
+		if bundles[index].ID == "golden-channels" {
+			golden = &bundles[index]
+			break
+		}
+	}
+	if golden == nil {
+		return nil, fmt.Errorf("golden channel bundle %q is required before running shared-environment soak", "golden-channels")
+	}
+	byKey := make(map[string]any, len(golden.Spec.Options))
+	for _, option := range golden.Spec.Options {
+		byKey[option.Key] = option.Value
+	}
+	result := make([]map[string]string, 0, 2)
+	for _, key := range []string{"CompletionRatio", "ModelRatio"} {
+		value, ok := byKey[key]
+		if !ok {
+			return nil, fmt.Errorf("golden channel bundle %q does not contain %s", golden.ID, key)
+		}
+		values, err := decodeRatioSnapshot(value)
+		if err != nil {
+			return nil, fmt.Errorf("decode golden %s: %w", key, err)
+		}
+		values[model] = 1
+		raw, err := json.Marshal(values)
+		if err != nil {
+			return nil, fmt.Errorf("encode merged %s: %w", key, err)
+		}
+		result = append(result, map[string]string{"key": key, "value": string(raw)})
+	}
+	return result, nil
+}
+
+func decodeRatioSnapshot(value any) (map[string]any, error) {
+	if result, ok := value.(map[string]any); ok {
+		copy := make(map[string]any, len(result)+1)
+		for key, item := range result {
+			copy[key] = item
+		}
+		return copy, nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected JSON object or string, got %T", value)
+	}
+	result := map[string]any{}
+	if err := json.Unmarshal([]byte(text), &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (c apiClient) applyBundle(ctx context.Context, bundleID, setID string) error {

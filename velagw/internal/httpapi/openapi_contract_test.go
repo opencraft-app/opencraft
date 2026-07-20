@@ -33,6 +33,10 @@ func TestOpenAPIIncludesControlPlaneChannelContract(t *testing.T) {
 		"/api/desired-config/export",
 		"/api/desired-config/import",
 		"/api/admin/traffic-probe",
+		"/api/admin/release-campaigns",
+		"/api/admin/release-campaigns/{campaign_id}",
+		"/api/admin/release-campaigns/{campaign_id}/pause",
+		"/api/admin/release-campaigns/{campaign_id}/resume",
 		"/api/admin/shard-expansions",
 		"/api/admin/shard-expansions/{expansion_id}/infrastructure",
 		"/api/admin/shard-expansions/{expansion_id}/verification",
@@ -49,6 +53,8 @@ func TestOpenAPIIncludesControlPlaneChannelContract(t *testing.T) {
 		"TrafficProbeRequest":           {"mode", "api_key", "user_id", "model", "prompt"},
 		"ShardExpansion":                {"shard_id", "status", "redis_db_start", "redis_db_limit", "mysql_endpoint", "redis_endpoint"},
 		"Shard":                         {"endpoint", "redis_endpoint", "redis_db_start", "redis_db_limit"},
+		"ReleaseCampaign":               {"id", "target_release_id", "status", "total_rings", "completed_rings", "rings"},
+		"ReleaseCampaignRing":           {"campaign_id", "sequence", "ring_id", "status", "rollout_id"},
 	} {
 		definition, ok := spec.Components.Schemas[schema]
 		if !ok {

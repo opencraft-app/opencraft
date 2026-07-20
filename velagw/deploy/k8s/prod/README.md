@@ -37,7 +37,7 @@ export LLMGATEWAY_CONTROL_TOKEN="$(kubectl -n llmgateway get secret llmgateway-c
 deploy/k8s/prod/bootstrap/import-entitlement-plans.sh
 ```
 
-`bootstrap/entitlement-plans.json` 当前只包含 CTL 正在引用的 6 个权益模板，以及业务 Plan 下显式登记的非默认周期；入门型包含 `14 days` 周期变体。文件不包含 Coding 历史模板或北京压测产生的 `load-*` 数据。脚本可重复执行：同 ID 同权益幂等成功，同 ID 不同权益会返回 409 并停止；周期变体通过 `/api/plans/{id}/periods` 登记，不创建拼接 ID 的独立 Plan。模板和周期入库后由 `sync_plans` worker 下发到各 Set。
+`bootstrap/entitlement-plans.json` 当前只包含 CTL 正在引用的 6 个权益模板，不包含 Coding 历史模板或北京压测产生的 `load-*` 数据。脚本可重复执行：同 ID 同权益幂等成功，同 ID 不同权益会返回 409 并停止。模板入库后由 `sync_plans` worker 下发到各 Set。
 
 ```bash
 kubectl apply -f rendered-db-bootstrap-job.yaml
@@ -140,7 +140,7 @@ export TRAFFIC_CERT_ID="XCYa3P4e"
 
 管理面只承载 control API 和控制台，不承载 `/v1/*`。内部系统调用管理 API 时不使用用户模型 key，也不传 `sk-...`；如果直接调用 `/api/admin/*`，当前仍需要 `Authorization: Bearer <CLUSTER_ADMIN_TOKEN>` 或后续替换成上层服务身份。调用模型流量时使用 OpenAI-compatible 入口，例如 `POST https://llmgw-inner.lightvela.com/v1/chat/completions`。
 
-管理台推理自检统一调用 control 的 `POST /api/admin/traffic-probe`。只传用户 ID 时，每个用户固定复用一个 `traffic_probe` key，不会在每次测试时重复签发。`gateway` 模式通过 `LLMGATEWAY_TRAFFIC_BASE_URL=http://llmgateway-traffic` 进入统一流量面；`set_direct` 模式由 control 根据 external key binding 直连目标 Set 的 traffic Service，用于区分统一路由故障与 Set/上游故障。LLMGateway MySQL 同时保存完整 external key 和 SHA-256；明文用于故障恢复，哈希唯一索引用于路由查询，Redis 热路由不保存 external key 明文。
+管理台推理自检统一调用 control 的 `POST /api/admin/traffic-probe`。`gateway` 模式只传用户 ID 时签发一次性 v2 key，通过 `LLMGATEWAY_TRAFFIC_BASE_URL=http://llmgateway-traffic` 进入统一流量面，并在请求结束后撤销本地 binding 和 Redis 路由。`set_direct` 模式可以按用户选择已有 active upstream key，直连目标 Set 的 traffic Service，用于区分统一路由故障与 Set/上游故障。LLMGateway MySQL 不保存完整 external key，只保存 Key ID、完整 Key 哈希、Secret 哈希、路由槽和状态；Redis 热路由也不保存 external key 明文。
 
 管理 key 不写入 Git 仓库。当前生产管理 key 存在 TKE Secret `llmgateway-control-runtime` 的 `CLUSTER_ADMIN_TOKEN` 字段里，需要有集群权限的人按需读取：
 

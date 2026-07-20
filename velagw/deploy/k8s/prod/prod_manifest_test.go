@@ -283,6 +283,88 @@ func TestTrafficServiceTemplateExposesHTTPSWithTencentCertificateSecret(t *testi
 	}
 }
 
+func TestProductionTrafficDeploymentSupportsLongLivedRollingUpgrades(t *testing.T) {
+	docs := decodeYAMLDocuments(t, readFile(t, "llmgateway-app.yaml.template"))
+	deployment := resourceByName(t, docs, "Deployment", "llmgateway-traffic")
+	spec, _ := deployment["spec"].(map[string]any)
+	if spec["progressDeadlineSeconds"] != 900 {
+		t.Fatalf("traffic progressDeadlineSeconds = %v, want 900", spec["progressDeadlineSeconds"])
+	}
+
+	strategy, _ := spec["strategy"].(map[string]any)
+	rollingUpdate, _ := strategy["rollingUpdate"].(map[string]any)
+	if strategy["type"] != "RollingUpdate" || rollingUpdate["maxSurge"] != 1 || rollingUpdate["maxUnavailable"] != 0 {
+		t.Fatalf("traffic rolling update strategy = %+v, want surge 1 and unavailable 0", strategy)
+	}
+
+	template, _ := spec["template"].(map[string]any)
+	podSpec, _ := template["spec"].(map[string]any)
+	if podSpec["terminationGracePeriodSeconds"] != 330 {
+		t.Fatalf("traffic terminationGracePeriodSeconds = %v, want 330", podSpec["terminationGracePeriodSeconds"])
+	}
+
+	traffic := deploymentContainer(t, docs, "llmgateway-traffic", "traffic")
+	requireEnv(t, traffic, "LLMGATEWAY_DRAIN_WAIT", "45s")
+	requireEnv(t, traffic, "LLMGATEWAY_SHUTDOWN_TIMEOUT", "240s")
+	readiness, _ := traffic["readinessProbe"].(map[string]any)
+	if readiness["failureThreshold"] != 1 {
+		t.Fatalf("traffic readiness failureThreshold = %v, want 1", readiness["failureThreshold"])
+	}
+
+	pdb := resourceByName(t, docs, "PodDisruptionBudget", "llmgateway-traffic")
+	pdbSpec, _ := pdb["spec"].(map[string]any)
+	if pdbSpec["minAvailable"] != 1 {
+		t.Fatalf("traffic PDB minAvailable = %v, want 1", pdbSpec["minAvailable"])
+	}
+	selector, _ := pdbSpec["selector"].(map[string]any)
+	matchLabels, _ := selector["matchLabels"].(map[string]any)
+	if matchLabels["app"] != "llmgateway-traffic" {
+		t.Fatalf("traffic PDB selector = %+v", selector)
+	}
+}
+
+func TestProductionSetTrafficRuntimeHasRegionalHighAvailability(t *testing.T) {
+	manager := string(readFile(t, "llmgateway-set-manager.yaml.template"))
+	if !strings.Contains(manager, "name: LLMGATEWAY_SET_MANAGER_NEW_SET_REPLICAS\n                  value: \"2\"") {
+		t.Fatal("production set-manager must create and scale Set traffic runtimes to two replicas")
+	}
+
+	app := decodeYAMLDocuments(t, readFile(t, "llmgateway-app.yaml.template"))
+	traffic := deploymentContainer(t, app, "llmgateway-traffic", "traffic")
+	requireEnv(t, traffic, "LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED", "true")
+
+	fleet := string(readFile(t, "llmfleet.yaml.template"))
+	for _, want := range []string{
+		"availability:\n    traffic:\n      minReplicas: 2\n      topologyKey: topology.kubernetes.io/zone\n      pdbMinAvailable: 1",
+		"admin:\n        maxOpenConns: 16",
+		"traffic:\n        maxOpenConns: 8",
+		"maxSets: 24",
+	} {
+		if !strings.Contains(fleet, want) {
+			t.Fatalf("production LLMFleet connection budget missing %q", want)
+		}
+	}
+
+	rgd := string(readFile(t, "llmfleet-rgd.yaml"))
+	for _, want := range []string{
+		"id: newapiVersionedTrafficPodDisruptionBudgets",
+		"trafficDeployments:",
+		"trafficPodDisruptionBudgets:",
+		"nodeSelector:\n                llmgateway.io/runtime: serverless",
+		"key: eks.tke.cloud.tencent.com/eklet",
+		"topologySpreadConstraints:",
+		"topologyKey: ${schema.spec.availability.traffic.topologyKey}",
+		"whenUnsatisfiable: DoNotSchedule",
+		"matchLabelKeys: [pod-template-hash]",
+		"minAvailable: ${schema.spec.availability.traffic.pdbMinAvailable}",
+		"name: ${schema.metadata.name + '-' + rt.setID + '-g' + string(rt.generation) + '-newapi-traffic'}",
+	} {
+		if !strings.Contains(rgd, want) {
+			t.Fatalf("production LLMFleet runtime HA contract missing %q", want)
+		}
+	}
+}
+
 func TestProductionAppsUseProcessScopedRuntimeSecrets(t *testing.T) {
 	raw := readFile(t, "llmgateway-app.yaml.template")
 	content := string(raw)
@@ -607,6 +689,21 @@ func deploymentContainer(t *testing.T, docs []map[string]any, deploymentName, co
 		}
 	}
 	t.Fatalf("deployment %s container %s not found", deploymentName, containerName)
+	return nil
+}
+
+func resourceByName(t *testing.T, docs []map[string]any, kind, name string) map[string]any {
+	t.Helper()
+	for _, doc := range docs {
+		if doc["kind"] != kind {
+			continue
+		}
+		metadata, _ := doc["metadata"].(map[string]any)
+		if metadata["name"] == name {
+			return doc
+		}
+	}
+	t.Fatalf("%s %s not found", kind, name)
 	return nil
 }
 

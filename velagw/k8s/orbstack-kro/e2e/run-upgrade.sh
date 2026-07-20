@@ -75,7 +75,7 @@ to_generation=$(printf '%s' "$batch_response" | jq -er '.data.runs[0].to_generat
 kubectl delete job "$MANAGER_JOB" -n "$NAMESPACE" --ignore-not-found >/dev/null
 kubectl create job "$MANAGER_JOB" -n "$NAMESPACE" --from=cronjob/llmgateway-set-manager >/dev/null
 external_user_id=$(kubectl exec -n "$NAMESPACE" deployment/llmgateway-mysql -- \
-  mysql -uroot -ptest-local-password -Nse "SELECT external_user_id FROM llmgateway.llmgateway_user_bindings WHERE set_id='$SET_ID' ORDER BY created_at LIMIT 1" 2>/dev/null)
+  mysql -uroot -p123456 -Nse "SELECT external_user_id FROM llmgateway.llmgateway_user_bindings WHERE set_id='$SET_ID' ORDER BY created_at LIMIT 1" 2>/dev/null)
 if [ -z "$external_user_id" ]; then
   echo "no existing user was available for the admin write queue check" >&2
   exit 1
@@ -87,7 +87,7 @@ command_id=""
 deadline=$(( $(date +%s) + 180 ))
 while [ "$(date +%s)" -lt "$deadline" ]; do
   paused=$(kubectl exec -n "$NAMESPACE" deployment/llmgateway-mysql -- \
-    mysql -uroot -ptest-local-password -Nse "SELECT admin_writes_paused FROM llmgateway.llmgateway_sets WHERE id='$SET_ID'" 2>/dev/null || true)
+    mysql -uroot -p123456 -Nse "SELECT admin_writes_paused FROM llmgateway.llmgateway_sets WHERE id='$SET_ID'" 2>/dev/null || true)
   if [ "$paused" = "1" ]; then
     command_response=$(curl -sS -w '\n%{http_code}' -X POST \
       "http://127.0.0.1:$CONTROL_PORT/api/admin/users/$external_user_id/api-keys" \
@@ -154,12 +154,12 @@ if kubectl get "deployment/$old_deployment" -n "$NAMESPACE" >/dev/null 2>&1; the
 fi
 
 route=$(kubectl exec -n "$NAMESPACE" deployment/shared-redis-a -- \
-  redis-cli -a test-local-password --raw GET "llmgateway:set-runtime:{$SET_ID}" 2>/dev/null)
+  redis-cli -a 123456 --raw GET "llmgateway:set-runtime:{$SET_ID}" 2>/dev/null)
 printf '%s' "$route" | jq -e --arg set "$SET_ID" --argjson generation "$to_generation" \
   '.set_id==$set and .runtime_generation==$generation and .route_revision>=2 and .enabled==true' >/dev/null
 
 external_key=$(kubectl exec -n "$NAMESPACE" deployment/llmgateway-mysql -- \
-  mysql -uroot -ptest-local-password -Nse "SELECT external_key FROM llmgateway.llmgateway_api_key_bindings WHERE set_id='$SET_ID' AND external_key<>'' ORDER BY created_at DESC LIMIT 1" 2>/dev/null)
+  mysql -uroot -p123456 -Nse "SELECT external_key FROM llmgateway.llmgateway_api_key_bindings WHERE set_id='$SET_ID' AND external_key<>'' ORDER BY created_at DESC LIMIT 1" 2>/dev/null)
 if [ -z "$external_key" ]; then
   echo "no external key was available for upgraded set" >&2
   exit 1

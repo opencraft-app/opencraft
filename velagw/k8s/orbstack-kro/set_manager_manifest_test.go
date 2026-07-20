@@ -136,6 +136,13 @@ func TestTrafficManifestProvidesSeparateDataPlane(t *testing.T) {
 		"LLMGATEWAY_UPSTREAM_IDLE_CONN_TIMEOUT",
 		"/readyz",
 		"replicas: 2",
+		"progressDeadlineSeconds: 900",
+		"maxSurge: 1",
+		"maxUnavailable: 0",
+		"terminationGracePeriodSeconds: 330",
+		"value: 45s",
+		"value: 240s",
+		"kind: PodDisruptionBudget",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("traffic manifest missing %q", want)
@@ -151,7 +158,7 @@ func TestTrafficManifestProvidesSeparateDataPlane(t *testing.T) {
 	for _, doc := range docs {
 		kinds[doc["kind"].(string)]++
 	}
-	for _, want := range []string{"Service", "Deployment"} {
+	for _, want := range []string{"Service", "Deployment", "PodDisruptionBudget"} {
 		if kinds[want] == 0 {
 			t.Fatalf("traffic manifest missing %s", want)
 		}
@@ -175,7 +182,7 @@ func TestWorkerManifestWritesRouteSnapshotsToRedis(t *testing.T) {
 		"value: observer",
 		"LLMGATEWAY_SQL_DSN",
 		"LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL",
-		"redis://:test-local-password@shared-redis-a:6379/0",
+		"redis://:123456@shared-redis-a:6379/0",
 		"LLMGATEWAY_SET_AUTOSCALER_ENABLED",
 		"LLMGATEWAY_SET_AUTOSCALER_MIN_WARM_SETS",
 		"LLMGATEWAY_SET_AUTOSCALER_SHARD_REFS",

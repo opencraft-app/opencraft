@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -185,7 +186,7 @@ func TestNewAPIReleaseIsImmutableAndMustUseDigest(t *testing.T) {
 	}
 }
 
-func TestCompletedSetUpgradeConvergesRolloutRingAndSetRelease(t *testing.T) {
+func TestCompletedSetUpgradeEnforcesSoakBeforeConvergingRing(t *testing.T) {
 	store := NewMemoryStore()
 	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
 	mustSaveSet(t, store, Set{
@@ -210,6 +211,7 @@ func TestCompletedSetUpgradeConvergesRolloutRingAndSetRelease(t *testing.T) {
 	}
 	if _, err := svc.UpsertReleaseRing(t.Context(), UpsertReleaseRingInput{
 		ID: "stable", Name: "Stable", ServingReleaseID: "release-v1", SetIDs: []string{"set-a"},
+		SoakDuration: 30 * time.Minute,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -248,15 +250,38 @@ func TestCompletedSetUpgradeConvergesRolloutRingAndSetRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, ok, err := svc.GetReleaseRollout(t.Context(), rollout.ID)
-	if err != nil || !ok || got.Status != ReleaseRolloutStatusCompleted {
+	if err != nil || !ok || got.Status != ReleaseRolloutStatusSoaking {
 		t.Fatalf("rollout=%+v ok=%v err=%v", got, ok, err)
 	}
+	if !got.SoakStartedAt.Equal(now) || !got.SoakDeadline.Equal(now.Add(30*time.Minute)) {
+		t.Fatalf("soak window=%s..%s", got.SoakStartedAt, got.SoakDeadline)
+	}
 	ring, _, _ := store.GetReleaseRing(t.Context(), "stable")
-	if ring.Status != ReleaseRingStatusSteady || ring.ServingReleaseID != "release-v2" || ring.TargetReleaseID != "" {
-		t.Fatalf("ring did not converge: %+v", ring)
+	if ring.Status != ReleaseRingStatusSoaking || ring.ServingReleaseID != "release-v1" || ring.TargetReleaseID != "release-v2" {
+		t.Fatalf("ring skipped soak: %+v", ring)
 	}
 	set, _, _ := store.GetSet(t.Context(), "set-a")
 	if set.CurrentReleaseID != "release-v2" || set.TargetReleaseID != "" {
 		t.Fatalf("set release did not converge: %+v", set)
+	}
+
+	svc.releaseHealthGate = func(_ context.Context, candidate ReleaseRollout) error {
+		if candidate.ID != rollout.ID {
+			t.Fatalf("gate rollout=%q", candidate.ID)
+		}
+		return nil
+	}
+	now = now.Add(30 * time.Minute)
+	advanced, err := svc.ReconcileReleaseRolloutSoaks(t.Context(), 10)
+	if err != nil || advanced != 1 {
+		t.Fatalf("advanced=%d err=%v", advanced, err)
+	}
+	got, ok, err = svc.GetReleaseRollout(t.Context(), rollout.ID)
+	if err != nil || !ok || got.Status != ReleaseRolloutStatusCompleted {
+		t.Fatalf("completed rollout=%+v ok=%v err=%v", got, ok, err)
+	}
+	ring, _, _ = store.GetReleaseRing(t.Context(), "stable")
+	if ring.Status != ReleaseRingStatusSteady || ring.ServingReleaseID != "release-v2" || ring.TargetReleaseID != "" {
+		t.Fatalf("ring did not converge after soak: %+v", ring)
 	}
 }

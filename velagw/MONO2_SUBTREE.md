@@ -26,8 +26,9 @@ changes land there.
      git@git.woa.com:wisp/velagw.git master --squash
    ```
 
-3. Update `velagw/.mono2-subtree` so `upstream_commit` matches the imported
-   velagw commit.
+3. Restore mono2-only files that are not present upstream, then update
+   `velagw/.mono2-subtree` so `upstream_commit` matches the imported velagw
+   commit.
 
 4. Keep these trailers on the mono2 import commit:
 

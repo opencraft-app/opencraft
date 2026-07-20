@@ -9,18 +9,10 @@ PLAN_FILE="${2:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/entitlement-plans.
 
 while IFS= read -r plan; do
   plan_id="$(jq -r '.id' <<<"${plan}")"
-  plan_payload="$(jq -c 'del(.periods)' <<<"${plan}")"
   curl -fsS "${CONTROL_URL%/}/api/plans" \
     -H "Authorization: Bearer ${LLMGATEWAY_CONTROL_TOKEN}" \
     -H 'Content-Type: application/json' \
-    --data-binary "${plan_payload}" >/dev/null
-  while IFS= read -r period; do
-    curl -fsS "${CONTROL_URL%/}/api/plans/${plan_id}/periods" \
-      -H "Authorization: Bearer ${LLMGATEWAY_CONTROL_TOKEN}" \
-      -H 'Content-Type: application/json' \
-      --data-binary "${period}" >/dev/null
-    printf 'registered entitlement plan period %s %s\n' "${plan_id}" "$(jq -r '"\(.period_value) \(.period_unit)"' <<<"${period}")"
-  done < <(jq -c '.periods[]?' <<<"${plan}")
+    --data-binary "${plan}" >/dev/null
   curl -fsS "${CONTROL_URL%/}/api/plans/${plan_id}/sync" \
     -H "Authorization: Bearer ${LLMGATEWAY_CONTROL_TOKEN}" \
     -H 'Content-Type: application/json' \

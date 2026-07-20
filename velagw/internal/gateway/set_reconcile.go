@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"git.woa.com/wisp/mono2/llmgateway/internal/newapi"
+	"git.woa.com/wisp/mono2/llmgateway/internal/observability"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 func (s *Service) RecordSetReconcileFacts(ctx context.Context, input RecordSetReconcileFactsInput) (RecordSetReconcileFactsResult, error) {
@@ -44,6 +46,7 @@ func (s *Service) projectSetRuntimeConfig(ctx context.Context, fact SetReconcile
 	if err != nil || !ok {
 		return err
 	}
+	previousRuntimeHAStatus := set.RuntimeHAStatus
 	set.SQLMaxOpenConns = fact.SQLMaxOpenConns
 	set.ShardID = fact.ShardRef
 	set.SQLMaxIdleConns = fact.SQLMaxIdleConns
@@ -52,7 +55,27 @@ func (s *Service) projectSetRuntimeConfig(ctx context.Context, fact SetReconcile
 	set.TrafficSQLMaxIdleConns = fact.TrafficSQLMaxIdleConns
 	set.TrafficSQLMaxLifetimeSeconds = fact.TrafficSQLMaxLifetimeSeconds
 	set.SubscriptionWriteConcurrency = fact.SubscriptionWriteConcurrency
-	return s.store.SaveSet(ctx, set)
+	set.RuntimeHAStatus = fact.RuntimeHAStatus
+	set.RuntimeHADesiredReplicas = fact.RuntimeHADesiredReplicas
+	set.RuntimeHAReadyReplicas = fact.RuntimeHAReadyReplicas
+	set.RuntimeHAPDBHealthy = fact.RuntimeHAPDBHealthy
+	set.RuntimeHATopologyKey = fact.RuntimeHATopologyKey
+	set.RuntimeHAError = fact.RuntimeHAError
+	set.RuntimeHACheckedAt = fact.RuntimeHACheckedAt
+	if err := s.store.SaveSet(ctx, set); err != nil {
+		return err
+	}
+	if fact.RuntimeHADesiredReplicas > 0 {
+		s.emitCommittedTransition(ctx, observability.ScopeSetLifecycle, "llmgateway.set.state_changed",
+			"set_runtime_ha", set.ID, previousRuntimeHAStatus, set.RuntimeHAStatus,
+			attribute.String("llmgateway.set.id", set.ID),
+			attribute.Int("llmgateway.runtime.ha.desired_replicas", set.RuntimeHADesiredReplicas),
+			attribute.Int("llmgateway.runtime.ha.ready_replicas", set.RuntimeHAReadyReplicas),
+			attribute.Bool("llmgateway.runtime.ha.pdb_ready", set.RuntimeHAPDBHealthy),
+			attribute.String("llmgateway.runtime.ha.topology_key", set.RuntimeHATopologyKey),
+		)
+	}
+	return nil
 }
 
 func (s *Service) ListSetReconcileFacts(ctx context.Context, opts SetReconcileFactListOptions) ([]SetReconcileFact, error) {
@@ -142,6 +165,13 @@ func (s *Service) buildSetReconcileFact(ctx context.Context, source string, name
 		TrafficSQLMaxIdleConns:       input.TrafficSQLMaxIdleConns,
 		TrafficSQLMaxLifetimeSeconds: input.TrafficSQLMaxLifetimeSeconds,
 		SubscriptionWriteConcurrency: input.SubscriptionWriteConcurrency,
+		RuntimeHAStatus:              strings.TrimSpace(input.RuntimeHAStatus),
+		RuntimeHADesiredReplicas:     input.RuntimeHADesiredReplicas,
+		RuntimeHAReadyReplicas:       input.RuntimeHAReadyReplicas,
+		RuntimeHAPDBHealthy:          input.RuntimeHAPDBHealthy,
+		RuntimeHATopologyKey:         strings.TrimSpace(input.RuntimeHATopologyKey),
+		RuntimeHAError:               strings.TrimSpace(input.RuntimeHAError),
+		RuntimeHACheckedAt:           input.RuntimeHACheckedAt,
 		DesiredHash:                  desiredHash,
 		Status:                       SetReconcileStatusPending,
 		LastObservedAt:               now,
@@ -204,6 +234,9 @@ func (s *Service) reconcileOneSetFact(ctx context.Context, fact SetReconcileFact
 	}); err != nil {
 		return s.saveFailedSetFact(ctx, fact, err)
 	}
+	if err := s.projectSetRuntimeConfig(ctx, fact); err != nil {
+		return s.saveFailedSetFact(ctx, fact, err)
+	}
 	if fact.RuntimeGeneration > 0 {
 		if _, _, err := s.store.InitializeSetRuntime(ctx, fact.SetID, fact.RuntimeGeneration, fact.RuntimeImage, fact.TrafficBaseURL, s.nowUTC()); err != nil {
 			return s.saveFailedSetFact(ctx, fact, err)
@@ -250,7 +283,7 @@ func (s *Service) reconcileOneSetFact(ctx context.Context, fact SetReconcileFact
 }
 
 func (s *Service) syncManagedSetDefaults(ctx context.Context, setID string) error {
-	bundles, err := s.store.ListChannelBundles(ctx)
+	bundles, err := s.desiredChannelBundles(ctx)
 	if err != nil {
 		return err
 	}

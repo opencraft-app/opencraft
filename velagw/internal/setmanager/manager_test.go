@@ -65,6 +65,135 @@ func TestRunOnceAlwaysUsesLLMFleetBackend(t *testing.T) {
 	}
 }
 
+func TestProductionDefaultsUseTwoSetTrafficReplicas(t *testing.T) {
+	t.Setenv("LLMGATEWAY_SET_MANAGER_NEW_SET_REPLICAS", "")
+	if got := LoadConfigFromEnv().NewSetReplicas; got != 2 {
+		t.Fatalf("default Set traffic replicas = %d, want 2", got)
+	}
+}
+
+func TestEffectiveTrafficHAPolicyPrefersFleetDeclaration(t *testing.T) {
+	var fleet LLMFleet
+	fleet.Spec.Availability.Traffic.MinReplicas = 3
+	fleet.Spec.Availability.Traffic.TopologyKey = "topology.kubernetes.io/zone"
+	fleet.Spec.Availability.Traffic.PDBMinAvailable = 2
+
+	policy := EffectiveTrafficHAPolicy(fleet, 2)
+	if policy.MinReplicas != 3 || policy.TopologyKey != "topology.kubernetes.io/zone" || policy.PDBMinAvailable != 2 {
+		t.Fatalf("unexpected traffic HA policy: %+v", policy)
+	}
+}
+
+func TestEffectiveTrafficHAPolicyDefaultsInstitutionalRequirements(t *testing.T) {
+	policy := EffectiveTrafficHAPolicy(LLMFleet{}, 2)
+	if policy.MinReplicas != 2 || policy.TopologyKey != "topology.kubernetes.io/zone" || policy.PDBMinAvailable != 1 {
+		t.Fatalf("unexpected default traffic HA policy: %+v", policy)
+	}
+}
+
+func TestEvaluateSetRuntimeHARequiresReplicasSpreadAndPDB(t *testing.T) {
+	checkedAt := time.Date(2026, 7, 19, 6, 0, 0, 0, time.UTC)
+	policy := LLMFleetTrafficAvailability{
+		MinReplicas: 2, TopologyKey: "topology.kubernetes.io/zone", PDBMinAvailable: 1,
+	}
+	runtime := LLMFleetTrafficRuntime{SetID: "set-a", Generation: 7, Replicas: 2}
+	deployment := LLMFleetTrafficDeploymentStatus{
+		SetID: "set-a", Generation: 7, Name: "prod-set-a-g7-newapi-traffic",
+		ObjectGeneration: 4, ObservedGeneration: 4, DesiredReplicas: 2, ReadyReplicas: 2, AvailableReplicas: 2,
+	}
+	pdb := LLMFleetTrafficPDBStatus{
+		SetID: "set-a", Generation: 7, Name: "prod-set-a-g7-newapi-traffic",
+		MinAvailable: 1, ExpectedPods: 2, CurrentHealthy: 2, DisruptionsAllowed: 1,
+	}
+
+	health := EvaluateSetRuntimeHA(runtime, deployment, pdb, policy, checkedAt)
+	if health.Status != SetRuntimeHAHealthy || health.ReadyReplicas != 2 || !health.PDBHealthy || health.CheckedAt != checkedAt {
+		t.Fatalf("healthy runtime evaluated as %+v", health)
+	}
+
+	deployment.ReadyReplicas = 1
+	health = EvaluateSetRuntimeHA(runtime, deployment, pdb, policy, checkedAt)
+	if health.Status != SetRuntimeHADegraded || !strings.Contains(health.Error, "ready replicas") {
+		t.Fatalf("degraded runtime evaluated as %+v", health)
+	}
+}
+
+func TestObserveFleetRuntimeHAUsesProjectedCRStatus(t *testing.T) {
+	var fleet LLMFleet
+	fleet.Metadata.Name = "prod"
+	fleet.Spec.Sets = []LLMFleetSet{{Name: "set-a", Replicas: 2}}
+	fleet.Spec.TrafficRuntimes = []LLMFleetTrafficRuntime{{SetID: "set-a", Generation: 7, Replicas: 2}}
+	fleet.Status.TrafficDeployments = []LLMFleetTrafficDeploymentStatus{{
+		SetID: "set-a", Generation: 7, ObjectGeneration: 2, ObservedGeneration: 2,
+		DesiredReplicas: 2, ReadyReplicas: 2, AvailableReplicas: 2,
+	}}
+	fleet.Status.TrafficPodDisruptionBudgets = []LLMFleetTrafficPDBStatus{{
+		SetID: "set-a", Generation: 7, MinAvailable: 1, ExpectedPods: 2, CurrentHealthy: 2, DisruptionsAllowed: 1,
+	}}
+	policy := LLMFleetTrafficAvailability{MinReplicas: 2, TopologyKey: "topology.kubernetes.io/zone", PDBMinAvailable: 1}
+
+	observed := ObserveFleetRuntimeHA(fleet, policy, time.Now().UTC())
+	if observed["set-a"].Status != SetRuntimeHAHealthy {
+		t.Fatalf("projected CR status evaluated as %+v", observed["set-a"])
+	}
+	facts := FactsFromLLMFleetWithHA(fleet, observed)
+	if len(facts) != 1 || facts[0].RuntimeHAStatus != SetRuntimeHAHealthy || facts[0].RuntimeHAReadyReplicas != 2 {
+		t.Fatalf("runtime HA facts = %+v", facts)
+	}
+}
+
+func TestEnsureManagedTrafficReplicaFloorScalesExistingRuntimeButNotBootstrapSet(t *testing.T) {
+	var fleet LLMFleet
+	fleet.Spec.Sets = []LLMFleetSet{
+		{Name: "set-managed", Replicas: 1},
+		{Name: "set-bootstrap", Replicas: 0},
+	}
+	fleet.Spec.TrafficRuntimes = []LLMFleetTrafficRuntime{
+		{SetID: "set-managed", Generation: 7, Replicas: 1},
+	}
+
+	if !EnsureManagedTrafficReplicaFloor(&fleet, 2) {
+		t.Fatal("expected managed runtime replica floor to change the fleet")
+	}
+	if fleet.Spec.Sets[0].Replicas != 2 || fleet.Spec.TrafficRuntimes[0].Replicas != 2 {
+		t.Fatalf("managed Set was not scaled: set=%d runtime=%d", fleet.Spec.Sets[0].Replicas, fleet.Spec.TrafficRuntimes[0].Replicas)
+	}
+	if fleet.Spec.Sets[1].Replicas != 0 {
+		t.Fatalf("bootstrap Set replicas = %d, want 0 until admission completes", fleet.Spec.Sets[1].Replicas)
+	}
+}
+
+func TestRegressionUpgradeHoldIsDisabledUnlessStatusMatches(t *testing.T) {
+	cfg := Config{RegressionHoldUpgradeStatus: "switching"}
+	if err := holdUpgradeAtRegressionPoint(t.Context(), cfg, "preparing"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRegressionUpgradeOwnerOverrideIsExplicit(t *testing.T) {
+	cfg := Config{RegressionUpgradeOwner: "regression-manager-job-01"}
+	if got := setUpgradeOwner(cfg, "run-1"); got != "regression-manager-job-01" {
+		t.Fatalf("owner=%q", got)
+	}
+}
+
+func TestRegressionUpgradeHoldBlocksUntilManagerIsTerminated(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		done <- holdUpgradeAtRegressionPoint(ctx, Config{RegressionHoldUpgradeStatus: "switching"}, "switching")
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("hold returned before cancellation: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	cancel()
+	if err := <-done; err == nil || err != context.Canceled {
+		t.Fatalf("hold error = %v", err)
+	}
+}
+
 func TestControlClientUsesInternalTokenForScopedSetManagerEndpoints(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer internal-token" {
@@ -981,6 +1110,37 @@ func TestWaitSetUpgradeRuntimeReadyDoesNotCountStartupFailures(t *testing.T) {
 	}
 	if calls != 3 {
 		t.Fatalf("status calls=%d, want 3", calls)
+	}
+}
+
+func TestWaitSetUpgradeRuntimeFunctionalReadyWaitsForPricingCache(t *testing.T) {
+	chatCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/status":
+			w.WriteHeader(http.StatusOK)
+		case "/v1/chat/completions":
+			chatCalls++
+			if chatCalls < 3 {
+				http.Error(w, "model price cache is still loading", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	err := WaitSetUpgradeRuntimeFunctionalReady(
+		t.Context(), server.Client(), server.URL, "sk-probe", "llmgw-regression-upgrade-probe", time.Second, time.Millisecond,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chatCalls != 3 {
+		t.Fatalf("chat calls=%d, want 3", chatCalls)
 	}
 }
 

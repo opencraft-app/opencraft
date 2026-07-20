@@ -50,3 +50,5 @@ LLMGATEWAY_SOAK_INTERNAL_SECRET_KEY=INTERNAL_SERVICE_TOKEN \
 ```
 
 `LLMGATEWAY_SOAK_TARGET_IMAGE` 默认读取 `LLMFleet.spec.newapiImage`，且程序会拒绝非 digest 镜像。测试渠道只使用 `llmgw-upgrade-soak` 虚拟模型，不会调用真实腾讯上游。
+
+保存 soak 渠道包前，runner 必须读取 `golden-channels` 的完整 `ModelRatio` 和 `CompletionRatio`，只为 `llmgw-upgrade-soak` 增补条目。黄金包缺失、Option 不是完整对象或读取失败时会在写入前终止，绝不把局部倍率 map 覆盖到共享环境。

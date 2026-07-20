@@ -254,25 +254,26 @@ func (s *Service) deleteTenantRemoteResources(ctx context.Context, externalUserI
 	if !ok {
 		return fmt.Errorf("set %q not found", binding.SetID)
 	}
-	client := s.newAPIClient(set.BaseURL)
+	adminClient := s.newAPIClient(set.BaseURL)
 	auth := adminAuthForSet(set)
-	if err := s.invalidateActiveSubscriptions(ctx, client, auth, binding.UpstreamUserID); err != nil {
+	if err := s.invalidateActiveSubscriptions(ctx, adminClient, auth, binding.UpstreamUserID); err != nil {
 		return err
 	}
-	if _, err := client.Login(ctx, binding.Username, binding.Password); err != nil {
-		_, findErr := client.FindUser(ctx, auth, binding.Username)
+	userClient := s.newAPIClient(set.BaseURL)
+	if _, err := userClient.Login(ctx, binding.Username, binding.Password); err != nil {
+		_, findErr := adminClient.FindUser(ctx, auth, binding.Username)
 		if errors.Is(findErr, newapi.ErrNotFound) {
 			return nil
 		}
 		return err
 	}
-	accessToken, err := client.GenerateAccessToken(ctx, binding.UpstreamUserID)
+	accessToken, err := userClient.GenerateAccessToken(ctx, binding.UpstreamUserID)
 	if err != nil {
 		return err
 	}
 	tokens := make([]newapi.UserToken, 0)
 	for page := 1; ; page++ {
-		items, total, err := client.ListUserTokens(ctx, binding.UpstreamUserID, accessToken, page, 100)
+		items, total, err := userClient.ListUserTokens(ctx, binding.UpstreamUserID, accessToken, page, 100)
 		if err != nil {
 			return err
 		}
@@ -282,7 +283,7 @@ func (s *Service) deleteTenantRemoteResources(ctx context.Context, externalUserI
 		}
 	}
 	for _, token := range tokens {
-		if err := client.DeleteUserToken(ctx, binding.UpstreamUserID, accessToken, token.ID); err != nil {
+		if err := userClient.DeleteUserToken(ctx, binding.UpstreamUserID, accessToken, token.ID); err != nil {
 			return err
 		}
 	}
@@ -297,12 +298,12 @@ func (s *Service) deleteTenantRemoteResources(ctx context.Context, externalUserI
 				continue
 			}
 			seenChannels[provider.RemoteChannelID] = true
-			if err := client.DeleteChannel(ctx, auth, provider.RemoteChannelID); err != nil {
+			if err := adminClient.DeleteChannel(ctx, auth, provider.RemoteChannelID); err != nil {
 				return err
 			}
 		}
 	}
-	return client.ManageUser(ctx, auth, binding.UpstreamUserID, "delete")
+	return adminClient.ManageUser(ctx, auth, binding.UpstreamUserID, "delete")
 }
 
 func (s *Service) PreviewSetDecommission(ctx context.Context, setID string) (SetDecommissionPreview, error) {

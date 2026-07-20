@@ -213,6 +213,43 @@ func TestOperationalOverviewDoesNotCountAdmissionPendingSetAsReady(t *testing.T)
 	}
 }
 
+func TestOperationalOverviewProjectsRuntimeHADegradation(t *testing.T) {
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	mustSaveSet(t, store, Set{
+		ID: "set-ha", Name: "Set HA", BaseURL: "http://set-ha", Status: SetStatusActive,
+		Setup: true, AdminUserID: 1, AdminAccessToken: "admin", AdmissionStatus: SetAdmissionStatusPassed,
+		RuntimeHAStatus: SetRuntimeHADegraded, RuntimeHADesiredReplicas: 2, RuntimeHAReadyReplicas: 1,
+		RuntimeHAError: "ready replicas 1 below desired 2", RuntimeHACheckedAt: time.Now().UTC(),
+	})
+
+	overview, err := svc.GetOperationalOverview(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.Totals.ReadySets != 0 || overview.Totals.RuntimeHADegradedSets != 1 {
+		t.Fatalf("unexpected overview totals: %+v", overview.Totals)
+	}
+	set, ok := overviewSetByID(overview, "set-ha")
+	if !ok || set.RuntimeHAStatus != SetRuntimeHADegraded || set.AcceptingNewUsers {
+		t.Fatalf("unexpected Set HA overview: %+v", set)
+	}
+	if !overviewHasAlert(overview, "set_runtime_ha_degraded") {
+		t.Fatalf("overview missing runtime HA alert: %+v", overview.Alerts)
+	}
+	metrics := svc.PrometheusMetrics()
+	for _, want := range []string{
+		`llmgateway_set_runtime_ha_ready{set_id="set-ha",status="degraded"} 0`,
+		`llmgateway_set_runtime_ha_desired_replicas{set_id="set-ha"} 2`,
+		`llmgateway_set_runtime_ha_ready_replicas{set_id="set-ha"} 1`,
+		`llmgateway_set_runtime_ha_pdb_ready{set_id="set-ha"} 0`,
+	} {
+		if !strings.Contains(metrics, want) {
+			t.Fatalf("metrics missing %q:\n%s", want, metrics)
+		}
+	}
+}
+
 func TestWorkerSetAdmissionMarksSyncedSetPassed(t *testing.T) {
 	upstream := newAdmissionSetupServer(t, true, true)
 	defer upstream.Close()
@@ -1070,17 +1107,15 @@ func TestChannelDriftJobUsesPersistentCursorBatches(t *testing.T) {
 
 	store := NewMemoryStore()
 	svc := NewService(store, upstream.Client().Transport, Options{})
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 12; i++ {
 		saveReadySet(t, store, fmt.Sprintf("set-%02d", i), upstream.URL)
 	}
-	for _, bundleID := range []string{"bundle-a", "bundle-b"} {
-		if _, err := svc.UpsertChannelBundle(context.Background(), ChannelBundle{
-			ID: bundleID, Name: bundleID, Spec: ChannelBundleSpec{Version: 1, Kind: ChannelBundleKind, Channels: []ChannelBundleChannel{{
-				ID: "channel", Name: "Channel", Type: 1, Key: "sk-test", BaseURL: "http://mock", Models: "m1", Group: "default", Status: ChannelSpecStatusEnabled,
-			}}},
-		}); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := svc.UpsertChannelBundle(context.Background(), ChannelBundle{
+		ID: "golden-channels", Name: "Golden", Spec: ChannelBundleSpec{Version: 1, Kind: ChannelBundleKind, Channels: []ChannelBundleChannel{{
+			ID: "channel", Name: "Channel", Type: 1, Key: "sk-test", BaseURL: "http://mock", Models: "m1", Group: "default", Status: ChannelSpecStatusEnabled,
+		}}},
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	first, err := svc.RunWorkerJobNow(context.Background(), WorkerJobCheckChannelDrift)
@@ -1773,5 +1808,33 @@ func mustSaveSet(t *testing.T, store Store, set Set) {
 	t.Helper()
 	if err := store.SaveSet(context.Background(), set); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestListWorkerJobRunsFiltersByStartedAtWatermark(t *testing.T) {
+	store := NewMemoryStore()
+	jobName := WorkerJobRefreshSetCapacity
+	watermark := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	for _, run := range []WorkerJobRun{
+		{ID: "before", JobName: jobName, Status: WorkerJobStatusSuccess, StartedAt: watermark.Add(-time.Second)},
+		{ID: "at", JobName: jobName, Status: WorkerJobStatusSuccess, StartedAt: watermark},
+		{ID: "after", JobName: jobName, Status: WorkerJobStatusSuccess, StartedAt: watermark.Add(time.Second)},
+		{ID: "other", JobName: WorkerJobCheckChannelDrift, Status: WorkerJobStatusSuccess, StartedAt: watermark.Add(2 * time.Second)},
+	} {
+		if err := store.SaveWorkerJobRun(t.Context(), run); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	runs, err := store.ListWorkerJobRuns(t.Context(), WorkerJobRunListOptions{
+		JobName:          jobName,
+		StartedAtOrAfter: watermark,
+		Limit:            10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 2 || runs[0].ID != "after" || runs[1].ID != "at" {
+		t.Fatalf("runs = %+v", runs)
 	}
 }

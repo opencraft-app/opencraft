@@ -89,6 +89,17 @@ func (s *MemoryStore) GetReleaseRollout(_ context.Context, id string) (ReleaseRo
 	return rollout, ok, nil
 }
 
+func (s *MemoryStore) GetReleaseRolloutByCampaignStep(_ context.Context, campaignID string, sequence int) (ReleaseRollout, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, rollout := range s.releaseRollouts {
+		if rollout.CampaignID == campaignID && rollout.CampaignSequence == sequence {
+			return rollout, true, nil
+		}
+	}
+	return ReleaseRollout{}, false, nil
+}
+
 func (s *MemoryStore) ListReleaseRollouts(_ context.Context, ringID string, limit int) ([]ReleaseRollout, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -98,11 +109,38 @@ func (s *MemoryStore) ListReleaseRollouts(_ context.Context, ringID string, limi
 			result = append(result, rollout)
 		}
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt.After(result[j].CreatedAt) })
+	sort.Slice(result, func(i, j int) bool {
+		iTerminal := releaseRolloutTerminal(result[i].Status)
+		jTerminal := releaseRolloutTerminal(result[j].Status)
+		if iTerminal != jTerminal {
+			return !iTerminal
+		}
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
 	if limit > 0 && len(result) > limit {
 		result = result[:limit]
 	}
 	return result, nil
+}
+
+func releaseRolloutTerminal(status string) bool {
+	return status == ReleaseRolloutStatusCompleted || status == ReleaseRolloutStatusFailed
+}
+
+func (s *MemoryStore) SaveReleaseRolloutAndRing(_ context.Context, rollout ReleaseRollout, ring ReleaseRing) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existingRollout, rolloutOK := s.releaseRollouts[rollout.ID]
+	existingRing, ringOK := s.releaseRings[ring.ID]
+	if !rolloutOK || !ringOK {
+		return fmt.Errorf("release rollout or ring not found")
+	}
+	rollout.CreatedAt = existingRollout.CreatedAt
+	rollout.Batch = SetUpgradeBatch{}
+	ring.CreatedAt = existingRing.CreatedAt
+	s.releaseRollouts[rollout.ID] = rollout
+	s.releaseRings[ring.ID] = ring
+	return nil
 }
 
 func (s *MemoryStore) CreateReleaseRolloutPlan(_ context.Context, ring ReleaseRing, rollout ReleaseRollout, batch SetUpgradeBatch) error {

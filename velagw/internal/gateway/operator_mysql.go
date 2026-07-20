@@ -895,9 +895,17 @@ func (s *MySQLStore) ListWorkerJobRuns(ctx context.Context, opts WorkerJobRunLis
 		SELECT id, job_name, owner, status, started_at, finished_at, error, detail
 		FROM llmgateway_worker_job_runs`
 	args := []any{}
+	conditions := []string{}
 	if strings.TrimSpace(opts.JobName) != "" {
-		query += ` WHERE job_name = ?`
+		conditions = append(conditions, `job_name = ?`)
 		args = append(args, strings.TrimSpace(opts.JobName))
+	}
+	if !opts.StartedAtOrAfter.IsZero() {
+		conditions = append(conditions, `started_at >= ?`)
+		args = append(args, opts.StartedAtOrAfter.UTC())
+	}
+	if len(conditions) > 0 {
+		query += ` WHERE ` + strings.Join(conditions, ` AND `)
 	}
 	query += ` ORDER BY started_at DESC, id DESC`
 	if opts.Limit > 0 {

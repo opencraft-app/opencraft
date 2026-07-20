@@ -50,8 +50,15 @@ type Store interface {
 	ListReleaseRings(context.Context) ([]ReleaseRing, error)
 	SaveReleaseRollout(context.Context, ReleaseRollout) error
 	GetReleaseRollout(context.Context, string) (ReleaseRollout, bool, error)
+	GetReleaseRolloutByCampaignStep(context.Context, string, int) (ReleaseRollout, bool, error)
 	ListReleaseRollouts(context.Context, string, int) ([]ReleaseRollout, error)
+	SaveReleaseRolloutAndRing(context.Context, ReleaseRollout, ReleaseRing) error
 	CreateReleaseRolloutPlan(context.Context, ReleaseRing, ReleaseRollout, SetUpgradeBatch) error
+	CreateReleaseCampaign(context.Context, ReleaseCampaign, []ReleaseCampaignRing) error
+	GetReleaseCampaign(context.Context, string) (ReleaseCampaign, bool, error)
+	ListReleaseCampaigns(context.Context, int) ([]ReleaseCampaign, error)
+	SaveReleaseCampaign(context.Context, ReleaseCampaign, ReleaseCampaignRing) error
+	ResumeReleaseCampaign(context.Context, ReleaseCampaign, ReleaseCampaignRing, ReleaseRollout, ReleaseRing) error
 	CreateSetUpgradeBatch(context.Context, SetUpgradeBatch) error
 	GetSetUpgradeBatch(context.Context, string) (SetUpgradeBatch, bool, error)
 	GetSetUpgradeRun(context.Context, string) (SetUpgradeRun, bool, error)
@@ -248,6 +255,8 @@ type MemoryStore struct {
 	newAPIReleases            map[string]NewAPIRelease
 	releaseRings              map[string]ReleaseRing
 	releaseRollouts           map[string]ReleaseRollout
+	releaseCampaigns          map[string]ReleaseCampaign
+	releaseCampaignRings      map[string]ReleaseCampaignRing
 	setUpgradeBatches         map[string]SetUpgradeBatch
 	setUpgradeRuns            map[string]SetUpgradeRun
 	setRuntimeRouteOutbox     map[string]SetRuntimeRouteOutbox
@@ -301,6 +310,8 @@ func NewMemoryStore() *MemoryStore {
 		newAPIReleases:            map[string]NewAPIRelease{},
 		releaseRings:              map[string]ReleaseRing{},
 		releaseRollouts:           map[string]ReleaseRollout{},
+		releaseCampaigns:          map[string]ReleaseCampaign{},
+		releaseCampaignRings:      map[string]ReleaseCampaignRing{},
 		setUpgradeBatches:         map[string]SetUpgradeBatch{},
 		setUpgradeRuns:            map[string]SetUpgradeRun{},
 		setRuntimeRouteOutbox:     map[string]SetRuntimeRouteOutbox{},
@@ -2795,9 +2806,13 @@ func (s *MemoryStore) ListWorkerJobRuns(_ context.Context, opts WorkerJobRunList
 	defer s.mu.RUnlock()
 	runs := make([]WorkerJobRun, 0)
 	for _, run := range s.workerRuns {
-		if opts.JobName == "" || run.JobName == opts.JobName {
-			runs = append(runs, run)
+		if opts.JobName != "" && run.JobName != opts.JobName {
+			continue
 		}
+		if !opts.StartedAtOrAfter.IsZero() && run.StartedAt.Before(opts.StartedAtOrAfter) {
+			continue
+		}
+		runs = append(runs, run)
 	}
 	sort.Slice(runs, func(i, j int) bool {
 		if !runs[i].StartedAt.Equal(runs[j].StartedAt) {

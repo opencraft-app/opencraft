@@ -8,6 +8,7 @@ import (
 
 	"git.woa.com/wisp/mono2/llmgateway/internal/observability"
 	"go.opentelemetry.io/otel/attribute"
+	otellog "go.opentelemetry.io/otel/log"
 )
 
 type capturedTelemetryEvent struct {
@@ -80,6 +81,49 @@ func requireTelemetryString(t *testing.T, event observability.Event, key, want s
 	}
 	if got := value.AsString(); got != want {
 		t.Fatalf("telemetry attribute %q = %q, want %q", key, got, want)
+	}
+}
+
+func TestRuntimeHAProjectionEmitsOneCommittedTransition(t *testing.T) {
+	store := NewMemoryStore()
+	mustSaveSet(t, store, Set{
+		ID: "set-ha", BaseURL: "http://set-ha", Status: SetStatusActive,
+		RuntimeHAStatus: SetRuntimeHAHealthy, RuntimeHADesiredReplicas: 2,
+		RuntimeHAReadyReplicas: 2, RuntimeHAPDBHealthy: true,
+	})
+	emitter, events := captureTelemetryEvents()
+	svc := NewService(store, nil, Options{TelemetryEmitter: emitter})
+	fact := SetReconcileFact{
+		SetID: "set-ha", RuntimeHAStatus: SetRuntimeHADegraded,
+		RuntimeHADesiredReplicas: 2, RuntimeHAReadyReplicas: 1,
+		RuntimeHAPDBHealthy: false, RuntimeHATopologyKey: "topology.kubernetes.io/zone",
+		RuntimeHAError: "ready replicas 1 below desired 2",
+	}
+
+	if err := svc.projectSetRuntimeConfig(t.Context(), fact); err != nil {
+		t.Fatal(err)
+	}
+	if len(*events) != 1 {
+		t.Fatalf("events = %d, want one runtime HA transition: %+v", len(*events), *events)
+	}
+	got := (*events)[0]
+	if got.scope != observability.ScopeSetLifecycle || got.event.Name != "llmgateway.set.state_changed" {
+		t.Fatalf("unexpected telemetry event: %+v", got)
+	}
+	if got.event.Severity != otellog.SeverityWarn {
+		t.Fatalf("severity = %v, want WARN", got.event.Severity)
+	}
+	requireTelemetryString(t, got.event, "llmgateway.entity.type", "set_runtime_ha")
+	requireTelemetryString(t, got.event, "llmgateway.entity.id", "set-ha")
+	requireTelemetryString(t, got.event, "llmgateway.set.id", "set-ha")
+	requireTelemetryString(t, got.event, "llmgateway.state.from", SetRuntimeHAHealthy)
+	requireTelemetryString(t, got.event, "llmgateway.state.to", SetRuntimeHADegraded)
+
+	if err := svc.projectSetRuntimeConfig(t.Context(), fact); err != nil {
+		t.Fatal(err)
+	}
+	if len(*events) != 1 {
+		t.Fatalf("unchanged runtime HA state emitted telemetry: %+v", *events)
 	}
 }
 

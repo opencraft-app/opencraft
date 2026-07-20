@@ -16,20 +16,22 @@ import (
 )
 
 type Config struct {
-	Namespace       string
-	ControlURL      string
-	AdminToken      string
-	InternalToken   string
-	Source          string
-	Fleet           string
-	RequestLimit    int
-	NewSetReplicas  int
-	WaitTimeout     time.Duration
-	UpgradeLeaseTTL time.Duration
-	ProbeTimeout    time.Duration
-	ProbeInterval   time.Duration
-	ProbeModel      string
-	UpgradeEnabled  bool
+	Namespace                   string
+	ControlURL                  string
+	AdminToken                  string
+	InternalToken               string
+	Source                      string
+	Fleet                       string
+	RequestLimit                int
+	NewSetReplicas              int
+	WaitTimeout                 time.Duration
+	UpgradeLeaseTTL             time.Duration
+	ProbeTimeout                time.Duration
+	ProbeInterval               time.Duration
+	ProbeModel                  string
+	UpgradeEnabled              bool
+	RegressionHoldUpgradeStatus string
+	RegressionUpgradeOwner      string
 }
 
 type ProvisionRequest struct {
@@ -149,20 +151,22 @@ func PruneOrphanTrafficRuntimes(fleet *LLMFleet) int {
 
 func LoadConfigFromEnv() Config {
 	return Config{
-		Namespace:       envString("POD_NAMESPACE", readServiceAccountNamespace()),
-		ControlURL:      strings.TrimRight(envString("LLMGATEWAY_CONTROL_URL", "http://llmgateway-control"), "/"),
-		AdminToken:      os.Getenv("LLMGATEWAY_ADMIN_TOKEN"),
-		InternalToken:   os.Getenv("LLMGATEWAY_INTERNAL_TOKEN"),
-		Source:          envString("LLMGATEWAY_SET_MANAGER_SOURCE", "prod"),
-		Fleet:           envString("LLMGATEWAY_SET_MANAGER_FLEET", "prod"),
-		RequestLimit:    envInt("LLMGATEWAY_SET_MANAGER_REQUEST_LIMIT", 20),
-		NewSetReplicas:  envInt("LLMGATEWAY_SET_MANAGER_NEW_SET_REPLICAS", 1),
-		WaitTimeout:     time.Duration(envInt("LLMGATEWAY_SET_MANAGER_WAIT_TIMEOUT_SECONDS", 300)) * time.Second,
-		UpgradeLeaseTTL: time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_LEASE_SECONDS", 90)) * time.Second,
-		ProbeTimeout:    time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_PROBE_TIMEOUT_SECONDS", 180)) * time.Second,
-		ProbeInterval:   time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_PROBE_INTERVAL_SECONDS", 10)) * time.Second,
-		ProbeModel:      envString("LLMGATEWAY_SET_UPGRADE_PROBE_MODEL", "auto"),
-		UpgradeEnabled:  true,
+		Namespace:                   envString("POD_NAMESPACE", readServiceAccountNamespace()),
+		ControlURL:                  strings.TrimRight(envString("LLMGATEWAY_CONTROL_URL", "http://llmgateway-control"), "/"),
+		AdminToken:                  os.Getenv("LLMGATEWAY_ADMIN_TOKEN"),
+		InternalToken:               os.Getenv("LLMGATEWAY_INTERNAL_TOKEN"),
+		Source:                      envString("LLMGATEWAY_SET_MANAGER_SOURCE", "prod"),
+		Fleet:                       envString("LLMGATEWAY_SET_MANAGER_FLEET", "prod"),
+		RequestLimit:                envInt("LLMGATEWAY_SET_MANAGER_REQUEST_LIMIT", 20),
+		NewSetReplicas:              envInt("LLMGATEWAY_SET_MANAGER_NEW_SET_REPLICAS", 2),
+		WaitTimeout:                 time.Duration(envInt("LLMGATEWAY_SET_MANAGER_WAIT_TIMEOUT_SECONDS", 300)) * time.Second,
+		UpgradeLeaseTTL:             time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_LEASE_SECONDS", 90)) * time.Second,
+		ProbeTimeout:                time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_PROBE_TIMEOUT_SECONDS", 180)) * time.Second,
+		ProbeInterval:               time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_PROBE_INTERVAL_SECONDS", 10)) * time.Second,
+		ProbeModel:                  envString("LLMGATEWAY_SET_UPGRADE_PROBE_MODEL", "auto"),
+		UpgradeEnabled:              true,
+		RegressionHoldUpgradeStatus: strings.TrimSpace(os.Getenv("LLMGATEWAY_REGRESSION_HOLD_UPGRADE_STATUS")),
+		RegressionUpgradeOwner:      strings.TrimSpace(os.Getenv("LLMGATEWAY_REGRESSION_UPGRADE_OWNER")),
 	}
 }
 
@@ -195,6 +199,7 @@ func runLLMFleetOnce(ctx context.Context, cfg Config, control ControlClient, kub
 	if err != nil {
 		return fmt.Errorf("get llmfleet: %w", err)
 	}
+	cfg.NewSetReplicas = EffectiveTrafficHAPolicy(fleet, cfg.NewSetReplicas).MinReplicas
 	if removed := PruneOrphanTrafficRuntimes(&fleet); removed > 0 {
 		if err := kube.PatchLLMFleetUpgradeRuntime(ctx, cfg.Namespace, cfg.Fleet, fleet.Metadata.ResourceVersion, fleet.Spec.Sets, fleet.Spec.TrafficRuntimes); err != nil {
 			return fmt.Errorf("prune %d orphan llmfleet traffic runtimes: %w", removed, err)
@@ -226,6 +231,18 @@ func runLLMFleetOnce(ctx context.Context, cfg Config, control ControlClient, kub
 	}
 	if decommissionChanged {
 		return nil
+	}
+	// Replica repair is steady-state work. Never let it race with an active
+	// decommission cleanup or take priority over the upgrade state machine.
+	if len(fleet.Spec.Cleanups) == 0 && EnsureManagedTrafficReplicaFloor(&fleet, cfg.NewSetReplicas) {
+		if err := kube.PatchLLMFleetUpgradeRuntime(ctx, cfg.Namespace, cfg.Fleet, fleet.Metadata.ResourceVersion, fleet.Spec.Sets, fleet.Spec.TrafficRuntimes); err != nil {
+			return fmt.Errorf("enforce llmfleet traffic replica floor: %w", err)
+		}
+		fleet, err = kube.WaitLLMFleetReady(ctx, cfg.Namespace, cfg.Fleet, cfg.WaitTimeout)
+		if err != nil {
+			return fmt.Errorf("wait llmfleet traffic replica floor ready: %w", err)
+		}
+		return syncFleetFacts(ctx, cfg, control, fleet)
 	}
 	if _, err := recoverErroredLLMFleetRequests(ctx, cfg, control, fleet); err != nil {
 		return err
@@ -599,7 +616,9 @@ func syncFleetFacts(ctx context.Context, cfg Config, control ControlClient, flee
 	if err := syncFleetShards(ctx, control, fleet); err != nil {
 		return err
 	}
-	facts := FactsFromLLMFleet(fleet)
+	policy := EffectiveTrafficHAPolicy(fleet, cfg.NewSetReplicas)
+	observations := ObserveFleetRuntimeHA(fleet, policy, time.Now().UTC())
+	facts := FactsFromLLMFleetWithHA(fleet, observations)
 	if len(facts) == 0 {
 		return nil
 	}
@@ -815,7 +834,44 @@ func ScaleConfiguredTrafficRuntimes(fleet *LLMFleet, requests []ProvisionRequest
 	return changed
 }
 
+// EnsureManagedTrafficReplicaFloor applies the availability floor only after a
+// versioned traffic runtime exists. Bootstrap Sets stay at zero until admission
+// and initial configuration have completed.
+func EnsureManagedTrafficReplicaFloor(fleet *LLMFleet, target int) bool {
+	if fleet == nil {
+		return false
+	}
+	if target <= 0 {
+		return false
+	}
+	managed := make(map[string]struct{}, len(fleet.Spec.TrafficRuntimes))
+	changed := false
+	for index := range fleet.Spec.TrafficRuntimes {
+		runtime := &fleet.Spec.TrafficRuntimes[index]
+		if runtime.Generation <= 0 || strings.TrimSpace(runtime.SetID) == "" {
+			continue
+		}
+		managed[runtime.SetID] = struct{}{}
+		if runtime.Replicas < target {
+			runtime.Replicas = target
+			changed = true
+		}
+	}
+	for index := range fleet.Spec.Sets {
+		set := &fleet.Spec.Sets[index]
+		if _, ok := managed[set.Name]; ok && set.Replicas < target {
+			set.Replicas = target
+			changed = true
+		}
+	}
+	return changed
+}
+
 func FactsFromLLMFleet(fleet LLMFleet) []SetFact {
+	return FactsFromLLMFleetWithHA(fleet, nil)
+}
+
+func FactsFromLLMFleetWithHA(fleet LLMFleet, observations map[string]SetRuntimeHAObservation) []SetFact {
 	facts := make([]SetFact, 0, len(fleet.Spec.Sets))
 	for _, set := range fleet.Spec.Sets {
 		if strings.TrimSpace(set.Name) == "" {
@@ -831,7 +887,7 @@ func FactsFromLLMFleet(fleet LLMFleet) []SetFact {
 				trafficBaseURL = fmt.Sprintf("http://%s-%s-g%d-newapi-traffic:3000", fleet.Metadata.Name, set.Name, runtime.Generation)
 			}
 		}
-		facts = append(facts, SetFact{
+		fact := SetFact{
 			SetID:                        set.Name,
 			Name:                         firstNonEmpty(set.DisplayName, set.Name),
 			BaseURL:                      "http://" + fleet.Metadata.Name + "-" + set.Name + "-newapi-admin:3000",
@@ -848,7 +904,17 @@ func FactsFromLLMFleet(fleet LLMFleet) []SetFact {
 			TrafficSQLMaxIdleConns:       set.TrafficSQLMaxIdleConns,
 			TrafficSQLMaxLifetimeSeconds: set.TrafficSQLMaxLifetimeSeconds,
 			SubscriptionWriteConcurrency: set.SubscriptionWriteConcurrency,
-		})
+		}
+		if health, ok := observations[set.Name]; ok {
+			fact.RuntimeHAStatus = health.Status
+			fact.RuntimeHADesiredReplicas = health.DesiredReplicas
+			fact.RuntimeHAReadyReplicas = health.ReadyReplicas
+			fact.RuntimeHAPDBHealthy = health.PDBHealthy
+			fact.RuntimeHATopologyKey = health.TopologyKey
+			fact.RuntimeHAError = health.Error
+			fact.RuntimeHACheckedAt = health.CheckedAt
+		}
+		facts = append(facts, fact)
 	}
 	return facts
 }

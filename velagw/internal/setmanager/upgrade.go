@@ -34,7 +34,7 @@ func reconcileFleetUpgrade(ctx context.Context, cfg Config, control ControlClien
 		if candidate.Source != cfg.Source || candidate.Namespace != cfg.Namespace || candidate.Fleet != cfg.Fleet {
 			continue
 		}
-		owner := setUpgradeOwner(candidate.ID)
+		owner := setUpgradeOwner(cfg, candidate.ID)
 		leaseTTL := cfg.UpgradeLeaseTTL
 		if leaseTTL <= 0 {
 			leaseTTL = 90 * time.Second
@@ -112,6 +112,9 @@ func executeSetUpgradeRun(ctx context.Context, cfg Config, control ControlClient
 		probeTimeout = 3 * time.Minute
 	}
 	baseURL := setUpgradeRuntimeBaseURL(fleet.Metadata.Name, run.SetID, run.ToGeneration)
+	if err := holdUpgradeAtRegressionPoint(ctx, cfg, run.Status); err != nil {
+		return fleet, err
+	}
 	if run.Status == upgradeUpgradingMaster {
 		changed, err := ApplySetUpgradeMasterToFleet(&fleet, run)
 		if err != nil {
@@ -130,6 +133,9 @@ func executeSetUpgradeRun(ctx context.Context, cfg Config, control ControlClient
 		}
 		run, err = control.SetUpgradeAction(ctx, run.ID, "master-complete", owner, true, "", "")
 		if err != nil {
+			return fleet, err
+		}
+		if err := holdUpgradeAtRegressionPoint(ctx, cfg, run.Status); err != nil {
 			return fleet, err
 		}
 	}
@@ -156,7 +162,11 @@ func executeSetUpgradeRun(ctx context.Context, cfg Config, control ControlClient
 		if err != nil {
 			return fleet, err
 		}
+		if err := holdUpgradeAtRegressionPoint(ctx, cfg, run.Status); err != nil {
+			return fleet, err
+		}
 	}
+	var credential SetUpgradeProbeCredential
 	if run.Status == upgradePreparing {
 		var changed bool
 		var err error
@@ -176,14 +186,23 @@ func executeSetUpgradeRun(ctx context.Context, cfg Config, control ControlClient
 		if err := WaitSetUpgradeRuntimeReady(ctx, nil, baseURL, probeTimeout, probeInterval); err != nil {
 			return fleet, fmt.Errorf("wait green runtime endpoint: %w", err)
 		}
+		credential, err = control.SetUpgradeProbeCredential(ctx, run.ID, owner)
+		if err != nil {
+			return fleet, fmt.Errorf("get upgrade probe credential: %w", err)
+		}
+		if err := WaitSetUpgradeRuntimeFunctionalReady(ctx, nil, baseURL, credential.UpstreamKey, cfg.ProbeModel, probeTimeout, probeInterval); err != nil {
+			return fleet, fmt.Errorf("wait green runtime functional readiness: %w", err)
+		}
 		run, err = control.PrepareSetUpgradeCandidate(ctx, run.ID, owner, baseURL)
 		if err != nil {
 			return fleet, err
 		}
+		if err := holdUpgradeAtRegressionPoint(ctx, cfg, run.Status); err != nil {
+			return fleet, err
+		}
 	}
 
-	var credential SetUpgradeProbeCredential
-	if run.Status == upgradeProbing || run.Status == upgradeDraining {
+	if (run.Status == upgradeProbing || run.Status == upgradeDraining) && credential.UpstreamKey == "" {
 		var err error
 		credential, err = control.SetUpgradeProbeCredential(ctx, run.ID, owner)
 		if err != nil {
@@ -208,6 +227,9 @@ func executeSetUpgradeRun(ctx context.Context, cfg Config, control ControlClient
 			_ = kube.PatchLLMFleetUpgradeRuntime(ctx, cfg.Namespace, cfg.Fleet, fleet.Metadata.ResourceVersion, fleet.Spec.Sets, fleet.Spec.TrafficRuntimes)
 			return fleet, fmt.Errorf("green runtime failed probes: %s", run.LastError)
 		}
+		if err := holdUpgradeAtRegressionPoint(ctx, cfg, run.Status); err != nil {
+			return fleet, err
+		}
 		if run.Status == upgradeProbing {
 			if err := sleepContext(ctx, probeInterval); err != nil {
 				return fleet, err
@@ -220,12 +242,18 @@ func executeSetUpgradeRun(ctx context.Context, cfg Config, control ControlClient
 		if err != nil {
 			return fleet, fmt.Errorf("publish green route: %w", err)
 		}
+		if err := holdUpgradeAtRegressionPoint(ctx, cfg, run.Status); err != nil {
+			return fleet, err
+		}
 	}
 	if run.Status == upgradeSwitching || run.Status == upgradeRollbackSwitching {
 		// MySQL already switched, but the Redis outbox has not been confirmed yet.
 		return fleet, nil
 	}
 	if run.Status == upgradeDraining {
+		if err := holdUpgradeAtRegressionPoint(ctx, cfg, run.Status); err != nil {
+			return fleet, err
+		}
 		if credential.UpstreamKey == "" {
 			var err error
 			credential, err = control.SetUpgradeProbeCredential(ctx, run.ID, owner)
@@ -291,6 +319,39 @@ func executeSetUpgradeRun(ctx context.Context, cfg Config, control ControlClient
 	return fleet, nil
 }
 
+func holdUpgradeAtRegressionPoint(ctx context.Context, cfg Config, status string) error {
+	if cfg.RegressionHoldUpgradeStatus == "" || cfg.RegressionHoldUpgradeStatus != status {
+		return nil
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func WaitSetUpgradeRuntimeFunctionalReady(ctx context.Context, client *http.Client, baseURL, upstreamKey, model string, timeout, interval time.Duration) error {
+	if timeout <= 0 {
+		timeout = 3 * time.Minute
+	}
+	if interval <= 0 {
+		interval = 3 * time.Second
+	}
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		probeCtx, cancel := context.WithTimeout(ctx, timeout)
+		lastErr = ProbeSetUpgradeRuntime(probeCtx, client, baseURL, upstreamKey, model)
+		cancel()
+		if lastErr == nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return lastErr
+		}
+		if err := sleepContext(ctx, interval); err != nil {
+			return err
+		}
+	}
+}
+
 func WaitSetUpgradeRuntimeReady(ctx context.Context, client *http.Client, baseURL string, timeout, interval time.Duration) error {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
@@ -343,7 +404,10 @@ func setUpgradeCurrentTrafficBaseURL(fleet, setID string, generation int64) stri
 	return setUpgradeRuntimeBaseURL(fleet, setID, generation)
 }
 
-func setUpgradeOwner(runID string) string {
+func setUpgradeOwner(cfg Config, runID string) string {
+	if cfg.RegressionUpgradeOwner != "" {
+		return cfg.RegressionUpgradeOwner
+	}
 	host, _ := os.Hostname()
 	if host == "" {
 		host = "set-manager"

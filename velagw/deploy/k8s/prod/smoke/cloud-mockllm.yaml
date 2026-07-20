@@ -9,6 +9,30 @@ data:
       "listen_addr": "0.0.0.0:8080",
       "openai": [
         {
+          "name": "llmgateway-regression",
+          "match": {
+            "match_type": "contains",
+            "message": {
+              "role": "user",
+              "content": "reply with regression-marker"
+            }
+          },
+          "response": {
+            "id": "chatcmpl-llmgw-regression",
+            "object": "chat.completion",
+            "created": 1790000000,
+            "model": "llmgw-mock-chat",
+            "choices": [
+              {
+                "index": 0,
+                "message": {"role": "assistant", "content": "cloud regression answer"},
+                "finish_reason": "stop"
+              }
+            ],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 3, "total_tokens": 6}
+          }
+        },
+        {
           "name": "set-upgrade-probe",
           "match": {
             "match_type": "contains",

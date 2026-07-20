@@ -49,7 +49,7 @@ kubectl logs -n "$NAMESPACE" job/llmgateway-set-manager-fresh
 deadline=$(( $(date +%s) + 180 ))
 while [ "$(date +%s)" -lt "$deadline" ]; do
   passed=$(kubectl exec -n "$NAMESPACE" deployment/llmgateway-mysql -- \
-    mysql -uroot -ptest-local-password -Nse "SELECT COUNT(*) FROM llmgateway.llmgateway_sets WHERE admission_status='passed'" 2>/dev/null || true)
+    mysql -uroot -p123456 -Nse "SELECT COUNT(*) FROM llmgateway.llmgateway_sets WHERE admission_status='passed'" 2>/dev/null || true)
   if [ "${passed:-0}" -ge 4 ]; then
     break
   fi

@@ -8,6 +8,7 @@ import {
   ConsoleShell,
   OperatorOverviewPage,
   PlanManagementPage,
+  ReleaseManagementPage,
   ResourceAdminPage,
   SetWorkspace,
   ShardManagementPage,
@@ -49,6 +50,48 @@ describe("SetWorkspace", () => {
   })
 })
 
+describe("ReleaseManagementPage", () => {
+  it("makes the fleet campaign the primary release workflow", () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(["newapi-releases"], [
+      { id: "release-v2", version: "v2", image: "registry/new-api@sha256:abc", status: "verified" },
+    ])
+    queryClient.setQueryData(["release-rings"], [
+      { id: "canary", name: "Canary", ordinal: 0, serving_release_id: "release-v1", status: "steady", admission_enabled: false, max_parallel: 1, soak_seconds: 1800, set_count: 1 },
+      { id: "stable", name: "Stable", ordinal: 20, serving_release_id: "release-v1", status: "steady", admission_enabled: true, max_parallel: 1, soak_seconds: 1800, set_count: 3 },
+    ])
+    queryClient.setQueryData(["release-rollouts"], [])
+    queryClient.setQueryData(["release-campaigns"], [{
+      id: "release-campaign-1",
+      target_release_id: "release-v2",
+      status: "paused",
+      current_ring_id: "canary",
+      total_rings: 2,
+      completed_rings: 0,
+      last_error: "健康门禁未通过",
+      rings: [
+        { campaign_id: "release-campaign-1", sequence: 1, ring_id: "canary", status: "paused", rollout_id: "rollout-1" },
+        { campaign_id: "release-campaign-1", sequence: 2, ring_id: "stable", status: "pending" },
+      ],
+    }])
+    const api = new LLMGatewayAPI((async () =>
+      new Response(JSON.stringify({ success: true, data: [] }), {
+        headers: { "content-type": "application/json" },
+      })) as typeof fetch)
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={queryClient}>
+        <ReleaseManagementPage api={api} sets={[readySet]} />
+      </QueryClientProvider>,
+    )
+
+    expect(html).toContain("全量发布")
+    expect(html).toContain("Canary → Early → Stable")
+    expect(html).toContain("0 / 2 个发布环")
+    expect(html).toContain("健康门禁未通过")
+    expect(html).toContain("恢复发布")
+  })
+})
+
 describe("OperatorOverviewPage", () => {
   it("renders a duty dashboard for operators", () => {
     const queryClient = new QueryClient()
@@ -57,7 +100,11 @@ describe("OperatorOverviewPage", () => {
       totals: { sets: 2, active_sets: 1, users: 10, channel_drifts: 1 },
       sets: [
         { id: "set-a", name: "Set A", status: "active", setup: true, user_count: 8, ready: true },
-        { id: "set-b", name: "Set B", status: "disabled", setup: false, user_count: 2, ready: false, last_error: "bootstrap failed" },
+        {
+          id: "set-b", name: "Set B", status: "disabled", setup: false, user_count: 2, ready: false,
+          runtime_ha_status: "degraded", runtime_ha_desired_replicas: 2, runtime_ha_ready_replicas: 1,
+          runtime_ha_error: "跨区副本未就绪", last_error: "bootstrap failed",
+        },
       ],
       channel_bundles: [{ bundle_id: "golden", name: "生产模型渠道模板", drift_sets: 1, synced_sets: 1, error_sets: 0 }],
       alerts: [{ kind: "channel_drift", severity: "warning", message: "渠道存在漂移" }],
@@ -76,6 +123,8 @@ describe("OperatorOverviewPage", () => {
     expect(html).toContain("容量水位")
     expect(html).not.toContain("Set A")
     expect(html).toContain("Set B")
+    expect(html).toContain("推理 1/2")
+    expect(html).toContain("跨区副本未就绪")
     expect(html).toContain("生产模型渠道模板")
     expect(html).toContain("渠道存在漂移")
     expect(html).toContain("服务集群")
@@ -177,9 +226,6 @@ describe("PlanManagementPage", () => {
       { plan_id: "starter-2026-07", set_id: "set-a", upstream_plan_id: 42, status: "ready" },
       { plan_id: "starter-2026-07", set_id: "set-b", status: "pending" },
     ])
-    queryClient.setQueryData(["plan-periods", "starter-2026-07"], [
-      { plan_id: "starter-2026-07", period_value: 14, period_unit: "days" },
-    ])
     const api = new LLMGatewayAPI((async () =>
       new Response(JSON.stringify({ success: true, data: [] }), {
         headers: { "content-type": "application/json" },
@@ -196,9 +242,6 @@ describe("PlanManagementPage", () => {
     expect(html).toContain("复制模板")
     expect(html).toContain("入门型")
     expect(html).toContain("10,000")
-    expect(html).toContain("周期变体")
-    expect(html).toContain("14 天")
-    expect(html).not.toContain("starter-2026-07:14:days")
     expect(html).toContain("集群下发")
     expect(html).toContain("1 个集群已就绪")
     expect(html).toContain("待下发")

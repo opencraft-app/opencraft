@@ -38,22 +38,29 @@ func (e *controlHTTPError) Error() string {
 }
 
 type SetFact struct {
-	SetID                        string `json:"set_id"`
-	Name                         string `json:"name"`
-	BaseURL                      string `json:"base_url"`
-	TrafficBaseURL               string `json:"traffic_base_url,omitempty"`
-	RuntimeGeneration            int64  `json:"runtime_generation,omitempty"`
-	RuntimeImage                 string `json:"runtime_image,omitempty"`
-	ShardRef                     string `json:"shard_ref,omitempty"`
-	DatabaseName                 string `json:"database_name,omitempty"`
-	RedisDB                      string `json:"redis_db,omitempty"`
-	SQLMaxOpenConns              int    `json:"sql_max_open_conns,omitempty"`
-	SQLMaxIdleConns              int    `json:"sql_max_idle_conns,omitempty"`
-	SQLMaxLifetimeSeconds        int    `json:"sql_max_lifetime_seconds,omitempty"`
-	TrafficSQLMaxOpenConns       int    `json:"traffic_sql_max_open_conns,omitempty"`
-	TrafficSQLMaxIdleConns       int    `json:"traffic_sql_max_idle_conns,omitempty"`
-	TrafficSQLMaxLifetimeSeconds int    `json:"traffic_sql_max_lifetime_seconds,omitempty"`
-	SubscriptionWriteConcurrency int    `json:"subscription_write_concurrency,omitempty"`
+	SetID                        string    `json:"set_id"`
+	Name                         string    `json:"name"`
+	BaseURL                      string    `json:"base_url"`
+	TrafficBaseURL               string    `json:"traffic_base_url,omitempty"`
+	RuntimeGeneration            int64     `json:"runtime_generation,omitempty"`
+	RuntimeImage                 string    `json:"runtime_image,omitempty"`
+	ShardRef                     string    `json:"shard_ref,omitempty"`
+	DatabaseName                 string    `json:"database_name,omitempty"`
+	RedisDB                      string    `json:"redis_db,omitempty"`
+	SQLMaxOpenConns              int       `json:"sql_max_open_conns,omitempty"`
+	SQLMaxIdleConns              int       `json:"sql_max_idle_conns,omitempty"`
+	SQLMaxLifetimeSeconds        int       `json:"sql_max_lifetime_seconds,omitempty"`
+	TrafficSQLMaxOpenConns       int       `json:"traffic_sql_max_open_conns,omitempty"`
+	TrafficSQLMaxIdleConns       int       `json:"traffic_sql_max_idle_conns,omitempty"`
+	TrafficSQLMaxLifetimeSeconds int       `json:"traffic_sql_max_lifetime_seconds,omitempty"`
+	SubscriptionWriteConcurrency int       `json:"subscription_write_concurrency,omitempty"`
+	RuntimeHAStatus              string    `json:"runtime_ha_status,omitempty"`
+	RuntimeHADesiredReplicas     int       `json:"runtime_ha_desired_replicas,omitempty"`
+	RuntimeHAReadyReplicas       int       `json:"runtime_ha_ready_replicas,omitempty"`
+	RuntimeHAPDBHealthy          bool      `json:"runtime_ha_pdb_healthy,omitempty"`
+	RuntimeHATopologyKey         string    `json:"runtime_ha_topology_key,omitempty"`
+	RuntimeHAError               string    `json:"runtime_ha_error,omitempty"`
+	RuntimeHACheckedAt           time.Time `json:"runtime_ha_checked_at,omitempty"`
 }
 
 type ShardProjection struct {

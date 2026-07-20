@@ -867,6 +867,43 @@ func renewBody() map[string]any {
 	}
 }
 
+func moveInBody() map[string]any {
+	return map[string]any{
+		"externalUserId": "usr_migrate",
+		"uin":            "700000164995",
+		"appId":          "251202221",
+		"bundleId":       "bundle_launch_01",
+		"resourceId":     "pass-free-1",
+		"curDeadline":    "2026-07-20 12:00:00",
+	}
+}
+
+func TestMoveInOrder_InvalidInput(t *testing.T) {
+	cases := []struct {
+		name string
+		mut  func(b map[string]any)
+	}{
+		{"missing resource_id", func(b map[string]any) { delete(b, "resourceId") }},
+		{"missing cur_deadline", func(b map[string]any) { delete(b, "curDeadline") }},
+		{"bad cur_deadline", func(b map[string]any) { b["curDeadline"] = "2026-07-20T12:00:00Z" }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			body := moveInBody()
+			tc.mut(body)
+			rec := env.doJSON(http.MethodPost, "/internal/trade/orders/move-in", body, true)
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+			}
+			resp := decodeBody(t, rec)
+			if resp["code"] != "InvalidRequest" {
+				t.Errorf("expected code=InvalidRequest, got %v", resp["code"])
+			}
+		})
+	}
+}
+
 // TestPlaceRenewOrder_HappyPath 验证续费下单 happy path：
 //   - HTTP 200 + dealName/bigOrderId 正确返回
 //   - fakeOrderWriter.CreateOrder 被调用一次，且收到 OrderType='renew' + ResourceID 等于入参

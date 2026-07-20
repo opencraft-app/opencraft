@@ -60,7 +60,7 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: MYSQL_ROOT_PASSWORD
-              value: "test-local-password"
+              value: "123456"
           ports:
             - name: mysql
               containerPort: 3306
@@ -69,7 +69,7 @@ spec:
               command:
                 - sh
                 - -c
-                - mysqladmin ping -h 127.0.0.1 -uroot -ptest-local-password --silent
+                - mysqladmin ping -h 127.0.0.1 -uroot -p123456 --silent
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
@@ -137,7 +137,7 @@ spec:
           command:
             - redis-server
             - --requirepass
-            - "test-local-password"
+            - "123456"
           ports:
             - name: redis
               containerPort: 6379
@@ -146,7 +146,7 @@ spec:
               command:
                 - redis-cli
                 - -a
-                - "test-local-password"
+                - "123456"
                 - ping
             initialDelaySeconds: 3
             periodSeconds: 5
@@ -215,7 +215,7 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: MYSQL_ROOT_PASSWORD
-              value: "test-local-password"
+              value: "123456"
           ports:
             - name: mysql
               containerPort: 3306
@@ -224,7 +224,7 @@ spec:
               command:
                 - sh
                 - -c
-                - mysqladmin ping -h 127.0.0.1 -uroot -ptest-local-password --silent
+                - mysqladmin ping -h 127.0.0.1 -uroot -p123456 --silent
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
@@ -292,7 +292,7 @@ spec:
           command:
             - redis-server
             - --requirepass
-            - "test-local-password"
+            - "123456"
           ports:
             - name: redis
               containerPort: 6379
@@ -301,7 +301,7 @@ spec:
               command:
                 - redis-cli
                 - -a
-                - "test-local-password"
+                - "123456"
                 - ping
             initialDelaySeconds: 3
             periodSeconds: 5

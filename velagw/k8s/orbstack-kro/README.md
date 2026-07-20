@@ -116,7 +116,7 @@ curl http://127.0.0.1:13082/api/status
 kubectl port-forward -n llmgateway-kro-demo svc/llmgateway-control 18081:18080
 curl http://127.0.0.1:18081/readyz
 curl 'http://127.0.0.1:18081/api/admin/set-reconcile-facts?source=kro&namespace=llmgateway-kro-demo&fleet=fleet-demo' \
-  -H 'Authorization: Bearer test-cluster-token'
+  -H 'Authorization: Bearer dev-cluster-token'
 ```
 
 ## 本机访问 LLMGateway-traffic
@@ -299,18 +299,18 @@ shards:
     mysqlHost: shared-mysql-a
     mysqlPort: "3306"
     mysqlUser: root
-    mysqlPassword: "test-local-password"
+    mysqlPassword: "123456"
     redisHost: shared-redis-a
     redisPort: "6379"
-    redisPassword: "test-local-password"
+    redisPassword: "123456"
   - name: shard-b
     mysqlHost: shared-mysql-b
     mysqlPort: "3306"
     mysqlUser: root
-    mysqlPassword: "test-local-password"
+    mysqlPassword: "123456"
     redisHost: shared-redis-b
     redisPort: "6379"
-    redisPassword: "test-local-password"
+    redisPassword: "123456"
 
 sets:
   - name: set-a

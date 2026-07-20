@@ -120,19 +120,24 @@ func (s *MySQLStore) SaveReleaseRollout(ctx context.Context, rollout ReleaseRoll
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO llmgateway_release_rollouts
-			(id,ring_id,target_release_id,batch_id,status,total_sets,completed_sets,failed_sets,current_set_id,created_at,updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?)
+			(id,ring_id,target_release_id,batch_id,status,total_sets,completed_sets,failed_sets,current_set_id,campaign_id,campaign_sequence,
+			 soak_started_at,soak_deadline,last_gate_checked_at,last_gate_error,created_at,updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON DUPLICATE KEY UPDATE status=VALUES(status),total_sets=VALUES(total_sets),completed_sets=VALUES(completed_sets),
-			failed_sets=VALUES(failed_sets),current_set_id=VALUES(current_set_id),updated_at=VALUES(updated_at)
+			failed_sets=VALUES(failed_sets),current_set_id=VALUES(current_set_id),soak_started_at=VALUES(soak_started_at),
+			soak_deadline=VALUES(soak_deadline),last_gate_checked_at=VALUES(last_gate_checked_at),
+			last_gate_error=VALUES(last_gate_error),updated_at=VALUES(updated_at)
 	`, rollout.ID, rollout.RingID, rollout.TargetReleaseID, rollout.BatchID, rollout.Status,
-		rollout.TotalSets, rollout.CompletedSets, rollout.FailedSets, rollout.CurrentSetID,
+		rollout.TotalSets, rollout.CompletedSets, rollout.FailedSets, rollout.CurrentSetID, rollout.CampaignID, rollout.CampaignSequence,
+		nullableTime(rollout.SoakStartedAt), nullableTime(rollout.SoakDeadline), nullableTime(rollout.LastGateCheckedAt), rollout.LastGateError,
 		rollout.CreatedAt, rollout.UpdatedAt)
 	return err
 }
 
 func (s *MySQLStore) GetReleaseRollout(ctx context.Context, id string) (ReleaseRollout, bool, error) {
 	rollout, err := scanReleaseRollout(s.db.QueryRowContext(ctx, `
-		SELECT id,ring_id,target_release_id,batch_id,status,total_sets,completed_sets,failed_sets,current_set_id,created_at,updated_at
+		SELECT id,ring_id,target_release_id,batch_id,status,total_sets,completed_sets,failed_sets,current_set_id,campaign_id,campaign_sequence,
+			soak_started_at,soak_deadline,last_gate_checked_at,last_gate_error,created_at,updated_at
 		FROM llmgateway_release_rollouts WHERE id=?
 	`, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -141,14 +146,26 @@ func (s *MySQLStore) GetReleaseRollout(ctx context.Context, id string) (ReleaseR
 	return rollout, err == nil, err
 }
 
+func (s *MySQLStore) GetReleaseRolloutByCampaignStep(ctx context.Context, campaignID string, sequence int) (ReleaseRollout, bool, error) {
+	rollout, err := scanReleaseRollout(s.db.QueryRowContext(ctx, `
+		SELECT id,ring_id,target_release_id,batch_id,status,total_sets,completed_sets,failed_sets,current_set_id,
+			campaign_id,campaign_sequence,soak_started_at,soak_deadline,last_gate_checked_at,last_gate_error,created_at,updated_at
+		FROM llmgateway_release_rollouts WHERE campaign_id=? AND campaign_sequence=? ORDER BY created_at DESC LIMIT 1
+	`, campaignID, sequence))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ReleaseRollout{}, false, nil
+	}
+	return rollout, err == nil, err
+}
+
 func (s *MySQLStore) ListReleaseRollouts(ctx context.Context, ringID string, limit int) ([]ReleaseRollout, error) {
-	query := `SELECT id,ring_id,target_release_id,batch_id,status,total_sets,completed_sets,failed_sets,current_set_id,created_at,updated_at FROM llmgateway_release_rollouts`
+	query := `SELECT id,ring_id,target_release_id,batch_id,status,total_sets,completed_sets,failed_sets,current_set_id,campaign_id,campaign_sequence,soak_started_at,soak_deadline,last_gate_checked_at,last_gate_error,created_at,updated_at FROM llmgateway_release_rollouts`
 	args := make([]any, 0, 2)
 	if ringID != "" {
 		query += ` WHERE ring_id=?`
 		args = append(args, ringID)
 	}
-	query += ` ORDER BY created_at DESC,id DESC`
+	query += ` ORDER BY (status IN ('completed','failed')) ASC,created_at DESC,id DESC`
 	if limit > 0 {
 		query += ` LIMIT ?`
 		args = append(args, limit)
@@ -167,6 +184,44 @@ func (s *MySQLStore) ListReleaseRollouts(ctx context.Context, ringID string, lim
 		result = append(result, rollout)
 	}
 	return result, rows.Err()
+}
+
+func (s *MySQLStore) SaveReleaseRolloutAndRing(ctx context.Context, rollout ReleaseRollout, ring ReleaseRing) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `
+		UPDATE llmgateway_release_rollouts
+		SET status=?,total_sets=?,completed_sets=?,failed_sets=?,current_set_id=?,soak_started_at=?,soak_deadline=?,
+			last_gate_checked_at=?,last_gate_error=?,updated_at=? WHERE id=?
+	`, rollout.Status, rollout.TotalSets, rollout.CompletedSets, rollout.FailedSets, rollout.CurrentSetID,
+		nullableTime(rollout.SoakStartedAt), nullableTime(rollout.SoakDeadline), nullableTime(rollout.LastGateCheckedAt),
+		rollout.LastGateError, rollout.UpdatedAt, rollout.ID)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("release rollout %q not found", rollout.ID)
+	}
+	result, err = tx.ExecContext(ctx, `
+		UPDATE llmgateway_release_rings
+		SET serving_release_id=?,target_release_id=?,status=?,updated_at=? WHERE id=?
+	`, ring.ServingReleaseID, ring.TargetReleaseID, ring.Status, ring.UpdatedAt, ring.ID)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("release ring %q not found", ring.ID)
+	}
+	return tx.Commit()
 }
 
 func (s *MySQLStore) CreateReleaseRolloutPlan(ctx context.Context, ring ReleaseRing, rollout ReleaseRollout, batch SetUpgradeBatch) error {
@@ -245,10 +300,13 @@ func (s *MySQLStore) CreateReleaseRolloutPlan(ctx context.Context, ring ReleaseR
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO llmgateway_release_rollouts
-			(id,ring_id,target_release_id,batch_id,status,total_sets,completed_sets,failed_sets,current_set_id,created_at,updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?)
+			(id,ring_id,target_release_id,batch_id,status,total_sets,completed_sets,failed_sets,current_set_id,
+			 campaign_id,campaign_sequence,soak_started_at,soak_deadline,last_gate_checked_at,last_gate_error,created_at,updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	`, rollout.ID, rollout.RingID, rollout.TargetReleaseID, rollout.BatchID, rollout.Status,
 		rollout.TotalSets, rollout.CompletedSets, rollout.FailedSets, rollout.CurrentSetID,
+		rollout.CampaignID, rollout.CampaignSequence, nullableTime(rollout.SoakStartedAt), nullableTime(rollout.SoakDeadline),
+		nullableTime(rollout.LastGateCheckedAt), rollout.LastGateError,
 		rollout.CreatedAt, rollout.UpdatedAt); err != nil {
 		return err
 	}
@@ -273,8 +331,22 @@ func scanReleaseRing(row scanner) (ReleaseRing, error) {
 
 func scanReleaseRollout(row scanner) (ReleaseRollout, error) {
 	var rollout ReleaseRollout
+	var soakStartedAt, soakDeadline, lastGateCheckedAt sql.NullTime
+	var lastGateError sql.NullString
 	err := row.Scan(&rollout.ID, &rollout.RingID, &rollout.TargetReleaseID, &rollout.BatchID, &rollout.Status,
 		&rollout.TotalSets, &rollout.CompletedSets, &rollout.FailedSets, &rollout.CurrentSetID,
+		&rollout.CampaignID, &rollout.CampaignSequence,
+		&soakStartedAt, &soakDeadline, &lastGateCheckedAt, &lastGateError,
 		&rollout.CreatedAt, &rollout.UpdatedAt)
+	rollout.LastGateError = lastGateError.String
+	if soakStartedAt.Valid {
+		rollout.SoakStartedAt = soakStartedAt.Time.UTC()
+	}
+	if soakDeadline.Valid {
+		rollout.SoakDeadline = soakDeadline.Time.UTC()
+	}
+	if lastGateCheckedAt.Valid {
+		rollout.LastGateCheckedAt = lastGateCheckedAt.Time.UTC()
+	}
 	return rollout, err
 }
