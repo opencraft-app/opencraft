@@ -421,7 +421,7 @@ func (s *Service) MoveInOrderAndPay(ctx context.Context, req MoveInOrderRequest)
 				PayMode:         1,
 				ProjectID:       0,
 				Action:          "preMoveIn",
-				Type:            "postMoveIn",
+				Type:            def.SubProductCode,
 				GoodsDetail:     goodsDetail,
 			},
 		},
