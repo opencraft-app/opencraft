@@ -1172,7 +1172,7 @@ func TestMoveInOrderAndPay_HappyPath(t *testing.T) {
 		t.Errorf("ClientToken = %q", got.ClientToken)
 	}
 	goods := got.Goods[0]
-	if goods.GoodsCategoryID != 176262 || goods.Action != "preMoveIn" || goods.Type != "postMoveIn" {
+	if goods.GoodsCategoryID != 176262 || goods.Action != "preMoveIn" || goods.Type != "sp_linux_small" {
 		t.Fatalf("move-in goods mismatch: %+v", goods)
 	}
 	detail := goods.GoodsDetail
