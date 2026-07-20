@@ -142,7 +142,7 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       : variant === "chat"
       ? t("LightVela 支持网页内对话")
       : variant === "memory"
-      ? t("LightVela支持查看Hermes Agent记忆")
+      ? t("LightVela 支持查看 Hermes Agent 记忆")
       : variant === "schedule"
       ? t("LightVela 支持设置自动任务")
       : variant === "automationSkill"
@@ -180,7 +180,7 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       : variant === "automationSkill"
         ? "820 / 282"
         : variant === "skill-package"
-        ? "1450 / 714"
+        ? "1166 / 680"
         : variant === "soul"
           ? isGlobal ? "1279 / 808" : "1451 / 917"
           : "710 / 360";
@@ -313,7 +313,7 @@ function ChangelogContent() {
         },
         {
           id: "memory",
-          title: t("LightVela支持查看Hermes Agent记忆"),
+          title: t("LightVela 支持查看 Hermes Agent 记忆"),
           desc: t("在控制台查看 Hermes Agent 的记忆、用户画像和字符占用，帮助你了解 Agent 当前掌握的上下文。"),
           visual: "memory",
         },

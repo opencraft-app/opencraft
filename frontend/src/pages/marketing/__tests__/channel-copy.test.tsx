@@ -117,10 +117,12 @@ describe("marketing channel copy", () => {
       expect.stringContaining("/assets/changelog/lightvela-launch.webp"),
     );
     expect(screen.getByText("快速安装技能组合，让 Agent 从单点技能走向完整工作流。")).toBeInTheDocument();
-    expect(screen.getByAltText("LightVela 支持技能包")).toHaveAttribute(
+    const skillPackageImage = screen.getByAltText("LightVela 支持技能包");
+    expect(skillPackageImage).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/lightvela-skill-package-cn.webp"),
     );
+    expect(skillPackageImage.parentElement).toHaveStyle({ aspectRatio: "1166 / 680" });
     expect(screen.queryByRole("heading", { name: "新增技能包功能" })).not.toBeInTheDocument();
   });
 
@@ -132,6 +134,7 @@ describe("marketing channel copy", () => {
     );
 
     expect(screen.getByText("2026 年 5 月")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "LightVela 支持查看 Hermes Agent 记忆" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "LightVela 支持设置自动任务" })).toBeInTheDocument();
     expect(screen.getByText("为 Agent 设置周期、间隔或单次自动任务，让它按计划执行提醒、总结、通知等日常工作。")).toBeInTheDocument();
   });

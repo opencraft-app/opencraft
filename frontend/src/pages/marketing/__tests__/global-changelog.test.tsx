@@ -73,6 +73,7 @@ describe("global changelog skill package entry", () => {
       expect.stringContaining("/assets/changelog/lightvela-diagnostics-global-zh.webp"),
     );
     expect(screen.getByRole("heading", { name: "Soul 人设能力上线" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "LightVela 支持查看 Hermes Agent 记忆" })).toBeInTheDocument();
     expect(screen.getByAltText("Soul 人设能力上线")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/soul-persona-global-zh.webp"),
