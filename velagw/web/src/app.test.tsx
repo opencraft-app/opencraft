@@ -148,6 +148,7 @@ describe("BackgroundJobsPage", () => {
       observations: { pending: 14, due: 3, running: 2, error: 1, blocked: 4, expired_running_leases: 0, oldest_due_age_seconds: 185 },
       jobs: [
         { name: "check_channel_drift", enabled: true, status: "error", last_error: "remote drift", failure_count: 2, lease_owner: "worker-a" },
+		{ name: "rebuild_api_key_routes", enabled: true, status: "error", last_error: "route cache unavailable", failure_count: 1 },
         { name: "refresh_set_capacity", enabled: true, status: "success", failure_count: 19, lease_until: "0001-01-01T00:00:00Z" },
       ],
     })
@@ -174,6 +175,7 @@ describe("BackgroundJobsPage", () => {
     expect(scheduledHTML).toContain("同步队列")
     expect(scheduledHTML).toContain("清理任务")
     expect(scheduledHTML).toContain("渠道差异检查")
+	expect(scheduledHTML).toContain("恢复密钥路由")
     expect(scheduledHTML).toContain("remote drift")
     expect(scheduledHTML).toContain("重试")
     expect(scheduledHTML).not.toContain("worker-a")

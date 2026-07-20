@@ -108,6 +108,7 @@ const (
 	WorkerJobCleanupPending            = "cleanup_pending"
 	WorkerJobRefreshTenantStatistics   = "refresh_tenant_statistics"
 	WorkerJobPublishAPIKeyRoutes       = "publish_api_key_routes"
+	WorkerJobRebuildAPIKeyRoutes       = "rebuild_api_key_routes"
 	WorkerJobReconcileShardExpansions  = "reconcile_shard_expansions"
 	WorkerJobReconcileReleaseCampaigns = "reconcile_release_campaigns"
 
@@ -1368,6 +1369,17 @@ type APIKeyBinding struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
+// TrafficRouteRecoveryRecord is the durable MySQL projection needed to
+// reconstruct one Redis traffic route without per-key database lookups.
+type TrafficRouteRecoveryRecord struct {
+	Binding           APIKeyBinding
+	TenantBackend     string
+	TenantStatus      string
+	BYOKRoutingMode   string
+	BYOKUpstreamKey   string
+	BYOKUpstreamKeyID int
+}
+
 type UserLLMSettings struct {
 	ExternalUserID    string            `json:"user_id"`
 	Routing           UserLLMRouting    `json:"routing"`
@@ -2066,6 +2078,7 @@ type Options struct {
 	WorkerChannelDriftTimeout   time.Duration
 	WorkerSetAdminHealthBatch   int
 	WorkerSetAdminHealthTimeout time.Duration
+	WorkerKeyRouteRebuildBatch  int
 }
 
 type TrafficRouteLookup struct {

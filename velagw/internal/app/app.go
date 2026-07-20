@@ -215,6 +215,7 @@ func RunWorker(ctx context.Context) error {
 		WorkerObservationSeedBatch: envInt("LLMGATEWAY_OBSERVER_SEED_BATCH_SIZE", 1000),
 		WorkerChannelDriftBatch:    envInt("LLMGATEWAY_WORKER_CHANNEL_DRIFT_BATCH_SIZE", 10),
 		WorkerChannelDriftTimeout:  driftItemTimeout,
+		WorkerKeyRouteRebuildBatch: envInt("LLMGATEWAY_KEY_ROUTE_REBUILD_BATCH_SIZE", 1000),
 		TelemetrySanitizer:         telemetrySanitizer,
 		TelemetryCorrelator:        telemetryCorrelatorFromEnv(),
 	})

@@ -125,6 +125,54 @@ func TestNewRegionCanBootstrapBeforeCLBExists(t *testing.T) {
 	}
 }
 
+func TestControlRouteRedisUsesThreeShardThreeReplicaMultiAZCluster(t *testing.T) {
+	t.Parallel()
+
+	variables := mustReadFile(t, "variables.tf")
+	dataStores := mustReadFile(t, "data_stores.tf")
+	controlRedis := terraformVariableBlock(t, variables, "control_redis")
+
+	for _, expected := range []string{
+		`(?m)^\s*type_id\s*=\s*18\s*$`,
+		`(?m)^\s*redis_shard_num\s*=\s*3\s*$`,
+		`(?m)^\s*redis_replicas_num\s*=\s*3\s*$`,
+		`(?m)^\s*replica_zone_indexes\s*=\s*\[0, 1, 1\]\s*$`,
+	} {
+		if !regexp.MustCompile(expected).MatchString(controlRedis) {
+			t.Errorf("control_redis production default must contain %q", expected)
+		}
+	}
+	if !strings.Contains(dataStores, `data "tencentcloud_availability_zones_by_product" "redis"`) {
+		t.Fatal("Redis topology must resolve current TencentCloud zone IDs instead of hard-coding them")
+	}
+	if !regexp.MustCompile(`(?m)^\s*replica_zone_ids\s*=\s*local\.control_redis_replica_zone_ids\s*$`).MatchString(dataStores) {
+		t.Fatal("control Redis must explicitly place every replica across configured availability zones")
+	}
+	if !regexp.MustCompile(`(?m)^\s*replicas_read_only\s*=\s*false\s*$`).MatchString(dataStores) {
+		t.Fatal("route Redis must keep strongly consistent primary reads")
+	}
+	if !strings.Contains(dataStores, "distinct(concat([0], var.control_redis.replica_zone_indexes))") {
+		t.Fatal("multi-AZ validation must count the primary zone as well as replica zones")
+	}
+
+	for _, path := range []string{
+		filepath.Join("environments", "beijing.tfvars.example"),
+		filepath.Join("environments", "shanghai.tfvars.example"),
+	} {
+		raw := mustReadFile(t, path)
+		for _, expected := range []string{
+			`(?m)^\s*type_id\s*=\s*18\s*$`,
+			`(?m)^\s*redis_shard_num\s*=\s*3\s*$`,
+			`(?m)^\s*redis_replicas_num\s*=\s*3\s*$`,
+			`(?m)^\s*replica_zone_indexes\s*=\s*\[0, 1, 1\]\s*$`,
+		} {
+			if !regexp.MustCompile(expected).MatchString(raw) {
+				t.Errorf("%s must contain %q", path, expected)
+			}
+		}
+	}
+}
+
 type regionalExample struct {
 	region           string
 	regionAlias      string

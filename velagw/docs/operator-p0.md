@@ -128,6 +128,8 @@ Set 销毁同样必须先 preview，并在启动时原样带回 `expected_digest
 - `reconcile_group_ratios`：扫描本地 `pending/error` Set，把权威 `GroupRatio` 快照完整下发到 new-api。
 - `reconcile_set_facts`：消费 Set facts，自动纳管新 Set。
 - `cleanup_pending`：清理超时 pending 的扩容/纳管意图。
+- `publish_api_key_routes`：重试刚签发但尚未成功发布到 Redis 的 `route_pending` Key。
+- `rebuild_api_key_routes`：以中央 MySQL 为冷备真源，先恢复所有 active Set 的 runtime route，再按 `external_key_id` keyset cursor 全量恢复 active Key；扫描期间每秒推进一批，完整一轮后每小时重新校验。
 
 core 和 observer 的播种任务使用 `llmgateway_worker_jobs` 的 `lease_owner`、`lease_until` 做互斥。任务执行记录保存在 `llmgateway_worker_job_runs`，用于排障，不作为审计系统。旧的 `retry_byok_sync` 全局任务会被自动禁用并从运营列表隐藏。
 
@@ -209,6 +211,9 @@ checker 按“最后稳定 applied revision”做强校验：
 - `llmgateway_worker_job_failure_total`
 - `llmgateway_worker_job_lease_age_seconds`
 - `llmgateway_key_route_cache_total`
+- `llmgateway_key_route_rebuild_in_progress`
+- `llmgateway_key_route_rebuild_restored`
+- `llmgateway_key_route_rebuild_cycle_started_timestamp_seconds`
 - `llmgateway_byok_sync_failure`
 - `llmgateway_byok_sync_tasks`
 - `llmgateway_byok_sync_oldest_pending_age_seconds`
@@ -222,5 +227,26 @@ checker 按“最后稳定 applied revision”做强校验：
 - `llmgateway_tenant_observation_last_success_timestamp_seconds`
 - `llmgateway_tenant_observation_last_failure_timestamp_seconds`
 - 原有 `llmgateway_traffic_*`
+
+## Route Redis 冷备恢复
+
+中央 MySQL 的 `llmgateway_api_key_bindings`、`llmgateway_tenants`、`llmgateway_user_llm_settings` 和 Set runtime 投影是恢复真源；Route Redis 是流量面唯一热路径，不在请求 miss 时回源 MySQL。腾讯云 Redis 的 3 分片、3 副本、跨双 AZ 解决节点和可用区故障，但 `FLUSHDB`、误删除等逻辑故障会同步到所有副本，必须由 `rebuild_api_key_routes` 重建。
+
+任务采用固定高水位和持久 keyset cursor。每批只推进到最后一个已写入并读回校验成功的 Key；某一项失败时不会越过该项。恢复期间新签发 Key 仍走正常同步发布路径，不需要等待全量扫描。运营台“自动任务”中的“恢复密钥路由”可以手动排队，API 等价调用为：
+
+```bash
+curl -fsS -X POST "$LLMGATEWAY_CONTROL_URL/api/admin/jobs/rebuild_api_key_routes/run" \
+  -H "Authorization: Bearer $LLMGATEWAY_CONTROL_TOKEN"
+```
+
+破坏性恢复门禁只允许在明确的集成/预发布集群执行。它会真实清空 Route Redis，并要求同一个测试 Key 在恢复前后都能完成推理：
+
+```bash
+LLMGATEWAY_REGRESSION_TRAFFIC_KEY='sk-...' \
+LLMGATEWAY_ROUTE_RECOVERY_CONFIRM=I_UNDERSTAND_FLUSHDB \
+test/regression/route-redis-recovery-gate.sh
+```
+
+门禁从 Kubernetes Secret 读取管理 token 和 Redis URL，不把凭据写入 Pod 模板或日志。清空后流量面保持 fail closed；任务完成且 cursor 清空、指标回到 `in_progress 0`、测试 Key 再次调用成功，才算恢复完成。
 
 Prometheus 告警示例见 [prometheus-rules.yaml](./prometheus-rules.yaml)。

@@ -54,10 +54,11 @@ control_mysql = {
 }
 
 control_redis = {
-  type_id            = 17
-  mem_size           = 1024
-  redis_shard_num    = 1
-  redis_replicas_num = 1
+  type_id              = 18
+  mem_size             = 1024
+  redis_shard_num      = 3
+  redis_replicas_num   = 3
+  replica_zone_indexes = [0, 1, 1]
 }
 
 shards = {

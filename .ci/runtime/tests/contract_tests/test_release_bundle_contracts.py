@@ -259,7 +259,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(bundle.image_repo, "lightclaw-bj82.tencentcloudcr.com/llmgateway/llmgateway")
         self.assertEqual(parameters.get("SERVICE"), "velagw")
-        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-llmgateway")
         self.assertEqual(app["spec"]["destination"]["name"], "beijing-llmgateway")
         self.assertEqual(app["spec"]["source"]["path"], "argocd/services/velagw/beijing-llmgateway")
@@ -269,6 +269,93 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("kind: Secret", workloads)
         self.assertNotIn("kind: LLMFleet", workloads)
         self.assertEqual(traffic_env.get("LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED"), "true")
+
+    def test_velagw_release_bundle_targets_shanghai_production_cluster(self) -> None:
+        manifest = load_manifest()
+
+        bundle = require_build_metadata(load_bundle(manifest, "velagw", "shprod"))
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/velagw.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+        app = yaml.safe_load((REPO_ROOT / "argocd/apps/shprod/velagw.yaml").read_text())
+        project = yaml.safe_load((REPO_ROOT / "argocd/projects/shprod-velagw.yaml").read_text())
+        cluster = yaml.safe_load((REPO_ROOT / "argocd/clusters/shanghai-llmgateway-prod.yaml").read_text())
+
+        self.assertEqual(bundle.image_repo, "lightclaw-shprod.tencentcloudcr.com/llmgateway/llmgateway")
+        self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "shprod")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-llmgateway")
+        self.assertTrue(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
+
+        self.assertEqual(app["spec"]["project"], "shprod-velagw")
+        self.assertEqual(app["spec"]["source"]["repoURL"], "git@git.woa.com:wisp/mono2.git")
+        self.assertEqual(app["spec"]["source"]["targetRevision"], "gitops")
+        self.assertEqual(app["spec"]["source"]["path"], "argocd/services/velagw/shprod")
+        self.assertEqual(app["spec"]["destination"]["name"], "shanghai-llmgateway-prod")
+        self.assertEqual(app["spec"]["destination"]["namespace"], "llmgateway")
+        self.assertNotIn("automated", app["spec"].get("syncPolicy") or {})
+
+        self.assertEqual(project["spec"]["sourceRepos"], ["git@git.woa.com:wisp/mono2.git"])
+        self.assertEqual(
+            project["spec"]["destinations"],
+            [{"namespace": "llmgateway", "name": "shanghai-llmgateway-prod"}],
+        )
+        self.assertEqual(cluster["spec"]["server"], "https://43.180.150.109:443")
+        self.assertEqual(cluster["spec"]["tlsServerName"], "cls-baiv5l5p.ccs.tencent-cloud.com")
+        self.assertEqual(cluster["spec"]["projectPath"], "argocd/projects/shprod-velagw.yaml")
+        self.assertEqual(cluster["spec"]["namespaces"], ["llmgateway"])
+        self.assertTrue(cluster["spec"]["clusterResources"])
+
+        self.assertIn("argocd/apps/shprod/velagw.yaml", bundle.publish_paths)
+        self.assertIn("argocd/projects/shprod-velagw.yaml", bundle.publish_paths)
+        self.assertIn("argocd/clusters/shanghai-llmgateway-prod.yaml", bundle.publish_paths)
+        self.assertIn("argocd/services/velagw/shprod/**", bundle.publish_paths)
+
+        rendered = subprocess.run(
+            ["kustomize", "build", "argocd/services/velagw/shprod"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        rendered_docs = [doc for doc in yaml.safe_load_all(rendered) if doc]
+        kinds = {doc.get("kind") for doc in rendered_docs}
+        self.assertNotIn("Secret", kinds)
+        self.assertNotIn("Namespace", kinds)
+        self.assertNotIn("LLMFleet", kinds)
+        self.assertIn("ResourceGraphDefinition", kinds)
+
+        traffic = next(
+            doc
+            for doc in rendered_docs
+            if doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-traffic"
+        )
+        traffic_container = next(
+            container
+            for container in traffic["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "traffic"
+        )
+        traffic_env = {entry["name"]: entry.get("value") for entry in traffic_container.get("env", [])}
+        self.assertEqual(traffic_env.get("LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED"), "true")
+
+        set_manager = next(
+            doc
+            for doc in rendered_docs
+            if doc.get("kind") == "CronJob"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-set-manager"
+        )
+        set_manager_container = next(
+            container
+            for container in set_manager["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "set-manager"
+        )
+        set_manager_env = {
+            entry["name"]: entry.get("value") for entry in set_manager_container.get("env", [])
+        }
+        self.assertEqual(
+            set_manager_env.get("LLMGATEWAY_SET_MANAGER_RUNTIME_CLEANER_IMAGE"),
+            set_manager_container.get("image"),
+        )
 
     def test_velagw_beijing_otel_version_matches_subtree_source(self) -> None:
         marker = {}
@@ -283,6 +370,39 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         actual_versions = {}
         for workload in workloads:
+            if not workload or workload.get("kind") not in {"Deployment", "CronJob"}:
+                continue
+            if workload["kind"] == "CronJob":
+                pod_spec = workload["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+            else:
+                pod_spec = workload["spec"]["template"]["spec"]
+            for container in pod_spec.get("containers", []):
+                env = {entry["name"]: entry.get("value") for entry in container.get("env", [])}
+                if "OTEL_SERVICE_VERSION" in env:
+                    actual_versions[f"{workload['kind']}/{workload['metadata']['name']}/{container['name']}"] = env[
+                        "OTEL_SERVICE_VERSION"
+                    ]
+
+        self.assertTrue(actual_versions)
+        self.assertEqual(set(actual_versions.values()), {expected_version}, actual_versions)
+
+    def test_velagw_shprod_otel_version_matches_subtree_source(self) -> None:
+        marker = {}
+        for line in (REPO_ROOT / "velagw/.mono2-subtree").read_text().splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                marker[key] = value
+        expected_version = marker["upstream_commit"][:7]
+
+        rendered = subprocess.run(
+            ["kustomize", "build", "argocd/services/velagw/shprod"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        actual_versions = {}
+        for workload in yaml.safe_load_all(rendered):
             if not workload or workload.get("kind") not in {"Deployment", "CronJob"}:
                 continue
             if workload["kind"] == "CronJob":

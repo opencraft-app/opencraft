@@ -27,6 +27,7 @@ var defaultWorkerJobs = []WorkerJob{
 	{Name: WorkerJobCleanupPending, Kind: WorkerJobCleanupPending, Enabled: true, IntervalSeconds: 600},
 	{Name: WorkerJobRefreshTenantStatistics, Kind: WorkerJobRefreshTenantStatistics, Enabled: true, IntervalSeconds: 600},
 	{Name: WorkerJobPublishAPIKeyRoutes, Kind: WorkerJobPublishAPIKeyRoutes, Enabled: true, IntervalSeconds: 30},
+	{Name: WorkerJobRebuildAPIKeyRoutes, Kind: WorkerJobRebuildAPIKeyRoutes, Enabled: true, IntervalSeconds: idleAPIKeyRouteRebuildInterval},
 	{Name: WorkerJobReconcileShardExpansions, Kind: WorkerJobReconcileShardExpansions, Enabled: true, IntervalSeconds: 30},
 	{Name: WorkerJobReconcileReleaseCampaigns, Kind: WorkerJobReconcileReleaseCampaigns, Enabled: true, IntervalSeconds: 10},
 }
@@ -287,12 +288,12 @@ func (s *Service) QueueWorkerJobNow(ctx context.Context, name string) (WorkerJob
 		return WorkerJobRun{}, fmt.Errorf("job %q is disabled", name)
 	}
 	now := s.nowUTC()
-	job.NextRunAt = now
-	if strings.TrimSpace(job.Status) == "" {
-		job.Status = WorkerJobStatusIdle
-	}
-	if err := s.store.SaveWorkerJob(ctx, job); err != nil {
+	_, queued, err := s.store.QueueWorkerJob(ctx, name, name == WorkerJobRebuildAPIKeyRoutes, now)
+	if err != nil {
 		return WorkerJobRun{}, err
+	}
+	if !queued {
+		return WorkerJobRun{}, fmt.Errorf("job %q is already running", name)
 	}
 	return WorkerJobRun{
 		ID:         fmt.Sprintf("%s-queued-%d", job.Name, now.UnixNano()),
@@ -514,6 +515,9 @@ func (s *Service) runWorkerJobBody(ctx context.Context, job *WorkerJob) (string,
 	case WorkerJobPublishAPIKeyRoutes:
 		published, failed, err := s.publishAPIKeyRoutesJob(ctx, 200)
 		return fmt.Sprintf("published=%d failed=%d", published, failed), err
+	case WorkerJobRebuildAPIKeyRoutes:
+		result, err := s.rebuildAPIKeyRoutesJob(ctx, job, s.options.WorkerKeyRouteRebuildBatch)
+		return fmt.Sprintf("restored=%d runtime_restored=%d completed=%t after_key_id=%q", result.Restored, result.RuntimeRestored, result.Completed, result.AfterKeyID), err
 	case WorkerJobReconcileReleaseCampaigns:
 		soaks, soakErr := s.ReconcileReleaseRolloutSoaks(ctx, 50)
 		campaigns, campaignErr := s.ReconcileReleaseCampaigns(ctx, 25)

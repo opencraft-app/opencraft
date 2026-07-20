@@ -74,6 +74,24 @@ func TestJobTemplateCarriesControlPlaneOutageConfiguration(t *testing.T) {
 	}
 }
 
+func TestRouteRedisRecoveryGateRequiresExplicitDestructiveConfirmation(t *testing.T) {
+	script := read(t, "../route-redis-recovery-gate.sh")
+	for _, required := range []string{
+		`LLMGATEWAY_ROUTE_RECOVERY_CONFIRM`, `I_UNDERSTAND_FLUSHDB`,
+		`LLMGATEWAY_REGRESSION_TRAFFIC_KEY`, `LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL`,
+		`LLMGATEWAY_ROUTE_REDIS_CLI_IMAGE`, `LLMGATEWAY_ROUTE_RECOVERY_PROBE_TIMEOUT_SECONDS`,
+		`FLUSHDB`, `/api/admin/jobs/rebuild_api_key_routes/run`,
+		`/v1/chat/completions`, `llmgateway_key_route_rebuild_in_progress 0`,
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("route Redis recovery gate missing %q", required)
+		}
+	}
+	if strings.Contains(script, "CLUSTER_ADMIN_TOKEN=") || strings.Contains(script, "redis://:") {
+		t.Fatal("route Redis recovery gate must read secrets at runtime")
+	}
+}
+
 func TestPacerIsAStableDeploymentFixture(t *testing.T) {
 	infrastructure := read(t, "infrastructure.yaml")
 	for _, required := range []string{

@@ -121,3 +121,19 @@ go run ./test/regression/cmd/runner \
 ```
 
 一次性 Job、配置和报告 ConfigMap 由外部操作者删除；runner ServiceAccount 刻意没有 Job 删除权限。
+
+## Route Redis 冷备恢复门禁
+
+`route-redis-recovery-gate.sh` 是独立的破坏性门禁。它真实执行 `FLUSHDB`，然后排队 `rebuild_api_key_routes`，验证中央 MySQL 能恢复 Set runtime 和全部 active Key 路由。必须传入一条已在目标环境验证可用、允许短时中断的测试 Key，并显式确认：
+
+```bash
+LLMGATEWAY_REGRESSION_TRAFFIC_KEY='sk-...' \
+LLMGATEWAY_ROUTE_RECOVERY_CONFIRM=I_UNDERSTAND_FLUSHDB \
+test/regression/route-redis-recovery-gate.sh
+```
+
+门禁默认允许真实推理等待 90 秒。上游时延更长时，可通过
+`LLMGATEWAY_ROUTE_RECOVERY_PROBE_TIMEOUT_SECONDS` 调整；这只放宽单次推理等待时间，
+不会绕过恢复任务完成、游标归零和恢复后推理成功这三项验收。
+
+这项门禁不要加入普通日常回归，也不要在正式生产直接运行。失败退出会再次排队恢复任务，但不会把 traffic 临时改成 MySQL 回源模式。

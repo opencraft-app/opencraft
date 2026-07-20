@@ -1,0 +1,545 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: llmfleets.llmgateway.io
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: llmgateway.io
+    kind: LLMFleet
+    spec:
+      shards: "[]object"
+      sets: "[]object"
+      trafficRuntimes: "[]object"
+      cleanups: "[]object"
+      availability: object
+      newapi: object
+      newapiImage: string | default="calciumion/new-api@sha256:3125e24f119fa5e767563226a5208f2902b3faed3f27b69ea275b32c9f04a066"
+      runtimeCleanerImage: string
+    status:
+      cleanups: '${runtimeCleanupJobs.map(j, {"cleanupID": j.metadata.annotations["llmgateway.io/cleanup-id"], "attempt": int(j.metadata.annotations["llmgateway.io/cleanup-attempt"]), "jobUID": string(j.metadata.uid), "active": has(j.status.active) ? j.status.active : 0, "succeeded": has(j.status.succeeded) ? j.status.succeeded : 0, "failed": has(j.status.failed) ? j.status.failed : 0})}'
+      trafficDeployments: '${newapiVersionedTrafficDeployments.map(d, {"setID": d.metadata.labels["llmgateway.io/set"], "generation": int(d.metadata.labels["llmgateway.io/runtime-generation"]), "name": d.metadata.name, "objectGeneration": d.metadata.generation, "observedGeneration": has(d.status.observedGeneration) ? d.status.observedGeneration : 0, "desiredReplicas": d.spec.replicas, "readyReplicas": has(d.status.readyReplicas) ? d.status.readyReplicas : 0, "availableReplicas": has(d.status.availableReplicas) ? d.status.availableReplicas : 0})}'
+      trafficPodDisruptionBudgets: '${newapiVersionedTrafficPodDisruptionBudgets.map(p, {"setID": p.metadata.labels["llmgateway.io/set"], "generation": int(p.metadata.labels["llmgateway.io/runtime-generation"]), "name": p.metadata.name, "minAvailable": p.spec.minAvailable, "expectedPods": has(p.status.expectedPods) ? p.status.expectedPods : 0, "currentHealthy": has(p.status.currentHealthy) ? p.status.currentHealthy : 0, "disruptionsAllowed": has(p.status.disruptionsAllowed) ? p.status.disruptionsAllowed : 0})}'
+  resources:
+    - id: newapiAdminServices
+      forEach:
+        - set: ${schema.spec.sets}
+      template:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: ${schema.metadata.name + '-' + set.name + '-newapi-admin'}
+          labels:
+            app.kubernetes.io/name: ${schema.metadata.name + '-' + set.name + '-newapi-admin'}
+            app.kubernetes.io/component: new-api
+            app.kubernetes.io/part-of: llmgateway
+            llmgateway.io/fleet: ${schema.metadata.name}
+            llmgateway.io/set: ${set.name}
+            llmgateway.io/shard: ${set.shardRef}
+            llmgateway.io/newapi-role: admin
+        spec:
+          selector:
+            app.kubernetes.io/name: ${schema.metadata.name + '-' + set.name + '-newapi-admin-master'}
+          ports:
+            - name: http
+              protocol: TCP
+              port: 3000
+              targetPort: 3000
+
+    - id: newapiTrafficServices
+      forEach:
+        - set: '${schema.spec.sets.filter(s, !has(s.legacyTrafficEnabled) || s.legacyTrafficEnabled)}'
+      template:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: ${schema.metadata.name + '-' + set.name + '-newapi-traffic'}
+          labels:
+            app.kubernetes.io/name: ${schema.metadata.name + '-' + set.name + '-newapi-traffic'}
+            app.kubernetes.io/component: new-api
+            app.kubernetes.io/part-of: llmgateway
+            llmgateway.io/fleet: ${schema.metadata.name}
+            llmgateway.io/set: ${set.name}
+            llmgateway.io/shard: ${set.shardRef}
+            llmgateway.io/newapi-role: traffic
+        spec:
+          selector:
+            llmgateway.io/fleet: ${schema.metadata.name}
+            llmgateway.io/set: ${set.name}
+            llmgateway.io/newapi-role: traffic
+          ports:
+            - name: http
+              protocol: TCP
+              port: 3000
+              targetPort: 3000
+
+    - id: newapiVersionedTrafficServices
+      forEach:
+        - rt: ${schema.spec.trafficRuntimes}
+      template:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: ${schema.metadata.name + '-' + rt.setID + '-g' + string(rt.generation) + '-newapi-traffic'}
+          labels:
+            app.kubernetes.io/component: new-api
+            app.kubernetes.io/part-of: llmgateway
+            llmgateway.io/fleet: ${schema.metadata.name}
+            llmgateway.io/set: ${rt.setID}
+            llmgateway.io/runtime-generation: ${string(rt.generation)}
+            llmgateway.io/newapi-role: traffic
+        spec:
+          selector:
+            app.kubernetes.io/name: ${schema.metadata.name + '-' + rt.setID + '-g' + string(rt.generation) + '-newapi-traffic'}
+          ports:
+            - name: http
+              protocol: TCP
+              port: 3000
+              targetPort: 3000
+
+    - id: newapiAdminMasterDeployments
+      forEach:
+        - set: ${schema.spec.sets}
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${schema.metadata.name + '-' + set.name + '-newapi-admin-master'}
+          labels:
+            app.kubernetes.io/name: ${schema.metadata.name + '-' + set.name + '-newapi-admin-master'}
+            app.kubernetes.io/component: new-api
+            app.kubernetes.io/part-of: llmgateway
+            llmgateway.io/fleet: ${schema.metadata.name}
+            llmgateway.io/set: ${set.name}
+            llmgateway.io/shard: ${set.shardRef}
+            llmgateway.io/newapi-role: admin
+        spec:
+          replicas: 1
+          strategy:
+            type: Recreate
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: ${schema.metadata.name + '-' + set.name + '-newapi-admin-master'}
+          template:
+            metadata:
+              labels:
+                app.kubernetes.io/name: ${schema.metadata.name + '-' + set.name + '-newapi-admin-master'}
+                app.kubernetes.io/component: new-api
+                app.kubernetes.io/part-of: llmgateway
+                llmgateway.io/fleet: ${schema.metadata.name}
+                llmgateway.io/set: ${set.name}
+                llmgateway.io/shard: ${set.shardRef}
+                llmgateway.io/newapi-role: admin
+            spec:
+              imagePullSecrets:
+                - name: tcr-pull-secret
+              terminationGracePeriodSeconds: 60
+              initContainers:
+                - name: ensure-database
+                  image: mysql:8.4
+                  imagePullPolicy: IfNotPresent
+                  command:
+                    - sh
+                    - -c
+                    - |
+                      until mysqladmin ping -h ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].mysqlHost} -P ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].mysqlPort} -u$MYSQL_ADMIN_USER -p$MYSQL_ADMIN_PASSWORD --silent; do echo "waiting for mysql"; sleep 2; done
+                      mysql -h ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].mysqlHost} -P ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].mysqlPort} -u$MYSQL_ADMIN_USER -p$MYSQL_ADMIN_PASSWORD -e "CREATE DATABASE IF NOT EXISTS \`${set.databaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+                  env:
+                    - name: MYSQL_ADMIN_USER
+                      valueFrom:
+                        secretKeyRef:
+                          name: ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].secretName}
+                          key: mysqlAdminUser
+                    - name: MYSQL_ADMIN_PASSWORD
+                      valueFrom:
+                        secretKeyRef:
+                          name: ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].secretName}
+                          key: mysqlAdminPassword
+                - name: wait-for-dependencies
+                  image: busybox:1.36
+                  imagePullPolicy: IfNotPresent
+                  command:
+                    - sh
+                    - -c
+                    - |
+                      until nc -z ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].mysqlHost} ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].mysqlPort}; do echo "waiting for mysql"; sleep 2; done
+                      until nc -z ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].redisHost} ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].redisPort}; do echo "waiting for redis"; sleep 2; done
+              containers:
+                - name: newapi
+                  image: '${has(set.adminImage) && set.adminImage != "" ? set.adminImage : schema.spec.newapiImage}'
+                  imagePullPolicy: IfNotPresent
+                  command:
+                    - /new-api
+                    - --log-dir
+                    - /tmp/logs
+                  env:
+                    - name: MYSQL_APP_USER
+                      valueFrom:
+                        secretKeyRef:
+                          name: ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].secretName}
+                          key: mysqlAppUser
+                    - name: MYSQL_APP_PASSWORD
+                      valueFrom:
+                        secretKeyRef:
+                          name: ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].secretName}
+                          key: mysqlAppPassword
+                    - name: REDIS_PASSWORD_ENCODED
+                      valueFrom:
+                        secretKeyRef:
+                          name: ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].secretName}
+                          key: redisPasswordEncoded
+                    - name: SQL_DSN
+                      value: $(MYSQL_APP_USER):$(MYSQL_APP_PASSWORD)@tcp(${schema.spec.shards.filter(s, s.name == set.shardRef)[0].mysqlHost}:${schema.spec.shards.filter(s, s.name == set.shardRef)[0].mysqlPort})/${set.databaseName}?charset=utf8mb4&parseTime=true&loc=UTC
+                    - name: SQL_MAX_OPEN_CONNS
+                      value: ${string(set.adminSQLMaxOpenConns)}
+                    - name: SQL_MAX_IDLE_CONNS
+                      value: ${string(set.adminSQLMaxIdleConns)}
+                    - name: SQL_MAX_LIFETIME
+                      value: ${string(set.adminSQLMaxLifetimeSeconds)}
+                    - name: REDIS_CONN_STRING
+                      value: redis://:$(REDIS_PASSWORD_ENCODED)@${schema.spec.shards.filter(s, s.name == set.shardRef)[0].redisHost}:${schema.spec.shards.filter(s, s.name == set.shardRef)[0].redisPort}/${set.redisDB}
+                    - name: SESSION_SECRET
+                      value: ${set.sessionSecret}
+                    - name: TZ
+                      value: Asia/Shanghai
+                    - name: GLOBAL_API_RATE_LIMIT_ENABLE
+                      value: "false"
+                    - name: GLOBAL_WEB_RATE_LIMIT_ENABLE
+                      value: "false"
+                    - name: CRITICAL_RATE_LIMIT_ENABLE
+                      value: "false"
+                    - name: SEARCH_RATE_LIMIT_ENABLE
+                      value: "false"
+                    - name: BATCH_UPDATE_ENABLED
+                      value: "true"
+                    - name: NODE_TYPE
+                      value: master
+                    - name: NODE_NAME
+                      value: ${schema.metadata.name + '-' + set.name + '-admin-master'}
+                  ports:
+                    - name: http
+                      containerPort: 3000
+                  readinessProbe:
+                    httpGet:
+                      path: /api/status
+                      port: http
+                    initialDelaySeconds: 10
+                    periodSeconds: 5
+                    timeoutSeconds: 3
+                    failureThreshold: 60
+                  resources:
+                    requests:
+                      cpu: 1000m
+                      memory: 1Gi
+                    limits:
+                      cpu: "2"
+                      memory: 2Gi
+
+    - id: newapiVersionedTrafficDeployments
+      forEach:
+        - rt: ${schema.spec.trafficRuntimes}
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${schema.metadata.name + '-' + rt.setID + '-g' + string(rt.generation) + '-newapi-traffic'}
+          labels:
+            app.kubernetes.io/component: new-api
+            app.kubernetes.io/part-of: llmgateway
+            llmgateway.io/fleet: ${schema.metadata.name}
+            llmgateway.io/set: ${rt.setID}
+            llmgateway.io/runtime-generation: ${string(rt.generation)}
+            llmgateway.io/newapi-role: traffic
+        spec:
+          replicas: ${rt.replicas}
+          strategy:
+            type: RollingUpdate
+            rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: ${schema.metadata.name + '-' + rt.setID + '-g' + string(rt.generation) + '-newapi-traffic'}
+          template:
+            metadata:
+              labels:
+                app.kubernetes.io/name: ${schema.metadata.name + '-' + rt.setID + '-g' + string(rt.generation) + '-newapi-traffic'}
+                app.kubernetes.io/component: new-api
+                app.kubernetes.io/part-of: llmgateway
+                llmgateway.io/fleet: ${schema.metadata.name}
+                llmgateway.io/set: ${rt.setID}
+                llmgateway.io/runtime-generation: ${string(rt.generation)}
+                llmgateway.io/newapi-role: traffic
+            spec:
+              imagePullSecrets:
+                - name: tcr-pull-secret
+              nodeSelector:
+                llmgateway.io/runtime: serverless
+              tolerations:
+                - key: eks.tke.cloud.tencent.com/eklet
+                  operator: Exists
+                  effect: NoSchedule
+              topologySpreadConstraints:
+                - maxSkew: 1
+                  topologyKey: ${schema.spec.availability.traffic.topologyKey}
+                  whenUnsatisfiable: DoNotSchedule
+                  matchLabelKeys: [pod-template-hash]
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: ${schema.metadata.name + '-' + rt.setID + '-g' + string(rt.generation) + '-newapi-traffic'}
+              terminationGracePeriodSeconds: 330
+              initContainers:
+                - name: wait-for-dependencies
+                  image: busybox:1.36
+                  command: ["sh", "-c", 'until nc -z ${schema.spec.shards.filter(s, s.name == schema.spec.sets.filter(x, x.name == rt.setID)[0].shardRef)[0].mysqlHost} ${schema.spec.shards.filter(s, s.name == schema.spec.sets.filter(x, x.name == rt.setID)[0].shardRef)[0].mysqlPort}; do sleep 2; done; until nc -z ${schema.spec.shards.filter(s, s.name == schema.spec.sets.filter(x, x.name == rt.setID)[0].shardRef)[0].redisHost} ${schema.spec.shards.filter(s, s.name == schema.spec.sets.filter(x, x.name == rt.setID)[0].shardRef)[0].redisPort}; do sleep 2; done']
+              containers:
+                - name: newapi
+                  image: ${rt.image}
+                  imagePullPolicy: IfNotPresent
+                  command: ["/new-api", "--log-dir", "/tmp/logs"]
+                  env:
+                    - name: MYSQL_APP_USER
+                      valueFrom: {secretKeyRef: {name: "${schema.spec.shards.filter(s, s.name == schema.spec.sets.filter(x, x.name == rt.setID)[0].shardRef)[0].secretName}", key: mysqlAppUser}}
+                    - name: MYSQL_APP_PASSWORD
+                      valueFrom: {secretKeyRef: {name: "${schema.spec.shards.filter(s, s.name == schema.spec.sets.filter(x, x.name == rt.setID)[0].shardRef)[0].secretName}", key: mysqlAppPassword}}
+                    - name: REDIS_PASSWORD_ENCODED
+                      valueFrom: {secretKeyRef: {name: "${schema.spec.shards.filter(s, s.name == schema.spec.sets.filter(x, x.name == rt.setID)[0].shardRef)[0].secretName}", key: redisPasswordEncoded}}
+                    - {name: SQL_DSN, value: '$(MYSQL_APP_USER):$(MYSQL_APP_PASSWORD)@tcp(${schema.spec.shards.filter(s, s.name == schema.spec.sets.filter(x, x.name == rt.setID)[0].shardRef)[0].mysqlHost}:${schema.spec.shards.filter(s, s.name == schema.spec.sets.filter(x, x.name == rt.setID)[0].shardRef)[0].mysqlPort})/${schema.spec.sets.filter(x, x.name == rt.setID)[0].databaseName}?charset=utf8mb4&parseTime=true&loc=UTC'}
+                    - {name: SQL_MAX_OPEN_CONNS, value: '${string(schema.spec.sets.filter(x, x.name == rt.setID)[0].trafficSQLMaxOpenConns)}'}
+                    - {name: SQL_MAX_IDLE_CONNS, value: '${string(schema.spec.sets.filter(x, x.name == rt.setID)[0].trafficSQLMaxIdleConns)}'}
+                    - {name: SQL_MAX_LIFETIME, value: '${string(schema.spec.sets.filter(x, x.name == rt.setID)[0].trafficSQLMaxLifetimeSeconds)}'}
+                    - {name: REDIS_CONN_STRING, value: 'redis://:$(REDIS_PASSWORD_ENCODED)@${schema.spec.shards.filter(s, s.name == schema.spec.sets.filter(x, x.name == rt.setID)[0].shardRef)[0].redisHost}:${schema.spec.shards.filter(s, s.name == schema.spec.sets.filter(x, x.name == rt.setID)[0].shardRef)[0].redisPort}/${schema.spec.sets.filter(x, x.name == rt.setID)[0].redisDB}'}
+                    - {name: SESSION_SECRET, value: '${schema.spec.sets.filter(x, x.name == rt.setID)[0].sessionSecret}'}
+                    - {name: TZ, value: Asia/Shanghai}
+                    - {name: GLOBAL_API_RATE_LIMIT_ENABLE, value: "false"}
+                    - {name: GLOBAL_WEB_RATE_LIMIT_ENABLE, value: "false"}
+                    - {name: CRITICAL_RATE_LIMIT_ENABLE, value: "false"}
+                    - {name: SEARCH_RATE_LIMIT_ENABLE, value: "false"}
+                    - {name: BATCH_UPDATE_ENABLED, value: "false"}
+                    - {name: NODE_TYPE, value: slave}
+                    - {name: NODE_NAME, value: '${schema.metadata.name + "-" + rt.setID + "-g" + string(rt.generation) + "-traffic"}'}
+                  ports: [{name: http, containerPort: 3000}]
+                  readinessProbe:
+                    httpGet: {path: /api/status, port: http}
+                    initialDelaySeconds: 10
+                    periodSeconds: 5
+                    timeoutSeconds: 3
+                    failureThreshold: 60
+                  resources:
+                    requests: {cpu: 1000m, memory: 1Gi}
+                    limits: {cpu: "2", memory: 2Gi}
+
+    - id: newapiVersionedTrafficPodDisruptionBudgets
+      forEach:
+        - rt: ${schema.spec.trafficRuntimes}
+      template:
+        apiVersion: policy/v1
+        kind: PodDisruptionBudget
+        metadata:
+          name: ${schema.metadata.name + '-' + rt.setID + '-g' + string(rt.generation) + '-newapi-traffic'}
+          labels:
+            app.kubernetes.io/component: new-api
+            app.kubernetes.io/part-of: llmgateway
+            llmgateway.io/fleet: ${schema.metadata.name}
+            llmgateway.io/set: ${rt.setID}
+            llmgateway.io/runtime-generation: ${string(rt.generation)}
+        spec:
+          minAvailable: ${schema.spec.availability.traffic.pdbMinAvailable}
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: ${schema.metadata.name + '-' + rt.setID + '-g' + string(rt.generation) + '-newapi-traffic'}
+
+    - id: runtimeCleanupJobs
+      forEach:
+        - cleanup: ${schema.spec.cleanups}
+      template:
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: ${cleanup.jobName}
+          annotations:
+            llmgateway.io/cleanup-id: ${cleanup.cleanupID}
+            llmgateway.io/cleanup-attempt: ${string(cleanup.attempt)}
+          labels:
+            app.kubernetes.io/name: llmgateway-runtime-cleaner
+            app.kubernetes.io/component: runtime-cleanup
+            app.kubernetes.io/part-of: llmgateway
+            llmgateway.io/fleet: ${schema.metadata.name}
+            llmgateway.io/set: ${cleanup.setID}
+        spec:
+          backoffLimit: 2
+          activeDeadlineSeconds: 600
+          ttlSecondsAfterFinished: 3600
+          template:
+            metadata:
+              labels:
+                app.kubernetes.io/name: llmgateway-runtime-cleaner
+                llmgateway.io/fleet: ${schema.metadata.name}
+                llmgateway.io/set: ${cleanup.setID}
+            spec:
+              automountServiceAccountToken: false
+              restartPolicy: Never
+              imagePullSecrets:
+                - name: tcr-pull-secret
+              containers:
+                - name: cleaner
+                  image: ${schema.spec.runtimeCleanerImage}
+                  imagePullPolicy: IfNotPresent
+                  command: ["/usr/local/bin/llmgateway-runtime-cleaner"]
+                  env:
+                    - {name: LLMGATEWAY_OTEL_STDOUT_ENABLE, value: "true"}
+                    - {name: OTEL_SERVICE_NAME, value: "llmgateway-runtime-cleaner"}
+                    - {name: OTEL_SERVICE_VERSION, value: "${schema.spec.runtimeCleanerImage}"}
+                    - {name: LLMGATEWAY_ENVIRONMENT, value: "prod"}
+                    - name: K8S_NAMESPACE_NAME
+                      valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+                    - name: K8S_POD_NAME
+                      valueFrom: {fieldRef: {fieldPath: metadata.name}}
+                    - name: K8S_POD_UID
+                      valueFrom: {fieldRef: {fieldPath: metadata.uid}}
+                    - {name: K8S_CONTAINER_NAME, value: "cleaner"}
+                    - {name: LLMGATEWAY_CONTROL_URL, value: "http://llmgateway-control"}
+                    - {name: LLMGATEWAY_CLEANUP_ID, value: "${cleanup.cleanupID}"}
+                    - {name: LLMGATEWAY_CLEANUP_SET_ID, value: "${cleanup.setID}"}
+                    - {name: LLMGATEWAY_CLEANUP_ATTEMPT, value: "${string(cleanup.attempt)}"}
+                    - {name: LLMGATEWAY_CLEANUP_SOURCE, value: "${cleanup.source}"}
+                    - {name: LLMGATEWAY_CLEANUP_NAMESPACE, value: "${cleanup.namespace}"}
+                    - {name: LLMGATEWAY_CLEANUP_FLEET, value: "${cleanup.fleet}"}
+                    - {name: LLMGATEWAY_CLEANUP_SHARD_REF, value: "${cleanup.shardRef}"}
+                    - {name: LLMGATEWAY_CLEANUP_DATABASE_NAME, value: "${cleanup.databaseName}"}
+                    - {name: LLMGATEWAY_CLEANUP_REDIS_DB, value: "${cleanup.redisDB}"}
+                    - {name: LLMGATEWAY_CLEANUP_REDIS_DB_START, value: "${string(cleanup.redisDBStart)}"}
+                    - {name: LLMGATEWAY_CLEANUP_REDIS_DB_LIMIT, value: "${string(cleanup.redisDBLimit)}"}
+                    - {name: LLMGATEWAY_CLEANUP_LEASE_FINGERPRINT, value: "${cleanup.leaseFingerprint}"}
+                    - {name: LLMGATEWAY_CLEANUP_CLAIM_TOKEN, value: "${cleanup.claimToken}"}
+                    - {name: LLMGATEWAY_CLEANUP_CAPABILITY, value: "${cleanup.cleanupCapability}"}
+                    - {name: MYSQL_HOST, value: "${schema.spec.shards.filter(s, s.name == cleanup.shardRef)[0].mysqlHost}"}
+                    - {name: MYSQL_PORT, value: "${schema.spec.shards.filter(s, s.name == cleanup.shardRef)[0].mysqlPort}"}
+                    - name: MYSQL_ADMIN_USER
+                      valueFrom: {secretKeyRef: {name: "${schema.spec.shards.filter(s, s.name == cleanup.shardRef)[0].secretName}", key: mysqlAdminUser}}
+                    - name: MYSQL_ADMIN_PASSWORD
+                      valueFrom: {secretKeyRef: {name: "${schema.spec.shards.filter(s, s.name == cleanup.shardRef)[0].secretName}", key: mysqlAdminPassword}}
+                    - {name: REDIS_HOST, value: "${schema.spec.shards.filter(s, s.name == cleanup.shardRef)[0].redisHost}"}
+                    - {name: REDIS_PORT, value: "${schema.spec.shards.filter(s, s.name == cleanup.shardRef)[0].redisPort}"}
+                    - name: REDIS_PASSWORD_ENCODED
+                      valueFrom: {secretKeyRef: {name: "${schema.spec.shards.filter(s, s.name == cleanup.shardRef)[0].secretName}", key: redisPasswordEncoded}}
+
+    - id: newapiTrafficDeployments
+      forEach:
+        - set: '${schema.spec.sets.filter(s, !has(s.legacyTrafficEnabled) || s.legacyTrafficEnabled)}'
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${schema.metadata.name + '-' + set.name + '-newapi-traffic'}
+          labels:
+            app.kubernetes.io/name: ${schema.metadata.name + '-' + set.name + '-newapi-traffic'}
+            app.kubernetes.io/component: new-api
+            app.kubernetes.io/part-of: llmgateway
+            llmgateway.io/fleet: ${schema.metadata.name}
+            llmgateway.io/set: ${set.name}
+            llmgateway.io/shard: ${set.shardRef}
+            llmgateway.io/newapi-role: traffic
+        spec:
+          replicas: ${set.replicas}
+          strategy:
+            type: RollingUpdate
+            rollingUpdate:
+              maxUnavailable: 0
+              maxSurge: 1
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: ${schema.metadata.name + '-' + set.name + '-newapi-traffic'}
+          template:
+            metadata:
+              labels:
+                app.kubernetes.io/name: ${schema.metadata.name + '-' + set.name + '-newapi-traffic'}
+                app.kubernetes.io/component: new-api
+                app.kubernetes.io/part-of: llmgateway
+                llmgateway.io/fleet: ${schema.metadata.name}
+                llmgateway.io/set: ${set.name}
+                llmgateway.io/shard: ${set.shardRef}
+                llmgateway.io/newapi-role: traffic
+                llmgateway.io/newapi-serving: "true"
+            spec:
+              imagePullSecrets:
+                - name: tcr-pull-secret
+              terminationGracePeriodSeconds: 60
+              initContainers:
+                - name: wait-for-dependencies
+                  image: busybox:1.36
+                  imagePullPolicy: IfNotPresent
+                  command:
+                    - sh
+                    - -c
+                    - |
+                      until nc -z ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].mysqlHost} ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].mysqlPort}; do echo "waiting for mysql"; sleep 2; done
+                      until nc -z ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].redisHost} ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].redisPort}; do echo "waiting for redis"; sleep 2; done
+              containers:
+                - name: newapi
+                  image: '${has(set.legacyTrafficImage) && set.legacyTrafficImage != "" ? set.legacyTrafficImage : schema.spec.newapiImage}'
+                  imagePullPolicy: IfNotPresent
+                  command:
+                    - /new-api
+                    - --log-dir
+                    - /tmp/logs
+                  env:
+                    - name: MYSQL_APP_USER
+                      valueFrom:
+                        secretKeyRef:
+                          name: ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].secretName}
+                          key: mysqlAppUser
+                    - name: MYSQL_APP_PASSWORD
+                      valueFrom:
+                        secretKeyRef:
+                          name: ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].secretName}
+                          key: mysqlAppPassword
+                    - name: REDIS_PASSWORD_ENCODED
+                      valueFrom:
+                        secretKeyRef:
+                          name: ${schema.spec.shards.filter(s, s.name == set.shardRef)[0].secretName}
+                          key: redisPasswordEncoded
+                    - name: SQL_DSN
+                      value: $(MYSQL_APP_USER):$(MYSQL_APP_PASSWORD)@tcp(${schema.spec.shards.filter(s, s.name == set.shardRef)[0].mysqlHost}:${schema.spec.shards.filter(s, s.name == set.shardRef)[0].mysqlPort})/${set.databaseName}?charset=utf8mb4&parseTime=true&loc=UTC
+                    - name: SQL_MAX_OPEN_CONNS
+                      value: ${string(set.trafficSQLMaxOpenConns)}
+                    - name: SQL_MAX_IDLE_CONNS
+                      value: ${string(set.trafficSQLMaxIdleConns)}
+                    - name: SQL_MAX_LIFETIME
+                      value: ${string(set.trafficSQLMaxLifetimeSeconds)}
+                    - name: REDIS_CONN_STRING
+                      value: redis://:$(REDIS_PASSWORD_ENCODED)@${schema.spec.shards.filter(s, s.name == set.shardRef)[0].redisHost}:${schema.spec.shards.filter(s, s.name == set.shardRef)[0].redisPort}/${set.redisDB}
+                    - name: SESSION_SECRET
+                      value: ${set.sessionSecret}
+                    - name: TZ
+                      value: Asia/Shanghai
+                    - name: GLOBAL_API_RATE_LIMIT_ENABLE
+                      value: "false"
+                    - name: GLOBAL_WEB_RATE_LIMIT_ENABLE
+                      value: "false"
+                    - name: CRITICAL_RATE_LIMIT_ENABLE
+                      value: "false"
+                    - name: SEARCH_RATE_LIMIT_ENABLE
+                      value: "false"
+                    - name: BATCH_UPDATE_ENABLED
+                      value: "false"
+                    - name: NODE_TYPE
+                      value: slave
+                    - name: NODE_NAME
+                      value: ${schema.metadata.name + '-' + set.name + '-traffic'}
+                  ports:
+                    - name: http
+                      containerPort: 3000
+                  readinessProbe:
+                    httpGet:
+                      path: /api/status
+                      port: http
+                    initialDelaySeconds: 10
+                    periodSeconds: 5
+                    timeoutSeconds: 3
+                    failureThreshold: 60
+                  resources:
+                    requests:
+                      cpu: 1000m
+                      memory: 1Gi
+                    limits:
+                      cpu: "2"
+                      memory: 2Gi

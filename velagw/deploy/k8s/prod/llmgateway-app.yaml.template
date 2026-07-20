@@ -385,6 +385,8 @@ spec:
               value: "10"
             - name: LLMGATEWAY_WORKER_CHANNEL_DRIFT_ITEM_TIMEOUT
               value: 5s
+            - name: LLMGATEWAY_KEY_ROUTE_REBUILD_BATCH_SIZE
+              value: "1000"
             - name: LLMGATEWAY_SQL_MAX_OPEN_CONNS
               value: "12"
             - name: LLMGATEWAY_SQL_MAX_IDLE_CONNS

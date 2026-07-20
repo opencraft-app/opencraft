@@ -45,7 +45,7 @@ spec:
         - name: LLMGATEWAY_ENVIRONMENT
           value: prod
         - name: OTEL_SERVICE_VERSION
-          value: d4f55b3
+          value: 16cb6c4
         envFrom:
         - secretRef:
             name: llmgateway-control-runtime
@@ -147,7 +147,7 @@ spec:
         - name: LLMGATEWAY_SHUTDOWN_TIMEOUT
           value: 240s
         - name: OTEL_SERVICE_VERSION
-          value: d4f55b3
+          value: 16cb6c4
         envFrom:
         - secretRef:
             name: llmgateway-traffic-runtime
@@ -250,7 +250,7 @@ spec:
         - name: LLMGATEWAY_SQL_CONN_MAX_IDLE_TIME
           value: 2m
         - name: OTEL_SERVICE_VERSION
-          value: d4f55b3
+          value: 16cb6c4
         envFrom:
         - secretRef:
             name: llmgateway-worker-runtime
@@ -357,7 +357,7 @@ spec:
         - name: LLMGATEWAY_SET_AUTOSCALER_REDIS_DB_LIMIT
           value: '256'
         - name: OTEL_SERVICE_VERSION
-          value: d4f55b3
+          value: 16cb6c4
         envFrom:
         - secretRef:
             name: llmgateway-worker-runtime
@@ -426,7 +426,7 @@ spec:
         - name: LLMGATEWAY_ENVIRONMENT
           value: prod
         - name: OTEL_SERVICE_VERSION
-          value: d4f55b3
+          value: 16cb6c4
         envFrom:
         - secretRef:
             name: llmgateway-worker-runtime
@@ -509,7 +509,7 @@ spec:
         - name: LLMGATEWAY_SQL_CONN_MAX_IDLE_TIME
           value: 2m
         - name: OTEL_SERVICE_VERSION
-          value: d4f55b3
+          value: 16cb6c4
         envFrom:
         - secretRef:
             name: llmgateway-worker-runtime
@@ -598,7 +598,7 @@ spec:
         - name: LLMGATEWAY_SQL_CONN_MAX_IDLE_TIME
           value: 2m
         - name: OTEL_SERVICE_VERSION
-          value: d4f55b3
+          value: 16cb6c4
         envFrom:
         - secretRef:
             name: llmgateway-worker-runtime
@@ -760,7 +760,7 @@ spec:
             - name: LLMGATEWAY_SET_UPGRADE_PROBE_MODEL
               value: llmgw-mock-chat
             - name: OTEL_SERVICE_VERSION
-              value: d4f55b3
+              value: 16cb6c4
             image: lightclaw-bj82.tencentcloudcr.com/llmgateway/llmgateway@sha256:73de9bd035564d13c9e0e19f6c4ded63adc68ea21e811be64edbe12a65b5f7f8
             imagePullPolicy: IfNotPresent
             name: set-manager
