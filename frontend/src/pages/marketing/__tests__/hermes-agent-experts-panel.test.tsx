@@ -287,15 +287,7 @@ metadata:
     expect(fetchSkillFiles).not.toHaveBeenCalledWith("tdd-guide");
   });
 
-  it("hides package skill counts on package list items", async () => {
-    const detailSkillSlugs = [
-      "tdd-guide",
-      "test-case-generator",
-      "playwright-e2e",
-      "api-test",
-      "coverage-plan",
-      "pytest-unit",
-    ];
+  it("does not prefetch package or skill details when no cached package needs reconciliation", async () => {
     vi.mocked(fetchSkillSets).mockImplementation(async (params) => ({
       skillSets: !params?.scene || params.scene === "tech"
         ? [{
@@ -311,31 +303,45 @@ metadata:
           }]
         : [],
     }));
-    vi.mocked(fetchSkillSetDetail).mockResolvedValue({
-      id: 1,
-      slug: "tech-test-automation",
-      displayName: "自动化测试",
-      summary: "详情摘要",
-      remark: "",
-      skillCount: 6,
-      skillSlugs: detailSkillSlugs,
-      createdAt: 0,
-      updatedAt: 0,
-    });
-    vi.mocked(fetchSkillDetail).mockImplementation(async (slug) => {
-      if (slug === "tdd-guide") throw new Error("Skill not found");
-      return { slug, displayName: slug };
-    });
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
 
     expect(await screen.findByRole("button", { name: /自动化测试/ })).toBeInTheDocument();
-    await waitFor(() => {
-      expect(fetchSkillSetDetail).toHaveBeenCalledWith("tech-test-automation");
-      expect(fetchSkillDetail).toHaveBeenCalledWith("test-case-generator");
-    });
-    expect(fetchSkillDetail).not.toHaveBeenCalledWith("tdd-guide");
+    expect(fetchSkillSetDetail).not.toHaveBeenCalled();
+    expect(fetchSkillDetail).not.toHaveBeenCalled();
     expect(screen.queryByText(/个技能/)).not.toBeInTheDocument();
+  });
+
+  it("persists the selected package list or card view", async () => {
+    vi.mocked(fetchSkillSets).mockResolvedValue({
+      skillSets: [{
+        id: 1,
+        slug: "tech-code-review",
+        displayName: "代码审查",
+        summary: "列表摘要",
+        remark: "",
+        scene: "tech",
+        skillCount: 1,
+        skillSlugs: ["code-review-assistant"],
+        createdAt: 0,
+        updatedAt: 0,
+      }],
+    });
+
+    const firstRender = render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+
+    expect(await screen.findByTestId("skill-package-list-view")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "列表" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "卡片" }));
+    expect(await screen.findByTestId("skill-package-card-view")).toBeInTheDocument();
+    expect(window.localStorage.getItem("lightvela-experts-view")).toBe("grid");
+
+    firstRender.unmount();
+    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+
+    expect(await screen.findByTestId("skill-package-card-view")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "卡片" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("renders the SkillHub expert profile image on package cards", async () => {
@@ -495,6 +501,50 @@ metadata:
 
     resolveSkillSets({ skillSets: [] });
     await waitFor(() => expect(screen.queryByText("正在加载技能包")).not.toBeInTheDocument());
+  });
+
+  it("does not backfill international packages that do not match a keyword search", async () => {
+    const matchedPackage = {
+      id: 1,
+      slug: "finance-quant-backtesting-en",
+      displayName: "Quant Search Match",
+      summary: "Matched package",
+      remark: "",
+      scene: "finance",
+      skillCount: 1,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    const unmatchedPackage = {
+      id: 2,
+      slug: "tech-test-automation",
+      displayName: "Unmatched Test Package",
+      summary: "Unmatched package",
+      remark: "",
+      scene: "tech",
+      skillCount: 1,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    vi.mocked(fetchSkillSets).mockImplementation(async (params) => ({
+      skillSets: params?.keyword ? [matchedPackage] : [matchedPackage, unmatchedPackage],
+    }));
+    vi.mocked(fetchSkillSetDetail).mockImplementation(async (slug) => {
+      if (slug === unmatchedPackage.slug) return unmatchedPackage;
+      throw new Error("missing package");
+    });
+
+    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} lang="en" />);
+
+    expect(await screen.findByRole("button", { name: /Quant Search Match/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Unmatched Test Package/ })).toBeInTheDocument();
+
+    const searchInput = screen.getByPlaceholderText("Search skill packages");
+    fireEvent.change(searchInput, { target: { value: "quant" } });
+    fireEvent.keyDown(searchInput, { key: "Enter" });
+
+    await waitFor(() => expect(fetchSkillSets).toHaveBeenCalledWith(expect.objectContaining({ keyword: "quant" })));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Unmatched Test Package/ })).not.toBeInTheDocument());
   });
 
   it("loads SkillHub packages with scenes and filters local dev seed packages without a scene", async () => {
@@ -685,7 +735,11 @@ metadata:
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
     await waitFor(() => {
-      expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'");
+      expect(execDebugCommand).toHaveBeenCalledWith(
+        "bot-1",
+        "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'",
+        { timeoutMs: 120_000 },
+      );
     });
     const installCommands = execDebugCommand.mock.calls.map((call) => call[1]).filter((command) => command.startsWith("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install"));
     expect(installCommands).toEqual(["env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'market-data'", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'"]);
@@ -793,7 +847,11 @@ metadata:
     expect(await screen.findByRole("button", { name: "安装中 1/2" })).toBeDisabled();
     resolveFirstInstall?.({ status: "success", exitCode: 0, output: "" });
     await waitFor(() => {
-      expect(execDebugCommand).toHaveBeenCalledWith("bot-1", buildInstallSkillCommand("backtest-engine"));
+      expect(execDebugCommand).toHaveBeenCalledWith(
+        "bot-1",
+        buildInstallSkillCommand("backtest-engine"),
+        { timeoutMs: 120_000 },
+      );
     });
   });
 
@@ -841,7 +899,11 @@ metadata:
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
     await waitFor(() => {
-      expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'");
+      expect(execDebugCommand).toHaveBeenCalledWith(
+        "bot-1",
+        "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'",
+        { timeoutMs: 120_000 },
+      );
     });
     const installCommands = execDebugCommand.mock.calls.map((call) => call[1]).filter((command) => command.startsWith("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install"));
     expect(installCommands).toEqual([
@@ -1016,7 +1078,11 @@ metadata:
     expect(saveExpertPackagesState).toHaveBeenCalledWith("bot-1", {
       installedPackageSlugs: ["tech-test-automation"],
     });
-    expect(execDebugCommand).toHaveBeenCalledWith("bot-1", buildSkillHubSelfUpgradeCommand());
+    expect(execDebugCommand).toHaveBeenCalledWith(
+      "bot-1",
+      buildSkillHubSelfUpgradeCommand(),
+      { timeoutMs: 120_000 },
+    );
     expect(execDebugCommand.mock.calls.map((call) => call[1])).toEqual([
       buildInstalledSkillsListCommand(),
       buildInstallSkillCommand("test-case-generator"),
@@ -1149,10 +1215,18 @@ metadata:
       createdAt: 0,
       updatedAt: 0,
     });
+    let skillInstalled = false;
     const execDebugCommand = vi.fn().mockImplementation(async (_botId: string, command: string) => {
       if (command === buildInstalledSkillsListCommand()) {
-        return { status: "success", exitCode: 0, output: "" };
+        return {
+          status: "success",
+          exitCode: 0,
+          output: skillInstalled
+            ? JSON.stringify({ success: true, data: { skills: [{ name: "code-review-assistant" }] } })
+            : "",
+        };
       }
+      skillInstalled = true;
       return { status: "success", exitCode: 0, output: "" };
     });
 
@@ -1183,6 +1257,7 @@ metadata:
             remark: "",
             scene: "tech",
             skillCount: 1,
+            skillSlugs: ["code-review-assistant"],
             createdAt: 0,
             updatedAt: 0,
           }]
@@ -1190,7 +1265,11 @@ metadata:
     }));
     const execDebugCommand = vi.fn().mockImplementation(async (_botId: string, command: string) => {
       if (command === buildInstalledSkillsListCommand()) {
-        return { status: "success", exitCode: 0, output: "" };
+        return {
+          status: "success",
+          exitCode: 0,
+          output: JSON.stringify({ success: true, data: { skills: [{ name: "code-review-assistant" }] } }),
+        };
       }
       return { status: "success", exitCode: 0, output: "" };
     });
@@ -1212,6 +1291,7 @@ metadata:
             remark: "",
             scene: "finance",
             skillCount: 2,
+            skillSlugs: ["market-data", "backtest-engine"],
             createdAt: 0,
             updatedAt: 0,
           }]
@@ -1238,6 +1318,61 @@ metadata:
 
     const installedButton = await screen.findByRole("button", { name: "已安装" });
     expect(installedButton).toBeDisabled();
-    expect(execDebugCommand).toHaveBeenCalledWith("bot-1", buildInstalledSkillsListCommand());
+    expect(execDebugCommand).toHaveBeenCalledWith(
+      "bot-1",
+      buildInstalledSkillsListCommand(),
+      { timeoutMs: 120_000 },
+    );
+  });
+
+  it("clears stale installed package state when a package skill was removed", async () => {
+    window.localStorage.setItem(
+      "lightvela-experts-installed-packages:bot-1",
+      JSON.stringify(["tech-code-review"]),
+    );
+    vi.mocked(loadExpertPackagesState).mockResolvedValue({
+      installedPackageSlugs: ["tech-code-review"],
+    });
+    vi.mocked(fetchSkillSets).mockResolvedValue({
+      skillSets: [{
+        id: 1,
+        slug: "tech-code-review",
+        displayName: "代码审查",
+        summary: "列表摘要",
+        remark: "",
+        scene: "tech",
+        skillCount: 1,
+        createdAt: 0,
+        updatedAt: 0,
+      }],
+    });
+    vi.mocked(fetchSkillSetDetail).mockResolvedValue({
+      id: 1,
+      slug: "tech-code-review",
+      displayName: "代码审查",
+      summary: "详情摘要",
+      remark: "",
+      skillCount: 1,
+      skillSlugs: ["code-review-assistant"],
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    const execDebugCommand = vi.fn().mockResolvedValue({
+      status: "success",
+      exitCode: 0,
+      output: JSON.stringify({ success: true, data: { skills: [] } }),
+    });
+
+    render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+
+    expect(await screen.findByRole("button", { name: "安装" })).toBeEnabled();
+    await waitFor(() => {
+      expect(saveExpertPackagesState).toHaveBeenCalledWith("bot-1", {
+        installedPackageSlugs: [],
+      });
+    });
+    expect(window.localStorage.getItem("lightvela-experts-installed-packages:bot-1")).toBe("[]");
+    expect(fetchSkillSetDetail).toHaveBeenCalledWith("tech-code-review");
+    expect(fetchSkillDetail).not.toHaveBeenCalled();
   });
 });

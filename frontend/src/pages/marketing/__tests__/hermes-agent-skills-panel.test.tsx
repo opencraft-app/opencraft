@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -133,8 +133,8 @@ describe("HermesAgentSkillsPanel", () => {
     expect(skillsTab).toHaveAttribute("aria-selected", "true");
     expect(skillsTab).toHaveStyle({ fontSize: "18px", fontWeight: "600", lineHeight: "24px" });
     expect(expertsTab).toBeInTheDocument();
-    expect(screen.getByText("为智能体安装技能。支持 SkillHub 技能市场，安装后可在对话中自动调用。")).toBeInTheDocument();
-    expect(within(screen.getByText("为智能体安装技能。支持 SkillHub 技能市场，安装后可在对话中自动调用。").closest("p") as HTMLElement).queryByRole("link")).toBeNull();
+    expect(screen.getByText("为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用")).toBeInTheDocument();
+    expect(within(screen.getByText("为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用").closest("p") as HTMLElement).queryByRole("link")).toBeNull();
     expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
 
     await userEvent.click(expertsTab);
@@ -170,6 +170,30 @@ describe("HermesAgentSkillsPanel", () => {
 
     expect(screen.queryByRole("tab", { name: "创建技能" })).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
+  });
+
+  it("remounts the skills workspace when switching Agents", () => {
+    const execDebugCommand: ExpertsExecDebugCommand = vi.fn();
+    const renderForAgent = (botId: string) => (
+      <HermesAgentSkillsPanel
+        botId={botId}
+        execDebugCommand={execDebugCommand}
+        featureFlags={{} as never}
+        initialSectionSlug="skills"
+        instance={{ InstanceId: botId, RegionId: 1 }}
+        productConfig={{} as never}
+        showSkillPackages
+        SkillPanel={TestSkillPanel}
+      />
+    );
+    const { rerender } = render(renderForAgent("bot-1"));
+    const searchInput = screen.getByPlaceholderText("搜索 SkillHub 中的技能");
+    fireEvent.change(searchInput, { target: { value: "old-agent-query" } });
+    expect(searchInput).toHaveValue("old-agent-query");
+
+    rerender(renderForAgent("bot-2"));
+
+    expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toHaveValue("");
   });
 });
 

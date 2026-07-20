@@ -1367,13 +1367,14 @@ export function HermesAgentSkillsPanel<
             ? t("把你的任何个人和工作场景变成可复用技能！")
             : isGlobal
               ? t("为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。")
-              : "为智能体安装技能。支持 SkillHub 技能市场，安装后可在对话中自动调用。"}
+              : "为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用"}
         </p>
       ) : null}
 
       <TabsContent value="skills" className="mt-0">
         {useSkillsDemo ? (
           <SkillsDemoPanel
+            key={botId}
             botId={botId}
             execDebugCommand={execDebugCommand}
             mode={(isGlobal ? "global" : "domestic") satisfies SkillsDemoMode}

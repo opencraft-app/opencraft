@@ -23,7 +23,6 @@ import {
   parseUninstallOk,
   sortByPopular,
   skillIdentity,
-  uninstallSkillsSequentially,
   type Skill,
   type InstalledSkill,
 } from "./skill-registries";
@@ -72,7 +71,7 @@ describe("skills.sh command builders", () => {
     expect(mergeInstalledSources([], [first, second])).toHaveLength(2);
   });
 
-  it("merges one cross-registry slug with its Hermes directory into the skills.sh identity", () => {
+  it("keeps matching short slugs from different registries separate", () => {
     const clawhubSkill: InstalledSkill = {
       registry: "clawhub",
       rawId: "okx-sentiment-tracker",
@@ -96,14 +95,45 @@ describe("skills.sh command builders", () => {
       hermesSkills,
     );
 
-    expect(installed).toHaveLength(1);
-    expect(installed[0]).toEqual(expect.objectContaining({
+    expect(installed).toHaveLength(3);
+    expect(installed).toEqual(expect.arrayContaining([
+      expect.objectContaining({ registry: "clawhub", rawId: "okx-sentiment-tracker" }),
+      expect.objectContaining({ registry: "skills-sh", rawId: "okx/agent-skills/okx-sentiment-tracker" }),
+      expect.objectContaining({ registry: "hermes", rawId: "okx-sentiment-tracker" }),
+    ]));
+  });
+
+  it("uninstalls only the selected registry record and verifies that it disappeared", async () => {
+    const commands: string[] = [];
+    const execDebugCommand = async (_botId: string, command: string) => {
+      commands.push(command);
+      const output = command === buildSkillsshUninstallCommand("team/repo/shared-skill")
+        ? JSON.stringify({ success: true, data: { status: "uninstalled" } })
+        : command === buildHermesSkillsListCommand()
+          ? ""
+          : JSON.stringify({ success: true, data: { skills: [] } });
+      return {
+        status: "SUCCESS",
+        exitCode: 0,
+        output,
+      };
+    };
+    const installedSkill: InstalledSkill = {
       registry: "skills-sh",
-      rawId: "okx/agent-skills/okx-sentiment-tracker",
-      slug: "okx-sentiment-tracker",
-      name: "OKX Sentiment Tracker",
-      registries: expect.arrayContaining(["clawhub", "skills-sh", "hermes"]),
-    }));
+      rawId: "team/repo/shared-skill",
+      slug: "shared-skill",
+      name: "Shared Skill",
+      registries: ["skills-sh"],
+      sourceLabel: "skills.sh",
+    };
+
+    await expect(createLiveDataLayer("bot-1", execDebugCommand).uninstall(installedSkill)).resolves.toEqual({ ok: true });
+    expect(commands).toEqual([
+      buildSkillsshUninstallCommand("team/repo/shared-skill"),
+      buildClawhubListCommand(),
+      buildSkillsshListCommand(),
+      buildHermesSkillsListCommand(),
+    ]);
   });
 });
 
@@ -114,7 +144,7 @@ describe("domestic SkillHub command and response handling", () => {
     expect(buildSkillhubListCommand()).toBe("acli skills list");
   });
 
-  it("maps SkillHub search and installed-list responses without merging by display name", () => {
+  it("treats every domestic SkillHub API result as SkillHub", () => {
     const search = parseSkillhubSearch(JSON.stringify({
       code: 0,
       data: {
@@ -137,14 +167,15 @@ describe("domestic SkillHub command and response handling", () => {
       category: "knowledge-management",
       downloads: 12_345,
       iconUrl: "https://cdn.example.com/builder-radar.png",
-      sourceRegistry: "clawhub",
     })]);
+    expect(search[0]).not.toHaveProperty("sourceRegistry");
 
     const installed = parseSkillhubList(JSON.stringify({
       success: true,
       data: { skills: [{
         name: "builder-radar",
         display_name: "Builder Radar",
+        category: "productivity",
         iconUrl: "https://cdn.example.com/builder-radar.png",
         version: "1.0.0",
       }] },
@@ -152,18 +183,23 @@ describe("domestic SkillHub command and response handling", () => {
     expect(installed).toEqual([expect.objectContaining({
       registry: "skillhub",
       rawId: "builder-radar",
+      category: "productivity",
       iconUrl: "https://cdn.example.com/builder-radar.png",
       sourceLabel: "SkillHub",
     })]);
 
     const tableInstalled = parseSkillhubList([
-      "┌───────────────┬─────────┐",
-      "│ 名称          │ 版本    │",
-      "├───────────────┼─────────┤",
-      "│ builder-radar │ 1.0.0   │",
-      "└───────────────┴─────────┘",
+      "┌───────────────┬──────────────┬─────────┐",
+      "│ 名称          │ 分类         │ 版本    │",
+      "├───────────────┼──────────────┼─────────┤",
+      "│ builder-radar │ productivity │ 1.0.0   │",
+      "└───────────────┴──────────────┴─────────┘",
     ].join("\n"));
-    expect(tableInstalled).toEqual([expect.objectContaining({ rawId: "builder-radar" })]);
+    expect(tableInstalled).toEqual([expect.objectContaining({
+      rawId: "builder-radar",
+      category: "productivity",
+      version: "1.0.0",
+    })]);
 
     const numericIdOnly = parseSkillhubList(JSON.stringify({
       success: true,
@@ -201,9 +237,54 @@ describe("Hermes native installed skills", () => {
         registry: "hermes",
         rawId: "finance-news",
         name: "Finance News",
+        category: "research",
+        status: "installed",
         registries: ["hermes"],
-        sourceLabel: "Hermes",
+        nativeSource: "local",
+        sourceLabel: "本地安装",
         uninstallable: true,
+      }),
+    ]);
+  });
+
+  it("keeps builtin Hermes skills distinct from local skills", () => {
+    expect(parseHermesInstalledSkills([
+      "│ Name │ Category │ Source │ Trust │ Status │",
+      "│ plan │ productivity │ builtin │ builtin │ enabled │",
+    ].join("\n"))).toEqual([
+      expect.objectContaining({
+        rawId: "plan",
+        category: "productivity",
+        status: "enabled",
+        nativeSource: "builtin",
+        sourceLabel: "系统预置",
+        uninstallable: false,
+      }),
+    ]);
+  });
+
+  it("maps source-less Hermes skills to other", () => {
+    expect(parseHermesInstalledSkills("builder-radar")).toEqual([
+      expect.objectContaining({
+        rawId: "builder-radar",
+        nativeSource: "other",
+        sourceLabel: "其他",
+      }),
+    ]);
+  });
+
+  it("maps non-bundled skills stored under the Hermes skills root to other", () => {
+    expect(parseHermesInstalledSkills(
+      "│ Name │ Category │ Source │ Status │\n"
+      + "│ find-skills │ utility │ local │ enabled │\n"
+      + "\n__HERMES_BUNDLED_MANIFEST__\n"
+      + "\n__HERMES_SKILLS_ROOT__\n"
+      + "/home/agentuser/.hermes/skills/find-skills/SKILL.md\n",
+    )).toEqual([
+      expect.objectContaining({
+        rawId: "find-skills",
+        nativeSource: "other",
+        sourceLabel: "其他",
       }),
     ]);
   });
@@ -311,18 +392,67 @@ describe("Hermes native installed skills", () => {
     };
 
     await expect(createLiveDataLayer("bot-1", execDebugCommand).listInstalled()).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ rawId: "react" }),
-        expect.objectContaining({ rawId: "finance-news", registry: "hermes" }),
-      ]),
+      expect.objectContaining({
+        failedSources: [],
+        skills: expect.arrayContaining([
+          expect.objectContaining({ rawId: "react" }),
+          expect.objectContaining({ rawId: "finance-news", registry: "hermes" }),
+        ]),
+      }),
     );
     await expect(createDomesticDataLayer("bot-1", execDebugCommand).listInstalled()).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ rawId: "builder-radar" }),
-        expect.objectContaining({ rawId: "finance-news", registry: "hermes" }),
-      ]),
+      expect.objectContaining({
+        failedSources: [],
+        skills: expect.arrayContaining([
+          expect.objectContaining({ rawId: "builder-radar" }),
+          expect.objectContaining({ rawId: "finance-news", registry: "hermes" }),
+        ]),
+      }),
     );
     expect(commands.filter((command) => command === buildHermesSkillsListCommand())).toHaveLength(2);
+  });
+
+  it("marks an ambiguous Hermes row as unavailable when its registry list fails", async () => {
+    const execDebugCommand = async (_botId: string, command: string) => {
+      if (command === buildSkillhubListCommand()) {
+        return { status: "FAILED", exitCode: 1, output: "", stderr: "registry unavailable" };
+      }
+      return { status: "SUCCESS", exitCode: 0, output: "builder-radar" };
+    };
+
+    await expect(createDomesticDataLayer("bot-1", execDebugCommand).listInstalled()).resolves.toEqual({
+      failedSources: ["skillhub"],
+      skills: [expect.objectContaining({
+        rawId: "builder-radar",
+        sourceLabel: "来源暂不可用",
+        sourceUncertain: true,
+        uninstallable: false,
+      })],
+    });
+  });
+
+  it("reports failure when an uninstalled marketplace skill remains in Hermes", async () => {
+    const execDebugCommand = async (_botId: string, command: string) => {
+      const output = command === buildSkillhubUninstallCommand("builder-radar")
+        ? JSON.stringify({ success: true, data: { status: "uninstalled" } })
+        : command === buildSkillhubListCommand()
+          ? JSON.stringify({ success: true, data: { skills: [] } })
+          : "builder-radar";
+      return { status: "SUCCESS", exitCode: 0, output };
+    };
+    const skill: InstalledSkill = {
+      registry: "skillhub",
+      rawId: "builder-radar",
+      slug: "builder-radar",
+      name: "Builder Radar",
+      registries: ["skillhub", "hermes"],
+      sourceLabel: "SkillHub",
+    };
+
+    await expect(createDomesticDataLayer("bot-1", execDebugCommand).uninstall(skill)).resolves.toEqual({
+      ok: false,
+      message: "卸载后技能仍然存在，请重试",
+    });
   });
 
   it("really deletes Hermes-native skill directories in both data layers", async () => {
@@ -345,7 +475,12 @@ describe("Hermes native installed skills", () => {
     await expect(createDomesticDataLayer("bot-1", execDebugCommand).uninstall(nativeSkill)).resolves.toEqual({ ok: true });
     expect(commands).toEqual([
       buildHermesSkillDeleteCommand("finance-news"),
+      buildClawhubListCommand(),
+      buildSkillsshListCommand(),
+      buildHermesSkillsListCommand(),
       buildHermesSkillDeleteCommand("finance-news"),
+      buildSkillhubListCommand(),
+      buildHermesSkillsListCommand(),
     ]);
   });
 });
@@ -358,6 +493,7 @@ describe("batch skill installation", () => {
       { registry: "skillhub", rawId: "third", slug: "third", name: "Third" },
     ];
     const calls: string[] = [];
+    const progress: string[] = [];
     const dataLayer = {
       install: async (skill: Skill) => {
         calls.push(skill.rawId);
@@ -367,58 +503,78 @@ describe("batch skill installation", () => {
       },
     };
 
-    const result = await installSkillsSequentially(dataLayer, skills);
+    const result = await installSkillsSequentially(dataLayer, skills, ({ index, total, skill, status, message }) => {
+      progress.push(`${index}/${total}:${skill.rawId}:${status}:${message ?? ""}`);
+    });
 
     expect(calls).toEqual(["first", "team/repo/second", "third"]);
+    expect(progress).toEqual([
+      "1/3:first:installing:",
+      "1/3:first:succeeded:",
+      "2/3:team/repo/second:installing:",
+      "2/3:team/repo/second:failed:download failed",
+      "3/3:third:installing:",
+      "3/3:third:succeeded:",
+    ]);
     expect(result.succeeded.map((skill) => skill.rawId)).toEqual(["first", "third"]);
     expect(result.failed).toEqual([{ skill: skills[1], message: "download failed" }]);
+    expect(result.skipped).toEqual([]);
   });
 
-  it("uninstalls selected skills sequentially and keeps failures with their messages", async () => {
-    const skills: InstalledSkill[] = [
-      {
-        registry: "skillhub",
-        rawId: "first",
-        slug: "first",
-        name: "First",
-        registries: ["skillhub"],
-        sourceLabel: "SkillHub",
-      },
-      {
-        registry: "hermes",
-        rawId: "second",
-        slug: "second",
-        name: "Second",
-        registries: ["hermes"],
-        sourceLabel: "Hermes",
-      },
-      {
-        registry: "clawhub",
-        rawId: "third",
-        slug: "third",
-        name: "Third",
-        registries: ["clawhub"],
-        sourceLabel: "ClawHub",
-      },
+  it("stops before the next skill when batch cancellation is requested", async () => {
+    const skills: Skill[] = [
+      { registry: "clawhub", rawId: "first", slug: "first", name: "First" },
+      { registry: "clawhub", rawId: "second", slug: "second", name: "Second" },
+      { registry: "clawhub", rawId: "third", slug: "third", name: "Third" },
     ];
-    const calls: string[] = [];
-    const dataLayer = {
-      uninstall: async (skill: Skill) => {
-        calls.push(skill.rawId);
-        if (skill.rawId === "second") return { ok: false, message: "still in use" };
-        if (skill.rawId === "third") throw new Error("command unavailable");
-        return { ok: true };
+    let cancelled = false;
+    const statuses: string[] = [];
+    const result = await installSkillsSequentially(
+      {
+        install: async (skill) => {
+          cancelled = skill.rawId === "first";
+          return { ok: true };
+        },
       },
+      skills,
+      ({ skill, status }) => statuses.push(`${skill.rawId}:${status}`),
+      { shouldCancel: () => cancelled },
+    );
+
+    expect(result.succeeded.map((skill) => skill.rawId)).toEqual(["first"]);
+    expect(result.skipped.map((skill) => skill.rawId)).toEqual(["second", "third"]);
+    expect(statuses).toEqual([
+      "first:installing",
+      "first:succeeded",
+      "second:skipped",
+      "third:skipped",
+    ]);
+  });
+
+});
+
+describe("registry search reliability", () => {
+  it("reports a failed international source and applies a finite search timeout", async () => {
+    const calls: Array<{ command: string; timeoutMs?: number }> = [];
+    const execDebugCommand = async (
+      _botId: string,
+      command: string,
+      options?: { timeoutMs?: number },
+    ) => {
+      calls.push({ command, timeoutMs: options?.timeoutMs });
+      if (command.startsWith("acli clawhub search")) throw new Error("clawhub unavailable");
+      return {
+        status: "SUCCESS",
+        exitCode: 0,
+        output: JSON.stringify({ success: true, data: { skills: [] } }),
+      };
     };
 
-    const result = await uninstallSkillsSequentially(dataLayer, skills);
+    const result = await createLiveDataLayer("bot-1", execDebugCommand).search("image");
 
-    expect(calls).toEqual(["first", "second", "third"]);
-    expect(result.succeeded).toEqual([skills[0]]);
-    expect(result.failed).toEqual([
-      { skill: skills[1], message: "still in use" },
-      { skill: skills[2], message: "command unavailable" },
-    ]);
+    expect(result.failedSources).toEqual(["clawhub"]);
+    expect(calls).toHaveLength(2);
+    expect(calls.every((call) => call.timeoutMs === 30_000)).toBe(true);
   });
 });
 
@@ -434,7 +590,11 @@ describe("install and uninstall result handling", () => {
     expect(parseInstallOk(failedOutput)).toBe(false);
     expect(parseUninstallOk(failedOutput)).toBe(false);
     expect(parseInstallOk(JSON.stringify({ success: true, data: { status: "installed" } }))).toBe(true);
+    expect(parseInstallOk(JSON.stringify({ success: true, data: { status: "already-installed" } }))).toBe(true);
+    expect(parseInstallOk(JSON.stringify({ data: { status: "install_failed" } }))).toBe(false);
+    expect(parseInstallOk(JSON.stringify({ data: { status: "not_installed" } }))).toBe(false);
     expect(parseUninstallOk(JSON.stringify({ success: true, data: { status: "uninstalled" } }))).toBe(true);
+    expect(parseUninstallOk(JSON.stringify({ data: { status: "not_uninstalled" } }))).toBe(false);
   });
 
   it("does not persist a false success for either registry data layer", async () => {
