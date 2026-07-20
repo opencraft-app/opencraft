@@ -39,6 +39,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"git.woa.com/wisp/mono/trade/internal/jifei"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
 	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
 	"git.woa.com/wisp/mono/trade/internal/logic/orderstatus"
@@ -132,6 +133,7 @@ func Install(router *gin.Engine, deps Deps) {
 	group.POST("/inquiry/renew", inquiryRenewHandler(deps.Inquiry))
 	group.POST("/orders", placeOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/place-and-pay", placeOrderAndPayHandler(deps.PlaceOrder))
+	group.POST("/orders/move-in", moveInOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/renew", placeRenewOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/renew/place-and-pay", placeRenewOrderAndPayHandler(deps.PlaceOrder))
 	group.POST("/orders/:dealName/pay-url", payURLHandler(deps.PlaceOrder))
@@ -562,6 +564,76 @@ type placeRenewOrderRequest struct {
 	TimeUnit       string `json:"timeUnit"`
 	GoodsNum       int    `json:"goodsNum"`
 	PayMode        int    `json:"payMode"`
+}
+
+type moveInOrderRequest struct {
+	ExternalUserID string `json:"externalUserId"`
+	Uin            string `json:"uin"`
+	AppID          string `json:"appId"`
+	BundleID       string `json:"bundleId"`
+	ResourceID     string `json:"resourceId"`
+	CurDeadline    string `json:"curDeadline"`
+}
+
+// moveInOrderHandler 处理存量 pass 外部资源迁入计费端点。
+func moveInOrderHandler(svc *placeorder.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req moveInOrderRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "InvalidRequest",
+				"message": "decode JSON: " + err.Error(),
+			})
+			return
+		}
+		if err := validateMoveInOrderHTTPRequest(req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "InvalidRequest",
+				"message": err.Error(),
+			})
+			return
+		}
+		res, err := svc.MoveInOrderAndPay(c.Request.Context(), placeorder.MoveInOrderRequest{
+			ExternalUserID: req.ExternalUserID,
+			Uin:            req.Uin,
+			AppID:          req.AppID,
+			BundleID:       req.BundleID,
+			ResourceID:     req.ResourceID,
+			CurDeadline:    req.CurDeadline,
+		})
+		if err != nil {
+			code, status := classifyPlaceOrderError(err)
+			c.JSON(status, gin.H{
+				"code":    code,
+				"message": err.Error(),
+			})
+			return
+		}
+		c.JSON(http.StatusOK, placeOrderResponse{
+			DealName:   res.DealName,
+			BigOrderID: res.BigOrderID,
+		})
+	}
+}
+
+func validateMoveInOrderHTTPRequest(req moveInOrderRequest) error {
+	required := map[string]string{
+		"externalUserId": req.ExternalUserID,
+		"uin":            req.Uin,
+		"appId":          req.AppID,
+		"bundleId":       req.BundleID,
+		"resourceId":     req.ResourceID,
+		"curDeadline":    req.CurDeadline,
+	}
+	for field, value := range required {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s is required", field)
+		}
+	}
+	if _, err := jifei.ParseCurDeadline(strings.TrimSpace(req.CurDeadline)); err != nil {
+		return fmt.Errorf("curDeadline must match %s in CST: %w", jifei.CurDeadlineLayout, err)
+	}
+	return nil
 }
 
 // placeRenewOrderHandler 处理续费下单端点（R-C-7）。

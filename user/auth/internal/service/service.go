@@ -58,6 +58,7 @@ type Options struct {
 	ContentAudit              ContentAuditConfig
 	ContentAuditClient        ContentAuditClient
 	ShadowBinding             *shadowbinding.Service
+	PassBillingMigration      PassBillingMigrationNotifier
 	// ShadowBasicAuthSyncEnabled gates the external SaveBasicAuthForSaaS side
 	// effect and the user-facing sync status. Keep it off by default so the
 	// shadow binding code can land before product rollout.
@@ -345,23 +346,24 @@ type OAuthSignInInput struct {
 }
 
 type Service struct {
-	now                        func() time.Time
-	smsCooldown                time.Duration
-	smsCodeTTL                 time.Duration
-	sessionTTL                 time.Duration
-	verificationCodeGenerator  func(int) (string, error)
-	verification               VerificationPolicy
-	phoneAuth                  PhoneAuthConfig
-	store                      Store
-	realnameVerifier           RealnameVerifier
-	realnameFaceIDVerifier     RealnameFaceIDVerifier
-	realnameCipher             RealnameCipher
-	realnameFaceID             RealnameFaceIDConfig
-	contentAudit               ContentAuditConfig
-	contentAuditClient         ContentAuditClient
-	shadowBinding              *shadowbinding.Service
-	shadowBasicAuthSyncEnabled bool
-	emailBind                  EmailBindConfig
+	now                          func() time.Time
+	smsCooldown                  time.Duration
+	smsCodeTTL                   time.Duration
+	sessionTTL                   time.Duration
+	verificationCodeGenerator    func(int) (string, error)
+	verification                 VerificationPolicy
+	phoneAuth                    PhoneAuthConfig
+	store                        Store
+	realnameVerifier             RealnameVerifier
+	realnameFaceIDVerifier       RealnameFaceIDVerifier
+	realnameCipher               RealnameCipher
+	realnameFaceID               RealnameFaceIDConfig
+	contentAudit                 ContentAuditConfig
+	contentAuditClient           ContentAuditClient
+	shadowBinding                *shadowbinding.Service
+	passBillingMigrationNotifier PassBillingMigrationNotifier
+	shadowBasicAuthSyncEnabled   bool
+	emailBind                    EmailBindConfig
 }
 
 type smsChallenge struct {
@@ -417,23 +419,24 @@ func NewWithStore(store Store, opts Options) *Service {
 	}
 
 	return &Service{
-		now:                        now,
-		smsCooldown:                verificationPolicy.SendCooldown,
-		smsCodeTTL:                 verificationPolicy.CodeTTL,
-		sessionTTL:                 defaultDuration(opts.SessionTTL, 30*24*time.Hour),
-		verificationCodeGenerator:  codeGenerator,
-		verification:               verificationPolicy,
-		phoneAuth:                  opts.PhoneAuth,
-		store:                      store,
-		realnameVerifier:           opts.RealnameVerifier,
-		realnameFaceIDVerifier:     opts.RealnameFaceIDVerifier,
-		realnameCipher:             opts.RealnameCipher,
-		realnameFaceID:             normalizeRealnameFaceIDConfig(opts.RealnameFaceID),
-		contentAudit:               opts.ContentAudit,
-		contentAuditClient:         opts.ContentAuditClient,
-		shadowBinding:              opts.ShadowBinding,
-		shadowBasicAuthSyncEnabled: opts.ShadowBasicAuthSyncEnabled,
-		emailBind:                  opts.EmailBind,
+		now:                          now,
+		smsCooldown:                  verificationPolicy.SendCooldown,
+		smsCodeTTL:                   verificationPolicy.CodeTTL,
+		sessionTTL:                   defaultDuration(opts.SessionTTL, 30*24*time.Hour),
+		verificationCodeGenerator:    codeGenerator,
+		verification:                 verificationPolicy,
+		phoneAuth:                    opts.PhoneAuth,
+		store:                        store,
+		realnameVerifier:             opts.RealnameVerifier,
+		realnameFaceIDVerifier:       opts.RealnameFaceIDVerifier,
+		realnameCipher:               opts.RealnameCipher,
+		realnameFaceID:               normalizeRealnameFaceIDConfig(opts.RealnameFaceID),
+		contentAudit:                 opts.ContentAudit,
+		contentAuditClient:           opts.ContentAuditClient,
+		shadowBinding:                opts.ShadowBinding,
+		passBillingMigrationNotifier: opts.PassBillingMigration,
+		shadowBasicAuthSyncEnabled:   opts.ShadowBasicAuthSyncEnabled,
+		emailBind:                    opts.EmailBind,
 	}
 }
 
@@ -702,6 +705,7 @@ func (s *Service) verifyNewUserPhoneAuthSMS(ctx context.Context, input VerifySMS
 		_ = s.store.RejectExternalPhoneAuthChallenge(ctx, challenge, s.now())
 		return nil, newError("shadow_binding_incomplete", "影子账号绑定尚未完成，请稍后重试。", http.StatusBadGateway)
 	}
+	s.notifyPassBillingMigration(ctx, binding)
 	if err := s.store.ConsumeExternalPhoneAuthChallenge(ctx, challenge); err != nil {
 		return nil, err
 	}
@@ -761,6 +765,7 @@ func (s *Service) VerifyPhoneChange(ctx context.Context, token string, input Pho
 		if updatedBinding.Status != shadowbinding.StatusActive {
 			return PhoneChangeVerifyResult{}, newError("shadow_binding_incomplete", "影子账号绑定尚未完成，请稍后重试。", http.StatusBadGateway)
 		}
+		s.notifyPassBillingMigration(ctx, updatedBinding)
 		user, err = s.store.UpdateCurrentUserPhone(ctx, trimmedToken, phone, s.now())
 		if err != nil {
 			return PhoneChangeVerifyResult{}, err
@@ -799,6 +804,7 @@ func (s *Service) VerifyPhoneChange(ctx context.Context, token string, input Pho
 		if binding.Status != shadowbinding.StatusActive {
 			return PhoneChangeVerifyResult{}, newError("shadow_binding_incomplete", "影子账号绑定尚未完成，请稍后重试。", http.StatusBadGateway)
 		}
+		s.notifyPassBillingMigration(ctx, binding)
 		shadowStatus = bindingStatusOrDisabled(binding.Status)
 	}
 	user, err = s.store.CompletePhoneChange(ctx, trimmedToken, phone, code, s.now())
@@ -1165,6 +1171,7 @@ func (s *Service) completeRealnamePhoneIfEligible(ctx context.Context, token str
 		if binding.Status != shadowbinding.StatusActive {
 			return RealnamePhoneVerifyResult{}, false, nil
 		}
+		s.notifyPassBillingMigration(ctx, binding)
 		if err := s.syncShadowBasicAuth(ctx, user.ID, name, idCard, clientIP, clientUA, true); err != nil {
 			_ = shadowBasicAuthError(ctx, err, user.ID, binding)
 			return RealnamePhoneVerifyResult{}, false, nil
@@ -1330,6 +1337,7 @@ func (s *Service) VerifyRealnamePhone(ctx context.Context, token string, input R
 	if binding.Status != shadowbinding.StatusActive {
 		return RealnamePhoneVerifyResult{}, newError("shadow_binding_incomplete", "影子账号绑定尚未完成，请稍后重试。", http.StatusBadGateway)
 	}
+	s.notifyPassBillingMigration(ctx, binding)
 	if err := s.syncStoredShadowBasicAuth(ctx, user.ID, input.ClientIP, input.ClientUA, false); err != nil {
 		return RealnamePhoneVerifyResult{}, shadowBasicAuthError(ctx, err, user.ID, binding)
 	}
@@ -1446,6 +1454,7 @@ func (s *Service) RetryShadowBinding(ctx context.Context, token string) (ShadowB
 	if err != nil && binding.UserID == "" {
 		return ShadowBindingResult{}, err
 	}
+	s.notifyPassBillingMigration(ctx, binding)
 	return toShadowBindingResult(binding), nil
 }
 

@@ -112,6 +112,19 @@ type PlaceOrderRequest struct {
 	// 不再由 ctl / 前端透传。如未来 bundle 按 region 差价，再放回入参 + 改用 trade_bundle_definition.region 元数据。
 }
 
+// MoveInOrderRequest 是存量免费 pass 迁入计费的下单入参。
+//
+// 本路径只用于外部资源迁入 qcloud.Deal.generateDealsAndPay，不会触发 checkCreate/createResource
+// 回调，也不写 trade_order；迁移状态由 ctl 持有。
+type MoveInOrderRequest struct {
+	ExternalUserID string
+	Uin            string
+	AppID          string
+	BundleID       string
+	ResourceID     string
+	CurDeadline    string
+}
+
 // trade 内部固定的 region/zone 常量已收敛到 trade/internal/region 包（11C 抽取 2026-05-12）。
 // 历史上本文件、inquiry/service.go、jifei/adapter.go、resourcequery/install.go 各自声明
 // 同值常量，11C 起统一引用 region.LighthouseRegionID / region.LighthouseZoneID。
@@ -126,6 +139,8 @@ type PlaceOrderResult struct {
 	PayURL     string `json:"pay_url,omitempty"` // 本期始终为空字符串，留作向后兼容
 	ExpireAt   string `json:"expire_at,omitempty"`
 }
+
+const moveInGoodsCategoryID int64 = 176262
 
 // Deps 是 Service 的依赖注入。
 //
@@ -356,6 +371,87 @@ func (s *Service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Place
 	return &PlaceOrderResult{
 		DealName:   dealName,
 		BigOrderID: dealsResp.BigDealID,
+	}, nil
+}
+
+// MoveInOrderAndPay 为 ctl 已存在的免费 pass 创建计费侧外部资源迁入单。
+func (s *Service) MoveInOrderAndPay(ctx context.Context, req MoveInOrderRequest) (*PlaceOrderResult, error) {
+	if err := validateMoveInOrderRequest(&req); err != nil {
+		return nil, err
+	}
+
+	bundle, err := s.deps.CTLClient.GetBundleByID(ctx, req.BundleID)
+	if err != nil {
+		if errors.Is(err, ctlclient.ErrNotFound) {
+			return nil, fmt.Errorf("%w: ctl bundleId=%s", ErrBundleNotFound, req.BundleID)
+		}
+		return nil, fmt.Errorf("placeorder: ctl GetBundleByID: %w", err)
+	}
+	if !strings.EqualFold(bundle.BundleState, "ONLINE") {
+		return nil, fmt.Errorf("%w: bundleId=%s state=%s",
+			ErrBundleOffline, req.BundleID, bundle.BundleState)
+	}
+
+	def, err := s.deps.BundleStore.GetBundleDefinitionByID(ctx, req.BundleID)
+	if err != nil {
+		if errors.Is(err, store.ErrBundleDefinitionNotFound) {
+			return nil, fmt.Errorf("%w: trade_bundle_definition bundleId=%s",
+				ErrBundleNotFound, req.BundleID)
+		}
+		return nil, fmt.Errorf("placeorder: get bundle definition: %w", err)
+	}
+
+	appIDInt, err := parseAppIDForJifei(req.AppID)
+	if err != nil || appIDInt <= 0 {
+		return nil, fmt.Errorf("%w: invalid appId=%q: %v", ErrInvalidInput, req.AppID, err)
+	}
+
+	goodsDetail := buildMoveInGoodsDetail(def, req)
+	dealsReq := &jifeiclient.GenerateDealsAndPayRequest{
+		OwnerUin:    req.Uin,
+		Uin:         req.Uin,
+		AppID:       appIDInt,
+		ClientToken: "lightvela-move-in:" + strings.TrimSpace(req.ResourceID) + ":" + strings.TrimSpace(req.BundleID),
+		Goods: []jifeiclient.GoodsInfo{
+			{
+				GoodsCategoryID: moveInGoodsCategoryID,
+				RegionID:        s.region.RegionID,
+				ZoneID:          s.region.ZoneID,
+				GoodsNum:        1,
+				PayMode:         1,
+				ProjectID:       0,
+				Action:          "preMoveIn",
+				Type:            "postMoveIn",
+				GoodsDetail:     goodsDetail,
+			},
+		},
+	}
+	dealsResp, err := s.deps.JifeiClient.GenerateDealsAndPay(ctx, dealsReq)
+	if err != nil {
+		return nil, fmt.Errorf("placeorder: jifei GenerateDealsAndPay (move-in): %w", err)
+	}
+	if dealsResp == nil || len(dealsResp.BigDealIDs) == 0 || dealsResp.BigDealIDs[0] == "" ||
+		len(dealsResp.DealNames) == 0 || dealsResp.DealNames[0] == "" {
+		return nil, fmt.Errorf("%w: BigDealIDs=%v DealNames=%v",
+			ErrJifeiResponseInvalid,
+			func() []string {
+				if dealsResp == nil {
+					return nil
+				}
+				return dealsResp.BigDealIDs
+			}(),
+			func() []string {
+				if dealsResp == nil {
+					return nil
+				}
+				return dealsResp.DealNames
+			}(),
+		)
+	}
+
+	return &PlaceOrderResult{
+		DealName:   dealsResp.DealNames[0],
+		BigOrderID: dealsResp.BigDealIDs[0],
 	}, nil
 }
 
@@ -1356,6 +1452,59 @@ func buildGoodsDetail(def *store.BundleDefinition, req PlaceOrderRequest) map[st
 		out["productInfo"] = def.ProductInfo
 	}
 	return out
+}
+
+func buildMoveInGoodsDetail(def *store.BundleDefinition, req MoveInOrderRequest) map[string]interface{} {
+	out := map[string]interface{}{
+		"productCode":    def.ProductCode,
+		"subProductCode": def.SubProductCode,
+		"pid":            def.Pid,
+		"timeSpan":       1,
+		"timeUnit":       "m",
+		"goodsNum":       1,
+		"resourceId":     strings.TrimSpace(req.ResourceID),
+		"bundleId":       strings.TrimSpace(req.BundleID),
+		"externalUserId": strings.TrimSpace(req.ExternalUserID),
+		"curDeadline":    strings.TrimSpace(req.CurDeadline),
+		"billingParam": map[string]interface{}{
+			"resourcesSource": "lightvela",
+		},
+	}
+	for k, v := range def.SVList {
+		out[k] = v
+	}
+	if len(def.ProductInfo) > 0 {
+		out["productInfo"] = def.ProductInfo
+	}
+	return out
+}
+
+func validateMoveInOrderRequest(req *MoveInOrderRequest) error {
+	if req == nil {
+		return fmt.Errorf("%w: nil request", ErrInvalidInput)
+	}
+	if strings.TrimSpace(req.ExternalUserID) == "" {
+		return fmt.Errorf("%w: external_user_id is required", ErrInvalidInput)
+	}
+	if strings.TrimSpace(req.Uin) == "" {
+		return fmt.Errorf("%w: uin is required", ErrInvalidInput)
+	}
+	if strings.TrimSpace(req.AppID) == "" {
+		return fmt.Errorf("%w: app_id is required", ErrInvalidInput)
+	}
+	if strings.TrimSpace(req.BundleID) == "" {
+		return fmt.Errorf("%w: bundle_id is required", ErrInvalidInput)
+	}
+	if strings.TrimSpace(req.ResourceID) == "" {
+		return fmt.Errorf("%w: resource_id is required", ErrInvalidInput)
+	}
+	if strings.TrimSpace(req.CurDeadline) == "" {
+		return fmt.Errorf("%w: cur_deadline is required", ErrInvalidInput)
+	}
+	if _, err := jifei.ParseCurDeadline(strings.TrimSpace(req.CurDeadline)); err != nil {
+		return fmt.Errorf("%w: cur_deadline must match %s in CST: %v", ErrInvalidInput, jifei.CurDeadlineLayout, err)
+	}
+	return nil
 }
 
 // parseAppIDForJifei 把 trade 业务层的 string AppID 转换为 jifei 协议的 int64。
