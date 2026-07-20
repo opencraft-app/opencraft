@@ -56,6 +56,15 @@ export interface CtlRefundPassResult {
   submitted_at: string;
 }
 
+export interface CtlPassBillingMigrationResult {
+  status: string;
+  pass_id?: string;
+  bundle_id?: string;
+  deal_name?: string;
+  big_order_id?: string;
+  message?: string;
+}
+
 export interface CtlDianshiParticipation {
   id: number;
   uin: string;
@@ -210,6 +219,27 @@ export function useCtlDestroyPass() {
         {
           method: "POST",
           body: { user_id: userID },
+        }
+      ).then(unwrapCtlData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ctl-admin", "passes"] });
+    },
+  });
+}
+
+export function useCtlPassBillingMigration() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userID, uin, appID }: { userID: string; uin: number; appID: number }) =>
+      apiClient<CtlEnvelope<CtlPassBillingMigrationResult>>(
+        "ctl/admin/passes/billing-migration",
+        {
+          method: "POST",
+          body: {
+            user_id: userID,
+            uin,
+            app_id: appID,
+          },
         }
       ).then(unwrapCtlData),
     onSuccess: () => {
