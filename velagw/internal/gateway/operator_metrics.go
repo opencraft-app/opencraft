@@ -33,6 +33,32 @@ func (s *Service) storePrometheusMetrics(ctx context.Context) string {
 			fmt.Fprintf(&b, "llmgateway_set_ready{set_id=\"%s\",status=\"%s\",admission=\"%s\"} %d\n", prometheusLabelValue(set.ID), prometheusLabelValue(set.Status), prometheusLabelValue(firstNonEmpty(set.AdmissionStatus, SetAdmissionStatusPending)), ready)
 			fmt.Fprintf(&b, "llmgateway_set_admin_health{set_id=\"%s\",status=\"%s\"} 1\n", prometheusLabelValue(set.ID), prometheusLabelValue(firstNonEmpty(set.AdminHealthStatus, "unknown")))
 		}
+		b.WriteString("# HELP llmgateway_set_runtime_ha_ready Whether the declared Set traffic HA policy is currently satisfied.\n")
+		b.WriteString("# TYPE llmgateway_set_runtime_ha_ready gauge\n")
+		b.WriteString("# HELP llmgateway_set_runtime_ha_desired_replicas Declared minimum traffic replicas for each Set.\n")
+		b.WriteString("# TYPE llmgateway_set_runtime_ha_desired_replicas gauge\n")
+		b.WriteString("# HELP llmgateway_set_runtime_ha_ready_replicas Ready traffic replicas observed through LLMFleet status.\n")
+		b.WriteString("# TYPE llmgateway_set_runtime_ha_ready_replicas gauge\n")
+		b.WriteString("# HELP llmgateway_set_runtime_ha_pdb_ready Whether the Set traffic PodDisruptionBudget currently permits one disruption.\n")
+		b.WriteString("# TYPE llmgateway_set_runtime_ha_pdb_ready gauge\n")
+		for _, set := range sets {
+			if set.RuntimeHADesiredReplicas <= 0 {
+				continue
+			}
+			haReady := 0
+			if set.RuntimeHAStatus == SetRuntimeHAHealthy {
+				haReady = 1
+			}
+			pdbReady := 0
+			if set.RuntimeHAPDBHealthy {
+				pdbReady = 1
+			}
+			setID := prometheusLabelValue(set.ID)
+			fmt.Fprintf(&b, "llmgateway_set_runtime_ha_ready{set_id=\"%s\",status=\"%s\"} %d\n", setID, prometheusLabelValue(firstNonEmpty(set.RuntimeHAStatus, SetRuntimeHAPending)), haReady)
+			fmt.Fprintf(&b, "llmgateway_set_runtime_ha_desired_replicas{set_id=\"%s\"} %d\n", setID, set.RuntimeHADesiredReplicas)
+			fmt.Fprintf(&b, "llmgateway_set_runtime_ha_ready_replicas{set_id=\"%s\"} %d\n", setID, set.RuntimeHAReadyReplicas)
+			fmt.Fprintf(&b, "llmgateway_set_runtime_ha_pdb_ready{set_id=\"%s\"} %d\n", setID, pdbReady)
+		}
 		b.WriteString("# HELP llmgateway_set_users Number of llmgateway users assigned to each Set.\n")
 		b.WriteString("# TYPE llmgateway_set_users gauge\n")
 		b.WriteString("# HELP llmgateway_set_max_users Configured user capacity for each Set; 0 means unlimited.\n")
@@ -85,6 +111,22 @@ func (s *Service) storePrometheusMetrics(ctx context.Context) string {
 			fmt.Fprintf(&b, "llmgateway_set_upgrade_probe_failures{set_id=\"%s\",run_id=\"%s\"} %d\n", prometheusLabelValue(run.SetID), prometheusLabelValue(run.ID), run.ConsecutiveProbeFailures)
 			if run.Status == SetUpgradeRunStatusRolledBack && !run.RollbackRequested {
 				fmt.Fprintf(&b, "llmgateway_set_upgrade_auto_rollback_total{set_id=\"%s\"} 1\n", prometheusLabelValue(run.SetID))
+			}
+		}
+	}
+	campaigns, err := s.store.ListReleaseCampaigns(ctx, 100)
+	if err == nil {
+		sort.Slice(campaigns, func(i, j int) bool { return campaigns[i].ID < campaigns[j].ID })
+		b.WriteString("# HELP llmgateway_release_campaign_state Fleet release campaign state; value is always 1 for the current state.\n")
+		b.WriteString("# TYPE llmgateway_release_campaign_state gauge\n")
+		b.WriteString("# HELP llmgateway_release_campaign_ring_state Release ring step state inside a Fleet campaign.\n")
+		b.WriteString("# TYPE llmgateway_release_campaign_ring_state gauge\n")
+		for _, campaign := range campaigns {
+			fmt.Fprintf(&b, "llmgateway_release_campaign_state{campaign_id=\"%s\",fleet=\"%s\",target_release_id=\"%s\",status=\"%s\"} 1\n",
+				prometheusLabelValue(campaign.ID), prometheusLabelValue(campaign.Fleet), prometheusLabelValue(campaign.TargetReleaseID), prometheusLabelValue(campaign.Status))
+			for _, ring := range campaign.Rings {
+				fmt.Fprintf(&b, "llmgateway_release_campaign_ring_state{campaign_id=\"%s\",ring_id=\"%s\",status=\"%s\"} 1\n",
+					prometheusLabelValue(campaign.ID), prometheusLabelValue(ring.RingID), prometheusLabelValue(ring.Status))
 			}
 		}
 	}

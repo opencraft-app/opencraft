@@ -31,6 +31,7 @@ type GenerateDealsAndPayRequest struct {
 	OwnerUin    string      `json:"ownerUin"`
 	Uin         string      `json:"uin"`
 	AppID       int64       `json:"appId,omitempty"`
+	ClientToken string      `json:"clientToken,omitempty"`
 	AutoVoucher *int        `json:"autoVoucher,omitempty"`
 	Goods       []GoodsInfo `json:"goods"`
 }

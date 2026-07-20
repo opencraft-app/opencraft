@@ -141,6 +141,8 @@ func (s *Server) controlRoutes(blockTraffic bool) {
 	s.mux.HandleFunc("/api/admin/release-rings", s.requireAdmin(s.adminReleaseRings))
 	s.mux.HandleFunc("/api/admin/release-rollouts", s.requireAdmin(s.adminReleaseRollouts))
 	s.mux.HandleFunc("/api/admin/release-rollouts/", s.requireAdmin(s.adminReleaseRolloutAction))
+	s.mux.HandleFunc("/api/admin/release-campaigns", s.requireAdmin(s.adminReleaseCampaigns))
+	s.mux.HandleFunc("/api/admin/release-campaigns/", s.requireAdmin(s.adminReleaseCampaignAction))
 	s.mux.HandleFunc("/api/admin/set-upgrade-runs/", s.requireAdmin(s.adminSetUpgradeRunAction))
 	s.mux.HandleFunc("/api/admin/tenants/", s.requireAdmin(s.adminTenantAction))
 	s.mux.HandleFunc("/api/admin/users/", s.requireAdmin(s.adminUserAction))
@@ -368,17 +370,25 @@ func (s *Server) adminJobs(w http.ResponseWriter, r *http.Request) {
 func (s *Server) adminJobAction(w http.ResponseWriter, r *http.Request) {
 	trimmed := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/jobs/"), "/")
 	parts := strings.Split(trimmed, "/")
-	if len(parts) != 2 || parts[1] != "run" {
+	if len(parts) != 2 {
 		writeError(w, http.StatusNotFound, "not found")
-		return
-	}
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	name, err := url.PathUnescape(parts[0])
 	if err != nil || strings.TrimSpace(name) == "" {
 		writeError(w, http.StatusBadRequest, "invalid job name")
+		return
+	}
+	if parts[1] == "runs" {
+		s.adminWorkerJobRuns(w, r, name)
+		return
+	}
+	if parts[1] != "run" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	run, err := s.svc.QueueWorkerJobNow(r.Context(), name)
@@ -387,6 +397,41 @@ func (s *Server) adminJobAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, response{Success: true, Data: run})
+}
+
+func (s *Server) adminWorkerJobRuns(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var after time.Time
+	if raw := strings.TrimSpace(r.URL.Query().Get("after")); raw != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "after must be RFC3339")
+			return
+		}
+		after = parsed.UTC()
+	}
+	limit := 20
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			writeError(w, http.StatusBadRequest, "limit must be positive")
+			return
+		}
+		limit = parsed
+	}
+	runs, ok, err := s.svc.ListWorkerJobRuns(r.Context(), name, after, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, response{Success: true, Data: runs})
 }
 
 func (s *Server) adminRetryBYOKSync(w http.ResponseWriter, r *http.Request) {
@@ -1259,6 +1304,82 @@ func (s *Server) adminReleaseRolloutAction(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, response{Success: true, Data: rollout})
+}
+
+func (s *Server) adminReleaseCampaigns(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		campaigns, err := s.svc.ListReleaseCampaigns(r.Context(), queryInt(r, "limit", 50))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, response{Success: true, Data: campaigns})
+	case http.MethodPost:
+		var input gateway.CreateReleaseCampaignInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+		campaign, err := s.svc.CreateReleaseCampaign(r.Context(), input)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusAccepted, response{Success: true, Data: campaign})
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (s *Server) adminReleaseCampaignAction(w http.ResponseWriter, r *http.Request) {
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/release-campaigns/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) < 1 || len(parts) > 2 {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	id, err := url.PathUnescape(parts[0])
+	if err != nil || strings.TrimSpace(id) == "" {
+		writeError(w, http.StatusBadRequest, "invalid release campaign id")
+		return
+	}
+	if len(parts) == 1 {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		campaign, ok, err := s.svc.GetReleaseCampaign(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !ok {
+			writeError(w, http.StatusNotFound, "release campaign not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, response{Success: true, Data: campaign})
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var campaign gateway.ReleaseCampaign
+	switch parts[1] {
+	case "pause":
+		campaign, err = s.svc.PauseReleaseCampaign(r.Context(), id)
+	case "resume":
+		campaign, err = s.svc.ResumeReleaseCampaign(r.Context(), id)
+	default:
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, response{Success: true, Data: campaign})
 }
 
 func (s *Server) adminSetUpgradeAction(w http.ResponseWriter, r *http.Request) {

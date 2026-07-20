@@ -1856,9 +1856,4 @@ code {
     align-self: flex-end;
   }
 
-  .lv-buddy-panel__equipped {
-    position: static;
-    transform: none;
-    align-self: flex-start;
-  }
 }

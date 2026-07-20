@@ -8,6 +8,8 @@ import {
   GraduationCap,
   HeartPulse,
   Landmark,
+  LayoutGrid,
+  List,
   Loader2,
   Megaphone,
   MoonStar,
@@ -46,6 +48,7 @@ import {
 } from "@/lib/skillhub-api";
 
 type ExpertFilterId = "all" | SkillHubKnownSkillSetScene;
+type ExpertView = "list" | "grid";
 
 interface ExpertSceneOption {
   value: SkillHubKnownSkillSetScene;
@@ -62,7 +65,11 @@ export interface ExecDebugCommandResult {
   stderr?: string;
 }
 
-export type ExpertsExecDebugCommand = (botId: string, command: string) => Promise<ExecDebugCommandResult>;
+export type ExpertsExecDebugCommand = (
+  botId: string,
+  command: string,
+  options?: { timeoutMs?: number },
+) => Promise<ExecDebugCommandResult>;
 
 interface ExpertPackageCard {
   pkg: SkillHubSkillSet;
@@ -130,6 +137,10 @@ const EXPERT_PACKAGE_SUB_SCENE_ROLES: Record<string, string> = {
 };
 
 const EXPERT_KNOWN_SCENE_SET = new Set(Object.keys(EXPERT_PACKAGE_SCENE_ROLES) as SkillHubKnownSkillSetScene[]);
+const EXPERT_VIEW_OPTIONS: Array<{ value: ExpertView; label: string; icon: ElementType }> = [
+  { value: "list", label: "列表", icon: List },
+  { value: "grid", label: "卡片", icon: LayoutGrid },
+];
 
 const EXPERT_PAGE_SIZE = 200;
 // SkillHub currently returns both domestic and international packages from the
@@ -180,6 +191,7 @@ const INTERNATIONAL_EXPERT_PACKAGE_ORDER = new Map(
 const INSTALL_ERROR_OUTPUT_LINE_LIMIT = 3;
 const SKILL_INSTALL_DEFAULT_RETRY_DELAYS_MS = [0] as const;
 const SKILL_INSTALL_RATE_LIMIT_RETRY_DELAYS_MS = [2_000, 5_000] as const;
+const SKILL_PACKAGE_COMMAND_TIMEOUT_MS = 120_000;
 const AI_BUDDY_ASSET_BASE = "https://cloudcache.tencent-cloud.com/qcloud/tea/app/skillhub/assets/source/ai-buddy-decouple";
 const AI_BUDDY_EXPERT_PROFILE_VERSION = "v20260625";
 const AI_BUDDY_EXPERT_PROFILE_EXT = "avif";
@@ -522,7 +534,9 @@ async function executeInstallSkillCommand(
   execDebugCommand: ExpertsExecDebugCommand,
 ): Promise<{ succeeded: boolean; output: string }> {
   try {
-    const result = await execDebugCommand(botId, buildInstallSkillCommand(skillSlug));
+    const result = await execDebugCommand(botId, buildInstallSkillCommand(skillSlug), {
+      timeoutMs: SKILL_PACKAGE_COMMAND_TIMEOUT_MS,
+    });
     return {
       succeeded: isSkillInstallSucceeded(result),
       output: result.output,
@@ -577,7 +591,9 @@ export async function installSkillSlugs(
     let result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
     if (!result.succeeded && !hasTriedSkillHubUpgrade && shouldUpgradeSkillHubCli(result.output)) {
       hasTriedSkillHubUpgrade = true;
-      await execDebugCommand(botId, buildSkillHubSelfUpgradeCommand()).catch(() => null);
+      await execDebugCommand(botId, buildSkillHubSelfUpgradeCommand(), {
+        timeoutMs: SKILL_PACKAGE_COMMAND_TIMEOUT_MS,
+      }).catch(() => null);
       result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
     }
     if (!result.succeeded) {
@@ -707,6 +723,12 @@ async function fetchAllExpertPackages(keyword: string, lang?: string): Promise<S
 
   if (!expertLanguage) return visiblePackages;
 
+  const sortByInternationalOrder = (left: SkillHubSkillSet, right: SkillHubSkillSet) => (
+    (INTERNATIONAL_EXPERT_PACKAGE_ORDER.get(left.slug) ?? Number.MAX_SAFE_INTEGER)
+    - (INTERNATIONAL_EXPERT_PACKAGE_ORDER.get(right.slug) ?? Number.MAX_SAFE_INTEGER)
+  );
+  if (keyword.trim()) return visiblePackages.sort(sortByInternationalOrder);
+
   const missingPackages = INTERNATIONAL_EXPERT_PACKAGE_API_SLUGS.filter(
     (slug) => !visiblePackages.some((pkg) => pkg.slug === slug),
   );
@@ -719,8 +741,7 @@ async function fetchAllExpertPackages(keyword: string, lang?: string): Promise<S
   }));
 
   return [...visiblePackages, ...fetchedMissingPackages.filter((pkg): pkg is SkillHubSkillSet => Boolean(pkg))]
-    .sort((left, right) => (INTERNATIONAL_EXPERT_PACKAGE_ORDER.get(left.slug) ?? Number.MAX_SAFE_INTEGER)
-      - (INTERNATIONAL_EXPERT_PACKAGE_ORDER.get(right.slug) ?? Number.MAX_SAFE_INTEGER));
+    .sort(sortByInternationalOrder);
 }
 
 function filterExpertPackagesByScene(
@@ -733,14 +754,9 @@ function filterExpertPackagesByScene(
 
 async function fetchExperts(params: {
   keyword: string;
-  page: number;
   lang?: string;
-}): Promise<{ packages: SkillHubSkillSet[]; total: number }> {
-  const packages = await fetchAllExpertPackages(params.keyword, params.lang);
-  return {
-    packages,
-    total: packages.length,
-  };
+}): Promise<SkillHubSkillSet[]> {
+  return fetchAllExpertPackages(params.keyword, params.lang);
 }
 
 export function ExpertsPanel({
@@ -756,22 +772,23 @@ export function ExpertsPanel({
   const [activeFilter, setActiveFilter] = useState<ExpertFilterId>("all");
   const [keyword, setKeyword] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
+  const [view, setView] = useState<ExpertView>(() => {
+    if (typeof window === "undefined") return "list";
+    return window.localStorage.getItem("lightvela-experts-view") === "grid" ? "grid" : "list";
+  });
   const [installingSlug, setInstallingSlug] = useState<string | null>(null);
   const [installProgress, setInstallProgress] = useState<SkillInstallProgress | null>(null);
   const [installedSlugs, setInstalledSlugs] = useState<Set<string>>(() => readStoredInstalledPackageSlugs(botId));
   const installedSlugsRef = useRef(installedSlugs);
   const [installedSkillSlugs, setInstalledSkillSlugs] = useState<Set<string>>(() => new Set());
+  const [installedSkillsLoaded, setInstalledSkillsLoaded] = useState(false);
   const [packageSkillSlugs, setPackageSkillSlugs] = useState<Map<string, string[]>>(() => new Map());
   const [selectedCard, setSelectedCard] = useState<ExpertPackageCard | null>(null);
   const [expertPackages, setExpertPackages] = useState<SkillHubSkillSet[]>([]);
-  const [expertTotal, setExpertTotal] = useState(0);
-  const [expertPage, setExpertPage] = useState(1);
   const [expertsLoading, setExpertsLoading] = useState(true);
-  const [expertsLoadingMore, setExpertsLoadingMore] = useState(false);
   const [expertsError, setExpertsError] = useState<Error | null>(null);
   const [expertsRetryNonce, setExpertsRetryNonce] = useState(0);
   const expertsRequestIdRef = useRef(0);
-  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
 
   const filteredExpertPackages = useMemo(() => {
     return filterExpertPackagesByScene(expertPackages, activeFilter);
@@ -781,84 +798,52 @@ export function ExpertsPanel({
     return filteredExpertPackages.map((pkg) => ({ pkg }));
   }, [filteredExpertPackages]);
 
-  const hasMoreExperts = expertPackages.length < expertTotal;
-
   useEffect(() => {
     installedSlugsRef.current = installedSlugs;
   }, [installedSlugs]);
+
+  const handleViewChange = useCallback((nextView: ExpertView) => {
+    setView(nextView);
+    try {
+      window.localStorage.setItem("lightvela-experts-view", nextView);
+    } catch {
+      /* localStorage may be unavailable in restricted contexts. */
+    }
+  }, []);
 
   const commitSearch = useCallback((value: string) => {
     const nextKeyword = value.trim();
     setSearchDraft(nextKeyword);
     setKeyword(nextKeyword);
-    setExpertPage(1);
     setSelectedCard(null);
   }, []);
 
   const reloadExperts = useCallback(() => {
-    setExpertPage(1);
     setExpertPackages([]);
     setExpertsRetryNonce((current) => current + 1);
   }, []);
 
-  const loadMoreExperts = useCallback(() => {
-    if (expertsLoading || expertsLoadingMore || !hasMoreExperts) return;
-    setExpertPage((current) => current + 1);
-  }, [expertsLoading, expertsLoadingMore, hasMoreExperts]);
-
-  useEffect(() => {
-    if (!hasMoreExperts || expertsLoading || expertsLoadingMore) return;
-    if (typeof IntersectionObserver === "undefined") return;
-    const sentinel = loadMoreSentinelRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (entry?.isIntersecting) {
-          loadMoreExperts();
-        }
-      },
-      { rootMargin: "240px 0px" },
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [expertsLoading, expertsLoadingMore, hasMoreExperts, loadMoreExperts]);
-
   useEffect(() => {
     const currentRequestId = ++expertsRequestIdRef.current;
-    const firstPage = expertPage === 1;
-
-    if (firstPage) {
-      setExpertsLoading(true);
-      setExpertPackages([]);
-      setExpertTotal(0);
-    } else {
-      setExpertsLoadingMore(true);
-    }
+    setExpertsLoading(true);
+    setExpertPackages([]);
     setExpertsError(null);
 
-    fetchExperts({ keyword, page: expertPage, lang })
-      .then((result) => {
+    fetchExperts({ keyword, lang })
+      .then((packages) => {
         if (currentRequestId !== expertsRequestIdRef.current) return;
-        setExpertTotal(result.total);
-        setExpertPackages((current) => firstPage ? result.packages : [...current, ...result.packages]);
+        setExpertPackages(packages);
       })
       .catch((error) => {
         if (currentRequestId !== expertsRequestIdRef.current) return;
         setExpertsError(error instanceof Error ? error : new Error(String(error)));
-        if (firstPage) {
-          setExpertPackages([]);
-          setExpertTotal(0);
-        }
+        setExpertPackages([]);
       })
       .finally(() => {
         if (currentRequestId !== expertsRequestIdRef.current) return;
         setExpertsLoading(false);
-        setExpertsLoadingMore(false);
       });
-  }, [expertPage, expertsRetryNonce, keyword, lang]);
+  }, [expertsRetryNonce, keyword, lang]);
 
   useEffect(() => {
     let cancelled = false;
@@ -866,6 +851,8 @@ export function ExpertsPanel({
     installedSlugsRef.current = cachedPackageSlugs;
     setInstalledSlugs(cachedPackageSlugs);
     setInstalledSkillSlugs(new Set());
+    setInstalledSkillsLoaded(false);
+    setPackageSkillSlugs(new Map());
 
     async function refreshInstalledPackages() {
       try {
@@ -885,13 +872,22 @@ export function ExpertsPanel({
 
     async function refreshInstalledSkills() {
       try {
-        const result = await execDebugCommand(botId, buildInstalledSkillsListCommand());
+        const result = await execDebugCommand(botId, buildInstalledSkillsListCommand(), {
+          timeoutMs: SKILL_PACKAGE_COMMAND_TIMEOUT_MS,
+        });
         if (!cancelled) {
-          setInstalledSkillSlugs(isExecSucceeded(result) ? new Set(parseInstalledSkillSlugs(result.output)) : new Set());
+          if (isExecSucceeded(result)) {
+            setInstalledSkillSlugs(new Set(parseInstalledSkillSlugs(result.output)));
+            setInstalledSkillsLoaded(true);
+          } else {
+            setInstalledSkillSlugs(new Set());
+            setInstalledSkillsLoaded(false);
+          }
         }
       } catch {
         if (!cancelled) {
           setInstalledSkillSlugs(new Set());
+          setInstalledSkillsLoaded(false);
         }
       }
     }
@@ -904,10 +900,12 @@ export function ExpertsPanel({
   }, [botId, execDebugCommand]);
 
   useEffect(() => {
-    if (visibleCards.length === 0) return;
+    if (!installedSkillsLoaded || installedSlugs.size === 0 || visibleCards.length === 0) return;
 
     const missingCards = visibleCards.filter(({ pkg }) => {
-      return !packageSkillSlugs.has(pkg.slug) && !Array.isArray(pkg.skillSlugs);
+      return installedSlugs.has(pkg.slug)
+        && !packageSkillSlugs.has(pkg.slug)
+        && !Array.isArray(pkg.skillSlugs);
     });
     if (missingCards.length === 0) return;
 
@@ -919,7 +917,7 @@ export function ExpertsPanel({
           const detail = lang === "en"
             ? await fetchSkillSetDetail(pkg.slug, { lang })
             : await fetchSkillSetDetail(pkg.slug);
-          const skillSlugs = await resolveAvailablePackageSkillSlugs(
+          const skillSlugs = getPackageSkillSlugs(
             pkg.slug,
             detail.skillSlugs ?? pkg.skillSlugs ?? [],
             detail.missing ?? pkg.missing ?? [],
@@ -948,7 +946,7 @@ export function ExpertsPanel({
     return () => {
       cancelled = true;
     };
-  }, [lang, packageSkillSlugs, visibleCards]);
+  }, [installedSkillsLoaded, installedSlugs, lang, packageSkillSlugs, visibleCards]);
 
   const getKnownSkillSlugs = useCallback((pkg: SkillHubSkillSet) => {
     return getPackageSkillSlugs(pkg.slug, packageSkillSlugs.get(pkg.slug) ?? pkg.skillSlugs ?? [], pkg.missing ?? []);
@@ -958,8 +956,38 @@ export function ExpertsPanel({
     const knownSkillSlugs = getKnownSkillSlugs(pkg);
     const hasInstalledSkillPackage = knownSkillSlugs.length > 0
       && knownSkillSlugs.every((skillSlug) => installedSkillSlugs.has(skillSlug));
+    const hasResolvedPackageSkills = packageSkillSlugs.has(pkg.slug) || Array.isArray(pkg.skillSlugs);
+    if (installedSkillsLoaded && hasResolvedPackageSkills) {
+      return hasInstalledSkillPackage;
+    }
     return installedSlugs.has(pkg.slug) || hasInstalledSkillPackage;
-  }, [getKnownSkillSlugs, installedSkillSlugs, installedSlugs]);
+  }, [getKnownSkillSlugs, installedSkillSlugs, installedSkillsLoaded, installedSlugs, packageSkillSlugs]);
+
+  useEffect(() => {
+    if (!installedSkillsLoaded || installedSlugs.size === 0 || expertPackages.length === 0) return;
+
+    const packageBySlug = new Map(expertPackages.map((pkg) => [pkg.slug, pkg]));
+    const stalePackageSlugs = [...installedSlugs].filter((packageSlug) => {
+      const pkg = packageBySlug.get(packageSlug);
+      if (!pkg) return false;
+      const hasResolvedPackageSkills = packageSkillSlugs.has(packageSlug) || Array.isArray(pkg.skillSlugs);
+      if (!hasResolvedPackageSkills) return false;
+      const skillSlugs = getKnownSkillSlugs(pkg);
+      return skillSlugs.length === 0 || skillSlugs.some((skillSlug) => !installedSkillSlugs.has(skillSlug));
+    });
+    if (stalePackageSlugs.length === 0) return;
+
+    const nextInstalledSlugs = new Set(installedSlugs);
+    stalePackageSlugs.forEach((packageSlug) => nextInstalledSlugs.delete(packageSlug));
+    installedSlugsRef.current = nextInstalledSlugs;
+    writeStoredInstalledPackageSlugs(botId, nextInstalledSlugs);
+    setInstalledSlugs(nextInstalledSlugs);
+    saveExpertPackagesState(botId, { installedPackageSlugs: [...nextInstalledSlugs] })
+      .catch((error: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error("[experts] saveExpertPackagesState failed:", error);
+      });
+  }, [botId, expertPackages, getKnownSkillSlugs, installedSkillSlugs, installedSkillsLoaded, installedSlugs, packageSkillSlugs]);
 
   const handleInstall = useCallback(async (pkg: SkillHubSkillSet) => {
     if (installingSlug) return;
@@ -1033,6 +1061,7 @@ export function ExpertsPanel({
       <div className="space-y-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <ExpertSearchBox value={searchDraft} onChange={setSearchDraft} onCommit={commitSearch} lang={lang} />
+          <ExpertViewToggle value={view} onChange={handleViewChange} lang={lang} />
         </div>
 
         <ExpertSceneFilters
@@ -1040,7 +1069,6 @@ export function ExpertsPanel({
           lang={lang}
           onChange={(filterId) => {
             setActiveFilter(filterId);
-            setExpertPage(1);
             setSelectedCard(null);
           }}
         />
@@ -1070,39 +1098,50 @@ export function ExpertsPanel({
           </div>
         </div>
       ) : visibleCards.length > 0 ? (
-        <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-2">
-          {visibleCards.map((card) => (
-            <ExpertGridCard
-              key={card.pkg.slug}
-              card={card}
-              activeFilter={activeFilter}
-              lang={lang}
-              installingSlug={installingSlug}
-              installProgress={installProgress}
-              isInstalled={isPackageInstalled(card.pkg)}
-              onOpen={handleOpenDetail}
-              onInstall={handleInstall}
-            />
-          ))}
-        </div>
+        view === "grid" ? (
+          <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-2" data-testid="skill-package-card-view">
+            {visibleCards.map((card) => (
+              <ExpertGridCard
+                key={card.pkg.slug}
+                card={card}
+                activeFilter={activeFilter}
+                lang={lang}
+                installingSlug={installingSlug}
+                installProgress={installProgress}
+                isInstalled={isPackageInstalled(card.pkg)}
+                onOpen={handleOpenDetail}
+                onInstall={handleInstall}
+              />
+            ))}
+          </div>
+        ) : (
+          <div
+            className="overflow-hidden rounded-md border border-black/[0.06] bg-white"
+            data-testid="skill-package-list-view"
+          >
+            {visibleCards.map((card, index) => (
+              <div key={card.pkg.slug}>
+                {index > 0 ? <div className="mx-4 h-px bg-black/[0.06]" /> : null}
+                <ExpertListItem
+                  card={card}
+                  activeFilter={activeFilter}
+                  lang={lang}
+                  installingSlug={installingSlug}
+                  installProgress={installProgress}
+                  isInstalled={isPackageInstalled(card.pkg)}
+                  onOpen={handleOpenDetail}
+                  onInstall={handleInstall}
+                />
+              </div>
+            ))}
+          </div>
+        )
       ) : (
         <div className="rounded-md bg-white px-5 py-10 text-center text-sm text-black/40">
           {t("没有找到匹配的技能包")}
         </div>
       )}
 
-      {visibleCards.length > 0 && hasMoreExperts ? (
-        <div className="flex min-h-8 justify-center pt-1">
-          <div ref={loadMoreSentinelRef} className="flex h-8 items-center gap-2 text-xs text-black/32">
-            {expertsLoadingMore ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                {t("加载更多...")}
-              </>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -1137,6 +1176,52 @@ function ExpertSearchBox({
         placeholder={lang === "en" ? "Search skill packages" : "搜索技能包"}
         className="lv-skills-search-input lv-agent-search-box-input"
       />
+    </div>
+  );
+}
+
+function ExpertViewToggle({
+  value,
+  onChange,
+  lang,
+}: {
+  value: ExpertView;
+  onChange: (value: ExpertView) => void;
+  lang?: ExpertLanguage;
+}) {
+  return (
+    <div className="flex w-max items-center gap-1 rounded-md bg-black/[0.04] p-0.5">
+      {EXPERT_VIEW_OPTIONS.map((item) => {
+        const Icon = item.icon;
+        const active = value === item.value;
+        const label = lang === "en" ? (item.value === "list" ? "List" : "Cards") : item.label;
+        const tooltipId = `skill-package-view-${item.value}-tooltip`;
+        return (
+          <span key={item.value} className="group relative inline-flex">
+            <button
+              type="button"
+              onClick={() => onChange(item.value)}
+              aria-label={label}
+              aria-describedby={tooltipId}
+              aria-pressed={active}
+              className={cn(
+                "peer lv-agent-view-toggle-btn inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40",
+                active ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]" : "text-black/45 hover:text-black/70",
+              )}
+            >
+              <Icon className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <span
+              id={tooltipId}
+              role="tooltip"
+              className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-hover:opacity-100 peer-focus-visible:opacity-100"
+            >
+              {label}
+              <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
+            </span>
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -1309,6 +1394,59 @@ function InstallButton({
       {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
       {label}
     </button>
+  );
+}
+
+function ExpertListItem({
+  card,
+  activeFilter,
+  lang,
+  installingSlug,
+  installProgress,
+  isInstalled,
+  onOpen,
+  onInstall,
+}: {
+  card: ExpertPackageCard;
+  activeFilter: ExpertFilterId;
+  lang?: ExpertLanguage;
+  installingSlug: string | null;
+  installProgress: SkillInstallProgress | null;
+  isInstalled: boolean;
+  onOpen: (card: ExpertPackageCard) => void;
+  onInstall: (pkg: SkillHubSkillSet) => void;
+}) {
+  const t = useT();
+  const role = getExpertRole(card.pkg, activeFilter, t, lang);
+  const summary = getPackageSummary(card.pkg, t, lang);
+
+  return (
+    <article
+      className="group flex items-stretch gap-3 px-4 py-4 transition-colors hover:bg-black/[0.018]"
+    >
+      <button
+        type="button"
+        onClick={() => onOpen(card)}
+        className="flex min-w-0 flex-1 items-start gap-3 rounded-sm text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/35"
+      >
+        <SkillPackageProfileIcon pkg={card.pkg} className="h-10 w-10 rounded-[9px]" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold leading-5 text-black/90">
+            {getLocalizedPackageDisplayName(card.pkg, lang)}
+          </span>
+          <span className="mt-0.5 block truncate text-[11px] font-medium leading-4 text-black/48">{role}</span>
+          <span className="mt-1 line-clamp-2 text-xs leading-5 text-black/50" title={summary}>{summary}</span>
+        </span>
+      </button>
+      <InstallButton
+        pkg={card.pkg}
+        installingSlug={installingSlug}
+        installProgress={installProgress}
+        isInstalled={isInstalled}
+        onInstall={onInstall}
+        className="h-9 shrink-0 self-center px-3"
+      />
+    </article>
   );
 }
 

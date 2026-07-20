@@ -34,7 +34,7 @@ func TestLoadConfigDefaultsMatchThousandUserProfile(t *testing.T) {
 	if cfg.RunDuration != 10*time.Minute {
 		t.Fatalf("RunDuration=%s want 10m", cfg.RunDuration)
 	}
-	if cfg.Provider.Model != "llmgw-mock-chat" || cfg.Provider.BaseURL != "http://mockllm:8080" || cfg.Provider.APIKey != "test-mockllm-key" {
+	if cfg.Provider.Model != "llmgw-mock-chat" || cfg.Provider.BaseURL != "http://mockllm:8080" || cfg.Provider.APIKey != "sk-mockllm-local" {
 		t.Fatalf("unexpected default provider: %+v", cfg.Provider)
 	}
 	if cfg.ChatModel != "auto" {

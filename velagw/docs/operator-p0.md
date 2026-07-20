@@ -28,7 +28,7 @@ traffic 面的生产形态是 Redis-only，不允许 Redis miss 后回 MySQL 查
 sk-<Base64URL(version + route_slot + key_id + secret)>
 ```
 
-完整 Key 固定 95 字符，其中 Key ID 和 Secret 各为 256 bit。中央 MySQL 保存完整 Key、Key ID、完整 Key 哈希、Secret 哈希、路由槽和状态，用于固定自检 Key 复用和故障恢复；数据库访问与备份必须按密钥材料保护。Redis、日志和指标不保存或输出完整 Key。Redis route key 使用 route slot hash tag：
+完整 Key 固定 95 字符，其中 Key ID 和 Secret 各为 256 bit。中央 MySQL 只保存 Key ID、完整 Key 哈希、Secret 哈希、路由槽和状态，不保存完整 Key；完整 Key 仅在 Redis 路由发布成功后返回一次。Redis、日志和指标同样不保存或输出完整 Key。Redis route key 使用 route slot hash tag：
 
 ```text
 llmgateway:route:{kr-00000007}:key:<external_key_id>
@@ -50,6 +50,7 @@ snapshot 中包含 `set_base_url`、`upstream_key`、`route_mode`、`enabled` �
 | `GET` | `/api/admin/background-jobs` | 独立后台任务页：任务、BYOK 队列、租户观测队列 |
 | `GET` | `/api/admin/jobs` | 后台任务列表 |
 | `POST` | `/api/admin/jobs/{name}/run` | 手动触发一次后台任务 |
+| `GET` | `/api/admin/jobs/{name}/runs?after=<RFC3339>&limit=20` | 查询任务运行记录和 lease owner，用于恢复验证 |
 | `POST` | `/api/admin/byok-sync/retry` | 把退避中的 BYOK 失败任务重新置为待处理，由 BYOK worker 消费 |
 | `GET` | `/api/admin/tenant-statistics` | 读取 worker 最近一次租户数量统计快照 |
 | `GET` | `/api/admin/tenants/{user_id}` | 租户完整详情 |
@@ -191,6 +192,10 @@ checker 按“最后稳定 applied revision”做强校验：
 `/metrics` 已包含：
 
 - `llmgateway_set_ready`
+- `llmgateway_set_runtime_ha_ready`
+- `llmgateway_set_runtime_ha_desired_replicas`
+- `llmgateway_set_runtime_ha_ready_replicas`
+- `llmgateway_set_runtime_ha_pdb_ready`
 - `llmgateway_set_users`
 - `llmgateway_set_max_users`
 - `llmgateway_set_free_users`

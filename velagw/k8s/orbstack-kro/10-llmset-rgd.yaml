@@ -14,8 +14,8 @@ spec:
       replicas: integer | default=1
       mysqlImage: string | default="mysql:8.4"
       redisImage: string | default="redis:7-alpine"
-      mysqlRootPassword: string | default="test-local-password"
-      redisPassword: string | default="test-local-password"
+      mysqlRootPassword: string | default="123456"
+      redisPassword: string | default="123456"
       databaseName: string | default="new-api"
       sessionSecret: string | default="llmgateway-local-session-secret"
     status:

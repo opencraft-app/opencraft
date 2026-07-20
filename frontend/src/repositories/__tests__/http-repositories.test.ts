@@ -1424,4 +1424,27 @@ describe("http repositories auth token bootstrap", () => {
       "https://lightvela-preview-dppuuozk080l.edgeone.cool/auth/sign-in",
     );
   });
+
+  it("aborts a debug command after the requested timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => (
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+        })
+      ));
+      vi.stubGlobal("fetch", fetchMock);
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+
+      const request = repositories.bots.execDebugCommand("bot-1", "sleep 60", { timeoutMs: 10 });
+      const rejection = expect(request).rejects.toThrow("debug_exec_timeout:10");
+      await vi.advanceTimersByTimeAsync(10);
+
+      await rejection;
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

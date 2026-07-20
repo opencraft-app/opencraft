@@ -8,12 +8,12 @@ metadata:
     app.kubernetes.io/part-of: llmgateway-kro-demo
 type: Opaque
 stringData:
-  token: test-cluster-token
+  token: dev-cluster-token
   username: cluster-admin
-  password: test-local-password
-  internal-token: test-internal-token
+  password: Qq373866172!
+  internal-token: dev-internal-token
   set-root-username: set-root
-  set-root-password: test-local-password
+  set-root-password: Qq373866172!
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -72,7 +72,7 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: MYSQL_ROOT_PASSWORD
-              value: "test-local-password"
+              value: "123456"
           ports:
             - name: mysql
               containerPort: 3306
@@ -81,7 +81,7 @@ spec:
               command:
                 - sh
                 - -c
-                - mysqladmin ping -h 127.0.0.1 -uroot -ptest-local-password --silent
+                - mysqladmin ping -h 127.0.0.1 -uroot -p123456 --silent
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
@@ -158,9 +158,9 @@ spec:
             - name: PORT
               value: "18080"
             - name: LLMGATEWAY_SQL_DSN
-              value: root:test-local-password@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
+              value: root:123456@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
             - name: LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL
-              value: redis://:test-local-password@shared-redis-a:6379/0
+              value: redis://:123456@shared-redis-a:6379/0
             - name: LLMGATEWAY_TRAFFIC_BASE_URL
               value: http://llmgateway-traffic:18080
             - name: LLMGATEWAY_TRAFFIC_PROBE_TIMEOUT

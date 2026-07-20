@@ -63,7 +63,7 @@ func transitionSeverity(to string) otellog.Severity {
 	switch strings.ToLower(strings.TrimSpace(to)) {
 	case "error", "failed", "failure", "unknown":
 		return otellog.SeverityError
-	case "blocked", "conflict", "drift", "partial", "retry":
+	case "blocked", "conflict", "degraded", "drift", "partial", "retry":
 		return otellog.SeverityWarn
 	default:
 		return otellog.SeverityInfo
@@ -92,6 +92,29 @@ func (s *Service) emitSetUpgradeTransition(ctx context.Context, previous, curren
 		attribute.String("llmgateway.set.id", current.SetID),
 		attribute.Int64("llmgateway.runtime.from_generation", current.FromGeneration),
 		attribute.Int64("llmgateway.runtime.to_generation", current.ToGeneration),
+	)
+}
+
+func (s *Service) emitReleaseCampaignTransition(ctx context.Context, previous, current ReleaseCampaign) {
+	s.emitCommittedTransition(ctx, observability.ScopeSetLifecycle, "llmgateway.release.state_changed",
+		"release_campaign", current.ID, previous.Status, current.Status,
+		attribute.String("llmgateway.run.id", current.ID),
+		attribute.String("llmgateway.release.id", current.TargetReleaseID),
+		attribute.String("llmgateway.fleet", current.Fleet),
+		attribute.String("llmgateway.ring.id", current.CurrentRingID),
+	)
+}
+
+func (s *Service) emitReleaseCampaignRingTransition(ctx context.Context, previous, current ReleaseCampaignRing) {
+	if current.CampaignID == "" {
+		return
+	}
+	s.emitCommittedTransition(ctx, observability.ScopeSetLifecycle, "llmgateway.release.state_changed",
+		"release_campaign_ring", current.CampaignID+":"+current.RingID, previous.Status, current.Status,
+		attribute.String("llmgateway.run.id", current.CampaignID),
+		attribute.String("llmgateway.ring.id", current.RingID),
+		attribute.Int("llmgateway.ring.sequence", current.Sequence),
+		attribute.String("llmgateway.rollout.id", current.RolloutID),
 	)
 }
 

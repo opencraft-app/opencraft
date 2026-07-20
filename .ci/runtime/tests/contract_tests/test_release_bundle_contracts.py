@@ -242,6 +242,20 @@ class ReleaseBundleContractTests(unittest.TestCase):
         app = yaml.safe_load((REPO_ROOT / "argocd/apps/beijing-llmgateway/velagw.yaml").read_text())
         cluster = yaml.safe_load((REPO_ROOT / "argocd/clusters/beijing-llmgateway.yaml").read_text())
         workloads = (REPO_ROOT / "argocd/services/velagw/beijing-llmgateway/workloads.yaml").read_text()
+        workload_docs = list(yaml.safe_load_all(workloads))
+        traffic = next(
+            doc
+            for doc in workload_docs
+            if doc
+            and doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-traffic"
+        )
+        traffic_container = next(
+            container
+            for container in traffic["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "traffic"
+        )
+        traffic_env = {entry["name"]: entry.get("value") for entry in traffic_container.get("env", [])}
 
         self.assertEqual(bundle.image_repo, "lightclaw-bj82.tencentcloudcr.com/llmgateway/llmgateway")
         self.assertEqual(parameters.get("SERVICE"), "velagw")
@@ -254,6 +268,36 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("argocd/services/velagw/beijing-llmgateway/**", bundle.publish_paths)
         self.assertNotIn("kind: Secret", workloads)
         self.assertNotIn("kind: LLMFleet", workloads)
+        self.assertEqual(traffic_env.get("LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED"), "true")
+
+    def test_velagw_beijing_otel_version_matches_subtree_source(self) -> None:
+        marker = {}
+        for line in (REPO_ROOT / "velagw/.mono2-subtree").read_text().splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                marker[key] = value
+        expected_version = marker["upstream_commit"][:7]
+
+        workloads = yaml.safe_load_all(
+            (REPO_ROOT / "argocd/services/velagw/beijing-llmgateway/workloads.yaml").read_text()
+        )
+        actual_versions = {}
+        for workload in workloads:
+            if not workload or workload.get("kind") not in {"Deployment", "CronJob"}:
+                continue
+            if workload["kind"] == "CronJob":
+                pod_spec = workload["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+            else:
+                pod_spec = workload["spec"]["template"]["spec"]
+            for container in pod_spec.get("containers", []):
+                env = {entry["name"]: entry.get("value") for entry in container.get("env", [])}
+                if "OTEL_SERVICE_VERSION" in env:
+                    actual_versions[f"{workload['kind']}/{workload['metadata']['name']}/{container['name']}"] = env[
+                        "OTEL_SERVICE_VERSION"
+                    ]
+
+        self.assertTrue(actual_versions)
+        self.assertEqual(set(actual_versions.values()), {expected_version}, actual_versions)
 
     def test_workers_shanghai_overlay_uses_temporal_worker_deployment(self) -> None:
         rescue_deployment = yaml.safe_load(

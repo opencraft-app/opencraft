@@ -70,6 +70,31 @@ func TestShardDetailComputesLogicalConnectionBudget(t *testing.T) {
 	}
 }
 
+func TestShardDetailCountsAdminAndEveryTrafficReplica(t *testing.T) {
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	if err := svc.UpsertShard(t.Context(), UpsertShardInput{
+		ID: "shard-a", MaxConnections: testInt(1000), ReservedConnections: testInt(232),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RegisterSet(t.Context(), RegisterSetInput{
+		ID: "set-a", BaseURL: "http://set-a", Status: SetStatusActive, ShardID: "shard-a",
+		NewAPIReplicas: testInt(2), SQLMaxOpenConns: testInt(16), TrafficSQLMaxOpenConns: testInt(7),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	detail, err := svc.GetShardDetail(t.Context(), "shard-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.LogicalConnections != 30 || detail.Sets[0].LogicalConnections != 30 {
+		t.Fatalf("logical connections = %d set=%d, want admin 16 + 2 traffic * 7 = 30",
+			detail.LogicalConnections, detail.Sets[0].LogicalConnections)
+	}
+}
+
 func TestShardDetailProjectsRedisDBAllocationPerSet(t *testing.T) {
 	store := NewMemoryStore()
 	svc := NewService(store, nil, Options{})

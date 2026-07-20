@@ -50,6 +50,7 @@ const (
 	ChannelBundleKind              = "newapi-channel-bundle"
 	ChannelBundleStepCreateChannel = "create_channel"
 	ChannelBundleStepUpdateChannel = "update_channel"
+	ChannelBundleStepUpdateOption  = "update_option"
 	ChannelBundleStepNoop          = "noop"
 
 	LLMRouteBYOKFirst     = "byok_first"
@@ -108,6 +109,7 @@ const (
 	WorkerJobRefreshTenantStatistics   = "refresh_tenant_statistics"
 	WorkerJobPublishAPIKeyRoutes       = "publish_api_key_routes"
 	WorkerJobReconcileShardExpansions  = "reconcile_shard_expansions"
+	WorkerJobReconcileReleaseCampaigns = "reconcile_release_campaigns"
 
 	GroupRatioSourcePlatform = "platform"
 	GroupRatioSourceBYOK     = "byok"
@@ -166,6 +168,12 @@ const (
 	SetAdminHealthUnhealthy = "unhealthy"
 )
 
+const (
+	SetRuntimeHAPending  = "pending"
+	SetRuntimeHAHealthy  = "healthy"
+	SetRuntimeHADegraded = "degraded"
+)
+
 type Set struct {
 	ID                             string    `json:"id"`
 	Name                           string    `json:"name"`
@@ -194,6 +202,13 @@ type Set struct {
 	TrafficSQLMaxIdleConns         int       `json:"traffic_sql_max_idle_conns,omitempty"`
 	TrafficSQLMaxLifetimeSeconds   int       `json:"traffic_sql_max_lifetime_seconds,omitempty"`
 	SubscriptionWriteConcurrency   int       `json:"subscription_write_concurrency,omitempty"`
+	RuntimeHAStatus                string    `json:"runtime_ha_status,omitempty"`
+	RuntimeHADesiredReplicas       int       `json:"runtime_ha_desired_replicas,omitempty"`
+	RuntimeHAReadyReplicas         int       `json:"runtime_ha_ready_replicas,omitempty"`
+	RuntimeHAPDBHealthy            bool      `json:"runtime_ha_pdb_healthy,omitempty"`
+	RuntimeHATopologyKey           string    `json:"runtime_ha_topology_key,omitempty"`
+	RuntimeHAError                 string    `json:"runtime_ha_error,omitempty"`
+	RuntimeHACheckedAt             time.Time `json:"runtime_ha_checked_at,omitempty"`
 	AdminHealthStatus              string    `json:"admin_health_status,omitempty"`
 	AdminHealthConsecutiveFailures int       `json:"admin_health_consecutive_failures,omitempty"`
 	AdminHealthError               string    `json:"admin_health_error,omitempty"`
@@ -322,6 +337,18 @@ const (
 	ReleaseRolloutStatusPaused    = "paused"
 	ReleaseRolloutStatusCompleted = "completed"
 	ReleaseRolloutStatusFailed    = "failed"
+
+	ReleaseCampaignStatusPending   = "pending"
+	ReleaseCampaignStatusRunning   = "running"
+	ReleaseCampaignStatusSoaking   = "soaking"
+	ReleaseCampaignStatusPaused    = "paused"
+	ReleaseCampaignStatusCompleted = "completed"
+
+	ReleaseCampaignRingStatusPending   = "pending"
+	ReleaseCampaignRingStatusRunning   = "running"
+	ReleaseCampaignRingStatusSoaking   = "soaking"
+	ReleaseCampaignRingStatusPaused    = "paused"
+	ReleaseCampaignRingStatusCompleted = "completed"
 )
 
 type NewAPIRelease struct {
@@ -358,18 +385,56 @@ type ReleaseRing struct {
 }
 
 type ReleaseRollout struct {
-	ID              string          `json:"id"`
-	RingID          string          `json:"ring_id"`
-	TargetReleaseID string          `json:"target_release_id"`
-	BatchID         string          `json:"batch_id"`
-	Status          string          `json:"status"`
-	TotalSets       int             `json:"total_sets"`
-	CompletedSets   int             `json:"completed_sets"`
-	FailedSets      int             `json:"failed_sets"`
-	CurrentSetID    string          `json:"current_set_id,omitempty"`
-	Batch           SetUpgradeBatch `json:"batch,omitempty"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	ID                string          `json:"id"`
+	RingID            string          `json:"ring_id"`
+	TargetReleaseID   string          `json:"target_release_id"`
+	BatchID           string          `json:"batch_id"`
+	Status            string          `json:"status"`
+	TotalSets         int             `json:"total_sets"`
+	CompletedSets     int             `json:"completed_sets"`
+	FailedSets        int             `json:"failed_sets"`
+	CurrentSetID      string          `json:"current_set_id,omitempty"`
+	CampaignID        string          `json:"campaign_id,omitempty"`
+	CampaignSequence  int             `json:"campaign_sequence,omitempty"`
+	SoakStartedAt     time.Time       `json:"soak_started_at,omitempty"`
+	SoakDeadline      time.Time       `json:"soak_deadline,omitempty"`
+	LastGateCheckedAt time.Time       `json:"last_gate_checked_at,omitempty"`
+	LastGateError     string          `json:"last_gate_error,omitempty"`
+	Batch             SetUpgradeBatch `json:"batch,omitempty"`
+	CreatedAt         time.Time       `json:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at"`
+}
+
+type ReleaseCampaign struct {
+	ID               string                `json:"id"`
+	Source           string                `json:"source"`
+	Namespace        string                `json:"namespace"`
+	Fleet            string                `json:"fleet"`
+	TargetReleaseID  string                `json:"target_release_id"`
+	Status           string                `json:"status"`
+	CurrentRingID    string                `json:"current_ring_id,omitempty"`
+	CurrentRolloutID string                `json:"current_rollout_id,omitempty"`
+	TotalRings       int                   `json:"total_rings"`
+	CompletedRings   int                   `json:"completed_rings"`
+	LastError        string                `json:"last_error,omitempty"`
+	Rings            []ReleaseCampaignRing `json:"rings,omitempty"`
+	CreatedAt        time.Time             `json:"created_at"`
+	UpdatedAt        time.Time             `json:"updated_at"`
+}
+
+type ReleaseCampaignRing struct {
+	CampaignID string    `json:"campaign_id"`
+	Sequence   int       `json:"sequence"`
+	RingID     string    `json:"ring_id"`
+	Status     string    `json:"status"`
+	RolloutID  string    `json:"rollout_id,omitempty"`
+	LastError  string    `json:"last_error,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type CreateReleaseCampaignInput struct {
+	TargetReleaseID string `json:"target_release_id"`
 }
 
 type CreateNewAPIReleaseInput struct {
@@ -398,10 +463,12 @@ type UpsertReleaseRingInput struct {
 }
 
 type CreateReleaseRolloutInput struct {
-	RingID          string        `json:"ring_id"`
-	TargetReleaseID string        `json:"target_release_id"`
-	DrainTimeout    time.Duration `json:"-"`
-	RollbackWindow  time.Duration `json:"-"`
+	RingID           string        `json:"ring_id"`
+	TargetReleaseID  string        `json:"target_release_id"`
+	DrainTimeout     time.Duration `json:"-"`
+	RollbackWindow   time.Duration `json:"-"`
+	CampaignID       string        `json:"-"`
+	CampaignSequence int           `json:"-"`
 }
 
 type SetRuntimeRouteOutbox struct {
@@ -756,6 +823,13 @@ type SetReconcileFact struct {
 	TrafficSQLMaxIdleConns       int       `json:"traffic_sql_max_idle_conns,omitempty"`
 	TrafficSQLMaxLifetimeSeconds int       `json:"traffic_sql_max_lifetime_seconds,omitempty"`
 	SubscriptionWriteConcurrency int       `json:"subscription_write_concurrency,omitempty"`
+	RuntimeHAStatus              string    `json:"runtime_ha_status,omitempty"`
+	RuntimeHADesiredReplicas     int       `json:"runtime_ha_desired_replicas,omitempty"`
+	RuntimeHAReadyReplicas       int       `json:"runtime_ha_ready_replicas,omitempty"`
+	RuntimeHAPDBHealthy          bool      `json:"runtime_ha_pdb_healthy,omitempty"`
+	RuntimeHATopologyKey         string    `json:"runtime_ha_topology_key,omitempty"`
+	RuntimeHAError               string    `json:"runtime_ha_error,omitempty"`
+	RuntimeHACheckedAt           time.Time `json:"runtime_ha_checked_at,omitempty"`
 	DesiredHash                  string    `json:"desired_hash"`
 	Status                       string    `json:"status"`
 	LastError                    string    `json:"last_error,omitempty"`
@@ -766,22 +840,29 @@ type SetReconcileFact struct {
 }
 
 type SetReconcileFactInput struct {
-	SetID                        string `json:"set_id"`
-	Name                         string `json:"name"`
-	BaseURL                      string `json:"base_url"`
-	TrafficBaseURL               string `json:"traffic_base_url,omitempty"`
-	RuntimeGeneration            int64  `json:"runtime_generation,omitempty"`
-	RuntimeImage                 string `json:"runtime_image,omitempty"`
-	ShardRef                     string `json:"shard_ref,omitempty"`
-	DatabaseName                 string `json:"database_name,omitempty"`
-	RedisDB                      string `json:"redis_db,omitempty"`
-	SQLMaxOpenConns              int    `json:"sql_max_open_conns,omitempty"`
-	SQLMaxIdleConns              int    `json:"sql_max_idle_conns,omitempty"`
-	SQLMaxLifetimeSeconds        int    `json:"sql_max_lifetime_seconds,omitempty"`
-	TrafficSQLMaxOpenConns       int    `json:"traffic_sql_max_open_conns,omitempty"`
-	TrafficSQLMaxIdleConns       int    `json:"traffic_sql_max_idle_conns,omitempty"`
-	TrafficSQLMaxLifetimeSeconds int    `json:"traffic_sql_max_lifetime_seconds,omitempty"`
-	SubscriptionWriteConcurrency int    `json:"subscription_write_concurrency,omitempty"`
+	SetID                        string    `json:"set_id"`
+	Name                         string    `json:"name"`
+	BaseURL                      string    `json:"base_url"`
+	TrafficBaseURL               string    `json:"traffic_base_url,omitempty"`
+	RuntimeGeneration            int64     `json:"runtime_generation,omitempty"`
+	RuntimeImage                 string    `json:"runtime_image,omitempty"`
+	ShardRef                     string    `json:"shard_ref,omitempty"`
+	DatabaseName                 string    `json:"database_name,omitempty"`
+	RedisDB                      string    `json:"redis_db,omitempty"`
+	SQLMaxOpenConns              int       `json:"sql_max_open_conns,omitempty"`
+	SQLMaxIdleConns              int       `json:"sql_max_idle_conns,omitempty"`
+	SQLMaxLifetimeSeconds        int       `json:"sql_max_lifetime_seconds,omitempty"`
+	TrafficSQLMaxOpenConns       int       `json:"traffic_sql_max_open_conns,omitempty"`
+	TrafficSQLMaxIdleConns       int       `json:"traffic_sql_max_idle_conns,omitempty"`
+	TrafficSQLMaxLifetimeSeconds int       `json:"traffic_sql_max_lifetime_seconds,omitempty"`
+	SubscriptionWriteConcurrency int       `json:"subscription_write_concurrency,omitempty"`
+	RuntimeHAStatus              string    `json:"runtime_ha_status,omitempty"`
+	RuntimeHADesiredReplicas     int       `json:"runtime_ha_desired_replicas,omitempty"`
+	RuntimeHAReadyReplicas       int       `json:"runtime_ha_ready_replicas,omitempty"`
+	RuntimeHAPDBHealthy          bool      `json:"runtime_ha_pdb_healthy,omitempty"`
+	RuntimeHATopologyKey         string    `json:"runtime_ha_topology_key,omitempty"`
+	RuntimeHAError               string    `json:"runtime_ha_error,omitempty"`
+	RuntimeHACheckedAt           time.Time `json:"runtime_ha_checked_at,omitempty"`
 }
 
 type RecordSetReconcileFactsInput struct {
@@ -900,6 +981,8 @@ type SetCapacityResult struct {
 	Policy            SetCapacityPolicy        `json:"policy"`
 	ReadySets         int                      `json:"ready_sets"`
 	ReadyFreeUsers    int                      `json:"ready_free_users"`
+	CapacitySets      int                      `json:"capacity_sets"`
+	CapacityFreeUsers int                      `json:"capacity_free_users"`
 	RequiredFreeUsers int                      `json:"required_free_users"`
 	InflightRequests  int                      `json:"inflight_requests"`
 	InflightFreeUsers int                      `json:"inflight_free_users"`
@@ -1767,13 +1850,14 @@ type OperationalOverview struct {
 }
 
 type OperationalOverviewTotals struct {
-	Sets               int `json:"sets"`
-	ActiveSets         int `json:"active_sets"`
-	ReadySets          int `json:"ready_sets"`
-	Users              int `json:"users"`
-	AvailableUserSlots int `json:"available_user_slots,omitempty"`
-	FullSets           int `json:"full_sets,omitempty"`
-	ChannelDrifts      int `json:"channel_drifts"`
+	Sets                  int `json:"sets"`
+	ActiveSets            int `json:"active_sets"`
+	ReadySets             int `json:"ready_sets"`
+	Users                 int `json:"users"`
+	AvailableUserSlots    int `json:"available_user_slots,omitempty"`
+	FullSets              int `json:"full_sets,omitempty"`
+	ChannelDrifts         int `json:"channel_drifts"`
+	RuntimeHADegradedSets int `json:"runtime_ha_degraded_sets,omitempty"`
 }
 
 type BackgroundJobsOverview struct {
@@ -1784,30 +1868,37 @@ type BackgroundJobsOverview struct {
 }
 
 type SetOverview struct {
-	ID                   string    `json:"id"`
-	Name                 string    `json:"name"`
-	Status               string    `json:"status"`
-	Setup                bool      `json:"setup"`
-	Ready                bool      `json:"ready"`
-	UserCount            int       `json:"user_count"`
-	MaxUsers             int       `json:"max_users,omitempty"`
-	WarnUsers            int       `json:"warn_users,omitempty"`
-	ReservedUsers        int       `json:"reserved_users,omitempty"`
-	FreeUsers            int       `json:"free_users,omitempty"`
-	AcceptingNewUsers    bool      `json:"accepting_new_users"`
-	CapacityStatus       string    `json:"capacity_status,omitempty"`
-	CapacityUpdatedAt    time.Time `json:"capacity_updated_at,omitempty"`
-	AdmissionStatus      string    `json:"admission_status,omitempty"`
-	AdmissionError       string    `json:"admission_error,omitempty"`
-	AdmissionCheckedAt   time.Time `json:"admission_checked_at,omitempty"`
-	AdminHealthStatus    string    `json:"admin_health_status,omitempty"`
-	AdminHealthError     string    `json:"admin_health_error,omitempty"`
-	AdminHealthCheckedAt time.Time `json:"admin_health_checked_at,omitempty"`
-	LastError            string    `json:"last_error,omitempty"`
-	LastErrorAt          time.Time `json:"last_error_at,omitempty"`
-	LastReconciledAt     time.Time `json:"last_reconciled_at,omitempty"`
-	LastProvisionStatus  string    `json:"last_provision_status,omitempty"`
-	UpdatedAt            time.Time `json:"updated_at,omitempty"`
+	ID                       string    `json:"id"`
+	Name                     string    `json:"name"`
+	Status                   string    `json:"status"`
+	Setup                    bool      `json:"setup"`
+	Ready                    bool      `json:"ready"`
+	UserCount                int       `json:"user_count"`
+	MaxUsers                 int       `json:"max_users,omitempty"`
+	WarnUsers                int       `json:"warn_users,omitempty"`
+	ReservedUsers            int       `json:"reserved_users,omitempty"`
+	FreeUsers                int       `json:"free_users,omitempty"`
+	AcceptingNewUsers        bool      `json:"accepting_new_users"`
+	CapacityStatus           string    `json:"capacity_status,omitempty"`
+	CapacityUpdatedAt        time.Time `json:"capacity_updated_at,omitempty"`
+	AdmissionStatus          string    `json:"admission_status,omitempty"`
+	AdmissionError           string    `json:"admission_error,omitempty"`
+	AdmissionCheckedAt       time.Time `json:"admission_checked_at,omitempty"`
+	AdminHealthStatus        string    `json:"admin_health_status,omitempty"`
+	AdminHealthError         string    `json:"admin_health_error,omitempty"`
+	AdminHealthCheckedAt     time.Time `json:"admin_health_checked_at,omitempty"`
+	RuntimeHAStatus          string    `json:"runtime_ha_status,omitempty"`
+	RuntimeHADesiredReplicas int       `json:"runtime_ha_desired_replicas,omitempty"`
+	RuntimeHAReadyReplicas   int       `json:"runtime_ha_ready_replicas,omitempty"`
+	RuntimeHAPDBHealthy      bool      `json:"runtime_ha_pdb_healthy,omitempty"`
+	RuntimeHATopologyKey     string    `json:"runtime_ha_topology_key,omitempty"`
+	RuntimeHAError           string    `json:"runtime_ha_error,omitempty"`
+	RuntimeHACheckedAt       time.Time `json:"runtime_ha_checked_at,omitempty"`
+	LastError                string    `json:"last_error,omitempty"`
+	LastErrorAt              time.Time `json:"last_error_at,omitempty"`
+	LastReconciledAt         time.Time `json:"last_reconciled_at,omitempty"`
+	LastProvisionStatus      string    `json:"last_provision_status,omitempty"`
+	UpdatedAt                time.Time `json:"updated_at,omitempty"`
 }
 
 type ChannelBundleOverview struct {
@@ -1892,8 +1983,9 @@ type WorkerJobListOptions struct {
 }
 
 type WorkerJobRunListOptions struct {
-	JobName string
-	Limit   int
+	JobName          string
+	StartedAtOrAfter time.Time
+	Limit            int
 }
 
 type SubscriptionPeriodOverlay struct {

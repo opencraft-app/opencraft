@@ -179,6 +179,12 @@ func (s *MemoryStore) TryAcquireSetUpgradeRun(_ context.Context, id, owner strin
 		if !ok {
 			return SetUpgradeRun{}, false, fmt.Errorf("upgrade batch %q not found", run.BatchID)
 		}
+		if rollout, ok := s.releaseRollouts[batch.RolloutID]; ok && rollout.CampaignID != "" {
+			campaign, ok := s.releaseCampaigns[rollout.CampaignID]
+			if !ok || campaign.Status == ReleaseCampaignStatusPaused || campaign.Status == ReleaseCampaignStatusCompleted {
+				return SetUpgradeRun{}, false, nil
+			}
+		}
 		active := 0
 		for _, candidate := range s.setUpgradeRuns {
 			if candidate.BatchID != run.BatchID || candidate.ID == run.ID {

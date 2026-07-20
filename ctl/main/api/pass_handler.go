@@ -164,6 +164,16 @@ func (h *passHandler) modifyPass(w http.ResponseWriter, r *http.Request) {
 	writeSuccess(w, r, http.StatusOK, detailToPassResponse(detail))
 }
 
+// handleAdminPassBillingMigration POST /admin/api/ctl/passes/billing-migration
+func (h *passHandler) handleAdminPassBillingMigration(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	h.handlePassBillingMigration(w, r)
+}
+
 // describePasses GET /v1/passes — 用户可见
 func (h *passHandler) describePasses(w http.ResponseWriter, r *http.Request) {
 	ctx, ok := newRequestContext(r)
@@ -443,6 +453,8 @@ func (h *passHandler) handleInternalPasses(w http.ResponseWriter, r *http.Reques
 		switch parts[0] {
 		case "complete":
 			h.completePass(w, r)
+		case "billing-migration":
+			h.internalPassBillingMigration(w, r)
 		case "app-ids":
 			h.listInternalPassAppIDs(w, r)
 		case "by-app":
@@ -692,6 +704,30 @@ func (h *passHandler) completePass(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeSuccess(w, r, http.StatusOK, detailToPassResponse(detail))
+}
+
+// internalPassBillingMigration POST /internal/ctl/passes/billing-migration
+func (h *passHandler) internalPassBillingMigration(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	h.handlePassBillingMigration(w, r)
+}
+
+func (h *passHandler) handlePassBillingMigration(w http.ResponseWriter, r *http.Request) {
+	var req transport.PassBillingMigrationRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+	result, err := h.logic.MigrateFreeTrialPassToBilling(&req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
 }
 
 // detailToPassResponse 将 PassDetail 转换为 admin / internal 接口响应（含 uin/app_id 等内部字段）

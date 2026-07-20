@@ -1137,6 +1137,98 @@ func TestPlaceOrderAndPay_HappyPath(t *testing.T) {
 	}
 }
 
+func TestMoveInOrderAndPay_HappyPath(t *testing.T) {
+	d := newStdDeps()
+	d.jifei.generateDealsAndPayFn = func(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+		return &jifeiclient.GenerateDealsAndPayResponse{
+			DealNames:  []string{"20260720000000001-001"},
+			BigDealIDs: []string{"20260720000000001"},
+		}, nil
+	}
+
+	resp, err := d.service.MoveInOrderAndPay(context.Background(), MoveInOrderRequest{
+		ExternalUserID: "usr_migrate",
+		Uin:            "700000164995",
+		AppID:          "251202221",
+		BundleID:       "bundle_launch_01",
+		ResourceID:     "pass-free-1",
+		CurDeadline:    "2026-07-20 12:00:00",
+	})
+	if err != nil {
+		t.Fatalf("MoveInOrderAndPay: %v", err)
+	}
+	if resp.DealName != "20260720000000001-001" || resp.BigOrderID != "20260720000000001" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Fatalf("move-in must not persist trade_order, got calls=%d", d.writer.createOrderCalls.Load())
+	}
+
+	got := d.jifei.lastGenerateDealsAndPayReq
+	if got == nil {
+		t.Fatal("lastGenerateDealsAndPayReq is nil")
+	}
+	if got.ClientToken != "lightvela-move-in:pass-free-1:bundle_launch_01" {
+		t.Errorf("ClientToken = %q", got.ClientToken)
+	}
+	goods := got.Goods[0]
+	if goods.GoodsCategoryID != 176262 || goods.Action != "preMoveIn" || goods.Type != "postMoveIn" {
+		t.Fatalf("move-in goods mismatch: %+v", goods)
+	}
+	detail := goods.GoodsDetail
+	if detail["resourceId"] != "pass-free-1" || detail["bundleId"] != "bundle_launch_01" || detail["externalUserId"] != "usr_migrate" {
+		t.Fatalf("move-in identity detail mismatch: %+v", detail)
+	}
+	if detail["timeSpan"] != 1 || detail["timeUnit"] != "m" {
+		t.Fatalf("move-in period mismatch: %+v", detail)
+	}
+	if detail["curDeadline"] != "2026-07-20 12:00:00" {
+		t.Fatalf("curDeadline = %v", detail["curDeadline"])
+	}
+	billingParam, ok := detail["billingParam"].(map[string]interface{})
+	if !ok || billingParam["resourcesSource"] != "lightvela" {
+		t.Fatalf("billingParam mismatch: %+v", detail["billingParam"])
+	}
+}
+
+func TestMoveInOrderAndPay_InvalidInput(t *testing.T) {
+	base := MoveInOrderRequest{
+		ExternalUserID: "usr_migrate",
+		Uin:            "700000164995",
+		AppID:          "251202221",
+		BundleID:       "bundle_launch_01",
+		ResourceID:     "pass-free-1",
+		CurDeadline:    "2026-07-20 12:00:00",
+	}
+	cases := []struct {
+		name string
+		mut  func(*MoveInOrderRequest)
+		want string
+	}{
+		{"missing external_user_id", func(req *MoveInOrderRequest) { req.ExternalUserID = "" }, "external_user_id"},
+		{"missing uin", func(req *MoveInOrderRequest) { req.Uin = "" }, "uin"},
+		{"missing app_id", func(req *MoveInOrderRequest) { req.AppID = "" }, "app_id"},
+		{"missing bundle_id", func(req *MoveInOrderRequest) { req.BundleID = "" }, "bundle_id"},
+		{"missing resource_id", func(req *MoveInOrderRequest) { req.ResourceID = "" }, "resource_id"},
+		{"missing cur_deadline", func(req *MoveInOrderRequest) { req.CurDeadline = "" }, "cur_deadline"},
+		{"bad cur_deadline", func(req *MoveInOrderRequest) { req.CurDeadline = "2026-07-20T12:00:00Z" }, "cur_deadline"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newStdDeps()
+			req := base
+			tc.mut(&req)
+			_, err := d.service.MoveInOrderAndPay(context.Background(), req)
+			if !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("expected ErrInvalidInput, got %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %q, want contains %q", err.Error(), tc.want)
+			}
+		})
+	}
+}
+
 // TestPlaceOrderAndPay_GenerateDealsAndPayFailure：jifei generateDealsAndPay 业务失败时
 //   - 错误透传（带 placeorder: jifei GenerateDealsAndPay: ... 前缀）
 //   - trade_order 不写库（避免本地有孤立 paid 状态）

@@ -28,6 +28,7 @@ var defaultWorkerJobs = []WorkerJob{
 	{Name: WorkerJobRefreshTenantStatistics, Kind: WorkerJobRefreshTenantStatistics, Enabled: true, IntervalSeconds: 600},
 	{Name: WorkerJobPublishAPIKeyRoutes, Kind: WorkerJobPublishAPIKeyRoutes, Enabled: true, IntervalSeconds: 30},
 	{Name: WorkerJobReconcileShardExpansions, Kind: WorkerJobReconcileShardExpansions, Enabled: true, IntervalSeconds: 30},
+	{Name: WorkerJobReconcileReleaseCampaigns, Kind: WorkerJobReconcileReleaseCampaigns, Enabled: true, IntervalSeconds: 10},
 }
 
 const defaultBYOKSyncBatchSize = 1000
@@ -49,7 +50,7 @@ func (s *Service) GetOperationalOverview(ctx context.Context) (OperationalOvervi
 	if err != nil {
 		return OperationalOverview{}, err
 	}
-	bundles, err := s.store.ListChannelBundles(ctx)
+	bundles, err := s.desiredChannelBundles(ctx)
 	if err != nil {
 		return OperationalOverview{}, err
 	}
@@ -80,6 +81,9 @@ func (s *Service) GetOperationalOverview(ctx context.Context) (OperationalOvervi
 		if ready {
 			overview.Totals.ReadySets++
 		}
+		if set.RuntimeHADesiredReplicas > 0 && set.RuntimeHAStatus != SetRuntimeHAHealthy {
+			overview.Totals.RuntimeHADegradedSets++
+		}
 		users := userCounts[set.ID]
 		overview.Totals.Users += users
 		capacity := setCapacitySnapshot(set, users, 0)
@@ -90,30 +94,42 @@ func (s *Service) GetOperationalOverview(ctx context.Context) (OperationalOvervi
 			overview.Totals.FullSets++
 		}
 		item := SetOverview{
-			ID:                   set.ID,
-			Name:                 set.Name,
-			Status:               set.Status,
-			Setup:                set.Setup,
-			Ready:                ready,
-			UserCount:            users,
-			MaxUsers:             capacity.MaxUsers,
-			WarnUsers:            capacity.WarnUsers,
-			ReservedUsers:        capacity.ReservedUsers,
-			FreeUsers:            capacity.FreeUsers,
-			AcceptingNewUsers:    ready && capacity.AcceptingNewUsers,
-			CapacityStatus:       capacity.Status,
-			CapacityUpdatedAt:    set.CapacityUpdatedAt,
-			AdmissionStatus:      firstNonEmpty(set.AdmissionStatus, SetAdmissionStatusPending),
-			AdmissionError:       set.AdmissionError,
-			AdmissionCheckedAt:   set.AdmissionCheckedAt,
-			AdminHealthStatus:    firstNonEmpty(set.AdminHealthStatus, "unknown"),
-			AdminHealthError:     set.AdminHealthError,
-			AdminHealthCheckedAt: set.AdminHealthCheckedAt,
-			UpdatedAt:            set.UpdatedAt,
+			ID:                       set.ID,
+			Name:                     set.Name,
+			Status:                   set.Status,
+			Setup:                    set.Setup,
+			Ready:                    ready,
+			UserCount:                users,
+			MaxUsers:                 capacity.MaxUsers,
+			WarnUsers:                capacity.WarnUsers,
+			ReservedUsers:            capacity.ReservedUsers,
+			FreeUsers:                capacity.FreeUsers,
+			AcceptingNewUsers:        ready && capacity.AcceptingNewUsers,
+			CapacityStatus:           capacity.Status,
+			CapacityUpdatedAt:        set.CapacityUpdatedAt,
+			AdmissionStatus:          firstNonEmpty(set.AdmissionStatus, SetAdmissionStatusPending),
+			AdmissionError:           set.AdmissionError,
+			AdmissionCheckedAt:       set.AdmissionCheckedAt,
+			AdminHealthStatus:        firstNonEmpty(set.AdminHealthStatus, "unknown"),
+			AdminHealthError:         set.AdminHealthError,
+			AdminHealthCheckedAt:     set.AdminHealthCheckedAt,
+			RuntimeHAStatus:          set.RuntimeHAStatus,
+			RuntimeHADesiredReplicas: set.RuntimeHADesiredReplicas,
+			RuntimeHAReadyReplicas:   set.RuntimeHAReadyReplicas,
+			RuntimeHAPDBHealthy:      set.RuntimeHAPDBHealthy,
+			RuntimeHATopologyKey:     set.RuntimeHATopologyKey,
+			RuntimeHAError:           set.RuntimeHAError,
+			RuntimeHACheckedAt:       set.RuntimeHACheckedAt,
+			UpdatedAt:                set.UpdatedAt,
 		}
 		if set.AdminHealthStatus == SetAdminHealthUnhealthy {
 			overview.Alerts = append(overview.Alerts, OperationalAlert{
 				Kind: "set_admin_unhealthy", Severity: "critical", Message: set.AdminHealthError, SetID: set.ID, CreatedAt: set.AdminHealthCheckedAt,
+			})
+		}
+		if set.RuntimeHADesiredReplicas > 0 && set.RuntimeHAStatus != SetRuntimeHAHealthy {
+			overview.Alerts = append(overview.Alerts, OperationalAlert{
+				Kind: "set_runtime_ha_degraded", Severity: "critical", Message: firstNonEmpty(set.RuntimeHAError, "Set traffic runtime 高可用未就绪"), SetID: set.ID, CreatedAt: firstNonZeroTime(set.RuntimeHACheckedAt, now),
 			})
 		}
 		if fact, ok := lastFactError[set.ID]; ok {
@@ -289,6 +305,29 @@ func (s *Service) QueueWorkerJobNow(ctx context.Context, name string) (WorkerJob
 	}, nil
 }
 
+func (s *Service) ListWorkerJobRuns(ctx context.Context, name string, startedAtOrAfter time.Time, limit int) ([]WorkerJobRun, bool, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, false, nil
+	}
+	if err := s.ensureDefaultWorkerJobs(ctx); err != nil {
+		return nil, false, err
+	}
+	if _, ok, err := s.store.GetWorkerJob(ctx, name); err != nil || !ok {
+		return nil, ok, err
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	runs, err := s.store.ListWorkerJobRuns(ctx, WorkerJobRunListOptions{
+		JobName: name, StartedAtOrAfter: startedAtOrAfter.UTC(), Limit: limit,
+	})
+	return runs, true, err
+}
+
 func (s *Service) RetryFailedBYOKSyncTasks(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {
 		limit = defaultBYOKSyncBatchSize
@@ -426,7 +465,7 @@ func (s *Service) runWorkerJobBody(ctx context.Context, job *WorkerJob) (string,
 			return "disabled", nil
 		}
 		result, err := s.ReconcileSetCapacity(ctx, s.options.WorkerSetCapacityPolicy)
-		return fmt.Sprintf("ready_sets=%d ready_free=%d required_free=%d inflight=%d created=%d deficit=%d", result.ReadySets, result.ReadyFreeUsers, result.RequiredFreeUsers, result.InflightRequests, result.CreatedRequests, result.DeficitUsers), err
+		return fmt.Sprintf("ready_sets=%d ready_free=%d capacity_sets=%d capacity_free=%d required_free=%d inflight=%d created=%d deficit=%d", result.ReadySets, result.ReadyFreeUsers, result.CapacitySets, result.CapacityFreeUsers, result.RequiredFreeUsers, result.InflightRequests, result.CreatedRequests, result.DeficitUsers), err
 	case WorkerJobCheckChannelDrift:
 		checked, failed, err := s.checkChannelDriftJob(ctx, job)
 		return fmt.Sprintf("checked=%d failed=%d", checked, failed), err
@@ -475,6 +514,13 @@ func (s *Service) runWorkerJobBody(ctx context.Context, job *WorkerJob) (string,
 	case WorkerJobPublishAPIKeyRoutes:
 		published, failed, err := s.publishAPIKeyRoutesJob(ctx, 200)
 		return fmt.Sprintf("published=%d failed=%d", published, failed), err
+	case WorkerJobReconcileReleaseCampaigns:
+		soaks, soakErr := s.ReconcileReleaseRolloutSoaks(ctx, 50)
+		campaigns, campaignErr := s.ReconcileReleaseCampaigns(ctx, 25)
+		if soakErr != nil {
+			return fmt.Sprintf("soaks=%d campaigns=%d", soaks, campaigns), soakErr
+		}
+		return fmt.Sprintf("soaks=%d campaigns=%d", soaks, campaigns), campaignErr
 	default:
 		return "", fmt.Errorf("unknown worker job %q", job.Name)
 	}
@@ -760,7 +806,7 @@ func decodeChannelDriftCursor(value string) (channelDriftCursor, bool) {
 }
 
 func (s *Service) checkChannelDriftJob(ctx context.Context, job *WorkerJob) (int, int, error) {
-	bundles, err := s.store.ListChannelBundles(ctx)
+	bundles, err := s.desiredChannelBundles(ctx)
 	if err != nil {
 		return 0, 0, err
 	}

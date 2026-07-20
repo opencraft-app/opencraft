@@ -16,11 +16,11 @@ func TestAdminLoginAndSetRegistry(t *testing.T) {
 	svc := gateway.NewService(gateway.NewMemoryStore(), nil, gateway.Options{})
 	handler := NewServer(svc, Config{
 		AdminUsername: "cluster-admin",
-		AdminPassword: "test-local-password",
+		AdminPassword: "Qq373866172!",
 		AdminToken:    "cluster-token",
 	})
 
-	loginBody := bytes.NewBufferString(`{"username":"cluster-admin","password":"test-local-password"}`)
+	loginBody := bytes.NewBufferString(`{"username":"cluster-admin","password":"Qq373866172!"}`)
 	loginReq := httptest.NewRequest(http.MethodPost, "/api/admin/login", loginBody)
 	loginRec := httptest.NewRecorder()
 	handler.ServeHTTP(loginRec, loginReq)
@@ -341,7 +341,7 @@ func TestAdminSetReconcileFactsEndpointConsumesPendingFacts(t *testing.T) {
 	defer upstream.Close()
 
 	store := gateway.NewMemoryStore()
-	svc := gateway.NewService(store, nil, gateway.Options{RootUsername: "set-root", RootPassword: "test-local-password"})
+	svc := gateway.NewService(store, nil, gateway.Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
 	handler := NewServer(svc, Config{AdminToken: "cluster-token"})
 	if _, err := svc.RecordSetReconcileFacts(t.Context(), gateway.RecordSetReconcileFactsInput{
 		Source:    "kro",
@@ -1089,6 +1089,12 @@ func TestAdminChannelBundlesPlanAndApply(t *testing.T) {
 				})
 			}
 			writeJSONForHTTPTest(t, w, map[string]any{"success": true, "data": map[string]any{"items": items, "total": len(items)}})
+		case "GET /api/option/":
+			options := []map[string]any{}
+			if optionUpdated {
+				options = append(options, map[string]any{"key": "ModelRatio", "value": `{"minimax-m2.7":1}`})
+			}
+			writeJSONForHTTPTest(t, w, map[string]any{"success": true, "data": options})
 		case "PUT /api/option/":
 			var req struct {
 				Key   string `json:"key"`

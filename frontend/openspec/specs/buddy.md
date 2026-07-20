@@ -15,7 +15,7 @@ Buddy（AI 搭子）是 Lightclaw 的人设抽卡玩法模块。在 Hermes 实�
 
 | 组件 | 文件 | 职责 |
 |------|------|------|
-| `OpenClawBuddyPanel` | `openclaw-buddy-panel.tsx`（65KB，v0.8） | 抽卡面板主入口，3×3 网格渲染 9 张槽位 |
+| `OpenClawBuddyPanel` | `hermes-agent-buddy-panel.tsx`（65KB，v0.8） | 抽卡面板主入口，3×3 网格渲染 9 张槽位 |
 | `OpenClawBuddyCards` | `openclaw-buddy-cards.tsx` | 卡片列表渲染 |
 | `OpenClawBuddyDrawModal` | `openclaw-buddy-draw-modal.tsx` | 抽卡弹窗 |
 | `OpenClawBuddySoulTestModal` | `openclaw-buddy-soul-test-modal.tsx` | 灵魂测试弹窗 |

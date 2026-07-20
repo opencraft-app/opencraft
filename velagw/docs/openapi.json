@@ -313,6 +313,25 @@
         }
       }
     },
+    "/api/admin/jobs/{job_name}/runs": {
+      "get": {
+        "tags": ["Cluster Admin"],
+        "operationId": "adminListWorkerJobRuns",
+        "summary": "查询后台任务运行记录",
+        "description": "按任务名和 started_at 时间水位查询不可变运行记录，用于恢复验证和运营排障。",
+        "security": [{"AdminBearer": []}],
+        "parameters": [
+          {"name": "job_name", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "after", "in": "query", "required": false, "schema": {"type": "string", "format": "date-time"}},
+          {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 1, "maximum": 200, "default": 20}}
+        ],
+        "responses": {
+          "200": {"description": "按 started_at、id 倒序排列的运行记录。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"description": "任务不存在。"}
+        }
+      }
+    },
     "/api/admin/byok-sync/retry": {
       "post": {
         "tags": [
@@ -3386,6 +3405,60 @@
         }
       }
     },
+    "/api/admin/release-campaigns": {
+      "get": {
+        "tags": ["Cluster Admin"],
+        "operationId": "adminListReleaseCampaigns",
+        "summary": "列出 Fleet 全量发布任务",
+        "security": [{"AdminBearer": []}],
+        "parameters": [{"name": "limit", "in": "query", "schema": {"type": "integer", "default": 50}}],
+        "responses": {"200": {"description": "Campaign 列表。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}
+      },
+      "post": {
+        "tags": ["Cluster Admin"],
+        "operationId": "adminCreateReleaseCampaign",
+        "summary": "按发布环顺序启动 Fleet 全量发布",
+        "description": "系统按 ordinal 严格串行执行发布环；每个发布环内逐个升级 Set，并在完整 soak 时间和健康门禁通过后才进入下一环。",
+        "security": [{"AdminBearer": []}],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"type": "object", "required": ["target_release_id"], "properties": {"target_release_id": {"type": "string"}}}}}
+        },
+        "responses": {"202": {"description": "Campaign 已创建。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}
+      }
+    },
+    "/api/admin/release-campaigns/{campaign_id}": {
+      "get": {
+        "tags": ["Cluster Admin"],
+        "operationId": "adminGetReleaseCampaign",
+        "summary": "查看 Fleet 全量发布进度",
+        "security": [{"AdminBearer": []}],
+        "parameters": [{"name": "campaign_id", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "Campaign 和各发布环状态。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}
+      }
+    },
+    "/api/admin/release-campaigns/{campaign_id}/pause": {
+      "post": {
+        "tags": ["Cluster Admin"],
+        "operationId": "adminPauseReleaseCampaign",
+        "summary": "暂停 Fleet 全量发布",
+        "description": "不再领取新的 Set 升级任务；当前已进入 drain 的 Set 仍按单 Set 状态机安全收尾。",
+        "security": [{"AdminBearer": []}],
+        "parameters": [{"name": "campaign_id", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "Campaign 已暂停。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}
+      }
+    },
+    "/api/admin/release-campaigns/{campaign_id}/resume": {
+      "post": {
+        "tags": ["Cluster Admin"],
+        "operationId": "adminResumeReleaseCampaign",
+        "summary": "恢复 Fleet 全量发布",
+        "description": "健康门禁失败后的恢复会重新开始完整 soak 窗口。",
+        "security": [{"AdminBearer": []}],
+        "parameters": [{"name": "campaign_id", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "Campaign 已恢复。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}
+      }
+    },
     "/api/admin/release-rings": {
       "get": {
         "tags": [
@@ -4921,6 +4994,29 @@
           "newapi_replicas": {
             "type": "integer"
           },
+          "runtime_ha_status": {
+            "type": "string",
+            "enum": ["pending", "healthy", "degraded"]
+          },
+          "runtime_ha_desired_replicas": {
+            "type": "integer"
+          },
+          "runtime_ha_ready_replicas": {
+            "type": "integer"
+          },
+          "runtime_ha_pdb_healthy": {
+            "type": "boolean"
+          },
+          "runtime_ha_topology_key": {
+            "type": "string"
+          },
+          "runtime_ha_error": {
+            "type": "string"
+          },
+          "runtime_ha_checked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
           "sql_max_open_conns": {
             "type": "integer"
           },
@@ -5850,6 +5946,14 @@
           },
           "ready_free_users": {
             "type": "integer"
+          },
+          "capacity_sets": {
+            "type": "integer",
+            "description": "已完成结构化纳管、计入扩容规划的 Set 数；临时健康故障不会从容量库存移除。"
+          },
+          "capacity_free_users": {
+            "type": "integer",
+            "description": "容量规划使用的剩余用户位；与当前可准入用户位分开计算。"
           },
           "required_free_users": {
             "type": "integer"
@@ -8279,6 +8383,40 @@
             }
           }
         ]
+      },
+      "ReleaseCampaignRing": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {"type": "string"},
+          "sequence": {"type": "integer"},
+          "ring_id": {"type": "string"},
+          "status": {"type": "string", "enum": ["pending", "running", "soaking", "paused", "completed"]},
+          "rollout_id": {"type": "string"},
+          "last_error": {"type": "string"},
+          "created_at": {"type": "string", "format": "date-time"},
+          "updated_at": {"type": "string", "format": "date-time"}
+        },
+        "required": ["campaign_id", "sequence", "ring_id", "status"]
+      },
+      "ReleaseCampaign": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "source": {"type": "string"},
+          "namespace": {"type": "string"},
+          "fleet": {"type": "string"},
+          "target_release_id": {"type": "string"},
+          "status": {"type": "string", "enum": ["pending", "running", "soaking", "paused", "completed"]},
+          "current_ring_id": {"type": "string"},
+          "current_rollout_id": {"type": "string"},
+          "total_rings": {"type": "integer"},
+          "completed_rings": {"type": "integer"},
+          "last_error": {"type": "string"},
+          "rings": {"type": "array", "items": {"$ref": "#/components/schemas/ReleaseCampaignRing"}},
+          "created_at": {"type": "string", "format": "date-time"},
+          "updated_at": {"type": "string", "format": "date-time"}
+        },
+        "required": ["id", "target_release_id", "status", "total_rings", "completed_rings", "rings"]
       },
       "SetUpgradeRun": {
         "type": "object",

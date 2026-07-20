@@ -1,11 +1,11 @@
-import { keepPreviousData, useIsFetching, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Activity,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
+  CirclePause,
   CircleDashed,
-  CornerDownRight,
   DatabaseZap,
   Download,
   Gauge,
@@ -21,6 +21,7 @@ import {
   Network,
   PanelLeftClose,
   PanelLeftOpen,
+  Play,
   Plus,
   RefreshCw,
   Route,
@@ -36,7 +37,7 @@ import {
   WalletCards,
   Zap,
 } from "lucide-react"
-import { Fragment, type ChangeEvent, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react"
+import { type ChangeEvent, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react"
 
 import {
   LLMGatewayAPI,
@@ -54,7 +55,6 @@ import {
   type GatewaySet,
   type EntitlementPlan,
   type OperationalOverview,
-  type PlanPeriod,
   type ResourceDefinition,
   type ResourceRow,
   type ResourceRowsResult,
@@ -885,7 +885,8 @@ function OperationalSetsCard({ overview, loading }: { overview?: OperationalOver
   const sets = overview?.sets || []
   const attentionSets = sets.filter((set) =>
     !set.ready ||
-    Boolean(set.last_error || set.admission_error) ||
+    Boolean(set.last_error || set.admission_error || set.runtime_ha_error) ||
+    (set.runtime_ha_desired_replicas || 0) > 0 && set.runtime_ha_status !== "healthy" ||
     ["warning", "warn", "full", "critical"].includes(set.capacity_status || "") ||
     set.accepting_new_users === false,
   )
@@ -939,12 +940,17 @@ function OperationalSetsCard({ overview, loading }: { overview?: OperationalOver
                     <TableCell className="px-4 py-3">
                       <div className="flex flex-wrap gap-1.5">
                         <StatusBadge status={set.status} setup={set.setup} />
+                        <RuntimeHAStatusBadge
+                          status={set.runtime_ha_status}
+                          ready={set.runtime_ha_ready_replicas}
+                          desired={set.runtime_ha_desired_replicas}
+                        />
                         <CapacityStatusBadge status={set.capacity_status} accepting={set.accepting_new_users} />
                       </div>
                     </TableCell>
                     <TableCell className="max-w-[260px] px-4 py-3">
                       <span className={cn("block truncate", set.last_error ? "text-destructive" : "text-muted-foreground")}>
-                        {set.last_error || set.admission_error || "-"}
+                        {set.runtime_ha_error || set.last_error || set.admission_error || "-"}
                       </span>
                     </TableCell>
                   </TableRow>
@@ -1305,7 +1311,7 @@ function CapacityWatermarkResult({ result }: { result?: SetCapacityResult }) {
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
-        <StateField label="当前空位" value={formatNumber(result.ready_free_users)} />
+        <StateField label="规划空位" value={formatNumber(result.capacity_free_users ?? result.ready_free_users)} />
         <StateField label="目标空位" value={formatNumber(result.required_free_users)} />
         <StateField label="缺口" value={formatNumber(Math.max(result.deficit_users, 0))} />
         <StateField label="新增意图" value={`${formatNumber(result.created_requests)} 个`} />
@@ -1392,9 +1398,11 @@ export function ReleaseManagementPage({ api, sets }: { api: LLMGatewayAPI; sets:
   const releasesQuery = useQuery({ queryKey: ["newapi-releases"], queryFn: () => api.listNewAPIReleases() })
   const ringsQuery = useQuery({ queryKey: ["release-rings"], queryFn: () => api.listReleaseRings(), refetchInterval: 5000 })
   const rolloutsQuery = useQuery({ queryKey: ["release-rollouts"], queryFn: () => api.listReleaseRollouts(), refetchInterval: 5000 })
+  const campaignsQuery = useQuery({ queryKey: ["release-campaigns"], queryFn: () => api.listReleaseCampaigns(), refetchInterval: 5000 })
   const releases = releasesQuery.data || []
   const rings = ringsQuery.data || []
   const rollouts = rolloutsQuery.data || []
+  const campaigns = campaignsQuery.data || []
   const [releaseID, setReleaseID] = useState("")
   const [releaseVersion, setReleaseVersion] = useState("")
   const [releaseImage, setReleaseImage] = useState("")
@@ -1404,11 +1412,13 @@ export function ReleaseManagementPage({ api, sets }: { api: LLMGatewayAPI; sets:
   const [ringSetIDs, setRingSetIDs] = useState<string[]>([])
   const [rolloutRingID, setRolloutRingID] = useState("")
   const [rolloutReleaseID, setRolloutReleaseID] = useState("")
+  const [campaignReleaseID, setCampaignReleaseID] = useState("")
   const refresh = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["newapi-releases"] }),
       queryClient.invalidateQueries({ queryKey: ["release-rings"] }),
       queryClient.invalidateQueries({ queryKey: ["release-rollouts"] }),
+      queryClient.invalidateQueries({ queryKey: ["release-campaigns"] }),
       queryClient.invalidateQueries({ queryKey: ["sets"] }),
     ])
   }
@@ -1420,6 +1430,7 @@ export function ReleaseManagementPage({ api, sets }: { api: LLMGatewayAPI; sets:
       setReleaseImage("")
       setRingReleaseID((current) => current || release.id)
       setRolloutReleaseID((current) => current || release.id)
+      setCampaignReleaseID((current) => current || release.id)
       await refresh()
     },
   })
@@ -1434,11 +1445,62 @@ export function ReleaseManagementPage({ api, sets }: { api: LLMGatewayAPI; sets:
     mutationFn: () => api.createReleaseRollout({ ring_id: rolloutRingID, target_release_id: rolloutReleaseID }),
     onSuccess: refresh,
   })
-  const error = releasesQuery.error?.message || ringsQuery.error?.message || rolloutsQuery.error?.message ||
-    createRelease.error?.message || saveRing.error?.message || createRollout.error?.message
+  const createCampaign = useMutation({
+    mutationFn: () => api.createReleaseCampaign({ target_release_id: campaignReleaseID }),
+    onSuccess: refresh,
+  })
+  const pauseCampaign = useMutation({
+    mutationFn: (campaignID: string) => api.pauseReleaseCampaign(campaignID),
+    onSuccess: refresh,
+  })
+  const resumeCampaign = useMutation({
+    mutationFn: (campaignID: string) => api.resumeReleaseCampaign(campaignID),
+    onSuccess: refresh,
+  })
+  const error = releasesQuery.error?.message || ringsQuery.error?.message || rolloutsQuery.error?.message || campaignsQuery.error?.message ||
+    createRelease.error?.message || saveRing.error?.message || createRollout.error?.message || createCampaign.error?.message ||
+    pauseCampaign.error?.message || resumeCampaign.error?.message
 
   return (
     <div className="flex flex-1 flex-col gap-6 overflow-auto bg-muted/20 p-4 md:p-6">
+      <DashboardSection title="全量发布" description="Canary → Early → Stable；每个发布环完成完整观察期并通过健康门禁后，才进入下一环">
+        <Card>
+          <CardContent className="flex flex-col gap-4 p-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+              <Field label="目标版本">
+                <select className="h-9 min-w-72 rounded-md border bg-background px-3 text-sm" value={campaignReleaseID} onChange={(event) => setCampaignReleaseID(event.target.value)}>
+                  <option value="">请选择已验证版本</option>
+                  {releases.filter((release) => ["verified", "stable"].includes(release.status)).map((release) => <option key={release.id} value={release.id}>{release.version} · {release.id}</option>)}
+                </select>
+              </Field>
+              <Button onClick={() => createCampaign.mutate()} disabled={!campaignReleaseID || createCampaign.isPending}>
+                <Route />启动全量发布
+              </Button>
+            </div>
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableHeader><TableRow><TableHead className="px-4">目标版本</TableHead><TableHead className="px-4">发布进度</TableHead><TableHead className="px-4">当前发布环</TableHead><TableHead className="px-4">状态</TableHead><TableHead className="px-4 text-right">操作</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {campaigns.map((campaign) => (
+                    <TableRow key={campaign.id}>
+                      <TableCell className="px-4"><div className="font-medium">{campaign.target_release_id}</div><div className="font-mono text-xs text-muted-foreground">{campaign.id}</div></TableCell>
+                      <TableCell className="px-4"><div>{campaign.completed_rings} / {campaign.total_rings} 个发布环</div><div className="text-xs text-muted-foreground">{campaign.rings.map((ring) => ring.ring_id).join(" → ")}</div></TableCell>
+                      <TableCell className="px-4">{campaign.current_ring_id || "-"}</TableCell>
+                      <TableCell className="max-w-80 px-4"><ReleaseStatusBadge status={campaign.status} />{campaign.last_error ? <div className="mt-1 truncate text-xs text-destructive" title={campaign.last_error}>{campaign.last_error}</div> : null}</TableCell>
+                      <TableCell className="px-4 text-right">
+                        {campaign.status === "paused" ? <Button variant="outline" size="sm" onClick={() => resumeCampaign.mutate(campaign.id)} disabled={resumeCampaign.isPending}><Play />恢复发布</Button> : null}
+                        {["pending", "running", "soaking"].includes(campaign.status) ? <Button variant="outline" size="sm" onClick={() => pauseCampaign.mutate(campaign.id)} disabled={pauseCampaign.isPending}><CirclePause />暂停</Button> : null}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!campaignsQuery.isLoading && campaigns.length === 0 ? <TableRow><TableCell colSpan={5} className="h-20 text-center text-muted-foreground">暂无全量发布任务</TableCell></TableRow> : null}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </DashboardSection>
+
       <DashboardSection title="发布环" description="不同发布环可以同时运行不同版本；每个发布环内部逐个升级集群">
         <div className="overflow-hidden rounded-md border bg-card">
           <Table>
@@ -1492,7 +1554,7 @@ export function ReleaseManagementPage({ api, sets }: { api: LLMGatewayAPI; sets:
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>发布版本</CardTitle><CardDescription>目标发布环内严格逐个升级，失败立即停止</CardDescription></CardHeader>
+          <CardHeader><CardTitle>单环发布</CardTitle><CardDescription>排障或定向发布时使用；常规升级请使用全量发布</CardDescription></CardHeader>
           <CardContent className="flex flex-col gap-3">
             <Field label="目标发布环"><select className="h-9 rounded-md border bg-background px-3 text-sm" value={rolloutRingID} onChange={(event) => setRolloutRingID(event.target.value)}><option value="">请选择发布环</option>{rings.map((ring) => <option key={ring.id} value={ring.id}>{ring.name} · {ring.set_count} 个集群</option>)}</select></Field>
             <Field label="目标版本"><select className="h-9 rounded-md border bg-background px-3 text-sm" value={rolloutReleaseID} onChange={(event) => setRolloutReleaseID(event.target.value)}><option value="">请选择版本</option>{releases.filter((release) => ["verified", "stable"].includes(release.status)).map((release) => <option key={release.id} value={release.id}>{release.version} · {release.id}</option>)}</select></Field>
@@ -2419,47 +2481,18 @@ type ChannelApplyOperationResult =
   | { kind: "apply"; set_id: string; set_name: string; state: ChannelBundleSyncState }
   | { kind: "error"; set_id: string; set_name: string; message: string }
 
-type PlanTargetSelection =
-  | { kind: "default"; planID: string }
-  | { kind: "period"; planID: string; periodValue: number; periodUnit: string }
-
 export function PlanManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: GatewaySet[] }) {
   const queryClient = useQueryClient()
-  const [selectedTarget, setSelectedTarget] = useState<PlanTargetSelection | null>(null)
+  const [selectedPlanID, setSelectedPlanID] = useState("")
   const [editorMode, setEditorMode] = useState<"create" | "copy" | null>(null)
   const [planDraft, setPlanDraft] = useState({ id: "", name: "", monthlyTokens: "", periodValue: "1", periodUnit: "months", isActive: true })
   const plansQuery = useQuery({ queryKey: ["plans"], queryFn: () => api.listPlans() })
   const plans = plansQuery.data || []
-  const periodQueries = useQueries({
-    queries: plans.map((plan) => ({
-      queryKey: ["plan-periods", plan.id],
-      queryFn: () => api.listPlanPeriods(plan.id),
-    })),
-  })
-  const periodsByPlan = new Map<string, PlanPeriod[]>(
-    plans.map((plan, index) => [plan.id, periodQueries[index]?.data || []]),
-  )
-  const periodQueryError = periodQueries.find((query) => query.error)?.error
-  const selectedPlanStillExists = selectedTarget && plans.some((plan) => plan.id === selectedTarget.planID)
-  const activeTarget = selectedPlanStillExists
-    ? selectedTarget
-    : plans[0]
-      ? { kind: "default" as const, planID: plans[0].id }
-      : null
-  const activePlanID = activeTarget?.planID || ""
+  const activePlanID = selectedPlanID || plans[0]?.id || ""
   const setStatesQuery = useQuery({
-    queryKey: activeTarget?.kind === "period"
-      ? ["plan-period-set-states", activePlanID, activeTarget.periodValue, activeTarget.periodUnit]
-      : ["plan-set-states", activePlanID],
-    queryFn: async (): Promise<SetPlanState[]> => {
-      if (!activeTarget) return []
-      if (activeTarget.kind === "default") return api.listPlanSetStates(activeTarget.planID)
-      const states = await api.listPlanPeriodSetStates(activeTarget.planID)
-      return states.filter((state) =>
-        state.period_value === activeTarget.periodValue && state.period_unit === activeTarget.periodUnit,
-      )
-    },
-    enabled: activeTarget !== null,
+    queryKey: ["plan-set-states", activePlanID],
+    queryFn: () => api.listPlanSetStates(activePlanID),
+    enabled: activePlanID !== "",
   })
   const syncMutation = useMutation({
     mutationFn: () => api.syncPlan(activePlanID),
@@ -2478,7 +2511,7 @@ export function PlanManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: Ga
       is_active: planDraft.isActive,
     }),
     onSuccess: async (plan) => {
-      setSelectedTarget({ kind: "default", planID: plan.id })
+      setSelectedPlanID(plan.id)
       setEditorMode(null)
       await queryClient.invalidateQueries({ queryKey: ["plans"] })
       await queryClient.invalidateQueries({ queryKey: ["plan-set-states", plan.id] })
@@ -2487,7 +2520,6 @@ export function PlanManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: Ga
   })
   const states = setStatesQuery.data || []
   const selectedPlan = plans.find((plan) => plan.id === activePlanID)
-  const selectedPeriod = activeTarget?.kind === "period" ? activeTarget : null
   const ready = states.filter((state) => state.status === "ready").length
   const failed = states.filter((state) => state.status === "error").length
   const unfinishedStates = states.filter((state) => state.status !== "ready")
@@ -2524,9 +2556,6 @@ export function PlanManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: Ga
           </CardHeader>
           <CardContent className="p-0">
             {plansQuery.error ? <div className="p-4 text-sm text-destructive">{plansQuery.error.message}</div> : null}
-            {periodQueryError ? (
-              <div className="border-t p-4 text-sm text-destructive">{periodQueryError.message}</div>
-            ) : null}
             {plans.length === 0 && !plansQuery.isLoading ? (
               <div className="p-8 text-center text-sm text-muted-foreground">尚未定义权益模板。点击“新增模板”开始配置。</div>
             ) : (
@@ -2541,51 +2570,15 @@ export function PlanManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: Ga
                 </TableHeader>
                 <TableBody>
                   {plans.map((plan) => (
-                    <Fragment key={plan.id}>
-                      <TableRow
-                        className={cn("cursor-pointer", activeTarget?.kind === "default" && plan.id === activePlanID && "bg-muted/60")}
-                        onClick={() => setSelectedTarget({ kind: "default", planID: plan.id })}
-                      >
-                        <TableCell>
-                          <div className="font-medium">{plan.name || plan.id}</div>
-                          <div className="mt-1 font-mono text-xs text-muted-foreground">{plan.id}</div>
-                        </TableCell>
-                        <TableCell>{formatNumber(plan.monthly_tokens)}</TableCell>
-                        <TableCell>{formatPlanPeriod(plan)}</TableCell>
-                        <TableCell><Badge variant={plan.is_active ? "outline" : "secondary"}>{plan.is_active ? "启用" : "停用"}</Badge></TableCell>
-                      </TableRow>
-                      {(periodsByPlan.get(plan.id) || []).map((period) => {
-                        const isSelected = activeTarget?.kind === "period"
-                          && activeTarget.planID === plan.id
-                          && activeTarget.periodValue === period.period_value
-                          && activeTarget.periodUnit === period.period_unit
-                        return (
-                          <TableRow
-                            key={`${plan.id}:${period.period_value}:${period.period_unit}`}
-                            className={cn("cursor-pointer bg-muted/20", isSelected && "bg-muted/60")}
-                            onClick={() => setSelectedTarget({
-                              kind: "period",
-                              planID: plan.id,
-                              periodValue: period.period_value,
-                              periodUnit: period.period_unit,
-                            })}
-                          >
-                            <TableCell>
-                              <div className="flex items-center gap-2 pl-5">
-                                <CornerDownRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                                <div>
-                                  <div className="font-medium">周期变体</div>
-                                  <div className="mt-1 text-xs text-muted-foreground">{plan.name}</div>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>{formatNumber(plan.monthly_tokens)}</TableCell>
-                            <TableCell>{formatPlanPeriod(period)}</TableCell>
-                            <TableCell><Badge variant={plan.is_active ? "outline" : "secondary"}>{plan.is_active ? "启用" : "停用"}</Badge></TableCell>
-                          </TableRow>
-                        )
-                      })}
-                    </Fragment>
+                    <TableRow key={plan.id} className={cn("cursor-pointer", plan.id === activePlanID && "bg-muted/60")} onClick={() => setSelectedPlanID(plan.id)}>
+                      <TableCell>
+                        <div className="font-medium">{plan.name || plan.id}</div>
+                        <div className="mt-1 font-mono text-xs text-muted-foreground">{plan.id}</div>
+                      </TableCell>
+                      <TableCell>{formatNumber(plan.monthly_tokens)}</TableCell>
+                      <TableCell>{formatPlanPeriod(plan)}</TableCell>
+                      <TableCell><Badge variant={plan.is_active ? "outline" : "secondary"}>{plan.is_active ? "启用" : "停用"}</Badge></TableCell>
+                    </TableRow>
                   ))}
                 </TableBody>
               </Table>
@@ -2599,17 +2592,15 @@ export function PlanManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: Ga
               <div>
                 <CardTitle>集群下发</CardTitle>
                 <CardDescription>
-                  {selectedPlan
-                    ? `${selectedPlan.name} · ${selectedPeriod ? formatPlanPeriod({ period_value: selectedPeriod.periodValue, period_unit: selectedPeriod.periodUnit }) : formatPlanPeriod(selectedPlan)} · ${ready} 个集群已就绪${failed > 0 ? ` · ${failed} 个失败` : ""}`
-                    : "选择一个权益模板查看状态"}
+                  {selectedPlan ? `${selectedPlan.name} · ${ready} 个集群已就绪${failed > 0 ? ` · ${failed} 个失败` : ""}` : "选择一个权益模板查看状态"}
                 </CardDescription>
               </div>
-              {unfinishedStates.length > 0 && activeTarget?.kind === "default" ? (
+              {unfinishedStates.length > 0 ? (
                 <Button size="sm" variant="outline" disabled={!activePlanID || syncMutation.isPending} onClick={() => syncMutation.mutate()}>
                   {syncMutation.isPending ? <Loader2 className="animate-spin" /> : <Send />}
                   重试未完成
                 </Button>
-              ) : unfinishedStates.length === 0 && states.length > 0 ? <Badge variant="outline">全部就绪</Badge> : null}
+              ) : <Badge variant="outline">全部就绪</Badge>}
             </div>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 p-4">
@@ -2692,7 +2683,7 @@ function SetPlanStatusBadge({ status }: { status: string }) {
   return <Badge variant="secondary">待下发</Badge>
 }
 
-function formatPlanPeriod(plan: Pick<EntitlementPlan, "period_value" | "period_unit">) {
+function formatPlanPeriod(plan: EntitlementPlan) {
   const unit = plan.period_unit === "days" ? "天" : plan.period_unit === "years" ? "年" : "个月"
   return `${plan.period_value} ${unit}`
 }
@@ -5611,6 +5602,19 @@ function CapacityStatusBadge({ status, accepting }: { status?: string; accepting
     return <Badge variant="secondary">暂停接人</Badge>
   }
   return <Badge variant="outline">可接人</Badge>
+}
+
+function RuntimeHAStatusBadge({ status, ready, desired }: { status?: string; ready?: number; desired?: number }) {
+  if (!desired) {
+    return null
+  }
+  if (status === "healthy") {
+    return <Badge variant="outline">推理 {ready ?? desired}/{desired}</Badge>
+  }
+  if (status === "pending") {
+    return <Badge variant="secondary">推理副本准备中</Badge>
+  }
+  return <Badge variant="destructive">推理 {ready ?? 0}/{desired}</Badge>
 }
 
 function AdmissionBadge({ status }: { status?: string }) {

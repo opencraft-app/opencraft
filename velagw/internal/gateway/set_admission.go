@@ -133,7 +133,7 @@ func (s *Service) checkSetAdmission(ctx context.Context, set Set) error {
 			}
 		}
 	}
-	bundles, err := s.store.ListChannelBundles(ctx)
+	bundles, err := s.desiredChannelBundles(ctx)
 	if err != nil {
 		return err
 	}

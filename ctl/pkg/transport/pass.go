@@ -29,6 +29,24 @@ type CompletePassRequest struct {
 	RenewFlag string `json:"renew_flag,omitempty"` // 续费标记，v4 收敛：协议层预留字段，本期 logic 内部写死 MANUAL_RENEW，trade 透传值暂不生效
 }
 
+// PassBillingMigrationRequest 通知 ctl 尝试把存量免费 pass 迁移到计费资源。
+//
+// auth 只传影子账号绑定结果，不传目标套餐；source/target bundle 由 ctl 业务策略决定。
+type PassBillingMigrationRequest struct {
+	UserID string `json:"user_id"`
+	Uin    int64  `json:"uin"`
+	AppID  int64  `json:"app_id"`
+}
+
+type PassBillingMigrationResult struct {
+	Status     string `json:"status"`
+	PassID     string `json:"pass_id,omitempty"`
+	BundleID   string `json:"bundle_id,omitempty"`
+	DealName   string `json:"deal_name,omitempty"`
+	BigOrderID string `json:"big_order_id,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
 // ModifyPassRequest 修改权益请求
 type ModifyPassRequest struct {
 	PassID      string     `json:"pass_id"`

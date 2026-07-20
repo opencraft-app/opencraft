@@ -86,45 +86,45 @@ docker rm -f \
 docker run -d --name llmgateway-mysql \
   --network llmgateway-local \
   -p 33306:3306 \
-  -e MYSQL_ROOT_PASSWORD=test-local-password \
+  -e MYSQL_ROOT_PASSWORD=123456 \
   -e MYSQL_DATABASE=llmgateway \
   mysql:8.4
 
 docker run -d --name llmgateway-redis \
   --network llmgateway-local \
   -p 36379:6379 \
-  redis:7-alpine redis-server --requirepass test-local-password
+  redis:7-alpine redis-server --requirepass 123456
 
 docker run -d --name newapi-mysql-a \
   --network llmgateway-local \
-  -e MYSQL_ROOT_PASSWORD=test-local-password \
+  -e MYSQL_ROOT_PASSWORD=123456 \
   -e MYSQL_DATABASE=new-api \
   mysql:8.4
 
 docker run -d --name newapi-redis-a \
   --network llmgateway-local \
-  redis:7-alpine redis-server --requirepass test-local-password
+  redis:7-alpine redis-server --requirepass 123456
 
 docker run -d --name newapi-mysql-b \
   --network llmgateway-local \
-  -e MYSQL_ROOT_PASSWORD=test-local-password \
+  -e MYSQL_ROOT_PASSWORD=123456 \
   -e MYSQL_DATABASE=new-api \
   mysql:8.4
 
 docker run -d --name newapi-redis-b \
   --network llmgateway-local \
-  redis:7-alpine redis-server --requirepass test-local-password
+  redis:7-alpine redis-server --requirepass 123456
 ```
 
 等待 MySQL 和 Redis 就绪：
 
 ```bash
-until docker exec llmgateway-mysql mysqladmin ping -uroot -ptest-local-password --silent; do sleep 1; done
-until docker exec llmgateway-redis redis-cli -a test-local-password ping | grep -q PONG; do sleep 1; done
-until docker exec newapi-mysql-a mysqladmin ping -uroot -ptest-local-password --silent; do sleep 1; done
-until docker exec newapi-mysql-b mysqladmin ping -uroot -ptest-local-password --silent; do sleep 1; done
-until docker exec newapi-redis-a redis-cli -a test-local-password ping | grep -q PONG; do sleep 1; done
-until docker exec newapi-redis-b redis-cli -a test-local-password ping | grep -q PONG; do sleep 1; done
+until docker exec llmgateway-mysql mysqladmin ping -uroot -p123456 --silent; do sleep 1; done
+until docker exec llmgateway-redis redis-cli -a 123456 ping | grep -q PONG; do sleep 1; done
+until docker exec newapi-mysql-a mysqladmin ping -uroot -p123456 --silent; do sleep 1; done
+until docker exec newapi-mysql-b mysqladmin ping -uroot -p123456 --silent; do sleep 1; done
+until docker exec newapi-redis-a redis-cli -a 123456 ping | grep -q PONG; do sleep 1; done
+until docker exec newapi-redis-b redis-cli -a 123456 ping | grep -q PONG; do sleep 1; done
 ```
 
 启动两个 new-api set：
@@ -135,8 +135,8 @@ NEWAPI_IMAGE='calciumion/new-api@sha256:3125e24f119fa5e767563226a5208f2902b3faed
 docker run -d --name newapi-a \
   --network llmgateway-local \
   -p 13001:3000 \
-  -e SQL_DSN='root:test-local-password@tcp(newapi-mysql-a:3306)/new-api' \
-  -e REDIS_CONN_STRING='redis://:test-local-password@newapi-redis-a:6379' \
+  -e SQL_DSN='root:123456@tcp(newapi-mysql-a:3306)/new-api' \
+  -e REDIS_CONN_STRING='redis://:123456@newapi-redis-a:6379' \
   -e SESSION_SECRET='llmgateway-local-set-a-session-secret' \
   -e TZ='Asia/Shanghai' \
   -e GLOBAL_API_RATE_LIMIT_ENABLE=false \
@@ -150,8 +150,8 @@ docker run -d --name newapi-a \
 docker run -d --name newapi-b \
   --network llmgateway-local \
   -p 13002:3000 \
-  -e SQL_DSN='root:test-local-password@tcp(newapi-mysql-b:3306)/new-api' \
-  -e REDIS_CONN_STRING='redis://:test-local-password@newapi-redis-b:6379' \
+  -e SQL_DSN='root:123456@tcp(newapi-mysql-b:3306)/new-api' \
+  -e REDIS_CONN_STRING='redis://:123456@newapi-redis-b:6379' \
   -e SESSION_SECRET='llmgateway-local-set-b-session-secret' \
   -e TZ='Asia/Shanghai' \
   -e GLOBAL_API_RATE_LIMIT_ENABLE=false \
@@ -179,15 +179,15 @@ until curl -fsS http://127.0.0.1:13002/api/status >/dev/null; do sleep 1; done
 ```bash
 cd ~/code/velagw
 
-LLMGATEWAY_SQL_DSN='root:test-local-password@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' \
-LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:test-local-password@127.0.0.1:36379/0' \
+LLMGATEWAY_SQL_DSN='root:123456@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' \
+LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:123456@127.0.0.1:36379/0' \
 LLMGATEWAY_TRAFFIC_BASE_URL='http://127.0.0.1:18082' \
 CLUSTER_ADMIN_USERNAME='cluster-admin' \
-CLUSTER_ADMIN_PASSWORD='test-local-password' \
-CLUSTER_ADMIN_TOKEN='test-cluster-token' \
-INTERNAL_SERVICE_TOKEN='test-internal-token' \
+CLUSTER_ADMIN_PASSWORD='Qq373866172!' \
+CLUSTER_ADMIN_TOKEN='dev-cluster-token' \
+INTERNAL_SERVICE_TOKEN='dev-internal-token' \
 NEWAPI_SET_ROOT_USERNAME='set-root' \
-NEWAPI_SET_ROOT_PASSWORD='test-local-password' \
+NEWAPI_SET_ROOT_PASSWORD='Qq373866172!' \
 go run ./cmd/llmgateway-control
 ```
 
@@ -199,11 +199,11 @@ go run ./cmd/llmgateway-control
 cd ~/code/velagw
 
 PORT=18082 \
-LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:test-local-password@127.0.0.1:36379/0' \
-CLUSTER_ADMIN_TOKEN='test-cluster-token' \
-INTERNAL_SERVICE_TOKEN='test-internal-token' \
+LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:123456@127.0.0.1:36379/0' \
+CLUSTER_ADMIN_TOKEN='dev-cluster-token' \
+INTERNAL_SERVICE_TOKEN='dev-internal-token' \
 NEWAPI_SET_ROOT_USERNAME='set-root' \
-NEWAPI_SET_ROOT_PASSWORD='test-local-password' \
+NEWAPI_SET_ROOT_PASSWORD='Qq373866172!' \
 go run ./cmd/llmgateway-traffic
 ```
 
@@ -212,11 +212,11 @@ go run ./cmd/llmgateway-traffic
 ```bash
 cd ~/code/velagw
 
-LLMGATEWAY_SQL_DSN='root:test-local-password@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' \
-CLUSTER_ADMIN_TOKEN='test-cluster-token' \
-INTERNAL_SERVICE_TOKEN='test-internal-token' \
+LLMGATEWAY_SQL_DSN='root:123456@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' \
+CLUSTER_ADMIN_TOKEN='dev-cluster-token' \
+INTERNAL_SERVICE_TOKEN='dev-internal-token' \
 NEWAPI_SET_ROOT_USERNAME='set-root' \
-NEWAPI_SET_ROOT_PASSWORD='test-local-password' \
+NEWAPI_SET_ROOT_PASSWORD='Qq373866172!' \
 LLMGATEWAY_WORKER_POOL=core \
 LLMGATEWAY_WORKER_POLL_INTERVAL=5s \
 LLMGATEWAY_WORKER_LEASE_TTL=1m \
@@ -228,10 +228,10 @@ go run ./cmd/llmgateway-worker
 ```bash
 cd ~/code/velagw
 
-LLMGATEWAY_SQL_DSN='root:test-local-password@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' \
-LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:test-local-password@127.0.0.1:36379/0' \
+LLMGATEWAY_SQL_DSN='root:123456@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' \
+LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:123456@127.0.0.1:36379/0' \
 NEWAPI_SET_ROOT_USERNAME='set-root' \
-NEWAPI_SET_ROOT_PASSWORD='test-local-password' \
+NEWAPI_SET_ROOT_PASSWORD='Qq373866172!' \
 LLMGATEWAY_WORKER_POOL=byok \
 go run ./cmd/llmgateway-worker
 ```
@@ -241,9 +241,9 @@ go run ./cmd/llmgateway-worker
 ```bash
 cd ~/code/velagw
 
-LLMGATEWAY_SQL_DSN='root:test-local-password@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' \
+LLMGATEWAY_SQL_DSN='root:123456@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' \
 NEWAPI_SET_ROOT_USERNAME='set-root' \
-NEWAPI_SET_ROOT_PASSWORD='test-local-password' \
+NEWAPI_SET_ROOT_PASSWORD='Qq373866172!' \
 LLMGATEWAY_WORKER_POOL=observer \
 LLMGATEWAY_WORKER_POLL_INTERVAL=2s \
 go run ./cmd/llmgateway-worker
@@ -254,10 +254,10 @@ go run ./cmd/llmgateway-worker
 ```bash
 cd ~/code/velagw
 
-LLMGATEWAY_SQL_DSN='root:test-local-password@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' \
-LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:test-local-password@127.0.0.1:36379/0' \
+LLMGATEWAY_SQL_DSN='root:123456@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' \
+LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:123456@127.0.0.1:36379/0' \
 NEWAPI_SET_ROOT_USERNAME='set-root' \
-NEWAPI_SET_ROOT_PASSWORD='test-local-password' \
+NEWAPI_SET_ROOT_PASSWORD='Qq373866172!' \
 LLMGATEWAY_WORKER_POOL=maintenance \
 LLMGATEWAY_WORKER_POLL_INTERVAL=2s \
 go run ./cmd/llmgateway-worker
@@ -278,11 +278,11 @@ curl -fsS http://127.0.0.1:18082/healthz
 
 ```bash
 curl -o /dev/null -w '%{http_code}\n' \
-  -H 'Authorization: Bearer test-cluster-token' \
+  -H 'Authorization: Bearer dev-cluster-token' \
   http://127.0.0.1:18080/api/sets
 
 curl -o /dev/null -w '%{http_code}\n' \
-  -H 'Authorization: Bearer test-cluster-token' \
+  -H 'Authorization: Bearer dev-cluster-token' \
   http://127.0.0.1:18082/api/sets
 ```
 
@@ -296,7 +296,7 @@ curl -o /dev/null -w '%{http_code}\n' \
 cd ~/code/velagw/web
 
 cat > .env.local <<'EOF'
-VITE_CLUSTER_ADMIN_TOKEN=test-cluster-token
+VITE_CLUSTER_ADMIN_TOKEN=dev-cluster-token
 EOF
 
 bun install
@@ -327,26 +327,26 @@ tmux kill-session -t velagw-worker-maintenance 2>/dev/null || true
 tmux kill-session -t velagw-web 2>/dev/null || true
 
 tmux new-session -d -s velagw-control -c ~/code/velagw \
-  "LLMGATEWAY_SQL_DSN='root:test-local-password@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:test-local-password@127.0.0.1:36379/0' CLUSTER_ADMIN_USERNAME='cluster-admin' CLUSTER_ADMIN_PASSWORD='test-local-password' CLUSTER_ADMIN_TOKEN='test-cluster-token' INTERNAL_SERVICE_TOKEN='test-internal-token' NEWAPI_SET_ROOT_USERNAME='set-root' NEWAPI_SET_ROOT_PASSWORD='test-local-password' go run ./cmd/llmgateway-control"
+  "LLMGATEWAY_SQL_DSN='root:123456@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:123456@127.0.0.1:36379/0' CLUSTER_ADMIN_USERNAME='cluster-admin' CLUSTER_ADMIN_PASSWORD='Qq373866172!' CLUSTER_ADMIN_TOKEN='dev-cluster-token' INTERNAL_SERVICE_TOKEN='dev-internal-token' NEWAPI_SET_ROOT_USERNAME='set-root' NEWAPI_SET_ROOT_PASSWORD='Qq373866172!' go run ./cmd/llmgateway-control"
 
 tmux new-session -d -s velagw-traffic -c ~/code/velagw \
-  "PORT=18082 LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:test-local-password@127.0.0.1:36379/0' CLUSTER_ADMIN_TOKEN='test-cluster-token' INTERNAL_SERVICE_TOKEN='test-internal-token' NEWAPI_SET_ROOT_USERNAME='set-root' NEWAPI_SET_ROOT_PASSWORD='test-local-password' go run ./cmd/llmgateway-traffic"
+  "PORT=18082 LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:123456@127.0.0.1:36379/0' CLUSTER_ADMIN_TOKEN='dev-cluster-token' INTERNAL_SERVICE_TOKEN='dev-internal-token' NEWAPI_SET_ROOT_USERNAME='set-root' NEWAPI_SET_ROOT_PASSWORD='Qq373866172!' go run ./cmd/llmgateway-traffic"
 
 tmux new-session -d -s velagw-worker-core -c ~/code/velagw \
-  "LLMGATEWAY_SQL_DSN='root:test-local-password@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' CLUSTER_ADMIN_TOKEN='test-cluster-token' INTERNAL_SERVICE_TOKEN='test-internal-token' NEWAPI_SET_ROOT_USERNAME='set-root' NEWAPI_SET_ROOT_PASSWORD='test-local-password' LLMGATEWAY_WORKER_POOL=core LLMGATEWAY_WORKER_POLL_INTERVAL=5s LLMGATEWAY_WORKER_LEASE_TTL=1m go run ./cmd/llmgateway-worker"
+  "LLMGATEWAY_SQL_DSN='root:123456@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' CLUSTER_ADMIN_TOKEN='dev-cluster-token' INTERNAL_SERVICE_TOKEN='dev-internal-token' NEWAPI_SET_ROOT_USERNAME='set-root' NEWAPI_SET_ROOT_PASSWORD='Qq373866172!' LLMGATEWAY_WORKER_POOL=core LLMGATEWAY_WORKER_POLL_INTERVAL=5s LLMGATEWAY_WORKER_LEASE_TTL=1m go run ./cmd/llmgateway-worker"
 
 tmux new-session -d -s velagw-worker-byok -c ~/code/velagw \
-  "LLMGATEWAY_SQL_DSN='root:test-local-password@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:test-local-password@127.0.0.1:36379/0' NEWAPI_SET_ROOT_USERNAME='set-root' NEWAPI_SET_ROOT_PASSWORD='test-local-password' LLMGATEWAY_WORKER_POOL=byok go run ./cmd/llmgateway-worker"
+  "LLMGATEWAY_SQL_DSN='root:123456@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:123456@127.0.0.1:36379/0' NEWAPI_SET_ROOT_USERNAME='set-root' NEWAPI_SET_ROOT_PASSWORD='Qq373866172!' LLMGATEWAY_WORKER_POOL=byok go run ./cmd/llmgateway-worker"
 
 tmux new-session -d -s velagw-worker-observer -c ~/code/velagw \
-  "LLMGATEWAY_SQL_DSN='root:test-local-password@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' NEWAPI_SET_ROOT_USERNAME='set-root' NEWAPI_SET_ROOT_PASSWORD='test-local-password' LLMGATEWAY_WORKER_POOL=observer LLMGATEWAY_WORKER_POLL_INTERVAL=2s go run ./cmd/llmgateway-worker"
+  "LLMGATEWAY_SQL_DSN='root:123456@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' NEWAPI_SET_ROOT_USERNAME='set-root' NEWAPI_SET_ROOT_PASSWORD='Qq373866172!' LLMGATEWAY_WORKER_POOL=observer LLMGATEWAY_WORKER_POLL_INTERVAL=2s go run ./cmd/llmgateway-worker"
 
 tmux new-session -d -s velagw-worker-maintenance -c ~/code/velagw \
-  "LLMGATEWAY_SQL_DSN='root:test-local-password@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:test-local-password@127.0.0.1:36379/0' NEWAPI_SET_ROOT_USERNAME='set-root' NEWAPI_SET_ROOT_PASSWORD='test-local-password' LLMGATEWAY_WORKER_POOL=maintenance LLMGATEWAY_WORKER_POLL_INTERVAL=2s go run ./cmd/llmgateway-worker"
+  "LLMGATEWAY_SQL_DSN='root:123456@tcp(127.0.0.1:33306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4' LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL='redis://:123456@127.0.0.1:36379/0' NEWAPI_SET_ROOT_USERNAME='set-root' NEWAPI_SET_ROOT_PASSWORD='Qq373866172!' LLMGATEWAY_WORKER_POOL=maintenance LLMGATEWAY_WORKER_POLL_INTERVAL=2s go run ./cmd/llmgateway-worker"
 
 cd ~/code/velagw/web
 cat > .env.local <<'EOF'
-VITE_CLUSTER_ADMIN_TOKEN=test-cluster-token
+VITE_CLUSTER_ADMIN_TOKEN=dev-cluster-token
 EOF
 bun install
 
@@ -368,20 +368,20 @@ tmux capture-pane -pt velagw-web:0 -S -80
 
 ```bash
 curl -fsS -X POST http://127.0.0.1:18080/api/sets \
-  -H 'authorization: Bearer test-cluster-token' \
+  -H 'authorization: Bearer dev-cluster-token' \
   -H 'content-type: application/json' \
   -d '{"id":"set-a","name":"集群 A","base_url":"http://localhost:13001","status":"active"}'
 
 curl -fsS -X POST http://127.0.0.1:18080/api/sets/set-a/bootstrap \
-  -H 'authorization: Bearer test-cluster-token'
+  -H 'authorization: Bearer dev-cluster-token'
 
 curl -fsS -X POST http://127.0.0.1:18080/api/sets \
-  -H 'authorization: Bearer test-cluster-token' \
+  -H 'authorization: Bearer dev-cluster-token' \
   -H 'content-type: application/json' \
   -d '{"id":"set-b","name":"集群 B","base_url":"http://localhost:13002","status":"active"}'
 
 curl -fsS -X POST http://127.0.0.1:18080/api/sets/set-b/bootstrap \
-  -H 'authorization: Bearer test-cluster-token'
+  -H 'authorization: Bearer dev-cluster-token'
 ```
 
 刷新 `http://127.0.0.1:18081` 后，概览页应该能看到两个集群。点击集群预览时，内嵌 new-api 控制台应该显示新版 `/dashboard`，而不是 404。
@@ -398,7 +398,7 @@ curl -fsS -X POST http://127.0.0.1:18080/api/sets/set-b/bootstrap \
 
 ```yaml
 mock_llm:
-  api_key: test-mockllm-key
+  api_key: sk-mockllm-local
   base_url: http://mockllm:8080
   model: llmgw-mock-chat
 ```
@@ -512,7 +512,7 @@ http://localhost:18080/_llmgateway_console/set-a/dashboard
 
 ```bash
 curl -fsS -X POST http://127.0.0.1:18080/api/sets/set-a/bootstrap \
-  -H 'authorization: Bearer test-cluster-token'
+  -H 'authorization: Bearer dev-cluster-token'
 ```
 
 如果仍失败，看控制面日志里是否有 `invalid access token`。LLMGateway 会在部分控制台 API 失败时刷新 admin token，但空 set 首次初始化仍需要 bootstrap 成功。

@@ -84,7 +84,7 @@ flowchart TB
 ### 租户、密钥与权益
 
 - LLMGateway 保存租户归属、new-api 用户绑定和外部 key；new-api 保存实际用户、token、订阅和额度。
-- 外部 key 使用固定长度的 `sk-<Base64URL payload>` v2 格式；payload 内含版本、稳定路由槽、256 bit Key ID 和 256 bit Secret。Redis 按路由槽分片保存路由快照；中央 MySQL 保存完整 key 用于固定自检 key 复用和故障恢复，并按密钥材料等级保护。
+- 外部 key 使用固定长度的 `sk-<Base64URL payload>` v2 格式；payload 内含版本、稳定路由槽、256 bit Key ID 和 256 bit Secret。Redis 按路由槽分片保存路由快照；中央 MySQL 只保存 Key ID、哈希、路由槽和状态，完整 key 仅在签发成功时返回一次。
 - `ctl/trade` 通过兼容 API 创建或续发权益；LLMGateway 只负责命令幂等和周期 overlay，实际额度由 new-api subscription 承担。
 - 余额查询聚合用户当前 active subscriptions，不维护另一份完整余额账本。
 
@@ -125,7 +125,7 @@ ctl/trade/运营台 → llmgateway-control
 版本发布分成两个层次：
 
 1. **单 Set 数据库感知蓝绿**：先暂停管理写并以 `Recreate` 升级唯一 admin/master，由它完成 Schema 迁移；旧 Blue traffic 在新 Schema 上通过兼容性探针后，再创建 Green。Green 连续探针成功后通过 Redis `route_revision` 原子切流，Blue 固定排空后删除。
-2. **跨 Set Release Ring**：一个 Fleet 长期维护 Canary、Early、Stable 等 Ring，不同 Ring 可以同时运行不同 new-api Release；Ring 内固定 `max_parallel=1`，逐个 Set 发布，任一失败立即暂停。
+2. **跨 Set Release Campaign**：一个 Fleet 长期维护 Canary、Early、Stable 等 Ring；Campaign 按 Ring 顺序自动推进，Ring 内固定 `max_parallel=1`，逐个 Set 发布，完成完整 soak 和健康门禁后才进入下一 Ring，任一失败立即暂停。
 
 Release 镜像必须固定到 `@sha256:<digest>`。Rollout 创建会在一个 MySQL 事务中锁定 Ring 和目标 Set，同时写入发布快照、Set 目标版本和单 Set upgrade runs，避免多个 control 实例并发发布或产生孤儿状态。
 
@@ -250,12 +250,12 @@ cd /Users/skipzhang/code/mono2newapi/llmgateway
 
 PORT=18080 \
 CLUSTER_ADMIN_USERNAME=cluster-admin \
-CLUSTER_ADMIN_PASSWORD='test-local-password' \
-CLUSTER_ADMIN_TOKEN=test-cluster-token \
-INTERNAL_SERVICE_TOKEN=test-internal-token \
+CLUSTER_ADMIN_PASSWORD='Qq373866172!' \
+CLUSTER_ADMIN_TOKEN=dev-cluster-token \
+INTERNAL_SERVICE_TOKEN=dev-internal-token \
 LEGACY_SUBSCRIPTION_CLIENT_COMPAT=false \
 NEWAPI_SET_ROOT_USERNAME=set-root \
-NEWAPI_SET_ROOT_PASSWORD='test-local-password' \
+NEWAPI_SET_ROOT_PASSWORD='Qq373866172!' \
 go run ./cmd/llmgateway
 ```
 
@@ -361,21 +361,24 @@ not retry an `unknown` keyed upstream outcome.
 ```bash
 curl -sS -X POST http://localhost:18080/api/admin/login \
   -H 'content-type: application/json' \
-  -d '{"username":"cluster-admin","password":"test-local-password"}'
+  -d '{"username":"cluster-admin","password":"Qq373866172!"}'
 
 curl -sS -X POST http://localhost:18080/api/sets \
-  -H 'authorization: Bearer test-cluster-token' \
+  -H 'authorization: Bearer dev-cluster-token' \
   -H 'content-type: application/json' \
   -d '{"id":"set-a","name":"local set A","base_url":"http://localhost:13001","status":"active"}'
 
 curl -sS -X POST http://localhost:18080/api/sets/set-a/bootstrap \
-  -H 'authorization: Bearer test-cluster-token'
+  -H 'authorization: Bearer dev-cluster-token'
 
 curl -sS -X POST http://localhost:18080/api/users/user-1/keys \
-  -H 'authorization: Bearer test-cluster-token'
+  -H 'authorization: Bearer dev-cluster-token'
 ```
 
 ## Reproducible E2E
+
+发布前的统一回归入口位于 [`test/regression/`](test/regression/README.md)。它用同一套 Go Case/Scenario
+覆盖租户准入、渠道交付、普通推理、SSE，以及 `llmgateway-traffic` 的真实滚动升级；完整场景必须以集群内 Job 运行。
 
 The E2E suite does not depend on an already-running developer machine setup. It
 creates a disposable Docker Compose cluster with:
@@ -410,7 +413,7 @@ at `test/e2e/mockllm/config.json`, and `cluster.compose.yaml` exposes it as:
 
 ```yaml
 mock_llm:
-  api_key: test-mockllm-key
+  api_key: sk-mockllm-local
   base_url: http://mockllm:8080
   model: llmgw-mock-chat
 ```
@@ -470,10 +473,10 @@ During migration, callers can query or set the thin user assignment:
 
 ```bash
 curl -sS http://localhost:18080/api/internal/users/usr_123/assignment \
-  -H 'authorization: Bearer test-internal-token'
+  -H 'authorization: Bearer dev-internal-token'
 
 curl -sS -X POST http://localhost:18080/api/internal/users/usr_123/assignment \
-  -H 'authorization: Bearer test-internal-token' \
+  -H 'authorization: Bearer dev-internal-token' \
   -H 'content-type: application/json' \
   -d '{"backend":"new","set_id":"set-a"}'
 ```
@@ -486,7 +489,7 @@ Credit lookup is exposed as:
 
 ```bash
 curl -sS http://localhost:18080/api/internal/users/usr_123/credit \
-  -H 'authorization: Bearer test-internal-token'
+  -H 'authorization: Bearer dev-internal-token'
 ```
 
 The response includes both the compatibility field `token_balance` and the
@@ -503,7 +506,7 @@ private channels are pinned to the user's private BYOK group with zero ratio.
 
 ```bash
 curl -sS -X PUT http://localhost:18080/api/internal/users/usr_123/llm-settings \
-  -H 'authorization: Bearer test-internal-token' \
+  -H 'authorization: Bearer dev-internal-token' \
   -H 'content-type: application/json' \
   -d "{
     \"routing\":{\"mode\":\"byok_first\"},
@@ -519,7 +522,7 @@ curl -sS -X PUT http://localhost:18080/api/internal/users/usr_123/llm-settings \
   }"
 
 curl -sS -X POST http://localhost:18080/api/internal/users/usr_123/llm-settings/sync \
-  -H 'authorization: Bearer test-internal-token'
+  -H 'authorization: Bearer dev-internal-token'
 ```
 
 The optional no-auth `POST /api/internal/subscriptions/apply|cancel` client is
@@ -535,10 +538,10 @@ LLMGateway-owned tables through:
 
 ```bash
 curl -sS http://localhost:18080/api/admin/resources \
-  -H 'authorization: Bearer test-cluster-token'
+  -H 'authorization: Bearer dev-cluster-token'
 
 curl -sS 'http://localhost:18080/api/admin/resources/tenants/rows?limit=50' \
-  -H 'authorization: Bearer test-cluster-token'
+  -H 'authorization: Bearer dev-cluster-token'
 ```
 
 This is intentionally not a generic database browser. The service exposes only a

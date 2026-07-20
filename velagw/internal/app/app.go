@@ -53,7 +53,7 @@ func Run(ctx context.Context, mode Mode) error {
 
 	port := getenv("PORT", defaultPort(mode))
 	adminUsername := getenv("CLUSTER_ADMIN_USERNAME", "cluster-admin")
-	adminPassword := getenv("CLUSTER_ADMIN_PASSWORD", "test-local-password")
+	adminPassword := getenv("CLUSTER_ADMIN_PASSWORD", "Qq373866172!")
 	adminToken := os.Getenv("CLUSTER_ADMIN_TOKEN")
 	internalToken := getenv("INTERNAL_SERVICE_TOKEN", adminToken)
 	consoleDist := os.Getenv("LLMGATEWAY_CONSOLE_DIST")
@@ -61,7 +61,7 @@ func Run(ctx context.Context, mode Mode) error {
 	trafficProbeTimeout := envDuration("LLMGATEWAY_TRAFFIC_PROBE_TIMEOUT", 2*time.Minute)
 	trafficProbeBaseURL := strings.TrimRight(getenv("LLMGATEWAY_TRAFFIC_BASE_URL", defaultTrafficProbeBaseURL(mode, port)), "/")
 	rootUsername := getenv("NEWAPI_SET_ROOT_USERNAME", "set-root")
-	rootPassword := getenv("NEWAPI_SET_ROOT_PASSWORD", "test-local-password")
+	rootPassword := getenv("NEWAPI_SET_ROOT_PASSWORD", "Qq373866172!")
 	drainWait := envDuration("LLMGATEWAY_DRAIN_WAIT", 10*time.Second)
 	shutdownTimeout := envDuration("LLMGATEWAY_SHUTDOWN_TIMEOUT", 2*time.Minute)
 
@@ -180,7 +180,7 @@ func RunWorker(ctx context.Context) error {
 	}()
 
 	rootUsername := getenv("NEWAPI_SET_ROOT_USERNAME", "set-root")
-	rootPassword := getenv("NEWAPI_SET_ROOT_PASSWORD", "test-local-password")
+	rootPassword := getenv("NEWAPI_SET_ROOT_PASSWORD", "Qq373866172!")
 	newAPIClientTimeout := envDuration("LLMGATEWAY_NEWAPI_CLIENT_TIMEOUT", 15*time.Second)
 	pollInterval := envDuration("LLMGATEWAY_WORKER_POLL_INTERVAL", 5*time.Second)
 	leaseTTL := envDuration("LLMGATEWAY_WORKER_LEASE_TTL", time.Minute)

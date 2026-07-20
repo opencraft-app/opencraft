@@ -18,7 +18,7 @@ import (
 
 func TestEnsureUserBindsToFirstActiveSetAndReusesBinding(t *testing.T) {
 	store := NewMemoryStore()
-	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "test-local-password"})
+	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
 	saveReadyServiceSet(t, store, "set-a")
 	saveReadyServiceSet(t, store, "set-b")
 
@@ -41,7 +41,7 @@ func TestEnsureUserBindsToFirstActiveSetAndReusesBinding(t *testing.T) {
 
 func TestEnsureUserBindingPreservesExistingTenantRoute(t *testing.T) {
 	store := NewMemoryStore()
-	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "test-local-password"})
+	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
 	saveReadyServiceSet(t, store, "set-a")
 	saveReadyServiceSet(t, store, "set-b")
 	setA, _, err := store.GetSet(t.Context(), "set-a")

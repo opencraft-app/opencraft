@@ -7,6 +7,7 @@ web/tsconfig.tsbuildinfo
 /.env
 /.env.local
 /.superpowers/
+/artifacts/
 test/e2e/cluster.local.yaml
 test/e2e/.tmp/
 test/e2e/.env

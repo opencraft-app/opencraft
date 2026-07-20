@@ -6,6 +6,21 @@ import (
 	"strings"
 )
 
+const defaultDesiredChannelBundleID = "golden-channels"
+
+func (s *Service) desiredChannelBundles(ctx context.Context) ([]ChannelBundle, error) {
+	bundles, err := s.store.ListChannelBundles(ctx)
+	if err != nil || len(bundles) <= 1 {
+		return bundles, err
+	}
+	for _, bundle := range bundles {
+		if bundle.ID == defaultDesiredChannelBundleID {
+			return []ChannelBundle{bundle}, nil
+		}
+	}
+	return nil, fmt.Errorf("multiple channel bundles exist but desired bundle %q is missing", defaultDesiredChannelBundleID)
+}
+
 func (s *Service) ExportDesiredConfigFromSet(ctx context.Context, input ImportChannelBundleInput) (DesiredConfig, error) {
 	// Disaster recovery snapshots must retain manually disabled channels too.
 	input.IncludeDisabled = true

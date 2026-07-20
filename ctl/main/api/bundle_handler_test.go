@@ -76,6 +76,9 @@ func (s *stubTradeAdapter) PlaceOrder(context.Context, *tradeadapter.PlaceOrderR
 func (s *stubTradeAdapter) PlaceOrderAndPay(context.Context, *tradeadapter.PlaceOrderRequest) (*tradeadapter.PlaceOrderResult, error) {
 	panic("stubTradeAdapter.PlaceOrderAndPay: not implemented")
 }
+func (s *stubTradeAdapter) MoveInOrderAndPay(context.Context, *tradeadapter.MoveInOrderRequest) (*tradeadapter.PlaceOrderResult, error) {
+	panic("stubTradeAdapter.MoveInOrderAndPay: not implemented")
+}
 func (s *stubTradeAdapter) PlaceRenewOrder(context.Context, *tradeadapter.PlaceRenewOrderRequest) (*tradeadapter.PlaceOrderResult, error) {
 	panic("stubTradeAdapter.PlaceRenewOrder: not implemented")
 }
