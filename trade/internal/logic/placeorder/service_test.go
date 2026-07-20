@@ -1137,6 +1137,61 @@ func TestPlaceOrderAndPay_HappyPath(t *testing.T) {
 	}
 }
 
+func TestMoveInOrderAndPay_HappyPath(t *testing.T) {
+	d := newStdDeps()
+	deadline := time.Date(2026, 7, 20, 4, 0, 0, 0, time.UTC)
+	d.jifei.generateDealsAndPayFn = func(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+		return &jifeiclient.GenerateDealsAndPayResponse{
+			DealNames:  []string{"20260720000000001-001"},
+			BigDealIDs: []string{"20260720000000001"},
+		}, nil
+	}
+
+	resp, err := d.service.MoveInOrderAndPay(context.Background(), MoveInOrderRequest{
+		ExternalUserID: "usr_migrate",
+		Uin:            "700000164995",
+		AppID:          "251202221",
+		BundleID:       "bundle_launch_01",
+		ResourceID:     "pass-free-1",
+		CurDeadline:    deadline,
+	})
+	if err != nil {
+		t.Fatalf("MoveInOrderAndPay: %v", err)
+	}
+	if resp.DealName != "20260720000000001-001" || resp.BigOrderID != "20260720000000001" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Fatalf("move-in must not persist trade_order, got calls=%d", d.writer.createOrderCalls.Load())
+	}
+
+	got := d.jifei.lastGenerateDealsAndPayReq
+	if got == nil {
+		t.Fatal("lastGenerateDealsAndPayReq is nil")
+	}
+	if got.ClientToken != "lightvela-move-in:pass-free-1:bundle_launch_01" {
+		t.Errorf("ClientToken = %q", got.ClientToken)
+	}
+	goods := got.Goods[0]
+	if goods.GoodsCategoryID != 176262 || goods.Action != "preMoveIn" || goods.Type != "postMoveIn" {
+		t.Fatalf("move-in goods mismatch: %+v", goods)
+	}
+	detail := goods.GoodsDetail
+	if detail["resourceId"] != "pass-free-1" || detail["bundleId"] != "bundle_launch_01" || detail["externalUserId"] != "usr_migrate" {
+		t.Fatalf("move-in identity detail mismatch: %+v", detail)
+	}
+	if detail["timeSpan"] != 1 || detail["timeUnit"] != "m" {
+		t.Fatalf("move-in period mismatch: %+v", detail)
+	}
+	if detail["curDeadline"] != "2026-07-20 12:00:00" {
+		t.Fatalf("curDeadline = %v", detail["curDeadline"])
+	}
+	billingParam, ok := detail["billingParam"].(map[string]interface{})
+	if !ok || billingParam["resourcesSource"] != "lightvela" {
+		t.Fatalf("billingParam mismatch: %+v", detail["billingParam"])
+	}
+}
+
 // TestPlaceOrderAndPay_GenerateDealsAndPayFailure：jifei generateDealsAndPay 业务失败时
 //   - 错误透传（带 placeorder: jifei GenerateDealsAndPay: ... 前缀）
 //   - trade_order 不写库（避免本地有孤立 paid 状态）
