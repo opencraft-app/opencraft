@@ -21,6 +21,7 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/logic/queryflow"
 	"git.woa.com/wisp/mono/trade/internal/logic/renewresource"
 	"git.woa.com/wisp/mono/trade/internal/logic/resourcequery"
+	"git.woa.com/wisp/mono/trade/internal/logic/transferresource"
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
 
@@ -239,6 +240,15 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 		Builder:        builder,
 		SiteKind:       cfg.SiteKind, // v1.7.x A6.3
 		RegionOverride: cfg.RegionOverride,
+	})
+
+	// 9. 注册 transferResource 真 handler（外部资源迁入）。
+	//    计费迁移单回调 trade 后，trade 反向调 ctl /internal/ctl/passes/transfer，
+	//    仅迁移既有 pass 的 bundle/uin/app_id，不创建新 pass。
+	transferresource.Install(dispatcher, transferresource.Deps{
+		FlowStore: cfg.FlowStore,
+		CTLClient: cfg.CTLClient,
+		Builder:   builder,
 	})
 
 	router.POST("/trade/jifei/callback", jifei.CallbackHandler(dispatcher))

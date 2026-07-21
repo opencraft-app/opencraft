@@ -33,6 +33,9 @@ func (f *fakeCTL) ListPassesByUser(ctx context.Context, externalUserID string) (
 func (f *fakeCTL) CompletePass(ctx context.Context, req *ctlclient.CompletePassRequest) (*ctlclient.PassDetail, error) {
 	return nil, errors.New("not used")
 }
+func (f *fakeCTL) TransferPass(ctx context.Context, req *ctlclient.TransferPassRequest) (*ctlclient.PassDetail, error) {
+	return nil, errors.New("not used")
+}
 func (f *fakeCTL) ListPassAppIDs(_ context.Context, _ []string, _, _ int) ([]int64, int64, error) {
 	return nil, 0, errors.New("not used")
 }

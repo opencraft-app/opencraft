@@ -28,7 +28,6 @@ import (
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func trialSubscriptionIdempotencyKey(userID, bundleID string) string {
@@ -161,6 +160,8 @@ type Logic interface {
 
 	// MigrateFreeTrialPassToBilling 尝试把存量 bundle_free_trial_01 pass 迁移成计费 bundle_launch_01。
 	MigrateFreeTrialPassToBilling(req *transport.PassBillingMigrationRequest) (*transport.PassBillingMigrationResult, error)
+	// TransferPassFromBilling 在 jifei transferResource 回调到达后绑定既有 pass 的计费归属。
+	TransferPassFromBilling(req *transport.TransferPassRequest) (*PassDetail, error)
 
 	// CreatePassOrder 创建付费 pass 订单（v1.7.31 拆分：仅下单，不再拉支付 URL）
 	//
@@ -643,9 +644,18 @@ func (l *logic) MigrateFreeTrialPassToBilling(req *transport.PassBillingMigratio
 			BigOrderID: stringValue(migration.BigOrderID),
 		}, nil
 	}
+	if err == nil && migration != nil && migration.Status == passmigrationmodel.StatusPendingTransfer {
+		return &transport.PassBillingMigrationResult{
+			Status:     passmigrationmodel.StatusPendingTransfer,
+			PassID:     candidate.PassID,
+			BundleID:   billingMigrationTargetBundleID,
+			DealName:   stringValue(migration.DealName),
+			BigOrderID: stringValue(migration.BigOrderID),
+		}, nil
+	}
 
 	if candidate.BundleID != allowedFreeTrialBundleID {
-		if err == nil && migration != nil && (migration.Status == passmigrationmodel.StatusFailed || migration.Status == passmigrationmodel.StatusPassMigrated) {
+		if err == nil && migration != nil && migration.Status == passmigrationmodel.StatusFailed {
 			return l.callTradeMoveInAndRecord(candidate, req, migrationDao)
 		}
 		return &transport.PassBillingMigrationResult{
@@ -659,44 +669,10 @@ func (l *logic) MigrateFreeTrialPassToBilling(req *transport.PassBillingMigratio
 	if _, err := l.bundleLogic.GetBundleByID(billingMigrationTargetBundleID); err != nil {
 		return nil, err
 	}
-	if err := resource.GormDB.Transaction(func(tx *gorm.DB) error {
-		record := passmigrationmodel.New(candidate.PassID, userID, allowedFreeTrialBundleID, billingMigrationTargetBundleID, req.Uin, req.AppID, passmigrationmodel.StatusPassMigrated)
-		if err := tx.Table(passmigrationmodel.TableName).Clauses(clause.OnConflict{
-			Columns: []clause.Column{
-				{Name: passmigrationmodel.ColumnPassID},
-				{Name: passmigrationmodel.ColumnTargetBundleID},
-			},
-			DoUpdates: clause.AssignmentColumns([]string{
-				passmigrationmodel.ColumnUserID,
-				passmigrationmodel.ColumnSourceBundleID,
-				passmigrationmodel.ColumnUin,
-				passmigrationmodel.ColumnAppID,
-				passmigrationmodel.ColumnStatus,
-				passmigrationmodel.ColumnLastError,
-			}),
-		}).Create(record).Error; err != nil {
-			return fmt.Errorf("upsert state: %w", err)
-		}
-		result := tx.Table(passmodel.TableName).
-			Where(passmodel.ColumnPassID+" = ?", candidate.PassID).
-			Updates(map[string]interface{}{
-				passmodel.ColumnBundleID: billingMigrationTargetBundleID,
-				passmodel.ColumnUin:      req.Uin,
-				passmodel.ColumnAppID:    req.AppID,
-			})
-		if result.Error != nil {
-			return fmt.Errorf("update pass: %w", result.Error)
-		}
-		if result.RowsAffected == 0 {
-			return fmt.Errorf("update pass: %w", gorm.ErrRecordNotFound)
-		}
-		return nil
-	}); err != nil {
+	record := passmigrationmodel.New(candidate.PassID, userID, allowedFreeTrialBundleID, billingMigrationTargetBundleID, req.Uin, req.AppID, passmigrationmodel.StatusPendingOrder)
+	if err := migrationDao.Upsert(record); err != nil {
 		return nil, fmt.Errorf("pass billing migration persist state: %w", err)
 	}
-	candidate.BundleID = billingMigrationTargetBundleID
-	candidate.Uin = req.Uin
-	candidate.AppID = req.AppID
 
 	return l.callTradeMoveInAndRecord(candidate, req, migrationDao)
 }
@@ -762,14 +738,145 @@ func (l *logic) callTradeMoveInAndRecord(candidate *passmodel.Entity, req *trans
 	}
 
 	if err := migrationDao.UpdateByPassAndTarget(candidate.PassID, billingMigrationTargetBundleID, map[string]interface{}{
-		passmigrationmodel.ColumnStatus:     passmigrationmodel.StatusCompleted,
+		passmigrationmodel.ColumnStatus:     passmigrationmodel.StatusPendingTransfer,
 		passmigrationmodel.ColumnDealName:   resp.DealName,
 		passmigrationmodel.ColumnBigOrderID: resp.BigOrderID,
 		passmigrationmodel.ColumnLastError:  nil,
 	}); err != nil {
 		return nil, fmt.Errorf("pass billing migration record order: %w", err)
 	}
-	return &transport.PassBillingMigrationResult{Status: "completed", PassID: candidate.PassID, BundleID: billingMigrationTargetBundleID, DealName: resp.DealName, BigOrderID: resp.BigOrderID}, nil
+	return &transport.PassBillingMigrationResult{Status: passmigrationmodel.StatusPendingTransfer, PassID: candidate.PassID, BundleID: billingMigrationTargetBundleID, DealName: resp.DealName, BigOrderID: resp.BigOrderID}, nil
+}
+
+func (l *logic) TransferPassFromBilling(req *transport.TransferPassRequest) (*PassDetail, error) {
+	if err := validateTransferPassRequest(req); err != nil {
+		return nil, err
+	}
+
+	passID := strings.TrimSpace(req.PassID)
+	userID := strings.TrimSpace(req.UserID)
+	sourceBundleID := strings.TrimSpace(req.SourceBundleID)
+	if sourceBundleID == "" {
+		sourceBundleID = allowedFreeTrialBundleID
+	}
+	targetBundleID := strings.TrimSpace(req.TargetBundleID)
+	dealName := strings.TrimSpace(req.DealName)
+	bigOrderID := strings.TrimSpace(req.BigOrderID)
+
+	var saved passmodel.Entity
+	if err := resource.GormDB.Transaction(func(tx *gorm.DB) error {
+		var passEntity passmodel.Entity
+		if err := tx.Table(passmodel.TableName).
+			Where(passmodel.ColumnPassID+" = ?", passID).
+			Take(&passEntity).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errcode.ErrPassNotFound
+			}
+			return fmt.Errorf("pass billing transfer get pass: %w", err)
+		}
+		if userID != "" && passEntity.UserID != userID {
+			return errcode.Wrap(errcode.ErrPassInvalidParam, "pass %s does not belong to user %s", passID, userID)
+		}
+
+		var migration passmigrationmodel.Entity
+		if err := tx.Table(passmigrationmodel.TableName).
+			Where(passmigrationmodel.ColumnPassID+" = ? AND "+passmigrationmodel.ColumnTargetBundleID+" = ?", passID, targetBundleID).
+			Take(&migration).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errcode.Wrap(errcode.ErrPassInvalidParam, "pass billing migration state not found")
+			}
+			return fmt.Errorf("pass billing transfer get migration state: %w", err)
+		}
+		if migration.Status != passmigrationmodel.StatusPendingTransfer &&
+			migration.Status != passmigrationmodel.StatusPendingOrder &&
+			migration.Status != passmigrationmodel.StatusCompleted {
+			return errcode.Wrap(errcode.ErrPassInvalidParam, "pass billing migration status %s is not transferable", migration.Status)
+		}
+
+		if passEntity.BundleID == targetBundleID && passEntity.Uin == req.NewUin && passEntity.AppID == req.NewAppID {
+			if err := markBillingMigrationCompleted(tx, passID, targetBundleID, dealName, bigOrderID); err != nil {
+				return err
+			}
+			saved = passEntity
+			return nil
+		}
+		if passEntity.BundleID != sourceBundleID {
+			return errcode.Wrap(errcode.ErrPassInvalidParam, "pass bundle mismatch: got %s, want %s", passEntity.BundleID, sourceBundleID)
+		}
+		if passEntity.Status != passmodel.StatusActive {
+			return errcode.Wrap(errcode.ErrPassInvalidParam, "pass status must be active, got %s", passEntity.Status)
+		}
+
+		updates := map[string]interface{}{
+			passmodel.ColumnBundleID: targetBundleID,
+			passmodel.ColumnUin:      req.NewUin,
+			passmodel.ColumnAppID:    req.NewAppID,
+		}
+		result := tx.Table(passmodel.TableName).
+			Where(passmodel.ColumnPassID+" = ?", passID).
+			Updates(updates)
+		if result.Error != nil {
+			return fmt.Errorf("pass billing transfer update pass: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return errcode.ErrPassNotFound
+		}
+		if err := markBillingMigrationCompleted(tx, passID, targetBundleID, dealName, bigOrderID); err != nil {
+			return err
+		}
+
+		passEntity.BundleID = targetBundleID
+		passEntity.Uin = req.NewUin
+		passEntity.AppID = req.NewAppID
+		saved = passEntity
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return entityToDetail(&saved), nil
+}
+
+func validateTransferPassRequest(req *transport.TransferPassRequest) error {
+	if req == nil {
+		return errcode.ErrPassInvalidParam
+	}
+	if strings.TrimSpace(req.PassID) == "" {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "pass_id is required")
+	}
+	if strings.TrimSpace(req.TargetBundleID) == "" {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "target_bundle_id is required")
+	}
+	if req.NewUin <= 0 {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "new_uin is required")
+	}
+	if req.NewAppID <= 0 {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "new_app_id is required")
+	}
+	return nil
+}
+
+func markBillingMigrationCompleted(tx *gorm.DB, passID, targetBundleID, dealName, bigOrderID string) error {
+	updates := map[string]interface{}{
+		passmigrationmodel.ColumnStatus:    passmigrationmodel.StatusCompleted,
+		passmigrationmodel.ColumnLastError: nil,
+	}
+	if dealName != "" {
+		updates[passmigrationmodel.ColumnDealName] = dealName
+	}
+	if bigOrderID != "" {
+		updates[passmigrationmodel.ColumnBigOrderID] = bigOrderID
+	}
+	result := tx.Table(passmigrationmodel.TableName).
+		Where(passmigrationmodel.ColumnPassID+" = ? AND "+passmigrationmodel.ColumnTargetBundleID+" = ?", passID, targetBundleID).
+		Updates(updates)
+	if result.Error != nil {
+		return fmt.Errorf("pass billing transfer complete migration state: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "pass billing migration state not found")
+	}
+	return nil
 }
 
 func stringValue(v *string) string {
