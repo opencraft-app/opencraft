@@ -15,7 +15,7 @@ The Lark channel is suited for office scenarios. It supports rich-text messages 
 >
 > -   A phone with Lark installed (or a desktop Lark already signed in)
 >
-> -   Complete [model configuration](./configuration/model.md) (or use the 100 trial credits included in the Launch plan)
+> -   Complete [model configuration](./model.md) (or use the 100 trial credits included in the Launch plan)
 >
 
 ---
@@ -133,4 +133,4 @@ After integration, the Lark bot supports more than basic text. The full list:
 
 ## Next steps
 
-- [Configure Skills](./configuration/skill.md) — Extend Hermes Agent capabilities
+- [Configure Skills](./skill.md) — Extend Hermes Agent capabilities

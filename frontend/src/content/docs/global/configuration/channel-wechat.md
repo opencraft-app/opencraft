@@ -15,7 +15,7 @@ WeChat 通道采用扫码接入方式，为所有通道中配置最简单的一�
 > 
 > -   一台装有 WeChat 的手机
 >     
-> -   完成 [模型配置](./configuration/model.md)（或使用启航套餐预置的 100 体验积分）
+> -   完成 [模型配置](./model.md)（或使用启航套餐预置的 100 体验积分）
 >     
 
 ---
@@ -130,10 +130,10 @@ WeChat 通道采用扫码接入方式，为所有通道中配置最简单的一�
 
 ## 下一步
 
-- [配置通道 - Telegram](./configuration/channel-telegram.md) — 轻量通知与跨端沟通
+- [配置通道 - Telegram](./channel-telegram.md) — 轻量通知与跨端沟通
 
-- [配置通道 - WhatsApp](./configuration/channel-whatsapp.md) — 国际用户沟通与客户服务
+- [配置通道 - WhatsApp](./channel-whatsapp.md) — 国际用户沟通与客户服务
 
-- [配置通道 - Discord](./configuration/channel-discord.md) — 社群运营与开发者社区
+- [配置通道 - Discord](./channel-discord.md) — 社群运营与开发者社区
 
-- [配置技能](./configuration/skill.md) — 扩展 Hermes Agent 能力
+- [配置技能](./skill.md) — 扩展 Hermes Agent 能力

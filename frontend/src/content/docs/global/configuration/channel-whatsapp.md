@@ -13,7 +13,7 @@ WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快�
 >
 > -   一台装有 WhatsApp 的手机
 >
-> -   完成 [模型配置](./configuration/model.md)（或使用启航套餐预置的 100 体验积分）
+> -   完成 [模型配置](./model.md)（或使用启航套餐预置的 100 体验积分）
 >
 
 ---
@@ -118,10 +118,10 @@ WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快�
 
 ## 下一步
 
-- [配置通道 - Discord](./configuration/channel-discord.md) — 社群运营与开发者社区
+- [配置通道 - Discord](./channel-discord.md) — 社群运营与开发者社区
 
-- [配置通道 - QQ](./configuration/channel-qq.md) — 手动创建机器人，AppID/AppSecret 接入
+- [配置通道 - QQ](./channel-qq.md) — 手动创建机器人，AppID/AppSecret 接入
 
-- [配置通道 - 企业微信](./configuration/channel-wecom.md) — 企业内部协作与办公场景
+- [配置通道 - 企业微信](./channel-wecom.md) — 企业内部协作与办公场景
 
-- [配置技能](./configuration/skill.md) — 扩展 Hermes Agent 能力
+- [配置技能](./skill.md) — 扩展 Hermes Agent 能力

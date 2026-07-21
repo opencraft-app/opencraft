@@ -17,7 +17,7 @@ The QQ channel requires creating a bot on the QQ Open Platform, then filling the
 >
 > -   A QQ account (to act as the bot administrator)
 >
-> -   Complete [model configuration](./configuration/model.md) (or use the 100 trial credits included in the Launch plan)
+> -   Complete [model configuration](./model.md) (or use the 100 trial credits included in the Launch plan)
 >
 
 ---
@@ -154,8 +154,8 @@ After integration, the QQ bot supports more than basic text. The full list:
 
 ## Next steps
 
-- [Configure Channel - WeCom](./configuration/channel-wecom.md) — Enterprise internal collaboration and office scenarios
+- [Configure Channel - WeCom](./channel-wecom.md) — Enterprise internal collaboration and office scenarios
 
-- [Configure Channel - Lark](./configuration/channel-feishu.md) — Office scenarios with rich text and group chat
+- [Configure Channel - Lark](./channel-feishu.md) — Office scenarios with rich text and group chat
 
-- [Configure Skills](./configuration/skill.md) — Extend Hermes Agent capabilities
+- [Configure Skills](./skill.md) — Extend Hermes Agent capabilities

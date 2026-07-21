@@ -13,7 +13,7 @@ The Telegram channel uses Bot Token access and is suitable for quickly connectin
 >
 > -   A phone with Telegram installed
 >
-> -   Complete [model configuration](./configuration/model.md) (or use the 100 trial credits included in the Launch plan)
+> -   Complete [model configuration](./model.md) (or use the 100 trial credits included in the Launch plan)
 >
 
 ---
@@ -133,10 +133,10 @@ After access succeeds, the Telegram bot can receive and reply to basic text mess
 
 ## Next steps
 
-- [Configure Channel - WhatsApp](./configuration/channel-whatsapp.md) — International user communication and customer service
+- [Configure Channel - WhatsApp](./channel-whatsapp.md) — International user communication and customer service
 
-- [Configure Channel - Discord](./configuration/channel-discord.md) — Community operations and developer communities
+- [Configure Channel - Discord](./channel-discord.md) — Community operations and developer communities
 
-- [Configure Channel - QQ](./configuration/channel-qq.md) — Bot created manually, integrated via AppID/AppSecret
+- [Configure Channel - QQ](./channel-qq.md) — Bot created manually, integrated via AppID/AppSecret
 
-- [Configure Skills](./configuration/skill.md) — Extend Hermes Agent capabilities
+- [Configure Skills](./skill.md) — Extend Hermes Agent capabilities

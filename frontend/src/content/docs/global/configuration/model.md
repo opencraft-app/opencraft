@@ -198,18 +198,18 @@
 
 ## 下一步
 
-- [配置通道 - WeChat](./configuration/channel-wechat.md)
+- [配置通道 - WeChat](./channel-wechat.md)
 
-- [配置通道 - Telegram](./configuration/channel-telegram.md)
+- [配置通道 - Telegram](./channel-telegram.md)
 
-- [配置通道 - WhatsApp](./configuration/channel-whatsapp.md)
+- [配置通道 - WhatsApp](./channel-whatsapp.md)
 
-- [配置通道 - Discord](./configuration/channel-discord.md)
+- [配置通道 - Discord](./channel-discord.md)
 
-- [配置通道 - QQ](./configuration/channel-qq.md)
+- [配置通道 - QQ](./channel-qq.md)
 
-- [配置通道 - 企业微信](./configuration/channel-wecom.md)
+- [配置通道 - 企业微信](./channel-wecom.md)
 
-- [配置通道 - 飞书](./configuration/channel-feishu.md)
+- [配置通道 - 飞书](./channel-feishu.md)
 
-- [配置技能](./configuration/skill.md)
+- [配置技能](./skill.md)

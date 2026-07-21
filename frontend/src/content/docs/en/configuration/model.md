@@ -198,18 +198,18 @@ When this happens, check the model configuration again.
 
 ## Next steps
 
-- [Configure Channel - WeChat](./configuration/channel-wechat.md)
+- [Configure Channel - WeChat](./channel-wechat.md)
 
-- [Configure Channel - Telegram](./configuration/channel-telegram.md)
+- [Configure Channel - Telegram](./channel-telegram.md)
 
-- [Configure Channel - WhatsApp](./configuration/channel-whatsapp.md)
+- [Configure Channel - WhatsApp](./channel-whatsapp.md)
 
-- [Configure Channel - Discord](./configuration/channel-discord.md)
+- [Configure Channel - Discord](./channel-discord.md)
 
-- [Configure Channel - QQ](./configuration/channel-qq.md)
+- [Configure Channel - QQ](./channel-qq.md)
 
-- [Configure Channel - WeCom](./configuration/channel-wecom.md)
+- [Configure Channel - WeCom](./channel-wecom.md)
 
-- [Configure Channel - Lark](./configuration/channel-feishu.md)
+- [Configure Channel - Lark](./channel-feishu.md)
 
-- [Configure Skills](./configuration/skill.md)
+- [Configure Skills](./skill.md)
