@@ -55,7 +55,6 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "quickstart", title: "快速开始" },
       { slug: "core-concepts", title: "核心概念" },
       { slug: "who-is-lightvela-for", title: "LightVela 适合哪些人使用？" },
-      { slug: "when-not-to-use-lightvela", title: "LightVela 不适合哪些场景？" },
     ],
   },
   {
@@ -206,7 +205,6 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   quickstart: "02-quickstart.md",
   "core-concepts": "04-core-concepts.md",
   "who-is-lightvela-for": "who-is-lightvela-for.md",
-  "when-not-to-use-lightvela": "when-not-to-use-lightvela.md",
   // 账号、套餐与开通
   account: "03-account.md",
   "announcements/public-beta": "announcements/public-beta.md",

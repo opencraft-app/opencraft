@@ -87,9 +87,6 @@ export const DOCS_ROUTE_SLUGS = {
       "who-is-lightvela-for"
     ],
     [
-      "when-not-to-use-lightvela"
-    ],
-    [
       "account"
     ],
     [
