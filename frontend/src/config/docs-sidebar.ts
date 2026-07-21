@@ -119,16 +119,6 @@ const CN_SIDEBAR: DocGroup[] = [
     ],
   },
   {
-    title: "安全、隐私与数据",
-    items: [
-      { slug: "security/data-protection", title: "LightVela 如何保护我的数据？" },
-      { slug: "security/data-storage", title: "Agent 的对话、记忆和文件存储在哪里？" },
-      { slug: "security/instance-isolation", title: "每个 Hermes 实例是否独立隔离？" },
-      { slug: "security/model-training-policy", title: "是否会使用用户数据训练模型？" },
-      { slug: "security/export-and-delete-data", title: "数据能否导出或删除？" },
-    ],
-  },
-  {
     title: "进阶用法",
     items: [
       { slug: "advanced/models-skills-automation", title: "如何组合模型、技能和自动任务？" },
@@ -244,12 +234,6 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "troubleshooting/automation-not-running": "troubleshooting/automation-not-running.md",
   "troubleshooting/skill-installation-failed": "troubleshooting/skill-installation-failed.md",
   "troubleshooting/rebuild-hermes": "troubleshooting/rebuild-hermes.md",
-  // 安全、隐私与数据
-  "security/data-protection": "security/data-protection.md",
-  "security/data-storage": "security/data-storage.md",
-  "security/instance-isolation": "security/instance-isolation.md",
-  "security/model-training-policy": "security/model-training-policy.md",
-  "security/export-and-delete-data": "security/export-and-delete-data.md",
   // 进阶用法
   "advanced/models-skills-automation": "advanced/models-skills-automation.md",
   "advanced/agent-workflow-design": "advanced/agent-workflow-design.md",
