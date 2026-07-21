@@ -1536,3 +1536,85 @@ Not-tested: 待实现后填写
 - [x] 将 `frontend/` 下 34 个代码文件名中的 `openclaw` 或 `hermes-agent` 统一收敛为 `agent`。
 - [x] 仅同步必要的模块路径引用，不修改 `OpenClaw*` 代码标识、API 字段、路由或普通业务文案。
 - [x] 确认旧代码文件名与旧模块路径无残留；49 个 TypeScript 文件通过调用关系等价检查，14 个测试文件共 252 条通过，`pnpm check` 和 `git diff --check` 通过；两个账号页测试文件的 17 条既有失败已确认与 `origin/master` 基线一致。
+
+### Task 75: 模型切换时同步自动任务推理配置
+
+**角色：** single_agent / implementation + verification
+
+**目标：** 用户切换 Hermes Agent 默认模型时，先识别会因 provider/model 漂移保护而受影响的自动任务；由用户明确选择仅切换聊天模型，或在切换成功后把这些任务显式绑定到新的默认 provider/model。
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-tat-adapter.ts`
+- Create: `frontend/src/pages/marketing/agent-model-switch-automation-sync.tsx`
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
+- Modify/Create: related Vitest files
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 用失败测试覆盖模型切换命令识别、仅筛选未完整 pin 且需要推理的任务、用户两种选择，以及同步部分失败反馈。
+- [x] 在 SDK 命令适配器加入局部命令生命周期钩子；只拦截 `acli model switch`，不改变通道、技能和其他模型命令。
+- [x] 模型切换前展示明确选择；模型切换成功后，通过 Hermes 官方 `cronjob(action="update")` 逐任务补齐未 pin 的 provider/model，保留任务原有显式绑定。
+- [x] 检查失败时不静默切换；同步部分失败时保留已成功的模型切换和任务更新，并就近反馈成功/失败数量。
+- [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check`、浏览器页面烟测和 `git diff --check`。
+- [x] 按本地预览反馈优化模型切换弹窗标题、风险说明和三个操作按钮文案；目标测试、类型检查、i18n 检查与 `git diff --check` 均通过。
+- [x] 中文界面将“当前套餐不支持所请求模型”的 Hermes 原始错误转换为用户可读中文，其他未知错误保留原文；目标测试、类型检查、i18n 检查与 `git diff --check` 均通过。
+- [x] 修复同步时误把命名 provider 归一化为 `custom` 的问题；同步选择覆盖所有尚未匹配目标 provider/model 的推理任务，可修复旧逻辑误绑定并支持后续多次切换；70 条目标测试、类型检查、i18n 检查与 `git diff --check` 均通过。
+- [x] 按本地预览反馈将模型切换提示拆成两段，并明确同步后的 Token 消耗方式；目标测试、类型检查、i18n 检查与 `git diff --check` 均通过。
+- [x] 按最新确认文案精简模型切换风险与 Token 消耗说明；目标测试、类型检查、i18n 检查与 `git diff --check` 均通过。
+
+### Task 76: 模型切换结果提示纵向排列
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/toast.ts`
+- Create: `frontend/src/lib/__tests__/toast.test.ts`
+
+- [x] 宿主 Toast 与 SDK message 复用同一个顶部纵向容器，同时出现时按触发顺序排列并保留间距。
+- [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
+
+### Task 77: 排除已失效的自动任务
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-switch-automation-sync.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-model-switch-automation-sync.test.ts`
+
+- [x] 暂停任务仍参与模型切换提示与同步；单次任务已执行或已过生效期的任务不再计入。
+- [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
+
+### Task 78: 关闭模型切换提示时终止流程
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-switch-automation-sync.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-model-switch-automation-sync.test.ts`
+
+- [x] 用户关闭自动任务更新提示时直接取消本次模型切换，不再误入自动任务检查失败降级弹窗。
+- [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
+
+### Task 79: 精简自动任务更新数量提示
+
+**角色：** single_agent / copy update + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-switch-automation-sync.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-model-switch-automation-sync.test.ts`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 将“检测到您已配置 x 个自动任务”改为“检测到 x 个自动任务需要更新”，保留动态数量。
+- [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
+
+### Task 80: 已过生效期任务继续同步模型
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-switch-automation-sync.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-model-switch-automation-sync.test.ts`
+
+- [x] 暂停及已过生效期的周期任务均计入模型更新提示与同步；仅已执行完的单次任务继续排除。
+- [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。

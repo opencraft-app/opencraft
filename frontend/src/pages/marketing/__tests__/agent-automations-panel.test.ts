@@ -66,6 +66,18 @@ describe("recent run limit hint", () => {
     expect(screen.getByText("问题原因：模型切换导致任务未执行")).toBeTruthy();
   });
 
+  it("localizes the unsupported-plan model error", () => {
+    render(createElement(RecentCronRunsPanel, {
+      runs: [makeCronRun({
+        status: "error: RuntimeError: HTTP 403: The requested model is not available in your current plan.",
+      })],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+
+    expect(screen.getByText("执行失败：当前模型暂不可用，请稍后重试或切换模型。")).toBeTruthy();
+    expect(screen.queryByText(/The requested model is not available/)).toBeNull();
+  });
+
   it("shows the bound Skill in the recent-run detail", () => {
     render(createElement(RecentCronRunsPanel, {
       runs: [makeCronRun({ skills: ["builder-radar"] })],

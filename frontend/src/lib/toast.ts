@@ -7,7 +7,7 @@
  *
  * 用纯 DOM 实现而不是 React portal，是为了：
  *  1. 不受任何 React 生命周期影响（成功后哪怕组件立刻 unmount，toast 也照样跑完）
- *  2. 跟 SDK 的 toast 共享样式 / 错峰策略（同时只显示最新一条）
+ *  2. 跟 SDK 的 toast 共享容器；同时出现时按触发顺序纵向排列
  *  3. React 19 + ReactDOM.render 在某些组合下的 race condition 不会触发
  *
  * API：
@@ -15,7 +15,8 @@
  *   toast.error("重置失败，请重试")
  */
 
-const CONTAINER_ID = "_lw-toast-container";
+// SDK message 使用同一容器 ID；复用后两类提示会按容器的 column + gap 布局排列。
+const CONTAINER_ID = "_lh-message-container";
 const DEFAULT_DURATION_MS = 3000;
 
 let currentEl: HTMLElement | null = null;

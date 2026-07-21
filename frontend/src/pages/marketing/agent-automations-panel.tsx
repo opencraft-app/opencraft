@@ -1395,10 +1395,10 @@ function isOnceCronJob(job: CronJob): boolean {
   return kind === "once" || display.toLowerCase().startsWith("once");
 }
 
-function isCronJobExpired(job: CronJob): boolean {
+export function isCronJobExpired(job: CronJob, now = Date.now()): boolean {
   if (!isOnceCronJob(job) || !job.next_run_at) return false;
   const d = parseCronDate(job.next_run_at);
-  return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
+  return !Number.isNaN(d.getTime()) && d.getTime() < now;
 }
 
 export function isCronJobExpiredBeyondGrace(job: CronJob): boolean {
@@ -2002,6 +2002,9 @@ export function getLastAgentRunForJob(job: CronJob, recentRuns: CronRunRecord[])
 function formatLastStatus(status: string | null, t: ReturnType<typeof useT>): string {
   const normalized = (status || "").trim().toLowerCase();
   if (!normalized) return "";
+  if (normalized.includes("the requested model is not available in your current plan")) {
+    return t("执行失败：当前模型暂不可用，请稍后重试或切换模型。");
+  }
   if (["ok", "success", "succeeded", "done", "completed"].includes(normalized)) return t("执行成功");
   if (["failed", "failure", "error"].includes(normalized)) return t("执行失败");
   if (normalized === "not_executed") return t("未执行");
