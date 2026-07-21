@@ -138,6 +138,37 @@ func TestRunIsolateInstanceTaskTreatsSandboxAlreadyPausedAsSuccess(t *testing.T)
 	}
 }
 
+func TestRunIsolateInstanceTaskTakesOverResumingInstance(t *testing.T) {
+	dao := &isolateInstanceDaoStub{
+		entity: &modelinstance.Entity{
+			Id:         204,
+			InstanceId: "ins-isolate-resuming",
+			Status:     modelinstance.InstanceStatusResuming,
+			SandboxId:  "sbx-isolate-resuming",
+		},
+	}
+	sb := &isolateSandboxStub{}
+	l := newIsolateLogicWith(dao, sb)
+	ctx := pctx.NewContext(nil).WithUserID("user-isolate-resuming")
+
+	err := l.RunIsolateInstanceTask(ctx, &common.IsolateInstanceTaskPayload{
+		InstanceID: "ins-isolate-resuming",
+		PassID:     "pass-isolate-resuming",
+	})
+	if err != nil {
+		t.Fatalf("expected resuming instance to be isolated, got %v", err)
+	}
+	if sb.pauseCalls != 1 {
+		t.Fatalf("expected one compensating pause, got %d", sb.pauseCalls)
+	}
+	if len(dao.lastFromStatuses) != 2 || dao.lastFromStatuses[0] != modelinstance.InstanceStatusRunning || dao.lastFromStatuses[1] != modelinstance.InstanceStatusResuming {
+		t.Fatalf("unexpected transition sources: %v", dao.lastFromStatuses)
+	}
+	if dao.entity.Status != modelinstance.InstanceStatusPaused {
+		t.Fatalf("instance status = %s, want %s", dao.entity.Status, modelinstance.InstanceStatusPaused)
+	}
+}
+
 // TestRunIsolateInstanceTaskPropagatesUnexpectedSandboxError 边界保护：
 // 当 PauseSandbox 返非 not_found / 非 conflict 的真实错误时，子 task 必须冒泡错误，
 // 让父 task 框架按 60s interval 重试，不能误吞。
