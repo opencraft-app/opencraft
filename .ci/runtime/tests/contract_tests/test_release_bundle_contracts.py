@@ -118,6 +118,24 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(values.get("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"), "*")
         self.assertEqual(values.get("CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST"), "*")
 
+    def test_shprod_ctl_routes_only_the_llmgateway_canary_to_shanghai(self) -> None:
+        secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/shprod/ctl-runtime-secrets.sops.yaml").read_text()
+        )
+        values = secret.get("stringData") or {}
+
+        self.assertEqual(values.get("CTL_LLMGATEWAY_BASE_URL"), "https://token-admin.lightvela.com")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_DEFAULT_BASE_URL"), "https://token.lightvela.com/v1")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_DEFAULT_MODEL_ID"), "auto")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"), "usr_58b6bb1f68ba7f46584bd282")
+        self.assertEqual(
+            values.get("CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST"),
+            "usr_58b6bb1f68ba7f46584bd282",
+        )
+        for key in ("CTL_LLMGATEWAY_ADMIN_TOKEN", "CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN"):
+            with self.subTest(key=key):
+                self.assertRegex(values.get(key, ""), r"^ENC\[")
+
     def test_playground_auto_release_workflows_match_build_contracts(self) -> None:
         manifest = load_manifest()
 
