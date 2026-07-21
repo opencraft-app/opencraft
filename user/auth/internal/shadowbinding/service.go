@@ -14,17 +14,19 @@ import (
 )
 
 type Options struct {
-	Enabled     bool
-	Now         func() time.Time
-	AuthCodeTTL time.Duration
+	Enabled        bool
+	Now            func() time.Time
+	AuthCodeTTL    time.Duration
+	AuthCodePrefix string
 }
 
 type Service struct {
-	store       Store
-	client      TencentCloudClient
-	enabled     bool
-	now         func() time.Time
-	authCodeTTL time.Duration
+	store          Store
+	client         TencentCloudClient
+	enabled        bool
+	now            func() time.Time
+	authCodeTTL    time.Duration
+	authCodePrefix string
 }
 
 func New(store Store, client TencentCloudClient, opts Options) *Service {
@@ -36,7 +38,7 @@ func New(store Store, client TencentCloudClient, opts Options) *Service {
 	if ttl <= 0 {
 		ttl = 10 * time.Minute
 	}
-	return &Service{store: store, client: client, enabled: opts.Enabled, now: now, authCodeTTL: ttl}
+	return &Service{store: store, client: client, enabled: opts.Enabled, now: now, authCodeTTL: ttl, authCodePrefix: strings.Trim(strings.TrimSpace(opts.AuthCodePrefix), ".")}
 }
 
 func (s *Service) Enabled() bool { return s != nil && s.enabled }
@@ -186,7 +188,7 @@ func (s *Service) SyncPhoneChange(ctx context.Context, in PhoneChangeInput) (Bin
 			OldPhoneNumber:      strings.TrimSpace(in.OldPhone),
 			NewPhoneCountryCode: "86",
 			NewPhoneNumber:      strings.TrimSpace(in.NewPhone),
-			AuthCode:            authCode.Code,
+			AuthCode:            s.externalAuthCode(authCode.Code),
 			VerifyCode:          strings.TrimSpace(in.VerifyCode),
 		}); err != nil {
 			return existing, err
@@ -264,7 +266,7 @@ func (s *Service) SaveBasicAuth(ctx context.Context, in BasicAuthInput) error {
 		"auth_code_expires_at", authCode.ExpiresAt.UTC().Format(time.RFC3339),
 	)
 	if err := s.client.SaveBasicAuthForSaaS(ctx, CloudSaveBasicAuthInput{
-		AuthCode:    authCode.Code,
+		AuthCode:    s.externalAuthCode(authCode.Code),
 		AccountType: accountType,
 		Name:        name,
 		IDCard:      strings.TrimSpace(in.IDCard),
@@ -362,6 +364,15 @@ func (s *Service) IssueAuthCode(ctx context.Context, userID string, purpose stri
 		purpose = AuthCodePurposeSaaSCallback
 	}
 	return s.store.IssueAuthCode(ctx, strings.TrimSpace(userID), strings.TrimSpace(purpose), s.authCodeTTL, s.now())
+}
+
+// externalAuthCode decorates the opaque code only while it travels through
+// TencentCloud. The raw code remains the value persisted and consumed locally.
+func (s *Service) externalAuthCode(code string) string {
+	if s == nil || s.authCodePrefix == "" {
+		return code
+	}
+	return s.authCodePrefix + "." + code
 }
 
 func (s *Service) ConsumeAuthCode(ctx context.Context, code string) (AuthCode, error) {

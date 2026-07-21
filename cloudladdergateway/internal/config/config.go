@@ -120,10 +120,16 @@ type WebhookConfig struct {
 }
 
 type ExternalRoute struct {
-	Path         string   `yaml:"path"`
-	Methods      []string `yaml:"methods"`
-	RouteID      string   `yaml:"route_id"`
-	UpstreamPath string   `yaml:"upstream_path"`
+	Path           string                  `yaml:"path"`
+	Methods        []string                `yaml:"methods"`
+	RouteID        string                  `yaml:"route_id"`
+	UpstreamPath   string                  `yaml:"upstream_path"`
+	AuthCodeRoutes []ExternalAuthCodeRoute `yaml:"auth_code_routes"`
+}
+
+type ExternalAuthCodeRoute struct {
+	Prefix  string `yaml:"prefix"`
+	RouteID string `yaml:"route_id"`
 }
 
 func Load(path string) (Config, error) {
@@ -309,6 +315,23 @@ func (c Config) Validate() error {
 		}
 		if strings.TrimSpace(route.UpstreamPath) != "" && !strings.HasPrefix(route.UpstreamPath, "/") {
 			return fmt.Errorf("external_routes[%d].upstream_path must start with /", i)
+		}
+		prefixes := make(map[string]struct{}, len(route.AuthCodeRoutes))
+		for j, authCodeRoute := range route.AuthCodeRoutes {
+			prefix := strings.TrimSpace(authCodeRoute.Prefix)
+			if prefix == "" || !strings.HasSuffix(prefix, ".") {
+				return fmt.Errorf("external_routes[%d].auth_code_routes[%d].prefix must be non-empty and end with .", i, j)
+			}
+			if _, exists := prefixes[prefix]; exists {
+				return fmt.Errorf("external_routes[%d].auth_code_routes[%d].prefix %q is duplicated", i, j, prefix)
+			}
+			prefixes[prefix] = struct{}{}
+			if strings.TrimSpace(authCodeRoute.RouteID) == "" {
+				return fmt.Errorf("external_routes[%d].auth_code_routes[%d].route_id is required", i, j)
+			}
+			if _, ok := seen[authCodeRoute.RouteID]; !ok {
+				return fmt.Errorf("external_routes[%d].auth_code_routes[%d] references unknown route %q", i, j, authCodeRoute.RouteID)
+			}
 		}
 	}
 	return nil
