@@ -20,6 +20,7 @@ const (
 	SourceApplySubscription        = modelgateway.SourceApplySubscription
 	SourceDetectActiveSubscription = modelgateway.SourceDetectActiveSubscription
 	SourceRenewalMigration         = modelgateway.SourceRenewalMigration
+	SourceLegacyPassMigration      = modelgateway.SourceLegacyPassMigration
 	SourceManual                   = modelgateway.SourceManual
 )
 

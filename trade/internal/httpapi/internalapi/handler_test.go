@@ -220,12 +220,20 @@ func (f *fakeOrderWriter) MarkOrderCancelled(ctx context.Context, dealName strin
 }
 
 type fakeOrderStore struct {
-	getOrderByDealNameFn func(ctx context.Context, dealName string) (*store.TradeOrder, error)
+	getOrderByDealNameFn                    func(ctx context.Context, dealName string) (*store.TradeOrder, error)
+	getProvisionedCreateOrderByResourceIDFn func(ctx context.Context, resourceID string) (*store.TradeOrder, error)
 }
 
 func (f *fakeOrderStore) GetOrderByDealName(ctx context.Context, dealName string) (*store.TradeOrder, error) {
 	if f.getOrderByDealNameFn != nil {
 		return f.getOrderByDealNameFn(ctx, dealName)
+	}
+	return nil, store.ErrTradeOrderNotFound
+}
+
+func (f *fakeOrderStore) GetProvisionedCreateOrderByResourceID(ctx context.Context, resourceID string) (*store.TradeOrder, error) {
+	if f.getProvisionedCreateOrderByResourceIDFn != nil {
+		return f.getProvisionedCreateOrderByResourceIDFn(ctx, resourceID)
 	}
 	return nil, store.ErrTradeOrderNotFound
 }
@@ -267,9 +275,10 @@ func newTestEnv(t *testing.T) *testEnv {
 
 	r := gin.New()
 	Install(r, Deps{
-		InternalServiceToken: "test-token",
-		Inquiry:              inq,
-		PlaceOrder:           po,
+		InternalServiceToken:  "test-token",
+		Inquiry:               inq,
+		PlaceOrder:            po,
+		ProvisionedOrderStore: orderStore,
 		// D-2.2 销毁链路用户主动入口路由依赖（设计稿 §3.5 + §11-A Q26）。
 		BundleStore: bundle,
 		JifeiClient: jifei,

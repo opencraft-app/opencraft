@@ -11,6 +11,7 @@
 //   - POST /internal/trade/orders/renew/place-and-pay 续费下单+支付一体化（ctl/pass.RenewPassOrderAndPay 测试用，R-D-7）
 //   - POST /internal/trade/orders/:dealName/pay-url   生成支付 url（ctl/pass CreatePass 拉支付页用）
 //   - POST /internal/trade/orders/:dealName/query-status 订单状态反查（v1.7.32 引入，详见 .tmp/ctl-order-status-query-design.md）
+//   - GET  /internal/trade/orders/by-resource/:resourceID 存量 Pass 原始购买周期查询
 //   - POST /internal/trade/flows/:flowID/complete     trade_flow.status 推进到 completed（Sub-4）
 //   - POST /internal/trade/resources/:resourceID/delete  ctl→trade 销毁链路用户主动入口（D-2）
 //   - POST /internal/trade/resources/:resourceID/refund  ctl→trade 退款链路用户主动入口（trade-pass-refund-design.md v0.5）
@@ -94,6 +95,9 @@ type Deps struct {
 	// 允许 nil（向后兼容 8A / Sub-4 / D-2 的旧调用方）；nil 时 query-status 路由不挂载。
 	OrderStatus *orderstatus.Service
 
+	// ProvisionedOrderStore 仅用于存量 Pass 迁移查询；nil 时不挂载对应路由。
+	ProvisionedOrderStore store.ProvisionedCreateOrderStore
+
 	// SiteKind（v1.7.x 国际站接入 A6.1 新增）：trade 内部部署站点语义字面量。
 	//
 	// 设计稿：.tmp/trade-international-site-design.md v1.1 §3.1 A6
@@ -135,6 +139,9 @@ func Install(router *gin.Engine, deps Deps) {
 	group.POST("/orders/renew", placeRenewOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/renew/place-and-pay", placeRenewOrderAndPayHandler(deps.PlaceOrder))
 	group.POST("/orders/:dealName/pay-url", payURLHandler(deps.PlaceOrder))
+	if deps.ProvisionedOrderStore != nil {
+		group.GET("/orders/by-resource/:resourceID", provisionedCreateOrderHandler(deps.ProvisionedOrderStore))
+	}
 
 	// Sub-4 ctl→trade callback：trade_flow.status 推进到 completed。
 	// FlowStore == nil 时不挂载（向后兼容；生产路径 main.go 必注入）。
@@ -173,6 +180,38 @@ func Install(router *gin.Engine, deps Deps) {
 		group.GET("/dianshi/orders", listDianshiRecordsHandler(deps.DianshiAdminStore))
 		group.DELETE("/dianshi/orders/:dealName", deleteDianshiOrderHandler(deps.DianshiAdminStore))
 		group.DELETE("/dianshi/participations/:id", deleteDianshiParticipationHandler(deps.DianshiAdminStore))
+	}
+}
+
+type provisionedCreateOrderResponse struct {
+	DealName string `json:"deal_name"`
+	BundleID string `json:"bundle_id"`
+	Period   int    `json:"period"`
+	TimeUnit string `json:"time_unit"`
+}
+
+func provisionedCreateOrderHandler(orderStore store.ProvisionedCreateOrderStore) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		resourceID := strings.TrimSpace(c.Param("resourceID"))
+		if resourceID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": "resourceID is required"})
+			return
+		}
+		order, err := orderStore.GetProvisionedCreateOrderByResourceID(c.Request.Context(), resourceID)
+		if errors.Is(err, store.ErrTradeOrderNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": "OrderNotFound", "message": "provisioned create order not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "InternalError", "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, provisionedCreateOrderResponse{
+			DealName: order.DealName,
+			BundleID: order.BundleID,
+			Period:   order.Period,
+			TimeUnit: order.TimeUnit,
+		})
 	}
 }
 

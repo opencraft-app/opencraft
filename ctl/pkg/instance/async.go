@@ -17,6 +17,7 @@ import (
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
 	instancebirth "ctl/pkg/instancebirth"
+	entitlementmigration "ctl/pkg/logic/entitlementmigration"
 	"ctl/pkg/logic/gatewayroute"
 	"ctl/pkg/metric"
 	modelfactory "ctl/pkg/model/factory"
@@ -2026,6 +2027,11 @@ func (l *logic) provisionAiGatewayOnCreate(ctx pctx.Context, entity *modelinstan
 	if err := l.ensureAiGatewayUser(ctx, backend, ctx.GetUserID(), "", entity.InstanceId); err != nil {
 		return err
 	}
+	if backend == gatewayBackendLLMGateway {
+		if err := l.ensureLegacyPassEntitlement(ctx, ctx.GetUserID()); err != nil {
+			return fmt.Errorf("ensure llmgateway pass entitlement: %w", err)
+		}
+	}
 	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, ctx.GetUserID(), entity.InstanceId)
 	if err != nil {
 		return err
@@ -2062,6 +2068,14 @@ func (l *logic) provisionAiGatewayOnCreate(ctx pctx.Context, entity *modelinstan
 	}
 
 	return nil
+}
+
+func (l *logic) ensureLegacyPassEntitlement(ctx pctx.Context, userID string) error {
+	if l.legacyPassEntitlementEnsurer != nil {
+		return l.legacyPassEntitlementEnsurer(ctx, userID, time.Now().UTC())
+	}
+	_, err := entitlementmigration.EnsureLegacyPassEntitlement(ctx, userID, time.Now().UTC())
+	return err
 }
 
 const hermesRuntimeUser = "agentuser"

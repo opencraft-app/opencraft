@@ -105,25 +105,26 @@ type Logic interface {
 }
 
 type logic struct {
-	instanceDao            modelinstance.Dao
-	taskDao                taskmodel.Dao
-	channelLoginSessionDao channelloginsession.Dao
-	quotaDao               quota.Dao
-	sandboxAdapter         psandbox.Adapter
-	aiGatewayAdapter       paigateway.Adapter
-	llmGatewayAdapter      pllmgateway.Adapter
-	openclawGatewayAdapter popenclawgateway.Adapter
-	producer               mq.Producer
-	operationHistoryDao    operationhistory.Dao
-	objectIdLogic          objectid.Logic
-	logger                 *zap.Logger
-	defaultTemplateClass   string
-	defaultTemplate        string
-	defaultSKUID           string
-	candidateTemplates     []string
-	executeTasksInline     bool
-	weixinHub              *weixinLoginHub
-	churnGuard             *createChurnGuard
+	instanceDao                  modelinstance.Dao
+	taskDao                      taskmodel.Dao
+	channelLoginSessionDao       channelloginsession.Dao
+	quotaDao                     quota.Dao
+	sandboxAdapter               psandbox.Adapter
+	aiGatewayAdapter             paigateway.Adapter
+	llmGatewayAdapter            pllmgateway.Adapter
+	openclawGatewayAdapter       popenclawgateway.Adapter
+	producer                     mq.Producer
+	operationHistoryDao          operationhistory.Dao
+	objectIdLogic                objectid.Logic
+	logger                       *zap.Logger
+	defaultTemplateClass         string
+	defaultTemplate              string
+	defaultSKUID                 string
+	candidateTemplates           []string
+	executeTasksInline           bool
+	weixinHub                    *weixinLoginHub
+	churnGuard                   *createChurnGuard
+	legacyPassEntitlementEnsurer func(stdctx.Context, string, time.Time) error
 }
 
 func NewLogic() Logic {
