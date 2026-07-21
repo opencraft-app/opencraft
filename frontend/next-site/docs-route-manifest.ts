@@ -75,20 +75,35 @@ export const DOCS_ROUTE_SLUGS = {
   "zh-cn": [
     [],
     [
-      "announcements",
-      "public-beta"
-    ],
-    [
       "overview"
     ],
     [
       "quickstart"
     ],
     [
+      "core-concepts"
+    ],
+    [
+      "who-is-lightvela-for"
+    ],
+    [
+      "when-not-to-use-lightvela"
+    ],
+    [
       "account"
     ],
     [
-      "core-concepts"
+      "announcements",
+      "public-beta"
+    ],
+    [
+      "plans"
+    ],
+    [
+      "credits"
+    ],
+    [
+      "create-first-hermes"
     ],
     [
       "configuration"
@@ -114,10 +129,142 @@ export const DOCS_ROUTE_SLUGS = {
       "skill"
     ],
     [
+      "configuration",
+      "memory"
+    ],
+    [
+      "configuration",
+      "files"
+    ],
+    [
+      "configuration",
+      "automation"
+    ],
+    [
+      "configuration",
+      "diagnostics"
+    ],
+    [
+      "configuration",
+      "multiple-models"
+    ],
+    [
+      "use-cases",
+      "personal-ai-assistant"
+    ],
+    [
+      "use-cases",
+      "hermes-agent-24-7"
+    ],
+    [
+      "use-cases",
+      "chinese-messaging-channels"
+    ],
+    [
+      "use-cases",
+      "daily-summary"
+    ],
+    [
+      "use-cases",
+      "memory-and-knowledge"
+    ],
+    [
+      "use-cases",
+      "work-assistant"
+    ],
+    [
+      "compare",
+      "lightvela-vs-self-hosting-hermes"
+    ],
+    [
+      "compare",
+      "cloud-vs-local-agent"
+    ],
+    [
+      "compare",
+      "ai-agent-vs-chatbot"
+    ],
+    [
+      "compare",
+      "lightvela-vs-server-hosting"
+    ],
+    [
+      "compare",
+      "model-selection"
+    ],
+    [
       "faq"
     ],
     [
+      "troubleshooting",
+      "agent-not-responding"
+    ],
+    [
+      "troubleshooting",
+      "model-errors"
+    ],
+    [
+      "troubleshooting",
+      "channel-connection-failed"
+    ],
+    [
+      "troubleshooting",
+      "automation-not-running"
+    ],
+    [
+      "troubleshooting",
+      "skill-installation-failed"
+    ],
+    [
+      "troubleshooting",
+      "rebuild-hermes"
+    ],
+    [
+      "security",
+      "data-protection"
+    ],
+    [
+      "security",
+      "data-storage"
+    ],
+    [
+      "security",
+      "instance-isolation"
+    ],
+    [
+      "security",
+      "model-training-policy"
+    ],
+    [
+      "security",
+      "export-and-delete-data"
+    ],
+    [
+      "advanced",
+      "models-skills-automation"
+    ],
+    [
+      "advanced",
+      "agent-workflow-design"
+    ],
+    [
+      "advanced",
+      "reduce-model-cost"
+    ],
+    [
+      "advanced",
+      "automation-fit"
+    ],
+    [
+      "advanced",
+      "multi-channel-hermes"
+    ],
+    [
       "contact-us"
+    ],
+    [
+      "support",
+      "report-an-issue"
     ]
   ],
   "zh-sg": [
