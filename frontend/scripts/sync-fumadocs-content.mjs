@@ -35,47 +35,10 @@ const cnDocs = [
   { slug: 'configuration/channel-feishu', title: '配置通道 - 飞书', file: 'configuration/channel-feishu.md', group: '功能与配置', description: '通过飞书与 Hermes Agent 对话。' },
   { slug: 'configuration/channel-qq', title: '配置通道 - QQ', file: 'configuration/channel-qq.md', group: '功能与配置', description: '通过 QQ 与 Hermes Agent 对话。' },
   { slug: 'configuration/skill', title: '配置技能', file: 'configuration/skill.md', group: '功能与配置', description: '安装技能包，扩展 Hermes 能力。' },
-  { slug: 'configuration/memory', title: '记忆管理', file: 'configuration/memory.md', group: '功能与配置', description: '' },
-  { slug: 'configuration/files', title: '云端文件管理', file: 'configuration/files.md', group: '功能与配置', description: '' },
-  { slug: 'configuration/automation', title: '自动任务', file: 'configuration/automation.md', group: '功能与配置', description: '' },
-  { slug: 'configuration/diagnostics', title: '诊断中心', file: 'configuration/diagnostics.md', group: '功能与配置', description: '' },
-  { slug: 'configuration/multiple-models', title: '多模型配置与切换', file: 'configuration/multiple-models.md', group: '功能与配置', description: '' },
-  // 场景方案
-  { slug: 'use-cases/personal-ai-assistant', title: '如何用 LightVela 搭建个人 AI 助手？', file: 'use-cases/personal-ai-assistant.md', group: '场景方案', description: '' },
-  { slug: 'use-cases/hermes-agent-24-7', title: '如何让 Hermes Agent 7x24 小时在线？', file: 'use-cases/hermes-agent-24-7.md', group: '场景方案', description: '' },
-  { slug: 'use-cases/chinese-messaging-channels', title: '如何把 AI Agent 接入微信 / QQ / 飞书？', file: 'use-cases/chinese-messaging-channels.md', group: '场景方案', description: '' },
-  { slug: 'use-cases/daily-summary', title: '如何用 Hermes Agent 做每日信息总结？', file: 'use-cases/daily-summary.md', group: '场景方案', description: '' },
-  { slug: 'use-cases/memory-and-knowledge', title: '如何用 Agent 管理长期记忆和个人知识？', file: 'use-cases/memory-and-knowledge.md', group: '场景方案', description: '' },
-  { slug: 'use-cases/work-assistant', title: '如何搭建一个工作助手？', file: 'use-cases/work-assistant.md', group: '场景方案', description: '' },
-  // 对比与选型
-  { slug: 'compare/lightvela-vs-self-hosting-hermes', title: 'LightVela 和自托管 Hermes Agent 有什么区别？', file: 'compare/lightvela-vs-self-hosting-hermes.md', group: '对比与选型', description: '' },
-  { slug: 'compare/cloud-vs-local-agent', title: 'LightVela 和本地运行 Agent 有什么区别？', file: 'compare/cloud-vs-local-agent.md', group: '对比与选型', description: '' },
-  { slug: 'compare/ai-agent-vs-chatbot', title: 'LightVela 和普通聊天机器人有什么区别？', file: 'compare/ai-agent-vs-chatbot.md', group: '对比与选型', description: '' },
-  { slug: 'compare/lightvela-vs-server-hosting', title: '使用 LightVela 还是自己买服务器部署？', file: 'compare/lightvela-vs-server-hosting.md', group: '对比与选型', description: '' },
-  { slug: 'compare/model-selection', title: '如何为 Hermes Agent 选择合适的模型？', file: 'compare/model-selection.md', group: '对比与选型', description: '' },
   // 问题排查
   { slug: 'faq', title: '常见问题 FAQ', file: '07-faq.md', group: '问题排查', description: 'LightVela 常见问题。' },
-  { slug: 'troubleshooting/agent-not-responding', title: 'Agent 无响应怎么办？', file: 'troubleshooting/agent-not-responding.md', group: '问题排查', description: '' },
-  { slug: 'troubleshooting/model-errors', title: '模型调用失败怎么办？', file: 'troubleshooting/model-errors.md', group: '问题排查', description: '' },
-  { slug: 'troubleshooting/channel-connection-failed', title: '微信 / QQ / 飞书通道连接失败怎么办？', file: 'troubleshooting/channel-connection-failed.md', group: '问题排查', description: '' },
-  { slug: 'troubleshooting/automation-not-running', title: '自动任务没有执行怎么办？', file: 'troubleshooting/automation-not-running.md', group: '问题排查', description: '' },
-  { slug: 'troubleshooting/skill-installation-failed', title: '技能安装失败怎么办？', file: 'troubleshooting/skill-installation-failed.md', group: '问题排查', description: '' },
-  { slug: 'troubleshooting/rebuild-hermes', title: '如何重建 Hermes？', file: 'troubleshooting/rebuild-hermes.md', group: '问题排查', description: '' },
-  // 安全、隐私与数据
-  { slug: 'security/data-protection', title: 'LightVela 如何保护我的数据？', file: 'security/data-protection.md', group: '安全、隐私与数据', description: '' },
-  { slug: 'security/data-storage', title: 'Agent 的对话、记忆和文件存储在哪里？', file: 'security/data-storage.md', group: '安全、隐私与数据', description: '' },
-  { slug: 'security/instance-isolation', title: '每个 Hermes 实例是否独立隔离？', file: 'security/instance-isolation.md', group: '安全、隐私与数据', description: '' },
-  { slug: 'security/model-training-policy', title: '是否会使用用户数据训练模型？', file: 'security/model-training-policy.md', group: '安全、隐私与数据', description: '' },
-  { slug: 'security/export-and-delete-data', title: '数据能否导出或删除？', file: 'security/export-and-delete-data.md', group: '安全、隐私与数据', description: '' },
-  // 进阶用法
-  { slug: 'advanced/models-skills-automation', title: '如何组合模型、技能和自动任务？', file: 'advanced/models-skills-automation.md', group: '进阶用法', description: '' },
-  { slug: 'advanced/agent-workflow-design', title: '如何设计一个稳定的个人 Agent 工作流？', file: 'advanced/agent-workflow-design.md', group: '进阶用法', description: '' },
-  { slug: 'advanced/reduce-model-cost', title: '如何降低 Agent 的模型调用成本？', file: 'advanced/reduce-model-cost.md', group: '进阶用法', description: '' },
-  { slug: 'advanced/automation-fit', title: '如何判断一个任务适不适合交给 Agent 自动执行？', file: 'advanced/automation-fit.md', group: '进阶用法', description: '' },
-  { slug: 'advanced/multi-channel-hermes', title: '多通道接入时如何管理同一个 Hermes？', file: 'advanced/multi-channel-hermes.md', group: '进阶用法', description: '' },
   // 联系与支持
   { slug: 'contact-us', title: '联系我们', file: 'contact-us.md', group: '联系与支持', description: '加入 LightVela 内测交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。' },
-  { slug: 'support/report-an-issue', title: '反馈问题时需要提供哪些信息？', file: 'support/report-an-issue.md', group: '联系与支持', description: '' },
 ];
 
 /** 国内站侧边栏分组顺序（GEO 导航方案的 9 大分组） */
@@ -83,11 +46,7 @@ const CN_GROUP_ORDER = [
   '产品入门',
   '账号、套餐与开通',
   '功能与配置',
-  '场景方案',
-  '对比与选型',
   '问题排查',
-  '安全、隐私与数据',
-  '进阶用法',
   '联系与支持',
 ];
 
