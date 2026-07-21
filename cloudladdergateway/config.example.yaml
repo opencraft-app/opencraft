@@ -262,10 +262,19 @@ backends:
       timeout: 10s
       allowed_methods: ["POST"]
 
-  - alias: lightclaw-auth-beijing-sandbox
-    env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK
+  - alias: lightclaw-auth-bjsbx
+    env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_BJSBX
     upstream:
       base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers_from_env:
+        X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
+
+  - alias: lightclaw-auth-shprod
+    env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_SHPROD
+    upstream:
+      base_url: "https://api.lightvela.com"
       timeout: 10s
       allowed_methods: ["POST"]
       headers_from_env:
@@ -294,7 +303,8 @@ auth:
     - billing-trade-intl-pre
     - billing-trade-intl-prod
     - jifei-test
-    - tencentcloud-account-callback-beijing-sandbox
+    - tencentcloud-account-callback-bjsbx
+    - tencentcloud-account-callback-shprod
   callers:
     - id: shadow
       secret_env: CLOUDLADDER_SHADOW_HMAC_SECRET
@@ -328,8 +338,13 @@ audit:
 external_routes:
   - path: /internal/tencentcloud/account
     methods: ["POST"]
-    route_id: tencentcloud-account-callback-beijing-sandbox
+    route_id: tencentcloud-account-callback-shprod
     upstream_path: /auth/internal/tencentcloud/account
+    auth_code_routes:
+      - prefix: "bjsbx."
+        route_id: tencentcloud-account-callback-bjsbx
+      - prefix: "shprod."
+        route_id: tencentcloud-account-callback-shprod
 
 routes:
   - id: sandbox-cn
@@ -849,8 +864,14 @@ routes:
     upstream:
       backend: tcapi-billing-cn-dev
 
-  - id: tencentcloud-account-callback-beijing-sandbox
-    description: "TencentCloud SaaS account callback compatibility route for Beijing main sandbox."
+  - id: tencentcloud-account-callback-bjsbx
+    description: "TencentCloud SaaS account callback route for Beijing main sandbox."
     condition: 'request.method == "POST"'
     upstream:
-      backend: lightclaw-auth-beijing-sandbox
+      backend: lightclaw-auth-bjsbx
+
+  - id: tencentcloud-account-callback-shprod
+    description: "TencentCloud SaaS account callback route for Shanghai production."
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: lightclaw-auth-shprod

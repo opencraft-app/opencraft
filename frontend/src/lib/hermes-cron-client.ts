@@ -36,6 +36,14 @@ export interface CronJob {
   script: string;
   effective_window: CronEffectiveWindow | null;
   lightvela_schedule: CronLightVelaSchedule | null;
+  /** jobs.json 中的任务级推理绑定；null 表示当前无法安全确认。 */
+  inference_config: CronInferenceConfig | null;
+}
+
+export interface CronInferenceConfig {
+  provider: string | null;
+  model: string | null;
+  no_agent: boolean;
 }
 
 export interface CronEffectiveWindow {
@@ -487,6 +495,7 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
       const promptById = new Map<string, string>();
       const createdAtById = new Map<string, string>();
       const scriptById = new Map<string, string>();
+      const inferenceConfigById = new Map<string, CronInferenceConfig>();
       for (const raw of arr) {
         const r = raw as Record<string, unknown>;
         const id = String(r.id ?? "");
@@ -497,6 +506,11 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
         if (createdAt) createdAtById.set(id, createdAt);
         const script = typeof r.script === "string" ? r.script : "";
         if (script) scriptById.set(id, script);
+        inferenceConfigById.set(id, {
+          provider: typeof r.provider === "string" && r.provider.trim() ? r.provider.trim() : null,
+          model: typeof r.model === "string" && r.model.trim() ? r.model.trim() : null,
+          no_agent: r.no_agent === true,
+        });
       }
       for (const j of jobs) {
         const p = promptById.get(j.id);
@@ -505,6 +519,7 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
         if (c) j.created_at = c;
         const script = scriptById.get(j.id);
         if (script) j.script = script;
+        j.inference_config = inferenceConfigById.get(j.id) ?? null;
       }
     }
   } catch {
@@ -905,6 +920,7 @@ function finalizeJob(p: Partial<CronJob>): CronJob {
     script: p.script || "",
     effective_window: p.effective_window || null,
     lightvela_schedule: p.lightvela_schedule || null,
+    inference_config: p.inference_config || null,
   };
 }
 

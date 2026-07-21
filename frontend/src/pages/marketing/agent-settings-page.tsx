@@ -62,6 +62,7 @@ import type { WorkerActionStatusResult } from "@/repositories/types";
 import {
   createMonoDebugExecAdapter,
 } from "@/pages/marketing/agent-tat-adapter";
+import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
 import {
@@ -3119,6 +3120,10 @@ export const AgentSettingsPage = ({
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
   const { bots, botsLoading, deleteBot, user, refreshBots, isSubscribed, addBot } = useOpenClaw();
   const repositories = useRepositories();
+  const {
+    commandLifecycle: automationModelCommandLifecycle,
+    confirmationDialog: automationModelSwitchDialog,
+  } = useAutomationAwareModelSwitch();
   // 账号 id：来自 /auth/profile 下发的 session.user.id，用于 LightVelaPanel.userId 等场景
   const { session } = useSession();
   const accountId = session.user?.id ?? "";
@@ -3484,8 +3489,9 @@ export const AgentSettingsPage = ({
           const token = readStoredAuthToken();
           return token ? `Bearer ${token}` : undefined;
         },
+        commandLifecycle: automationModelCommandLifecycle,
       }),
-    [],
+    [automationModelCommandLifecycle],
   );
 
   /**
@@ -4512,6 +4518,7 @@ export const AgentSettingsPage = ({
   return (
     <div className="flex min-h-dvh flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
       {showHeader && <ProductReturnHomeHeader reloadLanguageAfterSwitch />}
+      {automationModelSwitchDialog}
 
       <Dialog
         open={shouldExposeWorkspaceRecoveryPanel && Boolean(workspaceConfirm)}
