@@ -1,6 +1,7 @@
 package instance
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -34,10 +35,11 @@ func TestResetInstanceConfigCreatesNewKeyPersistsAndRevokesOldKey(t *testing.T) 
 		createResp: &pllmgateway.CreateApiKeyResponse{KeyID: "key-new", KeyPrefix: "sk-new", APIKey: "sk-new-secret"},
 	}
 	logic := &logic{
-		instanceDao:       instanceDao,
-		sandboxAdapter:    sandboxAdapter,
-		llmGatewayAdapter: aiGatewayAdapter,
-		logger:            zap.NewNop(),
+		instanceDao:                  instanceDao,
+		sandboxAdapter:               sandboxAdapter,
+		llmGatewayAdapter:            aiGatewayAdapter,
+		logger:                       zap.NewNop(),
+		legacyPassEntitlementEnsurer: legacyPassEntitlementAlreadyReady,
 	}
 
 	resp, err := logic.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset-1")
@@ -77,6 +79,49 @@ func TestResetInstanceConfigCreatesNewKeyPersistsAndRevokesOldKey(t *testing.T) 
 	}
 }
 
+func TestResetInstanceConfigDoesNotIssueLLMGatewayKeyWhenEntitlementPreparationFails(t *testing.T) {
+	installCreateTaskAiGatewayConfig(t)
+
+	instanceDao := &createTaskInstanceDaoStub{
+		entity: &modelinstance.Entity{
+			Id:         1,
+			InstanceId: "ins-reset-entitlement-fail",
+			UserId:     "user-reset-entitlement-fail",
+			Status:     modelinstance.InstanceStatusRunning,
+			SandboxId:  "sbx-reset-entitlement-fail",
+			CreatedAt:  time.Now().UTC(),
+		},
+	}
+	llmGateway := &createTaskLLMGatewayAdapterStub{
+		createResp: &pllmgateway.CreateApiKeyResponse{KeyID: "must-not-be-created", APIKey: "must-not-be-created"},
+	}
+	logic := &logic{
+		instanceDao:       instanceDao,
+		llmGatewayAdapter: llmGateway,
+		logger:            zap.NewNop(),
+		legacyPassEntitlementEnsurer: func(_ context.Context, userID string, _ time.Time) error {
+			if userID != "user-reset-entitlement-fail" {
+				t.Fatalf("userID = %q", userID)
+			}
+			return errors.New("entitlement unavailable")
+		},
+	}
+
+	_, err := logic.ResetInstanceConfig(
+		pctx.NewContext(nil).WithUserID("user-reset-entitlement-fail"),
+		"ins-reset-entitlement-fail",
+	)
+	if err == nil || !strings.Contains(err.Error(), "entitlement unavailable") {
+		t.Fatalf("error = %v", err)
+	}
+	if llmGateway.createCalls != 0 {
+		t.Fatalf("create-api-key calls = %d, want 0", llmGateway.createCalls)
+	}
+	if len(llmGateway.ensureCalls) != 1 {
+		t.Fatalf("ensure-user calls = %d, want 1", len(llmGateway.ensureCalls))
+	}
+}
+
 func TestResetInstanceConfigRejectsMissingDefaultProviderConfigBeforeCreatingKey(t *testing.T) {
 	prev := config.ServerConf
 	config.ServerConf = &config.GlobalConfig{
@@ -103,9 +148,10 @@ func TestResetInstanceConfigRejectsMissingDefaultProviderConfigBeforeCreatingKey
 	}
 	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{}
 	logic := &logic{
-		instanceDao:       instanceDao,
-		llmGatewayAdapter: aiGatewayAdapter,
-		logger:            zap.NewNop(),
+		instanceDao:                  instanceDao,
+		llmGatewayAdapter:            aiGatewayAdapter,
+		logger:                       zap.NewNop(),
+		legacyPassEntitlementEnsurer: legacyPassEntitlementAlreadyReady,
 	}
 
 	_, err := logic.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset-1")
@@ -142,9 +188,10 @@ func TestResetInstanceConfigFailsWhenOldKeyCannotBeRevoked(t *testing.T) {
 		revokeErrByKeyID: map[string]error{"key-old": errors.New("revoke failed")},
 	}
 	logic := &logic{
-		instanceDao:       instanceDao,
-		llmGatewayAdapter: aiGatewayAdapter,
-		logger:            zap.NewNop(),
+		instanceDao:                  instanceDao,
+		llmGatewayAdapter:            aiGatewayAdapter,
+		logger:                       zap.NewNop(),
+		legacyPassEntitlementEnsurer: legacyPassEntitlementAlreadyReady,
 	}
 
 	_, err := logic.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset-1")

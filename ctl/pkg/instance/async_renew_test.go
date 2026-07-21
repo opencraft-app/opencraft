@@ -59,10 +59,11 @@ func TestRunRenewInstanceTaskMigratesRunningAgentToLLMGateway(t *testing.T) {
 		APIKey:    "sk-lgw-new-secret",
 	}}
 	l := &logic{
-		instanceDao:       dao,
-		sandboxAdapter:    sandbox,
-		llmGatewayAdapter: llm,
-		logger:            zap.NewNop(),
+		instanceDao:                  dao,
+		sandboxAdapter:               sandbox,
+		llmGatewayAdapter:            llm,
+		logger:                       zap.NewNop(),
+		legacyPassEntitlementEnsurer: legacyPassEntitlementAlreadyReady,
 	}
 
 	err := l.RunRenewInstanceTask(

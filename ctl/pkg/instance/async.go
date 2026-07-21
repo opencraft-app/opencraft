@@ -1153,9 +1153,6 @@ func (l *logic) applyRenewalGatewayMigration(ctx pctx.Context, entity *modelinst
 	if userID == "" {
 		userID = strings.TrimSpace(entity.UserId)
 	}
-	if err := l.ensureAiGatewayUser(ctx, backend, userID, "", entity.InstanceId); err != nil {
-		return err
-	}
 	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, userID, entity.InstanceId)
 	if err != nil {
 		return err
@@ -1859,8 +1856,17 @@ func (l *logic) gatewayRuntimeConfig(backend gatewayBackend) (*gatewayRuntimeCon
 	}, nil
 }
 
-// createAiGatewayApiKey 调用选定网关为用户创建 API Key
+// createAiGatewayApiKey 在用户与权益准备完成后调用选定网关创建 API Key。
+// 所有实例侧签发入口必须经过这里，避免产生可鉴权但没有可用额度的密钥。
 func (l *logic) createAiGatewayApiKey(ctx pctx.Context, backend gatewayBackend, userID, instanceID string) (*gatewayAPIKey, error) {
+	if err := l.ensureAiGatewayUser(ctx, backend, userID, "", instanceID); err != nil {
+		return nil, err
+	}
+	if backend == gatewayBackendLLMGateway {
+		if err := l.ensureLegacyPassEntitlement(ctx, userID); err != nil {
+			return nil, fmt.Errorf("ensure llmgateway pass entitlement: %w", err)
+		}
+	}
 	l.logger.Info("gateway create-api-key started",
 		zap.String("instance_id", instanceID),
 		zap.String("user_id", userID),
@@ -2024,14 +2030,6 @@ func (l *logic) ensureAiGatewayUser(ctx pctx.Context, backend gatewayBackend, us
 
 func (l *logic) provisionAiGatewayOnCreate(ctx pctx.Context, entity *modelinstance.Entity, sandboxID string) error {
 	backend := l.resolveProvisionGateway(ctx, ctx.GetUserID(), entity.InstanceId)
-	if err := l.ensureAiGatewayUser(ctx, backend, ctx.GetUserID(), "", entity.InstanceId); err != nil {
-		return err
-	}
-	if backend == gatewayBackendLLMGateway {
-		if err := l.ensureLegacyPassEntitlement(ctx, ctx.GetUserID()); err != nil {
-			return fmt.Errorf("ensure llmgateway pass entitlement: %w", err)
-		}
-	}
 	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, ctx.GetUserID(), entity.InstanceId)
 	if err != nil {
 		return err
