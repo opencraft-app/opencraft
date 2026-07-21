@@ -115,6 +115,27 @@ export interface CreateMonoDebugExecAdapterOptions {
    * 的结果包一层再传进来。
    */
   getAuthHeader?: () => string | null | undefined;
+  /** 可选命令生命周期；用于宿主在执行特定命令前确认、成功后做关联更新。 */
+  commandLifecycle?: DebugExecCommandLifecycle;
+}
+
+export interface DebugExecCommandContext {
+  botId: string;
+  command: string;
+}
+
+export interface DebugExecCommandResult {
+  status: string;
+  exitCode: number;
+  output: string;
+}
+
+export interface DebugExecCommandLifecycle {
+  beforeExecute?: (context: DebugExecCommandContext) => Promise<unknown>;
+  afterExecute?: (context: DebugExecCommandContext & {
+    metadata: unknown;
+    result: DebugExecCommandResult;
+  }) => Promise<void>;
 }
 
 /** 归一化命令状态：mono 可能返回 SUCCESS/Succeeded/success 等不同大小写 */
@@ -151,7 +172,7 @@ function joinUrl(base: string, path: string): string {
 export function createMonoDebugExecAdapter(
   options: CreateMonoDebugExecAdapterOptions,
 ): Pick<Required<IProductConfig>, "runCommand" | "getInvocationTask"> {
-  const { baseUrl, getAuthHeader } = options;
+  const { baseUrl, commandLifecycle, getAuthHeader } = options;
 
   /**
    * invocationId → 命令结果缓存。
@@ -314,12 +335,13 @@ export function createMonoDebugExecAdapter(
 
     // SDK 把脚本 Base64 编码塞进 Content；后端 `command` 字段期望明文。
     const command = b64.decode(data.Content ?? "");
+    const metadata = await commandLifecycle?.beforeExecute?.({ botId, command });
 
     // 把 botId 和 command 缓存，供 getInvocationTask 使用
     const invocationId = `mono-debug-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     // 暂存 pending 状态，表示命令尚未执行（等 getInvocationTask 决定走同步还是流式）
-    pendingCommands.set(invocationId, { botId, command });
+    pendingCommands.set(invocationId, { botId, command, metadata });
 
     return { InvocationId: invocationId };
   };
@@ -328,7 +350,27 @@ export function createMonoDebugExecAdapter(
    * pending 命令缓存：runCommand 只记录命令，不执行；
    * getInvocationTask 根据是否有 onProgress 决定走同步/流式执行。
    */
-  const pendingCommands = new Map<string, { botId: string; command: string }>();
+  const pendingCommands = new Map<string, {
+    botId: string;
+    command: string;
+    metadata: unknown;
+  }>();
+
+  async function notifyCommandFinished(
+    pending: { botId: string; command: string; metadata: unknown },
+    payload: DebugExecPayload,
+  ): Promise<void> {
+    await commandLifecycle?.afterExecute?.({
+      botId: pending.botId,
+      command: pending.command,
+      metadata: pending.metadata,
+      result: {
+        status: normalizeStatus(payload.status),
+        exitCode: payload.exit_code,
+        output: payload.output || "",
+      },
+    });
+  }
 
   const getInvocationTask: IProductConfig["getInvocationTask"] = async (
     _regionId,
@@ -351,6 +393,7 @@ export function createMonoDebugExecAdapter(
           pending.command,
           pollingOptions.onProgress,
         );
+        await notifyCommandFinished(pending, payload);
         return {
           TaskStatus: normalizeStatus(payload.status),
           TaskResult: { Output: payload.output ? b64.encode(payload.output) : "" },
@@ -359,6 +402,7 @@ export function createMonoDebugExecAdapter(
 
       // 无 onProgress → 走普通同步模式
       const payload = await postDebugExec(pending.botId, pending.command);
+      await notifyCommandFinished(pending, payload);
       return {
         TaskStatus: normalizeStatus(payload.status),
         TaskResult: { Output: payload.output ? b64.encode(payload.output) : "" },
