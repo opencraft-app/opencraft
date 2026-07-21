@@ -1,4 +1,4 @@
-import { isExecCommandSucceeded } from "@/pages/marketing/openclaw-reset-config";
+import { isExecCommandSucceeded } from "@/pages/marketing/agent-reset-config";
 
 /**
  * 重启 Gateway 相关的纯逻辑函数。

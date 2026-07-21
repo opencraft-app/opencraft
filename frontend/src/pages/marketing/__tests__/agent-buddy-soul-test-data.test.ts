@@ -8,9 +8,9 @@ import {
   generatePersonalityProfile,
   personalityQuestions,
   prefQuestions,
-} from "@/pages/marketing/openclaw-buddy-soul-test-data";
+} from "@/pages/marketing/agent-buddy-soul-test-data";
 
-describe("openclaw-buddy-soul-test-data", () => {
+describe("agent-buddy-soul-test-data", () => {
   it("keeps the SkillHub test shape: 5 personality questions and 10 preference questions", () => {
     expect(personalityQuestions).toHaveLength(5);
     expect(prefQuestions).toHaveLength(10);

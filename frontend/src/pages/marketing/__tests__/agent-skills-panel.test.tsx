@@ -2,12 +2,12 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ExpertsExecDebugCommand } from "../hermes-agent-experts-panel";
+import type { ExpertsExecDebugCommand } from "../agent-experts-panel";
 import {
   getSafeUploadFileName,
   getInitialAgentSkillsTab,
   HermesAgentSkillsPanel,
-} from "../hermes-agent-skills-panel";
+} from "../agent-skills-panel";
 
 const tsshMocks = vi.hoisted(() => ({
   closeMock: vi.fn(),
@@ -81,7 +81,7 @@ vi.mock("@/lib/tencent-tssh-file-client", async () => {
   };
 });
 
-vi.mock("../hermes-agent-experts-panel", () => ({
+vi.mock("../agent-experts-panel", () => ({
   ExpertsPanel: () => <div>技能包列表</div>,
 }));
 

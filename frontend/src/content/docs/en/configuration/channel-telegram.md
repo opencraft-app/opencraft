@@ -1,12 +1,12 @@
 # Configure Channel - Telegram
 
-The Telegram channel uses Bot Token access and is suitable for quickly connecting Hermes to Telegram private chats or groups.
+The Telegram channel uses Bot Token access and is suitable for quickly connecting Hermes Agent to Telegram private chats or groups.
 
 ## This page covers
 
 - Authorizing access by scanning a code or opening a link in Telegram on your phone
 
-- Chatting with Hermes in Telegram
+- Chatting with Hermes Agent in Telegram
 
 
 > 💡 **Prerequisites**
@@ -68,7 +68,7 @@ Open the chat with the bot and send a test message:
 Hi
 ```
 
-You should receive a Hermes reply within a few seconds.
+You should receive a Hermes Agent reply within a few seconds.
 
 <img src="../images/telegram-botfather-6-global-en.webp" alt="" width="360" />
 
@@ -80,7 +80,7 @@ You should receive a Hermes reply within a few seconds.
 
 - The corresponding bot can be found in Telegram contacts
 
-- Hermes replies after you send a message
+- Hermes Agent replies after you send a message
 
 
 ---
@@ -101,7 +101,7 @@ After access succeeds, the Telegram bot can receive and reply to basic text mess
 
 > ℹ️ **Actual processing capability depends on the model**
 >
-> The table above only indicates the message types supported by the Telegram bot at the channel layer. Whether images, files, and other tasks can actually be processed also depends on whether the large language model connected to Hermes has the corresponding capabilities.
+> The table above only indicates the message types supported by the Telegram bot at the channel layer. Whether images, files, and other tasks can actually be processed also depends on whether the large language model connected to Hermes Agent has the corresponding capabilities.
 
 ---
 
@@ -117,7 +117,7 @@ After access succeeds, the Telegram bot can receive and reply to basic text mess
 | No reply after sending a message | Model is not configured, trial credits are exhausted, or the bot has not been connected successfully | Check the "Current model" status in the "1. Model" card and confirm the Telegram channel shows as connected |
 | Bot cannot receive group messages | Telegram group privacy mode restriction | Check Bot Settings in BotFather; if needed, disable Group Privacy or @ the bot in the group |
 | How to unlink | — | Delete the corresponding Telegram record in the "Connected channels" list |
-| Can the same Telegram bot connect to multiple Hermes instances | Not recommended; one Bot Token should be bound to one Hermes | If you need multiple Hermes instances, create separate Telegram bots |
+| Can the same Telegram bot connect to multiple Hermes Agent instances | Not recommended; one Bot Token should be bound to one Hermes Agent | If you need multiple Hermes Agent instances, create separate Telegram bots |
 
 ---
 
@@ -139,4 +139,4 @@ After access succeeds, the Telegram bot can receive and reply to basic text mess
 
 - [Configure Channel - QQ](./configuration/channel-qq.md) — Bot created manually, integrated via AppID/AppSecret
 
-- [Configure Skills](./configuration/skill.md) — Extend Hermes capabilities
+- [Configure Skills](./configuration/skill.md) — Extend Hermes Agent capabilities

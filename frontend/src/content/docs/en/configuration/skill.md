@@ -1,14 +1,14 @@
 # Configure Skills
 
-Skills are additional capability packages callable by Hermes. They extend concrete task handling beyond basic conversation, such as automatically organizing to-dos, generating daily reports, browsing web pages, searching news, generating images, and more.
+Skills are additional capability packages callable by Hermes Agent. They extend concrete task handling beyond basic conversation, such as automatically organizing to-dos, generating daily reports, browsing web pages, searching news, generating images, and more.
 
-All skills come from [ClawHub](https://clawhub.ai/), the skill marketplace shared by OpenClaw and Hermes.
+All skills come from [ClawHub](https://clawhub.ai/), the skill marketplace shared by OpenClaw and Hermes Agent.
 
 ## This page covers
 
 - Introduction to ClawHub
 
-- Relationship between Hermes and skills
+- Relationship between Hermes Agent and skills
 
 - Two installation methods: console installation and conversation installation
 
@@ -21,15 +21,15 @@ All skills come from [ClawHub](https://clawhub.ai/), the skill marketplace share
 
 > 💡 **Skills are optional**
 > 
-> Hermes does not install any skills by default. Hermes can still chat normally without installed skills. Skills are only used to extend specific task capabilities. We recommend installing them as needed after you discover capability boundaries during use.
+> Hermes Agent does not install any skills by default. Hermes Agent can still chat normally without installed skills. Skills are only used to extend specific task capabilities. We recommend installing them as needed after you discover capability boundaries during use.
 
 ---
 
 ## Positioning of skills
 
-If Hermes combined with a large model gives users an intelligent AI assistant, skills are its "hands and feet". Skills can further extend the capability boundary of an already deployed Hermes.
+If Hermes Agent combined with a large model gives users an intelligent AI assistant, skills are its "hands and feet". Skills can further extend the capability boundary of an already deployed Hermes Agent.
 
-You can think of skills as "applications" for Hermes:
+You can think of skills as "applications" for Hermes Agent:
 
 - Basic conversation capability = operating system
 
@@ -51,7 +51,7 @@ Each skill focuses on a single task, for example:
 - Organizing chat records into structured notes
 
 
-Hermes automatically determines whether to call the corresponding skill based on conversation context. Users do not need to specify it.
+Hermes Agent automatically determines whether to call the corresponding skill based on conversation context. Users do not need to specify it.
 
 ---
 
@@ -67,7 +67,7 @@ Features:
 
 - View tool descriptions, usage methods, and related information
 
-- Record the tool name and install or call it by name in the Hermes / OpenClaw conversation environment
+- Record the tool name and install or call it by name in the Hermes Agent / OpenClaw conversation environment
 
 ![](../images/clawhub-overview-global.webp)
 
@@ -85,7 +85,7 @@ The LightVela console provides a visual skill configuration entry in the "Skills
 
 Visit [https://clawhub.ai/](https://clawhub.ai/) to browse or search for the skill you need.
 
-Using an email scenario as an example, find the `gmail` skill. It lets Hermes receive, send, and query emails. Record the skill name shown on the skill details page (in this case, `gmail`) and use it later to complete installation.
+Using an email scenario as an example, find the `gmail` skill. It lets Hermes Agent receive, send, and query emails. Record the skill name shown on the skill details page (in this case, `gmail`) and use it later to complete installation.
 
 ![](../images/clawhub-gmail-global.webp)
 
@@ -106,7 +106,7 @@ Wait a moment. After installation succeeds, the skill appears in the "Installed 
 
 ### 4. Confirm availability in conversation
 
-Return to a connected channel (WeChat / Telegram / WhatsApp / Discord). First ask Hermes to update its skill list, then check the currently available skills:
+Return to a connected channel (WeChat / Telegram / WhatsApp / Discord). First ask Hermes Agent to update its skill list, then check the currently available skills:
 
 ```
 Please update your skill list
@@ -122,15 +122,15 @@ If the newly installed skill appears in the list, you can start using it in conv
 
 ## Method 2: Install directly through conversation
 
-In addition to using the console panel, you can also ask Hermes to install a skill directly through conversation. The skill to install still needs to be listed on ClawHub.
+In addition to using the console panel, you can also ask Hermes Agent to install a skill directly through conversation. The skill to install still needs to be listed on ClawHub.
 
 ### 1. Confirm the conversation channel is available
 
-First make sure Hermes is connected to at least one channel (WeChat / Telegram / WhatsApp / Discord) and can currently chat normally.
+First make sure Hermes Agent is connected to at least one channel (WeChat / Telegram / WhatsApp / Discord) and can currently chat normally.
 
-### 2. Tell Hermes which skill to install
+### 2. Tell Hermes Agent which skill to install
 
-Use the command below as a reference. Tell Hermes what skill you want to install and replace `[skill name]` with the actual name from ClawHub:
+Use the command below as a reference. Tell Hermes Agent what skill you want to install and replace `[skill name]` with the actual name from ClawHub:
 
 ```
 Please install a skill from ClawHub. Its name is [skill name]
@@ -142,15 +142,15 @@ For example, to install `mcd` (McDonald's assistant):
 Please install a skill from ClawHub. Its name is mcd
 ```
 
-If everything goes well, Hermes will complete the installation directly and tell you the result.
+If everything goes well, Hermes Agent will complete the installation directly and tell you the result.
 
 > ⚠️ **Secondary confirmation for high-risk skills**
 > 
-> If the selected skill is marked as high-risk in ClawHub (it may contain unsafe behavior), Hermes will remind you and request secondary confirmation before installation. Please make sure you fully understand the behavior of the skill before deciding whether to continue. If you are unsure, proceed with caution.
+> If the selected skill is marked as high-risk in ClawHub (it may contain unsafe behavior), Hermes Agent will remind you and request secondary confirmation before installation. Please make sure you fully understand the behavior of the skill before deciding whether to continue. If you are unsure, proceed with caution.
 
 ### 3. Verify the installation result
 
-You can ask Hermes to show how to use the skill to verify that installation succeeded:
+You can ask Hermes Agent to show how to use the skill to verify that installation succeeded:
 
 ```
 Please show me how to use it
@@ -166,7 +166,7 @@ Please show me how to use mcd
 
 ## Skill usage examples
 
-Using the `agent-browser` browser-operation skill on ClawHub as an example, after installation you can ask Hermes to perform the following tasks.
+Using the `agent-browser` browser-operation skill on ClawHub as an example, after installation you can ask Hermes Agent to perform the following tasks.
 
 > ℹ️ **Note**
 > 
@@ -178,7 +178,7 @@ Using the `agent-browser` browser-operation skill on ClawHub as an example, afte
 Use the browser to visit Baidu and tell me what is on the page
 ```
 
-Hermes opens the page and returns the content in text form.
+Hermes Agent opens the page and returns the content in text form.
 
 ### Scenario 2: Search information through the browser
 
@@ -192,7 +192,7 @@ Use the browser to look up today's top 5 trending news stories
 Use the browser to search ClawHub and find the currently most-installed email skill
 ```
 
-This task includes multiple steps such as opening a web page, waiting for it to load, entering content, and clicking buttons. It is relatively complex. Hermes completes the steps and returns the result.
+This task includes multiple steps such as opening a web page, waiting for it to load, entering content, and clicking buttons. It is relatively complex. Hermes Agent completes the steps and returns the result.
 
 ![](../images/clawhub-browser-example-global-en.webp)
 
@@ -200,7 +200,7 @@ This task includes multiple steps such as opening a web page, waiting for it to 
 
 ## Delete installed skills
 
-If you no longer use an installed skill, you can ask Hermes to delete it through conversation.
+If you no longer use an installed skill, you can ask Hermes Agent to delete it through conversation.
 
 ### 1. View currently installed skills
 
@@ -216,11 +216,11 @@ Find the skill you want to delete and send a deletion command:
 Please delete the email skill
 ```
 
-If everything goes well, Hermes will complete the deletion and tell you the result.
+If everything goes well, Hermes Agent will complete the deletion and tell you the result.
 
 > ℹ️ **Possible secondary confirmation**
 > 
-> Depending on the model being used or Hermes's personality settings, it may remind you to be careful when deleting. Reply with confirmation according to your actual needs.
+> Depending on the model being used or Hermes Agent's personality settings, it may remind you to be careful when deleting. Reply with confirmation according to your actual needs.
 
 ### 3. Verify the deletion result
 
@@ -232,7 +232,7 @@ Check again what skills you currently have installed
 
 > ℹ️ **Currently only conversation-based deletion is supported**
 > 
-> LightVela uses a cloud-hosted mode and does not provide user-facing file-system operations. Skills can only be deleted through conversation with Hermes.
+> LightVela uses a cloud-hosted mode and does not provide user-facing file-system operations. Skills can only be deleted through conversation with Hermes Agent.
 
 ---
 
@@ -240,7 +240,7 @@ Check again what skills you currently have installed
 
 - The target skill appears in the "Installed skills" list in the console
 
-- When you make a related request in conversation, Hermes can correctly recognize and call the skill
+- When you make a related request in conversation, Hermes Agent can correctly recognize and call the skill
 
 - The skill can be deleted normally through conversation
 
@@ -251,7 +251,7 @@ Check again what skills you currently have installed
 
 > ⚠️ **Safety confirmation before installation**
 
-Skills have permission to call Hermes capabilities at runtime and may involve:
+Skills have permission to call Hermes Agent capabilities at runtime and may involve:
 
 - Calling external APIs (consuming the corresponding quota)
 
@@ -318,7 +318,7 @@ Before installation, confirm that the skill author is trustworthy. We recommend:
 - If the issue persists, contact the skill author
 
 
-### Too many installed skills make Hermes respond slowly
+### Too many installed skills make Hermes Agent respond slowly
 
 **Possible cause**: More skills increase the decision-making burden of the Agent.
 

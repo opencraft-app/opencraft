@@ -1349,7 +1349,7 @@ async function removeCronJobByExactName(botId: string, name: string): Promise<vo
 /**
  * 把 Hermes / acli 返回的通道名归一化成投递用的 platform key。
  *
- * 与 `hermes-agent-automations-panel.tsx` 里的 `normalizeHermesChannelKey` 保持一致
+ * 与 `agent-automations-panel.tsx` 里的 `normalizeHermesChannelKey` 保持一致
  * （此处独立一份，避免 lib 反向依赖 page 组件文件）。
  */
 function normalizeChannelKeyForDeliver(channel: string): string {

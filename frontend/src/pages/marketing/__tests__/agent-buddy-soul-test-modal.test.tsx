@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SoulTestModal } from "@/pages/marketing/openclaw-buddy-soul-test-modal";
+import { SoulTestModal } from "@/pages/marketing/agent-buddy-soul-test-modal";
 import type { SkillHubSoul } from "@/lib/skillhub-api";
 import { ENGLISH_SOULS } from "@/lib/soul-english-data";
 

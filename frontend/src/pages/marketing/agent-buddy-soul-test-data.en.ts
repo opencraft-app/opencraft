@@ -5,7 +5,7 @@ import type {
   PersonalityLevel,
   SoulWeight,
   PrefCategory,
-} from "@/pages/marketing/openclaw-buddy-soul-test-data";
+} from "@/pages/marketing/agent-buddy-soul-test-data";
 import { toEnglishSlug } from "@/lib/soul-slug-mapping";
 import {
   PREF_TAG_MAX_SCORES,
@@ -14,7 +14,7 @@ import {
   shuffleArray,
   soulWeights,
   type SoulTestQuestion,
-} from "@/pages/marketing/openclaw-buddy-soul-test-data";
+} from "@/pages/marketing/agent-buddy-soul-test-data";
 
 export const englishPersonalityQuestions: PersonalityQuestion[] = [
   {

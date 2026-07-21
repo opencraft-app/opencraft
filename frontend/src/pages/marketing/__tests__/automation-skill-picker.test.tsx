@@ -8,7 +8,7 @@ import {
   AutomationSkillBindingSummary,
   AutomationSkillPicker,
 } from "../automation-skill-picker";
-import { AutomationFormModal } from "../hermes-agent-automations-panel";
+import { AutomationFormModal } from "../agent-automations-panel";
 
 vi.mock("@/lib/skillhub-api", () => ({
   fetchSkillFiles: vi.fn(async () => [{ path: "SKILL.md", size: 1, sha256: "abc" }]),

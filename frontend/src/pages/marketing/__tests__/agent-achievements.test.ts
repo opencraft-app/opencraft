@@ -5,14 +5,14 @@ import {
   buildHermesAchievementsCommand,
   fetchHermesAchievements,
   parseHermesAchievementsOutput,
-} from "@/pages/marketing/openclaw-achievements";
+} from "@/pages/marketing/agent-achievements";
 import {
   achievementCriteriaText,
   achievementErrorMessage,
   achievementDisplayDescription,
   achievementDisplayName,
   achievementTimestampLocale,
-} from "@/pages/marketing/openclaw-achievements-panel";
+} from "@/pages/marketing/agent-achievements-panel";
 
 const START = "__LIGHTVELA_ACHIEVEMENTS_JSON_START__";
 const END = "__LIGHTVELA_ACHIEVEMENTS_JSON_END__";

@@ -1,12 +1,12 @@
 # Configure Channel - Discord
 
-The Discord channel uses Bot authorization access and is suitable for connecting Hermes to a Discord server, providing Q&A, assistant, or community-interaction capabilities in channels.
+The Discord channel uses Bot authorization access and is suitable for connecting Hermes Agent to a Discord server, providing Q&A, assistant, or community-interaction capabilities in channels.
 
 ## This page covers
 
 - Opening an invite link in Discord and completing authorization
 
-- Chatting with Hermes in a Discord server or channel
+- Chatting with Hermes Agent in a Discord server or channel
 
 
 > 💡 **Prerequisites**
@@ -42,7 +42,7 @@ Choose the server you want to add the bot to, then go to the [Developer Portal](
 
 3. Give your Application a name
 
-4. Add a bot to your application and generate a bot token. The token is used to authenticate the connection between Hermes and your Discord server.
+4. Add a bot to your application and generate a bot token. The token is used to authenticate the connection between Hermes Agent and your Discord server.
 
 ![](../images/discord-2-global.webp)
 
@@ -102,7 +102,7 @@ Hi
 
 ![](../images/discord-chat-global.webp)
 
-You should receive a Hermes reply within a few seconds.
+You should receive a Hermes Agent reply within a few seconds.
 
 ---
 
@@ -112,7 +112,7 @@ You should receive a Hermes reply within a few seconds.
 
 - The corresponding bot can be found in Discord contacts
 
-- Hermes replies after you send a message
+- Hermes Agent replies after you send a message
 
 
 ---
@@ -133,7 +133,7 @@ After access succeeds, the Discord bot can receive and reply to basic text messa
 
 > ℹ️ **Actual processing capability depends on the model**
 >
-> The table above only indicates the message types supported by the Discord bot at the channel layer. Whether images, files, and other tasks can actually be processed also depends on whether the large language model connected to Hermes has the corresponding capabilities.
+> The table above only indicates the message types supported by the Discord bot at the channel layer. Whether images, files, and other tasks can actually be processed also depends on whether the large language model connected to Hermes Agent has the corresponding capabilities.
 
 ---
 
@@ -151,7 +151,7 @@ After access succeeds, the Discord bot can receive and reply to basic text messa
 | Bot has no permission to reply in a channel | Insufficient channel permissions | Confirm the bot has View Channels, Send Messages, Read Message History, and other necessary permissions |
 | Bot cannot receive direct messages | DM permission or user privacy settings restrictions | Confirm the bot allows DMs, and check the user's Discord privacy settings |
 | How to unlink | — | Delete the corresponding Discord record in the "Connected channels" list |
-| Can the same Discord Bot connect to multiple Hermes instances | Not recommended; one Bot Token should be bound to one Hermes | If you need multiple Hermes instances, create separate Discord Bots |
+| Can the same Discord Bot connect to multiple Hermes Agent instances | Not recommended; one Bot Token should be bound to one Hermes Agent | If you need multiple Hermes Agent instances, create separate Discord Bots |
 
 ---
 
@@ -173,4 +173,4 @@ After access succeeds, the Discord bot can receive and reply to basic text messa
 
 - [Configure Channel - Lark](./configuration/channel-feishu.md) — Office scenarios with rich text and group chat
 
-- [Configure Skills](./configuration/skill.md) — Extend Hermes capabilities
+- [Configure Skills](./configuration/skill.md) — Extend Hermes Agent capabilities

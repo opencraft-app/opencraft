@@ -23,7 +23,7 @@ import {
   installSkillSlugs,
   resolveAvailablePackageSkillSlugs,
   stripMarkdownFrontmatter,
-} from "../hermes-agent-experts-panel";
+} from "../agent-experts-panel";
 
 vi.mock("@/lib/skillhub-api", () => ({
   fetchSkillFile: vi.fn(),

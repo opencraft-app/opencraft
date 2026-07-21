@@ -11,7 +11,7 @@ import {
   isResetConfigRouteMissingError,
   truncateExecOutput,
   type ResettableBot,
-} from "../openclaw-reset-config";
+} from "../agent-reset-config";
 
 const bot = (id: string, status: ResettableBot["status"] = "running"): ResettableBot => ({ id, status });
 

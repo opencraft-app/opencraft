@@ -1,12 +1,12 @@
 # 配置通道 - Discord
 
-Discord 通道采用 Bot 授权接入方式，适合将 Hermes 接入 Discord 服务器，在频道中提供问答、助手或社区互动能力。
+Discord 通道采用 Bot 授权接入方式，适合将 Hermes Agent 接入 Discord 服务器，在频道中提供问答、助手或社区互动能力。
 
 ## 本页覆盖
 
 - 使用 Discord 打开邀请链接并完成授权
 
-- 在 Discord 服务器或频道中与 Hermes 进行对话
+- 在 Discord 服务器或频道中与 Hermes Agent 进行对话
 
 
 > 💡 **准备工作**
@@ -42,7 +42,7 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes 接入 Discord �
 
 3. 给你的 Application 起名
 
-4. 为你的应用程序添加一个机器人，并生成一个机器人令牌。该令牌将用于验证 Hermes 与您的 Discord 服务器之间的连接。
+4. 为你的应用程序添加一个机器人，并生成一个机器人令牌。该令牌将用于验证 Hermes Agent 与您的 Discord 服务器之间的连接。
 
 ![](../images/discord-2-global.webp)
 
@@ -102,7 +102,7 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes 接入 Discord �
 
 ![](../images/discord-chat-global.webp)
 
-几秒内收到 Hermes 回复。
+几秒内收到 Hermes Agent 回复。
 
 ---
 
@@ -112,7 +112,7 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes 接入 Discord �
 
 - Discord 联系人中可查找到对应机器人
 
-- 发送消息后能收到 Hermes 回复
+- 发送消息后能收到 Hermes Agent 回复
 
 
 ---
@@ -133,7 +133,7 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes 接入 Discord �
 
 > ℹ️ **实际处理能力取决于模型**
 >
-> 上表仅代表 Discord 机器人在消息通道层面支持接收、回复的类型。能否实际完成处理图片、文件等任务，还取决于 Hermes 所接入的大语言模型是否具备对应的处理能力。
+> 上表仅代表 Discord 机器人在消息通道层面支持接收、回复的类型。能否实际完成处理图片、文件等任务，还取决于 Hermes Agent 所接入的大语言模型是否具备对应的处理能力。
 
 ---
 
@@ -151,7 +151,7 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes 接入 Discord �
 | 机器人在频道中无权限回复 | 频道权限不足 | 确认机器人拥有查看频道、发送消息、读取消息历史等权限 |
 | 机器人无法接收私信 | 私信权限或用户隐私设置限制 | 确认机器人允许接收私信，并检查用户的 Discord 隐私设置 |
 | 如何解除绑定 | — | 在「已接入通道」列表中删除该 Discord 记录 |
-| 同一个 Discord Bot 能否接入多个 Hermes | 通常不建议，一个 Bot Token 应绑定一个 Hermes | 如需多个 Hermes，建议分别创建不同的 Discord Bot |
+| 同一个 Discord Bot 能否接入多个 Hermes Agent | 通常不建议，一个 Bot Token 应绑定一个 Hermes Agent | 如需多个 Hermes Agent，建议分别创建不同的 Discord Bot |
 
 ---
 
@@ -173,4 +173,4 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes 接入 Discord �
 
 - [配置通道 - 飞书](./configuration/channel-feishu.md) — 办公场景，支持富文本与群聊
 
-- [配置技能](./configuration/skill.md) — 扩展 Hermes 能力
+- [配置技能](./configuration/skill.md) — 扩展 Hermes Agent 能力

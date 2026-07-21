@@ -3,10 +3,10 @@ import {
   JSON_END,
   JSON_START,
   buildHermesAchievementsCommand,
-} from "@/pages/marketing/openclaw-achievements-command";
-import { isExecCommandSucceeded, truncateExecOutput } from "@/pages/marketing/openclaw-reset-config";
+} from "@/pages/marketing/agent-achievements-command";
+import { isExecCommandSucceeded, truncateExecOutput } from "@/pages/marketing/agent-reset-config";
 
-export { JSON_END, JSON_START, buildHermesAchievementsCommand } from "@/pages/marketing/openclaw-achievements-command";
+export { JSON_END, JSON_START, buildHermesAchievementsCommand } from "@/pages/marketing/agent-achievements-command";
 
 export type AchievementState = "unlocked" | "discovered" | "secret";
 

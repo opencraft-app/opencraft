@@ -80,7 +80,7 @@ vi.mock("@/components/site/user-avatar-menu", () => ({
   UserAvatarMenu: () => <div>avatar menu</div>,
 }));
 
-vi.mock("@/contexts/openclaw-context", () => ({
+vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => ({
     user: {
       plan: {

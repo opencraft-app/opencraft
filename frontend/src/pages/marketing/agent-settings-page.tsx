@@ -41,7 +41,7 @@ import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/produc
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
-import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
+import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
@@ -61,9 +61,9 @@ import {
 import type { WorkerActionStatusResult } from "@/repositories/types";
 import {
   createMonoDebugExecAdapter,
-} from "@/pages/marketing/openclaw-tat-adapter";
-import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
-import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
+} from "@/pages/marketing/agent-tat-adapter";
+import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
+import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
 import {
   buildHermesMemoryReadCommand,
   buildHermesMemoryLimitCommand,
@@ -77,11 +77,11 @@ import {
   type HermesMemorySnapshot,
   type HermesMemoryLimitTarget,
   type HermesMemoryLimitValidation,
-} from "@/pages/marketing/openclaw-memory";
-import { BuddyPanel } from "@/pages/marketing/hermes-agent-buddy-panel";
-import { HermesAgentSkillsPanel, type HermesAgentSkillsPanelProps } from "@/pages/marketing/hermes-agent-skills-panel";
-import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
-import { HermesAgentAutomationsPanel } from "@/pages/marketing/hermes-agent-automations-panel";
+} from "@/pages/marketing/agent-memory";
+import { BuddyPanel } from "@/pages/marketing/agent-buddy-panel";
+import { HermesAgentSkillsPanel, type HermesAgentSkillsPanelProps } from "@/pages/marketing/agent-skills-panel";
+import { AchievementsPanel } from "@/pages/marketing/agent-achievements-panel";
+import { HermesAgentAutomationsPanel } from "@/pages/marketing/agent-automations-panel";
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
 import { StableTeaSdkPanelHost } from "@/pages/marketing/agent-settings-sdk-stable-host";
 import {
@@ -93,7 +93,7 @@ import {
   shouldShowWorkspaceRecoveryPanel,
   type WorkspaceActionKind,
 } from "@/pages/marketing/agent-workspace-recovery";
-import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
+import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/agent-create-availability";
 import {
   getRestartBlockReason,
   isActiveBotRestarting as computeIsActiveBotRestarting,
@@ -102,7 +102,7 @@ import {
   setErrorForBot,
   clearErrorForBot,
   type RestartErrors,
-} from "@/pages/marketing/openclaw-restart-gateway";
+} from "@/pages/marketing/agent-restart-gateway";
 import {
   getResetBlockReason,
   getAcliResetBlockReason,
@@ -113,7 +113,7 @@ import {
   truncateExecOutput,
   ACLI_RESET_COMMAND,
   RESET_BLOCK_REASON,
-} from "@/pages/marketing/openclaw-reset-config";
+} from "@/pages/marketing/agent-reset-config";
 import { toast } from "@/lib/toast";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";

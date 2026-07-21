@@ -5,7 +5,7 @@ import {
   getOpenClawCreateLimitMessage,
   type OpenClawCreateAvailabilityBot,
   type OpenClawCreateStatusBot,
-} from "../openclaw-create-availability";
+} from "../agent-create-availability";
 
 const bot = (status: OpenClawCreateAvailabilityBot["status"]): OpenClawCreateAvailabilityBot => ({ status });
 const statusBot = (id: string, status: OpenClawCreateStatusBot["status"]): OpenClawCreateStatusBot => ({ id, status });

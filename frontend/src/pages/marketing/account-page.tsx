@@ -17,7 +17,7 @@ import {
 import { useCallback, useEffect, useState, useRef, useMemo, type ReactNode } from "react";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
-import { useOpenClaw } from "@/contexts/openclaw-context";
+import { useOpenClaw } from "@/contexts/agent-context";
 import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { RepositoryError } from "@/repositories/http-repositories";
 import { REALNAME_LEVEL, type BundleTimeUnit, type Pass, type PassRenewPrice } from "@/domain/types";
@@ -2105,7 +2105,7 @@ const SubscriptionSection = ({
 
   /**
    * 只读 fallback pass — 国内站场景：activePass 为 null 但用户仍有 expired/isolated pass 需要续费或销毁。
-   * 仅在国内站且未多貌 activePass 时拉一次，避免与 openclaw-context.refreshPasses 重复干活。
+   * 仅在国内站且未多貌 activePass 时拉一次，避免与 agent-context.refreshPasses 重复干活。
    */
   const [fallbackPass, setFallbackPass] = useState<Pass | null>(null);
 

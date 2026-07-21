@@ -34,7 +34,7 @@ import {
   CardBack,
   SoulFaceCard,
   SoulSpecRenderer,
-} from "@/pages/marketing/openclaw-buddy-cards";
+} from "@/pages/marketing/agent-buddy-cards";
 import { DATONG_PAGE_IDS } from "@/observability/datong";
 import { trackDatongClick } from "@/observability/datong-tracker";
 

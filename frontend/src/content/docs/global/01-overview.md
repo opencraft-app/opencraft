@@ -16,7 +16,7 @@ LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，致力于
 
 我们通过可视化面板把配置门槛降到最低：无需写配置文件、无需登录服务器，在网页上点选即可完成搭建。
 
-LightVela 目前提供的产品是 **Hermes**，一个基于大语言模型的 AI Agent，未来会扩展到更多开箱即用的产品。本文档围绕 Hermes 展开。
+LightVela 目前提供的产品是 **Hermes Agent**，一个基于大语言模型的 AI Agent，未来会扩展到更多开箱即用的产品。本文档围绕 Hermes Agent 展开。
 
 ![1.00](./images/1-1.webp)
 
@@ -46,13 +46,13 @@ LightVela 目前提供的产品是 **Hermes**，一个基于大语言模型的 A
 
 * **全托管部署**：云端自动完成环境配置与运行时管理，无需掌握服务器运维、容器镜像等基础设施知识
 
-* **独立运行环境**：每个 Hermes 实例拥有独立的运行环境，资源隔离，7×24 小时在线，不依赖本地设备
+* **独立运行环境**：每个 Hermes Agent 实例拥有独立的运行环境，资源隔离，7×24 小时在线，不依赖本地设备
 
 * **多模型支持**：支持接入国内主流大语言模型、各家 Coding Plan 包月套餐，以及任何 OpenAI 兼容端点，具体见 [配置模型](./configuration/model.md)
 
-* **多通道接入**：支持通过 WeChat、Telegram、WhatsApp、Discord 与 Hermes 进行对话
+* **多通道接入**：支持通过 WeChat、Telegram、WhatsApp、Discord 与 Hermes Agent 进行对话
 
-* **技能扩展**：通过 [SkillHub](https://skillhub.tencent.com) 安装技能包，扩展 Hermes 的能力边界
+* **技能扩展**：通过 [SkillHub](https://skillhub.tencent.com) 安装技能包，扩展 Hermes Agent 的能力边界
 
 * **开箱即用**：启航套餐预置体验积分，开通后无需额外配置模型即可对话
 
@@ -62,12 +62,12 @@ LightVela 目前提供的产品是 **Hermes**，一个基于大语言模型的 A
 
 ## 工作原理
 
-LightVela 在云端为用户运行一个专属的 Hermes 实例，并通过适配层接入用户指定的聊天平台。
+LightVela 在云端为用户运行一个专属的 Hermes Agent 实例，并通过适配层接入用户指定的聊天平台。
 
 ```
 用户（在 WeChat / Telegram / WhatsApp / Discord 中发送消息）
       ↓
-LightVela 云端的 Hermes 实例（用户专属）
+LightVela 云端的 Hermes Agent 实例（用户专属）
       ↓
 调用用户配置的大语言模型（GPT / Claude / Gemini / ...）
       ↓
@@ -76,11 +76,11 @@ LightVela 云端的 Hermes 实例（用户专属）
 
 完成一次对话闭环需配置三项：
 
-1. **模型**：Hermes 调用的大语言模型。启航套餐预置体验积分，可直接使用；也可配置自有 API Key
+1. **模型**：Hermes Agent 调用的大语言模型。启航套餐预置体验积分，可直接使用；也可配置自有 API Key
 
-2. **通道**：与 Hermes 对话的聊天平台（WeChat / Telegram / WhatsApp / Discord）
+2. **通道**：与 Hermes Agent 对话的聊天平台（WeChat / Telegram / WhatsApp / Discord）
 
-3. **技能**（可选）：扩展 Hermes 的能力
+3. **技能**（可选）：扩展 Hermes Agent 的能力
 
 ![1.00](./images/1-2.webp)
 
@@ -88,7 +88,7 @@ LightVela 云端的 Hermes 实例（用户专属）
 
 ## 关于套餐
 
-LightVela 采用套餐化计费。开通一个套餐即获得一个可用的 Hermes 实例，并附带该套餐规定的资源与积分。
+LightVela 采用套餐化计费。开通一个套餐即获得一个可用的 Hermes Agent 实例，并附带该套餐规定的资源与积分。
 
 当前上线套餐：
 
@@ -98,7 +98,7 @@ LightVela 采用套餐化计费。开通一个套餐即获得一个可用的 Her
 | 巡游 Cruise | $15 / 月 | 即将上线 |
 | 远航 Voyage | $42 / 月 | 即将上线 |
 
-启航套餐包含：1 个 Hermes 实例、2 核 4G 独立运行环境、50G 专属云端存储、100 体验积分、7×24 小时在线、管理面板访问权限。
+启航套餐包含：1 个 Hermes Agent 实例、2 核 4G 独立运行环境、50G 专属云端存储、100 体验积分、7×24 小时在线、管理面板访问权限。
 
 > ℹ️ **内测期套餐说明**
 >
@@ -118,7 +118,6 @@ LightVela 采用套餐化计费。开通一个套餐即获得一个可用的 Her
 
 * **[快速开始](./02-quickstart.md)** — 5 分钟跑通第一个对话
 
-* **[核心概念](./04-core-concepts.md)** — Hermes、模型、通道、技能四项核心概念说明
+* **[核心概念](./04-core-concepts.md)** — Hermes Agent、模型、通道、技能四项核心概念说明
 
 * **[配置总览](./05-configuration.md)** — 管理台功能与配置流程
-

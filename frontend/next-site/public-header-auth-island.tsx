@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { LoginModal } from '@/components/site/login-modal';
 import type { HeaderAppearance } from '@/components/site/public-site-header';
 import { UserAvatarMenu } from '@/components/site/user-avatar-menu';
-import { useOpenClaw } from '@/contexts/openclaw-context';
+import { useOpenClaw } from '@/contexts/agent-context';
 import { useSession } from '@/contexts/session-context';
 import { oauthErrorMessage } from '@/lib/oauth';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
