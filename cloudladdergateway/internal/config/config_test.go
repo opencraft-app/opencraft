@@ -135,29 +135,30 @@ func TestExampleConfigLoads(t *testing.T) {
 		t.Fatalf("load example config: %v", err)
 	}
 	wantRoutes := map[string]bool{
-		"billing-trade-cn-test":                         false,
-		"billing-trade-cn-pre":                          false,
-		"billing-trade-cn-prod":                         false,
-		"billing-trade-intl-test":                       false,
-		"billing-trade-intl-pre":                        false,
-		"billing-trade-intl-prod":                       false,
-		"tcapi-account-cn-dev":                          false,
-		"tcapi-billing-cn-dev":                          false,
-		"tcapi-account-cn-test":                         false,
-		"tcapi-cam-cn-test":                             false,
-		"tcapi-sts-cn-test":                             false,
-		"tcapi-account-cn-prod":                         false,
-		"tcapi-cam-cn-prod":                             false,
-		"tcapi-sts-cn-prod":                             false,
-		"jifei-test":                                    false,
-		"shadow-account-test":                           false,
-		"shadow-cam-test":                               false,
-		"shadow-sts-test":                               false,
-		"shadow-account-prod":                           false,
-		"shadow-cam-prod":                               false,
-		"shadow-sts-prod":                               false,
-		"shadow-billing-api-test":                       false,
-		"tencentcloud-account-callback-beijing-sandbox": false,
+		"billing-trade-cn-test":                false,
+		"billing-trade-cn-pre":                 false,
+		"billing-trade-cn-prod":                false,
+		"billing-trade-intl-test":              false,
+		"billing-trade-intl-pre":               false,
+		"billing-trade-intl-prod":              false,
+		"tcapi-account-cn-dev":                 false,
+		"tcapi-billing-cn-dev":                 false,
+		"tcapi-account-cn-test":                false,
+		"tcapi-cam-cn-test":                    false,
+		"tcapi-sts-cn-test":                    false,
+		"tcapi-account-cn-prod":                false,
+		"tcapi-cam-cn-prod":                    false,
+		"tcapi-sts-cn-prod":                    false,
+		"jifei-test":                           false,
+		"shadow-account-test":                  false,
+		"shadow-cam-test":                      false,
+		"shadow-sts-test":                      false,
+		"shadow-account-prod":                  false,
+		"shadow-cam-prod":                      false,
+		"shadow-sts-prod":                      false,
+		"shadow-billing-api-test":              false,
+		"tencentcloud-account-callback-bjsbx":  false,
+		"tencentcloud-account-callback-shprod": false,
 	}
 	for _, route := range cfg.Routes {
 		if _, ok := wantRoutes[route.ID]; ok {
@@ -178,8 +179,10 @@ func TestExampleConfigLoads(t *testing.T) {
 				wantBackend = "tcapi-sts-cn-prod"
 			case "shadow-billing-api-test":
 				wantBackend = "tcapi-billing-cn-dev"
-			case "tencentcloud-account-callback-beijing-sandbox":
-				wantBackend = "lightclaw-auth-beijing-sandbox"
+			case "tencentcloud-account-callback-bjsbx":
+				wantBackend = "lightclaw-auth-bjsbx"
+			case "tencentcloud-account-callback-shprod":
+				wantBackend = "lightclaw-auth-shprod"
 			}
 			if route.Upstream.Backend != wantBackend {
 				t.Fatalf("route %q should use matching backend alias, got %q", route.ID, route.Upstream.Backend)
@@ -196,6 +199,9 @@ func TestExampleConfigLoads(t *testing.T) {
 	}
 	if len(cfg.External) != 1 || cfg.External[0].Path != "/internal/tencentcloud/account" {
 		t.Fatalf("example config missing TencentCloud callback external route: %+v", cfg.External)
+	}
+	if got := cfg.External[0].AuthCodeRoutes; len(got) != 2 || got[0].Prefix != "bjsbx." || got[1].Prefix != "shprod." {
+		t.Fatalf("example config missing auth-code callback routes: %+v", got)
 	}
 }
 
