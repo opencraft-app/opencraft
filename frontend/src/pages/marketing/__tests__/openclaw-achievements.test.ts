@@ -139,7 +139,7 @@ describe("openclaw achievements debug exec helpers", () => {
 
   it("maps achievement errors to localized friendly copy", () => {
     expect(achievementErrorMessage({ code: "json_parse_failed" }, testT)).toBe("i18n:成就数据解析失败，请稍后重试。");
-    expect(achievementErrorMessage({ code: "command_failed" }, testT)).toBe("i18n:成就命令执行失败，请检查 Hermes 服务状态。");
+    expect(achievementErrorMessage({ code: "command_failed" }, testT)).toBe("i18n:成就命令执行失败，请检查 Hermes Agent 服务状态。");
     expect(achievementErrorMessage({ code: "unknown" }, testT)).toBe("i18n:成就数据读取失败");
   });
 
@@ -162,7 +162,7 @@ describe("openclaw achievements debug exec helpers", () => {
     const t = (zh: string) => `i18n:${zh}`;
 
     expect(achievementDisplayName(achievement, t)).toBe("i18n:甩手掌柜");
-    expect(achievementDisplayDescription(achievement, t)).toBe("i18n:让 Hermes 在一次会话中自主完成一条完整工具链。");
+    expect(achievementDisplayDescription(achievement, t)).toBe("i18n:让 Hermes Agent 在一次会话中自主完成一条完整工具链。");
   });
 
   it("localizes tiered achievement criteria", () => {
@@ -177,7 +177,7 @@ describe("openclaw achievements debug exec helpers", () => {
     } as const;
 
     expect(achievementCriteriaText(achievement, plainT, "zh-CN")).toBe(
-      "计数指标：累计 Hermes 工具调用次数。等级门槛：铜 1000、银 3000、金 8000。",
+      "计数指标：累计 Hermes Agent 工具调用次数。等级门槛：铜 1000、银 3000、金 8000。",
     );
   });
 
@@ -209,7 +209,7 @@ describe("openclaw achievements debug exec helpers", () => {
     } as const;
 
     expect(achievementCriteriaText(achievement, plainT, "zh-CN")).toBe(
-      "隐藏成就的具体条件会在 Hermes 发现相关行为后展示。继续在调试、工具、记忆、技能、插件和模型工作流中使用 Hermes。",
+      "隐藏成就的具体条件会在 Hermes Agent 发现相关行为后展示。继续在调试、工具、记忆、技能、插件和模型工作流中使用 Hermes Agent。",
     );
   });
 

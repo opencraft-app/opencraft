@@ -1603,7 +1603,7 @@ function CreateSkillPanel({
             <aside className="h-fit rounded-md border border-black/[0.06] bg-[#F8FAF9] p-4 pb-7">
               <div className="flex items-center gap-2 text-sm font-semibold text-black/80">
                 <Layers3 className="size-4 text-[#4C8279]" aria-hidden="true" />
-                {t("Hermes 将这样处理")}
+                            {t("Hermes Agent 将这样处理")}
               </div>
               <ol className="mt-4 space-y-3">
                 {detail.workflow.map((step, index) => (

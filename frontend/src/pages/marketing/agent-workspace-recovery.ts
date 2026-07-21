@@ -139,13 +139,13 @@ export function describeWorkspaceActionError(
   }
   if (detail.includes("hermes_import_zip_required")) {
     return {
-      message: "请选择 Hermes 导出的 zip 文件。",
+      message: "请选择 Hermes Agent 导出的 zip 文件。",
       detail,
     };
   }
   if (detail.includes("uploaded archive is empty") || detail.includes("bad zip member") || detail.includes("Not a valid zip")) {
     return {
-      message: "备份包无法识别或已损坏，请重新选择 Hermes 导出的 zip 文件。",
+      message: "备份包无法识别或已损坏，请重新选择 Hermes Agent 导出的 zip 文件。",
       detail,
     };
   }

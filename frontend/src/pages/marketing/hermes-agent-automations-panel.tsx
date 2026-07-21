@@ -169,7 +169,7 @@ function ScenarioReminderBanner({
           </h3>
           <p className="mt-1 text-xs leading-5 text-black/55">
             {isPreview
-              ? t("Hermes 已开始处理，结果会稍后推送到{{deliver}}，也会出现在最近执行。", { deliver: notice.draft.generatedDeliverLabel })
+              ? t("Hermes Agent 已开始处理，结果会稍后推送到{{deliver}}，也会出现在最近执行。", { deliver: notice.draft.generatedDeliverLabel })
               : t("后续会按{{frequency}}自动提醒，也可以在已生效任务里管理。", { frequency: pack.defaultFrequencyLabel })}
           </p>
         </div>

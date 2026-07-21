@@ -832,7 +832,7 @@ const MemoryLimitCard = ({
   const helperMessage = displayError
     || (shouldWarnNearUsage
       ? t("新上限接近当前用量，后续记忆可能无法继续写入或触发自动淘汰。")
-      : t("可设置范围：{{min}}-{{max}} 字符。保存后会重启 Hermes 网关，可能短暂中断会话。", { min: bounds.min, max: bounds.max }));
+      : t("可设置范围：{{min}}-{{max}} 字符。保存后会重启 Hermes Agent 网关，可能短暂中断会话。", { min: bounds.min, max: bounds.max }));
 
   useEffect(() => {
     if (!isEditing) {
@@ -1276,7 +1276,7 @@ export const ChannelSection = () => {
   /* ── 启动微信扫码流程 ── */
   const handleWechatAuth = useCallback(async () => {
     if (!selectedBot) {
-      setChannelNotice(t("请先创建并选择一个 Hermes，再接入通道。"));
+      setChannelNotice(t("请先创建并选择一个 Hermes Agent，再接入通道。"));
       return;
     }
 
@@ -1591,7 +1591,7 @@ export const ChannelSection = () => {
         )}
 
         <div className="space-y-2">
-          <label className="lw-label block">选择要配置的 Hermes</label>
+          <label className="lw-label block">选择要配置的 Hermes Agent</label>
           <select
             value={selectedBotId}
             onChange={(event) => setSelectedBotId(event.target.value)}
@@ -1600,12 +1600,12 @@ export const ChannelSection = () => {
           >
             {configurableBots.length ? configurableBots.map((bot) => (
               <option key={bot.id} value={bot.id}>{bot.name}</option>
-            )) : <option value="">暂无可配置 Hermes</option>}
+            )) : <option value="">暂无可配置 Hermes Agent</option>}
           </select>
         </div>
 
         {/* Channel selection */}
-        <p className="text-sm text-[var(--text-secondary)]" style={{ marginBottom: 25 }}>选择一个聊天软件接入你的 Hermes</p>
+        <p className="text-sm text-[var(--text-secondary)]" style={{ marginBottom: 25 }}>选择一个聊天软件接入你的 Hermes Agent</p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {/* QQ */}
           <button
@@ -1621,7 +1621,7 @@ export const ChannelSection = () => {
               <img src="https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/43adbcec-a954-4809-9310-1237e3981f99.png" alt="QQ" className="h-8 w-8 object-contain" />
             </div>
             <h4 className="text-sm font-bold" style={{ color: "var(--lw-fg)" }}>QQ</h4>
-            <p className="text-xs leading-relaxed text-[var(--text-secondary)]">通过QQ机器人与 Hermes 对话</p>
+            <p className="text-xs leading-relaxed text-[var(--text-secondary)]">通过QQ机器人与 Hermes Agent 对话</p>
             {selectedChannel === "qq" && (
               <div className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full shadow-[var(--shadow-soft)]" style={{ background: "var(--lw-accent)" }}>
                 <Check className="h-3 w-3 text-white" />
@@ -2709,7 +2709,7 @@ const ChannelModal = ({ bot, onClose }: { bot: { id: string; name: string; conne
             )}
 
             {/* Channel selection */}
-            <p className="text-sm text-[var(--text-secondary)]" style={{ marginBottom: "20px" }}>选择一个聊天软件接入你的 Hermes</p>
+            <p className="text-sm text-[var(--text-secondary)]" style={{ marginBottom: "20px" }}>选择一个聊天软件接入你的 Hermes Agent</p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
               {/* QQ */}
               <button
@@ -3351,7 +3351,7 @@ export const AgentSettingsPage = ({
     if (!activeBotId) {
       setMemorySnapshot(null);
       setMemoryStatus("error");
-      setMemoryError(rawT("未找到当前 Hermes 实例。"));
+      setMemoryError(rawT("未找到当前 Hermes Agent 实例。"));
       return null;
     }
 
@@ -3399,7 +3399,7 @@ export const AgentSettingsPage = ({
 
   const saveHermesMemoryLimit = useCallback(async (target: HermesMemoryLimitTarget, value: number, existingChars: number) => {
     if (!activeBotId) {
-      setMemoryLimitSaveError({ target, message: rawT("未找到当前 Hermes 实例。") });
+      setMemoryLimitSaveError({ target, message: rawT("未找到当前 Hermes Agent 实例。") });
       return false;
     }
 
@@ -3432,7 +3432,7 @@ export const AgentSettingsPage = ({
         await loadHermesMemory({ clearSnapshot: false });
         setMemoryLimitSaveError({
           target,
-          message: rawT("配置已保存，但 Hermes 网关重启失败。请到「设置 → 重启网关」手动重启，或稍后重试。"),
+          message: rawT("配置已保存，但 Hermes Agent 网关重启失败。请到「设置 → 重启网关」手动重启，或稍后重试。"),
         });
         return false;
       }
@@ -3446,7 +3446,7 @@ export const AgentSettingsPage = ({
         return false;
       }
 
-      toast.success(rawT("修改成功，Hermes 网关已重启。"));
+      toast.success(rawT("修改成功，Hermes Agent 网关已重启。"));
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : rawT("记忆上限调整失败，请稍后重试。");
@@ -4104,7 +4104,7 @@ export const AgentSettingsPage = ({
       if (cancelled) return;
 
       if (Date.now() - startedAt >= CREATING_MAX_WAIT_MS) {
-        setCreationError(t("Hermes 仍在创建中，请稍后刷新页面查看状态。"));
+        setCreationError(t("Hermes Agent 仍在创建中，请稍后刷新页面查看状态。"));
         return;
       }
 
@@ -4245,10 +4245,10 @@ export const AgentSettingsPage = ({
         return t("导出环境启动超时，Agent 所在云主机仍在准备中。请稍后重试。");
       case "远程命令通道暂时不可用，请稍后重试。":
         return t("远程命令通道暂时不可用，请稍后重试。");
-      case "备份包无法识别或已损坏，请重新选择 Hermes 导出的 zip 文件。":
-        return t("备份包无法识别或已损坏，请重新选择 Hermes 导出的 zip 文件。");
-      case "请选择 Hermes 导出的 zip 文件。":
-        return t("请选择 Hermes 导出的 zip 文件。");
+      case "备份包无法识别或已损坏，请重新选择 Hermes Agent 导出的 zip 文件。":
+        return t("备份包无法识别或已损坏，请重新选择 Hermes Agent 导出的 zip 文件。");
+      case "请选择 Hermes Agent 导出的 zip 文件。":
+        return t("请选择 Hermes Agent 导出的 zip 文件。");
       case "请先在账号页绑定邮箱。":
         return t("请先在账号页绑定邮箱。");
       case "恢复过程中遇到异常，请稍后重试。":
@@ -4394,7 +4394,7 @@ export const AgentSettingsPage = ({
                 ? workspaceLastLogTime
                   ? t("最近更新：{{time}}", { time: formatExportLogTime(workspaceLastLogTime) })
                   : t("正在等待任务状态更新")
-                : t("可以备份当前 Agent，或从 Hermes zip 备份恢复。")}
+                : t("可以备份当前 Agent，或从 Hermes Agent zip 备份恢复。")}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -4577,12 +4577,12 @@ export const AgentSettingsPage = ({
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-black/80" title={workspaceConfirm.file?.name}>
-                            {workspaceConfirm.file ? workspaceConfirm.file.name : t("选择 Hermes zip 备份包")}
+                            {workspaceConfirm.file ? workspaceConfirm.file.name : t("选择 Hermes Agent zip 备份包")}
                           </p>
                           <p className="mt-1 text-xs text-black/45">
                             {workspaceConfirm.file
                               ? formatWorkspaceImportFileSize(workspaceConfirm.file.size)
-                              : t("支持 Hermes 导出的 .zip 备份包。")}
+                              : t("支持 Hermes Agent 导出的 .zip 备份包。")}
                           </p>
                         </div>
                         <button
@@ -4596,7 +4596,7 @@ export const AgentSettingsPage = ({
                       </div>
                       {!workspaceConfirm.file && (
                         <p id="workspace-import-file-helper" className="mt-2 text-xs text-black/45">
-                          {t("请选择 Hermes 导出的 zip 备份包后再确认恢复。")}
+                          {t("请选择 Hermes Agent 导出的 zip 备份包后再确认恢复。")}
                         </p>
                       )}
                     </div>
