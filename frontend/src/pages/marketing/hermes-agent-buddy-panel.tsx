@@ -560,7 +560,7 @@ export function BuddyPanel({
         // 文件已写入 → 触发重新读取真实 SOUL.md，同步 Equipped 指示器。
         setEquippedRefreshTick((n) => n + 1);
         // hermes-agent 在 session 启动时一次性快照 SOUL.md，已存在 session 不感知
-        // 文件变化，弹一个确认对话框提示用户在 Hermes 里输入 /new 并 /approve 确认后让新人设生效。
+        // 文件变化，弹一个确认对话框提示用户在 Hermes Agent 里输入 /new，让新的人设生效。
         setToast({ kind: "idle" });
         setConfirmState({ kind: "applySuccess" });
         return;
@@ -992,7 +992,7 @@ export function BuddyPanel({
           <InfoDialog
             key="info-apply-success"
             title={t("人设已注入")}
-            message={t("请在与 Hermes 的对话中输入 /new 开启新会话，并且输入 /approve 确认后，让新人设生效。")}
+            message={t("请在与 Hermes Agent 的对话中输入 /new 开启新会话，让新的人设生效。")}
             buttonLabel={t("我知道了")}
             onClose={() => setConfirmState({ kind: "idle" })}
           />
