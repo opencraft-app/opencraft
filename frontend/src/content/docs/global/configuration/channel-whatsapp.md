@@ -1,12 +1,12 @@
 # 配置通道 - WhatsApp
 
-WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快速将 Hermes 接入 WhatsApp 对话场景。
+WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快速将 Hermes Agent 接入 WhatsApp 对话场景。
 
 ## 本页覆盖
 
 - 使用手机 WhatsApp 扫码授权
 
-- 在 WhatsApp 中与 Hermes 进行对话
+- 在 WhatsApp 中与 Hermes Agent 进行对话
 
 
 > 💡 **准备工作**
@@ -52,7 +52,7 @@ WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快�
 你好
 ```
 
-几秒内收到 Hermes 回复。
+几秒内收到 Hermes Agent 回复。
 
 ![](../images/whatsapp-3-global.webp)
 
@@ -64,7 +64,7 @@ WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快�
 
 - WhatsApp 联系人中可查找到对应机器人
 
-- 发送消息后能收到 Hermes 回复
+- 发送消息后能收到 Hermes Agent 回复
 
 
 ---
@@ -85,7 +85,7 @@ WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快�
 
 > ℹ️ **实际处理能力取决于模型**
 >
-> 上表仅代表 WhatsApp 机器人在消息通道层面支持接收、回复的类型。能否实际完成处理图片、文件等任务，还取决于 Hermes 所接入的大语言模型是否具备对应的处理能力。
+> 上表仅代表 WhatsApp 机器人在消息通道层面支持接收、回复的类型。能否实际完成处理图片、文件等任务，还取决于 Hermes Agent 所接入的大语言模型是否具备对应的处理能力。
 
 ---
 
@@ -102,7 +102,7 @@ WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快�
 | 无法接收图片、文件或语音消息 | 媒体权限、格式或通道能力限制 | 确认文件类型受支持；如语音无法识别，需检查是否启用语音转文字/媒体处理能力 |
 | 主动发送消息失败 | WhatsApp 对主动消息有模板消息或会话窗口限制 | 确认用户已与机器人发起过对话；若超出会话窗口，需使用已审核的消息模板 |
 | 如何解除绑定 | — | 在「已接入通道」列表中删除该 WhatsApp 记录 |
-| 同一个 WhatsApp 号能否接入多个 Hermes | 通常不建议，一个 WhatsApp 号码应绑定一个 Hermes | 如需多个 Hermes，建议分别使用不同的 WhatsApp 号码 |
+| 同一个 WhatsApp 号能否接入多个 Hermes Agent | 通常不建议，一个 WhatsApp 号码应绑定一个 Hermes Agent | 如需多个 Hermes Agent，建议分别使用不同的 WhatsApp 号码 |
 
 ---
 
@@ -124,4 +124,4 @@ WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快�
 
 - [配置通道 - 企业微信](./configuration/channel-wecom.md) — 企业内部协作与办公场景
 
-- [配置技能](./configuration/skill.md) — 扩展 Hermes 能力
+- [配置技能](./configuration/skill.md) — 扩展 Hermes Agent 能力

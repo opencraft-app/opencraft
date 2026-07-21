@@ -10,7 +10,7 @@ The QQ channel requires creating a bot on the QQ Open Platform, then filling the
 
 - Filling the credentials into LightVela to complete integration
 
-- Chatting with Hermes in QQ
+- Chatting with Hermes Agent in QQ
 
 
 > 💡 **Prerequisites**
@@ -78,7 +78,7 @@ Back in the console "Channel" card, choose "QQ" from the dropdown, and paste the
 
 LightVela uses the credentials above to connect the bot on the QQ Open Platform. After a few dozen seconds, the page shows "Saved successfully", and a "QQ" entry appears in the "Connected Channels" list.
 
-### 8. Find Hermes in QQ
+### 8. Find Hermes Agent in QQ
 
 Open QQ, find the bot you just created, and send a test message:
 
@@ -86,7 +86,7 @@ Open QQ, find the bot you just created, and send a test message:
 Hello
 ```
 
-You'll receive a Hermes reply within seconds.
+You'll receive a Hermes Agent reply within seconds.
 
 ![](../images/qq5.webp)
 
@@ -124,7 +124,7 @@ After integration, the QQ bot supports more than basic text. The full list:
 
 > ℹ️ **Actual capability depends on the model**
 >
-> The table above only reflects what the QQ bot can receive and reply with at the channel layer. Whether tasks such as image / file processing actually work depends on whether the underlying LLM connected to Hermes supports those capabilities.
+> The table above only reflects what the QQ bot can receive and reply with at the channel layer. Whether tasks such as image / file processing actually work depends on whether the underlying LLM connected to Hermes Agent supports those capabilities.
 
 ---
 
@@ -158,4 +158,4 @@ After integration, the QQ bot supports more than basic text. The full list:
 
 - [Configure Channel - Lark](./configuration/channel-feishu.md) — Office scenarios with rich text and group chat
 
-- [Configure Skills](./configuration/skill.md) — Extend Hermes capabilities
+- [Configure Skills](./configuration/skill.md) — Extend Hermes Agent capabilities

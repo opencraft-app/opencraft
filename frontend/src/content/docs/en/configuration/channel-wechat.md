@@ -8,7 +8,7 @@ The WeChat channel uses QR-code access and is the simplest channel to configure.
     
 - Scanning the QR code with WeChat on your phone
     
-- Chatting with Hermes in WeChat
+- Chatting with Hermes Agent in WeChat
     
 
 > 💡 **Prerequisites**
@@ -51,7 +51,7 @@ A QR code appears on the page.
 4. Follow the prompts on your phone to complete authorization
     
 
-### 5. Find Hermes in WeChat
+### 5. Find Hermes Agent in WeChat
 
 After scanning succeeds:
 
@@ -66,7 +66,7 @@ Open the chat with that bot and send a test message:
 Hi
 ```
 
-You should receive a Hermes reply within a few seconds.
+You should receive a Hermes Agent reply within a few seconds.
 
 ![](../images/6.1-2.webp)
 
@@ -78,7 +78,7 @@ You should receive a Hermes reply within a few seconds.
     
 - The corresponding bot can be found in WeChat contacts
     
-- Hermes replies after you send a message
+- Hermes Agent replies after you send a message
     
 
 ---
@@ -100,7 +100,7 @@ After access succeeds, the WeChat bot can receive and reply to basic text messag
 
 > ℹ️ **Actual processing capability depends on the model**
 > 
-> The table above only indicates the message types supported by the WeChat bot at the channel layer. Whether images, files, and other tasks can actually be processed also depends on whether the large language model connected to Hermes has the corresponding capabilities.
+> The table above only indicates the message types supported by the WeChat bot at the channel layer. Whether images, files, and other tasks can actually be processed also depends on whether the large language model connected to Hermes Agent has the corresponding capabilities.
 
 ---
 
@@ -110,10 +110,10 @@ After access succeeds, the WeChat bot can receive and reply to basic text messag
 |---|---|---|
 | WeChat shows "invalid QR code" after scanning | The QR code has expired | Close the dialog and click "Authorize Access" again |
 | No response on the computer after scanning | Network delay or authorization not completed | Refresh the console to confirm status; if access did not succeed, try again |
-| Cannot find the bot contact in WeChat | The message is folded into "Service Notifications" | Search "LightVela" or the Hermes name at the top of WeChat |
+| Cannot find the bot contact in WeChat | The message is folded into "Service Notifications" | Search "LightVela" or the Hermes Agent name at the top of WeChat |
 | No reply after sending a message | Model is not configured or trial credits are exhausted | Check the "Current model" status in the "1. Model" card |
 | How to unlink | — | Delete the corresponding record in the "Connected channels" list |
-| Can the same WeChat account connect to multiple Hermes instances | Launch plan limit is 1 Hermes | Not applicable |
+| Can the same WeChat account connect to multiple Hermes Agent instances | Launch plan limit is 1 Hermes Agent | Not applicable |
 
 ---
 
@@ -136,4 +136,4 @@ After access succeeds, the WeChat bot can receive and reply to basic text messag
 
 - [Configure Channel - Discord](./configuration/channel-discord.md) — Community operations and developer communities
 
-- [Configure Skills](./configuration/skill.md) — Extend Hermes capabilities
+- [Configure Skills](./configuration/skill.md) — Extend Hermes Agent capabilities

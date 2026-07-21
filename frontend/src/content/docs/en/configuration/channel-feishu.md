@@ -8,7 +8,7 @@ The Lark channel is suited for office scenarios. It supports rich-text messages 
 
 - Scanning the QR code with Lark to authorize
 
-- Chatting with Hermes in Lark
+- Chatting with Hermes Agent in Lark
 
 
 > 💡 **Prerequisites**
@@ -51,7 +51,7 @@ A QR code appears on the page.
 
 ![](../images/lark2.webp)
 
-### 5. Find Hermes in Lark
+### 5. Find Hermes Agent in Lark
 
 After a successful scan:
 
@@ -78,7 +78,7 @@ Hello
 
 - The bot can be found via Lark search
 
-- Sending a message receives a Hermes reply
+- Sending a message receives a Hermes Agent reply
 
 
 ---
@@ -103,7 +103,7 @@ After integration, the Lark bot supports more than basic text. The full list:
 
 > ℹ️ **Actual capability depends on the model**
 >
-> The table above only reflects what the Lark bot can receive and reply with at the channel layer. Whether tasks such as image / file processing actually work depends on whether the underlying LLM connected to Hermes supports those capabilities.
+> The table above only reflects what the Lark bot can receive and reply with at the channel layer. Whether tasks such as image / file processing actually work depends on whether the underlying LLM connected to Hermes Agent supports those capabilities.
 
 ---
 
@@ -112,7 +112,7 @@ After integration, the Lark bot supports more than basic text. The full list:
 | Symptom | Possible cause | Resolution |
 | --- | --- | --- |
 | Scan shows "Application not authorized" | Tenant admin restricts third-party apps | Ask your tenant admin to allow the app, or switch to a personal tenant |
-| Bot contact not found | Lark collapses bots by default | Search the Hermes application name from the top of Lark |
+| Bot contact not found | Lark collapses bots by default | Search the Hermes Agent application name from the top of Lark |
 | How to add the bot to a group | — | In group settings, "Add Members", search for the bot and add it |
 | QR code expired | Not scanned within the validity window | Close the dialog and click "Authorize Access" again |
 | No reply after sending a message | Model not configured or trial credits exhausted | Check the "Current Model" status |
@@ -133,4 +133,4 @@ After integration, the Lark bot supports more than basic text. The full list:
 
 ## Next steps
 
-- [Configure Skills](./configuration/skill.md) — Extend Hermes capabilities
+- [Configure Skills](./configuration/skill.md) — Extend Hermes Agent capabilities

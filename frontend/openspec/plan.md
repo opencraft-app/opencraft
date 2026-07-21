@@ -1513,3 +1513,14 @@ Not-tested: 待实现后填写
 - [x] 保留 `Hermes CLI`、`Hermes /learn`、`Hermes WebUI` 等官方技术名称，以及代码标识、命令和后端原始 key。
 - [x] 同步中英文 i18n 字典，更新受影响测试，并确认目标源码不再包含遗漏的用户可见单独 `Hermes`。
 - [x] 目标测试、`pnpm check`、`pnpm i18n:check`、浏览器烟测和 `git diff --check` 通过。
+
+### Task 73: 统一产品文档 Hermes Agent 称呼
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/content/docs/**/*.md`
+
+- [x] 检查国内站、国际站中文和国际站英文文档，将作为产品或 Agent 主体出现的单独 `Hermes` 统一为 `Hermes Agent`。
+- [x] 保留 `Hermes CLI`、命令、路径、配置键、代码示例等技术专名和机器可读内容。
+- [x] 校验三套文档的路由映射、链接与图片引用，并完成文档同步、项目检查、浏览器烟测和 `git diff --check`。
