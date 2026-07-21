@@ -59,8 +59,8 @@ export interface AutomationModelSwitchDecisionRequest {
 
 /** 只识别 Tea SDK 生成的 Hermes 模型切换命令，不影响 provider save 等命令。 */
 export function parseModelSwitchTarget(command: string): ModelSwitchTarget | null {
-  const match = /\bacli\s+model\s+switch\s+--model\s+(?:'((?:'\\''|[^'])*)'|"([^"]*)"|(\S+))/i.exec(command);
-  const encoded = match?.[1] ?? match?.[2] ?? match?.[3] ?? "";
+  const match = /\bacli\s+model\s+switch\s+--model\s+'((?:'\\''|[^'])*)'/i.exec(command);
+  const encoded = match?.[1] ?? "";
   const model = encoded.replace(/'\\''/g, "'").trim();
   const separator = model.indexOf("/");
   if (separator <= 0 || separator === model.length - 1) return null;
@@ -85,7 +85,7 @@ export function selectAutomationModelSyncCandidates(
 
 /**
  * 在 Hermes 自身虚拟环境内调用官方 cronjob update tool。
- * provider 使用模型切换命令中的真实配置 ID；model 在切换完成后从 Hermes 当前配置现场解析。
+ * provider/model 均使用模型切换命令中的目标值，避免同步期间读取到另一份全局配置。
  */
 export function buildPinAutomationModelsCommand(
   candidates: readonly AutomationModelSyncCandidate[],
@@ -98,11 +98,10 @@ export function buildPinAutomationModelsCommand(
   }));
   const script = [
     "import json",
-    "from cron.jobs import _resolve_default_model_snapshot",
     "from tools.cronjob_tools import cronjob",
     `plan = json.loads(${JSON.stringify(JSON.stringify(plan))})`,
     `provider = ${JSON.stringify(target.provider)}`,
-    "model = str(_resolve_default_model_snapshot() or '').strip()",
+    `model = ${JSON.stringify(target.model.slice(target.provider.length + 1))}`,
     "if not provider or not model: raise RuntimeError('current provider/model is unavailable')",
     "failed = []",
     "succeeded = 0",

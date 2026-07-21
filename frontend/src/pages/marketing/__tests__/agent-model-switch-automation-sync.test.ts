@@ -35,6 +35,8 @@ describe("model switch automation synchronization", () => {
       provider: "openrouter",
       model: "openrouter/google/gemini-3-flash-preview",
     });
+    expect(parseModelSwitchTarget('acli model switch --model "openrouter/google/gemini"')).toBeNull();
+    expect(parseModelSwitchTarget("acli model switch --model openrouter/google/gemini")).toBeNull();
     expect(parseModelSwitchTarget("acli provider save --name 'openrouter'")).toBeNull();
   });
 
@@ -93,8 +95,9 @@ describe("model switch automation synchronization", () => {
 
     expect(command).toContain("from tools.cronjob_tools import cronjob");
     expect(command).toContain("cronjob(action='\\''update'\\''");
-    expect(command).toContain("_resolve_default_model_snapshot");
+    expect(command).not.toContain("_resolve_default_model_snapshot");
     expect(command).toContain('provider = "tencent_hy_token_plan"');
+    expect(command).toContain('model = "hy3-preview"');
     expect(command).not.toContain("resolve_runtime_provider");
     expect(command).toContain("job-'\\''quoted");
     expect(command).not.toContain("quoted --");
