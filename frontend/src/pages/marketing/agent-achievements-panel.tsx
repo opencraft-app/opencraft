@@ -68,7 +68,7 @@ import {
   type AchievementState,
   type HermesAchievement,
   fetchHermesAchievements,
-} from "@/pages/marketing/openclaw-achievements";
+} from "@/pages/marketing/agent-achievements";
 
 type VisibilityFilter = "all" | AchievementState;
 

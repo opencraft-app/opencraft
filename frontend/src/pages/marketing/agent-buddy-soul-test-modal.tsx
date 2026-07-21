@@ -10,7 +10,7 @@ import { getSoulSpec, type SoulSpec } from "@/lib/soul-interpretations";
 import { getEnglishSoulSpec } from "@/lib/soul-english-data";
 import { getGlobalChineseSoulSpec } from "@/lib/soul-global-chinese-data";
 import { toEnglishSlug, toCanonicalSlug } from "@/lib/soul-slug-mapping";
-import { SoulFaceCard } from "@/pages/marketing/openclaw-buddy-cards";
+import { SoulFaceCard } from "@/pages/marketing/agent-buddy-cards";
 import {
   ENGLISH_PREF_TAG_LABELS,
   buildEnglishQuestions,
@@ -18,7 +18,7 @@ import {
   calculateEnglishPrefScores,
   categorizeEnglishPrefScores,
   generateEnglishPersonalityProfile,
-} from "@/pages/marketing/openclaw-buddy-soul-test-data.en";
+} from "@/pages/marketing/agent-buddy-soul-test-data.en";
 import {
   PREF_TAGS,
   calculateMatchedSoul,
@@ -31,7 +31,7 @@ import {
   shuffleArray,
   type PrefTag,
   type SoulTestQuestion,
-} from "@/pages/marketing/openclaw-buddy-soul-test-data";
+} from "@/pages/marketing/agent-buddy-soul-test-data";
 
 type Phase = "testing" | "result";
 

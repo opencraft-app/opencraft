@@ -3,7 +3,7 @@ import { Bot, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown } from "
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect } from "react";
-import { useOpenClaw } from "@/contexts/openclaw-context";
+import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";

@@ -1524,3 +1524,15 @@ Not-tested: 待实现后填写
 - [x] 检查国内站、国际站中文和国际站英文文档，将作为产品或 Agent 主体出现的单独 `Hermes` 统一为 `Hermes Agent`。
 - [x] 保留 `Hermes CLI`、命令、路径、配置键、代码示例等技术专名和机器可读内容。
 - [x] 校验三套文档的路由映射、链接与图片引用，并完成文档同步、项目检查、浏览器烟测和 `git diff --check`。
+
+### Task 74: 统一前端 Agent 代码文件名
+
+**角色：** single_agent / mechanical rename + verification
+
+**Files:**
+- Rename: `frontend/**/*{openclaw,hermes-agent}*.{ts,tsx}` → 对应 `*agent*.{ts,tsx}`
+- Modify: 引用上述模块的 `frontend/**/*.{ts,tsx}` import / export / mock 路径
+
+- [x] 将 `frontend/` 下 34 个代码文件名中的 `openclaw` 或 `hermes-agent` 统一收敛为 `agent`。
+- [x] 仅同步必要的模块路径引用，不修改 `OpenClaw*` 代码标识、API 字段、路由或普通业务文案。
+- [x] 确认旧代码文件名与旧模块路径无残留；49 个 TypeScript 文件通过调用关系等价检查，14 个测试文件共 252 条通过，`pnpm check` 和 `git diff --check` 通过；两个账号页测试文件的 17 条既有失败已确认与 `origin/master` 基线一致。

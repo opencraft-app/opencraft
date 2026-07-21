@@ -25,13 +25,13 @@ import { useRepositories } from "@/contexts/repository-context";
 import { useAsyncResource } from "@/services/use-async-resource";
 import { isGlobal } from "@/lib/region";
 import { toCanonicalSlug, toEnglishSlug } from "@/lib/soul-slug-mapping";
-import { DrawSoulModal } from "@/pages/marketing/openclaw-buddy-draw-modal";
-import { SoulTestModal } from "@/pages/marketing/openclaw-buddy-soul-test-modal";
+import { DrawSoulModal } from "@/pages/marketing/agent-buddy-draw-modal";
+import { SoulTestModal } from "@/pages/marketing/agent-buddy-soul-test-modal";
 import {
   CardBack,
   SoulFaceCard,
   SoulSpecRenderer,
-} from "@/pages/marketing/openclaw-buddy-cards";
+} from "@/pages/marketing/agent-buddy-cards";
 import {
   fetchSoulDetail,
   fetchSouls,

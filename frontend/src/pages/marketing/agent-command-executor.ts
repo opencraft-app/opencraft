@@ -29,12 +29,12 @@
  * ## 流式输出
  *
  * 当前实现是同步 JSON 版本，不会触发 `onOutput`。如果后续 panel 强依赖流式进度，
- * 可切到 `openclaw-tat-adapter.ts` 中已实现的 SSE 版本（`postDebugExecStream`），
+ * 可切到 `agent-tat-adapter.ts` 中已实现的 SSE 版本（`postDebugExecStream`），
  * 接口契约不变。
  *
  * @see openclaw-enterprise-fronted/client/src/pages/tenant/ChatView.tsx
  *      （clawpro 的 commandExecutor 参考实现，走 TAT）
- * @see openclaw-tat-adapter.ts
+ * @see agent-tat-adapter.ts
  *      （mono2 已有的 SDK 适配器，走 debug/exec，可复用其 SSE 流式实现）
  */
 import type { Repositories } from '@/repositories/types'

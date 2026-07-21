@@ -7,7 +7,7 @@
  *  - 「已安装」区通过双 list 交叉判定来源，修正 SDK 的 Unknown Source
  *  - Popular 排序 + registry 过滤 + 来源组织分类，便于后续做推荐位 / 分类位
  *
- * 仅国际站渲染（见 hermes-agent-skills-panel.tsx 的 isGlobal 分支）。
+ * 仅国际站渲染（见 agent-skills-panel.tsx 的 isGlobal 分支）。
  */
 
 import {
@@ -56,7 +56,7 @@ import { useT } from "@/i18n/t";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
-import type { ExpertsExecDebugCommand } from "../hermes-agent-experts-panel";
+import type { ExpertsExecDebugCommand } from "../agent-experts-panel";
 import {
   createSkillsDataLayer,
   getPopularityTier,

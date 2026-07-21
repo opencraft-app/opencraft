@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 import {
   ExpertsPanel,
   type ExpertsExecDebugCommand,
-} from "@/pages/marketing/hermes-agent-experts-panel";
+} from "@/pages/marketing/agent-experts-panel";
 import {
   SkillsDemoPanel,
   type LearnSkillTriggerOptions,

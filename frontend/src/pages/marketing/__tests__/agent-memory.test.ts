@@ -16,7 +16,7 @@ import {
   splitHermesMemoryEntries,
   toSingleLineMemoryEntry,
   validateHermesMemoryLimit,
-} from "../openclaw-memory";
+} from "../agent-memory";
 
 describe("buildHermesMemoryReadCommand", () => {
   it("reads Hermes config and memory files from the instance home directory", () => {

@@ -4,7 +4,7 @@ import { ArrowRight, Bot, FileText, Download, X, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
-import { useOpenClaw } from "@/contexts/openclaw-context";
+import { useOpenClaw } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { BrandMark } from "@/components/site/brand-mark";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";

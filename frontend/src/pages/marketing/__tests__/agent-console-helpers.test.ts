@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
+import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
 
 describe("installOpenClawConsoleHelpers", () => {
   const makeHost = () => {

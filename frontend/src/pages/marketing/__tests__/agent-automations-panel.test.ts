@@ -34,7 +34,7 @@ import {
   shouldRejectPastOnceSchedule,
   toCreateCronSkills,
   toEditCronSkills,
-} from "../hermes-agent-automations-panel";
+} from "../agent-automations-panel";
 import type { CronJob, CronRunRecord } from "@/lib/hermes-cron-client";
 
 afterEach(() => {

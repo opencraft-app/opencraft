@@ -31,7 +31,7 @@ import {
 
 import { resolveSkillHubApiBase } from "@/lib/skillhub-api";
 
-import type { ExpertsExecDebugCommand } from "../hermes-agent-experts-panel";
+import type { ExpertsExecDebugCommand } from "../agent-experts-panel";
 
 export type Registry = "clawhub" | "skills-sh" | "skillhub" | "hermes";
 export type SearchRegistry = Exclude<Registry, "hermes">;

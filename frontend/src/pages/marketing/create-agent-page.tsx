@@ -5,7 +5,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { SetupStepTimeline } from "@/components/domain/setup-step-timeline";
 import { cn } from "@/lib/utils";
-import { useOpenClaw } from "@/contexts/openclaw-context";
+import { useOpenClaw } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useT } from "@/i18n/t";
 import type { SoulTemplate } from "@/repositories/types";
