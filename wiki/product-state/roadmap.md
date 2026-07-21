@@ -1,6 +1,6 @@
 # LightVela 产品能力迭代路线图
 
-来源：用户提供的 `lightvela-roadmap-overview.html`，整理时间：2026-07-21。
+来源：用户提供的 [lightvela-roadmap-overview.html](../sources/roadmap/lightvela-roadmap-overview.html)，整理时间：2026-07-21。
 
 ## 总览
 
