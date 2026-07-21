@@ -100,7 +100,7 @@ export const achievementErrorMessage = (error: AchievementPanelError, t: Transla
     case "payload_invalid":
       return t("成就数据解析失败，请稍后重试。");
     case "command_failed":
-      return t("成就命令执行失败，请检查 Hermes 服务状态。");
+      return t("成就命令执行失败，请检查 Hermes Agent 服务状态。");
     case "unknown":
     default:
       return t("成就数据读取失败");
@@ -123,7 +123,7 @@ export const achievementTimestampLocale = (language?: string) => (
 
 const criteriaMetricTranslations: Record<string, AchievementCopyTranslator> = {
   "tool calls in one session": (t) => t("单次会话中的工具调用次数"),
-  "distinct Hermes tools used in one session": (t) => t("单次会话中使用的不同 Hermes 工具数"),
+  "distinct Hermes tools used in one session": (t) => t("单次会话中使用的不同 Hermes Agent 工具数"),
   "terminal calls in one session": (t) => t("单次会话中的终端调用次数"),
   "file/search/patch calls in one session": (t) => t("单次会话中的文件、搜索或补丁调用次数"),
   "web search/extract or browser calls in one session": (t) => t("单次会话中的网页搜索、提取或浏览器调用次数"),
@@ -147,7 +147,7 @@ const criteriaMetricTranslations: Record<string, AchievementCopyTranslator> = {
   "CSS, styling, Tailwind, or className activity": (t) => t("CSS、样式、Tailwind 或 className 活动次数"),
   "git workflow commands": (t) => t("Git 工作流命令次数"),
   "tiny typo-style fixes after error clusters": (t) => t("错误集中出现后的细小修复次数"),
-  "Hermes skill mentions or tool use": (t) => t("Hermes 技能提及或工具使用次数"),
+  "Hermes skill mentions or tool use": (t) => t("Hermes Agent 技能提及或工具使用次数"),
   "skill_manage create/patch/delete operations": (t) => t("skill_manage 创建、修改或删除操作次数"),
   "memory or Mnemosyne tool events": (t) => t("memory 或 Mnemosyne 工具事件数"),
   "durable memory writes": (t) => t("长期记忆写入次数"),
@@ -163,7 +163,7 @@ const criteriaMetricTranslations: Record<string, AchievementCopyTranslator> = {
   "lifetime web_search/web_extract calls": (t) => t("累计 web_search 或 web_extract 调用次数"),
   "lifetime web_extract calls": (t) => t("累计 web_extract 调用次数"),
   "lifetime browser automation calls": (t) => t("累计浏览器自动化调用次数"),
-  "lifetime Hermes tool calls": (t) => t("累计 Hermes 工具调用次数"),
+  "lifetime Hermes tool calls": (t) => t("累计 Hermes Agent 工具调用次数"),
   "lifetime terminal calls": (t) => t("累计终端调用次数"),
   "lifetime targeted patch edits": (t) => t("累计精准补丁修改次数"),
   "lifetime read_file/search_files calls": (t) => t("累计 read_file 或 search_files 调用次数"),
@@ -174,14 +174,14 @@ const criteriaMetricTranslations: Record<string, AchievementCopyTranslator> = {
   "Claude/Anthropic model mentions": (t) => t("Claude 或 Anthropic 模型提及次数"),
   "Gemini/Google model mentions": (t) => t("Gemini 或 Google 模型提及次数"),
   "local/open-weight model mentions": (t) => t("本地或开源权重模型提及次数"),
-  "Hermes sessions whose model metadata is local/open-weight": (t) => t("模型元数据为本地或开源权重的 Hermes 会话数"),
+  "Hermes sessions whose model metadata is local/open-weight": (t) => t("模型元数据为本地或开源权重的 Hermes Agent 会话数"),
   "toolset or tool-family mentions": (t) => t("工具集或工具族提及次数"),
   "configuration/environment/manifest activity": (t) => t("配置、环境或 manifest 活动次数"),
   "git history operations such as rebase, merge, fetch, push, or tag": (t) => t("rebase、merge、fetch、push 或 tag 等 Git 历史操作次数"),
   "test/check/verification command mentions": (t) => t("测试、检查或验证命令提及次数"),
   "screenshot, Playwright, PNG, or vision-inspection activity": (t) => t("截图、Playwright、PNG 或视觉检查活动次数"),
   "release, version, publish, or git tag events": (t) => t("发布、版本、上线或 Git tag 事件数"),
-  "Hermes sessions": (t) => t("Hermes 会话数"),
+  "Hermes sessions": (t) => t("Hermes Agent 会话数"),
   "sessions started on weekends": (t) => t("周末开始的会话数"),
   "sessions started late night or before dawn": (t) => t("深夜或凌晨开始的会话数"),
 };
@@ -194,7 +194,7 @@ const criteriaListSeparator = (language?: string) => (isChineseCriteriaLocale(la
 const criteriaRequirementSeparator = (language?: string) => (isChineseCriteriaLocale(language) ? "；" : "; ");
 
 const translateCriteriaMetric = (metric: string, t: Translate) => (
-  criteriaMetricTranslations[metric]?.(t) ?? t("对应的 Hermes 行为次数")
+  criteriaMetricTranslations[metric]?.(t) ?? t("对应的 Hermes Agent 行为次数")
 );
 
 const translateCriteriaTierLadder = (ladder: string, t: Translate, language?: string) => (
@@ -228,7 +228,7 @@ export const achievementCriteriaText = (achievement: HermesAchievement, t: Trans
     return t("当前成就暂未返回计数规则。");
   }
   if (criteria.startsWith("Secret: exact requirement hidden")) {
-    return t("隐藏成就的具体条件会在 Hermes 发现相关行为后展示。继续在调试、工具、记忆、技能、插件和模型工作流中使用 Hermes。");
+    return t("隐藏成就的具体条件会在 Hermes Agent 发现相关行为后展示。继续在调试、工具、记忆、技能、插件和模型工作流中使用 Hermes Agent。");
   }
 
   const tieredMatch = criteria.match(/^Requirement: (.+)\. Tier ladder: (.+)\.$/);
@@ -244,10 +244,10 @@ export const achievementCriteriaText = (achievement: HermesAchievement, t: Trans
   if (multiRequirementMatch) {
     const body = multiRequirementMatch[1] ?? "";
     if (body === "use Hermes in the matching workflow") {
-      return t("使用 Hermes 完成对应工作流。");
+      return t("使用 Hermes Agent 完成对应工作流。");
     }
     if (body === "complete the matching Hermes behavior") {
-      return t("完成对应的 Hermes 行为后解锁。");
+      return t("完成对应的 Hermes Agent 行为后解锁。");
     }
     const requirements = body
       .split(";")
@@ -256,10 +256,10 @@ export const achievementCriteriaText = (achievement: HermesAchievement, t: Trans
       .join(criteriaRequirementSeparator(language));
     return requirements
       ? t("需要同时满足：{{requirements}}。", { requirements })
-      : t("完成对应的 Hermes 行为后解锁。");
+      : t("完成对应的 Hermes Agent 行为后解锁。");
   }
 
-  return t("完成对应的 Hermes 行为后解锁。");
+  return t("完成对应的 Hermes Agent 行为后解锁。");
 };
 
 const TIER_ORDER = ["Olympian", "Diamond", "Gold", "Silver", "Copper"];
@@ -335,7 +335,7 @@ const achievementNameTranslations: Record<string, AchievementCopyTranslator> = {
 
 const achievementDescriptionTranslations: Record<string, AchievementCopyTranslator> = {
   actually_read_the_logs: (t) => t("多次查看日志，而不是直接猜测问题原因。"),
-  autonomous_avalanche: (t) => t("在多个会话中累计大量 Hermes 工具调用。"),
+  autonomous_avalanche: (t) => t("在多个会话中累计大量 Hermes Agent 工具调用。"),
   background_process_enjoyer: (t) => t("启动或控制了足够多的长时间运行进程。"),
   browser_possession: (t) => t("多次通过自动化方式操作浏览器。"),
   cache_hit_appreciator: (t) => t("注意到或受益于提示词缓存相关行为。"),
@@ -353,27 +353,27 @@ const achievementDescriptionTranslations: Record<string, AchievementCopyTranslat
   five_model_flight: (t) => t("使用过至少五种不同的大模型。"),
   forgot_the_env_var: (t) => t("因缺少环境变量导致过认证或配置失败。"),
   full_send: (t) => t("在一次任务中同时使用终端、文件和网页或浏览器能力。"),
-  gateway_dweller: (t) => t("多次使用与网关连接相关的 Hermes 工作流。"),
+  gateway_dweller: (t) => t("多次使用与网关连接相关的 Hermes Agent 工作流。"),
   gemini_cartographer: (t) => t("多次使用 Gemini 相关工作流。"),
   image_whisperer: (t) => t("多次使用图像生成或视觉理解工具。"),
-  let_him_cook: (t) => t("让 Hermes 在一次会话中自主完成一条完整工具链。"),
-  marathon_operator: (t) => t("累计了大量 Hermes 会话。"),
+  let_him_cook: (t) => t("让 Hermes Agent 在一次会话中自主完成一条完整工具链。"),
+  marathon_operator: (t) => t("累计了大量 Hermes Agent 会话。"),
   memory_keeper: (t) => t("使用 memory 或 Mnemosyne 保存长期知识。"),
   memory_palace: (t) => t("持续写入并沉淀长期记忆。"),
   model_hopper: (t) => t("多次切换、查看或配置模型与供应商。"),
   model_sommelier: (t) => t("多次使用不同模型或供应商，逐步形成使用偏好。"),
-  multi_model_mage: (t) => t("在 Hermes 历史中使用过多种不同模型。"),
-  night_shift_operator: (t) => t("多次在深夜时段运行 Hermes 会话。"),
+  multi_model_mage: (t) => t("在 Hermes Agent 历史中使用过多种不同模型。"),
+  night_shift_operator: (t) => t("多次在深夜时段运行 Hermes Agent 会话。"),
   one_character_fix: (t) => t("在多次错误之后，通过很小的修改完成修复。"),
   one_more_small_change: (t) => t("在一次会话中进行了大量文件修改。"),
-  open_weights_pilgrim: (t) => t("通过 Hermes 会话使用过本地模型或开源权重模型。"),
+  open_weights_pilgrim: (t) => t("通过 Hermes Agent 会话使用过本地模型或开源权重模型。"),
   openrouter_enjoyer: (t) => t("多次通过 OpenRouter 路由模型任务。"),
   patch_wizard: (t) => t("多次使用精准补丁修改文件。"),
   permission_denied_any_percent: (t) => t("多次遇到权限不足或访问被拒绝的问题。"),
   pixel_goblin: (t) => t("持续进行前端、CSS、SVG 或视觉细节调整。"),
   plugin_goblin: (t) => t("多次使用或开发插件相关能力。"),
   port_3000_taken: (t) => t("多次遇到开发服务器端口冲突。"),
-  provider_polyglot: (t) => t("在 Hermes 历史中使用过多个模型供应商。"),
+  provider_polyglot: (t) => t("在 Hermes Agent 历史中使用过多个模型供应商。"),
   rabbit_hole_certified: (t) => t("搜索或提取了大量网页内容用于研究。"),
   rebase_acrobat: (t) => t("处理过 rebase、冲突、合并、拉取或推送等 Git 历史操作。"),
   red_text_connoisseur: (t) => t("累计遇到过大量错误信息。"),
@@ -381,18 +381,18 @@ const achievementDescriptionTranslations: Record<string, AchievementCopyTranslat
   screenshot_hunter: (t) => t("多次截图、检查并打磨视觉效果。"),
   ship_first_ask_later: (t) => t("在一次较复杂工具链之后进行了 Git 相关操作。"),
   skill_issue_skill_created: (t) => t("创建或修改可复用技能，减少重复操作。"),
-  skillsmith: (t) => t("多次使用或维护 Hermes Skills。"),
+  skillsmith: (t) => t("多次使用或维护 Hermes Agent Skills。"),
   stack_trace_sommelier: (t) => t("多次遇到并处理堆栈追踪信息。"),
   subagent_commander: (t) => t("多次协调委派给其他 Agent 的工作。"),
   supposed_to_be_quick: (t) => t("一次原本很小的需求发展成了长会话。"),
   terminal_goblin: (t) => t("大量使用终端或 shell 命令。"),
   test_suite_tamer: (t) => t("多次运行测试、检查或验证命令。"),
   the_fix_was_restarting: (t) => t("在多次错误之后通过重启完成恢复。"),
-  toolchain_maxxer: (t) => t("在一次会话中使用了多种不同的 Hermes 工具。"),
-  toolset_cartographer: (t) => t("多次有意识地使用和切换 Hermes 工具集。"),
+  toolchain_maxxer: (t) => t("在一次会话中使用了多种不同的 Hermes Agent 工具。"),
+  toolset_cartographer: (t) => t("多次有意识地使用和切换 Hermes Agent 工具集。"),
   vibe_architect: (t) => t("在一次项目会话中修改或触达了较多文件与模块。"),
   voice_of_the_machine: (t) => t("多次使用文本转语音或语音相关工具。"),
-  weekend_warrior: (t) => t("多次在周末运行 Hermes 会话。"),
+  weekend_warrior: (t) => t("多次在周末运行 Hermes Agent 会话。"),
   yaml_colon_incident: (t) => t("多次遇到 YAML 或配置语法问题。"),
 };
 
@@ -505,7 +505,7 @@ const categoryLabel = (category: string, t: ReturnType<typeof useT>) => {
     case "Vibe Coding":
       return t("开发工作流");
     case "Hermes Native":
-      return t("Hermes 原生能力");
+      return t("Hermes Agent 原生能力");
     case "Research/Web":
       return t("研究与网页");
     case "Tool Mastery":
@@ -653,7 +653,7 @@ const AchievementCard = ({ achievement }: { achievement: HermesAchievement }) =>
           </div>
           <p className="mt-2 line-clamp-2 text-sm leading-6 text-black/55">
             {achievement.state === "secret"
-              ? t("继续使用 Hermes，相关行为出现后会揭示条件。")
+              ? t("继续使用 Hermes Agent，相关行为出现后会揭示条件。")
               : displayDescription}
           </p>
         </div>
@@ -814,7 +814,7 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
           {scanRunning ? (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-black/[0.04] px-2.5 py-1">
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-              {t("正在读取 Hermes 历史")}
+              {t("正在读取 Hermes Agent 历史")}
             </span>
           ) : null}
           {snapshot?.is_stale ? (
@@ -887,7 +887,7 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
         <section className="rounded-lg border border-dashed border-black/[0.12] bg-white p-8 text-center">
           <HelpCircle className="mx-auto h-8 w-8 text-black/28" />
           <h3 className="mt-3 text-base font-semibold text-black/75">{t("暂无匹配的成就")}</h3>
-          <p className="mt-2 text-sm text-black/45">{t("可以切换筛选条件，或重新扫描当前 Hermes 的历史数据。")}</p>
+          <p className="mt-2 text-sm text-black/45">{t("可以切换筛选条件，或重新扫描当前 Hermes Agent 的历史数据。")}</p>
         </section>
       ) : null}
 

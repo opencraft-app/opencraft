@@ -1481,3 +1481,16 @@ Not-tested: 待实现后填写
 - [x] 人设注入成功弹窗将 Hermes 名称改为 Hermes Agent，并移除 `/approve` 步骤。
 - [x] 新提示同步到中英文 i18n 字典，旧文案不再被引用。
 - [x] `pnpm check`、`pnpm i18n:check` 和 `git diff --check` 通过。
+
+### Task 72: 统一 Agent 控制台 Hermes Agent 称呼
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `/agents` 路由可达页面中的用户可见文案与对应测试
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 逐页检查 `/agents` 导航下全部页面，将作为 Agent 主体或品牌出现的单独 `Hermes` 统一为 `Hermes Agent`；实例默认名称和公共侧栏保留“我的Hermes”。
+- [x] 保留 `Hermes CLI`、`Hermes /learn`、`Hermes WebUI` 等官方技术名称，以及代码标识、命令和后端原始 key。
+- [x] 同步中英文 i18n 字典，更新受影响测试，并确认目标源码不再包含遗漏的用户可见单独 `Hermes`。
+- [x] 目标测试、`pnpm check`、`pnpm i18n:check`、浏览器烟测和 `git diff --check` 通过。

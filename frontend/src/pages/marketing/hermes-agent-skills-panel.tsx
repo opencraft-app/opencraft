@@ -342,8 +342,8 @@ const runHermesLearnCli = async (
     percent: 48,
     label: t("正在运行 Hermes /learn"),
     detail: toolsets.includes("web")
-      ? t("Hermes 正在使用 web_extract 处理 URL、读取来源并写入技能文件。")
-      : t("Hermes 正在读取所选来源并写入技能文件。"),
+      ? t("Hermes Agent 正在使用 web_extract 处理 URL、读取来源并写入技能文件。")
+      : t("Hermes Agent 正在读取所选来源并写入技能文件。"),
   });
 
   const result = await client.execCommand(buildHermesLearnCliCommand(prompt, toolsets), HERMES_LEARN_TIMEOUT_SECONDS);
