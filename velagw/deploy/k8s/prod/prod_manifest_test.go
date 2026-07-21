@@ -41,6 +41,142 @@ func TestSetManagerOnlyOwnsLLMFleetCRD(t *testing.T) {
 	}
 }
 
+func TestVelaGWSetCRDEnforcesSingleSetContract(t *testing.T) {
+	content := string(readFile(t, "velagwset-crd.yaml"))
+	for _, want := range []string{
+		"name: velagwsets.gateway.lightvela.com",
+		"kind: VelaGWSet",
+		"shortNames:",
+		"- vgs",
+		"subresources:",
+		"status: {}",
+		"x-kubernetes-list-type: map",
+		"x-kubernetes-list-map-keys:",
+		"- generation",
+		"rule: self == oldSelf",
+		"minimum: 0",
+		"maximum: 255",
+		"pattern: ^.+@sha256:[a-f0-9]{64}$",
+		"Managed policy cannot transition back to Observe or AdoptionPending",
+		"traffic runtime image is immutable within a generation",
+		"maxItems: 8",
+		"replicas:\n                        type: integer\n                        format: int32\n                        minimum: 0",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("VelaGWSet CRD missing %q", want)
+		}
+	}
+}
+
+func TestVelaGWSetControllerHasProductionDeployment(t *testing.T) {
+	content := string(readFile(t, "velagwset-controller.yaml.template"))
+	for _, want := range []string{
+		"name: velagwset-controller",
+		"replicas: 2",
+		"kind: PodDisruptionBudget",
+		"minAvailable: 1",
+		`command: ["/usr/local/bin/velagwset-controller"]`,
+		"--leader-elect",
+		"${LLMGATEWAY_IMAGE}",
+		"imagePullSecrets:",
+		"- name: tcr-pull-secret",
+		`resources: ["velagwsets", "velagwsets/status", "velagwsets/finalizers"]`,
+		`resources: ["deployments"]`,
+		`resources: ["services"]`,
+		`resources: ["poddisruptionbudgets"]`,
+		`resources: ["leases"]`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("production VelaGWSet controller manifest missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`resources: ["secrets"]`,
+		"LLMGATEWAY_MYSQL_DSN",
+		"LLMGATEWAY_REDIS",
+		"LLMGATEWAY_INTERNAL_TOKEN",
+		"system-node-critical",
+		"node.kubernetes.io/disk-pressure",
+	} {
+		if strings.Contains(content, forbidden) {
+			t.Fatalf("production VelaGWSet controller manifest must not contain %q", forbidden)
+		}
+	}
+}
+
+func TestVelaGWSetProvisionerHasIsolatedProductionDeployment(t *testing.T) {
+	content := string(readFile(t, "velagwset-provisioner.yaml.template"))
+	for _, want := range []string{
+		"name: velagwset-provisioner",
+		"replicas: 2",
+		`command: ["/usr/local/bin/velagwset-provisioner"]`,
+		"LLMGATEWAY_CONTROL_URL",
+		"value: http://llmgateway-control\n",
+		"INTERNAL_SERVICE_TOKEN",
+		"LLMGATEWAY_IMAGE",
+		`apiGroups: ["llmgateway.io"]`,
+		`resources: ["llmfleets"]`,
+		`verbs: ["get"]`,
+		`resources: ["velagwsets"]`,
+		`resources: ["jobs"]`,
+		`resources: ["secrets"]`,
+		`resources: ["secrets"]
+    verbs: ["get", "create"]`,
+		`resources: ["poddisruptionbudgets"]
+    verbs: ["get"]`,
+		"automountServiceAccountToken: true",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("VelaGWSet provisioner manifest missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"LLMGATEWAY_SQL_DSN",
+		"LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL",
+		"http://llmgateway-control:18080",
+		`resources: ["deployments"]`,
+		`resources: ["services"]`,
+		`verbs: ["list", "watch"]\n    resources: ["secrets"]`,
+	} {
+		if strings.Contains(content, forbidden) {
+			t.Fatalf("VelaGWSet provisioner manifest must not contain %q", forbidden)
+		}
+	}
+}
+
+func TestProductionAutoscalerWritesOnlyVelaGWSetRequests(t *testing.T) {
+	content := string(readFile(t, "llmgateway-app.yaml.template"))
+	for _, want := range []string{
+		"name: LLMGATEWAY_SET_AUTOSCALER_RUNTIME_BACKEND\n              value: velagwset",
+		"name: LLMGATEWAY_SET_AUTOSCALER_WRITER_EPOCH\n              value: \"2\"",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("production autoscaler manifest missing %q", want)
+		}
+	}
+}
+
+func TestVelaGWSetDeleteRequiresMatchingDecommissionApproval(t *testing.T) {
+	crd := string(readFile(t, "velagwset-crd.yaml"))
+	for _, want := range []string{"decommissionApproval:", "requestID", "approvedAt", "crUID", "!has(oldSelf.decommissionApproval)"} {
+		if !strings.Contains(crd, want) {
+			t.Fatalf("VelaGWSet CRD missing deletion contract %q", want)
+		}
+	}
+	policy := string(readFile(t, "velagwset-delete-policy.yaml"))
+	for _, want := range []string{
+		"kind: ValidatingAdmissionPolicy",
+		"operations: [\"DELETE\"]",
+		"oldObject.spec.decommissionApproval.crUID == string(oldObject.metadata.uid)",
+		"kind: ValidatingAdmissionPolicyBinding",
+		"validationActions: [Deny]",
+	} {
+		if !strings.Contains(policy, want) {
+			t.Fatalf("VelaGWSet delete policy missing %q", want)
+		}
+	}
+}
+
 func TestAdminWriteWorkerIsIndependentlyScalable(t *testing.T) {
 	content := string(readFile(t, "llmgateway-app.yaml.template"))
 	for _, want := range []string{
@@ -212,17 +348,17 @@ func TestLLMFleetBootstrapKeepsSecretsOutOfSpec(t *testing.T) {
 	}
 }
 
-func TestProductionDocsLockKROVersionAndBootstrapWarning(t *testing.T) {
+func TestProductionDocsLockKROVersionAndVelaGWSetContract(t *testing.T) {
 	raw := readFile(t, "README.md")
 	content := string(raw)
 	for _, want := range []string{
 		"--version 0.8.5",
 		"v0.8.5-amd64",
 		"field label not supported: spec.snapshot.name",
-		"bootstrap 模板",
-		"不是持续覆盖模板",
-		"spec.sets",
-		"只 patch `spec.shards`",
+		"独立 `VelaGWSet`",
+		"`spec.sets` 保持为空",
+		"velagwset-provisioner.yaml.template",
+		"LLMGATEWAY_SET_AUTOSCALER_RUNTIME_BACKEND=velagwset",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("production README missing %q", want)
@@ -537,6 +673,18 @@ func TestProductionWorkerBootstrapsWarmSetsThroughCapacityJob(t *testing.T) {
 		if strings.Contains(content, oldName) {
 			t.Fatalf("worker template still contains legacy autoscaler config %q", oldName)
 		}
+	}
+}
+
+func TestProductionProvisionerConsumesAutoscalerSource(t *testing.T) {
+	worker := string(readFile(t, "llmgateway-app.yaml.template"))
+	provisioner := string(readFile(t, "velagwset-provisioner.yaml.template"))
+
+	if !strings.Contains(worker, "- name: LLMGATEWAY_SET_AUTOSCALER_SOURCE\n              value: prod") {
+		t.Fatal("worker must publish capacity requests with source prod")
+	}
+	if !strings.Contains(provisioner, "- name: LLMGATEWAY_SET_SOURCE\n              value: prod") {
+		t.Fatal("VelaGWSet provisioner must consume the same prod source")
 	}
 }
 

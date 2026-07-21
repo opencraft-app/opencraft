@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: operator-canary-runtime
+  namespace: llmgateway-kro-demo
+type: Opaque
+stringData:
+  SQL_DSN: root:123456@tcp(shared-mysql-a:3306)/newapi_operator_canary?parseTime=true&loc=Local
+  REDIS_CONN_STRING: redis://:123456@shared-redis-a:6379/9
+  SESSION_SECRET: velagwset-operator-canary-session-secret
+  SQL_MAX_OPEN_CONNS: "16"
+  SQL_MAX_IDLE_CONNS: "2"
+  SQL_MAX_LIFETIME: "60"
+  SUBSCRIPTION_WRITE_CONCURRENCY: "8"
+---
+apiVersion: gateway.lightvela.com/v1alpha1
+kind: VelaGWSet
+metadata:
+  name: operator-canary
+  namespace: llmgateway-kro-demo
+spec:
+  fleetRef: local
+  shardRef: shard-a
+  databaseName: newapi_operator_canary
+  redisDB: 9
+  runtimeSecretRef:
+    name: operator-canary-runtime
+  managementPolicy: Managed
+  scheduling:
+    priorityClassName: system-node-critical
+  admin:
+    image: calciumion/new-api@sha256:3125e24f119fa5e767563226a5208f2902b3faed3f27b69ea275b32c9f04a066
+  trafficRuntimes:
+    - generation: 1
+      image: calciumion/new-api@sha256:3125e24f119fa5e767563226a5208f2902b3faed3f27b69ea275b32c9f04a066
+      replicas: 2

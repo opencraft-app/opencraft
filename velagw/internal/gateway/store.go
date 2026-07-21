@@ -35,6 +35,11 @@ type Store interface {
 	SaveSetProvisionRequest(context.Context, SetProvisionRequest) error
 	GetSetProvisionRequest(context.Context, string) (SetProvisionRequest, bool, error)
 	ListSetProvisionRequests(context.Context, SetProvisionRequestListOptions) ([]SetProvisionRequest, error)
+	ClaimSetProvisionRequest(context.Context, setProvisionClaimStoreInput) (SetProvisionRequest, bool, error)
+	RenewSetProvisionClaim(context.Context, setProvisionLeaseStoreInput) (SetProvisionRequest, bool, error)
+	ReleaseSetProvisionClaim(context.Context, setProvisionLeaseStoreInput) (SetProvisionRequest, bool, error)
+	CommitSetProvisionFact(context.Context, setProvisionFactCommitStoreInput) (SetProvisionRequest, bool, error)
+	AdvanceSetProvisionRequestForFact(context.Context, setProvisionFactAdvanceStoreInput) (SetProvisionRequest, bool, error)
 	SaveSetRuntimeLease(context.Context, SetRuntimeLease) error
 	ListSetRuntimeLeases(context.Context, SetRuntimeLeaseListOptions) ([]SetRuntimeLease, error)
 	CleanupStaleSetRuntimeLeases(context.Context) (int, error)
@@ -668,6 +673,18 @@ func (s *MemoryStore) SaveSetProvisionRequest(_ context.Context, request SetProv
 		}
 	}
 	now := time.Now().UTC()
+	if request.RuntimeBackend == "" {
+		request.RuntimeBackend = SetRuntimeBackendLLMFleet
+	}
+	if request.WriterEpoch <= 0 {
+		request.WriterEpoch = 1
+	}
+	if request.LifecycleRevision <= 0 {
+		request.LifecycleRevision = 1
+	}
+	if request.Version <= 0 {
+		request.Version = 1
+	}
 	if existing, ok := s.setRequests[request.ID]; ok {
 		request.CreatedAt = existing.CreatedAt
 	} else if request.CreatedAt.IsZero() {

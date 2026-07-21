@@ -551,6 +551,9 @@ func firstPositive(value int, fallback int) int {
 }
 
 func (s *Service) markProvisionRequestConfiguredForSetFact(ctx context.Context, fact SetReconcileFact) error {
+	if err := s.advanceNativeProvisionRequestForManagedFact(ctx, fact); err != nil {
+		return err
+	}
 	requests, err := s.store.ListSetProvisionRequests(ctx, SetProvisionRequestListOptions{
 		Source:    fact.Source,
 		Namespace: fact.Namespace,
@@ -560,6 +563,9 @@ func (s *Service) markProvisionRequestConfiguredForSetFact(ctx context.Context, 
 		return err
 	}
 	for _, request := range requests {
+		if request.RuntimeBackend == SetRuntimeBackendVelaGWSet {
+			continue
+		}
 		if request.SetID != fact.SetID || !isOpenSetProvisionStatus(request.Status) {
 			continue
 		}

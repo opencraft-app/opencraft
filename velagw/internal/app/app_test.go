@@ -222,6 +222,8 @@ func TestSetCapacityPolicyFromEnvUsesSetAutoscalerPrefix(t *testing.T) {
 	t.Setenv("LLMGATEWAY_SET_AUTOSCALER_SET_ID_PREFIX", "autoset")
 	t.Setenv("LLMGATEWAY_SET_AUTOSCALER_REDIS_DB_START", "8")
 	t.Setenv("LLMGATEWAY_SET_AUTOSCALER_REDIS_DB_LIMIT", "64")
+	t.Setenv("LLMGATEWAY_SET_AUTOSCALER_RUNTIME_BACKEND", "velagwset")
+	t.Setenv("LLMGATEWAY_SET_AUTOSCALER_WRITER_EPOCH", "9")
 
 	// Legacy capacity names must no longer influence the worker.
 	t.Setenv("LLMGATEWAY_SET_MANAGER_MIN_WARM_SETS", "99")
@@ -239,5 +241,8 @@ func TestSetCapacityPolicyFromEnvUsesSetAutoscalerPrefix(t *testing.T) {
 	}
 	if policy.SetIDPrefix != "autoset" || policy.RedisDBStart == nil || *policy.RedisDBStart != 8 || policy.RedisDBLimit == nil || *policy.RedisDBLimit != 64 {
 		t.Fatalf("unexpected autoscaler allocation policy: %+v", policy)
+	}
+	if policy.RuntimeBackend != gateway.SetRuntimeBackendVelaGWSet || policy.WriterEpoch != 9 {
+		t.Fatalf("unexpected autoscaler writer: %+v", policy)
 	}
 }

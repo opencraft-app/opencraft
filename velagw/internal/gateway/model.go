@@ -89,6 +89,9 @@ const (
 	SetProvisionStatusError        = "error"
 	SetProvisionStatusCancelled    = "cancelled"
 
+	SetRuntimeBackendLLMFleet  = "llmfleet"
+	SetRuntimeBackendVelaGWSet = "velagwset"
+
 	WorkerJobStatusIdle    = "idle"
 	WorkerJobStatusRunning = "running"
 	WorkerJobStatusQueued  = "queued"
@@ -901,25 +904,78 @@ type ReconcileSetReconcileFactsResult struct {
 }
 
 type SetProvisionRequest struct {
-	ID             string    `json:"id"`
-	Source         string    `json:"source"`
-	Namespace      string    `json:"namespace"`
-	Fleet          string    `json:"fleet"`
-	SetID          string    `json:"set_id"`
-	ShardRef       string    `json:"shard_ref"`
-	DatabaseName   string    `json:"database_name"`
-	RedisDB        string    `json:"redis_db"`
-	ReleaseRingID  string    `json:"release_ring_id,omitempty"`
-	ReleaseID      string    `json:"release_id,omitempty"`
-	ReleaseImage   string    `json:"release_image,omitempty"`
-	Status         string    `json:"status"`
-	Reason         string    `json:"reason,omitempty"`
-	LastError      string    `json:"last_error,omitempty"`
-	RequestedUsers int       `json:"requested_users"`
-	MaxUsersPerSet int       `json:"max_users_per_set"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	LastStatusAt   time.Time `json:"last_status_at,omitempty"`
+	ID                    string    `json:"id"`
+	Source                string    `json:"source"`
+	Namespace             string    `json:"namespace"`
+	Fleet                 string    `json:"fleet"`
+	SetID                 string    `json:"set_id"`
+	ShardRef              string    `json:"shard_ref"`
+	DatabaseName          string    `json:"database_name"`
+	RedisDB               string    `json:"redis_db"`
+	ReleaseRingID         string    `json:"release_ring_id,omitempty"`
+	ReleaseID             string    `json:"release_id,omitempty"`
+	ReleaseImage          string    `json:"release_image,omitempty"`
+	RuntimeBackend        string    `json:"runtime_backend"`
+	WriterEpoch           int64     `json:"writer_epoch"`
+	LifecycleRevision     int64     `json:"lifecycle_revision"`
+	Attempt               int       `json:"attempt"`
+	Version               int64     `json:"version"`
+	ClaimOwner            string    `json:"claim_owner,omitempty"`
+	ClaimToken            string    `json:"claim_token,omitempty"`
+	ClaimLeaseUntil       time.Time `json:"claim_lease_until,omitempty"`
+	CRUID                 string    `json:"cr_uid,omitempty"`
+	CRGeneration          int64     `json:"cr_generation,omitempty"`
+	RuntimeSecretUID      string    `json:"runtime_secret_uid,omitempty"`
+	RuntimeIdentityDigest string    `json:"runtime_identity_digest,omitempty"`
+	BootstrapJobUID       string    `json:"bootstrap_job_uid,omitempty"`
+	BootstrapCompletedAt  time.Time `json:"bootstrap_completed_at,omitempty"`
+	AdminFactHash         string    `json:"admin_fact_hash,omitempty"`
+	ServingFactHash       string    `json:"serving_fact_hash,omitempty"`
+	Status                string    `json:"status"`
+	Reason                string    `json:"reason,omitempty"`
+	LastError             string    `json:"last_error,omitempty"`
+	RequestedUsers        int       `json:"requested_users"`
+	MaxUsersPerSet        int       `json:"max_users_per_set"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
+	LastStatusAt          time.Time `json:"last_status_at,omitempty"`
+}
+
+type SetProvisionClaimInput struct {
+	ID                string        `json:"-"`
+	RuntimeBackend    string        `json:"runtime_backend,omitempty"`
+	WriterEpoch       int64         `json:"writer_epoch"`
+	LifecycleRevision int64         `json:"lifecycle_revision"`
+	Owner             string        `json:"owner"`
+	LeaseTTL          time.Duration `json:"-"`
+}
+
+type SetProvisionLeaseInput struct {
+	ID                string        `json:"-"`
+	RuntimeBackend    string        `json:"runtime_backend,omitempty"`
+	WriterEpoch       int64         `json:"writer_epoch"`
+	LifecycleRevision int64         `json:"lifecycle_revision"`
+	ExpectedVersion   int64         `json:"expected_version"`
+	ClaimToken        string        `json:"claim_token"`
+	LeaseTTL          time.Duration `json:"-"`
+}
+
+type SetProvisionFactCommitInput struct {
+	ID                    string                `json:"-"`
+	RuntimeBackend        string                `json:"runtime_backend"`
+	WriterEpoch           int64                 `json:"writer_epoch"`
+	LifecycleRevision     int64                 `json:"lifecycle_revision"`
+	ExpectedStatus        string                `json:"expected_status"`
+	ExpectedVersion       int64                 `json:"expected_version"`
+	ClaimToken            string                `json:"claim_token"`
+	NextStatus            string                `json:"next_status"`
+	CRUID                 string                `json:"cr_uid,omitempty"`
+	CRGeneration          int64                 `json:"cr_generation,omitempty"`
+	RuntimeSecretUID      string                `json:"runtime_secret_uid,omitempty"`
+	RuntimeIdentityDigest string                `json:"runtime_identity_digest,omitempty"`
+	BootstrapJobUID       string                `json:"bootstrap_job_uid,omitempty"`
+	BootstrapCompletedAt  time.Time             `json:"bootstrap_completed_at,omitempty"`
+	Fact                  SetReconcileFactInput `json:"fact"`
 }
 
 type SetRuntimeLease struct {
@@ -941,12 +997,14 @@ type SetRuntimeLeaseListOptions struct {
 }
 
 type SetProvisionRequestListOptions struct {
-	Source    string
-	Namespace string
-	Fleet     string
-	SetID     string
-	Status    string
-	Limit     int
+	Source         string
+	Namespace      string
+	Fleet          string
+	SetID          string
+	Status         string
+	Statuses       []string
+	RuntimeBackend string
+	Limit          int
 }
 
 type SetCapacityPolicy struct {
@@ -962,6 +1020,8 @@ type SetCapacityPolicy struct {
 	SetIDPrefix        string   `json:"set_id_prefix,omitempty"`
 	RedisDBStart       *int     `json:"redis_db_start,omitempty"`
 	RedisDBLimit       *int     `json:"redis_db_limit,omitempty"`
+	RuntimeBackend     string   `json:"runtime_backend,omitempty"`
+	WriterEpoch        int64    `json:"writer_epoch,omitempty"`
 }
 
 type SetCapacitySetSnapshot struct {

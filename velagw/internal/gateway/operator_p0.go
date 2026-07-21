@@ -949,6 +949,9 @@ func (s *Service) cleanupPendingJob(ctx context.Context) (int, error) {
 	now := s.nowUTC()
 	cleaned := 0
 	for _, request := range requests {
+		if request.RuntimeBackend == SetRuntimeBackendVelaGWSet {
+			continue
+		}
 		if request.UpdatedAt.IsZero() || now.Sub(request.UpdatedAt) < time.Hour {
 			continue
 		}

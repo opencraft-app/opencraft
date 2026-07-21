@@ -47,6 +47,34 @@ func TestSetManagerManifestOwnsRequestAndFactFlow(t *testing.T) {
 	}
 }
 
+func TestLocalVelaGWSetControllerIsKubernetesOnly(t *testing.T) {
+	content, err := os.ReadFile("55-velagwset-controller.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	for _, want := range []string{
+		"kind: Deployment",
+		"name: velagwset-controller",
+		`command: ["/usr/local/bin/velagwset-controller"]`,
+		`apiGroups: ["gateway.lightvela.com"]`,
+		`resources: ["velagwsets", "velagwsets/status", "velagwsets/finalizers"]`,
+		`resources: ["deployments"]`,
+		`resources: ["poddisruptionbudgets"]`,
+		"--leader-elect",
+		"image: llmgateway:local",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("local VelaGWSet controller manifest missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{"LLMGATEWAY_SQL_DSN", "REDIS_URL", "LLMGATEWAY_CONTROL_URL", "LLMGATEWAY_INTERNAL_TOKEN", `resources: ["secrets"]`, `verbs: ["get", "list", "watch", "create", "update", "patch"]`} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("VelaGWSet controller must not depend on %q", forbidden)
+		}
+	}
+}
+
 func TestLocalManifestIncludesAdminWriteWorker(t *testing.T) {
 	content, err := os.ReadFile("08-llmgateway-worker.yaml")
 	if err != nil {
@@ -56,6 +84,21 @@ func TestLocalManifestIncludesAdminWriteWorker(t *testing.T) {
 		if !strings.Contains(string(content), want) {
 			t.Fatalf("local worker manifest missing %q", want)
 		}
+	}
+}
+
+func TestLocalVelaGWSetProvisionerCanObserveTrafficPDB(t *testing.T) {
+	content, err := os.ReadFile("56-velagwset-provisioner.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), `resources: ["poddisruptionbudgets"]
+    verbs: ["get"]`) {
+		t.Fatal("local provisioner needs read-only PDB access for the serving-ready gate")
+	}
+	if !strings.Contains(string(content), `resources: ["secrets"]
+    verbs: ["get", "create"]`) {
+		t.Fatal("local provisioner Secret access must remain get/create only")
 	}
 }
 
@@ -296,6 +339,28 @@ func TestK8sFreshEnvironmentE2EInfrastructureExists(t *testing.T) {
 		if !strings.Contains(content, want) {
 			t.Fatalf("fresh e2e script missing %q", want)
 		}
+	}
+}
+
+func TestVelaGWSetProvisionerE2ETracksOnlyItsOwnRequest(t *testing.T) {
+	raw, err := os.ReadFile("e2e/run-velagwset-provisioner.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(raw)
+	for _, want := range []string{
+		`.data.requests[0].id`,
+		`.data.requests[0].set_id`,
+		`select(.id == $id)`,
+		`if [[ "$state" != "managed" ]]`,
+		`kubectl wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("VelaGWSet provisioner e2e script missing hard gate %q", want)
+		}
+	}
+	if strings.Contains(content, `sed -n 's/.*"status"`) {
+		t.Fatal("VelaGWSet provisioner e2e must not parse a multi-request response with greedy sed")
 	}
 }
 

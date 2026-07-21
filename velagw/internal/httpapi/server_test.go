@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -472,6 +473,70 @@ func TestAdminSetProvisionRequestsCanListAndUpdateStatus(t *testing.T) {
 	}
 	if stored.Status != gateway.SetProvisionStatusCreated {
 		t.Fatalf("status=%s, want created", stored.Status)
+	}
+}
+
+func TestInternalProvisionEndpointsAreBackendIsolated(t *testing.T) {
+	store := gateway.NewMemoryStore()
+	svc := gateway.NewService(store, nil, gateway.Options{})
+	for _, request := range []gateway.SetProvisionRequest{
+		{ID: "legacy", Source: "prod", Namespace: "llmgateway", Fleet: "prod", SetID: "legacy", RuntimeBackend: gateway.SetRuntimeBackendLLMFleet, Status: gateway.SetProvisionStatusPending},
+		{ID: "native", Source: "prod", Namespace: "llmgateway", Fleet: "prod", SetID: "native", RuntimeBackend: gateway.SetRuntimeBackendVelaGWSet, WriterEpoch: 3, Status: gateway.SetProvisionStatusPending},
+	} {
+		if err := store.SaveSetProvisionRequest(t.Context(), request); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler := NewControlServer(svc, Config{InternalToken: "internal-token"})
+	get := func(path string) string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer internal-token")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s status=%d body=%s", path, rec.Code, rec.Body.String())
+		}
+		return rec.Body.String()
+	}
+	legacy := get("/api/internal/set-manager/set-provision-requests?status=pending")
+	if !strings.Contains(legacy, `"set_id":"legacy"`) || strings.Contains(legacy, `"set_id":"native"`) {
+		t.Fatalf("legacy endpoint leaked backend: %s", legacy)
+	}
+	native := get("/api/internal/velagwset-provisioner/set-provision-requests?status=pending")
+	if !strings.Contains(native, `"set_id":"native"`) || strings.Contains(native, `"set_id":"legacy"`) {
+		t.Fatalf("native endpoint leaked backend: %s", native)
+	}
+}
+
+func TestVelaGWSetProvisionerListExcludesTerminalHistoryBeforeLimit(t *testing.T) {
+	store := gateway.NewMemoryStore()
+	pending := gateway.SetProvisionRequest{ID: "pending", SetID: "pending", RuntimeBackend: gateway.SetRuntimeBackendVelaGWSet, WriterEpoch: 1, LifecycleRevision: 1, Version: 1, Status: gateway.SetProvisionStatusPending}
+	if err := store.SaveSetProvisionRequest(t.Context(), pending); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		request := gateway.SetProvisionRequest{ID: fmt.Sprintf("managed-%d", i), SetID: fmt.Sprintf("managed-%d", i), RuntimeBackend: gateway.SetRuntimeBackendVelaGWSet, WriterEpoch: 1, LifecycleRevision: 1, Version: 1, Status: gateway.SetProvisionStatusManaged}
+		if err := store.SaveSetProvisionRequest(t.Context(), request); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler := NewControlServer(gateway.NewService(store, nil, gateway.Options{}), Config{InternalToken: "token"})
+	req := httptest.NewRequest(http.MethodGet, "/api/internal/velagwset-provisioner/set-provision-requests?limit=1", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Data []gateway.SetProvisionRequest `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Data) != 1 || response.Data[0].ID != pending.ID {
+		t.Fatalf("requests=%+v", response.Data)
 	}
 }
 
