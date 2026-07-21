@@ -611,6 +611,8 @@ func setCapacityPolicyFromEnv() gateway.SetCapacityPolicy {
 		SetIDPrefix:        getenv("LLMGATEWAY_SET_AUTOSCALER_SET_ID_PREFIX", "set-auto"),
 		RedisDBStart:       &redisDBStart,
 		RedisDBLimit:       &redisDBLimit,
+		RuntimeBackend:     getenv("LLMGATEWAY_SET_AUTOSCALER_RUNTIME_BACKEND", gateway.SetRuntimeBackendLLMFleet),
+		WriterEpoch:        int64(envInt("LLMGATEWAY_SET_AUTOSCALER_WRITER_EPOCH", 1)),
 	}
 }
 

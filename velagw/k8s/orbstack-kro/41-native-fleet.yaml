@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: native-shard-a
+  namespace: llmgateway-kro-demo
+type: Opaque
+stringData:
+  mysqlAdminUser: root
+  mysqlAdminPassword: "123456"
+  mysqlAppUser: root
+  mysqlAppPassword: "123456"
+  redisPasswordEncoded: "123456"
+---
+apiVersion: llmgateway.io/v1alpha1
+kind: LLMFleet
+metadata:
+  name: fleet-native
+  namespace: llmgateway-kro-demo
+spec:
+  availability:
+    traffic:
+      minReplicas: 2
+      topologyKey: kubernetes.io/hostname
+      pdbMinAvailable: 1
+  runtimeCleanerImage: llmgateway:local
+  newapi:
+    databasePool:
+      admin: {maxOpenConns: 16, maxIdleConns: 2, maxLifetimeSeconds: 60}
+      traffic: {maxOpenConns: 8, maxIdleConns: 2, maxLifetimeSeconds: 60}
+    subscriptionWriteConcurrency: 8
+  shards:
+    - name: shard-a
+      mysqlHost: shared-mysql-a
+      mysqlPort: "3306"
+      redisHost: shared-redis-a
+      redisPort: "6379"
+      secretName: native-shard-a
+      maxSets: 6
+      redisDBStart: 10
+      redisDBLimit: 16
+  cleanups: []
+  trafficRuntimes: []
+  sets: []

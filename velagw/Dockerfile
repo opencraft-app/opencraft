@@ -13,8 +13,11 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway ./cmd/llmg
     && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-traffic ./cmd/llmgateway-traffic \
     && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-worker ./cmd/llmgateway-worker \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-set-manager ./cmd/llmgateway-set-manager \
+	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/velagwset-controller ./cmd/velagwset-controller \
+	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/velagwset-provisioner ./cmd/velagwset-provisioner \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-runtime-cleaner ./cmd/llmgateway-runtime-cleaner \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-db-bootstrap ./cmd/llmgateway-db-bootstrap \
+	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-db-create ./cmd/llmgateway-db-create \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-set-upgrade-soak ./test/e2e/set-upgrade-soak \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-regression-runner ./test/regression/cmd/runner \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-regression-pacer ./test/regression/cmd/pacer
@@ -37,8 +40,11 @@ COPY --from=builder /out/llmgateway-control /usr/local/bin/llmgateway-control
 COPY --from=builder /out/llmgateway-traffic /usr/local/bin/llmgateway-traffic
 COPY --from=builder /out/llmgateway-worker /usr/local/bin/llmgateway-worker
 COPY --from=builder /out/llmgateway-set-manager /usr/local/bin/llmgateway-set-manager
+COPY --from=builder /out/velagwset-controller /usr/local/bin/velagwset-controller
+COPY --from=builder /out/velagwset-provisioner /usr/local/bin/velagwset-provisioner
 COPY --from=builder /out/llmgateway-runtime-cleaner /usr/local/bin/llmgateway-runtime-cleaner
 COPY --from=builder /out/llmgateway-db-bootstrap /usr/local/bin/llmgateway-db-bootstrap
+COPY --from=builder /out/llmgateway-db-create /usr/local/bin/llmgateway-db-create
 COPY --from=builder /out/llmgateway-set-upgrade-soak /usr/local/bin/llmgateway-set-upgrade-soak
 COPY --from=builder /out/llmgateway-regression-runner /usr/local/bin/llmgateway-regression-runner
 COPY --from=builder /out/llmgateway-regression-pacer /usr/local/bin/llmgateway-regression-pacer

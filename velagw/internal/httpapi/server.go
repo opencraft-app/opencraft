@@ -751,15 +751,23 @@ func (s *Server) adminSetCapacityReconcile(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) adminSetProvisionRequests(w http.ResponseWriter, r *http.Request) {
+	s.setProvisionRequests(w, r, "")
+}
+
+func (s *Server) setProvisionRequests(w http.ResponseWriter, r *http.Request, forcedBackend string) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	opts := gateway.SetProvisionRequestListOptions{
-		Source:    strings.TrimSpace(r.URL.Query().Get("source")),
-		Namespace: strings.TrimSpace(r.URL.Query().Get("namespace")),
-		Fleet:     strings.TrimSpace(r.URL.Query().Get("fleet")),
-		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
+		Source:         strings.TrimSpace(r.URL.Query().Get("source")),
+		Namespace:      strings.TrimSpace(r.URL.Query().Get("namespace")),
+		Fleet:          strings.TrimSpace(r.URL.Query().Get("fleet")),
+		Status:         strings.TrimSpace(r.URL.Query().Get("status")),
+		RuntimeBackend: strings.TrimSpace(forcedBackend),
+	}
+	if forcedBackend == gateway.SetRuntimeBackendVelaGWSet {
+		opts.Statuses = []string{gateway.SetProvisionStatusPending, gateway.SetProvisionStatusProvisioning, gateway.SetProvisionStatusConfigured}
 	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		parsed, err := strconv.Atoi(raw)
@@ -2231,7 +2239,11 @@ func (s *Server) internalAction(w http.ResponseWriter, r *http.Request) {
 	case path == "set-manager/shards":
 		s.internalSetManagerShard(w, r)
 	case path == "set-manager/set-provision-requests":
-		s.adminSetProvisionRequests(w, r)
+		s.setProvisionRequests(w, r, gateway.SetRuntimeBackendLLMFleet)
+	case path == "velagwset-provisioner/set-provision-requests":
+		s.setProvisionRequests(w, r, gateway.SetRuntimeBackendVelaGWSet)
+	case strings.HasPrefix(path, "velagwset-provisioner/set-provision-requests/"):
+		s.internalVelaGWSetProvisionRequestAction(w, r, strings.TrimPrefix(path, "velagwset-provisioner/set-provision-requests/"))
 	case strings.HasPrefix(path, "set-manager/set-provision-requests/"):
 		s.setProvisionRequestAction(w, r, "/api/internal/set-manager/set-provision-requests/")
 	case path == "set-manager/set-reconcile-facts":
@@ -2268,6 +2280,109 @@ func (s *Server) internalAction(w http.ResponseWriter, r *http.Request) {
 		s.internalGetActiveSubscription(w, r, userID)
 	default:
 		writeOpenAIError(w, http.StatusNotFound, "not_found_error", "not_found", "not found")
+	}
+}
+
+func (s *Server) internalVelaGWSetProvisionRequestAction(w http.ResponseWriter, r *http.Request, suffix string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	parts := strings.Split(strings.Trim(suffix, "/"), "/")
+	if len(parts) != 2 {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	id, err := url.PathUnescape(parts[0])
+	if err != nil || strings.TrimSpace(id) == "" {
+		writeError(w, http.StatusBadRequest, "invalid request id")
+		return
+	}
+	switch parts[1] {
+	case "claim":
+		var body struct {
+			WriterEpoch       int64  `json:"writer_epoch"`
+			LifecycleRevision int64  `json:"lifecycle_revision"`
+			Owner             string `json:"owner"`
+			LeaseSeconds      int    `json:"lease_seconds"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+		request, acquired, err := s.svc.ClaimSetProvisionRequest(r.Context(), gateway.SetProvisionClaimInput{
+			ID: id, RuntimeBackend: gateway.SetRuntimeBackendVelaGWSet, WriterEpoch: body.WriterEpoch,
+			LifecycleRevision: body.LifecycleRevision, Owner: body.Owner,
+			LeaseTTL: time.Duration(body.LeaseSeconds) * time.Second,
+		})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !acquired {
+			writeError(w, http.StatusConflict, "set provision request is already claimed or fenced")
+			return
+		}
+		writeJSON(w, http.StatusOK, response{Success: true, Data: request})
+	case "renew", "release":
+		var body struct {
+			WriterEpoch       int64  `json:"writer_epoch"`
+			LifecycleRevision int64  `json:"lifecycle_revision"`
+			ExpectedVersion   int64  `json:"expected_version"`
+			ClaimToken        string `json:"claim_token"`
+			LeaseSeconds      int    `json:"lease_seconds"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+		input := gateway.SetProvisionLeaseInput{
+			ID: id, RuntimeBackend: gateway.SetRuntimeBackendVelaGWSet, WriterEpoch: body.WriterEpoch,
+			LifecycleRevision: body.LifecycleRevision, ExpectedVersion: body.ExpectedVersion,
+			ClaimToken: body.ClaimToken, LeaseTTL: time.Duration(body.LeaseSeconds) * time.Second,
+		}
+		var request gateway.SetProvisionRequest
+		var changed bool
+		var err error
+		if parts[1] == "renew" {
+			request, changed, err = s.svc.RenewSetProvisionClaim(r.Context(), input)
+		} else {
+			request, changed, err = s.svc.ReleaseSetProvisionClaim(r.Context(), input)
+		}
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !changed {
+			writeError(w, http.StatusConflict, "set provision request claim or version is stale")
+			return
+		}
+		writeJSON(w, http.StatusOK, response{Success: true, Data: request})
+	case "materialized", "serving-ready":
+		var body gateway.SetProvisionFactCommitInput
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+		body.ID = id
+		body.RuntimeBackend = gateway.SetRuntimeBackendVelaGWSet
+		if parts[1] == "materialized" {
+			body.NextStatus = gateway.SetProvisionStatusCreated
+		} else {
+			body.NextStatus = gateway.SetProvisionStatusConfigured
+		}
+		request, committed, err := s.svc.CommitSetProvisionFact(r.Context(), body)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !committed {
+			writeError(w, http.StatusConflict, "set provision request claim or version is stale")
+			return
+		}
+		writeJSON(w, http.StatusOK, response{Success: true, Data: request})
+	default:
+		writeError(w, http.StatusNotFound, "not found")
 	}
 }
 

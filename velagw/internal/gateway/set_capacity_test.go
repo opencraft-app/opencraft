@@ -368,6 +368,8 @@ func TestReconcileSetCapacityCreatesProvisionRequestBelowWatermark(t *testing.T)
 		MinReadyFreeUsers:  5,
 		MaxScaleUpPerCycle: 1,
 		SetIDPrefix:        "set-auto",
+		RuntimeBackend:     SetRuntimeBackendVelaGWSet,
+		WriterEpoch:        7,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -381,6 +383,9 @@ func TestReconcileSetCapacityCreatesProvisionRequestBelowWatermark(t *testing.T)
 	request := result.Requests[0]
 	if request.Status != SetProvisionStatusPending || request.SetID != "set-auto-000001" || request.ShardRef != "shard-a" {
 		t.Fatalf("unexpected provision request: %+v", request)
+	}
+	if request.RuntimeBackend != SetRuntimeBackendVelaGWSet || request.WriterEpoch != 7 || request.Version != 1 {
+		t.Fatalf("unexpected provision writer identity: %+v", request)
 	}
 	if _, ok, err := store.GetSet(t.Context(), request.SetID); err != nil || ok {
 		t.Fatalf("capacity reconcile should not create set registry: ok=%v err=%v", ok, err)
