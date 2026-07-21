@@ -51,6 +51,11 @@ const (
 	//   反向调 ctl /internal/ctl/passes/{pass_id}/destroy 推进 pass.status deleting/isolated → terminating CAS +
 	//   派发 DestroyPass 父 task；trade 侧用 trade_flow.id 做 jifei flowId 出参（与 isolateResource 抢占式范式对偶）
 	InterfaceNameDestroyResource = "lightvela.pass.destroyResource"
+
+	// 外部资源迁入（.tmp/资源迁移+-+transferResource.doc）：
+	// - transferResource：jifei 外部资源迁入单发货回调，trade 反向调 ctl 绑定既有 pass
+	//   的 uin/app_id 并把免费 bundle 迁移为计费 bundle。
+	InterfaceNameTransferResource = "lightvela.pass.transferResource"
 )
 
 // InstallStubHandlers 把仍未落地的 handler stub 注册到 dispatcher；

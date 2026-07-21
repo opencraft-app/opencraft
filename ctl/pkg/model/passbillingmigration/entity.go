@@ -18,10 +18,12 @@ const (
 )
 
 const (
-	StatusPassMigrated = "pass_migrated"
-	StatusFailed       = "failed"
-	StatusCompleted    = "completed"
-	StatusSkipped      = "skipped"
+	StatusPendingOrder    = "pending_order"
+	StatusPendingTransfer = "pending_transfer"
+	StatusPassMigrated    = "pass_migrated"
+	StatusFailed          = "failed"
+	StatusCompleted       = "completed"
+	StatusSkipped         = "skipped"
 )
 
 type Entity struct {

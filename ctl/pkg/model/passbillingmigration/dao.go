@@ -50,6 +50,8 @@ func (d *dao) Upsert(entity *Entity) error {
 			ColumnUin,
 			ColumnAppID,
 			ColumnStatus,
+			ColumnDealName,
+			ColumnBigOrderID,
 			ColumnLastError,
 		}),
 	}).Create(entity).Error
