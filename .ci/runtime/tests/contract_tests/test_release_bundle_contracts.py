@@ -109,6 +109,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 else:
                     self.assertEqual(list(bundles), [path.stem])
 
+    def test_beijing_ctl_routes_all_eligible_users_to_llmgateway(self) -> None:
+        secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/beijing-sandbox/ctl-runtime-secrets.sops.yaml").read_text()
+        )
+        values = secret.get("stringData") or {}
+
+        self.assertEqual(values.get("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"), "*")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST"), "*")
+
     def test_playground_auto_release_workflows_match_build_contracts(self) -> None:
         manifest = load_manifest()
 
