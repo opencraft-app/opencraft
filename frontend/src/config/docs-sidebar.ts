@@ -64,7 +64,7 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "announcements/public-beta", title: "公测公告" },
       { slug: "plans", title: "套餐说明" },
       { slug: "credits", title: "体验积分说明" },
-      { slug: "create-first-hermes", title: "如何开通第一个 Hermes 实例？" },
+      { slug: "create-first-hermes", title: "如何开通第一个 Hermes 智能体伙伴？" },
     ],
   },
   {

@@ -90,6 +90,6 @@
 
 - [模型配置](./configuration/model.md) — 选择更经济或更强的底层模型
 
-- [如何开通第一个 Hermes 实例？](./create-first-hermes.md) — 从开通套餐到跑起 Agent
+- [如何开通第一个 Hermes 智能体伙伴？](./create-first-hermes.md) — 从开通套餐到跑起 Agent
 
 - [核心概念](./04-core-concepts.md) — 理解 Hermes、模型、通道、技能
