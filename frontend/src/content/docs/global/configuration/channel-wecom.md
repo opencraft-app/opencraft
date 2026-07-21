@@ -15,7 +15,7 @@
 >
 > -   一台装有企业微信的手机
 >
-> -   完成 [模型配置](./configuration/model.md)（或使用启航套餐预置的 100 体验积分）
+> -   完成 [模型配置](./model.md)（或使用启航套餐预置的 100 体验积分）
 >
 
 ---
@@ -136,6 +136,6 @@
 
 ## 下一步
 
-- [配置通道 - 飞书](./configuration/channel-feishu.md) — 办公场景，支持富文本与群聊
+- [配置通道 - 飞书](./channel-feishu.md) — 办公场景，支持富文本与群聊
 
-- [配置技能](./configuration/skill.md) — 扩展 Hermes Agent 能力
+- [配置技能](./skill.md) — 扩展 Hermes Agent 能力

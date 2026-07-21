@@ -16,7 +16,7 @@ QQ 通道需在 QQ 开放平台创建机器人，再将获得的 **AppID** 与 *
 > 
 > -   一个 QQ 账号（作为机器人管理员）
 >     
-> -   完成 [模型配置](./configuration/model.md)（或使用启航套餐预置的 100 体验积分）
+> -   完成 [模型配置](./model.md)（或使用启航套餐预置的 100 体验积分）
 >     
 
 ---
@@ -153,8 +153,8 @@ LightVela 使用上述凭证连接 QQ 开放平台上的机器人，等待几十
 
 ## 下一步
 
-- [配置通道 - 企业微信](./configuration/channel-wecom.md) — 企业内部协作与办公场景
+- [配置通道 - 企业微信](./channel-wecom.md) — 企业内部协作与办公场景
 
-- [配置通道 - 飞书](./configuration/channel-feishu.md) — 办公场景，支持富文本与群聊
+- [配置通道 - 飞书](./channel-feishu.md) — 办公场景，支持富文本与群聊
 
-- [配置技能](./configuration/skill.md) — 扩展 Hermes Agent 能力
+- [配置技能](./skill.md) — 扩展 Hermes Agent 能力

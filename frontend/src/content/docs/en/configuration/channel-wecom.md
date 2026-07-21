@@ -15,7 +15,7 @@ The WeCom channel uses QR-code access and is the simplest channel to configure.
 >
 > -   A phone with WeCom installed
 >
-> -   Complete [model configuration](./configuration/model.md) (or use the 100 trial credits included in the Launch plan)
+> -   Complete [model configuration](./model.md) (or use the 100 trial credits included in the Launch plan)
 >
 
 ---
@@ -136,6 +136,6 @@ After integration, the WeCom bot supports more than basic text. The full list:
 
 ## Next steps
 
-- [Configure Channel - Lark](./configuration/channel-feishu.md) — Office scenarios with rich text and group chat
+- [Configure Channel - Lark](./channel-feishu.md) — Office scenarios with rich text and group chat
 
-- [Configure Skills](./configuration/skill.md) — Extend Hermes Agent capabilities
+- [Configure Skills](./skill.md) — Extend Hermes Agent capabilities

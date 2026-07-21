@@ -13,7 +13,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接�
 >
 > -   一台装有 Telegram 的手机
 >
-> -   完成 [模型配置](./configuration/model.md)（或使用启航套餐预置的 100 体验积分）
+> -   完成 [模型配置](./model.md)（或使用启航套餐预置的 100 体验积分）
 >
 
 ---
@@ -133,10 +133,10 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接�
 
 ## 下一步
 
-- [配置通道 - WhatsApp](./configuration/channel-whatsapp.md) — 国际用户沟通与客户服务
+- [配置通道 - WhatsApp](./channel-whatsapp.md) — 国际用户沟通与客户服务
 
-- [配置通道 - Discord](./configuration/channel-discord.md) — 社群运营与开发者社区
+- [配置通道 - Discord](./channel-discord.md) — 社群运营与开发者社区
 
-- [配置通道 - QQ](./configuration/channel-qq.md) — 手动创建机器人，AppID/AppSecret 接入
+- [配置通道 - QQ](./channel-qq.md) — 手动创建机器人，AppID/AppSecret 接入
 
-- [配置技能](./configuration/skill.md) — 扩展 Hermes Agent 能力
+- [配置技能](./skill.md) — 扩展 Hermes Agent 能力
