@@ -154,6 +154,9 @@ func (l *logic) CreateWeixinLoginSession(ctx pctx.Context, instanceID string) (*
 	if entity.Status != instance.InstanceStatusRunning {
 		return nil, errcode.Wrap(errcode.ErrDebugNotSupported, "instance status is %s, expected running", entity.Status)
 	}
+	if err := l.requireActivePass(ctx); err != nil {
+		return nil, activePassGuardError("create weixin login session", err)
+	}
 	existing, err := l.channelLoginSessionDao.GetActiveByInstance(ctx, instanceID, channelloginsession.ChannelWeixin)
 	if err != nil {
 		return nil, err

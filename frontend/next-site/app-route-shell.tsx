@@ -253,7 +253,7 @@ function NextMarketingAuthGate({ children, loadingFallback }: { children: ReactN
         <div className="mx-auto flex max-w-md flex-col items-center px-6 text-center">
           <h2 className="text-xl font-bold" style={{ color: '#333', marginBottom: 16 }}>{t('请先登录')}</h2>
           <p className="text-sm leading-relaxed" style={{ color: '#999', marginBottom: 48 }}>
-            {t('登录后即可创建和管理你的 Hermes')}
+            {t('登录后即可创建和管理你的 Hermes Agent')}
           </p>
           <button
             type="button"

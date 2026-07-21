@@ -335,7 +335,11 @@ export interface BotRepository {
   cancelWeixinLoginSession(botId: string, sessionId: string): Promise<WeixinLoginSession>;
   subscribeWeixinLoginSessionEvents(botId: string, sessionId: string, signal?: AbortSignal): AsyncIterable<{ event: string; data: unknown }>;
   listSoulTemplates(): Promise<SoulTemplate[]>;
-  execDebugCommand(botId: string, command: string): Promise<{ status: string; exitCode: number; output: string }>;
+  execDebugCommand(
+    botId: string,
+    command: string,
+    options?: { timeoutMs?: number },
+  ): Promise<{ status: string; exitCode: number; output: string }>;
   startRescueExport(botId: string): Promise<WorkerActionStartResult>;
   getRescueExportStatus(botId: string): Promise<WorkerActionStatusResult | null>;
   importHermesWorkspace(botId: string, file: File): Promise<WorkerActionStartResult>;

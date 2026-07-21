@@ -201,7 +201,7 @@ Featured 是 Discover 顶部的人工运营区域，位于搜索结果之后、�
 
 Discover 页面用三层方式帮助用户找到技能：**搜索**用于精确查找，**Featured** 用于人工推荐重点技能，**Categories** 用于按使用场景浏览热门技能。三者的数据和状态彼此独立：搜索词、来源筛选和排序不会改变 Featured 或分类内容。
 
-- **顶部搜索栏**：同时查询 skills.sh 和 ClawHub，支持来源筛选及 Popular/Name 排序；默认展示前 12 个结果，超过 12 个可展开全部。搜索结果来自 registry 返回数据，前端不凭名称手工猜测技能 ID。
+- **顶部搜索栏**：同时查询 skills.sh 和 ClawHub，支持来源筛选及 Popular/Name 排序；搜索结果使用 SDK 风格的单列分隔列表，默认展示前 12 个结果，超过 12 个可展开全部。搜索结果来自 registry 返回数据，前端不凭名称手工猜测技能 ID。
 - **Featured 精选**：人工运营的重点推荐区，用于突出希望用户优先看到的技能。当前为 3 张一页的横向卡片，包含主题横幅、标题/副标题、技能信息和安装按钮；新增、删除、排序和文案都需要人工指定。
 - **Categories 分类**：人工定义的固定运营入口。国际站按 Market Analysis、Content Creation、Research、DevTools 组织；国内站按理财分析、内容创建、常用工具、教育学习组织。两站每类固定 6 张卡，不按运行时热门结果重排；用户点击卡片可查看该技能的结构化说明并安装。
 
@@ -211,11 +211,15 @@ Discover 页面用三层方式帮助用户找到技能：**搜索**用于精确�
 
 国内站和国际站 Skills 页面都保留四个横向标签：`Skills`、`Experts`、`Installed`、`Create Skill`；原来的 Discover 页面显示为 `Skills`，原来的 My Skills 页面显示为 `Installed`。`Experts` 展示 SkillHub 专家包，独立 `Search` 标签已移除，搜索控件位于 `Skills` 顶部。`Create Skill` 是独立的创建技能工作流，Quick Learn 和场景工作流在其中维护，不要把它误改成搜索或 Featured。国内站界面使用中文，国际站按当前语言提供英文/中文 i18n。
 
+`Experts` 技能包默认使用单列列表，搜索框右侧提供列表 / 卡片图标切换并记住本地偏好。两种视图共用同一份包数据和安装状态，切换时不能重新请求详情。列表请求已经按全部页聚合时，不再叠加前端分页或无限滚动；包列表也不能无条件预取所有包详情或逐技能详情。Hermes 已安装技能命令成功后，以实际技能集合校准包状态并清理缺少组成技能的包级缓存；命令失败时才保留本地或 Vibebase 记录作为降级。技能包安装、SkillHub CLI 自升级和已安装查询统一使用约 120 秒有限超时。
+
 ### Discover 顶部搜索
 
-国际站搜索输入防抖约 300ms，同时查询 ClawHub 和 skills.sh；国内站搜索只查询 SkillHub API，热门模式请求 `sortBy=downloads`，名称模式请求相关性排序，并拉取最多 50 条候选后再由前端按来源和热门排序。Skills 页顶部右侧显示可点击的来源标识：国内站为 SkillHub，国际站为 skills.sh，并按当前语言提供中英文文案。来源下拉在两站都显示：国际站为所有来源 / skills.sh / ClawHub，国内站为所有来源 / SkillHub / ClawHub。国内站 SkillHub 镜像中 `source: clawhub` 的技能展示为 ClawHub，但安装仍走 `acli skills`；未标记为 ClawHub 的结果展示为 SkillHub。Popular/Name 只影响搜索结果，不改变两站的精选或固定分类。搜索结果按对应站点的热门字段降序或名称排序，但卡片不显示具体安装量；达到站点热门阈值时显示橙色火焰和 `Popular / 热门`。标题显示完整结果数；默认只渲染前 12 条（2 列 × 6 条），超过 12 条时标题右侧显示 `View all / Hide all`，展开后显示全部结果。更改搜索词、来源或排序后重新收起到前 12 条。
+国际站搜索输入防抖约 300ms，同时查询 ClawHub 和 skills.sh；国内站搜索只查询 SkillHub API，热门模式请求 `sortBy=downloads`，名称模式请求相关性排序，并拉取最多 50 条候选后再由前端按来源和热门排序。国际站搜索框所在行的最右侧显示“技能来源于 Skills.sh 与 ClawHub”，并按当前语言提供中英文文案；国内站“源自 SkillHub”整段蓝色可点击外链位于搜索结果列表底部右侧，与底部“查看更多 / 收起”同为 `h-8`，并使用三列布局保证展开按钮整体居中。来源下拉仅在国际站显示，选项为所有来源 / skills.sh / ClawHub；国内站不显示来源选择，搜索结果默认且唯一归属 SkillHub。国内站从 SkillHub API 获取的搜索结果统一展示为 SkillHub，不再根据接口返回的 `source` 拆分为 ClawHub，安装统一走 `acli skills`。Popular/Name 只影响搜索结果，不改变两站的精选或固定分类。搜索结果仍按对应站点的热门字段降序或名称排序，但列表行不显示具体安装量、来源徽标、热门标记或技能图标。结果使用单个带边框的单列列表容器，行间以浅色分隔线区分；每行保留选择框、名称、slug、简介和安装状态。标题显示完整结果数；默认只渲染前 12 条，超过 12 条时底部显示 `View more / Collapse`，展开后显示全部结果。更改搜索词、来源或排序后重新收起到前 12 条。
 
 搜索结果、Featured 和分类推荐的搜索/数据状态彼此独立：搜索控件不改变 Featured 或分类推荐。无关键词时不展示搜索结果区，直接显示 Featured 和分类；有关键词时搜索结果位于 Featured 上方。
+
+搜索结果排序项使用“按热度 / 按名称”，明确表达这是排序而不是筛选；排序字段保持国内站 `downloads`、国际站 `installs` 和技能名称。批量安装只作用于搜索结果：只有搜索结果列表行显示批量选择框。搜索框旁不常驻批量安装按钮；仅当搜索返回可安装结果时，才在“搜索结果”标题右侧显示“已选 n / m”和“安装”按钮；按钮保持 `h-9 px-6 text-sm`，已选数量只在左侧统计中展示，不重复放入按钮。批量执行时，标题下显示“正在安装 (i/n)：技能名称”和“取消剩余任务”；取消后允许当前命令完成，停止后续项并标记为“已跳过”。行内依次显示“等待中 / 安装中... / 已安装 / 失败 / 已跳过”；失败或跳过后的单项重试显示“重试中...”。Featured 精选和 Categories 固定分类卡片只保留详情入口与单个安装按钮，不显示批量选择框，也不能进入批量选择集合；单项或批量任务执行期间必须同时禁用页签、搜索、清空、来源、排序以及全页面安装和选择控件，并在事件处理函数内再次检查忙碌状态，避免界面展示与实际任务快照不一致。
 
 ### 数据来源、安装和卸载
 
@@ -225,17 +229,25 @@ Discover 页面用三层方式帮助用户找到技能：**搜索**用于精确�
 - skills.sh 搜索：`acli skills-sh search '<keyword>' --sort-by installs`
 - ClawHub 安装/卸载：`acli clawhub install '<slug>'` / `acli clawhub uninstall '<slug>'`
 - skills.sh 安装/卸载：在登录 Shell 中执行 `bash -lc 'cd "$HOME" && acli skills-sh install <组织/仓库/技能名>'`，卸载保持同样的登录 Shell 结构。
-- 已安装列表：分别调用 `acli clawhub list` 和 `acli skills-sh list`，按 `registry + rawId` 合并完全相同的技能。
+- 已安装列表：分别调用 `acli clawhub list` 和 `acli skills-sh list`，并补充 Hermes 原生 `skills list`，按 `registry + rawId` 合并完全相同的技能；保留列表返回的 `category` / `Category`，禁止根据名称或 slug 猜测分类。
 - 国内站搜索：`GET https://api.skillhub.cn/api/skills?page=1&pageSize=50&sortBy=downloads&order=desc&keyword=<keyword>`（热门模式；名称模式使用 `sortBy=score`）；国内精选和分类不依赖无关键词热门结果，而是读取 `domestic-skill-catalog.ts` 的固定配置。
 - 国内站已安装/安装/卸载：`acli skills list`、`acli skills install '<slug>'`、`acli skills uninstall '<slug>'`。
 
 技能身份必须使用 `registry + rawId`；`name` 和短 `slug` 只能用于展示，不能用于 React key、安装中状态、已安装状态或卸载状态。skills.sh 的搜索结果优先使用完整 `id`；解析已安装列表时优先读取 `id/rawId`，只有旧版 ACLI 只返回短 slug 时才使用降级值，并保留本次会话点击的完整 ID，避免同名或同 slug 的不同技能同时变成已安装。
 
-安装按钮使用无边框 `+`，安装成功后变为 `✓`；卸载按钮使用红色垃圾桶图标。安装、卸载后刷新已安装列表，不要在 Featured 中维护另一份安装状态。
+搜索请求失败不能伪装成空结果：国际站按 ClawHub / skills.sh 分别记录失败来源，允许另一来源继续展示；国内站 SkillHub 请求失败时显示明确错误。失败提示必须提供“重试”，新的 HTTP 搜索会取消上一条过期请求。实例搜索命令使用约 30 秒超时，安装、卸载和列表命令使用约 120 秒超时。安装结果只接受明确成功状态（如 `installed`、`already_installed`、`success`），不得用包含 `install` 的模糊匹配把 `install_failed` 或 `not_installed` 判为成功；Hermes 已安装清单是本地安装记忆校准的权威依据，刷新失败时保留上一次成功列表。
+
+安装按钮使用无边框 `+`，安装成功后变为 `✓`；单项或批量安装失败时，搜索结果对应行显示“失败”状态，返回信息明确包含 skip/跳过语义时显示“已跳过”，两种状态均提供“重试”并复用单项安装流程，重试期间显示“重试中...”。卸载按钮使用普通灰色垃圾桶图标。安装、卸载后刷新已安装列表，不要在 Featured 中维护另一份安装状态。
 
 ### My Skills
 
-My Skills 从两个 registry 的 list 结果合并已安装技能，按 slug 归并来源，使用与 Discover/Search 相同的两列技能卡；右侧是现有卸载逻辑的红色垃圾桶按钮。不要新增第二套卡片样式。
+My Skills 使用结构化列表展示 `名称/Slug / 分类 / 来源 / 版本 / 操作`。分类来自 SkillHub/Hermes 列表命令，缺失显示“未分类”；名称列始终展示两行，第一行是名称、第二行是原始 slug，两者相同时也保留两行。来源保留 marketplace 与 Hermes 原生语义，右侧使用普通灰色垃圾桶执行单项卸载，不提供批量卸载。
+
+已安装列表按 Agent 隔离，切换 Agent 时立即清空上一台 Agent 的列表，过期请求不得回写。加载失败显示错误与重试，不能伪装成空列表；同一 Agent 的手动刷新失败可以保留上一份成功数据。registry 列表部分失败时显示“来源暂不可用”，并禁用身份不确定记录的删除。不同 registry 只因短 slug 相同不能合并；卸载后必须重新读取权威列表确认目标已经消失。系统预置技能不可删除。
+
+已安装列表支持名称搜索、分类筛选、来源筛选和每页 10 条分页；搜索同时匹配名称、slug、分类、版本和来源。正常 `installed / enabled` 状态不单独展示，仅在名称旁显示 `disabled / failed` 等异常状态。
+
+已安装来源筛选按 `全部来源 / SkillHub / 系统预置 / 本地安装` 固定优先排序；ClawHub、skills.sh、“其他”或“来源暂不可用”等实际存在的额外来源继续排在后面，不能被隐藏。来源识别必须结合真实记录和路径：registry 安装记录优先，bundled manifest 命中显示“系统预置”；实际位于 `$HOME/.hermes/skills/` 的非预置技能显示“其他”。只有不在该目录、且 Hermes 原生 `skills list` 明确返回 `Source=local` 的技能才显示“本地安装”，不要按技能名称猜测。
 
 ## 维护工作流
 

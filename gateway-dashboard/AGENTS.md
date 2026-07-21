@@ -23,3 +23,4 @@
 - `generated/` 一律不提交 Git
 
 <!-- retrigger 2026-07-08: shprod gateway-dashboard release after billing dependency rollout. -->
+<!-- retrigger 2026-07-21: shprod gateway-dashboard CI after auth billing migration MR. -->

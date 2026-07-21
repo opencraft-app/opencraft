@@ -140,7 +140,7 @@ export TRAFFIC_CERT_ID="XCYa3P4e"
 
 管理面只承载 control API 和控制台，不承载 `/v1/*`。内部系统调用管理 API 时不使用用户模型 key，也不传 `sk-...`；如果直接调用 `/api/admin/*`，当前仍需要 `Authorization: Bearer <CLUSTER_ADMIN_TOKEN>` 或后续替换成上层服务身份。调用模型流量时使用 OpenAI-compatible 入口，例如 `POST https://llmgw-inner.lightvela.com/v1/chat/completions`。
 
-管理台推理自检统一调用 control 的 `POST /api/admin/traffic-probe`。`gateway` 模式只传用户 ID 时签发一次性 v2 key，通过 `LLMGATEWAY_TRAFFIC_BASE_URL=http://llmgateway-traffic` 进入统一流量面，并在请求结束后撤销本地 binding 和 Redis 路由。`set_direct` 模式可以按用户选择已有 active upstream key，直连目标 Set 的 traffic Service，用于区分统一路由故障与 Set/上游故障。LLMGateway MySQL 不保存完整 external key，只保存 Key ID、完整 Key 哈希、Secret 哈希、路由槽和状态；Redis 热路由也不保存 external key 明文。
+管理台推理自检统一调用 control 的 `POST /api/admin/traffic-probe`。`gateway` 模式只传用户 ID 时签发一次性 v2 key，通过 `LLMGATEWAY_TRAFFIC_BASE_URL=http://llmgateway-traffic` 进入统一流量面，并在请求结束后撤销本地 binding 和 Redis 路由。`set_direct` 模式可以按用户选择已有 active upstream key，直连目标 Set 的 traffic Service，用于区分统一路由故障与 Set/上游故障。LLMGateway MySQL 受控保存完整 external key 作为 Route Redis 冷恢复材料，同时保存 Key ID、完整 Key 哈希、Secret 哈希、路由槽和状态；Redis 路由、日志和指标不得输出 external key 明文。
 
 管理 key 不写入 Git 仓库。当前生产管理 key 存在 TKE Secret `llmgateway-control-runtime` 的 `CLUSTER_ADMIN_TOKEN` 字段里，需要有集群权限的人按需读取：
 

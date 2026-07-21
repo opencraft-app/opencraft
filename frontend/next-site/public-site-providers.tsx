@@ -2,7 +2,7 @@
 
 import { Suspense, type ReactNode, useEffect } from 'react';
 
-import { OpenClawProvider } from '@/contexts/openclaw-context';
+import { OpenClawProvider } from '@/contexts/agent-context';
 import { RepositoryProvider } from '@/contexts/repository-context';
 import { RuntimeConfigProvider } from '@/contexts/runtime-config-context';
 import { SessionProvider } from '@/contexts/session-context';

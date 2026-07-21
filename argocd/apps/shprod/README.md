@@ -37,6 +37,7 @@
 - `service-gateway`
 - `subscription`
 - `trade`
+- `velagw`
 
 当前上海项目模型：
 
@@ -56,6 +57,7 @@
   - `shprod-service-gateway`
   - `shprod-subscription`
   - `shprod-trade`
+  - `shprod-velagw`
 
 新增/修改上海 leaf app 时，至少要同时确认：
 

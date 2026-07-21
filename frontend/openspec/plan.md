@@ -1,3 +1,22 @@
+# 精选技能轮播按钮位置调整
+
+**Goal:** 将精选技能轮播的上一批、下一批按钮分别放在卡片组左右两侧。
+
+## 任务清单
+
+- [ ] 1. 调整精选技能轮播布局并完成回归验证。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/DESIGN.md`、`frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`、`frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+  - 验收方式：上一批按钮位于卡片组左侧，下一批按钮位于卡片组右侧；原有切换、动画和禁用逻辑不变；交互规则同步到设计规范；聚焦测试、类型检查与 `git diff --check` 通过。
+
+## 规划门禁
+
+- 规模：S；执行模式：single_agent。
+- 不新增依赖、接口或组件，不改变技能数据与安装逻辑。
+- 规划门禁结论：通过。
+
+---
+
 # 2026-07-16 Hermes Agent 今晚升级公告
 
 **Goal:** 基于最新 master 更新首页 Hermes Agent 升级公告，让国内站和国际站今晚继续展示升级窗口提醒。
@@ -856,9 +875,664 @@ Not-tested: 待实现后填写
   - 影响文件：`frontend/src/pages/marketing/hermes-agent-buddy-panel.tsx`、`frontend/src/pages/marketing/agent-settings-page.tsx`、`frontend/src/styles.css`、`frontend/openspec/specs/buddy.md`
   - 验收方式：国内站和国际站均不再渲染“已选人设”；旧文件名无残留引用；已注入卡片状态、选中和注入交互保持不变；目标测试和类型检查通过。
 
+### Task 30: 合并 Hermes 原生技能并支持搜索结果批量安装
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/auth-api-base.ts`
+- Modify: `frontend/src/lib/__tests__/auth-api-base.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Create: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] `lightvela.ai` 在未配置显式环境变量时解析到 `https://api.lightvela.ai`，且保留恰好 3 行生产代码增量。
+- [x] 国内站和国际站的已安装列表把 registry 安装结果与 Hermes 原生技能结果合并；原生技能显示 `Hermes` 来源且不错误调用 registry 卸载命令。
+- [x] 已安装标签页保持不变，内容统一改成单列列表。
+- [x] 搜索结果中的未安装技能在 `+` 左侧提供可访问的方形选择按钮；已安装技能不可选择。
+- [x] 来源按钮右侧显示“批量下载 / Batch Install”；无选择时禁用，选中一项或多项时启用。
+- [x] 批量安装按选择顺序串行执行，结束后仅刷新一次已安装列表；成功项清除选择，失败项保留并显示成功/失败汇总。
+- [x] 先补失败测试，再实现最小代码；运行 auth/registry 目标测试、`pnpm i18n:extract`、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
+
+### Task 31: 下移搜索结果展开按钮并更新国内站说明
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/src/pages/marketing/hermes-agent-skills-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/hermes-agent-skills-panel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 国内站与国际站的“查看全部 / 收起全部”从搜索结果标题右侧移动到结果列表底部，并使用次级按钮样式。
+- [x] 国内站 Skills 说明改为“为智能体安装技能。支持 SkillHub 技能市场，安装后可在对话中自动调用。”，国际站说明保持不变。
+- [x] 先补失败测试，再运行 Skills 目标测试、`pnpm i18n:extract`、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
+
+### Task 32: 扩展全页面批量安装、来源链接与真实卸载
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/hermes-skills-client.ts`
+- Modify: `frontend/src/lib/__tests__/hermes-skills-client.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/src/pages/marketing/hermes-agent-skills-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/hermes-agent-skills-panel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 先补失败测试：国内站和国际站的精选与所有分类卡片显示可访问的方形批量选择按钮，并与搜索结果共用顶部批量下载状态和按选择顺序执行的安装队列。
+- [x] 让批量选择覆盖搜索、精选和分类的统一技能身份；已安装技能不可选择，单项或批量安装成功后清除对应选择。
+- [x] 国内站已安装的 SkillHub 技能图标链接到 `https://skillhub.cn/skills/<slug>`；优先显示已知 SkillHub 图标，缺失时使用默认图标；国际站和 Hermes 原生技能不添加该图标链接。
+- [x] 国内站和国际站的所有已安装技能显示垃圾桶；registry 技能调用原有卸载命令，Hermes 原生技能仅在 slug 通过严格校验后真实删除 `~/.hermes/skills/<slug>`，成功后刷新列表。
+- [x] 把来源说明从外层描述行移到“技能 / 技能包 / 已安装”标签线正上方最右侧，移除按钮外框；国内站显示“技能来源于 SkillHub”，国际站显示“技能来源于 Skills.sh 与 ClawHub”，各市场名为独立外链并支持中英文。
+- [x] 运行受影响 Vitest、`pnpm i18n:extract`、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`；检查交互控件的可访问名称、键盘焦点和禁用状态。
+
+### Task 33: 收紧技能安装反馈与列表头布局
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 国内站和国际站的中文单项安装成功 Toast 从“下载成功”改为“安装成功”。
+- [x] 已安装列表不再展示 SkillHub、Skills.sh、ClawHub 或 Hermes 来源标签，保留合并、去重和删除行为。
+- [x] 来源说明与技能标签共用同一条底部横线，并在最右侧贴近横线上方展示。
+- [x] 批量下载按钮使用更宽的固定宽度，选中数量变化时按钮宽度保持不变。
+- [x] 先补失败测试，再运行受影响 Vitest、`pnpm i18n:extract`、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
+
+### Task 34: 修复嵌套 Hermes 技能卸载并收紧批量按钮
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/hermes-skills-client.ts`
+- Modify: `frontend/src/lib/__tests__/hermes-skills-client.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+
+- [x] Hermes 原生技能卸载支持 `~/.hermes/skills/<category>/<slug>` 等嵌套目录，并只删除同名且包含 `SKILL.md` 的目录。
+- [x] 原生技能目录已不存在时卸载保持幂等成功，不再显示 `EXIT STATUS 1`。
+- [x] 批量下载按钮与来源选择器使用相同的 12px 圆角，固定宽度从 `w-36` 缩为 `w-32`。
+- [x] 先补失败测试，再运行受影响 Vitest、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
+
+### Task 35: 已安装扁平列表与批量卸载
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+- Modify: `frontend/openspec/specs/marketing.md`
+
+- [x] 在 `skill-registries.test.ts` 先补失败测试：`uninstallSkillsSequentially(dataLayer, skills)` 按输入顺序调用 `uninstall`，收集 `succeeded` 与带原错误消息的 `failed`，单项抛错不阻断后续技能。
+- [x] 在 `SkillsDemoPanel.test.tsx` 先补双站失败测试：已安装列表使用统一外框和 `divide-y` 扁平行；每行的“选择批量卸载 <name>”按钮位于“删除技能 <name>”左侧；标题行最右侧批量按钮默认禁用，选择两项后显示 `(2)` 并启用。
+- [x] 补双站批量卸载失败测试：点击批量按钮只打开一次确认；确认后按选择顺序卸载，成功项清除、失败项保留、列表只刷新一次；执行期间选择按钮和垃圾桶禁用。
+- [x] 运行 `pnpm exec vitest run --config vitest.config.ts src/pages/marketing/skills-demo/skill-registries.test.ts src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx --reporter=dot`，确认失败点仅来自尚未实现的 helper、扁平列表、选择控件和批量行为。
+- [x] 在 `skill-registries.ts` 新增导出的 `BatchUninstallResult` 与 `uninstallSkillsSequentially(dataLayer: Pick<SkillsDataLayer, "uninstall">, skills: InstalledSkill[])`，使用顺序 `for...of` 并把返回 `ok: false` 与异常都记录为失败。
+- [x] 在 `SkillsDemoPanel.tsx` 增加 `selectedInstalledSkillIds`、`batchUninstalling` 与批量确认状态；刷新列表时按 `registry + rawId` 清理失效选择，单项和批量卸载共用现有真实数据层。
+- [x] 把 `InstalledSkillCard` 收敛为扁平 `InstalledSkillRow`：父 `ul` 使用统一 `border-y divide-y`，行本身无独立边框和圆角；操作区依次渲染方形选择按钮和红色垃圾桶。
+- [x] 把已安装标题改为左右工具栏；非空列表右侧固定显示“批量卸载 / Batch Uninstall”，无选择或执行中禁用，选中时显示稳定宽度的数量；确认弹窗按单项/批量分别显示技能名或选中数量。
+- [x] 批量确认后调用 `uninstallSkillsSequentially`，仅在全部命令完成后刷新一次；成功 identity 从选择中删除，失败 identity 保留；全成功显示“批量卸载成功，共 {{count}} 个”，部分失败显示“批量卸载完成：成功 {{success}} 个，失败 {{failed}} 个”。
+- [x] 运行目标 Vitest 转绿；执行 `pnpm i18n:extract` 并补齐英文 `Batch Uninstall`、批量确认和结果 Toast，再运行 `pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
+
+### Task 36: 对齐批量卸载宽度并移除已安装图标
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+
+- [x] 国内站与国际站的“批量卸载 / Batch Uninstall”使用与“批量下载 / Batch Install”相同的固定 `w-32` 宽度，选中数量变化时不改变宽度。
+- [x] 已安装列表不再渲染技能图标及其 SkillHub 图标链接，仅保留技能信息、批量选择和删除操作。
+- [x] 校验国际站英文为 `Batch Uninstall`，并运行目标 Vitest、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
+
+### Task 37: 合并 SkillHub 市场别名与 Hermes 原生技能
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+
+- [ ] 用 Whistle 真实页面暴露的字段形态补失败测试：SkillHub 原生名称仅出现在 `display_name/displayName` 时，`quant-backtest-strategy` / `onequant-backtest` 与 `valuation-analysis` / `股票价值投资分析 (valuation-analysis)` 各自仍只合并成一条。
+- [ ] SkillHub 已安装解析保留市场 `rawId` 用于身份、安装状态与卸载，并把同一 ACLI 记录的 `name`、`display_name`、`displayName` 保存为精确别名集合；Hermes slug 唯一命中任一别名时优先保留 SkillHub 行。
+- [ ] 保持原生独有技能继续展示；没有任一明确别名精确匹配时不合并，禁止模糊或静态 slug 映射。
+- [ ] 在 Whistle 当前已安装页面复核两个重复案例各只显示一条，再运行目标 Vitest、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
 ## 增量修复：统一诊断中心备份卡片阴影
 
 - [x] 将“Agent 备份与恢复”外层卡片阴影与同页“最近日志”卡片保持一致。
   - 角色：Developer + Reviewer
   - 影响文件：`frontend/src/pages/marketing/agent-settings-page.tsx`、`frontend/DESIGN.md`
   - 验收方式：仅调整外层阴影，不改变卡片布局、交互、边框或业务逻辑；在设计规范中记录卡片阴影值与适用边界；`pnpm check` 与 `git diff --check` 通过。
+
+### Task 38: 合并国际站跨来源重复技能并修复 Hermes 删除工作目录
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+- Modify: `frontend/src/lib/hermes-skills-client.ts`
+- Modify: `frontend/src/lib/__tests__/hermes-skills-client.test.ts`
+
+- [x] 先补失败测试复现同一 `okx-sentiment-tracker` 同时出现在 ClawHub、skills.sh 和 Hermes 清单时被渲染为三条。
+- [x] 仅在跨 registry 的 slug 唯一对应时合并 ClawHub 与 skills.sh 记录；保留 skills.sh 完整 ID 作为可卸载主身份，同 registry 内同 slug 的不同完整 ID 继续分开。
+- [x] 让合并后的唯一 registry 记录继续吸收同 slug 的 Hermes 记录，国际站 My Skills 最终只显示一条。
+- [x] Hermes 删除命令先进入 `$HOME`，避免远端执行用户从不可访问的 `/root` 启动时 `find` 无法恢复初始工作目录。
+- [x] 运行 registry/Hermes 目标 Vitest、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
+
+### Task 39: 对齐旧版 SDK 的已安装技能结构化列表
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 参考旧版 `tea-sdk-lightclaw` 的已安装技能列表，将当前扁平行改为带表头的结构化列表，展示技能名称、真实安装来源、版本和删除操作；跨来源技能显示全部真实 registry，Hermes 仅在没有 registry 来源时单独显示。
+- [x] 增加已安装技能名称搜索和安装来源筛选，筛选后标题显示命中数量；无匹配结果时提供清除筛选入口，不改变单项卸载流程。
+- [x] 保持移动端可读布局、键盘焦点和图标按钮可访问名称；先补目标测试，再运行 i18n、类型检查、目标 Vitest、浏览器回验与 `git diff --check`。
+
+### Task 40: 恢复已安装技能的原生来源语义
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/hermes-skills-client.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: related tests and generated i18n files
+
+- [x] 保留 Hermes 清单的 `Source` 字段，不再用内部 `hermes` 归并标记充当用户可见来源。
+- [x] 保留旧版 SDK 来源语义并优化文案：`local` 显示“本地安装”、`builtin` 显示“系统预置”；Hermes 能枚举到但未匹配预置或市场安装记录的技能显示“其他”，市场来源继续显示对应 registry。
+- [x] 将表头精简为“名称 / 来源 / 版本”，来源筛选同步新语义，并完成目标测试、类型检查、i18n 检查和浏览器回验。
+
+### Task 41: 用 Hermes bundled manifest 补全系统预置来源
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/hermes-skills-client.ts`
+- Modify: `frontend/src/lib/__tests__/hermes-skills-client.test.ts`
+
+- [x] 扩展 Hermes 已安装技能命令，在列表成功后读取当前 profile 的 `~/.hermes/skills/.bundled_manifest`。
+- [x] 解析 manifest 的 `name:hash` 记录，仅为缺少来源且命中 manifest 的技能补充 `builtin`，不覆盖 CLI 已明确返回的来源。
+- [x] 验证 `architecture-diagram` 展示为“系统预置”，并运行目标 Vitest、类型检查与 `git diff --check`。
+
+### Task 42: 统一国内站搜索结果来源
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: related tests and `lv-sitepage-skills` product rules
+
+- [x] 国内站从 SkillHub API 获取的搜索结果统一展示为 SkillHub，不再按接口 `source` 区分 ClawHub。
+- [x] 国内站来源筛选仅保留“所有来源 / SkillHub”；国际站继续保留 skills.sh / ClawHub 区分。
+- [x] 保持国内站安装命令继续使用 `acli skills install`，不影响国际站 registry 命令。
+
+### Task 43: 按站点收敛搜索来源筛选
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] 国内站隐藏搜索来源选择控件，搜索结果默认且唯一使用 SkillHub。
+- [x] 国际站继续提供“所有来源 / skills.sh / ClawHub”筛选，不改变两套 ACLI 搜索命令。
+- [x] 更新目标测试并完成类型检查、i18n 检查、国内站浏览器回验与 `git diff --check`；Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动。
+
+### Task 44: 已安装技能增加分类列
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/hermes-skills-client.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: related tests, generated i18n, design and Skills page rules
+
+- [x] 从 Hermes 原生 `skills list` 的 `Category` 列和 SkillHub 已安装列表的 `category` 字段保留分类，不根据名称或 slug 猜测分类。
+- [x] 已安装技能表格在名称后增加“分类”列；缺少分类时显示“未分类”，移动端保持可读布局。
+- [x] 名称列继续优先显示展示名，仅当展示名与 slug 不同时在第二行补充 slug；完成解析测试、组件测试、类型检查、i18n、浏览器回验与 `git diff --check`；Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动。
+
+### Task 45: 兼容 Hermes Rich 表格分类表头
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/hermes-skills-client.ts`
+- Modify: `frontend/src/lib/__tests__/hermes-skills-client.test.ts`
+
+- [x] 用当前实例真实输出补测试：Rich 表头使用 `┃`、数据行使用 `│` 时，仍能读取 `Name / Category / Source`。
+- [x] 兼容两种竖线边框，不改变 JSON、普通表格、manifest 来源补全或纯文本降级逻辑。
+- [x] 验证已安装页面恢复 Hermes 分类，并完成类型检查、i18n 与 `git diff --check`；目标 Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动。
+
+### Task 46: 对齐国内站技能页顶部说明
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/hermes-agent-skills-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/hermes-agent-skills-panel.test.tsx`
+
+- [x] 国内站技能页顶部说明改为“为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用”。
+- [x] 国际站现有 ClawHub / skills.sh 说明保持不变，不新增 i18n 文案。
+- [x] 完成组件测试、类型检查、i18n 检查、浏览器回验与 `git diff --check`；目标 Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动。
+
+### Task 47: 批量安装仅限搜索结果
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] 搜索结果继续支持勾选和批量安装，批量选择状态只接受当前搜索结果中的技能。
+- [x] 精选与固定分类卡片移除批量选择框，保留详情和单个安装入口；批量执行期间继续锁定安装控件。
+- [x] 更新组件测试和 Skills 页面规则，并完成类型检查、i18n、浏览器回验与 `git diff --check`；目标 Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动。
+
+### Task 48: 对齐技能来源外链样式
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/DESIGN.md`
+
+- [x] 国内站“技能来源于 SkillHub”外链复用技能包详情页样式：蓝色文字、hover 下划线和外链箭头。
+- [x] 保持来源文案、链接地址、位置和国际站样式不变，并补充组件断言与设计规范。
+- [x] 完成类型检查、i18n、浏览器回验与 `git diff --check`；目标 Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动。
+
+### Task 49: 对齐 SDK 搜索结果批量安装工具栏
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+- Modify: related generated i18n files
+
+- [x] 搜索框右侧不再常驻批量安装按钮；无搜索或无可安装搜索结果时不展示批量安装工具栏。
+- [x] 有可安装搜索结果时，在“搜索结果”标题右侧展示“已选 n / m”和“批量安装 (n)”，并保留现有执行与忙碌保护。
+- [x] 更新组件测试和 Skills 页面规则，并完成类型检查、i18n、浏览器回验与 `git diff --check`；目标 Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动。
+
+### Task 50: 精简国内站技能来源文案
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] 国内站来源文案由“技能来源于 SkillHub”改为“源自 SkillHub”，保留 SkillHub 外链样式、箭头和 URL。
+- [x] 国际站“技能来源于 Skills.sh 与 ClawHub”保持不变。
+- [x] 更新组件测试和 Skills 页面规则，并完成类型检查、i18n、浏览器回验与 `git diff --check`；目标 Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动。
+
+### Task 51: 对齐 SDK 技能来源位置与点击范围
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/DESIGN.md`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] 将技能来源说明从标签分隔线右侧移动到搜索框所在行的最右侧。
+- [x] 国内站“源自 SkillHub”整段使用统一蓝色链接样式并可点击，保留外链箭头与 URL。
+- [x] 国际站来源文案和链接语义保持不变，完成类型检查、i18n、浏览器回验与 `git diff --check`；目标 Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动。
+
+### Task 52: 明确搜索结果排序文案
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+- Modify: related generated i18n files
+
+- [x] 将搜索结果排序项“热门 / 名称”改为“按热度 / 按名称”。
+- [x] 保持下载量、安装量和名称排序逻辑不变，并完成类型检查、i18n、浏览器回验与 `git diff --check`；目标 Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动。
+
+### Task 53: 对齐 SDK 搜索结果列表布局
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/DESIGN.md`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] 将搜索结果从双列独立卡片改为 SDK 风格的单列列表容器和分隔行。
+- [x] 每行保留批量选择、技能图标、名称、slug、简介、来源、热门状态和安装状态；保持现有搜索、排序、12 条预览与展开逻辑不变。
+- [x] 完成类型检查、i18n、国内站浏览器回验与 `git diff --check`；目标 Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动。
+
+### Task 54: 精简搜索结果列表信息
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/DESIGN.md`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] 搜索结果列表行移除技能图标、来源徽标和热门标记。
+- [x] 保留名称、slug、简介、批量选择和安装状态，且不影响精选与分类卡片的信息展示。
+- [x] 完成类型检查、i18n、国内站浏览器回验与 `git diff --check`；目标 Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动。
+
+### Task 55: 增加搜索结果行内失败与重试
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/DESIGN.md`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+- Modify: related generated i18n files
+
+- [x] 单项和批量安装失败后，在对应搜索结果行显示“失败”或“已跳过”状态。
+- [x] 失败与跳过状态提供“重试”，重试复用现有单项安装流程并在成功后恢复已安装状态。
+- [x] 保留现有 Toast、批量顺序和忙碌保护，完成类型检查、i18n、浏览器基础回验与 `git diff --check`；目标 Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动，未通过真实安装人为制造失败状态。
+
+### Task 56: 精简批量安装按钮文案
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+- Modify: related generated i18n files
+
+- [x] 搜索结果右上角按钮由“批量安装 (n)”改为“安装 (n)”，保留“已选 n / m”。
+- [x] 批量执行逻辑、选择范围和忙碌保护不变，完成类型检查、i18n、浏览器回验与 `git diff --check`；目标 Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动。
+
+### Task 57: 增加批量安装实时进度
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/DESIGN.md`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+- Modify: related generated i18n files
+
+- [x] 批量开始时选中行显示“等待中”，当前行显示“安装中”，标题下显示“正在安装 (i/n)：技能名称”。
+- [x] 单项重试时显示“重试中”，成功后恢复“已安装”；失败或跳过时继续提供重试入口。
+- [x] 保留“安装 (n)”、完成 Toast、顺序执行和忙碌保护，完成类型检查、i18n、浏览器基础回验与 `git diff --check`；目标 Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动，未通过真实安装人为制造进度状态。
+
+### Task 58: 精简搜索结果安装按钮
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] 搜索结果右上角按钮只显示“安装”，移除按钮内的已选数量 `(n)`。
+- [x] 去掉按钮的固定最小宽度，使按钮按“安装”文案自然收紧；保留左侧“已选 n / m”。
+- [x] 保持批量安装、进度和忙碌保护逻辑不变，完成类型检查、i18n、浏览器回验与 `git diff --check`；目标 Vitest 因本机 `localhost` DNS 的 `ENOTFOUND` 未能启动。
+
+### Task 59: 放大搜索结果安装按钮宽度
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] 将搜索结果右上角“安装”按钮的水平内边距从 `px-3` 调整为 `px-6`，宽度扩大约 50%。
+- [x] 保持按钮高度、文案、已选统计和批量安装逻辑不变。
+- [x] 完成类型检查、i18n、浏览器回验与 `git diff --check`；目标 Vitest 仍受本机 `localhost` DNS 的 `ENOTFOUND` 阻塞。
+
+### Task 60: 优化 Skills 搜索与批量安装可靠性
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+- Modify: `frontend/src/pages/marketing/hermes-agent-experts-panel.tsx`
+- Modify: `frontend/src/repositories/types.ts`
+- Modify: `frontend/src/repositories/http-repositories.ts`
+- Modify: `frontend/src/repositories/__tests__/http-repositories.test.ts`
+- Modify: `frontend/DESIGN.md`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] 批量安装期间冻结页签、搜索、来源、排序和全部安装/选择入口，并在事件处理函数内保留忙碌态保护，避免执行任务与页面选择快照不一致。
+- [x] 收紧安装成功状态解析，避免把 `install_failed` / `not_installed` 误判为成功；已安装刷新失败时保留现有列表，成功后校准本地已安装记忆。
+- [x] 为实例技能命令增加超时保护；批量安装支持取消剩余任务、标记跳过项并在离开页面前提示。
+- [x] 搜索请求支持取消过期 HTTP 请求，按来源展示搜索失败或部分失败状态，并提供明确的“重试”入口，不再把请求失败伪装成无结果。
+- [x] 目标 Vitest 3 个文件共 100 条用例通过；`pnpm i18n:check`、`pnpm check`、浏览器搜索回验和 `git diff --check` 均通过。测试运行通过临时 DNS hook 把本机缺失的 `localhost` 解析映射到 `127.0.0.1`，该临时文件未保留在工作区。
+
+### Task 61: 放大搜索结果安装按钮字号
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/DESIGN.md`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] 将搜索结果右上角“安装”按钮字号从 `text-xs` 调整为 `text-sm`，保持 `h-9 px-6`、文案和交互逻辑不变。
+- [x] 目标 Vitest 30 条用例通过；`pnpm i18n:check`、`pnpm check`、浏览器计算样式回验和 `git diff --check` 均通过。按钮实测字号为 14px，高度保持 36px。
+
+### Task 62: 移动国内站 SkillHub 来源链接
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/DESIGN.md`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] 国内站移除搜索框右侧“源自 SkillHub”链接，把它放到搜索结果列表底部右侧；国际站来源说明位置保持不变。
+- [x] 底部使用三列布局保持“查看更多 / 收起”整体居中，来源链接与按钮统一为 32px 高。
+- [x] 目标 Vitest 30 条用例通过；`pnpm check`、`pnpm i18n:check`、浏览器位置与尺寸回验和 `git diff --check` 均通过。浏览器实测两个控件 y 坐标一致、高度均为 32px。
+
+### Task 63: 优化已安装技能列表可靠性与可用性
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/hermes-skills-client.ts`
+- Modify: `frontend/src/lib/__tests__/hermes-skills-client.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/DESIGN.md`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+- Modify: related generated i18n files
+
+- [x] 已安装列表按 Agent 隔离并防止过期请求回写；加载失败显示可重试错误，同一 Agent 才允许保留上一份成功数据。
+- [x] registry 列表部分失败时明确标记来源不可用并禁止不确定记录卸载；不同 registry 仅短 slug 相同的技能不再合并。
+- [x] 卸载后重新读取权威列表确认目标消失；系统预置技能不可删除，卸载状态解析不再接受模糊失败值。
+- [x] 恢复分类筛选和 10 条分页，保留并展示 Hermes 的异常状态；目标 Vitest 80 条、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
+- [ ] 浏览器可见回验：本轮 Browser 被本地 URL 安全策略拦截，已保留 `http://127.0.0.1:5174/agents/skills/` 预览供人工刷新验证。
+
+### Task 64: 恢复技能包视图并收紧安装状态与请求开销
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/hermes-agent-experts-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/hermes-agent-experts-panel.test.tsx`
+- Modify: `frontend/DESIGN.md`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] 恢复技能包列表 / 卡片视图切换与本地偏好记忆，首次默认列表视图；保留新版国际化、分类和紧凑卡片能力。
+- [x] Hermes 已安装技能查询成功后以实际技能集合校准技能包状态，清理已缺少组成技能的缓存记录。
+- [x] 取消无条件全量详情与逐技能预取，移除与全量加载模式冲突的失效分页 / 无限滚动状态。
+- [x] 为技能包安装、自升级和已安装查询增加有限超时；目标 Vitest 41 条、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 均通过。
+
+### Task 65: 固定已安装来源筛选顺序
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/DESIGN.md`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] 将已安装来源筛选固定为“全部来源 / SkillHub / 系统预置 / 本地安装”优先，其他实际来源继续排在后面。
+- [x] 初版按 Hermes 原生列表的 `Source=local` 展示“本地安装”；后续由 Task 66 按真实目录进一步修正。
+- [x] 完成目标测试、类型、i18n、浏览器和 diff 校验。
+
+### Task 66: 按 Hermes 技能目录修正“其他”来源
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/hermes-skills-client.ts`
+- Modify: `frontend/src/lib/__tests__/hermes-skills-client.test.ts`
+- Modify: `frontend/DESIGN.md`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] Hermes 已安装查询同时回传 `$HOME/.hermes/skills/` 下的实际技能目录；非 bundled 技能位于该目录时归为“其他”。
+- [x] 保留 SkillHub 和 bundled manifest 的更高来源优先级；不在 Hermes 目录中的 `Source=local` 仍显示“本地安装”。
+- [x] 完成目标测试、类型、i18n、浏览器和 diff 校验。
+
+### Task 67: 已安装列表默认展示 slug
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/DESIGN.md`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+- Modify: generated i18n files
+
+- [x] 初版将已安装列表名称列收敛为只展示技能 slug；后续按用户澄清由 Task 68 恢复为名称与 slug 始终两行。
+- [x] 表头由“名称”调整为“名称/Slug”，保持搜索和删除交互不变。
+- [x] 完成目标测试、类型、i18n、浏览器和 diff 校验。
+
+### Task 68: 已安装名称与 slug 始终展示两行
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/DESIGN.md`
+- Modify: `.agents/skills/lv-sitepage-skills/SKILL.md`
+
+- [x] 已安装列表名称列第一行显示名称、第二行显示 slug；两者相同时也保留两行。
+- [x] 表头继续使用“名称/Slug”，搜索、筛选和删除交互保持不变。
+- [x] 完成目标测试、类型、i18n、浏览器和 diff 校验。
+
+### Task 69: 修复 Skills 搜索与 Agent 状态边界
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/hermes-agent-experts-panel.tsx`
+- Modify: `frontend/src/pages/marketing/hermes-agent-skills-panel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: related Vitest files
+
+- [x] 国际站技能包关键词搜索不再回填未命中的预置技能包。
+- [x] 已安装记忆按真实来源识别，跨 registry 的同 slug 技能不互相污染安装状态。
+- [x] 切换 Agent 时重置技能与技能包页面操作状态，旧 Agent 的异步任务不回写新 Agent 界面。
+- [x] 批量安装期间禁用搜索失败提示中的“重试”，事件处理函数同时增加忙碌状态保护。
+- [x] 目标 Vitest 93 条、`pnpm check`、`pnpm i18n:check`、浏览器三页签回验和 `git diff --check` 均通过；浏览器控制台无错误。
+
+### Task 70: 处理已安装技能来源与删除命令 CR
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/hermes-skills-client.ts`
+- Modify: `frontend/src/lib/__tests__/hermes-skills-client.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+
+- [x] 多市场同 slug 时保留各市场独立记录，不再额外展示无法确定归属的 Hermes 镜像记录。
+- [x] Hermes 删除命令在 `rm` 失败时立即返回失败，并继续保留删除后的存在性校验。
+- [x] Hermes 来源文案使用映射表，保持 builtin / local / other / clawhub 及未知来源回退行为。
+- [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
+- [x] 提交并推送现有 MR。
+
+### Task 71: 简化人设生效提示
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/hermes-agent-buddy-panel.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 人设注入成功弹窗将 Hermes 名称改为 Hermes Agent，并移除 `/approve` 步骤。
+- [x] 新提示同步到中英文 i18n 字典，旧文案不再被引用。
+- [x] `pnpm check`、`pnpm i18n:check` 和 `git diff --check` 通过。
+
+### Task 72: 统一 Agent 控制台 Hermes Agent 称呼
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `/agents` 路由可达页面中的用户可见文案与对应测试
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 逐页检查 `/agents` 导航下全部页面，将作为 Agent 主体或品牌出现的单独 `Hermes` 统一为 `Hermes Agent`；实例默认名称和公共侧栏保留“我的Hermes”。
+- [x] 保留 `Hermes CLI`、`Hermes /learn`、`Hermes WebUI` 等官方技术名称，以及代码标识、命令和后端原始 key。
+- [x] 同步中英文 i18n 字典，更新受影响测试，并确认目标源码不再包含遗漏的用户可见单独 `Hermes`。
+- [x] 目标测试、`pnpm check`、`pnpm i18n:check`、浏览器烟测和 `git diff --check` 通过。
+
+### Task 73: 统一产品文档 Hermes Agent 称呼
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/content/docs/**/*.md`
+
+- [x] 检查国内站、国际站中文和国际站英文文档，将作为产品或 Agent 主体出现的单独 `Hermes` 统一为 `Hermes Agent`。
+- [x] 保留 `Hermes CLI`、命令、路径、配置键、代码示例等技术专名和机器可读内容。
+- [x] 校验三套文档的路由映射、链接与图片引用，并完成文档同步、项目检查、浏览器烟测和 `git diff --check`。
+
+### Task 74: 统一前端 Agent 代码文件名
+
+**角色：** single_agent / mechanical rename + verification
+
+**Files:**
+- Rename: `frontend/**/*{openclaw,hermes-agent}*.{ts,tsx}` → 对应 `*agent*.{ts,tsx}`
+- Modify: 引用上述模块的 `frontend/**/*.{ts,tsx}` import / export / mock 路径
+
+- [x] 将 `frontend/` 下 34 个代码文件名中的 `openclaw` 或 `hermes-agent` 统一收敛为 `agent`。
+- [x] 仅同步必要的模块路径引用，不修改 `OpenClaw*` 代码标识、API 字段、路由或普通业务文案。
+- [x] 确认旧代码文件名与旧模块路径无残留；49 个 TypeScript 文件通过调用关系等价检查，14 个测试文件共 252 条通过，`pnpm check` 和 `git diff --check` 通过；两个账号页测试文件的 17 条既有失败已确认与 `origin/master` 基线一致。

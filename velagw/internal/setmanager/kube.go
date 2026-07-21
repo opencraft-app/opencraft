@@ -35,13 +35,14 @@ type LLMFleet struct {
 		ResourceVersion string `json:"resourceVersion"`
 	} `json:"metadata"`
 	Spec struct {
-		Availability    LLMFleetAvailability     `json:"availability,omitempty"`
-		NewAPI          LLMFleetNewAPI           `json:"newapi"`
-		NewAPIImage     string                   `json:"newapiImage"`
-		Shards          []LLMFleetShard          `json:"shards"`
-		Sets            []LLMFleetSet            `json:"sets"`
-		TrafficRuntimes []LLMFleetTrafficRuntime `json:"trafficRuntimes,omitempty"`
-		Cleanups        []LLMFleetCleanup        `json:"cleanups,omitempty"`
+		Availability        LLMFleetAvailability     `json:"availability,omitempty"`
+		RuntimeCleanerImage string                   `json:"runtimeCleanerImage,omitempty"`
+		NewAPI              LLMFleetNewAPI           `json:"newapi"`
+		NewAPIImage         string                   `json:"newapiImage"`
+		Shards              []LLMFleetShard          `json:"shards"`
+		Sets                []LLMFleetSet            `json:"sets"`
+		TrafficRuntimes     []LLMFleetTrafficRuntime `json:"trafficRuntimes,omitempty"`
+		Cleanups            []LLMFleetCleanup        `json:"cleanups,omitempty"`
 	} `json:"spec"`
 	Status struct {
 		Conditions                  []LLMFleetCondition               `json:"conditions"`
@@ -222,6 +223,18 @@ func (c KubeClient) GetLLMFleet(ctx context.Context, namespace string, name stri
 
 func (c KubeClient) PatchLLMFleetSets(ctx context.Context, namespace string, name string, resourceVersion string, sets []LLMFleetSet) error {
 	return c.PatchLLMFleetRuntime(ctx, namespace, name, resourceVersion, sets, nil)
+}
+
+func (c KubeClient) PatchLLMFleetRuntimeCleanerImage(ctx context.Context, namespace string, name string, resourceVersion string, image string) error {
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return fmt.Errorf("runtime cleaner image is required")
+	}
+	patch := []map[string]any{
+		{"op": "test", "path": "/metadata/resourceVersion", "value": resourceVersion},
+		{"op": "add", "path": "/spec/runtimeCleanerImage", "value": image},
+	}
+	return c.do(ctx, http.MethodPatch, llmFleetPath(namespace, name), patch, map[string]string{"Content-Type": "application/json-patch+json"}, nil)
 }
 
 func (c KubeClient) PatchLLMFleetRuntime(ctx context.Context, namespace string, name string, resourceVersion string, sets []LLMFleetSet, cleanups []LLMFleetCleanup) error {

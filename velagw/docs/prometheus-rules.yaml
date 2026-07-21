@@ -105,13 +105,31 @@ groups:
           description: "Set {{ $labels.set_id }} 的本地期望版本持续领先已下发版本 {{ $value }} 个版本。"
 
       - alert: LLMGatewayWorkerLongNoSuccess
-        expr: llmgateway_worker_job_last_success_timestamp_seconds > 0 and time() - llmgateway_worker_job_last_success_timestamp_seconds > 1800
+        expr: llmgateway_worker_job_last_success_timestamp_seconds{job!="rebuild_api_key_routes"} > 0 and time() - llmgateway_worker_job_last_success_timestamp_seconds{job!="rebuild_api_key_routes"} > 1800
         for: 5m
         labels:
           severity: warning
         annotations:
           summary: "后台任务长时间没有成功"
           description: "任务 {{ $labels.job }} 超过 30 分钟没有成功记录。"
+
+      - alert: LLMGatewayKeyRouteRebuildLongNoSuccess
+        expr: llmgateway_worker_job_last_success_timestamp_seconds{job="rebuild_api_key_routes"} > 0 and time() - llmgateway_worker_job_last_success_timestamp_seconds{job="rebuild_api_key_routes"} > 7200
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "密钥路由冷备长时间未校验"
+          description: "超过 2 小时没有完成一次 MySQL 到 Route Redis 的完整恢复校验。"
+
+      - alert: LLMGatewayKeyRouteRebuildStuck
+        expr: llmgateway_key_route_rebuild_in_progress == 1 and time() - llmgateway_key_route_rebuild_cycle_started_timestamp_seconds > 900
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "密钥路由恢复未按时完成"
+          description: "Route Redis 全量重建已运行超过 15 分钟，请检查 worker、MySQL 和 Redis。"
 
       - alert: LLMGatewayWorkerFailureIncreased
         expr: increase(llmgateway_worker_job_failure_total[10m]) > 0

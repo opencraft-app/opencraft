@@ -237,6 +237,15 @@ never scale traffic or new-api runtime Deployments. Recovery passes only when a
 pre-queued `refresh_set_capacity` job produces exactly one successful run and
 releases its MySQL lease.
 
+Route Redis recovery has a separate invariant:
+
+- Tencent Redis cluster mode uses 3 shards and 3 replicas across at least two AZs for physical HA.
+- Replicas do not protect against `FLUSHDB` or logical deletion because those commands replicate.
+- Central MySQL is the durable cold source for v2 Key routes and Set runtime routes.
+- `rebuild_api_key_routes` restores Set runtime routes first, then scans active Key routes with a persistent keyset cursor and read-after-write verification.
+- Traffic remains Redis-only and fails closed during an empty-cache interval; never add request-path MySQL fallback.
+- The destructive gate is `test/regression/route-redis-recovery-gate.sh`. It requires `LLMGATEWAY_ROUTE_RECOVERY_CONFIRM=I_UNDERSTAND_FLUSHDB` and a disposable active traffic Key. Run it only against an explicitly approved integration/preproduction cluster.
+
 Set operation lease admission has one intentional bootstrap exception:
 
 - Normal tenant, subscription, BYOK, and observation operations require a Set
@@ -463,6 +472,12 @@ validation.
 - The traffic process accepts strict v2 keys only and remains Redis-only. Do not
   restore v1 parsing or a MySQL fallback. The route slot is stable logical
   sharding input and must never encode a Set, Redis node, or MySQL instance.
+- The central Route Redis production baseline is TencentCloud Redis 7.0 cluster
+  architecture with 3 shards, 1GB per shard, 3 replicas per shard, and replica
+  placement across both regional availability zones. Keep replica reads
+  disabled so a newly published route is immediately visible. A single Tencent
+  Proxy endpoint is expected and does not remove the multi-AZ placement
+  requirement.
 
 ## Cloud Operations
 

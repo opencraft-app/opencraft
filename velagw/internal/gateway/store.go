@@ -101,6 +101,8 @@ type Store interface {
 	ReserveAPIKeyBinding(context.Context, APIKeyBinding) error
 	TransitionAPIKeyBinding(context.Context, string, string, string, string, int, string, time.Time) (APIKeyBinding, error)
 	ListAPIKeyBindingsByStatus(context.Context, string, int) ([]APIKeyBinding, error)
+	GetAPIKeyRouteRecoveryWatermark(context.Context) (string, error)
+	ListAPIKeyRouteRecoveryRecords(context.Context, string, string, int) ([]TrafficRouteRecoveryRecord, error)
 	GetAPIKeyBindingByExternalKey(context.Context, string) (APIKeyBinding, bool, error)
 	GetAPIKeyBindingByExternalKeyID(context.Context, string) (APIKeyBinding, bool, error)
 	ListAPIKeyBindingsByUser(context.Context, string) ([]APIKeyBinding, error)
@@ -175,6 +177,7 @@ type Store interface {
 	SaveWorkerJob(context.Context, WorkerJob) error
 	GetWorkerJob(context.Context, string) (WorkerJob, bool, error)
 	ListWorkerJobs(context.Context, WorkerJobListOptions) ([]WorkerJob, error)
+	QueueWorkerJob(context.Context, string, bool, time.Time) (WorkerJob, bool, error)
 	TryAcquireWorkerJobLease(context.Context, string, string, time.Duration, time.Time) (WorkerJob, bool, error)
 	RenewWorkerJobLease(context.Context, string, string, time.Duration, time.Time) (bool, error)
 	CompleteWorkerJobRun(context.Context, WorkerJob, WorkerJobRun) (bool, error)
@@ -1291,6 +1294,50 @@ func (s *MemoryStore) ListAPIKeyBindingsByStatus(_ context.Context, status strin
 		bindings = bindings[:limit]
 	}
 	return bindings, nil
+}
+
+func (s *MemoryStore) GetAPIKeyRouteRecoveryWatermark(_ context.Context) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	watermark := ""
+	for _, binding := range s.apiKeysByID {
+		if binding.Status == APIKeyStatusActive && binding.ExternalKeyID > watermark {
+			watermark = binding.ExternalKeyID
+		}
+	}
+	return watermark, nil
+}
+
+func (s *MemoryStore) ListAPIKeyRouteRecoveryRecords(_ context.Context, afterKeyID, throughKeyID string, limit int) ([]TrafficRouteRecoveryRecord, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 1000
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	records := make([]TrafficRouteRecoveryRecord, 0)
+	for _, binding := range s.apiKeysByID {
+		if binding.Status != APIKeyStatusActive || binding.ExternalKeyID <= afterKeyID || (throughKeyID != "" && binding.ExternalKeyID > throughKeyID) {
+			continue
+		}
+		record := TrafficRouteRecoveryRecord{Binding: binding}
+		if tenant, ok := s.tenants[binding.UserID]; ok {
+			record.TenantBackend = tenant.Backend
+			record.TenantStatus = tenant.Status
+		}
+		if settings, ok := s.llmSettings[binding.UserID]; ok {
+			record.BYOKRoutingMode = settings.Routing.Mode
+			record.BYOKUpstreamKey = settings.BYOKUpstreamKey
+			record.BYOKUpstreamKeyID = settings.BYOKUpstreamKeyID
+		}
+		records = append(records, record)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Binding.ExternalKeyID < records[j].Binding.ExternalKeyID
+	})
+	if len(records) > limit {
+		records = records[:limit]
+	}
+	return records, nil
 }
 
 func (s *MemoryStore) GetAPIKeyBindingByExternalKey(_ context.Context, externalKey string) (APIKeyBinding, bool, error) {
@@ -2700,6 +2747,32 @@ func (s *MemoryStore) ListWorkerJobs(_ context.Context, opts WorkerJobListOption
 	}
 	sort.Slice(jobs, func(i, j int) bool { return jobs[i].Name < jobs[j].Name })
 	return jobs, nil
+}
+
+func (s *MemoryStore) QueueWorkerJob(_ context.Context, name string, resetCursor bool, now time.Time) (WorkerJob, bool, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return WorkerJob{}, false, fmt.Errorf("job name is required")
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job, ok := s.workerJobs[name]
+	if !ok || !job.Enabled {
+		return job, false, nil
+	}
+	if job.Status == WorkerJobStatusRunning && job.LeaseUntil.After(now) {
+		return job, false, nil
+	}
+	if resetCursor {
+		job.Cursor = ""
+	}
+	job.NextRunAt = now
+	job.UpdatedAt = now
+	s.workerJobs[name] = job
+	return job, true, nil
 }
 
 func (s *MemoryStore) TryAcquireWorkerJobLease(_ context.Context, name string, owner string, ttl time.Duration, now time.Time) (WorkerJob, bool, error) {

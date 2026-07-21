@@ -23,10 +23,10 @@ const AGENT_SECTION_PGID: Record<AgentSectionId, DatongPageId> = {
   files: DATONG_PAGE_IDS.AGENT_FILES,
   chat: DATONG_PAGE_IDS.AGENT_CHAT,
   workbench: DATONG_PAGE_IDS.AGENT_WORKBENCH,
-  // 以下三项方案文档中作为兜底 pgid 归到 workbench，避免上报到未定义的 pgid。
+  achievement: DATONG_PAGE_IDS.AGENT_ACHIEVEMENT,
+  // 以下两项方案文档中作为兜底 pgid 归到 workbench，避免上报到未定义的 pgid。
   browser: DATONG_PAGE_IDS.AGENT_WORKBENCH,
   terminal: DATONG_PAGE_IDS.AGENT_WORKBENCH,
-  achievement: DATONG_PAGE_IDS.AGENT_WORKBENCH,
 };
 
 /** 顶级路径前缀 → pgid，命中后立即返回。 */

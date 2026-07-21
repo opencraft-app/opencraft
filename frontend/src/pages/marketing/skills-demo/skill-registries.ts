@@ -22,19 +22,27 @@
  */
 
 import { shellQuote } from "@/lib/hermes-cron-client";
+import {
+  buildHermesSkillDeleteCommand,
+  buildInstalledSkillsListCommand,
+  formatInstalledSkillDisplayName,
+  parseInstalledSkills,
+} from "@/lib/hermes-skills-client";
 
 import { resolveSkillHubApiBase } from "@/lib/skillhub-api";
 
-import type { ExpertsExecDebugCommand } from "../hermes-agent-experts-panel";
+import type { ExpertsExecDebugCommand } from "../agent-experts-panel";
 
-export type Registry = "clawhub" | "skills-sh" | "skillhub";
+export type Registry = "clawhub" | "skills-sh" | "skillhub" | "hermes";
+export type SearchRegistry = Exclude<Registry, "hermes">;
+
+const SKILL_SEARCH_TIMEOUT_MS = 30_000;
+const SKILL_COMMAND_TIMEOUT_MS = 120_000;
 
 /** 面板内部统一的技能模型（合并两个 registry 的字段） */
 export interface Skill {
   /** 来源 registry */
   registry: Registry;
-  /** 展示来源；国内 SkillHub 镜像可能来自 ClawHub，但安装仍走 SkillHub。 */
-  sourceRegistry?: Extract<Registry, "clawhub" | "skillhub">;
   /** 安装命令使用的原始标识：ClawHub=slug，skills.sh=完整 id */
   rawId: string;
   /** 短 slug，用于展示 / 已安装列表匹配 */
@@ -56,14 +64,31 @@ export interface Skill {
 
 export interface InstalledSkill extends Skill {
   version?: string;
+  /** Hermes / registry 返回的安装状态。正常值通常为 installed / enabled。 */
+  status?: string;
+  /** Hermes `skills list` 返回的原始 Source 值，例如 builtin / local。 */
+  nativeSource?: string;
+  /** Registry 同一条记录提供的原生别名；市场 rawId 与本地目录名不同时用于和 Hermes 清单归并。 */
+  nativeAliases?: string[];
   /** 来源归属（双 list 合并判定后的结果） */
   sourceLabel: string;
   registries: Registry[];
+  /** 兼容旧数据中的卸载能力标记；当前页面为所有已安装来源提供真实卸载。 */
+  uninstallable?: boolean;
+  /** 来源查询不完整，当前记录不能安全决定卸载命令。 */
+  sourceUncertain?: boolean;
+  /** 合并展示时保留各 registry 的真实卸载标识，避免只卸载其中一个来源。 */
+  uninstallTargets?: Array<Pick<Skill, "registry" | "rawId">>;
 }
 
 export interface InstallResult {
   ok: boolean;
   message?: string;
+}
+
+export interface InstalledListResult {
+  skills: InstalledSkill[];
+  failedSources: SearchRegistry[];
 }
 
 /** 技能的稳定身份；展示名和短 slug 都不能作为唯一 key。 */
@@ -83,6 +108,14 @@ export const REGISTRY_LABEL: Record<Registry, string> = {
   clawhub: "ClawHub",
   "skills-sh": "skills.sh",
   skillhub: "SkillHub",
+  hermes: "Hermes",
+};
+
+const HERMES_SOURCE_LABELS: Record<string, string> = {
+  builtin: "系统预置",
+  local: "本地安装",
+  other: "其他",
+  clawhub: REGISTRY_LABEL.clawhub,
 };
 
 // ─── 命令构造 ────────────────────────────────────────────────────────────────
@@ -138,6 +171,10 @@ export function buildSkillhubUninstallCommand(slug: string): string {
 
 export function buildSkillhubListCommand(): string {
   return "acli skills list";
+}
+
+export function buildHermesSkillsListCommand(): string {
+  return buildInstalledSkillsListCommand();
 }
 
 // ─── 输出解析 ─────────────────────────────────────────────────────────────────
@@ -247,6 +284,7 @@ function parseSkillsshSearch(raw: string): Skill[] {
 interface ClawhubListItem {
   displayName?: string;
   slug?: string;
+  status?: string;
   version?: string;
 }
 function parseClawhubList(raw: string): InstalledSkill[] {
@@ -262,6 +300,7 @@ function parseClawhubList(raw: string): InstalledSkill[] {
         rawId: slug,
         slug,
         name: (item?.displayName ?? slug).trim(),
+        status: item?.status?.trim() || undefined,
         version: item?.version?.trim() || undefined,
         registries: ["clawhub" as Registry],
         sourceLabel: REGISTRY_LABEL.clawhub,
@@ -275,6 +314,8 @@ interface SkillsshListItem {
   id?: string;
   rawId?: string;
   slug?: string;
+  status?: string;
+  version?: string;
 }
 function parseSkillsshList(raw: string): InstalledSkill[] {
   const parsed = dataEnvelope(extractJsonObject(raw));
@@ -290,6 +331,8 @@ function parseSkillsshList(raw: string): InstalledSkill[] {
         rawId,
         slug,
         name: (item?.displayName ?? slug).trim(),
+        status: item?.status?.trim() || undefined,
+        version: item?.version?.trim() || undefined,
         registries: ["skills-sh" as Registry],
         sourceLabel: REGISTRY_LABEL["skills-sh"],
       } satisfies InstalledSkill;
@@ -333,7 +376,6 @@ function mapSkillhubItem(item: SkillhubSearchItem, language: SkillhubLanguage): 
     : item.description_zh?.trim() || item.description?.trim();
   return {
     registry: "skillhub",
-    sourceRegistry: item.source?.trim().toLowerCase() === "clawhub" ? "clawhub" : "skillhub",
     rawId: slug,
     slug,
     name,
@@ -359,22 +401,39 @@ export function parseSkillhubSearch(raw: string, language: SkillhubLanguage = "z
 }
 
 interface SkillhubListItem {
+  category?: string;
   display_name?: string;
   displayName?: string;
   id?: string;
+  iconUrl?: string;
   name?: string;
   rawId?: string;
   slug?: string;
   source?: string;
+  status?: string;
   version?: string;
 }
 
 function parseSkillhubListTable(raw: string): SkillhubListItem[] {
-  return raw.split("\n")
+  const rows = raw.split("\n")
     .filter((line) => line.includes("│"))
     .map((line) => line.split("│").slice(1, -1).map((cell) => cell.trim()))
-    .filter((cells) => cells.length > 0 && cells[0] && cells[0] !== "Name" && cells[0] !== "名称")
-    .map(([name, version]) => ({ name, version }));
+    .filter((cells) => cells.length > 0 && cells.some(Boolean));
+  const header = rows.find((cells) => cells.includes("Name") || cells.includes("名称"));
+  if (!header) return rows.map(([name, version]) => ({ name, version }));
+
+  const nameIndex = Math.max(header.indexOf("Name"), header.indexOf("名称"));
+  const categoryIndex = Math.max(header.indexOf("Category"), header.indexOf("分类"));
+  const statusIndex = Math.max(header.indexOf("Status"), header.indexOf("状态"));
+  const versionIndex = Math.max(header.indexOf("Version"), header.indexOf("版本"));
+  return rows
+    .filter((cells) => cells !== header && cells[nameIndex])
+    .map((cells) => ({
+      name: cells[nameIndex],
+      category: categoryIndex >= 0 ? cells[categoryIndex] : undefined,
+      status: statusIndex >= 0 ? cells[statusIndex] : undefined,
+      version: versionIndex >= 0 ? cells[versionIndex] : undefined,
+    }));
 }
 
 export function parseSkillhubList(raw: string): InstalledSkill[] {
@@ -385,9 +444,15 @@ export function parseSkillhubList(raw: string): InstalledSkill[] {
 
   return items.map((item) => {
     const explicitId = item.slug ?? item.rawId ?? item.id;
+    const listedName = (item.name ?? "").trim();
+    const nativeAliases = Array.from(new Set(
+      [explicitId ? listedName : "", item.display_name, item.displayName]
+        .map((value) => value?.trim() ?? "")
+        .filter(Boolean),
+    ));
     const rawId = explicitId
       ? (/^\d+$/.test(explicitId.trim()) ? "" : explicitId.trim())
-      : (item.name ?? "").trim();
+      : listedName;
     if (!rawId) return null;
     const name = (item.display_name ?? item.displayName ?? item.name ?? rawId).trim();
     return {
@@ -395,11 +460,35 @@ export function parseSkillhubList(raw: string): InstalledSkill[] {
       rawId,
       slug: rawId,
       name,
+      category: item.category?.trim() || undefined,
+      iconUrl: item.iconUrl?.trim() || undefined,
+      status: item.status?.trim() || undefined,
       version: item.version?.trim() || undefined,
+      nativeAliases: nativeAliases.length > 0 ? nativeAliases : undefined,
       registries: ["skillhub" as Registry],
       sourceLabel: REGISTRY_LABEL.skillhub,
     } satisfies InstalledSkill;
   }).filter((skill): skill is InstalledSkill => skill !== null);
+}
+
+export function parseHermesInstalledSkills(raw: string): InstalledSkill[] {
+  return parseInstalledSkills(raw).map(({ slug, category, source, status }) => {
+    const trimmedSource = source?.trim() ?? "";
+    const normalizedSource = trimmedSource.toLowerCase();
+    const sourceLabel = HERMES_SOURCE_LABELS[normalizedSource] ?? (trimmedSource || "其他");
+    return {
+      registry: "hermes",
+      rawId: slug,
+      slug,
+      name: formatInstalledSkillDisplayName(slug) || slug,
+      category,
+      status,
+      nativeSource: normalizedSource || "other",
+      registries: ["hermes"],
+      sourceLabel,
+      uninstallable: normalizedSource !== "builtin",
+    };
+  });
 }
 
 export function parseInstallOk(raw: string): boolean {
@@ -407,14 +496,17 @@ export function parseInstallOk(raw: string): boolean {
   if (!isRecord(envelope) || ("success" in envelope && envelope.success !== true)) return false;
   const parsed = dataEnvelope(envelope);
   if (isRecord(parsed)) {
-    if (parsed.success === true) return true;
     const status = parsed.status;
-    if (typeof status === "string" && /install/i.test(status)) return true;
+    if (typeof status === "string") {
+      const normalizedStatus = status.trim().toLowerCase().replace(/[\s-]+/g, "_");
+      return ["installed", "already_installed", "success", "succeeded", "completed", "ok"].includes(normalizedStatus);
+    }
+    if (parsed.success === true) return true;
   }
   return false;
 }
 
-/** 解析 acli uninstall 输出：`{ name, status: 'uninstalled' }` 或 `{ success: true }` 都算成功。 */
+/** 解析 acli uninstall 输出，只接受明确的成功状态。 */
 export function parseUninstallOk(raw: string): boolean {
   const envelope = extractJsonObject(raw);
   if (!isRecord(envelope) || ("success" in envelope && envelope.success !== true)) return false;
@@ -422,7 +514,12 @@ export function parseUninstallOk(raw: string): boolean {
   if (isRecord(parsed)) {
     if (parsed.success === true) return true;
     const status = parsed.status;
-    if (typeof status === "string" && /uninstall|remove|delet/i.test(status)) return true;
+    if (typeof status === "string") {
+      const normalizedStatus = status.trim().toLowerCase().replace(/[\s-]+/g, "_");
+      return ["uninstalled", "removed", "deleted", "success", "succeeded", "completed", "ok"].includes(
+        normalizedStatus,
+      );
+    }
   }
   return false;
 }
@@ -449,10 +546,7 @@ export function sortByName(skills: Skill[]): Skill[] {
   return [...skills].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/**
- * 把 clawhub list + skills-sh list 的结果合并，并按 slug 归属判定每个已安装技能的来源。
- * 这一步是修正「Unknown Source」的关键：单 list 不带 source 字段，必须双 list 交叉判定。
- */
+/** 合并同一 registry 内的重复记录；不同 registry 即使短 slug 相同也保持独立。 */
 export function mergeInstalledSources(
   clawhubInstalled: InstalledSkill[],
   skillsshInstalled: InstalledSkill[],
@@ -470,13 +564,89 @@ export function mergeInstalledSources(
         const registries = Array.from(set);
         existing.registries = registries;
         existing.sourceLabel = registries.map((r) => REGISTRY_LABEL[r]).join(" / ");
+        existing.category = existing.category ?? skill.category;
         existing.version = existing.version ?? skill.version;
       }
     }
   };
   mergeInto(clawhubInstalled, "clawhub");
   mergeInto(skillsshInstalled, "skills-sh");
+
   return Array.from(byIdentity.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function mergeInstalledWithHermes(
+  registryInstalled: InstalledSkill[],
+  hermesInstalled: InstalledSkill[],
+): InstalledSkill[] {
+  const merged = registryInstalled.map((skill) => ({
+    ...skill,
+    registries: [...skill.registries],
+    uninstallable: skill.uninstallable ?? true,
+  }));
+
+  for (const hermesSkill of hermesInstalled) {
+    const normalizedSlug = hermesSkill.slug.trim().toLowerCase();
+    const matches = merged.filter((skill) => (
+      skill.registry !== "hermes"
+      && (
+        skill.slug.trim().toLowerCase() === normalizedSlug
+        || skill.nativeAliases?.some((alias) => alias.toLowerCase() === normalizedSlug)
+      )
+    ));
+    if (matches.length === 1 && matches[0]) {
+      if (!matches[0].registries.includes("hermes")) matches[0].registries.push("hermes");
+      matches[0].category = matches[0].category ?? hermesSkill.category;
+      matches[0].status = matches[0].status ?? hermesSkill.status;
+      matches[0].sourceLabel = matches[0].registries.map((registry) => REGISTRY_LABEL[registry]).join(" / ");
+      continue;
+    }
+    if (matches.length > 1) {
+      // Hermes reports the runtime directory, not a third marketplace install.
+      // When more than one marketplace record shares the slug, keep those records
+      // separate and avoid rendering an unattributable Hermes duplicate.
+      continue;
+    }
+    merged.push({
+      ...hermesSkill,
+      registries: [...hermesSkill.registries],
+      uninstallable: hermesSkill.uninstallable ?? true,
+    });
+  }
+
+  return merged.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function markUncertainHermesSources(
+  skills: InstalledSkill[],
+  failedSources: SearchRegistry[],
+): InstalledSkill[] {
+  if (failedSources.length === 0) return skills;
+  const failed = new Set<string>(failedSources);
+  return skills.map((skill) => {
+    if (skill.registry !== "hermes") return skill;
+    const nativeSource = skill.nativeSource?.trim().toLowerCase() || "other";
+    const couldBelongToFailedRegistry = nativeSource === "other" || failed.has(nativeSource);
+    if (!couldBelongToFailedRegistry) return skill;
+    return {
+      ...skill,
+      nativeSource: "unavailable",
+      sourceLabel: "来源暂不可用",
+      sourceUncertain: true,
+      uninstallable: false,
+    };
+  });
+}
+
+function installedSkillMatchesTarget(
+  skill: InstalledSkill,
+  target: Pick<Skill, "registry" | "rawId">,
+): boolean {
+  if (skillIdentity(skill) === skillIdentity(target)) return true;
+  const targetId = target.rawId.trim().toLowerCase();
+  const targetSlug = targetId.split("/").pop() || targetId;
+  return skill.registry === "hermes"
+    && (skill.rawId.trim().toLowerCase() === targetId || skill.slug.trim().toLowerCase() === targetSlug);
 }
 
 // ─── 数据层接口 ───────────────────────────────────────────────────────────────
@@ -485,16 +655,82 @@ export type SkillSearchSort = "score" | "downloads";
 
 export type SkillSearchOptions = {
   sortBy?: SkillSearchSort;
+  signal?: AbortSignal;
+};
+
+export type SkillSearchResult = {
+  clawhub: Skill[];
+  skillssh: Skill[];
+  skillhub: Skill[];
+  failedSources: SearchRegistry[];
 };
 
 export interface SkillsDataLayer {
-  search(keyword: string, options?: SkillSearchOptions): Promise<{ clawhub: Skill[]; skillssh: Skill[]; skillhub: Skill[] }>;
-  listInstalled(): Promise<InstalledSkill[]>;
+  search(keyword: string, options?: SkillSearchOptions): Promise<SkillSearchResult>;
+  listInstalled(): Promise<InstalledListResult>;
   install(skill: Skill): Promise<InstallResult>;
   /** 卸载已安装技能。ClawHub 走 acli clawhub uninstall；skills.sh 走对称子命令（未确认时调用会失败）。 */
   uninstall(skill: Skill): Promise<InstallResult>;
   /** 默认页（无搜索）的推荐位。mock 返回 fixtures；live 暂返回空，后续可接 trending。 */
   getPopular(): Promise<{ clawhub: Skill[]; skillssh: Skill[]; skillhub: Skill[] }>;
+}
+
+export type BatchInstallResult = {
+  succeeded: Skill[];
+  failed: Array<{ skill: Skill; message?: string }>;
+  skipped: Skill[];
+};
+
+export type BatchInstallProgress = {
+  index: number;
+  total: number;
+  skill: Skill;
+  status: "installing" | "succeeded" | "failed" | "skipped";
+  message?: string;
+};
+
+export async function installSkillsSequentially(
+  dataLayer: Pick<SkillsDataLayer, "install">,
+  skills: Skill[],
+  onProgress?: (progress: BatchInstallProgress) => void,
+  options?: { shouldCancel?: () => boolean },
+): Promise<BatchInstallResult> {
+  const succeeded: Skill[] = [];
+  const failed: BatchInstallResult["failed"] = [];
+  const skipped: Skill[] = [];
+  for (const [offset, skill] of skills.entries()) {
+    const index = offset + 1;
+    const total = skills.length;
+    if (options?.shouldCancel?.()) {
+      const remaining = skills.slice(offset);
+      remaining.forEach((pendingSkill, pendingOffset) => {
+        skipped.push(pendingSkill);
+        onProgress?.({
+          index: index + pendingOffset,
+          total,
+          skill: pendingSkill,
+          status: "skipped",
+        });
+      });
+      break;
+    }
+    onProgress?.({ index, total, skill, status: "installing" });
+    try {
+      const result = await dataLayer.install(skill);
+      if (result.ok) {
+        succeeded.push(skill);
+        onProgress?.({ index, total, skill, status: "succeeded" });
+      } else {
+        failed.push({ skill, message: result.message });
+        onProgress?.({ index, total, skill, status: "failed", message: result.message });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failed.push({ skill, message });
+      onProgress?.({ index, total, skill, status: "failed", message });
+    }
+  }
+  return { succeeded, failed, skipped };
 }
 
 // ─── Mock fixtures（来自联调样例 JSON） ───────────────────────────────────────
@@ -627,6 +863,7 @@ export function createMockDataLayer(): SkillsDataLayer {
         clawhub: MOCK_CLAWHUB_SEARCH.filter((s) => mockMatch(s, kw)),
         skillssh: MOCK_SKILLSSH_SEARCH.filter((s) => mockMatch(s, kw)),
         skillhub: [],
+        failedSources: [],
       };
     },
     async listInstalled() {
@@ -648,7 +885,7 @@ export function createMockDataLayer(): SkillsDataLayer {
         if (rec.registry === "clawhub") clawhubInstalled.push(entry);
         else skillsshInstalled.push(entry);
       }
-      return mergeInstalledSources(clawhubInstalled, skillsshInstalled);
+      return { skills: mergeInstalledSources(clawhubInstalled, skillsshInstalled), failedSources: [] };
     },
     async install(skill: Skill) {
       await delay(650);
@@ -691,8 +928,16 @@ export function createLiveDataLayer(
   botId: string,
   execDebugCommand: ExpertsExecDebugCommand,
 ): SkillsDataLayer {
-  const run = async (command: string): Promise<string> => {
-    const result = await execDebugCommand(botId, command);
+  const run = async (command: string, timeoutMs = SKILL_COMMAND_TIMEOUT_MS): Promise<string> => {
+    let result;
+    try {
+      result = await execDebugCommand(botId, command, { timeoutMs });
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("debug_exec_timeout:")) {
+        throw new Error("技能操作超时，请重试");
+      }
+      throw error;
+    }
     // exitCode === 0 视为命令成功；失败时优先保留 stderr，便于定位实例上的真实原因。
     if (result.exitCode !== 0) {
       const detail = [result.stderr, result.output]
@@ -704,29 +949,53 @@ export function createLiveDataLayer(
     return result.output ?? "";
   };
 
+  const listInstalled = async (): Promise<InstalledListResult> => {
+    const [clawhubRaw, skillsshRaw, hermesRaw] = await Promise.allSettled([
+      run(buildClawhubListCommand()),
+      run(buildSkillsshListCommand()),
+      run(buildHermesSkillsListCommand()),
+    ]);
+    if (hermesRaw.status === "rejected") throw hermesRaw.reason;
+    const failedSources: SearchRegistry[] = [
+      ...(clawhubRaw.status === "rejected" ? ["clawhub" as const] : []),
+      ...(skillsshRaw.status === "rejected" ? ["skills-sh" as const] : []),
+    ];
+    const clawhubInstalled = clawhubRaw.status === "fulfilled" ? parseClawhubList(clawhubRaw.value) : [];
+    const skillsshInstalled = skillsshRaw.status === "fulfilled" ? parseSkillsshList(skillsshRaw.value) : [];
+    const hermesInstalled = hermesRaw.status === "fulfilled" ? parseHermesInstalledSkills(hermesRaw.value) : [];
+    return {
+      skills: markUncertainHermesSources(
+        mergeInstalledWithHermes(mergeInstalledSources(clawhubInstalled, skillsshInstalled), hermesInstalled),
+        failedSources,
+      ),
+      failedSources,
+    };
+  };
+
   return {
-    async search(keyword: string) {
+    async search(keyword: string, options?: SkillSearchOptions) {
       const kw = keyword.trim();
-      if (!kw) return { clawhub: [], skillssh: [], skillhub: [] };
+      if (!kw || options?.signal?.aborted) {
+        return { clawhub: [], skillssh: [], skillhub: [], failedSources: [] };
+      }
       const [clawhubRaw, skillsshRaw] = await Promise.allSettled([
-        run(buildClawhubSearchCommand(kw)),
-        run(buildSkillsshSearchCommand(kw)),
+        run(buildClawhubSearchCommand(kw), SKILL_SEARCH_TIMEOUT_MS),
+        run(buildSkillsshSearchCommand(kw), SKILL_SEARCH_TIMEOUT_MS),
       ]);
+      if (options?.signal?.aborted) {
+        return { clawhub: [], skillssh: [], skillhub: [], failedSources: [] };
+      }
       return {
         clawhub: clawhubRaw.status === "fulfilled" ? parseClawhubSearch(clawhubRaw.value) : [],
         skillssh: skillsshRaw.status === "fulfilled" ? parseSkillsshSearch(skillsshRaw.value) : [],
         skillhub: [],
+        failedSources: [
+          ...(clawhubRaw.status === "rejected" ? ["clawhub" as const] : []),
+          ...(skillsshRaw.status === "rejected" ? ["skills-sh" as const] : []),
+        ],
       };
     },
-    async listInstalled() {
-      const [clawhubRaw, skillsshRaw] = await Promise.allSettled([
-        run(buildClawhubListCommand()),
-        run(buildSkillsshListCommand()),
-      ]);
-      const clawhubInstalled = clawhubRaw.status === "fulfilled" ? parseClawhubList(clawhubRaw.value) : [];
-      const skillsshInstalled = skillsshRaw.status === "fulfilled" ? parseSkillsshList(skillsshRaw.value) : [];
-      return mergeInstalledSources(clawhubInstalled, skillsshInstalled);
-    },
+    listInstalled,
     async install(skill: Skill) {
       const command =
         skill.registry === "skills-sh"
@@ -741,14 +1010,33 @@ export function createLiveDataLayer(
       }
     },
     async uninstall(skill: Skill) {
-      const command =
-        skill.registry === "skills-sh"
-          ? buildSkillsshUninstallCommand(skill.rawId)
-          : buildClawhubUninstallCommand(skill.rawId);
       try {
-        const output = await run(command);
-        const ok = parseUninstallOk(output);
-        return { ok, message: ok ? undefined : output.trim() || undefined };
+        const uninstallTargets = (skill as InstalledSkill).uninstallTargets;
+        const targets = uninstallTargets?.length
+          ? uninstallTargets
+          : [{ registry: skill.registry, rawId: skill.rawId }];
+        for (const target of targets) {
+          const command = target.registry === "hermes"
+            ? buildHermesSkillDeleteCommand(target.rawId)
+            : target.registry === "skills-sh"
+              ? buildSkillsshUninstallCommand(target.rawId)
+              : buildClawhubUninstallCommand(target.rawId);
+          const output = await run(command);
+          if (target.registry !== "hermes" && !parseUninstallOk(output)) {
+            return { ok: false, message: output.trim() || undefined };
+          }
+        }
+        const verification = await listInstalled();
+        const unverifiableTarget = targets.find((target) => (
+          target.registry !== "hermes" && verification.failedSources.includes(target.registry as SearchRegistry)
+        ));
+        if (unverifiableTarget) {
+          return { ok: false, message: "卸载命令已执行，但未能确认结果，请刷新后重试" };
+        }
+        if (targets.some((target) => verification.skills.some((item) => installedSkillMatchesTarget(item, target)))) {
+          return { ok: false, message: "卸载后技能仍然存在，请重试" };
+        }
+        return { ok: true };
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : String(error) };
       }
@@ -767,6 +1055,7 @@ async function fetchSkillhubSkills(params: {
   pageSize: number;
   sortBy?: SkillSearchSort;
   lang?: SkillhubLanguage;
+  signal?: AbortSignal;
 }): Promise<Skill[]> {
   const query = new URLSearchParams({
     page: "1",
@@ -777,7 +1066,9 @@ async function fetchSkillhubSkills(params: {
   if (params.keyword?.trim()) query.set("keyword", params.keyword.trim());
   if (params.lang) query.set("lang", params.lang);
 
-  const response = await fetch(`${resolveSkillHubApiBase()}/api/skills?${query.toString()}`);
+  const response = await fetch(`${resolveSkillHubApiBase()}/api/skills?${query.toString()}`, {
+    signal: params.signal,
+  });
   if (!response.ok) throw new Error(`SkillHub ${response.status} ${response.statusText}`);
   return parseSkillhubSearch(JSON.stringify(await response.json()), params.lang);
 }
@@ -787,8 +1078,16 @@ export function createDomesticDataLayer(
   execDebugCommand: ExpertsExecDebugCommand,
   language: SkillhubLanguage = "zh",
 ): SkillsDataLayer {
-  const run = async (command: string): Promise<string> => {
-    const result = await execDebugCommand(botId, command);
+  const run = async (command: string, timeoutMs = SKILL_COMMAND_TIMEOUT_MS): Promise<string> => {
+    let result;
+    try {
+      result = await execDebugCommand(botId, command, { timeoutMs });
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("debug_exec_timeout:")) {
+        throw new Error("技能操作超时，请重试");
+      }
+      throw error;
+    }
     if (result.exitCode !== 0) {
       const detail = [result.stderr, result.output]
         .map((value) => value?.trim())
@@ -799,6 +1098,24 @@ export function createDomesticDataLayer(
     return result.output ?? "";
   };
 
+  const listInstalled = async (): Promise<InstalledListResult> => {
+    const [skillhubRaw, hermesRaw] = await Promise.allSettled([
+      run(buildSkillhubListCommand()),
+      run(buildHermesSkillsListCommand()),
+    ]);
+    if (hermesRaw.status === "rejected") throw hermesRaw.reason;
+    const failedSources: SearchRegistry[] = skillhubRaw.status === "rejected" ? ["skillhub"] : [];
+    const skillhubInstalled = skillhubRaw.status === "fulfilled" ? parseSkillhubList(skillhubRaw.value) : [];
+    const hermesInstalled = hermesRaw.status === "fulfilled" ? parseHermesInstalledSkills(hermesRaw.value) : [];
+    return {
+      skills: markUncertainHermesSources(
+        mergeInstalledWithHermes(skillhubInstalled, hermesInstalled),
+        failedSources,
+      ),
+      failedSources,
+    };
+  };
+
   return {
     async search(keyword: string, options?: SkillSearchOptions) {
       try {
@@ -806,19 +1123,23 @@ export function createDomesticDataLayer(
         return {
           clawhub: [],
           skillssh: [],
-          skillhub: await fetchSkillhubSkills({ keyword, pageSize: 50, sortBy: options?.sortBy, lang: language }),
+          skillhub: await fetchSkillhubSkills({
+            keyword,
+            pageSize: 50,
+            sortBy: options?.sortBy,
+            lang: language,
+            signal: options?.signal,
+          }),
+          failedSources: [],
         };
-      } catch {
-        return { clawhub: [], skillssh: [], skillhub: [] };
+      } catch (error) {
+        if (options?.signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+          return { clawhub: [], skillssh: [], skillhub: [], failedSources: [] };
+        }
+        return { clawhub: [], skillssh: [], skillhub: [], failedSources: ["skillhub"] };
       }
     },
-    async listInstalled() {
-      try {
-        return parseSkillhubList(await run(buildSkillhubListCommand()));
-      } catch {
-        return [];
-      }
-    },
+    listInstalled,
     async install(skill: Skill) {
       try {
         const output = await run(buildSkillhubInstallCommand(skill.rawId));
@@ -830,9 +1151,29 @@ export function createDomesticDataLayer(
     },
     async uninstall(skill: Skill) {
       try {
-        const output = await run(buildSkillhubUninstallCommand(skill.rawId));
-        const ok = parseUninstallOk(output);
-        return { ok, message: ok ? undefined : output.trim() || undefined };
+        const uninstallTargets = (skill as InstalledSkill).uninstallTargets;
+        const targets = uninstallTargets?.length
+          ? uninstallTargets
+          : [{ registry: skill.registry, rawId: skill.rawId }];
+        for (const target of targets) {
+          const output = await run(target.registry === "hermes"
+            ? buildHermesSkillDeleteCommand(target.rawId)
+            : buildSkillhubUninstallCommand(target.rawId));
+          if (target.registry !== "hermes" && !parseUninstallOk(output)) {
+            return { ok: false, message: output.trim() || undefined };
+          }
+        }
+        const verification = await listInstalled();
+        const unverifiableTarget = targets.find((target) => (
+          target.registry !== "hermes" && verification.failedSources.includes(target.registry as SearchRegistry)
+        ));
+        if (unverifiableTarget) {
+          return { ok: false, message: "卸载命令已执行，但未能确认结果，请刷新后重试" };
+        }
+        if (targets.some((target) => verification.skills.some((item) => installedSkillMatchesTarget(item, target)))) {
+          return { ok: false, message: "卸载后技能仍然存在，请重试" };
+        }
+        return { ok: true };
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : String(error) };
       }

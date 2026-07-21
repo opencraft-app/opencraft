@@ -181,6 +181,7 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 
 	// Pass 路由
 	mux.HandleFunc("/admin/api/ctl/passes", ph.handleAdminPasses)
+	mux.HandleFunc("/admin/api/ctl/passes/billing-migration", ph.handleAdminPassBillingMigration)
 	mux.HandleFunc("/admin/api/ctl/passes/order", ph.handleAdminPassesOrder)
 	// /admin/api/ctl/passes/order-url — v1.7.31 接口拆分：拉取支付 URL
 	mux.HandleFunc("/admin/api/ctl/passes/order-url", ph.handleAdminPassesOrderUrl)

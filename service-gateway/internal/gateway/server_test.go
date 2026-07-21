@@ -194,6 +194,136 @@ func TestPublicAllowBypassesAuth(t *testing.T) {
 	}
 }
 
+func TestRoutePathAllowlistRejectsUnlistedRequestsBeforeAuth(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	authCalls := 0
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authCalls++
+		_, _ = w.Write([]byte(`{"session":{"user":{"id":"usr_123","realnameVerified":true}}}`))
+	}))
+	defer auth.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{{
+			Name:       "ctl",
+			Prefix:     "/v1/instances",
+			Methods:    []string{http.MethodGet, http.MethodPost, http.MethodOptions},
+			Upstream:   upstream.URL,
+			Access:     AccessAuthenticated,
+			PathPolicy: "allowlist",
+			PathAllow: []PublicRule{
+				{Method: http.MethodGet, Path: "/v1/instances"},
+				{Method: http.MethodPost, Path: "/v1/instances/{instance_id}/debug/exec"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	allowedReq := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/debug/exec", nil)
+	allowedReq.Header.Set("Authorization", "Bearer tok-123")
+	allowedRec := httptest.NewRecorder()
+	handler.ServeHTTP(allowedRec, allowedReq)
+	if allowedRec.Code != http.StatusNoContent {
+		t.Fatalf("expected allowlisted request 204, got %d body=%s", allowedRec.Code, allowedRec.Body.String())
+	}
+
+	blockedReq := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/resume", nil)
+	blockedReq.Header.Set("Authorization", "Bearer tok-123")
+	blockedRec := httptest.NewRecorder()
+	handler.ServeHTTP(blockedRec, blockedReq)
+	if blockedRec.Code != http.StatusNotFound {
+		t.Fatalf("expected unlisted request 404, got %d body=%s", blockedRec.Code, blockedRec.Body.String())
+	}
+	if !strings.Contains(blockedRec.Body.String(), "route_not_allowed") {
+		t.Fatalf("expected route_not_allowed body, got %s", blockedRec.Body.String())
+	}
+
+	wrongMethodReq := httptest.NewRequest(http.MethodPut, "/v1/instances", nil)
+	wrongMethodReq.Header.Set("Authorization", "Bearer tok-123")
+	wrongMethodRec := httptest.NewRecorder()
+	handler.ServeHTTP(wrongMethodRec, wrongMethodReq)
+	if wrongMethodRec.Code != http.StatusNotFound {
+		t.Fatalf("expected unlisted method 404, got %d body=%s", wrongMethodRec.Code, wrongMethodRec.Body.String())
+	}
+	if authCalls != 1 {
+		t.Fatalf("expected auth only for allowlisted request, got %d calls", authCalls)
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("expected upstream only for allowlisted request, got %d calls", upstreamCalls)
+	}
+}
+
+func TestRoutePathAllowlistScopesCORSPreflight(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("preflight must not reach upstream")
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: "http://auth.example.test",
+		AllowedOrigins: []string{"https://lightvela.com"},
+		Routes: []Route{{
+			Name:       "ctl",
+			Prefix:     "/v1/instances",
+			Methods:    []string{http.MethodPost, http.MethodOptions},
+			Upstream:   upstream.URL,
+			Access:     AccessAuthenticated,
+			PathPolicy: "allowlist",
+			PathAllow: []PublicRule{
+				{Method: http.MethodPost, Path: "/v1/instances/{instance_id}/debug/exec"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		path string
+		want int
+	}{
+		{name: "allowlisted", path: "/v1/instances/ins-1/debug/exec", want: http.StatusNoContent},
+		{name: "unlisted", path: "/v1/instances/ins-1/resume", want: http.StatusNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodOptions, tc.path, nil)
+			req.Header.Set("Origin", "https://lightvela.com")
+			req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Fatalf("expected %d, got %d body=%s", tc.want, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestRoutePathAllowlistRequiresRules(t *testing.T) {
+	_, err := NewHandler(Config{
+		AuthServiceURL: "http://auth.example.test",
+		Routes: []Route{{
+			Name:       "ctl",
+			Prefix:     "/v1/instances",
+			Upstream:   "http://ctl.example.test",
+			Access:     AccessAuthenticated,
+			PathPolicy: "allowlist",
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "path_allow") {
+		t.Fatalf("expected empty path_allow validation error, got %v", err)
+	}
+}
+
 func TestContentAuditCallbackRouteBypassesAuth(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

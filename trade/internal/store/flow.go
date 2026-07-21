@@ -31,6 +31,7 @@ const (
 //   - FlowTypeIsolateResource = "isolate_resource" jifei lightvela.pass.isolateResource (Sub-4)
 //   - FlowTypeRenewResource = "renew_resource"   jifei lightvela.pass.renewResource (R-A 续费)
 //   - FlowTypeDestroyResource = "destroy_resource" jifei lightvela.pass.destroyResource (D-1 销毁)
+//   - FlowTypeTransferResource = "transfer_resource" jifei lightvela.pass.transferResource (外部资源迁入)
 //
 // checkCreate 不写本表（Q62），所以无对应 flow_type；queryFlow 是只读链路（按 ID 反查），
 // 不写本表，也无对应 flow_type。
@@ -41,10 +42,11 @@ const (
 //
 // 设计稿：.tmp/trade-pass-isolate-design.md §3.2 + .tmp/trade-pass-renew-design.md §4.2 + .tmp/trade-pass-destroy-design.md §3.4
 const (
-	FlowTypeCreateResource  = "create_resource"
-	FlowTypeIsolateResource = "isolate_resource"
-	FlowTypeRenewResource   = "renew_resource"
-	FlowTypeDestroyResource = "destroy_resource"
+	FlowTypeCreateResource   = "create_resource"
+	FlowTypeIsolateResource  = "isolate_resource"
+	FlowTypeRenewResource    = "renew_resource"
+	FlowTypeDestroyResource  = "destroy_resource"
+	FlowTypeTransferResource = "transfer_resource"
 )
 
 // Flow 是 trade_flow 表的领域对象（与 §7.3.5 / migration 0001 + 0002 列对齐）。

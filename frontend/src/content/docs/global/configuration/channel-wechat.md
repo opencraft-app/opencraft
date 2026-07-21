@@ -8,14 +8,14 @@ WeChat 通道采用扫码接入方式，为所有通道中配置最简单的一�
     
 - 使用手机 WeChat 扫码授权
     
-- 在 WeChat 中与 Hermes 进行对话
+- 在 WeChat 中与 Hermes Agent 进行对话
     
 
 > 💡 **准备工作**
 > 
 > -   一台装有 WeChat 的手机
 >     
-> -   完成 [模型配置](./configuration/model.md)（或使用启航套餐预置的 100 体验积分）
+> -   完成 [模型配置](./model.md)（或使用启航套餐预置的 100 体验积分）
 >     
 
 ---
@@ -51,7 +51,7 @@ WeChat 通道采用扫码接入方式，为所有通道中配置最简单的一�
 4. 按手机提示完成授权
     
 
-### 5. 在 WeChat 中查找 Hermes
+### 5. 在 WeChat 中查找 Hermes Agent
 
 扫码成功后：
 
@@ -66,7 +66,7 @@ WeChat 通道采用扫码接入方式，为所有通道中配置最简单的一�
 你好
 ```
 
-几秒内收到 Hermes 回复。
+几秒内收到 Hermes Agent 回复。
 
 ![](../images/6.1-2.webp)
 
@@ -78,7 +78,7 @@ WeChat 通道采用扫码接入方式，为所有通道中配置最简单的一�
     
 - WeChat 联系人中可查找到对应机器人
     
-- 发送消息后能收到 Hermes 回复
+- 发送消息后能收到 Hermes Agent 回复
     
 
 ---
@@ -100,7 +100,7 @@ WeChat 通道采用扫码接入方式，为所有通道中配置最简单的一�
 
 > ℹ️ **实际处理能力取决于模型**
 > 
-> 上表仅代表 WeChat 机器人在消息通道层面支持接收、回复的类型。能否实际完成处理图片、文件等任务，还取决于 Hermes 所接入的大语言模型是否具备对应的处理能力。
+> 上表仅代表 WeChat 机器人在消息通道层面支持接收、回复的类型。能否实际完成处理图片、文件等任务，还取决于 Hermes Agent 所接入的大语言模型是否具备对应的处理能力。
 
 ---
 
@@ -110,10 +110,10 @@ WeChat 通道采用扫码接入方式，为所有通道中配置最简单的一�
 |---|---|---|
 | 扫码后 WeChat 提示"无效二维码" | 二维码已过期 | 关闭弹窗，重新点击「授权接入」 |
 | 扫码完成后电脑端无响应 | 网络延迟或授权未完成 | 刷新管理台页面确认状态；若未接入成功则重新操作 |
-| WeChat 中找不到机器人联系人 | 消息被折叠至"服务通知" | 在 WeChat 顶部搜索"LightVela"或 Hermes 名称 |
+| WeChat 中找不到机器人联系人 | 消息被折叠至"服务通知" | 在 WeChat 顶部搜索"LightVela"或 Hermes Agent 名称 |
 | 发送消息后无回复 | 模型未配置或体验积分耗尽 | 检查「1. 模型」卡片的「当前模型」状态 |
 | 如何解除绑定 | — | 在「已接入通道」列表中删除该条记录 |
-| 同一 WeChat 号能否接入多个 Hermes | 启航套餐上限 1 个 Hermes | 不涉及此问题 |
+| 同一 WeChat 号能否接入多个 Hermes Agent | 启航套餐上限 1 个 Hermes Agent | 不涉及此问题 |
 
 ---
 
@@ -130,10 +130,10 @@ WeChat 通道采用扫码接入方式，为所有通道中配置最简单的一�
 
 ## 下一步
 
-- [配置通道 - Telegram](./configuration/channel-telegram.md) — 轻量通知与跨端沟通
+- [配置通道 - Telegram](./channel-telegram.md) — 轻量通知与跨端沟通
 
-- [配置通道 - WhatsApp](./configuration/channel-whatsapp.md) — 国际用户沟通与客户服务
+- [配置通道 - WhatsApp](./channel-whatsapp.md) — 国际用户沟通与客户服务
 
-- [配置通道 - Discord](./configuration/channel-discord.md) — 社群运营与开发者社区
+- [配置通道 - Discord](./channel-discord.md) — 社群运营与开发者社区
 
-- [配置技能](./configuration/skill.md) — 扩展 Hermes 能力
+- [配置技能](./skill.md) — 扩展 Hermes Agent 能力

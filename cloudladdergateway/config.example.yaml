@@ -582,7 +582,7 @@ routes:
   #     → 反代到 trade.trade.svc.cluster.local:80（跨 ns ClusterIP DNS）
   #     → trade Pod containerPort 8080 (httpapi server.go POST /trade/jifei/callback)
   #     → dispatcher 按 envelope.interface.interfaceName 三段式
-  #     → lightvela.pass.* 9 个真 handler 之一
+  #     → lightvela.pass.* 10 个真 handler 之一（含 transferResource 资源迁移回调）
   #
   # 为什么走公网 HTTPS（而非内网）：
   #   - clgateway 部署在另一个集群（tkexgz 广州 / tkexsg 新加坡），跨 VPC 不可
@@ -601,7 +601,7 @@ routes:
   # 转发出去后 Host 自然是 lightclaw.tech（HTTPS TLS SNI 必须匹配）.
   # ===========================================================================
   - id: jifei-callback
-    description: "jifei → clgateway → trade 入向回调统一 endpoint（POST /trade/jifei/callback，dispatcher 路由 9 个 lightvela.pass.* 真 handler）"
+    description: "jifei → clgateway → trade 入向回调统一 endpoint（POST /trade/jifei/callback，dispatcher 路由 10 个 lightvela.pass.* 真 handler，含 transferResource）"
     # callers 字段在 auth.enabled=false 时无实际效果，预留 jifei 占位便于现网切换前
     # 启用 HMAC（届时需要 jifei 同事侧也持有同一份 caller secret，对 lightvela 侧的
     # 入向回调请求做签名）。

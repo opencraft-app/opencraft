@@ -130,7 +130,7 @@ tofu apply -parallelism=1 prod-beijing.tfplan
 - Traffic 回源：TKE Serverless 默认走 CLB-to-Pod direct access，客户端源 IP 会透传到 Pod ENI；因此 `tke_runtime` 安全组需要放通 `traffic_backend_cidrs -> traffic_backend_port`。
 - Image Registry：每个独立地域使用本地域 TCR，避免两个 state 同时管理同一个 namespace/repository。
 - MySQL：默认 MySQL 8.0，首发小规格 `2C/4GB/100GB`，`max_connections=1000`。
-- Redis：默认 Redis 7.0 主从架构 `type_id=17`，首发 `1GB`、单副本，代理兼容单 endpoint 由腾讯云 Redis 提供；真实部署时云盘版小规格可能报库存不足，首发使用默认托管规格，后续可按 shard 水位切到多副本或 Redis cluster 架构。
+- 中央 Route Redis：固定使用 Redis 7.0 集群架构 `type_id=18`，默认 `3` 分片、每分片 `1GB`、`3` 副本。副本按 `replica_zone_indexes = [0, 1, 1]` 分布在两个可用区，关闭副本只读以保证路由写后立即可见；业务仍通过腾讯云 Proxy 的单 endpoint 访问。
 - Shard：默认 `shard-a` 和 `shard-b`，分别落在两个地域可用区的数据子网。
 
 ## 已验证的腾讯云约束
@@ -139,6 +139,7 @@ tofu apply -parallelism=1 prod-beijing.tfplan
 - TKE `serviceCIDR` 的 IP 数需要和 `cluster_max_service_num` 对齐；例如 `/22` 对应 1024。
 - CDB 下单存在订单锁，首发建议 `tofu apply -parallelism=1`。
 - Redis `product_version = "cloud"` 的小规格在本次北京可用区测试中报库存不足；去掉该字段使用默认托管规格后可创建。
+- 腾讯云 Redis 单次规格变更只能修改内存、分片数、副本数其中一个；Provider `1.83.8` 在同时切换标准/集群架构和增加分片时会先修改分片，导致 `SpecNotExist`。存量标准版必须按“副本迁入目标 AZ -> `type_id` 切到集群版 -> 扩分片 -> 扩副本”的顺序分阶段 apply，每阶段恢复 `online` 后再继续。新地域直接按最终规格创建不受影响。
 - TKE 公网 kube-apiserver endpoint 使用 `tencentcloud_kubernetes_cluster_endpoint` 可以创建，但安全组过窄时 CLB 会返回 502/HTTPS 协议错误；临时验证可开放 443，生产应优先使用 VPN/专线访问内网 endpoint，或和腾讯云确认公网 endpoint 需要放通的健康检查来源后再收紧。
 
 ## 扩容方式

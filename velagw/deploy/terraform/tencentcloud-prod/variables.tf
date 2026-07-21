@@ -265,16 +265,18 @@ variable "control_mysql" {
 variable "control_redis" {
   description = "LLMGateway control-plane Redis sizing."
   type = object({
-    type_id            = number
-    mem_size           = number
-    redis_shard_num    = number
-    redis_replicas_num = number
+    type_id              = number
+    mem_size             = number
+    redis_shard_num      = number
+    redis_replicas_num   = number
+    replica_zone_indexes = list(number)
   })
   default = {
-    type_id            = 17
-    mem_size           = 1024
-    redis_shard_num    = 1
-    redis_replicas_num = 1
+    type_id              = 18
+    mem_size             = 1024
+    redis_shard_num      = 3
+    redis_replicas_num   = 3
+    replica_zone_indexes = [0, 1, 1]
   }
 }
 

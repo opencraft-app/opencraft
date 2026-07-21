@@ -159,6 +159,15 @@ TAPD 操作需遵循仓库和 TAPD skill 的调用规范，使用 `mcporter-inte
 - 避免 MR、接口、数据库、配置项等工程化词汇。
 - 风格要和现有更新日志一致。
 - 如果用户给了指定标题或描述，优先保留；只在明显不通顺或不准确时微调。
+- 标题和描述中英文混排时，中文与相邻英文之间统一保留一个半角空格，例如 `LightVela 支持查看 Hermes Agent 记忆`，不要写成 `LightVela支持查看Hermes Agent记忆`。
+
+#### 国际站英文标题大小写
+
+- 国际站（`global` / 国际站）更新日志标题统一使用 Title Case；只处理标题，不改描述。
+- 首字母大写：第一个和最后一个词、名词、代词、动词（包括 `Is` / `Are`）、形容词、副词，以及品牌和产品名。
+- 通常小写：冠词 `a` / `an` / `the`（首尾词除外）、短介词 `as` / `at` / `by` / `for` / `from` / `in` / `of` / `on` / `to` / `via` / `with`，以及短并列连词 `and` / `but` / `or` / `nor` / `so` / `yet`。
+- 保留产品名原有大小写，例如 `LightVela`、`Hermes`、`Agent`、`Skill`、`WeCom`、`ClawHub`、`skills.sh`。
+- 示例：使用 `Diagnostics Center Is Here for Faster Agent Troubleshooting`，不要写成 `Diagnostics Center is Here For Faster Agent Troubleshooting`。
 
 ### AutoSync 草稿 Payload
 

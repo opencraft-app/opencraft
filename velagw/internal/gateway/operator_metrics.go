@@ -234,6 +234,9 @@ func (s *Service) storePrometheusMetrics(ctx context.Context) string {
 		jobs = visibleWorkerJobs(jobs)
 		sort.Slice(jobs, func(i, j int) bool { return jobs[i].Name < jobs[j].Name })
 		now := s.nowUTC()
+		routeRebuildInProgress := 0
+		routeRebuildRestored := 0
+		routeRebuildStartedAt := time.Time{}
 		b.WriteString("# HELP llmgateway_worker_job_last_success_timestamp_seconds Last successful worker job finish time.\n")
 		b.WriteString("# TYPE llmgateway_worker_job_last_success_timestamp_seconds gauge\n")
 		b.WriteString("# HELP llmgateway_worker_job_failure_total Worker job failure count from local state.\n")
@@ -241,6 +244,13 @@ func (s *Service) storePrometheusMetrics(ctx context.Context) string {
 		b.WriteString("# HELP llmgateway_worker_job_lease_age_seconds Age of an active worker job lease.\n")
 		b.WriteString("# TYPE llmgateway_worker_job_lease_age_seconds gauge\n")
 		for _, job := range jobs {
+			if job.Name == WorkerJobRebuildAPIKeyRoutes {
+				if cursor, ok := decodeAPIKeyRouteRebuildCursor(job.Cursor); ok {
+					routeRebuildInProgress = 1
+					routeRebuildRestored = cursor.Restored
+					routeRebuildStartedAt = cursor.CycleStartedAt
+				}
+			}
 			lastSuccess := float64(0)
 			if !job.LastSuccessAt.IsZero() {
 				lastSuccess = float64(job.LastSuccessAt.Unix())
@@ -253,6 +263,15 @@ func (s *Service) storePrometheusMetrics(ctx context.Context) string {
 			fmt.Fprintf(&b, "llmgateway_worker_job_failure_total{job=\"%s\"} %d\n", prometheusLabelValue(job.Name), job.FailureCount)
 			fmt.Fprintf(&b, "llmgateway_worker_job_lease_age_seconds{job=\"%s\",owner=\"%s\"} %.0f\n", prometheusLabelValue(job.Name), prometheusLabelValue(job.LeaseOwner), leaseAge)
 		}
+		b.WriteString("# HELP llmgateway_key_route_rebuild_in_progress Whether a durable Redis key route rebuild cycle is in progress.\n")
+		b.WriteString("# TYPE llmgateway_key_route_rebuild_in_progress gauge\n")
+		fmt.Fprintf(&b, "llmgateway_key_route_rebuild_in_progress %d\n", routeRebuildInProgress)
+		b.WriteString("# HELP llmgateway_key_route_rebuild_restored Routes durably republished in the current rebuild cycle.\n")
+		b.WriteString("# TYPE llmgateway_key_route_rebuild_restored gauge\n")
+		fmt.Fprintf(&b, "llmgateway_key_route_rebuild_restored %d\n", routeRebuildRestored)
+		b.WriteString("# HELP llmgateway_key_route_rebuild_cycle_started_timestamp_seconds Start time of the current rebuild cycle.\n")
+		b.WriteString("# TYPE llmgateway_key_route_rebuild_cycle_started_timestamp_seconds gauge\n")
+		fmt.Fprintf(&b, "llmgateway_key_route_rebuild_cycle_started_timestamp_seconds %.0f\n", prometheusTimestamp(routeRebuildStartedAt))
 	}
 
 	byokStats, err := s.store.GetBYOKSyncTaskStats(ctx, s.nowUTC())

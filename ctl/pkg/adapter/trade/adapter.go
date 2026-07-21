@@ -100,6 +100,16 @@ type PlaceRenewOrderRequest struct {
 	PayMode        int    `json:"payMode"`
 }
 
+// MoveInOrderRequest 与 trade /internal/trade/orders/move-in 入参对齐。
+type MoveInOrderRequest struct {
+	ExternalUserID string `json:"externalUserId"`
+	Uin            string `json:"uin,omitempty"`
+	AppID          string `json:"appId,omitempty"`
+	BundleID       string `json:"bundleId"`
+	ResourceID     string `json:"resourceId"`
+	CurDeadline    string `json:"curDeadline"`
+}
+
 // PayURLResult 与 trade payURLResponse 字段集对齐（v1.7.30 R-D-2 扩展，2026-05-23）。
 //
 // 字段语义：
@@ -344,6 +354,9 @@ type Adapter interface {
 	// 出参 PayURL/ExpireAt 永远为空（一体化接口跳过支付 URL 概念），调用方应仅
 	// 关心 DealName / BigOrderID。
 	PlaceOrderAndPay(ctx context.Context, req *PlaceOrderRequest) (*PlaceOrderResult, error)
+
+	// MoveInOrderAndPay 调 trade POST /internal/trade/orders/move-in，为存量 pass 创建外部资源迁入单。
+	MoveInOrderAndPay(ctx context.Context, req *MoveInOrderRequest) (*PlaceOrderResult, error)
 
 	// PlaceRenewOrder 调 trade POST /internal/trade/orders/renew 创建一笔续费 jifei 订单（R-D-5）。
 	//
@@ -658,6 +671,22 @@ func (a *adapter) PlaceOrderAndPay(ctx context.Context, req *PlaceOrderRequest) 
 	}
 
 	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/orders/place-and-pay"
+	var result PlaceOrderResult
+	if err := a.doJSON(ctx, http.MethodPost, endpoint, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (a *adapter) MoveInOrderAndPay(ctx context.Context, req *MoveInOrderRequest) (*PlaceOrderResult, error) {
+	if a.config.BaseURL == "" {
+		return nil, fmt.Errorf("trade adapter: base_url not configured")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("trade adapter: MoveInOrderAndPay request is nil")
+	}
+
+	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/orders/move-in"
 	var result PlaceOrderResult
 	if err := a.doJSON(ctx, http.MethodPost, endpoint, req, &result); err != nil {
 		return nil, err

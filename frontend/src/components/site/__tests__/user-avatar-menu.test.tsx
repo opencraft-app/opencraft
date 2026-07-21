@@ -17,7 +17,7 @@ vi.mock("@/contexts/session-context", () => ({
   useSession: () => useSession(),
 }));
 
-vi.mock("@/contexts/openclaw-context", () => ({
+vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => useOpenClaw(),
 }));
 

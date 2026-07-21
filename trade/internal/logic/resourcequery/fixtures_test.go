@@ -21,26 +21,26 @@ import (
 
 type fakeCTLClient struct {
 	// ListPassAppIDs
-	listAppIDs    []int64
-	listAppTotal  int64
-	listAppErr    error
-	listAppCalls  int
+	listAppIDs           []int64
+	listAppTotal         int64
+	listAppErr           error
+	listAppCalls         int
 	listAppLastBundleIDs []string
 	listAppLastPageNo    int
 	listAppLastPageSize  int
 
 	// ListPassesByAppID
-	listByAppPasses []*ctlclient.PassDetail
-	listByAppTotal  int64
-	listByAppErr    error
-	listByAppCalls  int
+	listByAppPasses        []*ctlclient.PassDetail
+	listByAppTotal         int64
+	listByAppErr           error
+	listByAppCalls         int
 	listByAppLastAppID     int64
 	listByAppLastBundleIDs []string
 
 	// ListPassesByResourceIDs
-	listByResPasses []*ctlclient.PassDetail
-	listByResErr    error
-	listByResCalls  int
+	listByResPasses      []*ctlclient.PassDetail
+	listByResErr         error
+	listByResCalls       int
 	listByResLastAppID   int64
 	listByResLastPassIDs []string
 }
@@ -53,6 +53,9 @@ func (f *fakeCTLClient) ListPassesByUser(_ context.Context, _ string) ([]*ctlcli
 }
 func (f *fakeCTLClient) CompletePass(_ context.Context, _ *ctlclient.CompletePassRequest) (*ctlclient.PassDetail, error) {
 	return nil, errors.New("CompletePass not used in resourcequery")
+}
+func (f *fakeCTLClient) TransferPass(_ context.Context, _ *ctlclient.TransferPassRequest) (*ctlclient.PassDetail, error) {
+	return nil, errors.New("TransferPass not used in resourcequery")
 }
 func (f *fakeCTLClient) ListPassAppIDs(_ context.Context, bundleIDs []string, pageNo, pageSize int) ([]int64, int64, error) {
 	f.listAppCalls++
@@ -101,9 +104,9 @@ type fakeBundleStore struct {
 	batchGetCalls int
 	lastBatchIDs  []string
 
-	listBySub    []*store.BundleDefinition
-	listBySubErr error
-	listBySubCalls int
+	listBySub                   []*store.BundleDefinition
+	listBySubErr                error
+	listBySubCalls              int
 	listBySubLastProductCode    string
 	listBySubLastSubProductCode string
 }

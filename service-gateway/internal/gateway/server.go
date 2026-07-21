@@ -321,6 +321,26 @@ func validateRoute(route Route) error {
 	default:
 		return fmt.Errorf("route %s access %q is invalid", route.Name, route.Access)
 	}
+	switch route.PathPolicy {
+	case "":
+	case PathPolicyAllowlist:
+		if len(route.PathAllow) == 0 {
+			return fmt.Errorf("route %s path_allow is required when path_policy is allowlist", route.Name)
+		}
+		for i, rule := range route.PathAllow {
+			if strings.TrimSpace(rule.Method) == "" {
+				return fmt.Errorf("route %s path_allow[%d] method is required", route.Name, i)
+			}
+			if !strings.HasPrefix(strings.TrimSpace(rule.Path), "/") {
+				return fmt.Errorf("route %s path_allow[%d] path must start with /", route.Name, i)
+			}
+			if !hasRoutePrefix(rule.Path, route.Prefix) {
+				return fmt.Errorf("route %s path_allow[%d] path must be under route prefix", route.Name, i)
+			}
+		}
+	default:
+		return fmt.Errorf("route %s path_policy %q is invalid", route.Name, route.PathPolicy)
+	}
 	return nil
 }
 
@@ -359,8 +379,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	applyCORSHeaders(h.allowedOrigins, w.Header(), r, matched.route.Methods)
 
 	if isCORSPreflight(r) {
+		if !matched.allowsPreflight(r) {
+			rec := newStatusRecorder(w)
+			writeJSON(rec, http.StatusNotFound, map[string]string{"error": "route_not_allowed"})
+			h.observeRequest(start, matched.route.Name, r, rec.statusCode())
+			h.logRequest(start, matched, nil, r, rec.statusCode(), "")
+			return
+		}
 		rec := newStatusRecorder(w)
 		rec.WriteHeader(http.StatusNoContent)
+		h.observeRequest(start, matched.route.Name, r, rec.statusCode())
+		h.logRequest(start, matched, nil, r, rec.statusCode(), "")
+		return
+	}
+
+	if !matched.allowsRequest(r) {
+		rec := newStatusRecorder(w)
+		writeJSON(rec, http.StatusNotFound, map[string]string{"error": "route_not_allowed"})
 		h.observeRequest(start, matched.route.Name, r, rec.statusCode())
 		h.logRequest(start, matched, nil, r, rec.statusCode(), "")
 		return
@@ -929,6 +964,31 @@ func (r compiledRoute) isOptionalAuthAllowed(req *http.Request) bool {
 		}
 	}
 	return false
+}
+
+func (r compiledRoute) allowsRequest(req *http.Request) bool {
+	if r.route.PathPolicy != PathPolicyAllowlist {
+		return true
+	}
+	for _, rule := range r.route.PathAllow {
+		if pathRuleMatches(rule, req) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r compiledRoute) allowsPreflight(req *http.Request) bool {
+	requestedMethod := strings.TrimSpace(req.Header.Get("Access-Control-Request-Method"))
+	if !methodAllowed(r.route.Methods, requestedMethod) {
+		return false
+	}
+	if r.route.PathPolicy != PathPolicyAllowlist {
+		return true
+	}
+	target := req.Clone(req.Context())
+	target.Method = requestedMethod
+	return r.allowsRequest(target)
 }
 
 func pathRuleMatches(rule PublicRule, req *http.Request) bool {

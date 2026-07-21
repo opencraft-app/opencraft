@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowRightLeft, MoreHorizontal, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -34,6 +35,7 @@ import {
   useCtlDeleteDianshiParticipation,
   useCtlDestroyPass,
   useCtlDianshiRecords,
+  useCtlPassBillingMigration,
   useCtlRefundPass,
 } from "@/lib/queries/use-ctl-pass-admin";
 import { formatDateTime, formatNumber, statusVariant } from "@/lib/utils";
@@ -61,6 +63,14 @@ function passActionLabel(pass: CtlPass) {
   return `${pass.pass_id} / ${pass.user_id}`;
 }
 
+function parsePositiveIntegerInput(value: string) {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return Number.NaN;
+  }
+  return Number.parseInt(trimmed, 10);
+}
+
 export default function SubscriptionsPage() {
   const [userID, setUserID] = useState("");
   const [bundleID, setBundleID] = useState("all");
@@ -71,6 +81,9 @@ export default function SubscriptionsPage() {
   const [dianshiPageSize, setDianshiPageSize] = useState(20);
   const [refundTarget, setRefundTarget] = useState<CtlPass | null>(null);
   const [destroyTarget, setDestroyTarget] = useState<CtlPass | null>(null);
+  const [billingMigrationTarget, setBillingMigrationTarget] = useState<CtlPass | null>(null);
+  const [billingMigrationUin, setBillingMigrationUin] = useState("");
+  const [billingMigrationAppID, setBillingMigrationAppID] = useState("");
   const [deleteDianshiParticipationTarget, setDeleteDianshiParticipationTarget] =
     useState<CtlDianshiParticipation | null>(null);
 
@@ -84,6 +97,7 @@ export default function SubscriptionsPage() {
   });
   const refundPass = useCtlRefundPass();
   const destroyPass = useCtlDestroyPass();
+  const passBillingMigration = useCtlPassBillingMigration();
   const dianshiRecords = useCtlDianshiRecords({
     userID: userID.trim() || undefined,
     page: dianshiPage,
@@ -95,6 +109,20 @@ export default function SubscriptionsPage() {
   const passItems = passes.data?.passes ?? [];
 
   const dianshiParticipationItems = dianshiRecords.data?.participations ?? [];
+  const billingMigrationUinNumber = parsePositiveIntegerInput(billingMigrationUin);
+  const billingMigrationAppIDNumber = parsePositiveIntegerInput(billingMigrationAppID);
+  const canSubmitBillingMigration =
+    Boolean(billingMigrationTarget) &&
+    Number.isFinite(billingMigrationUinNumber) &&
+    billingMigrationUinNumber > 0 &&
+    Number.isFinite(billingMigrationAppIDNumber) &&
+    billingMigrationAppIDNumber > 0;
+
+  const openBillingMigrationDialog = useCallback((pass: CtlPass) => {
+    setBillingMigrationTarget(pass);
+    setBillingMigrationUin(pass.uin > 0 ? String(pass.uin) : "");
+    setBillingMigrationAppID(pass.app_id > 0 ? String(pass.app_id) : "");
+  }, []);
 
   async function handleRefundPass() {
     if (!refundTarget) {
@@ -125,6 +153,24 @@ export default function SubscriptionsPage() {
       setDestroyTarget(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "销毁失败");
+    }
+  }
+
+  async function handlePassBillingMigration() {
+    if (!billingMigrationTarget || !canSubmitBillingMigration) {
+      return;
+    }
+    try {
+      const result = await passBillingMigration.mutateAsync({
+        userID: billingMigrationTarget.user_id,
+        uin: billingMigrationUinNumber,
+        appID: billingMigrationAppIDNumber,
+      });
+      const summary = result.deal_name || result.message || result.status;
+      toast.success(`接入计费结果：${summary}`);
+      setBillingMigrationTarget(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "接入计费失败");
     }
   }
 
@@ -284,6 +330,10 @@ export default function SubscriptionsPage() {
                 <RotateCcw className="mr-2 h-4 w-4" />
                 退款
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openBillingMigrationDialog(row.original)}>
+                <ArrowRightLeft className="mr-2 h-4 w-4" />
+                接入计费
+              </DropdownMenuItem>
               <DropdownMenuItem variant="destructive" onClick={() => setDestroyTarget(row.original)}>
                 <Trash2 className="mr-2 h-4 w-4" />
                 销毁
@@ -293,7 +343,7 @@ export default function SubscriptionsPage() {
         ),
       },
     ],
-    []
+    [openBillingMigrationDialog]
   );
 
   const dianshiParticipationColumns = useMemo<ColumnDef<CtlDianshiParticipation>[]>(
@@ -531,6 +581,54 @@ export default function SubscriptionsPage() {
         onConfirm={handleDestroyPass}
         loading={destroyPass.isPending}
       />
+
+      <Dialog open={!!billingMigrationTarget} onOpenChange={(open) => {
+        if (!open) {
+          setBillingMigrationTarget(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>接入计费</DialogTitle>
+            <DialogDescription>
+              将 {billingMigrationTarget ? passActionLabel(billingMigrationTarget) : ""} 从免费套餐迁移到启航 01。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="billing-migration-uin">UIN</Label>
+              <Input
+                id="billing-migration-uin"
+                inputMode="numeric"
+                value={billingMigrationUin}
+                onChange={(event) => setBillingMigrationUin(event.target.value)}
+                placeholder="影子账号 UIN"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="billing-migration-app-id">AppID</Label>
+              <Input
+                id="billing-migration-app-id"
+                inputMode="numeric"
+                value={billingMigrationAppID}
+                onChange={(event) => setBillingMigrationAppID(event.target.value)}
+                placeholder="影子账号 AppID"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBillingMigrationTarget(null)}>
+              取消
+            </Button>
+            <Button
+              onClick={handlePassBillingMigration}
+              disabled={!canSubmitBillingMigration || passBillingMigration.isPending}
+            >
+              确认接入
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={!!deleteDianshiParticipationTarget}

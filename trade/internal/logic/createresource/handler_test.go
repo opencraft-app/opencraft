@@ -139,6 +139,9 @@ func (f *fakeCTLClient) ListPassesByUser(ctx context.Context, externalUserID str
 func (f *fakeCTLClient) CompletePass(ctx context.Context, req *ctlclient.CompletePassRequest) (*ctlclient.PassDetail, error) {
 	return f.completePassFunc(ctx, req)
 }
+func (f *fakeCTLClient) TransferPass(_ context.Context, _ *ctlclient.TransferPassRequest) (*ctlclient.PassDetail, error) {
+	return nil, errors.New("TransferPass not used in createResource")
+}
 func (f *fakeCTLClient) ListPassAppIDs(_ context.Context, _ []string, _, _ int) ([]int64, int64, error) {
 	return nil, 0, errors.New("ListPassAppIDs not used in createResource")
 }

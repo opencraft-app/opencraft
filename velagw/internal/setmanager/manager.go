@@ -29,6 +29,7 @@ type Config struct {
 	ProbeTimeout                time.Duration
 	ProbeInterval               time.Duration
 	ProbeModel                  string
+	RuntimeCleanerImage         string
 	UpgradeEnabled              bool
 	RegressionHoldUpgradeStatus string
 	RegressionUpgradeOwner      string
@@ -164,6 +165,7 @@ func LoadConfigFromEnv() Config {
 		ProbeTimeout:                time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_PROBE_TIMEOUT_SECONDS", 180)) * time.Second,
 		ProbeInterval:               time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_PROBE_INTERVAL_SECONDS", 10)) * time.Second,
 		ProbeModel:                  envString("LLMGATEWAY_SET_UPGRADE_PROBE_MODEL", "auto"),
+		RuntimeCleanerImage:         strings.TrimSpace(os.Getenv("LLMGATEWAY_SET_MANAGER_RUNTIME_CLEANER_IMAGE")),
 		UpgradeEnabled:              true,
 		RegressionHoldUpgradeStatus: strings.TrimSpace(os.Getenv("LLMGATEWAY_REGRESSION_HOLD_UPGRADE_STATUS")),
 		RegressionUpgradeOwner:      strings.TrimSpace(os.Getenv("LLMGATEWAY_REGRESSION_UPGRADE_OWNER")),
@@ -198,6 +200,12 @@ func runLLMFleetOnce(ctx context.Context, cfg Config, control ControlClient, kub
 	fleet, err := kube.GetLLMFleet(ctx, cfg.Namespace, cfg.Fleet)
 	if err != nil {
 		return fmt.Errorf("get llmfleet: %w", err)
+	}
+	if desired := strings.TrimSpace(cfg.RuntimeCleanerImage); desired != "" && fleet.Spec.RuntimeCleanerImage != desired {
+		if err := kube.PatchLLMFleetRuntimeCleanerImage(ctx, cfg.Namespace, cfg.Fleet, fleet.Metadata.ResourceVersion, desired); err != nil {
+			return fmt.Errorf("reconcile llmfleet runtime cleaner image: %w", err)
+		}
+		return nil
 	}
 	cfg.NewSetReplicas = EffectiveTrafficHAPolicy(fleet, cfg.NewSetReplicas).MinReplicas
 	if removed := PruneOrphanTrafficRuntimes(&fleet); removed > 0 {

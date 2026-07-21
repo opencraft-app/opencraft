@@ -13,15 +13,19 @@ import (
 
 func TestRunOnceAlwaysUsesLLMFleetBackend(t *testing.T) {
 	t.Setenv("LLMGATEWAY_SET_MANAGER_RUNTIME_BACKEND", "direct")
+	t.Setenv("LLMGATEWAY_SET_MANAGER_RUNTIME_CLEANER_IMAGE", "registry/llmgateway@sha256:cleaner")
 
 	fleetCalled := false
 	kubeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/apis/llmgateway.io/v1alpha1/namespaces/prod/llmfleets/prod" {
 			t.Fatalf("unexpected kube path: %s", r.URL.Path)
 		}
+		if r.Method != http.MethodGet {
+			t.Fatalf("idempotent cleaner reconcile used method %s", r.Method)
+		}
 		fleetCalled = true
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"metadata":{"name":"prod","namespace":"prod","generation":1},"spec":{"sets":[]},"status":{"conditions":[{"type":"Ready","status":"True","observedGeneration":1}]}}`))
+		_, _ = w.Write([]byte(`{"metadata":{"name":"prod","namespace":"prod","generation":1,"resourceVersion":"rv-1"},"spec":{"runtimeCleanerImage":"registry/llmgateway@sha256:cleaner","sets":[]},"status":{"conditions":[{"type":"Ready","status":"True","observedGeneration":1}]}}`))
 	}))
 	defer kubeServer.Close()
 
@@ -47,6 +51,9 @@ func TestRunOnceAlwaysUsesLLMFleetBackend(t *testing.T) {
 	defer controlServer.Close()
 
 	cfg := LoadConfigFromEnv()
+	if cfg.RuntimeCleanerImage != "registry/llmgateway@sha256:cleaner" {
+		t.Fatalf("runtime cleaner image = %q", cfg.RuntimeCleanerImage)
+	}
 	cfg.Namespace = "prod"
 	cfg.ControlURL = controlServer.URL
 	cfg.Source = "prod"
@@ -62,6 +69,47 @@ func TestRunOnceAlwaysUsesLLMFleetBackend(t *testing.T) {
 	}
 	if capacityCalls != 0 {
 		t.Fatalf("RunOnce called capacity reconcile %d times; set-manager must only execute pending requests", capacityCalls)
+	}
+}
+
+func TestRunOnceReconcilesOnlyRuntimeCleanerImageBeforeDynamicFleetState(t *testing.T) {
+	var operations []map[string]any
+	kubeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(`{"metadata":{"name":"prod","namespace":"prod","generation":7,"resourceVersion":"rv-7"},"spec":{"runtimeCleanerImage":"registry/llmgateway@sha256:old","sets":[{"name":"set-a"}],"trafficRuntimes":[{"setID":"set-a","generation":1,"image":"registry/new-api@sha256:a"}]}}`))
+		case http.MethodPatch:
+			if err := json.NewDecoder(r.Body).Decode(&operations); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			t.Fatalf("unexpected kube method: %s", r.Method)
+		}
+	}))
+	defer kubeServer.Close()
+
+	controlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("cleaner image reconcile must not call control: %s %s", r.Method, r.URL.Path)
+	}))
+	defer controlServer.Close()
+
+	cfg := Config{
+		Namespace: "prod", ControlURL: controlServer.URL, Source: "prod", Fleet: "prod",
+		RuntimeCleanerImage: "registry/llmgateway@sha256:new", WaitTimeout: time.Second,
+	}
+	if err := RunOnce(t.Context(), cfg, ControlClient{}, KubeClient{BaseURL: kubeServer.URL, HTTPClient: kubeServer.Client()}); err != nil {
+		t.Fatal(err)
+	}
+	if len(operations) != 2 {
+		t.Fatalf("patch operations = %+v", operations)
+	}
+	if operations[0]["op"] != "test" || operations[0]["path"] != "/metadata/resourceVersion" || operations[0]["value"] != "rv-7" {
+		t.Fatalf("resource version guard = %+v", operations[0])
+	}
+	if operations[1]["op"] != "add" || operations[1]["path"] != "/spec/runtimeCleanerImage" || operations[1]["value"] != "registry/llmgateway@sha256:new" {
+		t.Fatalf("cleaner image patch = %+v", operations[1])
 	}
 }
 
@@ -974,6 +1022,29 @@ func TestPatchLLMFleetRuntimeUsesOneResourceVersionGuardedPatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(operations) != 3 || operations[0]["op"] != "test" || operations[0]["value"] != "rv-7" || operations[1]["path"] != "/spec/sets" || operations[2]["path"] != "/spec/cleanups" {
+		t.Fatalf("patch operations = %+v", operations)
+	}
+}
+
+func TestPatchLLMFleetRuntimeCleanerImageUsesResourceVersionGuard(t *testing.T) {
+	var operations []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Fatalf("method = %s", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&operations); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client := KubeClient{BaseURL: server.URL, HTTPClient: server.Client()}
+	if err := client.PatchLLMFleetRuntimeCleanerImage(t.Context(), "prod", "fleet", "rv-11", "registry/llmgateway@sha256:new"); err != nil {
+		t.Fatal(err)
+	}
+	if len(operations) != 2 || operations[0]["value"] != "rv-11" || operations[1]["path"] != "/spec/runtimeCleanerImage" {
 		t.Fatalf("patch operations = %+v", operations)
 	}
 }

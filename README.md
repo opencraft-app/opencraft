@@ -817,3 +817,5 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
 ### 凭据配置和密钥
 为了安全，我们的凭据和密钥都防止在单独的repo中，这个repo由 vaultbox 文件夹管理。
 vaultbox 是一个由本地启动的服务器，
+
+CI trigger note: 2026-07-21 lightclaw-auth rebuild after GitOps validation fix.
