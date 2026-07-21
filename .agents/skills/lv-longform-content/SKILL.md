@@ -114,19 +114,24 @@ description: 生成 LightVela 长篇营销/产品文章的专用技能。用户�
 ## 写作流程
 
 1. 识别目标读者、文章模式、功能/场景、目标渠道，以及用户读完后应该完成的结果。
-2. 写作前先建立文章弧线：
-   - `tutorial`: promise -> prerequisites -> steps -> verification -> troubleshooting -> done.
-   - `feature-intro`: product context -> why it matters -> what it is -> how it works -> what changes for users -> what's next.
-   - `use-case`: relatable pain -> LightVela setup -> skills/configuration -> live usage -> automation or repeatability -> lesson/transferable pattern.
-3. 评估是否需要图片。推荐少量、高价值图片，通常 2-4 张；教程最多 5 张。**每个图片位置都必须用下方「图片建议固定模板」的 `[RECOMMEND ADD IMAGE: ...]` 方括号格式**，不要写裸 `[Image]`，也不要随意换花样。
-4. 语气保持亲近、直接、有轻微叙事感。多写具体产品动作，少写抽象宣传。
-5. 默认产出完整文章，不要只给大纲，除非用户明确要求大纲。
-6. 每篇完整文章末尾都追加固定 Community ending，包含 Discord 和 WhatsApp 邀请文案与真实二维码图片。**结尾文案语言跟随文章语言**：英文文章用英文版文案，中文文章（如 techpedia 的 `.zh.md`）用中文版文案；两套文案见 `references/style-guide.md` 的 Community Ending，照原样输出，不要自创排版。Markdown（`.md`）输出时的结尾结构：先用二级标题作结尾标题（英文 `## Join LightVela's Community for More Updates!` / 中文 `## 加入 LightVela 社区，获取更多动态！`），标题下一行是官网链接「Visit us at [LightVela](https://lightvela.ai)」 / 「访问 [LightVela](https://lightvela.ai)」，再下来是粗体 Discord / WhatsApp 标签与对应二维码。二维码在两套里都用同一组固定托管 CDN URL（不要用本地路径、不要用占位符）：Discord `https://dscache-intl.cloudcachetci.com/upload/nodir/disc_LV-23c00256e06401213046ab1142a1db7438ecc40b.png`，WhatsApp `https://dscache-intl.cloudcachetci.com/upload/nodir/whatsapp_LV-e2089814c4615f98fdae3c9d457ceee4b3654f9f.png`。
+2. **开头第一段：答案先行（answer-first / GEO 友好）**。正文首段（首图之后、任何铺垫之前）必须先用 1-3 句话直接把标题抛出的问题/主题回答清楚，给出可被搜索引擎和 AI 搜索直接抽取的结论，再往下展开背景、场景、步骤。
+   - 标题是疑问句时（如「LightVela 适合哪些人使用？」「每个 Hermes 实例是否独立隔离？」），首段第一句就正面回答这个问题（如「LightVela 适合……这几类人：……」），不要先讲故事或铺垫痛点。
+   - 标题是功能/名词时（如「自动任务」「Souls」），首段用一句定义句说清「它是什么 + 给用户带来什么」，再展开。
+   - 这一段要能独立成立：读者只看这一段也能拿到核心答案；后文再补细节、场景、示例。
+   - answer-first 只约束**开头第一段**；其后仍按各模式的弧线展开（叙事、场景、步骤都放在总结之后）。
+3. 建立文章弧线（首段答案先行之后再展开）：
+   - `tutorial`: answer-first summary -> promise -> prerequisites -> steps -> verification -> troubleshooting -> done.
+   - `feature-intro`: answer-first definition -> product context -> why it matters -> what it is -> how it works -> what changes for users -> what's next.
+   - `use-case`: answer-first summary(这篇讲用 LightVela 解决了什么、怎么解决) -> relatable pain -> LightVela setup -> skills/configuration -> live usage -> automation or repeatability -> lesson/transferable pattern.
+4. 评估是否需要图片。推荐少量、高价值图片，通常 2-4 张；教程最多 5 张。**每个图片位置都必须用下方「图片建议固定模板」的 `[RECOMMEND ADD IMAGE: ...]` 方括号格式**，不要写裸 `[Image]`，也不要随意换花样。
+5. 语气保持亲近、直接、有轻微叙事感。多写具体产品动作，少写抽象宣传。
+6. 默认产出完整文章，不要只给大纲，除非用户明确要求大纲。
+7. 每篇完整文章末尾都追加固定 Community ending，包含 Discord 和 WhatsApp 邀请文案与真实二维码图片。**结尾文案语言跟随文章语言**：英文文章用英文版文案，中文文章（如 techpedia 的 `.zh.md`）用中文版文案；两套文案见 `references/style-guide.md` 的 Community Ending，照原样输出，不要自创排版。Markdown（`.md`）输出时的结尾结构：先用二级标题作结尾标题（英文 `## Join LightVela's Community for More Updates!` / 中文 `## 加入 LightVela 社区，获取更多动态！`），标题下一行是官网链接「Visit us at [LightVela](https://lightvela.ai)」 / 「访问 [LightVela](https://lightvela.ai)」，再下来是粗体 Discord / WhatsApp 标签与对应二维码。二维码在两套里都用同一组固定托管 CDN URL（不要用本地路径、不要用占位符）：Discord `https://dscache-intl.cloudcachetci.com/upload/nodir/disc_LV-23c00256e06401213046ab1142a1db7438ecc40b.png`，WhatsApp `https://dscache-intl.cloudcachetci.com/upload/nodir/whatsapp_LV-e2089814c4615f98fdae3c9d457ceee4b3654f9f.png`。
 
 ## 输出规则
 
 - 语言与形式按「语言与形式默认值」走；用户指定了语言/形式则从用户。social-media 默认英文 + 对话纯文本；techpedia 固定中英双份 Markdown。
-- 开头先写纯文本标题行，然后用「图片建议固定模板」的首图格式（`[RECOMMEND ADD IMAGE: ...]`），再进入开头段落。
+- 开头先写纯文本标题行，然后用「图片建议固定模板」的首图格式（`[RECOMMEND ADD IMAGE: ...]`），再进入开头段落——**开头第一段必须答案先行**（见「写作流程」第 2 条）：直接回答标题问题 / 给出定义句，再展开。
 - 使用短小自然的 section heading。
 - 避免营销口号、泛泛 AI hype，以及过度解释 AI 是什么。
 - 只有在与文章主题相关时，才提到 LightVela、Hermes、SkillHub/ClawHub、Channels、Skills、Automations 等产品概念。
@@ -140,7 +145,8 @@ description: 生成 LightVela 长篇营销/产品文章的专用技能。用户�
 本技能不重复 SEO 细则；**完整 SEO/GEO 检查交由 `lv-seo-geo` 技能**（`../product-skills/lv-seo-geo/SKILL.md` + `references/seo-geo-rules.md`）。但写长文时就要顺手做对这几件事，让产出既对人友好，也容易被搜索引擎和 ChatGPT/Perplexity/Google AI Overview 这类生成式搜索抓取：
 
 - **开头自然带主关键词**：第一屏让主题词出现一次即可，不堆砌。英文核心词参考 `lv-seo-geo`：LightVela / cloud AI agent / personal AI agent / AI assistant / Hermes Agent / agent hosting / always-on AI agent / AI agent with memory / automations / skills；中文核心词：LightVela / 云端 Agent / 个人 Agent / AI 助手 / Hermes Agent / 云端托管 / 长期记忆 / 自动任务 / 技能。只挑和这篇主题真正相关的几个用。
-- **写“定义句”**：用一句清楚的陈述句把概念说死，例如 “LightVela is a cloud-hosted personal AI agent platform.” / “A Soul is a structured persona spec for a Hermes Agent.” 生成式搜索最容易抽取这种句式。
+- **答案先行（answer-first）**：正文第一段直接回答标题的问题或给出主题定义，让 AI 搜索能从开头一段就抽走结论，不要用铺垫/故事开场把答案埋在后面（详见「写作流程」第 2 条）。
+- **写“定义句”**：用一句清楚的陈述句把概念说死，例如 “LightVela is a cloud-hosted personal AI agent platform.” / “A Soul is a structured persona spec for a Hermes Agent.” 生成式搜索最容易抽取这种句式。疑问句标题（“……适合谁？”“……是否独立隔离？”）则在首段用一句正面回答对应，充当该文的定义句。
 - **用问答式 / 场景式段落**：在解释功能时顺带覆盖“它是什么 / 为什么需要 / 怎么用 / 和谁相关”几个角度，便于被当成答案抽取。
 - **加有意义的内部链接，且要分布在正文各处**：在正文自然提及概念的地方加行内链接（开头/中段/结尾都要有），而不是只在文末堆一排。链接要与所在句子真实相关（讲 skills 时链到 skill 配置页；讲 automations 时链到 automation 配置页）。每个链接都要帮读者走下一步，不为 SEO 硬塞。
 
