@@ -937,7 +937,7 @@ func (l *logic) FinalizeDestroyInstanceTaskFailure(ctx pctx.Context, payload *De
 //     不能让 sandbox 偶发缺失阻塞父 IsolatePass 收尾）
 //     - sandbox already-paused   → 视为成功，继续 CAS
 //     - 其它错误                 → 冒泡，触发父 task 重试
-//  4. CAS Running → Paused（与 PauseInstance 同语义）
+//  4. CAS Running/Resuming → Paused（同时接管用户恢复流程的中间态）
 func (l *logic) RunIsolateInstanceTask(ctx pctx.Context, payload *common.IsolateInstanceTaskPayload) error {
 	if payload == nil || strings.TrimSpace(payload.InstanceID) == "" {
 		return errcode.ErrInstanceInvalidParam
@@ -964,7 +964,7 @@ func (l *logic) RunIsolateInstanceTask(ctx pctx.Context, payload *common.Isolate
 			zap.String("status", entity.Status),
 		)
 		return nil
-	case modelinstance.InstanceStatusRunning:
+	case modelinstance.InstanceStatusRunning, modelinstance.InstanceStatusResuming:
 		// 正常路径
 	default:
 		// Creating / Deleting 等中间态：让框架按 60s interval 重试，等其先到 Running/终态
@@ -1001,7 +1001,7 @@ func (l *logic) RunIsolateInstanceTask(ctx pctx.Context, payload *common.Isolate
 	if err := l.instanceDao.TransitionStatus(
 		ctx,
 		entity.Id,
-		[]string{modelinstance.InstanceStatusRunning},
+		[]string{modelinstance.InstanceStatusRunning, modelinstance.InstanceStatusResuming},
 		modelinstance.InstanceStatusPaused,
 	); err != nil {
 		// CAS 失败常见于并发被 PauseInstance 改了状态：再次 GetByInstanceID 兜底
