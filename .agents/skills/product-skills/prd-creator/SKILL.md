@@ -385,7 +385,7 @@ PRD 已定稿、原型说明已补齐且 TAPD 父单已创建或复用后，必�
 
 - 来源分支、目标分支。
 - 将提交的文件列表和 diff 摘要。
-- 完整 commit message。提交信息遵守仓库 Lore Commit Protocol，意图行使用“中文在前 + 英文补充在后”。
+- 完整 commit message。提交信息遵守仓库根 `AGENTS.md` 的提交与 MR 标题约定，采用“中文在前 + 英文补充在后”。
 - MR 标题、描述摘要、TAPD 关联信息。
 
 展示后明确等待用户确认。一次确认可以覆盖本次已经完整展示的 commit、push 和 MR 创建动作；用户尚未确认时，只能保留本地文件和分支，不能先行提交或推送。
@@ -394,7 +394,7 @@ PRD 已定稿、原型说明已补齐且 TAPD 父单已创建或复用后，必�
 
 - 在调用工蜂写操作前，先按 Gongfeng Skill 调用 `get_current_user` 验证鉴权。未鉴权时只索要或修复工蜂个人 Token，不得把 Token 写入仓库文件、提交信息、MR 描述、日志或最终回复。
 - 只暂存 8.1 已展示的范围，运行 `git diff --check`，并检查 `git diff --cached --name-only` 没有无关文件。
-- 创建 Lore commit，推送来源分支，然后通过 Gongfeng 创建目标为 `master` 的 MR；已有 TAPD 时附带 `tapd_info`，例如 `--story=<TAPD 短 ID>`。
+- 按已确认的 commit message 创建提交，推送来源分支，然后通过 Gongfeng 创建目标为 `master` 的 MR；已有 TAPD 时附带 `tapd_info`，例如 `--story=<TAPD 短 ID>`。
 - 创建后按来源分支查询 MR，核对真实 MR 编号、标题、来源/目标分支和可访问链接，再把编号与完整链接主动发给用户。
 - push 成功不等于 MR 创建成功。如果创建接口报错，先按来源分支查询是否已经创建，避免重复 MR；确认不存在后再重试或如实报告阻塞原因。
 
@@ -473,6 +473,7 @@ PRD 已定稿、原型说明已补齐且 TAPD 父单已创建或复用后，必�
 - 已有研发需求但还需要澄清，需使用研发自己的 skill。
 - 研发同学自行创建独立技术需求单后，需要评估或排期，需使用研发自己的 skill。
 - 只有当独立技术需求单已经有清晰验收标准和依赖时，才进入实现流程。
+- PRD 定稿并通过工蜂 MR 落库后，结束本技能并回到 `/feai-start` 主流程进入研发执行；研发 MR 完成后运行 `/feai-archive` 做 OpenSpec 沉淀。
 
 ## 完成输出格式
 
@@ -524,7 +525,7 @@ PRD 已定稿、原型说明已补齐且 TAPD 父单已创建或复用后，必�
 - 写入本地 PRD、TAPD 或进入工蜂 MR 前，集中自检未发现占位符、目标链路矛盾、范围过大或未消除的歧义。
 - 已将确认后的 PRD 实际写入 mono2 的 `product/prd/YYYY-MM-DD-<short-title>.md`；产品原型说明默认包含在同一文件中，并已向用户给出实际路径。
 - 已从最新 `origin/master` 准备干净来源分支；存在无关脏改动时使用了独立 worktree，提交范围没有夹带其他文件。
-- commit、push 和 MR 创建前已展示文件范围、diff 摘要、Lore commit message、MR 标题/描述和 TAPD 关联，并获得用户明确确认。
+- commit、push 和 MR 创建前已展示文件范围、diff 摘要、完整 commit message、MR 标题/描述和 TAPD 关联，并获得用户明确确认。
 - 已把 PRD 提交到目标为 `master` 的工蜂 MR；创建后已核对真实 MR 编号、来源/目标分支和完整链接，并主动发给用户。仅本地写入、commit 或 push 不算完成。
 - LightVela 产品输入稿足够进入评审。
 - 如果本地无有效 TAPD Token，已按 6.2 向用户索要且仅索要 Token 本身，没有额外追问 TAPD 配置。
