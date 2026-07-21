@@ -1469,3 +1469,15 @@ Not-tested: 待实现后填写
 - [x] Hermes 来源文案使用映射表，保持 builtin / local / other / clawhub 及未知来源回退行为。
 - [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
 - [x] 提交并推送现有 MR。
+
+### Task 71: 简化人设生效提示
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/hermes-agent-buddy-panel.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 人设注入成功弹窗将 Hermes 名称改为 Hermes Agent，并移除 `/approve` 步骤。
+- [x] 新提示同步到中英文 i18n 字典，旧文案不再被引用。
+- [x] `pnpm check`、`pnpm i18n:check` 和 `git diff --check` 通过。
