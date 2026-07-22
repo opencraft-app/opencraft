@@ -352,6 +352,9 @@ func (r Reconciler) ensureBootstrapJob(ctx context.Context, set *velagwv1alpha1.
 			}}},
 		}},
 	}
+	if strings.TrimSpace(cfg.ImagePullSecret) != "" {
+		job.Spec.Template.Spec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: cfg.ImagePullSecret}}
+	}
 	if err := controllerutil.SetControllerReference(set, job, r.Scheme); err != nil {
 		return nil, err
 	}

@@ -10,6 +10,7 @@ resources:
   - velagwset-delete-policy.yaml
   - velagwset-controller.yaml
   - velagwset-provisioner.yaml
+  - release-bootstrap.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
@@ -65,6 +66,11 @@ replacements:
           name: velagwset-controller
         fieldPaths:
           - spec.template.spec.containers.[name=controller].image
+      - select:
+          kind: Job
+          name: llmgateway-release-bootstrap
+        fieldPaths:
+          - spec.template.spec.containers.[name=bootstrap].image
       - select:
           kind: CronJob
           name: llmgateway-set-manager

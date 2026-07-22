@@ -73,16 +73,6 @@ def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
     return kustomization, docs
 
 
-def load_velagw_shprod_platform_values() -> dict[str, str]:
-    values = {}
-    path = REPO_ROOT / "argocd/services/velagw/shprod/velagw-platform.env"
-    for line in path.read_text().splitlines():
-        key, separator, value = line.partition("=")
-        if separator:
-            values[key] = value
-    return values
-
-
 class ReleaseBundleContractTests(unittest.TestCase):
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
         rendered = dump_manifest(merge_bundle_sources(RUNTIME_DIR / "bundles"))
@@ -344,6 +334,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 "velagwset-delete-policy.yaml",
                 "velagwset-controller.yaml",
                 "velagwset-provisioner.yaml",
+                "release-bootstrap.yaml",
             ],
         )
         cluster_resource_whitelist = {
@@ -367,6 +358,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         }
         self.assertIn("velagwset-controller", image_replacement_targets)
         self.assertIn("velagwset-provisioner", image_replacement_targets)
+        self.assertIn("llmgateway-release-bootstrap", image_replacement_targets)
         self.assertNotIn(
             "VELAGW_PROVISIONER_IMAGE=",
             (service_root / "velagw-platform.env").read_text(),
@@ -468,12 +460,12 @@ class ReleaseBundleContractTests(unittest.TestCase):
             kustomization.get("resources"),
             [
                 "workloads.yaml",
-                "set-manager.yaml",
                 "llmfleet-rgd.yaml",
                 "velagwset-crd.yaml",
                 "velagwset-delete-policy.yaml",
                 "velagwset-controller.yaml",
                 "velagwset-provisioner.yaml",
+                "release-bootstrap.yaml",
             ],
         )
 
@@ -565,29 +557,21 @@ class ReleaseBundleContractTests(unittest.TestCase):
         }
         self.assertIn("velagwset-controller", image_replacement_targets)
         self.assertIn("velagwset-provisioner", image_replacement_targets)
-
-        set_manager = next(
+        self.assertIn("llmgateway-release-bootstrap", image_replacement_targets)
+        self.assertFalse(
+            any(
+                doc.get("kind") == "CronJob"
+                and (doc.get("metadata") or {}).get("name") == "llmgateway-set-manager"
+                for doc in resource_docs
+            )
+        )
+        bootstrap = next(
             doc
             for doc in resource_docs
-            if doc.get("kind") == "CronJob"
-            and (doc.get("metadata") or {}).get("name") == "llmgateway-set-manager"
+            if doc.get("kind") == "Job"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-release-bootstrap"
         )
-        set_manager_container = next(
-            container
-            for container in set_manager["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"]
-            if container.get("name") == "set-manager"
-        )
-        set_manager_env = {
-            entry["name"]: entry.get("value") for entry in set_manager_container.get("env", [])
-        }
-        self.assertEqual(
-            set_manager_env.get("LLMGATEWAY_SET_MANAGER_RUNTIME_CLEANER_IMAGE"),
-            set_manager_container.get("image"),
-        )
-        self.assertEqual(
-            load_velagw_shprod_platform_values().get("VELAGW_IMAGE"),
-            set_manager_container.get("image"),
-        )
+        self.assertEqual(bootstrap["metadata"]["annotations"]["argocd.argoproj.io/hook"], "PostSync")
 
     def test_velagw_beijing_otel_version_matches_subtree_source(self) -> None:
         marker = {}

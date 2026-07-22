@@ -175,6 +175,9 @@ func (s *Service) ReconcileSetCapacity(ctx context.Context, policy SetCapacityPo
 	if err != nil {
 		return SetCapacityResult{}, err
 	}
+	if normalized.RuntimeBackend == SetRuntimeBackendVelaGWSet && strings.TrimSpace(provisionRelease.Image) == "" {
+		return SetCapacityResult{}, fmt.Errorf("no admission release is configured for %s/%s/%s", normalized.Source, normalized.Namespace, normalized.Fleet)
+	}
 	for i := 0; i < requestCount; i++ {
 		nextSetID := nextProvisionSetID(normalized.SetIDPrefix, existingSetIDs)
 		existingSetIDs[nextSetID] = true

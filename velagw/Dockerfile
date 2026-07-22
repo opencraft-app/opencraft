@@ -24,6 +24,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway ./cmd/llmg
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-runtime-cleaner ./cmd/llmgateway-runtime-cleaner \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-db-bootstrap ./cmd/llmgateway-db-bootstrap \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-db-create ./cmd/llmgateway-db-create \
+	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-release-bootstrap ./cmd/llmgateway-release-bootstrap \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-set-upgrade-soak ./test/e2e/set-upgrade-soak \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-regression-runner ./test/regression/cmd/runner \
 	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-regression-pacer ./test/regression/cmd/pacer
@@ -52,6 +53,7 @@ COPY --from=builder /out/velagwset-provisioner /usr/local/bin/velagwset-provisio
 COPY --from=builder /out/llmgateway-runtime-cleaner /usr/local/bin/llmgateway-runtime-cleaner
 COPY --from=builder /out/llmgateway-db-bootstrap /usr/local/bin/llmgateway-db-bootstrap
 COPY --from=builder /out/llmgateway-db-create /usr/local/bin/llmgateway-db-create
+COPY --from=builder /out/llmgateway-release-bootstrap /usr/local/bin/llmgateway-release-bootstrap
 COPY --from=builder /out/llmgateway-set-upgrade-soak /usr/local/bin/llmgateway-set-upgrade-soak
 COPY --from=builder /out/llmgateway-regression-runner /usr/local/bin/llmgateway-regression-runner
 COPY --from=builder /out/llmgateway-regression-pacer /usr/local/bin/llmgateway-regression-pacer
