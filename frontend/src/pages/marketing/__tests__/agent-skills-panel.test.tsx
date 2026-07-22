@@ -193,6 +193,12 @@ describe("HermesAgentSkillsPanel", () => {
     );
     expect(skillsPanelSource).not.toMatch(/\bSkillPanel\b/);
     expect(skillsPanelSource).not.toContain("lv-agent-skills-sdk-panel");
+    expect(skillsPanelSource).toContain(
+      "const [skillsPanelRevision, refreshSkillsPanel] = useState(0);",
+    );
+    expect(skillsPanelSource).toContain('key={`${botId}-${skillsPanelRevision}`}');
+    expect(skillsPanelSource).not.toContain("isSkillsDemoCreateView");
+    expect(skillsPanelSource).not.toContain("globalSkillsTab");
     expect(stableHostSource).not.toContain("lh-std-skill-panel");
   });
 });

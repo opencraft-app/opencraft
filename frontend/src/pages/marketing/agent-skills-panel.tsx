@@ -1254,9 +1254,7 @@ export function HermesAgentSkillsPanel({
   const initialGlobalSkillsTab: SkillsDemoTab = initialSectionSlug === "experts" || initialSectionSlug === "packages"
     ? "experts"
     : "discover";
-  const [, refreshSkillsPanel] = useState(0);
-  const [globalSkillsTab, setGlobalSkillsTab] = useState<SkillsDemoTab>(initialGlobalSkillsTab);
-  const isSkillsDemoCreateView = globalSkillsTab === "create";
+  const [skillsPanelRevision, refreshSkillsPanel] = useState(0);
 
   return (
     <Tabs value="skills" className="min-w-0">
@@ -1270,21 +1268,19 @@ export function HermesAgentSkillsPanel({
             className="min-w-0 rounded-none bg-transparent px-0 py-0 shadow-none transition-colors hover:text-black/70 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
             style={getAgentSkillsTabStyle(true)}
           >
-            {isSkillsDemoCreateView ? t("创建你的技能") : t("技能")}
+            {t("技能")}
           </TabsTrigger>
         </TabsList>
       </div>
       <p className="mb-3 min-w-0 text-sm font-medium leading-6 text-black/50">
-        {isSkillsDemoCreateView
-          ? t("把你的任何个人和工作场景变成可复用技能！")
-          : isGlobal
-            ? t("为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。")
-            : "为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用"}
+        {isGlobal
+          ? t("为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。")
+          : "为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用"}
       </p>
 
       <TabsContent value="skills" className="mt-0">
         <SkillsDemoPanel
-          key={botId}
+          key={`${botId}-${skillsPanelRevision}`}
           botId={botId}
           execDebugCommand={execDebugCommand}
           mode={(isGlobal ? "global" : "domestic") satisfies SkillsDemoMode}
@@ -1299,7 +1295,6 @@ export function HermesAgentSkillsPanel({
               inline
             />
           )}
-          onTabChange={setGlobalSkillsTab}
           learnSkillTriggerFactory={(options: LearnSkillTriggerOptions) => (
             <LearnSkillDialog
               botId={botId}
