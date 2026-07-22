@@ -48,6 +48,7 @@ type Service struct {
 	store               Store
 	transport           http.RoundTripper
 	trafficManager      *TransportManager
+	trafficProxy        http.Handler
 	options             Options
 	now                 func() time.Time
 	migrationLocks      sync.Map
@@ -79,7 +80,7 @@ func NewService(store Store, transport http.RoundTripper, options Options) *Serv
 	if options.TelemetryEmitter == nil {
 		options.TelemetryEmitter = observability.EmitEvent
 	}
-	return &Service{
+	service := &Service{
 		store:               store,
 		transport:           transport,
 		trafficManager:      options.TrafficTransportManager,
@@ -90,6 +91,8 @@ func NewService(store Store, transport http.RoundTripper, options Options) *Serv
 		telemetrySanitizer:  options.TelemetrySanitizer,
 		telemetryCorrelator: options.TelemetryCorrelator,
 	}
+	service.trafficProxy = newTrafficReverseProxy()
+	return service
 }
 
 func (s *Service) nowUTC() time.Time {
@@ -2350,70 +2353,27 @@ func (s *Service) proxyWithTrafficRouteSnapshot(w http.ResponseWriter, r *http.R
 		http.Error(w, "traffic transport unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	replayBody, replayable, err := readReplayBodyForPlatformFallback(r, snapshot)
+	replayBody, replayable, err := prepareReplayBodyForPlatformFallback(r, snapshot)
 	if err != nil {
 		accessLog.Status = http.StatusBadRequest
 		accessLog.ErrorType = "request_body_read_error"
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	resp, err := s.roundTripTrafficRequest(r, trafficTransport, target, snapshot.UpstreamKey, replayBody, replayable)
-	if err != nil {
-		accessLog.Status = http.StatusBadGateway
-		accessLog.ErrorType = "upstream_roundtrip_error"
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
+	plan := &trafficProxyPlan{
+		target:      target,
+		transport:   trafficTransport,
+		upstreamKey: snapshot.UpstreamKey,
+		platformKey: snapshot.PlatformKey,
+		replayBody:  replayBody,
+		replayable:  replayable,
+		accessLog:   accessLog,
 	}
-	if shouldFallbackBYOKToPlatform(snapshot, resp.StatusCode) && replayable {
-		_ = resp.Body.Close()
-		resp, err = s.roundTripTrafficRequest(r, trafficTransport, target, snapshot.PlatformKey, replayBody, replayable)
-		if err != nil {
-			accessLog.Status = http.StatusBadGateway
-			accessLog.ErrorType = "platform_fallback_roundtrip_error"
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
-		}
-		accessLog.ErrorType = "byok_platform_fallback"
-	}
-	defer resp.Body.Close()
-	accessLog.Status = resp.StatusCode
-	accessLog.UpstreamStatus = resp.StatusCode
-	accessLog.Streaming = shouldFlushResponse(resp)
-	if accessLog.ErrorType == "" || resp.StatusCode >= 400 {
-		accessLog.ErrorType = upstreamStatusErrorType(resp.StatusCode)
-	}
-	copyHeader(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
-	if err := copyResponseBody(w, resp); err != nil {
-		accessLog.ErrorType = "response_copy_error"
-	}
+	request := r.WithContext(context.WithValue(r.Context(), trafficProxyPlanContextKey{}, plan))
+	s.trafficProxy.ServeHTTP(w, request)
 }
 
-func (s *Service) roundTripTrafficRequest(r *http.Request, transport http.RoundTripper, target *url.URL, upstreamKey string, replayBody []byte, replayable bool) (*http.Response, error) {
-	outReq := r.Clone(r.Context())
-	outReq.URL.Scheme = target.Scheme
-	outReq.URL.Host = target.Host
-	outReq.URL.Path = singleJoiningSlash(target.Path, r.URL.Path)
-	outReq.URL.RawQuery = r.URL.RawQuery
-	outReq.Host = target.Host
-	outReq.RequestURI = ""
-	outReq.Header = r.Header.Clone()
-	removeHopByHopHeaders(outReq.Header)
-	outReq.Header.Set("Authorization", "Bearer "+upstreamKey)
-	if replayable {
-		outReq.Body = io.NopCloser(bytes.NewReader(replayBody))
-		outReq.ContentLength = int64(len(replayBody))
-		outReq.GetBody = func() (io.ReadCloser, error) {
-			return io.NopCloser(bytes.NewReader(replayBody)), nil
-		}
-	}
-	if transport == nil {
-		return nil, fmt.Errorf("traffic transport unavailable")
-	}
-	return transport.RoundTrip(outReq)
-}
-
-func readReplayBodyForPlatformFallback(r *http.Request, snapshot TrafficRouteSnapshot) ([]byte, bool, error) {
+func prepareReplayBodyForPlatformFallback(r *http.Request, snapshot TrafficRouteSnapshot) ([]byte, bool, error) {
 	if !snapshot.canFallbackToPlatform() {
 		return nil, false, nil
 	}
@@ -2425,6 +2385,11 @@ func readReplayBodyForPlatformFallback(r *http.Request, snapshot TrafficRouteSna
 		return nil, false, err
 	}
 	_ = r.Body.Close()
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.ContentLength = int64(len(body))
+	r.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(body)), nil
+	}
 	return body, true, nil
 }
 
@@ -2432,16 +2397,6 @@ func (snapshot TrafficRouteSnapshot) canFallbackToPlatform() bool {
 	return snapshot.RouteMode == LLMRouteBYOKFirst &&
 		strings.TrimSpace(snapshot.PlatformKey) != "" &&
 		snapshot.PlatformKey != snapshot.UpstreamKey
-}
-
-func shouldFallbackBYOKToPlatform(snapshot TrafficRouteSnapshot, statusCode int) bool {
-	if !snapshot.canFallbackToPlatform() {
-		return false
-	}
-	return statusCode == http.StatusUnauthorized ||
-		statusCode == http.StatusForbidden ||
-		statusCode == http.StatusTooManyRequests ||
-		statusCode >= http.StatusInternalServerError
 }
 
 func (s *Service) buildTrafficRouteSnapshot(ctx context.Context, binding APIKeyBinding, set Set) (TrafficRouteSnapshot, error) {
@@ -3068,42 +3023,6 @@ func isHopByHopHeader(key string) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-func copyResponseBody(w http.ResponseWriter, resp *http.Response) error {
-	if shouldFlushResponse(resp) {
-		return copyAndFlush(w, resp.Body)
-	}
-	_, err := io.Copy(w, resp.Body)
-	return err
-}
-
-func shouldFlushResponse(resp *http.Response) bool {
-	return strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")
-}
-
-func copyAndFlush(w http.ResponseWriter, src io.Reader) error {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		_, err := io.Copy(w, src)
-		return err
-	}
-	buf := make([]byte, 32*1024)
-	for {
-		n, readErr := src.Read(buf)
-		if n > 0 {
-			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-				return writeErr
-			}
-			flusher.Flush()
-		}
-		if readErr != nil {
-			if errors.Is(readErr, io.EOF) {
-				return nil
-			}
-			return readErr
-		}
 	}
 }
 
