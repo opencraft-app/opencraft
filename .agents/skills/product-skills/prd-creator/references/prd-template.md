@@ -120,10 +120,10 @@ LightVela 同时有国内站 `lightvela.com` 和国际站 `lightvela.ai`。任�
 
 ## 文档输出约定
 
-- LightVela 的代码仓库是 mono2。产品输入稿确认后，必须实际写入 `<mono2-repo-root>/product/prd/YYYY-MM-DD-<short-title>.md`，不要只停留在聊天内容或 TAPD 描述草稿里。
-- 如果当前工作目录已经是 mono2 仓库根目录，使用相对路径 `product/prd/YYYY-MM-DD-<short-title>.md`；不要再额外创建一层 `mono2/` 目录。
+- LightVela 的代码仓库是 mono2。产品输入稿确认后，必须实际写入 `<mono2-repo-root>/wiki/prd-docs/YYYY-MM-DD-<short-title>.md`，不要只停留在聊天内容或 TAPD 描述草稿里。
+- 如果当前工作目录已经是 mono2 仓库根目录，使用相对路径 `wiki/prd-docs/YYYY-MM-DD-<short-title>.md`；不要再额外创建一层 `mono2/` 目录。
 - `YYYY-MM-DD` 使用文档首次创建日期，`<short-title>` 使用稳定、简短、可读的需求标识。修改已有 PRD 时更新原文件，不要仅因日期变化重复创建。
-- `product/prd/` 不存在时创建该目录。不要再把 LightVela PRD 写入 `docs/reqs/lightvela/`。
+- `wiki/prd-docs/` 不存在时创建该目录。不要再把 LightVela PRD 写入 `product/prd/` 或 `docs/reqs/lightvela/`。
 - 产品输入稿、方案决策、验收标准、产品原型说明和待确认问题默认保存在同一份 Markdown PRD 中；单独的设计稿或图片只在确有产物时由 PRD 链接引用。
 - 写入后在回复中给出实际文件路径，再进入后续 TAPD 与工蜂 MR 环节。PRD 只有进入远端 MR 评审后才算完成落库。
 

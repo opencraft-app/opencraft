@@ -2,7 +2,7 @@
 
 > 目的：把订阅页（`frontend/next-site/subscribe-page.tsx`）中**前端硬编码**的「功能特性列表」「一句话卖点」「促销角标」「独立环境规格 / 存储 / 积分」改为**后端 `GET /v1/bundles` 下发**，让启航 / 巡游 / 远航各套餐的展示信息由运营在 bundle 配置里维护，前端只做渲染。
 >
-> 关联：`product/prd/2026-07-14-subscribe-pricing-optimization.md`（功能点 3/6/7）；后端 handler `ctl/main/api/bundle_handler.go`；DTO `ctl/pkg/transport/bundle.go`；实体 `ctl/pkg/model/bundle/entity.go`。
+> 关联：`wiki/prd-docs/2026-07-14-subscribe-pricing-optimization.md`（功能点 3/6/7）；后端 handler `ctl/main/api/bundle_handler.go`；DTO `ctl/pkg/transport/bundle.go`；实体 `ctl/pkg/model/bundle/entity.go`。
 
 ---
 
