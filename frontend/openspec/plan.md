@@ -1,3 +1,25 @@
+# /subscribe 季付询价与下单放开
+
+**Goal:** 放开订阅页“季付”付费时长，让用户切换季付后按 `time_span=3&time_unit=m` 重新询价，并在下单时以 `period=3,time_unit=m` 创建订单。
+
+**Scope:** 仅调整 `/subscribe` 订阅页前端交互、展示文案和 i18n 资源；不修改后端接口、套餐配置、支付桥接页、实名/邀请/已订阅锁定规则或 AI 增强版“敬请期待”策略。
+
+## 任务清单
+
+- [x] 1. 放开季付时长并修正展示/确认链路。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/next-site/subscribe-page.tsx`、`frontend/src/i18n/generated/*.json`
+  - 验收方式：季付按钮不再 disabled；点击季付后已登录付费态调用 `/v1/bundles?time_span=3&time_unit=m` 询价；确认订单展示 `3个月`；支付下单继续通过现有 `createPassOrder` 传 `period=3,time_unit=m`；月付链路保持 `1个月` 与 `/ 月`；`pnpm i18n:check`、`pnpm check`、`git diff --check` 通过。
+
+## 规划门禁
+
+- 规模：S；执行模式：single_agent。
+- 不新增依赖、路由、后端接口或公共数据模型。
+- 既有询价/下单 repository 契约已支持 `time_span/time_unit` 与 `period/time_unit`，本次只解除 UI 禁用并修正用户可见周期文案。
+- 规划门禁结论：通过。
+
+---
+
 # 中国站首页站点切换入口
 
 **Goal:** 在中国站首页挂载国际站现网已有的站点切换器，保持国际站实现与行为不变。
@@ -363,21 +385,6 @@ Expected: 全部 exit 0。
 ---
 
 # 精选技能轮播按钮位置调整
-
-**Goal:** 将精选技能轮播的上一批、下一批按钮分别放在卡片组左右两侧。
-
-## 任务清单
-
-- [ ] 1. 调整精选技能轮播布局并完成回归验证。
-  - 角色：Developer + Reviewer
-  - 影响文件：`frontend/DESIGN.md`、`frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`、`frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
-  - 验收方式：上一批按钮位于卡片组左侧，下一批按钮位于卡片组右侧；原有切换、动画和禁用逻辑不变；交互规则同步到设计规范；聚焦测试、类型检查与 `git diff --check` 通过。
-
-## 规划门禁
-
-- 规模：S；执行模式：single_agent。
-- 不新增依赖、接口或组件，不改变技能数据与安装逻辑。
-- 规划门禁结论：通过。
 
 ---
 
