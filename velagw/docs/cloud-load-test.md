@@ -173,6 +173,33 @@ BYOK 重试任务报 `invalid access token`；本轮不写 BYOK 队列，该问�
 
 ## 自动扩 Set 云上验证
 
+### 2026-07-22 生产水位 3 万用户演练
+
+北京集成环境保持生产参数不变：4 个 Set、每 Set `max_users=10000`、目标利用率
+`0.70`、`min_ready_free_users=3000`、容量任务每轮最多扩 1 个 Set。使用
+`cloud_prod` profile、最大并发 60、MockLLM 和平台渠道，为 30000 个用户依次发放
+`regression-monthly`、签发 Key 并执行一次 chat。
+
+| 指标 | 结果 |
+| --- | ---: |
+| 成功 chat | 29,995 |
+| chat 失败 | 0 |
+| chat p50 / p95 / p99 | 62ms / 113ms / 143ms |
+| chat 最大延迟 | 324ms |
+| 用户链路错误 | 5 |
+| 扩容前 Set | 4 |
+| 扩容后 Set | 5 |
+
+容量投影在 29340 用户时仍为 4 个 Set；下一周期创建 `set-auto-000129`。该 Set 经
+VelaGWSet Controller/Provisioner 完成 admin、g1 traffic 2 副本、套餐、渠道和 admission
+后进入 `managed/passed/healthy`。随后追加 100 个用户，最少负载选择器将 100 个用户
+全部分配到新 Set，100 次 chat 全部成功，p95 114ms、最大 134ms。
+
+本轮同时暴露 key 激活竞态：同步签发路径与 `publish_api_key_routes` worker 可能同时把
+同一条记录从 `route_pending` CAS 到 `active`。worker 先完成时，前台曾把已经成功的
+激活误报为状态冲突，导致 5 个用户链路错误。修复后，两条路径在 CAS 冲突时会重新读取
+MySQL 真源；仅当同一 Key 已经处于 `active` 时按幂等成功处理，其他冲突仍失败。
+
 2026-07-09 已在北京 TKE 验证自动扩 Set 闭环：
 
 1. 临时将容量策略设为 `max_users_per_set=50`、`min_ready_free_users=300`、`max_scale_up_per_cycle=1`。

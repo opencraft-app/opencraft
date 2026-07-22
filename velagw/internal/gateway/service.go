@@ -1974,12 +1974,13 @@ func (s *Service) createExternalKeyForBinding(ctx context.Context, binding UserB
 		_, _ = s.store.TransitionAPIKeyBinding(context.WithoutCancel(ctx), externalKeyID, APIKeyStatusRoutePending, APIKeyStatusRoutePending, "", 0, err.Error(), s.nowUTC())
 		return APIKeyBinding{}, fmt.Errorf("publish external key route: %w", err)
 	}
-	if _, err := s.store.TransitionAPIKeyBinding(ctx, externalKeyID, APIKeyStatusRoutePending, APIKeyStatusActive, "", 0, "", s.nowUTC()); err != nil {
+	activated, err := s.activateAPIKeyBinding(ctx, externalKeyID)
+	if err != nil {
 		return APIKeyBinding{}, err
 	}
-	keyBinding.Status = APIKeyStatusActive
-	keyBinding.LastError = ""
-	keyBinding.UpdatedAt = s.nowUTC()
+	keyBinding.Status = activated.Status
+	keyBinding.LastError = activated.LastError
+	keyBinding.UpdatedAt = activated.UpdatedAt
 	binding.ProvisionStatus = BindingProvisionStatusTokenReady
 	binding.LastProvisionError = ""
 	if err := traceGatewayVoid(ctx, "store.save_user_binding", func(spanCtx context.Context) error {
@@ -1988,6 +1989,21 @@ func (s *Service) createExternalKeyForBinding(ctx context.Context, binding UserB
 		return APIKeyBinding{}, err
 	}
 	return keyBinding, nil
+}
+
+func (s *Service) activateAPIKeyBinding(ctx context.Context, externalKeyID string) (APIKeyBinding, error) {
+	binding, err := s.store.TransitionAPIKeyBinding(ctx, externalKeyID, APIKeyStatusRoutePending, APIKeyStatusActive, "", 0, "", s.nowUTC())
+	if err == nil || !errors.Is(err, ErrAPIKeyStateConflict) {
+		return binding, err
+	}
+	current, ok, getErr := s.store.GetAPIKeyBindingByExternalKeyID(ctx, externalKeyID)
+	if getErr != nil {
+		return APIKeyBinding{}, getErr
+	}
+	if !ok || current.Status != APIKeyStatusActive {
+		return APIKeyBinding{}, err
+	}
+	return current, nil
 }
 
 const externalKeyReservationAttempts = 5

@@ -218,6 +218,18 @@ func (s *MySQLStore) StartTenantDeletionJob(ctx context.Context, jobID string, i
 }
 
 func (s *MySQLStore) ClaimTenantDeletionJob(ctx context.Context, jobID string, batchSize int, now time.Time) (TenantDeletionJob, error) {
+	var result TenantDeletionJob
+	err := retryMySQLTransientLock(ctx, func() error {
+		job, err := s.claimTenantDeletionJobOnce(ctx, jobID, batchSize, now)
+		if err == nil {
+			result = job
+		}
+		return err
+	})
+	return result, err
+}
+
+func (s *MySQLStore) claimTenantDeletionJobOnce(ctx context.Context, jobID string, batchSize int, now time.Time) (TenantDeletionJob, error) {
 	if batchSize <= 0 {
 		return TenantDeletionJob{}, fmt.Errorf("batch size must be positive")
 	}
@@ -321,6 +333,20 @@ func (s *MySQLStore) ClaimTenantDeletionJob(ctx context.Context, jobID string, b
 }
 
 func (s *MySQLStore) AcquireTenantDeletionTarget(ctx context.Context, owner string, ttl time.Duration, now time.Time) (TenantDeletionTarget, bool, error) {
+	var result TenantDeletionTarget
+	var acquired bool
+	err := retryMySQLTransientLock(ctx, func() error {
+		target, ok, err := s.acquireTenantDeletionTargetOnce(ctx, owner, ttl, now)
+		if err == nil {
+			result = target
+			acquired = ok
+		}
+		return err
+	})
+	return result, acquired, err
+}
+
+func (s *MySQLStore) acquireTenantDeletionTargetOnce(ctx context.Context, owner string, ttl time.Duration, now time.Time) (TenantDeletionTarget, bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return TenantDeletionTarget{}, false, err
@@ -353,6 +379,7 @@ func (s *MySQLStore) AcquireTenantDeletionTarget(ctx context.Context, owner stri
 	if err != nil {
 		return TenantDeletionTarget{}, false, err
 	}
+	previousStatus := target.Status
 	result, err := tx.ExecContext(ctx, `
 		UPDATE llmgateway_tenants SET status = 'deleting', updated_at = ?
 		WHERE external_user_id = ? AND status <> 'deleted'
@@ -384,8 +411,10 @@ func (s *MySQLStore) AcquireTenantDeletionTarget(ctx context.Context, owner stri
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE llmgateway_tenant_deletion_jobs
-		SET status = 'running', version = version + 1, updated_at = ? WHERE id = ?
-	`, now, target.JobID); err != nil {
+		SET status = CASE WHEN GREATEST(failure_count - ?, 0) > 0 THEN 'partial' ELSE 'running' END,
+			failure_count = GREATEST(failure_count - ?, 0),
+			version = version + 1, updated_at = ? WHERE id = ?
+	`, boolToInt(previousStatus == TenantDeletionTargetStatusError), boolToInt(previousStatus == TenantDeletionTargetStatusError), now, target.JobID); err != nil {
 		return TenantDeletionTarget{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -395,6 +424,12 @@ func (s *MySQLStore) AcquireTenantDeletionTarget(ctx context.Context, owner stri
 }
 
 func (s *MySQLStore) FailTenantDeletionTarget(ctx context.Context, target TenantDeletionTarget, lastError string, now time.Time) error {
+	return retryMySQLTransientLock(ctx, func() error {
+		return s.failTenantDeletionTargetOnce(ctx, target, lastError, now)
+	})
+}
+
+func (s *MySQLStore) failTenantDeletionTargetOnce(ctx context.Context, target TenantDeletionTarget, lastError string, now time.Time) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -415,9 +450,9 @@ func (s *MySQLStore) FailTenantDeletionTarget(ctx context.Context, target Tenant
 		return fmt.Errorf("tenant deletion target lease was lost")
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE llmgateway_tenant_deletion_jobs jobs
+		UPDATE llmgateway_tenant_deletion_jobs
 		SET status = 'partial',
-			failure_count = (SELECT COUNT(*) FROM llmgateway_tenant_deletion_targets targets WHERE targets.job_id = jobs.id AND targets.status = 'error'),
+			failure_count = failure_count + 1,
 			last_error = ?, version = version + 1, updated_at = ?
 		WHERE id = ?
 	`, strings.TrimSpace(lastError), now, target.JobID); err != nil {
@@ -427,6 +462,18 @@ func (s *MySQLStore) FailTenantDeletionTarget(ctx context.Context, target Tenant
 }
 
 func (s *MySQLStore) PurgeTenantDeletionTarget(ctx context.Context, target TenantDeletionTarget, now time.Time) (TenantDeletionJob, error) {
+	var result TenantDeletionJob
+	err := retryMySQLTransientLock(ctx, func() error {
+		job, err := s.purgeTenantDeletionTargetOnce(ctx, target, now)
+		if err == nil {
+			result = job
+		}
+		return err
+	})
+	return result, err
+}
+
+func (s *MySQLStore) purgeTenantDeletionTargetOnce(ctx context.Context, target TenantDeletionTarget, now time.Time) (TenantDeletionJob, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return TenantDeletionJob{}, err
@@ -497,38 +544,24 @@ func (s *MySQLStore) PurgeTenantDeletionTarget(ctx context.Context, target Tenan
 			return TenantDeletionJob{}, err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `
+	targetResult, err := tx.ExecContext(ctx, `
 		UPDATE llmgateway_tenant_deletion_targets
 		SET status = 'succeeded', lease_owner = '', lease_until = NULL, last_error = '', updated_at = ?
-		WHERE job_id = ? AND external_user_id = ? AND lease_owner = ?
-	`, now, target.JobID, target.ExternalUserID, target.LeaseOwner); err != nil {
+		WHERE job_id = ? AND external_user_id = ? AND lease_owner = ? AND status = 'running'
+	`, now, target.JobID, target.ExternalUserID, target.LeaseOwner)
+	if err != nil {
 		return TenantDeletionJob{}, err
+	}
+	if affected, err := targetResult.RowsAffected(); err != nil || affected != 1 {
+		if err != nil {
+			return TenantDeletionJob{}, err
+		}
+		return TenantDeletionJob{}, fmt.Errorf("tenant deletion target lease was lost")
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM llmgateway_tenant_deletion_claims WHERE external_user_id = ? AND job_id = ?`, target.ExternalUserID, target.JobID); err != nil {
 		return TenantDeletionJob{}, err
 	}
-	var successCount, failureCount, targetCount int
-	if err := tx.QueryRowContext(ctx, `
-		SELECT
-			SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END),
-			SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END),
-			COUNT(*)
-		FROM llmgateway_tenant_deletion_targets WHERE job_id = ?
-	`, target.JobID).Scan(&successCount, &failureCount, &targetCount); err != nil {
-		return TenantDeletionJob{}, err
-	}
-	status := TenantDeletionStatusRunning
-	lastError := ""
-	if successCount == targetCount {
-		status = TenantDeletionStatusSucceeded
-	} else if failureCount > 0 {
-		status = TenantDeletionStatusPartial
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE llmgateway_tenant_deletion_jobs
-		SET status = ?, success_count = ?, failure_count = ?, last_error = ?,
-			version = version + 1, updated_at = ? WHERE id = ?
-	`, status, successCount, failureCount, lastError, now, target.JobID); err != nil {
+	if _, err := tx.ExecContext(ctx, tenantDeletionSuccessJobUpdateSQL(), now, target.JobID); err != nil {
 		return TenantDeletionJob{}, err
 	}
 	job, ok, err := getTenantDeletionJobSQL(ctx, tx, target.JobID, false)
@@ -539,6 +572,28 @@ func (s *MySQLStore) PurgeTenantDeletionTarget(ctx context.Context, target Tenan
 		return TenantDeletionJob{}, err
 	}
 	return job, nil
+}
+
+func tenantDeletionSuccessJobUpdateSQL() string {
+	return `
+		UPDATE llmgateway_tenant_deletion_jobs
+		SET status = CASE
+				WHEN success_count + 1 >= target_count THEN 'succeeded'
+				WHEN failure_count > 0 THEN 'partial'
+				ELSE 'running'
+			END,
+			last_error = CASE WHEN success_count + 1 >= target_count THEN '' ELSE last_error END,
+			success_count = success_count + 1,
+			version = version + 1, updated_at = ?
+		WHERE id = ?
+	`
+}
+
+func boolToInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func tenantDeletionCandidateQuery(job TenantDeletionJob, limit int) (string, []any, error) {

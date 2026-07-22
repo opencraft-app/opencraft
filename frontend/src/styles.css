@@ -39,6 +39,8 @@
   --border-strong: rgba(0, 0, 0, 0.08);
 
   --color-success: #07C160;
+  --realname-control-border: #E9ECF1;
+  --realname-control-muted: #F2F4F8;
 
   --accent-purple: #dcc6ff;
   --accent-purple-bg: rgba(219, 197, 255, 0.16);

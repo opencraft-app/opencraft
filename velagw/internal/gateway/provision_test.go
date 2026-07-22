@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -647,6 +649,29 @@ func TestCreateExternalKeyDoesNotReturnKeyWhenRoutePublicationFails(t *testing.T
 	}
 }
 
+func TestCreateExternalKeyAcceptsWorkerWinningRouteActivationRace(t *testing.T) {
+	upstream := newKeyIssuanceUpstream(t, nil)
+	defer upstream.Close()
+
+	memory := NewMemoryStore()
+	prepareReadyKeyIssuanceUser(t, memory, upstream.URL)
+	store := &routeActivationRaceStore{Store: memory}
+	cache := NewMemoryAPIKeyRouteCache(0, 100)
+	svc := NewService(store, nil, Options{KeyRouteCache: cache})
+
+	key, err := svc.CreateExternalKey(t.Context(), "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key.Status != APIKeyStatusActive || key.ExternalKey == "" || !store.raced.Load() {
+		t.Fatalf("key = %+v raced=%t, want active key after worker race", key, store.raced.Load())
+	}
+	saved, ok, err := memory.GetAPIKeyBindingByExternalKeyID(t.Context(), key.ExternalKeyID)
+	if err != nil || !ok || saved.Status != APIKeyStatusActive {
+		t.Fatalf("saved key = %+v ok=%t err=%v, want active", saved, ok, err)
+	}
+}
+
 func TestCreateExternalKeyRetriesRandomIdentityCollisionAtMostFiveTimes(t *testing.T) {
 	var upstreamCreates atomic.Int32
 	upstream := newKeyIssuanceUpstream(t, func() { upstreamCreates.Add(1) })
@@ -727,6 +752,21 @@ func (s *keyIssuanceOrderStore) SaveAPIKeyBinding(ctx context.Context, binding A
 type failingRoutePublicationCache struct {
 	*MemoryAPIKeyRouteCache
 	err error
+}
+
+type routeActivationRaceStore struct {
+	Store
+	raced atomic.Bool
+}
+
+func (s *routeActivationRaceStore) TransitionAPIKeyBinding(ctx context.Context, keyID, expectedStatus, nextStatus, upstreamKey string, upstreamKeyID int, lastError string, updatedAt time.Time) (APIKeyBinding, error) {
+	if expectedStatus == APIKeyStatusRoutePending && nextStatus == APIKeyStatusActive && s.raced.CompareAndSwap(false, true) {
+		if _, err := s.Store.TransitionAPIKeyBinding(ctx, keyID, expectedStatus, nextStatus, upstreamKey, upstreamKeyID, lastError, updatedAt); err != nil {
+			return APIKeyBinding{}, err
+		}
+		return APIKeyBinding{}, fmt.Errorf("%w: key=%s expected=%s", ErrAPIKeyStateConflict, keyID, expectedStatus)
+	}
+	return s.Store.TransitionAPIKeyBinding(ctx, keyID, expectedStatus, nextStatus, upstreamKey, upstreamKeyID, lastError, updatedAt)
 }
 
 type collisionReservationStore struct {

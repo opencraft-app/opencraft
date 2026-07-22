@@ -1368,11 +1368,12 @@ func (s *Service) RetryRealnameSync(ctx context.Context, token string, clientIP,
 	user := session.User
 	if user.RealnameLevel == RealnameLevelPhone3FA {
 		user.RealnameSyncStatus = RealnameSyncStatusSucceeded
+		shadowBindingStatus := s.notifyPassBillingMigrationByUserID(ctx, user.ID)
 		return RealnameSyncRetryResult{
 			OK:                  true,
 			User:                user,
 			RealnameSyncStatus:  RealnameSyncStatusSucceeded,
-			ShadowBindingStatus: s.currentShadowBindingStatusOrDisabled(ctx, user.ID),
+			ShadowBindingStatus: shadowBindingStatus,
 		}, nil
 	}
 	if !isAtLeastRealnameLevel(user.RealnameLevel, RealnameLevelIDCard2FA) && !user.RealnameVerified {
@@ -1405,12 +1406,25 @@ func (s *Service) RetryRealnameSync(ctx context.Context, token string, clientIP,
 		return RealnameSyncRetryResult{}, err
 	}
 	updatedUser.RealnameSyncStatus = RealnameSyncStatusSucceeded
+	s.notifyPassBillingMigration(ctx, binding)
 	return RealnameSyncRetryResult{
 		OK:                  true,
 		User:                updatedUser,
 		RealnameSyncStatus:  RealnameSyncStatusSucceeded,
 		ShadowBindingStatus: bindingStatusOrDisabled(binding.Status),
 	}, nil
+}
+
+func (s *Service) notifyPassBillingMigrationByUserID(ctx context.Context, userID string) string {
+	if s == nil || s.shadowBinding == nil {
+		return shadowbinding.StatusDisabled
+	}
+	binding, err := s.shadowBinding.GetBindingByUserID(ctx, userID)
+	if err != nil {
+		return shadowbinding.StatusDisabled
+	}
+	s.notifyPassBillingMigration(ctx, binding)
+	return bindingStatusOrDisabled(binding.Status)
 }
 
 func (s *Service) currentShadowBindingStatusOrDisabled(ctx context.Context, userID string) string {
