@@ -96,12 +96,12 @@ function PublicHeaderAuthControls({
   if (!authReady) {
     return (
       <>
-        <div className="hidden shrink-0 items-center gap-3 md:flex" aria-hidden="true">
+        <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3" aria-hidden="true">
+          {showLanguageSwitcher && <span className="h-[36px] w-[70px] rounded-[100px] bg-black/[0.04]" />}
           <span className="h-[36px] w-[96px] rounded-[100px] bg-black/[0.06]" />
           <span className="h-[36px] w-[64px] rounded-[100px] bg-black/[0.04]" />
-          {showLanguageSwitcher && <span className="h-[36px] w-[70px] rounded-[100px] bg-black/[0.04]" />}
         </div>
-        <div className="ml-auto flex items-center gap-2 md:hidden" aria-hidden="true">
+        <div className="ml-auto flex items-center gap-2 lg:hidden" aria-hidden="true">
           <span className="h-[32px] w-[58px] rounded-[100px] bg-black/[0.05]" />
         </div>
       </>
@@ -111,11 +111,11 @@ function PublicHeaderAuthControls({
   if (isAuthenticated) {
     return (
       <>
-        <div className="hidden shrink-0 items-center gap-3 md:flex">
+        <div className="hidden shrink-0 items-center gap-2 lg:flex xl:gap-3">
           {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
           <UserAvatarMenu />
         </div>
-        <div className="ml-auto flex items-center gap-2 md:hidden">
+        <div className="ml-auto flex items-center gap-2 lg:hidden">
           <UserAvatarMenu />
         </div>
       </>
@@ -124,11 +124,12 @@ function PublicHeaderAuthControls({
 
   return (
     <>
-      <div className="hidden shrink-0 items-center gap-3 md:flex">
+      <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3">
+        {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
         <button
           type="button"
           onClick={goToCreate}
-          className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-5 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg"
+          className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
         >
           {copy.createNow}
         </button>
@@ -139,15 +140,14 @@ function PublicHeaderAuthControls({
             setShowLogin(true);
           }}
           className={cn(
-            'inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-4 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors',
+            'inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-3 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors xl:px-4',
             secondaryButtonClass[appearance],
           )}
         >
           {copy.login}
         </button>
-        {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
       </div>
-      <div className="ml-auto flex items-center gap-2 md:hidden">
+      <div className="ml-auto flex items-center gap-2 lg:hidden">
         <button
           type="button"
           onClick={() => {

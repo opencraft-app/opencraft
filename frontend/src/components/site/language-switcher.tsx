@@ -115,7 +115,7 @@ function chinaSiteLabel(activeLocale: PublicSiteLocale): string {
 
 function openChinaSite(): void {
   if (typeof window === "undefined") return;
-  window.location.assign(CHINA_SITE_URL);
+  window.open(CHINA_SITE_URL, "_blank", "noopener,noreferrer");
 }
 
 function intlSiteUrlForLocale(value: PublicSiteLocale): string {
@@ -140,7 +140,7 @@ function applyIntlChoice(
   }
 
   if (typeof window === "undefined") return;
-  window.location.assign(intlSiteUrlForLocale(value));
+  window.open(intlSiteUrlForLocale(value), "_blank", "noopener,noreferrer");
 }
 
 /**
@@ -177,6 +177,28 @@ function DropdownSwitcher({
     if (!isGlobal || value !== active.value) applyIntlChoice(value, reloadAfterSwitch, navigateTo);
   };
 
+  const chinaSiteOption = (
+    <li>
+      <button
+        type="button"
+        role="option"
+        aria-selected={!isGlobal}
+        onClick={() => {
+          setOpen(false);
+          openChinaSite();
+        }}
+        className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-sm transition-colors hover:bg-black/5 ${
+          !isGlobal ? "font-semibold text-black/90" : "font-normal text-black/80"
+        }`}
+      >
+        <span>{chinaSiteLabel(active.value)}</span>
+        {!isGlobal && <Check className="h-[14px] w-[14px]" />}
+      </button>
+    </li>
+  );
+
+  const orderedOptions = isGlobal ? options : [ZH_CN_OPTION, EN_OPTION] as const;
+
   return (
     <div ref={wrapRef} className="relative">
       <button
@@ -199,7 +221,8 @@ function DropdownSwitcher({
           role="listbox"
           className="absolute right-0 top-[calc(100%+6px)] z-50 min-w-[168px] overflow-hidden rounded-xl border border-black/5 bg-white shadow-[0_8px_24px_rgba(0,0,0,0.08)] py-1"
         >
-          {options.map((opt) => {
+          {!isGlobal && chinaSiteOption}
+          {orderedOptions.map((opt) => {
             const selected = isGlobal && opt.value === active.value;
             return (
               <li key={opt.value}>
@@ -212,30 +235,18 @@ function DropdownSwitcher({
                     selected ? "font-semibold text-black/90" : "font-normal text-black/80"
                   }`}
                 >
-                  <span>{opt.label}</span>
+                  <span>
+                    {isGlobal
+                      ? opt.label
+                      : opt.value.startsWith("zh") ? "国际站 - 中文" : "国际站 - English"}
+                  </span>
                   {selected && <Check className="h-[14px] w-[14px]" />}
                 </button>
               </li>
             );
           })}
-          <li aria-hidden="true" className="my-1 border-t border-black/10" />
-          <li>
-            <button
-              type="button"
-              role="option"
-              aria-selected={!isGlobal}
-              onClick={() => {
-                setOpen(false);
-                openChinaSite();
-              }}
-              className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-sm transition-colors hover:bg-black/5 ${
-                !isGlobal ? "font-semibold text-black/90" : "font-normal text-black/80"
-              }`}
-            >
-              <span>{chinaSiteLabel(active.value)}</span>
-              {!isGlobal && <Check className="h-[14px] w-[14px]" />}
-            </button>
-          </li>
+          {isGlobal && <li aria-hidden="true" className="my-1 border-t border-black/10" />}
+          {isGlobal && chinaSiteOption}
         </ul>
       )}
     </div>

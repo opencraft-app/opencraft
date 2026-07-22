@@ -1,3 +1,22 @@
+# 中国站首页站点切换入口
+
+**Goal:** 在中国站首页挂载国际站现网已有的站点切换器，保持国际站实现与行为不变。
+
+## 任务清单
+
+- [x] 1. 在中国站首页显示既有站点切换器并完成双站回归验证。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/src/components/site/language-switcher.tsx`、`frontend/src/components/site/__tests__/language-switcher.test.tsx`、`frontend/src/pages/marketing/landing-page.tsx`、`frontend/next-site/public-pages.tsx`、`frontend/src/components/site/public-site-header.tsx`、`frontend/next-site/public-header-auth-island.tsx`
+  - 验收方式：中国站首页显示与国际站现网一致的 36px 浅灰胶囊切换器，下拉依次展示 `中国站 / 国际站 - 中文 / 国际站 - English` 并标记中国站为当前项；跨站点选择在新浏览器窗口打开；国际站原有 `Intl - English / Intl - 中文 / China Site` 文案与顺序不变；入口位于 Create Now 左侧，宽屏下三个操作整体向右微移；1024px 起保留完整顶部导航且不重叠，更窄时收起；相关测试、类型检查与 `git diff --check` 通过。
+
+## 规划门禁
+
+- 规模：S；执行模式：single_agent。
+- 仅挂载和调整既有站点切换组件的页头布局，不新增依赖、接口或页面，不重写国际站切换逻辑。
+- 规划门禁结论：通过。
+
+---
+
 # 精选技能轮播按钮位置调整
 
 **Goal:** 将精选技能轮播的上一批、下一批按钮分别放在卡片组左右两侧。
