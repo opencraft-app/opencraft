@@ -656,7 +656,7 @@ func (l *logic) MigrateFreeTrialPassToBilling(req *transport.PassBillingMigratio
 
 	if candidate.BundleID != allowedFreeTrialBundleID {
 		if err == nil && migration != nil && migration.Status == passmigrationmodel.StatusFailed {
-			return l.callTradeMoveInAndRecord(candidate, req, migrationDao)
+			return l.callTradeMoveIn(candidate, req, migrationDao)
 		}
 		return &transport.PassBillingMigrationResult{
 			Status:   "already_migrated",
@@ -669,12 +669,12 @@ func (l *logic) MigrateFreeTrialPassToBilling(req *transport.PassBillingMigratio
 	if _, err := l.bundleLogic.GetBundleByID(billingMigrationTargetBundleID); err != nil {
 		return nil, err
 	}
-	record := passmigrationmodel.New(candidate.PassID, userID, allowedFreeTrialBundleID, billingMigrationTargetBundleID, req.Uin, req.AppID, passmigrationmodel.StatusPendingOrder)
+	record := passmigrationmodel.New(candidate.PassID, userID, allowedFreeTrialBundleID, billingMigrationTargetBundleID, req.Uin, req.AppID, passmigrationmodel.StatusPendingTransfer)
 	if err := migrationDao.Upsert(record); err != nil {
 		return nil, fmt.Errorf("pass billing migration persist state: %w", err)
 	}
 
-	return l.callTradeMoveInAndRecord(candidate, req, migrationDao)
+	return l.callTradeMoveIn(candidate, req, migrationDao)
 }
 
 func selectPassForBillingMigration(passes []*passmodel.Entity) (*passmodel.Entity, *transport.PassBillingMigrationResult) {
@@ -710,7 +710,7 @@ func selectPassForBillingMigration(passes []*passmodel.Entity) (*passmodel.Entit
 	return nil, &transport.PassBillingMigrationResult{Status: "skipped_no_active_free_pass", Message: "user has no active free trial pass"}
 }
 
-func (l *logic) callTradeMoveInAndRecord(candidate *passmodel.Entity, req *transport.PassBillingMigrationRequest, migrationDao passmigrationmodel.Dao) (*transport.PassBillingMigrationResult, error) {
+func (l *logic) callTradeMoveIn(candidate *passmodel.Entity, req *transport.PassBillingMigrationRequest, migrationDao passmigrationmodel.Dao) (*transport.PassBillingMigrationResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -725,10 +725,7 @@ func (l *logic) callTradeMoveInAndRecord(candidate *passmodel.Entity, req *trans
 	})
 	if err != nil {
 		msg := truncateString(err.Error(), 1024)
-		_ = migrationDao.UpdateByPassAndTarget(candidate.PassID, billingMigrationTargetBundleID, map[string]interface{}{
-			passmigrationmodel.ColumnStatus:    passmigrationmodel.StatusFailed,
-			passmigrationmodel.ColumnLastError: msg,
-		})
+		_ = migrationDao.DeleteByPassAndTargetAndStatus(candidate.PassID, billingMigrationTargetBundleID, passmigrationmodel.StatusPendingTransfer)
 		resource.ZapLogger.Warn("pass billing migration move-in failed",
 			zap.String("user_id", req.UserID),
 			zap.String("pass_id", candidate.PassID),
@@ -737,14 +734,6 @@ func (l *logic) callTradeMoveInAndRecord(candidate *passmodel.Entity, req *trans
 		return &transport.PassBillingMigrationResult{Status: "failed", PassID: candidate.PassID, BundleID: billingMigrationTargetBundleID, Message: msg}, nil
 	}
 
-	if err := migrationDao.UpdateByPassAndTarget(candidate.PassID, billingMigrationTargetBundleID, map[string]interface{}{
-		passmigrationmodel.ColumnStatus:     passmigrationmodel.StatusPendingTransfer,
-		passmigrationmodel.ColumnDealName:   resp.DealName,
-		passmigrationmodel.ColumnBigOrderID: resp.BigOrderID,
-		passmigrationmodel.ColumnLastError:  nil,
-	}); err != nil {
-		return nil, fmt.Errorf("pass billing migration record order: %w", err)
-	}
 	return &transport.PassBillingMigrationResult{Status: passmigrationmodel.StatusPendingTransfer, PassID: candidate.PassID, BundleID: billingMigrationTargetBundleID, DealName: resp.DealName, BigOrderID: resp.BigOrderID}, nil
 }
 
