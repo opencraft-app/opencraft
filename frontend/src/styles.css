@@ -1390,37 +1390,14 @@ code {
   min-width: 0;
 }
 
-._lh-claw-bot-panel .lh-std-skill-panel__empty {
-  background: #fff;
-}
-
-._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__hint-bar {
-  align-items: center;
-  gap: 0;
-  padding: 0;
-  background: transparent;
-  border-radius: 0;
-  color: rgba(0, 0, 0, 0.5);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 24px;
-  margin-bottom: 20px;
-}
-
-._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__hint-icon {
-  display: none;
-}
-
-._lh-claw-bot-panel .lv-agent-search-box,
-._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__search-input-wrap {
+._lh-claw-bot-panel .lv-agent-search-box {
   position: relative;
   display: flex;
   align-items: center;
   width: 100%;
 }
 
-._lh-claw-bot-panel .lv-agent-search-box-icon,
-._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__search-icon {
+._lh-claw-bot-panel .lv-agent-search-box-icon {
   position: absolute;
   left: 12px;
   top: 50%;
@@ -1434,13 +1411,11 @@ code {
   transition: color 160ms ease;
 }
 
-._lh-claw-bot-panel .lv-agent-search-box:focus-within .lv-agent-search-box-icon,
-._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__search-input-wrap:focus-within .lh-std-skill-panel__search-icon {
+._lh-claw-bot-panel .lv-agent-search-box:focus-within .lv-agent-search-box-icon {
   color: rgba(0, 0, 0, 0.55);
 }
 
-._lh-claw-bot-panel .lv-agent-search-box-input,
-._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__search-input {
+._lh-claw-bot-panel .lv-agent-search-box-input {
   box-sizing: border-box;
   width: 100%;
   height: 40px;
@@ -1455,37 +1430,18 @@ code {
   transition: border-color 160ms ease;
 }
 
-._lh-claw-bot-panel .lv-agent-search-box-input:focus,
-._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__search-input:focus {
+._lh-claw-bot-panel .lv-agent-search-box-input:focus {
   border-color: rgba(0, 0, 0, 0.2);
 }
 
 /* All Skills / Skill Packages search inputs use one shared radius in both regions. */
 .lv-skills-search-input,
-.lv-agent-search-box-input,
-.lh-std-skill-panel__search-input {
+.lv-agent-search-box-input {
   border-radius: 12px !important;
 }
 
-._lh-claw-bot-panel .lv-agent-search-box-input::placeholder,
-._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__search-input::placeholder {
+._lh-claw-bot-panel .lv-agent-search-box-input::placeholder {
   color: rgba(0, 0, 0, 0.32);
-}
-
-._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__search {
-  align-items: center;
-  flex-direction: row;
-  gap: 12px;
-}
-
-._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__search-input-wrap {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__skillhub-link {
-  flex: 0 0 auto;
-  white-space: nowrap;
 }
 
 ._lh-claw-bot-panel .lv-agent-view-toggle-btn {
@@ -1496,16 +1452,6 @@ code {
 @media (max-width: 1023px) {
   ._lh-claw-bot-panel ._lh-cards-grid._lh-claw-bot-panel__cards {
     grid-template-columns: 1fr;
-  }
-
-  ._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__search {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  ._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__search-input-wrap {
-    width: 100%;
   }
 }
 
