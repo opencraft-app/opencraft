@@ -373,6 +373,64 @@ func TestGinHTTPExternalRouteRoutesUnprefixedAuthCodeToDefaultRoute(t *testing.T
 	}
 }
 
+func TestGinHTTPExternalRouteRoutesConfiguredLegacyUserIDToBeijing(t *testing.T) {
+	calledBeijing := false
+	beijing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calledBeijing = true
+		_, _ = w.Write([]byte(`{"returnCode":0}`))
+	}))
+	defer beijing.Close()
+	shanghai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("Shanghai should not receive configured Beijing legacy username")
+	}))
+	defer shanghai.Close()
+	cfg := config.Config{MaxBodyBytes: config.DefaultMaxBodyBytes, Auth: config.AuthConfig{Enabled: true, TimestampSkew: "5m", AllowUnauthenticated: []string{"callback-bjsbx", "callback-shprod"}}, Routes: []config.RouteConfig{{ID: "callback-bjsbx", Upstream: config.UpstreamConfig{BaseURL: beijing.URL, AllowedMethods: []string{http.MethodPost}}}, {ID: "callback-shprod", Upstream: config.UpstreamConfig{BaseURL: shanghai.URL, AllowedMethods: []string{http.MethodPost}}}}, External: []config.ExternalRoute{{Path: "/internal/tencentcloud/account", Methods: []string{http.MethodPost}, RouteID: "callback-shprod", UpstreamPath: "/auth/internal/tencentcloud/account", UserIDRoutes: []config.ExternalUserIDRoute{{UserID: "u4912323654", RouteID: "callback-bjsbx"}}}}}
+	engine, err := proxy.NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	authenticator, err := auth.New(cfg)
+	if err != nil {
+		t.Fatalf("new authenticator: %v", err)
+	}
+	router := NewGinRouter(engine, authenticator, config.DefaultMaxBodyBytes, cfg.External...)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/internal/tencentcloud/account", strings.NewReader(`{"interface":{"interfaceName":"qcloud.saas.checkSaaSAccountExist","para":{"user_id":"u4912323654"}}}`))
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !calledBeijing {
+		t.Fatalf("expected Beijing 200, code=%d called=%t", rec.Code, calledBeijing)
+	}
+}
+
+func TestGinHTTPExternalRouteRoutesPrefixedUserIDToBeijing(t *testing.T) {
+	calledBeijing := false
+	beijing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calledBeijing = true
+		_, _ = w.Write([]byte(`{"returnCode":0}`))
+	}))
+	defer beijing.Close()
+	shanghai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("Shanghai should not receive prefixed Beijing username")
+	}))
+	defer shanghai.Close()
+	cfg := config.Config{MaxBodyBytes: config.DefaultMaxBodyBytes, Auth: config.AuthConfig{Enabled: true, TimestampSkew: "5m", AllowUnauthenticated: []string{"callback-bjsbx", "callback-shprod"}}, Routes: []config.RouteConfig{{ID: "callback-bjsbx", Upstream: config.UpstreamConfig{BaseURL: beijing.URL, AllowedMethods: []string{http.MethodPost}}}, {ID: "callback-shprod", Upstream: config.UpstreamConfig{BaseURL: shanghai.URL, AllowedMethods: []string{http.MethodPost}}}}, External: []config.ExternalRoute{{Path: "/internal/tencentcloud/account", Methods: []string{http.MethodPost}, RouteID: "callback-shprod", UpstreamPath: "/auth/internal/tencentcloud/account", UserIDPrefixRoutes: []config.ExternalUserIDPrefixRoute{{Prefix: "bjsbx_", RouteID: "callback-bjsbx"}}}}}
+	engine, err := proxy.NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	authenticator, err := auth.New(cfg)
+	if err != nil {
+		t.Fatalf("new authenticator: %v", err)
+	}
+	router := NewGinRouter(engine, authenticator, config.DefaultMaxBodyBytes, cfg.External...)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/internal/tencentcloud/account", strings.NewReader(`{"interface":{"interfaceName":"qcloud.saas.checkSaaSAccountExist","para":{"user_id":"bjsbx_u0825080737"}}}`))
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !calledBeijing {
+		t.Fatalf("expected Beijing 200, code=%d called=%t", rec.Code, calledBeijing)
+	}
+}
+
 func TestGinHTTPUnknownRouteIsQuiet404(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("upstream should not be called")

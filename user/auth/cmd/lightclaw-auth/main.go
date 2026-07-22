@@ -297,6 +297,7 @@ func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger) *
 		Enabled:        true,
 		AuthCodeTTL:    parseDurationEnv("SHADOW_AUTH_CODE_TTL", 10*time.Minute),
 		AuthCodePrefix: envOrDefault("SHADOW_AUTH_CODE_PREFIX", ""),
+		UserNamePrefix: envOrDefault("SHADOW_USER_NAME_PREFIX", ""),
 	})
 }
 

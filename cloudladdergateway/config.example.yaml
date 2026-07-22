@@ -345,6 +345,12 @@ external_routes:
         route_id: tencentcloud-account-callback-bjsbx
       - prefix: "shprod."
         route_id: tencentcloud-account-callback-shprod
+    user_id_routes:
+      - user_id: "u4912323654"
+        route_id: tencentcloud-account-callback-bjsbx
+    user_id_prefix_routes:
+      - prefix: "bjsbx_"
+        route_id: tencentcloud-account-callback-bjsbx
 
 routes:
   - id: sandbox-cn

@@ -128,7 +128,7 @@ func invokeResolvedHTTPWithBody(c *gin.Context, engine *proxy.Engine, authentica
 }
 
 func resolveExternalAuthCodeRoute(externalRoute config.ExternalRoute, body []byte) (string, []byte, error) {
-	if len(externalRoute.AuthCodeRoutes) == 0 {
+	if len(externalRoute.AuthCodeRoutes) == 0 && len(externalRoute.UserIDRoutes) == 0 && len(externalRoute.UserIDPrefixRoutes) == 0 {
 		return externalRoute.RouteID, body, nil
 	}
 	var payload map[string]any
@@ -136,11 +136,28 @@ func resolveExternalAuthCodeRoute(externalRoute config.ExternalRoute, body []byt
 		return externalRoute.RouteID, body, nil
 	}
 	callback, ok := payload["interface"].(map[string]any)
-	if !ok || callback["interfaceName"] != "qcloud.saas.checkSaaSAuthCode" {
+	if !ok {
 		return externalRoute.RouteID, body, nil
 	}
 	para, ok := callback["para"].(map[string]any)
 	if !ok {
+		return externalRoute.RouteID, body, nil
+	}
+	if callback["interfaceName"] == "qcloud.saas.checkSaaSAccountExist" {
+		userID, _ := para["user_id"].(string)
+		for _, candidate := range externalRoute.UserIDRoutes {
+			if userID == candidate.UserID {
+				return candidate.RouteID, body, nil
+			}
+		}
+		for _, candidate := range externalRoute.UserIDPrefixRoutes {
+			if strings.HasPrefix(userID, candidate.Prefix) {
+				return candidate.RouteID, body, nil
+			}
+		}
+		return externalRoute.RouteID, body, nil
+	}
+	if callback["interfaceName"] != "qcloud.saas.checkSaaSAuthCode" {
 		return externalRoute.RouteID, body, nil
 	}
 	authCode, ok := para["auth_code"].(string)
