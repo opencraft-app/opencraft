@@ -907,11 +907,12 @@ type PlanTierKey = "launch" | "cruise" | "voyage";
 const PLAN_TIER_ORDER: PlanTierKey[] = ["launch", "cruise", "voyage"];
 
 /**
- * AI 增强版档位的「模型积分」写死值（不再取后端 bundle.credit）。
- * 当前 AI 增强版仅展示「敬请期待」、不展示价格，仅积分数字对外露出，故前端固定：
+ * AI 增强版档位的「模型积分」写死值（仅在 AI 档位未放出可购买时作为展示兜底）。
+ * 当前 AI 增强版放出策略：启航 / 巡游在月付下可购买（取后端 bundle.credit），
+ * 季付下仍未上线、展示「敬请期待」，此时积分用前端写死值：
  *   - 启航 launch → 4500
  *   - 巡游 cruise → 10000
- * 后端接入 AI 档位可购买后再回退为取 bundle.credit。
+ * 月付放出可购买时积分回退为取后端 bundle.credit，不再用此表覆盖。
  */
 const AI_VARIANT_CREDIT: Partial<Record<PlanTierKey, number>> = {
   launch: 4500,
@@ -2107,25 +2108,32 @@ export const SubscribePage = ({
           }],
         });
       } else {
-        /* AI 增强版（本期先不上线可购买）：屏蔽后端可能已配置的价格 / 促销 / 下单入口，
-           统一展示「敬请期待」。保留卡内积分切换（用户仍可查看该档位），选中后价格区落到
-           「敬请期待」分支、CTA 禁用；标准版 variant 保持原样正常购买。
-           模型积分不再取后端 bundle.credit，改为前端写死（启航 4500 / 巡游 10000）。 */
+        /* AI 增强版可见性：
+           - 已登录 + 月付（durationKey === "monthly"）：启航 / 巡游的 AI 档位已上线可购买，
+             保留后端真实价格 / 促销 / 下单入口，积分回退取后端 bundle.credit（不再写死）。
+           - 未登录：统一「敬请期待」。未登录走的是前端静态价（AI price=null），放出后会落到
+             「暂无报价」，体验劣于「敬请期待」，故未登录一律维持敬请期待。
+           - 季付（durationKey === "quarterly"）：AI 档位本期暂不支持，统一「敬请期待」，
+             保留卡内积分切换（用户仍可查看该档位），选中后价格区落到「敬请期待」分支、CTA 禁用；
+             积分维持前端写死（启航 4500 / 巡游 10000）。
+           - 标准版 variant 任何时长都保持原样正常购买。 */
+        const aiReleased = isLoggedIn && aiDurationKey === "monthly";
         const aiCredit = AI_VARIANT_CREDIT[tk];
-        const mapped = sorted.map((v) =>
-          (v.bundleType === "ai" || v.raw.bundle_type === "ai")
-            ? {
-                ...v,
-                comingSoon: true,
-                price: "",
-                promoTag: undefined,
-                priceUnavailable: false,
-                pricingLoading: false,
-                ctaLabel: t("敬请期待"),
-                raw: aiCredit != null ? { ...v.raw, credit: aiCredit } : v.raw,
-              }
-            : v,
-        );
+        const mapped = sorted.map((v) => {
+          const isAi = v.bundleType === "ai" || v.raw.bundle_type === "ai";
+          if (!isAi) return v;
+          if (aiReleased) return v;
+          return {
+            ...v,
+            comingSoon: true,
+            price: "",
+            promoTag: undefined,
+            priceUnavailable: false,
+            pricingLoading: false,
+            ctaLabel: t("敬请期待"),
+            raw: aiCredit != null ? { ...v.raw, credit: aiCredit } : v.raw,
+          };
+        });
         groups.push({ key: tk, variants: mapped });
       }
     }
@@ -2133,7 +2141,7 @@ export const SubscribePage = ({
       groups.push({ key: plan.id, variants: [plan] });
     }
     return groups;
-  }, [planList]);
+  }, [planList, isLoggedIn, aiDurationKey, t]);
 
   /* 付费过程上下文：仅在国内站走付费链路时使用。
      v1.7.31 起统一走 bridge 中转页二维码方案；不再保留 fallback 新窗口模式。
