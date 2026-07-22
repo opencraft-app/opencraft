@@ -41,6 +41,8 @@
   - 角色：Reviewer
   - 影响文件：测试输出和 `rg` 扫描结果
   - 验收方式：前端 repository 测试、前端类型检查、CTL 目标测试、gateway-dashboard 类型检查按影响面运行；`rg` 残留只允许历史迁移或明确保留的第二阶段旧代码。
+  - 前端侧已复验：`pnpm --dir frontend build:next`、`pnpm --dir frontend check`、`pnpm --dir frontend test -- src/repositories/__tests__/http-repositories.test.ts` 均通过。
+  - 分支预览触发：2026-07-22 使用本 OpenSpec 记录变更命中 `frontend/**` 路径过滤，重新触发 `frontsandbox/hermes-agent-name-investigation` 预览流水线。
 
 ## 门禁重点
 
