@@ -191,7 +191,7 @@ function DropdownSwitcher({
           !isGlobal ? "font-semibold text-black/90" : "font-normal text-black/80"
         }`}
       >
-        <span>{chinaSiteLabel(active.value)}</span>
+        <span>{isGlobal ? "中国站" : chinaSiteLabel(active.value)}</span>
         {!isGlobal && <Check className="h-[14px] w-[14px]" />}
       </button>
     </li>
@@ -219,7 +219,7 @@ function DropdownSwitcher({
       {open && (
         <ul
           role="listbox"
-          className="absolute right-0 top-[calc(100%+6px)] z-50 min-w-[168px] overflow-hidden rounded-xl border border-black/5 bg-white shadow-[0_8px_24px_rgba(0,0,0,0.08)] py-1"
+          className="absolute right-0 top-[calc(100%+6px)] z-50 w-max min-w-[168px] overflow-hidden rounded-xl border border-black/5 bg-white shadow-[0_8px_24px_rgba(0,0,0,0.08)] py-1"
         >
           {!isGlobal && chinaSiteOption}
           {orderedOptions.map((opt) => {
