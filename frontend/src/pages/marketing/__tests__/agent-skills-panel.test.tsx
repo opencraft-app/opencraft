@@ -1,11 +1,14 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { isGlobal } from "@/lib/region";
 import type { ExpertsExecDebugCommand } from "../agent-experts-panel";
 import {
   getSafeUploadFileName,
-  getInitialAgentSkillsTab,
   HermesAgentSkillsPanel,
 } from "../agent-skills-panel";
 
@@ -85,31 +88,21 @@ vi.mock("../agent-experts-panel", () => ({
   ExpertsPanel: () => <div>技能包列表</div>,
 }));
 
-function TestSkillPanel({ skillHubApiUrl }: { skillHubApiUrl?: string }) {
-  return (
-    <div data-testid="sdk-skill-panel" data-skillhub-api-url={skillHubApiUrl}>
-      单技能安装面板
-      <input className="lh-std-skill-panel__installed-search-input" placeholder="搜索技能名称" />
-    </div>
-  );
-}
-
-const renderPanel = (initialSectionSlug?: string, showSkillPackages = true) => {
+const renderPanel = (initialSectionSlug?: string) => {
   const execDebugCommand: ExpertsExecDebugCommand = vi.fn();
   render(
     <HermesAgentSkillsPanel
       botId="bot-1"
       execDebugCommand={execDebugCommand}
-      featureFlags={{} as never}
       initialSectionSlug={initialSectionSlug}
-      instance={{ InstanceId: "bot-1", RegionId: 1 }}
-      productConfig={{} as never}
-      showSkillPackages={showSkillPackages}
-      SkillPanel={TestSkillPanel}
     />,
   );
   return { execDebugCommand };
 };
+
+const skillsSearchPlaceholder = isGlobal
+  ? "搜索 Skills.sh / Clawhub 中的技能"
+  : "搜索 SkillHub 中的技能";
 
 describe("HermesAgentSkillsPanel", () => {
   afterEach(() => {
@@ -122,7 +115,7 @@ describe("HermesAgentSkillsPanel", () => {
     tsshMocks.listPathMock.mockReset();
   });
 
-  it("defaults to the domestic Skills Demo and can switch to Experts", async () => {
+  it("defaults to the mono2 Skills Demo and can switch to Experts", async () => {
     renderPanel("skills");
 
     const outerTabs = within(screen.getByRole("tablist", { name: "技能页面切换" }));
@@ -133,9 +126,12 @@ describe("HermesAgentSkillsPanel", () => {
     expect(skillsTab).toHaveAttribute("aria-selected", "true");
     expect(skillsTab).toHaveStyle({ fontSize: "18px", fontWeight: "600", lineHeight: "24px" });
     expect(expertsTab).toBeInTheDocument();
-    expect(screen.getByText("为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用")).toBeInTheDocument();
-    expect(within(screen.getByText("为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用").closest("p") as HTMLElement).queryByRole("link")).toBeNull();
-    expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
+    const description = isGlobal
+      ? "为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。"
+      : "为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用";
+    expect(screen.getByText(description)).toBeInTheDocument();
+    expect(within(screen.getByText(description).closest("p") as HTMLElement).queryByRole("link")).toBeNull();
+    expect(screen.getByPlaceholderText(skillsSearchPlaceholder)).toBeInTheDocument();
 
     await userEvent.click(expertsTab);
 
@@ -143,33 +139,18 @@ describe("HermesAgentSkillsPanel", () => {
     expect(screen.getByText("技能包列表")).toBeInTheDocument();
   });
 
-  it("defaults to the package tab for package routes", () => {
-    expect(getInitialAgentSkillsTab("experts")).toBe("packages");
-    expect(getInitialAgentSkillsTab("packages")).toBe("packages");
-
-    renderPanel("experts");
+  it.each(["experts", "packages"])("defaults to the Experts tab for the %s route", (route) => {
+    renderPanel(route);
 
     expect(screen.getByRole("tab", { name: "技能包" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("技能包列表")).toBeInTheDocument();
   });
 
-  it("keeps the Skills demo package tab independent of the legacy outer tab", async () => {
-    expect(getInitialAgentSkillsTab("experts", false)).toBe("skills");
-    expect(getInitialAgentSkillsTab("packages", false)).toBe("skills");
-
-    renderPanel("packages", false);
-
-    expect(within(screen.getByRole("tablist", { name: "技能页面切换" })).getByRole("tab", { name: "技能" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "技能包" })).toBeInTheDocument();
-    await userEvent.click(within(screen.getByRole("tablist", { name: "技能市场页面切换" })).getByRole("tab", { name: "技能" }));
-    expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
-  });
-
   it("hides the Create Skill tab for now", () => {
-    renderPanel("skills", false);
+    renderPanel("skills");
 
     expect(screen.queryByRole("tab", { name: "创建技能" })).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(skillsSearchPlaceholder)).toBeInTheDocument();
   });
 
   it("remounts the skills workspace when switching Agents", () => {
@@ -178,22 +159,41 @@ describe("HermesAgentSkillsPanel", () => {
       <HermesAgentSkillsPanel
         botId={botId}
         execDebugCommand={execDebugCommand}
-        featureFlags={{} as never}
         initialSectionSlug="skills"
-        instance={{ InstanceId: botId, RegionId: 1 }}
-        productConfig={{} as never}
-        showSkillPackages
-        SkillPanel={TestSkillPanel}
       />
     );
     const { rerender } = render(renderForAgent("bot-1"));
-    const searchInput = screen.getByPlaceholderText("搜索 SkillHub 中的技能");
+    const searchInput = screen.getByPlaceholderText(skillsSearchPlaceholder);
     fireEvent.change(searchInput, { target: { value: "old-agent-query" } });
     expect(searchInput).toHaveValue("old-agent-query");
 
     rerender(renderForAgent("bot-2"));
 
-    expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toHaveValue("");
+    expect(screen.getByPlaceholderText(skillsSearchPlaceholder)).toHaveValue("");
+  });
+
+  it("keeps the Skills route outside the TEA SDK runtime boundary", () => {
+    const settingsPageSource = readFileSync(
+      resolve(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"),
+      "utf8",
+    );
+    const skillsPanelSource = readFileSync(
+      resolve(process.cwd(), "src/pages/marketing/agent-skills-panel.tsx"),
+      "utf8",
+    );
+    const stableHostSource = readFileSync(
+      resolve(process.cwd(), "src/pages/marketing/agent-settings-sdk-stable-host.tsx"),
+      "utf8",
+    );
+
+    expect(settingsPageSource).not.toContain("HermesAgentSkillsRuntimePanel");
+    expect(settingsPageSource).not.toContain("runtime.SkillPanel");
+    expect(settingsPageSource).toContain(
+      'const TEA_SDK_SECTIONS = new Set<AgentSettingsSectionId>(["channel", "model"]);',
+    );
+    expect(skillsPanelSource).not.toMatch(/\bSkillPanel\b/);
+    expect(skillsPanelSource).not.toContain("lv-agent-skills-sdk-panel");
+    expect(stableHostSource).not.toContain("lh-std-skill-panel");
   });
 });
 

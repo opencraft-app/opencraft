@@ -80,7 +80,7 @@ import {
   type HermesMemoryLimitValidation,
 } from "@/pages/marketing/agent-memory";
 import { BuddyPanel } from "@/pages/marketing/agent-buddy-panel";
-import { HermesAgentSkillsPanel, type HermesAgentSkillsPanelProps } from "@/pages/marketing/agent-skills-panel";
+import { HermesAgentSkillsPanel } from "@/pages/marketing/agent-skills-panel";
 import { AchievementsPanel } from "@/pages/marketing/agent-achievements-panel";
 import { HermesAgentAutomationsPanel } from "@/pages/marketing/agent-automations-panel";
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
@@ -172,7 +172,6 @@ type TeaSdkPanelProps = {
 type TeaSdkRuntime = {
   ChannelPanel: ComponentType<TeaSdkPanelProps>;
   ModelPanel: ComponentType<TeaSdkPanelProps>;
-  SkillPanel: ComponentType<TeaSdkPanelProps>;
   /** SDK 的 useModelProviders hook（动态 import 获取，避免静态 import 破坏 SSG） */
   useModelProviders: (params?: {
     isI18n?: boolean;
@@ -227,7 +226,6 @@ function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
       const runtime: TeaSdkRuntime = {
         ChannelPanel: sdk.ChannelPanel as unknown as ComponentType<TeaSdkPanelProps>,
         ModelPanel: sdk.ModelPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        SkillPanel: sdk.SkillPanel as unknown as ComponentType<TeaSdkPanelProps>,
         useModelProviders,
         createProductConfig: ({ runCommand, getInvocationTask, modelProviders }) => {
           const config = sdk.createLighthouseConfig({
@@ -296,7 +294,7 @@ function TeaSdkSettingsPanel({
   productConfigArgs,
   useEnglish,
 }: {
-  kind: "channel" | "model" | "skill";
+  kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
   featureFlags: TeaSdkFeatureFlags;
   productConfigArgs: {
@@ -363,7 +361,7 @@ function TeaSdkSettingsPanelReady({
   useEnglish,
 }: {
   runtime: TeaSdkRuntime;
-  kind: "channel" | "model" | "skill";
+  kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
   featureFlags: TeaSdkFeatureFlags;
   productConfigArgs: {
@@ -378,12 +376,7 @@ function TeaSdkSettingsPanelReady({
     [runtime, productConfigArgs, modelProviders],
   );
 
-  const Panel =
-    kind === "channel"
-      ? runtime.ChannelPanel
-      : kind === "model"
-        ? runtime.ModelPanel
-        : runtime.SkillPanel;
+  const Panel = kind === "channel" ? runtime.ChannelPanel : runtime.ModelPanel;
 
   return (
     <StableTeaSdkPanelHost>
@@ -391,120 +384,6 @@ function TeaSdkSettingsPanelReady({
         instance={instance}
         featureFlags={featureFlags}
         productConfig={productConfig}
-      />
-    </StableTeaSdkPanelHost>
-  );
-}
-
-function HermesAgentSkillsRuntimePanel({
-  botId,
-  execDebugCommand,
-  featureFlags,
-  initialSectionSlug,
-  instance,
-  productConfigArgs,
-  useEnglish,
-}: {
-  botId: string;
-  execDebugCommand: HermesAgentSkillsPanelProps["execDebugCommand"];
-  featureFlags: TeaSdkFeatureFlags;
-  initialSectionSlug?: string;
-  instance: TeaSdkInstanceInfo;
-  productConfigArgs: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-  };
-  /** 是否取英文文案（语言维度），传给 SDK useModelProviders */
-  useEnglish: boolean;
-}) {
-  const t = useT();
-  const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
-  const [error, setError] = useState<string | null>(() => teaSdkRuntimeError?.message ?? null);
-
-  useEffect(() => {
-    if (teaSdkRuntimeCache) {
-      setRuntime(teaSdkRuntimeCache);
-      setError(null);
-      return;
-    }
-    let cancelled = false;
-    void loadTeaSdkRuntime()
-      .then((nextRuntime) => {
-        if (!cancelled) setRuntime(nextRuntime);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (error) {
-    return (
-      <div className="rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-        {t("加载配置面板失败：{{message}}", { message: error })}
-      </div>
-    );
-  }
-
-  if (!runtime) {
-    return <TeaSdkRuntimeLoading />;
-  }
-
-  return (
-    <HermesAgentSkillsRuntimePanelReady
-      runtime={runtime}
-      botId={botId}
-      execDebugCommand={execDebugCommand}
-      featureFlags={featureFlags}
-      initialSectionSlug={initialSectionSlug}
-      instance={instance}
-      productConfigArgs={productConfigArgs}
-      useEnglish={useEnglish}
-    />
-  );
-}
-
-/** runtime 已就绪的内层组件，无条件调 hook（遵守 Rules of Hooks） */
-function HermesAgentSkillsRuntimePanelReady({
-  runtime,
-  botId,
-  execDebugCommand,
-  featureFlags,
-  initialSectionSlug,
-  instance,
-  productConfigArgs,
-  useEnglish,
-}: {
-  runtime: TeaSdkRuntime;
-  botId: string;
-  execDebugCommand: HermesAgentSkillsPanelProps["execDebugCommand"];
-  featureFlags: TeaSdkFeatureFlags;
-  initialSectionSlug?: string;
-  instance: TeaSdkInstanceInfo;
-  productConfigArgs: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-  };
-  useEnglish: boolean;
-}) {
-  const modelProviders = runtime.useModelProviders({ isI18n: isGlobal, useEnglish });
-  const productConfig = useMemo(
-    () => runtime.createProductConfig({ ...productConfigArgs, modelProviders }),
-    [runtime, productConfigArgs, modelProviders],
-  );
-
-  return (
-    <StableTeaSdkPanelHost>
-      <HermesAgentSkillsPanel
-        botId={botId}
-        execDebugCommand={execDebugCommand}
-        featureFlags={featureFlags}
-        initialSectionSlug={initialSectionSlug}
-        instance={instance}
-        productConfig={productConfig}
-        SkillPanel={runtime.SkillPanel}
       />
     </StableTeaSdkPanelHost>
   );
@@ -3045,7 +2924,7 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 const RESCUE_EXPORT_POLL_INTERVAL_MS = 5000;
 const HERMES_WORKSPACE_EXPORT_PATH = "/home/agentuser/.hermes";
 const RESCUE_EXPORT_TERMINAL_PHASES = new Set(["completed", "failed"]);
-const TEA_SDK_SECTIONS = new Set<AgentSettingsSectionId>(["channel", "model", "skill"]);
+const TEA_SDK_SECTIONS = new Set<AgentSettingsSectionId>(["channel", "model"]);
 
 type WorkspaceConfirmState =
   | { kind: "export" }
@@ -5236,14 +5115,10 @@ export const AgentSettingsPage = ({
                             />
                           )}
                           {activeSection === "skill" && (
-                            <HermesAgentSkillsRuntimePanel
+                            <HermesAgentSkillsPanel
                               botId={activeBot.id}
                               execDebugCommand={repositories.bots.execDebugCommand}
-                              instance={sdkInstance}
-                              featureFlags={sdkFeatureFlags}
                               initialSectionSlug={initialSectionSlug}
-                              productConfigArgs={sdkProductConfigArgs}
-                              useEnglish={useEnglish}
                             />
                           )}
                           {activeSection === "buddy" && (

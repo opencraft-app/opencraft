@@ -5,7 +5,6 @@ const SDK_LOADING_SELECTORS = [
   ".lh-std-channel-panel--loading",
   ".lh-std-channel-panel__loader",
   ".lh-std-model-panel__loader",
-  ".lh-std-skill-panel__empty",
 ] as const;
 
 export function isTeaSdkLoading(root: ParentNode): boolean {
