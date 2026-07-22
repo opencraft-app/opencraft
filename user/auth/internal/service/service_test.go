@@ -2080,6 +2080,8 @@ func TestRetryRealnameSyncPromotesAfterStoredRealname(t *testing.T) {
 		t.Fatalf("expected failed sync before retry, got %+v", failedProfile)
 	}
 
+	passNotifier := &recordingPassBillingMigrationNotifier{}
+	svc.passBillingMigrationNotifier = passNotifier
 	client.basicAuthErr = nil
 	result, err := svc.RetryRealnameSync(context.Background(), session.Token, "127.0.0.1", "agent")
 	if err != nil {
@@ -2090,6 +2092,24 @@ func TestRetryRealnameSyncPromotesAfterStoredRealname(t *testing.T) {
 	}
 	if client.lastBasicAuth.Name != "张三" || client.lastBasicAuth.IDCard != "11010519491231002X" || client.lastBasicAuth.ClientIP != "127.0.0.1" || client.lastBasicAuth.ClientUA != "agent" {
 		t.Fatalf("expected retry to use stored realname and client context, got %+v", client.lastBasicAuth)
+	}
+	if len(passNotifier.calls) != 1 {
+		t.Fatalf("expected retry success to notify pass billing migration once, got %d", len(passNotifier.calls))
+	}
+	if got := passNotifier.calls[0]; got.UserID != session.User.ID || got.Uin != 300000000056 || got.AppID != 1250000000 {
+		t.Fatalf("unexpected pass billing migration binding: %+v", got)
+	}
+
+	passNotifier.calls = nil
+	again, err := svc.RetryRealnameSync(context.Background(), session.Token, "127.0.0.1", "agent")
+	if err != nil {
+		t.Fatalf("retry realname sync after success: %v", err)
+	}
+	if !again.OK || again.RealnameSyncStatus != RealnameSyncStatusSucceeded {
+		t.Fatalf("unexpected already-synced retry result: %+v", again)
+	}
+	if len(passNotifier.calls) != 1 {
+		t.Fatalf("expected already-synced retry to notify pass billing migration once, got %d", len(passNotifier.calls))
 	}
 }
 
