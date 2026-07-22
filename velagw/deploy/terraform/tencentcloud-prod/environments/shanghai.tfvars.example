@@ -1,0 +1,87 @@
+region       = "ap-shanghai"
+region_alias = "sh"
+project      = "llmgateway"
+environment  = "prod"
+
+# Confirm current inventory before deployment; AI/operator must ask for these.
+availability_zones = ["ap-shanghai-2", "ap-shanghai-4"]
+
+# These CIDRs may match Beijing because this is an independent VPC. Change them
+# if future peering or cross-region routing requires non-overlapping networks.
+vpc_cidr            = "10.64.0.0/16"
+public_subnet_cidrs = ["10.64.0.0/24", "10.64.1.0/24"]
+app_subnet_cidrs    = ["10.64.10.0/23", "10.64.12.0/23"]
+data_subnet_cidrs   = ["10.64.20.0/24", "10.64.21.0/24"]
+
+admin_cidrs = ["203.0.113.10/32"]
+
+traffic_backend_cidrs = ["0.0.0.0/0"]
+traffic_backend_port  = "18080"
+
+dns_domain            = "lightvela.com"
+control_dns_subdomain = "llmgw-sh-control"
+traffic_dns_subdomain = "llmgw-sh-inner"
+
+# First apply keeps DNS disabled. After the Kubernetes Services create their
+# CLBs, replace these values and set edge_dns_enabled=true in the second apply.
+edge_dns_enabled   = false
+control_clb_domain = "replace-control-clb.clb.sh-tencentclb.com."
+traffic_clb_domain = "replace-traffic-clb.clb.sh-tencentclb.com."
+
+# Ask whether to reuse the wildcard certificate or use Shanghai-specific IDs.
+control_cert_id = "replace-with-certificate-id"
+traffic_cert_id = "replace-with-certificate-id"
+
+# Independent regional state must own a Shanghai TCR namespace/repository.
+tcr_instance_id   = "replace-with-tcr-instance-id"
+tcr_public_domain = "replace-with-tcr-domain.tencentcloudcr.com"
+tcr_namespace     = "llmgateway"
+tcr_repository    = "llmgateway"
+
+# Confirm versions and stock in ap-shanghai before plan.
+tke_cluster_version = "1.30.0"
+tke_cluster_level   = "L20"
+tke_service_cidr    = "172.21.0.0/22"
+tke_cluster_description = "LLMGateway production TKE cluster in Shanghai."
+
+mysql_root_password = "Replace-With-A-Strong-Password"
+redis_password      = "Replace16!"
+
+control_mysql = {
+  mem_size    = 4000
+  volume_size = 100
+  cpu         = 2
+}
+
+control_redis = {
+  type_id              = 18
+  mem_size             = 1024
+  redis_shard_num      = 3
+  redis_replicas_num   = 3
+  replica_zone_indexes = [0, 1, 1]
+}
+
+shards = {
+  shard-a = {
+    zone_index       = 0
+    mysql_mem_size   = 4000
+    mysql_volume_size = 100
+    mysql_cpu        = 2
+    redis_type_id    = 17
+    redis_mem_size   = 1024
+    redis_shard_num  = 1
+    redis_replicas   = 1
+    max_sets         = 4
+  }
+  shard-b = {
+    zone_index       = 1
+    mysql_mem_size   = 4000
+    mysql_volume_size = 100
+    mysql_cpu        = 2
+    redis_type_id    = 17
+    redis_mem_size   = 1024
+    redis_shard_num  = 1
+    redis_replicas   = 1
+    max_sets         = 4
+  }
+}

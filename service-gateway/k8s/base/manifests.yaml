@@ -299,6 +299,7 @@ metadata:
   namespace: lightclaw-gateway
 spec:
   type: NodePort
+  externalTrafficPolicy: Local
   selector:
     app: service-gateway
   ports:

@@ -41,6 +41,16 @@ func (s *stubFaceIDVerifier) GetDetectInfoEnhanced(_ context.Context, in Realnam
 	return s.getInfoOut, nil
 }
 
+type recordingPassBillingMigrationNotifier struct {
+	calls []shadowbinding.Binding
+	err   error
+}
+
+func (n *recordingPassBillingMigrationNotifier) NotifyShadowBound(_ context.Context, binding shadowbinding.Binding) error {
+	n.calls = append(n.calls, binding)
+	return n.err
+}
+
 func TestFaceRequiredCurrentSessionIgnoresLegacyRealnameProjection(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true})
 	svc := NewWithStore(store, Options{
@@ -383,6 +393,12 @@ func TestAutomaticRealnameFaceIDCompletionHonorsSyncGateAndReplacesStaleShadowCo
 	attempt.FaceVerifiedAt = &faceVerifiedAt
 	store.realnameFaceIDAttempts[attempt.AttemptID] = attempt
 	store.mu.Unlock()
+	if _, err := svc.SendRealnameFaceIDPhoneCode(context.Background(), session.Token, RealnameFaceIDPhoneCodeInput{
+		AttemptID: started.AttemptID,
+		ClientIP:  "127.0.0.1",
+	}); err != nil {
+		t.Fatalf("send FaceID phone code: %v", err)
+	}
 	svc.shadowBasicAuthSyncEnabled = false
 	_, err = svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
 		AttemptID: started.AttemptID,
@@ -669,6 +685,12 @@ func TestVerifyRealnameFaceIDPhoneUsesShadowBindingCode(t *testing.T) {
 	attempt.FaceVerifiedAt = &faceVerifiedAt
 	store.realnameFaceIDAttempts[attempt.AttemptID] = attempt
 	store.mu.Unlock()
+	if _, err := svc.SendRealnameFaceIDPhoneCode(context.Background(), session.Token, RealnameFaceIDPhoneCodeInput{
+		AttemptID: started.AttemptID,
+		ClientIP:  "127.0.0.1",
+	}); err != nil {
+		t.Fatalf("send FaceID phone code: %v", err)
+	}
 
 	verified, err := svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
 		AttemptID: started.AttemptID, Code: "888888", ClientIP: "127.0.0.1", ClientUA: "agent",
@@ -681,6 +703,68 @@ func TestVerifyRealnameFaceIDPhoneUsesShadowBindingCode(t *testing.T) {
 	}
 	if shadowClient.calls != 1 || shadowClient.basicAuthCalls != 1 || shadowClient.lastRegister.VerifyCode != "888888" || shadowClient.lastRegister.Phone != session.User.Phone {
 		t.Fatalf("expected Tencent Shadow registration and basic auth to complete synchronously, registerCalls=%d basicAuthCalls=%d input=%+v", shadowClient.calls, shadowClient.basicAuthCalls, shadowClient.lastRegister)
+	}
+}
+
+func TestVerifyRealnameFaceIDPhoneNotifiesPassBillingMigrationBestEffort(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true})
+	shadowClient := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{
+		Uin: 300000000064, OwnerUin: 300000000064, AppID: 1250000000,
+	}}
+	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), shadowClient, shadowbinding.Options{Enabled: true, Now: fixedNow})
+	passNotifier := &recordingPassBillingMigrationNotifier{err: errors.New("ctl unavailable")}
+	svc := NewWithStore(store, Options{
+		Now:                        fixedNow,
+		RealnameCipher:             stubRealnameCipher{},
+		ShadowBasicAuthSyncEnabled: true,
+		PassBillingMigration:       passNotifier,
+		RealnameFaceIDVerifier: &stubFaceIDVerifier{detectAuthOut: RealnameFaceIDDetectAuthResult{
+			BizToken: "biz-notify-pass-migration", VerifyURL: "https://faceid.example.invalid/notify-pass-migration", RequestID: "req-notify-pass-migration",
+		}},
+		ShadowBinding: shadowSvc,
+		RealnameFaceID: RealnameFaceIDConfig{
+			Mode: RealnameAssuranceModeObserve, RuleID: "rule-1", AccountID: "acct-1",
+			RedirectURL: "https://api.example.com/auth/realname/faceid/callback",
+			DigestKey:   []byte("0123456789abcdef0123456789abcdef"), DailyQuota: 5,
+			AttemptTTL: 2 * time.Hour, LeaseTTL: 30 * time.Second,
+		},
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "notify-pass-migration-faceid@example.invalid", "13800138124")
+	started, err := svc.StartRealnameFaceIDAttempt(context.Background(), session.Token, RealnameFaceIDStartInput{
+		Name: "张三", IDCard: "11010519491231002X", ClientIP: "127.0.0.1", ClientUA: "agent", ConsentAccepted: true,
+	})
+	if err != nil {
+		t.Fatalf("start attempt: %v", err)
+	}
+	store.mu.Lock()
+	attempt := store.realnameFaceIDAttempts[started.AttemptID]
+	faceVerifiedAt := fixedNow()
+	attempt.State = RealnameFaceIDStateFaceSucceeded
+	attempt.FaceVerifiedAt = &faceVerifiedAt
+	store.realnameFaceIDAttempts[attempt.AttemptID] = attempt
+	store.mu.Unlock()
+	if _, err := svc.SendRealnameFaceIDPhoneCode(context.Background(), session.Token, RealnameFaceIDPhoneCodeInput{
+		AttemptID: started.AttemptID,
+		ClientIP:  "127.0.0.1",
+	}); err != nil {
+		t.Fatalf("send FaceID phone code: %v", err)
+	}
+
+	verified, err := svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
+		AttemptID: started.AttemptID, Code: "888888", ClientIP: "127.0.0.1", ClientUA: "agent",
+	})
+	if err != nil {
+		t.Fatalf("pass migration notification failure must not block FaceID verification: %v", err)
+	}
+	if verified.State != RealnameFaceIDStateSucceeded {
+		t.Fatalf("expected FaceID verification to complete, got %+v", verified)
+	}
+	if len(passNotifier.calls) != 1 {
+		t.Fatalf("expected one pass billing migration notification, got %d", len(passNotifier.calls))
+	}
+	call := passNotifier.calls[0]
+	if call.UserID != session.User.ID || call.Uin != shadowClient.result.Uin || call.AppID != shadowClient.result.AppID || call.Status != shadowbinding.StatusActive {
+		t.Fatalf("unexpected pass billing migration notification binding: %+v", call)
 	}
 }
 
@@ -706,7 +790,8 @@ func TestCleanUserCompletesFaceIDWithNewPhoneAndShadowBinding(t *testing.T) {
 		},
 	})
 	session := mustPasswordSession(t, svc, "clean-full-faceid@example.invalid")
-	phone := "13800138123"
+	firstPhone := "13800138123"
+	phone := "13800138124"
 	started, err := svc.StartRealnameFaceIDAttempt(context.Background(), session.Token, RealnameFaceIDStartInput{
 		Name: "张三", IDCard: "11010519491231002X", ClientIP: "127.0.0.1", ClientUA: "agent", ConsentAccepted: true,
 	})
@@ -722,20 +807,36 @@ func TestCleanUserCompletesFaceIDWithNewPhoneAndShadowBinding(t *testing.T) {
 	store.mu.Unlock()
 
 	cooldown, err := svc.SendRealnameFaceIDPhoneCode(context.Background(), session.Token, RealnameFaceIDPhoneCodeInput{
-		AttemptID: started.AttemptID, Phone: phone, ClientIP: "127.0.0.1",
+		AttemptID: started.AttemptID, Phone: firstPhone, ClientIP: "127.0.0.1",
 	})
 	if err != nil {
 		t.Fatalf("send clean-user phone code: %v", err)
 	}
-	if cooldown <= 0 || shadowClient.lastSMS.Phone != phone {
+	if cooldown <= 0 || shadowClient.lastSMS.Phone != firstPhone {
 		t.Fatalf("expected Shadow SMS for candidate phone, cooldown=%s input=%+v", cooldown, shadowClient.lastSMS)
 	}
+	shadowClient.err = errors.New("[TencentCloudSDKError] Code=LimitExceeded.PhoneNumBound, Message=Phone number binding exceeds limit")
 	_, err = svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
-		AttemptID: started.AttemptID, Phone: "13800138124", Code: "888888", ClientIP: "127.0.0.1", ClientUA: "agent",
+		AttemptID: started.AttemptID, Phone: firstPhone, Code: "888888", ClientIP: "127.0.0.1", ClientUA: "agent",
 	})
 	var authErr *Error
-	if !errors.As(err, &authErr) || authErr.Code != "realname_phone_mismatch" || shadowClient.calls != 0 {
-		t.Fatalf("candidate phone must not change after SMS, err=%#v registerCalls=%d", err, shadowClient.calls)
+	if !errors.As(err, &authErr) || authErr.Code != "phone_in_use" || shadowClient.calls != 1 {
+		t.Fatalf("expected first candidate to be rejected as already bound, err=%#v registerCalls=%d", err, shadowClient.calls)
+	}
+	shadowClient.err = nil
+	if _, err := svc.SendRealnameFaceIDPhoneCode(context.Background(), session.Token, RealnameFaceIDPhoneCodeInput{
+		AttemptID: started.AttemptID, Phone: phone, ClientIP: "127.0.0.1",
+	}); err != nil {
+		t.Fatalf("send replacement phone code: %v", err)
+	}
+	if shadowClient.smsCalls != 2 || shadowClient.lastSMS.Phone != phone {
+		t.Fatalf("expected Shadow SMS for replacement phone, calls=%d input=%+v", shadowClient.smsCalls, shadowClient.lastSMS)
+	}
+	_, err = svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
+		AttemptID: started.AttemptID, Phone: firstPhone, Code: "888888", ClientIP: "127.0.0.1", ClientUA: "agent",
+	})
+	if !errors.As(err, &authErr) || authErr.Code != "realname_phone_mismatch" || shadowClient.calls != 1 {
+		t.Fatalf("old candidate must not verify after replacement SMS, err=%#v registerCalls=%d", err, shadowClient.calls)
 	}
 
 	verified, err := svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
@@ -754,7 +855,7 @@ func TestCleanUserCompletesFaceIDWithNewPhoneAndShadowBinding(t *testing.T) {
 	if current.User.Phone != phone || current.User.RealnameLevel != RealnameLevelPhone3FA || !current.User.RealnameVerified {
 		t.Fatalf("expected phone_3fa user with bound phone, got %+v", current.User)
 	}
-	if shadowClient.calls != 1 || shadowClient.basicAuthCalls != 1 || shadowClient.lastRegister.Phone != phone {
+	if shadowClient.calls != 2 || shadowClient.basicAuthCalls != 1 || shadowClient.lastRegister.Phone != phone {
 		t.Fatalf("expected Shadow binding and basic auth for candidate phone, register=%d basicAuth=%d input=%+v", shadowClient.calls, shadowClient.basicAuthCalls, shadowClient.lastRegister)
 	}
 }
@@ -976,3 +1077,100 @@ func TestPhoneChangeClearsFinalFaceIDProjection(t *testing.T) {
 }
 
 func ptrTime(v time.Time) *time.Time { return &v }
+
+func TestStartRealnameFaceIDAttemptRejectsTwoFactorMismatchBeforeFace(t *testing.T) {
+	provider := &stubFaceIDVerifier{
+		detectAuthOut: RealnameFaceIDDetectAuthResult{
+			BizToken:  "biz-mismatch",
+			VerifyURL: "https://faceid.example.com/mismatch",
+			RequestID: "req-mismatch",
+		},
+	}
+	verifier := &countingRealnameVerifier{result: RealnameProviderResult{Result: "1", Description: "证件号不匹配"}}
+	svc := NewWithStore(NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true}), Options{
+		Now:                    fixedNow,
+		RealnameCipher:         stubRealnameCipher{},
+		RealnameVerifier:       verifier,
+		RealnameFaceIDVerifier: provider,
+		RealnameFaceID: RealnameFaceIDConfig{
+			Mode:        RealnameAssuranceModeObserve,
+			RuleID:      "rule-1",
+			AccountID:   "acct-1",
+			RedirectURL: "https://api.example.com/auth/realname/faceid/callback",
+			DigestKey:   []byte("0123456789abcdef0123456789abcdef"),
+			DailyQuota:  5,
+			AttemptTTL:  2 * time.Hour,
+			LeaseTTL:    30 * time.Second,
+		},
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "mismatch-faceid@example.invalid", "13800138120")
+
+	started, err := svc.StartRealnameFaceIDAttempt(context.Background(), session.Token, RealnameFaceIDStartInput{
+		Name:            "张三",
+		IDCard:          "11010519491231002X",
+		ClientIP:        "127.0.0.1",
+		ClientUA:        "agent",
+		ConsentAccepted: true,
+	})
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "realname_mismatch" || authErr.Status != http.StatusBadRequest {
+		t.Fatalf("expected realname_mismatch 400, got %#v", err)
+	}
+	if started.AttemptID != "" {
+		t.Fatalf("expected no attempt created on two-factor mismatch, got %q", started.AttemptID)
+	}
+	if verifier.calls != 1 {
+		t.Fatalf("expected exactly one two-factor verification call, got %d", verifier.calls)
+	}
+	if provider.detectAuthCalls != 0 {
+		t.Fatalf("expected no FaceID DetectAuth call on two-factor mismatch, got %d", provider.detectAuthCalls)
+	}
+}
+
+func TestStartRealnameFaceIDAttemptProceedsToFaceAfterTwoFactorMatch(t *testing.T) {
+	provider := &stubFaceIDVerifier{
+		detectAuthOut: RealnameFaceIDDetectAuthResult{
+			BizToken:  "biz-match",
+			VerifyURL: "https://faceid.example.com/match",
+			RequestID: "req-match",
+		},
+	}
+	verifier := &countingRealnameVerifier{result: RealnameProviderResult{Result: "0"}}
+	svc := NewWithStore(NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true}), Options{
+		Now:                    fixedNow,
+		RealnameCipher:         stubRealnameCipher{},
+		RealnameVerifier:       verifier,
+		RealnameFaceIDVerifier: provider,
+		RealnameFaceID: RealnameFaceIDConfig{
+			Mode:        RealnameAssuranceModeObserve,
+			RuleID:      "rule-1",
+			AccountID:   "acct-1",
+			RedirectURL: "https://api.example.com/auth/realname/faceid/callback",
+			DigestKey:   []byte("0123456789abcdef0123456789abcdef"),
+			DailyQuota:  5,
+			AttemptTTL:  2 * time.Hour,
+			LeaseTTL:    30 * time.Second,
+		},
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "match-faceid@example.invalid", "13800138121")
+
+	started, err := svc.StartRealnameFaceIDAttempt(context.Background(), session.Token, RealnameFaceIDStartInput{
+		Name:            "张三",
+		IDCard:          "11010519491231002X",
+		ClientIP:        "127.0.0.1",
+		ClientUA:        "agent",
+		ConsentAccepted: true,
+	})
+	if err != nil {
+		t.Fatalf("start attempt after matching two-factor: %v", err)
+	}
+	if started.AttemptID == "" {
+		t.Fatalf("expected an attempt to be created after two-factor match")
+	}
+	if verifier.calls != 1 {
+		t.Fatalf("expected exactly one two-factor verification call, got %d", verifier.calls)
+	}
+	if provider.detectAuthCalls != 1 {
+		t.Fatalf("expected FaceID DetectAuth to run once after two-factor match, got %d", provider.detectAuthCalls)
+	}
+}

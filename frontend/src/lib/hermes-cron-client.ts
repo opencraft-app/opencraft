@@ -36,6 +36,14 @@ export interface CronJob {
   script: string;
   effective_window: CronEffectiveWindow | null;
   lightvela_schedule: CronLightVelaSchedule | null;
+  /** jobs.json 中的任务级推理绑定；null 表示当前无法安全确认。 */
+  inference_config: CronInferenceConfig | null;
+}
+
+export interface CronInferenceConfig {
+  provider: string | null;
+  model: string | null;
+  no_agent: boolean;
 }
 
 export interface CronEffectiveWindow {
@@ -58,11 +66,13 @@ export interface CronRunRecord {
   job_id: string;
   job_name: string;
   job_prompt: string;
+  skills: string[];
   schedule: CronJob["schedule"] | null;
   deliver: string;
   run_at: string;
   status: string | null;
   output_path: string;
+  skip_reason?: "model_changed";
 }
 
 /** 调用方传给 create() 的入参 */
@@ -79,6 +89,16 @@ export interface CreateCronJobInput {
   deliver?: string;
   /** 可选 pre-run script 文件名，文件需位于 ~/.hermes/scripts/ */
   script?: string;
+}
+
+export interface EditCronJobPatch {
+  schedule?: string;
+  prompt?: string;
+  name?: string;
+  deliver?: string;
+  script?: string;
+  /** undefined = keep existing; [] = clear; non-empty = replace with these slugs */
+  skills?: string[];
 }
 
 /** 命令失败时抛出，message 已准备好直接进 toast */
@@ -133,8 +153,10 @@ interface CronRunFileRow {
   mtime_ms?: unknown;
   output_status?: unknown;
   agent_skipped?: unknown;
+  skip_reason?: unknown;
   job_name?: unknown;
   job_prompt?: unknown;
+  job_skills?: unknown;
   job_schedule?: unknown;
   job_deliver?: unknown;
   job_last_run_at?: unknown;
@@ -178,6 +200,24 @@ export function buildCreateCommand(input: CreateCronJobInput): string {
   }
   if (input.script) {
     parts.push("--script", shellQuote(input.script));
+  }
+  return parts.join(" ");
+}
+
+/** 拼装编辑命令；Skill 使用三态区分保持、替换与清空。 */
+export function buildEditCommand(id: string, patch: EditCronJobPatch): string {
+  const parts = ["hermes", "cron", "edit", shellQuote(id)];
+  if (patch.schedule !== undefined) parts.push("--schedule", shellQuote(patch.schedule));
+  if (patch.prompt !== undefined) parts.push("--prompt", shellQuote(patch.prompt));
+  if (patch.name !== undefined) parts.push("--name", shellQuote(patch.name));
+  if (patch.deliver !== undefined) parts.push("--deliver", shellQuote(patch.deliver));
+  if (patch.script !== undefined) parts.push("--script", shellQuote(patch.script));
+  if (patch.skills !== undefined) {
+    if (patch.skills.length === 0) {
+      parts.push("--clear-skills");
+    } else {
+      for (const skill of patch.skills) parts.push("--skill", shellQuote(skill));
+    }
   }
   return parts.join(" ");
 }
@@ -455,6 +495,7 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
       const promptById = new Map<string, string>();
       const createdAtById = new Map<string, string>();
       const scriptById = new Map<string, string>();
+      const inferenceConfigById = new Map<string, CronInferenceConfig>();
       for (const raw of arr) {
         const r = raw as Record<string, unknown>;
         const id = String(r.id ?? "");
@@ -465,6 +506,11 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
         if (createdAt) createdAtById.set(id, createdAt);
         const script = typeof r.script === "string" ? r.script : "";
         if (script) scriptById.set(id, script);
+        inferenceConfigById.set(id, {
+          provider: typeof r.provider === "string" && r.provider.trim() ? r.provider.trim() : null,
+          model: typeof r.model === "string" && r.model.trim() ? r.model.trim() : null,
+          no_agent: r.no_agent === true,
+        });
       }
       for (const j of jobs) {
         const p = promptById.get(j.id);
@@ -473,6 +519,7 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
         if (c) j.created_at = c;
         const script = scriptById.get(j.id);
         if (script) j.script = script;
+        j.inference_config = inferenceConfigById.get(j.id) ?? null;
       }
     }
   } catch {
@@ -517,6 +564,7 @@ function buildListRecentCronRunsCommand(limit: number): string {
     "            jobs_meta[job_id] = {",
     "                'job_name': job.get('name') or job.get('job_name') or '',",
     "                'job_prompt': job.get('prompt') or job.get('job_prompt') or '',",
+    "                'job_skills': job.get('skills') or job.get('job_skills') or [],",
     "                'job_schedule': job.get('schedule') or job.get('job_schedule'),",
     "                'job_deliver': job.get('deliver') or job.get('job_deliver') or '',",
     "                'job_last_run_at': job.get('last_run_at') or job.get('job_last_run_at') or '',",
@@ -537,6 +585,12 @@ function buildListRecentCronRunsCommand(limit: number): string {
     "        return {'output_status': '', 'agent_skipped': False}",
     "    lowered = text.lower()",
     "    compact = ''.join(lowered.split())",
+    "    model_changed = all(marker in lowered for marker in [",
+    "        'skipped to prevent unintended spend',",
+    "        'global inference config drifted since this job was created',",
+    "    ])",
+    "    if model_changed:",
+    "        return {'output_status': 'not_executed', 'agent_skipped': False, 'skip_reason': 'model_changed'}",
     "    agent_skipped = any(marker in compact for marker in [",
     "        '\"wakeagent\":false',",
     "        \"'wakeagent':false\",",
@@ -616,6 +670,7 @@ function buildArchiveCronJobMetadataCommand(): string {
     "            'id': job_id,",
     "            'name': job.get('name') or '',",
     "            'prompt': job.get('prompt') or '',",
+    "            'skills': job.get('skills') or [],",
     "            'schedule': job.get('schedule'),",
     "            'deliver': job.get('deliver') or '',",
     "            'last_run_at': job.get('last_run_at') or '',",
@@ -676,7 +731,15 @@ export function parseCronRunFilesOutput(text: string, jobs: CronJob[]): CronRunR
     if (row.agent_skipped === true) continue;
     const job = jobsById.get(jobId);
     const rowSchedule = normalizeRunSchedule(row.job_schedule);
-    const rawName = job?.name || stringValue(row.job_name) || jobId;
+    const inferredStatus = inferRunStatus(row, job);
+    const modelChanged = row.skip_reason === "model_changed"
+      || isModelConfigDriftMessage(inferredStatus);
+    const rawName = modelChanged
+      ? firstNonModelConfigDriftText(job?.name, row.job_name, jobId)
+      : job?.name || stringValue(row.job_name) || jobId;
+    const jobPrompt = modelChanged
+      ? firstNonModelConfigDriftText(job?.prompt, row.job_prompt)
+      : job?.prompt || stringValue(row.job_prompt);
     // 「测试运行」创建的临时任务是内部实现细节，不应出现在「最近执行」里：它的
     // cron output 目录在任务删除后仍存在，archive/jobs_meta 里也可能留有其 meta，
     // 导致这里解析出带零宽 marker 的临时任务名/临时 job id。凡是 job.name 或
@@ -689,12 +752,14 @@ export function parseCronRunFilesOutput(text: string, jobs: CronJob[]): CronRunR
       id: `${jobId}:${outputPath || runAt}`,
       job_id: jobId,
       job_name: displayNameForRun(rawName, jobs),
-      job_prompt: job?.prompt || stringValue(row.job_prompt),
+      job_prompt: jobPrompt,
+      skills: job?.skills ?? normalizeRunSkills(row.job_skills),
       schedule: job?.schedule ?? rowSchedule,
       deliver: job?.deliver || stringValue(row.job_deliver),
       run_at: runAt,
-      status: inferRunStatus(row, job),
+      status: modelChanged ? "not_executed" : inferredStatus,
       output_path: outputPath,
+      ...(modelChanged ? { skip_reason: "model_changed" as const } : {}),
     });
   }
   return records;
@@ -702,6 +767,28 @@ export function parseCronRunFilesOutput(text: string, jobs: CronJob[]): CronRunR
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function normalizeRunSkills(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isModelConfigDriftMessage(value: unknown): boolean {
+  const normalized = stringValue(value).toLowerCase();
+  return normalized.includes("skipped to prevent unintended spend")
+    && normalized.includes("global inference config drifted since this job was created");
+}
+
+function firstNonModelConfigDriftText(...values: unknown[]): string {
+  for (const value of values) {
+    const text = stringValue(value);
+    if (text && !isModelConfigDriftMessage(text)) return text;
+  }
+  return "";
 }
 
 function normalizeRunSchedule(value: unknown): CronJob["schedule"] | null {
@@ -833,6 +920,7 @@ function finalizeJob(p: Partial<CronJob>): CronJob {
     script: p.script || "",
     effective_window: p.effective_window || null,
     lightvela_schedule: p.lightvela_schedule || null,
+    inference_config: p.inference_config || null,
   };
 }
 
@@ -1277,7 +1365,7 @@ async function removeCronJobByExactName(botId: string, name: string): Promise<vo
 /**
  * 把 Hermes / acli 返回的通道名归一化成投递用的 platform key。
  *
- * 与 `openclaw-automations-panel.tsx` 里的 `normalizeHermesChannelKey` 保持一致
+ * 与 `agent-automations-panel.tsx` 里的 `normalizeHermesChannelKey` 保持一致
  * （此处独立一份，避免 lib 反向依赖 page 组件文件）。
  */
 function normalizeChannelKeyForDeliver(channel: string): string {
@@ -1651,13 +1739,7 @@ export async function removeCronJob(botId: string, id: string): Promise<void> {
 export async function editCronJob(
   botId: string,
   id: string,
-  patch: { schedule?: string; prompt?: string; name?: string; deliver?: string; script?: string },
+  patch: EditCronJobPatch,
 ): Promise<void> {
-  const parts = ["hermes", "cron", "edit", shellQuote(id)];
-  if (patch.schedule !== undefined) parts.push("--schedule", shellQuote(patch.schedule));
-  if (patch.prompt !== undefined) parts.push("--prompt", shellQuote(patch.prompt));
-  if (patch.name !== undefined) parts.push("--name", shellQuote(patch.name));
-  if (patch.deliver !== undefined) parts.push("--deliver", shellQuote(patch.deliver));
-  if (patch.script !== undefined) parts.push("--script", shellQuote(patch.script));
-  await execCommand(botId, parts.join(" "));
+  await execCommand(botId, buildEditCommand(id, patch));
 }

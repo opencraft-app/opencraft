@@ -3,18 +3,19 @@ import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
-import { useOpenClaw } from "@/contexts/openclaw-context";
+import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import {
   usePaidBillingEnabled,
   useRealnamePhoneVerificationEnabled,
 } from "@/contexts/runtime-config-context";
-import { InviteCodeModal } from "@/components/site/login-modal";
+import { InviteCodeModal, LoginModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
-import type { Bundle } from "@/domain/types";
+import type { Bundle, BundlePrice, BundleDescriptionEntry } from "@/domain/types";
+import { REALNAME_LEVEL } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
 import { isGlobal } from "@/lib/region";
@@ -26,7 +27,7 @@ import {
   isPassRequiresRenewError,
 } from "@/lib/billing-error";
 import { buildPayPlan } from "@/lib/wx-pay";
-import { AGENTS_HOME_PATH } from "@/lib/agent-routes";
+import { ACCOUNT_PATH, getAgentCreatingPath, REALNAME_REQUIRED_QUERY_KEY, SUBSCRIBE_PATH } from "@/lib/agent-routes";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS } from "@/observability/posthog";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
@@ -90,7 +91,9 @@ interface PlanInfo {
   price: string;
   priceUnit?: string;
   priceNote?: string;
-  /* 促销标签（如“限时免费”），展在价格右侧，粉色小徐章风格 */
+  /* 原价（折扣前价格）：有折扣时展在活动价右侧，小字删除线灰色。无折扣时为 undefined。 */
+  originalPrice?: string;
+  /* 促销标签（如“限时免费”），挪到套餐名右侧，粉色小徐章风格 */
   promoTag?: string;
   description: string;
   features: PlanFeature[];
@@ -155,19 +158,19 @@ const BUNDLE_TYPE_TABS: BundleTypeTabDef[] = [
   { key: "ai", zhLabel: "AI 增强版" },
 ];
 
-/* ─── AI 增强版：付费时长子 Tab（月付 / 年付）─── */
+/* ─── AI 增强版：付费时长子 Tab（月付 / 季付）─── */
 
 /**
  * 仅在计费开关开启（paidBillingActive=true）且当前 tab 为 `ai` 时展示。
  * 切换后以 { time_span, time_unit } 作为 listBundles 询价参数，重拉套餐价格；
  * 下单时把 { period, time_unit } 传给 createPassOrder。
  *
- * 关于「年付」编码：暂用 `12m`（12 个月）而非 `1y`。
- *   - 后端 BundleTimeUnit 类型允许 y/m/d，但当前后端未验证 y 是否已支持；
- *   - 12m 语义等价、最兼容；后端确认支持 y 后可改回。
+ * 关于「季付」编码：用 `3m`（3 个月）。
+ *   - 后端 BundleTimeUnit 允许 y/m/d，季付用月为单位最兼容、语义清晰；
+ *   - 展示为「3 个月下单价」，单位「/ 季」。
  */
 interface AiDurationTabDef {
-  key: "monthly" | "yearly";
+  key: "monthly" | "quarterly";
   period: number;
   time_unit: "m";
   zhLabel: string;
@@ -175,7 +178,7 @@ interface AiDurationTabDef {
 
 const AI_DURATION_TABS: AiDurationTabDef[] = [
   { key: "monthly", period: 1, time_unit: "m", zhLabel: "月付" },
-  { key: "yearly", period: 12, time_unit: "m", zhLabel: "年付" },
+  { key: "quarterly", period: 3, time_unit: "m", zhLabel: "季付" },
 ];
 
 /* i18n 静态标记：AI_DURATION_TABS 的 zhLabel 与 priceUnit 的年付文案、询价中占位文案都是动态变量，extract 脚本扫不到 t() 调用 */
@@ -191,7 +194,7 @@ const iconStyle = { width: 16, height: 16, color: colors.warmGray300, strokeWidt
 
 /* ─── Icon 映射（用于纯数据 → JSX 转换）─── */
 
-type IconKey = "user" | "monitor" | "hardDrive" | "clock" | "settings" | "zap" | "wifi" | "headphones" | "check";
+type IconKey = "user" | "monitor" | "hardDrive" | "clock" | "settings" | "zap" | "wifi" | "headphones" | "check" | "automation" | "skill" | "channel" | "memory" | "evolution" | "persona" | "diagnostics" | "modelApi";
 
 const iconMap: Record<IconKey, React.ReactNode> = {
   user: <User {...iconStyle} />,
@@ -203,6 +206,19 @@ const iconMap: Record<IconKey, React.ReactNode> = {
   wifi: <Wifi {...iconStyle} />,
   headphones: <Sparkles {...iconStyle} />,
   check: <Check {...iconStyle} />,
+  /* Agent 核心能力点：自动任务 / 技能（包）/ 多平台通道 / 长期记忆 */
+  automation: <CalendarClock {...iconStyle} />,
+  skill: <Puzzle {...iconStyle} />,
+  channel: <MessageSquare {...iconStyle} />,
+  memory: <Brain {...iconStyle} />,
+  /* Agent 自主进化：用 Sparkles 表达「持续进化 / 智能升级」 */
+  evolution: <Sparkles {...iconStyle} />,
+  /* 人设注入：用 UserCog 表达「可配置的人格 / 角色设定」 */
+  persona: <UserCog {...iconStyle} />,
+  /* 诊断中心：用 Stethoscope 表达「运行状态检查 / 问题诊断」 */
+  diagnostics: <Stethoscope {...iconStyle} />,
+  /* 接入主流模型 API：用 Cpu 表达「模型 / 算力接入」 */
+  modelApi: <Cpu {...iconStyle} />,
 };
 
 /**
@@ -225,6 +241,21 @@ const iconForKey = (key: string): React.ReactNode => {
   if (k.includes("环境") || k.includes("environment")) return iconMap.monitor;
   if (k.includes("配置") || k.includes("config")) return iconMap.settings;
   return iconMap.check;
+};
+
+/**
+ * Agent 核心能力点在卡片下方按固定顺序统一渲染（见 mapBundleToPlan）。
+ * 后端 description 里若也下发了同类项（最典型的是「7*24小时在线」），
+ * 这里将其从 otherFeatures 中过滤掉，避免与固定能力点重复或打乱顺序。
+ */
+const CAPABILITY_DESC_KEYS = new Set<string>([
+  "7*24小时在线", "7×24小时在线", "7×24 在线", "7*24 在线",
+  "极简配置面板", "自动任务", "技能安装", "技能包", "精选技能/技能包",
+  "连接主流聊天通道", "接入主流模型 API", "长期记忆", "人设注入", "Agent 自主进化", "诊断中心",
+]);
+const isCapabilityDescKey = (rawKey: string): boolean => {
+  if (CAPABILITY_DESC_KEYS.has(rawKey)) return true;
+  return /24/.test(rawKey) && /(在线|online)/i.test(rawKey);
 };
 
 /**
@@ -260,8 +291,8 @@ const mapBundleToPlan = (
   paidBillingEnabled: boolean,
   /* 当前选中的付费时长（面向所有 bundle_type）。默认 monthly 保持向后兼容：
      - 未开启计费开关/国际站限时免费视觉：调用处可不传，单位经后面逆矩阵处理为"/ 月"
-     - 开启计费开关后已选年付时：应传入 "yearly" 以保证价格单位与后端 real_total_cost 口径一致 */
-  durationKey: "monthly" | "yearly" = "monthly",
+     - 开启计费开关后已选季付时：应传入 "quarterly" 以保证价格单位与后端 real_total_cost 口径一致 */
+  durationKey: "monthly" | "quarterly" = "monthly",
   /* 询价中占位标记：仅在「用户已切换 durationKey，但对应时长的询价请求尚未返回」的中间态传 true。
      此时 bundle.price 仍是上一时长（如月付）的旧价，若原样展示会出现「¥49 / 年」这种严重误导，
      故价格换成 "——"、单位清空、CTA 禁用，直到新价格回来。 */
@@ -275,10 +306,37 @@ const mapBundleToPlan = (
        与 lightclaw:features.realnamePhoneVerificationEnabled=false 的场景）
      两开关任一开启时，一律维持原「立即开通」文案，不做免费引导。 */
   freeGuideAllowed: boolean = false,
+  /* 当前用户已生效权益对应的 bundle_id（来自 activePass.bundle_id）。
+     命中当前卡时，CTA 文案改为「当前订阅」；配合外层 subscriptionLocked 让所有卡按钮禁用
+     （暂不支持升级/更换套餐）。未订阅或国际站无 activePass 时传 null。 */
+  currentBundleId: string | null = null,
+  /* 是否已登录：未登录时按套餐名直接展示促销标签，不依赖后端 discount 字段。 */
+  isLoggedIn: boolean = true,
 ): PlanInfo => {
   /* 静态标记，运行时一次性调用以让字典加载后端下发中文的翻译 */
   __markBundleBackendStringsForI18n(t);
   const features: PlanFeature[] = [];
+
+  /* 套餐档位（tier）判定，依据 bundle_name（中/英/中英混排）识别启航 / 巡游 / 远航。
+     用于：独立环境规格差异化 + 一句话文案差异化。避免后端 description.Value 缺值时露馅。 */
+  const bundleNm = bundle.bundle_name ?? "";
+  const nmLower = bundleNm.toLowerCase();
+  const isLaunchTier = bundleNm.includes("启航") || nmLower.includes("launch");
+  const isCruiseTier = bundleNm.includes("巡游") || nmLower.includes("cruise");
+  const isVoyageTier = bundleNm.includes("远航") || nmLower.includes("voyage");
+  /* 独立环境规格：启航 2核4G；巡游 / 远航 升配 4核8G。 */
+  const envSpec = isLaunchTier ? t("2核 4G 内存") : t("4核 8G 内存");
+  /* 专属云端存储：启航 50G；巡游 / 远航 升配 80G。 */
+  const storageSpec = isLaunchTier ? "50G" : "80G";
+  /* 一句话文案按 tier 差异化（PRD 需求2）。命中 tier 时直接使用 tier 文案，不受 freeGuideAllowed 清空；
+     未命中 tier（如免费试用卡）保持原有兜底逻辑。 */
+  const tierTagline = isLaunchTier
+    ? t("低成本上手，先让 Agent 替你跑起来")
+    : isCruiseTier
+      ? t("日常主力，让智能化成为习惯")
+      : isVoyageTier
+        ? t("体验进阶，专业玩家的配置")
+        : "";
 
   /* agent_quota 打头阵 */
   if (bundle.agent_quota > 0) {
@@ -296,16 +354,20 @@ const mapBundleToPlan = (
     /* 统一走 i18n 字典：当前语言是 en-US 则查英文，zh-CN 则回显原文。
        动态参数 extract 脚本扫不到，为此在 __markBundleBackendStringsForI18n 中静态列举。 */
     const label = t(rawKey);
-    /* 「独立环境」统一前端展示规格，避免后端 Value 为空导致卡片露馅 */
+    /* 「独立环境」统一前端展示规格，避免后端 Value 为空导致卡片露馅；
+       匹配 key 仍用后端下发的「独立环境」，展示文案统一为「云端独立环境」 */
     if (rawKey === "独立环境") {
-      envFeature = { icon: iconForKey(rawKey), label, value: t("2核 4G 内存") };
+      envFeature = { icon: iconForKey(rawKey), label: t("云端独立环境"), value: envSpec };
       continue;
     }
-    /* 「专属云端存储」前端统一展示容量，避免后端缺值 */
+    /* 「专属云端存储」前端按 tier 统一展示容量，避免后端缺值 */
     if (rawKey === "专属云端存储") {
-      storageFeature = { icon: iconMap.hardDrive, label, value: "50G" };
+      storageFeature = { icon: iconMap.hardDrive, label, value: storageSpec };
       continue;
     }
+    /* 能力点（7*24小时在线 / 自动任务 / 技能 / 多通道 / 长期记忆 / 极简配置面板 / 人设注入 / 自主进化）
+       统一在下方按固定顺序渲染，这里跳过后端 description 里的同类项，避免重复与乱序。 */
+    if (isCapabilityDescKey(rawKey)) continue;
     /* 后端 Value 为空时，用右侧勾替代，避免卡片右侧空白 */
     if (!entry.Value) {
       otherFeatures.push({ icon: iconForKey(rawKey), label, hasCheck: true });
@@ -321,22 +383,35 @@ const mapBundleToPlan = (
     features.push({
       icon: iconMap.zap,
       label: t("模型积分"),
-      value: `${bundle.credit} ${t("体验积分")}`,
+      value: `${bundle.credit} ${t("积分/月")}`,
     });
   }
   features.push(...otherFeatures);
-  /* 如果 features 比较少，填几个通用卖点（顺序：独立环境 → 专属云端存储 → 7×24 在线）*/
+  /* 规格项兜底：后端缺失「独立环境」「专属云端存储」时补齐，仍固定排在能力点上方 */
   if (!envFeature) {
-    features.push({ icon: iconMap.monitor, label: t("独立环境"), value: t("2核 4G 内存") });
+    features.push({ icon: iconMap.monitor, label: t("云端独立环境"), value: envSpec });
   }
   if (!storageFeature) {
-    features.push({ icon: iconMap.hardDrive, label: t("专属云端存储"), value: "50G" });
+    features.push({ icon: iconMap.hardDrive, label: t("专属云端存储"), value: storageSpec });
   }
-  if (features.length < 4 && !features.some((f) => f.label === t("7×24 在线"))) {
-    features.push({ icon: iconMap.clock, label: t("7×24 在线"), hasCheck: true });
-  }
-  if (isGlobal && !features.some((f) => f.label === t("极简配置面板"))) {
-    features.push({ icon: iconMap.settings, label: t("极简配置面板"), hasCheck: true });
+  /* ─── Agent 核心能力点（固定顺序，所有套餐一致，统一展示在规格项下方）───
+     顺序：Agent 自主进化 → 7*24小时在线 → 极简配置面板 → 连接主流聊天通道 → 接入主流模型 API
+          → 精选技能/技能包 → 人设注入 → 自动任务 → 长期记忆 → 诊断中心。
+     技能项不再按 tier 区分「技能安装 / 技能包」，所有套餐统一「精选技能/技能包」。 */
+  const capabilityPoints: PlanFeature[] = [
+    { icon: iconMap.evolution, label: t("Agent 自主进化"), hasCheck: true },
+    { icon: iconMap.clock, label: t("7*24小时在线"), hasCheck: true },
+    { icon: iconMap.settings, label: t("极简配置面板"), hasCheck: true },
+    { icon: iconMap.channel, label: t("连接主流聊天通道"), hasCheck: true },
+    { icon: iconMap.modelApi, label: t("接入主流模型 API"), hasCheck: true },
+    { icon: iconMap.skill, label: t("精选技能/技能包"), hasCheck: true },
+    { icon: iconMap.persona, label: t("人设注入"), hasCheck: true },
+    { icon: iconMap.automation, label: t("自动任务"), hasCheck: true },
+    { icon: iconMap.memory, label: t("长期记忆"), hasCheck: true },
+    { icon: iconMap.diagnostics, label: t("诊断中心"), hasCheck: true },
+  ];
+  for (const cap of capabilityPoints) {
+    if (!features.some((f) => f.label === cap.label)) features.push(cap);
   }
 
   /**
@@ -364,11 +439,70 @@ const mapBundleToPlan = (
   const showPricingPlaceholder = paid && isPricingLoading && !soldOut;
 
   let price = "";
+  let originalPrice: string | undefined;
   let promoTag: string | undefined;
+  /* 需求4：是否可享受「免费 14 天 0 元下单」——命中即把 CTA 文案改为「免费开通」。
+     当前口径：国内付费启航标准版（非 AI 增强、无后端折扣）享 14 天免费试用、首单 0 元。 */
+  let isZeroDownFreeTrial = false;
   if (paid) {
-    price = realPriceYuan != null ? formatYuan(realPriceYuan, bundle.price?.currency ?? "CNY") : "";
+    const currency = bundle.price?.currency ?? "CNY";
+    /* 未登录静态页面：启航 discount=0（免费试用），巡游 discount=50%（首月 5 折），按折扣调整展示价 */
+    let displayPriceYuan = realPriceYuan;
+    /* 原价（折扣前）：未登录时即 realPriceYuan（后端下发的原价）；已登录时取后端 total_cost。 */
+    let originalPriceYuan: number | null = null;
+    if (!isLoggedIn && realPriceYuan != null) {
+      const nm = bundle.bundle_name ?? "";
+      const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
+      const isCruise = nm.includes("巡游") || nm.toLowerCase().includes("cruise");
+      const notAi = bundle.bundle_type !== "ai";
+      if (isLaunch && notAi) {
+        displayPriceYuan = 0; // 免费 14 天 → ¥0
+        originalPriceYuan = realPriceYuan; // 原价展示
+      } else if (isCruise && notAi) {
+        displayPriceYuan = +(realPriceYuan * 0.5).toFixed(2); // 首月 5 折
+        originalPriceYuan = realPriceYuan; // 原价展示
+      }
+    } else if (isLoggedIn && bundle.price) {
+      /* 已登录：后端 real_total_cost 为折后价，total_cost 为原价；有折扣时展示原价删除线。 */
+      const backendOriginalYuan = centsToYuan(bundle.price.total_cost);
+      if (
+        backendOriginalYuan != null &&
+        displayPriceYuan != null &&
+        backendOriginalYuan > displayPriceYuan
+      ) {
+        originalPriceYuan = backendOriginalYuan;
+      }
+    }
+    price = displayPriceYuan != null ? formatYuan(displayPriceYuan, currency) : "";
+    originalPrice = originalPriceYuan != null ? formatYuan(originalPriceYuan, currency) : undefined;
     /* 国内站不再展示"限时免费"标签 */
-    promoTag = undefined;
+    const backendDiscount = bundle.price?.discount;
+    if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
+      promoTag = `${Math.round(backendDiscount * 100) / 10}折`;
+    } else {
+      const nm = bundle.bundle_name ?? "";
+      const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
+      const isCruise = nm.includes("巡游") || nm.toLowerCase().includes("cruise");
+      const withToken = bundle.bundle_type === "ai";
+      if (isLaunch) {
+        if (withToken) {
+          promoTag = t("首月 6 折");
+        } else if (!isLoggedIn || backendDiscount === 0) {
+          /* 启航01：未登录直接展示「免费 14 天」；已登录需 discount=0 */
+          promoTag = t("首单免费 14 天");
+          isZeroDownFreeTrial = true;
+        }
+      } else if (isCruise) {
+        if (withToken) {
+          promoTag = t("首月 6 折");
+        } else if (!isLoggedIn || backendDiscount === 50) {
+          /* 巡游01：未登录直接展示「首月 5 折」；已登录需 discount=50 */
+          promoTag = t("首月 5 折");
+        }
+      } else {
+        promoTag = undefined;
+      }
+    }
   } else {
     /* 国际站：保持当前限时免费视觉 */
     price = isGlobal ? "$7.5" : "¥49";
@@ -384,15 +518,29 @@ const mapBundleToPlan = (
    *  任一开关开启时一律维持「立即开通」。
    *  售罄 / 询价中 / 暂无报价等禁用态文案优先级更高，不受此引导文案影响。 */
   const isFeaturedFreeGuide = freeGuideAllowed && index === 0 && !isSubscribed;
-  const ctaLabel = soldOut
+  /* 命中当前已订阅套餐：CTA 固定为「当前订阅」，优先级最高（覆盖售罄/询价/引导等文案）。
+     暂不支持升级 / 更换套餐，所有卡按钮由外层 subscriptionLocked 统一禁用。
+     别名映射：老免费版 bundle_free_trial_01 视为 bundle_launch_01 的前身，匹配同一张卡。 */
+  const CURRENT_BUNDLE_ALIASES: Record<string, string[]> = {
+    "bundle_launch_01": ["bundle_free_trial_01"],
+  };
+  const isCurrentPlan = currentBundleId != null && (
+    bundle.bundle_id === currentBundleId ||
+    CURRENT_BUNDLE_ALIASES[bundle.bundle_id]?.includes(currentBundleId) === true
+  );
+  const ctaLabel = isCurrentPlan
+    ? t("当前订阅")
+    : soldOut
     ? t("已售罄")
     : showPricingPlaceholder
       ? t("询价中...")
       : priceUnavailable
         ? t("暂无报价")
-        : isFeaturedFreeGuide
-          ? t("免费开通")
-          : t("立即开通");
+        : /* 需求4：可享免费 14 天 0 元下单，或内测「免费订阅」引导态，一律显示「免费订阅」。
+             已订阅用户不展示「免费订阅」引导（当前套餐走 isCurrentPlan →「当前订阅」优先级更高）。 */
+          !isSubscribed && (isZeroDownFreeTrial || isFeaturedFreeGuide)
+          ? t("免费订阅")
+          : t("立即订阅");
 
   return {
     id: bundle.bundle_id,
@@ -403,6 +551,8 @@ const mapBundleToPlan = (
     badgeStyle: soldOut ? "tag" : undefined,
     /* 价格：中间态保留旧价原样展示，视觉稳定不跳变；CTA 由 pricingLoading 兜底禁用。 */
     price,
+    /* 原价（折扣前）：有折扣时展在活动价右侧删除线；询价加载中不展示，避免误导。 */
+    originalPrice: showPricingPlaceholder ? undefined : originalPrice,
     /* 价格单位需与当前 durationKey 一致，且中间态必须与旧价口径一致：
        - 未付费（限时免费视觉）：paid=false 就一定是默认月价锚点，单位固定为"/ 月"
        - 已付费：paid=true 时，当前价格已是后端按 durationKey 询价回来的 real_total_cost；
@@ -415,9 +565,9 @@ const mapBundleToPlan = (
       : (isGlobal ? "/ month" : t("/ 月")),
     /* 国际站中英文都展示促销标签：英文为 Limited free，中文为限时免费；国内站保持原有中文标签。 */
     promoTag,
-    /* freeGuideAllowed（两开关同时关闭）时去掉卡片描述「尝鲜体验，从一个 Agent 开始」，
-       其余情况维持原文案。 */
-    description: freeGuideAllowed ? "" : t("尝鲜体验，从一个 Agent 开始"),
+    /* 命中 tier 时用 tier 一句话文案（需求2）；未命中 tier 时维持原兜底：
+       freeGuideAllowed（两开关同时关闭）去掉描述，其余展示「尝鲜体验，从一个 Agent 开始」。 */
+    description: tierTagline || (freeGuideAllowed ? "" : t("尝鲜体验，从一个 Agent 开始")),
     features,
     ctaLabel,
     ctaStyle: index === 0 ? "primary" : "outline",
@@ -474,6 +624,130 @@ const makePlaceholderBundle = (id: string, name: string, agentQuota: number): Bu
   bundle_sales_state: "SOLD_OUT",
 });
 
+/* ─── 未登录静态定价表（功能点2b / PRD 方案A）─────────────────────────
+ * 未登录用户不调 GET /v1/bundles（匿名调用后端返回 price=null，会全线落到「暂无报价」+ 按钮禁用，
+ * 表现为「打开啥也没有」），改用下面写死的静态 Bundle 列表，喂给同一套 mapBundleToPlan / planTiers
+ * 渲染，保证「未登录静态展示」与「登录后询价展示」的结构、文案、促销角标完全一致；
+ * 仅在点击订阅按钮时才引导登录（见 handleSubscribe 的 !isLoggedIn → login()）。
+ *
+ * 价格为线上确认值（金额敏感）：
+ *   - 启航标准版：月付 ¥45 / 季付 ¥135（月×3，无折扣）
+ *   - 巡游标准版：月付 ¥95 / 季付 ¥285（月×3，无折扣）
+ * AI 增强版与远航统一「敬请期待」、不展示价格（price=null，由 planTiers 强制），故无需静态金额。
+ * ⚠️ 后端调整线上价格时请同步更新此表，避免未登录静态价与登录后询价价不一致。 */
+const STATIC_TIER_PRICE_YUAN: Record<"launch" | "cruise", Record<"monthly" | "quarterly", number>> = {
+  launch: { monthly: 45, quarterly: 135 },
+  cruise: { monthly: 95, quarterly: 285 },
+};
+
+/** 静态价格构造器：入参以「元」为单位，内部转「分」以与后端询价 BundlePrice 口径一致（discount=1.0 不打折）。 */
+const buildStaticPrice = (yuan: number): BundlePrice => {
+  const cents = Math.round(yuan * 100);
+  return { price: cents, total_cost: cents, real_total_cost: cents, currency: "CNY", discount: 1.0 };
+};
+
+/** 标准版通用卖点（与后端 description 对齐；独立环境规格 / 存储 / 积分等具体展示由 mapBundleToPlan 内部统一处理）。 */
+const STATIC_GENERAL_DESC: BundleDescriptionEntry[] = [
+  { Key: "独立环境", Value: "" },
+  { Key: "专属云端存储", Value: "" },
+  { Key: "7×24小时在线", Value: "" },
+];
+
+/**
+ * 生成未登录静态 Bundle 列表（6 张，覆盖启航/巡游/远航 × 标准版/AI 增强版），
+ * 走与后端相同的 mapBundleToPlan / planTiers 链路渲染。
+ *   - 标准版：露真实价（启航/巡游随 durationKey 取月付/季付；远航由 planTiers 强制「敬请期待」，price=null）
+ *   - AI 增强版：price=null，积分由 planTiers 的 AI_VARIANT_CREDIT 强制写死（启航 4500 / 巡游 10000）
+ * bundle_id 与线上真实配置一致（见 scripts/seed_trade_shprod_bundle_definition.sql），
+ * 但未登录不会触发下单（点订阅先引导登录），仅用于展示。
+ */
+const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
+  const span = durationKey === "quarterly" ? 3 : 1;
+  const base = {
+    bundle_state: "ONLINE" as const,
+    time_unit: "m" as const,
+    /* 未登录纯静态展示不露出「今日剩余 N/M 份」名额提示：available === total 时，
+       PlanCard 的 `availableCount < totalCount` 条件不成立，名额行不渲染。 */
+    bundle_sales_available_count: 100,
+    bundle_sales_total_count: 100,
+    bundle_sales_state: "AVAILABLE" as const,
+  };
+  return [
+    /* 免费试用：仅在计费开关关闭（paidBillingActive=false）时经 planList 过滤后展示；
+       开关开启的付费场景会被 planList 过滤掉，与登录后一致。 */
+    {
+      ...base,
+      bundle_id: "bundle_free_7d",
+      bundle_name: "免费试用 7天",
+      bundle_type: "free",
+      description: [{ Key: "独立环境", Value: "" }],
+      agent_quota: 1,
+      credit: 0,
+      price: null,
+      time_span: 7,
+      time_unit: "d",
+    },
+    /* 启航 Launch —— 标准版（可购买、露真实价，促销「免费 14 天」）+ AI 增强版（敬请期待） */
+    {
+      ...base,
+      bundle_id: "bundle_launch_01",
+      bundle_name: "启航 Launch",
+      bundle_type: "general",
+      description: STATIC_GENERAL_DESC,
+      agent_quota: 1,
+      credit: 100,
+      price: buildStaticPrice(STATIC_TIER_PRICE_YUAN.launch[durationKey]),
+      time_span: span,
+    },
+    {
+      ...base,
+      bundle_id: "bundle_launch_ai_01",
+      bundle_name: "启航 Launch",
+      bundle_type: "ai",
+      description: STATIC_GENERAL_DESC,
+      agent_quota: 1,
+      credit: 4500,
+      price: null,
+      time_span: 1,
+    },
+    /* 巡游 Cruise —— 标准版（促销「首月 5 折」）+ AI 增强版（敬请期待） */
+    {
+      ...base,
+      bundle_id: "bundle_cruise_01",
+      bundle_name: "巡游 Cruise",
+      bundle_type: "general",
+      description: STATIC_GENERAL_DESC,
+      agent_quota: 1,
+      credit: 200,
+      price: buildStaticPrice(STATIC_TIER_PRICE_YUAN.cruise[durationKey]),
+      time_span: span,
+    },
+    {
+      ...base,
+      bundle_id: "bundle_cruise_ai_01",
+      bundle_name: "巡游 Cruise",
+      bundle_type: "ai",
+      description: STATIC_GENERAL_DESC,
+      agent_quota: 1,
+      credit: 10000,
+      price: null,
+      time_span: 1,
+    },
+    /* 远航 Voyage —— planTiers 强制单卡「敬请期待」，无需价格 */
+    {
+      ...base,
+      bundle_id: "bundle_voyage_01",
+      bundle_name: "远航 Voyage",
+      bundle_type: "general",
+      description: STATIC_GENERAL_DESC,
+      agent_quota: 3,
+      credit: 500,
+      price: null,
+      time_span: 1,
+    },
+  ];
+};
+
 /**
  * 占位套餐纯数据定义（不含 JSX），渲染时通过 buildPlaceholderPlans 转为 PlanInfo。
  */
@@ -516,11 +790,19 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     description: "日常主力，让智能化成为习惯",
     features: [
       { iconKey: "user", label: "Agent", value: "1 个" },
-      { iconKey: "monitor", label: "独立环境", value: "4核 8G 内存" },
+      { iconKey: "monitor", label: "云端独立环境", value: "4核 8G 内存" },
       { iconKey: "hardDrive", label: "专属云端存储", value: "80G" },
       { iconKey: "zap", label: "模型积分", value: "-" },
-      { iconKey: "clock", label: "7×24 在线", hasCheck: true },
+      { iconKey: "evolution", label: "Agent 自主进化", hasCheck: true },
+      { iconKey: "clock", label: "7*24小时在线", hasCheck: true },
       { iconKey: "settings", label: "极简配置面板", hasCheck: true },
+      { iconKey: "channel", label: "连接主流聊天通道", hasCheck: true },
+      { iconKey: "modelApi", label: "接入主流模型 API", hasCheck: true },
+      { iconKey: "skill", label: "精选技能/技能包", hasCheck: true },
+      { iconKey: "persona", label: "人设注入", hasCheck: true },
+      { iconKey: "automation", label: "自动任务", hasCheck: true },
+      { iconKey: "memory", label: "长期记忆", hasCheck: true },
+      { iconKey: "diagnostics", label: "诊断中心", hasCheck: true },
     ],
     ctaLabel: "即将上线",
     ctaStyle: "outline-dark",
@@ -536,15 +818,22 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     priceGlobal: "$42",
     priceUnit: "/ 月",
     priceUnitGlobal: "/ month",
-    description: "体验进阶，把效率拉满",
+    description: "体验进阶，专业玩家的配置",
     features: [
       { iconKey: "user", label: "Agent", value: "3 个" },
-      { iconKey: "monitor", label: "独立环境", value: "4核 8G 内存" },
+      { iconKey: "monitor", label: "云端独立环境", value: "4核 8G 内存" },
       { iconKey: "hardDrive", label: "专属云端存储", value: "80G" },
       { iconKey: "zap", label: "模型积分", value: "-" },
-      { iconKey: "clock", label: "7×24 在线", hasCheck: true },
+      { iconKey: "evolution", label: "Agent 自主进化", hasCheck: true },
+      { iconKey: "clock", label: "7*24小时在线", hasCheck: true },
       { iconKey: "settings", label: "极简配置面板", hasCheck: true },
-      { iconKey: "zap", label: "新功能优先体验", hasCheck: true },
+      { iconKey: "channel", label: "连接主流聊天通道", hasCheck: true },
+      { iconKey: "modelApi", label: "接入主流模型 API", hasCheck: true },
+      { iconKey: "skill", label: "精选技能/技能包", hasCheck: true },
+      { iconKey: "persona", label: "人设注入", hasCheck: true },
+      { iconKey: "automation", label: "自动任务", hasCheck: true },
+      { iconKey: "memory", label: "长期记忆", hasCheck: true },
+      { iconKey: "diagnostics", label: "诊断中心", hasCheck: true },
     ],
     ctaLabel: "即将上线",
     ctaStyle: "outline-dark",
@@ -566,12 +855,21 @@ const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unk
   void t("巡游 Cruise");
   void t("远航 Voyage");
   void t("日常主力，让智能化成为习惯");
-  void t("体验进阶，把效率拉满");
+  void t("体验进阶，专业玩家的配置");
   void t("1 个");
   void t("3 个");
+  void t("云端独立环境");
   void t("4核 8G 内存");
   void t("极简配置面板");
-  void t("新功能优先体验");
+  void t("自动任务");
+  void t("精选技能/技能包");
+  void t("人设注入");
+  void t("连接主流聊天通道");
+  void t("接入主流模型 API");
+  void t("长期记忆");
+  void t("Agent 自主进化");
+  void t("7*24小时在线");
+  void t("诊断中心");
 };
 
 /** 将纯数据占位套餐转为带 JSX + i18n 的 PlanInfo */
@@ -597,6 +895,47 @@ const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) =
     raw: makePlaceholderBundle(def.id, def.name, def.agentQuota),
   }));
 };
+
+/* ─── 套餐档位（tier）分组：启航 / 巡游 / 远航 ─── */
+
+/**
+ * 需求3 重构：不再用「标准版 / AI 增强版」全局 tab 切换整排卡，而是
+ * 三张卡按 tier（启航 / 巡游 / 远航）固定展示，同一 tier 下的标准版 / AI 增强版
+ * 收敛为卡内「积分」切换（见 PlanCard）。这里定义 tier 分组所需的类型与工具。
+ */
+type PlanTierKey = "launch" | "cruise" | "voyage";
+const PLAN_TIER_ORDER: PlanTierKey[] = ["launch", "cruise", "voyage"];
+
+/**
+ * AI 增强版档位的「模型积分」写死值（仅在 AI 档位未放出可购买时作为展示兜底）。
+ * 当前 AI 增强版放出策略：启航 / 巡游在月付下可购买（取后端 bundle.credit），
+ * 季付下仍未上线、展示「敬请期待」，此时积分用前端写死值：
+ *   - 启航 launch → 4500
+ *   - 巡游 cruise → 10000
+ * 月付放出可购买时积分回退为取后端 bundle.credit，不再用此表覆盖。
+ */
+const AI_VARIANT_CREDIT: Partial<Record<PlanTierKey, number>> = {
+  launch: 4500,
+  cruise: 10000,
+};
+
+/** 按 bundle_name（中 / 英 / 中英混排）判定 tier；未命中返回 null（如免费试用卡）。 */
+const tierOfPlan = (plan: PlanInfo): PlanTierKey | null => {
+  const raw = plan.raw.bundle_name ?? plan.name ?? "";
+  const lower = raw.toLowerCase();
+  if (raw.includes("启航") || lower.includes("launch")) return "launch";
+  if (raw.includes("巡游") || lower.includes("cruise")) return "cruise";
+  if (raw.includes("远航") || lower.includes("voyage")) return "voyage";
+  return null;
+};
+
+/** 一个 tier 分组：同 tier 的多个档位（variants，按积分升序）+ 是否敬请期待。 */
+interface PlanTierGroup {
+  /** tier key（launch/cruise/voyage）或未命中 tier 时的 plan.id（各自单卡） */
+  key: string;
+  /** 同 tier 的档位列表，按 credit 升序（标准版在左、AI 增强版在右） */
+  variants: PlanInfo[];
+}
 
 /**
  * 实名校验错误码兜底文案 — 计费侧错误码统一走 lib/billing-error 的 resolveBillingErrorMessage
@@ -650,27 +989,46 @@ const SubscribePageHeader = ({
 /* ─── Plan Card Component ─── */
 
 const PlanCard = ({
-  plan,
+  variants,
   index,
   onSubscribe,
-  subscribing,
+  subscribingPlanId,
   currentBots,
+  reserveCreditTabSpace,
+  subscriptionLocked,
 }: {
-  plan: PlanInfo;
+  /* 同一 tier 的档位列表（标准版 / AI 增强版），按积分升序；未命中 tier 时长度为 1 */
+  variants: PlanInfo[];
   index: number;
-  onSubscribe: () => void;
-  subscribing: boolean;
+  onSubscribe: (planId: string) => void;
+  subscribingPlanId: string | null;
   currentBots: number;
+  /* 是否为「无积分切换」的卡（如远航敬请期待）预留等高占位，使其 CTA/功能点与有积分切换的卡对齐 */
+  reserveCreditTabSpace?: boolean;
+  /* 用户已有生效订阅：暂不支持升级 / 更换套餐，所有卡按钮统一禁用（当前套餐卡文案为「当前订阅」）。 */
+  subscriptionLocked?: boolean;
 }) => {
   const t = useT();
+  /* 卡内积分档位切换：同 tier 的标准版 / AI 增强版收敛为 variants，切换即换整份 PlanInfo，
+     价格 / 积分 / 折扣 / 下单套餐随之联动（需求3）。默认选中第一个（积分最少的标准版）。 */
+  const [activeVariantIdx, setActiveVariantIdx] = useState(0);
+  const safeIdx = activeVariantIdx < variants.length ? activeVariantIdx : 0;
+  const plan = variants[safeIdx]!;
+  const subscribing = subscribingPlanId === plan.id;
   const quotaWouldExceed = currentBots >= plan.maxBots;
-  const isFeatured = plan.featured;
+  /* 主推卡由 tier 顺序决定（启航，index===0），不随积分切换变化 */
+  const isFeatured = index === 0;
   const isSoldOut = plan.soldOut === true;
   const isComingSoon = plan.comingSoon === true;
   const isPriceUnavailable = plan.priceUnavailable === true;
+  /* 积分切换 tab：只要有 >1 个档位就展示（远航为单档位天然不展示）。
+     即便当前选中的档位是「敬请期待」（如本期未上线的 AI 增强版），也保留切换入口，
+     否则用户切到 AI 档后会因 tab 消失而无法切回标准版。 */
+  const showCreditTabs = variants.length > 1;
   /* 售罄 / 未上线 / 暂无报价 / 询价加载中：按钮禁用。
      询价加载中虽然价格数字仍在展示（旧价），但为避免用户以旧价口径提交订单，CTA 必须 disabled。 */
-  const disabled = isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed;
+  /* subscriptionLocked：用户已有生效订阅，暂不支持升级/更换套餐，所有卡按钮一律禁用。 */
+  const disabled = isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed || subscriptionLocked === true;
 
   return (
     <motion.div
@@ -683,19 +1041,18 @@ const PlanCard = ({
         background: colors.white,
         border: isFeatured ? `1.5px solid ${colors.primary}` : `1px solid ${colors.border}`,
         borderRadius: isFeatured ? 16 : 12,
-        boxShadow: isFeatured ? shadows.featured : shadows.card,
+        /* 需求3：三张卡统一取消阴影，仅保留边框（主推卡为高亮描边） */
+        boxShadow: "none",
         overflow: "hidden",
-        transition: "box-shadow 0.3s, transform 0.3s",
+        transition: "transform 0.3s",
       }}
       onMouseEnter={(e) => {
         if (!isFeatured) {
-          e.currentTarget.style.boxShadow = shadows.deep;
           e.currentTarget.style.transform = "translateY(-2px)";
         }
       }}
       onMouseLeave={(e) => {
         if (!isFeatured) {
-          e.currentTarget.style.boxShadow = shadows.card;
           e.currentTarget.style.transform = "translateY(0)";
         }
       }}
@@ -723,19 +1080,46 @@ const PlanCard = ({
       <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "32px 28px 28px" }}>
         {/* Header: Name + Description */}
         <div style={{ marginBottom: 16 }}>
-          <h3
+          <div
             style={{
-              fontSize: 22,
-              fontWeight: 700,
-              letterSpacing: "-0.25px",
-              lineHeight: 1.27,
-              color: colors.black,
-              margin: 0,
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
               marginBottom: 12,
             }}
           >
-            {plan.name}
-          </h3>
+            <h3
+              style={{
+                fontSize: 22,
+                fontWeight: 700,
+                letterSpacing: "-0.25px",
+                lineHeight: 1.27,
+                color: colors.black,
+                margin: 0,
+              }}
+            >
+              {plan.name}
+            </h3>
+            {/* 促销小徐章：挪到套餐名右侧，粉色背景 + 深色文字，醒目告诉用户促销信息 */}
+            {plan.promoTag && (
+              <span
+                style={{
+                  fontSize: isGlobal ? 11 : 12,
+                  fontWeight: 600,
+                  lineHeight: 1,
+                  color: "#D14081",
+                  background: "#FDE7F0",
+                  border: "1px solid #F7B8D2",
+                  borderRadius: 999,
+                  padding: isGlobal ? "3px 8px" : "4px 10px",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {plan.promoTag}
+              </span>
+            )}
+          </div>
           {plan.badge && plan.badgeStyle === "tag" && (
             <span
               style={{
@@ -770,6 +1154,65 @@ const PlanCard = ({
             </p>
           ) : null}
         </div>
+
+        {/* 积分档位切换（segmented control）：同 tier 的标准版 / AI 增强版通过积分数值切换，
+            切换即联动价格 / 积分 / 折扣 / 下单套餐（需求3）。远航（敬请期待）不展示。 */}
+        {showCreditTabs && (
+          <div
+            role="tablist"
+            aria-label={t("模型积分")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              padding: 3,
+              marginTop: 4,
+              marginBottom: 16,
+              background: "rgba(0,0,0,0.04)",
+              borderRadius: 9999,
+              alignSelf: "flex-start",
+              /* 需求3：卡内顺序 价格 → 积分切换 → 开通按钮 → 分割线 → 功能点（flex order 重排） */
+              order: 2,
+            }}
+          >
+            {variants.map((v, vi) => {
+              const active = vi === safeIdx;
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setActiveVariantIdx(vi)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: "5px 14px",
+                    borderRadius: 9999,
+                    border: "none",
+                    background: active ? colors.white : "transparent",
+                    color: active ? colors.black : colors.warmGray500,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    lineHeight: 1.2,
+                    cursor: "pointer",
+                    boxShadow: active ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  <Zap style={{ width: 13, height: 13, color: active ? "#D14081" : colors.warmGray300, strokeWidth: 2 }} />
+                  {v.raw.credit}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* 无积分切换的卡（如远航敬请期待）补一段与积分 tabs 等高的占位，使 CTA/分割线/功能点与其他卡对齐 */}
+        {!showCreditTabs && reserveCreditTabSpace && (
+          <div aria-hidden style={{ height: 32, marginTop: 4, marginBottom: 16, order: 2 }} />
+        )}
 
         {/* Price - 未上线占位卡：有价格时正常展示价格，无价格时显示「敬请期待」；售罄套餐用「已售罄」遮盖价格 */}
         {isComingSoon && !plan.price ? (
@@ -830,48 +1273,71 @@ const PlanCard = ({
           </div>
         ) : plan.price ? (
           <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginBottom: 8, flexWrap: isGlobal ? "nowrap" : "wrap", rowGap: 6 }}>
-            <span
-              style={{
-                fontSize: 48,
-                fontWeight: 700,
-                letterSpacing: "-1.5px",
-                lineHeight: 1,
-                color: colors.black,
-              }}
-            >
-              {plan.price}
-            </span>
+            {(() => {
+              /* 价格拆分：把前缀货币符号（¥ / $）与数字分离，符号用更小字号并顶端对齐，
+                 让数字成为视觉主体（参考设计稿）。无符号时整体按数字大字号展示。 */
+              const m = /^(\D*)(.*)$/.exec(plan.price ?? "");
+              const symbol = m?.[1] ?? "";
+              const amount = m?.[2] ?? (plan.price ?? "");
+              return (
+                <span style={{ display: "inline-flex", alignItems: "flex-start", color: colors.black }}>
+                  {symbol && (
+                    <span
+                      style={{
+                      fontSize: 22,
+                      fontWeight: 700,
+                      lineHeight: 1,
+                      marginRight: 4,
+                    }}
+                  >
+                    {symbol}
+                    </span>
+                  )}
+                  <span
+                    style={{
+                      fontSize: 48,
+                      fontWeight: 700,
+                      letterSpacing: "-1.5px",
+                      lineHeight: 1,
+                    }}
+                  >
+                    {amount}
+                  </span>
+                </span>
+              );
+            })()}
             {(plan.priceUnit || plan.priceNote) && (
               <span
                 style={{
                   fontSize: 14,
                   fontWeight: 400,
                   color: colors.warmGray300,
-                  lineHeight: 1.43,
+                  lineHeight: 1,
                   marginLeft: 2,
+                  /* 时长单位与价格数字底部对齐，并整体上移一点点 */
+                  alignSelf: "flex-end",
+                  marginBottom: 4,
                 }}
               >
                 {plan.priceUnit || plan.priceNote}
               </span>
             )}
-            {/* 促销小徐章：位于价格右侧，粉色背景 + 深色文字，醒目告诉用户"限时免费" */}
-            {plan.promoTag && (
+            {/* 原价（折扣前）：紧跟活动价右侧，小字灰色删除线，突出优惠力度 */}
+            {plan.originalPrice && (
               <span
                 style={{
-                  fontSize: isGlobal ? 11 : 12,
-                  fontWeight: 600,
+                  fontSize: 14,
+                  fontWeight: 400,
                   lineHeight: 1,
-                  color: "#D14081",
-                  background: "#FDE7F0",
-                  border: "1px solid #F7B8D2",
-                  borderRadius: 999,
-                  padding: isGlobal ? "3px 8px" : "4px 10px",
-                  marginLeft: isGlobal ? 6 : 8,
+                  color: colors.warmGray300,
+                  textDecoration: "line-through",
+                  alignSelf: "flex-end",
+                  marginBottom: 4,
+                  marginLeft: 6,
                   whiteSpace: "nowrap",
-                  alignSelf: "center",
                 }}
               >
-                {plan.promoTag}
+                {plan.originalPrice}
               </span>
             )}
           </div>
@@ -894,7 +1360,7 @@ const PlanCard = ({
           </p>
         )}
         {/* Divider */}
-        <div style={{ height: 1, background: colors.border, marginBottom: 24 }} />
+        <div style={{ height: 1, background: colors.border, marginTop: 4, marginBottom: 24, order: 4 }} />
 
         {/* Features - 售罄 / （无卖点的）未上线时展示占位文案 */}
         {isSoldOut || (isComingSoon && plan.features.length === 0) || (!isComingSoon && !isSoldOut && plan.features.length === 0) ? (
@@ -908,6 +1374,7 @@ const PlanCard = ({
               padding: "32px 16px",
               gap: 8,
               textAlign: "center",
+              order: 5,
             }}
           >
             <Sparkles style={{ width: 24, height: 24, color: colors.warmGray300 }} />
@@ -937,7 +1404,7 @@ const PlanCard = ({
             )}
           </div>
         ) : (
-          <ul style={{ listStyle: "none", padding: 0, margin: 0, flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
+          <ul style={{ listStyle: "none", padding: 0, margin: 0, flex: 1, display: "flex", flexDirection: "column", gap: 16, order: 5 }}>
             {plan.features.map((feature, idx) => (
               <li
                 key={idx}
@@ -967,8 +1434,8 @@ const PlanCard = ({
           </ul>
         )}
 
-        {/* CTA Button */}
-        <div style={{ marginTop: 32 }}>
+        {/* CTA Button — 需求3：上移到功能点上方（积分切换与分割线之间），order=3 */}
+        <div style={{ marginTop: 4, marginBottom: 4, order: 3 }}>
           {isComingSoon ? (
             <button
               disabled
@@ -993,7 +1460,7 @@ const PlanCard = ({
             </button>
           ) : plan.ctaStyle === "primary" ? (
             <button
-              onClick={onSubscribe}
+              onClick={() => onSubscribe(plan.id)}
               disabled={disabled}
               style={{
                 display: "flex",
@@ -1024,11 +1491,11 @@ const PlanCard = ({
                 }
               }}
             >
-              {isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : quotaWouldExceed ? t("已达上限（{{current}}/{{max}}）", { current: currentBots, max: plan.maxBots }) : plan.ctaLabel}
+              {subscriptionLocked ? plan.ctaLabel : isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : plan.ctaLabel}
             </button>
           ) : (
             <button
-              onClick={onSubscribe}
+              onClick={() => onSubscribe(plan.id)}
               disabled={disabled}
               style={{
                 display: "flex",
@@ -1061,7 +1528,7 @@ const PlanCard = ({
                 }
               }}
             >
-              {isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : quotaWouldExceed ? t("已达上限（{{current}}/{{max}}）", { current: currentBots, max: plan.maxBots }) : plan.ctaLabel}
+              {subscriptionLocked ? plan.ctaLabel : isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : plan.ctaLabel}
             </button>
           )}
         </div>
@@ -1318,7 +1785,7 @@ const PaymentPendingModal = ({
             {t("请完成支付")}
           </h3>
           <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 24px" }}>
-            {t("请使用微信扫描下方二维码，授权后即可在微信内完成签约")}
+            {t("请使用微信扫描下方二维码完成支付")}
           </p>
 
           {/* bridge 模式：渲染中转页 URL 的二维码，用户在微信扫码后由中转页负责走 OAuth + wxSign */}
@@ -1338,7 +1805,11 @@ const PaymentPendingModal = ({
             </div>
           )}
 
-          {/* 底部按钮区：左「刷新」（描边白底，重新生成二维码）+ 右「完成」（实色，等价于「我已完成支付」） */}
+          <p style={{ fontSize: 13, color: colors.warmGray500, textAlign: "center", margin: "0 0 20px" }}>
+            {t("支付完成后，需等待约15秒完成下单")}
+          </p>
+
+          {/* 底部按钮区：仅「刷新」（重新生成二维码） */}
           <div style={{ display: "flex", flexDirection: "row", gap: 12 }}>
             <button
               onClick={onRefresh}
@@ -1365,25 +1836,6 @@ const PaymentPendingModal = ({
               }}
             >
               {refreshing ? t("刷新中...") : t("刷新")}
-            </button>
-            <button
-              onClick={onManualConfirm}
-              style={{
-                flex: 1,
-                padding: "12px 16px",
-                borderRadius: 8,
-                border: "none",
-                background: colors.primary,
-                color: colors.white,
-                fontSize: 15,
-                fontWeight: 600,
-                cursor: "pointer",
-                transition: "background 0.15s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
-            >
-              {t("完成")}
             </button>
           </div>
         </div>
@@ -1434,10 +1886,13 @@ export const SubscribePage = ({
      这里在组件函数体顺序执行一次，与 t 同生命周期，避免放在 useEffect 的异步路径里漏扣。 */
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
-  const { isLoggedIn, login, isSubscribed, subscribe, addBot, bots, user, refreshPasses } = useOpenClaw();
+  const [hoveredDurationTab, setHoveredDurationTab] = useState<string | null>(null);
+  const { isLoggedIn, isSubscribed, subscribe, addBot, bots, user, refreshPasses, activePass, latestPass } = useOpenClaw();
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
+  /* 未登录用户点「订阅」时弹出的登录引导弹窗开关（见 handleSubscribe）。 */
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [error, setError] = useState<SubscribeError | null>(null);
   const [modalStep, setModalStep] = useState<ModalStep>("closed");
   const [selectedPlan, setSelectedPlan] = useState<PlanInfo | null>(null);
@@ -1449,11 +1904,8 @@ export const SubscribePage = ({
   const [bundlesLoading, setBundlesLoading] = useState(false);
   const [bundlesError, setBundlesError] = useState<string | null>(null);
 
-  /* 当前选中的套餐分类 tab key；null 表示尚未根据数据初始化 */
-  const [selectedBundleTab, setSelectedBundleTab] = useState<string | null>(null);
-
-  /* AI 增强版付费时长（仅 paidBillingActive && selectedBundleTab==='ai' 时生效）；
-     切换时会触发 listBundles 用新时长重拉价格。默认月付。 */
+  /* 付费时长（月付 / 季付）；切换时会触发 listBundles 用新时长重拉价格。默认月付。
+     作用于所有可购买套餐（general / ai），与卡内积分档位切换正交。 */
   const [aiDurationKey, setAiDurationKey] = useState<AiDurationTabDef["key"]>("monthly");
   const aiDuration = useMemo(
     () => AI_DURATION_TABS.find((d) => d.key === aiDurationKey) ?? AI_DURATION_TABS[0],
@@ -1468,7 +1920,6 @@ export const SubscribePage = ({
      且 lightclaw:features.realnamePhoneVerificationEnabled=false 的场景。
      任一开关开启时不做免费引导，CTA 维持「立即开通」。 */
   const freeGuideAllowed = !paidBillingEnabled && !realnamePhoneVerificationEnabled;
-  const quotaExceeded = bots.length >= user.plan.maxBots;
   const header = (
     <SubscribePageHeader
       authControls={authControls}
@@ -1481,12 +1932,8 @@ export const SubscribePage = ({
     />
   );
 
-  /* 进入订阅页即触发登录态 */
-  useEffect(() => {
-    if (!isLoggedIn) {
-      login();
-    }
-  }, [isLoggedIn, login]);
+  /* 功能点2b：进入订阅页不再强制登录，允许未登录用户浏览静态价格。
+     登录引导下沉到点「订阅」按钮时（见 handleSubscribe）。 */
 
   /* 拉取上线套餐列表（GET /v1/bundles）
      计费开关开启且当前是 AI tab 时，携带 { time_span, time_unit } 询价参数；
@@ -1514,14 +1961,36 @@ export const SubscribePage = ({
   const needsAiPriceQuery =
     paidBillingActive && aiDurationKey !== "monthly";
   const loadKey = useMemo(() => {
+    /* 登录态必须参与 loadKey：未登录走前端静态定价表、已登录走后端询价；
+       auth 就绪 / 登录态翻转时触发 useEffect 重跑，重新选择数据来源。 */
+    const authSeg = !authReady ? "authpending" : isAuthenticated ? "auth" : "anon";
     const base = needsAiPriceQuery
       ? `paid:${aiDurationKey}`
       : "__initial__";
-    return `${base}#${retryToken}`;
-  }, [needsAiPriceQuery, aiDurationKey, retryToken]);
+    return `${authSeg}#${base}#${retryToken}`;
+  }, [authReady, isAuthenticated, needsAiPriceQuery, aiDurationKey, retryToken]);
 
   useEffect(() => {
     let cancelled = false;
+    /* 功能点2b：未登录不请求后端（匿名调用 price 返回 null，会全线落到「暂无报价」+ 按钮禁用），
+       直接用前端静态定价表填充，使未登录静态展示与登录后询价展示保持一致；
+       登录引导下沉到点「订阅」按钮时（见 handleSubscribe 的 !isLoggedIn → login()）。 */
+    if (authReady && !isAuthenticated) {
+      setBundles(buildStaticBundles(aiDurationKey));
+      setBundlesError(null);
+      setBundlesLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+    /* 登录态尚未就绪：先保持 loading，避免「先闪静态价、再闪询价价」的跳变；
+       authReady 后 loadKey 变更会重跑本 effect 选择正确来源。 */
+    if (!authReady) {
+      setBundlesLoading(true);
+      return () => {
+        cancelled = true;
+      };
+    }
     const run = async () => {
       setBundlesLoading(true);
       setBundlesError(null);
@@ -1576,8 +2045,12 @@ export const SubscribePage = ({
         paidBillingActive,
         aiDurationKey,
         isPricingLoading,
-        isSubscribed,
+        isSubscribed || bots.length > 0,
         freeGuideAllowed,
+        /* 已订阅套餐的 bundle_id：命中当前卡时 CTA 显示「当前订阅」。
+           activePass 为 null（pass 过期）时回退到 latestPass，仍能匹配用户曾订阅的套餐。 */
+        activePass?.bundle_id ?? latestPass?.bundle_id ?? null,
+        isLoggedIn,
       );
       return paidBillingActive ? plan : { ...plan, bundleType: undefined };
     });
@@ -1590,59 +2063,85 @@ export const SubscribePage = ({
        isSubscribed 影响启航 Launch 卡的「免费开通/立即开通」引导文案，必须进依赖数组；
        freeGuideAllowed 是「免费开通」引导的前提开关，同样影响文案，必须进依赖数组；
        正常路径下切换时长会先触发 loadKey → bundlesLoading 变更连带重算。 */
-  }, [bundles, bundlesLoading, paidBillingActive, t, aiDurationKey, isSubscribed, freeGuideAllowed]);
+  }, [bundles, bundlesLoading, paidBillingActive, t, aiDurationKey, isSubscribed, bots.length, freeGuideAllowed, activePass?.bundle_id, latestPass?.bundle_id, isLoggedIn]);
 
   /**
-   * 按 `bundleType` 把 planList 分组：
-   *   - 所有套餐都没有 bundleType → hasAnyType=false，UI 不渲染 tab 栏（兼容后端未下发字段的过渡期）
-   *   - 命中 BUNDLE_TYPE_TABS 的归入对应 key；未命中或为空 → 归入 fallback（未分类）
-   *   - 仅保留「有套餐」的 tab；空 tab 不展示
+   * 需求3：按 tier（启航 / 巡游 / 远航）把 planList 分组，取代原「标准版 / AI 增强版」全局 tab。
+   *   - 同 tier 的标准版 / AI 增强版收敛为一张卡的多个 variants（按积分升序），卡内切换（见 PlanCard）
+   *   - tier 顺序固定：启航 → 巡游 → 远航
+   *   - 远航（voyage）保持「敬请期待」：只取首个 variant 并强制 comingSoon、不放积分切换（PRD 决策）
+   *   - 未命中 tier 的套餐（如免费试用卡）各自单卡展示，追加在后，保持 planList 原顺序
    */
-  const { tabs: bundleTabs, plansByTab } = useMemo(() => {
-    const hasAnyType = planList.some((p) => typeof p.bundleType === "string" && p.bundleType.trim() !== "");
-    if (!hasAnyType) {
-      return {
-        tabs: [] as { key: string; label: string }[],
-        plansByTab: {} as Record<string, PlanInfo[]>,
-      };
-    }
-    const knownKeys = new Set(BUNDLE_TYPE_TABS.map((tab) => tab.key));
-    const groups: Record<string, PlanInfo[]> = {};
+  const planTiers = useMemo<PlanTierGroup[]>(() => {
+    const tierMap = new Map<PlanTierKey, PlanInfo[]>();
+    const uncategorized: PlanInfo[] = [];
     for (const plan of planList) {
-      const raw = plan.bundleType?.trim() ?? "";
-      const bucketKey = raw && knownKeys.has(raw) ? raw : BUNDLE_TYPE_FALLBACK_KEY;
-      if (!groups[bucketKey]) groups[bucketKey] = [];
-      groups[bucketKey].push(plan);
-    }
-    const orderedTabs: { key: string; label: string }[] = [];
-    for (const tab of BUNDLE_TYPE_TABS) {
-      if (groups[tab.key]?.length) {
-        orderedTabs.push({ key: tab.key, label: t(tab.zhLabel) });
+      const tk = tierOfPlan(plan);
+      if (tk) {
+        if (!tierMap.has(tk)) tierMap.set(tk, []);
+        tierMap.get(tk)!.push(plan);
+      } else {
+        uncategorized.push(plan);
       }
     }
-    if (groups[BUNDLE_TYPE_FALLBACK_KEY]?.length) {
-      orderedTabs.push({ key: BUNDLE_TYPE_FALLBACK_KEY, label: t("其他") });
+    const groups: PlanTierGroup[] = [];
+    for (const tk of PLAN_TIER_ORDER) {
+      const variants = tierMap.get(tk);
+      if (!variants || variants.length === 0) continue;
+      /* 按积分升序：标准版（积分少）在左，AI 增强版（积分多）在右 */
+      const sorted = [...variants].sort((a, b) => (a.raw.credit ?? 0) - (b.raw.credit ?? 0));
+      if (tk === "voyage") {
+        /* 远航（需求1）：屏蔽后端可能已配置的价格 / 促销 / 下单入口，统一「敬请期待」，单卡无积分切换。
+           清空 price / promoTag 并复位 priceUnavailable / pricingLoading，确保价格区落到「敬请期待」分支；
+           CTA 文案同步改为「敬请期待」。 */
+        const first = sorted[0]!;
+        groups.push({
+          key: tk,
+          variants: [{
+            ...first,
+            comingSoon: true,
+            price: "",
+            promoTag: undefined,
+            priceUnavailable: false,
+            pricingLoading: false,
+            ctaLabel: t("敬请期待"),
+          }],
+        });
+      } else {
+        /* AI 增强版可见性：
+           - 已登录 + 月付（durationKey === "monthly"）：启航 / 巡游的 AI 档位已上线可购买，
+             保留后端真实价格 / 促销 / 下单入口，积分回退取后端 bundle.credit（不再写死）。
+           - 未登录：统一「敬请期待」。未登录走的是前端静态价（AI price=null），放出后会落到
+             「暂无报价」，体验劣于「敬请期待」，故未登录一律维持敬请期待。
+           - 季付（durationKey === "quarterly"）：AI 档位本期暂不支持，统一「敬请期待」，
+             保留卡内积分切换（用户仍可查看该档位），选中后价格区落到「敬请期待」分支、CTA 禁用；
+             积分维持前端写死（启航 4500 / 巡游 10000）。
+           - 标准版 variant 任何时长都保持原样正常购买。 */
+        const aiReleased = isLoggedIn && aiDurationKey === "monthly";
+        const aiCredit = AI_VARIANT_CREDIT[tk];
+        const mapped = sorted.map((v) => {
+          const isAi = v.bundleType === "ai" || v.raw.bundle_type === "ai";
+          if (!isAi) return v;
+          if (aiReleased) return v;
+          return {
+            ...v,
+            comingSoon: true,
+            price: "",
+            promoTag: undefined,
+            priceUnavailable: false,
+            pricingLoading: false,
+            ctaLabel: t("敬请期待"),
+            raw: aiCredit != null ? { ...v.raw, credit: aiCredit } : v.raw,
+          };
+        });
+        groups.push({ key: tk, variants: mapped });
+      }
     }
-    return { tabs: orderedTabs, plansByTab: groups };
-  }, [planList, t]);
-
-  /* 数据加载完后初始化默认选中 tab：选第一个有套餐的 tab；若用户切换后数据刷新导致选中 tab 消失，自动回退到第一个 tab */
-  useEffect(() => {
-    if (bundleTabs.length === 0) {
-      if (selectedBundleTab !== null) setSelectedBundleTab(null);
-      return;
+    for (const plan of uncategorized) {
+      groups.push({ key: plan.id, variants: [plan] });
     }
-    if (selectedBundleTab === null || !bundleTabs.some((tab) => tab.key === selectedBundleTab)) {
-      setSelectedBundleTab(bundleTabs[0]!.key);
-    }
-  }, [bundleTabs, selectedBundleTab]);
-
-  /* 当前 tab 下展示的套餐：没有 tab（后端未下发字段）时直接展示全部 */
-  const visiblePlans = useMemo<PlanInfo[]>(() => {
-    if (bundleTabs.length === 0) return planList;
-    if (!selectedBundleTab) return [];
-    return plansByTab[selectedBundleTab] ?? [];
-  }, [bundleTabs, plansByTab, planList, selectedBundleTab]);
+    return groups;
+  }, [planList, isLoggedIn, aiDurationKey, t]);
 
   /* 付费过程上下文：仅在国内站走付费链路时使用。
      v1.7.31 起统一走 bridge 中转页二维码方案；不再保留 fallback 新窗口模式。
@@ -1698,7 +2197,7 @@ export const SubscribePage = ({
     setModalStep("closed");
     setSelectedPlan(null);
     setPaymentContext(null);
-    navigate(`${AGENTS_HOME_PATH}?creating=${encodeURIComponent(createdBot.id)}&plan=${encodeURIComponent(plan.id)}`);
+    navigate(getAgentCreatingPath(createdBot.id));
   }, [addBot, subscribe, navigate]);
 
   /**
@@ -1908,6 +2407,15 @@ export const SubscribePage = ({
     const plan = planList.find((p) => p.id === planId);
     if (!plan) return;
 
+    /* 功能点2b：进页不再强制登录，未登录用户可浏览静态价；
+       点「订阅」按钮时再引导登录，登录后回到本页继续操作。 */
+    if (!isLoggedIn) {
+      /* 未登录：弹出登录弹窗引导登录（OAuth 整页跳转）。
+         登录回跳后进入已登录态定价页，用户再次点「订阅」即走下方实名判断链路。 */
+      setShowLoginModal(true);
+      return;
+    }
+
     /* 售罄 / 未上线 / 暂无报价 / 询价加载中 套餐按钮已 disabled，这里再加一层保护，
        防止浏览器绕过 disabled 或竞态触发时以旧价/无价的口径下单。 */
     if (plan.soldOut || plan.comingSoon || plan.priceUnavailable || plan.pricingLoading) return;
@@ -1929,6 +2437,22 @@ export const SubscribePage = ({
 
     setError(null);
 
+    /* 实名前置校验（仅国内站，国际站无实名概念）：
+       未实名用户先引导去账号页完成实名，再回来开通，避免（尤其是「免费开通」这类
+       skipPayment 直接创建的链路）绕过确认弹窗后被后端 realname_required 拒绝、体验断裂。
+       口径与账号页 verified 判定一致：开启手机实名开关时要求 phone_3fa，否则看 realnameVerified。
+       跳转携带 realname_required query，触发账号页的实名提醒（与首页「立即创建」一致）。 */
+    if (!isGlobal) {
+      const u = session.user;
+      const realnameOk = realnamePhoneVerificationEnabled
+        ? u?.realnameLevel === REALNAME_LEVEL.PHONE_3FA
+        : Boolean(u?.realnameVerified);
+      if (!realnameOk) {
+        navigate(`${ACCOUNT_PATH}/?${REALNAME_REQUIRED_QUERY_KEY}=1&return_to=${encodeURIComponent(SUBSCRIBE_PATH + "/")}`);
+        return;
+      }
+    }
+
     /* 免费套餐：跳过「确认订单」和「支付」弹窗，直接创建 */
     if (plan.skipPayment) {
       void executeCreateBot(plan);
@@ -1938,7 +2462,7 @@ export const SubscribePage = ({
     /* 付费套餐：进入确认订单弹窗 */
     setSelectedPlan(plan);
     setModalStep("confirm");
-  }, [planList, bots.length, executeCreateBot, session.stage, session.user]);
+  }, [planList, bots.length, executeCreateBot, session.stage, session.user, isLoggedIn, realnamePhoneVerificationEnabled, navigate]);
 
   /* 邀请码激活成功后：自动继续用户之前点击的套餐流程 */
   const handleInviteSuccess = useCallback(() => {
@@ -2025,75 +2549,6 @@ export const SubscribePage = ({
   /* v1.7.30 后端联调文档明确「前端不需要轮询支付状态」——
      原轮询 listMyPasses 的 useEffect 已删除，SDK callback / 用户手动确认均会走 finalizeBot 接棒。 */
 
-  if (quotaExceeded) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: colors.white, color: colors.black }}>
-        {header}
-        <main style={{ flexGrow: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "96px 24px 64px" }}>
-          <div style={{ maxWidth: 480, textAlign: "center" }}>
-            <div
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: 16,
-                background: "rgba(0,0,0,0.04)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto 32px",
-              }}
-            >
-              <Sparkles style={{ width: 32, height: 32, color: colors.warmGray500 }} />
-            </div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: colors.black, marginBottom: 16 }}>{t("已达创建上限")}</h2>
-            <p style={{ fontSize: 14, color: colors.warmGray300, marginBottom: 40, lineHeight: 1.6 }}>
-              {t("当前 {{plan}} 套餐最多可创建 {{max}} 个 Hermes，你已达到上限。", { plan: user.plan.name, max: user.plan.maxBots })}
-            </p>
-            <AppLink
-              to={AGENTS_HOME_PATH}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "12px 24px",
-                borderRadius: 8,
-                background: colors.primary,
-                color: colors.white,
-                fontSize: 15,
-                fontWeight: 600,
-                textDecoration: "none",
-                transition: "background 0.2s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
-            >
-              {t("管理我的智能体伙伴")} <ArrowRight style={{ width: 16, height: 16 }} />
-            </AppLink>
-            <div style={{ marginTop: 24 }}>
-              <AppLink
-                to="/"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  fontSize: 14,
-                  color: colors.warmGray300,
-                  textDecoration: "none",
-                  transition: "color 0.2s",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = colors.primary; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = colors.warmGray300; }}
-              >
-                <ArrowLeft style={{ width: 14, height: 14 }} /> {t("返回首页")}
-              </AppLink>
-            </div>
-          </div>
-        </main>
-        <LegalFooter />
-      </div>
-    );
-  }
-
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: colors.white, color: colors.black }}>
       {header}
@@ -2145,7 +2600,7 @@ export const SubscribePage = ({
                   </a>
                 </>
               ) : (
-                t("一键创建云端 Hermes Agent")
+                t("免费开始，一键创建你的云端智能伙伴")
               )}
             </p>
             {/* {bots.length > 0 && (
@@ -2191,7 +2646,7 @@ export const SubscribePage = ({
                   <>
                     {t("请前往")}{" "}
                     <AppLink
-                      to="/account"
+                      to={`${ACCOUNT_PATH}/?${REALNAME_REQUIRED_QUERY_KEY}=1&return_to=${encodeURIComponent(SUBSCRIBE_PATH + "/")}`}
                       style={{ color: "#cf3d4c", fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3 }}
                     >
                       {t("我的账号")}
@@ -2201,56 +2656,6 @@ export const SubscribePage = ({
                 ) : error.message}
               </p>
             </motion.div>
-          )}
-
-          {/* Bundle Type Tabs — 后端联调期：bundleTabs 为空时（所有套餐缺 bundle_type）整段不渲染，行为退化为改造前 */}
-          {bundleTabs.length > 0 && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                gap: 8,
-                marginBottom: 32,
-              }}
-              role="tablist"
-              aria-label={t("套餐分类")}
-            >
-              {bundleTabs.map((tab) => {
-                const active = tab.key === selectedBundleTab;
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setSelectedBundleTab(tab.key)}
-                    style={{
-                      padding: "8px 20px",
-                      borderRadius: 9999,
-                      border: `1px solid ${active ? colors.black : colors.border}`,
-                      background: active ? colors.black : colors.white,
-                      color: active ? colors.white : colors.warmGray500,
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      transition: "all 0.2s ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!active) {
-                        e.currentTarget.style.color = colors.black;
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!active) {
-                        e.currentTarget.style.color = colors.warmGray500;
-                      }
-                    }}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
           )}
 
           {/* 付费时长子 Tab — 计费开关开启即展示，作用于所有 bundle_type（general / ai / 其他），
@@ -2269,29 +2674,67 @@ export const SubscribePage = ({
             >
               {AI_DURATION_TABS.map((tab) => {
                 const active = tab.key === aiDurationKey;
+                const isComingSoon = tab.key === "quarterly";
                 return (
-                  <button
+                  <span
                     key={tab.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setAiDurationKey(tab.key)}
-                    disabled={bundlesLoading}
-                    style={{
-                      padding: "6px 16px",
-                      borderRadius: 9999,
-                      border: `1px solid ${active ? colors.black : colors.border}`,
-                      background: active ? colors.black : colors.white,
-                      color: active ? colors.white : colors.warmGray500,
-                      fontSize: 13,
-                      fontWeight: 500,
-                      cursor: bundlesLoading ? "not-allowed" : "pointer",
-                      opacity: bundlesLoading && !active ? 0.6 : 1,
-                      transition: "all 0.2s ease",
-                    }}
+                    style={{ position: "relative", display: "inline-block" }}
+                    onMouseEnter={() => setHoveredDurationTab(tab.key)}
+                    onMouseLeave={() => setHoveredDurationTab(null)}
                   >
-                    {t(tab.zhLabel)}
-                  </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => !isComingSoon && setAiDurationKey(tab.key)}
+                      disabled={bundlesLoading || isComingSoon}
+                      style={{
+                        padding: "6px 16px",
+                        borderRadius: 9999,
+                        border: `1px solid ${active ? colors.black : colors.border}`,
+                        background: active ? colors.black : colors.white,
+                        color: active ? colors.white : colors.warmGray500,
+                        fontSize: 13,
+                        fontWeight: 500,
+                        cursor: (bundlesLoading || isComingSoon) ? "not-allowed" : "pointer",
+                        opacity: (bundlesLoading && !active) || isComingSoon ? 0.6 : 1,
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      {t(tab.zhLabel)}
+                    </button>
+                    {isComingSoon && hoveredDurationTab === tab.key && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: "-32px",
+                          left: "50%",
+                          transform: "translateX(-50%)",
+                          background: "rgba(0,0,0,0.8)",
+                          color: "#fff",
+                          fontSize: 12,
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          whiteSpace: "nowrap",
+                          pointerEvents: "none",
+                          zIndex: 10,
+                        }}
+                      >
+                        {t("即将上线")}
+                        <span
+                          style={{
+                            position: "absolute",
+                            bottom: "-4px",
+                            left: "50%",
+                            transform: "translateX(-50%) rotate(45deg)",
+                            width: 8,
+                            height: 8,
+                            background: "rgba(0,0,0,0.8)",
+                          }}
+                        />
+                      </span>
+                    )}
+                  </span>
                 );
               })}
             </div>
@@ -2316,7 +2759,7 @@ export const SubscribePage = ({
                 {t("重试")}
               </button>
             </div>
-          ) : visiblePlans.length === 0 ? (
+          ) : planTiers.length === 0 ? (
             <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center", padding: "48px 0" }}>
               <Sparkles style={{ width: 24, height: 24, color: colors.warmGray300, margin: "0 auto 8px" }} />
               <p style={{ fontSize: 14, color: colors.warmGray300 }}>{t("暂无在售套餐，敬请期待")}</p>
@@ -2328,20 +2771,23 @@ export const SubscribePage = ({
               animate="visible"
               style={{
                 display: "grid",
-                gridTemplateColumns: visiblePlans.length >= 3 ? "repeat(3, 1fr)" : `repeat(${visiblePlans.length}, 1fr)`,
+                gridTemplateColumns: planTiers.length >= 3 ? "repeat(3, 1fr)" : `repeat(${planTiers.length}, 1fr)`,
                 gap: 24,
-                maxWidth: 960,
+                maxWidth: 1080,
                 margin: "0 auto",
               }}
             >
-              {visiblePlans.map((plan, idx) => (
+              {planTiers.map((tier, idx) => (
                 <PlanCard
-                  key={plan.id}
-                  plan={plan}
+                  key={tier.key}
+                  variants={tier.variants}
                   index={idx}
-                  onSubscribe={() => void handleSubscribe(plan.id)}
-                  subscribing={subscribingPlanId === plan.id}
+                  onSubscribe={(planId) => void handleSubscribe(planId)}
+                  subscribingPlanId={subscribingPlanId}
                   currentBots={bots.length}
+                  reserveCreditTabSpace={planTiers.some((tt) => tt.variants.length > 1)}
+                  /* 已有生效订阅或有智能体：暂不支持升级/更换套餐，所有卡按钮禁用（当前套餐卡文案为「当前订阅」）。 */
+                  subscriptionLocked={isSubscribed || bots.length > 0}
                 />
               ))}
             </motion.div>
@@ -2379,6 +2825,13 @@ export const SubscribePage = ({
         open={showInviteCode}
         onClose={handleCloseInviteModal}
         onSuccess={handleInviteSuccess}
+      />
+
+      {/* Login Modal — 未登录点「订阅」时引导登录；登录成功仅关闭弹窗，
+          OAuth 整页跳转回跳后即为已登录态定价页。 */}
+      <LoginModal
+        open={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
       />
 
       {/* Responsive: collapse to single column on mobile */}

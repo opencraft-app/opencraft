@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildEffectiveWindowScript,
   buildCreateCommand,
+  buildEditCommand,
   buildTestRunMarker,
   createCronJob,
   createCronJobWithScriptRollback,
@@ -118,7 +119,7 @@ describe("parseCronRunFilesOutput", () => {
       name: "Morning sync",
       prompt: "Check overnight alerts.",
       schedule: { kind: "cron", expr: "0 9 * * *", display: "0 9 * * *" },
-      skills: [],
+      skills: ["builder-radar"],
       enabled: true,
       state: "scheduled",
       deliver: "local",
@@ -136,6 +137,7 @@ describe("parseCronRunFilesOutput", () => {
       job_id: "job-1",
       job_name: "Morning sync",
       job_prompt: "Check overnight alerts.",
+      skills: ["builder-radar"],
       schedule: { kind: "cron", expr: "0 9 * * *", display: "0 9 * * *" },
       deliver: "local",
       run_at: "2026-06-06T01:00:00+00:00",
@@ -152,6 +154,7 @@ describe("parseCronRunFilesOutput", () => {
       mtime_ms: 1780712416000,
       job_name: "One shot reminder",
       job_prompt: "Remind me once.",
+      job_skills: ["reminder"],
       job_schedule: "once at 2026-06-06 10:20",
       job_deliver: "local",
       job_last_run_at: "2026-06-06T02:20:16+00:00",
@@ -162,6 +165,7 @@ describe("parseCronRunFilesOutput", () => {
       job_id: "once-1",
       job_name: "One shot reminder",
       job_prompt: "Remind me once.",
+      skills: ["reminder"],
       schedule: { kind: "once", expr: "once at 2026-06-06 10:20", display: "once at 2026-06-06 10:20" },
       deliver: "local",
       status: "ok",
@@ -192,6 +196,61 @@ describe("parseCronRunFilesOutput", () => {
     }]), []);
 
     expect(runs[0]?.status).toBe("failed");
+  });
+
+  it("presents inference config drift as an unexecuted run while preserving the task name", () => {
+    const modelDriftError = "error: RuntimeError: Skipped to prevent unintended spend: global inference config drifted since this job was created (model 'kimi-k2.5' -> 'glm-5-turbo'), and this job is unpinned. No inference call was made.";
+    const runs = parseCronRunFilesOutput(JSON.stringify([{
+      job_id: "hourly-summary",
+      run_at: "2026-07-16T03:29:33+00:00",
+      output_path: "/home/agentuser/.hermes/cron/output/hourly-summary/2026-07-16T03-29-33.md",
+      mtime_ms: 1784172573000,
+      job_name: "每日工作小结",
+      job_prompt: "请帮我回顾今天的工作进展。",
+      job_last_run_at: "2026-07-16T03:29:33+00:00",
+      job_last_status: modelDriftError,
+      output_status: "ok",
+    }]), []);
+
+    expect(runs[0]).toMatchObject({
+      job_name: "每日工作小结",
+      job_prompt: "请帮我回顾今天的工作进展。",
+      status: "not_executed",
+      skip_reason: "model_changed",
+    });
+  });
+
+  it("does not relabel older successful runs when only the latest run hit model drift", () => {
+    const modelDriftError = "error: RuntimeError: Skipped to prevent unintended spend: global inference config drifted since this job was created.";
+    const runs = parseCronRunFilesOutput(JSON.stringify([{
+      job_id: "hourly-summary",
+      run_at: "2026-07-16T02:29:24+00:00",
+      output_path: "/home/agentuser/.hermes/cron/output/hourly-summary/2026-07-16T02-29-24.md",
+      mtime_ms: 1784168964000,
+      output_status: "ok",
+    }]), [{
+      id: "hourly-summary",
+      name: "每日工作小结",
+      prompt: "请帮我回顾今天的工作进展。",
+      schedule: { kind: "cron", expr: "0 * * * *", display: "0 * * * *" },
+      skills: [],
+      enabled: true,
+      state: "scheduled",
+      deliver: "local",
+      next_run_at: null,
+      last_run_at: "2026-07-16T03:29:33+00:00",
+      last_status: modelDriftError,
+      created_at: null,
+      script: "",
+      effective_window: null,
+      lightvela_schedule: null,
+    }]);
+
+    expect(runs[0]).toMatchObject({
+      job_name: "每日工作小结",
+      status: "ok",
+    });
+    expect(runs[0]).not.toHaveProperty("skip_reason");
   });
 
   it("filters scheduler attempts skipped before waking the Agent", () => {
@@ -248,6 +307,41 @@ describe("buildCreateCommand", () => {
       name: "morning",
       script: "lightvela-effective-window-job-1.py",
     })).toBe("hermes cron create '0 9 * * *' 'hello' --name 'morning' --script 'lightvela-effective-window-job-1.py'");
+  });
+
+  it("attaches one selected Skill slug", () => {
+    expect(buildCreateCommand({
+      schedule: "0 9 * * *",
+      prompt: "summarize news",
+      name: "morning news",
+      skills: ["finance-news"],
+    })).toBe("hermes cron create '0 9 * * *' 'summarize news' --name 'morning news' --skill 'finance-news'");
+  });
+});
+
+describe("buildEditCommand", () => {
+  it("leaves the Skill list untouched when the patch omits skills", () => {
+    expect(buildEditCommand("job-1", { name: "daily" })).toBe(
+      "hermes cron edit 'job-1' --name 'daily'",
+    );
+  });
+
+  it("replaces the Skill list and shell-quotes every slug", () => {
+    expect(buildEditCommand("job-1", { skills: ["report's-helper"] })).toBe(
+      "hermes cron edit 'job-1' --skill 'report'\\''s-helper'",
+    );
+  });
+
+  it("keeps Hermes repeated --skill compatibility", () => {
+    expect(buildEditCommand("job-1", { skills: ["first", "second"] })).toBe(
+      "hermes cron edit 'job-1' --skill 'first' --skill 'second'",
+    );
+  });
+
+  it("clears the Skill list only when an empty array is explicit", () => {
+    expect(buildEditCommand("job-1", { skills: [] })).toBe(
+      "hermes cron edit 'job-1' --clear-skills",
+    );
   });
 });
 
@@ -355,6 +449,32 @@ describe("effective window script", () => {
 });
 
 describe("listCronJobs", () => {
+  it("hydrates task-level inference bindings from jobs.json", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okExec(`
+  6e8b6fc74896 [active]
+    Name:      模型任务
+    Schedule:  every 2h
+    Deliver:   local
+`))
+      .mockResolvedValueOnce(okExec(JSON.stringify([{
+        id: "6e8b6fc74896",
+        provider: "openrouter",
+        model: null,
+        no_agent: false,
+      }])))
+      .mockResolvedValueOnce(okExec(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const jobs = await listCronJobs("bot-1");
+
+    expect(jobs[0]?.inference_config).toEqual({
+      provider: "openrouter",
+      model: null,
+      no_agent: false,
+    });
+  });
+
   it("filters out disposable test-run temp jobs by their hidden zero-width marker", async () => {
     const tempName = buildTestRunMarker("6e8b6fc74896", "喝水提醒");
     const fetchMock = vi.fn()
@@ -439,6 +559,8 @@ describe("createCronJob auth handling", () => {
 	    expect(body.command).toContain("lightvela-jobs-meta.json");
     expect(body.command.toLowerCase()).toContain("wakeagent");
     expect(body.command).toContain("agent_skipped");
+    expect(body.command).toContain("global inference config drifted since this job was created");
+    expect(body.command).toContain("model_changed");
 	  });
 
   it("streams debug exec stdout chunks before the command finishes", async () => {

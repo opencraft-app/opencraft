@@ -122,6 +122,9 @@ func (l *logic) loadOwnedRunningInstance(ctx pctx.Context, instanceID string) (*
 	if strings.TrimSpace(entity.SandboxId) == "" || isPendingSandboxID(entity.SandboxId) {
 		return nil, errcode.Wrap(errcode.ErrDebugNotSupported, "instance sandbox is not ready")
 	}
+	if err := l.requireActivePass(ctx); err != nil {
+		return nil, activePassGuardError("operate instance", err)
+	}
 	return entity, nil
 }
 

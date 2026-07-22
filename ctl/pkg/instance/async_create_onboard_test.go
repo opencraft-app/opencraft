@@ -189,18 +189,45 @@ func installCreateTaskAiGatewayConfig(t *testing.T) {
 	config.ServerConf = &config.GlobalConfig{
 		AdapterConfig: &config.AdapterConfig{
 			LLMGateway: &config.LLMGatewayConfig{
-				Enabled:              true,
-				BaseURL:              "https://llmgateway.test",
-				DefaultBaseURL:       "https://model.internal/v1",
-				DefaultModelID:       "kimi-k2.5",
-				DefaultCompatibility: "openai",
-				DefaultGatewayPort:   18789,
+				Enabled:                    true,
+				BaseURL:                    "https://llmgateway.test",
+				DefaultBaseURL:             "https://model.internal/v1",
+				DefaultModelID:             "kimi-k2.5",
+				DefaultCompatibility:       "openai",
+				DefaultGatewayPort:         18789,
+				NewAllocationUserAllowlist: []string{"*"},
 			},
 		},
 	}
 	t.Cleanup(func() {
 		config.ServerConf = prev
 	})
+}
+
+func legacyPassEntitlementAlreadyReady(context.Context, string, time.Time) error { return nil }
+
+func TestProvisionAiGatewayOnCreateDoesNotIssueKeyWhenLegacyEntitlementMigrationFails(t *testing.T) {
+	installCreateTaskAiGatewayConfig(t)
+
+	llm := &createTaskLLMGatewayAdapterStub{}
+	logic := &logic{
+		llmGatewayAdapter: llm,
+		logger:            zap.NewNop(),
+		legacyPassEntitlementEnsurer: func(_ context.Context, userID string, _ time.Time) error {
+			if userID != "user-migration-fail" {
+				t.Fatalf("userID = %q", userID)
+			}
+			return errors.New("trade unavailable")
+		},
+	}
+	ctx := pctx.NewContext(nil).WithUserID("user-migration-fail")
+	err := logic.provisionAiGatewayOnCreate(ctx, &modelinstance.Entity{InstanceId: "ins-migration-fail"}, "sbx-migration-fail")
+	if err == nil || !strings.Contains(err.Error(), "trade unavailable") {
+		t.Fatalf("error = %v", err)
+	}
+	if llm.createCalls != 0 {
+		t.Fatalf("create-api-key calls = %d, want 0", llm.createCalls)
+	}
 }
 
 func TestRunCreateInstanceTaskProvisionsAiGatewayOnCreate(t *testing.T) {
@@ -227,12 +254,13 @@ func TestRunCreateInstanceTaskProvisionsAiGatewayOnCreate(t *testing.T) {
 	}
 
 	logic := &logic{
-		instanceDao:        instanceDao,
-		sandboxAdapter:     sandboxAdapter,
-		llmGatewayAdapter:  aiGatewayAdapter,
-		logger:             zap.NewNop(),
-		defaultTemplate:    "tpl-create",
-		candidateTemplates: []string{"tpl-create"},
+		instanceDao:                  instanceDao,
+		sandboxAdapter:               sandboxAdapter,
+		llmGatewayAdapter:            aiGatewayAdapter,
+		logger:                       zap.NewNop(),
+		defaultTemplate:              "tpl-create",
+		candidateTemplates:           []string{"tpl-create"},
+		legacyPassEntitlementEnsurer: legacyPassEntitlementAlreadyReady,
 	}
 	ctx := pctx.NewContext(nil).WithUserID("user-create-1")
 
@@ -313,12 +341,13 @@ func TestRunCreateInstanceTaskFailsWhenAiGatewayOnboardFails(t *testing.T) {
 	}
 
 	logic := &logic{
-		instanceDao:        instanceDao,
-		sandboxAdapter:     sandboxAdapter,
-		llmGatewayAdapter:  aiGatewayAdapter,
-		logger:             zap.NewNop(),
-		defaultTemplate:    "tpl-create",
-		candidateTemplates: []string{"tpl-create"},
+		instanceDao:                  instanceDao,
+		sandboxAdapter:               sandboxAdapter,
+		llmGatewayAdapter:            aiGatewayAdapter,
+		logger:                       zap.NewNop(),
+		defaultTemplate:              "tpl-create",
+		candidateTemplates:           []string{"tpl-create"},
+		legacyPassEntitlementEnsurer: legacyPassEntitlementAlreadyReady,
 	}
 	ctx := pctx.NewContext(nil).WithUserID("user-create-2")
 

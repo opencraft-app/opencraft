@@ -22,6 +22,7 @@ import (
 	bundlemodel "ctl/pkg/model/bundle"
 	modelfactory "ctl/pkg/model/factory"
 	passmodel "ctl/pkg/model/pass"
+	passmigrationmodel "ctl/pkg/model/passbillingmigration"
 	"ctl/pkg/resource"
 	"ctl/pkg/transport"
 
@@ -52,7 +53,7 @@ type newPassSubscription struct {
 }
 
 func ensureNewPassGatewayUser(ctx context.Context, userID, nickname string) (bool, error) {
-	if gatewayroute.NewAllocationGateway() == gatewayroute.GatewayLLMGateway {
+	if gatewayroute.NewAllocationGateway(userID) == gatewayroute.GatewayLLMGateway {
 		resp, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().EnsureUser(ctx, userID, nickname)
 		return resp != nil && resp.Result == "created", err
 	}
@@ -61,7 +62,7 @@ func ensureNewPassGatewayUser(ctx context.Context, userID, nickname string) (boo
 }
 
 func applyNewPassGatewaySubscription(ctx context.Context, req newPassSubscriptionRequest) (*newPassSubscription, error) {
-	if gatewayroute.NewAllocationGateway() == gatewayroute.GatewayLLMGateway {
+	if gatewayroute.NewAllocationGateway(req.UserID) == gatewayroute.GatewayLLMGateway {
 		sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
 			IdempotencyKey: req.IdempotencyKey,
 			UserID:         req.UserID,
@@ -156,6 +157,11 @@ type Logic interface {
 	//   - renew_flag 本期 logic 内部写死 MANUAL_RENEW（不读 req.RenewFlag，待 AUTO_RENEW 放开后再切换）
 	//   - 兜底防御：用户已有 active pass 直接报 ErrPassAlreadyExists（不做幂等，不依赖 pass_pending_order）
 	CompletePass(req *transport.CompletePassRequest) (*PassDetail, error)
+
+	// MigrateFreeTrialPassToBilling 尝试把存量 bundle_free_trial_01 pass 迁移成计费 bundle_launch_01。
+	MigrateFreeTrialPassToBilling(req *transport.PassBillingMigrationRequest) (*transport.PassBillingMigrationResult, error)
+	// TransferPassFromBilling 在 jifei transferResource 回调到达后绑定既有 pass 的计费归属。
+	TransferPassFromBilling(req *transport.TransferPassRequest) (*PassDetail, error)
 
 	// CreatePassOrder 创建付费 pass 订单（v1.7.31 拆分：仅下单，不再拉支付 URL）
 	//
@@ -426,6 +432,7 @@ type logic struct {
 }
 
 const allowedFreeTrialBundleID = "bundle_free_trial_01"
+const billingMigrationTargetBundleID = "bundle_launch_01"
 
 // NewLogic 创建 Pass Logic
 func NewLogic() Logic {
@@ -601,6 +608,278 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 	detail.CreditTotal = bundle.Credit
 	detail.CreditAvailable = bundle.Credit
 	return detail, nil
+}
+
+func (l *logic) MigrateFreeTrialPassToBilling(req *transport.PassBillingMigrationRequest) (*transport.PassBillingMigrationResult, error) {
+	if req == nil || strings.TrimSpace(req.UserID) == "" || req.Uin <= 0 || req.AppID <= 0 {
+		return nil, errcode.ErrPassInvalidParam
+	}
+
+	userID := strings.TrimSpace(req.UserID)
+	passDao := modelfactory.DefaultDaoFactory.PassDao(nil)
+	passes, err := passDao.ListByUserID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("pass billing migration list passes: %w", err)
+	}
+	if len(passes) == 0 {
+		return &transport.PassBillingMigrationResult{Status: "skipped_no_pass", Message: "user has no pass"}, nil
+	}
+
+	candidate, skipped := selectPassForBillingMigration(passes)
+	if candidate == nil {
+		return skipped, nil
+	}
+
+	migrationDao := passmigrationmodel.NewDao()
+	migration, err := migrationDao.GetByPassAndTarget(candidate.PassID, billingMigrationTargetBundleID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("pass billing migration get state: %w", err)
+	}
+	if err == nil && migration != nil && migration.Status == passmigrationmodel.StatusCompleted {
+		return &transport.PassBillingMigrationResult{
+			Status:     "already_migrated",
+			PassID:     candidate.PassID,
+			BundleID:   billingMigrationTargetBundleID,
+			DealName:   stringValue(migration.DealName),
+			BigOrderID: stringValue(migration.BigOrderID),
+		}, nil
+	}
+	if err == nil && migration != nil && migration.Status == passmigrationmodel.StatusPendingTransfer {
+		return &transport.PassBillingMigrationResult{
+			Status:     passmigrationmodel.StatusPendingTransfer,
+			PassID:     candidate.PassID,
+			BundleID:   billingMigrationTargetBundleID,
+			DealName:   stringValue(migration.DealName),
+			BigOrderID: stringValue(migration.BigOrderID),
+		}, nil
+	}
+
+	if candidate.BundleID != allowedFreeTrialBundleID {
+		if err == nil && migration != nil && migration.Status == passmigrationmodel.StatusFailed {
+			return l.callTradeMoveIn(candidate, req, migrationDao)
+		}
+		return &transport.PassBillingMigrationResult{
+			Status:   "already_migrated",
+			PassID:   candidate.PassID,
+			BundleID: candidate.BundleID,
+			Message:  "pass is not free trial",
+		}, nil
+	}
+
+	if _, err := l.bundleLogic.GetBundleByID(billingMigrationTargetBundleID); err != nil {
+		return nil, err
+	}
+	record := passmigrationmodel.New(candidate.PassID, userID, allowedFreeTrialBundleID, billingMigrationTargetBundleID, req.Uin, req.AppID, passmigrationmodel.StatusPendingTransfer)
+	if err := migrationDao.Upsert(record); err != nil {
+		return nil, fmt.Errorf("pass billing migration persist state: %w", err)
+	}
+
+	return l.callTradeMoveIn(candidate, req, migrationDao)
+}
+
+func selectPassForBillingMigration(passes []*passmodel.Entity) (*passmodel.Entity, *transport.PassBillingMigrationResult) {
+	var free, target, paid *passmodel.Entity
+	for _, p := range passes {
+		if p == nil {
+			continue
+		}
+		switch {
+		case p.BundleID == allowedFreeTrialBundleID && p.Status == passmodel.StatusActive:
+			if free == nil {
+				free = p
+			}
+		case p.BundleID == billingMigrationTargetBundleID:
+			if target == nil {
+				target = p
+			}
+		case p.BundleID != allowedFreeTrialBundleID:
+			if paid == nil {
+				paid = p
+			}
+		}
+	}
+	if free != nil {
+		return free, nil
+	}
+	if target != nil {
+		return target, nil
+	}
+	if paid != nil {
+		return nil, &transport.PassBillingMigrationResult{Status: "skipped_paid_pass", PassID: paid.PassID, BundleID: paid.BundleID, Message: "user already has paid pass"}
+	}
+	return nil, &transport.PassBillingMigrationResult{Status: "skipped_no_active_free_pass", Message: "user has no active free trial pass"}
+}
+
+func (l *logic) callTradeMoveIn(candidate *passmodel.Entity, req *transport.PassBillingMigrationRequest, migrationDao passmigrationmodel.Dao) (*transport.PassBillingMigrationResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	tradeAdapter := adapterfactory.DefaultAdapterFactory.TradeAdapter()
+	resp, err := tradeAdapter.MoveInOrderAndPay(ctx, &tradeadapter.MoveInOrderRequest{
+		ExternalUserID: req.UserID,
+		Uin:            strconv.FormatInt(req.Uin, 10),
+		AppID:          strconv.FormatInt(req.AppID, 10),
+		BundleID:       billingMigrationTargetBundleID,
+		ResourceID:     candidate.PassID,
+		CurDeadline:    formatCurDeadlineForJifei(candidate.ExpiredTime),
+	})
+	if err != nil {
+		msg := truncateString(err.Error(), 1024)
+		_ = migrationDao.DeleteByPassAndTargetAndStatus(candidate.PassID, billingMigrationTargetBundleID, passmigrationmodel.StatusPendingTransfer)
+		resource.ZapLogger.Warn("pass billing migration move-in failed",
+			zap.String("user_id", req.UserID),
+			zap.String("pass_id", candidate.PassID),
+			zap.Error(err),
+		)
+		return &transport.PassBillingMigrationResult{Status: "failed", PassID: candidate.PassID, BundleID: billingMigrationTargetBundleID, Message: msg}, nil
+	}
+
+	return &transport.PassBillingMigrationResult{Status: passmigrationmodel.StatusPendingTransfer, PassID: candidate.PassID, BundleID: billingMigrationTargetBundleID, DealName: resp.DealName, BigOrderID: resp.BigOrderID}, nil
+}
+
+func (l *logic) TransferPassFromBilling(req *transport.TransferPassRequest) (*PassDetail, error) {
+	if err := validateTransferPassRequest(req); err != nil {
+		return nil, err
+	}
+
+	passID := strings.TrimSpace(req.PassID)
+	userID := strings.TrimSpace(req.UserID)
+	sourceBundleID := strings.TrimSpace(req.SourceBundleID)
+	if sourceBundleID == "" {
+		sourceBundleID = allowedFreeTrialBundleID
+	}
+	targetBundleID := strings.TrimSpace(req.TargetBundleID)
+	dealName := strings.TrimSpace(req.DealName)
+	bigOrderID := strings.TrimSpace(req.BigOrderID)
+
+	var saved passmodel.Entity
+	if err := resource.GormDB.Transaction(func(tx *gorm.DB) error {
+		var passEntity passmodel.Entity
+		if err := tx.Table(passmodel.TableName).
+			Where(passmodel.ColumnPassID+" = ?", passID).
+			Take(&passEntity).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errcode.ErrPassNotFound
+			}
+			return fmt.Errorf("pass billing transfer get pass: %w", err)
+		}
+		if userID != "" && passEntity.UserID != userID {
+			return errcode.Wrap(errcode.ErrPassInvalidParam, "pass %s does not belong to user %s", passID, userID)
+		}
+
+		var migration passmigrationmodel.Entity
+		if err := tx.Table(passmigrationmodel.TableName).
+			Where(passmigrationmodel.ColumnPassID+" = ? AND "+passmigrationmodel.ColumnTargetBundleID+" = ?", passID, targetBundleID).
+			Take(&migration).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errcode.Wrap(errcode.ErrPassInvalidParam, "pass billing migration state not found")
+			}
+			return fmt.Errorf("pass billing transfer get migration state: %w", err)
+		}
+		if migration.Status != passmigrationmodel.StatusPendingTransfer &&
+			migration.Status != passmigrationmodel.StatusPendingOrder &&
+			migration.Status != passmigrationmodel.StatusCompleted {
+			return errcode.Wrap(errcode.ErrPassInvalidParam, "pass billing migration status %s is not transferable", migration.Status)
+		}
+
+		if passEntity.BundleID == targetBundleID && passEntity.Uin == req.NewUin && passEntity.AppID == req.NewAppID {
+			if err := markBillingMigrationCompleted(tx, passID, targetBundleID, dealName, bigOrderID); err != nil {
+				return err
+			}
+			saved = passEntity
+			return nil
+		}
+		if passEntity.BundleID != sourceBundleID {
+			return errcode.Wrap(errcode.ErrPassInvalidParam, "pass bundle mismatch: got %s, want %s", passEntity.BundleID, sourceBundleID)
+		}
+		if passEntity.Status != passmodel.StatusActive {
+			return errcode.Wrap(errcode.ErrPassInvalidParam, "pass status must be active, got %s", passEntity.Status)
+		}
+
+		updates := map[string]interface{}{
+			passmodel.ColumnBundleID: targetBundleID,
+			passmodel.ColumnUin:      req.NewUin,
+			passmodel.ColumnAppID:    req.NewAppID,
+		}
+		result := tx.Table(passmodel.TableName).
+			Where(passmodel.ColumnPassID+" = ?", passID).
+			Updates(updates)
+		if result.Error != nil {
+			return fmt.Errorf("pass billing transfer update pass: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return errcode.ErrPassNotFound
+		}
+		if err := markBillingMigrationCompleted(tx, passID, targetBundleID, dealName, bigOrderID); err != nil {
+			return err
+		}
+
+		passEntity.BundleID = targetBundleID
+		passEntity.Uin = req.NewUin
+		passEntity.AppID = req.NewAppID
+		saved = passEntity
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return entityToDetail(&saved), nil
+}
+
+func validateTransferPassRequest(req *transport.TransferPassRequest) error {
+	if req == nil {
+		return errcode.ErrPassInvalidParam
+	}
+	if strings.TrimSpace(req.PassID) == "" {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "pass_id is required")
+	}
+	if strings.TrimSpace(req.TargetBundleID) == "" {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "target_bundle_id is required")
+	}
+	if req.NewUin <= 0 {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "new_uin is required")
+	}
+	if req.NewAppID <= 0 {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "new_app_id is required")
+	}
+	return nil
+}
+
+func markBillingMigrationCompleted(tx *gorm.DB, passID, targetBundleID, dealName, bigOrderID string) error {
+	updates := map[string]interface{}{
+		passmigrationmodel.ColumnStatus:    passmigrationmodel.StatusCompleted,
+		passmigrationmodel.ColumnLastError: nil,
+	}
+	if dealName != "" {
+		updates[passmigrationmodel.ColumnDealName] = dealName
+	}
+	if bigOrderID != "" {
+		updates[passmigrationmodel.ColumnBigOrderID] = bigOrderID
+	}
+	result := tx.Table(passmigrationmodel.TableName).
+		Where(passmigrationmodel.ColumnPassID+" = ? AND "+passmigrationmodel.ColumnTargetBundleID+" = ?", passID, targetBundleID).
+		Updates(updates)
+	if result.Error != nil {
+		return fmt.Errorf("pass billing transfer complete migration state: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "pass billing migration state not found")
+	}
+	return nil
+}
+
+func stringValue(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
+func truncateString(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max]
 }
 
 func (l *logic) GetPasses(userID *string, bundleID *string) ([]*PassDetail, error) {

@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import base64
 import copy
+import dataclasses
 import json
 import os
 import re
@@ -26,6 +27,14 @@ from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest
 from harness_ci.secrets import build_secret_manifest, redact, resolve_contract_secret_values, secret_env_ref
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+@dataclasses.dataclass(frozen=True)
+class CommandResult:
+    args: list[str]
+    returncode: int
+    stdout: str
+    stderr: str
 
 
 SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
@@ -280,8 +289,33 @@ def resolve_job_namespace(deploy_root: Path, env_name: str, service: str, explic
     return load_playground_catalog_value(deploy_root, env_name, service, "namespace")
 
 
+def validate_command(command: list[str]) -> list[str]:
+    if not command or not all(isinstance(part, str) and part for part in command):
+        raise ValueError("command must be a non-empty list of non-empty strings")
+    return command
+
+
+def run_command(
+    command: list[str],
+    *,
+    cwd: Path | None = None,
+    input_text: str | None = None,
+    timeout: int | None = None,
+) -> CommandResult:
+    safe_command = validate_command(command)
+    completed = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
+        safe_command,
+        cwd=cwd,
+        input=input_text,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    return CommandResult(safe_command, completed.returncode, completed.stdout, completed.stderr)
+
+
 def git_output(args: list[str]) -> str:
-    result = subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True)
+    result = run_command(["git", *args], cwd=REPO_ROOT)
     if result.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
     return result.stdout.strip()
@@ -363,20 +397,20 @@ def is_transient_kubectl_message(output: str) -> bool:
     return any(marker in output for marker in transient_markers)
 
 
-def is_transient_kubectl_error(result: subprocess.CompletedProcess[str]) -> bool:
+def is_transient_kubectl_error(result: CommandResult) -> bool:
     output = "\n".join(part for part in (result.stdout, result.stderr) if part)
     return is_transient_kubectl_message(output)
 
 
-def kubectl_run(cmd: list[str], *, input_text: str | None = None, retries: int = 1) -> subprocess.CompletedProcess[str]:
+def kubectl_run(cmd: list[str], *, input_text: str | None = None, retries: int = 1) -> CommandResult:
     attempts = max(1, retries)
     kubectl_cmd = kubectl_command(cmd)
-    last_result: subprocess.CompletedProcess[str] | None = None
+    last_result: CommandResult | None = None
     for attempt in range(1, attempts + 1):
         try:
-            result = subprocess.run(kubectl_cmd, input=input_text, capture_output=True, text=True, timeout=75)
+            result = run_command(kubectl_cmd, input_text=input_text, timeout=75)
         except subprocess.TimeoutExpired as exc:
-            result = subprocess.CompletedProcess(
+            result = CommandResult(
                 kubectl_cmd,
                 124,
                 stdout=exc.stdout or "",
@@ -444,7 +478,7 @@ def resolve_job_image(
 
 
 def build_configmap_manifest(namespace: str, name: str, source_dir: Path) -> dict[str, Any]:
-    result = subprocess.run(
+    result = run_command(
         [
             "kubectl",
             "-n",
@@ -456,9 +490,7 @@ def build_configmap_manifest(namespace: str, name: str, source_dir: Path) -> dic
             "--dry-run=client",
             "-o",
             "json",
-        ],
-        capture_output=True,
-        text=True,
+        ]
     )
     if result.returncode != 0:
         raise RuntimeError(f"kubectl create configmap {name} failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")

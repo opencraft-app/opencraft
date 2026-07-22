@@ -31,6 +31,10 @@ const (
 	testDeviceBindSecret = "test-device-bind-secret"
 )
 
+func fixedVerificationCode(code string) func(int) (string, error) {
+	return func(int) (string, error) { return code, nil }
+}
+
 func TestSetSessionCookieUsesConfiguredCrossSiteAttributes(t *testing.T) {
 	t.Parallel()
 
@@ -62,6 +66,53 @@ func TestSetSessionCookieUsesConfiguredCrossSiteAttributes(t *testing.T) {
 	}
 	if cookie.Name != sessionCookieName {
 		t.Fatalf("expected cookie name %q, got %q", sessionCookieName, cookie.Name)
+	}
+}
+
+func TestRequestClientMetadataIgnoresCustomClientIPHeader(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/auth/sms/send", nil)
+	ctx.Request.RemoteAddr = "10.0.0.12:32000"
+	ctx.Request.Header.Set("X-Forwarded-For", "198.51.100.77")
+	ctx.Request.Header.Set("X-Lightclaw-Client-IP", "1.203.100.246")
+
+	clientIP, _ := requestClientMetadata(ctx)
+	if clientIP != "198.51.100.77" {
+		t.Fatalf("expected Gin's trusted-proxy result, got %q", clientIP)
+	}
+}
+
+func TestRequestClientMetadataUsesForwardingOnlyFromTrustedProxy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	if err := router.SetTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+		t.Fatalf("set trusted proxies: %v", err)
+	}
+	router.GET("/client-ip", func(ctx *gin.Context) {
+		clientIP, _ := requestClientMetadata(ctx)
+		ctx.String(http.StatusOK, clientIP)
+	})
+
+	trusted := httptest.NewRequest(http.MethodGet, "/client-ip", nil)
+	trusted.RemoteAddr = "10.0.0.12:32000"
+	trusted.Header.Set("X-Forwarded-For", "1.203.100.246")
+	trustedRecorder := httptest.NewRecorder()
+	router.ServeHTTP(trustedRecorder, trusted)
+	if got := trustedRecorder.Body.String(); got != "1.203.100.246" {
+		t.Fatalf("trusted proxy client IP = %q", got)
+	}
+
+	untrusted := httptest.NewRequest(http.MethodGet, "/client-ip", nil)
+	untrusted.RemoteAddr = "192.0.2.44:32000"
+	untrusted.Header.Set("X-Forwarded-For", "1.203.100.246")
+	untrustedRecorder := httptest.NewRecorder()
+	router.ServeHTTP(untrustedRecorder, untrusted)
+	if got := untrustedRecorder.Body.String(); got != "192.0.2.44" {
+		t.Fatalf("untrusted peer client IP = %q", got)
 	}
 }
 
@@ -528,6 +579,53 @@ func TestRealnameFaceIDCallbackReturnsGenericNonCacheableHTML(t *testing.T) {
 	}
 	if recorder.Header().Get("Cache-Control") != "no-store" || strings.Contains(recorder.Body.String(), "foreign-token") {
 		t.Fatalf("callback must be non-cacheable and must not reflect token: headers=%v body=%s", recorder.Header(), recorder.Body.String())
+	}
+	if len(recorder.Result().Cookies()) != 0 {
+		t.Fatalf("callback must not create a browser session: %v", recorder.Result().Cookies())
+	}
+	if !strings.Contains(recorder.Body.String(), "认证结果查询异常") {
+		t.Fatalf("unknown callback must not imply success: %s", recorder.Body.String())
+	}
+}
+
+func TestRealnameFaceIDCallbackRendersReconciledOutcome(t *testing.T) {
+	tests := []struct {
+		name        string
+		provider    service.RealnameFaceIDProviderCheckResult
+		providerErr error
+		wantText    string
+	}{
+		{name: "pending", provider: service.RealnameFaceIDProviderCheckResult{}, wantText: "认证结果处理中"},
+		{name: "failed", provider: service.RealnameFaceIDProviderCheckResult{Completed: true}, wantText: "人脸核身未通过"},
+		{name: "passed", provider: service.RealnameFaceIDProviderCheckResult{Completed: true, Success: true}, wantText: "人脸核身已通过"},
+		{name: "query error", providerErr: errors.New("provider unavailable"), wantText: "认证结果查询异常"},
+		{name: "integrity failure", providerErr: &service.RealnameFaceIDProviderIntegrityError{Reason: "mismatch"}, wantText: "人脸核身未通过"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			router, svc, provider := newAuthTestRouterWithFaceID()
+			if _, err := svc.SendVerificationCode(context.Background(), "13800138888"); err != nil {
+				t.Fatalf("send login code: %v", err)
+			}
+			session, err := svc.VerifySMS(context.Background(), service.VerifySMSInput{Phone: "13800138888", Code: "123456", Name: "Face Callback User"})
+			if err != nil {
+				t.Fatalf("verify login sms: %v", err)
+			}
+			cookie := &http.Cookie{Name: sessionCookieName, Value: session.Token}
+			started := performJSONRequest(t, router, http.MethodPost, "/auth/realname/faceid/attempts", map[string]any{
+				"name": "张三", "idCard": "11010519491231002X", "consent": true,
+			}, cookie)
+			if started.Code != http.StatusOK {
+				t.Fatalf("start FaceID attempt: %d %s", started.Code, started.Body.String())
+			}
+			provider.getInfoOut = tt.provider
+			provider.getInfoErr = tt.providerErr
+			callback := performJSONRequest(t, router, http.MethodGet, "/auth/realname/faceid/callback?BizToken=biz-http", nil)
+			if callback.Code != http.StatusOK || !strings.Contains(callback.Body.String(), tt.wantText) {
+				t.Fatalf("expected callback outcome %q, got %d: %s", tt.wantText, callback.Code, callback.Body.String())
+			}
+		})
 	}
 }
 
@@ -1072,6 +1170,29 @@ func TestSendSmsCodeReturnsCooldownWhenPhoneAuthIsEnabled(t *testing.T) {
 	decodeJSONResponse(t, recorder, &response)
 	if response.CooldownSeconds <= 0 {
 		t.Fatalf("expected positive cooldown seconds, got %d", response.CooldownSeconds)
+	}
+}
+
+func TestVerifySmsCodeReturnsTooManyRequestsAfterRateLimit(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthTestRouter()
+	for i := 0; i < 10; i++ {
+		recorder := performJSONRequest(t, router, http.MethodPost, "/auth/sms/verify", map[string]any{
+			"phone": "13800138000",
+			"code":  "000000",
+		})
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("attempt %d expected 400, got %d: %s", i+1, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	recorder := performJSONRequest(t, router, http.MethodPost, "/auth/sms/verify", map[string]any{
+		"phone": "13800138000",
+		"code":  "000000",
+	})
+	if recorder.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -1834,7 +1955,7 @@ func newAuthTestRouterWithFaceID() (*gin.Engine, *service.Service, *httpStubFace
 	svc := service.NewWithStore(store, service.Options{
 		Now:                        fixedHTTPTestNow,
 		SessionTTL:                 30 * 24 * time.Hour,
-		DefaultSMSCode:             "123456",
+		VerificationCodeGenerator:  fixedVerificationCode("123456"),
 		RealnameCipher:             httpStubRealnameCipher{},
 		RealnameFaceIDVerifier:     provider,
 		ShadowBinding:              shadowSvc,
@@ -2041,6 +2162,7 @@ type httpStubFaceIDVerifier struct {
 	detectOut  service.RealnameFaceIDDetectAuthResult
 	detectErr  error
 	getInfoOut service.RealnameFaceIDProviderCheckResult
+	getInfoErr error
 }
 
 type httpFaceIDShadowClient struct{}
@@ -2073,6 +2195,9 @@ func (s *httpStubFaceIDVerifier) DetectAuth(_ context.Context, in service.Realna
 }
 
 func (s *httpStubFaceIDVerifier) GetDetectInfoEnhanced(_ context.Context, _ service.RealnameFaceIDGetDetectInfoInput) (service.RealnameFaceIDProviderCheckResult, error) {
+	if s.getInfoErr != nil {
+		return service.RealnameFaceIDProviderCheckResult{}, s.getInfoErr
+	}
 	return s.getInfoOut, nil
 }
 

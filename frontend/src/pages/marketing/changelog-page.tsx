@@ -46,8 +46,8 @@ type ChangelogEntry = {
   id: string;
   title: string;
   desc?: string;
-  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / achievements=成就图 / schedule=自动任务图 / chat=网页对话图 / memory=记忆页图 / none=无图 */
-  visual: "lobster" | "cloudStorage" | "skillPackages" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" | "none";
+  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / chat=网页对话图 / memory=记忆页图 / none=无图 */
+  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "soul" | "schedule" | "automationSkill" | "chat" | "memory" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -60,10 +60,11 @@ type ChangelogMonthGroup = {
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" | "skill-package" }) {
+export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "achievements" | "wecom" | "soul" | "schedule" | "automationSkill" | "chat" | "memory" | "skill-package" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
+  const useGlobalChineseAsset = i18n.language.startsWith("zh");
   /* 国际站中英文 changelog 均使用国际版截图；国内站继续使用中文截图。 */
   const imgPath =
     variant === "cloudStorage"
@@ -76,6 +77,24 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       ? useGlobalAssets
         ? "/assets/changelog/lightvela-achievements-en.png"
         : "/assets/changelog/lightvela-achievements.webp"
+      : variant === "skillsRevamp"
+      ? isGlobal
+        ? useGlobalChineseAsset
+          ? "/assets/changelog/lightvela-skills-page-global-zh.webp"
+          : "/assets/changelog/lightvela-skills-page-global-en.webp"
+        : "/assets/changelog/lightvela-skills-page-domestic-zh.webp"
+      : variant === "skillPackagesRevamp"
+      ? isGlobal
+        ? useGlobalChineseAsset
+          ? "/assets/changelog/lightvela-skill-packages-global-zh.webp"
+          : "/assets/changelog/lightvela-skill-packages-global-en.webp"
+        : "/assets/changelog/lightvela-skill-package-cn.webp"
+      : variant === "diagnosticsCenter"
+      ? isGlobal
+        ? useGlobalChineseAsset
+          ? "/assets/changelog/lightvela-diagnostics-global-zh.webp"
+          : "/assets/changelog/lightvela-diagnostics-global-en.webp"
+        : "/assets/changelog/lightvela-diagnostics-domestic-zh.webp"
       : variant === "wecom"
       ? "/assets/changelog/lightvela-wecom-channel.webp"
       : variant === "chat"
@@ -90,18 +109,34 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       ? useGlobalAssets
         ? "/assets/changelog/scheduled-tasks-en.png"
         : "/assets/changelog/scheduled-tasks.webp"
+      : variant === "automationSkill"
+      ? useGlobalAssets
+        ? "/assets/changelog/automation-skill-invocation-en.png"
+        : "/assets/changelog/automation-skill-invocation.png"
       : variant === "skill-package"
-      ? "/assets/changelog/lightvela-skill-package.png"
+      ? "/assets/changelog/lightvela-skill-package-cn.webp"
       : variant === "soul"
-      ? "/assets/changelog/soul-persona.webp"
-      : useGlobalAssets
-        ? "/assets/changelog/lightvela-launch-en.webp"
+        ? isGlobal
+          ? useGlobalChineseAsset
+            ? "/assets/changelog/soul-persona-global-zh.webp"
+            : "/assets/changelog/soul-persona-global-en.webp"
+          : "/assets/changelog/soul-persona-domestic-zh.webp"
+      : isGlobal
+        ? useGlobalChineseAsset
+          ? "/assets/changelog/lightvela-launch-global-zh.webp"
+          : "/assets/changelog/lightvela-launch-global-en.webp"
         : "/assets/changelog/lightvela-launch.webp";
   const altText =
     variant === "cloudStorage"
       ? t("LightVela 支持云存储管理")
       : variant === "skillPackages"
       ? t("新增技能包功能")
+      : variant === "skillsRevamp"
+      ? t("技能页面全新升级")
+      : variant === "skillPackagesRevamp"
+      ? t("LightVela 支持技能包")
+      : variant === "diagnosticsCenter"
+      ? t("诊断中心上线，让 Agent 排查更简单")
       : variant === "achievements"
       ? t("LightVela 支持成就模块")
       : variant === "wecom"
@@ -109,9 +144,11 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       : variant === "chat"
       ? t("LightVela 支持网页内对话")
       : variant === "memory"
-      ? t("LightVela支持查看Hermes Agent记忆")
+      ? t("LightVela 支持查看 Hermes Agent 记忆")
       : variant === "schedule"
       ? t("LightVela 支持设置自动任务")
+      : variant === "automationSkill"
+      ? t("自动任务调用技能设置")
       : variant === "skill-package"
       ? t("LightVela 支持技能包")
       : variant === "soul"
@@ -124,6 +161,18 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       ? "2328 / 1370"
       : variant === "achievements"
       ? useGlobalAssets ? "1275 / 663" : "2140 / 1198"
+      : variant === "skillsRevamp"
+      ? isGlobal
+        ? useGlobalChineseAsset ? "1279 / 867" : "1285 / 863"
+        : "1161 / 785"
+      : variant === "skillPackagesRevamp"
+      ? isGlobal
+        ? useGlobalChineseAsset ? "1279 / 635" : "1275 / 666"
+        : "1166 / 680"
+      : variant === "diagnosticsCenter"
+      ? isGlobal
+        ? useGlobalChineseAsset ? "1281 / 615" : "1283 / 638"
+        : "1454 / 1045"
       : variant === "wecom"
       ? "2160 / 844"
       : variant === "chat"
@@ -132,10 +181,12 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       ? useGlobalAssets ? "1637 / 961" : "2326 / 1322"
       : variant === "schedule"
         ? useGlobalAssets ? "1784 / 882" : "1952 / 806"
+      : variant === "automationSkill"
+        ? "820 / 282"
         : variant === "skill-package"
-        ? "2330 / 1334"
+        ? "1166 / 680"
         : variant === "soul"
-          ? "2044 / 748"
+          ? isGlobal ? "1279 / 808" : "1451 / 917"
           : "710 / 360";
   /* LightVela 正式上线卡片 — 直接使用设计稿/截图资产 */
   return (
@@ -169,14 +220,39 @@ function ChangelogContent() {
   /* 数据驱动；每条文案直接通过翻译函数调用字面量，以便被 i18n-extract 扫描。
      国内站与国际站的渠道事实不同，使用 isGlobal 编译期分支分别维护。 */
   const launchDesc = isGlobal
-    ? t("支持一键创建云端 Hermes Agent，支持快速接入Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")
+    ? t("支持一键创建云端 Hermes Agent，支持快速接入 Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")
     : t("支持一键创建云端 Hermes Agent，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。");
+  const skillsPageDesc = isGlobal
+    ? t("支持从 ClawHub 和 skills.sh 搜索并一键安装技能；在精选技能页面浏览热门推荐和场景分类、查看技能详情。")
+    : t("支持从 SkillHub 搜索并一键安装技能；在精选技能页面浏览热门推荐和场景分类、查看技能详情。");
 
   const changelogGroups: ChangelogMonthGroup[] = [
     {
       id: "2026-07",
       month: t("2026 年 7 月"),
       entries: [
+        {
+          id: "skills-page-revamp",
+          title: t("技能页面全新升级"),
+          desc: skillsPageDesc,
+          visual: "skillsRevamp",
+        },
+        ...(isGlobal
+          ? [
+              {
+                id: "skill-packages-global",
+                title: t("LightVela 支持技能包"),
+                desc: t("快速安装技能组合，让 Agent 从单点技能走向完整工作流。"),
+                visual: "skillPackagesRevamp" as const,
+              },
+            ]
+          : []),
+        {
+          id: "automation-skill-invocation",
+          title: t("自动任务支持调用技能"),
+          desc: t("创建或编辑自动任务时，可以选择需要调用的技能。Agent 会在执行任务前加载该技能，帮助自动任务更稳定地调用技能。"),
+          visual: "automationSkill",
+        },
         ...(!isGlobal
           ? [
               {
@@ -193,16 +269,12 @@ function ChangelogContent() {
       id: "2026-06",
       month: t("2026 年 6 月"),
       entries: [
-        ...(!isGlobal
-          ? [
-              {
-                id: "skill-packages",
-                title: t("新增技能包功能"),
-                desc: t("提供不同场景的技能包，帮助用户一键快速为 Agent 安装技能组合，覆盖金融、开发、设计、法律、教育等场景"),
-                visual: "skillPackages" as const,
-              },
-            ]
-          : []),
+        {
+          id: "diagnostics-center",
+          title: t("诊断中心上线，让 Agent 排查更简单"),
+          desc: t("集中查看 Hermes Agent 最近日志，并执行模型配置重置、Agent 重装等维护操作，帮助快速定位和解决问题。"),
+          visual: "diagnosticsCenter",
+        },
         {
           id: "cloud-storage",
           title: t("LightVela 支持云存储管理"),
@@ -232,6 +304,12 @@ function ChangelogContent() {
       month: t("2026 年 5 月"),
       entries: [
         {
+          id: "soul",
+          title: t("Soul 人设能力上线"),
+          desc: t("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新会话。"),
+          visual: "soul",
+        },
+        {
           id: "web-chat",
           title: t("LightVela 支持网页内对话"),
           desc: t("无需切换到外部通道，现在可以在 LightVela 网页内基于 AgentChat 直接与 Hermes Agent 对话。"),
@@ -239,7 +317,7 @@ function ChangelogContent() {
         },
         {
           id: "memory",
-          title: t("LightVela支持查看Hermes Agent记忆"),
+          title: t("LightVela 支持查看 Hermes Agent 记忆"),
           desc: t("在控制台查看 Hermes Agent 的记忆、用户画像和字符占用，帮助你了解 Agent 当前掌握的上下文。"),
           visual: "memory",
         },
@@ -249,16 +327,6 @@ function ChangelogContent() {
           desc: t("为 Agent 设置周期、间隔或单次自动任务，让它按计划执行提醒、总结、通知等日常工作。"),
           visual: "schedule",
         },
-        ...(!isGlobal
-          ? [
-              {
-                id: "soul",
-                title: t("Soul 人设能力上线"),
-                desc: t("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新会话。"),
-                visual: "soul" as const,
-              },
-            ]
-          : []),
       ],
     },
     {

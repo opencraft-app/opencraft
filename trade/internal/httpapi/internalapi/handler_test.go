@@ -48,6 +48,9 @@ func (f *fakeCTL) ListPassesByUser(ctx context.Context, externalUserID string) (
 func (f *fakeCTL) CompletePass(ctx context.Context, req *ctlclient.CompletePassRequest) (*ctlclient.PassDetail, error) {
 	return nil, errors.New("not used")
 }
+func (f *fakeCTL) TransferPass(ctx context.Context, req *ctlclient.TransferPassRequest) (*ctlclient.PassDetail, error) {
+	return nil, errors.New("not used")
+}
 func (f *fakeCTL) ListPassAppIDs(_ context.Context, _ []string, _, _ int) ([]int64, int64, error) {
 	return nil, 0, errors.New("not used")
 }
@@ -220,12 +223,20 @@ func (f *fakeOrderWriter) MarkOrderCancelled(ctx context.Context, dealName strin
 }
 
 type fakeOrderStore struct {
-	getOrderByDealNameFn func(ctx context.Context, dealName string) (*store.TradeOrder, error)
+	getOrderByDealNameFn                    func(ctx context.Context, dealName string) (*store.TradeOrder, error)
+	getProvisionedCreateOrderByResourceIDFn func(ctx context.Context, resourceID string) (*store.TradeOrder, error)
 }
 
 func (f *fakeOrderStore) GetOrderByDealName(ctx context.Context, dealName string) (*store.TradeOrder, error) {
 	if f.getOrderByDealNameFn != nil {
 		return f.getOrderByDealNameFn(ctx, dealName)
+	}
+	return nil, store.ErrTradeOrderNotFound
+}
+
+func (f *fakeOrderStore) GetProvisionedCreateOrderByResourceID(ctx context.Context, resourceID string) (*store.TradeOrder, error) {
+	if f.getProvisionedCreateOrderByResourceIDFn != nil {
+		return f.getProvisionedCreateOrderByResourceIDFn(ctx, resourceID)
 	}
 	return nil, store.ErrTradeOrderNotFound
 }
@@ -267,9 +278,10 @@ func newTestEnv(t *testing.T) *testEnv {
 
 	r := gin.New()
 	Install(r, Deps{
-		InternalServiceToken: "test-token",
-		Inquiry:              inq,
-		PlaceOrder:           po,
+		InternalServiceToken:  "test-token",
+		Inquiry:               inq,
+		PlaceOrder:            po,
+		ProvisionedOrderStore: orderStore,
 		// D-2.2 销毁链路用户主动入口路由依赖（设计稿 §3.5 + §11-A Q26）。
 		BundleStore: bundle,
 		JifeiClient: jifei,
@@ -864,6 +876,43 @@ func renewBody() map[string]any {
 		"timeUnit":       "m",
 		"goodsNum":       1,
 		"payMode":        1,
+	}
+}
+
+func moveInBody() map[string]any {
+	return map[string]any{
+		"externalUserId": "usr_migrate",
+		"uin":            "700000164995",
+		"appId":          "251202221",
+		"bundleId":       "bundle_launch_01",
+		"resourceId":     "pass-free-1",
+		"curDeadline":    "2026-07-20 12:00:00",
+	}
+}
+
+func TestMoveInOrder_InvalidInput(t *testing.T) {
+	cases := []struct {
+		name string
+		mut  func(b map[string]any)
+	}{
+		{"missing resource_id", func(b map[string]any) { delete(b, "resourceId") }},
+		{"missing cur_deadline", func(b map[string]any) { delete(b, "curDeadline") }},
+		{"bad cur_deadline", func(b map[string]any) { b["curDeadline"] = "2026-07-20T12:00:00Z" }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			body := moveInBody()
+			tc.mut(body)
+			rec := env.doJSON(http.MethodPost, "/internal/trade/orders/move-in", body, true)
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+			}
+			resp := decodeBody(t, rec)
+			if resp["code"] != "InvalidRequest" {
+				t.Errorf("expected code=InvalidRequest, got %v", resp["code"])
+			}
+		})
 	}
 }
 

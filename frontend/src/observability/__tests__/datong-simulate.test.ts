@@ -153,9 +153,29 @@ describe("大同埋点全链路模拟上报", () => {
       });
     });
 
-    it("cookie consent 未同意不初始化", async () => {
+    it("国内站 cookie consent 未同意仍初始化（国内站无需 consent 门禁）", async () => {
       const config = resolveDatongConfig(PROD_ENV as never, "cn", null);
+      expect(config).toEqual({
+        appKey: "0WEB071LS3218EU7",
+        region: "cn",
+        appEnv: "production",
+        enableNoCodeTracking: false,
+      });
+    });
+
+    it("国际站 cookie consent 未同意不初始化", async () => {
+      const config = resolveDatongConfig(PROD_ENV as never, "global", null);
       expect(config).toBeNull();
+    });
+
+    it("国际站 cookie consent 同意后初始化", async () => {
+      const config = resolveDatongConfig(PROD_ENV as never, "global", "accepted" as CookieConsentValue);
+      expect(config).toEqual({
+        appKey: "0WEB071LS3218EU7",
+        region: "global",
+        appEnv: "production",
+        enableNoCodeTracking: false,
+      });
     });
 
     it("enabled=false 不初始化", async () => {

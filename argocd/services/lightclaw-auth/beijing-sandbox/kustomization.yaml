@@ -29,6 +29,7 @@ patches:
         secretRef:
           name: lightvela-e2e-auth-secrets
 - path: patch-shadowbinding.yaml
+- path: patch-phone-auth.yaml
 configMapGenerator:
 - name: auth-platform-values
   envs:

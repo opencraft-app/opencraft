@@ -56,7 +56,7 @@ describe("workspace recovery helpers", () => {
       "远程命令通道暂时不可用，请稍后重试。",
     );
     expect(describeWorkspaceActionError("import", "bad zip member: foo").message).toBe(
-      "备份包无法识别或已损坏，请重新选择 Hermes 导出的 zip 文件。",
+      "备份包无法识别或已损坏，请重新选择 Hermes Agent 导出的 zip 文件。",
     );
   });
 

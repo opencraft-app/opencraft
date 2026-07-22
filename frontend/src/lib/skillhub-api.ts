@@ -73,8 +73,12 @@ export interface SkillHubSkillSet {
   id: number;
   slug: string;
   displayName: string;
+  displayNameEn?: string;
   summary: string;
+  summaryEn?: string;
   remark: string;
+  contentEn?: string;
+  scope?: number;
   scene?: SkillHubSkillSetScene;
   subScene?: string;
   avatarUrl?: string | null;
@@ -100,7 +104,9 @@ export interface SkillHubSkill {
   id?: number;
   slug: string;
   displayName: string;
+  displayNameEn?: string;
   summary?: string;
+  summaryEn?: string;
   summary_zh?: string;
 }
 
@@ -164,24 +170,30 @@ export function fetchSkillSets(params?: {
   scene?: SkillHubSkillSetScene;
   page?: number;
   pageSize?: number;
+  lang?: string;
 }): Promise<SkillHubSkillSetListResponse> {
   const qs = new URLSearchParams();
   if (params?.keyword?.trim()) qs.set("keyword", params.keyword.trim());
   if (params?.scene) qs.set("scene", params.scene);
   if (params?.page) qs.set("page", String(params.page));
   if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.lang?.trim()) qs.set("lang", params.lang.trim());
   const suffix = qs.toString();
   return publicGet(`/api/v1/skillsets${suffix ? `?${suffix}` : ""}`);
 }
 
 /** 查询单个 SkillHub 技能包详情 */
-export function fetchSkillSetDetail(slug: string): Promise<SkillHubSkillSetDetail> {
-  return publicGet(`/api/v1/skillsets/${encodeURIComponent(slug)}`);
+export function fetchSkillSetDetail(slug: string, params?: { lang?: string }): Promise<SkillHubSkillSetDetail> {
+  const lang = params?.lang?.trim();
+  const suffix = lang ? `?lang=${encodeURIComponent(lang)}` : "";
+  return publicGet(`/api/v1/skillsets/${encodeURIComponent(slug)}${suffix}`);
 }
 
 /** 查询单个 Skill 详情，包含 SkillHub 后端维护的展示名称 */
-export function fetchSkillDetail(slug: string): Promise<SkillHubSkill> {
-  return publicGet<SkillHubSkillDetailResponse>(`/api/v1/skills/${encodeURIComponent(slug)}`)
+export function fetchSkillDetail(slug: string, params?: { lang?: string }): Promise<SkillHubSkill> {
+  const lang = params?.lang?.trim();
+  const suffix = lang ? `?lang=${encodeURIComponent(lang)}` : "";
+  return publicGet<SkillHubSkillDetailResponse>(`/api/v1/skills/${encodeURIComponent(slug)}${suffix}`)
     .then((response) => response.skill);
 }
 

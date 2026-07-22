@@ -8,7 +8,7 @@
 ## 一、需求理解（必须）
 
 - [ ] 已与用户确认需求范围与边界（不在范围内的需求已明确排除）
-- [ ] 已识别需求规模：S / M / L（参见 `.workflow/project.yaml` 的 `workflow.scale_levels`）
+- [ ] 已识别需求规模：S / M / L（参见 `.workflow/project.yaml` 的 `workflow.size_levels`）
 - [ ] 已识别此需求是否依赖未实现的前置依赖（如新接口、新设计稿、新基础组件）
 - [ ] 用户验收标准已写入 `openspec/proposal.md` 或 plan.md 顶部
 
@@ -17,8 +17,11 @@
 ## 二、上下文加载（必须）
 
 - [ ] 已读取 `.workflow/project.yaml`，确认工作流模式与规模分级
-- [ ] 已加载 P0 文件（参见 config.yaml 的 `context_loading.P0`）
-- [ ] 已识别项目当前的技术栈与公共组件清单（`AGENTS.md` 中描述）
+- [ ] 已加载 P0 文件（参见 `.workflow/project.yaml` 的 `context_loading.P0`）
+- [ ] 已按需读取 `.workflow/project.yaml`，识别项目当前技术栈与公共组件清单
+- [ ] 已按 `.workflow/rules/flow-cost.md` 判定 S/M/L 流程强度（review / archive / metrics）；S 级门禁可 quick 降级
+- [ ] 计划确认后已初始化/刷新 `.workflow/runtime/current-task.summary.md`（首批 active slice + planHash/branch）
+- [ ] 如涉及只读调查 / 追问反证，已按 `.workflow/rules/agent-dispatch.md` 明确 Investigation Brief 与验证预算
 - [ ] 已确认是否有相关已存在 Spec（避免重复设计）
 
 ---
@@ -27,8 +30,10 @@
 
 - [ ] `openspec/plan.md` 已生成（M / L 级需求强制要求）
 - [ ] plan.md 中至少有一条 `- [ ]` 任务项
+- [ ] 任务数匹配真实工作量，**未过度拆解**（单个 bug / 小需求不得展开成十几个任务；相邻可合并子任务已合并）
 - [ ] 每个任务都标注：所属角色 / 影响文件 / 验收方式
 - [ ] L 级需求：已识别需要派发给哪些 Agent（leader/implementer/developer/reviewer）
+- [ ] 多人 / 多 Agent 需求已规划文件归属，且共享状态文件只有单写者
 - [ ] 不在 plan.md 范围内的修改已明确排除
 
 ---

@@ -12,6 +12,7 @@ patches:
   - path: delete-default-serviceaccount.yaml
   - path: delete-lightclaw-auth-internal.yaml
   - path: patch-shadowbinding.yaml
+  - path: patch-phone-auth.yaml
 
 generators:
   - ksops-secret-generator.yaml
@@ -27,6 +28,16 @@ configMapGenerator:
       - auth-platform.env
 
 replacements:
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_TRUSTED_PROXY_CIDRS
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_TRUSTED_PROXY_CIDRS
   - source:
       kind: ConfigMap
       name: auth-platform-values

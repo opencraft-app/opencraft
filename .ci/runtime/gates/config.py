@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from support.logging import print_section
-from support.process import run_logged
+from support.process import run_logged, validate_command
 
 
 def run_config_gate(
@@ -68,7 +68,7 @@ def prepare_worktree(
 ) -> None:
     if worktree.exists():
         shutil.rmtree(worktree)
-    subprocess.run(
+    run_quiet(
         ["git", "-C", str(repo_root), "worktree", "add", "--detach", str(worktree), f"{remote_name}/{gitops_branch}"],
         check=True,
         stdout=subprocess.DEVNULL,
@@ -80,7 +80,7 @@ def prepare_worktree(
     runtime_destination = worktree / ".ci/runtime"
     runtime_destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(runtime_dir, runtime_destination, dirs_exist_ok=True)
-    subprocess.run(
+    run_quiet(
         [
             "python3",
             str(runtime_destination / "commands/generate_release_bundle_manifest.py"),
@@ -91,6 +91,11 @@ def prepare_worktree(
         stdout=subprocess.DEVNULL,
         check=True,
     )
+
+
+def run_quiet(command: list[str], **kwargs: object) -> None:
+    validate_command(command)
+    subprocess.run(command, **kwargs)  # nosemgrep: dangerous-subprocess-use-audit
 
 
 def project_and_pin(

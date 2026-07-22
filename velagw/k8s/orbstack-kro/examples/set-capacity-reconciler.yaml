@@ -1,0 +1,64 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: llmgateway-set-capacity-reconciler
+  namespace: llmgateway-kro-demo
+  labels:
+    app.kubernetes.io/name: llmgateway-set-capacity-reconciler
+    app.kubernetes.io/part-of: llmgateway-kro-demo
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: llmgateway-set-capacity-reconciler
+            app.kubernetes.io/part-of: llmgateway-kro-demo
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: curl
+              image: curlimages/curl:8.8.0
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: LLMGATEWAY_CONTROL_URL
+                  value: http://llmgateway-control:18080
+                - name: LLMGATEWAY_ADMIN_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: llmgateway-control-admin
+                      key: token
+                - name: LLMGATEWAY_REDIS_DB_START
+                  value: "10"
+                - name: LLMGATEWAY_REDIS_DB_LIMIT
+                  value: "16"
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  body=$(cat <<EOF
+                  {
+                    "source": "kro",
+                    "namespace": "llmgateway-kro-demo",
+                    "fleet": "fleet-demo",
+                    "shard_refs": ["shard-a", "shard-b"],
+                    "max_users_per_set": 10000,
+                    "target_utilization": 0.70,
+                    "min_ready_free_users": 3000,
+                    "max_scale_up_per_cycle": 1,
+                    "set_id_prefix": "set-auto",
+                    "redis_db_start": ${LLMGATEWAY_REDIS_DB_START},
+                    "redis_db_limit": ${LLMGATEWAY_REDIS_DB_LIMIT}
+                  }
+                  EOF
+                  )
+                  curl -fsS -X POST "${LLMGATEWAY_CONTROL_URL}/api/admin/set-capacity/reconcile" \
+                    -H "Authorization: Bearer ${LLMGATEWAY_ADMIN_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -d "$body"

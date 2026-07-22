@@ -22,8 +22,11 @@ func TestResolveProvisionGatewayUsesExplicitAllocationGate(t *testing.T) {
 	logic := &logic{logger: zap.NewNop()}
 
 	config.ServerConf = &config.GlobalConfig{AdapterConfig: &config.AdapterConfig{
-		AiGateway:  &config.AiGatewayConfig{BaseURL: "https://legacy.example.com"},
-		LLMGateway: &config.LLMGatewayConfig{BaseURL: "https://llmgateway.example.com"},
+		AiGateway: &config.AiGatewayConfig{BaseURL: "https://legacy.example.com"},
+		LLMGateway: &config.LLMGatewayConfig{
+			BaseURL:                    "https://llmgateway.example.com",
+			NewAllocationUserAllowlist: []string{ctx.GetUserID()},
+		},
 	}}
 	if got := logic.resolveProvisionGateway(ctx, ctx.GetUserID(), "ins-legacy"); got != gatewayBackendAiGateway {
 		t.Fatalf("resolveProvisionGateway() = %q, want %q", got, gatewayBackendAiGateway)

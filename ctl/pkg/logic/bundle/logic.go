@@ -30,10 +30,16 @@ type BundleDetail struct {
 	//   - general : 普通付费套餐
 	//   - ai      : AI 增强付费套餐
 	// 取值由 ctl/pkg/model/bundle.BundleType* 常量统一约束。
-	BundleType      string
-	Description     string // JSON: [{"Key":"...","Value":"..."}]
-	BundleState     string
-	AgentQuota      int64
+	BundleType  string
+	Description string // JSON: [{"Key":"...","Value":"..."}]
+	// Features 功能特性列表 JSON 字符串（[]DisplayFeature），user-facing 出参下发。
+	Features string
+	// Tagline 一句话卖点，空串表示未配置。
+	Tagline string
+	// Promotion 促销角标 JSON 字符串（*DisplayPromotion，可空），空串表示无促销。
+	Promotion   string
+	BundleState string
+	AgentQuota  int64
 	Credit          int64  // 用户可见积分额度
 	TimeSpan        int    // 套餐周期数值
 	TimeUnit        string // 套餐周期单位 "m"=月 / "d"=天
@@ -57,10 +63,15 @@ type BundleDetail struct {
 type ModifyBundleFields struct {
 	BundleName *string `json:"bundle_name,omitempty"`
 	// BundleType 套餐类型，nil 表示不修改；非 nil 时必须为 free / general / ai。
-	BundleType      *string `json:"bundle_type,omitempty"`
-	Description     *string `json:"description,omitempty"`
-	BundleState     *string `json:"bundle_state,omitempty"`
-	AgentQuota      *int64  `json:"agent_quota,omitempty"`
+	BundleType  *string `json:"bundle_type,omitempty"`
+	Description *string `json:"description,omitempty"`
+	// Features / Tagline / Promotion 展示化字段，nil = 不修改。
+	// Features / Promotion 为 raw JSON string。
+	Features    *string `json:"features,omitempty"`
+	Tagline     *string `json:"tagline,omitempty"`
+	Promotion   *string `json:"promotion,omitempty"`
+	BundleState *string `json:"bundle_state,omitempty"`
+	AgentQuota  *int64  `json:"agent_quota,omitempty"`
 	Credit          *int64  `json:"credit,omitempty"`
 	TimeSpan        *int    `json:"time_span,omitempty"`
 	TimeUnit        *string `json:"time_unit,omitempty"`
@@ -84,6 +95,7 @@ type Logic interface {
 	//   - 空字符串 → 兼容期 fallback 到全局默认 spec-2c4g50g
 	//   - 非空 → 必须在 instancespec.KnownSpecs 字典中，否则报 ErrBundleInstanceSpecNotFound
 	ImportBundle(bundleID string, bundleName string, bundleType string, description string,
+		features string, tagline string, promotion string,
 		agentQuota int64, credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string,
 		instanceSpecID string, staticSoldOut bool, salesAvailCount int, salesTotalCount int) (*BundleDetail, error)
 
@@ -227,6 +239,7 @@ func validateCreditPlanPeriod(credit int64, timeSpan int, timeUnit, aiGatewayPla
 }
 
 func (l *logic) ImportBundle(bundleID string, bundleName string, bundleType string, description string,
+	features string, tagline string, promotion string,
 	agentQuota int64, credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string,
 	instanceSpecID string, staticSoldOut bool, salesAvailCount int, salesTotalCount int) (*BundleDetail, error) {
 
@@ -256,6 +269,14 @@ func (l *logic) ImportBundle(bundleID string, bundleName string, bundleType stri
 			"unknown instance_spec_id: %s", instanceSpecID)
 	}
 
+	// 展示化字段校验：features / promotion 若非空必须是合法 JSON（DB 列类型为 JSON）。
+	if features != "" && !json.Valid([]byte(features)) {
+		return nil, errcode.Wrap(errcode.ErrBundleConfigInvalid, "features must be valid JSON")
+	}
+	if promotion != "" && !json.Valid([]byte(promotion)) {
+		return nil, errcode.Wrap(errcode.ErrBundleConfigInvalid, "promotion must be valid JSON")
+	}
+
 	// 如果没有提供 bundleID，生成一个
 	if bundleID == "" {
 		bundleID = objectid.NewLogic().GenerateBundleId()
@@ -266,6 +287,9 @@ func (l *logic) ImportBundle(bundleID string, bundleName string, bundleType stri
 		BundleName:            bundleName,
 		BundleType:            bundleType,
 		Description:           description,
+		Features:              features,
+		Tagline:               tagline,
+		Promotion:             promotion,
 		BundleState:           bundlemodel.StateOffline, // 导入默认 OFFLINE
 		AgentQuota:            agentQuota,
 		Credit:                credit,
@@ -324,6 +348,21 @@ func (l *logic) ModifyBundles(bundleIDs []string, req *ModifyBundleFields) (int6
 			return 0, errcode.Wrap(errcode.ErrBundleConfigInvalid, "description must be valid JSON")
 		}
 		updates[bundlemodel.ColumnDescription] = *req.Description
+	}
+	if req.Features != nil {
+		if *req.Features != "" && !json.Valid([]byte(*req.Features)) {
+			return 0, errcode.Wrap(errcode.ErrBundleConfigInvalid, "features must be valid JSON")
+		}
+		updates[bundlemodel.ColumnFeatures] = *req.Features
+	}
+	if req.Tagline != nil {
+		updates[bundlemodel.ColumnTagline] = *req.Tagline
+	}
+	if req.Promotion != nil {
+		if *req.Promotion != "" && !json.Valid([]byte(*req.Promotion)) {
+			return 0, errcode.Wrap(errcode.ErrBundleConfigInvalid, "promotion must be valid JSON")
+		}
+		updates[bundlemodel.ColumnPromotion] = *req.Promotion
 	}
 	if req.BundleState != nil {
 		state := *req.BundleState
@@ -459,6 +498,9 @@ func entityToDetail(e *bundlemodel.Entity) *BundleDetail {
 		BundleName:            e.BundleName,
 		BundleType:            e.BundleType,
 		Description:           e.Description,
+		Features:              e.Features,
+		Tagline:               e.Tagline,
+		Promotion:             e.Promotion,
 		BundleState:           e.BundleState,
 		AgentQuota:            e.AgentQuota,
 		Credit:                e.Credit,

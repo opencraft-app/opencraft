@@ -176,6 +176,91 @@ func TestLoadFileOverridesProcessEnv(t *testing.T) {
 	}
 }
 
+func TestLoadNormalizesConfigAndOverlayPaths(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	basePath := filepath.Join(configDir, "config.jsonnet")
+	if err := os.WriteFile(basePath, []byte(`{"WISP_NAME":"path-clean"}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write base config: %v", err)
+	}
+	overlayPath := filepath.Join(configDir, "overlay.jsonnet")
+	if err := os.WriteFile(overlayPath, []byte(`{"REMOTE_BACKEND":"smh"}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write overlay config: %v", err)
+	}
+	if err := os.Chdir(configDir); err != nil {
+		t.Fatalf("chdir config dir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(wd)
+	}()
+	t.Setenv("WISP_CONFIG_OVERLAY", filepath.Join(".", "overlay.jsonnet"))
+	wantBasePath, err := filepath.Abs(filepath.Join(".", "config.jsonnet"))
+	if err != nil {
+		t.Fatalf("resolve base config: %v", err)
+	}
+	wantOverlayPath, err := filepath.Abs(filepath.Join(".", "overlay.jsonnet"))
+	if err != nil {
+		t.Fatalf("resolve overlay config: %v", err)
+	}
+
+	cfg, err := Load(filepath.Join(".", "config.jsonnet"))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.ConfigFile != wantBasePath {
+		t.Fatalf("ConfigFile=%q want %q", cfg.ConfigFile, wantBasePath)
+	}
+	if cfg.OverlayConfigFile != wantOverlayPath {
+		t.Fatalf("OverlayConfigFile=%q want %q", cfg.OverlayConfigFile, wantOverlayPath)
+	}
+}
+
+func TestLoadWithOverlayNormalizesBothPaths(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.jsonnet"), []byte(`{"WISP_NAME":"direct-load"}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write base config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "overlay.jsonnet"), []byte(`{"REMOTE_BACKEND":"smh"}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write overlay config: %v", err)
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir config dir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(wd)
+	}()
+
+	cfg, err := loadWithOverlay(filepath.Join(".", "config.jsonnet"), filepath.Join(".", "nested", "..", "overlay.jsonnet"))
+	if err != nil {
+		t.Fatalf("loadWithOverlay: %v", err)
+	}
+	wantConfigPath, err := filepath.Abs(filepath.Join(".", "config.jsonnet"))
+	if err != nil {
+		t.Fatalf("resolve base config: %v", err)
+	}
+	if cfg.ConfigFile != wantConfigPath {
+		t.Fatalf("ConfigFile=%q want %q", cfg.ConfigFile, wantConfigPath)
+	}
+	wantOverlayPath, err := filepath.Abs(filepath.Join(".", "overlay.jsonnet"))
+	if err != nil {
+		t.Fatalf("resolve overlay config: %v", err)
+	}
+	if cfg.OverlayConfigFile != wantOverlayPath {
+		t.Fatalf("OverlayConfigFile=%q want %q", cfg.OverlayConfigFile, wantOverlayPath)
+	}
+}
+
 func TestLoadAdminRootDerivesAdminPaths(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.jsonnet")
@@ -252,7 +337,10 @@ func TestSetWorkspaceLayoutPersistsBackendIdentity(t *testing.T) {
 	if err := SetWorkspaceLayout(path, cfg, "demo"); err != nil {
 		t.Fatalf("SetWorkspaceLayout: %v", err)
 	}
-	overlayPath := ContainerOverlayPath(path, "demo")
+	overlayPath, err := ContainerOverlayPath(path, "demo")
+	if err != nil {
+		t.Fatalf("ContainerOverlayPath: %v", err)
+	}
 	data, err := os.ReadFile(overlayPath)
 	if err != nil {
 		t.Fatalf("read overlay: %v", err)
@@ -268,6 +356,42 @@ func TestSetWorkspaceLayoutPersistsBackendIdentity(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("overlay missing %q: %s", want, text)
 		}
+	}
+}
+
+func TestWorkspaceNameValidationRejectsTraversalInputs(t *testing.T) {
+	for _, name := range []string{
+		"../escape",
+		"agent/session",
+		"agent.session",
+		"agent session",
+		"agent\x00session",
+	} {
+		if err := ValidateWorkspaceName(name); err == nil {
+			t.Fatalf("ValidateWorkspaceName(%q) expected error", name)
+		}
+	}
+	if err := ValidateWorkspaceName("agent-session_01"); err != nil {
+		t.Fatalf("ValidateWorkspaceName valid name: %v", err)
+	}
+}
+
+func TestLoadRejectsInvalidWispName(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.jsonnet")
+	if err := os.WriteFile(path, []byte("{\n  \"WISP_NAME\": \"../escape\"\n}\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("Load should reject invalid WISP_NAME")
+	}
+}
+
+func TestContainerOverlayPathRejectsInvalidWorkspaceName(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.jsonnet")
+	if _, err := ContainerOverlayPath(path, "../escape"); err == nil {
+		t.Fatal("ContainerOverlayPath should reject traversal workspace name")
 	}
 }
 

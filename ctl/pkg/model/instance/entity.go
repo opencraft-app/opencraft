@@ -25,6 +25,7 @@ const (
 	InstanceStatusCreating = "Creating"
 	InstanceStatusRunning  = "Running"
 	InstanceStatusPaused   = "Paused"
+	InstanceStatusResuming = "Resuming"
 	InstanceStatusFailed   = "Failed"
 	InstanceStatusDeleting = "Deleting"
 	InstanceStatusDeleted  = "Deleted"

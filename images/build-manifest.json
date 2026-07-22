@@ -28,6 +28,7 @@
     "install_script_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh",
     "install_args": "--skip-setup",
     "qwen_code_version": "latest",
+    "lightclaw_allow_all_users": true,
     "acli_install_url": "https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh"
   },
   "artifacts": {

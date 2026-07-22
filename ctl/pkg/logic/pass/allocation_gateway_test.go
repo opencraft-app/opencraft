@@ -7,6 +7,7 @@ import (
 	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
 	"ctl/pkg/adapter/llmgateway"
+	tradeadapter "ctl/pkg/adapter/trade"
 	"ctl/pkg/config"
 	"ctl/pkg/logic/gatewayroute"
 )
@@ -45,12 +46,14 @@ func (s *allocationLLMGatewayStub) ApplySubscription(_ context.Context, req *llm
 
 type allocationAdapterFactory struct {
 	adapterfactory.AdapterFactory
-	ai  aigateway.Adapter
-	llm llmgateway.Adapter
+	ai           aigateway.Adapter
+	llm          llmgateway.Adapter
+	tradeAdapter tradeadapter.Adapter
 }
 
 func (f *allocationAdapterFactory) AiGatewayAdapter() aigateway.Adapter   { return f.ai }
 func (f *allocationAdapterFactory) LLMGatewayAdapter() llmgateway.Adapter { return f.llm }
+func (f *allocationAdapterFactory) TradeAdapter() tradeadapter.Adapter    { return f.tradeAdapter }
 
 func TestNewPassAllocationUsesExplicitlyEnabledGateway(t *testing.T) {
 	tests := []struct {
@@ -74,8 +77,12 @@ func TestNewPassAllocationUsesExplicitlyEnabledGateway(t *testing.T) {
 			})
 
 			config.ServerConf = &config.GlobalConfig{AdapterConfig: &config.AdapterConfig{
-				AiGateway:  &config.AiGatewayConfig{BaseURL: "https://legacy.example.com"},
-				LLMGateway: &config.LLMGatewayConfig{Enabled: tt.llmEnabled, BaseURL: "https://llmgateway.example.com"},
+				AiGateway: &config.AiGatewayConfig{BaseURL: "https://legacy.example.com"},
+				LLMGateway: &config.LLMGatewayConfig{
+					Enabled:                    tt.llmEnabled,
+					BaseURL:                    "https://llmgateway.example.com",
+					NewAllocationUserAllowlist: []string{"*"},
+				},
 			}}
 			aiStub := &allocationAIGatewayStub{}
 			llmStub := &allocationLLMGatewayStub{}

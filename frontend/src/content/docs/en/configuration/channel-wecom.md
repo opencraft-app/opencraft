@@ -8,14 +8,14 @@ The WeCom channel uses QR-code access and is the simplest channel to configure.
 
 - Scanning the QR code with WeCom on your phone
 
-- Chatting with Hermes in WeCom
+- Chatting with Hermes Agent in WeCom
 
 
 > 💡 **Prerequisites**
 >
 > -   A phone with WeCom installed
 >
-> -   Complete [model configuration](./configuration/model.md) (or use the 100 trial credits included in the Launch plan)
+> -   Complete [model configuration](./model.md) (or use the 100 trial credits included in the Launch plan)
 >
 
 ---
@@ -72,7 +72,7 @@ Open the bot's chat window and send a test message:
 Hello
 ```
 
-You'll receive a Hermes reply within seconds.
+You'll receive a Hermes Agent reply within seconds.
 
 ![](../images/wecom5-en.webp)
 
@@ -84,7 +84,7 @@ You'll receive a Hermes reply within seconds.
 
 - The bot can be found in your WeCom contacts
 
-- Sending a message receives a Hermes reply
+- Sending a message receives a Hermes Agent reply
 
 
 ---
@@ -106,7 +106,7 @@ After integration, the WeCom bot supports more than basic text. The full list:
 
 > ℹ️ **Actual capability depends on the model**
 >
-> The table above only reflects what the WeCom bot can receive and reply with at the channel layer. Whether tasks such as image / file processing actually work depends on whether the underlying LLM connected to Hermes supports those capabilities.
+> The table above only reflects what the WeCom bot can receive and reply with at the channel layer. Whether tasks such as image / file processing actually work depends on whether the underlying LLM connected to Hermes Agent supports those capabilities.
 
 ---
 
@@ -116,10 +116,10 @@ After integration, the WeCom bot supports more than basic text. The full list:
 | --- | --- | --- |
 | WeCom shows "Invalid QR code" after scanning | The QR code has expired | Close the dialog and click "Authorize Access" again |
 | No response on the desktop after scanning | Network delay or authorization not yet completed | Refresh the console page to confirm the status; if not connected, retry |
-| Bot contact not found in WeCom | Messages collapsed under "Service Notifications" | Search "LightVela" or your Hermes name from the top of WeCom |
+| Bot contact not found in WeCom | Messages collapsed under "Service Notifications" | Search "LightVela" or your Hermes Agent name from the top of WeCom |
 | No reply after sending a message | Model not configured or trial credits exhausted | Check the "Current Model" status on the "1. Model" card |
 | How to disconnect | — | Delete the entry from the "Connected Channels" list |
-| Can a single WeCom account connect to multiple Hermes instances | The Launch plan caps you at 1 Hermes | Not applicable |
+| Can a single WeCom account connect to multiple Hermes Agent instances | The Launch plan caps you at 1 Hermes Agent | Not applicable |
 
 ---
 
@@ -136,6 +136,6 @@ After integration, the WeCom bot supports more than basic text. The full list:
 
 ## Next steps
 
-- [Configure Channel - Lark](./configuration/channel-feishu.md) — Office scenarios with rich text and group chat
+- [Configure Channel - Lark](./channel-feishu.md) — Office scenarios with rich text and group chat
 
-- [Configure Skills](./configuration/skill.md) — Extend Hermes capabilities
+- [Configure Skills](./skill.md) — Extend Hermes Agent capabilities

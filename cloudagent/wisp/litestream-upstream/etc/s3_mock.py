@@ -6,10 +6,19 @@ from moto.server import ThreadedMotoServer
 import boto3
 import subprocess
 
-cmd = sys.argv[1:]
-if len(cmd) == 0:
-    print(f"usage: {sys.argv[0]} <command> [arguments]", file=sys.stderr)
-    sys.exit(1)
+
+def validate_command(command):
+    if not command:
+        print(f"usage: {sys.argv[0]} <command> [arguments]", file=sys.stderr)
+        sys.exit(1)
+    if not all(isinstance(part, str) and part for part in command):
+        raise ValueError("command must be a list of non-empty strings")
+    if any("\x00" in part for part in command):
+        raise ValueError("command arguments must not contain NUL bytes")
+    return command
+
+
+cmd = validate_command(sys.argv[1:])
 
 env = os.environ.copy() | {
     "LITESTREAM_S3_ACCESS_KEY_ID": "lite",
@@ -29,7 +38,9 @@ s3 = boto3.client(
     endpoint_url=env["LITESTREAM_S3_ENDPOINT"]
 ).create_bucket(Bucket=env["LITESTREAM_S3_BUCKET"])
 
-proc = subprocess.run(cmd, env=env)
+# This developer test helper intentionally runs the caller-supplied litestream command
+# with an isolated moto S3 environment.
+proc = subprocess.run(cmd, env=env)  # nosemgrep: dangerous-subprocess-use-audit
 
 server.stop()
 sys.exit(proc.returncode)

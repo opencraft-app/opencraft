@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"log/slog"
 	"net/http"
 	"testing"
 	"time"
@@ -120,4 +122,23 @@ func TestBuildRealnameFaceIDConfigReadsEnvironment(t *testing.T) {
 	if cfg.DailyQuota != 7 || cfg.AttemptTTL != 45*time.Minute || cfg.LeaseTTL != 15*time.Second {
 		t.Fatalf("unexpected faceid timing fields: %+v", cfg)
 	}
+}
+
+func TestBuildPhoneAuthSMSSenderUsesConfiguredEnvNames(t *testing.T) {
+	t.Setenv("LIGHTCLAW_PHONE_AUTH_ENABLED", "true")
+	t.Setenv("LIGHTCLAW_SMS_SECRET_ID", "secret-id")
+	t.Setenv("LIGHTCLAW_SMS_SECRET_KEY", "secret-key")
+	t.Setenv("LIGHTCLAW_SMS_REGION", "ap-guangzhou")
+	t.Setenv("LIGHTCLAW_SMS_ENDPOINT", "sms.tencentcloudapi.com")
+	t.Setenv("LIGHTCLAW_SMS_SDK_APP_ID", "1401097405")
+	t.Setenv("LIGHTCLAW_SMS_SIGN_NAME", "腾讯云")
+	t.Setenv("LIGHTCLAW_SMS_TEMPLATE_ID", "2683912")
+
+	if sender := buildPhoneAuthSMSSender(loggingDiscardLogger()); sender == nil {
+		t.Fatal("expected configured phone auth sms sender")
+	}
+}
+
+func loggingDiscardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

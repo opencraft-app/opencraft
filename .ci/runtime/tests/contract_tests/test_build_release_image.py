@@ -1,9 +1,10 @@
+import subprocess
 import sys
 import tempfile
 import unittest
-from unittest import mock
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / ".ci/runtime").is_dir())
@@ -18,7 +19,9 @@ from contracts.build_release_image import (  # noqa: E402
     image_for_target,
     main,
     playground_frontend_auth_api_base_url,
+    push_image_with_retry,
     resolve_docker_build_args,
+    run_command,
     wait_for_remote_image,
 )
 from contracts.bundles import ImageTarget  # noqa: E402
@@ -26,6 +29,13 @@ from contracts.image_existence import ImageCheckResult  # noqa: E402
 
 
 class BuildReleaseImageTests(unittest.TestCase):
+    def test_run_command_rejects_empty_command_parts(self) -> None:
+        with mock.patch("contracts.build_release_image.subprocess.run") as run:
+            with self.assertRaisesRegex(ValueError, "non-empty strings"):
+                run_command(["docker", ""])
+
+        run.assert_not_called()
+
     def test_frontend_playground_build_bakes_env_scoped_auth_api_base(self) -> None:
         self.assertEqual(
             resolve_docker_build_args("frontend", "sandbox-bj-7"),
@@ -114,7 +124,7 @@ class BuildReleaseImageTests(unittest.TestCase):
         )
 
         with mock.patch("contracts.build_release_image.docker_daemon_available", return_value=True), \
-            mock.patch("contracts.build_release_image.docker_login") as login, \
+            mock.patch("contracts.build_release_image.push_image_with_retry") as push_image, \
             mock.patch("contracts.build_release_image.wait_for_remote_image") as wait, \
             mock.patch("contracts.build_release_image.subprocess.run") as run:
             image = build_target(
@@ -128,13 +138,107 @@ class BuildReleaseImageTests(unittest.TestCase):
             )
 
         self.assertEqual(image, "registry.example.com/lightclaw/workers:workers-test")
-        login.assert_called_once_with(target.image_repo)
+        push_image.assert_called_once_with(
+            target.image_repo,
+            image,
+            max_attempts=3,
+            retry_interval_seconds=10,
+        )
         wait.assert_called_once_with(
             "registry.example.com/lightclaw/workers:workers-test",
             timeout_seconds=17,
             interval_seconds=3,
         )
-        self.assertEqual(run.call_args_list[-1].args[0], ["docker", "push", image])
+        self.assertEqual(run.call_args_list[-1].args[0][0:2], ["docker", "build"])
+
+    def test_push_image_retries_after_connection_failure(self) -> None:
+        image = "registry.example.com/lightclaw/workers:workers-test"
+        push_error = subprocess.CalledProcessError(1, ["docker", "push", image])
+
+        with mock.patch("contracts.build_release_image.docker_login") as login, \
+            mock.patch("contracts.build_release_image.run_command", side_effect=[push_error, mock.DEFAULT]) as run, \
+            mock.patch(
+                "contracts.build_release_image.verify_images",
+                return_value=[ImageCheckResult(image, False)],
+            ) as verify, \
+            mock.patch("contracts.build_release_image.time.sleep") as sleep:
+            push_image_with_retry(
+                "registry.example.com/lightclaw/workers",
+                image,
+                max_attempts=3,
+                retry_interval_seconds=4,
+            )
+
+        self.assertEqual(login.call_count, 2)
+        self.assertEqual(run.call_count, 2)
+        verify.assert_called_once_with([image], skip_login=True)
+        sleep.assert_called_once_with(4)
+
+    def test_push_image_accepts_remote_manifest_after_client_disconnect(self) -> None:
+        image = "registry.example.com/lightclaw/workers:workers-test"
+        push_error = subprocess.CalledProcessError(1, ["docker", "push", image])
+
+        with mock.patch("contracts.build_release_image.docker_login") as login, \
+            mock.patch("contracts.build_release_image.run_command", side_effect=push_error) as run, \
+            mock.patch(
+                "contracts.build_release_image.verify_images",
+                return_value=[ImageCheckResult(image, True, "sha256:workers")],
+            ) as verify, \
+            mock.patch("contracts.build_release_image.time.sleep") as sleep:
+            push_image_with_retry(
+                "registry.example.com/lightclaw/workers",
+                image,
+                max_attempts=3,
+                retry_interval_seconds=4,
+            )
+
+        login.assert_called_once()
+        run.assert_called_once_with(["docker", "push", image], check=True)
+        verify.assert_called_once_with([image], skip_login=True)
+        sleep.assert_not_called()
+
+    def test_push_image_retries_transient_login_failure(self) -> None:
+        image = "registry.example.com/lightclaw/workers:workers-test"
+        login_error = subprocess.CalledProcessError(1, ["docker", "login"])
+
+        with mock.patch(
+            "contracts.build_release_image.docker_login",
+            side_effect=[login_error, None],
+        ) as login, mock.patch("contracts.build_release_image.run_command") as run, \
+            mock.patch("contracts.build_release_image.verify_images") as verify, \
+            mock.patch("contracts.build_release_image.time.sleep") as sleep:
+            push_image_with_retry(
+                "registry.example.com/lightclaw/workers",
+                image,
+                max_attempts=3,
+                retry_interval_seconds=4,
+            )
+
+        self.assertEqual(login.call_count, 2)
+        run.assert_called_once_with(["docker", "push", image], check=True)
+        verify.assert_not_called()
+        sleep.assert_called_once_with(4)
+
+    def test_push_image_fails_after_retry_budget_is_exhausted(self) -> None:
+        image = "registry.example.com/lightclaw/workers:workers-test"
+        push_error = subprocess.CalledProcessError(1, ["docker", "push", image])
+
+        with mock.patch("contracts.build_release_image.docker_login"), \
+            mock.patch("contracts.build_release_image.run_command", side_effect=push_error) as run, \
+            mock.patch(
+                "contracts.build_release_image.verify_images",
+                return_value=[ImageCheckResult(image, False)],
+            ), mock.patch("contracts.build_release_image.time.sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, "failed after 2 attempts"):
+                push_image_with_retry(
+                    "registry.example.com/lightclaw/workers",
+                    image,
+                    max_attempts=2,
+                    retry_interval_seconds=4,
+                )
+
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(4)
 
     def test_wait_for_remote_image_retries_until_digest_is_visible(self) -> None:
         image = "registry.example.com/lightclaw/workers:workers-test"
@@ -244,6 +348,8 @@ class BuildReleaseImageTests(unittest.TestCase):
                 {},
                 push_verify_timeout_seconds=300,
                 push_verify_interval_seconds=5,
+                push_max_attempts=3,
+                push_retry_interval_seconds=10,
             )
             self.assertEqual((Path(tmp) / "image.txt").read_text().strip(), expected_image)
 

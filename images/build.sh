@@ -58,6 +58,7 @@ HERMES_WHATSAPP_BRIDGE_HOME="${HERMES_WHATSAPP_BRIDGE_HOME:-}"
 HERMES_PYPI_INDEX_URL="${HERMES_PYPI_INDEX_URL:-https://mirrors.tencent.com/pypi/simple}"
 HERMES_PYPI_EXTRA_INDEX_URL="${HERMES_PYPI_EXTRA_INDEX_URL:-https://mirrors.cloud.tencent.com/pypi/simple}"
 HERMES_LIGHTCLAWBOT_PACKAGE="${HERMES_LIGHTCLAWBOT_PACKAGE:-lightclawbot}"
+HERMES_LIGHTCLAW_ALLOW_ALL_USERS="${HERMES_LIGHTCLAW_ALLOW_ALL_USERS:-true}"
 ACLI_IDENTITY_PATH="${ACLI_IDENTITY_PATH:-/etc/acli/identity.yaml}"
 HERMES_UV_CMD=""
 NODE_VERSION=""
@@ -171,6 +172,7 @@ values = {
     "HERMES_VERSION": data.get("runtime_hermes", {}).get("version", ""),
     "HERMES_SRC_VERSION": data.get("runtime_hermes", {}).get("src_version", ""),
     "HERMES_GIT_COMMIT": data.get("runtime_hermes", {}).get("git_commit", ""),
+    "HERMES_LIGHTCLAW_ALLOW_ALL_USERS": str(data.get("runtime_hermes", {}).get("lightclaw_allow_all_users", True)).lower(),
     "HERMES_ACLI_INSTALL_URL": data.get("runtime_hermes", {}).get("acli_install_url", ""),
     "NODE_VERSION": runtime.get("node_version", ""),
     "PNPM_VERSION": runtime.get("pnpm_version", ""),
@@ -840,6 +842,7 @@ write_hermes_env_profile() {
   mkdir -p "$(dirname "${HERMES_ENV_PROFILE_PATH}")"
   cat > "${HERMES_ENV_PROFILE_PATH}" <<EOF
 export PATH="\$HOME/.hermes/hermes-agent/venv/bin:${npm_global_bin}:\$PATH"
+export XDG_RUNTIME_DIR="\${XDG_RUNTIME_DIR:-/run/user/\$(id -u)}"
 EOF
   chmod 0644 "${HERMES_ENV_PROFILE_PATH}"
 }
@@ -921,6 +924,7 @@ install_hermes_extra_tools() {
   if [ -x "${RUNTIME_HOME}/.local/bin/skillhub" ]; then
     install -m 0755 "${RUNTIME_HOME}/.local/bin/skillhub" /usr/local/bin/skillhub
   fi
+  rm -rf "${RUNTIME_HOME}/.openclaw"
 }
 
 install_hermes_lightclawbot_plugin() {
@@ -935,6 +939,8 @@ install_hermes_lightclawbot_plugin() {
   local extracted_dir=""
   local extracted_plugin=""
   local config_file="${hermes_home}/config.yaml"
+  local env_file="${hermes_home}/.env"
+  local agents_file="${hermes_home}/sessions/agents.json"
   local hermes_python="${hermes_home}/hermes-agent/venv/bin/python"
 
   log_info "installing Hermes ${plugin_name} platform plugin"
@@ -1052,12 +1058,54 @@ if not isinstance(display_platform, dict):
 display_platform['streaming'] = True
 display_platforms['lightclawbot'] = display_platform
 
+approvals = config.get('approvals')
+if not isinstance(approvals, dict):
+    approvals = {}
+config['approvals'] = approvals
+approvals['mode'] = 'off'
+approvals['cron_mode'] = 'approve'
+approvals['destructive_slash_confirm'] = False
+
 with open(path, 'w', encoding='utf-8') as fh:
     yaml.safe_dump(config, fh, sort_keys=False, allow_unicode=True)
 PY"
 
+  case "${HERMES_LIGHTCLAW_ALLOW_ALL_USERS}" in
+    true|false) ;;
+    *)
+      log_error "invalid Hermes lightclaw allow-all setting: ${HERMES_LIGHTCLAW_ALLOW_ALL_USERS}"
+      rm -rf "${tmp_dir}"
+      return 1
+      ;;
+  esac
+
+  touch "${env_file}"
+  if grep -q '^LIGHTCLAW_ALLOW_ALL_USERS=' "${env_file}"; then
+    sed -i "s|^LIGHTCLAW_ALLOW_ALL_USERS=.*|LIGHTCLAW_ALLOW_ALL_USERS=${HERMES_LIGHTCLAW_ALLOW_ALL_USERS}|" "${env_file}"
+  else
+    printf 'LIGHTCLAW_ALLOW_ALL_USERS=%s\n' "${HERMES_LIGHTCLAW_ALLOW_ALL_USERS}" >>"${env_file}"
+  fi
+
+  if [ ! -f "${agents_file}" ]; then
+    mkdir -p "$(dirname "${agents_file}")"
+    cat >"${agents_file}" <<'JSON'
+{"agents":[{"id":"main","name":"main","identity":{"name":"默认助手","emoji":"🤖"}}]}
+JSON
+  fi
+  chown "${RUNTIME_USER}:${RUNTIME_USER}" "${env_file}" "${agents_file}"
+  chmod 0600 "${env_file}"
+
   run_as_runtime_user "test -f '${plugin_dir}/plugin.yaml' && grep -q '^name: lightclawbot$' '${plugin_dir}/plugin.yaml'"
   rm -rf "${tmp_dir}"
+}
+
+remove_hermes_find_skill_skillhub() {
+  local skill_dir="${RUNTIME_HOME}/.agents/skills/find-skill-skillhub"
+
+  if [ -e "${skill_dir}" ]; then
+    log_info "removing preinstalled find-skill-skillhub"
+    rm -rf "${skill_dir}"
+  fi
 }
 
 curate_hermes_skills() {
@@ -1481,7 +1529,7 @@ run_hermes_installer_stage() {
   printf -v hermes_home_escaped '%q' "${hermes_home}"
   printf -v hermes_dir_escaped '%q' "${hermes_dir}"
   log_info "running Hermes installer stage: ${stage}"
-  run_as_runtime_user "unset PLAYWRIGHT_BROWSERS_PATH; bash ${installer_escaped} ${HERMES_INSTALL_ARGS} --dir ${hermes_dir_escaped} --hermes-home ${hermes_home_escaped} --skip-browser --non-interactive --stage ${stage}"
+  run_as_runtime_user "unset PLAYWRIGHT_BROWSERS_PATH; bash ${installer_escaped} ${HERMES_INSTALL_ARGS} --dir ${hermes_dir_escaped} --hermes-home ${hermes_home_escaped} --non-interactive --stage ${stage}"
 }
 
 install_hermes_runtime() {
@@ -2147,6 +2195,7 @@ build_app_layer() {
     upgrade_hermes_backend_blueprint
     finalize_hermes_runtime_pin
     curate_hermes_skills
+    remove_hermes_find_skill_skillhub
   else
     install_openclaw
     install_all_plugins

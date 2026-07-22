@@ -200,7 +200,8 @@ func (h *Handler) StartWeChatOAuth(ctx *gin.Context) {
 		Secure:   h.cookieSecure,
 		MaxAge:   int(h.wechatOAuth.stateTTL / time.Second),
 	})
-	setOAuthReturnToCookie(ctx, wechatOAuthReturnToCookieName, wechatOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.wechatOAuth.stateTTL, h.validatedReturnToURL)
+	validatedReturnTo := h.readValidatedReturnToFromRequest(ctx.Request)
+	setOAuthReturnToCookie(ctx, wechatOAuthReturnToCookieName, wechatOAuthStateCookiePath, validatedReturnTo, h.cookieSecure, h.wechatOAuth.stateTTL)
 
 	ctx.Redirect(http.StatusTemporaryRedirect, app.authorizeURL(startState.StateParam, startState.RedirectURI, scope))
 }
@@ -228,7 +229,7 @@ func (h *Handler) HandleWeChatOAuthCallback(ctx *gin.Context) {
 			return
 		}
 		if isOAuthRelayIssuerCallback(ctx.Request, relayState) {
-			target, err := relayCallbackURLWithOriginalQuery(relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
+			target, err := relayCallbackURLWithOriginalQuery("wechat", relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
 			if err != nil {
 				logger.Warn("wechat oauth relay callback failed", "stage", "target_query", "err", err)
 				ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_state_mismatch"))
@@ -247,13 +248,13 @@ func (h *Handler) HandleWeChatOAuthCallback(ctx *gin.Context) {
 		if cookie, err := ctx.Request.Cookie(wechatOAuthStateCookieName); err == nil {
 			expectedState = strings.TrimSpace(cookie.Value)
 		}
-		returnTo := readOAuthReturnToCookie(ctx.Request, wechatOAuthReturnToCookieName)
+		validatedSuccessTarget := h.readValidatedOAuthReturnToCookie(ctx.Request, wechatOAuthReturnToCookieName)
 		scope := readWeChatOAuthScopeCookie(ctx.Request, app.scope)
 		h.clearWeChatOAuthStateCookie(ctx)
 		h.clearWeChatOAuthModeCookie(ctx)
 		h.clearWeChatOAuthScopeCookie(ctx)
 		clearOAuthReturnToCookie(ctx, wechatOAuthReturnToCookieName, wechatOAuthStateCookiePath, h.cookieSecure)
-		h.handleWeChatOAuthCallbackAfterState(ctx, app, scope, code, relayState.Nonce, expectedState, returnTo, exchangeRedirectURI, logger)
+		h.handleWeChatOAuthCallbackAfterState(ctx, app, scope, code, relayState.Nonce, expectedState, validatedSuccessTarget, exchangeRedirectURI, logger)
 		return
 	}
 
@@ -261,16 +262,16 @@ func (h *Handler) HandleWeChatOAuthCallback(ctx *gin.Context) {
 	if cookie, err := ctx.Request.Cookie(wechatOAuthStateCookieName); err == nil {
 		expectedState = strings.TrimSpace(cookie.Value)
 	}
-	returnTo := readOAuthReturnToCookie(ctx.Request, wechatOAuthReturnToCookieName)
+	validatedSuccessTarget := h.readValidatedOAuthReturnToCookie(ctx.Request, wechatOAuthReturnToCookieName)
 	scope := readWeChatOAuthScopeCookie(ctx.Request, app.scope)
 	h.clearWeChatOAuthStateCookie(ctx)
 	h.clearWeChatOAuthModeCookie(ctx)
 	h.clearWeChatOAuthScopeCookie(ctx)
 	clearOAuthReturnToCookie(ctx, wechatOAuthReturnToCookieName, wechatOAuthStateCookiePath, h.cookieSecure)
-	h.handleWeChatOAuthCallbackAfterState(ctx, app, scope, code, state, expectedState, returnTo, exchangeRedirectURI, logger)
+	h.handleWeChatOAuthCallbackAfterState(ctx, app, scope, code, state, expectedState, validatedSuccessTarget, exchangeRedirectURI, logger)
 }
 
-func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wechatOAuthApp, scope string, code string, state string, expectedState string, returnTo string, exchangeRedirectURI string, logger interface {
+func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wechatOAuthApp, scope string, code string, state string, expectedState string, validatedSuccessTarget string, exchangeRedirectURI string, logger interface {
 	Warn(msg string, keysAndValues ...any)
 	Error(msg string, keysAndValues ...any)
 	Info(msg string, keysAndValues ...any)
@@ -306,8 +307,8 @@ func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wec
 			return
 		}
 		redirectURL := h.wechatOAuth.frontendURL(ctx.Request, "/auth/wechat-pay")
-		if validated := h.validatedReturnToURL(returnTo); validated != "" {
-			redirectURL = validated
+		if validatedSuccessTarget != "" {
+			redirectURL = validatedSuccessTarget
 		}
 		ctx.Redirect(http.StatusTemporaryRedirect, appendQueryParamToReturnTo(redirectURL, "openid", openID))
 		return
@@ -344,8 +345,7 @@ func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wec
 		}
 	}
 	h.setSessionCookie(ctx, session.Token)
-	redirectURL := h.oauthSuccessRedirectURL(ctx, returnTo, h.wechatOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
-	ctx.Redirect(http.StatusTemporaryRedirect, redirectURL)
+	h.redirectOAuthSuccess(ctx, validatedSuccessTarget, h.wechatOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 }
 
 func (h *Handler) clearWeChatOAuthStateCookie(ctx *gin.Context) {
@@ -527,19 +527,7 @@ func (w *wechatOAuth) frontendURL(request *http.Request, path string) string {
 }
 
 func (w *wechatOAuth) successFrontendURL(request *http.Request, path string, sessionToken string) string {
-	redirectURL := w.frontendURL(request, path)
-	if strings.TrimSpace(sessionToken) == "" {
-		return redirectURL
-	}
-
-	parsed, err := url.Parse(redirectURL)
-	if err != nil {
-		return redirectURL
-	}
-	fragment := url.Values{}
-	fragment.Set("session_token", strings.TrimSpace(sessionToken))
-	parsed.Fragment = fragment.Encode()
-	return parsed.String()
+	return oauthSuccessFrontendURL(w.frontendBaseURLForRequest(request), path, sessionToken)
 }
 
 func (w *wechatOAuth) frontendBaseURLForRequest(request *http.Request) string {

@@ -221,16 +221,18 @@ type AiGatewayConfig struct {
 // BaseURL 指向控制面（/api/admin 与 /api/internal）；DefaultBaseURL 指向
 // OpenAI 兼容流量面，通常带 /v1。
 type LLMGatewayConfig struct {
-	Enabled              bool   `toml:"-"`
-	BaseURL              string `toml:"base_url"`
-	AdminToken           string `toml:"admin_token"`
-	InternalServiceToken string `toml:"internal_service_token"`
-	Timeout              int    `toml:"timeout"`
-	DefaultBaseURL       string `toml:"default_base_url"`
-	DefaultModelID       string `toml:"default_model_id"`
-	DefaultCompatibility string `toml:"default_compatibility"`
-	DefaultGatewayPort   int    `toml:"default_gateway_port"`
-	DefaultProviderID    string `toml:"default_provider_id"`
+	Enabled                       bool     `toml:"-"`
+	BaseURL                       string   `toml:"base_url"`
+	AdminToken                    string   `toml:"admin_token"`
+	InternalServiceToken          string   `toml:"internal_service_token"`
+	Timeout                       int      `toml:"timeout"`
+	DefaultBaseURL                string   `toml:"default_base_url"`
+	DefaultModelID                string   `toml:"default_model_id"`
+	DefaultCompatibility          string   `toml:"default_compatibility"`
+	DefaultGatewayPort            int      `toml:"default_gateway_port"`
+	DefaultProviderID             string   `toml:"default_provider_id"`
+	NewAllocationUserAllowlist    []string `toml:"-"`
+	RenewalMigrationUserAllowlist []string `toml:"-"`
 }
 
 // BundleConfig 套餐相关全局配置

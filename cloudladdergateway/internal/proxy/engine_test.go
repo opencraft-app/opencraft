@@ -308,6 +308,65 @@ func TestEngineRejectsUnmatchedCondition(t *testing.T) {
 	}
 }
 
+func TestEngineRejectsUnsupportedRequestMethodBeforeProxy(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("upstream should not be called")
+	}))
+	defer upstream.Close()
+
+	engine, err := NewEngine(config.Config{
+		MaxBodyBytes: config.DefaultMaxBodyBytes,
+		Routes: []config.RouteConfig{{
+			ID:       "billing.query_bill",
+			Upstream: config.UpstreamConfig{BaseURL: upstream.URL},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+
+	_, err = engine.Invoke(context.Background(), Request{
+		RouteID: "billing.query_bill",
+		Method:  "BREW",
+		Path:    "/bill/query",
+	})
+	if !errors.Is(err, ErrInvalidMethod) {
+		t.Fatalf("expected ErrInvalidMethod, got %v", err)
+	}
+}
+
+func TestNewEngineRejectsUnsupportedConfiguredMethod(t *testing.T) {
+	_, err := NewEngine(config.Config{
+		MaxBodyBytes: config.DefaultMaxBodyBytes,
+		Routes: []config.RouteConfig{{
+			ID: "billing.query_bill",
+			Upstream: config.UpstreamConfig{
+				BaseURL:        "http://127.0.0.1",
+				AllowedMethods: []string{"BREW"},
+			},
+		}},
+	})
+	if !errors.Is(err, ErrInvalidMethod) {
+		t.Fatalf("expected ErrInvalidMethod for upstream method, got %v", err)
+	}
+
+	_, err = NewEngine(config.Config{
+		MaxBodyBytes: config.DefaultMaxBodyBytes,
+		Routes: []config.RouteConfig{{
+			ID:       "billing.query_bill",
+			Upstream: config.UpstreamConfig{BaseURL: "http://127.0.0.1"},
+			Webhooks: []config.WebhookConfig{{
+				ID:     "mirror",
+				URL:    "http://127.0.0.1/webhook",
+				Method: "BREW",
+			}},
+		}},
+	})
+	if !errors.Is(err, ErrInvalidMethod) {
+		t.Fatalf("expected ErrInvalidMethod for webhook method, got %v", err)
+	}
+}
+
 func TestEngineEmitsAuditEvent(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

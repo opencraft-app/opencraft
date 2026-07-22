@@ -21,6 +21,12 @@ type PublicRule struct {
 	Path   string `yaml:"path"`
 }
 
+type PathPolicy string
+
+const (
+	PathPolicyAllowlist PathPolicy = "allowlist"
+)
+
 type Route struct {
 	Name                   string       `yaml:"name"`
 	Prefix                 string       `yaml:"prefix"`
@@ -29,6 +35,8 @@ type Route struct {
 	Upstream               string       `yaml:"upstream"`
 	UpstreamBearerTokenEnv string       `yaml:"upstream_bearer_token_env"`
 	Access                 Access       `yaml:"access"`
+	PathPolicy             PathPolicy   `yaml:"path_policy"`
+	PathAllow              []PublicRule `yaml:"path_allow"`
 	PublicAllow            []PublicRule `yaml:"public_allow"`
 	OptionalAuthAllow      []PublicRule `yaml:"optional_auth_allow"`
 	RequireRealname        bool         `yaml:"require_realname"`
@@ -36,10 +44,11 @@ type Route struct {
 }
 
 type Config struct {
-	AuthServiceURL string              `yaml:"auth_service_url"`
-	AllowedOrigins []string            `yaml:"allowed_origins"`
-	Routes         []Route             `yaml:"routes"`
-	WorkerActions  WorkerActionsConfig `yaml:"worker_actions"`
+	AuthServiceURL    string              `yaml:"auth_service_url"`
+	AllowedOrigins    []string            `yaml:"allowed_origins"`
+	TrustedProxyCIDRs []string            `yaml:"trusted_proxy_cidrs"`
+	Routes            []Route             `yaml:"routes"`
+	WorkerActions     WorkerActionsConfig `yaml:"worker_actions"`
 }
 
 type WorkerActionsConfig struct {

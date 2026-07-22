@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -514,15 +515,43 @@ func (h *Handler) HandleRealnameFaceIDCallback(ctx context.Context, request api.
 	if bizToken == "" {
 		return api.HandleRealnameFaceIDCallback400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})}, nil
 	}
-	_, _ = h.service.ReconcileRealnameFaceIDAttempt(ctx, "", bizToken, "callback")
+	attempt, reconcileErr := h.service.ReconcileRealnameFaceIDAttempt(ctx, "", bizToken, "callback")
 	if gctx := ginContext(ctx); gctx != nil {
 		gctx.Header("Cache-Control", "no-store")
 		gctx.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
 		gctx.Header("Referrer-Policy", "no-referrer")
 		gctx.Header("X-Content-Type-Options", "nosniff")
 	}
-	const page = "<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>认证结果已提交</title><body><main><h1>认证结果已提交</h1><p>请返回 LightVela 继续完成实名认证。</p></main></body></html>"
+	page := realnameFaceIDCallbackPage(attempt.State, reconcileErr)
 	return api.HandleRealnameFaceIDCallback200TexthtmlResponse{Body: strings.NewReader(page), ContentLength: int64(len(page))}, nil
+}
+
+func realnameFaceIDCallbackPage(state string, reconcileErr error) string {
+	title := "认证结果处理中"
+	detail := "请返回 LightVela，系统将继续查询本次核身结果。"
+	switch state {
+	case service.RealnameFaceIDStateFaceSucceeded,
+		service.RealnameFaceIDStatePhonePending,
+		service.RealnameFaceIDStateShadowPending,
+		service.RealnameFaceIDStateSucceeded:
+		title = "人脸核身已通过"
+		detail = "请返回 LightVela，继续完成手机号验证与实名同步。"
+	case service.RealnameFaceIDStateFailed:
+		title = "人脸核身未通过"
+		detail = "请返回 LightVela 查看结果并重新认证。"
+	case service.RealnameFaceIDStateExpired,
+		service.RealnameFaceIDStateLateIgnored,
+		service.RealnameFaceIDStateRevoked:
+		title = "本次核身已失效"
+		detail = "请返回 LightVela 重新发起认证。"
+	default:
+		if reconcileErr != nil {
+			title = "认证结果查询异常"
+			detail = "暂时无法确认本次核身结果，请返回 LightVela 稍后查看。"
+		}
+	}
+
+	return fmt.Sprintf(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>%s</title><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f7f8fa;color:#202020;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:360px;padding:32px;text-align:center}h1{margin:0 0 12px;font-size:22px;line-height:1.4}p{margin:0;color:#666;font-size:15px;line-height:1.7}</style></head><body><main><h1>%s</h1><p>%s</p></main></body></html>`, title, title, detail)
 }
 
 func requestClientMetadata(ctx context.Context) (string, string) {
@@ -561,7 +590,8 @@ func (h *Handler) SendShadowBindingSMS(ctx *gin.Context) {
 		return
 	}
 
-	cooldown, err := h.service.SendShadowBindingCode(ctx, request.PhoneNumber, ctx.ClientIP())
+	clientIP, _ := requestClientMetadata(ctx)
+	cooldown, err := h.service.SendShadowBindingCode(ctx, request.PhoneNumber, clientIP)
 	if err != nil {
 		body, status := toErrorBody(err)
 		ctx.JSON(status, body)
@@ -581,10 +611,11 @@ func (h *Handler) VerifyShadowBindingPhone(ctx *gin.Context) {
 		return
 	}
 
+	clientIP, clientUA := requestClientMetadata(ctx)
 	result, err := h.service.VerifyRealnamePhone(ctx, tokenFromContext(ctx), service.RealnamePhoneVerifyInput{
 		Code:     request.PhoneVerifyCode,
-		ClientIP: ctx.ClientIP(),
-		ClientUA: ctx.Request.UserAgent(),
+		ClientIP: clientIP,
+		ClientUA: clientUA,
 	})
 	if err != nil {
 		body, status := toErrorBody(err)
@@ -613,7 +644,8 @@ func (h *Handler) SendPhoneChangeSMS(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})
 		return
 	}
-	cooldown, err := h.service.SendPhoneChangeCode(ctx, tokenFromContext(ctx), request.Phone, ctx.ClientIP())
+	clientIP, _ := requestClientMetadata(ctx)
+	cooldown, err := h.service.SendPhoneChangeCode(ctx, tokenFromContext(ctx), request.Phone, clientIP)
 	if err != nil {
 		body, status := toErrorBody(err)
 		ctx.JSON(status, body)
@@ -632,11 +664,12 @@ func (h *Handler) VerifyPhoneChange(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})
 		return
 	}
+	clientIP, clientUA := requestClientMetadata(ctx)
 	result, err := h.service.VerifyPhoneChange(ctx, tokenFromContext(ctx), service.PhoneChangeVerifyInput{
 		Phone:    request.Phone,
 		Code:     request.Code,
-		ClientIP: ctx.ClientIP(),
-		ClientUA: ctx.Request.UserAgent(),
+		ClientIP: clientIP,
+		ClientUA: clientUA,
 	})
 	if err != nil {
 		body, status := toErrorBody(err)
@@ -934,7 +967,8 @@ func (h *Handler) SendSmsCode(ctx context.Context, request api.SendSmsCodeReques
 		})}, nil
 	}
 
-	cooldown, err := h.service.SendVerificationCode(ctx, request.Body.Phone)
+	clientIP, _ := requestClientMetadata(ctx)
+	cooldown, err := h.service.SendVerificationCodeForClient(ctx, request.Body.Phone, clientIP)
 	if err != nil {
 		body, status := toErrorBody(err)
 		if status >= http.StatusInternalServerError {
@@ -943,6 +977,8 @@ func (h *Handler) SendSmsCode(ctx context.Context, request api.SendSmsCodeReques
 		switch status {
 		case http.StatusTooManyRequests:
 			return api.SendSmsCode429JSONResponse(body), nil
+		case http.StatusForbidden:
+			return api.SendSmsCode403JSONResponse(body), nil
 		default:
 			return api.SendSmsCode400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
 		}
@@ -968,10 +1004,11 @@ func (h *Handler) VerifySmsCode(ctx context.Context, request api.VerifySmsCodeRe
 		inviteCode = h.inviteTicketFromRequest(gctx)
 	}
 	session, err := h.service.VerifySMS(ctx, service.VerifySMSInput{
-		Name:       request.Body.Name,
+		Name:       optionalStringValue(request.Body.Name),
 		Phone:      request.Body.Phone,
 		Code:       request.Body.Code,
 		InviteCode: inviteCode,
+		ClientIP:   clientIPFromContext(ctx),
 	})
 	if err != nil {
 		body, status := toErrorBody(err)
@@ -979,6 +1016,8 @@ func (h *Handler) VerifySmsCode(ctx context.Context, request api.VerifySmsCodeRe
 			return nil, err
 		}
 		switch status {
+		case http.StatusTooManyRequests:
+			return api.VerifySmsCode429JSONResponse(body), nil
 		case http.StatusUnauthorized:
 			return api.VerifySmsCode401JSONResponse(body), nil
 		case http.StatusForbidden:
@@ -993,6 +1032,11 @@ func (h *Handler) VerifySmsCode(ctx context.Context, request api.VerifySmsCodeRe
 		h.clearInviteTicketCookie(gctx)
 	}
 	return api.VerifySmsCode200JSONResponse(h.toSessionResponse(ctx, session)), nil
+}
+
+func clientIPFromContext(ctx context.Context) string {
+	clientIP, _ := requestClientMetadata(ctx)
+	return clientIP
 }
 
 func ginContext(ctx context.Context) *gin.Context {

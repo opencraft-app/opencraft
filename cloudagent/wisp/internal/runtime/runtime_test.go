@@ -38,6 +38,139 @@ func TestRunDetachedDoesNotWaitForInheritedChildOutputFDs(t *testing.T) {
 	}
 }
 
+func TestNormalizeLocalFilePathCleansRelativePath(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	got, err := normalizeLocalFilePath(filepath.Join(".", "nested", "..", "root-upper.img"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dir, "root-upper.img")
+	if got != want {
+		t.Fatalf("normalizeLocalFilePath=%q want %q", got, want)
+	}
+}
+
+func TestNormalizeLocalFilePathRejectsEmptyPath(t *testing.T) {
+	if _, err := normalizeLocalFilePath(" \t"); err == nil {
+		t.Fatal("expected empty path error")
+	}
+}
+
+func TestSparseCopyFileNormalizesSourceAndDestination(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+	if err := os.MkdirAll("src", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("out", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("src", "root-upper.img"), []byte("root-upper"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dst := filepath.Join("out", "nested", "..", "copy.img")
+	if err := sparseCopyFile(filepath.Join(".", "src", "root-upper.img"), dst); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join("out", "copy.img"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "root-upper" {
+		t.Fatalf("copied content=%q", string(got))
+	}
+}
+
+func TestRemoveLocalDirNormalizesPathAndRejectsRoot(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+	if err := os.MkdirAll(filepath.Join("cg", "child"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := removeLocalDir(filepath.Join(".", "cg", "nested", "..", "child")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join("cg", "child")); !os.IsNotExist(err) {
+		t.Fatalf("expected child removed, stat err=%v", err)
+	}
+	if err := removeLocalDir(string(os.PathSeparator)); err == nil || !strings.Contains(err.Error(), "refuse to remove root") {
+		t.Fatalf("remove root err=%v", err)
+	}
+}
+
+func TestCgroupPathHelpersNormalizePaths(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	cgroupDir := filepath.Join(".", "cg", "nested", "..", "user")
+	if err := ensureLocalDir(cgroupDir); err != nil {
+		t.Fatal(err)
+	}
+	wantDir := filepath.Join(dir, "cg", "user")
+	if _, err := os.Stat(wantDir); err != nil {
+		t.Fatalf("expected normalized cgroup dir: %v", err)
+	}
+	got, err := cgroupFilePath(cgroupDir, "cgroup.procs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(wantDir, "cgroup.procs")
+	if got != want {
+		t.Fatalf("cgroupFilePath=%q want %q", got, want)
+	}
+	if err := ensureLocalDir(string(os.PathSeparator)); err == nil || !strings.Contains(err.Error(), "refuse to create root") {
+		t.Fatalf("ensure root err=%v", err)
+	}
+}
+
 func TestJuiceFSScriptEnvDoesNotLeakSMHSecret(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin")
 	t.Setenv("UNRELATED_SECRET", "do-not-leak")
@@ -498,19 +631,35 @@ func TestEnsureActiveImageUsesBlankTemplateTarWhenRootUpperSizeUnset(t *testing.
 
 func TestEnsureActiveImageUsesBlankSparseTemplateWhenRootUpperSizeUnset(t *testing.T) {
 	root := t.TempDir()
-	template := filepath.Join(root, "root-upper-default.sparse")
+	templateDir := filepath.Join(root, "templates")
+	if err := os.MkdirAll(templateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	template := filepath.Join(templateDir, "root-upper-default.sparse")
 	payload := sparseRootUpperMagic + "\n" +
 		`{"size":1024,"extents":[{"offset":0,"length":3},{"offset":100,"length":4}]}` + "\n" +
 		"abc" + "tail"
 	if err := os.WriteFile(template, []byte(payload), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(templateDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
 	active := filepath.Join(root, "state", "active", "root-upper.img")
 	rt := New(config.Config{
 		ActiveImg:            active,
 		RootUpperSize:        "",
 		DefaultRootUpperSize: "5G",
-		BlankRootUpperSparse: template,
+		BlankRootUpperSparse: filepath.Join(".", "root-upper-default.sparse"),
 	})
 	if err := rt.ensureActiveImage(context.Background()); err != nil {
 		t.Fatal(err)
@@ -545,6 +694,54 @@ func TestDeleteCheckpointRemovesCheckpointDir(t *testing.T) {
 	}
 	if _, err := os.Stat(checkpointDir); !os.IsNotExist(err) {
 		t.Fatalf("checkpoint dir still exists: err=%v", err)
+	}
+}
+
+func TestDeleteCheckpointRejectsTraversalID(t *testing.T) {
+	root := t.TempDir()
+	rt := New(config.Config{
+		WispName:        "demo",
+		CheckpointsRoot: filepath.Join(root, "checkpoints"),
+	})
+
+	for _, id := range []string{"../escape", "nested/ck1", ".", ".."} {
+		id := id
+		t.Run(id, func(t *testing.T) {
+			if err := rt.DeleteCheckpoint(context.Background(), id); err == nil || !strings.Contains(err.Error(), "invalid checkpoint id") {
+				t.Fatalf("DeleteCheckpoint(%q) err=%v", id, err)
+			}
+		})
+	}
+}
+
+func TestCheckpointDirPathNormalizesRootAndStaysWithinRoot(t *testing.T) {
+	root := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+	rt := New(config.Config{
+		CheckpointsRoot: filepath.Join(".", "checkpoints", "..", "checkpoints"),
+	})
+
+	id, dir, err := rt.checkpointDirPath("manual-20260527T010000.000000000Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "manual-20260527T010000.000000000Z" {
+		t.Fatalf("checkpoint id=%q", id)
+	}
+	wantDir := filepath.Join(root, "checkpoints", id)
+	if dir != wantDir {
+		t.Fatalf("checkpoint dir=%q want %q", dir, wantDir)
 	}
 }
 

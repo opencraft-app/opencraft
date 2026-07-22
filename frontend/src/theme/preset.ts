@@ -32,6 +32,8 @@ export const themePresets: Record<ThemePresetName, ThemePreset> = {
       "--hot": "#a2b5f7",
       "--border-subtle": "color-mix(in oklab, #101216 9%, white)",
       "--border-strong": "color-mix(in oklab, #101216 18%, white)",
+      "--realname-control-border": "#E9ECF1",
+      "--realname-control-muted": "#F2F4F8",
       "--success": "#147a56",
       "--warning": "#c67b1e",
       "--danger": "#cf3d4c",

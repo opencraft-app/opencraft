@@ -120,7 +120,8 @@ func (h *Handler) StartGoogleOAuth(ctx *gin.Context) {
 		Secure:   h.cookieSecure,
 		MaxAge:   int(h.googleOAuth.stateTTL / time.Second),
 	})
-	setOAuthReturnToCookie(ctx, googleOAuthReturnToCookieName, googleOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.googleOAuth.stateTTL, h.validatedReturnToURL)
+	validatedReturnTo := h.readValidatedReturnToFromRequest(ctx.Request)
+	setOAuthReturnToCookie(ctx, googleOAuthReturnToCookieName, googleOAuthStateCookiePath, validatedReturnTo, h.cookieSecure, h.googleOAuth.stateTTL)
 
 	ctx.Redirect(http.StatusTemporaryRedirect, h.googleOAuth.authorizeURL(startState.StateParam, startState.RedirectURI))
 }
@@ -144,7 +145,7 @@ func (h *Handler) HandleGoogleOAuthCallback(ctx *gin.Context) {
 			return
 		}
 		if isOAuthRelayIssuerCallback(ctx.Request, relayState) {
-			target, err := relayCallbackURLWithOriginalQuery(relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
+			target, err := relayCallbackURLWithOriginalQuery("google", relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
 			if err != nil {
 				logger.Warn("google oauth relay callback failed", "stage", "target_query", "err", err)
 				ctx.Redirect(http.StatusTemporaryRedirect, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_state_mismatch"))
@@ -163,10 +164,10 @@ func (h *Handler) HandleGoogleOAuthCallback(ctx *gin.Context) {
 		if cookie, err := ctx.Request.Cookie(googleOAuthStateCookieName); err == nil {
 			expectedState = strings.TrimSpace(cookie.Value)
 		}
-		returnTo := readOAuthReturnToCookie(ctx.Request, googleOAuthReturnToCookieName)
+		validatedSuccessTarget := h.readValidatedOAuthReturnToCookie(ctx.Request, googleOAuthReturnToCookieName)
 		h.clearGoogleOAuthStateCookie(ctx)
 		clearOAuthReturnToCookie(ctx, googleOAuthReturnToCookieName, googleOAuthStateCookiePath, h.cookieSecure)
-		h.handleGoogleOAuthCallbackAfterState(ctx, code, relayState.Nonce, expectedState, returnTo, exchangeRedirectURI, logger)
+		h.handleGoogleOAuthCallbackAfterState(ctx, code, relayState.Nonce, expectedState, validatedSuccessTarget, exchangeRedirectURI, logger)
 		return
 	}
 
@@ -174,13 +175,13 @@ func (h *Handler) HandleGoogleOAuthCallback(ctx *gin.Context) {
 	if cookie, err := ctx.Request.Cookie(googleOAuthStateCookieName); err == nil {
 		expectedState = strings.TrimSpace(cookie.Value)
 	}
-	returnTo := readOAuthReturnToCookie(ctx.Request, googleOAuthReturnToCookieName)
+	validatedSuccessTarget := h.readValidatedOAuthReturnToCookie(ctx.Request, googleOAuthReturnToCookieName)
 	h.clearGoogleOAuthStateCookie(ctx)
 	clearOAuthReturnToCookie(ctx, googleOAuthReturnToCookieName, googleOAuthStateCookiePath, h.cookieSecure)
-	h.handleGoogleOAuthCallbackAfterState(ctx, code, state, expectedState, returnTo, exchangeRedirectURI, logger)
+	h.handleGoogleOAuthCallbackAfterState(ctx, code, state, expectedState, validatedSuccessTarget, exchangeRedirectURI, logger)
 }
 
-func (h *Handler) handleGoogleOAuthCallbackAfterState(ctx *gin.Context, code string, state string, expectedState string, returnTo string, exchangeRedirectURI string, logger interface {
+func (h *Handler) handleGoogleOAuthCallbackAfterState(ctx *gin.Context, code string, state string, expectedState string, validatedSuccessTarget string, exchangeRedirectURI string, logger interface {
 	Warn(msg string, keysAndValues ...any)
 	Error(msg string, keysAndValues ...any)
 	Info(msg string, keysAndValues ...any)
@@ -229,8 +230,7 @@ func (h *Handler) handleGoogleOAuthCallbackAfterState(ctx *gin.Context, code str
 	h.clearInviteTicketCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "google", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
-	redirectURL := h.oauthSuccessRedirectURL(ctx, returnTo, h.googleOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
-	ctx.Redirect(http.StatusTemporaryRedirect, redirectURL)
+	h.redirectOAuthSuccess(ctx, validatedSuccessTarget, h.googleOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 }
 
 func (h *Handler) clearGoogleOAuthStateCookie(ctx *gin.Context) {
@@ -268,20 +268,7 @@ func (g *googleOAuth) frontendURL(request *http.Request, path string) string {
 }
 
 func (g *googleOAuth) successFrontendURL(request *http.Request, path string, sessionToken string) string {
-	redirectURL := g.frontendURL(request, path)
-	if strings.TrimSpace(sessionToken) == "" {
-		return redirectURL
-	}
-
-	parsed, err := url.Parse(redirectURL)
-	if err != nil {
-		return redirectURL
-	}
-
-	fragment := url.Values{}
-	fragment.Set("session_token", strings.TrimSpace(sessionToken))
-	parsed.Fragment = fragment.Encode()
-	return parsed.String()
+	return oauthSuccessFrontendURL(g.frontendBaseURLForRequest(request), path, sessionToken)
 }
 
 func (g *googleOAuth) redirectURIForRequest(request *http.Request) string {

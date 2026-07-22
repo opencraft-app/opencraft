@@ -10,6 +10,16 @@
 - [ ] 本次改动严格限定在 plan.md 已声明的范围内
 - [ ] 未在 plan.md 范围内的"顺手改"已被记录或撤销（不允许偷偷加塞）
 - [ ] 改动文件列表已与 plan.md 任务对应
+- [ ] 多人 / 多 Agent 模式下，改动文件均在 `team-state.md` 约定的归属清单内
+- [ ] 未越权修改 `openspec/current_state.md`、`openspec/changes/**`、`.workflow/project.yaml` 等共享状态文件
+
+---
+
+## 一之二、上下文恢复缓存（必须）
+
+- [ ] 本批完成后已刷新 `.workflow/runtime/current-task.summary.md`：Active Slice 指向下一批 ≤ 3 任务，Freshness 的 planHash/branch 与当前一致
+- [ ] 已有调查结论后的追问走了 Targeted Verification（先沉淀 Investigation Brief），未在主会话重复完整调查
+- [ ] 命中早停条件（重复同一失败假设且无新证据 / 缺少外部事实无法继续复现）时已 Stop-and-Ask；仓库内仍有安全证据时未提前终止调查
 
 ---
 

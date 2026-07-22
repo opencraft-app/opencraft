@@ -23,6 +23,11 @@ from contracts.image_existence import (  # noqa: E402
 )
 
 
+def completed_process(args: object, returncode: int = 0, stdout: str = "", stderr: str = ""):
+    # Test fixtures construct CompletedProcess objects directly; no subprocess is launched here.
+    return subprocess.CompletedProcess(args, returncode, stdout=stdout, stderr=stderr)  # nosemgrep: dangerous-subprocess-use-audit
+
+
 class ImageExistenceTests(unittest.TestCase):
     def test_parses_single_image_reference(self) -> None:
         self.assertEqual(image_references("registry.example.com/app/demo:v1"), ["registry.example.com/app/demo:v1"])
@@ -41,13 +46,11 @@ class ImageExistenceTests(unittest.TestCase):
         def fake_run(command, **kwargs):
             calls.append(command)
             if command[1:3] == ["manifest", "inspect"]:
-                return subprocess.CompletedProcess(
+                return completed_process(
                     command,
-                    0,
                     stdout='{"Descriptor":{"digest":"sha256:abc"}}',
-                    stderr="",
                 )
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+            return completed_process(command)
 
         previous = os.environ.copy()
         try:
@@ -72,7 +75,7 @@ class ImageExistenceTests(unittest.TestCase):
 
     def test_missing_image_fails_result(self) -> None:
         def fake_run(command, **kwargs):
-            return subprocess.CompletedProcess(command, 1, stdout="", stderr="manifest unknown")
+            return completed_process(command, 1, stderr="manifest unknown")
 
         with redirect_stderr(StringIO()):
             results = verify_images(
@@ -92,8 +95,8 @@ class ImageExistenceTests(unittest.TestCase):
             nonlocal calls
             calls += 1
             if calls == 1:
-                return subprocess.CompletedProcess(command, 1, stdout="", stderr="manifest unknown")
-            return subprocess.CompletedProcess(command, 0, stdout='{"Descriptor":{"digest":"sha256:abc"}}', stderr="")
+                return completed_process(command, 1, stderr="manifest unknown")
+            return completed_process(command, stdout='{"Descriptor":{"digest":"sha256:abc"}}')
 
         with redirect_stderr(StringIO()), mock.patch("contracts.image_existence.time.sleep") as sleep:
             results = verify_images_with_retry(

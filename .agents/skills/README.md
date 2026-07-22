@@ -4,6 +4,7 @@
 
 | Skill | 适用场景 |
 | --- | --- |
+| `codedog-lint-fix` | 智研 CodeDog / CodeLint 问题获取、筛选、分析、修复、验证与 MR 交付 |
 | `gongfeng` | 工蜂仓库操作、分支管理、MR 创建/查询、MR 评论、代码审查、文件操作、提交查询 |
 | `devops-pipeline` | 蓝盾流水线、CI/CD、构建查询、构建启动/取消、构建状态、流水线参数修改 |
 | `tencent-tat-instance-mining` | 通过腾讯云 TAT/自动化助手批量采集 Hermes CVM 实例数据，统计 Token、Session、通道配置，并可按账号表合并分析 |
@@ -18,6 +19,7 @@
 | `product-skills/lv-vibe-coding` | LightVela 从需求澄清、Issue、开发、评审、MR 到发布回归的 Vibe Coding 协作流程 |
 | `lv-international-docs` | LightVela 国际站文档维护，编辑/翻译/审查 `lightvela.ai/docs`、`global/`、`en/`、文档图片与 sidebar/slug |
 | `lv-longform-content` | LightVela 长篇内容写作，生成教程系列、功能介绍系列、应用场景系列、英文博客/文章草稿 |
+| `lv-sitepage-skills` | 维护国内站和国际站 Agent Skills 的 Discover 分类、Featured 精选、搜索、来源、My Skills、Create Skill 和分页规范 |
 
 ## 使用约定
 

@@ -24,6 +24,21 @@ class ProdDbMigrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "SERVICE must be one of"):
             prod_db_migration.map_service("frontend")
 
+    def test_command_validation_rejects_empty_command(self) -> None:
+        with self.assertRaisesRegex(ValueError, "non-empty list"):
+            prod_db_migration.validate_command([])
+
+    def test_command_validation_rejects_unsupported_executable(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported command executable"):
+            prod_db_migration.validate_command(["bash", "-c", "echo unsafe"])
+
+    def test_command_validation_allows_git_and_python_executables(self) -> None:
+        self.assertEqual(prod_db_migration.validate_command(["git", "status"]), ["git", "status"])
+        self.assertEqual(
+            prod_db_migration.validate_command(["/usr/bin/python3", "-c", "import yaml"]),
+            ["/usr/bin/python3", "-c", "import yaml"],
+        )
+
     def test_skip_flag_allows_non_db_services(self) -> None:
         with mock.patch.object(
             prod_db_migration,

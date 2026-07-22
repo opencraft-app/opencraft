@@ -1,10 +1,10 @@
 # 配置模型
 
-本页介绍如何为 Hermes 配置大语言模型，包含三种配置方式的差异、API Key 的获取方式、管理台配置步骤、支持的模型列表以及选型建议。
+本页介绍如何为 Hermes Agent 配置大语言模型，包含三种配置方式的差异、API Key 的获取方式、管理台配置步骤、支持的模型列表以及选型建议。
 
 > 💡 **配置非必须**
 > 
-> 启航套餐预置 100 体验积分，创建 Hermes 并接入通道后即可直接对话。在积分耗尽后再进行模型配置即可。
+> 启航套餐预置 100 体验积分，创建 Hermes Agent 并接入通道后即可直接对话。在积分耗尽后再进行模型配置即可。
 
 ---
 
@@ -108,11 +108,11 @@
 
 > ⚠️ **单模型生效**
 > 
-> 当前版本每个 Hermes 仅支持配置并生效一个模型。如需对比不同模型表现，需分别配置试用。
+> 当前版本每个 Hermes Agent 仅支持配置并生效一个模型。如需对比不同模型表现，需分别配置试用。
 
 ### 切换对记忆的影响
 
-切换模型不会影响对话记忆。记忆为 Hermes 自身数据，模型仅负责生成响应。
+切换模型不会影响对话记忆。记忆为 Hermes Agent 自身数据，模型仅负责生成响应。
 
 ---
 
@@ -167,7 +167,7 @@
 | 中文理解 | 中国模型对中文支持普遍更好 |
 | 高频使用 | 选择对应服务商的 Coding Plan 包月套餐 |
 
-建议：先通过启航套餐的体验积分进行若干轮对话，确认 Hermes 工作正常后再决定模型选型。
+建议：先通过启航套餐的体验积分进行若干轮对话，确认 Hermes Agent 工作正常后再决定模型选型。
 
 ---
 
@@ -198,18 +198,18 @@
 
 ## 下一步
 
-- [配置通道 - WeChat](./configuration/channel-wechat.md)
+- [配置通道 - WeChat](./channel-wechat.md)
 
-- [配置通道 - Telegram](./configuration/channel-telegram.md)
+- [配置通道 - Telegram](./channel-telegram.md)
 
-- [配置通道 - WhatsApp](./configuration/channel-whatsapp.md)
+- [配置通道 - WhatsApp](./channel-whatsapp.md)
 
-- [配置通道 - Discord](./configuration/channel-discord.md)
+- [配置通道 - Discord](./channel-discord.md)
 
-- [配置通道 - QQ](./configuration/channel-qq.md)
+- [配置通道 - QQ](./channel-qq.md)
 
-- [配置通道 - 企业微信](./configuration/channel-wecom.md)
+- [配置通道 - 企业微信](./channel-wecom.md)
 
-- [配置通道 - 飞书](./configuration/channel-feishu.md)
+- [配置通道 - 飞书](./channel-feishu.md)
 
-- [配置技能](./configuration/skill.md)
+- [配置技能](./skill.md)

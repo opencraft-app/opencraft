@@ -37,10 +37,14 @@ type ServerConfig struct {
 	E2ESessionTTL              time.Duration
 	ShadowBindingInternalToken string
 	ShadowTencentCallbackToken string
+	TrustedProxyCIDRs          []string
 }
 
 func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	router := gin.New()
+	if err := router.SetTrustedProxies(config.TrustedProxyCIDRs); err != nil {
+		panic("configure trusted proxies: " + err.Error())
+	}
 	router.Use(
 		requestIDMiddleware(),
 		requestLogMiddleware(config.Logger),

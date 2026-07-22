@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -267,6 +268,108 @@ func TestGinHTTPExternalRouteForwardsToConfiguredUpstreamPath(t *testing.T) {
 	}
 	if got := rec.Body.String(); got != `{"returnCode":0}` {
 		t.Fatalf("unexpected body %q", got)
+	}
+}
+
+func TestGinHTTPExternalRouteRoutesPrefixedAuthCodeAndStripsPrefix(t *testing.T) {
+	calledBeijing := false
+	beijing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calledBeijing = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer beijing.Close()
+
+	calledShanghai := false
+	shanghai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calledShanghai = true
+		var payload struct {
+			Interface struct {
+				Para struct {
+					AuthCode string `json:"auth_code"`
+				} `json:"para"`
+			} `json:"interface"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode callback body: %v", err)
+		}
+		if got := payload.Interface.Para.AuthCode; got != "raw-auth-code" {
+			t.Fatalf("expected stripped raw auth code, got %q", got)
+		}
+		_, _ = w.Write([]byte(`{"returnCode":0}`))
+	}))
+	defer shanghai.Close()
+
+	cfg := config.Config{
+		MaxBodyBytes: config.DefaultMaxBodyBytes,
+		Auth:         config.AuthConfig{Enabled: true, TimestampSkew: "5m", AllowUnauthenticated: []string{"callback-bjsbx", "callback-shprod"}},
+		Routes: []config.RouteConfig{
+			{ID: "callback-bjsbx", Upstream: config.UpstreamConfig{BaseURL: beijing.URL, AllowedMethods: []string{http.MethodPost}}},
+			{ID: "callback-shprod", Upstream: config.UpstreamConfig{BaseURL: shanghai.URL, AllowedMethods: []string{http.MethodPost}}},
+		},
+		External: []config.ExternalRoute{{Path: "/internal/tencentcloud/account", Methods: []string{http.MethodPost}, RouteID: "callback-shprod", UpstreamPath: "/auth/internal/tencentcloud/account", AuthCodeRoutes: []config.ExternalAuthCodeRoute{{Prefix: "bjsbx.", RouteID: "callback-bjsbx"}, {Prefix: "shprod.", RouteID: "callback-shprod"}}}},
+	}
+	engine, err := proxy.NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	authenticator, err := auth.New(cfg)
+	if err != nil {
+		t.Fatalf("new authenticator: %v", err)
+	}
+	router := NewGinRouter(engine, authenticator, config.DefaultMaxBodyBytes, cfg.External...)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/internal/tencentcloud/account", strings.NewReader(`{"interface":{"interfaceName":"qcloud.saas.checkSaaSAuthCode","para":{"auth_code":"shprod.raw-auth-code"}}}`))
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if calledBeijing || !calledShanghai {
+		t.Fatalf("expected only Shanghai upstream to be called, Beijing=%t Shanghai=%t", calledBeijing, calledShanghai)
+	}
+}
+
+func TestGinHTTPExternalRouteRoutesUnprefixedAuthCodeToDefaultRoute(t *testing.T) {
+	bjsbx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("Beijing should not receive an unprefixed auth code")
+	}))
+	defer bjsbx.Close()
+	calledShanghai := false
+	shanghai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calledShanghai = true
+		var payload struct {
+			Interface struct {
+				Para struct {
+					AuthCode string `json:"auth_code"`
+				} `json:"para"`
+			} `json:"interface"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode callback body: %v", err)
+		}
+		if got := payload.Interface.Para.AuthCode; got != "legacy-auth-code" {
+			t.Fatalf("expected unchanged legacy auth code, got %q", got)
+		}
+		_, _ = w.Write([]byte(`{"returnCode":0}`))
+	}))
+	defer shanghai.Close()
+	cfg := config.Config{MaxBodyBytes: config.DefaultMaxBodyBytes, Auth: config.AuthConfig{Enabled: true, TimestampSkew: "5m", AllowUnauthenticated: []string{"callback-bjsbx", "callback-shprod"}}, Routes: []config.RouteConfig{{ID: "callback-bjsbx", Upstream: config.UpstreamConfig{BaseURL: bjsbx.URL, AllowedMethods: []string{http.MethodPost}}}, {ID: "callback-shprod", Upstream: config.UpstreamConfig{BaseURL: shanghai.URL, AllowedMethods: []string{http.MethodPost}}}}, External: []config.ExternalRoute{{Path: "/internal/tencentcloud/account", Methods: []string{http.MethodPost}, RouteID: "callback-shprod", UpstreamPath: "/auth/internal/tencentcloud/account", AuthCodeRoutes: []config.ExternalAuthCodeRoute{{Prefix: "bjsbx.", RouteID: "callback-bjsbx"}, {Prefix: "shprod.", RouteID: "callback-shprod"}}}}}
+	engine, err := proxy.NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	authenticator, err := auth.New(cfg)
+	if err != nil {
+		t.Fatalf("new authenticator: %v", err)
+	}
+	router := NewGinRouter(engine, authenticator, config.DefaultMaxBodyBytes, cfg.External...)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/internal/tencentcloud/account", strings.NewReader(`{"interface":{"interfaceName":"qcloud.saas.checkSaaSAuthCode","para":{"auth_code":"legacy-auth-code"}}}`))
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !calledShanghai {
+		t.Fatal("expected unprefixed auth code to use Shanghai default route")
 	}
 }
 

@@ -1,19 +1,19 @@
 # Configure Channel - WhatsApp
 
-The WhatsApp channel uses QR-code access, similar to WeChat, and is suitable for quickly connecting Hermes to WhatsApp conversations.
+The WhatsApp channel uses QR-code access, similar to WeChat, and is suitable for quickly connecting Hermes Agent to WhatsApp conversations.
 
 ## This page covers
 
 - Scanning a QR code with WhatsApp on your phone to authorize access
 
-- Chatting with Hermes in WhatsApp
+- Chatting with Hermes Agent in WhatsApp
 
 
 > 💡 **Prerequisites**
 >
 > -   A phone with WhatsApp installed
 >
-> -   Complete [model configuration](./configuration/model.md) (or use the 100 trial credits included in the Launch plan)
+> -   Complete [model configuration](./model.md) (or use the 100 trial credits included in the Launch plan)
 >
 
 ---
@@ -52,7 +52,7 @@ Open the chat with the bot and send a test message:
 Hi
 ```
 
-You should receive a Hermes reply within a few seconds.
+You should receive a Hermes Agent reply within a few seconds.
 
 ![](../images/whatsapp-3-global-en.webp)
 
@@ -64,7 +64,7 @@ You should receive a Hermes reply within a few seconds.
 
 - The corresponding bot can be found in WhatsApp contacts
 
-- Hermes replies after you send a message
+- Hermes Agent replies after you send a message
 
 
 ---
@@ -85,7 +85,7 @@ After access succeeds, the WhatsApp bot can receive and reply to basic text mess
 
 > ℹ️ **Actual processing capability depends on the model**
 >
-> The table above only indicates the message types supported by the WhatsApp bot at the channel layer. Whether images, files, and other tasks can actually be processed also depends on whether the large language model connected to Hermes has the corresponding capabilities.
+> The table above only indicates the message types supported by the WhatsApp bot at the channel layer. Whether images, files, and other tasks can actually be processed also depends on whether the large language model connected to Hermes Agent has the corresponding capabilities.
 
 ---
 
@@ -102,7 +102,7 @@ After access succeeds, the WhatsApp bot can receive and reply to basic text mess
 | Cannot receive images, files, or voice messages | Media permission, format, or channel capability limits | Confirm the file type is supported; if voice cannot be recognized, check whether speech-to-text / media processing is enabled |
 | Proactive messages fail | WhatsApp limits proactive messages via message templates and conversation windows | Confirm the user has started a conversation with the bot; if the conversation window has expired, use an approved message template |
 | How to unlink | — | Delete the corresponding WhatsApp record in the "Connected channels" list |
-| Can the same WhatsApp number connect to multiple Hermes instances | Not recommended; one WhatsApp number should be bound to one Hermes | If you need multiple Hermes instances, use separate WhatsApp numbers |
+| Can the same WhatsApp number connect to multiple Hermes Agent instances | Not recommended; one WhatsApp number should be bound to one Hermes Agent | If you need multiple Hermes Agent instances, use separate WhatsApp numbers |
 
 ---
 
@@ -118,10 +118,10 @@ After access succeeds, the WhatsApp bot can receive and reply to basic text mess
 
 ## Next steps
 
-- [Configure Channel - Discord](./configuration/channel-discord.md) — Community operations and developer communities
+- [Configure Channel - Discord](./channel-discord.md) — Community operations and developer communities
 
-- [Configure Channel - QQ](./configuration/channel-qq.md) — Bot created manually, integrated via AppID/AppSecret
+- [Configure Channel - QQ](./channel-qq.md) — Bot created manually, integrated via AppID/AppSecret
 
-- [Configure Channel - WeCom](./configuration/channel-wecom.md) — Enterprise internal collaboration and office scenarios
+- [Configure Channel - WeCom](./channel-wecom.md) — Enterprise internal collaboration and office scenarios
 
-- [Configure Skills](./configuration/skill.md) — Extend Hermes capabilities
+- [Configure Skills](./skill.md) — Extend Hermes Agent capabilities

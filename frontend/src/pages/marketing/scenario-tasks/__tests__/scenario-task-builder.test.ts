@@ -16,6 +16,7 @@ function makeRun(overrides: Partial<CronRunRecord>): CronRunRecord {
     job_id: "job-1",
     job_name: "试跑 - 每日新闻",
     job_prompt: "",
+    skills: [],
     schedule: { kind: "once", expr: "2026-07-02T09:02", display: "2026-07-02T09:02" },
     deliver: "local",
     run_at: "2026-07-02T01:03:00.000Z",

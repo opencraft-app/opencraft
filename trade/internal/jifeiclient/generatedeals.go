@@ -59,6 +59,8 @@ type GoodsInfo struct {
 	GoodsNum        int                    `json:"goodsNum"`
 	PayMode         int                    `json:"payMode"`
 	ProjectID       int                    `json:"projectId"`
+	Action          string                 `json:"action,omitempty"`
+	Type            string                 `json:"type,omitempty"`
 	GoodsDetail     map[string]interface{} `json:"goodsDetail,omitempty"`
 	// 注：不持有 tagList / voucherIds / agentPay / goodsAlias / currency 字段（Q46 / Q48 / Q42 收敛）。
 }
@@ -69,10 +71,11 @@ type GoodsInfo struct {
 //
 // PDF §5.2 generateDeals 响应明示 `bigDealId String` (**单数 string**) +
 // `dealNames Array` (复数数组)。jifei 实测 2026-05-21 04:11:59 返回 body：
-//   "data": {
-//     "dealNames": ["20260521995022860913841"],     // 复数数组
-//     "bigDealId": "20260521995022860913831"        // 单数 string
-//   }
+//
+//	"data": {
+//	  "dealNames": ["20260521995022860913841"],     // 复数数组
+//	  "bigDealId": "20260521995022860913831"        // 单数 string
+//	}
 //
 // **历史回归 (v1.7.19 B14 → BUG-11)**：v1.7.19 commit 当时把 BigDealID string
 // 改成 BigDealIDs []string + json:"bigDealIds"，注释写"历史 BigDealID string 是

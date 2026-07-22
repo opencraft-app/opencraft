@@ -124,6 +124,10 @@ display:
   platforms:
     lightclawbot:
       streaming: true
+approvals:
+  mode: off
+  cron_mode: approve
+  destructive_slash_confirm: false
 YAML
     exit 0
   fi
@@ -383,7 +387,8 @@ ln() {
   log_call "ln $*"
 }
 
-mkdir -p "${HOME}/.local/bin" "${HOME}/.config"
+mkdir -p "${HOME}/.local/bin" "${HOME}/.config" "${HOME}/.openclaw" "${HOME}/.agents/skills/find-skill-skillhub"
+printf 'remove\n' >"${HOME}/.agents/skills/find-skill-skillhub/SKILL.md"
 
 install_hermes_runtime
 configure_hermes_python_mirrors
@@ -396,15 +401,17 @@ install_hermes_acli
 upgrade_hermes_backend_blueprint
 finalize_hermes_runtime_pin
 curate_hermes_skills
+remove_hermes_find_skill_skillhub
 
 grep -q "curl-hermes-latest" "${LOG_FILE}"
 grep -q "curl-hermes-tarball" "${LOG_FILE}"
 grep -q "curl-installer" "${LOG_FILE}"
-grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage venv" "${LOG_FILE}"
-grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage python-deps" "${LOG_FILE}"
-grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage node-deps" "${LOG_FILE}"
-grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage path" "${LOG_FILE}"
-grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage config" "${LOG_FILE}"
+grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --non-interactive --stage venv" "${LOG_FILE}"
+grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --non-interactive --stage python-deps" "${LOG_FILE}"
+grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --non-interactive --stage node-deps" "${LOG_FILE}"
+grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --non-interactive --stage path" "${LOG_FILE}"
+grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --non-interactive --stage config" "${LOG_FILE}"
+! grep -q -- "--skip-browser" "${LOG_FILE}"
 grep -Fq "uv-pip-install pip install --python ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python --no-deps --reinstall-package hermes-agent -e ${RUNTIME_HOME}/.hermes/hermes-agent" "${LOG_FILE}"
 test "$(grep -Fc "uv-pip-install pip install --python ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python --no-deps --reinstall-package hermes-agent -e ${RUNTIME_HOME}/.hermes/hermes-agent" "${LOG_FILE}")" -ge 2
 grep -q "npm-install @qwen-code/qwen-code@latest" "${LOG_FILE}"
@@ -415,7 +422,22 @@ grep -q "curl-lightclawbot-wheel" "${LOG_FILE}"
 test -f "${RUNTIME_HOME}/.hermes/plugins/lightclawbot/plugin.yaml"
 grep -q '^name: lightclawbot$' "${RUNTIME_HOME}/.hermes/plugins/lightclawbot/plugin.yaml"
 grep -q 'lightclawbot' "${RUNTIME_HOME}/.hermes/config.yaml"
+grep -q '^LIGHTCLAW_ALLOW_ALL_USERS=true$' "${RUNTIME_HOME}/.hermes/.env"
 ! grep -q '^LIGHTCLAW_API_KEY' "${RUNTIME_HOME}/.hermes/.env"
+python3 - "${RUNTIME_HOME}/.hermes/sessions/agents.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    data = json.load(fh)
+assert data["agents"][0]["id"] == "main"
+PY
+grep -q '^approvals:$' "${RUNTIME_HOME}/.hermes/config.yaml"
+grep -q '^  mode: off$' "${RUNTIME_HOME}/.hermes/config.yaml"
+grep -q '^  cron_mode: approve$' "${RUNTIME_HOME}/.hermes/config.yaml"
+grep -q '^  destructive_slash_confirm: false$' "${RUNTIME_HOME}/.hermes/config.yaml"
+test ! -e "${RUNTIME_HOME}/.agents/skills/find-skill-skillhub"
+test ! -e "${RUNTIME_HOME}/.openclaw"
 grep -Fq "index-url = https://mirrors.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
 grep -Fq "https://mirrors.cloud.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
 grep -Fq 'index-url = "https://mirrors.tencent.com/pypi/simple"' "${RUNTIME_HOME}/.config/uv/uv.toml"
@@ -444,6 +466,7 @@ grep -q "acli bundle-update" "${LOG_FILE}"
 grep -q "acli backend upgrade-start --blueprint-id lhbp-lyx28qje --wait=true --force=true" "${LOG_FILE}"
 grep -q '\$HOME/.hermes/hermes-agent/venv/bin' "${PROFILE_FILE}"
 grep -q '\$HOME/.local/bin:\$PATH' "${PROFILE_FILE}"
+grep -q 'XDG_RUNTIME_DIR=.*run/user/.*id -u' "${PROFILE_FILE}"
 grep -q '^YUANBAO_ALLOW_ALL_USERS=true$' "${HOME}/.hermes/.env"
 grep -q '^product: lightvela$' "${ACLI_IDENTITY_PATH}"
 grep -q '^run_as: agentuser$' "${ACLI_IDENTITY_PATH}"

@@ -385,6 +385,18 @@ func (s *Service) StartRealnameFaceIDAttempt(ctx context.Context, token string, 
 	if count >= s.realnameFaceID.DailyQuota {
 		return RealnameFaceIDStartResult{}, &Error{Code: "realname_faceid_quota_exceeded", Message: "今日实名认证尝试次数已达上限。", Status: http.StatusTooManyRequests}
 	}
+	// 进人脸前先做姓名+身份证二要素核验，不匹配直接拦在第一步、不创建 attempt、不进人脸。
+	// 这里只调用核验（不写库、不触发手机/影子绑定），与 legacy VerifyRealname 的实名落库路径区分开，
+	// 避免用户白扫脸后才被告知姓名身份证不匹配。核验器未装配时保持原有行为跳过。
+	if s.realnameVerifier != nil {
+		twoFactorResult, verifyErr := s.realnameVerifier.Verify(ctx, name, idCard)
+		if verifyErr != nil {
+			return RealnameFaceIDStartResult{}, newError("realname_verify_failed", "实名核验失败，请稍后重试。", http.StatusBadGateway)
+		}
+		if strings.TrimSpace(twoFactorResult.Result) != "0" {
+			return RealnameFaceIDStartResult{}, newError("realname_mismatch", "姓名与身份证号不一致，请重新输入。", http.StatusBadRequest)
+		}
+	}
 	attemptID, err := newPrefixedID("rfid")
 	if err != nil {
 		return RealnameFaceIDStartResult{}, fmt.Errorf("generate realname faceid attempt id: %w", err)
@@ -555,7 +567,7 @@ func (s *Service) SendRealnameFaceIDPhoneCode(ctx context.Context, token string,
 	if attempt.FaceVerifiedAt == nil || (attempt.State != RealnameFaceIDStateFaceSucceeded && attempt.State != RealnameFaceIDStatePhonePending) {
 		return 0, newError("realname_faceid_face_required", "请先完成人脸核身。", http.StatusForbidden)
 	}
-	phone, phoneHash, err := s.resolveRealnameFaceIDPhoneCandidate(ctx, token, session, attempt, input.Phone)
+	phone, phoneHash, err := s.resolveRealnameFaceIDPhoneCandidate(ctx, token, session, input.Phone)
 	if err != nil {
 		return 0, err
 	}
@@ -591,7 +603,7 @@ func (s *Service) SendRealnameFaceIDPhoneCode(ctx context.Context, token string,
 	return s.SendShadowBindingCode(ctx, phone, input.ClientIP)
 }
 
-func (s *Service) resolveRealnameFaceIDPhoneCandidate(ctx context.Context, token string, session *AuthSession, attempt RealnameFaceIDAttempt, submittedPhone string) (string, string, error) {
+func (s *Service) resolveRealnameFaceIDPhoneCandidate(ctx context.Context, token string, session *AuthSession, submittedPhone string) (string, string, error) {
 	phone := normalizePhone(submittedPhone)
 	currentPhone := normalizePhone(session.User.Phone)
 	if currentPhone != "" {
@@ -610,11 +622,7 @@ func (s *Service) resolveRealnameFaceIDPhoneCandidate(ctx context.Context, token
 	if !isValidPhone(phone) {
 		return "", "", newError("invalid_phone", "手机号格式不正确。", http.StatusBadRequest)
 	}
-	phoneHash := s.hashRealnamePhone(phone)
-	if attempt.CurrentPhoneHash != "" && attempt.CurrentPhoneHash != phoneHash {
-		return "", "", newError("realname_phone_mismatch", "当前手机号已变更，请重新开始实名认证。", http.StatusConflict)
-	}
-	return phone, phoneHash, nil
+	return phone, s.hashRealnamePhone(phone), nil
 }
 
 func (s *Service) VerifyRealnameFaceIDPhone(ctx context.Context, token string, input RealnameFaceIDPhoneProofInput) (RealnameFaceIDAttempt, error) {
@@ -640,12 +648,15 @@ func (s *Service) VerifyRealnameFaceIDPhone(ctx context.Context, token string, i
 	if attempt.FaceVerifiedAt == nil || (attempt.State != RealnameFaceIDStateFaceSucceeded && attempt.State != RealnameFaceIDStatePhonePending) {
 		return RealnameFaceIDAttempt{}, newError("realname_faceid_face_required", "请先完成人脸核身。", http.StatusForbidden)
 	}
-	phone, currentPhoneHash, err := s.resolveRealnameFaceIDPhoneCandidate(ctx, token, session, attempt, input.Phone)
+	phone, currentPhoneHash, err := s.resolveRealnameFaceIDPhoneCandidate(ctx, token, session, input.Phone)
 	if err != nil {
 		return RealnameFaceIDAttempt{}, err
 	}
 	if attempt.CurrentPhoneHash == "" {
 		return RealnameFaceIDAttempt{}, newError("realname_phone_code_required", "请先获取手机验证码。", http.StatusBadRequest)
+	}
+	if attempt.CurrentPhoneHash != currentPhoneHash {
+		return RealnameFaceIDAttempt{}, newError("realname_phone_mismatch", "当前手机号已变更，请重新开始实名认证。", http.StatusConflict)
 	}
 	if s.shadowBinding == nil || !s.shadowBinding.Enabled() {
 		return RealnameFaceIDAttempt{}, newError("shadow_binding_disabled", "Lightvela 账号同步暂未启用。", http.StatusServiceUnavailable)
@@ -666,6 +677,13 @@ func (s *Service) VerifyRealnameFaceIDPhone(ctx context.Context, token string, i
 	if code == "" {
 		return RealnameFaceIDAttempt{}, newError("invalid_sms_code", "验证码不能为空。", http.StatusBadRequest)
 	}
+	if err := s.enforceVerificationCheckLimits(ctx, VerificationChannelSMS, phone, input.ClientIP); err != nil {
+		return RealnameFaceIDAttempt{}, err
+	}
+	reservation, err := s.reserveExternalSMSChallenge(ctx, phone)
+	if err != nil {
+		return RealnameFaceIDAttempt{}, err
+	}
 	binding, err := s.shadowBinding.BindShadowAccount(ctx, shadowbinding.BindInput{
 		UserID:     session.User.ID,
 		Phone:      phone,
@@ -674,7 +692,11 @@ func (s *Service) VerifyRealnameFaceIDPhone(ctx context.Context, token string, i
 		VerifyCode: code,
 	})
 	if err != nil {
+		_ = s.store.RejectExternalSMSChallenge(ctx, reservation, s.now())
 		return RealnameFaceIDAttempt{}, shadowBindingError(ctx, err, session.User.ID)
+	}
+	if err := s.store.ConsumeExternalSMSChallenge(ctx, reservation); err != nil {
+		return RealnameFaceIDAttempt{}, err
 	}
 	if binding.Status != shadowbinding.StatusActive {
 		return RealnameFaceIDAttempt{}, newError("shadow_binding_incomplete", "影子账号绑定尚未完成，请稍后重试。", http.StatusBadGateway)
@@ -810,6 +832,7 @@ func (s *Service) completeRealnameFaceIDAttempt(ctx context.Context, store faceI
 	if err != nil {
 		return RealnameVerifyResult{}, RealnameFaceIDAttempt{}, err
 	}
+	s.notifyPassBillingMigration(ctx, binding)
 	return RealnameVerifyResult{
 		OK:                  true,
 		Verified:            true,

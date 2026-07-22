@@ -1,6 +1,6 @@
 # Automations
 
-Automations let Hermes run specified work on a preset schedule or trigger condition, so you don't have to repeat the same operations manually. Typical scenarios include scheduled reminders, daily report generation, news tracking, and content publishing.
+Automations let Hermes Agent run specified work on a preset schedule or trigger condition, so you don't have to repeat the same operations manually. Typical scenarios include scheduled reminders, daily report generation, news tracking, and content publishing.
 
 Every task supports flexible scheduling and run rules, keeping your AI assistant proactively working in the background.
 
@@ -16,7 +16,7 @@ Every task supports flexible scheduling and run rules, keeping your AI assistant
 
 ## Adding an automation
 
-Open the "Automations" tab on the left side of Hermes to view existing tasks, then click "+ Add" at the top right to create a new one.
+Open the "Automations" tab on the left side of Hermes Agent to view existing tasks, then click "+ Add" at the top right to create a new one.
 
 ![](../images/automation-1-global-en.webp)
 

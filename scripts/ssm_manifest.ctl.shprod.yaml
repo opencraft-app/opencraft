@@ -35,6 +35,13 @@ items:
   kubernetes_resource_kind: Secret
   output_path: argocd/secrets/shprod/ctl-runtime-secrets.sops.yaml
   secret_type: Opaque
+  # 上海 LLMGateway 灰度策略必须始终存在且可 review；令牌等凭据仍由 SOPS 加密。
+  plaintext_keys:
+  - CTL_LLMGATEWAY_BASE_URL
+  - CTL_LLMGATEWAY_DEFAULT_BASE_URL
+  - CTL_LLMGATEWAY_DEFAULT_MODEL_ID
+  - CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
+  - CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST
   labels:
     app.kubernetes.io/name: ctl
     app.kubernetes.io/managed-by: argocd

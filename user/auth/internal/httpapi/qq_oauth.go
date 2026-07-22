@@ -115,7 +115,8 @@ func (h *Handler) StartQQOAuth(ctx *gin.Context) {
 		Secure:   h.cookieSecure,
 		MaxAge:   int(h.qqOAuth.stateTTL / time.Second),
 	})
-	setOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.qqOAuth.stateTTL, h.validatedReturnToURL)
+	validatedReturnTo := h.readValidatedReturnToFromRequest(ctx.Request)
+	setOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, validatedReturnTo, h.cookieSecure, h.qqOAuth.stateTTL)
 
 	ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.authorizeURL(startState.StateParam, startState.RedirectURI))
 }
@@ -138,7 +139,7 @@ func (h *Handler) HandleQQOAuthCallback(ctx *gin.Context) {
 			return
 		}
 		if isOAuthRelayIssuerCallback(ctx.Request, relayState) {
-			target, err := relayCallbackURLWithOriginalQuery(relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
+			target, err := relayCallbackURLWithOriginalQuery("qq", relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
 			if err != nil {
 				logger.Warn("qq oauth relay callback failed", "stage", "target_query", "err", err)
 				ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_state_mismatch"))
@@ -157,10 +158,10 @@ func (h *Handler) HandleQQOAuthCallback(ctx *gin.Context) {
 		if cookie, err := ctx.Request.Cookie(qqOAuthStateCookieName); err == nil {
 			expectedState = strings.TrimSpace(cookie.Value)
 		}
-		returnTo := readOAuthReturnToCookie(ctx.Request, qqOAuthReturnToCookieName)
+		validatedSuccessTarget := h.readValidatedOAuthReturnToCookie(ctx.Request, qqOAuthReturnToCookieName)
 		h.clearQQOAuthStateCookie(ctx)
 		clearOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, h.cookieSecure)
-		h.handleQQOAuthCallbackAfterState(ctx, code, relayState.Nonce, expectedState, returnTo, exchangeRedirectURI, logger)
+		h.handleQQOAuthCallbackAfterState(ctx, code, relayState.Nonce, expectedState, validatedSuccessTarget, exchangeRedirectURI, logger)
 		return
 	}
 
@@ -168,13 +169,13 @@ func (h *Handler) HandleQQOAuthCallback(ctx *gin.Context) {
 	if cookie, err := ctx.Request.Cookie(qqOAuthStateCookieName); err == nil {
 		expectedState = strings.TrimSpace(cookie.Value)
 	}
-	returnTo := readOAuthReturnToCookie(ctx.Request, qqOAuthReturnToCookieName)
+	validatedSuccessTarget := h.readValidatedOAuthReturnToCookie(ctx.Request, qqOAuthReturnToCookieName)
 	h.clearQQOAuthStateCookie(ctx)
 	clearOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, h.cookieSecure)
-	h.handleQQOAuthCallbackAfterState(ctx, code, state, expectedState, returnTo, exchangeRedirectURI, logger)
+	h.handleQQOAuthCallbackAfterState(ctx, code, state, expectedState, validatedSuccessTarget, exchangeRedirectURI, logger)
 }
 
-func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string, state string, expectedState string, returnTo string, exchangeRedirectURI string, logger interface {
+func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string, state string, expectedState string, validatedSuccessTarget string, exchangeRedirectURI string, logger interface {
 	Warn(msg string, keysAndValues ...any)
 	Error(msg string, keysAndValues ...any)
 	Info(msg string, keysAndValues ...any)
@@ -226,8 +227,7 @@ func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string,
 	h.clearInviteTicketCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "qq", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
-	redirectURL := h.oauthSuccessRedirectURL(ctx, returnTo, h.qqOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
-	ctx.Redirect(http.StatusTemporaryRedirect, redirectURL)
+	h.redirectOAuthSuccess(ctx, validatedSuccessTarget, h.qqOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 }
 
 func (h *Handler) clearQQOAuthStateCookie(ctx *gin.Context) {
@@ -264,20 +264,7 @@ func (q *qqOAuth) frontendURL(request *http.Request, path string) string {
 }
 
 func (q *qqOAuth) successFrontendURL(request *http.Request, path string, sessionToken string) string {
-	redirectURL := q.frontendURL(request, path)
-	if strings.TrimSpace(sessionToken) == "" {
-		return redirectURL
-	}
-
-	parsed, err := url.Parse(redirectURL)
-	if err != nil {
-		return redirectURL
-	}
-
-	fragment := url.Values{}
-	fragment.Set("session_token", strings.TrimSpace(sessionToken))
-	parsed.Fragment = fragment.Encode()
-	return parsed.String()
+	return oauthSuccessFrontendURL(q.frontendBaseURLForRequest(request), path, sessionToken)
 }
 
 func (q *qqOAuth) redirectURIForRequest(request *http.Request) string {

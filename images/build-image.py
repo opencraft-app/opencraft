@@ -102,6 +102,25 @@ IMAGE_INVENTORY_DOC = os.path.join(
 AUTO_LATEST_START = "<!-- AUTO-LATEST-START -->"
 AUTO_LATEST_END = "<!-- AUTO-LATEST-END -->"
 DEFAULT_REMOTE_BUILD_DIR = "/opt/lightclaw-image"
+SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]*$")
+
+
+def validate_command_args(cmd, context, allow_empty_indices=()):
+    if not isinstance(cmd, list):
+        raise TypeError(f"{context} command must be an argv list")
+    if not cmd:
+        raise ValueError(f"{context} command must not be empty")
+    allowed_empty = frozenset(allow_empty_indices)
+    normalized = []
+    for index, arg in enumerate(cmd):
+        if not isinstance(arg, str):
+            raise TypeError(f"{context} argument must be str")
+        if not arg and index not in allowed_empty:
+            raise ValueError(f"{context} argument must not be empty")
+        if "\x00" in arg:
+            raise ValueError(f"{context} argument must not contain NUL")
+        normalized.append(arg)
+    return normalized
 
 
 def load_build_manifest():
@@ -390,12 +409,20 @@ def is_transient_tccli_failure(stdout_text, stderr_text):
 
 def run_tccli(service, action, region, extra_args=None):
     """调用 tccli 并返回解析后的 JSON。"""
+    for label, value in (("service", service), ("action", action), ("region", region)):
+        if not SAFE_IDENTIFIER_RE.fullmatch(str(value)):
+            raise ValueError(f"invalid tccli {label}: {value}")
     cmd = ["tccli", service, action, "--region", region]
     if extra_args:
         cmd.extend(extra_args)
+    cmd = validate_command_args(cmd, "tccli")
     attempt = 1
     while True:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
+            cmd,
+            capture_output=True,
+            text=True,
+        )
         if result.returncode == 0:
             break
         if (
@@ -422,11 +449,17 @@ def run_tccli(service, action, region, extra_args=None):
         return {"raw": result.stdout.strip()}
 
 
-def run_cmd(cmd, check=True, timeout=None, input_text=None):
+def run_cmd(cmd, check=True, timeout=None, input_text=None, allow_empty_indices=()):
     """运行本地命令，打印输出。"""
-    log(f"  $ {' '.join(cmd) if isinstance(cmd, list) else cmd}")
-    result = subprocess.run(
-        cmd, shell=isinstance(cmd, str),
+    cmd = validate_command_args(
+        cmd,
+        "local command",
+        allow_empty_indices=allow_empty_indices,
+    )
+    log(f"  $ {' '.join(cmd)}")
+    result = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
+        cmd,
+        shell=False,
         capture_output=False, text=True,
         timeout=timeout,
         input=input_text,
@@ -483,11 +516,12 @@ def run_ssh_command(
     cmd = build_ssh_cmd(ssh_host, ssh_port, remote_cmd, extra_opts=extra_opts)
     if identity_file:
         cmd[1:1] = ["-i", identity_file]
+    cmd = validate_command_args(cmd, "ssh command")
     attempt = 1
     max_attempts = SSH_RETRY_ATTEMPTS if retry_policy == "transport_safe" else 1
     while True:
         log(f"  $ {' '.join(cmd)}")
-        result = subprocess.run(
+        result = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
             cmd,
             capture_output=capture_output,
             text=True,
@@ -638,7 +672,12 @@ def resolve_hermes_backend_blueprint_id():
 
     cmd = [sys.executable, HERMES_BLUEPRINT_RESOLVER_SCRIPT]
     log("解析最新非南京 Hermes backend blueprint")
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    result = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
+        validate_command_args(cmd, "Hermes blueprint resolver"),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     if result.stderr.strip():
         for line in result.stderr.strip().splitlines():
             log(line)
@@ -1152,12 +1191,12 @@ def wait_for_ssh_ready(
             raise TimeoutError(f"SSH 在 {timeout}s 内未就绪")
 
         for candidate_port in candidate_ports:
-            subprocess.run(
-                ["ssh-keygen", "-R", f"[{host_part}]:{candidate_port}"],
+            subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
+                validate_command_args(["ssh-keygen", "-R", f"[{host_part}]:{candidate_port}"], "ssh-keygen"),
                 capture_output=True, timeout=5,
             )
-        subprocess.run(
-            ["ssh-keygen", "-R", host_part],
+        subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
+            validate_command_args(["ssh-keygen", "-R", host_part], "ssh-keygen"),
             capture_output=True, timeout=5,
         )
 
@@ -1329,18 +1368,21 @@ def create_temp_ssh_keypair_local(dry_run=False):
 
     key_dir = tempfile.mkdtemp(prefix="lightclaw-build-image-key-")
     private_key_path = os.path.join(key_dir, "id_rsa")
-    run_cmd([
-        "ssh-keygen",
-        "-q",
-        "-t",
-        "rsa",
-        "-b",
-        "2048",
-        "-N",
-        "",
-        "-f",
-        private_key_path,
-    ])
+    run_cmd(
+        [
+            "ssh-keygen",
+            "-q",
+            "-t",
+            "rsa",
+            "-b",
+            "2048",
+            "-N",
+            "",
+            "-f",
+            private_key_path,
+        ],
+        allow_empty_indices=(7,),
+    )
     with open(f"{private_key_path}.pub", "r", encoding="utf-8") as f:
         public_key_text = f.read().strip()
     return {

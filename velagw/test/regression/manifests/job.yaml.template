@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llmgateway-regression-config-${RUN_ID}
+  namespace: ${NAMESPACE}
+  labels:
+    llmgateway.io/regression-run: ${RUN_ID}
+data:
+  config.yaml: |
+    scenario: ${SCENARIO}
+    target:
+      namespace: ${NAMESPACE}
+      trafficDeployment: llmgateway-traffic
+      controlURL: ${CONTROL_URL}
+      trafficURL: ${TRAFFIC_URL}
+      mockURL: ${MOCK_URL}
+      pacerURL: http://llmgateway-regression-pacer:18082
+      targetSets: ${TARGET_SETS_JSON}
+      planID: ${PLAN_ID}
+      channelBundleID: ${CHANNEL_BUNDLE_ID}
+      pricingBundleID: ${PRICING_BUNDLE_ID}
+      model: ${MODEL}
+      longStreamModel: ${LONG_STREAM_MODEL}
+      marker: ${MARKER}
+    rollout:
+      sseDuration: ${SSE_DURATION}
+      pinnedStreamHeadroom: ${PINNED_STREAM_HEADROOM}
+      requestInterval: ${REQUEST_INTERVAL}
+      timeout: ${ROLLOUT_TIMEOUT}
+    campaign:
+      targetReleaseID: ${TARGET_RELEASE_ID}
+      expectedRings: ${EXPECTED_RINGS_JSON}
+      timeout: ${CAMPAIGN_TIMEOUT}
+      pollInterval: ${CAMPAIGN_POLL_INTERVAL}
+      requestInterval: ${CAMPAIGN_REQUEST_INTERVAL}
+      minSamples: ${CAMPAIGN_MIN_SAMPLES}
+    disruption:
+      targetImage: ${TARGET_IMAGE}
+      source: ${UPGRADE_SOURCE}
+      fleet: ${UPGRADE_FLEET}
+      managerCronJob: ${MANAGER_CRONJOB}
+      managerImage: ${MANAGER_IMAGE}
+      probeModel: ${UPGRADE_PROBE_MODEL}
+      timeout: ${DISRUPTION_TIMEOUT}
+      drainTimeout: ${UPGRADE_DRAIN_TIMEOUT}
+      rollbackWindow: ${UPGRADE_ROLLBACK_WINDOW}
+      pollInterval: ${DISRUPTION_POLL_INTERVAL}
+    controlPlaneOutage:
+      controlDeployment: ${OUTAGE_CONTROL_DEPLOYMENT}
+      workerDeployments: ${OUTAGE_WORKER_DEPLOYMENTS_JSON}
+      managerCronJob: ${OUTAGE_MANAGER_CRONJOB}
+      backlogJob: ${OUTAGE_BACKLOG_JOB}
+      outageDuration: ${OUTAGE_DURATION}
+      trafficInterval: ${OUTAGE_TRAFFIC_INTERVAL}
+      minimumSamples: ${OUTAGE_MIN_SAMPLES}
+      recoveryTimeout: ${OUTAGE_RECOVERY_TIMEOUT}
+    cleanup:
+      preserveOnFailure: true
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: llmgateway-regression-${RUN_ID}
+  namespace: ${NAMESPACE}
+  labels:
+    llmgateway.io/regression-run: ${RUN_ID}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: ${JOB_ACTIVE_DEADLINE_SECONDS}
+  template:
+    metadata:
+      labels:
+        llmgateway.io/regression-run: ${RUN_ID}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: ${SERVICE_ACCOUNT}
+      imagePullSecrets:
+        - name: tcr-pull-secret
+      containers:
+        - name: runner
+          image: ${LLMGATEWAY_IMAGE}
+          imagePullPolicy: IfNotPresent
+          command: [/usr/local/bin/llmgateway-regression-runner]
+          args: [--config, /etc/llmgateway-regression/config.yaml, --run-id, ${RUN_ID}]
+          env:
+            - name: LLMGATEWAY_REGRESSION_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llmgateway-control-runtime
+                  key: CLUSTER_ADMIN_TOKEN
+            - name: LLMGATEWAY_REGRESSION_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llmgateway-control-runtime
+                  key: INTERNAL_SERVICE_TOKEN
+          volumeMounts:
+            - name: config
+              mountPath: /etc/llmgateway-regression
+              readOnly: true
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+      volumes:
+        - name: config
+          configMap:
+            name: llmgateway-regression-config-${RUN_ID}

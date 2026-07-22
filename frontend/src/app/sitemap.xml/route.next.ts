@@ -1,6 +1,7 @@
 import { DOCS_ROUTE_LOCALES, DOCS_ROUTE_SLUGS, type DocsRouteLocale } from '@next-site/docs-route-manifest';
 import { DEFAULT_PUBLIC_DOCS_LOCALE } from '@next-site/public-locale';
 import {
+  absolutePageUrlForSeoRegion,
   buildDocsAlternates,
   buildPublicAlternates,
   lastModified,
@@ -9,7 +10,7 @@ import {
   SEO_ALL_DOCS_ROUTE_LOCALES,
   SEO_DOCS_ROUTE_LOCALES,
   SEO_PUBLIC_URL_LANGS,
-  siteUrl,
+  seoRegion,
 } from '@next-site/seo';
 
 export const dynamic = 'force-static';
@@ -29,12 +30,12 @@ type SitemapEntry = {
 };
 
 function sitemapUrl(entry: SitemapEntry): string {
-  const origin = siteUrl();
   const alternates = entry.alternates ?? {};
+  const modified = lastModified();
   return [
     '  <url>',
-    `    <loc>${escapeXml(`${origin}${entry.path === '/' ? '' : entry.path}`)}</loc>`,
-    `    <lastmod>${escapeXml(lastModified())}</lastmod>`,
+    `    <loc>${escapeXml(absolutePageUrlForSeoRegion(seoRegion(), entry.path))}</loc>`,
+    ...(modified ? [`    <lastmod>${escapeXml(modified)}</lastmod>`] : []),
     ...Object.entries(alternates).map(([hreflang, path]) =>
       `    <xhtml:link rel="alternate" hreflang="${escapeXml(hreflang)}" href="${escapeXml(path)}" />`,
     ),
@@ -53,10 +54,12 @@ function sameSlug(left: readonly string[], right: readonly string[]): boolean {
 }
 
 export function GET() {
+  const globalBuild = seoRegion() === 'global';
   const publicPaths = ['/', '/about', '/changelog', '/privacy-policy', '/cookie-policy', '/open-source-licenses'];
+  const localizedPublicLangs = SEO_PUBLIC_URL_LANGS.filter((lang) => !globalBuild || lang !== 'en-us');
   const publicEntries: SitemapEntry[] = [
     ...publicPaths.map((path) => ({ path, alternates: buildPublicAlternates(path) })),
-    ...SEO_PUBLIC_URL_LANGS.flatMap((lang) =>
+    ...localizedPublicLangs.flatMap((lang) =>
       publicPaths.map((path) => ({
         path: localizedPublicPath(path, lang),
         alternates: buildPublicAlternates(path),
@@ -64,17 +67,21 @@ export function GET() {
     ),
   ];
 
-  const defaultDocsEntries: SitemapEntry[] = DOCS_ROUTE_SLUGS[DEFAULT_PUBLIC_DOCS_LOCALE].map((slug) => ({
-    path: localizedDocsPath('default', slug),
-    alternates: buildDocsAlternates(slug, docsAvailableLocales(slug)),
-  }));
-  const localizedDocsEntries: SitemapEntry[] = DOCS_ROUTE_LOCALES.filter((locale) =>
-    SEO_DOCS_ROUTE_LOCALES.includes(locale),
-  ).flatMap((locale) =>
-    DOCS_ROUTE_SLUGS[locale].map((slug) => ({
-      path: localizedDocsPath(locale, slug),
+  const defaultDocsEntries: SitemapEntry[] = DOCS_ROUTE_SLUGS[DEFAULT_PUBLIC_DOCS_LOCALE]
+    .filter((slug) => !globalBuild || slug.length > 0)
+    .map((slug) => ({
+      path: localizedDocsPath('default', slug),
       alternates: buildDocsAlternates(slug, docsAvailableLocales(slug)),
-    })),
+    }));
+  const localizedDocsEntries: SitemapEntry[] = DOCS_ROUTE_LOCALES.filter((locale) =>
+    SEO_DOCS_ROUTE_LOCALES.includes(locale) && (!globalBuild || locale !== 'en-us'),
+  ).flatMap((locale) =>
+    DOCS_ROUTE_SLUGS[locale]
+      .filter((slug) => !globalBuild || slug.length > 0)
+      .map((slug) => ({
+        path: localizedDocsPath(locale, slug),
+        alternates: buildDocsAlternates(slug, docsAvailableLocales(slug)),
+      })),
   );
 
   const urls = [...publicEntries, ...defaultDocsEntries, ...localizedDocsEntries];

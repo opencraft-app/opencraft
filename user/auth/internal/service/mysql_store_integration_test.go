@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -9,6 +10,166 @@ import (
 
 	internalmigrations "github.com/openclaw/openclaw/mono/backend/auth/internal/migrations"
 )
+
+func TestMySQLStorePersistsWrongSMSAttempts(t *testing.T) {
+	dsn := os.Getenv("LIGHTCLAW_AUTH_TEST_DSN")
+	if dsn == "" {
+		t.Skip("LIGHTCLAW_AUTH_TEST_DSN is not set")
+	}
+	if err := internalmigrations.Run(dsn); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	store, err := NewMySQLStore(dsn, StoreOptions{Now: fixedNow})
+	if err != nil {
+		t.Fatalf("open mysql store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.db.Close() })
+
+	now := fixedNow().Add(time.Duration(time.Now().UnixNano()%1_000_000) * time.Nanosecond)
+	phone := fmt.Sprintf("137%08d", time.Now().UnixNano()%100000000)
+	if _, err := store.SendVerificationCode(context.Background(), phone, "654321", now, 5*time.Minute, time.Minute, 2); err != nil {
+		t.Fatalf("send verification code: %v", err)
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		_, err := store.CompleteSMSVerification(context.Background(), VerifySMSInput{Phone: phone, Code: "wrong"}, now, time.Hour)
+		var authErr *Error
+		if !errors.As(err, &authErr) || authErr.Code != "invalid_sms_code" {
+			t.Fatalf("attempt %d: expected invalid_sms_code, got %#v", attempt, err)
+		}
+	}
+	var count int
+	if err := store.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM sms_challenges WHERE phone = ?`, phone).Scan(&count); err != nil {
+		t.Fatalf("count sms challenge: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected exhausted challenge to be deleted, count=%d", count)
+	}
+}
+
+func TestMySQLVerificationRateLimitResetsAtWindowBoundary(t *testing.T) {
+	dsn := os.Getenv("LIGHTCLAW_AUTH_TEST_DSN")
+	if dsn == "" {
+		t.Skip("LIGHTCLAW_AUTH_TEST_DSN is not set")
+	}
+	if err := internalmigrations.Run(dsn); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	store, err := NewMySQLStore(dsn, StoreOptions{Now: fixedNow})
+	if err != nil {
+		t.Fatalf("open mysql store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.db.Close() })
+
+	now := fixedNow().Truncate(time.Minute).Add(10 * time.Second)
+	key := VerificationRateLimitKey{
+		Scope:       "sms:verify:ip",
+		SubjectHash: fmt.Sprintf("%064x", time.Now().UnixNano()),
+	}
+	for want := 1; want <= 3; want++ {
+		attempts, retryAfter, err := store.IncrementVerificationRateLimit(context.Background(), key, now, time.Minute)
+		if err != nil {
+			t.Fatalf("increment rate limit %d: %v", want, err)
+		}
+		if attempts != want || retryAfter != 50*time.Second {
+			t.Fatalf("increment %d: attempts=%d retry_after=%s", want, attempts, retryAfter)
+		}
+	}
+
+	attempts, retryAfter, err := store.IncrementVerificationRateLimit(context.Background(), key, now.Add(time.Minute), time.Minute)
+	if err != nil {
+		t.Fatalf("increment next rate-limit window: %v", err)
+	}
+	if attempts != 1 || retryAfter != 50*time.Second {
+		t.Fatalf("next window: attempts=%d retry_after=%s", attempts, retryAfter)
+	}
+}
+
+func TestMySQLExternalSMSReservationIsSingleFlightAndGenerationBound(t *testing.T) {
+	dsn := os.Getenv("LIGHTCLAW_AUTH_TEST_DSN")
+	if dsn == "" {
+		t.Skip("LIGHTCLAW_AUTH_TEST_DSN is not set")
+	}
+	if err := internalmigrations.Run(dsn); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	store, err := NewMySQLStore(dsn, StoreOptions{Now: fixedNow})
+	if err != nil {
+		t.Fatalf("open mysql store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.db.Close() })
+
+	now := fixedNow().Add(time.Duration(time.Now().UnixNano()%1_000_000) * time.Nanosecond)
+	phone := fmt.Sprintf("136%08d", time.Now().UnixNano()%100000000)
+	if _, err := store.SendVerificationCode(context.Background(), phone, "111111", now, 5*time.Minute, time.Minute, 5); err != nil {
+		t.Fatalf("send first challenge: %v", err)
+	}
+	first, err := store.ReserveExternalSMSChallenge(context.Background(), phone, "reservation-1", now)
+	if err != nil {
+		t.Fatalf("reserve first challenge: %v", err)
+	}
+	if _, err := store.ReserveExternalSMSChallenge(context.Background(), phone, "reservation-2", now); err == nil {
+		t.Fatal("parallel reservation must be rejected")
+	}
+
+	secondNow := now.Add(time.Minute)
+	if _, err := store.SendVerificationCode(context.Background(), phone, "222222", secondNow, 5*time.Minute, time.Minute, 5); err != nil {
+		t.Fatalf("send replacement challenge: %v", err)
+	}
+	if err := store.ConsumeExternalSMSChallenge(context.Background(), first); err != nil {
+		t.Fatalf("consume stale reservation: %v", err)
+	}
+	second, err := store.ReserveExternalSMSChallenge(context.Background(), phone, "reservation-3", secondNow)
+	if err != nil {
+		t.Fatalf("stale reservation must not delete replacement challenge: %v", err)
+	}
+	if second.Generation == first.Generation {
+		t.Fatalf("replacement challenge must advance generation: first=%d second=%d", first.Generation, second.Generation)
+	}
+}
+
+func TestMySQLExternalPhoneAuthReservationIsSingleFlightAndGenerationBound(t *testing.T) {
+	dsn := os.Getenv("LIGHTCLAW_AUTH_TEST_DSN")
+	if dsn == "" {
+		t.Skip("LIGHTCLAW_AUTH_TEST_DSN is not set")
+	}
+	if err := internalmigrations.Run(dsn); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	store, err := NewMySQLStore(dsn, StoreOptions{Now: fixedNow})
+	if err != nil {
+		t.Fatalf("open mysql store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.db.Close() })
+
+	now := fixedNow().Add(time.Duration(time.Now().UnixNano()%1_000_000) * time.Nanosecond)
+	phone := fmt.Sprintf("135%08d", time.Now().UnixNano()%100000000)
+	challenge := PhoneAuthChallenge{Phone: phone, Flow: PhoneAuthFlowNewUserShadow}
+	if _, err := store.SendPhoneAuthChallenge(context.Background(), challenge, now, 5*time.Minute, time.Minute, 5); err != nil {
+		t.Fatalf("send first phone auth challenge: %v", err)
+	}
+	first, err := store.ReserveExternalPhoneAuthChallenge(context.Background(), phone, "reservation-1", now)
+	if err != nil {
+		t.Fatalf("reserve first phone auth challenge: %v", err)
+	}
+	if _, err := store.ReserveExternalPhoneAuthChallenge(context.Background(), phone, "reservation-2", now); err == nil {
+		t.Fatal("parallel phone auth reservation must be rejected")
+	}
+
+	secondNow := now.Add(time.Minute)
+	if _, err := store.SendPhoneAuthChallenge(context.Background(), challenge, secondNow, 5*time.Minute, time.Minute, 5); err != nil {
+		t.Fatalf("send replacement phone auth challenge: %v", err)
+	}
+	if err := store.ConsumeExternalPhoneAuthChallenge(context.Background(), first); err != nil {
+		t.Fatalf("consume stale phone auth reservation: %v", err)
+	}
+	second, err := store.ReserveExternalPhoneAuthChallenge(context.Background(), phone, "reservation-3", secondNow)
+	if err != nil {
+		t.Fatalf("stale reservation must not delete replacement phone auth challenge: %v", err)
+	}
+	if second.Generation == first.Generation {
+		t.Fatalf("replacement phone auth challenge must advance generation: first=%d second=%d", first.Generation, second.Generation)
+	}
+}
 
 func TestMySQLStorePersistsImpersonationSessionMetadata(t *testing.T) {
 	dsn := os.Getenv("LIGHTCLAW_AUTH_TEST_DSN")

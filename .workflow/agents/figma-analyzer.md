@@ -1,3 +1,7 @@
+---
+model: glm-5.2-ioa
+---
+
 # Figma Analyzer Agent — Figma 结构分析（Sub-agent）
 
 > 定位：临时派发的 sub-agent，用于在 `/feai-start` 规划阶段一次性完成 Figma 结构分析

@@ -4,6 +4,8 @@ allowed_origins:
   - https://api.lightvela.ai
   - https://lightvela.com
   - https://www.lightvela.com
+trusted_proxy_cidrs:
+  - 100.64.0.0/10
 worker_actions:
   enabled: true
   temporal:
@@ -43,9 +45,25 @@ routes:
     access: public
   - name: ctl
     prefix: /v1/instances
-    methods: [GET, POST, PUT, DELETE, OPTIONS]
+    methods: [GET, POST, DELETE, OPTIONS]
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: authenticated
+    path_policy: allowlist
+    path_allow:
+      - { method: GET, path: "/v1/instances" }
+      - { method: POST, path: "/v1/instances" }
+      - { method: GET, path: "/v1/instances/{instance_id}" }
+      - { method: DELETE, path: "/v1/instances/{instance_id}" }
+      - { method: GET, path: "/v1/instances/{instance_id}/borncard" }
+      - { method: POST, path: "/v1/instances/{instance_id}/debug/exec" }
+      - { method: POST, path: "/v1/instances/{instance_id}/tat/session" }
+      - { method: POST, path: "/v1/instances/{instance_id}/config/reset" }
+      - { method: POST, path: "/v1/instances/{instance_id}/agentchat/launch-token" }
+      - { method: POST, path: "/v1/instances/{instance_id}/channels/config" }
+      - { method: POST, path: "/v1/instances/{instance_id}/channels/weixin/login-sessions" }
+      - { method: GET, path: "/v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}" }
+      - { method: GET, path: "/v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}/events" }
+      - { method: POST, path: "/v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}/cancel" }
     require_realname: true
     response_header_timeout: 60s
   - name: sandbox-legacy

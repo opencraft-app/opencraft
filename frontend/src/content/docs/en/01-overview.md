@@ -16,7 +16,7 @@ Your Agent stays online 24/7, runs independently, and is always ready to chat. Y
 
 We lower the configuration barrier through a visual console: no config files, no server login, just select options on the web page to complete setup.
 
-The current LightVela product is **Hermes**, an AI Agent powered by large language models. More ready-to-use products may be added in the future. This documentation focuses on Hermes.
+The current LightVela product is **Hermes Agent**, an AI Agent powered by large language models. More ready-to-use products may be added in the future. This documentation focuses on Hermes Agent.
 
 ![1.00](./images/1-1.webp)
 
@@ -46,13 +46,13 @@ The current LightVela product is **Hermes**, an AI Agent powered by large langua
 
 * **Fully managed deployment**: The cloud automatically handles environment setup and runtime management. No server operations, container images, or infrastructure knowledge required
 
-* **Isolated runtime environment**: Each Hermes instance has its own runtime environment, resource isolation, 24/7 availability, and no dependency on local devices
+* **Isolated runtime environment**: Each Hermes Agent instance has its own runtime environment, resource isolation, 24/7 availability, and no dependency on local devices
 
 * **Multi-model support**: Connect to mainstream Chinese large language models, provider Coding Plan subscriptions, or any OpenAI-compatible endpoint. See [Configure Models](./configuration/model.md)
 
-* **Multi-channel access**: Chat with Hermes through WeChat, Telegram, WhatsApp, and Discord
+* **Multi-channel access**: Chat with Hermes Agent through WeChat, Telegram, WhatsApp, and Discord
 
-* **Skill extensions**: Install skill packages from [SkillHub](https://skillhub.tencent.com) to extend Hermes capabilities
+* **Skill extensions**: Install skill packages from [SkillHub](https://skillhub.tencent.com) to extend Hermes Agent capabilities
 
 * **Ready to use**: The Launch plan includes trial credits, so you can start chatting after activation without configuring a model separately
 
@@ -62,12 +62,12 @@ The current LightVela product is **Hermes**, an AI Agent powered by large langua
 
 ## How it works
 
-LightVela runs a dedicated Hermes instance for each user in the cloud, then connects it to the messaging platform selected by the user through an adapter layer.
+LightVela runs a dedicated Hermes Agent instance for each user in the cloud, then connects it to the messaging platform selected by the user through an adapter layer.
 
 ```
 User (sends a message in WeChat / Telegram / WhatsApp / Discord)
       ↓
-User-dedicated Hermes instance in the LightVela cloud
+User-dedicated Hermes Agent instance in the LightVela cloud
       ↓
 Calls the configured large language model (GPT / Claude / Gemin / ...)
       ↓
@@ -76,11 +76,11 @@ Response returns through the original channel
 
 A complete conversation loop requires three configurations:
 
-1. **Model**: The large language model called by Hermes. The Launch plan includes trial credits and can be used directly; you can also configure your own API Key
+1. **Model**: The large language model called by Hermes Agent. The Launch plan includes trial credits and can be used directly; you can also configure your own API Key
 
-2. **Channel**: The messaging platform used to chat with Hermes (WeChat / Telegram / WhatsApp / Discord)
+2. **Channel**: The messaging platform used to chat with Hermes Agent (WeChat / Telegram / WhatsApp / Discord)
 
-3. **Skill** (optional): Additional capabilities for Hermes
+3. **Skill** (optional): Additional capabilities for Hermes Agent
 
 ![1.00](./images/1-2.webp)
 
@@ -88,7 +88,7 @@ A complete conversation loop requires three configurations:
 
 ## About plans
 
-LightVela uses plan-based billing. Activating a plan gives you one available Hermes instance and the resources and credits included in that plan.
+LightVela uses plan-based billing. Activating a plan gives you one available Hermes Agent instance and the resources and credits included in that plan.
 
 Currently available plans:
 
@@ -98,7 +98,7 @@ Currently available plans:
 | Cruise | $15 / month | Coming soon |
 | Voyage | $42 / month | Coming soon |
 
-The Launch plan includes: 1 Hermes instance, 2-core 4G isolated runtime environment, 50G dedicated cloud storage, 100 trial credits, 24/7 availability, and console access.
+The Launch plan includes: 1 Hermes Agent instance, 2-core 4G isolated runtime environment, 50G dedicated cloud storage, 100 trial credits, 24/7 availability, and console access.
 
 > ℹ️ **Beta plan notice**
 >
@@ -118,6 +118,6 @@ If you are new to cloud Agents, you can skip this section.
 
 * **[Quickstart](./02-quickstart.md)** — Complete your first conversation in 5 minutes
 
-* **[Core Concepts](./04-core-concepts.md)** — Understand the four core concepts: Hermes, models, channels, and skills
+* **[Core Concepts](./04-core-concepts.md)** — Understand the four core concepts: Hermes Agent, models, channels, and skills
 
 * **[Configuration Overview](./05-configuration.md)** — Console features and configuration flow

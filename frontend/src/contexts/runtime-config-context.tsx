@@ -28,13 +28,10 @@ interface RuntimeConfigState {
 
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   features: {
-    paidBillingEnabled: false,
-    realnamePhoneVerificationEnabled: false,
+    paidBillingEnabled: true,
+    realnamePhoneVerificationEnabled: true,
   },
 };
-
-const PAID_BILLING_OVERRIDE_STORAGE_KEY = "lightclaw:features.paidBillingEnabled";
-const REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY = "lightclaw:features.realnamePhoneVerificationEnabled";
 
 const RuntimeConfigContext = createContext<RuntimeConfigState>({
   config: DEFAULT_RUNTIME_CONFIG,
@@ -61,34 +58,6 @@ const normalizeRuntimeConfig = (payload: unknown): RuntimeConfig => {
   };
 };
 
-const readBooleanOverride = (storageKey: string): boolean | null => {
-  if (typeof window === "undefined") return null;
-  try {
-    const value = window.localStorage.getItem(storageKey)?.trim().toLowerCase();
-    if (!value) return null;
-    if (value === "true" || value === "1" || value === "on") return true;
-    if (value === "false" || value === "0" || value === "off") return false;
-    return null;
-  } catch {
-    return null;
-  }
-};
-
-const applyRuntimeOverrides = (config: RuntimeConfig): RuntimeConfig => {
-  const paidBillingOverride = readBooleanOverride(PAID_BILLING_OVERRIDE_STORAGE_KEY);
-  const realnamePhoneVerificationOverride = readBooleanOverride(REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY);
-  if (paidBillingOverride == null && realnamePhoneVerificationOverride == null) return config;
-  return {
-    ...config,
-    features: {
-      ...config.features,
-      paidBillingEnabled: paidBillingOverride ?? config.features.paidBillingEnabled,
-      realnamePhoneVerificationEnabled:
-        realnamePhoneVerificationOverride ?? config.features.realnamePhoneVerificationEnabled,
-    },
-  };
-};
-
 const shouldSkipRemoteRuntimeConfig = (): boolean => {
   if (typeof window === "undefined") return false;
   return isLightVelaEdgeOnePreviewHostname(window.location.hostname);
@@ -96,7 +65,7 @@ const shouldSkipRemoteRuntimeConfig = (): boolean => {
 
 const fetchRuntimeConfig = async (): Promise<RuntimeConfig> => {
   if (shouldSkipRemoteRuntimeConfig()) {
-    return applyRuntimeOverrides(DEFAULT_RUNTIME_CONFIG);
+    return DEFAULT_RUNTIME_CONFIG;
   }
   const baseUrl = resolveConfiguredAuthApiBaseUrl();
   const response = await fetch(`${baseUrl}/v1/frontend/runtime-config`, {
@@ -108,7 +77,7 @@ const fetchRuntimeConfig = async (): Promise<RuntimeConfig> => {
   if (!response.ok) {
     throw new Error(`runtime config request failed: ${response.status}`);
   }
-  return applyRuntimeOverrides(normalizeRuntimeConfig(await response.json()));
+  return normalizeRuntimeConfig(await response.json());
 };
 
 export const RuntimeConfigProvider = ({ children }: PropsWithChildren) => {
@@ -122,7 +91,7 @@ export const RuntimeConfigProvider = ({ children }: PropsWithChildren) => {
     try {
       setConfig(await fetchRuntimeConfig());
     } catch (err) {
-      setConfig(applyRuntimeOverrides(DEFAULT_RUNTIME_CONFIG));
+      setConfig(DEFAULT_RUNTIME_CONFIG);
       setError(err instanceof Error ? err.message : "runtime config request failed");
     } finally {
       setLoading(false);
@@ -161,9 +130,6 @@ export const useRealnamePhoneVerificationEnabled = (): boolean => {
 
 export const __runtimeConfigTestHooks = {
   DEFAULT_RUNTIME_CONFIG,
-  PAID_BILLING_OVERRIDE_STORAGE_KEY,
-  REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY,
-  applyRuntimeOverrides,
   normalizeRuntimeConfig,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,
