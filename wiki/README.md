@@ -13,10 +13,11 @@
 处理产品策略、规划或知识整理任务时，建议按以下顺序读取：
 
 1. `product-state/current-focus.md`
-2. `product-state/roadmap.md`
-3. `product-state/risks.md`
-4. `knowledge/README.md`
-5. 需要验证时再回到 `sources/` 中的原始材料。
+2. `product-state/environment.md`
+3. `product-state/roadmap.md`
+4. `product-state/risks.md`
+5. `knowledge/README.md`
+6. 需要验证时再回到 `sources/` 中的原始材料。
 
 ## 维护原则
 
