@@ -10,6 +10,8 @@ bundles:
     - vibebase/k8s/overlays/shprod
     - vibebase/k8s/overlays/sgprod
     - vibebase/Dockerfile
+    promotion_gitops_services:
+    - vibebase
     exit_condition: Can be removed only after Vibebase is folded into a different durable state service.
     publish_paths:
     - argocd/services/vibebase/{env}/**
@@ -23,14 +25,10 @@ bundles:
       - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
       - argocd/services/vibebase/beijing-sandbox/**
       - argocd/services/vibebase/common/**
-      - argocd/services/service-gateway/beijing-sandbox/config.yaml
-      - argocd/services/service-gateway/beijing-sandbox/kustomization.yaml
-      - argocd/services/service-gateway/beijing-sandbox/service-gateway-platform.env
       - argocd/catalogs/sandbox/beijing-sandbox/vibebase.yaml
       - argocd/secrets/beijing-sandbox/vibebase-runtime-secrets.sops.yaml
       - vibebase/k8s/base/**
       - vibebase/k8s/overlays/beijing-sandbox/**
-      - service-gateway/k8s/base/**
       shprod:
       - argocd/apps/shprod/vibebase.yaml
       - argocd/projects/shprod-vibebase.yaml

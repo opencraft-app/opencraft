@@ -13,7 +13,7 @@ RUNTIME_DIR = REPO_ROOT / ".ci" / "runtime"
 COMMAND_DIR = RUNTIME_DIR / "commands"
 sys.path.insert(0, str(RUNTIME_DIR))
 
-from contracts.bundles import load_bundle  # noqa: E402
+from contracts.bundles import load_bundle, load_manifest  # noqa: E402
 from tests.helpers import git, git_output  # noqa: E402
 
 
@@ -23,6 +23,42 @@ def run_command(command: list[str], **kwargs: object):
 
 
 class ResolveReleaseBundleTests(unittest.TestCase):
+    def test_bundle_rejects_publish_paths_for_unowned_gitops_services(self) -> None:
+        manifest = {
+            "bundles": {
+                "demo": {
+                    "owner": "demo",
+                    "source": "demo",
+                    "reason": "Demo bundle",
+                    "allowed_paths": ["demo/k8s/base"],
+                    "exit_condition": "never",
+                    "promotion_gitops_services": ["demo"],
+                    "publish_paths_by_env": {
+                        "beijing-sandbox": [
+                            "argocd/services/demo/beijing-sandbox/**",
+                            "argocd/services/other/beijing-sandbox/**",
+                        ]
+                    },
+                }
+            }
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "bundle demo publish path targets unowned GitOps service other",
+        ):
+            load_bundle(manifest, "demo", "beijing-sandbox")
+
+    def test_vibebase_beijing_promotion_only_owns_vibebase_gitops_service(self) -> None:
+        bundle = load_bundle(
+            load_manifest(),
+            "vibebase",
+            "beijing-sandbox",
+        )
+
+        self.assertEqual(bundle.promotion_gitops_services, ["vibebase"])
+        self.assertFalse(any("service-gateway" in path for path in bundle.publish_paths))
+
     def test_resolve_release_bundle_exposes_publish_paths(self) -> None:
         result = run_command(
             [

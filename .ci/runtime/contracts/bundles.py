@@ -44,6 +44,7 @@ class ReleaseBundle:
     build_context: str | None
     image_repo: str | None
     publish_paths: list[str]
+    promotion_gitops_services: list[str]
     image_targets: list[ImageTarget]
     config_contract: dict[str, Any]
     db_contract: dict[str, Any]
@@ -67,6 +68,18 @@ def load_bundle(manifest: dict[str, Any], service: str, env: str) -> ReleaseBund
     if not bundle:
         raise KeyError(f"unknown release bundle: {service}")
 
+    publish_paths = _resolve_publish_paths(bundle, env)
+    promotion_gitops_services = [
+        str(item).strip()
+        for item in (bundle.get("promotion_gitops_services") or [])
+        if str(item).strip()
+    ]
+    _validate_promotion_gitops_services(
+        service,
+        publish_paths,
+        promotion_gitops_services,
+    )
+
     return ReleaseBundle(
         service=service,
         env=env,
@@ -78,11 +91,33 @@ def load_bundle(manifest: dict[str, Any], service: str, env: str) -> ReleaseBund
         dockerfile=_optional_str(bundle.get("dockerfile")),
         build_context=_optional_str(bundle.get("build_context")),
         image_repo=_optional_str(_resolve_env_mapping_value(bundle.get("image_repo") or {}, env)),
-        publish_paths=_resolve_publish_paths(bundle, env),
+        publish_paths=publish_paths,
+        promotion_gitops_services=promotion_gitops_services,
         image_targets=_resolve_image_targets(bundle, env),
         config_contract=_resolve_config_contract(bundle),
         db_contract=_resolve_db_contract(bundle),
     )
+
+
+def _validate_promotion_gitops_services(
+    bundle_service: str,
+    publish_paths: list[str],
+    promotion_gitops_services: list[str],
+) -> None:
+    if not promotion_gitops_services:
+        return
+
+    allowed = set(promotion_gitops_services)
+    prefix = "argocd/services/"
+    for path in publish_paths:
+        if not path.startswith(prefix):
+            continue
+        gitops_service = path[len(prefix):].split("/", 1)[0]
+        if gitops_service not in allowed:
+            raise ValueError(
+                f"bundle {bundle_service} publish path targets unowned GitOps service "
+                f"{gitops_service}: {path}"
+            )
 
 
 def require_build_metadata(bundle: ReleaseBundle) -> ReleaseBundle:
