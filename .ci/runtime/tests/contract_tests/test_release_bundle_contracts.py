@@ -286,6 +286,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         workflow = yaml.safe_load((REPO_ROOT / ".ci/velagw.yml").read_text())
         parameters = (workflow.get("extends") or {}).get("parameters") or {}
         app = yaml.safe_load((REPO_ROOT / "argocd/apps/beijing-llmgateway/velagw.yaml").read_text())
+        project = yaml.safe_load((REPO_ROOT / "argocd/projects/beijing-llmgateway.yaml").read_text())
         cluster = yaml.safe_load((REPO_ROOT / "argocd/clusters/beijing-llmgateway.yaml").read_text())
         service_root = REPO_ROOT / "argocd/services/velagw/beijing-llmgateway"
         kustomization = yaml.safe_load((service_root / "kustomization.yaml").read_text())
@@ -327,7 +328,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(app["spec"]["destination"]["name"], "beijing-llmgateway")
         self.assertEqual(app["spec"]["source"]["path"], "argocd/services/velagw/beijing-llmgateway")
         self.assertEqual(cluster["spec"]["namespaces"], ["llmgateway"])
-        self.assertFalse(cluster["spec"]["clusterResources"])
+        self.assertTrue(cluster["spec"]["clusterResources"])
         self.assertIn("argocd/services/velagw/beijing-llmgateway/**", bundle.publish_paths)
         self.assertNotIn("kind: Secret", workloads)
         self.assertNotIn("kind: LLMFleet", workloads)
@@ -336,7 +337,27 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(core_worker_env.get("LLMGATEWAY_SET_AUTOSCALER_WRITER_EPOCH"), "2")
         self.assertEqual(
             kustomization.get("resources"),
-            ["workloads.yaml", "velagwset-controller.yaml", "velagwset-provisioner.yaml"],
+            [
+                "workloads.yaml",
+                "llmfleet-rgd.yaml",
+                "velagwset-crd.yaml",
+                "velagwset-delete-policy.yaml",
+                "velagwset-controller.yaml",
+                "velagwset-provisioner.yaml",
+            ],
+        )
+        cluster_resource_whitelist = {
+            (entry.get("group"), entry.get("kind"))
+            for entry in project["spec"].get("clusterResourceWhitelist", [])
+        }
+        self.assertTrue(
+            {
+                ("kro.run", "ResourceGraphDefinition"),
+                ("apiextensions.k8s.io", "CustomResourceDefinition"),
+                ("admissionregistration.k8s.io", "ValidatingAdmissionPolicy"),
+                ("admissionregistration.k8s.io", "ValidatingAdmissionPolicyBinding"),
+            }
+            <= cluster_resource_whitelist
         )
         image_replacement_targets = {
             (target.get("select") or {}).get("name")
@@ -350,9 +371,28 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "VELAGW_PROVISIONER_IMAGE=",
             (service_root / "velagw-platform.env").read_text(),
         )
-        for resource in ("velagwset-controller.yaml", "velagwset-provisioner.yaml"):
+        for resource in (
+            "llmfleet-rgd.yaml",
+            "velagwset-crd.yaml",
+            "velagwset-delete-policy.yaml",
+            "velagwset-controller.yaml",
+            "velagwset-provisioner.yaml",
+        ):
             with self.subTest(resource=resource):
                 self.assertTrue((service_root / resource).is_file())
+
+        for resource in ("llmfleet-rgd.yaml", "velagwset-crd.yaml", "velagwset-delete-policy.yaml"):
+            with self.subTest(resource=resource):
+                self.assertEqual(
+                    (service_root / resource).read_text(),
+                    (REPO_ROOT / "argocd/services/velagw/shprod" / resource).read_text(),
+                )
+                for document in yaml.safe_load_all((service_root / resource).read_text()):
+                    annotations = ((document or {}).get("metadata") or {}).get("annotations") or {}
+                    self.assertIn(
+                        "Prune=false",
+                        annotations.get("argocd.argoproj.io/sync-options", ""),
+                    )
 
     def test_velagw_image_build_runs_backend_and_console_tests(self) -> None:
         dockerfile = (REPO_ROOT / "velagw/Dockerfile").read_text()

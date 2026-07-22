@@ -2,6 +2,8 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: velagwset-delete-protection
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -26,6 +28,8 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: velagwset-delete-protection
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   policyName: velagwset-delete-protection
   validationActions: [Deny]
