@@ -237,7 +237,7 @@ function DropdownSwitcher({
                 >
                   <span>
                     {isGlobal
-                      ? opt.label
+                      ? opt.value.startsWith("zh") ? "International Site - 中文" : "International Site - English"
                       : opt.value.startsWith("zh") ? "国际站 - 中文" : "国际站 - English"}
                   </span>
                   {selected && <Check className="h-[14px] w-[14px]" />}

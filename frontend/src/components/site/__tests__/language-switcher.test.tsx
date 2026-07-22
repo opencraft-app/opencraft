@@ -18,7 +18,7 @@ describe("LanguageSwitcher", () => {
     const options = screen.getAllByRole("option");
     expect(options.map((option) => option.textContent)).toEqual(
       isGlobal
-        ? ["Intl - English", "Intl - 中文", "China Site"]
+        ? ["International Site - English", "International Site - 中文", "China Site"]
         : ["中国站", "国际站 - 中文", "国际站 - English"],
     );
     expect(options[0]).toHaveAttribute("aria-selected", "true");
