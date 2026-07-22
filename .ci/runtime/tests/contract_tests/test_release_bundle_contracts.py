@@ -354,6 +354,27 @@ class ReleaseBundleContractTests(unittest.TestCase):
             with self.subTest(resource=resource):
                 self.assertTrue((service_root / resource).is_file())
 
+    def test_velagw_image_build_runs_backend_and_console_tests(self) -> None:
+        dockerfile = (REPO_ROOT / "velagw/Dockerfile").read_text()
+        dockerignore = (REPO_ROOT / "velagw/.dockerignore").read_text().splitlines()
+
+        self.assertIn("RUN apk add --no-cache bash curl git jq", dockerfile)
+        self.assertIn("COPY .gitignore ./.gitignore", dockerfile)
+        self.assertNotIn(".gitignore", dockerignore)
+        for package_root in ("cmd", "internal", "deploy", "docs", "k8s", "openspec", "test"):
+            with self.subTest(package_root=package_root):
+                self.assertIn(f"COPY {package_root} ./{package_root}", dockerfile)
+
+        go_test = dockerfile.index("RUN git init --quiet && go test ./...")
+        go_build = dockerfile.index("RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build")
+        console_install = dockerfile.index("RUN corepack enable && pnpm install --frozen-lockfile")
+        console_test = dockerfile.index("RUN pnpm test")
+        console_build = dockerfile.index("RUN pnpm run build")
+
+        self.assertLess(go_test, go_build)
+        self.assertLess(console_install, console_test)
+        self.assertLess(console_test, console_build)
+
     def test_velagw_release_bundle_targets_shanghai_production_cluster(self) -> None:
         manifest = load_manifest()
 
