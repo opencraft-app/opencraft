@@ -10,9 +10,11 @@ Default article length: 900-1,500 words unless the user gives a target length.
 
 ## Output Channel
 
-Choose one output channel before writing. Language and form (text vs Markdown) default from the channel per the table in `SKILL.md` (语言与形式默认值); honour any explicit language/form the user gave and never ask about them separately.
+Choose one output channel and one publishing platform before writing. The platform determines the `from` attribution parameter for every `lightvela.ai` link; language and form (text vs Markdown) default from the channel per the table in `SKILL.md` (语言与形式默认值). Honour any explicit language/form the user gave and never ask about them separately. Generic “social media” or “blog” is not a platform; ask whether the target is X, Medium, LinkedIn, Product Hunt, or Techpedia.
 
-- `social-media`: produce the article in chat unless the user asks to save it. Default language is English unless the user asks for Chinese or bilingual output. Default form is in-chat text, **not** `.md` (covers X / blog / 公众号 long posts).
+For examples below, replace `<distribution_from>` with the exact mapped value from `SKILL.md` before producing an article. Never emit the placeholder in final content.
+
+- `social-media`: use only when the user names X, Medium, LinkedIn, or Product Hunt; produce the article in chat unless the user asks to save it. Default language is English unless the user asks for Chinese or bilingual output. Default form is in-chat text, **not** `.md`.
 - `techpedia`: for Tencent Techpedia、腾讯技术百科、开发者社区、开发者文章, produce Markdown files, not chat-only output. Always create both a Chinese version and an English version (`.zh.md` + `.en.md`) — this is a fixed, bundled default.
 
 If the user does not specify the channel (or mode/topic), run the consolidated intake in `SKILL.md`; do not ask about language or form in a separate round.
@@ -36,7 +38,7 @@ Closing paragraphs...
 
 ## Join LightVela's Community for More Updates!
 
-**Visit us at [LightVela](https://lightvela.ai)**
+**Visit us at [LightVela](https://lightvela.ai/?from=<distribution_from>)**
 
 **Discord** — scan the QR code to join our Discord community and connect with builders for the latest updates.
 
@@ -79,7 +81,7 @@ English ending:
 ```markdown
 ## Join LightVela's Community for More Updates!
 
-**Visit us at [LightVela](https://lightvela.ai)**
+**Visit us at [LightVela](https://lightvela.ai/?from=<distribution_from>)**
 
 **Discord** — scan the QR code to join our Discord community and connect with builders for the latest updates.
 
@@ -95,7 +97,7 @@ Chinese ending（中文文章用这个）:
 ```markdown
 ## 加入 LightVela 社区，获取更多动态！
 
-**访问 [LightVela](https://lightvela.ai)**
+**访问 [LightVela](https://lightvela.ai/?from=<distribution_from>)**
 
 **Discord** —— 扫码加入我们的 Discord 社区，与开发者交流、获取最新动态。
 
@@ -178,7 +180,7 @@ Short closing that restates the completed outcome.
 
 ## Join LightVela's Community for More Updates!
 
-**Visit us at [LightVela](https://lightvela.ai)**
+**Visit us at [LightVela](https://lightvela.ai/?from=<distribution_from>)**
 
 **Discord** — scan the QR code to join our Discord community and connect with builders for the latest updates.
 
@@ -231,7 +233,7 @@ Close with the product direction and what this first version unlocks.
 
 ## Join LightVela's Community for More Updates!
 
-**Visit us at [LightVela](https://lightvela.ai)**
+**Visit us at [LightVela](https://lightvela.ai/?from=<distribution_from>)**
 
 **Discord** — scan the QR code to join our Discord community and connect with builders for the latest updates.
 
@@ -285,7 +287,7 @@ End emotionally but practically: what became easier, what stayed online, what fe
 
 ## Join LightVela's Community for More Updates!
 
-**Visit us at [LightVela](https://lightvela.ai)**
+**Visit us at [LightVela](https://lightvela.ai/?from=<distribution_from>)**
 
 **Discord** — scan the QR code to join our Discord community and connect with builders for the latest updates.
 
