@@ -142,6 +142,7 @@ export const LandingPageView = ({
           position="absolute"
           renderLink={renderLink}
           renderLanguageSwitcher={renderLanguageSwitcher}
+          showLanguageSwitcher
         />
         <HeroSection onCreateClick={() => handleCreateClick('hero')} ctaLabel={ctaLabel} />
       </div>
