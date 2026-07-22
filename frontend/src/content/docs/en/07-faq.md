@@ -12,7 +12,7 @@ LightVela mainly serves international users. Google / GitHub one-click login has
 
 ### Can the same user log in once with Google and once with GitHub?
 
-Yes, but they will be two independent accounts. Hermes, conversation memory, and plan status are not shared. We recommend using one login method consistently.
+Yes, but they will be two independent accounts. Hermes Agent, conversation memory, and plan status are not shared. We recommend using one login method consistently.
 
 ### How to log out
 
@@ -28,7 +28,7 @@ For plan contents and quota, see [What is LightVela - About plans](./01-overview
 
 ### What do "100 trial credits" mean?
 
-They are the model calling quota included in the Launch plan. You can use Hermes without preparing your own API Key—the conversations started after creating Hermes and connecting a channel consume this quota.
+They are the model calling quota included in the Launch plan. You can use Hermes Agent without preparing your own API Key—the conversations started after creating Hermes Agent and connecting a channel consume this quota.
 
 ### What happens after credits run out?
 
@@ -36,15 +36,15 @@ After credits run out, messages cannot receive model responses. Configure your o
 
 ### Can credits be topped up?
 
-Standalone credit top-up is not currently supported. To continue using Hermes, configure your own API Key.
+Standalone credit top-up is not currently supported. To continue using Hermes Agent, configure your own API Key.
 
 ### Is the Launch plan free forever?
 
 It is currently free for a limited time. Policy changes will be announced in advance.
 
-### Can one account create only 1 Hermes?
+### Can one account create only 1 Hermes Agent?
 
-The Launch plan is limited to 1 Hermes. Cruise and Voyage plans are coming soon.
+The Launch plan is limited to 1 Hermes Agent. Cruise and Voyage plans are coming soon.
 
 ### When will Cruise / Voyage be available?
 
@@ -66,7 +66,7 @@ See [Configure Models - Selection guidance](./configuration/model.md#selection-g
 
 Yes. Connect them through "Custom Model" and prepare an accessible Deepseek-compatible endpoint yourself.
 
-### How to troubleshoot when Hermes does not respond after sending a message
+### How to troubleshoot when Hermes Agent does not respond after sending a message
 
 Check in the following order:
 
@@ -80,11 +80,11 @@ Check in the following order:
 
 ### Will switching models lose conversation memory?
 
-No. Conversation memory is Hermes data. The model is only responsible for generating responses.
+No. Conversation memory is Hermes Agent data. The model is only responsible for generating responses.
 
 ### Can multiple models be configured at the same time?
 
-Not in the current version. Each Hermes can have only one active model. To compare different model performance, you need multiple Hermes instances (the Launch plan supports only 1).
+Not in the current version. Each Hermes Agent can have only one active model. To compare different model performance, you need multiple Hermes Agent instances (the Launch plan supports only 1).
 
 ---
 
@@ -92,7 +92,7 @@ Not in the current version. Each Hermes can have only one active model. To compa
 
 ### Can WeChat, Telegram, WhatsApp, and Discord be connected at the same time?
 
-Yes. Multiple channels point to the same Hermes instance and share memory and Agent behavior.
+Yes. Multiple channels point to the same Hermes Agent instance and share memory and Agent behavior.
 
 ### Can the bot be added to a WeChat group?
 
@@ -112,9 +112,9 @@ Delete the corresponding item in the console "Connected channels" list. After un
 
 ### Can a single message be deleted?
 
-Not currently. To clear memory, delete the entire Hermes instance.
+Not currently. To clear memory, delete the entire Hermes Agent instance.
 
-### Can Hermes be restored after deletion?
+### Can Hermes Agent be restored after deletion?
 
 No. Deletion is irreversible. Conversations, channel bindings, and installed skills are all cleared.
 
@@ -124,11 +124,11 @@ No. Deletion is irreversible. Conversations, channel bindings, and installed ski
 
 ### Do skills require trigger words after installation?
 
-No. Describe your needs in natural language, and Hermes automatically determines whether to call a skill.
+No. Describe your needs in natural language, and Hermes Agent automatically determines whether to call a skill.
 
 ### How to uninstall a skill
 
-The LightVela console does not currently support panel-based uninstall. You can ask Hermes through conversation to delete it. See [Configure Skills - Delete installed skills](./configuration/skill.md#delete-installed-skills).
+The LightVela console does not currently support panel-based uninstall. You can ask Hermes Agent through conversation to delete it. See [Configure Skills - Delete installed skills](./configuration/skill.md#delete-installed-skills).
 
 ### Are skills charged separately?
 
@@ -142,7 +142,7 @@ Developer publishing capabilities are planned. Currently, only listed skills can
 
 ## Troubleshooting
 
-### Hermes creation stays on the transition page for a long time
+### Hermes Agent creation stays on the transition page for a long time
 
 This may be caused by slow cloud initialization or network instability. Recommended actions:
 
@@ -150,7 +150,7 @@ This may be caused by slow cloud initialization or network instability. Recommen
 
 2. If there is still no response, refresh the page
 
-3. If there is still no response, click "+ Create Hermes" again
+3. If there is still no response, click "+ Create Hermes Agent" again
 
 ### No response in the console after scanning
 
@@ -174,9 +174,9 @@ In most cases, the custom model endpoint is not compatible with the OpenAI proto
 
 Provider rate limiting or network instability. Try again later or switch to another provider.
 
-### How to recreate Hermes
+### How to recreate Hermes Agent
 
-Delete the current Hermes and click "+ Create Hermes" again. All data will be cleared.
+Delete the current Hermes Agent and click "+ Create Hermes Agent" again. All data will be cleared.
 
 ---
 

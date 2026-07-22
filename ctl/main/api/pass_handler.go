@@ -417,6 +417,8 @@ func (h *passHandler) handleAdminPassesOrderUrl(w http.ResponseWriter, r *http.R
 //     trade.checkCreate 反向调，按 user_id 查该用户**全部** pass 记录做互斥占用判定（Q69）
 //   - POST /internal/ctl/passes/complete —
 //     trade 反向调，完成付费 pass 发货
+//   - POST /internal/ctl/passes/transfer —
+//     trade.transferResource 反向调，把存量免费 pass 绑定为计费资源
 //   - GET  /internal/ctl/passes/app-ids?bundle_ids=&page_no=&page_size= —
 //     trade.getAllAppIds 反向调，反查 app_id 列表（B11A 新增）
 //   - GET  /internal/ctl/passes/by-app?app_id=&bundle_ids=&page_no=&page_size= —
@@ -453,6 +455,8 @@ func (h *passHandler) handleInternalPasses(w http.ResponseWriter, r *http.Reques
 		switch parts[0] {
 		case "complete":
 			h.completePass(w, r)
+		case "transfer":
+			h.transferPass(w, r)
 		case "billing-migration":
 			h.internalPassBillingMigration(w, r)
 		case "app-ids":
@@ -699,6 +703,28 @@ func (h *passHandler) completePass(w http.ResponseWriter, r *http.Request) {
 	}
 
 	detail, err := h.logic.CompletePass(&req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, detailToPassResponse(detail))
+}
+
+// transferPass POST /internal/ctl/passes/transfer — trade 反向回调迁移既有 pass
+func (h *passHandler) transferPass(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	var req transport.TransferPassRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+
+	detail, err := h.logic.TransferPassFromBilling(&req)
 	if err != nil {
 		writeHTTPError(w, r, err)
 		return

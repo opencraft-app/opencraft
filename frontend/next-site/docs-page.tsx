@@ -5,6 +5,7 @@ import { getMDXComponents } from '../mdx-components';
 import {
   BreadcrumbJsonLd,
   buildDocsAlternates,
+  canonicalDocsPath,
   createPublicMetadata,
   localizedDocsPath,
   SEO_ALL_DOCS_ROUTE_LOCALES,
@@ -29,7 +30,7 @@ export function getDocsPage(prefix: DocsLocalePrefix, slug?: string[]) {
 export function LightVelaDocsPage({ prefix, slug }: { prefix?: DocsLocalePrefix; slug?: string[] }) {
   const page = getDocsPage(prefix, slug);
   const MDX = page.data.body;
-  const routePath = localizedDocsPath(prefix ?? 'default', docsSlug(prefix, slug));
+  const breadcrumbRoutePath = canonicalDocsPath(prefix ?? 'default', docsSlug(prefix, slug));
 
   return (
     <>
@@ -47,8 +48,8 @@ export function LightVelaDocsPage({ prefix, slug }: { prefix?: DocsLocalePrefix;
       <BreadcrumbJsonLd
         items={[
           { name: 'LightVela', path: '/' },
-          { name: 'Docs', path: localizedDocsPath(prefix ?? 'default', []) },
-          { name: page.data.title, path: routePath },
+          { name: 'Docs', path: canonicalDocsPath(prefix ?? 'default', []) },
+          { name: page.data.title, path: breadcrumbRoutePath },
         ]}
       />
     </>

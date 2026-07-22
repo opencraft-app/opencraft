@@ -105,25 +105,27 @@ type Logic interface {
 }
 
 type logic struct {
-	instanceDao            modelinstance.Dao
-	taskDao                taskmodel.Dao
-	channelLoginSessionDao channelloginsession.Dao
-	quotaDao               quota.Dao
-	sandboxAdapter         psandbox.Adapter
-	aiGatewayAdapter       paigateway.Adapter
-	llmGatewayAdapter      pllmgateway.Adapter
-	openclawGatewayAdapter popenclawgateway.Adapter
-	producer               mq.Producer
-	operationHistoryDao    operationhistory.Dao
-	objectIdLogic          objectid.Logic
-	logger                 *zap.Logger
-	defaultTemplateClass   string
-	defaultTemplate        string
-	defaultSKUID           string
-	candidateTemplates     []string
-	executeTasksInline     bool
-	weixinHub              *weixinLoginHub
-	churnGuard             *createChurnGuard
+	instanceDao                  modelinstance.Dao
+	passLister                   userPassLister
+	taskDao                      taskmodel.Dao
+	channelLoginSessionDao       channelloginsession.Dao
+	quotaDao                     quota.Dao
+	sandboxAdapter               psandbox.Adapter
+	aiGatewayAdapter             paigateway.Adapter
+	llmGatewayAdapter            pllmgateway.Adapter
+	openclawGatewayAdapter       popenclawgateway.Adapter
+	producer                     mq.Producer
+	operationHistoryDao          operationhistory.Dao
+	objectIdLogic                objectid.Logic
+	logger                       *zap.Logger
+	defaultTemplateClass         string
+	defaultTemplate              string
+	defaultSKUID                 string
+	candidateTemplates           []string
+	executeTasksInline           bool
+	weixinHub                    *weixinLoginHub
+	churnGuard                   *createChurnGuard
+	legacyPassEntitlementEnsurer func(stdctx.Context, string, time.Time) error
 }
 
 func NewLogic() Logic {
@@ -136,6 +138,7 @@ func NewLogic() Logic {
 	defaultTemplate := defaultTemplateIDFromConfig(instanceConf)
 	return &logic{
 		instanceDao:            modelfactory.DefaultDaoFactory.InstanceDao(nil),
+		passLister:             modelfactory.DefaultDaoFactory.PassDao(nil),
 		channelLoginSessionDao: modelfactory.DefaultDaoFactory.ChannelLoginSessionDao(nil),
 		taskDao:                modelfactory.DefaultDaoFactory.TaskDao(nil),
 		quotaDao:               modelfactory.DefaultDaoFactory.UserResourceQuotaDao(nil),
@@ -829,10 +832,12 @@ func (l *logic) StartTerminalSession(ctx pctx.Context, instanceID string) (*tran
 	if strings.TrimSpace(instanceID) == "" {
 		return nil, errcode.ErrInstanceInvalidParam
 	}
-
 	entity, err := l.instanceDao.GetByInstanceID(ctx, instanceID)
 	if err != nil {
 		return nil, err
+	}
+	if err := l.requireActivePass(ctx); err != nil {
+		return nil, activePassGuardError("start terminal session", err)
 	}
 	if strings.TrimSpace(entity.SandboxId) == "" {
 		return nil, errcode.ErrSandboxNotFound
@@ -1028,7 +1033,6 @@ func (l *logic) ResumeInstance(ctx pctx.Context, instanceID string, req *transpo
 	if !isValidInstanceTimeout(timeout) {
 		return nil, errcode.ErrInstanceInvalidParam
 	}
-
 	entity, err := l.instanceDao.GetByInstanceID(ctx, instanceID)
 	if err != nil {
 		return nil, err
@@ -1036,11 +1040,40 @@ func (l *logic) ResumeInstance(ctx pctx.Context, instanceID string, req *transpo
 	if entity.Status != modelinstance.InstanceStatusPaused {
 		return nil, errcode.ErrInstanceStatusInvalid
 	}
+	if err := l.requireActivePass(ctx); err != nil {
+		return nil, activePassGuardError("resume instance", err)
+	}
+	if err := l.instanceDao.TransitionStatus(
+		ctx,
+		entity.Id,
+		[]string{modelinstance.InstanceStatusPaused},
+		modelinstance.InstanceStatusResuming,
+	); err != nil {
+		return nil, err
+	}
+	entity.Status = modelinstance.InstanceStatusResuming
+	if err := l.requireActivePass(ctx); err != nil {
+		l.rollbackResumingInstance(ctx, entity)
+		return nil, activePassGuardError("resume instance", err)
+	}
 
 	timeoutAt := time.Now().UTC().Add(time.Duration(timeout) * time.Second)
 	sandboxReq := &psandbox.ResumeSandboxRequest{Timeout: &timeout}
 	if err := l.resumeSandbox(ctx, entity, sandboxReq); err != nil {
+		l.rollbackResumingInstance(ctx, entity)
 		return nil, err
+	}
+	if err := l.requireActivePass(ctx); err != nil {
+		if pauseErr := l.sandboxAdapter.PauseSandbox(ctx, entity.SandboxId); pauseErr != nil {
+			l.logger.Error("compensating sandbox pause failed after pass became inactive",
+				zap.Error(pauseErr),
+				zap.String("instance_id", entity.InstanceId),
+				zap.String("sandbox_id", entity.SandboxId),
+			)
+			return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "compensating pause after pass check: %v", pauseErr)
+		}
+		l.rollbackResumingInstance(ctx, entity)
+		return nil, activePassGuardError("resume instance", err)
 	}
 
 	updates := map[string]interface{}{
@@ -1050,7 +1083,7 @@ func (l *logic) ResumeInstance(ctx pctx.Context, instanceID string, req *transpo
 	if err := l.instanceDao.UpdateWithStatusPrecondition(
 		ctx,
 		entity.Id,
-		[]string{modelinstance.InstanceStatusPaused},
+		[]string{modelinstance.InstanceStatusResuming},
 		updates,
 	); err != nil {
 		l.logger.Error("persist running state failed after sandbox resume",
@@ -1058,12 +1091,40 @@ func (l *logic) ResumeInstance(ctx pctx.Context, instanceID string, req *transpo
 			zap.String("instance_id", entity.InstanceId),
 			zap.String("sandbox_id", entity.SandboxId),
 		)
+		if pauseErr := l.sandboxAdapter.PauseSandbox(ctx, entity.SandboxId); pauseErr == nil {
+			l.rollbackResumingInstance(ctx, entity)
+		} else {
+			l.logger.Error("compensating sandbox pause failed after resume persistence error",
+				zap.Error(pauseErr),
+				zap.String("instance_id", entity.InstanceId),
+				zap.String("sandbox_id", entity.SandboxId),
+			)
+		}
 		return nil, err
 	}
 	entity.Status = modelinstance.InstanceStatusRunning
 	entity.TimeoutAt = timeoutAt
 
 	return toInstanceResponse(entity, true), nil
+}
+
+func (l *logic) rollbackResumingInstance(ctx pctx.Context, entity *modelinstance.Entity) {
+	if entity == nil || entity.Status != modelinstance.InstanceStatusResuming {
+		return
+	}
+	if err := l.instanceDao.TransitionStatus(
+		ctx,
+		entity.Id,
+		[]string{modelinstance.InstanceStatusResuming},
+		modelinstance.InstanceStatusPaused,
+	); err != nil {
+		l.logger.Error("rollback resuming instance failed",
+			zap.Error(err),
+			zap.String("instance_id", entity.InstanceId),
+		)
+		return
+	}
+	entity.Status = modelinstance.InstanceStatusPaused
 }
 
 func (l *logic) SetInstanceTimeout(ctx pctx.Context, instanceID string, req *transport.SetTimeoutRequest) (resp *transport.InstanceResponse, retErr error) {
@@ -1080,7 +1141,6 @@ func (l *logic) SetInstanceTimeout(ctx pctx.Context, instanceID string, req *tra
 	if req == nil || req.Timeout == nil || !isValidInstanceTimeout(*req.Timeout) {
 		return nil, errcode.ErrInstanceInvalidParam
 	}
-
 	entity, err := l.instanceDao.GetByInstanceID(ctx, instanceID)
 	if err != nil {
 		return nil, err
@@ -1089,6 +1149,9 @@ func (l *logic) SetInstanceTimeout(ctx pctx.Context, instanceID string, req *tra
 	case modelinstance.InstanceStatusRunning, modelinstance.InstanceStatusPaused:
 	default:
 		return nil, errcode.ErrInstanceStatusInvalid
+	}
+	if err := l.requireActivePass(ctx); err != nil {
+		return nil, activePassGuardError("set instance timeout", err)
 	}
 
 	timeoutAt := time.Now().UTC().Add(time.Duration(*req.Timeout) * time.Second)
@@ -1703,6 +1766,9 @@ func (l *logic) prepareDebugCommand(ctx pctx.Context, instanceID string, command
 	if entity.Status != modelinstance.InstanceStatusRunning {
 		return nil, "", "", "", nil, 0, errcode.Wrap(errcode.ErrDebugNotSupported, "instance status is %s, expected running", entity.Status)
 	}
+	if err := l.requireActivePass(ctx); err != nil {
+		return nil, "", "", "", nil, 0, activePassGuardError("execute debug command", err)
+	}
 	return entity, commandKind, command, normalizedRunAsUser, processEnv, spec.timeoutSec, nil
 }
 
@@ -1933,13 +1999,15 @@ func (l *logic) ConfigureChannel(ctx pctx.Context, instanceID string, req *trans
 	if req == nil || strings.TrimSpace(req.Channel) == "" || strings.TrimSpace(req.Token) == "" {
 		return nil, errcode.ErrChannelInvalidParam
 	}
-
 	entity, err := l.instanceDao.GetByInstanceID(ctx, instanceID)
 	if err != nil {
 		return nil, err
 	}
 	if entity.Status != modelinstance.InstanceStatusRunning {
 		return nil, errcode.ErrInstanceStatusInvalid
+	}
+	if err := l.requireActivePass(ctx); err != nil {
+		return nil, activePassGuardError("configure channel", err)
 	}
 
 	if strings.EqualFold(strings.TrimSpace(req.Channel), "qqbot") {

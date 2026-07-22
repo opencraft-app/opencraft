@@ -540,14 +540,11 @@ func TestCascadeCompletionRejectsChangedSetLifecycle(t *testing.T) {
 	if err != nil || !acquired {
 		t.Fatalf("claim=%+v acquired=%v err=%v", claimed, acquired, err)
 	}
-	set, _, err := store.GetSet(t.Context(), "set-a")
-	if err != nil {
-		t.Fatal(err)
-	}
+	store.mu.Lock()
+	set := store.sets["set-a"]
 	set.LifecycleGeneration++
-	if err := store.SaveSet(t.Context(), set); err != nil {
-		t.Fatal(err)
-	}
+	store.sets[set.ID] = set
+	store.mu.Unlock()
 	if _, err := store.CompleteSetDecommissionCascade(t.Context(), job.ID, claimed.ClaimToken, now.Add(2*time.Second)); err == nil {
 		t.Fatal("expected changed Set lifecycle to fence cascade completion")
 	}

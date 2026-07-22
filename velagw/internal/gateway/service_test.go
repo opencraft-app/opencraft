@@ -230,9 +230,15 @@ func TestProxyUsesBYOKUpstreamKeyWhenUserPrefersBYOK(t *testing.T) {
 
 func TestProxyFallsBackToPlatformKeyWhenBYOKGroupIsNotReady(t *testing.T) {
 	var authorizations []string
+	var bodies []string
 	store := NewMemoryStore()
 	svc := NewService(store, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		authorizations = append(authorizations, r.Header.Get("Authorization"))
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		bodies = append(bodies, string(body))
 		if r.Header.Get("Authorization") == "Bearer sk-byok-upstream" {
 			return &http.Response{
 				StatusCode: http.StatusForbidden,
@@ -275,6 +281,110 @@ func TestProxyFallsBackToPlatformKeyWhenBYOKGroupIsNotReady(t *testing.T) {
 	}
 	if strings.Join(authorizations, ",") != "Bearer sk-byok-upstream,Bearer sk-platform-upstream" {
 		t.Fatalf("authorizations = %#v", authorizations)
+	}
+	if strings.Join(bodies, ",") != `{"model":"auto"},{"model":"auto"}` {
+		t.Fatalf("request bodies = %#v", bodies)
+	}
+}
+
+func TestProxyBYOKFallbackStatusPolicy(t *testing.T) {
+	tests := []struct {
+		name         string
+		status       int
+		wantAttempts int
+	}{
+		{name: "bad request stays on BYOK", status: http.StatusBadRequest, wantAttempts: 1},
+		{name: "rate limit falls back", status: http.StatusTooManyRequests, wantAttempts: 2},
+		{name: "server error falls back", status: http.StatusInternalServerError, wantAttempts: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var attempts int
+			store := NewMemoryStore()
+			svc := NewService(store, roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				attempts++
+				status := tt.status
+				if attempts == 2 {
+					status = http.StatusOK
+				}
+				return &http.Response{
+					StatusCode: status,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(`{}`)),
+				}, nil
+			}), Options{})
+			if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://upstream", Status: SetStatusActive}); err != nil {
+				t.Fatal(err)
+			}
+			externalKey, _ := saveTestAPIKey(t, store, "byok-status-policy-"+tt.name, APIKeyBinding{
+				SetID:       "set-a",
+				UserID:      "user-1",
+				UpstreamKey: "sk-platform-upstream",
+			})
+			if err := store.SaveUserLLMSettings(t.Context(), UserLLMSettings{
+				ExternalUserID:    "user-1",
+				Routing:           UserLLMRouting{Mode: LLMRouteBYOKFirst},
+				BYOKUpstreamKey:   "sk-byok-upstream",
+				BYOKUpstreamKeyID: 77,
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"auto"}`))
+			req.Header.Set("Authorization", "Bearer "+externalKey)
+			svc.ProxyHTTP(httptest.NewRecorder(), req)
+
+			if attempts != tt.wantAttempts {
+				t.Fatalf("attempts = %d, want %d", attempts, tt.wantAttempts)
+			}
+		})
+	}
+}
+
+func TestProxyRecordsPlatformFallbackRoundTripError(t *testing.T) {
+	var entries []AccessLog
+	var attempts int
+	store := NewMemoryStore()
+	svc := NewService(store, roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		attempts++
+		if attempts == 1 {
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+			}, nil
+		}
+		return nil, errors.New("platform transport failed")
+	}), Options{AccessLogger: func(entry AccessLog) {
+		entries = append(entries, entry)
+	}})
+	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://upstream", Status: SetStatusActive}); err != nil {
+		t.Fatal(err)
+	}
+	externalKey, _ := saveTestAPIKey(t, store, "byok-fallback-error", APIKeyBinding{
+		SetID:       "set-a",
+		UserID:      "user-1",
+		UpstreamKey: "sk-platform-upstream",
+	})
+	if err := store.SaveUserLLMSettings(t.Context(), UserLLMSettings{
+		ExternalUserID:    "user-1",
+		Routing:           UserLLMRouting{Mode: LLMRouteBYOKFirst},
+		BYOKUpstreamKey:   "sk-byok-upstream",
+		BYOKUpstreamKeyID: 77,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"auto"}`))
+	req.Header.Set("Authorization", "Bearer "+externalKey)
+	rec := httptest.NewRecorder()
+	svc.ProxyHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", rec.Code)
+	}
+	if len(entries) != 1 || entries[0].ErrorType != "platform_fallback_roundtrip_error" {
+		t.Fatalf("access entries = %+v", entries)
 	}
 }
 
@@ -839,6 +949,67 @@ func TestProxyAccessLogIncludesRequestRoutingAndUpstreamFields(t *testing.T) {
 	}
 }
 
+func TestProxyDoesNotClassifyClientDisconnectAsUpstreamError(t *testing.T) {
+	var entries []AccessLog
+	store := NewMemoryStore()
+	svc := NewService(store, roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader("data: done\n\n")),
+		}, nil
+	}), Options{AccessLogger: func(entry AccessLog) {
+		entries = append(entries, entry)
+	}})
+	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://upstream", Status: SetStatusActive}); err != nil {
+		t.Fatal(err)
+	}
+	externalKey, _ := saveTestAPIKey(t, store, "client-disconnect", APIKeyBinding{
+		SetID:       "set-a",
+		UpstreamKey: "sk-upstream",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	req.Header.Set("Authorization", "Bearer "+externalKey)
+	svc.ProxyHTTP(&disconnectingResponseWriter{header: make(http.Header)}, req)
+
+	if len(entries) != 1 {
+		t.Fatalf("access log entries = %d, want 1", len(entries))
+	}
+	if entries[0].Status != http.StatusOK || entries[0].UpstreamStatus != http.StatusOK || entries[0].ErrorType != "" {
+		t.Fatalf("client disconnect must not be an upstream error: %+v", entries[0])
+	}
+}
+
+func TestProxyClassifiesUnexpectedUpstreamTruncation(t *testing.T) {
+	var entries []AccessLog
+	store := NewMemoryStore()
+	svc := NewService(store, roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(&unexpectedEOFReader{data: []byte("data: partial\n\n")}),
+		}, nil
+	}), Options{AccessLogger: func(entry AccessLog) {
+		entries = append(entries, entry)
+	}})
+	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://upstream", Status: SetStatusActive}); err != nil {
+		t.Fatal(err)
+	}
+	externalKey, _ := saveTestAPIKey(t, store, "upstream-truncation", APIKeyBinding{
+		SetID:       "set-a",
+		UpstreamKey: "sk-upstream",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	req.Header.Set("Authorization", "Bearer "+externalKey)
+	svc.ProxyHTTP(httptest.NewRecorder(), req)
+
+	if len(entries) != 1 || entries[0].ErrorType != "upstream_read_error" {
+		t.Fatalf("access entries = %+v", entries)
+	}
+}
+
 func TestProxyMetricsExposeTrafficLabelsAndDuration(t *testing.T) {
 	store := NewMemoryStore()
 	svc := NewService(store, roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -1012,6 +1183,41 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+type disconnectingResponseWriter struct {
+	header http.Header
+	status int
+}
+
+func (w *disconnectingResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *disconnectingResponseWriter) WriteHeader(status int) {
+	w.status = status
+}
+
+func (w *disconnectingResponseWriter) Write([]byte) (int, error) {
+	return 0, io.ErrClosedPipe
+}
+
+func (w *disconnectingResponseWriter) Flush() {}
+
+type unexpectedEOFReader struct {
+	data []byte
+}
+
+func (r *unexpectedEOFReader) Read(p []byte) (int, error) {
+	if len(r.data) == 0 {
+		return 0, io.ErrUnexpectedEOF
+	}
+	n := copy(p, r.data)
+	r.data = r.data[n:]
+	if len(r.data) == 0 {
+		return n, io.ErrUnexpectedEOF
+	}
+	return n, nil
 }
 
 func saveReadyServiceSet(t *testing.T, store *MemoryStore, setID string) {

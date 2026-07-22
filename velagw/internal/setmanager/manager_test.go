@@ -72,6 +72,15 @@ func TestRunOnceAlwaysUsesLLMFleetBackend(t *testing.T) {
 	}
 }
 
+func TestLoadConfigCanDisableLegacyLifecycleWriters(t *testing.T) {
+	t.Setenv("LLMGATEWAY_SET_MANAGER_UPGRADE_ENABLED", "false")
+	t.Setenv("LLMGATEWAY_SET_MANAGER_DECOMMISSION_ENABLED", "false")
+	cfg := LoadConfigFromEnv()
+	if cfg.UpgradeEnabled || cfg.DecommissionEnabled == nil || *cfg.DecommissionEnabled {
+		t.Fatalf("legacy lifecycle flags upgrade=%v decommission=%v", cfg.UpgradeEnabled, cfg.DecommissionEnabled)
+	}
+}
+
 func TestRunOnceReconcilesOnlyRuntimeCleanerImageBeforeDynamicFleetState(t *testing.T) {
 	var operations []map[string]any
 	kubeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -109,6 +109,33 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 else:
                     self.assertEqual(list(bundles), [path.stem])
 
+    def test_beijing_ctl_routes_all_eligible_users_to_llmgateway(self) -> None:
+        secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/beijing-sandbox/ctl-runtime-secrets.sops.yaml").read_text()
+        )
+        values = secret.get("stringData") or {}
+
+        self.assertEqual(values.get("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"), "*")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST"), "*")
+
+    def test_shprod_ctl_routes_only_the_llmgateway_canary_to_shanghai(self) -> None:
+        secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/shprod/ctl-runtime-secrets.sops.yaml").read_text()
+        )
+        values = secret.get("stringData") or {}
+
+        self.assertEqual(values.get("CTL_LLMGATEWAY_BASE_URL"), "https://token-admin.lightvela.com")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_DEFAULT_BASE_URL"), "https://token.lightvela.com/v1")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_DEFAULT_MODEL_ID"), "auto")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"), "usr_58b6bb1f68ba7f46584bd282")
+        self.assertEqual(
+            values.get("CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST"),
+            "usr_58b6bb1f68ba7f46584bd282",
+        )
+        for key in ("CTL_LLMGATEWAY_ADMIN_TOKEN", "CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN"):
+            with self.subTest(key=key):
+                self.assertRegex(values.get(key, ""), r"^ENC\[")
+
     def test_playground_auto_release_workflows_match_build_contracts(self) -> None:
         manifest = load_manifest()
 
@@ -260,7 +287,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         parameters = (workflow.get("extends") or {}).get("parameters") or {}
         app = yaml.safe_load((REPO_ROOT / "argocd/apps/beijing-llmgateway/velagw.yaml").read_text())
         cluster = yaml.safe_load((REPO_ROOT / "argocd/clusters/beijing-llmgateway.yaml").read_text())
-        workloads = (REPO_ROOT / "argocd/services/velagw/beijing-llmgateway/workloads.yaml").read_text()
+        service_root = REPO_ROOT / "argocd/services/velagw/beijing-llmgateway"
+        kustomization = yaml.safe_load((service_root / "kustomization.yaml").read_text())
+        workloads = (service_root / "workloads.yaml").read_text()
         workload_docs = list(yaml.safe_load_all(workloads))
         traffic = next(
             doc
@@ -275,6 +304,21 @@ class ReleaseBundleContractTests(unittest.TestCase):
             if container.get("name") == "traffic"
         )
         traffic_env = {entry["name"]: entry.get("value") for entry in traffic_container.get("env", [])}
+        core_worker = next(
+            doc
+            for doc in workload_docs
+            if doc
+            and doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-worker-core"
+        )
+        core_worker_container = next(
+            container
+            for container in core_worker["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "worker"
+        )
+        core_worker_env = {
+            entry["name"]: entry.get("value") for entry in core_worker_container.get("env", [])
+        }
 
         self.assertEqual(bundle.image_repo, "lightclaw-bj82.tencentcloudcr.com/llmgateway/llmgateway")
         self.assertEqual(parameters.get("SERVICE"), "velagw")
@@ -288,6 +332,27 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("kind: Secret", workloads)
         self.assertNotIn("kind: LLMFleet", workloads)
         self.assertEqual(traffic_env.get("LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED"), "true")
+        self.assertEqual(core_worker_env.get("LLMGATEWAY_SET_AUTOSCALER_RUNTIME_BACKEND"), "velagwset")
+        self.assertEqual(core_worker_env.get("LLMGATEWAY_SET_AUTOSCALER_WRITER_EPOCH"), "2")
+        self.assertEqual(
+            kustomization.get("resources"),
+            ["workloads.yaml", "velagwset-controller.yaml", "velagwset-provisioner.yaml"],
+        )
+        image_replacement_targets = {
+            (target.get("select") or {}).get("name")
+            for replacement in kustomization.get("replacements", [])
+            if (replacement.get("source") or {}).get("fieldPath") == "data.VELAGW_IMAGE"
+            for target in replacement.get("targets", [])
+        }
+        self.assertIn("velagwset-controller", image_replacement_targets)
+        self.assertIn("velagwset-provisioner", image_replacement_targets)
+        self.assertNotIn(
+            "VELAGW_PROVISIONER_IMAGE=",
+            (service_root / "velagw-platform.env").read_text(),
+        )
+        for resource in ("velagwset-controller.yaml", "velagwset-provisioner.yaml"):
+            with self.subTest(resource=resource):
+                self.assertTrue((service_root / resource).is_file())
 
     def test_velagw_release_bundle_targets_shanghai_production_cluster(self) -> None:
         manifest = load_manifest()
@@ -335,9 +400,34 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("Namespace", kinds)
         self.assertNotIn("LLMFleet", kinds)
         self.assertIn("ResourceGraphDefinition", kinds)
+        self.assertIn("CustomResourceDefinition", kinds)
+        self.assertIn("ValidatingAdmissionPolicy", kinds)
+        self.assertIn("ValidatingAdmissionPolicyBinding", kinds)
         self.assertEqual(
             kustomization.get("resources"),
-            ["workloads.yaml", "set-manager.yaml", "llmfleet-rgd.yaml"],
+            [
+                "workloads.yaml",
+                "set-manager.yaml",
+                "llmfleet-rgd.yaml",
+                "velagwset-crd.yaml",
+                "velagwset-delete-policy.yaml",
+                "velagwset-controller.yaml",
+                "velagwset-provisioner.yaml",
+            ],
+        )
+
+        cluster_resource_whitelist = {
+            (entry.get("group"), entry.get("kind"))
+            for entry in project["spec"].get("clusterResourceWhitelist", [])
+        }
+        self.assertTrue(
+            {
+                ("kro.run", "ResourceGraphDefinition"),
+                ("apiextensions.k8s.io", "CustomResourceDefinition"),
+                ("admissionregistration.k8s.io", "ValidatingAdmissionPolicy"),
+                ("admissionregistration.k8s.io", "ValidatingAdmissionPolicyBinding"),
+            }
+            <= cluster_resource_whitelist
         )
 
         traffic = next(
@@ -353,6 +443,67 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         traffic_env = {entry["name"]: entry.get("value") for entry in traffic_container.get("env", [])}
         self.assertEqual(traffic_env.get("LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED"), "true")
+
+        core_worker = next(
+            doc
+            for doc in resource_docs
+            if doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-worker-core"
+        )
+        core_worker_container = next(
+            container
+            for container in core_worker["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "worker"
+        )
+        core_worker_env = {
+            entry["name"]: entry.get("value") for entry in core_worker_container.get("env", [])
+        }
+        self.assertEqual(core_worker_env.get("LLMGATEWAY_SET_AUTOSCALER_RUNTIME_BACKEND"), "velagwset")
+        self.assertEqual(core_worker_env.get("LLMGATEWAY_SET_AUTOSCALER_WRITER_EPOCH"), "2")
+
+        deployments = {
+            (doc.get("metadata") or {}).get("name"): doc
+            for doc in resource_docs
+            if doc.get("kind") == "Deployment"
+        }
+        controller = deployments["velagwset-controller"]
+        provisioner = deployments["velagwset-provisioner"]
+        self.assertEqual(controller["spec"].get("replicas"), 2)
+        self.assertEqual(provisioner["spec"].get("replicas"), 2)
+
+        controller_container = next(
+            container
+            for container in controller["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "controller"
+        )
+        self.assertIn("--leader-elect", controller_container.get("args", []))
+        self.assertNotIn("envFrom", controller_container)
+
+        provisioner_container = next(
+            container
+            for container in provisioner["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "provisioner"
+        )
+        provisioner_env = {
+            entry["name"]: entry for entry in provisioner_container.get("env", [])
+        }
+        self.assertEqual(provisioner_env["LLMGATEWAY_CONTROL_URL"].get("value"), "http://llmgateway-control")
+        self.assertEqual(provisioner_env["LLMGATEWAY_SET_SOURCE"].get("value"), "prod")
+        self.assertEqual(provisioner_env["LLMGATEWAY_FLEET"].get("value"), "prod")
+        self.assertEqual(provisioner_env["LLMGATEWAY_VELAGWSET_SERVERLESS_TRAFFIC"].get("value"), "true")
+        self.assertEqual(
+            provisioner_env["INTERNAL_SERVICE_TOKEN"]["valueFrom"]["secretKeyRef"],
+            {"name": "llmgateway-control-runtime", "key": "INTERNAL_SERVICE_TOKEN"},
+        )
+
+        image_replacement_targets = {
+            (target.get("select") or {}).get("name")
+            for replacement in kustomization.get("replacements", [])
+            if (replacement.get("source") or {}).get("fieldPath") == "data.VELAGW_IMAGE"
+            for target in replacement.get("targets", [])
+        }
+        self.assertIn("velagwset-controller", image_replacement_targets)
+        self.assertIn("velagwset-provisioner", image_replacement_targets)
 
         set_manager = next(
             doc

@@ -138,6 +138,7 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 			lifecycle_generation BIGINT NOT NULL DEFAULT 0,
 			admin_image TEXT NOT NULL,
 			active_runtime_generation BIGINT NOT NULL DEFAULT 0,
+			last_runtime_generation BIGINT NOT NULL DEFAULT 0,
 			route_revision BIGINT NOT NULL DEFAULT 0,
 			created_at DATETIME(6) NOT NULL,
 			updated_at DATETIME(6) NOT NULL,
@@ -241,6 +242,7 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 			runtime_ha_error TEXT NOT NULL,
 			runtime_ha_checked_at DATETIME(6) NULL,
 			desired_hash CHAR(64) NOT NULL DEFAULT '',
+			projection_version BIGINT NOT NULL DEFAULT 0,
 			status VARCHAR(32) NOT NULL DEFAULT 'pending',
 			last_error TEXT NOT NULL,
 			last_observed_at DATETIME(6) NOT NULL,
@@ -264,6 +266,22 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 			release_ring_id VARCHAR(191) NOT NULL DEFAULT '',
 			release_id VARCHAR(191) NOT NULL DEFAULT '',
 			release_image TEXT NULL,
+			runtime_backend VARCHAR(32) NOT NULL DEFAULT 'llmfleet',
+			writer_epoch BIGINT NOT NULL DEFAULT 1,
+			lifecycle_revision BIGINT NOT NULL DEFAULT 1,
+			attempt BIGINT NOT NULL DEFAULT 0,
+			version BIGINT NOT NULL DEFAULT 1,
+			claim_owner VARCHAR(191) NOT NULL DEFAULT '',
+			claim_token VARCHAR(191) NOT NULL DEFAULT '',
+			claim_lease_until DATETIME(6) NULL,
+			cr_uid VARCHAR(191) NOT NULL DEFAULT '',
+			cr_generation BIGINT NOT NULL DEFAULT 0,
+			runtime_secret_uid VARCHAR(191) NOT NULL DEFAULT '',
+			runtime_identity_digest CHAR(64) NOT NULL DEFAULT '',
+			bootstrap_job_uid VARCHAR(191) NOT NULL DEFAULT '',
+			bootstrap_completed_at DATETIME(6) NULL,
+			admin_fact_hash CHAR(64) NOT NULL DEFAULT '',
+			serving_fact_hash CHAR(64) NOT NULL DEFAULT '',
 			status VARCHAR(32) NOT NULL DEFAULT 'pending',
 			reason TEXT NOT NULL,
 			last_error TEXT NOT NULL,
@@ -329,6 +347,7 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 			sequence_no BIGINT NOT NULL DEFAULT 0,
 			from_generation BIGINT NOT NULL,
 			to_generation BIGINT NOT NULL,
+			lifecycle_generation BIGINT NOT NULL DEFAULT 0,
 			status VARCHAR(32) NOT NULL,
 			consecutive_probe_successes BIGINT NOT NULL DEFAULT 0,
 			consecutive_probe_failures BIGINT NOT NULL DEFAULT 0,
@@ -1020,6 +1039,9 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 	if err := s.migrateReleaseRingColumns(ctx); err != nil {
 		return err
 	}
+	if err := s.migrateSetProvisionFencingColumns(ctx); err != nil {
+		return err
+	}
 	if err := s.migrateSetAdmissionColumns(ctx); err != nil {
 		return err
 	}
@@ -1183,6 +1205,7 @@ func (s *MySQLStore) migrateSetUpgradeColumns(ctx context.Context) error {
 	}{
 		{name: "admin_image", definition: "TEXT NULL"},
 		{name: "active_runtime_generation", definition: "BIGINT NOT NULL DEFAULT 0"},
+		{name: "last_runtime_generation", definition: "BIGINT NOT NULL DEFAULT 0"},
 		{name: "route_revision", definition: "BIGINT NOT NULL DEFAULT 0"},
 		{name: "admin_writes_paused", definition: "TINYINT(1) NOT NULL DEFAULT 0"},
 		{name: "admin_writes_pause_reason", definition: "TEXT NULL"},
@@ -1193,7 +1216,21 @@ func (s *MySQLStore) migrateSetUpgradeColumns(ctx context.Context) error {
 			return err
 		}
 	}
-	return nil
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE llmgateway_sets s
+		LEFT JOIN (
+			SELECT set_id, MAX(generation) AS max_generation
+			FROM llmgateway_set_runtimes GROUP BY set_id
+		) r ON r.set_id = s.id
+		SET s.last_runtime_generation = GREATEST(
+			s.last_runtime_generation,
+			s.active_runtime_generation,
+			COALESCE(r.max_generation, 0)
+		)
+	`); err != nil {
+		return err
+	}
+	return s.ensureMySQLColumn(ctx, "llmgateway_set_reconcile_facts", "projection_version", "BIGINT NOT NULL DEFAULT 0")
 }
 
 func (s *MySQLStore) migrateSetUpgradeRunColumns(ctx context.Context) error {
@@ -1205,6 +1242,7 @@ func (s *MySQLStore) migrateSetUpgradeRunColumns(ctx context.Context) error {
 		{name: "rollback_reason", definition: "TEXT NULL"},
 		{name: "master_upgraded_at", definition: "DATETIME(6) NULL"},
 		{name: "compatibility_checked_at", definition: "DATETIME(6) NULL"},
+		{name: "lifecycle_generation", definition: "BIGINT NOT NULL DEFAULT 0"},
 	}
 	for _, column := range columns {
 		if err := s.ensureMySQLColumn(ctx, "llmgateway_set_upgrade_runs", column.name, column.definition); err != nil {
@@ -1246,6 +1284,36 @@ func (s *MySQLStore) migrateReleaseRingColumns(ctx context.Context) error {
 		}
 	}
 	return s.ensureMySQLIndex(ctx, "llmgateway_release_rollouts", "idx_llmgateway_release_rollout_campaign", "campaign_id, campaign_sequence")
+}
+
+func (s *MySQLStore) migrateSetProvisionFencingColumns(ctx context.Context) error {
+	columns := []struct {
+		name       string
+		definition string
+	}{
+		{"runtime_backend", "VARCHAR(32) NOT NULL DEFAULT 'llmfleet'"},
+		{"writer_epoch", "BIGINT NOT NULL DEFAULT 1"},
+		{"lifecycle_revision", "BIGINT NOT NULL DEFAULT 1"},
+		{"attempt", "BIGINT NOT NULL DEFAULT 0"},
+		{"version", "BIGINT NOT NULL DEFAULT 1"},
+		{"claim_owner", "VARCHAR(191) NOT NULL DEFAULT ''"},
+		{"claim_token", "VARCHAR(191) NOT NULL DEFAULT ''"},
+		{"claim_lease_until", "DATETIME(6) NULL"},
+		{"cr_uid", "VARCHAR(191) NOT NULL DEFAULT ''"},
+		{"cr_generation", "BIGINT NOT NULL DEFAULT 0"},
+		{"runtime_secret_uid", "VARCHAR(191) NOT NULL DEFAULT ''"},
+		{"runtime_identity_digest", "CHAR(64) NOT NULL DEFAULT ''"},
+		{"bootstrap_job_uid", "VARCHAR(191) NOT NULL DEFAULT ''"},
+		{"bootstrap_completed_at", "DATETIME(6) NULL"},
+		{"admin_fact_hash", "CHAR(64) NOT NULL DEFAULT ''"},
+		{"serving_fact_hash", "CHAR(64) NOT NULL DEFAULT ''"},
+	}
+	for _, column := range columns {
+		if err := s.ensureMySQLColumn(ctx, "llmgateway_set_provision_requests", column.name, column.definition); err != nil {
+			return err
+		}
+	}
+	return s.ensureMySQLIndex(ctx, "llmgateway_set_provision_requests", "idx_llmgateway_set_provision_backend_status", "runtime_backend, status, updated_at")
 }
 
 func (s *MySQLStore) migrateSetRuntimeLeases(ctx context.Context) error {
@@ -1762,9 +1830,7 @@ func (s *MySQLStore) SaveSet(ctx context.Context, set Set) error {
 		if set.AdmissionCheckedAt.IsZero() {
 			set.AdmissionCheckedAt = existing.AdmissionCheckedAt
 		}
-		if set.LifecycleGeneration < existing.LifecycleGeneration {
-			set.LifecycleGeneration = existing.LifecycleGeneration
-		}
+		set.LifecycleGeneration = existing.LifecycleGeneration
 		if set.AdminImage == "" {
 			set.AdminImage = existing.AdminImage
 		}
@@ -1777,12 +1843,9 @@ func (s *MySQLStore) SaveSet(ctx context.Context, set Set) error {
 		if set.TargetReleaseID == "" {
 			set.TargetReleaseID = existing.TargetReleaseID
 		}
-		if set.ActiveRuntimeGeneration == 0 {
-			set.ActiveRuntimeGeneration = existing.ActiveRuntimeGeneration
-		}
-		if set.RouteRevision < existing.RouteRevision {
-			set.RouteRevision = existing.RouteRevision
-		}
+		set.ActiveRuntimeGeneration = existing.ActiveRuntimeGeneration
+		set.LastRuntimeGeneration = existing.LastRuntimeGeneration
+		set.RouteRevision = existing.RouteRevision
 		set.AdminWritesPaused = existing.AdminWritesPaused
 		set.AdminWritesPauseReason = existing.AdminWritesPauseReason
 		set.AdminWritesPausedAt = existing.AdminWritesPausedAt
@@ -1806,8 +1869,8 @@ func (s *MySQLStore) SaveSet(ctx context.Context, set Set) error {
 			admin_writes_paused, admin_writes_pause_reason, admin_writes_paused_at,
 			admission_status, admission_error, admission_checked_at, lifecycle_generation,
 			admin_image, release_ring_id, current_release_id, target_release_id,
-			active_runtime_generation, route_revision, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			active_runtime_generation, last_runtime_generation, route_revision, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			name = VALUES(name),
 			base_url = VALUES(base_url),
@@ -1850,13 +1913,10 @@ func (s *MySQLStore) SaveSet(ctx context.Context, set Set) error {
 			admission_status = VALUES(admission_status),
 			admission_error = VALUES(admission_error),
 			admission_checked_at = VALUES(admission_checked_at),
-			lifecycle_generation = GREATEST(lifecycle_generation, VALUES(lifecycle_generation)),
 			admin_image = VALUES(admin_image),
 			release_ring_id = VALUES(release_ring_id),
 			current_release_id = VALUES(current_release_id),
 			target_release_id = VALUES(target_release_id),
-			active_runtime_generation = GREATEST(active_runtime_generation, VALUES(active_runtime_generation)),
-			route_revision = GREATEST(route_revision, VALUES(route_revision)),
 			updated_at = VALUES(updated_at)
 	`, set.ID, set.Name, set.BaseURL, set.TrafficBaseURL, set.Status, set.Setup, set.AdminUserID, set.AdminUsername,
 		set.AdminRole, set.AdminStatus, set.AdminGroup, set.AdminAccessToken, set.AdminTOTPSecret,
@@ -1871,7 +1931,7 @@ func (s *MySQLStore) SaveSet(ctx context.Context, set Set) error {
 		set.AdminWritesPaused, set.AdminWritesPauseReason, nullableTime(set.AdminWritesPausedAt),
 		set.AdmissionStatus, set.AdmissionError, nullableTime(set.AdmissionCheckedAt), set.LifecycleGeneration,
 		set.AdminImage, set.ReleaseRingID, set.CurrentReleaseID, set.TargetReleaseID,
-		set.ActiveRuntimeGeneration, set.RouteRevision, set.CreatedAt, set.UpdatedAt)
+		set.ActiveRuntimeGeneration, set.LastRuntimeGeneration, set.RouteRevision, set.CreatedAt, set.UpdatedAt)
 	return err
 }
 
@@ -1915,7 +1975,7 @@ func (s *MySQLStore) GetSet(ctx context.Context, id string) (Set, bool, error) {
 			admin_writes_paused, admin_writes_pause_reason, admin_writes_paused_at,
 			admission_status, admission_error, admission_checked_at, lifecycle_generation,
 			COALESCE(admin_image, ''), release_ring_id, current_release_id, target_release_id,
-			active_runtime_generation, route_revision, created_at, updated_at
+			active_runtime_generation, last_runtime_generation, route_revision, created_at, updated_at
 		FROM llmgateway_sets WHERE id = ?
 	`, id)
 	set, err := scanSet(row)
@@ -1943,7 +2003,7 @@ func (s *MySQLStore) ListSets(ctx context.Context) ([]Set, error) {
 			admin_writes_paused, admin_writes_pause_reason, admin_writes_paused_at,
 			admission_status, admission_error, admission_checked_at, lifecycle_generation,
 			COALESCE(admin_image, ''), release_ring_id, current_release_id, target_release_id,
-			active_runtime_generation, route_revision, created_at, updated_at
+			active_runtime_generation, last_runtime_generation, route_revision, created_at, updated_at
 		FROM llmgateway_sets ORDER BY id
 	`)
 	if err != nil {
@@ -2146,9 +2206,9 @@ func (s *MySQLStore) SaveSetReconcileFact(ctx context.Context, fact SetReconcile
 			subscription_write_concurrency,
 			runtime_ha_status, runtime_ha_desired_replicas, runtime_ha_ready_replicas,
 			runtime_ha_pdb_healthy, runtime_ha_topology_key, runtime_ha_error, runtime_ha_checked_at,
-			desired_hash,
+			desired_hash, projection_version,
 			status, last_error, last_observed_at, last_reconciled_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			name = VALUES(name),
 			base_url = VALUES(base_url),
@@ -2171,6 +2231,7 @@ func (s *MySQLStore) SaveSetReconcileFact(ctx context.Context, fact SetReconcile
 			runtime_ha_error = VALUES(runtime_ha_error),
 			runtime_ha_checked_at = VALUES(runtime_ha_checked_at),
 			desired_hash = VALUES(desired_hash),
+			projection_version = VALUES(projection_version),
 			status = VALUES(status),
 			last_error = VALUES(last_error),
 			last_observed_at = VALUES(last_observed_at),
@@ -2182,7 +2243,7 @@ func (s *MySQLStore) SaveSetReconcileFact(ctx context.Context, fact SetReconcile
 		fact.SubscriptionWriteConcurrency,
 		fact.RuntimeHAStatus, fact.RuntimeHADesiredReplicas, fact.RuntimeHAReadyReplicas,
 		fact.RuntimeHAPDBHealthy, fact.RuntimeHATopologyKey, fact.RuntimeHAError, nullableTime(fact.RuntimeHACheckedAt),
-		fact.DesiredHash,
+		fact.DesiredHash, fact.ProjectionVersion,
 		fact.Status, fact.LastError, fact.LastObservedAt, lastReconciledAt, fact.CreatedAt, fact.UpdatedAt)
 	return err
 }
@@ -2195,7 +2256,7 @@ func (s *MySQLStore) GetSetReconcileFact(ctx context.Context, source string, nam
 			subscription_write_concurrency,
 			runtime_ha_status, runtime_ha_desired_replicas, runtime_ha_ready_replicas,
 			runtime_ha_pdb_healthy, runtime_ha_topology_key, runtime_ha_error, runtime_ha_checked_at,
-			desired_hash,
+			desired_hash, projection_version,
 			status, last_error, last_observed_at, last_reconciled_at, created_at, updated_at
 		FROM llmgateway_set_reconcile_facts
 		WHERE source = ? AND namespace_name = ? AND fleet = ? AND set_id = ?
@@ -2218,7 +2279,7 @@ func (s *MySQLStore) ListSetReconcileFacts(ctx context.Context, opts SetReconcil
 			subscription_write_concurrency,
 			runtime_ha_status, runtime_ha_desired_replicas, runtime_ha_ready_replicas,
 			runtime_ha_pdb_healthy, runtime_ha_topology_key, runtime_ha_error, runtime_ha_checked_at,
-			desired_hash,
+			desired_hash, projection_version,
 			status, last_error, last_observed_at, last_reconciled_at, created_at, updated_at
 		FROM llmgateway_set_reconcile_facts`
 	where := []string{}
@@ -2238,6 +2299,10 @@ func (s *MySQLStore) ListSetReconcileFacts(ctx context.Context, opts SetReconcil
 	if opts.Status != "" {
 		where = append(where, "status = ?")
 		args = append(args, opts.Status)
+	}
+	if opts.ProjectionVersionBefore > 0 {
+		where = append(where, "projection_version < ?")
+		args = append(args, opts.ProjectionVersionBefore)
 	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
@@ -2265,6 +2330,18 @@ func (s *MySQLStore) ListSetReconcileFacts(ctx context.Context, opts SetReconcil
 
 func (s *MySQLStore) SaveSetProvisionRequest(ctx context.Context, request SetProvisionRequest) error {
 	now := time.Now().UTC()
+	if request.RuntimeBackend == "" {
+		request.RuntimeBackend = SetRuntimeBackendLLMFleet
+	}
+	if request.WriterEpoch <= 0 {
+		request.WriterEpoch = 1
+	}
+	if request.LifecycleRevision <= 0 {
+		request.LifecycleRevision = 1
+	}
+	if request.Version <= 0 {
+		request.Version = 1
+	}
 	if existing, ok, err := s.GetSetProvisionRequest(ctx, request.ID); err != nil {
 		return err
 	} else if ok {
@@ -2311,9 +2388,13 @@ func execSaveSetProvisionRequest(ctx context.Context, execer provisionRequestExe
 		INSERT INTO llmgateway_set_provision_requests (
 			id, source, namespace_name, fleet, set_id, shard_ref, database_name, redis_db,
 			release_ring_id, release_id, release_image,
+			runtime_backend, writer_epoch, lifecycle_revision, attempt, version,
+			claim_owner, claim_token, claim_lease_until,
+			cr_uid, cr_generation, runtime_secret_uid, runtime_identity_digest,
+			bootstrap_job_uid, bootstrap_completed_at, admin_fact_hash, serving_fact_hash,
 			status, reason, last_error, requested_users, max_users_per_set,
 			last_status_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			shard_ref = VALUES(shard_ref),
 			database_name = VALUES(database_name),
@@ -2321,6 +2402,22 @@ func execSaveSetProvisionRequest(ctx context.Context, execer provisionRequestExe
 			release_ring_id = VALUES(release_ring_id),
 			release_id = VALUES(release_id),
 			release_image = VALUES(release_image),
+			runtime_backend = VALUES(runtime_backend),
+			writer_epoch = VALUES(writer_epoch),
+			lifecycle_revision = VALUES(lifecycle_revision),
+			attempt = VALUES(attempt),
+			version = VALUES(version),
+			claim_owner = VALUES(claim_owner),
+			claim_token = VALUES(claim_token),
+			claim_lease_until = VALUES(claim_lease_until),
+			cr_uid = VALUES(cr_uid),
+			cr_generation = VALUES(cr_generation),
+			runtime_secret_uid = VALUES(runtime_secret_uid),
+			runtime_identity_digest = VALUES(runtime_identity_digest),
+			bootstrap_job_uid = VALUES(bootstrap_job_uid),
+			bootstrap_completed_at = VALUES(bootstrap_completed_at),
+			admin_fact_hash = VALUES(admin_fact_hash),
+			serving_fact_hash = VALUES(serving_fact_hash),
 			status = VALUES(status),
 			reason = VALUES(reason),
 			last_error = VALUES(last_error),
@@ -2330,6 +2427,10 @@ func execSaveSetProvisionRequest(ctx context.Context, execer provisionRequestExe
 			updated_at = VALUES(updated_at)
 	`, request.ID, request.Source, request.Namespace, request.Fleet, request.SetID, request.ShardRef,
 		request.DatabaseName, request.RedisDB, request.ReleaseRingID, request.ReleaseID, request.ReleaseImage,
+		request.RuntimeBackend, request.WriterEpoch, request.LifecycleRevision, request.Attempt, request.Version,
+		request.ClaimOwner, request.ClaimToken, nullableTime(request.ClaimLeaseUntil),
+		request.CRUID, request.CRGeneration, request.RuntimeSecretUID, request.RuntimeIdentityDigest,
+		request.BootstrapJobUID, nullableTime(request.BootstrapCompletedAt), request.AdminFactHash, request.ServingFactHash,
 		request.Status, request.Reason, request.LastError,
 		request.RequestedUsers, request.MaxUsersPerSet, nullableTime(request.LastStatusAt), request.CreatedAt, request.UpdatedAt)
 	return err
@@ -2536,6 +2637,10 @@ func (s *MySQLStore) GetSetProvisionRequest(ctx context.Context, id string) (Set
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, source, namespace_name, fleet, set_id, shard_ref, database_name, redis_db,
 			release_ring_id, release_id, COALESCE(release_image, ''),
+			runtime_backend, writer_epoch, lifecycle_revision, attempt, version,
+			claim_owner, claim_token, claim_lease_until,
+			cr_uid, cr_generation, runtime_secret_uid, runtime_identity_digest,
+			bootstrap_job_uid, bootstrap_completed_at, admin_fact_hash, serving_fact_hash,
 			status, reason, last_error, requested_users, max_users_per_set,
 			last_status_at, created_at, updated_at
 		FROM llmgateway_set_provision_requests
@@ -2555,6 +2660,10 @@ func (s *MySQLStore) ListSetProvisionRequests(ctx context.Context, opts SetProvi
 	query := `
 		SELECT id, source, namespace_name, fleet, set_id, shard_ref, database_name, redis_db,
 			release_ring_id, release_id, COALESCE(release_image, ''),
+			runtime_backend, writer_epoch, lifecycle_revision, attempt, version,
+			claim_owner, claim_token, claim_lease_until,
+			cr_uid, cr_generation, runtime_secret_uid, runtime_identity_digest,
+			bootstrap_job_uid, bootstrap_completed_at, admin_fact_hash, serving_fact_hash,
 			status, reason, last_error, requested_users, max_users_per_set,
 			last_status_at, created_at, updated_at
 		FROM llmgateway_set_provision_requests`
@@ -2579,6 +2688,18 @@ func (s *MySQLStore) ListSetProvisionRequests(ctx context.Context, opts SetProvi
 	if opts.Status != "" {
 		where = append(where, "status = ?")
 		args = append(args, opts.Status)
+	}
+	if len(opts.Statuses) > 0 {
+		placeholders := make([]string, 0, len(opts.Statuses))
+		for _, status := range opts.Statuses {
+			placeholders = append(placeholders, "?")
+			args = append(args, status)
+		}
+		where = append(where, "status IN ("+strings.Join(placeholders, ",")+")")
+	}
+	if opts.RuntimeBackend != "" {
+		where = append(where, "runtime_backend = ?")
+		args = append(args, opts.RuntimeBackend)
 	}
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
@@ -4367,7 +4488,7 @@ func scanSet(row scanner) (Set, error) {
 		&set.AdminWritesPaused, &adminWritesPauseReason, &adminWritesPausedAt,
 		&set.AdmissionStatus, &set.AdmissionError, &admissionCheckedAt, &set.LifecycleGeneration,
 		&adminImage, &set.ReleaseRingID, &set.CurrentReleaseID, &set.TargetReleaseID,
-		&set.ActiveRuntimeGeneration, &set.RouteRevision, &set.CreatedAt, &set.UpdatedAt)
+		&set.ActiveRuntimeGeneration, &set.LastRuntimeGeneration, &set.RouteRevision, &set.CreatedAt, &set.UpdatedAt)
 	set.AdminWritesPauseReason = adminWritesPauseReason.String
 	set.AdminImage = adminImage.String
 	if capacityUpdatedAt.Valid {
@@ -4451,6 +4572,7 @@ func scanSetReconcileFact(row scanner) (SetReconcileFact, error) {
 		&fact.RuntimeHAError,
 		&runtimeHACheckedAt,
 		&fact.DesiredHash,
+		&fact.ProjectionVersion,
 		&fact.Status,
 		&fact.LastError,
 		&fact.LastObservedAt,
@@ -4476,6 +4598,8 @@ func scanSetReconcileFact(row scanner) (SetReconcileFact, error) {
 func scanSetProvisionRequest(row scanner) (SetProvisionRequest, error) {
 	var request SetProvisionRequest
 	var lastStatusAt sql.NullTime
+	var claimLeaseUntil sql.NullTime
+	var bootstrapCompletedAt sql.NullTime
 	err := row.Scan(
 		&request.ID,
 		&request.Source,
@@ -4488,6 +4612,22 @@ func scanSetProvisionRequest(row scanner) (SetProvisionRequest, error) {
 		&request.ReleaseRingID,
 		&request.ReleaseID,
 		&request.ReleaseImage,
+		&request.RuntimeBackend,
+		&request.WriterEpoch,
+		&request.LifecycleRevision,
+		&request.Attempt,
+		&request.Version,
+		&request.ClaimOwner,
+		&request.ClaimToken,
+		&claimLeaseUntil,
+		&request.CRUID,
+		&request.CRGeneration,
+		&request.RuntimeSecretUID,
+		&request.RuntimeIdentityDigest,
+		&request.BootstrapJobUID,
+		&bootstrapCompletedAt,
+		&request.AdminFactHash,
+		&request.ServingFactHash,
 		&request.Status,
 		&request.Reason,
 		&request.LastError,
@@ -4502,6 +4642,12 @@ func scanSetProvisionRequest(row scanner) (SetProvisionRequest, error) {
 	}
 	if lastStatusAt.Valid {
 		request.LastStatusAt = lastStatusAt.Time.UTC()
+	}
+	if claimLeaseUntil.Valid {
+		request.ClaimLeaseUntil = claimLeaseUntil.Time.UTC()
+	}
+	if bootstrapCompletedAt.Valid {
+		request.BootstrapCompletedAt = bootstrapCompletedAt.Time.UTC()
 	}
 	request.CreatedAt = request.CreatedAt.UTC()
 	request.UpdatedAt = request.UpdatedAt.UTC()

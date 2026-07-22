@@ -108,6 +108,9 @@ func (f *fakeCTLClient) ListPassesByUser(_ context.Context, _ string) ([]*ctlcli
 func (f *fakeCTLClient) CompletePass(_ context.Context, _ *ctlclient.CompletePassRequest) (*ctlclient.PassDetail, error) {
 	return nil, errors.New("CompletePass not used in renewresource tests")
 }
+func (f *fakeCTLClient) TransferPass(_ context.Context, _ *ctlclient.TransferPassRequest) (*ctlclient.PassDetail, error) {
+	return nil, errors.New("TransferPass not used in renewresource tests")
+}
 func (f *fakeCTLClient) ListPassAppIDs(_ context.Context, _ []string, _, _ int) ([]int64, int64, error) {
 	return nil, 0, errors.New("ListPassAppIDs not used in renewresource tests")
 }

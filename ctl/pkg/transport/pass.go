@@ -47,6 +47,22 @@ type PassBillingMigrationResult struct {
 	Message    string `json:"message,omitempty"`
 }
 
+// TransferPassRequest 是 trade 在 jifei transferResource 回调后反向调用 ctl 的请求。
+//
+// 本接口只迁移既有免费 pass 的计费归属，不创建 pass、不改 quota/subscription。
+type TransferPassRequest struct {
+	PassID         string `json:"pass_id"`
+	UserID         string `json:"user_id,omitempty"`
+	SourceBundleID string `json:"source_bundle_id,omitempty"`
+	TargetBundleID string `json:"target_bundle_id"`
+	OldUin         int64  `json:"old_uin"`
+	OldAppID       int64  `json:"old_app_id"`
+	NewUin         int64  `json:"new_uin"`
+	NewAppID       int64  `json:"new_app_id"`
+	DealName       string `json:"deal_name"`
+	BigOrderID     string `json:"big_order_id,omitempty"`
+}
+
 // ModifyPassRequest 修改权益请求
 type ModifyPassRequest struct {
 	PassID      string     `json:"pass_id"`

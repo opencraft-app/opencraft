@@ -1,12 +1,12 @@
 # Core Concepts
 
-LightVela involves four core concepts: Hermes, models, channels, and skills. This page explains their roles. For detailed configuration steps, see the corresponding configuration pages.
+LightVela involves four core concepts: Hermes Agent, models, channels, and skills. This page explains their roles. For detailed configuration steps, see the corresponding configuration pages.
 
 ## This page covers
 
 - The relationship between the four concepts
 
-- Characteristics of a Hermes instance
+- Characteristics of a Hermes Agent instance
 
 - The positioning and configuration entry points of models, channels, and skills
 
@@ -18,7 +18,7 @@ LightVela involves four core concepts: Hermes, models, channels, and skills. Thi
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                            Hermes                            │
+│                         Hermes Agent                         │
 │              (Agent running in the LightVela cloud)           │
 └──────────────────────────────────────────────────────────────┘
       │                          │                        │
@@ -32,34 +32,34 @@ LightVela involves four core concepts: Hermes, models, channels, and skills. Thi
 
 | Concept | Role | Description |
 |---|---|---|
-| Hermes | Conversation subject | The AI Agent instance itself |
-| Model | Language capability | The large language model called by Hermes |
-| Channel | Interaction entry point | The platform where users chat with Hermes |
-| Skill | Capability extension | Additional capability packages callable by Hermes |
+| Hermes Agent | Conversation subject | The AI Agent instance itself |
+| Model | Language capability | The large language model called by Hermes Agent |
+| Channel | Interaction entry point | The platform where users chat with Hermes Agent |
+| Skill | Capability extension | Additional capability packages callable by Hermes Agent |
 
 ![](./images/3-1.webp)
 
 ---
 
-## Hermes
+## Hermes Agent
 
-Hermes is the AI Agent instance in LightVela. Creating a Hermes is equivalent to starting an independent Agent instance in the cloud.
+Hermes Agent is the AI Agent instance in LightVela. Creating a Hermes Agent is equivalent to starting an independent Agent instance in the cloud.
 
-Hermes has the following characteristics:
+Hermes Agent has the following characteristics:
 
-- **Isolated runtime environment**: Each Hermes runs in a dedicated environment isolated from other instances
+- **Isolated runtime environment**: Each Hermes Agent runs in a dedicated environment isolated from other instances
 
 - **Persistent memory**: Conversation content is saved across sessions, and the Agent uses historical context when responding
 
 - **Always online**: Runs 24/7 and does not depend on the user's local device
 
-The current Launch plan supports creating up to 1 Hermes instance.
+The current Launch plan supports creating up to 1 Hermes Agent instance.
 
 ---
 
 ## Models
 
-A model is the large language model (LLM) that drives Hermes thinking and responses. LightVela does not train models itself. Instead, users select a calling method in the "Model" card of the console:
+A model is the large language model (LLM) that drives Hermes Agent thinking and responses. LightVela does not train models itself. Instead, users select a calling method in the "Model" card of the console:
 
 | Method | Billing mode | API Key source | Use case |
 |---|---|---|---|
@@ -73,13 +73,13 @@ For supported models, API Key acquisition, and model selection guidance, see [Co
 
 > ⚠️ **Only one model is active**
 >
-> Currently, each Hermes can have only one active model configuration. To switch models, use "Add as default" to overwrite the previous configuration.
+> Currently, each Hermes Agent can have only one active model configuration. To switch models, use "Add as default" to overwrite the previous configuration.
 
 ---
 
 ## Channels
 
-Channels are the messaging platform entry points where users chat with Hermes. LightVela currently supports the following channels:
+Channels are the messaging platform entry points where users chat with Hermes Agent. LightVela currently supports the following channels:
 
 | Channel | Access method | Use case |
 |---|---|---|
@@ -96,21 +96,21 @@ Detailed access steps for each channel: [Configure Channel - WeChat](./configura
 
 > 💡 **Multiple channels can coexist**
 >
-> Multiple channels can be connected to the same Hermes instance and share memory and Agent behavior. No matter which channel sends a message, the conversation target is the same Hermes.
+> Multiple channels can be connected to the same Hermes Agent instance and share memory and Agent behavior. No matter which channel sends a message, the conversation target is the same Hermes Agent.
 
 ---
 
 ## Skills
 
-Skills are additional capability packages callable by Hermes. They extend Hermes beyond basic conversation for specific tasks such as organizing to-dos, generating daily reports, browsing the web, generating images, and more.
+Skills are additional capability packages callable by Hermes Agent. They extend Hermes Agent beyond basic conversation for specific tasks such as organizing to-dos, generating daily reports, browsing the web, generating images, and more.
 
 All skills come from [SkillHub](https://skillhub.tencent.com), an independent skill marketplace launched by Tencent. In SkillHub, you can browse listed skills and view their feature descriptions and examples.
 
-Enter the skill name recorded on SkillHub in the "3. Skills" card of the console and click "Install Skill" to install it. You can also ask Hermes directly in conversation to install or delete skills. See [Configure Skills](./configuration/skill.md).
+Enter the skill name recorded on SkillHub in the "3. Skills" card of the console and click "Install Skill" to install it. You can also ask Hermes Agent directly in conversation to install or delete skills. See [Configure Skills](./configuration/skill.md).
 
 > ⚠️ **Security check before installation**
 >
-> Skills have permission to call Hermes capabilities at runtime. Before installing a skill, confirm that the author is trustworthy and prefer skills with high downloads and good ratings.
+> Skills have permission to call Hermes Agent capabilities at runtime. Before installing a skill, confirm that the author is trustworthy and prefer skills with high downloads and good ratings.
 
 ---
 
@@ -118,9 +118,9 @@ Enter the skill name recorded on SkillHub in the "3. Skills" card of the console
 
 A complete conversation flow works as follows:
 
-1. The user sends a message to Hermes through a channel (such as WeChat)
+1. The user sends a message to Hermes Agent through a channel (such as WeChat)
 
-2. Hermes determines whether a skill needs to be called based on the message
+2. Hermes Agent determines whether a skill needs to be called based on the message
 
 3. The model processes the context and generates a response
 
@@ -132,4 +132,4 @@ A complete conversation flow works as follows:
 
 - [Configuration Overview](./05-configuration.md) — Full console feature guide
 
-- [Quickstart](./02-quickstart.md) — Getting started when no Hermes has been created
+- [Quickstart](./02-quickstart.md) — Getting started when no Hermes Agent has been created

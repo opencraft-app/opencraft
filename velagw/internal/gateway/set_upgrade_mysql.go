@@ -13,7 +13,7 @@ import (
 
 const setUpgradeRunColumns = `id, batch_id, set_id, source, namespace_name, fleet, target_image,
 	from_release_id, target_release_id, sequence_no,
-	from_generation, to_generation, status, consecutive_probe_successes, consecutive_probe_failures,
+	from_generation, to_generation, lifecycle_generation, status, consecutive_probe_successes, consecutive_probe_failures,
 	drain_timeout_seconds, rollback_window_seconds, lease_owner, lease_until, switched_at,
 	drain_deadline, rollback_deadline, rollback_requested, rollback_reason,
 	master_upgraded_at, compatibility_checked_at, last_error, created_at, updated_at`
@@ -30,8 +30,10 @@ func (s *MySQLStore) SaveSetRuntime(ctx context.Context, runtime SetRuntime) err
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO llmgateway_set_runtimes (set_id, generation, release_id, image, traffic_base_url, status, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE release_id=VALUES(release_id), image=VALUES(image), traffic_base_url=VALUES(traffic_base_url), status=VALUES(status), updated_at=VALUES(updated_at)
 	`, runtime.SetID, runtime.Generation, runtime.ReleaseID, runtime.Image, runtime.TrafficBaseURL, runtime.Status, runtime.CreatedAt, runtime.UpdatedAt)
+	if isMySQLDuplicateKeyError(err) {
+		return fmt.Errorf("set runtime %s generation %d is immutable", runtime.SetID, runtime.Generation)
+	}
 	return err
 }
 
@@ -39,27 +41,72 @@ func (s *MySQLStore) InitializeSetRuntime(ctx context.Context, setID string, gen
 	setID = strings.TrimSpace(setID)
 	image = strings.TrimSpace(image)
 	trafficBaseURL = strings.TrimRight(strings.TrimSpace(trafficBaseURL), "/")
-	if setID == "" || generation <= 0 || image == "" || trafficBaseURL == "" {
-		return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("initial set runtime requires set_id, positive generation, image and traffic url")
+	if setID == "" || generation < 0 || image == "" || trafficBaseURL == "" {
+		return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("initial set runtime requires set_id, non-negative generation, image and traffic url")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return SetRuntimeRouteSnapshot{}, false, err
 	}
 	defer tx.Rollback()
-	var status string
-	var activeGeneration, routeRevision int64
+	var status, baseURL, declaredTrafficBaseURL string
+	var activeGeneration, lastGeneration, routeRevision int64
 	var updatedAt time.Time
 	if err := tx.QueryRowContext(ctx, `
-		SELECT status, active_runtime_generation, route_revision, updated_at
+		SELECT status, base_url, traffic_base_url, active_runtime_generation, last_runtime_generation, route_revision, updated_at
 		FROM llmgateway_sets WHERE id=? FOR UPDATE
-	`, setID).Scan(&status, &activeGeneration, &routeRevision, &updatedAt); err != nil {
+	`, setID).Scan(&status, &baseURL, &declaredTrafficBaseURL, &activeGeneration, &lastGeneration, &routeRevision, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("set %q not found", setID)
 		}
 		return SetRuntimeRouteSnapshot{}, false, err
 	}
-	if routeRevision > 0 || activeGeneration > 0 {
+	if activeGeneration == 0 && routeRevision > 0 {
+		legacy := SetRuntime{SetID: setID, Generation: 0}
+		if err := tx.QueryRowContext(ctx, `
+			SELECT image,traffic_base_url FROM llmgateway_set_runtimes
+			WHERE set_id=? AND generation=0 FOR UPDATE
+		`, setID).Scan(&legacy.Image, &legacy.TrafficBaseURL); err != nil {
+			return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("load generation 0 runtime for set %q: %w", setID, err)
+		}
+		if !canAdoptObservedSetRuntime(Set{BaseURL: baseURL, TrafficBaseURL: declaredTrafficBaseURL}, legacy, trafficBaseURL) {
+			return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("set %q generation 0 route does not match observed generation %d", setID, generation)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO llmgateway_set_runtimes (set_id,generation,release_id,image,traffic_base_url,status,created_at,updated_at)
+			VALUES (?,?,?,?,?,?,?,?)
+		`, setID, generation, "", image, trafficBaseURL, SetRuntimeStatusActive, now, now); err != nil {
+			if isMySQLDuplicateKeyError(err) {
+				return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("set runtime %s generation %d is immutable", setID, generation)
+			}
+			return SetRuntimeRouteSnapshot{}, false, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE llmgateway_set_runtimes SET status=?,updated_at=? WHERE set_id=? AND generation=0
+		`, SetRuntimeStatusRetired, now, setID); err != nil {
+			return SetRuntimeRouteSnapshot{}, false, err
+		}
+		routeRevision++
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE llmgateway_sets SET active_runtime_generation=?,
+				last_runtime_generation=GREATEST(last_runtime_generation,?), route_revision=?,
+				admin_image=?, traffic_base_url=?, updated_at=? WHERE id=?
+		`, generation, generation, routeRevision, image, trafficBaseURL, now, setID); err != nil {
+			return SetRuntimeRouteSnapshot{}, false, err
+		}
+		snapshot := SetRuntimeRouteSnapshot{
+			SetID: setID, RuntimeGeneration: generation, RouteRevision: routeRevision,
+			TrafficBaseURL: trafficBaseURL, Enabled: status == SetStatusActive, SwitchedAt: now,
+		}
+		if err := insertSetRuntimeRouteOutboxTx(ctx, tx, snapshot, now); err != nil {
+			return SetRuntimeRouteSnapshot{}, false, err
+		}
+		if err := tx.Commit(); err != nil {
+			return SetRuntimeRouteSnapshot{}, false, err
+		}
+		return snapshot, true, nil
+	}
+	if routeRevision > 0 {
 		var runtimeURL string
 		if err := tx.QueryRowContext(ctx, `
 			SELECT traffic_base_url FROM llmgateway_set_runtimes WHERE set_id=? AND generation=?
@@ -72,15 +119,14 @@ func (s *MySQLStore) InitializeSetRuntime(ctx context.Context, setID string, gen
 		}, false, nil
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE llmgateway_sets SET active_runtime_generation=?, route_revision=1,
+		UPDATE llmgateway_sets SET active_runtime_generation=?, last_runtime_generation=GREATEST(last_runtime_generation,?), route_revision=1,
 			admin_image=?, traffic_base_url=?, updated_at=? WHERE id=?
-	`, generation, image, trafficBaseURL, now, setID); err != nil {
+	`, generation, generation, image, trafficBaseURL, now, setID); err != nil {
 		return SetRuntimeRouteSnapshot{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO llmgateway_set_runtimes (set_id,generation,release_id,image,traffic_base_url,status,created_at,updated_at)
 		VALUES (?,?,?,?,?,?,?,?)
-		ON DUPLICATE KEY UPDATE image=VALUES(image),traffic_base_url=VALUES(traffic_base_url),status=VALUES(status),updated_at=VALUES(updated_at)
 	`, setID, generation, "", image, trafficBaseURL, SetRuntimeStatusActive, now, now); err != nil {
 		return SetRuntimeRouteSnapshot{}, false, err
 	}
@@ -128,13 +174,101 @@ func (s *MySQLStore) ListSetRuntimes(ctx context.Context, setID string) ([]SetRu
 	return result, rows.Err()
 }
 
+func (s *MySQLStore) TransitionSetTrafficState(ctx context.Context, setID, status string, now time.Time) (Set, SetRuntimeRouteSnapshot, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Set{}, SetRuntimeRouteSnapshot{}, err
+	}
+	defer tx.Rollback()
+	var currentStatus string
+	var activeGeneration, routeRevision int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT status,active_runtime_generation,route_revision
+		FROM llmgateway_sets WHERE id=? FOR UPDATE
+	`, setID).Scan(&currentStatus, &activeGeneration, &routeRevision); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Set{}, SetRuntimeRouteSnapshot{}, fmt.Errorf("set %q not found", setID)
+		}
+		return Set{}, SetRuntimeRouteSnapshot{}, err
+	}
+	if currentStatus == status {
+		if err := tx.Commit(); err != nil {
+			return Set{}, SetRuntimeRouteSnapshot{}, err
+		}
+		set, ok, err := s.GetSet(ctx, setID)
+		if err != nil || !ok {
+			return Set{}, SetRuntimeRouteSnapshot{}, err
+		}
+		return set, SetRuntimeRouteSnapshot{}, nil
+	}
+	var trafficBaseURL string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT traffic_base_url FROM llmgateway_set_runtimes
+		WHERE set_id=? AND generation=? FOR UPDATE
+	`, setID, activeGeneration).Scan(&trafficBaseURL); err != nil {
+		return Set{}, SetRuntimeRouteSnapshot{}, fmt.Errorf("load active runtime for set %q: %w", setID, err)
+	}
+	routeRevision++
+	if routeRevision <= 0 {
+		routeRevision = 1
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE llmgateway_sets SET status=?,route_revision=?,updated_at=? WHERE id=?
+	`, status, routeRevision, now, setID); err != nil {
+		return Set{}, SetRuntimeRouteSnapshot{}, err
+	}
+	snapshot := SetRuntimeRouteSnapshot{
+		SetID: setID, RuntimeGeneration: activeGeneration, RouteRevision: routeRevision,
+		TrafficBaseURL: trafficBaseURL, Enabled: status != SetStatusDisabled, SwitchedAt: now,
+	}
+	if err := insertSetRuntimeRouteOutboxTx(ctx, tx, snapshot, now); err != nil {
+		return Set{}, SetRuntimeRouteSnapshot{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Set{}, SetRuntimeRouteSnapshot{}, err
+	}
+	set, ok, err := s.GetSet(ctx, setID)
+	if err != nil || !ok {
+		return Set{}, SetRuntimeRouteSnapshot{}, err
+	}
+	return set, snapshot, nil
+}
+
 func (s *MySQLStore) CreateSetUpgradeBatch(ctx context.Context, batch SetUpgradeBatch) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	for _, run := range batch.Runs {
+	for index := range batch.Runs {
+		run := &batch.Runs[index]
+		var status string
+		var activeGeneration, lastGeneration, lifecycleGeneration, maxRuntimeGeneration int64
+		if err := tx.QueryRowContext(ctx, `
+			SELECT status,active_runtime_generation,last_runtime_generation,lifecycle_generation
+			FROM llmgateway_sets WHERE id=? FOR UPDATE
+		`, run.SetID).Scan(&status, &activeGeneration, &lastGeneration, &lifecycleGeneration); err != nil {
+			return err
+		}
+		if status != SetStatusActive {
+			return fmt.Errorf("set %q is not active", run.SetID)
+		}
+		if run.FromGeneration != activeGeneration {
+			return fmt.Errorf("set %q active runtime changed while creating upgrade", run.SetID)
+		}
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COALESCE(MAX(generation),0) FROM llmgateway_set_runtimes WHERE set_id=?
+		`, run.SetID).Scan(&maxRuntimeGeneration); err != nil {
+			return err
+		}
+		if maxRuntimeGeneration > lastGeneration {
+			lastGeneration = maxRuntimeGeneration
+		}
+		if activeGeneration > lastGeneration {
+			lastGeneration = activeGeneration
+		}
+		run.ToGeneration = lastGeneration + 1
+		run.LifecycleGeneration = lifecycleGeneration
 		var activeID string
 		err := tx.QueryRowContext(ctx, `
 			SELECT id FROM llmgateway_set_upgrade_runs
@@ -144,6 +278,11 @@ func (s *MySQLStore) CreateSetUpgradeBatch(ctx context.Context, batch SetUpgrade
 			return ErrSetUpgradeAlreadyActive
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE llmgateway_sets SET last_runtime_generation=?,updated_at=? WHERE id=?
+		`, run.ToGeneration, batch.UpdatedAt, run.SetID); err != nil {
 			return err
 		}
 	}
@@ -156,7 +295,7 @@ func (s *MySQLStore) CreateSetUpgradeBatch(ctx context.Context, batch SetUpgrade
 	for _, run := range batch.Runs {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO llmgateway_set_upgrade_runs (`+setUpgradeRunColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, setUpgradeRunValues(run)...); err != nil {
 			return err
 		}
@@ -241,6 +380,16 @@ func (s *MySQLStore) TryAcquireSetUpgradeRun(ctx context.Context, id, owner stri
 	}
 	if run.LeaseOwner != "" && run.LeaseOwner != owner && run.LeaseUntil.After(now) {
 		return SetUpgradeRun{}, false, nil
+	}
+	var setStatus string
+	var lifecycleGeneration int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT status,lifecycle_generation FROM llmgateway_sets WHERE id=? FOR UPDATE
+	`, run.SetID).Scan(&setStatus, &lifecycleGeneration); err != nil {
+		return SetUpgradeRun{}, false, err
+	}
+	if setStatus != SetStatusActive || lifecycleGeneration != run.LifecycleGeneration {
+		return SetUpgradeRun{}, false, fmt.Errorf("set %q lifecycle changed during upgrade", run.SetID)
 	}
 	if run.Status == SetUpgradeRunStatusPending {
 		var maxParallel int
@@ -346,8 +495,10 @@ func (s *MySQLStore) PrepareSetUpgradeRuntime(ctx context.Context, claimed SetUp
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO llmgateway_set_runtimes (set_id,generation,release_id,image,traffic_base_url,status,created_at,updated_at)
 		VALUES (?,?,?,?,?,?,?,?)
-		ON DUPLICATE KEY UPDATE release_id=VALUES(release_id),image=VALUES(image),traffic_base_url=VALUES(traffic_base_url),status=VALUES(status),updated_at=VALUES(updated_at)
 	`, runtime.SetID, runtime.Generation, runtime.ReleaseID, runtime.Image, runtime.TrafficBaseURL, runtime.Status, runtime.CreatedAt, runtime.UpdatedAt); err != nil {
+		if isMySQLDuplicateKeyError(err) {
+			return SetUpgradeRun{}, fmt.Errorf("set runtime %s generation %d is immutable", runtime.SetID, runtime.Generation)
+		}
 		return SetUpgradeRun{}, err
 	}
 	run.Status = SetUpgradeRunStatusProbing
@@ -764,6 +915,16 @@ func claimedSetUpgradeRunTx(ctx context.Context, tx *sql.Tx, claimed SetUpgradeR
 	if run.LeaseOwner == "" || run.LeaseOwner != claimed.LeaseOwner || !run.LeaseUntil.After(now) {
 		return SetUpgradeRun{}, fmt.Errorf("upgrade run lease is not owned or expired")
 	}
+	var setStatus string
+	var lifecycleGeneration int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT status,lifecycle_generation FROM llmgateway_sets WHERE id=? FOR UPDATE
+	`, run.SetID).Scan(&setStatus, &lifecycleGeneration); err != nil {
+		return SetUpgradeRun{}, err
+	}
+	if setStatus != SetStatusActive || lifecycleGeneration != run.LifecycleGeneration {
+		return SetUpgradeRun{}, fmt.Errorf("set %q lifecycle changed during upgrade", run.SetID)
+	}
 	return run, nil
 }
 
@@ -787,15 +948,17 @@ func insertSetRuntimeRouteOutboxTx(ctx context.Context, tx *sql.Tx, snapshot Set
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO llmgateway_set_runtime_route_outbox (id,set_id,route_revision,snapshot_json,status,attempts,last_error,created_at,updated_at)
 		VALUES (?,?,?,?,?,0,'',?,?)
-		ON DUPLICATE KEY UPDATE snapshot_json=VALUES(snapshot_json),updated_at=VALUES(updated_at)
 	`, id, snapshot.SetID, snapshot.RouteRevision, raw, SetRuntimeRouteOutboxStatusPending, now, now)
+	if isMySQLDuplicateKeyError(err) {
+		return fmt.Errorf("runtime route outbox revision %d for set %q already exists", snapshot.RouteRevision, snapshot.SetID)
+	}
 	return err
 }
 
 func setUpgradeRunValues(run SetUpgradeRun) []any {
 	return []any{run.ID, run.BatchID, run.SetID, run.Source, run.Namespace, run.Fleet, run.TargetImage,
 		run.FromReleaseID, run.TargetReleaseID, run.Sequence,
-		run.FromGeneration, run.ToGeneration, run.Status, run.ConsecutiveProbeSuccesses, run.ConsecutiveProbeFailures,
+		run.FromGeneration, run.ToGeneration, run.LifecycleGeneration, run.Status, run.ConsecutiveProbeSuccesses, run.ConsecutiveProbeFailures,
 		int64(run.DrainTimeout / time.Second), int64(run.RollbackWindow / time.Second), run.LeaseOwner, nullableTime(run.LeaseUntil),
 		nullableTime(run.SwitchedAt), nullableTime(run.DrainDeadline), nullableTime(run.RollbackDeadline), run.RollbackRequested, run.RollbackReason,
 		nullableTime(run.MasterUpgradedAt), nullableTime(run.CompatibilityCheckedAt), run.LastError, run.CreatedAt, run.UpdatedAt}
@@ -813,7 +976,7 @@ func scanSetUpgradeRun(row scanner) (SetUpgradeRun, error) {
 	var leaseUntil, switchedAt, drainDeadline, rollbackDeadline, masterUpgradedAt, compatibilityCheckedAt sql.NullTime
 	err := row.Scan(&run.ID, &run.BatchID, &run.SetID, &run.Source, &run.Namespace, &run.Fleet, &run.TargetImage,
 		&run.FromReleaseID, &run.TargetReleaseID, &run.Sequence,
-		&run.FromGeneration, &run.ToGeneration, &run.Status, &run.ConsecutiveProbeSuccesses, &run.ConsecutiveProbeFailures,
+		&run.FromGeneration, &run.ToGeneration, &run.LifecycleGeneration, &run.Status, &run.ConsecutiveProbeSuccesses, &run.ConsecutiveProbeFailures,
 		&drainSeconds, &rollbackSeconds, &run.LeaseOwner, &leaseUntil, &switchedAt, &drainDeadline, &rollbackDeadline,
 		&run.RollbackRequested, &run.RollbackReason, &masterUpgradedAt, &compatibilityCheckedAt,
 		&run.LastError, &run.CreatedAt, &run.UpdatedAt)

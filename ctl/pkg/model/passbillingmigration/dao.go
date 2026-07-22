@@ -14,6 +14,7 @@ type Dao interface {
 	GetByPassAndTarget(passID, targetBundleID string) (*Entity, error)
 	Upsert(entity *Entity) error
 	UpdateByPassAndTarget(passID, targetBundleID string, updates map[string]interface{}) error
+	DeleteByPassAndTargetAndStatus(passID, targetBundleID, status string) error
 }
 
 type dao struct {
@@ -50,6 +51,8 @@ func (d *dao) Upsert(entity *Entity) error {
 			ColumnUin,
 			ColumnAppID,
 			ColumnStatus,
+			ColumnDealName,
+			ColumnBigOrderID,
 			ColumnLastError,
 		}),
 	}).Create(entity).Error
@@ -64,6 +67,16 @@ func (d *dao) UpdateByPassAndTarget(passID, targetBundleID string, updates map[s
 	}
 	if result.RowsAffected == 0 {
 		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (d *dao) DeleteByPassAndTargetAndStatus(passID, targetBundleID, status string) error {
+	result := d.DB().
+		Where(ColumnPassID+" = ? AND "+ColumnTargetBundleID+" = ? AND "+ColumnStatus+" = ?", passID, targetBundleID, status).
+		Delete(&Entity{})
+	if result.Error != nil {
+		return result.Error
 	}
 	return nil
 }

@@ -1,3 +1,386 @@
+# 中国站首页站点切换入口
+
+**Goal:** 在中国站首页挂载国际站现网已有的站点切换器，保持国际站实现与行为不变。
+
+## 任务清单
+
+- [x] 1. 在中国站首页显示既有站点切换器并完成双站回归验证。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/src/components/site/language-switcher.tsx`、`frontend/src/components/site/__tests__/language-switcher.test.tsx`、`frontend/src/pages/marketing/landing-page.tsx`、`frontend/next-site/public-pages.tsx`、`frontend/src/components/site/public-site-header.tsx`、`frontend/next-site/public-header-auth-island.tsx`
+  - 验收方式：中国站首页显示与国际站现网一致的 36px 浅灰胶囊切换器，下拉依次展示 `中国站 / 国际站 - 中文 / 国际站 - English` 并标记中国站为当前项；跨站点选择在新浏览器窗口打开；国际站原有 `Intl - English / Intl - 中文 / China Site` 文案与顺序不变；入口位于 Create Now 左侧，宽屏下三个操作整体向右微移；1024px 起保留完整顶部导航且不重叠，更窄时收起；相关测试、类型检查与 `git diff --check` 通过。
+
+## 规划门禁
+
+- 规模：S；执行模式：single_agent。
+- 仅挂载和调整既有站点切换组件的页头布局，不新增依赖、接口或页面，不重写国际站切换逻辑。
+- 规划门禁结论：通过。
+
+---
+
+# 实名认证流程体验优化 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 在不改变配色、认证接口和业务状态机的前提下，把实名认证三阶段弹窗改造成稳定、流畅、可访问的产品化向导，并提供本地可见预览。
+
+**Architecture:** 保留 `VerifyIdentityModal` 现有 API 调用、轮询与阶段状态，抽取无副作用的 `RealnameStepper` 展示组件，集中重构弹窗壳体和各阶段视图。弹窗改用现有 Radix Dialog primitive，阶段切换只动画 opacity/transform；错误就近关联但继续复用现有错误码映射。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS 4、Radix Dialog、Framer Motion、Vitest、Testing Library。
+
+## Global Constraints
+
+- 不修改现有黑白灰配色、后端接口、错误码、轮询频率、实名准入规则和国际站行为。
+- 不新增依赖，不存储姓名、身份证号或核身地址。
+- 遮罩点击不关闭；支持 Esc、焦点锁定和关闭后焦点恢复。
+- 动效只使用 opacity/transform，不超过 200ms，并尊重 reduced motion。
+- 成功仍以刷新后的 `user.realnameVerified` 为唯一真源。
+
+---
+
+### Task 1: 锁定向导结构与可访问性契约
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+- Create: `frontend/src/pages/marketing/realname-stepper.tsx`
+- Create: `frontend/src/pages/marketing/__tests__/realname-stepper.test.tsx`
+
+**Interfaces:**
+- Produces: `RealnameStepper({ stage, includePhoneStep, labels })`
+- Consumes: `stage: "identity" | "face" | "phone" | "shadow"`
+
+- [x] **Step 1: 为步骤轨道写失败测试**
+
+```tsx
+render(<RealnameStepper stage="face" includePhoneStep labels={labels} />);
+expect(screen.getByText("身份信息").closest("li")).toHaveAttribute("data-state", "complete");
+expect(screen.getByText("人脸核身").closest("li")).toHaveAttribute("aria-current", "step");
+```
+
+- [x] **Step 2: 为 Dialog 行为和静态证件类型写失败测试**
+
+```tsx
+expect(screen.getByRole("dialog", { name: "实名认证" })).toBeInTheDocument();
+expect(screen.queryByRole("combobox", { name: "证件类型" })).not.toBeInTheDocument();
+await userEvent.keyboard("{Escape}");
+expect(screen.queryByRole("dialog", { name: "实名认证" })).not.toBeInTheDocument();
+```
+
+- [x] **Step 3: 运行测试并确认仅因新契约未实现而失败**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+Expected: 新步骤组件不存在，现有手写弹窗没有 dialog 语义。
+
+- [x] **Step 4: 实现最小步骤组件**
+
+使用有序列表、弹性连接线、`data-state` 和 `aria-current="step"`；完成态显示 Check，连接线不写固定像素宽度。
+
+- [x] **Step 5: 运行步骤组件测试**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx`
+
+Expected: PASS。
+
+### Task 2: 重构实名弹窗壳体与三个阶段
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+**Interfaces:**
+- Consumes: Task 1 的 `RealnameStepper`
+- Preserves: `VerifyIdentityModal` props、Repository 方法和 `applyAttemptState`
+
+- [x] **Step 1: 把手写 fixed overlay 替换为受控 Radix Dialog**
+
+```tsx
+<Dialog open onOpenChange={(open) => {
+  if (!open) onClose();
+}}>
+  <DialogContent onPointerDownOutside={(event) => event.preventDefault()}>
+    <DialogTitle>{verified ? t("修改实名认证") : t("实名认证")}</DialogTitle>
+  </DialogContent>
+</Dialog>
+```
+
+- [x] **Step 2: 实现稳定的头部、阶段画布和响应式操作区**
+
+头部合并标题与步骤轨道；画布使用 `AnimatePresence mode="wait"` 和不超过 0.18 秒的 opacity/y 动效；桌面按钮右对齐，移动端占满。
+
+- [x] **Step 3: 重排身份信息阶段**
+
+证件类型改为普通静态信息行；保留姓名、身份证输入和隐私同意；为字段补稳定 id、`aria-invalid`、`aria-describedby` 和 `autoComplete`。
+
+- [x] **Step 4: 重排人脸阶段**
+
+桌面端使用二维码与步骤说明的单层布局；移动端直接打开刷脸页面；等待、过期、失败状态占用同一状态区域，保留现有轮询和重启动作。
+
+- [x] **Step 5: 重排手机与 Shadow 阶段**
+
+手机号、验证码和发送按钮使用统一高度；验证码错误就近展示；Shadow 使用 `role="status"`，自动同步时不渲染空白 footer。
+
+- [x] **Step 6: 运行完整 FaceID 目标测试**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+Expected: PASS，现有桌面二维码、移动端直开、轮询、过期、手机号和最终成功行为无回归。
+
+### Task 3: 静态检查与本地视觉验收
+
+**Files:**
+- Modify: `frontend/DESIGN.md`
+- Modify: `frontend/openspec/plan.md`
+
+**Interfaces:**
+- Consumes: 完成后的实名向导
+- Produces: 可复用的多阶段 Dialog 设计规则与本地预览证据
+
+- [x] **Step 1: 记录多阶段 Dialog 规则**
+
+补充稳定壳体、自适应步骤轨道、桌面紧凑操作区、移动端全宽按钮以及仅动画 opacity/transform 的规范。
+
+- [x] **Step 2: 运行质量门禁**
+
+Run:
+`pnpm check && pnpm i18n:check`
+
+Expected: 两条命令 exit 0。
+
+- [x] **Step 3: 运行差异检查**
+
+Run:
+`git diff --check`
+
+Expected: exit 0，无空白错误。
+
+- [x] **Step 4: 启动国内站本地预览**
+
+Run:
+`NEXT_PUBLIC_REGION=cn VITE_REGION=cn NEXT_PUBLIC_AUTH_API_BASE_URL=https://lightclaw.tech VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm exec next dev --webpack -H 127.0.0.1 -p 3300`
+
+Expected: `http://127.0.0.1:3300/account` 使用真实后端接口并可访问。
+
+- [x] **Step 5: 浏览器验收**
+
+验证身份页、二维码页、手机号页、Shadow/错误状态和 390px 移动端；确认无横向溢出、无大面积布局跳动、控制台无新增错误。
+
+### Task 4: 收敛实名错误为无容器行内校验
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Interfaces:**
+- Produces: 按 `RepositoryError.code` 分类的字段错误对象，包含 `code`、用户标题、解决建议和关联字段。
+- Preserves: 现有 Repository 调用、提交状态、阶段推进和后端错误码。
+
+- [x] **Step 1: 写失败测试**
+
+断言 `phone_in_use` 显示“该手机号暂不可使用”和解决建议，不显示技术错误码；断言 `realname_mismatch` 显示“身份信息未通过核验”，关联字段均具备 `aria-invalid` 和 `aria-describedby`。
+
+- [x] **Step 2: 运行测试确认失败原因**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot`
+
+Expected: FAIL，当前错误仍是弹窗底部裸红字且 `phone_in_use` 回退到后端原始 message。
+
+- [x] **Step 3: 实现最小错误分类与行内视图**
+
+使用无背景、无边框、无圆角的图标 + 标题 + 次级说明结构；输入框只增加轻微错误描边。修改相关字段时清除对应错误，未归类错误保留在阶段底部。
+
+- [x] **Step 4: 生成翻译并运行质量门禁**
+
+Run:
+`pnpm i18n:extract && pnpm i18n:check && pnpm check && pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot && git diff --check`
+
+Expected: 全部 exit 0。
+
+- [x] **Step 5: 在 3300 真实接口页面回验**
+
+确认手机号占用和姓名证件不一致均集中显示在阶段底部、技术码隐藏、修改字段后提示消失，且错误出现不会破坏移动端布局。
+
+### Task 5: 固定表单底部错误槽
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+**Interfaces:**
+- Produces: 身份信息、手机验证等阶段共用的固定高度底部错误槽。
+- Preserves: 输入框错误描边、`aria-describedby`、错误清除逻辑和错误文案。
+
+- [x] **Step 1: 写失败测试**
+
+断言提交前错误槽已经存在且预留固定高度；错误出现后复用同一错误槽，并位于协议或当前阶段最后一个输入控件之后。
+
+- [x] **Step 2: 运行测试确认失败**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot`
+
+Expected: FAIL，当前错误插入字段与协议之间，且无固定高度错误槽。
+
+- [x] **Step 3: 将错误统一移动到底部槽**
+
+删除字段之间的错误节点，在阶段内容末尾永久渲染桌面端 `min-h-[52px]`、移动端 `min-h-[72px]` 的错误槽；错误与轮询异常复用该位置，不动画高度。
+
+- [x] **Step 4: 运行聚焦测试与质量门禁**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot && pnpm i18n:check && pnpm check && git diff --check`
+
+Expected: 全部 exit 0。
+
+### Task 6: 复用操作栏安全说明区域承载错误
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+**Interfaces:**
+- Produces: 操作栏左侧稳定反馈区域，无错误时显示安全说明，有错误时原位替换。
+- Removes: 表单内容区永久占位的空白错误槽。
+
+- [x] **Step 1: 写失败测试**
+
+断言无错误时反馈区域显示安全说明；错误出现后复用同一节点展示错误且安全说明消失；反馈区域位于表单之后、主按钮之前。
+
+- [x] **Step 2: 运行测试确认失败**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot`
+
+Expected: FAIL，当前实现仍渲染空白错误槽，操作栏安全说明不会被错误替换。
+
+- [x] **Step 3: 实现操作栏反馈区域**
+
+删除内容区错误槽，将错误和轮询异常移动到操作栏左侧；无错误时显示原有安全说明。FaceID Shadow 阶段继续在既有状态区原位展示异常。
+
+- [x] **Step 4: 运行聚焦测试与质量门禁**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot && pnpm i18n:check && pnpm check && git diff --check`
+
+Expected: 全部 exit 0。
+
+### Task 7: 移除表单阶段固定高度留白
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+**Interfaces:**
+- Produces: 身份信息和手机验证阶段按内容自然撑高。
+- Preserves: 人脸二维码、等待、失败和同步状态所需的最小高度。
+
+- [x] **Step 1: 写失败测试**
+
+断言身份信息和手机验证的阶段内容容器不再带 `min-h-[248px]`。
+
+- [x] **Step 2: 运行测试确认失败**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot`
+
+Expected: FAIL，当前阶段外层仍统一设置固定最小高度。
+
+- [x] **Step 3: 删除外层固定最小高度**
+
+移除阶段外层 `min-h-[248px]`；人脸与 Shadow 子视图现有 `min-h-[248px]` 保持不变。
+
+- [x] **Step 4: 运行聚焦测试与质量门禁**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot && pnpm i18n:check && pnpm check && git diff --check`
+
+Expected: 全部 exit 0。
+
+### Task 8: 处理实名向导 AI 评审意见
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/realname-stepper.tsx`
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+
+**Interfaces:**
+- Produces: 阶段值与错误字段值的单一常量来源。
+- Preserves: 实名阶段状态机、错误映射、布局与交互行为。
+
+- [x] **Step 1: 统一阶段与错误字段常量**
+
+使用 `as const` 元组派生步骤类型，使用 `REALNAME_ERROR_FIELD` 对象派生错误字段类型，消除重复魔法字符串。
+
+- [x] **Step 2: 替换新增 UI 中的硬编码颜色**
+
+使用项目已有的 `--danger`、`--text-primary`、`--text-secondary`、`--text-tertiary`、`--surface-muted` 和 `--border-strong`，不引入评审建议中不存在的变量。
+
+- [x] **Step 3: 运行聚焦测试与质量门禁**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot && pnpm i18n:check && pnpm check && git diff --check`
+
+Expected: 全部 exit 0。
+
+### Task 9: 恢复实名控件可见对比度
+
+**Files:**
+- Modify: `frontend/src/styles.css`
+- Modify: `frontend/src/theme/preset.ts`
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+**Interfaces:**
+- Produces: `--realname-control-border` 与 `--realname-control-muted` 可覆盖主题变量。
+- Preserves: 评审修复中的常量类型安全与无硬编码颜色约束。
+
+- [x] **Step 1: 写失败测试**
+
+断言身份证类型栏使用实名专用弱背景 token，姓名与身份证输入框使用实名专用边框 token。
+
+- [x] **Step 2: 恢复原设计对比度**
+
+在根主题与 LightVela preset 中定义实名控件 token，恢复 `#F2F4F8` 弱背景和 `#E9ECF1` 边框，并替换错误的通用 token 引用。
+
+- [x] **Step 3: 运行聚焦测试与质量门禁**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot && pnpm i18n:check && pnpm check && git diff --check`
+
+Expected: 全部 exit 0。
+
+## 规划门禁
+
+- 规模：M；执行模式：single_agent。
+- 已确认现有 Radix Dialog、Framer Motion、二维码和测试能力足够，无需 capability 或新依赖。
+- 已覆盖 loading、错误、过期、恢复、两步/三步和移动端边界。
+- 明确排除接口、配色、轮询、实名规则、国际站与身份证校验算法变更。
+- 规划门禁结论：通过，可进入实现。
+
+---
+
+# 精选技能轮播按钮位置调整
+
+**Goal:** 将精选技能轮播的上一批、下一批按钮分别放在卡片组左右两侧。
+
+## 任务清单
+
+- [ ] 1. 调整精选技能轮播布局并完成回归验证。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/DESIGN.md`、`frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`、`frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+  - 验收方式：上一批按钮位于卡片组左侧，下一批按钮位于卡片组右侧；原有切换、动画和禁用逻辑不变；交互规则同步到设计规范；聚焦测试、类型检查与 `git diff --check` 通过。
+
+## 规划门禁
+
+- 规模：S；执行模式：single_agent。
+- 不新增依赖、接口或组件，不改变技能数据与安装逻辑。
+- 规划门禁结论：通过。
+
+---
+
 # 2026-07-16 Hermes Agent 今晚升级公告
 
 **Goal:** 基于最新 master 更新首页 Hermes Agent 升级公告，让国内站和国际站今晚继续展示升级窗口提醒。
@@ -1469,3 +1852,133 @@ Not-tested: 待实现后填写
 - [x] Hermes 来源文案使用映射表，保持 builtin / local / other / clawhub 及未知来源回退行为。
 - [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
 - [x] 提交并推送现有 MR。
+
+### Task 71: 简化人设生效提示
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/hermes-agent-buddy-panel.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 人设注入成功弹窗将 Hermes 名称改为 Hermes Agent，并移除 `/approve` 步骤。
+- [x] 新提示同步到中英文 i18n 字典，旧文案不再被引用。
+- [x] `pnpm check`、`pnpm i18n:check` 和 `git diff --check` 通过。
+
+### Task 72: 统一 Agent 控制台 Hermes Agent 称呼
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `/agents` 路由可达页面中的用户可见文案与对应测试
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 逐页检查 `/agents` 导航下全部页面，将作为 Agent 主体或品牌出现的单独 `Hermes` 统一为 `Hermes Agent`；实例默认名称和公共侧栏保留“我的Hermes”。
+- [x] 保留 `Hermes CLI`、`Hermes /learn`、`Hermes WebUI` 等官方技术名称，以及代码标识、命令和后端原始 key。
+- [x] 同步中英文 i18n 字典，更新受影响测试，并确认目标源码不再包含遗漏的用户可见单独 `Hermes`。
+- [x] 目标测试、`pnpm check`、`pnpm i18n:check`、浏览器烟测和 `git diff --check` 通过。
+
+### Task 73: 统一产品文档 Hermes Agent 称呼
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/content/docs/**/*.md`
+
+- [x] 检查国内站、国际站中文和国际站英文文档，将作为产品或 Agent 主体出现的单独 `Hermes` 统一为 `Hermes Agent`。
+- [x] 保留 `Hermes CLI`、命令、路径、配置键、代码示例等技术专名和机器可读内容。
+- [x] 校验三套文档的路由映射、链接与图片引用，并完成文档同步、项目检查、浏览器烟测和 `git diff --check`。
+
+### Task 74: 统一前端 Agent 代码文件名
+
+**角色：** single_agent / mechanical rename + verification
+
+**Files:**
+- Rename: `frontend/**/*{openclaw,hermes-agent}*.{ts,tsx}` → 对应 `*agent*.{ts,tsx}`
+- Modify: 引用上述模块的 `frontend/**/*.{ts,tsx}` import / export / mock 路径
+
+- [x] 将 `frontend/` 下 34 个代码文件名中的 `openclaw` 或 `hermes-agent` 统一收敛为 `agent`。
+- [x] 仅同步必要的模块路径引用，不修改 `OpenClaw*` 代码标识、API 字段、路由或普通业务文案。
+- [x] 确认旧代码文件名与旧模块路径无残留；49 个 TypeScript 文件通过调用关系等价检查，14 个测试文件共 252 条通过，`pnpm check` 和 `git diff --check` 通过；两个账号页测试文件的 17 条既有失败已确认与 `origin/master` 基线一致。
+
+### Task 75: 模型切换时同步自动任务推理配置
+
+**角色：** single_agent / implementation + verification
+
+**目标：** 用户切换 Hermes Agent 默认模型时，先识别会因 provider/model 漂移保护而受影响的自动任务；由用户明确选择仅切换聊天模型，或在切换成功后把这些任务显式绑定到新的默认 provider/model。
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-tat-adapter.ts`
+- Create: `frontend/src/pages/marketing/agent-model-switch-automation-sync.tsx`
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
+- Modify/Create: related Vitest files
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 用失败测试覆盖模型切换命令识别、仅筛选未完整 pin 且需要推理的任务、用户两种选择，以及同步部分失败反馈。
+- [x] 在 SDK 命令适配器加入局部命令生命周期钩子；只拦截 `acli model switch`，不改变通道、技能和其他模型命令。
+- [x] 模型切换前展示明确选择；模型切换成功后，通过 Hermes 官方 `cronjob(action="update")` 逐任务补齐未 pin 的 provider/model，保留任务原有显式绑定。
+- [x] 检查失败时不静默切换；同步部分失败时保留已成功的模型切换和任务更新，并就近反馈成功/失败数量。
+- [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check`、浏览器页面烟测和 `git diff --check`。
+- [x] 按本地预览反馈优化模型切换弹窗标题、风险说明和三个操作按钮文案；目标测试、类型检查、i18n 检查与 `git diff --check` 均通过。
+- [x] 中文界面将“当前套餐不支持所请求模型”的 Hermes 原始错误转换为用户可读中文，其他未知错误保留原文；目标测试、类型检查、i18n 检查与 `git diff --check` 均通过。
+- [x] 修复同步时误把命名 provider 归一化为 `custom` 的问题；同步选择覆盖所有尚未匹配目标 provider/model 的推理任务，可修复旧逻辑误绑定并支持后续多次切换；70 条目标测试、类型检查、i18n 检查与 `git diff --check` 均通过。
+- [x] 按本地预览反馈将模型切换提示拆成两段，并明确同步后的 Token 消耗方式；目标测试、类型检查、i18n 检查与 `git diff --check` 均通过。
+- [x] 按最新确认文案精简模型切换风险与 Token 消耗说明；目标测试、类型检查、i18n 检查与 `git diff --check` 均通过。
+
+### Task 76: 模型切换结果提示纵向排列
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/toast.ts`
+- Create: `frontend/src/lib/__tests__/toast.test.ts`
+
+- [x] 宿主 Toast 与 SDK message 复用同一个顶部纵向容器，同时出现时按触发顺序排列并保留间距。
+- [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
+
+### Task 77: 排除已失效的自动任务
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-switch-automation-sync.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-model-switch-automation-sync.test.ts`
+
+- [x] 暂停任务仍参与模型切换提示与同步；单次任务已执行或已过生效期的任务不再计入。
+- [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
+
+### Task 78: 关闭模型切换提示时终止流程
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-switch-automation-sync.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-model-switch-automation-sync.test.ts`
+
+- [x] 用户关闭自动任务更新提示时直接取消本次模型切换，不再误入自动任务检查失败降级弹窗。
+- [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
+
+### Task 79: 精简自动任务更新数量提示
+
+**角色：** single_agent / copy update + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-switch-automation-sync.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-model-switch-automation-sync.test.ts`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 将“检测到您已配置 x 个自动任务”改为“检测到 x 个自动任务需要更新”，保留动态数量。
+- [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。
+
+### Task 80: 已过生效期任务继续同步模型
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx`
+- Modify: `frontend/src/pages/marketing/agent-model-switch-automation-sync.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/agent-model-switch-automation-sync.test.ts`
+
+- [x] 暂停及已过生效期的周期任务均计入模型更新提示与同步；仅已执行完的单次任务继续排除。
+- [x] 完成目标 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check`。

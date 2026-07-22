@@ -170,13 +170,15 @@ new-api 数据库连接池由 `LLMFleet.spec.newapi.databasePool` 提供默认�
 runtime lease 去重后的 `allocated/maxSets` 选择 Shard；数据库连接数只作为安全告警，
 不参与日常放置排序。
 
-生产默认使用 `LLMFleet` 作为 Set runtime 的事实入口：
+生产使用 `LLMFleet` 保存 Fleet/Shard/连接池/HA 策略，使用独立 `VelaGWSet` 作为每个 Set runtime 的事实入口：
 
 1. 安装 kro。当前 TKE Serverless 云测使用 `0.8.5`；`0.9.2` 会依赖 `GraphRevision` 字段选择器，在当前 apiserver 上会出现 `field label not supported: spec.snapshot.name`。
 2. `kubectl apply -f llmfleet-rgd.yaml`，等待 `rgd/llmfleets.llmgateway.io` Ready。
 3. 渲染并 apply `llmfleet-shard-secrets.yaml.template`，创建 shard Secret。
-4. 首次渲染并 apply `llmfleet.yaml.template`，创建初始 `prod` Fleet。模板只声明 shard，`spec.sets` 初始为空。
-5. 渲染并 apply `llmgateway-set-manager.yaml.template`。
+4. 首次渲染并 apply `llmfleet.yaml.template`，创建初始 `prod` Fleet。模板只声明 shard，`spec.sets` 保持为空。
+5. apply `velagwset-crd.yaml`，再部署 `velagwset-controller.yaml.template`。
+6. 渲染并部署 `velagwset-provisioner.yaml.template`；它只持有 control 内部 token，不持有 LLMGateway MySQL/Redis 凭据。
+7. control/worker 设置 `LLMGATEWAY_SET_AUTOSCALER_RUNTIME_BACKEND=velagwset` 和新的单调递增 writer epoch，再开启容量任务。旧 set-manager endpoint 对这些请求始终返回空。
 
 示例 kro 安装：
 
@@ -194,7 +196,7 @@ helm upgrade --install kro oci://registry.k8s.io/kro/charts/kro \
 
 `KRO_IMAGE_REPOSITORY` 应指向目标地域 TCR 中预先镜像的 kro 仓库；北京当前值为 `lightclaw-bj82.tencentcloudcr.com/llmgateway/kro`。
 
-set-manager 不再直接创建 new-api Secret、Deployment、Service。它先消费 control 产生的 `pending` request，以 `slave replicas=0` 把新 Set patch 到 `LLMFleet.spec.sets`；control 完成 bootstrap、合规、渠道、定价和权益模板后将 request 标记为 `configured`；set-manager 再把 slave 扩到目标副本数，等待 Fleet Ready 后标记为 `managed`。最终 admission 独立检查通过后才允许分配用户和承载流量。生产不再保留手工写死的创世 Set；首批 Set 也必须通过同一条路径创建。
+新路径不再 patch `LLMFleet.spec.sets[]`。Provisioner 先创建 admin-only `VelaGWSet`、运行 Secret 和幂等建库 Job；controller 报告 `AdminReady` 后提交 materialized fact。control 完成 bootstrap、合规、渠道、定价和权益模板并推进到 `configured` 后，Provisioner 才把 generation 1 traffic 扩到 Fleet 规定的副本数；`Ready` 与 PDB 健康后提交 serving fact，worker 最终推进到 `managed`。admission 独立检查通过后才允许分配用户和承载流量。
 
 首批 Set 的标准动作由 `llmgateway-worker-core` 的 `reconcile_set_capacity` 任务触发。生产模板显式设置 `LLMGATEWAY_SET_AUTOSCALER_ENABLED=true`、`LLMGATEWAY_SET_AUTOSCALER_MIN_WARM_SETS=4`、`LLMGATEWAY_SET_AUTOSCALER_MAX_SCALE_UP_PER_CYCLE=2`，所以全新 Fleet 即使 `spec.sets` 为空，也会分两轮写入四个 pending provision request。每个请求都按 `pending → created → configured → managed` 幂等推进；失败会停留在当前可重试阶段或记录为 `error`，不会越过 admission。
 
@@ -205,7 +207,7 @@ set-manager 不再直接创建 new-api Secret、Deployment、Service。它先消
 
 master 使用 `Recreate` 保证任一时刻只有一个控制写进程；升级窗口内管理写进入 MySQL 命令队列，已有 slave 继续承载模型流量。traffic slave 使用版本化蓝绿 runtime，详见 `docs/set-blue-green-upgrade.md`。
 
-注意：`llmfleet.yaml.template` 是 bootstrap 模板，不是持续覆盖模板。Fleet 的 `spec.sets` 由 set-manager 动态维护；反复 apply 空 `spec.sets` 的模板会删除动态扩出来的 Set。后续若要变更 shard host/port，应使用 `patch-llmfleet-shards.sh` 只 patch `spec.shards`，或先从线上 Fleet 导出完整 `spec.sets` 后再发布。
+`llmfleet.yaml.template` 可以持续管理稳定策略和 Shard；动态 Set 不再写入 Fleet 大数组，因此 apply 空 `spec.sets` 不会删除 `VelaGWSet`。删除单个 Set 必须走带不可变身份批准的 `VelaGWSet` Finalizer 流程，禁止直接清理其 Deployment/Service/PDB。
 
 `llmfleet.yaml.template` 里 shard 只保留 host/port 和 `secretName`；initContainer 从 shard Secret 读取 admin 凭据幂等建库，new-api 主容器只用 `newapi_app` 连接对应 `newapi_%` 数据库。
 

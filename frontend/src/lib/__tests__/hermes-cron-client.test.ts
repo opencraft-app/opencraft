@@ -449,6 +449,32 @@ describe("effective window script", () => {
 });
 
 describe("listCronJobs", () => {
+  it("hydrates task-level inference bindings from jobs.json", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okExec(`
+  6e8b6fc74896 [active]
+    Name:      模型任务
+    Schedule:  every 2h
+    Deliver:   local
+`))
+      .mockResolvedValueOnce(okExec(JSON.stringify([{
+        id: "6e8b6fc74896",
+        provider: "openrouter",
+        model: null,
+        no_agent: false,
+      }])))
+      .mockResolvedValueOnce(okExec(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const jobs = await listCronJobs("bot-1");
+
+    expect(jobs[0]?.inference_config).toEqual({
+      provider: "openrouter",
+      model: null,
+      no_agent: false,
+    });
+  });
+
   it("filters out disposable test-run temp jobs by their hidden zero-width marker", async () => {
     const tempName = buildTestRunMarker("6e8b6fc74896", "喝水提醒");
     const fetchMock = vi.fn()

@@ -626,6 +626,75 @@ func TestMySQLSetRuntimeProjectionRoundTrips(t *testing.T) {
 	}
 }
 
+func TestMySQLManagedSetAdoptsObservedGenerationOneFromMatchingLegacyRoute(t *testing.T) {
+	store := newIsolatedMySQLStore(t)
+	defer func() { _ = store.Close() }()
+	ctx := t.Context()
+	now := time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC)
+	const trafficURL = "http://prod-set-a-g1-newapi-traffic:3000"
+	const image = "registry/new-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	if err := store.SaveSet(ctx, Set{
+		ID: "set-a", BaseURL: "http://set-a-admin:3000", TrafficBaseURL: trafficURL,
+		Status: SetStatusActive, ActiveRuntimeGeneration: 0, RouteRevision: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSetRuntime(ctx, SetRuntime{
+		SetID: "set-a", Generation: 0, Image: "legacy", TrafficBaseURL: "http://set-a-admin:3000",
+		Status: SetRuntimeStatusActive,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, changed, err := store.InitializeSetRuntime(ctx, "set-a", 1, image, trafficURL, now)
+	if err != nil || !changed {
+		t.Fatalf("snapshot=%+v changed=%v err=%v", snapshot, changed, err)
+	}
+	set, ok, err := store.GetSet(ctx, "set-a")
+	if err != nil || !ok || set.ActiveRuntimeGeneration != 1 || set.LastRuntimeGeneration != 1 || set.RouteRevision != 2 {
+		t.Fatalf("set=%+v ok=%v err=%v", set, ok, err)
+	}
+	g0, _, _ := store.GetSetRuntime(ctx, "set-a", 0)
+	g1, ok, err := store.GetSetRuntime(ctx, "set-a", 1)
+	if err != nil || !ok || g0.Status != SetRuntimeStatusRetired || g1.Status != SetRuntimeStatusActive {
+		t.Fatalf("g0=%+v g1=%+v ok=%v err=%v", g0, g1, ok, err)
+	}
+	outbox, err := store.ListSetRuntimeRouteOutbox(ctx, SetRuntimeRouteOutboxStatusPending, 10)
+	if err != nil || len(outbox) != 1 || outbox[0].RouteRevision != 2 {
+		t.Fatalf("outbox=%+v err=%v", outbox, err)
+	}
+}
+
+func TestMySQLSaveSetCannotRewriteLifecycleOwnedFields(t *testing.T) {
+	store := newIsolatedMySQLStore(t)
+	defer func() { _ = store.Close() }()
+	ctx := t.Context()
+	if err := store.SaveSet(ctx, Set{
+		ID: "set-owned", Name: "before", Status: SetStatusActive, LifecycleGeneration: 7,
+		ActiveRuntimeGeneration: 3, LastRuntimeGeneration: 5, RouteRevision: 11,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stale, _, err := store.GetSet(ctx, "set-owned")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale.Name = "after"
+	stale.LifecycleGeneration = 9
+	stale.ActiveRuntimeGeneration = 4
+	stale.LastRuntimeGeneration = 6
+	stale.RouteRevision = 12
+	if err := store.SaveSet(ctx, stale); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := store.GetSet(ctx, "set-owned")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "after" || got.LifecycleGeneration != 7 || got.ActiveRuntimeGeneration != 3 || got.LastRuntimeGeneration != 5 || got.RouteRevision != 11 {
+		t.Fatalf("set=%+v", got)
+	}
+}
+
 func TestMySQLFleetRuntimeFactsAndShardProjectionRoundTrip(t *testing.T) {
 	store := newIsolatedMySQLStore(t)
 	defer func() { _ = store.Close() }()

@@ -558,8 +558,7 @@ func (s *Service) publishAPIKeyRoutesJob(ctx context.Context, limit int) (int, i
 			}
 			continue
 		}
-		if _, transitionErr := s.store.TransitionAPIKeyBinding(ctx, binding.ExternalKeyID,
-			APIKeyStatusRoutePending, APIKeyStatusActive, "", 0, "", s.nowUTC()); transitionErr != nil {
+		if _, transitionErr := s.activateAPIKeyBinding(ctx, binding.ExternalKeyID); transitionErr != nil {
 			failed++
 			if firstErr == nil {
 				firstErr = transitionErr
@@ -949,6 +948,9 @@ func (s *Service) cleanupPendingJob(ctx context.Context) (int, error) {
 	now := s.nowUTC()
 	cleaned := 0
 	for _, request := range requests {
+		if request.RuntimeBackend == SetRuntimeBackendVelaGWSet {
+			continue
+		}
 		if request.UpdatedAt.IsZero() || now.Sub(request.UpdatedAt) < time.Hour {
 			continue
 		}

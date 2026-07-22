@@ -179,9 +179,16 @@ type ReusableDianshiOrderStore interface {
 	FindReusableDianshiOrder(ctx context.Context, externalUserID string, activityID int64, bundleID string, createdAfter time.Time) (*TradeOrder, error)
 }
 
+// ProvisionedCreateOrderStore 提供存量 Pass 迁移所需的原始购买快照。
+// 独立于 OrderStore，避免迁移能力扩散到所有订单读端测试桩。
+type ProvisionedCreateOrderStore interface {
+	GetProvisionedCreateOrderByResourceID(ctx context.Context, resourceID string) (*TradeOrder, error)
+}
+
 // 编译期断言 *MySQLStore 实现 OrderStore 接口。
 var _ OrderStore = (*MySQLStore)(nil)
 var _ ReusableDianshiOrderStore = (*MySQLStore)(nil)
+var _ ProvisionedCreateOrderStore = (*MySQLStore)(nil)
 
 // GetOrderByDealName 实现 OrderStore 接口。
 //
@@ -205,6 +212,28 @@ func (s *MySQLStore) GetOrderByDealName(ctx context.Context, dealName string) (*
 	}
 	if err != nil {
 		return nil, fmt.Errorf("trade_order: query dealName=%s: %w", dealName, err)
+	}
+	return order, nil
+}
+
+// GetProvisionedCreateOrderByResourceID 返回为指定 Pass 发货的首笔新购订单。
+func (s *MySQLStore) GetProvisionedCreateOrderByResourceID(ctx context.Context, resourceID string) (*TradeOrder, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("trade_order: store is nil")
+	}
+	const q = selectTradeOrderColumns + `
+		 WHERE resource_type = 'pass'
+		   AND resource_id = ?
+		   AND order_type = ?
+		   AND status = ?
+		 ORDER BY id ASC
+		 LIMIT 1`
+	order, err := scanTradeOrder(s.db.QueryRowContext(ctx, q, resourceID, OrderTypeCreate, OrderStatusProvisioned))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrTradeOrderNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("trade_order: query provisioned create resourceID=%s: %w", resourceID, err)
 	}
 	return order, nil
 }

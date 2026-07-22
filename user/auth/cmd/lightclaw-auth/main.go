@@ -294,8 +294,9 @@ func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger) *
 		client = tencentClient
 	}
 	return shadowbinding.New(store, client, shadowbinding.Options{
-		Enabled:     true,
-		AuthCodeTTL: parseDurationEnv("SHADOW_AUTH_CODE_TTL", 10*time.Minute),
+		Enabled:        true,
+		AuthCodeTTL:    parseDurationEnv("SHADOW_AUTH_CODE_TTL", 10*time.Minute),
+		AuthCodePrefix: envOrDefault("SHADOW_AUTH_CODE_PREFIX", ""),
 	})
 }
 

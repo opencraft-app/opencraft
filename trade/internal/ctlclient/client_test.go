@@ -245,6 +245,56 @@ func TestCompletePass_Unauthorized(t *testing.T) {
 	}
 }
 
+func TestTransferPass_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/internal/ctl/passes/transfer" {
+			t.Errorf("path mismatch: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer secret-xyz" {
+			t.Errorf("Authorization header mismatch: got %q", got)
+		}
+		raw, _ := io.ReadAll(r.Body)
+		var got TransferPassRequest
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatalf("decode req body: %v", err)
+		}
+		if got.PassID != "pass-free" || got.UserID != "user-aaa" ||
+			got.SourceBundleID != "bundle_free_trial_01" || got.TargetBundleID != "bundle_launch_01" ||
+			got.NewUin != 330500000004 || got.NewAppID != 1447552654 || got.DealName != "deal-transfer-1" {
+			t.Errorf("req body mismatch: %+v", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(envelopeForSuccess(t, &PassDetail{
+			PassID:   got.PassID,
+			UserID:   got.UserID,
+			BundleID: got.TargetBundleID,
+			Uin:      got.NewUin,
+			AppID:    got.NewAppID,
+		}))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-xyz")
+	got, err := c.TransferPass(context.Background(), &TransferPassRequest{
+		PassID:         "pass-free",
+		UserID:         "user-aaa",
+		SourceBundleID: "bundle_free_trial_01",
+		TargetBundleID: "bundle_launch_01",
+		NewUin:         330500000004,
+		NewAppID:       1447552654,
+		DealName:       "deal-transfer-1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got.PassID != "pass-free" || got.BundleID != "bundle_launch_01" {
+		t.Fatalf("unexpected detail: %+v", got)
+	}
+}
+
 func TestCompletePass_BusinessErrorPropagatesCode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

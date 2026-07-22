@@ -25,10 +25,6 @@ func (l *logic) ResetInstanceConfig(ctx pctx.Context, instanceID string) (*trans
 		return nil, errcode.Wrap(errcode.ErrInternalServer, "default_base_url or default_model_id not configured")
 	}
 
-	if err := l.ensureAiGatewayUser(ctx, backend, ctx.GetUserID(), "", entity.InstanceId); err != nil {
-		return nil, err
-	}
-
 	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, ctx.GetUserID(), entity.InstanceId)
 	if err != nil {
 		return nil, err

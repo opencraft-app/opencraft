@@ -417,7 +417,7 @@ const envValue = (
  *   1. 只在生产构建启用（NODE_ENV=production 或 PROD=true）；
  *      本地 dev 模式可显式打开 NEXT_PUBLIC_DATONG_DEV_ENABLED / VITE_DATONG_DEV_ENABLED 放行
  *   2. 全球站与国内站均启用（大同双区可用；PostHog 只在 global 启用）
- *   3. 需通过 cookie consent（dev 模式下跳过此门禁，便于本地联调）
+ *   3. cookie consent 门禁仅国际站需要（GDPR/隐私合规）；国内站直接上报，dev 模式下跳过此门禁
  *   4. 需要显式打开 NEXT_PUBLIC_DATONG_ENABLED
  *   5. 需要提供 appKey（可从环境变量注入或走 fallback 常量）
  */
@@ -459,7 +459,8 @@ export function resolveDatongConfig(
   // 非生产构建且未显式打开 dev 开关时，保持原行为（不初始化）
   if (!isProduction && !devEnabled) return null;
   // dev 模式下跳过 cookie consent 门禁，便于本地联调埋点
-  if (!devEnabled && consent !== COOKIE_CONSENT_ACCEPTED) return null;
+  // 国内站无需 cookie consent 门禁，直接上报；仅国际站（GDPR/隐私合规）需用户同意
+  if (!devEnabled && region === "global" && consent !== COOKIE_CONSENT_ACCEPTED) return null;
 
   if (!isTruthy(envValue(env, "NEXT_PUBLIC_DATONG_ENABLED", "VITE_DATONG_ENABLED"))) {
     return null;

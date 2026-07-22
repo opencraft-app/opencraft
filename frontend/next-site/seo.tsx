@@ -30,7 +30,6 @@ type SeoSiteRegion = 'cn' | 'global';
 
 const SITE_NAME = 'LightVela';
 const DEFAULT_OG_IMAGE_PATH = '/lightvela-logo.jpg';
-const DEFAULT_LAST_MODIFIED = '2026-06-23';
 const BAIDU_SITE_VERIFICATION = 'codeva-ip0AdXURxG';
 const WECHAT_SITE_VERIFICATION = 'pKLUCg80PuWPBYLB';
 const DEFAULT_THEME_COLOR = '#f7f4ff';
@@ -141,14 +140,21 @@ export function localizedDocsPath(locale: DocsRouteLocale | 'default', slug: rea
   return `/${locale}/docs${suffix}`;
 }
 
+export function canonicalDocsPath(locale: DocsRouteLocale | 'default', slug: readonly string[]): string {
+  if (isGlobal && locale === 'en-us') return localizedDocsPath('default', slug);
+  return localizedDocsPath(locale, slug);
+}
+
 export function buildPublicAlternates(path: string): Record<string, string> {
+  const publicPath = stripPublicLocalePrefix(path);
   const alternates: Record<string, string> = {
-    'x-default': absoluteUrlForSeoRegion('global', localizedPublicPath(path, 'default')),
+    'x-default': absolutePageUrlForSeoRegion('global', localizedPublicPath(publicPath, 'default')),
   };
 
   for (const lang of SEO_ALL_PUBLIC_URL_LANGS) {
     const locale = localeFromUrlLang(lang);
-    alternates[locale] = absoluteUrlForUrlLang(lang, localizedPublicPath(path, lang));
+    const localizedPath = lang === 'en-us' ? publicPath : localizedPublicPath(publicPath, lang);
+    alternates[locale] = absolutePageUrlForUrlLang(lang, localizedPath);
   }
 
   return alternates;
@@ -158,12 +164,25 @@ export function buildDocsAlternates(
   slug: readonly string[],
   availableLocales: readonly DocsRouteLocale[],
 ): Record<string, string> {
-  const alternates: Record<string, string> = {
-    'x-default': absoluteUrlForSeoRegion('global', localizedDocsPath('default', slug)),
-  };
+  const defaultLocale = availableLocales.includes('en-us')
+    ? 'en-us'
+    : availableLocales.includes('zh-sg')
+      ? 'zh-sg'
+      : availableLocales[0];
+  const alternates: Record<string, string> = {};
+
+  if (defaultLocale) {
+    const defaultPath = defaultLocale === 'en-us'
+      ? localizedDocsPath('default', slug)
+      : localizedDocsPath(defaultLocale, slug);
+    alternates['x-default'] = absolutePageUrlForUrlLang(defaultLocale, defaultPath);
+  }
 
   for (const locale of availableLocales) {
-    alternates[localeFromUrlLang(locale)] = absoluteUrlForUrlLang(locale, localizedDocsPath(locale, slug));
+    const localizedPath = locale === 'en-us'
+      ? localizedDocsPath('default', slug)
+      : localizedDocsPath(locale, slug);
+    alternates[localeFromUrlLang(locale)] = absolutePageUrlForUrlLang(locale, localizedPath);
   }
 
   return alternates;
@@ -180,7 +199,8 @@ export function createPublicMetadata({
   titleAbsolute = false,
 }: SeoPage): Metadata {
   const normalizedPath = normalizePath(path);
-  const canonical = absoluteUrl(normalizedPath);
+  const canonicalPath = canonicalPathForLocale(normalizedPath, locale);
+  const canonical = absolutePageUrlForSeoRegion(isGlobal ? 'global' : 'cn', canonicalPath);
   const image = absoluteUrl(DEFAULT_OG_IMAGE_PATH);
 
   return {
@@ -192,7 +212,7 @@ export function createPublicMetadata({
     description,
     keywords: [...keywords],
     alternates: {
-      canonical: normalizedPath,
+      canonical: canonicalPath,
       languages: alternates,
     },
     robots: index
@@ -319,8 +339,17 @@ export function absoluteUrlForUrlLang(lang: PublicUrlLang, path: string): string
   return absoluteUrlForSeoRegion(lang === 'zh-cn' ? 'cn' : 'global', path);
 }
 
-export function lastModified(): string {
-  return process.env.NEXT_PUBLIC_BUILD_DATE || process.env.BUILD_DATE || DEFAULT_LAST_MODIFIED;
+export function absolutePageUrlForSeoRegion(region: SeoSiteRegion, path: string): string {
+  const normalizedPath = normalizePath(path);
+  return `${siteOriginForSeoRegion(region)}${normalizedPath === '/' ? '/' : `${normalizedPath}/`}`;
+}
+
+export function absolutePageUrlForUrlLang(lang: PublicUrlLang, path: string): string {
+  return absolutePageUrlForSeoRegion(lang === 'zh-cn' ? 'cn' : 'global', path);
+}
+
+export function lastModified(): string | undefined {
+  return process.env.NEXT_PUBLIC_BUILD_DATE || process.env.BUILD_DATE || undefined;
 }
 
 export function siteVerification() {
@@ -348,6 +377,21 @@ export function normalizePath(path: string): string {
   const withoutQuery = path.split(/[?#]/, 1)[0] || '/';
   const prefixed = withoutQuery.startsWith('/') ? withoutQuery : `/${withoutQuery}`;
   return trimTrailingSlash(prefixed) || '/';
+}
+
+function stripPublicLocalePrefix(path: string): string {
+  const normalizedPath = normalizePath(path);
+  const barePath = normalizedPath.replace(/^\/(?:en-us|zh-cn|zh-sg)(?=\/|$)/, '');
+  return barePath || '/';
+}
+
+function canonicalPathForLocale(path: string, locale: SeoLocale): string {
+  if (isGlobal && locale === 'en-US') return stripPublicLocalePrefix(path);
+  return normalizePath(path);
+}
+
+function siteOriginForSeoRegion(region: SeoSiteRegion): string {
+  return region === seoRegion() ? siteUrl() : siteUrlForSeoRegion(region);
 }
 
 function trimTrailingSlash(value: string): string {

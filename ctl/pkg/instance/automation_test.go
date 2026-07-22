@@ -2,8 +2,10 @@ package instance
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	pllmgateway "ctl/pkg/adapter/llmgateway"
 	psandbox "ctl/pkg/adapter/sandbox"
@@ -24,10 +26,13 @@ type automationGatewayAdapterStub struct {
 type automationLLMGatewayAdapterStub struct {
 	createResp   *pllmgateway.CreateApiKeyResponse
 	createErr    error
+	createCalls  int
+	ensureCalls  int
 	revokedKeyID string
 }
 
 func (s *automationLLMGatewayAdapterStub) CreateApiKey(_ context.Context, _ string, _ string) (*pllmgateway.CreateApiKeyResponse, error) {
+	s.createCalls++
 	if s.createErr != nil {
 		return nil, s.createErr
 	}
@@ -38,6 +43,7 @@ func (s *automationLLMGatewayAdapterStub) CreateApiKey(_ context.Context, _ stri
 }
 
 func (s *automationLLMGatewayAdapterStub) EnsureUser(_ context.Context, userID string, nickname string) (*pllmgateway.EnsureUserResponse, error) {
+	s.ensureCalls++
 	return &pllmgateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
 }
 
@@ -139,10 +145,11 @@ func TestListAutomationSchedulesBackfillsGatewayAuthMaterialForRunningInstance(t
 		instanceDao: &commandInstanceDaoStub{
 			entity: entity,
 		},
-		sandboxAdapter:         sandbox,
-		llmGatewayAdapter:      aiGateway,
-		openclawGatewayAdapter: adapter,
-		logger:                 zap.NewNop(),
+		sandboxAdapter:               sandbox,
+		llmGatewayAdapter:            aiGateway,
+		openclawGatewayAdapter:       adapter,
+		logger:                       zap.NewNop(),
+		legacyPassEntitlementEnsurer: legacyPassEntitlementAlreadyReady,
 	}
 	ctx := pctx.NewContext(nil).WithUserID("user-1")
 
@@ -167,6 +174,50 @@ func TestListAutomationSchedulesBackfillsGatewayAuthMaterialForRunningInstance(t
 	}
 	if aiGateway.revokedKeyID != "key_old" {
 		t.Fatalf("expected previous key to be revoked, got %s", aiGateway.revokedKeyID)
+	}
+}
+
+func TestAutomationBackfillDoesNotIssueLLMGatewayKeyWhenEntitlementPreparationFails(t *testing.T) {
+	prevConf := config.ServerConf
+	config.ServerConf = &config.GlobalConfig{
+		AdapterConfig: &config.AdapterConfig{
+			LLMGateway: &config.LLMGatewayConfig{
+				Enabled:                    true,
+				BaseURL:                    "https://llmgateway.test",
+				NewAllocationUserAllowlist: []string{"*"},
+			},
+		},
+	}
+	t.Cleanup(func() { config.ServerConf = prevConf })
+
+	llmGateway := &automationLLMGatewayAdapterStub{}
+	logic := &logic{
+		llmGatewayAdapter: llmGateway,
+		logger:            zap.NewNop(),
+		legacyPassEntitlementEnsurer: func(_ context.Context, userID string, _ time.Time) error {
+			if userID != "user-automation-entitlement-fail" {
+				t.Fatalf("userID = %q", userID)
+			}
+			return errors.New("entitlement unavailable")
+		},
+	}
+
+	err := logic.ensureAutomationGatewayAuthMaterial(
+		pctx.NewContext(nil).WithUserID("user-automation-entitlement-fail"),
+		&instance.Entity{
+			InstanceId: "ins-automation-entitlement-fail",
+			SandboxId:  "sbx-automation-entitlement-fail",
+			Status:     instance.InstanceStatusRunning,
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "entitlement unavailable") {
+		t.Fatalf("error = %v", err)
+	}
+	if llmGateway.createCalls != 0 {
+		t.Fatalf("create-api-key calls = %d, want 0", llmGateway.createCalls)
+	}
+	if llmGateway.ensureCalls != 1 {
+		t.Fatalf("ensure-user calls = %d, want 1", llmGateway.ensureCalls)
 	}
 }
 

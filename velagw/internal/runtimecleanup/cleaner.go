@@ -59,8 +59,8 @@ func ValidateTarget(target Target) error {
 	if !databaseNamePattern.MatchString(target.DatabaseName) {
 		return fmt.Errorf("unsafe set database name %q", target.DatabaseName)
 	}
-	if target.RedisDBLimit <= 0 || target.RedisDB < target.RedisDBStart || target.RedisDB >= target.RedisDBStart+target.RedisDBLimit {
-		return fmt.Errorf("redis db %d is outside allowed range [%d,%d)", target.RedisDB, target.RedisDBStart, target.RedisDBStart+target.RedisDBLimit)
+	if target.RedisDBLimit <= target.RedisDBStart || target.RedisDB < target.RedisDBStart || target.RedisDB >= target.RedisDBLimit {
+		return fmt.Errorf("redis db %d is outside allowed range [%d,%d)", target.RedisDB, target.RedisDBStart, target.RedisDBLimit)
 	}
 	return nil
 }

@@ -17,6 +17,7 @@ import (
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
 	instancebirth "ctl/pkg/instancebirth"
+	entitlementmigration "ctl/pkg/logic/entitlementmigration"
 	"ctl/pkg/logic/gatewayroute"
 	"ctl/pkg/metric"
 	modelfactory "ctl/pkg/model/factory"
@@ -937,7 +938,7 @@ func (l *logic) FinalizeDestroyInstanceTaskFailure(ctx pctx.Context, payload *De
 //     不能让 sandbox 偶发缺失阻塞父 IsolatePass 收尾）
 //     - sandbox already-paused   → 视为成功，继续 CAS
 //     - 其它错误                 → 冒泡，触发父 task 重试
-//  4. CAS Running → Paused（与 PauseInstance 同语义）
+//  4. CAS Running/Resuming → Paused（同时接管用户恢复流程的中间态）
 func (l *logic) RunIsolateInstanceTask(ctx pctx.Context, payload *common.IsolateInstanceTaskPayload) error {
 	if payload == nil || strings.TrimSpace(payload.InstanceID) == "" {
 		return errcode.ErrInstanceInvalidParam
@@ -964,7 +965,7 @@ func (l *logic) RunIsolateInstanceTask(ctx pctx.Context, payload *common.Isolate
 			zap.String("status", entity.Status),
 		)
 		return nil
-	case modelinstance.InstanceStatusRunning:
+	case modelinstance.InstanceStatusRunning, modelinstance.InstanceStatusResuming:
 		// 正常路径
 	default:
 		// Creating / Deleting 等中间态：让框架按 60s interval 重试，等其先到 Running/终态
@@ -1001,7 +1002,7 @@ func (l *logic) RunIsolateInstanceTask(ctx pctx.Context, payload *common.Isolate
 	if err := l.instanceDao.TransitionStatus(
 		ctx,
 		entity.Id,
-		[]string{modelinstance.InstanceStatusRunning},
+		[]string{modelinstance.InstanceStatusRunning, modelinstance.InstanceStatusResuming},
 		modelinstance.InstanceStatusPaused,
 	); err != nil {
 		// CAS 失败常见于并发被 PauseInstance 改了状态：再次 GetByInstanceID 兜底
@@ -1151,9 +1152,6 @@ func (l *logic) applyRenewalGatewayMigration(ctx pctx.Context, entity *modelinst
 	userID := strings.TrimSpace(ctx.GetUserID())
 	if userID == "" {
 		userID = strings.TrimSpace(entity.UserId)
-	}
-	if err := l.ensureAiGatewayUser(ctx, backend, userID, "", entity.InstanceId); err != nil {
-		return err
 	}
 	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, userID, entity.InstanceId)
 	if err != nil {
@@ -1858,8 +1856,17 @@ func (l *logic) gatewayRuntimeConfig(backend gatewayBackend) (*gatewayRuntimeCon
 	}, nil
 }
 
-// createAiGatewayApiKey 调用选定网关为用户创建 API Key
+// createAiGatewayApiKey 在用户与权益准备完成后调用选定网关创建 API Key。
+// 所有实例侧签发入口必须经过这里，避免产生可鉴权但没有可用额度的密钥。
 func (l *logic) createAiGatewayApiKey(ctx pctx.Context, backend gatewayBackend, userID, instanceID string) (*gatewayAPIKey, error) {
+	if err := l.ensureAiGatewayUser(ctx, backend, userID, "", instanceID); err != nil {
+		return nil, err
+	}
+	if backend == gatewayBackendLLMGateway {
+		if err := l.ensureLegacyPassEntitlement(ctx, userID); err != nil {
+			return nil, fmt.Errorf("ensure llmgateway pass entitlement: %w", err)
+		}
+	}
 	l.logger.Info("gateway create-api-key started",
 		zap.String("instance_id", instanceID),
 		zap.String("user_id", userID),
@@ -2023,9 +2030,6 @@ func (l *logic) ensureAiGatewayUser(ctx pctx.Context, backend gatewayBackend, us
 
 func (l *logic) provisionAiGatewayOnCreate(ctx pctx.Context, entity *modelinstance.Entity, sandboxID string) error {
 	backend := l.resolveProvisionGateway(ctx, ctx.GetUserID(), entity.InstanceId)
-	if err := l.ensureAiGatewayUser(ctx, backend, ctx.GetUserID(), "", entity.InstanceId); err != nil {
-		return err
-	}
 	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, ctx.GetUserID(), entity.InstanceId)
 	if err != nil {
 		return err
@@ -2062,6 +2066,14 @@ func (l *logic) provisionAiGatewayOnCreate(ctx pctx.Context, entity *modelinstan
 	}
 
 	return nil
+}
+
+func (l *logic) ensureLegacyPassEntitlement(ctx pctx.Context, userID string) error {
+	if l.legacyPassEntitlementEnsurer != nil {
+		return l.legacyPassEntitlementEnsurer(ctx, userID, time.Now().UTC())
+	}
+	_, err := entitlementmigration.EnsureLegacyPassEntitlement(ctx, userID, time.Now().UTC())
+	return err
 }
 
 const hermesRuntimeUser = "agentuser"

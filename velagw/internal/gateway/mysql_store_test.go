@@ -22,6 +22,22 @@ func TestIsMySQLTransientLockErrorRecognizesDeadlockAndLockWaitTimeout(t *testin
 	}
 }
 
+func TestTenantDeletionSuccessUpdateDoesNotRescanAllTargets(t *testing.T) {
+	query := tenantDeletionSuccessJobUpdateSQL()
+	if strings.Contains(query, "llmgateway_tenant_deletion_targets") || strings.Contains(strings.ToUpper(query), "SELECT") {
+		t.Fatalf("tenant deletion progress update must stay O(1): %s", query)
+	}
+	for _, fragment := range []string{
+		"success_count = success_count + 1",
+		"success_count + 1 >= target_count",
+		"failure_count > 0",
+	} {
+		if !strings.Contains(query, fragment) {
+			t.Fatalf("tenant deletion progress update is missing %q: %s", fragment, query)
+		}
+	}
+}
+
 func TestTenantSearchLikePatternEscapesWildcards(t *testing.T) {
 	if got, want := tenantSearchLikePattern(`sgw%_\tenant`), `sgw\%\_\\tenant%`; got != want {
 		t.Fatalf("tenantSearchLikePattern() = %q, want %q", got, want)

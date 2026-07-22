@@ -9,6 +9,7 @@
 //   - POST /internal/trade/orders/renew                 续费下单（PlaceRenewOrder，trade-pass-renew R-D-5）
 //   - POST /internal/trade/orders/renew/place-and-pay   续费下单 + 支付一体化（PlaceRenewOrderAndPay，R-D-7 测试用）
 //   - POST /internal/trade/orders/{dealName}/pay-url     生成 / 反查支付页 URL（GeneratePayURL）
+//   - GET  /internal/trade/orders/by-resource/{passID}   查询存量 Pass 原始购买周期
 //   - POST /internal/trade/flows/{flowID}/complete      推进 trade_flow 终态（CompleteFlow，trade-pass-isolate §10 Q22-I-E）
 //   - POST /internal/trade/resources/{resourceID}/delete 触发 jifei 销毁前置（DeleteResource，trade-pass-destroy §3.5 / §4.5.3）
 //   - POST /internal/trade/resources/{resourceID}/refund 触发 jifei 同步退款（RefundResource，trade-pass-refund-design.md v0.5）

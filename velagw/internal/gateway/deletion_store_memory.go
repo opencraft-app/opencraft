@@ -544,6 +544,11 @@ func (s *MemoryStore) StartSetDecommission(_ context.Context, input SetDecommiss
 		return SetDecommissionJob{}, fmt.Errorf("set %q runtime lease does not match orphan cleanup mode", input.SetID)
 	}
 	set := s.sets[input.SetID]
+	for _, run := range s.setUpgradeRuns {
+		if run.SetID == input.SetID && !setUpgradeRunTerminal(run.Status) {
+			return SetDecommissionJob{}, fmt.Errorf("set %q has active upgrade %q", input.SetID, run.ID)
+		}
+	}
 	if set.Status != SetStatusActive && set.Status != SetStatusDisabled {
 		return SetDecommissionJob{}, fmt.Errorf("set %q cannot be decommissioned from status %q", input.SetID, set.Status)
 	}

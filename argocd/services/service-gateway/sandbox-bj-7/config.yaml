@@ -63,11 +63,40 @@ routes:
   methods:
   - GET
   - POST
-  - PUT
   - DELETE
   - OPTIONS
   upstream: http://ctl-api.lightvela-playground-sandbox-bj-7.svc.cluster.local
   access: authenticated
+  path_policy: allowlist
+  path_allow:
+  - method: GET
+    path: /v1/instances
+  - method: POST
+    path: /v1/instances
+  - method: GET
+    path: /v1/instances/{instance_id}
+  - method: DELETE
+    path: /v1/instances/{instance_id}
+  - method: GET
+    path: /v1/instances/{instance_id}/borncard
+  - method: POST
+    path: /v1/instances/{instance_id}/debug/exec
+  - method: POST
+    path: /v1/instances/{instance_id}/tat/session
+  - method: POST
+    path: /v1/instances/{instance_id}/config/reset
+  - method: POST
+    path: /v1/instances/{instance_id}/agentchat/launch-token
+  - method: POST
+    path: /v1/instances/{instance_id}/channels/config
+  - method: POST
+    path: /v1/instances/{instance_id}/channels/weixin/login-sessions
+  - method: GET
+    path: /v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}
+  - method: GET
+    path: /v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}/events
+  - method: POST
+    path: /v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}/cancel
   require_realname: true
   auth_strategy: shadow_api_key_or_session
   response_header_timeout: 60s

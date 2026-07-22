@@ -66,6 +66,72 @@ func TestDeployConfigsScopePhoneAuthPublicRoutes(t *testing.T) {
 	}
 }
 
+func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+
+	configPaths := []string{
+		"argocd/services/service-gateway/beijing-sandbox/config.yaml",
+		"argocd/services/service-gateway/beijing-sandbox-2/config.yaml",
+		"argocd/services/service-gateway/sandbox-bj-7/config.yaml",
+		"argocd/services/service-gateway/sgprod/config.yaml",
+		"argocd/services/service-gateway/shprod/config.yaml",
+	}
+	want := map[string]struct{}{
+		http.MethodGet + " /v1/instances":                                                                   {},
+		http.MethodPost + " /v1/instances":                                                                  {},
+		http.MethodGet + " /v1/instances/{instance_id}":                                                     {},
+		http.MethodDelete + " /v1/instances/{instance_id}":                                                  {},
+		http.MethodGet + " /v1/instances/{instance_id}/borncard":                                            {},
+		http.MethodPost + " /v1/instances/{instance_id}/debug/exec":                                         {},
+		http.MethodPost + " /v1/instances/{instance_id}/tat/session":                                        {},
+		http.MethodPost + " /v1/instances/{instance_id}/config/reset":                                       {},
+		http.MethodPost + " /v1/instances/{instance_id}/agentchat/launch-token":                             {},
+		http.MethodPost + " /v1/instances/{instance_id}/channels/config":                                    {},
+		http.MethodPost + " /v1/instances/{instance_id}/channels/weixin/login-sessions":                     {},
+		http.MethodGet + " /v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}":         {},
+		http.MethodGet + " /v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}/events":  {},
+		http.MethodPost + " /v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}/cancel": {},
+	}
+
+	for _, configPath := range configPaths {
+		t.Run(configPath, func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, configPath))
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			for _, route := range cfg.Routes {
+				if route.Prefix != "/v1/instances" {
+					continue
+				}
+				if route.PathPolicy != "allowlist" {
+					t.Fatalf("instance route path_policy = %q, want allowlist", route.PathPolicy)
+				}
+				got := make(map[string]struct{}, len(route.PathAllow))
+				for _, rule := range route.PathAllow {
+					got[rule.Method+" "+rule.Path] = struct{}{}
+				}
+				if len(got) != len(want) {
+					t.Fatalf("instance path allowlist has %d rules, want %d: %+v", len(got), len(want), got)
+				}
+				for key := range want {
+					if _, ok := got[key]; !ok {
+						t.Fatalf("instance path allowlist missing %s", key)
+					}
+				}
+				if _, exposed := got[http.MethodPost+" /v1/instances/{instance_id}/resume"]; exposed {
+					t.Fatal("resume must not be exposed by the gateway")
+				}
+				return
+			}
+			t.Fatal("instance route not found")
+		})
+	}
+}
+
 func TestLegacySandboxProxyRoutesStayRestricted(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {

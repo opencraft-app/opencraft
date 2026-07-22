@@ -67,7 +67,7 @@ Control plane:
   value has been rotated:
 
 ```bash
-kubectl --kubeconfig /tmp/llmgateway-prod-kubeconfig-cluster-sni \
+kubectl --kubeconfig /tmp/llmgateway-prod-kubeconfig-current-sni \
   -n llmgateway get secret llmgateway-control-runtime \
   -o jsonpath='{.data.CLUSTER_ADMIN_TOKEN}' | base64 -d
 ```
@@ -540,45 +540,45 @@ Kubeconfigs used in this workspace:
 
 ```text
 /tmp/llmgateway-prod-kubeconfig              # Tencent response; source only
-/tmp/llmgateway-prod-kubeconfig-cluster-sni  # required for TKE operations
+/tmp/llmgateway-prod-kubeconfig-current-sni  # derived and verified before writes
 ```
 
-Do not use `/tmp/llmgateway-prod-kubeconfig-refresh-sni` for production
-operations. That legacy file uses a CLB hostname as TLS SNI and can return
-intermittent `EOF` even when the API server is healthy.
+Do not assume that an older derived kubeconfig remains valid. Tencent can
+replace the external CLB or change which hostname its endpoint expects as SNI.
+Derive a fresh file from current TKE endpoint metadata and verify it before
+every write session.
 
 Common read-only checks:
 
 ```bash
-kubectl --kubeconfig /tmp/llmgateway-prod-kubeconfig-cluster-sni -n llmgateway get deploy,svc,llmfleet
-kubectl --kubeconfig /tmp/llmgateway-prod-kubeconfig-cluster-sni -n llmgateway describe svc llmgateway-control-public
-kubectl --kubeconfig /tmp/llmgateway-prod-kubeconfig-cluster-sni -n llmgateway describe svc llmgateway-traffic
+kubectl --kubeconfig /tmp/llmgateway-prod-kubeconfig-current-sni -n llmgateway get deploy,svc,llmfleet
+kubectl --kubeconfig /tmp/llmgateway-prod-kubeconfig-current-sni -n llmgateway describe svc llmgateway-control-public
+kubectl --kubeconfig /tmp/llmgateway-prod-kubeconfig-current-sni -n llmgateway describe svc llmgateway-traffic
 ```
 
-### TKE API: IP endpoint with cluster TLS SNI is mandatory
+### TKE API: IP endpoint with currently advertised TLS SNI
 
-Never put a hostname in `clusters[].cluster.server`. The TKE access path must
-connect to the API IP while preserving certificate verification with the TKE
-cluster hostname in `tls-server-name`. The SNI value must be the cluster domain
-such as `cls-*.ccs.tencent-cloud.com`; a `*.clb.*.tencentclb.com` hostname is
-not equivalent and is known to cause intermittent `EOF` on this environment.
+Prefer connecting to the resolved API IP while preserving certificate
+verification with `tls-server-name`. Do not hardcode whether the SNI is the
+`cls-*.ccs.tencent-cloud.com` cluster domain or the external CLB hostname. Use
+the hostname returned by the current `ClusterExternalEndpoint` or source
+kubeconfig, then prove the resulting pair with `/readyz` and `kubectl version`.
 
-Do not derive `tls-server-name` from the source kubeconfig `server` field. The
-source can expose a CLB hostname. Obtain the cluster domain from the TKE cluster
-endpoint metadata or an already verified cluster-SNI kubeconfig, then validate
-it with `kubectl version` before any write operation.
+On 2026-07-21 the Beijing endpoint accepted the current CLB hostname as SNI and
+returned plaintext HTTP when the former cluster-domain SNI was used. This
+supersedes the previous environment-specific rule that cluster-domain SNI was
+always mandatory.
 
 Create a derived kubeconfig instead of overwriting Tencent's response:
 
 ```bash
 SOURCE_KUBECONFIG=/tmp/llmgateway-prod-kubeconfig
-SNI_KUBECONFIG=/tmp/llmgateway-prod-kubeconfig-cluster-sni
+SNI_KUBECONFIG=/tmp/llmgateway-prod-kubeconfig-current-sni
 cp "${SOURCE_KUBECONFIG}" "${SNI_KUBECONFIG}"
 
-# Supply these from the current TKE endpoint metadata. Do not use the CLB
-# hostname from the source kubeconfig as CLUSTER_TLS_SERVER_NAME.
+# Supply these from the current TKE external endpoint metadata.
 APISERVER_IP='<current API endpoint IP>'
-CLUSTER_TLS_SERVER_NAME='<current cls-*.ccs.tencent-cloud.com hostname>'
+CLUSTER_TLS_SERVER_NAME='<current endpoint hostname>'
 CLUSTER_NAME="$(kubectl config --kubeconfig "${SOURCE_KUBECONFIG}" \
   view --minify -o jsonpath='{.clusters[0].name}')"
 
@@ -589,23 +589,25 @@ kubectl config --kubeconfig "${SNI_KUBECONFIG}" \
 
 kubectl --kubeconfig "${SNI_KUBECONFIG}" config view --minify \
   -o jsonpath='{.clusters[0].cluster.server}{"\n"}{.clusters[0].cluster.tls-server-name}{"\n"}'
+kubectl --kubeconfig "${SNI_KUBECONFIG}" --request-timeout=15s get --raw=/readyz
 kubectl --kubeconfig "${SNI_KUBECONFIG}" --request-timeout=15s version
 kubectl --kubeconfig "${SNI_KUBECONFIG}" -n llmgateway get deploy,svc,llmfleet
 ```
 
 The currently verified Beijing workspace kubeconfig is
-`/tmp/llmgateway-prod-kubeconfig-cluster-sni`. Always inspect it before use;
-endpoint IPs and cluster domains can change when the TKE endpoint is recreated.
+`/tmp/llmgateway-prod-kubeconfig-current-sni`. Always inspect it before use;
+endpoint IPs and TLS hostnames can change when the TKE endpoint is recreated.
 The invariant is:
 
 ```text
 server:          https://<API IP>:443
-tls-server-name: cls-*.ccs.tencent-cloud.com
+tls-server-name: <hostname currently advertised for that endpoint>
 ```
 
-If a request returns `EOF`, first verify that `tls-server-name` is the cluster
-domain rather than a CLB domain. Only after that validation may bounded,
-idempotent retries be used; never normalize repeated `EOF` as expected behavior.
+If a request returns `EOF`, a TLS-version error, or plaintext HTTP, test the
+current CLB hostname and cluster domain as SNI candidates against the same IP.
+Only use a candidate after `/readyz` and `kubectl version` both succeed. Never
+normalize repeated transport errors as expected behavior.
 
 ## Git and Handoff Rules
 

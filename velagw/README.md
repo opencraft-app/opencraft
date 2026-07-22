@@ -11,7 +11,7 @@
 1. **new-api 负责 Set 内能力**：模型渠道、API token、订阅额度、计费和实际推理转发。
 2. **LLMGateway 负责跨 Set 能力**：租户归属、外部 key、Set/Shard、BYOK 意图、渠道包和版本发布。
 3. **控制面与流量面分离**：控制面使用 MySQL；流量面只依赖 Redis 路由快照，不回源 MySQL。
-4. **Kubernetes 负责运行资源，不负责业务发布决策**：KRO/LLMFleet 渲染 Pod 和 Service，发布顺序由 LLMGateway 的持久化状态机控制。
+4. **Kubernetes 负责运行资源，不负责业务发布决策**：`VelaGWSet` Controller 收敛单 Set 的 Pod、Service 和 PDB；容量、准入和发布顺序仍由 LLMGateway 的持久化状态机控制。
 
 ```mermaid
 flowchart TB
@@ -22,12 +22,13 @@ flowchart TB
     coreWorker["worker-core<br/>Set、渠道与容量任务"]
     byokWorker["worker-byok<br/>用户 BYOK 同步"]
     observerWorker["worker-observer<br/>租户观测投影"]
-    setManager["llmgateway-set-manager<br/>LLMFleet 资源协调"]
+    provisioner["velagwset-provisioner<br/>容量意图物化"]
+    setController["velagwset-controller<br/>Kubernetes 资源收敛"]
     traffic["llmgateway-traffic<br/>Redis-only /v1/*"]
 
     mysql[("LLMGateway MySQL<br/>控制面真源")]
     redis[("Route Redis<br/>流量路由快照")]
-    kube["Kubernetes / KRO / LLMFleet"]
+    kube["Kubernetes / LLMFleet / VelaGWSet"]
 
     subgraph fleet["一个 Fleet"]
         shardA["Shard A<br/>MySQL + Redis"]
@@ -45,8 +46,9 @@ flowchart TB
     coreWorker --> mysql
     byokWorker --> mysql
     observerWorker --> mysql
-    setManager --> mysql
-    setManager --> kube
+    provisioner --> control
+    provisioner --> kube
+    setController --> kube
     kube --> fleet
 
     caller --> traffic
@@ -66,8 +68,10 @@ flowchart TB
 | `llmgateway-worker` `core` | Set facts、容量水位、渠道漂移、准入检查和控制面后台任务 | 是 |
 | `llmgateway-worker` `byok` | 合并同一用户的最新 BYOK 意图并异步下发目标 Set | 是 |
 | `llmgateway-worker` `observer` | 分页刷新租户、权益和用量观测投影 | 是 |
-| `llmgateway-set-manager` | 消费 Set provision/upgrade 状态，协调 LLMFleet 资源 | 是 |
-| `llmgateway-runtime-cleaner` | 在蓝绿排空窗口后清理旧 traffic runtime | 是 |
+| `velagwset-provisioner` | 认领容量请求，并作为 `VelaGWSet.spec` 唯一业务写入者执行创建、逐 Set 蓝绿升级和下线 | 否，通过 control 内部 API |
+| `velagwset-controller` | 仅根据单个 `VelaGWSet` 收敛 Deployment、Service、PDB 和 status | 否，也不读取 Secret |
+| `llmgateway-set-manager` | 仅兼容存量 `LLMFleet.spec.sets[]`；原生 Fleet 必须关闭其 upgrade/decommission writer | 是 |
+| `llmgateway-runtime-cleaner` | Set 下线且 Kubernetes runtime 消失后，凭短期 capability 清理独占 MySQL 数据库和 Redis DB | 是 |
 | `new-api master/slave` | Set 内管理、计费、渠道选择和模型转发 | 使用所属 Shard 数据源 |
 
 ## 资源模型
@@ -79,6 +83,11 @@ flowchart TB
 - **Set** 是租户分片和故障隔离单元。租户首次分配后固定归属一个 Set，常规请求不进行动态一致性哈希迁移。
 - 每个 Set 拥有独立 new-api 数据库名和 Redis DB，不允许两个 Set 复用同一份 Redis 逻辑空间。
 - Set 水位通过 `max_users / warn_users / reserved_users` 描述；新租户选择健康且水位最低的 Set，容量不足时生成新的 provision request。
+- `LLMFleet` 保存 Shard、连接池、HA 和调度策略；每个动态 Set 使用独立、不可变身份的 `VelaGWSet` CR，不再回写 `LLMFleet.spec.sets[]`，避免大数组冲突和残留资源。
+- 新 Set 先以 admin-only 形态完成建库、bootstrap 和配置，状态由 `pending → provisioning → created → configured → managed` 推进；traffic 只在 `configured` 后启用，最终通过 PDB/Ready 门禁才允许准入。
+- `active_runtime_generation`、`last_runtime_generation`、`route_revision` 和 `lifecycle_generation` 只能由专用事务命令推进，健康检查、容量刷新等通用 Set 更新不得改写；runtime generation 永不复用，回滚也只增加 route revision。
+- provision fact 带投影版本。worker 会按游标修复旧 `managed` fact，把 `max_users`、Shard 和真实 runtime generation 回填到本地投影，不依赖人工 SQL。
+- Shard 的 Redis 范围统一使用半开区间 `[redis_db_start, redis_db_limit)`；分配、清理 Job 和 capability 授权使用同一语义。
 - Shard 扩容从运营台提交意图，不直接手填事实。Terraform/Agent 创建 MySQL、Redis 和 Secret，set-manager 从 LLMFleet 回传真实投影，worker 核对资源并等待冒烟验证；只有完整流程结束的 Shard 才应加入容量策略。
 
 ### 租户、密钥与权益
@@ -148,7 +157,7 @@ set-04 完整蓝绿升级 → set-05 → set-06 → ...
 | 租户归属、外部 key、Set/Shard、任务、渠道包、Release Ring | LLMGateway MySQL | 控制面持久化状态 |
 | 用户、上游 token、subscription、额度、渠道实例 | 各 Set 的 new-api 数据库 | 通过 new-api API 管理，不直接改库 |
 | 外部 key 与 Set runtime 路由 | Redis | traffic 热路径唯一依赖；MySQL outbox 负责可靠发布 |
-| Deployment、Service、Secret 引用 | Kubernetes `LLMFleet` | 运行资源事实，不承担业务发布顺序 |
+| Fleet/Shard 策略与单 Set runtime | Kubernetes `LLMFleet` + `VelaGWSet` | `LLMFleet` 保存稳定策略，`VelaGWSet` 保存逐 Set 期望与运行状态 |
 
 系统不承诺在 Redis 完全不可用时继续接收模型流量，而是快速失败；也不会在 traffic Redis miss 时回源 MySQL，避免数据库故障演变为流量雪崩。
 
@@ -156,8 +165,8 @@ set-04 完整蓝绿升级 → set-05 → set-06 → ...
 
 - 不修改 new-api，不直接写 new-api 业务数据库。
 - 不引入 Kafka、Temporal、Service Mesh 或 ArgoCD per Set；后台任务使用 MySQL job/lease。
-- traffic 生产模式为 Redis-only；control、worker 和 set-manager 可以独立扩缩。
-- 多 Set 发布编排由 LLMGateway 状态机完成，不要求自定义 Kubernetes Controller。
+- traffic 生产模式为 Redis-only；control、worker、provisioner 和 Controller 可以独立扩缩。
+- `VelaGWSet` Controller 只管理 Kubernetes 资源；多 Set 发布编排仍由 LLMGateway 状态机完成。
 - 本地可使用内存 store 快速开发；生产必须使用 MySQL、Redis 和拆分进程部署。
 
 ## Runtime Topology: Traffic, Master, And Slave
@@ -413,7 +422,7 @@ at `test/e2e/mockllm/config.json`, and `cluster.compose.yaml` exposes it as:
 
 ```yaml
 mock_llm:
-  api_key: sk-mockllm-local
+  api_key: sk-mockllm-local # pragma: allowlist secret -- deterministic local-only fixture
   base_url: http://mockllm:8080
   model: llmgw-mock-chat
 ```

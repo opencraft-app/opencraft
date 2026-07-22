@@ -83,6 +83,7 @@ export function PublicHomePage({
             appearance="immersive"
             locale={locale}
             oauthError={new URLSearchParams(locationSearch).get('oauth_error')}
+            showLanguageSwitcher
           />
         )}
         locationSearch={locationSearch}

@@ -41,6 +41,16 @@ func (s *stubFaceIDVerifier) GetDetectInfoEnhanced(_ context.Context, in Realnam
 	return s.getInfoOut, nil
 }
 
+type recordingPassBillingMigrationNotifier struct {
+	calls []shadowbinding.Binding
+	err   error
+}
+
+func (n *recordingPassBillingMigrationNotifier) NotifyShadowBound(_ context.Context, binding shadowbinding.Binding) error {
+	n.calls = append(n.calls, binding)
+	return n.err
+}
+
 func TestFaceRequiredCurrentSessionIgnoresLegacyRealnameProjection(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true})
 	svc := NewWithStore(store, Options{
@@ -693,6 +703,68 @@ func TestVerifyRealnameFaceIDPhoneUsesShadowBindingCode(t *testing.T) {
 	}
 	if shadowClient.calls != 1 || shadowClient.basicAuthCalls != 1 || shadowClient.lastRegister.VerifyCode != "888888" || shadowClient.lastRegister.Phone != session.User.Phone {
 		t.Fatalf("expected Tencent Shadow registration and basic auth to complete synchronously, registerCalls=%d basicAuthCalls=%d input=%+v", shadowClient.calls, shadowClient.basicAuthCalls, shadowClient.lastRegister)
+	}
+}
+
+func TestVerifyRealnameFaceIDPhoneNotifiesPassBillingMigrationBestEffort(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true})
+	shadowClient := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{
+		Uin: 300000000064, OwnerUin: 300000000064, AppID: 1250000000,
+	}}
+	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), shadowClient, shadowbinding.Options{Enabled: true, Now: fixedNow})
+	passNotifier := &recordingPassBillingMigrationNotifier{err: errors.New("ctl unavailable")}
+	svc := NewWithStore(store, Options{
+		Now:                        fixedNow,
+		RealnameCipher:             stubRealnameCipher{},
+		ShadowBasicAuthSyncEnabled: true,
+		PassBillingMigration:       passNotifier,
+		RealnameFaceIDVerifier: &stubFaceIDVerifier{detectAuthOut: RealnameFaceIDDetectAuthResult{
+			BizToken: "biz-notify-pass-migration", VerifyURL: "https://faceid.example.invalid/notify-pass-migration", RequestID: "req-notify-pass-migration",
+		}},
+		ShadowBinding: shadowSvc,
+		RealnameFaceID: RealnameFaceIDConfig{
+			Mode: RealnameAssuranceModeObserve, RuleID: "rule-1", AccountID: "acct-1",
+			RedirectURL: "https://api.example.com/auth/realname/faceid/callback",
+			DigestKey:   []byte("0123456789abcdef0123456789abcdef"), DailyQuota: 5,
+			AttemptTTL: 2 * time.Hour, LeaseTTL: 30 * time.Second,
+		},
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "notify-pass-migration-faceid@example.invalid", "13800138124")
+	started, err := svc.StartRealnameFaceIDAttempt(context.Background(), session.Token, RealnameFaceIDStartInput{
+		Name: "张三", IDCard: "11010519491231002X", ClientIP: "127.0.0.1", ClientUA: "agent", ConsentAccepted: true,
+	})
+	if err != nil {
+		t.Fatalf("start attempt: %v", err)
+	}
+	store.mu.Lock()
+	attempt := store.realnameFaceIDAttempts[started.AttemptID]
+	faceVerifiedAt := fixedNow()
+	attempt.State = RealnameFaceIDStateFaceSucceeded
+	attempt.FaceVerifiedAt = &faceVerifiedAt
+	store.realnameFaceIDAttempts[attempt.AttemptID] = attempt
+	store.mu.Unlock()
+	if _, err := svc.SendRealnameFaceIDPhoneCode(context.Background(), session.Token, RealnameFaceIDPhoneCodeInput{
+		AttemptID: started.AttemptID,
+		ClientIP:  "127.0.0.1",
+	}); err != nil {
+		t.Fatalf("send FaceID phone code: %v", err)
+	}
+
+	verified, err := svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
+		AttemptID: started.AttemptID, Code: "888888", ClientIP: "127.0.0.1", ClientUA: "agent",
+	})
+	if err != nil {
+		t.Fatalf("pass migration notification failure must not block FaceID verification: %v", err)
+	}
+	if verified.State != RealnameFaceIDStateSucceeded {
+		t.Fatalf("expected FaceID verification to complete, got %+v", verified)
+	}
+	if len(passNotifier.calls) != 1 {
+		t.Fatalf("expected one pass billing migration notification, got %d", len(passNotifier.calls))
+	}
+	call := passNotifier.calls[0]
+	if call.UserID != session.User.ID || call.Uin != shadowClient.result.Uin || call.AppID != shadowClient.result.AppID || call.Status != shadowbinding.StatusActive {
+		t.Fatalf("unexpected pass billing migration notification binding: %+v", call)
 	}
 }
 

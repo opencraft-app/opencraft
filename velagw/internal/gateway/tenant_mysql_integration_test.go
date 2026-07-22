@@ -141,3 +141,68 @@ func TestMySQLTenantListIndexesAreInstalled(t *testing.T) {
 		}
 	}
 }
+
+func TestMySQLTenantDeletionProgressUsesAtomicCounters(t *testing.T) {
+	store := newIsolatedMySQLStore(t)
+	defer func() { _ = store.Close() }()
+	ctx := t.Context()
+	base := time.Date(2026, 7, 22, 7, 0, 0, 0, time.UTC)
+
+	if err := store.SaveSet(ctx, Set{ID: "set-delete", Name: "set-delete", Status: SetStatusActive, MaxUsers: 10}); err != nil {
+		t.Fatal(err)
+	}
+	for _, userID := range []string{"delete-001", "delete-002"} {
+		if err := store.SaveTenant(ctx, Tenant{ExternalUserID: userID, Backend: UserBackendNew, SetID: "set-delete", Status: TenantStatusActive}); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SaveUserBinding(ctx, UserBinding{ExternalUserID: userID, SetID: "set-delete", Username: "sgw-" + userID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	job := TenantDeletionJob{
+		ID: "tenant-delete-atomic", Status: TenantDeletionStatusClaiming,
+		SelectorType: tenantDeletionSelectorUserIDs, SnapshotAt: base,
+		TargetCount: 2, Version: 1, CreatedAt: base, UpdatedAt: base,
+	}
+	targets := []TenantDeletionTarget{
+		{JobID: job.ID, ExternalUserID: "delete-001", SetID: "set-delete", Status: TenantDeletionTargetStatusPending},
+		{JobID: job.ID, ExternalUserID: "delete-002", SetID: "set-delete", Status: TenantDeletionTargetStatusPending},
+	}
+	if err := store.CreateTenantDeletionJob(ctx, job, targets); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.ClaimTenantDeletionJob(ctx, job.ID, 10, base)
+	if err != nil || job.Status != TenantDeletionStatusQueued || job.ClaimedCount != 2 {
+		t.Fatalf("claim job=%+v err=%v", job, err)
+	}
+
+	first, acquired, err := store.AcquireTenantDeletionTarget(ctx, "worker-a", time.Minute, base)
+	if err != nil || !acquired {
+		t.Fatalf("acquire first=%+v acquired=%v err=%v", first, acquired, err)
+	}
+	job, err = store.PurgeTenantDeletionTarget(ctx, first, base.Add(time.Second))
+	if err != nil || job.Status != TenantDeletionStatusRunning || job.SuccessCount != 1 || job.FailureCount != 0 {
+		t.Fatalf("purge first job=%+v err=%v", job, err)
+	}
+
+	second, acquired, err := store.AcquireTenantDeletionTarget(ctx, "worker-b", time.Minute, base.Add(2*time.Second))
+	if err != nil || !acquired {
+		t.Fatalf("acquire second=%+v acquired=%v err=%v", second, acquired, err)
+	}
+	if err := store.FailTenantDeletionTarget(ctx, second, "temporary", base.Add(3*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	job, _, err = store.GetTenantDeletionJob(ctx, job.ID)
+	if err != nil || job.Status != TenantDeletionStatusPartial || job.SuccessCount != 1 || job.FailureCount != 1 {
+		t.Fatalf("failed job=%+v err=%v", job, err)
+	}
+
+	second, acquired, err = store.AcquireTenantDeletionTarget(ctx, "worker-a", time.Minute, base.Add(tenantDeletionRetryDelay+4*time.Second))
+	if err != nil || !acquired {
+		t.Fatalf("retry second=%+v acquired=%v err=%v", second, acquired, err)
+	}
+	job, err = store.PurgeTenantDeletionTarget(ctx, second, base.Add(tenantDeletionRetryDelay+5*time.Second))
+	if err != nil || job.Status != TenantDeletionStatusSucceeded || job.SuccessCount != 2 || job.FailureCount != 0 {
+		t.Fatalf("purge retry job=%+v err=%v", job, err)
+	}
+}

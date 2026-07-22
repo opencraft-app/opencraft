@@ -7,6 +7,10 @@ resources:
   - workloads.yaml
   - set-manager.yaml
   - llmfleet-rgd.yaml
+  - velagwset-crd.yaml
+  - velagwset-delete-policy.yaml
+  - velagwset-controller.yaml
+  - velagwset-provisioner.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
@@ -57,6 +61,17 @@ replacements:
           name: llmgateway-worker-observer
         fieldPaths:
           - spec.template.spec.containers.[name=worker].image
+      - select:
+          kind: Deployment
+          name: velagwset-controller
+        fieldPaths:
+          - spec.template.spec.containers.[name=controller].image
+      - select:
+          kind: Deployment
+          name: velagwset-provisioner
+        fieldPaths:
+          - spec.template.spec.containers.[name=provisioner].image
+          - spec.template.spec.containers.[name=provisioner].env.[name=LLMGATEWAY_IMAGE].value
       - select:
           kind: CronJob
           name: llmgateway-set-manager

@@ -832,6 +832,7 @@ func (s *Service) completeRealnameFaceIDAttempt(ctx context.Context, store faceI
 	if err != nil {
 		return RealnameVerifyResult{}, RealnameFaceIDAttempt{}, err
 	}
+	s.notifyPassBillingMigration(ctx, binding)
 	return RealnameVerifyResult{
 		OK:                  true,
 		Verified:            true,

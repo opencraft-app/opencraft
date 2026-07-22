@@ -1,8 +1,10 @@
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
   Camera,
   Check,
   ChevronRight,
+  CircleAlert,
   Copy,
   CreditCard,
   Loader2,
@@ -17,7 +19,7 @@ import {
 import { useCallback, useEffect, useState, useRef, useMemo, type ReactNode } from "react";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
-import { useOpenClaw } from "@/contexts/openclaw-context";
+import { useOpenClaw } from "@/contexts/agent-context";
 import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { RepositoryError } from "@/repositories/http-repositories";
 import { REALNAME_LEVEL, type BundleTimeUnit, type Pass, type PassRenewPrice } from "@/domain/types";
@@ -42,6 +44,7 @@ import { REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
 import { cn } from "@/lib/utils";
 import { buildPayPlan } from "@/lib/wx-pay";
 import { QRCodeSVG } from "qrcode.react";
+import { RealnameStepper, type RealnameStage } from "@/pages/marketing/realname-stepper";
 
 /* ─── animation variants ─── */
 
@@ -79,85 +82,6 @@ const InfoRow = ({
 
 const FACE_ID_PENDING_POLL_DELAYS_MS = [250, 500, 1000, 1500, 2000, 3000, 5000, 8000, 10000];
 
-type VerifyIdentityModalStage = "identity" | "face" | "phone" | "shadow";
-
-/* ─── Realname progress indicator ───
- * 新用户（未绑手机）：身份证 → 人脸 → 手机号（3 步）
- * 已实名/已绑手机用户：身份证 → 人脸（2 步，手机号已绑无需再验证）
- */
-
-const RealnameStepper = ({
-  stage,
-  t,
-  includePhoneStep,
-}: {
-  stage: VerifyIdentityModalStage;
-  t: (text: string) => string;
-  /** 是否包含「手机验证」步：未绑手机的新用户为 true（3 步），已绑手机用户为 false（2 步） */
-  includePhoneStep: boolean;
-}) => {
-  const stepKeys: VerifyIdentityModalStage[] = includePhoneStep
-    ? ["identity", "face", "phone"]
-    : ["identity", "face"];
-  const labels: Record<string, string> = {
-    identity: t("身份信息"),
-    face: t("人脸核身"),
-    phone: t("手机验证"),
-  };
-  // shadow（同步）视为最后一步之后的完成态，进度停在最后一步且全部完成。
-  const currentIndex = stage === "shadow" ? stepKeys.length : stepKeys.indexOf(stage);
-
-  return (
-    <div className="flex items-center justify-center" style={{ padding: "4px 0" }}>
-      {stepKeys.map((key, index) => {
-        const isDone = index < currentIndex;
-        const isActive = index === currentIndex;
-        const dotBg = isActive ? "#202020" : isDone ? "#202020" : "rgba(0,0,0,0.06)";
-        const dotColor = isActive || isDone ? "#FFFFFF" : "rgba(0,0,0,0.4)";
-        const labelColor = isActive ? "rgba(0,0,0,0.9)" : isDone ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.35)";
-        return (
-          <div key={key} className="flex flex-shrink-0 items-center">
-            <div className="flex flex-shrink-0 items-center gap-2">
-              <span
-                className="flex items-center justify-center rounded-full"
-                style={{
-                  width: 22,
-                  height: 22,
-                  background: dotBg,
-                  color: dotColor,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  fontFamily: "PingFang SC",
-                  transition: "background 0.2s ease",
-                }}
-              >
-                {isDone ? <Check className="h-3.5 w-3.5" /> : index + 1}
-              </span>
-              <span
-                className="whitespace-nowrap"
-                style={{ fontSize: 13, fontWeight: isActive ? 500 : 400, color: labelColor, fontFamily: "PingFang SC" }}
-              >
-                {labels[key]}
-              </span>
-            </div>
-            {index < stepKeys.length - 1 && (
-              <span
-                style={{
-                  width: 96,
-                  height: 1,
-                  margin: "0 12px",
-                  background: index < currentIndex ? "#202020" : "rgba(0,0,0,0.15)",
-                  transition: "background 0.2s ease",
-                }}
-              />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
 const formatFaceIdExpiry = (value?: string) => {
   if (!value) return "";
   const date = new Date(value);
@@ -166,6 +90,43 @@ const formatFaceIdExpiry = (value?: string) => {
   }
   return date.toLocaleString();
 };
+
+const REALNAME_ERROR_FIELD = {
+  IDENTITY: "identity",
+  NAME: "name",
+  ID_CARD: "idCard",
+  PHONE: "phone",
+  SMS_CODE: "smsCode",
+  GLOBAL: "global",
+} as const;
+
+type RealnameErrorField = (typeof REALNAME_ERROR_FIELD)[keyof typeof REALNAME_ERROR_FIELD];
+
+type RealnameFormError = {
+  field: RealnameErrorField;
+  title: string;
+  description?: string;
+};
+
+const InlineValidationMessage = ({
+  id,
+  title,
+  description,
+}: {
+  id: string;
+  title: string;
+  description?: string;
+}) => (
+  <div id={id} className="flex items-start gap-2.5" role="alert">
+    <CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--danger)]" aria-hidden="true" />
+    <div className="min-w-0">
+      <p className="m-0 text-[13px] font-medium leading-5 text-[var(--danger)]">{title}</p>
+      {description && (
+        <p className="mb-0 mt-0.5 text-[13px] leading-5 text-[var(--text-tertiary)]">{description}</p>
+      )}
+    </div>
+  </div>
+);
 
 const VerifyIdentityModal = ({
   onClose,
@@ -192,14 +153,15 @@ const VerifyIdentityModal = ({
   const normalizedPhone = phone?.trim() ?? "";
   const hasIdCardVerified = phoneVerificationEnabled
     && (verified || realnameLevel === "idcard_2fa" || realnameLevel === "phone_3fa");
-  const initialStage: VerifyIdentityModalStage = faceIdFlowEnabled
+  const initialStage: RealnameStage = faceIdFlowEnabled
     ? !verified && realnameLevel === REALNAME_LEVEL.PHONE_3FA
       ? "shadow"
       : "identity"
     : hasIdCardVerified
       ? "phone"
       : "identity";
-  const [stage, setStage] = useState<VerifyIdentityModalStage>(initialStage);
+  const [stage, setStage] = useState<RealnameStage>(initialStage);
+  const reduceMotion = useReducedMotion();
   const [realName, setRealName] = useState("");
   const [idNumber, setIdNumber] = useState("");
   const [phoneInput, setPhoneInput] = useState(normalizedPhone);
@@ -208,7 +170,7 @@ const VerifyIdentityModal = ({
   const [sendingCode, setSendingCode] = useState(false);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<RealnameFormError | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState<{
     attemptId: string;
@@ -257,43 +219,96 @@ const VerifyIdentityModal = ({
     }
   }, [awaitingFinalRefresh, onSuccess, verified]);
 
-  const mapErrorMessage = (err: unknown): string => {
+  const mapErrorMessage = (err: unknown): RealnameFormError => {
     if (err instanceof RepositoryError) {
       switch (err.code) {
         case "phone_required":
-          return t("请输入用于实名认证的手机号。");
+          return {
+            field: REALNAME_ERROR_FIELD.PHONE,
+            title: t("请输入手机号"),
+            description: t("请输入用于实名认证的中国大陆手机号。"),
+          };
+        case "invalid_phone":
+          return {
+            field: REALNAME_ERROR_FIELD.PHONE,
+            title: t("手机号格式不正确"),
+            description: t("请输入 11 位中国大陆手机号后重试。"),
+          };
+        case "phone_in_use":
+          return {
+            field: REALNAME_ERROR_FIELD.PHONE,
+            title: t("该手机号暂不可使用"),
+            description: t("该手机号已绑定其他 LightVela 账号，请更换手机号或联系管理员。"),
+          };
         case "sms_code_not_found":
-          return t("请先获取短信验证码。");
+          return {
+            field: REALNAME_ERROR_FIELD.SMS_CODE,
+            title: t("请先获取验证码"),
+            description: t("获取短信验证码后再完成手机号认证。"),
+          };
         case "sms_code_expired":
-          return t("验证码已过期，请重新获取。");
+          return {
+            field: REALNAME_ERROR_FIELD.SMS_CODE,
+            title: t("验证码已过期"),
+            description: t("请重新获取短信验证码后再试。"),
+          };
         case "invalid_sms_code":
-          return t("验证码不正确，请检查后重试。");
+          return {
+            field: REALNAME_ERROR_FIELD.SMS_CODE,
+            title: t("验证码不正确"),
+            description: t("请检查短信中的验证码后重试。"),
+          };
         case "invalid_realname":
-          return t("真实姓名格式不正确，请检查后重试。");
+          return {
+            field: REALNAME_ERROR_FIELD.NAME,
+            title: t("姓名格式不正确"),
+            description: t("请输入身份证上的真实姓名。"),
+          };
         case "invalid_id_card":
-          return t("身份证号格式不正确，请检查后重试。");
+          return {
+            field: REALNAME_ERROR_FIELD.ID_CARD,
+            title: t("身份证号格式不正确"),
+            description: t("请输入 18 位中国大陆居民身份证号。"),
+          };
         case "realname_mismatch":
-          return t("姓名与身份证号不一致，请重新输入。");
+          return {
+            field: REALNAME_ERROR_FIELD.IDENTITY,
+            title: t("身份信息未通过核验"),
+            description: t("请确认姓名与身份证上的信息完全一致后重试。"),
+          };
         case "realname_verify_failed":
-          return t("实名核验失败，请稍后重试。");
+          return { field: REALNAME_ERROR_FIELD.GLOBAL, title: t("实名核验失败"), description: t("请稍后重新提交认证。") };
         case "realname_unavailable":
-          return t("实名认证服务暂未开放，请稍后再试。");
+          return { field: REALNAME_ERROR_FIELD.GLOBAL, title: t("实名认证暂不可用"), description: t("请稍后再试。") };
         case "shadow_binding_failed":
         case "shadow_binding_incomplete":
         case "shadow_basic_auth_failed":
-          return t("LightVela 实名信息同步失败，请稍后重试。");
+          return {
+            field: REALNAME_ERROR_FIELD.GLOBAL,
+            title: t("实名信息同步失败"),
+            description: t("你无需重新填写信息，请稍后重试。"),
+          };
         default:
           break;
       }
       if (err.status === 502 || err.status === 503) {
-        return t("认证服务繁忙或暂未开放，请稍后再试。");
+        return { field: REALNAME_ERROR_FIELD.GLOBAL, title: t("认证服务暂时繁忙"), description: t("请稍后再试。") };
       }
-      return err.message || t("实名认证失败，请稍后重试。");
+      return { field: REALNAME_ERROR_FIELD.GLOBAL, title: t("实名认证失败"), description: t("请稍后重试。") };
     }
     if (err instanceof Error && err.message.trim().length > 0) {
-      return err.message;
+      return { field: REALNAME_ERROR_FIELD.GLOBAL, title: t("实名认证失败"), description: t("请稍后重试。") };
     }
-    return t("网络异常，请稍后再试。");
+    return { field: REALNAME_ERROR_FIELD.GLOBAL, title: t("网络连接异常"), description: t("请检查网络连接后重试。") };
+  };
+
+  const clearErrorFor = (...fields: RealnameErrorField[]) => {
+    setError((current) => current && fields.includes(current.field) ? null : current);
+  };
+
+  const getPollErrorMessage = (err: unknown) => {
+    const mappedError = mapErrorMessage(err);
+    return mappedError.description ?? mappedError.title;
   };
 
   const applyAttemptState = useCallback(async (nextAttempt: NonNullable<typeof attempt>) => {
@@ -345,9 +360,7 @@ const VerifyIdentityModal = ({
           : typeof err === "object" && err !== null && "status" in err
             ? Number((err as { status?: unknown }).status)
             : 0;
-        if (!cancelled && status !== 404) {
-          setError(mapErrorMessage(err));
-        }
+        if (!cancelled && status !== 404) setError(mapErrorMessage(err));
       });
     return () => {
       cancelled = true;
@@ -400,7 +413,7 @@ const VerifyIdentityModal = ({
     const refreshPersistedState = () => {
       void auth.getRealnameFaceIdAttempt(attempt.attemptId)
         .then((nextAttempt) => applyAttemptState(nextAttempt))
-        .catch((err: unknown) => setPollError(mapErrorMessage(err)));
+        .catch((err: unknown) => setPollError(getPollErrorMessage(err)));
     };
     const handleVisibility = () => {
       if (document.visibilityState === "visible") refreshPersistedState();
@@ -482,7 +495,11 @@ const VerifyIdentityModal = ({
             return;
           }
           if (!normalizedPhone) {
-            setError(t("当前账号未绑定手机号，请先使用手机号登录或绑定手机号。"));
+            setError({
+              field: REALNAME_ERROR_FIELD.PHONE,
+              title: t("当前账号未绑定手机号"),
+              description: t("请先使用手机号登录或绑定手机号。"),
+            });
             return;
           }
           setStage("phone");
@@ -564,504 +581,432 @@ const VerifyIdentityModal = ({
       : stage === "face"
         ? Boolean(attempt?.attemptId)
         : !faceIdFlowEnabled && (shadowFailed || Boolean(attempt?.attemptId));
+  const modalTitle = verified ? t("修改实名认证") : t("实名认证");
+  const stageDescription = stage === "identity"
+    ? verified
+      ? t("填写新的身份信息，通过核验后将更新当前实名。")
+      : t("填写与你身份证一致的信息，下一步将进行人脸核身。")
+    : stage === "face"
+      ? t("使用手机完成核身，结果会在当前页面自动更新。")
+      : stage === "phone"
+        ? normalizedPhone
+          ? t("验证当前绑定手机号，完成最后一步认证。")
+          : t("绑定并验证中国大陆手机号，完成最后一步认证。")
+        : t("认证已完成，正在同步最终结果。");
+  const safetyText = faceIdFlowEnabled
+    ? t("你的姓名、身份证号和核身过程仅用于本次实名认证")
+    : phoneVerificationEnabled
+      ? t("你的姓名、身份证号和手机号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。")
+      : t("你的姓名和身份证号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。");
+  const fieldClassName = "h-11 w-full rounded-md border border-[var(--realname-control-border)] bg-[var(--surface-base)] px-4 text-sm text-[var(--text-primary)] outline-none transition-shadow duration-150 placeholder:text-[var(--text-tertiary)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
+  const invalidFieldClassName = "border-[color-mix(in_oklab,var(--danger)_50%,transparent)] focus-visible:border-[color-mix(in_oklab,var(--danger)_60%,transparent)] focus-visible:ring-[color-mix(in_oklab,var(--danger)_15%,transparent)]";
+  const identityErrorId = "realname-identity-error";
+  const nameErrorId = "realname-name-error";
+  const idCardErrorId = "realname-id-card-error";
+  const phoneErrorId = "realname-phone-error";
+  const smsCodeErrorId = "realname-sms-code-error";
+  const errorMessageId = error ? {
+    [REALNAME_ERROR_FIELD.IDENTITY]: identityErrorId,
+    [REALNAME_ERROR_FIELD.NAME]: nameErrorId,
+    [REALNAME_ERROR_FIELD.ID_CARD]: idCardErrorId,
+    [REALNAME_ERROR_FIELD.PHONE]: phoneErrorId,
+    [REALNAME_ERROR_FIELD.SMS_CODE]: smsCodeErrorId,
+    [REALNAME_ERROR_FIELD.GLOBAL]: "realname-global-error",
+  } satisfies Record<RealnameErrorField, string> : null;
+  const isIdentityGroupInvalid = error?.field === REALNAME_ERROR_FIELD.IDENTITY;
+  const isNameInvalid = isIdentityGroupInvalid || error?.field === REALNAME_ERROR_FIELD.NAME;
+  const isIdCardInvalid = isIdentityGroupInvalid || error?.field === REALNAME_ERROR_FIELD.ID_CARD;
+  const isPhoneInvalid = error?.field === REALNAME_ERROR_FIELD.PHONE;
+  const isSmsCodeInvalid = error?.field === REALNAME_ERROR_FIELD.SMS_CODE;
 
   return (
-    <motion.div
-      className="fixed inset-0 z-[100] flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-    >
-      <motion.div
-        className="relative mx-4 w-full max-w-[622px] overflow-hidden bg-white"
-        style={{
-          borderRadius: 12,
-          border: "1px solid #E6E9EF",
-          boxShadow: "0px 24px 48px -12px rgba(0, 0, 0, 0.15)",
-        }}
-        initial={{ opacity: 0, scale: 0.96, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 10 }}
-        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-      >
-        <div className="flex flex-col gap-4" style={{ padding: "32px 32px 24px" }}>
-          <div className="flex items-center gap-4">
-            <div className="flex flex-1 flex-col justify-center gap-2">
-              <h3
-                className="m-0"
-                style={{
-                  fontFamily: "PingFang SC",
-                  fontWeight: 500,
-                  fontSize: 20,
-                  lineHeight: "1.6em",
-                  color: "rgba(0,0,0,0.9)",
-                }}
-              >
-                {verified ? t("修改实名认证") : t("实名认证")}
-              </h3>
-              {(() => {
-                const subtitle = faceIdFlowEnabled
-                  ? ""
-                  : verified
-                    ? t("重新提交真实姓名和身份证号，通过核验后将更新当前实名信息。")
-                    : t("完成实名认证后可以发布技能和参与更多社区活动");
-                if (!subtitle) return null;
-                return (
-                  <p
-                    className="m-0"
-                    style={{
-                      fontFamily: "PingFang SC",
-                      fontWeight: 400,
-                      fontSize: 14,
-                      lineHeight: "22px",
-                      color: "rgba(0,0,0,0.9)",
-                    }}
-                  >
-                    {subtitle}
-                  </p>
-                );
-              })()}
-            </div>
-            <button
-              onClick={onClose}
-              className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[rgba(0,0,0,0.04)]"
-              style={{ color: "rgba(0,0,0,0.5)" }}
-              aria-label={t("关闭")}
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-
-          {(() => {
-            const hintText = faceIdFlowEnabled
-              ? verified
-                ? t("当前账号已完成实名。修改后会覆盖当前实名信息。")
-                : ""
-              : verified
-                ? t("当前账号已完成实名。修改后会覆盖当前实名信息。")
-                : stage === "identity"
-                  ? phoneVerificationEnabled
-                    ? t("第一步：提交真实姓名和身份证号。")
-                    : t("当前未认证，请完善信息并提交认证。")
-                  : t("第二步：输入当前手机号收到的短信验证码。");
-            if (!hintText) return null;
-            return (
-              <div
-                className="flex items-center gap-1"
-                style={{
-                  background: verified ? "rgba(7, 193, 96, 0.1)" : "rgba(255, 161, 0, 0.1)",
-                  borderRadius: 8,
-                  padding: "4px 12px",
-                }}
-              >
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center">
-                  {verified ? (
-                    <ShieldCheck className="h-[18px] w-[18px]" style={{ color: "var(--color-success)" }} />
-                  ) : (
-                    <Shield className="h-[18px] w-[18px]" style={{ color: "#FFA100" }} />
-                  )}
+    <DialogPrimitive.Root open onOpenChange={(open) => {
+      if (!open) onClose();
+    }}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay asChild>
+          <motion.div
+            className="fixed inset-0 z-50 bg-[rgba(0,0,0,0.45)]"
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: reduceMotion ? 0 : 0.16, ease: "easeOut" }}
+          />
+        </DialogPrimitive.Overlay>
+        <DialogPrimitive.Content
+          asChild
+          onPointerDownOutside={(event) => event.preventDefault()}
+          onInteractOutside={(event) => event.preventDefault()}
+        >
+          <motion.div
+            className="fixed inset-x-4 bottom-4 z-50 flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-2xl border border-[var(--realname-control-border)] bg-[var(--surface-base)] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.15)] outline-none md:inset-auto md:left-1/2 md:top-1/2 md:w-[680px] md:max-w-[calc(100vw-2rem)] md:-translate-x-1/2 md:-translate-y-1/2"
+            initial={reduceMotion ? false : { opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: reduceMotion ? 0 : 0.18, ease: "easeOut" }}
+          >
+            <header className="shrink-0 px-6 pb-5 pt-6 md:px-8 md:pb-6 md:pt-7">
+              <div className="flex items-start gap-6">
+                <div className="min-w-0 flex-1">
+                  <DialogPrimitive.Title className="m-0 text-balance text-[22px] font-semibold leading-8 text-black/90">
+                    {modalTitle}
+                  </DialogPrimitive.Title>
+                  <DialogPrimitive.Description className="mb-0 mt-1 text-pretty text-sm leading-6 text-black/50">
+                    {stageDescription}
+                  </DialogPrimitive.Description>
                 </div>
-                <span
-                  style={{
-                    fontFamily: "PingFang SC",
-                    fontWeight: 400,
-                    fontSize: 14,
-                    lineHeight: "22px",
-                    color: "rgba(0,0,0,0.9)",
-                  }}
-                >
-                  {hintText}
-                </span>
-              </div>
-            );
-          })()}
-        </div>
-
-        {faceIdFlowEnabled && stage !== "shadow" && (
-          <div style={{ padding: "0 32px 20px" }}>
-            <RealnameStepper stage={stage} t={t} includePhoneStep={!normalizedPhone} />
-          </div>
-        )}
-
-        <div style={{ height: 1, background: "#E9ECF1" }} />
-
-        <div className="flex flex-col" style={{ gap: 24, padding: "24px 32px" }}>
-          {stage === "identity" && (
-            <>
-              <div className="flex flex-col" style={{ gap: 8 }}>
-                <label
-                  style={{
-                    fontFamily: "PingFang SC",
-                    fontWeight: 500,
-                    fontSize: 14,
-                    lineHeight: "22px",
-                    color: "rgba(0,0,0,0.9)",
-                  }}
-                >
-                  {t("证件类型")}
-                </label>
-                <div
-                  className="flex items-center justify-between"
-                  style={{
-                    background: "#F2F4F8",
-                    border: "1px solid #E9ECF1",
-                    borderRadius: 8,
-                    padding: "6px 16px",
-                    cursor: "not-allowed",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontFamily: "PingFang SC",
-                      fontWeight: 400,
-                      fontSize: 14,
-                      lineHeight: "24px",
-                      color: "rgba(0,0,0,0.3)",
-                    }}
+                <DialogPrimitive.Close asChild>
+                  <button
+                    type="button"
+                    aria-label={t("关闭")}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-black/45 transition-colors duration-150 hover:bg-black/[0.04] hover:text-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
                   >
-                    {t("身份证")}
-                  </span>
-                  <ChevronRight className="h-4 w-4" style={{ color: "rgba(0,0,0,0.3)", transform: "rotate(90deg)" }} />
-                </div>
-              </div>
-
-              <div className="flex flex-col" style={{ gap: 8 }}>
-                <label
-                  style={{
-                    fontFamily: "PingFang SC",
-                    fontWeight: 500,
-                    fontSize: 14,
-                    lineHeight: "22px",
-                    color: "rgba(0,0,0,0.9)",
-                  }}
-                >
-                  {t("真实姓名")} <span style={{ color: "#cf3d4c" }}>*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder={t("请输入真实姓名")}
-                  value={realName}
-                  onChange={(e) => setRealName(e.target.value)}
-                  maxLength={20}
-                  className="w-full focus:outline-none"
-                  style={{
-                    background: "rgba(255,255,255,0.9)",
-                    border: "1px solid #E9ECF1",
-                    borderRadius: 8,
-                    padding: "6px 16px",
-                    fontFamily: "PingFang SC",
-                    fontWeight: 400,
-                    fontSize: 14,
-                    lineHeight: "24px",
-                    color: "rgba(0,0,0,0.9)",
-                  }}
-                />
-              </div>
-
-              <div className="flex flex-col" style={{ gap: 8 }}>
-                <label
-                  style={{
-                    fontFamily: "PingFang SC",
-                    fontWeight: 500,
-                    fontSize: 14,
-                    lineHeight: "22px",
-                    color: "rgba(0,0,0,0.9)",
-                  }}
-                >
-                  {t("身份证号")} <span style={{ color: "#cf3d4c" }}>*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder={t("请输入身份证号码")}
-                  value={idNumber}
-                  onChange={(e) => setIdNumber(e.target.value.replace(/[^0-9Xx]/g, "").slice(0, 18))}
-                  maxLength={18}
-                  className="w-full focus:outline-none"
-                  style={{
-                    background: "rgba(255,255,255,0.9)",
-                    border: "1px solid #E9ECF1",
-                    borderRadius: 8,
-                    padding: "6px 16px",
-                    fontFamily: "PingFang SC",
-                    fontWeight: 400,
-                    fontSize: 14,
-                    lineHeight: "24px",
-                    color: "rgba(0,0,0,0.9)",
-                  }}
-                />
+                    <X className="size-5" aria-hidden="true" />
+                  </button>
+                </DialogPrimitive.Close>
               </div>
 
               {faceIdFlowEnabled && (
-                <label className="flex items-start gap-3 text-sm" style={{ color: "rgba(0,0,0,0.72)", lineHeight: "22px" }}>
-                  <input
-                    type="checkbox"
-                    checked={consent}
-                    onChange={(e) => setConsent(e.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-[#D1D5DB]"
-                    aria-label={t("我已阅读《隐私协议》并同意进行身份核验")}
-                  />
-                  <span>
-                    {t("我已阅读")}
-                    <a
-                      href="https://privacy.qq.com/document/preview/a955b796edc34796b6e81d4f4df006f3"
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ color: "var(--lw-accent)", textDecoration: "none" }}
-                    >
-                      {t("《隐私协议》")}
-                    </a>
-                    {t("并同意进行身份核验")}
-                  </span>
-                </label>
-              )}
-            </>
-          )}
-
-          {stage === "face" && (
-            <div className="flex flex-col gap-4">
-              {faceNeedsRestart || !attempt?.verificationUrl ? (
-                <div className="rounded-xl border border-[#E9ECF1] bg-[#F9F8F7] p-5">
-                  <p className="m-0 text-sm font-medium" style={{ color: "rgba(0,0,0,0.9)" }}>
-                    {t("请使用手机扫码完成人脸核身")}
-                  </p>
-                  <p className="mb-0 mt-2 text-sm" style={{ color: "rgba(0,0,0,0.58)", lineHeight: "22px" }}>
-                    {attempt?.state === "failed"
-                      ? t("本次刷脸未通过，请重新发起认证。")
-                      : attempt?.state === "expired"
-                        ? t("本次刷脸已过期，请重新发起认证。")
-                        : t("等待刷脸结果")}
-                  </p>
-                </div>
-              ) : isMobileViewport ? (
-                <div className="rounded-xl border border-[#E9ECF1] bg-[#F9F8F7] p-5">
-                  <p className="m-0 text-sm font-medium" style={{ color: "rgba(0,0,0,0.9)" }}>{t("当前设备为移动端")}</p>
-                  <p className="mb-0 mt-2 text-sm" style={{ color: "rgba(0,0,0,0.58)", lineHeight: "22px" }}>
-                    {t("请直接打开腾讯核身页面，完成刷脸后再返回这里等待状态同步。")}
-                  </p>
-                  <a
-                    href={attempt.verificationUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-4 inline-flex items-center justify-center rounded-full bg-[#202020] px-5 py-3 text-sm font-medium text-white"
-                  >
-                    {t("打开刷脸页面")}
-                  </a>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-4 rounded-xl border border-[#E9ECF1] bg-[#F9F8F7] p-6">
-                  <div className="w-full">
-                    <p className="m-0 text-sm font-medium" style={{ color: "rgba(0,0,0,0.9)" }}>
-                      {t("请使用手机扫码完成人脸核身")}
-                    </p>
-                    <p className="mb-0 mt-2 text-sm" style={{ color: "rgba(0,0,0,0.58)", lineHeight: "22px" }}>
-                      {t("等待刷脸结果")}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-[#E9ECF1] bg-white p-4">
-                    <QRCodeSVG value={attempt.verificationUrl} size={184} level="M" includeMargin={false} />
-                  </div>
-                  <p className="m-0 text-xs" style={{ color: "rgba(0,0,0,0.45)" }}>
-                    {t("有效期至：{{time}}", { time: formatFaceIdExpiry(attempt.expiresAt) })}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {stage === "phone" && (
-            <>
-              <div className="flex flex-col" style={{ gap: 8 }}>
-                <label
-                  style={{
-                    fontFamily: "PingFang SC",
-                    fontWeight: 500,
-                    fontSize: 14,
-                    lineHeight: "22px",
-                    color: "rgba(0,0,0,0.9)",
-                  }}
-                >
-                  {normalizedPhone ? t("当前手机号") : t("手机号")} <span style={{ color: "#cf3d4c" }}>*</span>
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="tel"
-                    inputMode="numeric"
-                    autoComplete="tel"
-                    placeholder={normalizedPhone ? undefined : t("请输入中国大陆手机号")}
-                    value={phoneForVerification}
-                    onChange={(event) => setPhoneInput(event.target.value.replace(/\D/g, "").slice(0, 11))}
-                    disabled={Boolean(normalizedPhone)}
-                    className="w-full focus:outline-none"
-                    style={{
-                      background: normalizedPhone ? "#F2F4F8" : "rgba(255,255,255,0.9)",
-                      border: "1px solid #E9ECF1",
-                      borderRadius: 8,
-                      padding: "6px 16px",
-                      fontFamily: "PingFang SC",
-                      fontWeight: 400,
-                      fontSize: 14,
-                      lineHeight: "24px",
-                      color: "rgba(0,0,0,0.9)",
+                <div className="mt-6">
+                  <RealnameStepper
+                    stage={stage}
+                    includePhoneStep
+                    labels={{
+                      identity: t("身份信息"),
+                      face: t("人脸核身"),
+                      phone: t("手机验证"),
                     }}
                   />
-                  <button
-                    type="button"
-                    onClick={() => void sendPhoneCode()}
-                    disabled={!PHONE_REGEX.test(phoneForVerification) || sendingCode || cooldownSeconds > 0}
-                    className="flex-shrink-0 rounded-lg px-4 text-sm font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-                    style={{ border: "1px solid #202020", color: "#202020" }}
-                  >
-                    {sendingCode
-                      ? t("发送中...")
-                      : cooldownSeconds > 0
-                        ? t("重新发送 {{seconds}}s").replace("{{seconds}}", String(cooldownSeconds))
-                        : t("获取验证码")}
-                  </button>
                 </div>
-              </div>
+              )}
 
-              <div className="flex flex-col" style={{ gap: 8 }}>
-                <label
-                  style={{
-                    fontFamily: "PingFang SC",
-                    fontWeight: 500,
-                    fontSize: 14,
-                    lineHeight: "22px",
-                    color: "rgba(0,0,0,0.9)",
-                  }}
+              {verified && stage === "identity" && (
+                <div className="mt-5 flex items-center gap-2 rounded-md bg-[rgba(7,193,96,0.1)] px-3 py-2 text-sm text-black/75">
+                  <ShieldCheck className="size-4 shrink-0 text-[var(--color-success)]" aria-hidden="true" />
+                  <span>{t("当前账号已完成实名。修改后会覆盖当前实名信息。")}</span>
+                </div>
+              )}
+            </header>
+
+            <div className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--realname-control-border)] px-6 py-6 md:px-8">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={stage}
+                  data-testid="realname-stage-content"
+                  className="flex flex-col gap-5"
+                  initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={reduceMotion ? undefined : { opacity: 0, y: -4 }}
+                  transition={{ duration: reduceMotion ? 0 : 0.16, ease: "easeOut" }}
                 >
-                  {t("短信验证码")} <span style={{ color: "#cf3d4c" }}>*</span>
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder={t("请输入短信验证码")}
-                  value={smsCode}
-                  onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
-                  maxLength={8}
-                  className="w-full focus:outline-none"
-                  style={{
-                    background: "rgba(255,255,255,0.9)",
-                    border: "1px solid #E9ECF1",
-                    borderRadius: 8,
-                    padding: "6px 16px",
-                    fontFamily: "PingFang SC",
-                    fontWeight: 400,
-                    fontSize: 14,
-                    lineHeight: "24px",
-                    color: "rgba(0,0,0,0.9)",
-                  }}
-                />
-              </div>
-            </>
-          )}
+                  {stage === "identity" && (
+                    <>
+                      <div className="flex items-center justify-between rounded-md bg-[var(--realname-control-muted)] px-4 py-3 text-sm">
+                        <span className="text-black/45">{t("证件类型")}</span>
+                        <span className="font-medium text-black/75">{t("中国大陆居民身份证")}</span>
+                      </div>
 
-          {stage === "shadow" && (
-            <div className="flex flex-col gap-4">
-              <div className="rounded-xl border border-[#E9ECF1] bg-[#F9F8F7] p-5">
-                <p className="m-0 text-sm font-medium" style={{ color: "rgba(0,0,0,0.9)" }}>
-                  {shadowFailed ? t("LightVela 实名同步失败") : t("正在确认最终实名结果")}
-                </p>
-                <p className="mb-0 mt-2 text-sm" style={{ color: "rgba(0,0,0,0.58)", lineHeight: "22px" }}>
-                  {shadowFailed
-                    ? t("你无需重新刷脸，可直接重试当前实名同步。")
-                    : t("刷脸和当前手机号认证完成后，系统还会继续等待 LightVela 同步成功，再刷新最终实名状态。")}
-                </p>
-              </div>
-              {attempt?.expiresAt && (
-                <p className="m-0 text-xs" style={{ color: "rgba(0,0,0,0.45)" }}>
-                  {t("本次尝试有效期：{{time}}", { time: formatFaceIdExpiry(attempt.expiresAt) })}
-                </p>
-              )}
-              {shadowPending && !shadowFailed && (
-                <p className="m-0 text-sm" style={{ color: "rgba(0,0,0,0.58)" }}>
-                  {awaitingFinalRefresh ? t("正在刷新最终实名状态...") : t("实名信息同步中")}
-                </p>
-              )}
+                      <div className="grid gap-5 md:grid-cols-[0.7fr_1.3fr]">
+                        <div className="flex flex-col gap-2">
+                          <label htmlFor="realname-name" className="text-sm font-medium text-black/90">
+                            {t("真实姓名")} <span className="text-[var(--danger)]">*</span>
+                          </label>
+                          <input
+                            id="realname-name"
+                            type="text"
+                            autoComplete="name"
+                            placeholder={t("请输入真实姓名")}
+                            value={realName}
+                            onChange={(event) => {
+                              setRealName(event.target.value);
+                              clearErrorFor(REALNAME_ERROR_FIELD.NAME, REALNAME_ERROR_FIELD.IDENTITY);
+                            }}
+                            maxLength={20}
+                            aria-invalid={isNameInvalid}
+                            aria-describedby={isNameInvalid ? (isIdentityGroupInvalid ? identityErrorId : nameErrorId) : undefined}
+                            className={cn(fieldClassName, isNameInvalid && invalidFieldClassName)}
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          <label htmlFor="realname-id-card" className="text-sm font-medium text-black/90">
+                            {t("身份证号")} <span className="text-[var(--danger)]">*</span>
+                          </label>
+                          <input
+                            id="realname-id-card"
+                            type="text"
+                            inputMode="text"
+                            autoComplete="off"
+                            placeholder={t("请输入身份证号码")}
+                            value={idNumber}
+                            onChange={(event) => {
+                              setIdNumber(event.target.value.replace(/[^0-9Xx]/g, "").slice(0, 18));
+                              clearErrorFor(REALNAME_ERROR_FIELD.ID_CARD, REALNAME_ERROR_FIELD.IDENTITY);
+                            }}
+                            maxLength={18}
+                            aria-invalid={isIdCardInvalid}
+                            aria-describedby={isIdCardInvalid ? (isIdentityGroupInvalid ? identityErrorId : idCardErrorId) : undefined}
+                            className={cn(fieldClassName, isIdCardInvalid && invalidFieldClassName)}
+                          />
+                        </div>
+                      </div>
+
+                      {faceIdFlowEnabled && (
+                        <label className="flex items-start gap-3 text-sm leading-6 text-black/70">
+                          <input
+                            type="checkbox"
+                            checked={consent}
+                            onChange={(event) => setConsent(event.target.checked)}
+                            className="mt-1 size-4 rounded border-[var(--border-strong)]"
+                            aria-label={t("我已阅读《隐私协议》并同意进行身份核验")}
+                          />
+                          <span>
+                            {t("我已阅读")}
+                            <a
+                              href="https://privacy.qq.com/document/preview/a955b796edc34796b6e81d4f4df006f3"
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(event) => event.stopPropagation()}
+                              className="text-[var(--lw-accent)] hover:underline"
+                            >
+                              {t("《隐私协议》")}
+                            </a>
+                            {t("并同意进行身份核验")}
+                          </span>
+                        </label>
+                      )}
+                    </>
+                  )}
+
+                  {stage === "face" && (
+                    <>
+                      {faceNeedsRestart || !attempt?.verificationUrl ? (
+                        <div className="flex min-h-[248px] flex-col items-center justify-center text-center" role="status">
+                          <div className="flex size-11 items-center justify-center rounded-full bg-black/[0.05]">
+                            <ShieldAlert className="size-5 text-black/55" aria-hidden="true" />
+                          </div>
+                          <p className="mb-0 mt-4 text-base font-medium text-black/90">
+                            {attempt?.state === "failed" ? t("本次刷脸未通过") : attempt?.state === "expired" ? t("本次刷脸已过期") : t("正在准备核身页面")}
+                          </p>
+                          <p className="mb-0 mt-2 text-sm leading-6 text-black/50">
+                            {attempt?.state === "failed"
+                              ? t("本次刷脸未通过，请重新发起认证。")
+                              : attempt?.state === "expired"
+                                ? t("本次刷脸已过期，请重新发起认证。")
+                                : t("请稍候，核身页面准备完成后会自动显示。")}
+                          </p>
+                        </div>
+                      ) : isMobileViewport ? (
+                        <div className="flex min-h-[248px] flex-col items-center justify-center text-center">
+                          <div className="flex size-12 items-center justify-center rounded-full bg-black/[0.05]">
+                            <Camera className="size-5 text-black/60" aria-hidden="true" />
+                          </div>
+                          <p className="mb-0 mt-4 text-base font-medium text-black/90">{t("在手机上完成人脸核身")}</p>
+                          <p className="mb-0 mt-2 max-w-sm text-pretty text-sm leading-6 text-black/50">
+                            {t("打开腾讯核身页面，完成刷脸后返回这里，认证状态会自动更新。")}
+                          </p>
+                          <a
+                            href={attempt.verificationUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-5 inline-flex h-11 items-center justify-center rounded-full bg-[var(--text-primary)] px-6 text-sm font-medium text-[var(--surface-base)]"
+                          >
+                            {t("打开刷脸页面")}
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="grid min-h-[248px] items-center gap-8 md:grid-cols-[216px_1fr]">
+                          <div className="flex flex-col items-center">
+                            <div
+                              role="img"
+                              aria-label={t("核身二维码")}
+                              className="rounded-2xl border border-[var(--realname-control-border)] bg-[var(--surface-base)] p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)]"
+                            >
+                              <QRCodeSVG value={attempt.verificationUrl} size={184} level="M" includeMargin={false} />
+                            </div>
+                            <p className="mb-0 mt-3 tabular-nums text-xs text-black/40">
+                              {t("有效期至：{{time}}", { time: formatFaceIdExpiry(attempt.expiresAt) })}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="m-0 text-balance text-lg font-semibold text-black/90">
+                              {t("请使用手机扫码完成人脸核身")}
+                            </p>
+                            <ol className="mt-5 space-y-4 text-sm text-black/60">
+                              {[t("使用微信或手机相机扫描二维码"), t("按页面提示完成人脸核验"), t("完成后返回，结果将自动更新")].map((item, index) => (
+                                <li key={item} className="flex items-center gap-3">
+                                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-black/[0.06] text-xs font-medium text-black/55">
+                                    {index + 1}
+                                  </span>
+                                  <span>{item}</span>
+                                </li>
+                              ))}
+                            </ol>
+                            <p className="mb-0 mt-5 flex items-center gap-2 text-sm text-black/45" role="status">
+                              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                              {t("等待刷脸结果")}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {stage === "phone" && (
+                    <>
+                      <div className="flex flex-col gap-2">
+                        <label htmlFor="realname-phone" className="text-sm font-medium text-black/90">
+                          {normalizedPhone ? t("当前手机号") : t("手机号")} <span className="text-[var(--danger)]">*</span>
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            id="realname-phone"
+                            type="tel"
+                            inputMode="numeric"
+                            autoComplete="tel"
+                            placeholder={normalizedPhone ? undefined : t("请输入中国大陆手机号")}
+                            value={phoneForVerification}
+                            onChange={(event) => {
+                              setPhoneInput(event.target.value.replace(/\D/g, "").slice(0, 11));
+                              clearErrorFor(REALNAME_ERROR_FIELD.PHONE);
+                            }}
+                            disabled={Boolean(normalizedPhone)}
+                            aria-invalid={isPhoneInvalid}
+                            aria-describedby={isPhoneInvalid ? phoneErrorId : undefined}
+                            className={cn(
+                              fieldClassName,
+                              normalizedPhone && "bg-[var(--realname-control-muted)]",
+                              isPhoneInvalid && invalidFieldClassName,
+                            )}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void sendPhoneCode()}
+                            disabled={!PHONE_REGEX.test(phoneForVerification) || sendingCode || cooldownSeconds > 0}
+                            className="h-11 shrink-0 rounded-full border border-[var(--text-primary)] px-5 text-sm font-medium text-[var(--text-primary)] transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {sendingCode
+                              ? t("发送中...")
+                              : cooldownSeconds > 0
+                                ? t("重新发送 {{seconds}}s").replace("{{seconds}}", String(cooldownSeconds))
+                                : t("获取验证码")}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <label htmlFor="realname-sms-code" className="text-sm font-medium text-black/90">
+                          {t("短信验证码")} <span className="text-[var(--danger)]">*</span>
+                        </label>
+                        <input
+                          id="realname-sms-code"
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          placeholder={t("请输入短信验证码")}
+                          value={smsCode}
+                          onChange={(event) => {
+                            setSmsCode(event.target.value.replace(/\D/g, "").slice(0, 8));
+                            clearErrorFor(REALNAME_ERROR_FIELD.SMS_CODE);
+                          }}
+                          maxLength={8}
+                          aria-invalid={isSmsCodeInvalid}
+                          aria-describedby={isSmsCodeInvalid ? smsCodeErrorId : undefined}
+                          className={cn(fieldClassName, isSmsCodeInvalid && invalidFieldClassName)}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {stage === "shadow" && (
+                    <div className="flex min-h-[248px] flex-col items-center justify-center text-center" role="status" aria-live="polite">
+                      <div className="flex size-12 items-center justify-center rounded-full bg-black/[0.05]">
+                        {shadowFailed
+                          ? <ShieldAlert className="size-5 text-black/55" aria-hidden="true" />
+                          : <Loader2 className="size-5 animate-spin text-black/55" aria-hidden="true" />}
+                      </div>
+                      <p className="mb-0 mt-4 text-base font-medium text-black/90">
+                        {error?.title
+                          ?? (pollError
+                            ? t("状态更新遇到问题")
+                            : shadowFailed
+                              ? t("LightVela 实名同步失败")
+                              : t("正在确认最终实名结果"))}
+                      </p>
+                      <p className="mb-0 mt-2 max-w-md text-pretty text-sm leading-6 text-black/50">
+                        {error?.description
+                          ?? pollError
+                          ?? (shadowFailed
+                            ? t("你无需重新刷脸，可直接重试当前实名同步。")
+                            : awaitingFinalRefresh
+                              ? t("正在刷新最终实名状态...")
+                              : t("实名信息同步中"))}
+                      </p>
+                    </div>
+                  )}
+
+                </motion.div>
+              </AnimatePresence>
             </div>
-          )}
 
-          {(error || pollError) && (
-            <p className="m-0 text-[13px]" style={{ color: "#cf3d4c" }}>
-              {error || pollError}
-            </p>
-          )}
-        </div>
-
-        <div style={{ height: 1, background: "#E9ECF1" }} />
-
-        <div className="flex flex-col" style={{ gap: 8, padding: "24px 32px 32px" }}>
-          {faceNeedsRestart ? (
-            <button
-              onClick={restartFaceIdFlow}
-              className="flex w-full items-center justify-center gap-2 transition-opacity"
-              style={{
-                background: "#202020",
-                color: "#FFFFFF",
-                borderRadius: 28,
-                padding: "15px 24px",
-                fontFamily: "PingFang SC",
-                fontWeight: 500,
-                fontSize: 14,
-                lineHeight: "24px",
-              }}
-            >
-              {t("重新开始认证")}
-            </button>
-          ) : faceIdFlowEnabled && stage === "shadow" ? null : (
-            <button
-              onClick={() => void handleSubmit()}
-              disabled={!canSubmit || submitting || awaitingFinalRefresh}
-              className="flex w-full items-center justify-center gap-2 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-              style={{
-                background: "#202020",
-                color: "#FFFFFF",
-                borderRadius: 28,
-                padding: "15px 24px",
-                fontFamily: "PingFang SC",
-                fontWeight: 500,
-                fontSize: 14,
-                lineHeight: "24px",
-              }}
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {stage === "phone"
-                    ? t("认证中...")
-                    : stage === "shadow"
-                      ? t("处理中...")
-                      : verified
-                        ? t("更新中...")
-                        : t("提交中...")}
-                </>
-              ) : (
-                primaryButtonLabel
-              )}
-            </button>
-          )}
-          <p
-            className="m-0 text-center"
-            style={{
-              fontFamily: "PingFang SC",
-              fontWeight: 400,
-              fontSize: 12,
-              lineHeight: "24px",
-              color: "rgba(0,0,0,0.3)",
-            }}
-          >
-            {faceIdFlowEnabled
-              ? t("你的姓名、身份证号和核身过程仅用于本次实名认证")
-              : phoneVerificationEnabled
-                ? t("你的姓名、身份证号和手机号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。")
-                : t("你的姓名和身份证号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。")}
-          </p>
-        </div>
-      </motion.div>
-    </motion.div>
+            {!(faceIdFlowEnabled && stage === "shadow") && (
+              <footer className="shrink-0 border-t border-[var(--realname-control-border)] px-6 py-5 md:px-8">
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div
+                    data-testid="realname-feedback-area"
+                    className="flex min-h-16 w-full max-w-[420px] items-center sm:min-h-11"
+                    aria-live="polite"
+                  >
+                    {error && errorMessageId ? (
+                      <InlineValidationMessage
+                        id={errorMessageId[error.field]}
+                        title={error.title}
+                        description={error.description}
+                      />
+                    ) : pollError ? (
+                      <InlineValidationMessage
+                        id="realname-poll-error"
+                        title={t("状态更新遇到问题")}
+                        description={pollError}
+                      />
+                    ) : (
+                      <p className="m-0 text-pretty text-xs leading-5 text-black/35">
+                        {safetyText}
+                      </p>
+                    )}
+                  </div>
+                  {faceNeedsRestart ? (
+                    <button
+                      type="button"
+                      onClick={restartFaceIdFlow}
+                      className="inline-flex h-11 w-full items-center justify-center rounded-full bg-[var(--text-primary)] px-6 text-sm font-medium text-[var(--surface-base)] sm:w-auto sm:min-w-40"
+                    >
+                      {t("重新开始认证")}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleSubmit()}
+                      disabled={!canSubmit || submitting || awaitingFinalRefresh}
+                      className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[var(--text-primary)] px-6 text-sm font-medium text-[var(--surface-base)] transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:min-w-40"
+                    >
+                      {submitting && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+                      {submitting
+                        ? stage === "phone"
+                          ? t("认证中...")
+                          : stage === "shadow"
+                            ? t("处理中...")
+                            : verified
+                              ? t("更新中...")
+                              : t("提交中...")
+                        : primaryButtonLabel}
+                    </button>
+                  )}
+                </div>
+              </footer>
+            )}
+          </motion.div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 };
 
@@ -2105,7 +2050,7 @@ const SubscriptionSection = ({
 
   /**
    * 只读 fallback pass — 国内站场景：activePass 为 null 但用户仍有 expired/isolated pass 需要续费或销毁。
-   * 仅在国内站且未多貌 activePass 时拉一次，避免与 openclaw-context.refreshPasses 重复干活。
+   * 仅在国内站且未多貌 activePass 时拉一次，避免与 agent-context.refreshPasses 重复干活。
    */
   const [fallbackPass, setFallbackPass] = useState<Pass | null>(null);
 

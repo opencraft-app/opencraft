@@ -1,10 +1,10 @@
 # Configure Models
 
-This page explains how to configure a large language model for Hermes, including the differences between the three configuration methods, how to obtain an API Key, console configuration steps, supported models, and model selection guidance.
+This page explains how to configure a large language model for Hermes Agent, including the differences between the three configuration methods, how to obtain an API Key, console configuration steps, supported models, and model selection guidance.
 
 > 💡 **Configuration is optional**
 > 
-> The Launch plan includes 100 trial credits. After creating Hermes and connecting a channel, you can start chatting directly. Configure a model after the credits run out.
+> The Launch plan includes 100 trial credits. After creating Hermes Agent and connecting a channel, you can start chatting directly. Configure a model after the credits run out.
 
 ---
 
@@ -108,11 +108,11 @@ Run the configuration steps again. The new "Add as default" action overwrites th
 
 > ⚠️ **Only one model is active**
 > 
-> Currently, each Hermes can have only one active model. To compare different model performance, configure and try them separately.
+> Currently, each Hermes Agent can have only one active model. To compare different model performance, configure and try them separately.
 
 ### Impact on memory
 
-Switching models does not affect conversation memory. Memory belongs to Hermes itself; the model is only responsible for generating responses.
+Switching models does not affect conversation memory. Memory belongs to Hermes Agent itself; the model is only responsible for generating responses.
 
 ---
 
@@ -167,7 +167,7 @@ Selection directions for different priorities:
 | Chinese understanding | Chinese models generally support Chinese better |
 | High-frequency usage | Choose the corresponding provider's monthly Coding Plan |
 
-Recommendation: use the Launch plan trial credits for several conversations first. After confirming that Hermes works normally, decide which model to use.
+Recommendation: use the Launch plan trial credits for several conversations first. After confirming that Hermes Agent works normally, decide which model to use.
 
 ---
 
@@ -198,18 +198,18 @@ When this happens, check the model configuration again.
 
 ## Next steps
 
-- [Configure Channel - WeChat](./configuration/channel-wechat.md)
+- [Configure Channel - WeChat](./channel-wechat.md)
 
-- [Configure Channel - Telegram](./configuration/channel-telegram.md)
+- [Configure Channel - Telegram](./channel-telegram.md)
 
-- [Configure Channel - WhatsApp](./configuration/channel-whatsapp.md)
+- [Configure Channel - WhatsApp](./channel-whatsapp.md)
 
-- [Configure Channel - Discord](./configuration/channel-discord.md)
+- [Configure Channel - Discord](./channel-discord.md)
 
-- [Configure Channel - QQ](./configuration/channel-qq.md)
+- [Configure Channel - QQ](./channel-qq.md)
 
-- [Configure Channel - WeCom](./configuration/channel-wecom.md)
+- [Configure Channel - WeCom](./channel-wecom.md)
 
-- [Configure Channel - Lark](./configuration/channel-feishu.md)
+- [Configure Channel - Lark](./channel-feishu.md)
 
-- [Configure Skills](./configuration/skill.md)
+- [Configure Skills](./skill.md)

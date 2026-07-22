@@ -15,6 +15,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+const currentSetProjectionVersion = 1
+
 func (s *Service) RecordSetReconcileFacts(ctx context.Context, input RecordSetReconcileFactsInput) (RecordSetReconcileFactsResult, error) {
 	source, namespace, fleet, err := normalizeSetReconcileSource(input.Source, input.Namespace, input.Fleet)
 	if err != nil {
@@ -87,20 +89,51 @@ func (s *Service) ListSetReconcileFacts(ctx context.Context, opts SetReconcileFa
 }
 
 func (s *Service) ReconcileSetReconcileFacts(ctx context.Context, input ReconcileSetReconcileFactsInput) (ReconcileSetReconcileFactsResult, error) {
+	limit := input.Limit
+	if limit <= 0 {
+		limit = 100
+	}
 	opts := SetReconcileFactListOptions{
 		Source:    strings.TrimSpace(input.Source),
 		Namespace: strings.TrimSpace(input.Namespace),
 		Fleet:     strings.TrimSpace(input.Fleet),
 		Status:    SetReconcileStatusPending,
-		Limit:     input.Limit,
+		Limit:     limit,
 	}
 	facts, err := s.store.ListSetReconcileFacts(ctx, opts)
 	if err != nil {
 		return ReconcileSetReconcileFactsResult{}, err
 	}
+	if len(facts) < limit {
+		failed, failedErr := s.store.ListSetReconcileFacts(ctx, SetReconcileFactListOptions{
+			Source: opts.Source, Namespace: opts.Namespace, Fleet: opts.Fleet,
+			Status: SetReconcileStatusError, Limit: limit - len(facts),
+		})
+		if failedErr != nil {
+			return ReconcileSetReconcileFactsResult{}, failedErr
+		}
+		facts = append(facts, failed...)
+	}
+	if len(facts) < limit {
+		stale, staleErr := s.store.ListSetReconcileFacts(ctx, SetReconcileFactListOptions{
+			Source: opts.Source, Namespace: opts.Namespace, Fleet: opts.Fleet,
+			Status: SetReconcileStatusManaged, ProjectionVersionBefore: currentSetProjectionVersion,
+			Limit: limit - len(facts),
+		})
+		if staleErr != nil {
+			return ReconcileSetReconcileFactsResult{}, staleErr
+		}
+		facts = append(facts, stale...)
+	}
 	result := ReconcileSetReconcileFactsResult{Scanned: len(facts), Facts: make([]SetReconcileFact, 0, len(facts))}
 	for _, fact := range facts {
-		reconciled := s.reconcileOneSetFact(ctx, fact)
+		reconciled := fact
+		if fact.Status == SetReconcileStatusManaged {
+			reconciled = s.repairManagedSetProjection(ctx, fact)
+		} else {
+			fact.Status = SetReconcileStatusPending
+			reconciled = s.reconcileOneSetFact(ctx, fact)
+		}
 		if reconciled.Status == SetReconcileStatusManaged {
 			result.Managed++
 		} else {
@@ -109,6 +142,28 @@ func (s *Service) ReconcileSetReconcileFacts(ctx context.Context, input Reconcil
 		result.Facts = append(result.Facts, reconciled)
 	}
 	return result, nil
+}
+
+func (s *Service) repairManagedSetProjection(ctx context.Context, fact SetReconcileFact) SetReconcileFact {
+	fact.LastReconciledAt = s.nowUTC()
+	fact.LastError = ""
+	if err := s.projectSetRuntimeConfig(ctx, fact); err != nil {
+		return s.saveFailedSetFact(ctx, fact, err)
+	}
+	if err := s.applyProvisionRequestProjectionForSetFact(ctx, fact); err != nil {
+		return s.saveFailedSetFact(ctx, fact, err)
+	}
+	if fact.RuntimeGeneration > 0 {
+		if _, _, err := s.store.InitializeSetRuntime(ctx, fact.SetID, fact.RuntimeGeneration, fact.RuntimeImage, fact.TrafficBaseURL, s.nowUTC()); err != nil {
+			return s.saveFailedSetFact(ctx, fact, err)
+		}
+	}
+	fact.ProjectionVersion = currentSetProjectionVersion
+	fact.Status = SetReconcileStatusManaged
+	if err := s.store.SaveSetReconcileFact(ctx, fact); err != nil {
+		return s.saveFailedSetFact(ctx, fact, err)
+	}
+	return fact
 }
 
 func (s *Service) buildSetReconcileFact(ctx context.Context, source string, namespace string, fleet string, input SetReconcileFactInput) (SetReconcileFact, error) {
@@ -183,6 +238,7 @@ func (s *Service) buildSetReconcileFact(ctx context.Context, source string, name
 	if ok {
 		fact.CreatedAt = existing.CreatedAt
 		fact.LastReconciledAt = existing.LastReconciledAt
+		fact.ProjectionVersion = existing.ProjectionVersion
 		if existing.DesiredHash == desiredHash && existing.Status == SetReconcileStatusManaged {
 			fact.Status = SetReconcileStatusManaged
 			fact.LastError = existing.LastError
@@ -272,6 +328,7 @@ func (s *Service) reconcileOneSetFact(ctx context.Context, fact SetReconcileFact
 		return s.saveFailedSetFact(ctx, fact, err)
 	}
 	fact.Status = SetReconcileStatusManaged
+	fact.ProjectionVersion = currentSetProjectionVersion
 	if err := s.store.SaveSetReconcileFact(ctx, fact); err != nil {
 		fact.Status = SetReconcileStatusError
 		fact.LastError = err.Error()
@@ -551,6 +608,9 @@ func firstPositive(value int, fallback int) int {
 }
 
 func (s *Service) markProvisionRequestConfiguredForSetFact(ctx context.Context, fact SetReconcileFact) error {
+	if err := s.advanceNativeProvisionRequestForManagedFact(ctx, fact); err != nil {
+		return err
+	}
 	requests, err := s.store.ListSetProvisionRequests(ctx, SetProvisionRequestListOptions{
 		Source:    fact.Source,
 		Namespace: fact.Namespace,
@@ -560,17 +620,35 @@ func (s *Service) markProvisionRequestConfiguredForSetFact(ctx context.Context, 
 		return err
 	}
 	for _, request := range requests {
-		if request.SetID != fact.SetID || !isOpenSetProvisionStatus(request.Status) {
+		if request.SetID != fact.SetID {
 			continue
 		}
 		if err := s.applyProvisionRequestCapacityToSet(ctx, request); err != nil {
 			return err
+		}
+		if request.RuntimeBackend == SetRuntimeBackendVelaGWSet || !isOpenSetProvisionStatus(request.Status) {
+			continue
 		}
 		request.Status = SetProvisionStatusConfigured
 		request.LastError = ""
 		request.LastStatusAt = s.nowUTC()
 		if err := s.store.SaveSetProvisionRequest(ctx, request); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) applyProvisionRequestProjectionForSetFact(ctx context.Context, fact SetReconcileFact) error {
+	requests, err := s.store.ListSetProvisionRequests(ctx, SetProvisionRequestListOptions{
+		Source: fact.Source, Namespace: fact.Namespace, Fleet: fact.Fleet, SetID: fact.SetID,
+	})
+	if err != nil {
+		return err
+	}
+	for _, request := range requests {
+		if request.SetID == fact.SetID {
+			return s.applyProvisionRequestCapacityToSet(ctx, request)
 		}
 	}
 	return nil
@@ -667,6 +745,9 @@ func setReconcileFactMatchesOptions(fact SetReconcileFact, opts SetReconcileFact
 		return false
 	}
 	if opts.Status != "" && fact.Status != opts.Status {
+		return false
+	}
+	if opts.ProjectionVersionBefore > 0 && fact.ProjectionVersion >= opts.ProjectionVersionBefore {
 		return false
 	}
 	return true

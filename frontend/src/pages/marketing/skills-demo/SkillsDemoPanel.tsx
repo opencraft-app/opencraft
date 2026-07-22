@@ -7,7 +7,7 @@
  *  - 「已安装」区通过双 list 交叉判定来源，修正 SDK 的 Unknown Source
  *  - Popular 排序 + registry 过滤 + 来源组织分类，便于后续做推荐位 / 分类位
  *
- * 仅国际站渲染（见 hermes-agent-skills-panel.tsx 的 isGlobal 分支）。
+ * 仅国际站渲染（见 agent-skills-panel.tsx 的 isGlobal 分支）。
  */
 
 import {
@@ -56,7 +56,7 @@ import { useT } from "@/i18n/t";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
-import type { ExpertsExecDebugCommand } from "../hermes-agent-experts-panel";
+import type { ExpertsExecDebugCommand } from "../agent-experts-panel";
 import {
   createSkillsDataLayer,
   getPopularityTier,
@@ -1603,7 +1603,7 @@ function CreateSkillPanel({
             <aside className="h-fit rounded-md border border-black/[0.06] bg-[#F8FAF9] p-4 pb-7">
               <div className="flex items-center gap-2 text-sm font-semibold text-black/80">
                 <Layers3 className="size-4 text-[#4C8279]" aria-hidden="true" />
-                {t("Hermes 将这样处理")}
+                            {t("Hermes Agent 将这样处理")}
               </div>
               <ol className="mt-4 space-y-3">
                 {detail.workflow.map((step, index) => (
@@ -2675,72 +2675,70 @@ export function SkillsDemoPanel({
             ) : null}
 
             <section>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <SectionTitle className="mb-0 text-base">{t("精选")}</SectionTitle>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setFeaturedBatch((current) => Math.max(current - 1, 0))}
-                    disabled={featuredBatchIndex === 0}
-                    aria-label={t("上一批")}
-                    title={t("上一批")}
-                    className="inline-flex size-8 items-center justify-center rounded-full border border-black/10 bg-white text-black/60 transition-colors hover:bg-black/[0.03] hover:text-black disabled:cursor-default disabled:border-black/[0.06] disabled:bg-transparent disabled:text-black/20"
-                  >
-                    <ChevronLeft className="size-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFeaturedBatch((current) => Math.min(current + 1, featuredBatchCount - 1))}
-                    disabled={featuredBatchIndex >= featuredBatchCount - 1}
-                    aria-label={t("下一批")}
-                    title={t("下一批")}
-                    className="inline-flex size-8 items-center justify-center rounded-full border border-black/10 bg-white text-black/60 transition-colors hover:bg-black/[0.03] hover:text-black disabled:cursor-default disabled:border-black/[0.06] disabled:bg-transparent disabled:text-black/20"
-                  >
-                    <ChevronRight className="size-4" aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-              <div className="min-w-0 overflow-hidden">
-                <motion.div
-                  animate={{ x: `${-(featuredBatchIndex * 100) / featuredBatchCount}%` }}
-                  transition={{ duration: shouldReduceMotion ? 0 : 0.2, ease: "easeOut" }}
-                  className="flex"
-                  style={{ width: `${featuredBatchCount * 100}%` }}
+              <SectionTitle className="mb-2 text-base">{t("精选")}</SectionTitle>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFeaturedBatch((current) => Math.max(current - 1, 0))}
+                  disabled={featuredBatchIndex === 0}
+                  aria-label={t("上一批")}
+                  title={t("上一批")}
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/60 transition-colors hover:bg-black/[0.03] hover:text-black disabled:cursor-default disabled:border-black/[0.06] disabled:bg-transparent disabled:text-black/20"
                 >
-                  {featuredBatches.map((batch, index) => (
-                    <ul
-                      key={`featured:${index}`}
-                      aria-hidden={index !== featuredBatchIndex}
-                      inert={index !== featuredBatchIndex}
-                      className="grid shrink-0 grid-cols-1 gap-3 md:grid-cols-3"
-                      style={{ width: `${100 / featuredBatchCount}%` }}
-                    >
-                      {batch.map((entry) => {
-                        const copy = getFeaturedCopy(entry);
-                        return (
-                          <FeaturedSkillCard
-                            key={entry.id}
-                            entry={entry}
-                            title={copy.title}
-                            subtitle={copy.subtitle}
-                            description={copy.description}
-                            installed={isInstalled(entry.skill)}
-                            installing={
-                              installingId === skillIdentity(entry.skill)
-                              || (batchInstalling && selectedSkillIds.has(skillIdentity(entry.skill)))
-                            }
-                            onInstall={handleInstall}
-                            disabled={batchInstalling || Boolean(installingId)}
-                            onOpenDetails={(skill) => setSelectedSkillDetails({
-                              skill,
-                              overview: getSkillOverview(skill, isChinese),
-                            })}
-                          />
-                        );
-                      })}
-                    </ul>
-                  ))}
-                </motion.div>
+                  <ChevronLeft className="size-4" aria-hidden="true" />
+                </button>
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <motion.div
+                    animate={{ x: `${-(featuredBatchIndex * 100) / featuredBatchCount}%` }}
+                    transition={{ duration: shouldReduceMotion ? 0 : 0.2, ease: "easeOut" }}
+                    className="flex"
+                    style={{ width: `${featuredBatchCount * 100}%` }}
+                  >
+                    {featuredBatches.map((batch, index) => (
+                      <ul
+                        key={`featured:${index}`}
+                        aria-hidden={index !== featuredBatchIndex}
+                        inert={index !== featuredBatchIndex}
+                        className="grid shrink-0 grid-cols-1 gap-3 md:grid-cols-3"
+                        style={{ width: `${100 / featuredBatchCount}%` }}
+                      >
+                        {batch.map((entry) => {
+                          const copy = getFeaturedCopy(entry);
+                          return (
+                            <FeaturedSkillCard
+                              key={entry.id}
+                              entry={entry}
+                              title={copy.title}
+                              subtitle={copy.subtitle}
+                              description={copy.description}
+                              installed={isInstalled(entry.skill)}
+                              installing={
+                                installingId === skillIdentity(entry.skill)
+                                || (batchInstalling && selectedSkillIds.has(skillIdentity(entry.skill)))
+                              }
+                              onInstall={handleInstall}
+                              disabled={batchInstalling || Boolean(installingId)}
+                              onOpenDetails={(skill) => setSelectedSkillDetails({
+                                skill,
+                                overview: getSkillOverview(skill, isChinese),
+                              })}
+                            />
+                          );
+                        })}
+                      </ul>
+                    ))}
+                  </motion.div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFeaturedBatch((current) => Math.min(current + 1, featuredBatchCount - 1))}
+                  disabled={featuredBatchIndex >= featuredBatchCount - 1}
+                  aria-label={t("下一批")}
+                  title={t("下一批")}
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/60 transition-colors hover:bg-black/[0.03] hover:text-black disabled:cursor-default disabled:border-black/[0.06] disabled:bg-transparent disabled:text-black/20"
+                >
+                  <ChevronRight className="size-4" aria-hidden="true" />
+                </button>
               </div>
             </section>
 

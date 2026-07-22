@@ -72,6 +72,13 @@ type Client interface {
 	//   - trade 侧由 trade_flow 抢占式幂等（Q61）保证不重复调
 	CompletePass(ctx context.Context, req *CompletePassRequest) (*PassDetail, error)
 
+	// TransferPass 调 POST /internal/ctl/passes/transfer
+	//
+	// 由 trade transferResource 在 jifei 外部资源迁入发货回调后调用，将存量免费 pass
+	// 原子更新为计费 bundle，并绑定计费侧新 uin/app_id。与 CompletePass 不同，本接口不创建
+	// 新 pass、不动 quota/subscription，只迁移既有 pass 的计费归属。
+	TransferPass(ctx context.Context, req *TransferPassRequest) (*PassDetail, error)
+
 	// ListPassAppIDs 调 GET /internal/ctl/passes/app-ids
 	//
 	// jifei.getAllAppIds 反查链路（trade-resource-query-design §3.2 / §4）：
@@ -242,6 +249,20 @@ type CompletePassRequest struct {
 	AppID     int64  `json:"app_id"`
 	DealName  string `json:"deal_name"`
 	RenewFlag string `json:"renew_flag,omitempty"`
+}
+
+// TransferPassRequest 镜像 ctl/pkg/transport.TransferPassRequest。
+type TransferPassRequest struct {
+	PassID         string `json:"pass_id"`
+	UserID         string `json:"user_id,omitempty"`
+	SourceBundleID string `json:"source_bundle_id,omitempty"`
+	TargetBundleID string `json:"target_bundle_id"`
+	OldUin         int64  `json:"old_uin"`
+	OldAppID       int64  `json:"old_app_id"`
+	NewUin         int64  `json:"new_uin"`
+	NewAppID       int64  `json:"new_app_id"`
+	DealName       string `json:"deal_name"`
+	BigOrderID     string `json:"big_order_id,omitempty"`
 }
 
 // IsolatePassRequest 镜像 ctl/pkg/transport.IsolatePassRequest。
@@ -487,6 +508,19 @@ func (c *httpClient) CompletePass(ctx context.Context, req *CompletePassRequest)
 		return nil, fmt.Errorf("ctlclient: CompletePass req is nil")
 	}
 	endpoint := c.baseURL + "/internal/ctl/passes/complete"
+
+	var detail PassDetail
+	if err := c.do(ctx, http.MethodPost, endpoint, req, &detail); err != nil {
+		return nil, err
+	}
+	return &detail, nil
+}
+
+func (c *httpClient) TransferPass(ctx context.Context, req *TransferPassRequest) (*PassDetail, error) {
+	if req == nil {
+		return nil, fmt.Errorf("ctlclient: TransferPass req is nil")
+	}
+	endpoint := c.baseURL + "/internal/ctl/passes/transfer"
 
 	var detail PassDetail
 	if err := c.do(ctx, http.MethodPost, endpoint, req, &detail); err != nil {

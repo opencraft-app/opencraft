@@ -9,10 +9,38 @@ P0 模型里，Shard 和 Set 都是一等资源，但粒度不同：
 - 一个 `Shard` 可以承载多个 `Set`
 - 一个 `Set` 通过 `shardRef` 绑定到一个 `Shard`
 - 同一 Shard 内，不同 Set 使用不同 `databaseName` 和 `redisDB`
-- kro 只负责展开 new-api runtime 和 Service
-- set-manager 负责把容量 request 转成 Fleet spec，并把 Fleet 观测结果写入 LLMGateway facts
+- `LLMFleet` 保存 Shard、连接池、HA 和调度策略，不再保存动态 Set 大数组
+- `velagwset-provisioner` 把容量 request 物化为独立 `VelaGWSet`
+- `velagwset-controller` 只负责展开 new-api runtime、Service 和 PDB
 - LLMGateway-control 读取 facts 后执行 `RegisterSet + BootstrapSet`
 - 本地 `05-shared-infra.yaml` 提供标准本地拓扑：`shard-a` 和 `shard-b`
+
+## VelaGWSet Controller 路径
+
+`VelaGWSet` 是标准单 Set Kubernetes 资源。旧 `LLMFleet.spec.sets[]` 路径只用于兼容已有请求；新容量请求必须声明 `runtime_backend=velagwset`，两条路径不会消费同一请求。
+
+- LLMGateway 容量控制器负责 Set ID、Shard、数据库名和 Redis DB 的持久化分配。
+- `velagwset-provisioner` 通过带 epoch、revision、version 和 lease 的内部 API 认领请求，创建运行 Secret、幂等建库 Job 和 `VelaGWSet`。
+- `velagwset-controller` 只访问 Kubernetes API，负责 Deployment、Service、PDB 和 status 收敛。
+- controller Deployment 不注入 MySQL、Redis、LLMGateway control URL 或内部 token，并且 RBAC 不允许读取 Secret。
+- 未携带匹配 CR UID 和不可变身份的 `decommissionApproval` 时，Kubernetes API Server 直接拒绝删除。
+- `Observe` 和 `AdoptionPending` 为只读迁移状态，不增加 runtime Finalizer，也不修改现有 workload。
+
+已有共享 MySQL/Redis 夹具后，可运行完整回归：
+
+```bash
+k8s/orbstack-kro/e2e/run-velagwset-controller.sh
+```
+
+脚本会自动构建轻量 controller 镜像，安装 CRD/删除策略，创建真实 new-api admin 与两副本 traffic，并验证 Ready、稳定 reconcile、Service 自愈、两副本 leader 接管、未批准删除拒绝和批准删除清理。测试脚本会创建数据库作为夹具，但 controller 本身不会连接数据库或 Redis。
+
+验证从容量意图到自动纳管的标准路径：
+
+```bash
+k8s/orbstack-kro/e2e/run-velagwset-provisioner.sh
+```
+
+该脚本使用空 `fleet-native.spec.sets` 创建一条真实容量请求，验证请求认领、数据库初始化、admin-only bootstrap、worker 配置、traffic 两副本启用、PDB 健康和最终 `managed`。脚本只按本次 request ID 判定结果，任何超时、CR 缺失或 `Ready` 未通过都会硬失败。
 
 每个 Set 会展开成两组内部入口：
 
@@ -85,7 +113,7 @@ kubectl get deploy,svc,pod -n llmgateway-kro-demo -l llmgateway.io/fleet=fleet-d
 - `llmgateway-traffic` 只读取 Redis 的 key route 和 Set runtime route，不连接 LLMGateway MySQL。
 - `llmgateway-worker-*` 分别处理核心任务、BYOK、观测和 durable outbox/删除维护。
 
-`50-set-manager.yaml` 是这套语义的胶水层：
+`50-set-manager.yaml` 是旧 `LLMFleet.spec.sets[]` 路径的兼容胶水层：
 
 1. 读取 pending `set_provision_requests`，把 admin 和 generation 1 traffic runtime patch 到 Fleet；新 Set 不创建 legacy traffic。
 2. 把 Fleet 当前 Set 写入 reconcile facts；control 完成 bootstrap、配置同步和预检后写 `configured`，但 admission 保持 pending。

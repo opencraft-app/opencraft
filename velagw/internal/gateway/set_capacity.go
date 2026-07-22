@@ -21,6 +21,9 @@ func (s *Service) ListSetProvisionRequests(ctx context.Context, opts SetProvisio
 	opts.Fleet = strings.TrimSpace(opts.Fleet)
 	opts.SetID = strings.TrimSpace(opts.SetID)
 	opts.Status = strings.TrimSpace(opts.Status)
+	for index := range opts.Statuses {
+		opts.Statuses[index] = strings.TrimSpace(opts.Statuses[index])
+	}
 	return s.store.ListSetProvisionRequests(ctx, opts)
 }
 
@@ -40,6 +43,9 @@ func (s *Service) UpdateSetProvisionRequestStatus(ctx context.Context, id string
 	}
 	if !ok {
 		return SetProvisionRequest{}, fmt.Errorf("set provision request %q not found", id)
+	}
+	if request.RuntimeBackend == SetRuntimeBackendVelaGWSet {
+		return SetProvisionRequest{}, fmt.Errorf("VelaGWSet provision requests require the fenced provisioner API")
 	}
 	previousStatus := request.Status
 	request.Status = status
@@ -182,21 +188,25 @@ func (s *Service) ReconcileSetCapacity(ctx context.Context, policy SetCapacityPo
 		}
 		allocations[shardRef][nextSetID] = true
 		request := SetProvisionRequest{
-			ID:             setProvisionRequestID(normalized.Source, normalized.Namespace, normalized.Fleet, nextSetID),
-			Source:         normalized.Source,
-			Namespace:      normalized.Namespace,
-			Fleet:          normalized.Fleet,
-			SetID:          nextSetID,
-			ShardRef:       shardRef,
-			DatabaseName:   databaseNameForSet(nextSetID),
-			RedisDB:        strconv.Itoa(redisDB),
-			ReleaseRingID:  provisionRingID,
-			ReleaseID:      provisionRelease.ID,
-			ReleaseImage:   provisionRelease.Image,
-			Status:         SetProvisionStatusPending,
-			Reason:         reason,
-			RequestedUsers: result.DeficitUsers,
-			MaxUsersPerSet: normalized.MaxUsersPerSet,
+			ID:                setProvisionRequestID(normalized.Source, normalized.Namespace, normalized.Fleet, nextSetID),
+			Source:            normalized.Source,
+			Namespace:         normalized.Namespace,
+			Fleet:             normalized.Fleet,
+			SetID:             nextSetID,
+			ShardRef:          shardRef,
+			DatabaseName:      databaseNameForSet(nextSetID),
+			RedisDB:           strconv.Itoa(redisDB),
+			ReleaseRingID:     provisionRingID,
+			ReleaseID:         provisionRelease.ID,
+			ReleaseImage:      provisionRelease.Image,
+			RuntimeBackend:    normalized.RuntimeBackend,
+			WriterEpoch:       normalized.WriterEpoch,
+			LifecycleRevision: 1,
+			Version:           1,
+			Status:            SetProvisionStatusPending,
+			Reason:            reason,
+			RequestedUsers:    result.DeficitUsers,
+			MaxUsersPerSet:    normalized.MaxUsersPerSet,
 		}
 		if err := s.store.SaveSetProvisionRequest(ctx, request); err != nil {
 			return SetCapacityResult{}, err
@@ -338,6 +348,7 @@ func normalizeSetCapacityPolicy(policy SetCapacityPolicy) (SetCapacityPolicy, er
 	policy.Namespace = strings.TrimSpace(policy.Namespace)
 	policy.Fleet = strings.TrimSpace(policy.Fleet)
 	policy.SetIDPrefix = strings.Trim(strings.TrimSpace(policy.SetIDPrefix), "-")
+	policy.RuntimeBackend = strings.TrimSpace(strings.ToLower(policy.RuntimeBackend))
 	if policy.Source == "" {
 		policy.Source = "kro"
 	}
@@ -346,6 +357,15 @@ func normalizeSetCapacityPolicy(policy SetCapacityPolicy) (SetCapacityPolicy, er
 	}
 	if policy.Fleet == "" {
 		return SetCapacityPolicy{}, fmt.Errorf("fleet is required")
+	}
+	if policy.RuntimeBackend == "" {
+		policy.RuntimeBackend = SetRuntimeBackendLLMFleet
+	}
+	if policy.RuntimeBackend != SetRuntimeBackendLLMFleet && policy.RuntimeBackend != SetRuntimeBackendVelaGWSet {
+		return SetCapacityPolicy{}, fmt.Errorf("invalid runtime_backend %q", policy.RuntimeBackend)
+	}
+	if policy.WriterEpoch <= 0 {
+		policy.WriterEpoch = 1
 	}
 	if policy.MaxUsersPerSet <= 0 {
 		policy.MaxUsersPerSet = 10000
@@ -567,6 +587,21 @@ func setProvisionRequestMatchesOptions(request SetProvisionRequest, opts SetProv
 		return false
 	}
 	if opts.Status != "" && request.Status != opts.Status {
+		return false
+	}
+	if len(opts.Statuses) > 0 {
+		matched := false
+		for _, status := range opts.Statuses {
+			if request.Status == status {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	if opts.RuntimeBackend != "" && request.RuntimeBackend != opts.RuntimeBackend {
 		return false
 	}
 	return true
