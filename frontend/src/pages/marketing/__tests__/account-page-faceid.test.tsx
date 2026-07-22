@@ -217,6 +217,21 @@ describe("AccountPage FaceID flow", () => {
     expect(screen.queryByRole("dialog", { name: "实名认证" })).not.toBeInTheDocument();
   });
 
+  it("uses dedicated visible tokens for identity controls", async () => {
+    renderAccountPage();
+    await openVerifyModal();
+
+    expect(screen.getByText("中国大陆居民身份证").parentElement).toHaveClass(
+      "bg-[var(--realname-control-muted)]",
+    );
+    expect(screen.getByRole("textbox", { name: /真实姓名/ })).toHaveClass(
+      "border-[var(--realname-control-border)]",
+    );
+    expect(screen.getByRole("textbox", { name: /身份证号/ })).toHaveClass(
+      "border-[var(--realname-control-border)]",
+    );
+  });
+
   it("shows identity mismatch as field-linked guidance without exposing the error code", async () => {
     startRealnameFaceIdAttempt.mockRejectedValue(
       new RepositoryError(

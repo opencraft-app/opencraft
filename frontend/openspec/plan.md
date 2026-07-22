@@ -306,6 +306,33 @@ Run:
 
 Expected: 全部 exit 0。
 
+### Task 9: 恢复实名控件可见对比度
+
+**Files:**
+- Modify: `frontend/src/styles.css`
+- Modify: `frontend/src/theme/preset.ts`
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+**Interfaces:**
+- Produces: `--realname-control-border` 与 `--realname-control-muted` 可覆盖主题变量。
+- Preserves: 评审修复中的常量类型安全与无硬编码颜色约束。
+
+- [x] **Step 1: 写失败测试**
+
+断言身份证类型栏使用实名专用弱背景 token，姓名与身份证输入框使用实名专用边框 token。
+
+- [x] **Step 2: 恢复原设计对比度**
+
+在根主题与 LightVela preset 中定义实名控件 token，恢复 `#F2F4F8` 弱背景和 `#E9ECF1` 边框，并替换错误的通用 token 引用。
+
+- [x] **Step 3: 运行聚焦测试与质量门禁**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot && pnpm i18n:check && pnpm check && git diff --check`
+
+Expected: 全部 exit 0。
+
 ## 规划门禁
 
 - 规模：M；执行模式：single_agent。

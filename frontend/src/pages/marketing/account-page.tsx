@@ -598,7 +598,7 @@ const VerifyIdentityModal = ({
     : phoneVerificationEnabled
       ? t("你的姓名、身份证号和手机号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。")
       : t("你的姓名和身份证号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。");
-  const fieldClassName = "h-11 w-full rounded-md border border-[var(--border-subtle)] bg-[var(--surface-base)] px-4 text-sm text-[var(--text-primary)] outline-none transition-shadow duration-150 placeholder:text-[var(--text-tertiary)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
+  const fieldClassName = "h-11 w-full rounded-md border border-[var(--realname-control-border)] bg-[var(--surface-base)] px-4 text-sm text-[var(--text-primary)] outline-none transition-shadow duration-150 placeholder:text-[var(--text-tertiary)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
   const invalidFieldClassName = "border-[color-mix(in_oklab,var(--danger)_50%,transparent)] focus-visible:border-[color-mix(in_oklab,var(--danger)_60%,transparent)] focus-visible:ring-[color-mix(in_oklab,var(--danger)_15%,transparent)]";
   const identityErrorId = "realname-identity-error";
   const nameErrorId = "realname-name-error";
@@ -638,7 +638,7 @@ const VerifyIdentityModal = ({
           onInteractOutside={(event) => event.preventDefault()}
         >
           <motion.div
-            className="fixed inset-x-4 bottom-4 z-50 flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-base)] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.15)] outline-none md:inset-auto md:left-1/2 md:top-1/2 md:w-[680px] md:max-w-[calc(100vw-2rem)] md:-translate-x-1/2 md:-translate-y-1/2"
+            className="fixed inset-x-4 bottom-4 z-50 flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-2xl border border-[var(--realname-control-border)] bg-[var(--surface-base)] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.15)] outline-none md:inset-auto md:left-1/2 md:top-1/2 md:w-[680px] md:max-w-[calc(100vw-2rem)] md:-translate-x-1/2 md:-translate-y-1/2"
             initial={reduceMotion ? false : { opacity: 0, y: 8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: reduceMotion ? 0 : 0.18, ease: "easeOut" }}
@@ -686,7 +686,7 @@ const VerifyIdentityModal = ({
               )}
             </header>
 
-            <div className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--border-subtle)] px-6 py-6 md:px-8">
+            <div className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--realname-control-border)] px-6 py-6 md:px-8">
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div
                   key={stage}
@@ -699,7 +699,7 @@ const VerifyIdentityModal = ({
                 >
                   {stage === "identity" && (
                     <>
-                      <div className="flex items-center justify-between rounded-md bg-[var(--surface-muted)] px-4 py-3 text-sm">
+                      <div className="flex items-center justify-between rounded-md bg-[var(--realname-control-muted)] px-4 py-3 text-sm">
                         <span className="text-black/45">{t("证件类型")}</span>
                         <span className="font-medium text-black/75">{t("中国大陆居民身份证")}</span>
                       </div>
@@ -818,7 +818,7 @@ const VerifyIdentityModal = ({
                             <div
                               role="img"
                               aria-label={t("核身二维码")}
-                              className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-base)] p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)]"
+                              className="rounded-2xl border border-[var(--realname-control-border)] bg-[var(--surface-base)] p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)]"
                             >
                               <QRCodeSVG value={attempt.verificationUrl} size={184} level="M" includeMargin={false} />
                             </div>
@@ -873,7 +873,7 @@ const VerifyIdentityModal = ({
                             aria-describedby={isPhoneInvalid ? phoneErrorId : undefined}
                             className={cn(
                               fieldClassName,
-                              normalizedPhone && "bg-[var(--surface-muted)]",
+                              normalizedPhone && "bg-[var(--realname-control-muted)]",
                               isPhoneInvalid && invalidFieldClassName,
                             )}
                           />
@@ -948,7 +948,7 @@ const VerifyIdentityModal = ({
             </div>
 
             {!(faceIdFlowEnabled && stage === "shadow") && (
-              <footer className="shrink-0 border-t border-[var(--border-subtle)] px-6 py-5 md:px-8">
+              <footer className="shrink-0 border-t border-[var(--realname-control-border)] px-6 py-5 md:px-8">
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div
                     data-testid="realname-feedback-area"
