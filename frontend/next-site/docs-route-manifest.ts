@@ -75,20 +75,32 @@ export const DOCS_ROUTE_SLUGS = {
   "zh-cn": [
     [],
     [
-      "announcements",
-      "public-beta"
-    ],
-    [
       "overview"
     ],
     [
       "quickstart"
     ],
     [
+      "core-concepts"
+    ],
+    [
+      "who-is-lightvela-for"
+    ],
+    [
       "account"
     ],
     [
-      "core-concepts"
+      "announcements",
+      "public-beta"
+    ],
+    [
+      "plans"
+    ],
+    [
+      "credits"
+    ],
+    [
+      "create-first-hermes"
     ],
     [
       "configuration"

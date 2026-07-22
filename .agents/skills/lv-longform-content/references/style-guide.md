@@ -6,6 +6,8 @@ Write like a product builder explaining something useful to a real user. The sty
 
 Default article length: 900-1,500 words unless the user gives a target length.
 
+**Answer-first opening (GEO/AEO):** the very first paragraph (after the hero image, before any setup or story) must directly answer the title's question or define the topic in 1-3 sentences, so search engines and AI search can extract the conclusion straight from the top. For a question title (e.g. "Who is LightVela for?"), the first sentence answers it head-on ("LightVela is for … these kinds of people: …") — do not open with a story or a pain point. For a feature/noun title, open with a one-sentence definition ("X is …, which lets you …"). The paragraph must stand on its own; put narrative, scenarios, and steps *after* this summary. Answer-first constrains only the opening paragraph; each mode's arc then unfolds as usual below it.
+
 ## Output Channel
 
 Choose one output channel before writing. Language and form (text vs Markdown) default from the channel per the table in `SKILL.md` (语言与形式默认值); honour any explicit language/form the user gave and never ask about them separately.
@@ -20,7 +22,7 @@ Use this shape:
 ```markdown
 Article Title
 [RECOMMEND ADD IMAGE: Recommended hero image or product screenshot — <why it belongs here>]
-Opening paragraphs...
+Answer-first opening paragraph: directly answer the title's question / define the topic in 1-3 sentences, then a short bridge into the body.
 
 Section Heading
 Body...
@@ -147,7 +149,7 @@ Recommended structure:
 ```markdown
 <Outcome-focused title>
 [RECOMMEND ADD IMAGE: Hero screenshot showing the finished setup or target workflow — <what the reader sees when it's done>]
-Why this setup matters, what the guide will help the user do.
+Answer-first: in 1-2 sentences state what this guide gets you to and roughly what it takes, then say what the guide will help the user do.
 
 Before You Start
 Prerequisites, accounts, tokens, model/channel/skill requirements, safety notes.
@@ -189,7 +191,7 @@ Short closing that restates the completed outcome.
 
 Style notes:
 
-- Make the first paragraph immediately useful.
+- Make the first paragraph answer-first: state the outcome and rough effort up front, before any setup context.
 - Number steps only when the sequence matters.
 - Include safety notes near the action that creates risk, such as tokens, API keys, permissions, or public channels.
 - Add `[RECOMMEND ADD IMAGE: <specific screenshot> — <why>]` after major UI milestones.
@@ -208,7 +210,7 @@ Recommended structure:
 ```markdown
 Introducing <feature>: <human benefit> with LightVela
 [RECOMMEND ADD IMAGE: Product screenshot or simple visual showing the feature — <the capability at a glance>]
-Start from the existing LightVela/Hermes context and the user problem this feature answers.
+Answer-first: open with a one-sentence definition of the feature and the benefit it gives users, then bridge into the existing LightVela/Hermes context and the problem it answers.
 
 What Is <Feature>?
 Define the capability in simple product language.
@@ -242,7 +244,7 @@ Close with the product direction and what this first version unlocks.
 
 Style notes:
 
-- Lead with the shift in user experience, not an internal implementation detail.
+- After the answer-first definition sentence, lead with the shift in user experience, not an internal implementation detail.
 - Use "what Hermes can use" vs "how Hermes shows up" style contrasts when helpful.
 - Avoid full step-by-step setup unless the feature intro needs a short "how to try it" section.
 - Keep product definitions crisp: one feature, one job, one user-facing benefit.
@@ -258,7 +260,7 @@ Recommended structure:
 ```markdown
 I made a <scenario> agent in <channel> with LightVela
 [RECOMMEND ADD IMAGE: Hero image showing the channel or finished assistant — <where the story lives>]
-Open with a specific annoyance, recurring task, or personal need.
+Answer-first: in 1-2 sentences say what this agent does and how LightVela made it possible (the takeaway), then open the story with the specific annoyance, recurring task, or personal need.
 
 Starting With <Channel or Entry Point>
 Why this channel/workflow fit the user's real behavior.
@@ -297,7 +299,7 @@ End emotionally but practically: what became easier, what stayed online, what fe
 Style notes:
 
 - Use a first-person narrative when the prompt is a scenario/story.
-- Start from a small annoyance, not from the product.
+- Open with a one-to-two sentence answer-first takeaway (what the agent does + that LightVela made it easy); then start the story from a small annoyance, not from the product.
 - Make the build feel achievable: channel + skill + instruction + optional automation.
 - Include transferable examples near the end: "The same pattern could work for..."
 - Keep the article honest. If a skill or data source is hypothetical, phrase it as "you could" or "with the right skill".
@@ -309,7 +311,7 @@ Before finalizing, check:
 - The selected mode matches the prompt.
 - The output channel is known. If mode/channel/topic are not all clear, run the consolidated intake from `SKILL.md` (never ask about language or form separately).
 - The title matches the series style.
-- The article begins with a narrative/product hook and a `[RECOMMEND ADD IMAGE: <specific recommendation> — <why>]` hero line.
+- The article has a `[RECOMMEND ADD IMAGE: <specific recommendation> — <why>]` hero line, and its first paragraph is answer-first: it directly answers the title's question / defines the topic in 1-3 self-contained sentences before any story, pain point, or setup.
 - Image spots appear at natural screenshot moments, with fair density, all using the fixed `[RECOMMEND ADD IMAGE: <what> — <why>]` format.
 - The final chat response lists all recommended image placements and what each image should show.
 - For Techpedia/开发者社区, two Markdown files exist: Chinese and English.
@@ -317,4 +319,4 @@ Before finalizing, check:
 - The product mechanics are clear enough to act on.
 - The piece sounds like LightVela/Hermes, not a generic AI SaaS blog.
 - No attached example content is copied beyond structural inspiration.
-- SEO/GEO: opening contains the main keyword once; at least one clear definition sentence; meaningful internal links woven through the body (not only at the end), each pointing to a real verified route (never a markdown source filename like `/docs/01-overview` — use `/docs/overview`); no keyword stuffing. (Full link-verification procedure and route list belongs to `lv-seo-geo`.)
+- SEO/GEO: opening is answer-first (title question answered / topic defined in the first paragraph); contains the main keyword once; at least one clear definition sentence; meaningful internal links woven through the body (not only at the end), each pointing to a real verified route (never a markdown source filename like `/docs/01-overview` — use `/docs/overview`); no keyword stuffing. (Full link-verification procedure and route list belongs to `lv-seo-geo`.)

@@ -122,6 +122,36 @@
   border-radius: 6px;
 }
 
+/* ── 侧边栏层级：大分类（分组标题）与子项做出清晰区隔 ──
+ * 参考 wiki.newtype.pro：分组标题「粗、弱化灰、字间距、顶格」作为分区标签；
+ * 子项「常规字重、主文本色、缩进」作为实际导航入口。 */
+
+/* 大分类：fumadocs 侧边栏里的 <p> 即为分组标题（子项均为 <a>） */
+.lv-docs-sidebar [data-radix-scroll-area-viewport] p {
+  margin-top: 1.75rem !important;
+  margin-bottom: 0.375rem !important;
+  padding-inline-start: 0.5rem !important;
+  color: var(--text-tertiary) !important;
+  font-family: var(--font-heading);
+  font-size: 0.75rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.06em;
+  text-transform: none;
+}
+
+/* 子项：与大分类错开——增加缩进、常规字重、主文本色 */
+.lv-docs-sidebar a[data-active] {
+  padding-inline-start: 1.125rem !important;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+/* 子项 hover 时略微加深，强化「可点击项」的反差 */
+.lv-docs-sidebar a[data-active='false']:hover {
+  color: var(--lv-docs-blue-hover);
+  font-weight: 500;
+}
+
 .lv-docs-sidebar a[aria-current='page'],
 .lv-docs-sidebar a[data-active='true'],
 .lv-docs-sidebar [data-active='true'] > a {
