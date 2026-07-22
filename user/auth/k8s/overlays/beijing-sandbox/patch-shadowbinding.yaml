@@ -5,3 +5,4 @@ metadata:
   namespace: user-auth
 data:
   SHADOW_AUTH_CODE_PREFIX: "bjsbx"
+  SHADOW_USER_NAME_PREFIX: "bjsbx_"

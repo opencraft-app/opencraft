@@ -203,6 +203,12 @@ func TestExampleConfigLoads(t *testing.T) {
 	if got := cfg.External[0].AuthCodeRoutes; len(got) != 2 || got[0].Prefix != "bjsbx." || got[1].Prefix != "shprod." {
 		t.Fatalf("example config missing auth-code callback routes: %+v", got)
 	}
+	if got := cfg.External[0].UserIDRoutes; len(got) != 1 || got[0].UserID != "u4912323654" || got[0].RouteID != "tencentcloud-account-callback-bjsbx" {
+		t.Fatalf("example config missing legacy user-id callback route: %+v", got)
+	}
+	if got := cfg.External[0].UserIDPrefixRoutes; len(got) != 1 || got[0].Prefix != "bjsbx_" || got[0].RouteID != "tencentcloud-account-callback-bjsbx" {
+		t.Fatalf("example config missing user-id prefix callback route: %+v", got)
+	}
 }
 
 func TestExampleConfigIncludesRegionalJifeiCallbacks(t *testing.T) {
