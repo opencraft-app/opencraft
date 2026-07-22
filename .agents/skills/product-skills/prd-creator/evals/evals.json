@@ -6,7 +6,7 @@
       "id": 1,
       "name": "粗糙想法进入产品输入稿",
       "prompt": "老板说 LightVela 的 /agents 页面看不出哪些 skill 已安装，帮我先建一个需求",
-      "expected_output": "识别为 LightVela 产品前置需求，每轮只问一个最影响范围的问题并优先使用选择题；澄清后由 AI 提出 2-3 个产品方案、说明取舍并给出推荐，按用户选择形成产品输入稿，补齐基本信息、需求背景、目标用户画像、功能范围、功能详细描述、影响面和验收标准；产品输入稿确认后实际写入 mono2 的 product/prd/YYYY-MM-DD-<short-title>.md，并返回文件路径；在产品输入稿确认前不直接创建 TAPD 单，定稿并完成 TAPD 后还需进入工蜂 MR 评审",
+      "expected_output": "识别为 LightVela 产品前置需求，每轮只问一个最影响范围的问题并优先使用选择题；澄清后由 AI 提出 2-3 个产品方案、说明取舍并给出推荐，按用户选择形成产品输入稿，补齐基本信息、需求背景、目标用户画像、功能范围、功能详细描述、影响面和验收标准；产品输入稿确认后实际写入 mono2 的 wiki/prd-docs/YYYY-MM-DD-<short-title>.md，并返回文件路径；在产品输入稿确认前不直接创建 TAPD 单，定稿并完成 TAPD 后还需进入工蜂 MR 评审",
       "files": []
     },
     {
@@ -41,7 +41,7 @@
       "id": 6,
       "name": "默认输出 Demo 而不是交互稿或原型稿",
       "prompt": "这个需求要新增一个 agents 工具安装弹窗，PRD 写完后需要产品和前端先确认页面结构",
-      "expected_output": "PRD 草稿完成后先判断是否需要原型或交互评审稿；默认情况下直接输出 Demo，不输出交互设计稿或原型设计稿；仅当当前项目明确需要时，才补充交互设计稿或原型设计稿链接。Demo 或页面结构说明默认写入 mono2 的同一份 product/prd/YYYY-MM-DD-<short-title>.md",
+      "expected_output": "PRD 草稿完成后先判断是否需要原型或交互评审稿；默认情况下直接输出 Demo，不输出交互设计稿或原型设计稿；仅当当前项目明确需要时，才补充交互设计稿或原型设计稿链接。Demo 或页面结构说明默认写入 mono2 的同一份 wiki/prd-docs/YYYY-MM-DD-<short-title>.md",
       "files": []
     },
     {
@@ -67,16 +67,16 @@
     },
     {
       "id": 10,
-      "name": "PRD 固定写入 mono2 product/prd",
+      "name": "PRD 固定写入 mono2 wiki/prd-docs",
       "prompt": "这个 LightVela 产品方案已经确认，请把 PRD 正式落成文档",
-      "expected_output": "定位 mono2 仓库根目录，必要时创建 product/prd，并把 PRD 实际写入 product/prd/YYYY-MM-DD-<short-title>.md；不要写入 docs/reqs/lightvela，也不要只在聊天中返回正文。Demo、页面结构说明、产物交接建议和待确认问题默认写在同一 Markdown 文件中，完成后主动返回实际文件路径；如果已有对应 PRD，则更新原文件而不是按新日期重复创建；完成 TAPD 写入后继续准备干净分支和工蜂 MR，不能把本地文档当作最终落库完成",
+      "expected_output": "定位 mono2 仓库根目录，必要时创建 wiki/prd-docs，并把 PRD 实际写入 wiki/prd-docs/YYYY-MM-DD-<short-title>.md；不要写入 product/prd 或 docs/reqs/lightvela，也不要只在聊天中返回正文。Demo、页面结构说明、产物交接建议和待确认问题默认写在同一 Markdown 文件中，完成后主动返回实际文件路径；如果已有对应 PRD，则更新原文件而不是按新日期重复创建；完成 TAPD 写入后继续准备干净分支和工蜂 MR，不能把本地文档当作最终落库完成",
       "files": []
     },
     {
       "id": 11,
       "name": "PRD 定稿后提交工蜂 MR",
       "prompt": "这个 LightVela PRD 和 TAPD 都确认好了，把需求文档提交到远端工蜂仓库评审",
-      "expected_output": "读取根 AGENTS.md 和 gongfeng Skill；从最新 origin/master 准备 codex/prd-<short-title> 干净分支，工作区有无关改动时使用独立 worktree；默认只纳入目标 product/prd 文件。commit、push 和创建 MR 前一次性展示文件范围、diff 摘要、Lore commit message、MR 标题描述与 TAPD 关联并等待明确确认；确认后验证 get_current_user 鉴权，运行 git diff --check，提交并推送，通过 Gongfeng 创建目标 master 的工蜂 MR 并关联 TAPD；最后按来源分支核对并返回真实 MR 编号和完整链接，不能把 commit 或 push 当作 MR 已完成",
+      "expected_output": "读取根 AGENTS.md 和 gongfeng Skill；从最新 origin/master 准备 codex/prd-<short-title> 干净分支，工作区有无关改动时使用独立 worktree；默认只纳入目标 wiki/prd-docs 文件。commit、push 和创建 MR 前一次性展示文件范围、diff 摘要、Lore commit message、MR 标题描述与 TAPD 关联并等待明确确认；确认后验证 get_current_user 鉴权，运行 git diff --check，提交并推送，通过 Gongfeng 创建目标 master 的工蜂 MR 并关联 TAPD；最后按来源分支核对并返回真实 MR 编号和完整链接，不能把 commit 或 push 当作 MR 已完成",
       "files": []
     },
     {
