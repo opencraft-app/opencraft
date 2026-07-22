@@ -1,3 +1,348 @@
+# 实名认证流程体验优化 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 在不改变配色、认证接口和业务状态机的前提下，把实名认证三阶段弹窗改造成稳定、流畅、可访问的产品化向导，并提供本地可见预览。
+
+**Architecture:** 保留 `VerifyIdentityModal` 现有 API 调用、轮询与阶段状态，抽取无副作用的 `RealnameStepper` 展示组件，集中重构弹窗壳体和各阶段视图。弹窗改用现有 Radix Dialog primitive，阶段切换只动画 opacity/transform；错误就近关联但继续复用现有错误码映射。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS 4、Radix Dialog、Framer Motion、Vitest、Testing Library。
+
+## Global Constraints
+
+- 不修改现有黑白灰配色、后端接口、错误码、轮询频率、实名准入规则和国际站行为。
+- 不新增依赖，不存储姓名、身份证号或核身地址。
+- 遮罩点击不关闭；支持 Esc、焦点锁定和关闭后焦点恢复。
+- 动效只使用 opacity/transform，不超过 200ms，并尊重 reduced motion。
+- 成功仍以刷新后的 `user.realnameVerified` 为唯一真源。
+
+---
+
+### Task 1: 锁定向导结构与可访问性契约
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+- Create: `frontend/src/pages/marketing/realname-stepper.tsx`
+- Create: `frontend/src/pages/marketing/__tests__/realname-stepper.test.tsx`
+
+**Interfaces:**
+- Produces: `RealnameStepper({ stage, includePhoneStep, labels })`
+- Consumes: `stage: "identity" | "face" | "phone" | "shadow"`
+
+- [x] **Step 1: 为步骤轨道写失败测试**
+
+```tsx
+render(<RealnameStepper stage="face" includePhoneStep labels={labels} />);
+expect(screen.getByText("身份信息").closest("li")).toHaveAttribute("data-state", "complete");
+expect(screen.getByText("人脸核身").closest("li")).toHaveAttribute("aria-current", "step");
+```
+
+- [x] **Step 2: 为 Dialog 行为和静态证件类型写失败测试**
+
+```tsx
+expect(screen.getByRole("dialog", { name: "实名认证" })).toBeInTheDocument();
+expect(screen.queryByRole("combobox", { name: "证件类型" })).not.toBeInTheDocument();
+await userEvent.keyboard("{Escape}");
+expect(screen.queryByRole("dialog", { name: "实名认证" })).not.toBeInTheDocument();
+```
+
+- [x] **Step 3: 运行测试并确认仅因新契约未实现而失败**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+Expected: 新步骤组件不存在，现有手写弹窗没有 dialog 语义。
+
+- [x] **Step 4: 实现最小步骤组件**
+
+使用有序列表、弹性连接线、`data-state` 和 `aria-current="step"`；完成态显示 Check，连接线不写固定像素宽度。
+
+- [x] **Step 5: 运行步骤组件测试**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx`
+
+Expected: PASS。
+
+### Task 2: 重构实名弹窗壳体与三个阶段
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+**Interfaces:**
+- Consumes: Task 1 的 `RealnameStepper`
+- Preserves: `VerifyIdentityModal` props、Repository 方法和 `applyAttemptState`
+
+- [x] **Step 1: 把手写 fixed overlay 替换为受控 Radix Dialog**
+
+```tsx
+<Dialog open onOpenChange={(open) => {
+  if (!open) onClose();
+}}>
+  <DialogContent onPointerDownOutside={(event) => event.preventDefault()}>
+    <DialogTitle>{verified ? t("修改实名认证") : t("实名认证")}</DialogTitle>
+  </DialogContent>
+</Dialog>
+```
+
+- [x] **Step 2: 实现稳定的头部、阶段画布和响应式操作区**
+
+头部合并标题与步骤轨道；画布使用 `AnimatePresence mode="wait"` 和不超过 0.18 秒的 opacity/y 动效；桌面按钮右对齐，移动端占满。
+
+- [x] **Step 3: 重排身份信息阶段**
+
+证件类型改为普通静态信息行；保留姓名、身份证输入和隐私同意；为字段补稳定 id、`aria-invalid`、`aria-describedby` 和 `autoComplete`。
+
+- [x] **Step 4: 重排人脸阶段**
+
+桌面端使用二维码与步骤说明的单层布局；移动端直接打开刷脸页面；等待、过期、失败状态占用同一状态区域，保留现有轮询和重启动作。
+
+- [x] **Step 5: 重排手机与 Shadow 阶段**
+
+手机号、验证码和发送按钮使用统一高度；验证码错误就近展示；Shadow 使用 `role="status"`，自动同步时不渲染空白 footer。
+
+- [x] **Step 6: 运行完整 FaceID 目标测试**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+Expected: PASS，现有桌面二维码、移动端直开、轮询、过期、手机号和最终成功行为无回归。
+
+### Task 3: 静态检查与本地视觉验收
+
+**Files:**
+- Modify: `frontend/DESIGN.md`
+- Modify: `frontend/openspec/plan.md`
+
+**Interfaces:**
+- Consumes: 完成后的实名向导
+- Produces: 可复用的多阶段 Dialog 设计规则与本地预览证据
+
+- [x] **Step 1: 记录多阶段 Dialog 规则**
+
+补充稳定壳体、自适应步骤轨道、桌面紧凑操作区、移动端全宽按钮以及仅动画 opacity/transform 的规范。
+
+- [x] **Step 2: 运行质量门禁**
+
+Run:
+`pnpm check && pnpm i18n:check`
+
+Expected: 两条命令 exit 0。
+
+- [x] **Step 3: 运行差异检查**
+
+Run:
+`git diff --check`
+
+Expected: exit 0，无空白错误。
+
+- [x] **Step 4: 启动国内站本地预览**
+
+Run:
+`NEXT_PUBLIC_REGION=cn VITE_REGION=cn NEXT_PUBLIC_AUTH_API_BASE_URL=https://lightclaw.tech VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm exec next dev --webpack -H 127.0.0.1 -p 3300`
+
+Expected: `http://127.0.0.1:3300/account` 使用真实后端接口并可访问。
+
+- [x] **Step 5: 浏览器验收**
+
+验证身份页、二维码页、手机号页、Shadow/错误状态和 390px 移动端；确认无横向溢出、无大面积布局跳动、控制台无新增错误。
+
+### Task 4: 收敛实名错误为无容器行内校验
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+**Interfaces:**
+- Produces: 按 `RepositoryError.code` 分类的字段错误对象，包含 `code`、用户标题、解决建议和关联字段。
+- Preserves: 现有 Repository 调用、提交状态、阶段推进和后端错误码。
+
+- [x] **Step 1: 写失败测试**
+
+断言 `phone_in_use` 显示“该手机号暂不可使用”和解决建议，不显示技术错误码；断言 `realname_mismatch` 显示“身份信息未通过核验”，关联字段均具备 `aria-invalid` 和 `aria-describedby`。
+
+- [x] **Step 2: 运行测试确认失败原因**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot`
+
+Expected: FAIL，当前错误仍是弹窗底部裸红字且 `phone_in_use` 回退到后端原始 message。
+
+- [x] **Step 3: 实现最小错误分类与行内视图**
+
+使用无背景、无边框、无圆角的图标 + 标题 + 次级说明结构；输入框只增加轻微错误描边。修改相关字段时清除对应错误，未归类错误保留在阶段底部。
+
+- [x] **Step 4: 生成翻译并运行质量门禁**
+
+Run:
+`pnpm i18n:extract && pnpm i18n:check && pnpm check && pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot && git diff --check`
+
+Expected: 全部 exit 0。
+
+- [x] **Step 5: 在 3300 真实接口页面回验**
+
+确认手机号占用和姓名证件不一致均集中显示在阶段底部、技术码隐藏、修改字段后提示消失，且错误出现不会破坏移动端布局。
+
+### Task 5: 固定表单底部错误槽
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+**Interfaces:**
+- Produces: 身份信息、手机验证等阶段共用的固定高度底部错误槽。
+- Preserves: 输入框错误描边、`aria-describedby`、错误清除逻辑和错误文案。
+
+- [x] **Step 1: 写失败测试**
+
+断言提交前错误槽已经存在且预留固定高度；错误出现后复用同一错误槽，并位于协议或当前阶段最后一个输入控件之后。
+
+- [x] **Step 2: 运行测试确认失败**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot`
+
+Expected: FAIL，当前错误插入字段与协议之间，且无固定高度错误槽。
+
+- [x] **Step 3: 将错误统一移动到底部槽**
+
+删除字段之间的错误节点，在阶段内容末尾永久渲染桌面端 `min-h-[52px]`、移动端 `min-h-[72px]` 的错误槽；错误与轮询异常复用该位置，不动画高度。
+
+- [x] **Step 4: 运行聚焦测试与质量门禁**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot && pnpm i18n:check && pnpm check && git diff --check`
+
+Expected: 全部 exit 0。
+
+### Task 6: 复用操作栏安全说明区域承载错误
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+**Interfaces:**
+- Produces: 操作栏左侧稳定反馈区域，无错误时显示安全说明，有错误时原位替换。
+- Removes: 表单内容区永久占位的空白错误槽。
+
+- [x] **Step 1: 写失败测试**
+
+断言无错误时反馈区域显示安全说明；错误出现后复用同一节点展示错误且安全说明消失；反馈区域位于表单之后、主按钮之前。
+
+- [x] **Step 2: 运行测试确认失败**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot`
+
+Expected: FAIL，当前实现仍渲染空白错误槽，操作栏安全说明不会被错误替换。
+
+- [x] **Step 3: 实现操作栏反馈区域**
+
+删除内容区错误槽，将错误和轮询异常移动到操作栏左侧；无错误时显示原有安全说明。FaceID Shadow 阶段继续在既有状态区原位展示异常。
+
+- [x] **Step 4: 运行聚焦测试与质量门禁**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot && pnpm i18n:check && pnpm check && git diff --check`
+
+Expected: 全部 exit 0。
+
+### Task 7: 移除表单阶段固定高度留白
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+**Interfaces:**
+- Produces: 身份信息和手机验证阶段按内容自然撑高。
+- Preserves: 人脸二维码、等待、失败和同步状态所需的最小高度。
+
+- [x] **Step 1: 写失败测试**
+
+断言身份信息和手机验证的阶段内容容器不再带 `min-h-[248px]`。
+
+- [x] **Step 2: 运行测试确认失败**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot`
+
+Expected: FAIL，当前阶段外层仍统一设置固定最小高度。
+
+- [x] **Step 3: 删除外层固定最小高度**
+
+移除阶段外层 `min-h-[248px]`；人脸与 Shadow 子视图现有 `min-h-[248px]` 保持不变。
+
+- [x] **Step 4: 运行聚焦测试与质量门禁**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot && pnpm i18n:check && pnpm check && git diff --check`
+
+Expected: 全部 exit 0。
+
+### Task 8: 处理实名向导 AI 评审意见
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/realname-stepper.tsx`
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+
+**Interfaces:**
+- Produces: 阶段值与错误字段值的单一常量来源。
+- Preserves: 实名阶段状态机、错误映射、布局与交互行为。
+
+- [x] **Step 1: 统一阶段与错误字段常量**
+
+使用 `as const` 元组派生步骤类型，使用 `REALNAME_ERROR_FIELD` 对象派生错误字段类型，消除重复魔法字符串。
+
+- [x] **Step 2: 替换新增 UI 中的硬编码颜色**
+
+使用项目已有的 `--danger`、`--text-primary`、`--text-secondary`、`--text-tertiary`、`--surface-muted` 和 `--border-strong`，不引入评审建议中不存在的变量。
+
+- [x] **Step 3: 运行聚焦测试与质量门禁**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot && pnpm i18n:check && pnpm check && git diff --check`
+
+Expected: 全部 exit 0。
+
+### Task 9: 恢复实名控件可见对比度
+
+**Files:**
+- Modify: `frontend/src/styles.css`
+- Modify: `frontend/src/theme/preset.ts`
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`
+
+**Interfaces:**
+- Produces: `--realname-control-border` 与 `--realname-control-muted` 可覆盖主题变量。
+- Preserves: 评审修复中的常量类型安全与无硬编码颜色约束。
+
+- [x] **Step 1: 写失败测试**
+
+断言身份证类型栏使用实名专用弱背景 token，姓名与身份证输入框使用实名专用边框 token。
+
+- [x] **Step 2: 恢复原设计对比度**
+
+在根主题与 LightVela preset 中定义实名控件 token，恢复 `#F2F4F8` 弱背景和 `#E9ECF1` 边框，并替换错误的通用 token 引用。
+
+- [x] **Step 3: 运行聚焦测试与质量门禁**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot && pnpm i18n:check && pnpm check && git diff --check`
+
+Expected: 全部 exit 0。
+
+## 规划门禁
+
+- 规模：M；执行模式：single_agent。
+- 已确认现有 Radix Dialog、Framer Motion、二维码和测试能力足够，无需 capability 或新依赖。
+- 已覆盖 loading、错误、过期、恢复、两步/三步和移动端边界。
+- 明确排除接口、配色、轮询、实名规则、国际站与身份证校验算法变更。
+- 规划门禁结论：通过，可进入实现。
+
+---
+
 # 精选技能轮播按钮位置调整
 
 **Goal:** 将精选技能轮播的上一批、下一批按钮分别放在卡片组左右两侧。
