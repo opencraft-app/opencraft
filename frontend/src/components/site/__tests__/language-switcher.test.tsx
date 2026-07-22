@@ -15,13 +15,21 @@ describe("LanguageSwitcher", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Change language" }));
 
+    expect(screen.getByRole("listbox")).toHaveClass("w-max");
     const options = screen.getAllByRole("option");
     expect(options.map((option) => option.textContent)).toEqual(
       isGlobal
-        ? ["International Site - English", "International Site - 中文", "China Site"]
+        ? ["International Site - English", "International Site - 中文", "中国站"]
         : ["中国站", "国际站 - 中文", "国际站 - English"],
     );
     expect(options[0]).toHaveAttribute("aria-selected", "true");
+
+    if (isGlobal) {
+      cleanup();
+      render(<LanguageSwitcher activeLocale="zh-SG" />);
+      fireEvent.click(screen.getByRole("button", { name: "Change language" }));
+      expect(screen.getAllByRole("option").at(-1)).toHaveTextContent("中国站");
+    }
   });
 
   it("opens cross-site destinations in a new browser window", () => {
@@ -29,7 +37,7 @@ describe("LanguageSwitcher", () => {
     render(<LanguageSwitcher activeLocale={isGlobal ? "en-US" : "zh-CN"} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Change language" }));
-    fireEvent.click(screen.getByRole("option", { name: isGlobal ? "China Site" : "国际站 - 中文" }));
+    fireEvent.click(screen.getByRole("option", { name: isGlobal ? "中国站" : "国际站 - 中文" }));
 
     expect(openSpy).toHaveBeenCalledWith(
       isGlobal ? "https://lightvela.com" : "https://lightvela.ai/zh-sg/",
