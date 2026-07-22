@@ -10,12 +10,13 @@ import {
   type CookieConsentChangedDetail,
 } from "@/lib/cookie-consent";
 import { disableDatong, getDatong, initDatong, isDatongDevEnabled, setDatongUser, startDatongReport } from "@/observability/datong";
+import { isGlobal } from "@/lib/region";
 
 /**
  * 大同埋点桥接组件。
  *
  * 职责与 ProductAnalyticsBridge (posthog) 对称：
- *   1. 监听 cookie consent 变更，同意后 lazy-init 大同 SDK
+ *   1. 监听 cookie consent 变更（仅国际站需要）：国际站同意后 lazy-init 大同 SDK；国内站无需 consent 直接初始化
  *   2. 监听 session 变更，将当前登录用户 id 注入 SDK 公参
  *   3. 大同同时支持全球站与国内站，因此不像 posthog 只在 isGlobal 启用
  *
@@ -27,11 +28,14 @@ export const DatongTrackerBridge = () => {
   const userId = isAuthenticated ? session.user?.id : null;
 
   useEffect(() => {
+    // 国内站无 GDPR 要求，无需 cookie consent 门禁，直接上报；
+    // 仅国际站需用户同意 cookie consent 后才初始化 SDK。
+    const consentRequired = isGlobal;
+
     const syncConsent = () => {
       const consent = readStoredCookieConsent();
-      // dev 模式（NEXT_PUBLIC_DATONG_DEV_ENABLED=true）下跳过 cookie consent 门禁，
-      // 便于本地联调埋点；生产模式仍需用户同意 cookie consent 后才初始化。
-      if (isDatongDevEnabled() || consent === COOKIE_CONSENT_ACCEPTED) {
+      // 国内站直接初始化上报；国际站需用户同意 cookie consent 后才初始化（dev 模式跳过）。
+      if (!consentRequired || isDatongDevEnabled() || consent === COOKIE_CONSENT_ACCEPTED) {
         void initDatong(undefined, undefined, consent);
         return;
       }
@@ -44,12 +48,15 @@ export const DatongTrackerBridge = () => {
       if (getDatong()) return;
       if (document.visibilityState === "hidden") return;
       const consent = readStoredCookieConsent();
-      if (consent === COOKIE_CONSENT_ACCEPTED || isDatongDevEnabled()) {
+      // 国内站直接初始化；国际站需 consent accepted（dev 模式跳过）
+      if (!consentRequired || isDatongDevEnabled() || consent === COOKIE_CONSENT_ACCEPTED) {
         void initDatong(undefined, undefined, consent);
       }
     };
 
     const handleConsentChange = (event: Event) => {
+      // 国内站不依赖 cookie consent，consent 变化不影响 SDK 状态（syncConsent 已处理初始化）
+      if (!consentRequired) return;
       const detail = (event as CustomEvent<CookieConsentChangedDetail>).detail;
       if (detail.value === COOKIE_CONSENT_ACCEPTED || isDatongDevEnabled()) {
         void initDatong(undefined, undefined, detail.value);
