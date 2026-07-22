@@ -9,6 +9,7 @@ resources. Runtime Secrets, CRDs, KRO/RGD, the `LLMFleet` instance, individual
 `VelaGWSet` resources, and dynamically generated new-api resources remain
 externally managed and must not be added to this application.
 
-The image pin in `velagw-platform.env` is updated by `.ci/velagw.yml`. The
-initial pin matches the image that was live when this application was created,
-so onboarding does not intentionally roll the workloads.
+The single `VELAGW_IMAGE` pin in `velagw-platform.env` is updated by
+`.ci/velagw.yml` and applies to every VelaGW process, including the
+VelaGWSet provisioner. Keeping one release pin prevents a control-plane release
+from leaving lifecycle reconcilers on an older binary.

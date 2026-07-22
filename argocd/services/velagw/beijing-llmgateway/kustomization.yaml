@@ -70,7 +70,7 @@ replacements:
   - source:
       kind: ConfigMap
       name: velagw-platform-values
-      fieldPath: data.VELAGW_PROVISIONER_IMAGE
+      fieldPath: data.VELAGW_IMAGE
     targets:
       - select:
           kind: Deployment

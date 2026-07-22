@@ -338,6 +338,18 @@ class ReleaseBundleContractTests(unittest.TestCase):
             kustomization.get("resources"),
             ["workloads.yaml", "velagwset-controller.yaml", "velagwset-provisioner.yaml"],
         )
+        image_replacement_targets = {
+            (target.get("select") or {}).get("name")
+            for replacement in kustomization.get("replacements", [])
+            if (replacement.get("source") or {}).get("fieldPath") == "data.VELAGW_IMAGE"
+            for target in replacement.get("targets", [])
+        }
+        self.assertIn("velagwset-controller", image_replacement_targets)
+        self.assertIn("velagwset-provisioner", image_replacement_targets)
+        self.assertNotIn(
+            "VELAGW_PROVISIONER_IMAGE=",
+            (service_root / "velagw-platform.env").read_text(),
+        )
         for resource in ("velagwset-controller.yaml", "velagwset-provisioner.yaml"):
             with self.subTest(resource=resource):
                 self.assertTrue((service_root / resource).is_file())
