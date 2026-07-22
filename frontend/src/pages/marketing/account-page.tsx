@@ -91,7 +91,16 @@ const formatFaceIdExpiry = (value?: string) => {
   return date.toLocaleString();
 };
 
-type RealnameErrorField = "identity" | "name" | "idCard" | "phone" | "smsCode" | "global";
+const REALNAME_ERROR_FIELD = {
+  IDENTITY: "identity",
+  NAME: "name",
+  ID_CARD: "idCard",
+  PHONE: "phone",
+  SMS_CODE: "smsCode",
+  GLOBAL: "global",
+} as const;
+
+type RealnameErrorField = (typeof REALNAME_ERROR_FIELD)[keyof typeof REALNAME_ERROR_FIELD];
 
 type RealnameFormError = {
   field: RealnameErrorField;
@@ -109,11 +118,11 @@ const InlineValidationMessage = ({
   description?: string;
 }) => (
   <div id={id} className="flex items-start gap-2.5" role="alert">
-    <CircleAlert className="mt-0.5 size-4 shrink-0 text-[#cf3d4c]" aria-hidden="true" />
+    <CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--danger)]" aria-hidden="true" />
     <div className="min-w-0">
-      <p className="m-0 text-[13px] font-medium leading-5 text-[#b83443]">{title}</p>
+      <p className="m-0 text-[13px] font-medium leading-5 text-[var(--danger)]">{title}</p>
       {description && (
-        <p className="mb-0 mt-0.5 text-[13px] leading-5 text-black/45">{description}</p>
+        <p className="mb-0 mt-0.5 text-[13px] leading-5 text-[var(--text-tertiary)]">{description}</p>
       )}
     </div>
   </div>
@@ -215,67 +224,67 @@ const VerifyIdentityModal = ({
       switch (err.code) {
         case "phone_required":
           return {
-            field: "phone",
+            field: REALNAME_ERROR_FIELD.PHONE,
             title: t("请输入手机号"),
             description: t("请输入用于实名认证的中国大陆手机号。"),
           };
         case "invalid_phone":
           return {
-            field: "phone",
+            field: REALNAME_ERROR_FIELD.PHONE,
             title: t("手机号格式不正确"),
             description: t("请输入 11 位中国大陆手机号后重试。"),
           };
         case "phone_in_use":
           return {
-            field: "phone",
+            field: REALNAME_ERROR_FIELD.PHONE,
             title: t("该手机号暂不可使用"),
             description: t("该手机号已绑定其他 LightVela 账号，请更换手机号或联系管理员。"),
           };
         case "sms_code_not_found":
           return {
-            field: "smsCode",
+            field: REALNAME_ERROR_FIELD.SMS_CODE,
             title: t("请先获取验证码"),
             description: t("获取短信验证码后再完成手机号认证。"),
           };
         case "sms_code_expired":
           return {
-            field: "smsCode",
+            field: REALNAME_ERROR_FIELD.SMS_CODE,
             title: t("验证码已过期"),
             description: t("请重新获取短信验证码后再试。"),
           };
         case "invalid_sms_code":
           return {
-            field: "smsCode",
+            field: REALNAME_ERROR_FIELD.SMS_CODE,
             title: t("验证码不正确"),
             description: t("请检查短信中的验证码后重试。"),
           };
         case "invalid_realname":
           return {
-            field: "name",
+            field: REALNAME_ERROR_FIELD.NAME,
             title: t("姓名格式不正确"),
             description: t("请输入身份证上的真实姓名。"),
           };
         case "invalid_id_card":
           return {
-            field: "idCard",
+            field: REALNAME_ERROR_FIELD.ID_CARD,
             title: t("身份证号格式不正确"),
             description: t("请输入 18 位中国大陆居民身份证号。"),
           };
         case "realname_mismatch":
           return {
-            field: "identity",
+            field: REALNAME_ERROR_FIELD.IDENTITY,
             title: t("身份信息未通过核验"),
             description: t("请确认姓名与身份证上的信息完全一致后重试。"),
           };
         case "realname_verify_failed":
-          return { field: "global", title: t("实名核验失败"), description: t("请稍后重新提交认证。") };
+          return { field: REALNAME_ERROR_FIELD.GLOBAL, title: t("实名核验失败"), description: t("请稍后重新提交认证。") };
         case "realname_unavailable":
-          return { field: "global", title: t("实名认证暂不可用"), description: t("请稍后再试。") };
+          return { field: REALNAME_ERROR_FIELD.GLOBAL, title: t("实名认证暂不可用"), description: t("请稍后再试。") };
         case "shadow_binding_failed":
         case "shadow_binding_incomplete":
         case "shadow_basic_auth_failed":
           return {
-            field: "global",
+            field: REALNAME_ERROR_FIELD.GLOBAL,
             title: t("实名信息同步失败"),
             description: t("你无需重新填写信息，请稍后重试。"),
           };
@@ -283,14 +292,14 @@ const VerifyIdentityModal = ({
           break;
       }
       if (err.status === 502 || err.status === 503) {
-        return { field: "global", title: t("认证服务暂时繁忙"), description: t("请稍后再试。") };
+        return { field: REALNAME_ERROR_FIELD.GLOBAL, title: t("认证服务暂时繁忙"), description: t("请稍后再试。") };
       }
-      return { field: "global", title: t("实名认证失败"), description: t("请稍后重试。") };
+      return { field: REALNAME_ERROR_FIELD.GLOBAL, title: t("实名认证失败"), description: t("请稍后重试。") };
     }
     if (err instanceof Error && err.message.trim().length > 0) {
-      return { field: "global", title: t("实名认证失败"), description: t("请稍后重试。") };
+      return { field: REALNAME_ERROR_FIELD.GLOBAL, title: t("实名认证失败"), description: t("请稍后重试。") };
     }
-    return { field: "global", title: t("网络连接异常"), description: t("请检查网络连接后重试。") };
+    return { field: REALNAME_ERROR_FIELD.GLOBAL, title: t("网络连接异常"), description: t("请检查网络连接后重试。") };
   };
 
   const clearErrorFor = (...fields: RealnameErrorField[]) => {
@@ -487,7 +496,7 @@ const VerifyIdentityModal = ({
           }
           if (!normalizedPhone) {
             setError({
-              field: "phone",
+              field: REALNAME_ERROR_FIELD.PHONE,
               title: t("当前账号未绑定手机号"),
               description: t("请先使用手机号登录或绑定手机号。"),
             });
@@ -589,26 +598,26 @@ const VerifyIdentityModal = ({
     : phoneVerificationEnabled
       ? t("你的姓名、身份证号和手机号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。")
       : t("你的姓名和身份证号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。");
-  const fieldClassName = "h-11 w-full rounded-md border border-[#E9ECF1] bg-white px-4 text-sm text-black/90 outline-none transition-shadow duration-150 placeholder:text-black/35 focus-visible:ring-2 focus-visible:ring-black/15";
-  const invalidFieldClassName = "border-[#cf3d4c]/50 focus-visible:border-[#cf3d4c]/60 focus-visible:ring-[#cf3d4c]/15";
+  const fieldClassName = "h-11 w-full rounded-md border border-[var(--border-subtle)] bg-[var(--surface-base)] px-4 text-sm text-[var(--text-primary)] outline-none transition-shadow duration-150 placeholder:text-[var(--text-tertiary)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
+  const invalidFieldClassName = "border-[color-mix(in_oklab,var(--danger)_50%,transparent)] focus-visible:border-[color-mix(in_oklab,var(--danger)_60%,transparent)] focus-visible:ring-[color-mix(in_oklab,var(--danger)_15%,transparent)]";
   const identityErrorId = "realname-identity-error";
   const nameErrorId = "realname-name-error";
   const idCardErrorId = "realname-id-card-error";
   const phoneErrorId = "realname-phone-error";
   const smsCodeErrorId = "realname-sms-code-error";
   const errorMessageId = error ? {
-    identity: identityErrorId,
-    name: nameErrorId,
-    idCard: idCardErrorId,
-    phone: phoneErrorId,
-    smsCode: smsCodeErrorId,
-    global: "realname-global-error",
+    [REALNAME_ERROR_FIELD.IDENTITY]: identityErrorId,
+    [REALNAME_ERROR_FIELD.NAME]: nameErrorId,
+    [REALNAME_ERROR_FIELD.ID_CARD]: idCardErrorId,
+    [REALNAME_ERROR_FIELD.PHONE]: phoneErrorId,
+    [REALNAME_ERROR_FIELD.SMS_CODE]: smsCodeErrorId,
+    [REALNAME_ERROR_FIELD.GLOBAL]: "realname-global-error",
   } satisfies Record<RealnameErrorField, string> : null;
-  const isIdentityGroupInvalid = error?.field === "identity";
-  const isNameInvalid = isIdentityGroupInvalid || error?.field === "name";
-  const isIdCardInvalid = isIdentityGroupInvalid || error?.field === "idCard";
-  const isPhoneInvalid = error?.field === "phone";
-  const isSmsCodeInvalid = error?.field === "smsCode";
+  const isIdentityGroupInvalid = error?.field === REALNAME_ERROR_FIELD.IDENTITY;
+  const isNameInvalid = isIdentityGroupInvalid || error?.field === REALNAME_ERROR_FIELD.NAME;
+  const isIdCardInvalid = isIdentityGroupInvalid || error?.field === REALNAME_ERROR_FIELD.ID_CARD;
+  const isPhoneInvalid = error?.field === REALNAME_ERROR_FIELD.PHONE;
+  const isSmsCodeInvalid = error?.field === REALNAME_ERROR_FIELD.SMS_CODE;
 
   return (
     <DialogPrimitive.Root open onOpenChange={(open) => {
@@ -629,7 +638,7 @@ const VerifyIdentityModal = ({
           onInteractOutside={(event) => event.preventDefault()}
         >
           <motion.div
-            className="fixed inset-x-4 bottom-4 z-50 flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-2xl border border-[#E6E9EF] bg-white shadow-[0_24px_48px_-12px_rgba(0,0,0,0.15)] outline-none md:inset-auto md:left-1/2 md:top-1/2 md:w-[680px] md:max-w-[calc(100vw-2rem)] md:-translate-x-1/2 md:-translate-y-1/2"
+            className="fixed inset-x-4 bottom-4 z-50 flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-base)] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.15)] outline-none md:inset-auto md:left-1/2 md:top-1/2 md:w-[680px] md:max-w-[calc(100vw-2rem)] md:-translate-x-1/2 md:-translate-y-1/2"
             initial={reduceMotion ? false : { opacity: 0, y: 8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: reduceMotion ? 0 : 0.18, ease: "easeOut" }}
@@ -677,7 +686,7 @@ const VerifyIdentityModal = ({
               )}
             </header>
 
-            <div className="min-h-0 flex-1 overflow-y-auto border-t border-[#E9ECF1] px-6 py-6 md:px-8">
+            <div className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--border-subtle)] px-6 py-6 md:px-8">
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div
                   key={stage}
@@ -690,7 +699,7 @@ const VerifyIdentityModal = ({
                 >
                   {stage === "identity" && (
                     <>
-                      <div className="flex items-center justify-between rounded-md bg-[#F2F4F8] px-4 py-3 text-sm">
+                      <div className="flex items-center justify-between rounded-md bg-[var(--surface-muted)] px-4 py-3 text-sm">
                         <span className="text-black/45">{t("证件类型")}</span>
                         <span className="font-medium text-black/75">{t("中国大陆居民身份证")}</span>
                       </div>
@@ -698,7 +707,7 @@ const VerifyIdentityModal = ({
                       <div className="grid gap-5 md:grid-cols-[0.7fr_1.3fr]">
                         <div className="flex flex-col gap-2">
                           <label htmlFor="realname-name" className="text-sm font-medium text-black/90">
-                            {t("真实姓名")} <span className="text-[#cf3d4c]">*</span>
+                            {t("真实姓名")} <span className="text-[var(--danger)]">*</span>
                           </label>
                           <input
                             id="realname-name"
@@ -708,7 +717,7 @@ const VerifyIdentityModal = ({
                             value={realName}
                             onChange={(event) => {
                               setRealName(event.target.value);
-                              clearErrorFor("name", "identity");
+                              clearErrorFor(REALNAME_ERROR_FIELD.NAME, REALNAME_ERROR_FIELD.IDENTITY);
                             }}
                             maxLength={20}
                             aria-invalid={isNameInvalid}
@@ -719,7 +728,7 @@ const VerifyIdentityModal = ({
 
                         <div className="flex flex-col gap-2">
                           <label htmlFor="realname-id-card" className="text-sm font-medium text-black/90">
-                            {t("身份证号")} <span className="text-[#cf3d4c]">*</span>
+                            {t("身份证号")} <span className="text-[var(--danger)]">*</span>
                           </label>
                           <input
                             id="realname-id-card"
@@ -730,7 +739,7 @@ const VerifyIdentityModal = ({
                             value={idNumber}
                             onChange={(event) => {
                               setIdNumber(event.target.value.replace(/[^0-9Xx]/g, "").slice(0, 18));
-                              clearErrorFor("idCard", "identity");
+                              clearErrorFor(REALNAME_ERROR_FIELD.ID_CARD, REALNAME_ERROR_FIELD.IDENTITY);
                             }}
                             maxLength={18}
                             aria-invalid={isIdCardInvalid}
@@ -746,7 +755,7 @@ const VerifyIdentityModal = ({
                             type="checkbox"
                             checked={consent}
                             onChange={(event) => setConsent(event.target.checked)}
-                            className="mt-1 size-4 rounded border-[#D1D5DB]"
+                            className="mt-1 size-4 rounded border-[var(--border-strong)]"
                             aria-label={t("我已阅读《隐私协议》并同意进行身份核验")}
                           />
                           <span>
@@ -798,7 +807,7 @@ const VerifyIdentityModal = ({
                             href={attempt.verificationUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="mt-5 inline-flex h-11 items-center justify-center rounded-full bg-[#202020] px-6 text-sm font-medium text-white"
+                            className="mt-5 inline-flex h-11 items-center justify-center rounded-full bg-[var(--text-primary)] px-6 text-sm font-medium text-[var(--surface-base)]"
                           >
                             {t("打开刷脸页面")}
                           </a>
@@ -809,7 +818,7 @@ const VerifyIdentityModal = ({
                             <div
                               role="img"
                               aria-label={t("核身二维码")}
-                              className="rounded-2xl border border-[#E9ECF1] bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)]"
+                              className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-base)] p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)]"
                             >
                               <QRCodeSVG value={attempt.verificationUrl} size={184} level="M" includeMargin={false} />
                             </div>
@@ -845,7 +854,7 @@ const VerifyIdentityModal = ({
                     <>
                       <div className="flex flex-col gap-2">
                         <label htmlFor="realname-phone" className="text-sm font-medium text-black/90">
-                          {normalizedPhone ? t("当前手机号") : t("手机号")} <span className="text-[#cf3d4c]">*</span>
+                          {normalizedPhone ? t("当前手机号") : t("手机号")} <span className="text-[var(--danger)]">*</span>
                         </label>
                         <div className="flex gap-2">
                           <input
@@ -857,14 +866,14 @@ const VerifyIdentityModal = ({
                             value={phoneForVerification}
                             onChange={(event) => {
                               setPhoneInput(event.target.value.replace(/\D/g, "").slice(0, 11));
-                              clearErrorFor("phone");
+                              clearErrorFor(REALNAME_ERROR_FIELD.PHONE);
                             }}
                             disabled={Boolean(normalizedPhone)}
                             aria-invalid={isPhoneInvalid}
                             aria-describedby={isPhoneInvalid ? phoneErrorId : undefined}
                             className={cn(
                               fieldClassName,
-                              normalizedPhone && "bg-[#F2F4F8]",
+                              normalizedPhone && "bg-[var(--surface-muted)]",
                               isPhoneInvalid && invalidFieldClassName,
                             )}
                           />
@@ -872,7 +881,7 @@ const VerifyIdentityModal = ({
                             type="button"
                             onClick={() => void sendPhoneCode()}
                             disabled={!PHONE_REGEX.test(phoneForVerification) || sendingCode || cooldownSeconds > 0}
-                            className="h-11 shrink-0 rounded-full border border-[#202020] px-5 text-sm font-medium text-[#202020] transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+                            className="h-11 shrink-0 rounded-full border border-[var(--text-primary)] px-5 text-sm font-medium text-[var(--text-primary)] transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             {sendingCode
                               ? t("发送中...")
@@ -885,7 +894,7 @@ const VerifyIdentityModal = ({
 
                       <div className="flex flex-col gap-2">
                         <label htmlFor="realname-sms-code" className="text-sm font-medium text-black/90">
-                          {t("短信验证码")} <span className="text-[#cf3d4c]">*</span>
+                          {t("短信验证码")} <span className="text-[var(--danger)]">*</span>
                         </label>
                         <input
                           id="realname-sms-code"
@@ -896,7 +905,7 @@ const VerifyIdentityModal = ({
                           value={smsCode}
                           onChange={(event) => {
                             setSmsCode(event.target.value.replace(/\D/g, "").slice(0, 8));
-                            clearErrorFor("smsCode");
+                            clearErrorFor(REALNAME_ERROR_FIELD.SMS_CODE);
                           }}
                           maxLength={8}
                           aria-invalid={isSmsCodeInvalid}
@@ -939,7 +948,7 @@ const VerifyIdentityModal = ({
             </div>
 
             {!(faceIdFlowEnabled && stage === "shadow") && (
-              <footer className="shrink-0 border-t border-[#E9ECF1] px-6 py-5 md:px-8">
+              <footer className="shrink-0 border-t border-[var(--border-subtle)] px-6 py-5 md:px-8">
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div
                     data-testid="realname-feedback-area"
@@ -968,7 +977,7 @@ const VerifyIdentityModal = ({
                     <button
                       type="button"
                       onClick={restartFaceIdFlow}
-                      className="inline-flex h-11 w-full items-center justify-center rounded-full bg-[#202020] px-6 text-sm font-medium text-white sm:w-auto sm:min-w-40"
+                      className="inline-flex h-11 w-full items-center justify-center rounded-full bg-[var(--text-primary)] px-6 text-sm font-medium text-[var(--surface-base)] sm:w-auto sm:min-w-40"
                     >
                       {t("重新开始认证")}
                     </button>
@@ -977,7 +986,7 @@ const VerifyIdentityModal = ({
                       type="button"
                       onClick={() => void handleSubmit()}
                       disabled={!canSubmit || submitting || awaitingFinalRefresh}
-                      className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#202020] px-6 text-sm font-medium text-white transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:min-w-40"
+                      className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[var(--text-primary)] px-6 text-sm font-medium text-[var(--surface-base)] transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:min-w-40"
                     >
                       {submitting && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
                       {submitting

@@ -281,6 +281,31 @@ Run:
 
 Expected: 全部 exit 0。
 
+### Task 8: 处理实名向导 AI 评审意见
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/realname-stepper.tsx`
+- Modify: `frontend/src/pages/marketing/account-page.tsx`
+
+**Interfaces:**
+- Produces: 阶段值与错误字段值的单一常量来源。
+- Preserves: 实名阶段状态机、错误映射、布局与交互行为。
+
+- [x] **Step 1: 统一阶段与错误字段常量**
+
+使用 `as const` 元组派生步骤类型，使用 `REALNAME_ERROR_FIELD` 对象派生错误字段类型，消除重复魔法字符串。
+
+- [x] **Step 2: 替换新增 UI 中的硬编码颜色**
+
+使用项目已有的 `--danger`、`--text-primary`、`--text-secondary`、`--text-tertiary`、`--surface-muted` 和 `--border-strong`，不引入评审建议中不存在的变量。
+
+- [x] **Step 3: 运行聚焦测试与质量门禁**
+
+Run:
+`pnpm exec vitest run --config vitest.config.ts src/pages/marketing/__tests__/realname-stepper.test.tsx src/pages/marketing/__tests__/account-page-faceid.test.tsx --reporter=dot && pnpm i18n:check && pnpm check && git diff --check`
+
+Expected: 全部 exit 0。
+
 ## 规划门禁
 
 - 规模：M；执行模式：single_agent。
