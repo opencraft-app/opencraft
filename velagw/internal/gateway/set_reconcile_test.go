@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRecordSetReconcileFactsDoesNotRegisterSet(t *testing.T) {
@@ -158,6 +159,28 @@ func TestReconcileSetReconcileFactsRegistersAndBootstrapsPendingSet(t *testing.T
 	}
 }
 
+func TestReconcileSetFactsRetriesErrorFact(t *testing.T) {
+	upstream := newBootstrapTestServer(t)
+	defer upstream.Close()
+	store := NewMemoryStore()
+	if err := store.SaveSetReconcileFact(t.Context(), SetReconcileFact{
+		Source: "prod", Namespace: "llmgateway", Fleet: "prod", SetID: "set-a",
+		Name: "Set A", BaseURL: upstream.URL, DesiredHash: "desired",
+		Status: SetReconcileStatusError, LastError: "transient failure",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(store, nil, Options{RootUsername: "set-root", RootPassword: "Qq373866172!"})
+	result, err := svc.ReconcileSetReconcileFacts(t.Context(), ReconcileSetReconcileFactsInput{Limit: 10})
+	if err != nil || result.Managed != 1 || result.Failed != 0 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	fact, _, _ := store.GetSetReconcileFact(t.Context(), "prod", "llmgateway", "prod", "set-a")
+	if fact.Status != SetReconcileStatusManaged || fact.LastError != "" {
+		t.Fatalf("fact=%+v", fact)
+	}
+}
+
 func TestReconcileSetFactsInitializesGenerationOneRuntimeRoute(t *testing.T) {
 	upstream := newBootstrapTestServer(t)
 	defer upstream.Close()
@@ -192,6 +215,72 @@ func TestReconcileSetFactsInitializesGenerationOneRuntimeRoute(t *testing.T) {
 	}
 	route, ok, err := routeCache.GetSetRuntime(t.Context(), "set-a")
 	if err != nil || !ok || route.RuntimeGeneration != 1 || route.RouteRevision != 1 {
+		t.Fatalf("route=%+v ok=%v err=%v", route, ok, err)
+	}
+}
+
+func TestReconcileManagedNativeFactRepairsCapacityAndAdoptsGenerationOne(t *testing.T) {
+	store := NewMemoryStore()
+	cache := NewMemoryAPIKeyRouteCache(0, 10)
+	svc := NewService(store, nil, Options{KeyRouteCache: cache})
+	now := time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+	const trafficURL = "http://prod-set-a-g1-newapi-traffic:3000"
+	const image = "registry/new-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	mustSaveSet(t, store, Set{
+		ID: "set-a", Name: "Set A", BaseURL: "http://prod-set-a-newapi-admin:3000",
+		TrafficBaseURL: trafficURL, Status: SetStatusActive, RouteRevision: 1,
+	})
+	if err := store.SaveSetRuntime(t.Context(), SetRuntime{
+		SetID: "set-a", Generation: 0, Image: image, TrafficBaseURL: trafficURL,
+		Status: SetRuntimeStatusActive,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSetProvisionRequest(t.Context(), SetProvisionRequest{
+		ID: "native", Source: "prod", Namespace: "llmgateway", Fleet: "prod", SetID: "set-a",
+		RuntimeBackend: SetRuntimeBackendVelaGWSet, Status: SetProvisionStatusManaged,
+		MaxUsersPerSet: 10000, ShardRef: "shard-a", Version: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSetReconcileFact(t.Context(), SetReconcileFact{
+		Source: "prod", Namespace: "llmgateway", Fleet: "prod", SetID: "set-a",
+		Name: "Set A", BaseURL: "http://prod-set-a-newapi-admin:3000",
+		TrafficBaseURL: trafficURL, RuntimeGeneration: 1, RuntimeImage: image,
+		ShardRef: "shard-a", DesiredHash: "stable", Status: SetReconcileStatusManaged,
+		LastObservedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := svc.ReconcileSetReconcileFacts(t.Context(), ReconcileSetReconcileFactsInput{
+		Source: "prod", Namespace: "llmgateway", Fleet: "prod", Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Scanned != 1 || result.Managed != 1 {
+		t.Fatalf("reconcile result = %+v", result)
+	}
+	set, _, _ := store.GetSet(t.Context(), "set-a")
+	if set.MaxUsers != 10000 || set.ShardID != "shard-a" {
+		t.Fatalf("capacity projection was not repaired: %+v", set)
+	}
+	if set.ActiveRuntimeGeneration != 1 || set.RouteRevision != 2 {
+		t.Fatalf("runtime projection was not adopted: %+v", set)
+	}
+	g0, _, _ := store.GetSetRuntime(t.Context(), "set-a", 0)
+	g1, ok, err := store.GetSetRuntime(t.Context(), "set-a", 1)
+	if err != nil || !ok || g0.Status != SetRuntimeStatusRetired || g1.Status != SetRuntimeStatusActive {
+		t.Fatalf("g0=%+v g1=%+v ok=%v err=%v", g0, g1, ok, err)
+	}
+	if published, failed, err := svc.PublishPendingSetRuntimeRoutes(t.Context(), 10); err != nil || published != 1 || failed != 0 {
+		t.Fatalf("publish result published=%d failed=%d err=%v", published, failed, err)
+	}
+	route, ok, err := cache.GetSetRuntime(t.Context(), "set-a")
+	if err != nil || !ok || route.RuntimeGeneration != 1 || route.RouteRevision != 2 {
 		t.Fatalf("route=%+v ok=%v err=%v", route, ok, err)
 	}
 }

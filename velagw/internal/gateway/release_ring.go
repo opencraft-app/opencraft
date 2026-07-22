@@ -223,12 +223,26 @@ func (s *Service) CreateReleaseRollout(ctx context.Context, input CreateReleaseR
 		MaxParallel: 1, StopOnFailure: true, CreatedAt: now, UpdatedAt: now,
 	}
 	for index, set := range selected {
+		lastGeneration := set.LastRuntimeGeneration
+		if lastGeneration < set.ActiveRuntimeGeneration {
+			lastGeneration = set.ActiveRuntimeGeneration
+		}
+		runtimes, err := s.store.ListSetRuntimes(ctx, set.ID)
+		if err != nil {
+			return ReleaseRollout{}, err
+		}
+		for _, runtime := range runtimes {
+			if runtime.Generation > lastGeneration {
+				lastGeneration = runtime.Generation
+			}
+		}
 		batch.Runs = append(batch.Runs, SetUpgradeRun{
 			ID: fmt.Sprintf("%s-%03d", batch.ID, index+1), BatchID: batch.ID, SetID: set.ID,
 			Source: ring.Source, Namespace: ring.Namespace, Fleet: ring.Fleet, TargetImage: release.Image,
 			FromReleaseID: set.CurrentReleaseID, TargetReleaseID: release.ID, Sequence: index + 1,
-			FromGeneration: set.ActiveRuntimeGeneration, ToGeneration: set.ActiveRuntimeGeneration + 1,
-			Status: SetUpgradeRunStatusPending, DrainTimeout: input.DrainTimeout, RollbackWindow: input.RollbackWindow,
+			FromGeneration: set.ActiveRuntimeGeneration, ToGeneration: lastGeneration + 1,
+			LifecycleGeneration: set.LifecycleGeneration,
+			Status:              SetUpgradeRunStatusPending, DrainTimeout: input.DrainTimeout, RollbackWindow: input.RollbackWindow,
 			CreatedAt: now, UpdatedAt: now,
 		})
 	}

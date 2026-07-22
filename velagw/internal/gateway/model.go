@@ -230,6 +230,7 @@ type Set struct {
 	CurrentReleaseID               string    `json:"current_release_id,omitempty"`
 	TargetReleaseID                string    `json:"target_release_id,omitempty"`
 	ActiveRuntimeGeneration        int64     `json:"active_runtime_generation"`
+	LastRuntimeGeneration          int64     `json:"last_runtime_generation"`
 	RouteRevision                  int64     `json:"route_revision"`
 	CreatedAt                      time.Time `json:"created_at"`
 	UpdatedAt                      time.Time `json:"updated_at"`
@@ -304,6 +305,7 @@ type SetUpgradeRun struct {
 	Sequence                  int           `json:"sequence,omitempty"`
 	FromGeneration            int64         `json:"from_generation"`
 	ToGeneration              int64         `json:"to_generation"`
+	LifecycleGeneration       int64         `json:"lifecycle_generation"`
 	Status                    string        `json:"status"`
 	ConsecutiveProbeSuccesses int           `json:"consecutive_probe_successes"`
 	ConsecutiveProbeFailures  int           `json:"consecutive_probe_failures"`
@@ -835,6 +837,7 @@ type SetReconcileFact struct {
 	RuntimeHAError               string    `json:"runtime_ha_error,omitempty"`
 	RuntimeHACheckedAt           time.Time `json:"runtime_ha_checked_at,omitempty"`
 	DesiredHash                  string    `json:"desired_hash"`
+	ProjectionVersion            int       `json:"projection_version"`
 	Status                       string    `json:"status"`
 	LastError                    string    `json:"last_error,omitempty"`
 	LastObservedAt               time.Time `json:"last_observed_at"`
@@ -882,11 +885,12 @@ type RecordSetReconcileFactsResult struct {
 }
 
 type SetReconcileFactListOptions struct {
-	Source    string
-	Namespace string
-	Fleet     string
-	Status    string
-	Limit     int
+	Source                  string
+	Namespace               string
+	Fleet                   string
+	Status                  string
+	ProjectionVersionBefore int
+	Limit                   int
 }
 
 type ReconcileSetReconcileFactsInput struct {

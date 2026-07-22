@@ -21,6 +21,9 @@ func (s *MemoryStore) SaveSetRuntime(_ context.Context, runtime SetRuntime) erro
 	now := time.Now().UTC()
 	key := setRuntimeStoreKey(runtime.SetID, runtime.Generation)
 	if existing, ok := s.setRuntimes[key]; ok {
+		if existing.Image != runtime.Image || existing.TrafficBaseURL != runtime.TrafficBaseURL {
+			return fmt.Errorf("set runtime %s generation %d is immutable", runtime.SetID, runtime.Generation)
+		}
 		runtime.CreatedAt = existing.CreatedAt
 	} else if runtime.CreatedAt.IsZero() {
 		runtime.CreatedAt = now
@@ -31,8 +34,8 @@ func (s *MemoryStore) SaveSetRuntime(_ context.Context, runtime SetRuntime) erro
 }
 
 func (s *MemoryStore) InitializeSetRuntime(_ context.Context, setID string, generation int64, image, trafficBaseURL string, now time.Time) (SetRuntimeRouteSnapshot, bool, error) {
-	if strings.TrimSpace(setID) == "" || generation <= 0 || strings.TrimSpace(image) == "" || strings.TrimSpace(trafficBaseURL) == "" {
-		return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("initial set runtime requires set_id, positive generation, image and traffic url")
+	if strings.TrimSpace(setID) == "" || generation < 0 || strings.TrimSpace(image) == "" || strings.TrimSpace(trafficBaseURL) == "" {
+		return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("initial set runtime requires set_id, non-negative generation, image and traffic url")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -40,7 +43,45 @@ func (s *MemoryStore) InitializeSetRuntime(_ context.Context, setID string, gene
 	if !ok {
 		return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("set %q not found", setID)
 	}
-	if set.RouteRevision > 0 || set.ActiveRuntimeGeneration > 0 {
+	trafficBaseURL = strings.TrimRight(strings.TrimSpace(trafficBaseURL), "/")
+	if set.ActiveRuntimeGeneration == 0 && set.RouteRevision > 0 && generation > 0 {
+		legacyKey := setRuntimeStoreKey(setID, 0)
+		legacy, legacyOK := s.setRuntimes[legacyKey]
+		if !legacyOK {
+			return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("active runtime 0 for set %q not found", setID)
+		}
+		if strings.TrimRight(legacy.TrafficBaseURL, "/") != trafficBaseURL {
+			return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("set %q generation 0 route does not match observed generation %d", setID, generation)
+		}
+		candidateKey := setRuntimeStoreKey(setID, generation)
+		if candidate, exists := s.setRuntimes[candidateKey]; exists &&
+			(candidate.Image != image || strings.TrimRight(candidate.TrafficBaseURL, "/") != trafficBaseURL) {
+			return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("set runtime %s generation %d is immutable", setID, generation)
+		}
+		legacy.Status = SetRuntimeStatusRetired
+		legacy.UpdatedAt = now
+		s.setRuntimes[legacyKey] = legacy
+		s.setRuntimes[candidateKey] = SetRuntime{
+			SetID: setID, Generation: generation, Image: image, TrafficBaseURL: trafficBaseURL,
+			Status: SetRuntimeStatusActive, CreatedAt: now, UpdatedAt: now,
+		}
+		set.ActiveRuntimeGeneration = generation
+		if set.LastRuntimeGeneration < generation {
+			set.LastRuntimeGeneration = generation
+		}
+		set.RouteRevision++
+		set.AdminImage = image
+		set.TrafficBaseURL = trafficBaseURL
+		set.UpdatedAt = now
+		s.sets[setID] = set
+		snapshot := SetRuntimeRouteSnapshot{
+			SetID: setID, RuntimeGeneration: generation, RouteRevision: set.RouteRevision,
+			TrafficBaseURL: trafficBaseURL, Enabled: set.Status == SetStatusActive, SwitchedAt: now,
+		}
+		s.enqueueRuntimeRouteOutboxLocked(snapshot, now)
+		return snapshot, true, nil
+	}
+	if set.RouteRevision > 0 {
 		runtime, runtimeOK := s.setRuntimes[setRuntimeStoreKey(setID, set.ActiveRuntimeGeneration)]
 		if !runtimeOK {
 			return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("active runtime %d for set %q not found", set.ActiveRuntimeGeneration, setID)
@@ -51,6 +92,7 @@ func (s *MemoryStore) InitializeSetRuntime(_ context.Context, setID string, gene
 		}, false, nil
 	}
 	set.ActiveRuntimeGeneration = generation
+	set.LastRuntimeGeneration = generation
 	set.RouteRevision = 1
 	set.AdminImage = image
 	set.TrafficBaseURL = strings.TrimRight(trafficBaseURL, "/")
@@ -89,6 +131,35 @@ func (s *MemoryStore) ListSetRuntimes(_ context.Context, setID string) ([]SetRun
 	return result, nil
 }
 
+func (s *MemoryStore) TransitionSetTrafficState(_ context.Context, setID, status string, now time.Time) (Set, SetRuntimeRouteSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	set, ok := s.sets[setID]
+	if !ok {
+		return Set{}, SetRuntimeRouteSnapshot{}, fmt.Errorf("set %q not found", setID)
+	}
+	runtime, ok := s.setRuntimes[setRuntimeStoreKey(setID, set.ActiveRuntimeGeneration)]
+	if !ok || strings.TrimSpace(runtime.TrafficBaseURL) == "" {
+		return Set{}, SetRuntimeRouteSnapshot{}, fmt.Errorf("active runtime %d for set %q not found", set.ActiveRuntimeGeneration, setID)
+	}
+	if set.Status == status {
+		return set, SetRuntimeRouteSnapshot{}, nil
+	}
+	set.Status = status
+	set.RouteRevision++
+	if set.RouteRevision <= 0 {
+		set.RouteRevision = 1
+	}
+	set.UpdatedAt = now
+	s.sets[setID] = set
+	snapshot := SetRuntimeRouteSnapshot{
+		SetID: setID, RuntimeGeneration: runtime.Generation, RouteRevision: set.RouteRevision,
+		TrafficBaseURL: runtime.TrafficBaseURL, Enabled: status != SetStatusDisabled, SwitchedAt: now,
+	}
+	s.enqueueRuntimeRouteOutboxLocked(snapshot, now)
+	return set, snapshot, nil
+}
+
 func (s *MemoryStore) CreateSetUpgradeBatch(_ context.Context, batch SetUpgradeBatch) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -96,6 +167,16 @@ func (s *MemoryStore) CreateSetUpgradeBatch(_ context.Context, batch SetUpgradeB
 		return fmt.Errorf("set upgrade batch %q already exists", batch.ID)
 	}
 	for _, run := range batch.Runs {
+		set, ok := s.sets[run.SetID]
+		if !ok || set.Status != SetStatusActive {
+			return fmt.Errorf("set %q is not active", run.SetID)
+		}
+		if run.ToGeneration <= set.LastRuntimeGeneration {
+			return fmt.Errorf("set %q runtime generation %d was already allocated", run.SetID, run.ToGeneration)
+		}
+		if run.LifecycleGeneration != set.LifecycleGeneration {
+			return fmt.Errorf("set %q lifecycle changed while creating upgrade", run.SetID)
+		}
 		for _, existing := range s.setUpgradeRuns {
 			if existing.SetID == run.SetID && !setUpgradeRunTerminal(existing.Status) {
 				return ErrSetUpgradeAlreadyActive
@@ -107,6 +188,10 @@ func (s *MemoryStore) CreateSetUpgradeBatch(_ context.Context, batch SetUpgradeB
 	s.setUpgradeBatches[batch.ID] = stored
 	for _, run := range batch.Runs {
 		s.setUpgradeRuns[run.ID] = run
+		set := s.sets[run.SetID]
+		set.LastRuntimeGeneration = run.ToGeneration
+		set.UpdatedAt = batch.UpdatedAt
+		s.sets[run.SetID] = set
 	}
 	return nil
 }
@@ -174,6 +259,13 @@ func (s *MemoryStore) TryAcquireSetUpgradeRun(_ context.Context, id, owner strin
 	if run.LeaseOwner != "" && run.LeaseOwner != owner && run.LeaseUntil.After(now) {
 		return SetUpgradeRun{}, false, nil
 	}
+	set, exists := s.sets[run.SetID]
+	if !exists {
+		return SetUpgradeRun{}, false, fmt.Errorf("set %q not found", run.SetID)
+	}
+	if set.Status != SetStatusActive || set.LifecycleGeneration != run.LifecycleGeneration {
+		return SetUpgradeRun{}, false, fmt.Errorf("set %q lifecycle changed during upgrade", run.SetID)
+	}
 	if run.Status == SetUpgradeRunStatusPending {
 		batch, ok := s.setUpgradeBatches[run.BatchID]
 		if !ok {
@@ -205,10 +297,6 @@ func (s *MemoryStore) TryAcquireSetUpgradeRun(_ context.Context, id, owner strin
 	run.LeaseUntil = now.Add(ttl)
 	if run.Status == SetUpgradeRunStatusPending {
 		run.Status = SetUpgradeRunStatusUpgradingMaster
-		set, exists := s.sets[run.SetID]
-		if !exists {
-			return SetUpgradeRun{}, false, fmt.Errorf("set %q not found", run.SetID)
-		}
 		set.AdminWritesPaused = true
 		set.AdminWritesPauseReason = "set upgrade " + run.ID
 		set.AdminWritesPausedAt = now
@@ -566,6 +654,10 @@ func (s *MemoryStore) claimedUpgradeRunLocked(claimed SetUpgradeRun, expected st
 	}
 	if run.LeaseOwner == "" || run.LeaseOwner != claimed.LeaseOwner || !run.LeaseUntil.After(now) {
 		return SetUpgradeRun{}, fmt.Errorf("upgrade run lease is not owned or expired")
+	}
+	set, ok := s.sets[run.SetID]
+	if !ok || set.Status != SetStatusActive || set.LifecycleGeneration != run.LifecycleGeneration {
+		return SetUpgradeRun{}, fmt.Errorf("set %q lifecycle changed during upgrade", run.SetID)
 	}
 	return run, nil
 }

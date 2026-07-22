@@ -68,10 +68,10 @@ flowchart TB
 | `llmgateway-worker` `core` | Set facts、容量水位、渠道漂移、准入检查和控制面后台任务 | 是 |
 | `llmgateway-worker` `byok` | 合并同一用户的最新 BYOK 意图并异步下发目标 Set | 是 |
 | `llmgateway-worker` `observer` | 分页刷新租户、权益和用量观测投影 | 是 |
-| `velagwset-provisioner` | 认领容量请求，创建数据库、运行 Secret 和 `VelaGWSet`，分阶段提交事实 | 否，通过 control 内部 API |
+| `velagwset-provisioner` | 认领容量请求，并作为 `VelaGWSet.spec` 唯一业务写入者执行创建、逐 Set 蓝绿升级和下线 | 否，通过 control 内部 API |
 | `velagwset-controller` | 仅根据单个 `VelaGWSet` 收敛 Deployment、Service、PDB 和 status | 否，也不读取 Secret |
-| `llmgateway-set-manager` | 兼容存量 `LLMFleet.spec.sets[]` 请求；新 Set 不再走该路径 | 是 |
-| `llmgateway-runtime-cleaner` | 在蓝绿排空窗口后清理旧 traffic runtime | 是 |
+| `llmgateway-set-manager` | 仅兼容存量 `LLMFleet.spec.sets[]`；原生 Fleet 必须关闭其 upgrade/decommission writer | 是 |
+| `llmgateway-runtime-cleaner` | Set 下线且 Kubernetes runtime 消失后，凭短期 capability 清理独占 MySQL 数据库和 Redis DB | 是 |
 | `new-api master/slave` | Set 内管理、计费、渠道选择和模型转发 | 使用所属 Shard 数据源 |
 
 ## 资源模型
@@ -85,6 +85,9 @@ flowchart TB
 - Set 水位通过 `max_users / warn_users / reserved_users` 描述；新租户选择健康且水位最低的 Set，容量不足时生成新的 provision request。
 - `LLMFleet` 保存 Shard、连接池、HA 和调度策略；每个动态 Set 使用独立、不可变身份的 `VelaGWSet` CR，不再回写 `LLMFleet.spec.sets[]`，避免大数组冲突和残留资源。
 - 新 Set 先以 admin-only 形态完成建库、bootstrap 和配置，状态由 `pending → provisioning → created → configured → managed` 推进；traffic 只在 `configured` 后启用，最终通过 PDB/Ready 门禁才允许准入。
+- `active_runtime_generation`、`last_runtime_generation`、`route_revision` 和 `lifecycle_generation` 只能由专用事务命令推进，健康检查、容量刷新等通用 Set 更新不得改写；runtime generation 永不复用，回滚也只增加 route revision。
+- provision fact 带投影版本。worker 会按游标修复旧 `managed` fact，把 `max_users`、Shard 和真实 runtime generation 回填到本地投影，不依赖人工 SQL。
+- Shard 的 Redis 范围统一使用半开区间 `[redis_db_start, redis_db_limit)`；分配、清理 Job 和 capability 授权使用同一语义。
 - Shard 扩容从运营台提交意图，不直接手填事实。Terraform/Agent 创建 MySQL、Redis 和 Secret，set-manager 从 LLMFleet 回传真实投影，worker 核对资源并等待冒烟验证；只有完整流程结束的 Shard 才应加入容量策略。
 
 ### 租户、密钥与权益
@@ -419,7 +422,7 @@ at `test/e2e/mockllm/config.json`, and `cluster.compose.yaml` exposes it as:
 
 ```yaml
 mock_llm:
-  api_key: sk-mockllm-local
+  api_key: sk-mockllm-local # pragma: allowlist secret -- deterministic local-only fixture
   base_url: http://mockllm:8080
   model: llmgw-mock-chat
 ```

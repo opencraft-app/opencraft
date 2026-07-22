@@ -89,6 +89,31 @@ func TestCreateSetUpgradeBatchAllocatesNextGenerationAndRejectsConcurrentRun(t *
 	}
 }
 
+func TestCreateSetUpgradeBatchNeverReusesRetiredGenerationAfterRollback(t *testing.T) {
+	store := NewMemoryStore()
+	mustSaveSet(t, store, Set{
+		ID: "set-a", Status: SetStatusActive, ActiveRuntimeGeneration: 12, RouteRevision: 22,
+	})
+	for _, runtime := range []SetRuntime{
+		{SetID: "set-a", Generation: 12, Image: "old@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", TrafficBaseURL: "http://set-a-g12:3000", Status: SetRuntimeStatusActive},
+		{SetID: "set-a", Generation: 13, Image: testUpgradeImage, TrafficBaseURL: "http://set-a-g13:3000", Status: SetRuntimeStatusRetired},
+	} {
+		if err := store.SaveSetRuntime(t.Context(), runtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewService(store, nil, Options{})
+	batch, err := svc.CreateSetUpgradeBatch(t.Context(), CreateSetUpgradeBatchInput{
+		SetIDs: []string{"set-a"}, TargetImage: "next@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := batch.Runs[0].ToGeneration; got != 14 {
+		t.Fatalf("to_generation=%d want 14", got)
+	}
+}
+
 func TestCreateSetUpgradeBatchRequiresDigestPinnedImage(t *testing.T) {
 	store := NewMemoryStore()
 	mustSaveSet(t, store, Set{ID: "set-a", Status: SetStatusActive})
@@ -112,6 +137,52 @@ func TestSetUpgradeRunLeaseIsExclusive(t *testing.T) {
 	}
 	if _, ok, err := store.TryAcquireSetUpgradeRun(t.Context(), run.ID, "manager-b", time.Minute, first.LeaseUntil.Add(time.Second)); err != nil || !ok {
 		t.Fatalf("expired claim takeover ok=%v err=%v", ok, err)
+	}
+}
+
+func TestSetUpgradeRunStopsWhenSetLifecycleChanges(t *testing.T) {
+	store := NewMemoryStore()
+	mustSaveSet(t, store, Set{
+		ID: "set-a", Status: SetStatusActive, LifecycleGeneration: 4,
+		ActiveRuntimeGeneration: 1, LastRuntimeGeneration: 1,
+	})
+	if err := store.SaveSetRuntime(t.Context(), SetRuntime{
+		SetID: "set-a", Generation: 1, Image: "old@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		TrafficBaseURL: "http://set-a-g1:3000", Status: SetRuntimeStatusActive,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(store, nil, Options{})
+	batch, err := svc.CreateSetUpgradeBatch(t.Context(), CreateSetUpgradeBatchInput{
+		SetIDs: []string{"set-a"}, TargetImage: testUpgradeImage,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, ok, err := store.TryAcquireSetUpgradeRun(t.Context(), batch.Runs[0].ID, "manager", time.Minute, time.Now().UTC())
+	if err != nil || !ok {
+		t.Fatalf("claim ok=%v err=%v", ok, err)
+	}
+	run, err = store.CompleteSetUpgradeMaster(t.Context(), run, true, "", time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err = store.CompleteSetUpgradeCompatibility(t.Context(), run, true, "", time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, _, _ := store.GetSet(t.Context(), "set-a")
+	set.Status = SetStatusDraining
+	set.LifecycleGeneration++
+	if err := store.SaveSet(t.Context(), set); err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.PrepareSetUpgradeRuntime(t.Context(), run, SetRuntime{
+		SetID: "set-a", Generation: run.ToGeneration, Image: run.TargetImage,
+		TrafficBaseURL: "http://set-a-g2:3000",
+	}, time.Now().UTC())
+	if err == nil || !strings.Contains(err.Error(), "lifecycle changed") {
+		t.Fatalf("prepare error=%v", err)
 	}
 }
 
@@ -344,6 +415,92 @@ func TestRuntimeRouteOutboxPublishesIdempotently(t *testing.T) {
 	published, failed, err = svc.PublishPendingSetRuntimeRoutes(t.Context(), 10)
 	if err != nil || published != 0 || failed != 0 {
 		t.Fatalf("second publish result published=%d failed=%d err=%v", published, failed, err)
+	}
+}
+
+func TestRuntimeRouteOutboxRejectsEqualRevisionWithDifferentPayload(t *testing.T) {
+	store := NewMemoryStore()
+	cache := NewMemoryAPIKeyRouteCache(time.Minute, 10)
+	current := SetRuntimeRouteSnapshot{
+		SetID: "set-a", RuntimeGeneration: 13, RouteRevision: 21,
+		TrafficBaseURL: "http://set-a-g13:3000", Enabled: true,
+	}
+	if applied, err := cache.SetSetRuntime(t.Context(), current); err != nil || !applied {
+		t.Fatalf("seed cache applied=%v err=%v", applied, err)
+	}
+	now := time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC)
+	conflicting := current
+	conflicting.RuntimeGeneration = 12
+	conflicting.TrafficBaseURL = "http://set-a-g12:3000"
+	store.setRuntimeRouteOutbox["conflict"] = SetRuntimeRouteOutbox{
+		ID: "conflict", SetID: "set-a", RouteRevision: 21, Snapshot: conflicting,
+		Status: SetRuntimeRouteOutboxStatusPending, CreatedAt: now, UpdatedAt: now,
+	}
+	svc := NewService(store, nil, Options{KeyRouteCache: cache})
+	published, failed, err := svc.PublishPendingSetRuntimeRoutes(t.Context(), 10)
+	if err == nil || published != 0 || failed != 1 {
+		t.Fatalf("published=%d failed=%d err=%v", published, failed, err)
+	}
+	item := store.setRuntimeRouteOutbox["conflict"]
+	if item.Status != SetRuntimeRouteOutboxStatusPending || !strings.Contains(item.LastError, "conflict") {
+		t.Fatalf("outbox item=%+v", item)
+	}
+}
+
+func TestTransitionSetTrafficStatePublishesDisabledRuntimeRoute(t *testing.T) {
+	store := NewMemoryStore()
+	cache := NewMemoryAPIKeyRouteCache(time.Minute, 10)
+	mustSaveSet(t, store, Set{
+		ID: "set-a", Status: SetStatusActive, ActiveRuntimeGeneration: 3,
+		LastRuntimeGeneration: 3, RouteRevision: 7,
+	})
+	if err := store.SaveSetRuntime(t.Context(), SetRuntime{
+		SetID: "set-a", Generation: 3, Image: testUpgradeImage,
+		TrafficBaseURL: "http://set-a-g3:3000", Status: SetRuntimeStatusActive,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(store, nil, Options{KeyRouteCache: cache})
+	set, err := svc.TransitionSetTrafficState(t.Context(), "set-a", SetStatusDisabled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set.Status != SetStatusDisabled || set.RouteRevision != 8 {
+		t.Fatalf("set=%+v", set)
+	}
+	if published, failed, err := svc.PublishPendingSetRuntimeRoutes(t.Context(), 10); err != nil || published != 1 || failed != 0 {
+		t.Fatalf("publish result published=%d failed=%d err=%v", published, failed, err)
+	}
+	route, ok, err := cache.GetSetRuntime(t.Context(), "set-a")
+	if err != nil || !ok || route.Enabled || route.RouteRevision != 8 {
+		t.Fatalf("route=%+v ok=%v err=%v", route, ok, err)
+	}
+}
+
+func TestSaveSetCannotRewriteLifecycleOwnedFields(t *testing.T) {
+	store := NewMemoryStore()
+	mustSaveSet(t, store, Set{
+		ID: "set-a", Name: "before", Status: SetStatusActive, LifecycleGeneration: 7,
+		ActiveRuntimeGeneration: 3, LastRuntimeGeneration: 5, RouteRevision: 11,
+	})
+	stale, _, err := store.GetSet(t.Context(), "set-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale.Name = "after"
+	stale.LifecycleGeneration = 9
+	stale.ActiveRuntimeGeneration = 4
+	stale.LastRuntimeGeneration = 6
+	stale.RouteRevision = 12
+	if err := store.SaveSet(t.Context(), stale); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := store.GetSet(t.Context(), "set-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "after" || got.LifecycleGeneration != 7 || got.ActiveRuntimeGeneration != 3 || got.LastRuntimeGeneration != 5 || got.RouteRevision != 11 {
+		t.Fatalf("set=%+v", got)
 	}
 }
 

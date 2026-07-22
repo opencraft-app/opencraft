@@ -819,7 +819,17 @@ func (s *MySQLStore) StartSetDecommission(ctx context.Context, input SetDecommis
 	}
 	var status string
 	var generation int64
-	if err := tx.QueryRowContext(ctx, `SELECT status, lifecycle_generation FROM llmgateway_sets WHERE id = ?`, input.SetID).Scan(&status, &generation); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT status, lifecycle_generation FROM llmgateway_sets WHERE id = ? FOR UPDATE`, input.SetID).Scan(&status, &generation); err != nil {
+		return SetDecommissionJob{}, err
+	}
+	var activeUpgradeID string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id FROM llmgateway_set_upgrade_runs
+		WHERE set_id=? AND status NOT IN ('completed','failed','rolled_back')
+		LIMIT 1 FOR UPDATE
+	`, input.SetID).Scan(&activeUpgradeID); err == nil {
+		return SetDecommissionJob{}, fmt.Errorf("set %q has active upgrade %q", input.SetID, activeUpgradeID)
+	} else if !errors.Is(err, sql.ErrNoRows) {
 		return SetDecommissionJob{}, err
 	}
 	if status != SetStatusActive && status != SetStatusDisabled {

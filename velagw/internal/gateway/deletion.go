@@ -516,7 +516,7 @@ func (s *Service) AuthorizeRuntimeCleanup(ctx context.Context, input RuntimeClea
 		return RuntimeCleanupAuthorization{}, fmt.Errorf("runtime lease no longer matches cleanup payload")
 	}
 	redisDB, err := strconv.Atoi(input.RedisDB)
-	if err != nil || input.RedisDBLimit <= 0 || redisDB < input.RedisDBStart || redisDB >= input.RedisDBStart+input.RedisDBLimit {
+	if err != nil || input.RedisDBLimit <= input.RedisDBStart || redisDB < input.RedisDBStart || redisDB >= input.RedisDBLimit {
 		return RuntimeCleanupAuthorization{}, fmt.Errorf("redis db is outside the shard cleanup range")
 	}
 	return RuntimeCleanupAuthorization{Authorized: true, ExpiresAt: job.ClaimLeaseUntil}, nil

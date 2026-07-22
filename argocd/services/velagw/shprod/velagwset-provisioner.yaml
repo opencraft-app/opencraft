@@ -110,6 +110,10 @@ spec:
               value: 60s
             - name: LLMGATEWAY_VELAGWSET_PROVISION_LIMIT
               value: "50"
+            - name: LLMGATEWAY_VELAGWSET_UPGRADE_ENABLED
+              value: "false"
+            - name: LLMGATEWAY_VELAGWSET_DECOMMISSION_ENABLED
+              value: "false"
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:

@@ -58,12 +58,26 @@ func (s *Service) CreateSetUpgradeBatch(ctx context.Context, input CreateSetUpgr
 		if !ok || set.Status != SetStatusActive {
 			return SetUpgradeBatch{}, fmt.Errorf("set %q is not active", setID)
 		}
+		lastGeneration := set.LastRuntimeGeneration
+		if lastGeneration < set.ActiveRuntimeGeneration {
+			lastGeneration = set.ActiveRuntimeGeneration
+		}
+		runtimes, err := s.store.ListSetRuntimes(ctx, setID)
+		if err != nil {
+			return SetUpgradeBatch{}, err
+		}
+		for _, runtime := range runtimes {
+			if runtime.Generation > lastGeneration {
+				lastGeneration = runtime.Generation
+			}
+		}
 		batch.Runs = append(batch.Runs, SetUpgradeRun{
 			ID: fmt.Sprintf("%s-%03d", batch.ID, index+1), BatchID: batch.ID, SetID: setID,
 			Source: input.Source, Namespace: input.Namespace, Fleet: input.Fleet,
 			TargetImage: input.TargetImage, FromGeneration: set.ActiveRuntimeGeneration,
 			FromReleaseID: set.CurrentReleaseID, TargetReleaseID: input.TargetReleaseID, Sequence: index + 1,
-			ToGeneration: set.ActiveRuntimeGeneration + 1, Status: SetUpgradeRunStatusPending,
+			ToGeneration: lastGeneration + 1, LifecycleGeneration: set.LifecycleGeneration,
+			Status:       SetUpgradeRunStatusPending,
 			DrainTimeout: input.DrainTimeout, RollbackWindow: input.RollbackWindow,
 			CreatedAt: now, UpdatedAt: now,
 		})
@@ -132,6 +146,18 @@ func deriveSetUpgradeBatchStatus(runs []SetUpgradeRun, stopOnFailure bool) strin
 	return SetUpgradeBatchStatusRunning
 }
 
+func (s *Service) TransitionSetTrafficState(ctx context.Context, setID, status string) (Set, error) {
+	setID = strings.TrimSpace(setID)
+	status = strings.TrimSpace(strings.ToLower(status))
+	switch status {
+	case SetStatusActive, SetStatusDraining, SetStatusDisabled:
+	default:
+		return Set{}, fmt.Errorf("invalid set status %q", status)
+	}
+	set, _, err := s.store.TransitionSetTrafficState(ctx, setID, status, s.nowUTC())
+	return set, err
+}
+
 func (s *Service) PublishPendingSetRuntimeRoutes(ctx context.Context, limit int) (int, int, error) {
 	if s.options.KeyRouteCache == nil {
 		return 0, 0, fmt.Errorf("key route cache is unavailable")
@@ -153,6 +179,8 @@ func (s *Service) PublishPendingSetRuntimeRoutes(ctx context.Context, limit int)
 				publishErr = getErr
 			} else if !ok || current.RouteRevision < item.RouteRevision {
 				publishErr = fmt.Errorf("runtime route revision %d was not applied", item.RouteRevision)
+			} else if current.RouteRevision == item.RouteRevision && !setRuntimeSnapshotsEqual(current, item.Snapshot) {
+				publishErr = fmt.Errorf("runtime route revision %d conflicts with the published payload", item.RouteRevision)
 			}
 		}
 		if publishErr != nil {
@@ -200,17 +228,12 @@ func (s *Service) BackfillLegacySetRuntimeRoutes(ctx context.Context, limit int)
 		if baseURL == "" {
 			continue
 		}
-		if set.RouteRevision <= 0 {
-			set.RouteRevision = 1
-			if err := s.store.SaveSet(ctx, set); err != nil {
-				return backfilled, err
-			}
-		}
-		runtime, ok, err := s.store.GetSetRuntime(ctx, set.ID, set.ActiveRuntimeGeneration)
+		var snapshot SetRuntimeRouteSnapshot
+		runtime, runtimeOK, err := s.store.GetSetRuntime(ctx, set.ID, set.ActiveRuntimeGeneration)
 		if err != nil {
 			return backfilled, err
 		}
-		if !ok {
+		if set.RouteRevision > 0 && !runtimeOK {
 			runtime = SetRuntime{
 				SetID: set.ID, Generation: set.ActiveRuntimeGeneration, Image: firstNonEmpty(set.AdminImage, "legacy"),
 				TrafficBaseURL: baseURL, Status: SetRuntimeStatusActive,
@@ -218,14 +241,20 @@ func (s *Service) BackfillLegacySetRuntimeRoutes(ctx context.Context, limit int)
 			if err := s.store.SaveSetRuntime(ctx, runtime); err != nil {
 				return backfilled, err
 			}
+			runtimeOK = true
 		}
-		if runtime.TrafficBaseURL == "" {
-			runtime.TrafficBaseURL = baseURL
+		if set.RouteRevision > 0 && runtimeOK {
+			snapshot = SetRuntimeRouteSnapshot{
+				SetID: set.ID, RuntimeGeneration: runtime.Generation, RouteRevision: set.RouteRevision,
+				TrafficBaseURL: runtime.TrafficBaseURL, Enabled: set.Status == SetStatusActive, SwitchedAt: set.UpdatedAt,
+			}
+		} else {
+			snapshot, _, err = s.store.InitializeSetRuntime(ctx, set.ID, set.ActiveRuntimeGeneration, firstNonEmpty(set.AdminImage, "legacy"), baseURL, s.nowUTC())
+			if err != nil {
+				return backfilled, err
+			}
 		}
-		if _, err := s.options.KeyRouteCache.SetSetRuntime(ctx, SetRuntimeRouteSnapshot{
-			SetID: set.ID, RuntimeGeneration: runtime.Generation, RouteRevision: set.RouteRevision,
-			TrafficBaseURL: runtime.TrafficBaseURL, Enabled: true, SwitchedAt: set.UpdatedAt,
-		}); err != nil {
+		if _, err := s.options.KeyRouteCache.SetSetRuntime(ctx, snapshot); err != nil {
 			return backfilled, err
 		}
 		backfilled++

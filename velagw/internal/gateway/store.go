@@ -47,6 +47,7 @@ type Store interface {
 	InitializeSetRuntime(context.Context, string, int64, string, string, time.Time) (SetRuntimeRouteSnapshot, bool, error)
 	GetSetRuntime(context.Context, string, int64) (SetRuntime, bool, error)
 	ListSetRuntimes(context.Context, string) ([]SetRuntime, error)
+	TransitionSetTrafficState(context.Context, string, string, time.Time) (Set, SetRuntimeRouteSnapshot, error)
 	SaveNewAPIRelease(context.Context, NewAPIRelease) error
 	GetNewAPIRelease(context.Context, string) (NewAPIRelease, bool, error)
 	ListNewAPIReleases(context.Context) ([]NewAPIRelease, error)
@@ -480,18 +481,13 @@ func (s *MemoryStore) SaveSet(_ context.Context, set Set) error {
 		if set.AdmissionCheckedAt.IsZero() {
 			set.AdmissionCheckedAt = existing.AdmissionCheckedAt
 		}
-		if set.LifecycleGeneration < existing.LifecycleGeneration {
-			set.LifecycleGeneration = existing.LifecycleGeneration
-		}
+		set.LifecycleGeneration = existing.LifecycleGeneration
 		if set.AdminImage == "" {
 			set.AdminImage = existing.AdminImage
 		}
-		if set.ActiveRuntimeGeneration == 0 {
-			set.ActiveRuntimeGeneration = existing.ActiveRuntimeGeneration
-		}
-		if set.RouteRevision < existing.RouteRevision {
-			set.RouteRevision = existing.RouteRevision
-		}
+		set.ActiveRuntimeGeneration = existing.ActiveRuntimeGeneration
+		set.LastRuntimeGeneration = existing.LastRuntimeGeneration
+		set.RouteRevision = existing.RouteRevision
 	} else if set.CreatedAt.IsZero() {
 		set.CreatedAt = now
 	}

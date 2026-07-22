@@ -156,7 +156,8 @@ func (s *MemoryStore) CreateReleaseRolloutPlan(_ context.Context, ring ReleaseRi
 	for _, run := range batch.Runs {
 		set, found := s.sets[run.SetID]
 		if !found || set.Status != SetStatusActive || set.ReleaseRingID != ring.ID || set.TargetReleaseID != "" ||
-			set.CurrentReleaseID != run.FromReleaseID || set.ActiveRuntimeGeneration != run.FromGeneration {
+			set.CurrentReleaseID != run.FromReleaseID || set.ActiveRuntimeGeneration != run.FromGeneration ||
+			set.LifecycleGeneration != run.LifecycleGeneration || run.ToGeneration <= set.LastRuntimeGeneration {
 			return fmt.Errorf("set %q changed while creating release rollout", run.SetID)
 		}
 		for _, existing := range s.setUpgradeRuns {
@@ -172,6 +173,7 @@ func (s *MemoryStore) CreateReleaseRolloutPlan(_ context.Context, ring ReleaseRi
 		s.setUpgradeRuns[run.ID] = run
 		set := s.sets[run.SetID]
 		set.TargetReleaseID = run.TargetReleaseID
+		set.LastRuntimeGeneration = run.ToGeneration
 		set.UpdatedAt = rollout.UpdatedAt
 		s.sets[run.SetID] = set
 	}

@@ -237,7 +237,7 @@ func resourceSpecs() map[string]resourceSpec {
 					colPrimary("id", "Set ID", "string"),
 					colEditable("name", "Name", "string"),
 					colEditable("base_url", "Base URL", "string"),
-					colEditable("status", "Status", "string"),
+					col("status", "Status", "string"),
 					col("setup", "Setup", "bool"),
 					col("admin_user_id", "Admin User", "number"),
 					col("admin_username", "Admin Username", "string"),
@@ -694,15 +694,6 @@ func (s *Service) patchResourceRow(ctx context.Context, resourceID string, rowID
 		if value, ok := values["base_url"]; ok {
 			set.BaseURL = strings.TrimRight(stringResourceValue(value), "/")
 		}
-		if value, ok := values["status"]; ok {
-			status := strings.TrimSpace(strings.ToLower(stringResourceValue(value)))
-			switch status {
-			case SetStatusActive, SetStatusDraining, SetStatusDisabled:
-				set.Status = status
-			default:
-				return fmt.Errorf("invalid set status %q", status)
-			}
-		}
 		if value, ok := values["max_users"]; ok {
 			set.MaxUsers = nonNegativeResourceInt(value)
 		}
@@ -790,22 +781,23 @@ func (s *Service) runResourceAction(ctx context.Context, resourceID string, acti
 	case "sets":
 		switch actionID {
 		case "enable", "drain", "disable":
-			set, ok, err := s.store.GetSet(ctx, rowID)
-			if err != nil {
-				return err
-			}
-			if !ok {
-				return ErrResourceRowNotFound
-			}
+			status := ""
 			switch actionID {
 			case "enable":
-				set.Status = SetStatusActive
+				status = SetStatusActive
 			case "drain":
-				set.Status = SetStatusDraining
+				status = SetStatusDraining
 			case "disable":
-				set.Status = SetStatusDisabled
+				status = SetStatusDisabled
 			}
-			return s.store.SaveSet(ctx, set)
+			if _, err := s.TransitionSetTrafficState(ctx, rowID, status); err != nil {
+				return err
+			}
+			if s.options.KeyRouteCache != nil {
+				_, _, err := s.PublishPendingSetRuntimeRoutes(ctx, 100)
+				return err
+			}
+			return nil
 		case "bootstrap":
 			_, err := s.BootstrapSet(ctx, rowID)
 			return err

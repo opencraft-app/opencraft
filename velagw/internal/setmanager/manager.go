@@ -31,6 +31,7 @@ type Config struct {
 	ProbeModel                  string
 	RuntimeCleanerImage         string
 	UpgradeEnabled              bool
+	DecommissionEnabled         *bool
 	RegressionHoldUpgradeStatus string
 	RegressionUpgradeOwner      string
 }
@@ -166,7 +167,8 @@ func LoadConfigFromEnv() Config {
 		ProbeInterval:               time.Duration(envInt("LLMGATEWAY_SET_UPGRADE_PROBE_INTERVAL_SECONDS", 10)) * time.Second,
 		ProbeModel:                  envString("LLMGATEWAY_SET_UPGRADE_PROBE_MODEL", "auto"),
 		RuntimeCleanerImage:         strings.TrimSpace(os.Getenv("LLMGATEWAY_SET_MANAGER_RUNTIME_CLEANER_IMAGE")),
-		UpgradeEnabled:              true,
+		UpgradeEnabled:              envBool("LLMGATEWAY_SET_MANAGER_UPGRADE_ENABLED", true),
+		DecommissionEnabled:         boolPointer(envBool("LLMGATEWAY_SET_MANAGER_DECOMMISSION_ENABLED", true)),
 		RegressionHoldUpgradeStatus: strings.TrimSpace(os.Getenv("LLMGATEWAY_REGRESSION_HOLD_UPGRADE_STATUS")),
 		RegressionUpgradeOwner:      strings.TrimSpace(os.Getenv("LLMGATEWAY_REGRESSION_UPGRADE_OWNER")),
 	}
@@ -230,9 +232,13 @@ func runLLMFleetOnce(ctx context.Context, cfg Config, control ControlClient, kub
 			return syncFleetFacts(ctx, cfg, control, updated)
 		}
 	}
-	fleet, decommissionChanged, err := reconcileFleetDecommission(ctx, cfg, control, kube, fleet)
-	if err != nil {
-		return err
+	decommissionChanged := false
+	if cfg.DecommissionEnabled == nil || *cfg.DecommissionEnabled {
+		var err error
+		fleet, decommissionChanged, err = reconcileFleetDecommission(ctx, cfg, control, kube, fleet)
+		if err != nil {
+			return err
+		}
 	}
 	if err := syncFleetFacts(ctx, cfg, control, fleet); err != nil {
 		return err
@@ -957,6 +963,17 @@ func envInt(key string, fallback int) int {
 	}
 	return fallback
 }
+
+func envBool(key string, fallback bool) bool {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+func boolPointer(value bool) *bool { return &value }
 
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {

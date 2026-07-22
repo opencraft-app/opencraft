@@ -244,22 +244,33 @@ func (s *MySQLStore) CreateReleaseRolloutPlan(ctx context.Context, ring ReleaseR
 	if currentRing.Status != ReleaseRingStatusSteady {
 		return fmt.Errorf("release ring %q is not steady", ring.ID)
 	}
-	for _, run := range batch.Runs {
+	for index := range batch.Runs {
+		run := &batch.Runs[index]
 		var setStatus, releaseRingID, currentReleaseID, targetReleaseID string
-		var activeGeneration int64
+		var activeGeneration, lastGeneration, lifecycleGeneration, maxRuntimeGeneration int64
 		if err := tx.QueryRowContext(ctx, `
-			SELECT status,release_ring_id,current_release_id,target_release_id,active_runtime_generation
+			SELECT status,release_ring_id,current_release_id,target_release_id,active_runtime_generation,last_runtime_generation,lifecycle_generation
 			FROM llmgateway_sets WHERE id=? FOR UPDATE
-		`, run.SetID).Scan(&setStatus, &releaseRingID, &currentReleaseID, &targetReleaseID, &activeGeneration); err != nil {
+		`, run.SetID).Scan(&setStatus, &releaseRingID, &currentReleaseID, &targetReleaseID, &activeGeneration, &lastGeneration, &lifecycleGeneration); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("set %q not found", run.SetID)
 			}
 			return err
 		}
 		if setStatus != SetStatusActive || releaseRingID != ring.ID || targetReleaseID != "" ||
-			currentReleaseID != run.FromReleaseID || activeGeneration != run.FromGeneration {
+			currentReleaseID != run.FromReleaseID || activeGeneration != run.FromGeneration || lifecycleGeneration != run.LifecycleGeneration {
 			return fmt.Errorf("set %q changed while creating release rollout", run.SetID)
 		}
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(generation),0) FROM llmgateway_set_runtimes WHERE set_id=?`, run.SetID).Scan(&maxRuntimeGeneration); err != nil {
+			return err
+		}
+		if maxRuntimeGeneration > lastGeneration {
+			lastGeneration = maxRuntimeGeneration
+		}
+		if activeGeneration > lastGeneration {
+			lastGeneration = activeGeneration
+		}
+		run.ToGeneration = lastGeneration + 1
 		var activeID string
 		err := tx.QueryRowContext(ctx, `
 			SELECT id FROM llmgateway_set_upgrade_runs
@@ -283,13 +294,13 @@ func (s *MySQLStore) CreateReleaseRolloutPlan(ctx context.Context, ring ReleaseR
 	for _, run := range batch.Runs {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO llmgateway_set_upgrade_runs (`+setUpgradeRunColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, setUpgradeRunValues(run)...); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE llmgateway_sets SET target_release_id=?,updated_at=? WHERE id=?
-		`, run.TargetReleaseID, rollout.UpdatedAt, run.SetID); err != nil {
+			UPDATE llmgateway_sets SET target_release_id=?,last_runtime_generation=?,updated_at=? WHERE id=?
+		`, run.TargetReleaseID, run.ToGeneration, rollout.UpdatedAt, run.SetID); err != nil {
 			return err
 		}
 	}

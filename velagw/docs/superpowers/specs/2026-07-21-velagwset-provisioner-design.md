@@ -155,14 +155,15 @@ shell tracing，设置失败重试上限和 TTL。Provisioner 日志和错误上
    递增 writer epoch。服务端从此不再向旧 endpoint 返回该 Fleet 的新 request。
 2. OrbStack 以空 Fleet 验证 request 到 managed 的完整链路和重启恢复。
 3. 不立即停掉整个旧 CronJob。服务端 backend 隔离会关闭它对 velagwset request
-   的读取和写入；它继续负责 legacy LLMFleet 的 shard projection、fact repair、
-   upgrade、decommission 和 traffic floor。VelaGWSet 初始 fact/traffic floor由新
-   Provisioner负责；VelaGWSet 后续 upgrade/decommission 由各自业务 handler patch
-   CR spec。北京 legacy Fleet 已清空，因此旧职责不会写入新增 Set。
+   的读取和写入；它只继续负责 legacy LLMFleet。原生 Fleet 显式设置
+   `LLMGATEWAY_SET_MANAGER_UPGRADE_ENABLED=false` 和
+   `LLMGATEWAY_SET_MANAGER_DECOMMISSION_ENABLED=false`。VelaGWSet 初始 fact、
+   蓝绿 upgrade 和 decommission 都由常驻 provisioner 消费 control lease 后修改
+   单个 CR；Controller 仍然只负责子资源收敛。
 4. 北京创建一个人工 canary request；确认只出现 `VelaGWSet`，且
    `LLMFleet.spec.sets[]` 保持不变。
 5. 在外部 ArgoCD 期望状态中保留旧 manager 但使用只允许 legacy backend 的
-   scoped token；后续替换完 legacy upgrade/decommission 后再删除整个 CronJob。
+   scoped token；原生 lifecycle 默认关闭，只有对应环境 manifest 显式开启。
 6. 确认旧 manager 的 legacy provisioning endpoint 对 velagwset backend 返回空，且
    新 provisioner 已持有当前 writer epoch 后开启 `reconcile_set_capacity`。
 7. 触发最小水位 2，验证两个 Set 逐一 managed 后再允许正常自动扩容。
@@ -177,7 +178,8 @@ provisioner 不提供回写 `LLMFleet.spec.sets[]` 的兼容分支。
   Job attempt、取消竞争补偿和字段所有权。
 - HTTP 测试：claim/renew/release、取消后的旧 lease、非法状态迁移。
 - fake-client 测试：Observe CR、bootstrap Job、runtime Secret、owner reference、
-  Managed 切换、AdminReady/Ready 分离、零副本 PDB prune 和 serving fact evidence。
+  Managed 切换、AdminReady/Ready 分离、Green runtime 追加、指定代际排空、带 CR UID
+  的下线许可、runtime 消失后才创建 cleanup Job，以及 serving fact evidence。
 - OrbStack E2E：空环境创建容量缺口，自动得到 request、database、Secret、CR、
   admin bootstrap、traffic 扩容和 managed Set；中途重启 provisioner/controller
   不重复创建资源。

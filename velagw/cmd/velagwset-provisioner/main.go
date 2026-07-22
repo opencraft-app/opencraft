@@ -54,10 +54,42 @@ func main() {
 		LeaseTTL: durationEnv("LLMGATEWAY_VELAGWSET_PROVISION_LEASE", time.Minute),
 		Limit:    intEnv("LLMGATEWAY_VELAGWSET_PROVISION_LIMIT", 50),
 	}
+	upgradeRunner := provisioner.UpgradeRunner{
+		Control: control,
+		Reconciler: provisioner.UpgradeReconciler{
+			Client: kubeClient, Control: control, HTTPClient: httpClient,
+			ProbeModel: envOr("LLMGATEWAY_SET_UPGRADE_PROBE_MODEL", "auto"),
+		},
+		Source: envOr("LLMGATEWAY_SET_SOURCE", "kro"), Namespace: namespace, Fleet: fleet, Owner: owner,
+		LeaseTTL: durationEnv("LLMGATEWAY_VELAGWSET_UPGRADE_LEASE", 15*time.Minute),
+		Limit:    intEnv("LLMGATEWAY_VELAGWSET_UPGRADE_LIMIT", 20),
+	}
+	upgradeEnabled := boolEnv("LLMGATEWAY_VELAGWSET_UPGRADE_ENABLED", false)
+	decommissionRunner := &provisioner.DecommissionRunner{
+		Control: control,
+		Reconciler: provisioner.DecommissionReconciler{
+			Client: kubeClient, Control: control, CleanerImage: bootstrapImage,
+			ControlURL: controlURL, ImagePullSecret: os.Getenv("LLMGATEWAY_VELAGWSET_IMAGE_PULL_SECRET"),
+		},
+		Source: envOr("LLMGATEWAY_SET_SOURCE", "kro"), Namespace: namespace, Fleet: fleet, Owner: owner,
+		LeaseTTL: durationEnv("LLMGATEWAY_VELAGWSET_DECOMMISSION_LEASE", 15*time.Minute),
+		Limit:    intEnv("LLMGATEWAY_VELAGWSET_DECOMMISSION_LIMIT", 10),
+	}
+	decommissionEnabled := boolEnv("LLMGATEWAY_VELAGWSET_DECOMMISSION_ENABLED", false)
 	interval := durationEnv("LLMGATEWAY_VELAGWSET_PROVISION_INTERVAL", 5*time.Second)
 	for {
 		if err := runner.RunOnce(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("velagwset provision cycle: %v", err)
+		}
+		if upgradeEnabled {
+			if err := upgradeRunner.RunOnce(ctx); err != nil && ctx.Err() == nil {
+				log.Printf("velagwset upgrade cycle: %v", err)
+			}
+		}
+		if decommissionEnabled {
+			if err := decommissionRunner.RunOnce(ctx); err != nil && ctx.Err() == nil {
+				log.Printf("velagwset decommission cycle: %v", err)
+			}
 		}
 		select {
 		case <-ctx.Done():

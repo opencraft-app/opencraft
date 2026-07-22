@@ -19,7 +19,7 @@ func TestValidateTargetRejectsUnsafeDatabaseNames(t *testing.T) {
 }
 
 func TestValidateTargetRejectsRedisDBOutsideFrozenRange(t *testing.T) {
-	for _, redisDB := range []int{9, 42} {
+	for _, redisDB := range []int{9, 32, 42} {
 		err := ValidateTarget(Target{DatabaseName: "newapi_set_a", RedisDB: redisDB, RedisDBStart: 10, RedisDBLimit: 32})
 		if err == nil {
 			t.Fatalf("redis db %d should be rejected", redisDB)
