@@ -1,13 +1,19 @@
 FROM golang:1.25-alpine AS builder
 
 WORKDIR /src
+RUN apk add --no-cache bash curl git jq
+COPY .gitignore ./.gitignore
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY cmd ./cmd
 COPY internal ./internal
-COPY test/e2e/set-upgrade-soak ./test/e2e/set-upgrade-soak
-COPY test/regression ./test/regression
+COPY deploy ./deploy
+COPY docs ./docs
+COPY k8s ./k8s
+COPY openspec ./openspec
+COPY test ./test
+RUN git init --quiet && go test ./...
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway ./cmd/llmgateway \
     && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-control ./cmd/llmgateway-control \
     && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/llmgateway-traffic ./cmd/llmgateway-traffic \
@@ -28,6 +34,7 @@ WORKDIR /src/web
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN corepack enable && pnpm install --frozen-lockfile
 COPY web ./
+RUN pnpm test
 RUN pnpm run build
 
 FROM alpine:3.20
