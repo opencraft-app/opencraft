@@ -233,7 +233,7 @@ func TestReconcileManagedNativeFactRepairsCapacityAndAdoptsGenerationOne(t *test
 		TrafficBaseURL: trafficURL, Status: SetStatusActive, RouteRevision: 1,
 	})
 	if err := store.SaveSetRuntime(t.Context(), SetRuntime{
-		SetID: "set-a", Generation: 0, Image: image, TrafficBaseURL: trafficURL,
+		SetID: "set-a", Generation: 0, Image: "legacy", TrafficBaseURL: "http://prod-set-a-newapi-admin:3000",
 		Status: SetRuntimeStatusActive,
 	}); err != nil {
 		t.Fatal(err)
@@ -250,6 +250,7 @@ func TestReconcileManagedNativeFactRepairsCapacityAndAdoptsGenerationOne(t *test
 		Name: "Set A", BaseURL: "http://prod-set-a-newapi-admin:3000",
 		TrafficBaseURL: trafficURL, RuntimeGeneration: 1, RuntimeImage: image,
 		ShardRef: "shard-a", DesiredHash: "stable", Status: SetReconcileStatusManaged,
+		RuntimeHAStatus: SetRuntimeHAHealthy, RuntimeHADesiredReplicas: 2, RuntimeHAReadyReplicas: 2,
 		LastObservedAt: now,
 	}); err != nil {
 		t.Fatal(err)

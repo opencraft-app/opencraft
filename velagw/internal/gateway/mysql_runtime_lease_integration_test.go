@@ -640,7 +640,7 @@ func TestMySQLManagedSetAdoptsObservedGenerationOneFromMatchingLegacyRoute(t *te
 		t.Fatal(err)
 	}
 	if err := store.SaveSetRuntime(ctx, SetRuntime{
-		SetID: "set-a", Generation: 0, Image: image, TrafficBaseURL: trafficURL,
+		SetID: "set-a", Generation: 0, Image: "legacy", TrafficBaseURL: "http://set-a-admin:3000",
 		Status: SetRuntimeStatusActive,
 	}); err != nil {
 		t.Fatal(err)

@@ -49,27 +49,27 @@ func (s *MySQLStore) InitializeSetRuntime(ctx context.Context, setID string, gen
 		return SetRuntimeRouteSnapshot{}, false, err
 	}
 	defer tx.Rollback()
-	var status string
+	var status, baseURL, declaredTrafficBaseURL string
 	var activeGeneration, lastGeneration, routeRevision int64
 	var updatedAt time.Time
 	if err := tx.QueryRowContext(ctx, `
-		SELECT status, active_runtime_generation, last_runtime_generation, route_revision, updated_at
+		SELECT status, base_url, traffic_base_url, active_runtime_generation, last_runtime_generation, route_revision, updated_at
 		FROM llmgateway_sets WHERE id=? FOR UPDATE
-	`, setID).Scan(&status, &activeGeneration, &lastGeneration, &routeRevision, &updatedAt); err != nil {
+	`, setID).Scan(&status, &baseURL, &declaredTrafficBaseURL, &activeGeneration, &lastGeneration, &routeRevision, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("set %q not found", setID)
 		}
 		return SetRuntimeRouteSnapshot{}, false, err
 	}
 	if activeGeneration == 0 && routeRevision > 0 {
-		var legacyURL string
+		legacy := SetRuntime{SetID: setID, Generation: 0}
 		if err := tx.QueryRowContext(ctx, `
-			SELECT traffic_base_url FROM llmgateway_set_runtimes
+			SELECT image,traffic_base_url FROM llmgateway_set_runtimes
 			WHERE set_id=? AND generation=0 FOR UPDATE
-		`, setID).Scan(&legacyURL); err != nil {
+		`, setID).Scan(&legacy.Image, &legacy.TrafficBaseURL); err != nil {
 			return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("load generation 0 runtime for set %q: %w", setID, err)
 		}
-		if strings.TrimRight(strings.TrimSpace(legacyURL), "/") != trafficBaseURL {
+		if !canAdoptObservedSetRuntime(Set{BaseURL: baseURL, TrafficBaseURL: declaredTrafficBaseURL}, legacy, trafficBaseURL) {
 			return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("set %q generation 0 route does not match observed generation %d", setID, generation)
 		}
 		if _, err := tx.ExecContext(ctx, `

@@ -12,6 +12,29 @@ import (
 
 const testUpgradeImage = "example.com/new-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
+func TestCanAdoptObservedSetRuntime(t *testing.T) {
+	set := Set{BaseURL: "http://set-a-admin:3000", TrafficBaseURL: "http://set-a-g1:3000"}
+	tests := []struct {
+		name     string
+		legacy   SetRuntime
+		observed string
+		want     bool
+	}{
+		{name: "same route", legacy: SetRuntime{Generation: 0, Image: "old", TrafficBaseURL: "http://set-a-g1:3000/"}, observed: "http://set-a-g1:3000", want: true},
+		{name: "legacy admin to declared traffic", legacy: SetRuntime{Generation: 0, Image: "legacy", TrafficBaseURL: "http://set-a-admin:3000"}, observed: "http://set-a-g1:3000", want: true},
+		{name: "unrelated legacy route", legacy: SetRuntime{Generation: 0, Image: "legacy", TrafficBaseURL: "http://other:3000"}, observed: "http://set-a-g1:3000", want: false},
+		{name: "non legacy admin route", legacy: SetRuntime{Generation: 0, Image: "old", TrafficBaseURL: "http://set-a-admin:3000"}, observed: "http://set-a-g1:3000", want: false},
+		{name: "undeclared observed route", legacy: SetRuntime{Generation: 0, Image: "legacy", TrafficBaseURL: "http://set-a-admin:3000"}, observed: "http://set-a-g2:3000", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := canAdoptObservedSetRuntime(set, test.legacy, test.observed); got != test.want {
+				t.Fatalf("canAdoptObservedSetRuntime()=%v want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestSetUpgradeProbeQuotaIsOverriddenForDedicatedUser(t *testing.T) {
 	var calls []string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -50,7 +50,7 @@ func (s *MemoryStore) InitializeSetRuntime(_ context.Context, setID string, gene
 		if !legacyOK {
 			return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("active runtime 0 for set %q not found", setID)
 		}
-		if strings.TrimRight(legacy.TrafficBaseURL, "/") != trafficBaseURL {
+		if !canAdoptObservedSetRuntime(set, legacy, trafficBaseURL) {
 			return SetRuntimeRouteSnapshot{}, false, fmt.Errorf("set %q generation 0 route does not match observed generation %d", setID, generation)
 		}
 		candidateKey := setRuntimeStoreKey(setID, generation)

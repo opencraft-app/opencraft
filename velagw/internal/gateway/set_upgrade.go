@@ -17,6 +17,18 @@ var (
 
 const setUpgradeProbeQuota = 100_000_000
 
+func canAdoptObservedSetRuntime(set Set, legacy SetRuntime, observedTrafficBaseURL string) bool {
+	legacyURL := strings.TrimRight(strings.TrimSpace(legacy.TrafficBaseURL), "/")
+	observedURL := strings.TrimRight(strings.TrimSpace(observedTrafficBaseURL), "/")
+	if legacyURL == observedURL {
+		return true
+	}
+	return legacy.Generation == 0 &&
+		strings.EqualFold(strings.TrimSpace(legacy.Image), "legacy") &&
+		legacyURL == strings.TrimRight(strings.TrimSpace(set.BaseURL), "/") &&
+		observedURL == strings.TrimRight(strings.TrimSpace(set.TrafficBaseURL), "/")
+}
+
 func (s *Service) CreateSetUpgradeBatch(ctx context.Context, input CreateSetUpgradeBatchInput) (SetUpgradeBatch, error) {
 	if !digestPinnedImagePattern.MatchString(strings.TrimSpace(input.TargetImage)) {
 		return SetUpgradeBatch{}, fmt.Errorf("target_image must be pinned by sha256 digest")
