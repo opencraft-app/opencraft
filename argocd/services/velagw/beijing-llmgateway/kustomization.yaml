@@ -5,6 +5,9 @@ namespace: llmgateway
 
 resources:
   - workloads.yaml
+  - llmfleet-rgd.yaml
+  - velagwset-crd.yaml
+  - velagwset-delete-policy.yaml
   - velagwset-controller.yaml
   - velagwset-provisioner.yaml
 
