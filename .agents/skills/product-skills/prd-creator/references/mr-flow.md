@@ -11,7 +11,7 @@ PRD 已定稿、Demo/原型说明已补齐且 TAPD 父单已创建或复用后�
 - 先读取仓库根 `AGENTS.md` 和 `.agents/skills/gongfeng/SKILL.md`，遵守仓库的分支、提交、敏感信息和工蜂调用约定。
 - 确认目标仓库是 `git@git.woa.com:wisp/mono2.git`，目标分支是最新 `origin/master`。默认使用 `codex/prd-<short-title>` 作为来源分支。
 - 先检查 `git status`。如果当前工作区存在与本次 PRD 无关的修改，基于最新 `origin/master` 创建独立 worktree，不得 stash、覆盖、提交或夹带用户的其他改动。
-- 默认只纳入本次目标 PRD：`product/prd/YYYY-MM-DD-<short-title>.md`。只有当前需求明确要求同时修改产品 Skill 或直接相关文档时，才能把这些文件一并纳入同一 MR。
+- 默认只纳入本次目标 PRD：`wiki/prd-docs/YYYY-MM-DD-<short-title>.md`。只有当前需求明确要求同时修改产品 Skill 或直接相关文档时，才能把这些文件一并纳入同一 MR。
 - 如果 TAPD 父单已经创建，把其完整详情链接保留在 PRD 中，并在 MR 描述或 `tapd_info` 中关联对应 TAPD 短 ID。
 
 ### 提交前必须展示并等待确认

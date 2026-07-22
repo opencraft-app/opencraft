@@ -1056,7 +1056,7 @@ Not-tested: 待实现后填写
 - Modify: `frontend/src/pages/marketing/__tests__/hermes-agent-automations-panel.test.ts`
 - Modify: `frontend/openspec/proposal.md`
 - Modify: `frontend/openspec/spec.md`
-- Modify: `product/prd/2026-07-14-automation-skill-invocation.md`
+- Modify: `wiki/prd-docs/2026-07-14-automation-skill-invocation.md`
 
 - [x] 选择、切换或清除 Skill 时，任务说明始终保持用户当前填写内容，不再自动生成、替换或清空。
 - [x] 删除 SkillHub 提示词读取、兜底生成及系统提示词来源跟踪代码。
@@ -1072,7 +1072,7 @@ Not-tested: 待实现后填写
 - Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
 - Modify: `frontend/src/i18n/generated/*.json`
 - Modify: `frontend/openspec/spec.md`
-- Modify: `product/prd/2026-07-14-automation-skill-invocation.md`
+- Modify: `wiki/prd-docs/2026-07-14-automation-skill-invocation.md`
 
 - [x] 在“调用技能”后增加帮助图标，Tooltip 文案为“在此处选择技能后，Agent 会在执行任务前加载该技能，相比仅在任务说明中通过提示词要求调用技能更加稳定。”
 - [x] Tooltip 沿用项目白底轻边框样式，并同时支持鼠标 hover 与键盘 focus。
@@ -1088,7 +1088,7 @@ Not-tested: 待实现后填写
 - Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
 - Modify: `frontend/src/i18n/generated/*.json`
 - Modify: `frontend/openspec/spec.md`
-- Modify: `product/prd/2026-07-14-automation-skill-invocation.md`
+- Modify: `wiki/prd-docs/2026-07-14-automation-skill-invocation.md`
 
 - [x] Tooltip 精确调整为“在此处选择技能后，Agent 会在执行任务前加载该技能，相比仅在任务说明中通过提示词要求调用技能更加稳定。”
 - [x] 保持帮助图标、hover、键盘 focus 与可访问性行为不变。

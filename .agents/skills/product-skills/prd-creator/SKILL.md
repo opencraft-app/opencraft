@@ -156,7 +156,7 @@ PRD 定稿后，如果用户需要 TAPD 产品父单，读取 `references/tapd-w
 **先判断本次交付范围**：
 
 - `完整前置`（用户要求建 TAPD、提评审、走完整产品前置，或未特别限定）：PRD 已定稿、Demo/原型说明已补齐且 TAPD 父单已创建或复用后，读取 `references/mr-flow.md`，把 PRD 提交到 mono2 远端工蜂仓库的 MR。此时工蜂 MR 是完成门禁；仅写出本地 Markdown、仅创建 TAPD、仅提交 commit 或仅 push 分支都不算完整落库。
-- `仅 PRD`（用户明确只要一份 PRD、只梳理需求、不建 TAPD、不提 MR）：PRD 实际写入 mono2 `product/prd/YYYY-MM-DD-<short-title>.md` 并返回路径即视为完成，不强制创建 TAPD 或工蜂 MR。在完成总结里把 TAPD、工蜂 MR 标为"未触发（用户仅要求 PRD）"，并说明后续如需评审可再走完整前置。
+- `仅 PRD`（用户明确只要一份 PRD、只梳理需求、不建 TAPD、不提 MR）：PRD 实际写入 mono2 `wiki/prd-docs/YYYY-MM-DD-<short-title>.md` 并返回路径即视为完成，不强制创建 TAPD 或工蜂 MR。在完成总结里把 TAPD、工蜂 MR 标为"未触发（用户仅要求 PRD）"，并说明后续如需评审可再走完整前置。
 
 不确定属于哪种范围时，按 `完整前置` 处理，但可在进入 MR 前用一个选择题向用户确认是否需要建 TAPD / 提评审。
 
