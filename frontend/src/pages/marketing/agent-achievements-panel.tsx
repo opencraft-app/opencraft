@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Anvil,
@@ -734,12 +734,15 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
   const [error, setError] = useState<AchievementPanelError | null>(null);
   const [visibility, setVisibility] = useState<VisibilityFilter>("all");
   const [category, setCategory] = useState("all");
+  const latestRequestId = useRef(0);
 
   const load = useCallback(async (forceRescan = false) => {
     if (!botId) {
       return;
     }
 
+    const requestId = latestRequestId.current + 1;
+    latestRequestId.current = requestId;
     setError(null);
     if (forceRescan) {
       setRefreshing(true);
@@ -748,14 +751,20 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
     }
     try {
       const next = await fetchHermesAchievements(botsRepository, botId, { forceRescan });
-      setSnapshot(next);
+      if (latestRequestId.current === requestId) {
+        setSnapshot(next);
+      }
     } catch (loadError) {
-      const nextError = achievementPanelErrorFromUnknown(loadError);
-      console.warn("Failed to load Hermes achievements", loadError);
-      setError(nextError);
+      if (latestRequestId.current === requestId) {
+        const nextError = achievementPanelErrorFromUnknown(loadError);
+        console.warn("Failed to load Hermes achievements", loadError);
+        setError(nextError);
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (latestRequestId.current === requestId) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [botId, botsRepository]);
 
@@ -764,6 +773,9 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
     setVisibility("all");
     setCategory("all");
     void load(false);
+    return () => {
+      latestRequestId.current += 1;
+    };
   }, [botId, load]);
 
   const achievements = snapshot?.achievements ?? [];

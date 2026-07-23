@@ -51,3 +51,36 @@
 - 计划保留 1 个可独立验收的任务，文件归属明确，不使用多 Agent，不存在共享状态并发写入。
 - `feai` CLI 在当前环境不可用，因此 usage context 与 runtime summary 尚未写入；按工作流作为非阻塞降级，待用户确认计划后手工刷新 runtime summary 再进入实现。
 - 规划门禁结论：**有条件通过**；唯一条件是用户确认本计划，确认后进入实现阶段。
+
+---
+
+# 成就页 P1 稳定性修复 Implementation Plan
+
+**Goal:** 修复成就页请求竞态、命令无超时、payload 校验不足和自定义 Hermes 安装路径不一致问题。
+
+**Architecture:** 保持现有 UI、Repository 接口和插件桥接结构，仅在数据层收紧契约、在命令层统一根目录、在组件层增加最新请求保护。每个行为先通过聚焦测试复现，再写最小实现。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4、Testing Library、BotRepository。
+
+## Global Constraints
+
+- 超时固定为 `300_000` 毫秒。
+- 不新增依赖、公共 API、文案或视觉变化。
+- 数组中的单条非法成就继续过滤；仅字段整体缺失或非数组时报错。
+
+## 任务清单
+
+- [x] 收紧 payload 契约，并为成就命令增加 5 分钟超时。
+- [x] 从 `HERMES_HOME` 统一派生插件目录与 Python 虚拟环境路径。
+- [x] 使用请求序号防止旧 Agent 请求覆盖当前成就状态。
+- [x] 补充非法 payload、超时、自定义路径和 Agent 切换竞态测试。
+- [x] 完成聚焦测试、类型检查、i18n 检查和差异检查。
+
+## 验证结果
+
+- 聚焦 Vitest：2 个测试文件、17 个用例通过。
+- `pnpm check`：通过。
+- `pnpm i18n:check`：通过，1925/1925 条翻译完整。
+- `git diff --check`：通过。
+
+---
