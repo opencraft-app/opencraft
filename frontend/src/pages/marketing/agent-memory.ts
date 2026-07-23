@@ -29,7 +29,11 @@ export interface HermesMemorySnapshot {
 
 const PYTHON_MEMORY_READER = String.raw`import json, os
 from pathlib import Path
-import yaml
+
+try:
+    import yaml
+except ModuleNotFoundError:
+    raise SystemExit("PyYAML is unavailable. Repair the Hermes runtime environment and try again.")
 
 root = Path(os.environ["HERMES_ROOT"])
 config = root / "config.yaml"

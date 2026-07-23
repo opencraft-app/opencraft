@@ -117,6 +117,13 @@
   - REFACTOR：只抽取局部 helper，避免扩大大型设置页重构。
   - 验收：目标 Vitest、`pnpm check`、`pnpm i18n:check`、`git diff --check` 和本地页面 smoke 全部通过。
 
+- [x] 4. 以 TDD 为 PyYAML 缺失场景补充明确的运行环境错误提示。
+  - 角色：Developer + Reviewer
+  - 影响文件：`src/pages/marketing/agent-memory.ts`、`src/pages/marketing/__tests__/agent-memory.test.ts`
+  - RED：先断言读取命令捕获 `ModuleNotFoundError` 并输出可操作的 Hermes runtime 修复提示。
+  - GREEN：仅包装 `yaml` 导入，不改变标准 Hermes venv、系统 Python fallback 或读取契约。
+  - 验收：聚焦 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check` 通过。
+
 ## 约束
 
 - 超时固定为 `120_000` 毫秒。

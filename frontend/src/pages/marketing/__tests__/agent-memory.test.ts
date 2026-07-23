@@ -45,6 +45,15 @@ describe("buildHermesMemoryReadCommand", () => {
     expect(command).not.toContain("re.search");
   });
 
+  it("reports how to recover when PyYAML is unavailable", () => {
+    const command = buildHermesMemoryReadCommand();
+
+    expect(command).toContain("except ModuleNotFoundError");
+    expect(command).toContain(
+      "PyYAML is unavailable. Repair the Hermes runtime environment and try again.",
+    );
+  });
+
   it("only treats missing files as empty and lets other read failures surface", () => {
     const command = buildHermesMemoryReadCommand();
 
