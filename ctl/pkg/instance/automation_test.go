@@ -175,8 +175,8 @@ func TestListAutomationSchedulesBackfillsGatewayAuthMaterialForRunningInstance(t
 	if len(sandbox.processCalls) != 2 {
 		t.Fatalf("expected onboard and gateway patch commands to run, got %d", len(sandbox.processCalls))
 	}
-	if aiGateway.revokedKeyID != "key_old" {
-		t.Fatalf("expected previous key to be revoked, got %s", aiGateway.revokedKeyID)
+	if aiGateway.revokedKeyID != "" {
+		t.Fatalf("LLMGateway user key must survive automation backfill, got revoked key %s", aiGateway.revokedKeyID)
 	}
 }
 

@@ -495,12 +495,6 @@ func TestCreateExternalKeyRejectsUnusablePurposeBindingStates(t *testing.T) {
 		{name: "route pending", status: APIKeyStatusRoutePending, wantError: ErrAPIKeyProvisioning},
 		{name: "error", status: APIKeyStatusError, wantError: ErrAPIKeyStateUnavailable},
 		{name: "legacy disabled", status: APIKeyStatusLegacyDisabled, wantError: ErrAPIKeyStateUnavailable},
-		{
-			name:      "active missing material",
-			status:    APIKeyStatusActive,
-			mutate:    func(binding *APIKeyBinding) { binding.ExternalKey = "" },
-			wantError: ErrAPIKeyMaterialMissing,
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -521,6 +515,82 @@ func TestCreateExternalKeyRejectsUnusablePurposeBindingStates(t *testing.T) {
 				t.Fatal("state error leaked external key")
 			}
 		})
+	}
+}
+
+func TestCreateExternalKeyRotatesActivePurposeBindingWithoutStoredMaterial(t *testing.T) {
+	var upstreamCreates atomic.Int32
+	var upstreamDeletes atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/user/login":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 42, "username": "sgw-user-1"}})
+		case "GET /api/user/token":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": "user-access-token"})
+		case "DELETE /api/token/7":
+			upstreamDeletes.Add(1)
+			writeTestJSON(t, w, map[string]any{"success": true})
+		case "POST /api/token/":
+			upstreamCreates.Add(1)
+			writeTestJSON(t, w, map[string]any{"success": true})
+		case "GET /api/token/search":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"items": []map[string]any{{"id": 8, "name": r.URL.Query().Get("keyword")}}}})
+		case "POST /api/token/8/key":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-upstream-new"}})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	material, err := generateExternalKeyV2(bytes.NewReader(bytes.Repeat([]byte{4}, externalKeyRandomBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	memory := NewMemoryStore()
+	prepareReadyKeyIssuanceUser(t, memory, upstream.URL)
+	store := &legacyPurposeBindingStore{
+		Store: memory,
+		binding: APIKeyBinding{
+			ExternalKeyHash: material.ExternalKeyHash,
+			ExternalKeyID:   material.ExternalKeyID,
+			SecretHash:      material.SecretHash,
+			KeyVersion:      material.Version,
+			RouteSlot:       material.RouteSlot,
+			Purpose:         "default",
+			SetID:           "set-a",
+			UserID:          "user-1",
+			UpstreamKey:     "sk-upstream-old",
+			UpstreamKeyID:   7,
+			Status:          APIKeyStatusActive,
+		},
+	}
+	svc := NewService(store, nil, Options{KeyRouteCache: NewMemoryAPIKeyRouteCache(0, 100)})
+
+	rotated, err := svc.createExternalKey(t.Context(), "user-1", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rotated.ExternalKey == "" || rotated.ExternalKeyID == material.ExternalKeyID {
+		t.Fatalf("rotated key = %+v, want fresh material", rotated)
+	}
+	if upstreamDeletes.Load() != 1 || upstreamCreates.Load() != 1 {
+		t.Fatalf("upstream deletes=%d creates=%d, want 1 each", upstreamDeletes.Load(), upstreamCreates.Load())
+	}
+	if !store.deleted.Load() {
+		t.Fatal("legacy binding was not deleted")
+	}
+
+	reused, err := svc.createExternalKey(t.Context(), "user-1", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reused.ExternalKeyID != rotated.ExternalKeyID || reused.ExternalKey != rotated.ExternalKey {
+		t.Fatalf("reused key = %+v, want rotated key id=%q", reused, rotated.ExternalKeyID)
+	}
+	if upstreamDeletes.Load() != 1 || upstreamCreates.Load() != 1 {
+		t.Fatalf("repeat request changed upstream deletes=%d creates=%d", upstreamDeletes.Load(), upstreamCreates.Load())
 	}
 }
 
@@ -928,6 +998,33 @@ type fixedPurposeLookupStore struct {
 
 func (s *fixedPurposeLookupStore) GetAPIKeyBindingByUserPurpose(context.Context, string, string) (APIKeyBinding, bool, error) {
 	return s.binding, true, nil
+}
+
+type legacyPurposeBindingStore struct {
+	Store
+	binding APIKeyBinding
+	deleted atomic.Bool
+}
+
+func (s *legacyPurposeBindingStore) GetAPIKeyBindingByUserPurpose(ctx context.Context, userID, purpose string) (APIKeyBinding, bool, error) {
+	if !s.deleted.Load() && s.binding.UserID == userID && s.binding.Purpose == purpose {
+		return s.binding, true, nil
+	}
+	return s.Store.GetAPIKeyBindingByUserPurpose(ctx, userID, purpose)
+}
+
+func (s *legacyPurposeBindingStore) GetAPIKeyBindingByExternalKeyID(ctx context.Context, keyID string) (APIKeyBinding, bool, error) {
+	if !s.deleted.Load() && s.binding.ExternalKeyID == keyID {
+		return s.binding, true, nil
+	}
+	return s.Store.GetAPIKeyBindingByExternalKeyID(ctx, keyID)
+}
+
+func (s *legacyPurposeBindingStore) DeleteAPIKeyBindingByExternalKeyID(ctx context.Context, keyID string) error {
+	if s.binding.ExternalKeyID == keyID {
+		s.deleted.Store(true)
+	}
+	return s.Store.DeleteAPIKeyBindingByExternalKeyID(ctx, keyID)
 }
 
 type failingRoutePublicationCache struct {

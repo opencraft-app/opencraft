@@ -2075,7 +2075,7 @@ func (s *Service) createExternalKey(ctx context.Context, externalUserID string, 
 	if err != nil {
 		return APIKeyBinding{}, err
 	}
-	if key, ok, err := s.getExternalKeyByPurpose(ctx, externalUserID, purpose); err != nil || ok {
+	if key, ok, err := s.getOrRotateExternalKeyByPurpose(ctx, externalUserID, purpose); err != nil || ok {
 		return key, err
 	}
 	binding, err := traceGatewayValue(ctx, "llmgateway.ensure_user_binding", func(spanCtx context.Context) (UserBinding, error) {
@@ -2244,6 +2244,30 @@ func (s *Service) getExternalKeyByPurpose(ctx context.Context, externalUserID, p
 	}
 }
 
+func (s *Service) getOrRotateExternalKeyByPurpose(ctx context.Context, externalUserID, purpose string) (APIKeyBinding, bool, error) {
+	key, ok, err := s.getExternalKeyByPurpose(ctx, externalUserID, purpose)
+	if err == nil || !errors.Is(err, ErrAPIKeyMaterialMissing) {
+		return key, ok, err
+	}
+
+	stale, found, lookupErr := s.store.GetAPIKeyBindingByUserPurpose(
+		ctx,
+		strings.TrimSpace(externalUserID),
+		canonicalAPIKeyPurpose(purpose),
+	)
+	if lookupErr != nil || !found {
+		return APIKeyBinding{}, false, lookupErr
+	}
+	// Another request may have completed the rotation after the first lookup.
+	if stale.Status != APIKeyStatusActive || validateStoredExternalKey(stale) == nil {
+		return s.getExternalKeyByPurpose(ctx, externalUserID, purpose)
+	}
+	if err := s.RevokeExternalKey(ctx, stale.ExternalKeyID); err != nil {
+		return APIKeyBinding{}, false, fmt.Errorf("revoke key without stored material: %w", err)
+	}
+	return s.getExternalKeyByPurpose(ctx, externalUserID, purpose)
+}
+
 func (s *Service) activateAPIKeyBinding(ctx context.Context, externalKeyID string) (APIKeyBinding, error) {
 	binding, err := s.store.TransitionAPIKeyBinding(ctx, externalKeyID, APIKeyStatusRoutePending, APIKeyStatusActive, "", 0, "", s.nowUTC())
 	if err == nil || !errors.Is(err, ErrAPIKeyStateConflict) {
@@ -2332,6 +2356,9 @@ func (s *Service) RevokeExternalKey(ctx context.Context, externalKeyID string) (
 		if err := s.deleteCachedTrafficRoute(ctx, binding); err != nil {
 			return err
 		}
+		if err := s.deleteUpstreamAPIKey(ctx, binding); err != nil {
+			return err
+		}
 	}
 	if err := s.store.DeleteAPIKeyBindingByExternalKeyID(ctx, externalKeyID); err != nil {
 		return err
@@ -2351,6 +2378,44 @@ func (s *Service) RevokeExternalKey(ctx context.Context, externalKeyID string) (
 		if err := s.deleteCachedTrafficRoute(ctx, binding); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (s *Service) deleteUpstreamAPIKey(ctx context.Context, binding APIKeyBinding) error {
+	if binding.UpstreamKeyID <= 0 {
+		return nil
+	}
+	userBinding, ok, err := s.store.GetUserBinding(ctx, binding.UserID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("user binding %q not found", binding.UserID)
+	}
+	if userBinding.UpstreamUserID <= 0 {
+		return fmt.Errorf("upstream user id is required for user %q", binding.UserID)
+	}
+	if userBinding.SetID != binding.SetID {
+		return fmt.Errorf("api key set %q does not match user binding set %q", binding.SetID, userBinding.SetID)
+	}
+	set, ok, err := s.store.GetSet(ctx, binding.SetID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("set %q not found", binding.SetID)
+	}
+	client := s.newAPIClient(set.BaseURL)
+	if _, err := client.Login(ctx, userBinding.Username, userBinding.Password); err != nil {
+		return fmt.Errorf("login upstream user before key revoke: %w", err)
+	}
+	accessToken, err := client.GenerateAccessToken(ctx, userBinding.UpstreamUserID)
+	if err != nil {
+		return fmt.Errorf("generate upstream access token before key revoke: %w", err)
+	}
+	if err := client.DeleteUserToken(ctx, userBinding.UpstreamUserID, accessToken, binding.UpstreamKeyID); err != nil {
+		return fmt.Errorf("delete upstream api key: %w", err)
 	}
 	return nil
 }

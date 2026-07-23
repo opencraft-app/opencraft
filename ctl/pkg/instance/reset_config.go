@@ -32,14 +32,14 @@ func (l *logic) ResetInstanceConfig(ctx pctx.Context, instanceID string) (*trans
 
 	previousKeyID := strings.TrimSpace(entity.AiGatewayKeyID)
 	if previousKeyID != "" && previousKeyID != apiKeyResp.KeyID {
-		if err := l.revokeAiGatewayApiKey(ctx, previousKeyID); err != nil && !isAiGatewayKeyNotFound(err) {
-			_ = l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
+		if err := l.revokeGatewayAPIKey(ctx, backend, previousKeyID); err != nil {
+			_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
 			return nil, fmt.Errorf("revoke previous ai-gateway key after config reset: %w", err)
 		}
 	}
 
 	if err := l.persistAiGatewayKeyIDWithStatuses(ctx, entity, apiKeyResp.KeyID, []string{modelinstance.InstanceStatusRunning}); err != nil {
-		_ = l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
+		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
 		return nil, fmt.Errorf("persist reset ai-gateway key id: %w", err)
 	}
 

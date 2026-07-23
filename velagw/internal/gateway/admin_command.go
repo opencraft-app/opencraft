@@ -150,7 +150,9 @@ func (s *Service) CreateExternalKeyManaged(ctx context.Context, externalUserID, 
 	if err := s.ensureTenantCanWrite(ctx, externalUserID); err != nil {
 		return APIKeyBinding{}, nil, err
 	}
-	if key, ok, err := s.getExternalKeyByPurpose(ctx, externalUserID, purpose); err != nil || ok {
+	if key, ok, err := s.getExternalKeyByPurpose(ctx, externalUserID, purpose); err != nil && !errors.Is(err, ErrAPIKeyMaterialMissing) {
+		return key, nil, err
+	} else if ok {
 		return key, nil, err
 	}
 	set, paused, err := s.boundSetAdminWritesPaused(ctx, externalUserID)

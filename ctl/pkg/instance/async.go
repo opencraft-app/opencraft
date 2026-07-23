@@ -903,7 +903,7 @@ func (l *logic) RunDestroyInstanceTask(ctx pctx.Context, payload *DestroyInstanc
 	}
 
 	if strings.TrimSpace(entity.AiGatewayKeyID) != "" {
-		if err := l.revokeAiGatewayApiKey(ctx, entity.AiGatewayKeyID); err != nil && !isAiGatewayKeyNotFound(err) {
+		if err := l.revokeLegacyAiGatewayAPIKey(ctx, entity.AiGatewayKeyID); err != nil {
 			return fmt.Errorf("revoke ai-gateway api key: %w", err)
 		}
 	}
@@ -1178,15 +1178,11 @@ func (l *logic) revokeGatewayAPIKey(ctx pctx.Context, backend gatewayBackend, ke
 		return nil
 	}
 	if backend == gatewayBackendLLMGateway {
-		if l.llmGatewayAdapter == nil {
-			return fmt.Errorf("llmGatewayAdapter not configured")
-		}
-		return l.llmGatewayAdapter.RevokeApiKey(ctx, keyID)
+		// LLMGateway keys belong to the user, not an instance. Instance
+		// compensation, migration, reset, and destruction must preserve them.
+		return nil
 	}
-	if l.aiGatewayAdapter == nil {
-		return fmt.Errorf("aiGatewayAdapter not configured")
-	}
-	return l.aiGatewayAdapter.RevokeApiKey(ctx, keyID)
+	return l.revokeLegacyAiGatewayAPIKey(ctx, keyID)
 }
 
 // FinalizeRenewInstanceTaskFailure 子 task RenewInstance 失败兜底
@@ -1925,25 +1921,18 @@ func (l *logic) createAiGatewayApiKey(ctx pctx.Context, backend gatewayBackend, 
 	return &gatewayAPIKey{KeyID: keyID, APIKey: apiKey, KeyPrefix: keyPrefix}, nil
 }
 
-func (l *logic) revokeAiGatewayApiKey(ctx pctx.Context, keyID string) error {
+func (l *logic) revokeLegacyAiGatewayAPIKey(ctx pctx.Context, keyID string) error {
 	if strings.TrimSpace(keyID) == "" {
 		return nil
 	}
-	if l.aiGatewayAdapter != nil {
-		err := l.aiGatewayAdapter.RevokeApiKey(ctx, keyID)
-		if err == nil {
-			return nil
-		}
-		if !isLegacyGatewayDisabled(err) && !isAiGatewayKeyNotFound(err) {
-			l.logger.Warn("revoke ai-gateway api key failed, try llmgateway",
-				zap.String("key_id", keyID),
-				zap.Error(err))
-		}
+	if l.aiGatewayAdapter == nil {
+		return nil
 	}
-	if l.llmGatewayAdapter == nil {
-		return fmt.Errorf("llmGatewayAdapter not configured")
+	err := l.aiGatewayAdapter.RevokeApiKey(ctx, keyID)
+	if err == nil || isLegacyGatewayDisabled(err) || isAiGatewayKeyNotFound(err) {
+		return nil
 	}
-	return l.llmGatewayAdapter.RevokeApiKey(ctx, keyID)
+	return err
 }
 
 func isDuplicateKeyError(err error) bool {
@@ -2036,12 +2025,12 @@ func (l *logic) provisionAiGatewayOnCreate(ctx pctx.Context, entity *modelinstan
 	}
 	gatewayAuthToken, err := generateGatewayAuthToken()
 	if err != nil {
-		_ = l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
+		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
 		return err
 	}
 
 	revokeIfNeeded := func(stageErr error) error {
-		revokeErr := l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
+		revokeErr := l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
 		if revokeErr != nil {
 			return fmt.Errorf("%w; revoke key %s: %v", stageErr, apiKeyResp.KeyID, revokeErr)
 		}
