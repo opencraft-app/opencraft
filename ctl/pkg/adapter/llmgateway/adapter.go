@@ -45,6 +45,8 @@ type Adapter interface {
 	// GetActiveSubscription 调用 LLMGateway Internal API 查询用户当前活跃订阅
 	// 无订阅时返回 (nil, nil)
 	GetActiveSubscription(ctx context.Context, userID string) (*Subscription, error)
+	// ListActiveSubscriptions 调用 LLMGateway Internal API 查询用户所有活跃订阅
+	ListActiveSubscriptions(ctx context.Context, userID string) (*ActiveSubscriptionList, error)
 }
 
 // LLMGatewayAdapter LLMGateway HTTP 适配器
@@ -581,6 +583,67 @@ func (a *LLMGatewayAdapter) GetActiveSubscription(ctx context.Context, userID st
 	return sub, nil
 }
 
+// ListActiveSubscriptions 调用 GET /api/internal/users/:user_id/subscriptions/active
+func (a *LLMGatewayAdapter) ListActiveSubscriptions(ctx context.Context, userID string) (*ActiveSubscriptionList, error) {
+	if a.baseURL == "" {
+		return nil, fmt.Errorf("llmgateway base_url not configured")
+	}
+	if a.internalToken == "" {
+		return nil, fmt.Errorf("llmgateway internal_service_token not configured")
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, fmt.Errorf("llmgateway user_id is required")
+	}
+
+	reqURL := a.baseURL + "/api/internal/users/" + url.PathEscape(userID) + "/subscriptions/active"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create list-active-subscriptions request: %w", err)
+	}
+	httpReq.Header.Set("Accept", "application/json")
+	a.applyInternalAuth(httpReq)
+
+	start := time.Now()
+	resp, err := a.httpClient.Do(httpReq)
+	duration := time.Since(start)
+	if err != nil {
+		a.logger.Warn("llmgateway list-active-subscriptions request failed",
+			zap.String("url", reqURL), zap.Duration("duration", duration), zap.Error(err))
+		return nil, fmt.Errorf("list-active-subscriptions request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read list-active-subscriptions response: %w", err)
+	}
+
+	a.logger.Info("llmgateway list-active-subscriptions response",
+		zap.String("url", reqURL), zap.Int("status", resp.StatusCode), zap.Duration("duration", duration))
+
+	if resp.StatusCode == http.StatusNotFound {
+		if isLLMGatewayBusinessErrorBody(respBody) {
+			return &ActiveSubscriptionList{UserID: userID, Subscriptions: []Subscription{}}, nil
+		}
+		a.logger.Warn("llmgateway list-active-subscriptions returned route 404 (likely deployment lag)",
+			zap.String("url", reqURL), zap.String("body", string(respBody)))
+		return nil, ErrLLMGatewayRouteNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list-active-subscriptions returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	list, err := decodeActiveSubscriptionList(respBody)
+	if err != nil {
+		return nil, fmt.Errorf("decode list-active-subscriptions response: %w", err)
+	}
+	if list.Subscriptions == nil {
+		list.Subscriptions = []Subscription{}
+	}
+	return list, nil
+}
+
 // decodePlan 解析响应体（支持 apiResponse 包装或裸 Plan）
 func decodePlan(body []byte) (*Plan, error) {
 	var wrapped apiResponse
@@ -611,6 +674,22 @@ func decodeSubscription(body []byte) (*Subscription, error) {
 		return nil, err
 	}
 	return &s, nil
+}
+
+// decodeActiveSubscriptionList 解析响应体（支持 apiResponse 包装或裸 ActiveSubscriptionList）
+func decodeActiveSubscriptionList(body []byte) (*ActiveSubscriptionList, error) {
+	var wrapped apiResponse
+	if err := json.Unmarshal(body, &wrapped); err == nil && len(wrapped.Data) > 0 {
+		var list ActiveSubscriptionList
+		if err := json.Unmarshal(wrapped.Data, &list); err == nil {
+			return &list, nil
+		}
+	}
+	var list ActiveSubscriptionList
+	if err := json.Unmarshal(body, &list); err != nil {
+		return nil, err
+	}
+	return &list, nil
 }
 
 // ExtendSubscription 调用 POST /api/internal/subscriptions/extend (R-MR-4)

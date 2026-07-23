@@ -73,6 +73,9 @@ func (s *stubLLMGatewayAdapter) CancelSubscription(_ context.Context, _ string) 
 func (s *stubLLMGatewayAdapter) GetActiveSubscription(_ context.Context, _ string) (*llmgateway.Subscription, error) {
 	return nil, fmt.Errorf("GetActiveSubscription not configured")
 }
+func (s *stubLLMGatewayAdapter) ListActiveSubscriptions(_ context.Context, _ string) (*llmgateway.ActiveSubscriptionList, error) {
+	return nil, fmt.Errorf("ListActiveSubscriptions not configured")
+}
 
 // stubAdapterFactory 仅承载 ai-gateway，其余 adapter 返 nil；测试用例如调到这些
 // nil adapter 会立刻 panic，提示测试覆盖范围超出预期。

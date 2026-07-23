@@ -414,6 +414,7 @@ func TestClientCreateUserTokenRetriesTransientMySQLDeadlock(t *testing.T) {
 
 func TestClientAdminUserSubscriptionFlow(t *testing.T) {
 	var createdPlanID int
+	var createdName string
 	var invalidatedID int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -426,6 +427,7 @@ func TestClientAdminUserSubscriptionFlow(t *testing.T) {
 			var req AdminCreateUserSubscriptionRequest
 			decodeJSON(t, r, &req)
 			createdPlanID = req.PlanID
+			createdName = req.Name
 			writeJSON(t, w, map[string]any{"success": true})
 		case "GET /api/subscription/admin/users/42/subscriptions":
 			writeJSON(t, w, map[string]any{
@@ -433,6 +435,7 @@ func TestClientAdminUserSubscriptionFlow(t *testing.T) {
 				"data": []map[string]any{{
 					"subscription": map[string]any{
 						"id":           9,
+						"name":         "package:user-1:pass-1",
 						"user_id":      42,
 						"plan_id":      7,
 						"amount_total": 1000,
@@ -455,18 +458,21 @@ func TestClientAdminUserSubscriptionFlow(t *testing.T) {
 
 	client := NewClient(server.URL, server.Client())
 	auth := AdminAuth{UserID: 1, AccessToken: "admin-access-token"}
-	if err := client.AdminCreateUserSubscription(t.Context(), auth, 42, AdminCreateUserSubscriptionRequest{PlanID: 7}); err != nil {
+	if err := client.AdminCreateUserSubscription(t.Context(), auth, 42, AdminCreateUserSubscriptionRequest{PlanID: 7, Name: "package:user-1:pass-1"}); err != nil {
 		t.Fatal(err)
 	}
 	if createdPlanID != 7 {
 		t.Fatalf("created plan id = %d, want 7", createdPlanID)
+	}
+	if createdName != "package:user-1:pass-1" {
+		t.Fatalf("created subscription name = %q", createdName)
 	}
 
 	subs, err := client.AdminListUserSubscriptions(t.Context(), auth, 42)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(subs) != 1 || subs[0].ID != 9 || subs[0].AmountTotal != 1000 || subs[0].AmountUsed != 125 {
+	if len(subs) != 1 || subs[0].ID != 9 || subs[0].Name != "package:user-1:pass-1" || subs[0].AmountTotal != 1000 || subs[0].AmountUsed != 125 {
 		t.Fatalf("unexpected subscriptions: %+v", subs)
 	}
 
