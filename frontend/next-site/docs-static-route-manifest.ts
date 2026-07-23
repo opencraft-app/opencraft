@@ -42,7 +42,7 @@ export const DOCS_RETIRED_ROUTE_SLUGS = {
 } as const;
 
 export const DOCS_STATIC_ROUTE_SLUGS = {
-  'en-us': [...DOCS_ROUTE_SLUGS['en-us'], ...DOCS_RETIRED_ROUTE_SLUGS['en-us']],
+  'en-us': DOCS_ROUTE_SLUGS['en-us'],
   'zh-cn': DOCS_ROUTE_SLUGS['zh-cn'],
-  'zh-sg': [...DOCS_ROUTE_SLUGS['zh-sg'], ...DOCS_RETIRED_ROUTE_SLUGS['zh-sg']],
+  'zh-sg': DOCS_ROUTE_SLUGS['zh-sg'],
 } as const;

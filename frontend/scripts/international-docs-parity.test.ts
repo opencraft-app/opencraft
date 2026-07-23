@@ -93,8 +93,8 @@ describe("international docs publication inventory", () => {
       expect(hasRoute("zh-sg", file), `unexpected zh-sg route for ${file}`).toBe(false);
       expect(hasRetiredRoute("en-us", file), `missing retired en-us route for ${file}`).toBe(true);
       expect(hasRetiredRoute("zh-sg", file), `missing retired zh-sg route for ${file}`).toBe(true);
-      expect(hasStaticRoute("en-us", file), `missing static en-us tombstone for ${file}`).toBe(true);
-      expect(hasStaticRoute("zh-sg", file), `missing static zh-sg tombstone for ${file}`).toBe(true);
+      expect(hasStaticRoute("en-us", file), `unexpected static en-us tombstone for ${file}`).toBe(false);
+      expect(hasStaticRoute("zh-sg", file), `unexpected static zh-sg tombstone for ${file}`).toBe(false);
     }
   });
 
@@ -108,8 +108,8 @@ describe("international docs publication inventory", () => {
       expect(hasRoute("en-us", file), `unexpected en-us route for ${file}`).toBe(false);
       expect(hasRetiredRoute("zh-sg", file), `missing retired zh-sg route for ${file}`).toBe(true);
       expect(hasRetiredRoute("en-us", file), `missing retired en-us route for ${file}`).toBe(true);
-      expect(hasStaticRoute("zh-sg", file), `missing static zh-sg tombstone for ${file}`).toBe(true);
-      expect(hasStaticRoute("en-us", file), `missing static en-us tombstone for ${file}`).toBe(true);
+      expect(hasStaticRoute("zh-sg", file), `unexpected static zh-sg tombstone for ${file}`).toBe(false);
+      expect(hasStaticRoute("en-us", file), `unexpected static en-us tombstone for ${file}`).toBe(false);
     }
   });
 
