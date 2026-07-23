@@ -136,6 +136,7 @@ const VerifyIdentityModal = ({
   realnameLevel,
   realnameSyncStatus,
   faceIdFlowEnabled,
+  faceCaptureEnabled,
   phone,
 }: {
   onClose: () => void;
@@ -145,6 +146,7 @@ const VerifyIdentityModal = ({
   realnameLevel?: string;
   realnameSyncStatus?: RealnameSyncStatus;
   faceIdFlowEnabled: boolean;
+  faceCaptureEnabled: boolean;
   phone?: string;
 }) => {
   const t = useT();
@@ -561,7 +563,8 @@ const VerifyIdentityModal = ({
 
   const primaryButtonLabel = (() => {
     if (stage === "identity") {
-      if (faceIdFlowEnabled) return t("开始刷脸认证");
+      if (faceCaptureEnabled) return t("开始刷脸认证");
+      if (faceIdFlowEnabled) return t("下一步");
       return verified ? t("更新认证") : t("提交认证");
     }
     if (stage === "phone") {
@@ -585,7 +588,11 @@ const VerifyIdentityModal = ({
   const stageDescription = stage === "identity"
     ? verified
       ? t("填写新的身份信息，通过核验后将更新当前实名。")
-      : t("填写与你身份证一致的信息，下一步将进行人脸核身。")
+      : faceCaptureEnabled
+        ? t("填写与你身份证一致的信息，下一步将进行人脸核身。")
+        : faceIdFlowEnabled
+          ? t("填写与身份证一致的信息，完成核验后验证安全手机号。")
+          : t("填写与你身份证一致的信息，完成实名认证。")
     : stage === "face"
       ? t("使用手机完成核身，结果会在当前页面自动更新。")
       : stage === "phone"
@@ -593,7 +600,7 @@ const VerifyIdentityModal = ({
           ? t("验证当前绑定手机号，完成最后一步认证。")
           : t("绑定并验证中国大陆手机号，完成最后一步认证。")
         : t("认证已完成，正在同步最终结果。");
-  const safetyText = faceIdFlowEnabled
+  const safetyText = faceCaptureEnabled
     ? t("你的姓名、身份证号和核身过程仅用于本次实名认证")
     : phoneVerificationEnabled
       ? t("你的姓名、身份证号和手机号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。")
@@ -668,11 +675,12 @@ const VerifyIdentityModal = ({
                 <div className="mt-6">
                   <RealnameStepper
                     stage={stage}
+                    includeFaceStep={faceCaptureEnabled}
                     includePhoneStep
                     labels={{
                       identity: t("身份信息"),
                       face: t("人脸核身"),
-                      phone: t("手机验证"),
+                      phone: faceCaptureEnabled ? t("手机验证") : t("安全手机"),
                     }}
                   />
                 </div>
@@ -2392,9 +2400,10 @@ export const AccountPage = () => {
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const faceIdBackendEnabled = user?.realnameAssuranceMode === "observe"
     || user?.realnameAssuranceMode === "face_required";
+  const facelessFlowEnabled = user?.realnameAssuranceMode === "faceless";
   const hasSafetyPhone = Boolean(user?.phone?.trim());
-  // 灰度结束：实名人脸流程默认放开，只要后端具备能力即启用（身份证 → 人脸 → 手机号 三步）。
-  const faceIdFlowEnabled = faceIdBackendEnabled;
+  // FaceID 与 faceless 共享 attempt 状态机；faceless 仅跳过人脸采集节点。
+  const faceIdFlowEnabled = faceIdBackendEnabled || facelessFlowEnabled;
   const phoneProofEnabled = hasSafetyPhone && (realnamePhoneVerificationEnabled || faceIdFlowEnabled);
 
   const verified = faceIdFlowEnabled
@@ -3169,6 +3178,7 @@ export const AccountPage = () => {
             realnameLevel={user?.realnameLevel}
             realnameSyncStatus={realnameSyncStatus}
             faceIdFlowEnabled={faceIdFlowEnabled}
+            faceCaptureEnabled={faceIdBackendEnabled}
             phone={user?.phone}
           />
         )}

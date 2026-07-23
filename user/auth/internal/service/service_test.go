@@ -43,6 +43,102 @@ func TestSharedStoreEnforcesCooldownAcrossServiceInstances(t *testing.T) {
 	}
 }
 
+func TestFacelessRealnameSkipsFaceCaptureAndUsesFaceIDPhoneProofFlow(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true})
+	shadowClient := &stubShadowRegisterClient{
+		result: shadowbinding.CloudRegisterResult{Uin: 300000000071, OwnerUin: 300000000071, AppID: 1250000000},
+	}
+	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), shadowClient, shadowbinding.Options{Enabled: true, Now: fixedNow})
+	svc := NewWithStore(store, Options{
+		Now:                       fixedNow,
+		VerificationCodeGenerator: fixedVerificationCode("111111"),
+		RealnameVerifier:          stubRealnameVerifier{result: RealnameProviderResult{Result: "0"}},
+		RealnameCipher:            stubRealnameCipher{},
+		RealnameFaceID: RealnameFaceIDConfig{
+			Mode:      RealnameAssuranceModeFaceless,
+			DigestKey: []byte("0123456789abcdef0123456789abcdef"),
+		},
+		ShadowBinding:              shadowSvc,
+		ShadowBasicAuthSyncEnabled: true,
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "faceless@example.invalid", "13800138118")
+
+	started, err := svc.StartRealnameFaceIDAttempt(context.Background(), session.Token, RealnameFaceIDStartInput{
+		Name: "张三", IDCard: "11010519491231002X", ClientIP: "127.0.0.1", ClientUA: "test", ConsentAccepted: true,
+	})
+	if err != nil {
+		t.Fatalf("start faceless realname: %v", err)
+	}
+	if started.VerifyURL != "" {
+		t.Fatalf("faceless flow must not issue a face-capture URL, got %+v", started)
+	}
+	attempt, err := store.GetRealnameFaceIDAttempt(context.Background(), started.AttemptID)
+	if err != nil {
+		t.Fatalf("load faceless attempt: %v", err)
+	}
+	if attempt.State != RealnameFaceIDStateFaceSucceeded || attempt.FaceVerifiedAt == nil {
+		t.Fatalf("faceless flow must enter the FaceID phone-proof stage, got %+v", attempt)
+	}
+
+	if _, err := svc.SendRealnameFaceIDPhoneCode(context.Background(), session.Token, RealnameFaceIDPhoneCodeInput{
+		AttemptID: started.AttemptID, ClientIP: "127.0.0.1",
+	}); err != nil {
+		t.Fatalf("send FaceID-flow shadow phone code: %v", err)
+	}
+	if shadowClient.smsCalls != 1 || shadowClient.lastSMS.Phone != "13800138118" {
+		t.Fatalf("expected Tencent safety-phone SMS for current user, got calls=%d input=%+v", shadowClient.smsCalls, shadowClient.lastSMS)
+	}
+
+	verified, err := svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
+		AttemptID: started.AttemptID, Code: "888888", ClientIP: "127.0.0.1", ClientUA: "test",
+	})
+	if err != nil {
+		t.Fatalf("verify Tencent safety-phone code: %v", err)
+	}
+	if verified.State != RealnameFaceIDStateSucceeded {
+		t.Fatalf("expected faceless FaceID-flow verification to complete, got %+v", verified)
+	}
+}
+
+func TestFacelessRealnameRequiresTwoFactorVerifier(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true})
+	svc := NewWithStore(store, Options{
+		Now:            fixedNow,
+		RealnameCipher: stubRealnameCipher{},
+		RealnameFaceID: RealnameFaceIDConfig{
+			Mode:      RealnameAssuranceModeFaceless,
+			DigestKey: []byte("0123456789abcdef0123456789abcdef"),
+		},
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "faceless-no-verifier@example.invalid", "13800138119")
+
+	_, err := svc.StartRealnameFaceIDAttempt(context.Background(), session.Token, RealnameFaceIDStartInput{
+		Name: "张三", IDCard: "11010519491231002X", ConsentAccepted: true,
+	})
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "realname_unavailable" {
+		t.Fatalf("faceless mode must fail closed without two-factor verifier, got %#v", err)
+	}
+}
+
+func TestFacelessRealnameRejectsLegacyVerifyEndpoint(t *testing.T) {
+	svc := New(Options{
+		Now:              fixedNow,
+		RealnameVerifier: stubRealnameVerifier{result: RealnameProviderResult{Result: "0"}},
+		RealnameCipher:   stubRealnameCipher{},
+		RealnameFaceID:   RealnameFaceIDConfig{Mode: RealnameAssuranceModeFaceless},
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "faceless-legacy-endpoint@example.invalid", "13800138120")
+
+	_, err := svc.VerifyRealname(context.Background(), session.Token, RealnameVerifyInput{
+		Name: "张三", IDCard: "11010519491231002X",
+	})
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "realname_faceid_required" {
+		t.Fatalf("faceless mode must use the attempt state machine, got %#v", err)
+	}
+}
+
 func TestSharedStorePersistsSessionsAcrossServiceInstances(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{
 		Now:                fixedNow,
