@@ -137,6 +137,7 @@ const VerifyIdentityModal = ({
   realnameSyncStatus,
   faceIdFlowEnabled,
   faceCaptureEnabled,
+  facelessFlowEnabled,
   phone,
 }: {
   onClose: () => void;
@@ -147,6 +148,7 @@ const VerifyIdentityModal = ({
   realnameSyncStatus?: RealnameSyncStatus;
   faceIdFlowEnabled: boolean;
   faceCaptureEnabled: boolean;
+  facelessFlowEnabled: boolean;
   phone?: string;
 }) => {
   const t = useT();
@@ -508,11 +510,14 @@ const VerifyIdentityModal = ({
           return;
         }
 
-        const nextAttempt = await auth.startRealnameFaceIdAttempt({
+        let nextAttempt = await auth.startRealnameFaceIdAttempt({
           name: realName.trim(),
           idCard: idNumber.trim().toUpperCase(),
           consent: true,
         });
+        if (facelessFlowEnabled && normalizedPhone && nextAttempt.state === "face_succeeded") {
+          nextAttempt = await auth.getRealnameFaceIdAttempt(nextAttempt.attemptId);
+        }
         await applyAttemptState(nextAttempt);
         return;
       }
@@ -564,6 +569,7 @@ const VerifyIdentityModal = ({
   const primaryButtonLabel = (() => {
     if (stage === "identity") {
       if (faceCaptureEnabled) return t("开始刷脸认证");
+      if (facelessFlowEnabled && normalizedPhone) return t("提交认证");
       if (faceIdFlowEnabled) return t("下一步");
       return verified ? t("更新认证") : t("提交认证");
     }
@@ -590,6 +596,8 @@ const VerifyIdentityModal = ({
       ? t("填写新的身份信息，通过核验后将更新当前实名。")
       : faceCaptureEnabled
         ? t("填写与你身份证一致的信息，下一步将进行人脸核身。")
+        : facelessFlowEnabled && normalizedPhone
+          ? t("填写与你身份证一致的信息，完成实名认证。")
         : faceIdFlowEnabled
           ? t("填写与身份证一致的信息，完成核验后验证安全手机号。")
           : t("填写与你身份证一致的信息，完成实名认证。")
@@ -676,7 +684,7 @@ const VerifyIdentityModal = ({
                   <RealnameStepper
                     stage={stage}
                     includeFaceStep={faceCaptureEnabled}
-                    includePhoneStep
+                    includePhoneStep={!facelessFlowEnabled || !normalizedPhone || stage === "phone"}
                     labels={{
                       identity: t("身份信息"),
                       face: t("人脸核身"),
@@ -3179,6 +3187,7 @@ export const AccountPage = () => {
             realnameSyncStatus={realnameSyncStatus}
             faceIdFlowEnabled={faceIdFlowEnabled}
             faceCaptureEnabled={faceIdBackendEnabled}
+            facelessFlowEnabled={facelessFlowEnabled}
             phone={user?.phone}
           />
         )}
