@@ -36,7 +36,7 @@
 
 具体执行规则：
 
-- [`lv-longform-content/SKILL.md`](../../../.agents/skills/lv-longform-content/SKILL.md)
+- [`lv-longform-content/SKILL.md`](../../../.agents/skills/product-skills/lv-longform-content/SKILL.md)
 - [`lv-seo-geo/SKILL.md`](../../../.agents/skills/product-skills/lv-seo-geo/SKILL.md)
 
 ## Context

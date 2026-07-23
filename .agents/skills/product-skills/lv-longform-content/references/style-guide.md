@@ -4,7 +4,7 @@
 
 Write like a product builder explaining something useful to a real user. The style is warm, clear, and practical, with enough narrative to make the article readable.
 
-Default article length: 900-1,500 words unless the user gives a target length.
+Default article length: 900-1,500 words unless the user gives a target length. `industry-update` may be shorter or longer when the event needs enough context and caveats.
 
 **Answer-first opening (GEO/AEO):** the very first paragraph (after the hero image, before any setup or story) must directly answer the title's question or define the topic in 1-3 sentences, so search engines and AI search can extract the conclusion straight from the top. For a question title (e.g. "Who is LightVela for?"), the first sentence answers it head-on ("LightVela is for … these kinds of people: …") — do not open with a story or a pain point. For a feature/noun title, open with a one-sentence definition ("X is …, which lets you …"). The paragraph must stand on its own; put narrative, scenarios, and steps *after* this summary. Answer-first constrains only the opening paragraph; each mode's arc then unfolds as usual below it.
 
@@ -18,6 +18,8 @@ For examples below, replace `<distribution_from>` with the exact mapped value fr
 - `techpedia`: for Tencent Techpedia、腾讯技术百科、开发者社区、开发者文章, produce Markdown files, not chat-only output. Always create both a Chinese version and an English version (`.zh.md` + `.en.md`) — this is a fixed, bundled default.
 
 If the user does not specify the channel (or mode/topic), run the consolidated intake in `SKILL.md`; do not ask about language or form in a separate round.
+
+Markdown-specific rule: when `form=md`, use native Markdown tables when they materially clarify comparisons, specifications, timelines, datasets, or source summaries. Keep columns concise and readable; do not use HTML tables or force long prose into cells. Plain-text articles do not need tables by default.
 
 Use this shape:
 
@@ -54,13 +56,14 @@ Voice rules:
 - Use first person for use-case stories when appropriate: "I wanted...", "I connected...", "What I learned...".
 - Use second person for tutorials: "You will...", "Make sure...", "Go back...".
 - Use product voice for feature introductions: "LightVela gives...", "A Soul is...", "This lets...".
+- Use an informed first-person voice for industry updates: distinguish reported facts from personal judgment, and do not force Hermes or LightVela into an unrelated topic.
 - Keep paragraphs short, usually 2-5 sentences.
 - Prefer concrete nouns and verbs: connect, paste, install, ask, schedule, reply, verify.
 - Use examples and short quoted prompts where the user needs to see exactly what to type.
 - Keep the ending grounded: what the user can now do, why it matters, and what the pattern unlocks.
-- Always append the Community Ending after the article's normal closing. The Discord and WhatsApp QR images are real assets, not `[Image]` placeholders.
+- Always append the Community Ending after the article's normal closing when the selected output channel requires it. The Discord and WhatsApp QR images are real assets, not `[Image]` placeholders.
 - Use the fixed image recommendation format defined in `SKILL.md` (图片建议固定模板). Inside the article, put a standalone bracketed line at each image spot: `[RECOMMEND ADD IMAGE: <what to add> — <why it belongs here>]`. Do not use a bare `[Image]` or arbitrary variants.
-- Keep image density fair: usually 2-4 images for a long article, up to 5 only for a screenshot-heavy tutorial.
+- Keep image density fair: usually 2-4 images for a long article, up to 5 only for a screenshot-heavy tutorial. `industry-update` is the exception: generate exactly one topic-specific hero image with Codex image generation and no other image placeholders.
 
 Avoid:
 
@@ -72,7 +75,7 @@ Avoid:
 
 ## Community Ending
 
-Append this exact ending after every complete article, regardless of whether the selected mode is `tutorial`, `feature-intro`, or `use-case`. Keep it after the article's own closing section, and do not replace the QR images with `[Image]` placeholders.
+Append this exact ending after every complete article when the selected output channel requires it, regardless of whether the selected mode is `tutorial`, `feature-intro`, `use-case`, or `industry-update`. Keep it after the article's own closing section, and do not replace the QR images with `[Image]` placeholders.
 
 **The ending's language follows the article's output language:** use the English block for English articles (and English-default `social-media`), and the Chinese block for Chinese articles (e.g. the `.zh.md` file in a `techpedia` pair). The QR image URLs are identical in both; only the invite copy differs.
 
@@ -306,6 +309,59 @@ Style notes:
 - Include transferable examples near the end: "The same pattern could work for..."
 - Keep the article honest. If a skill or data source is hypothetical, phrase it as "you could" or "with the right skill".
 
+## Industry Updates
+
+Use for `industry-update`.
+
+Purpose: analyze a concrete model release, product change, hardware trend, infrastructure shift, research result, policy event, or ecosystem development. The article should be topic-first and observational, not a tutorial, feature introduction, or sales page. Hermes and LightVela are optional context, not the subject by default.
+
+Recommended structure:
+
+```markdown
+<Industry Update Title>
+<One Codex-generated topic-specific hero image>
+Answer-first opening: state what happened, why it matters, and how readers should understand it.
+
+The Short Version
+What Actually Happened
+Research and Evidence
+What Changed — and What Did Not
+The Caveats Nobody Mentions
+Who Should Care
+What This Says About the Industry
+Personal Take and What I’m Watching Next
+Where LightVela Fits
+
+## Join LightVela's Community for More Updates!
+...
+```
+
+Rules:
+
+- Generate exactly one original 16:9 hero image with Codex `imagegen`; do not write a `[RECOMMEND ADD IMAGE: ...]` placeholder and do not add further article images.
+- Research before outlining or drafting. Use high-quality, traceable sources: primary announcements and documentation, papers or research institutions, regulator/government documents, original benchmarks or datasets, filings, and formal interviews; use reputable edited media and industry research for context and independent perspective.
+- Cross-check key facts, dates, prices, performance numbers, and policy claims with two independent sources when possible. State source conflicts, dates, and uncertainty instead of manufacturing certainty.
+- Keep an evidence trail with inline links or a concise `Sources` section. Do not treat unsourced social posts, SEO farms, unattributed reposts, affiliate roundups, or screenshots as the sole evidence for an important claim.
+- Include dates, units, sample sizes, benchmark scope, and caveats for important numbers. Use a native Markdown table when it makes comparisons, specifications, timelines, data, or sources easier to understand.
+- Use a clean, minimal futuristic editorial-poster aesthetic: soft lavender gradients, glossy lighting, restrained glass or metallic surfaces, minimal UI accents, topic-relevant floating elements, and generous negative space.
+- Make the visual specific to the article's topic. Use one clear object or metaphor for the actual event or change; avoid generic robots, unrelated sci-fi visuals, clutter, dense UI, fake logos, and long or unreadable text.
+- Place the main subject on the right or lower-right and reserve the left or upper-left for a short 2-5 word headline and optional small `INDUSTRY UPDATE` eyebrow. Match the article language and keep typography sparse.
+- Do not require Hermes or LightVela to appear in the article. Keep the body focused on the industry topic.
+- Merge personal judgment and future monitoring into `Personal Take and What I’m Watching Next`; do not add a separate `Closing Thought` section.
+- Add one concise, natural LightVela bridge near the end only. This is the only place where LightVela links may appear. Before writing it, use `lv-seo-geo` to verify the relevant real route, localization, and matching `from` attribution. Do not add LightVela links in the opening or body.
+- If the output channel requires the Community Ending, put it after the LightVela bridge.
+
+Image prompt pattern:
+
+```text
+Create one 16:9 editorial hero image for an industry-update article about "<specific topic>".
+Use an exceptionally clean, minimal futuristic blog-poster aesthetic with soft lavender and pale violet gradients, glossy studio lighting, restrained glass or metallic materials, generous negative space, minimal UI-like accents, and a few topic-relevant floating elements.
+Make the main subject unmistakably about <specific product, model, hardware, research, event, or policy>. Use one clear visual metaphor for the article's actual change or tension, not a generic humanoid robot.
+Place the main subject on the right or lower-right, keep the left or upper-left calm for a short 2-5 word headline, and use only sparse explanatory elements such as a timeline, benchmark card, data stream, network node, price marker, or regulatory boundary when they fit the topic.
+Use clean modern sans-serif typography and, if useful, a small "INDUSTRY UPDATE" eyebrow. Do not add paragraphs, fake UI copy, dense labels, fake logos, fake brand marks, or unreadable microtext. Match the article language.
+Make it polished, editorial, topic-specific, and suitable as a blog hero image; avoid clutter, excessive neon, stock-photo styling, and visual noise.
+```
+
 ## Quick Revision Checklist
 
 Before finalizing, check:
@@ -313,12 +369,15 @@ Before finalizing, check:
 - The selected mode matches the prompt.
 - The output channel is known. If mode/channel/topic are not all clear, run the consolidated intake from `SKILL.md` (never ask about language or form separately).
 - The title matches the series style.
-- The article has a `[RECOMMEND ADD IMAGE: <specific recommendation> — <why>]` hero line, and its first paragraph is answer-first: it directly answers the title's question / defines the topic in 1-3 self-contained sentences before any story, pain point, or setup.
-- Image spots appear at natural screenshot moments, with fair density, all using the fixed `[RECOMMEND ADD IMAGE: <what> — <why>]` format.
-- The final chat response lists all recommended image placements and what each image should show.
+- For `tutorial`, `feature-intro`, and `use-case`, the article has a `[RECOMMEND ADD IMAGE: <specific recommendation> — <why>]` hero line, and its first paragraph is answer-first: it directly answers the title's question / defines the topic in 1-3 self-contained sentences before any story, pain point, or setup.
+- For `industry-update`, the article has exactly one Codex-generated, topic-specific hero image and no `[RECOMMEND ADD IMAGE: ...]` lines or additional image recommendations.
+- For `industry-update`, research happened before drafting; important claims have traceable, high-quality sources, key facts are cross-checked where possible, and data includes dates, units, scope, and caveats.
+- For non-`industry-update` modes, image spots appear at natural screenshot moments, with fair density, all using the fixed `[RECOMMEND ADD IMAGE: <what> — <why>]` format.
+- The final chat response lists recommended image placements for non-`industry-update` modes; for `industry-update`, it reports the generated hero image instead.
 - For Techpedia/开发者社区, two Markdown files exist: Chinese and English.
 - The Community Ending appears after the normal article closing, with both QR image links intact.
+- Markdown articles may use concise native Markdown tables when they materially improve comparisons, specifications, timelines, data, or source summaries; plain-text articles do not require tables.
 - The product mechanics are clear enough to act on.
-- The piece sounds like LightVela/Hermes, not a generic AI SaaS blog.
+- The piece sounds like LightVela/Hermes when the topic calls for it; `industry-update` remains topic-first and does not force either product into the body.
 - No attached example content is copied beyond structural inspiration.
-- SEO/GEO: opening is answer-first (title question answered / topic defined in the first paragraph); contains the main keyword once; at least one clear definition sentence; meaningful internal links woven through the body (not only at the end), each pointing to a real verified route (never a markdown source filename like `/docs/01-overview` — use `/docs/overview`); no keyword stuffing. (Full link-verification procedure and route list belongs to `lv-seo-geo`.)
+- SEO/GEO: opening is answer-first (title question answered / topic defined in the first paragraph); contains the main keyword once; at least one clear definition sentence; meaningful internal links woven through the body for non-`industry-update` modes, each pointing to a real verified route (never a markdown source filename like `/docs/01-overview` — use `/docs/overview`); no keyword stuffing. For `industry-update`, LightVela links appear only in the closing bridge and are verified with `lv-seo-geo`. (Full link-verification procedure and route list belongs to `lv-seo-geo`.)
