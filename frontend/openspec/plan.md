@@ -84,3 +84,58 @@
 - `git diff --check`：通过。
 
 ---
+
+# 国内站续费用户交互优化 Implementation Plan
+
+**Goal:** 补齐国内站存量套餐续费路径：`/account` 恢复续费入口，`/agents` 在 Agent 信息头部提示 7 日内到期并可直接唤起续费弹窗，`/subscribe` 对过期或隔离状态提供明确回流。
+
+**Product Source:** `wiki/prd-docs/2026-07-22-renewal-interaction-design.md`
+
+**TAPD:** [TAPD #136414042](https://tapd.woa.com/tapd_fe/10132091/story/detail/1010132091136414042)
+
+**Branch:** `feat/walkercao-0722-renewal-interaction-design`
+
+**Scale:** M，标准单 Agent 流程。影响多个前端页面、抽取一个复用弹窗组件、补充测试和 i18n，不新增后端接口或 npm 依赖。
+
+**Global Constraints:**
+
+- 国内站 only；国际站不得展示国内续费入口或中文提醒。
+- 续费周期只支持月付和季付，分别对应 1 个月、3 个月。
+- `active` 的可见状态文案为“生效中”。
+- 支付阶段删除“二维码有效期约 9 分钟”，手动按钮为“刷新”。
+- `/agents` 到期提醒放在 Agent 信息头部，点击直接打开续费弹窗。
+- 工具能力、SkillHub、MCP、专家包、自动任务入口不在本次上线。
+- 续费成功只以刷新后同一 `pass_id` 的 `expired_time` 推后为准。
+
+## 任务清单
+
+- [ ] 1. 抽取并收敛续费弹窗与账号页入口。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/src/pages/marketing/account-page.tsx`、`frontend/src/pages/marketing/renew-pass-modal.tsx`、`frontend/src/lib/pass-renewal.ts`、`frontend/src/pages/marketing/__tests__/account-page-name-audit.test.tsx`、必要的新增续费弹窗测试。
+  - 验收方式：`/account` 国内站 active/expired/isolated 未删除 Pass 展示“立即续费”；deleted 和国际站不展示；弹窗默认月付、可切季付、不展示 6/12 个月；状态文案为“生效中”；询价、下单、支付、刷新成功和未确认状态按 spec 表现。
+
+- [ ] 2. 在 `/agents` Agent 信息头部接入到期状态提醒和续费弹窗。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/src/pages/marketing/agent-settings-page.tsx`、`frontend/src/contexts/agent-context.tsx`（仅在现有 `refreshPasses` 不足时调整）、`frontend/src/lib/pass-renewal.ts`、`frontend/src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`。
+  - 验收方式：有 Agent 且 `activePass.expired_time` 距离当前时间小于等于 7 日时，在 Agent 信息头部贴近“运行中”展示 `套餐将到期`；hover 展示剩余 X 天或 X 小时，不足 1 小时有专门文案；2-7 天和小于 2 天颜色不同；点击提醒直接打开 `RenewPassModal`；无 Agent、无有效 Pass、过期/隔离和国际站不展示。
+
+- [ ] 3. 更新 `/subscribe` 过期/隔离回流提示与区域化测试。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/next-site/subscribe-page.tsx`、对应 subscribe 组件测试。
+  - 验收方式：`PASS_EXPIRED` / `PASS_ISOLATED` 显示“当前套餐需要续费”与“前往续费”动作；点击跳转 `/account`；订阅页不自动打开续费弹窗、不绕过续费规则新购；国际站路径不受影响。
+
+- [ ] 4. 完成 i18n、静态检查和国内站 smoke 验证。
+  - 角色：Reviewer
+  - 影响文件：`frontend/src/i18n/generated/*.json`、`frontend/openspec/plan.md`。
+  - 验收方式：运行目标 Vitest、`pnpm i18n:extract`、`pnpm i18n:check`、`pnpm check`、`git diff --check`；国内站本地或预览 smoke 覆盖 `/account`、`/agents`、`/subscribe` 关键路径和移动端布局。
+
+## 规划门禁
+
+- 需求范围与边界：已确认，国内站 only；工具能力暂不上线；续费周期仅月付/季付。
+- 规模：M。
+- 执行模式：single_agent。
+- 前置依赖：续费接口、Repository 方法、微信中转页已存在；TAPD 产品需求已创建。
+- OpenSpec：已生成 `frontend/openspec/proposal.md`、`frontend/openspec/spec.md`、`frontend/openspec/plan.md`。
+- 未归档提醒：上一批旧 OpenSpec 为已完成自动任务 Skill 内容；用户已明确 `SKIP-ARCHIVE` 且工具能力暂不上线，本次覆盖当前执行计划。
+- 门禁结论：通过。
+- 条件：进入 commit / push / MR 前必须补充真实验证结果并等待用户确认。

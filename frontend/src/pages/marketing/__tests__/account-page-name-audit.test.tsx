@@ -4,6 +4,16 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Pass, User } from "@/domain/types";
+
+vi.mock("@tencent/universal-report", () => ({
+  default: class MockUniversalReport {
+    reportEvent = vi.fn();
+    setPublicParams = vi.fn();
+    setAccountInfo = vi.fn();
+    startReport = vi.fn();
+  },
+}));
+
 import { AccountPage } from "@/pages/marketing/account-page";
 
 const updateProfile = vi.fn();
@@ -13,6 +23,10 @@ const deleteAccount = vi.fn();
 const signInAsGuest = vi.fn();
 const refreshProfile = vi.fn();
 const retryRealnameSync = vi.fn();
+const refreshPasses = vi.fn();
+const listMyPasses = vi.fn();
+const getRenewPrice = vi.fn();
+const createRenewOrder = vi.fn();
 
 let currentUser: User;
 let realnamePhoneVerificationEnabled = false;
@@ -80,6 +94,7 @@ vi.mock("@/contexts/agent-context", () => ({
       },
     },
     activePass,
+    refreshPasses,
   }),
 }));
 
@@ -90,7 +105,9 @@ vi.mock("@/contexts/repository-context", () => ({
       retryRealnameSync,
     },
     plans: {
-      listMyPasses: vi.fn().mockResolvedValue([]),
+      listMyPasses,
+      getRenewPrice,
+      createRenewOrder,
     },
   }),
 }));
@@ -154,6 +171,23 @@ describe("AccountPage nickname audit state", () => {
     activePass = null;
     sessionAuthReady = true;
     sessionIsAuthenticated = true;
+    refreshPasses.mockResolvedValue(undefined);
+    listMyPasses.mockResolvedValue([]);
+    getRenewPrice.mockResolvedValue({
+      bundle_id: "bundle_launch",
+      price: 4900,
+      total_cost: 4900,
+      real_total_cost: 4900,
+      currency: "CNY",
+      discount: 100,
+    });
+    createRenewOrder.mockResolvedValue({
+      order_id: "order_renewal_audit",
+      pass_id: "pass_active_renew",
+      pay_url: "weixin://wxpay/bizpayurl?pr=renewal",
+      auth_code: "weixin://wxpay/bizpayurl?pr=renewal",
+      deal_names: ["启航套餐 续费"],
+    });
   });
 
   it("keeps the account chrome singular across auth states", () => {
@@ -288,23 +322,17 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.getByText("实名认证")).toBeInTheDocument();
   });
 
-  it("keeps the renew action hidden until show() reveals account hidden tools", () => {
+  it("shows the renew action by default for domestic active passes", () => {
     paidBillingEnabled = true;
     activePass = buildActivePass();
 
     renderAccountPage();
 
     expect(screen.getByText("启航套餐")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /立即续费/ })).not.toBeInTheDocument();
-
-    act(() => {
-      ((window as Window & typeof globalThis & { show?: () => boolean }).show?.());
-    });
-
     expect(screen.getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
   });
 
-  it("keeps the safety phone and renew actions hidden by default", () => {
+  it("keeps the safety phone hidden while showing the renew action by default", () => {
     realnamePhoneVerificationEnabled = true;
     paidBillingEnabled = true;
     activePass = buildActivePass();
@@ -312,7 +340,24 @@ describe("AccountPage nickname audit state", () => {
     renderAccountPage();
 
     expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /立即续费/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
+  });
+
+  it("opens the renewal modal with the new status wording and month or quarter choices only", async () => {
+    paidBillingEnabled = true;
+    activePass = buildActivePass();
+
+    renderAccountPage();
+
+    await userEvent.click(screen.getByRole("button", { name: /立即续费/ }));
+
+    expect(await screen.findByText("续费套餐")).toBeInTheDocument();
+    expect(screen.getByText("生效中")).toBeInTheDocument();
+    expect(screen.queryByText("有效中")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /月付/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /季付/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /6个月/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /1年|12个月/ })).not.toBeInTheDocument();
   });
 
   it("shows the pending nickname privately while keeping the active nickname explicit", async () => {

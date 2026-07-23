@@ -316,6 +316,58 @@ a {
   line-height: 20px;
 }
 
+.lv-agent-status-row {
+  display: flex;
+  min-height: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.lv-agent-status-row .lv-agent-status {
+  margin-top: 0;
+}
+
+.lv-agent-renewal-badge {
+  display: inline-flex;
+  height: 18px;
+  max-width: 92px;
+  align-items: center;
+  gap: 3px;
+  overflow: hidden;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.lv-agent-renewal-badge.is-warning {
+  border-color: rgb(198 123 30 / 20%);
+  color: #a86108;
+  background: rgb(198 123 30 / 8%);
+}
+
+.lv-agent-renewal-badge.is-urgent {
+  border-color: rgb(207 61 76 / 22%);
+  color: #cf3d4c;
+  background: rgb(207 61 76 / 8%);
+}
+
+.lv-agent-renewal-badge:hover,
+.lv-agent-renewal-badge:focus-visible {
+  outline: none;
+  filter: saturate(1.08);
+}
+
 .lv-agent-actions {
   position: relative;
   margin-left: auto;
