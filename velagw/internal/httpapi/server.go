@@ -1634,7 +1634,7 @@ func (s *Server) adminCreateAPIKey(w http.ResponseWriter, r *http.Request, userI
 	}
 	key, command, err := s.svc.CreateExternalKeyManaged(r.Context(), userID, name)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeAPIKeyError(w, err)
 		return
 	}
 	if command != nil {
@@ -3090,12 +3090,30 @@ func keyPrefix(key string) string {
 
 type response struct {
 	Success bool   `json:"success"`
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
 	Data    any    `json:"data,omitempty"`
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, response{Success: false, Message: message})
+}
+
+func writeAPIKeyError(w http.ResponseWriter, err error) {
+	code := ""
+	status := http.StatusBadRequest
+	switch {
+	case errors.Is(err, gateway.ErrAPIKeyProvisioning):
+		status = http.StatusConflict
+		code = "api_key_provision_in_progress"
+	case errors.Is(err, gateway.ErrAPIKeyMaterialMissing):
+		status = http.StatusConflict
+		code = "api_key_material_unavailable"
+	case errors.Is(err, gateway.ErrAPIKeyStateUnavailable):
+		status = http.StatusConflict
+		code = "api_key_state_unavailable"
+	}
+	writeJSON(w, status, response{Success: false, Code: code, Message: err.Error()})
 }
 
 func writeInternalServiceError(w http.ResponseWriter, err error) {

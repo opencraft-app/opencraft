@@ -32,13 +32,16 @@ const consoleProxyPrefix = "/_llmgateway_console/"
 const defaultUserLLMSettingsTrafficCacheTTL = 30 * time.Second
 
 var (
-	ErrPlanNotFound          = errors.New("plan not found")
-	ErrPlanNotReady          = errors.New("plan is not ready in any active set")
-	ErrPlanImmutableConflict = errors.New("plan id already exists with different entitlements")
-	ErrSubscriptionNotFound  = errors.New("active subscription not found")
-	ErrAPIKeyRandomCollision = errors.New("external api key random identity collision")
-	ErrAPIKeyPurposeConflict = errors.New("external api key purpose already exists")
-	ErrAPIKeyStateConflict   = errors.New("external api key state transition conflict")
+	ErrPlanNotFound           = errors.New("plan not found")
+	ErrPlanNotReady           = errors.New("plan is not ready in any active set")
+	ErrPlanImmutableConflict  = errors.New("plan id already exists with different entitlements")
+	ErrSubscriptionNotFound   = errors.New("active subscription not found")
+	ErrAPIKeyRandomCollision  = errors.New("external api key random identity collision")
+	ErrAPIKeyPurposeConflict  = errors.New("external api key purpose already exists")
+	ErrAPIKeyStateConflict    = errors.New("external api key state transition conflict")
+	ErrAPIKeyProvisioning     = errors.New("external api key provisioning is in progress")
+	ErrAPIKeyMaterialMissing  = errors.New("external api key material is unavailable")
+	ErrAPIKeyStateUnavailable = errors.New("external api key state is unavailable")
 	// stdout is reserved for canonical OTLP JSON envelopes. Legacy access logs
 	// remain on stderr until the traffic-plane telemetry rollout is enabled.
 	defaultAccessLogger = log.New(os.Stderr, "", 0)
@@ -1853,6 +1856,13 @@ func (s *Service) createExternalKey(ctx context.Context, externalUserID string, 
 	}); err != nil {
 		return APIKeyBinding{}, err
 	}
+	purpose, err = normalizeAPIKeyPurpose(purpose)
+	if err != nil {
+		return APIKeyBinding{}, err
+	}
+	if key, ok, err := s.getExternalKeyByPurpose(ctx, externalUserID, purpose); err != nil || ok {
+		return key, err
+	}
 	binding, err := traceGatewayValue(ctx, "llmgateway.ensure_user_binding", func(spanCtx context.Context) (UserBinding, error) {
 		return s.EnsureUserBinding(spanCtx, externalUserID)
 	})
@@ -1944,6 +1954,9 @@ func (s *Service) createExternalKeyForBinding(ctx context.Context, binding UserB
 	if err != nil {
 		return APIKeyBinding{}, err
 	}
+	if keyBinding.Status == APIKeyStatusActive {
+		return keyBinding, nil
+	}
 	externalKeyID := keyBinding.ExternalKeyID
 	upstreamKey, err := traceGatewayValue(ctx, "newapi.create_user_token", func(spanCtx context.Context) (newapi.UpstreamKey, error) {
 		return client.CreateUserToken(spanCtx, binding.UpstreamUserID, userAccessToken, newapi.CreateTokenRequest{
@@ -1992,6 +2005,28 @@ func (s *Service) createExternalKeyForBinding(ctx context.Context, binding UserB
 		return APIKeyBinding{}, err
 	}
 	return keyBinding, nil
+}
+
+func (s *Service) getExternalKeyByPurpose(ctx context.Context, externalUserID, purpose string) (APIKeyBinding, bool, error) {
+	purpose = canonicalAPIKeyPurpose(purpose)
+	if purpose == "" {
+		return APIKeyBinding{}, false, nil
+	}
+	binding, ok, err := s.store.GetAPIKeyBindingByUserPurpose(ctx, strings.TrimSpace(externalUserID), purpose)
+	if err != nil || !ok {
+		return APIKeyBinding{}, ok, err
+	}
+	switch binding.Status {
+	case APIKeyStatusActive:
+		if err := validateStoredExternalKey(binding); err != nil {
+			return APIKeyBinding{}, false, fmt.Errorf("%w: user=%s purpose=%s", ErrAPIKeyMaterialMissing, externalUserID, purpose)
+		}
+		return binding, true, nil
+	case APIKeyStatusReserved, APIKeyStatusUpstreamReady, APIKeyStatusRoutePending:
+		return APIKeyBinding{}, false, fmt.Errorf("%w: user=%s purpose=%s status=%s", ErrAPIKeyProvisioning, externalUserID, purpose, binding.Status)
+	default:
+		return APIKeyBinding{}, false, fmt.Errorf("%w: user=%s purpose=%s status=%s", ErrAPIKeyStateUnavailable, externalUserID, purpose, binding.Status)
+	}
 }
 
 func (s *Service) activateAPIKeyBinding(ctx context.Context, externalKeyID string) (APIKeyBinding, error) {
@@ -2048,6 +2083,12 @@ func (s *Service) reserveExternalKeyBinding(ctx context.Context, binding UserBin
 		}, attribute.String("llmgateway.set.id", set.ID), attribute.String("llmgateway.external_key.id", candidate.ExternalKeyID))
 		if err == nil {
 			return candidate, nil
+		}
+		if errors.Is(err, ErrAPIKeyPurposeConflict) {
+			if existing, ok, existingErr := s.getExternalKeyByPurpose(ctx, binding.ExternalUserID, purpose); existingErr != nil || ok {
+				return existing, existingErr
+			}
+			return APIKeyBinding{}, err
 		}
 		if !errors.Is(err, ErrAPIKeyRandomCollision) {
 			return APIKeyBinding{}, err

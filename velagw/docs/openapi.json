@@ -2478,8 +2478,8 @@
           "Internal Compatibility"
         ],
         "operationId": "adminCreateAPIKey",
-        "summary": "为用户创建 API key",
-        "description": "LLMGateway 在目标 new-api Set 创建 key binding。",
+        "summary": "按用途获取或创建用户 API key",
+        "description": "LLMGateway 按 (user_id, name) 保证幂等。不存在时在目标 new-api Set 创建 key binding；已有 active binding 时返回原 key，不创建新的上游 token。name 为空时保留多 key 签发语义。",
         "security": [
           {
             "AdminBearer": []
@@ -2517,6 +2517,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AdminCommandEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "同用途 key 正在签发，或历史 binding 的密钥材料/状态不可复用。响应 code 为 api_key_provision_in_progress、api_key_material_unavailable 或 api_key_state_unavailable。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
                 }
               }
             }
@@ -4076,6 +4086,9 @@
         "properties": {
           "success": {
             "type": "boolean"
+          },
+          "code": {
+            "type": "string"
           },
           "message": {
             "type": "string"

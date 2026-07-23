@@ -28,7 +28,7 @@ traffic 面的生产形态是 Redis-only，不允许 Redis miss 后回 MySQL 查
 sk-<Base64URL(version + route_slot + key_id + secret)>
 ```
 
-完整 Key 固定 95 字符，其中 Key ID 和 Secret 各为 256 bit。中央 MySQL 只保存 Key ID、完整 Key 哈希、Secret 哈希、路由槽和状态，不保存完整 Key；完整 Key 仅在 Redis 路由发布成功后返回一次。Redis、日志和指标同样不保存或输出完整 Key。Redis route key 使用 route slot hash tag：
+完整 Key 固定 95 字符，其中 Key ID 和 Secret 各为 256 bit。中央 MySQL 保存完整 Key、Key ID、完整 Key 哈希、Secret 哈希、路由槽和状态，用于固定用途 Key 的幂等复用与灾难恢复；数据库访问和备份必须按密钥材料保护。完整 Key 只通过受认证管理接口返回，Redis、日志和指标不保存或输出完整 Key。Redis route key 使用 route slot hash tag：
 
 ```text
 llmgateway:route:{kr-00000007}:key:<external_key_id>

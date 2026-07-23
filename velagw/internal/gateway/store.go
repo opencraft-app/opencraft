@@ -111,6 +111,7 @@ type Store interface {
 	ListAPIKeyRouteRecoveryRecords(context.Context, string, string, int) ([]TrafficRouteRecoveryRecord, error)
 	GetAPIKeyBindingByExternalKey(context.Context, string) (APIKeyBinding, bool, error)
 	GetAPIKeyBindingByExternalKeyID(context.Context, string) (APIKeyBinding, bool, error)
+	GetAPIKeyBindingByUserPurpose(context.Context, string, string) (APIKeyBinding, bool, error)
 	ListAPIKeyBindingsByUser(context.Context, string) ([]APIKeyBinding, error)
 	ListAPIKeyBindingsBySet(context.Context, string) ([]APIKeyBinding, error)
 	DeleteAPIKeyBindingByExternalKeyID(context.Context, string) error
@@ -1199,6 +1200,7 @@ func (s *MemoryStore) SaveAPIKeyBinding(_ context.Context, binding APIKeyBinding
 	if binding.Status == "" {
 		binding.Status = APIKeyStatusActive
 	}
+	binding.Purpose = canonicalAPIKeyPurpose(binding.Purpose)
 	if binding.CreatedAt.IsZero() {
 		if existing, ok := s.apiKeysByID[binding.ExternalKeyID]; ok && !existing.CreatedAt.IsZero() {
 			binding.CreatedAt = existing.CreatedAt
@@ -1365,6 +1367,22 @@ func (s *MemoryStore) GetAPIKeyBindingByExternalKeyID(_ context.Context, keyID s
 	defer s.mu.RUnlock()
 	binding, ok := s.apiKeysByID[keyID]
 	return binding, ok, nil
+}
+
+func (s *MemoryStore) GetAPIKeyBindingByUserPurpose(_ context.Context, userID, purpose string) (APIKeyBinding, bool, error) {
+	userID = strings.TrimSpace(userID)
+	purpose = canonicalAPIKeyPurpose(purpose)
+	if userID == "" || purpose == "" {
+		return APIKeyBinding{}, false, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, binding := range s.apiKeysByID {
+		if binding.UserID == userID && canonicalAPIKeyPurpose(binding.Purpose) == purpose {
+			return binding, true, nil
+		}
+	}
+	return APIKeyBinding{}, false, nil
 }
 
 func (s *MemoryStore) ListAPIKeyBindingsByUser(_ context.Context, userID string) ([]APIKeyBinding, error) {

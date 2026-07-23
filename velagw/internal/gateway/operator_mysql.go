@@ -33,6 +33,28 @@ func (s *MySQLStore) ListAPIKeyBindingsByUser(ctx context.Context, userID string
 	return bindings, rows.Err()
 }
 
+func (s *MySQLStore) GetAPIKeyBindingByUserPurpose(ctx context.Context, userID, purpose string) (APIKeyBinding, bool, error) {
+	userID = strings.TrimSpace(userID)
+	purpose = canonicalAPIKeyPurpose(purpose)
+	if userID == "" || purpose == "" {
+		return APIKeyBinding{}, false, nil
+	}
+	row := s.db.QueryRowContext(ctx, `
+		SELECT external_key_id, external_key, external_key_hash, secret_hash, key_version, route_slot,
+			purpose, set_id, user_id, upstream_key, upstream_key_id, status, last_error, created_at, updated_at
+		FROM llmgateway_api_key_bindings
+		WHERE user_id = ? AND purpose = ?
+	`, userID, purpose)
+	binding, err := scanAPIKeyBinding(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return APIKeyBinding{}, false, nil
+	}
+	if err != nil {
+		return APIKeyBinding{}, false, err
+	}
+	return binding, true, nil
+}
+
 func (s *MySQLStore) ListAPIKeyBindingsBySet(ctx context.Context, setID string) ([]APIKeyBinding, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT external_key_id, external_key, external_key_hash, secret_hash, key_version, route_slot,
