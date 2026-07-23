@@ -1448,7 +1448,7 @@ func TestCreateInstanceFailsWhenSandboxIDAlreadyExists(t *testing.T) {
 	}
 }
 
-func TestDestroyInstanceRevokesTrackedAiGatewayKey(t *testing.T) {
+func TestDestroyInstancePreservesTrackedLLMGatewayKey(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
@@ -1478,8 +1478,8 @@ func TestDestroyInstanceRevokesTrackedAiGatewayKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("destroy instance: %v", err)
 	}
-	if len(aiGateway.revokedKeyIDs) != 1 || aiGateway.revokedKeyIDs[0] != "key-123" {
-		t.Fatalf("expected ai-gateway key to be revoked, got %#v", aiGateway.revokedKeyIDs)
+	if len(aiGateway.revokedKeyIDs) != 0 {
+		t.Fatalf("LLMGateway user key must survive instance destruction, got revocations %#v", aiGateway.revokedKeyIDs)
 	}
 }
 

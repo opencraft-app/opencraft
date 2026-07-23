@@ -23,8 +23,6 @@ type Adapter interface {
 	CreateApiKey(ctx context.Context, userID string, name string) (*CreateApiKeyResponse, error)
 	// EnsureUser 调用 LLMGateway Internal API 确保业务用户在网关内存在
 	EnsureUser(ctx context.Context, userID string, nickname string) (*EnsureUserResponse, error)
-	// RevokeApiKey 调用 LLMGateway 撤销指定 API Key
-	RevokeApiKey(ctx context.Context, keyID string) error
 	// GetUserUsage 调用 LLMGateway admin API 获取用户用量概览
 	GetUserUsage(ctx context.Context, userID string) (*UserUsageResponse, error)
 
@@ -153,54 +151,6 @@ func (a *LLMGatewayAdapter) CreateApiKey(ctx context.Context, userID string, nam
 		return nil, fmt.Errorf("decode create-api-key response body: %w", err)
 	}
 	return &result, nil
-}
-
-// RevokeApiKey 调用 DELETE /api/admin/api-keys/:id
-func (a *LLMGatewayAdapter) RevokeApiKey(ctx context.Context, keyID string) error {
-	if a.baseURL == "" {
-		return fmt.Errorf("llmgateway base_url not configured")
-	}
-	keyID = strings.TrimSpace(keyID)
-	if keyID == "" {
-		return fmt.Errorf("llmgateway key_id is required")
-	}
-
-	url := a.baseURL + "/api/admin/api-keys/" + url.PathEscape(keyID)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
-	if err != nil {
-		return fmt.Errorf("create revoke-api-key request: %w", err)
-	}
-	httpReq.Header.Set("Accept", "application/json")
-	a.applyAdminAuth(httpReq)
-
-	start := time.Now()
-	resp, err := a.httpClient.Do(httpReq)
-	duration := time.Since(start)
-	if err != nil {
-		a.logger.Warn("llmgateway revoke-api-key request failed",
-			zap.String("url", url),
-			zap.Duration("duration", duration),
-			zap.Error(err),
-		)
-		return fmt.Errorf("revoke-api-key request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read revoke-api-key response: %w", err)
-	}
-
-	a.logger.Info("llmgateway revoke-api-key response",
-		zap.String("url", url),
-		zap.Int("status", resp.StatusCode),
-		zap.Duration("duration", duration),
-	)
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("revoke-api-key returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-	return nil
 }
 
 // GetUserUsage 调用 GET /api/admin/users/:user_id/usage

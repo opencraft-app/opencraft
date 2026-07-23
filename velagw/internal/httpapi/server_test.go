@@ -1515,6 +1515,8 @@ func TestAIGatewayCompatibleAdminAPIKeyCreateAndRevoke(t *testing.T) {
 			writeJSONForHTTPTest(t, w, map[string]any{"success": true, "data": map[string]any{"items": []map[string]any{{"id": 7, "name": r.URL.Query().Get("keyword")}}}})
 		case "POST /api/token/7/key":
 			writeJSONForHTTPTest(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-upstream"}})
+		case "DELETE /api/token/7":
+			writeJSONForHTTPTest(t, w, map[string]any{"success": true})
 		case "POST /v1/chat/completions":
 			if got := r.Header.Get("Authorization"); got != "Bearer sk-upstream" {
 				t.Fatalf("proxy authorization = %q", got)

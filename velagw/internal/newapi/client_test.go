@@ -835,6 +835,21 @@ func TestClientListsAndDeletesUserTokensAndChannels(t *testing.T) {
 	}
 }
 
+func TestDeleteUserTokenTreatsNotFoundAsAlreadyDeleted(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/api/token/99" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	if err := client.DeleteUserToken(t.Context(), 42, "user-access-token", 99); err != nil {
+		t.Fatalf("delete missing token: %v", err)
+	}
+}
+
 func TestClientCreatesAndUpdatesMultiKeyChannel(t *testing.T) {
 	var create AddChannelRequest
 	var update UpdateChannelRequest

@@ -763,6 +763,9 @@ func (c *Client) DeleteUserToken(ctx context.Context, userID int, accessToken st
 	}
 	var resp apiResponse[json.RawMessage]
 	if err := c.do(ctx, http.MethodDelete, fmt.Sprintf("/api/token/%d", tokenID), userHeaders(userID, accessToken), nil, &resp); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil
+		}
 		return err
 	}
 	if !resp.Success {
@@ -1104,6 +1107,9 @@ func (c *Client) do(ctx context.Context, method string, path string, headers map
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
+		if resp.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("%w: new-api %s %s returned %d", ErrNotFound, method, path, resp.StatusCode)
+		}
 		return fmt.Errorf("new-api %s %s returned %d", method, path, resp.StatusCode)
 	}
 	if out == nil {

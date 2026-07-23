@@ -230,6 +230,8 @@ func TestKeyIssueAndRevokeEmitCommittedEvents(t *testing.T) {
 			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"items": []map[string]any{{"id": 7, "name": r.URL.Query().Get("keyword")}}}})
 		case "POST /api/token/7/key":
 			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-upstream-secret"}})
+		case "DELETE /api/token/7":
+			writeTestJSON(t, w, map[string]any{"success": true})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
