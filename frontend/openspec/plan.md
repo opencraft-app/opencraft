@@ -150,3 +150,59 @@
 - GitNexus CLI：当前环境未安装，无法执行导出函数影响面命令；已通过 `rg`、TypeScript 和聚焦引用测试核对影响范围。
 
 ---
+
+# Agent 人设页 P1 稳定性修复 Implementation Plan
+
+**Goal:** 修复国内站与国际站共用人设面板的跨 Agent 异步竞态、Hermes 路径与命令契约、清除失败一致性和详情重试六类 P1 问题。
+
+**Architecture:** 保持现有抽卡、持久化、文案和视觉不变；把 Hermes 命令构造与执行契约抽到纯模块，在 React 面板中用 Agent/request 作用域保护异步状态，并让清除失败阻止乐观删除。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4、Testing Library、BotRepository。
+
+## 任务清单
+
+- [x] 1. 以 TDD 固化 Hermes 自定义根目录、120 秒超时和 status + exitCode 成功契约。
+  - 角色：Developer + Reviewer
+  - 影响文件：`src/pages/marketing/agent-buddy-command.ts`、`src/pages/marketing/__tests__/agent-buddy-command.test.ts`
+  - RED：先覆盖写入、清除、读取命令都使用 `HERMES_HOME` fallback，所有 debug/exec 调用都传超时且拒绝 TIMEOUT/FAILED。
+  - GREEN：新增最小纯模块构造命令并复用 `isExecCommandSucceeded`。
+  - 验收：聚焦命令测试通过，组件不再拼接 Hermes shell。
+
+- [x] 2. 以 TDD 修复跨 Agent 注入/删除与保存回调竞态，并保证清除失败不删除卡片。
+  - 角色：Developer + Reviewer
+  - 影响文件：`src/pages/marketing/agent-buddy-panel.tsx`、`src/pages/marketing/__tests__/agent-buddy-panel.test.tsx`
+  - RED：用 deferred promise 锁定旧 Agent 注入/保存结果不回写新 Agent；清除失败时卡片保持且提示错误。
+  - GREEN：使用 operation/save requestId 与 active bot ref 保护所有异步回调；清除成功后再更新 drawnSouls。
+  - 验收：组件竞态测试通过，旧请求不能更新当前 Agent 状态。
+
+- [x] 3. 修复详情错误态的真实重试并完成双站相关回归验证。
+  - 角色：Developer + Reviewer
+  - 影响文件：`src/pages/marketing/agent-buddy-panel.tsx`、`src/pages/marketing/__tests__/agent-buddy-panel.test.tsx`
+  - RED：详情首次失败后点击“重试”应再次请求且保持弹窗。
+  - GREEN：把 `useAsyncResource.reload` 传给 `ErrorState`。
+  - 验收：聚焦测试、现有人设测试、`pnpm check`、`pnpm i18n:check` 和 `git diff --check` 全部通过。
+
+## 约束
+
+- 命令超时固定为 `120_000` 毫秒。
+- 不新增依赖、后端 API、视觉或抽卡规则；仅新增清除失败所需的一条错误提示。
+- 国内站继续使用 SkillHub 数据，国际站继续使用内置中英文数据。
+- 不处理 P2 OpenSpec 历史描述与更大范围组件拆分。
+- 未经用户后续确认，不 commit、push 或创建 MR。
+
+## 执行策略
+
+- 规模：M；single_agent 顺序执行，每批最多 3 个任务。
+- 分支：`frontsandbox/persona-p1-hardening`；隔离工作区：`/Users/pablozhong/codex/lightvela-persona-p1-hardening`。
+- 已完成但未归档的 Skills、成就和记忆计划原样保留，不混入本次代码修改。
+- 用户已明确确认修复 6 个 P1；规划门禁结论：**通过**。
+
+## 验证结果
+
+- TDD RED：命令测试因统一模块不存在而失败；组件新增的 4 个竞态/错误态用例全部复现并失败。
+- 聚焦 Vitest：8 个测试文件、38 个用例全部通过，覆盖国内 SkillHub 链路、国际站中英文数据、slug 映射、持久化和本次新增行为。
+- `pnpm check`：通过。
+- `pnpm i18n:check`：通过，1924/1924 条源文案已翻译。
+- 全量 Vitest：106 个文件、1178 个用例通过；Datong 3 项、Account 6 项和 Tea 依赖解析 1 项失败，另有 1 个 worker OOM。三个失败文件已在纯 `origin/master` 临时 worktree 复跑，仍为相同 10 项失败，与本次改动无关。
+- 登录后人设面板无法在隔离浏览器中安全执行真实注入/删除；按验证门禁使用组件级 deferred promise 测试替代，不把登录门禁或静态资源检查视为功能验收。
+- `git diff --check`：通过。
