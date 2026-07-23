@@ -1572,6 +1572,26 @@ func TestAIGatewayCompatibleAdminAPIKeyCreateAndRevoke(t *testing.T) {
 	if createResp.Data.KeyPrefix == "" || !strings.HasPrefix(createResp.Data.APIKey, createResp.Data.KeyPrefix) {
 		t.Fatalf("key prefix %q does not match api key %q", createResp.Data.KeyPrefix, createResp.Data.APIKey)
 	}
+	reuseReq := httptest.NewRequest(http.MethodPost, "/api/admin/users/user-1/api-keys", bytes.NewBufferString(`{"name":"instance-key"}`))
+	reuseReq.Header.Set("Authorization", "Bearer cluster-token")
+	reuseRec := httptest.NewRecorder()
+	handler.ServeHTTP(reuseRec, reuseReq)
+	if reuseRec.Code != http.StatusOK {
+		t.Fatalf("reuse api-key status=%d body=%s", reuseRec.Code, reuseRec.Body.String())
+	}
+	var reuseResp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			APIKey string `json:"api_key"`
+			KeyID  string `json:"key_id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(reuseRec.Body).Decode(&reuseResp); err != nil {
+		t.Fatal(err)
+	}
+	if !reuseResp.Success || reuseResp.Data.APIKey != createResp.Data.APIKey || reuseResp.Data.KeyID != createResp.Data.KeyID {
+		t.Fatalf("unexpected reused api-key response: %+v want key_id=%q", reuseResp, createResp.Data.KeyID)
+	}
 	assignment, err := svc.GetUserAssignment(t.Context(), "user-1")
 	if err != nil {
 		t.Fatal(err)
@@ -1602,6 +1622,38 @@ func TestAIGatewayCompatibleAdminAPIKeyCreateAndRevoke(t *testing.T) {
 	handler.ServeHTTP(proxyAfterRevokeRec, proxyAfterRevokeReq)
 	if proxyAfterRevokeRec.Code != http.StatusUnauthorized {
 		t.Fatalf("proxy after revoke status=%d body=%s", proxyAfterRevokeRec.Code, proxyAfterRevokeRec.Body.String())
+	}
+}
+
+func TestAdminAPIKeyStateErrorsUseStableConflictCodes(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		code string
+	}{
+		{name: "provisioning", err: gateway.ErrAPIKeyProvisioning, code: "api_key_provision_in_progress"},
+		{name: "material", err: gateway.ErrAPIKeyMaterialMissing, code: "api_key_material_unavailable"},
+		{name: "state", err: gateway.ErrAPIKeyStateUnavailable, code: "api_key_state_unavailable"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			writeAPIKeyError(recorder, fmt.Errorf("%w: safe detail", test.err))
+			if recorder.Code != http.StatusConflict {
+				t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+			}
+			var payload struct {
+				Success bool   `json:"success"`
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			}
+			if err := json.NewDecoder(recorder.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Success || payload.Code != test.code || payload.Message == "" {
+				t.Fatalf("payload = %+v, want code %q", payload, test.code)
+			}
+		})
 	}
 }
 

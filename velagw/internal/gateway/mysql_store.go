@@ -3259,6 +3259,7 @@ func (s *MySQLStore) SaveAPIKeyBinding(ctx context.Context, binding APIKeyBindin
 	if binding.Status == "" {
 		binding.Status = APIKeyStatusActive
 	}
+	binding.Purpose = canonicalAPIKeyPurpose(binding.Purpose)
 	hash := hashExternalKey(binding.ExternalKey)
 	binding.ExternalKeyHash = hash
 	return retryMySQLTransientLock(ctx, func() error {

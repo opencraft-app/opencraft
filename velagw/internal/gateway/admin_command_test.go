@@ -29,6 +29,33 @@ func TestCreateExternalKeyManagedRejectsPurposeTooLongBeforeQueueing(t *testing.
 	}
 }
 
+func TestCreateExternalKeyManagedReusesActiveKeyWhileAdminWritesPaused(t *testing.T) {
+	upstream := newKeyIssuanceUpstream(t, nil)
+	defer upstream.Close()
+
+	store := NewMemoryStore()
+	prepareReadyKeyIssuanceUser(t, store, upstream.URL)
+	svc := NewService(store, nil, Options{KeyRouteCache: NewMemoryAPIKeyRouteCache(0, 100)})
+	first, err := svc.createExternalKey(t.Context(), "user-1", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetAdminWritesPaused(t.Context(), "set-a", true, "upgrade run-a", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	reused, command, err := svc.CreateExternalKeyManaged(t.Context(), "user-1", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command != nil {
+		t.Fatalf("command = %+v, want active key reuse without queue", command)
+	}
+	if reused.ExternalKeyID != first.ExternalKeyID || reused.ExternalKey != first.ExternalKey {
+		t.Fatalf("reused key = %+v, want original key id=%q", reused, first.ExternalKeyID)
+	}
+}
+
 func TestManagedSubscriptionQueuesWhileAdminWritesPausedAndExecutesOnce(t *testing.T) {
 	fixture := newSubscriptionFixture(t)
 	defer fixture.server.Close()
