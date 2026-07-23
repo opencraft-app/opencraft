@@ -415,6 +415,7 @@ func TestClientCreateUserTokenRetriesTransientMySQLDeadlock(t *testing.T) {
 func TestClientAdminUserSubscriptionFlow(t *testing.T) {
 	var createdPlanID int
 	var createdName string
+	var createdRequestID string
 	var invalidatedID int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -428,7 +429,18 @@ func TestClientAdminUserSubscriptionFlow(t *testing.T) {
 			decodeJSON(t, r, &req)
 			createdPlanID = req.PlanID
 			createdName = req.Name
-			writeJSON(t, w, map[string]any{"success": true})
+			createdRequestID = req.RequestID
+			writeJSON(t, w, map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"id":         9,
+					"name":       req.Name,
+					"request_id": req.RequestID,
+					"user_id":    42,
+					"plan_id":    req.PlanID,
+					"status":     "active",
+				},
+			})
 		case "GET /api/subscription/admin/users/42/subscriptions":
 			writeJSON(t, w, map[string]any{
 				"success": true,
@@ -458,7 +470,12 @@ func TestClientAdminUserSubscriptionFlow(t *testing.T) {
 
 	client := NewClient(server.URL, server.Client())
 	auth := AdminAuth{UserID: 1, AccessToken: "admin-access-token"}
-	if err := client.AdminCreateUserSubscription(t.Context(), auth, 42, AdminCreateUserSubscriptionRequest{PlanID: 7, Name: "package:user-1:pass-1"}); err != nil {
+	created, err := client.AdminCreateUserSubscription(t.Context(), auth, 42, AdminCreateUserSubscriptionRequest{
+		PlanID:    7,
+		Name:      "package:user-1:pass-1",
+		RequestID: "trade:deal-1",
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if createdPlanID != 7 {
@@ -466,6 +483,12 @@ func TestClientAdminUserSubscriptionFlow(t *testing.T) {
 	}
 	if createdName != "package:user-1:pass-1" {
 		t.Fatalf("created subscription name = %q", createdName)
+	}
+	if createdRequestID != "trade:deal-1" {
+		t.Fatalf("created subscription request id = %q", createdRequestID)
+	}
+	if created.ID != 9 || created.Name != "package:user-1:pass-1" || created.RequestID != "trade:deal-1" {
+		t.Fatalf("unexpected created subscription: %+v", created)
 	}
 
 	subs, err := client.AdminListUserSubscriptions(t.Context(), auth, 42)
@@ -529,10 +552,10 @@ func TestClientAdminCreateUserSubscriptionRejectsInvalidIDsBeforeRequest(t *test
 	defer server.Close()
 
 	client := NewClient(server.URL, server.Client())
-	if err := client.AdminCreateUserSubscription(t.Context(), AdminAuth{UserID: 1, AccessToken: "admin-access-token"}, 0, AdminCreateUserSubscriptionRequest{PlanID: 7}); err == nil {
+	if _, err := client.AdminCreateUserSubscription(t.Context(), AdminAuth{UserID: 1, AccessToken: "admin-access-token"}, 0, AdminCreateUserSubscriptionRequest{PlanID: 7}); err == nil {
 		t.Fatal("expected invalid user id to fail")
 	}
-	if err := client.AdminCreateUserSubscription(t.Context(), AdminAuth{UserID: 1, AccessToken: "admin-access-token"}, 42, AdminCreateUserSubscriptionRequest{PlanID: 0}); err == nil {
+	if _, err := client.AdminCreateUserSubscription(t.Context(), AdminAuth{UserID: 1, AccessToken: "admin-access-token"}, 42, AdminCreateUserSubscriptionRequest{PlanID: 0}); err == nil {
 		t.Fatal("expected invalid plan id to fail")
 	}
 	if called {

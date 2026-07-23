@@ -813,7 +813,11 @@ func (s *Service) MigrateUser(ctx context.Context, req MigrationRequest) (Migrat
 	}
 	if !alreadyHasPlan {
 		if err := s.withSetSubscriptionWriteLease(ctx, set, func(leaseCtx context.Context) error {
-			return client.AdminCreateUserSubscription(leaseCtx, adminAuth, binding.UpstreamUserID, newapi.AdminCreateUserSubscriptionRequest{PlanID: upstreamPlanID})
+			_, createErr := client.AdminCreateUserSubscription(leaseCtx, adminAuth, binding.UpstreamUserID, newapi.AdminCreateUserSubscriptionRequest{
+				PlanID:    upstreamPlanID,
+				RequestID: migrationSubscriptionRequestID(req.UserID, req.PlanID),
+			})
+			return createErr
 		}); err != nil {
 			return MigrationResult{}, err
 		}
@@ -1226,22 +1230,28 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 		}
 		span.SetAttributes(attribute.Int("llmgateway.upstream_user.id", binding.UpstreamUserID))
 	}
-	if req.IsUnique && hadUpstreamUser {
-		activeSubs, err := s.listActiveSubscriptions(ctx, client, adminAuth, binding.UpstreamUserID)
+	upstreamRequestID := upstreamSubscriptionRequestID(req.IdempotencyKey)
+	activeSubsBeforeCreate := make([]newapi.UserSubscription, 0)
+	if hadUpstreamUser {
+		activeSubsBeforeCreate, err = s.listActiveSubscriptions(ctx, client, adminAuth, binding.UpstreamUserID)
 		if err != nil {
 			return Subscription{}, err
 		}
-		if hasActiveSubscriptionNamed(activeSubs, req.SubscriptionName) {
+		if req.IsUnique && hasActiveSubscriptionNamedForOtherRequest(activeSubsBeforeCreate, req.SubscriptionName, upstreamRequestID) {
 			return Subscription{}, fmt.Errorf("%w: %s", ErrSubscriptionNameConflict, req.SubscriptionName)
 		}
 	}
+	var createdSubscription newapi.UserSubscription
 	upstreamCreateAttempted = true
 	if err := traceGatewayVoid(ctx, "newapi.admin_create_user_subscription", func(spanCtx context.Context) error {
 		return s.withSetSubscriptionWriteLease(spanCtx, set, func(leaseCtx context.Context) error {
-			return client.AdminCreateUserSubscription(leaseCtx, adminAuth, binding.UpstreamUserID, newapi.AdminCreateUserSubscriptionRequest{
-				PlanID: upstreamPlanID,
-				Name:   req.SubscriptionName,
+			var createErr error
+			createdSubscription, createErr = client.AdminCreateUserSubscription(leaseCtx, adminAuth, binding.UpstreamUserID, newapi.AdminCreateUserSubscriptionRequest{
+				PlanID:    upstreamPlanID,
+				Name:      req.SubscriptionName,
+				RequestID: upstreamRequestID,
 			})
+			return createErr
 		})
 	}, attribute.String("llmgateway.set.id", set.ID), attribute.Int("llmgateway.upstream_user.id", binding.UpstreamUserID), attribute.Int("llmgateway.upstream_plan.id", upstreamPlanID)); err != nil {
 		return Subscription{}, err
@@ -1267,10 +1277,8 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 	}); err != nil {
 		return Subscription{}, err
 	}
-	if hadUpstreamUser {
-		if err := s.saveCreatedSubscriptionProjection(ctx, client, adminAuth, binding, plan.ID, upstreamPlanID, req.SubscriptionName, periodEnd); err != nil {
-			return Subscription{}, err
-		}
+	if err := s.saveCreatedSubscriptionProjection(ctx, binding, createdSubscription, plan.ID, upstreamPlanID, req.SubscriptionName, periodEnd); err != nil {
+		return Subscription{}, err
 	}
 	if _, err := traceGatewayValue(ctx, "llmgateway.set_user_assignment", func(spanCtx context.Context) (UserAssignment, error) {
 		return s.SetUserAssignment(spanCtx, UserAssignment{
@@ -1281,18 +1289,12 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 	}); err != nil {
 		return Subscription{}, err
 	}
-	if !hadUpstreamUser {
-		result = projectedSubscriptionFromPlan(binding, plan, periodStart, periodEnd)
-	} else {
-		result, err = traceGatewayValue(ctx, "llmgateway.get_active_subscription", func(spanCtx context.Context) (Subscription, error) {
-			return s.GetActiveSubscription(spanCtx, binding.ExternalUserID)
-		})
-		if err != nil {
-			return Subscription{}, err
-		}
-		result.PeriodStart = formatUnixTime(periodStart.Unix())
-		result.PeriodEnd = formatUnixTime(periodEnd.Unix())
+	result, err = s.aggregateSubscription(ctx, binding, mergeSubscriptionByID(activeSubsBeforeCreate, createdSubscription))
+	if err != nil {
+		return Subscription{}, err
 	}
+	result.PeriodStart = formatUnixTime(periodStart.Unix())
+	result.PeriodEnd = formatUnixTime(periodEnd.Unix())
 	if idempotencyEnabled {
 		if err := s.finishSubscriptionIdempotency(ctx, req, idempotencyRequestHash, SubscriptionIdempotencySucceeded, ""); err != nil {
 			return Subscription{}, err
@@ -1355,11 +1357,27 @@ func hasActiveSubscriptionNamed(subs []newapi.UserSubscription, name string) boo
 	return false
 }
 
-func (s *Service) saveCreatedSubscriptionProjection(ctx context.Context, client *newapi.Client, auth newapi.AdminAuth, binding UserBinding, planID string, upstreamPlanID int, subscriptionName string, periodEnd time.Time) error {
-	created, err := s.identifyCreatedSubscription(ctx, client, auth, binding.UpstreamUserID, upstreamPlanID, subscriptionName)
-	if err != nil {
-		return err
+func hasActiveSubscriptionNamedForOtherRequest(subs []newapi.UserSubscription, name string, requestID string) bool {
+	name = strings.TrimSpace(name)
+	for _, sub := range subs {
+		if strings.TrimSpace(sub.Name) == name && strings.TrimSpace(sub.RequestID) != requestID {
+			return true
+		}
 	}
+	return false
+}
+
+func mergeSubscriptionByID(subs []newapi.UserSubscription, created newapi.UserSubscription) []newapi.UserSubscription {
+	merged := make([]newapi.UserSubscription, 0, len(subs)+1)
+	for _, sub := range subs {
+		if sub.ID != created.ID {
+			merged = append(merged, sub)
+		}
+	}
+	return append(merged, created)
+}
+
+func (s *Service) saveCreatedSubscriptionProjection(ctx context.Context, binding UserBinding, created newapi.UserSubscription, planID string, upstreamPlanID int, subscriptionName string, periodEnd time.Time) error {
 	return s.store.SaveSubscriptionProjection(ctx, SubscriptionProjection{
 		ExternalUserID:         binding.ExternalUserID,
 		SetID:                  binding.SetID,
@@ -1371,41 +1389,9 @@ func (s *Service) saveCreatedSubscriptionProjection(ctx context.Context, client 
 	})
 }
 
-func (s *Service) identifyCreatedSubscription(ctx context.Context, client *newapi.Client, auth newapi.AdminAuth, upstreamUserID int, upstreamPlanID int, subscriptionName string) (newapi.UserSubscription, error) {
-	activeSubs, err := s.listActiveSubscriptions(ctx, client, auth, upstreamUserID)
-	if err != nil {
-		return newapi.UserSubscription{}, err
-	}
-	var matched *newapi.UserSubscription
-	for i := range activeSubs {
-		sub := activeSubs[i]
-		if sub.PlanID != upstreamPlanID {
-			continue
-		}
-		if strings.TrimSpace(sub.Name) != strings.TrimSpace(subscriptionName) {
-			continue
-		}
-		if matched == nil || sub.CreatedAt > matched.CreatedAt || (sub.CreatedAt == matched.CreatedAt && sub.ID > matched.ID) {
-			copied := sub
-			matched = &copied
-		}
-	}
-	if matched == nil && strings.TrimSpace(subscriptionName) == "" {
-		for i := range activeSubs {
-			sub := activeSubs[i]
-			if sub.PlanID != upstreamPlanID {
-				continue
-			}
-			if matched == nil || sub.CreatedAt > matched.CreatedAt || (sub.CreatedAt == matched.CreatedAt && sub.ID > matched.ID) {
-				copied := sub
-				matched = &copied
-			}
-		}
-	}
-	if matched == nil {
-		return newapi.UserSubscription{}, fmt.Errorf("%w: created subscription cannot be identified", ErrSubscriptionOutcomeUnknown)
-	}
-	return *matched, nil
+func migrationSubscriptionRequestID(userID string, planID string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(userID) + "\x00" + strings.TrimSpace(planID)))
+	return fmt.Sprintf("migration:%x", sum[:])
 }
 
 func (s *Service) finishSubscriptionIdempotency(ctx context.Context, req ApplySubscriptionRequest, requestHash string, status int, lastError string) error {

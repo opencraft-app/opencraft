@@ -13,6 +13,7 @@ import (
 	"github.com/samber/hot"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Subscription duration units
@@ -36,6 +37,7 @@ const (
 var (
 	ErrSubscriptionOrderNotFound      = errors.New("subscription order not found")
 	ErrSubscriptionOrderStatusInvalid = errors.New("subscription order status invalid")
+	ErrSubscriptionRequestConflict    = errors.New("subscription request id conflicts with a different request")
 )
 
 const (
@@ -251,9 +253,12 @@ func GetSubscriptionOrderByTradeNo(tradeNo string) *SubscriptionOrder {
 
 // User subscription instance
 type UserSubscription struct {
-	Id     int `json:"id"`
-	UserId int `json:"user_id" gorm:"index;index:idx_user_sub_active,priority:1"`
-	PlanId int `json:"plan_id" gorm:"index"`
+	Id     int    `json:"id"`
+	UserId int    `json:"user_id" gorm:"index;index:idx_user_sub_active,priority:1"`
+	PlanId int    `json:"plan_id" gorm:"index"`
+	Name   string `json:"name,omitempty" gorm:"type:varchar(191);index"`
+
+	RequestId *string `json:"request_id,omitempty" gorm:"type:varchar(128);uniqueIndex"`
 
 	AmountTotal int64 `json:"amount_total" gorm:"type:bigint;not null;default:0"`
 	AmountUsed  int64 `json:"amount_used" gorm:"type:bigint;not null;default:0"`
@@ -471,7 +476,16 @@ func downgradeUserGroupForSubscriptionTx(tx *gorm.DB, sub *UserSubscription, now
 	return target, nil
 }
 
+type createUserSubscriptionOptions struct {
+	name      string
+	requestId *string
+}
+
 func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *SubscriptionPlan, source string) (*UserSubscription, error) {
+	return createUserSubscriptionFromPlanTx(tx, userId, plan, source, createUserSubscriptionOptions{})
+}
+
+func createUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *SubscriptionPlan, source string, options createUserSubscriptionOptions) (*UserSubscription, error) {
 	if tx == nil {
 		return nil, errors.New("tx is nil")
 	}
@@ -480,6 +494,19 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	}
 	if userId <= 0 {
 		return nil, errors.New("invalid user id")
+	}
+	if options.requestId != nil {
+		var existing UserSubscription
+		result := tx.Where("request_id = ?", *options.requestId).Limit(1).Find(&existing)
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected > 0 {
+			if err := validateSubscriptionRequest(existing, userId, plan.Id, options.name); err != nil {
+				return nil, err
+			}
+			return &existing, nil
+		}
 	}
 	if plan.MaxPurchasePerUser > 0 {
 		var count int64
@@ -492,7 +519,7 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 			return nil, errors.New("已达到该套餐购买上限")
 		}
 	}
-	nowUnix := GetDBTimestamp()
+	nowUnix := getDBTimestamp(tx)
 	now := time.Unix(nowUnix, 0)
 	endUnix, err := calcPlanEndTime(now, plan)
 	if err != nil {
@@ -513,10 +540,6 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		}
 		if currentGroup != upgradeGroup {
 			prevGroup = currentGroup
-			if err := tx.Model(&User{}).Where("id = ?", userId).
-				Update("group", upgradeGroup).Error; err != nil {
-				return nil, err
-			}
 		}
 	}
 	allowWalletOverflow := true
@@ -526,6 +549,8 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	sub := &UserSubscription{
 		UserId:              userId,
 		PlanId:              plan.Id,
+		Name:                strings.TrimSpace(options.name),
+		RequestId:           options.requestId,
 		AmountTotal:         plan.TotalAmount,
 		AmountUsed:          0,
 		StartTime:           now.Unix(),
@@ -541,10 +566,97 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		CreatedAt:           common.GetTimestamp(),
 		UpdatedAt:           common.GetTimestamp(),
 	}
-	if err := tx.Create(sub).Error; err != nil {
-		return nil, err
+	createQuery := tx
+	if options.requestId != nil {
+		createQuery = createQuery.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "request_id"}},
+			DoNothing: true,
+		})
+	}
+	result := createQuery.Create(sub)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 && options.requestId != nil {
+		var existing UserSubscription
+		if err := tx.Where("request_id = ?", *options.requestId).First(&existing).Error; err != nil {
+			return nil, err
+		}
+		if err := validateSubscriptionRequest(existing, userId, plan.Id, options.name); err != nil {
+			return nil, err
+		}
+		return &existing, nil
+	}
+	if upgradeGroup != "" && prevGroup != "" {
+		if err := tx.Model(&User{}).Where("id = ?", userId).
+			Update("group", upgradeGroup).Error; err != nil {
+			return nil, err
+		}
 	}
 	return sub, nil
+}
+
+func validateSubscriptionRequest(existing UserSubscription, userId int, planId int, name string) error {
+	if existing.UserId != userId || existing.PlanId != planId || existing.Name != strings.TrimSpace(name) {
+		return ErrSubscriptionRequestConflict
+	}
+	return nil
+}
+
+func normalizeSubscriptionRequestId(requestId string) (*string, error) {
+	requestId = strings.TrimSpace(requestId)
+	if requestId == "" {
+		return nil, errors.New("request id is required")
+	}
+	if len(requestId) > 128 {
+		return nil, errors.New("request id must not exceed 128 characters")
+	}
+	return &requestId, nil
+}
+
+func AdminCreateUserSubscription(userId int, planId int, name string, requestId string) (*UserSubscription, string, error) {
+	normalizedRequestId, err := normalizeSubscriptionRequestId(requestId)
+	if err != nil {
+		return nil, "", err
+	}
+	return createAdminUserSubscription(userId, planId, name, normalizedRequestId)
+}
+
+func createAdminUserSubscription(userId int, planId int, name string, requestId *string) (*UserSubscription, string, error) {
+	if userId <= 0 || planId <= 0 {
+		return nil, "", errors.New("invalid userId or planId")
+	}
+	plan, err := GetSubscriptionPlanById(planId)
+	if err != nil {
+		return nil, "", err
+	}
+	var subscription *UserSubscription
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		var createErr error
+		subscription, createErr = createUserSubscriptionFromPlanTx(tx, userId, plan, "admin", createUserSubscriptionOptions{
+			name:      name,
+			requestId: requestId,
+		})
+		return createErr
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	message := ""
+	if strings.TrimSpace(plan.UpgradeGroup) != "" {
+		_ = UpdateUserGroupCache(userId, plan.UpgradeGroup)
+		message = fmt.Sprintf("用户分组将升级到 %s", plan.UpgradeGroup)
+	}
+	return subscription, message, nil
+}
+
+// Admin bind (no payment). Creates a UserSubscription from a plan.
+func AdminBindSubscription(userId int, planId int, sourceNote string) (string, error) {
+	_, message, err := createAdminUserSubscription(userId, planId, "", nil)
+	if err != nil {
+		return "", err
+	}
+	return message, nil
 }
 
 // Complete a subscription order (idempotent). Creates a UserSubscription snapshot from the plan.
@@ -681,29 +793,6 @@ func ExpireSubscriptionOrder(tradeNo string, expectedPaymentProvider string) err
 		order.CompleteTime = common.GetTimestamp()
 		return tx.Save(&order).Error
 	})
-}
-
-// Admin bind (no payment). Creates a UserSubscription from a plan.
-func AdminBindSubscription(userId int, planId int, sourceNote string) (string, error) {
-	if userId <= 0 || planId <= 0 {
-		return "", errors.New("invalid userId or planId")
-	}
-	plan, err := GetSubscriptionPlanById(planId)
-	if err != nil {
-		return "", err
-	}
-	err = DB.Transaction(func(tx *gorm.DB) error {
-		_, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "admin")
-		return err
-	})
-	if err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(plan.UpgradeGroup) != "" {
-		_ = UpdateUserGroupCache(userId, plan.UpgradeGroup)
-		return fmt.Sprintf("用户分组将升级到 %s", plan.UpgradeGroup), nil
-	}
-	return "", nil
 }
 
 func calcSubscriptionBalanceQuota(priceAmount float64) (int, error) {

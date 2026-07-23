@@ -392,7 +392,9 @@ func AdminListUserSubscriptions(c *gin.Context) {
 }
 
 type AdminCreateUserSubscriptionRequest struct {
-	PlanId int `json:"plan_id"`
+	PlanId    int    `json:"plan_id"`
+	Name      string `json:"name"`
+	RequestId string `json:"request_id"`
 }
 
 // AdminCreateUserSubscription creates a new user subscription from a plan (no payment).
@@ -411,16 +413,25 @@ func AdminCreateUserSubscription(c *gin.Context) {
 		common.ApiErrorMsg(c, "参数错误")
 		return
 	}
-	msg, err := model.AdminBindSubscription(userId, req.PlanId, "")
+	if strings.TrimSpace(req.RequestId) == "" {
+		msg, err := model.AdminBindSubscription(userId, req.PlanId, "")
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if msg != "" {
+			common.ApiSuccess(c, gin.H{"message": msg})
+			return
+		}
+		common.ApiSuccess(c, nil)
+		return
+	}
+	subscription, _, err := model.AdminCreateUserSubscription(userId, req.PlanId, req.Name, req.RequestId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	if msg != "" {
-		common.ApiSuccess(c, gin.H{"message": msg})
-		return
-	}
-	common.ApiSuccess(c, nil)
+	common.ApiSuccess(c, subscription)
 }
 
 // AdminInvalidateUserSubscription cancels a user subscription immediately.
