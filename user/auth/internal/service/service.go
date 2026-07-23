@@ -1056,8 +1056,8 @@ func (s *Service) CreateImpersonationSession(ctx context.Context, userID string,
 }
 
 func (s *Service) VerifyRealname(ctx context.Context, token string, input RealnameVerifyInput) (RealnameVerifyResult, error) {
-	if s.realnameFaceID.Mode == RealnameAssuranceModeFaceRequired {
-		return RealnameVerifyResult{}, newError("realname_faceid_required", "请使用人脸实名认证流程完成认证。", http.StatusConflict)
+	if s.realnameFaceID.Mode == RealnameAssuranceModeFaceRequired || s.realnameFaceID.Mode == RealnameAssuranceModeFaceless {
+		return RealnameVerifyResult{}, newError("realname_faceid_required", "请使用当前实名认证流程完成认证。", http.StatusConflict)
 	}
 	trimmedToken := strings.TrimSpace(token)
 	if trimmedToken == "" {

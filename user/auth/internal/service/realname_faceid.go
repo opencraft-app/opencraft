@@ -18,6 +18,7 @@ type RealnameAssuranceMode string
 
 const (
 	RealnameAssuranceModeLegacy       RealnameAssuranceMode = "legacy"
+	RealnameAssuranceModeFaceless     RealnameAssuranceMode = "faceless"
 	RealnameAssuranceModeObserve      RealnameAssuranceMode = "observe"
 	RealnameAssuranceModeFaceRequired RealnameAssuranceMode = "face_required"
 )
@@ -243,6 +244,31 @@ func ValidateRealnameFaceIDStartup(cfg RealnameFaceIDConfig, verifier RealnameFa
 	if cfg.Mode == RealnameAssuranceModeLegacy {
 		return nil
 	}
+	if cfg.Mode == RealnameAssuranceModeFaceless {
+		missing := make([]string, 0, 4)
+		if verifier == nil {
+			missing = append(missing, "Tencent realname client")
+		}
+		if cipher == nil {
+			missing = append(missing, "realname cipher")
+		}
+		if len(cfg.DigestKey) != 32 {
+			missing = append(missing, "32-byte digest key")
+		}
+		if binding == nil || !binding.Ready() {
+			missing = append(missing, "Shadow binding")
+		}
+		if !shadowBasicAuthSyncEnabled {
+			missing = append(missing, "Shadow basic-auth sync")
+		}
+		if !durableStore {
+			missing = append(missing, "MySQL store")
+		}
+		if len(missing) > 0 {
+			return fmt.Errorf("faceless realname startup config incomplete: %s", strings.Join(missing, ", "))
+		}
+		return nil
+	}
 	if cfg.Mode != RealnameAssuranceModeObserve && cfg.Mode != RealnameAssuranceModeFaceRequired {
 		return fmt.Errorf("unsupported realname assurance mode %q", cfg.Mode)
 	}
@@ -282,7 +308,7 @@ func ValidateRealnameFaceIDStartup(cfg RealnameFaceIDConfig, verifier RealnameFa
 
 func normalizeRealnameFaceIDConfig(cfg RealnameFaceIDConfig) RealnameFaceIDConfig {
 	switch cfg.Mode {
-	case RealnameAssuranceModeObserve, RealnameAssuranceModeFaceRequired:
+	case RealnameAssuranceModeFaceless, RealnameAssuranceModeObserve, RealnameAssuranceModeFaceRequired:
 	default:
 		cfg.Mode = RealnameAssuranceModeLegacy
 	}
@@ -332,7 +358,10 @@ func (s *Service) StartRealnameFaceIDAttempt(ctx context.Context, token string, 
 	if !input.ConsentAccepted {
 		return RealnameFaceIDStartResult{}, newError("realname_faceid_consent_required", "请先确认实名授权。", http.StatusBadRequest)
 	}
-	if s.realnameCipher == nil || s.realnameFaceIDVerifier == nil || s.realnameFaceID.RuleID == "" || s.realnameFaceID.RedirectURL == "" || len(s.realnameFaceID.DigestKey) < 32 {
+	if s.realnameFaceID.Mode == RealnameAssuranceModeFaceless && (s.realnameCipher == nil || s.realnameVerifier == nil || len(s.realnameFaceID.DigestKey) != 32) {
+		return RealnameFaceIDStartResult{}, newError("realname_unavailable", "实名认证服务暂不可用。", http.StatusServiceUnavailable)
+	}
+	if s.realnameFaceID.Mode != RealnameAssuranceModeFaceless && (s.realnameCipher == nil || s.realnameFaceIDVerifier == nil || s.realnameFaceID.RuleID == "" || s.realnameFaceID.RedirectURL == "" || len(s.realnameFaceID.DigestKey) != 32) {
 		return RealnameFaceIDStartResult{}, newError("realname_faceid_unavailable", "人脸实名认证服务暂不可用。", http.StatusServiceUnavailable)
 	}
 	store, err := s.faceIDStore()
@@ -444,6 +473,22 @@ func (s *Service) StartRealnameFaceIDAttempt(ctx context.Context, token string, 
 	}
 	if err := store.CreateRealnameFaceIDAttempt(ctx, attempt); err != nil {
 		return RealnameFaceIDStartResult{}, err
+	}
+	if s.realnameFaceID.Mode == RealnameAssuranceModeFaceless {
+		attempt.State = RealnameFaceIDStateFaceSucceeded
+		attempt.FaceVerifiedAt = &now
+		attempt.UpdatedAt = now
+		applied, err := store.ApplyRealnameFaceIDTransitionWithAudit(ctx, attempt, RealnameFaceIDStateCreated, attempt.LeaseVersion, RealnameFaceIDAuditEvent{
+			AttemptID: attempt.AttemptID, UserID: attempt.UserID, EventType: "face_capture_skipped", State: attempt.State,
+			IdentityHash: attempt.IdentityHash, PhoneHash: attempt.CurrentPhoneHash, CreatedAt: now,
+		})
+		if err != nil {
+			return RealnameFaceIDStartResult{}, err
+		}
+		if !applied {
+			return RealnameFaceIDStartResult{}, newError("realname_faceid_state_changed", "本次实名认证状态已变更，请重新开始。", http.StatusConflict)
+		}
+		return RealnameFaceIDStartResult{AttemptID: attempt.AttemptID}, nil
 	}
 	_ = store.AppendRealnameFaceIDAuditEvent(ctx, RealnameFaceIDAuditEvent{
 		AttemptID:    attempt.AttemptID,
@@ -1137,6 +1182,10 @@ func (s *Service) syncStoredFaceIDShadowBasicAuth(ctx context.Context, userID st
 
 func (s *Service) projectUserForAssuranceMode(ctx context.Context, user User) User {
 	user.RealnameAssuranceMode = string(s.realnameFaceID.Mode)
+	if s.realnameFaceID.Mode == RealnameAssuranceModeFaceless {
+		user.RealnameVerified = user.RealnameLevel == RealnameLevelPhone3FA
+		return user
+	}
 	if s.realnameFaceID.Mode != RealnameAssuranceModeFaceRequired {
 		return user
 	}

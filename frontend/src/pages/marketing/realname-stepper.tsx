@@ -14,18 +14,20 @@ export type RealnameStage = RealnameCoreStage | typeof REALNAME_SHADOW_STAGE;
 
 interface RealnameStepperProps {
   stage: RealnameStage;
+  includeFaceStep?: boolean;
   includePhoneStep: boolean;
   labels: Record<RealnameCoreStage, string>;
 }
 
 export const RealnameStepper = ({
   stage,
+  includeFaceStep = true,
   includePhoneStep,
   labels,
 }: RealnameStepperProps) => {
-  const steps: readonly RealnameCoreStage[] = includePhoneStep
-    ? REALNAME_STAGE_ORDER
-    : REALNAME_STAGE_ORDER.slice(0, -1);
+  const steps: readonly RealnameCoreStage[] = REALNAME_STAGE_ORDER.filter((step) => (
+    (includeFaceStep || step !== "face") && (includePhoneStep || step !== "phone")
+  ));
   const currentIndex = stage === REALNAME_SHADOW_STAGE ? steps.length : steps.indexOf(stage);
 
   return (
