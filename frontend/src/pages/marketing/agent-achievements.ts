@@ -8,6 +8,8 @@ import { isExecCommandSucceeded, truncateExecOutput } from "@/pages/marketing/ag
 
 export { JSON_END, JSON_START, buildHermesAchievementsCommand } from "@/pages/marketing/agent-achievements-command";
 
+export const ACHIEVEMENTS_COMMAND_TIMEOUT_MS = 300_000;
+
 export type AchievementState = "unlocked" | "discovered" | "secret";
 
 export interface AchievementEvidence {
@@ -170,9 +172,13 @@ export const parseHermesAchievementsOutput = (output: string): AchievementSnapsh
     throw new AchievementPayloadError("payload_invalid", "Hermes achievements payload is not an object.");
   }
 
-  const achievements = Array.isArray(parsed.achievements)
-    ? parsed.achievements.map(normalizeAchievement).filter((item): item is HermesAchievement => item !== null)
-    : [];
+  if (!Array.isArray(parsed.achievements)) {
+    throw new AchievementPayloadError("payload_invalid", "Hermes achievements payload does not contain an achievements array.");
+  }
+
+  const achievements = parsed.achievements
+    .map(normalizeAchievement)
+    .filter((item): item is HermesAchievement => item !== null);
 
   const scanMeta = isRecord(parsed.scan_meta) ? parsed.scan_meta : undefined;
   const scanStatus = scanMeta && isRecord(scanMeta.status) ? scanMeta.status : undefined;
@@ -218,7 +224,11 @@ export const fetchHermesAchievements = async (
   botId: string,
   options: { forceRescan?: boolean } = {},
 ): Promise<AchievementSnapshot> => {
-  const result = await bots.execDebugCommand(botId, buildHermesAchievementsCommand(options.forceRescan === true));
+  const result = await bots.execDebugCommand(
+    botId,
+    buildHermesAchievementsCommand(options.forceRescan === true),
+    { timeoutMs: ACHIEVEMENTS_COMMAND_TIMEOUT_MS },
+  );
   if (!isExecCommandSucceeded(result)) {
     throw new AchievementPayloadError("command_failed", `Hermes achievements command failed: ${truncateExecOutput(result.output, result.status)}`);
   }

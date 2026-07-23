@@ -41,6 +41,15 @@ describe("openclaw achievements debug exec helpers", () => {
     expect(command).toContain('getattr(module, "_scan_status_payload", None)');
   });
 
+  it("uses the configured Hermes home for both Python and plugin discovery", () => {
+    const command = buildHermesAchievementsCommand();
+
+    expect(command).toContain('HERMES_ROOT="$HERMES_HOME"');
+    expect(command).toContain('HERMES_ROOT="$HOME/.hermes"');
+    expect(command).toContain('PYTHON_BIN="$HERMES_ROOT/hermes-agent/venv/bin/python"');
+    expect(command).toContain('home = Path(os.environ["HERMES_ROOT"])');
+  });
+
   it("switches the fixed command to force rescan mode", () => {
     expect(buildHermesAchievementsCommand(true)).toContain("force_rescan = True");
   });
@@ -124,6 +133,36 @@ describe("openclaw achievements debug exec helpers", () => {
       expect(error).toBeInstanceOf(AchievementPayloadError);
       expect((error as AchievementPayloadError).code).toBe("json_block_missing");
     }
+  });
+
+  it.each([
+    ["missing", {}],
+    ["not an array", { achievements: {} }],
+  ])("rejects an achievements field that is %s", (_label, payload) => {
+    try {
+      parseHermesAchievementsOutput([START, JSON.stringify(payload), END].join("\n"));
+      throw new Error("Expected parseHermesAchievementsOutput to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AchievementPayloadError);
+      expect((error as AchievementPayloadError).code).toBe("payload_invalid");
+    }
+  });
+
+  it("bounds the Hermes achievements command with a five minute timeout", async () => {
+    let receivedOptions: { timeoutMs?: number } | undefined;
+    const bots = {
+      execDebugCommand: async (_botId: string, _command: string, options?: { timeoutMs?: number }) => {
+        receivedOptions = options;
+        return {
+          status: "Succeeded",
+          exitCode: 0,
+          output: [START, JSON.stringify({ achievements: [] }), END].join("\n"),
+        };
+      },
+    } as Pick<BotRepository, "execDebugCommand"> as BotRepository;
+
+    await expect(fetchHermesAchievements(bots, "bot-1")).resolves.toMatchObject({ achievements: [] });
+    expect(receivedOptions).toEqual({ timeoutMs: 300_000 });
   });
 
   it("surfaces debug exec failures before parsing output", async () => {
