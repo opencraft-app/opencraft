@@ -84,3 +84,69 @@
 - `git diff --check`：通过。
 
 ---
+
+# Agent 记忆页 P1 稳定性修复 Implementation Plan
+
+**Goal:** 修复记忆页的 Hermes 路径、YAML/payload 契约、命令超时、跨 Agent 保存竞态、并发保存和部分成功提示六类 P1 稳定性问题。
+
+**Architecture:** 保留 `debug/exec` 桥接；数据层统一命令与严格契约，独立纯模块编排保存阶段，React 页面仅维护请求作用域、互斥 UI 和结果展示。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4、Testing Library、BotRepository。
+
+## 任务清单
+
+- [x] 1. 以 TDD 加固记忆读取命令、YAML/file 语义、固定 JSON 标记、严格 payload 和 120 秒读取超时。
+  - 角色：Developer + Reviewer
+  - 影响文件：`src/pages/marketing/agent-memory.ts`、`src/pages/marketing/__tests__/agent-memory.test.ts`
+  - RED：先补自定义 `HERMES_HOME`、YAML 行尾注释、文件错误、标记解析和非法 payload 测试并确认失败。
+  - GREEN：最小修改命令与 parser，通过显式 `botId` 数据访问函数接入读取超时。
+  - 验收：聚焦 Vitest 通过，命令不再硬编码根目录，非法数据不再静默回退。
+
+- [x] 2. 以 TDD 实现可测试的保存编排，区分 failed/success/partial 并覆盖 config/restart/read 超时。
+  - 角色：Developer + Reviewer
+  - 影响文件：`src/pages/marketing/agent-memory-save.ts`、`src/pages/marketing/__tests__/agent-memory-save.test.ts`
+  - RED：先覆盖配置前失败、配置后各阶段失败、完整成功和显式超时并确认失败。
+  - GREEN：实现最小判别联合状态机，不依赖 React、不回滚已保存配置。
+  - 验收：保存编排聚焦测试通过，所有结果与阶段边界可判定。
+
+- [x] 3. 接入 Agent/request 作用域和双卡片保存互斥，完成聚焦回归与最终验证。
+  - 角色：Developer + Reviewer
+  - 影响文件：`src/pages/marketing/agent-settings-page.tsx`、相关 `__tests__` 测试、必要的 i18n 生成文件
+  - RED：先锁定切换 Agent 后旧保存不更新 UI、保存期间无法二次提交、partial 提示不宣称失败。
+  - GREEN：页面最小接线，所有 state/toast 更新同时校验 botId 与 requestId。
+  - REFACTOR：只抽取局部 helper，避免扩大大型设置页重构。
+  - 验收：目标 Vitest、`pnpm check`、`pnpm i18n:check`、`git diff --check` 和本地页面 smoke 全部通过。
+
+- [x] 4. 以 TDD 为 PyYAML 缺失场景补充明确的运行环境错误提示。
+  - 角色：Developer + Reviewer
+  - 影响文件：`src/pages/marketing/agent-memory.ts`、`src/pages/marketing/__tests__/agent-memory.test.ts`
+  - RED：先断言读取命令捕获 `ModuleNotFoundError` 并输出可操作的 Hermes runtime 修复提示。
+  - GREEN：仅包装 `yaml` 导入，不改变标准 Hermes venv、系统 Python fallback 或读取契约。
+  - 验收：聚焦 Vitest、`pnpm check`、`pnpm i18n:check` 和 `git diff --check` 通过。
+
+## 约束
+
+- 超时固定为 `120_000` 毫秒。
+- 不新增依赖、后端 API 或视觉改版。
+- 不处理 P2 埋点字段问题。
+- 不提交、推送或创建 MR，除非用户后续明确授权。
+
+## 执行策略
+
+- 规模：M；每批最多 3 个任务；单 Agent 执行。
+- 现有两个已完成但未归档计划保留，不覆盖、不混入本次代码范围。
+- 详细设计、提案和技术规格位于 `openspec/changes/2026-07-23-memory-p1-hardening-*.md`。
+- 规划门禁：用户已确认设计与继续执行，无新接口、设计稿或 capability 前置依赖；进入 TDD 实现。
+
+## 验证结果
+
+- TDD RED：读取契约新增测试初始 12 项失败；保存编排模块缺失；页面作用域/互斥/partial 边界新增 6 项失败。
+- 聚焦 Vitest：3 个测试文件、37 个用例全部通过。
+- `pnpm check`：通过。
+- `pnpm i18n:check`：通过，1923/1923 条源文案已翻译。
+- `git diff --check`：通过。
+- 全量 Vitest：105 个文件、1166 个用例通过；9 个既有 Datong/Account 用例失败，另有 1 个 worker OOM，均不涉及本次改动文件。
+- 页面 smoke：`/agents/memory/` 在 webpack dev 模式编译成功并返回 200；本地浏览器无登录态，只验证到登录门禁，未执行任何真实配置修改或网关重启。
+- GitNexus CLI：当前环境未安装，无法执行导出函数影响面命令；已通过 `rg`、TypeScript 和聚焦引用测试核对影响范围。
+
+---
