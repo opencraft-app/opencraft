@@ -186,8 +186,16 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "5 分钟从登录、实名认证、开通启航套餐、创建 Hermes 实例到接入微信通道，完成第一次 AI 对话的完整教程。",
     "/docs/account":
       "了解 LightVela 的账号体系、登录方式（QQ / 微信）、实名认证流程、账号信息页结构，以及退出登录与注销说明。",
+    "/docs/plans":
+      "LightVela 启航 Launch、巡游 Cruise、远航 Voyage 三档套餐说明：各含独立云端环境、专属存储与每月模型积分。本页讲各档定位、规格、权益与计费，帮你按需选择。",
+    "/docs/credits":
+      "LightVela 模型积分（Credits）是计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 token 消耗。本页说明积分定义、换算、发放、消耗方式及与套餐、模型的关系。",
+    "/docs/create-first-hermes":
+      "开通第一个 Hermes 实例的完整流程：登录账号、完成实名认证、选择并开通套餐、平台自动创建实例，再配置模型与通道，让你的云端 AI Agent 7×24 小时在线运行。",
     "/docs/core-concepts":
       "LightVela 的四大核心概念：Hermes、模型、通道、技能。本页解释四者关系，以及一次完整 AI 对话的内部流程。",
+    "/docs/who-is-lightvela-for":
+      "LightVela 适合想拥有长期在线、越聊越懂你的专属 AI 伙伴，却不想碰服务器、容器和 API 鉴权的用户。本页梳理目标用户画像、典型使用场景与前置条件。",
     "/docs/configuration":
       "Hermes 管理台配置总览：模型 / 通道 / 技能三大配置卡片的功能与入口，以及切换模型、接入多个通道、重建 Hermes 等常用操作。",
     "/docs/configuration/model":

@@ -120,14 +120,26 @@ type WebhookConfig struct {
 }
 
 type ExternalRoute struct {
-	Path           string                  `yaml:"path"`
-	Methods        []string                `yaml:"methods"`
-	RouteID        string                  `yaml:"route_id"`
-	UpstreamPath   string                  `yaml:"upstream_path"`
-	AuthCodeRoutes []ExternalAuthCodeRoute `yaml:"auth_code_routes"`
+	Path               string                      `yaml:"path"`
+	Methods            []string                    `yaml:"methods"`
+	RouteID            string                      `yaml:"route_id"`
+	UpstreamPath       string                      `yaml:"upstream_path"`
+	AuthCodeRoutes     []ExternalAuthCodeRoute     `yaml:"auth_code_routes"`
+	UserIDRoutes       []ExternalUserIDRoute       `yaml:"user_id_routes"`
+	UserIDPrefixRoutes []ExternalUserIDPrefixRoute `yaml:"user_id_prefix_routes"`
 }
 
 type ExternalAuthCodeRoute struct {
+	Prefix  string `yaml:"prefix"`
+	RouteID string `yaml:"route_id"`
+}
+
+type ExternalUserIDRoute struct {
+	UserID  string `yaml:"user_id"`
+	RouteID string `yaml:"route_id"`
+}
+
+type ExternalUserIDPrefixRoute struct {
 	Prefix  string `yaml:"prefix"`
 	RouteID string `yaml:"route_id"`
 }
@@ -331,6 +343,40 @@ func (c Config) Validate() error {
 			}
 			if _, ok := seen[authCodeRoute.RouteID]; !ok {
 				return fmt.Errorf("external_routes[%d].auth_code_routes[%d] references unknown route %q", i, j, authCodeRoute.RouteID)
+			}
+		}
+		userIDs := make(map[string]struct{}, len(route.UserIDRoutes))
+		for j, userIDRoute := range route.UserIDRoutes {
+			userID := strings.TrimSpace(userIDRoute.UserID)
+			if userID == "" {
+				return fmt.Errorf("external_routes[%d].user_id_routes[%d].user_id is required", i, j)
+			}
+			if _, exists := userIDs[userID]; exists {
+				return fmt.Errorf("external_routes[%d].user_id_routes[%d].user_id %q is duplicated", i, j, userID)
+			}
+			userIDs[userID] = struct{}{}
+			if strings.TrimSpace(userIDRoute.RouteID) == "" {
+				return fmt.Errorf("external_routes[%d].user_id_routes[%d].route_id is required", i, j)
+			}
+			if _, ok := seen[userIDRoute.RouteID]; !ok {
+				return fmt.Errorf("external_routes[%d].user_id_routes[%d] references unknown route %q", i, j, userIDRoute.RouteID)
+			}
+		}
+		userIDPrefixes := make(map[string]struct{}, len(route.UserIDPrefixRoutes))
+		for j, userIDPrefixRoute := range route.UserIDPrefixRoutes {
+			prefix := strings.TrimSpace(userIDPrefixRoute.Prefix)
+			if prefix == "" || !strings.HasSuffix(prefix, "_") {
+				return fmt.Errorf("external_routes[%d].user_id_prefix_routes[%d].prefix must be non-empty and end with _", i, j)
+			}
+			if _, exists := userIDPrefixes[prefix]; exists {
+				return fmt.Errorf("external_routes[%d].user_id_prefix_routes[%d].prefix %q is duplicated", i, j, prefix)
+			}
+			userIDPrefixes[prefix] = struct{}{}
+			if strings.TrimSpace(userIDPrefixRoute.RouteID) == "" {
+				return fmt.Errorf("external_routes[%d].user_id_prefix_routes[%d].route_id is required", i, j)
+			}
+			if _, ok := seen[userIDPrefixRoute.RouteID]; !ok {
+				return fmt.Errorf("external_routes[%d].user_id_prefix_routes[%d] references unknown route %q", i, j, userIDPrefixRoute.RouteID)
 			}
 		}
 	}

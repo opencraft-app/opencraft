@@ -162,6 +162,7 @@ func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger) *
 		Enabled:        envOrDefault("SHADOW_BINDING_ENABLED", "false") == "true",
 		Now:            time.Now,
 		AuthCodePrefix: envOrDefault("SHADOW_AUTH_CODE_PREFIX", ""),
+		UserNamePrefix: envOrDefault("SHADOW_USER_NAME_PREFIX", ""),
 	})
 }
 

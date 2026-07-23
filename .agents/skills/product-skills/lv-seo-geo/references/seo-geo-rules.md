@@ -285,10 +285,28 @@ URL 结构（已验证，来自 `frontend/next-site/seo.tsx` 的 `localizedDocsP
 
 示例：
 
-- 英文文章 → `[quickstart](https://lightvela.ai/docs/quickstart)`
-- 中文文章 → `[快速上手](https://lightvela.ai/zh-sg/docs/quickstart)`
+- 英文文章 → `[quickstart](https://lightvela.ai/docs/quickstart?from=<distribution_from>)`
+- 中文文章 → `[快速上手](https://lightvela.ai/zh-sg/docs/quickstart?from=<distribution_from>)`
 
 拿不准某 slug 在中文站是否提供时，去 `DOCS_ROUTE_SLUGS["zh-sg"]`（或 `"zh-cn"`）里查；该 locale 下没有的 slug，回退到英文默认路径，并在最终回复里说明。
+
+### 内容反链归因参数（P0）
+
+当输出用于外部文章、社媒发布、Techpedia 或其他内容反链时，所有 `lightvela.ai` 链接都必须带与发布平台匹配的 `from` 参数：
+
+| 发布平台 | `from` 参数 |
+| --- | --- |
+| X / Twitter | `social_x` |
+| Medium | `social_medium` |
+| LinkedIn | `social_linkedin` |
+| Product Hunt | `social_producthunt` |
+| Tencent Techpedia / 技术百科 | `social_techpedia` |
+
+例如：`https://lightvela.ai/?from=social_x`、`https://lightvela.ai/docs/configuration/files/?from=social_x`。
+
+- 一篇文章内所有 `lightvela.ai` 链接必须使用同一个来源值，包括正文内链、CTA、Community ending 和引用链接。
+- 没有查询参数时使用 `?from=...`；已有查询参数时使用 `&from=...`，且不得重复添加 `from`。
+- 未指定发布平台时先询问，不要猜测来源；二维码等非 `lightvela.ai` CDN 链接不添加该参数。
 
 ## 修改 SEO 数据时的测试提示
 

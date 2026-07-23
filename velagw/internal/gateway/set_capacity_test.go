@@ -359,6 +359,18 @@ func TestReconcileSetCapacityCreatesProvisionRequestBelowWatermark(t *testing.T)
 	store := NewMemoryStore()
 	svc := NewService(store, nil, Options{})
 	saveReadyCapacitySetWithObservedUsers(t, store, "set-a", 9)
+	if _, err := svc.CreateNewAPIRelease(t.Context(), CreateNewAPIReleaseInput{
+		ID: "release-v1", Source: "kro", Namespace: "llmgateway-kro-demo", Fleet: "fleet-demo",
+		Version: "v1", Image: testNewReleaseImage, Status: NewAPIReleaseStatusStable,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpsertReleaseRing(t.Context(), UpsertReleaseRingInput{
+		ID: "stable", Name: "Stable", Source: "kro", Namespace: "llmgateway-kro-demo", Fleet: "fleet-demo",
+		ServingReleaseID: "release-v1", AdmissionEnabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	result, err := svc.ReconcileSetCapacity(t.Context(), SetCapacityPolicy{
 		Namespace:          "llmgateway-kro-demo",
@@ -497,6 +509,36 @@ func TestReconcileSetCapacityPinsNewSetToServingReleaseRing(t *testing.T) {
 	request := result.Requests[0]
 	if request.ReleaseRingID != "stable" || request.ReleaseID != "release-v2" || request.ReleaseImage != testNewReleaseImage {
 		t.Fatalf("request release=%+v", request)
+	}
+}
+
+func TestReconcileSetCapacityRejectsVelaGWSetWithoutAdmissionRelease(t *testing.T) {
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	if err := store.SaveShard(t.Context(), Shard{ID: "shard-a", Status: ShardStatusActive}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := svc.ReconcileSetCapacity(t.Context(), SetCapacityPolicy{
+		Source: "prod", Namespace: "llmgateway", Fleet: "prod", ShardRefs: []string{"shard-a"},
+		MaxUsersPerSet: 10, MinWarmSets: 1, MaxScaleUpPerCycle: 1,
+		RuntimeBackend: SetRuntimeBackendVelaGWSet, WriterEpoch: 2,
+		RedisDBStart: intPtr(1), RedisDBLimit: intPtr(16),
+	})
+	if err == nil || !strings.Contains(err.Error(), "admission release") {
+		t.Fatalf("error = %v, want missing admission release", err)
+	}
+	if result.CreatedRequests != 0 {
+		t.Fatalf("created requests = %d, want 0", result.CreatedRequests)
+	}
+	requests, listErr := store.ListSetProvisionRequests(t.Context(), SetProvisionRequestListOptions{
+		Source: "prod", Namespace: "llmgateway", Fleet: "prod",
+	})
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if len(requests) != 0 {
+		t.Fatalf("persisted requests = %+v, want none", requests)
 	}
 }
 

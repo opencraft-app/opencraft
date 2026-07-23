@@ -73,16 +73,6 @@ def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
     return kustomization, docs
 
 
-def load_velagw_shprod_platform_values() -> dict[str, str]:
-    values = {}
-    path = REPO_ROOT / "argocd/services/velagw/shprod/velagw-platform.env"
-    for line in path.read_text().splitlines():
-        key, separator, value = line.partition("=")
-        if separator:
-            values[key] = value
-    return values
-
-
 class ReleaseBundleContractTests(unittest.TestCase):
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
         rendered = dump_manifest(merge_bundle_sources(RUNTIME_DIR / "bundles"))
@@ -286,6 +276,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         workflow = yaml.safe_load((REPO_ROOT / ".ci/velagw.yml").read_text())
         parameters = (workflow.get("extends") or {}).get("parameters") or {}
         app = yaml.safe_load((REPO_ROOT / "argocd/apps/beijing-llmgateway/velagw.yaml").read_text())
+        project = yaml.safe_load((REPO_ROOT / "argocd/projects/beijing-llmgateway.yaml").read_text())
         cluster = yaml.safe_load((REPO_ROOT / "argocd/clusters/beijing-llmgateway.yaml").read_text())
         service_root = REPO_ROOT / "argocd/services/velagw/beijing-llmgateway"
         kustomization = yaml.safe_load((service_root / "kustomization.yaml").read_text())
@@ -327,7 +318,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(app["spec"]["destination"]["name"], "beijing-llmgateway")
         self.assertEqual(app["spec"]["source"]["path"], "argocd/services/velagw/beijing-llmgateway")
         self.assertEqual(cluster["spec"]["namespaces"], ["llmgateway"])
-        self.assertFalse(cluster["spec"]["clusterResources"])
+        self.assertTrue(cluster["spec"]["clusterResources"])
         self.assertIn("argocd/services/velagw/beijing-llmgateway/**", bundle.publish_paths)
         self.assertNotIn("kind: Secret", workloads)
         self.assertNotIn("kind: LLMFleet", workloads)
@@ -336,7 +327,28 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(core_worker_env.get("LLMGATEWAY_SET_AUTOSCALER_WRITER_EPOCH"), "2")
         self.assertEqual(
             kustomization.get("resources"),
-            ["workloads.yaml", "velagwset-controller.yaml", "velagwset-provisioner.yaml"],
+            [
+                "workloads.yaml",
+                "llmfleet-rgd.yaml",
+                "velagwset-crd.yaml",
+                "velagwset-delete-policy.yaml",
+                "velagwset-controller.yaml",
+                "velagwset-provisioner.yaml",
+                "release-bootstrap.yaml",
+            ],
+        )
+        cluster_resource_whitelist = {
+            (entry.get("group"), entry.get("kind"))
+            for entry in project["spec"].get("clusterResourceWhitelist", [])
+        }
+        self.assertTrue(
+            {
+                ("kro.run", "ResourceGraphDefinition"),
+                ("apiextensions.k8s.io", "CustomResourceDefinition"),
+                ("admissionregistration.k8s.io", "ValidatingAdmissionPolicy"),
+                ("admissionregistration.k8s.io", "ValidatingAdmissionPolicyBinding"),
+            }
+            <= cluster_resource_whitelist
         )
         image_replacement_targets = {
             (target.get("select") or {}).get("name")
@@ -346,13 +358,54 @@ class ReleaseBundleContractTests(unittest.TestCase):
         }
         self.assertIn("velagwset-controller", image_replacement_targets)
         self.assertIn("velagwset-provisioner", image_replacement_targets)
+        self.assertIn("llmgateway-release-bootstrap", image_replacement_targets)
         self.assertNotIn(
             "VELAGW_PROVISIONER_IMAGE=",
             (service_root / "velagw-platform.env").read_text(),
         )
-        for resource in ("velagwset-controller.yaml", "velagwset-provisioner.yaml"):
+        for resource in (
+            "llmfleet-rgd.yaml",
+            "velagwset-crd.yaml",
+            "velagwset-delete-policy.yaml",
+            "velagwset-controller.yaml",
+            "velagwset-provisioner.yaml",
+        ):
             with self.subTest(resource=resource):
                 self.assertTrue((service_root / resource).is_file())
+
+        for resource in ("llmfleet-rgd.yaml", "velagwset-crd.yaml", "velagwset-delete-policy.yaml"):
+            with self.subTest(resource=resource):
+                self.assertEqual(
+                    (service_root / resource).read_text(),
+                    (REPO_ROOT / "argocd/services/velagw/shprod" / resource).read_text(),
+                )
+                for document in yaml.safe_load_all((service_root / resource).read_text()):
+                    annotations = ((document or {}).get("metadata") or {}).get("annotations") or {}
+                    self.assertIn(
+                        "Prune=false",
+                        annotations.get("argocd.argoproj.io/sync-options", ""),
+                    )
+
+    def test_velagw_image_build_runs_backend_and_console_tests(self) -> None:
+        dockerfile = (REPO_ROOT / "velagw/Dockerfile").read_text()
+        dockerignore = (REPO_ROOT / "velagw/.dockerignore").read_text().splitlines()
+
+        self.assertIn("RUN apk add --no-cache bash curl git jq", dockerfile)
+        self.assertIn("COPY .gitignore ./.gitignore", dockerfile)
+        self.assertNotIn(".gitignore", dockerignore)
+        for package_root in ("cmd", "internal", "deploy", "docs", "k8s", "openspec", "test"):
+            with self.subTest(package_root=package_root):
+                self.assertIn(f"COPY {package_root} ./{package_root}", dockerfile)
+
+        go_test = dockerfile.index("RUN git init --quiet && go test ./...")
+        go_build = dockerfile.index("RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build")
+        console_install = dockerfile.index("RUN corepack enable && pnpm install --frozen-lockfile")
+        console_test = dockerfile.index("RUN pnpm test")
+        console_build = dockerfile.index("RUN pnpm run build")
+
+        self.assertLess(go_test, go_build)
+        self.assertLess(console_install, console_test)
+        self.assertLess(console_test, console_build)
 
     def test_velagw_release_bundle_targets_shanghai_production_cluster(self) -> None:
         manifest = load_manifest()
@@ -407,12 +460,12 @@ class ReleaseBundleContractTests(unittest.TestCase):
             kustomization.get("resources"),
             [
                 "workloads.yaml",
-                "set-manager.yaml",
                 "llmfleet-rgd.yaml",
                 "velagwset-crd.yaml",
                 "velagwset-delete-policy.yaml",
                 "velagwset-controller.yaml",
                 "velagwset-provisioner.yaml",
+                "release-bootstrap.yaml",
             ],
         )
 
@@ -504,29 +557,21 @@ class ReleaseBundleContractTests(unittest.TestCase):
         }
         self.assertIn("velagwset-controller", image_replacement_targets)
         self.assertIn("velagwset-provisioner", image_replacement_targets)
-
-        set_manager = next(
+        self.assertIn("llmgateway-release-bootstrap", image_replacement_targets)
+        self.assertFalse(
+            any(
+                doc.get("kind") == "CronJob"
+                and (doc.get("metadata") or {}).get("name") == "llmgateway-set-manager"
+                for doc in resource_docs
+            )
+        )
+        bootstrap = next(
             doc
             for doc in resource_docs
-            if doc.get("kind") == "CronJob"
-            and (doc.get("metadata") or {}).get("name") == "llmgateway-set-manager"
+            if doc.get("kind") == "Job"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-release-bootstrap"
         )
-        set_manager_container = next(
-            container
-            for container in set_manager["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"]
-            if container.get("name") == "set-manager"
-        )
-        set_manager_env = {
-            entry["name"]: entry.get("value") for entry in set_manager_container.get("env", [])
-        }
-        self.assertEqual(
-            set_manager_env.get("LLMGATEWAY_SET_MANAGER_RUNTIME_CLEANER_IMAGE"),
-            set_manager_container.get("image"),
-        )
-        self.assertEqual(
-            load_velagw_shprod_platform_values().get("VELAGW_IMAGE"),
-            set_manager_container.get("image"),
-        )
+        self.assertEqual(bootstrap["metadata"]["annotations"]["argocd.argoproj.io/hook"], "PostSync")
 
     def test_velagw_beijing_otel_version_matches_subtree_source(self) -> None:
         marker = {}

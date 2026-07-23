@@ -9,6 +9,11 @@ ResourceGraphDefinition. The namespace, runtime Secrets, and the
 `LLMFleet/prod` instance remain externally managed and must not be added to
 this application.
 
+Cluster-scoped API definitions carry `Prune=false` so a GitOps packaging error
+cannot cascade-delete live Fleet or Set instances. Their Beijing and Shanghai
+copies are intentionally identical and enforced by release bundle contract
+tests.
+
 New capacity requests use the `velagwset` runtime backend with writer epoch 2.
 The Provisioner materializes them as `VelaGWSet` resources and the Controller
 owns their new-api workloads. Existing Sets already present in

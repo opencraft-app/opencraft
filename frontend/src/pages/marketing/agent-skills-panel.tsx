@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type ComponentType } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { ArrowUp, Check, File, Folder, FolderOpen, Link2, Loader2, Maximize2, MessageSquareText, Minimize2, Sparkles, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useRepositories } from "@/contexts/repository-context";
 import { useT } from "@/i18n/t";
-import { isCN, isGlobal } from "@/lib/region";
+import { isGlobal } from "@/lib/region";
 import { joinTsshPath, parentTsshPath, TencentTsshFileClient, type TsshFileInfo } from "@/lib/tencent-tssh-file-client";
 import { cn } from "@/lib/utils";
 import {
@@ -31,7 +31,6 @@ import {
   type SkillsDemoTab,
 } from "@/pages/marketing/skills-demo/SkillsDemoPanel";
 
-type AgentSkillsTab = "skills" | "packages";
 type LearnSkillSourceKind = "cloud" | "url" | "notes" | "upload";
 type LearnSkillStatus = "idle" | "loading" | "learning" | "success" | "error";
 type LearnSkillProgressPhase =
@@ -82,13 +81,6 @@ function getAgentSkillsTabStyle(isActive: boolean): CSSProperties {
     fontWeight: 600,
     lineHeight: "24px",
   };
-}
-
-function syncInstalledSkillSearchPlaceholder(root: HTMLElement | null, placeholder: string) {
-  const input = root?.querySelector<HTMLInputElement>(".lh-std-skill-panel__installed-search-input");
-  if (input) {
-    input.placeholder = placeholder;
-  }
 }
 
 function getLearnSourcePanelClass(selected: boolean) {
@@ -1245,94 +1237,28 @@ function LearnSkillDialog({
   );
 }
 
-export interface HermesAgentSkillsPanelProps<
-  TInstance = unknown,
-  TFeatureFlags = unknown,
-  TProductConfig = unknown,
-> {
+export interface HermesAgentSkillsPanelProps {
   botId: string;
   execDebugCommand: ExpertsExecDebugCommand;
-  featureFlags: TFeatureFlags;
   initialSectionSlug?: string;
-  instance: TInstance;
-  productConfig: TProductConfig;
-  showSkillPackages?: boolean;
-  SkillPanel: ComponentType<{
-    instance: TInstance;
-    featureFlags: TFeatureFlags;
-    productConfig: TProductConfig;
-    skillHubApiUrl?: string;
-  }>;
 }
 
-export function getInitialAgentSkillsTab(
-  sectionSlug?: string | null,
-  showSkillPackages = isCN || isGlobal,
-): AgentSkillsTab {
-  if (showSkillPackages && !isGlobal && (sectionSlug === "experts" || sectionSlug === "packages")) return "packages";
-  return "skills";
-}
-
-export function HermesAgentSkillsPanel<
-  TInstance,
-  TFeatureFlags,
-  TProductConfig,
->({
+export function HermesAgentSkillsPanel({
   botId,
   execDebugCommand,
-  featureFlags,
   initialSectionSlug,
-  instance,
-  productConfig,
-  showSkillPackages = isCN || isGlobal,
-  SkillPanel,
-}: HermesAgentSkillsPanelProps<TInstance, TFeatureFlags, TProductConfig>) {
+}: HermesAgentSkillsPanelProps) {
   const t = useT();
   const { i18n } = useTranslation();
   const globalExpertLanguage = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
-  const useSkillsDemo = isGlobal || isCN;
-  // Keep the SDK-backed outer packages tab for non-domestic hosts that explicitly enable it.
-  const showOuterSkillPackages = showSkillPackages && !isGlobal && !useSkillsDemo;
-  const initialTab = getInitialAgentSkillsTab(initialSectionSlug, showSkillPackages);
-  const initialGlobalSkillsTab: SkillsDemoTab = useSkillsDemo && (initialSectionSlug === "experts" || initialSectionSlug === "packages")
+  const initialGlobalSkillsTab: SkillsDemoTab = initialSectionSlug === "experts" || initialSectionSlug === "packages"
     ? "experts"
     : "discover";
-  const [activeTab, setActiveTab] = useState<AgentSkillsTab>(initialTab);
-  const currentTab: AgentSkillsTab = showOuterSkillPackages ? activeTab : "skills";
-  const skillPanelRef = useRef<HTMLDivElement>(null);
-  const installedSkillSearchPlaceholder = t("搜索已安装技能名称");
-  const [skillPanelRevision, setSkillPanelRevision] = useState(0);
-  const [globalSkillsTab, setGlobalSkillsTab] = useState<SkillsDemoTab>(initialGlobalSkillsTab);
-  const isSkillsDemoCreateView = useSkillsDemo && currentTab === "skills" && globalSkillsTab === "create";
-
-  useEffect(() => {
-    setActiveTab(initialTab);
-  }, [initialTab]);
-
-  useEffect(() => {
-    if (currentTab !== "skills") return;
-    const root = skillPanelRef.current;
-    syncInstalledSkillSearchPlaceholder(root, installedSkillSearchPlaceholder);
-    if (!root) return;
-
-    const observer = new MutationObserver(() => {
-      syncInstalledSkillSearchPlaceholder(root, installedSkillSearchPlaceholder);
-    });
-    observer.observe(root, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [currentTab, installedSkillSearchPlaceholder]);
+  const [skillsPanelRevision, refreshSkillsPanel] = useState(0);
 
   return (
-    <Tabs
-      value={currentTab}
-      onValueChange={(value) => {
-        if (value === "skills" || (showOuterSkillPackages && value === "packages")) {
-          setActiveTab(value);
-        }
-      }}
-      className="min-w-0"
-    >
-      <div className={(useSkillsDemo && currentTab === "skills") ? "mb-1 flex min-w-0 flex-wrap items-center gap-3" : "mb-2 flex min-w-0 flex-wrap items-center gap-3"}>
+    <Tabs value="skills" className="min-w-0">
+      <div className="mb-1 flex min-w-0 flex-wrap items-center gap-3">
         <TabsList
           aria-label={t("技能页面切换")}
           className="h-auto justify-start gap-8 rounded-none border-0 bg-transparent p-0 text-black/38 shadow-none"
@@ -1340,84 +1266,49 @@ export function HermesAgentSkillsPanel<
           <TabsTrigger
             value="skills"
             className="min-w-0 rounded-none bg-transparent px-0 py-0 shadow-none transition-colors hover:text-black/70 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            style={getAgentSkillsTabStyle(currentTab === "skills")}
+            style={getAgentSkillsTabStyle(true)}
           >
-            {isSkillsDemoCreateView ? t("创建你的技能") : t("技能")}
+            {t("技能")}
           </TabsTrigger>
-          {showOuterSkillPackages ? (
-            <TabsTrigger
-              value="packages"
-              className="min-w-0 rounded-none bg-transparent px-0 py-0 shadow-none transition-colors hover:text-black/70 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-              style={getAgentSkillsTabStyle(currentTab === "packages")}
-            >
-              {t("技能包")}
-              <span
-                aria-hidden="true"
-                className="ml-1.5 inline-flex h-4 items-center rounded-[4px] bg-[#FF4D2E] px-1.5 text-[10px] font-semibold leading-none text-white shadow-[0_3px_8px_rgba(255,77,46,0.22)]"
-              >
-                NEW
-              </span>
-            </TabsTrigger>
-          ) : null}
         </TabsList>
       </div>
-      {useSkillsDemo && currentTab === "skills" ? (
-        <p className="mb-3 min-w-0 text-sm font-medium leading-6 text-black/50">
-          {isSkillsDemoCreateView
-            ? t("把你的任何个人和工作场景变成可复用技能！")
-            : isGlobal
-              ? t("为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。")
-              : "为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用"}
-        </p>
-      ) : null}
+      <p className="mb-3 min-w-0 text-sm font-medium leading-6 text-black/50">
+        {isGlobal
+          ? t("为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。")
+          : "为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用"}
+      </p>
 
       <TabsContent value="skills" className="mt-0">
-        {useSkillsDemo ? (
-          <SkillsDemoPanel
-            key={botId}
-            botId={botId}
-            execDebugCommand={execDebugCommand}
-            mode={(isGlobal ? "global" : "domestic") satisfies SkillsDemoMode}
-            initialTab={initialGlobalSkillsTab}
-            expertsPanel={(
-              <ExpertsPanel botId={botId} execDebugCommand={execDebugCommand} lang={isGlobal ? globalExpertLanguage : undefined} />
-            )}
-            learnSkillPanel={(
-              <LearnSkillDialog
-                botId={botId}
-                onLearned={() => setSkillPanelRevision((current) => current + 1)}
-                inline
-              />
-            )}
-            onTabChange={setGlobalSkillsTab}
-            learnSkillTriggerFactory={(options: LearnSkillTriggerOptions) => (
-              <LearnSkillDialog
-                botId={botId}
-                onLearned={() => setSkillPanelRevision((current) => current + 1)}
-                initialSkillName={options.initialSkillName}
-                initialUrl={options.initialUrl}
-                initialNotes={options.initialNotes}
-                triggerLabel={options.triggerLabel}
-                hideNotes={options.hideNotes}
-                hideName={options.hideName}
-              />
-            )}
-          />
-        ) : (
-          <div ref={skillPanelRef} className="lv-agent-skills-sdk-panel" key={skillPanelRevision}>
-            <SkillPanel
-              instance={instance}
-              featureFlags={featureFlags}
-              productConfig={productConfig}
+        <SkillsDemoPanel
+          key={`${botId}-${skillsPanelRevision}`}
+          botId={botId}
+          execDebugCommand={execDebugCommand}
+          mode={(isGlobal ? "global" : "domestic") satisfies SkillsDemoMode}
+          initialTab={initialGlobalSkillsTab}
+          expertsPanel={(
+            <ExpertsPanel botId={botId} execDebugCommand={execDebugCommand} lang={isGlobal ? globalExpertLanguage : undefined} />
+          )}
+          learnSkillPanel={(
+            <LearnSkillDialog
+              botId={botId}
+              onLearned={() => refreshSkillsPanel((current) => current + 1)}
+              inline
             />
-          </div>
-        )}
+          )}
+          learnSkillTriggerFactory={(options: LearnSkillTriggerOptions) => (
+            <LearnSkillDialog
+              botId={botId}
+              onLearned={() => refreshSkillsPanel((current) => current + 1)}
+              initialSkillName={options.initialSkillName}
+              initialUrl={options.initialUrl}
+              initialNotes={options.initialNotes}
+              triggerLabel={options.triggerLabel}
+              hideNotes={options.hideNotes}
+              hideName={options.hideName}
+            />
+          )}
+        />
       </TabsContent>
-      {showOuterSkillPackages ? (
-        <TabsContent value="packages" className="mt-0">
-          <ExpertsPanel botId={botId} execDebugCommand={execDebugCommand} lang={isGlobal ? "en" : undefined} />
-        </TabsContent>
-      ) : null}
     </Tabs>
   );
 }

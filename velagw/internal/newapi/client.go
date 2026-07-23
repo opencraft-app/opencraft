@@ -112,13 +112,14 @@ type UpdateUserRequest struct {
 }
 
 type User struct {
-	ID          int    `json:"id"`
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
-	Role        int    `json:"role"`
-	Status      int    `json:"status"`
-	Group       string `json:"group"`
-	Quota       int    `json:"quota"`
+	ID          int        `json:"id"`
+	Username    string     `json:"username"`
+	DisplayName string     `json:"display_name"`
+	Role        int        `json:"role"`
+	Status      int        `json:"status"`
+	Group       string     `json:"group"`
+	Quota       int        `json:"quota"`
+	DeletedAt   *time.Time `json:"DeletedAt"`
 }
 
 type CreateTokenRequest struct {
@@ -573,6 +574,7 @@ func (c *Client) FindUser(ctx context.Context, auth AdminAuth, username string) 
 				Role:        user.Role,
 				Status:      user.Status,
 				Group:       user.Group,
+				DeletedAt:   user.DeletedAt,
 			}, nil
 		}
 	}
@@ -1168,12 +1170,13 @@ type loginData struct {
 
 type pagedUsers struct {
 	Items []struct {
-		ID          int    `json:"id"`
-		Username    string `json:"username"`
-		DisplayName string `json:"display_name"`
-		Role        int    `json:"role"`
-		Status      int    `json:"status"`
-		Group       string `json:"group"`
+		ID          int        `json:"id"`
+		Username    string     `json:"username"`
+		DisplayName string     `json:"display_name"`
+		Role        int        `json:"role"`
+		Status      int        `json:"status"`
+		Group       string     `json:"group"`
+		DeletedAt   *time.Time `json:"DeletedAt"`
 	} `json:"items"`
 }
 

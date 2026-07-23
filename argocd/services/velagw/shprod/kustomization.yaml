@@ -5,12 +5,12 @@ namespace: llmgateway
 
 resources:
   - workloads.yaml
-  - set-manager.yaml
   - llmfleet-rgd.yaml
   - velagwset-crd.yaml
   - velagwset-delete-policy.yaml
   - velagwset-controller.yaml
   - velagwset-provisioner.yaml
+  - release-bootstrap.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
@@ -73,8 +73,7 @@ replacements:
           - spec.template.spec.containers.[name=provisioner].image
           - spec.template.spec.containers.[name=provisioner].env.[name=LLMGATEWAY_IMAGE].value
       - select:
-          kind: CronJob
-          name: llmgateway-set-manager
+          kind: Job
+          name: llmgateway-release-bootstrap
         fieldPaths:
-          - spec.jobTemplate.spec.template.spec.containers.[name=set-manager].image
-          - spec.jobTemplate.spec.template.spec.containers.[name=set-manager].env.[name=LLMGATEWAY_SET_MANAGER_RUNTIME_CLEANER_IMAGE].value
+          - spec.template.spec.containers.[name=bootstrap].image

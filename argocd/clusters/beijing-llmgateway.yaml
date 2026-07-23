@@ -10,4 +10,4 @@ spec:
   owner: velagw/deploy/terraform/tencentcloud-prod
   namespaces:
     - llmgateway
-  clusterResources: false
+  clusterResources: true

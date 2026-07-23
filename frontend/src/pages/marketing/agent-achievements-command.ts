@@ -16,7 +16,12 @@ export const JSON_END = "__LIGHTVELA_ACHIEVEMENTS_JSON_END__";
  * bridge stays easy to audit and replace.
  */
 export const buildHermesAchievementsCommand = (forceRescan = false) => String.raw`set -e
-PYTHON_BIN="$HOME/.hermes/hermes-agent/venv/bin/python"
+HERMES_ROOT="$HERMES_HOME"
+if [ -z "$HERMES_ROOT" ]; then
+  HERMES_ROOT="$HOME/.hermes"
+fi
+export HERMES_ROOT
+PYTHON_BIN="$HERMES_ROOT/hermes-agent/venv/bin/python"
 if [ ! -x "$PYTHON_BIN" ]; then
   PYTHON_BIN="python3"
 fi
@@ -31,7 +36,7 @@ START = "${JSON_START}"
 END = "${JSON_END}"
 force_rescan = ${forceRescan ? "True" : "False"}
 
-home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+home = Path(os.environ["HERMES_ROOT"])
 candidates = [
     home / "hermes-agent" / "plugins" / "hermes-achievements" / "dashboard" / "plugin_api.py",
     home / "plugins" / "hermes-achievements" / "dashboard" / "plugin_api.py",

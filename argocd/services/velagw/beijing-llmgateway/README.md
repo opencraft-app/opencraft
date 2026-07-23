@@ -4,10 +4,16 @@ GitOps source for the existing Beijing LLMGateway integration cluster
 `cls-nxamet2z`.
 
 This release unit owns the static LLMGateway Deployments, Services,
-set-manager CronJob, and the namespaced VelaGWSet controller/provisioner
-resources. Runtime Secrets, CRDs, KRO/RGD, the `LLMFleet` instance, individual
+set-manager CronJob, the `VelaGWSet` API definition and deletion policy, the
+LLMFleet KRO ResourceGraphDefinition, and the VelaGWSet
+controller/provisioner. Runtime Secrets, the `LLMFleet` instance, individual
 `VelaGWSet` resources, and dynamically generated new-api resources remain
-externally managed and must not be added to this application.
+runtime-managed and must not be added to this application.
+
+The cluster-scoped API definitions are reconciled by Argo CD but carry
+`Prune=false`. Removing one from this directory must never cascade-delete
+live Fleet or Set instances. Beijing and Shanghai intentionally keep identical
+copies of these definitions, guarded by the release bundle contract tests.
 
 The single `VELAGW_IMAGE` pin in `velagw-platform.env` is updated by
 `.ci/velagw.yml` and applies to every VelaGW process, including the

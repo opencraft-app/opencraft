@@ -1132,6 +1132,69 @@ func TestProcessTenantDeletionRevokesRemoteResourcesAndTombstonesLocally(t *test
 	}
 }
 
+func TestDeleteTenantRemoteResourcesTreatsSoftDeletedUpstreamUserAsComplete(t *testing.T) {
+	var calls []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/subscription/admin/users/42/subscriptions":
+			writeGatewayTestJSON(t, w, map[string]any{"success": true, "data": []any{}})
+		case "POST /api/user/login":
+			writeGatewayTestJSON(t, w, map[string]any{
+				"success": false,
+				"message": "Username or password is incorrect, or user has been banned",
+			})
+		case "GET /api/user/search":
+			writeGatewayTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"page": 1, "page_size": 10, "total": 1,
+				"items": []map[string]any{{
+					"id": 42, "username": "sgw-user-1", "role": 1, "status": 1,
+					"group": "default", "DeletedAt": "2026-07-23T03:33:40.125Z",
+				}},
+			}})
+		default:
+			t.Fatalf("unexpected new-api request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	store := NewMemoryStore()
+	svc := NewService(store, server.Client().Transport, Options{})
+	mustSaveSet(t, store, Set{
+		ID: "set-a", BaseURL: server.URL, Status: SetStatusActive, Setup: true,
+		AdminUserID: 1, AdminAccessToken: "admin-token", AdmissionStatus: SetAdmissionStatusPassed,
+	})
+	if err := store.SaveTenant(t.Context(), Tenant{
+		ExternalUserID: "user-1", Backend: UserBackendNew, SetID: "set-a", Status: TenantStatusActive,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveUserBinding(t.Context(), UserBinding{
+		ExternalUserID: "user-1", SetID: "set-a", UpstreamUserID: 42,
+		Username: "sgw-user-1", Password: "password", ProvisionStatus: BindingProvisionStatusTokenReady,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveTenant(t.Context(), Tenant{
+		ExternalUserID: "user-1", Backend: UserBackendNew, SetID: "set-a", Status: TenantStatusDeleting,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.deleteTenantRemoteResources(t.Context(), "user-1"); err != nil {
+		t.Fatalf("delete already-removed upstream user: %v", err)
+	}
+	wantCalls := []string{
+		"GET /api/subscription/admin/users/42/subscriptions",
+		"POST /api/user/login",
+		"GET /api/user/search",
+	}
+	if strings.Join(calls, "|") != strings.Join(wantCalls, "|") {
+		t.Fatalf("new-api calls = %v, want %v", calls, wantCalls)
+	}
+}
+
 func TestDeletingTenantRejectsDependentWrites(t *testing.T) {
 	store := NewMemoryStore()
 	if err := store.SaveTenant(t.Context(), Tenant{

@@ -162,7 +162,7 @@ curl -sS https://llmgw-control.lightvela.com/api/admin/overview \
 ## LLMFleet
 
 new-api 数据库连接池由 `LLMFleet.spec.newapi.databasePool` 提供默认值，Shard 可通过
-`spec.shards[].databasePool` 按叶子字段覆盖。Set 中的连接池字段由 set-manager 物化，
+`spec.shards[].databasePool` 按叶子字段覆盖。Set 中的连接池字段由 VelaGWSet Provisioner 物化，
 不得人工逐个维护。生产初值为 admin/traffic `maxOpenConns=32`、`maxIdleConns=2`、
 `maxLifetimeSeconds=60`，订阅写入并发为每 Set 8。
 
@@ -178,7 +178,8 @@ runtime lease 去重后的 `allocated/maxSets` 选择 Shard；数据库连接数
 4. 首次渲染并 apply `llmfleet.yaml.template`，创建初始 `prod` Fleet。模板只声明 shard，`spec.sets` 保持为空。
 5. apply `velagwset-crd.yaml`，再部署 `velagwset-controller.yaml.template`。
 6. 渲染并部署 `velagwset-provisioner.yaml.template`；它只持有 control 内部 token，不持有 LLMGateway MySQL/Redis 凭据。
-7. control/worker 设置 `LLMGATEWAY_SET_AUTOSCALER_RUNTIME_BACKEND=velagwset` 和新的单调递增 writer epoch，再开启容量任务。旧 set-manager endpoint 对这些请求始终返回空。
+7. 运行 `llmgateway-release-bootstrap`，幂等创建一个 digest 固定的稳定 Release，以及 canary、early、stable 三个 Ring；只有 stable Ring 允许新 Set 准入。
+8. control/worker 设置 `LLMGATEWAY_SET_AUTOSCALER_RUNTIME_BACKEND=velagwset` 和新的单调递增 writer epoch，再开启容量任务。旧 set-manager endpoint 对这些请求始终返回空。
 
 示例 kro 安装：
 
@@ -197,6 +198,8 @@ helm upgrade --install kro oci://registry.k8s.io/kro/charts/kro \
 `KRO_IMAGE_REPOSITORY` 应指向目标地域 TCR 中预先镜像的 kro 仓库；北京当前值为 `lightclaw-bj82.tencentcloudcr.com/llmgateway/kro`。
 
 新路径不再 patch `LLMFleet.spec.sets[]`。Provisioner 先创建 admin-only `VelaGWSet`、运行 Secret 和幂等建库 Job；controller 报告 `AdminReady` 后提交 materialized fact。control 完成 bootstrap、合规、渠道、定价和权益模板并推进到 `configured` 后，Provisioner 才把 generation 1 traffic 扩到 Fleet 规定的副本数；`Ready` 与 PDB 健康后提交 serving fact，worker 最终推进到 `managed`。admission 独立检查通过后才允许分配用户和承载流量。
+
+Release/Ring 是容量扩容的前置事实，不是人工初始化数据。GitOps 中的 `release-bootstrap.yaml` 以 Argo `PostSync` Job 执行：缺失时创建，定义一致时不写，发现同 ID 漂移时失败并阻止静默覆盖。`velagwset` 容量任务在找不到可准入 Release 时必须返回错误且不落 provision request，禁止生成空镜像的半成品 Set。
 
 首批 Set 的标准动作由 `llmgateway-worker-core` 的 `reconcile_set_capacity` 任务触发。生产模板显式设置 `LLMGATEWAY_SET_AUTOSCALER_ENABLED=true`、`LLMGATEWAY_SET_AUTOSCALER_MIN_WARM_SETS=4`、`LLMGATEWAY_SET_AUTOSCALER_MAX_SCALE_UP_PER_CYCLE=2`，所以全新 Fleet 即使 `spec.sets` 为空，也会分两轮写入四个 pending provision request。每个请求都按 `pending → created → configured → managed` 幂等推进；失败会停留在当前可重试阶段或记录为 `error`，不会越过 admission。
 

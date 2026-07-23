@@ -80,6 +80,22 @@ func TestBindShadowAccountCreatesActiveBindingAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestBindShadowAccountUsesConfiguredUserNamePrefix(t *testing.T) {
+	client := &recordingClient{result: CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}}
+	svc := New(NewMemoryStore(), client, Options{Enabled: true, UserNamePrefix: "bjsbx_"})
+
+	binding, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_1", Phone: "13800138000"})
+	if err != nil {
+		t.Fatalf("bind shadow account: %v", err)
+	}
+	if got, want := binding.ShadowUserName, "bjsbx_u0825080737"; got != want {
+		t.Fatalf("binding shadow username = %q, want %q", got, want)
+	}
+	if got, want := client.lastRegister.UserName, "bjsbx_u0825080737"; got != want {
+		t.Fatalf("cloud register username = %q, want %q", got, want)
+	}
+}
+
 func TestBindShadowAccountRecordsFailureAndAllowsRetry(t *testing.T) {
 	now := time.Date(2026, 6, 1, 1, 2, 3, 0, time.UTC)
 	client := &recordingClient{err: errors.New("register failed")}

@@ -261,8 +261,11 @@ func (s *Service) deleteTenantRemoteResources(ctx context.Context, externalUserI
 	}
 	userClient := s.newAPIClient(set.BaseURL)
 	if _, err := userClient.Login(ctx, binding.Username, binding.Password); err != nil {
-		_, findErr := adminClient.FindUser(ctx, auth, binding.Username)
+		existingUser, findErr := adminClient.FindUser(ctx, auth, binding.Username)
 		if errors.Is(findErr, newapi.ErrNotFound) {
+			return nil
+		}
+		if findErr == nil && existingUser.ID == binding.UpstreamUserID && existingUser.DeletedAt != nil {
 			return nil
 		}
 		return err

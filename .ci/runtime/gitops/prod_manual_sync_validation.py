@@ -32,7 +32,7 @@ def iter_yaml_files(root: Path) -> Iterable[Path]:
         path
         for pattern in ("*.yaml", "*.yml")
         for path in root.rglob(pattern)
-        if PROD_PATH_TOKEN in path.as_posix().lower()
+        if PROD_PATH_TOKEN in path.relative_to(root).as_posix().lower()
     )
 
 

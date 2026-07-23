@@ -89,6 +89,9 @@ func TestReconcileProvisioningCreatesObserveResourcesAndCommitsAdminFact(t *test
 	if len(job.OwnerReferences) != 1 || job.OwnerReferences[0].UID != set.UID {
 		t.Fatalf("bootstrap job owner references = %+v", job.OwnerReferences)
 	}
+	if len(job.Spec.Template.Spec.ImagePullSecrets) != 1 || job.Spec.Template.Spec.ImagePullSecrets[0].Name != "tcr-pull-secret" {
+		t.Fatalf("bootstrap job image pull secrets = %+v, want tcr-pull-secret", job.Spec.Template.Spec.ImagePullSecrets)
+	}
 
 	job.Status.Succeeded = 1
 	if err := cl.Status().Update(t.Context(), job); err != nil {

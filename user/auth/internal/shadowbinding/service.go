@@ -18,6 +18,7 @@ type Options struct {
 	Now            func() time.Time
 	AuthCodeTTL    time.Duration
 	AuthCodePrefix string
+	UserNamePrefix string
 }
 
 type Service struct {
@@ -27,6 +28,7 @@ type Service struct {
 	now            func() time.Time
 	authCodeTTL    time.Duration
 	authCodePrefix string
+	userNamePrefix string
 }
 
 func New(store Store, client TencentCloudClient, opts Options) *Service {
@@ -38,7 +40,7 @@ func New(store Store, client TencentCloudClient, opts Options) *Service {
 	if ttl <= 0 {
 		ttl = 10 * time.Minute
 	}
-	return &Service{store: store, client: client, enabled: opts.Enabled, now: now, authCodeTTL: ttl, authCodePrefix: strings.Trim(strings.TrimSpace(opts.AuthCodePrefix), ".")}
+	return &Service{store: store, client: client, enabled: opts.Enabled, now: now, authCodeTTL: ttl, authCodePrefix: strings.Trim(strings.TrimSpace(opts.AuthCodePrefix), "."), userNamePrefix: strings.TrimSpace(opts.UserNamePrefix)}
 }
 
 func (s *Service) Enabled() bool { return s != nil && s.enabled }
@@ -135,7 +137,7 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 		}
 	}
 
-	shadowUserName := shadowUserNameForUser(userID)
+	shadowUserName := s.shadowUserNameForUser(userID)
 	binding, err := s.store.SavePendingBinding(ctx, userID, shadowUserName, now)
 	if err != nil {
 		return Binding{}, err
@@ -312,7 +314,7 @@ func (s *Service) registerPhoneChangeAccount(ctx context.Context, userID string,
 	if !s.enabled || s.client == nil {
 		return Binding{}, errors.New("shadow binding client is not configured")
 	}
-	shadowUserName := shadowUserNameForUser(userID)
+	shadowUserName := s.shadowUserNameForUser(userID)
 	existing, getErr := s.store.GetBindingByUserID(ctx, userID)
 	if getErr != nil {
 		return Binding{}, getErr
@@ -388,6 +390,10 @@ func shadowUserNameForUser(userID string) string {
 	number := new(big.Int).SetBytes(sum[:])
 	number.Mod(number, big.NewInt(10_000_000_000))
 	return fmt.Sprintf("u%010d", number.Int64())
+}
+
+func (s *Service) shadowUserNameForUser(userID string) string {
+	return s.userNamePrefix + shadowUserNameForUser(userID)
 }
 
 func newAuthCode() (string, error) {

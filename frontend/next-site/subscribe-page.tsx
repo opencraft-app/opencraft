@@ -158,10 +158,10 @@ const BUNDLE_TYPE_TABS: BundleTypeTabDef[] = [
   { key: "ai", zhLabel: "AI 增强版" },
 ];
 
-/* ─── AI 增强版：付费时长子 Tab（月付 / 季付）─── */
+/* ─── 付费时长子 Tab（月付 / 季付）─── */
 
 /**
- * 仅在计费开关开启（paidBillingActive=true）且当前 tab 为 `ai` 时展示。
+ * 仅在计费开关开启（paidBillingActive=true）时展示，作用于所有可购买套餐。
  * 切换后以 { time_span, time_unit } 作为 listBundles 询价参数，重拉套餐价格；
  * 下单时把 { period, time_unit } 传给 createPassOrder。
  *
@@ -181,12 +181,32 @@ const AI_DURATION_TABS: AiDurationTabDef[] = [
   { key: "quarterly", period: 3, time_unit: "m", zhLabel: "季付" },
 ];
 
-/* i18n 静态标记：AI_DURATION_TABS 的 zhLabel 与 priceUnit 的年付文案、询价中占位文案都是动态变量，extract 脚本扫不到 t() 调用 */
+const getBillingPriceUnit = (
+  durationKey: AiDurationTabDef["key"],
+  t: (zh: string, opts?: Record<string, unknown>) => string,
+): string => {
+  if (durationKey === "quarterly") {
+    return isGlobal ? "/ quarter" : t("/ 季");
+  }
+  return isGlobal ? "/ month" : t("/ 月");
+};
+
+const getBillingDurationLabel = (
+  duration: AiDurationTabDef,
+  t: (zh: string, opts?: Record<string, unknown>) => string,
+): string => {
+  if (duration.key === "quarterly") return t("3个月");
+  return t("1个月");
+};
+
+/* i18n 静态标记：AI_DURATION_TABS 的 zhLabel、priceUnit、确认订单周期与询价中占位文案都是动态变量，extract 脚本扫不到 t() 调用 */
 const __markAiDurationTabsForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
   void t("月付");
-  void t("年付");
+  void t("季付");
   void t("/ 月");
-  void t("/ 年");
+  void t("/ 季");
+  void t("1个月");
+  void t("3个月");
   void t("询价中...");
 };
 
@@ -294,7 +314,7 @@ const mapBundleToPlan = (
      - 开启计费开关后已选季付时：应传入 "quarterly" 以保证价格单位与后端 real_total_cost 口径一致 */
   durationKey: "monthly" | "quarterly" = "monthly",
   /* 询价中占位标记：仅在「用户已切换 durationKey，但对应时长的询价请求尚未返回」的中间态传 true。
-     此时 bundle.price 仍是上一时长（如月付）的旧价，若原样展示会出现「¥49 / 年」这种严重误导，
+     此时 bundle.price 仍是上一时长（如月付）的旧价，若原样展示会出现「¥49 / 季」这种严重误导，
      故价格换成 "——"、单位清空、CTA 禁用，直到新价格回来。 */
   isPricingLoading: boolean = false,
   /* 当前用户是否已开通套餐：仅用于转化引导文案。
@@ -556,13 +576,11 @@ const mapBundleToPlan = (
     /* 价格单位需与当前 durationKey 一致，且中间态必须与旧价口径一致：
        - 未付费（限时免费视觉）：paid=false 就一定是默认月价锚点，单位固定为"/ 月"
        - 已付费：paid=true 时，当前价格已是后端按 durationKey 询价回来的 real_total_cost；
-         年付回来的是 12 个月总价，若单位仍写"/ 月"会误导用户，必须同步切换为"/ 年"。
+         季付回来的是 3 个月总价，若单位仍写"/ 月"会误导用户，必须同步切换为"/ 季"。
        - 询价加载中（showPricingPlaceholder）：此时 bundle.price 还是旧时长的价，
          为避免「旧价 + 新单位」的误导，单位强制回退为"/ 月"，与旧价口径保持一致，
-         直到新价格返回后再随 durationKey 一并切成"/ 年"。 */
-    priceUnit: paid && durationKey === "yearly" && !showPricingPlaceholder
-      ? (isGlobal ? "/ year" : t("/ 年"))
-      : (isGlobal ? "/ month" : t("/ 月")),
+         直到新价格返回后再随 durationKey 一并切成"/ 季"。 */
+    priceUnit: paid && !showPricingPlaceholder ? getBillingPriceUnit(durationKey, t) : getBillingPriceUnit("monthly", t),
     /* 国际站中英文都展示促销标签：英文为 Limited free，中文为限时免费；国内站保持原有中文标签。 */
     promoTag,
     /* 命中 tier 时用 tier 一句话文案（需求2）；未命中 tier 时维持原兜底：
@@ -592,7 +610,7 @@ const mapBundleToPlan = (
      *
      * 这里前端临时按"月付"兜底，**仅用于联调跑通整条支付链路**。
      *
-     * ⚠️ 风险：一旦后端未来上线季付/年付套餐而仍未下发 time_span/time_unit，
+     * ⚠️ 风险：一旦后端未来上线季付等多周期套餐而仍未下发 time_span/time_unit，
      *     这里会按 1 个月下单但发放更长周期权益，导致财务对账事故。
      *
      * 正确做法：推后端在 bundle 配置里加 time_span / time_unit 字段并由 /v1/bundles 透出。
@@ -1581,10 +1599,12 @@ const modalCloseStyle: React.CSSProperties = {
 
 const ConfirmOrderModal = ({
   plan,
+  billingPeriodLabel,
   onCancel,
   onPay,
 }: {
   plan: PlanInfo;
+  billingPeriodLabel: string;
   onCancel: () => void;
   onPay: () => void;
 }) => {
@@ -1638,7 +1658,7 @@ const ConfirmOrderModal = ({
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 14, color: colors.warmGray500 }}>
               <span>{t("订阅周期")}</span>
-              <span style={{ fontWeight: 600, color: colors.black }}>{t("1个月")}</span>
+              <span style={{ fontWeight: 600, color: colors.black }}>{billingPeriodLabel}</span>
             </div>
             <div style={{ height: 1, background: colors.border, margin: "0 0 16px" }} />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -1886,7 +1906,6 @@ export const SubscribePage = ({
      这里在组件函数体顺序执行一次，与 t 同生命周期，避免放在 useEffect 的异步路径里漏扣。 */
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
-  const [hoveredDurationTab, setHoveredDurationTab] = useState<string | null>(null);
   const { isLoggedIn, isSubscribed, subscribe, addBot, bots, user, refreshPasses, activePass, latestPass } = useOpenClaw();
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
@@ -1936,39 +1955,39 @@ export const SubscribePage = ({
      登录引导下沉到点「订阅」按钮时（见 handleSubscribe）。 */
 
   /* 拉取上线套餐列表（GET /v1/bundles）
-     计费开关开启且当前是 AI tab 时，携带 { time_span, time_unit } 询价参数；
+     计费开关开启且当前为非默认时长时，携带 { time_span, time_unit } 询价参数；
      其他情况保持无参调用（老逻辑，含未开启计费开关的国际站占位卡场景）。
 
      加载策略（避免首屏多余请求）：
        - selectedBundleTab === null（首屏未初始化）：无参加载一次
-       - selectedBundleTab === 'ai' && paidBillingActive && 非默认时长（如年付）：带参重拉覆盖价格
-       - selectedBundleTab === 'ai' && paidBillingActive && 月付（默认）：复用首屏无参结果
+       - paidBillingActive && 非默认时长（如季付）：带参重拉覆盖价格
+       - paidBillingActive && 月付（默认）：复用首屏无参结果
          （已与后端约定：无参调用 == time_span=1&time_unit=m 的月付定价）
        - selectedBundleTab 变为其他 tab：不再重复拉取（数据已有，切 tab 只做前端分组）
 
      使用 loadKey 显式表达「要拉哪批数据」，只在 loadKey 变化时触发。
-     ⚠️ 契约：loadKey 必须是稳定字符串——非 AI tab 与 AI 月付一律映射到 "__initial__"，
+     ⚠️ 契约：loadKey 必须是稳定字符串——默认月付一律映射到 "__initial__"，
      依赖 useEffect 依赖 diff 机制实现「切回已加载过的场景不重拉」。
      修改本处务必保持这一映射稳定，否则会破坏首屏请求次数优化。
 
      retryToken 用于错误重试：++retryToken 会让 loadKey 变更 → useEffect 重跑，
      自然享受同一套 cancelled 竞态保护，无需重复抽取加载函数。 */
   const [retryToken, setRetryToken] = useState(0);
-  /* 是否需要带参询价：仅当计费开关开启且选中非默认时长（当前即年付）时为 true。
+  /* 是否需要带参询价：仅当计费开关开启且选中非默认时长（当前即季付）时为 true。
      月付为默认，与首屏无参调用返回的价格等价，直接复用即可。
      注：不再区分 bundle_type——general / ai 等所有付费套餐共用同一份询价结果，
      后端已确认所有 bundle_type 都支持 { time_span, time_unit } 询价。 */
-  const needsAiPriceQuery =
+  const needsExplicitDurationPriceQuery =
     paidBillingActive && aiDurationKey !== "monthly";
   const loadKey = useMemo(() => {
     /* 登录态必须参与 loadKey：未登录走前端静态定价表、已登录走后端询价；
        auth 就绪 / 登录态翻转时触发 useEffect 重跑，重新选择数据来源。 */
     const authSeg = !authReady ? "authpending" : isAuthenticated ? "auth" : "anon";
-    const base = needsAiPriceQuery
+    const base = needsExplicitDurationPriceQuery
       ? `paid:${aiDurationKey}`
       : "__initial__";
     return `${authSeg}#${base}#${retryToken}`;
-  }, [authReady, isAuthenticated, needsAiPriceQuery, aiDurationKey, retryToken]);
+  }, [authReady, isAuthenticated, needsExplicitDurationPriceQuery, aiDurationKey, retryToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1996,7 +2015,7 @@ export const SubscribePage = ({
       setBundlesError(null);
       try {
         const list = await repositories.plans.listBundles(
-          needsAiPriceQuery
+          needsExplicitDurationPriceQuery
             ? { time_span: aiDuration.period, time_unit: aiDuration.time_unit }
             : undefined,
         );
@@ -2109,15 +2128,13 @@ export const SubscribePage = ({
         });
       } else {
         /* AI 增强版可见性：
-           - 已登录 + 月付（durationKey === "monthly"）：启航 / 巡游的 AI 档位已上线可购买，
+           - 已登录：启航 / 巡游的 AI 档位（月付 / 季付）均已上线可购买，
              保留后端真实价格 / 促销 / 下单入口，积分回退取后端 bundle.credit（不再写死）。
+             季付走带参询价（见 needsExplicitDurationPriceQuery），后端已支持。
            - 未登录：统一「敬请期待」。未登录走的是前端静态价（AI price=null），放出后会落到
              「暂无报价」，体验劣于「敬请期待」，故未登录一律维持敬请期待。
-           - 季付（durationKey === "quarterly"）：AI 档位本期暂不支持，统一「敬请期待」，
-             保留卡内积分切换（用户仍可查看该档位），选中后价格区落到「敬请期待」分支、CTA 禁用；
-             积分维持前端写死（启航 4500 / 巡游 10000）。
            - 标准版 variant 任何时长都保持原样正常购买。 */
-        const aiReleased = isLoggedIn && aiDurationKey === "monthly";
+        const aiReleased = isLoggedIn;
         const aiCredit = AI_VARIANT_CREDIT[tk];
         const mapped = sorted.map((v) => {
           const isAi = v.bundleType === "ai" || v.raw.bundle_type === "ai";
@@ -2141,7 +2158,7 @@ export const SubscribePage = ({
       groups.push({ key: plan.id, variants: [plan] });
     }
     return groups;
-  }, [planList, isLoggedIn, aiDurationKey, t]);
+  }, [planList, isLoggedIn, t]);
 
   /* 付费过程上下文：仅在国内站走付费链路时使用。
      v1.7.31 起统一走 bridge 中转页二维码方案；不再保留 fallback 新窗口模式。
@@ -2674,67 +2691,29 @@ export const SubscribePage = ({
             >
               {AI_DURATION_TABS.map((tab) => {
                 const active = tab.key === aiDurationKey;
-                const isComingSoon = tab.key === "quarterly";
                 return (
-                  <span
+                  <button
                     key={tab.key}
-                    style={{ position: "relative", display: "inline-block" }}
-                    onMouseEnter={() => setHoveredDurationTab(tab.key)}
-                    onMouseLeave={() => setHoveredDurationTab(null)}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setAiDurationKey(tab.key)}
+                    disabled={bundlesLoading}
+                    style={{
+                      padding: "6px 16px",
+                      borderRadius: 9999,
+                      border: `1px solid ${active ? colors.black : colors.border}`,
+                      background: active ? colors.black : colors.white,
+                      color: active ? colors.white : colors.warmGray500,
+                      fontSize: 13,
+                      fontWeight: 500,
+                      cursor: bundlesLoading ? "not-allowed" : "pointer",
+                      opacity: bundlesLoading && !active ? 0.6 : 1,
+                      transition: "all 0.2s ease",
+                    }}
                   >
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      onClick={() => !isComingSoon && setAiDurationKey(tab.key)}
-                      disabled={bundlesLoading || isComingSoon}
-                      style={{
-                        padding: "6px 16px",
-                        borderRadius: 9999,
-                        border: `1px solid ${active ? colors.black : colors.border}`,
-                        background: active ? colors.black : colors.white,
-                        color: active ? colors.white : colors.warmGray500,
-                        fontSize: 13,
-                        fontWeight: 500,
-                        cursor: (bundlesLoading || isComingSoon) ? "not-allowed" : "pointer",
-                        opacity: (bundlesLoading && !active) || isComingSoon ? 0.6 : 1,
-                        transition: "all 0.2s ease",
-                      }}
-                    >
-                      {t(tab.zhLabel)}
-                    </button>
-                    {isComingSoon && hoveredDurationTab === tab.key && (
-                      <span
-                        style={{
-                          position: "absolute",
-                          top: "-32px",
-                          left: "50%",
-                          transform: "translateX(-50%)",
-                          background: "rgba(0,0,0,0.8)",
-                          color: "#fff",
-                          fontSize: 12,
-                          padding: "4px 10px",
-                          borderRadius: 6,
-                          whiteSpace: "nowrap",
-                          pointerEvents: "none",
-                          zIndex: 10,
-                        }}
-                      >
-                        {t("即将上线")}
-                        <span
-                          style={{
-                            position: "absolute",
-                            bottom: "-4px",
-                            left: "50%",
-                            transform: "translateX(-50%) rotate(45deg)",
-                            width: 8,
-                            height: 8,
-                            background: "rgba(0,0,0,0.8)",
-                          }}
-                        />
-                      </span>
-                    )}
-                  </span>
+                    {t(tab.zhLabel)}
+                  </button>
                 );
               })}
             </div>
@@ -2803,6 +2782,7 @@ export const SubscribePage = ({
           <ConfirmOrderModal
             key="confirm"
             plan={selectedPlan}
+            billingPeriodLabel={getBillingDurationLabel(aiDuration, t)}
             onCancel={handleCloseModal}
             onPay={handlePay}
           />

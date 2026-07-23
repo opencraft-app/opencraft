@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
+import type { BotRepository } from "@/repositories/types";
 
 import {
   DEFAULT_MEMORY_CHAR_LIMIT,
   DEFAULT_USER_CHAR_LIMIT,
+  HERMES_MEMORY_COMMAND_TIMEOUT_MS,
+  HERMES_MEMORY_JSON_END,
+  HERMES_MEMORY_JSON_START,
   HERMES_MEMORY_CHAR_LIMIT_MAX,
   HERMES_MEMORY_LIMIT_SAFE_BUFFER,
   HERMES_MEMORY_LIMIT_MIN,
   HERMES_USER_CHAR_LIMIT_MAX,
   buildHermesMemoryLimitCommand,
   buildHermesMemoryReadCommand,
+  fetchHermesMemorySnapshot,
   getHermesMemoryLimitBounds,
   getMemoryUsagePercent,
   isHermesMemoryLimitNearUsage,
@@ -19,30 +24,67 @@ import {
 } from "../agent-memory";
 
 describe("buildHermesMemoryReadCommand", () => {
-  it("reads Hermes config and memory files from the instance home directory", () => {
+  it("reads Hermes config and memory files from HERMES_HOME with the default root as fallback", () => {
     const command = buildHermesMemoryReadCommand();
 
-    expect(command).toContain("python3 - <<'PY'");
-    expect(command).toContain(".hermes");
+    expect(command).toContain('HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"');
+    expect(command).toContain('os.environ["HERMES_ROOT"]');
+    expect(command).toContain('"$HERMES_ROOT/hermes-agent/venv/bin/python"');
     expect(command).toContain("config.yaml");
     expect(command).toContain("MEMORY.md");
     expect(command).toContain("USER.md");
     expect(command).toContain(String(DEFAULT_MEMORY_CHAR_LIMIT));
     expect(command).toContain(String(DEFAULT_USER_CHAR_LIMIT));
   });
+
+  it("uses safe YAML parsing so canonical inline comments remain valid", () => {
+    const command = buildHermesMemoryReadCommand();
+
+    expect(command).toContain("yaml.safe_load");
+    expect(command).toContain('config_payload.get("memory"');
+    expect(command).not.toContain("re.search");
+  });
+
+  it("reports how to recover when PyYAML is unavailable", () => {
+    const command = buildHermesMemoryReadCommand();
+
+    expect(command).toContain("except ModuleNotFoundError");
+    expect(command).toContain(
+      "PyYAML is unavailable. Repair the Hermes runtime environment and try again.",
+    );
+  });
+
+  it("only treats missing files as empty and lets other read failures surface", () => {
+    const command = buildHermesMemoryReadCommand();
+
+    expect(command).toContain("except FileNotFoundError");
+    expect(command).not.toContain("except Exception:");
+  });
+
+  it("wraps the JSON payload in fixed markers", () => {
+    const command = buildHermesMemoryReadCommand();
+
+    expect(command).toContain(HERMES_MEMORY_JSON_START);
+    expect(command).toContain(HERMES_MEMORY_JSON_END);
+  });
 });
 
 describe("parseHermesMemorySnapshot", () => {
   it("parses the structured debug/exec output", () => {
-    const snapshot = parseHermesMemorySnapshot(JSON.stringify({
-      memoryCharLimit: 2200,
-      userCharLimit: 1375,
-      memoryChars: 12,
-      userChars: 8,
-      memoryText: "alpha",
-      userText: "beta",
-      usedFallbackLimits: false,
-    }));
+    const snapshot = parseHermesMemorySnapshot([
+      "transport noise {not-json}",
+      HERMES_MEMORY_JSON_START,
+      JSON.stringify({
+        memoryCharLimit: 2200,
+        userCharLimit: 1375,
+        memoryChars: 12,
+        userChars: 8,
+        memoryText: "alpha",
+        userText: "beta",
+        usedFallbackLimits: false,
+      }),
+      HERMES_MEMORY_JSON_END,
+    ].join("\n"));
 
     expect(snapshot).toEqual({
       memoryCharLimit: 2200,
@@ -55,36 +97,74 @@ describe("parseHermesMemorySnapshot", () => {
     });
   });
 
-  it("falls back when optional numeric fields are missing", () => {
-    const snapshot = parseHermesMemorySnapshot(JSON.stringify({
-      memoryText: "agent note",
-      userText: "user note",
-      usedFallbackLimits: true,
-    }));
-
-    expect(snapshot.memoryCharLimit).toBe(DEFAULT_MEMORY_CHAR_LIMIT);
-    expect(snapshot.userCharLimit).toBe(DEFAULT_USER_CHAR_LIMIT);
-    expect(snapshot.memoryChars).toBe(0);
-    expect(snapshot.userChars).toBe(0);
-    expect(snapshot.usedFallbackLimits).toBe(true);
-  });
-
-  it("can parse JSON wrapped by transport noise", () => {
-    const snapshot = parseHermesMemorySnapshot(`stdout:\n${JSON.stringify({
-      memoryCharLimit: 100,
-      userCharLimit: 50,
-      memoryChars: 20,
-      userChars: 10,
-    })}\n`);
-
-    expect(snapshot.memoryCharLimit).toBe(100);
-    expect(snapshot.userCharLimit).toBe(50);
-    expect(snapshot.memoryChars).toBe(20);
-    expect(snapshot.userChars).toBe(10);
+  it.each([
+    [{}, "memoryCharLimit"],
+    [{ memoryCharLimit: "2200" }, "memoryCharLimit"],
+    [{
+      memoryCharLimit: 2200,
+      userCharLimit: 1375,
+      memoryChars: -1,
+      userChars: 0,
+      memoryText: "",
+      userText: "",
+      usedFallbackLimits: false,
+    }, "memoryChars"],
+    [{
+      memoryCharLimit: 2200,
+      userCharLimit: 1375,
+      memoryChars: 0,
+      userChars: 0,
+      memoryText: null,
+      userText: "",
+      usedFallbackLimits: false,
+    }, "memoryText"],
+  ])("rejects invalid required payload fields: %s", (payload, field) => {
+    const output = [HERMES_MEMORY_JSON_START, JSON.stringify(payload), HERMES_MEMORY_JSON_END].join("\n");
+    expect(() => parseHermesMemorySnapshot(output)).toThrow(field);
   });
 
   it("throws for non-json output", () => {
-    expect(() => parseHermesMemorySnapshot("Traceback: python3 not found")).toThrow("memory payload is not valid JSON");
+    expect(() => parseHermesMemorySnapshot("Traceback: python3 not found")).toThrow("memory JSON block was not found");
+  });
+});
+
+describe("fetchHermesMemorySnapshot", () => {
+  it("bounds the remote read command with a two minute timeout", async () => {
+    let receivedOptions: { timeoutMs?: number } | undefined;
+    const bots = {
+      execDebugCommand: async (_botId: string, _command: string, options?: { timeoutMs?: number }) => {
+        receivedOptions = options;
+        return {
+          status: "Succeeded",
+          exitCode: 0,
+          output: [
+            HERMES_MEMORY_JSON_START,
+            JSON.stringify({
+              memoryCharLimit: 2200,
+              userCharLimit: 1375,
+              memoryChars: 0,
+              userChars: 0,
+              memoryText: "",
+              userText: "",
+              usedFallbackLimits: false,
+            }),
+            HERMES_MEMORY_JSON_END,
+          ].join("\n"),
+        };
+      },
+    } as Pick<BotRepository, "execDebugCommand"> as BotRepository;
+
+    await expect(fetchHermesMemorySnapshot(bots, "bot-1")).resolves.toMatchObject({ memoryChars: 0 });
+    expect(receivedOptions).toEqual({ timeoutMs: HERMES_MEMORY_COMMAND_TIMEOUT_MS });
+    expect(HERMES_MEMORY_COMMAND_TIMEOUT_MS).toBe(120_000);
+  });
+
+  it("surfaces command failures before parsing output", async () => {
+    const bots = {
+      execDebugCommand: async () => ({ status: "Failed", exitCode: 1, output: "permission denied" }),
+    } as Pick<BotRepository, "execDebugCommand"> as BotRepository;
+
+    await expect(fetchHermesMemorySnapshot(bots, "bot-1")).rejects.toThrow("permission denied");
   });
 });
 

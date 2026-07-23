@@ -40,25 +40,35 @@ export interface DocGroup {
   items: DocItem[];
 }
 
-/** 国内站 sidebar：微信 / 飞书 / QQ */
+/**
+ * 国内站 sidebar：按用户任务组织（GEO 导航方案）。
+ * 分组：产品入门 / 账号、套餐与开通 / 功能与配置 / 场景方案 / 对比与选型 /
+ *       问题排查 / 安全、隐私与数据 / 进阶用法 / 联系与支持。
+ * 通道具体项（微信 / 飞书 / QQ）挂在「配置通道」表头下作为二级项。
+ * 注：部分新增页面为占位（仅标题骨架），正文内容后续逐步补齐。
+ */
 const CN_SIDEBAR: DocGroup[] = [
   {
-    title: "产品公告",
-    items: [
-      { slug: "announcements/public-beta", title: "LightVela 付费版本公告" },
-    ],
-  },
-  {
-    title: "开始使用",
+    title: "产品入门",
     items: [
       { slug: "overview", title: "LightVela 是什么" },
       { slug: "quickstart", title: "快速开始" },
-      { slug: "account", title: "账号与实名认证" },
       { slug: "core-concepts", title: "核心概念" },
+      { slug: "who-is-lightvela-for", title: "LightVela 适合哪些人使用？" },
     ],
   },
   {
-    title: "配置指南",
+    title: "账号、套餐与开通",
+    items: [
+      { slug: "account", title: "账号与实名认证" },
+      { slug: "announcements/public-beta", title: "公测公告" },
+      { slug: "plans", title: "套餐说明" },
+      { slug: "credits", title: "体验积分说明" },
+      { slug: "create-first-hermes", title: "如何开通第一个 Hermes 智能体伙伴？" },
+    ],
+  },
+  {
+    title: "功能与配置",
     items: [
       { slug: "configuration", title: "配置总览" },
       { slug: "configuration/model", title: "配置模型" },
@@ -71,9 +81,14 @@ const CN_SIDEBAR: DocGroup[] = [
     ],
   },
   {
-    title: "参考",
+    title: "问题排查",
     items: [
       { slug: "faq", title: "常见问题 FAQ" },
+    ],
+  },
+  {
+    title: "联系与支持",
+    items: [
       { slug: "contact-us", title: "联系我们" },
     ],
   },
@@ -132,18 +147,27 @@ export const SIDEBAR: DocGroup[] = isGlobal ? GLOBAL_SIDEBAR : CN_SIDEBAR;
 
 /** slug 到 markdown 文件路径（相对于 `@/content/docs/`）的映射 */
 const CN_SLUG_TO_FILE: Record<string, string> = {
+  // 产品入门
   overview: "01-overview.md",
   quickstart: "02-quickstart.md",
-  account: "03-account.md",
   "core-concepts": "04-core-concepts.md",
+  "who-is-lightvela-for": "who-is-lightvela-for.md",
+  // 账号、套餐与开通
+  account: "03-account.md",
+  "announcements/public-beta": "announcements/public-beta.md",
+  plans: "plans.md",
+  credits: "credits.md",
+  "create-first-hermes": "create-first-hermes.md",
+  // 功能与配置
   configuration: "05-configuration.md",
   "configuration/model": "configuration/model.md",
   "configuration/channel-wechat": "configuration/channel-wechat.md",
   "configuration/channel-feishu": "configuration/channel-feishu.md",
   "configuration/channel-qq": "configuration/channel-qq.md",
   "configuration/skill": "configuration/skill.md",
-  "announcements/public-beta": "announcements/public-beta.md",
+  // 问题排查
   faq: "07-faq.md",
+  // 联系与支持
   "contact-us": "contact-us.md",
 };
 
