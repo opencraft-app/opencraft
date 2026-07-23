@@ -1,9 +1,15 @@
+import type { BotRepository } from "@/repositories/types";
+import { isExecCommandSucceeded, truncateExecOutput } from "@/pages/marketing/agent-reset-config";
+
 export const DEFAULT_MEMORY_CHAR_LIMIT = 2200;
 export const DEFAULT_USER_CHAR_LIMIT = 1375;
 export const HERMES_MEMORY_LIMIT_MIN = 500;
 export const HERMES_MEMORY_CHAR_LIMIT_MAX = 4000;
 export const HERMES_USER_CHAR_LIMIT_MAX = 3000;
 export const HERMES_MEMORY_LIMIT_SAFE_BUFFER = 200;
+export const HERMES_MEMORY_COMMAND_TIMEOUT_MS = 120_000;
+export const HERMES_MEMORY_JSON_START = "__LIGHTVELA_HERMES_MEMORY_JSON_START__";
+export const HERMES_MEMORY_JSON_END = "__LIGHTVELA_HERMES_MEMORY_JSON_END__";
 
 export type HermesMemoryLimitTarget = "memory" | "user";
 
@@ -21,34 +27,48 @@ export interface HermesMemorySnapshot {
   usedFallbackLimits: boolean;
 }
 
-const PYTHON_MEMORY_READER = String.raw`import json, re
+const PYTHON_MEMORY_READER = String.raw`import json, os
 from pathlib import Path
+import yaml
 
-home = Path.home()
-config = home / ".hermes" / "config.yaml"
-memory_file = home / ".hermes" / "memories" / "MEMORY.md"
-user_file = home / ".hermes" / "memories" / "USER.md"
+root = Path(os.environ["HERMES_ROOT"])
+config = root / "config.yaml"
+memory_file = root / "memories" / "MEMORY.md"
+user_file = root / "memories" / "USER.md"
 
-try:
-    config_text = config.read_text(encoding="utf-8")
-except Exception:
-    config_text = ""
-
-def yaml_int(key, default):
-    match = re.search(r"^\s*" + re.escape(key) + r":\s*(\d+)\s*$", config_text, re.M)
-    return int(match.group(1)) if match else default
-
-def read_text(path):
+def read_optional_text(path):
     try:
         return path.read_text(encoding="utf-8")
-    except Exception:
-        return ""
+    except FileNotFoundError:
+        return None
 
-memory_text = read_text(memory_file)
-user_text = read_text(user_file)
-memory_limit = yaml_int("memory_char_limit", ${DEFAULT_MEMORY_CHAR_LIMIT})
-user_limit = yaml_int("user_char_limit", ${DEFAULT_USER_CHAR_LIMIT})
+config_text = read_optional_text(config)
+config_payload = yaml.safe_load(config_text) if config_text is not None else {}
+if config_payload is None:
+    config_payload = {}
+if not isinstance(config_payload, dict):
+    raise ValueError("Hermes config root must be a mapping")
 
+memory_config = config_payload.get("memory", {})
+if memory_config is None:
+    memory_config = {}
+if not isinstance(memory_config, dict):
+    raise ValueError("Hermes memory config must be a mapping")
+
+def read_limit(key, default):
+    if key not in memory_config:
+        return default, True
+    value = memory_config[key]
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"Hermes memory config {key} must be a positive integer")
+    return value, False
+
+memory_text = read_optional_text(memory_file) or ""
+user_text = read_optional_text(user_file) or ""
+memory_limit, memory_fallback = read_limit("memory_char_limit", ${DEFAULT_MEMORY_CHAR_LIMIT})
+user_limit, user_fallback = read_limit("user_char_limit", ${DEFAULT_USER_CHAR_LIMIT})
+
+print("${HERMES_MEMORY_JSON_START}")
 print(json.dumps({
     "memoryCharLimit": memory_limit,
     "userCharLimit": user_limit,
@@ -56,11 +76,20 @@ print(json.dumps({
     "userChars": len(user_text),
     "memoryText": memory_text,
     "userText": user_text,
-    "usedFallbackLimits": not config_text or memory_limit == ${DEFAULT_MEMORY_CHAR_LIMIT} and "memory_char_limit" not in config_text or user_limit == ${DEFAULT_USER_CHAR_LIMIT} and "user_char_limit" not in config_text,
-}, ensure_ascii=False))`;
+    "usedFallbackLimits": config_text is None or memory_fallback or user_fallback,
+}, ensure_ascii=False))
+print("${HERMES_MEMORY_JSON_END}")`;
 
 export function buildHermesMemoryReadCommand(): string {
-  return `python3 - <<'PY'\n${PYTHON_MEMORY_READER}\nPY`;
+  return [
+    'HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"',
+    "export HERMES_ROOT",
+    'HERMES_PYTHON="$HERMES_ROOT/hermes-agent/venv/bin/python"',
+    'if [ ! -x "$HERMES_PYTHON" ]; then HERMES_PYTHON="python3"; fi',
+    '"$HERMES_PYTHON" - <<\'PY\'',
+    PYTHON_MEMORY_READER,
+    "PY",
+  ].join("\n");
 }
 
 function normalizeExistingChars(existingChars: number): number {
@@ -115,50 +144,71 @@ export function isHermesMemoryLimitNearUsage(value: number, used: number, curren
 }
 
 function parseJsonObject(output: string): Record<string, unknown> {
-  const trimmed = output.trim();
-  try {
-    const parsed = JSON.parse(trimmed) as unknown;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // Fall through to the bounded parse below. debug/exec may prepend transport noise.
+  const start = output.indexOf(HERMES_MEMORY_JSON_START);
+  const end = output.indexOf(HERMES_MEMORY_JSON_END, start + HERMES_MEMORY_JSON_START.length);
+  if (start < 0 || end < 0 || end <= start) {
+    throw new Error("memory JSON block was not found");
   }
 
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start < 0 || end <= start) {
-    throw new Error("memory payload is not valid JSON");
-  }
-
-  const parsed = JSON.parse(trimmed.slice(start, end + 1)) as unknown;
+  const jsonText = output.slice(start + HERMES_MEMORY_JSON_START.length, end).trim();
+  const parsed = JSON.parse(jsonText) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("memory payload is not an object");
   }
   return parsed as Record<string, unknown>;
 }
 
-function readNumber(payload: Record<string, unknown>, key: string, fallback: number): number {
+function readInteger(payload: Record<string, unknown>, key: string, minimum: number): number {
   const value = payload[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum) {
+    throw new Error(`memory payload field ${key} is invalid`);
+  }
+  return value;
 }
 
 function readString(payload: Record<string, unknown>, key: string): string {
   const value = payload[key];
-  return typeof value === "string" ? value : "";
+  if (typeof value !== "string") {
+    throw new Error(`memory payload field ${key} is invalid`);
+  }
+  return value;
 }
 
 export function parseHermesMemorySnapshot(output: string): HermesMemorySnapshot {
   const payload = parseJsonObject(output);
+  const memoryCharLimit = readInteger(payload, "memoryCharLimit", 1);
+  const userCharLimit = readInteger(payload, "userCharLimit", 1);
+  const memoryChars = readInteger(payload, "memoryChars", 0);
+  const userChars = readInteger(payload, "userChars", 0);
+  const memoryText = readString(payload, "memoryText");
+  const userText = readString(payload, "userText");
+  if (typeof payload.usedFallbackLimits !== "boolean") {
+    throw new Error("memory payload field usedFallbackLimits is invalid");
+  }
   return {
-    memoryCharLimit: readNumber(payload, "memoryCharLimit", DEFAULT_MEMORY_CHAR_LIMIT),
-    userCharLimit: readNumber(payload, "userCharLimit", DEFAULT_USER_CHAR_LIMIT),
-    memoryChars: readNumber(payload, "memoryChars", 0),
-    userChars: readNumber(payload, "userChars", 0),
-    memoryText: readString(payload, "memoryText"),
-    userText: readString(payload, "userText"),
-    usedFallbackLimits: payload.usedFallbackLimits === true,
+    memoryCharLimit,
+    userCharLimit,
+    memoryChars,
+    userChars,
+    memoryText,
+    userText,
+    usedFallbackLimits: payload.usedFallbackLimits,
   };
+}
+
+export async function fetchHermesMemorySnapshot(
+  bots: BotRepository,
+  botId: string,
+): Promise<HermesMemorySnapshot> {
+  const result = await bots.execDebugCommand(
+    botId,
+    buildHermesMemoryReadCommand(),
+    { timeoutMs: HERMES_MEMORY_COMMAND_TIMEOUT_MS },
+  );
+  if (!isExecCommandSucceeded(result)) {
+    throw new Error(`Hermes memory command failed: ${truncateExecOutput(result.output, result.status)}`);
+  }
+  return parseHermesMemorySnapshot(result.output);
 }
 
 export function splitHermesMemoryEntries(text: string): string[] {

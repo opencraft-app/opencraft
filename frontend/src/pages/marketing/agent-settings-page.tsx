@@ -66,12 +66,10 @@ import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-swi
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
 import {
-  buildHermesMemoryReadCommand,
-  buildHermesMemoryLimitCommand,
+  fetchHermesMemorySnapshot,
   getHermesMemoryLimitBounds,
   getMemoryUsagePercent,
   isHermesMemoryLimitNearUsage,
-  parseHermesMemorySnapshot,
   splitHermesMemoryEntries,
   toSingleLineMemoryEntry,
   validateHermesMemoryLimit,
@@ -79,6 +77,11 @@ import {
   type HermesMemoryLimitTarget,
   type HermesMemoryLimitValidation,
 } from "@/pages/marketing/agent-memory";
+import {
+  canStartHermesMemoryLimitSave,
+  isHermesMemoryOperationCurrent,
+  saveHermesMemoryLimit as executeHermesMemoryLimitSave,
+} from "@/pages/marketing/agent-memory-save";
 import { BuddyPanel } from "@/pages/marketing/agent-buddy-panel";
 import { HermesAgentSkillsPanel } from "@/pages/marketing/agent-skills-panel";
 import { AchievementsPanel } from "@/pages/marketing/agent-achievements-panel";
@@ -683,6 +686,7 @@ const MemoryLimitCard = ({
   used,
   limit,
   isSaving,
+  isDisabled,
   saveError,
   onSaveLimit,
   onDraftChange,
@@ -694,6 +698,7 @@ const MemoryLimitCard = ({
   used: number;
   limit: number;
   isSaving: boolean;
+  isDisabled: boolean;
   saveError: string | null;
   onSaveLimit: (target: HermesMemoryLimitTarget, value: number, existingChars: number) => Promise<boolean>;
   onDraftChange: (target: HermesMemoryLimitTarget) => void;
@@ -764,7 +769,7 @@ const MemoryLimitCard = ({
               setTouched(true);
               onDraftChange(target);
             }}
-            disabled={isSaving}
+            disabled={isDisabled}
             className="h-9 w-28 rounded-md border border-black/[0.10] bg-white px-3 text-sm tabular-nums text-black/85 outline-none transition-colors focus:border-black/30 disabled:cursor-not-allowed disabled:opacity-60"
           />
         ) : (
@@ -780,7 +785,11 @@ const MemoryLimitCard = ({
               setTouched(false);
               setIsEditing(true);
             }}
-            className="ml-1 inline-flex h-7 items-center rounded-md border border-black/[0.10] bg-white px-2.5 text-xs font-medium text-black/55 transition-colors hover:border-black/[0.18] hover:bg-black/[0.04] hover:text-black/80"
+            disabled={isDisabled}
+            className={cn(
+              "ml-1 inline-flex h-7 items-center rounded-md border border-black/[0.10] bg-white px-2.5 text-xs font-medium text-black/55 transition-colors hover:border-black/[0.18] hover:bg-black/[0.04] hover:text-black/80",
+              isDisabled && "cursor-not-allowed opacity-45",
+            )}
           >
             {t("调整限额")}
           </button>
@@ -789,10 +798,10 @@ const MemoryLimitCard = ({
             <button
               type="button"
               onClick={handleSave}
-              disabled={isSaving || !validation.ok}
+              disabled={isDisabled || !validation.ok}
               className={cn(
                 "ml-1 inline-flex h-8 items-center gap-1.5 rounded-md bg-black px-3 text-xs font-medium text-white transition-colors hover:bg-black/85",
-                (isSaving || !validation.ok) && "cursor-not-allowed opacity-45",
+                (isDisabled || !validation.ok) && "cursor-not-allowed opacity-45",
               )}
             >
               {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -801,10 +810,10 @@ const MemoryLimitCard = ({
             <button
               type="button"
               onClick={handleCancel}
-              disabled={isSaving}
+              disabled={isDisabled}
               className={cn(
                 "inline-flex h-8 items-center rounded-md border border-black/[0.08] bg-white px-3 text-xs font-medium text-black/55 transition-colors hover:bg-black/[0.04] hover:text-black/75",
-                isSaving && "cursor-not-allowed opacity-45",
+                isDisabled && "cursor-not-allowed opacity-45",
               )}
             >
               {t("取消")}
@@ -934,6 +943,7 @@ const MemoryPanel = ({
               used={snapshot.memoryChars}
               limit={snapshot.memoryCharLimit}
               isSaving={savingLimitTarget === "memory"}
+              isDisabled={savingLimitTarget !== null}
               saveError={limitSaveError?.target === "memory" ? limitSaveError.message : null}
               onSaveLimit={onSaveLimit}
               onDraftChange={onDraftChange}
@@ -946,6 +956,7 @@ const MemoryPanel = ({
               used={snapshot.userChars}
               limit={snapshot.userCharLimit}
               isSaving={savingLimitTarget === "user"}
+              isDisabled={savingLimitTarget !== null}
               saveError={limitSaveError?.target === "user" ? limitSaveError.message : null}
               onSaveLimit={onSaveLimit}
               onDraftChange={onDraftChange}
@@ -3227,12 +3238,17 @@ export const AgentSettingsPage = ({
   const [savingMemoryLimitTarget, setSavingMemoryLimitTarget] = useState<HermesMemoryLimitTarget | null>(null);
   const [memoryLimitSaveError, setMemoryLimitSaveError] = useState<{ target: HermesMemoryLimitTarget; message: string } | null>(null);
   const memoryRequestIdRef = useRef(0);
+  const memorySaveRequestIdRef = useRef(0);
+  const memorySaveInFlightRef = useRef<number | null>(null);
+  const activeMemoryBotIdRef = useRef(activeBotId);
+  activeMemoryBotIdRef.current = activeBotId;
 
   const loadHermesMemory = useCallback(async (options?: { clearSnapshot?: boolean }): Promise<HermesMemorySnapshot | null> => {
     const requestId = memoryRequestIdRef.current + 1;
     memoryRequestIdRef.current = requestId;
+    const requestedBotId = activeBotId;
 
-    if (!activeBotId) {
+    if (!requestedBotId) {
       setMemorySnapshot(null);
       setMemoryStatus("error");
       setMemoryError(rawT("未找到当前 Hermes Agent 实例。"));
@@ -3252,23 +3268,27 @@ export const AgentSettingsPage = ({
     setMemoryStatus("loading");
     setMemoryError(null);
     try {
-      const result = await repositories.bots.execDebugCommand(activeBotId, buildHermesMemoryReadCommand());
-      if (memoryRequestIdRef.current !== requestId) return null;
-      if (!isExecCommandSucceeded(result)) {
-        throw new Error(
-          rawT("记忆读取命令执行失败：{{detail}}", {
-            detail: truncateExecOutput(result.output, result.status),
-          }),
-        );
-      }
-      const snapshot = parseHermesMemorySnapshot(result.output);
+      const snapshot = await fetchHermesMemorySnapshot(repositories.bots, requestedBotId);
+      if (!isHermesMemoryOperationCurrent({
+        activeBotId: activeMemoryBotIdRef.current,
+        requestedBotId,
+        latestRequestId: memoryRequestIdRef.current,
+        requestId,
+      })) return null;
       setMemorySnapshot(snapshot);
       setMemoryStatus("ready");
       return snapshot;
     } catch (err) {
-      if (memoryRequestIdRef.current !== requestId) return null;
+      if (!isHermesMemoryOperationCurrent({
+        activeBotId: activeMemoryBotIdRef.current,
+        requestedBotId,
+        latestRequestId: memoryRequestIdRef.current,
+        requestId,
+      })) return null;
       setMemoryStatus("error");
-      setMemoryError(err instanceof Error ? err.message : rawT("记忆读取失败，请稍后重试。"));
+      setMemoryError(rawT("记忆读取命令执行失败：{{detail}}", {
+        detail: err instanceof Error ? err.message : rawT("未知错误"),
+      }));
       return null;
     }
   }, [activeBotId, activeBotStatus, repositories]);
@@ -3277,12 +3297,9 @@ export const AgentSettingsPage = ({
     setMemoryLimitSaveError((prev) => prev?.target === target ? null : prev);
   }, []);
 
-  const getSnapshotLimitValue = useCallback((snapshot: HermesMemorySnapshot, target: HermesMemoryLimitTarget) => (
-    target === "memory" ? snapshot.memoryCharLimit : snapshot.userCharLimit
-  ), []);
-
   const saveHermesMemoryLimit = useCallback(async (target: HermesMemoryLimitTarget, value: number, existingChars: number) => {
-    if (!activeBotId) {
+    const requestedBotId = activeBotId;
+    if (!requestedBotId) {
       setMemoryLimitSaveError({ target, message: rawT("未找到当前 Hermes Agent 实例。") });
       return false;
     }
@@ -3291,55 +3308,82 @@ export const AgentSettingsPage = ({
       setMemoryLimitSaveError({ target, message: rawT("实例运行后才能调整记忆上限。") });
       return false;
     }
+    if (
+      !canStartHermesMemoryLimitSave(savingMemoryLimitTarget)
+      || memorySaveInFlightRef.current !== null
+    ) {
+      return false;
+    }
 
     trackDatongEvent(DATONG_EVENTS.MEMORY_QUOTA_UPDATE, {
       pgid: DATONG_PAGE_IDS.AGENT_MEMORY,
-      params: { bot_id: activeBotId, target, old_quota: existingChars, new_quota: value },
+      params: { bot_id: requestedBotId, target, old_quota: existingChars, new_quota: value },
     });
+    const requestId = memorySaveRequestIdRef.current + 1;
+    memorySaveRequestIdRef.current = requestId;
+    memorySaveInFlightRef.current = requestId;
     setSavingMemoryLimitTarget(target);
     setMemoryLimitSaveError(null);
+
+    const isCurrentRequest = () => isHermesMemoryOperationCurrent({
+      activeBotId: activeMemoryBotIdRef.current,
+      requestedBotId,
+      latestRequestId: memorySaveRequestIdRef.current,
+      requestId,
+    });
+
     try {
-      const command = buildHermesMemoryLimitCommand(target, value, existingChars);
-      const result = await repositories.bots.execDebugCommand(activeBotId, command);
-      if (!isExecCommandSucceeded(result)) {
-        throw new Error(
-          rawT("记忆上限调整失败：{{detail}}", {
-            detail: truncateExecOutput(result.output, result.status),
-          }),
-        );
-      }
+      const saveResult = await executeHermesMemoryLimitSave({
+        bots: repositories.bots,
+        botId: requestedBotId,
+        target,
+        value,
+        existingChars,
+        getGatewayRestartCommand: async () => {
+          const teaSdkRuntime = await loadTeaSdkRuntime();
+          return teaSdkRuntime.getGatewayRestartCommand();
+        },
+      });
+      if (!isCurrentRequest()) return false;
 
-      const teaSdkRuntime = await loadTeaSdkRuntime();
-      const restartResult = await repositories.bots.execDebugCommand(activeBotId, teaSdkRuntime.getGatewayRestartCommand());
-      const restartError = buildRestartErrorMessage(restartResult);
-      if (restartError) {
-        await loadHermesMemory({ clearSnapshot: false });
+      if (saveResult.status === "failed") {
         setMemoryLimitSaveError({
           target,
-          message: rawT("配置已保存，但 Hermes Agent 网关重启失败。请到「设置 → 重启网关」手动重启，或稍后重试。"),
+          message: rawT("记忆上限调整失败：{{detail}}", { detail: saveResult.error.message }),
         });
         return false;
       }
 
-      const snapshot = await loadHermesMemory({ clearSnapshot: false });
-      if (!snapshot || getSnapshotLimitValue(snapshot, target) !== value) {
+      if (saveResult.status === "partial") {
         setMemoryLimitSaveError({
           target,
-          message: rawT("配置命令已执行，但回读未生效，请刷新后重试。"),
+          message: rawT("配置已保存，但后续步骤失败。请刷新页面确认最新配置；如网关未重启，请到「设置 → 重启网关」手动重启。"),
         });
         return false;
       }
 
+      setMemorySnapshot(saveResult.snapshot);
+      setMemoryStatus("ready");
+      setMemoryError(null);
       toast.success(rawT("修改成功，Hermes Agent 网关已重启。"));
       return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : rawT("记忆上限调整失败，请稍后重试。");
-      setMemoryLimitSaveError({ target, message });
-      return false;
     } finally {
-      setSavingMemoryLimitTarget(null);
+      if (memorySaveInFlightRef.current === requestId) {
+        memorySaveInFlightRef.current = null;
+      }
+      if (isCurrentRequest()) {
+        setSavingMemoryLimitTarget(null);
+      }
     }
-  }, [activeBotId, activeBotStatus, getSnapshotLimitValue, loadHermesMemory, repositories]);
+  }, [activeBotId, activeBotStatus, repositories, savingMemoryLimitTarget]);
+
+  useEffect(() => {
+    memoryRequestIdRef.current += 1;
+    memorySaveRequestIdRef.current += 1;
+    memorySaveInFlightRef.current = null;
+    setSavingMemoryLimitTarget(null);
+    setMemoryLimitSaveError(null);
+  }, [activeBotId]);
 
   useEffect(() => {
     if (activeSection !== "memory") return;
