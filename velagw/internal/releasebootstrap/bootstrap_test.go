@@ -79,6 +79,31 @@ func TestEnsureLeavesMatchingReleaseAndRollingRingUntouched(t *testing.T) {
 	}
 }
 
+func TestEnsureAllowsCosmeticRingNameDrift(t *testing.T) {
+	writes := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writes++
+		}
+		switch r.URL.Path {
+		case "/api/admin/newapi-releases":
+			_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"release-v1","source":"prod","namespace":"llmgateway","fleet":"prod","version":"v1","image":"registry/new-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","compatibility":"expand_compatible","status":"stable"}]}`))
+		case "/api/admin/release-rings":
+			_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"stable","source":"prod","namespace":"llmgateway","fleet":"prod","name":"生产稳定环","ordinal":30,"serving_release_id":"release-v1","status":"steady","admission_enabled":true,"max_parallel":1,"soak_seconds":60}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	if err := Ensure(context.Background(), server.Client(), testConfig(server.URL)); err != nil {
+		t.Fatalf("cosmetic ring name drift must not block bootstrap: %v", err)
+	}
+	if writes != 0 {
+		t.Fatalf("writes = %d, want cosmetic drift left untouched", writes)
+	}
+}
+
 func TestEnsureRejectsExistingReleaseDrift(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"release-v1","source":"prod","namespace":"llmgateway","fleet":"prod","version":"v1","image":"registry/new-api@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","compatibility":"expand_compatible","status":"stable"}]}`))

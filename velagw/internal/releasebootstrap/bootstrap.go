@@ -133,6 +133,6 @@ func releaseMatches(existing gateway.NewAPIRelease, desired gateway.CreateNewAPI
 func ringMatches(existing gateway.ReleaseRing, desired Ring) bool {
 	input := desired.Input
 	return existing.Source == input.Source && existing.Namespace == input.Namespace && existing.Fleet == input.Fleet &&
-		existing.Name == input.Name && existing.Ordinal == input.Ordinal && existing.ServingReleaseID == input.ServingReleaseID &&
+		existing.Ordinal == input.Ordinal && existing.ServingReleaseID == input.ServingReleaseID &&
 		existing.AdmissionEnabled == input.AdmissionEnabled && existing.MaxParallel == input.MaxParallel && existing.SoakSeconds == desired.SoakSeconds
 }
