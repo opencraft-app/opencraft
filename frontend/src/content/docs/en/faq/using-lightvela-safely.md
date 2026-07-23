@@ -56,7 +56,7 @@ Incorrect example:
 
 Recommended approach:
 
-> Please explain the security considerations when designing a payment flow.
+> Using a fictional payment scenario, explain how to design a secure payment flow with tokenization, least privilege, server-side validation, webhook signature verification, and redacted logs. Do not use real card numbers, account details, or transaction credentials.
 
 ## Health and Medical Information
 
@@ -164,7 +164,7 @@ You can ask questions safely in the following ways:
 
 ### Ask for General Advice
 
-> Please tell me what security issues to consider when designing an OAuth login flow.
+**Please tell me what security issues to consider when designing an OAuth login flow.**
 
 ### Ask for Templates Instead of Sharing Real Data
 

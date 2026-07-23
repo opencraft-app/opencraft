@@ -1,0 +1,95 @@
+# How to Connect an AI Agent to Messaging Platforms
+
+An AI agent only becomes part of your routine when you can reach it where conversations already happen. Connecting Hermes to a messaging platform gives you a familiar entry point for questions, follow-ups, and recurring updates—without opening a separate AI app each time.
+
+LightVela lets one cloud-hosted Hermes Agent serve through supported messaging channels. The same Agent keeps its configured model, skills, and memory while you choose the platform that fits the people and moments you want to support.
+
+[RECOMMEND ADD IMAGE: The Channel page in the LightVela console showing several supported messaging platforms — gives readers an immediate view of their choices.]
+
+## Who this is for
+
+This guide is for anyone who wants to talk to Hermes from a messaging app rather than only from the web console. It also helps if you want one assistant available in more than one place—for example, Telegram for personal use and Discord for a community.
+
+Start with one channel. Add another only when it serves a distinct context, audience, or device habit.
+
+## Prerequisites
+
+- A LightVela account with a Hermes Agent that is running. Use the [Quickstart](https://lightvela.ai/docs/quickstart) if you need to create one.
+
+- A working model configuration or trial credits, so Hermes can reply after the channel is connected.
+
+- Access to the platform you want to connect. Some platforms use a QR-code authorization flow, while others require a bot token or platform credentials.
+
+- A test message you can send as soon as setup finishes.
+
+## Steps / key concepts
+
+### 1. Choose the channel that matches the conversation
+
+Choose based on where you will actually use the assistant, not on how many platforms you can connect. Telegram, WhatsApp, Discord, and WeChat are common options:
+
+| Channel | A good fit for |
+| --- | --- |
+| Telegram | Personal messaging, lightweight routines, and direct conversations |
+| WhatsApp | Everyday communication and notifications where WhatsApp is already your default |
+| Discord | Communities, developer groups, and organized discussion spaces |
+| WeChat | Personal conversations for people who use WeChat every day |
+
+LightVela also provides setup pages for other supported channels. The Channel page in the console is the source of truth for what is currently available to your Hermes Agent.
+
+### 2. Complete the platform-specific connection flow
+
+Open the Channel area in the console, select the platform, and follow its authorization or credential flow. Use the corresponding guide rather than copying credentials from an unrelated platform:
+
+- [Telegram](https://lightvela.ai/docs/configuration/channel-telegram)
+- [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp)
+- [Discord](https://lightvela.ai/docs/configuration/channel-discord)
+- [WeChat](https://lightvela.ai/docs/configuration/channel-wechat)
+
+Treat bot tokens, application IDs, and secrets like passwords. Do not paste them into a group chat, public document, or message to another person. If a credential is exposed, rotate it in the platform that issued it before reconnecting Hermes.
+
+[RECOMMEND ADD IMAGE: A LightVela channel-connection dialog with sensitive values and QR content masked — shows the connection step without exposing credentials.]
+
+### 3. Verify the connection with a simple conversation
+
+After the console shows the channel as connected, find the bot or conversation in that platform and send a short message:
+
+```text
+Hi Hermes. Please reply with the channel you received this from.
+```
+
+This checks the full path: the platform can deliver a message, Hermes has a working model, and the reply can return to the same place. If it does not work, check the connected status first, then confirm the active model in [Configure Models](https://lightvela.ai/docs/configuration/model).
+
+### 4. Decide what should remain shared across channels
+
+When more than one channel connects to the same Hermes Agent, they are different doors into the same assistant. That means the Agent can keep the same memory, working preferences, and installed skills across supported channels.
+
+Use [Memory Management](https://lightvela.ai/docs/configuration/memory) to review the long-term context you want Hermes to retain. If one channel is for a different audience or needs a very different role, consider keeping the use case separate instead of mixing unrelated expectations into one conversation history.
+
+[RECOMMEND ADD IMAGE: A memory page or two channel conversations that demonstrate the same assistant context — explains why multi-channel access feels continuous.]
+
+## FAQ
+
+### Can I connect several messaging platforms to one Hermes Agent?
+
+Yes. Supported channels can point to the same Agent, which lets you reach it from more than one messaging app while preserving the same configured behavior and memory.
+
+### Which channel should I connect first?
+
+Choose the one you already use most often. A personal assistant is more likely to become useful when the first message is easy to send. Telegram, WhatsApp, Discord, and WeChat each have detailed setup guides.
+
+### Why does the channel show as connected but Hermes does not reply?
+
+Send a simple test message, then check that an active model or trial credits are available. If the issue persists, reconnect the channel and use [Diagnostics](https://lightvela.ai/docs/configuration/diagnostics) to review maintenance options and recent logs.
+
+### Can I share one bot credential across multiple Hermes Agents?
+
+Avoid doing so unless the platform and your intended workflow clearly support it. Keeping one credential attached to one clear purpose makes troubleshooting and access control much easier.
+
+## Next steps
+
+- [Configure Models](https://lightvela.ai/docs/configuration/model) — confirm Hermes has a model ready to answer.
+
+- [Memory Management](https://lightvela.ai/docs/configuration/memory) — manage the context shared by your connected channels.
+
+- [Automations](https://lightvela.ai/docs/configuration/automation) — deliver scheduled updates to a connected channel when appropriate.
