@@ -52,6 +52,12 @@ import {
   saveBuddyState,
   VibebaseError,
 } from "@/lib/buddy-storage";
+import {
+  buildHermesSoulClearCommand,
+  buildHermesSoulReadCommand,
+  buildHermesSoulWriteCommand,
+  executeHermesPersonaCommand,
+} from "@/pages/marketing/agent-buddy-command";
 
 const PANEL_CARD_STYLE: React.CSSProperties = {
   border: "1px solid rgba(0,0,0,0.06)",
@@ -149,6 +155,10 @@ export function BuddyPanel({
   const t = useT();
   const { i18n } = useTranslation();
   const repositories = useRepositories();
+  const activeBotIdRef = useRef(botId);
+  activeBotIdRef.current = botId;
+  const operationReqIdRef = useRef(0);
+  const saveReqIdRef = useRef(0);
   const [previewSoulSlug, setPreviewSoulSlug] = useState<string | null>(null);
   const useEnglishSoulData = isGlobal && !i18n.language.startsWith("zh");
   // 国际站中文：用独立的 global-CN 人设体系（GOAT·大神…），与国内站（YYDS·神人…）分开。
@@ -332,6 +342,9 @@ export function BuddyPanel({
   );
   useEffect(() => {
     const reqId = ++loadReqIdRef.current;
+    operationReqIdRef.current += 1;
+    saveReqIdRef.current += 1;
+    setToast({ kind: "idle" });
     setLoadStatus("loading");
     setDrawnSouls([]);
     setAppliedSlug(null);
@@ -373,12 +386,22 @@ export function BuddyPanel({
     }
     saveTimerRef.current = window.setTimeout(() => {
       saveTimerRef.current = null;
-      saveBuddyState(botId, { drawnSouls, appliedSlug })
+      const saveReqId = ++saveReqIdRef.current;
+      const saveBotId = botId;
+      saveBuddyState(saveBotId, { drawnSouls, appliedSlug })
         .then(() => {
+          if (
+            saveReqIdRef.current !== saveReqId
+            || activeBotIdRef.current !== saveBotId
+          ) return;
           // 写入成功后更新快照，让 StrictMode 双 mount / 同值再触发不会重复 PUT
-          syncedSnapshotRef.current = { botId, data: currentData };
+          syncedSnapshotRef.current = { botId: saveBotId, data: currentData };
         })
         .catch((err: unknown) => {
+          if (
+            saveReqIdRef.current !== saveReqId
+            || activeBotIdRef.current !== saveBotId
+          ) return;
           if (err instanceof VibebaseError && err.isUnauthorized) {
             // session 中途失效（比如 cookie 过期）→ 切到未登录态
             setLoadStatus("unauthorized");
@@ -457,7 +480,7 @@ export function BuddyPanel({
 
   /** 注入人设：
    *  - 有 botId → 走 `debug/exec` 一把梭：备份旧 SOUL.md（若存在）→ 写入新 SOUL.md
-   *    路径 `${HOME}/.hermes/SOUL.md`（hermes-agent 运行时读这里，不是
+   *    路径 `${HERMES_HOME:-$HOME/.hermes}/SOUL.md`（hermes-agent 运行时读这里，不是
    *    `~/.openclaw/workspace/SOUL.md` —— 那是 openclaw runtime 的约定）。
    *    走 raw bash 而非 `workspace/files`：后者写死 `${HOME}/.openclaw/workspace`
    *    且强制白名单文件名，hermes 场景两个限制都不适用。
@@ -467,6 +490,12 @@ export function BuddyPanel({
   const handleApply = useCallback(async () => {
     if (!selectedSlug) return; // 按钮已 disabled，理论上点不到
     if (toast.kind === "applying") return; // 防重复点击
+    const requestId = ++operationReqIdRef.current;
+    const requestBotId = botId;
+    const isCurrentRequest = () => (
+      operationReqIdRef.current === requestId
+      && activeBotIdRef.current === requestBotId
+    );
     const canonical = toCanonicalSlug(selectedSlug);
     const soul = localizedDrawnSouls.find((s) => toCanonicalSlug(s.slug) === canonical);
     if (!soul) return;
@@ -508,6 +537,7 @@ export function BuddyPanel({
       // eslint-disable-next-line no-console
       console.error("[buddy] fetch soul detail failed:", err);
       await ensureMinSpin();
+      if (!isCurrentRequest()) return;
       showToast({
         kind: "error",
         message: t("拉取人设详情失败，请检查网络后重试"),
@@ -516,7 +546,7 @@ export function BuddyPanel({
     }
 
     // 路径 A：写入到当前 bot 工作区的 SOUL.md（覆盖前先备份）
-    if (botId) {
+    if (requestBotId) {
       try {
         // UTF-8 → base64（避免 btoa 直接吃中文炸 latin1）
         const mdBytes = new TextEncoder().encode(md);
@@ -531,30 +561,13 @@ export function BuddyPanel({
           .replace("T", "_")
           .replace("Z", "");
 
-        // 一把梭：mkdir → 备份到独立子目录 → heredoc base64 解码写入
-        // 路径：${HOME}/.hermes/SOUL.md（hermes-agent 运行时实际读取位置）
-        // 备份：${HOME}/.hermes/.soul-backups/<ts>.md（跟主文件分开，便于 ls 查看）
-        const bash = [
-          'set -e',
-          'WORKSPACE_DIR="${HOME}/.hermes"',
-          'BACKUP_DIR="$WORKSPACE_DIR/.soul-backups"',
-          'mkdir -p "$WORKSPACE_DIR" "$BACKUP_DIR"',
-          'TARGET="$WORKSPACE_DIR/SOUL.md"',
-          `BACKUP="$BACKUP_DIR/${ts}.md"`,
-          'if [ -s "$TARGET" ]; then cp "$TARGET" "$BACKUP"; fi',
-          "cat <<'__CTL_SOUL_EOF__' | base64 -d > \"$TARGET\"",
-          mdBase64,
-          '__CTL_SOUL_EOF__',
-        ].join('\n');
-
-        const result = await repositories.bots.execDebugCommand(botId, bash);
-        if (result.exitCode !== 0) {
-          throw new Error(`exec exit ${result.exitCode}: ${result.output}`);
-        }
+        const bash = buildHermesSoulWriteCommand(mdBase64, ts);
+        await executeHermesPersonaCommand(repositories.bots, requestBotId, bash);
         await ensureMinSpin();
+        if (!isCurrentRequest()) return;
         trackDatongEvent(DATONG_EVENTS.PERSONA_INJECT_SUCCESS, {
           pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
-          params: { bot_id: botId, persona_id: canonical, persona_source: "draw" },
+          params: { bot_id: requestBotId, persona_id: canonical, persona_source: "draw" },
         });
         setAppliedSlug(selectedSlug);
         // 文件已写入 → 触发重新读取真实 SOUL.md，同步 Equipped 指示器。
@@ -565,11 +578,12 @@ export function BuddyPanel({
         setConfirmState({ kind: "applySuccess" });
         return;
       } catch (err) {
+        if (!isCurrentRequest()) return;
         // eslint-disable-next-line no-console
         console.error("[buddy] inject SOUL.md to bot failed, fallback to download:", err);
         trackDatongEvent(DATONG_EVENTS.PERSONA_INJECT_FAIL, {
           pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
-          params: { bot_id: botId, persona_id: canonical, error_code: "inject_failed" },
+          params: { bot_id: requestBotId, persona_id: canonical, error_code: "inject_failed" },
         });
         // 写入失败 → 不打断用户，降级走浏览器下载
       }
@@ -577,6 +591,7 @@ export function BuddyPanel({
 
     // 路径 B：浏览器下载兜底
     await ensureMinSpin();
+    if (!isCurrentRequest()) return;
     const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -590,7 +605,7 @@ export function BuddyPanel({
     // 区分两种降级原因：botId 为空（用户未选 bot） vs sandbox 写入失败
     showToast({
       kind: "fallback",
-      message: botId
+      message: requestBotId
         ? t("无法写入 Agent 沙箱，已下载 soul.md 到本地")
         : t("当前未选中 Agent，已下载 soul.md 到本地"),
     });
@@ -599,40 +614,39 @@ export function BuddyPanel({
   /**
    * 清除 Bot 沙箱里当前的 SOUL.md（让 hermes-agent 回到无人设状态）。
    * 删之前再备份一次到 `.soul-backups/<ts>.removed.md`，万一用户后悔可以手动恢复。
-   * - 没有 botId 或 sandbox 写入失败 → 静默忽略，前端 UI 自己清就够了
-   * - 有 botId 但 sandbox 调用失败 → console.error，不阻塞 UI 流程
+   * - 没有 botId → 仅清理前端卡片
+   * - sandbox 调用失败或请求已过期 → 返回 false，调用方保留卡片与持久化状态
    */
-  const clearSandboxSoul = useCallback(async () => {
-    if (!botId) return;
+  const clearSandboxSoul = useCallback(async (): Promise<boolean> => {
+    if (!botId) return true;
+    const requestId = ++operationReqIdRef.current;
+    const requestBotId = botId;
+    const isCurrentRequest = () => (
+      operationReqIdRef.current === requestId
+      && activeBotIdRef.current === requestBotId
+    );
     const ts = new Date()
       .toISOString()
       .replace(/[:.]/g, "-")
       .replace("T", "_")
       .replace("Z", "");
     // 防御性：ts 只含 [0-9_-]，避免未来上游污染导致 shell 注入
-    if (!/^[0-9_-]+$/.test(ts)) return;
-    const bash = [
-      "set -eo pipefail",
-      'WORKSPACE_DIR="${HOME}/.hermes"',
-      'BACKUP_DIR="$WORKSPACE_DIR/.soul-backups"',
-      'TARGET="$WORKSPACE_DIR/SOUL.md"',
-      // 只有 SOUL.md 存在且非空才走 backup → rm 流程，否则直接结束
-      'if [ -s "$TARGET" ]; then',
-      '  mkdir -p "$BACKUP_DIR"',
-      `  cp "$TARGET" "$BACKUP_DIR/${ts}.removed.md"`,
-      '  rm -f "$TARGET"',
-      "fi",
-    ].join("\n");
+    if (!/^[0-9_-]+$/.test(ts)) return false;
+    const bash = buildHermesSoulClearCommand(ts);
     try {
-      const result = await repositories.bots.execDebugCommand(botId, bash);
-      if (result.exitCode !== 0) {
-        throw new Error(`exec exit ${result.exitCode}: ${result.output}`);
-      }
+      await executeHermesPersonaCommand(repositories.bots, requestBotId, bash);
+      return isCurrentRequest();
     } catch (err) {
+      if (!isCurrentRequest()) return false;
       // eslint-disable-next-line no-console
       console.error("[buddy] clearSandboxSoul failed:", err);
+      showToast({
+        kind: "error",
+        message: t("删除人设失败，请检查网络后重试"),
+      });
+      return false;
     }
-  }, [botId, repositories]);
+  }, [botId, repositories, showToast, t]);
 
   /**
    * 从 Bot 沙箱读取实际生效的 SOUL.md，解析出 Slug，同时把 appliedSlug 收敛到真实值，
@@ -649,15 +663,13 @@ export function BuddyPanel({
       return;
     }
     // 只 cat 出 Slug 行，避免把整份 markdown（可能合中文）扛到前端。
-    const bash = [
-      'set +e',
-      'TARGET="${HOME}/.hermes/SOUL.md"',
-      'if [ -s "$TARGET" ]; then',
-      '  grep -m1 "^Slug:" "$TARGET" 2>/dev/null || true',
-      'fi',
-    ].join('\n');
+    const bash = buildHermesSoulReadCommand();
     try {
-      const result = await repositories.bots.execDebugCommand(activeBotId, bash);
+      const result = await executeHermesPersonaCommand(
+        repositories.bots,
+        activeBotId,
+        bash,
+      );
       // 切 bot 超车：丢弃旧结果，不覆盖新 bot 的状态。
       if (equippedReqIdRef.current !== reqId) return;
       const out = result?.output ?? '';
@@ -717,13 +729,14 @@ export function BuddyPanel({
   const confirmDeleteOne = useCallback(
     async (slug: string, isAppliedTarget: boolean) => {
       setConfirmState({ kind: "idle" });
-      setDrawnSouls((prev) => prev.filter((s) => s.slug !== slug));
-      // applied/selected 的清理由 useEffect 自动处理（drawnSouls 变化触发）
       if (isAppliedTarget) {
-        await clearSandboxSoul();
+        const cleared = await clearSandboxSoul();
+        if (!cleared) return;
         // SOUL.md 已删除 → 触发重新读取，让 Equipped 指示器回到「无」。
         setEquippedRefreshTick((n) => n + 1);
       }
+      setDrawnSouls((prev) => prev.filter((s) => s.slug !== slug));
+      // applied/selected 的清理由 useEffect 自动处理（drawnSouls 变化触发）
     },
     [clearSandboxSoul],
   );
@@ -756,7 +769,7 @@ export function BuddyPanel({
         </h2>
       </div>
       <a
-        href="https://skillhub.cn/hermes"
+        href="https://skillhub.cn/soul"
         target="_blank"
         rel="noopener noreferrer"
         className="lv-buddy-panel__source inline-flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
@@ -1360,7 +1373,10 @@ function SoulPreviewModal({
     }
     return fetchSoulDetail(toCanonicalSlug(slug));
   }, [slug, useEnglishSoulData, useGlobalChineseSoulData]);
-  const { data, loading, error } = useAsyncResource(fetcher, [slug, useEnglishSoulData, useGlobalChineseSoulData]);
+  const { data, loading, error, reload } = useAsyncResource(
+    fetcher,
+    [slug, useEnglishSoulData, useGlobalChineseSoulData],
+  );
   const spec = useEnglishSoulData
     ? getEnglishSoulSpec(toEnglishSlug(slug))
     : useGlobalChineseSoulData
@@ -1369,7 +1385,7 @@ function SoulPreviewModal({
   return (
     <PreviewModal title={data?.displayName ?? ""} onClose={onClose}>
       {loading && <CenterLoader />}
-      {error && <ErrorState message={error} onRetry={onClose} />}
+      {error && <ErrorState message={error} onRetry={reload} />}
       {data && (spec
         ? <SoulSpecPanel spec={spec} />
         : (
