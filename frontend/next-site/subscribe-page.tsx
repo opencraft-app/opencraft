@@ -2128,15 +2128,13 @@ export const SubscribePage = ({
         });
       } else {
         /* AI 增强版可见性：
-           - 已登录 + 月付（durationKey === "monthly"）：启航 / 巡游的 AI 档位已上线可购买，
+           - 已登录：启航 / 巡游的 AI 档位（月付 / 季付）均已上线可购买，
              保留后端真实价格 / 促销 / 下单入口，积分回退取后端 bundle.credit（不再写死）。
+             季付走带参询价（见 needsExplicitDurationPriceQuery），后端已支持。
            - 未登录：统一「敬请期待」。未登录走的是前端静态价（AI price=null），放出后会落到
              「暂无报价」，体验劣于「敬请期待」，故未登录一律维持敬请期待。
-           - 季付（durationKey === "quarterly"）：AI 档位本期暂不支持，统一「敬请期待」，
-             保留卡内积分切换（用户仍可查看该档位），选中后价格区落到「敬请期待」分支、CTA 禁用；
-             积分维持前端写死（启航 4500 / 巡游 10000）。
            - 标准版 variant 任何时长都保持原样正常购买。 */
-        const aiReleased = isLoggedIn && aiDurationKey === "monthly";
+        const aiReleased = isLoggedIn;
         const aiCredit = AI_VARIANT_CREDIT[tk];
         const mapped = sorted.map((v) => {
           const isAi = v.bundleType === "ai" || v.raw.bundle_type === "ai";
@@ -2160,7 +2158,7 @@ export const SubscribePage = ({
       groups.push({ key: plan.id, variants: [plan] });
     }
     return groups;
-  }, [planList, isLoggedIn, aiDurationKey, t]);
+  }, [planList, isLoggedIn, t]);
 
   /* 付费过程上下文：仅在国内站走付费链路时使用。
      v1.7.31 起统一走 bridge 中转页二维码方案；不再保留 fallback 新窗口模式。
