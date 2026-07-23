@@ -11,6 +11,7 @@ import { DatongPageEffect } from '@/observability/datong-page-effect';
 import { DatongTrackerBridge } from '@/observability/datong-tracker-bridge';
 import { ProductAnalyticsBridge } from '@/observability/product-analytics-bridge';
 import { RumUserBridge } from '@/observability/rum-user-bridge';
+import { CookieConsentBanner } from '@/components/site/cookie-consent-banner';
 import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
 
 import type { PublicRouteLocale } from './public-locale';
@@ -46,6 +47,7 @@ export function PublicSiteAppProviders({ children }: { children: ReactNode }) {
           </Suspense>
           <OpenClawProvider>
             <MaintenanceAnnouncementBanner />
+            <CookieConsentBanner />
             {children}
           </OpenClawProvider>
         </SessionProvider>
