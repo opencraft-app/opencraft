@@ -849,7 +849,12 @@ func TestInternalSubscriptionEndpointsUseAIGatewayCompatibleShapes(t *testing.T)
 		case "POST /api/subscription/admin/user_subscriptions/9/invalidate":
 			writeJSONForHTTPTest(t, w, map[string]any{"success": true})
 		case "POST /api/subscription/admin/users/42/subscriptions":
-			writeJSONForHTTPTest(t, w, map[string]any{"success": true})
+			writeJSONForHTTPTest(t, w, map[string]any{"success": true, "data": map[string]any{
+				"id": 10, "user_id": 42, "plan_id": 7,
+				"amount_total": 1000, "amount_used": 0,
+				"start_time": time.Now().Unix(), "end_time": time.Now().Add(31 * 24 * time.Hour).Unix(),
+				"status": "active", "source": "admin",
+			}})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -1452,7 +1457,12 @@ func TestInternalMigrationCommitEndpointActivatesUser(t *testing.T) {
 				t.Fatal(err)
 			}
 			createdPlanID = body.PlanID
-			writeJSONForHTTPTest(t, w, map[string]any{"success": true})
+			writeJSONForHTTPTest(t, w, map[string]any{"success": true, "data": map[string]any{
+				"id": 10, "user_id": 42, "plan_id": body.PlanID,
+				"amount_total": 1000, "amount_used": 0,
+				"start_time": time.Now().Unix(), "end_time": time.Now().Add(31 * 24 * time.Hour).Unix(),
+				"status": "active", "source": "admin",
+			}})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}

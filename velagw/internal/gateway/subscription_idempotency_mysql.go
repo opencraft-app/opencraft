@@ -29,14 +29,16 @@ func (s *MySQLStore) TryBeginSubscriptionIdempotency(ctx context.Context, candid
 	if err != nil {
 		return SubscriptionIdempotency{}, false, err
 	}
-	if existing.RequestHash != candidate.RequestHash || existing.Status != SubscriptionIdempotencyFailed {
+	if existing.RequestHash != candidate.RequestHash ||
+		(existing.Status != SubscriptionIdempotencyFailed && existing.Status != SubscriptionIdempotencyUnknown) {
 		return existing, false, nil
 	}
 	result, err = s.db.ExecContext(ctx, `
 		UPDATE llmgateway_subscription_idempotencies
 		SET status = ?, last_error = '', updated_at = ?
-		WHERE idempotency_key = ? AND request_hash = ? AND status = ?
-	`, SubscriptionIdempotencyProcessing, candidate.UpdatedAt.UTC(), candidate.IdempotencyKey, []byte(candidate.RequestHash), SubscriptionIdempotencyFailed)
+		WHERE idempotency_key = ? AND request_hash = ? AND status IN (?, ?)
+	`, SubscriptionIdempotencyProcessing, candidate.UpdatedAt.UTC(), candidate.IdempotencyKey, []byte(candidate.RequestHash),
+		SubscriptionIdempotencyFailed, SubscriptionIdempotencyUnknown)
 	if err != nil {
 		return SubscriptionIdempotency{}, false, err
 	}

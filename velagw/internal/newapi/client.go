@@ -143,8 +143,9 @@ type UserToken struct {
 }
 
 type AdminCreateUserSubscriptionRequest struct {
-	PlanID int    `json:"plan_id"`
-	Name   string `json:"name,omitempty"`
+	PlanID    int    `json:"plan_id"`
+	Name      string `json:"name,omitempty"`
+	RequestID string `json:"request_id"`
 }
 
 type AdminCreateSubscriptionPlanRequest struct {
@@ -233,6 +234,7 @@ type FetchModelsRequest struct {
 type UserSubscription struct {
 	ID            int    `json:"id"`
 	Name          string `json:"name"`
+	RequestID     string `json:"request_id"`
 	UserID        int    `json:"user_id"`
 	PlanID        int    `json:"plan_id"`
 	AmountTotal   int64  `json:"amount_total"`
@@ -814,22 +816,28 @@ func IsUsernameDuplicateError(err error) bool {
 	return strings.Contains(message, "duplicate entry") && strings.Contains(message, "users.username")
 }
 
-func (c *Client) AdminCreateUserSubscription(ctx context.Context, auth AdminAuth, userID int, req AdminCreateUserSubscriptionRequest) error {
+func (c *Client) AdminCreateUserSubscription(ctx context.Context, auth AdminAuth, userID int, req AdminCreateUserSubscriptionRequest) (UserSubscription, error) {
 	if userID <= 0 {
-		return fmt.Errorf("new-api user id is required")
+		return UserSubscription{}, fmt.Errorf("new-api user id is required")
 	}
 	if req.PlanID <= 0 {
-		return fmt.Errorf("new-api subscription plan id is required")
+		return UserSubscription{}, fmt.Errorf("new-api subscription plan id is required")
 	}
-	var resp apiResponse[json.RawMessage]
+	if strings.TrimSpace(req.RequestID) == "" {
+		return UserSubscription{}, fmt.Errorf("new-api subscription request id is required")
+	}
+	var resp apiResponse[UserSubscription]
 	path := fmt.Sprintf("/api/subscription/admin/users/%d/subscriptions", userID)
 	if err := c.do(ctx, http.MethodPost, path, adminHeaders(auth), req, &resp); err != nil {
-		return err
+		return UserSubscription{}, err
 	}
 	if !resp.Success {
-		return fmt.Errorf("new-api create user subscription failed: %s", resp.Message)
+		return UserSubscription{}, fmt.Errorf("new-api create user subscription failed: %s", resp.Message)
 	}
-	return nil
+	if resp.Data.ID <= 0 {
+		return UserSubscription{}, fmt.Errorf("new-api create user subscription returned an invalid subscription id")
+	}
+	return resp.Data, nil
 }
 
 func (c *Client) AdminCreateSubscriptionPlan(ctx context.Context, auth AdminAuth, req AdminCreateSubscriptionPlanRequest) (AdminCreateSubscriptionPlanResult, error) {

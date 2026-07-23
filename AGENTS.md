@@ -53,8 +53,18 @@
 | `shadow/` | Go | 影子账号服务 | [shadow/AGENTS.md](shadow/AGENTS.md) |
 | `sandbox/` | Go / 沙箱 | 云主机 Mock | [sandbox/AGENTS.md](sandbox/AGENTS.md) |
 | `infra_pulumi/` | Pulumi / IaC | 基础设施 | [infra_pulumi/AGENTS.md](infra_pulumi/AGENTS.md) |
+| `new-api/` | Go + React | NewAPI upstream subtree | [new-api/MONO2_SUBTREE.md](new-api/MONO2_SUBTREE.md) |
 | `velagw/` | Go + React | LLMGateway control/data plane upstream subtree | [velagw/MONO2_SUBTREE.md](velagw/MONO2_SUBTREE.md) |
 | `velalink/` | TS + Rust | AI chat/runtime upstream subtree | [velalink/MONO2_SUBTREE.md](velalink/MONO2_SUBTREE.md) |
+
+### NewAPI subtree 协作模型（P0）
+
+`new-api/` 是 `https://github.com/QuantumNous/new-api.git` 的 squash-style subtree。
+mono2 内可以直接修改、测试和 review；上游同步必须显式选择版本并更新 `new-api/.mono2-subtree`。
+
+`.ci/new-api.yml` 只负责构建并推送北京、上海 TCR 镜像，不修改 GitOps，也不自动发布。
+
+标准流程详见 [new-api/MONO2_SUBTREE.md](new-api/MONO2_SUBTREE.md)。
 
 ### LLMGateway subtree 协作模型（P0）
 

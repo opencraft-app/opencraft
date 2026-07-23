@@ -56,6 +56,14 @@ func subscriptionRequestHash(req ApplySubscriptionRequest) string {
 	return string(sum[:])
 }
 
+func upstreamSubscriptionRequestID(idempotencyKey string) string {
+	if idempotencyKey == "" {
+		return "llmgw:subscription:" + randomSecret()
+	}
+	sum := sha256.Sum256([]byte(idempotencyKey))
+	return "llmgw:subscription:" + fmt.Sprintf("%x", sum[:])
+}
+
 func (s *MemoryStore) TryBeginSubscriptionIdempotency(_ context.Context, candidate SubscriptionIdempotency) (SubscriptionIdempotency, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -66,7 +74,8 @@ func (s *MemoryStore) TryBeginSubscriptionIdempotency(_ context.Context, candida
 		s.subscriptionIdem[candidate.IdempotencyKey] = candidate
 		return candidate, true, nil
 	}
-	if existing.RequestHash == candidate.RequestHash && existing.Status == SubscriptionIdempotencyFailed {
+	if existing.RequestHash == candidate.RequestHash &&
+		(existing.Status == SubscriptionIdempotencyFailed || existing.Status == SubscriptionIdempotencyUnknown) {
 		existing.Status = SubscriptionIdempotencyProcessing
 		existing.LastError = ""
 		existing.UpdatedAt = candidate.UpdatedAt
