@@ -277,7 +277,7 @@ export const RenewPassModal = ({ pass, onClose, onSuccess }: RenewPassModalProps
                         )}
                       </>
                     ) : (
-                      <span className="text-sm text-[#999]">{t("暂无报价")}</span>
+                      <span className="text-sm text-[#999]">{t("暂无价格")}</span>
                     )}
                   </div>
                 </div>
