@@ -350,16 +350,11 @@ a {
     color 0.15s ease;
 }
 
-.lv-agent-renewal-badge.is-warning {
+.lv-agent-renewal-badge.is-warning,
+.lv-agent-renewal-badge.is-urgent {
   border-color: rgb(198 123 30 / 20%);
   color: #a86108;
   background: rgb(198 123 30 / 8%);
-}
-
-.lv-agent-renewal-badge.is-urgent {
-  border-color: rgb(207 61 76 / 22%);
-  color: #cf3d4c;
-  background: rgb(207 61 76 / 8%);
 }
 
 .lv-agent-renewal-badge:hover,

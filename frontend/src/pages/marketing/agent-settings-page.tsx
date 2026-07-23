@@ -4942,7 +4942,7 @@ export const AgentSettingsPage = ({
                               <button
                                 type="button"
                                 className={cn("lv-agent-renewal-badge", `is-${passExpiryReminder.level}`)}
-                                title={t(passExpiryReminder.tooltip)}
+                                title={passExpiryReminder.tooltip}
                                 aria-label={t("套餐{{time}}，点击续费", { time: passExpiryReminder.tooltip })}
                                 onClick={(event) => {
                                   event.stopPropagation();
@@ -4955,7 +4955,7 @@ export const AgentSettingsPage = ({
                                 }}
                               >
                                 <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                                {t(passExpiryReminder.label)}
+                                {passExpiryReminder.label}
                               </button>
                             )}
                           </span>
