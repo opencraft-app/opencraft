@@ -236,6 +236,28 @@ func (h *passHandler) handleAdminPassesOrder(w http.ResponseWriter, r *http.Requ
 	writeSuccess(w, r, http.StatusOK, result)
 }
 
+// handleAdminPassesFreeCredit POST /admin/api/ctl/passes/free-credit — 后台发放免费/额外积分
+func (h *passHandler) handleAdminPassesFreeCredit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	var req transport.GrantFreeCreditRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+
+	result, err := h.logic.GrantFreeCredit(&req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
 // handleUserPassesOrder POST /v1/passes/order — 用户可见付费 pass 下单入口
 //
 // 用途（billing-integration B2 新增）：
@@ -773,6 +795,8 @@ func detailToPassResponse(d *passlogic.PassDetail) *transport.PassResponse {
 		Status:              d.Status,
 		CreditTotal:         d.CreditTotal,
 		CreditAvailable:     d.CreditAvailable,
+		FreeCreditTotal:     d.FreeCreditTotal,
+		FreeCreditAvailable: d.FreeCreditAvailable,
 		AgentQuotaTotal:     d.AgentQuotaTotal,
 		AgentQuotaAvailable: d.AgentQuotaAvailable,
 		RenewFlag:           d.RenewFlag,
@@ -800,6 +824,8 @@ func detailToUserPassResponse(d *passlogic.PassDetail) *transport.UserPassRespon
 		AgentQuotaAvailable: d.AgentQuotaAvailable,
 		CreditTotal:         d.CreditTotal,
 		CreditAvailable:     d.CreditAvailable,
+		FreeCreditTotal:     d.FreeCreditTotal,
+		FreeCreditAvailable: d.FreeCreditAvailable,
 	}
 }
 

@@ -98,6 +98,9 @@ func (s *Service) ApplySubscriptionManaged(ctx context.Context, req ApplySubscri
 	if req.UserID == "" || req.PlanID == "" {
 		return Subscription{}, nil, fmt.Errorf("user_id and plan_id are required")
 	}
+	if err := s.validateApplySubscriptionRequest(req); err != nil {
+		return Subscription{}, nil, err
+	}
 	plan, err := s.activePlan(ctx, req.PlanID)
 	if err != nil {
 		return Subscription{}, nil, err

@@ -181,6 +181,9 @@ func (s *createTaskLLMGatewayAdapterStub) GetUserUsage(_ context.Context, _ stri
 func (s *createTaskLLMGatewayAdapterStub) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
 	return nil, nil
 }
+func (s *createTaskLLMGatewayAdapterStub) ListActiveSubscriptions(_ context.Context, _ string) (*pllmgateway.ActiveSubscriptionList, error) {
+	return &pllmgateway.ActiveSubscriptionList{Subscriptions: []pllmgateway.Subscription{}}, nil
+}
 
 func installCreateTaskAiGatewayConfig(t *testing.T) {
 	t.Helper()

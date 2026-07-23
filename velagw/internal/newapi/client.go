@@ -143,7 +143,8 @@ type UserToken struct {
 }
 
 type AdminCreateUserSubscriptionRequest struct {
-	PlanID int `json:"plan_id"`
+	PlanID int    `json:"plan_id"`
+	Name   string `json:"name,omitempty"`
 }
 
 type AdminCreateSubscriptionPlanRequest struct {
@@ -231,6 +232,7 @@ type FetchModelsRequest struct {
 
 type UserSubscription struct {
 	ID            int    `json:"id"`
+	Name          string `json:"name"`
 	UserID        int    `json:"user_id"`
 	PlanID        int    `json:"plan_id"`
 	AmountTotal   int64  `json:"amount_total"`

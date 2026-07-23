@@ -167,6 +167,166 @@ func TestApplySubscriptionReplaysSucceededIdempotencyKeyWithoutCreatingAgain(t *
 	}
 }
 
+func TestApplySubscriptionRejectsPeriodEndWithRelativePeriod(t *testing.T) {
+	fixture := newSubscriptionFixture(t)
+	defer fixture.server.Close()
+
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	fixture.registerBootstrappedSet(t, svc, store)
+	if err := store.SavePlanMapping(t.Context(), PlanMapping{
+		ID: "plan-pro", Name: "Pro", MonthlyTokens: 1000,
+		PeriodValue: 1, PeriodUnit: "months", IsActive: true,
+		UpstreamPlanIDs: map[string]int{"set-a": 7},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	periodEnd := time.Now().UTC().Add(24 * time.Hour)
+	_, err := svc.ApplySubscription(t.Context(), ApplySubscriptionRequest{
+		IdempotencyKey:   "trade:deal-period-conflict",
+		UserID:           "user-1",
+		PlanID:           "plan-pro",
+		SubscriptionName: "package:user-1:pass-1",
+		PeriodValue:      1,
+		PeriodUnit:       "months",
+		PeriodEnd:        &periodEnd,
+	})
+	if err == nil || !strings.Contains(err.Error(), "period_end is mutually exclusive") {
+		t.Fatalf("err = %v, want period_end mutual exclusion", err)
+	}
+	if len(fixture.createdPlanIDs) != 0 {
+		t.Fatalf("subscription was created despite invalid period args: %+v", fixture.createdPlanIDs)
+	}
+}
+
+func TestApplySubscriptionRejectsDuplicateActiveNameWhenUnique(t *testing.T) {
+	fixture := newSubscriptionFixture(t)
+	fixture.existingSubscriptionNames = map[int]string{3: "package:user-1:pass-1"}
+	defer fixture.server.Close()
+
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	fixture.registerBootstrappedSet(t, svc, store)
+	if err := store.SaveUserBinding(t.Context(), UserBinding{
+		ExternalUserID: "user-1", SetID: "set-a", UpstreamUserID: 42,
+		Username: "sgw-user-1", Password: "user-pass-123",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SavePlanMapping(t.Context(), PlanMapping{
+		ID: "plan-pro", Name: "Pro", MonthlyTokens: 1000,
+		PeriodValue: 1, PeriodUnit: "months", IsActive: true,
+		UpstreamPlanIDs: map[string]int{"set-a": 7},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := svc.ApplySubscription(t.Context(), ApplySubscriptionRequest{
+		IdempotencyKey:   "trade:deal-duplicate-name",
+		UserID:           "user-1",
+		PlanID:           "plan-pro",
+		SubscriptionName: "package:user-1:pass-1",
+		IsUnique:         true,
+	})
+	if !errors.Is(err, ErrSubscriptionNameConflict) {
+		t.Fatalf("err = %v, want ErrSubscriptionNameConflict", err)
+	}
+	if len(fixture.createdPlanIDs) != 0 {
+		t.Fatalf("new-api create count = %d, want 0", len(fixture.createdPlanIDs))
+	}
+}
+
+func TestApplySubscriptionAllowsMultipleNamedSubscriptionsWhenNotUnique(t *testing.T) {
+	fixture := newSubscriptionFixture(t)
+	fixture.existingSubscriptionNames = map[int]string{3: "free-credit:campaign:same"}
+	defer fixture.server.Close()
+
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	fixture.registerBootstrappedSet(t, svc, store)
+	if err := store.SaveUserBinding(t.Context(), UserBinding{
+		ExternalUserID: "user-1", SetID: "set-a", UpstreamUserID: 42,
+		Username: "sgw-user-1", Password: "user-pass-123",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SavePlanMapping(t.Context(), PlanMapping{
+		ID: "plan-pro", Name: "Pro", MonthlyTokens: 1000,
+		PeriodValue: 1, PeriodUnit: "months", IsActive: true,
+		UpstreamPlanIDs: map[string]int{"set-a": 7},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.ApplySubscription(t.Context(), ApplySubscriptionRequest{
+		IdempotencyKey:   "credit:grant-same",
+		UserID:           "user-1",
+		PlanID:           "plan-pro",
+		SubscriptionName: "free-credit:campaign:same",
+		IsUnique:         false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fixture.createdPlanIDs) != 1 || fixture.createdSubscriptionNames[0] != "free-credit:campaign:same" {
+		t.Fatalf("created subscriptions = plans %+v names %+v", fixture.createdPlanIDs, fixture.createdSubscriptionNames)
+	}
+}
+
+func TestListActiveSubscriptionsReturnsNamesAndExplicitPeriodEnd(t *testing.T) {
+	fixture := newSubscriptionFixture(t)
+	defer fixture.server.Close()
+
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	fixture.registerBootstrappedSet(t, svc, store)
+	if err := store.SaveUserBinding(t.Context(), UserBinding{
+		ExternalUserID: "user-1", SetID: "set-a", UpstreamUserID: 42,
+		Username: "sgw-user-1", Password: "user-pass-123",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SavePlanMapping(t.Context(), PlanMapping{
+		ID: "plan-pro", Name: "Pro", MonthlyTokens: 1000,
+		PeriodValue: 1, PeriodUnit: "months", IsActive: true,
+		UpstreamPlanIDs: map[string]int{"set-a": 7},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	periodEnd := time.Unix(fixture.now+7200, 0).UTC()
+	if _, err := svc.ApplySubscription(t.Context(), ApplySubscriptionRequest{
+		IdempotencyKey:   "credit:grant-explicit-end",
+		UserID:           "user-1",
+		PlanID:           "plan-pro",
+		SubscriptionName: "free-credit:campaign:grant-1",
+		PeriodEnd:        &periodEnd,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := svc.ListActiveSubscriptions(t.Context(), "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *Subscription
+	for i := range list.Subscriptions {
+		if list.Subscriptions[i].Name == "free-credit:campaign:grant-1" {
+			found = &list.Subscriptions[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("free-credit subscription not found in %+v", list.Subscriptions)
+	}
+	if found.PeriodEnd != periodEnd.Format(time.RFC3339Nano) {
+		t.Fatalf("period_end = %s, want %s", found.PeriodEnd, periodEnd.Format(time.RFC3339Nano))
+	}
+	if found.TokenTotal != 1000 {
+		t.Fatalf("token_total = %d, want 1000", found.TokenTotal)
+	}
+}
+
 func TestApplySubscriptionKeepsDifferentDealsAsIndependentActiveSubscriptions(t *testing.T) {
 	fixture := newSubscriptionFixture(t)
 	defer fixture.server.Close()
@@ -1244,24 +1404,27 @@ func TestCancelSubscriptionEnsureOnlyUserIsNoop(t *testing.T) {
 }
 
 type subscriptionFixture struct {
-	server                 *httptest.Server
-	now                    int64
-	userCreated            bool
-	createdUsername        string
-	createdPassword        string
-	failCreateSubscription bool
-	createAttempts         int
-	existingAmountUsed     int64
-	createdPlanIDs         []int
-	invalidated            map[int]bool
+	server                    *httptest.Server
+	now                       int64
+	userCreated               bool
+	createdUsername           string
+	createdPassword           string
+	failCreateSubscription    bool
+	createAttempts            int
+	existingAmountUsed        int64
+	createdPlanIDs            []int
+	createdSubscriptionNames  []string
+	existingSubscriptionNames map[int]string
+	invalidated               map[int]bool
 }
 
 func newSubscriptionFixture(t *testing.T) *subscriptionFixture {
 	t.Helper()
 	f := &subscriptionFixture{
-		now:                time.Now().UTC().Unix(),
-		existingAmountUsed: 100,
-		invalidated:        map[int]bool{},
+		now:                       time.Now().UTC().Unix(),
+		existingAmountUsed:        100,
+		existingSubscriptionNames: map[int]string{},
+		invalidated:               map[int]bool{},
 	}
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1304,6 +1467,7 @@ func newSubscriptionFixture(t *testing.T) *subscriptionFixture {
 			subs := []map[string]any{{
 				"subscription": map[string]any{
 					"id":           3,
+					"name":         f.existingSubscriptionNames[3],
 					"user_id":      42,
 					"plan_id":      7,
 					"amount_total": 500,
@@ -1315,9 +1479,14 @@ func newSubscriptionFixture(t *testing.T) *subscriptionFixture {
 			}}
 			for i, planID := range f.createdPlanIDs {
 				id := 10 + i
+				name := ""
+				if i < len(f.createdSubscriptionNames) {
+					name = f.createdSubscriptionNames[i]
+				}
 				subs = append(subs, map[string]any{
 					"subscription": map[string]any{
 						"id":           id,
+						"name":         name,
 						"user_id":      42,
 						"plan_id":      planID,
 						"amount_total": 1000,
@@ -1336,10 +1505,12 @@ func newSubscriptionFixture(t *testing.T) *subscriptionFixture {
 				return
 			}
 			var req struct {
-				PlanID int `json:"plan_id"`
+				PlanID int    `json:"plan_id"`
+				Name   string `json:"name"`
 			}
 			decodeTestJSON(t, r, &req)
 			f.createdPlanIDs = append(f.createdPlanIDs, req.PlanID)
+			f.createdSubscriptionNames = append(f.createdSubscriptionNames, req.Name)
 			writeTestJSON(t, w, map[string]any{"success": true})
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/subscription/admin/user_subscriptions/") && strings.HasSuffix(r.URL.Path, "/invalidate"):
 			parts := strings.Split(r.URL.Path, "/")

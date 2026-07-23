@@ -94,8 +94,10 @@ type PassResponse struct {
 	Status string `json:"status"`
 
 	// Credit 字段（CTL 运行时填充）
-	CreditTotal     int64 `json:"credit_total"`
-	CreditAvailable int64 `json:"credit_available"`
+	CreditTotal         int64 `json:"credit_total"`
+	CreditAvailable     int64 `json:"credit_available"`
+	FreeCreditTotal     int64 `json:"free_credit_total"`
+	FreeCreditAvailable int64 `json:"free_credit_available"`
 
 	// AgentQuota 字段（v1.7.23 B18 新增, v1.7.24 B19 修订；CTL 运行时填充，DB 不持久化）
 	//   - AgentQuotaTotal     = user_resource_quota.total
@@ -148,13 +150,33 @@ type UserPassResponse struct {
 	AgentQuotaAvailable int64 `json:"agent_quota_available"`
 
 	// Credit 积分
-	CreditTotal     int64 `json:"credit_total"`
-	CreditAvailable int64 `json:"credit_available"`
+	CreditTotal         int64 `json:"credit_total"`
+	CreditAvailable     int64 `json:"credit_available"`
+	FreeCreditTotal     int64 `json:"free_credit_total"`
+	FreeCreditAvailable int64 `json:"free_credit_available"`
 }
 
 // ListUserPassesResponse 用户面查询 Pass 列表响应（v1.7.23 B18，对偶 ListPassesResponse）
 type ListUserPassesResponse struct {
 	Passes []*UserPassResponse `json:"passes"`
+}
+
+// GrantFreeCreditRequest 后台给用户发放免费/额外积分。
+//
+// CTL 只负责业务命名和过期时间绑定；LLMGateway 只看到一条普通 named subscription。
+type GrantFreeCreditRequest struct {
+	UserID         string `json:"user_id"`
+	PlanID         string `json:"plan_id"`
+	Source         string `json:"source,omitempty"`
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+type GrantFreeCreditResponse struct {
+	UserID           string    `json:"user_id"`
+	PlanID           string    `json:"plan_id"`
+	SubscriptionID   string    `json:"subscription_id"`
+	SubscriptionName string    `json:"subscription_name"`
+	PeriodEnd        time.Time `json:"period_end"`
 }
 
 // === jifei 反查接口三件套 transport DTOs（billing-integration B11A 新增）===

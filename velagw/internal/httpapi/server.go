@@ -2275,6 +2275,9 @@ func (s *Server) internalAction(w http.ResponseWriter, r *http.Request) {
 		s.internalExtendSubscription(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "admin-commands/"):
 		s.internalGetAdminCommand(w, r, strings.TrimPrefix(path, "admin-commands/"))
+	case r.Method == http.MethodGet && strings.HasPrefix(path, "users/") && strings.HasSuffix(path, "/subscriptions/active"):
+		userID := strings.TrimSuffix(strings.TrimPrefix(path, "users/"), "/subscriptions/active")
+		s.internalListActiveSubscriptions(w, r, userID)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "users/") && strings.HasSuffix(path, "/subscriptions"):
 		userID := strings.TrimSuffix(strings.TrimPrefix(path, "users/"), "/subscriptions")
 		s.internalGetActiveSubscription(w, r, userID)
@@ -2851,6 +2854,20 @@ func (s *Server) internalGetActiveSubscription(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, response{Success: true, Data: sub})
 }
 
+func (s *Server) internalListActiveSubscriptions(w http.ResponseWriter, r *http.Request, userID string) {
+	userID, err := url.PathUnescape(strings.TrimSpace(userID))
+	if err != nil || userID == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "Missing required field: user_id")
+		return
+	}
+	list, err := s.svc.ListActiveSubscriptions(r.Context(), userID)
+	if err != nil {
+		writeInternalServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response{Success: true, Data: list})
+}
+
 func (s *Server) internalGetUserCredit(w http.ResponseWriter, r *http.Request, userID string) {
 	userID, err := url.PathUnescape(strings.TrimSpace(userID))
 	if err != nil || userID == "" {
@@ -3132,6 +3149,8 @@ func writeInternalServiceError(w http.ResponseWriter, err error) {
 		writeOpenAIError(w, http.StatusConflict, "invalid_request_error", "idempotency_in_progress", err.Error())
 	case errors.Is(err, gateway.ErrSubscriptionOutcomeUnknown):
 		writeOpenAIError(w, http.StatusServiceUnavailable, "server_error", "delivery_outcome_unknown", err.Error())
+	case errors.Is(err, gateway.ErrSubscriptionNameConflict):
+		writeOpenAIError(w, http.StatusConflict, "invalid_request_error", "subscription_name_conflict", err.Error())
 	case errors.Is(err, gateway.ErrAdminCommandConflict):
 		writeOpenAIError(w, http.StatusConflict, "invalid_request_error", "idempotency_conflict", err.Error())
 	default:

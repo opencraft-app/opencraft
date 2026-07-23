@@ -32,16 +32,17 @@ const consoleProxyPrefix = "/_llmgateway_console/"
 const defaultUserLLMSettingsTrafficCacheTTL = 30 * time.Second
 
 var (
-	ErrPlanNotFound           = errors.New("plan not found")
-	ErrPlanNotReady           = errors.New("plan is not ready in any active set")
-	ErrPlanImmutableConflict  = errors.New("plan id already exists with different entitlements")
-	ErrSubscriptionNotFound   = errors.New("active subscription not found")
-	ErrAPIKeyRandomCollision  = errors.New("external api key random identity collision")
-	ErrAPIKeyPurposeConflict  = errors.New("external api key purpose already exists")
-	ErrAPIKeyStateConflict    = errors.New("external api key state transition conflict")
-	ErrAPIKeyProvisioning     = errors.New("external api key provisioning is in progress")
-	ErrAPIKeyMaterialMissing  = errors.New("external api key material is unavailable")
-	ErrAPIKeyStateUnavailable = errors.New("external api key state is unavailable")
+	ErrPlanNotFound             = errors.New("plan not found")
+	ErrPlanNotReady             = errors.New("plan is not ready in any active set")
+	ErrPlanImmutableConflict    = errors.New("plan id already exists with different entitlements")
+	ErrSubscriptionNotFound     = errors.New("active subscription not found")
+	ErrSubscriptionNameConflict = errors.New("active subscription with the same name already exists")
+	ErrAPIKeyRandomCollision    = errors.New("external api key random identity collision")
+	ErrAPIKeyPurposeConflict    = errors.New("external api key purpose already exists")
+	ErrAPIKeyStateConflict      = errors.New("external api key state transition conflict")
+	ErrAPIKeyProvisioning       = errors.New("external api key provisioning is in progress")
+	ErrAPIKeyMaterialMissing    = errors.New("external api key material is unavailable")
+	ErrAPIKeyStateUnavailable   = errors.New("external api key state is unavailable")
 	// stdout is reserved for canonical OTLP JSON envelopes. Legacy access logs
 	// remain on stderr until the traffic-plane telemetry rollout is enabled.
 	defaultAccessLogger = log.New(os.Stderr, "", 0)
@@ -1105,9 +1106,16 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
 	req.UserID = strings.TrimSpace(req.UserID)
 	req.PlanID = strings.TrimSpace(req.PlanID)
+	req.SubscriptionName = strings.TrimSpace(req.SubscriptionName)
+	req.PeriodUnit = strings.TrimSpace(req.PeriodUnit)
+	if req.PeriodEnd != nil {
+		periodEnd := req.PeriodEnd.UTC()
+		req.PeriodEnd = &periodEnd
+	}
 	ctx, span := s.startTelemetrySpan(ctx, observability.ScopeTenantEntitlement, "llmgateway.subscription.apply",
 		attribute.String("llmgateway.user.id", req.UserID),
 		attribute.String("llmgateway.plan.id", req.PlanID),
+		attribute.String("llmgateway.subscription.name", req.SubscriptionName),
 	)
 	defer func() { observability.FinishSpan(span, err, "subscription_apply_failed", s.telemetrySanitizer) }()
 	idempotencyEnabled := req.IdempotencyKey != ""
@@ -1119,6 +1127,9 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 	}
 	if req.UserID == "" || req.PlanID == "" {
 		return Subscription{}, fmt.Errorf("user_id and plan_id are required")
+	}
+	if err := s.validateApplySubscriptionRequest(req); err != nil {
+		return Subscription{}, err
 	}
 	if idempotencyEnabled {
 		now := s.nowUTC()
@@ -1215,10 +1226,22 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 		}
 		span.SetAttributes(attribute.Int("llmgateway.upstream_user.id", binding.UpstreamUserID))
 	}
+	if req.IsUnique && hadUpstreamUser {
+		activeSubs, err := s.listActiveSubscriptions(ctx, client, adminAuth, binding.UpstreamUserID)
+		if err != nil {
+			return Subscription{}, err
+		}
+		if hasActiveSubscriptionNamed(activeSubs, req.SubscriptionName) {
+			return Subscription{}, fmt.Errorf("%w: %s", ErrSubscriptionNameConflict, req.SubscriptionName)
+		}
+	}
 	upstreamCreateAttempted = true
 	if err := traceGatewayVoid(ctx, "newapi.admin_create_user_subscription", func(spanCtx context.Context) error {
 		return s.withSetSubscriptionWriteLease(spanCtx, set, func(leaseCtx context.Context) error {
-			return client.AdminCreateUserSubscription(leaseCtx, adminAuth, binding.UpstreamUserID, newapi.AdminCreateUserSubscriptionRequest{PlanID: upstreamPlanID})
+			return client.AdminCreateUserSubscription(leaseCtx, adminAuth, binding.UpstreamUserID, newapi.AdminCreateUserSubscriptionRequest{
+				PlanID: upstreamPlanID,
+				Name:   req.SubscriptionName,
+			})
 		})
 	}, attribute.String("llmgateway.set.id", set.ID), attribute.Int("llmgateway.upstream_user.id", binding.UpstreamUserID), attribute.Int("llmgateway.upstream_plan.id", upstreamPlanID)); err != nil {
 		return Subscription{}, err
@@ -1243,6 +1266,11 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 		})
 	}); err != nil {
 		return Subscription{}, err
+	}
+	if hadUpstreamUser {
+		if err := s.saveCreatedSubscriptionProjection(ctx, client, adminAuth, binding, plan.ID, upstreamPlanID, req.SubscriptionName, periodEnd); err != nil {
+			return Subscription{}, err
+		}
 	}
 	if _, err := traceGatewayValue(ctx, "llmgateway.set_user_assignment", func(spanCtx context.Context) (UserAssignment, error) {
 		return s.SetUserAssignment(spanCtx, UserAssignment{
@@ -1288,6 +1316,7 @@ func projectedSubscriptionFromPlan(binding UserBinding, plan Plan, periodStart t
 		UserID:       binding.ExternalUserID,
 		PlanID:       plan.ID,
 		Status:       "active",
+		TokenTotal:   plan.MonthlyTokens,
 		TokenBalance: plan.MonthlyTokens,
 		PeriodStart:  formatUnixTime(periodStart.UTC().Unix()),
 		PeriodEnd:    formatUnixTime(periodEnd.UTC().Unix()),
@@ -1296,6 +1325,87 @@ func projectedSubscriptionFromPlan(binding UserBinding, plan Plan, periodStart t
 		sub.Unlimited = true
 	}
 	return sub
+}
+
+func (s *Service) validateApplySubscriptionRequest(req ApplySubscriptionRequest) error {
+	if req.PeriodStart != nil {
+		return fmt.Errorf("period_start is not supported by new-api admin subscription API")
+	}
+	if req.PeriodEnd != nil {
+		if req.PeriodValue != 0 || strings.TrimSpace(req.PeriodUnit) != "" {
+			return fmt.Errorf("period_end is mutually exclusive with period_value and period_unit")
+		}
+		if !req.PeriodEnd.After(s.nowUTC()) {
+			return fmt.Errorf("period_end must be in the future")
+		}
+	}
+	if req.IsUnique && strings.TrimSpace(req.SubscriptionName) == "" {
+		return fmt.Errorf("subscription_name is required when is_unique is true")
+	}
+	return nil
+}
+
+func hasActiveSubscriptionNamed(subs []newapi.UserSubscription, name string) bool {
+	name = strings.TrimSpace(name)
+	for _, sub := range subs {
+		if strings.TrimSpace(sub.Name) == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) saveCreatedSubscriptionProjection(ctx context.Context, client *newapi.Client, auth newapi.AdminAuth, binding UserBinding, planID string, upstreamPlanID int, subscriptionName string, periodEnd time.Time) error {
+	created, err := s.identifyCreatedSubscription(ctx, client, auth, binding.UpstreamUserID, upstreamPlanID, subscriptionName)
+	if err != nil {
+		return err
+	}
+	return s.store.SaveSubscriptionProjection(ctx, SubscriptionProjection{
+		ExternalUserID:         binding.ExternalUserID,
+		SetID:                  binding.SetID,
+		UpstreamSubscriptionID: created.ID,
+		SubscriptionName:       subscriptionName,
+		PlanID:                 planID,
+		UpstreamPlanID:         upstreamPlanID,
+		PeriodEnd:              periodEnd,
+	})
+}
+
+func (s *Service) identifyCreatedSubscription(ctx context.Context, client *newapi.Client, auth newapi.AdminAuth, upstreamUserID int, upstreamPlanID int, subscriptionName string) (newapi.UserSubscription, error) {
+	activeSubs, err := s.listActiveSubscriptions(ctx, client, auth, upstreamUserID)
+	if err != nil {
+		return newapi.UserSubscription{}, err
+	}
+	var matched *newapi.UserSubscription
+	for i := range activeSubs {
+		sub := activeSubs[i]
+		if sub.PlanID != upstreamPlanID {
+			continue
+		}
+		if strings.TrimSpace(sub.Name) != strings.TrimSpace(subscriptionName) {
+			continue
+		}
+		if matched == nil || sub.CreatedAt > matched.CreatedAt || (sub.CreatedAt == matched.CreatedAt && sub.ID > matched.ID) {
+			copied := sub
+			matched = &copied
+		}
+	}
+	if matched == nil && strings.TrimSpace(subscriptionName) == "" {
+		for i := range activeSubs {
+			sub := activeSubs[i]
+			if sub.PlanID != upstreamPlanID {
+				continue
+			}
+			if matched == nil || sub.CreatedAt > matched.CreatedAt || (sub.CreatedAt == matched.CreatedAt && sub.ID > matched.ID) {
+				copied := sub
+				matched = &copied
+			}
+		}
+	}
+	if matched == nil {
+		return newapi.UserSubscription{}, fmt.Errorf("%w: created subscription cannot be identified", ErrSubscriptionOutcomeUnknown)
+	}
+	return *matched, nil
 }
 
 func (s *Service) finishSubscriptionIdempotency(ctx context.Context, req ApplySubscriptionRequest, requestHash string, status int, lastError string) error {
@@ -1434,6 +1544,9 @@ func (s *Service) CancelSubscription(ctx context.Context, externalUserID string)
 		if err := s.store.DeleteSubscriptionPeriodOverlay(ctx, externalUserID); err != nil {
 			return err
 		}
+		if err := s.store.DeleteSubscriptionProjections(ctx, externalUserID); err != nil {
+			return err
+		}
 		s.enqueueTenantObservationEvent(ctx, externalUserID, binding.SetID)
 		s.emitCommittedTransition(ctx, observability.ScopeTenantEntitlement, "llmgateway.entitlement.changed",
 			"subscription", externalUserID, "active", "cancelled",
@@ -1446,6 +1559,9 @@ func (s *Service) CancelSubscription(ctx context.Context, externalUserID string)
 		return err
 	}
 	if err := s.store.DeleteSubscriptionPeriodOverlay(ctx, externalUserID); err != nil {
+		return err
+	}
+	if err := s.store.DeleteSubscriptionProjections(ctx, externalUserID); err != nil {
 		return err
 	}
 	s.emitCommittedTransition(ctx, observability.ScopeTenantEntitlement, "llmgateway.entitlement.changed",
@@ -1488,6 +1604,59 @@ func (s *Service) GetActiveSubscription(ctx context.Context, externalUserID stri
 		return Subscription{}, err
 	}
 	return s.applySubscriptionPeriodOverlay(ctx, binding, sub)
+}
+
+func (s *Service) ListActiveSubscriptions(ctx context.Context, externalUserID string) (ActiveSubscriptionList, error) {
+	externalUserID = strings.TrimSpace(externalUserID)
+	if externalUserID == "" {
+		return ActiveSubscriptionList{}, fmt.Errorf("user_id is required")
+	}
+	binding, ok, err := s.store.GetUserBinding(ctx, externalUserID)
+	if err != nil {
+		return ActiveSubscriptionList{}, err
+	}
+	if !ok || binding.UpstreamUserID == 0 {
+		return ActiveSubscriptionList{UserID: externalUserID, Subscriptions: []Subscription{}}, nil
+	}
+	set, ok, err := s.store.GetSet(ctx, binding.SetID)
+	if err != nil {
+		return ActiveSubscriptionList{}, err
+	}
+	if !ok {
+		return ActiveSubscriptionList{}, fmt.Errorf("set %q not found", binding.SetID)
+	}
+	if set.AdminAccessToken == "" || set.AdminUserID == 0 {
+		return ActiveSubscriptionList{}, fmt.Errorf("set %q is not bootstrapped", set.ID)
+	}
+	activeSubs, err := s.listActiveSubscriptions(ctx, s.newAPIClient(set.BaseURL), adminAuthForSet(set), binding.UpstreamUserID)
+	if err != nil {
+		return ActiveSubscriptionList{}, err
+	}
+	projections, err := s.store.ListSubscriptionProjections(ctx, externalUserID)
+	if err != nil {
+		return ActiveSubscriptionList{}, err
+	}
+	projectionByUpstreamID := make(map[int]SubscriptionProjection, len(projections))
+	for _, projection := range projections {
+		projectionByUpstreamID[projection.UpstreamSubscriptionID] = projection
+	}
+	result := ActiveSubscriptionList{UserID: externalUserID, Subscriptions: make([]Subscription, 0, len(activeSubs))}
+	for _, sub := range activeSubs {
+		item := s.subscriptionFromUpstream(ctx, binding, sub)
+		if projection, ok := projectionByUpstreamID[sub.ID]; ok {
+			if strings.TrimSpace(projection.SubscriptionName) != "" {
+				item.Name = projection.SubscriptionName
+			}
+			if strings.TrimSpace(projection.PlanID) != "" {
+				item.PlanID = projection.PlanID
+			}
+			if !projection.PeriodEnd.IsZero() && projection.PeriodEnd.After(s.nowUTC()) {
+				item.PeriodEnd = formatUnixTime(projection.PeriodEnd.UTC().Unix())
+			}
+		}
+		result.Subscriptions = append(result.Subscriptions, item)
+	}
+	return result, nil
 }
 
 func (s *Service) activePlan(ctx context.Context, planID string) (Plan, error) {
@@ -1660,6 +1829,9 @@ func normalizePeriodUnit(unit string) string {
 }
 
 func subscriptionPeriodEnd(start time.Time, req ApplySubscriptionRequest, plan Plan) (time.Time, error) {
+	if req.PeriodEnd != nil {
+		return req.PeriodEnd.UTC(), nil
+	}
 	value := req.PeriodValue
 	if value == 0 {
 		value = plan.PeriodValue
@@ -1756,6 +1928,7 @@ func (s *Service) aggregateSubscription(ctx context.Context, binding UserBinding
 	tokenBalance := int64(0)
 	unlimited := false
 	planID := binding.LastPlanID
+	subscriptionName := ""
 	for _, sub := range activeSubs {
 		if sub.StartTime > 0 && (periodStart == 0 || sub.StartTime < periodStart) {
 			periodStart = sub.StartTime
@@ -1774,6 +1947,9 @@ func (s *Service) aggregateSubscription(ctx context.Context, binding UserBinding
 		if planID == "" {
 			planID = s.externalPlanIDForUpstream(ctx, binding.SetID, sub.PlanID)
 		}
+		if subscriptionName == "" {
+			subscriptionName = strings.TrimSpace(sub.Name)
+		}
 	}
 	if unlimited {
 		tokenBalance = 0
@@ -1789,14 +1965,53 @@ func (s *Service) aggregateSubscription(ctx context.Context, binding UserBinding
 	}
 	return Subscription{
 		ID:           "llmgw-sub-" + binding.SetID + "-" + binding.ExternalUserID,
+		Name:         subscriptionName,
 		UserID:       binding.ExternalUserID,
 		PlanID:       planID,
 		Status:       "active",
+		TokenTotal:   tokenBalance,
 		TokenBalance: tokenBalance,
 		Unlimited:    unlimited,
 		PeriodStart:  formatUnixTime(periodStart),
 		PeriodEnd:    formatUnixTime(periodEnd),
 	}, nil
+}
+
+func (s *Service) subscriptionFromUpstream(ctx context.Context, binding UserBinding, sub newapi.UserSubscription) Subscription {
+	tokenBalance := int64(0)
+	tokenTotal := int64(0)
+	unlimited := sub.AmountTotal == 0
+	if !unlimited {
+		tokenTotal = sub.AmountTotal
+		remain := sub.AmountTotal - sub.AmountUsed
+		if remain > 0 {
+			tokenBalance = remain
+		}
+	}
+	planID := s.externalPlanIDForUpstream(ctx, binding.SetID, sub.PlanID)
+	if planID == "" {
+		planID = strconv.Itoa(sub.PlanID)
+	}
+	periodStart := sub.StartTime
+	if periodStart == 0 {
+		periodStart = s.nowUTC().Unix()
+	}
+	periodEnd := sub.EndTime
+	if periodEnd == 0 {
+		periodEnd = s.nowUTC().Unix()
+	}
+	return Subscription{
+		ID:           strconv.Itoa(sub.ID),
+		Name:         strings.TrimSpace(sub.Name),
+		UserID:       binding.ExternalUserID,
+		PlanID:       planID,
+		Status:       "active",
+		TokenTotal:   tokenTotal,
+		TokenBalance: tokenBalance,
+		Unlimited:    unlimited,
+		PeriodStart:  formatUnixTime(periodStart),
+		PeriodEnd:    formatUnixTime(periodEnd),
+	}
 }
 
 func (s *Service) applySubscriptionPeriodOverlay(ctx context.Context, binding UserBinding, sub Subscription) (Subscription, error) {
