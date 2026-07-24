@@ -612,8 +612,10 @@ const mapBundleToPlan = (
          为避免「旧价 + 新单位」的误导，单位强制回退为"/ 月"，与旧价口径保持一致，
          直到新价格返回后再随 durationKey 一并切成"/ 季"。 */
     priceUnit: paid && !showPricingPlaceholder ? getBillingPriceUnit(durationKey, t) : getBillingPriceUnit("monthly", t),
-    /* 国际站中英文都展示促销标签：英文为 Limited free，中文为限时免费；国内站保持原有中文标签。 */
-    promoTag,
+    /* 国际站中英文都展示促销标签：英文为 Limited free，中文为限时免费；国内站保持原有中文标签。
+       询价加载中（showPricingPlaceholder）不展示折扣角标：此时 bundle.price 仍是旧时长的价，
+       与 originalPrice 同样口径处理，避免月付切季付的中间态基于旧价算出「0折 / 5折」等误导角标。 */
+    promoTag: showPricingPlaceholder ? undefined : promoTag,
     /* 命中 tier 时用 tier 一句话文案（需求2）；未命中 tier 时维持原兜底：
        freeGuideAllowed（两开关同时关闭）去掉描述，其余展示「尝鲜体验，从一个 Agent 开始」。 */
     description: tierTagline || (freeGuideAllowed ? "" : t("尝鲜体验，从一个 Agent 开始")),
