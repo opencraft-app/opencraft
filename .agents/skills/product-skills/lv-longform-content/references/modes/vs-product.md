@@ -12,10 +12,18 @@ Use for a practical comparison between LightVela and another product, or between
 
 Keep this mode tighter than a broad enterprise comparison: usually 800–1,100 words unless the user sets a length.
 
+Use this title pattern for one-to-one comparisons:
+
+```markdown
+<Product A> vs <Product B>: Which is best to <specific job>?
+```
+
+Use plain `vs` without a period, name the actual job being compared, and avoid vague titles such as “Which product is better?”.
+
 Suggested arc:
 
 ```markdown
-<LightVela vs. Alternative: Which Fits <specific job>?>
+<Product A vs Product B: Which is best to <specific job>?>
 <One Codex-generated comparison hero image>
 
 Answer-first: state who should choose each option in 1–3 plain sentences. Lead with the reader's real constraint, not a company claim.
