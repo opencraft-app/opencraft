@@ -101,9 +101,18 @@ func (s *Service) ApplySubscriptionManaged(ctx context.Context, req ApplySubscri
 	if err := s.validateApplySubscriptionRequest(req); err != nil {
 		return Subscription{}, nil, err
 	}
-	plan, err := s.activePlan(ctx, req.PlanID)
+	plan, err := s.GetPlan(ctx, req.PlanID)
 	if err != nil {
 		return Subscription{}, nil, err
+	}
+	if !plan.IsActive {
+		binding, ok, bindingErr := s.store.GetUserBinding(ctx, req.UserID)
+		if bindingErr != nil {
+			return Subscription{}, nil, bindingErr
+		}
+		if !ok || binding.UpstreamUserID <= 0 {
+			return Subscription{}, nil, ErrPlanNotFound
+		}
 	}
 	if _, err := s.resolvePlanTarget(ctx, req, plan); err != nil {
 		return Subscription{}, nil, err

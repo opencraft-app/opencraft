@@ -137,6 +137,7 @@ type Store interface {
 	GetPlanMapping(context.Context, string) (PlanMapping, bool, error)
 	ListPlanMappings(context.Context) ([]PlanMapping, error)
 	SavePlan(context.Context, Plan) error
+	RetirePlan(context.Context, string, time.Time) error
 	GetPlan(context.Context, string) (Plan, bool, error)
 	ListPlans(context.Context) ([]Plan, error)
 	SaveSetPlan(context.Context, SetPlan) error
@@ -398,11 +399,16 @@ func setOperationLeaseKey(setID string, operation string, slot int) string {
 }
 
 func setReadyForOperationLease(set Set, operation string) bool {
-	if operation != SetOperationGroupRatioWrite {
+	if !setOperationAllowedBeforeAdmission(operation) {
 		return setReadyForServing(set)
 	}
 	return set.Status == SetStatusActive && set.Setup && set.AdminUserID > 0 && set.AdminAccessToken != "" &&
 		set.AdminHealthStatus != SetAdminHealthUnhealthy
+}
+
+func setOperationAllowedBeforeAdmission(operation string) bool {
+	return operation == SetOperationGroupRatioWrite ||
+		strings.HasPrefix(operation, SetOperationPlanSync+"_")
 }
 
 func (s *MemoryStore) SaveSet(_ context.Context, set Set) error {
@@ -2040,13 +2046,15 @@ func (s *MemoryStore) SavePlanMapping(_ context.Context, plan PlanMapping) error
 		}
 		s.setPlans[setPlanKey(plan.ID, setID)] = SetPlan{
 			PlanID: plan.ID, SetID: setID, UpstreamPlanID: upstreamPlanID,
-			Status: SetPlanStatusReady, SyncedAt: now, CreatedAt: now, UpdatedAt: now,
+			AppliedFingerprint: entitlement.Fingerprint,
+			Status:             SetPlanStatusReady, SyncedAt: now, CreatedAt: now, UpdatedAt: now,
 		}
 	}
 	if plan.UpstreamPlanID > 0 && plan.SetID != "" {
 		s.setPlans[setPlanKey(plan.ID, plan.SetID)] = SetPlan{
 			PlanID: plan.ID, SetID: plan.SetID, UpstreamPlanID: plan.UpstreamPlanID,
-			Status: SetPlanStatusReady, SyncedAt: now, CreatedAt: now, UpdatedAt: now,
+			AppliedFingerprint: entitlement.Fingerprint,
+			Status:             SetPlanStatusReady, SyncedAt: now, CreatedAt: now, UpdatedAt: now,
 		}
 	}
 	return nil
@@ -2112,6 +2120,22 @@ func (s *MemoryStore) SavePlan(_ context.Context, plan Plan) error {
 	}
 	plan.UpdatedAt = now
 	s.entitlementPlans[plan.ID] = plan
+	return nil
+}
+
+func (s *MemoryStore) RetirePlan(_ context.Context, planID string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existing, ok := s.entitlementPlans[planID]
+	if !ok {
+		return ErrPlanNotFound
+	}
+	if !existing.IsActive {
+		return nil
+	}
+	existing.IsActive = false
+	existing.UpdatedAt = now.UTC()
+	s.entitlementPlans[planID] = existing
 	return nil
 }
 

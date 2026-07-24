@@ -153,17 +153,18 @@ type AdminCreateSubscriptionPlanRequest struct {
 }
 
 type AdminSubscriptionPlan struct {
-	ID               int     `json:"id,omitempty"`
-	Title            string  `json:"title"`
-	Subtitle         string  `json:"subtitle,omitempty"`
-	PriceAmount      float64 `json:"price_amount"`
-	Currency         string  `json:"currency"`
-	DurationUnit     string  `json:"duration_unit"`
-	DurationValue    int     `json:"duration_value"`
-	Enabled          bool    `json:"enabled"`
-	TotalAmount      int64   `json:"total_amount"`
-	AllowBalancePay  bool    `json:"allow_balance_pay"`
-	QuotaResetPeriod string  `json:"quota_reset_period"`
+	ID                      int     `json:"id,omitempty"`
+	Title                   string  `json:"title"`
+	Subtitle                string  `json:"subtitle,omitempty"`
+	PriceAmount             float64 `json:"price_amount"`
+	Currency                string  `json:"currency"`
+	DurationUnit            string  `json:"duration_unit"`
+	DurationValue           int     `json:"duration_value"`
+	Enabled                 bool    `json:"enabled"`
+	TotalAmount             int64   `json:"total_amount"`
+	AllowBalancePay         bool    `json:"allow_balance_pay"`
+	QuotaResetPeriod        string  `json:"quota_reset_period"`
+	QuotaResetCustomSeconds int64   `json:"quota_reset_custom_seconds,omitempty"`
 }
 
 type AdminCreateSubscriptionPlanResult struct {

@@ -79,6 +79,7 @@
     "/api/plans/{plan_id}",
     "/api/plans/{plan_id}/periods",
     "/api/plans/{plan_id}/periods/sets",
+    "/api/plans/{plan_id}/retire",
     "/api/plans/{plan_id}/sets",
     "/api/plans/{plan_id}/sync",
     "/api/sets",

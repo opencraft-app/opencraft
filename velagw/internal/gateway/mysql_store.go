@@ -647,6 +647,8 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 			id VARCHAR(191) PRIMARY KEY,
 			name VARCHAR(255) NOT NULL,
 			monthly_tokens BIGINT NOT NULL DEFAULT 0,
+			quota_reset_period VARCHAR(32) NOT NULL DEFAULT 'monthly',
+			quota_reset_custom_seconds BIGINT NOT NULL DEFAULT 0,
 			period_value BIGINT NOT NULL DEFAULT 1,
 			period_unit VARCHAR(32) NOT NULL DEFAULT 'months',
 			is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -659,6 +661,7 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 			plan_id VARCHAR(191) NOT NULL,
 			set_id VARCHAR(128) NOT NULL,
 			upstream_plan_id BIGINT NOT NULL DEFAULT 0,
+			applied_fingerprint VARCHAR(64) NOT NULL DEFAULT '',
 			status VARCHAR(32) NOT NULL DEFAULT 'pending',
 			attempts BIGINT NOT NULL DEFAULT 0,
 			last_error TEXT NOT NULL,
@@ -1069,6 +1072,9 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 	if err := s.migrateChannelSpecDesiredColumns(ctx); err != nil {
 		return err
 	}
+	if err := s.migratePlanResetColumns(ctx); err != nil {
+		return err
+	}
 	if err := s.migrateSetRuntimeLeases(ctx); err != nil {
 		return err
 	}
@@ -1077,6 +1083,24 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 	}
 	if err := s.migrateTenantBackendSemantics(ctx); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (s *MySQLStore) migratePlanResetColumns(ctx context.Context) error {
+	columns := []struct {
+		table      string
+		name       string
+		definition string
+	}{
+		{"llmgateway_plans", "quota_reset_period", "VARCHAR(32) NOT NULL DEFAULT 'monthly'"},
+		{"llmgateway_plans", "quota_reset_custom_seconds", "BIGINT NOT NULL DEFAULT 0"},
+		{"llmgateway_set_plans", "applied_fingerprint", "VARCHAR(64) NOT NULL DEFAULT ''"},
+	}
+	for _, column := range columns {
+		if err := s.ensureMySQLColumn(ctx, column.table, column.name, column.definition); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -3585,13 +3609,21 @@ func (s *MySQLStore) SavePlanMapping(ctx context.Context, plan PlanMapping) erro
 	}
 	for setID, upstreamPlanID := range plan.UpstreamPlanIDs {
 		if upstreamPlanID > 0 {
-			if err := s.SaveSetPlan(ctx, SetPlan{PlanID: plan.ID, SetID: setID, UpstreamPlanID: upstreamPlanID, Status: SetPlanStatusReady, SyncedAt: time.Now().UTC()}); err != nil {
+			if err := s.SaveSetPlan(ctx, SetPlan{
+				PlanID: plan.ID, SetID: setID, UpstreamPlanID: upstreamPlanID,
+				AppliedFingerprint: entitlement.Fingerprint,
+				Status:             SetPlanStatusReady, SyncedAt: time.Now().UTC(),
+			}); err != nil {
 				return err
 			}
 		}
 	}
 	if plan.UpstreamPlanID > 0 && plan.SetID != "" {
-		return s.SaveSetPlan(ctx, SetPlan{PlanID: plan.ID, SetID: plan.SetID, UpstreamPlanID: plan.UpstreamPlanID, Status: SetPlanStatusReady, SyncedAt: time.Now().UTC()})
+		return s.SaveSetPlan(ctx, SetPlan{
+			PlanID: plan.ID, SetID: plan.SetID, UpstreamPlanID: plan.UpstreamPlanID,
+			AppliedFingerprint: entitlement.Fingerprint,
+			Status:             SetPlanStatusReady, SyncedAt: time.Now().UTC(),
+		})
 	}
 	return nil
 }
@@ -3647,10 +3679,12 @@ func (s *MySQLStore) SavePlan(ctx context.Context, plan Plan) error {
 	plan.UpdatedAt = now
 	result, err := s.db.ExecContext(ctx, `
 		INSERT IGNORE INTO llmgateway_plans (
-			id, name, monthly_tokens, period_value, period_unit, is_active,
+			id, name, monthly_tokens, quota_reset_period, quota_reset_custom_seconds,
+			period_value, period_unit, is_active,
 			fingerprint, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, plan.ID, plan.Name, plan.MonthlyTokens, plan.PeriodValue, plan.PeriodUnit,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, plan.ID, plan.Name, plan.MonthlyTokens, plan.QuotaResetPeriod, plan.QuotaResetCustomSeconds,
+		plan.PeriodValue, plan.PeriodUnit,
 		plan.IsActive, plan.Fingerprint, plan.CreatedAt, plan.UpdatedAt)
 	if err != nil {
 		return err
@@ -3669,9 +3703,31 @@ func (s *MySQLStore) SavePlan(ctx context.Context, plan Plan) error {
 	return nil
 }
 
+func (s *MySQLStore) RetirePlan(ctx context.Context, planID string, now time.Time) error {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE llmgateway_plans
+		SET is_active = FALSE, updated_at = ?
+		WHERE id = ? AND is_active = TRUE
+	`, now.UTC(), planID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected > 0 {
+		return err
+	}
+	if _, ok, err := s.GetPlan(ctx, planID); err != nil {
+		return err
+	} else if !ok {
+		return ErrPlanNotFound
+	}
+	return nil
+}
+
 func (s *MySQLStore) GetPlan(ctx context.Context, id string) (Plan, bool, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, monthly_tokens, period_value, period_unit, is_active,
+		SELECT id, name, monthly_tokens, quota_reset_period, quota_reset_custom_seconds,
+			period_value, period_unit, is_active,
 			fingerprint, created_at, updated_at
 		FROM llmgateway_plans WHERE id = ?
 	`, id)
@@ -3687,7 +3743,8 @@ func (s *MySQLStore) GetPlan(ctx context.Context, id string) (Plan, bool, error)
 
 func (s *MySQLStore) ListPlans(ctx context.Context) ([]Plan, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, monthly_tokens, period_value, period_unit, is_active,
+		SELECT id, name, monthly_tokens, quota_reset_period, quota_reset_custom_seconds,
+			period_value, period_unit, is_active,
 			fingerprint, created_at, updated_at
 		FROM llmgateway_plans ORDER BY id
 	`)
@@ -3724,24 +3781,25 @@ func (s *MySQLStore) SaveSetPlan(ctx context.Context, state SetPlan) error {
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO llmgateway_set_plans (
-			plan_id, set_id, upstream_plan_id, status, attempts, last_error,
-			synced_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			plan_id, set_id, upstream_plan_id, applied_fingerprint, status, attempts,
+			last_error, synced_at, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			upstream_plan_id = VALUES(upstream_plan_id),
+			applied_fingerprint = VALUES(applied_fingerprint),
 			status = VALUES(status),
 			attempts = VALUES(attempts),
 			last_error = VALUES(last_error),
 			synced_at = VALUES(synced_at),
 			updated_at = VALUES(updated_at)
-	`, state.PlanID, state.SetID, state.UpstreamPlanID, state.Status, state.Attempts,
+	`, state.PlanID, state.SetID, state.UpstreamPlanID, state.AppliedFingerprint, state.Status, state.Attempts,
 		state.LastError, syncedAt, state.CreatedAt, state.UpdatedAt)
 	return err
 }
 
 func (s *MySQLStore) GetSetPlan(ctx context.Context, planID string, setID string) (SetPlan, bool, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT plan_id, set_id, upstream_plan_id, status, attempts, last_error,
+		SELECT plan_id, set_id, upstream_plan_id, applied_fingerprint, status, attempts, last_error,
 			synced_at, created_at, updated_at
 		FROM llmgateway_set_plans WHERE plan_id = ? AND set_id = ?
 	`, planID, setID)
@@ -3757,7 +3815,7 @@ func (s *MySQLStore) GetSetPlan(ctx context.Context, planID string, setID string
 
 func (s *MySQLStore) ListSetPlans(ctx context.Context, options SetPlanListOptions) ([]SetPlan, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT plan_id, set_id, upstream_plan_id, status, attempts, last_error,
+		SELECT plan_id, set_id, upstream_plan_id, applied_fingerprint, status, attempts, last_error,
 			synced_at, created_at, updated_at
 		FROM llmgateway_set_plans ORDER BY plan_id, set_id
 	`)
@@ -4948,7 +5006,8 @@ func scanPlanMapping(row scanner) (PlanMapping, error) {
 
 func scanPlan(row scanner) (Plan, error) {
 	var plan Plan
-	err := row.Scan(&plan.ID, &plan.Name, &plan.MonthlyTokens, &plan.PeriodValue,
+	err := row.Scan(&plan.ID, &plan.Name, &plan.MonthlyTokens,
+		&plan.QuotaResetPeriod, &plan.QuotaResetCustomSeconds, &plan.PeriodValue,
 		&plan.PeriodUnit, &plan.IsActive, &plan.Fingerprint, &plan.CreatedAt, &plan.UpdatedAt)
 	if err != nil {
 		return Plan{}, err
@@ -4961,7 +5020,7 @@ func scanPlan(row scanner) (Plan, error) {
 func scanSetPlan(row scanner) (SetPlan, error) {
 	var state SetPlan
 	var syncedAt sql.NullTime
-	err := row.Scan(&state.PlanID, &state.SetID, &state.UpstreamPlanID, &state.Status,
+	err := row.Scan(&state.PlanID, &state.SetID, &state.UpstreamPlanID, &state.AppliedFingerprint, &state.Status,
 		&state.Attempts, &state.LastError, &syncedAt, &state.CreatedAt, &state.UpdatedAt)
 	if err != nil {
 		return SetPlan{}, err

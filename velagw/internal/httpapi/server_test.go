@@ -568,7 +568,7 @@ func TestPlanEndpointGeneratesIDAndReturnsCreatedPlan(t *testing.T) {
 	svc := gateway.NewService(store, nil, gateway.Options{})
 	handler := NewServer(svc, Config{AdminToken: "cluster-token"})
 
-	body := `{"name":"入门型 14 天","monthly_tokens":1000000,"period_value":14,"period_unit":"days"}`
+	body := `{"name":"入门型","monthly_tokens":1000000,"quota_reset_period":"monthly"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/plans", bytes.NewBufferString(body))
 	req.Header.Set("Authorization", "Bearer cluster-token")
 	rec := httptest.NewRecorder()
@@ -583,7 +583,9 @@ func TestPlanEndpointGeneratesIDAndReturnsCreatedPlan(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if !payload.Success || !strings.HasPrefix(payload.Data.ID, "plan-") || payload.Data.PeriodValue != 14 || payload.Data.PeriodUnit != "days" {
+	if !payload.Success || !strings.HasPrefix(payload.Data.ID, "plan-") ||
+		payload.Data.QuotaResetPeriod != "monthly" ||
+		payload.Data.PeriodValue != 0 || payload.Data.PeriodUnit != "" {
 		t.Fatalf("unexpected response: %+v", payload)
 	}
 	if _, err := svc.GetPlan(t.Context(), payload.Data.ID); err != nil {
@@ -890,11 +892,14 @@ func TestInternalSubscriptionEndpointsUseAIGatewayCompatibleShapes(t *testing.T)
 	planReq.Header.Set("Authorization", "Bearer cluster-token")
 	planRec := httptest.NewRecorder()
 	handler.ServeHTTP(planRec, planReq)
-	if planRec.Code != http.StatusOK || !bytes.Contains(planRec.Body.Bytes(), []byte(`"monthly_tokens":1000`)) {
+	if planRec.Code != http.StatusOK ||
+		!bytes.Contains(planRec.Body.Bytes(), []byte(`"monthly_tokens":1000`)) ||
+		!bytes.Contains(planRec.Body.Bytes(), []byte(`"ready_for_all_sets":true`)) ||
+		!bytes.Contains(planRec.Body.Bytes(), []byte(`"active_set_count":1`)) {
 		t.Fatalf("plan response status=%d body=%s", planRec.Code, planRec.Body.String())
 	}
 
-	applyReq := httptest.NewRequest(http.MethodPost, "/api/internal/subscriptions/apply", bytes.NewBufferString(`{"idempotency_key":"trade:deal-http-shape","user_id":"user-1","plan_id":"plan-pro"}`))
+	applyReq := httptest.NewRequest(http.MethodPost, "/api/internal/subscriptions/apply", bytes.NewBufferString(`{"idempotency_key":"trade:deal-http-shape","user_id":"user-1","plan_id":"plan-pro","is_unique":true}`))
 	applyReq.Header.Set("Authorization", "Bearer cluster-token")
 	applyRec := httptest.NewRecorder()
 	handler.ServeHTTP(applyRec, applyReq)
