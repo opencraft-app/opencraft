@@ -514,14 +514,14 @@ func (s *Service) BootstrapSet(ctx context.Context, setID string) (Set, error) {
 	if err != nil {
 		return Set{}, err
 	}
-	if err := client.ConfirmPaymentCompliance(ctx, session.UserID); err != nil {
+	if err := client.ConfirmPaymentCompliance(ctx, session.UserID, session.AccessToken); err != nil {
 		return Set{}, err
 	}
-	if err := client.UpdateOption(ctx, session.UserID, "theme.frontend", "default"); err != nil {
+	if err := client.UpdateOption(ctx, session.UserID, "theme.frontend", "default", session.AccessToken); err != nil {
 		return Set{}, err
 	}
 	if set.AdminTOTPSecret == "" {
-		setup2FA, err := client.Setup2FA(ctx, session.UserID, "")
+		setup2FA, err := client.Setup2FA(ctx, session.UserID, session.AccessToken)
 		if err != nil {
 			return Set{}, err
 		}
@@ -529,12 +529,12 @@ func (s *Service) BootstrapSet(ctx context.Context, setID string) (Set, error) {
 		if err != nil {
 			return Set{}, err
 		}
-		if err := client.Enable2FA(ctx, session.UserID, "", code); err != nil {
+		if err := client.Enable2FA(ctx, session.UserID, session.AccessToken, code); err != nil {
 			return Set{}, err
 		}
 		set.AdminTOTPSecret = setup2FA.Secret
 	}
-	accessToken, err := client.GenerateAccessToken(ctx, session.UserID)
+	accessToken, err := client.GenerateAccessToken(ctx, session.UserID, session.AccessToken)
 	if err != nil {
 		return Set{}, err
 	}
@@ -2179,14 +2179,15 @@ func (s *Service) createExternalKeyForBinding(ctx context.Context, binding UserB
 		return APIKeyBinding{}, fmt.Errorf("upstream username and password are required")
 	}
 	client := s.newAPIClient(set.BaseURL)
-	if _, err := traceGatewayValue(ctx, "newapi.user_login", func(spanCtx context.Context) (newapi.Session, error) {
+	session, err := traceGatewayValue(ctx, "newapi.user_login", func(spanCtx context.Context) (newapi.Session, error) {
 		return client.Login(spanCtx, binding.Username, binding.Password)
-	}, attribute.String("llmgateway.set.id", set.ID), attribute.Int("llmgateway.upstream_user.id", binding.UpstreamUserID)); err != nil {
+	}, attribute.String("llmgateway.set.id", set.ID), attribute.Int("llmgateway.upstream_user.id", binding.UpstreamUserID))
+	if err != nil {
 		s.markBindingProvisionFailed(ctx, binding, err)
 		return APIKeyBinding{}, err
 	}
 	userAccessToken, err := traceGatewayValue(ctx, "newapi.generate_access_token", func(spanCtx context.Context) (string, error) {
-		return client.GenerateAccessToken(spanCtx, binding.UpstreamUserID)
+		return client.GenerateAccessToken(spanCtx, binding.UpstreamUserID, session.AccessToken)
 	}, attribute.String("llmgateway.set.id", set.ID), attribute.Int("llmgateway.upstream_user.id", binding.UpstreamUserID))
 	if err != nil {
 		s.markBindingProvisionFailed(ctx, binding, err)

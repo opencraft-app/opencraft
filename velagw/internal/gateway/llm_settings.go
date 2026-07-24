@@ -408,10 +408,11 @@ func (s *Service) createBYOKUpstreamToken(ctx context.Context, client *newapi.Cl
 	if binding.Username == "" || binding.Password == "" {
 		return newapi.UpstreamKey{}, fmt.Errorf("upstream username and password are required")
 	}
-	if _, err := client.Login(ctx, binding.Username, binding.Password); err != nil {
+	session, err := client.Login(ctx, binding.Username, binding.Password)
+	if err != nil {
 		return newapi.UpstreamKey{}, err
 	}
-	userAccessToken, err := client.GenerateAccessToken(ctx, binding.UpstreamUserID)
+	userAccessToken, err := client.GenerateAccessToken(ctx, binding.UpstreamUserID, session.AccessToken)
 	if err != nil {
 		return newapi.UpstreamKey{}, err
 	}
