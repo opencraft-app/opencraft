@@ -2500,11 +2500,57 @@ func TestCorsPreflightBypassesAuth(t *testing.T) {
 	if methods := rec.Header().Get("Access-Control-Allow-Methods"); methods != "GET, POST, PUT, DELETE, OPTIONS" {
 		t.Fatalf("unexpected allow methods header: %q", methods)
 	}
+	if headers := rec.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(headers, "X-Requested-With") {
+		t.Fatalf("expected allow headers to include X-Requested-With, got %q", headers)
+	}
 	if upstreamCalls != 0 {
 		t.Fatalf("expected upstream not to be called for preflight, got %d", upstreamCalls)
 	}
 	if authCalls != 0 {
 		t.Fatalf("expected auth introspection to be skipped, got %d calls", authCalls)
+	}
+}
+
+func TestPassOrderURLPreflightReflectsRequestedHeaders(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("preflight must not reach upstream")
+	}))
+	defer upstream.Close()
+
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("preflight must not require auth")
+	}))
+	defer auth.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		AllowedOrigins: []string{"https://lightvela.com"},
+		Routes: []Route{
+			{
+				Name:     "ctl-passes",
+				Prefix:   "/v1/passes",
+				Upstream: upstream.URL,
+				Access:   AccessAuthenticated,
+				Methods:  []string{http.MethodGet, http.MethodPost},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/passes/order-url", nil)
+	req.Header.Set("Origin", "https://lightvela.com")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	req.Header.Set("Access-Control-Request-Headers", "content-type,x-wx-client-version,x-webview-extra")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if headers := rec.Header().Get("Access-Control-Allow-Headers"); headers != "content-type,x-wx-client-version,x-webview-extra" {
+		t.Fatalf("expected requested allow headers to be reflected, got %q", headers)
 	}
 }
 

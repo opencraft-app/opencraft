@@ -613,8 +613,16 @@ func applyCORSHeaders(allowedOrigins originAllowlist, header http.Header, r *htt
 	header.Set("Access-Control-Allow-Credentials", "true")
 	header.Set("Vary", appendVary(header.Values("Vary"), "Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers"))
 	header.Set("Access-Control-Allow-Methods", strings.Join(corsAllowedMethods(allowedMethods), ", "))
-	header.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id, X-Trace-Id")
+	header.Set("Access-Control-Allow-Headers", corsAllowedHeaders(r))
 	header.Set("Access-Control-Max-Age", "600")
+}
+
+func corsAllowedHeaders(r *http.Request) string {
+	requestedHeaders := strings.TrimSpace(r.Header.Get("Access-Control-Request-Headers"))
+	if r.URL.Path == "/v1/passes/order-url" && requestedHeaders != "" {
+		return requestedHeaders
+	}
+	return "Authorization, Content-Type, X-Request-Id, X-Trace-Id, X-Requested-With"
 }
 
 type wildcardOrigin struct {
