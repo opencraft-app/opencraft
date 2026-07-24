@@ -59,6 +59,9 @@ _research-output
 *.zip
 graphify-out/
 
+# Locally generated longform article covers; reusable skill reference assets remain tracked.
+product/longform-content/assets/
+
 # ─── Python ──────────────────────────────────────────
 __pycache__/
 *.py[cod]

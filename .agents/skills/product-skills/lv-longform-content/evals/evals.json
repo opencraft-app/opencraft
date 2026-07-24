@@ -1,0 +1,42 @@
+{
+  "skill_name": "lv-longform-content",
+  "cases": [
+    {
+      "id": "x-longform-preserves-markdown",
+      "prompt": "Write an industry update long-form article for X about a model release.",
+      "expect": [
+        "Resolved brief uses platform=x, attribution=social_x, and output_shape=longform-article.",
+        "Output is one Markdown-formatted article with headings and emphasis where useful, not a numbered 1/n thread.",
+        "Industry mode creates exactly one generated hero image and no recommendation placeholders."
+      ]
+    },
+    {
+      "id": "x-community-ending-is-required",
+      "prompt": "Write a complete English feature-introduction article for X.",
+      "expect": [
+        "The final section is the exact English Community Ending.",
+        "The LightVela URL and any other lightvela.ai URL use from=social_x.",
+        "Both hosted Discord and WhatsApp QR images are present."
+      ]
+    },
+    {
+      "id": "techpedia-is-bilingual-files",
+      "prompt": "Write a Techpedia tutorial about LightVela automations.",
+      "expect": [
+        "Resolved brief uses platform=techpedia, language=both, form=md, output_shape=markdown-files, attribution=social_techpedia.",
+        "A publication-ready .zh.md and .en.md file are created.",
+        "Each file has language-localized LightVela links with from=social_techpedia and its own language-matched Community Ending."
+      ]
+    },
+    {
+      "id": "vs-product-is-balanced-and-platform-aware",
+      "prompt": "Write an X comparison of self-hosting Hermes Agent on a personal computer versus LightVela.",
+      "expect": [
+        "Resolved brief uses mode=vs-product, platform=x, output_shape=longform-article, and attribution=social_x.",
+        "The article starts with one sparse Codex-generated comparison hero using assets/vs-product-hero-reference.png: LightVela's left half and the fixed straight divider are preserved, while only the right half changes. Use a verified official alternative icon when available; otherwise use one obvious unbranded physical metaphor, such as a personal laptop for self-hosting on a computer. It then gives a direct fit-based answer, a concise at-a-glance table, and real operating tradeoffs from primary sources.",
+        "The conclusion names situations where self-hosting is the better choice as well as situations where LightVela fits better; it does not declare an unsupported universal winner.",
+        "Every lightvela.ai link uses from=social_x and the English Community Ending is the final section."
+      ]
+    }
+  ]
+}
