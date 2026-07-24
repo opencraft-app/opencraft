@@ -5,6 +5,7 @@ package instance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"ctl/pkg/adapter/whitelist"
 	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
+	"ctl/pkg/logic/gatewayroute"
 	"ctl/pkg/logic/objectid"
 	modelfactory "ctl/pkg/model/factory"
 	modelinstance "ctl/pkg/model/instance"
@@ -262,6 +264,9 @@ func (s *stubSandboxAdapterInline) Refresh(_ context.Context, _ string, _ int32)
 func (s *stubSandboxAdapterInline) GetLogs(_ context.Context, _ string, _ *psandbox.GetLogsRequest) (*psandbox.SandboxLogs, error) {
 	return nil, nil
 }
+func (s *stubSandboxAdapterInline) StartTerminalSession(_ context.Context, _ string) (*psandbox.TerminalSession, error) {
+	return nil, nil
+}
 func (s *stubSandboxAdapterInline) ExecCommand(_ context.Context, _ string, _ string, _ int) (*psandbox.ExecCommandResult, error) {
 	return &psandbox.ExecCommandResult{Status: "SUCCESS"}, nil
 }
@@ -323,6 +328,17 @@ func (s *stubLLMGatewayAdapterInline) GetActiveSubscription(_ context.Context, _
 }
 func (s *stubLLMGatewayAdapterInline) ListActiveSubscriptions(_ context.Context, _ string) (*pllmgateway.ActiveSubscriptionList, error) {
 	return &pllmgateway.ActiveSubscriptionList{Subscriptions: []pllmgateway.Subscription{}}, nil
+}
+
+type stubLegacyAIGatewayAdapterInline struct {
+	paigateway.Adapter
+	revokedKeyIDs []string
+	revokeErr     error
+}
+
+func (s *stubLegacyAIGatewayAdapterInline) RevokeApiKey(_ context.Context, keyID string) error {
+	s.revokedKeyIDs = append(s.revokedKeyIDs, keyID)
+	return s.revokeErr
 }
 
 type inlineStubAdapterFactory struct {
@@ -628,4 +644,94 @@ func TestInlineDestroyTask_Success(t *testing.T) {
 		Order("id DESC").First(&taskEntity).Error
 	require.NoError(t, dbErr)
 	assert.Equal(t, taskmodel.StateSuccess, taskEntity.TaskState)
+}
+
+func TestInlineDestroyTask_PreservesLLMGatewayUserKey(t *testing.T) {
+	_, _ = setupEnqueueTestEnv(t)
+
+	var deletedSandboxID string
+	sandboxStub := &stubSandboxAdapterInline{
+		deleteFunc: func(_ context.Context, sandboxID string) error {
+			deletedSandboxID = sandboxID
+			return nil
+		},
+	}
+	restore := installInlineStubFactory(sandboxStub)
+	defer restore()
+
+	userID := "user-inline-destroy-llmgateway"
+	instanceID := "ins-inline-destroy-llmgateway"
+	keyID := "llmgateway-external-key-id"
+
+	insertInlineInstance(t, instanceID, userID, modelinstance.InstanceStatusRunning, "sbx-llmgateway")
+	require.NoError(t, resource.GormDB.Table(modelinstance.TableName).
+		Where(modelinstance.ColumnInstanceID+" = ?", instanceID).
+		Update(modelinstance.ColumnAiGatewayKeyID, keyID).Error)
+	require.NoError(t, gatewayroute.Record(
+		userID,
+		gatewayroute.GatewayLLMGateway,
+		"subscription-llmgateway",
+		"plan-llmgateway",
+		gatewayroute.SourceDetectActiveSubscription,
+	))
+	insertInlineQuota(t, userID)
+
+	instanceDao := modelfactory.DefaultDaoFactory.InstanceDao(nil)
+	quotaDao := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(nil)
+	l := NewLogicForTest(instanceDao, quotaDao, sandboxStub, nil, nil, zap.NewNop(), "test-template")
+	legacyGateway := &stubLegacyAIGatewayAdapterInline{revokeErr: errors.New("legacy key revoke must not run")}
+	l.(*logic).aiGatewayAdapter = legacyGateway
+
+	ctx := testutil.NewContext(t, userID)
+	resp, err := l.DestroyInstance(ctx, instanceID)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, modelinstance.InstanceStatusDeleted, resp.Status)
+	assert.Empty(t, legacyGateway.revokedKeyIDs)
+	assert.Equal(t, "sbx-llmgateway", deletedSandboxID)
+}
+
+func TestInlineDestroyTask_RevokesLegacyAIGatewayKey(t *testing.T) {
+	_, _ = setupEnqueueTestEnv(t)
+
+	var deletedSandboxID string
+	sandboxStub := &stubSandboxAdapterInline{
+		deleteFunc: func(_ context.Context, sandboxID string) error {
+			deletedSandboxID = sandboxID
+			return nil
+		},
+	}
+	restore := installInlineStubFactory(sandboxStub)
+	defer restore()
+
+	userID := "user-inline-destroy-ai-gateway"
+	instanceID := "ins-inline-destroy-ai-gateway"
+	keyID := "legacy-ai-gateway-key-id"
+
+	insertInlineInstance(t, instanceID, userID, modelinstance.InstanceStatusRunning, "sbx-ai-gateway")
+	require.NoError(t, resource.GormDB.Table(modelinstance.TableName).
+		Where(modelinstance.ColumnInstanceID+" = ?", instanceID).
+		Update(modelinstance.ColumnAiGatewayKeyID, keyID).Error)
+	require.NoError(t, gatewayroute.Record(
+		userID,
+		gatewayroute.GatewayAIGateway,
+		"subscription-ai-gateway",
+		"plan-ai-gateway",
+		gatewayroute.SourceDetectActiveSubscription,
+	))
+	insertInlineQuota(t, userID)
+
+	instanceDao := modelfactory.DefaultDaoFactory.InstanceDao(nil)
+	quotaDao := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(nil)
+	l := NewLogicForTest(instanceDao, quotaDao, sandboxStub, nil, nil, zap.NewNop(), "test-template")
+	legacyGateway := &stubLegacyAIGatewayAdapterInline{}
+	l.(*logic).aiGatewayAdapter = legacyGateway
+
+	ctx := testutil.NewContext(t, userID)
+	resp, err := l.DestroyInstance(ctx, instanceID)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, modelinstance.InstanceStatusDeleted, resp.Status)
+	assert.Equal(t, []string{keyID}, legacyGateway.revokedKeyIDs)
+	assert.Equal(t, "sbx-ai-gateway", deletedSandboxID)
 }

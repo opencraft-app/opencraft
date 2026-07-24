@@ -127,6 +127,10 @@ func (s *llmGatewayAdapterStub) GetActiveSubscription(_ context.Context, _ strin
 	return nil, nil
 }
 
+func (s *llmGatewayAdapterStub) ListActiveSubscriptions(_ context.Context, _ string) (*pllmgateway.ActiveSubscriptionList, error) {
+	return &pllmgateway.ActiveSubscriptionList{}, nil
+}
+
 func installAiGatewayConfigForTest(t *testing.T, conf *config.LLMGatewayConfig) {
 	t.Helper()
 	conf.Enabled = true
@@ -224,6 +228,9 @@ func (s *sandboxAdapterStub) GetLogs(_ context.Context, _ string, _ *psandbox.Ge
 		return s.getLogsResp, s.getLogsErr
 	}
 	panic("unexpected call")
+}
+func (s *sandboxAdapterStub) StartTerminalSession(_ context.Context, _ string) (*psandbox.TerminalSession, error) {
+	return nil, nil
 }
 func (s *sandboxAdapterStub) ExecCommand(ctx context.Context, sandboxID, bash string, timeoutSec int) (*psandbox.ExecCommandResult, error) {
 	s.lastExecSandbox = sandboxID
