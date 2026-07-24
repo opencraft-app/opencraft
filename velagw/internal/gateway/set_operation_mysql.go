@@ -48,7 +48,7 @@ func (s *MySQLStore) TryAcquireSetOperationLease(
 		return SetOperationLease{}, false, err
 	}
 	ready := status == SetStatusActive && setup && adminUserID > 0 && adminAccessToken != "" && adminHealthStatus != SetAdminHealthUnhealthy
-	if operation != SetOperationGroupRatioWrite && admissionStatus != SetAdmissionStatusPassed {
+	if !setOperationAllowedBeforeAdmission(operation) && admissionStatus != SetAdmissionStatusPassed {
 		ready = ready && admissionStatus != SetAdmissionStatusPending && admissionStatus != SetAdmissionStatusFailed && maxUsers <= 0 && warnUsers <= 0 && reservedUsers <= 0
 	}
 	if !ready {

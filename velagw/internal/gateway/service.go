@@ -23,7 +23,6 @@ import (
 	"git.woa.com/wisp/mono2/llmgateway/internal/observability"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	otellog "go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -944,7 +943,7 @@ func (s *Service) RegisterPlanMapping(ctx context.Context, plan PlanMapping) err
 func normalizePlan(plan Plan) (Plan, error) {
 	plan.ID = strings.TrimSpace(plan.ID)
 	plan.Name = strings.TrimSpace(plan.Name)
-	plan.PeriodUnit = normalizePeriodUnit(plan.PeriodUnit)
+	plan.QuotaResetPeriod = strings.ToLower(strings.TrimSpace(plan.QuotaResetPeriod))
 	if plan.ID == "" {
 		return Plan{}, fmt.Errorf("plan id is required")
 	}
@@ -954,14 +953,28 @@ func normalizePlan(plan Plan) (Plan, error) {
 	if plan.MonthlyTokens < 0 {
 		return Plan{}, fmt.Errorf("monthly_tokens must not be negative")
 	}
-	if plan.PeriodValue <= 0 {
-		plan.PeriodValue = 1
+	if plan.QuotaResetPeriod == "" {
+		plan.QuotaResetPeriod = "monthly"
 	}
-	if plan.PeriodUnit == "" {
-		plan.PeriodUnit = "months"
+	switch plan.QuotaResetPeriod {
+	case "never", "daily", "weekly", "monthly":
+		if plan.QuotaResetCustomSeconds != 0 {
+			return Plan{}, fmt.Errorf("quota_reset_custom_seconds is only valid for custom reset")
+		}
+	case "custom":
+		if plan.QuotaResetCustomSeconds <= 0 {
+			return Plan{}, fmt.Errorf("quota_reset_custom_seconds must be positive for custom reset")
+		}
+	default:
+		return Plan{}, fmt.Errorf("unsupported quota_reset_period %q", plan.QuotaResetPeriod)
 	}
-	canonical := fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s\x00%t",
-		plan.ID, plan.Name, plan.MonthlyTokens, plan.PeriodValue, plan.PeriodUnit, plan.IsActive)
+	// Legacy business-duration fields remain accepted during one compatibility
+	// window, but do not participate in storage semantics or identity.
+	plan.PeriodValue = 0
+	plan.PeriodUnit = ""
+	canonical := fmt.Sprintf("%s\x00%s\x00%d\x00%s\x00%d",
+		plan.ID, plan.Name, plan.MonthlyTokens, plan.QuotaResetPeriod,
+		plan.QuotaResetCustomSeconds)
 	plan.Fingerprint = fmt.Sprintf("%x", sha256.Sum256([]byte(canonical)))
 	return plan, nil
 }
@@ -1017,6 +1030,17 @@ func (s *Service) CreatePlan(ctx context.Context, plan Plan) (Plan, error) {
 	return s.GetPlan(ctx, plan.ID)
 }
 
+func (s *Service) RetirePlan(ctx context.Context, planID string) (Plan, error) {
+	planID = strings.TrimSpace(planID)
+	if _, err := s.GetPlan(ctx, planID); err != nil {
+		return Plan{}, err
+	}
+	if err := s.store.RetirePlan(ctx, planID, s.nowUTC()); err != nil {
+		return Plan{}, err
+	}
+	return s.GetPlan(ctx, planID)
+}
+
 func (s *Service) GetPlan(ctx context.Context, planID string) (Plan, error) {
 	plan, ok, err := s.store.GetPlan(ctx, strings.TrimSpace(planID))
 	if err != nil {
@@ -1030,6 +1054,41 @@ func (s *Service) GetPlan(ctx context.Context, planID string) (Plan, error) {
 
 func (s *Service) ListPlans(ctx context.Context) ([]Plan, error) {
 	return s.store.ListPlans(ctx)
+}
+
+func (s *Service) GetPlanReadiness(ctx context.Context, planID string) (PlanReadiness, error) {
+	plan, err := s.GetPlan(ctx, planID)
+	if err != nil {
+		return PlanReadiness{}, err
+	}
+	sets, err := s.store.ListSets(ctx)
+	if err != nil {
+		return PlanReadiness{}, err
+	}
+	states, err := s.store.ListSetPlans(ctx, SetPlanListOptions{PlanID: plan.ID})
+	if err != nil {
+		return PlanReadiness{}, err
+	}
+	stateBySet := make(map[string]SetPlan, len(states))
+	for _, state := range states {
+		stateBySet[state.SetID] = state
+	}
+	readiness := PlanReadiness{Plan: plan}
+	for _, set := range sets {
+		if set.Status != SetStatusActive {
+			continue
+		}
+		readiness.ActiveSetCount++
+		state, ok := stateBySet[set.ID]
+		if ok && state.Status == SetPlanStatusReady && state.UpstreamPlanID > 0 &&
+			state.AppliedFingerprint == plan.Fingerprint {
+			readiness.ReadySetCount++
+		}
+	}
+	readiness.ReadyForAllSets = plan.IsActive &&
+		readiness.ActiveSetCount > 0 &&
+		readiness.ReadySetCount == readiness.ActiveSetCount
+	return readiness, nil
 }
 
 func (s *Service) ListPlanSets(ctx context.Context, planID string) ([]SetPlan, error) {
@@ -1071,7 +1130,14 @@ func (s *Service) QueuePlanSync(ctx context.Context, planID string, setIDs []str
 		if err != nil {
 			return nil, err
 		}
-		if ok && state.Status == SetPlanStatusReady && state.UpstreamPlanID > 0 {
+		if ok && state.UpstreamPlanID > 0 && state.AppliedFingerprint != "" {
+			state.SyncedAt = time.Time{}
+			if state.Status == SetPlanStatusReady && state.AppliedFingerprint == plan.Fingerprint {
+				state.LastError = ""
+			}
+			if err := s.store.SaveSetPlan(ctx, state); err != nil {
+				return nil, err
+			}
 			queued = append(queued, state)
 			continue
 		}
@@ -1191,11 +1257,20 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 	}); err != nil {
 		return Subscription{}, err
 	}
-	plan, err := traceGatewayValue(ctx, "llmgateway.active_plan", func(spanCtx context.Context) (Plan, error) {
-		return s.activePlan(spanCtx, req.PlanID)
+	plan, err := traceGatewayValue(ctx, "llmgateway.plan", func(spanCtx context.Context) (Plan, error) {
+		return s.GetPlan(spanCtx, req.PlanID)
 	})
 	if err != nil {
 		return Subscription{}, err
+	}
+	if !plan.IsActive {
+		binding, ok, bindingErr := s.store.GetUserBinding(ctx, req.UserID)
+		if bindingErr != nil {
+			return Subscription{}, bindingErr
+		}
+		if !ok || binding.UpstreamUserID <= 0 {
+			return Subscription{}, ErrPlanNotFound
+		}
 	}
 	resolvedTarget, err := s.resolvePlanTarget(ctx, req, plan)
 	if err != nil {
@@ -1220,7 +1295,6 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 	)
 	client := s.newAPIClient(set.BaseURL)
 	adminAuth := adminAuthForSet(set)
-	hadUpstreamUser := binding.UpstreamUserID > 0
 	if binding.UpstreamUserID == 0 {
 		binding, err = traceGatewayValue(ctx, "llmgateway.ensure_upstream_user", func(spanCtx context.Context) (UserBinding, error) {
 			return s.ensureUpstreamUser(spanCtx, client, adminAuth, binding)
@@ -1231,27 +1305,60 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 		span.SetAttributes(attribute.Int("llmgateway.upstream_user.id", binding.UpstreamUserID))
 	}
 	upstreamRequestID := upstreamSubscriptionRequestID(req.IdempotencyKey)
-	activeSubsBeforeCreate := make([]newapi.UserSubscription, 0)
-	if hadUpstreamUser {
-		activeSubsBeforeCreate, err = s.listActiveSubscriptions(ctx, client, adminAuth, binding.UpstreamUserID)
-		if err != nil {
-			return Subscription{}, err
-		}
-		if req.IsUnique && hasActiveSubscriptionNamedForOtherRequest(activeSubsBeforeCreate, req.SubscriptionName, upstreamRequestID) {
-			return Subscription{}, fmt.Errorf("%w: %s", ErrSubscriptionNameConflict, req.SubscriptionName)
-		}
-	}
-	var createdSubscription newapi.UserSubscription
-	upstreamCreateAttempted = true
-	if err := traceGatewayVoid(ctx, "newapi.admin_create_user_subscription", func(spanCtx context.Context) error {
-		return s.withSetSubscriptionWriteLease(spanCtx, set, func(leaseCtx context.Context) error {
-			var createErr error
-			createdSubscription, createErr = client.AdminCreateUserSubscription(leaseCtx, adminAuth, binding.UpstreamUserID, newapi.AdminCreateUserSubscriptionRequest{
-				PlanID:    upstreamPlanID,
-				Name:      req.SubscriptionName,
-				RequestID: upstreamRequestID,
+	var activeSubscriptions []newapi.UserSubscription
+	var ensuredSubscription newapi.UserSubscription
+	if err := traceGatewayVoid(ctx, "newapi.ensure_user_subscription", func(spanCtx context.Context) error {
+		return s.withUserSubscriptionWriteLease(spanCtx, set, binding.ExternalUserID, func(userLeaseCtx context.Context) error {
+			return s.withSetSubscriptionWriteLease(userLeaseCtx, set, func(setLeaseCtx context.Context) error {
+				active, listErr := s.listActiveSubscriptions(setLeaseCtx, client, adminAuth, binding.UpstreamUserID)
+				if listErr != nil {
+					return listErr
+				}
+				currentPlan, planErr := s.GetPlan(setLeaseCtx, plan.ID)
+				if planErr != nil {
+					return planErr
+				}
+				reusable, hasReusable := reusableUniqueSubscription(active, req.SubscriptionName, upstreamPlanID)
+				if !currentPlan.IsActive {
+					if !req.IsUnique || !hasReusable {
+						return ErrPlanNotFound
+					}
+					ensuredSubscription = reusable
+					activeSubscriptions = active
+					return nil
+				}
+
+				if req.IsUnique && hasReusable {
+					ensuredSubscription = reusable
+				} else {
+					upstreamCreateAttempted = true
+					created, createErr := client.AdminCreateUserSubscription(setLeaseCtx, adminAuth, binding.UpstreamUserID, newapi.AdminCreateUserSubscriptionRequest{
+						PlanID:    upstreamPlanID,
+						Name:      req.SubscriptionName,
+						RequestID: upstreamRequestID,
+					})
+					if createErr != nil {
+						return createErr
+					}
+					ensuredSubscription = created
+					active = mergeSubscriptionByID(active, created)
+				}
+
+				if !req.IsUnique {
+					activeSubscriptions = active
+					return nil
+				}
+				for _, sub := range active {
+					if sub.ID == ensuredSubscription.ID || isAdditiveSubscription(sub) {
+						continue
+					}
+					if invalidateErr := client.AdminInvalidateUserSubscription(setLeaseCtx, adminAuth, sub.ID); invalidateErr != nil {
+						return invalidateErr
+					}
+				}
+				activeSubscriptions, listErr = s.listActiveSubscriptions(setLeaseCtx, client, adminAuth, binding.UpstreamUserID)
+				return listErr
 			})
-			return createErr
 		})
 	}, attribute.String("llmgateway.set.id", set.ID), attribute.Int("llmgateway.upstream_user.id", binding.UpstreamUserID), attribute.Int("llmgateway.upstream_plan.id", upstreamPlanID)); err != nil {
 		return Subscription{}, err
@@ -1263,21 +1370,14 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 	}); err != nil {
 		return Subscription{}, err
 	}
-	periodStart := s.nowUTC()
-	periodEnd, err := subscriptionPeriodEnd(periodStart, req, plan)
-	if err != nil {
+	if err := s.store.DeleteSubscriptionPeriodOverlay(ctx, binding.ExternalUserID); err != nil {
 		return Subscription{}, err
 	}
-	if err := traceGatewayVoid(ctx, "store.save_subscription_period_overlay", func(spanCtx context.Context) error {
-		return s.store.SaveSubscriptionPeriodOverlay(spanCtx, SubscriptionPeriodOverlay{
-			ExternalUserID: binding.ExternalUserID,
-			SetID:          binding.SetID,
-			PeriodEnd:      periodEnd,
-		})
-	}); err != nil {
-		return Subscription{}, err
+	projectionEnd := s.nowUTC().AddDate(100, 0, 0)
+	if ensuredSubscription.EndTime > 0 {
+		projectionEnd = time.Unix(ensuredSubscription.EndTime, 0).UTC()
 	}
-	if err := s.saveCreatedSubscriptionProjection(ctx, binding, createdSubscription, plan.ID, upstreamPlanID, req.SubscriptionName, periodEnd); err != nil {
+	if err := s.saveCreatedSubscriptionProjection(ctx, binding, ensuredSubscription, plan.ID, upstreamPlanID, req.SubscriptionName, projectionEnd); err != nil {
 		return Subscription{}, err
 	}
 	if _, err := traceGatewayValue(ctx, "llmgateway.set_user_assignment", func(spanCtx context.Context) (UserAssignment, error) {
@@ -1289,12 +1389,10 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 	}); err != nil {
 		return Subscription{}, err
 	}
-	result, err = s.aggregateSubscription(ctx, binding, mergeSubscriptionByID(activeSubsBeforeCreate, createdSubscription))
+	result, err = s.aggregateSubscription(ctx, binding, activeSubscriptions)
 	if err != nil {
 		return Subscription{}, err
 	}
-	result.PeriodStart = formatUnixTime(periodStart.Unix())
-	result.PeriodEnd = formatUnixTime(periodEnd.Unix())
 	if idempotencyEnabled {
 		if err := s.finishSubscriptionIdempotency(ctx, req, idempotencyRequestHash, SubscriptionIdempotencySucceeded, ""); err != nil {
 			return Subscription{}, err
@@ -1330,20 +1428,6 @@ func projectedSubscriptionFromPlan(binding UserBinding, plan Plan, periodStart t
 }
 
 func (s *Service) validateApplySubscriptionRequest(req ApplySubscriptionRequest) error {
-	if req.PeriodStart != nil {
-		return fmt.Errorf("period_start is not supported by new-api admin subscription API")
-	}
-	if req.PeriodEnd != nil {
-		if req.PeriodValue != 0 || strings.TrimSpace(req.PeriodUnit) != "" {
-			return fmt.Errorf("period_end is mutually exclusive with period_value and period_unit")
-		}
-		if !req.PeriodEnd.After(s.nowUTC()) {
-			return fmt.Errorf("period_end must be in the future")
-		}
-	}
-	if req.IsUnique && strings.TrimSpace(req.SubscriptionName) == "" {
-		return fmt.Errorf("subscription_name is required when is_unique is true")
-	}
 	return nil
 }
 
@@ -1357,14 +1441,25 @@ func hasActiveSubscriptionNamed(subs []newapi.UserSubscription, name string) boo
 	return false
 }
 
-func hasActiveSubscriptionNamedForOtherRequest(subs []newapi.UserSubscription, name string, requestID string) bool {
+func reusableUniqueSubscription(subs []newapi.UserSubscription, name string, upstreamPlanID int) (newapi.UserSubscription, bool) {
 	name = strings.TrimSpace(name)
 	for _, sub := range subs {
-		if strings.TrimSpace(sub.Name) == name && strings.TrimSpace(sub.RequestID) != requestID {
-			return true
+		if sub.PlanID == upstreamPlanID && strings.TrimSpace(sub.Name) == name {
+			return sub, true
 		}
 	}
-	return false
+	// Legacy package subscriptions may not carry a name. Reuse one matching
+	// the target Plan instead of minting a duplicate during the rollout.
+	for _, sub := range subs {
+		if sub.PlanID == upstreamPlanID && !isAdditiveSubscription(sub) {
+			return sub, true
+		}
+	}
+	return newapi.UserSubscription{}, false
+}
+
+func isAdditiveSubscription(sub newapi.UserSubscription) bool {
+	return strings.HasPrefix(strings.TrimSpace(sub.Name), "free-credit:")
 }
 
 func mergeSubscriptionByID(subs []newapi.UserSubscription, created newapi.UserSubscription) []newapi.UserSubscription {
@@ -1454,50 +1549,7 @@ func (s *Service) ExtendSubscription(ctx context.Context, req ExtendSubscription
 	if err != nil {
 		return ExtendSubscriptionResponse{}, err
 	}
-	currentEnd, _ := time.Parse(time.RFC3339Nano, current.PeriodEnd)
-	binding, ok, err := s.store.GetUserBinding(ctx, req.UserID)
-	if err != nil {
-		return ExtendSubscriptionResponse{}, err
-	}
-	if !ok {
-		return ExtendSubscriptionResponse{}, ErrSubscriptionNotFound
-	}
-	targetEnd := req.NewPeriodEnd.UTC()
-	if !currentEnd.IsZero() && targetEnd.Equal(currentEnd) {
-		return ExtendSubscriptionResponse{Subscription: &current, Updated: false}, nil
-	}
-	periodStart, err := time.Parse(time.RFC3339Nano, current.PeriodStart)
-	if err != nil || periodStart.IsZero() {
-		periodStart = s.nowUTC()
-	}
-	binding.LastExtendedPeriodEnd = targetEnd
-	if err := s.store.SaveUserBinding(ctx, binding); err != nil {
-		return ExtendSubscriptionResponse{}, err
-	}
-	if err := s.store.SaveSubscriptionPeriodOverlay(ctx, SubscriptionPeriodOverlay{
-		ExternalUserID: binding.ExternalUserID,
-		SetID:          binding.SetID,
-		PeriodEnd:      targetEnd,
-	}); err != nil {
-		return ExtendSubscriptionResponse{}, err
-	}
-	updated := current
-	updated.PeriodStart = formatUnixTime(periodStart.UTC().Unix())
-	updated.PeriodEnd = formatUnixTime(targetEnd.Unix())
-	s.emitTelemetryEvent(ctx, observability.ScopeTenantEntitlement, observability.Event{
-		Name: "llmgateway.entitlement.changed", Severity: otellog.SeverityInfo,
-		Attributes: []attribute.KeyValue{
-			attribute.String("llmgateway.entity.type", "subscription"),
-			attribute.String("llmgateway.entity.id", updated.ID),
-			attribute.String("llmgateway.user.id", binding.ExternalUserID),
-			attribute.String("llmgateway.set.id", binding.SetID),
-			attribute.String("llmgateway.plan.id", updated.PlanID),
-			attribute.String("llmgateway.operation", "extend"),
-			attribute.String("llmgateway.outcome", "success"),
-		},
-	})
-	s.enqueueTenantObservationEvent(ctx, binding.ExternalUserID, binding.SetID)
-	return ExtendSubscriptionResponse{Subscription: &updated, Updated: true}, nil
+	return ExtendSubscriptionResponse{Subscription: &current, Updated: false}, nil
 }
 
 func (s *Service) CancelSubscription(ctx context.Context, externalUserID string) (err error) {
@@ -1541,7 +1593,13 @@ func (s *Service) CancelSubscription(ctx context.Context, externalUserID string)
 		)
 		return nil
 	}
-	if err := s.invalidateActiveSubscriptions(ctx, s.newAPIClient(set.BaseURL), adminAuthForSet(set), binding.UpstreamUserID); err != nil {
+	client := s.newAPIClient(set.BaseURL)
+	auth := adminAuthForSet(set)
+	if err := s.withUserSubscriptionWriteLease(ctx, set, externalUserID, func(userLeaseCtx context.Context) error {
+		return s.withSetSubscriptionWriteLease(userLeaseCtx, set, func(setLeaseCtx context.Context) error {
+			return s.invalidateActiveSubscriptions(setLeaseCtx, client, auth, binding.UpstreamUserID)
+		})
+	}); err != nil {
 		return err
 	}
 	if err := s.store.DeleteSubscriptionPeriodOverlay(ctx, externalUserID); err != nil {
@@ -1589,7 +1647,7 @@ func (s *Service) GetActiveSubscription(ctx context.Context, externalUserID stri
 	if err != nil {
 		return Subscription{}, err
 	}
-	return s.applySubscriptionPeriodOverlay(ctx, binding, sub)
+	return sub, nil
 }
 
 func (s *Service) ListActiveSubscriptions(ctx context.Context, externalUserID string) (ActiveSubscriptionList, error) {
@@ -1793,7 +1851,12 @@ func (s *Service) readySetPlanID(ctx context.Context, planID string, setID strin
 	if err != nil {
 		return 0, err
 	}
-	if !ok || state.Status != SetPlanStatusReady || state.UpstreamPlanID <= 0 {
+	plan, planOK, planErr := s.store.GetPlan(ctx, planID)
+	if planErr != nil {
+		return 0, planErr
+	}
+	if !ok || !planOK || state.Status != SetPlanStatusReady || state.UpstreamPlanID <= 0 ||
+		state.AppliedFingerprint != plan.Fingerprint {
 		return 0, ErrPlanNotReady
 	}
 	return state.UpstreamPlanID, nil

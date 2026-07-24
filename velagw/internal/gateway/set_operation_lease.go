@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 	"time"
@@ -19,6 +20,12 @@ func (s *Service) withSetSubscriptionWriteLease(ctx context.Context, set Set, op
 		limit = legacySubscriptionWriteConcurrency
 	}
 	return s.withSetOperationLease(ctx, set.ID, SetOperationSubscriptionWrite, limit, operation)
+}
+
+func (s *Service) withUserSubscriptionWriteLease(ctx context.Context, set Set, externalUserID string, operation func(context.Context) error) error {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(externalUserID)))
+	operationName := fmt.Sprintf("subscription_user_%x", sum[:16])
+	return s.withSetOperationLease(ctx, set.ID, operationName, 1, operation)
 }
 
 func (s *Service) withSetOperationLease(ctx context.Context, setID string, operationName string, limit int, operation func(context.Context) error) error {

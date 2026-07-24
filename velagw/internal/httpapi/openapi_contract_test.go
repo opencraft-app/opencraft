@@ -73,6 +73,12 @@ func TestOpenAPIIncludesControlPlaneChannelContract(t *testing.T) {
 	if len(applySchema.Properties["idempotency_key"]) == 0 {
 		t.Fatal("ApplySubscriptionRequest missing idempotency_key")
 	}
+	if len(applySchema.Properties["is_unique"]) == 0 {
+		t.Fatal("ApplySubscriptionRequest missing is_unique")
+	}
+	if len(applySchema.Properties["subscription_name"]) == 0 {
+		t.Fatal("ApplySubscriptionRequest missing subscription_name")
+	}
 	required := map[string]bool{}
 	for _, field := range applySchema.Required {
 		required[field] = true

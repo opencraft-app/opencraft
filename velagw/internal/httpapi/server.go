@@ -1783,50 +1783,11 @@ func (s *Server) planAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 2 && parts[1] == "periods" {
-		switch r.Method {
-		case http.MethodGet:
-			periods, err := s.svc.ListPlanPeriods(r.Context(), planID)
-			if err != nil {
-				if errors.Is(err, gateway.ErrPlanNotFound) {
-					writeError(w, http.StatusNotFound, "plan not found")
-					return
-				}
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			writeJSON(w, http.StatusOK, response{Success: true, Data: periods})
-		case http.MethodPost:
-			var req gateway.PlanPeriod
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				writeError(w, http.StatusBadRequest, "invalid json")
-				return
-			}
-			req.PlanID = planID
-			if err := s.svc.RegisterPlanPeriod(r.Context(), req); err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			writeJSON(w, http.StatusOK, response{Success: true})
-		default:
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		}
+		writeError(w, http.StatusGone, "plan period variants are retired; business validity is managed by ctl")
 		return
 	}
 	if len(parts) == 3 && parts[1] == "periods" && parts[2] == "sets" {
-		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-			return
-		}
-		states, err := s.svc.ListPlanPeriodSets(r.Context(), planID)
-		if err != nil {
-			if errors.Is(err, gateway.ErrPlanNotFound) {
-				writeError(w, http.StatusNotFound, "plan not found")
-				return
-			}
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, response{Success: true, Data: states})
+		writeError(w, http.StatusGone, "plan period variants are retired; business validity is managed by ctl")
 		return
 	}
 	if len(parts) == 2 && parts[1] == "sync" {
@@ -1849,7 +1810,28 @@ func (s *Server) planAction(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, response{Success: true, Data: states})
 		return
 	}
-	if len(parts) != 1 || r.Method != http.MethodGet {
+	if len(parts) == 2 && parts[1] == "retire" {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		plan, err := s.svc.RetirePlan(r.Context(), planID)
+		if err != nil {
+			if errors.Is(err, gateway.ErrPlanNotFound) {
+				writeError(w, http.StatusNotFound, "plan not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, response{Success: true, Data: plan})
+		return
+	}
+	if len(parts) != 1 {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
@@ -2743,7 +2725,7 @@ func (s *Server) internalMigrateUser(w http.ResponseWriter, r *http.Request, suf
 }
 
 func (s *Server) internalGetPlan(w http.ResponseWriter, r *http.Request, planID string) {
-	plan, err := s.svc.GetPlan(r.Context(), planID)
+	plan, err := s.svc.GetPlanReadiness(r.Context(), planID)
 	if err != nil {
 		if errors.Is(err, gateway.ErrPlanNotFound) {
 			writeOpenAIError(w, http.StatusNotFound, "not_found_error", "not_found", "Plan not found")
