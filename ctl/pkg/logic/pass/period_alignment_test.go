@@ -40,12 +40,6 @@ func (s *legacyPeriodAlignmentStub) GetActiveSubscription(context.Context, strin
 
 type periodlessLLMStub struct {
 	llmgateway.Adapter
-	extendCalls int
-}
-
-func (s *periodlessLLMStub) ExtendSubscription(context.Context, *llmgateway.ExtendSubscriptionRequest) (*llmgateway.ExtendSubscriptionResponse, error) {
-	s.extendCalls++
-	return nil, nil
 }
 
 type periodAlignmentFactory struct {
@@ -108,8 +102,5 @@ func TestAlignSubscriptionPeriodEndDoesNotExtendLLMGateway(t *testing.T) {
 		time.Now().UTC().AddDate(0, 1, 0),
 	); err != nil {
 		t.Fatalf("periodless llmgateway alignment: %v", err)
-	}
-	if llm.extendCalls != 0 {
-		t.Fatalf("llmgateway ExtendSubscription calls=%d, want 0", llm.extendCalls)
 	}
 }

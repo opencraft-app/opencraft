@@ -254,7 +254,8 @@ func renewLogger() *zap.Logger {
 }
 
 // AlignAiGatewaySubscriptionPeriodEnd 只为迁移期的 legacy ai-gateway 用户保留。
-// LLMGateway 的订阅为长期权益，业务有效期只由 ctl 管理，因此该路径直接 no-op。
+// 旧 ai-gateway 仍需要把 ctl 算好的 pass.expired_time 对齐到 subscription.period_end；
+// LLMGateway/velagw 的订阅为长期权益，续费不再延长 period_end。
 func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID string, newPeriodEnd time.Time) error {
 	if logger == nil {
 		logger = renewLogger()

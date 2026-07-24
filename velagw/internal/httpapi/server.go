@@ -2253,8 +2253,6 @@ func (s *Server) internalAction(w http.ResponseWriter, r *http.Request) {
 		s.internalApplySubscription(w, r)
 	case r.Method == http.MethodPost && path == "subscriptions/cancel":
 		s.internalCancelSubscription(w, r)
-	case r.Method == http.MethodPost && path == "subscriptions/extend":
-		s.internalExtendSubscription(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "admin-commands/"):
 		s.internalGetAdminCommand(w, r, strings.TrimPrefix(path, "admin-commands/"))
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "users/") && strings.HasSuffix(path, "/subscriptions/active"):
@@ -2801,30 +2799,6 @@ func (s *Server) internalCancelSubscription(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, response{Success: true, Data: map[string]string{"status": "ok"}})
-}
-
-func (s *Server) internalExtendSubscription(w http.ResponseWriter, r *http.Request) {
-	raw, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "invalid request body")
-		return
-	}
-	var req gateway.ExtendSubscriptionRequest
-	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&req); err != nil {
-		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "Missing required fields: user_id, new_period_end")
-		return
-	}
-	result, command, err := s.svc.ExtendSubscriptionManaged(r.Context(), req)
-	if err != nil {
-		writeInternalServiceError(w, err)
-		return
-	}
-	if command != nil {
-		w.Header().Set("Location", "/api/internal/admin-commands/"+url.PathEscape(command.ID))
-		writeJSON(w, http.StatusAccepted, response{Success: true, Data: command})
-		return
-	}
-	writeJSON(w, http.StatusOK, response{Success: true, Data: result})
 }
 
 func (s *Server) internalGetActiveSubscription(w http.ResponseWriter, r *http.Request, userID string) {

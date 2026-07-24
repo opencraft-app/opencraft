@@ -1,9 +1,6 @@
 package llmgateway
 
-import (
-	"encoding/json"
-	"time"
-)
+import "encoding/json"
 
 // CreateApiKeyRequest 调用 LLMGateway POST /api/admin/users/:user_id/api-keys 的请求体
 type CreateApiKeyRequest struct {
@@ -61,44 +58,22 @@ type Plan struct {
 }
 
 // ApplySubscriptionRequest 确保长期订阅存在。
-// PeriodValue/PeriodUnit/PeriodEnd 只用于兼容旧 VelaGW，新 ctl 的普通权益不发送。
+// PeriodValue/PeriodUnit 只用于兼容旧 VelaGW；period_end 已下线。
 type ApplySubscriptionRequest struct {
-	IdempotencyKey   string     `json:"idempotency_key"`
-	UserID           string     `json:"user_id"`
-	PlanID           string     `json:"plan_id"`
-	SubscriptionName string     `json:"subscription_name,omitempty"`
-	Nickname         string     `json:"nickname,omitempty"`
-	Phone            string     `json:"phone,omitempty"`
-	PeriodValue      int        `json:"period_value,omitempty"`
-	PeriodUnit       string     `json:"period_unit,omitempty"` // "m" / "d" / "y" / "months" / "days" / "years"
-	PeriodEnd        *time.Time `json:"period_end,omitempty"`
-	IsUnique         bool       `json:"is_unique,omitempty"`
+	IdempotencyKey   string `json:"idempotency_key"`
+	UserID           string `json:"user_id"`
+	PlanID           string `json:"plan_id"`
+	SubscriptionName string `json:"subscription_name,omitempty"`
+	Nickname         string `json:"nickname,omitempty"`
+	Phone            string `json:"phone,omitempty"`
+	PeriodValue      int    `json:"period_value,omitempty"`
+	PeriodUnit       string `json:"period_unit,omitempty"` // "m" / "d" / "y" / "months" / "days" / "years"
+	IsUnique         bool   `json:"is_unique,omitempty"`
 }
 
 // CancelSubscriptionRequest 取消订阅请求体
 type CancelSubscriptionRequest struct {
 	UserID string `json:"user_id"`
-}
-
-// ExtendSubscriptionRequest R-MR-4 续费链路：把 ctl 算好的新 PeriodEnd 推到 llmgateway。
-//
-// 续费场景下 ctl 是 PeriodEnd 真源（与 Q9=i1 不矛盾 — Q9=i1 是新购场景，
-// 续费场景 ctl renewPassTask 已经 CAS pass.expired_time，必须把这个时间镜像到
-// llmgateway。算法等价：ctl CalcExpiredTime 与 llmgateway timex.AddMonthsNatural
-// 同 helper，所以即使两边各算一次，结果也完全相同）。
-//
-// 幂等：llmgateway 端用 CAS（仅当当前 < new 才更新），重复调用同一 NewPeriodEnd
-// 返回 200 OK + updated=false。
-type ExtendSubscriptionRequest struct {
-	UserID       string    `json:"user_id"`
-	NewPeriodEnd time.Time `json:"new_period_end"`
-}
-
-// ExtendSubscriptionResponse 包含 llmgateway 端 CAS 后的最新订阅状态 + 是否真的更新了。
-// Updated=false 表示 idempotent no-op（PeriodEnd 已是新值或更靠后）。
-type ExtendSubscriptionResponse struct {
-	Subscription *Subscription `json:"subscription"`
-	Updated      bool          `json:"updated"`
 }
 
 // Subscription llmgateway 订阅返回体（精简）

@@ -103,11 +103,6 @@ type ApplySubscriptionInput struct {
 	PeriodUnit     string `json:"period_unit,omitempty"`
 }
 
-type ExtendSubscriptionInput struct {
-	UserID       string    `json:"user_id"`
-	NewPeriodEnd time.Time `json:"new_period_end"`
-}
-
 type CancelSubscriptionInput struct {
 	UserID string `json:"user_id"`
 }

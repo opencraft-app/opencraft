@@ -59,7 +59,6 @@ type newPassSubscriptionRequest struct {
 	SubscriptionName string
 	PeriodValue      int
 	PeriodUnit       string
-	PeriodEnd        *time.Time
 	IsUnique         bool
 }
 
@@ -889,7 +888,6 @@ func (l *logic) GrantFreeCredit(req *transport.GrantFreeCreditRequest) (*transpo
 		UserID:           userID,
 		PlanID:           planID,
 		SubscriptionName: subscriptionName,
-		PeriodEnd:        &periodEnd,
 		IsUnique:         false,
 	})
 	if err != nil {

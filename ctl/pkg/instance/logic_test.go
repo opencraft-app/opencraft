@@ -115,10 +115,6 @@ func (s *llmGatewayAdapterStub) ApplySubscription(_ context.Context, _ *pllmgate
 	return nil, fmt.Errorf("subscription apply not configured")
 }
 
-func (s *llmGatewayAdapterStub) ExtendSubscription(_ context.Context, _ *pllmgateway.ExtendSubscriptionRequest) (*pllmgateway.ExtendSubscriptionResponse, error) {
-	return nil, fmt.Errorf("subscription extend not configured")
-}
-
 func (s *llmGatewayAdapterStub) CancelSubscription(_ context.Context, _ string) error {
 	return nil
 }

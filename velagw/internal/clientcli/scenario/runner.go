@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"git.woa.com/wisp/mono2/llmgateway/internal/client"
 )
@@ -14,7 +13,6 @@ type ControlGateway interface {
 	EnsureUser(context.Context, client.EnsureUserInput) (client.Result, error)
 	GetAssignment(context.Context, string) (client.Result, error)
 	ApplySubscription(context.Context, client.ApplySubscriptionInput) (client.Result, error)
-	ExtendSubscription(context.Context, client.ExtendSubscriptionInput) (client.Result, error)
 	CancelSubscription(context.Context, string) (client.Result, error)
 	GetSubscription(context.Context, string) (client.Result, error)
 	GetCredit(context.Context, string) (client.Result, error)
@@ -61,7 +59,6 @@ type TradeLifecycleInput struct {
 	IdempotencyKey string
 	PeriodValue    int
 	PeriodUnit     string
-	NewPeriodEnd   time.Time
 }
 
 type OnboardInput struct {
@@ -76,8 +73,7 @@ type OnboardInput struct {
 }
 
 type RenewInput struct {
-	Apply        client.ApplySubscriptionInput
-	NewPeriodEnd time.Time
+	Apply client.ApplySubscriptionInput
 }
 
 type BYOKInput struct {
@@ -112,14 +108,6 @@ func (r Runner) TradeLifecycle(ctx context.Context, input TradeLifecycleInput) (
 		{"应用订阅", func() (client.Result, error) { return r.Gateway.ApplySubscription(ctx, apply) }},
 		{"查询订阅", func() (client.Result, error) { return r.Gateway.GetSubscription(ctx, input.UserID) }},
 		{"查询积分", func() (client.Result, error) { return r.Gateway.GetCredit(ctx, input.UserID) }},
-	}
-	if !input.NewPeriodEnd.IsZero() {
-		steps = append(steps,
-			plannedStep{"延长订阅", func() (client.Result, error) {
-				return r.Gateway.ExtendSubscription(ctx, client.ExtendSubscriptionInput{UserID: input.UserID, NewPeriodEnd: input.NewPeriodEnd})
-			}},
-			plannedStep{"确认续期结果", func() (client.Result, error) { return r.Gateway.GetSubscription(ctx, input.UserID) }},
-		)
 	}
 	steps = append(steps,
 		plannedStep{"取消订阅", func() (client.Result, error) { return r.Gateway.CancelSubscription(ctx, input.UserID) }},
@@ -164,11 +152,6 @@ func (r Runner) Renew(ctx context.Context, input RenewInput) (Report, error) {
 	report := Report{Scenario: "renew"}
 	steps := []plannedStep{
 		{"应用续费订单", func() (client.Result, error) { return r.Gateway.ApplySubscription(ctx, input.Apply) }},
-	}
-	if !input.NewPeriodEnd.IsZero() {
-		steps = append(steps, plannedStep{"对齐有效期", func() (client.Result, error) {
-			return r.Gateway.ExtendSubscription(ctx, client.ExtendSubscriptionInput{UserID: input.Apply.UserID, NewPeriodEnd: input.NewPeriodEnd})
-		}})
 	}
 	steps = append(steps,
 		plannedStep{"查询续费结果", func() (client.Result, error) { return r.Gateway.GetSubscription(ctx, input.Apply.UserID) }},
