@@ -2500,6 +2500,9 @@ func TestCorsPreflightBypassesAuth(t *testing.T) {
 	if methods := rec.Header().Get("Access-Control-Allow-Methods"); methods != "GET, POST, PUT, DELETE, OPTIONS" {
 		t.Fatalf("unexpected allow methods header: %q", methods)
 	}
+	if headers := rec.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(headers, "X-Requested-With") {
+		t.Fatalf("expected allow headers to include X-Requested-With, got %q", headers)
+	}
 	if upstreamCalls != 0 {
 		t.Fatalf("expected upstream not to be called for preflight, got %d", upstreamCalls)
 	}
