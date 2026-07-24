@@ -104,6 +104,7 @@
 - `active` 的可见状态文案为“生效中”。
 - 支付阶段删除“二维码有效期约 9 分钟”，手动按钮为“刷新”。
 - `/agents` 到期提醒放在 Agent 信息头部，点击直接打开续费弹窗。
+- `/agents` 临近到期与即将到期提醒统一使用橙色，不使用红色异常告警。
 - 工具能力、SkillHub、MCP、专家包、自动任务入口不在本次上线。
 - 续费成功只以刷新后同一 `pass_id` 的 `expired_time` 推后为准。
 
@@ -117,7 +118,7 @@
 - [ ] 2. 在 `/agents` Agent 信息头部接入到期状态提醒和续费弹窗。
   - 角色：Developer + Reviewer
   - 影响文件：`frontend/src/pages/marketing/agent-settings-page.tsx`、`frontend/src/contexts/agent-context.tsx`（仅在现有 `refreshPasses` 不足时调整）、`frontend/src/lib/pass-renewal.ts`、`frontend/src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`。
-  - 验收方式：有 Agent 且 `activePass.expired_time` 距离当前时间小于等于 7 日时，在 Agent 信息头部贴近“运行中”展示 `套餐将到期`；hover 展示剩余 X 天或 X 小时，不足 1 小时有专门文案；2-7 天和小于 2 天颜色不同；点击提醒直接打开 `RenewPassModal`；无 Agent、无有效 Pass、过期/隔离和国际站不展示。
+  - 验收方式：有 Agent 且 `activePass.expired_time` 距离当前时间小于等于 7 日时，在 Agent 信息头部贴近“运行中”展示 `套餐将到期`；hover 展示剩余 X 天或 X 小时，不足 1 小时有专门文案；临近到期与即将到期统一使用橙色提醒态；点击提醒直接打开 `RenewPassModal`；无 Agent、无有效 Pass、过期/隔离和国际站不展示。
 
 - [ ] 3. 更新 `/subscribe` 过期/隔离回流提示与区域化测试。
   - 角色：Developer + Reviewer
