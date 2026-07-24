@@ -10,6 +10,17 @@ Resolve this table before choosing a mode template. Every mode inherits the sele
 | Product Hunt | social-media | `en` | `text` | `longform-article` | `social_producthunt` |
 | Tencent Techpedia / 技术百科 / 开发者社区 | techpedia | `both` | `md` | `markdown-files` | `social_techpedia` |
 
+## Placement for comparisons
+
+For `vs-product`, also resolve the publication placement:
+
+| Placement | Meaning | Intro treatment |
+| --- | --- | --- |
+| `internal` / 站内 | Published inside LightVela-owned pages or documentation | Do not add the external LightVela definition block unless requested |
+| `external` / 站外 | Published on an external channel, publication, or community | Add the language-matched LightVela definition block near the beginning, after the title/hero and before the answer-first opening |
+
+If a `vs-product` brief does not specify 站内 or 站外, ask before drafting. For 站外, the definition block must use the resolved platform attribution in its LightVela link.
+
 ## Overrides and delivery
 
 - Honour explicit `language` or `form` choices. A `text` social post still uses Markdown formatting; it only stays in chat.

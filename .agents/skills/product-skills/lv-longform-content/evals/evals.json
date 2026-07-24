@@ -29,12 +29,14 @@
       ]
     },
     {
-      "id": "vs-product-is-balanced-and-platform-aware",
-      "prompt": "Write an X comparison of self-hosting Hermes Agent on a personal computer versus LightVela.",
+      "id": "vs-product-advocates-for-lightvela-and-is-platform-aware",
+      "prompt": "Write an X comparison of self-hosting Hermes Agent on a personal computer versus LightVela for an external publication (站外).",
       "expect": [
-        "Resolved brief uses mode=vs-product, platform=x, output_shape=longform-article, and attribution=social_x.",
-        "The article starts with one sparse Codex-generated comparison hero using assets/vs-product-hero-reference.png: LightVela's left half and the fixed straight divider are preserved, while only the right half changes. Use a verified official alternative icon when available; otherwise use one obvious unbranded physical metaphor, such as a personal laptop for self-hosting on a computer. It then gives a direct fit-based answer, a concise at-a-glance table, and real operating tradeoffs from primary sources.",
-        "The conclusion names situations where self-hosting is the better choice as well as situations where LightVela fits better; it does not declare an unsupported universal winner.",
+        "Resolved brief uses mode=vs-product, platform=x, placement=external, output_shape=longform-article, and attribution=social_x.",
+        "The article starts with one sparse Codex-generated comparison hero using assets/vs-product-hero-reference.png: LightVela's left half and the fixed straight divider are preserved, while only the right half changes. Use a verified official alternative icon when available; otherwise use one obvious unbranded physical metaphor, such as a personal laptop for self-hosting on a computer. It then gives a direct LightVela-led fit answer, a concise at-a-glance table with LightVela first, and real operating tradeoffs from primary sources.",
+        "The article uses a confident, evidence-backed advocacy tone for LightVela, presents LightVela's fit before the alternative's best-fit case, and puts the 'Choose LightVela if…' bullets before 'Choose <alternative> if…'. It does not declare an unsupported universal winner or hide meaningful tradeoffs.",
+        "The alternative section is materially shorter than the LightVela section and focuses only on decision-changing facts; it does not become a full competitor profile or equal-length marketing section.",
+        "Because placement is external, the article includes the language-matched LightVela definition block near the beginning, before the answer-first opening, with the single resolved social_x attribution.",
         "Every lightvela.ai link uses from=social_x and the English Community Ending is the final section."
       ]
     }
