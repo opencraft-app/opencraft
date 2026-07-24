@@ -3,7 +3,7 @@ import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
@@ -895,6 +895,11 @@ interface PlaceholderPlanDef {
   ctaStyle: "outline" | "primary" | "outline-dark";
   maxBots: number;
   comingSoon?: boolean;
+  /**
+   * 国际站放开为可购买（进信用卡确认弹窗、纯前端演示下单）。
+   * 仅在 isGlobal 构建下生效；国内站及其他占位卡仍维持 comingSoon「即将上线」。
+   */
+  releasedOnGlobal?: boolean;
   agentQuota: number;
   /**
    * 套餐分类，用于未开启计费开关（国际站占位卡场景）时也能按 BUNDLE_TYPE_TABS 分 tab。
@@ -932,6 +937,7 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     ctaStyle: "outline-dark",
     maxBots: 1,
     comingSoon: true,
+    releasedOnGlobal: true,
     agentQuota: 1,
     bundleType: "general",
   },
@@ -999,25 +1005,33 @@ const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unk
 /** 将纯数据占位套餐转为带 JSX + i18n 的 PlanInfo */
 const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) => string): PlanInfo[] => {
   __markPlaceholderPlansForI18n(t);
-  return PLACEHOLDER_PLAN_DEFS.map((def) => ({
-    id: def.id,
-    name: t(def.name),
-    price: isGlobal ? def.priceGlobal : def.price,
-    priceUnit: isGlobal ? def.priceUnitGlobal : t(def.priceUnit),
-    description: t(def.description),
-    features: def.features.map((f) => ({
-      icon: iconMap[f.iconKey],
-      label: t(f.label),
-      value: f.value ? t(f.value) : undefined,
-      hasCheck: f.hasCheck,
-    })),
-    ctaLabel: t(def.ctaLabel),
-    ctaStyle: def.ctaStyle,
-    maxBots: def.maxBots,
-    comingSoon: def.comingSoon,
-    bundleType: def.bundleType,
-    raw: makePlaceholderBundle(def.id, def.name, def.agentQuota),
-  }));
+  return PLACEHOLDER_PLAN_DEFS.map((def) => {
+    /* 国际站放开的占位卡（当前仅「巡游 Cruise」）：解除「即将上线」禁用、CTA 改为「立即订阅」，
+       并置 skipPayment=false 让点击走信用卡确认弹窗（纯前端演示下单，见 CreditCardConfirmOrderModal）。
+       国内站及未放开的占位卡（如「远航」）维持 comingSoon「即将上线」原样。 */
+    const releasedForGlobal = isGlobal && def.releasedOnGlobal === true;
+    return {
+      id: def.id,
+      name: t(def.name),
+      price: isGlobal ? def.priceGlobal : def.price,
+      priceUnit: isGlobal ? def.priceUnitGlobal : t(def.priceUnit),
+      description: t(def.description),
+      features: def.features.map((f) => ({
+        icon: iconMap[f.iconKey],
+        label: t(f.label),
+        value: f.value ? t(f.value) : undefined,
+        hasCheck: f.hasCheck,
+      })),
+      ctaLabel: releasedForGlobal ? t("立即订阅") : t(def.ctaLabel),
+      ctaStyle: releasedForGlobal ? "primary" : def.ctaStyle,
+      maxBots: def.maxBots,
+      comingSoon: releasedForGlobal ? false : def.comingSoon,
+      /* 放开后不走免费直建链路，改由确认弹窗承接（纯前端演示） */
+      skipPayment: releasedForGlobal ? false : undefined,
+      bundleType: def.bundleType,
+      raw: makePlaceholderBundle(def.id, def.name, def.agentQuota),
+    };
+  });
 };
 
 /* ─── 套餐档位（tier）分组：启航 / 巡游 / 远航 ─── */
@@ -1889,6 +1903,439 @@ const ConfirmOrderModal = ({
   );
 };
 
+/* ─── Credit Card Confirm Order Modal（国际站）─── */
+
+/**
+ * 国际站信用卡确认订单弹窗。
+ *
+ * 与国内站微信版 ConfirmOrderModal 并列，由渲染点按编译期常量 isGlobal 分流：
+ * 国内包不会打进本组件，国际包不会打进微信版（tree-shaking）。
+ *
+ * 本组件为纯前端 UI / 交互还原（不接后端）：
+ *   - 订单明细：Subtotal / Tax / Total
+ *   - 支付方式：仅信用卡（Credit card）
+ *   - 信用卡下「自动续费（Auto-renew）」开关；开关开启且未绑卡时，
+ *     提示绑卡并拦截支付，点击「Bind card」进入绑卡表单
+ *   - 绑卡为前端演示：卡片状态仅在弹窗生命周期内维护，不落库、不发请求
+ *
+ * ⚠️ 税费为前端占位（TAX_RATE = 0），真实税额应由后端结算返回后替换。
+ */
+const TAX_RATE = 0; // 前端占位税率；接入后端结算后用真实税额替换
+
+const CreditCardConfirmOrderModal = ({
+  plan,
+  billingPeriodLabel,
+  demoMode = false,
+  onCancel,
+  onPay,
+}: {
+  plan: PlanInfo;
+  billingPeriodLabel: string;
+  /** 纯前端演示：点「Pay」不调后端下单，直接在弹窗内展示支付成功（国际站占位付费卡放开场景）。 */
+  demoMode?: boolean;
+  onCancel: () => void;
+  onPay: () => void;
+}) => {
+  const [view, setView] = useState<"order" | "bindCard" | "success">("order");
+  const [autoRenew, setAutoRenew] = useState(false);
+  /* 纯前端演示的绑卡状态：仅保留卡尾号用于回显 */
+  const [boundCardLast4, setBoundCardLast4] = useState<string | null>(null);
+  const [cardNumber, setCardNumber] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [cvc, setCvc] = useState("");
+  const [holder, setHolder] = useState("");
+  const [cardError, setCardError] = useState<string | null>(null);
+
+  const subtotal = parseFloat(plan.price.replace(/[^0-9.]/g, "")) || 0;
+  const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
+  const total = Math.round((subtotal + tax) * 100) / 100;
+  const fmt = (n: number) => `$${n.toFixed(2)}`;
+
+  /* 自动续费开启但未绑卡：必须先绑卡才能支付 */
+  const needsCard = autoRenew && !boundCardLast4;
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 8,
+    border: `1px solid ${colors.border}`,
+    fontSize: 14,
+    color: colors.black,
+    outline: "none",
+    background: colors.white,
+    boxSizing: "border-box",
+  };
+  const fieldLabelStyle: React.CSSProperties = {
+    display: "block",
+    fontSize: 12,
+    fontWeight: 600,
+    color: colors.warmGray500,
+    margin: "0 0 6px",
+  };
+
+  const formatCardNumber = (v: string) =>
+    v.replace(/\D/g, "").slice(0, 16).replace(/(.{4})/g, "$1 ").trim();
+  const formatExpiry = (v: string) => {
+    const d = v.replace(/\D/g, "").slice(0, 4);
+    return d.length >= 3 ? `${d.slice(0, 2)}/${d.slice(2)}` : d;
+  };
+
+  const handleSaveCard = () => {
+    const digits = cardNumber.replace(/\D/g, "");
+    if (digits.length < 13) { setCardError("Please enter a valid card number."); return; }
+    if (!/^\d{2}\/\d{2}$/.test(expiry)) { setCardError("Expiry date must be MM / YY."); return; }
+    if (cvc.replace(/\D/g, "").length < 3) { setCardError("Invalid security code."); return; }
+    if (!holder.trim()) { setCardError("Cardholder name is required."); return; }
+    setBoundCardLast4(digits.slice(-4));
+    setCardError(null);
+    setView("order");
+  };
+
+  const handlePayClick = () => {
+    /* 开了自动续费却未绑卡：不直接下单，先引导绑卡 */
+    if (needsCard) { setView("bindCard"); return; }
+    /* 纯前端演示：不调后端下单，直接展示支付成功 */
+    if (demoMode) { setView("success"); return; }
+    onPay();
+  };
+
+  const backToOrder = () => { setView("order"); setCardError(null); };
+
+  return (
+    <motion.div
+      style={modalOverlayStyle}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      onClick={onCancel}
+    >
+      <motion.div
+        style={modalPanelStyle}
+        initial={{ opacity: 0, scale: 0.95, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 12 }}
+        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          style={modalCloseStyle}
+          onClick={onCancel}
+          aria-label="Close"
+          onMouseEnter={(e) => { e.currentTarget.style.background = colors.warmWhite; e.currentTarget.style.color = colors.primary; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = colors.warmGray300; }}
+        >
+          <X style={{ width: 18, height: 18 }} />
+        </button>
+
+        {view === "success" ? (
+          /* ─── Payment success view（纯前端演示）─── */
+          <div style={{ padding: "36px 28px 28px", textAlign: "center" }}>
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: "50%",
+                background: colors.primary,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 18px",
+              }}
+            >
+              <Check style={{ width: 30, height: 30, color: colors.white }} strokeWidth={3} />
+            </div>
+            <h3 style={{ fontSize: 18, fontWeight: 700, color: colors.black, margin: "0 0 6px", letterSpacing: "-0.25px" }}>
+              Payment successful
+            </h3>
+            <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 4px" }}>
+              You&rsquo;ve subscribed to the {plan.name} plan.
+            </p>
+            <p style={{ fontSize: 20, fontWeight: 700, color: colors.black, margin: "8px 0 24px", letterSpacing: "-0.5px" }}>
+              {fmt(total)}
+              <span style={{ fontSize: 13, fontWeight: 500, color: colors.warmGray500 }}> {billingPeriodLabel}</span>
+            </p>
+            <button
+              onClick={onCancel}
+              style={{ width: "100%", padding: "12px 16px", borderRadius: 8, border: "none", background: colors.primary, color: colors.white, fontSize: 15, fontWeight: 600, cursor: "pointer", transition: "all 0.15s" }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
+            >
+              Done
+            </button>
+          </div>
+        ) : view === "order" ? (
+          <div style={{ padding: "28px 28px 24px" }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, color: colors.black, margin: "0 0 6px", letterSpacing: "-0.25px" }}>
+              {t("确认订单")}
+            </h3>
+            <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 20px" }}>{t("请核对以下订单信息")}</p>
+
+            {/* Order summary */}
+            <div style={{ border: `1px solid ${colors.border}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, fontSize: 14, color: colors.warmGray500 }}>
+                <span>{t("「{{plan}}」套餐", { plan: plan.name })}</span>
+                <span style={{ fontWeight: 600, color: colors.black }}>{fmt(subtotal)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 14, color: colors.warmGray500 }}>
+                <span>{t("计费周期")}</span>
+                <span style={{ fontWeight: 600, color: colors.black }}>{billingPeriodLabel}</span>
+              </div>
+              <div style={{ height: 1, background: colors.border, margin: "0 0 16px" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 13, color: colors.warmGray500 }}>
+                <span>{t("小计")}</span>
+                <span>{fmt(subtotal)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 13, color: colors.warmGray500 }}>
+                <span>{t("税费")}</span>
+                <span>{fmt(tax)}</span>
+              </div>
+              <div style={{ height: 1, background: colors.border, margin: "0 0 16px" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <span style={{ fontSize: 14, color: colors.warmGray500 }}>{t("合计")}</span>
+                <span style={{ fontSize: 28, fontWeight: 700, color: colors.black, letterSpacing: "-1px" }}>{fmt(total)}</span>
+              </div>
+            </div>
+
+            {/* Payment method */}
+            <div style={{ fontSize: 12, fontWeight: 600, color: colors.warmGray500, margin: "0 0 10px", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+              {t("支付方式")}
+            </div>
+            <div style={{ border: `1px solid ${colors.primary}`, borderRadius: 12, padding: "16px 20px", marginBottom: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 18, height: 18, borderRadius: "50%", border: `2px solid ${colors.primary}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: colors.primary }} />
+                </div>
+                <CreditCard style={{ width: 20, height: 20, flexShrink: 0, color: colors.black }} />
+                <span style={{ fontSize: 14, fontWeight: 500, color: colors.black }}>{t("信用卡")}</span>
+                {boundCardLast4 && (
+                  <span style={{ marginLeft: "auto", fontSize: 13, color: colors.warmGray500, fontVariantNumeric: "tabular-nums" }}>
+                    •••• {boundCardLast4}
+                  </span>
+                )}
+              </div>
+
+              {boundCardLast4 && (
+                <div style={{ marginTop: 6, textAlign: "right" }}>
+                  <button
+                    onClick={() => setView("bindCard")}
+                    style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, fontWeight: 600, color: colors.primary, textDecoration: "underline" }}
+                  >
+                    {t("更换卡片")}
+                  </button>
+                </div>
+              )}
+
+              <div style={{ height: 1, background: colors.border, margin: "16px 0" }} />
+
+              {/* Auto-renew toggle */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: colors.black }}>{t("自动续费")}</div>
+                  <div style={{ fontSize: 12, color: colors.warmGray500, marginTop: 2 }}>
+                    {t("每个计费周期结束时自动续费")}
+                  </div>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={autoRenew}
+                  aria-label={t("自动续费")}
+                  onClick={() => setAutoRenew((v) => !v)}
+                  style={{
+                    position: "relative",
+                    width: 40,
+                    height: 22,
+                    borderRadius: 999,
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    background: autoRenew ? colors.primary : colors.border,
+                    transition: "background 0.2s",
+                  }}
+                >
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: 2,
+                      left: autoRenew ? 20 : 2,
+                      width: 18,
+                      height: 18,
+                      borderRadius: "50%",
+                      background: colors.white,
+                      boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
+                      transition: "left 0.2s",
+                    }}
+                  />
+                </button>
+              </div>
+
+              {/* 未绑卡提示 */}
+              {needsCard && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    background: colors.warmWhite,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                  }}
+                >
+                  <span style={{ fontSize: 13, color: colors.warmGray500 }}>
+                    {t("请先绑定卡片以启用自动续费")}
+                  </span>
+                  <button
+                    onClick={() => setView("bindCard")}
+                    style={{
+                      flexShrink: 0,
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      border: `1px solid ${colors.primary}`,
+                      background: colors.white,
+                      color: colors.primary,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {t("绑定卡片")}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                onClick={onCancel}
+                style={{ flex: 1, padding: "12px 16px", borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.white, color: colors.black, fontSize: 15, fontWeight: 600, cursor: "pointer", transition: "all 0.15s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = colors.warmWhite; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = colors.white; }}
+              >
+                {t("取消")}
+              </button>
+              <button
+                onClick={handlePayClick}
+                disabled={needsCard}
+                style={{
+                  flex: 1,
+                  padding: "12px 16px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: needsCard ? colors.warmGray300 : colors.primary,
+                  color: colors.white,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  cursor: needsCard ? "not-allowed" : "pointer",
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={(e) => { if (!needsCard) e.currentTarget.style.background = colors.primaryHover; }}
+                onMouseLeave={(e) => { if (!needsCard) e.currentTarget.style.background = colors.primary; }}
+              >
+                {t("支付 {{amount}}", { amount: fmt(total) })}
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* ─── Bind card view ─── */
+          <div style={{ padding: "28px 28px 24px" }}>
+            <button
+              onClick={backToOrder}
+              aria-label={t("返回")}
+              style={{ position: "absolute", top: 16, left: 16, background: "none", border: "none", cursor: "pointer", color: colors.warmGray300, padding: 4, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = colors.warmWhite; e.currentTarget.style.color = colors.primary; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = colors.warmGray300; }}
+            >
+              <ArrowLeft style={{ width: 18, height: 18 }} />
+            </button>
+
+            <h3 style={{ fontSize: 18, fontWeight: 700, color: colors.black, margin: "4px 0 6px", letterSpacing: "-0.25px", textAlign: "center" }}>
+              {t("添加支付卡")}
+            </h3>
+            <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 20px", textAlign: "center" }}>
+              {t("您的卡片将用于自动续费")}
+            </p>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={fieldLabelStyle}>{t("卡号")}</label>
+              <input
+                value={cardNumber}
+                onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
+                placeholder="1234 5678 9012 3456"
+                inputMode="numeric"
+                autoComplete="cc-number"
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+              <div style={{ flex: 1 }}>
+                <label style={fieldLabelStyle}>{t("有效期")}</label>
+                <input
+                  value={expiry}
+                  onChange={(e) => setExpiry(formatExpiry(e.target.value))}
+                  placeholder="MM / YY"
+                  inputMode="numeric"
+                  autoComplete="cc-exp"
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={fieldLabelStyle}>{t("安全码")}</label>
+                <input
+                  value={cvc}
+                  onChange={(e) => setCvc(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  placeholder="123"
+                  inputMode="numeric"
+                  autoComplete="cc-csc"
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: cardError ? 12 : 24 }}>
+              <label style={fieldLabelStyle}>{t("持卡人姓名")}</label>
+              <input
+                value={holder}
+                onChange={(e) => setHolder(e.target.value)}
+                placeholder={t("卡片上的姓名")}
+                autoComplete="cc-name"
+                style={inputStyle}
+              />
+            </div>
+
+            {cardError && (
+              <p style={{ fontSize: 13, color: "#d92d20", margin: "0 0 16px" }}>{cardError}</p>
+            )}
+
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                onClick={backToOrder}
+                style={{ flex: 1, padding: "12px 16px", borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.white, color: colors.black, fontSize: 15, fontWeight: 600, cursor: "pointer", transition: "all 0.15s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = colors.warmWhite; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = colors.white; }}
+              >
+                {t("取消")}
+              </button>
+              <button
+                onClick={handleSaveCard}
+                style={{ flex: 1, padding: "12px 16px", borderRadius: 8, border: "none", background: colors.primary, color: colors.white, fontSize: 15, fontWeight: 600, cursor: "pointer", transition: "all 0.15s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
+              >
+                {t("保存卡片")}
+              </button>
+            </div>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+};
+
 /* ─── Payment Pending Modal ─── */
 
 /**
@@ -2657,6 +3104,9 @@ export const SubscribePage = ({
    */
   const handlePay = useCallback(() => {
     if (!selectedPlan) return;
+    /* 占位付费卡为纯前端演示：确认弹窗内部已处理支付成功展示，绝不能拿假 bundle_id 调后端下单。
+       这里再兜底一层，防止误触真实下单链路。 */
+    if (selectedPlan.id.startsWith("placeholder-")) return;
     void executeCreateBot(selectedPlan);
   }, [selectedPlan, executeCreateBot]);
 
@@ -2936,13 +3386,25 @@ export const SubscribePage = ({
       {/* Payment Modals */}
       <AnimatePresence>
         {modalStep === "confirm" && selectedPlan && (
-          <ConfirmOrderModal
-            key="confirm"
-            plan={selectedPlan}
-            billingPeriodLabel={getBillingDurationLabel(aiDuration, t)}
-            onCancel={handleCloseModal}
-            onPay={handlePay}
-          />
+          isGlobal ? (
+            <CreditCardConfirmOrderModal
+              key="confirm"
+              plan={selectedPlan}
+              billingPeriodLabel={getBillingDurationLabel(aiDuration, t)}
+              demoMode={selectedPlan.id.startsWith("placeholder-")}
+              onCancel={handleCloseModal}
+              onPay={handlePay}
+              t={t}
+            />
+          ) : (
+            <ConfirmOrderModal
+              key="confirm"
+              plan={selectedPlan}
+              billingPeriodLabel={getBillingDurationLabel(aiDuration, t)}
+              onCancel={handleCloseModal}
+              onPay={handlePay}
+            />
+          )
         )}
         {modalStep === "paying" && paymentContext && (
           <PaymentPendingModal
