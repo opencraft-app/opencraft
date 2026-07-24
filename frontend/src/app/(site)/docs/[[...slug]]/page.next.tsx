@@ -3,8 +3,7 @@ import { DEFAULT_PUBLIC_DOCS_LOCALE, DEFAULT_PUBLIC_ROUTE_LOCALE } from '@next-s
 import { LightVelaDocsHeader } from '@next-site/docs-header';
 import { LightVelaDocsLayout } from '@next-site/docs-layout';
 import { PublicSiteLocaleBridge } from '@next-site/public-site-providers';
-import { isDocsRouteSlug } from '@next-site/docs-route-manifest';
-import { DOCS_STATIC_ROUTE_SLUGS } from '@next-site/docs-static-route-manifest';
+import { DOCS_ROUTE_SLUGS, isDocsRouteSlug } from '@next-site/docs-route-manifest';
 import { notFound } from 'next/navigation';
 
 export default async function Page({ params }: { params: Promise<{ slug?: string[] }> }) {
@@ -22,7 +21,7 @@ export default async function Page({ params }: { params: Promise<{ slug?: string
 }
 
 export function generateStaticParams() {
-  return DOCS_STATIC_ROUTE_SLUGS[DEFAULT_PUBLIC_DOCS_LOCALE].map((slug) => ({ slug: [...slug] }));
+  return DOCS_ROUTE_SLUGS[DEFAULT_PUBLIC_DOCS_LOCALE].map((slug) => ({ slug: [...slug] }));
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug?: string[] }> }) {
