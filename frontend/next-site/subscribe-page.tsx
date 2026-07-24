@@ -475,11 +475,31 @@ const mapBundleToPlan = (
       const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
       const isCruise = nm.includes("巡游") || nm.toLowerCase().includes("cruise");
       const notAi = bundle.bundle_type !== "ai";
-      if (isLaunch && notAi) {
-        displayPriceYuan = 0; // 免费 14 天 → ¥0
+      if (durationKey === "quarterly") {
+        /* 季付：静态 price 已内置折扣（标准版 8.5 折 / AI 增强版 9 折，见 STATIC_*_DISCOUNT），
+           结构与登录后询价一致（total_cost=原价 / real_total_cost=折后价）。此处仅取原价展示删除线，
+           不套用月付促销（免费14天 / 首月5折 / 首月6折）；折后价 realPriceYuan 直接展示，
+           季付统一不展示折扣角标（由后续 promoTag 分支强制 undefined）。标准版与 AI 增强版一致。 */
+        if (isLaunch || isCruise) {
+          const staticOriginalYuan = centsToYuan(bundle.price.total_cost);
+          if (
+            staticOriginalYuan != null &&
+            displayPriceYuan != null &&
+            staticOriginalYuan > displayPriceYuan
+          ) {
+            originalPriceYuan = staticOriginalYuan;
+          }
+        }
+      } else if (isLaunch && notAi) {
+        displayPriceYuan = 0; // 月付：免费 14 天 → ¥0
         originalPriceYuan = realPriceYuan; // 原价展示
       } else if (isCruise && notAi) {
-        displayPriceYuan = +(realPriceYuan * 0.5).toFixed(2); // 首月 5 折
+        displayPriceYuan = +(realPriceYuan * 0.5).toFixed(2); // 月付：首月 5 折
+        originalPriceYuan = realPriceYuan; // 原价展示
+      } else if ((isLaunch || isCruise) && !notAi) {
+        /* AI 增强版月付：首月 6 折（静态 price 存原价，此处按 0.6 计算折后价，
+           「首月 6 折」标签由后续 promoTag 分支给出）。 */
+        displayPriceYuan = +(realPriceYuan * STATIC_AI_MONTHLY_DISCOUNT).toFixed(2);
         originalPriceYuan = realPriceYuan; // 原价展示
       }
     } else if (isLoggedIn && bundle.price) {
@@ -497,7 +517,10 @@ const mapBundleToPlan = (
     originalPrice = originalPriceYuan != null ? formatYuan(originalPriceYuan, currency) : undefined;
     /* 国内站不再展示"限时免费"标签 */
     const backendDiscount = bundle.price?.discount;
-    if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
+    if (durationKey === "quarterly") {
+      /* 季付：一律不展示折扣 / 促销角标（原价删除线仍由前面价格逻辑保留），登录 / 未登录一致。 */
+      promoTag = undefined;
+    } else if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
       promoTag = `${Math.round(backendDiscount * 100) / 10}折`;
     } else {
       const nm = bundle.bundle_name ?? "";
@@ -506,7 +529,8 @@ const mapBundleToPlan = (
       const withToken = bundle.bundle_type === "ai";
       if (isLaunch) {
         if (withToken) {
-          promoTag = t("首月 6 折");
+          /* 季付不展示「首月 6 折」首期折扣标签 */
+          if (durationKey !== "quarterly") promoTag = t("首月 6 折");
         } else if (!isLoggedIn || backendDiscount === 0) {
           /* 启航01：未登录直接展示「免费 14 天」；已登录需 discount=0 */
           promoTag = t("首单免费 14 天");
@@ -514,7 +538,8 @@ const mapBundleToPlan = (
         }
       } else if (isCruise) {
         if (withToken) {
-          promoTag = t("首月 6 折");
+          /* 季付不展示「首月 6 折」首期折扣标签 */
+          if (durationKey !== "quarterly") promoTag = t("首月 6 折");
         } else if (!isLoggedIn || backendDiscount === 50) {
           /* 巡游01：未登录直接展示「首月 5 折」；已登录需 discount=50 */
           promoTag = t("首月 5 折");
@@ -648,20 +673,49 @@ const makePlaceholderBundle = (id: string, name: string, agentQuota: number): Bu
  * 渲染，保证「未登录静态展示」与「登录后询价展示」的结构、文案、促销角标完全一致；
  * 仅在点击订阅按钮时才引导登录（见 handleSubscribe 的 !isLoggedIn → login()）。
  *
- * 价格为线上确认值（金额敏感）：
- *   - 启航标准版：月付 ¥45 / 季付 ¥135（月×3，无折扣）
- *   - 巡游标准版：月付 ¥95 / 季付 ¥285（月×3，无折扣）
+ * 价格为线上确认值（金额敏感），此处均为「原价」：
+ *   - 启航标准版：月付 ¥45 / 季付 ¥135（月×3）
+ *   - 巡游标准版：月付 ¥95 / 季付 ¥285（月×3）
+ * 季付统一享 8.5 折优惠（与登录后询价下发折扣一致）：启航 ¥114.75 / 巡游 ¥242.25，原价删除线展示。
  * AI 增强版与远航统一「敬请期待」、不展示价格（price=null，由 planTiers 强制），故无需静态金额。
- * ⚠️ 后端调整线上价格时请同步更新此表，避免未登录静态价与登录后询价价不一致。 */
+ * ⚠️ 后端调整线上价格 / 折扣时请同步更新此表，避免未登录静态价与登录后询价价不一致。 */
 const STATIC_TIER_PRICE_YUAN: Record<"launch" | "cruise", Record<"monthly" | "quarterly", number>> = {
   launch: { monthly: 45, quarterly: 135 },
   cruise: { monthly: 95, quarterly: 285 },
 };
 
-/** 静态价格构造器：入参以「元」为单位，内部转「分」以与后端询价 BundlePrice 口径一致（discount=1.0 不打折）。 */
-const buildStaticPrice = (yuan: number): BundlePrice => {
-  const cents = Math.round(yuan * 100);
-  return { price: cents, total_cost: cents, real_total_cost: cents, currency: "CNY", discount: 1.0 };
+/** 季付统一优惠折扣：8.5 折（与登录后询价下发的 discount 对齐，未登录静态展示据此计算折后价）。 */
+const STATIC_QUARTERLY_DISCOUNT = 0.85;
+
+/**
+ * AI 增强版静态原价（元）：与登录后询价原价对齐（启航月付 ¥68 / 巡游月付 ¥158，季付 = 月付×3）。
+ * 未登录静态展示据此计算：月付享「首月 6 折」、季付享 9 折（无促销标签）。
+ * ⚠️ 后端调整线上 AI 价格 / 折扣时请同步更新此表，避免未登录静态价与登录后询价不一致。
+ */
+const STATIC_AI_TIER_PRICE_YUAN: Record<"launch" | "cruise", Record<"monthly" | "quarterly", number>> = {
+  launch: { monthly: 68, quarterly: 204 },
+  cruise: { monthly: 158, quarterly: 474 },
+};
+
+/** AI 增强版月付首期折扣：首月 6 折（0.6），后续原价；仅未登录静态展示据此计算折后价 + 展示「首月 6 折」标签。 */
+const STATIC_AI_MONTHLY_DISCOUNT = 0.6;
+
+/** AI 增强版季付折扣：9 折（0.9），无促销标签（季付统一不展示折扣角标）。 */
+const STATIC_AI_QUARTERLY_DISCOUNT = 0.9;
+
+/** 静态价格构造器：入参以「元」为单位的原价，可选 discount（0~1，默认 1.0 不打折）。
+ *  内部转「分」并按 discount 计算折后价，与后端询价 BundlePrice 口径一致
+ *  （total_cost=原价 / real_total_cost=折后价 / discount=折扣率）。 */
+const buildStaticPrice = (yuan: number, discount = 1.0): BundlePrice => {
+  const originalCents = Math.round(yuan * 100);
+  const realCents = Math.round(yuan * discount * 100);
+  return {
+    price: originalCents,
+    total_cost: originalCents,
+    real_total_cost: realCents,
+    currency: "CNY",
+    discount,
+  };
 };
 
 /** 标准版通用卖点（与后端 description 对齐；独立环境规格 / 存储 / 积分等具体展示由 mapBundleToPlan 内部统一处理）。 */
@@ -675,7 +729,7 @@ const STATIC_GENERAL_DESC: BundleDescriptionEntry[] = [
  * 生成未登录静态 Bundle 列表（6 张，覆盖启航/巡游/远航 × 标准版/AI 增强版），
  * 走与后端相同的 mapBundleToPlan / planTiers 链路渲染。
  *   - 标准版：露真实价（启航/巡游随 durationKey 取月付/季付；远航由 planTiers 强制「敬请期待」，price=null）
- *   - AI 增强版：price=null，积分由 planTiers 的 AI_VARIANT_CREDIT 强制写死（启航 4500 / 巡游 10000）
+ *   - AI 增强版：露静态价（启航/巡游随 durationKey 取月付/季付，见 STATIC_AI_TIER_PRICE_YUAN；月付「首月 6 折」/季付 9 折无标签），积分写死（启航 4500 / 巡游 10000）
  * bundle_id 与线上真实配置一致（见 scripts/seed_trade_shprod_bundle_definition.sql），
  * 但未登录不会触发下单（点订阅先引导登录），仅用于展示。
  */
@@ -714,7 +768,10 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       description: STATIC_GENERAL_DESC,
       agent_quota: 1,
       credit: 100,
-      price: buildStaticPrice(STATIC_TIER_PRICE_YUAN.launch[durationKey]),
+      price: buildStaticPrice(
+        STATIC_TIER_PRICE_YUAN.launch[durationKey],
+        durationKey === "quarterly" ? STATIC_QUARTERLY_DISCOUNT : 1.0,
+      ),
       time_span: span,
     },
     {
@@ -725,8 +782,11 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       description: STATIC_GENERAL_DESC,
       agent_quota: 1,
       credit: 4500,
-      price: null,
-      time_span: 1,
+      price: buildStaticPrice(
+        STATIC_AI_TIER_PRICE_YUAN.launch[durationKey],
+        durationKey === "quarterly" ? STATIC_AI_QUARTERLY_DISCOUNT : 1.0,
+      ),
+      time_span: span,
     },
     /* 巡游 Cruise —— 标准版（促销「首月 5 折」）+ AI 增强版（敬请期待） */
     {
@@ -737,7 +797,10 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       description: STATIC_GENERAL_DESC,
       agent_quota: 1,
       credit: 200,
-      price: buildStaticPrice(STATIC_TIER_PRICE_YUAN.cruise[durationKey]),
+      price: buildStaticPrice(
+        STATIC_TIER_PRICE_YUAN.cruise[durationKey],
+        durationKey === "quarterly" ? STATIC_QUARTERLY_DISCOUNT : 1.0,
+      ),
       time_span: span,
     },
     {
@@ -748,8 +811,11 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       description: STATIC_GENERAL_DESC,
       agent_quota: 1,
       credit: 10000,
-      price: null,
-      time_span: 1,
+      price: buildStaticPrice(
+        STATIC_AI_TIER_PRICE_YUAN.cruise[durationKey],
+        durationKey === "quarterly" ? STATIC_AI_QUARTERLY_DISCOUNT : 1.0,
+      ),
+      time_span: span,
     },
     /* 远航 Voyage —— planTiers 强制单卡「敬请期待」，无需价格 */
     {
@@ -923,19 +989,6 @@ const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) =
  */
 type PlanTierKey = "launch" | "cruise" | "voyage";
 const PLAN_TIER_ORDER: PlanTierKey[] = ["launch", "cruise", "voyage"];
-
-/**
- * AI 增强版档位的「模型积分」写死值（仅在 AI 档位未放出可购买时作为展示兜底）。
- * 当前 AI 增强版放出策略：启航 / 巡游在月付下可购买（取后端 bundle.credit），
- * 季付下仍未上线、展示「敬请期待」，此时积分用前端写死值：
- *   - 启航 launch → 4500
- *   - 巡游 cruise → 10000
- * 月付放出可购买时积分回退为取后端 bundle.credit，不再用此表覆盖。
- */
-const AI_VARIANT_CREDIT: Partial<Record<PlanTierKey, number>> = {
-  launch: 4500,
-  cruise: 10000,
-};
 
 /** 按 bundle_name（中 / 英 / 中英混排）判定 tier；未命中返回 null（如免费试用卡）。 */
 const tierOfPlan = (plan: PlanInfo): PlanTierKey | null => {
@@ -2127,38 +2180,20 @@ export const SubscribePage = ({
           }],
         });
       } else {
-        /* AI 增强版可见性：
-           - 已登录：启航 / 巡游的 AI 档位（月付 / 季付）均已上线可购买，
-             保留后端真实价格 / 促销 / 下单入口，积分回退取后端 bundle.credit（不再写死）。
-             季付走带参询价（见 needsExplicitDurationPriceQuery），后端已支持。
-           - 未登录：统一「敬请期待」。未登录走的是前端静态价（AI price=null），放出后会落到
-             「暂无报价」，体验劣于「敬请期待」，故未登录一律维持敬请期待。
-           - 标准版 variant 任何时长都保持原样正常购买。 */
-        const aiReleased = isLoggedIn;
-        const aiCredit = AI_VARIANT_CREDIT[tk];
-        const mapped = sorted.map((v) => {
-          const isAi = v.bundleType === "ai" || v.raw.bundle_type === "ai";
-          if (!isAi) return v;
-          if (aiReleased) return v;
-          return {
-            ...v,
-            comingSoon: true,
-            price: "",
-            promoTag: undefined,
-            priceUnavailable: false,
-            pricingLoading: false,
-            ctaLabel: t("敬请期待"),
-            raw: aiCredit != null ? { ...v.raw, credit: aiCredit } : v.raw,
-          };
-        });
-        groups.push({ key: tk, variants: mapped });
+        /* AI 增强版可见性：启航 / 巡游的 AI 档位（月付 / 季付）均展示价格 + 下单入口。
+           - 已登录：保留后端真实价格 / 促销 / 下单入口，积分取后端 bundle.credit。
+           - 未登录：走前端静态价（buildStaticBundles 已为 AI bundle 补上原价 + 折扣，
+             月付「首月 6 折」/季付 9 折无标签），展示折后价 + 原价删除线；CTA 点击引导登录，
+             与标准版未登录一致。
+           - 远航（voyage）仍在上方单独强制「敬请期待」。 */
+        groups.push({ key: tk, variants: sorted });
       }
     }
     for (const plan of uncategorized) {
       groups.push({ key: plan.id, variants: [plan] });
     }
     return groups;
-  }, [planList, isLoggedIn, t]);
+  }, [planList, t]);
 
   /* 付费过程上下文：仅在国内站走付费链路时使用。
      v1.7.31 起统一走 bridge 中转页二维码方案；不再保留 fallback 新窗口模式。
