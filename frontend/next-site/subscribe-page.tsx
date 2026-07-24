@@ -506,7 +506,8 @@ const mapBundleToPlan = (
       const withToken = bundle.bundle_type === "ai";
       if (isLaunch) {
         if (withToken) {
-          promoTag = t("首月 6 折");
+          /* 季付不展示「首月 6 折」首期折扣标签 */
+          if (durationKey !== "quarterly") promoTag = t("首月 6 折");
         } else if (!isLoggedIn || backendDiscount === 0) {
           /* 启航01：未登录直接展示「免费 14 天」；已登录需 discount=0 */
           promoTag = t("首单免费 14 天");
@@ -514,7 +515,8 @@ const mapBundleToPlan = (
         }
       } else if (isCruise) {
         if (withToken) {
-          promoTag = t("首月 6 折");
+          /* 季付不展示「首月 6 折」首期折扣标签 */
+          if (durationKey !== "quarterly") promoTag = t("首月 6 折");
         } else if (!isLoggedIn || backendDiscount === 50) {
           /* 巡游01：未登录直接展示「首月 5 折」；已登录需 discount=50 */
           promoTag = t("首月 5 折");
