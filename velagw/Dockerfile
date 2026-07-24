@@ -41,7 +41,8 @@ RUN pnpm run build
 FROM alpine:3.20
 
 LABEL org.opencontainers.image.title="velagw" \
-      org.opencontainers.image.description="LightVela LLM gateway control and traffic plane"
+      org.opencontainers.image.description="LightVela LLM gateway control and traffic plane" \
+      org.opencontainers.image.source="https://git.woa.com/wisp/mono2/tree/master/velagw"
 
 COPY --from=builder /out/llmgateway /usr/local/bin/llmgateway
 COPY --from=builder /out/llmgateway-control /usr/local/bin/llmgateway-control

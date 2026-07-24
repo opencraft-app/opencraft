@@ -181,6 +181,9 @@ func (s *createTaskLLMGatewayAdapterStub) GetUserUsage(_ context.Context, _ stri
 func (s *createTaskLLMGatewayAdapterStub) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
 	return nil, nil
 }
+func (s *createTaskLLMGatewayAdapterStub) ListActiveSubscriptions(_ context.Context, _ string) (*pllmgateway.ActiveSubscriptionList, error) {
+	return &pllmgateway.ActiveSubscriptionList{Subscriptions: []pllmgateway.Subscription{}}, nil
+}
 
 func installCreateTaskAiGatewayConfig(t *testing.T) {
 	t.Helper()
@@ -317,7 +320,7 @@ func TestRunCreateInstanceTaskProvisionsAiGatewayOnCreate(t *testing.T) {
 	}
 }
 
-func TestRunCreateInstanceTaskFailsWhenAiGatewayOnboardFails(t *testing.T) {
+func TestRunCreateInstanceTaskPreservesLLMGatewayKeyWhenOnboardFails(t *testing.T) {
 	installCreateTaskAiGatewayConfig(t)
 
 	instanceDao := &createTaskInstanceDaoStub{
@@ -358,8 +361,8 @@ func TestRunCreateInstanceTaskFailsWhenAiGatewayOnboardFails(t *testing.T) {
 	if instanceDao.entity.Status == modelinstance.InstanceStatusRunning {
 		t.Fatalf("expected instance to stay non-running after onboard failure, got %s", instanceDao.entity.Status)
 	}
-	if len(aiGatewayAdapter.revoked) != 1 || aiGatewayAdapter.revoked[0] != "key-create-fail" {
-		t.Fatalf("expected created key to be revoked, got %+v", aiGatewayAdapter.revoked)
+	if len(aiGatewayAdapter.revoked) != 0 {
+		t.Fatalf("LLMGateway user key must survive instance onboarding failure, got revocations %+v", aiGatewayAdapter.revoked)
 	}
 	if len(aiGatewayAdapter.ensureCalls) != 1 || aiGatewayAdapter.ensureCalls[0].userID != "user-create-2" {
 		t.Fatalf("expected ensure user to run before failed key provisioning, got %+v", aiGatewayAdapter.ensureCalls)

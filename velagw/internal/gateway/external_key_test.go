@@ -57,7 +57,7 @@ func TestGenerateExternalKeyV2FailsClosedWhenRandomSourceFails(t *testing.T) {
 	}
 }
 
-func TestPrepareAPIKeyReservationRemovesPlaintextAndUpstreamMaterial(t *testing.T) {
+func TestPrepareAPIKeyReservationPreservesExternalKeyAndRemovesUpstreamMaterial(t *testing.T) {
 	material, err := generateExternalKeyV2(bytes.NewReader(bytes.Repeat([]byte{9}, externalKeyRandomBytes)))
 	if err != nil {
 		t.Fatal(err)
@@ -71,11 +71,53 @@ func TestPrepareAPIKeyReservationRemovesPlaintextAndUpstreamMaterial(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if binding.ExternalKey != "" || binding.UpstreamKey != "" || binding.UpstreamKeyID != 0 {
-		t.Fatalf("reservation retained secret material: %+v", binding)
+	if binding.ExternalKey != material.ExternalKey {
+		t.Fatalf("reservation external key = %q, want persisted key", binding.ExternalKey)
+	}
+	if binding.UpstreamKey != "" || binding.UpstreamKeyID != 0 {
+		t.Fatalf("reservation retained upstream material: %+v", binding)
 	}
 	if binding.Status != APIKeyStatusReserved || binding.ExternalKeyID != material.ExternalKeyID || binding.SecretHash != material.SecretHash {
 		t.Fatalf("reservation lost route identity: %+v", binding)
+	}
+}
+
+func TestValidateStoredExternalKeyRejectsMetadataMismatch(t *testing.T) {
+	material, err := generateExternalKeyV2(bytes.NewReader(bytes.Repeat([]byte{5}, externalKeyRandomBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := APIKeyBinding{
+		ExternalKey:     material.ExternalKey,
+		ExternalKeyHash: material.ExternalKeyHash,
+		ExternalKeyID:   material.ExternalKeyID,
+		SecretHash:      material.SecretHash,
+		KeyVersion:      material.Version,
+		RouteSlot:       material.RouteSlot,
+	}
+	if err := validateStoredExternalKey(valid); err != nil {
+		t.Fatalf("valid stored key rejected: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*APIKeyBinding)
+	}{
+		{name: "missing plaintext", mutate: func(binding *APIKeyBinding) { binding.ExternalKey = "" }},
+		{name: "key id", mutate: func(binding *APIKeyBinding) { binding.ExternalKeyID = "wrong" }},
+		{name: "key hash", mutate: func(binding *APIKeyBinding) { binding.ExternalKeyHash = strings.Repeat("0", 64) }},
+		{name: "secret hash", mutate: func(binding *APIKeyBinding) { binding.SecretHash = strings.Repeat("1", 64) }},
+		{name: "version", mutate: func(binding *APIKeyBinding) { binding.KeyVersion++ }},
+		{name: "route slot", mutate: func(binding *APIKeyBinding) { binding.RouteSlot++ }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			binding := valid
+			test.mutate(&binding)
+			if err := validateStoredExternalKey(binding); err == nil {
+				t.Fatalf("invalid binding accepted: %+v", binding)
+			}
+		})
 	}
 }
 

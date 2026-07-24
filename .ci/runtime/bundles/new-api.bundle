@@ -1,0 +1,24 @@
+bundles:
+  new-api:
+    owner: new-api
+    source: new-api
+    db_contract: none
+    config_contract:
+      mode: none
+      static_validation: false
+      kustomize: false
+      placeholder_scan: false
+      requires_mr: false
+    reason: Build-only NewAPI image bundle for the Beijing and Shanghai LLMGateway registries.
+    allowed_paths:
+    - new-api
+    exit_condition: Can be removed only after NewAPI moves to another reproducible internal image build.
+    publish_paths: []
+    publish_paths_by_env:
+      beijing-llmgateway: []
+      shprod: []
+    dockerfile: new-api/Dockerfile
+    build_context: new-api
+    image_repo:
+      beijing-llmgateway: lightclaw-bj82.tencentcloudcr.com/llmgateway/new-api
+      shprod: lightclaw-shprod.tencentcloudcr.com/llmgateway/new-api

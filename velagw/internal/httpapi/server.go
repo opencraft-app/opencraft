@@ -1634,7 +1634,7 @@ func (s *Server) adminCreateAPIKey(w http.ResponseWriter, r *http.Request, userI
 	}
 	key, command, err := s.svc.CreateExternalKeyManaged(r.Context(), userID, name)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeAPIKeyError(w, err)
 		return
 	}
 	if command != nil {
@@ -2275,6 +2275,9 @@ func (s *Server) internalAction(w http.ResponseWriter, r *http.Request) {
 		s.internalExtendSubscription(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "admin-commands/"):
 		s.internalGetAdminCommand(w, r, strings.TrimPrefix(path, "admin-commands/"))
+	case r.Method == http.MethodGet && strings.HasPrefix(path, "users/") && strings.HasSuffix(path, "/subscriptions/active"):
+		userID := strings.TrimSuffix(strings.TrimPrefix(path, "users/"), "/subscriptions/active")
+		s.internalListActiveSubscriptions(w, r, userID)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "users/") && strings.HasSuffix(path, "/subscriptions"):
 		userID := strings.TrimSuffix(strings.TrimPrefix(path, "users/"), "/subscriptions")
 		s.internalGetActiveSubscription(w, r, userID)
@@ -2851,6 +2854,20 @@ func (s *Server) internalGetActiveSubscription(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, response{Success: true, Data: sub})
 }
 
+func (s *Server) internalListActiveSubscriptions(w http.ResponseWriter, r *http.Request, userID string) {
+	userID, err := url.PathUnescape(strings.TrimSpace(userID))
+	if err != nil || userID == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "Missing required field: user_id")
+		return
+	}
+	list, err := s.svc.ListActiveSubscriptions(r.Context(), userID)
+	if err != nil {
+		writeInternalServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response{Success: true, Data: list})
+}
+
 func (s *Server) internalGetUserCredit(w http.ResponseWriter, r *http.Request, userID string) {
 	userID, err := url.PathUnescape(strings.TrimSpace(userID))
 	if err != nil || userID == "" {
@@ -3090,12 +3107,30 @@ func keyPrefix(key string) string {
 
 type response struct {
 	Success bool   `json:"success"`
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
 	Data    any    `json:"data,omitempty"`
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, response{Success: false, Message: message})
+}
+
+func writeAPIKeyError(w http.ResponseWriter, err error) {
+	code := ""
+	status := http.StatusBadRequest
+	switch {
+	case errors.Is(err, gateway.ErrAPIKeyProvisioning):
+		status = http.StatusConflict
+		code = "api_key_provision_in_progress"
+	case errors.Is(err, gateway.ErrAPIKeyMaterialMissing):
+		status = http.StatusConflict
+		code = "api_key_material_unavailable"
+	case errors.Is(err, gateway.ErrAPIKeyStateUnavailable):
+		status = http.StatusConflict
+		code = "api_key_state_unavailable"
+	}
+	writeJSON(w, status, response{Success: false, Code: code, Message: err.Error()})
 }
 
 func writeInternalServiceError(w http.ResponseWriter, err error) {
@@ -3114,6 +3149,8 @@ func writeInternalServiceError(w http.ResponseWriter, err error) {
 		writeOpenAIError(w, http.StatusConflict, "invalid_request_error", "idempotency_in_progress", err.Error())
 	case errors.Is(err, gateway.ErrSubscriptionOutcomeUnknown):
 		writeOpenAIError(w, http.StatusServiceUnavailable, "server_error", "delivery_outcome_unknown", err.Error())
+	case errors.Is(err, gateway.ErrSubscriptionNameConflict):
+		writeOpenAIError(w, http.StatusConflict, "invalid_request_error", "subscription_name_conflict", err.Error())
 	case errors.Is(err, gateway.ErrAdminCommandConflict):
 		writeOpenAIError(w, http.StatusConflict, "invalid_request_error", "idempotency_conflict", err.Error())
 	default:

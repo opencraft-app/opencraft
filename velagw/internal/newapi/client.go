@@ -112,13 +112,14 @@ type UpdateUserRequest struct {
 }
 
 type User struct {
-	ID          int    `json:"id"`
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
-	Role        int    `json:"role"`
-	Status      int    `json:"status"`
-	Group       string `json:"group"`
-	Quota       int    `json:"quota"`
+	ID          int        `json:"id"`
+	Username    string     `json:"username"`
+	DisplayName string     `json:"display_name"`
+	Role        int        `json:"role"`
+	Status      int        `json:"status"`
+	Group       string     `json:"group"`
+	Quota       int        `json:"quota"`
+	DeletedAt   *time.Time `json:"DeletedAt"`
 }
 
 type CreateTokenRequest struct {
@@ -142,7 +143,9 @@ type UserToken struct {
 }
 
 type AdminCreateUserSubscriptionRequest struct {
-	PlanID int `json:"plan_id"`
+	PlanID    int    `json:"plan_id"`
+	Name      string `json:"name,omitempty"`
+	RequestID string `json:"request_id"`
 }
 
 type AdminCreateSubscriptionPlanRequest struct {
@@ -230,6 +233,8 @@ type FetchModelsRequest struct {
 
 type UserSubscription struct {
 	ID            int    `json:"id"`
+	Name          string `json:"name"`
+	RequestID     string `json:"request_id"`
 	UserID        int    `json:"user_id"`
 	PlanID        int    `json:"plan_id"`
 	AmountTotal   int64  `json:"amount_total"`
@@ -573,6 +578,7 @@ func (c *Client) FindUser(ctx context.Context, auth AdminAuth, username string) 
 				Role:        user.Role,
 				Status:      user.Status,
 				Group:       user.Group,
+				DeletedAt:   user.DeletedAt,
 			}, nil
 		}
 	}
@@ -761,6 +767,9 @@ func (c *Client) DeleteUserToken(ctx context.Context, userID int, accessToken st
 	}
 	var resp apiResponse[json.RawMessage]
 	if err := c.do(ctx, http.MethodDelete, fmt.Sprintf("/api/token/%d", tokenID), userHeaders(userID, accessToken), nil, &resp); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil
+		}
 		return err
 	}
 	if !resp.Success {
@@ -807,22 +816,28 @@ func IsUsernameDuplicateError(err error) bool {
 	return strings.Contains(message, "duplicate entry") && strings.Contains(message, "users.username")
 }
 
-func (c *Client) AdminCreateUserSubscription(ctx context.Context, auth AdminAuth, userID int, req AdminCreateUserSubscriptionRequest) error {
+func (c *Client) AdminCreateUserSubscription(ctx context.Context, auth AdminAuth, userID int, req AdminCreateUserSubscriptionRequest) (UserSubscription, error) {
 	if userID <= 0 {
-		return fmt.Errorf("new-api user id is required")
+		return UserSubscription{}, fmt.Errorf("new-api user id is required")
 	}
 	if req.PlanID <= 0 {
-		return fmt.Errorf("new-api subscription plan id is required")
+		return UserSubscription{}, fmt.Errorf("new-api subscription plan id is required")
 	}
-	var resp apiResponse[json.RawMessage]
+	if strings.TrimSpace(req.RequestID) == "" {
+		return UserSubscription{}, fmt.Errorf("new-api subscription request id is required")
+	}
+	var resp apiResponse[UserSubscription]
 	path := fmt.Sprintf("/api/subscription/admin/users/%d/subscriptions", userID)
 	if err := c.do(ctx, http.MethodPost, path, adminHeaders(auth), req, &resp); err != nil {
-		return err
+		return UserSubscription{}, err
 	}
 	if !resp.Success {
-		return fmt.Errorf("new-api create user subscription failed: %s", resp.Message)
+		return UserSubscription{}, fmt.Errorf("new-api create user subscription failed: %s", resp.Message)
 	}
-	return nil
+	if resp.Data.ID <= 0 {
+		return UserSubscription{}, fmt.Errorf("new-api create user subscription returned an invalid subscription id")
+	}
+	return resp.Data, nil
 }
 
 func (c *Client) AdminCreateSubscriptionPlan(ctx context.Context, auth AdminAuth, req AdminCreateSubscriptionPlanRequest) (AdminCreateSubscriptionPlanResult, error) {
@@ -1102,6 +1117,9 @@ func (c *Client) do(ctx context.Context, method string, path string, headers map
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
+		if resp.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("%w: new-api %s %s returned %d", ErrNotFound, method, path, resp.StatusCode)
+		}
 		return fmt.Errorf("new-api %s %s returned %d", method, path, resp.StatusCode)
 	}
 	if out == nil {
@@ -1168,12 +1186,13 @@ type loginData struct {
 
 type pagedUsers struct {
 	Items []struct {
-		ID          int    `json:"id"`
-		Username    string `json:"username"`
-		DisplayName string `json:"display_name"`
-		Role        int    `json:"role"`
-		Status      int    `json:"status"`
-		Group       string `json:"group"`
+		ID          int        `json:"id"`
+		Username    string     `json:"username"`
+		DisplayName string     `json:"display_name"`
+		Role        int        `json:"role"`
+		Status      int        `json:"status"`
+		Group       string     `json:"group"`
+		DeletedAt   *time.Time `json:"DeletedAt"`
 	} `json:"items"`
 }
 

@@ -223,9 +223,17 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/overview":
       "LightVela is a cloud Agent hosting product from the Tencent Lighthouse team, built around Hermes Agent — a personal AI companion that stays online 24/7, knows you, remembers you, and understands you better over time.",
     "/docs/quickstart":
-      "A 5-minute walkthrough: sign in, complete identity verification, activate the starter plan, create your Hermes instance, connect a channel (WeChat / Telegram / WhatsApp / Discord) and have your first AI conversation.",
+      "A 5-minute walkthrough: sign in, activate the starter plan, create your Hermes instance, connect a channel (WeChat / Telegram / WhatsApp / Discord) and have your first AI conversation.",
+    "/docs/plans":
+      "Compare LightVela's Launch, Cruise, and Voyage plans for isolated Hermes runtime resources, storage, and monthly model credits. International beta access is free but limited while available; check Subscribe for current tiers, quotas, and pricing.",
+    "/docs/credits":
+      "Learn how LightVela model credits measure Hermes usage across conversations, automations, skills, and supported messaging channels. Credits are included with plans; check Subscribe for current availability and the latest options.",
+    "/docs/create-first-hermes":
+      "Activate your first Hermes instance: sign in with Google or GitHub, choose an available plan on Subscribe, and let LightVela provision it. International beta access is limited and free while available, with no China real-name verification required.",
     "/docs/core-concepts":
       "LightVela's four core concepts: Hermes, Models, Channels, and Skills. This page explains how they relate and what happens inside a single conversation.",
+    "/docs/who-is-lightvela-for":
+      "Discover whether LightVela is right for you: a cloud-hosted personal AI Agent with long-term memory and channels including Telegram, WhatsApp, Discord, and WeChat. Sign in with Google or GitHub; no China real-name verification is required.",
     "/docs/configuration":
       "Overview of the Hermes admin console: the three configuration cards (Models / Channels / Skills), their entry points, and common operations like switching models, connecting multiple channels, and rebuilding Hermes.",
     "/docs/configuration/model":
@@ -246,6 +254,14 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "Lark (Feishu) channel setup guide: scan-to-authorize onboarding for office scenarios, with rich-text messages and group @mentions of the bot.",
     "/docs/configuration/skill":
       "Configure Skills for Hermes: callable capability packs from Tencent SkillHub, covering to-do management, daily reports, web browsing, news search, image generation and more — installable from the admin console or directly inside chat.",
+    "/docs/configuration/memory":
+      "Learn how Hermes stores persistent memory and user profile information, reviews memory usage, and keeps context available across conversations.",
+    "/docs/configuration/files":
+      "Use Cloud Storage in LightVela to browse, upload, download, rename, and delete files in your Hermes workspace.",
+    "/docs/configuration/diagnostics":
+      "Use Diagnostics to query Hermes logs and run maintenance actions such as resetting model configuration or reinstalling the Agent while preserving data.",
+    "/docs/configuration/multiple-models":
+      "Switch between configured models in LightVela when you need a different balance of capability, speed, cost, or provider availability.",
     "/docs/configuration/automation":
       "Set up Hermes automations: schedule recurring tasks (reminders, daily reports, news tracking, content publishing) by time or trigger, with templates and lifecycle management.",
     "/docs/configuration/agent-chat":
@@ -383,6 +399,10 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/core-concepts": "Core Concepts",
     "/docs/configuration": "Configuration Overview",
     "/docs/configuration/model": "Configure Models",
+    "/docs/configuration/memory": "Memory Management",
+    "/docs/configuration/files": "Cloud Storage",
+    "/docs/configuration/diagnostics": "Diagnostics",
+    "/docs/configuration/multiple-models": "Model Switching",
     "/docs/configuration/channel-wechat": "WeChat",
     "/docs/configuration/channel-telegram": "Telegram",
     "/docs/configuration/channel-whatsapp": "WhatsApp",
@@ -394,6 +414,10 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/automation": "Automations",
     "/docs/configuration/agent-chat": "Chat",
     "/docs/faq": "FAQ",
+    "/docs/plans": "Plans",
+    "/docs/credits": "Credits",
+    "/docs/create-first-hermes": "How Do I Activate My First Hermes Instance?",
+    "/docs/who-is-lightvela-for": "Who Is LightVela For?",
     "/docs/faq/using-lightvela-safely": "Using LightVela Safely",
   },
 };

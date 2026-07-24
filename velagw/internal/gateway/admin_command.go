@@ -15,7 +15,7 @@ var ErrAdminCommandConflict = errors.New("admin command idempotency conflict")
 const APIKeyPurposeMaxLength = 32
 
 func normalizeAPIKeyPurpose(purpose string) (string, error) {
-	purpose = strings.TrimSpace(purpose)
+	purpose = canonicalAPIKeyPurpose(purpose)
 	if utf8.RuneCountInString(purpose) > APIKeyPurposeMaxLength {
 		return "", fmt.Errorf("api key purpose must be at most %d characters", APIKeyPurposeMaxLength)
 	}
@@ -98,6 +98,9 @@ func (s *Service) ApplySubscriptionManaged(ctx context.Context, req ApplySubscri
 	if req.UserID == "" || req.PlanID == "" {
 		return Subscription{}, nil, fmt.Errorf("user_id and plan_id are required")
 	}
+	if err := s.validateApplySubscriptionRequest(req); err != nil {
+		return Subscription{}, nil, err
+	}
 	plan, err := s.activePlan(ctx, req.PlanID)
 	if err != nil {
 		return Subscription{}, nil, err
@@ -143,6 +146,14 @@ func (s *Service) CreateExternalKeyManaged(ctx context.Context, externalUserID, 
 	purpose, err := normalizeAPIKeyPurpose(purpose)
 	if err != nil {
 		return APIKeyBinding{}, nil, err
+	}
+	if err := s.ensureTenantCanWrite(ctx, externalUserID); err != nil {
+		return APIKeyBinding{}, nil, err
+	}
+	if key, ok, err := s.getExternalKeyByPurpose(ctx, externalUserID, purpose); err != nil && !errors.Is(err, ErrAPIKeyMaterialMissing) {
+		return key, nil, err
+	} else if ok {
+		return key, nil, err
 	}
 	set, paused, err := s.boundSetAdminWritesPaused(ctx, externalUserID)
 	if err != nil {

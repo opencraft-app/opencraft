@@ -38,12 +38,29 @@ func tradeSubscriptionIdempotencyKey(dealName string) string {
 	return "trade:" + strings.TrimSpace(dealName)
 }
 
+const freeCreditSubscriptionNamePrefix = "free-credit:"
+
+func packageSubscriptionName(userID, passID string) string {
+	return "package:" + strings.TrimSpace(userID) + ":" + strings.TrimSpace(passID)
+}
+
+func freeCreditSubscriptionName(source, idempotencyKey string) string {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "manual"
+	}
+	return freeCreditSubscriptionNamePrefix + source + ":" + strings.TrimSpace(idempotencyKey)
+}
+
 type newPassSubscriptionRequest struct {
-	IdempotencyKey string
-	UserID         string
-	PlanID         string
-	PeriodValue    int
-	PeriodUnit     string
+	IdempotencyKey   string
+	UserID           string
+	PlanID           string
+	SubscriptionName string
+	PeriodValue      int
+	PeriodUnit       string
+	PeriodEnd        *time.Time
+	IsUnique         bool
 }
 
 type newPassSubscription struct {
@@ -64,11 +81,14 @@ func ensureNewPassGatewayUser(ctx context.Context, userID, nickname string) (boo
 func applyNewPassGatewaySubscription(ctx context.Context, req newPassSubscriptionRequest) (*newPassSubscription, error) {
 	if gatewayroute.NewAllocationGateway(req.UserID) == gatewayroute.GatewayLLMGateway {
 		sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
-			IdempotencyKey: req.IdempotencyKey,
-			UserID:         req.UserID,
-			PlanID:         req.PlanID,
-			PeriodValue:    req.PeriodValue,
-			PeriodUnit:     req.PeriodUnit,
+			IdempotencyKey:   req.IdempotencyKey,
+			UserID:           req.UserID,
+			PlanID:           req.PlanID,
+			SubscriptionName: req.SubscriptionName,
+			PeriodValue:      req.PeriodValue,
+			PeriodUnit:       req.PeriodUnit,
+			PeriodEnd:        req.PeriodEnd,
+			IsUnique:         req.IsUnique,
 		})
 		if err != nil {
 			return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply llmgateway subscription: %v", err)
@@ -114,9 +134,11 @@ type PassDetail struct {
 	Status string
 
 	// 以下字段运行时从 Bundle / ai-gateway / user_resource_quota 拉取填充，不持久化
-	BundleName      string // 套餐名称（= bundle.bundle_name）
-	CreditTotal     int64  // 积分总量（= bundle.credit）
-	CreditAvailable int64  // 积分余量（= token_balance / credit_token_ratio）
+	BundleName          string // 套餐名称（= bundle.bundle_name）
+	CreditTotal         int64  // 积分总量（= bundle.credit）
+	CreditAvailable     int64  // 积分余量（= token_balance / credit_token_ratio）
+	FreeCreditTotal     int64  // 免费/额外积分总量（LLMGateway subscription_name=free-credit:*）
+	FreeCreditAvailable int64  // 免费/额外积分余量（LLMGateway subscription_name=free-credit:*）
 
 	// AgentQuotaTotal / AgentQuotaAvailable 是 Agent 席位配额（v1.7.23 B18 新增,
 	// v1.7.24 B19 修订: 两值都从 user_resource_quota 表同一行取, 不再用 bundle.agent_quota）。
@@ -162,6 +184,10 @@ type Logic interface {
 	MigrateFreeTrialPassToBilling(req *transport.PassBillingMigrationRequest) (*transport.PassBillingMigrationResult, error)
 	// TransferPassFromBilling 在 jifei transferResource 回调到达后绑定既有 pass 的计费归属。
 	TransferPassFromBilling(req *transport.TransferPassRequest) (*PassDetail, error)
+
+	// GrantFreeCredit 给用户发放免费/额外积分。实际落到 LLMGateway named subscription，
+	// 过期时间跟随用户当前 active pass，不走 AI Gateway。
+	GrantFreeCredit(req *transport.GrantFreeCreditRequest) (*transport.GrantFreeCreditResponse, error)
 
 	// CreatePassOrder 创建付费 pass 订单（v1.7.31 拆分：仅下单，不再拉支付 URL）
 	//
@@ -558,11 +584,13 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 		// 让其内部按 (NOW + period) 算 PeriodEnd（Q9=i1 真源），与 ctl
 		// CalcExpiredTime 走同算法保证 PeriodEnd 完全一致。
 		sub, subErr := applyNewPassGatewaySubscription(ctx, newPassSubscriptionRequest{
-			IdempotencyKey: trialSubscriptionIdempotencyKey(userID, bundleID),
-			UserID:         userID,
-			PlanID:         bundle.AiGatewayPlanID,
-			PeriodValue:    bundle.TimeSpan,
-			PeriodUnit:     bundle.TimeUnit,
+			IdempotencyKey:   trialSubscriptionIdempotencyKey(userID, bundleID),
+			UserID:           userID,
+			PlanID:           bundle.AiGatewayPlanID,
+			SubscriptionName: packageSubscriptionName(userID, passID),
+			PeriodValue:      bundle.TimeSpan,
+			PeriodUnit:       bundle.TimeUnit,
+			IsUnique:         true,
 		})
 		cancel()
 		if subErr != nil {
@@ -826,6 +854,77 @@ func (l *logic) TransferPassFromBilling(req *transport.TransferPassRequest) (*Pa
 	return entityToDetail(&saved), nil
 }
 
+func (l *logic) GrantFreeCredit(req *transport.GrantFreeCreditRequest) (*transport.GrantFreeCreditResponse, error) {
+	if req == nil {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "request is nil")
+	}
+	userID := strings.TrimSpace(req.UserID)
+	planID := strings.TrimSpace(req.PlanID)
+	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
+	if userID == "" {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "user_id is required")
+	}
+	if planID == "" {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "plan_id is required")
+	}
+	if idempotencyKey == "" {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "idempotency_key is required")
+	}
+	if !config.LLMGatewayEnabled() {
+		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "llmgateway is disabled")
+	}
+
+	activePass, err := findActivePassForFreeCredit(userID, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	periodEnd := activePass.ExpiredTime.UTC()
+	subscriptionName := freeCreditSubscriptionName(req.Source, idempotencyKey)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
+		IdempotencyKey:   idempotencyKey,
+		UserID:           userID,
+		PlanID:           planID,
+		SubscriptionName: subscriptionName,
+		PeriodEnd:        &periodEnd,
+		IsUnique:         false,
+	})
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply llmgateway free credit subscription: %v", err)
+	}
+	if sub == nil {
+		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply llmgateway free credit subscription returned empty subscription")
+	}
+	gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayLLMGateway, sub.ID, sub.PlanID, gatewayroute.SourceApplySubscription)
+	return &transport.GrantFreeCreditResponse{
+		UserID:           userID,
+		PlanID:           sub.PlanID,
+		SubscriptionID:   sub.ID,
+		SubscriptionName: subscriptionName,
+		PeriodEnd:        periodEnd,
+	}, nil
+}
+
+func findActivePassForFreeCredit(userID string, now time.Time) (*passmodel.Entity, error) {
+	passDao := modelfactory.DefaultDaoFactory.PassDao(nil)
+	passes, err := passDao.ListByUserID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("list user passes: %w", err)
+	}
+	for _, p := range passes {
+		if p == nil {
+			continue
+		}
+		if p.DeletedTime != nil || p.Status != passmodel.StatusActive || !p.ExpiredTime.After(now) {
+			continue
+		}
+		return p, nil
+	}
+	return nil, errcode.ErrPassNotFound
+}
+
 func validateTransferPassRequest(req *transport.TransferPassRequest) error {
 	if req == nil {
 		return errcode.ErrPassInvalidParam
@@ -1016,15 +1115,10 @@ func (l *logic) fillCredit(d *PassDetail) {
 	}
 	// quotaEntity == nil（用户从未购买过 pass，无配额行）→ total/available 保持零值
 
-	// credit == 0 的 bundle 不需要查网关订阅
-	if bundle.Credit == 0 {
-		d.CreditAvailable = 0
-		return
-	}
-
+	// 即使套餐积分为 0，也要查询 LLMGateway 的免费/额外积分订阅。
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	tokenBalance, found, err := getCompatibleActiveSubscriptionTokenBalance(ctx, d.UserID)
+	balances, err := getCompatibleCreditBalances(ctx, d.UserID)
 	if err != nil {
 		resource.ZapLogger.Warn("fill credit: get active subscription failed",
 			zap.String("pass_id", d.PassID),
@@ -1034,15 +1128,23 @@ func (l *logic) fillCredit(d *PassDetail) {
 		d.CreditAvailable = 0
 		return
 	}
-	if !found {
-		// 无订阅（可能尚未开通或已取消）
+	if bundle.Credit == 0 || !balances.PackageFound {
 		d.CreditAvailable = 0
-		return
+	} else {
+		d.CreditAvailable = bundlelogic.TokensToCredit(balances.PackageTokenBalance)
 	}
-	d.CreditAvailable = bundlelogic.TokensToCredit(tokenBalance)
+	d.FreeCreditTotal = bundlelogic.TokensToCredit(balances.FreeTokenTotal)
+	d.FreeCreditAvailable = bundlelogic.TokensToCredit(balances.FreeTokenBalance)
 }
 
-func getCompatibleActiveSubscriptionTokenBalance(ctx context.Context, userID string) (int64, bool, error) {
+type creditBalances struct {
+	PackageTokenBalance int64
+	PackageFound        bool
+	FreeTokenTotal      int64
+	FreeTokenBalance    int64
+}
+
+func getCompatibleCreditBalances(ctx context.Context, userID string) (creditBalances, error) {
 	if gateway, ok, err := gatewayroute.Get(userID); err != nil {
 		resource.ZapLogger.Warn("get recorded subscription gateway failed, fallback to probe",
 			zap.String("user_id", userID),
@@ -1052,32 +1154,33 @@ func getCompatibleActiveSubscriptionTokenBalance(ctx context.Context, userID str
 		case gatewayroute.GatewayAIGateway:
 			legacyAdapter := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter()
 			if legacyAdapter == nil {
-				return 0, false, fmt.Errorf("recorded ai-gateway subscription but ai-gateway adapter is nil")
+				return creditBalances{}, fmt.Errorf("recorded ai-gateway subscription but ai-gateway adapter is nil")
 			}
 			sub, err := legacyAdapter.GetActiveSubscription(ctx, userID)
 			if err != nil {
-				return 0, false, err
+				return creditBalances{}, err
 			}
 			if sub == nil {
-				return 0, false, nil
+				return creditBalances{}, nil
 			}
 			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayAIGateway, sub.ID, sub.PlanID, gatewayroute.SourceDetectActiveSubscription)
-			return sub.TokenBalance, true, nil
+			return creditBalances{PackageTokenBalance: sub.TokenBalance, PackageFound: true}, nil
 		case gatewayroute.GatewayLLMGateway:
 			if !config.LLMGatewayEnabled() {
 				resource.ZapLogger.Warn("recorded llmgateway subscription ignored because llmgateway is disabled",
 					zap.String("user_id", userID))
 				break
 			}
-			sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().GetActiveSubscription(ctx, userID)
+			list, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ListActiveSubscriptions(ctx, userID)
 			if err != nil {
-				return 0, false, err
+				return creditBalances{}, err
 			}
-			if sub == nil {
-				return 0, false, nil
+			balances := creditBalancesFromLLMSubscriptions(list.Subscriptions)
+			if len(list.Subscriptions) > 0 {
+				sub := firstPackageSubscription(list.Subscriptions)
+				gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayLLMGateway, sub.ID, sub.PlanID, gatewayroute.SourceDetectActiveSubscription)
 			}
-			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayLLMGateway, sub.ID, sub.PlanID, gatewayroute.SourceDetectActiveSubscription)
-			return sub.TokenBalance, true, nil
+			return balances, nil
 		default:
 			resource.ZapLogger.Warn("unknown recorded subscription gateway, fallback to probe",
 				zap.String("user_id", userID),
@@ -1092,7 +1195,7 @@ func getCompatibleActiveSubscriptionTokenBalance(ctx context.Context, userID str
 		if legacyErr == nil {
 			if legacySub != nil {
 				gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayAIGateway, legacySub.ID, legacySub.PlanID, gatewayroute.SourceDetectActiveSubscription)
-				return legacySub.TokenBalance, true, nil
+				return creditBalances{PackageTokenBalance: legacySub.TokenBalance, PackageFound: true}, nil
 			}
 		} else if !isLegacyGatewayDisabled(legacyErr) {
 			resource.ZapLogger.Warn("get active subscription from ai-gateway failed, try llmgateway",
@@ -1104,26 +1207,54 @@ func getCompatibleActiveSubscriptionTokenBalance(ctx context.Context, userID str
 
 	if !config.LLMGatewayEnabled() {
 		if legacyErr != nil && !isLegacyGatewayDisabled(legacyErr) {
-			return 0, false, legacyErr
+			return creditBalances{}, legacyErr
 		}
-		return 0, false, nil
+		return creditBalances{}, nil
 	}
 
-	llmSub, llmErr := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().GetActiveSubscription(ctx, userID)
+	llmList, llmErr := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ListActiveSubscriptions(ctx, userID)
 	if llmErr == nil {
-		if llmSub != nil {
-			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayLLMGateway, llmSub.ID, llmSub.PlanID, gatewayroute.SourceDetectActiveSubscription)
-			return llmSub.TokenBalance, true, nil
+		if llmList != nil && len(llmList.Subscriptions) > 0 {
+			sub := firstPackageSubscription(llmList.Subscriptions)
+			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayLLMGateway, sub.ID, sub.PlanID, gatewayroute.SourceDetectActiveSubscription)
+			return creditBalancesFromLLMSubscriptions(llmList.Subscriptions), nil
 		}
 		if legacyErr != nil && !isLegacyGatewayDisabled(legacyErr) {
-			return 0, false, legacyErr
+			return creditBalances{}, legacyErr
 		}
-		return 0, false, nil
+		return creditBalances{}, nil
 	}
 	if legacyErr != nil && !isLegacyGatewayDisabled(legacyErr) {
-		return 0, false, fmt.Errorf("ai-gateway: %v; llmgateway: %w", legacyErr, llmErr)
+		return creditBalances{}, fmt.Errorf("ai-gateway: %v; llmgateway: %w", legacyErr, llmErr)
 	}
-	return 0, false, llmErr
+	return creditBalances{}, llmErr
+}
+
+func creditBalancesFromLLMSubscriptions(subs []llmgateway.Subscription) creditBalances {
+	var balances creditBalances
+	for _, sub := range subs {
+		if strings.HasPrefix(strings.TrimSpace(sub.Name), freeCreditSubscriptionNamePrefix) {
+			tokenTotal := sub.TokenTotal
+			if tokenTotal == 0 && sub.TokenBalance > 0 {
+				tokenTotal = sub.TokenBalance
+			}
+			balances.FreeTokenTotal += tokenTotal
+			balances.FreeTokenBalance += sub.TokenBalance
+			continue
+		}
+		balances.PackageFound = true
+		balances.PackageTokenBalance += sub.TokenBalance
+	}
+	return balances
+}
+
+func firstPackageSubscription(subs []llmgateway.Subscription) llmgateway.Subscription {
+	for _, sub := range subs {
+		if !strings.HasPrefix(strings.TrimSpace(sub.Name), freeCreditSubscriptionNamePrefix) {
+			return sub
+		}
+	}
+	return subs[0]
 }
 
 func isLegacyGatewayDisabled(err error) bool {
@@ -1344,11 +1475,13 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		// 时长），让 ai-gateway 按 (NOW + period) 算 PeriodEnd（Q9=i1 真源）。
 		// 同一份 bundle 不再需要按时长配多个 plan — bundle.AiGatewayPlanID 复用。
 		sub, subErr := applyNewPassGatewaySubscription(ctx, newPassSubscriptionRequest{
-			IdempotencyKey: tradeSubscriptionIdempotencyKey(req.DealName),
-			UserID:         req.UserID,
-			PlanID:         bundle.AiGatewayPlanID,
-			PeriodValue:    req.TimeSpan,
-			PeriodUnit:     req.TimeUnit,
+			IdempotencyKey:   tradeSubscriptionIdempotencyKey(req.DealName),
+			UserID:           req.UserID,
+			PlanID:           bundle.AiGatewayPlanID,
+			SubscriptionName: packageSubscriptionName(req.UserID, passID),
+			PeriodValue:      req.TimeSpan,
+			PeriodUnit:       req.TimeUnit,
+			IsUnique:         true,
 		})
 		cancel()
 		if subErr != nil {

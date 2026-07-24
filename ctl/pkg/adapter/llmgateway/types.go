@@ -65,13 +65,16 @@ type Plan struct {
 // plan.PeriodValue / plan.PeriodUnit 兜底。CTL 端 R-MR-3 改造后默认会传入
 // bundle.TimeSpan/TimeUnit 或 req.TimeSpan/TimeUnit。
 type ApplySubscriptionRequest struct {
-	IdempotencyKey string `json:"idempotency_key"`
-	UserID         string `json:"user_id"`
-	PlanID         string `json:"plan_id"`
-	Nickname       string `json:"nickname,omitempty"`
-	Phone          string `json:"phone,omitempty"`
-	PeriodValue    int    `json:"period_value,omitempty"`
-	PeriodUnit     string `json:"period_unit,omitempty"` // "m" / "d" / "y" / "months" / "days" / "years"
+	IdempotencyKey   string     `json:"idempotency_key"`
+	UserID           string     `json:"user_id"`
+	PlanID           string     `json:"plan_id"`
+	SubscriptionName string     `json:"subscription_name,omitempty"`
+	Nickname         string     `json:"nickname,omitempty"`
+	Phone            string     `json:"phone,omitempty"`
+	PeriodValue      int        `json:"period_value,omitempty"`
+	PeriodUnit       string     `json:"period_unit,omitempty"` // "m" / "d" / "y" / "months" / "days" / "years"
+	PeriodEnd        *time.Time `json:"period_end,omitempty"`
+	IsUnique         bool       `json:"is_unique,omitempty"`
 }
 
 // CancelSubscriptionRequest 取消订阅请求体
@@ -103,10 +106,18 @@ type ExtendSubscriptionResponse struct {
 // Subscription llmgateway 订阅返回体（精简）
 type Subscription struct {
 	ID           string `json:"id"`
+	Name         string `json:"name,omitempty"`
 	UserID       string `json:"user_id"`
 	PlanID       string `json:"plan_id"`
 	Status       string `json:"status"`
+	TokenTotal   int64  `json:"token_total"`
 	TokenBalance int64  `json:"token_balance"`
 	PeriodStart  string `json:"period_start"`
 	PeriodEnd    string `json:"period_end"`
+}
+
+// ActiveSubscriptionList 是 LLMGateway 多 active 订阅查询返回体（data 字段）。
+type ActiveSubscriptionList struct {
+	UserID        string         `json:"user_id"`
+	Subscriptions []Subscription `json:"subscriptions"`
 }

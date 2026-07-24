@@ -36,17 +36,32 @@ func subscriptionRequestHash(req ApplySubscriptionRequest) string {
 	if req.PeriodStart != nil {
 		periodStart = req.PeriodStart.UTC().Format(time.RFC3339Nano)
 	}
+	periodEnd := ""
+	if req.PeriodEnd != nil {
+		periodEnd = req.PeriodEnd.UTC().Format(time.RFC3339Nano)
+	}
 	payload := strings.Join([]string{
 		strings.TrimSpace(req.UserID),
 		strings.TrimSpace(req.PlanID),
+		strings.TrimSpace(req.SubscriptionName),
 		strings.TrimSpace(req.Nickname),
 		strings.TrimSpace(req.Phone),
 		periodStart,
 		strconv.Itoa(req.PeriodValue),
 		strings.TrimSpace(req.PeriodUnit),
+		periodEnd,
+		strconv.FormatBool(req.IsUnique),
 	}, "\x00")
 	sum := sha256.Sum256([]byte(payload))
 	return string(sum[:])
+}
+
+func upstreamSubscriptionRequestID(idempotencyKey string) string {
+	if idempotencyKey == "" {
+		return "llmgw:subscription:" + randomSecret()
+	}
+	sum := sha256.Sum256([]byte(idempotencyKey))
+	return "llmgw:subscription:" + fmt.Sprintf("%x", sum[:])
 }
 
 func (s *MemoryStore) TryBeginSubscriptionIdempotency(_ context.Context, candidate SubscriptionIdempotency) (SubscriptionIdempotency, bool, error) {
@@ -59,7 +74,8 @@ func (s *MemoryStore) TryBeginSubscriptionIdempotency(_ context.Context, candida
 		s.subscriptionIdem[candidate.IdempotencyKey] = candidate
 		return candidate, true, nil
 	}
-	if existing.RequestHash == candidate.RequestHash && existing.Status == SubscriptionIdempotencyFailed {
+	if existing.RequestHash == candidate.RequestHash &&
+		(existing.Status == SubscriptionIdempotencyFailed || existing.Status == SubscriptionIdempotencyUnknown) {
 		existing.Status = SubscriptionIdempotencyProcessing
 		existing.LastError = ""
 		existing.UpdatedAt = candidate.UpdatedAt

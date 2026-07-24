@@ -23,8 +23,6 @@ type Adapter interface {
 	CreateApiKey(ctx context.Context, userID string, name string) (*CreateApiKeyResponse, error)
 	// EnsureUser 调用 LLMGateway Internal API 确保业务用户在网关内存在
 	EnsureUser(ctx context.Context, userID string, nickname string) (*EnsureUserResponse, error)
-	// RevokeApiKey 调用 LLMGateway 撤销指定 API Key
-	RevokeApiKey(ctx context.Context, keyID string) error
 	// GetUserUsage 调用 LLMGateway admin API 获取用户用量概览
 	GetUserUsage(ctx context.Context, userID string) (*UserUsageResponse, error)
 
@@ -45,6 +43,8 @@ type Adapter interface {
 	// GetActiveSubscription 调用 LLMGateway Internal API 查询用户当前活跃订阅
 	// 无订阅时返回 (nil, nil)
 	GetActiveSubscription(ctx context.Context, userID string) (*Subscription, error)
+	// ListActiveSubscriptions 调用 LLMGateway Internal API 查询用户所有活跃订阅
+	ListActiveSubscriptions(ctx context.Context, userID string) (*ActiveSubscriptionList, error)
 }
 
 // LLMGatewayAdapter LLMGateway HTTP 适配器
@@ -153,54 +153,6 @@ func (a *LLMGatewayAdapter) CreateApiKey(ctx context.Context, userID string, nam
 		return nil, fmt.Errorf("decode create-api-key response body: %w", err)
 	}
 	return &result, nil
-}
-
-// RevokeApiKey 调用 DELETE /api/admin/api-keys/:id
-func (a *LLMGatewayAdapter) RevokeApiKey(ctx context.Context, keyID string) error {
-	if a.baseURL == "" {
-		return fmt.Errorf("llmgateway base_url not configured")
-	}
-	keyID = strings.TrimSpace(keyID)
-	if keyID == "" {
-		return fmt.Errorf("llmgateway key_id is required")
-	}
-
-	url := a.baseURL + "/api/admin/api-keys/" + url.PathEscape(keyID)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
-	if err != nil {
-		return fmt.Errorf("create revoke-api-key request: %w", err)
-	}
-	httpReq.Header.Set("Accept", "application/json")
-	a.applyAdminAuth(httpReq)
-
-	start := time.Now()
-	resp, err := a.httpClient.Do(httpReq)
-	duration := time.Since(start)
-	if err != nil {
-		a.logger.Warn("llmgateway revoke-api-key request failed",
-			zap.String("url", url),
-			zap.Duration("duration", duration),
-			zap.Error(err),
-		)
-		return fmt.Errorf("revoke-api-key request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read revoke-api-key response: %w", err)
-	}
-
-	a.logger.Info("llmgateway revoke-api-key response",
-		zap.String("url", url),
-		zap.Int("status", resp.StatusCode),
-		zap.Duration("duration", duration),
-	)
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("revoke-api-key returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-	return nil
 }
 
 // GetUserUsage 调用 GET /api/admin/users/:user_id/usage
@@ -581,6 +533,67 @@ func (a *LLMGatewayAdapter) GetActiveSubscription(ctx context.Context, userID st
 	return sub, nil
 }
 
+// ListActiveSubscriptions 调用 GET /api/internal/users/:user_id/subscriptions/active
+func (a *LLMGatewayAdapter) ListActiveSubscriptions(ctx context.Context, userID string) (*ActiveSubscriptionList, error) {
+	if a.baseURL == "" {
+		return nil, fmt.Errorf("llmgateway base_url not configured")
+	}
+	if a.internalToken == "" {
+		return nil, fmt.Errorf("llmgateway internal_service_token not configured")
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, fmt.Errorf("llmgateway user_id is required")
+	}
+
+	reqURL := a.baseURL + "/api/internal/users/" + url.PathEscape(userID) + "/subscriptions/active"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create list-active-subscriptions request: %w", err)
+	}
+	httpReq.Header.Set("Accept", "application/json")
+	a.applyInternalAuth(httpReq)
+
+	start := time.Now()
+	resp, err := a.httpClient.Do(httpReq)
+	duration := time.Since(start)
+	if err != nil {
+		a.logger.Warn("llmgateway list-active-subscriptions request failed",
+			zap.String("url", reqURL), zap.Duration("duration", duration), zap.Error(err))
+		return nil, fmt.Errorf("list-active-subscriptions request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read list-active-subscriptions response: %w", err)
+	}
+
+	a.logger.Info("llmgateway list-active-subscriptions response",
+		zap.String("url", reqURL), zap.Int("status", resp.StatusCode), zap.Duration("duration", duration))
+
+	if resp.StatusCode == http.StatusNotFound {
+		if isLLMGatewayBusinessErrorBody(respBody) {
+			return &ActiveSubscriptionList{UserID: userID, Subscriptions: []Subscription{}}, nil
+		}
+		a.logger.Warn("llmgateway list-active-subscriptions returned route 404 (likely deployment lag)",
+			zap.String("url", reqURL), zap.String("body", string(respBody)))
+		return nil, ErrLLMGatewayRouteNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list-active-subscriptions returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	list, err := decodeActiveSubscriptionList(respBody)
+	if err != nil {
+		return nil, fmt.Errorf("decode list-active-subscriptions response: %w", err)
+	}
+	if list.Subscriptions == nil {
+		list.Subscriptions = []Subscription{}
+	}
+	return list, nil
+}
+
 // decodePlan 解析响应体（支持 apiResponse 包装或裸 Plan）
 func decodePlan(body []byte) (*Plan, error) {
 	var wrapped apiResponse
@@ -611,6 +624,22 @@ func decodeSubscription(body []byte) (*Subscription, error) {
 		return nil, err
 	}
 	return &s, nil
+}
+
+// decodeActiveSubscriptionList 解析响应体（支持 apiResponse 包装或裸 ActiveSubscriptionList）
+func decodeActiveSubscriptionList(body []byte) (*ActiveSubscriptionList, error) {
+	var wrapped apiResponse
+	if err := json.Unmarshal(body, &wrapped); err == nil && len(wrapped.Data) > 0 {
+		var list ActiveSubscriptionList
+		if err := json.Unmarshal(wrapped.Data, &list); err == nil {
+			return &list, nil
+		}
+	}
+	var list ActiveSubscriptionList
+	if err := json.Unmarshal(body, &list); err != nil {
+		return nil, err
+	}
+	return &list, nil
 }
 
 // ExtendSubscription 调用 POST /api/internal/subscriptions/extend (R-MR-4)

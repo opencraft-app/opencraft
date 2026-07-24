@@ -32,6 +32,7 @@ type allocationLLMGatewayStub struct {
 	llmgateway.Adapter
 	ensureCalls int
 	applyCalls  int
+	lastApply   llmgateway.ApplySubscriptionRequest
 }
 
 func (s *allocationLLMGatewayStub) EnsureUser(_ context.Context, userID, _ string) (*llmgateway.EnsureUserResponse, error) {
@@ -41,6 +42,7 @@ func (s *allocationLLMGatewayStub) EnsureUser(_ context.Context, userID, _ strin
 
 func (s *allocationLLMGatewayStub) ApplySubscription(_ context.Context, req *llmgateway.ApplySubscriptionRequest) (*llmgateway.Subscription, error) {
 	s.applyCalls++
+	s.lastApply = *req
 	return &llmgateway.Subscription{ID: "llm-sub", UserID: req.UserID, PlanID: req.PlanID}, nil
 }
 
@@ -93,11 +95,13 @@ func TestNewPassAllocationUsesExplicitlyEnabledGateway(t *testing.T) {
 				t.Fatalf("ensureNewPassGatewayUser() created=%v err=%v", created, err)
 			}
 			sub, err := applyNewPassGatewaySubscription(context.Background(), newPassSubscriptionRequest{
-				IdempotencyKey: "test:usr-test",
-				UserID:         "usr-test",
-				PlanID:         "plan-test",
-				PeriodValue:    1,
-				PeriodUnit:     "months",
+				IdempotencyKey:   "test:usr-test",
+				UserID:           "usr-test",
+				PlanID:           "plan-test",
+				SubscriptionName: "package:usr-test:pass-test",
+				PeriodValue:      1,
+				PeriodUnit:       "months",
+				IsUnique:         true,
 			})
 			if err != nil {
 				t.Fatalf("applyNewPassGatewaySubscription() error = %v", err)
@@ -111,6 +115,35 @@ func TestNewPassAllocationUsesExplicitlyEnabledGateway(t *testing.T) {
 			if got := llmStub.ensureCalls + llmStub.applyCalls; got != tt.wantLLMCalls {
 				t.Fatalf("llmgateway calls = %d, want %d", got, tt.wantLLMCalls)
 			}
+			if tt.llmEnabled {
+				if llmStub.lastApply.SubscriptionName != "package:usr-test:pass-test" {
+					t.Fatalf("llmgateway subscription_name = %q", llmStub.lastApply.SubscriptionName)
+				}
+				if !llmStub.lastApply.IsUnique {
+					t.Fatalf("llmgateway is_unique = false, want true")
+				}
+			}
 		})
+	}
+}
+
+func TestCreditBalancesFromLLMSubscriptionsSeparatesFreeCredit(t *testing.T) {
+	balances := creditBalancesFromLLMSubscriptions([]llmgateway.Subscription{
+		{Name: "package:usr-test:pass-test", TokenTotal: 100000, TokenBalance: 60000},
+		{Name: "free-credit:campaign:grant-1", TokenTotal: 30000, TokenBalance: 20000},
+		{Name: "free-credit:campaign:grant-2", TokenTotal: 10000, TokenBalance: 5000},
+	})
+
+	if !balances.PackageFound {
+		t.Fatalf("PackageFound = false, want true")
+	}
+	if balances.PackageTokenBalance != 60000 {
+		t.Fatalf("PackageTokenBalance = %d, want 60000", balances.PackageTokenBalance)
+	}
+	if balances.FreeTokenTotal != 40000 {
+		t.Fatalf("FreeTokenTotal = %d, want 40000", balances.FreeTokenTotal)
+	}
+	if balances.FreeTokenBalance != 25000 {
+		t.Fatalf("FreeTokenBalance = %d, want 25000", balances.FreeTokenBalance)
 	}
 }

@@ -1,6 +1,6 @@
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { useTranslation } from "react-i18next";
 import { isGlobal } from "@/lib/region";
 import {
   readStoredCookieConsent,
@@ -28,7 +28,7 @@ const copy = {
 };
 
 export const CookieConsentBanner = () => {
-  const { i18n } = useTranslation();
+  const pathname = usePathname();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -38,7 +38,10 @@ export const CookieConsentBanner = () => {
 
   if (!isGlobal || !visible) return null;
 
-  const locale = i18n.language === "zh-CN" ? "zh-CN" : "en-US";
+  const localePrefix = pathname?.split("/")[1]?.toLowerCase();
+  const hasLocalizedRoute = localePrefix === "en-us" || localePrefix === "zh-cn" || localePrefix === "zh-sg";
+  const locale = localePrefix === "zh-cn" || localePrefix === "zh-sg" ? "zh-CN" : "en-US";
+  const cookiePolicyPath = hasLocalizedRoute ? `/${localePrefix}/cookie-policy` : "/cookie-policy";
   const text = copy[locale];
   const handleChoice = (value: CookieConsentValue) => {
     storeCookieConsent(value);
@@ -53,7 +56,7 @@ export const CookieConsentBanner = () => {
           <p className="mt-2 text-sm leading-6 text-slate-600">
             {text.description}{" "}
             <Link
-              to="/cookie-policy"
+              href={cookiePolicyPath}
               className="font-semibold underline underline-offset-2 hover:opacity-80"
               style={{ color: "#2563EB", WebkitTextFillColor: "#2563EB", textDecorationColor: "#2563EB" }}
             >

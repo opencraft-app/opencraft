@@ -703,6 +703,21 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 			INDEX idx_llmgateway_period_overlay_set_id (set_id),
 			INDEX idx_llmgateway_period_overlay_period_end (period_end)
 		)`,
+		`CREATE TABLE IF NOT EXISTS llmgateway_subscription_projections (
+			external_user_id VARCHAR(191) NOT NULL,
+			set_id VARCHAR(128) NOT NULL DEFAULT '',
+			upstream_subscription_id BIGINT NOT NULL,
+			subscription_name VARCHAR(191) NOT NULL DEFAULT '',
+			plan_id VARCHAR(191) NOT NULL DEFAULT '',
+			upstream_plan_id BIGINT NOT NULL DEFAULT 0,
+			period_end DATETIME(6) NOT NULL,
+			created_at DATETIME(6) NOT NULL,
+			updated_at DATETIME(6) NOT NULL,
+			PRIMARY KEY (external_user_id, upstream_subscription_id),
+			INDEX idx_llmgateway_sub_projection_user_name (external_user_id, subscription_name),
+			INDEX idx_llmgateway_sub_projection_set_id (set_id),
+			INDEX idx_llmgateway_sub_projection_period_end (period_end)
+		)`,
 		`CREATE TABLE IF NOT EXISTS llmgateway_subscription_idempotencies (
 			idempotency_key VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
 			request_hash BINARY(32) NOT NULL,
@@ -3259,6 +3274,7 @@ func (s *MySQLStore) SaveAPIKeyBinding(ctx context.Context, binding APIKeyBindin
 	if binding.Status == "" {
 		binding.Status = APIKeyStatusActive
 	}
+	binding.Purpose = canonicalAPIKeyPurpose(binding.Purpose)
 	hash := hashExternalKey(binding.ExternalKey)
 	binding.ExternalKeyHash = hash
 	return retryMySQLTransientLock(ctx, func() error {
@@ -3963,6 +3979,77 @@ func (s *MySQLStore) GetSubscriptionPeriodOverlay(ctx context.Context, externalU
 
 func (s *MySQLStore) DeleteSubscriptionPeriodOverlay(ctx context.Context, externalUserID string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM llmgateway_subscription_period_overlays WHERE external_user_id = ?`, externalUserID)
+	return err
+}
+
+func (s *MySQLStore) SaveSubscriptionProjection(ctx context.Context, projection SubscriptionProjection) error {
+	projection.ExternalUserID = strings.TrimSpace(projection.ExternalUserID)
+	projection.SetID = strings.TrimSpace(projection.SetID)
+	projection.SubscriptionName = strings.TrimSpace(projection.SubscriptionName)
+	projection.PlanID = strings.TrimSpace(projection.PlanID)
+	if projection.ExternalUserID == "" || projection.UpstreamSubscriptionID <= 0 {
+		return fmt.Errorf("external user id and upstream subscription id are required")
+	}
+	now := time.Now().UTC()
+	if projection.CreatedAt.IsZero() {
+		projection.CreatedAt = now
+	}
+	projection.UpdatedAt = now
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := rejectDeletingTenantWriteTx(ctx, tx, projection.ExternalUserID); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO llmgateway_subscription_projections (
+			external_user_id, set_id, upstream_subscription_id, subscription_name, plan_id,
+			upstream_plan_id, period_end, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+			set_id = VALUES(set_id),
+			subscription_name = VALUES(subscription_name),
+			plan_id = VALUES(plan_id),
+			upstream_plan_id = VALUES(upstream_plan_id),
+			period_end = VALUES(period_end),
+			updated_at = VALUES(updated_at)
+	`, projection.ExternalUserID, projection.SetID, projection.UpstreamSubscriptionID, projection.SubscriptionName,
+		projection.PlanID, projection.UpstreamPlanID, projection.PeriodEnd.UTC(), projection.CreatedAt.UTC(), projection.UpdatedAt.UTC())
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *MySQLStore) ListSubscriptionProjections(ctx context.Context, externalUserID string) ([]SubscriptionProjection, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT external_user_id, set_id, upstream_subscription_id, subscription_name, plan_id,
+			upstream_plan_id, period_end, created_at, updated_at
+		FROM llmgateway_subscription_projections
+		WHERE external_user_id = ?
+		ORDER BY upstream_subscription_id
+	`, strings.TrimSpace(externalUserID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var projections []SubscriptionProjection
+	for rows.Next() {
+		var projection SubscriptionProjection
+		if err := rows.Scan(&projection.ExternalUserID, &projection.SetID, &projection.UpstreamSubscriptionID,
+			&projection.SubscriptionName, &projection.PlanID, &projection.UpstreamPlanID,
+			&projection.PeriodEnd, &projection.CreatedAt, &projection.UpdatedAt); err != nil {
+			return nil, err
+		}
+		projections = append(projections, projection)
+	}
+	return projections, rows.Err()
+}
+
+func (s *MySQLStore) DeleteSubscriptionProjections(ctx context.Context, externalUserID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM llmgateway_subscription_projections WHERE external_user_id = ?`, strings.TrimSpace(externalUserID))
 	return err
 }
 

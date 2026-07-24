@@ -1647,14 +1647,17 @@ type SetPlanListOptions struct {
 }
 
 type ApplySubscriptionRequest struct {
-	IdempotencyKey string     `json:"idempotency_key"`
-	UserID         string     `json:"user_id"`
-	PlanID         string     `json:"plan_id"`
-	Nickname       string     `json:"nickname,omitempty"`
-	Phone          string     `json:"phone,omitempty"`
-	PeriodStart    *time.Time `json:"period_start,omitempty"`
-	PeriodValue    int        `json:"period_value,omitempty"`
-	PeriodUnit     string     `json:"period_unit,omitempty"`
+	IdempotencyKey   string     `json:"idempotency_key"`
+	UserID           string     `json:"user_id"`
+	PlanID           string     `json:"plan_id"`
+	SubscriptionName string     `json:"subscription_name,omitempty"`
+	Nickname         string     `json:"nickname,omitempty"`
+	Phone            string     `json:"phone,omitempty"`
+	PeriodStart      *time.Time `json:"period_start,omitempty"`
+	PeriodValue      int        `json:"period_value,omitempty"`
+	PeriodUnit       string     `json:"period_unit,omitempty"`
+	PeriodEnd        *time.Time `json:"period_end,omitempty"`
+	IsUnique         bool       `json:"is_unique,omitempty"`
 }
 
 const (
@@ -1712,13 +1715,20 @@ type ExtendSubscriptionResponse struct {
 
 type Subscription struct {
 	ID           string `json:"id"`
+	Name         string `json:"name,omitempty"`
 	UserID       string `json:"user_id"`
 	PlanID       string `json:"plan_id"`
 	Status       string `json:"status"`
+	TokenTotal   int64  `json:"token_total,omitempty"`
 	TokenBalance int64  `json:"token_balance"`
 	Unlimited    bool   `json:"unlimited,omitempty"`
 	PeriodStart  string `json:"period_start"`
 	PeriodEnd    string `json:"period_end"`
+}
+
+type ActiveSubscriptionList struct {
+	UserID        string         `json:"user_id"`
+	Subscriptions []Subscription `json:"subscriptions"`
 }
 
 type UserCredit struct {
@@ -2070,6 +2080,18 @@ type SubscriptionPeriodOverlay struct {
 	PeriodEnd      time.Time `json:"period_end"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type SubscriptionProjection struct {
+	ExternalUserID         string    `json:"external_user_id"`
+	SetID                  string    `json:"set_id"`
+	UpstreamSubscriptionID int       `json:"upstream_subscription_id"`
+	SubscriptionName       string    `json:"subscription_name"`
+	PlanID                 string    `json:"plan_id"`
+	UpstreamPlanID         int       `json:"upstream_plan_id"`
+	PeriodEnd              time.Time `json:"period_end"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
 
 const (

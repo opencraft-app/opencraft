@@ -16,7 +16,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestResetInstanceConfigCreatesNewKeyPersistsAndRevokesOldKey(t *testing.T) {
+func TestResetInstanceConfigCreatesNewKeyPersistsAndPreservesUserKeys(t *testing.T) {
 	installCreateTaskAiGatewayConfig(t)
 
 	instanceDao := &createTaskInstanceDaoStub{
@@ -65,8 +65,8 @@ func TestResetInstanceConfigCreatesNewKeyPersistsAndRevokesOldKey(t *testing.T) 
 	if len(instanceDao.updates) != 1 {
 		t.Fatalf("expected exactly one instance update, got %d", len(instanceDao.updates))
 	}
-	if got := aiGatewayAdapter.revoked; len(got) != 1 || got[0] != "key-old" {
-		t.Fatalf("expected old key to be revoked, got %+v", got)
+	if got := aiGatewayAdapter.revoked; len(got) != 0 {
+		t.Fatalf("LLMGateway user keys must survive instance config reset, got revocations %+v", got)
 	}
 	if len(aiGatewayAdapter.ensureCalls) != 1 || aiGatewayAdapter.ensureCalls[0].userID != "user-reset" {
 		t.Fatalf("expected ensure user before key creation, got %+v", aiGatewayAdapter.ensureCalls)
@@ -169,7 +169,7 @@ func TestResetInstanceConfigRejectsMissingDefaultProviderConfigBeforeCreatingKey
 	}
 }
 
-func TestResetInstanceConfigFailsWhenOldKeyCannotBeRevoked(t *testing.T) {
+func TestResetInstanceConfigDoesNotCallLLMGatewayRevoke(t *testing.T) {
 	installCreateTaskAiGatewayConfig(t)
 
 	instanceDao := &createTaskInstanceDaoStub{
@@ -195,20 +195,17 @@ func TestResetInstanceConfigFailsWhenOldKeyCannotBeRevoked(t *testing.T) {
 	}
 
 	_, err := logic.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset-1")
-	if err == nil {
-		t.Fatal("expected old key revoke failure")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "revoke previous ai-gateway key after config reset") {
-		t.Fatalf("unexpected error: %v", err)
+	if instanceDao.entity.AiGatewayKeyID != "key-new" {
+		t.Fatalf("expected new key id to be persisted, got %q", instanceDao.entity.AiGatewayKeyID)
 	}
-	if instanceDao.entity.AiGatewayKeyID != "key-old" {
-		t.Fatalf("expected persisted key id to remain old key, got %q", instanceDao.entity.AiGatewayKeyID)
+	if len(instanceDao.updates) != 1 {
+		t.Fatalf("expected one instance update, got %+v", instanceDao.updates)
 	}
-	if len(instanceDao.updates) != 0 {
-		t.Fatalf("expected no instance update, got %+v", instanceDao.updates)
-	}
-	if got := aiGatewayAdapter.revoked; len(got) != 2 || got[0] != "key-old" || got[1] != "key-new" {
-		t.Fatalf("expected old revoke attempt then new key cleanup, got %+v", got)
+	if got := aiGatewayAdapter.revoked; len(got) != 0 {
+		t.Fatalf("LLMGateway revoke must not be called, got %+v", got)
 	}
 }
 

@@ -321,6 +321,9 @@ func (s *stubLLMGatewayAdapterInline) CancelSubscription(_ context.Context, _ st
 func (s *stubLLMGatewayAdapterInline) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
 	return nil, nil
 }
+func (s *stubLLMGatewayAdapterInline) ListActiveSubscriptions(_ context.Context, _ string) (*pllmgateway.ActiveSubscriptionList, error) {
+	return &pllmgateway.ActiveSubscriptionList{Subscriptions: []pllmgateway.Subscription{}}, nil
+}
 
 type inlineStubAdapterFactory struct {
 	sandbox   psandbox.Adapter

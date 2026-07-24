@@ -4,7 +4,7 @@ metadata:
   name: lightclaw-auth-config
   namespace: user-auth
 data:
-  LIGHTCLAW_REALNAME_ASSURANCE_MODE: "observe"
+  LIGHTCLAW_REALNAME_ASSURANCE_MODE: "faceless"
   SHADOW_BINDING_ENABLED: "true"
   SHADOW_BASIC_AUTH_SYNC_ENABLED: "true"
   SHADOW_CLOUDLADDER_ENABLED: "true"

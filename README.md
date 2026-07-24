@@ -178,7 +178,15 @@ git push git@git.woa.com:wisp/velagw.git \
 源码嵌入不等于发布迁移完成。`velagw/` 接入 mono2 统一 Argo/CD 入口前，仍按其目录内现有发布定义维护。
 详细说明见 [`velagw/MONO2_SUBTREE.md`](velagw/MONO2_SUBTREE.md)。
 
-### 4. Frontend 发布到 Cloudflare Pages
+### 4. NewAPI subtree 协作模型
+
+`new-api/` 是 `https://github.com/QuantumNous/new-api.git` 的 squash-style subtree。
+初始导入版本与当时北京、上海 LLMGateway 运行镜像的源码 revision 一致。
+
+源码变更由 `.ci/new-api.yml` 构建并推送到北京、上海 TCR，但不会自动修改 GitOps 或发布环境。
+详细说明见 [`new-api/MONO2_SUBTREE.md`](new-api/MONO2_SUBTREE.md)。
+
+### 5. Frontend 发布到 Cloudflare Pages
 
 当前 `frontend` 的 Cloudflare Pages 实战发布方式是：
 

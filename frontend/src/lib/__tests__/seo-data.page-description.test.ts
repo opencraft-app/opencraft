@@ -83,8 +83,16 @@ describe("getSeoMeta — page-level description override", () => {
       "/docs/configuration/channel-feishu",
       "/docs/configuration/automation",
       "/docs/configuration/agent-chat",
+      "/docs/configuration/memory",
+      "/docs/configuration/files",
+      "/docs/configuration/diagnostics",
+      "/docs/configuration/multiple-models",
       "/docs/faq",
       "/docs/faq/using-lightvela-safely",
+      "/docs/plans",
+      "/docs/credits",
+      "/docs/create-first-hermes",
+      "/docs/who-is-lightvela-for",
     ];
 
     for (const path of cnDocPaths) {
@@ -100,6 +108,25 @@ describe("getSeoMeta — page-level description override", () => {
         const meta = getSeoMeta(path, "global");
         expect(meta.description).not.toBe(getSeoMeta("/", "global").description);
         expect(meta.description.length).toBeGreaterThan(20);
+      });
+    }
+  });
+
+  describe("global docs pages have explicit titles", () => {
+    const paths = [
+      "/docs/plans",
+      "/docs/credits",
+      "/docs/create-first-hermes",
+      "/docs/who-is-lightvela-for",
+      "/docs/configuration/memory",
+      "/docs/configuration/files",
+      "/docs/configuration/diagnostics",
+      "/docs/configuration/multiple-models",
+    ];
+
+    for (const path of paths) {
+      it(`global: ${path} does not use the not-found title`, () => {
+        expect(getSeoMeta(path, "global").title).not.toContain("Page Not Found");
       });
     }
   });

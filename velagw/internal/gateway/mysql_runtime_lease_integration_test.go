@@ -877,7 +877,7 @@ func TestMySQLCascadeSetDecommissionPurgesTenantStateBeforeRuntimeCleanup(t *tes
 	}
 }
 
-func TestMySQLAPIKeyReservationOmitsPlaintextAndPersistsRecoverableRoute(t *testing.T) {
+func TestMySQLAPIKeyReservationPersistsKeyAndRecoverableRoute(t *testing.T) {
 	store := newIsolatedMySQLStore(t)
 	defer func() { _ = store.Close() }()
 	ctx := t.Context()
@@ -907,8 +907,8 @@ func TestMySQLAPIKeyReservationOmitsPlaintextAndPersistsRecoverableRoute(t *test
 	if err != nil || !ok {
 		t.Fatalf("restored binding: ok=%v err=%v", ok, err)
 	}
-	if restored.ExternalKey != "" {
-		t.Fatalf("external key plaintext was persisted: %q", restored.ExternalKey)
+	if restored.ExternalKey != material.ExternalKey {
+		t.Fatalf("external key = %q, want issued key", restored.ExternalKey)
 	}
 	if restored.ExternalKeyHash != material.ExternalKeyHash || restored.SecretHash != material.SecretHash {
 		t.Fatalf("external key route hashes are wrong: %+v", restored)
