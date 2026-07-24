@@ -30,24 +30,18 @@ func setupAdminSubscriptionControllerTest(t *testing.T) (*model.User, *model.Sub
 	confirmPaymentComplianceForTest(t)
 
 	originalDB := model.DB
-	originalUsingSQLite := common.UsingSQLite
-	originalUsingMySQL := common.UsingMySQL
-	originalUsingPostgreSQL := common.UsingPostgreSQL
+	originalMainDatabaseType := common.MainDatabaseType()
 
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	model.DB = db
-	common.UsingSQLite = true
-	common.UsingMySQL = false
-	common.UsingPostgreSQL = false
+	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.SubscriptionPlan{}, &model.UserSubscription{}))
 
 	t.Cleanup(func() {
 		model.DB = originalDB
-		common.UsingSQLite = originalUsingSQLite
-		common.UsingMySQL = originalUsingMySQL
-		common.UsingPostgreSQL = originalUsingPostgreSQL
+		common.SetMainDatabaseType(originalMainDatabaseType)
 		sqlDB, dbErr := db.DB()
 		if dbErr == nil {
 			_ = sqlDB.Close()
