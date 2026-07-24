@@ -2435,10 +2435,11 @@ func (s *Service) deleteUpstreamAPIKey(ctx context.Context, binding APIKeyBindin
 		return fmt.Errorf("set %q not found", binding.SetID)
 	}
 	client := s.newAPIClient(set.BaseURL)
-	if _, err := client.Login(ctx, userBinding.Username, userBinding.Password); err != nil {
+	session, err := client.Login(ctx, userBinding.Username, userBinding.Password)
+	if err != nil {
 		return fmt.Errorf("login upstream user before key revoke: %w", err)
 	}
-	accessToken, err := client.GenerateAccessToken(ctx, userBinding.UpstreamUserID)
+	accessToken, err := client.GenerateAccessToken(ctx, userBinding.UpstreamUserID, session.AccessToken)
 	if err != nil {
 		return fmt.Errorf("generate upstream access token before key revoke: %w", err)
 	}
