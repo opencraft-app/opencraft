@@ -38,6 +38,9 @@ func TestMain(m *testing.M) {
 	common.RedisEnabled = false
 	common.BatchUpdateEnabled = false
 	common.LogConsumeEnabled = true
+	if err := model.InitLogDB(); err != nil {
+		panic("failed to initialize test database columns: " + err.Error())
+	}
 
 	if err := db.AutoMigrate(
 		&model.Task{},
@@ -46,7 +49,9 @@ func TestMain(m *testing.M) {
 		&model.Log{},
 		&model.Channel{},
 		&model.TopUp{},
+		&model.SubscriptionPlan{},
 		&model.UserSubscription{},
+		&model.SubscriptionPreConsumeRecord{},
 		&model.SystemTask{},
 		&model.SystemTaskLock{},
 	); err != nil {
@@ -69,7 +74,9 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM logs")
 		model.DB.Exec("DELETE FROM channels")
 		model.DB.Exec("DELETE FROM top_ups")
+		model.DB.Exec("DELETE FROM subscription_plans")
 		model.DB.Exec("DELETE FROM user_subscriptions")
+		model.DB.Exec("DELETE FROM subscription_pre_consume_records")
 		model.DB.Exec("DELETE FROM system_task_locks")
 		model.DB.Exec("DELETE FROM system_tasks")
 	})

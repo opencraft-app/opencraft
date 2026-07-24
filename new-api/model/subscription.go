@@ -1370,7 +1370,7 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 }
 
 // PreConsumeUserSubscription pre-consumes from any active subscription total quota.
-func PreConsumeUserSubscription(requestId string, userId int, modelName string, quotaType int, amount int64) (*SubscriptionPreConsumeResult, error) {
+func PreConsumeUserSubscription(requestId string, userId int, modelName string, quotaType int, amount int64, allowTailGrace bool) (*SubscriptionPreConsumeResult, error) {
 	if userId <= 0 {
 		return nil, errors.New("invalid userId")
 	}
@@ -1416,6 +1416,9 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 		if len(subs) == 0 {
 			return errors.New("no active subscription")
 		}
+		var fullCandidate *UserSubscription
+		var graceCandidate *UserSubscription
+		var graceAmount int64
 		for _, candidate := range subs {
 			sub := candidate
 			plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
@@ -1426,46 +1429,68 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 				return err
 			}
 			usedBefore := sub.AmountUsed
-			if sub.AmountTotal > 0 {
-				remain := sub.AmountTotal - usedBefore
-				if remain < amount {
-					continue
-				}
+			if sub.AmountTotal <= 0 {
+				fullCandidate = &sub
+				break
 			}
-			record := &SubscriptionPreConsumeRecord{
-				RequestId:          requestId,
-				UserId:             userId,
-				UserSubscriptionId: sub.Id,
-				PreConsumed:        amount,
-				Status:             "consumed",
+			remain := sub.AmountTotal - usedBefore
+			if remain >= amount {
+				fullCandidate = &sub
+				break
 			}
-			if err := tx.Create(record).Error; err != nil {
-				var dup SubscriptionPreConsumeRecord
-				if err2 := tx.Where("request_id = ?", requestId).First(&dup).Error; err2 == nil {
-					if dup.Status == "refunded" {
-						return errors.New("subscription pre-consume already refunded")
-					}
-					returnValue.UserSubscriptionId = sub.Id
-					returnValue.PreConsumed = dup.PreConsumed
-					returnValue.AmountTotal = sub.AmountTotal
-					returnValue.AmountUsedBefore = sub.AmountUsed
-					returnValue.AmountUsedAfter = sub.AmountUsed
-					return nil
-				}
-				return err
+			if allowTailGrace && remain > 0 && graceCandidate == nil {
+				graceCandidate = &sub
+				graceAmount = remain
 			}
-			sub.AmountUsed += amount
-			if err := tx.Save(&sub).Error; err != nil {
-				return err
-			}
-			returnValue.UserSubscriptionId = sub.Id
-			returnValue.PreConsumed = amount
-			returnValue.AmountTotal = sub.AmountTotal
-			returnValue.AmountUsedBefore = usedBefore
-			returnValue.AmountUsedAfter = sub.AmountUsed
-			return nil
 		}
-		return fmt.Errorf("subscription quota insufficient, need=%d", amount)
+
+		selected := fullCandidate
+		preConsumed := amount
+		if selected == nil {
+			selected = graceCandidate
+			preConsumed = graceAmount
+		}
+		if selected == nil || preConsumed <= 0 {
+			return fmt.Errorf("subscription quota insufficient, need=%d", amount)
+		}
+
+		usedBefore := selected.AmountUsed
+		record := &SubscriptionPreConsumeRecord{
+			RequestId:          requestId,
+			UserId:             userId,
+			UserSubscriptionId: selected.Id,
+			PreConsumed:        preConsumed,
+			Status:             "consumed",
+		}
+		if err := tx.Create(record).Error; err != nil {
+			var dup SubscriptionPreConsumeRecord
+			if err2 := tx.Where("request_id = ?", requestId).First(&dup).Error; err2 == nil {
+				if dup.Status == "refunded" {
+					return errors.New("subscription pre-consume already refunded")
+				}
+				var dupSub UserSubscription
+				if err2 := tx.Where("id = ?", dup.UserSubscriptionId).First(&dupSub).Error; err2 != nil {
+					return err2
+				}
+				returnValue.UserSubscriptionId = dupSub.Id
+				returnValue.PreConsumed = dup.PreConsumed
+				returnValue.AmountTotal = dupSub.AmountTotal
+				returnValue.AmountUsedBefore = dupSub.AmountUsed
+				returnValue.AmountUsedAfter = dupSub.AmountUsed
+				return nil
+			}
+			return err
+		}
+		selected.AmountUsed += preConsumed
+		if err := tx.Save(selected).Error; err != nil {
+			return err
+		}
+		returnValue.UserSubscriptionId = selected.Id
+		returnValue.PreConsumed = preConsumed
+		returnValue.AmountTotal = selected.AmountTotal
+		returnValue.AmountUsedBefore = usedBefore
+		returnValue.AmountUsedAfter = selected.AmountUsed
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -1491,7 +1516,7 @@ func RefundSubscriptionPreConsume(requestId string) error {
 			record.Status = "refunded"
 			return tx.Save(&record).Error
 		}
-		if err := PostConsumeUserSubscriptionDelta(record.UserSubscriptionId, -record.PreConsumed); err != nil {
+		if err := postConsumeUserSubscriptionDeltaTx(tx, record.UserSubscriptionId, -record.PreConsumed); err != nil {
 			return err
 		}
 		record.Status = "refunded"
@@ -1590,20 +1615,27 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 		return nil
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		var sub UserSubscription
-		if err := lockForUpdate(tx).
-			Where("id = ?", userSubscriptionId).
-			First(&sub).Error; err != nil {
-			return err
-		}
-		newUsed := sub.AmountUsed + delta
-		if newUsed < 0 {
-			newUsed = 0
-		}
-		if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
-			return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
-		}
-		sub.AmountUsed = newUsed
-		return tx.Save(&sub).Error
+		return postConsumeUserSubscriptionDeltaTx(tx, userSubscriptionId, delta)
 	})
+}
+
+func postConsumeUserSubscriptionDeltaTx(tx *gorm.DB, userSubscriptionId int, delta int64) error {
+	if tx == nil {
+		return errors.New("transaction is nil")
+	}
+	var sub UserSubscription
+	if err := lockForUpdate(tx).
+		Where("id = ?", userSubscriptionId).
+		First(&sub).Error; err != nil {
+		return err
+	}
+	newUsed := sub.AmountUsed + delta
+	if newUsed < 0 {
+		newUsed = 0
+	}
+	if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
+		return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
+	}
+	sub.AmountUsed = newUsed
+	return tx.Save(&sub).Error
 }
