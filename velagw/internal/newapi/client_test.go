@@ -203,6 +203,9 @@ func TestClientGenerateAccessTokenUsesLoginBearer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if session.UserID != 42 || session.AccessToken != "login-access-token" {
+		t.Fatalf("session = %+v, want user 42 with login access token", session)
+	}
 	token, err := client.GenerateAccessToken(t.Context(), session.UserID, session.AccessToken)
 	if err != nil {
 		t.Fatal(err)
