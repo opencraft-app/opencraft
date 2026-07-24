@@ -44,26 +44,24 @@ type UserUsageResponse struct {
 	TotalRequests int64  `json:"total_requests"`
 }
 
-// Plan llmgateway 的 Plan 结构（只保留 CTL 校验需要的字段）
+// Plan 是 VelaGW 的稳定权益模板。周期额度和重置节奏属于模板，
+// 订单购买时长不属于模板。
 type Plan struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	MonthlyTokens int64  `json:"monthly_tokens"`
-	PeriodValue   int    `json:"period_value"`
-	PeriodUnit    string `json:"period_unit"` // "months" / "days"
-	IsActive      bool   `json:"is_active"`
+	ID                      string `json:"id"`
+	Name                    string `json:"name"`
+	MonthlyTokens           int64  `json:"monthly_tokens"`
+	QuotaResetPeriod        string `json:"quota_reset_period,omitempty"`
+	QuotaResetCustomSeconds int64  `json:"quota_reset_custom_seconds,omitempty"`
+	IsActive                bool   `json:"is_active"`
+	ReadyForAllSets         bool   `json:"ready_for_all_sets"`
+	ActiveSetCount          int    `json:"active_set_count"`
+	ReadySetCount           int    `json:"ready_set_count"`
+	PeriodValue             int    `json:"period_value,omitempty"`
+	PeriodUnit              string `json:"period_unit,omitempty"`
 }
 
-// ApplySubscriptionRequest 开通订阅请求体
-//
-// PeriodValue / PeriodUnit (R-MR-3 v0.3.0 bundle ↔ plan 解耦, Q9=i1 拍板):
-// 调用方传入实际购买时长，llmgateway 内部按 (NOW + period) 计算 PeriodEnd。
-// 同算法约束：llmgateway 端走 timex.AddPeriod，与 ctl/pkg/logic/pass.CalcExpiredTime
-// 输出完全一致 — 无双源不一致风险。
-//
-// Q10=j1 向后兼容：未传时（PeriodValue==0 || PeriodUnit==""）llmgateway 回退到
-// plan.PeriodValue / plan.PeriodUnit 兜底。CTL 端 R-MR-3 改造后默认会传入
-// bundle.TimeSpan/TimeUnit 或 req.TimeSpan/TimeUnit。
+// ApplySubscriptionRequest 确保长期订阅存在。
+// PeriodValue/PeriodUnit/PeriodEnd 只用于兼容旧 VelaGW，新 ctl 的普通权益不发送。
 type ApplySubscriptionRequest struct {
 	IdempotencyKey   string     `json:"idempotency_key"`
 	UserID           string     `json:"user_id"`

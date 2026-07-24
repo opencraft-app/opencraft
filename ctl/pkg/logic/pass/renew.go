@@ -9,7 +9,6 @@ import (
 
 	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
-	"ctl/pkg/adapter/llmgateway"
 	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
@@ -23,8 +22,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// extendAiGatewayCallTimeout ai-gateway ExtendSubscription 调用单次 ctx 超时（与异步
-// renewPassTask 共享同一上限，10s 与现有 ApplySubscription 调用风格一致）。
 const extendAiGatewayCallTimeout = 10 * time.Second
 
 // === trade-pass-renew 设计稿落地 §3.1 / §3.4 v3.8 / R-D-1 ===
@@ -96,14 +93,13 @@ func (l *logic) RenewPass(passID string, tradeFlowID int64, timeSpan int, timeUn
 	case passmodel.StatusActive:
 		// === R-MR-5 升级（2026-05-24 用户拍板）：active 分支彻底异步化 ===
 		//
-		// 旧设计：active 续费走同步路径 — 直接 UpdateExpiredTimeIfActive + AlignAiGatewaySubscription，
-		// 不入队 task；任意一环失败由 trade callback 重投 ctl.RenewPass 兜底。
+		// 旧设计：active 续费走同步路径并镜像网关结束时间；现已废弃。
 		//
 		// 升级理由：
-		//  1. 续费失败回滚要求强一致 + 跨 instance / pass / ai-gateway 多步原子语义，同步路径
+		//  1. 续费失败回滚要求强一致 + 跨 instance / pass 多步原子语义，同步路径
 		//     无法承载（同步路径失败回滚需要在 RenewPass 函数内部硬写回滚，混乱且并发不安全）；
-		//  2. active 续费同样可能伴随 ai-gateway 失败，统一走异步父 task + 失败回滚 task 模型，
-		//     语义对齐 isolated 分支，避免两套失败处理路径。
+		//  2. active 和 isolated 统一走异步父 task + 失败回滚 task，避免两套失败处理路径；
+		//     只有 isolated 恢复会在实例启动前 Ensure 长期 AI 权益。
 		//
 		// 新行为：
 		//  - CAS active → renewing（与 isolated 分支 isolated→renewing 对偶）
@@ -257,33 +253,8 @@ func renewLogger() *zap.Logger {
 	return zap.NewNop()
 }
 
-// AlignAiGatewaySubscriptionPeriodEnd 把 ctl 算好的新 pass.expired_time 强制对齐
-// 到 ai-gateway subscription.period_end，保证两侧天级一致。
-//
-// 设计：.tmp/aigateway-monthly-token-refresh-design.md §5.2 / §8 stage 4 R-MR-4
-// + 2026-05-24 用户拍板"对齐"原则。
-//
-// 适用场景（任何让 ctl pass.expired_time 改变的事件）：
-//   - 续费 active 同步分支（renew.go RenewPass case StatusActive）：向后延期
-//   - 续费 isolated 异步分支（worker/renew_task.go execute 收尾）：向后延期
-//   - 退费隔离父 task 终态（worker/isolate_task.go refund branch）：可能向前缩短
-//
-// 强一致语义（与各 caller 共享）：
-//   - 调用失败 → 返回 err 让 caller 触发重试（同步分支：trade callback 重投；
-//     异步分支：父 task fail 重试 30s × INT64_MAX）。
-//   - PeriodEnd 没推进 = ai-gateway scheduler 5min 内会标 expired = AI 服务断档，
-//     必须强一致而非 best-effort。
-//
-// 幂等：ai-gateway 端 ExtendSubscription 现采用"等值即 no-op、不等强制覆盖"语义
-// （2026-05-24 升级，废弃旧 only-forward CAS）；重复调用同一 newPeriodEnd 返回
-// 200 OK + updated=false 不报错；退费向前缩短同样安全（向前缩短一次后再调
-// updated=false）。
-//
-// 例外：ErrLLMGatewayPlanNotFound 表示该用户在 ai-gateway 端从未通过
-// ApplySubscription 建立订阅（如付费产品迁移到免费试用期外的边缘场景），记 Warn
-// + 当作成功放过（不阻断 pass 主链路 — 用户本来就没 AI 订阅，不存在"对齐"目标）；
-// caller 收到 nil 视同成功。其它错误（含 ErrLLMGatewayRouteNotFound 路由 404）
-// 一律透传给 caller，由 caller 决定重试 / failTask / Warn 不阻断。
+// AlignAiGatewaySubscriptionPeriodEnd 只为迁移期的 legacy ai-gateway 用户保留。
+// LLMGateway 的订阅为长期权益，业务有效期只由 ctl 管理，因此该路径直接 no-op。
 func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID string, newPeriodEnd time.Time) error {
 	if logger == nil {
 		logger = renewLogger()
@@ -331,34 +302,9 @@ func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID stri
 				zap.Bool("updated", resp != nil && resp.Updated))
 			return nil
 		case gatewayroute.GatewayLLMGateway:
-			if !config.LLMGatewayEnabled() {
-				logger.Warn("recorded llmgateway subscription ignored because llmgateway is disabled",
-					zap.String("user_id", userID),
-					zap.String("pass_id", passID))
-				break
-			}
-			resp, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().
-				ExtendSubscription(ctx, &llmgateway.ExtendSubscriptionRequest{
-					UserID:       userID,
-					NewPeriodEnd: newPeriodEnd,
-				})
-			if err != nil {
-				if errors.Is(err, llmgateway.ErrLLMGatewayPlanNotFound) {
-					logger.Warn("recorded llmgateway subscription not found, skipping align",
-						zap.String("user_id", userID),
-						zap.String("pass_id", passID))
-					return nil
-				}
-				return err
-			}
-			if resp != nil && resp.Subscription != nil {
-				gatewayroute.RecordBestEffort(logger, userID, gatewayroute.GatewayLLMGateway, resp.Subscription.ID, resp.Subscription.PlanID, gatewayroute.SourceDetectActiveSubscription)
-			}
-			logger.Info("llmgateway subscription period_end aligned",
+			logger.Info("skip period_end alignment for periodless llmgateway entitlement",
 				zap.String("user_id", userID),
-				zap.String("pass_id", passID),
-				zap.Time("new_period_end", newPeriodEnd),
-				zap.Bool("updated", resp != nil && resp.Updated))
+				zap.String("pass_id", passID))
 			return nil
 		default:
 			logger.Warn("unknown recorded subscription gateway, fallback to probe",
@@ -396,28 +342,8 @@ func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID stri
 			zap.String("pass_id", passID))
 		return nil
 	}
-
-	resp, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().
-		ExtendSubscription(ctx, &llmgateway.ExtendSubscriptionRequest{
-			UserID:       userID,
-			NewPeriodEnd: newPeriodEnd,
-		})
-	if err != nil {
-		if errors.Is(err, llmgateway.ErrLLMGatewayPlanNotFound) {
-			logger.Warn("no active subscription for user in ai-gateway or llmgateway, skipping align",
-				zap.String("user_id", userID),
-				zap.String("pass_id", passID))
-			return nil
-		}
-		return err
-	}
-	if resp != nil && resp.Subscription != nil {
-		gatewayroute.RecordBestEffort(logger, userID, gatewayroute.GatewayLLMGateway, resp.Subscription.ID, resp.Subscription.PlanID, gatewayroute.SourceDetectActiveSubscription)
-	}
-	logger.Info("llmgateway subscription period_end aligned",
+	logger.Info("no legacy subscription found; periodless llmgateway requires no period alignment",
 		zap.String("user_id", userID),
-		zap.String("pass_id", passID),
-		zap.Time("new_period_end", newPeriodEnd),
-		zap.Bool("updated", resp != nil && resp.Updated)) // false = 等值幂等 no-op
+		zap.String("pass_id", passID))
 	return nil
 }
