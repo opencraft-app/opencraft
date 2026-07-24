@@ -1675,7 +1675,6 @@ type ApplySubscriptionRequest struct {
 const (
 	AdminCommandKindApplySubscription  = "apply_subscription"
 	AdminCommandKindCancelSubscription = "cancel_subscription"
-	AdminCommandKindExtendSubscription = "extend_subscription"
 	AdminCommandKindCreateExternalKey  = "create_external_key"
 
 	AdminCommandStatusPending   = "pending"
@@ -1713,16 +1712,6 @@ type AdminCommandListOptions struct {
 
 type CancelSubscriptionRequest struct {
 	UserID string `json:"user_id"`
-}
-
-type ExtendSubscriptionRequest struct {
-	UserID       string    `json:"user_id"`
-	NewPeriodEnd time.Time `json:"new_period_end"`
-}
-
-type ExtendSubscriptionResponse struct {
-	Subscription *Subscription `json:"subscription"`
-	Updated      bool          `json:"updated"`
 }
 
 type Subscription struct {

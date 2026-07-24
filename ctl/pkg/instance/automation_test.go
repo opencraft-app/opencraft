@@ -64,13 +64,6 @@ func (s *automationLLMGatewayAdapterStub) ApplySubscription(_ context.Context, r
 	return &pllmgateway.Subscription{UserID: req.UserID, PlanID: req.PlanID}, nil
 }
 
-func (s *automationLLMGatewayAdapterStub) ExtendSubscription(_ context.Context, req *pllmgateway.ExtendSubscriptionRequest) (*pllmgateway.ExtendSubscriptionResponse, error) {
-	return &pllmgateway.ExtendSubscriptionResponse{
-		Subscription: &pllmgateway.Subscription{UserID: req.UserID},
-		Updated:      true,
-	}, nil
-}
-
 func (s *automationLLMGatewayAdapterStub) CancelSubscription(_ context.Context, _ string) error {
 	return nil
 }

@@ -948,13 +948,6 @@ func (a *integrationLLMGatewayAdapter) ApplySubscription(_ context.Context, req 
 	return &pllmgateway.Subscription{UserID: req.UserID, PlanID: req.PlanID, Status: "active"}, nil
 }
 
-func (a *integrationLLMGatewayAdapter) ExtendSubscription(_ context.Context, req *pllmgateway.ExtendSubscriptionRequest) (*pllmgateway.ExtendSubscriptionResponse, error) {
-	return &pllmgateway.ExtendSubscriptionResponse{
-		Subscription: &pllmgateway.Subscription{UserID: req.UserID, Status: "active"},
-		Updated:      true,
-	}, nil
-}
-
 func (a *integrationLLMGatewayAdapter) CancelSubscription(_ context.Context, _ string) error {
 	return nil
 }

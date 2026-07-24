@@ -1530,28 +1530,6 @@ func subscriptionIdempotencyStatusName(status int) string {
 	}
 }
 
-func (s *Service) ExtendSubscription(ctx context.Context, req ExtendSubscriptionRequest) (result ExtendSubscriptionResponse, err error) {
-	req.UserID = strings.TrimSpace(req.UserID)
-	ctx, span := s.startTelemetrySpan(ctx, observability.ScopeTenantEntitlement, "llmgateway.subscription.extend",
-		attribute.String("llmgateway.user.id", req.UserID),
-	)
-	defer func() { observability.FinishSpan(span, err, "subscription_extend_failed", s.telemetrySanitizer) }()
-	if req.UserID == "" {
-		return ExtendSubscriptionResponse{}, fmt.Errorf("user_id is required")
-	}
-	if req.NewPeriodEnd.IsZero() {
-		return ExtendSubscriptionResponse{}, fmt.Errorf("new_period_end is required")
-	}
-	if err := s.ensureTenantCanWrite(ctx, req.UserID); err != nil {
-		return ExtendSubscriptionResponse{}, err
-	}
-	current, err := s.GetActiveSubscription(ctx, req.UserID)
-	if err != nil {
-		return ExtendSubscriptionResponse{}, err
-	}
-	return ExtendSubscriptionResponse{Subscription: &current, Updated: false}, nil
-}
-
 func (s *Service) CancelSubscription(ctx context.Context, externalUserID string) (err error) {
 	externalUserID = strings.TrimSpace(externalUserID)
 	ctx, span := s.startTelemetrySpan(ctx, observability.ScopeTenantEntitlement, "llmgateway.subscription.cancel",

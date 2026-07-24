@@ -394,30 +394,3 @@ func TestApplySubscriptionSerializesConcurrentDifferentCommandsPerUser(t *testin
 		t.Fatalf("concurrent create count=%d, want 1", got)
 	}
 }
-
-func TestExtendSubscriptionIsCompatibilityNoop(t *testing.T) {
-	fixture := newSubscriptionFixture(t)
-	defer fixture.server.Close()
-	store := NewMemoryStore()
-	svc := NewService(store, nil, Options{})
-	fixture.registerBootstrappedSet(t, svc, store)
-	if err := store.SaveUserBinding(t.Context(), UserBinding{
-		ExternalUserID: "user-1", SetID: "set-a", UpstreamUserID: 42,
-		Username: "sgw-user-1", Password: "user-pass-123",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := svc.ExtendSubscription(t.Context(), ExtendSubscriptionRequest{
-		UserID: "user-1", NewPeriodEnd: time.Now().Add(14 * 24 * time.Hour),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Updated {
-		t.Fatal("legacy extend unexpectedly mutated subscription projection")
-	}
-	if _, ok, err := store.GetSubscriptionPeriodOverlay(t.Context(), "user-1"); err != nil || ok {
-		t.Fatalf("period overlay was written: ok=%v err=%v", ok, err)
-	}
-}
