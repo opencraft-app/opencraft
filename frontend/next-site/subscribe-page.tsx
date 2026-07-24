@@ -519,12 +519,12 @@ const mapBundleToPlan = (
     const backendDiscount = bundle.price?.discount;
     if (durationKey === "quarterly") {
       /* 季付：不展示月付首期促销（免费14天 / 首月5折 / 首月6折），改为按实际折扣显示「8.5折」这类角标。
-         折扣来源：登录后取后端 discount，未登录取静态 price.discount
-         （见 STATIC_QUARTERLY_DISCOUNT=0.85 / STATIC_AI_QUARTERLY_DISCOUNT=0.9），两者口径一致（0~1 小数）。
-         无有效折扣（discount 不在 (0,1)）时不展示角标。原价删除线仍由前面价格逻辑保留。 */
+         折扣直接由「折后价 / 原价」比值算出（originalPriceYuan=原价、displayPriceYuan=折后价，前面价格逻辑已备好），
+         登录取后端 total_cost/real_total_cost、未登录取静态价，口径一致，不依赖后端 discount 字段口径。
+         无原价删除线（即无折扣）时不展示角标。 */
       promoTag =
-        typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1
-          ? `${Math.round(backendDiscount * 100) / 10}折`
+        originalPriceYuan != null && displayPriceYuan != null && originalPriceYuan > displayPriceYuan
+          ? `${Math.round((displayPriceYuan / originalPriceYuan) * 100) / 10}折`
           : undefined;
     } else if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
       promoTag = `${Math.round(backendDiscount * 100) / 10}折`;
