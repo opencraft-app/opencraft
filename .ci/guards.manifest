@@ -10,7 +10,7 @@ guards:
       - argocd/services/service-gateway/**
       - argocd/apps/*/service-gateway.yaml
       - argocd/secrets/*/service-gateway-runtime-secrets.sops.yaml
-    command: service-gateway/checks/guard.sh
+    command: .ci/checks/service-gateway_guard.sh
 
   - name: admin-gateway
     paths:
