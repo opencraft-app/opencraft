@@ -94,6 +94,26 @@ export const DOCS_ROUTE_SLUGS = {
       "personal-ai-assistant"
     ],
     [
+      "compare",
+      "lightvela-vs-localhost-ai-agent"
+    ],
+    [
+      "compare",
+      "lightvela-vs-hostinger"
+    ],
+    [
+      "compare",
+      "lightvela-vs-manus"
+    ],
+    [
+      "compare",
+      "lightvela-vs-chatgpt"
+    ],
+    [
+      "compare",
+      "lightvela-vs-genspark"
+    ],
+    [
       "faq",
       "using-lightvela-safely"
     ],
@@ -247,6 +267,26 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "use-cases",
       "personal-ai-assistant"
+    ],
+    [
+      "compare",
+      "lightvela-vs-localhost-ai-agent"
+    ],
+    [
+      "compare",
+      "lightvela-vs-hostinger"
+    ],
+    [
+      "compare",
+      "lightvela-vs-manus"
+    ],
+    [
+      "compare",
+      "lightvela-vs-chatgpt"
+    ],
+    [
+      "compare",
+      "lightvela-vs-genspark"
     ],
     [
       "faq",
