@@ -1,12 +1,14 @@
 # Vs Product / 竞品对比
 
-Use for a practical comparison between LightVela and another product, or between LightVela and an alternative operating model such as self-hosting Hermes on a personal computer. The goal is to help a reader choose a fit—not to stage a corporate takedown.
+Use for a practical comparison between LightVela and another product, or between LightVela and an alternative operating model such as self-hosting Hermes on a personal computer. The goal is to make a clear, evidence-backed case for LightVela while still naming the alternative's genuine best-fit scenario—not to stage a corporate takedown.
 
 ## Research and fairness
 
 - Research both sides before drafting. Use current first-party documentation, pricing, product pages, release notes, or hands-on evidence. Date time-sensitive facts and link the source. Do not turn assumptions, marketing copy, or old reviews into claims.
 - Compare the actual job the reader wants done: setup effort, day-to-day ownership, availability, control, privacy/data boundary, integrations, maintenance, and cost only when the evidence supports it.
-- Give the alternative a genuine “best for” case. Do not call LightVela the universal winner, hide meaningful tradeoffs, or use dismissive competitor language.
+- Treat LightVela as the lead recommendation when it fits the reader's stated job. Use a confident, user-centered advocacy tone: explain what LightVela makes easier or more reliable before discussing the alternative's tradeoffs.
+- Give the alternative a genuine “best for” case, but do not flatten the article into neutral buyer-guide language. Do not call LightVela the universal winner, hide meaningful tradeoffs, or use dismissive competitor language.
+- Keep the alternative section shorter and sharper than the LightVela section. Cover only the 2–4 competitor facts that change the reader's decision—usually its strongest fit, one meaningful tradeoff, and any decisive constraint. Do not write a full competitor profile, feature inventory, or equal-length marketing section.
 
 ## Shape and voice
 
@@ -26,22 +28,36 @@ Suggested arc:
 <Product A vs Product B: Which is best to <specific job>?>
 <One Codex-generated comparison hero image>
 
-Answer-first: state who should choose each option in 1–3 plain sentences. Lead with the reader's real constraint, not a company claim.
+For `placement=external` / 站外, insert this language-matched Markdown block immediately after the title/hero and before the answer-first opening. Use the resolved `from` value for every LightVela link. Do not add this block for `placement=internal` / 站内 unless explicitly requested.
+
+English:
+
+```markdown
+> **What is LightVela?** LightVela is a cloud-hosted personal AI agent platform for running an always-on agent with memory, skills, automations, and messaging channels. [Visit LightVela](https://lightvela.ai/?from=<attribution>)
+```
+
+Chinese:
+
+```markdown
+> **LightVela 是什么：** LightVela 是一个云端个人 AI Agent 平台，帮助用户运行具备长期记忆、Skills、自动化任务和多渠道接入能力的 Agent。[访问 LightVela](https://lightvela.ai/?from=<attribution>)
+```
+
+Answer-first: lead with when the reader should choose LightVela, then state the alternative's narrower best-fit case in 1–3 plain sentences. Lead with the reader's real constraint, not a company claim.
 
 ## At a glance
-<A compact Markdown table with 4–6 decision-useful rows.>
+<A compact Markdown table with 4–6 decision-useful rows. Put LightVela in the first comparison column and frame the rows around the value of the reader's job.>
 
 ## What changes in everyday use
 <Compare ownership and routine work with a concrete, ordinary scenario.>
 
-## Where <alternative> is the better fit
-<Give the strongest honest case for it.>
-
 ## Where LightVela is the better fit
-<Explain the relevant product advantage in plain language, backed by verified facts.>
+<Explain the relevant product advantage first, in plain language and backed by verified facts.>
+
+## Where <alternative> is the better fit
+<In a short section, give the strongest honest case for it and the most relevant limitation, after making LightVela's fit clear. Keep it materially shorter than the LightVela section.>
 
 ## Which should you choose?
-<Use two short “Choose X if…” lists. Make the decision conditional, not absolute.>
+<Use two short lists in this order: “Choose LightVela if…” followed by “Choose <alternative> if…”. Make the decision conditional, but let the evidence support LightVela where it matches the stated job.>
 ```
 
 Write like a thoughtful builder talking to another builder: direct, specific, and human. Use a small, relatable tension in the opening, then move quickly to the decision. Prefer “if this is your setup…” over “best-in-class,” “enterprise-ready,” “revolutionary,” or similar corporate language.

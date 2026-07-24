@@ -17,10 +17,13 @@ language: en | zh | both
 form: text | md
 output_shape: longform-article | thread | markdown-files
 attribution: social_<platform>
+placement: internal | external
 style: default
 ```
 
 Read `references/publishing-contract.md` first. If `mode`, `platform`, or `subject` is missing, ask once for every missing item. Do not ask separately about language or form: use the platform default. Generic “social media”, “blog”, or “write an article” is not a platform.
+
+For `vs-product`, also resolve `placement` before drafting: ask whether the document is for 站内 (internal) or 站外 (external) when the user has not said. Do not infer this from the platform. For 站外, apply the external-publication intro block in the mode reference; omit it for 站内 unless the user explicitly requests it.
 
 Before drafting, read:
 
