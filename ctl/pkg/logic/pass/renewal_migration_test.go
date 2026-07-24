@@ -55,7 +55,7 @@ func (s *renewalMigrationLLMStub) ExtendSubscription(_ context.Context, req *llm
 	}, nil
 }
 
-func TestPrepareRenewalGatewayMigrationUsesWildcardAndExactExpiry(t *testing.T) {
+func TestPrepareRenewalGatewayMigrationUsesWildcardAndPeriodlessEntitlement(t *testing.T) {
 	originalConfig := config.ServerConf
 	originalFactory := adapterfactory.DefaultAdapterFactory
 	originalDB := resource.GormDB
@@ -108,14 +108,17 @@ func TestPrepareRenewalGatewayMigrationUsesWildcardAndExactExpiry(t *testing.T) 
 	if result == nil || !result.Required || result.SubscriptionID != "sub-migrated" || result.PlanID != "plan-pro" {
 		t.Fatalf("unexpected migration result: %+v", result)
 	}
-	if llm.ensureCalls != 1 || len(llm.applyReqs) != 1 || len(llm.extendReqs) != 1 {
+	if llm.ensureCalls != 1 || len(llm.applyReqs) != 1 || len(llm.extendReqs) != 0 {
 		t.Fatalf("unexpected llmgateway calls: ensure=%d apply=%d extend=%d", llm.ensureCalls, len(llm.applyReqs), len(llm.extendReqs))
 	}
 	if got := llm.applyReqs[0].IdempotencyKey; got != "renew-migrate:9988" {
 		t.Fatalf("idempotency key = %q, want renew-migrate:9988", got)
 	}
-	if got := llm.extendReqs[0].NewPeriodEnd; !got.Equal(newExpired) {
-		t.Fatalf("new period end = %s, want %s", got, newExpired)
+	if llm.applyReqs[0].PeriodValue != 0 || llm.applyReqs[0].PeriodUnit != "" || llm.applyReqs[0].PeriodEnd != nil {
+		t.Fatalf("business period leaked into llmgateway request: %+v", llm.applyReqs[0])
+	}
+	if !llm.applyReqs[0].IsUnique {
+		t.Fatal("renewal migration must ensure the user's single package entitlement")
 	}
 }
 
