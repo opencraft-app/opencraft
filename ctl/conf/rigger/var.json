@@ -1,8 +1,0 @@
-{
-    "PRJ_NAME": "lightglobal",
-    "PRJ_HOME": "__ARG__(prjHome)",
-    "RIGGER_TPL_ROOT": "${PRJ_HOME}/conf/rigger/tpl",
-
-    "SERVER_CONF_TPL": "${RIGGER_TPL_ROOT}/tpl_server_conf_rewrite.toml",
-    "SERVER_CONF_DST": "${PRJ_HOME}/conf/server/rewrite/server_conf_rewrite.toml"
-}

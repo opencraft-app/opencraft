@@ -1,8 +1,0 @@
-apiVersion: viaduct.ai/v1
-kind: ksops
-metadata:
-  name: ctl-runtime-assets
-files:
-  - ../../../secrets/sandbox-bj-7/ctl-conf-common.sops.yaml
-  - ../../../secrets/sandbox-bj-7/ctl-conf-rewrite.sops.yaml
-  - ../../../secrets/sandbox-bj-7/ctl-runtime-secrets.sops.yaml

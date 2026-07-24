@@ -1,2 +1,0 @@
-"""Harness CI runtime package."""
-

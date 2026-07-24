@@ -1,6 +1,0 @@
-service: lightclaw-auth
-env: beijing-sandbox
-project: beijing-sandbox
-destinationName: beijing-sandbox
-namespace: user-auth
-sourcePath: argocd/services/lightclaw-auth/beijing-sandbox

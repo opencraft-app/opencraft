@@ -1,6 +1,0 @@
-service: ctl
-env: beijing-sandbox
-project: beijing-sandbox
-destinationName: beijing-sandbox
-namespace: ctl
-sourcePath: argocd/services/ctl/beijing-sandbox

@@ -1,2 +1,0 @@
-ALTER TABLE sandboxes
-  ADD COLUMN region VARCHAR(32) NOT NULL DEFAULT '' AFTER pool_id;

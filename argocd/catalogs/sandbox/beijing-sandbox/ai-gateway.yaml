@@ -1,6 +1,0 @@
-service: ai-gateway
-env: beijing-sandbox
-project: beijing-sandbox
-destinationName: beijing-sandbox
-namespace: ai-gateway
-sourcePath: argocd/services/ai-gateway/beijing-sandbox

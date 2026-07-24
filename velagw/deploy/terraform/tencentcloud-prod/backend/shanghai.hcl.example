@@ -1,5 +1,0 @@
-# Backend region is the COS bucket location, not the cluster region. Reuse the
-# existing Beijing state bucket while keeping a Shanghai-specific state prefix.
-region = "ap-beijing"
-bucket = "llmgateway-prod-tfstate-<appid>"
-prefix = "llmgateway/prod/shanghai"

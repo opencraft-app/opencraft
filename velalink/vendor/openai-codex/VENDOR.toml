@@ -1,3 +1,0 @@
-source = "https://github.com/openai/codex.git"
-commit = "932f72c225889102257493f57460251016cbfdc2"
-imported_by = "git archive from clean HEAD"

@@ -1,7 +1,0 @@
-Agent 工作区导出未完成。
-
-Agent：{{.AgentLabel}}
-导出路径：{{.RemotePaths}}
-原因：{{.Reason}}
-
-建议：请稍后重试；如果连续失败，请联系支持并提供 Agent 信息。

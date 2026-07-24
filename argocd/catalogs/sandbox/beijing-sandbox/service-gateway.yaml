@@ -1,6 +1,0 @@
-service: service-gateway
-env: beijing-sandbox
-project: beijing-sandbox
-destinationName: beijing-sandbox
-namespace: lightclaw-gateway
-sourcePath: argocd/services/service-gateway/beijing-sandbox

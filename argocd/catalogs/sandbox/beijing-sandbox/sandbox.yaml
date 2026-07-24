@@ -1,6 +1,0 @@
-service: sandbox
-env: beijing-sandbox
-project: beijing-sandbox
-destinationName: beijing-sandbox
-namespace: sandbox
-sourcePath: argocd/services/sandbox/beijing-sandbox

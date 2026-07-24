@@ -1,8 +1,0 @@
-node_modules/
-dist/
-.runtime/
-.omx/
-outputs/
-
-*.log
-.DS_Store

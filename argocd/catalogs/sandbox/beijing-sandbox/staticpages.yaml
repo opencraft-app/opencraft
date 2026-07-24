@@ -1,6 +1,0 @@
-service: staticpages
-env: beijing-sandbox
-project: beijing-sandbox
-destinationName: beijing-sandbox
-namespace: frontend-preview
-sourcePath: argocd/services/staticpages/beijing-sandbox

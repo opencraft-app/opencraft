@@ -1,8 +1,0 @@
-# trade
-
-Component ID: trade
-Source path: trade
-Docs contract level: 0
-
-## Key documentation
-- Trade Agent Guide: trade/AGENTS.md

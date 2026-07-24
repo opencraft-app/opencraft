@@ -1,8 +1,0 @@
-# argocd
-
-Component ID: argocd
-Source path: argocd
-Docs contract level: 0
-
-## Key documentation
-- Argo CD Layout: argocd/README.md

@@ -1,5 +1,0 @@
-apiVersion: cls.cloud.tencent.com/v1
-kind: LogConfig
-metadata:
-  name: admin-gateway-access
-$patch: delete

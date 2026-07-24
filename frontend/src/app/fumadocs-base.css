@@ -1,9 +1,0 @@
-@layer base {
-  *,
-  ::after,
-  ::before,
-  ::backdrop,
-  ::file-selector-button {
-    border-color: var(--color-fd-border, currentColor);
-  }
-}

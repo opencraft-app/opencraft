@@ -1,4 +1,0 @@
-interface:
-  display_name: "Tencent TAT Instance Mining"
-  short_description: "Mine and enrich Hermes CVM instance data"
-  default_prompt: "Use $tencent-tat-instance-mining to collect Hermes CVM data and enrich account tables."

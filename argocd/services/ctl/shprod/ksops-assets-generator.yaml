@@ -1,8 +1,0 @@
-apiVersion: viaduct.ai/v1
-kind: ksops
-metadata:
-  name: ctl-runtime-assets
-files:
-  - ../../../secrets/shprod/ctl-conf-common.sops.yaml
-  - ../../../secrets/shprod/ctl-agentchat-secrets.sops.yaml
-  - ../../../secrets/shprod/ctl-runtime-secrets.sops.yaml

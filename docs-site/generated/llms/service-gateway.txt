@@ -1,9 +1,0 @@
-# service-gateway
-
-Component ID: service-gateway
-Source path: service-gateway
-Docs contract level: 0
-
-## Key documentation
-- Service Gateway Agent Notes: service-gateway/AGENTS.md
-- service-gateway: service-gateway/README.md

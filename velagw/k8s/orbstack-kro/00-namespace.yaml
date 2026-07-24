@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: llmgateway-kro-demo
-  labels:
-    app.kubernetes.io/name: llmgateway
-    app.kubernetes.io/part-of: llmgateway-kro-demo
