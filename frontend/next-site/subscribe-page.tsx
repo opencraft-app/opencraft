@@ -479,7 +479,7 @@ const mapBundleToPlan = (
         /* 季付：静态 price 已内置折扣（标准版 8.5 折 / AI 增强版 9 折，见 STATIC_*_DISCOUNT），
            结构与登录后询价一致（total_cost=原价 / real_total_cost=折后价）。此处仅取原价展示删除线，
            不套用月付促销（免费14天 / 首月5折 / 首月6折）；折后价 realPriceYuan 直接展示，
-           季付统一不展示折扣角标（由后续 promoTag 分支强制 undefined）。标准版与 AI 增强版一致。 */
+           折扣角标（如「8.5折」）由后续 promoTag 分支按 price.discount 计算。标准版与 AI 增强版一致。 */
         if (isLaunch || isCruise) {
           const staticOriginalYuan = centsToYuan(bundle.price.total_cost);
           if (
@@ -518,8 +518,14 @@ const mapBundleToPlan = (
     /* 国内站不再展示"限时免费"标签 */
     const backendDiscount = bundle.price?.discount;
     if (durationKey === "quarterly") {
-      /* 季付：一律不展示折扣 / 促销角标（原价删除线仍由前面价格逻辑保留），登录 / 未登录一致。 */
-      promoTag = undefined;
+      /* 季付：不展示月付首期促销（免费14天 / 首月5折 / 首月6折），改为按实际折扣显示「8.5折」这类角标。
+         折扣来源：登录后取后端 discount，未登录取静态 price.discount
+         （见 STATIC_QUARTERLY_DISCOUNT=0.85 / STATIC_AI_QUARTERLY_DISCOUNT=0.9），两者口径一致（0~1 小数）。
+         无有效折扣（discount 不在 (0,1)）时不展示角标。原价删除线仍由前面价格逻辑保留。 */
+      promoTag =
+        typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1
+          ? `${Math.round(backendDiscount * 100) / 10}折`
+          : undefined;
     } else if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
       promoTag = `${Math.round(backendDiscount * 100) / 10}折`;
     } else {
@@ -529,8 +535,8 @@ const mapBundleToPlan = (
       const withToken = bundle.bundle_type === "ai";
       if (isLaunch) {
         if (withToken) {
-          /* 季付不展示「首月 6 折」首期折扣标签 */
-          if (durationKey !== "quarterly") promoTag = t("首月 6 折");
+          /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
+          promoTag = t("首月 6 折");
         } else if (!isLoggedIn || backendDiscount === 0) {
           /* 启航01：未登录直接展示「免费 14 天」；已登录需 discount=0 */
           promoTag = t("首单免费 14 天");
@@ -538,8 +544,8 @@ const mapBundleToPlan = (
         }
       } else if (isCruise) {
         if (withToken) {
-          /* 季付不展示「首月 6 折」首期折扣标签 */
-          if (durationKey !== "quarterly") promoTag = t("首月 6 折");
+          /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
+          promoTag = t("首月 6 折");
         } else if (!isLoggedIn || backendDiscount === 50) {
           /* 巡游01：未登录直接展示「首月 5 折」；已登录需 discount=50 */
           promoTag = t("首月 5 折");
@@ -677,7 +683,7 @@ const makePlaceholderBundle = (id: string, name: string, agentQuota: number): Bu
  *   - 启航标准版：月付 ¥45 / 季付 ¥135（月×3）
  *   - 巡游标准版：月付 ¥95 / 季付 ¥285（月×3）
  * 季付统一享 8.5 折优惠（与登录后询价下发折扣一致）：启航 ¥114.75 / 巡游 ¥242.25，原价删除线展示。
- * AI 增强版与远航统一「敬请期待」、不展示价格（price=null，由 planTiers 强制），故无需静态金额。
+ * 远航统一「敬请期待」（price=null 由 planTiers 强制）；AI 增强版已露静态价，见 STATIC_AI_TIER_PRICE_YUAN。
  * ⚠️ 后端调整线上价格 / 折扣时请同步更新此表，避免未登录静态价与登录后询价价不一致。 */
 const STATIC_TIER_PRICE_YUAN: Record<"launch" | "cruise", Record<"monthly" | "quarterly", number>> = {
   launch: { monthly: 45, quarterly: 135 },
@@ -689,7 +695,7 @@ const STATIC_QUARTERLY_DISCOUNT = 0.85;
 
 /**
  * AI 增强版静态原价（元）：与登录后询价原价对齐（启航月付 ¥68 / 巡游月付 ¥158，季付 = 月付×3）。
- * 未登录静态展示据此计算：月付享「首月 6 折」、季付享 9 折（无促销标签）。
+ * 未登录静态展示据此计算：月付享「首月 6 折」、季付享 9 折（展示「9折」角标）。
  * ⚠️ 后端调整线上 AI 价格 / 折扣时请同步更新此表，避免未登录静态价与登录后询价不一致。
  */
 const STATIC_AI_TIER_PRICE_YUAN: Record<"launch" | "cruise", Record<"monthly" | "quarterly", number>> = {
@@ -700,7 +706,7 @@ const STATIC_AI_TIER_PRICE_YUAN: Record<"launch" | "cruise", Record<"monthly" | 
 /** AI 增强版月付首期折扣：首月 6 折（0.6），后续原价；仅未登录静态展示据此计算折后价 + 展示「首月 6 折」标签。 */
 const STATIC_AI_MONTHLY_DISCOUNT = 0.6;
 
-/** AI 增强版季付折扣：9 折（0.9），无促销标签（季付统一不展示折扣角标）。 */
+/** AI 增强版季付折扣：9 折（0.9），展示「9折」角标（季付按实际折扣显示，不套月付首期促销）。 */
 const STATIC_AI_QUARTERLY_DISCOUNT = 0.9;
 
 /** 静态价格构造器：入参以「元」为单位的原价，可选 discount（0~1，默认 1.0 不打折）。
@@ -729,7 +735,7 @@ const STATIC_GENERAL_DESC: BundleDescriptionEntry[] = [
  * 生成未登录静态 Bundle 列表（6 张，覆盖启航/巡游/远航 × 标准版/AI 增强版），
  * 走与后端相同的 mapBundleToPlan / planTiers 链路渲染。
  *   - 标准版：露真实价（启航/巡游随 durationKey 取月付/季付；远航由 planTiers 强制「敬请期待」，price=null）
- *   - AI 增强版：露静态价（启航/巡游随 durationKey 取月付/季付，见 STATIC_AI_TIER_PRICE_YUAN；月付「首月 6 折」/季付 9 折无标签），积分写死（启航 4500 / 巡游 10000）
+ *   - AI 增强版：露静态价（启航/巡游随 durationKey 取月付/季付，见 STATIC_AI_TIER_PRICE_YUAN；月付「首月 6 折」/季付「9折」角标），积分写死（启航 4500 / 巡游 10000）
  * bundle_id 与线上真实配置一致（见 scripts/seed_trade_shprod_bundle_definition.sql），
  * 但未登录不会触发下单（点订阅先引导登录），仅用于展示。
  */
