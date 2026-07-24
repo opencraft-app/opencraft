@@ -44,6 +44,11 @@ type PublicHeaderAuthIslandProps = {
   locale?: PublicSiteLocale;
   oauthError?: string | null;
   showLanguageSwitcher?: boolean;
+  /**
+   * 未登录转化引导：为 true 时右上角主按钮文案改为「免费试用」，
+   * 未登录点击直接跳转订阅套餐页（而非弹出登录框）。仅首页启用。
+   */
+  promoteFreeTrial?: boolean;
 };
 
 function PublicHeaderAuthControls({
@@ -51,6 +56,7 @@ function PublicHeaderAuthControls({
   locale,
   oauthError = null,
   showLanguageSwitcher = isGlobal,
+  promoteFreeTrial = false,
 }: PublicHeaderAuthIslandProps) {
   const router = useRouter();
   const { i18n } = useTranslation();
@@ -60,6 +66,12 @@ function PublicHeaderAuthControls({
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
   const activeLocale: PublicSiteLocale = locale ?? (i18n.language?.startsWith('zh') ? 'zh-SG' : 'en-US');
   const copy = copyByLocale[activeLocale] || copyByLocale['en-US'];
+  // 未登录转化引导：主按钮文案改为「免费试用」（英文站为 Free trial）
+  const createLabel = promoteFreeTrial
+    ? activeLocale.startsWith('zh')
+      ? '免费试用'
+      : 'Free trial'
+    : copy.createNow;
 
   useEffect(() => {
     if (oauthError) {
@@ -69,7 +81,9 @@ function PublicHeaderAuthControls({
 
   const goToCreate = () => {
     const target = !isAuthenticated
-      ? 'login_modal'
+      ? promoteFreeTrial
+        ? '/subscribe'
+        : 'login_modal'
       : isSubscribed
         ? bots.length > 0
           ? AGENTS_HOME_PATH
@@ -83,6 +97,12 @@ function PublicHeaderAuthControls({
       },
     });
     if (!isAuthenticated) {
+      // 首页转化引导：未登录点击「免费试用」直接进入订阅套餐页；
+      // 其它页面维持原有「弹出登录框」行为。
+      if (promoteFreeTrial) {
+        router.push('/subscribe');
+        return;
+      }
       setShowLogin(true);
       return;
     }
@@ -131,7 +151,7 @@ function PublicHeaderAuthControls({
           onClick={goToCreate}
           className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
         >
-          {copy.createNow}
+          {createLabel}
         </button>
         <button
           type="button"
