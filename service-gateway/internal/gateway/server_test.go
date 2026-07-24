@@ -2511,6 +2511,49 @@ func TestCorsPreflightBypassesAuth(t *testing.T) {
 	}
 }
 
+func TestPassOrderURLPreflightReflectsRequestedHeaders(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("preflight must not reach upstream")
+	}))
+	defer upstream.Close()
+
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("preflight must not require auth")
+	}))
+	defer auth.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		AllowedOrigins: []string{"https://lightvela.com"},
+		Routes: []Route{
+			{
+				Name:     "ctl-passes",
+				Prefix:   "/v1/passes",
+				Upstream: upstream.URL,
+				Access:   AccessAuthenticated,
+				Methods:  []string{http.MethodGet, http.MethodPost},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/passes/order-url", nil)
+	req.Header.Set("Origin", "https://lightvela.com")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	req.Header.Set("Access-Control-Request-Headers", "content-type,x-wx-client-version,x-webview-extra")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if headers := rec.Header().Get("Access-Control-Allow-Headers"); headers != "content-type,x-wx-client-version,x-webview-extra" {
+		t.Fatalf("expected requested allow headers to be reflected, got %q", headers)
+	}
+}
+
 func TestAuthenticatedRouteAddsCORSHeadersToActualResponse(t *testing.T) {
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"session":{"user":{"id":"usr_123","email":"ops@example.com"}}}`))
