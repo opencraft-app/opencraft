@@ -75,6 +75,15 @@ export interface CronRunRecord {
   skip_reason?: "model_changed";
 }
 
+export interface CronModelSyncResult {
+  targetModel: string;
+  scanned: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  failedJobIds: string[];
+}
+
 /** 调用方传给 create() 的入参 */
 export interface CreateCronJobInput {
   /** Hermes schedule 字符串，例：`0 9 * * *` / `every 2h` / `2026-05-26T09:00:00` */
@@ -89,6 +98,11 @@ export interface CreateCronJobInput {
   deliver?: string;
   /** 可选 pre-run script 文件名，文件需位于 ~/.hermes/scripts/ */
   script?: string;
+  /**
+   * 创建后尽力把任务模型显式钉住（避免后续切换全局默认模型导致 fail-closed 停跑）。
+   * 默认 false，避免影响旧调用方与单测语义。
+   */
+  pinCurrentModel?: boolean;
 }
 
 export interface EditCronJobPatch {
@@ -97,6 +111,7 @@ export interface EditCronJobPatch {
   name?: string;
   deliver?: string;
   script?: string;
+  model?: string;
   /** undefined = keep existing; [] = clear; non-empty = replace with these slugs */
   skills?: string[];
 }
@@ -204,6 +219,25 @@ export function buildCreateCommand(input: CreateCronJobInput): string {
   return parts.join(" ");
 }
 
+/** 关闭 Hermes 默认的 Cronjob/job_id 包装，只投递任务本身的最终消息。 */
+export function buildSetCleanCronDeliveryCommand(): string {
+  const script = [
+    "from pathlib import Path",
+    "import yaml",
+    "path = Path.home() / '.hermes' / 'config.yaml'",
+    "path.parent.mkdir(parents=True, exist_ok=True)",
+    "config = yaml.safe_load(path.read_text(encoding='utf-8')) if path.exists() else {}",
+    "config = config if isinstance(config, dict) else {}",
+    "config.setdefault('cron', {})['wrap_response'] = False",
+    "path.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding='utf-8')",
+  ].join("\n");
+  return `~/.hermes/hermes-agent/venv/bin/python -c ${shellQuote(script)}`;
+}
+
+export async function ensureCleanCronDelivery(botId: string): Promise<void> {
+  await execCommand(botId, buildSetCleanCronDeliveryCommand());
+}
+
 /** 拼装编辑命令；Skill 使用三态区分保持、替换与清空。 */
 export function buildEditCommand(id: string, patch: EditCronJobPatch): string {
   const parts = ["hermes", "cron", "edit", shellQuote(id)];
@@ -212,6 +246,7 @@ export function buildEditCommand(id: string, patch: EditCronJobPatch): string {
   if (patch.name !== undefined) parts.push("--name", shellQuote(patch.name));
   if (patch.deliver !== undefined) parts.push("--deliver", shellQuote(patch.deliver));
   if (patch.script !== undefined) parts.push("--script", shellQuote(patch.script));
+  if (patch.model !== undefined) parts.push("--model", shellQuote(patch.model));
   if (patch.skills !== undefined) {
     if (patch.skills.length === 0) {
       parts.push("--clear-skills");
@@ -1119,6 +1154,163 @@ export function detectCronCreateFailure(output: string): string | null {
   return null;
 }
 
+function pickStringValue(raw: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = raw[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function resolvePinnedModelFromRawCronRecord(raw: Record<string, unknown> | null): string | null {
+  if (!raw) return null;
+  const directModel = pickStringValue(raw, ["model", "model_id", "modelId", "model_name", "modelName"]);
+  if (directModel.includes("/")) return directModel;
+  const provider = pickStringValue(raw, ["provider", "provider_name", "providerName", "provider_id", "providerId"]);
+  if (directModel && provider) return `${provider}/${directModel}`;
+  if (directModel) return directModel;
+  const modelObj = raw.model;
+  if (modelObj && typeof modelObj === "object") {
+    const obj = modelObj as Record<string, unknown>;
+    const nestedModel = pickStringValue(obj, ["id", "model", "model_id", "modelId", "name"]);
+    const nestedProvider = pickStringValue(obj, ["provider", "provider_name", "providerName", "provider_id", "providerId"]);
+    if (nestedModel.includes("/")) return nestedModel;
+    if (nestedModel && nestedProvider) return `${nestedProvider}/${nestedModel}`;
+    if (nestedModel) return nestedModel;
+  }
+  return null;
+}
+
+function normalizeCronModelId(value: string | null | undefined): string {
+  return (value ?? "").trim();
+}
+
+function rawCronScheduleKind(raw: Record<string, unknown>): string {
+  const schedule = raw.schedule;
+  if (typeof schedule === "string") return detectScheduleKind(schedule);
+  if (schedule && typeof schedule === "object") {
+    const scheduleRecord = schedule as Record<string, unknown>;
+    return pickStringValue(scheduleRecord, ["kind", "type"]);
+  }
+  return "";
+}
+
+function rawCronScheduleDisplay(raw: Record<string, unknown>): string {
+  const schedule = raw.schedule;
+  if (typeof schedule === "string") return schedule.trim();
+  if (schedule && typeof schedule === "object") {
+    const scheduleRecord = schedule as Record<string, unknown>;
+    return pickStringValue(scheduleRecord, ["display", "expr", "value"]);
+  }
+  return "";
+}
+
+function isFinishedOnceCronRecord(raw: Record<string, unknown>): boolean {
+  const kind = rawCronScheduleKind(raw).toLowerCase();
+  const display = rawCronScheduleDisplay(raw);
+  const isOnce = kind === "once" || /^once\b/i.test(display);
+  if (!isOnce) return false;
+  const state = pickStringValue(raw, ["state", "status"]).toLowerCase();
+  if (["completed", "complete", "done", "finished"].includes(state)) return true;
+  const lastRunAt = pickStringValue(raw, ["last_run_at", "lastRunAt", "last_run"]);
+  const hasNextRunField = Object.prototype.hasOwnProperty.call(raw, "next_run_at")
+    || Object.prototype.hasOwnProperty.call(raw, "nextRunAt")
+    || Object.prototype.hasOwnProperty.call(raw, "next_run");
+  const nextRunAt = pickStringValue(raw, ["next_run_at", "nextRunAt", "next_run"]);
+  return Boolean(lastRunAt && hasNextRunField && !nextRunAt);
+}
+
+function shouldSyncCronModel(raw: Record<string, unknown>, targetModel: string): boolean {
+  const id = String(raw.id ?? "").trim();
+  if (!id) return false;
+  const name = String(raw.name ?? "");
+  if (isTestRunMarkerName(name)) return false;
+  if (isFinishedOnceCronRecord(raw)) return false;
+  const currentModel = normalizeCronModelId(resolvePinnedModelFromRawCronRecord(raw));
+  return currentModel !== targetModel;
+}
+
+function parseRawCronJobsJson(text: string): Record<string, unknown>[] {
+  if (!text.trim()) return [];
+  const parsed = JSON.parse(text) as unknown;
+  const arr: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray((parsed as { jobs?: unknown[] })?.jobs)
+      ? (parsed as { jobs: unknown[] }).jobs
+      : [];
+  return arr.filter((raw): raw is Record<string, unknown> => Boolean(raw && typeof raw === "object"));
+}
+
+async function readRawCronJobRecords(botId: string): Promise<Record<string, unknown>[]> {
+  const text = await readCronJobsJsonFile(botId);
+  if (!text) return [];
+  try {
+    return parseRawCronJobsJson(text);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * LightVela 的产品语义：用户切换默认模型后，已有自动任务继续跟随当前可用模型。
+ *
+ * Hermes 官方 cron 会在创建时快照 provider/model；若之后全局默认模型变化，未更新
+ * 的 job 会 fail-closed 跳过执行。这里不改 Hermes 的安全策略，而是在 LightVela
+ * 的模型切换链路里主动把未结束的 cron job 重新 pin 到新模型。
+ */
+export async function syncCronJobsToModel(botId: string, modelFullId: string): Promise<CronModelSyncResult> {
+  const targetModel = normalizeCronModelId(modelFullId);
+  const result: CronModelSyncResult = {
+    targetModel,
+    scanned: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    failedJobIds: [],
+  };
+  if (!targetModel) return result;
+
+  const records = await readRawCronJobRecords(botId);
+  result.scanned = records.length;
+  for (const raw of records) {
+    const id = String(raw.id ?? "").trim();
+    if (!shouldSyncCronModel(raw, targetModel)) {
+      result.skipped += 1;
+      continue;
+    }
+    try {
+      await editCronJob(botId, id, { model: targetModel });
+      result.updated += 1;
+    } catch {
+      result.failed += 1;
+      result.failedJobIds.push(id);
+    }
+  }
+  if (result.updated > 0) {
+    await archiveCronJobMetadata(botId);
+  }
+  return result;
+}
+
+export function extractHermesModelFullIdFromCommand(command: string): string | null {
+  const match = /\bacli\s+model\s+switch\b[\s\S]*?--model\s+(?:'([^']*)'|"([^"]*)"|([^\s]+))/i.exec(command);
+  const raw = match?.[1] ?? match?.[2] ?? match?.[3] ?? "";
+  return normalizeCronModelId(raw) || null;
+}
+
+async function pinCronJobModelBestEffort(botId: string, jobName: string): Promise<void> {
+  const jobId = await findCronJobIdByExactNameWithRetry(botId, jobName);
+  if (!jobId) return;
+  const raw = await readRawCronJobRecordById(botId, jobId);
+  const model = resolvePinnedModelFromRawCronRecord(raw);
+  if (!model) return;
+  try {
+    await editCronJob(botId, jobId, { model });
+  } catch {
+    /* 某些 CLI 版本可能暂不支持 --model，保持 best-effort，不阻断创建流程 */
+  }
+}
+
 export async function createCronJob(botId: string, input: CreateCronJobInput): Promise<void> {
   const payload = await execCommand(botId, buildCreateCommand(input));
   // 二次校验：即便 exit 0，也要看 stdout 里有没有错误特征，避免「假成功」（详见上方注释）。
@@ -1130,6 +1322,9 @@ export async function createCronJob(botId: string, input: CreateCronJobInput): P
       status: "CREATE_FAILED",
       exitCode: payload.exit_code ?? 0,
     });
+  }
+  if (input.pinCurrentModel) {
+    await pinCronJobModelBestEffort(botId, input.name);
   }
   await archiveCronJobMetadata(botId);
 }
@@ -1286,43 +1481,22 @@ function buildImmediateOnceSchedule(): string {
 
 /** 从 ~/.hermes/cron/jobs.json 里按 id 读出未经 `hermes cron list` 文本裁剪的原始字段（如 origin / last_delivery_error） */
 async function readRawCronJobRecordById(botId: string, jobId: string): Promise<Record<string, unknown> | null> {
-  const text = await readCronJobsJsonFile(botId);
-  if (!text) return null;
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    const arr: unknown[] = Array.isArray(parsed)
-      ? parsed
-      : Array.isArray((parsed as { jobs?: unknown[] })?.jobs)
-        ? (parsed as { jobs: unknown[] }).jobs
-        : [];
-    for (const raw of arr) {
-      if (raw && typeof raw === "object" && String((raw as Record<string, unknown>).id ?? "") === jobId) {
-        return raw as Record<string, unknown>;
-      }
-    }
-  } catch { /* ignore parse失败，走上层兜底 */ }
+  const records = await readRawCronJobRecords(botId);
+  for (const raw of records) {
+    if (String(raw.id ?? "") === jobId) return raw;
+  }
   return null;
 }
 
 /** 按 name 精确匹配反查 job id（临时任务创建后用这个拿到它的真实 id） */
 async function findCronJobIdByExactName(botId: string, name: string): Promise<string | null> {
-  const text = await readCronJobsJsonFile(botId);
-  if (!text) return null;
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    const arr: unknown[] = Array.isArray(parsed)
-      ? parsed
-      : Array.isArray((parsed as { jobs?: unknown[] })?.jobs)
-        ? (parsed as { jobs: unknown[] }).jobs
-        : [];
-    for (const raw of arr) {
-      const r = raw as Record<string, unknown>;
-      if (r && r.name === name) {
-        const id = String(r.id ?? "");
-        if (id) return id;
-      }
+  const records = await readRawCronJobRecords(botId);
+  for (const raw of records) {
+    if (raw.name === name) {
+      const id = String(raw.id ?? "");
+      if (id) return id;
     }
-  } catch { /* ignore */ }
+  }
   return null;
 }
 
