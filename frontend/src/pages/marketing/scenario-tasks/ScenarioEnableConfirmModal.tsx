@@ -29,15 +29,15 @@ export function ScenarioEnableConfirmModal({
           <p className="text-xs font-medium text-black/42">{pack.name}</p>
           <DialogTitle className="mt-1 text-lg font-semibold text-black/90">{t("添加为自动任务")}</DialogTitle>
           <DialogDescription className="mt-1 text-sm leading-6 text-black/55">
-            {t("确认后会使用同一份场景配置创建周期任务。")}
+            {t("确认后会按这份任务说明创建自动任务。")}
           </DialogDescription>
         </DialogHeader>
 
         <dl className="overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <ConfirmRow label={t("任务名称")} value={draft.generatedName} />
-          <ConfirmRow label={t("执行频率")} value={pack.defaultFrequencyLabel} />
-          <ConfirmRow label={t("回传位置")} value={draft.generatedDeliverLabel} />
-          <ConfirmRow label={t("关注内容")} value={buildFocusSummary(draft.values)} />
+          <ConfirmRow label={t("执行时间")} value={pack.defaultFrequencyLabel} />
+          <ConfirmRow label={t("通知方式")} value={draft.generatedDeliverLabel} />
+          <ConfirmRow label={t("任务备注")} value={buildFocusSummary(draft.values)} />
         </dl>
 
         {pack.safetyNote && (
