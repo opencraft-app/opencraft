@@ -31,6 +31,9 @@ import BrandIconsSection from "@/imports/Frame2147230025/sections/BrandIconsSect
 import FeatureSection, { CardsSection } from "@/imports/Frame2147230025/sections/FeatureSection";
 import ProcessSection from "@/imports/Frame2147230025/sections/ProcessSection";
 import CtaSection from "@/imports/Frame2147230025/sections/CtaSection";
+import { OverviewAutomationTasksSection } from "./scenario-tasks/OverviewAutomationTasksSection";
+import { ScenarioTaskLauncher } from "./scenario-tasks/ScenarioTaskLauncher";
+import { getOverviewScenarioTaskPacks } from "./scenario-tasks/scenario-packs";
 
 type LandingNavigateOptions = {
   replace?: boolean;
@@ -67,6 +70,10 @@ export const LandingPageView = ({
   const { bots, isSubscribed } = useOpenClaw();
   const oauthError = useMemo(() => new URLSearchParams(locationSearch).get("oauth_error"), [locationSearch]);
   const oauthInitialError = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
+  const overviewScenarioTaskPacks = useMemo(
+    () => getOverviewScenarioTaskPacks(publicLocale ?? (isGlobal ? "en-US" : "zh-CN")),
+    [publicLocale],
+  );
   const [showLogin, setShowLogin] = useState(false);
 
   useEffect(() => {
@@ -81,11 +88,13 @@ export const LandingPageView = ({
     captureProductEvent(PRODUCT_ANALYTICS_EVENTS.LANDING_CTA_CLICKED, {
       location: PRODUCT_ANALYTICS_LOCATIONS.PUBLIC_LANDING,
     });
-    const target = !isSubscribed
-      ? SUBSCRIBE_PATH
-      : bots.length > 0
-        ? AGENTS_HOME_PATH
-        : getAgentCreatingPath(true);
+    const target = !isAuthenticated
+      ? AGENTS_HOME_PATH
+      : !isSubscribed
+        ? SUBSCRIBE_PATH
+        : bots.length > 0
+          ? AGENTS_HOME_PATH
+          : getAgentCreatingPath(true);
     trackDatongClick(`${origin}_create_now_btn`, {
       pgid: DATONG_PAGE_IDS.HOME,
       params: {
@@ -93,9 +102,14 @@ export const LandingPageView = ({
         target,
       },
     });
-    // 转化引导：未开通套餐（含未登录）时按钮文案为「免费试用」，
-    // 点击统一进入订阅套餐页（与右上角 header 行为一致），
-    // 而不是直接进产品壳 /agents，避免文案与跳转不符。
+    // 未登录：进入创建流程入口（产品壳内会引导登录）
+    if (!isAuthenticated) {
+      navigateTo(AGENTS_HOME_PATH);
+      return;
+    }
+    // 功能点1：首页「创建」不再前置实名认证，已登录用户直接进入后续流程。
+    // 实名引导下沉到订阅套餐页点「订阅」按钮时通过 tips 提示，降低前置门槛、提升转化。
+    // 已登录但未订阅：先去订阅页
     if (!isSubscribed) {
       navigateTo(SUBSCRIBE_PATH);
       return;
@@ -142,6 +156,16 @@ export const LandingPageView = ({
       <BrandIconsSection />
       <FeatureSection />
       <CardsSection />
+      <ScenarioTaskLauncher packs={overviewScenarioTaskPacks}>
+          {({ installedScenarioIds, myTasksHref, openScenarioInstaller }) => (
+            <OverviewAutomationTasksSection
+              packs={overviewScenarioTaskPacks}
+              installedScenarioIds={installedScenarioIds}
+              myTasksHref={myTasksHref}
+              onEnable={openScenarioInstaller}
+            />
+          )}
+      </ScenarioTaskLauncher>
       <ProcessSection />
       <CtaSection onCreateClick={() => handleCreateClick('footer')} ctaLabel={ctaLabel} />
       {isGlobal ? <LightVelaFooter renderLink={renderFooterLink} /> : <LegalFooter icpPlacement="right" />}
