@@ -1,68 +1,147 @@
-import { CheckCircle2, Loader2, MessageCircle, QrCode, RefreshCw, ScanLine } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { QRCodeSVG } from "qrcode.react";
+import { CheckCircle2, ChevronDown, ExternalLink, Loader2, MessageCircle, Plus, RefreshCw, X } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useT } from "@/i18n/t";
-import { execCommandStream } from "@/lib/hermes-cron-client";
-import { SCENARIO_MULTISELECT_SEPARATOR, type ScenarioTaskField, type ScenarioTaskPack } from "./scenario-packs";
+import { AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
+import type { InstalledSkillLoadState } from "@/lib/hermes-skills-client";
+import { formatScenarioChannelLabel } from "../scenario-task-cron";
+import {
+  SCENARIO_MULTISELECT_SEPARATOR,
+  formatScenarioQuickPrompt,
+  formatScenarioQuickPromptSegments,
+  isScenarioTaskFieldVisible,
+  type ScenarioTaskField,
+  type ScenarioTaskPack,
+  type ScenarioTriggerType,
+} from "./scenario-packs";
+import { ScenarioQuickPromptEditor } from "./ScenarioQuickPromptEditor";
+import {
+  buildScenarioFullPrompt,
+  isScenarioFullPrompt,
+  supportsScenarioFullPrompt,
+  type ScenarioFullPromptIssue,
+} from "./scenario-full-prompt";
 import {
   buildScenarioTaskDraft,
-  normalizeScenarioDeliverTarget,
-  type ScenarioDeliveryTarget,
+  formatScenarioTaskDraftFrequency,
+  getScenarioTaskValidationIssue,
   type ScenarioTaskDraft,
 } from "./scenario-task-builder";
-
-type ScenarioPushDeliveryTarget = Exclude<ScenarioDeliveryTarget, "local">;
-type GatewayQrStatus = "creating" | "waiting_qr" | "failed";
-type ScenarioInstallStep = "task" | "delivery";
 
 export function ScenarioInstallModal({
   pack,
   botId,
   submitting,
   initialValues,
+  initialUserPrompt,
   initialDeliver,
   enabledChannels,
   channelStatus,
+  deferDeliverySetup = false,
   onRefreshChannels,
   onClose,
   onRunOnce,
   onEnableDirect,
 }: {
   pack: ScenarioTaskPack;
-  botId: string;
+  botId?: string;
   submitting: boolean;
   initialValues?: Record<string, string>;
+  initialUserPrompt?: string;
   initialDeliver?: string;
+  initialSkill?: string;
   enabledChannels: Set<string> | null;
   channelStatus: "loading" | "ready";
+  skillLoadState?: InstalledSkillLoadState;
+  deferDeliverySetup?: boolean;
   onRefreshChannels: () => Promise<void>;
+  onRefreshSkills?: () => Promise<InstalledSkillLoadState>;
   onClose: () => void;
   onRunOnce: (draft: ScenarioTaskDraft) => void;
   onEnableDirect: (draft: ScenarioTaskDraft) => void;
 }) {
   const t = useT();
-  const [step, setStep] = useState<ScenarioInstallStep>("task");
+  const usesFullPrompt = supportsScenarioFullPrompt(pack);
   const [values, setValues] = useState<Record<string, string>>(() => {
     const entries = pack.fields.map((field) => [field.key, initialValues?.[field.key] ?? field.defaultValue]);
     return Object.fromEntries(entries);
   });
-  const [deliverTarget, setDeliverTarget] = useState<ScenarioPushDeliveryTarget>(() => selectInitialPushDeliverTarget(initialDeliver, enabledChannels));
-  const draft = useMemo(() => buildScenarioTaskDraft({ pack, values, deliver: deliverTarget }), [deliverTarget, pack, values]);
-  const selectedChannelConnected = channelStatus === "ready" && enabledChannels?.has(deliverTarget) === true;
-  const actionDisabled = submitting || !selectedChannelConnected;
-  const isTaskStep = step === "task";
+  const [editableTaskRequest, setEditableTaskRequest] = useState(() => {
+    const initialPrompt = initialUserPrompt?.trim();
+    if (initialPrompt) {
+      return isScenarioFullPrompt(initialPrompt)
+        ? extractScenarioTaskRequest(initialPrompt)
+        : initialPrompt;
+    }
+    return formatScenarioQuickPrompt(pack, Object.fromEntries(
+      pack.fields.map((field) => [field.key, initialValues?.[field.key] ?? field.defaultValue]),
+    ));
+  });
+  const [moreSettingsOpen, setMoreSettingsOpen] = useState(false);
+  const [deliverTargets, setDeliverTargets] = useState<string[]>(() => selectInitialPushDeliverTargets(initialDeliver, enabledChannels));
+  const deliverValue = deliverTargets.join(",");
+  const hasInlinePrompt = Boolean(pack.quickPromptTemplate?.length);
+  const quickPromptSegments = useMemo(
+    () => formatScenarioQuickPromptSegments(pack, values),
+    [pack, values],
+  );
+  const userPrompt = useMemo(
+    () => usesFullPrompt
+      ? buildScenarioFullPrompt(pack, editableTaskRequest)
+      : editableTaskRequest,
+    [editableTaskRequest, pack, usesFullPrompt],
+  );
+  const draft = useMemo(
+    () => buildScenarioTaskDraft({ pack, values, deliver: deliverValue, userPrompt, selectedSkill: "" }),
+    [deliverValue, pack, userPrompt, values],
+  );
+  const selectedChannelConnected = deferDeliverySetup
+    || (
+      channelStatus === "ready"
+      && deliverTargets.length > 0
+      && deliverTargets.every((target) => enabledChannels?.has(target) === true)
+    );
+  const validationIssue = useMemo(
+    () => usesFullPrompt ? null : getScenarioTaskValidationIssue(pack, values),
+    [pack, usesFullPrompt, values],
+  );
+  const validationMessage = validationIssue
+    ? getScenarioTaskValidationMessage(pack, validationIssue, t)
+    : usesFullPrompt
+      ? getScenarioFullPromptValidationMessage(draft.promptScheduleIssue, t)
+      : null;
+  const actionDisabled = submitting
+    || !selectedChannelConnected
+    || Boolean(validationIssue)
+    || Boolean(draft.promptScheduleIssue)
+    || !userPrompt.trim();
+  const isOneShotTask = draft.runMode === "one-shot";
+  const triggerType = isOneShotTask ? "schedule" : getScenarioTriggerType(pack);
+  const frequencyLabel = formatScenarioTaskDraftFrequency(pack, draft);
+  const visibleFields = pack.fields.filter((field) => isScenarioTaskFieldVisible(field, values));
+  const inlineFieldKeys = new Set(
+    pack.quickPromptTemplate
+      ?.filter((part) => part.type === "field")
+      .map((part) => part.fieldKey) ?? [],
+  );
+  const confirmFields = hasInlinePrompt || usesFullPrompt
+    ? []
+    : visibleFields.filter((field) => field.required || field.quickConfirm);
+  const secondaryFields = hasInlinePrompt || usesFullPrompt
+    ? visibleFields.filter((field) => !inlineFieldKeys.has(field.key))
+    : visibleFields.filter((field) => !field.required && !field.quickConfirm);
 
   useEffect(() => {
+    if (deferDeliverySetup) return;
     if (channelStatus !== "ready" || !enabledChannels) return;
-    setDeliverTarget((current) => {
-      if (enabledChannels.has(current)) return current;
-      if (enabledChannels.has("weixin")) return "weixin";
-      if (enabledChannels.has("qqbot")) return "qqbot";
-      return current;
+    setDeliverTargets((current) => {
+      const available = current.filter((target) => enabledChannels.has(target));
+      if (available.length) return available;
+      const [firstAvailable] = sortConfiguredScenarioChannels(enabledChannels);
+      return firstAvailable ? [firstAvailable] : [];
     });
-  }, [channelStatus, enabledChannels]);
+  }, [channelStatus, deferDeliverySetup, enabledChannels]);
 
   const updateValue = (key: string, value: string) => {
     setValues((current) => ({ ...current, [key]: value }));
@@ -72,77 +151,152 @@ export function ScenarioInstallModal({
     <Dialog open onOpenChange={(open) => {
       if (!open && !submitting) onClose();
     }}>
-      <DialogContent className="max-h-[calc(100vh-24px)] w-[calc(100vw-2rem)] max-w-[680px] overflow-y-auto rounded-lg bg-white p-6 shadow-2xl md:w-[680px]">
-        <DialogHeader className="mb-5 pr-8">
-          <p className="text-xs font-medium text-black/42">{t("场景任务")}</p>
-          <DialogTitle className="mt-1 text-lg font-semibold text-black/90">{t("设置场景任务")}</DialogTitle>
-          <DialogDescription className="mt-1 text-sm leading-6 text-black/55">{pack.name} · {pack.description}</DialogDescription>
+      <DialogContent className="max-h-[calc(100vh-24px)] w-[calc(100vw-2rem)] max-w-[640px] overflow-x-hidden overflow-y-auto rounded-lg bg-white p-5 shadow-2xl md:w-[640px] md:p-6">
+        <DialogHeader className="mb-4 pr-8">
+          <p className="text-xs font-medium text-black/42">{t("20 秒快速启用")}</p>
+          <DialogTitle className="mt-1 text-xl font-semibold text-black/90">{pack.name}</DialogTitle>
+          <DialogDescription className="mt-1 text-sm leading-6 text-black/55">
+            {usesFullPrompt
+              ? t("我先帮你写好一版，你只改真实情况。")
+              : hasInlinePrompt
+              ? t("我先帮你写好一版，红色文字可按需修改。")
+              : t("改一句任务要求，确认关键设置即可开始。")}
+          </DialogDescription>
         </DialogHeader>
 
-        <ScenarioStepIndicator step={step} onChange={setStep} />
-
-        <div className="mt-4 grid gap-4">
-          {isTaskStep ? (
-            <>
-              <section className="rounded-md border border-black/[0.08] bg-white p-4">
-                <h3 className="text-sm font-semibold text-black/85">{t("任务设置")}</h3>
-                <div className="mt-3 grid gap-3">
-                  {pack.fields.map((field) => (
-                    <ScenarioFieldControl
-                      key={field.key}
-                      field={field}
-                      value={values[field.key] ?? field.defaultValue}
-                      onChange={(value) => updateValue(field.key, value)}
-                    />
-                  ))}
-                </div>
-                {pack.safetyNote && (
-                  <p className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-5 text-[#8A5A00]">
-                    {pack.safetyNote}
-                  </p>
-                )}
-              </section>
-
-              <section className="rounded-md border border-black/[0.08] bg-white p-4">
-                <h3 className="text-sm font-semibold text-black/85">{t("任务摘要")}</h3>
-                <p className="mt-2 line-clamp-6 whitespace-pre-line text-xs leading-5 text-black/55">{draft.generatedPrompt}</p>
-              </section>
-            </>
+        <div className="grid min-w-0 gap-3.5">
+          {hasInlinePrompt ? (
+            <ScenarioQuickPromptEditor
+              value={editableTaskRequest}
+              onChange={setEditableTaskRequest}
+              suggestedSegments={quickPromptSegments}
+              footer={!deferDeliverySetup && botId ? (
+                <ScenarioDeliverPicker
+                  value={deliverTargets}
+                  enabledChannels={enabledChannels}
+                  channelStatus={channelStatus}
+                  onRefreshChannels={onRefreshChannels}
+                  onChange={setDeliverTargets}
+                />
+              ) : undefined}
+            />
           ) : (
-            <section className="rounded-md border border-black/[0.08] bg-white p-4">
-              <h3 className="text-sm font-semibold text-black/85">{t("执行与回传")}</h3>
+          <section>
+            <div className="flex items-center justify-between gap-3">
+              <label htmlFor="scenario-quick-prompt" className="text-sm font-semibold text-black/82">{t("任务要求")}</label>
+              <span className="rounded-full bg-[#EEF7F1] px-2 py-0.5 text-[11px] font-medium text-[#237A46]">{t("已有默认值")}</span>
+            </div>
+            <textarea
+              id="scenario-quick-prompt"
+              aria-label={t("任务要求")}
+              value={editableTaskRequest}
+              onChange={(event) => setEditableTaskRequest(event.target.value)}
+              rows={2}
+              className="mt-1.5 w-full resize-none rounded-md border border-black/10 bg-white px-3 py-2.5 text-sm leading-6 text-black/82 outline-none transition focus:border-black/35"
+            />
+            <p className="mt-1 text-[11px] text-black/38">{t("可以直接使用，也可以改成你自己的说法。")}</p>
+          </section>
+          )}
+
+          {confirmFields.length ? (
+            <section className="rounded-md border border-[#D9B96E]/35 bg-[#FFFDF7] p-3.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="text-sm font-semibold text-black/82">{t("需要确认")}</h3>
+                <span className="text-[11px] text-black/40">{t("会影响执行结果")}</span>
+              </div>
+              <div className="mt-3 grid gap-3">
+                {confirmFields.map((field) => (
+                  <ScenarioFieldControl
+                    key={field.key}
+                    field={field}
+                    value={values[field.key] ?? field.defaultValue}
+                    onChange={(value) => updateValue(field.key, value)}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {validationMessage ? (
+            <p role="alert" aria-live="polite" className="text-xs font-medium text-[#B91C1C]">
+              {validationMessage}
+            </p>
+          ) : null}
+
+          {usesFullPrompt && pack.safetyNote ? (
+            <p className="rounded-md bg-[#FFF8E8] px-3 py-2 text-xs leading-5 text-[#7A5200]">
+              {pack.safetyNote}
+            </p>
+          ) : null}
+
+          {!hasInlinePrompt && !deferDeliverySetup && botId ? (
+            <section className="min-w-0 rounded-md border border-black/[0.08] bg-white p-3.5">
               <ScenarioDeliverPicker
-                botId={botId}
-                value={deliverTarget}
+                value={deliverTargets}
                 enabledChannels={enabledChannels}
                 channelStatus={channelStatus}
                 onRefreshChannels={onRefreshChannels}
-                onChange={setDeliverTarget}
+                onChange={setDeliverTargets}
               />
-              <dl className="mt-3 grid gap-2 text-sm">
-                <SummaryRow
-                  label={t("试跑方式")}
-                  value={(
-                    <>
-                      {t("一次性执行，")}
-                      <strong className="font-semibold text-black/88">{t("下发后立即开始")}</strong>
-                    </>
-                  )}
-                />
-                <SummaryRow label={t("常态频率")} value={pack.defaultFrequencyLabel} />
-                <SummaryRow label={t("回传方式")} value={draft.generatedDeliverLabel} />
-                <SummaryRow label={t("任务名称")} value={draft.generatedName} />
-              </dl>
-              {!selectedChannelConnected && (
-                <p className="mt-3 rounded-md border border-black/[0.08] bg-black/[0.025] px-3 py-2 text-xs leading-5 text-black/55">
-                  {t("请先在当前弹窗内连接{{channel}}，连接成功后再试跑或添加自动任务。", { channel: formatScenarioDeliveryTargetLabel(deliverTarget, t) })}
-                </p>
-              )}
             </section>
-          )}
+          ) : null}
+
+          {!hasInlinePrompt && !usesFullPrompt ? <section className="overflow-hidden rounded-md border border-black/[0.08] bg-white">
+            <button
+              type="button"
+              aria-expanded={moreSettingsOpen}
+              aria-controls="scenario-more-settings"
+              onClick={() => setMoreSettingsOpen((open) => !open)}
+              className="flex h-11 w-full items-center justify-between gap-3 px-3.5 text-left text-sm font-semibold text-black/68 transition hover:bg-black/[0.025]"
+            >
+              <span>{t("更多设置")}</span>
+              <ChevronDown className={`h-4 w-4 text-black/35 transition ${moreSettingsOpen ? "rotate-180" : ""}`} />
+            </button>
+            {moreSettingsOpen ? (
+              <div id="scenario-more-settings" className="grid gap-4 border-t border-black/[0.06] px-3.5 py-3.5">
+                {secondaryFields.length ? (
+                  <div className="grid gap-3">
+                    {secondaryFields.map((field) => (
+                      <ScenarioFieldControl
+                        key={field.key}
+                        field={field}
+                        value={values[field.key] ?? field.defaultValue}
+                        onChange={(value) => updateValue(field.key, value)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+                {pack.usageGuide?.length ? (
+                  <div className="rounded-md bg-black/[0.025] px-3 py-2">
+                    <p className="text-xs font-semibold text-black/68">{t("怎么执行")}</p>
+                    <ul className="mt-1 grid gap-1 text-xs leading-5 text-black/50">
+                      {pack.usageGuide.map((item) => <li key={item}>· {item}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+                <ScenarioSkillSourcePanel pack={pack} />
+                <dl className="grid gap-1.5 text-xs">
+                  <SummaryRow label={t("执行频率")} value={frequencyLabel} />
+                  <SummaryRow label={t("执行方式")} value={getScenarioTriggerLabel(triggerType, t)} />
+                  {pack.notificationPolicy === "only-when-needed" ? (
+                    <SummaryRow label={t("推送规则")} value={t("满足条件才推送，无变化不打扰。")}/>
+                  ) : null}
+                </dl>
+                {pack.safetyNote ? <p className="text-xs leading-5 text-[#8A5A00]">{pack.safetyNote}</p> : null}
+              </div>
+            ) : null}
+          </section> : null}
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-black/[0.06] pt-4">
+          <div className="min-w-0 text-xs text-black/46">
+            {deferDeliverySetup
+              ? t("登录后会继续启用，无需重新填写")
+              : selectedChannelConnected
+              ? t("发送到 {{channel}}", { channel: draft.generatedDeliverLabel })
+              : t("请先配置至少一个通知通道")}
+          </div>
+          <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onClose}
@@ -151,393 +305,225 @@ export function ScenarioInstallModal({
           >
             {t("取消")}
           </button>
-          {isTaskStep ? (
-            <button
-              type="button"
-              onClick={() => setStep("delivery")}
-              className="inline-flex h-9 min-w-[112px] items-center justify-center rounded-md bg-black px-4 text-sm font-semibold text-white transition hover:bg-black/85"
-            >
-              {t("下一步")}
-            </button>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => setStep("task")}
-                disabled={submitting}
-                className="inline-flex h-9 items-center justify-center rounded-md border border-black/[0.08] bg-white px-4 text-sm font-semibold text-black/65 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {t("上一步")}
-              </button>
-              <button
-                type="button"
-                onClick={() => onEnableDirect(draft)}
-                disabled={actionDisabled}
-                className="inline-flex h-9 items-center justify-center rounded-md border border-black/[0.08] bg-white px-4 text-sm font-semibold text-black/75 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {t("直接添加为自动任务")}
-              </button>
-              <button
-                type="button"
-                onClick={() => onRunOnce(draft)}
-                disabled={actionDisabled}
-                className="inline-flex h-9 min-w-[112px] items-center justify-center gap-2 rounded-md bg-black px-4 text-sm font-semibold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {t("先跑一次")}
-              </button>
-            </>
-          )}
+          <button
+            type="button"
+            onClick={() => {
+              if (isOneShotTask) onRunOnce(draft);
+              else onEnableDirect(draft);
+            }}
+            disabled={actionDisabled}
+            className="inline-flex h-9 min-w-[112px] items-center justify-center gap-2 rounded-md bg-black px-4 text-sm font-semibold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {t("立即启用")}
+          </button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-function ScenarioStepIndicator({
-  step,
-  onChange,
-}: {
-  step: ScenarioInstallStep;
-  onChange: (step: ScenarioInstallStep) => void;
-}) {
+function getScenarioTaskValidationMessage(
+  pack: ScenarioTaskPack,
+  issue: ReturnType<typeof getScenarioTaskValidationIssue>,
+  t: ReturnType<typeof useT>,
+): string | null {
+  if (!issue) return null;
+  const field = pack.fields.find((item) => item.key === issue.fieldKey);
+  if (issue.code === "required") {
+    return t("请先确认「{{field}}」。", { field: field?.label ?? issue.fieldKey });
+  }
+  if (issue.code === "invalid-one-shot-time") {
+    return t("请输入完整且有效的触发时间，例如 2026-07-20 20:30。");
+  }
+  if (issue.code === "past-one-shot-time") {
+    return pack.id === "flight-departure-once"
+      ? t("按路程和提前量倒推出的提醒时间必须晚于当前时间。")
+      : t("触发时间必须晚于当前时间。");
+  }
+  if (issue.code === "invalid-date-range") {
+    return t("结束日期不能早于开始日期。");
+  }
+  if (issue.code === "invalid-time-range") {
+    return t("结束时间必须晚于开始时间。");
+  }
+  if (issue.code === "past-effective-end") {
+    return t("疗程结束日期不能早于今天。");
+  }
+  if (issue.code === "invalid-threshold") {
+    return t("阈值必须是大于 0 的数字；涨跌幅填写 1 代表 1%。");
+  }
+  return t("换出币种和换入币种不能相同。");
+}
+
+function getScenarioFullPromptValidationMessage(
+  issue: ScenarioFullPromptIssue | null,
+  t: ReturnType<typeof useT>,
+): string | null {
+  if (!issue) return null;
+  if (issue === "missing-mode" || issue === "invalid-mode") {
+    return t("请在【执行方式】中写“一次性推送”或“长期推送”。");
+  }
+  if (issue === "past-time") {
+    return t("【执行时间】已经过去，请填写未来的日期和时间。");
+  }
+  return t("请在【执行时间】中写清具体日期或周期，例如“每天 09:00”。");
+}
+
+function ScenarioSkillSourcePanel({ pack }: { pack: ScenarioTaskPack }) {
   const t = useT();
-  const steps: Array<{ key: ScenarioInstallStep; index: string; label: string }> = [
-    { key: "task", index: "1", label: t("任务本身") },
-    { key: "delivery", index: "2", label: t("消息通道") },
-  ];
+  if (!pack.skillSources?.length && !pack.skillIds?.length) return null;
 
   return (
-    <div className="grid grid-cols-2 gap-2" role="tablist" aria-label={t("场景任务配置步骤")}>
-      {steps.map((item) => {
-        const active = item.key === step;
-        return (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => onChange(item.key)}
-            className={
-              "flex h-10 items-center gap-2 rounded-md border px-3 text-left text-sm font-semibold transition " +
-              (active
-                ? "border-black bg-black text-white"
-                : "border-black/[0.08] bg-white text-black/58 hover:bg-black/[0.04] hover:text-black/80")
-            }
-            role="tab"
-            aria-selected={active}
-            aria-current={active ? "step" : undefined}
-          >
-            <span
-              className={
-                "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold " +
-                (active ? "bg-white text-black" : "bg-black/[0.06] text-black/55")
-              }
+    <section className="rounded-md border border-black/[0.08] bg-[#F8FAFC] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-black/85">{t("Skill 来源")}</h3>
+          <p className="mt-1 text-xs leading-5 text-black/50">
+            {pack.skillIds?.length
+              ? t("这个模板已预置可复用技能，启用后会按触发条件执行，并把最终消息推送到你选择的通道。")
+              : t("这个模板参考了公开 Skill 的工作方法；当前使用 Hermes 自带能力执行，不要求你的 Agent 预先安装该 Skill。")}
+          </p>
+        </div>
+        {pack.skillIds?.length ? (
+          <span className="inline-flex rounded-full bg-black/[0.05] px-2 py-0.5 text-[11px] font-semibold text-black/45">
+            {t("已配置 {{count}} 个 skill", { count: pack.skillIds.length })}
+          </span>
+        ) : pack.skillSources?.length ? (
+          <span className="inline-flex rounded-full bg-black/[0.05] px-2 py-0.5 text-[11px] font-semibold text-black/45">
+            {t("方法参考")}
+          </span>
+        ) : null}
+      </div>
+
+      {pack.skillSources?.length ? (
+        <div className="mt-3 grid gap-2">
+          {pack.skillSources.map((source) => (
+            <a
+              key={source.slug}
+              href={source.url}
+              target="_blank"
+              rel="noreferrer"
+              className="group rounded-md border border-black/[0.06] bg-white px-3 py-2 transition hover:border-black/[0.12] hover:shadow-[0_8px_20px_rgba(15,23,42,0.04)]"
             >
-              {item.index}
-            </span>
-            <span className="truncate">{item.label}</span>
-          </button>
-        );
-      })}
-    </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-black/78">{source.name}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-black/42">
+                    {source.source} · {t("提供方")}：{source.provider}
+                  </p>
+                </div>
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-black/30 transition group-hover:text-black/55" />
+              </div>
+              <p className="mt-1 text-[11px] leading-5 text-black/48">{source.description}</p>
+            </a>
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
+function getScenarioTriggerType(pack: ScenarioTaskPack): ScenarioTriggerType {
+  return pack.triggerType ?? (pack.runMode === "one-shot" ? "schedule" : "cron");
+}
+
+function getScenarioTriggerLabel(trigger: ScenarioTriggerType, t: ReturnType<typeof useT>): string {
+  if (trigger === "schedule") return t("一次性 Schedule");
+  if (trigger === "goal") return t("目标推进");
+  return t("Cron 定时");
+}
+
 function ScenarioDeliverPicker({
-  botId,
   value,
   enabledChannels,
   channelStatus,
   onRefreshChannels,
   onChange,
 }: {
-  botId: string;
-  value: ScenarioPushDeliveryTarget;
+  value: string[];
   enabledChannels: Set<string> | null;
   channelStatus: "loading" | "ready";
   onRefreshChannels: () => Promise<void>;
-  onChange: (value: ScenarioPushDeliveryTarget) => void;
+  onChange: (value: string[]) => void;
 }) {
   const t = useT();
-  const [connectTarget, setConnectTarget] = useState<ScenarioPushDeliveryTarget | null>(null);
-  const options: Array<{
-    key: ScenarioPushDeliveryTarget;
-    label: string;
-    description: string;
-    connectLabel: string;
-  }> = [
-    {
-      key: "weixin",
-      label: t("微信"),
-      description: t("扫码接入微信个人号后，任务结果主动推送到微信"),
-      connectLabel: t("连接微信"),
-    },
-    {
-      key: "qqbot",
-      label: "QQ",
-      description: t("配置 QQ 机器人后，任务结果主动推送到 QQ"),
-      connectLabel: t("连接 QQ"),
-    },
-  ];
+  const options = sortConfiguredScenarioChannels(enabledChannels);
+  const toggleChannel = (channel: string) => {
+    onChange(
+      value.includes(channel)
+        ? value.filter((item) => item !== channel)
+        : [...value, channel],
+    );
+  };
 
   return (
-    <div className="mt-3">
+    <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-medium text-black/45">{t("结果回传")}</p>
-        {channelStatus === "loading" ? (
-          <span className="inline-flex items-center gap-1 text-xs text-black/40">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            {t("读取通道状态中")}
-          </span>
-        ) : (
-          <button
-            type="button"
-            onClick={() => void onRefreshChannels()}
-            className="inline-flex items-center gap-1 text-xs font-medium text-black/55 underline decoration-black/25 underline-offset-4 transition hover:text-black"
+        <p className="text-xs font-medium text-black/45">{t("通知方式")}</p>
+        <div className="flex items-center gap-3">
+          {channelStatus === "loading" ? (
+            <span className="inline-flex items-center gap-1 text-xs text-black/40">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {t("读取中")}
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void onRefreshChannels()}
+              className="inline-flex items-center gap-1 text-xs text-black/42 transition hover:text-black/70"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              {t("刷新")}
+            </button>
+          )}
+          <a
+            href={AGENT_SECTION_PATH_BY_ID.channel}
+            className="inline-flex items-center gap-1 text-xs font-medium text-black/58 transition hover:text-black"
           >
-            <RefreshCw className="h-3.5 w-3.5" />
-            {t("刷新通道状态")}
-          </button>
-        )}
+            {t("更多通道")}
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
       </div>
-      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {options.map(({ key, label, description, connectLabel }) => {
-          const connected = enabledChannels?.has(key) === true;
-          const statusKnown = channelStatus === "ready" && enabledChannels !== null;
-          const active = value === key;
+      {channelStatus === "ready" && options.length === 0 ? (
+        <div className="mt-2 flex items-center justify-between gap-3 rounded-md bg-black/[0.025] px-3 py-2.5">
+          <span className="text-xs text-black/46">{t("暂无已配置的通知通道")}</span>
+          <a
+            href={AGENT_SECTION_PATH_BY_ID.channel}
+            className="shrink-0 text-xs font-medium text-black/72"
+          >
+            {t("去配置")}
+          </a>
+        </div>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {options.map((key) => {
+          const active = value.includes(key);
+          const label = formatScenarioChannelLabel(key);
           return (
-            <div
+            <button
               key={key}
+              type="button"
+              onClick={() => toggleChannel(key)}
+              aria-pressed={active}
               className={
-                "rounded-md border transition " +
+                "inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm transition " +
                 (active
                   ? "border-black bg-black text-white"
-                  : "border-black/[0.08] bg-white text-black/70 hover:bg-black/[0.035]") +
-                (channelStatus === "loading" ? " opacity-60" : "")
+                  : "border-black/[0.08] bg-white text-black/66 hover:border-black/15 hover:bg-black/[0.025]")
               }
             >
-              <button
-                type="button"
-                onClick={() => onChange(key)}
-                className="flex min-h-[92px] w-full items-start gap-2 px-3 py-2.5 text-left"
-                aria-pressed={active}
-              >
-                <MessageCircle className={`mt-0.5 h-4 w-4 shrink-0 ${active ? "text-white" : "text-black/45"}`} />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold">{label}</span>
-                  <span className={`mt-0.5 block text-[11px] leading-4 ${active ? "text-white/70" : "text-black/42"}`}>
-                    {connected ? description : t("未接入，连接后才能推送")}
-                  </span>
-                </span>
-                {connected && (
-                  <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#0F8A4B]"}`} />
-                )}
-              </button>
-              {statusKnown && !connected && (
-                <div className="px-3 pb-3">
-                  <button
-                    type="button"
-                    onClick={() => setConnectTarget(key)}
-                    className={
-                      "inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] font-semibold transition " +
-                      (active
-                        ? "border-white/30 bg-white/10 text-white hover:bg-white/15"
-                        : "border-black/[0.08] bg-black/[0.03] text-black/65 hover:bg-black/[0.06]")
-                    }
-                  >
-                    <QrCode className="h-3.5 w-3.5" />
-                    {connectLabel}
-                  </button>
-                </div>
-              )}
-            </div>
+              <MessageCircle className="h-4 w-4 shrink-0" />
+              <span>{label}</span>
+              {active ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : null}
+            </button>
           );
-        })}
-      </div>
-      {connectTarget && (
-        <ScenarioChannelConnectDialog
-          botId={botId}
-          target={connectTarget}
-          onClose={() => setConnectTarget(null)}
-          onConnected={async (target) => {
-            await onRefreshChannels();
-            onChange(target);
-            setConnectTarget(null);
-          }}
-        />
+          })}
+        </div>
       )}
     </div>
-  );
-}
-
-function ScenarioChannelConnectDialog({
-  botId,
-  target,
-  onClose,
-  onConnected,
-}: {
-  botId: string;
-  target: ScenarioPushDeliveryTarget;
-  onClose: () => void;
-  onConnected: (target: ScenarioPushDeliveryTarget) => Promise<void>;
-}) {
-  return (
-    <GatewayQrConnectDialog
-      botId={botId}
-      target={target}
-      onClose={onClose}
-      onConnected={() => onConnected(target)}
-    />
-  );
-}
-
-function GatewayQrConnectDialog({
-  botId,
-  target,
-  onClose,
-  onConnected,
-}: {
-  botId: string;
-  target: ScenarioPushDeliveryTarget;
-  onClose: () => void;
-  onConnected: () => Promise<void>;
-}) {
-  const t = useT();
-  const [status, setStatus] = useState<GatewayQrStatus>("creating");
-  const [qrValue, setQrValue] = useState("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const command = useMemo(() => buildGatewayQrUrlCommand(target), [target]);
-  const channelLabel = formatScenarioDeliveryTargetLabel(target, t);
-
-  const startGatewayQr = useCallback(async () => {
-    abortRef.current?.abort();
-    const abortController = new AbortController();
-    abortRef.current = abortController;
-    setStatus("creating");
-    setQrValue("");
-    setErrorMessage(null);
-
-    let streamedOutput = "";
-    let hasQrValue = false;
-    try {
-      const result = await execCommandStream(botId, command, {
-        signal: abortController.signal,
-        onOutput: (output) => {
-          if (abortController.signal.aborted) return;
-          streamedOutput = output;
-          const parsedQrValue = extractGatewayQrValue(output);
-          if (!parsedQrValue) return;
-          hasQrValue = true;
-          setQrValue(parsedQrValue);
-          setStatus("waiting_qr");
-        },
-      });
-      if (abortController.signal.aborted) return;
-      const output = result.output.trim() || streamedOutput.trim();
-      const parsedQrValue = extractGatewayQrValue(output);
-      if (parsedQrValue) {
-        hasQrValue = true;
-        setQrValue(parsedQrValue);
-        setStatus("waiting_qr");
-      }
-      if (hasQrValue) {
-        await onConnected();
-        return;
-      }
-      setStatus("failed");
-      setErrorMessage(t("二维码生成完成，但没有解析到二维码链接。请重试。"));
-    } catch (error) {
-      if (abortController.signal.aborted) return;
-      if (hasQrValue) {
-        setStatus("waiting_qr");
-        setErrorMessage(t("等待扫码结果超时。二维码可能仍可使用，扫码后请刷新状态；如果失败请重新生成。"));
-        return;
-      }
-      setStatus("failed");
-      setErrorMessage(error instanceof Error ? error.message : t("二维码生成失败"));
-    }
-  }, [botId, command, onConnected, t]);
-
-  useEffect(() => {
-    void startGatewayQr();
-  }, [startGatewayQr]);
-
-  useEffect(() => () => {
-    abortRef.current?.abort();
-  }, []);
-
-  const handleConnected = useCallback(async () => {
-    abortRef.current?.abort();
-    await onConnected();
-  }, [onConnected]);
-
-  return (
-    <Dialog open onOpenChange={(open) => {
-      if (!open) onClose();
-    }}>
-      <DialogContent className="w-[calc(100vw-2rem)] max-w-[360px] rounded-md bg-white p-5 text-center shadow-2xl md:w-[360px]">
-        <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-md bg-[#07C160]/10">
-          <ScanLine className="h-5 w-5 text-[#07C160]" />
-        </div>
-        <DialogHeader className="mb-0 space-y-1 text-center">
-          <DialogTitle className="text-base font-semibold text-black/90">{t("{{channel}}扫码接入", { channel: channelLabel })}</DialogTitle>
-          <DialogDescription className="text-sm font-medium text-[#07C160]">
-            {status === "creating" ? t("正在生成二维码") : t("请扫码完成接入")}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="mx-auto mt-4 flex h-52 w-52 items-center justify-center rounded-md border border-black/[0.08] bg-black/[0.025]">
-          {qrValue ? (
-            <GatewayQrValuePreview value={qrValue} alt={t("{{channel}}接入二维码", { channel: channelLabel })} />
-          ) : status === "failed" ? (
-            <div className="px-4 text-xs leading-5 text-[#B91C1C]">{errorMessage || t("请重试")}</div>
-          ) : (
-            <div className="flex flex-col items-center gap-2 text-black/45">
-              <Loader2 className="h-7 w-7 animate-spin" />
-              <span className="text-xs">{t("正在生成二维码")}</span>
-            </div>
-          )}
-        </div>
-        {errorMessage && status !== "failed" && (
-          <p className="mt-3 text-xs leading-5 text-[#B91C1C]">{errorMessage}</p>
-        )}
-        <div className="mt-4 grid gap-2">
-          {status === "failed" ? (
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={onClose} className="inline-flex h-9 flex-1 items-center justify-center rounded-md border border-black/[0.08] text-sm font-semibold text-black/65">
-                {t("关闭")}
-              </button>
-              <button type="button" onClick={() => void startGatewayQr()} className="inline-flex h-9 flex-1 items-center justify-center rounded-md bg-black text-sm font-semibold text-white">
-                {t("重试")}
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={onClose} className="inline-flex h-9 items-center justify-center rounded-md border border-black/[0.08] text-sm font-semibold text-black/65">
-                  {t("取消")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void startGatewayQr()}
-                  disabled={status === "creating"}
-                  className="inline-flex h-9 items-center justify-center rounded-md border border-black/[0.08] text-sm font-semibold text-black/65 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {t("重新生成")}
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleConnected()}
-                disabled={status === "creating"}
-                className="inline-flex h-9 items-center justify-center rounded-md bg-black text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {t("我已扫码，刷新状态")}
-              </button>
-            </>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -552,32 +538,121 @@ function ScenarioFieldControl({
 }) {
   const t = useT();
 
-  if (field.type === "textarea") {
+  if (field.type === "date") {
+    return <ScenarioDateFieldControl field={field} value={value} onChange={onChange} />;
+  }
+
+  if (field.type === "datetime") {
     return (
       <label className="block">
-        <span className="text-sm font-medium text-black/75">{field.label}</span>
-        <textarea
-          value={value}
-          onChange={(event) => onChange(event.target.value.slice(0, 180))}
-          rows={3}
-          placeholder={field.placeholder}
-          className="mt-1.5 w-full resize-none rounded-md border border-black/10 bg-white px-3 py-2 text-sm leading-5 placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+        <span className="text-sm font-medium text-black/75">{field.label}{field.required ? <span className="ml-1 text-[#B91C1C]">*</span> : null}</span>
+        <input
+          type="datetime-local"
+          aria-label={field.label}
+          value={normalizeDateTimeLocalValue(value)}
+          onChange={(event) => onChange(event.target.value)}
+          className="mt-1.5 h-10 w-full rounded-md border border-black/10 bg-white px-3 text-sm text-black/78 focus:border-black/30 focus:outline-none"
         />
+        {field.helpText && <span className="mt-1 block text-xs leading-5 text-black/42">{field.helpText}</span>}
       </label>
     );
   }
 
-  if (field.type === "text") {
+  if (field.type === "time") {
     return (
       <label className="block">
-        <span className="text-sm font-medium text-black/75">{field.label}</span>
+        <span className="text-sm font-medium text-black/75">{field.label}{field.required ? <span className="ml-1 text-[#B91C1C]">*</span> : null}</span>
         <input
-          type="text"
+          type="time"
+          aria-label={field.label}
           value={value}
-          onChange={(event) => onChange(event.target.value.slice(0, 120))}
+          onChange={(event) => onChange(event.target.value)}
+          className="mt-1.5 h-10 w-full rounded-md border border-black/10 bg-white px-3 text-sm text-black/78 focus:border-black/30 focus:outline-none"
+        />
+        {field.helpText && <span className="mt-1 block text-xs leading-5 text-black/42">{field.helpText}</span>}
+      </label>
+    );
+  }
+
+  if (field.type === "times") {
+    return <ScenarioTimesFieldControl field={field} value={value} onChange={onChange} />;
+  }
+
+  if (field.type === "multi-dropdown") {
+    return <ScenarioMultiDropdownFieldControl field={field} value={value} onChange={onChange} />;
+  }
+
+  if (field.type === "checkbox") {
+    const checked = value === "true";
+    return (
+      <label className="flex cursor-pointer items-start gap-3 rounded-md border border-black/[0.08] bg-white px-3 py-2.5">
+        <input
+          type="checkbox"
+          aria-label={field.label}
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked ? "true" : "false")}
+          className="mt-0.5 size-4 rounded border-black/20 accent-black"
+        />
+        <span className="min-w-0">
+          <span className="block text-sm font-medium text-black/75">{field.label}</span>
+          {field.helpText && <span className="mt-0.5 block text-xs leading-5 text-black/42">{field.helpText}</span>}
+        </span>
+      </label>
+    );
+  }
+
+  if (field.type === "textarea") {
+    const maxLength = field.maxLength ?? 180;
+    return (
+      <label className="block">
+        <span className="text-sm font-medium text-black/75">{field.label}{field.required ? <span className="ml-1 text-[#B91C1C]">*</span> : null}</span>
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value.slice(0, maxLength))}
+          rows={field.rows ?? 3}
+          placeholder={field.placeholder}
+          className="mt-1.5 w-full resize-none rounded-md border border-black/10 bg-white px-3 py-2 text-sm leading-5 placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+        />
+        {field.helpText && <span className="mt-1 block text-xs text-black/42">{field.helpText}</span>}
+      </label>
+    );
+  }
+
+  if (field.type === "text" || field.type === "number") {
+    const maxLength = field.maxLength ?? 120;
+    return (
+      <label className="block">
+        <span className="text-sm font-medium text-black/75">{field.label}{field.required ? <span className="ml-1 text-[#B91C1C]">*</span> : null}</span>
+        <input
+          type={field.type}
+          min={field.min}
+          max={field.max}
+          step={field.step}
+          value={value}
+          onChange={(event) => onChange(event.target.value.slice(0, maxLength))}
           placeholder={field.placeholder}
           className="mt-1.5 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm leading-5 placeholder:text-black/35 focus:border-black/30 focus:outline-none"
         />
+        {field.helpText && <span className="mt-1 block text-xs text-black/42">{field.helpText}</span>}
+      </label>
+    );
+  }
+
+  if (field.type === "dropdown") {
+    return (
+      <label className="block">
+        <span className="text-sm font-medium text-black/75">{field.label}{field.required ? <span className="ml-1 text-[#B91C1C]">*</span> : null}</span>
+        <select
+          aria-label={field.label}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="mt-1.5 h-10 w-full rounded-md border border-black/10 bg-white px-3 text-sm text-black/78 focus:border-black/30 focus:outline-none"
+        >
+          {field.placeholder ? <option value="">{field.placeholder}</option> : null}
+          {(field.options ?? []).map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
         {field.helpText && <span className="mt-1 block text-xs text-black/42">{field.helpText}</span>}
       </label>
     );
@@ -597,7 +672,7 @@ function ScenarioFieldControl({
 
   return (
     <div>
-      <span className="text-sm font-medium text-black/75">{field.label}</span>
+      <span className="text-sm font-medium text-black/75">{field.label}{field.required ? <span className="ml-1 text-[#B91C1C]">*</span> : null}</span>
       <div className="mt-1.5 flex flex-wrap gap-2">
         {(field.options ?? []).map((option) => {
           const active = field.type === "select" ? value === option.value : selected.has(option.value);
@@ -633,12 +708,153 @@ function ScenarioFieldControl({
   );
 }
 
+function ScenarioTimesFieldControl({
+  field,
+  value,
+  onChange,
+}: {
+  field: ScenarioTaskField;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const times = splitMultiselectValue(value);
+  const maxItems = field.maxItems ?? 3;
+  const [slotCount, setSlotCount] = useState(() => Math.max(1, times.length));
+  const visibleTimes = Array.from({ length: slotCount }, (_, index) => times[index] ?? "");
+
+  useEffect(() => {
+    if (times.length > slotCount) setSlotCount(Math.min(times.length, maxItems));
+  }, [maxItems, slotCount, times.length]);
+
+  const updateTime = (index: number, nextValue: string) => {
+    const next = [...visibleTimes];
+    next[index] = nextValue;
+    onChange(next.join(SCENARIO_MULTISELECT_SEPARATOR));
+  };
+
+  const removeTime = (index: number) => {
+    const next = visibleTimes.filter((_, itemIndex) => itemIndex !== index);
+    setSlotCount(Math.max(1, slotCount - 1));
+    onChange((next.length > 0 ? next : [""]).join(SCENARIO_MULTISELECT_SEPARATOR));
+  };
+
+  const addTime = () => {
+    if (visibleTimes.length >= maxItems) return;
+    setSlotCount(slotCount + 1);
+  };
+
+  return (
+    <div>
+      <span className="text-sm font-medium text-black/75">{field.label}{field.required ? <span className="ml-1 text-[#B91C1C]">*</span> : null}</span>
+      <div className="mt-1.5 grid gap-2">
+        {visibleTimes.map((time, index) => (
+          <div key={`${index}-${visibleTimes.length}`} className="flex items-center gap-2">
+            <input
+              type="time"
+              aria-label={`${field.label} ${index + 1}`}
+              value={time}
+              onChange={(event) => updateTime(index, event.target.value)}
+              className="h-10 min-w-0 flex-1 rounded-md border border-black/10 bg-white px-3 text-sm text-black/78 focus:border-black/30 focus:outline-none"
+            />
+            {visibleTimes.length > 1 ? (
+              <button
+                type="button"
+                onClick={() => removeTime(index)}
+                aria-label={`删除提醒时间 ${index + 1}`}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-black/[0.08] text-black/45 transition hover:bg-black/[0.04] hover:text-black/75"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      {visibleTimes.length < maxItems ? (
+        <button
+          type="button"
+          onClick={addTime}
+          aria-label="添加提醒时间"
+          className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-md border border-black/[0.08] px-2.5 text-xs font-medium text-black/58 transition hover:bg-black/[0.04] hover:text-black/78"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          添加时间
+        </button>
+      ) : null}
+      {field.helpText && <span className="mt-1 block text-xs leading-5 text-black/42">{field.helpText}</span>}
+    </div>
+  );
+}
+
+function ScenarioDateFieldControl({
+  field,
+  value,
+  onChange,
+}: {
+  field: ScenarioTaskField;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="text-sm font-medium text-black/75">
+        {field.label}
+        {field.required ? <span className="ml-1 text-[#B91C1C]">*</span> : null}
+      </span>
+      <input
+        type="date"
+        aria-label={field.label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1.5 h-10 w-full rounded-md border border-black/10 bg-white px-3 text-sm text-black/78 focus:border-black/30 focus:outline-none"
+      />
+      {field.helpText ? <span className="mt-1 block text-xs leading-5 text-black/42">{field.helpText}</span> : null}
+    </label>
+  );
+}
+
+function ScenarioMultiDropdownFieldControl({
+  field,
+  value,
+  onChange,
+}: {
+  field: ScenarioTaskField;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="text-sm font-medium text-black/75">
+        {field.label}
+        {field.required ? <span className="ml-1 text-[#B91C1C]">*</span> : null}
+      </span>
+      <input
+        type="text"
+        aria-label={field.label}
+        value={splitMultiselectValue(value).join("、")}
+        onChange={(event) => onChange(
+          event.target.value
+            .split(/[、,，]/)
+            .map((item) => item.trim())
+            .filter(Boolean)
+            .join(SCENARIO_MULTISELECT_SEPARATOR),
+        )}
+        placeholder={field.placeholder}
+        className="mt-1.5 h-10 w-full rounded-md border border-black/10 bg-white px-3 text-sm text-black/78 focus:border-black/30 focus:outline-none"
+      />
+      {field.helpText ? <span className="mt-1 block text-xs leading-5 text-black/42">{field.helpText}</span> : null}
+    </label>
+  );
+}
+
 function splitMultiselectValue(value: string): string[] {
-  const separator = value.includes(SCENARIO_MULTISELECT_SEPARATOR) ? SCENARIO_MULTISELECT_SEPARATOR : " / ";
   return value
-    .split(separator)
+    .split(/[|、,，]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function normalizeDateTimeLocalValue(value: string): string {
+  return value.trim().replace(" ", "T").slice(0, 16);
 }
 
 function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
@@ -650,121 +866,36 @@ function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-function selectInitialPushDeliverTarget(initialDeliver: string | undefined, enabledChannels: Set<string> | null): ScenarioPushDeliveryTarget {
-  const normalized = normalizeScenarioDeliverTarget(initialDeliver ?? "");
-  if (normalized === "weixin" || normalized === "qqbot") return normalized;
-  if (enabledChannels?.has("weixin")) return "weixin";
-  if (enabledChannels?.has("qqbot")) return "qqbot";
-  return "weixin";
+function selectInitialPushDeliverTargets(
+  initialDeliver: string | undefined,
+  enabledChannels: Set<string> | null,
+): string[] {
+  const requested = (initialDeliver ?? "")
+    .split(",")
+    .map((target) => target.trim())
+    .filter(Boolean);
+  const configuredRequested = enabledChannels
+    ? requested.filter((target) => enabledChannels.has(target))
+    : requested;
+  if (configuredRequested.length) return [...new Set(configuredRequested)];
+  const [firstConfigured] = sortConfiguredScenarioChannels(enabledChannels);
+  return firstConfigured ? [firstConfigured] : [];
 }
 
-function formatScenarioDeliveryTargetLabel(target: ScenarioPushDeliveryTarget, t: ReturnType<typeof useT>): string {
-  return target === "weixin" ? t("微信") : "QQ";
+function sortConfiguredScenarioChannels(enabledChannels: Set<string> | null): string[] {
+  if (!enabledChannels) return [];
+  const preferredOrder = ["weixin", "qqbot", "wecom", "feishu", "telegram", "discord", "slack", "whatsapp"];
+  return [...enabledChannels].sort((left, right) => {
+    const leftIndex = preferredOrder.indexOf(left);
+    const rightIndex = preferredOrder.indexOf(right);
+    if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
+    if (leftIndex === -1) return 1;
+    if (rightIndex === -1) return -1;
+    return leftIndex - rightIndex;
+  });
 }
 
-function buildGatewayQrUrlCommand(target: ScenarioPushDeliveryTarget): string {
-  const platform = target === "weixin" ? "weixin" : "qqbot";
-  return `acli gateway qr-url --platform ${platform} --wait true`;
-}
-
-function GatewayQrValuePreview({ value, alt }: { value: string; alt: string }) {
-  const [imageFailed, setImageFailed] = useState(false);
-
-  useEffect(() => {
-    setImageFailed(false);
-  }, [value]);
-
-  if (looksLikeQrImageUrl(value) && !imageFailed) {
-    return (
-      <img
-        src={value}
-        alt={alt}
-        onError={() => setImageFailed(true)}
-        className="h-44 w-44 rounded-md bg-white object-contain"
-      />
-    );
-  }
-
-  return (
-    <div className="rounded-md bg-white p-2">
-      <QRCodeSVG value={value} size={176} level="M" includeMargin={false} />
-    </div>
-  );
-}
-
-function extractGatewayQrValue(output: string): string {
-  const jsonValue = extractGatewayQrValueFromJson(output);
-  if (jsonValue) return jsonValue;
-
-  const urlPattern = /(?:https?:\/\/|weixin:\/\/|mqqapi:\/\/|qq:\/\/)[^\s"'<>，。；、)）\]}]+/g;
-  const matches = output.match(urlPattern) ?? [];
-  return matches.at(-1)?.trim() ?? "";
-}
-
-function extractGatewayQrValueFromJson(output: string): string {
-  const trimmed = output.trim();
-  const candidates = [trimmed];
-  const firstBrace = trimmed.indexOf("{");
-  const lastBrace = trimmed.lastIndexOf("}");
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
-  }
-
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate) as unknown;
-      const found = findGatewayQrValue(parsed);
-      if (found) return found;
-    } catch {
-      // Try the next candidate.
-    }
-  }
-  return "";
-}
-
-function findGatewayQrValue(value: unknown): string {
-  if (typeof value === "string") {
-    return extractGatewayQrValueFromText(value);
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findGatewayQrValue(item);
-      if (found) return found;
-    }
-    return "";
-  }
-  if (!isRecord(value)) return "";
-
-  for (const key of ["qr_url", "qrUrl", "qrcode_url", "qrCodeUrl", "url", "link"]) {
-    const property = value[key];
-    if (typeof property === "string") {
-      const found = extractGatewayQrValueFromText(property);
-      if (found) return found;
-    }
-  }
-
-  for (const property of Object.values(value)) {
-    const found = findGatewayQrValue(property);
-    if (found) return found;
-  }
-  return "";
-}
-
-function extractGatewayQrValueFromText(value: string): string {
-  const trimmed = value.trim();
-  if (/^(https?:\/\/|weixin:\/\/|mqqapi:\/\/|qq:\/\/)/.test(trimmed)) return trimmed;
-  const match = trimmed.match(/(?:https?:\/\/|weixin:\/\/|mqqapi:\/\/|qq:\/\/)[^\s"'<>，。；、)）\]}]+/);
-  return match?.[0] ?? "";
-}
-
-function looksLikeQrImageUrl(value: string): boolean {
-  const lower = value.toLowerCase();
-  return lower.startsWith("data:image/")
-    || /\.(?:png|jpe?g|webp|gif|svg)(?:[?#]|$)/.test(lower)
-    || lower.includes("qrcode")
-    || lower.includes("/qr/");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+function extractScenarioTaskRequest(prompt: string): string {
+  const match = /^【任务要求】\s*(.+)$/m.exec(prompt);
+  return match?.[1]?.trim() || prompt.trim();
 }
