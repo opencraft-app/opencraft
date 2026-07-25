@@ -380,16 +380,24 @@ describe("parseInitialDeliver", () => {
 describe("buildHermesSendTestCommand", () => {
   it("uses the platform home target when chat id is empty", () => {
     expect(buildHermesSendTarget("feishu", "")).toBe("feishu");
-    expect(buildHermesSendTestCommand("feishu", "", "deploy finished")).toBe(
+    expect(buildHermesSendTestCommand("feishu", "", "deploy finished")).toContain(
       "hermes send --to 'feishu' 'deploy finished'",
     );
   });
 
   it("uses platform:chat_id target when chat id is provided", () => {
     expect(buildHermesSendTarget("feishu", " oc_123 ")).toBe("feishu:oc_123");
-    expect(buildHermesSendTestCommand("feishu", "oc_123", "it's ready")).toBe(
+    expect(buildHermesSendTestCommand("feishu", "oc_123", "it's ready")).toContain(
       "hermes send --to 'feishu:oc_123' 'it'\\''s ready'",
     );
+  });
+
+  it("treats gateway delivery errors as failed test sends", () => {
+    const command = buildHermesSendTestCommand("qqbot", "", "test");
+
+    expect(command).toContain("no access_token");
+    expect(command).toContain("not connected");
+    expect(command).toContain("exit 1");
   });
 });
 
@@ -462,8 +470,8 @@ describe("parseEnabledHermesChannels", () => {
 });
 
 describe("isHermesNotificationChannelConfigured", () => {
-  it("treats unknown channel status as configurable so users can still try", () => {
-    expect(isHermesNotificationChannelConfigured(null, "feishu")).toBe(true);
+  it("treats unknown channel status as not configured", () => {
+    expect(isHermesNotificationChannelConfigured(null, "feishu")).toBe(false);
   });
 
   it("uses the loaded enabled-channel set when channel status is known", () => {
