@@ -42,4 +42,17 @@ describe("scenario full prompt", () => {
     expect(parsed.runMode).toBe("one-shot");
     expect(parsed.schedule).toBe("2026-12-31T20:30:00");
   });
+
+  it("preserves seconds in typed one-shot date and time", () => {
+    const pack = getScenarioTaskPack("medication-once");
+    const prompt = buildScenarioFullPrompt(
+      pack,
+      "仅这一次，请在 2026-12-31 20:30:45 提醒我按医嘱服药。",
+    );
+    const parsed = parseScenarioFullPrompt(prompt, new Date("2026-07-23T08:00:00+08:00"));
+
+    expect(parsed.issue).toBeNull();
+    expect(parsed.runMode).toBe("one-shot");
+    expect(parsed.schedule).toBe("2026-12-31T20:30:45");
+  });
 });
