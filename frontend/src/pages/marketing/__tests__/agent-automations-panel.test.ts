@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildEffectiveWindowFromInputs,
   buildDeliverString,
+  buildHermesSendCommand,
   buildHermesSendTarget,
   buildHermesSendTestCommand,
   buildScheduleString,
@@ -399,6 +400,13 @@ describe("buildHermesSendTestCommand", () => {
     expect(command).toContain("not connected");
     expect(command).toContain("exit 1");
   });
+
+  it("keeps stderr redirection outside hermes send arguments", () => {
+    const command = buildHermesSendCommand("qqbot", "", "测试消息");
+
+    expect(command).toContain("output=$(hermes send --to 'qqbot' '测试消息' 2>&1)");
+    expect(command).not.toContain("'2>&1'");
+  });
 });
 
 describe("parseEnabledHermesChannels", () => {
@@ -470,8 +478,8 @@ describe("parseEnabledHermesChannels", () => {
 });
 
 describe("isHermesNotificationChannelConfigured", () => {
-  it("treats unknown channel status as not configured", () => {
-    expect(isHermesNotificationChannelConfigured(null, "feishu")).toBe(false);
+  it("keeps channels visible until the connected status is known", () => {
+    expect(isHermesNotificationChannelConfigured(null, "feishu")).toBe(true);
   });
 
   it("uses the loaded enabled-channel set when channel status is known", () => {
