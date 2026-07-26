@@ -74,7 +74,17 @@ function normalizeChannelCollection(collection: unknown): Array<{ channel: strin
   const rawItems = Array.isArray(collection)
     ? collection
     : collection && typeof collection === "object"
-      ? Object.entries(collection as Record<string, unknown>).map(([name, value]) => ({ name, value }))
+      ? Object.entries(collection as Record<string, unknown>).map(([name, value]) => {
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          return { name, ...(value as Record<string, unknown>) };
+        }
+        return {
+          name,
+          enabled: value === true,
+          status: typeof value === "string" ? value : undefined,
+          value: typeof value === "string" ? undefined : value,
+        };
+      })
       : [];
 
   return rawItems.flatMap((raw) => {
@@ -100,9 +110,7 @@ function normalizeChannelCollection(collection: unknown): Array<{ channel: strin
       ? item.status
       : typeof nestedValue?.status === "string"
         ? nestedValue.status
-        : typeof item.value === "string"
-          ? item.value
-          : "";
+        : "";
     const status = statusSource.toLowerCase();
     const enabled = item.enabled === true
       || nestedValue?.enabled === true
