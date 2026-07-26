@@ -2,13 +2,58 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ScenarioInstallModal } from "../ScenarioInstallModal";
-import { getScenarioTaskPack } from "../scenario-packs";
+import { getScenarioTaskPack, type ScenarioTaskPack } from "../scenario-packs";
 
 afterEach(() => {
   cleanup();
 });
 
 describe("ScenarioInstallModal notification apps", () => {
+  it("removes an added time slot without leaving an empty reminder input", () => {
+    const timeSlotPack: ScenarioTaskPack = {
+      ...getScenarioTaskPack("stock-info-digest"),
+      id: "time-slot-test",
+      quickPromptTemplate: undefined,
+      quickPrompt: "提醒我喝水",
+      fields: [
+        {
+          key: "dailyTimes",
+          label: "每日提醒时间",
+          type: "times",
+          defaultValue: "08:00|20:00",
+          required: true,
+          maxItems: 3,
+        },
+      ],
+      promptBuilder: () => "按用户填写的时间提醒。",
+    };
+
+    render(
+      <ScenarioInstallModal
+        pack={timeSlotPack}
+        botId="bot-1"
+        submitting={false}
+        enabledChannels={new Set(["wecom"])}
+        channelStatus="ready"
+        onRefreshChannels={vi.fn().mockResolvedValue(undefined)}
+        onClose={vi.fn()}
+        onRunOnce={vi.fn()}
+        onEnableDirect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText("每日提醒时间 1")).toHaveValue("08:00");
+    expect(screen.getByLabelText("每日提醒时间 2")).toHaveValue("20:00");
+
+    fireEvent.click(screen.getByRole("button", { name: "添加提醒时间" }));
+    expect(screen.getByLabelText("每日提醒时间 3")).toHaveValue("");
+
+    fireEvent.click(screen.getByRole("button", { name: "删除提醒时间 2" }));
+
+    expect(screen.getByLabelText("每日提醒时间 1")).toHaveValue("08:00");
+    expect(screen.queryByLabelText("每日提醒时间 2")).toBeNull();
+  });
+
   it("only shows configured apps, supports multiple selections, and links to channel settings", () => {
     const onEnableDirect = vi.fn();
 
