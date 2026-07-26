@@ -118,10 +118,11 @@ function inferPromptExecution(
 }
 
 function extractOneShotDateTime(value: string): string {
-  const isoMatch = /(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})日?[ T](\d{1,2}):(\d{2})/.exec(value);
+  const isoMatch = /(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})日?[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(value);
   if (!isoMatch) return "";
-  const [, year = "", month = "", day = "", hour = "", minute = ""] = isoMatch;
-  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")} ${hour.padStart(2, "0")}:${minute}`;
+  const [, year = "", month = "", day = "", hour = "", minute = "", second = ""] = isoMatch;
+  const normalized = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")} ${hour.padStart(2, "0")}:${minute}`;
+  return second ? `${normalized}:${second}` : normalized;
 }
 
 export function highlightScenarioPromptPrimaryHtml(primary: string): string {
@@ -375,15 +376,16 @@ function formatTimeMinutes(totalMinutes: number): string {
 
 function parseLocalDateTime(value: string): string | null {
   const normalized = value.replace(/\//g, "-").replace("T", " ").replace(/[：]/g, ":");
-  const match = /^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})$/.exec(normalized);
+  const match = /^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(normalized);
   if (!match) return null;
-  const [, yearRaw = "", monthRaw = "", dayRaw = "", hourRaw = "", minuteRaw = ""] = match;
+  const [, yearRaw = "", monthRaw = "", dayRaw = "", hourRaw = "", minuteRaw = "", secondRaw = "0"] = match;
   const year = Number(yearRaw);
   const month = Number(monthRaw);
   const day = Number(dayRaw);
   const hour = Number(hourRaw);
   const minute = Number(minuteRaw);
-  const parsed = new Date(year, month - 1, day, hour, minute, 0, 0);
+  const second = Number(secondRaw);
+  const parsed = new Date(year, month - 1, day, hour, minute, second, 0);
   if (
     year < 2000
     || month < 1
@@ -394,12 +396,15 @@ function parseLocalDateTime(value: string): string | null {
     || hour > 23
     || minute < 0
     || minute > 59
+    || second < 0
+    || second > 59
     || parsed.getFullYear() !== year
     || parsed.getMonth() !== month - 1
     || parsed.getDate() !== day
     || parsed.getHours() !== hour
     || parsed.getMinutes() !== minute
+    || parsed.getSeconds() !== second
   ) return null;
   const pad = (part: number) => String(part).padStart(2, "0");
-  return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}:00`;
+  return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}:${pad(second)}`;
 }
