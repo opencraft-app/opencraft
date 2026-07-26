@@ -9,6 +9,14 @@ import {
 const HAN_CHARACTER_PATTERN = /[\u3400-\u9fff]/;
 
 describe("getOverviewScenarioTaskPacks", () => {
+  it("keeps Chinese and English overview pack ids aligned by index", () => {
+    const zhPacks = getOverviewScenarioTaskPacks("zh-CN");
+    const enPacks = getOverviewScenarioTaskPacks("en-US");
+
+    expect(enPacks).toHaveLength(zhPacks.length);
+    expect(enPacks.map((pack) => pack.id)).toEqual(zhPacks.map((pack) => pack.id));
+  });
+
   it("keeps the six overview automations in Chinese for both Chinese locales", () => {
     for (const locale of ["zh-CN", "zh-SG"] as const) {
       const packs = getOverviewScenarioTaskPacks(locale);
