@@ -11,7 +11,7 @@ import { LightVelaFooter, type RenderFooterLink } from "@/components/site/lightv
 import { LoginModal } from "@/components/site/login-modal";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
-import { useOpenClaw } from "@/contexts/openclaw-context";
+import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
