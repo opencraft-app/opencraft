@@ -42,6 +42,19 @@ describe("scenario task cron helpers", () => {
     expect(formatScenarioChannelLabel("telegram")).toBe("Telegram");
   });
 
+  it("does not treat array value channel names as connected statuses", () => {
+    const output = JSON.stringify({
+      data: {
+        platforms: [
+          { value: "openclaw-wecom" },
+          { value: "openclaw-discord", status: "ready" },
+        ],
+      },
+    });
+
+    expect(parseEnabledScenarioChannels(output)).toEqual(new Set(["discord"]));
+  });
+
   it("returns null when Hermes status output has no JSON payload", () => {
     expect(parseEnabledScenarioChannels("not-json")).toBeNull();
   });
