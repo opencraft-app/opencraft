@@ -4142,7 +4142,7 @@ export function buildHermesSendTarget(platform: string, chatId: string): string 
 export function buildHermesSendCommand(platform: string, chatId: string, message: string): string {
   const target = shellQuote(buildHermesSendTarget(platform, chatId));
   const payload = shellQuote(message);
-  const directSend = ["hermes", "send", "--to", target, payload, "2>&1"].join(" ");
+  const directSend = `${["hermes", "send", "--to", target, payload].join(" ")} 2>&1`;
   const directCommand = [
     `output=$(${directSend})`,
     "status=$?",
@@ -4271,7 +4271,8 @@ export function isHermesNotificationChannelConfigured(
   comingSoon = false,
 ): boolean {
   if (comingSoon) return false;
-  return enabledChannels?.has(key) ?? false;
+  if (enabledChannels === null) return true;
+  return enabledChannels.has(key);
 }
 
 export function formatTestSendError(
