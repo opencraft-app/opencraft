@@ -843,14 +843,19 @@ func TestRevokeExternalKeyInvalidatesRouteCache(t *testing.T) {
 }
 
 func TestRevokeExternalKeyUsesLoginBearerForNewAPIUserToken(t *testing.T) {
+	var loginCalls atomic.Int32
+	var userTokenCalls atomic.Int32
+	var deleteCalls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
 		case "POST /api/user/login":
+			loginCalls.Add(1)
 			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{
 				"access_token": "login-access-token",
 				"user":         map[string]any{"id": 42, "username": "sgw-user-42"},
 			}})
 		case "GET /api/user/token":
+			userTokenCalls.Add(1)
 			if r.Header.Get("Authorization") != "Bearer login-access-token" {
 				http.Error(w, `{"success":false,"message":"unauthorized"}`, http.StatusUnauthorized)
 				return
@@ -860,6 +865,7 @@ func TestRevokeExternalKeyUsesLoginBearerForNewAPIUserToken(t *testing.T) {
 			}
 			writeTestJSON(t, w, map[string]any{"success": true, "data": "user-access-token"})
 		case "DELETE /api/token/7":
+			deleteCalls.Add(1)
 			if r.Header.Get("Authorization") != "Bearer user-access-token" {
 				t.Fatalf("delete Authorization = %q, want user access token", r.Header.Get("Authorization"))
 			}
@@ -892,6 +898,14 @@ func TestRevokeExternalKeyUsesLoginBearerForNewAPIUserToken(t *testing.T) {
 	svc := NewService(store, upstream.Client().Transport, Options{})
 	if err := svc.RevokeExternalKey(t.Context(), externalKeyID); err != nil {
 		t.Fatal(err)
+	}
+	if loginCalls.Load() != 1 || userTokenCalls.Load() != 1 || deleteCalls.Load() != 1 {
+		t.Fatalf(
+			"upstream calls login=%d user_token=%d delete=%d, want 1 each",
+			loginCalls.Load(),
+			userTokenCalls.Load(),
+			deleteCalls.Load(),
+		)
 	}
 }
 
