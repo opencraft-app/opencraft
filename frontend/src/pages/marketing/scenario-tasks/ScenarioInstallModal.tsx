@@ -733,9 +733,13 @@ function ScenarioTimesFieldControl({
   };
 
   const removeTime = (index: number) => {
-    const next = visibleTimes.filter((_, itemIndex) => itemIndex !== index);
-    setSlotCount(Math.max(1, slotCount - 1));
-    onChange((next.length > 0 ? next : [""]).join(SCENARIO_MULTISELECT_SEPARATOR));
+    const remainingTimes = visibleTimes
+      .filter((_, itemIndex) => itemIndex !== index)
+      .map((time) => time.trim())
+      .filter(Boolean);
+    const nextTimes = remainingTimes.length > 0 ? remainingTimes : [""];
+    setSlotCount(Math.min(maxItems, Math.max(1, nextTimes.length)));
+    onChange(nextTimes.join(SCENARIO_MULTISELECT_SEPARATOR));
   };
 
   const addTime = () => {
