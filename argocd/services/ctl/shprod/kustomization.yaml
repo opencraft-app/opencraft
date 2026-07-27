@@ -32,7 +32,7 @@ patches:
         path: /spec/template/spec/containers/0/env/-
         value:
           name: CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
-          value: usr_dcbd9ccfa2cd3a18be7d2bd2
+          value: "*"
   - target:
       kind: Deployment
       name: ctl-service
@@ -55,7 +55,7 @@ patches:
         path: /spec/template/spec/containers/0/env/-
         value:
           name: CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
-          value: usr_dcbd9ccfa2cd3a18be7d2bd2
+          value: "*"
   - target:
       kind: Deployment
       name: ctl-bypass
@@ -78,7 +78,7 @@ patches:
         path: /spec/template/spec/containers/0/env/-
         value:
           name: CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
-          value: usr_dcbd9ccfa2cd3a18be7d2bd2
+          value: "*"
 
 generators:
   - ksops-assets-generator.yaml
