@@ -393,12 +393,12 @@ describe("buildHermesSendTestCommand", () => {
     );
   });
 
-  it("treats gateway delivery errors as failed test sends", () => {
-    const command = buildHermesSendTestCommand("qqbot", "", "test");
+  it("trusts the hermes send exit code instead of grepping natural-language output", () => {
+    const command = buildHermesSendTestCommand("qqbot", "", "上次 failed 原因已修复");
 
-    expect(command).toContain("no access_token");
-    expect(command).toContain("not connected");
-    expect(command).toContain("exit 1");
+    expect(command).toContain("status=$?");
+    expect(command).toContain("if [ $status -ne 0 ]; then exit $status; fi");
+    expect(command).not.toContain("grep -Eiq");
   });
 
   it("keeps stderr redirection outside hermes send arguments", () => {
