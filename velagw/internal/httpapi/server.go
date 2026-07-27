@@ -2220,6 +2220,8 @@ func (s *Server) internalAction(w http.ResponseWriter, r *http.Request) {
 		s.internalSetUpgradeRuns(w, r, strings.TrimPrefix(path, "set-manager/set-upgrade-runs"))
 	case path == "set-manager/shards":
 		s.internalSetManagerShard(w, r)
+	case path == "shard-manager/shards":
+		s.internalShardManagerObservation(w, r)
 	case path == "set-manager/set-provision-requests":
 		s.setProvisionRequests(w, r, gateway.SetRuntimeBackendLLMFleet)
 	case path == "velagwset-provisioner/set-provision-requests":
@@ -2380,6 +2382,27 @@ func (s *Server) internalSetManagerShard(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := s.svc.UpsertShard(r.Context(), input); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, response{Success: true})
+}
+
+func (s *Server) internalShardManagerObservation(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var input gateway.UpsertShardInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if err := s.svc.ObserveShard(r.Context(), input); err != nil {
+		if errors.Is(err, gateway.ErrShardProjectionDrift) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
