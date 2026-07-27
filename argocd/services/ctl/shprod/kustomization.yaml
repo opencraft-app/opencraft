@@ -23,6 +23,16 @@ patches:
         value:
           secretRef:
             name: ctl-agentchat-secrets
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
+          value: usr_58b6bb1f68ba7f46584bd282,usr_dcbd9ccfa2cd3a18be7d2bd2
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
+          value: usr_dcbd9ccfa2cd3a18be7d2bd2
   - target:
       kind: Deployment
       name: ctl-service
@@ -36,6 +46,16 @@ patches:
         value:
           secretRef:
             name: ctl-agentchat-secrets
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
+          value: usr_58b6bb1f68ba7f46584bd282,usr_dcbd9ccfa2cd3a18be7d2bd2
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
+          value: usr_dcbd9ccfa2cd3a18be7d2bd2
   - target:
       kind: Deployment
       name: ctl-bypass
@@ -49,6 +69,16 @@ patches:
         value:
           secretRef:
             name: ctl-agentchat-secrets
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
+          value: usr_58b6bb1f68ba7f46584bd282,usr_dcbd9ccfa2cd3a18be7d2bd2
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
+          value: usr_dcbd9ccfa2cd3a18be7d2bd2
 
 generators:
   - ksops-assets-generator.yaml
