@@ -35,7 +35,7 @@
 - `AUTH_WECHAT_APP_ID`
 - `AUTH_WECHAT_REDIRECT_URI`
 - `AUTH_DEPLOYED_AT`
-- `LIGHTCLAW_REALNAME_ASSURANCE_MODE=observe` enables the hidden FaceID flow without changing legacy verification semantics.
+- `LIGHTCLAW_REALNAME_ASSURANCE_MODE=faceless` keeps the FaceID attempt state machine while skipping face capture.
 - `SHADOW_BASIC_AUTH_SYNC_ENABLED=true` keeps phone proof and Shadow synchronization in the verification chain.
 - `LIGHTVELA_E2E_AUTH_ENABLED=true` is patched only in this Beijing sandbox overlay.
 

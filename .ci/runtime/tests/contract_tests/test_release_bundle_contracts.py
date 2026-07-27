@@ -189,6 +189,29 @@ class ReleaseBundleContractTests(unittest.TestCase):
                     f"{sorted(referenced_secrets - set(bundle.publish_paths))}",
                 )
 
+    def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
+        for env in ("beijing-sandbox", "shprod"):
+            with self.subTest(env=env):
+                source_patch = next(
+                    doc
+                    for doc in yaml.safe_load_all(
+                        (REPO_ROOT / f"user/auth/k8s/overlays/{env}/patch-realname-faceid.yaml").read_text()
+                    )
+                    if doc.get("kind") == "ConfigMap"
+                )
+                deploy_patch = next(
+                    doc
+                    for doc in yaml.safe_load_all(
+                        (REPO_ROOT / f"argocd/services/lightclaw-auth/{env}/patch-shadowbinding.yaml").read_text()
+                    )
+                    if doc.get("kind") == "ConfigMap"
+                )
+                source_mode = source_patch["data"]["LIGHTCLAW_REALNAME_ASSURANCE_MODE"]
+                deploy_mode = deploy_patch["data"]["LIGHTCLAW_REALNAME_ASSURANCE_MODE"]
+
+                self.assertEqual(source_mode, "faceless")
+                self.assertEqual(deploy_mode, source_mode)
+
     def test_korea_playground_env_uses_kr_registry_and_seoul_catalog_root(self) -> None:
         manifest = load_manifest()
 
