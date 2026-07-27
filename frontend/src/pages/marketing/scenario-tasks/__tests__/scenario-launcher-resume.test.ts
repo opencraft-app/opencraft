@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   getScenarioActivationPrerequisite,
   getPendingScenarioSkillResumeState,
+  resolvePendingScenarioDeliver,
 } from "../ScenarioTaskLauncher";
 import {
   clearPendingScenarioInstall,
@@ -50,5 +51,12 @@ describe("scenario launcher resume", () => {
       slugs: [],
       error: null,
     })).toBe("ready");
+  });
+
+  it("resumes only when every originally selected notification channel is still connected", () => {
+    expect(resolvePendingScenarioDeliver("wecom,feishu", new Set(["wecom", "feishu"]))).toBe("wecom,feishu");
+    expect(resolvePendingScenarioDeliver("wecom", new Set(["feishu"]))).toBeNull();
+    expect(resolvePendingScenarioDeliver("wecom,feishu", new Set(["wecom"]))).toBeNull();
+    expect(resolvePendingScenarioDeliver("wecom", null)).toBeNull();
   });
 });
