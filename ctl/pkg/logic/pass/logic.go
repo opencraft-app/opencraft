@@ -134,7 +134,7 @@ type PassDetail struct {
 
 	// 以下字段运行时从 Bundle / ai-gateway / user_resource_quota 拉取填充，不持久化
 	BundleName          string // 套餐名称（= bundle.bundle_name）
-	CreditTotal         int64  // 积分总量（= bundle.credit）
+	CreditTotal         int64  // 套餐积分总量（active 且存在套餐订阅时 = bundle.credit）
 	CreditAvailable     int64  // 积分余量（= token_balance / credit_token_ratio）
 	FreeCreditTotal     int64  // 免费/额外积分总量（LLMGateway subscription_name=free-credit:*）
 	FreeCreditAvailable int64  // 免费/额外积分余量（LLMGateway subscription_name=free-credit:*）
@@ -1073,7 +1073,7 @@ func (l *logic) fillCredits(details []*PassDetail) {
 
 // fillCredit 为单个 PassDetail 填充 bundle / 配额 / ai-gateway 相关字段
 //   - bundle_name 从 bundle 读取
-//   - credit_total 从 bundle.credit 读取
+//   - credit_total 从 bundle.credit 读取；pass 非 active 或无套餐订阅时返回 0
 //   - credit_available 实时调 ai-gateway 查 subscription 换算；失败时返回 0 + 日志告警
 //   - agent_quota_total / agent_quota_available 从 user_resource_quota 表读取（v1.7.23 B18 新增,
 //     v1.7.24 B19 修订: 两值都从同一行取, 强一致, 不再混用 bundle.agent_quota）
@@ -1117,6 +1117,12 @@ func (l *logic) fillCredit(d *PassDetail) {
 	}
 	// quotaEntity == nil（用户从未购买过 pass，无配额行）→ total/available 保持零值
 
+	if d.Status != "" && d.Status != passmodel.StatusActive {
+		d.CreditTotal = 0
+		d.CreditAvailable = 0
+		return
+	}
+
 	// 即使套餐积分为 0，也要查询 LLMGateway 的免费/额外积分订阅。
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -1131,6 +1137,7 @@ func (l *logic) fillCredit(d *PassDetail) {
 		return
 	}
 	if bundle.Credit == 0 || !balances.PackageFound {
+		d.CreditTotal = 0
 		d.CreditAvailable = 0
 	} else {
 		d.CreditAvailable = bundlelogic.TokensToCredit(balances.PackageTokenBalance)
