@@ -17,7 +17,7 @@ data:
   SHADOW_CAM_ENDPOINT: "cam.tencentcloudapi.com"
   SHADOW_STS_ENDPOINT: "sts.tencentcloudapi.com"
   SHADOW_REGION: "ap-guangzhou"
-  SHADOW_PLATFORM: "lightclaw"
+  SHADOW_PLATFORM: "Lightclaw"
   SHADOW_REQUEST_TIMEOUT: "10s"
   SHADOW_AUTH_CODE_TTL: "10m"
   SHADOW_AUTH_CODE_PREFIX: "shprod"
