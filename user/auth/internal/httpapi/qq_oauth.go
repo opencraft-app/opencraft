@@ -21,6 +21,8 @@ import (
 const qqOAuthStateCookieName = "lc_qq_oauth_state"
 const qqOAuthStateCookiePath = "/auth/oauth/qq/callback"
 const qqOAuthReturnToCookieName = "lc_qq_oauth_return_to"
+const defaultQQOAuthAuthorizeURL = "https://graph.qq.com/oauth2.0/authorize"
+const defaultQQOAuthAPIBaseURL = "https://graph.qq.com"
 
 type QQOAuthClient interface {
 	ExchangeCode(ctx context.Context, code string, redirectURI string) (*QQOAuthToken, error)
@@ -37,6 +39,8 @@ type QQOAuthConfig struct {
 	AppID           string
 	AppKey          string
 	RedirectURI     string
+	AuthorizeURL    string
+	APIBaseURL      string
 	FrontendBaseURL string
 	PublicBaseURL   string
 	StateTTL        time.Duration
@@ -44,12 +48,13 @@ type QQOAuthConfig struct {
 }
 
 type qqOAuth struct {
-	appID           string
-	redirectURI     string
-	frontendBaseURL string
-	publicBaseURL   string
-	stateTTL        time.Duration
-	client          QQOAuthClient
+	appID             string
+	redirectURI       string
+	authorizeEndpoint string
+	frontendBaseURL   string
+	publicBaseURL     string
+	stateTTL          time.Duration
+	client            QQOAuthClient
 }
 
 func newQQOAuth(config *QQOAuthConfig) *qqOAuth {
@@ -63,6 +68,14 @@ func newQQOAuth(config *QQOAuthConfig) *qqOAuth {
 	if appID == "" || appKey == "" || redirectURI == "" {
 		return nil
 	}
+	authorizeURL := strings.TrimSpace(config.AuthorizeURL)
+	if authorizeURL == "" {
+		authorizeURL = defaultQQOAuthAuthorizeURL
+	}
+	apiBaseURL := strings.TrimRight(strings.TrimSpace(config.APIBaseURL), "/")
+	if apiBaseURL == "" {
+		apiBaseURL = defaultQQOAuthAPIBaseURL
+	}
 
 	stateTTL := config.StateTTL
 	if stateTTL <= 0 {
@@ -75,17 +88,19 @@ func newQQOAuth(config *QQOAuthConfig) *qqOAuth {
 			appID:       appID,
 			appKey:      appKey,
 			redirectURI: redirectURI,
+			apiBaseURL:  apiBaseURL,
 			httpClient:  http.DefaultClient,
 		}
 	}
 
 	return &qqOAuth{
-		appID:           appID,
-		redirectURI:     redirectURI,
-		frontendBaseURL: strings.TrimRight(strings.TrimSpace(config.FrontendBaseURL), "/"),
-		publicBaseURL:   strings.TrimRight(strings.TrimSpace(config.PublicBaseURL), "/"),
-		stateTTL:        stateTTL,
-		client:          client,
+		appID:             appID,
+		redirectURI:       redirectURI,
+		authorizeEndpoint: authorizeURL,
+		frontendBaseURL:   strings.TrimRight(strings.TrimSpace(config.FrontendBaseURL), "/"),
+		publicBaseURL:     strings.TrimRight(strings.TrimSpace(config.PublicBaseURL), "/"),
+		stateTTL:          stateTTL,
+		client:            client,
 	}
 }
 
@@ -249,7 +264,7 @@ func (q *qqOAuth) authorizeURL(state string, redirectURI string) string {
 	query.Set("redirect_uri", strings.TrimSpace(redirectURI))
 	query.Set("state", state)
 	query.Set("scope", "get_user_info")
-	return "https://graph.qq.com/oauth2.0/authorize?" + query.Encode()
+	return q.authorizeEndpoint + "?" + query.Encode()
 }
 
 func (q *qqOAuth) frontendURL(request *http.Request, path string) string {
@@ -338,6 +353,7 @@ type qqOAuthHTTPClient struct {
 	appID       string
 	appKey      string
 	redirectURI string
+	apiBaseURL  string
 	httpClient  *http.Client
 }
 
@@ -350,7 +366,7 @@ func (c *qqOAuthHTTPClient) ExchangeCode(ctx context.Context, code string, redir
 	query.Set("redirect_uri", strings.TrimSpace(redirectURI))
 	query.Set("fmt", "json")
 
-	body, err := c.doGET(ctx, "https://graph.qq.com/oauth2.0/token?"+query.Encode())
+	body, err := c.doGET(ctx, c.endpoint("/oauth2.0/token")+"?"+query.Encode())
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +402,7 @@ func (c *qqOAuthHTTPClient) loadOpenID(ctx context.Context, accessToken string) 
 	query := url.Values{}
 	query.Set("access_token", accessToken)
 
-	body, err := c.doGET(ctx, "https://graph.qq.com/oauth2.0/me?"+query.Encode())
+	body, err := c.doGET(ctx, c.endpoint("/oauth2.0/me")+"?"+query.Encode())
 	if err != nil {
 		return "", err
 	}
@@ -420,7 +436,7 @@ func (c *qqOAuthHTTPClient) loadProfile(ctx context.Context, accessToken string,
 	query.Set("oauth_consumer_key", c.appID)
 	query.Set("openid", openID)
 
-	body, err := c.doGET(ctx, "https://graph.qq.com/user/get_user_info?"+query.Encode())
+	body, err := c.doGET(ctx, c.endpoint("/user/get_user_info")+"?"+query.Encode())
 	if err != nil {
 		return nil, err
 	}
@@ -454,6 +470,17 @@ func (c *qqOAuthHTTPClient) doGET(ctx context.Context, requestURL string) ([]byt
 		return nil, fmt.Errorf("qq oauth request failed: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return body, nil
+}
+
+func (c *qqOAuthHTTPClient) endpoint(path string) string {
+	baseURL := strings.TrimRight(strings.TrimSpace(c.apiBaseURL), "/")
+	if baseURL == "" {
+		baseURL = defaultQQOAuthAPIBaseURL
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return baseURL + path
 }
 
 type qqUserInfoResponse struct {

@@ -45,6 +45,26 @@
 - 管理终端：`nextgen-dashboard`
 - 环境与云资源：`infra_pulumi`
 
+## 本地 Kubernetes 开发环境
+
+仓库提供一套不依赖云资源、Argo CD 或 CI/CD 的 `localstack` 环境。它复用
+各服务现有 `k8s/base` 和 Kustomize 变量渲染，在本机 Kubernetes 中运行
+MySQL、Redis、认证、支付、订阅、AI Gateway、Mock Sandbox、统一网关、
+前端和外部服务 Mock。
+
+```bash
+make local-stack-doctor
+make local-stack-up
+```
+
+默认入口：
+
+- 前端：`http://localhost:5173`
+- API Gateway：`http://localhost:8085`
+
+环境模型、Secret 覆盖和清理命令见
+[`deploy/localstack/README.md`](deploy/localstack/README.md)。
+
 ## Agent 自动化玩法
 
 仓库已经内置工蜂和蓝盾 Skill。用户只需要说明目标，并通过当前本机会话安全提供对应凭据，Agent 就可以按仓库规范完成自动化操作，无需用户手工拼 API 请求。

@@ -1,0 +1,100 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../ai-gateway/k8s/base
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: ai-gateway-runtime-config
+    namespace: ai-gateway
+    behavior: merge
+    literals:
+      - MYSQL_HOST=mysql.localstack-system.svc.cluster.local
+      - MYSQL_PORT=3306
+      - AI_GATEWAY_DB=ai_gateway
+      - AI_GATEWAY_DB_USER=ai_gateway
+      - REDIS_ADDR=redis.localstack-system.svc.cluster.local:6379
+  - name: gateway-backend-config
+    namespace: ai-gateway
+    files:
+      - config.yaml
+secretGenerator:
+  - name: ai-gateway-runtime-secrets
+    namespace: ai-gateway
+    envs:
+      - secrets.defaults.env
+images:
+  - name: REPLACE_AI_GATEWAY_IMAGE
+    newName: lightclaw-local/ai-gateway
+    newTag: dev
+patches:
+  - target:
+      kind: ServiceAccount
+      name: default
+      namespace: ai-gateway
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: default
+        namespace: ai-gateway
+  - target:
+      kind: Deployment
+      name: gateway-backend
+      namespace: ai-gateway
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: remove
+        path: /spec/template/spec/topologySpreadConstraints
+      - op: replace
+        path: /spec/template/metadata/annotations/ai-gateway.clawhub.dev~1redeploy-at
+        value: localstack
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+      - op: replace
+        path: /spec/template/spec/containers/1/imagePullPolicy
+        value: IfNotPresent
+  - target:
+      kind: Ingress
+      name: gateway-model-internal
+      namespace: ai-gateway
+    patch: |-
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: gateway-model-internal
+        namespace: ai-gateway
+  - target:
+      kind: Service
+      name: gateway-internal
+      namespace: ai-gateway
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: gateway-internal
+        namespace: ai-gateway
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: gateway-backend
+      namespace: ai-gateway
+    patch: |-
+      $patch: delete
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: gateway-backend
+        namespace: ai-gateway
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: lightclaw-localstack
+    includeSelectors: false
+    includeTemplates: true

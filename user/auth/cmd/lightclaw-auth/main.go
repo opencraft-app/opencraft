@@ -356,6 +356,8 @@ func buildQQOAuthConfig() *httpapi.QQOAuthConfig {
 		AppID:           appID,
 		AppKey:          appKey,
 		RedirectURI:     envOrDefault("LIGHTCLAW_QQ_REDIRECT_URI", "https://lightclaw.tech/auth/oauth/qq/callback"),
+		AuthorizeURL:    envOrDefault("LIGHTCLAW_QQ_AUTHORIZE_URL", ""),
+		APIBaseURL:      envOrDefault("LIGHTCLAW_QQ_API_BASE_URL", ""),
 		FrontendBaseURL: frontendBaseURL,
 		PublicBaseURL:   publicBaseURL,
 	}

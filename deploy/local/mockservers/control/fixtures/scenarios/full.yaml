@@ -1,0 +1,6 @@
+id: full
+name: 完整成功链路
+description: 所有未覆盖的 fake 能力使用各自的成功默认值。
+tags:
+  - default
+overrides: {}
