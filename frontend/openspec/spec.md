@@ -1,233 +1,224 @@
-# 自动任务调用 Skill：技术规格
+# 国内站续费用户交互优化：技术规格
 
 ## 1. 目的
 
-在 LightVela Agent 控制台的自动任务创建、编辑和详情链路中，提供零个或一个 Hermes Skill 的绑定能力。实现必须复用 Hermes Cron 已有协议，保持历史任务与普通任务兼容，并对 Skill 列表失败和已绑定 Skill 失效提供显式状态。
+补齐国内站续费链路，让用户能从 `/account` 和 `/agents` 两个真实场景进入同一个续费弹窗，并在 `/subscribe` 过期或隔离拦截时获得明确回流路径。实现必须复用现有 Pass 续费接口和微信支付中转页，不新增后端接口、不影响国际站。
 
 ## 2. 术语
 
-- **真实 slug**：Hermes 已安装 Skill 列表返回的目录/标识值，是唯一允许写入 Cron job 的值。
-- **展示名称**：由真实 slug 格式化得到的可读文本，仅用于展示与搜索，不参与持久化。
-- **可用绑定**：job 保存的 slug 当前存在于该 Agent 的已安装 Skill 列表中。
-- **不可用绑定**：已成功加载安装列表，且 job 保存的 slug 不在列表中。
-- **未知状态**：安装列表仍在加载或加载失败，无法判断绑定是否仍可用。
-- **普通任务**：未绑定任何 Skill 的 Cron job。
+- **可续费 Pass**：未删除且状态为 `active`、`expired` 或 `isolated` 的 Pass。
+- **有效 Pass**：未删除且 `expired_time` 晚于当前时间的 Pass，对应 `activePass`。
+- **到期提醒窗口**：有效 Pass 距离 `expired_time` 小于等于 7 日。
+- **Agent 头部状态提醒**：`/agents` 左侧 Agent 信息头部中贴近“运行中”的套餐到期短提醒。
+- **续费成功**：同一 `pass_id` 刷新后 `expired_time` 大于打开弹窗时的原始时间。
 
 ## 3. 架构与数据流
 
 ```text
-Hermes `skills list`
-        ↓
-hermes-skills-client（命令、解析、去重、展示名）
-        ↓
-HermesAgentAutomationsPanel（idle/loading/ready/error）
-        ├── AutomationSkillPicker（搜索、选择、空态、重试）
-        ├── AutomationFormModal（create/edit 映射）
-        └── CronJobDetailModal（绑定状态展示）
-                         ↓
-hermes-cron-client（create/edit 命令）
-                         ↓
-Hermes Cron job.skills
+/account 订阅卡片
+        └── RenewPassModal
+
+/agents Agent 信息头部
+        └── 到期状态提醒
+              └── RenewPassModal
+
+RenewPassModal
+        ├── getRenewPrice(passId, { period, time_unit: "month" })
+        ├── createRenewOrder(passId, { period, time_unit: "month" })
+        ├── /auth/wechat-pay?...&pid=<passId>
+        └── listMyPasses() / refreshPasses() 校验 expired_time 推后
 ```
 
-Skill 列表状态必须与 Cron job 列表状态解耦。Skill 查询失败不得清空已有 job 绑定，不得触发 Cron 列表失败，也不得阻止未选择 Skill 的表单提交。
+`RenewPassModal` 不直接持有页面级订阅状态。调用方负责传入当前 Pass、套餐列表、刷新函数和成功后的 UI 收束动作。
 
-## 4. 共享已安装 Skill 能力
+## 4. 续费弹窗
 
-### 4.1 命令
+### Requirement RENEW-MODAL-1：可复用组件
 
-共享模块必须继续使用当前已验证命令：
-
-```sh
-cd "$HOME/.hermes/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main skills list
-```
-
-### 4.2 输出解析
-
-解析器必须支持：
-
-1. `{ success: true, data: { skills: [...] } }` 形式的 JSON；
-2. 顶层 Skill 数组 JSON；
-3. Hermes 竖线表格输出；
-4. 每行一个 slug 的纯文本兜底。
-
-输出必须 trim、去空值、按首次出现顺序去重。保存值必须来自解析后的真实 slug。
-
-### 4.3 展示名称
-
-展示名称由 slug 按 `-` / `_` 分词并格式化，仅用于 UI。搜索必须同时匹配展示名称和原始 slug，大小写不敏感。任何代码都不得根据展示名称反向拼接保存 slug。
-
-### 4.4 复用边界
-
-`hermes-agent-experts-panel.tsx` 与自动任务页面必须共同 import 共享 helper。自动任务页面不得 import 专家包页面模块；共享模块不得依赖 React 页面组件。
-
-## 5. Skill 列表状态模型
+续费弹窗必须从账号页局部实现中抽取为可复用组件，供 `/account` 与 `/agents` 两个入口共同使用。组件应接收：
 
 ```ts
-type InstalledSkillLoadState =
-  | { status: "idle" | "loading"; slugs: string[]; error: null }
-  | { status: "ready"; slugs: string[]; error: null }
-  | { status: "error"; slugs: string[]; error: string };
+type RenewPassModalProps = {
+  pass: Pass;
+  plans: BundlePlan[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onRefreshPasses: () => Promise<Pass[] | void>;
+  onSuccess?: (pass: Pass) => void;
+};
 ```
 
-要求：
+实际类型命名可按仓库现有类型调整，但必须保持调用方可控制打开、关闭和刷新。
 
-- `botId` 变化时重新加载，不能复用另一个 Agent 的结果。
-- 刷新失败时可以保留上次 slugs 供只读展示，但状态必须是 `error`，不能把缓存结果声明为当前可用。
-- 选择器必须提供显式重试入口。
-- `botId` 为空时进入 `ready + []`，不发命令。
-- Skill 加载失败不弹出阻塞整个自动任务面板的全局错误。
+#### Scenario：账号页打开
 
-## 6. 选择器
+- Given 用户在 `/account` 持有可续费 Pass
+- When 点击“立即续费”
+- Then 打开 `RenewPassModal`
+- And 弹窗关闭后焦点回到“立即续费”
 
-### Requirement SKILL-PICKER-1：可选单选
+#### Scenario：Agent 页打开
 
-创建和编辑弹窗必须在“任务说明”之后、“生效时间段”之前渲染“调用技能（可选）”。默认值为空，触发器显示“选择你希望 Agent 稳定调用的技能”，且同一时刻最多选中一个真实 slug。“调用技能”后必须提供帮助入口，通过 hover 或键盘 focus 展示“在此处选择技能后，Agent 会在执行任务前加载该技能，相比仅在任务说明中通过提示词要求调用技能更加稳定。”。
+- Given 用户在 `/agents` hover 到期提醒
+- When 点击提醒
+- Then 打开同一个 `RenewPassModal`
+- And 弹窗关闭后焦点回到到期状态提醒
 
-#### Scenario：普通任务
+### Requirement RENEW-MODAL-2：周期与信息结构
 
-- Given 用户打开创建弹窗
-- When 用户不选择 Skill 并提交
-- Then 表单不传 `skills`
-- And 现有创建行为保持不变
+弹窗确认阶段必须展示当前套餐、套餐状态、当前到期时间、续费时长、预计续费后到期时间和应付金额。
 
-#### Scenario：选择 Skill
+- 状态映射：
+  - `active`：`生效中`
+  - `expired`：`已过期`
+  - `isolated`：`隔离期`
+- 周期选项：
+  - 月付：`period=1`，`time_unit="month"`
+  - 季付：`period=3`，`time_unit="month"`
+- 默认选中月付。
+- 不展示 6 个月或 12 个月选项。
+- 预计到期时间按当前 Pass 到期时间顺延；若当前时间晚于到期时间，以后端成功刷新后的 `expired_time` 为最终真源。
 
-- Given 已安装列表包含 `finance-news`
-- When 用户选择该项
-- Then 选择器在同一行显示展示名称与 `finance-news`
-- And 表单保存值严格等于 `finance-news`
+### Requirement RENEW-MODAL-3：询价与下单状态
 
-### Requirement SKILL-PICKER-2：搜索与键盘语义
+- 打开弹窗后立即对默认月付询价。
+- 切换周期后重新询价，并忽略旧请求的晚返回结果。
+- 询价中展示 `正在查询价格...`，确认按钮暂不可点击。
+- 询价成功展示应付金额。
+- 询价失败展示轻量错误，确认按钮可点击，文案说明最终金额以支付页为准。
+- 点击确认后进入 `正在创建订单...`，禁止重复点击。
+- 下单失败保留已选周期并允许重试。
 
-选择器必须是产品内自定义下拉，不使用原生 `<select>`。触发器应提供 `aria-expanded`，搜索框的 label/placeholder 统一为“搜索已安装的技能”，选项使用可识别的单选语义。每个 Skill 的展示名称和 slug 必须在同一行展示并在空间不足时截断。搜索空结果与已安装列表为空必须是两个不同状态。
+### Requirement RENEW-MODAL-4：微信支付与刷新校验
 
-### Requirement SKILL-PICKER-3：任务说明保持独立
+支付阶段必须展示套餐、续费周期、应付金额、二维码和“刷新”按钮。
 
-Skill 选择只建立 Cron 执行绑定，不得自动生成、替换或清空任务说明，也不得为此读取 SkillHub 文档或摘要。
+- 文案仅保留：`支付完成后页面会自动刷新。`
+- 不展示：`二维码有效期约 9 分钟。`
+- 不展示：`我已完成支付`。
+- “刷新”按钮立即触发一次 Pass 刷新校验。
+- 自动轮询可以保留，但成功判定必须以同一 `pass_id` 的 `expired_time` 推后为准。
+- 未确认支付结果时展示 `暂未确认支付结果，请点击刷新或稍后再查看套餐状态。`
+- 弹窗关闭不取消订单，只结束当前页面的等待。
 
-#### Scenario：空任务说明选择 Skill
+## 5. `/account` 续费入口
 
-- Given 用户尚未填写任务说明
-- When 用户选择一个已安装 Skill
-- Then 任务说明保持为空
-- And Skill 绑定仍可正常保存
+### Requirement ACCOUNT-RENEW-1：恢复入口
 
-#### Scenario：已有任务说明选择或切换 Skill
+国内站 `/account` 中，`paidBillingActive` 为真且存在可续费 Pass 时展示“立即续费”。
 
-- Given 任务说明已由用户、模板或历史任务提供
-- When 用户选择或切换 Skill
-- Then 任务说明保持原内容
+| Pass 状态 | 展示 |
+| --- | --- |
+| `active` | 展示“立即续费” |
+| `expired` | 展示“立即续费”和过期提示 |
+| `isolated` | 展示“立即续费”和“销毁套餐”，续费为主操作 |
+| `deleted` | 不展示续费入口 |
 
-#### Scenario：清除 Skill
+国际站不得展示国内续费入口或中文续费提示。
 
-- Given 用户已选择 Skill 且任务说明存在内容
-- When 用户清除 Skill 选择
-- Then 任务说明保持原内容
+### Requirement ACCOUNT-RENEW-2：成功刷新
 
-### Requirement SKILL-PICKER-4：加载和错误
+账号页发起续费成功后必须刷新账号页 Pass 数据和订阅卡片有效期。刷新未确认成功时不得展示成功。
 
-- `loading`：显示加载态，不清空表单其他输入。
-- `ready + []`：显示“暂无已安装 Skill”和前往技能管理入口。
-- `error`：显示加载失败和重试入口。
-- 已选但不可用：保留 slug，标记“不可用”，允许更换。
-- 下拉选项仅展示已安装 Skill，不展示“不调用 Skill”。
+## 6. `/agents` Agent 头部到期提醒
 
-## 7. 创建与编辑命令
+### Requirement AGENTS-RENEW-1：展示条件
 
-### 7.1 创建
+`/agents` 到期提醒必须同时满足：
 
-```ts
-skills: selectedSkill ? [selectedSkill] : undefined
+- 国内站。
+- 用户已登录。
+- 当前页面存在至少 1 个非 `provisioning`、非 `deleting` 的 Agent。
+- `activePass` 存在。
+- 当前时间距离 `activePass.expired_time` 小于等于 7 日且大于 0。
+
+无 Agent、无有效 Pass、Pass 已过期或隔离、国际站都不展示此提醒。
+
+### Requirement AGENTS-RENEW-2：位置与视觉
+
+提醒放在 Agent 信息头部，贴近“运行中”状态，不放在主内容区顶部。更多菜单位置保持不变。
+
+桌面参考结构：
+
+```text
+┌────────────────────────────────────┐
+│ [头像] 我的Hermes              [⋮] │
+│        ● 运行中  ·  套餐将到期      │
+└────────────────────────────────────┘
 ```
 
-- 有选择时生成且只生成一个 `--skill '<slug>'`。
-- 无选择时不生成 `--skill` 或 `--clear-skills`。
+移动端参考结构：
 
-### 7.2 编辑
+```text
+[头像] 我的Hermes          [⋮]
+       ● 运行中
+       套餐将到期
+```
 
-`EditCronJobPatch.skills` 使用以下三态：
+颜色规则：
 
-| patch 值 | CLI | 含义 |
-| --- | --- | --- |
-| `undefined` | 不生成 Skill flag | 保持原绑定，不触碰现有列表 |
-| `[slug]` | `--skill '<slug>'` | 用一个 Skill 替换原列表 |
-| `[]` | `--clear-skills` | 清空原列表 |
+- 剩余 2-7 天：琥珀色状态点或浅色 chip。
+- 剩余小于 2 天：红色或橙红色状态点或 chip。
+- 正常大于 7 天：不展示套餐到期提醒。
 
-命令构造必须抽为纯函数并独立测试，所有 slug 必须使用现有 `shellQuote`。
+### Requirement AGENTS-RENEW-3：hover 与点击
 
-### 7.3 外部多 Skill 任务
+- 默认短文案：`套餐将到期`。
+- hover 大于等于 1 天：`套餐剩余 {{days}} 天到期，点击续费。`
+- hover 小于 1 天：`套餐剩余 {{hours}} 小时到期，点击续费。`
+- hover 不足 1 小时：`套餐不足 1 小时到期，点击续费。`
+- 点击提醒直接打开 `RenewPassModal`，不跳转 `/account`。
+- 移动端没有 hover 时短文案常显，点击短文案打开弹窗。
+- 提醒不提供关闭按钮，不阻断 Agent 管理操作。
 
-一期 UI 仅回显首个 Skill，但若用户未修改 Skill 字段，patch 必须保持 `skills === undefined`，从而保留外部 CLI 创建的完整多 Skill 列表。用户主动更换或清空时，才收敛为一期的零/单 Skill模型。
+### Requirement AGENTS-RENEW-4：成功刷新
 
-### 7.4 提交前失效检查
+从 `/agents` 发起续费成功后，必须刷新 `useOpenClaw()` 中的 Pass 状态。若有效期已延长，到期提醒消失或恢复为普通运行状态。
 
-- 创建时选择 Skill，或编辑时更换 Skill：保存前必须使用当前列表验证所选 slug。
-- 编辑弹窗打开时绑定可用、保存前刷新确认已经卸载：阻止保存，提示重新选择。
-- 编辑弹窗打开时绑定已经不可用且用户未修改 Skill：允许保存其他字段，patch 不触碰 Skill，以满足“不自动解绑”。
-- 重新验证失败时：未绑定的普通任务仍可提交；新建或变更后的 Skill 绑定不得使用无法确认的陈旧选择提交。
+## 7. `/subscribe` 续费回流
 
-## 8. 详情展示
+### Requirement SUBSCRIBE-RENEW-1：错误引导
 
-`CronJobDetailModal` 必须新增“调用 Skill”字段：
+当 `/subscribe` 创建 Pass 返回 `PASS_EXPIRED` 或 `PASS_ISOLATED` 时，页面必须展示明确引导：
 
-| job.skills | 列表状态 | 展示 |
-| --- | --- | --- |
-| `[]` | 任意 | 不调用 Skill |
-| `[slug]` | ready 且包含 slug | 展示名称 + slug |
-| `[slug]` | ready 且不包含 slug | 展示名称 + slug + 不可用 |
-| `[slug]` | loading | 展示名称 + slug + 状态确认中 |
-| `[slug]` | error | 展示名称 + slug + 暂无法确认 |
+- 标题：`当前套餐需要续费`
+- 描述：`你的套餐已过期或进入隔离期，请前往我的账号续费当前套餐。`
+- 操作：`前往续费`
 
-不可用状态只影响提示，不得修改 job、不触发自动清除，也不得在测试运行时移除 `job.skills`。
+点击操作跳转 `/account`。订阅页不自动打开续费弹窗，不自动选择新购套餐，不允许绕过续费规则直接新购。
 
-## 9. 兼容性、隐私与国际化
+## 8. 兼容性、区域化与隐私
 
-### 9.1 兼容性
+- 续费接口仍使用现有 `getRenewPrice`、`createRenewOrder`、`getRenewOrderUrl`。
+- 微信中转页继续通过 `pid` 或 `passId` 判断续费场景。
+- 国内站差异必须通过 `isCN` / `isGlobal` 编译期常量控制。
+- 不新增敏感数据存储，不把订单号、支付 URL、Pass 明细写入普通日志或埋点。
+- 工具能力、SkillHub、MCP、自动任务相关入口不得在本次改动中出现。
 
-- `CronJob.skills` 缺失或空数组继续按普通任务处理。
-- 现有 create、edit、test run、pause、resume、remove 行为不变。
-- 测试运行继续携带 `job.skills`，不新增降级逻辑。
-- 不新增路由、后端字段、数据库迁移或特性开关。
-
-### 9.2 隐私
-
-- 不新增记录任务说明全文、Skill 内容或用户自定义 Skill 名称的日志。
-- 不把 prompt 或 slug 加入现有大同埋点参数。
-- 错误提示可以显示当前用户已经可见的 slug，但不得把 Skill 文件内容发送到埋点或普通日志。
-
-### 9.3 国际化
-
-所有新增中文 key 必须通过现有 `useT()` 接入，并运行 `pnpm i18n:extract` 更新：
-
-- `src/i18n/generated/zh-CN.json`
-- `src/i18n/generated/en-US.json`
-- `src/i18n/generated/zh-to-key.json`
-
-国内站和国际站必须验证创建、编辑、详情、清空、空态、错误态和不可用态。
-
-## 10. 测试要求
+## 9. 测试要求
 
 ### 单元测试
 
-- 已安装 Skill JSON、表格、纯文本解析与去重。
-- 展示名和搜索匹配。
-- create 命令有/无 Skill。
-- edit 命令保持/替换/清空 Skill。
-- 表单 create/edit 三态映射及外部多 Skill 不误覆盖。
-- 可用、不可用、loading、error 详情状态判定。
+- 续费周期映射：月付到 `{ period: 1, time_unit: "month" }`，季付到 `{ period: 3, time_unit: "month" }`。
+- 预计到期时间计算。
+- 到期提醒剩余天数、小时、不足 1 小时文案。
+- 到期提醒颜色状态：2-7 天与小于 2 天不同。
+- 可续费 Pass 判断不包含 deleted。
 
 ### 组件测试
 
-- 默认显示未选择提示。
-- 搜索、选择和切换，不展示“不调用 Skill”选项。
-- loading、空态、失败重试。
-- 已绑定但不可用的保留与标记。
-- 基本 ARIA 属性。
+- `/account` active、expired、isolated 展示“立即续费”；deleted 不展示。
+- `RenewPassModal` 默认月付、可切季付、不展示 6/12 个月。
+- 支付阶段展示“刷新”，不展示“我已完成支付”和“二维码有效期约 9 分钟”。
+- `/agents` 有 Agent 且 7 日内展示头部提醒，hover 有 tooltip，点击打开弹窗。
+- `/agents` 无 Agent、无有效 Pass、国际站不展示提醒。
+- `/subscribe` 对 `PASS_EXPIRED` / `PASS_ISOLATED` 展示可点击续费引导。
 
 ### 项目门禁
 
 - 目标 Vitest 测试通过。
+- `pnpm i18n:extract` 生成新增文案。
 - `pnpm i18n:check` 通过。
 - `pnpm check` 通过。
-- 国内站与国际站本地页面完成可见验证。
+- `git diff --check` 通过。
+- 国内站本地页面完成 `/account`、`/agents`、`/subscribe` 关键路径 smoke。

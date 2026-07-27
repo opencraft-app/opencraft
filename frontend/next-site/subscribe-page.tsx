@@ -2023,6 +2023,10 @@ type ModalStep = "closed" | "confirm" | "paying";
 type SubscribeError = {
   code?: string | null;
   message: string;
+  action?: {
+    label: string;
+    href: string;
+  };
 };
 
 type SubscribePageProps = {
@@ -2529,7 +2533,17 @@ export const SubscribePage = ({
       }
       /* 特例 3：需要走续费路径（expired/isolated） → 引导到账号页 */
       if (isPassRequiresRenewError(code)) {
-        setError({ code, message: t("您的套餐已过期或进入隔离期，请前往「我的账号」续费。") });
+        const message = code === "PASS_ISOLATED"
+          ? t("当前套餐已进入隔离期，请前往我的账号续费恢复使用，或在账号页销毁后重新购买。")
+          : t("当前套餐已到期，请前往我的账号续费后继续使用。");
+        setError({
+          code,
+          message,
+          action: {
+            label: t("前往续费"),
+            href: ACCOUNT_PATH,
+          },
+        });
         setModalStep("closed");
         setSelectedPlan(null);
         setPaymentContext(null);
@@ -2775,6 +2789,11 @@ export const SubscribePage = ({
             >
               <p
                 style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
                   padding: "10px 16px",
                   borderRadius: 8,
                   textAlign: "center",
@@ -2795,7 +2814,19 @@ export const SubscribePage = ({
                     </AppLink>{" "}
                     {t("进行实名。")}
                   </>
-                ) : error.message}
+                ) : (
+                  <>
+                    <span>{error.message}</span>
+                    {error.action && (
+                      <AppLink
+                        to={error.action.href}
+                        style={{ color: "#cf3d4c", fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3 }}
+                      >
+                        {error.action.label}
+                      </AppLink>
+                    )}
+                  </>
+                )}
               </p>
             </motion.div>
           )}

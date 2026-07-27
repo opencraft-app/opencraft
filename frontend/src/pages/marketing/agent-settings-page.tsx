@@ -43,6 +43,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
+import { usePaidBillingEnabled } from "@/contexts/runtime-config-context";
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
@@ -119,6 +120,9 @@ import {
   RESET_BLOCK_REASON,
 } from "@/pages/marketing/agent-reset-config";
 import { toast } from "@/lib/toast";
+import { isPaidBillingEnabled } from "@/lib/billing-flow";
+import { getPassExpiryReminder } from "@/lib/pass-renewal";
+import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 
@@ -3008,8 +3012,10 @@ export const AgentSettingsPage = ({
   const [searchParams] = useAppSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
-  const { bots, botsLoading, deleteBot, user, refreshBots, isSubscribed, addBot } = useOpenClaw();
+  const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass } = useOpenClaw();
   const repositories = useRepositories();
+  const paidBillingEnabled = usePaidBillingEnabled();
+  const paidBillingActive = isCN && isPaidBillingEnabled(paidBillingEnabled);
   const {
     commandLifecycle: automationModelCommandLifecycle,
     confirmationDialog: automationModelSwitchDialog,
@@ -3065,6 +3071,7 @@ export const AgentSettingsPage = ({
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
   const [isAgentActionMenuOpen, setIsAgentActionMenuOpen] = useState(false);
+  const [renewPassModalOpen, setRenewPassModalOpen] = useState(false);
   const agentActionMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!isAgentActionMenuOpen) return undefined;
@@ -3095,6 +3102,14 @@ export const AgentSettingsPage = ({
   }, [visibleBots, activeTabId, isCreating]);
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const activeBotStatus = activeBot?.status;
+  const passExpiryReminder = useMemo(
+    () => (paidBillingActive ? getPassExpiryReminder(activePass) : null),
+    [activePass, paidBillingActive],
+  );
+  const handleRenewPassSuccess = useCallback(async () => {
+    setRenewPassModalOpen(false);
+    await refreshPasses();
+  }, [refreshPasses]);
   const isInitialBotsLoading = shouldShowAgentSettingsDataLoading({
     botsLoading,
     isCreating,
@@ -4850,6 +4865,17 @@ export const AgentSettingsPage = ({
         document.body,
       )}
 
+      <AnimatePresence>
+        {renewPassModalOpen && activePass && (
+          <RenewPassModal
+            key="renew-pass"
+            pass={activePass}
+            onClose={() => setRenewPassModalOpen(false)}
+            onSuccess={() => void handleRenewPassSuccess()}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Channel Modal */}
       {showChannelModal && activeBot && (
         <ChannelModal bot={activeBot} onClose={() => setShowChannelModal(false)} />
@@ -4944,16 +4970,38 @@ export const AgentSettingsPage = ({
                           <span className="lv-agent-profile-name" title={activeBot.name}>
                             {truncateBotName(activeBot.name)}
                           </span>
-                          <span className="lv-agent-status">
-                            {isActiveBotRestarting ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <span
-                                className="inline-block h-1.5 w-1.5 rounded-full"
-                                style={{ background: getBotStatusColor(activeBot.status) }}
-                              />
+                          <span className="lv-agent-status-row">
+                            <span className="lv-agent-status">
+                              {isActiveBotRestarting ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <span
+                                  className="inline-block h-1.5 w-1.5 rounded-full"
+                                  style={{ background: getBotStatusColor(activeBot.status) }}
+                                />
+                              )}
+                              {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                            </span>
+                            {passExpiryReminder && activePass && (
+                              <button
+                                type="button"
+                                className={cn("lv-agent-renewal-badge", `is-${passExpiryReminder.level}`)}
+                                title={passExpiryReminder.tooltip}
+                                aria-label={t("套餐{{time}}，点击续费", { time: passExpiryReminder.tooltip })}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setRenewPassModalOpen(true);
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.stopPropagation();
+                                  }
+                                }}
+                              >
+                                <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                                {passExpiryReminder.label}
+                              </button>
                             )}
-                            {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
                           </span>
                         </span>
                         <div

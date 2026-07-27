@@ -10,6 +10,9 @@
 
 import { RepositoryError } from "@/repositories/http-repositories";
 
+const SYSTEM_BUSY_RETRY_MESSAGE = "系统繁忙，请刷新页面后重试";
+const LEGACY_SYSTEM_BUSY_MESSAGE = "系统繁忙，请稍后再试。";
+
 /**
  * envelope.code → 用户文案映射表
  *
@@ -51,7 +54,7 @@ const BILLING_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   INSTANCE_SHADOW_BINDING_REQUIRED: "请先完成手机号验证后再创建 Hermes。",
 
   // §7.4 5xx
-  INTERNAL_SERVER_ERROR: "系统繁忙，请稍后再试。",
+  INTERNAL_SERVER_ERROR: SYSTEM_BUSY_RETRY_MESSAGE,
   UPSTREAM_ERROR: "计费服务暂时不可用，请稍后再试。",
 } as const;
 
@@ -60,7 +63,7 @@ const BILLING_ERROR_MESSAGES: Readonly<Record<string, string>> = {
  */
 const FALLBACK_BY_STATUS: Readonly<Record<string, string>> = {
   "4xx": "请求未能完成，请检查后重试。",
-  "5xx": "系统繁忙，请稍后再试。",
+  "5xx": SYSTEM_BUSY_RETRY_MESSAGE,
 } as const;
 
 /** 默认兜底文案 */
@@ -113,6 +116,7 @@ export const resolveBillingErrorMessage = (
 
   // 走原始 message（如 RepositoryError 已经把 ctl 的 message 拼好了）
   if (error instanceof RepositoryError) {
+    if (error.message === LEGACY_SYSTEM_BUSY_MESSAGE) return SYSTEM_BUSY_RETRY_MESSAGE;
     if (error.message) return error.message;
     if (error.status >= 500) return FALLBACK_BY_STATUS["5xx"]!;
     if (error.status >= 400) return FALLBACK_BY_STATUS["4xx"]!;
