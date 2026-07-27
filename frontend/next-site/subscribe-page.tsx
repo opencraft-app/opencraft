@@ -46,7 +46,19 @@ const colors = {
   border: "rgba(0,0,0,0.1)",
   badgeBg: "rgba(0,0,0,0.04)",
   badgeText: "rgba(0,0,0,0.75)",
+  /* Tooltip（免费试用提示等）配色，集中管理避免散落硬编码 */
+  tooltipBg: "rgba(23,23,23,0.92)",
+  tooltipShadow: "0 4px 16px rgba(0,0,0,0.18)",
 };
+
+/* ─── 套餐识别常量（避免魔法字符串） ─── */
+/** 启航版套餐名匹配关键字（后端可能返回「启航」中文名或「launch」英文名） */
+const LAUNCH_BUNDLE_NAME_KEYWORDS = {
+  zh: "启航",
+  en: "launch",
+} as const;
+/** AI 增强版套餐类型标识（首月折扣付费，不在免费试用范围内） */
+const BUNDLE_TYPE_AI = "ai";
 
 const shadows = {
   card: "rgba(0,0,0,0.04) 0px 4px 18px, rgba(0,0,0,0.027) 0px 2.025px 7.85px, rgba(0,0,0,0.02) 0px 0.8px 2.93px, rgba(0,0,0,0.01) 0px 0.175px 1.04px",
@@ -587,8 +599,9 @@ const mapBundleToPlan = (
      AI 增强版（bundle_type === "ai"）为付费首月折扣，不在此免费试用范围内。 */
   const _launchBundleName = bundle.bundle_name ?? "";
   const isLaunchStandard =
-    (_launchBundleName.includes("启航") || _launchBundleName.toLowerCase().includes("launch")) &&
-    bundle.bundle_type !== "ai";
+    (_launchBundleName.includes(LAUNCH_BUNDLE_NAME_KEYWORDS.zh) ||
+      _launchBundleName.toLowerCase().includes(LAUNCH_BUNDLE_NAME_KEYWORDS.en)) &&
+    bundle.bundle_type !== BUNDLE_TYPE_AI;
   const isNewUserFreeLaunch = isLaunchStandard && !isSubscribed && !isCurrentPlan;
   const ctaLabel = isCurrentPlan
     ? t("当前订阅")
@@ -1556,13 +1569,13 @@ const PlanCard = ({
                 maxWidth: 240,
                 padding: "8px 12px",
                 borderRadius: 8,
-                background: "rgba(23,23,23,0.92)",
+                background: colors.tooltipBg,
                 color: colors.white,
                 fontSize: 12,
                 fontWeight: 500,
                 lineHeight: 1.5,
                 textAlign: "center",
-                boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
+                boxShadow: colors.tooltipShadow,
                 pointerEvents: "none",
                 whiteSpace: "normal",
               }}
@@ -1579,7 +1592,7 @@ const PlanCard = ({
                   height: 0,
                   borderLeft: "5px solid transparent",
                   borderRight: "5px solid transparent",
-                  borderTop: "5px solid rgba(23,23,23,0.92)",
+                  borderTop: `5px solid ${colors.tooltipBg}`,
                 }}
               />
             </div>
