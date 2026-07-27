@@ -4148,7 +4148,6 @@ export function buildHermesSendCommand(platform: string, chatId: string, message
     "status=$?",
     "printf '%s\\n' \"$output\"",
     "if [ $status -ne 0 ]; then exit $status; fi",
-    "if printf '%s\\n' \"$output\" | grep -Eiq '(^|[^a-z])(error|failed|failure|unauthorized|forbidden|no access_token|not configured|not connected)([^a-z]|$)'; then exit 1; fi",
   ].join("; ");
   const legacyPayload = JSON.stringify({ action: "send", target: buildHermesSendTarget(platform, chatId), message });
   const legacyScript = [
