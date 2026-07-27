@@ -70,7 +70,8 @@ flowchart TB
 | `llmgateway-worker` `observer` | 分页刷新租户、权益和用量观测投影 | 是 |
 | `velagwset-provisioner` | 认领容量请求，并作为 `VelaGWSet.spec` 唯一业务写入者执行创建、逐 Set 蓝绿升级和下线 | 否，通过 control 内部 API |
 | `velagwset-controller` | 仅根据单个 `VelaGWSet` 收敛 Deployment、Service、PDB 和 status | 否，也不读取 Secret |
-| `llmgateway-set-manager` | 仅兼容存量 `LLMFleet.spec.sets[]`；原生 Fleet 必须关闭其 upgrade/decommission writer | 是 |
+| `llmgateway-shard-manager` | 只读观察 `LLMFleet.spec.shards`，登记不可变 Shard 事实供容量选择和运营查询 | 否，通过 control 内部 API |
+| `llmgateway-set-manager` | 旧 `LLMFleet.spec.sets[]` 兼容命令；当前北京、上海原生 Fleet 不部署 | 是 |
 | `llmgateway-runtime-cleaner` | Set 下线且 Kubernetes runtime 消失后，凭短期 capability 清理独占 MySQL 数据库和 Redis DB | 是 |
 | `new-api master/slave` | Set 内管理、计费、渠道选择和模型转发 | 使用所属 Shard 数据源 |
 
@@ -88,7 +89,7 @@ flowchart TB
 - `active_runtime_generation`、`last_runtime_generation`、`route_revision` 和 `lifecycle_generation` 只能由专用事务命令推进，健康检查、容量刷新等通用 Set 更新不得改写；runtime generation 永不复用，回滚也只增加 route revision。
 - provision fact 带投影版本。worker 会按游标修复旧 `managed` fact，把 `max_users`、Shard 和真实 runtime generation 回填到本地投影，不依赖人工 SQL。
 - Shard 的 Redis 范围统一使用半开区间 `[redis_db_start, redis_db_limit)`；分配、清理 Job 和 capability 授权使用同一语义。
-- Shard 扩容从运营台提交意图，不直接手填事实。Terraform/Agent 创建 MySQL、Redis 和 Secret，set-manager 从 LLMFleet 回传真实投影，worker 核对资源并等待冒烟验证；只有完整流程结束的 Shard 才应加入容量策略。
+- Shard 扩容从运营台提交意图，不直接手填事实。Terraform/Agent 创建 MySQL、Redis 和 Secret，Shard Manager 从 `LLMFleet.spec.shards` 回传不可变真实投影，worker 核对资源并等待冒烟验证；只有完整流程结束的 Shard 才应加入容量策略。
 
 ### 租户、密钥与权益
 
