@@ -94,7 +94,7 @@ func TestManagedSubscriptionQueuesWhileAdminWritesPausedAndExecutesOnce(t *testi
 
 	req := ApplySubscriptionRequest{
 		IdempotencyKey: "trade:deal-paused", UserID: "user-1", PlanID: "plan-pro",
-		PeriodValue: 14, PeriodUnit: "days",
+		IsUnique: true, PeriodValue: 14, PeriodUnit: "days",
 	}
 	_, first, err := svc.ApplySubscriptionManaged(t.Context(), req)
 	if err != nil || first == nil || first.Status != AdminCommandStatusPending {
@@ -120,11 +120,8 @@ func TestManagedSubscriptionQueuesWhileAdminWritesPausedAndExecutesOnce(t *testi
 	if processed, err := svc.ProcessAdminCommandOnce(t.Context(), "worker-b", time.Minute); err != nil || processed {
 		t.Fatalf("completed command processed again=%v err=%v", processed, err)
 	}
-	if len(fixture.createdPlanIDs) != 1 {
-		t.Fatalf("upstream subscription writes = %d, want 1", len(fixture.createdPlanIDs))
-	}
-	if fixture.createdPlanIDs[0] != 37 {
-		t.Fatalf("upstream plan id = %d, want period plan 37", fixture.createdPlanIDs[0])
+	if len(fixture.createdPlanIDs) != 0 {
+		t.Fatalf("existing subscription should be reused, writes=%v", fixture.createdPlanIDs)
 	}
 	completed, ok, err := store.GetAdminCommand(t.Context(), first.ID)
 	if err != nil || !ok || completed.Status != AdminCommandStatusSucceeded {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -17,6 +18,22 @@ const (
 // PreConsumeBilling 根据用户计费偏好创建 BillingSession 并执行预扣费。
 // 会话存储在 relayInfo.Billing 上，供后续 Settle / Refund 使用。
 func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycommon.RelayInfo) *types.NewAPIError {
+	if relayInfo != nil && relayInfo.QuotaClamp != nil {
+		return types.NewErrorWithStatusCode(
+			relayInfo.QuotaClamp,
+			types.ErrorCodeModelPriceError,
+			http.StatusBadRequest,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
+	if preConsumedQuota < 0 {
+		return types.NewErrorWithStatusCode(
+			fmt.Errorf("pre-consume quota cannot be negative: %d", preConsumedQuota),
+			types.ErrorCodeModelPriceError,
+			http.StatusBadRequest,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
 	session, apiErr := NewBillingSession(c, relayInfo, preConsumedQuota)
 	if apiErr != nil {
 		return apiErr
@@ -34,9 +51,20 @@ func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycom
 func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) error {
 	if relayInfo.Billing != nil {
 		preConsumed := relayInfo.Billing.GetPreConsumedQuota()
-		delta := actualQuota - preConsumed
+		settlementQuota := actualQuota
+		if session, ok := relayInfo.Billing.(*BillingSession); ok {
+			settlementQuota = session.settlementQuota(actualQuota)
+		}
+		delta := settlementQuota - preConsumed
+		waivedQuota := actualQuota - settlementQuota
 
-		if delta > 0 {
+		if waivedQuota > 0 {
+			logger.LogInfo(ctx, fmt.Sprintf("订阅尾部额度宽限：%s（实际消耗：%s，实际扣费：%s）",
+				logger.FormatQuota(waivedQuota),
+				logger.FormatQuota(actualQuota),
+				logger.FormatQuota(settlementQuota),
+			))
+		} else if delta > 0 {
 			logger.LogInfo(ctx, fmt.Sprintf("预扣费后补扣费：%s（实际消耗：%s，预扣费：%s）",
 				logger.FormatQuota(delta),
 				logger.FormatQuota(actualQuota),

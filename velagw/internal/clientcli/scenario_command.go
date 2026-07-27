@@ -2,8 +2,6 @@ package clientcli
 
 import (
 	"context"
-	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -26,35 +24,25 @@ func newScenarioCommand(root *rootOptions) *cobra.Command {
 }
 
 type tradeLifecycleOptions struct {
-	apply     subscriptionApplyOptions
-	periodEnd string
+	apply subscriptionApplyOptions
 }
 
 func newTradeLifecycleCommand(root *rootOptions) *cobra.Command {
 	options := &tradeLifecycleOptions{}
-	command := leafCommand("trade-lifecycle", "完整验证开通、续期、查询和取消", root, options)
+	command := leafCommand("trade-lifecycle", "完整验证开通、查询和取消", root, options)
 	bindApplyFlags(command, &options.apply)
-	command.Flags().StringVar(&options.periodEnd, "period-end", "", "可选：续期后的到期时间（RFC3339）")
 	return command
 }
 
 func (o *tradeLifecycleOptions) Validate() error {
-	if err := o.apply.Validate(); err != nil {
-		return err
-	}
-	if strings.TrimSpace(o.periodEnd) != "" {
-		_, err := parseRFC3339(o.periodEnd)
-		return err
-	}
-	return nil
+	return o.apply.Validate()
 }
 
 func (o *tradeLifecycleOptions) Run(ctx context.Context, api *client.Client, renderer ui.Renderer) error {
-	periodEnd := optionalTime(o.periodEnd)
 	report, err := (clientscenario.Runner{Gateway: api}).TradeLifecycle(ctx, clientscenario.TradeLifecycleInput{
 		UserID: o.apply.userID, Nickname: o.apply.nickname, PlanID: o.apply.planID,
 		IdempotencyKey: o.apply.idempotencyKey, PeriodValue: o.apply.periodValue,
-		PeriodUnit: o.apply.periodUnit, NewPeriodEnd: periodEnd,
+		PeriodUnit: o.apply.periodUnit,
 	})
 	return renderScenario(renderer, report, err)
 }
@@ -88,32 +76,21 @@ func (o *onboardScenarioOptions) Run(ctx context.Context, api *client.Client, re
 }
 
 type renewScenarioOptions struct {
-	apply     subscriptionApplyOptions
-	periodEnd string
+	apply subscriptionApplyOptions
 }
 
 func newRenewScenarioCommand(root *rootOptions) *cobra.Command {
 	options := &renewScenarioOptions{}
 	command := leafCommand("renew", "模拟一笔续费订单并确认权益", root, options)
 	bindApplyFlags(command, &options.apply)
-	command.Flags().StringVar(&options.periodEnd, "period-end", "", "可选：显式对齐的到期时间（RFC3339）")
 	return command
 }
 
-func (o *renewScenarioOptions) Validate() error {
-	if err := o.apply.Validate(); err != nil {
-		return err
-	}
-	if strings.TrimSpace(o.periodEnd) != "" {
-		_, err := parseRFC3339(o.periodEnd)
-		return err
-	}
-	return nil
-}
+func (o *renewScenarioOptions) Validate() error { return o.apply.Validate() }
 
 func (o *renewScenarioOptions) Run(ctx context.Context, api *client.Client, renderer ui.Renderer) error {
 	report, err := (clientscenario.Runner{Gateway: api}).Renew(ctx, clientscenario.RenewInput{
-		Apply: o.apply.input(), NewPeriodEnd: optionalTime(o.periodEnd),
+		Apply: o.apply.input(),
 	})
 	return renderScenario(renderer, report, err)
 }
@@ -213,14 +190,6 @@ func bindBYOKFlags(command *cobra.Command, options *byokSetOptions) {
 	command.Flags().StringVar(&options.userID, "user-id", "", "业务用户 ID")
 	command.Flags().StringVar(&options.mode, "mode", options.mode, "路由策略：byok_first 或 platform_first")
 	command.Flags().StringArrayVar(&options.providerJSON, "provider", nil, "渠道 JSON；可重复传入")
-}
-
-func optionalTime(value string) time.Time {
-	if strings.TrimSpace(value) == "" {
-		return time.Time{}
-	}
-	parsed, _ := parseRFC3339(value)
-	return parsed
 }
 
 func renderScenario(renderer ui.Renderer, report clientscenario.Report, scenarioErr error) error {

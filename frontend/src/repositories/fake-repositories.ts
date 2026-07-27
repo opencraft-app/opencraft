@@ -783,6 +783,21 @@ export const createFakeRepositories = (): Repositories => {
           },
         };
       },
+      async createTencentCloudRedirect(targetPath = "/developer/security/cancel") {
+        await wait(NETWORK_DELAY_MS);
+        const session = readStoredAuthSession();
+        if (!session) {
+          throw new Error("未登录或登录已失效。");
+        }
+        const redirectUrl = new URL("https://cloud.tencent.com/login/saas/jumpLoginByCode");
+        redirectUrl.searchParams.set("code", "fake.auth-code");
+        redirectUrl.searchParams.set("platform", "Lightclaw");
+        redirectUrl.searchParams.set("s_url", `https://console.cloud.tencent.com${targetPath}`);
+        return {
+          redirectUrl: redirectUrl.toString(),
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        };
+      },
       getOAuthStartUrl(provider: OAuthProvider, options) {
         return fakeOAuthStartURL(provider, options?.wechatMode);
       },

@@ -803,6 +803,64 @@ func TestVerifyRealnamePhoneWithShadowRequiresBindingSuccess(t *testing.T) {
 	}
 }
 
+func TestIssueTencentCloudConsoleAuthCodeUsesCurrentUsersActiveBinding(t *testing.T) {
+	shadowSvc := shadowbinding.New(
+		shadowbinding.NewMemoryStore(),
+		&stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}},
+		shadowbinding.Options{Enabled: true, Now: fixedNow, AuthCodePrefix: "bjsbx"},
+	)
+	svc := NewWithStore(
+		NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true}),
+		Options{Now: fixedNow, ShadowBinding: shadowSvc},
+	)
+	session := mustPasswordSessionWithPhone(t, svc, "console-login@example.invalid", "13800138090")
+	if _, err := shadowSvc.BindShadowAccount(context.Background(), shadowbinding.BindInput{
+		UserID: session.User.ID,
+		Phone:  session.User.Phone,
+	}); err != nil {
+		t.Fatalf("seed active shadow binding: %v", err)
+	}
+
+	code, err := svc.IssueTencentCloudConsoleAuthCode(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("issue Tencent Cloud console auth code: %v", err)
+	}
+	if !strings.HasPrefix(code.Code, "bjsbx.") {
+		t.Fatalf("expected Beijing routing prefix, got %q", code.Code)
+	}
+	if got, want := code.ExpiresAt, fixedNow().Add(10*time.Minute); !got.Equal(want) {
+		t.Fatalf("expected expiry %s, got %s", want, got)
+	}
+
+	rawCode := strings.TrimPrefix(code.Code, "bjsbx.")
+	consumed, err := shadowSvc.ConsumeAuthCode(context.Background(), rawCode)
+	if err != nil {
+		t.Fatalf("consume issued raw auth code: %v", err)
+	}
+	if got, want := consumed.UserID, session.User.ID; got != want {
+		t.Fatalf("expected code for current user %q, got %q", want, got)
+	}
+}
+
+func TestIssueTencentCloudConsoleAuthCodeRequiresActiveBinding(t *testing.T) {
+	shadowSvc := shadowbinding.New(
+		shadowbinding.NewMemoryStore(),
+		&stubShadowRegisterClient{},
+		shadowbinding.Options{Enabled: true, Now: fixedNow},
+	)
+	svc := NewWithStore(
+		NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true}),
+		Options{Now: fixedNow, ShadowBinding: shadowSvc},
+	)
+	session := mustPasswordSessionWithPhone(t, svc, "console-no-binding@example.invalid", "13800138091")
+
+	_, err := svc.IssueTencentCloudConsoleAuthCode(context.Background(), session.Token)
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "shadow_binding_not_ready" || authErr.Status != http.StatusConflict {
+		t.Fatalf("expected shadow_binding_not_ready 409, got %#v", err)
+	}
+}
+
 func TestVerifyRealnamePhoneWithShadowUsesTencentCode(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true})
 	client := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}}

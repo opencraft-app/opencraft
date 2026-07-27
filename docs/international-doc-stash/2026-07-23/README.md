@@ -1,25 +1,25 @@
 # International docs stash — 2026-07-23
 
-This directory stores LightVela international-site documentation that was not ready for publication on 2026-07-23.
+This directory is the fixed recovery archive for LightVela international-site documentation that is intentionally hidden from publication.
 
 ## Scope
 
-- `global/`: 29 unfinished Chinese international-site documents.
-- `en/`: 29 unfinished English international-site documents.
-- A page was stashed when it was a full placeholder (`内容待补充。` / `Content coming soon.`), or when the whole page explicitly said it was under construction (`configuration/channel-slack.md`).
-- Completed pages that only contain a product-availability note or an image recommendation were kept active.
-- The five secondary use-case pages are stashed in both languages; only the first use case, Personal AI Assistant, remains active.
-- The Troubleshooting section is stashed in both languages until those pages are ready.
-- The international FAQ page is also stashed in both languages until it is ready.
+- `global/` and `en/` retain the original 2026-07-23 archive snapshot.
+- `rehidden-2026-07-24/global/` and `rehidden-2026-07-24/en/` contain the current copies that were hidden again on 2026-07-24.
+- The 2026-07-24 batch contains all full placeholder pages (`内容待补充。` / `Content coming soon.`), plus the five secondary Use Cases and the general FAQ by request. Only the first Use Case, Personal AI Assistant, remains published.
+- Entire placeholder-only groups, Advanced and Troubleshooting, are hidden with their pages. Security retains the completed "Using LightVela Safely" page and Support retains Contact Us.
+- Completed pages that merely mention future availability or recommend an image remain active.
 - Domestic-site content was not changed.
 
 ## Restore convention
 
-Each file keeps its original path relative to `frontend/src/content/docs/`:
+The archived copies remain here for recovery and comparison. The active copies now live under `frontend/src/content/docs/`.
+
+Each file keeps its original path relative to `frontend/src/content/docs/` within its archive batch:
 
 ```text
-stash/global/<path>.md -> frontend/src/content/docs/global/<path>.md
-stash/en/<path>.md     -> frontend/src/content/docs/en/<path>.md
+rehidden-2026-07-24/global/<path>.md -> frontend/src/content/docs/global/<path>.md
+rehidden-2026-07-24/en/<path>.md     -> frontend/src/content/docs/en/<path>.md
 ```
 
 Before restoring a file, update `frontend/src/config/docs-sidebar.ts` if the page should be publicly listed again. Run the frontend documentation checks after restoring it.

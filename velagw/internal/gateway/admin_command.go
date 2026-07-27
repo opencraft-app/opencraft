@@ -60,36 +60,6 @@ func (s *Service) CancelSubscriptionManaged(ctx context.Context, externalUserID 
 	return &command, nil
 }
 
-func (s *Service) ExtendSubscriptionManaged(ctx context.Context, req ExtendSubscriptionRequest) (ExtendSubscriptionResponse, *AdminCommand, error) {
-	req.UserID = strings.TrimSpace(req.UserID)
-	if req.UserID == "" || req.NewPeriodEnd.IsZero() {
-		return ExtendSubscriptionResponse{}, nil, fmt.Errorf("user_id and new_period_end are required")
-	}
-	set, paused, err := s.boundSetAdminWritesPaused(ctx, req.UserID)
-	if err != nil {
-		return ExtendSubscriptionResponse{}, nil, err
-	}
-	if !paused {
-		result, err := s.ExtendSubscription(ctx, req)
-		return result, nil, err
-	}
-	payload, err := json.Marshal(req)
-	if err != nil {
-		return ExtendSubscriptionResponse{}, nil, err
-	}
-	commandID := "cmd-" + randomSecret()
-	command, _, err := s.store.EnqueueAdminCommand(ctx, AdminCommand{
-		ID:        commandID,
-		DedupeKey: fmt.Sprintf("extend-subscription:%s:%s:%d", set.ID, req.UserID, req.NewPeriodEnd.UTC().UnixNano()),
-		SetID:     set.ID, ExternalUserID: req.UserID, Kind: AdminCommandKindExtendSubscription,
-		Payload: string(payload), Status: AdminCommandStatusPending, NextRunAt: s.nowUTC(),
-	})
-	if err != nil {
-		return ExtendSubscriptionResponse{}, nil, err
-	}
-	return ExtendSubscriptionResponse{}, &command, nil
-}
-
 // ApplySubscriptionManaged keeps the synchronous behavior outside upgrade
 // windows and persists a typed command when the user's admin master is paused.
 func (s *Service) ApplySubscriptionManaged(ctx context.Context, req ApplySubscriptionRequest) (Subscription, *AdminCommand, error) {
@@ -101,9 +71,18 @@ func (s *Service) ApplySubscriptionManaged(ctx context.Context, req ApplySubscri
 	if err := s.validateApplySubscriptionRequest(req); err != nil {
 		return Subscription{}, nil, err
 	}
-	plan, err := s.activePlan(ctx, req.PlanID)
+	plan, err := s.GetPlan(ctx, req.PlanID)
 	if err != nil {
 		return Subscription{}, nil, err
+	}
+	if !plan.IsActive {
+		binding, ok, bindingErr := s.store.GetUserBinding(ctx, req.UserID)
+		if bindingErr != nil {
+			return Subscription{}, nil, bindingErr
+		}
+		if !ok || binding.UpstreamUserID <= 0 {
+			return Subscription{}, nil, ErrPlanNotFound
+		}
 	}
 	if _, err := s.resolvePlanTarget(ctx, req, plan); err != nil {
 		return Subscription{}, nil, err
@@ -259,13 +238,6 @@ func (s *Service) executeAdminCommand(ctx context.Context, command AdminCommand)
 		}
 		runErr = s.CancelSubscription(ctx, req.ExternalUserID)
 		result = map[string]string{"status": "ok"}
-	case AdminCommandKindExtendSubscription:
-		var req ExtendSubscriptionRequest
-		if err := json.Unmarshal([]byte(command.Payload), &req); err != nil {
-			runErr = err
-			break
-		}
-		result, runErr = s.ExtendSubscription(ctx, req)
 	case AdminCommandKindCreateExternalKey:
 		var req createExternalKeyCommandPayload
 		if err := json.Unmarshal([]byte(command.Payload), &req); err != nil {

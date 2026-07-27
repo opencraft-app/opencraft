@@ -1,5 +1,5 @@
 upstream_repo=https://github.com/QuantumNous/new-api.git
 upstream_branch=main
-upstream_commit=55b00fcf0956f3f1aa3906dd3c0f236b90e4f062
+upstream_commit=84a79b6807ac1a679ca86f34c8c6f39175c294d8
 prefix=new-api
 mode=squash-subtree

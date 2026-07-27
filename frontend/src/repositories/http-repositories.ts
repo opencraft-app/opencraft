@@ -35,6 +35,7 @@ import type {
   Repositories,
   SettingsSnapshot,
   TatDeviceBindResult,
+  TencentCloudRedirectResult,
   WorkerActionStatusLog,
   WorkerActionStatusResult,
   WorkspaceSnapshot,
@@ -1359,6 +1360,12 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
           }
         : undefined,
     };
+  },
+  async createTencentCloudRedirect(targetPath): Promise<TencentCloudRedirectResult> {
+    return request<TencentCloudRedirectResult>(baseUrl, "/auth/tencent-cloud/redirect", {
+      method: "POST",
+      body: targetPath ? { targetPath } : {},
+    });
   },
   getOAuthStartUrl(provider, options) {
     const base = typeof window !== "undefined" ? window.location.origin : "https://lightclaw.tech";

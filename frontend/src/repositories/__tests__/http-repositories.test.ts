@@ -216,6 +216,40 @@ describe("http repositories auth token bootstrap", () => {
     expect(session?.currentSubscription).toBeNull();
   });
 
+  it("creates a Tencent Cloud console redirect from a relative target path", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          redirectUrl:
+            "https://cloud.tencent.com/login/saas/jumpLoginByCode?code=bjsbx.code&platform=Lightclaw&s_url=https%3A%2F%2Fconsole.cloud.tencent.com%2Fcvm%2Finstance%2Findex",
+          expiresAt: "2026-07-27T12:10:00Z",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await expect(repositories.auth.createTencentCloudRedirect("/cvm/instance/index")).resolves.toMatchObject({
+      expiresAt: "2026-07-27T12:10:00Z",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/auth/tencent-cloud/redirect",
+      expect.objectContaining({
+        body: JSON.stringify({ targetPath: "/cvm/instance/index" }),
+        credentials: "include",
+        method: "POST",
+      }),
+    );
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer persisted-bearer-token");
+  });
+
   it("uses the new subscriptions checkout endpoint when confirming a plan", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn().mockResolvedValue(

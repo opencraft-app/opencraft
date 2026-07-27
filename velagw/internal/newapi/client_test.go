@@ -167,6 +167,54 @@ func TestClientBootstrapAndCreateUserTokenFlow(t *testing.T) {
 	}
 }
 
+func TestClientGenerateAccessTokenUsesLoginBearer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/user/login":
+			writeJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"access_token": "login-access-token",
+				"user": map[string]any{
+					"id":       42,
+					"username": "managed-user",
+					"role":     1,
+					"status":   1,
+					"group":    "default",
+				},
+			}})
+		case "GET /api/user/token":
+			if r.Header.Get("Authorization") != "Bearer login-access-token" {
+				http.Error(w, `{"success":false,"message":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			if r.Header.Get("New-Api-User") != "42" {
+				t.Fatalf("New-Api-User = %q, want 42", r.Header.Get("New-Api-User"))
+			}
+			writeJSON(t, w, map[string]any{"success": true, "data": "generated-user-token"})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	session, err := client.Login(t.Context(), "managed-user", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.UserID != 42 || session.AccessToken != "login-access-token" {
+		t.Fatalf("session = %+v, want user 42 with login access token", session)
+	}
+	token, err := client.GenerateAccessToken(t.Context(), session.UserID, session.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "generated-user-token" {
+		t.Fatalf("token = %q, want generated-user-token", token)
+	}
+}
+
 func TestClientConfirmPaymentComplianceUsesDashboardSession(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

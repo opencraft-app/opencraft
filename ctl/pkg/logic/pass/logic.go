@@ -59,7 +59,6 @@ type newPassSubscriptionRequest struct {
 	SubscriptionName string
 	PeriodValue      int
 	PeriodUnit       string
-	PeriodEnd        *time.Time
 	IsUnique         bool
 }
 
@@ -72,6 +71,9 @@ type newPassSubscription struct {
 func ensureNewPassGatewayUser(ctx context.Context, userID, nickname string) (bool, error) {
 	if gatewayroute.NewAllocationGateway(userID) == gatewayroute.GatewayLLMGateway {
 		resp, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().EnsureUser(ctx, userID, nickname)
+		if err != nil {
+			return false, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "ensure llmgateway user: %v", err)
+		}
 		return resp != nil && resp.Result == "created", err
 	}
 	resp, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().EnsureUser(ctx, userID, nickname)
@@ -85,9 +87,6 @@ func applyNewPassGatewaySubscription(ctx context.Context, req newPassSubscriptio
 			UserID:           req.UserID,
 			PlanID:           req.PlanID,
 			SubscriptionName: req.SubscriptionName,
-			PeriodValue:      req.PeriodValue,
-			PeriodUnit:       req.PeriodUnit,
-			PeriodEnd:        req.PeriodEnd,
 			IsUnique:         req.IsUnique,
 		})
 		if err != nil {
@@ -576,13 +575,11 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 		return nil, fmt.Errorf("calc expired_time: %w", err)
 	}
 
-	// 步骤 9：AI Token 订阅联动（严格一致）
-	// credit > 0 时向选定网关开通订阅；credit == 0 时跳过。
+	// 步骤 9：确保 AI 权益存在。LLMGateway 使用长期订阅，业务有效期只由 ctl
+	// 的 pass 管理；legacy ai-gateway 在迁移期仍接收原周期。
+	subscriptionEnsured := false
 	if bundle.Credit > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		// R-MR-3 v0.3.0：透传 bundle.TimeSpan/TimeUnit 给选定网关，
-		// 让其内部按 (NOW + period) 算 PeriodEnd（Q9=i1 真源），与 ctl
-		// CalcExpiredTime 走同算法保证 PeriodEnd 完全一致。
 		sub, subErr := applyNewPassGatewaySubscription(ctx, newPassSubscriptionRequest{
 			IdempotencyKey:   trialSubscriptionIdempotencyKey(userID, bundleID),
 			UserID:           userID,
@@ -596,6 +593,7 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 		if subErr != nil {
 			return nil, fmt.Errorf("apply gateway subscription: %w", subErr)
 		}
+		subscriptionEnsured = true
 		if sub != nil {
 			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, sub.Gateway, sub.ID, sub.PlanID, gatewayroute.SourceApplySubscription)
 			resource.ZapLogger.Info("pass subscription applied",
@@ -620,7 +618,12 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 	}
 
 	if err := passDao.CreatePassWithQuota(entity, userID, agentQuota); err != nil {
-		return nil, fmt.Errorf("create pass with quota: %w", err)
+		return nil, compensateEnsuredEntitlement(
+			resource.ZapLogger,
+			userID,
+			subscriptionEnsured,
+			fmt.Errorf("create pass with quota: %w", err),
+		)
 	}
 
 	// 步骤 11：创建成功，取消回滚
@@ -888,7 +891,6 @@ func (l *logic) GrantFreeCredit(req *transport.GrantFreeCreditRequest) (*transpo
 		UserID:           userID,
 		PlanID:           planID,
 		SubscriptionName: subscriptionName,
-		PeriodEnd:        &periodEnd,
 		IsUnique:         false,
 	})
 	if err != nil {
@@ -1468,12 +1470,11 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		return nil, fmt.Errorf("calc expired_time: %w", err)
 	}
 
-	// 步骤 9：AI Token 订阅联动（与 CreateTrialPass 一致，credit > 0 时向选定网关开通订阅）
+	// 步骤 9：确保 AI 权益存在。LLMGateway 使用长期订阅，订单购买时长不下沉；
+	// legacy ai-gateway 在迁移期仍接收原周期。
+	subscriptionEnsured := false
 	if bundle.Credit > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		// R-MR-3 v0.3.0：透传 req.TimeSpan/TimeUnit（trade 已持有用户实际购买
-		// 时长），让 ai-gateway 按 (NOW + period) 算 PeriodEnd（Q9=i1 真源）。
-		// 同一份 bundle 不再需要按时长配多个 plan — bundle.AiGatewayPlanID 复用。
 		sub, subErr := applyNewPassGatewaySubscription(ctx, newPassSubscriptionRequest{
 			IdempotencyKey:   tradeSubscriptionIdempotencyKey(req.DealName),
 			UserID:           req.UserID,
@@ -1487,6 +1488,7 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		if subErr != nil {
 			return nil, fmt.Errorf("apply gateway subscription: %w", subErr)
 		}
+		subscriptionEnsured = true
 		if sub != nil {
 			gatewayroute.RecordBestEffort(logger, req.UserID, sub.Gateway, sub.ID, sub.PlanID, gatewayroute.SourceApplySubscription)
 			logger.Info("complete pass subscription applied",
@@ -1509,7 +1511,12 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		Status:      passmodel.StatusActive,    // v1.7.28 BUG-17 修复：显式写 active，避免 gorm 用 Go zero value 覆盖 DB DEFAULT
 	}
 	if err := passDao.CreatePassWithQuota(entity, req.UserID, agentQuota); err != nil {
-		return nil, fmt.Errorf("create pass with quota: %w", err)
+		return nil, compensateEnsuredEntitlement(
+			logger,
+			req.UserID,
+			subscriptionEnsured,
+			fmt.Errorf("create pass with quota: %w", err),
+		)
 	}
 
 	// 步骤 11：创建成功，取消回滚

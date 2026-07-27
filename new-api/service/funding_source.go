@@ -74,6 +74,8 @@ type SubscriptionFunding struct {
 	amount         int64 // 预扣的订阅额度（subConsume）
 	subscriptionId int
 	preConsumed    int64
+	tailGrace      bool
+	allowTailGrace bool
 	// 以下字段在 PreConsume 成功后填充，供 RelayInfo 同步使用
 	AmountTotal     int64
 	AmountUsedAfter int64
@@ -85,12 +87,13 @@ func (s *SubscriptionFunding) Source() string { return BillingSourceSubscription
 
 func (s *SubscriptionFunding) PreConsume(_ int) error {
 	// amount 参数被忽略，使用内部 s.amount（已在构造时根据 preConsumedQuota 计算）
-	res, err := model.PreConsumeUserSubscription(s.requestId, s.userId, s.modelName, 0, s.amount)
+	res, err := model.PreConsumeUserSubscription(s.requestId, s.userId, s.modelName, 0, s.amount, s.allowTailGrace)
 	if err != nil {
 		return err
 	}
 	s.subscriptionId = res.UserSubscriptionId
 	s.preConsumed = res.PreConsumed
+	s.tailGrace = res.PreConsumed < s.amount
 	s.AmountTotal = res.AmountTotal
 	s.AmountUsedAfter = res.AmountUsedAfter
 	// 获取订阅计划信息
@@ -99,6 +102,14 @@ func (s *SubscriptionFunding) PreConsume(_ int) error {
 		s.PlanTitle = planInfo.PlanTitle
 	}
 	return nil
+}
+
+func (s *SubscriptionFunding) PreConsumedQuota() int {
+	return int(s.preConsumed)
+}
+
+func (s *SubscriptionFunding) IsTailGrace() bool {
+	return s.tailGrace
 }
 
 func (s *SubscriptionFunding) Settle(delta int) error {

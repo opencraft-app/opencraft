@@ -138,6 +138,7 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/channel-qq", title: "QQ", titleEn: "QQ", indent: true },
       { slug: "configuration/channel-wecom", title: "企业微信", titleEn: "WeCom", indent: true },
       { slug: "configuration/channel-feishu", title: "飞书", titleEn: "Lark", indent: true },
+      { slug: "configuration/channel-slack", title: "Slack", titleEn: "Slack", indent: true },
       { slug: "configuration/skill", title: "配置技能", titleEn: "Configure Skills" },
       { slug: "configuration/memory", title: "记忆管理", titleEn: "Memory Management" },
       { slug: "configuration/automation", title: "自动任务", titleEn: "Automations" },
@@ -160,18 +161,38 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         title: "如何用 LightVela 搭建个人 AI 助手？",
         titleEn: "How to Build a Personal AI Assistant with LightVela",
       },
+      {
+        slug: "use-cases/chinese-messaging-channels",
+        title: "如何把 AI Agent 接入消息平台？",
+        titleEn: "How to Connect an AI Agent to Messaging Platforms",
+      },
+      {
+        slug: "use-cases/daily-summary",
+        title: "如何用 Hermes Agent 做每日信息总结？",
+        titleEn: "How to Create Daily Summaries with Hermes Agent",
+      },
+      {
+        slug: "use-cases/hermes-agent-24-7",
+        title: "如何让 Hermes Agent 7×24 小时在线？",
+        titleEn: "How to Keep a Hermes Agent Online 24/7",
+      },
+      {
+        slug: "use-cases/memory-and-knowledge",
+        title: "如何用 Agent 管理长期记忆和个人知识？",
+        titleEn: "How to Manage Long-Term Memory and Personal Knowledge with an Agent",
+      },
     ],
   },
   {
     title: "对比与选型",
     titleEn: "Compare & Choose",
     items: [
+      { slug: "compare/lightvela-vs-manus", title: "LightVela vs Manus", titleEn: "LightVela vs Manus" },
+      { slug: "compare/lightvela-vs-hostinger", title: "LightVela vs Hostinger", titleEn: "LightVela vs Hostinger" },
+      { slug: "compare/lightvela-vs-localhost-ai-agent", title: "LightVela vs 本地部署 Agent", titleEn: "LightVela vs Selfhost Agent" },
+      { slug: "compare/lightvela-vs-chatgpt", title: "LightVela vs ChatGPT", titleEn: "LightVela vs ChatGPT" },
+      { slug: "compare/lightvela-vs-genspark", title: "LightVela vs Genspark", titleEn: "LightVela vs Genspark" },
     ],
-  },
-  {
-    title: "问题排查",
-    titleEn: "Troubleshooting",
-    items: [],
   },
   {
     title: "安全、隐私与数据",
@@ -182,12 +203,6 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         title: "安全使用 LightVela",
         titleEn: "Using LightVela Safely",
       },
-    ],
-  },
-  {
-    title: "进阶用法",
-    titleEn: "Advanced",
-    items: [
     ],
   },
   {
@@ -223,6 +238,7 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "configuration/model": "configuration/model.md",
   "configuration/channel-wechat": "configuration/channel-wechat.md",
   "configuration/channel-feishu": "configuration/channel-feishu.md",
+  "configuration/channel-slack": "configuration/channel-slack.md",
   "configuration/channel-qq": "configuration/channel-qq.md",
   "configuration/skill": "configuration/skill.md",
   // 问题排查
@@ -256,9 +272,17 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/multiple-models": "configuration/multiple-models.md",
   "configuration/agent-chat": "configuration/agent-chat.md",
   "use-cases/personal-ai-assistant": "use-cases/personal-ai-assistant.md",
+  "use-cases/chinese-messaging-channels": "use-cases/chinese-messaging-channels.md",
+  "use-cases/daily-summary": "use-cases/daily-summary.md",
+  "use-cases/hermes-agent-24-7": "use-cases/hermes-agent-24-7.md",
+  "use-cases/memory-and-knowledge": "use-cases/memory-and-knowledge.md",
   "faq/using-lightvela-safely": "faq/using-lightvela-safely.md",
+  "compare/lightvela-vs-manus": "compare/lightvela-vs-manus.md",
+  "compare/lightvela-vs-hostinger": "compare/lightvela-vs-hostinger.md",
+  "compare/lightvela-vs-localhost-ai-agent": "compare/lightvela-vs-localhost-ai-agent.md",
+  "compare/lightvela-vs-chatgpt": "compare/lightvela-vs-chatgpt.md",
+  "compare/lightvela-vs-genspark": "compare/lightvela-vs-genspark.md",
   "contact-us": "contact-us.md",
-  "support/report-an-issue": "support/report-an-issue.md",
 };
 
 export const SLUG_TO_FILE: Record<string, string> = isGlobal

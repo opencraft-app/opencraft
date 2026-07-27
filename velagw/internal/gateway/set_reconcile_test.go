@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"git.woa.com/wisp/mono2/llmgateway/internal/newapi"
 )
 
 func TestRecordSetReconcileFactsDoesNotRegisterSet(t *testing.T) {
@@ -626,6 +628,7 @@ func newAutoManagedSetTestServer(t *testing.T, optionKeys *[]string, channelCrea
 func newAutoPlanSetTestServer(t *testing.T, createdPlanTitle *string) *httptest.Server {
 	t.Helper()
 	initialized := false
+	var createdPlan newapi.AdminSubscriptionPlan
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method + " " + r.URL.Path {
@@ -648,15 +651,19 @@ func newAutoPlanSetTestServer(t *testing.T, createdPlanTitle *string) *httptest.
 		case "GET /api/user/token":
 			writeTestJSON(t, w, map[string]any{"success": true, "data": "set-admin-token"})
 		case "GET /api/subscription/admin/plans":
-			writeTestJSON(t, w, map[string]any{"success": true, "data": []any{}})
-		case "POST /api/subscription/admin/plans":
-			var req struct {
-				Plan struct {
-					Title string `json:"title"`
-				} `json:"plan"`
+			if createdPlan.ID == 0 {
+				writeTestJSON(t, w, map[string]any{"success": true, "data": []any{}})
+				return
 			}
+			writeTestJSON(t, w, map[string]any{"success": true, "data": []any{
+				map[string]any{"plan": createdPlan},
+			}})
+		case "POST /api/subscription/admin/plans":
+			var req newapi.AdminCreateSubscriptionPlanRequest
 			decodeGatewayChannelJSON(t, r, &req)
 			*createdPlanTitle = req.Plan.Title
+			createdPlan = req.Plan
+			createdPlan.ID = 99
 			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 99}})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)

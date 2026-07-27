@@ -4,10 +4,10 @@ import { docsMetadata, LightVelaDocsPage, type DocsLocalePrefix } from '@next-si
 import { LightVelaDocsLayout } from '@next-site/docs-layout';
 import {
   DOCS_ROUTE_LOCALES,
+  DOCS_ROUTE_SLUGS,
   isDocsRouteSlug,
   type DocsRouteLocale,
 } from '@next-site/docs-route-manifest';
-import { DOCS_STATIC_ROUTE_SLUGS } from '@next-site/docs-static-route-manifest';
 import { LightVelaDocsHeader } from '@next-site/docs-header';
 import { PublicSiteLocaleBridge } from '@next-site/public-site-providers';
 import { isGlobal } from '@/lib/region';
@@ -48,7 +48,7 @@ export default async function Page({
 
 export function generateStaticParams() {
   return DOCS_ROUTE_LOCALES.filter((lang) => REGION_DOCS_ROUTE_LOCALES.includes(lang)).flatMap((lang) =>
-    DOCS_STATIC_ROUTE_SLUGS[lang].map((slug) => ({ lang, slug: [...slug] })),
+    DOCS_ROUTE_SLUGS[lang].map((slug) => ({ lang, slug: [...slug] })),
   );
 }
 

@@ -16,12 +16,10 @@ import (
 	"fmt"
 	"time"
 
-	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
-	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
 	instanceasync "ctl/pkg/instance"
-	"ctl/pkg/logic/gatewayroute"
+	logicpass "ctl/pkg/logic/pass"
 	"ctl/pkg/metric"
 	daoFactory "ctl/pkg/model/factory"
 	modelinstance "ctl/pkg/model/instance"
@@ -44,7 +42,6 @@ const (
 	destroyInstanceForPassTaskMaxExecuteCount = 60
 
 	// 收尾步骤外部调用超时
-	cancelSubscriptionCallTimeout   = 5 * time.Second         // 5a：与 ai-gateway internal API 一致
 	tradeCompleteFlowDestroyTimeout = 1500 * time.Millisecond // 5c：与 isolate 父 task 同 1.5s
 )
 
@@ -125,6 +122,15 @@ func (t *destroyPassTask) execute(ctx pctx.Context) (string, error) {
 	if err != nil {
 		// pass 已不在表 — 关键 Q6 场景：5b 已成功 + 5c 失败的重投
 		if t.in.PassDeleted {
+			if !t.in.SubscriptionDone {
+				if err := t.cancelAiGatewaySubscription(ctx, logger, t.in.UserID); err != nil {
+					return "", fmt.Errorf("repair 5a after pass migration: %w", err)
+				}
+				t.in.SubscriptionDone = true
+				if err := t.persistProgress(ctx); err != nil {
+					return "", fmt.Errorf("persist repaired 5a progress: %w", err)
+				}
+			}
 			logger.Info("destroy pass: pass already migrated to history, proceeding to 5c finalize")
 			return t.finalizePostPassDeleted(ctx, logger)
 		}
@@ -149,9 +155,11 @@ func (t *destroyPassTask) execute(ctx pctx.Context) (string, error) {
 
 	// === 阶段 5：步骤级幂等收尾（D-7 落地，Q6 重投幂等）===
 
-	// 5a：ai-gateway.CancelSubscription（best-effort，Q3 拍板不阻塞）
+	// 5a：可靠取消长期权益；失败时不推进 SubscriptionDone，也不删除 pass。
 	if !t.in.SubscriptionDone {
-		t.cancelAiGatewaySubscription(ctx, logger, passEntity.UserID)
+		if err := t.cancelAiGatewaySubscription(ctx, logger, passEntity.UserID); err != nil {
+			return "", fmt.Errorf("5a CancelSubscription: %w", err)
+		}
 		t.in.SubscriptionDone = true
 		if err := t.persistProgress(ctx); err != nil {
 			return "", fmt.Errorf("persist progress after 5a: %w", err)
@@ -305,83 +313,27 @@ func detachInstancesForPassDestroy(userID string, instances []*modelinstance.Ent
 
 // === D-7 收尾步骤实现（5a / 5b / 5c）===
 
-// cancelAiGatewaySubscription 5a：调 ai-gateway.CancelSubscription（best-effort，Q3 拍板不阻塞）
-//
-// 设计稿 §11-A Q3 拍板（方案 A）：CancelSubscription 维持 best-effort，不阻塞销毁主流程。
-// 兜底依赖 ai-gateway Scheduler 按 period_end 自动过期 + 用户下次 Subscribe() 强制 CancelByUserID 覆盖。
-func (t *destroyPassTask) cancelAiGatewaySubscription(_ pctx.Context, logger *zap.Logger, userIDFromEntity string) {
+// cancelAiGatewaySubscription 5a：可靠取消长期权益。失败必须让父任务重试，
+// 因为订阅不再跟随业务有效期自动过期。
+func (t *destroyPassTask) cancelAiGatewaySubscription(_ pctx.Context, logger *zap.Logger, userIDFromEntity string) error {
 	userID := t.in.UserID
 	if userID == "" {
 		userID = userIDFromEntity
 	}
 	if userID == "" {
-		logger.Warn("destroy pass 5a: userID empty, skip CancelSubscription")
-		metric.DestroyFinalizeStepTotal.WithLabelValues("5a_cancel_subscription", "skipped").Inc()
-		return
-	}
-	callCtx, cancel := context.WithTimeout(context.Background(), cancelSubscriptionCallTimeout)
-	defer cancel()
-	cancelSource := "ai-gateway"
-	if config.LLMGatewayEnabled() {
-		cancelSource = "llmgateway"
-	}
-	if gateway, ok, err := gatewayroute.Get(userID); err != nil {
-		logger.Warn("destroy pass 5a: get recorded subscription gateway failed, fallback to probe",
-			zap.String("user_id", userID),
-			zap.Error(err))
-	} else if ok {
-		switch gateway {
-		case gatewayroute.GatewayAIGateway:
-			cancelSource = "ai-gateway"
-		case gatewayroute.GatewayLLMGateway:
-			if config.LLMGatewayEnabled() {
-				cancelSource = "llmgateway"
-			} else {
-				logger.Warn("destroy pass 5a: recorded llmgateway subscription ignored because llmgateway is disabled",
-					zap.String("user_id", userID))
-				cancelSource = "ai-gateway"
-			}
-		default:
-			logger.Warn("destroy pass 5a: unknown recorded subscription gateway, fallback to probe",
-				zap.String("user_id", userID),
-				zap.String("gateway", gateway))
-		}
-	} else if legacyAdapter := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter(); legacyAdapter != nil {
-		legacySub, legacyErr := legacyAdapter.GetActiveSubscription(callCtx, userID)
-		if legacyErr == nil && legacySub != nil {
-			cancelSource = "ai-gateway"
-			gatewayroute.RecordBestEffort(logger, userID, gatewayroute.GatewayAIGateway, legacySub.ID, legacySub.PlanID, gatewayroute.SourceDetectActiveSubscription)
-		} else if legacyErr != nil && !isLegacyGatewayDisabled(legacyErr) {
-			logger.Warn("destroy pass 5a: get ai-gateway active subscription failed, try llmgateway cancel",
-				zap.String("user_id", userID),
-				zap.Error(legacyErr))
-		}
-	}
-
-	var err error
-	if cancelSource == "ai-gateway" {
-		err = adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().CancelSubscription(callCtx, userID)
-	} else {
-		err = adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().CancelSubscription(callCtx, userID)
-	}
-	if err != nil {
-		// best-effort：失败仅记 Warn，不阻塞后续 5b/5c
-		logger.Warn("destroy pass 5a: gateway CancelSubscription failed (best-effort, parent task still proceeds)",
-			zap.String("user_id", userID),
-			zap.String("gateway", cancelSource),
-			zap.Error(err))
 		metric.DestroyFinalizeStepTotal.WithLabelValues("5a_cancel_subscription", "failed").Inc()
-		return
+		return errors.New("destroy pass 5a: userID empty")
+	}
+	if err := logicpass.CancelAiGatewayEntitlement(logger, userID); err != nil {
+		logger.Warn("destroy pass 5a: ai-gateway CancelSubscription failed",
+			zap.String("user_id", userID), zap.Error(err))
+		metric.DestroyFinalizeStepTotal.WithLabelValues("5a_cancel_subscription", "failed").Inc()
+		return err
 	}
 	logger.Info("destroy pass 5a: gateway CancelSubscription succeeded",
-		zap.String("user_id", userID),
-		zap.String("gateway", cancelSource))
-	gatewayroute.ClearBestEffort(logger, userID, "destroy")
+		zap.String("user_id", userID))
 	metric.DestroyFinalizeStepTotal.WithLabelValues("5a_cancel_subscription", "success").Inc()
-}
-
-func isLegacyGatewayDisabled(err error) bool {
-	return errors.Is(err, aigateway.ErrAiGatewayNotConfigured)
+	return nil
 }
 
 // movePassToHistory 5b：dao.MoveToHistory（删 pass 行 + 写 history_pass，单事务）

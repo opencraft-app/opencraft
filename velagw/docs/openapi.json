@@ -2151,7 +2151,7 @@
           "Cluster Admin"
         ],
         "operationId": "listPlans",
-        "summary": "列出不可变权益模板",
+        "summary": "列出权益模板",
         "security": [
           {
             "AdminBearer": []
@@ -2175,8 +2175,8 @@
           "Cluster Admin"
         ],
         "operationId": "registerPlan",
-        "summary": "定义不可变权益模板",
-        "description": "ID 可省略并由 LLMGateway 生成。显式指定 ID 时，相同权益重复写入成功；同一 ID 的权益发生变化返回 409。保存后由后台任务下发到各 Set。",
+        "summary": "创建权益模板",
+        "description": "ID 可省略并由 LLMGateway 生成。模板定义周期额度和额度重置策略，不包含业务有效期。保存后由后台任务下发到各 Set。",
         "security": [
           {
             "AdminBearer": []
@@ -2253,13 +2253,14 @@
         }
       }
     },
-    "/api/plans/{plan_id}/periods": {
-      "get": {
+    "/api/plans/{plan_id}/retire": {
+      "post": {
         "tags": [
           "Cluster Admin"
         ],
-        "operationId": "listPlanPeriods",
-        "summary": "查看权益模板允许的非默认周期",
+        "operationId": "retirePlan",
+        "summary": "停止权益模板的新发放",
+        "description": "不可逆地停止该模板的新订阅发放。已存在的有效订阅继续生效，模板内容和指纹保持不变。",
         "security": [
           {
             "AdminBearer": []
@@ -2272,14 +2273,42 @@
         ],
         "responses": {
           "200": {
-            "description": "周期变体列表。",
+            "description": "模板已停止新发放；重复调用仍返回成功。",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlanPeriodListEnvelope"
+                  "$ref": "#/components/schemas/PlanEnvelope"
                 }
               }
             }
+          },
+          "404": {
+            "$ref": "#/components/responses/OpenAIError"
+          }
+        }
+      }
+    },
+    "/api/plans/{plan_id}/periods": {
+      "get": {
+        "tags": [
+          "Cluster Admin"
+        ],
+        "operationId": "listPlanPeriods",
+        "summary": "已废弃：查看权益模板周期变体",
+        "deprecated": true,
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PlanID"
+          }
+        ],
+        "responses": {
+          "410": {
+            "description": "业务有效期已改由 ctl/trade 管理。"
           }
         }
       },
@@ -2288,8 +2317,9 @@
           "Cluster Admin"
         ],
         "operationId": "registerPlanPeriod",
-        "summary": "登记权益模板的非默认周期",
-        "description": "登记后为所有 active Set 排队创建独立的 new-api subscription plan。",
+        "summary": "已废弃：登记权益模板周期变体",
+        "description": "业务有效期已改由 ctl/trade 管理。",
+        "deprecated": true,
         "security": [
           {
             "AdminBearer": []
@@ -2311,11 +2341,8 @@
           }
         },
         "responses": {
-          "200": {
-            "$ref": "#/components/responses/OK"
-          },
-          "400": {
-            "$ref": "#/components/responses/OpenAIError"
+          "410": {
+            "description": "业务有效期已改由 ctl/trade 管理。"
           }
         }
       }
@@ -2326,7 +2353,8 @@
           "Cluster Admin"
         ],
         "operationId": "listPlanPeriodSetStates",
-        "summary": "查看周期变体的集群下发状态",
+        "summary": "已废弃：查看周期变体下发状态",
+        "deprecated": true,
         "security": [
           {
             "AdminBearer": []
@@ -2338,15 +2366,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "每个周期变体在各 Set 的下发状态。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SetPlanPeriodListEnvelope"
-                }
-              }
-            }
+          "410": {
+            "description": "业务有效期已改由 ctl/trade 管理。"
           }
         }
       }
@@ -3022,7 +3043,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlanEnvelope"
+                  "$ref": "#/components/schemas/PlanReadinessEnvelope"
                 }
               }
             }
@@ -3075,8 +3096,8 @@
           "Internal Compatibility"
         ],
         "operationId": "applySubscription",
-        "summary": "ctl 兼容：开通或续购订阅",
-        "description": "LLMGateway 调用租户目标 new-api Set。",
+        "summary": "ctl 兼容：发放套餐或追加权益",
+        "description": "LLMGateway 调用租户目标 new-api Set。普通套餐传 is_unique=true，服务端按用户收敛为一份 active subscription；赠送积分等叠加权益使用 false。",
         "security": [
           {
             "InternalBearer": []
@@ -3162,8 +3183,8 @@
           "Internal Compatibility"
         ],
         "operationId": "extendSubscription",
-        "summary": "ctl 兼容：对齐 period_end",
-        "description": "LLMGateway 维护极薄 period_end overlay，用于续费、回滚和自然月对齐。",
+        "summary": "ctl 兼容：续期 no-op",
+        "description": "兼容旧 ctl 的临时接口。业务有效期由 ctl/trade 管理，调用不会修改 new-api 订阅或本地投影。",
         "security": [
           {
             "InternalBearer": []
@@ -6113,15 +6134,25 @@
           },
           "monthly_tokens": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "每个额度重置周期可用的 token/积分额度；字段名为兼容历史保留。"
           },
-          "period_value": {
-            "type": "integer",
-            "default": 1
-          },
-          "period_unit": {
+          "quota_reset_period": {
             "type": "string",
-            "default": "months"
+            "enum": [
+              "never",
+              "daily",
+              "weekly",
+              "monthly",
+              "custom"
+            ],
+            "default": "monthly"
+          },
+          "quota_reset_custom_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "quota_reset_period=custom 时必填。"
           },
           "is_active": {
             "type": "boolean",
@@ -6130,9 +6161,34 @@
           "fingerprint": {
             "type": "string",
             "readOnly": true,
-            "description": "不可变权益字段的规范化指纹。"
+            "description": "不可变权益内容的规范化指纹；停止新发放不会改变该值。"
           }
         }
+      },
+      "PlanReadiness": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Plan"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ready_for_all_sets": {
+                "type": "boolean",
+                "readOnly": true,
+                "description": "模板仍允许发放，且已在全部 active Set 中完成一致物化。"
+              },
+              "active_set_count": {
+                "type": "integer",
+                "readOnly": true
+              },
+              "ready_set_count": {
+                "type": "integer",
+                "readOnly": true
+              }
+            }
+          }
+        ]
       },
       "PlanEnvelope": {
         "allOf": [
@@ -6144,6 +6200,21 @@
             "properties": {
               "data": {
                 "$ref": "#/components/schemas/Plan"
+              }
+            }
+          }
+        ]
+      },
+      "PlanReadinessEnvelope": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Envelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/PlanReadiness"
               }
             }
           }
@@ -6231,6 +6302,10 @@
           },
           "upstream_plan_id": {
             "type": "integer"
+          },
+          "applied_fingerprint": {
+            "type": "string",
+            "description": "该 Set 当前稳定生效的权益规格指纹。"
           },
           "status": {
             "type": "string",
@@ -6997,13 +7072,22 @@
           "idempotency_key": {
             "type": "string",
             "maxLength": 128,
-            "description": "可选的订阅发放幂等键。付费/续费使用 trade:<deal_name>，试用使用 trial:<user_id>:<bundle_id>；旧调用方不传时，每次请求都按独立发放处理。"
+            "description": "可选的命令幂等键。相同键、相同请求只执行一次。"
           },
           "user_id": {
             "type": "string"
           },
           "plan_id": {
             "type": "string"
+          },
+          "subscription_name": {
+            "type": "string",
+            "description": "可选的权益来源名称，用于赠送积分等可叠加权益的幂等身份。"
+          },
+          "is_unique": {
+            "type": "boolean",
+            "default": false,
+            "description": "true 表示普通套餐：按用户收敛为唯一 active subscription，并替换其他有效套餐；false 表示追加一份独立权益。"
           },
           "nickname": {
             "type": "string"
@@ -7014,13 +7098,24 @@
           "period_start": {
             "type": "string",
             "format": "date-time",
-            "description": "当前实现拒绝覆盖 period_start。"
+            "deprecated": true,
+            "description": "兼容字段，服务端忽略。业务有效期由 ctl/trade 管理。"
           },
           "period_value": {
-            "type": "integer"
+            "type": "integer",
+            "deprecated": true,
+            "description": "兼容字段，服务端忽略。"
           },
           "period_unit": {
-            "type": "string"
+            "type": "string",
+            "deprecated": true,
+            "description": "兼容字段，服务端忽略。"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date-time",
+            "deprecated": true,
+            "description": "兼容字段，服务端忽略。业务有效期由 ctl/trade 管理。"
           }
         },
         "required": [

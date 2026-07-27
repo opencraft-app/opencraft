@@ -3,10 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { DOCS_ROUTE_SLUGS } from "../next-site/docs-route-manifest";
-import {
-  DOCS_RETIRED_ROUTE_SLUGS,
-  DOCS_STATIC_ROUTE_SLUGS,
-} from "../next-site/docs-static-route-manifest";
+import { DOCS_STATIC_ROUTE_SLUGS } from "../next-site/docs-static-route-manifest";
 
 const ACTIVE_SHARED_FILES = [
   "configuration/diagnostics.md",
@@ -17,30 +14,20 @@ const ACTIVE_SHARED_FILES = [
   "credits.md",
   "plans.md",
   "use-cases/personal-ai-assistant.md",
-  "who-is-lightvela-for.md",
-] as const;
-
-const STASHED_USE_CASE_FILES = [
   "use-cases/chinese-messaging-channels.md",
   "use-cases/daily-summary.md",
   "use-cases/hermes-agent-24-7.md",
   "use-cases/memory-and-knowledge.md",
-  "use-cases/work-assistant.md",
+  "who-is-lightvela-for.md",
 ] as const;
 
 const STASHED_SHARED_FILES = [
+  "07-faq.md",
   "advanced/agent-workflow-design.md",
   "advanced/automation-fit.md",
   "advanced/models-skills-automation.md",
   "advanced/multi-channel-hermes.md",
   "advanced/reduce-model-cost.md",
-  "compare/ai-agent-vs-chatbot.md",
-  "compare/cloud-vs-local-agent.md",
-  "compare/lightvela-vs-self-hosting-hermes.md",
-  "compare/lightvela-vs-server-hosting.md",
-  "compare/model-selection.md",
-  "configuration/channel-slack.md",
-  "07-faq.md",
   "security/data-protection.md",
   "security/data-storage.md",
   "security/export-and-delete-data.md",
@@ -56,7 +43,14 @@ const STASHED_SHARED_FILES = [
 ] as const;
 
 const docsContentRoot = join(process.cwd(), "src", "content", "docs");
-const stashRoot = join(process.cwd(), "..", "docs", "international-doc-stash", "2026-07-23");
+const stashRoot = join(
+  process.cwd(),
+  "..",
+  "docs",
+  "international-doc-stash",
+  "2026-07-23",
+  "rehidden-2026-07-24",
+);
 
 const toRouteSlug = (file: string) => {
   if (file === "07-faq.md") return ["faq"];
@@ -66,9 +60,6 @@ const toRouteSlug = (file: string) => {
 
 const hasRoute = (locale: "en-us" | "zh-sg", file: string) =>
   DOCS_ROUTE_SLUGS[locale].some((slug) => slug.join("/") === toRouteSlug(file).join("/"));
-
-const hasRetiredRoute = (locale: "en-us" | "zh-sg", file: string) =>
-  DOCS_RETIRED_ROUTE_SLUGS[locale].some((slug) => slug.join("/") === toRouteSlug(file).join("/"));
 
 const hasStaticRoute = (locale: "en-us" | "zh-sg", file: string) =>
   DOCS_STATIC_ROUTE_SLUGS[locale].some((slug) => slug.join("/") === toRouteSlug(file).join("/"));
@@ -83,33 +74,16 @@ describe("international docs publication inventory", () => {
     }
   });
 
-  it("keeps the five secondary use cases stashed in both languages", () => {
-    for (const file of STASHED_USE_CASE_FILES) {
-      expect(existsSync(join(docsContentRoot, "en", file)), `unexpected en/${file}`).toBe(false);
-      expect(existsSync(join(docsContentRoot, "global", file)), `unexpected global/${file}`).toBe(false);
-      expect(existsSync(join(stashRoot, "global", file)), `missing stashed global/${file}`).toBe(true);
-      expect(existsSync(join(stashRoot, "en", file)), `missing stashed en/${file}`).toBe(true);
-      expect(hasRoute("en-us", file), `unexpected en-us route for ${file}`).toBe(false);
-      expect(hasRoute("zh-sg", file), `unexpected zh-sg route for ${file}`).toBe(false);
-      expect(hasRetiredRoute("en-us", file), `missing retired en-us route for ${file}`).toBe(true);
-      expect(hasRetiredRoute("zh-sg", file), `missing retired zh-sg route for ${file}`).toBe(true);
-      expect(hasStaticRoute("en-us", file), `unexpected static en-us tombstone for ${file}`).toBe(false);
-      expect(hasStaticRoute("zh-sg", file), `unexpected static zh-sg tombstone for ${file}`).toBe(false);
-    }
-  });
-
-  it("keeps unfinished shared documents out of active content and static routes", () => {
+  it("keeps unfinished international documents stashed and unpublished", () => {
     for (const file of STASHED_SHARED_FILES) {
-      expect(existsSync(join(docsContentRoot, "global", file)), `unexpected global/${file}`).toBe(false);
-      expect(existsSync(join(docsContentRoot, "en", file)), `unexpected en/${file}`).toBe(false);
-      expect(existsSync(join(stashRoot, "global", file)), `missing stashed global/${file}`).toBe(true);
-      expect(existsSync(join(stashRoot, "en", file)), `missing stashed en/${file}`).toBe(true);
-      expect(hasRoute("zh-sg", file), `unexpected zh-sg route for ${file}`).toBe(false);
-      expect(hasRoute("en-us", file), `unexpected en-us route for ${file}`).toBe(false);
-      expect(hasRetiredRoute("zh-sg", file), `missing retired zh-sg route for ${file}`).toBe(true);
-      expect(hasRetiredRoute("en-us", file), `missing retired en-us route for ${file}`).toBe(true);
-      expect(hasStaticRoute("zh-sg", file), `unexpected static zh-sg tombstone for ${file}`).toBe(false);
-      expect(hasStaticRoute("en-us", file), `unexpected static en-us tombstone for ${file}`).toBe(false);
+      expect(existsSync(join(docsContentRoot, "global", file)), `active global/${file}`).toBe(false);
+      expect(existsSync(join(docsContentRoot, "en", file)), `active en/${file}`).toBe(false);
+      expect(existsSync(join(stashRoot, "global", file)), `missing stash global/${file}`).toBe(true);
+      expect(existsSync(join(stashRoot, "en", file)), `missing stash en/${file}`).toBe(true);
+      expect(hasRoute("zh-sg", file), `published zh-sg route for ${file}`).toBe(false);
+      expect(hasRoute("en-us", file), `published en-us route for ${file}`).toBe(false);
+      expect(hasStaticRoute("zh-sg", file), `static zh-sg route for ${file}`).toBe(false);
+      expect(hasStaticRoute("en-us", file), `static en-us route for ${file}`).toBe(false);
     }
   });
 

@@ -1,3 +1,52 @@
+# 2026-07-21 国际站 GEO 文档增量对齐
+
+## 补充：国际站配置教程正文
+
+- [x] 为国际站英文与中文各自完成 Cloud Storage、Diagnostics、Model Switching 三篇教程；使用独立内容源和 `[IMAGE]` 占位，不改国内站文档。
+- [x] 运行文档同步、聚焦回归、类型检查与 diff 范围检查。
+
+**Goal:** 仅复制 `jasminzhao-geo-article-720` 分支新增且国际站尚未具备的文档，为 `zh-sg` 和 `en-us` 分别提供独立版本。
+
+**Scope:** 新增 36 对国际站文档（5 篇完整本地化、31 篇占位结构），同步 Fumadocs、旧侧边栏/搜索映射、四条国际站 SEO 描述及聚焦回归测试；不迁移该分支之前已存在的国内站差异。
+
+## 当前任务清单
+
+- [x] 1. 先添加精确的 36 页双语言 parity 测试，并确认因页面、路由和 SEO 缺失而失败。
+  - 角色：Developer
+  - 影响文件：`scripts/international-docs-parity.test.ts`、`src/lib/__tests__/seo-data.page-description.test.ts`
+  - 验收方式：聚焦 Vitest 以预期的页面、路由和 SEO 缺失原因进入 RED。
+- [x] 2. 在 `src/content/docs/global/` 与 `src/content/docs/en/` 创建 31 对本地化占位页。
+  - 角色：Developer
+  - 影响文件：两个国际站内容树内的 62 个 Markdown 文件。
+  - 验收方式：双语言文件集合精确匹配 allowlist；页面保持占位结构，不扩写长文。
+- [x] 3. 创建并国际化 `who-is-lightvela-for`、`plans`、`credits`、`create-first-hermes`、`configuration/memory` 五对完整页面。
+  - 角色：Developer
+  - 影响文件：两个国际站内容树内的 10 个 Markdown 文件。
+  - 验收方式：国际登录、开通、计费与渠道逻辑正确，无人民币截图或国内实名前提。
+- [x] 4. 同步 Fumadocs 分组、旧侧边栏/搜索映射并重新生成路由 manifest。
+  - 角色：Developer
+  - 影响文件：`scripts/sync-fumadocs-content.mjs`、`src/config/docs-sidebar.ts`、`next-site/docs-route-manifest.ts`
+  - 验收方式：`pnpm docs:sync` 成功，两个 locale 均包含相同的 36 个新增 slug 且保留已有国际路由。
+- [x] 5. 仅新增本分支对应的四条国际站页面级 SEO 描述。
+  - 角色：Developer
+  - 影响文件：`src/lib/seo-data.ts`、`src/lib/__tests__/seo-data.page-description.test.ts`
+  - 验收方式：四条国际站 SEO 测试通过，31 个占位页不新增 SEO override。
+- [x] 6. 完成聚焦测试、docs sync、类型检查、国际站构建和最终范围审计。
+  - 角色：Reviewer
+  - 影响文件：本计划产生的全部 diff。
+  - 验收方式：聚焦测试、`pnpm docs:sync`、`pnpm check`、`pnpm build:global`、`git diff --check` 全部通过，并确认无越界国内文档改动。
+
+## 执行边界
+
+- 事实范围限定为 `dad64aff49a27962540aab2c6793050e39175ae2..71d1c08bc4b186e6ef9984d9b60d082065922020`。
+- 不修改 `global/`、`en/` 之外的国内站 Markdown，不重复改写已存在的国际站 Automation 文档。
+- 不在国际站引用含中文界面、人民币价格和国内促销的 `20260721-150502-8b3a.webp`。
+- 国际站渠道顺序为 Telegram、WhatsApp、Discord、WeChat；完整清单再接 QQ、WeCom、Lark。
+- 详细任务和逐项验收见 `openspec/changes/2026-07-21-international-docs-geo-parity-plan.md`。
+- commit、push 前必须展示范围并取得用户明确确认。
+
+---
+
 # Skills 页面去除 TEA SDK 依赖 Implementation Plan
 
 **Goal:** 国内站与国际站的 Agent Skills 路由直接渲染 mono2 自有 Skills 面板，不再请求、执行或等待 TEA SDK runtime、scripts、styles，同时保持现有页面结构、文案、交互和技能管理能力不变。

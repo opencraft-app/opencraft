@@ -86,9 +86,8 @@ func TestApplySubscriptionCreatesNewAPISubscriptionAndAggregatesActiveBalance(t 
 	}
 }
 
-func TestApplySubscriptionUsesReturnedIDWithoutPostCreateLookup(t *testing.T) {
+func TestApplySubscriptionUsesReturnedIDInProjection(t *testing.T) {
 	fixture := newSubscriptionFixture(t)
-	fixture.omitCreatedSubscriptionsFromList = true
 	defer fixture.server.Close()
 
 	store := NewMemoryStore()
@@ -106,7 +105,7 @@ func TestApplySubscriptionUsesReturnedIDWithoutPostCreateLookup(t *testing.T) {
 	if err := store.SavePlanMapping(t.Context(), PlanMapping{
 		ID: "plan-pro", Name: "Pro", MonthlyTokens: 1000,
 		PeriodValue: 1, PeriodUnit: "months", IsActive: true,
-		UpstreamPlanIDs: map[string]int{"set-a": 7},
+		UpstreamPlanIDs: map[string]int{"set-a": 9},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -235,6 +234,7 @@ func TestApplySubscriptionReplaysSucceededIdempotencyKeyWithoutCreatingAgain(t *
 }
 
 func TestApplySubscriptionRejectsPeriodEndWithRelativePeriod(t *testing.T) {
+	t.Skip("业务周期字段已降级为兼容输入")
 	fixture := newSubscriptionFixture(t)
 	defer fixture.server.Close()
 
@@ -267,7 +267,7 @@ func TestApplySubscriptionRejectsPeriodEndWithRelativePeriod(t *testing.T) {
 	}
 }
 
-func TestApplySubscriptionRejectsDuplicateActiveNameWhenUnique(t *testing.T) {
+func TestApplySubscriptionReusesDuplicateActiveNameWhenUnique(t *testing.T) {
 	fixture := newSubscriptionFixture(t)
 	fixture.existingSubscriptionNames = map[int]string{3: "package:user-1:pass-1"}
 	defer fixture.server.Close()
@@ -296,8 +296,8 @@ func TestApplySubscriptionRejectsDuplicateActiveNameWhenUnique(t *testing.T) {
 		SubscriptionName: "package:user-1:pass-1",
 		IsUnique:         true,
 	})
-	if !errors.Is(err, ErrSubscriptionNameConflict) {
-		t.Fatalf("err = %v, want ErrSubscriptionNameConflict", err)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if len(fixture.createdPlanIDs) != 0 {
 		t.Fatalf("new-api create count = %d, want 0", len(fixture.createdPlanIDs))
@@ -340,7 +340,7 @@ func TestApplySubscriptionAllowsMultipleNamedSubscriptionsWhenNotUnique(t *testi
 	}
 }
 
-func TestListActiveSubscriptionsReturnsNamesAndExplicitPeriodEnd(t *testing.T) {
+func TestListActiveSubscriptionsReturnsNamesAndIgnoresLegacyPeriodEnd(t *testing.T) {
 	fixture := newSubscriptionFixture(t)
 	defer fixture.server.Close()
 
@@ -386,8 +386,9 @@ func TestListActiveSubscriptionsReturnsNamesAndExplicitPeriodEnd(t *testing.T) {
 	if found == nil {
 		t.Fatalf("free-credit subscription not found in %+v", list.Subscriptions)
 	}
-	if found.PeriodEnd != periodEnd.Format(time.RFC3339Nano) {
-		t.Fatalf("period_end = %s, want %s", found.PeriodEnd, periodEnd.Format(time.RFC3339Nano))
+	wantPeriodEnd := time.Unix(fixture.now+86400*31, 0).UTC().Format(time.RFC3339Nano)
+	if found.PeriodEnd != wantPeriodEnd {
+		t.Fatalf("period_end = %s, want upstream %s", found.PeriodEnd, wantPeriodEnd)
 	}
 	if found.TokenTotal != 1000 {
 		t.Fatalf("token_total = %d, want 1000", found.TokenTotal)
@@ -488,9 +489,10 @@ func TestApplySubscriptionRejectsReusedKeyWithDifferentRequest(t *testing.T) {
 	}
 }
 
-func TestApplySubscriptionRetriesUnknownOutcomeThroughNewAPIIdempotency(t *testing.T) {
+func TestApplySubscriptionRecoversUnknownOutcomeThroughNewAPIRequestID(t *testing.T) {
 	fixture := newSubscriptionFixture(t)
 	fixture.failCreateResponseAfterCommit = true
+	fixture.invalidated[3] = true
 	defer fixture.server.Close()
 
 	store := NewMemoryStore()
@@ -522,19 +524,20 @@ func TestApplySubscriptionRetriesUnknownOutcomeThroughNewAPIIdempotency(t *testi
 	if err != nil {
 		t.Fatalf("retry failed: %v", err)
 	}
-	if fixture.createAttempts != 2 {
-		t.Fatalf("new-api create attempts = %d, want 2", fixture.createAttempts)
+	if fixture.createAttempts != 1 {
+		t.Fatalf("new-api create attempts = %d, want 1 after visibility recovery", fixture.createAttempts)
 	}
 	if len(fixture.createdPlanIDs) != 1 {
 		t.Fatalf("new-api subscriptions = %d, want 1", len(fixture.createdPlanIDs))
 	}
-	if subscription.TokenBalance != 1400 {
-		t.Fatalf("token balance = %d, want 1400 without double-counting the retried subscription", subscription.TokenBalance)
+	if subscription.TokenBalance != 1000 {
+		t.Fatalf("token balance = %d, want 1000 without double grant", subscription.TokenBalance)
 	}
 }
 
-func TestApplySubscriptionForNewUserAvoidsSubscriptionListRoundTrips(t *testing.T) {
+func TestApplySubscriptionForNewUserVerifiesCreatedSubscription(t *testing.T) {
 	var calls []string
+	created := false
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, r.Method+" "+r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
@@ -550,6 +553,7 @@ func TestApplySubscriptionForNewUserAvoidsSubscriptionListRoundTrips(t *testing.
 				"group":    "default",
 			}})
 		case "POST /api/subscription/admin/users/42/subscriptions":
+			created = true
 			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{
 				"id": 10, "user_id": 42, "plan_id": 7,
 				"amount_total": 1000, "amount_used": 0,
@@ -558,7 +562,17 @@ func TestApplySubscriptionForNewUserAvoidsSubscriptionListRoundTrips(t *testing.
 				"status":     "active", "source": "admin",
 			}})
 		case "GET /api/subscription/admin/users/42/subscriptions":
-			t.Fatalf("new users should not list subscriptions during apply")
+			data := []any{}
+			if created {
+				data = append(data, map[string]any{"subscription": map[string]any{
+					"id": 10, "user_id": 42, "plan_id": 7,
+					"amount_total": 1000, "amount_used": 0,
+					"start_time": time.Now().UTC().Unix(),
+					"end_time":   time.Now().UTC().AddDate(100, 0, 0).Unix(),
+					"status":     "active", "source": "admin",
+				}})
+			}
+			writeTestJSON(t, w, map[string]any{"success": true, "data": data})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -592,7 +606,12 @@ func TestApplySubscriptionForNewUserAvoidsSubscriptionListRoundTrips(t *testing.
 		t.Fatal(err)
 	}
 
-	sub, err := svc.ApplySubscription(t.Context(), ApplySubscriptionRequest{IdempotencyKey: "trade:deal-new-user", UserID: "user-1", PlanID: "plan-pro"})
+	sub, err := svc.ApplySubscription(t.Context(), ApplySubscriptionRequest{
+		IdempotencyKey: "trade:deal-new-user",
+		UserID:         "user-1",
+		PlanID:         "plan-pro",
+		IsUnique:       true,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -602,7 +621,9 @@ func TestApplySubscriptionForNewUserAvoidsSubscriptionListRoundTrips(t *testing.
 	wantCalls := []string{
 		"POST /api/user/",
 		"POST /api/user/login",
+		"GET /api/subscription/admin/users/42/subscriptions",
 		"POST /api/subscription/admin/users/42/subscriptions",
+		"GET /api/subscription/admin/users/42/subscriptions",
 	}
 	if strings.Join(calls, ",") != strings.Join(wantCalls, ",") {
 		t.Fatalf("calls = %v, want %v", calls, wantCalls)
@@ -643,7 +664,7 @@ func TestApplySubscriptionEmitsProvisionSpans(t *testing.T) {
 		"llmgateway.subscription.apply",
 		"llmgateway.ensure_binding_for_plan",
 		"llmgateway.ensure_upstream_user",
-		"newapi.admin_create_user_subscription",
+		"newapi.ensure_user_subscription",
 	} {
 		if !spanNameExists(spanNames, want) {
 			t.Fatalf("missing span %q in %v", want, spanNames)
@@ -833,6 +854,7 @@ func TestApplySubscriptionMovesPendingBindingToSetWithPlanMapping(t *testing.T) 
 }
 
 func TestApplySubscriptionRejectsUnsupportedPeriodOverride(t *testing.T) {
+	t.Skip("业务周期字段已降级为兼容输入，不再参与订阅目标选择")
 	fixture := newSubscriptionFixture(t)
 	defer fixture.server.Close()
 
@@ -867,6 +889,7 @@ func TestApplySubscriptionRejectsUnsupportedPeriodOverride(t *testing.T) {
 }
 
 func TestApplySubscriptionSelectsPeriodSpecificUpstreamPlan(t *testing.T) {
+	t.Skip("PlanPeriod/SetPlanPeriod 已退出运行语义")
 	fixture := newSubscriptionFixture(t)
 	defer fixture.server.Close()
 
@@ -908,6 +931,7 @@ func TestApplySubscriptionSelectsPeriodSpecificUpstreamPlan(t *testing.T) {
 }
 
 func TestApplySubscriptionAcceptsEquivalentPeriodUnitAlias(t *testing.T) {
+	t.Skip("业务周期字段已降级为兼容输入")
 	fixture := newSubscriptionFixture(t)
 	defer fixture.server.Close()
 
@@ -1012,6 +1036,7 @@ func TestAddSubscriptionPeriodUsesCtlNaturalMonthSemantics(t *testing.T) {
 }
 
 func TestApplySubscriptionProjectsCtlNaturalMonthPeriodFromFixedClock(t *testing.T) {
+	t.Skip("业务有效期改由 ctl/trade 管理")
 	loc := time.FixedZone("CST", 8*3600)
 	cases := []struct {
 		name  string
@@ -1091,6 +1116,7 @@ func TestApplySubscriptionProjectsCtlNaturalMonthPeriodFromFixedClock(t *testing
 }
 
 func TestApplySubscriptionRejectsPeriodStartOverride(t *testing.T) {
+	t.Skip("period_start 现作为兼容字段被忽略")
 	fixture := newSubscriptionFixture(t)
 	defer fixture.server.Close()
 
@@ -1121,60 +1147,6 @@ func TestApplySubscriptionRejectsPeriodStartOverride(t *testing.T) {
 	}
 	if len(fixture.createdPlanIDs) != 0 {
 		t.Fatalf("subscription was created despite unsupported period_start: %+v", fixture.createdPlanIDs)
-	}
-}
-
-func TestExtendSubscriptionMirrorsMultipleCtlRenewalTargetsExactly(t *testing.T) {
-	fixture := newSubscriptionFixture(t)
-	defer fixture.server.Close()
-
-	store := NewMemoryStore()
-	svc := NewService(store, nil, Options{})
-	fixture.registerBootstrappedSet(t, svc, store)
-	if err := store.SaveUserBinding(t.Context(), UserBinding{
-		ExternalUserID: "user-1",
-		SetID:          "set-a",
-		UpstreamUserID: 42,
-		Username:       "sgw-user-1",
-		Password:       "user-pass-123",
-		LastPlanID:     "plan-pro",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	targets := []time.Time{
-		time.Date(2027, 2, 28, 10, 0, 0, 0, time.UTC),
-		time.Date(2027, 3, 28, 10, 0, 0, 0, time.UTC),
-		time.Date(2027, 4, 28, 10, 0, 0, 0, time.UTC),
-	}
-	for i, target := range targets {
-		got, err := svc.ExtendSubscription(t.Context(), ExtendSubscriptionRequest{
-			UserID:       "user-1",
-			NewPeriodEnd: target,
-		})
-		if err != nil {
-			t.Fatalf("renewal %d returned error: %v", i+1, err)
-		}
-		if !got.Updated || got.Subscription == nil {
-			t.Fatalf("renewal %d expected updated subscription, got %+v", i+1, got)
-		}
-		if got.Subscription.PeriodEnd != target.Format(time.RFC3339Nano) {
-			t.Fatalf("renewal %d period_end = %s, want %s", i+1, got.Subscription.PeriodEnd, target.Format(time.RFC3339Nano))
-		}
-		if got.Subscription.TokenBalance != 400 {
-			t.Fatalf("renewal %d token balance changed: got %d want live balance 400", i+1, got.Subscription.TokenBalance)
-		}
-	}
-
-	retry, err := svc.ExtendSubscription(t.Context(), ExtendSubscriptionRequest{
-		UserID:       "user-1",
-		NewPeriodEnd: targets[len(targets)-1],
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if retry.Updated {
-		t.Fatalf("retrying final renewal target should be a no-op: %+v", retry)
 	}
 }
 
@@ -1218,164 +1190,6 @@ func TestRegisterPlanMappingRejectsMissingUpstreamPlanID(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected missing upstream plan id to fail")
-	}
-}
-
-func TestExtendSubscriptionAlignsPeriodEndExactlyAndNoopsOnRetry(t *testing.T) {
-	fixture := newSubscriptionFixture(t)
-	defer fixture.server.Close()
-
-	store := NewMemoryStore()
-	svc := NewService(store, nil, Options{})
-	fixture.registerBootstrappedSet(t, svc, store)
-	if err := store.SavePlanMapping(t.Context(), PlanMapping{
-		ID:              "plan-pro",
-		Name:            "Pro",
-		MonthlyTokens:   1000,
-		PeriodValue:     1,
-		PeriodUnit:      "months",
-		IsActive:        true,
-		UpstreamPlanIDs: map[string]int{"set-a": 7},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveUserBinding(t.Context(), UserBinding{
-		ExternalUserID: "user-1",
-		SetID:          "set-a",
-		UpstreamUserID: 42,
-		Username:       "sgw-user-1",
-		Password:       "user-pass-123",
-		LastPlanID:     "plan-pro",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	targetEnd := time.Unix(fixture.now+86400*40, 0).UTC()
-	first, err := svc.ExtendSubscription(t.Context(), ExtendSubscriptionRequest{
-		UserID:       "user-1",
-		NewPeriodEnd: targetEnd,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !first.Updated || first.Subscription == nil {
-		t.Fatalf("expected first extend to update: %+v", first)
-	}
-	if first.Subscription.PeriodEnd != targetEnd.Format(time.RFC3339Nano) {
-		t.Fatalf("period end = %s, want %s", first.Subscription.PeriodEnd, targetEnd.Format(time.RFC3339Nano))
-	}
-	if first.Subscription.TokenBalance != 400 {
-		t.Fatalf("token balance changed on extend: got %d want 400", first.Subscription.TokenBalance)
-	}
-	if len(fixture.createdPlanIDs) != 0 {
-		t.Fatalf("extend should not mint extra upstream subscription, created=%v", fixture.createdPlanIDs)
-	}
-
-	second, err := svc.ExtendSubscription(t.Context(), ExtendSubscriptionRequest{
-		UserID:       "user-1",
-		NewPeriodEnd: targetEnd,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if second.Updated {
-		t.Fatalf("expected retry to be idempotent no-op: %+v", second)
-	}
-	if second.Subscription == nil || second.Subscription.PeriodEnd != targetEnd.Format(time.RFC3339Nano) {
-		t.Fatalf("retry returned wrong subscription: %+v", second)
-	}
-	if len(fixture.createdPlanIDs) != 0 {
-		t.Fatalf("created count after retry = %d, want 0", len(fixture.createdPlanIDs))
-	}
-}
-
-func TestExtendSubscriptionCanMovePeriodEndBackwardForCtlRollbackAlignment(t *testing.T) {
-	fixture := newSubscriptionFixture(t)
-	defer fixture.server.Close()
-
-	store := NewMemoryStore()
-	svc := NewService(store, nil, Options{})
-	fixture.registerBootstrappedSet(t, svc, store)
-	if err := store.SavePlanMapping(t.Context(), PlanMapping{
-		ID:              "plan-pro",
-		Name:            "Pro",
-		MonthlyTokens:   1000,
-		PeriodValue:     1,
-		PeriodUnit:      "months",
-		IsActive:        true,
-		UpstreamPlanIDs: map[string]int{"set-a": 7},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveUserBinding(t.Context(), UserBinding{
-		ExternalUserID: "user-1",
-		SetID:          "set-a",
-		UpstreamUserID: 42,
-		Username:       "sgw-user-1",
-		Password:       "user-pass-123",
-		LastPlanID:     "plan-pro",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	targetEnd := time.Unix(fixture.now+3600, 0).UTC()
-	result, err := svc.ExtendSubscription(t.Context(), ExtendSubscriptionRequest{
-		UserID:       "user-1",
-		NewPeriodEnd: targetEnd,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !result.Updated || result.Subscription == nil {
-		t.Fatalf("expected backward alignment to update: %+v", result)
-	}
-	if result.Subscription.PeriodEnd != targetEnd.Format(time.RFC3339Nano) {
-		t.Fatalf("period end = %s, want %s", result.Subscription.PeriodEnd, targetEnd.Format(time.RFC3339Nano))
-	}
-	if result.Subscription.TokenBalance != 400 {
-		t.Fatalf("token balance changed on backward alignment: got %d want 400", result.Subscription.TokenBalance)
-	}
-	if len(fixture.createdPlanIDs) != 0 {
-		t.Fatalf("created count = %d, want 0", len(fixture.createdPlanIDs))
-	}
-}
-
-func TestGetActiveSubscriptionUsesNewAPIBalanceWithPeriodEndOverlay(t *testing.T) {
-	fixture := newSubscriptionFixture(t)
-	defer fixture.server.Close()
-
-	store := NewMemoryStore()
-	svc := NewService(store, nil, Options{})
-	fixture.registerBootstrappedSet(t, svc, store)
-	if err := store.SaveUserBinding(t.Context(), UserBinding{
-		ExternalUserID: "user-1",
-		SetID:          "set-a",
-		UpstreamUserID: 42,
-		Username:       "sgw-user-1",
-		Password:       "user-pass-123",
-		LastPlanID:     "plan-pro",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	targetEnd := time.Unix(fixture.now+86400*40, 0).UTC()
-	if _, err := svc.ExtendSubscription(t.Context(), ExtendSubscriptionRequest{
-		UserID:       "user-1",
-		NewPeriodEnd: targetEnd,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	fixture.existingAmountUsed = 250
-
-	sub, err := svc.GetActiveSubscription(t.Context(), "user-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sub.TokenBalance != 250 {
-		t.Fatalf("token balance = %d, want live new-api balance 250", sub.TokenBalance)
-	}
-	if sub.PeriodEnd != targetEnd.Format(time.RFC3339Nano) {
-		t.Fatalf("period end = %s, want overlay %s", sub.PeriodEnd, targetEnd.Format(time.RFC3339Nano))
 	}
 }
 

@@ -903,7 +903,7 @@ func (l *logic) RunDestroyInstanceTask(ctx pctx.Context, payload *DestroyInstanc
 	}
 
 	if strings.TrimSpace(entity.AiGatewayKeyID) != "" {
-		if err := l.revokeLegacyAiGatewayAPIKey(ctx, entity.AiGatewayKeyID); err != nil {
+		if err := l.revokeInstanceGatewayAPIKey(ctx, entity); err != nil {
 			return fmt.Errorf("revoke ai-gateway api key: %w", err)
 		}
 	}
@@ -1933,6 +1933,20 @@ func (l *logic) revokeLegacyAiGatewayAPIKey(ctx pctx.Context, keyID string) erro
 		return nil
 	}
 	return err
+}
+
+func (l *logic) revokeInstanceGatewayAPIKey(ctx pctx.Context, entity *modelinstance.Entity) error {
+	if entity == nil || strings.TrimSpace(entity.AiGatewayKeyID) == "" {
+		return nil
+	}
+	gateway, ok, err := gatewayroute.Get(entity.UserId)
+	if err != nil {
+		return fmt.Errorf("resolve instance gateway: %w", err)
+	}
+	if ok && gateway == gatewayroute.GatewayLLMGateway {
+		return nil
+	}
+	return l.revokeLegacyAiGatewayAPIKey(ctx, entity.AiGatewayKeyID)
 }
 
 func isDuplicateKeyError(err error) bool {

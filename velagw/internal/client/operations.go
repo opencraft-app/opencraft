@@ -23,10 +23,6 @@ func (c *Client) ApplySubscription(ctx context.Context, input ApplySubscriptionI
 	return c.doJSON(ctx, AuthInternal, http.MethodPost, "/api/internal/subscriptions/apply", input)
 }
 
-func (c *Client) ExtendSubscription(ctx context.Context, input ExtendSubscriptionInput) (Result, error) {
-	return c.doJSON(ctx, AuthInternal, http.MethodPost, "/api/internal/subscriptions/extend", input)
-}
-
 func (c *Client) CancelSubscription(ctx context.Context, userID string) (Result, error) {
 	return c.doJSON(ctx, AuthInternal, http.MethodPost, "/api/internal/subscriptions/cancel", CancelSubscriptionInput{UserID: userID})
 }

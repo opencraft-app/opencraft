@@ -32,25 +32,13 @@ func validateSubscriptionIdempotencyKey(key string) error {
 }
 
 func subscriptionRequestHash(req ApplySubscriptionRequest) string {
-	periodStart := ""
-	if req.PeriodStart != nil {
-		periodStart = req.PeriodStart.UTC().Format(time.RFC3339Nano)
-	}
-	periodEnd := ""
-	if req.PeriodEnd != nil {
-		periodEnd = req.PeriodEnd.UTC().Format(time.RFC3339Nano)
-	}
 	payload := strings.Join([]string{
 		strings.TrimSpace(req.UserID),
 		strings.TrimSpace(req.PlanID),
 		strings.TrimSpace(req.SubscriptionName),
+		strconv.FormatBool(req.IsUnique),
 		strings.TrimSpace(req.Nickname),
 		strings.TrimSpace(req.Phone),
-		periodStart,
-		strconv.Itoa(req.PeriodValue),
-		strings.TrimSpace(req.PeriodUnit),
-		periodEnd,
-		strconv.FormatBool(req.IsUnique),
 	}, "\x00")
 	sum := sha256.Sum256([]byte(payload))
 	return string(sum[:])

@@ -115,16 +115,16 @@ func (s *llmGatewayAdapterStub) ApplySubscription(_ context.Context, _ *pllmgate
 	return nil, fmt.Errorf("subscription apply not configured")
 }
 
-func (s *llmGatewayAdapterStub) ExtendSubscription(_ context.Context, _ *pllmgateway.ExtendSubscriptionRequest) (*pllmgateway.ExtendSubscriptionResponse, error) {
-	return nil, fmt.Errorf("subscription extend not configured")
-}
-
 func (s *llmGatewayAdapterStub) CancelSubscription(_ context.Context, _ string) error {
 	return nil
 }
 
 func (s *llmGatewayAdapterStub) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
 	return nil, nil
+}
+
+func (s *llmGatewayAdapterStub) ListActiveSubscriptions(_ context.Context, _ string) (*pllmgateway.ActiveSubscriptionList, error) {
+	return &pllmgateway.ActiveSubscriptionList{}, nil
 }
 
 func installAiGatewayConfigForTest(t *testing.T, conf *config.LLMGatewayConfig) {
@@ -224,6 +224,9 @@ func (s *sandboxAdapterStub) GetLogs(_ context.Context, _ string, _ *psandbox.Ge
 		return s.getLogsResp, s.getLogsErr
 	}
 	panic("unexpected call")
+}
+func (s *sandboxAdapterStub) StartTerminalSession(_ context.Context, _ string) (*psandbox.TerminalSession, error) {
+	return nil, nil
 }
 func (s *sandboxAdapterStub) ExecCommand(ctx context.Context, sandboxID, bash string, timeoutSec int) (*psandbox.ExecCommandResult, error) {
 	s.lastExecSandbox = sandboxID

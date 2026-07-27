@@ -948,19 +948,16 @@ func (a *integrationLLMGatewayAdapter) ApplySubscription(_ context.Context, req 
 	return &pllmgateway.Subscription{UserID: req.UserID, PlanID: req.PlanID, Status: "active"}, nil
 }
 
-func (a *integrationLLMGatewayAdapter) ExtendSubscription(_ context.Context, req *pllmgateway.ExtendSubscriptionRequest) (*pllmgateway.ExtendSubscriptionResponse, error) {
-	return &pllmgateway.ExtendSubscriptionResponse{
-		Subscription: &pllmgateway.Subscription{UserID: req.UserID, Status: "active"},
-		Updated:      true,
-	}, nil
-}
-
 func (a *integrationLLMGatewayAdapter) CancelSubscription(_ context.Context, _ string) error {
 	return nil
 }
 
 func (a *integrationLLMGatewayAdapter) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
 	return nil, nil
+}
+
+func (a *integrationLLMGatewayAdapter) ListActiveSubscriptions(_ context.Context, _ string) (*pllmgateway.ActiveSubscriptionList, error) {
+	return &pllmgateway.ActiveSubscriptionList{}, nil
 }
 
 func transportInt(v int) string {
@@ -973,7 +970,10 @@ func seedBundleForPass(t *testing.T, bundleID string, credit int64, aiGatewayPla
 		BundleID:              bundleID,
 		BundleName:            bundleID,
 		Description:           "[]",
+		Features:              "[]",
+		Promotion:             "{}",
 		BundleState:           bundlemodel.StateOnline,
+		BundleType:            bundlemodel.BundleTypeGeneral,
 		AgentQuota:            1,
 		Credit:                credit,
 		TimeSpan:              30,
@@ -1110,9 +1110,51 @@ func TestCompletePassAPIIntegrationAIGatewaySubscriptionFailureIsNonRetryable(t 
 	}
 }
 
+func TestCompletePassAPIIntegrationLLMGatewayEnsureUserFailureIsNonRetryable(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+	config.ServerConf.AdapterConfig.LLMGateway.Enabled = true
+	config.ServerConf.AdapterConfig.LLMGateway.NewAllocationUserAllowlist = []string{"*"}
+	bundleID := "bundle_complete_llmgateway_ensure_failed"
+	seedBundleForPass(t, bundleID, 100, "plan-pro")
+
+	h.llmgw.mu.Lock()
+	h.llmgw.ensureUserErr = fmt.Errorf("llmgateway tenant inactive")
+	h.llmgw.mu.Unlock()
+
+	body := completePassReqDefaults(h.userID, bundleID)
+	resp := h.request(t, http.MethodPost, "/internal/ctl/passes/complete", body, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-retryable gateway ensure-user failure, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+	bodyStr := readBody(t, resp)
+	if !strings.Contains(bodyStr, "PASS_GATEWAY_SUBSCRIPTION_FAILED") {
+		t.Fatalf("expected PASS_GATEWAY_SUBSCRIPTION_FAILED, got body=%s", bodyStr)
+	}
+
+	var passCount int64
+	if err := resource.GormDB.Table("pass").
+		Where("user_id = ?", h.userID).Count(&passCount).Error; err != nil {
+		t.Fatalf("count pass: %v", err)
+	}
+	if passCount != 0 {
+		t.Fatalf("expected no pass row after ensure-user failure, got %d", passCount)
+	}
+
+	var bundle bundlemodel.Entity
+	if err := resource.GormDB.Table(bundlemodel.TableName).
+		Where("bundle_id = ?", bundleID).First(&bundle).Error; err != nil {
+		t.Fatalf("load bundle: %v", err)
+	}
+	if bundle.BundleSalesAvailCount != 10 {
+		t.Fatalf("expected bundle avail unchanged at 10, got %d", bundle.BundleSalesAvailCount)
+	}
+}
+
 func TestCompletePassAPIIntegrationLLMGatewaySubscriptionFailureIsNonRetryable(t *testing.T) {
 	h := newAPIIntegrationHarness(t)
 	config.ServerConf.AdapterConfig.LLMGateway.Enabled = true
+	config.ServerConf.AdapterConfig.LLMGateway.NewAllocationUserAllowlist = []string{"*"}
 	bundleID := "bundle_complete_llmgateway_apply_failed"
 	seedBundleForPass(t, bundleID, 100, "plan-pro")
 
