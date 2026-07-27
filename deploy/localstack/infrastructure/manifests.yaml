@@ -1,0 +1,602 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: localstack-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+spec:
+  selector:
+    app: mysql
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+spec:
+  serviceName: mysql
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+        app.kubernetes.io/part-of: lightclaw-localstack
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --character-set-server=utf8mb4
+            - --collation-server=utf8mb4_unicode_ci
+            - --default-authentication-plugin=mysql_native_password
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: localstack-infra-secrets
+                  key: MYSQL_ROOT_PASSWORD
+            - name: TZ
+              value: Asia/Shanghai
+          ports:
+            - name: mysql
+              containerPort: 3306
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - "-ec"
+                - mysqladmin ping -h 127.0.0.1 -uroot -p"${MYSQL_ROOT_PASSWORD}"
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d/001-databases.sql
+              subPath: 001-databases.sql
+      volumes:
+        - name: init
+          configMap:
+            name: mysql-init
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 8Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        app.kubernetes.io/part-of: lightclaw-localstack
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - "-ec"
+            - exec redis-server --appendonly yes --requirepass "${REDIS_PASSWORD}"
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: localstack-infra-secrets
+                  key: REDIS_PASSWORD
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - "-ec"
+                - redis-cli -a "${REDIS_PASSWORD}" ping | grep -q PONG
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redis-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-control
+spec:
+  selector:
+    app: mock-control
+  ports:
+    - name: http
+      port: 19060
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-control
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-control
+  template:
+    metadata:
+      labels:
+        app: mock-control
+        app.kubernetes.io/part-of: lightclaw-localstack
+    spec:
+      containers:
+        - name: mock-control
+          image: lightclaw-local/mock-control:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MOCK_CONTROL_PORT
+              value: "19060"
+            - name: MOCK_CONTROL_FIXTURES_DIR
+              value: /app/fixtures
+            - name: MOCK_DEVELOPMENT_SMS_CODE
+              value: "123456"
+            - name: MYSQL_HOST
+              value: mysql
+            - name: MYSQL_PORT
+              value: "3306"
+            - name: MYSQL_DATABASE
+              value: mock_control
+            - name: MYSQL_USER
+              value: mock_control
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: localstack-infra-secrets
+                  key: MOCK_CONTROL_DB_PASSWORD
+          ports:
+            - name: http
+              containerPort: 19060
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fake-qq-oauth
+spec:
+  selector:
+    app: fake-qq-oauth
+  ports:
+    - name: http
+      port: 19010
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fake-qq-oauth
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fake-qq-oauth
+  template:
+    metadata:
+      labels:
+        app: fake-qq-oauth
+        app.kubernetes.io/part-of: lightclaw-localstack
+    spec:
+      containers:
+        - name: fake-qq-oauth
+          image: node:22-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - node
+            - /mock/server.mjs
+          env:
+            - name: FAKE_QQ_PORT
+              value: "19010"
+            - name: FAKE_QQ_APP_ID
+              value: local-qq-app-id
+            - name: FAKE_QQ_DEFAULT_USER
+              value: local
+            - name: MOCK_CONTROL_BASE_URL
+              value: http://mock-control:19060
+          ports:
+            - name: http
+              containerPort: 19010
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: script
+              mountPath: /mock/server.mjs
+              subPath: server.mjs
+      volumes:
+        - name: script
+          configMap:
+            name: fake-qq-oauth
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fake-jifei-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fake-jifei
+spec:
+  selector:
+    app: fake-jifei
+  ports:
+    - name: http
+      port: 19020
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fake-jifei
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: fake-jifei
+  template:
+    metadata:
+      labels:
+        app: fake-jifei
+        app.kubernetes.io/part-of: lightclaw-localstack
+    spec:
+      containers:
+        - name: fake-jifei
+          image: node:22-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - node
+            - /mock/server.mjs
+          env:
+            - name: FAKE_JIFEI_PORT
+              value: "19020"
+            - name: FAKE_JIFEI_CALLBACK_URL
+              value: http://trade.trade.svc.cluster.local/trade/jifei/callback
+            - name: FAKE_JIFEI_DATABASE_PATH
+              value: /data/fake-jifei.sqlite
+          ports:
+            - name: http
+              containerPort: 19020
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: script
+              mountPath: /mock/server.mjs
+              subPath: server.mjs
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: script
+          configMap:
+            name: fake-jifei
+        - name: data
+          persistentVolumeClaim:
+            claimName: fake-jifei-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fake-tencentcloud
+spec:
+  selector:
+    app: fake-tencentcloud
+  ports:
+    - name: http
+      port: 19030
+      targetPort: http
+    - name: https
+      port: 19443
+      targetPort: https
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fake-tencentcloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fake-tencentcloud
+  template:
+    metadata:
+      labels:
+        app: fake-tencentcloud
+        app.kubernetes.io/part-of: lightclaw-localstack
+    spec:
+      containers:
+        - name: fake-tencentcloud
+          image: node:22-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - node
+            - /mock/server.mjs
+          env:
+            - name: FAKE_TENCENTCLOUD_PORT
+              value: "19030"
+            - name: FAKE_TENCENTCLOUD_TLS_PORT
+              value: "19443"
+            - name: FAKE_TENCENTCLOUD_TLS_CERT
+              value: /mock/tls/tls.crt
+            - name: FAKE_TENCENTCLOUD_TLS_KEY
+              value: /mock/tls/tls.key
+            - name: MOCK_CONTROL_BASE_URL
+              value: http://mock-control:19060
+          ports:
+            - name: http
+              containerPort: 19030
+            - name: https
+              containerPort: 19443
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: script
+              mountPath: /mock/server.mjs
+              subPath: server.mjs
+            - name: tls
+              mountPath: /mock/tls
+              readOnly: true
+      volumes:
+        - name: script
+          configMap:
+            name: fake-tencentcloud
+        - name: tls
+          secret:
+            secretName: fake-tencentcloud-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fake-wechat-pay-bridge
+spec:
+  selector:
+    app: fake-wechat-pay-bridge
+  ports:
+    - name: http
+      port: 19040
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fake-wechat-pay-bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fake-wechat-pay-bridge
+  template:
+    metadata:
+      labels:
+        app: fake-wechat-pay-bridge
+        app.kubernetes.io/part-of: lightclaw-localstack
+    spec:
+      containers:
+        - name: fake-wechat-pay-bridge
+          image: node:22-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - node
+            - /mock/server.mjs
+          env:
+            - name: FAKE_WECHAT_PAY_BRIDGE_PORT
+              value: "19040"
+            - name: FRONTEND_BASE_URL
+              value: http://localhost:5173
+            - name: FAKE_WECHAT_OPEN_ID
+              value: local-wechat-openid
+          ports:
+            - name: http
+              containerPort: 19040
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: script
+              mountPath: /mock/server.mjs
+              subPath: server.mjs
+      volumes:
+        - name: script
+          configMap:
+            name: fake-wechat-pay-bridge
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fake-envd
+spec:
+  selector:
+    app: fake-envd
+  ports:
+    - name: grpc-web
+      port: 19050
+      targetPort: grpc-web
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fake-envd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fake-envd
+  template:
+    metadata:
+      labels:
+        app: fake-envd
+        app.kubernetes.io/part-of: lightclaw-localstack
+    spec:
+      containers:
+        - name: fake-envd
+          image: lightclaw-local/fake-envd:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: FAKE_ENVD_PORT
+              value: "19050"
+            - name: MYSQL_HOST
+              value: mysql.localstack-system.svc.cluster.local
+            - name: MYSQL_PORT
+              value: "3306"
+            - name: MYSQL_USER
+              value: root
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: localstack-infra-secrets
+                  key: MYSQL_ROOT_PASSWORD
+          ports:
+            - name: grpc-web
+              containerPort: 19050
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: grpc-web
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: localstack-databases
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: localstack-databases
+        app.kubernetes.io/part-of: lightclaw-localstack
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-mysql
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MYSQL_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: localstack-infra-secrets
+                  key: MYSQL_ROOT_PASSWORD
+          command:
+            - sh
+            - -ec
+            - until mysqladmin ping -hmysql -uroot --silent; do sleep 2; done
+      containers:
+        - name: databases
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MYSQL_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: localstack-infra-secrets
+                  key: MYSQL_ROOT_PASSWORD
+          command:
+            - sh
+            - -ec
+            - mysql -hmysql -uroot < /init/001-databases.sql
+          volumeMounts:
+            - name: init
+              mountPath: /init
+      volumes:
+        - name: init
+          configMap:
+            name: mysql-init

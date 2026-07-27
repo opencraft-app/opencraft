@@ -1,0 +1,94 @@
+# localstack only overrides environment-bound values. The common config,
+# workloads, migrations, and templates are shared with the formal environment.
+[api]
+enable_inner_sign = false
+
+[api.instance]
+default_template_id = "openclaw-default"
+candidate_template_ids = ["openclaw-default"]
+
+[[api.instance.spec_pools]]
+spec_id = "spec-2c4g50g"
+template_class_id = "openclaw-default"
+sku_id = "sku-local-default"
+default_template_id = "pool-local-default"
+candidate_template_ids = ["pool-local-default"]
+
+[[api.instance.spec_pools]]
+spec_id = "spec-4c8g80g"
+template_class_id = "openclaw-default"
+sku_id = "sku-local-default"
+default_template_id = "pool-local-default"
+candidate_template_ids = ["pool-local-default"]
+
+[bypass]
+specify_names = ["checkUserAbuse", "checkPoolPressure"]
+
+[db]
+host = "mysql.localstack-system.svc.cluster.local"
+port = 3306
+user = "root"
+database = "ctl"
+rw_timeout_seconds = 10
+
+[redis]
+host = "redis.localstack-system.svc.cluster.local"
+port = 6379
+connect_timeout_seconds = 5
+rw_timeout_seconds = 5
+mq_rw_timeout_seconds = 300
+pool_size = 16
+
+[mq]
+stream_key = "ctl-localstack"
+group_name = "ctl_service"
+max_len = 100000
+
+[adapter.sandbox]
+baseUrl = "http://sandbox-api.sandbox.svc.cluster.local"
+processBaseUrl = "http://fake-envd.localstack-system.svc.cluster.local:19050"
+apiKey = ""
+timeout = 60
+maxRetries = 3
+retryInterval = 1000
+
+[adapter.lightpro]
+use_mock = true
+
+[adapter.sts]
+use_mock = true
+
+[adapter.aigateway]
+base_url = "http://gateway.ai-gateway.svc.cluster.local"
+default_base_url = "http://gateway.ai-gateway.svc.cluster.local/v1"
+default_model_id = "local-model"
+default_compatibility = "openai"
+default_gateway_port = 18789
+default_provider_id = "local"
+
+[adapter.shadow]
+base_url = "http://shadow.shadow.svc.cluster.local"
+token = "test_local_internal_token"
+timeout = 10
+enabled = true
+
+[adapter.trade]
+base_url = "http://trade.trade.svc.cluster.local"
+token = "test_local_internal_token"
+timeout = 30
+
+[tracing]
+protocol = ""
+async = false
+grpc_endpoint = ""
+http_endpoint = ""
+tenant_id = "default"
+service_namespace = "localstack"
+
+[misc]
+region = "local"
+object_id_password_suffix = "localstack"
+apps_data_dir = "/data/lightglobal/apps"
+block_bypass_and_service = false
+use_random_machine_id = true
+account_area = "0"

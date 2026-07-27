@@ -27,6 +27,7 @@ go.work.sum
 node_modules/
 package-lock.json
 !ai-gateway/package-lock.json
+!deploy/local/mockservers/control/package-lock.json
 yarn.lock
 pnpm-lock.yaml
 !frontend/pnpm-lock.yaml
@@ -96,6 +97,8 @@ frontend/k8s/overlays/*/generated/
 workers/k8s/overlays/*/generated/
 deploy/envs/*/platform.env
 deploy/envs/*/*.kustomize.secret.env
+deploy/envs/localstack/overrides/*.env
+.localstack/
 infra_pulumi/.reconcile/
 /api
 ctl/api

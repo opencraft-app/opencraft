@@ -14,6 +14,22 @@
   - 镜像构建输入
   - 必要 migration / seed 二进制与 SQL
 
+## 本地 Kubernetes 环境
+
+`localstack` 是开发者本机的正式环境定义，但不是正式发布目标：
+
+- 环境事实：`deploy/envs/localstack/`
+- Kustomize 组合与本地控制入口：`deploy/localstack/`
+- 执行面：本机 OrbStack / Docker Desktop Kubernetes
+- Secret：仅本地假值和 gitignored 开发者覆盖，不使用 SOPS
+- 不进入 `argocd/`、`gitops` 分支或任何 CI/CD 流水线
+
+启动入口：
+
+```bash
+make local-stack-up
+```
+
 ## 当前边界
 
 - `infra_pulumi/`

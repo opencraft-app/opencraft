@@ -1,0 +1,58 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../payment/k8s/base
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: payment-config
+    namespace: user-auth
+    behavior: merge
+    literals:
+      - MYSQL_HOST=mysql.localstack-system.svc.cluster.local
+      - MYSQL_PORT=3306
+      - PAYMENT_DB=payment
+      - PAYMENT_DB_USER=payment
+      - PAYMENT_PROVIDER=mock
+      - SUBSCRIPTION_INTERNAL_BASE_URL=http://subscription.user-auth.svc.cluster.local
+secretGenerator:
+  - name: payment-runtime-secrets
+    namespace: user-auth
+    envs:
+      - secrets.defaults.env
+images:
+  - name: REPLACE_PAYMENT_IMAGE
+    newName: lightclaw-local/payment
+    newTag: dev
+patches:
+  - target:
+      kind: ServiceAccount
+      name: default
+      namespace: user-auth
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: default
+        namespace: user-auth
+  - target:
+      kind: Deployment
+      name: payment
+      namespace: user-auth
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: remove
+        path: /spec/template/spec/topologySpreadConstraints
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: lightclaw-localstack
+    includeSelectors: false
+    includeTemplates: true

@@ -1,0 +1,149 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../sandbox/k8s/base/manifests.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: sandbox-runtime-config
+    namespace: sandbox
+    behavior: merge
+    literals:
+      - CLOUD_PROVIDER=mock
+      - REDIS_ADDR=redis.localstack-system.svc.cluster.local:6379
+      - MYSQL_HOST=mysql.localstack-system.svc.cluster.local
+      - MYSQL_PORT=3306
+      - MYSQL_DB=sandbox
+      - AUTH_SERVICE_URL=http://lightclaw-auth.user-auth.svc.cluster.local
+      - TENCENT_REGION=local
+      - SANDBOX_VPC_ID=local
+      - SANDBOX_POOL_BJ8_SUBNET_ID=local
+      - SANDBOX_POOL_BJ8_ZONE=local
+      - SANDBOX_POOL_C0_SUBNET_ID=local
+      - SANDBOX_POOL_C0_ZONE=local
+      - SANDBOX_POOL_C1_SUBNET_ID=local
+      - SANDBOX_POOL_C1_ZONE=local
+      - SANDBOX_POOL_C2_SUBNET_ID=local
+      - SANDBOX_POOL_C2_ZONE=local
+      - SANDBOX_POOL_C3_SUBNET_ID=local
+      - SANDBOX_POOL_C3_ZONE=local
+      - SANDBOX_POOL_C4_SUBNET_ID=local
+      - SANDBOX_POOL_C4_ZONE=local
+      - SANDBOX_POOL_C5_SUBNET_ID=local
+      - SANDBOX_POOL_C5_ZONE=local
+secretGenerator:
+  - name: sandbox-runtime-secrets
+    namespace: sandbox
+    envs:
+      - secrets.defaults.env
+images:
+  - name: REPLACE_REGISTRY_SERVER/lightclaw/sandbox-api
+    newName: lightclaw-local/sandbox-api
+    newTag: dev
+patches:
+  - target:
+      kind: ServiceAccount
+      name: default
+      namespace: sandbox
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: default
+        namespace: sandbox
+  - target:
+      kind: Deployment
+      name: sandbox-api
+      namespace: sandbox
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: remove
+        path: /spec/template/spec/topologySpreadConstraints
+      - op: replace
+        path: /spec/template/metadata/annotations/sandbox.clawhub.dev~1redeploy-at
+        value: localstack
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  - target:
+      kind: Job
+      name: sandbox-db-migrate-v2
+    patch: |-
+      $patch: delete
+      apiVersion: batch/v1
+      kind: Job
+      metadata:
+        name: sandbox-db-migrate-v2
+  - target:
+      kind: ServiceMonitor
+      name: sandbox-api
+    patch: |-
+      $patch: delete
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: sandbox-api
+  - target:
+      kind: Service
+      name: sandbox-api-internal
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: sandbox-api-internal
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: sandbox-api
+    patch: |-
+      $patch: delete
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: sandbox-api
+  - target:
+      kind: Deployment
+      name: sandbox-worker
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: sandbox-worker
+  - target:
+      kind: Service
+      name: sandbox-worker-sharded
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: sandbox-worker-sharded
+  - target:
+      kind: StatefulSet
+      name: sandbox-worker-sharded
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: sandbox-worker-sharded
+  - target:
+      kind: PodMonitor
+      name: sandbox-worker-sharded
+    patch: |-
+      $patch: delete
+      apiVersion: monitoring.coreos.com/v1
+      kind: PodMonitor
+      metadata:
+        name: sandbox-worker-sharded
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: lightclaw-localstack
+    includeSelectors: false
+    includeTemplates: true

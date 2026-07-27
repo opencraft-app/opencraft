@@ -1,0 +1,433 @@
+name: lightclaw-local
+
+x-mysql-env: &mysql_env
+  MYSQL_HOST: mysql
+  MYSQL_PORT: "3306"
+
+x-redis-env: &redis_env
+  REDIS_ADDR: "redis:6379"
+  REDIS_PASSWORD: ${LOCAL_REDIS_PASSWORD:-local_redis_password}
+
+x-local-tokens: &local_tokens
+  ADMIN_TOKEN: ${LOCAL_ADMIN_TOKEN:-local-admin-token}
+  LIGHTCLAW_INTERNAL_SERVICE_TOKEN: ${LOCAL_INTERNAL_SERVICE_TOKEN:-local-internal-token}
+
+x-auth-env: &auth_env
+  <<: *mysql_env
+  LIGHTCLAW_AUTH_DB: lightclaw_auth
+  LIGHTCLAW_AUTH_DB_USER: lightclaw_auth
+  LIGHTCLAW_AUTH_DB_PASSWORD: ${LOCAL_LIGHTCLAW_AUTH_DB_PASSWORD:-local_lightclaw_auth}
+  LIGHTCLAW_LOG_LEVEL: info
+
+x-payment-env: &payment_env
+  <<: [*mysql_env, *local_tokens]
+  PAYMENT_ADDR: ":8080"
+  PAYMENT_DB: payment
+  PAYMENT_DB_USER: payment
+  PAYMENT_DB_PASSWORD: ${LOCAL_PAYMENT_DB_PASSWORD:-local_payment}
+  PAYMENT_PROVIDER: mock
+  SUBSCRIPTION_INTERNAL_BASE_URL: "http://subscription:8086"
+
+x-subscription-env: &subscription_env
+  <<: *mysql_env
+  SUBSCRIPTION_ADDR: ":8086"
+  SUBSCRIPTION_DB: subscription
+  SUBSCRIPTION_DB_USER: subscription
+  SUBSCRIPTION_DB_PASSWORD: ${LOCAL_SUBSCRIPTION_DB_PASSWORD:-local_subscription}
+  PAYMENT_INTERNAL_BASE_URL: "http://payment:8080"
+  AI_GATEWAY_BASE_URL: "http://ai-gateway:18080"
+  SUBSCRIPTION_ADMIN_TOKEN: "${LOCAL_SUBSCRIPTION_ADMIN_TOKEN:-local-subscription-admin-token}"
+  SUBSCRIPTION_ALLOWED_ORIGINS: "http://localhost:8085,http://localhost:5173"
+  SUBSCRIPTION_FREE_PLAN_ID: free
+  SUBSCRIPTION_LITE_PLAN_ID: lite
+  SUBSCRIPTION_PRO_PLAN_ID: pro
+
+x-ai-gateway-env: &ai_gateway_env
+  <<: [*redis_env, *local_tokens]
+  CONFIG_PATH: /app/config.local.yaml
+  ENCRYPTION_KEY: "${LOCAL_AI_GATEWAY_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef}"
+  DATABASE_URL: "ai_gateway:${LOCAL_AI_GATEWAY_DB_PASSWORD:-local_ai_gateway}@tcp(mysql:3306)/ai_gateway?charset=utf8mb4&parseTime=true&loc=UTC&time_zone=%27%2B00%3A00%27"
+  AI_GATEWAY_MIGRATE_DSN: "ai_gateway:${LOCAL_AI_GATEWAY_DB_PASSWORD:-local_ai_gateway}@tcp(mysql:3306)/ai_gateway?charset=utf8mb4&parseTime=true&loc=UTC&time_zone=%27%2B00%3A00%27&multiStatements=true"
+  PORTKEY_BASE_URL: "http://portkey:8787"
+  REGISTRY_TOKEN: "${LOCAL_REGISTRY_TOKEN:-local-registry-token}"
+
+x-sandbox-env: &sandbox_env
+  <<: [*mysql_env, *redis_env]
+  API_ADDR: ":8080"
+  MYSQL_DB: sandbox
+  MYSQL_USER: sandbox
+  MYSQL_PASSWORD: "${LOCAL_SANDBOX_DB_PASSWORD:-local_sandbox}"
+  REDIS_DB: "0"
+  REDIS_ROUTE_PREFIX: "route:sandbox:"
+  AUTH_SERVICE_URL: "http://lightclaw-auth:8081"
+  CLOUD_PROVIDER: mock
+
+x-app-platform: &app_platform
+  platform: ${LOCAL_STACK_PLATFORM:-linux/arm64}
+
+services:
+  mysql:
+    image: mysql:8.0
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: ${LOCAL_MYSQL_ROOT_PASSWORD:-local_root_password}
+      TZ: Asia/Shanghai
+    ports:
+      - "${LOCAL_MYSQL_PORT:-43306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init/001-databases.sql:/docker-entrypoint-initdb.d/001-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$${MYSQL_ROOT_PASSWORD}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${LOCAL_REDIS_PASSWORD:-local_redis_password}"]
+    environment:
+      REDIS_PASSWORD: ${LOCAL_REDIS_PASSWORD:-local_redis_password}
+    ports:
+      - "${LOCAL_REDIS_PORT:-36379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  portkey:
+    image: portkeyai/gateway:latest
+    ports:
+      - "${LOCAL_PORTKEY_PORT:-8787}:8787"
+
+  lightclaw-auth-migrate:
+    <<: *app_platform
+    image: lightclaw-local/lightclaw-auth:dev
+    build:
+      context: ../..
+      dockerfile: user/auth/Dockerfile
+    environment:
+      <<: *auth_env
+    command: ["lightclaw-auth-migrate"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  fake-qq-oauth:
+    <<: *app_platform
+    image: node:22-alpine
+    working_dir: /mockservers/qq-oauth
+    command: ["node", "server.mjs"]
+    environment:
+      FAKE_QQ_PORT: "19010"
+      FAKE_QQ_APP_ID: ${LOCAL_QQ_APP_ID:-local-qq-app-id}
+      FAKE_QQ_DEFAULT_USER: ${LOCAL_FAKE_QQ_DEFAULT_USER:-local}
+    volumes:
+      - ./mockservers/qq-oauth:/mockservers/qq-oauth:ro
+    ports:
+      - "${LOCAL_FAKE_QQ_OAUTH_PORT:-19010}:19010"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:19010/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  lightclaw-auth:
+    <<: *app_platform
+    image: lightclaw-local/lightclaw-auth:dev
+    build:
+      context: ../..
+      dockerfile: user/auth/Dockerfile
+    environment:
+      <<: [*auth_env, *local_tokens]
+      LIGHTCLAW_AUTH_ADDR: ":8081"
+      LIGHTCLAW_COOKIE_SECURE: "false"
+      LIGHTCLAW_COOKIE_SAME_SITE: lax
+      LIGHTCLAW_PUBLIC_BASE_URL: "http://localhost:8085"
+      LIGHTCLAW_FRONTEND_BASE_URL: "http://localhost:5173"
+      LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS: "localhost,127.0.0.1,::1,http://localhost:5173,http://127.0.0.1:5173"
+      LIGHTCLAW_DEV_SMS_CODE: "123456"
+      LIGHTCLAW_EMAIL_BIND_ENABLED: "false"
+      LIGHTCLAW_QQ_APP_ID: ${LOCAL_QQ_APP_ID:-local-qq-app-id}
+      LIGHTCLAW_QQ_APP_KEY: ${LOCAL_QQ_APP_KEY:-local-qq-app-key}
+      LIGHTCLAW_QQ_REDIRECT_URI: "http://localhost:8085/auth/oauth/qq/callback"
+      LIGHTCLAW_QQ_AUTHORIZE_URL: "http://localhost:${LOCAL_FAKE_QQ_OAUTH_PORT:-19010}/oauth2.0/authorize"
+      LIGHTCLAW_QQ_API_BASE_URL: "http://fake-qq-oauth:19010"
+      CONTENT_AUDIT_ENABLED: "false"
+      LIGHTVELA_E2E_AUTH_ENABLED: "true"
+      LIGHTVELA_E2E_AUTH_TOKEN: "${LOCAL_E2E_AUTH_TOKEN:-local-e2e-token}"
+      LIGHTCLAW_ADMIN_TOKEN: "${LOCAL_AUTH_ADMIN_TOKEN:-local-auth-admin-token}"
+      SHADOW_BINDING_INTERNAL_TOKEN: "${LOCAL_SHADOW_BINDING_INTERNAL_TOKEN:-local-shadow-binding-token}"
+    ports:
+      - "${LOCAL_AUTH_PORT:-28081}:8081"
+    depends_on:
+      local-seed:
+        condition: service_completed_successfully
+      fake-qq-oauth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/healthz >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  payment-migrate:
+    <<: *app_platform
+    image: lightclaw-local/payment:dev
+    build:
+      context: ../../payment
+      dockerfile: Dockerfile
+    entrypoint: ["/usr/local/bin/payment-migrate"]
+    environment:
+      <<: *payment_env
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  payment:
+    <<: *app_platform
+    image: lightclaw-local/payment:dev
+    build:
+      context: ../../payment
+      dockerfile: Dockerfile
+    environment:
+      <<: *payment_env
+    ports:
+      - "${LOCAL_PAYMENT_PORT:-18082}:8080"
+    depends_on:
+      payment-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  subscription-migrate:
+    <<: *app_platform
+    image: lightclaw-local/subscription:dev
+    build:
+      context: ../../subscription
+      dockerfile: Dockerfile
+    entrypoint: ["/usr/local/bin/subscription-migrate"]
+    environment:
+      <<: *subscription_env
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  subscription:
+    <<: *app_platform
+    image: lightclaw-local/subscription:dev
+    build:
+      context: ../../subscription
+      dockerfile: Dockerfile
+    environment:
+      <<: *subscription_env
+    ports:
+      - "${LOCAL_SUBSCRIPTION_PORT:-8086}:8086"
+    depends_on:
+      local-seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8086/healthz >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  ai-gateway-migrate:
+    <<: *app_platform
+    image: lightclaw-local/ai-gateway:dev
+    build:
+      context: ../..
+      dockerfile: ai-gateway/deploy/Dockerfile
+    entrypoint: ["ai-gateway-migrate"]
+    environment:
+      <<: *ai_gateway_env
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  ai-gateway:
+    <<: *app_platform
+    image: lightclaw-local/ai-gateway:dev
+    build:
+      context: ../..
+      dockerfile: ai-gateway/deploy/Dockerfile
+    environment:
+      <<: *ai_gateway_env
+      GIN_MODE: release
+    volumes:
+      - ./ai-gateway-config.yaml:/app/config.local.yaml:ro
+    ports:
+      - "${LOCAL_AI_GATEWAY_PORT:-18080}:18080"
+    depends_on:
+      ai-gateway-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      portkey:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:18080/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  sandbox-migrate:
+    <<: *app_platform
+    image: lightclaw-local/sandbox-migrate:dev
+    build:
+      context: ../../sandbox
+      dockerfile: Dockerfile.migrate
+    command:
+      - -path
+      - /migrations
+      - -database
+      - "mysql://sandbox:${LOCAL_SANDBOX_DB_PASSWORD:-local_sandbox}@tcp(mysql:3306)/sandbox?multiStatements=true"
+      - up
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  local-seed:
+    image: mysql:8.0
+    environment:
+      MYSQL_PWD: ${LOCAL_MYSQL_ROOT_PASSWORD:-local_root_password}
+    volumes:
+      - ./mysql/seed:/seed:ro
+    command: ["sh", "-c", "mysql -hmysql -uroot < /seed/005-auth-invites.sql && mysql -hmysql -uroot < /seed/010-subscription-plans.sql && mysql -hmysql -uroot < /seed/020-sandbox-mock-pool.sql"]
+    depends_on:
+      lightclaw-auth-migrate:
+        condition: service_completed_successfully
+      subscription-migrate:
+        condition: service_completed_successfully
+      sandbox-migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  sandbox-api:
+    <<: *app_platform
+    image: lightclaw-local/sandbox-api:dev
+    build:
+      context: ../../sandbox
+      dockerfile: Dockerfile.api
+    environment:
+      <<: *sandbox_env
+    ports:
+      - "${LOCAL_SANDBOX_PORT:-18081}:8080"
+    depends_on:
+      local-seed:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  sandbox-worker:
+    <<: *app_platform
+    profiles: ["workers"]
+    image: lightclaw-local/sandbox-worker:dev
+    build:
+      context: ../../sandbox
+      dockerfile: Dockerfile.worker
+    environment:
+      <<: *sandbox_env
+    command: ["worker", "-refill-interval", "5s", "-cleanup-interval", "30s"]
+    depends_on:
+      local-seed:
+        condition: service_completed_successfully
+      sandbox-api:
+        condition: service_started
+
+  service-gateway:
+    <<: *app_platform
+    image: lightclaw-local/service-gateway:dev
+    build:
+      context: ../../service-gateway
+      dockerfile: Dockerfile
+    environment:
+      SERVICE_GATEWAY_ADDR: ":8085"
+      SERVICE_GATEWAY_CONFIG_FILE: /etc/service-gateway/config.yaml
+      SERVICE_GATEWAY_REALNAME_WALL_ENABLED: "false"
+      SERVICE_GATEWAY_ADMIN_BASIC_AUTH_USER: ${LOCAL_GATEWAY_ADMIN_USER:-admin}
+      SERVICE_GATEWAY_ADMIN_BASIC_AUTH_PASSWORD: "${LOCAL_GATEWAY_ADMIN_PASSWORD:-local-admin-password}"
+      LIGHTVELA_SITE_KIND: intl
+      SERVICE_GATEWAY_VIBEBASE_INTERNAL_TOKEN: "${LOCAL_VIBEBASE_INTERNAL_TOKEN:-local-vibebase-token}"
+    volumes:
+      - ./service-gateway-config.yaml:/etc/service-gateway/config.yaml:ro
+    ports:
+      - "${LOCAL_SERVICE_GATEWAY_PORT:-8085}:8085"
+    depends_on:
+      lightclaw-auth:
+        condition: service_healthy
+      payment:
+        condition: service_healthy
+      subscription:
+        condition: service_healthy
+      ai-gateway:
+        condition: service_healthy
+      sandbox-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8085/metrics >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  frontend:
+    <<: *app_platform
+    image: node:22-alpine
+    working_dir: /frontend
+    command:
+      - sh
+      - -lc
+      - |
+        corepack enable
+        corepack prepare pnpm@10.23.0 --activate
+        pnpm config set store-dir /pnpm/store
+        pnpm install --frozen-lockfile
+        pnpm "$${LOCAL_FRONTEND_SCRIPT}" --host 0.0.0.0
+    environment:
+      LOCAL_FRONTEND_SCRIPT: ${LOCAL_FRONTEND_SCRIPT:-dev:global}
+      VITE_AUTH_API_BASE_URL: ${LOCAL_FRONTEND_API_BASE_URL:-http://localhost:8085}
+      VITE_AEGIS_ENABLED: "false"
+      VITE_DEV_HOST: 0.0.0.0
+      VITE_DEV_PORT: "5173"
+      VITE_DEV_ALLOWED_HOSTS: "localhost,127.0.0.1,frontend"
+    volumes:
+      - ../../frontend:/frontend
+      - frontend-node-modules:/frontend/node_modules
+      - frontend-pnpm-store:/pnpm/store
+    ports:
+      - "${LOCAL_FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      service-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/ >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+volumes:
+  mysql-data:
+  redis-data:
+  frontend-node-modules:
+  frontend-pnpm-store:

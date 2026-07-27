@@ -1,0 +1,7 @@
+capabilities:
+  - id: tencentcloud.faceid.id-card-verification
+    provider: fake-tencentcloud
+    defaultPreset: success
+    presets:
+      - success
+      - identity-mismatch
