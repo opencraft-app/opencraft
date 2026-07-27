@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRepositories } from "@/contexts/repository-context";
 import type { BundleTimeUnit, Pass, PassRenewPrice } from "@/domain/types";
 import { getBillingErrorCode, resolveBillingErrorMessage } from "@/lib/billing-error";
-import { centsToYuan, formatYuan, getPassStatus } from "@/lib/billing-flow";
+import { centsToYuan, formatYuan, getPassStatus, type PassStatus } from "@/lib/billing-flow";
 import {
   estimateRenewalExpiry,
   formatPassDate,
@@ -31,6 +31,13 @@ type RenewalSelection = {
 
 const RENEW_STATUS_POLL_INTERVAL_MS = 3_000;
 const RENEW_STATUS_POLL_TIMEOUT_MS = 3 * 60 * 1_000;
+
+const PASS_STATUS_BADGE_CLASS_NAME: Record<PassStatus, string> = {
+  active: "bg-[rgba(20,122,86,0.08)] text-[#147A56]",
+  expired: "bg-black/[0.06] text-black/45",
+  isolated: "bg-[rgba(198,123,30,0.12)] text-[#9A5A00]",
+  deleted: "bg-black/[0.06] text-black/45",
+};
 
 const __markRenewalOptionsForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
   void t("月付");
@@ -234,7 +241,10 @@ export const RenewPassModal = ({ pass, onClose, onSuccess }: RenewPassModalProps
                       {t("当前到期：{{date}}", { date: formatPassDate(pass.expired_time) })}
                     </p>
                   </div>
-                  <span className="inline-flex shrink-0 items-center rounded bg-[rgba(20,122,86,0.08)] px-2.5 py-1 text-xs font-bold text-[#147A56]">
+                  <span className={cn(
+                    "inline-flex shrink-0 items-center rounded px-2.5 py-1 text-xs font-bold",
+                    PASS_STATUS_BADGE_CLASS_NAME[passStatus],
+                  )}>
                     {t(getPassStatusLabel(passStatus))}
                   </span>
                 </div>

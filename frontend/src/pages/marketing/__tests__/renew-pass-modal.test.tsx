@@ -25,7 +25,7 @@ vi.mock("@/contexts/repository-context", () => ({
   }),
 }));
 
-const buildPass = (): Pass => ({
+const buildPass = (overrides: Partial<Pass> = {}): Pass => ({
   pass_id: "pass_renew_modal",
   user_id: "usr_renew_modal",
   bundle_id: "bundle_launch",
@@ -36,6 +36,7 @@ const buildPass = (): Pass => ({
   deleted_time: null,
   credit_total: 1000,
   credit_available: 800,
+  ...overrides,
 });
 
 describe("RenewPassModal", () => {
@@ -101,5 +102,33 @@ describe("RenewPassModal", () => {
     await Promise.resolve();
     intervalCallbacks[0]!();
     expect(listMyPasses).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses non-green badge colors for expired and isolated passes", async () => {
+    const renderModal = (pass: Pass) => (
+      <RenewPassModal
+        pass={pass}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />
+    );
+
+    const { rerender } = render(renderModal(buildPass({
+      expired_time: "2026-07-01T00:00:00.000Z",
+    })));
+
+    const expiredBadge = await screen.findByText("已过期");
+    expect(expiredBadge).toHaveClass("bg-black/[0.06]");
+    expect(expiredBadge).toHaveClass("text-black/45");
+    expect(expiredBadge.className).not.toContain("#147A56");
+
+    rerender(renderModal(buildPass({
+      isolated_time: "2026-07-20T00:00:00.000Z",
+    })));
+
+    const isolatedBadge = await screen.findByText("隔离期");
+    expect(isolatedBadge).toHaveClass("bg-[rgba(198,123,30,0.12)]");
+    expect(isolatedBadge).toHaveClass("text-[#9A5A00]");
+    expect(isolatedBadge.className).not.toContain("#147A56");
   });
 });
