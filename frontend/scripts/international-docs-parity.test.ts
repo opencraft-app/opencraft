@@ -14,6 +14,10 @@ const ACTIVE_SHARED_FILES = [
   "credits.md",
   "plans.md",
   "use-cases/personal-ai-assistant.md",
+  "use-cases/chinese-messaging-channels.md",
+  "use-cases/daily-summary.md",
+  "use-cases/hermes-agent-24-7.md",
+  "use-cases/memory-and-knowledge.md",
   "who-is-lightvela-for.md",
 ] as const;
 
@@ -36,11 +40,6 @@ const STASHED_SHARED_FILES = [
   "troubleshooting/model-errors.md",
   "troubleshooting/rebuild-hermes.md",
   "troubleshooting/skill-installation-failed.md",
-  "use-cases/chinese-messaging-channels.md",
-  "use-cases/daily-summary.md",
-  "use-cases/hermes-agent-24-7.md",
-  "use-cases/memory-and-knowledge.md",
-  "use-cases/work-assistant.md",
 ] as const;
 
 const docsContentRoot = join(process.cwd(), "src", "content", "docs");

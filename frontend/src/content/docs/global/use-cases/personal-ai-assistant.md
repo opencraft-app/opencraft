@@ -4,7 +4,7 @@
 
 LightVela 是一个云端托管的个人 AI Agent 平台：Hermes Agent 可以结合你选择的模型、通道、记忆、技能和自动任务持续工作。本指南会带你把这些基础能力组合成一个从第一周起就有用的助手，而不是一开始就把所有事情自动化。
 
-![通过 LightVela 跨通道使用个人 AI 助手](../images/personal-ai-assistant-hero.webp)
+![通过 LightVela 跨通道使用个人 AI 助手](../images/use-case-personal-ai-assistant.png)
 
 ## 适合谁
 
