@@ -99,6 +99,9 @@ interface PlanInfo {
   features: PlanFeature[];
   ctaLabel: string;
   ctaStyle: "outline" | "primary" | "outline-dark";
+  /* 免费试用提示：新用户启航版按钮展示「免费订阅」时，hover 到按钮上方显示的提示文案。
+     非新用户 / 非启航版 / 非免费订阅态时为 undefined（不展示提示）。 */
+  freeTrialHint?: string;
   featured?: boolean;
   maxBots: number;
   /* 售罄：按钮禁用，展示「当日名额已满 / 明天再试」 */
@@ -579,6 +582,14 @@ const mapBundleToPlan = (
     bundle.bundle_id === currentBundleId ||
     CURRENT_BUNDLE_ALIASES[bundle.bundle_id]?.includes(currentBundleId) === true
   );
+  /* 启航版（标准版，非 AI 增强版）识别。需求：新用户（未订阅任何套餐）无论登录态 / 未登录态，
+     启航版订阅按钮统一展示「免费订阅」，并在 hover 时提示「免费试用到期后不自动扣款、需手动续费」。
+     AI 增强版（bundle_type === "ai"）为付费首月折扣，不在此免费试用范围内。 */
+  const _launchBundleName = bundle.bundle_name ?? "";
+  const isLaunchStandard =
+    (_launchBundleName.includes("启航") || _launchBundleName.toLowerCase().includes("launch")) &&
+    bundle.bundle_type !== "ai";
+  const isNewUserFreeLaunch = isLaunchStandard && !isSubscribed && !isCurrentPlan;
   const ctaLabel = isCurrentPlan
     ? t("当前订阅")
     : soldOut
@@ -588,10 +599,17 @@ const mapBundleToPlan = (
       : priceUnavailable
         ? t("暂无报价")
         : /* 需求4：可享免费 14 天 0 元下单，或内测「免费订阅」引导态，一律显示「免费订阅」。
+             需求（新用户启航版）：无论登录 / 未登录，新用户启航版一律展示「免费订阅」。
              已订阅用户不展示「免费订阅」引导（当前套餐走 isCurrentPlan →「当前订阅」优先级更高）。 */
-          !isSubscribed && (isZeroDownFreeTrial || isFeaturedFreeGuide)
+          !isSubscribed && (isZeroDownFreeTrial || isFeaturedFreeGuide || isNewUserFreeLaunch)
           ? t("免费订阅")
           : t("立即订阅");
+  /* 免费试用提示：仅当按钮实际展示「免费订阅」且为新用户启航版时才展示。
+     售罄 / 询价中 / 暂无报价 / 当前订阅等态下 ctaLabel 不是「免费订阅」，不提示。 */
+  const freeTrialHint =
+    isNewUserFreeLaunch && !soldOut && !showPricingPlaceholder && !priceUnavailable
+      ? t("免费试用到期后，不会自动扣费，后续如需继续使用，请手动续费。")
+      : undefined;
 
   return {
     id: bundle.bundle_id,
@@ -621,6 +639,7 @@ const mapBundleToPlan = (
     description: tierTagline || (freeGuideAllowed ? "" : t("尝鲜体验，从一个 Agent 开始")),
     features,
     ctaLabel,
+    freeTrialHint,
     ctaStyle: index === 0 ? "primary" : "outline",
     featured: index === 0,
     maxBots: bundle.agent_quota || 1,
@@ -1094,6 +1113,8 @@ const PlanCard = ({
   const safeIdx = activeVariantIdx < variants.length ? activeVariantIdx : 0;
   const plan = variants[safeIdx]!;
   const subscribing = subscribingPlanId === plan.id;
+  /* 新用户启航版「免费订阅」按钮 hover 时，上方展示免费试用到期不自动扣款的提示（plan.freeTrialHint） */
+  const [showFreeTrialHint, setShowFreeTrialHint] = useState(false);
   const quotaWouldExceed = currentBots >= plan.maxBots;
   /* 主推卡由 tier 顺序决定（启航，index===0），不随积分切换变化 */
   const isFeatured = index === 0;
@@ -1514,7 +1535,55 @@ const PlanCard = ({
         )}
 
         {/* CTA Button — 需求3：上移到功能点上方（积分切换与分割线之间），order=3 */}
-        <div style={{ marginTop: 4, marginBottom: 4, order: 3 }}>
+        <div
+          style={{ position: "relative", marginTop: 4, marginBottom: 4, order: 3 }}
+          onMouseEnter={() => {
+            if (plan.freeTrialHint) setShowFreeTrialHint(true);
+          }}
+          onMouseLeave={() => setShowFreeTrialHint(false)}
+        >
+          {/* 免费试用提示：新用户启航版「免费订阅」按钮 hover 时，在按钮上方展示 */}
+          {plan.freeTrialHint && showFreeTrialHint && (
+            <div
+              role="tooltip"
+              style={{
+                position: "absolute",
+                bottom: "calc(100% + 8px)",
+                left: "50%",
+                transform: "translateX(-50%)",
+                zIndex: 20,
+                width: "max-content",
+                maxWidth: 240,
+                padding: "8px 12px",
+                borderRadius: 8,
+                background: "rgba(23,23,23,0.92)",
+                color: colors.white,
+                fontSize: 12,
+                fontWeight: 500,
+                lineHeight: 1.5,
+                textAlign: "center",
+                boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
+                pointerEvents: "none",
+                whiteSpace: "normal",
+              }}
+            >
+              {plan.freeTrialHint}
+              {/* 指向按钮的小三角箭头 */}
+              <span
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  width: 0,
+                  height: 0,
+                  borderLeft: "5px solid transparent",
+                  borderRight: "5px solid transparent",
+                  borderTop: "5px solid rgba(23,23,23,0.92)",
+                }}
+              />
+            </div>
+          )}
           {isComingSoon ? (
             <button
               disabled
