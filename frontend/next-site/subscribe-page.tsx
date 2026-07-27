@@ -2415,7 +2415,7 @@ export const SubscribePage = ({
           code,
           message,
           action: {
-            label: t("去续费"),
+            label: t("前往续费"),
             href: ACCOUNT_PATH,
           },
         });

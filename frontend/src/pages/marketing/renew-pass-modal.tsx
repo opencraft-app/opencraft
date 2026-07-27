@@ -59,6 +59,13 @@ export const RenewPassModal = ({ pass, onClose, onSuccess }: RenewPassModalProps
   const [checkingPayment, setCheckingPayment] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const startExpiredAtRef = useRef(new Date(pass.expired_time).getTime());
+  const paymentCheckInFlightRef = useRef(false);
+  const paymentSettledRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
 
   const selectedOption = useMemo(
     () => RENEWAL_PERIOD_OPTIONS.find(
@@ -98,6 +105,8 @@ export const RenewPassModal = ({ pass, onClose, onSuccess }: RenewPassModalProps
   }, [pass.pass_id, plans, selected, step, t]);
 
   const checkRenewalStatus = useCallback(async (showPendingMessage: boolean) => {
+    if (paymentSettledRef.current || paymentCheckInFlightRef.current) return false;
+    paymentCheckInFlightRef.current = true;
     setCheckingPayment(true);
     try {
       const list = await plans.listMyPasses();
@@ -105,21 +114,25 @@ export const RenewPassModal = ({ pass, onClose, onSuccess }: RenewPassModalProps
       const updatedExpiredAt = updated?.expired_time ? new Date(updated.expired_time).getTime() : NaN;
       const startExpiredAt = Number.isFinite(startExpiredAtRef.current) ? startExpiredAtRef.current : 0;
       if (Number.isFinite(updatedExpiredAt) && updatedExpiredAt > startExpiredAt) {
+        paymentSettledRef.current = true;
         await onSuccess();
         return true;
       }
-      if (showPendingMessage) {
+      if (showPendingMessage && mountedRef.current) {
         setSubmitError(t("暂未确认支付结果，请稍后刷新。"));
       }
       return false;
     } catch (err) {
       console.warn("[account] refresh renew status failed", err);
-      if (showPendingMessage) {
+      if (showPendingMessage && mountedRef.current) {
         setSubmitError(resolveBillingErrorMessage(err, t("刷新支付结果失败，请稍后重试。")));
       }
       return false;
     } finally {
-      setCheckingPayment(false);
+      paymentCheckInFlightRef.current = false;
+      if (mountedRef.current && !paymentSettledRef.current) {
+        setCheckingPayment(false);
+      }
     }
   }, [onSuccess, pass.pass_id, plans, t]);
 

@@ -239,7 +239,7 @@ describe("AccountPage nickname audit state", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /去认证/ }));
 
-    expect(screen.getByText("当前未认证，请完善信息并提交认证。")).toBeInTheDocument();
+    expect(screen.getByText("填写与你身份证一致的信息，完成实名认证。")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("请输入真实姓名")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("请输入身份证号码")).toBeInTheDocument();
     expect(screen.queryByText(/手机/)).not.toBeInTheDocument();
@@ -259,8 +259,7 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage();
 
-    expect(screen.getByText("账号 ID")).toBeInTheDocument();
-    expect(screen.getByText("usr_visible_account_id")).toBeInTheDocument();
+    expect(screen.getByText("id: usr_visible_account_id")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "复制" }));
 
@@ -276,7 +275,7 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage();
 
-    expect(screen.getByText("绑定邮箱")).toBeInTheDocument();
+    expect(screen.getByText("邮箱")).toBeInTheDocument();
     expect(screen.getByText("user@example.com")).toBeInTheDocument();
     expect(screen.getByText("已验证")).toBeInTheDocument();
     expect(screen.queryByText("该邮箱已验证，可用于接收导出完成通知等重要消息。")).not.toBeInTheDocument();
@@ -298,7 +297,7 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.queryByText(/SaaS/)).not.toBeInTheDocument();
   });
 
-  it("keeps the safety phone row hidden until show() reveals account hidden tools", () => {
+  it("shows the safety phone row after verification when phone proof is enabled", () => {
     realnamePhoneVerificationEnabled = true;
     currentUser = {
       ...currentUser,
@@ -309,13 +308,7 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage();
 
-    expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
-
-    act(() => {
-      ((window as Window & typeof globalThis & { show?: () => boolean }).show?.());
-    });
-
-    const safetyPhoneRow = screen.getByText("安全手机").parentElement;
+    const safetyPhoneRow = screen.getByText("手机号").parentElement;
     expect(safetyPhoneRow).not.toBeNull();
     expect(within(safetyPhoneRow!).getByRole("button", { name: /修改/ })).toBeInTheDocument();
     expect(within(safetyPhoneRow!).queryByRole("button", { name: /绑定/ })).not.toBeInTheDocument();
@@ -457,7 +450,7 @@ describe("AccountPage nickname audit state", () => {
     expect(verifyButtons.length).toBeGreaterThan(0);
     await userEvent.click(verifyButtons[0]!);
 
-    expect(screen.getByText("第一步：提交真实姓名和身份证号。")).toBeInTheDocument();
+    expect(screen.getByText("填写与你身份证一致的信息，完成实名认证。")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("请输入真实姓名")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("请输入身份证号码")).toBeInTheDocument();
     expect(screen.queryByText("第二步：输入当前手机号收到的短信验证码。")).not.toBeInTheDocument();
