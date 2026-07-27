@@ -71,6 +71,9 @@ type newPassSubscription struct {
 func ensureNewPassGatewayUser(ctx context.Context, userID, nickname string) (bool, error) {
 	if gatewayroute.NewAllocationGateway(userID) == gatewayroute.GatewayLLMGateway {
 		resp, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().EnsureUser(ctx, userID, nickname)
+		if err != nil {
+			return false, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "ensure llmgateway user: %v", err)
+		}
 		return resp != nil && resp.Result == "created", err
 	}
 	resp, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().EnsureUser(ctx, userID, nickname)
