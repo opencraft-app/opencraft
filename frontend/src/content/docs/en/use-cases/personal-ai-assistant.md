@@ -4,7 +4,7 @@ Most AI chats are useful for a single answer, then disappear into the next tab. 
 
 LightVela is a cloud-hosted personal AI agent platform: a Hermes Agent can keep working with the model, channel, memory, skills, and automations you choose. This guide shows how to turn that set of building blocks into an assistant that feels useful from the first week, without trying to automate everything at once.
 
-![A personal AI assistant with LightVela across channels](../images/personal-ai-assistant-hero.webp)
+![A personal AI assistant with LightVela across channels](../images/use-case-personal-ai-assistant.png)
 
 ## Who this is for
 
