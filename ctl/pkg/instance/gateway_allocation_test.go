@@ -37,3 +37,31 @@ func TestResolveProvisionGatewayUsesExplicitAllocationGate(t *testing.T) {
 		t.Fatalf("resolveProvisionGateway() = %q, want %q", got, gatewayBackendLLMGateway)
 	}
 }
+
+func TestResolveCreateProvisionGatewayUsesIndependentBotCreateMigrationGate(t *testing.T) {
+	original := config.ServerConf
+	originalDB := resource.GormDB
+	t.Cleanup(func() {
+		config.ServerConf = original
+		resource.GormDB = originalDB
+	})
+	resource.GormDB = nil
+	ctx := testutil.NewContext(t, "usr-bot-create-migration")
+	logic := &logic{logger: zap.NewNop()}
+
+	config.ServerConf = &config.GlobalConfig{AdapterConfig: &config.AdapterConfig{
+		AiGateway: &config.AiGatewayConfig{BaseURL: "https://legacy.example.com"},
+		LLMGateway: &config.LLMGatewayConfig{
+			Enabled:                         true,
+			BaseURL:                         "https://llmgateway.example.com",
+			BotCreateMigrationUserAllowlist: []string{ctx.GetUserID()},
+		},
+	}}
+
+	if got := logic.resolveCreateProvisionGateway(ctx, ctx.GetUserID(), "ins-bot-create"); got != gatewayBackendLLMGateway {
+		t.Fatalf("resolveCreateProvisionGateway() = %q, want %q", got, gatewayBackendLLMGateway)
+	}
+	if got := logic.resolveProvisionGateway(ctx, ctx.GetUserID(), "ins-non-create"); got != gatewayBackendAiGateway {
+		t.Fatalf("resolveProvisionGateway() = %q, want %q outside bot creation", got, gatewayBackendAiGateway)
+	}
+}
