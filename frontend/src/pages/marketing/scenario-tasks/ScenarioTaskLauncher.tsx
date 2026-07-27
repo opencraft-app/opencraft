@@ -100,6 +100,22 @@ export function getPendingScenarioSkillResumeState(
   return loadState.slugs.includes(selectedSkill) ? "ready" : "reselect";
 }
 
+export function resolvePendingScenarioDeliver(
+  deliver: string,
+  enabledChannels: Set<string> | null,
+): string | null {
+  if (!enabledChannels) return null;
+  const requestedTargets = deliver
+    .split(",")
+    .map((target) => target.trim())
+    .filter((target) => target && target !== "local");
+  if (!requestedTargets.length) return null;
+  const connectedTargets = requestedTargets.filter((target) => enabledChannels.has(target));
+  return connectedTargets.length === requestedTargets.length
+    ? connectedTargets.join(",")
+    : null;
+}
+
 function isTerminalScenarioCronStatus(status: string | null | undefined): boolean {
   const normalized = (status || "").trim().toLowerCase();
   return ["ok", "success", "succeeded", "done", "completed", "failed", "failure", "error"].includes(normalized);
@@ -479,15 +495,7 @@ export function ScenarioTaskLauncher({ packs, children }: ScenarioTaskLauncherPr
     );
     if (skillResumeState === "wait") return;
 
-    const requestedTargets = pending.deliver
-      .split(",")
-      .map((target) => target.trim())
-      .filter((target) => target && target !== "local");
-    const connectedTargets = requestedTargets
-      .filter((target) => enabledChannels?.has(target));
-    const connectedDeliver = connectedTargets.length
-      ? connectedTargets.join(",")
-      : enabledChannels?.values().next().value ?? null;
+    const connectedDeliver = resolvePendingScenarioDeliver(pending.deliver, enabledChannels);
     const draft = buildScenarioTaskDraft({
       pack,
       values: pending.values,
