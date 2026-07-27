@@ -424,6 +424,18 @@ type ShadowBindingResponse struct {
 	Binding ShadowBinding `json:"binding"`
 }
 
+// TencentCloudRedirectRequest defines model for TencentCloudRedirectRequest.
+type TencentCloudRedirectRequest struct {
+	// TargetPath Relative path inside console.cloud.tencent.com. Defaults to the account cancellation page.
+	TargetPath *string `json:"targetPath,omitempty"`
+}
+
+// TencentCloudRedirectResponse defines model for TencentCloudRedirectResponse.
+type TencentCloudRedirectResponse struct {
+	ExpiresAt   time.Time `json:"expiresAt"`
+	RedirectUrl string    `json:"redirectUrl"`
+}
+
 // UpdateProfileRequest defines model for UpdateProfileRequest.
 type UpdateProfileRequest struct {
 	Name string `json:"name"`
@@ -533,6 +545,9 @@ type SendSmsCodeJSONRequestBody = SendSmsRequest
 // VerifySmsCodeJSONRequestBody defines body for VerifySmsCode for application/json ContentType.
 type VerifySmsCodeJSONRequestBody = VerifySmsRequest
 
+// CreateTencentCloudRedirectJSONRequestBody defines body for CreateTencentCloudRedirect for application/json ContentType.
+type CreateTencentCloudRedirectJSONRequestBody = TencentCloudRedirectRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Send a magic-link email to bind an address to the current user
@@ -613,6 +628,9 @@ type ServerInterface interface {
 	// Verify SMS code and create a session
 	// (POST /auth/sms/verify)
 	VerifySmsCode(c *gin.Context)
+	// Create a one-time Tencent Cloud console login redirect for the current user
+	// (POST /auth/tencent-cloud/redirect)
+	CreateTencentCloudRedirect(c *gin.Context)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -1102,6 +1120,23 @@ func (siw *ServerInterfaceWrapper) VerifySmsCode(c *gin.Context) {
 	siw.Handler.VerifySmsCode(c)
 }
 
+// CreateTencentCloudRedirect operation middleware
+func (siw *ServerInterfaceWrapper) CreateTencentCloudRedirect(c *gin.Context) {
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateTencentCloudRedirect(c)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -1155,6 +1190,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/auth/shadow/binding/retry", wrapper.RetryShadowBinding)
 	router.POST(options.BaseURL+"/auth/sms/send", wrapper.SendSmsCode)
 	router.POST(options.BaseURL+"/auth/sms/verify", wrapper.VerifySmsCode)
+	router.POST(options.BaseURL+"/auth/tencent-cloud/redirect", wrapper.CreateTencentCloudRedirect)
 }
 
 type ErrorResponseJSONResponse ErrorResponse
@@ -2412,6 +2448,59 @@ func (response VerifySmsCode429JSONResponse) VisitVerifySmsCodeResponse(w http.R
 	return json.NewEncoder(w).Encode(response)
 }
 
+type CreateTencentCloudRedirectRequestObject struct {
+	Body *CreateTencentCloudRedirectJSONRequestBody
+}
+
+type CreateTencentCloudRedirectResponseObject interface {
+	VisitCreateTencentCloudRedirectResponse(w http.ResponseWriter) error
+}
+
+type CreateTencentCloudRedirect200JSONResponse TencentCloudRedirectResponse
+
+func (response CreateTencentCloudRedirect200JSONResponse) VisitCreateTencentCloudRedirectResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateTencentCloudRedirect400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response CreateTencentCloudRedirect400JSONResponse) VisitCreateTencentCloudRedirectResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateTencentCloudRedirect401JSONResponse ErrorResponse
+
+func (response CreateTencentCloudRedirect401JSONResponse) VisitCreateTencentCloudRedirectResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateTencentCloudRedirect409JSONResponse ErrorResponse
+
+func (response CreateTencentCloudRedirect409JSONResponse) VisitCreateTencentCloudRedirectResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateTencentCloudRedirect503JSONResponse ErrorResponse
+
+func (response CreateTencentCloudRedirect503JSONResponse) VisitCreateTencentCloudRedirectResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// Send a magic-link email to bind an address to the current user
@@ -2492,6 +2581,9 @@ type StrictServerInterface interface {
 	// Verify SMS code and create a session
 	// (POST /auth/sms/verify)
 	VerifySmsCode(ctx context.Context, request VerifySmsCodeRequestObject) (VerifySmsCodeResponseObject, error)
+	// Create a one-time Tencent Cloud console login redirect for the current user
+	// (POST /auth/tencent-cloud/redirect)
+	CreateTencentCloudRedirect(ctx context.Context, request CreateTencentCloudRedirectRequestObject) (CreateTencentCloudRedirectResponseObject, error)
 }
 
 type StrictHandlerFunc = strictgin.StrictGinHandlerFunc
@@ -3288,60 +3380,99 @@ func (sh *strictHandler) VerifySmsCode(ctx *gin.Context) {
 	}
 }
 
+// CreateTencentCloudRedirect operation middleware
+func (sh *strictHandler) CreateTencentCloudRedirect(ctx *gin.Context) {
+	var request CreateTencentCloudRedirectRequestObject
+
+	var body CreateTencentCloudRedirectJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			ctx.Status(http.StatusBadRequest)
+			ctx.Error(err)
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateTencentCloudRedirect(ctx, request.(CreateTencentCloudRedirectRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateTencentCloudRedirect")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(CreateTencentCloudRedirectResponseObject); ok {
+		if err := validResponse.VisitCreateTencentCloudRedirectResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"TbhU0x/Ofngeba+3/wsAAP//hPxG+81YAAA=",
+	"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",
+	"pU9/OvnpWbK6Xv0vAAD//51SEDRMXQAA",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

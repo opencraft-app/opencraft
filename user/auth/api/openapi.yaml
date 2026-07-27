@@ -595,6 +595,34 @@ paths:
                 $ref: '#/components/schemas/ShadowBindingResponse'
         '401':
           $ref: '#/components/responses/ErrorResponse'
+  /auth/tencent-cloud/redirect:
+    post:
+      operationId: createTencentCloudRedirect
+      summary: Create a one-time Tencent Cloud console login redirect for the current user
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TencentCloudRedirectRequest'
+      responses:
+        '200':
+          description: One-time Tencent Cloud console login redirect
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TencentCloudRedirectResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
   /auth/profile/avatar:
     get:
       operationId: getProfileAvatar
@@ -908,6 +936,24 @@ components:
       properties:
         binding:
           $ref: '#/components/schemas/ShadowBinding'
+    TencentCloudRedirectRequest:
+      type: object
+      properties:
+        targetPath:
+          type: string
+          description: Relative path inside console.cloud.tencent.com. Defaults to the account cancellation page.
+    TencentCloudRedirectResponse:
+      type: object
+      required:
+        - redirectUrl
+        - expiresAt
+      properties:
+        redirectUrl:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time
     AuthSession:
       type: object
       required:

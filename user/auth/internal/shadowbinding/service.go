@@ -368,6 +368,15 @@ func (s *Service) IssueAuthCode(ctx context.Context, userID string, purpose stri
 	return s.store.IssueAuthCode(ctx, strings.TrimSpace(userID), strings.TrimSpace(purpose), s.authCodeTTL, s.now())
 }
 
+func (s *Service) IssueExternalAuthCode(ctx context.Context, userID string, purpose string) (AuthCode, error) {
+	code, err := s.IssueAuthCode(ctx, userID, purpose)
+	if err != nil {
+		return AuthCode{}, err
+	}
+	code.Code = s.externalAuthCode(code.Code)
+	return code, nil
+}
+
 // externalAuthCode decorates the opaque code only while it travels through
 // TencentCloud. The raw code remains the value persisted and consumed locally.
 func (s *Service) externalAuthCode(code string) string {

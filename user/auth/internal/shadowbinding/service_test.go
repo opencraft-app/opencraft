@@ -324,6 +324,35 @@ func TestAuthCodeIsOneTimeAndExpires(t *testing.T) {
 	}
 }
 
+func TestIssueExternalAuthCodeAddsRoutingPrefixWithoutChangingStoredCode(t *testing.T) {
+	now := time.Date(2026, 6, 1, 1, 2, 3, 0, time.UTC)
+	svc := New(NewMemoryStore(), nil, Options{
+		Enabled:        true,
+		Now:            func() time.Time { return now },
+		AuthCodePrefix: ".bjsbx.",
+	})
+
+	code, err := svc.IssueExternalAuthCode(context.Background(), "usr_1", "")
+	if err != nil {
+		t.Fatalf("issue external auth code: %v", err)
+	}
+	if !strings.HasPrefix(code.Code, "bjsbx.") {
+		t.Fatalf("expected external auth code to contain routing prefix, got %q", code.Code)
+	}
+
+	rawCode := strings.TrimPrefix(code.Code, "bjsbx.")
+	consumed, err := svc.ConsumeAuthCode(context.Background(), rawCode)
+	if err != nil {
+		t.Fatalf("consume stored raw auth code: %v", err)
+	}
+	if consumed.UserID != "usr_1" {
+		t.Fatalf("expected auth code for usr_1, got %+v", consumed)
+	}
+	if _, err := svc.ConsumeAuthCode(context.Background(), code.Code); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected prefixed transport code not to be stored directly, got %v", err)
+	}
+}
+
 func TestShadowUserNameForUserUsesTencentSafeName(t *testing.T) {
 	if got := shadowUserNameForUser("usr_aa8deff8dcbd814b27b37799"); got != "u6505083861" {
 		t.Fatalf("unexpected safe shadow username: %q", got)
