@@ -189,6 +189,29 @@ class ReleaseBundleContractTests(unittest.TestCase):
                     f"{sorted(referenced_secrets - set(bundle.publish_paths))}",
                 )
 
+    def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
+        for env in ("beijing-sandbox", "shprod"):
+            with self.subTest(env=env):
+                source_patch = next(
+                    doc
+                    for doc in yaml.safe_load_all(
+                        (REPO_ROOT / f"user/auth/k8s/overlays/{env}/patch-realname-faceid.yaml").read_text()
+                    )
+                    if doc.get("kind") == "ConfigMap"
+                )
+                deploy_patch = next(
+                    doc
+                    for doc in yaml.safe_load_all(
+                        (REPO_ROOT / f"argocd/services/lightclaw-auth/{env}/patch-shadowbinding.yaml").read_text()
+                    )
+                    if doc.get("kind") == "ConfigMap"
+                )
+                source_mode = source_patch["data"]["LIGHTCLAW_REALNAME_ASSURANCE_MODE"]
+                deploy_mode = deploy_patch["data"]["LIGHTCLAW_REALNAME_ASSURANCE_MODE"]
+
+                self.assertEqual(source_mode, "faceless")
+                self.assertEqual(deploy_mode, source_mode)
+
     def test_korea_playground_env_uses_kr_registry_and_seoul_catalog_root(self) -> None:
         manifest = load_manifest()
 
@@ -288,6 +311,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         kustomization = yaml.safe_load((service_root / "kustomization.yaml").read_text())
         workloads = (service_root / "workloads.yaml").read_text()
         workload_docs = list(yaml.safe_load_all(workloads))
+        shard_manager_docs = list(yaml.safe_load_all((service_root / "shard-manager.yaml").read_text()))
         traffic = next(
             doc
             for doc in workload_docs
@@ -328,6 +352,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("argocd/services/velagw/beijing-llmgateway/**", bundle.publish_paths)
         self.assertNotIn("kind: Secret", workloads)
         self.assertNotIn("kind: LLMFleet", workloads)
+        self.assertNotIn("llmgateway-set-manager", workloads)
         self.assertEqual(traffic_env.get("LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED"), "true")
         self.assertEqual(core_worker_env.get("LLMGATEWAY_SET_AUTOSCALER_RUNTIME_BACKEND"), "velagwset")
         self.assertEqual(core_worker_env.get("LLMGATEWAY_SET_AUTOSCALER_WRITER_EPOCH"), "2")
@@ -340,6 +365,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 "velagwset-delete-policy.yaml",
                 "velagwset-controller.yaml",
                 "velagwset-provisioner.yaml",
+                "shard-manager.yaml",
                 "release-bootstrap.yaml",
             ],
         )
@@ -364,7 +390,40 @@ class ReleaseBundleContractTests(unittest.TestCase):
         }
         self.assertIn("velagwset-controller", image_replacement_targets)
         self.assertIn("velagwset-provisioner", image_replacement_targets)
+        self.assertIn("llmgateway-shard-manager", image_replacement_targets)
         self.assertIn("llmgateway-release-bootstrap", image_replacement_targets)
+        shard_manager = next(
+            doc
+            for doc in shard_manager_docs
+            if doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-shard-manager"
+        )
+        self.assertEqual(shard_manager["spec"].get("replicas"), 2)
+        shard_manager_container = next(
+            container
+            for container in shard_manager["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "shard-manager"
+        )
+        self.assertIn("--leader-elect", shard_manager_container.get("args", []))
+        shard_manager_env = {
+            entry["name"]: entry for entry in shard_manager_container.get("env", [])
+        }
+        self.assertEqual(
+            shard_manager_env["INTERNAL_SERVICE_TOKEN"]["valueFrom"]["secretKeyRef"],
+            {"name": "llmgateway-control-runtime", "key": "INTERNAL_SERVICE_TOKEN"},
+        )
+        shard_manager_role = next(
+            doc
+            for doc in shard_manager_docs
+            if doc.get("kind") == "Role"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-shard-manager"
+        )
+        llmfleet_rule = next(
+            rule
+            for rule in shard_manager_role["rules"]
+            if "llmfleets" in rule.get("resources", [])
+        )
+        self.assertEqual(llmfleet_rule.get("verbs"), ["get", "list", "watch"])
         self.assertNotIn(
             "VELAGW_PROVISIONER_IMAGE=",
             (service_root / "velagw-platform.env").read_text(),
@@ -375,6 +434,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "velagwset-delete-policy.yaml",
             "velagwset-controller.yaml",
             "velagwset-provisioner.yaml",
+            "shard-manager.yaml",
         ):
             with self.subTest(resource=resource):
                 self.assertTrue((service_root / resource).is_file())
@@ -471,6 +531,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 "velagwset-delete-policy.yaml",
                 "velagwset-controller.yaml",
                 "velagwset-provisioner.yaml",
+                "shard-manager.yaml",
                 "release-bootstrap.yaml",
             ],
         )
@@ -527,8 +588,35 @@ class ReleaseBundleContractTests(unittest.TestCase):
         }
         controller = deployments["velagwset-controller"]
         provisioner = deployments["velagwset-provisioner"]
+        shard_manager = deployments["llmgateway-shard-manager"]
         self.assertEqual(controller["spec"].get("replicas"), 2)
         self.assertEqual(provisioner["spec"].get("replicas"), 2)
+        self.assertEqual(shard_manager["spec"].get("replicas"), 2)
+        shard_manager_container = next(
+            container
+            for container in shard_manager["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "shard-manager"
+        )
+        self.assertIn("--leader-elect", shard_manager_container.get("args", []))
+        shard_manager_env = {
+            entry["name"]: entry for entry in shard_manager_container.get("env", [])
+        }
+        self.assertEqual(
+            shard_manager_env["INTERNAL_SERVICE_TOKEN"]["valueFrom"]["secretKeyRef"],
+            {"name": "llmgateway-control-runtime", "key": "INTERNAL_SERVICE_TOKEN"},
+        )
+        shard_manager_role = next(
+            doc
+            for doc in resource_docs
+            if doc.get("kind") == "Role"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-shard-manager"
+        )
+        llmfleet_rule = next(
+            rule
+            for rule in shard_manager_role["rules"]
+            if "llmfleets" in rule.get("resources", [])
+        )
+        self.assertEqual(llmfleet_rule.get("verbs"), ["get", "list", "watch"])
 
         controller_container = next(
             container
@@ -563,6 +651,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         }
         self.assertIn("velagwset-controller", image_replacement_targets)
         self.assertIn("velagwset-provisioner", image_replacement_targets)
+        self.assertIn("llmgateway-shard-manager", image_replacement_targets)
         self.assertIn("llmgateway-release-bootstrap", image_replacement_targets)
         self.assertFalse(
             any(

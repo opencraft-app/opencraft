@@ -97,6 +97,11 @@ export interface TatDeviceBindResult {
   };
 }
 
+export interface TencentCloudRedirectResult {
+  redirectUrl: string;
+  expiresAt: string;
+}
+
 export interface AuthRepository {
   signInWithCode(input: { phone: string; code?: string; inviteCode?: string }): Promise<AuthSessionSnapshot>;
   prepareInviteCode(code: string): Promise<void>;
@@ -129,6 +134,7 @@ export interface AuthRepository {
   /** 邮箱绑定：POST /auth/email/bind/request */
   requestEmailBind(input: { email: string }): Promise<{ cooldownSeconds: number }>;
   createTatDeviceBind(input: { callbackUrl: string; deviceName?: string }): Promise<TatDeviceBindResult>;
+  createTencentCloudRedirect(targetPath?: string): Promise<TencentCloudRedirectResult>;
   getOAuthStartUrl(provider: OAuthProvider, options?: OAuthStartOptions): string | null;
   signInAsGuest(): Promise<AuthSessionSnapshot>;
   signOut(): Promise<void>;

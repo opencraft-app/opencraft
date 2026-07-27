@@ -1456,6 +1456,29 @@ func (s *Service) CurrentShadowBinding(ctx context.Context, token string) (Shado
 	return toShadowBindingResult(binding), nil
 }
 
+func (s *Service) IssueTencentCloudConsoleAuthCode(ctx context.Context, token string) (shadowbinding.AuthCode, error) {
+	session, err := s.CurrentSession(ctx, token)
+	if err != nil {
+		return shadowbinding.AuthCode{}, err
+	}
+	if s.shadowBinding == nil || !s.shadowBinding.Enabled() {
+		return shadowbinding.AuthCode{}, newError("shadow_binding_disabled", "腾讯云账号绑定暂未启用。", http.StatusServiceUnavailable)
+	}
+
+	binding, err := s.shadowBinding.GetBindingByUserID(ctx, session.User.ID)
+	if err != nil {
+		if errors.Is(err, shadowbinding.ErrNotFound) {
+			return shadowbinding.AuthCode{}, newError("shadow_binding_not_ready", "腾讯云账号绑定尚未完成。", http.StatusConflict)
+		}
+		return shadowbinding.AuthCode{}, err
+	}
+	if binding.Status != shadowbinding.StatusActive {
+		return shadowbinding.AuthCode{}, newError("shadow_binding_not_ready", "腾讯云账号绑定尚未完成。", http.StatusConflict)
+	}
+
+	return s.shadowBinding.IssueExternalAuthCode(ctx, session.User.ID, shadowbinding.AuthCodePurposeSaaSCallback)
+}
+
 func (s *Service) RetryShadowBinding(ctx context.Context, token string) (ShadowBindingResult, error) {
 	session, err := s.CurrentSession(ctx, token)
 	if err != nil {

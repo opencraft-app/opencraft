@@ -10,6 +10,7 @@ resources:
   - velagwset-delete-policy.yaml
   - velagwset-controller.yaml
   - velagwset-provisioner.yaml
+  - shard-manager.yaml
   - release-bootstrap.yaml
 
 generatorOptions:
@@ -66,6 +67,11 @@ replacements:
           name: velagwset-controller
         fieldPaths:
           - spec.template.spec.containers.[name=controller].image
+      - select:
+          kind: Deployment
+          name: llmgateway-shard-manager
+        fieldPaths:
+          - spec.template.spec.containers.[name=shard-manager].image
       - select:
           kind: Deployment
           name: velagwset-provisioner

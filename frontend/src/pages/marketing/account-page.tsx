@@ -22,7 +22,7 @@ import { useRepositories } from "@/contexts/repository-context";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { RepositoryError } from "@/repositories/http-repositories";
-import { REALNAME_LEVEL, type BundleTimeUnit, type Pass, type PassRenewPrice } from "@/domain/types";
+import { REALNAME_LEVEL, type Pass } from "@/domain/types";
 import { LoginModal } from "@/components/site/login-modal";
 import { ProductPageShell } from "@/components/site/product-chrome";
 import { useT } from "@/i18n/t";
@@ -30,21 +30,18 @@ import { avatarImageUrl } from "@/lib/avatar-image";
 import {
   canDeletePass,
   canRenewPass,
-  centsToYuan,
-  formatDuration,
-  formatYuan,
   getPassStatus,
   isPaidBillingEnabled,
 } from "@/lib/billing-flow";
-import { getBillingErrorCode, resolveBillingErrorMessage } from "@/lib/billing-error";
+import { resolveBillingErrorMessage } from "@/lib/billing-error";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { isCN, isGlobal } from "@/lib/region";
 import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-state-switcher";
 import { REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
 import { cn } from "@/lib/utils";
-import { buildPayPlan } from "@/lib/wx-pay";
 import { QRCodeSVG } from "qrcode.react";
 import { RealnameStepper, type RealnameStage } from "@/pages/marketing/realname-stepper";
+import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 
 /* ─── animation variants ─── */
 
@@ -1525,343 +1522,6 @@ const DeleteAccountModal = ({
   );
 };
 
-/* ─── Renew Pass Modal ─── */
-
-/**
- * 续费弹窗 —— 联调文档 §3（v1.7.31 两阶段下单）
- *
- * 流程：
- *   1. 选周期（默认 1 个月）→ 自动调 getRenewPrice 询价（分→元）
- *   2. 用户确认 → 调 createRenewOrder 拿 deal_names → buildPayPlan 生成中转页二维码 URL
- *   3. paying 阶段渲染二维码，用户扫码后中转页走 OAuth → getRenewOrderUrl → wxSign
- *   4. 同时轮询 listMyPasses 检测同 pass_id 的 expired_time 被推后 → 续费成功
- *
- * 设计取舍：
- *   - 仅给定 1 / 3 / 6 / 12 个月 4 个预设档，避免任意输入引发风险
- *   - 询价失败不阻塞 UI，仍允许用户尝试下单（trade 侧最终兜底）
- *   - v1.7.31 起零元订单判定不在 PC 端进行，统一走二维码 bridge；
- *     中转页拿到 getRenewOrderUrl 响应后从 need_charge === 0 路径提示「已完成」
- */
-const RenewPassModal = ({
-  pass,
-  onClose,
-  onSuccess,
-  t,
-}: {
-  pass: Pass;
-  onClose: () => void;
-  onSuccess: () => void;
-  t: (zh: string, opts?: Record<string, unknown>) => string;
-}) => {
-  const { plans } = useRepositories();
-  /* 默认选中 1 个月，与 RENEW_PRESETS[0] 保持一致；直接写字面量避免索引型推断雷区 */
-  const [selected, setSelected] = useState<{ period: number; time_unit: BundleTimeUnit }>({
-    period: 1,
-    time_unit: "m",
-  });
-  const [priceInfo, setPriceInfo] = useState<PassRenewPrice | null>(null);
-  const [pricing, setPricing] = useState(false);
-  const [priceError, setPriceError] = useState<string | null>(null);
-
-  const [step, setStep] = useState<"confirm" | "paying">("confirm");
-  /* 付费上下文：v1.7.31 起统一走 bridge 中转页，仅保留 deal_names + bridgeUrl */
-  const [payContext, setPayContext] = useState<{
-    dealNames: string[];
-    bridgeUrl: string;
-  } | null>(null);
-  const payContextRef = useRef(payContext);
-  payContextRef.current = payContext;
-
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-
-  /* 询价：周期变化即重新询价 */
-  useEffect(() => {
-    if (step !== "confirm") return;
-    let cancelled = false;
-    setPricing(true);
-    setPriceError(null);
-    void (async () => {
-      try {
-        const result = await plans.getRenewPrice(pass.pass_id, selected);
-        if (cancelled) return;
-        setPriceInfo(result);
-      } catch (err) {
-        if (cancelled) return;
-        setPriceInfo(null);
-        setPriceError(resolveBillingErrorMessage(err, t("询价失败，可直接下单或稍后重试")));
-      } finally {
-        if (!cancelled) setPricing(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [pass.pass_id, plans, selected, step, t]);
-
-  /* v1.7.30 后端联调文档明确「前端不需要轮询支付状态」——
-     原轮询 listMyPasses + 补 expired_time 逻辑已删除，改为 SDK callback / 手动确认刷一次。 */
-
-  /** SDK / 手动确认后走该函数：刷新外层页面状态、并判定续费是否生效 */
-  const finalizeRenewSuccess = useCallback(async () => {
-    /* 后端文档推荐刷列表拿新 expired_time，这里仅做一次刷新，不再轮询 */
-    onSuccess();
-  }, [onSuccess]);
-
-  /** 用户点「我已完成支付」→ 直接转交给 finalizeRenewSuccess，跳出轮询中 */
-  const handleManualConfirm = useCallback(() => {
-    void finalizeRenewSuccess();
-  }, [finalizeRenewSuccess]);
-
-  /* v1.7.31 起统一二维码 bridge，原 handleReopenPayUrl + payContextRef 已删除（无 pay_url 可重新打开） */
-
-  /* paying 阶段轮询：代替原 SDK callback。轮询 listMyPasses 检测同 pass_id 的 expired_time 被推后、
-     由外层 onSuccess() 接棒 finalize。超时不主动报错，用户仍可点「我已完成支付」。 */
-  useEffect(() => {
-    if (step !== "paying") return;
-    let cancelled = false;
-    const startedAt = Date.now();
-    const startExpired = pass.expired_time ? new Date(pass.expired_time).getTime() : 0;
-    const timer = window.setInterval(async () => {
-      if (cancelled) return;
-      try {
-        const list = await plans.listMyPasses();
-        const updated = list.find((p) => p.pass_id === pass.pass_id);
-        if (updated && updated.expired_time && new Date(updated.expired_time).getTime() > startExpired) {
-          window.clearInterval(timer);
-          if (!cancelled) await finalizeRenewSuccess();
-          return;
-        }
-      } catch (err) {
-        console.warn("[account] poll renew status failed", err);
-      }
-      if (Date.now() - startedAt > 180_000) {
-        window.clearInterval(timer);
-      }
-    }, 3000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [step, pass.pass_id, pass.expired_time, plans, finalizeRenewSuccess]);
-
-  const handleSubmit = useCallback(async () => {
-    if (submitting) return;
-    setSubmitting(true);
-    setSubmitError(null);
-    try {
-      /* 阶段一：续费下单拿 deal_names + auth_code（CodeBuddy AuthCode 模型） */
-      const order = await plans.createRenewOrder(pass.pass_id, selected);
-
-      /* 把 deal_name + auth_code + passId + bundleName 编进二维码 URL；
-         中转页根据 passId 非空走 renew/order-url 路径，再调 wxSign。
-         PC 端不再调 getRenewOrderUrl —— 因为 jifei pay_url 生成时绑定 wx_open_id，
-         必须等到中转页拿到 wx_code 后才能拉。零元订单由中转页直接显示「已完成」。 */
-      const payPlan = buildPayPlan({
-        dealName: order.deal_names[0] ?? "",
-        authCode: order.auth_code,
-        passId: pass.pass_id,
-        bundleName: pass.bundle_name,
-      });
-      /* bridge：渲染中转页二维码，上方轮询 useEffect 检测 expired_time 推后即触发 onSuccess */
-      setPayContext({ dealNames: order.deal_names, bridgeUrl: payPlan.bridgeUrl });
-      setStep("paying");
-    } catch (err) {
-      const code = getBillingErrorCode(err);
-      const fallbackMsg = err instanceof Error ? err.message : t("下单失败，请稍后重试。");
-      console.error("[account] create renew order failed", err instanceof RepositoryError
-        ? { status: err.status, code: err.code, message: err.message }
-        : err);
-      setSubmitError(`${code ? `[${code}] ` : ""}${resolveBillingErrorMessage(err, fallbackMsg)}`);
-    } finally {
-      setSubmitting(false);
-    }
-  }, [submitting, plans, pass.pass_id, pass.bundle_name, selected, t]);
-
-  /* 原「手动确认」/「重新打开 pay_url」逻辑已在 useEffect 上方声明 */
-
-  const realTotalYuan = priceInfo ? centsToYuan(priceInfo.real_total_cost) : null;
-  const originalTotalYuan = priceInfo ? centsToYuan(priceInfo.total_cost) : null;
-  const hasDiscount = priceInfo != null && originalTotalYuan != null && realTotalYuan != null
-    && originalTotalYuan > realTotalYuan + 0.001;
-
-  return (
-    <motion.div
-      className="fixed inset-0 z-[100] flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-      onClick={onClose}
-    >
-      <motion.div
-        className="relative mx-4 w-full max-w-[460px] overflow-hidden rounded-2xl bg-white"
-        style={{ boxShadow: "0 20px 60px -10px rgba(0,0,0,0.2)" }}
-        initial={{ opacity: 0, scale: 0.96, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 10 }}
-        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={onClose}
-          className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-[rgba(0,0,0,0.04)]"
-          style={{ color: "rgba(0,0,0,0.5)" }}
-          aria-label={t("关闭")}
-        >
-          <X className="h-4 w-4" />
-        </button>
-
-        <div className="px-7 pb-6 pt-7">
-          <h3 className="m-0 text-[18px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
-            {step === "confirm" ? t("续费套餐") : t("请完成支付")}
-          </h3>
-          <p className="text-sm" style={{ margin: "6px 0 20px 0", color: "#999" }}>
-            {pass.bundle_name}
-          </p>
-
-          {step === "confirm" ? (
-            <>
-              {/* 周期选择 */}
-              <div className="mb-5">
-                <p className="mb-2 text-sm font-semibold" style={{ color: "#333" }}>{t("续费时长")}</p>
-                <div className="flex flex-wrap gap-2">
-                  {RENEW_PRESETS.map((preset) => {
-                    const active = selected.period === preset.period && selected.time_unit === preset.time_unit;
-                    return (
-                      <button
-                        key={`${preset.period}-${preset.time_unit}`}
-                        type="button"
-                        onClick={() => setSelected({ period: preset.period, time_unit: preset.time_unit })}
-                        className="rounded-full border px-4 py-1.5 text-sm font-medium transition-colors"
-                        style={{
-                          borderColor: active ? "#202020" : "rgba(0,0,0,0.1)",
-                          background: active ? "#202020" : "white",
-                          color: active ? "white" : "#333",
-                        }}
-                      >
-                        {t(preset.label)}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* 价格展示 */}
-              <div
-                className="mb-5 rounded-xl p-4"
-                style={{ background: "#F9F8F7", border: "1px solid #E6E9EF" }}
-              >
-                <div className="mb-1 flex items-center justify-between text-xs" style={{ color: "#999" }}>
-                  <span>{t("续费时长")}</span>
-                  <span>{formatDuration(selected.period, selected.time_unit)}</span>
-                </div>
-                <div className="flex items-end justify-between">
-                  <span className="text-sm font-semibold" style={{ color: "#333" }}>{t("应付金额")}</span>
-                  <div className="text-right">
-                    {pricing ? (
-                      <span className="inline-flex items-center gap-1 text-sm" style={{ color: "#999" }}>
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        {t("询价中...")}
-                      </span>
-                    ) : realTotalYuan != null ? (
-                      <>
-                        <p className="m-0 text-xl font-bold tracking-tight" style={{ color: "var(--lw-accent)" }}>
-                          {formatYuan(realTotalYuan, priceInfo?.currency ?? "CNY")}
-                        </p>
-                        {hasDiscount && originalTotalYuan != null && (
-                          <p className="m-0 text-xs line-through" style={{ color: "#bbb" }}>
-                            {formatYuan(originalTotalYuan, priceInfo?.currency ?? "CNY")}
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-sm" style={{ color: "#999" }}>{t("暂无报价")}</span>
-                    )}
-                  </div>
-                </div>
-                {priceError && (
-                  <p className="m-0 mt-2 text-xs" style={{ color: "#C67B1E" }}>{priceError}</p>
-                )}
-              </div>
-
-              {submitError && (
-                <p className="mb-3 text-sm" style={{ color: "#cf3d4c" }}>{submitError}</p>
-              )}
-
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  disabled={submitting}
-                  className="flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50"
-                  style={{ borderColor: "rgba(0,0,0,0.1)", color: "#333" }}
-                >
-                  {t("取消")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleSubmit()}
-                  disabled={submitting || pricing || realTotalYuan == null}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                  style={{ background: "#202020" }}
-                >
-                  {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {submitting ? t("正在生成订单...") : t("前往支付")}
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              {/* paying 面板：v1.7.31 起统一渲染中转页二维码 */}
-              <div
-                className="mb-5 flex flex-col items-center gap-3 rounded-xl p-4"
-                style={{ background: "#F9F8F7" }}
-              >
-                <p className="m-0 text-sm" style={{ color: "#333" }}>
-                  {t("请使用微信扫描下方二维码完成支付")}
-                </p>
-                {payContext?.bridgeUrl ? (
-                  <QRCodeSVG value={payContext.bridgeUrl} size={180} level="M" includeMargin={false} />
-                ) : (
-                  <Loader2 className="h-5 w-5 animate-spin" style={{ color: "var(--lw-accent)" }} />
-                )}
-              </div>
-
-              {submitError && (
-                <p className="mb-3 text-sm" style={{ color: "#cf3d4c" }}>{submitError}</p>
-              )}
-
-              <div className="flex flex-row gap-3">
-                {/* 左「刷新」：重新下单生成新二维码。复用 handleSubmit 走与首次下单一致逻辑。 */}
-                <button
-                  type="button"
-                  onClick={() => void handleSubmit()}
-                  disabled={submitting}
-                  className="flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-                  style={{ borderColor: "var(--lw-accent)", color: "var(--lw-accent)", background: "#fff" }}
-                >
-                  {submitting ? t("刷新中...") : t("刷新")}
-                </button>
-                {/* 右「完成」：语义同原「我已完成支付」，主动接棒 finalize，成功后关闭 */}
-                <button
-                  type="button"
-                  onClick={handleManualConfirm}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors"
-                  style={{ background: "#202020" }}
-                >
-                  {t("完成")}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-};
-
 /* ─── Pass Delete Modal ─── */
 
 /**
@@ -2032,19 +1692,6 @@ const PassDeleteModal = ({
 };
 
 /* ─── Subscription Section ─── */
-
-/**
- * 询价选项——联调文档 §3 说明起始仅提供「月15/30/180/365」几个限定组合。
- * 主动按「1 / 3 / 6 / 12 个月」展示，发请求时仅发 period+time_unit。
- */
-const RENEW_PRESETS: ReadonlyArray<{ period: number; time_unit: BundleTimeUnit; label: string }> = [
-  { period: 1, time_unit: "m", label: "1个月" },
-  { period: 3, time_unit: "m", label: "3个月" },
-  { period: 6, time_unit: "m", label: "6个月" },
-  { period: 12, time_unit: "m", label: "1年" },
-];
-
-/** 中转页轮询的超时 / 间隔在 useEffect 中内联使用，不再需要独立常量。原 MIDAS_PAY_RENEW_TARGET_ID 已与 wxSign 拆离，不再需要。 */
 
 /** 销毁轮询：联调文档 §4.1 说明销毁是异步，需等 pass 从列表消失 */
 const DELETE_POLL_INTERVAL_MS = 3_000;
@@ -2312,11 +1959,20 @@ const SubscriptionSection = ({
         )}
 
         {/* 续费 / 销毁按钮区：仅国内站 + 可操作 pass 时展示 */}
-        {(canDelete) && operablePass && (
+        {(canRenew || canDelete) && operablePass && (
           <>
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
             <div className="flex flex-wrap items-center gap-3">
-              {/* 续费按钮暂隐藏 */}
+              {canRenew && (
+                <button
+                  type="button"
+                  onClick={() => setRenewModalOpen(true)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#202020] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-black"
+                >
+                  <CreditCard className="h-4 w-4" />
+                  {t("立即续费")}
+                </button>
+              )}
               {canDelete && (
                 <button
                   type="button"
@@ -2351,7 +2007,6 @@ const SubscriptionSection = ({
             pass={operablePass}
             onClose={() => setRenewModalOpen(false)}
             onSuccess={() => void handleRenewSuccess()}
-            t={t}
           />
         )}
         {deleteModalOpen && operablePass && (

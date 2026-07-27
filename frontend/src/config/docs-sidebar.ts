@@ -161,6 +161,26 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         title: "如何用 LightVela 搭建个人 AI 助手？",
         titleEn: "How to Build a Personal AI Assistant with LightVela",
       },
+      {
+        slug: "use-cases/chinese-messaging-channels",
+        title: "如何把 AI Agent 接入消息平台？",
+        titleEn: "How to Connect an AI Agent to Messaging Platforms",
+      },
+      {
+        slug: "use-cases/daily-summary",
+        title: "如何用 Hermes Agent 做每日信息总结？",
+        titleEn: "How to Create Daily Summaries with Hermes Agent",
+      },
+      {
+        slug: "use-cases/hermes-agent-24-7",
+        title: "如何让 Hermes Agent 7×24 小时在线？",
+        titleEn: "How to Keep a Hermes Agent Online 24/7",
+      },
+      {
+        slug: "use-cases/memory-and-knowledge",
+        title: "如何用 Agent 管理长期记忆和个人知识？",
+        titleEn: "How to Manage Long-Term Memory and Personal Knowledge with an Agent",
+      },
     ],
   },
   {
@@ -252,6 +272,10 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/multiple-models": "configuration/multiple-models.md",
   "configuration/agent-chat": "configuration/agent-chat.md",
   "use-cases/personal-ai-assistant": "use-cases/personal-ai-assistant.md",
+  "use-cases/chinese-messaging-channels": "use-cases/chinese-messaging-channels.md",
+  "use-cases/daily-summary": "use-cases/daily-summary.md",
+  "use-cases/hermes-agent-24-7": "use-cases/hermes-agent-24-7.md",
+  "use-cases/memory-and-knowledge": "use-cases/memory-and-knowledge.md",
   "faq/using-lightvela-safely": "faq/using-lightvela-safely.md",
   "compare/lightvela-vs-manus": "compare/lightvela-vs-manus.md",
   "compare/lightvela-vs-hostinger": "compare/lightvela-vs-hostinger.md",

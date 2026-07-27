@@ -232,6 +232,83 @@ func (s *Service) ListSets(ctx context.Context) ([]Set, error) {
 	return s.store.ListSets(ctx)
 }
 
+var ErrShardProjectionDrift = errors.New("shard projection conflicts with immutable fields")
+
+func (s *Service) ObserveShard(ctx context.Context, input UpsertShardInput) error {
+	input.ID = strings.TrimSpace(input.ID)
+	if input.ID == "" {
+		return fmt.Errorf("shard id is required")
+	}
+	existing, ok, err := s.store.GetShard(ctx, input.ID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return s.UpsertShard(ctx, input)
+	}
+	if field := shardProjectionDriftField(existing, input); field != "" {
+		return fmt.Errorf("%w: shard %q field %s", ErrShardProjectionDrift, input.ID, field)
+	}
+	return nil
+}
+
+func shardProjectionDriftField(existing Shard, input UpsertShardInput) string {
+	stringFields := []struct {
+		name     string
+		observed string
+		current  string
+	}{
+		{name: "name", observed: strings.TrimSpace(input.Name), current: existing.Name},
+		{name: "kind", observed: strings.TrimSpace(input.Kind), current: existing.Kind},
+		{name: "endpoint", observed: strings.TrimSpace(input.Endpoint), current: existing.Endpoint},
+		{name: "redis_endpoint", observed: strings.TrimSpace(input.RedisEndpoint), current: existing.RedisEndpoint},
+		{name: "secret_name", observed: strings.TrimSpace(input.SecretName), current: existing.SecretName},
+		{name: "status", observed: strings.TrimSpace(input.Status), current: existing.Status},
+	}
+	for _, field := range stringFields {
+		if field.observed != "" && field.observed != field.current {
+			return field.name
+		}
+	}
+	intFields := []struct {
+		name     string
+		observed *int
+		current  int
+	}{
+		{name: "redis_db_start", observed: input.RedisDBStart, current: existing.RedisDBStart},
+		{name: "redis_db_limit", observed: input.RedisDBLimit, current: existing.RedisDBLimit},
+		{name: "max_connections", observed: input.MaxConnections, current: existing.MaxConnections},
+		{name: "reserved_connections", observed: input.ReservedConnections, current: existing.ReservedConnections},
+		{name: "max_sets", observed: input.MaxSets, current: existing.MaxSets},
+		{name: "admin_sql_max_open_conns", observed: input.AdminSQLMaxOpenConns, current: existing.AdminSQLMaxOpenConns},
+		{name: "admin_sql_max_idle_conns", observed: input.AdminSQLMaxIdleConns, current: existing.AdminSQLMaxIdleConns},
+		{name: "admin_sql_max_lifetime_seconds", observed: input.AdminSQLMaxLifetimeSeconds, current: existing.AdminSQLMaxLifetimeSeconds},
+		{name: "traffic_sql_max_open_conns", observed: input.TrafficSQLMaxOpenConns, current: existing.TrafficSQLMaxOpenConns},
+		{name: "traffic_sql_max_idle_conns", observed: input.TrafficSQLMaxIdleConns, current: existing.TrafficSQLMaxIdleConns},
+		{name: "traffic_sql_max_lifetime_seconds", observed: input.TrafficSQLMaxLifetimeSeconds, current: existing.TrafficSQLMaxLifetimeSeconds},
+		{name: "subscription_write_concurrency", observed: input.SubscriptionWriteConcurrency, current: existing.SubscriptionWriteConcurrency},
+	}
+	for _, field := range intFields {
+		if field.observed != nil && *field.observed != field.current {
+			return field.name
+		}
+	}
+	floatFields := []struct {
+		name     string
+		observed *float64
+		current  float64
+	}{
+		{name: "warn_ratio", observed: input.WarnRatio, current: existing.WarnRatio},
+		{name: "critical_ratio", observed: input.CriticalRatio, current: existing.CriticalRatio},
+	}
+	for _, field := range floatFields {
+		if field.observed != nil && *field.observed != field.current {
+			return field.name
+		}
+	}
+	return ""
+}
+
 func (s *Service) UpsertShard(ctx context.Context, input UpsertShardInput) error {
 	input.ID = strings.TrimSpace(input.ID)
 	if input.ID == "" {

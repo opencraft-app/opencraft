@@ -19,6 +19,10 @@ export default defineConfig({
         find: /^react-syntax-highlighter$/,
         replacement: path.resolve(rootDir, "src/vendor/react-syntax-highlighter-shim.ts"),
       },
+      {
+        find: /^@tencent\/universal-report$/,
+        replacement: path.resolve(rootDir, "src/vendor/tencent-universal-report-shim.ts"),
+      },
     ],
   },
   test: {
