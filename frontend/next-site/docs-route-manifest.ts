@@ -15,15 +15,23 @@ export const DOCS_ROUTE_SLUGS = {
       "core-concepts"
     ],
     [
+      "who-is-lightvela-for"
+    ],
+    [
+      "plans"
+    ],
+    [
+      "credits"
+    ],
+    [
+      "create-first-hermes"
+    ],
+    [
       "configuration"
     ],
     [
       "configuration",
       "model"
-    ],
-    [
-      "configuration",
-      "channel-wechat"
     ],
     [
       "configuration",
@@ -36,6 +44,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "channel-discord"
+    ],
+    [
+      "configuration",
+      "channel-wechat"
     ],
     [
       "configuration",
@@ -55,14 +67,51 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "memory"
+    ],
+    [
+      "configuration",
       "automation"
+    ],
+    [
+      "configuration",
+      "files"
     ],
     [
       "configuration",
       "agent-chat"
     ],
     [
-      "faq"
+      "configuration",
+      "diagnostics"
+    ],
+    [
+      "configuration",
+      "multiple-models"
+    ],
+    [
+      "use-cases",
+      "personal-ai-assistant"
+    ],
+    [
+      "compare",
+      "lightvela-vs-localhost-ai-agent"
+    ],
+    [
+      "compare",
+      "lightvela-vs-hostinger"
+    ],
+    [
+      "compare",
+      "lightvela-vs-manus"
+    ],
+    [
+      "compare",
+      "lightvela-vs-chatgpt"
+    ],
+    [
+      "compare",
+      "lightvela-vs-genspark"
     ],
     [
       "faq",
@@ -127,9 +176,6 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "faq"
-    ],
-    [
-      "contact-us"
     ]
   ],
   "zh-sg": [
@@ -144,15 +190,23 @@ export const DOCS_ROUTE_SLUGS = {
       "core-concepts"
     ],
     [
+      "who-is-lightvela-for"
+    ],
+    [
+      "plans"
+    ],
+    [
+      "credits"
+    ],
+    [
+      "create-first-hermes"
+    ],
+    [
       "configuration"
     ],
     [
       "configuration",
       "model"
-    ],
-    [
-      "configuration",
-      "channel-wechat"
     ],
     [
       "configuration",
@@ -165,6 +219,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "channel-discord"
+    ],
+    [
+      "configuration",
+      "channel-wechat"
     ],
     [
       "configuration",
@@ -184,14 +242,51 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "memory"
+    ],
+    [
+      "configuration",
       "automation"
+    ],
+    [
+      "configuration",
+      "files"
     ],
     [
       "configuration",
       "agent-chat"
     ],
     [
-      "faq"
+      "configuration",
+      "diagnostics"
+    ],
+    [
+      "configuration",
+      "multiple-models"
+    ],
+    [
+      "use-cases",
+      "personal-ai-assistant"
+    ],
+    [
+      "compare",
+      "lightvela-vs-localhost-ai-agent"
+    ],
+    [
+      "compare",
+      "lightvela-vs-hostinger"
+    ],
+    [
+      "compare",
+      "lightvela-vs-manus"
+    ],
+    [
+      "compare",
+      "lightvela-vs-chatgpt"
+    ],
+    [
+      "compare",
+      "lightvela-vs-genspark"
     ],
     [
       "faq",

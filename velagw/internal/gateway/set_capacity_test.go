@@ -115,9 +115,23 @@ func TestEnsureBindingForPlanReassignsUnprovisionedBindingFromFailedSet(t *testi
 
 func saveReadySetPlans(t *testing.T, store *MemoryStore, planID string, setPlans map[string]int) {
 	t.Helper()
+	plan, ok, err := store.GetPlan(t.Context(), planID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		if err := store.SavePlan(t.Context(), Plan{ID: planID, Name: planID, IsActive: true}); err != nil {
+			t.Fatal(err)
+		}
+		plan, ok, err = store.GetPlan(t.Context(), planID)
+		if err != nil || !ok {
+			t.Fatalf("load saved plan ok=%v err=%v", ok, err)
+		}
+	}
 	for setID, upstreamPlanID := range setPlans {
 		if err := store.SaveSetPlan(t.Context(), SetPlan{
-			PlanID: planID, SetID: setID, UpstreamPlanID: upstreamPlanID, Status: SetPlanStatusReady,
+			PlanID: planID, SetID: setID, UpstreamPlanID: upstreamPlanID,
+			AppliedFingerprint: plan.Fingerprint, Status: SetPlanStatusReady,
 		}); err != nil {
 			t.Fatal(err)
 		}

@@ -36,7 +36,7 @@ export interface User {
   /** 实名等级：none / idcard_2fa / phone_3fa */
   realnameLevel?: string;
   /** 实名流程模式，由认证服务下发。 */
-  realnameAssuranceMode?: "legacy" | "observe" | "face_required";
+  realnameAssuranceMode?: "legacy" | "faceless" | "observe" | "face_required";
   /** 实名信息同步状态：pending / failed / succeeded */
   realnameSyncStatus?: "pending" | "failed" | "succeeded";
   /** 邮箱是否已验证（Magic Link 绑定），后端 /auth/session /auth/profile 下发 */

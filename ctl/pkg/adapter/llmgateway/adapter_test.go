@@ -66,6 +66,59 @@ func TestEnsureUserRequiresInternalToken(t *testing.T) {
 	}
 }
 
+func TestListActiveSubscriptionsUsesInternalContract(t *testing.T) {
+	var authHeader string
+	var gotPath string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader = r.Header.Get("Authorization")
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(apiResponse{
+			Code:    0,
+			Message: "ok",
+			Data: mustRawJSON(t, ActiveSubscriptionList{
+				UserID: "usr_test",
+				Subscriptions: []Subscription{
+					{
+						ID:           "sub-1",
+						Name:         "free-credit:campaign:grant-1",
+						UserID:       "usr_test",
+						PlanID:       "plan-free",
+						Status:       "active",
+						TokenTotal:   30000,
+						TokenBalance: 20000,
+					},
+				},
+			}),
+		})
+	}))
+	defer server.Close()
+
+	adapter := NewLLMGatewayAdapter(&config.LLMGatewayConfig{
+		BaseURL:              server.URL,
+		InternalServiceToken: "internal-token",
+		Timeout:              5,
+	}, nil)
+
+	list, err := adapter.ListActiveSubscriptions(context.Background(), "usr_test")
+	if err != nil {
+		t.Fatalf("list active subscriptions: %v", err)
+	}
+	if authHeader != "Bearer internal-token" {
+		t.Fatalf("expected internal auth header, got %q", authHeader)
+	}
+	if gotPath != "/api/internal/users/usr_test/subscriptions/active" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	if list == nil || len(list.Subscriptions) != 1 {
+		t.Fatalf("unexpected list: %+v", list)
+	}
+	if got := list.Subscriptions[0]; got.Name != "free-credit:campaign:grant-1" || got.TokenTotal != 30000 || got.TokenBalance != 20000 {
+		t.Fatalf("unexpected subscription: %+v", got)
+	}
+}
+
 func mustRawJSON(t *testing.T, value any) json.RawMessage {
 	t.Helper()
 	data, err := json.Marshal(value)

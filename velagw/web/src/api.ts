@@ -249,8 +249,8 @@ export type EntitlementPlan = {
   id: string
   name: string
   monthly_tokens: number
-  period_value: number
-  period_unit: string
+  quota_reset_period: "never" | "daily" | "weekly" | "monthly" | "custom" | string
+  quota_reset_custom_seconds?: number
   is_active: boolean
   fingerprint: string
   created_at?: string
@@ -261,8 +261,8 @@ export type CreateEntitlementPlanInput = {
   id?: string
   name: string
   monthly_tokens: number
-  period_value: number
-  period_unit: string
+  quota_reset_period: "never" | "daily" | "weekly" | "monthly" | "custom" | string
+  quota_reset_custom_seconds?: number
   is_active: boolean
 }
 
@@ -270,6 +270,7 @@ export type SetPlanState = {
   plan_id: string
   set_id: string
   upstream_plan_id?: number
+  applied_fingerprint?: string
   status: "pending" | "syncing" | "ready" | "error" | string
   attempts?: number
   last_error?: string
@@ -1124,6 +1125,13 @@ export class LLMGatewayAPI {
       method: "POST",
       auth: true,
       body: JSON.stringify(input),
+    })
+  }
+
+  retirePlan(planID: string) {
+    return this.request<EntitlementPlan>(`/api/plans/${encodeURIComponent(planID)}/retire`, {
+      method: "POST",
+      auth: true,
     })
   }
 

@@ -29,7 +29,9 @@ Base64URL 不带 padding，payload 编码后固定 92 字符，完整 Key 固定
 
 - Key 材料只允许通过 `crypto/rand` 和 `io.ReadFull` 生成。
 - 随机源失败立即终止签发，禁止固定字符串或弱随机降级。
-- MySQL 不保存完整外部 Key，只保存 `external_key_id`、完整 Key 哈希、带域分离的 Secret 哈希、路由槽和状态。完整 Key 仅在路由发布成功后向调用方返回一次。
+- 中央 MySQL 保存完整外部 Key，用于固定用途 Key 的幂等复用和灾难恢复，同时保存
+  `external_key_id`、完整 Key 哈希、带域分离的 Secret 哈希、路由槽和状态。数据库
+  访问与备份按密钥材料保护；完整 Key 只通过受认证管理接口返回。
 - Redis 路由投影、流量缓存、日志和指标不保存或输出完整外部 Key。
 - Secret 校验使用恒定时间比较。
 - 日志和指标只允许记录内部 user ID、Key ID 或哈希前缀。
@@ -43,14 +45,18 @@ Base64URL 不带 padding，payload 编码后固定 92 字符，完整 Key 固定
 reserved -> upstream_ready -> route_pending -> active
 ```
 
-1. 生成候选 Key，在中央 MySQL 使用纯 `INSERT` 创建 `reserved` 记录。
+1. 生成候选 Key，在中央 MySQL 使用纯 `INSERT` 创建 `reserved` 记录，并原子保存完整
+   外部 Key。
 2. 只有 Key 主键或完整 Key 哈希冲突才重新生成，最多 5 次。`user_id + purpose` 冲突属于业务冲突，不得伪装成随机碰撞重试。
 3. 使用 `sgw-<external_key_id>` 作为 new-api token 的确定性名称创建上游 token。
 4. 将上游 token 信息写回 MySQL，进入 `route_pending`。
 5. 从 MySQL 记录构造路由快照并发布 Redis。
 6. Redis 发布成功后将 MySQL 状态改为 `active`，此时才向调用方返回完整 Key。
 
-Redis 写失败时不得返回 Key。`route_pending` 记录由 worker 幂等重试；Redis `SET` 本身必须幂等。`reserved` 或 `upstream_ready` 的异常中断记录保留在 MySQL，交由超时清理或后续补充的上游 token 对账任务处理，不能凭空重新生成同一把完整外部 Key。
+Redis 写失败时不得返回 Key。`route_pending` 记录由 worker 幂等重试；Redis `SET`
+本身必须幂等。`reserved` 或 `upstream_ready` 的异常中断记录保留在 MySQL，交由
+超时清理或后续补充的上游 token 对账任务处理；持久化的完整 Key 允许恢复同一份
+密钥材料，但不得在中间状态直接返回给调用方。
 
 ## 兼容与清理
 

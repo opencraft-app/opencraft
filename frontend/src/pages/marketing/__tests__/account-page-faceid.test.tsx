@@ -18,6 +18,7 @@ const getRealnameFaceIdAttempt = vi.fn();
 const getCurrentRealnameFaceIdAttempt = vi.fn();
 const verifyRealnameFaceIdPhone = vi.fn();
 const finalizeRealnameFaceIdAttempt = vi.fn();
+const verifyRealname = vi.fn();
 const verifyRealnamePhone = vi.fn();
 const sendRealnameFaceIdPhoneCode = vi.fn();
 const sendSmsCode = vi.fn();
@@ -100,6 +101,7 @@ vi.mock("@/contexts/repository-context", () => ({
       getCurrentRealnameFaceIdAttempt,
       verifyRealnameFaceIdPhone,
       finalizeRealnameFaceIdAttempt,
+      verifyRealname,
       sendRealnameFaceIdPhoneCode,
       sendSmsCode,
       verifyRealnamePhone,
@@ -183,6 +185,7 @@ describe("AccountPage FaceID flow", () => {
     rerenderPage = null;
     sendSmsCode.mockResolvedValue({ cooldownSeconds: 60 });
     sendRealnameFaceIdPhoneCode.mockResolvedValue({ cooldownSeconds: 60 });
+    verifyRealname.mockResolvedValue({ phoneVerificationRequired: true });
     refreshProfile.mockResolvedValue(undefined);
     getCurrentRealnameFaceIdAttempt.mockRejectedValue(
       new RepositoryError("not found", 404, "realname_faceid_not_found"),
@@ -203,6 +206,80 @@ describe("AccountPage FaceID flow", () => {
 
     expect(screen.getByRole("button", { name: "开始刷脸认证" })).toBeInTheDocument();
     expect(startRealnameFaceIdAttempt).not.toHaveBeenCalled();
+  });
+
+  it("reuses an already bound safety phone without showing a second faceless step", async () => {
+    realnamePhoneVerificationEnabled = false;
+    currentUser = {
+      ...currentUser,
+      realnameAssuranceMode: "faceless" as User["realnameAssuranceMode"],
+    };
+    startRealnameFaceIdAttempt.mockResolvedValue({
+      attemptId: "attempt_faceless",
+      state: "face_succeeded",
+    });
+    getRealnameFaceIdAttempt.mockResolvedValue({
+      attemptId: "attempt_faceless",
+      state: "succeeded",
+    });
+
+    renderAccountPage();
+    await openVerifyModal();
+
+    expect(screen.queryByText("人脸核身")).not.toBeInTheDocument();
+    expect(screen.queryByText(/扫码.*人脸/)).not.toBeInTheDocument();
+    expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("请输入真实姓名"), "张三");
+    await userEvent.type(screen.getByPlaceholderText("请输入身份证号码"), "11010519491231002X");
+    await userEvent.click(screen.getByRole("checkbox", { name: /我已阅读.*并同意/ }));
+    await userEvent.click(screen.getByRole("button", { name: "提交认证" }));
+
+    expect(startRealnameFaceIdAttempt).toHaveBeenCalledWith({
+      name: "张三",
+      idCard: "11010519491231002X",
+      consent: true,
+    });
+    await waitFor(() => {
+      expect(getRealnameFaceIdAttempt).toHaveBeenCalledWith("attempt_faceless");
+    });
+    expect(sendRealnameFaceIdPhoneCode).not.toHaveBeenCalled();
+    expect(sendSmsCode).not.toHaveBeenCalled();
+  });
+
+  it("reveals the safety-phone step when the bound phone cannot be reused", async () => {
+    realnamePhoneVerificationEnabled = false;
+    currentUser = {
+      ...currentUser,
+      realnameAssuranceMode: "faceless" as User["realnameAssuranceMode"],
+    };
+    startRealnameFaceIdAttempt.mockResolvedValue({
+      attemptId: "attempt_faceless_fallback",
+      state: "face_succeeded",
+    });
+    getRealnameFaceIdAttempt.mockResolvedValue({
+      attemptId: "attempt_faceless_fallback",
+      state: "face_succeeded",
+    });
+
+    renderAccountPage();
+    await openVerifyModal();
+
+    expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("请输入真实姓名"), "张三");
+    await userEvent.type(screen.getByPlaceholderText("请输入身份证号码"), "11010519491231002X");
+    await userEvent.click(screen.getByRole("checkbox", { name: /我已阅读.*并同意/ }));
+    await userEvent.click(screen.getByRole("button", { name: "提交认证" }));
+
+    expect(await screen.findByText("安全手机")).toBeInTheDocument();
+    await screen.findByPlaceholderText("请输入短信验证码");
+    await userEvent.click(screen.getByRole("button", { name: "获取验证码" }));
+
+    expect(sendRealnameFaceIdPhoneCode).toHaveBeenCalledWith("attempt_faceless_fallback", {
+      phone: "15625128341",
+    });
+    expect(sendSmsCode).not.toHaveBeenCalled();
   });
 
   it("exposes an accessible dialog and closes it with Escape", async () => {

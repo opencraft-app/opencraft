@@ -6,7 +6,7 @@
 >
 > AgentChat 当前内置提示语以中文为主，多语言文案正在补齐。
 
-![](../images/agentchat-1-global.webp)
+![LightVela 管理台中的对话页面](../images/chat-overview.png)
 
 ---
 
@@ -14,7 +14,7 @@
 
 Hermes Agent 智能代理具备随对话自主迭代进化的特性。前往「记忆」页面，查看更多记忆功能相关说明。
 
-![](../images/agentchat-2-global.webp)
+![记忆管理页面](../images/memory-management-overview.png)
 
 ### 记忆运行原理
 

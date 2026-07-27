@@ -76,6 +76,17 @@ import {
 } from "./api"
 import { Badge } from "./components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "./components/ui/alert-dialog"
 import { Button } from "./components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card"
 import {
@@ -2485,7 +2496,10 @@ export function PlanManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: Ga
   const queryClient = useQueryClient()
   const [selectedPlanID, setSelectedPlanID] = useState("")
   const [editorMode, setEditorMode] = useState<"create" | "copy" | null>(null)
-  const [planDraft, setPlanDraft] = useState({ id: "", name: "", monthlyTokens: "", periodValue: "1", periodUnit: "months", isActive: true })
+  const [retireDialogOpen, setRetireDialogOpen] = useState(false)
+  const [planDraft, setPlanDraft] = useState({
+    id: "", name: "", quotaAmount: "", resetPeriod: "monthly", customResetSeconds: "", isActive: true,
+  })
   const plansQuery = useQuery({ queryKey: ["plans"], queryFn: () => api.listPlans() })
   const plans = plansQuery.data || []
   const activePlanID = selectedPlanID || plans[0]?.id || ""
@@ -2501,15 +2515,17 @@ export function PlanManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: Ga
       await queryClient.invalidateQueries({ queryKey: ["background-jobs"] })
     },
   })
-  const createMutation = useMutation({
-    mutationFn: () => api.createPlan({
-      ...(planDraft.id.trim() ? { id: planDraft.id.trim() } : {}),
-      name: planDraft.name.trim(),
-      monthly_tokens: Number(planDraft.monthlyTokens),
-      period_value: Number(planDraft.periodValue),
-      period_unit: planDraft.periodUnit,
-      is_active: planDraft.isActive,
-    }),
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const input = {
+        name: planDraft.name.trim(),
+        monthly_tokens: Number(planDraft.quotaAmount),
+        quota_reset_period: planDraft.resetPeriod,
+        ...(planDraft.resetPeriod === "custom" ? { quota_reset_custom_seconds: Number(planDraft.customResetSeconds) } : {}),
+        is_active: planDraft.isActive,
+      }
+      return api.createPlan({ ...(planDraft.id.trim() ? { id: planDraft.id.trim() } : {}), ...input })
+    },
     onSuccess: async (plan) => {
       setSelectedPlanID(plan.id)
       setEditorMode(null)
@@ -2518,25 +2534,36 @@ export function PlanManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: Ga
       await queryClient.invalidateQueries({ queryKey: ["background-jobs"] })
     },
   })
+  const retireMutation = useMutation({
+    mutationFn: (planID: string) => api.retirePlan(planID),
+    onSuccess: async (plan) => {
+      setSelectedPlanID(plan.id)
+      setRetireDialogOpen(false)
+      await queryClient.invalidateQueries({ queryKey: ["plans"] })
+    },
+  })
   const states = setStatesQuery.data || []
   const selectedPlan = plans.find((plan) => plan.id === activePlanID)
   const ready = states.filter((state) => state.status === "ready").length
   const failed = states.filter((state) => state.status === "error").length
   const unfinishedStates = states.filter((state) => state.status !== "ready")
   const openPlanEditor = (mode: "create" | "copy") => {
-    const source = mode === "copy" ? selectedPlan : undefined
+    const source = mode === "create" ? undefined : selectedPlan
     setPlanDraft({
       id: "",
       name: source?.name || "",
-      monthlyTokens: source ? String(source.monthly_tokens) : "",
-      periodValue: source ? String(source.period_value) : "1",
-      periodUnit: source?.period_unit || "months",
-      isActive: source?.is_active ?? true,
+      quotaAmount: source ? String(source.monthly_tokens) : "",
+      resetPeriod: source?.quota_reset_period || "monthly",
+      customResetSeconds: source?.quota_reset_custom_seconds ? String(source.quota_reset_custom_seconds) : "",
+      isActive: true,
     })
-    createMutation.reset()
+    saveMutation.reset()
     setEditorMode(mode)
   }
-  const canCreatePlan = planDraft.name.trim() !== "" && planDraft.monthlyTokens.trim() !== "" && Number(planDraft.monthlyTokens) >= 0 && Number(planDraft.periodValue) > 0
+  const canSavePlan = planDraft.name.trim() !== "" &&
+    planDraft.quotaAmount.trim() !== "" &&
+    Number(planDraft.quotaAmount) >= 0 &&
+    (planDraft.resetPeriod !== "custom" || Number(planDraft.customResetSeconds) > 0)
 
   return (
     <div className="flex flex-1 flex-col gap-5 overflow-auto bg-muted/20 p-4 md:p-6">
@@ -2546,10 +2573,46 @@ export function PlanManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: Ga
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <CardTitle>模板清单</CardTitle>
-                <CardDescription>权益变化时创建新编号，历史模板不会被原地改写</CardDescription>
+                <CardDescription>业务有效期由上层管理；这里定义每个重置周期可用的模型额度</CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                <Button type="button" size="sm" variant="outline" disabled={!selectedPlan} onClick={() => openPlanEditor("copy")}>复制模板</Button>
+                <Button type="button" size="sm" variant="outline" disabled={!selectedPlan} onClick={() => openPlanEditor("copy")}>基于此创建新版</Button>
+                <AlertDialog
+                  open={retireDialogOpen}
+                  onOpenChange={(open) => {
+                    setRetireDialogOpen(open)
+                    if (open) retireMutation.reset()
+                  }}
+                >
+                  <AlertDialogTrigger asChild>
+                    <Button type="button" size="sm" variant="outline" disabled={!selectedPlan?.is_active}>
+                      <CirclePause />
+                      停止新发放
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>停止此模板的新发放？</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        此操作不可撤销。已发放给用户的权益仍然有效；后续若要调整额度或重新发放，请基于此模板创建新版。
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    {retireMutation.error ? <p className="text-sm text-destructive">{retireMutation.error.message}</p> : null}
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>取消</AlertDialogCancel>
+                      <AlertDialogAction
+                        disabled={!selectedPlan || retireMutation.isPending}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          if (selectedPlan) retireMutation.mutate(selectedPlan.id)
+                        }}
+                      >
+                        {retireMutation.isPending ? <Loader2 className="animate-spin" /> : <CirclePause />}
+                        确认停止
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
                 <Button type="button" size="sm" onClick={() => openPlanEditor("create")}><Plus />新增模板</Button>
               </div>
             </div>
@@ -2564,7 +2627,7 @@ export function PlanManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: Ga
                   <TableRow>
                     <TableHead>权益模板</TableHead>
                     <TableHead>周期额度</TableHead>
-                    <TableHead>有效期</TableHead>
+                    <TableHead>重置周期</TableHead>
                     <TableHead>状态</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -2576,7 +2639,7 @@ export function PlanManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: Ga
                         <div className="mt-1 font-mono text-xs text-muted-foreground">{plan.id}</div>
                       </TableCell>
                       <TableCell>{formatNumber(plan.monthly_tokens)}</TableCell>
-                      <TableCell>{formatPlanPeriod(plan)}</TableCell>
+                      <TableCell>{formatQuotaResetPeriod(plan)}</TableCell>
                       <TableCell><Badge variant={plan.is_active ? "outline" : "secondary"}>{plan.is_active ? "启用" : "停用"}</Badge></TableCell>
                     </TableRow>
                   ))}
@@ -2595,12 +2658,10 @@ export function PlanManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: Ga
                   {selectedPlan ? `${selectedPlan.name} · ${ready} 个集群已就绪${failed > 0 ? ` · ${failed} 个失败` : ""}` : "选择一个权益模板查看状态"}
                 </CardDescription>
               </div>
-              {unfinishedStates.length > 0 ? (
-                <Button size="sm" variant="outline" disabled={!activePlanID || syncMutation.isPending} onClick={() => syncMutation.mutate()}>
-                  {syncMutation.isPending ? <Loader2 className="animate-spin" /> : <Send />}
-                  重试未完成
-                </Button>
-              ) : <Badge variant="outline">全部就绪</Badge>}
+              <Button size="sm" variant="outline" disabled={!activePlanID || syncMutation.isPending} onClick={() => syncMutation.mutate()}>
+                {syncMutation.isPending ? <Loader2 className="animate-spin" /> : unfinishedStates.length > 0 ? <Send /> : <RefreshCw />}
+                {unfinishedStates.length > 0 ? "重试未完成" : "重新检查"}
+              </Button>
             </div>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 p-4">
@@ -2617,39 +2678,41 @@ export function PlanManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: Ga
       <Sheet open={editorMode !== null} onOpenChange={(open) => !open && setEditorMode(null)}>
         <SheetContent className="w-full overflow-y-auto sm:max-w-md">
           <SheetHeader>
-            <SheetTitle>{editorMode === "copy" ? "复制权益模板" : "新增权益模板"}</SheetTitle>
-            <SheetDescription>模板保存后不可修改，并由后台任务下发到所有可用集群。</SheetDescription>
+            <SheetTitle>{editorMode === "copy" ? "基于现有模板创建新版" : "新增权益模板"}</SheetTitle>
+            <SheetDescription>权益模板创建后不可修改。保存后由后台任务下发到所有可用集群；不会改变上层套餐有效期。</SheetDescription>
           </SheetHeader>
-          <form className="flex flex-1 flex-col gap-5 px-4 pb-4" onSubmit={(event) => { event.preventDefault(); if (canCreatePlan) createMutation.mutate() }}>
+          <form className="flex flex-1 flex-col gap-5 px-4 pb-4" onSubmit={(event) => { event.preventDefault(); if (canSavePlan) saveMutation.mutate() }}>
             <Field label="模板编号（可选）">
               <Input value={planDraft.id} onChange={(event) => setPlanDraft((current) => ({ ...current, id: event.target.value }))} placeholder="留空时由系统生成" autoComplete="off" />
             </Field>
             <Field label="模板名称">
-              <Input value={planDraft.name} onChange={(event) => setPlanDraft((current) => ({ ...current, name: event.target.value }))} placeholder="例如：入门型 14 天" autoComplete="off" />
+              <Input value={planDraft.name} onChange={(event) => setPlanDraft((current) => ({ ...current, name: event.target.value }))} placeholder="例如：入门型" autoComplete="off" />
             </Field>
             <Field label="周期额度">
-              <Input type="number" min="0" step="1" value={planDraft.monthlyTokens} onChange={(event) => setPlanDraft((current) => ({ ...current, monthlyTokens: event.target.value }))} placeholder="例如：1000000" />
+              <Input type="number" min="0" step="1" value={planDraft.quotaAmount} onChange={(event) => setPlanDraft((current) => ({ ...current, quotaAmount: event.target.value }))} placeholder="例如：1000000" />
             </Field>
-            <div className="grid grid-cols-[minmax(0,1fr)_140px] gap-3">
-              <Field label="有效期">
-                <Input type="number" min="1" step="1" value={planDraft.periodValue} onChange={(event) => setPlanDraft((current) => ({ ...current, periodValue: event.target.value }))} />
+            <Field label="额度重置周期">
+              <select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50" value={planDraft.resetPeriod} onChange={(event) => setPlanDraft((current) => ({ ...current, resetPeriod: event.target.value }))}>
+                <option value="daily">每天</option>
+                <option value="weekly">每周</option>
+                <option value="monthly">每月</option>
+                <option value="custom">自定义秒数</option>
+                <option value="never">不重置</option>
+              </select>
+            </Field>
+            {planDraft.resetPeriod === "custom" ? (
+              <Field label="自定义周期（秒）">
+                <Input type="number" min="1" step="1" value={planDraft.customResetSeconds} onChange={(event) => setPlanDraft((current) => ({ ...current, customResetSeconds: event.target.value }))} />
               </Field>
-              <Field label="单位">
-                <select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50" value={planDraft.periodUnit} onChange={(event) => setPlanDraft((current) => ({ ...current, periodUnit: event.target.value }))}>
-                  <option value="days">天</option>
-                  <option value="months">个月</option>
-                  <option value="years">年</option>
-                </select>
-              </Field>
-            </div>
+            ) : null}
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={planDraft.isActive} onChange={(event) => setPlanDraft((current) => ({ ...current, isActive: event.target.checked }))} />
               创建后允许发放
             </label>
-            {createMutation.error ? <p className="text-sm text-destructive">{createMutation.error.message}</p> : null}
+            {saveMutation.error ? <p className="text-sm text-destructive">{saveMutation.error.message}</p> : null}
             <SheetFooter className="mt-auto px-0">
-              <Button type="submit" disabled={!canCreatePlan || createMutation.isPending}>
-                {createMutation.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
+              <Button type="submit" disabled={!canSavePlan || saveMutation.isPending}>
+                {saveMutation.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
                 创建模板
               </Button>
             </SheetFooter>
@@ -2683,9 +2746,13 @@ function SetPlanStatusBadge({ status }: { status: string }) {
   return <Badge variant="secondary">待下发</Badge>
 }
 
-function formatPlanPeriod(plan: EntitlementPlan) {
-  const unit = plan.period_unit === "days" ? "天" : plan.period_unit === "years" ? "年" : "个月"
-  return `${plan.period_value} ${unit}`
+function formatQuotaResetPeriod(plan: EntitlementPlan) {
+  if (plan.quota_reset_period === "daily") return "每天重置"
+  if (plan.quota_reset_period === "weekly") return "每周重置"
+  if (plan.quota_reset_period === "monthly") return "每月重置"
+  if (plan.quota_reset_period === "never") return "不重置"
+  if (plan.quota_reset_period === "custom") return `每 ${formatNumber(plan.quota_reset_custom_seconds || 0)} 秒重置`
+  return plan.quota_reset_period || "每月重置"
 }
 
 export function ChannelManagementPage({ api, sets }: { api: LLMGatewayAPI; sets: GatewaySet[] }) {
@@ -4822,9 +4889,9 @@ const columnCopy: Record<string, string> = {
   last_provision_error: "最近错误",
   upstream_key: "内部密钥",
   upstream_key_id: "内部密钥 ID",
-  monthly_tokens: "月度额度",
-  period_value: "周期数",
-  period_unit: "周期单位",
+  monthly_tokens: "周期额度",
+  quota_reset_period: "额度重置周期",
+  quota_reset_custom_seconds: "自定义周期秒数",
   is_active: "是否启用",
   upstream_plan_id: "内部套餐",
   plan_id: "权益模板",

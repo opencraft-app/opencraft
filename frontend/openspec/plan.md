@@ -1,3 +1,52 @@
+# 2026-07-21 国际站 GEO 文档增量对齐
+
+## 补充：国际站配置教程正文
+
+- [x] 为国际站英文与中文各自完成 Cloud Storage、Diagnostics、Model Switching 三篇教程；使用独立内容源和 `[IMAGE]` 占位，不改国内站文档。
+- [x] 运行文档同步、聚焦回归、类型检查与 diff 范围检查。
+
+**Goal:** 仅复制 `jasminzhao-geo-article-720` 分支新增且国际站尚未具备的文档，为 `zh-sg` 和 `en-us` 分别提供独立版本。
+
+**Scope:** 新增 36 对国际站文档（5 篇完整本地化、31 篇占位结构），同步 Fumadocs、旧侧边栏/搜索映射、四条国际站 SEO 描述及聚焦回归测试；不迁移该分支之前已存在的国内站差异。
+
+## 当前任务清单
+
+- [x] 1. 先添加精确的 36 页双语言 parity 测试，并确认因页面、路由和 SEO 缺失而失败。
+  - 角色：Developer
+  - 影响文件：`scripts/international-docs-parity.test.ts`、`src/lib/__tests__/seo-data.page-description.test.ts`
+  - 验收方式：聚焦 Vitest 以预期的页面、路由和 SEO 缺失原因进入 RED。
+- [x] 2. 在 `src/content/docs/global/` 与 `src/content/docs/en/` 创建 31 对本地化占位页。
+  - 角色：Developer
+  - 影响文件：两个国际站内容树内的 62 个 Markdown 文件。
+  - 验收方式：双语言文件集合精确匹配 allowlist；页面保持占位结构，不扩写长文。
+- [x] 3. 创建并国际化 `who-is-lightvela-for`、`plans`、`credits`、`create-first-hermes`、`configuration/memory` 五对完整页面。
+  - 角色：Developer
+  - 影响文件：两个国际站内容树内的 10 个 Markdown 文件。
+  - 验收方式：国际登录、开通、计费与渠道逻辑正确，无人民币截图或国内实名前提。
+- [x] 4. 同步 Fumadocs 分组、旧侧边栏/搜索映射并重新生成路由 manifest。
+  - 角色：Developer
+  - 影响文件：`scripts/sync-fumadocs-content.mjs`、`src/config/docs-sidebar.ts`、`next-site/docs-route-manifest.ts`
+  - 验收方式：`pnpm docs:sync` 成功，两个 locale 均包含相同的 36 个新增 slug 且保留已有国际路由。
+- [x] 5. 仅新增本分支对应的四条国际站页面级 SEO 描述。
+  - 角色：Developer
+  - 影响文件：`src/lib/seo-data.ts`、`src/lib/__tests__/seo-data.page-description.test.ts`
+  - 验收方式：四条国际站 SEO 测试通过，31 个占位页不新增 SEO override。
+- [x] 6. 完成聚焦测试、docs sync、类型检查、国际站构建和最终范围审计。
+  - 角色：Reviewer
+  - 影响文件：本计划产生的全部 diff。
+  - 验收方式：聚焦测试、`pnpm docs:sync`、`pnpm check`、`pnpm build:global`、`git diff --check` 全部通过，并确认无越界国内文档改动。
+
+## 执行边界
+
+- 事实范围限定为 `dad64aff49a27962540aab2c6793050e39175ae2..71d1c08bc4b186e6ef9984d9b60d082065922020`。
+- 不修改 `global/`、`en/` 之外的国内站 Markdown，不重复改写已存在的国际站 Automation 文档。
+- 不在国际站引用含中文界面、人民币价格和国内促销的 `20260721-150502-8b3a.webp`。
+- 国际站渠道顺序为 Telegram、WhatsApp、Discord、WeChat；完整清单再接 QQ、WeCom、Lark。
+- 详细任务和逐项验收见 `openspec/changes/2026-07-21-international-docs-geo-parity-plan.md`。
+- commit、push 前必须展示范围并取得用户明确确认。
+
+---
+
 # Skills 页面去除 TEA SDK 依赖 Implementation Plan
 
 **Goal:** 国内站与国际站的 Agent Skills 路由直接渲染 mono2 自有 Skills 面板，不再请求、执行或等待 TEA SDK runtime、scripts、styles，同时保持现有页面结构、文案、交互和技能管理能力不变。
@@ -150,3 +199,59 @@
 - GitNexus CLI：当前环境未安装，无法执行导出函数影响面命令；已通过 `rg`、TypeScript 和聚焦引用测试核对影响范围。
 
 ---
+
+# Agent 人设页 P1 稳定性修复 Implementation Plan
+
+**Goal:** 修复国内站与国际站共用人设面板的跨 Agent 异步竞态、Hermes 路径与命令契约、清除失败一致性和详情重试六类 P1 问题。
+
+**Architecture:** 保持现有抽卡、持久化、文案和视觉不变；把 Hermes 命令构造与执行契约抽到纯模块，在 React 面板中用 Agent/request 作用域保护异步状态，并让清除失败阻止乐观删除。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4、Testing Library、BotRepository。
+
+## 任务清单
+
+- [x] 1. 以 TDD 固化 Hermes 自定义根目录、120 秒超时和 status + exitCode 成功契约。
+  - 角色：Developer + Reviewer
+  - 影响文件：`src/pages/marketing/agent-buddy-command.ts`、`src/pages/marketing/__tests__/agent-buddy-command.test.ts`
+  - RED：先覆盖写入、清除、读取命令都使用 `HERMES_HOME` fallback，所有 debug/exec 调用都传超时且拒绝 TIMEOUT/FAILED。
+  - GREEN：新增最小纯模块构造命令并复用 `isExecCommandSucceeded`。
+  - 验收：聚焦命令测试通过，组件不再拼接 Hermes shell。
+
+- [x] 2. 以 TDD 修复跨 Agent 注入/删除与保存回调竞态，并保证清除失败不删除卡片。
+  - 角色：Developer + Reviewer
+  - 影响文件：`src/pages/marketing/agent-buddy-panel.tsx`、`src/pages/marketing/__tests__/agent-buddy-panel.test.tsx`
+  - RED：用 deferred promise 锁定旧 Agent 注入/保存结果不回写新 Agent；清除失败时卡片保持且提示错误。
+  - GREEN：使用 operation/save requestId 与 active bot ref 保护所有异步回调；清除成功后再更新 drawnSouls。
+  - 验收：组件竞态测试通过，旧请求不能更新当前 Agent 状态。
+
+- [x] 3. 修复详情错误态的真实重试并完成双站相关回归验证。
+  - 角色：Developer + Reviewer
+  - 影响文件：`src/pages/marketing/agent-buddy-panel.tsx`、`src/pages/marketing/__tests__/agent-buddy-panel.test.tsx`
+  - RED：详情首次失败后点击“重试”应再次请求且保持弹窗。
+  - GREEN：把 `useAsyncResource.reload` 传给 `ErrorState`。
+  - 验收：聚焦测试、现有人设测试、`pnpm check`、`pnpm i18n:check` 和 `git diff --check` 全部通过。
+
+## 约束
+
+- 命令超时固定为 `120_000` 毫秒。
+- 不新增依赖、后端 API、视觉或抽卡规则；仅新增清除失败所需的一条错误提示。
+- 国内站继续使用 SkillHub 数据，国际站继续使用内置中英文数据。
+- 不处理 P2 OpenSpec 历史描述与更大范围组件拆分。
+- 未经用户后续确认，不 commit、push 或创建 MR。
+
+## 执行策略
+
+- 规模：M；single_agent 顺序执行，每批最多 3 个任务。
+- 分支：`frontsandbox/persona-p1-hardening`；隔离工作区：`/Users/pablozhong/codex/lightvela-persona-p1-hardening`。
+- 已完成但未归档的 Skills、成就和记忆计划原样保留，不混入本次代码修改。
+- 用户已明确确认修复 6 个 P1；规划门禁结论：**通过**。
+
+## 验证结果
+
+- TDD RED：命令测试因统一模块不存在而失败；组件新增的 4 个竞态/错误态用例全部复现并失败。
+- 聚焦 Vitest：8 个测试文件、38 个用例全部通过，覆盖国内 SkillHub 链路、国际站中英文数据、slug 映射、持久化和本次新增行为。
+- `pnpm check`：通过。
+- `pnpm i18n:check`：通过，1924/1924 条源文案已翻译。
+- 全量 Vitest：106 个文件、1178 个用例通过；Datong 3 项、Account 6 项和 Tea 依赖解析 1 项失败，另有 1 个 worker OOM。三个失败文件已在纯 `origin/master` 临时 worktree 复跑，仍为相同 10 项失败，与本次改动无关。
+- 登录后人设面板无法在隔离浏览器中安全执行真实注入/删除；按验证门禁使用组件级 deferred promise 测试替代，不把登录门禁或静态资源检查视为功能验收。
+- `git diff --check`：通过。

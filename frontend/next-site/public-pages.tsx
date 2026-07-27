@@ -84,6 +84,7 @@ export function PublicHomePage({
             locale={locale}
             oauthError={new URLSearchParams(locationSearch).get('oauth_error')}
             showLanguageSwitcher
+            promoteFreeTrial
           />
         )}
         locationSearch={locationSearch}

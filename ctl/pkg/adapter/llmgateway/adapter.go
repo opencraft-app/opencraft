@@ -23,8 +23,6 @@ type Adapter interface {
 	CreateApiKey(ctx context.Context, userID string, name string) (*CreateApiKeyResponse, error)
 	// EnsureUser 调用 LLMGateway Internal API 确保业务用户在网关内存在
 	EnsureUser(ctx context.Context, userID string, nickname string) (*EnsureUserResponse, error)
-	// RevokeApiKey 调用 LLMGateway 撤销指定 API Key
-	RevokeApiKey(ctx context.Context, keyID string) error
 	// GetUserUsage 调用 LLMGateway admin API 获取用户用量概览
 	GetUserUsage(ctx context.Context, userID string) (*UserUsageResponse, error)
 
@@ -36,15 +34,13 @@ type Adapter interface {
 	// R-MR-3 改造：req.PeriodValue/PeriodUnit 透传购买时长（Q9=i1 llmgateway 真源）；
 	// 未传时 llmgateway 回退到 plan.PeriodValue/PeriodUnit 兜底（Q10=j1）。
 	ApplySubscription(ctx context.Context, req *ApplySubscriptionRequest) (*Subscription, error)
-	// ExtendSubscription R-MR-4 续费链路：CAS 推进当前 user active 订阅的 PeriodEnd。
-	// 幂等：重复调用同一 NewPeriodEnd 返回 updated=false 不报错；不动 token_balance
-	// （月度刷新 scheduler 自然按月回血）。
-	ExtendSubscription(ctx context.Context, req *ExtendSubscriptionRequest) (*ExtendSubscriptionResponse, error)
 	// CancelSubscription 调用 LLMGateway Internal API 取消用户当前订阅
 	CancelSubscription(ctx context.Context, userID string) error
 	// GetActiveSubscription 调用 LLMGateway Internal API 查询用户当前活跃订阅
 	// 无订阅时返回 (nil, nil)
 	GetActiveSubscription(ctx context.Context, userID string) (*Subscription, error)
+	// ListActiveSubscriptions 调用 LLMGateway Internal API 查询用户所有活跃订阅
+	ListActiveSubscriptions(ctx context.Context, userID string) (*ActiveSubscriptionList, error)
 }
 
 // LLMGatewayAdapter LLMGateway HTTP 适配器
@@ -153,54 +149,6 @@ func (a *LLMGatewayAdapter) CreateApiKey(ctx context.Context, userID string, nam
 		return nil, fmt.Errorf("decode create-api-key response body: %w", err)
 	}
 	return &result, nil
-}
-
-// RevokeApiKey 调用 DELETE /api/admin/api-keys/:id
-func (a *LLMGatewayAdapter) RevokeApiKey(ctx context.Context, keyID string) error {
-	if a.baseURL == "" {
-		return fmt.Errorf("llmgateway base_url not configured")
-	}
-	keyID = strings.TrimSpace(keyID)
-	if keyID == "" {
-		return fmt.Errorf("llmgateway key_id is required")
-	}
-
-	url := a.baseURL + "/api/admin/api-keys/" + url.PathEscape(keyID)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
-	if err != nil {
-		return fmt.Errorf("create revoke-api-key request: %w", err)
-	}
-	httpReq.Header.Set("Accept", "application/json")
-	a.applyAdminAuth(httpReq)
-
-	start := time.Now()
-	resp, err := a.httpClient.Do(httpReq)
-	duration := time.Since(start)
-	if err != nil {
-		a.logger.Warn("llmgateway revoke-api-key request failed",
-			zap.String("url", url),
-			zap.Duration("duration", duration),
-			zap.Error(err),
-		)
-		return fmt.Errorf("revoke-api-key request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read revoke-api-key response: %w", err)
-	}
-
-	a.logger.Info("llmgateway revoke-api-key response",
-		zap.String("url", url),
-		zap.Int("status", resp.StatusCode),
-		zap.Duration("duration", duration),
-	)
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("revoke-api-key returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-	return nil
 }
 
 // GetUserUsage 调用 GET /api/admin/users/:user_id/usage
@@ -350,10 +298,7 @@ var ErrLLMGatewaySubscriptionNotFound = fmt.Errorf("llmgateway active subscripti
 // ErrLLMGatewayRouteNotFound llmgateway 路由不存在（gin 默认 404，返 'page not found' 纯文本）。
 //
 // 区分业务 404（用户/订阅不存在—llmgateway 返 OpenAI 风格 JSON 含 error.code）与
-// 路由 404（llmgateway 镜像未升级 / 路由未注册，gin 其他默认文本）的哨兵：
-//   - 业务 404 返 ErrLLMGatewayPlanNotFound，caller 限定场景（如 ExtendSubscription）可选择降级 nil；
-//   - 路由 404 返 ErrLLMGatewayRouteNotFound，caller 严格当一般错误处理以告警 + 重试，
-//     避免被"误吞"为"用户未订阅跳过"背面遮蔽挑处 llmgateway 部署倒退。
+// 路由 404（llmgateway 镜像未升级 / 路由未注册，gin 其他默认文本）的哨兵。
 var ErrLLMGatewayRouteNotFound = fmt.Errorf("llmgateway route not found (likely deployment lag)")
 
 // GetPlan 调用 GET /api/internal/plans/:id
@@ -411,8 +356,7 @@ func (a *LLMGatewayAdapter) GetPlan(ctx context.Context, planID string) (*Plan, 
 
 // ApplySubscription 调用 POST /api/internal/subscriptions/apply
 //
-// R-MR-3 改造：req.PeriodValue/PeriodUnit 透传购买时长；llmgateway 内部按
-// (NOW + period) 算 PeriodEnd（Q9=i1 真源）；未传时回退 plan 兜底（Q10=j1）。
+// PeriodValue/PeriodUnit 仅作为兼容输入透传；不再支持 period_end。
 func (a *LLMGatewayAdapter) ApplySubscription(ctx context.Context, req *ApplySubscriptionRequest) (*Subscription, error) {
 	if a.baseURL == "" {
 		return nil, fmt.Errorf("llmgateway base_url not configured")
@@ -581,6 +525,67 @@ func (a *LLMGatewayAdapter) GetActiveSubscription(ctx context.Context, userID st
 	return sub, nil
 }
 
+// ListActiveSubscriptions 调用 GET /api/internal/users/:user_id/subscriptions/active
+func (a *LLMGatewayAdapter) ListActiveSubscriptions(ctx context.Context, userID string) (*ActiveSubscriptionList, error) {
+	if a.baseURL == "" {
+		return nil, fmt.Errorf("llmgateway base_url not configured")
+	}
+	if a.internalToken == "" {
+		return nil, fmt.Errorf("llmgateway internal_service_token not configured")
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, fmt.Errorf("llmgateway user_id is required")
+	}
+
+	reqURL := a.baseURL + "/api/internal/users/" + url.PathEscape(userID) + "/subscriptions/active"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create list-active-subscriptions request: %w", err)
+	}
+	httpReq.Header.Set("Accept", "application/json")
+	a.applyInternalAuth(httpReq)
+
+	start := time.Now()
+	resp, err := a.httpClient.Do(httpReq)
+	duration := time.Since(start)
+	if err != nil {
+		a.logger.Warn("llmgateway list-active-subscriptions request failed",
+			zap.String("url", reqURL), zap.Duration("duration", duration), zap.Error(err))
+		return nil, fmt.Errorf("list-active-subscriptions request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read list-active-subscriptions response: %w", err)
+	}
+
+	a.logger.Info("llmgateway list-active-subscriptions response",
+		zap.String("url", reqURL), zap.Int("status", resp.StatusCode), zap.Duration("duration", duration))
+
+	if resp.StatusCode == http.StatusNotFound {
+		if isLLMGatewayBusinessErrorBody(respBody) {
+			return &ActiveSubscriptionList{UserID: userID, Subscriptions: []Subscription{}}, nil
+		}
+		a.logger.Warn("llmgateway list-active-subscriptions returned route 404 (likely deployment lag)",
+			zap.String("url", reqURL), zap.String("body", string(respBody)))
+		return nil, ErrLLMGatewayRouteNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list-active-subscriptions returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	list, err := decodeActiveSubscriptionList(respBody)
+	if err != nil {
+		return nil, fmt.Errorf("decode list-active-subscriptions response: %w", err)
+	}
+	if list.Subscriptions == nil {
+		list.Subscriptions = []Subscription{}
+	}
+	return list, nil
+}
+
 // decodePlan 解析响应体（支持 apiResponse 包装或裸 Plan）
 func decodePlan(body []byte) (*Plan, error) {
 	var wrapped apiResponse
@@ -613,97 +618,20 @@ func decodeSubscription(body []byte) (*Subscription, error) {
 	return &s, nil
 }
 
-// ExtendSubscription 调用 POST /api/internal/subscriptions/extend (R-MR-4)
-//
-// 用于 ctl renewPassTask 收尾：把 pass.expired_time 镜像到 llmgateway。
-// 幂等：重复调用同一 NewPeriodEnd 返回 updated=false（CAS 在 llmgateway 端实现）。
-// 不动 token_balance：月度刷新 scheduler 自然按月回血，无需 R-D 链路操心 token。
-func (a *LLMGatewayAdapter) ExtendSubscription(ctx context.Context, req *ExtendSubscriptionRequest) (*ExtendSubscriptionResponse, error) {
-	if a.baseURL == "" {
-		return nil, fmt.Errorf("llmgateway base_url not configured")
-	}
-	if a.internalToken == "" {
-		return nil, fmt.Errorf("llmgateway internal_service_token not configured")
-	}
-	if req == nil {
-		return nil, fmt.Errorf("llmgateway extend-subscription req is nil")
-	}
-	req.UserID = strings.TrimSpace(req.UserID)
-	if req.UserID == "" {
-		return nil, fmt.Errorf("llmgateway user_id is required")
-	}
-	if req.NewPeriodEnd.IsZero() {
-		return nil, fmt.Errorf("llmgateway new_period_end is required")
-	}
-
-	reqBody, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("marshal extend-subscription request: %w", err)
-	}
-
-	reqURL := a.baseURL + "/api/internal/subscriptions/extend"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(reqBody))
-	if err != nil {
-		return nil, fmt.Errorf("create extend-subscription request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
-	a.applyInternalAuth(httpReq)
-
-	start := time.Now()
-	resp, err := a.httpClient.Do(httpReq)
-	duration := time.Since(start)
-	if err != nil {
-		a.logger.Warn("llmgateway extend-subscription request failed",
-			zap.String("url", reqURL), zap.Duration("duration", duration), zap.Error(err))
-		return nil, fmt.Errorf("extend-subscription request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read extend-subscription response: %w", err)
-	}
-
-	a.logger.Info("llmgateway extend-subscription response",
-		zap.String("url", reqURL), zap.Int("status", resp.StatusCode), zap.Duration("duration", duration))
-
-	if resp.StatusCode == http.StatusNotFound {
-		// 区分业务 404 vs 路由 404（2026-05-24 精细化）：
-		//   - 业务 404（user not found / active subscription not found）→
-		//     llmgateway 返 OpenAI 风格 JSON {error: {code, message, type}}，
-		//     同于原语义返 ErrLLMGatewayPlanNotFound，caller（如 renew helper）可选择降级 nil。
-		//   - 路由 404（gin 默认 "404 page not found\n" 纯文本）→ llmgateway 镜像过旧
-		//     未含 R-MR-4 路由注册，返 ErrLLMGatewayRouteNotFound 让 caller 严格报错（避免被
-		//     误吞为"用户未订阅跳过"背面遮蔽部署问题）。
-		if isLLMGatewayBusinessErrorBody(respBody) {
-			return nil, ErrLLMGatewayPlanNotFound
-		}
-		a.logger.Warn("llmgateway extend-subscription returned route 404 (likely deployment lag)",
-			zap.String("url", reqURL), zap.String("body", string(respBody)))
-		return nil, ErrLLMGatewayRouteNotFound
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("extend-subscription returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	return decodeExtendSubscription(respBody)
-}
-
-// decodeExtendSubscription 解析 extend response body（支持 apiResponse 包装）
-func decodeExtendSubscription(body []byte) (*ExtendSubscriptionResponse, error) {
+// decodeActiveSubscriptionList 解析响应体（支持 apiResponse 包装或裸 ActiveSubscriptionList）
+func decodeActiveSubscriptionList(body []byte) (*ActiveSubscriptionList, error) {
 	var wrapped apiResponse
 	if err := json.Unmarshal(body, &wrapped); err == nil && len(wrapped.Data) > 0 {
-		var r ExtendSubscriptionResponse
-		if err := json.Unmarshal(wrapped.Data, &r); err == nil {
-			return &r, nil
+		var list ActiveSubscriptionList
+		if err := json.Unmarshal(wrapped.Data, &list); err == nil {
+			return &list, nil
 		}
 	}
-	var r ExtendSubscriptionResponse
-	if err := json.Unmarshal(body, &r); err != nil {
+	var list ActiveSubscriptionList
+	if err := json.Unmarshal(body, &list); err != nil {
 		return nil, err
 	}
-	return &r, nil
+	return &list, nil
 }
 
 // isLLMGatewayBusinessErrorBody 判别 body 是否 llmgateway 业务错误 JSON（OpenAI 风格

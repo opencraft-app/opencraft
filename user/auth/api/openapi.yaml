@@ -710,6 +710,7 @@ components:
           type: string
           enum:
             - legacy
+            - faceless
             - observe
             - face_required
         realnameSyncStatus:

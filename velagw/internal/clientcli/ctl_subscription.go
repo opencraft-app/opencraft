@@ -13,21 +13,17 @@ import (
 )
 
 func newCtlSubscriptionCommand(root *rootOptions) *cobra.Command {
-	command := &cobra.Command{Use: "subscription", Short: "模拟订阅开通、续期和取消"}
+	command := &cobra.Command{Use: "subscription", Short: "模拟订阅开通和取消"}
 	apply := &subscriptionApplyOptions{}
 	applyCommand := leafCommand("apply", "应用一笔订阅订单", root, apply)
 	bindApplyFlags(applyCommand, apply)
-	extend := &subscriptionExtendOptions{}
-	extendCommand := leafCommand("extend", "把当前订阅延长到指定时间", root, extend)
-	extendCommand.Flags().StringVar(&extend.userID, "user-id", "", "业务用户 ID")
-	extendCommand.Flags().StringVar(&extend.periodEnd, "period-end", "", "新的到期时间（RFC3339）")
 	cancel := &subscriptionUserOptions{}
 	cancelCommand := leafCommand("cancel", "取消当前订阅", root, cancel)
 	cancelCommand.Flags().StringVar(&cancel.userID, "user-id", "", "业务用户 ID")
 	get := &subscriptionUserOptions{}
 	getCommand := leafCommand("get", "查询当前订阅", root, &subscriptionGetOptions{subscriptionUserOptions: get})
 	getCommand.Flags().StringVar(&get.userID, "user-id", "", "业务用户 ID")
-	command.AddCommand(applyCommand, extendCommand, cancelCommand, getCommand)
+	command.AddCommand(applyCommand, cancelCommand, getCommand)
 	return command
 }
 
@@ -78,28 +74,6 @@ func (o *subscriptionApplyOptions) Run(ctx context.Context, api *client.Client, 
 		return err
 	}
 	return renderer.Print("应用订阅", result)
-}
-
-type subscriptionExtendOptions struct {
-	userID    string
-	periodEnd string
-}
-
-func (o *subscriptionExtendOptions) Validate() error {
-	if err := requireValues(map[string]string{"--user-id": o.userID, "--period-end": o.periodEnd}); err != nil {
-		return err
-	}
-	_, err := parseRFC3339(o.periodEnd)
-	return err
-}
-
-func (o *subscriptionExtendOptions) Run(ctx context.Context, api *client.Client, renderer ui.Renderer) error {
-	periodEnd, _ := parseRFC3339(o.periodEnd)
-	result, err := api.ExtendSubscription(ctx, client.ExtendSubscriptionInput{UserID: o.userID, NewPeriodEnd: periodEnd})
-	if err != nil {
-		return err
-	}
-	return renderer.Print("延长订阅", result)
 }
 
 type subscriptionUserOptions struct{ userID string }

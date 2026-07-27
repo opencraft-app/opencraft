@@ -116,21 +116,9 @@ func (s *Service) checkSetAdmission(ctx context.Context, set Set) error {
 		if err != nil {
 			return err
 		}
-		if !ok || state.Status != SetPlanStatusReady || state.UpstreamPlanID <= 0 {
+		if !ok || state.Status != SetPlanStatusReady || state.UpstreamPlanID <= 0 ||
+			state.AppliedFingerprint == "" {
 			return fmt.Errorf("plan %q is not ready on set %q", plan.ID, set.ID)
-		}
-		periods, err := s.store.ListPlanPeriods(ctx, plan.ID)
-		if err != nil {
-			return err
-		}
-		for _, period := range periods {
-			periodState, ok, err := s.store.GetSetPlanPeriod(ctx, plan.ID, period.PeriodValue, period.PeriodUnit, set.ID)
-			if err != nil {
-				return err
-			}
-			if !ok || periodState.Status != SetPlanStatusReady || periodState.UpstreamPlanID <= 0 {
-				return fmt.Errorf("plan %q period %d %s is not ready on set %q", plan.ID, period.PeriodValue, period.PeriodUnit, set.ID)
-			}
 		}
 	}
 	bundles, err := s.desiredChannelBundles(ctx)

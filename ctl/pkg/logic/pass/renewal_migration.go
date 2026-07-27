@@ -109,24 +109,13 @@ func PrepareRenewalGatewayMigration(ctx context.Context, input RenewalGatewayMig
 		IdempotencyKey: renewalMigrationIdempotencyKey(input),
 		UserID:         userID,
 		PlanID:         planID,
-		PeriodValue:    input.TimeSpan,
-		PeriodUnit:     input.TimeUnit,
+		IsUnique:       true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("apply llmgateway subscription for renewal migration: %w", err)
 	}
 	if sub == nil || strings.TrimSpace(sub.ID) == "" {
 		return nil, fmt.Errorf("apply llmgateway subscription for renewal migration returned no subscription")
-	}
-	extended, err := adapter.ExtendSubscription(callCtx, &llmgateway.ExtendSubscriptionRequest{
-		UserID:       userID,
-		NewPeriodEnd: input.NewExpired.UTC(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("align llmgateway subscription for renewal migration: %w", err)
-	}
-	if extended != nil && extended.Subscription != nil && strings.TrimSpace(extended.Subscription.ID) != "" {
-		sub = extended.Subscription
 	}
 	return &RenewalGatewayMigrationResult{
 		Required:       true,

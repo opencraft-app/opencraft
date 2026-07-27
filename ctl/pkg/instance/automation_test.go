@@ -64,19 +64,15 @@ func (s *automationLLMGatewayAdapterStub) ApplySubscription(_ context.Context, r
 	return &pllmgateway.Subscription{UserID: req.UserID, PlanID: req.PlanID}, nil
 }
 
-func (s *automationLLMGatewayAdapterStub) ExtendSubscription(_ context.Context, req *pllmgateway.ExtendSubscriptionRequest) (*pllmgateway.ExtendSubscriptionResponse, error) {
-	return &pllmgateway.ExtendSubscriptionResponse{
-		Subscription: &pllmgateway.Subscription{UserID: req.UserID},
-		Updated:      true,
-	}, nil
-}
-
 func (s *automationLLMGatewayAdapterStub) CancelSubscription(_ context.Context, _ string) error {
 	return nil
 }
 
 func (s *automationLLMGatewayAdapterStub) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
 	return nil, nil
+}
+func (s *automationLLMGatewayAdapterStub) ListActiveSubscriptions(_ context.Context, _ string) (*pllmgateway.ActiveSubscriptionList, error) {
+	return &pllmgateway.ActiveSubscriptionList{Subscriptions: []pllmgateway.Subscription{}}, nil
 }
 
 func (s *automationGatewayAdapterStub) Call(_ context.Context, _ string, _ string, method string, params interface{}, out interface{}) error {
@@ -172,8 +168,8 @@ func TestListAutomationSchedulesBackfillsGatewayAuthMaterialForRunningInstance(t
 	if len(sandbox.processCalls) != 2 {
 		t.Fatalf("expected onboard and gateway patch commands to run, got %d", len(sandbox.processCalls))
 	}
-	if aiGateway.revokedKeyID != "key_old" {
-		t.Fatalf("expected previous key to be revoked, got %s", aiGateway.revokedKeyID)
+	if aiGateway.revokedKeyID != "" {
+		t.Fatalf("LLMGateway user key must survive automation backfill, got revoked key %s", aiGateway.revokedKeyID)
 	}
 }
 

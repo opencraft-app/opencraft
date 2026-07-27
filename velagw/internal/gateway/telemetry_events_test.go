@@ -221,8 +221,15 @@ func TestKeyIssueAndRevokeEmitCommittedEvents(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
 		case "POST /api/user/login":
-			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 42, "username": "sgw-user-42"}})
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"access_token": "login-access-token",
+				"user":         map[string]any{"id": 42, "username": "sgw-user-42"},
+			}})
 		case "GET /api/user/token":
+			if r.Header.Get("Authorization") != "Bearer login-access-token" {
+				http.Error(w, `{"success":false,"message":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
 			writeTestJSON(t, w, map[string]any{"success": true, "data": "access-secret"})
 		case "POST /api/token/":
 			writeTestJSON(t, w, map[string]any{"success": true})
@@ -230,6 +237,8 @@ func TestKeyIssueAndRevokeEmitCommittedEvents(t *testing.T) {
 			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"items": []map[string]any{{"id": 7, "name": r.URL.Query().Get("keyword")}}}})
 		case "POST /api/token/7/key":
 			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-upstream-secret"}})
+		case "DELETE /api/token/7":
+			writeTestJSON(t, w, map[string]any{"success": true})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}

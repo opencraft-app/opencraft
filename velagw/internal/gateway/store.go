@@ -111,6 +111,7 @@ type Store interface {
 	ListAPIKeyRouteRecoveryRecords(context.Context, string, string, int) ([]TrafficRouteRecoveryRecord, error)
 	GetAPIKeyBindingByExternalKey(context.Context, string) (APIKeyBinding, bool, error)
 	GetAPIKeyBindingByExternalKeyID(context.Context, string) (APIKeyBinding, bool, error)
+	GetAPIKeyBindingByUserPurpose(context.Context, string, string) (APIKeyBinding, bool, error)
 	ListAPIKeyBindingsByUser(context.Context, string) ([]APIKeyBinding, error)
 	ListAPIKeyBindingsBySet(context.Context, string) ([]APIKeyBinding, error)
 	DeleteAPIKeyBindingByExternalKeyID(context.Context, string) error
@@ -136,6 +137,7 @@ type Store interface {
 	GetPlanMapping(context.Context, string) (PlanMapping, bool, error)
 	ListPlanMappings(context.Context) ([]PlanMapping, error)
 	SavePlan(context.Context, Plan) error
+	RetirePlan(context.Context, string, time.Time) error
 	GetPlan(context.Context, string) (Plan, bool, error)
 	ListPlans(context.Context) ([]Plan, error)
 	SaveSetPlan(context.Context, SetPlan) error
@@ -150,6 +152,9 @@ type Store interface {
 	SaveSubscriptionPeriodOverlay(context.Context, SubscriptionPeriodOverlay) error
 	GetSubscriptionPeriodOverlay(context.Context, string) (SubscriptionPeriodOverlay, bool, error)
 	DeleteSubscriptionPeriodOverlay(context.Context, string) error
+	SaveSubscriptionProjection(context.Context, SubscriptionProjection) error
+	ListSubscriptionProjections(context.Context, string) ([]SubscriptionProjection, error)
+	DeleteSubscriptionProjections(context.Context, string) error
 	TryBeginSubscriptionIdempotency(context.Context, SubscriptionIdempotency) (SubscriptionIdempotency, bool, error)
 	FinishSubscriptionIdempotency(context.Context, string, int, string, time.Time) error
 	EnqueueAdminCommand(context.Context, AdminCommand) (AdminCommand, bool, error)
@@ -238,6 +243,7 @@ type MemoryStore struct {
 	planPeriods               map[string]PlanPeriod
 	setPlanPeriods            map[string]SetPlanPeriod
 	periodEnds                map[string]SubscriptionPeriodOverlay
+	subscriptionProjections   map[string]SubscriptionProjection
 	subscriptionIdem          map[string]SubscriptionIdempotency
 	adminCommands             map[string]AdminCommand
 	adminCommandDedupe        map[string]string
@@ -295,6 +301,7 @@ func NewMemoryStore() *MemoryStore {
 		planPeriods:               map[string]PlanPeriod{},
 		setPlanPeriods:            map[string]SetPlanPeriod{},
 		periodEnds:                map[string]SubscriptionPeriodOverlay{},
+		subscriptionProjections:   map[string]SubscriptionProjection{},
 		subscriptionIdem:          map[string]SubscriptionIdempotency{},
 		adminCommands:             map[string]AdminCommand{},
 		adminCommandDedupe:        map[string]string{},
@@ -392,11 +399,16 @@ func setOperationLeaseKey(setID string, operation string, slot int) string {
 }
 
 func setReadyForOperationLease(set Set, operation string) bool {
-	if operation != SetOperationGroupRatioWrite {
+	if !setOperationAllowedBeforeAdmission(operation) {
 		return setReadyForServing(set)
 	}
 	return set.Status == SetStatusActive && set.Setup && set.AdminUserID > 0 && set.AdminAccessToken != "" &&
 		set.AdminHealthStatus != SetAdminHealthUnhealthy
+}
+
+func setOperationAllowedBeforeAdmission(operation string) bool {
+	return operation == SetOperationGroupRatioWrite ||
+		strings.HasPrefix(operation, SetOperationPlanSync+"_")
 }
 
 func (s *MemoryStore) SaveSet(_ context.Context, set Set) error {
@@ -1199,6 +1211,7 @@ func (s *MemoryStore) SaveAPIKeyBinding(_ context.Context, binding APIKeyBinding
 	if binding.Status == "" {
 		binding.Status = APIKeyStatusActive
 	}
+	binding.Purpose = canonicalAPIKeyPurpose(binding.Purpose)
 	if binding.CreatedAt.IsZero() {
 		if existing, ok := s.apiKeysByID[binding.ExternalKeyID]; ok && !existing.CreatedAt.IsZero() {
 			binding.CreatedAt = existing.CreatedAt
@@ -1365,6 +1378,22 @@ func (s *MemoryStore) GetAPIKeyBindingByExternalKeyID(_ context.Context, keyID s
 	defer s.mu.RUnlock()
 	binding, ok := s.apiKeysByID[keyID]
 	return binding, ok, nil
+}
+
+func (s *MemoryStore) GetAPIKeyBindingByUserPurpose(_ context.Context, userID, purpose string) (APIKeyBinding, bool, error) {
+	userID = strings.TrimSpace(userID)
+	purpose = canonicalAPIKeyPurpose(purpose)
+	if userID == "" || purpose == "" {
+		return APIKeyBinding{}, false, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, binding := range s.apiKeysByID {
+		if binding.UserID == userID && canonicalAPIKeyPurpose(binding.Purpose) == purpose {
+			return binding, true, nil
+		}
+	}
+	return APIKeyBinding{}, false, nil
 }
 
 func (s *MemoryStore) ListAPIKeyBindingsByUser(_ context.Context, userID string) ([]APIKeyBinding, error) {
@@ -2017,13 +2046,15 @@ func (s *MemoryStore) SavePlanMapping(_ context.Context, plan PlanMapping) error
 		}
 		s.setPlans[setPlanKey(plan.ID, setID)] = SetPlan{
 			PlanID: plan.ID, SetID: setID, UpstreamPlanID: upstreamPlanID,
-			Status: SetPlanStatusReady, SyncedAt: now, CreatedAt: now, UpdatedAt: now,
+			AppliedFingerprint: entitlement.Fingerprint,
+			Status:             SetPlanStatusReady, SyncedAt: now, CreatedAt: now, UpdatedAt: now,
 		}
 	}
 	if plan.UpstreamPlanID > 0 && plan.SetID != "" {
 		s.setPlans[setPlanKey(plan.ID, plan.SetID)] = SetPlan{
 			PlanID: plan.ID, SetID: plan.SetID, UpstreamPlanID: plan.UpstreamPlanID,
-			Status: SetPlanStatusReady, SyncedAt: now, CreatedAt: now, UpdatedAt: now,
+			AppliedFingerprint: entitlement.Fingerprint,
+			Status:             SetPlanStatusReady, SyncedAt: now, CreatedAt: now, UpdatedAt: now,
 		}
 	}
 	return nil
@@ -2089,6 +2120,22 @@ func (s *MemoryStore) SavePlan(_ context.Context, plan Plan) error {
 	}
 	plan.UpdatedAt = now
 	s.entitlementPlans[plan.ID] = plan
+	return nil
+}
+
+func (s *MemoryStore) RetirePlan(_ context.Context, planID string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existing, ok := s.entitlementPlans[planID]
+	if !ok {
+		return ErrPlanNotFound
+	}
+	if !existing.IsActive {
+		return nil
+	}
+	existing.IsActive = false
+	existing.UpdatedAt = now.UTC()
+	s.entitlementPlans[planID] = existing
 	return nil
 }
 
@@ -2337,6 +2384,63 @@ func (s *MemoryStore) DeleteSubscriptionPeriodOverlay(_ context.Context, externa
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.periodEnds, externalUserID)
+	return nil
+}
+
+func subscriptionProjectionKey(externalUserID string, upstreamSubscriptionID int) string {
+	return strings.TrimSpace(externalUserID) + "\x00" + fmt.Sprint(upstreamSubscriptionID)
+}
+
+func (s *MemoryStore) SaveSubscriptionProjection(_ context.Context, projection SubscriptionProjection) error {
+	projection.ExternalUserID = strings.TrimSpace(projection.ExternalUserID)
+	projection.SetID = strings.TrimSpace(projection.SetID)
+	projection.SubscriptionName = strings.TrimSpace(projection.SubscriptionName)
+	projection.PlanID = strings.TrimSpace(projection.PlanID)
+	if projection.ExternalUserID == "" || projection.UpstreamSubscriptionID <= 0 {
+		return fmt.Errorf("external user id and upstream subscription id are required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rejectInactiveTenantWriteLocked(projection.ExternalUserID); err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	key := subscriptionProjectionKey(projection.ExternalUserID, projection.UpstreamSubscriptionID)
+	if existing, ok := s.subscriptionProjections[key]; ok {
+		projection.CreatedAt = existing.CreatedAt
+	} else if projection.CreatedAt.IsZero() {
+		projection.CreatedAt = now
+	}
+	projection.UpdatedAt = now
+	s.subscriptionProjections[key] = projection
+	return nil
+}
+
+func (s *MemoryStore) ListSubscriptionProjections(_ context.Context, externalUserID string) ([]SubscriptionProjection, error) {
+	externalUserID = strings.TrimSpace(externalUserID)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	projections := make([]SubscriptionProjection, 0)
+	for _, projection := range s.subscriptionProjections {
+		if projection.ExternalUserID == externalUserID {
+			projections = append(projections, projection)
+		}
+	}
+	sort.Slice(projections, func(i, j int) bool {
+		return projections[i].UpstreamSubscriptionID < projections[j].UpstreamSubscriptionID
+	})
+	return projections, nil
+}
+
+func (s *MemoryStore) DeleteSubscriptionProjections(_ context.Context, externalUserID string) error {
+	externalUserID = strings.TrimSpace(externalUserID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, projection := range s.subscriptionProjections {
+		if projection.ExternalUserID == externalUserID {
+			delete(s.subscriptionProjections, key)
+		}
+	}
 	return nil
 }
 

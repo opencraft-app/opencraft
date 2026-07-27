@@ -413,16 +413,6 @@ func TestReproducibleComposeClusterDropInScenario(t *testing.T) {
 		assertOpenAIError(t, body, "not_found_error", "not_found")
 	})
 
-	t.Run("renew alignment without an active subscription returns a business 404", func(t *testing.T) {
-		req := newJSONRequest(t, http.MethodPost, cfg.LLMGateway.BaseURL+"/api/internal/subscriptions/extend", map[string]any{
-			"user_id":        "align-missing-" + runID,
-			"new_period_end": time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339Nano),
-		})
-		req.Header.Set("Authorization", "Bearer "+cfg.LLMGateway.InternalToken)
-		body := expectStatus(t, client, req, http.StatusNotFound)
-		assertOpenAIError(t, body, "not_found_error", "not_found")
-	})
-
 	t.Run("inactive plan cannot be applied through the trade-facing API", func(t *testing.T) {
 		inactivePlanID := "inactive-" + externalPlanID
 		adminPost(t, client, cfg, "/api/plans", map[string]any{
@@ -717,22 +707,6 @@ func TestReproducibleComposeClusterDropInScenario(t *testing.T) {
 			tenants.Items[0].ObservedSubscriptionStatus != "active" {
 			t.Fatalf("tenant list did not expose latest observation: %+v", tenants)
 		}
-	})
-
-	t.Run("bad renewal payload keeps the active subscription unchanged", func(t *testing.T) {
-		before := currentSub
-		req := newJSONRequest(t, http.MethodPost, cfg.LLMGateway.BaseURL+"/api/internal/subscriptions/extend", map[string]any{
-			"user_id": userID,
-		})
-		req.Header.Set("Authorization", "Bearer "+cfg.LLMGateway.InternalToken)
-		body := expectStatus(t, client, req, http.StatusBadRequest)
-		assertOpenAIError(t, body, "invalid_request_error", "bad_request")
-
-		var after subscriptionPayload
-		internalGet(t, client, cfg, "/api/internal/users/"+url.PathEscape(userID)+"/subscriptions", &after)
-		assertActiveSubscription(t, after, userID, externalPlanID, currentTokenBalance)
-		assertSubscriptionPeriodEndString(t, after, before.PeriodEnd)
-		currentSub = after
 	})
 
 	t.Run("ctl can apply a day-based bundle period alias", func(t *testing.T) {
@@ -1308,7 +1282,7 @@ func TestReproducibleComposeClusterDropInScenario(t *testing.T) {
 		fsm.AssertTrafficAllowed(secondKey)
 
 		fsm.RenewalPaymentSucceeded("order-renew-1")
-		fsm.AssertPeriodEndAfter(firstEnd)
+		fsm.AssertPeriodEndEquals(firstEnd)
 		renewedEnd := fsm.PeriodEnd
 
 		fsm.ReplayRenewalPayment("order-renew-1")
@@ -1378,7 +1352,7 @@ func TestReproducibleComposeClusterDropInScenario(t *testing.T) {
 		fsm.AssertActivePlan(dailyPlanID, cfg.Scenario.Plan.TotalAmount+dailyPlanTokens)
 	})
 
-	t.Run("business FSM ignores stale renewal replay after cancel and allows explicit admin resync", func(t *testing.T) {
+	t.Run("business FSM ignores stale renewal replay after cancel", func(t *testing.T) {
 		fsm := newBusinessFSM(t, client, cfg, businessFSMConfig{
 			UserID:       "biz-fsm-cancel-replay-" + runID,
 			PlanID:       externalPlanID,
@@ -1388,87 +1362,11 @@ func TestReproducibleComposeClusterDropInScenario(t *testing.T) {
 		})
 		fsm.CheckoutPaid("order-initial")
 		fsm.PaymentSucceeded("order-initial")
-		nextEnd, err := addBusinessPeriod(fsm.PeriodEnd, fsm.conf.PeriodValue, fsm.conf.PeriodUnit)
-		if err != nil {
-			t.Fatalf("calculate stale renewal target: %v", err)
-		}
 
 		fsm.Cancel()
 		fsm.AssertNoActiveSubscription()
-		fsm.ReplayRenewalAfterCancelIgnored("order-renew-stale", nextEnd)
+		fsm.ReplayRenewalAfterCancelIgnored("order-renew-stale")
 		fsm.AssertNoActiveSubscription()
-
-		// 只有显式运维/管控 resync 才能在取消后重新投影订阅，普通旧回调不能复活。
-		fsm.AdminResync(nextEnd)
-		fsm.AssertActivePlan(externalPlanID, cfg.Scenario.Plan.TotalAmount)
-		fsm.AssertPeriodEndEquals(nextEnd)
-	})
-
-	t.Run("business FSM expiration boundary hides active subscription projection", func(t *testing.T) {
-		fsm := newBusinessFSM(t, client, cfg, businessFSMConfig{
-			UserID:       "biz-fsm-expire-" + runID,
-			PlanID:       externalPlanID,
-			TokenBalance: cfg.Scenario.Plan.TotalAmount,
-			PeriodValue:  cfg.Scenario.Plan.DurationValue,
-			PeriodUnit:   cfg.Scenario.Plan.GatewayPeriodUnit,
-		})
-		fsm.CheckoutPaid("order-initial")
-		fsm.PaymentSucceeded("order-initial")
-		key := fsm.CreateInstanceKey("instance-expire")
-
-		fsm.ExpireAt(time.Now().UTC().Add(-time.Second))
-		fsm.AssertNoActiveSubscription()
-		// /v1/models 在老 ai-gateway 里是“列模型”探针，不走扣费；这里仍只验证 key 路由没有被误删。
-		fsm.AssertTrafficAllowed(key)
-	})
-
-	t.Run("concurrent paid callbacks converge to one business period end", func(t *testing.T) {
-		fsm := newBusinessFSM(t, client, cfg, businessFSMConfig{
-			UserID:       "biz-fsm-concurrent-pay-" + runID,
-			PlanID:       externalPlanID,
-			TokenBalance: cfg.Scenario.Plan.TotalAmount,
-			PeriodValue:  cfg.Scenario.Plan.DurationValue,
-			PeriodUnit:   cfg.Scenario.Plan.GatewayPeriodUnit,
-		})
-		fsm.CheckoutPaid("order-initial")
-		fsm.PaymentSucceeded("order-initial")
-		targetEnd, err := addBusinessPeriod(fsm.PeriodEnd, fsm.conf.PeriodValue, fsm.conf.PeriodUnit)
-		if err != nil {
-			t.Fatalf("calculate concurrent renewal target: %v", err)
-		}
-
-		const callbackCount = 8
-		var wg sync.WaitGroup
-		errs := make(chan error, callbackCount)
-		for i := 0; i < callbackCount; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				status, raw, err := internalPostRaw(client, cfg, "/api/internal/subscriptions/extend", map[string]any{
-					"user_id":        fsm.conf.UserID,
-					"new_period_end": targetEnd.Format(time.RFC3339Nano),
-				})
-				if err != nil {
-					errs <- err
-					return
-				}
-				if status != http.StatusOK {
-					errs <- fmt.Errorf("concurrent extend status=%d body=%s", status, raw)
-				}
-			}()
-		}
-		wg.Wait()
-		close(errs)
-		for err := range errs {
-			if err != nil {
-				t.Fatal(err)
-			}
-		}
-
-		var sub subscriptionPayload
-		internalGet(t, client, cfg, "/api/internal/users/"+url.PathEscape(fsm.conf.UserID)+"/subscriptions", &sub)
-		assertActiveSubscription(t, sub, fsm.conf.UserID, externalPlanID, cfg.Scenario.Plan.TotalAmount)
-		assertSubscriptionPeriodEnd(t, sub, targetEnd)
 	})
 
 	t.Run("concurrent key create and revoke leaves sibling keys usable", func(t *testing.T) {
@@ -1755,65 +1653,7 @@ func TestReproducibleComposeClusterDropInScenario(t *testing.T) {
 		assertActiveSubscription(t, sub, userID, externalPlanID, currentTokenBalance)
 	})
 
-	t.Run("renewal extension is applied once for a target period end", func(t *testing.T) {
-		currentEnd, err := time.Parse(time.RFC3339Nano, currentSub.PeriodEnd)
-		if err != nil {
-			t.Fatalf("parse current period end %q: %v", currentSub.PeriodEnd, err)
-		}
-		targetEnd := currentEnd.Add(48 * time.Hour).UTC()
-		var first struct {
-			Subscription *subscriptionPayload `json:"subscription"`
-			Updated      bool                 `json:"updated"`
-		}
-		internalPost(t, client, cfg, "/api/internal/subscriptions/extend", map[string]any{
-			"user_id":        userID,
-			"new_period_end": targetEnd.Format(time.RFC3339Nano),
-		}, &first)
-		if !first.Updated || first.Subscription == nil {
-			t.Fatalf("first extension returned %+v", first)
-		}
-		assertActiveSubscription(t, *first.Subscription, userID, externalPlanID, currentTokenBalance)
-		assertSubscriptionPeriodEnd(t, *first.Subscription, targetEnd)
-
-		var second struct {
-			Subscription *subscriptionPayload `json:"subscription"`
-			Updated      bool                 `json:"updated"`
-		}
-		internalPost(t, client, cfg, "/api/internal/subscriptions/extend", map[string]any{
-			"user_id":        userID,
-			"new_period_end": targetEnd.Format(time.RFC3339Nano),
-		}, &second)
-		if second.Updated || second.Subscription == nil {
-			t.Fatalf("second extension returned %+v", second)
-		}
-		assertActiveSubscription(t, *second.Subscription, userID, externalPlanID, currentTokenBalance)
-		assertSubscriptionPeriodEnd(t, *second.Subscription, targetEnd)
-		currentSub = *second.Subscription
-	})
-
-	t.Run("rollback alignment can move period end backward without changing balance", func(t *testing.T) {
-		previousEnd, err := time.Parse(time.RFC3339Nano, currentSub.PeriodEnd)
-		if err != nil {
-			t.Fatalf("parse current period end %q: %v", currentSub.PeriodEnd, err)
-		}
-		targetEnd := previousEnd.Add(-24 * time.Hour).UTC()
-		var result struct {
-			Subscription *subscriptionPayload `json:"subscription"`
-			Updated      bool                 `json:"updated"`
-		}
-		internalPost(t, client, cfg, "/api/internal/subscriptions/extend", map[string]any{
-			"user_id":        userID,
-			"new_period_end": targetEnd.Format(time.RFC3339Nano),
-		}, &result)
-		if !result.Updated || result.Subscription == nil {
-			t.Fatalf("backward alignment returned %+v", result)
-		}
-		assertActiveSubscription(t, *result.Subscription, userID, externalPlanID, currentTokenBalance)
-		assertSubscriptionPeriodEnd(t, *result.Subscription, targetEnd)
-		currentSub = *result.Subscription
-	})
-
-	t.Run("active subscription can be fetched after renewal aggregation", func(t *testing.T) {
+	t.Run("active subscription can be fetched after package renewal no-op", func(t *testing.T) {
 		var sub subscriptionPayload
 		internalGet(t, client, cfg, "/api/internal/users/"+url.PathEscape(userID)+"/subscriptions", &sub)
 		assertActiveSubscription(t, sub, userID, externalPlanID, currentTokenBalance)
@@ -1825,45 +1665,7 @@ func TestReproducibleComposeClusterDropInScenario(t *testing.T) {
 		currentSub = sub
 	})
 
-	t.Run("multiple renewal targets converge to the final period end", func(t *testing.T) {
-		baseEnd, err := time.Parse(time.RFC3339Nano, currentSub.PeriodEnd)
-		if err != nil {
-			t.Fatalf("parse current period end %q: %v", currentSub.PeriodEnd, err)
-		}
-		targets := []time.Time{
-			baseEnd.Add(24 * time.Hour).UTC(),
-			baseEnd.Add(48 * time.Hour).UTC(),
-			baseEnd.Add(72 * time.Hour).UTC(),
-		}
-		for i, target := range targets {
-			var result struct {
-				Subscription *subscriptionPayload `json:"subscription"`
-				Updated      bool                 `json:"updated"`
-			}
-			internalPost(t, client, cfg, "/api/internal/subscriptions/extend", map[string]any{
-				"user_id":        userID,
-				"new_period_end": target.Format(time.RFC3339Nano),
-			}, &result)
-			if !result.Updated || result.Subscription == nil {
-				t.Fatalf("renewal %d returned %+v", i+1, result)
-			}
-			assertActiveSubscription(t, *result.Subscription, userID, externalPlanID, currentTokenBalance)
-			assertSubscriptionPeriodEnd(t, *result.Subscription, target)
-			currentSub = *result.Subscription
-		}
-
-		var fetched subscriptionPayload
-		internalGet(t, client, cfg, "/api/internal/users/"+url.PathEscape(userID)+"/subscriptions", &fetched)
-		assertActiveSubscription(t, fetched, userID, externalPlanID, currentTokenBalance)
-		assertSubscriptionPeriodEnd(t, fetched, targets[len(targets)-1])
-		currentSub = fetched
-	})
-
-	t.Run("reapplying after renewal clears stale period overlay", func(t *testing.T) {
-		staleOverlayEnd, err := time.Parse(time.RFC3339Nano, currentSub.PeriodEnd)
-		if err != nil {
-			t.Fatalf("parse current period end %q: %v", currentSub.PeriodEnd, err)
-		}
+	t.Run("reapplying package subscription grants additional balance", func(t *testing.T) {
 		var reset subscriptionPayload
 		internalPost(t, client, cfg, "/api/internal/subscriptions/apply", map[string]any{
 			"user_id": userID,
@@ -1871,12 +1673,8 @@ func TestReproducibleComposeClusterDropInScenario(t *testing.T) {
 		}, &reset)
 		currentTokenBalance += cfg.Scenario.Plan.TotalAmount
 		assertActiveSubscription(t, reset, userID, externalPlanID, currentTokenBalance)
-		resetEnd, err := time.Parse(time.RFC3339Nano, reset.PeriodEnd)
-		if err != nil {
+		if _, err := time.Parse(time.RFC3339Nano, reset.PeriodEnd); err != nil {
 			t.Fatalf("parse reset period end %q: %v", reset.PeriodEnd, err)
-		}
-		if !resetEnd.Before(staleOverlayEnd) {
-			t.Fatalf("reapply kept stale overlay period_end=%s, reset subscription=%+v", staleOverlayEnd.Format(time.RFC3339Nano), reset)
 		}
 		currentSub = reset
 	})
@@ -1889,24 +1687,9 @@ func TestReproducibleComposeClusterDropInScenario(t *testing.T) {
 			"plan_id": singleSetPlanID,
 		}, &sub)
 		assertActiveSubscription(t, sub, restartUserID, singleSetPlanID, cfg.Scenario.Plan.TotalAmount)
-		currentEnd, err := time.Parse(time.RFC3339Nano, sub.PeriodEnd)
-		if err != nil {
+		if _, err := time.Parse(time.RFC3339Nano, sub.PeriodEnd); err != nil {
 			t.Fatalf("parse restart period end %q: %v", sub.PeriodEnd, err)
 		}
-		targetEnd := currentEnd.Add(36 * time.Hour).UTC()
-		var extended struct {
-			Subscription *subscriptionPayload `json:"subscription"`
-			Updated      bool                 `json:"updated"`
-		}
-		internalPost(t, client, cfg, "/api/internal/subscriptions/extend", map[string]any{
-			"user_id":        restartUserID,
-			"new_period_end": targetEnd.Format(time.RFC3339Nano),
-		}, &extended)
-		if !extended.Updated || extended.Subscription == nil {
-			t.Fatalf("restart user extension returned %+v", extended)
-		}
-		assertActiveSubscription(t, *extended.Subscription, restartUserID, singleSetPlanID, cfg.Scenario.Plan.TotalAmount)
-		assertSubscriptionPeriodEnd(t, *extended.Subscription, targetEnd)
 
 		key := createAdminAPIKey(t, client, cfg, restartUserID, "restart-"+runID)
 		revokedKey := createAdminAPIKey(t, client, cfg, restartUserID, "restart-revoked-"+runID)
@@ -1957,7 +1740,7 @@ func TestReproducibleComposeClusterDropInScenario(t *testing.T) {
 			PlanID:             singleSetPlanID,
 			APIKey:             key.APIKey,
 			RevokedAPIKey:      revokedKey.APIKey,
-			PeriodEnd:          extended.Subscription.PeriodEnd,
+			PeriodEnd:          sub.PeriodEnd,
 			TokenBalance:       cfg.Scenario.Plan.TotalAmount,
 			CancelledUserID:    cancelledUserID,
 			InactivePlanID:     inactivePlanID,
@@ -3154,67 +2937,26 @@ func (f *businessFSM) RenewalPaymentSucceeded(orderID string) {
 	if f.cancelled {
 		f.t.Fatalf("business renewal %q arrived after cancellation; use ReplayRenewalAfterCancelIgnored for stale callback semantics", orderID)
 	}
-	targetEnd, err := addBusinessPeriod(f.PeriodEnd, f.conf.PeriodValue, f.conf.PeriodUnit)
-	if err != nil {
-		f.t.Fatalf("calculate business renewal period: %v", err)
-	}
 
-	// 业务续费的真源是业务订阅周期：先让 new-api 获得新的有效订阅，再把 llmgateway 投影周期对齐到业务期望。
-	f.applyPlan(f.conf)
-
-	var extended struct {
-		Subscription *subscriptionPayload `json:"subscription"`
-		Updated      bool                 `json:"updated"`
-	}
-	internalPost(f.t, f.client, f.cfg, "/api/internal/subscriptions/extend", map[string]any{
-		"user_id":        f.conf.UserID,
-		"new_period_end": targetEnd.Format(time.RFC3339Nano),
-	}, &extended)
-	if !extended.Updated || extended.Subscription == nil {
-		f.t.Fatalf("business renewal did not update llmgateway projection: %+v", extended)
-	}
-	f.acceptSubscription(*extended.Subscription)
-	f.AssertPeriodEndEquals(targetEnd)
+	// LLMGateway 套餐积分订阅按长期有效期创建；活跃 pass 续费时不再延长 period_end，
+	// 只确认现有订阅仍可查询。
+	f.AssertActivePlan(f.conf.PlanID, f.expectedBalance)
 	f.completedOrders[orderID] = true
 }
 
 func (f *businessFSM) ReplayRenewalPayment(orderID string) {
 	f.t.Helper()
-	// 支付回调重放应由业务状态机按 order_id 幂等吞掉，不能再次延长 LLM 周期。
+	// 支付回调重放应由业务状态机按 order_id 幂等吞掉，不能改变 LLMGateway 周期。
 	f.RenewalPaymentSucceeded(orderID)
 }
 
-func (f *businessFSM) ReplayRenewalAfterCancelIgnored(orderID string, targetEnd time.Time) {
+func (f *businessFSM) ReplayRenewalAfterCancelIgnored(orderID string) {
 	f.t.Helper()
 	if strings.TrimSpace(orderID) == "" {
 		f.t.Fatal("business stale renewal order id is required")
 	}
-	if targetEnd.IsZero() {
-		f.t.Fatal("business stale renewal target period end is required")
-	}
-	// 取消之后到达的旧续费回调必须按业务订单状态吞掉，不能再调用 llmgateway extend/apply。
+	// 取消之后到达的旧续费回调必须按业务订单状态吞掉，不能再调用 llmgateway apply。
 	f.terminalOrders[orderID] = "stale_after_cancel"
-}
-
-func (f *businessFSM) AdminResync(targetEnd time.Time) {
-	f.t.Helper()
-	if targetEnd.IsZero() {
-		f.t.Fatal("admin resync target period end is required")
-	}
-	f.applyPlan(f.conf)
-	var extended struct {
-		Subscription *subscriptionPayload `json:"subscription"`
-		Updated      bool                 `json:"updated"`
-	}
-	internalPost(f.t, f.client, f.cfg, "/api/internal/subscriptions/extend", map[string]any{
-		"user_id":        f.conf.UserID,
-		"new_period_end": targetEnd.Format(time.RFC3339Nano),
-	}, &extended)
-	if extended.Subscription == nil {
-		f.t.Fatalf("admin resync returned no subscription: %+v", extended)
-	}
-	f.acceptSubscription(*extended.Subscription)
-	f.cancelled = false
 }
 
 func (f *businessFSM) CreateInstanceKey(instanceID string) string {
@@ -3291,36 +3033,9 @@ func (f *businessFSM) AssertTrafficUnauthorized(apiKey string) {
 	}
 }
 
-func (f *businessFSM) AssertPeriodEndAfter(previous time.Time) {
-	f.t.Helper()
-	if !f.PeriodEnd.After(previous) {
-		f.t.Fatalf("business period did not advance: got=%s previous=%s", f.PeriodEnd.Format(time.RFC3339Nano), previous.Format(time.RFC3339Nano))
-	}
-}
-
 func (f *businessFSM) AssertPeriodEndEquals(want time.Time) {
 	f.t.Helper()
 	assertSubscriptionPeriodEnd(f.t, f.subscription, want)
-}
-
-func (f *businessFSM) ExpireAt(target time.Time) {
-	f.t.Helper()
-	if target.IsZero() {
-		f.t.Fatal("expiration target is required")
-	}
-	var extended struct {
-		Subscription *subscriptionPayload `json:"subscription"`
-		Updated      bool                 `json:"updated"`
-	}
-	internalPost(f.t, f.client, f.cfg, "/api/internal/subscriptions/extend", map[string]any{
-		"user_id":        f.conf.UserID,
-		"new_period_end": target.UTC().Format(time.RFC3339Nano),
-	}, &extended)
-	if extended.Subscription == nil {
-		f.t.Fatalf("expire alignment returned no subscription: %+v", extended)
-	}
-	f.subscription = *extended.Subscription
-	f.PeriodEnd = target.UTC()
 }
 
 func (f *businessFSM) acceptSubscription(sub subscriptionPayload) {
@@ -3346,24 +3061,6 @@ func (f *businessFSM) requirePendingOrder(orderID string) {
 	}
 	if !f.pendingOrders[orderID] {
 		f.t.Fatalf("business order %q was not checked out before payment", orderID)
-	}
-}
-
-func addBusinessPeriod(start time.Time, value int, unit string) (time.Time, error) {
-	if value <= 0 {
-		return time.Time{}, fmt.Errorf("period value must be positive")
-	}
-	switch strings.ToLower(strings.TrimSpace(unit)) {
-	case "m", "month", "months":
-		return start.AddDate(0, value, 0), nil
-	case "d", "day", "days":
-		return start.AddDate(0, 0, value), nil
-	case "y", "year", "years":
-		return start.AddDate(value, 0, 0), nil
-	case "h", "hour", "hours":
-		return start.Add(time.Duration(value) * time.Hour), nil
-	default:
-		return time.Time{}, fmt.Errorf("unsupported period unit %q", unit)
 	}
 }
 

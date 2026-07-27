@@ -143,7 +143,9 @@ type UserToken struct {
 }
 
 type AdminCreateUserSubscriptionRequest struct {
-	PlanID int `json:"plan_id"`
+	PlanID    int    `json:"plan_id"`
+	Name      string `json:"name,omitempty"`
+	RequestID string `json:"request_id"`
 }
 
 type AdminCreateSubscriptionPlanRequest struct {
@@ -151,17 +153,18 @@ type AdminCreateSubscriptionPlanRequest struct {
 }
 
 type AdminSubscriptionPlan struct {
-	ID               int     `json:"id,omitempty"`
-	Title            string  `json:"title"`
-	Subtitle         string  `json:"subtitle,omitempty"`
-	PriceAmount      float64 `json:"price_amount"`
-	Currency         string  `json:"currency"`
-	DurationUnit     string  `json:"duration_unit"`
-	DurationValue    int     `json:"duration_value"`
-	Enabled          bool    `json:"enabled"`
-	TotalAmount      int64   `json:"total_amount"`
-	AllowBalancePay  bool    `json:"allow_balance_pay"`
-	QuotaResetPeriod string  `json:"quota_reset_period"`
+	ID                      int     `json:"id,omitempty"`
+	Title                   string  `json:"title"`
+	Subtitle                string  `json:"subtitle,omitempty"`
+	PriceAmount             float64 `json:"price_amount"`
+	Currency                string  `json:"currency"`
+	DurationUnit            string  `json:"duration_unit"`
+	DurationValue           int     `json:"duration_value"`
+	Enabled                 bool    `json:"enabled"`
+	TotalAmount             int64   `json:"total_amount"`
+	AllowBalancePay         bool    `json:"allow_balance_pay"`
+	QuotaResetPeriod        string  `json:"quota_reset_period"`
+	QuotaResetCustomSeconds int64   `json:"quota_reset_custom_seconds,omitempty"`
 }
 
 type AdminCreateSubscriptionPlanResult struct {
@@ -231,6 +234,8 @@ type FetchModelsRequest struct {
 
 type UserSubscription struct {
 	ID            int    `json:"id"`
+	Name          string `json:"name"`
+	RequestID     string `json:"request_id"`
 	UserID        int    `json:"user_id"`
 	PlanID        int    `json:"plan_id"`
 	AmountTotal   int64  `json:"amount_total"`
@@ -302,11 +307,12 @@ func (c *Client) Login(ctx context.Context, username string, password string) (S
 		return Session{Require2FA: true}, nil
 	}
 	return Session{
-		UserID:   resp.Data.ID,
-		Username: resp.Data.Username,
-		Role:     resp.Data.Role,
-		Status:   resp.Data.Status,
-		Group:    resp.Data.Group,
+		UserID:      resp.Data.userID(),
+		Username:    resp.Data.username(),
+		Role:        resp.Data.role(),
+		Status:      resp.Data.status(),
+		Group:       resp.Data.group(),
+		AccessToken: resp.Data.AccessToken,
 	}, nil
 }
 
@@ -353,16 +359,20 @@ func (c *Client) Complete2FALogin(ctx context.Context, code string) (Session, er
 		return Session{}, fmt.Errorf("new-api 2fa login failed: %s", resp.Message)
 	}
 	return Session{
-		UserID:   resp.Data.ID,
-		Username: resp.Data.Username,
-		Role:     resp.Data.Role,
-		Status:   resp.Data.Status,
-		Group:    resp.Data.Group,
+		UserID:      resp.Data.userID(),
+		Username:    resp.Data.username(),
+		Role:        resp.Data.role(),
+		Status:      resp.Data.status(),
+		Group:       resp.Data.group(),
+		AccessToken: resp.Data.AccessToken,
 	}, nil
 }
 
-func (c *Client) GenerateAccessToken(ctx context.Context, userID int) (string, error) {
+func (c *Client) GenerateAccessToken(ctx context.Context, userID int, bearerToken ...string) (string, error) {
 	headers := map[string]string{"New-Api-User": strconv.Itoa(userID)}
+	if token := firstNonEmpty(bearerToken...); token != "" {
+		headers["Authorization"] = "Bearer " + token
+	}
 	var resp apiResponse[string]
 	if err := c.do(ctx, http.MethodGet, "/api/user/token", headers, nil, &resp); err != nil {
 		return "", err
@@ -373,12 +383,12 @@ func (c *Client) GenerateAccessToken(ctx context.Context, userID int) (string, e
 	return resp.Data, nil
 }
 
-func (c *Client) ConfirmPaymentCompliance(ctx context.Context, userID int) error {
+func (c *Client) ConfirmPaymentCompliance(ctx context.Context, userID int, bearerToken ...string) error {
 	if userID <= 0 {
 		return fmt.Errorf("new-api user id is required")
 	}
 	var resp apiResponse[json.RawMessage]
-	headers := map[string]string{"New-Api-User": strconv.Itoa(userID)}
+	headers := userHeaders(userID, firstNonEmpty(bearerToken...))
 	if err := c.do(ctx, http.MethodPost, "/api/option/payment_compliance", headers, PaymentComplianceRequest{Confirmed: true}, &resp); err != nil {
 		return err
 	}
@@ -388,11 +398,11 @@ func (c *Client) ConfirmPaymentCompliance(ctx context.Context, userID int) error
 	return nil
 }
 
-func (c *Client) UpdateOption(ctx context.Context, userID int, key string, value any) error {
+func (c *Client) UpdateOption(ctx context.Context, userID int, key string, value any, bearerToken ...string) error {
 	if userID <= 0 {
 		return fmt.Errorf("new-api user id is required")
 	}
-	return c.updateOption(ctx, map[string]string{"New-Api-User": strconv.Itoa(userID)}, key, value)
+	return c.updateOption(ctx, userHeaders(userID, firstNonEmpty(bearerToken...)), key, value)
 }
 
 func (c *Client) GetOptions(ctx context.Context, auth AdminAuth) ([]Option, error) {
@@ -763,6 +773,9 @@ func (c *Client) DeleteUserToken(ctx context.Context, userID int, accessToken st
 	}
 	var resp apiResponse[json.RawMessage]
 	if err := c.do(ctx, http.MethodDelete, fmt.Sprintf("/api/token/%d", tokenID), userHeaders(userID, accessToken), nil, &resp); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil
+		}
 		return err
 	}
 	if !resp.Success {
@@ -809,22 +822,28 @@ func IsUsernameDuplicateError(err error) bool {
 	return strings.Contains(message, "duplicate entry") && strings.Contains(message, "users.username")
 }
 
-func (c *Client) AdminCreateUserSubscription(ctx context.Context, auth AdminAuth, userID int, req AdminCreateUserSubscriptionRequest) error {
+func (c *Client) AdminCreateUserSubscription(ctx context.Context, auth AdminAuth, userID int, req AdminCreateUserSubscriptionRequest) (UserSubscription, error) {
 	if userID <= 0 {
-		return fmt.Errorf("new-api user id is required")
+		return UserSubscription{}, fmt.Errorf("new-api user id is required")
 	}
 	if req.PlanID <= 0 {
-		return fmt.Errorf("new-api subscription plan id is required")
+		return UserSubscription{}, fmt.Errorf("new-api subscription plan id is required")
 	}
-	var resp apiResponse[json.RawMessage]
+	if strings.TrimSpace(req.RequestID) == "" {
+		return UserSubscription{}, fmt.Errorf("new-api subscription request id is required")
+	}
+	var resp apiResponse[UserSubscription]
 	path := fmt.Sprintf("/api/subscription/admin/users/%d/subscriptions", userID)
 	if err := c.do(ctx, http.MethodPost, path, adminHeaders(auth), req, &resp); err != nil {
-		return err
+		return UserSubscription{}, err
 	}
 	if !resp.Success {
-		return fmt.Errorf("new-api create user subscription failed: %s", resp.Message)
+		return UserSubscription{}, fmt.Errorf("new-api create user subscription failed: %s", resp.Message)
 	}
-	return nil
+	if resp.Data.ID <= 0 {
+		return UserSubscription{}, fmt.Errorf("new-api create user subscription returned an invalid subscription id")
+	}
+	return resp.Data, nil
 }
 
 func (c *Client) AdminCreateSubscriptionPlan(ctx context.Context, auth AdminAuth, req AdminCreateSubscriptionPlanRequest) (AdminCreateSubscriptionPlanResult, error) {
@@ -1104,6 +1123,9 @@ func (c *Client) do(ctx context.Context, method string, path string, headers map
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
+		if resp.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("%w: new-api %s %s returned %d", ErrNotFound, method, path, resp.StatusCode)
+		}
 		return fmt.Errorf("new-api %s %s returned %d", method, path, resp.StatusCode)
 	}
 	if out == nil {
@@ -1160,12 +1182,64 @@ type apiResponse[T any] struct {
 }
 
 type loginData struct {
-	ID         int    `json:"id"`
-	Username   string `json:"username"`
-	Role       int    `json:"role"`
-	Status     int    `json:"status"`
-	Group      string `json:"group"`
-	Require2FA bool   `json:"require_2fa"`
+	ID          int    `json:"id"`
+	Username    string `json:"username"`
+	Role        int    `json:"role"`
+	Status      int    `json:"status"`
+	Group       string `json:"group"`
+	AccessToken string `json:"access_token"`
+	Require2FA  bool   `json:"require_2fa"`
+	User        struct {
+		ID       int    `json:"id"`
+		Username string `json:"username"`
+		Role     int    `json:"role"`
+		Status   int    `json:"status"`
+		Group    string `json:"group"`
+	} `json:"user"`
+}
+
+func (d loginData) userID() int {
+	if d.User.ID != 0 {
+		return d.User.ID
+	}
+	return d.ID
+}
+
+func (d loginData) username() string {
+	if d.User.Username != "" {
+		return d.User.Username
+	}
+	return d.Username
+}
+
+func (d loginData) role() int {
+	if d.User.Role != 0 {
+		return d.User.Role
+	}
+	return d.Role
+}
+
+func (d loginData) status() int {
+	if d.User.Status != 0 {
+		return d.User.Status
+	}
+	return d.Status
+}
+
+func (d loginData) group() string {
+	if d.User.Group != "" {
+		return d.User.Group
+	}
+	return d.Group
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 type pagedUsers struct {
