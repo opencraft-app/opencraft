@@ -215,6 +215,51 @@ func TestClientGenerateAccessTokenUsesLoginBearer(t *testing.T) {
 	}
 }
 
+func TestClientComplete2FALoginUsesFlowToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/user/login":
+			writeJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"require_2fa": true,
+				"flow_token":  "flow-123",
+			}})
+		case "POST /api/user/login/2fa":
+			var req TwoFALoginRequest
+			decodeJSON(t, r, &req)
+			if req.FlowToken != "flow-123" || req.Code != "123456" {
+				t.Fatalf("unexpected 2fa login request: %+v", req)
+			}
+			writeJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"id":       1,
+				"username": "set-root",
+				"role":     100,
+				"status":   1,
+				"group":    "default",
+			}})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	session, err := client.Login(t.Context(), "set-root", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !session.Require2FA || session.TwoFAFlowToken != "flow-123" {
+		t.Fatalf("login session = %+v, want pending 2fa flow", session)
+	}
+	session, err = client.Complete2FALogin(t.Context(), session.TwoFAFlowToken, "123456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.UserID != 1 || session.Username != "set-root" {
+		t.Fatalf("completed session = %+v", session)
+	}
+}
+
 func TestClientConfirmPaymentComplianceUsesDashboardSession(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

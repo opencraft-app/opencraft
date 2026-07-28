@@ -232,19 +232,18 @@ func TestBootstrapSetCompletesTwoFALoginWhenManagedRootAlreadyRequiresIt(t *test
 		case "GET /api/setup":
 			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"status": true, "root_init": true}})
 		case "POST /api/user/login":
-			http.SetCookie(w, &http.Cookie{Name: "session", Value: "pending-2fa", Path: "/"})
-			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"require_2fa": true}})
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"require_2fa": true,
+				"flow_token":  "flow-123",
+			}})
 		case "POST /api/user/login/2fa":
-			cookie, err := r.Cookie("session")
-			if err != nil || cookie.Value != "pending-2fa" {
-				t.Fatalf("missing pending 2FA session cookie: cookie=%v err=%v", cookie, err)
-			}
 			var req struct {
-				Code string `json:"code"`
+				Code      string `json:"code"`
+				FlowToken string `json:"flow_token"`
 			}
 			decodeTestJSON(t, r, &req)
-			if len(req.Code) != 6 || strings.Trim(req.Code, "0123456789") != "" {
-				t.Fatalf("unexpected 2FA login code %q", req.Code)
+			if req.FlowToken != "flow-123" || len(req.Code) != 6 || strings.Trim(req.Code, "0123456789") != "" {
+				t.Fatalf("unexpected 2FA login request %+v", req)
 			}
 			completed2FA = true
 			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default"}})

@@ -1147,15 +1147,18 @@ func TestChannelBundleApplyCompletesTwoFALoginForOptionSync(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method + " " + r.URL.Path {
 		case "POST /api/user/login":
-			http.SetCookie(w, &http.Cookie{Name: "session", Value: "need-2fa", Path: "/"})
-			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"require_2fa": true}})
+			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"require_2fa": true,
+				"flow_token":  "flow-123",
+			}})
 		case "POST /api/user/login/2fa":
 			var req struct {
-				Code string `json:"code"`
+				Code      string `json:"code"`
+				FlowToken string `json:"flow_token"`
 			}
 			decodeGatewayChannelJSON(t, r, &req)
-			if strings.TrimSpace(req.Code) == "" {
-				t.Fatal("2fa code is required")
+			if req.FlowToken != "flow-123" || strings.TrimSpace(req.Code) == "" {
+				t.Fatalf("unexpected 2fa login request: %+v", req)
 			}
 			twoFACompleted = true
 			writeGatewayChannelJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 1, "username": "set-root", "role": 100, "status": 1, "group": "default"}})
