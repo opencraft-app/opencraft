@@ -149,3 +149,5 @@ openspec/spec.md
 .DS_Store
 frontend/.support-feedback/
 frontend/.next-global/
+frontend/.codebuddy/.cache
+frontend/.workflow/
