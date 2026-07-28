@@ -114,7 +114,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "usr_31b0bd10d198d7aa7012fbf0",
         )
 
-    def test_shprod_ctl_routes_only_the_llmgateway_canary_to_shanghai(self) -> None:
+    def test_shprod_ctl_routes_new_users_and_bot_creates_to_llmgateway(self) -> None:
         secret = yaml.safe_load(
             (REPO_ROOT / "argocd/secrets/shprod/ctl-runtime-secrets.sops.yaml").read_text()
         )
@@ -123,7 +123,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(values.get("CTL_LLMGATEWAY_BASE_URL"), "https://token-admin.lightvela.com")
         self.assertEqual(values.get("CTL_LLMGATEWAY_DEFAULT_BASE_URL"), "https://token.lightvela.com/v1")
         self.assertEqual(values.get("CTL_LLMGATEWAY_DEFAULT_MODEL_ID"), "auto")
-        self.assertEqual(values.get("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"), "usr_58b6bb1f68ba7f46584bd282")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"), "*")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST"), "*")
         self.assertEqual(
             values.get("CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST"),
             "usr_58b6bb1f68ba7f46584bd282",
