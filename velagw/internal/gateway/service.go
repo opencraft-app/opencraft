@@ -3230,27 +3230,25 @@ func (s *Service) ProxyConsoleHTTP(w http.ResponseWriter, r *http.Request, setID
 		return outReq
 	}
 
-	resp, body, err := s.roundTripConsoleRequest(buildRequest(set))
+	var resp *http.Response
+	var body []byte
+	if r.Method == http.MethodPost && upstreamPath == "/api/user/auth/refresh" {
+		resp, body, err = s.roundTripConsoleDashboardSession(r.Context(), set, r, upstreamPath, bodyBytes)
+	} else {
+		resp, body, err = s.roundTripConsoleRequest(buildRequest(set))
+		if err == nil && isConsoleAPIPath(upstreamPath) && isInvalidAccessTokenResponse(resp.StatusCode, body) {
+			if freshSet, refreshErr := s.BootstrapSet(r.Context(), setID); refreshErr == nil {
+				set = freshSet
+				resp, body, err = s.roundTripConsoleRequest(buildRequest(set))
+			}
+		}
+		if err == nil && isConsoleAPIPath(upstreamPath) && isDashboardSessionRequiredResponse(resp.StatusCode, body) {
+			resp, body, err = s.roundTripConsoleDashboardSession(r.Context(), set, r, upstreamPath, bodyBytes)
+		}
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
-	}
-	if isConsoleAPIPath(upstreamPath) && isInvalidAccessTokenResponse(resp.StatusCode, body) {
-		if freshSet, refreshErr := s.BootstrapSet(r.Context(), setID); refreshErr == nil {
-			set = freshSet
-			resp, body, err = s.roundTripConsoleRequest(buildRequest(set))
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadGateway)
-				return
-			}
-		}
-	}
-	if isConsoleAPIPath(upstreamPath) && isDashboardSessionRequiredResponse(resp.StatusCode, body) {
-		resp, body, err = s.roundTripConsoleDashboardSession(r.Context(), set, r, upstreamPath, bodyBytes)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
-		}
 	}
 	copyHeader(w.Header(), resp.Header)
 	if isHTML(resp.Header.Get("Content-Type")) {
