@@ -1,0 +1,58 @@
+server:
+  port: 18080
+  admin_token: ""
+  internal_service_token: ""
+  admin_ip_whitelist: []
+  max_request_body_size: 10485760
+
+portkey:
+  base_url: "http://portkey:8787"
+  strategy:
+    mode: "fallback"
+    on_status_codes: [429, 500, 502, 503, 504]
+    retry_attempts: 3
+    retry_status_codes: [429, 503]
+
+database:
+  dsn: ""
+
+redis:
+  addr: "redis:6379"
+  password: ""
+
+billing:
+  async_log: true
+  low_balance_threshold: 10000
+  default_reservation_tokens: 4096
+
+rate_limit:
+  defaults:
+    - window: "5h"
+      max_requests: 1200
+      label: "5h"
+    - window: "1w"
+      max_requests: 9000
+      label: "1w"
+    - window: "1M"
+      max_requests: 18000
+      label: "1M"
+
+circuit_breaker:
+  failure_threshold: 5
+  cooldown_duration_s: 30
+
+gateway:
+  max_inflight_budget: 0
+  stream_request_weight: 3
+  non_stream_request_weight: 1
+  overload_status_code: 503
+
+provider_cooldown:
+  default_429_ttl_s: 15
+  max_429_ttl_s: 60
+
+registry:
+  token: ""
+  heartbeat_interval_s: 30
+  stale_timeout_s: 90
+  health_check_interval_s: 60

@@ -13,13 +13,11 @@ package instance
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 
-	pllmgateway "ctl/pkg/adapter/llmgateway"
 	psandbox "ctl/pkg/adapter/sandbox"
-	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
 	modelinstance "ctl/pkg/model/instance"
@@ -27,6 +25,36 @@ import (
 
 	"go.uber.org/zap"
 )
+
+func TestRunRenewInstanceTaskIgnoresLegacyTargetGatewayPayload(t *testing.T) {
+	var payload common.RenewInstanceTaskPayload
+	if err := json.Unmarshal([]byte(`{
+		"instance_id":"ins-renew-running",
+		"pass_id":"pass-renew-running",
+		"target_gateway":"llm_gateway"
+	}`), &payload); err != nil {
+		t.Fatalf("unmarshal legacy payload: %v", err)
+	}
+
+	dao := &renewInstanceDaoStub{entity: &modelinstance.Entity{
+		Id:         200,
+		InstanceId: "ins-renew-running",
+		UserId:     "user-renew-running",
+		Status:     modelinstance.InstanceStatusRunning,
+		SandboxId:  "sbx-renew-running",
+	}}
+	l := &logic{
+		instanceDao: dao,
+		logger:      zap.NewNop(),
+	}
+
+	if err := l.RunRenewInstanceTask(pctx.NewContext(nil).WithUserID("user-renew-running"), &payload); err != nil {
+		t.Fatalf("legacy target_gateway must not trigger renewal migration: %v", err)
+	}
+	if dao.transitionCalls != 0 {
+		t.Fatalf("running instance should stay unchanged, transition calls = %d", dao.transitionCalls)
+	}
+}
 
 // renewInstanceDaoStub 仅实现 RunRenewInstanceTask 走过的两个 DAO 方法。
 //
@@ -39,71 +67,6 @@ type renewInstanceDaoStub struct {
 	transitionCalls  int
 	lastFromStatuses []string
 	lastTargetStatus string
-}
-
-func TestRunRenewInstanceTaskMigratesRunningAgentToLLMGateway(t *testing.T) {
-	installCreateTaskAiGatewayConfig(t)
-
-	dao := &createTaskInstanceDaoStub{entity: &modelinstance.Entity{
-		Id:             201,
-		InstanceId:     "ins-renew-migrate",
-		UserId:         "user-renew-migrate",
-		Status:         modelinstance.InstanceStatusRunning,
-		SandboxId:      "sbx-renew-migrate",
-		AiGatewayKeyID: "legacy-key",
-	}}
-	sandbox := &createTaskSandboxAdapterStub{}
-	llm := &createTaskLLMGatewayAdapterStub{createResp: &pllmgateway.CreateApiKeyResponse{
-		KeyID:     "llm-key-new",
-		KeyPrefix: "sk-lgw-new",
-		APIKey:    "sk-lgw-new-secret",
-	}}
-	l := &logic{
-		instanceDao:                  dao,
-		sandboxAdapter:               sandbox,
-		llmGatewayAdapter:            llm,
-		logger:                       zap.NewNop(),
-		legacyPassEntitlementEnsurer: legacyPassEntitlementAlreadyReady,
-	}
-
-	err := l.RunRenewInstanceTask(
-		pctx.NewContext(nil).WithUserID("user-renew-migrate"),
-		&common.RenewInstanceTaskPayload{
-			InstanceID:    "ins-renew-migrate",
-			PassID:        "pass-renew-migrate",
-			TargetGateway: "llm_gateway",
-		},
-	)
-	if err != nil {
-		t.Fatalf("migrate running agent during renewal: %v", err)
-	}
-	if len(llm.ensureCalls) != 1 || llm.createCalls != 1 {
-		t.Fatalf("expected llmgateway user/key preparation, ensure=%+v create=%d", llm.ensureCalls, llm.createCalls)
-	}
-	if dao.entity.AiGatewayKeyID != "llm-key-new" {
-		t.Fatalf("persisted key id = %q, want llm-key-new", dao.entity.AiGatewayKeyID)
-	}
-	if len(sandbox.processCalls) != 2 {
-		t.Fatalf("expected cli bootstrap plus atomic model-save/restart command, got %d calls", len(sandbox.processCalls))
-	}
-	command := sandbox.processCalls[1].Args[2]
-	for _, fragment := range []string{
-		"acli provider save",
-		"https://model.internal/v1",
-		"sk-lgw-new-secret",
-		"acli model switch --model",
-		"acli gateway restart",
-	} {
-		if !strings.Contains(command, fragment) {
-			t.Fatalf("migration command missing %q: %s", fragment, command)
-		}
-	}
-	if got := llm.revoked; len(got) != 0 {
-		t.Fatalf("renewal migration must retain old key for natural expiry, revoked=%+v", got)
-	}
-	if config.ServerConf.AdapterConfig.LLMGateway.DefaultBaseURL != "https://model.internal/v1" {
-		t.Fatal("test setup lost llmgateway runtime configuration")
-	}
 }
 
 func (s *renewInstanceDaoStub) GetByInstanceID(_ pctx.Context, _ string) (*modelinstance.Entity, error) {

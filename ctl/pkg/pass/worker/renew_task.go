@@ -211,27 +211,6 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("calc new expired_time: %w", err)
 	}
-	migration, err := logicpass.PrepareRenewalGatewayMigration(context.Background(), logicpass.RenewalGatewayMigrationInput{
-		UserID:      userID,
-		PassID:      t.in.PassID,
-		BundleID:    passEntity.BundleID,
-		TradeFlowID: t.in.TradeFlowID,
-		TimeSpan:    t.in.TimeSpan,
-		TimeUnit:    t.in.TimeUnit,
-		NewExpired:  newExpired,
-	})
-	if err != nil {
-		return "", fmt.Errorf("prepare renewal gateway migration: %w", err)
-	}
-	migrationRequired := migration != nil && migration.Required
-	targetGateway := ""
-	childMaxExecuteCount := renewInstanceTaskMaxExecuteCount
-	if migrationRequired {
-		targetGateway = logicpass.RenewalMigrationTargetGateway
-		// Migration is forward-only. Once one Agent has accepted the new key,
-		// failed siblings must keep retrying rather than rolling the user back.
-		childMaxExecuteCount = renewPassTaskMaxExecuteCount
-	}
 
 	// 权益恢复必须先于实例恢复，避免 Agent 先启动后命中零额度窗口。
 	if err := t.ensureEntitlementBeforeResume(logger, passEntity); err != nil {
@@ -275,21 +254,20 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 		}
 		// instance 处于 Running/Deleted/Failed 终态时跳过派发
 		// 续费子 task 的目标是 Paused → Running（与 isolate 子 task 的 Running → Paused 对偶反向）
-		if (!migrationRequired && inst.Status == modelinstance.InstanceStatusRunning) ||
+		if inst.Status == modelinstance.InstanceStatusRunning ||
 			inst.Status == modelinstance.InstanceStatusDeleted ||
 			inst.Status == modelinstance.InstanceStatusFailed {
 			continue
 		}
-		if err := instanceasync.EnqueueRenewInstanceTaskWithTarget(
+		if err := instanceasync.EnqueueRenewInstanceTask(
 			ctx,
 			inst.InstanceId,
 			t.in.PassID,
 			userID,
 			t.in.OperationID,
 			t.TaskId,
-			targetGateway,
 			renewInstanceTaskExecuteInterval,
-			childMaxExecuteCount,
+			renewInstanceTaskMaxExecuteCount,
 		); err != nil {
 			// 派发失败让父 task 重试整轮（下一次 execute 会基于 child_registry 跳过已派发的）
 			return "", fmt.Errorf("enqueue renew instance task for %s: %w", inst.InstanceId, err)
@@ -350,18 +328,7 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 	//     会让 ctl 与 jifei 的实际计费时长漂移。
 	//
 	// 防御：passEntity.ExpiredTime 在 active / isolated 续费场景下必非零（DB NOT NULL 约束）
-	var updated bool
-	if migrationRequired {
-		updated, err = logicpass.CommitRenewalGatewayMigration(
-			t.in.PassID,
-			newExpired,
-			userID,
-			migration.SubscriptionID,
-			migration.PlanID,
-		)
-	} else {
-		updated, err = passDao.FinalizeRenewal(t.in.PassID, newExpired)
-	}
+	updated, err := passDao.FinalizeRenewal(t.in.PassID, newExpired)
 	if err != nil {
 		return "", fmt.Errorf("FinalizeRenewal: %w", err)
 	}
@@ -375,7 +342,7 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 	)
 
 	// legacy ai-gateway 仍对齐结束时间；LLMGateway 的长期订阅在 helper 内直接 no-op。
-	if !migrationRequired && t.in.UserID != "" {
+	if t.in.UserID != "" {
 		if err := logicpass.AlignAiGatewaySubscriptionPeriodEnd(logger, t.in.UserID, t.in.PassID, newExpired); err != nil {
 			return "", fmt.Errorf("extend ai-gateway subscription: %w", err)
 		}

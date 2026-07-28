@@ -1,0 +1,203 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ctl
+
+resources:
+  - ../../../ctl/k8s/base/manifests.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: ctl-platform-values
+    literals:
+      - CTL_MIGRATION_JOB_NAME=ctl-migrate
+      - CTL_TEST_MYSQL_HOST=mysql.localstack-system.svc.cluster.local
+      - SHADOW_ACCOUNT_ENABLED=true
+      - SHADOW_BINDING_REQUIRED=false
+      - LIGHTVELA_SITE_KIND=cn
+  - name: ctl-conf-common
+    files:
+      - server_conf.toml=../../../argocd/services/ctl/beijing-sandbox/conf/server_conf.toml
+  - name: ctl-conf-rewrite
+    files:
+      - server_conf_rewrite.toml=server_conf_rewrite.toml
+  - name: ctl-soul-templates
+    files:
+      - SOUL-gentle.md=../../../ctl/assets/souls/SOUL-gentle.md
+      - SOUL-humor.md=../../../ctl/assets/souls/SOUL-humor.md
+      - SOUL-pro.md=../../../ctl/assets/souls/SOUL-pro.md
+  - name: ctl-migrations-runtime
+    files:
+      - ../../../ctl/migrations/000001_init_schema.down.sql
+      - ../../../ctl/migrations/000001_init_schema.up.sql
+      - ../../../ctl/migrations/000002_create_instances.down.sql
+      - ../../../ctl/migrations/000002_create_instances.up.sql
+      - ../../../ctl/migrations/000003_create_user_resource_quota.down.sql
+      - ../../../ctl/migrations/000003_create_user_resource_quota.up.sql
+      - ../../../ctl/migrations/000004_create_tasks.down.sql
+      - ../../../ctl/migrations/000004_create_tasks.up.sql
+      - ../../../ctl/migrations/000005_rename_tasks_to_operation_histories.down.sql
+      - ../../../ctl/migrations/000005_rename_tasks_to_operation_histories.up.sql
+      - ../../../ctl/migrations/000006_create_async_tasks.down.sql
+      - ../../../ctl/migrations/000006_create_async_tasks.up.sql
+      - ../../../ctl/migrations/000007_create_channel_login_sessions.down.sql
+      - ../../../ctl/migrations/000007_create_channel_login_sessions.up.sql
+      - ../../../ctl/migrations/000008_add_instance_ai_gateway_key_id.down.sql
+      - ../../../ctl/migrations/000008_add_instance_ai_gateway_key_id.up.sql
+      - ../../../ctl/migrations/000009_enforce_single_active_channel_login_session.down.sql
+      - ../../../ctl/migrations/000009_enforce_single_active_channel_login_session.up.sql
+      - ../../../ctl/migrations/000010_create_instance_birth_profiles.down.sql
+      - ../../../ctl/migrations/000010_create_instance_birth_profiles.up.sql
+      - ../../../ctl/migrations/000011_add_instance_gateway_auth_token.down.sql
+      - ../../../ctl/migrations/000011_add_instance_gateway_auth_token.up.sql
+      - ../../../ctl/migrations/000012_add_instance_display_name.down.sql
+      - ../../../ctl/migrations/000012_add_instance_display_name.up.sql
+      - ../../../ctl/migrations/000013_create_bundle.down.sql
+      - ../../../ctl/migrations/000013_create_bundle.up.sql
+      - ../../../ctl/migrations/000014_create_pass.down.sql
+      - ../../../ctl/migrations/000014_create_pass.up.sql
+      - ../../../ctl/migrations/000015_create_id_gen.down.sql
+      - ../../../ctl/migrations/000015_create_id_gen.up.sql
+      - ../../../ctl/migrations/000016_add_bundle_credit.down.sql
+      - ../../../ctl/migrations/000016_add_bundle_credit.up.sql
+      - ../../../ctl/migrations/000017_add_bundle_ai_gateway_plans.down.sql
+      - ../../../ctl/migrations/000017_add_bundle_ai_gateway_plans.up.sql
+      - ../../../ctl/migrations/000018_add_pass_renew_flag.down.sql
+      - ../../../ctl/migrations/000018_add_pass_renew_flag.up.sql
+      - ../../../ctl/migrations/000019_add_pass_status.down.sql
+      - ../../../ctl/migrations/000019_add_pass_status.up.sql
+      - ../../../ctl/migrations/000020_create_history_pass.down.sql
+      - ../../../ctl/migrations/000020_create_history_pass.up.sql
+      - ../../../ctl/migrations/000021_create_snapshot.down.sql
+      - ../../../ctl/migrations/000021_create_snapshot.up.sql
+      - ../../../ctl/migrations/000022_add_bundle_instance_spec_id.down.sql
+      - ../../../ctl/migrations/000022_add_bundle_instance_spec_id.up.sql
+      - ../../../ctl/migrations/000023_add_bundle_type.down.sql
+      - ../../../ctl/migrations/000023_add_bundle_type.up.sql
+
+secretGenerator:
+  - name: ctl-runtime-secrets
+    envs:
+      - secrets.defaults.env
+  - name: ctl-migrate-runtime-secrets
+    envs:
+      - migrate-secrets.defaults.env
+
+images:
+  - name: REPLACE_CTL_IMAGE
+    newName: lightclaw-local/ctl
+    newTag: dev
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: ctl-platform-values
+      fieldPath: data.CTL_MIGRATION_JOB_NAME
+    targets:
+      - select:
+          kind: Job
+          name: REPLACE_CTL_MIGRATION_JOB_NAME
+        fieldPaths:
+          - metadata.name
+  - source:
+      kind: ConfigMap
+      name: ctl-platform-values
+      fieldPath: data.CTL_TEST_MYSQL_HOST
+    targets:
+      - select:
+          kind: Job
+          name: REPLACE_CTL_MIGRATION_JOB_NAME
+        fieldPaths:
+          - spec.template.spec.initContainers.0.env.0.value
+
+patches:
+  - target:
+      kind: ServiceAccount
+      name: default
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: default
+  - target:
+      kind: Job
+      name: REPLACE_CTL_MIGRATION_JOB_NAME
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: replace
+        path: /spec/template/spec/hostNetwork
+        value: false
+      - op: replace
+        path: /spec/template/spec/dnsPolicy
+        value: ClusterFirst
+  - target:
+      kind: Deployment
+      name: ctl-api
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: replace
+        path: /spec/template/metadata/annotations/ctl.clawhub.dev~1redeploy-at
+        value: localstack
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  - target:
+      kind: Deployment
+      name: ctl-service
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: replace
+        path: /spec/template/metadata/annotations/ctl.clawhub.dev~1redeploy-at
+        value: localstack
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  - target:
+      kind: Deployment
+      name: ctl-bypass
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: replace
+        path: /spec/template/metadata/annotations/ctl.clawhub.dev~1redeploy-at
+        value: localstack
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  - target:
+      kind: Service
+      name: ctl-api-internal
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: ctl-api-internal
+  - target:
+      kind: HorizontalPodAutoscaler
+    patch: |-
+      $patch: delete
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: unused
+  - target:
+      kind: ServiceMonitor
+      name: ctl-workloads
+    patch: |-
+      $patch: delete
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: ctl-workloads
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: lightclaw-localstack
+    includeSelectors: false
+    includeTemplates: true

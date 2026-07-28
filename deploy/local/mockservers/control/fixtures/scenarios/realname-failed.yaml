@@ -1,0 +1,9 @@
+id: realname-failed
+name: 实名不通过
+description: 腾讯云身份证二要素返回身份不匹配。
+tags:
+  - auth
+  - realname
+overrides:
+  tencentcloud.faceid.id-card-verification:
+    preset: identity-mismatch

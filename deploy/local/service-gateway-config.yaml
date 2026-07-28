@@ -1,0 +1,79 @@
+auth_service_url: http://lightclaw-auth:8081
+allowed_origins:
+  - "*"
+routes:
+  - name: users
+    prefix: /users
+    methods: [GET, OPTIONS]
+    upstream: http://lightclaw-auth:8081
+    access: public
+
+  - name: auth
+    prefix: /auth
+    methods: [GET, POST, PUT, DELETE, OPTIONS]
+    upstream: http://lightclaw-auth:8081
+    access: authenticated
+    response_header_timeout: 60s
+    public_allow:
+      - method: POST
+        path: /auth/password/sign-in
+      - method: POST
+        path: /auth/password/sign-up
+      - method: POST
+        path: /auth/password/forgot
+      - method: POST
+        path: /auth/sms/send
+      - method: POST
+        path: /auth/sms/verify
+      - method: POST
+        path: /auth/invite/validate
+      - method: POST
+        path: /auth/invite/prepare
+      - method: GET
+        path: /auth/oauth/qq/start
+      - method: GET
+        path: /auth/oauth/qq/callback
+      - method: GET
+        path: /auth/oauth/wechat/start
+      - method: GET
+        path: /auth/oauth/wechat/callback
+      - method: GET
+        path: /auth/oauth/google/start
+      - method: GET
+        path: /auth/oauth/google/callback
+      - method: GET
+        path: /auth/oauth/github/start
+      - method: GET
+        path: /auth/oauth/github/callback
+
+  - name: sandbox
+    prefix: /sandboxes
+    methods: [GET, POST, PUT, DELETE, OPTIONS]
+    upstream: http://sandbox-api:8080
+    access: public
+    response_header_timeout: 60s
+
+  - name: sandbox-v2
+    prefix: /v2/sandboxes
+    methods: [GET, OPTIONS]
+    upstream: http://sandbox-api:8080
+    access: public
+
+  - name: subscription
+    prefix: /subscriptions
+    methods: [GET, POST, OPTIONS]
+    upstream: http://subscription:8086
+    access: public
+
+  - name: ai-gateway-admin
+    prefix: /api/admin
+    methods: [GET, POST, PUT, DELETE, OPTIONS]
+    upstream: http://ai-gateway:18080
+    access: admin
+
+  - name: ai-gateway-openai
+    prefix: /v1
+    methods: [GET, POST, PUT, DELETE, OPTIONS]
+    upstream: http://ai-gateway:18080
+    access: public
+    response_header_timeout: 60s

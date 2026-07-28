@@ -106,6 +106,10 @@ type TencentCloudProvider struct {
 	cbsClient *cbs.Client
 	cred      *common.Credential
 	cfg       TencentConfig
+
+	startTerminalSessionFunc func(context.Context, string, string) (TerminalSession, error)
+	tatForwardURLFunc        func(string) string
+	tatAuthDelay             time.Duration
 }
 
 const (

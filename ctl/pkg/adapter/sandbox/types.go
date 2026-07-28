@@ -161,6 +161,39 @@ type ProcessStreamEvent struct {
 	Ended    bool
 }
 
+type PtyExecStreamRequest struct {
+	Command          string `json:"command"`
+	Username         string `json:"username"`
+	WorkingDirectory string `json:"working_directory"`
+	TimeoutSeconds   int    `json:"timeout_seconds"`
+}
+
+type PtyExecStreamEvent struct {
+	Type        string `json:"type"`
+	ExecutionID string `json:"execution_id,omitempty"`
+	Index       int    `json:"index,omitempty"`
+	Chunk       string `json:"chunk,omitempty"`
+	Status      string `json:"status,omitempty"`
+	ExitCode    int64  `json:"exit_code,omitempty"`
+	Code        string `json:"code,omitempty"`
+	Message     string `json:"message,omitempty"`
+}
+
+type PtyExecStreamError struct {
+	Code    string
+	Message string
+}
+
+func (e *PtyExecStreamError) Error() string {
+	if e == nil {
+		return "tat pty command stream failed"
+	}
+	if e.Message == "" {
+		return "tat pty command stream failed: " + e.Code
+	}
+	return "tat pty command stream failed: " + e.Message
+}
+
 // APIError is the upstream API error response format.
 type APIError struct {
 	Code    int    `json:"code"`

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildEffectiveWindowFromInputs,
   buildDeliverString,
+  buildHermesSendCommand,
   buildHermesSendTarget,
   buildHermesSendTestCommand,
   buildScheduleString,
@@ -380,16 +381,31 @@ describe("parseInitialDeliver", () => {
 describe("buildHermesSendTestCommand", () => {
   it("uses the platform home target when chat id is empty", () => {
     expect(buildHermesSendTarget("feishu", "")).toBe("feishu");
-    expect(buildHermesSendTestCommand("feishu", "", "deploy finished")).toBe(
+    expect(buildHermesSendTestCommand("feishu", "", "deploy finished")).toContain(
       "hermes send --to 'feishu' 'deploy finished'",
     );
   });
 
   it("uses platform:chat_id target when chat id is provided", () => {
     expect(buildHermesSendTarget("feishu", " oc_123 ")).toBe("feishu:oc_123");
-    expect(buildHermesSendTestCommand("feishu", "oc_123", "it's ready")).toBe(
+    expect(buildHermesSendTestCommand("feishu", "oc_123", "it's ready")).toContain(
       "hermes send --to 'feishu:oc_123' 'it'\\''s ready'",
     );
+  });
+
+  it("trusts the hermes send exit code instead of grepping natural-language output", () => {
+    const command = buildHermesSendTestCommand("qqbot", "", "上次 failed 原因已修复");
+
+    expect(command).toContain("status=$?");
+    expect(command).toContain("if [ $status -ne 0 ]; then exit $status; fi");
+    expect(command).not.toContain("grep -Eiq");
+  });
+
+  it("keeps stderr redirection outside hermes send arguments", () => {
+    const command = buildHermesSendCommand("qqbot", "", "测试消息");
+
+    expect(command).toContain("output=$(hermes send --to 'qqbot' '测试消息' 2>&1)");
+    expect(command).not.toContain("'2>&1'");
   });
 });
 
@@ -462,7 +478,7 @@ describe("parseEnabledHermesChannels", () => {
 });
 
 describe("isHermesNotificationChannelConfigured", () => {
-  it("treats unknown channel status as configurable so users can still try", () => {
+  it("keeps channels visible until the connected status is known", () => {
     expect(isHermesNotificationChannelConfigured(null, "feishu")).toBe(true);
   });
 

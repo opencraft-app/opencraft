@@ -195,27 +195,27 @@ func TestParseAdapterConfLoadsLLMGatewayNewUserAllowlist(t *testing.T) {
 	}
 }
 
-func TestParseAdapterConfLoadsLLMGatewayRenewalMigrationAllowlist(t *testing.T) {
+func TestParseAdapterConfLoadsLLMGatewayBotCreateMigrationAllowlist(t *testing.T) {
 	original := ServerConf
 	t.Cleanup(func() { ServerConf = original })
 	t.Setenv("CTL_LLMGATEWAY_BASE_URL", "https://llmgateway.example.com")
 	t.Setenv("CTL_LLMGATEWAY_ADMIN_TOKEN", "admin")
 	t.Setenv("CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN", "internal")
-	t.Setenv("CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST", " *,usr-canary,* ")
+	t.Setenv("CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST", " usr-canary,usr-second,usr-canary ")
 	ServerConf = &GlobalConfig{AdapterConfig: &AdapterConfig{}}
 
 	parseAdapterConf()
 
-	got := ServerConf.AdapterConfig.LLMGateway.RenewalMigrationUserAllowlist
-	want := []string{"*", "usr-canary"}
+	got := ServerConf.AdapterConfig.LLMGateway.BotCreateMigrationUserAllowlist
+	want := []string{"usr-canary", "usr-second"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("RenewalMigrationUserAllowlist = %#v, want %#v", got, want)
+		t.Fatalf("BotCreateMigrationUserAllowlist = %#v, want %#v", got, want)
 	}
-	if !LLMGatewayAllowsRenewalMigration("usr-any") {
-		t.Fatal("wildcard renewal migration allowlist should match every non-empty user")
+	if !LLMGatewayAllowsBotCreateMigration("usr-canary") {
+		t.Fatal("explicit bot-create migration allowlist should match the configured user")
 	}
-	if LLMGatewayAllowsRenewalMigration("") {
-		t.Fatal("wildcard renewal migration allowlist must not match an empty user id")
+	if LLMGatewayAllowsBotCreateMigration("usr-other") {
+		t.Fatal("bot-create migration allowlist must not match an unconfigured user")
 	}
 }
 

@@ -3,20 +3,18 @@
  *
  * ## 背景
  *
- * SDK 默认走腾讯云 TAT OpenAPI（`sandboxAdapter.ExecCommand`）执行脚本。
- * 但 mono 的存量业务（channel 配置、onboard、debug 排错等）都**刻意绕开**
- * TAT，统一走沙箱内置的 **envd process stream**：
- *   - 直连 sandbox agent，延迟毫秒级（vs TAT 秒级轮询）
- *   - 支持流式 stdout/stderr（vs TAT 只能轮询 Output 字段）
- *   - 不占腾讯云配额，不受云侧 QPS 限制
+ * SDK 默认走腾讯云 TAT RunCommand API 执行脚本。mono2 统一通过 debug/exec
+ * 入口；国际站由后端建立 TAT PTY 会话并直接发送 PtyExecCmdStream，国内站
+ * 保持原 envd 执行链路。
  *
  * 后端已经暴露了一个通用入口：
  *
- *   POST /v1/instances/:botId/debug/exec    body: { command: string }
+ *   POST /v1/instances/:botId/debug/exec
+ *   body: { command: string, run_as_user: "agentuser", execution_backend?: "tat" }
  *
  * 后端内部自动：
  *   1. 查出该 bot 对应的 sandbox 与 cloud instance
- *   2. 走 envd process stream 执行命令
+ *   2. 国际站走 TAT PtyExecCmdStream，国内站走 envd process stream
  *   3. 等命令结束后一次性返回 `{ status, exit_code, output, invocation_id, ... }`
  *
  * 本适配器把 SDK 的 TAT 语义桥接到 debug/exec：
@@ -36,6 +34,7 @@
  */
 
 import type { IProductConfig } from "@tencent/tea-sdk-lightclaw";
+import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 
 /**
  * UTF-8 安全的 Base64 编解码。
@@ -194,7 +193,7 @@ export function createMonoDebugExecAdapter(
         method: "POST",
         credentials: "include",
         headers,
-        body: JSON.stringify({ command, "run_as_user": "agentuser" }),
+        body: JSON.stringify(createDebugExecRequestBody(command)),
       },
     );
 
@@ -246,7 +245,7 @@ export function createMonoDebugExecAdapter(
         method: "POST",
         credentials: "include",
         headers,
-        body: JSON.stringify({ command, "run_as_user": "agentuser" }),
+        body: JSON.stringify(createDebugExecRequestBody(command)),
       },
     );
 

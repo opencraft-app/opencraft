@@ -8,15 +8,15 @@
  * 走腾讯云 TAT OpenAPI（异步 + 轮询 RunCommand / DescribeInvocations /
  * DescribeInvocationTasks）。
  *
- * 我们 mono2 的存量业务（channel 配置、onboard、debug 排错等）都**刻意绕开** TAT，
- * 统一走沙箱内置的 envd process stream（直连 sandbox agent，毫秒级延迟、不占
- * 腾讯云配额）。后端已经暴露：
+ * mono2 通过统一的 debug/exec 接口；国际站由后端建立 TAT PTY 会话并直接
+ * 发送 PtyExecCmdStream，国内站保持原 envd 执行链路。后端已经暴露：
  *
- *   POST /v1/instances/:botId/debug/exec    body: { command }
+ *   POST /v1/instances/:botId/debug/exec
+ *   body: { command, run_as_user: "agentuser", execution_backend?: "tat" }
  *
  * 后端内部自动：
  *   1. 查出该 bot 对应的 sandbox 与 cloud instance
- *   2. 走 envd process stream 执行命令
+ *   2. 国际站走 TAT PtyExecCmdStream，国内站走 envd process stream
  *   3. 等命令结束后**一次性**返回 `{ status, exit_code, output }`
  *
  * 本适配器把这个同步接口桥接成 `LightVelaPanel.commandExecutor` 期望的契约：
@@ -126,7 +126,7 @@ export function createLightVelaCommandExecutor(
       throw err;
     }
 
-    // mono debug/exec 是同步接口：内部走 envd process stream，命令结束后
+    // mono debug/exec 是同步接口：国际站走 TAT PTY，国内站走 envd；命令结束后
     // 一次性返回 { status, exitCode, output }。无需轮询。
     const result = await repositories.bots.execDebugCommand(botId, command);
 

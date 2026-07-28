@@ -1,0 +1,64 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../trade/k8s/base
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: trade-config
+    namespace: trade
+    behavior: merge
+    literals:
+      - MYSQL_HOST=mysql.localstack-system.svc.cluster.local
+      - MYSQL_PORT=3306
+      - TRADE_DB=trade
+      - TRADE_DB_USER=trade
+      - CTL_INTERNAL_BASE_URL=http://ctl-api.ctl.svc.cluster.local
+      - SHADOW_INTERNAL_BASE_URL=http://shadow-trade-adapter.shadow.svc.cluster.local
+      - JIFEI_CGW_GATEWAY_URL=http://cloudladdergateway.cloudladdergateway.svc.cluster.local:8095/v1/proxy/jifei-test/interfaces/interface.php
+      - JIFEI_CGW_HOST_HEADER=
+      - JIFEI_CGW_X_QCLOUD_USER_ID=700000164995
+      - TRADE_SHADOW_MOCK_ENABLED=false
+      - LIGHTVELA_SITE_KIND=cn
+      - LIGHTVELA_TRADE_REGION=ap-guangzhou
+secretGenerator:
+  - name: trade-runtime-secrets
+    namespace: trade
+    envs:
+      - secrets.defaults.env
+images:
+  - name: REPLACE_TRADE_IMAGE
+    newName: lightclaw-local/trade
+    newTag: dev
+patches:
+  - target:
+      kind: ServiceAccount
+      name: default
+      namespace: trade
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: default
+        namespace: trade
+  - target:
+      kind: Deployment
+      name: trade
+      namespace: trade
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: remove
+        path: /spec/template/spec/topologySpreadConstraints
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: lightclaw-localstack
+    includeSelectors: false
+    includeTemplates: true

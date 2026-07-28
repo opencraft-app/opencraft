@@ -345,13 +345,6 @@ func EnqueueRollbackRenewPassTask(ctx pctx.Context, passID, userID, operationID 
 //   - parentTaskID 必传，用于父 task 反查 child_registry
 //   - executeInterval / maxExecuteCount：默认 60s × 60 = 1h 重试窗口（与 IsolateInstance 子 task 对偶）
 func EnqueueRenewInstanceTask(ctx pctx.Context, instanceID, passID, userID, operationID, parentTaskID string, executeInterval int64, maxExecuteCount int) error {
-	return EnqueueRenewInstanceTaskWithTarget(ctx, instanceID, passID, userID, operationID, parentTaskID, "", executeInterval, maxExecuteCount)
-}
-
-// EnqueueRenewInstanceTaskWithTarget adds an optional forward-only gateway
-// migration to the ordinary resume task. targetGateway must be empty or
-// llm_gateway.
-func EnqueueRenewInstanceTaskWithTarget(ctx pctx.Context, instanceID, passID, userID, operationID, parentTaskID, targetGateway string, executeInterval int64, maxExecuteCount int) error {
 	if instanceID == "" {
 		return errors.New("instanceID is required")
 	}
@@ -368,10 +361,9 @@ func EnqueueRenewInstanceTaskWithTarget(ctx pctx.Context, instanceID, passID, us
 		maxExecuteCount = defaultTaskMaxExecuteCount
 	}
 	payload := &common.RenewInstanceTaskPayload{
-		InstanceID:    instanceID,
-		PassID:        passID,
-		OperationID:   operationID,
-		TargetGateway: strings.TrimSpace(targetGateway),
+		InstanceID:  instanceID,
+		PassID:      passID,
+		OperationID: operationID,
 	}
 	// BUG-30 修订：注入 ctx user，让 enqueueTaskWithSchedule 写 task entity.UserID 不为空。
 	if ctx == nil {
@@ -1061,13 +1053,10 @@ func (l *logic) RunRenewInstanceTask(ctx pctx.Context, payload *common.RenewInst
 		}
 		return err
 	}
-	migrateGateway := strings.TrimSpace(payload.TargetGateway)
 	switch entity.Status {
 	case modelinstance.InstanceStatusRunning:
-		if migrateGateway == "" {
-			logger.Info("renew task: instance already running, short-circuit")
-			return nil
-		}
+		logger.Info("renew task: instance already running, short-circuit")
+		return nil
 	case modelinstance.InstanceStatusDeleted, modelinstance.InstanceStatusFailed:
 		logger.Info("renew task: instance in terminal state, no-op",
 			zap.String("status", entity.Status),
@@ -1131,45 +1120,6 @@ func (l *logic) RunRenewInstanceTask(ctx pctx.Context, payload *common.RenewInst
 		}
 	}
 
-	if migrateGateway != "" {
-		if migrateGateway != gatewayroute.GatewayLLMGateway {
-			return fmt.Errorf("unsupported renewal migration target gateway %q", migrateGateway)
-		}
-		if err := l.applyRenewalGatewayMigration(ctx, entity, gatewayBackendLLMGateway); err != nil {
-			return fmt.Errorf("apply renewal gateway migration: %w", err)
-		}
-	}
-	return nil
-}
-
-func (l *logic) applyRenewalGatewayMigration(ctx pctx.Context, entity *modelinstance.Entity, backend gatewayBackend) error {
-	if entity == nil {
-		return fmt.Errorf("instance is nil")
-	}
-	if strings.TrimSpace(entity.SandboxId) == "" || isPendingSandboxID(entity.SandboxId) {
-		return fmt.Errorf("instance has no usable sandbox")
-	}
-	userID := strings.TrimSpace(ctx.GetUserID())
-	if userID == "" {
-		userID = strings.TrimSpace(entity.UserId)
-	}
-	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, userID, entity.InstanceId)
-	if err != nil {
-		return err
-	}
-	gwConf, err := l.gatewayRuntimeConfig(backend)
-	if err != nil {
-		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
-		return err
-	}
-	if err := l.configureGatewayRuntimeAndRestart(ctx, entity.SandboxId, apiKeyResp.APIKey, gwConf); err != nil {
-		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
-		return err
-	}
-	if err := l.persistAiGatewayKeyIDWithStatuses(ctx, entity, apiKeyResp.KeyID, []string{modelinstance.InstanceStatusRunning}); err != nil {
-		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
-		return fmt.Errorf("persist migrated gateway key id: %w", err)
-	}
 	return nil
 }
 
@@ -1826,6 +1776,13 @@ func (l *logic) resolveProvisionGateway(ctx pctx.Context, userID, instanceID str
 	return gatewayBackendLLMGateway
 }
 
+func (l *logic) resolveCreateProvisionGateway(ctx pctx.Context, userID, instanceID string) gatewayBackend {
+	if config.LLMGatewayAllowsBotCreateMigration(userID) {
+		return gatewayBackendLLMGateway
+	}
+	return l.resolveProvisionGateway(ctx, userID, instanceID)
+}
+
 func (l *logic) gatewayRuntimeConfig(backend gatewayBackend) (*gatewayRuntimeConfig, error) {
 	if config.ServerConf == nil || config.ServerConf.AdapterConfig == nil {
 		return nil, fmt.Errorf("adapter config not configured")
@@ -2032,7 +1989,7 @@ func (l *logic) ensureAiGatewayUser(ctx pctx.Context, backend gatewayBackend, us
 }
 
 func (l *logic) provisionAiGatewayOnCreate(ctx pctx.Context, entity *modelinstance.Entity, sandboxID string) error {
-	backend := l.resolveProvisionGateway(ctx, ctx.GetUserID(), entity.InstanceId)
+	backend := l.resolveCreateProvisionGateway(ctx, ctx.GetUserID(), entity.InstanceId)
 	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, ctx.GetUserID(), entity.InstanceId)
 	if err != nil {
 		return err
