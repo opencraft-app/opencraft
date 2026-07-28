@@ -370,6 +370,75 @@ func TestConsoleProxyReplaysSessionOnlyAPIWithManagedDashboardSession(t *testing
 	}
 }
 
+func TestConsoleProxyBootstrapsManagedDashboardSessionForAuthRefresh(t *testing.T) {
+	var refreshCalls int
+	var completed2FA bool
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/user/login":
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "pending-2fa", Path: "/"})
+			_, _ = w.Write([]byte(`{"success":true,"data":{"require_2fa":true}}`))
+		case "/api/user/login/2fa":
+			if cookie, err := r.Cookie("session"); err != nil || cookie.Value != "pending-2fa" {
+				t.Fatalf("missing pending 2FA cookie: cookie=%v err=%v", cookie, err)
+			}
+			completed2FA = true
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "root-session", Path: "/"})
+			_, _ = w.Write([]byte(`{"success":true,"data":{"user":{"id":1,"username":"set-root","role":100,"status":1,"group":"default"}}}`))
+		case "/api/user/auth/refresh":
+			refreshCalls++
+			if cookie, err := r.Cookie("session"); err != nil || cookie.Value != "root-session" {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"success":false,"message":"unauthorized"}`))
+				return
+			}
+			http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "rotated-refresh", Path: "/", HttpOnly: true})
+			_, _ = w.Write([]byte(`{"success":true,"data":{"access_token":"dashboard-access","token_type":"Bearer","access_expires_at":4102444800,"user":{"id":1,"username":"set-root","role":100,"status":1,"group":"default"},"session":{"sid":"root-session","current":true,"login_method":"password","ip":"","user_agent":"","created_at":1,"last_active_at":1,"expires_at":4102444800}}}`))
+		default:
+			t.Fatalf("unexpected upstream path %s", r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	store := gateway.NewMemoryStore()
+	svc := gateway.NewService(store, nil, gateway.Options{RootUsername: "set-root", RootPassword: "root-password"})
+	if err := store.SaveSet(t.Context(), gateway.Set{
+		ID:               "set-a",
+		BaseURL:          upstream.URL,
+		Status:           gateway.SetStatusActive,
+		Setup:            true,
+		AdminUserID:      1,
+		AdminUsername:    "set-root",
+		AdminRole:        100,
+		AdminStatus:      1,
+		AdminGroup:       "default",
+		AdminAccessToken: "admin-token",
+		AdminTOTPSecret:  "JBSWY3DPEHPK3PXP",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewServer(svc, Config{AdminToken: "cluster-token"})
+
+	req := httptest.NewRequest(http.MethodPost, "/_llmgateway_console/set-a/api/user/auth/refresh", nil)
+	authorizeConsoleTestRequest(req)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	if refreshCalls != 1 || !completed2FA {
+		t.Fatalf("refreshCalls=%d completed2FA=%t", refreshCalls, completed2FA)
+	}
+	if !strings.Contains(rec.Body.String(), `"access_token":"dashboard-access"`) {
+		t.Fatalf("auth bundle not returned: %s", rec.Body.String())
+	}
+	if cookie := rec.Header().Get("Set-Cookie"); !strings.Contains(cookie, "refresh_token=rotated-refresh") {
+		t.Fatalf("refresh cookie not forwarded: %q", cookie)
+	}
+}
+
 func TestConsoleFallbackHandlesSessionOnlyPasskeyStatusForEmbeddedAdmin(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/user/passkey" {
