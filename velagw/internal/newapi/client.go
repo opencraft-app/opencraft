@@ -47,7 +47,8 @@ type LoginRequest struct {
 }
 
 type TwoFALoginRequest struct {
-	Code string `json:"code"`
+	Code      string `json:"code"`
+	FlowToken string `json:"flow_token"`
 }
 
 type PaymentComplianceRequest struct {
@@ -80,13 +81,14 @@ type Option struct {
 }
 
 type Session struct {
-	UserID      int
-	Username    string
-	Role        int
-	Status      int
-	Group       string
-	AccessToken string
-	Require2FA  bool
+	UserID         int
+	Username       string
+	Role           int
+	Status         int
+	Group          string
+	AccessToken    string
+	Require2FA     bool
+	TwoFAFlowToken string
 }
 
 type AdminAuth struct {
@@ -304,7 +306,10 @@ func (c *Client) Login(ctx context.Context, username string, password string) (S
 		return Session{}, fmt.Errorf("new-api login failed: %s", resp.Message)
 	}
 	if resp.Data.Require2FA {
-		return Session{Require2FA: true}, nil
+		return Session{
+			Require2FA:     true,
+			TwoFAFlowToken: resp.Data.FlowToken,
+		}, nil
 	}
 	return Session{
 		UserID:      resp.Data.userID(),
@@ -347,12 +352,18 @@ func (c *Client) isolatedSessionClient() *Client {
 	return &Client{baseURL: c.baseURL, httpClient: &copied}
 }
 
-func (c *Client) Complete2FALogin(ctx context.Context, code string) (Session, error) {
+func (c *Client) Complete2FALogin(ctx context.Context, flowToken string, code string) (Session, error) {
+	if strings.TrimSpace(flowToken) == "" {
+		return Session{}, fmt.Errorf("new-api 2fa login flow token is required")
+	}
 	if strings.TrimSpace(code) == "" {
 		return Session{}, fmt.Errorf("new-api 2fa login code is required")
 	}
 	var resp apiResponse[loginData]
-	if err := c.do(ctx, http.MethodPost, "/api/user/login/2fa", nil, TwoFALoginRequest{Code: code}, &resp); err != nil {
+	if err := c.do(ctx, http.MethodPost, "/api/user/login/2fa", nil, TwoFALoginRequest{
+		Code:      code,
+		FlowToken: flowToken,
+	}, &resp); err != nil {
 		return Session{}, err
 	}
 	if !resp.Success {
@@ -1189,6 +1200,7 @@ type loginData struct {
 	Group       string `json:"group"`
 	AccessToken string `json:"access_token"`
 	Require2FA  bool   `json:"require_2fa"`
+	FlowToken   string `json:"flow_token"`
 	User        struct {
 		ID       int    `json:"id"`
 		Username string `json:"username"`

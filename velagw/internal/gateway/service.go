@@ -643,7 +643,7 @@ func (s *Service) loginRootSession(ctx context.Context, client *newapi.Client, s
 	if err != nil {
 		return newapi.Session{}, err
 	}
-	return client.Complete2FALogin(ctx, code)
+	return client.Complete2FALogin(ctx, session.TwoFAFlowToken, code)
 }
 
 func isNewAPIAlreadyInitializedError(err error) bool {

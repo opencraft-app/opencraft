@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -319,11 +320,17 @@ func TestConsoleProxyReplaysSessionOnlyAPIWithManagedDashboardSession(t *testing
 			}
 			_, _ = w.Write([]byte(`{"success":true,"data":{"id":17}}`))
 		case "/api/user/login":
-			http.SetCookie(w, &http.Cookie{Name: "session", Value: "pending-2fa", Path: "/"})
-			_, _ = w.Write([]byte(`{"success":true,"data":{"require_2fa":true}}`))
+			_, _ = w.Write([]byte(`{"success":true,"data":{"require_2fa":true,"flow_token":"flow-123"}}`))
 		case "/api/user/login/2fa":
-			if cookie, err := r.Cookie("session"); err != nil || cookie.Value != "pending-2fa" {
-				t.Fatalf("missing pending 2FA cookie: cookie=%v err=%v", cookie, err)
+			var req struct {
+				Code      string `json:"code"`
+				FlowToken string `json:"flow_token"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatal(err)
+			}
+			if req.FlowToken != "flow-123" || strings.TrimSpace(req.Code) == "" {
+				t.Fatalf("unexpected 2FA login request: %+v", req)
 			}
 			completed2FA = true
 			http.SetCookie(w, &http.Cookie{Name: "session", Value: "root-session", Path: "/"})
@@ -377,11 +384,17 @@ func TestConsoleProxyBootstrapsManagedDashboardSessionForAuthRefresh(t *testing.
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/user/login":
-			http.SetCookie(w, &http.Cookie{Name: "session", Value: "pending-2fa", Path: "/"})
-			_, _ = w.Write([]byte(`{"success":true,"data":{"require_2fa":true}}`))
+			_, _ = w.Write([]byte(`{"success":true,"data":{"require_2fa":true,"flow_token":"flow-123"}}`))
 		case "/api/user/login/2fa":
-			if cookie, err := r.Cookie("session"); err != nil || cookie.Value != "pending-2fa" {
-				t.Fatalf("missing pending 2FA cookie: cookie=%v err=%v", cookie, err)
+			var req struct {
+				Code      string `json:"code"`
+				FlowToken string `json:"flow_token"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatal(err)
+			}
+			if req.FlowToken != "flow-123" || strings.TrimSpace(req.Code) == "" {
+				t.Fatalf("unexpected 2FA login request: %+v", req)
 			}
 			completed2FA = true
 			http.SetCookie(w, &http.Cookie{Name: "session", Value: "root-session", Path: "/"})

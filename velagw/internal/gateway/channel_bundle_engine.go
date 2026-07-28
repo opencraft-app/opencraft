@@ -810,7 +810,7 @@ func (s *Service) updateSetOption(ctx context.Context, client *newapi.Client, se
 			if err != nil {
 				return err
 			}
-			session, err = client.Complete2FALogin(ctx, code)
+			session, err = client.Complete2FALogin(ctx, session.TwoFAFlowToken, code)
 			if err != nil {
 				return err
 			}
