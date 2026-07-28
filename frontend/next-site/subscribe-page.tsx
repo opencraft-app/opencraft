@@ -2647,7 +2647,8 @@ export const SubscribePage = ({
                 <>
                   {t("当前LightVela为内测阶段，内测期间限时免费。")}
                   <a
-                    href="/docs/announcements/public-beta/"
+                    href={isGlobal ? "https://lightvela.ai/docs/overview/" : "/docs/announcements/public-beta/"}
+                    {...(isGlobal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                     style={{
                       color: colors.primary,
                       fontWeight: 500,
