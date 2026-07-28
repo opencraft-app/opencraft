@@ -107,11 +107,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(
             values.get("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"),
-            "usr_31b0bd10d198d7aa7012fbf0",
+            "usr_31b0bd10d198d7aa7012fbf0,usr_cd57811ec414ce48e8d40c6c",
         )
         self.assertEqual(
             values.get("CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST"),
-            "usr_31b0bd10d198d7aa7012fbf0",
+            "usr_31b0bd10d198d7aa7012fbf0,usr_cd57811ec414ce48e8d40c6c",
         )
 
     def test_shprod_ctl_routes_new_users_and_bot_creates_to_llmgateway(self) -> None:
