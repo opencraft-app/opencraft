@@ -555,9 +555,9 @@ const mapBundleToPlan = (
       }
     }
   } else {
-    /* 国际站已进入付费闭环，不再展示「限时免费」标签；仅国内未开启计费时保留内测视觉 */
+    /* 国际站：保持当前限时免费视觉 */
     price = isGlobal ? "$7.5" : "¥49";
-    promoTag = isGlobal ? undefined : (soldOut ? undefined : t("限时免费"));
+    promoTag = soldOut ? undefined : t("限时免费");
   }
 
   /** 国内站价格不可用时按「暂无报价」展示禁用 CTA，避免点击后报错。
@@ -588,9 +588,8 @@ const mapBundleToPlan = (
       : priceUnavailable
         ? t("暂无报价")
         : /* 需求4：可享免费 14 天 0 元下单，或内测「免费订阅」引导态，一律显示「免费订阅」。
-             国际站已进入付费闭环，一律「立即订阅」，不展示免费引导。
              已订阅用户不展示「免费订阅」引导（当前套餐走 isCurrentPlan →「当前订阅」优先级更高）。 */
-          !isGlobal && !isSubscribed && (isZeroDownFreeTrial || isFeaturedFreeGuide)
+          !isSubscribed && (isZeroDownFreeTrial || isFeaturedFreeGuide)
           ? t("免费订阅")
           : t("立即订阅");
 
