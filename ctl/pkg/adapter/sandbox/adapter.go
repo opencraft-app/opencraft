@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -1049,6 +1050,89 @@ func (a *SandboxAdapter) GetCommandResult(ctx context.Context, sandboxID string,
 		StartTime:    result.StartTime,
 		EndTime:      result.EndTime,
 	}, nil
+}
+
+// StreamPtyCommand executes a command through sandbox's internal TAT
+// PtyExecCmdStream endpoint. It intentionally does not use the polling TAT
+// command APIs.
+func (a *SandboxAdapter) StreamPtyCommand(
+	ctx context.Context,
+	sandboxID string,
+	reqBody *PtyExecStreamRequest,
+	onEvent func(PtyExecStreamEvent) error,
+) error {
+	if err := validateSandboxID(sandboxID); err != nil {
+		return err
+	}
+	if reqBody == nil || strings.TrimSpace(reqBody.Command) == "" || onEvent == nil {
+		return errcode.ErrSandboxInvalidParam
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return errcode.Wrap(errcode.ErrSandboxInvalidParam, "marshal TAT PTY request")
+	}
+	requestURL := a.baseURL + "/internal/sandboxes/" + url.PathEscape(sandboxID) + "/tat/exec-stream"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(body))
+	if err != nil {
+		return errcode.Wrap(errcode.ErrSandboxServiceError, "create TAT PTY request")
+	}
+	httpReq.Header.Set("User-Agent", defaultUserAgent)
+	httpReq.Header.Set("Accept", "application/x-ndjson")
+	httpReq.Header.Set("Content-Type", "application/json")
+	streamClient := &http.Client{Transport: a.httpClient.Transport}
+	resp, err := streamClient.Do(httpReq)
+	if err != nil {
+		return errcode.Wrap(errcode.ErrSandboxServiceError, "call TAT PTY stream: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
+		return errcode.Wrap(
+			errcode.ErrSandboxServiceError,
+			"TAT PTY stream returned HTTP %d: %s",
+			resp.StatusCode,
+			strings.TrimSpace(string(payload)),
+		)
+	}
+	if contentType := strings.ToLower(resp.Header.Get("Content-Type")); !strings.Contains(contentType, "application/x-ndjson") {
+		return errcode.Wrap(errcode.ErrSandboxServiceError, "unexpected TAT PTY content type %q", contentType)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
+	terminal := false
+	for scanner.Scan() {
+		var event PtyExecStreamEvent
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			return errcode.Wrap(errcode.ErrSandboxServiceError, "decode TAT PTY stream event")
+		}
+		switch event.Type {
+		case "started", "output":
+		case "finished":
+			terminal = true
+		case "error":
+			terminal = true
+		default:
+			return errcode.Wrap(errcode.ErrSandboxServiceError, "unknown TAT PTY stream event %q", event.Type)
+		}
+		if err := onEvent(event); err != nil {
+			return err
+		}
+		if event.Type == "error" {
+			return &PtyExecStreamError{Code: event.Code, Message: event.Message}
+		}
+		if event.Type == "finished" {
+			return nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return errcode.Wrap(errcode.ErrSandboxServiceError, "read TAT PTY stream: %v", err)
+	}
+	if !terminal {
+		return errcode.Wrap(errcode.ErrSandboxServiceError, "TAT PTY stream ended without terminal event")
+	}
+	return nil
 }
 
 // endSpanWithError 记录 Span 结束状态

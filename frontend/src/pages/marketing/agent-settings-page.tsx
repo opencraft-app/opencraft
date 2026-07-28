@@ -3411,8 +3411,8 @@ export const AgentSettingsPage = ({
    * 自定义 `runCommand` + `getInvocationTask` 把命令下发到 mono 后端。
    *
    * 和存量业务（channel 配置、onboard、debug 排错等）保持一致，走通用
-   * 入口 `POST /v1/instances/:botId/debug/exec`（envd process stream），
-   * 不再使用腾讯云 TAT。
+   * 入口 `POST /v1/instances/:botId/debug/exec`。国际站由后端直接使用腾讯云
+   * TAT PtyExecCmdStream，国内站保持原 envd 执行链路。
    *
    * 业务约定：把 `activeBot.id` 作为 SDK `IInstanceInfo.InstanceId` 传入，
    * SDK 内部 `InstanceIds: [instance.InstanceId]` 原样透传给适配器，

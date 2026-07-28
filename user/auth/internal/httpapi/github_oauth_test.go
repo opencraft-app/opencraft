@@ -63,6 +63,10 @@ func newAuthTestRouterWithGitHub(client GitHubOAuthClient) *gin.Engine {
 }
 
 func newAuthTestRouterWithGitHubAndAvatarStore(client GitHubOAuthClient, avatarStore AvatarStore) *gin.Engine {
+	return newAuthTestRouterWithGitHubOptions(client, avatarStore, false)
+}
+
+func newAuthTestRouterWithGitHubOptions(client GitHubOAuthClient, avatarStore AvatarStore, registrationDisabled bool) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	store := service.NewMemoryStore(service.StoreOptions{
 		Now:                fixedHTTPTestNow,
@@ -78,13 +82,14 @@ func newAuthTestRouterWithGitHubAndAvatarStore(client GitHubOAuthClient, avatarS
 		SessionTTL:     30 * 24 * time.Hour,
 		AvatarStore:    avatarStore,
 		GitHubOAuth: &GitHubOAuthConfig{
-			ClientID:        "github-client-id-test",
-			ClientSecret:    "github-client-secret-test",
-			RedirectURI:     "https://lightclaw.tech/auth/oauth/github/callback",
-			FrontendBaseURL: "https://lightclaw.pages.dev",
-			PublicBaseURL:   "https://lightclaw.tech",
-			Client:          client,
-			StateTTL:        10 * time.Minute,
+			ClientID:             "github-client-id-test",
+			ClientSecret:         "github-client-secret-test",
+			RedirectURI:          "https://lightclaw.tech/auth/oauth/github/callback",
+			FrontendBaseURL:      "https://lightclaw.pages.dev",
+			PublicBaseURL:        "https://lightclaw.tech",
+			Client:               client,
+			StateTTL:             10 * time.Minute,
+			RegistrationDisabled: registrationDisabled,
 		},
 	})
 }
@@ -259,6 +264,43 @@ func TestGitHubOAuthCallbackIdentityFailureRedirectsWithError(t *testing.T) {
 	}
 	if !strings.Contains(callback.Header().Get("Location"), "oauth_error=github_identity_failed") {
 		t.Fatalf("expected github_identity_failed error in redirect, got %q", callback.Header().Get("Location"))
+	}
+}
+
+func TestGitHubOAuthCallbackRejectsNewRegistrationWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthTestRouterWithGitHubOptions(&stubGitHubOAuthClient{
+		identity: service.OAuthSignInInput{
+			Provider:        "github",
+			ProviderSubject: "github-id-new-disabled",
+			Email:           "new-disabled@example.com",
+			EmailVerified:   true,
+			Name:            "New Disabled User",
+		},
+	}, nil, true)
+
+	start := performJSONRequest(t, router, http.MethodGet, "/auth/oauth/github/start", nil)
+	startLocation, err := url.Parse(start.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse start location: %v", err)
+	}
+	state := startLocation.Query().Get("state")
+	stateCookie := cookieFromRecorderByName(t, start, githubOAuthStateCookieName)
+
+	callback := performJSONRequest(
+		t,
+		router,
+		http.MethodGet,
+		"/auth/oauth/github/callback?code=github-code-disabled&state="+url.QueryEscape(state),
+		nil,
+		stateCookie,
+	)
+	if callback.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from github oauth callback, got %d: %s", callback.Code, callback.Body.String())
+	}
+	if !strings.Contains(callback.Header().Get("Location"), "oauth_error=github_registration_disabled") {
+		t.Fatalf("expected github_registration_disabled error in redirect, got %q", callback.Header().Get("Location"))
 	}
 }
 

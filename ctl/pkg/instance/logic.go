@@ -71,6 +71,8 @@ type Logic interface {
 	GetInstanceLogs(ctx pctx.Context, instanceID string, start *int64, limit *int32) (*psandbox.SandboxLogs, error)
 	ExecDebugCommand(ctx pctx.Context, instanceID string, commandType string, runAsUser string) (*transport.ExecDebugCommandResponse, error)
 	StreamDebugCommand(ctx pctx.Context, instanceID string, commandType string, runAsUser string, onEvent func(transport.ExecDebugCommandStreamEvent) error) error
+	ExecDebugCommandWithBackend(ctx pctx.Context, instanceID string, commandType string, runAsUser string, executionBackend string) (*transport.ExecDebugCommandResponse, error)
+	StreamDebugCommandWithBackend(ctx pctx.Context, instanceID string, commandType string, runAsUser string, executionBackend string, onEvent func(transport.ExecDebugCommandStreamEvent) error) error
 	GetWorkspaceFiles(ctx pctx.Context, instanceID string, fileName string) (*transport.WorkspaceFilesResponse, error)
 	UpdateWorkspaceFile(ctx pctx.Context, instanceID string, req *transport.UpdateWorkspaceFileRequest) (*transport.WorkspaceFileResponse, error)
 	UploadWorkspaceAttachment(ctx pctx.Context, instanceID string, req *transport.UploadWorkspaceAttachmentRequest) (*transport.WorkspaceUploadResponse, error)
@@ -1723,6 +1725,18 @@ var allowedDebugRunAsUsers = map[string]struct{}{
 	"agentuser": {},
 }
 
+const debugExecutionBackendTAT = "tat"
+
+func normalizeDebugExecutionBackend(raw string) (string, error) {
+	backend := strings.ToLower(strings.TrimSpace(raw))
+	switch backend {
+	case "", debugExecutionBackendTAT:
+		return backend, nil
+	default:
+		return "", errcode.Wrap(errcode.ErrInstanceInvalidParam, "execution_backend %q is not supported", raw)
+	}
+}
+
 func normalizeDebugRunAsUser(raw string) (string, error) {
 	user := strings.TrimSpace(raw)
 	if user == "" {
@@ -1752,13 +1766,6 @@ func (l *logic) prepareDebugCommand(ctx pctx.Context, instanceID string, command
 	if err != nil {
 		return nil, "", "", "", nil, 0, err
 	}
-	command := spec.bash
-	var processEnv map[string]string
-	if normalizedRunAsUser != "" {
-		command = shellUserCommand(normalizedRunAsUser, command)
-		processEnv = shellUserEnv(normalizedRunAsUser)
-	}
-
 	entity, err := l.instanceDao.GetByInstanceID(ctx, instanceID)
 	if err != nil {
 		return nil, "", "", "", nil, 0, err
@@ -1769,7 +1776,7 @@ func (l *logic) prepareDebugCommand(ctx pctx.Context, instanceID string, command
 	if err := l.requireActivePass(ctx); err != nil {
 		return nil, "", "", "", nil, 0, activePassGuardError("execute debug command", err)
 	}
-	return entity, commandKind, command, normalizedRunAsUser, processEnv, spec.timeoutSec, nil
+	return entity, commandKind, spec.bash, normalizedRunAsUser, nil, spec.timeoutSec, nil
 }
 
 func (e *debugExecError) Error() string {
@@ -1823,9 +1830,37 @@ func newDebugExecError(cause error, result *psandbox.ExecCommandResult, runAsUse
 
 // ExecDebugCommand executes either a built-in debug alias or a raw bash command on the instance's sandbox via envd process stream.
 func (l *logic) ExecDebugCommand(ctx pctx.Context, instanceID string, commandType string, runAsUser string) (*transport.ExecDebugCommandResponse, error) {
+	return l.ExecDebugCommandWithBackend(ctx, instanceID, commandType, runAsUser, "")
+}
+
+func (l *logic) ExecDebugCommandWithBackend(ctx pctx.Context, instanceID string, commandType string, runAsUser string, executionBackend string) (*transport.ExecDebugCommandResponse, error) {
+	backend, err := normalizeDebugExecutionBackend(executionBackend)
+	if err != nil {
+		return nil, err
+	}
 	entity, commandKind, command, normalizedRunAsUser, processEnv, timeoutSec, err := l.prepareDebugCommand(ctx, instanceID, commandType, runAsUser)
 	if err != nil {
 		return nil, err
+	}
+	if backend == debugExecutionBackendTAT {
+		if normalizedRunAsUser == "" {
+			normalizedRunAsUser = "agentuser"
+		}
+		result, execErr := l.execSandboxPtyCommandStream(ctx, entity.SandboxId, commandKind, command, normalizedRunAsUser, timeoutSec, nil)
+		if execErr != nil {
+			if errors.Is(execErr, errcode.ErrSandboxTimeout) {
+				return nil, newDebugExecError(errcode.ErrDebugExecTimeout, result, normalizedRunAsUser)
+			}
+			return nil, newDebugExecError(errcode.Wrap(errcode.ErrDebugExecFailed, "%v", execErr), result, normalizedRunAsUser)
+		}
+		if !sandboxCommandSucceeded(result) {
+			return nil, newDebugExecError(errcode.Wrap(errcode.ErrDebugExecFailed, "%s", sandboxCommandFailureDetail(result)), result, normalizedRunAsUser)
+		}
+		return buildExecDebugCommandResponse(result, normalizedRunAsUser), nil
+	}
+	if normalizedRunAsUser != "" {
+		command = shellUserCommand(normalizedRunAsUser, command)
+		processEnv = shellUserEnv(normalizedRunAsUser)
 	}
 
 	result, err := l.execSandboxProcessCommand(ctx, entity.SandboxId, commandKind, &psandbox.ProcessStartRequest{
@@ -1851,9 +1886,27 @@ func (l *logic) ExecDebugCommand(ctx pctx.Context, instanceID string, commandTyp
 // stdout/stderr chunks through the provided callback. It keeps synchronous JSON
 // semantics unchanged by existing ExecDebugCommand while enabling SSE clients.
 func (l *logic) StreamDebugCommand(ctx pctx.Context, instanceID string, commandType string, runAsUser string, onEvent func(transport.ExecDebugCommandStreamEvent) error) error {
+	return l.StreamDebugCommandWithBackend(ctx, instanceID, commandType, runAsUser, "", onEvent)
+}
+
+func (l *logic) StreamDebugCommandWithBackend(ctx pctx.Context, instanceID string, commandType string, runAsUser string, executionBackend string, onEvent func(transport.ExecDebugCommandStreamEvent) error) error {
+	backend, err := normalizeDebugExecutionBackend(executionBackend)
+	if err != nil {
+		return err
+	}
 	entity, _, command, normalizedRunAsUser, processEnv, timeoutSec, err := l.prepareDebugCommand(ctx, instanceID, commandType, runAsUser)
 	if err != nil {
 		return err
+	}
+	if backend == debugExecutionBackendTAT {
+		if normalizedRunAsUser == "" {
+			normalizedRunAsUser = "agentuser"
+		}
+		return l.streamDebugCommandWithPty(ctx, entity.SandboxId, command, normalizedRunAsUser, timeoutSec, onEvent)
+	}
+	if normalizedRunAsUser != "" {
+		command = shellUserCommand(normalizedRunAsUser, command)
+		processEnv = shellUserEnv(normalizedRunAsUser)
 	}
 
 	runCtx, cancel := stdctx.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
@@ -1981,6 +2034,73 @@ func (l *logic) StreamDebugCommand(ctx pctx.Context, instanceID string, commandT
 			RunAsUser:    normalizedRunAsUser,
 			Response:     buildExecDebugCommandResponse(result, normalizedRunAsUser),
 		})
+	}
+	return nil
+}
+
+func (l *logic) streamDebugCommandWithPty(
+	ctx pctx.Context,
+	sandboxID, command, runAsUser string,
+	timeoutSec int,
+	onEvent func(transport.ExecDebugCommandStreamEvent) error,
+) error {
+	terminalEmitted := false
+	result, err := l.execSandboxPtyCommandStream(
+		ctx,
+		sandboxID,
+		"debug_tat",
+		command,
+		runAsUser,
+		timeoutSec,
+		func(event psandbox.PtyExecStreamEvent, current *psandbox.ExecCommandResult) error {
+			switch event.Type {
+			case "started":
+				if onEvent == nil {
+					return nil
+				}
+				return onEvent(transport.ExecDebugCommandStreamEvent{
+					Type:         "started",
+					InvocationID: current.InvocationID,
+					CommandID:    current.CommandID,
+					RunAsUser:    runAsUser,
+				})
+			case "output":
+				if onEvent == nil || event.Chunk == "" {
+					return nil
+				}
+				return onEvent(transport.ExecDebugCommandStreamEvent{
+					Type:         "stdout",
+					Stream:       "stdout",
+					Chunk:        event.Chunk,
+					InvocationID: current.InvocationID,
+					CommandID:    current.CommandID,
+					RunAsUser:    runAsUser,
+				})
+			case "finished", "error":
+				terminalEmitted = true
+				if onEvent == nil {
+					return nil
+				}
+				return onEvent(transport.ExecDebugCommandStreamEvent{
+					Type:         "finished",
+					InvocationID: current.InvocationID,
+					CommandID:    current.CommandID,
+					RunAsUser:    runAsUser,
+					Response:     buildExecDebugCommandResponse(current, runAsUser),
+				})
+			default:
+				return nil
+			}
+		},
+	)
+	if err != nil {
+		if terminalEmitted {
+			return nil
+		}
+		if errors.Is(err, errcode.ErrSandboxTimeout) {
+			return newDebugExecError(errcode.ErrDebugExecTimeout, result, runAsUser)
+		}
+		return newDebugExecError(errcode.Wrap(errcode.ErrDebugExecFailed, "%v", err), result, runAsUser)
 	}
 	return nil
 }

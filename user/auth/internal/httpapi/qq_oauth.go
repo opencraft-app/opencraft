@@ -5,6 +5,7 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,25 +37,27 @@ type QQOAuthToken struct {
 }
 
 type QQOAuthConfig struct {
-	AppID           string
-	AppKey          string
-	RedirectURI     string
-	AuthorizeURL    string
-	APIBaseURL      string
-	FrontendBaseURL string
-	PublicBaseURL   string
-	StateTTL        time.Duration
-	Client          QQOAuthClient
+	AppID                string
+	AppKey               string
+	RedirectURI          string
+	AuthorizeURL         string
+	APIBaseURL           string
+	FrontendBaseURL      string
+	PublicBaseURL        string
+	StateTTL             time.Duration
+	Client               QQOAuthClient
+	RegistrationDisabled bool
 }
 
 type qqOAuth struct {
-	appID             string
-	redirectURI       string
-	authorizeEndpoint string
-	frontendBaseURL   string
-	publicBaseURL     string
-	stateTTL          time.Duration
-	client            QQOAuthClient
+	appID                string
+	redirectURI          string
+	authorizeEndpoint    string
+	frontendBaseURL      string
+	publicBaseURL        string
+	stateTTL             time.Duration
+	client               QQOAuthClient
+	registrationDisabled bool
 }
 
 func newQQOAuth(config *QQOAuthConfig) *qqOAuth {
@@ -94,13 +97,14 @@ func newQQOAuth(config *QQOAuthConfig) *qqOAuth {
 	}
 
 	return &qqOAuth{
-		appID:             appID,
-		redirectURI:       redirectURI,
-		authorizeEndpoint: authorizeURL,
-		frontendBaseURL:   strings.TrimRight(strings.TrimSpace(config.FrontendBaseURL), "/"),
-		publicBaseURL:     strings.TrimRight(strings.TrimSpace(config.PublicBaseURL), "/"),
-		stateTTL:          stateTTL,
-		client:            client,
+		appID:                appID,
+		redirectURI:          redirectURI,
+		authorizeEndpoint:    authorizeURL,
+		frontendBaseURL:      strings.TrimRight(strings.TrimSpace(config.FrontendBaseURL), "/"),
+		publicBaseURL:        strings.TrimRight(strings.TrimSpace(config.PublicBaseURL), "/"),
+		stateTTL:             stateTTL,
+		client:               client,
+		registrationDisabled: config.RegistrationDisabled,
 	}
 }
 
@@ -222,6 +226,7 @@ func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string,
 		return
 	}
 	identity.InviteCode = h.inviteTicketFromRequest(ctx)
+	identity.RegistrationDisabled = h.qqOAuth.registrationDisabled
 	session, err := h.service.SignInWithOAuth(requestCtx, identity)
 	if err != nil {
 		logger.Error(
@@ -231,6 +236,11 @@ func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string,
 			"subject", identity.ProviderSubject,
 			"err", err,
 		)
+		var serviceErr *service.Error
+		if errors.As(err, &serviceErr) && serviceErr.Code == "oauth_registration_disabled" {
+			ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_registration_disabled"))
+			return
+		}
 		ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_sign_in_failed"))
 		return
 	}

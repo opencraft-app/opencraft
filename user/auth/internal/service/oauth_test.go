@@ -80,6 +80,89 @@ func TestOAuthSignInRejectsMissingProviderSubject(t *testing.T) {
 	}
 }
 
+func TestOAuthSignInRegistrationDisabledRejectsOnlyNewUsers(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	svc := NewWithStore(store, Options{Now: fixedNow})
+	ctx := context.Background()
+
+	_, err := svc.SignInWithOAuth(ctx, OAuthSignInInput{
+		Provider:             "github",
+		ProviderSubject:      "github-new-user",
+		Email:                "new-user@example.com",
+		EmailVerified:        true,
+		Name:                 "New User",
+		RegistrationDisabled: true,
+	})
+	if err == nil {
+		t.Fatal("expected disabled registration to reject a new GitHub user")
+	}
+	authErr, ok := err.(*Error)
+	if !ok || authErr.Code != "oauth_registration_disabled" {
+		t.Fatalf("expected oauth_registration_disabled, got %T %v", err, err)
+	}
+
+	existingSession, err := svc.SignInWithOAuth(ctx, OAuthSignInInput{
+		Provider:        "github",
+		ProviderSubject: "github-existing-user",
+		Email:           "existing-user@example.com",
+		EmailVerified:   true,
+		Name:            "Existing User",
+	})
+	if err != nil {
+		t.Fatalf("seed existing GitHub user: %v", err)
+	}
+	returningSession, err := svc.SignInWithOAuth(ctx, OAuthSignInInput{
+		Provider:             "github",
+		ProviderSubject:      "github-existing-user",
+		Email:                "existing-user@example.com",
+		EmailVerified:        true,
+		Name:                 "Existing User",
+		RegistrationDisabled: true,
+	})
+	if err != nil {
+		t.Fatalf("returning GitHub user should still sign in: %v", err)
+	}
+	if returningSession.User.ID != existingSession.User.ID {
+		t.Fatalf("expected existing user %q, got %q", existingSession.User.ID, returningSession.User.ID)
+	}
+}
+
+func TestOAuthSignInRegistrationDisabledDoesNotCreateEmailLink(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	svc := NewWithStore(store, Options{Now: fixedNow})
+	ctx := context.Background()
+
+	passwordSession, err := svc.SignUpWithPassword(ctx, PasswordSignUpInput{
+		Email:    "existing-email@example.com",
+		Password: "secure2026!",
+		Name:     "Existing Email User",
+	})
+	if err != nil {
+		t.Fatalf("seed existing email user: %v", err)
+	}
+
+	_, err = svc.SignInWithOAuth(ctx, OAuthSignInInput{
+		Provider:             "github",
+		ProviderSubject:      "github-links-existing-email",
+		Email:                "existing-email@example.com",
+		EmailVerified:        true,
+		Name:                 "GitHub Profile",
+		RegistrationDisabled: true,
+	})
+	if err == nil {
+		t.Fatal("expected disabled registration to reject a new GitHub identity even when email exists")
+	}
+	authErr, ok := err.(*Error)
+	if !ok || authErr.Code != "oauth_registration_disabled" {
+		t.Fatalf("expected oauth_registration_disabled, got %T %v", err, err)
+	}
+	_ = passwordSession
+}
+
 func TestOAuthSignInCreatesUsableUserForFirstSignInWithoutInvite(t *testing.T) {
 	t.Parallel()
 

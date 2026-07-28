@@ -216,6 +216,8 @@ type ExecDebugCommandRequest struct {
 	Command string `json:"command" example:"openclaw_version"`
 	// 可选：使用指定系统用户执行命令。目前仅允许白名单用户。
 	RunAsUser string `json:"run_as_user,omitempty" example:"agentuser"`
+	// 可选执行后端。空值保持 envd；tat 直接使用 TAT PtyExecCmdStream。
+	ExecutionBackend string `json:"execution_backend,omitempty" example:"tat"`
 }
 
 // ExecDebugCommandResponse 调试命令响应

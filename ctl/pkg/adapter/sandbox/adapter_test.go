@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -174,5 +175,48 @@ func TestStartTerminalSessionForwardsSessionCookieWhenBearerMissing(t *testing.T
 	ctx := pctx.NewContext(t.Context()).WithSessionAuth("", "lc_session=cookie-token")
 	if _, err := adapter.StartTerminalSession(ctx, "sbx-123"); err != nil {
 		t.Fatalf("start terminal session: %v", err)
+	}
+}
+
+func TestStreamPtyCommandConsumesNDJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/sandboxes/sbx-1/tat/exec-stream" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		var req PtyExecStreamRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if req.Username != "agentuser" || req.WorkingDirectory != "/home/agentuser" {
+			t.Fatalf("unexpected request: %+v", req)
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = w.Write([]byte(
+			"{\"type\":\"started\",\"execution_id\":\"pty:test\"}\n" +
+				"{\"type\":\"output\",\"execution_id\":\"pty:test\",\"chunk\":\"hello\\n\"}\n" +
+				"{\"type\":\"finished\",\"execution_id\":\"pty:test\",\"status\":\"SUCCESS\",\"exit_code\":0}\n",
+		))
+	}))
+	defer server.Close()
+
+	adapter := &SandboxAdapter{
+		baseURL:    server.URL,
+		httpClient: server.Client(),
+	}
+	var events []PtyExecStreamEvent
+	err := adapter.StreamPtyCommand(context.Background(), "sbx-1", &PtyExecStreamRequest{
+		Command:          "echo hello",
+		Username:         "agentuser",
+		WorkingDirectory: "/home/agentuser",
+		TimeoutSeconds:   30,
+	}, func(event PtyExecStreamEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("stream PTY command: %v", err)
+	}
+	if len(events) != 3 || events[1].Chunk != "hello\n" || events[2].Status != "SUCCESS" {
+		t.Fatalf("unexpected events: %+v", events)
 	}
 }
