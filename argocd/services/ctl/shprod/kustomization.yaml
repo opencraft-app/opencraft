@@ -27,7 +27,7 @@ patches:
         path: /spec/template/spec/containers/0/env/-
         value:
           name: CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
-          value: usr_58b6bb1f68ba7f46584bd282,usr_dcbd9ccfa2cd3a18be7d2bd2
+          value: "*"
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
@@ -50,7 +50,7 @@ patches:
         path: /spec/template/spec/containers/0/env/-
         value:
           name: CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
-          value: usr_58b6bb1f68ba7f46584bd282,usr_dcbd9ccfa2cd3a18be7d2bd2
+          value: "*"
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
@@ -73,7 +73,7 @@ patches:
         path: /spec/template/spec/containers/0/env/-
         value:
           name: CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
-          value: usr_58b6bb1f68ba7f46584bd282,usr_dcbd9ccfa2cd3a18be7d2bd2
+          value: "*"
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
