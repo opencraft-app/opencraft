@@ -790,9 +790,9 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
     {
       ...base,
       bundle_id: "bundle_free_7d",
-      bundle_name: "免费试用 7天",
+      bundle_name: "启航 Launch",
       bundle_type: "free",
-      description: [{ Key: "独立环境", Value: "" }],
+      description: STATIC_GENERAL_DESC,
       agent_quota: 1,
       credit: 0,
       price: null,
@@ -2743,7 +2743,8 @@ export const SubscribePage = ({
                 <>
                   {t("当前LightVela为内测阶段，内测期间限时免费。")}
                   <a
-                    href="/docs/announcements/public-beta/"
+                    href={isGlobal ? "https://lightvela.ai/docs/overview/" : "/docs/announcements/public-beta/"}
+                    {...(isGlobal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                     style={{
                       color: colors.primary,
                       fontWeight: 500,
