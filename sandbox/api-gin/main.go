@@ -25,16 +25,20 @@ func main() {
 	}
 	var commands provider.CommandRunner
 	var terminals provider.TerminalSessionStarter
+	var terminalCommands provider.TerminalCommandStreamer
 	cp, err := provider.ResolveFromEnv()
 	if err != nil {
 		log.Printf("init provider failed; tat commands unavailable: %v", err)
-	} else if runner, ok := cp.(provider.CommandRunner); ok {
-		commands = runner
+	} else {
+		if runner, ok := cp.(provider.CommandRunner); ok {
+			commands = runner
+		}
 		if starter, ok := cp.(provider.TerminalSessionStarter); ok {
 			terminals = starter
 		}
-	} else if starter, ok := cp.(provider.TerminalSessionStarter); ok {
-		terminals = starter
+		if streamer, ok := cp.(provider.TerminalCommandStreamer); ok {
+			terminalCommands = streamer
+		}
 	}
 	apiMetrics := observability.NewAPIMetrics(prometheus.NewRegistry())
 	h := &handler{
@@ -42,6 +46,7 @@ func main() {
 		routes:           routes,
 		commands:         commands,
 		terminals:        terminals,
+		terminalCommands: terminalCommands,
 		cloud:            cp,
 		metrics:          apiMetrics,
 		cloudPauseResume: cfg.CloudPauseResume,
@@ -60,6 +65,7 @@ func main() {
 	internal := r.Group("/internal")
 	registerPoolRoutes(internal, h)
 	registerTemplateClassRoutes(internal, h)
+	registerInternalTATRoutes(internal, h)
 
 	srv := &http.Server{
 		Addr:         cfg.Addr,

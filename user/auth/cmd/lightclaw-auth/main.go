@@ -353,13 +353,14 @@ func buildQQOAuthConfig() *httpapi.QQOAuthConfig {
 	frontendBaseURL, publicBaseURL := oauthBaseURLs()
 
 	return &httpapi.QQOAuthConfig{
-		AppID:           appID,
-		AppKey:          appKey,
-		RedirectURI:     envOrDefault("LIGHTCLAW_QQ_REDIRECT_URI", "https://lightclaw.tech/auth/oauth/qq/callback"),
-		AuthorizeURL:    envOrDefault("LIGHTCLAW_QQ_AUTHORIZE_URL", ""),
-		APIBaseURL:      envOrDefault("LIGHTCLAW_QQ_API_BASE_URL", ""),
-		FrontendBaseURL: frontendBaseURL,
-		PublicBaseURL:   publicBaseURL,
+		AppID:                appID,
+		AppKey:               appKey,
+		RedirectURI:          envOrDefault("LIGHTCLAW_QQ_REDIRECT_URI", "https://lightclaw.tech/auth/oauth/qq/callback"),
+		AuthorizeURL:         envOrDefault("LIGHTCLAW_QQ_AUTHORIZE_URL", ""),
+		APIBaseURL:           envOrDefault("LIGHTCLAW_QQ_API_BASE_URL", ""),
+		FrontendBaseURL:      frontendBaseURL,
+		PublicBaseURL:        publicBaseURL,
+		RegistrationDisabled: envOrDefault("LIGHTCLAW_QQ_REGISTRATION_ENABLED", "false") != "true",
 	}
 }
 
@@ -423,11 +424,12 @@ func buildGitHubOAuthConfig() *httpapi.GitHubOAuthConfig {
 	frontendBaseURL, publicBaseURL := oauthBaseURLs()
 
 	return &httpapi.GitHubOAuthConfig{
-		ClientID:        clientID,
-		ClientSecret:    clientSecret,
-		RedirectURI:     envOrDefault("LIGHTCLAW_GITHUB_REDIRECT_URI", oauthCallbackURL(publicBaseURL, "/auth/oauth/github/callback")),
-		FrontendBaseURL: frontendBaseURL,
-		PublicBaseURL:   publicBaseURL,
+		ClientID:             clientID,
+		ClientSecret:         clientSecret,
+		RedirectURI:          envOrDefault("LIGHTCLAW_GITHUB_REDIRECT_URI", oauthCallbackURL(publicBaseURL, "/auth/oauth/github/callback")),
+		FrontendBaseURL:      frontendBaseURL,
+		PublicBaseURL:        publicBaseURL,
+		RegistrationDisabled: envOrDefault("LIGHTCLAW_GITHUB_REGISTRATION_ENABLED", "false") != "true",
 	}
 }
 

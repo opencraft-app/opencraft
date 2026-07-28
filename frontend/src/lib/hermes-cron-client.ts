@@ -13,6 +13,7 @@
  * - 不解析 list 文本输出；优先 `--json`，失败直接抛错让 toast 展示原始 stderr。
  */
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 import {
   AUTH_UNAUTHORIZED_EVENT,
   readStoredAuthToken,
@@ -272,7 +273,7 @@ export async function execCommand(botId: string, command: string): Promise<Debug
     method: "POST",
     credentials: "include",
     headers,
-    body: JSON.stringify({ command, run_as_user: "agentuser" }),
+    body: JSON.stringify(createDebugExecRequestBody(command)),
   });
   if (!resp.ok) {
     if (resp.status === 401 || resp.status === 403) {

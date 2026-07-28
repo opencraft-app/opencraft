@@ -343,6 +343,9 @@ type OAuthSignInInput struct {
 	Name            string
 	AvatarURL       string
 	InviteCode      string
+	// RegistrationDisabled allows a provider to authenticate or link existing
+	// users without creating a new platform account.
+	RegistrationDisabled bool
 }
 
 type Service struct {

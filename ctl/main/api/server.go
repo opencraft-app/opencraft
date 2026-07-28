@@ -1092,7 +1092,7 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			h.streamDebugCommand(w, r, ctx, instanceID, &req)
 			return
 		}
-		resp, err := h.logic.ExecDebugCommand(ctx, instanceID, req.Command, req.RunAsUser)
+		resp, err := h.logic.ExecDebugCommandWithBackend(ctx, instanceID, req.Command, req.RunAsUser, req.ExecutionBackend)
 		if err != nil {
 			writeHTTPError(w, r, err)
 			return
@@ -1133,7 +1133,7 @@ func (h *instanceHandler) streamDebugCommand(w http.ResponseWriter, r *http.Requ
 		return nil
 	}
 
-	if err := h.logic.StreamDebugCommand(ctx, instanceID, req.Command, req.RunAsUser, flushEvent); err != nil {
+	if err := h.logic.StreamDebugCommandWithBackend(ctx, instanceID, req.Command, req.RunAsUser, req.ExecutionBackend, flushEvent); err != nil {
 		if !started {
 			writeHTTPError(w, r, err)
 			return

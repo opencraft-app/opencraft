@@ -65,6 +65,13 @@ export const oauthErrorMessage = (oauthError: string | null) => {
     return null;
   }
 
+  if (oauthError === "github_registration_disabled") {
+    return "GitHub registration is unavailable. Please sign in with Google.";
+  }
+  if (oauthError === "qq_registration_disabled") {
+    return "QQ 暂不开放新用户注册，请使用微信登录。";
+  }
+
   for (const provider of ["qq", "wechat", "google", "github"] as const) {
     if (oauthError === `${provider}_state_mismatch`) {
       return OAUTH_PROVIDER_STATE_MESSAGES[provider];

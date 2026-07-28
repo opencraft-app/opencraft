@@ -1,5 +1,6 @@
 import { planCatalog } from "@/domain/plan-catalog";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 import type {
   AuthSessionSnapshot,
   BillingSummary,
@@ -991,7 +992,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           method: "POST",
           credentials: "include",
           headers,
-          body: JSON.stringify({ command, run_as_user: "agentuser" }),
+          body: JSON.stringify(createDebugExecRequestBody(command)),
           signal: abortController.signal,
         });
       } catch {

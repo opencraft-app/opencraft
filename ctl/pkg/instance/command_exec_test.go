@@ -39,6 +39,9 @@ type commandSandboxAdapterStub struct {
 	stdinCalls      []commandSandboxStdinCall
 	stdinResult     *psandbox.ExecCommandResult
 	stdinErr        error
+	ptyCalls        []psandbox.PtyExecStreamRequest
+	ptyEvents       []psandbox.PtyExecStreamEvent
+	ptyErr          error
 }
 
 type commandSandboxStdinCall struct {
@@ -126,6 +129,18 @@ func (s *commandSandboxAdapterStub) RunProcessWithStdin(_ context.Context, sandb
 		return s.stdinResult, nil
 	}
 	return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0}, nil
+}
+
+func (s *commandSandboxAdapterStub) StreamPtyCommand(_ context.Context, _ string, req *psandbox.PtyExecStreamRequest, onEvent func(psandbox.PtyExecStreamEvent) error) error {
+	if req != nil {
+		s.ptyCalls = append(s.ptyCalls, *req)
+	}
+	for _, event := range s.ptyEvents {
+		if err := onEvent(event); err != nil {
+			return err
+		}
+	}
+	return s.ptyErr
 }
 
 type commandInstanceDaoStub struct {
@@ -838,6 +853,93 @@ func TestExecDebugCommandRejectsUnsupportedRunAsUser(t *testing.T) {
 	_, err := logic.ExecDebugCommand(ctx, "ins-1", "echo raw-debug", "root")
 	if !errors.Is(err, errcode.ErrDebugInvalidRunAs) {
 		t.Fatalf("expected invalid run_as_user error, got %v", err)
+	}
+}
+
+func TestExecDebugCommandTATUsesPtyExecStream(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{
+		ptyEvents: []psandbox.PtyExecStreamEvent{
+			{Type: "started", ExecutionID: "pty:test"},
+			{Type: "output", ExecutionID: "pty:test", Index: 0, Chunk: "hello\n"},
+			{Type: "finished", ExecutionID: "pty:test", Status: "SUCCESS", ExitCode: 0},
+		},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1",
+			SandboxId:  "sbx-1",
+			Status:     modelinstance.InstanceStatusRunning,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+	ctx := pctx.NewContext(nil).WithUserID("user-1")
+
+	resp, err := logic.ExecDebugCommandWithBackend(ctx, "ins-1", "echo hello", "agentuser", "tat")
+	if err != nil {
+		t.Fatalf("exec TAT debug command: %v", err)
+	}
+	if resp.Status != "SUCCESS" || resp.Output != "hello\n" || resp.Stderr != "" {
+		t.Fatalf("unexpected TAT response: %+v", resp)
+	}
+	if len(adapter.ptyCalls) != 1 || len(adapter.processCalls) != 0 {
+		t.Fatalf("expected PTY only, pty=%d envd=%d", len(adapter.ptyCalls), len(adapter.processCalls))
+	}
+	call := adapter.ptyCalls[0]
+	if call.Username != "agentuser" || call.WorkingDirectory != "/home/agentuser" {
+		t.Fatalf("unexpected PTY identity: %+v", call)
+	}
+	if !strings.Contains(call.Command, `sudo -u "$target_user"`) ||
+		!strings.Contains(call.Command, `cd "$target_home"`) ||
+		!strings.Contains(call.Command, "/bin/bash -lc") ||
+		!strings.Contains(call.Command, "echo hello") {
+		t.Fatalf("expected agentuser login-shell command in its home, got %q", call.Command)
+	}
+}
+
+func TestStreamDebugCommandTATRelaysPtyOutput(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{
+		ptyEvents: []psandbox.PtyExecStreamEvent{
+			{Type: "started", ExecutionID: "pty:test"},
+			{Type: "output", ExecutionID: "pty:test", Index: 0, Chunk: "one"},
+			{Type: "output", ExecutionID: "pty:test", Index: 1, Chunk: "two"},
+			{Type: "finished", ExecutionID: "pty:test", Status: "SUCCESS", ExitCode: 0},
+		},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1",
+			SandboxId:  "sbx-1",
+			Status:     modelinstance.InstanceStatusRunning,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+	ctx := pctx.NewContext(nil).WithUserID("user-1")
+	var events []transport.ExecDebugCommandStreamEvent
+
+	err := logic.StreamDebugCommandWithBackend(ctx, "ins-1", "echo hello", "agentuser", "tat", func(event transport.ExecDebugCommandStreamEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("stream TAT debug command: %v", err)
+	}
+	if len(events) != 4 || events[0].Type != "started" || events[1].Chunk != "one" || events[2].Chunk != "two" || events[3].Type != "finished" {
+		t.Fatalf("unexpected events: %+v", events)
+	}
+	if events[3].Response == nil || events[3].Response.Output != "onetwo" {
+		t.Fatalf("unexpected final response: %+v", events[3].Response)
+	}
+}
+
+func TestExecDebugCommandRejectsUnknownBackend(t *testing.T) {
+	logic := &logic{logger: zap.NewNop()}
+	ctx := pctx.NewContext(nil).WithUserID("user-1")
+
+	_, err := logic.ExecDebugCommandWithBackend(ctx, "ins-1", "echo hello", "agentuser", "run-command")
+	if !errors.Is(err, errcode.ErrInstanceInvalidParam) {
+		t.Fatalf("expected invalid backend error, got %v", err)
 	}
 }
 

@@ -7,6 +7,7 @@ describe("oauthErrorMessage", () => {
     expect(oauthErrorMessage("qq_sign_in_failed")).toBe("QQ 登录暂时失败，请稍后重试。");
     expect(oauthErrorMessage("qq_exchange_failed")).toBe("QQ 登录暂时失败，请稍后重试。");
     expect(oauthErrorMessage("qq_identity_failed")).toBe("QQ 登录暂时失败，请稍后重试。");
+    expect(oauthErrorMessage("qq_registration_disabled")).toBe("QQ 暂不开放新用户注册，请使用微信登录。");
   });
 
   it("maps Google signin failures to the modal error copy", () => {
@@ -19,6 +20,9 @@ describe("oauthErrorMessage", () => {
     expect(oauthErrorMessage("github_sign_in_failed")).toBe("GitHub 登录暂时失败，请稍后重试。");
     expect(oauthErrorMessage("github_exchange_failed")).toBe("GitHub 登录暂时失败，请稍后重试。");
     expect(oauthErrorMessage("github_identity_failed")).toBe("GitHub 登录暂时失败，请稍后重试。");
+    expect(oauthErrorMessage("github_registration_disabled")).toBe(
+      "GitHub registration is unavailable. Please sign in with Google.",
+    );
   });
 
   it("maps WeChat signin failures to the shared modal error copy", () => {

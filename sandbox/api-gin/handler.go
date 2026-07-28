@@ -20,12 +20,13 @@ import (
 
 // handler implements the generated ServerInterface.
 type handler struct {
-	svc       *service.Service
-	routes    route.Store
-	commands  provider.CommandRunner
-	terminals provider.TerminalSessionStarter
-	cloud     provider.CloudProvider
-	metrics   *observability.APIMetrics
+	svc              *service.Service
+	routes           route.Store
+	commands         provider.CommandRunner
+	terminals        provider.TerminalSessionStarter
+	terminalCommands provider.TerminalCommandStreamer
+	cloud            provider.CloudProvider
+	metrics          *observability.APIMetrics
 
 	// cloudPauseResume controls Stop/Start based pause/resume semantics. It
 	// defaults on because billing/pass lifecycle isolation needs real cloud
