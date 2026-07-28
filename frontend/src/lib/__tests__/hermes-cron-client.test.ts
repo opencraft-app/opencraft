@@ -9,6 +9,7 @@ import {
   createCronJobWithScriptRollback,
   execCommand,
   execCommandStream,
+  extractHermesModelFullIdFromCommand,
   listCronJobs,
   listRecentCronRuns,
   parseCronRunFilesOutput,
@@ -20,6 +21,7 @@ import {
   runCronJobAsTest,
   shellQuote,
   splitLastRunValue,
+  syncCronJobsToModel,
   type CronJob,
 } from "../hermes-cron-client";
 import { AUTH_UNAUTHORIZED_EVENT, writeStoredAuthToken } from "@/repositories/http-repositories";
@@ -516,6 +518,68 @@ describe("listCronJobs", () => {
 
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.name).toBe("喝水提醒测试运行");
+  });
+});
+
+describe("cron model sync", () => {
+  it("extracts the target model from Hermes model switch commands", () => {
+    expect(extractHermesModelFullIdFromCommand("acli model switch --model 'openrouter/deepseek-chat'"))
+      .toBe("openrouter/deepseek-chat");
+    expect(extractHermesModelFullIdFromCommand("acli model switch --model tencent/hunyuan-turbos"))
+      .toBe("tencent/hunyuan-turbos");
+    expect(extractHermesModelFullIdFromCommand("acli provider save --name tencent"))
+      .toBeNull();
+  });
+
+  it("updates active cron jobs to the selected model and skips finished one-shot jobs", async () => {
+    const jobsJson = JSON.stringify([
+      {
+        id: "active-old",
+        name: "每日待办",
+        schedule: { kind: "cron", display: "0 9 * * *" },
+        provider: "old-provider",
+        model: "old-model",
+      },
+      {
+        id: "active-new",
+        name: "AI 热点日报",
+        schedule: { kind: "cron", display: "0 8 * * *" },
+        model: "tencent/hunyuan-turbos",
+      },
+      {
+        id: "done-once",
+        name: "赶飞机出门提醒",
+        schedule: { kind: "once", display: "once 2026-07-14T09:00:00+08:00" },
+        state: "completed",
+        provider: "old-provider",
+        model: "old-model",
+      },
+    ]);
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const command = String((JSON.parse(String(init?.body ?? "{}")) as { command?: string }).command ?? "");
+      if (command.includes("cat ~/.hermes/cron/jobs.json")) return okExec(jobsJson);
+      if (command === "hermes cron edit 'active-old' --model 'tencent/hunyuan-turbos'") return okExec("");
+      if (command.includes("lightvela-jobs-meta.json")) return okExec("");
+      return failedExec(`unexpected command: ${command}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await syncCronJobsToModel("bot-1", "tencent/hunyuan-turbos");
+
+    expect(result).toMatchObject({
+      targetModel: "tencent/hunyuan-turbos",
+      scanned: 3,
+      updated: 1,
+      skipped: 2,
+      failed: 0,
+    });
+    const commands = fetchMock.mock.calls.map((call) => {
+      const body = JSON.parse(String((call[1] as RequestInit)?.body ?? "{}")) as { command?: string };
+      return body.command ?? "";
+    });
+    expect(commands.filter((command) => command.startsWith("hermes cron edit"))).toEqual([
+      "hermes cron edit 'active-old' --model 'tencent/hunyuan-turbos'",
+    ]);
   });
 });
 
