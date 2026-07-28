@@ -63,6 +63,7 @@ import type { WorkerActionStatusResult } from "@/repositories/types";
 import {
   createMonoDebugExecAdapter,
 } from "@/pages/marketing/agent-tat-adapter";
+import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
 import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
@@ -4123,21 +4124,7 @@ export const AgentSettingsPage = ({
       setIsCreating(true);
       navigate(`${AGENTS_HOME_PATH}?creating=${encodeURIComponent(newBot.id)}`, { replace: true });
     } catch (err) {
-      const raw = err instanceof Error ? err.message : "";
-      // 将后端错误映射为用户友好文案
-      let friendlyMsg: string;
-      if (/quota|limit|exceed/i.test(raw)) {
-        friendlyMsg = t("当前套餐的 Agent 配额已满，请升级套餐或删除现有 Agent 后重试。");
-      } else if (/resource|sandbox|pool|exhaust/i.test(raw)) {
-        friendlyMsg = t("云端资源暂时紧张，请稍后再试。");
-      } else if (/timeout|timed?\s*out/i.test(raw)) {
-        friendlyMsg = t("创建超时，请稍后重试。");
-      } else if (/network|fetch|connect/i.test(raw)) {
-        friendlyMsg = t("网络异常，请检查网络后重试。");
-      } else {
-        friendlyMsg = raw || t("创建失败，请稍后重试。");
-      }
-      setDirectCreateError(friendlyMsg);
+      setDirectCreateError(getAgentCreateErrorMessage(err, (message) => t(message)));
     } finally {
       setDirectCreating(false);
     }
