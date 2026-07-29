@@ -13,6 +13,7 @@ patches:
   - path: delete-lightclaw-auth-internal.yaml
   - path: patch-shadowbinding.yaml
   - path: patch-phone-auth.yaml
+  - path: patch-oauth-registration.yaml
 
 generators:
   - ksops-secret-generator.yaml
