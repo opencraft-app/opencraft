@@ -1,3 +1,4 @@
+# Regional values are injected by the environment overlay.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,6 +6,7 @@ metadata:
   namespace: llmgateway
   labels:
     app: llmgateway-control
+    velagw.lightvela.com/regional-observability: "true"
 spec:
   replicas: 2
   selector:
@@ -20,7 +22,7 @@ spec:
       terminationGracePeriodSeconds: 150
       containers:
         - name: control
-          image: lightclaw-shprod.tencentcloudcr.com/llmgateway/llmgateway@sha256:7bf2cd88628e78936e071b66d4aaa5b785fa6cc1dc023cda8ad917000075dd13
+          image: REPLACE_VELAGW_IMAGE
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/llmgateway-control"]
           ports:
@@ -48,8 +50,8 @@ spec:
               value: llmgateway-control
             - name: LLMGATEWAY_ENVIRONMENT
               value: prod
-            - {name: OTEL_SERVICE_VERSION, value: "348b446"}
-            - {name: K8S_CLUSTER_NAME, value: "shanghai-llmgateway-prod"}
+            - {name: OTEL_SERVICE_VERSION, value: "REPLACE_VELAGW_OTEL_SERVICE_VERSION"}
+            - {name: K8S_CLUSTER_NAME, value: "REPLACE_VELAGW_CLUSTER_NAME"}
             - name: K8S_NAMESPACE_NAME
               valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
             - name: K8S_POD_NAME
@@ -57,7 +59,7 @@ spec:
             - name: K8S_POD_UID
               valueFrom: {fieldRef: {fieldPath: metadata.uid}}
             - {name: K8S_CONTAINER_NAME, value: control}
-            - {name: CLOUD_REGION, value: "ap-shanghai"}
+            - {name: CLOUD_REGION, value: "REPLACE_VELAGW_CLOUD_REGION"}
           startupProbe:
             httpGet:
               path: /healthz
@@ -95,6 +97,7 @@ metadata:
   namespace: llmgateway
   labels:
     app: llmgateway-worker-maintenance
+    velagw.lightvela.com/regional-observability: "true"
 spec:
   replicas: 2
   selector:
@@ -110,7 +113,7 @@ spec:
       terminationGracePeriodSeconds: 330
       containers:
         - name: worker
-          image: lightclaw-shprod.tencentcloudcr.com/llmgateway/llmgateway@sha256:7bf2cd88628e78936e071b66d4aaa5b785fa6cc1dc023cda8ad917000075dd13
+          image: REPLACE_VELAGW_IMAGE
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/llmgateway-worker"]
           envFrom:
@@ -129,8 +132,8 @@ spec:
               value: llmgateway-worker-maintenance
             - name: LLMGATEWAY_ENVIRONMENT
               value: prod
-            - {name: OTEL_SERVICE_VERSION, value: "348b446"}
-            - {name: K8S_CLUSTER_NAME, value: "shanghai-llmgateway-prod"}
+            - {name: OTEL_SERVICE_VERSION, value: "REPLACE_VELAGW_OTEL_SERVICE_VERSION"}
+            - {name: K8S_CLUSTER_NAME, value: "REPLACE_VELAGW_CLUSTER_NAME"}
             - name: K8S_NAMESPACE_NAME
               valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
             - name: K8S_POD_NAME
@@ -138,7 +141,7 @@ spec:
             - name: K8S_POD_UID
               valueFrom: {fieldRef: {fieldPath: metadata.uid}}
             - {name: K8S_CONTAINER_NAME, value: worker}
-            - {name: CLOUD_REGION, value: "ap-shanghai"}
+            - {name: CLOUD_REGION, value: "REPLACE_VELAGW_CLOUD_REGION"}
             - name: LLMGATEWAY_MAINTENANCE_WORKER_POLL_INTERVAL
               value: 1s
             - name: LLMGATEWAY_MAINTENANCE_WORKER_LEASE_TTL
@@ -182,7 +185,7 @@ metadata:
   namespace: llmgateway
   annotations:
     service.cloud.tencent.com/direct-access: "true"
-    service.cloud.tencent.com/specify-protocol: '{"443":{"protocol":["HTTPS"],"hosts":{"token-admin.lightvela.com":{"tls":"token-admin-lightvela-com-cert"}}}}'
+    service.cloud.tencent.com/specify-protocol: REPLACE_VELAGW_CONTROL_PROTOCOL
 spec:
   type: LoadBalancer
   selector:
@@ -221,7 +224,7 @@ spec:
       terminationGracePeriodSeconds: 330
       containers:
         - name: traffic
-          image: lightclaw-shprod.tencentcloudcr.com/llmgateway/llmgateway@sha256:7bf2cd88628e78936e071b66d4aaa5b785fa6cc1dc023cda8ad917000075dd13
+          image: REPLACE_VELAGW_IMAGE
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/llmgateway-traffic"]
           ports:
@@ -288,7 +291,7 @@ metadata:
   namespace: llmgateway
   annotations:
     service.cloud.tencent.com/direct-access: "true"
-    service.cloud.tencent.com/specify-protocol: '{"80":{"protocol":["HTTP"],"hosts":{"token.lightvela.com":{}}},"443":{"protocol":["HTTPS"],"hosts":{"token.lightvela.com":{"tls":"token-lightvela-com-cert"}}}}'
+    service.cloud.tencent.com/specify-protocol: REPLACE_VELAGW_TRAFFIC_PROTOCOL
 spec:
   type: LoadBalancer
   selector:
@@ -310,6 +313,7 @@ metadata:
   namespace: llmgateway
   labels:
     app: llmgateway-worker-core
+    velagw.lightvela.com/regional-observability: "true"
 spec:
   replicas: 2
   selector:
@@ -325,7 +329,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: worker
-          image: lightclaw-shprod.tencentcloudcr.com/llmgateway/llmgateway@sha256:7bf2cd88628e78936e071b66d4aaa5b785fa6cc1dc023cda8ad917000075dd13
+          image: REPLACE_VELAGW_IMAGE
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/llmgateway-worker"]
           envFrom:
@@ -344,8 +348,8 @@ spec:
               value: llmgateway-worker-core
             - name: LLMGATEWAY_ENVIRONMENT
               value: prod
-            - {name: OTEL_SERVICE_VERSION, value: "348b446"}
-            - {name: K8S_CLUSTER_NAME, value: "shanghai-llmgateway-prod"}
+            - {name: OTEL_SERVICE_VERSION, value: "REPLACE_VELAGW_OTEL_SERVICE_VERSION"}
+            - {name: K8S_CLUSTER_NAME, value: "REPLACE_VELAGW_CLUSTER_NAME"}
             - name: K8S_NAMESPACE_NAME
               valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
             - name: K8S_POD_NAME
@@ -353,7 +357,7 @@ spec:
             - name: K8S_POD_UID
               valueFrom: {fieldRef: {fieldPath: metadata.uid}}
             - {name: K8S_CONTAINER_NAME, value: worker}
-            - {name: CLOUD_REGION, value: "ap-shanghai"}
+            - {name: CLOUD_REGION, value: "REPLACE_VELAGW_CLOUD_REGION"}
             - name: LLMGATEWAY_WORKER_POLL_INTERVAL
               value: 5s
             - name: LLMGATEWAY_WORKER_LEASE_TTL
@@ -391,7 +395,7 @@ spec:
             - name: LLMGATEWAY_SET_AUTOSCALER_MIN_READY_FREE_USERS
               value: "3000"
             - name: LLMGATEWAY_SET_AUTOSCALER_MIN_WARM_SETS
-              value: "4"
+              value: "REPLACE_VELAGW_SET_AUTOSCALER_MIN_WARM_SETS"
             - name: LLMGATEWAY_SET_AUTOSCALER_MAX_SCALE_UP_PER_CYCLE
               value: "2"
             - name: LLMGATEWAY_SET_AUTOSCALER_SET_ID_PREFIX
@@ -417,6 +421,7 @@ metadata:
   namespace: llmgateway
   labels:
     app: llmgateway-worker-admin
+    velagw.lightvela.com/regional-observability: "true"
 spec:
   replicas: 2
   selector:
@@ -432,7 +437,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: worker
-          image: lightclaw-shprod.tencentcloudcr.com/llmgateway/llmgateway@sha256:7bf2cd88628e78936e071b66d4aaa5b785fa6cc1dc023cda8ad917000075dd13
+          image: REPLACE_VELAGW_IMAGE
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/llmgateway-worker"]
           envFrom:
@@ -455,8 +460,8 @@ spec:
               value: llmgateway-worker-admin
             - name: LLMGATEWAY_ENVIRONMENT
               value: prod
-            - {name: OTEL_SERVICE_VERSION, value: "348b446"}
-            - {name: K8S_CLUSTER_NAME, value: "shanghai-llmgateway-prod"}
+            - {name: OTEL_SERVICE_VERSION, value: "REPLACE_VELAGW_OTEL_SERVICE_VERSION"}
+            - {name: K8S_CLUSTER_NAME, value: "REPLACE_VELAGW_CLUSTER_NAME"}
             - name: K8S_NAMESPACE_NAME
               valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
             - name: K8S_POD_NAME
@@ -464,7 +469,7 @@ spec:
             - name: K8S_POD_UID
               valueFrom: {fieldRef: {fieldPath: metadata.uid}}
             - {name: K8S_CONTAINER_NAME, value: worker}
-            - {name: CLOUD_REGION, value: "ap-shanghai"}
+            - {name: CLOUD_REGION, value: "REPLACE_VELAGW_CLOUD_REGION"}
           resources:
             requests:
               cpu: 100m
@@ -480,6 +485,7 @@ metadata:
   namespace: llmgateway
   labels:
     app: llmgateway-worker-byok
+    velagw.lightvela.com/regional-observability: "true"
 spec:
   replicas: 2
   selector:
@@ -495,7 +501,7 @@ spec:
       terminationGracePeriodSeconds: 330
       containers:
         - name: worker
-          image: lightclaw-shprod.tencentcloudcr.com/llmgateway/llmgateway@sha256:7bf2cd88628e78936e071b66d4aaa5b785fa6cc1dc023cda8ad917000075dd13
+          image: REPLACE_VELAGW_IMAGE
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/llmgateway-worker"]
           envFrom:
@@ -514,8 +520,8 @@ spec:
               value: llmgateway-worker-byok
             - name: LLMGATEWAY_ENVIRONMENT
               value: prod
-            - {name: OTEL_SERVICE_VERSION, value: "348b446"}
-            - {name: K8S_CLUSTER_NAME, value: "shanghai-llmgateway-prod"}
+            - {name: OTEL_SERVICE_VERSION, value: "REPLACE_VELAGW_OTEL_SERVICE_VERSION"}
+            - {name: K8S_CLUSTER_NAME, value: "REPLACE_VELAGW_CLUSTER_NAME"}
             - name: K8S_NAMESPACE_NAME
               valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
             - name: K8S_POD_NAME
@@ -523,7 +529,7 @@ spec:
             - name: K8S_POD_UID
               valueFrom: {fieldRef: {fieldPath: metadata.uid}}
             - {name: K8S_CONTAINER_NAME, value: worker}
-            - {name: CLOUD_REGION, value: "ap-shanghai"}
+            - {name: CLOUD_REGION, value: "REPLACE_VELAGW_CLOUD_REGION"}
             - name: LLMGATEWAY_BYOK_WORKER_POLL_INTERVAL
               value: 1s
             - name: LLMGATEWAY_BYOK_WORKER_LEASE_TTL
@@ -557,6 +563,7 @@ metadata:
   namespace: llmgateway
   labels:
     app: llmgateway-worker-observer
+    velagw.lightvela.com/regional-observability: "true"
 spec:
   replicas: 2
   selector:
@@ -572,7 +579,7 @@ spec:
       terminationGracePeriodSeconds: 330
       containers:
         - name: worker
-          image: lightclaw-shprod.tencentcloudcr.com/llmgateway/llmgateway@sha256:7bf2cd88628e78936e071b66d4aaa5b785fa6cc1dc023cda8ad917000075dd13
+          image: REPLACE_VELAGW_IMAGE
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/llmgateway-worker"]
           envFrom:
@@ -591,8 +598,8 @@ spec:
               value: llmgateway-worker-observer
             - name: LLMGATEWAY_ENVIRONMENT
               value: prod
-            - {name: OTEL_SERVICE_VERSION, value: "348b446"}
-            - {name: K8S_CLUSTER_NAME, value: "shanghai-llmgateway-prod"}
+            - {name: OTEL_SERVICE_VERSION, value: "REPLACE_VELAGW_OTEL_SERVICE_VERSION"}
+            - {name: K8S_CLUSTER_NAME, value: "REPLACE_VELAGW_CLUSTER_NAME"}
             - name: K8S_NAMESPACE_NAME
               valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
             - name: K8S_POD_NAME
@@ -600,7 +607,7 @@ spec:
             - name: K8S_POD_UID
               valueFrom: {fieldRef: {fieldPath: metadata.uid}}
             - {name: K8S_CONTAINER_NAME, value: worker}
-            - {name: CLOUD_REGION, value: "ap-shanghai"}
+            - {name: CLOUD_REGION, value: "REPLACE_VELAGW_CLOUD_REGION"}
             - name: LLMGATEWAY_WORKER_POLL_INTERVAL
               value: 5s
             - name: LLMGATEWAY_WORKER_LEASE_TTL

@@ -45,7 +45,7 @@ variable "environment" {
 }
 
 variable "availability_zones" {
-  description = "Zones used by subnets, TKE Serverless, CDB, and Redis. Keep at least two zones in the selected region."
+  description = "Zones used by subnets, TKE node pools, CDB, and Redis. Keep at least two zones in the selected region."
   type        = list(string)
 
   validation {
@@ -67,7 +67,7 @@ variable "public_subnet_cidrs" {
 }
 
 variable "app_subnet_cidrs" {
-  description = "Private TKE Serverless/pod subnet CIDRs. Same length as availability_zones."
+  description = "Private TKE node/pod subnet CIDRs. Same length as availability_zones."
   type        = list(string)
   default     = ["10.64.10.0/23", "10.64.12.0/23"]
 }
@@ -94,6 +94,69 @@ variable "traffic_backend_port" {
   description = "Pod port exposed by llmgateway-traffic behind the CLB."
   type        = string
   default     = "18080"
+}
+
+variable "nat_eip_bandwidth" {
+  description = "Egress public bandwidth in Mbps."
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.nat_eip_bandwidth >= 1 && var.nat_eip_bandwidth <= 100
+    error_message = "nat_eip_bandwidth must be between 1 and 100 Mbps."
+  }
+}
+
+variable "egress_gateway_mode" {
+  description = "Private-subnet egress implementation: managed_nat, nat_instance, or disabled."
+  type        = string
+  default     = "managed_nat"
+
+  validation {
+    condition     = contains(["managed_nat", "nat_instance", "disabled"], var.egress_gateway_mode)
+    error_message = "egress_gateway_mode must be managed_nat, nat_instance, or disabled."
+  }
+}
+
+variable "nat_instance_image_id" {
+  description = "Regional Linux image used by NAT instances when egress_gateway_mode is nat_instance."
+  type        = string
+  default     = ""
+}
+
+variable "nat_instance_type" {
+  description = "CVM instance type used by each same-zone NAT instance."
+  type        = string
+  default     = "SA9.MEDIUM2"
+}
+
+variable "nat_instance_key_ids" {
+  description = "Existing TencentCloud SSH key IDs attached to NAT instances."
+  type        = list(string)
+  default     = []
+}
+
+variable "nat_instance_admin_cidrs" {
+  description = "CIDRs allowed to SSH to NAT instances for restricted operations."
+  type        = list(string)
+  default     = []
+}
+
+variable "nat_instance_system_disk_type" {
+  description = "System disk type used by NAT instances."
+  type        = string
+  default     = "CLOUD_BSSD"
+}
+
+variable "nat_instance_system_disk_size" {
+  description = "System disk size used by NAT instances in GiB."
+  type        = number
+  default     = 50
+
+  validation {
+    condition     = var.nat_instance_system_disk_size >= 50
+    error_message = "nat_instance_system_disk_size must be at least 50 GiB."
+  }
 }
 
 variable "dns_domain" {
@@ -174,8 +237,14 @@ variable "tags" {
   default     = {}
 }
 
+variable "manage_tcr_repository" {
+  description = "Manage the configured TCR namespace and repository in this regional state. Disable when reusing an existing cross-region registry."
+  type        = bool
+  default     = true
+}
+
 variable "tcr_instance_id" {
-  description = "Existing regional Tencent Container Registry instance ID used to publish LLMGateway images."
+  description = "Existing Tencent Container Registry instance ID used to publish LLMGateway images."
   type        = string
 
   validation {
@@ -185,7 +254,7 @@ variable "tcr_instance_id" {
 }
 
 variable "tcr_public_domain" {
-  description = "Public domain of the existing regional Tencent Container Registry instance."
+  description = "Public domain of the existing Tencent Container Registry instance."
   type        = string
 
   validation {
@@ -222,6 +291,113 @@ variable "tke_cluster_level" {
   description = "Managed TKE cluster level. Examples: L5, L20, L50, L100."
   type        = string
   default     = "L20"
+}
+
+variable "tke_node_pool_type" {
+  description = "TKE worker type. Keep serverless for existing regions; use standard where Super Nodes are unavailable."
+  type        = string
+  default     = "serverless"
+
+  validation {
+    condition     = contains(["serverless", "standard"], var.tke_node_pool_type)
+    error_message = "tke_node_pool_type must be serverless or standard."
+  }
+}
+
+variable "tke_internet_endpoint_enabled" {
+  description = "Whether to expose the Kubernetes API through a public TKE endpoint."
+  type        = bool
+  default     = true
+}
+
+variable "tke_internet_endpoint_domain" {
+  description = "Optional custom domain signed by TKE for the public Kubernetes API endpoint."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = trimspace(var.tke_internet_endpoint_domain) == "" || can(regex("^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", var.tke_internet_endpoint_domain))
+    error_message = "tke_internet_endpoint_domain must be empty or a lowercase fully qualified domain name."
+  }
+}
+
+variable "tke_intranet_endpoint_enabled" {
+  description = "Whether to expose the Kubernetes API through an app-subnet private TKE endpoint."
+  type        = bool
+  default     = false
+}
+
+variable "tke_intranet_endpoint_subnet_index" {
+  description = "Index of the app subnet used by the private Kubernetes API endpoint."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.tke_intranet_endpoint_subnet_index >= 0 && var.tke_intranet_endpoint_subnet_index < length(var.availability_zones)
+    error_message = "tke_intranet_endpoint_subnet_index must select an existing app subnet."
+  }
+}
+
+variable "standard_node_pool" {
+  description = "Per-zone CVM node pool configuration used when tke_node_pool_type is standard."
+  type = object({
+    instance_type              = string
+    backup_instance_types      = list(string)
+    node_os                    = string
+    min_size                   = number
+    max_size                   = number
+    desired_capacity           = number
+    enable_auto_scale          = bool
+    public_ip_assigned         = bool
+    internet_max_bandwidth_out = number
+    system_disk_type           = string
+    system_disk_size           = number
+  })
+  default = {
+    instance_type              = "SA9.LARGE8"
+    backup_instance_types      = ["SA5.LARGE8"]
+    node_os                    = "tlinux3.1x86_64"
+    min_size                   = 1
+    max_size                   = 3
+    desired_capacity           = 1
+    enable_auto_scale          = false
+    public_ip_assigned         = false
+    internet_max_bandwidth_out = 0
+    system_disk_type           = "CLOUD_PREMIUM"
+    system_disk_size           = 100
+  }
+
+  validation {
+    condition = (
+      var.standard_node_pool.min_size >= 1
+      && var.standard_node_pool.max_size >= var.standard_node_pool.min_size
+      && var.standard_node_pool.desired_capacity >= var.standard_node_pool.min_size
+      && var.standard_node_pool.desired_capacity <= var.standard_node_pool.max_size
+      && trimspace(var.standard_node_pool.instance_type) != ""
+    )
+    error_message = "standard_node_pool must define a valid instance type and min <= desired <= max with at least one node per zone."
+  }
+}
+
+variable "standard_node_pool_password" {
+  description = "Login password for standard CVM workers. Required only when tke_node_pool_type is standard."
+  type        = string
+  default     = null
+  sensitive   = true
+
+  validation {
+    condition = (
+      var.standard_node_pool_password == null
+      || (length(var.standard_node_pool_password) >= 8 && length(var.standard_node_pool_password) <= 16)
+    )
+    error_message = "standard_node_pool_password must be null or between 8 and 16 characters."
+  }
+}
+
+variable "standard_node_pool_generation" {
+  description = "Name suffix used when standard node pools need zero-downtime replacement."
+  type        = string
+  default     = "v1"
 }
 
 variable "tke_cluster_cidr" {
@@ -280,18 +456,25 @@ variable "control_redis" {
   }
 }
 
+variable "redis_zone_ids" {
+  description = "Optional explicit mapping from availability-zone name to TencentCloud numeric Redis zone ID. Use when the provider's Redis zone data source is unavailable."
+  type        = map(number)
+  default     = {}
+}
+
 variable "shards" {
   description = "Business data shards. Each shard can host multiple new-api Sets."
   type = map(object({
-    zone_index        = number
-    mysql_mem_size    = number
-    mysql_volume_size = number
-    mysql_cpu         = number
-    redis_type_id     = number
-    redis_mem_size    = number
-    redis_shard_num   = number
-    redis_replicas    = number
-    max_sets          = number
+    zone_index                 = number
+    mysql_mem_size             = number
+    mysql_volume_size          = number
+    mysql_cpu                  = number
+    redis_type_id              = number
+    redis_mem_size             = number
+    redis_shard_num            = number
+    redis_replicas             = number
+    redis_replica_zone_indexes = optional(list(number), [])
+    max_sets                   = number
   }))
   default = {
     shard-a = {

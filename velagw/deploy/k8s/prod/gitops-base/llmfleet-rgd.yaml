@@ -1,3 +1,4 @@
+# Shared by every production VelaGW regional overlay.
 apiVersion: kro.run/v1alpha1
 kind: ResourceGraphDefinition
 metadata:

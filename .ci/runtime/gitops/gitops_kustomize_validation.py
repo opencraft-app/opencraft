@@ -115,6 +115,10 @@ def changed_direct_app_services_from_paths(paths: list[str], env: str) -> set[st
                 services.add(parts[2])
         elif path.startswith(app_prefix) and path.endswith(".yaml"):
             services.add(Path(path).stem)
+        else:
+            source_service = source_service_for_path(path)
+            if source_service:
+                services.add(source_service)
     return services
 
 
@@ -212,6 +216,7 @@ def source_service_for_path(path: str) -> str:
         "session",
         "subscription",
         "trade",
+        "velagw",
         "workers",
     }:
         return first

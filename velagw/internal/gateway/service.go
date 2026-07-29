@@ -246,13 +246,22 @@ func (s *Service) ObserveShard(ctx context.Context, input UpsertShardInput) erro
 	if !ok {
 		return s.UpsertShard(ctx, input)
 	}
-	if field := shardProjectionDriftField(existing, input); field != "" {
+	initializing := shardNeedsFleetProjection(existing)
+	if field := shardProjectionDriftField(existing, input, initializing); field != "" {
 		return fmt.Errorf("%w: shard %q field %s", ErrShardProjectionDrift, input.ID, field)
+	}
+	if initializing {
+		return s.UpsertShard(ctx, input)
 	}
 	return nil
 }
 
-func shardProjectionDriftField(existing Shard, input UpsertShardInput) string {
+func shardNeedsFleetProjection(shard Shard) bool {
+	return strings.TrimSpace(shard.RedisEndpoint) == "" &&
+		strings.TrimSpace(shard.SecretName) == ""
+}
+
+func shardProjectionDriftField(existing Shard, input UpsertShardInput, allowEmptyCurrent bool) string {
 	stringFields := []struct {
 		name     string
 		observed string
@@ -267,6 +276,9 @@ func shardProjectionDriftField(existing Shard, input UpsertShardInput) string {
 	}
 	for _, field := range stringFields {
 		if field.observed != "" && field.observed != field.current {
+			if allowEmptyCurrent && strings.TrimSpace(field.current) == "" {
+				continue
+			}
 			return field.name
 		}
 	}
@@ -290,6 +302,9 @@ func shardProjectionDriftField(existing Shard, input UpsertShardInput) string {
 	}
 	for _, field := range intFields {
 		if field.observed != nil && *field.observed != field.current {
+			if allowEmptyCurrent && field.current == 0 {
+				continue
+			}
 			return field.name
 		}
 	}
@@ -303,6 +318,9 @@ func shardProjectionDriftField(existing Shard, input UpsertShardInput) string {
 	}
 	for _, field := range floatFields {
 		if field.observed != nil && *field.observed != field.current {
+			if allowEmptyCurrent && field.current == 0 {
+				continue
+			}
 			return field.name
 		}
 	}

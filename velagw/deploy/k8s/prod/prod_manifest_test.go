@@ -9,6 +9,26 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func TestDBBootstrapShardNamesMatchFleetShardIDs(t *testing.T) {
+	content := string(readFile(t, "db-bootstrap-job.yaml"))
+	for _, want := range []string{
+		"id: \"shard-a\"\n        name: \"shard-a\"",
+		"id: \"shard-b\"\n        name: \"shard-b\"",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("DB bootstrap manifest missing canonical shard identity %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"name: \"Shard A\"",
+		"name: \"Shard B\"",
+	} {
+		if strings.Contains(content, forbidden) {
+			t.Fatalf("DB bootstrap manifest contains mutable display name %q", forbidden)
+		}
+	}
+}
+
 func TestSetManagerOnlyOwnsLLMFleetCRD(t *testing.T) {
 	raw := readFile(t, "llmgateway-set-manager.yaml.template")
 	content := string(raw)

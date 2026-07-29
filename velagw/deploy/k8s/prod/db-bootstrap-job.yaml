@@ -13,7 +13,7 @@ stringData:
       app_password: "${LLMGATEWAY_APP_MYSQL_PASSWORD}"
     shards:
       - id: "shard-a"
-        name: "Shard A"
+        name: "shard-a"
         admin_dsn: "root:${SHARD_A_MYSQL_ROOT_PASSWORD}@tcp(${SHARD_A_MYSQL_HOST}:3306)/"
         endpoint: "${SHARD_A_MYSQL_HOST}:3306"
         app_user: "newapi_app"
@@ -22,7 +22,7 @@ stringData:
         max_connections: 1000
         reserved_connections: 100
       - id: "shard-b"
-        name: "Shard B"
+        name: "shard-b"
         admin_dsn: "root:${SHARD_B_MYSQL_ROOT_PASSWORD}@tcp(${SHARD_B_MYSQL_HOST}:3306)/"
         endpoint: "${SHARD_B_MYSQL_HOST}:3306"
         app_user: "newapi_app"
