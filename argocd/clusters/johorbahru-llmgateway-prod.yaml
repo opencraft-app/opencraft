@@ -1,0 +1,13 @@
+apiVersion: lightclaw.dev/v1alpha1
+kind: ArgoTargetCluster
+metadata:
+  name: johorbahru-llmgateway-prod
+spec:
+  description: Independent Johor Bahru production cell for Singapore LLMGateway traffic.
+  server: https://k8s-jhb.lightvela.com
+  projectPath: argocd/projects/sgprod-velagw.yaml
+  kubeconfigHint: .secret/johorbahru-llmgateway-prod.kubeconfig
+  owner: velagw/deploy/terraform/tencentcloud-prod/llmgateway/sgprod/johorbahru
+  namespaces:
+    - llmgateway
+  clusterResources: true

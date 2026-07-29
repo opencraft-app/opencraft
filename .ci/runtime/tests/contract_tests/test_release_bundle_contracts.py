@@ -64,13 +64,17 @@ PROD_DB_MIGRATION_WORKFLOWS = {
 }
 
 
-def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
-    service_root = REPO_ROOT / "argocd/services/velagw/shprod"
+def load_velagw_resources(env: str) -> tuple[dict, list[dict]]:
+    service_root = REPO_ROOT / "argocd/services/velagw" / env
     kustomization = yaml.safe_load((service_root / "kustomization.yaml").read_text())
     docs = []
     for resource in kustomization.get("resources", []):
         docs.extend(doc for doc in yaml.safe_load_all((service_root / resource).read_text()) if doc)
     return kustomization, docs
+
+
+def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
+    return load_velagw_resources("shprod")
 
 
 class ReleaseBundleContractTests(unittest.TestCase):
@@ -344,7 +348,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(bundle.image_repo, "lightclaw-bj82.tencentcloudcr.com/llmgateway/llmgateway")
         self.assertEqual(parameters.get("SERVICE"), "velagw")
-        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod,sgprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-llmgateway")
         self.assertEqual(app["spec"]["destination"]["name"], "beijing-llmgateway")
         self.assertEqual(app["spec"]["source"]["path"], "argocd/services/velagw/beijing-llmgateway")
@@ -486,7 +490,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(bundle.image_repo, "lightclaw-shprod.tencentcloudcr.com/llmgateway/llmgateway")
         self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "shprod")
-        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod,sgprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-llmgateway")
         self.assertTrue(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
 
@@ -668,6 +672,104 @@ class ReleaseBundleContractTests(unittest.TestCase):
             and (doc.get("metadata") or {}).get("name") == "llmgateway-release-bootstrap"
         )
         self.assertEqual(bootstrap["metadata"]["annotations"]["argocd.argoproj.io/hook"], "PostSync")
+
+    def test_velagw_release_bundle_targets_johorbahru_sgprod_cluster(self) -> None:
+        manifest = load_manifest()
+
+        bundle = require_build_metadata(load_bundle(manifest, "velagw", "sgprod"))
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/velagw.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+        app = yaml.safe_load((REPO_ROOT / "argocd/apps/sgprod/velagw.yaml").read_text())
+        project = yaml.safe_load((REPO_ROOT / "argocd/projects/sgprod-velagw.yaml").read_text())
+        cluster = yaml.safe_load((REPO_ROOT / "argocd/clusters/johorbahru-llmgateway-prod.yaml").read_text())
+        service_root = REPO_ROOT / "argocd/services/velagw/sgprod"
+        kustomization, resource_docs = load_velagw_resources("sgprod")
+
+        self.assertEqual(bundle.image_repo, "lightclaw-sgprod.tencentcloudcr.com/lightclaw/velagw")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod,sgprod")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-llmgateway")
+        self.assertTrue(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
+
+        self.assertEqual(app["spec"]["project"], "sgprod-velagw")
+        self.assertEqual(app["spec"]["source"]["targetRevision"], "gitops")
+        self.assertEqual(app["spec"]["source"]["path"], "argocd/services/velagw/sgprod")
+        self.assertEqual(app["spec"]["destination"]["name"], "johorbahru-llmgateway-prod")
+        self.assertEqual(app["spec"]["destination"]["namespace"], "llmgateway")
+        self.assertNotIn("automated", app["spec"].get("syncPolicy") or {})
+
+        self.assertEqual(
+            project["spec"]["destinations"],
+            [{"namespace": "llmgateway", "name": "johorbahru-llmgateway-prod"}],
+        )
+        self.assertEqual(cluster["spec"]["server"], "https://k8s-jhb.lightvela.com")
+        self.assertEqual(cluster["spec"]["projectPath"], "argocd/projects/sgprod-velagw.yaml")
+        self.assertEqual(cluster["spec"]["namespaces"], ["llmgateway"])
+        self.assertTrue(cluster["spec"]["clusterResources"])
+
+        self.assertIn("argocd/apps/sgprod/velagw.yaml", bundle.publish_paths)
+        self.assertIn("argocd/projects/sgprod-velagw.yaml", bundle.publish_paths)
+        self.assertIn("argocd/clusters/johorbahru-llmgateway-prod.yaml", bundle.publish_paths)
+        self.assertIn("argocd/services/velagw/sgprod/**", bundle.publish_paths)
+
+        kinds = {doc.get("kind") for doc in resource_docs}
+        self.assertNotIn("Secret", kinds)
+        self.assertNotIn("Namespace", kinds)
+        self.assertNotIn("LLMFleet", kinds)
+
+        workloads = [
+            doc
+            for doc in resource_docs
+            if doc.get("kind") in {"Deployment", "Service"}
+        ]
+        core_worker = next(
+            doc
+            for doc in workloads
+            if doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-worker-core"
+        )
+        core_container = next(
+            container
+            for container in core_worker["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "worker"
+        )
+        core_env = {entry["name"]: entry.get("value") for entry in core_container.get("env", [])}
+        self.assertEqual(core_env.get("LLMGATEWAY_SET_AUTOSCALER_ENABLED"), "true")
+        self.assertEqual(core_env.get("LLMGATEWAY_SET_AUTOSCALER_MIN_WARM_SETS"), "2")
+
+        provisioner = next(
+            doc
+            for doc in workloads
+            if doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "velagwset-provisioner"
+        )
+        provisioner_container = next(
+            container
+            for container in provisioner["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "provisioner"
+        )
+        provisioner_env = {
+            entry["name"]: entry.get("value") for entry in provisioner_container.get("env", [])
+        }
+        self.assertEqual(provisioner_env.get("LLMGATEWAY_VELAGWSET_SERVERLESS_TRAFFIC"), "false")
+
+        traffic_service = next(
+            doc
+            for doc in workloads
+            if doc.get("kind") == "Service"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-traffic"
+        )
+        protocol = traffic_service["metadata"]["annotations"]["service.cloud.tencent.com/specify-protocol"]
+        self.assertIn("token-jhb.lightvela.ai", protocol)
+        self.assertIn("token-jhb-lightvela-ai-cert", protocol)
+
+        image_pin = (service_root / "velagw-platform.env").read_text()
+        self.assertIn("lightclaw-sgprod.tencentcloudcr.com/lightclaw/velagw@sha256:", image_pin)
+        for resource in ("llmfleet-rgd.yaml", "velagwset-crd.yaml", "velagwset-delete-policy.yaml"):
+            with self.subTest(resource=resource):
+                self.assertEqual(
+                    (service_root / resource).read_text(),
+                    (REPO_ROOT / "argocd/services/velagw/shprod" / resource).read_text(),
+                )
 
     def test_velagw_beijing_otel_version_matches_subtree_source(self) -> None:
         marker = {}

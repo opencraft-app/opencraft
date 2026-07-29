@@ -3,7 +3,7 @@ bundles:
     owner: velagw
     source: velagw
     db_contract: none
-    reason: LLMGateway Beijing verification and Shanghai production release bundle.
+    reason: LLMGateway Beijing verification plus Shanghai and Johor Bahru production release bundle.
     allowed_paths:
     - velagw
     - argocd/apps/beijing-llmgateway
@@ -15,6 +15,10 @@ bundles:
     - argocd/clusters/shanghai-llmgateway-prod.yaml
     - argocd/projects/shprod-velagw.yaml
     - argocd/services/velagw/shprod
+    - argocd/apps/sgprod/velagw.yaml
+    - argocd/clusters/johorbahru-llmgateway-prod.yaml
+    - argocd/projects/sgprod-velagw.yaml
+    - argocd/services/velagw/sgprod
     exit_condition: Can be removed only after velagw moves to a shared platform release contract.
     publish_paths:
     - argocd/apps/beijing-llmgateway/velagw.yaml
@@ -26,6 +30,10 @@ bundles:
     - argocd/clusters/shanghai-llmgateway-prod.yaml
     - argocd/projects/shprod-velagw.yaml
     - argocd/services/velagw/shprod/**
+    - argocd/apps/sgprod/velagw.yaml
+    - argocd/clusters/johorbahru-llmgateway-prod.yaml
+    - argocd/projects/sgprod-velagw.yaml
+    - argocd/services/velagw/sgprod/**
     publish_paths_by_env:
       beijing-llmgateway:
       - argocd/apps/beijing-llmgateway/velagw.yaml
@@ -38,8 +46,14 @@ bundles:
       - argocd/clusters/shanghai-llmgateway-prod.yaml
       - argocd/projects/shprod-velagw.yaml
       - argocd/services/velagw/shprod/**
+      sgprod:
+      - argocd/apps/sgprod/velagw.yaml
+      - argocd/clusters/johorbahru-llmgateway-prod.yaml
+      - argocd/projects/sgprod-velagw.yaml
+      - argocd/services/velagw/sgprod/**
     dockerfile: velagw/Dockerfile
     build_context: velagw
     image_repo:
       beijing-llmgateway: lightclaw-bj82.tencentcloudcr.com/llmgateway/llmgateway
       shprod: lightclaw-shprod.tencentcloudcr.com/llmgateway/llmgateway
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/velagw
