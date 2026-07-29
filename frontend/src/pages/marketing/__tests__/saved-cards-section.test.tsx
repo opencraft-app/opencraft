@@ -15,6 +15,11 @@ vi.mock("@/i18n/t", () => ({
       /\{\{\s*(\w+)\s*\}\}/g,
       (raw, key: string) => (options?.[key] === undefined ? raw : String(options[key])),
     ),
+  t: (text: string, options?: Record<string, unknown>) =>
+    text.replace(
+      /\{\{\s*(\w+)\s*\}\}/g,
+      (raw, key: string) => (options?.[key] === undefined ? raw : String(options[key])),
+    ),
 }));
 
 describe("saved-cards-section pure functions", () => {

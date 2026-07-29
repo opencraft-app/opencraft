@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useT } from "@/i18n/t";
+import { useT, t as rawT } from "@/i18n/t";
 
 export interface SavedCard {
   id: string;
@@ -41,6 +41,19 @@ export const validateCardInput = (
   if (!holder.trim()) return "请输入持卡人姓名。";
   return null;
 };
+
+/**
+ * i18n 注册：validateCardInput 返回的中文源文案通过 rawT() 注册，
+ * 使 i18n-extract 脚本能扫描到并生成 hash key。
+ * 运行时 rawT 在模块加载时执行一次，结果不使用（仅用于注册）。
+ */
+void [
+  rawT("请输入有效的卡号。"),
+  rawT("有效期格式应为 MM/YY。"),
+  rawT("有效期月份应在 01-12 之间。"),
+  rawT("安全码无效。"),
+  rawT("请输入持卡人姓名。"),
+];
 
 /** 预置 3 张演示卡（含 1 张默认） */
 export const buildInitialCards = (): SavedCard[] => [
@@ -84,10 +97,10 @@ export const SavedCardsSection = (): JSX.Element => {
   };
 
   const handleSaveCard = (): void => {
-    // validateCardInput 返回中文文案（非 i18n key），直接使用无需 t() 包裹
+    // validateCardInput 返回中文源文案，通过 t() 解析为当前 locale 翻译
     const errMsg = validateCardInput(cardNumber, expiry, cvc, holder);
     if (errMsg) {
-      setFormError(errMsg);
+      setFormError(t(errMsg));
       return;
     }
     const digits = cardNumber.replace(/\D/g, "");
@@ -215,7 +228,7 @@ export const SavedCardsSection = (): JSX.Element => {
                 className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
               />
             </div>
-            {/* validateCardInput 返回中文文案而非 i18n key，直接显示无需 t() */}
+            {/* formError 已通过 t() 翻译为当前 locale 文案 */}
             {formError && <p className="text-sm text-red-600">{formError}</p>}
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" onClick={() => { resetForm(); setShowAddForm(false); }} className="px-4 py-2 text-sm text-gray-600 hover:underline">{t("取消")}</button>
