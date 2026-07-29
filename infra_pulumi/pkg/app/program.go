@@ -1,6 +1,10 @@
 package app
 
 import (
+	"fmt"
+	"os"
+	"strings"
+
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/tencentcloudstack/pulumi-tencentcloud/sdk/go/tencentcloud"
 
@@ -10,6 +14,7 @@ import (
 	"github.com/skipzhang/mono/infra_pulumi/pkg/components/connectivity"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/components/cynosdb"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/components/networking"
+	"github.com/skipzhang/mono/infra_pulumi/pkg/components/notify"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/components/redis"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/components/securitygroup"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/components/storage"
@@ -46,18 +51,9 @@ func Run(ctx *pulumi.Context) error {
 		Provider:  provider,
 	}
 
-	steps := []func(*stackctx.Context) error{
-		networking.Ensure,
-		connectivity.Ensure,
-		clb.EnsureAIGatewayModelInternal,
-		tcr.Ensure,
-		tke.Ensure,
-		securitygroup.EnsureSandbox,
-		cynosdb.Ensure,
-		redis.Ensure,
-		storage.Ensure,
-		cls.Ensure,
-		compute.Ensure,
+	steps, err := selectedSteps(os.Getenv("INFRA_COMPONENT_SCOPE"))
+	if err != nil {
+		return err
 	}
 
 	for _, step := range steps {
@@ -82,4 +78,29 @@ func Run(ctx *pulumi.Context) error {
 		ctx.Export("registryPullUsername", appCtx.Derived.TCRPullUsername)
 	}
 	return nil
+}
+
+func selectedSteps(scope string) ([]func(*stackctx.Context) error, error) {
+	all := []func(*stackctx.Context) error{
+		networking.Ensure,
+		connectivity.Ensure,
+		clb.EnsureAIGatewayModelInternal,
+		tcr.Ensure,
+		tke.Ensure,
+		securitygroup.EnsureSandbox,
+		cynosdb.Ensure,
+		redis.Ensure,
+		storage.Ensure,
+		cls.Ensure,
+		notify.Ensure,
+		compute.Ensure,
+	}
+	switch strings.TrimSpace(scope) {
+	case "":
+		return all, nil
+	case "notify":
+		return []func(*stackctx.Context) error{notify.Ensure}, nil
+	default:
+		return nil, fmt.Errorf("unsupported INFRA_COMPONENT_SCOPE %q", scope)
+	}
 }

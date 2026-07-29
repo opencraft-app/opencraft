@@ -159,7 +159,14 @@ func up(projectRoot, stack string) error {
 	); err != nil {
 		return err
 	}
+	if !shouldSyncAfterUp(os.Getenv("INFRA_COMPONENT_SCOPE")) {
+		return nil
+	}
 	return sync(projectRoot, stack)
+}
+
+func shouldSyncAfterUp(scope string) bool {
+	return strings.TrimSpace(scope) == ""
 }
 
 func sync(projectRoot, stack string) error {

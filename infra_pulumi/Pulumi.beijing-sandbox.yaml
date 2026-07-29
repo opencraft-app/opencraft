@@ -13,4 +13,6 @@ config:
     secure: v1:dBsbBjfMyUWpSNWk:BpxZbUWFQ1c6yEojvwhsWQbAG+wUBE0kYPlSJA==
   infra-pulumi:registryPullPassword:
     secure: v1:ef6Ifu2ehc8XAav2:goN4u+iW0ocWf+HKwTok3bkrDBctkcUNnDk=
+  infra-pulumi:notifyTestAllowlistSHA256:
+    secure: v1:h5oUzCx4fMcbjexa:P8Wqhprw2TtYm/GjXcN9wqgS+g3JxMicZpHEGiMtQXDVoNzVYsGoBe7b8boCARpclRaiY78UN6Xs50AZF4AnAu8B54yW0sYWuyKWw4vll3I=
 encryptionsalt: v1:FmrsfN4Khuc=:v1:C7Oju9ocFEiew+cC:wl9P3/q8dyh4W5a2o3jkIizQF87qPQ==
