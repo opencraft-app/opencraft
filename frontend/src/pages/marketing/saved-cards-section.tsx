@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useT } from "@/i18n/t";
 
 export interface SavedCard {
@@ -48,8 +49,183 @@ export const buildInitialCards = (): SavedCard[] => [
   { id: "demo-3", brand: "amex", last4: "3782", expiry: "03/28", holderName: "John Doe", isDefault: false },
 ];
 
-// 占位导出，Task 2 会替换为真实组件
-export const _SavedCardsSectionPlaceholder = () => {
-  void useT();
-  return null;
+// ─── SavedCardsSection 组件 ───
+
+let _cardIdCounter = 100;
+const nextCardId = () => `card-${++_cardIdCounter}`;
+
+const brandLabel = (brand: SavedCard["brand"]): string =>
+  brand === "visa" ? "Visa" : brand === "mastercard" ? "Mastercard" : "Amex";
+
+/**
+ * 卡管理组件：卡列表 + 绑卡 + 设为默认 + 解绑。
+ * 纯前端占位实现：数据仅存 useState，不发起后端请求。
+ * CVC 不存入 SavedCard（PCI 口径）。
+ */
+export const SavedCardsSection = (): JSX.Element => {
+  const t = useT();
+  const [cards, setCards] = useState<SavedCard[]>(() => buildInitialCards());
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+
+  // 绑卡表单状态
+  const [cardNumber, setCardNumber] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [cvc, setCvc] = useState("");
+  const [holder, setHolder] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const resetForm = (): void => {
+    setCardNumber("");
+    setExpiry("");
+    setCvc("");
+    setHolder("");
+    setFormError(null);
+  };
+
+  const handleSaveCard = (): void => {
+    // validateCardInput 返回中文文案（非 i18n key），直接使用无需 t() 包裹
+    const errMsg = validateCardInput(cardNumber, expiry, cvc, holder);
+    if (errMsg) {
+      setFormError(errMsg);
+      return;
+    }
+    const digits = cardNumber.replace(/\D/g, "");
+    const newCard: SavedCard = {
+      id: nextCardId(),
+      brand: detectBrand(cardNumber),
+      last4: digits.slice(-4),
+      expiry,
+      holderName: holder.trim(),
+      isDefault: cards.length === 0, // 首张卡自动默认
+    };
+    setCards((prev) => [...prev, newCard]);
+    resetForm();
+    setShowAddForm(false);
+  };
+
+  const handleSetDefault = (id: string): void => {
+    setCards((prev) => prev.map((c) => ({ ...c, isDefault: c.id === id })));
+  };
+
+  const handleConfirmRemove = (id: string): void => {
+    setCards((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      // 移除的是默认卡且列表非空：自动选剩余首张为默认
+      const removedWasDefault = prev.find((c) => c.id === id)?.isDefault ?? false;
+      if (removedWasDefault && next.length > 0) {
+        next[0] = { ...next[0], isDefault: true };
+      }
+      return next;
+    });
+    setConfirmRemoveId(null);
+  };
+
+  return (
+    <section className="mx-auto px-6 md:px-8" style={{ maxWidth: 800 }}>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-bold">{t("签约卡管理")}</h2>
+        {!showAddForm && (
+          <button
+            type="button"
+            onClick={() => setShowAddForm(true)}
+            className="text-sm font-medium text-blue-600 hover:underline"
+          >
+            {t("添加卡片")}
+          </button>
+        )}
+      </div>
+
+      {/* 卡列表 */}
+      {cards.length === 0 ? (
+        <p className="text-sm text-gray-500 py-8 text-center">{t("还没有绑定卡片")}</p>
+      ) : (
+        <ul className="space-y-3">
+          {cards.map((card) => (
+            <li key={card.id} className="flex items-center justify-between p-4 rounded-lg border border-gray-200">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{brandLabel(card.brand)}</span>
+                  <span className="text-gray-500">•••• {card.last4}</span>
+                  {card.isDefault && (
+                    <span className="px-2 py-0.5 text-xs rounded bg-blue-100 text-blue-700">{t("默认")}</span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 mt-1">{card.expiry} · {card.holderName}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {!card.isDefault && (
+                  <button type="button" onClick={() => handleSetDefault(card.id)} className="text-sm text-gray-600 hover:underline">
+                    {t("设为默认")}
+                  </button>
+                )}
+                {confirmRemoveId === card.id ? (
+                  <>
+                    <button type="button" onClick={() => handleConfirmRemove(card.id)} className="text-sm text-red-600 hover:underline">{t("确认")}</button>
+                    <button type="button" onClick={() => setConfirmRemoveId(null)} className="text-sm text-gray-500 hover:underline">{t("取消")}</button>
+                  </>
+                ) : (
+                  <button type="button" onClick={() => setConfirmRemoveId(card.id)} className="text-sm text-red-600 hover:underline">{t("解绑")}</button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* 绑卡表单（内联展开） */}
+      {showAddForm && (
+        <div className="mt-4 p-4 rounded-lg border border-gray-200 bg-gray-50">
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">{t("卡号")}</label>
+              <input
+                value={cardNumber}
+                onChange={(e) => setCardNumber(e.target.value)}
+                placeholder={t("卡号")}
+                className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+              />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-sm font-medium mb-1">{t("有效期")}</label>
+                <input
+                  value={expiry}
+                  onChange={(e) => setExpiry(formatExpiry(e.target.value))}
+                  placeholder="MM/YY"
+                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-sm font-medium mb-1">{t("安全码")}</label>
+                <input
+                  value={cvc}
+                  onChange={(e) => setCvc(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  placeholder="CVC"
+                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">{t("持卡人姓名")}</label>
+              <input
+                value={holder}
+                onChange={(e) => setHolder(e.target.value)}
+                placeholder={t("持卡人姓名")}
+                className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+              />
+            </div>
+            {/* validateCardInput 返回中文文案而非 i18n key，直接显示无需 t() */}
+            {formError && <p className="text-sm text-red-600">{formError}</p>}
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => { resetForm(); setShowAddForm(false); }} className="px-4 py-2 text-sm text-gray-600 hover:underline">{t("取消")}</button>
+              <button type="button" onClick={handleSaveCard} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700">{t("保存")}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
 };
+
+export default SavedCardsSection;
