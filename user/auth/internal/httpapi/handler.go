@@ -1003,12 +1003,14 @@ func (h *Handler) VerifySmsCode(ctx context.Context, request api.VerifySmsCodeRe
 	if gctx := ginContext(ctx); gctx != nil && inviteCode == "" {
 		inviteCode = h.inviteTicketFromRequest(gctx)
 	}
+	clientIP, clientUA := requestClientMetadata(ctx)
 	session, err := h.service.VerifySMS(ctx, service.VerifySMSInput{
 		Name:       optionalStringValue(request.Body.Name),
 		Phone:      request.Body.Phone,
 		Code:       request.Body.Code,
 		InviteCode: inviteCode,
-		ClientIP:   clientIPFromContext(ctx),
+		ClientIP:   clientIP,
+		ClientUA:   clientUA,
 	})
 	if err != nil {
 		body, status := toErrorBody(err)
@@ -1032,11 +1034,6 @@ func (h *Handler) VerifySmsCode(ctx context.Context, request api.VerifySmsCodeRe
 		h.clearInviteTicketCookie(gctx)
 	}
 	return api.VerifySmsCode200JSONResponse(h.toSessionResponse(ctx, session)), nil
-}
-
-func clientIPFromContext(ctx context.Context) string {
-	clientIP, _ := requestClientMetadata(ctx)
-	return clientIP
 }
 
 func ginContext(ctx context.Context) *gin.Context {

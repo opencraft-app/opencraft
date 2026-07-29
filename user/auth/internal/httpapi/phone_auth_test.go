@@ -79,11 +79,85 @@ func TestVerifySmsCodeAcceptsMissingNameWhenPhoneAuthEnabled(t *testing.T) {
 	}
 }
 
+func TestVerifySmsCodePassesClientMetadataToNewUserShadowRegistration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	store := service.NewMemoryStore(service.StoreOptions{
+		Now:                fixedHTTPTestNow,
+		SeedDefaultInvites: true,
+	})
+	shadowClient := &phoneAuthRecordingShadowClient{}
+	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), shadowClient, shadowbinding.Options{
+		Enabled: true,
+		Now:     fixedHTTPTestNow,
+	})
+	svc := service.NewWithStore(store, service.Options{
+		Now:        fixedHTTPTestNow,
+		SessionTTL: 30 * 24 * time.Hour,
+		PhoneAuth: service.PhoneAuthConfig{
+			Enabled:   true,
+			SMSSender: &httpStubPhoneAuthSMSSender{},
+		},
+		ShadowBinding: shadowSvc,
+	})
+	router := NewRouter(svc, ServerConfig{
+		CookieSecure:   true,
+		CookieSameSite: http.SameSiteNoneMode,
+		SessionTTL:     30 * 24 * time.Hour,
+		PublicBaseURL:  "https://lightclaw.tech",
+		AdminToken:     testAdminToken,
+	})
+
+	sendCode := performJSONRequest(t, router, http.MethodPost, "/auth/sms/send", map[string]any{
+		"phone": "13800138137",
+	})
+	if sendCode.Code != http.StatusOK {
+		t.Fatalf("expected 200 from send sms, got %d: %s", sendCode.Code, sendCode.Body.String())
+	}
+
+	recorder := performJSONRequestWithHeaders(t, router, http.MethodPost, "/auth/sms/verify", map[string]any{
+		"phone": "13800138137",
+		"code":  "888888",
+	}, map[string]string{
+		"User-Agent": "lightvela-phone-auth-test/1.0",
+	})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from verify sms, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if shadowClient.lastRegister.ClientIP != "192.0.2.1" {
+		t.Fatalf("expected request client IP in shadow registration, got %+v", shadowClient.lastRegister)
+	}
+	if shadowClient.lastRegister.ClientUA != "lightvela-phone-auth-test/1.0" {
+		t.Fatalf("expected request user agent in shadow registration, got %+v", shadowClient.lastRegister)
+	}
+}
+
 type httpStubPhoneAuthSMSSender struct {
 	lastCode string
 }
 
 func (s *httpStubPhoneAuthSMSSender) SendVerificationCode(_ context.Context, _ string, code string, _ int) error {
 	s.lastCode = code
+	return nil
+}
+
+type phoneAuthRecordingShadowClient struct {
+	lastRegister shadowbinding.CloudRegisterInput
+}
+
+func (c *phoneAuthRecordingShadowClient) SendSMSVerifyCode(context.Context, shadowbinding.CloudSendSMSInput) error {
+	return nil
+}
+
+func (c *phoneAuthRecordingShadowClient) RegisterShadowAccount(_ context.Context, input shadowbinding.CloudRegisterInput) (shadowbinding.CloudRegisterResult, error) {
+	c.lastRegister = input
+	return shadowbinding.CloudRegisterResult{Uin: 300000000071, OwnerUin: 300000000071, AppID: 1250000000}, nil
+}
+
+func (c *phoneAuthRecordingShadowClient) UpdatePhoneByAuthCode(context.Context, shadowbinding.CloudUpdatePhoneInput) error {
+	return nil
+}
+
+func (c *phoneAuthRecordingShadowClient) SaveBasicAuthForSaaS(context.Context, shadowbinding.CloudSaveBasicAuthInput) error {
 	return nil
 }
