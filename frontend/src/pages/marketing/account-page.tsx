@@ -42,6 +42,7 @@ import { cn } from "@/lib/utils";
 import { QRCodeSVG } from "qrcode.react";
 import { RealnameStepper, type RealnameStage } from "@/pages/marketing/realname-stepper";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
+import { SavedCardsSection } from "./saved-cards-section";
 
 /* ─── animation variants ─── */
 
@@ -2807,6 +2808,8 @@ export const AccountPage = () => {
 
             {/* ── Section 2: Subscription ── */}
             <SubscriptionSection subscription={subscription} pass={activePass} />
+
+            {isGlobal && <SavedCardsSection />}
 
             {/* ── Sign out (page bottom) ── */}
             <motion.div variants={fadeIn} className="flex justify-center pt-2">
