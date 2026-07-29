@@ -10,6 +10,7 @@ resources:
 patches:
   - path: patch-realname-faceid.yaml
   - path: patch-phone-auth.yaml
+  - path: patch-oauth-registration.yaml
   - path: patch-shadowbinding.yaml
 
 generatorOptions:
