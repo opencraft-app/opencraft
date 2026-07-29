@@ -34,6 +34,7 @@ bundles:
     - argocd/clusters/johorbahru-llmgateway-prod.yaml
     - argocd/projects/sgprod-velagw.yaml
     - argocd/services/velagw/sgprod/**
+    - velagw/deploy/k8s/prod/gitops-base/**
     publish_paths_by_env:
       beijing-llmgateway:
       - argocd/apps/beijing-llmgateway/velagw.yaml
@@ -46,11 +47,13 @@ bundles:
       - argocd/clusters/shanghai-llmgateway-prod.yaml
       - argocd/projects/shprod-velagw.yaml
       - argocd/services/velagw/shprod/**
+      - velagw/deploy/k8s/prod/gitops-base/**
       sgprod:
       - argocd/apps/sgprod/velagw.yaml
       - argocd/clusters/johorbahru-llmgateway-prod.yaml
       - argocd/projects/sgprod-velagw.yaml
       - argocd/services/velagw/sgprod/**
+      - velagw/deploy/k8s/prod/gitops-base/**
     dockerfile: velagw/Dockerfile
     build_context: velagw
     image_repo:

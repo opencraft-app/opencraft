@@ -3,16 +3,17 @@
 GitOps source for the independent Johor Bahru LLMGateway production cell that
 serves the Singapore business environment.
 
-This release unit owns the static LLMGateway Deployments, Services, the
-`VelaGWSet` CRD, deletion policy, Controller, Provisioner, Shard Manager, RBAC,
-disruption budgets, and the LLMFleet KRO ResourceGraphDefinition. The
-namespace, runtime Secrets, and the `LLMFleet/prod` instance remain externally
-managed and must not be added to this application.
+The structural manifests come from
+`velagw/deploy/k8s/prod/gitops-base`. This overlay owns only the image pin,
+cluster identity, region, public protocol annotations, runtime shape, and
+capacity waterline in `velagw-platform.env`. The namespace, runtime Secrets,
+and the `LLMFleet/prod` instance remain externally managed and must not be
+added to this application.
 
 Cluster-scoped API definitions carry `Prune=false` so a GitOps packaging error
-cannot cascade-delete live Fleet or Set instances. Their Beijing and Shanghai
-copies are intentionally identical and enforced by release bundle contract
-tests.
+cannot cascade-delete live Fleet or Set instances. Shanghai and Johor Bahru
+consume the same production base, and release bundle contract tests reject
+structural resources copied back into either overlay.
 
 New capacity requests use the `velagwset` runtime backend with writer epoch 2.
 The Provisioner materializes them as `VelaGWSet` resources and the Controller
