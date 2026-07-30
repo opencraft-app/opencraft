@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Pass, User } from "@/domain/types";
+import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
 
 vi.mock("@tencent/universal-report", () => ({
   default: class MockUniversalReport {
@@ -137,6 +138,24 @@ const renderAccountPage = () => {
   );
 };
 
+const renderAccountPageWithNavigation = (navigation: AppNavigationValue) => {
+  render(
+    <MemoryRouter>
+      <AppNavigationProvider value={navigation}>
+        <AccountPage />
+      </AppNavigationProvider>
+    </MemoryRouter>,
+  );
+};
+
+const createNavigationValue = (navigate = vi.fn()): AppNavigationValue => ({
+  Link: ({ to, children, ...props }) => <a href={to} {...props}>{children}</a>,
+  navigate,
+  pathname: "/account",
+  search: "",
+  setSearchParams: vi.fn(),
+});
+
 const buildActivePass = (): Pass => ({
   pass_id: "pass_active_renew",
   user_id: "usr_profile_audit",
@@ -222,6 +241,27 @@ describe("AccountPage nickname audit state", () => {
 
     expect(document.querySelectorAll("header")).toHaveLength(1);
     expect(screen.getAllByText("legal footer")).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "退出登录" })).toHaveLength(1);
+  });
+
+  it("replaces to the homepage immediately while signing out", async () => {
+    const navigate = vi.fn();
+    let resolveSignOut: () => void = () => {};
+    signOut.mockReturnValueOnce(new Promise<void>((resolve) => {
+      resolveSignOut = resolve;
+    }));
+
+    renderAccountPageWithNavigation(createNavigationValue(navigate));
+
+    await userEvent.click(screen.getByRole("button", { name: "退出登录" }));
+
+    expect(navigate).toHaveBeenCalledWith("/", { replace: true });
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("登录以查看账号信息")).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveSignOut();
+    });
   });
 
   it("uses pure realname by default without exposing any phone concept", async () => {

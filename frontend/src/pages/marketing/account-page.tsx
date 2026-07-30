@@ -2122,6 +2122,7 @@ export const AccountPage = () => {
   const [showBindEmailModal, setShowBindEmailModal] = useState(false);
   const [copiedUserId, setCopiedUserId] = useState(false);
   const copyResetTimer = useRef<number | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   // Delete account
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -2327,10 +2328,12 @@ export const AccountPage = () => {
   };
 
   const handleSignOut = async () => {
+    setIsSigningOut(true);
+    navigate("/", { replace: true });
     try {
       await signOut();
-      navigate("/");
     } catch (err) {
+      setIsSigningOut(false);
       console.error("Failed to sign out", err);
     }
   };
@@ -2352,7 +2355,7 @@ export const AccountPage = () => {
   let pageOverlays: ReactNode = null;
 
   /* ── Unauthenticated view ── */
-  if (authReady && !isAuthenticated) {
+  if (authReady && !isAuthenticated && !isSigningOut) {
     pageContent = (
         <main className="relative z-10 flex flex-grow items-center justify-center px-6 pb-16 pt-24 md:px-8">
           <motion.div
@@ -2417,7 +2420,7 @@ export const AccountPage = () => {
           <LoginModal open={showLoginModal} onClose={() => setShowLoginModal(false)} />
         </main>
     );
-  } else if (!authReady) {
+  } else if (!authReady || isSigningOut) {
     /* ── Loading auth ── */
     pageContent = (
         <main className="relative z-10 flex-grow pb-8 pt-20 md:pt-24" aria-hidden="true">
@@ -2807,23 +2810,6 @@ export const AccountPage = () => {
 
             {/* ── Section 2: Subscription ── */}
             <SubscriptionSection subscription={subscription} pass={activePass} />
-
-            {/* ── Sign out (page bottom) ── */}
-            <motion.div variants={fadeIn} className="flex justify-center pt-2">
-              <button
-                onClick={() => void handleSignOut()}
-                className="inline-flex items-center justify-center rounded-full bg-white px-6 py-2.5 transition-colors hover:bg-[rgba(0,0,0,0.03)]"
-                style={{
-                  border: "1px solid #E6E9EF",
-                  fontSize: 14,
-                  lineHeight: "22px",
-                  color: "rgba(0,0,0,0.9)",
-                  boxShadow: "0px 2px 0px 0px rgba(187, 187, 187, 0.05)",
-                }}
-              >
-                {t("退出登录")}
-              </button>
-            </motion.div>
           </motion.div>
         </section>
       </main>
