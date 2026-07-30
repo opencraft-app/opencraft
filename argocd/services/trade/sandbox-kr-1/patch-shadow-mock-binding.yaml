@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trade-config
+  namespace: trade
+data:
+  TRADE_SHADOW_MOCK_UIN: "800000294207"
+  TRADE_SHADOW_MOCK_APP_ID: "251221987"

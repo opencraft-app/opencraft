@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - workloads.yaml
+  - llmfleet-rgd.yaml
+  - velagwset-crd.yaml
+  - velagwset-delete-policy.yaml
+  - velagwset-controller.yaml
+  - velagwset-provisioner.yaml
+  - shard-manager.yaml
+  - release-bootstrap.yaml

@@ -260,6 +260,55 @@ func TestClientComplete2FALoginUsesFlowToken(t *testing.T) {
 	}
 }
 
+func TestClientComplete2FALoginUsesPendingSessionWithoutFlowToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/user/login":
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "pending-root", Path: "/"})
+			writeJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"require_2fa": true,
+			}})
+		case "POST /api/user/login/2fa":
+			session, err := r.Cookie("session")
+			if err != nil || session.Value != "pending-root" {
+				t.Fatalf("pending session cookie = %#v, err = %v", session, err)
+			}
+			var req TwoFALoginRequest
+			decodeJSON(t, r, &req)
+			if req.FlowToken != "" || req.Code != "123456" {
+				t.Fatalf("unexpected 2fa login request: %+v", req)
+			}
+			writeJSON(t, w, map[string]any{"success": true, "data": map[string]any{
+				"id":       1,
+				"username": "set-root",
+				"role":     100,
+				"status":   1,
+				"group":    "default",
+			}})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	session, err := client.Login(t.Context(), "set-root", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !session.Require2FA || session.TwoFAFlowToken != "" {
+		t.Fatalf("login session = %+v, want pending cookie-backed 2fa flow", session)
+	}
+	session, err = client.Complete2FALogin(t.Context(), session.TwoFAFlowToken, "123456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.UserID != 1 || session.Username != "set-root" {
+		t.Fatalf("completed session = %+v", session)
+	}
+}
+
 func TestClientConfirmPaymentComplianceUsesDashboardSession(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -597,6 +646,48 @@ func TestClientAdminUserSubscriptionFlow(t *testing.T) {
 	}
 	if invalidatedID != 9 {
 		t.Fatalf("invalidated id = %d, want 9", invalidatedID)
+	}
+}
+
+func TestClientAdminCreateUserSubscriptionResolvesNullCreateResponse(t *testing.T) {
+	var listCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Header.Get("Authorization") != "Bearer admin-access-token" || r.Header.Get("New-Api-User") != "1" {
+			t.Fatalf("missing admin auth headers for %s %s", r.Method, r.URL.Path)
+		}
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/subscription/admin/users/42/subscriptions":
+			writeJSON(t, w, map[string]any{"success": true, "data": nil})
+		case "GET /api/subscription/admin/users/42/subscriptions":
+			listCalls++
+			writeJSON(t, w, map[string]any{
+				"success": true,
+				"data": []map[string]any{
+					{"subscription": map[string]any{"id": 8, "user_id": 42, "plan_id": 6, "status": "active"}},
+					{"subscription": map[string]any{"id": 9, "user_id": 42, "plan_id": 7, "status": "active"}},
+					{"subscription": map[string]any{"id": 11, "user_id": 42, "plan_id": 7, "status": "active"}},
+				},
+			})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	created, err := client.AdminCreateUserSubscription(t.Context(), AdminAuth{UserID: 1, AccessToken: "admin-access-token"}, 42, AdminCreateUserSubscriptionRequest{
+		PlanID:    7,
+		RequestID: "trade:deal-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.ID != 11 || created.PlanID != 7 {
+		t.Fatalf("resolved subscription = %+v", created)
+	}
+	if listCalls != 1 {
+		t.Fatalf("list calls = %d, want 1", listCalls)
 	}
 }
 

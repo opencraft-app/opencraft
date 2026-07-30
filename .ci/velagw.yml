@@ -16,6 +16,10 @@ on:
       - argocd/clusters/shanghai-llmgateway-prod.yaml
       - argocd/projects/shprod-velagw.yaml
       - argocd/services/velagw/shprod/**
+      - argocd/apps/sgprod/velagw.yaml
+      - argocd/clusters/johorbahru-llmgateway-prod.yaml
+      - argocd/projects/sgprod-velagw.yaml
+      - argocd/services/velagw/sgprod/**
     paths-ignore:
       - OWNERS
       - "**/OWNERS"
@@ -34,7 +38,7 @@ extends:
     BUNDLE: velagw
     DISPLAY_NAME: velagw
     DEFAULT_TARGET_ENV: shprod
-    MASTER_BUILD_ENVS: beijing-llmgateway,shprod
+    MASTER_BUILD_ENVS: beijing-llmgateway,shprod,sgprod
     MASTER_AUTO_PIN_ENVS: beijing-llmgateway
     ENABLE_MASTER_PROD_PROMOTE: true
     PLAYGROUND_BUILD_ENVS: none

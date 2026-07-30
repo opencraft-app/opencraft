@@ -1,0 +1,125 @@
+region       = "ap-johorbahru"
+region_alias = "jhb"
+project      = "llmgateway"
+environment  = "sgprod"
+
+availability_zones = ["ap-johorbahru-1", "ap-johorbahru-2"]
+
+# Keep this VPC distinct from Singapore and the retired Thailand cell so that
+# future CCN connectivity does not require a network replacement.
+vpc_cidr            = "10.75.0.0/16"
+public_subnet_cidrs = ["10.75.0.0/24", "10.75.1.0/24"]
+app_subnet_cidrs    = ["10.75.10.0/23", "10.75.12.0/23"]
+data_subnet_cidrs   = ["10.75.20.0/24", "10.75.21.0/24"]
+
+# Corporate operations egress plus the shared Argo CD control plane.
+admin_cidrs = ["43.132.141.0/24", "170.106.101.170/32"]
+
+traffic_backend_cidrs = ["0.0.0.0/0"]
+traffic_backend_port  = "18080"
+nat_eip_bandwidth     = 10
+# Johor Bahru currently exposes no managed NAT Gateway zones. Use one small
+# public gateway CVM per availability zone and route each app subnet locally.
+egress_gateway_mode           = "nat_instance"
+nat_instance_image_id         = "img-mmytdhbn"
+nat_instance_type             = "SA9.MEDIUM2"
+nat_instance_system_disk_type = "CLOUD_BSSD"
+nat_instance_system_disk_size = 50
+
+dns_domain            = "lightvela.ai"
+control_dns_subdomain = "token-admin-jhb"
+traffic_dns_subdomain = "token-jhb"
+
+# Enable DNS only after the Kubernetes Services have created their CLBs.
+edge_dns_enabled   = false
+control_clb_domain = "lb-l28uw79t-rmcbp2j0x5lnhtyv.clb.jb-tencentclb.com."
+traffic_clb_domain = "lb-7worxaih-te8dr61mj4ug3i07.clb.jb-tencentclb.com."
+
+control_cert_id = "XV7Zeg81"
+traffic_cert_id = "XV7Zeg81"
+
+# Johor Bahru reuses the Singapore TCR over its public endpoint.
+manage_tcr_repository = false
+tcr_instance_id       = "tcr-cp0yxl3v"
+tcr_public_domain     = "lightclaw-sgprod.tencentcloudcr.com"
+tcr_namespace         = "lightclaw"
+tcr_repository        = "velagw"
+
+tke_cluster_version     = "1.30.0"
+tke_cluster_level       = "L20"
+tke_cluster_cidr        = "172.24.0.0/16"
+tke_service_cidr        = "172.25.0.0/22"
+tke_cluster_description = "VelaGW production cell in Johor Bahru for sgprod."
+tke_node_pool_type      = "standard"
+tke_internet_endpoint_enabled = true
+tke_internet_endpoint_domain = "k8s-jhb.lightvela.com"
+tke_intranet_endpoint_enabled = true
+tke_intranet_endpoint_subnet_index = 0
+
+# One fixed 4C8G worker per availability zone for bootstrap. The pools retain
+# room for manual or later autoscaled expansion without changing instance type.
+standard_node_pool = {
+  instance_type         = "SA9.LARGE8"
+  backup_instance_types = ["SA5.LARGE8"]
+  node_os               = "tlinux3.1x86_64"
+  min_size              = 1
+  max_size              = 3
+  desired_capacity      = 1
+  enable_auto_scale     = false
+  public_ip_assigned    = false
+  internet_max_bandwidth_out = 0
+  system_disk_type      = "CLOUD_BSSD"
+  system_disk_size      = 100
+}
+standard_node_pool_password = "Replace-Aa1!1234"
+standard_node_pool_generation = "private-v1"
+
+mysql_root_password = "Replace-With-A-Strong-Password"
+redis_password      = "Replace16!"
+
+control_mysql = {
+  mem_size    = 4000
+  volume_size = 100
+  cpu         = 2
+}
+
+# Redis 7 cluster edition in Johor Bahru starts at three shards. One replica
+# gives two copies of every shard; the regional API performs placement.
+control_redis = {
+  type_id              = 18
+  mem_size             = 2048
+  redis_shard_num      = 3
+  redis_replicas_num   = 1
+  replica_zone_indexes = [1]
+}
+redis_zone_ids = {
+  ap-johorbahru-1 = 106001
+  ap-johorbahru-2 = 106002
+}
+
+shards = {
+  shard-a = {
+    zone_index        = 0
+    mysql_mem_size    = 4000
+    mysql_volume_size = 100
+    mysql_cpu         = 2
+    redis_type_id     = 17
+    redis_mem_size    = 1024
+    redis_shard_num   = 1
+    redis_replicas    = 1
+    redis_replica_zone_indexes = [1]
+    max_sets          = 4
+  }
+  shard-b = {
+    zone_index        = 1
+    mysql_mem_size    = 4000
+    mysql_volume_size = 100
+    mysql_cpu         = 2
+    redis_type_id     = 17
+    redis_mem_size    = 1024
+    redis_shard_num   = 1
+    redis_replicas    = 1
+    redis_replica_zone_indexes = [0]
+    max_sets          = 4
+  }
+}

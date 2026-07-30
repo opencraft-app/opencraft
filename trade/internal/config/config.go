@@ -79,6 +79,12 @@ type Config struct {
 	// `LIGHTVELA_SITE_KIND` 注入，缺省 / 非法值兜底为 "cn"。详见上方包级注释。
 	SiteKind string
 
+	// ShadowMockEnabled 仅供联调测试环境使用。启用后 cmd/trade 注入 in-process
+	// shadow mock client，避免未部署 shadow / 未写真实绑定时阻塞询价和下单。
+	ShadowMockEnabled bool
+	ShadowMockUin     string
+	ShadowMockAppID   string
+
 	// RegionOverride 是 trade 出向 jifei 协议字段 region 的运行时 override（北京 2 预发布
 	// 接入 2026-06-12 新增）。取值为腾讯云 region 字面量（kebab-case 全小写），例：
 	//   - "ap-guangzhou" → 1 / 100001 / "广州"
@@ -148,6 +154,10 @@ func Load() (Config, error) {
 
 		// v1.7.x 国际站接入：站点标识 env 解析（兼容性兜底见 normalizeSiteKind）
 		SiteKind: normalizeSiteKind(os.Getenv("LIGHTVELA_SITE_KIND")),
+
+		ShadowMockEnabled: parseBoolEnv("TRADE_SHADOW_MOCK_ENABLED"),
+		ShadowMockUin:     strings.TrimSpace(os.Getenv("TRADE_SHADOW_MOCK_UIN")),
+		ShadowMockAppID:   strings.TrimSpace(os.Getenv("TRADE_SHADOW_MOCK_APP_ID")),
 
 		// 北京 2 预发布接入（2026-06-12）：region 字段 override，未配则按 SiteKind 兜底
 		RegionOverride: strings.TrimSpace(os.Getenv("LIGHTVELA_TRADE_REGION")),

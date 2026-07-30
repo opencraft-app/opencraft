@@ -657,6 +657,17 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn('PIN_SCRIPT="$PIN_RUNTIME_SNAPSHOT/.ci/runtime/pin_image_to_gitops.sh"', script)
         self.assertIn('prepare_pin_runtime_snapshot\n\nIFS=\',\' read -r -a AUTO_ENVS <<<"$AUTO_PIN_ENVS"', script)
 
+    def test_pin_script_resets_frontend_build_generated_files_before_dirty_guard(self) -> None:
+        script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
+
+        self.assertIn("reset_known_build_side_effects_before_rewrite", script)
+        self.assertIn("frontend/next-env.d.ts", script)
+        self.assertIn("frontend/public/fonts/HYRuiYiSong-45J.subset.woff2", script)
+        self.assertLess(
+            script.index("reset_known_build_side_effects_before_rewrite\n\nif ! git"),
+            script.index("repository has uncommitted changes; refuse to rewrite branch state"),
+        )
+
     def test_prod_promote_fanout_pins_runtime_before_branch_checkouts(self) -> None:
         template = (REPO_ROOT / ".ci/templates/service-release.yml").read_text()
 

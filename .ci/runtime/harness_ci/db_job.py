@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest
+from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest, playground_catalog_root
 from harness_ci.secrets import build_secret_manifest, redact, resolve_contract_secret_values, secret_env_ref
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -248,15 +248,7 @@ def load_service_platform_env(spec: dict[str, Any], env_name: str, deploy_root: 
 
 
 def load_playground_catalog_value(deploy_root: Path, env_name: str, service: str, key: str) -> str:
-    path = (
-        deploy_root
-        / "argocd"
-        / "catalogs"
-        / "playground"
-        / "beijing-playground"
-        / env_name
-        / f"{service}.yaml"
-    )
+    path = deploy_root / playground_catalog_root(env_name) / env_name / f"{service}.yaml"
     if not path.is_file():
         return ""
     for raw in path.read_text().splitlines():
@@ -510,16 +502,19 @@ def build_ctl_dynamic_resources(
     mysql_host = service_platform_env.get("CTL_TEST_MYSQL_HOST", "").strip()
     resolved_secrets = resolve_contract_secret_values(deploy_root, env_name, db_contract)
     resolver_name = str(db_contract.get("db_job_secret_resolver") or "").strip()
-    mysql_password = platform_env.get("CTL_TEST_MYSQL_PASSWORD", "").strip() or runtime_secret_value(
+    mysql_password = ""
+    if resolver_name:
+        mysql_password = resolved_secrets.get(resolver_name, "").strip()
+    mysql_password = mysql_password or platform_env.get("CTL_TEST_MYSQL_PASSWORD", "").strip() or runtime_secret_value(
         "CTL_TEST_MYSQL_PASSWORD", env_name
     )
-    if kubeconfig and namespace.startswith("lightvela-playground-"):
-        mysql_password = (
-            kubectl_secret_value(kubeconfig, namespace, "playground-runtime-secrets", "MYSQL_ROOT_PASSWORD").strip()
-            or mysql_password
-        )
-    elif resolver_name:
-        mysql_password = resolved_secrets.get(resolver_name, "").strip() or mysql_password
+    if not mysql_password and kubeconfig and namespace.startswith("lightvela-playground-"):
+        mysql_password = kubectl_secret_value(
+            kubeconfig,
+            namespace,
+            "playground-runtime-secrets",
+            "MYSQL_ROOT_PASSWORD",
+        ).strip()
     if not mysql_host:
         raise ValueError("missing CTL_TEST_MYSQL_HOST in ctl platform env")
     if not mysql_password:

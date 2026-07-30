@@ -15,7 +15,19 @@ output "data_subnet_ids" {
 }
 
 output "nat_eip" {
-  value = tencentcloud_eip.nat.public_ip
+  value = (
+    var.egress_gateway_mode == "managed_nat"
+    ? tencentcloud_eip.nat[0].public_ip
+    : try(tencentcloud_instance.nat["0"].public_ip, null)
+  )
+}
+
+output "egress_public_ips" {
+  value = (
+    var.egress_gateway_mode == "managed_nat"
+    ? [tencentcloud_eip.nat[0].public_ip]
+    : [for key in sort(keys(tencentcloud_instance.nat)) : tencentcloud_instance.nat[key].public_ip]
+  )
 }
 
 output "security_group_ids" {
@@ -23,6 +35,7 @@ output "security_group_ids" {
     traffic_edge = tencentcloud_security_group.traffic_edge.id
     control_edge = tencentcloud_security_group.control_edge.id
     tke_runtime  = tencentcloud_security_group.tke_runtime.id
+    nat_instance = try(tencentcloud_security_group.nat_instance[0].id, null)
     mysql        = tencentcloud_security_group.mysql.id
     redis        = tencentcloud_security_group.redis.id
   }
@@ -34,6 +47,10 @@ output "tke_cluster_id" {
 
 output "tke_external_endpoint" {
   value = tencentcloud_kubernetes_cluster_endpoint.internet.cluster_external_endpoint
+}
+
+output "tke_intranet_endpoint" {
+  value = tencentcloud_kubernetes_cluster_endpoint.internet.pgw_endpoint
 }
 
 output "control_host" {

@@ -2123,6 +2123,7 @@ export const AccountPage = () => {
   const [showBindEmailModal, setShowBindEmailModal] = useState(false);
   const [copiedUserId, setCopiedUserId] = useState(false);
   const copyResetTimer = useRef<number | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   // Delete account
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -2328,10 +2329,12 @@ export const AccountPage = () => {
   };
 
   const handleSignOut = async () => {
+    setIsSigningOut(true);
+    navigate("/", { replace: true });
     try {
       await signOut();
-      navigate("/");
     } catch (err) {
+      setIsSigningOut(false);
       console.error("Failed to sign out", err);
     }
   };
@@ -2353,7 +2356,7 @@ export const AccountPage = () => {
   let pageOverlays: ReactNode = null;
 
   /* ── Unauthenticated view ── */
-  if (authReady && !isAuthenticated) {
+  if (authReady && !isAuthenticated && !isSigningOut) {
     pageContent = (
         <main className="relative z-10 flex flex-grow items-center justify-center px-6 pb-16 pt-24 md:px-8">
           <motion.div
@@ -2418,7 +2421,7 @@ export const AccountPage = () => {
           <LoginModal open={showLoginModal} onClose={() => setShowLoginModal(false)} />
         </main>
     );
-  } else if (!authReady) {
+  } else if (!authReady || isSigningOut) {
     /* ── Loading auth ── */
     pageContent = (
         <main className="relative z-10 flex-grow pb-8 pt-20 md:pt-24" aria-hidden="true">

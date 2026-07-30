@@ -2,18 +2,21 @@ FROM node:22-alpine AS build
 
 WORKDIR /frontend
 
-COPY package.json pnpm-lock.yaml .npmrc ./
-
-COPY tsconfig.json tsconfig.app.json next-env.d.ts next.config.mjs postcss.config.mjs source.config.ts mdx-components.tsx ./
-COPY public ./public
-COPY scripts ./scripts
-COPY src ./src
-COPY next-site ./next-site
-COPY vendor ./vendor
-COPY assets ./assets
+COPY frontend ./
+COPY velalink /velalink
 
 ARG VITE_AUTH_API_BASE_URL
+ARG NEXT_PUBLIC_AUTH_API_BASE_URL
+ARG VITE_PAID_BILLING_ENABLED=false
+ARG NEXT_PUBLIC_PAID_BILLING_ENABLED=false
+ARG VITE_REGION=cn
+ARG NEXT_PUBLIC_REGION=cn
 ENV VITE_AUTH_API_BASE_URL="${VITE_AUTH_API_BASE_URL}"
+ENV NEXT_PUBLIC_AUTH_API_BASE_URL="${NEXT_PUBLIC_AUTH_API_BASE_URL}"
+ENV VITE_PAID_BILLING_ENABLED="${VITE_PAID_BILLING_ENABLED}"
+ENV NEXT_PUBLIC_PAID_BILLING_ENABLED="${NEXT_PUBLIC_PAID_BILLING_ENABLED}"
+ENV VITE_REGION="${VITE_REGION}"
+ENV NEXT_PUBLIC_REGION="${NEXT_PUBLIC_REGION}"
 ARG VITE_AEGIS_ENABLED=true
 ARG VITE_AEGIS_ID=4e66EF5XoPEXx3y8lw
 ARG VITE_AEGIS_HOST_URL=https://rumt-zh.com
@@ -47,7 +50,7 @@ RUN corepack enable && corepack prepare pnpm@10.23.0 --activate && cd /frontend 
 
 FROM nginx:1.27-alpine
 
-COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/deploy/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /frontend/out /usr/share/nginx/html
 
 EXPOSE 8080

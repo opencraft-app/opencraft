@@ -48,7 +48,7 @@ type LoginRequest struct {
 
 type TwoFALoginRequest struct {
 	Code      string `json:"code"`
-	FlowToken string `json:"flow_token"`
+	FlowToken string `json:"flow_token,omitempty"`
 }
 
 type PaymentComplianceRequest struct {
@@ -353,9 +353,6 @@ func (c *Client) isolatedSessionClient() *Client {
 }
 
 func (c *Client) Complete2FALogin(ctx context.Context, flowToken string, code string) (Session, error) {
-	if strings.TrimSpace(flowToken) == "" {
-		return Session{}, fmt.Errorf("new-api 2fa login flow token is required")
-	}
 	if strings.TrimSpace(code) == "" {
 		return Session{}, fmt.Errorf("new-api 2fa login code is required")
 	}
@@ -851,10 +848,26 @@ func (c *Client) AdminCreateUserSubscription(ctx context.Context, auth AdminAuth
 	if !resp.Success {
 		return UserSubscription{}, fmt.Errorf("new-api create user subscription failed: %s", resp.Message)
 	}
-	if resp.Data.ID <= 0 {
+	if resp.Data.ID > 0 {
+		return resp.Data, nil
+	}
+	// New API v1.0.0-rc.12 creates the subscription but returns data: null.
+	// Resolve the durable row immediately so callers retain an ID for
+	// idempotency, projection, and later invalidation.
+	subscriptions, err := c.AdminListUserSubscriptions(ctx, auth, userID)
+	if err != nil {
+		return UserSubscription{}, fmt.Errorf("resolve created new-api user subscription: %w", err)
+	}
+	var created UserSubscription
+	for _, subscription := range subscriptions {
+		if subscription.PlanID == req.PlanID && subscription.ID > created.ID {
+			created = subscription
+		}
+	}
+	if created.ID <= 0 {
 		return UserSubscription{}, fmt.Errorf("new-api create user subscription returned an invalid subscription id")
 	}
-	return resp.Data, nil
+	return created, nil
 }
 
 func (c *Client) AdminCreateSubscriptionPlan(ctx context.Context, auth AdminAuth, req AdminCreateSubscriptionPlanRequest) (AdminCreateSubscriptionPlanResult, error) {

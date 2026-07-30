@@ -33,6 +33,7 @@
 - `sandbox`
 - `service-gateway`
 - `subscription`
+- `velagw`（部署在独立的 `johorbahru-llmgateway-prod` 目标集群）
 - `vibebase`
 
 当前新加坡项目模型：
@@ -51,6 +52,7 @@
   - `sgprod-sandbox`
   - `sgprod-service-gateway`
   - `sgprod-subscription`
+  - `sgprod-velagw`
   - `sgprod-vibebase`
 
 当前已有 deploy-facing 目录但尚未接入 live leaf app：
@@ -61,7 +63,8 @@
 
 - `spec.source.repoURL` 指向 `git@git.woa.com:wisp/mono2.git`
 - `spec.source.targetRevision` 指向 `gitops`
-- `spec.destination.name` 继续使用 `sgprod`
+- 普通业务服务的 `spec.destination.name` 继续使用 `sgprod`
+- `velagw` 使用独立目标集群 `johorbahru-llmgateway-prod`
 - `spec.project` 与服务对应的 cutover project 一致
 - 不要为 sgprod root app 或 leaf app 添加 `syncPolicy.automated`
 - 对应 deploy-facing 目录已经在新 Argo 的 `ksops` 运行时下验证通过

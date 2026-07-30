@@ -64,13 +64,38 @@ PROD_DB_MIGRATION_WORKFLOWS = {
 }
 
 
-def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
-    service_root = REPO_ROOT / "argocd/services/velagw/shprod"
+def load_velagw_resources(env: str) -> tuple[dict, list[dict]]:
+    service_root = REPO_ROOT / "argocd/services/velagw" / env
     kustomization = yaml.safe_load((service_root / "kustomization.yaml").read_text())
+    docs = load_kustomization_resources(service_root, kustomization)
+    return kustomization, docs
+
+
+def load_kustomization_resources(root: Path, kustomization: dict) -> list[dict]:
     docs = []
     for resource in kustomization.get("resources", []):
-        docs.extend(doc for doc in yaml.safe_load_all((service_root / resource).read_text()) if doc)
-    return kustomization, docs
+        path = (root / resource).resolve()
+        if path.is_dir():
+            child = yaml.safe_load((path / "kustomization.yaml").read_text())
+            docs.extend(load_kustomization_resources(path, child))
+            continue
+        docs.extend(doc for doc in yaml.safe_load_all(path.read_text()) if doc)
+    return docs
+
+
+def load_platform_env(env: str) -> dict[str, str]:
+    content = (REPO_ROOT / "argocd/services/velagw" / env / "velagw-platform.env").read_text()
+    return {
+        key: value
+        for line in content.splitlines()
+        if line and not line.startswith("#")
+        for key, separator, value in [line.partition("=")]
+        if separator
+    }
+
+
+def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
+    return load_velagw_resources("shprod")
 
 
 class ReleaseBundleContractTests(unittest.TestCase):
@@ -344,7 +369,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(bundle.image_repo, "lightclaw-bj82.tencentcloudcr.com/llmgateway/llmgateway")
         self.assertEqual(parameters.get("SERVICE"), "velagw")
-        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod,sgprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-llmgateway")
         self.assertEqual(app["spec"]["destination"]["name"], "beijing-llmgateway")
         self.assertEqual(app["spec"]["source"]["path"], "argocd/services/velagw/beijing-llmgateway")
@@ -444,7 +469,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
             with self.subTest(resource=resource):
                 self.assertEqual(
                     (service_root / resource).read_text(),
-                    (REPO_ROOT / "argocd/services/velagw/shprod" / resource).read_text(),
+                    (REPO_ROOT / "velagw/deploy/k8s/prod/gitops-base" / resource).read_text().replace(
+                        "# Shared by every production VelaGW regional overlay.\n",
+                        "",
+                        1,
+                    ),
                 )
                 for document in yaml.safe_load_all((service_root / resource).read_text()):
                     annotations = ((document or {}).get("metadata") or {}).get("annotations") or {}
@@ -486,7 +515,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(bundle.image_repo, "lightclaw-shprod.tencentcloudcr.com/llmgateway/llmgateway")
         self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "shprod")
-        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod,sgprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-llmgateway")
         self.assertTrue(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
 
@@ -513,6 +542,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("argocd/projects/shprod-velagw.yaml", bundle.publish_paths)
         self.assertIn("argocd/clusters/shanghai-llmgateway-prod.yaml", bundle.publish_paths)
         self.assertIn("argocd/services/velagw/shprod/**", bundle.publish_paths)
+        self.assertIn("velagw/deploy/k8s/prod/gitops-base/**", bundle.publish_paths)
 
         kustomization, resource_docs = load_velagw_shprod_resources()
         kinds = {doc.get("kind") for doc in resource_docs}
@@ -525,16 +555,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("ValidatingAdmissionPolicyBinding", kinds)
         self.assertEqual(
             kustomization.get("resources"),
-            [
-                "workloads.yaml",
-                "llmfleet-rgd.yaml",
-                "velagwset-crd.yaml",
-                "velagwset-delete-policy.yaml",
-                "velagwset-controller.yaml",
-                "velagwset-provisioner.yaml",
-                "shard-manager.yaml",
-                "release-bootstrap.yaml",
-            ],
+            ["../../../../velagw/deploy/k8s/prod/gitops-base"],
         )
 
         cluster_resource_whitelist = {
@@ -638,7 +659,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(provisioner_env["LLMGATEWAY_CONTROL_URL"].get("value"), "http://llmgateway-control")
         self.assertEqual(provisioner_env["LLMGATEWAY_SET_SOURCE"].get("value"), "prod")
         self.assertEqual(provisioner_env["LLMGATEWAY_FLEET"].get("value"), "prod")
-        self.assertEqual(provisioner_env["LLMGATEWAY_VELAGWSET_SERVERLESS_TRAFFIC"].get("value"), "true")
+        self.assertEqual(
+            load_platform_env("shprod")["VELAGW_VELAGWSET_SERVERLESS_TRAFFIC"],
+            "true",
+        )
         self.assertEqual(
             provisioner_env["INTERNAL_SERVICE_TOKEN"]["valueFrom"]["secretKeyRef"],
             {"name": "llmgateway-control-runtime", "key": "INTERNAL_SERVICE_TOKEN"},
@@ -669,6 +693,170 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertEqual(bootstrap["metadata"]["annotations"]["argocd.argoproj.io/hook"], "PostSync")
 
+    def test_velagw_release_bundle_targets_johorbahru_sgprod_cluster(self) -> None:
+        manifest = load_manifest()
+
+        bundle = require_build_metadata(load_bundle(manifest, "velagw", "sgprod"))
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/velagw.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+        app = yaml.safe_load((REPO_ROOT / "argocd/apps/sgprod/velagw.yaml").read_text())
+        project = yaml.safe_load((REPO_ROOT / "argocd/projects/sgprod-velagw.yaml").read_text())
+        cluster = yaml.safe_load((REPO_ROOT / "argocd/clusters/johorbahru-llmgateway-prod.yaml").read_text())
+        service_root = REPO_ROOT / "argocd/services/velagw/sgprod"
+        kustomization, resource_docs = load_velagw_resources("sgprod")
+
+        self.assertEqual(bundle.image_repo, "lightclaw-sgprod.tencentcloudcr.com/lightclaw/velagw")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod,sgprod")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-llmgateway")
+        self.assertTrue(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
+
+        self.assertEqual(app["spec"]["project"], "sgprod-velagw")
+        self.assertEqual(app["spec"]["source"]["targetRevision"], "gitops")
+        self.assertEqual(app["spec"]["source"]["path"], "argocd/services/velagw/sgprod")
+        self.assertEqual(app["spec"]["destination"]["name"], "johorbahru-llmgateway-prod")
+        self.assertEqual(app["spec"]["destination"]["namespace"], "llmgateway")
+        self.assertNotIn("automated", app["spec"].get("syncPolicy") or {})
+
+        self.assertEqual(
+            project["spec"]["destinations"],
+            [{"namespace": "llmgateway", "name": "johorbahru-llmgateway-prod"}],
+        )
+        self.assertEqual(cluster["spec"]["server"], "https://k8s-jhb.lightvela.com")
+        self.assertEqual(cluster["spec"]["projectPath"], "argocd/projects/sgprod-velagw.yaml")
+        self.assertEqual(cluster["spec"]["namespaces"], ["llmgateway"])
+        self.assertTrue(cluster["spec"]["clusterResources"])
+
+        self.assertIn("argocd/apps/sgprod/velagw.yaml", bundle.publish_paths)
+        self.assertIn("argocd/projects/sgprod-velagw.yaml", bundle.publish_paths)
+        self.assertIn("argocd/clusters/johorbahru-llmgateway-prod.yaml", bundle.publish_paths)
+        self.assertIn("argocd/services/velagw/sgprod/**", bundle.publish_paths)
+        self.assertIn("velagw/deploy/k8s/prod/gitops-base/**", bundle.publish_paths)
+
+        kinds = {doc.get("kind") for doc in resource_docs}
+        self.assertNotIn("Secret", kinds)
+        self.assertNotIn("Namespace", kinds)
+        self.assertNotIn("LLMFleet", kinds)
+
+        workloads = [
+            doc
+            for doc in resource_docs
+            if doc.get("kind") in {"Deployment", "Service"}
+        ]
+        core_worker = next(
+            doc
+            for doc in workloads
+            if doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-worker-core"
+        )
+        core_container = next(
+            container
+            for container in core_worker["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "worker"
+        )
+        core_env = {entry["name"]: entry.get("value") for entry in core_container.get("env", [])}
+        self.assertEqual(core_env.get("LLMGATEWAY_SET_AUTOSCALER_ENABLED"), "true")
+        platform = load_platform_env("sgprod")
+        self.assertEqual(platform["VELAGW_SET_AUTOSCALER_MIN_WARM_SETS"], "2")
+
+        provisioner = next(
+            doc
+            for doc in workloads
+            if doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "velagwset-provisioner"
+        )
+        provisioner_container = next(
+            container
+            for container in provisioner["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "provisioner"
+        )
+        provisioner_env = {
+            entry["name"]: entry.get("value") for entry in provisioner_container.get("env", [])
+        }
+        self.assertEqual(platform["VELAGW_VELAGWSET_SERVERLESS_TRAFFIC"], "false")
+
+        traffic_service = next(
+            doc
+            for doc in workloads
+            if doc.get("kind") == "Service"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-traffic"
+        )
+        protocol = platform["VELAGW_TRAFFIC_PROTOCOL"]
+        self.assertIn("token-jhb.lightvela.ai", protocol)
+        self.assertIn("token-jhb-lightvela-ai-cert", protocol)
+
+        image_pin = (service_root / "velagw-platform.env").read_text()
+        self.assertIn("lightclaw-sgprod.tencentcloudcr.com/lightclaw/velagw@sha256:", image_pin)
+
+    def test_velagw_production_overlays_share_one_structural_base(self) -> None:
+        base = REPO_ROOT / "velagw/deploy/k8s/prod/gitops-base"
+        expected_base_files = {
+            "kustomization.yaml",
+            "workloads.yaml",
+            "llmfleet-rgd.yaml",
+            "velagwset-crd.yaml",
+            "velagwset-delete-policy.yaml",
+            "velagwset-controller.yaml",
+            "velagwset-provisioner.yaml",
+            "shard-manager.yaml",
+            "release-bootstrap.yaml",
+        }
+        self.assertEqual(
+            {path.name for path in base.iterdir() if path.is_file()},
+            expected_base_files,
+        )
+
+        overlays = [REPO_ROOT / "argocd/services/velagw" / env for env in ("shprod", "sgprod")]
+        for overlay in overlays:
+            with self.subTest(overlay=overlay.name):
+                self.assertEqual(
+                    {path.name for path in overlay.iterdir() if path.is_file()},
+                    {"README.md", "kustomization.yaml", "velagw-platform.env"},
+                )
+                kustomization = yaml.safe_load((overlay / "kustomization.yaml").read_text())
+                self.assertEqual(
+                    kustomization.get("resources"),
+                    ["../../../../velagw/deploy/k8s/prod/gitops-base"],
+                )
+
+        self.assertEqual(
+            (overlays[0] / "kustomization.yaml").read_text(),
+            (overlays[1] / "kustomization.yaml").read_text(),
+        )
+
+        expected_keys = {
+            "VELAGW_IMAGE",
+            "VELAGW_DEPLOYED_AT",
+            "VELAGW_OTEL_SERVICE_VERSION",
+            "VELAGW_CLUSTER_NAME",
+            "VELAGW_CLOUD_REGION",
+            "VELAGW_CONTROL_PROTOCOL",
+            "VELAGW_TRAFFIC_PROTOCOL",
+            "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS",
+            "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC",
+        }
+        expected_region_values = {
+            "shprod": {
+                "VELAGW_CLUSTER_NAME": "shanghai-llmgateway-prod",
+                "VELAGW_CLOUD_REGION": "ap-shanghai",
+                "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS": "4",
+                "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC": "true",
+            },
+            "sgprod": {
+                "VELAGW_CLUSTER_NAME": "johorbahru-llmgateway-prod",
+                "VELAGW_CLOUD_REGION": "ap-johorbahru",
+                "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS": "2",
+                "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC": "false",
+            },
+        }
+        for env, expected in expected_region_values.items():
+            with self.subTest(env=env):
+                platform = load_platform_env(env)
+                self.assertEqual(set(platform), expected_keys)
+                self.assertEqual(
+                    {key: platform[key] for key in expected},
+                    expected,
+                )
+
     def test_velagw_beijing_otel_version_matches_subtree_source(self) -> None:
         marker = {}
         for line in (REPO_ROOT / "velagw/.mono2-subtree").read_text().splitlines():
@@ -698,7 +886,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertTrue(actual_versions)
         self.assertEqual(set(actual_versions.values()), {expected_version}, actual_versions)
 
-    def test_velagw_shprod_otel_version_matches_subtree_source(self) -> None:
+    def test_velagw_production_otel_versions_match_subtree_source(self) -> None:
         marker = {}
         for line in (REPO_ROOT / "velagw/.mono2-subtree").read_text().splitlines():
             key, separator, value = line.partition("=")
@@ -706,24 +894,12 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 marker[key] = value
         expected_version = marker["upstream_commit"][:7]
 
-        _, resource_docs = load_velagw_shprod_resources()
-        actual_versions = {}
-        for workload in resource_docs:
-            if not workload or workload.get("kind") not in {"Deployment", "CronJob"}:
-                continue
-            if workload["kind"] == "CronJob":
-                pod_spec = workload["spec"]["jobTemplate"]["spec"]["template"]["spec"]
-            else:
-                pod_spec = workload["spec"]["template"]["spec"]
-            for container in pod_spec.get("containers", []):
-                env = {entry["name"]: entry.get("value") for entry in container.get("env", [])}
-                if "OTEL_SERVICE_VERSION" in env:
-                    actual_versions[f"{workload['kind']}/{workload['metadata']['name']}/{container['name']}"] = env[
-                        "OTEL_SERVICE_VERSION"
-                    ]
-
-        self.assertTrue(actual_versions)
-        self.assertEqual(set(actual_versions.values()), {expected_version}, actual_versions)
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                self.assertEqual(
+                    load_platform_env(env)["VELAGW_OTEL_SERVICE_VERSION"],
+                    expected_version,
+                )
 
     def test_workers_shanghai_overlay_uses_temporal_worker_deployment(self) -> None:
         rescue_deployment = yaml.safe_load(

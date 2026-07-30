@@ -326,6 +326,7 @@ type VerifySMSInput struct {
 	Code       string
 	InviteCode string
 	ClientIP   string
+	ClientUA   string
 }
 
 type PasswordSignUpInput struct {
@@ -695,6 +696,8 @@ func (s *Service) verifyNewUserPhoneAuthSMS(ctx context.Context, input VerifySMS
 		UserID:     user.ID,
 		Phone:      input.Phone,
 		VerifyCode: input.Code,
+		ClientIP:   input.ClientIP,
+		ClientUA:   input.ClientUA,
 		Force:      true,
 	})
 	if err != nil {

@@ -1,0 +1,6 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: service-gateway
+  namespace: lightclaw-gateway
+$patch: delete

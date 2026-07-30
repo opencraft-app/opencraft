@@ -1,5 +1,5 @@
 .pulumi-state/
+.build/
 .plugin-cache/
 Pulumi.*.yaml.bak
 *.tmp
-

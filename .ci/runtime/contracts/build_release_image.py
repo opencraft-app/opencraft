@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from contracts.bundles import ImageTarget, is_playground_env, load_bundle, load_manifest, require_build_metadata
+from contracts.bundles import ImageTarget, is_playground_env, load_bundle, load_manifest, playground_region, require_build_metadata
 from contracts.image_existence import ImageCheckResult, verify_images
 
 
@@ -35,6 +35,12 @@ def run_command(command: list[str], **kwargs: object) -> subprocess.CompletedPro
 
 def playground_frontend_auth_api_base_url(env: str) -> str:
     return f"https://api-{env}.lightclaw.tech"
+
+
+def playground_frontend_region(env: str) -> str:
+    if playground_region(env) == "kr":
+        return "global"
+    return "cn"
 
 
 def parse_args() -> argparse.Namespace:
@@ -198,13 +204,20 @@ def encode_built_output(built: dict[str, str], has_explicit_targets: bool) -> st
 
 def all_target_images_exist(targets: list[ImageTarget], tag: str) -> tuple[bool, list[ImageCheckResult]]:
     images = [image_for_target(target, tag) for target in targets]
-    results = verify_images(images)
+    results = verify_images(images, log_missing_errors=False)
     return all(result.exists for result in results), results
 
 
 def resolve_docker_build_args(service: str, env: str) -> dict[str, str]:
     if service == "frontend" and is_playground_env(env):
-        return {"VITE_AUTH_API_BASE_URL": playground_frontend_auth_api_base_url(env)}
+        auth_api_base_url = playground_frontend_auth_api_base_url(env)
+        region = playground_frontend_region(env)
+        return {
+            "NEXT_PUBLIC_AUTH_API_BASE_URL": auth_api_base_url,
+            "NEXT_PUBLIC_REGION": region,
+            "VITE_AUTH_API_BASE_URL": auth_api_base_url,
+            "VITE_REGION": region,
+        }
     return {}
 
 

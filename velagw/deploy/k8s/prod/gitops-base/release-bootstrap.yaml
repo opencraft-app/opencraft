@@ -1,3 +1,4 @@
+# Shared by every production VelaGW regional overlay.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -21,7 +22,7 @@ spec:
         - name: tcr-pull-secret
       containers:
         - name: bootstrap
-          image: lightclaw-shprod.tencentcloudcr.com/llmgateway/llmgateway@sha256:7bf2cd88628e78936e071b66d4aaa5b785fa6cc1dc023cda8ad917000075dd13
+          image: REPLACE_VELAGW_IMAGE
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/llmgateway-release-bootstrap"]
           env:

@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
-from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest
+from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest, playground_catalog_root
 from harness_ci.secrets import build_secret_manifest, redact, resolve_contract_secret_values, secret_env_ref
 
 
@@ -170,15 +170,7 @@ def resolve_runtime_env(
 
 
 def load_playground_catalog_value(repo_root: Path, env: str, service: str, key: str) -> str:
-    path = (
-        repo_root
-        / "argocd"
-        / "catalogs"
-        / "playground"
-        / "beijing-playground"
-        / env
-        / f"{service}.yaml"
-    )
+    path = repo_root / playground_catalog_root(env) / env / f"{service}.yaml"
     if not path.is_file():
         return ""
     for raw in path.read_text().splitlines():
@@ -288,6 +280,8 @@ def apply_playground_ctl_runtime_env(
     if service != "ctl" or not is_playground_namespace(namespace):
         return
     env_values["CTL_DB"] = default_ctl_database(env)
+    if env_secret_values.get("CTL_DB_PASSWORD", "").strip():
+        return
     if not kubeconfig:
         return
     root_password = kubectl_secret_value(
@@ -571,7 +565,7 @@ def main() -> int:
     if not verifier:
         raise ValueError(f"bundle {args.service} does not define db_contract.verifier")
     catalog_service = resolve_catalog_service(args.service, contract)
-    verifier["namespace"] = resolve_verifier_namespace(repo_root, args.env, catalog_service, verifier)
+    verifier["namespace"] = resolve_verifier_namespace(deploy_root, args.env, catalog_service, verifier)
     expected_version = max_migration_version(repo_root, str(contract.get("expected_migration_source") or ""))
     env_values, node_selector, env_secret_values = resolve_runtime_env(deploy_root, args.env, verifier, contract)
     kubeconfig = ""

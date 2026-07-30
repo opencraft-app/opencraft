@@ -48,6 +48,10 @@ func main() {
 	//     未显式提供 uin/app_id 时，按 externalUserId 反查云账号身份
 	//   - cfg.AccountBindingInternalBaseURL 已在 config.Load() 强校验非空
 	shadowClient := shadowclient.New(cfg.AccountBindingInternalBaseURL, cfg.InternalServiceToken)
+	if cfg.ShadowMockEnabled {
+		shadowClient = newMockShadowClient(cfg.ShadowMockUin, cfg.ShadowMockAppID)
+		log.Printf("[shadow] mock enabled")
+	}
 
 	// jifei CGW 出向客户端（迭代 8A）：
 	//   - 询价：GetPrice
