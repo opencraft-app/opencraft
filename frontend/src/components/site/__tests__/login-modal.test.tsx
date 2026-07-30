@@ -70,6 +70,7 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
 
     expect(screen.getByRole("heading", { name: "微信登录" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "微信账号登录" })).toBeInTheDocument();
+    expect(screen.queryByText("使用微信账号继续登录")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "手机" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "QQ" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "GitHub 登录" })).not.toBeInTheDocument();
@@ -162,6 +163,8 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
     expect(agreeCheckbox).toBeDefined();
     fireEvent.click(agreeCheckbox as HTMLElement);
     fireEvent.click(screen.getByRole("button", { name: "QQ" }));
+
+    expect(screen.queryByText("使用 QQ 账号继续登录")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "QQ账号登录" }));
 
     expect(screen.getByRole("button", { name: "微信" })).toBeInTheDocument();

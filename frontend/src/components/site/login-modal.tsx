@@ -347,18 +347,6 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
     }
   })();
 
-  const domesticSubtitle = (() => {
-    switch (domesticLoginMethod) {
-      case "phone":
-        return null;
-      case "qq":
-        return t("使用 QQ 账号继续登录");
-      case "wechat":
-      default:
-        return t("使用微信账号继续登录");
-    }
-  })();
-
   const renderAgreementBlock = (className: string) => (
     <div className={cn("flex w-full flex-col items-center", className)}>
       <label className="flex cursor-pointer items-start gap-2 select-none">
@@ -482,7 +470,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
               <X className="h-5 w-5" />
             </button>
 
-            {/* Header — 标题 + 副标题（按设计稿不展示 Logo） */}
+            {/* Header — 标题（按设计稿不展示 Logo） */}
             <div className="flex w-full flex-col items-center px-9 pt-10">
               <h2
                 className="text-[28px] font-medium leading-none"
@@ -490,12 +478,12 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
               >
                 {isGlobal ? t("登录") : domesticTitle}
               </h2>
-              {(isGlobal || domesticSubtitle) ? (
+              {isGlobal ? (
                 <p
                   className="mt-4 text-center text-sm text-pretty"
                   style={{ color: "rgba(0,0,0,0.5)" }}
                 >
-                  {isGlobal ? t("使用社交软件一键登录") : domesticSubtitle}
+                  {t("使用社交软件一键登录")}
                 </p>
               ) : null}
             </div>
