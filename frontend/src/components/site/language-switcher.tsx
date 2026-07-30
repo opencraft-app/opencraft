@@ -21,7 +21,7 @@ import { useTranslation } from "react-i18next";
 
 import { setLocale } from "@/i18n";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
-import { shouldLocalizePublicPath, stripPublicSiteLocalePrefix } from "@/lib/public-site-routing";
+import { PUBLIC_SITE_LOCALES, shouldLocalizePublicPath, stripPublicSiteLocalePrefix } from "@/lib/public-site-routing";
 import { isGlobal, switchLocaleInPath } from "@/lib/region";
 
 export type LanguageSwitcherVariant = "dropdown" | "inline";
@@ -37,10 +37,10 @@ type Option = {
   label: string;
 };
 
-const EN_OPTION: Option = { value: "en-US", short: "EN", label: "Intl - English" };
-const ZH_CN_OPTION: Option = { value: "zh-CN", short: "中", label: "Intl - 中文" };
-const ZH_SG_OPTION: Option = { value: "zh-SG", short: "简", label: "Intl - 简体中文" };
-const ZH_HANT_OPTION: Option = { value: "zh-Hant", short: "繁", label: "Intl - 繁體中文" };
+const EN_OPTION: Option = { value: PUBLIC_SITE_LOCALES.EN_US, short: "EN", label: "Intl - English" };
+const ZH_CN_OPTION: Option = { value: PUBLIC_SITE_LOCALES.ZH_CN, short: "中", label: "Intl - 中文" };
+const ZH_SG_OPTION: Option = { value: PUBLIC_SITE_LOCALES.ZH_SG, short: "简", label: "Intl - 简体中文" };
+const ZH_HANT_OPTION: Option = { value: PUBLIC_SITE_LOCALES.ZH_HANT, short: "繁", label: "Intl - 繁體中文" };
 const CHINA_SITE_URL = "https://lightvela.com";
 const INTL_SITE_URL = "https://lightvela.ai";
 
@@ -49,7 +49,7 @@ function chineseOption(): Option {
 }
 
 function currentOption(lang: string | undefined): Option {
-  if (lang === "zh-Hant") return ZH_HANT_OPTION;
+  if (lang === PUBLIC_SITE_LOCALES.ZH_HANT) return ZH_HANT_OPTION;
   if (lang?.startsWith("zh")) return chineseOption();
   return EN_OPTION;
 }
@@ -62,9 +62,9 @@ function currentOption(lang: string | undefined): Option {
 function dropdownOptionLabel(opt: Option): string {
   const sitePrefix = isGlobal ? "International Site - " : "国际站 - ";
   const name =
-    opt.value === "en-US"
+    opt.value === PUBLIC_SITE_LOCALES.EN_US
       ? "English"
-      : opt.value === "zh-Hant"
+      : opt.value === PUBLIC_SITE_LOCALES.ZH_HANT
         ? "繁體中文"
         : "简体中文";
   return sitePrefix + name;
@@ -76,8 +76,8 @@ function languageFromPublicLocale(locale: PublicSiteLocale | undefined): PublicS
 }
 
 function i18nLocaleForPublicLocale(locale: PublicSiteLocale): I18nLocale {
-  if (locale === "zh-Hant") return "zh-Hant";
-  return locale.startsWith("zh") ? "zh-CN" : "en-US";
+  if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return PUBLIC_SITE_LOCALES.ZH_HANT;
+  return locale.startsWith("zh") ? PUBLIC_SITE_LOCALES.ZH_CN : PUBLIC_SITE_LOCALES.EN_US;
 }
 
 /**

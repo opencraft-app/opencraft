@@ -13,14 +13,15 @@ import { ProductAnalyticsBridge } from '@/observability/product-analytics-bridge
 import { RumUserBridge } from '@/observability/rum-user-bridge';
 import { CookieConsentBanner } from '@/components/site/cookie-consent-banner';
 import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
+import { PUBLIC_SITE_LOCALES } from '@/lib/public-site-routing';
 
 import type { PublicRouteLocale } from './public-locale';
 
 type Locale = PublicRouteLocale['locale'];
 
 function i18nLocaleForPublicLocale(locale: Locale): I18nLocale {
-  if (locale === 'zh-Hant') return 'zh-Hant';
-  return locale.startsWith('zh') ? 'zh-CN' : 'en-US';
+  if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return PUBLIC_SITE_LOCALES.ZH_HANT;
+  return locale.startsWith('zh') ? PUBLIC_SITE_LOCALES.ZH_CN : PUBLIC_SITE_LOCALES.EN_US;
 }
 
 /**

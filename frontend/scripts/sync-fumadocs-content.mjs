@@ -6,17 +6,23 @@ import * as OpenCC from 'opencc-js';
 
 /**
  * 繁體中文（zh-Hant）文檔转换。
- * 与 scripts/i18n-zh-hant.mjs 的官网文案转换保持同一链路：
- *   OpenCC `cn → twp`（台湾正体 + 常用词汇）后，叠加术语校正表统一港台惯用词。
+ *
+ * 与 UI 文案链路（`scripts/i18n-zh-hant.mjs` + `src/lib/zh-hant.ts` +
+ * `src/lib/zh-hant-overrides.ts`）**必须完全一致**：
+ *   1. OpenCC `cn → hk`（香港繁体字形，仅字形层简→繁，不做台湾词汇替换。
+ *      因此保留港式用词，如「軟件 / 網絡 / 視頻 / 智能 / 信息」，
+ *      而非台湾的「軟體 / 網路 / 影片 / 智慧 / 資訊」。）
+ *   2. 叠加 ZH_HANT_TERM_OVERRIDES（与 `zh-hant-overrides.ts` 的 TERM_OVERRIDES 同步）。
+ *
+ * ⚠️ 若此处术语表增删条目，请同步 `src/lib/zh-hant-overrides.ts`（.mjs 不能 import .ts，
+ *    只能手动保持一致），否则同一 `/zh-hant/` 语言下用户在 docs 与 UI 中看到的用词会漂移。
+ *
  * 只转换中文字符，英文 / 代码 / URL（ASCII）与占位符原样保留。
  */
-const toTraditional = OpenCC.Converter({ from: 'cn', to: 'twp' });
+const toTraditional = OpenCC.Converter({ from: 'cn', to: 'hk' });
 const ZH_HANT_TERM_OVERRIDES = {
-  網絡: '網路',
-  軟件: '軟體',
-  視頻: '影片',
-  智能: '智慧',
-  信息: '資訊',
+  // 港澳日常几乎都写「群」而非港标本字「羣」（微信、报刊、社交媒体一致）
+  羣: '群',
 };
 
 function convertTraditional(text) {

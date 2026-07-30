@@ -1,5 +1,7 @@
 import {
   type PublicSiteLocaleCode,
+  PUBLIC_SITE_LOCALES,
+  PUBLIC_URL_LANGS,
   PUBLIC_URL_LANG_TO_LOCALE,
   matchPublicLangPrefix,
   publicUrlLangForLocale,
@@ -100,10 +102,10 @@ export const localizedPath = (path: string, locale: PublicSiteLocaleCode): strin
 
   // 国际站：繁体走独立前缀 zh-hant；其余中文（简体 zh-CN / zh-SG）统一用 SEO 别名 zh-sg。
   const lang = isGlobal
-    ? locale === "zh-Hant"
-      ? "zh-hant"
+    ? locale === PUBLIC_SITE_LOCALES.ZH_HANT
+      ? PUBLIC_URL_LANGS.ZH_HANT
       : locale.startsWith("zh")
-        ? "zh-sg"
+        ? PUBLIC_URL_LANGS.ZH_SG
         : publicUrlLangForLocale(locale)
     : publicUrlLangForLocale(locale);
   // 根路径特殊处理：/{lang}/  ←  /

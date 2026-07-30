@@ -4,6 +4,21 @@ import { notFound } from 'next/navigation';
 import { PublicOpenSourceLicensesPage } from '@next-site/legal-pages';
 import { publicRouteLocaleFromLang, type PublicUrlLang } from '@next-site/public-locale';
 import { createPublicMetadata, localizedPublicPath, SEO_PUBLIC_URL_LANGS } from '@next-site/seo';
+import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from '@/lib/public-site-routing';
+
+const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
+  [PUBLIC_SITE_LOCALES.EN_US]: 'Open Source Notices',
+  [PUBLIC_SITE_LOCALES.ZH_HANT]: '開源聲明',
+  [PUBLIC_SITE_LOCALES.ZH_CN]: '开源声明',
+  [PUBLIC_SITE_LOCALES.ZH_SG]: '开源声明',
+};
+
+const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
+  [PUBLIC_SITE_LOCALES.EN_US]: 'Attribution and license notices for open source software used by LightVela.',
+  [PUBLIC_SITE_LOCALES.ZH_HANT]: 'LightVela 使用的開源軟件歸屬與許可證聲明。',
+  [PUBLIC_SITE_LOCALES.ZH_CN]: 'LightVela 使用的开源软件归属与许可证声明。',
+  [PUBLIC_SITE_LOCALES.ZH_SG]: 'LightVela 使用的开源软件归属与许可证声明。',
+};
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {
   return SEO_PUBLIC_URL_LANGS.map((lang) => ({ lang }));
@@ -16,18 +31,8 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   return createPublicMetadata({
     path: localizedPublicPath('/open-source-licenses', lang as PublicUrlLang),
     locale: routeLocale.locale,
-    title:
-      routeLocale.locale === 'en-US'
-        ? 'Open Source Notices'
-        : routeLocale.locale === 'zh-Hant'
-          ? '開源聲明'
-          : '开源声明',
-    description:
-      routeLocale.locale === 'en-US'
-        ? 'Attribution and license notices for open source software used by LightVela.'
-        : routeLocale.locale === 'zh-Hant'
-          ? 'LightVela 使用的開源軟件歸屬與許可證聲明。'
-          : 'LightVela 使用的开源软件归属与许可证声明。',
+    title: TITLE_BY_LOCALE[routeLocale.locale],
+    description: DESCRIPTION_BY_LOCALE[routeLocale.locale],
   });
 }
 

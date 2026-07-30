@@ -4,6 +4,21 @@ import { notFound } from 'next/navigation';
 import { PublicPrivacyPolicyPage } from '@next-site/legal-pages';
 import { publicRouteLocaleFromLang, type PublicUrlLang } from '@next-site/public-locale';
 import { createPublicMetadata, localizedPublicPath, SEO_PUBLIC_URL_LANGS } from '@next-site/seo';
+import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from '@/lib/public-site-routing';
+
+const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
+  [PUBLIC_SITE_LOCALES.EN_US]: 'Privacy Policy',
+  [PUBLIC_SITE_LOCALES.ZH_HANT]: '隱私政策',
+  [PUBLIC_SITE_LOCALES.ZH_CN]: '隐私政策',
+  [PUBLIC_SITE_LOCALES.ZH_SG]: '隐私政策',
+};
+
+const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
+  [PUBLIC_SITE_LOCALES.EN_US]: 'LightVela Privacy Policy, including personal information processing, storage, sharing, and user rights.',
+  [PUBLIC_SITE_LOCALES.ZH_HANT]: 'LightVela 隱私政策，說明個人信息的處理、存儲、共享和用戶權利。',
+  [PUBLIC_SITE_LOCALES.ZH_CN]: 'LightVela 隐私政策，说明个人信息的处理、存储、共享和用户权利。',
+  [PUBLIC_SITE_LOCALES.ZH_SG]: 'LightVela 隐私政策，说明个人信息的处理、存储、共享和用户权利。',
+};
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {
   return SEO_PUBLIC_URL_LANGS.map((lang) => ({ lang }));
@@ -16,18 +31,8 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   return createPublicMetadata({
     path: localizedPublicPath('/privacy-policy', lang as PublicUrlLang),
     locale: routeLocale.locale,
-    title:
-      routeLocale.locale === 'en-US'
-        ? 'Privacy Policy'
-        : routeLocale.locale === 'zh-Hant'
-          ? '隱私政策'
-          : '隐私政策',
-    description:
-      routeLocale.locale === 'en-US'
-        ? 'LightVela Privacy Policy, including personal information processing, storage, sharing, and user rights.'
-        : routeLocale.locale === 'zh-Hant'
-          ? 'LightVela 隱私政策，說明個人信息的處理、存儲、共享和用戶權利。'
-          : 'LightVela 隐私政策，说明个人信息的处理、存储、共享和用户权利。',
+    title: TITLE_BY_LOCALE[routeLocale.locale],
+    description: DESCRIPTION_BY_LOCALE[routeLocale.locale],
   });
 }
 

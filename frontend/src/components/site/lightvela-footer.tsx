@@ -5,6 +5,7 @@ import { CN_PRIVACY_POLICY_URL } from "@/constants/legal";
 import { useT } from "@/i18n/t";
 import { isGlobal, localizedPath } from "@/lib/region";
 import type { PublicSiteLocaleCode } from "@/lib/public-site-routing";
+import { PUBLIC_SITE_LOCALES } from "@/lib/public-site-routing";
 import { cn } from "@/lib/utils";
 
 type FooterLink =
@@ -120,7 +121,11 @@ function FooterTextLink({ link, className, renderLink }: { link: FooterLink; cla
   // 将当前 i18n 语言映射到公开站点合法 locale，繁体保留 zh-Hant 以生成 /zh-hant 前缀
   const lang = i18n.language;
   const locale: PublicSiteLocaleCode =
-    lang === "zh-CN" || lang === "zh-SG" || lang === "zh-Hant" ? lang : "en-US";
+    lang === PUBLIC_SITE_LOCALES.ZH_CN
+      || lang === PUBLIC_SITE_LOCALES.ZH_SG
+      || lang === PUBLIC_SITE_LOCALES.ZH_HANT
+      ? lang
+      : PUBLIC_SITE_LOCALES.EN_US;
   const linkClassName = cn(footerLinkClassName, className);
   const label = link.label;
 

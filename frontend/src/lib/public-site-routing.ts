@@ -2,6 +2,29 @@ export type PublicSiteLocaleCode = "zh-CN" | "zh-SG" | "zh-Hant" | "en-US";
 export type PublicUrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant";
 export type CanonicalPublicUrlLang = "en-us" | "zh-cn" | "zh-sg" | "zh-hant";
 
+/**
+ * 官网前端所有 locale / URL-lang 字符串的**唯一常量来源**。
+ *
+ * 用法：调用方应引用 `PUBLIC_SITE_LOCALES.ZH_HANT` 而不是硬编码 `'zh-Hant'`，
+ * 避免大小写 / 连字符方向漂移（历史上出现过 `zh-hant` / `zh-HANT` 混用问题）。
+ *
+ * 与类型联动：`typeof PUBLIC_SITE_LOCALES[keyof …]` 天然等价于 `PublicSiteLocaleCode`。
+ */
+export const PUBLIC_SITE_LOCALES = {
+  EN_US: "en-US",
+  ZH_CN: "zh-CN",
+  ZH_SG: "zh-SG",
+  ZH_HANT: "zh-Hant",
+} as const satisfies Record<string, PublicSiteLocaleCode>;
+
+/** URL 前缀（小写连字符）—— 与 `next-site/source.ts` 的 `docsI18n.languages` 一一对应。 */
+export const PUBLIC_URL_LANGS = {
+  EN_US: "en-us",
+  ZH_CN: "zh-cn",
+  ZH_SG: "zh-sg",
+  ZH_HANT: "zh-hant",
+} as const satisfies Record<string, CanonicalPublicUrlLang>;
+
 export const PUBLIC_LOCALIZED_PATH_PREFIXES = [
   "/docs",
   "/about",

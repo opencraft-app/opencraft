@@ -4,6 +4,26 @@ import { notFound } from 'next/navigation';
 import { publicRouteLocaleFromLang, type PublicUrlLang } from '@next-site/public-locale';
 import { PublicChangelogPage } from '@next-site/public-pages';
 import { createPublicMetadata, localizedPublicPath, SEO_PUBLIC_URL_LANGS } from '@next-site/seo';
+import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from '@/lib/public-site-routing';
+
+/**
+ * 每个公开 locale 对应的 SEO 标题 / 描述。
+ * 用 Record 显式列出全部四种 locale，避免嵌套三元 & 魔法字符串，
+ * TypeScript 会保证 `PublicSiteLocaleCode` 联合类型的完备覆盖。
+ */
+const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
+  [PUBLIC_SITE_LOCALES.EN_US]: 'Changelog',
+  [PUBLIC_SITE_LOCALES.ZH_HANT]: '更新日誌',
+  [PUBLIC_SITE_LOCALES.ZH_CN]: '更新日志',
+  [PUBLIC_SITE_LOCALES.ZH_SG]: '更新日志',
+};
+
+const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
+  [PUBLIC_SITE_LOCALES.EN_US]: 'Product updates, new capabilities, and experience improvements from LightVela.',
+  [PUBLIC_SITE_LOCALES.ZH_HANT]: '記錄 LightVela 的產品更新、能力上線與體驗改進。',
+  [PUBLIC_SITE_LOCALES.ZH_CN]: '记录 LightVela 的产品更新、能力上线与体验改进。',
+  [PUBLIC_SITE_LOCALES.ZH_SG]: '记录 LightVela 的产品更新、能力上线与体验改进。',
+};
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {
   return SEO_PUBLIC_URL_LANGS.map((lang) => ({ lang }));
@@ -16,18 +36,8 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   return createPublicMetadata({
     path: localizedPublicPath('/changelog', lang as PublicUrlLang),
     locale: routeLocale.locale,
-    title:
-      routeLocale.locale === 'en-US'
-        ? 'Changelog'
-        : routeLocale.locale === 'zh-Hant'
-          ? '更新日誌'
-          : '更新日志',
-    description:
-      routeLocale.locale === 'en-US'
-        ? 'Product updates, new capabilities, and experience improvements from LightVela.'
-        : routeLocale.locale === 'zh-Hant'
-          ? '記錄 LightVela 的產品更新、能力上線與體驗改進。'
-          : '记录 LightVela 的产品更新、能力上线与体验改进。',
+    title: TITLE_BY_LOCALE[routeLocale.locale],
+    description: DESCRIPTION_BY_LOCALE[routeLocale.locale],
   });
 }
 
