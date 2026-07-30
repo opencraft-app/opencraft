@@ -2,7 +2,9 @@ package notify
 
 import (
 	"encoding/json"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/skipzhang/mono/infra_pulumi/pkg/config"
@@ -104,6 +106,29 @@ func TestTriggerManagementCanBeDeferredUntilFunctionsExist(t *testing.T) {
 func TestRedisSecretUsesRuntimeCurrentVersion(t *testing.T) {
 	if notifySecretVersionID != "SSM_Current" {
 		t.Fatalf("notify secret version = %q, want SSM_Current", notifySecretVersionID)
+	}
+}
+
+func TestTimersBindToImmutableLiveAlias(t *testing.T) {
+	source, err := os.ReadFile("notify.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	code := string(source)
+	if strings.Contains(code, `Qualifier:    pulumi.StringPtr("$LATEST")`) {
+		t.Fatal("notify timer must not bind to mutable $LATEST")
+	}
+	for _, required := range []string{
+		"scf.NewFunctionVersion",
+		"scf.NewFunctionAlias",
+		"notifyLiveAlias",
+		"Qualifier:    alias.Name.ToStringPtrOutput()",
+		`pulumi.ReplaceOnChanges([]string{"description"})`,
+	} {
+		if !strings.Contains(code, required) {
+			t.Fatalf("notify release is missing %q", required)
+		}
 	}
 }
 

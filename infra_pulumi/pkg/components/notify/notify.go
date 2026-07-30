@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -24,6 +25,7 @@ const (
 	runtimeName           = "Python3.10"
 	functionTimeout       = 900
 	notifySecretVersionID = "SSM_Current"
+	notifyLiveAlias       = "live"
 )
 
 func Ensure(ctx *stackctx.Context) error {
@@ -86,16 +88,24 @@ func Ensure(ctx *stackctx.Context) error {
 	if err != nil {
 		return err
 	}
+	scannerAlias, err := ensureFunctionRelease(ctx, "scanner", scanner, releaseDescription(ctx, "scanner", inv.ScannerFunctionName, "app.scanner_handler", zipPath, inv, redisSecretName))
+	if err != nil {
+		return err
+	}
+	workerAlias, err := ensureFunctionRelease(ctx, "worker", worker, releaseDescription(ctx, "worker", inv.WorkerFunctionName, "app.worker_handler", zipPath, inv, redisSecretName))
+	if err != nil {
+		return err
+	}
 
 	if shouldManageTriggers(inv) {
 		triggerState := "CLOSE"
 		if inv.TriggersEnabled {
 			triggerState = "OPEN"
 		}
-		if err := ensureTimer(ctx, "scanner", scanner, inv.ExistingScannerTriggerID, inv.ScannerCron, triggerState); err != nil {
+		if err := ensureTimer(ctx, "scanner", scanner, scannerAlias, inv.ExistingScannerTriggerID, inv.ScannerCron, triggerState); err != nil {
 			return err
 		}
-		if err := ensureTimer(ctx, "worker", worker, inv.ExistingWorkerTriggerID, inv.WorkerCron, triggerState); err != nil {
+		if err := ensureTimer(ctx, "worker", worker, workerAlias, inv.ExistingWorkerTriggerID, inv.WorkerCron, triggerState); err != nil {
 			return err
 		}
 	}
@@ -221,18 +231,79 @@ func ensureFunction(ctx *stackctx.Context, suffix, functionName, importID, handl
 	}, ctx.OptionsWithAdopt(importID, pulumi.DependsOn(dependencies))...)
 }
 
-func ensureTimer(ctx *stackctx.Context, suffix string, function *scf.Function, importID, cron, state string) error {
+func ensureFunctionRelease(ctx *stackctx.Context, suffix string, function *scf.Function, description pulumi.StringOutput) (*scf.FunctionAlias, error) {
+	version, err := scf.NewFunctionVersion(ctx.Pulumi, naming.StableResource("notify", suffix, "version"), &scf.FunctionVersionArgs{
+		FunctionName: function.Name,
+		Namespace:    pulumi.StringPtr(functionNamespace),
+		Description:  description.ToStringPtrOutput(),
+	}, ctx.Options(
+		pulumi.DependsOn([]pulumi.Resource{function}),
+		pulumi.ReplaceOnChanges([]string{"description"}),
+	)...)
+	if err != nil {
+		return nil, err
+	}
+	return scf.NewFunctionAlias(ctx.Pulumi, naming.StableResource("notify", suffix, "live-alias"), &scf.FunctionAliasArgs{
+		Name:            pulumi.StringPtr(notifyLiveAlias),
+		FunctionName:    function.Name,
+		Namespace:       pulumi.StringPtr(functionNamespace),
+		FunctionVersion: version.FunctionVersion,
+		Description:     pulumi.StringPtr("Stable release alias for LightVela expiry notification " + suffix),
+	}, ctx.Options(pulumi.DependsOn([]pulumi.Resource{version}))...)
+}
+
+func ensureTimer(ctx *stackctx.Context, suffix string, function *scf.Function, alias *scf.FunctionAlias, importID, cron, state string) error {
 	triggerName := "lightvela-notify-" + suffix + "-timer"
 	_, err := scf.NewTriggerConfig(ctx.Pulumi, naming.StableResource("notify", suffix, "timer"), &scf.TriggerConfigArgs{
 		FunctionName: function.Name,
 		Namespace:    pulumi.StringPtr(functionNamespace),
-		Qualifier:    pulumi.StringPtr("$LATEST"),
+		Qualifier:    alias.Name.ToStringPtrOutput(),
 		TriggerName:  pulumi.String(triggerName),
 		Type:         pulumi.String("timer"),
 		TriggerDesc:  pulumi.String(cron),
 		Enable:       pulumi.StringPtr(state),
-	}, ctx.OptionsWithAdopt(importID, pulumi.DependsOn([]pulumi.Resource{function}))...)
+	}, ctx.OptionsWithAdopt(importID, pulumi.DependsOn([]pulumi.Resource{function, alias}))...)
 	return err
+}
+
+func releaseDescription(ctx *stackctx.Context, suffix, functionName, handler, zipPath string, inv config.NotifyInventory, redisSecretName string) pulumi.StringOutput {
+	return ctx.Runtime.NotifyTestAllowlistSHA256.ApplyT(func(allowlistHash string) string {
+		fields := []string{
+			ctx.Inventory.EnvName,
+			ctx.Inventory.EnvShort,
+			ctx.Inventory.Region,
+			suffix,
+			functionName,
+			handler,
+			zipPath,
+			runtimeName,
+			strconv.Itoa(functionTimeout),
+			inv.VPCID,
+			inv.SubnetID,
+			inv.CLSLogsetID,
+			inv.CLSTopicID,
+			inv.DBHost,
+			strconv.Itoa(inv.DBPort),
+			inv.DBUser,
+			inv.DBSecretName,
+			inv.RedisHost,
+			strconv.Itoa(inv.RedisPort),
+			redisSecretName,
+			inv.SMSSDKAppID,
+			inv.SMSSignName,
+			inv.SMSTemplateID,
+			inv.ExpiryWindowsDays,
+			strconv.Itoa(inv.SMSQPS),
+			strconv.Itoa(inv.SMSBurst),
+			strconv.Itoa(inv.ScanPageSize),
+			strconv.Itoa(inv.WorkerBatchSize),
+			strconv.Itoa(inv.WorkerMaxMessages),
+			strconv.FormatBool(inv.TestAllowlistEnabled),
+			allowlistHash,
+		}
+		digest := sha256.Sum256([]byte(strings.Join(fields, "\x00")))
+		return fmt.Sprintf("LightVela expiry notification %s release %x", suffix, digest[:8])
+	}).(pulumi.StringOutput)
 }
 
 func functionEnvironment(ctx *stackctx.Context, inv config.NotifyInventory, redisSecretName string) pulumi.StringMap {
