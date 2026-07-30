@@ -57,7 +57,7 @@ importers:
         version: 2.0.27(react-dom@19.2.4(react@19.2.4))
       '@tencent/tea-sdk-lightclaw':
         specifier: 1.10.1
-        version: 1.10.1(@tencent/qcloud-iaas-api@1.0.1)(@types/react@19.2.14)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(path-to-regexp@2.4.0)(prop-types@15.8.1)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(tencentcloud-sdk-nodejs@4.1.217)(typescript@5.9.3)
+        version: 1.10.1(@tencent/qcloud-iaas-api@1.0.1)(@types/react@19.2.14)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(path-to-regexp@2.4.0)(prop-types@15.8.1)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(tencentcloud-sdk-nodejs@4.1.217)(typescript@5.9.3)
       '@tencent/universal-report':
         specifier: 4.7.6
         version: 4.7.6
@@ -106,6 +106,9 @@ importers:
       next:
         specifier: ^16.2.9
         version: 16.2.9(@opentelemetry/api@1.9.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      opencc-js:
+        specifier: 1.4.1
+        version: 1.4.1
       posthog-js:
         specifier: 1.386.6
         version: 1.386.6
@@ -182,9 +185,6 @@ importers:
       jsdom:
         specifier: ^28.1.0
         version: 28.1.0
-      opencc-js:
-        specifier: 1.4.1
-        version: 1.4.1
       sharp:
         specifier: ^0.33.5
         version: 0.33.5
@@ -7587,7 +7587,7 @@ packages:
     deprecated: This package is now deprecated. Move to @xterm/xterm instead.
 
   yaml@1.10.3:
-    resolution: {integrity: sha512-vIYeF1u3CjlhAFekPPAk2h/Kv4T3mAkMox5OymRiJQB0spDP10LHvt+K7G9Ny6NuuMAb25/6n1qyUjAcGNf/AA==, tarball: https://mirrors.tencent.com/npm/yaml/-/yaml-1.10.3.tgz}
+    resolution: {integrity: sha512-vIYeF1u3CjlhAFekPPAk2h/Kv4T3mAkMox5OymRiJQB0spDP10LHvt+K7G9Ny6NuuMAb25/6n1qyUjAcGNf/AA==}
     engines: {node: '>= 6'}
 
   yaml@2.9.0:
@@ -10444,7 +10444,7 @@ snapshots:
       - react-dom
       - react-native
 
-  '@tencent/iaas-common@3.8.38(@tencent/tea-app@2.1.25(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(moment@2.30.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0)(tencentcloud-sdk-nodejs@4.1.217))(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(classnames@2.2.6)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(moment@2.30.1)(path-to-regexp@2.4.0)(react-dom@19.2.4(react@19.2.4))(react-redux@7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(react@19.2.4)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(typescript@5.9.3)':
+  '@tencent/iaas-common@3.8.38(@tencent/tea-app@2.1.25(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(moment@2.30.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0)(tencentcloud-sdk-nodejs@4.1.217))(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(classnames@2.2.6)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(moment@2.30.1)(path-to-regexp@2.4.0)(react-dom@19.2.4(react@19.2.4))(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(typescript@5.9.3)':
     dependencies:
       '@tencent/tce-sdk': 1.1.11
       '@tencent/tea-app': 2.1.25(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(moment@2.30.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(tencentcloud-sdk-nodejs@4.1.217)
@@ -10457,13 +10457,13 @@ snapshots:
       path-to-regexp: 2.4.0
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
-      react-redux: 7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      react-redux: 7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0)
       redux: 4.2.1
       redux-logger: 3.0.6
       redux-saga: 0.16.2
       redux-saga-catch: 1.1.2(redux-saga@0.16.2)
       reselect: 4.1.8
-      saga-duck: 3.4.8(react-redux@7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(redux-saga@0.16.2)(redux@4.2.1)
+      saga-duck: 3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1)
       semaphore-async-await: 1.5.1
       typescript: 5.9.3
       xlsx: 0.18.5
@@ -10474,9 +10474,9 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@tencent/iaas-component@0.2.105(541713f631d52ea189c2e72978a8498f)':
+  '@tencent/iaas-component@0.2.105(225065547723104f7eb926cf2d0d1877)':
     dependencies:
-      '@tencent/iaas-common': 3.8.38(@tencent/tea-app@2.1.25(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(moment@2.30.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0)(tencentcloud-sdk-nodejs@4.1.217))(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(classnames@2.2.6)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(moment@2.30.1)(path-to-regexp@2.4.0)(react-dom@19.2.4(react@19.2.4))(react-redux@7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(react@19.2.4)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(typescript@5.9.3)
+      '@tencent/iaas-common': 3.8.38(@tencent/tea-app@2.1.25(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(moment@2.30.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0)(tencentcloud-sdk-nodejs@4.1.217))(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(classnames@2.2.6)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(moment@2.30.1)(path-to-regexp@2.4.0)(react-dom@19.2.4(react@19.2.4))(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(typescript@5.9.3)
       '@tencent/qcloud-iaas-api': 1.0.1
       '@tencent/tea-app': 2.1.25(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(moment@2.30.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(tencentcloud-sdk-nodejs@4.1.217)
       '@tencent/tea-component': 2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -10484,11 +10484,11 @@ snapshots:
       lodash.merge: 4.6.2
       react: 16.14.0
       react-dom: 16.14.0(react@16.14.0)
-      react-redux: 7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      react-redux: 7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0)
       redux: 4.2.1
       redux-saga: 0.16.2
       reselect: 4.1.8
-      saga-duck: 3.4.8(react-redux@7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(redux-saga@0.16.2)(redux@4.2.1)
+      saga-duck: 3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1)
 
   '@tencent/iaas-workbench-api-client@1.0.20':
     dependencies:
@@ -10637,7 +10637,7 @@ snapshots:
       moment: 2.30.1
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
-      react-i18next: 12.3.1(i18next@19.9.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      react-i18next: 12.3.1(i18next@19.9.2)(react-dom@16.14.0(react@16.14.0))(react@16.14.0)
       tencentcloud-sdk-nodejs: 4.1.217
       tslib: 2.8.1
       warning: 4.0.3
@@ -10694,7 +10694,7 @@ snapshots:
   '@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
       '@juggle/resize-observer': 3.4.0
-      '@tencent/tea-icons-react': 1.0.79(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@tencent/tea-icons-react': 1.0.79(react-dom@16.14.0(react@16.14.0))(react@16.14.0)
       '@types/hoist-non-react-statics': 3.3.7(@types/react@19.2.14)
       '@types/react-transition-group': 4.2.3
       '@types/react-window': 1.8.8
@@ -10711,11 +10711,11 @@ snapshots:
       react-copy-to-clipboard: 5.1.1(react@16.14.0)
       react-dom: 19.2.4(react@19.2.4)
       react-dropzone: 11.7.1(react@16.14.0)
-      react-onclickoutside: 6.10.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      react-onclickoutside: 6.10.0(react-dom@16.14.0(react@16.14.0))(react@16.14.0)
       react-popper: 1.3.11(react@16.14.0)
-      react-sortable-hoc: 2.0.0(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      react-transition-group: 4.4.5(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      react-window: 1.8.11(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      react-sortable-hoc: 2.0.0(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0)
+      react-transition-group: 4.4.5(react-dom@16.14.0(react@16.14.0))(react@16.14.0)
+      react-window: 1.8.11(react-dom@16.14.0(react@16.14.0))(react@16.14.0)
       resize-observer-polyfill: 1.5.1
       scroll-into-view-if-needed: 2.2.31
       tslib: 2.8.1
@@ -10768,10 +10768,10 @@ snapshots:
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
 
-  '@tencent/tea-sdk-lightclaw@1.10.1(@tencent/qcloud-iaas-api@1.0.1)(@types/react@19.2.14)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(path-to-regexp@2.4.0)(prop-types@15.8.1)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(tencentcloud-sdk-nodejs@4.1.217)(typescript@5.9.3)':
+  '@tencent/tea-sdk-lightclaw@1.10.1(@tencent/qcloud-iaas-api@1.0.1)(@types/react@19.2.14)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(path-to-regexp@2.4.0)(prop-types@15.8.1)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(tencentcloud-sdk-nodejs@4.1.217)(typescript@5.9.3)':
     dependencies:
-      '@tencent/iaas-common': 3.8.38(@tencent/tea-app@2.1.25(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(moment@2.30.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0)(tencentcloud-sdk-nodejs@4.1.217))(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(classnames@2.2.6)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(moment@2.30.1)(path-to-regexp@2.4.0)(react-dom@19.2.4(react@19.2.4))(react-redux@7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(react@19.2.4)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(typescript@5.9.3)
-      '@tencent/iaas-component': 0.2.105(541713f631d52ea189c2e72978a8498f)
+      '@tencent/iaas-common': 3.8.38(@tencent/tea-app@2.1.25(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(moment@2.30.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0)(tencentcloud-sdk-nodejs@4.1.217))(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(classnames@2.2.6)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(moment@2.30.1)(path-to-regexp@2.4.0)(react-dom@19.2.4(react@19.2.4))(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(typescript@5.9.3)
+      '@tencent/iaas-component': 0.2.105(225065547723104f7eb926cf2d0d1877)
       '@tencent/iaas-workbench-api-client': 1.0.20
       '@tencent/tea-app': 2.1.25(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(moment@2.30.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(tencentcloud-sdk-nodejs@4.1.217)
       '@tencent/tea-chart': 2.5.1(react-dom@16.14.0(react@16.14.0))(react@16.14.0)
@@ -10787,7 +10787,7 @@ snapshots:
       qrcode.react: 3.2.0(react@16.14.0)
       react: 16.14.0
       react-dom: 16.14.0(react@16.14.0)
-      react-redux: 7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      react-redux: 7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0)
       react-syntax-highlighter: 15.6.6(react@16.14.0)
       xterm: 4.19.0
       xterm-addon-fit: 0.5.0(xterm@4.19.0)
@@ -14999,14 +14999,14 @@ snapshots:
     optionalDependencies:
       react-dom: 19.2.4(react@19.2.4)
 
-  react-i18next@12.3.1(i18next@19.9.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
+  react-i18next@12.3.1(i18next@19.9.2)(react-dom@16.14.0(react@16.14.0))(react@16.14.0):
     dependencies:
       '@babel/runtime': 7.29.2
       html-parse-stringify: 3.0.1
       i18next: 19.9.2
-      react: 19.2.4
+      react: 16.14.0
     optionalDependencies:
-      react-dom: 19.2.4(react@19.2.4)
+      react-dom: 16.14.0(react@16.14.0)
 
   react-i18next@14.1.3(i18next@23.10.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
     dependencies:
@@ -15080,6 +15080,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  react-onclickoutside@6.10.0(react-dom@16.14.0(react@16.14.0))(react@16.14.0):
+    dependencies:
+      react: 16.14.0
+      react-dom: 16.14.0(react@16.14.0)
+
   react-onclickoutside@6.10.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
     dependencies:
       react: 19.2.4
@@ -15107,17 +15112,17 @@ snapshots:
       typed-styles: 0.0.7
       warning: 4.0.3
 
-  react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
+  react-redux@7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0):
     dependencies:
       '@babel/runtime': 7.29.2
       '@types/react-redux': 7.1.34
       hoist-non-react-statics: 3.3.2
       loose-envify: 1.4.0
       prop-types: 15.8.1
-      react: 19.2.4
+      react: 16.14.0
       react-is: 17.0.2
     optionalDependencies:
-      react-dom: 19.2.4(react@19.2.4)
+      react-dom: 16.14.0(react@16.14.0)
 
   react-remove-scroll-bar@2.3.8(@types/react@19.2.14)(react@19.2.4):
     dependencies:
@@ -15176,6 +15181,14 @@ snapshots:
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
 
+  react-sortable-hoc@2.0.0(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0):
+    dependencies:
+      '@babel/runtime': 7.29.2
+      invariant: 2.2.4
+      prop-types: 15.8.1
+      react: 16.14.0
+      react-dom: 16.14.0(react@16.14.0)
+
   react-sortable-hoc@2.0.0(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
     dependencies:
       '@babel/runtime': 7.29.2
@@ -15229,6 +15242,15 @@ snapshots:
     transitivePeerDependencies:
       - '@types/react'
 
+  react-transition-group@4.4.5(react-dom@16.14.0(react@16.14.0))(react@16.14.0):
+    dependencies:
+      '@babel/runtime': 7.29.2
+      dom-helpers: 5.2.1
+      loose-envify: 1.4.0
+      prop-types: 15.8.1
+      react: 16.14.0
+      react-dom: 16.14.0(react@16.14.0)
+
   react-transition-group@4.4.5(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
     dependencies:
       '@babel/runtime': 7.29.2
@@ -15237,6 +15259,13 @@ snapshots:
       prop-types: 15.8.1
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
+
+  react-window@1.8.11(react-dom@16.14.0(react@16.14.0))(react@16.14.0):
+    dependencies:
+      '@babel/runtime': 7.29.2
+      memoize-one: 5.2.1
+      react: 16.14.0
+      react-dom: 16.14.0(react@16.14.0)
 
   react-window@1.8.11(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
     dependencies:
@@ -15548,9 +15577,9 @@ snapshots:
 
   safer-buffer@2.1.2: {}
 
-  saga-duck@3.4.8(react-redux@7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(redux-saga@0.16.2)(redux@4.2.1):
+  saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1):
     dependencies:
-      react-redux: 7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      react-redux: 7.2.9(react-dom@16.14.0(react@16.14.0))(react@16.14.0)
       redux: 4.2.1
       redux-saga: 0.16.2
       redux-saga-catch: 1.1.2(redux-saga@0.16.2)
