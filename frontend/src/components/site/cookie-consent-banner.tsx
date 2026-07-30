@@ -2,6 +2,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { isGlobal } from "@/lib/region";
+import { PUBLIC_SITE_LOCALES, PUBLIC_URL_LANGS } from "@/lib/public-site-routing";
 import {
   readStoredCookieConsent,
   storeCookieConsent,
@@ -9,7 +10,7 @@ import {
 } from "@/lib/cookie-consent";
 
 const copy = {
-  "en-US": {
+  [PUBLIC_SITE_LOCALES.EN_US]: {
     title: "Cookie Policy",
     description:
       "We use cookies to keep LightVela reliable, understand how the site is used, and improve your experience. You can accept all cookies or continue with necessary cookies only.",
@@ -17,7 +18,7 @@ const copy = {
     accept: "Accept all",
     necessary: "Necessary only",
   },
-  "zh-CN": {
+  [PUBLIC_SITE_LOCALES.ZH_CN]: {
     title: "我们使用 Cookie",
     description:
       "我们使用 Cookie 来保障 LightVela 稳定运行、了解网站使用情况，并优化您的体验。您可以接受全部 Cookie，或仅使用必要 Cookie。详情请查看",
@@ -25,7 +26,7 @@ const copy = {
     accept: "接受全部",
     necessary: "仅必要 Cookie",
   },
-  "zh-Hant": {
+  [PUBLIC_SITE_LOCALES.ZH_HANT]: {
     title: "我們使用 Cookie",
     description:
       "我們使用 Cookie 來保障 LightVela 穩定運行、了解網站使用情況，並優化您的體驗。您可以接受全部 Cookie，或僅使用必要 Cookie。詳情請查看",
@@ -48,16 +49,16 @@ export const CookieConsentBanner = () => {
 
   const localePrefix = pathname?.split("/")[1]?.toLowerCase();
   const hasLocalizedRoute =
-    localePrefix === "en-us" ||
-    localePrefix === "zh-cn" ||
-    localePrefix === "zh-sg" ||
-    localePrefix === "zh-hant";
+    localePrefix === PUBLIC_URL_LANGS.EN_US ||
+    localePrefix === PUBLIC_URL_LANGS.ZH_CN ||
+    localePrefix === PUBLIC_URL_LANGS.ZH_SG ||
+    localePrefix === PUBLIC_URL_LANGS.ZH_HANT;
   const locale =
-    localePrefix === "zh-hant"
-      ? "zh-Hant"
-      : localePrefix === "zh-cn" || localePrefix === "zh-sg"
-        ? "zh-CN"
-        : "en-US";
+    localePrefix === PUBLIC_URL_LANGS.ZH_HANT
+      ? PUBLIC_SITE_LOCALES.ZH_HANT
+      : localePrefix === PUBLIC_URL_LANGS.ZH_CN || localePrefix === PUBLIC_URL_LANGS.ZH_SG
+        ? PUBLIC_SITE_LOCALES.ZH_CN
+        : PUBLIC_SITE_LOCALES.EN_US;
   const cookiePolicyPath = hasLocalizedRoute ? `/${localePrefix}/cookie-policy` : "/cookie-policy";
   const text = copy[locale];
   const handleChoice = (value: CookieConsentValue) => {

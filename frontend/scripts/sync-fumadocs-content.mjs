@@ -25,6 +25,27 @@ const ZH_HANT_TERM_OVERRIDES = {
   羣: '群',
 };
 
+/**
+ * 语言代码常量（单一来源，避免文件内 'zh-CN' / 'en-US' / 'zh-Hant' / 'zh-SG' 魔法字符串散落）。
+ *
+ * ⚠️ `.mjs` 无法 import `src/lib/public-site-routing.ts` 的 `PUBLIC_SITE_LOCALES`，
+ * 只能在此手动维护同名镜像。如需增删语言，请同步这两个文件。
+ */
+const LOCALES = Object.freeze({
+  EN_US: 'en-US',
+  ZH_CN: 'zh-CN',
+  ZH_SG: 'zh-SG',
+  ZH_HANT: 'zh-Hant',
+});
+
+/** URL 前缀（对应 fumadocs 输出目录），与 `PUBLIC_URL_LANGS` 保持一致。 */
+const URL_LANGS = Object.freeze({
+  EN_US: 'en-us',
+  ZH_CN: 'zh-cn',
+  ZH_SG: 'zh-sg',
+  ZH_HANT: 'zh-hant',
+});
+
 function convertTraditional(text) {
   if (typeof text !== 'string' || text.length === 0) return text;
   let out = toTraditional(text);
@@ -420,32 +441,32 @@ const globalDocsForChinese = globalDocs.filter((doc) =>
 
 const docSets = [
   {
-    outputPrefix: 'en-us',
+    outputPrefix: URL_LANGS.EN_US,
     sourcePrefix: 'en',
     fallbackSourcePrefix: 'global',
-    locale: 'en-US',
+    locale: LOCALES.EN_US,
     docs: globalDocsForEnglish,
     title: 'LightVela Docs',
   },
   {
-    outputPrefix: 'zh-cn',
+    outputPrefix: URL_LANGS.ZH_CN,
     sourcePrefix: '',
-    locale: 'zh-CN',
+    locale: LOCALES.ZH_CN,
     docs: cnDocs,
     title: 'LightVela 文档',
   },
   {
-    outputPrefix: 'zh-sg',
+    outputPrefix: URL_LANGS.ZH_SG,
     sourcePrefix: 'global',
-    locale: 'zh-SG',
+    locale: LOCALES.ZH_SG,
     docs: globalDocsForChinese,
     title: 'LightVela 文档',
   },
   {
     // 繁體中文文檔：与 zh-sg 同源（global 简体），生成时逐条做简→繁转换。
-    outputPrefix: 'zh-hant',
+    outputPrefix: URL_LANGS.ZH_HANT,
     sourcePrefix: 'global',
-    locale: 'zh-Hant',
+    locale: LOCALES.ZH_HANT,
     docs: globalDocsForChinese,
     title: 'LightVela 文件',
     convertToTraditional: true,
@@ -476,8 +497,10 @@ function escapeRegExp(value) {
 function textFor(value, locale) {
   if (typeof value === 'string') return value;
   // zh-SG / zh-Hant 均以简体（zh-CN）为文本底稿；zh-Hant 会在写盘时再做简→繁转换。
-  if (locale === 'zh-SG' || locale === 'zh-Hant') return value?.['zh-CN'] ?? value?.['en-US'] ?? '';
-  return value?.[locale] ?? value?.['en-US'] ?? '';
+  if (locale === LOCALES.ZH_SG || locale === LOCALES.ZH_HANT) {
+    return value?.[LOCALES.ZH_CN] ?? value?.[LOCALES.EN_US] ?? '';
+  }
+  return value?.[locale] ?? value?.[LOCALES.EN_US] ?? '';
 }
 
 function stripTitle(markdown, title) {
@@ -486,7 +509,9 @@ function stripTitle(markdown, title) {
 
 function allDocsForLinks(outputPrefix) {
   const localeDocs =
-    outputPrefix === 'zh-sg' || outputPrefix === 'zh-hant' ? globalDocsForChinese : globalDocsForEnglish;
+    outputPrefix === URL_LANGS.ZH_SG || outputPrefix === URL_LANGS.ZH_HANT
+      ? globalDocsForChinese
+      : globalDocsForEnglish;
   return [...cnDocs, ...localeDocs];
 }
 

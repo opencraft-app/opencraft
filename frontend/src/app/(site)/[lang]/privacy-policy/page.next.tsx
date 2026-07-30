@@ -31,8 +31,8 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   return createPublicMetadata({
     path: localizedPublicPath('/privacy-policy', lang as PublicUrlLang),
     locale: routeLocale.locale,
-    title: TITLE_BY_LOCALE[routeLocale.locale],
-    description: DESCRIPTION_BY_LOCALE[routeLocale.locale],
+    title: TITLE_BY_LOCALE[routeLocale.locale] ?? TITLE_BY_LOCALE[PUBLIC_SITE_LOCALES.EN_US],
+    description: DESCRIPTION_BY_LOCALE[routeLocale.locale] ?? DESCRIPTION_BY_LOCALE[PUBLIC_SITE_LOCALES.EN_US],
   });
 }
 

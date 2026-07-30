@@ -31,8 +31,11 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   return createPublicMetadata({
     path: localizedPublicPath('/cookie-policy', lang as PublicUrlLang),
     locale: routeLocale.locale,
-    title: TITLE_BY_LOCALE[routeLocale.locale],
-    description: DESCRIPTION_BY_LOCALE[routeLocale.locale],
+    // Record<PublicSiteLocaleCode, string> + PublicSiteLocaleCode 联合类型
+    // 已经在类型层保证 key 存在；?? 兜底仅作运行时防御（若 routeLocale.locale
+    // 被上游改造成更宽的字符串类型，避免返回 undefined 破坏 Metadata 契约）。
+    title: TITLE_BY_LOCALE[routeLocale.locale] ?? TITLE_BY_LOCALE[PUBLIC_SITE_LOCALES.EN_US],
+    description: DESCRIPTION_BY_LOCALE[routeLocale.locale] ?? DESCRIPTION_BY_LOCALE[PUBLIC_SITE_LOCALES.EN_US],
   });
 }
 
