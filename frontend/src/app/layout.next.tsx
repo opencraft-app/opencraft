@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
-import { DEFAULT_PUBLIC_ROUTE_LOCALE } from '@next-site/public-locale';
+import { DEFAULT_PUBLIC_ROUTE_LOCALE, EN_US_LOCALE } from '@next-site/public-locale';
 import { siteUrl, siteVerification, themeColor } from '@next-site/seo';
 
-const defaultEnglish = DEFAULT_PUBLIC_ROUTE_LOCALE.locale === 'en-US';
+const defaultEnglish = DEFAULT_PUBLIC_ROUTE_LOCALE.locale === EN_US_LOCALE;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),

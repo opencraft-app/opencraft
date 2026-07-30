@@ -23,6 +23,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import i18n from "../i18n";
+import { PUBLIC_SITE_LOCALES } from "./public-site-routing";
 import { applyZhHantOverrides } from "./zh-hant-overrides";
 
 /** OpenCC converter 单例（惰性、异步加载） */
@@ -51,12 +52,17 @@ const loadConverter = (): Promise<Converter> => {
 const cache = new Map<string, string>();
 
 /** 判断某个 locale 是否为繁体 */
-export const isZhHant = (locale?: string): boolean => (locale ?? i18n.language) === "zh-Hant";
+export const isZhHant = (locale?: string): boolean =>
+  (locale ?? i18n.language) === PUBLIC_SITE_LOCALES.ZH_HANT;
 
 /** 判断某个 locale 是否为中文（简体或繁体） */
 export const isZhLocale = (locale?: string): boolean => {
   const l = locale ?? i18n.language;
-  return l === "zh-CN" || l === "zh-SG" || l === "zh-Hant";
+  return (
+    l === PUBLIC_SITE_LOCALES.ZH_CN ||
+    l === PUBLIC_SITE_LOCALES.ZH_SG ||
+    l === PUBLIC_SITE_LOCALES.ZH_HANT
+  );
 };
 
 /**

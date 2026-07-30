@@ -13,8 +13,18 @@ import {
 } from './seo';
 import { source } from './source';
 import { DOCS_ROUTE_SLUGS, type DocsRouteLocale } from './docs-route-manifest';
+import {
+  EN_US_LOCALE,
+  EN_US_URL_LANG,
+  ZH_CN_LOCALE,
+  ZH_CN_URL_LANG,
+  ZH_HANT_LOCALE,
+  ZH_HANT_URL_LANG,
+  ZH_SG_LOCALE,
+  ZH_SG_URL_LANG,
+} from './public-locale';
 
-export type DocsLocalePrefix = 'en-us' | 'zh-cn' | 'zh-sg' | 'zh-hant' | undefined;
+export type DocsLocalePrefix = typeof EN_US_URL_LANG | typeof ZH_CN_URL_LANG | typeof ZH_SG_URL_LANG | typeof ZH_HANT_URL_LANG | undefined;
 
 export function docsSlug(_prefix: DocsLocalePrefix, slug?: string[]) {
   const pageSlug = slug && slug.length > 0 ? slug : ['overview'];
@@ -72,10 +82,14 @@ export function docsMetadata(prefix: DocsLocalePrefix, slug?: string[]) {
 }
 
 function docsSeoLocale(prefix: DocsLocalePrefix): SeoLocale {
-  if (prefix === 'en-us') return 'en-US';
-  if (prefix === 'zh-sg') return 'zh-SG';
-  if (prefix === 'zh-hant') return 'zh-Hant';
-  return 'zh-CN';
+  // 通过单一 lookup 表避免多分支魔法字符串比较（url-lang → SEO locale）。
+  const PREFIX_TO_SEO_LOCALE = {
+    [EN_US_URL_LANG]: EN_US_LOCALE,
+    [ZH_CN_URL_LANG]: ZH_CN_LOCALE,
+    [ZH_SG_URL_LANG]: ZH_SG_LOCALE,
+    [ZH_HANT_URL_LANG]: ZH_HANT_LOCALE,
+  } as const satisfies Record<Exclude<DocsLocalePrefix, undefined>, SeoLocale>;
+  return prefix ? PREFIX_TO_SEO_LOCALE[prefix] : ZH_CN_LOCALE;
 }
 
 function docsAvailableLocales(slug: readonly string[]): DocsRouteLocale[] {

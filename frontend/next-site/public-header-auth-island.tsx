@@ -18,6 +18,7 @@ import { DATONG_PAGE_IDS } from '@/observability/datong';
 import { trackDatongClick } from '@/observability/datong-tracker';
 
 import { renderNextLanguageSwitcher } from './language-switcher';
+import { EN_US_LOCALE, ZH_CN_LOCALE, ZH_HANT_LOCALE, ZH_SG_LOCALE } from './public-locale';
 
 const secondaryButtonClass: Record<HeaderAppearance, string> = {
   immersive: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
@@ -25,19 +26,19 @@ const secondaryButtonClass: Record<HeaderAppearance, string> = {
 };
 
 const copyByLocale: Record<PublicSiteLocale, { createNow: string; login: string }> = {
-  'en-US': {
+  [EN_US_LOCALE]: {
     createNow: 'Create Now',
     login: 'Sign In',
   },
-  'zh-CN': {
+  [ZH_CN_LOCALE]: {
     createNow: '立即创建',
     login: '登录',
   },
-  'zh-SG': {
+  [ZH_SG_LOCALE]: {
     createNow: '立即创建',
     login: '登录',
   },
-  'zh-Hant': {
+  [ZH_HANT_LOCALE]: {
     createNow: '立即創建',
     login: '登入',
   },
@@ -68,11 +69,11 @@ function PublicHeaderAuthControls({
   const { bots, isSubscribed } = useOpenClaw();
   const [showLogin, setShowLogin] = useState(false);
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
-  const activeLocale: PublicSiteLocale = locale ?? (i18n.language?.startsWith('zh') ? 'zh-SG' : 'en-US');
-  const copy = copyByLocale[activeLocale] || copyByLocale['en-US'];
+  const activeLocale: PublicSiteLocale = locale ?? (i18n.language?.startsWith('zh') ? ZH_SG_LOCALE : EN_US_LOCALE);
+  const copy = copyByLocale[activeLocale] || copyByLocale[EN_US_LOCALE];
   // 未登录转化引导：主按钮文案改为「免费试用」（英文站为 Free trial、繁体为「免費試用」）
   const createLabel = promoteFreeTrial
-    ? activeLocale === 'zh-Hant'
+    ? activeLocale === ZH_HANT_LOCALE
       ? '免費試用'
       : activeLocale.startsWith('zh')
         ? '免费试用'

@@ -16,6 +16,7 @@ import {
   type PublicSiteLocale,
   type PublicSiteSection,
 } from "@/lib/public-site-navigation";
+import { PUBLIC_SITE_LOCALES } from "@/lib/public-site-routing";
 import { DEFAULT_LOCALE, isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
 
@@ -108,25 +109,25 @@ const headerCopy: Record<PublicSiteLocale, {
   login: string;
   openMenu: string;
 }> = {
-  "en-US": {
+  [PUBLIC_SITE_LOCALES.EN_US]: {
     closeMenu: "Close menu",
     createNow: "Create Now",
     login: "Sign In",
     openMenu: "Open menu",
   },
-  "zh-CN": {
+  [PUBLIC_SITE_LOCALES.ZH_CN]: {
     closeMenu: "关闭菜单",
     createNow: "立即创建",
     login: "登录",
     openMenu: "打开菜单",
   },
-  "zh-SG": {
+  [PUBLIC_SITE_LOCALES.ZH_SG]: {
     closeMenu: "关闭菜单",
     createNow: "立即创建",
     login: "登录",
     openMenu: "打开菜单",
   },
-  "zh-Hant": {
+  [PUBLIC_SITE_LOCALES.ZH_HANT]: {
     closeMenu: "關閉選單",
     createNow: "立即創建",
     login: "登入",
@@ -135,14 +136,14 @@ const headerCopy: Record<PublicSiteLocale, {
 };
 
 function defaultHeaderLocale(): PublicSiteLocale {
-  if (DEFAULT_LOCALE === "en-US") return "en-US";
-  return isGlobal ? "zh-SG" : "zh-CN";
+  if (DEFAULT_LOCALE === PUBLIC_SITE_LOCALES.EN_US) return PUBLIC_SITE_LOCALES.EN_US;
+  return isGlobal ? PUBLIC_SITE_LOCALES.ZH_SG : PUBLIC_SITE_LOCALES.ZH_CN;
 }
 
 function headerLocaleFromLanguage(language: string | undefined): PublicSiteLocale {
-  if (language === "zh-Hant") return "zh-Hant";
-  if (language?.startsWith("zh")) return isGlobal ? "zh-SG" : "zh-CN";
-  return "en-US";
+  if (language === PUBLIC_SITE_LOCALES.ZH_HANT) return PUBLIC_SITE_LOCALES.ZH_HANT;
+  if (language?.startsWith("zh")) return isGlobal ? PUBLIC_SITE_LOCALES.ZH_SG : PUBLIC_SITE_LOCALES.ZH_CN;
+  return PUBLIC_SITE_LOCALES.EN_US;
 }
 
 function useCurrentPath(explicitPath?: string): string {

@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 
 import { source } from './source';
 import type { DocsLocalePrefix } from './docs-page';
+import { EN_US_URL_LANG, ZH_CN_URL_LANG, ZH_HANT_URL_LANG } from './public-locale';
 
 const ZH_FUMADOCS_TRANSLATIONS = {
   'Close Search(search dialog)(aria-label)': '关闭搜索',
@@ -26,19 +27,19 @@ const ZH_HANT_FUMADOCS_TRANSLATIONS = {
 };
 
 function fumadocsTranslations(docsLocale: DocsLocalePrefix) {
-  if (docsLocale === 'en-us') return undefined;
-  if (docsLocale === 'zh-hant') return ZH_HANT_FUMADOCS_TRANSLATIONS;
+  if (docsLocale === EN_US_URL_LANG) return undefined;
+  if (docsLocale === ZH_HANT_URL_LANG) return ZH_HANT_FUMADOCS_TRANSLATIONS;
   return ZH_FUMADOCS_TRANSLATIONS;
 }
 
 export function LightVelaDocsLayout({
   children,
-  contentLocale = 'zh-cn',
+  contentLocale = ZH_CN_URL_LANG,
 }: {
   children: ReactNode;
   contentLocale?: DocsLocalePrefix;
 }) {
-  const docsLocale = contentLocale ?? 'zh-cn';
+  const docsLocale = contentLocale ?? ZH_CN_URL_LANG;
   const translations = fumadocsTranslations(docsLocale);
 
   return (

@@ -55,7 +55,7 @@ export function publicUrlLangForLocale(locale: PublicSiteLocaleCode): CanonicalP
 }
 
 export function defaultPublicUrlLang(defaultLocale: "zh-CN" | "en-US"): "en-us" | "zh-cn" {
-  return defaultLocale === "en-US" ? "en-us" : "zh-cn";
+  return defaultLocale === PUBLIC_SITE_LOCALES.EN_US ? PUBLIC_URL_LANGS.EN_US : PUBLIC_URL_LANGS.ZH_CN;
 }
 
 export function matchPublicLangPrefix(pathname: string): { lang: PublicUrlLang; rest: string } | null {

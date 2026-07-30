@@ -635,10 +635,10 @@ function writeGroupedMeta(docSet, groupOrder, groupLocale) {
 }
 
 function writeMetaForDocSet(docSet) {
-  if (docSet.outputPrefix === 'zh-cn') {
-    writeGroupedMeta(docSet, CN_GROUP_ORDER, 'zh-CN');
+  if (docSet.outputPrefix === URL_LANGS.ZH_CN) {
+    writeGroupedMeta(docSet, CN_GROUP_ORDER, LOCALES.ZH_CN);
   } else {
-    writeGroupedMeta(docSet, GLOBAL_GROUP_ORDER, 'en-US');
+    writeGroupedMeta(docSet, GLOBAL_GROUP_ORDER, LOCALES.EN_US);
   }
 }
 

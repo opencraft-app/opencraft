@@ -549,9 +549,9 @@ function getAppPageTitle(pathname: string, region: SeoRegion): string | null {
  */
 function effectiveRegionForLookup(region: SeoRegion, urlLang: UrlLang | null): SeoRegion {
   if (region !== "global") return region;
-  return urlLang === "zh" || urlLang === "zh-cn" || urlLang === "zh-sg" || urlLang === "zh-hant"
-    ? "cn"
-    : "global";
+  // 中文语系（含短前缀 "zh" / 简体 / 新加坡简体 / 港澳繁体）都复用 cn 查表。
+  const ZH_URL_LANGS: readonly UrlLang[] = ["zh", "zh-cn", "zh-sg", "zh-hant"];
+  return urlLang !== null && (ZH_URL_LANGS as readonly string[]).includes(urlLang) ? "cn" : "global";
 }
 
 export function getSeoMeta(pathname: string, region?: SeoRegion): SeoMeta {

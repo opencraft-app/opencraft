@@ -31,6 +31,7 @@
  * 避免 SDK 自动 init 的 tree-shake 风险。
  */
 import { isGlobal } from "@/lib/region";
+import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { initI18n } from "@tencent/tea-sdk-lightclaw";
 // 静态 import 英文词条。这一行**必须**保留为静态 import——异步 `await import(...)`
 // 会被 React 渲染抢跑，导致 SDK 模块缓存里的 t() 求值出 undefined。
@@ -47,12 +48,15 @@ const LOCALE_STORAGE_KEY = "lw-locale";
  * 以空词条初始化输出简体源文案，繁体字形由 `tea-sdk-zh-hant-observer` 在渲染后
  * 用 OpenCC `cn→hk` 就地转换。
  */
-type StoredLocale = "zh-CN" | "zh-SG" | "zh-Hant" | "en-US";
+type StoredLocale = PublicSiteLocaleCode;
+// 校验用的可迭代 whitelist；派生自 PUBLIC_SITE_LOCALES 常量，避免手写 4 个字面量。
+const STORED_LOCALE_WHITELIST: readonly StoredLocale[] = Object.values(PUBLIC_SITE_LOCALES);
+
 function readStoredLocale(): StoredLocale | null {
   if (typeof window === "undefined") return null;
   try {
     const v = window.localStorage.getItem(LOCALE_STORAGE_KEY);
-    return v === "zh-CN" || v === "zh-SG" || v === "zh-Hant" || v === "en-US"
+    return v !== null && (STORED_LOCALE_WHITELIST as readonly string[]).includes(v)
       ? (v as StoredLocale)
       : null;
   } catch {
@@ -73,8 +77,8 @@ function readStoredLocale(): StoredLocale | null {
  */
 export const isEnglishEnv: boolean = (() => {
   const stored = readStoredLocale();
-  if (stored === "en-US") return true;
-  if (stored === "zh-CN" || stored === "zh-SG" || stored === "zh-Hant") return false;
+  if (stored === PUBLIC_SITE_LOCALES.EN_US) return true;
+  if (stored !== null) return false;
   return isGlobal;
 })();
 
