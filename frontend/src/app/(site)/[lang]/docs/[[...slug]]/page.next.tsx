@@ -17,9 +17,10 @@ const DOCS_LOCALE_TO_PUBLIC_LOCALE: Record<DocsRouteLocale, PublicSiteLocale> = 
   'en-us': 'en-US',
   'zh-cn': 'zh-CN',
   'zh-sg': 'zh-SG',
+  'zh-hant': 'zh-Hant',
 };
 
-const REGION_DOCS_ROUTE_LOCALES = (isGlobal ? ['en-us', 'zh-sg'] : ['zh-cn']) as readonly DocsRouteLocale[];
+const REGION_DOCS_ROUTE_LOCALES = (isGlobal ? ['en-us', 'zh-sg', 'zh-hant'] : ['zh-cn']) as readonly DocsRouteLocale[];
 
 function docsRouteLocale(lang: string): DocsRouteLocale {
   if ((REGION_DOCS_ROUTE_LOCALES as readonly string[]).includes(lang)) return lang as DocsRouteLocale;

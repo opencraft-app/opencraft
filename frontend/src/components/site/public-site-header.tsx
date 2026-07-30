@@ -126,6 +126,12 @@ const headerCopy: Record<PublicSiteLocale, {
     login: "登录",
     openMenu: "打开菜单",
   },
+  "zh-Hant": {
+    closeMenu: "關閉選單",
+    createNow: "立即創建",
+    login: "登入",
+    openMenu: "開啟選單",
+  },
 };
 
 function defaultHeaderLocale(): PublicSiteLocale {
@@ -134,6 +140,7 @@ function defaultHeaderLocale(): PublicSiteLocale {
 }
 
 function headerLocaleFromLanguage(language: string | undefined): PublicSiteLocale {
+  if (language === "zh-Hant") return "zh-Hant";
   if (language?.startsWith("zh")) return isGlobal ? "zh-SG" : "zh-CN";
   return "en-US";
 }

@@ -16,11 +16,18 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   return createPublicMetadata({
     path: localizedPublicPath('/cookie-policy', lang as PublicUrlLang),
     locale: routeLocale.locale,
-    title: routeLocale.locale === 'en-US' ? 'Cookies Policy' : 'Cookies 政策',
+    title:
+      routeLocale.locale === 'en-US'
+        ? 'Cookies Policy'
+        : routeLocale.locale === 'zh-Hant'
+          ? 'Cookies 政策'
+          : 'Cookies 政策',
     description:
       routeLocale.locale === 'en-US'
         ? 'LightVela Cookies Policy, including cookie types, purposes, and controls.'
-        : 'LightVela Cookies 政策，说明 cookies 的类型、用途和管理方式。',
+        : routeLocale.locale === 'zh-Hant'
+          ? 'LightVela Cookies 政策，說明 cookies 的類型、用途和管理方式。'
+          : 'LightVela Cookies 政策，说明 cookies 的类型、用途和管理方式。',
   });
 }
 

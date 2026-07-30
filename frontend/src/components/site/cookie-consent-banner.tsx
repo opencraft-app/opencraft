@@ -25,6 +25,14 @@ const copy = {
     accept: "接受全部",
     necessary: "仅必要 Cookie",
   },
+  "zh-Hant": {
+    title: "我們使用 Cookie",
+    description:
+      "我們使用 Cookie 來保障 LightVela 穩定運行、了解網站使用情況，並優化您的體驗。您可以接受全部 Cookie，或僅使用必要 Cookie。詳情請查看",
+    policy: "Cookie 政策",
+    accept: "接受全部",
+    necessary: "僅必要 Cookie",
+  },
 };
 
 export const CookieConsentBanner = () => {
@@ -39,8 +47,17 @@ export const CookieConsentBanner = () => {
   if (!isGlobal || !visible) return null;
 
   const localePrefix = pathname?.split("/")[1]?.toLowerCase();
-  const hasLocalizedRoute = localePrefix === "en-us" || localePrefix === "zh-cn" || localePrefix === "zh-sg";
-  const locale = localePrefix === "zh-cn" || localePrefix === "zh-sg" ? "zh-CN" : "en-US";
+  const hasLocalizedRoute =
+    localePrefix === "en-us" ||
+    localePrefix === "zh-cn" ||
+    localePrefix === "zh-sg" ||
+    localePrefix === "zh-hant";
+  const locale =
+    localePrefix === "zh-hant"
+      ? "zh-Hant"
+      : localePrefix === "zh-cn" || localePrefix === "zh-sg"
+        ? "zh-CN"
+        : "en-US";
   const cookiePolicyPath = hasLocalizedRoute ? `/${localePrefix}/cookie-policy` : "/cookie-policy";
   const text = copy[locale];
   const handleChoice = (value: CookieConsentValue) => {

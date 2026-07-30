@@ -15,6 +15,22 @@ const ZH_FUMADOCS_TRANSLATIONS = {
   'Search(search trigger)': '搜索文档',
 };
 
+const ZH_HANT_FUMADOCS_TRANSLATIONS = {
+  'Close Search(search dialog)(aria-label)': '關閉搜尋',
+  'No Headings(table of contents)': '暫無目錄',
+  'No results found(search dialog)': '沒有找到結果',
+  'On this page(table of contents)': '本頁目錄',
+  'Open Search(search trigger)(aria-label)': '開啟搜尋',
+  'Search(search dialog)': '搜尋',
+  'Search(search trigger)': '搜尋文件',
+};
+
+function fumadocsTranslations(docsLocale: DocsLocalePrefix) {
+  if (docsLocale === 'en-us') return undefined;
+  if (docsLocale === 'zh-hant') return ZH_HANT_FUMADOCS_TRANSLATIONS;
+  return ZH_FUMADOCS_TRANSLATIONS;
+}
+
 export function LightVelaDocsLayout({
   children,
   contentLocale = 'zh-cn',
@@ -23,7 +39,7 @@ export function LightVelaDocsLayout({
   contentLocale?: DocsLocalePrefix;
 }) {
   const docsLocale = contentLocale ?? 'zh-cn';
-  const translations = docsLocale === 'en-us' ? undefined : ZH_FUMADOCS_TRANSLATIONS;
+  const translations = fumadocsTranslations(docsLocale);
 
   return (
     <div className="lv-docs-shell">

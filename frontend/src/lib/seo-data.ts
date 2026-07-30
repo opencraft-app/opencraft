@@ -466,10 +466,10 @@ function normalizePathname(pathname: string): string {
  * - `/en-us/`             → { bare: "/", urlLang: "en-us" }
  * - `/about` （裸）    → { bare: "/about", urlLang: null }
  */
-type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg";
+type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant";
 
 function stripUrlLangPrefix(pathname: string): { bare: string; urlLang: UrlLang | null } {
-  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|en|zh)(?:\/(.*))?$/);
+  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|en|zh)(?:\/(.*))?$/);
   if (!m) return { bare: pathname, urlLang: null };
   const rest = m[2] ?? "";
   return {
@@ -485,6 +485,7 @@ const URL_LANG_TO_HTML_LANG: Record<UrlLang, string> = {
   zh: "zh-CN",
   "zh-cn": "zh-CN",
   "zh-sg": "zh-SG",
+  "zh-hant": "zh-Hant",
 };
 const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   en: "en_US",
@@ -492,6 +493,7 @@ const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   zh: "zh_CN",
   "zh-cn": "zh_CN",
   "zh-sg": "zh_SG",
+  "zh-hant": "zh_Hant",
 };
 
 function safeDecodeURIComponent(value: string): string {
@@ -547,7 +549,9 @@ function getAppPageTitle(pathname: string, region: SeoRegion): string | null {
  */
 function effectiveRegionForLookup(region: SeoRegion, urlLang: UrlLang | null): SeoRegion {
   if (region !== "global") return region;
-  return urlLang === "zh" || urlLang === "zh-cn" || urlLang === "zh-sg" ? "cn" : "global";
+  return urlLang === "zh" || urlLang === "zh-cn" || urlLang === "zh-sg" || urlLang === "zh-hant"
+    ? "cn"
+    : "global";
 }
 
 export function getSeoMeta(pathname: string, region?: SeoRegion): SeoMeta {

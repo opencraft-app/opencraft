@@ -16,11 +16,18 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   return createPublicMetadata({
     path: localizedPublicPath('/open-source-licenses', lang as PublicUrlLang),
     locale: routeLocale.locale,
-    title: routeLocale.locale === 'en-US' ? 'Open Source Notices' : '开源声明',
+    title:
+      routeLocale.locale === 'en-US'
+        ? 'Open Source Notices'
+        : routeLocale.locale === 'zh-Hant'
+          ? '開源聲明'
+          : '开源声明',
     description:
       routeLocale.locale === 'en-US'
         ? 'Attribution and license notices for open source software used by LightVela.'
-        : 'LightVela 使用的开源软件归属与许可证声明。',
+        : routeLocale.locale === 'zh-Hant'
+          ? 'LightVela 使用的開源軟件歸屬與許可證聲明。'
+          : 'LightVela 使用的开源软件归属与许可证声明。',
   });
 }
 

@@ -16,11 +16,18 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   return createPublicMetadata({
     path: localizedPublicPath('/changelog', lang as PublicUrlLang),
     locale: routeLocale.locale,
-    title: routeLocale.locale === 'en-US' ? 'Changelog' : '更新日志',
+    title:
+      routeLocale.locale === 'en-US'
+        ? 'Changelog'
+        : routeLocale.locale === 'zh-Hant'
+          ? '更新日誌'
+          : '更新日志',
     description:
       routeLocale.locale === 'en-US'
         ? 'Product updates, new capabilities, and experience improvements from LightVela.'
-        : '记录 LightVela 的产品更新、能力上线与体验改进。',
+        : routeLocale.locale === 'zh-Hant'
+          ? '記錄 LightVela 的產品更新、能力上線與體驗改進。'
+          : '记录 LightVela 的产品更新、能力上线与体验改进。',
   });
 }
 

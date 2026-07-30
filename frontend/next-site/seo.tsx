@@ -38,18 +38,21 @@ const LOCALE_TO_URL_LANG: Record<SeoLocale, PublicUrlLang> = {
   'en-US': 'en-us',
   'zh-CN': 'zh-cn',
   'zh-SG': 'zh-sg',
+  'zh-Hant': 'zh-hant',
 };
 
 const URL_LANG_TO_LOCALE: Record<PublicUrlLang, SeoLocale> = {
   'en-us': 'en-US',
   'zh-cn': 'zh-CN',
   'zh-sg': 'zh-SG',
+  'zh-hant': 'zh-Hant',
 };
 
 const LOCALE_TO_OG_LOCALE: Record<SeoLocale, string> = {
   'en-US': 'en_US',
   'zh-CN': 'zh_CN',
   'zh-SG': 'zh_SG',
+  'zh-Hant': 'zh_Hant',
 };
 
 const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {
@@ -87,12 +90,23 @@ const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {
     'WhatsApp bot',
     'Discord bot',
   ],
+  'zh-Hant': [
+    'LightVela',
+    '雲端 Agent',
+    '個人 Agent',
+    'AI 夥伴',
+    'Hermes Agent',
+    'Agent 託管',
+    'Telegram bot',
+    'WhatsApp bot',
+    'Discord bot',
+  ],
 };
 
-export const SEO_PUBLIC_URL_LANGS = (isGlobal ? ['en-us', 'zh-sg'] : ['zh-cn']) as readonly PublicUrlLang[];
-export const SEO_DOCS_ROUTE_LOCALES = (isGlobal ? ['en-us', 'zh-sg'] : ['zh-cn']) as readonly DocsRouteLocale[];
-export const SEO_ALL_PUBLIC_URL_LANGS = ['zh-cn', 'en-us', 'zh-sg'] as const satisfies readonly PublicUrlLang[];
-export const SEO_ALL_DOCS_ROUTE_LOCALES = ['zh-cn', 'en-us', 'zh-sg'] as const satisfies readonly DocsRouteLocale[];
+export const SEO_PUBLIC_URL_LANGS = (isGlobal ? ['en-us', 'zh-sg', 'zh-hant'] : ['zh-cn']) as readonly PublicUrlLang[];
+export const SEO_DOCS_ROUTE_LOCALES = (isGlobal ? ['en-us', 'zh-sg', 'zh-hant'] : ['zh-cn']) as readonly DocsRouteLocale[];
+export const SEO_ALL_PUBLIC_URL_LANGS = ['zh-cn', 'en-us', 'zh-sg', 'zh-hant'] as const satisfies readonly PublicUrlLang[];
+export const SEO_ALL_DOCS_ROUTE_LOCALES = ['zh-cn', 'en-us', 'zh-sg', 'zh-hant'] as const satisfies readonly DocsRouteLocale[];
 
 export function siteUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL;
@@ -123,6 +137,7 @@ export function localeFromUrlLang(lang: PublicUrlLang): SeoLocale {
 }
 
 export function urlLangForLocale(locale: SeoLocale): PublicUrlLang {
+  if (isGlobal && locale === 'zh-Hant') return 'zh-hant';
   if (isGlobal && locale.startsWith('zh')) return 'zh-sg';
   return LOCALE_TO_URL_LANG[locale];
 }
@@ -381,7 +396,7 @@ export function normalizePath(path: string): string {
 
 function stripPublicLocalePrefix(path: string): string {
   const normalizedPath = normalizePath(path);
-  const barePath = normalizedPath.replace(/^\/(?:en-us|zh-cn|zh-sg)(?=\/|$)/, '');
+  const barePath = normalizedPath.replace(/^\/(?:en-us|zh-cn|zh-sg|zh-hant)(?=\/|$)/, '');
   return barePath || '/';
 }
 

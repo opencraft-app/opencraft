@@ -2,6 +2,33 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync,
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import * as OpenCC from 'opencc-js';
+
+/**
+ * 繁體中文（zh-Hant）文檔转换。
+ * 与 scripts/i18n-zh-hant.mjs 的官网文案转换保持同一链路：
+ *   OpenCC `cn → twp`（台湾正体 + 常用词汇）后，叠加术语校正表统一港台惯用词。
+ * 只转换中文字符，英文 / 代码 / URL（ASCII）与占位符原样保留。
+ */
+const toTraditional = OpenCC.Converter({ from: 'cn', to: 'twp' });
+const ZH_HANT_TERM_OVERRIDES = {
+  網絡: '網路',
+  軟件: '軟體',
+  視頻: '影片',
+  智能: '智慧',
+  信息: '資訊',
+};
+
+function convertTraditional(text) {
+  if (typeof text !== 'string' || text.length === 0) return text;
+  let out = toTraditional(text);
+  for (const [from, to] of Object.entries(ZH_HANT_TERM_OVERRIDES)) {
+    if (from === to) continue;
+    out = out.split(from).join(to);
+  }
+  return out;
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = join(here, '..');
 const sourceRoot = join(frontendRoot, 'src', 'content', 'docs');
@@ -408,6 +435,15 @@ const docSets = [
     docs: globalDocsForChinese,
     title: 'LightVela 文档',
   },
+  {
+    // 繁體中文文檔：与 zh-sg 同源（global 简体），生成时逐条做简→繁转换。
+    outputPrefix: 'zh-hant',
+    sourcePrefix: 'global',
+    locale: 'zh-Hant',
+    docs: globalDocsForChinese,
+    title: 'LightVela 文件',
+    convertToTraditional: true,
+  },
 ];
 
 function ensureDir(path) {
@@ -433,7 +469,8 @@ function escapeRegExp(value) {
 
 function textFor(value, locale) {
   if (typeof value === 'string') return value;
-  if (locale === 'zh-SG') return value?.['zh-CN'] ?? value?.['en-US'] ?? '';
+  // zh-SG / zh-Hant 均以简体（zh-CN）为文本底稿；zh-Hant 会在写盘时再做简→繁转换。
+  if (locale === 'zh-SG' || locale === 'zh-Hant') return value?.['zh-CN'] ?? value?.['en-US'] ?? '';
   return value?.[locale] ?? value?.['en-US'] ?? '';
 }
 
@@ -442,7 +479,8 @@ function stripTitle(markdown, title) {
 }
 
 function allDocsForLinks(outputPrefix) {
-  const localeDocs = outputPrefix === 'zh-sg' ? globalDocsForChinese : globalDocsForEnglish;
+  const localeDocs =
+    outputPrefix === 'zh-sg' || outputPrefix === 'zh-hant' ? globalDocsForChinese : globalDocsForEnglish;
   return [...cnDocs, ...localeDocs];
 }
 
@@ -493,15 +531,20 @@ function sourcePathFor(docSet, file) {
 }
 
 function writeDoc(docSet, doc) {
-  const title = textFor(doc.title, docSet.locale);
-  const description = textFor(doc.description, docSet.locale);
+  const convert = docSet.convertToTraditional ? convertTraditional : (value) => value;
+  // rawTitle 为简体底稿，用于从原始 md 中剥离一级标题；title/description/body 写盘时再转繁。
+  const rawTitle = textFor(doc.title, docSet.locale);
+  const title = convert(rawTitle);
+  const description = convert(textFor(doc.description, docSet.locale));
   const inputPath = sourcePathFor(docSet, doc.file);
   if (!existsSync(inputPath)) {
     throw new Error(`missing LightVela doc source: ${inputPath}`);
   }
 
   const raw = readFileSync(inputPath, 'utf8').replace(/\r\n/g, '\n');
-  const body = normalizeMarkdownLinks(stripTitle(raw, title), doc.file, docSet.outputPrefix, docSet.locale);
+  const body = convert(
+    normalizeMarkdownLinks(stripTitle(raw, rawTitle), doc.file, docSet.outputPrefix, docSet.locale),
+  );
   const outputPath = join(outputRoot, docSet.outputPrefix, `${doc.slug}.mdx`);
   ensureDir(dirname(outputPath));
   writeFileSync(
@@ -539,6 +582,7 @@ function copyImages() {
  * `---分组名---` 列出页面，组内顺序与 docSet.docs 一致。
  */
 function writeGroupedMeta(docSet, groupOrder, groupLocale) {
+  const convert = docSet.convertToTraditional ? convertTraditional : (value) => value;
   const root = join(outputRoot, docSet.outputPrefix);
   ensureDir(root);
 
@@ -546,7 +590,7 @@ function writeGroupedMeta(docSet, groupOrder, groupLocale) {
   for (const group of groupOrder) {
     const groupDocs = docSet.docs.filter((doc) => textFor(doc.group, groupLocale) === group);
     if (groupDocs.length === 0) continue;
-    pages.push(`---${textFor(groupDocs[0].group, docSet.locale)}---`);
+    pages.push(`---${convert(textFor(groupDocs[0].group, docSet.locale))}---`);
     for (const doc of groupDocs) {
       // 根 meta 用相对该 locale 根的 slug 路径引用页面
       pages.push(doc.slug);

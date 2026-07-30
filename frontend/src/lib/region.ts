@@ -70,7 +70,7 @@ export const DEFAULT_LOCALE: "zh-CN" | "en-US" = isGlobal ? "en-US" : "zh-CN";
  * 从浏览器路径中读取语言（仅国际站；国内站固定返回 null）。
  * - 不在白名单的路径或没有前缀都返回 null（调用方应回退到 localStorage / DEFAULT_LOCALE）
  */
-export const readLocaleFromPath = (pathname: string): "zh-CN" | "en-US" | null => {
+export const readLocaleFromPath = (pathname: string): "zh-CN" | "en-US" | "zh-Hant" | null => {
   if (!isGlobal) return null;
   const m = matchPublicLangPrefix(pathname);
   if (!m) return null;
@@ -98,7 +98,14 @@ export const localizedPath = (path: string, locale: PublicSiteLocaleCode): strin
 
   if (locale === DEFAULT_LOCALE) return bare;
 
-  const lang = isGlobal && locale.startsWith("zh") ? "zh-sg" : publicUrlLangForLocale(locale);
+  // 国际站：繁体走独立前缀 zh-hant；其余中文（简体 zh-CN / zh-SG）统一用 SEO 别名 zh-sg。
+  const lang = isGlobal
+    ? locale === "zh-Hant"
+      ? "zh-hant"
+      : locale.startsWith("zh")
+        ? "zh-sg"
+        : publicUrlLangForLocale(locale)
+    : publicUrlLangForLocale(locale);
   // 根路径特殊处理：/{lang}/  ←  /
   if (bare === "/") return `/${lang}/`;
   return `/${lang}${bare}`;

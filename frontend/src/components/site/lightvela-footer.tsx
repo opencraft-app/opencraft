@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { CN_PRIVACY_POLICY_URL } from "@/constants/legal";
 import { useT } from "@/i18n/t";
 import { isGlobal, localizedPath } from "@/lib/region";
+import type { PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { cn } from "@/lib/utils";
 
 type FooterLink =
@@ -116,7 +117,10 @@ function LightVelaFooterLogo({ renderLink }: { renderLink: RenderFooterLink }) {
 
 function FooterTextLink({ link, className, renderLink }: { link: FooterLink; className?: string; renderLink: RenderFooterLink }) {
   const { i18n } = useTranslation();
-  const locale = i18n.language === "zh-CN" ? "zh-CN" : "en-US";
+  // 将当前 i18n 语言映射到公开站点合法 locale，繁体保留 zh-Hant 以生成 /zh-hant 前缀
+  const lang = i18n.language;
+  const locale: PublicSiteLocaleCode =
+    lang === "zh-CN" || lang === "zh-SG" || lang === "zh-Hant" ? lang : "en-US";
   const linkClassName = cn(footerLinkClassName, className);
   const label = link.label;
 

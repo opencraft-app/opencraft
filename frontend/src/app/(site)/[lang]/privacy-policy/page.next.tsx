@@ -16,11 +16,18 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   return createPublicMetadata({
     path: localizedPublicPath('/privacy-policy', lang as PublicUrlLang),
     locale: routeLocale.locale,
-    title: routeLocale.locale === 'en-US' ? 'Privacy Policy' : '隐私政策',
+    title:
+      routeLocale.locale === 'en-US'
+        ? 'Privacy Policy'
+        : routeLocale.locale === 'zh-Hant'
+          ? '隱私政策'
+          : '隐私政策',
     description:
       routeLocale.locale === 'en-US'
         ? 'LightVela Privacy Policy, including personal information processing, storage, sharing, and user rights.'
-        : 'LightVela 隐私政策，说明个人信息的处理、存储、共享和用户权利。',
+        : routeLocale.locale === 'zh-Hant'
+          ? 'LightVela 隱私政策，說明個人信息的處理、存儲、共享和用戶權利。'
+          : 'LightVela 隐私政策，说明个人信息的处理、存储、共享和用户权利。',
   });
 }
 

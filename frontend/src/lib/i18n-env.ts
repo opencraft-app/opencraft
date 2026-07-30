@@ -41,13 +41,20 @@ const LOCALE_STORAGE_KEY = "lw-locale";
 
 /**
  * 读取用户在 LanguageSwitcher 上手动切换并持久化的语言偏好。
- * 返回值与 mono2 i18n 的 Locale 类型对齐：'zh-CN' | 'en-US' | null（未设置）。
+ * 返回值与 mono2 i18n 的 Locale 类型对齐；未识别的值返回 null。
+ *
+ * 注意：`zh-Hant`（繁体）与 `zh-SG`（新加坡中文）都视为「中文源」——SDK 依旧
+ * 以空词条初始化输出简体源文案，繁体字形由 `tea-sdk-zh-hant-observer` 在渲染后
+ * 用 OpenCC `cn→hk` 就地转换。
  */
-function readStoredLocale(): "zh-CN" | "en-US" | null {
+type StoredLocale = "zh-CN" | "zh-SG" | "zh-Hant" | "en-US";
+function readStoredLocale(): StoredLocale | null {
   if (typeof window === "undefined") return null;
   try {
     const v = window.localStorage.getItem(LOCALE_STORAGE_KEY);
-    return v === "zh-CN" || v === "en-US" ? v : null;
+    return v === "zh-CN" || v === "zh-SG" || v === "zh-Hant" || v === "en-US"
+      ? (v as StoredLocale)
+      : null;
   } catch {
     return null;
   }
@@ -57,17 +64,17 @@ function readStoredLocale(): "zh-CN" | "en-US" | null {
  * 是否英文环境。
  *
  * 决策表：
- *   | lw-locale | isGlobal | isEnglishEnv |
- *   | --------- | -------- | ------------ |
- *   | en-US     | -        | true         |
- *   | zh-CN     | -        | false        |
- *   | (未设置)   | true     | true         |
- *   | (未设置)   | false    | false        |
+ *   | lw-locale         | isGlobal | isEnglishEnv |
+ *   | ----------------- | -------- | ------------ |
+ *   | en-US             | -        | true         |
+ *   | zh-CN/zh-SG/zh-Hant| -       | false        |
+ *   | (未设置)           | true     | true         |
+ *   | (未设置)           | false    | false        |
  */
 export const isEnglishEnv: boolean = (() => {
   const stored = readStoredLocale();
   if (stored === "en-US") return true;
-  if (stored === "zh-CN") return false;
+  if (stored === "zh-CN" || stored === "zh-SG" || stored === "zh-Hant") return false;
   return isGlobal;
 })();
 

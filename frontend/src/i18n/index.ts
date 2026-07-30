@@ -26,6 +26,7 @@ import { initReactI18next } from "react-i18next";
 import { DEFAULT_LOCALE, readLocaleFromPath } from "@/lib/region";
 import enUS from "./generated/en-US.json";
 import zhCN from "./generated/zh-CN.json";
+import zhHant from "./generated/zh-Hant.json";
 
 /** 本地存储 key，用户手动切换语言时持久化 */
 const LOCALE_STORAGE_KEY = "lw-locale";
@@ -58,6 +59,7 @@ void i18n.use(initReactI18next).init({
   resources: {
     "zh-CN": { translation: zhCN },
     "en-US": { translation: enUS },
+    "zh-Hant": { translation: zhHant },
   },
   lng: initialLocale,
   fallbackLng: "zh-CN",
@@ -74,7 +76,7 @@ void i18n.use(initReactI18next).init({
  * 手动切换语言并持久化
  * @example setLocale('en-US')
  */
-export const setLocale = (locale: "zh-CN" | "en-US"): void => {
+export const setLocale = (locale: "zh-CN" | "en-US" | "zh-Hant"): void => {
   try {
     window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
   } catch {

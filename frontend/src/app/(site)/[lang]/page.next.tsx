@@ -19,13 +19,17 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
     title:
       routeLocale.locale === 'en-US'
         ? 'LightVela | Your Personal Cloud AI Agent'
-        : 'LightVela｜云端专属个人 Agent',
+        : routeLocale.locale === 'zh-Hant'
+          ? 'LightVela｜雲端專屬個人 Agent'
+          : 'LightVela｜云端专属个人 Agent',
     /* 首页 title 已自带品牌名，跳过 root 模板，避免重复的 `| LightVela` 后缀 */
     titleAbsolute: true,
     description:
       routeLocale.locale === 'en-US'
         ? 'LightVela is a cloud Agent hosting product from the Tencent Lighthouse team.'
-        : 'LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品。',
+        : routeLocale.locale === 'zh-Hant'
+          ? 'LightVela 是騰訊輕量雲團隊推出的雲端 Agent 託管產品。'
+          : 'LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品。',
   });
 }
 

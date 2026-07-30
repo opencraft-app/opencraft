@@ -16,11 +16,18 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   return createPublicMetadata({
     path: localizedPublicPath('/about', lang as PublicUrlLang),
     locale: routeLocale.locale,
-    title: routeLocale.locale === 'en-US' ? 'About LightVela' : '关于我们',
+    title:
+      routeLocale.locale === 'en-US'
+        ? 'About LightVela'
+        : routeLocale.locale === 'zh-Hant'
+          ? '關於我們'
+          : '关于我们',
     description:
       routeLocale.locale === 'en-US'
         ? 'LightVela brings the cloud Agent experience to more people through a managed, approachable product.'
-        : 'LightVela 由腾讯轻量云团队出品，将 AI Agent 的完整能力搬上云端。',
+        : routeLocale.locale === 'zh-Hant'
+          ? 'LightVela 由騰訊輕量雲團隊出品，將 AI Agent 的完整能力搬上雲端。'
+          : 'LightVela 由腾讯轻量云团队出品，将 AI Agent 的完整能力搬上云端。',
   });
 }
 

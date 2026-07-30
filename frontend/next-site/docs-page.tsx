@@ -14,7 +14,7 @@ import {
 import { source } from './source';
 import { DOCS_ROUTE_SLUGS, type DocsRouteLocale } from './docs-route-manifest';
 
-export type DocsLocalePrefix = 'en-us' | 'zh-cn' | 'zh-sg' | undefined;
+export type DocsLocalePrefix = 'en-us' | 'zh-cn' | 'zh-sg' | 'zh-hant' | undefined;
 
 export function docsSlug(_prefix: DocsLocalePrefix, slug?: string[]) {
   const pageSlug = slug && slug.length > 0 ? slug : ['overview'];
@@ -74,6 +74,7 @@ export function docsMetadata(prefix: DocsLocalePrefix, slug?: string[]) {
 function docsSeoLocale(prefix: DocsLocalePrefix): SeoLocale {
   if (prefix === 'en-us') return 'en-US';
   if (prefix === 'zh-sg') return 'zh-SG';
+  if (prefix === 'zh-hant') return 'zh-Hant';
   return 'zh-CN';
 }
 

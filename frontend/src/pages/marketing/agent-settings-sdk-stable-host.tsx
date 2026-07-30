@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { useLayoutEffect, useRef, useState } from "react";
 
+import { useTeaSdkZhHantObserver } from "./tea-sdk-zh-hant-observer";
+
 const SDK_LOADING_SELECTORS = [
   ".lh-std-channel-panel--loading",
   ".lh-std-channel-panel__loader",
@@ -26,6 +28,10 @@ export function StableTeaSdkPanelHost({ children }: { children: ReactNode }) {
   const snapshotRef = useRef<string | null>(null);
   const [snapshotHtml, setSnapshotHtml] = useState<string | null>(null);
   const [showSnapshot, setShowSnapshot] = useState(false);
+
+  // zh-Hant 环境下把 SDK 渲染出的简体文案就地转成繁体字形，
+  // 并把 SDK 硬编码的 docs 链接加上 /zh-hant/ 前缀。
+  useTeaSdkZhHantObserver(liveRef);
 
   useLayoutEffect(() => {
     const live = liveRef.current;

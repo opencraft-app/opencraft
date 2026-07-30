@@ -28,13 +28,15 @@ vi.mock("@/i18n/t", () => ({
 }));
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ i18n: { language: "zh-CN" } }),
+  useTranslation: () => ({ i18n: { language: "zh-CN", resolvedLanguage: "zh-CN" } }),
+  initReactI18next: { type: "3rdParty", init: () => {} },
 }));
 
 vi.mock("@/lib/region", () => ({
   DEFAULT_LOCALE: "zh-CN",
   isCN: true,
   isGlobal: false,
+  readLocaleFromPath: () => null,
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({

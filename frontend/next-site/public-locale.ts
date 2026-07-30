@@ -1,7 +1,7 @@
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
 
-export type PublicUrlLang = 'en-us' | 'zh-cn' | 'zh-sg';
+export type PublicUrlLang = 'en-us' | 'zh-cn' | 'zh-sg' | 'zh-hant';
 
 export type PublicRouteLocale = {
   locale: PublicSiteLocale;
@@ -19,12 +19,13 @@ export const DEFAULT_PUBLIC_ROUTE_LOCALE: PublicRouteLocale = {
   localized: false,
 };
 
-export const PUBLIC_URL_LANGS = ['en-us', 'zh-cn', 'zh-sg'] as const satisfies readonly PublicUrlLang[];
+export const PUBLIC_URL_LANGS = ['en-us', 'zh-cn', 'zh-sg', 'zh-hant'] as const satisfies readonly PublicUrlLang[];
 
 const LANG_TO_LOCALE: Record<PublicUrlLang, PublicSiteLocale> = {
   'en-us': 'en-US',
   'zh-cn': 'zh-CN',
   'zh-sg': 'zh-SG',
+  'zh-hant': 'zh-Hant',
 };
 
 export function publicRouteLocaleFromLang(lang: string): PublicRouteLocale | null {

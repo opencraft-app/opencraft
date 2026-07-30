@@ -37,6 +37,10 @@ const copyByLocale: Record<PublicSiteLocale, { createNow: string; login: string 
     createNow: '立即创建',
     login: '登录',
   },
+  'zh-Hant': {
+    createNow: '立即創建',
+    login: '登入',
+  },
 };
 
 type PublicHeaderAuthIslandProps = {
@@ -66,11 +70,13 @@ function PublicHeaderAuthControls({
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
   const activeLocale: PublicSiteLocale = locale ?? (i18n.language?.startsWith('zh') ? 'zh-SG' : 'en-US');
   const copy = copyByLocale[activeLocale] || copyByLocale['en-US'];
-  // 未登录转化引导：主按钮文案改为「免费试用」（英文站为 Free trial）
+  // 未登录转化引导：主按钮文案改为「免费试用」（英文站为 Free trial、繁体为「免費試用」）
   const createLabel = promoteFreeTrial
-    ? activeLocale.startsWith('zh')
-      ? '免费试用'
-      : 'Free trial'
+    ? activeLocale === 'zh-Hant'
+      ? '免費試用'
+      : activeLocale.startsWith('zh')
+        ? '免费试用'
+        : 'Free trial'
     : copy.createNow;
 
   useEffect(() => {

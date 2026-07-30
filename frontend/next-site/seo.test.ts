@@ -52,6 +52,7 @@ describe("global public SEO URL contract", () => {
       "zh-CN": "https://lightvela.com/zh-cn/about/",
       "en-US": "https://lightvela.ai/about/",
       "zh-SG": "https://lightvela.ai/zh-sg/about/",
+      "zh-Hant": "https://lightvela.ai/zh-hant/about/",
     });
   });
 
