@@ -90,14 +90,6 @@ func TestValidateInventoryRequiresRuntimeIdentifiers(t *testing.T) {
 	}
 }
 
-func TestTriggerImportIDMatchesProviderFormat(t *testing.T) {
-	got := triggerImportID("lightvela-notify-worker-bj", "lightvela-notify-worker-timer")
-	want := "lightvela-notify-worker-bj#default#lightvela-notify-worker-timer"
-	if got != want {
-		t.Fatalf("triggerImportID() = %q, want %q", got, want)
-	}
-}
-
 func TestTriggerManagementCanBeDeferredUntilFunctionsExist(t *testing.T) {
 	inv := validInventory()
 	if shouldManageTriggers(inv) {

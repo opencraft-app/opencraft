@@ -92,10 +92,10 @@ func Ensure(ctx *stackctx.Context) error {
 		if inv.TriggersEnabled {
 			triggerState = "OPEN"
 		}
-		if err := ensureTimer(ctx, "scanner", scanner, inv.ScannerFunctionName, inv.ScannerCron, triggerState); err != nil {
+		if err := ensureTimer(ctx, "scanner", scanner, inv.ExistingScannerTriggerID, inv.ScannerCron, triggerState); err != nil {
 			return err
 		}
-		if err := ensureTimer(ctx, "worker", worker, inv.WorkerFunctionName, inv.WorkerCron, triggerState); err != nil {
+		if err := ensureTimer(ctx, "worker", worker, inv.ExistingWorkerTriggerID, inv.WorkerCron, triggerState); err != nil {
 			return err
 		}
 	}
@@ -221,23 +221,18 @@ func ensureFunction(ctx *stackctx.Context, suffix, functionName, importID, handl
 	}, ctx.OptionsWithAdopt(importID, pulumi.DependsOn(dependencies))...)
 }
 
-func ensureTimer(ctx *stackctx.Context, suffix string, function *scf.Function, functionName, cron, state string) error {
+func ensureTimer(ctx *stackctx.Context, suffix string, function *scf.Function, importID, cron, state string) error {
 	triggerName := "lightvela-notify-" + suffix + "-timer"
 	_, err := scf.NewTriggerConfig(ctx.Pulumi, naming.StableResource("notify", suffix, "timer"), &scf.TriggerConfigArgs{
 		FunctionName: function.Name,
 		Namespace:    pulumi.StringPtr(functionNamespace),
-		Qualifier:    pulumi.StringPtr("$DEFAULT"),
+		Qualifier:    pulumi.StringPtr("$LATEST"),
 		TriggerName:  pulumi.String(triggerName),
 		Type:         pulumi.String("timer"),
 		TriggerDesc:  pulumi.String(cron),
 		Enable:       pulumi.StringPtr(state),
-		Description:  pulumi.StringPtr("Managed by infra_pulumi"),
-	}, ctx.OptionsWithAdopt(triggerImportID(functionName, triggerName), pulumi.DependsOn([]pulumi.Resource{function}))...)
+	}, ctx.OptionsWithAdopt(importID, pulumi.DependsOn([]pulumi.Resource{function}))...)
 	return err
-}
-
-func triggerImportID(functionName, triggerName string) string {
-	return strings.Join([]string{functionName, functionNamespace, triggerName}, "#")
 }
 
 func functionEnvironment(ctx *stackctx.Context, inv config.NotifyInventory, redisSecretName string) pulumi.StringMap {
