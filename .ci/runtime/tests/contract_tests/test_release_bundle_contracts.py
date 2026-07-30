@@ -781,8 +781,25 @@ class ReleaseBundleContractTests(unittest.TestCase):
             and (doc.get("metadata") or {}).get("name") == "llmgateway-traffic"
         )
         protocol = platform["VELAGW_TRAFFIC_PROTOCOL"]
-        self.assertIn("token-jhb.lightvela.ai", protocol)
+        self.assertIn("token.lightvela.ai", protocol)
+        self.assertNotIn("token-jhb.lightvela.ai", protocol)
         self.assertIn("token-jhb-lightvela-ai-cert", protocol)
+        control_protocol = platform["VELAGW_CONTROL_PROTOCOL"]
+        self.assertIn("token-admin.lightvela.ai", control_protocol)
+        self.assertNotIn("token-admin-jhb.lightvela.ai", control_protocol)
+
+        ctl_runtime = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/sgprod/ctl-runtime-secrets.sops.yaml").read_text()
+        )
+        ctl_runtime_data = ctl_runtime["stringData"]
+        self.assertEqual(
+            ctl_runtime_data["CTL_LLMGATEWAY_BASE_URL"],
+            "https://token-admin.lightvela.ai",
+        )
+        self.assertEqual(
+            ctl_runtime_data["CTL_LLMGATEWAY_DEFAULT_BASE_URL"],
+            "https://token.lightvela.ai/v1",
+        )
 
         image_pin = (service_root / "velagw-platform.env").read_text()
         self.assertIn("lightclaw-sgprod.tencentcloudcr.com/lightclaw/velagw@sha256:", image_pin)
