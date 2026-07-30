@@ -2058,6 +2058,9 @@ func (l *logic) RenewPassOrder(userID, passID string, req *transport.RenewPassOr
 	placeCancel()
 	if placeErr != nil {
 		logger.Warn("renew pass order: trade.PlaceRenewOrder failed", zap.Error(placeErr))
+		if mappedErr := tradeShadowBindingNotFoundError(placeErr); mappedErr != nil {
+			return nil, mappedErr
+		}
 		return nil, fmt.Errorf("trade place renew order: %w", placeErr)
 	}
 	if placeResp == nil || placeResp.DealName == "" {
@@ -2124,6 +2127,9 @@ func (l *logic) RenewPassOrderAndPay(userID, passID string, req *transport.Renew
 	placeCancel()
 	if placeErr != nil {
 		logger.Warn("renew pass order and pay: trade.PlaceRenewOrderAndPay failed", zap.Error(placeErr))
+		if mappedErr := tradeShadowBindingNotFoundError(placeErr); mappedErr != nil {
+			return nil, mappedErr
+		}
 		return nil, fmt.Errorf("trade place renew order and pay: %w", placeErr)
 	}
 	if placeResp == nil || placeResp.DealName == "" {
@@ -2153,8 +2159,8 @@ func (l *logic) RenewPassOrderAndPay(userID, passID string, req *transport.Renew
 //  3. 校验 passEntity.BundleID 对应 Bundle 存在（v1.7.22 B17 修订：不校验 BundleState；
 //     套餐下架仍可续费询价）
 //  4. **不调 shadow** — trade.QuoteRenew 已支持 ShadowClient 自动反查（ctl 只透传
-//     externalUserId / 与新购询价 DescribeBundles 同范式；询价是无副作用 RPC，
-//     trade 反查失败 → 业务错降级 nil 价格，不阻塞前端展示）
+//     externalUserId / 与新购询价 DescribeBundles 同范式）；trade 反查失败时，ctl
+//     将 BindingNotFound 翻译为 ErrPassShadowBindingRequired，保持新购 / 续费错误语义一致
 //  5. 构造 trade.InquiryRenew 入参（含 ResourceID + CurDeadline = passEntity.ExpiredTime.Format(...)）
 //  6. 调 trade adapter，把响应的 prices[0] 拍平为 RenewPassPriceResult 返回
 //
@@ -2230,6 +2236,9 @@ func (l *logic) RenewPassPrice(userID, passID string, req *transport.RenewPassPr
 	inqCancel()
 	if inqErr != nil {
 		logger.Warn("renew pass price: trade.InquiryRenew failed", zap.Error(inqErr))
+		if mappedErr := tradeShadowBindingNotFoundError(inqErr); mappedErr != nil {
+			return nil, mappedErr
+		}
 		return nil, fmt.Errorf("trade inquiry renew: %w", inqErr)
 	}
 	if inqResp == nil || len(inqResp.Prices) == 0 || inqResp.Prices[0] == nil {
@@ -2271,6 +2280,18 @@ func parseQuotePrice(s string) float64 {
 		return 0
 	}
 	return v
+}
+
+func isTradeShadowBindingNotFound(err error) bool {
+	var tradeErr *tradeadapter.Error
+	return errors.As(err, &tradeErr) && tradeErr.Code == "BindingNotFound"
+}
+
+func tradeShadowBindingNotFoundError(err error) error {
+	if isTradeShadowBindingNotFound(err) {
+		return errcode.ErrPassShadowBindingRequired
+	}
+	return nil
 }
 
 // prepareRenewPassOrder 是 RenewPassOrderUrl 的共享前置流程（与 prepareCreatePassOrder 对偶）。
