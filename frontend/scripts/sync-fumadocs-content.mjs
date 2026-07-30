@@ -350,6 +350,8 @@ const globalDocs = [
     file: 'use-cases/chinese-messaging-channels.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    // 中文正文尚未落地（仅英文源被简→繁转成占位），中文站暂不展示。
+    hiddenForLocales: [LOCALES.ZH_SG, LOCALES.ZH_HANT],
   },
   {
     slug: 'use-cases/daily-summary',
@@ -357,6 +359,7 @@ const globalDocs = [
     file: 'use-cases/daily-summary.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hiddenForLocales: [LOCALES.ZH_SG, LOCALES.ZH_HANT],
   },
   {
     slug: 'use-cases/hermes-agent-24-7',
@@ -364,6 +367,7 @@ const globalDocs = [
     file: 'use-cases/hermes-agent-24-7.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hiddenForLocales: [LOCALES.ZH_SG, LOCALES.ZH_HANT],
   },
   {
     slug: 'use-cases/memory-and-knowledge',
@@ -371,6 +375,7 @@ const globalDocs = [
     file: 'use-cases/memory-and-knowledge.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hiddenForLocales: [LOCALES.ZH_SG, LOCALES.ZH_HANT],
   },
   {
     slug: 'compare/lightvela-vs-localhost-ai-agent',
@@ -435,9 +440,21 @@ const globalDocsForEnglish = globalDocs.filter(
     existsSync(join(sourceRoot, 'global', doc.file)),
 );
 
-const globalDocsForChinese = globalDocs.filter((doc) =>
-  existsSync(join(sourceRoot, 'global', doc.file)),
-);
+/** 判断 doc 是否对某 locale 隐藏（仅按 hiddenForLocales 白名单）。 */
+function isHiddenFor(doc, locale) {
+  return Array.isArray(doc.hiddenForLocales) && doc.hiddenForLocales.includes(locale);
+}
+
+/**
+ * zh-SG / zh-Hant 共用的中文文档集合。
+ * 部分英文源尚未沉淀中文正文，标注 `hiddenForLocales` 后在中文站不生成对应页面
+ * （包括路由、meta.json 侧边栏与 route manifest），避免出现繁体标题 + 英文占位的效果。
+ */
+function globalDocsForChineseLocale(locale) {
+  return globalDocs.filter(
+    (doc) => existsSync(join(sourceRoot, 'global', doc.file)) && !isHiddenFor(doc, locale),
+  );
+}
 
 const docSets = [
   {
@@ -459,7 +476,7 @@ const docSets = [
     outputPrefix: URL_LANGS.ZH_SG,
     sourcePrefix: 'global',
     locale: LOCALES.ZH_SG,
-    docs: globalDocsForChinese,
+    docs: globalDocsForChineseLocale(LOCALES.ZH_SG),
     title: 'LightVela 文档',
   },
   {
@@ -467,7 +484,7 @@ const docSets = [
     outputPrefix: URL_LANGS.ZH_HANT,
     sourcePrefix: 'global',
     locale: LOCALES.ZH_HANT,
-    docs: globalDocsForChinese,
+    docs: globalDocsForChineseLocale(LOCALES.ZH_HANT),
     title: 'LightVela 文件',
     convertToTraditional: true,
   },
@@ -508,10 +525,14 @@ function stripTitle(markdown, title) {
 }
 
 function allDocsForLinks(outputPrefix) {
-  const localeDocs =
-    outputPrefix === URL_LANGS.ZH_SG || outputPrefix === URL_LANGS.ZH_HANT
-      ? globalDocsForChinese
-      : globalDocsForEnglish;
+  let localeDocs;
+  if (outputPrefix === URL_LANGS.ZH_SG) {
+    localeDocs = globalDocsForChineseLocale(LOCALES.ZH_SG);
+  } else if (outputPrefix === URL_LANGS.ZH_HANT) {
+    localeDocs = globalDocsForChineseLocale(LOCALES.ZH_HANT);
+  } else {
+    localeDocs = globalDocsForEnglish;
+  }
   return [...cnDocs, ...localeDocs];
 }
 
