@@ -33,6 +33,7 @@ from app import (
     read_worker_messages,
     release_scan_lock,
     scanner_handler,
+    sms_template_id,
     transition_failure,
     utc_expiry_bounds,
     validate_delivery,
@@ -49,6 +50,13 @@ class FakeRedis:
     def eval(self, script, key_count, *args):
         self.calls.append((script, key_count, args))
         return self.result
+
+
+class SMSConfigurationTest(unittest.TestCase):
+    def test_template_id_is_required_without_a_default(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(KeyError):
+                sms_template_id()
 
 
 class FakeWorkerRedis:

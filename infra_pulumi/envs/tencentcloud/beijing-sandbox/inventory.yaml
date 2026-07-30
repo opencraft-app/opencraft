@@ -174,7 +174,7 @@ stacks:
     cls_topic_id: 687086c1-9f74-44ce-b103-06ea30fdf968
     sms_sdk_app_id: "1401097405"
     sms_sign_name: "腾讯云"
-    sms_template_id: "2699772"
+    sms_template_id: "2701152"
     expiry_windows_days: "7,0"
     sms_qps: 15
     sms_burst: 1

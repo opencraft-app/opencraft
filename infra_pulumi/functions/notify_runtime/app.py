@@ -17,7 +17,6 @@ DEFAULT_ENVIRONMENT = "test"
 DEDUPE_TTL_SECONDS = 60 * 24 * 60 * 60
 MAX_ATTEMPTS = 5
 RECLAIM_IDLE_MILLISECONDS = 5 * 60 * 1000
-SMS_TEMPLATE_ID = "2699772"
 LOG = logging.getLogger()
 LOG.setLevel(logging.INFO)
 
@@ -482,12 +481,16 @@ def send_sms(phone, expiry_time, event_key):
     request.from_json_string(json.dumps({
         "SmsSdkAppId": os.environ["SMS_SDK_APP_ID"],
         "SignName": os.environ.get("SMS_SIGN_NAME", "\u817e\u8baf\u4e91"),
-        "TemplateId": os.environ.get("SMS_TEMPLATE_ID", SMS_TEMPLATE_ID),
+        "TemplateId": sms_template_id(),
         "TemplateParamSet": [expiry_time],
         "PhoneNumberSet": [phone],
         "SessionContext": event_reference(event_key),
     }))
     return client.SendSms(request)
+
+
+def sms_template_id():
+    return os.environ["SMS_TEMPLATE_ID"]
 
 
 def ensure_group(client):

@@ -158,7 +158,7 @@ stacks:
     cls_topic_id: 3c16d897-bf5f-41f1-8395-347c80018b7d
     sms_sdk_app_id: "1401097405"
     sms_sign_name: "腾讯云"
-    sms_template_id: "2699772"
+    sms_template_id: "2701152"
     expiry_windows_days: "7,0"
     sms_qps: 15
     sms_burst: 1
