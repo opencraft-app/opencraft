@@ -143,6 +143,8 @@ func TestJohorBahruUsesStandardNodePoolsAndSingaporeRegistry(t *testing.T) {
 		`(?m)^\s*tke_node_pool_type\s*=\s*"standard"\s*$`,
 		`(?m)^\s*tke_internet_endpoint_enabled\s*=\s*true\s*$`,
 		`(?m)^\s*tke_internet_endpoint_domain\s*=\s*"k8s-jhb\.lightvela\.com"\s*$`,
+		`(?m)^\s*control_dns_subdomain\s*=\s*"token-admin"\s*$`,
+		`(?m)^\s*traffic_dns_subdomain\s*=\s*"token"\s*$`,
 		`(?m)^\s*control_clb_domain\s*=\s*"lb-l28uw79t-rmcbp2j0x5lnhtyv\.clb\.jb-tencentclb\.com\."\s*$`,
 		`(?m)^\s*traffic_clb_domain\s*=\s*"lb-7worxaih-te8dr61mj4ug3i07\.clb\.jb-tencentclb\.com\."\s*$`,
 		`(?m)^\s*egress_gateway_mode\s*=\s*"nat_instance"\s*$`,

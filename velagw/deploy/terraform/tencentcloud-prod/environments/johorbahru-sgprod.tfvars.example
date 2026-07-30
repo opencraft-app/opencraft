@@ -27,8 +27,8 @@ nat_instance_system_disk_type = "CLOUD_BSSD"
 nat_instance_system_disk_size = 50
 
 dns_domain            = "lightvela.ai"
-control_dns_subdomain = "token-admin-jhb"
-traffic_dns_subdomain = "token-jhb"
+control_dns_subdomain = "token-admin"
+traffic_dns_subdomain = "token"
 
 # Enable DNS only after the Kubernetes Services have created their CLBs.
 edge_dns_enabled   = false
