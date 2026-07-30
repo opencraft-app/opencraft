@@ -17,7 +17,7 @@ const config = {
   env: {
     VITE_AUTH_API_BASE_URL: process.env.NEXT_PUBLIC_AUTH_API_BASE_URL || process.env.VITE_AUTH_API_BASE_URL || '',
   },
-  allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai', 'lightvela.com', 'lightvela.tencent.com', 'localhost', '127.0.0.1', 'lightclaw.pages.dev'],
+  allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai', 'lightvela.com', 'lightvela.tencent.com', 'localhost', '127.0.0.1', 'lightclaw.pages.dev','intl-sandbox-kr-1.preview.lightclaw.tech'],
   pageExtensions: ['next.tsx', 'next.ts'],
   ...(isDevelopment
     ? {

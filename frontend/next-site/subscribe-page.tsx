@@ -1928,6 +1928,7 @@ const CreditCardConfirmOrderModal = ({
   plan,
   billingPeriodLabel,
   demoMode = false,
+  paying = false,
   onCancel,
   onPay,
 }: {
@@ -1935,6 +1936,8 @@ const CreditCardConfirmOrderModal = ({
   billingPeriodLabel: string;
   /** 纯前端演示：点「Pay」不调后端下单，直接在弹窗内展示支付成功（国际站占位付费卡放开场景）。 */
   demoMode?: boolean;
+  /** 支付处理中（onPay 已触发、后端 order-and-pay 未返回）：禁用按钮防重复下单扣款。 */
+  paying?: boolean;
   onCancel: () => void;
   onPay: () => void;
 }) => {
@@ -2221,23 +2224,23 @@ const CreditCardConfirmOrderModal = ({
               </button>
               <button
                 onClick={handlePayClick}
-                disabled={needsCard}
+                disabled={needsCard || paying}
                 style={{
                   flex: 1,
                   padding: "12px 16px",
                   borderRadius: 8,
                   border: "none",
-                  background: needsCard ? colors.warmGray300 : colors.primary,
+                  background: (needsCard || paying) ? colors.warmGray300 : colors.primary,
                   color: colors.white,
                   fontSize: 15,
                   fontWeight: 600,
-                  cursor: needsCard ? "not-allowed" : "pointer",
+                  cursor: (needsCard || paying) ? "not-allowed" : "pointer",
                   transition: "all 0.15s",
                 }}
-                onMouseEnter={(e) => { if (!needsCard) e.currentTarget.style.background = colors.primaryHover; }}
-                onMouseLeave={(e) => { if (!needsCard) e.currentTarget.style.background = colors.primary; }}
+                onMouseEnter={(e) => { if (!needsCard && !paying) e.currentTarget.style.background = colors.primaryHover; }}
+                onMouseLeave={(e) => { if (!needsCard && !paying) e.currentTarget.style.background = colors.primary; }}
               >
-                {t("支付 {{amount}}", { amount: fmt(total) })}
+                {paying ? t("处理中...") : t("支付 {{amount}}", { amount: fmt(total) })}
               </button>
             </div>
           </div>
@@ -2872,6 +2875,47 @@ export const SubscribePage = ({
     setModalStep("paying");
   }, [isSubscribed, repositories.plans, finalizeBot, paidBillingActive, aiDuration]);
 
+  /**
+   * 国际站信用卡直付链路（联调阶段）。
+   *
+   * 与国内站 startPaidPassOrder 的区别：不走微信二维码扫码，直接调
+   * `POST /v1/passes/order-and-pay` 一体化下单+支付（后端同步扣款），
+   * 返回 `{ deal_name, big_order_id }`，无需再拉 pay_url / 轮询二维码。
+   *
+   * ⚠️ `order-and-pay` 后端注释明确「仅联调测试 / e2e，现网禁用」；
+   *    现网国际站正式链路应改走 createPassOrder + getPassOrderUrl 拉信用卡支付页，
+   *    待签约支付正式接口就绪后切换。
+   *
+   * 支付成功（同步）→ refreshPasses 拿新生效 pass → finalizeBot 创建实例并跳转。
+   * 抛错由 executeCreateBot 的 try/catch 统一走错误映射（realname_required / invite 等）。
+   */
+  const startIntlCardPay = useCallback(async (plan: PlanInfo) => {
+    trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_CHECKOUT_START, {
+      pgid: DATONG_PAGE_IDS.SUBSCRIBE,
+      params: {
+        plan: plan.id,
+        plan_name: plan.name,
+        billing_period: aiDuration.period,
+      },
+    });
+    if (isSubscribed) {
+      /* 已有有效 pass，直接创建实例即可 */
+      await finalizeBot(plan);
+      return;
+    }
+    /* 一体化下单+支付：order-and-pay 同步扣款，返回 deal_name + big_order_id（仅审计用） */
+    await repositories.plans.createPassOrderAndPay({
+      bundle_id: plan.raw.bundle_id,
+      period: aiDuration.period,
+      time_unit: aiDuration.time_unit,
+    });
+    /* 同步支付完成 → 刷新 pass 列表拿到新生效 pass → finalize 创建实例并跳转 */
+    await refreshPasses();
+    await finalizeBot(plan);
+    setModalStep("closed");
+    setSelectedPlan(null);
+  }, [isSubscribed, repositories.plans, finalizeBot, refreshPasses, aiDuration]);
+
   /* finalizeBot 的 ref 镜像 — 见 isSubscribedRef 的注释，目的相同：
      轮询 effect 内的 setInterval 闭包要拿最新 finalizeBot，又不能依赖它（会反复重建）。
      注意：必须放在 finalizeBot 声明之后，用一个独立 effect 来同步。 */
@@ -2941,12 +2985,19 @@ export const SubscribePage = ({
       /* 国内站一律走付费下单链路（plan.skipPayment 已在 mapBundleToPlan 中按站点置为 false）；
          国际站维持「paidBillingActive 开关 + skipPayment」组合控制。 */
       if ((!isGlobal || paidBillingActive) && !plan.skipPayment) {
-        /* 付费链路：startPaidPassOrder 只展示二维码并把弹窗切到 paying；
-           真正的 addBot + 跳转由两条接棒路径承接：
-             ① paying 阶段轮询到 active pass → 自动 finalizeBot
-             ② 用户点「我已完成支付」 → handleManualConfirm → finalizeBot
-           因此这里**不能**再继续往下做 addBot/navigate，否则用户还没付钱实例就建了 */
-        await startPaidPassOrder(plan);
+        if (isGlobal) {
+          /* 国际站付费链路：信用卡直付（order-and-pay 一体化，联调阶段）。
+             同步扣款成功后 startIntlCardPay 内部已 refreshPasses + finalizeBot，
+             这里不能继续往下 addBot/navigate，finalize 已处理跳转。 */
+          await startIntlCardPay(plan);
+        } else {
+          /* 国内站付费链路：startPaidPassOrder 只展示二维码并把弹窗切到 paying；
+             真正的 addBot + 跳转由两条接棒路径承接：
+               ① paying 阶段轮询到 active pass → 自动 finalizeBot
+               ② 用户点「我已完成支付」 → handleManualConfirm → finalizeBot
+             因此这里**不能**再继续往下做 addBot/navigate，否则用户还没付钱实例就建了 */
+          await startPaidPassOrder(plan);
+        }
       } else {
         /* 免费链路：startTrialPass 内部已 await finalizeBot，addBot + 跳转一气呵成 */
         await startTrialPass(plan);
@@ -3006,7 +3057,7 @@ export const SubscribePage = ({
     } finally {
       setSubscribingPlanId(null);
     }
-  }, [paidBillingActive, startPaidPassOrder, startTrialPass, t]);
+  }, [paidBillingActive, startPaidPassOrder, startIntlCardPay, startTrialPass, t]);
 
   const handleSubscribe = useCallback((planId: string) => {
     const plan = planList.find((p) => p.id === planId);
@@ -3394,6 +3445,7 @@ export const SubscribePage = ({
               plan={selectedPlan}
               billingPeriodLabel={getBillingDurationLabel(aiDuration, t)}
               demoMode={selectedPlan.id.startsWith("placeholder-")}
+              paying={subscribingPlanId === selectedPlan.id}
               onCancel={handleCloseModal}
               onPay={handlePay}
               t={t}
