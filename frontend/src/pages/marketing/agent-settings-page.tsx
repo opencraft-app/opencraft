@@ -43,7 +43,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
-import { usePaidBillingEnabled } from "@/contexts/runtime-config-context";
+import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
@@ -123,6 +123,7 @@ import {
 import { toast } from "@/lib/toast";
 import { isPaidBillingEnabled } from "@/lib/billing-flow";
 import { getPassExpiryReminder } from "@/lib/pass-renewal";
+import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
@@ -3016,6 +3017,7 @@ export const AgentSettingsPage = ({
   const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass } = useOpenClaw();
   const repositories = useRepositories();
   const paidBillingEnabled = usePaidBillingEnabled();
+  const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const paidBillingActive = isCN && isPaidBillingEnabled(paidBillingEnabled);
   const {
     commandLifecycle: automationModelCommandLifecycle,
@@ -3024,6 +3026,7 @@ export const AgentSettingsPage = ({
   // 账号 id：来自 /auth/profile 下发的 session.user.id，用于 LightVelaPanel.userId 等场景
   const { session } = useSession();
   const accountId = session.user?.id ?? "";
+  const renewalRealnameVerified = isRenewalRealnameVerified(session.user, realnamePhoneVerificationEnabled);
 
   useEffect(() => {
     document.documentElement.classList.add("lw-settings-scrollbar-stable");
@@ -4859,6 +4862,7 @@ export const AgentSettingsPage = ({
             pass={activePass}
             onClose={() => setRenewPassModalOpen(false)}
             onSuccess={() => void handleRenewPassSuccess()}
+            initialRealnameRequired={Boolean(session.user) && !renewalRealnameVerified}
           />
         )}
       </AnimatePresence>

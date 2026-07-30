@@ -21,6 +21,7 @@ describe("fake repositories FaceID flow", () => {
     vi.restoreAllMocks();
     vi.stubGlobal("localStorage", createMemoryStorage());
     window.localStorage.clear();
+    window.history.replaceState({}, "", "/");
   });
 
   it("completes the fake FaceID attempt during phone verification", async () => {
@@ -47,5 +48,17 @@ describe("fake repositories FaceID flow", () => {
     expect(profile.realnameVerified).toBe(true);
     expect(profile.realnameLevel).toBe("phone_3fa");
     expect(profile.realnameSyncStatus).toBe("succeeded");
+  });
+
+  it("provides an expiring pass for local renewal previews", async () => {
+    window.history.replaceState({}, "", "/account?passState=expiring");
+
+    const repositories = createFakeRepositories();
+    const passes = await repositories.plans.listMyPasses();
+
+    expect(passes).toHaveLength(1);
+    expect(passes[0]?.pass_id).toBe("pass-preview-expiring");
+    expect(passes[0]?.bundle_name).toBe("启航 Launch");
+    expect(new Date(passes[0]?.expired_time ?? "").getTime() - Date.now()).toBeGreaterThan(5 * 24 * 60 * 60 * 1000);
   });
 });

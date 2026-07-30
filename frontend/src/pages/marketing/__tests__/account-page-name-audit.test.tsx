@@ -393,6 +393,34 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.queryByRole("button", { name: /1年|12个月/ })).not.toBeInTheDocument();
   });
 
+  it("shows the realname guide in the renewal modal when an unverified user clicks renew", async () => {
+    currentUser = {
+      ...currentUser,
+      realnameVerified: false,
+      realnameLevel: "none",
+    };
+    paidBillingEnabled = true;
+    activePass = buildActivePass();
+
+    renderAccountPage();
+
+    await userEvent.click(screen.getByRole("button", { name: /立即续费/ }));
+
+    expect(await screen.findByText("续费套餐")).toBeInTheDocument();
+    expect(await screen.findByText("续费前需先")).toBeInTheDocument();
+    expect(screen.getByText("，完成后再确认续费。")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "更新实名认证信息" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "确认续费" })).toBeDisabled();
+    expect(screen.queryByRole("dialog", { name: "实名认证" })).not.toBeInTheDocument();
+    expect(getRenewPrice).not.toHaveBeenCalled();
+    expect(createRenewOrder).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "更新实名认证信息" }));
+
+    expect(screen.queryByText("续费套餐")).not.toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "实名认证" })).toBeInTheDocument();
+  });
+
   it("shows the pending nickname privately while keeping the active nickname explicit", async () => {
     currentUser = {
       ...currentUser,

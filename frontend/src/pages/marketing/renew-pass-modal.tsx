@@ -1,10 +1,12 @@
 import { motion } from "framer-motion";
-import { Loader2, X } from "lucide-react";
+import { Loader2, ShieldAlert, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useRepositories } from "@/contexts/repository-context";
-import type { BundleTimeUnit, Pass, PassRenewPrice } from "@/domain/types";
+import { useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
+import { useSession } from "@/contexts/session-context";
+import { type BundleTimeUnit, type Pass, type PassRenewPrice } from "@/domain/types";
 import { getBillingErrorCode, resolveBillingErrorMessage } from "@/lib/billing-error";
 import { centsToYuan, formatYuan, getPassStatus, type PassStatus } from "@/lib/billing-flow";
 import {
@@ -13,15 +15,18 @@ import {
   getPassStatusLabel,
   RENEWAL_PERIOD_OPTIONS,
 } from "@/lib/pass-renewal";
+import { getRenewalRealnameFlowFlags, isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { cn } from "@/lib/utils";
 import { buildPayPlan } from "@/lib/wx-pay";
 import { useT } from "@/i18n/t";
 import { RepositoryError } from "@/repositories/http-repositories";
+import { VerifyIdentityModal, type RealnameSyncStatus } from "@/pages/marketing/verify-identity-modal";
 
 type RenewPassModalProps = {
   pass: Pass;
   onClose: () => void;
   onSuccess: () => void | Promise<void>;
+  initialRealnameRequired?: boolean;
 };
 
 type RenewalSelection = {
@@ -46,10 +51,18 @@ const __markRenewalOptionsForI18n = (t: (zh: string, opts?: Record<string, unkno
   void t("3个月");
 };
 
-export const RenewPassModal = ({ pass, onClose, onSuccess }: RenewPassModalProps) => {
+export const RenewPassModal = ({
+  pass,
+  onClose,
+  onSuccess,
+  initialRealnameRequired = false,
+}: RenewPassModalProps) => {
   const t = useT();
   __markRenewalOptionsForI18n(t);
   const { plans } = useRepositories();
+  const { session, refreshProfile } = useSession();
+  const user = session.user;
+  const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const [selected, setSelected] = useState<RenewalSelection>({
     period: RENEWAL_PERIOD_OPTIONS[0]!.period,
     time_unit: RENEWAL_PERIOD_OPTIONS[0]!.time_unit,
@@ -65,6 +78,9 @@ export const RenewPassModal = ({ pass, onClose, onSuccess }: RenewPassModalProps
   const [submitting, setSubmitting] = useState(false);
   const [checkingPayment, setCheckingPayment] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [realnameNoticeVisible, setRealnameNoticeVisible] = useState(false);
+  const [realnameModalOpen, setRealnameModalOpen] = useState(false);
+  const [renewalPaneHiddenForRealname, setRenewalPaneHiddenForRealname] = useState(false);
   const startExpiredAtRef = useRef(new Date(pass.expired_time).getTime());
   const paymentCheckInFlightRef = useRef(false);
   const paymentSettledRef = useRef(false);
@@ -86,9 +102,24 @@ export const RenewPassModal = ({ pass, onClose, onSuccess }: RenewPassModalProps
   const originalTotalYuan = priceInfo ? centsToYuan(priceInfo.total_cost) : null;
   const hasDiscount = priceInfo != null && originalTotalYuan != null && realTotalYuan != null
     && originalTotalYuan > realTotalYuan + 0.001;
+  const {
+    faceIdBackendEnabled,
+    facelessFlowEnabled,
+    faceIdFlowEnabled,
+    phoneProofEnabled,
+  } = getRenewalRealnameFlowFlags(user, realnamePhoneVerificationEnabled);
+  const realnameVerified = isRenewalRealnameVerified(user, realnamePhoneVerificationEnabled);
+  const realnameSyncStatus = user?.realnameSyncStatus as RealnameSyncStatus | undefined;
+  const renewActionDisabled = submitting || pricing || !realnameVerified;
 
   useEffect(() => {
     if (step !== "confirm") return;
+    if (!realnameVerified) {
+      setPricing(false);
+      setPriceInfo(null);
+      setPriceError(null);
+      return;
+    }
     let cancelled = false;
     setPricing(true);
     setPriceError(null);
@@ -109,7 +140,19 @@ export const RenewPassModal = ({ pass, onClose, onSuccess }: RenewPassModalProps
     return () => {
       cancelled = true;
     };
-  }, [pass.pass_id, plans, selected, step, t]);
+  }, [pass.pass_id, plans, realnameVerified, selected, step, t]);
+
+  useEffect(() => {
+    if (realnameVerified) {
+      setRealnameNoticeVisible(false);
+    }
+  }, [realnameVerified]);
+
+  useEffect(() => {
+    if (!initialRealnameRequired || !user || realnameVerified) return;
+    setSubmitError(null);
+    setRealnameNoticeVisible(true);
+  }, [initialRealnameRequired, realnameVerified, user]);
 
   const checkRenewalStatus = useCallback(async (showPendingMessage: boolean) => {
     if (paymentSettledRef.current || paymentCheckInFlightRef.current) return false;
@@ -164,6 +207,15 @@ export const RenewPassModal = ({ pass, onClose, onSuccess }: RenewPassModalProps
 
   const handleSubmit = useCallback(async () => {
     if (submitting) return;
+    if (!user) {
+      setSubmitError(t("请先登录后再续费。"));
+      return;
+    }
+    if (!realnameVerified) {
+      setSubmitError(null);
+      setRealnameNoticeVisible(true);
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -186,40 +238,66 @@ export const RenewPassModal = ({ pass, onClose, onSuccess }: RenewPassModalProps
     } finally {
       setSubmitting(false);
     }
-  }, [pass.bundle_name, pass.pass_id, plans, selected, submitting, t]);
+  }, [pass.bundle_name, pass.pass_id, plans, realnameVerified, selected, submitting, t, user]);
+
+  const handleOpenRealnameGuide = useCallback(() => {
+    setSubmitError(null);
+    setRenewalPaneHiddenForRealname(true);
+    setRealnameModalOpen(true);
+  }, []);
+
+  const handleCloseRealnameModal = useCallback(() => {
+    setRealnameModalOpen(false);
+    onClose();
+  }, [onClose]);
+
+  const handleRealnameSuccess = useCallback(async () => {
+    let profileRefreshed = false;
+    try {
+      await refreshProfile();
+      profileRefreshed = true;
+    } catch (err) {
+      console.warn("[account] refresh profile after renewal realname failed", err);
+    }
+    setRealnameModalOpen(false);
+    setRenewalPaneHiddenForRealname(false);
+    setRealnameNoticeVisible(!profileRefreshed);
+  }, [refreshProfile]);
 
   return (
-    <motion.div
-      className="fixed inset-0 z-[10000] flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-      onClick={onClose}
-    >
-      <motion.div
-        className="relative mx-4 w-full max-w-[480px] overflow-hidden bg-white"
-        style={{
-          borderRadius: 12,
-          border: "1px solid #E6E9EF",
-          boxShadow: "0px 24px 48px -12px rgba(0, 0, 0, 0.15)",
-        }}
-        initial={{ opacity: 0, scale: 0.96, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 10 }}
-        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <button
+    <>
+      {!renewalPaneHiddenForRealname && (
+        <motion.div
+          className="fixed inset-0 z-[10000] flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
           onClick={onClose}
-          className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-[rgba(0,0,0,0.04)]"
-          style={{ color: "rgba(0,0,0,0.5)" }}
-          aria-label={t("关闭")}
-          type="button"
         >
-          <X className="h-4 w-4" />
-        </button>
+          <motion.div
+            className="relative mx-4 w-full max-w-[480px] overflow-hidden bg-white"
+            style={{
+              borderRadius: 12,
+              border: "1px solid #E6E9EF",
+              boxShadow: "0px 24px 48px -12px rgba(0, 0, 0, 0.15)",
+            }}
+            initial={{ opacity: 0, scale: 0.96, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 10 }}
+            transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              onClick={onClose}
+              className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-[rgba(0,0,0,0.04)]"
+              style={{ color: "rgba(0,0,0,0.5)" }}
+              aria-label={t("关闭")}
+              type="button"
+            >
+              <X className="h-4 w-4" />
+            </button>
 
         <div className="px-7 pb-6 pt-7">
           <h3 className="m-0 text-[18px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
@@ -309,6 +387,26 @@ export const RenewPassModal = ({ pass, onClose, onSuccess }: RenewPassModalProps
                 )}
               </div>
 
+              {realnameNoticeVisible && (
+                <div
+                  className="mb-3 flex items-start gap-2 rounded-[8px] bg-[rgba(198,123,30,0.10)] px-3 py-2 text-sm text-[#9A5A00]"
+                  role="status"
+                >
+                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                  <div className="min-w-0 flex-1">
+                    <span>{t("续费前需先")}</span>
+                    <button
+                      type="button"
+                      onClick={handleOpenRealnameGuide}
+                      className="border-0 bg-transparent p-0 align-baseline text-sm font-semibold text-[#9A5A00] underline underline-offset-2 transition-colors hover:text-[#7A4500]"
+                    >
+                      {t("更新实名认证信息")}
+                    </button>
+                    <span>{t("，完成后再确认续费。")}</span>
+                  </div>
+                </div>
+              )}
+
               {submitError && (
                 <p className="mb-3 text-sm text-[#cf3d4c]">{submitError}</p>
               )}
@@ -325,8 +423,8 @@ export const RenewPassModal = ({ pass, onClose, onSuccess }: RenewPassModalProps
                 <button
                   type="button"
                   onClick={() => void handleSubmit()}
-                  disabled={submitting || pricing}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-[8px] bg-[#202020] px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={renewActionDisabled}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-[8px] bg-[#202020] px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:bg-black/[0.08] disabled:text-black/35"
                 >
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                   {submitting ? t("正在创建订单...") : t("确认续费")}
@@ -378,7 +476,26 @@ export const RenewPassModal = ({ pass, onClose, onSuccess }: RenewPassModalProps
             </>
           )}
         </div>
-      </motion.div>
-    </motion.div>
+          </motion.div>
+        </motion.div>
+      )}
+
+      {realnameModalOpen && user && (
+        <VerifyIdentityModal
+          key="renew-realname"
+          onClose={handleCloseRealnameModal}
+          onSuccess={() => void handleRealnameSuccess()}
+          verified={realnameVerified}
+          phoneVerificationEnabled={phoneProofEnabled}
+          realnameLevel={user.realnameLevel}
+          realnameSyncStatus={realnameSyncStatus}
+          faceIdFlowEnabled={faceIdFlowEnabled}
+          faceCaptureEnabled={faceIdBackendEnabled}
+          facelessFlowEnabled={facelessFlowEnabled}
+          phone={user.phone}
+          layerClassName="z-[10020]"
+        />
+      )}
+    </>
   );
 };

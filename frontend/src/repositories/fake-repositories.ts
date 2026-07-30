@@ -371,10 +371,43 @@ const FAKE_BUNDLES: Bundle[] = [
 ];
 
 const FAKE_PASSES_STORAGE_KEY = "lightclaw-fake-passes-v1";
+const ACCOUNT_PREVIEW_PASS_STATE_QUERY_KEY = "passState";
+
+const readAccountPreviewPassStateKey = (): string | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const key = new URLSearchParams(window.location.search).get(ACCOUNT_PREVIEW_PASS_STATE_QUERY_KEY);
+    return key && key.trim().length > 0 ? key.trim() : null;
+  } catch {
+    return null;
+  }
+};
+
+const buildExpiringAccountPreviewPass = (): Pass => {
+  const now = Date.now();
+  return {
+    pass_id: "pass-preview-expiring",
+    user_id: ACCOUNT_PREVIEW_BASE_USER.id,
+    bundle_id: "bundle_launch_01",
+    bundle_name: "启航 Launch",
+    created_time: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+    expired_time: new Date(now + 6 * 24 * 60 * 60 * 1000).toISOString(),
+    isolated_time: null,
+    deleted_time: null,
+    updated_time: new Date(now).toISOString(),
+    agent_quota_total: 1,
+    agent_quota_available: 0,
+    credit_total: 100,
+    credit_available: 88,
+  };
+};
 
 const readStoredPasses = (): Pass[] => {
   if (typeof window === "undefined") {
     return [];
+  }
+  if (readAccountPreviewPassStateKey() === "expiring") {
+    return [buildExpiringAccountPreviewPass()];
   }
   try {
     const raw = window.localStorage.getItem(FAKE_PASSES_STORAGE_KEY);
