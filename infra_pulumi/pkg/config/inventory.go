@@ -206,6 +206,8 @@ type NotifyInventory struct {
 	WorkerFunctionName        string `yaml:"worker_function_name"`
 	ExistingScannerFunctionID string `yaml:"existing_scanner_function_id"`
 	ExistingWorkerFunctionID  string `yaml:"existing_worker_function_id"`
+	ExistingScannerTriggerID  string `yaml:"existing_scanner_trigger_id"`
+	ExistingWorkerTriggerID   string `yaml:"existing_worker_trigger_id"`
 }
 
 type JumpserverInventory struct {

@@ -142,8 +142,8 @@ stacks:
 
   notify:
     enabled: true
-    manage_triggers: false
-    triggers_enabled: false
+    manage_triggers: true
+    triggers_enabled: true
     test_allowlist_enabled: false
     db_user: ctl_notify_reader
     db_host: 10.15.192.13
@@ -169,6 +169,8 @@ stacks:
     worker_cron: "0 */15 * * * * *"
     scanner_function_name: lightvela-notify-scanner-sh
     worker_function_name: lightvela-notify-worker-sh
+    existing_scanner_trigger_id: lightvela-notify-scanner-sh#default#lightvela-notify-scanner-timer
+    existing_worker_trigger_id: lightvela-notify-worker-sh#default#lightvela-notify-worker-timer
 
   tcr:
     instance_type: basic
