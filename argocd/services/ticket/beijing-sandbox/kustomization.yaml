@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ticket
+components:
+- ../common
+- ../profiles/sandbox
+generators:
+- ksops-secret-generator.yaml
+configMapGenerator:
+- name: ticket-platform-values
+  envs:
+  - ticket-platform.env

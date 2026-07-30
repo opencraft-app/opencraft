@@ -92,6 +92,28 @@ class ProdManualSyncValidationTests(unittest.TestCase):
 
             self.assertEqual(validate(repo, Path("argocd")), [])
 
+    def test_ignores_prod_token_in_workspace_parent_path(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="shprod-workspace-") as tmp:
+            repo = Path(tmp)
+            app = repo / "argocd/apps/beijing-sandbox/frontend.yaml"
+            app.parent.mkdir(parents=True)
+            app.write_text(
+                textwrap.dedent(
+                    """\
+                    apiVersion: argoproj.io/v1alpha1
+                    kind: Application
+                    metadata:
+                      name: frontend-beijing-sandbox
+                    spec:
+                      syncPolicy:
+                        automated:
+                          prune: true
+                    """
+                )
+            )
+
+            self.assertEqual(validate(repo, Path("argocd")), [])
+
 
 if __name__ == "__main__":
     unittest.main()

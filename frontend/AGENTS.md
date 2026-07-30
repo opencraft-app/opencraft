@@ -87,6 +87,9 @@ frontend/AGENTS.md                 # 前端子项目 — AI 行为指引（本�
 ├── project.local.json             # 本地项目配置（动态、不提交）
 └── mcp.json                       # MCP 服务配置
 
+../.agents/skills/product-skills/
+└── prd-creator/                       # /feai-start 产品前置、需求分析、PRD 梳理
+
 ../.codebuddy/commands/            # 命令文件（IDE 中立）
 ├── feai-start.md                  # /feai-start
 ├── feai-archive.md                # /feai-archive
@@ -119,6 +122,7 @@ DESIGN.md                          # 前端 UI 约定（圆角 / 弹窗 / toolti
 | 创建 MR / 合并请求 / merge request | `../.codebuddy/skills/team-extensions/mr-auto-submit.md` |
 | 代码审查 / CR / review / 检查代码 | `../.codebuddy/skills/team-extensions/cr-check.md` |
 | 写单测 / 单元测试 / 测试用例 | `../.codebuddy/skills/team-extensions/unit-test-development.md` |
+| 产品前置 / PRD / 需求分析 / 需求梳理 | `../.agents/skills/product-skills/prd-creator/SKILL.md` |
 | 获取需求 / TAPD / 需求详情 | `../.codebuddy/skills/team-extensions/tapd-requirement-fetch.md` |
 | FE-AI 标记 / 数据采集 | `../.codebuddy/skills/team-extensions/ai-usage-tracking.md` |
 | MR 提了 / 推上去了 / MR 开好了 | `../.codebuddy/commands/feai-archive.md` — **主动询问**用户是否运行 `/feai-archive` |
@@ -163,7 +167,7 @@ DESIGN.md                          # 前端 UI 约定（圆角 / 弹窗 / toolti
 
 | 命令            | 用途                                                         |
 | --------------- | ------------------------------------------------------------ |
-| `/feai-start`   | 启动开发流程（需求分析 → 开发 → MR）                         |
+| `/feai-start`   | 启动开发流程（prd-creator 产品前置 → 开发 → MR）                 |
 | `/feai-archive` | 归档沉淀（MR 提了之后；trigger G22）                         |
 | `/feai-init`    | 项目初始化（生成深度信息：常用命令、目录结构、代码风格等）   |
 | `/feai-review`  | 主动 CR（提交前对本次 git diff 做三级问题检查）              |
@@ -203,12 +207,13 @@ DESIGN.md                          # 前端 UI 约定（圆角 / 弹窗 / toolti
 - **国内/国际站域名**
   - 国内预览：`https://<branch>.preview.lightclaw.tech`（`frontsandbox/<name>` 分支自动推流）
   - 国际预览：`https://lightvela-preview-hpthlnbc.edgeone.cool`
-  - 生产 API：`https://lightclaw.tech`
+  - 生产 API：`https://lightclaw.tech` / `https://api.lightvela.ai`
 - **主干分支策略**：`master` 同时承载国内 + 国际站，运行时通过 `src/lib/region.ts` 暴露的 `isCN` / `isGlobal` 编译期常量做差异化（构建时 Tree-shake，未命中分支不会进入产物）。
 - **分支自动预览**：把分支推到 `frontsandbox/<name>`（命中 `frontend/**` 路径），CI 自动构建国内 + 国际双产物并发布到 StaticPages，约 2 分钟可访问，**评审/验证首选**，无需手工跑构建。
 - **发布脚本**
-  - 国际站：`pnpm deploy:eo`（EdgeOne Pages，可通过 `EDGEONE_PAGES_PROJECT_NAME` / `EDGEONE_PAGES_ENV` / `EDGEONE_PAGES_DIR` 覆盖）
+  - 国际站：`pnpm deploy:cf`（Cloudflare）或 `pnpm deploy:eo`（EdgeOne Pages，可通过 `EDGEONE_PAGES_PROJECT_NAME` / `EDGEONE_PAGES_ENV` / `EDGEONE_PAGES_DIR` 覆盖）
   - 国内站：`python3 scripts/build-release-image.py --service frontend --env shprod --tag <tag>`（monorepo 根执行，走 Argo CD `shprod`）
+- **本地预览后端**：默认连接真实国际站后端；涉及真实实例能力的页面优先使用真实后端启动，不要默认切换到 mock。
 - **GitNexus 影响面检查约定**（来自仓库根 `CLAUDE.md`）
   - 改动**导出的**函数/组件/类型前：`gitnexus_impact({target: "<symbol>", direction: "upstream"})`
   - 提交前：`gitnexus_detect_changes()` 确认范围
@@ -217,6 +222,15 @@ DESIGN.md                          # 前端 UI 约定（圆角 / 弹窗 / toolti
 - **注意**：当前 `package.json` 没有 `lint` 脚本，不能把“运行 lint”当成可执行门禁；以后若项目新增 lint 脚本，再同步本文件。
 - **高风险页面**：`src/pages/marketing/openclaw-settings-page.tsx` 是 `/agents` Agent 控制台主页面，体量大、同时承载 SDK、Hermes、通道、模型、自动任务等逻辑。改动时保持小步、局部、可验证；优先抽取局部 helper 并补针对性测试，不要顺手做大重构。
 - **UI 修改补充**：修改设置页、Agent console、弹窗、tooltip 或共享视觉样式前，先读取 `DESIGN.md`，避免和项目既有圆角、弹窗间距、tooltip 行为约定冲突。
+
+### SkillHub 技能搜索接口
+
+- 国内站 SDK `SkillPanel` 的技能搜索必须使用当前 SkillHub 接口：
+  `https://api.skillhub.cn/api/skills?page=1&pageSize=24&sortBy=score&order=desc&keyword=<keyword>`。
+- 不要继续使用旧的 `https://lightmake.cloud/api/skills`。该地址是旧镜像/旧目录，可能缺少新发布的 SkillHub 技能，例如 `builder-radar`。
+- 当前 `@tencent/tea-sdk-lightclaw@1.9.0` 的 `useSkillOperations` 仍将 `https://lightmake.cloud` 作为默认地址；不要直接修改 `node_modules`。优先在 SDK 仓库修复默认地址并发布新版本，或由宿主通过 SDK 的 `skillHubApiUrl` 参数显式传入正确地址，再升级 `frontend/package.json` 与 `pnpm-lock.yaml`。
+- 国内站的搜索请求来自 SDK，国际站自建 Skills 页面使用自己的 registry 数据层；修改一侧的搜索接口时必须确认目标站点，不能误把国内 SDK 的接口改动扩展到国际站。
+- 本地开发已有 `/__skillhub_api/*` 到 `https://api.skillhub.cn/*` 的 Next rewrite（见 `next.config.mjs`）；生产静态站不能依赖该开发 rewrite，应使用正式 API 地址或正式后端代理。
 
 ### 通用编码原则（与具体项目无关，永久有效）
 

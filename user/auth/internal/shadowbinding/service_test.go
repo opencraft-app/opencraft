@@ -80,6 +80,22 @@ func TestBindShadowAccountCreatesActiveBindingAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestBindShadowAccountUsesConfiguredUserNamePrefix(t *testing.T) {
+	client := &recordingClient{result: CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}}
+	svc := New(NewMemoryStore(), client, Options{Enabled: true, UserNamePrefix: "bjsbx_"})
+
+	binding, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_1", Phone: "13800138000"})
+	if err != nil {
+		t.Fatalf("bind shadow account: %v", err)
+	}
+	if got, want := binding.ShadowUserName, "bjsbx_u0825080737"; got != want {
+		t.Fatalf("binding shadow username = %q, want %q", got, want)
+	}
+	if got, want := client.lastRegister.UserName, "bjsbx_u0825080737"; got != want {
+		t.Fatalf("cloud register username = %q, want %q", got, want)
+	}
+}
+
 func TestBindShadowAccountRecordsFailureAndAllowsRetry(t *testing.T) {
 	now := time.Date(2026, 6, 1, 1, 2, 3, 0, time.UTC)
 	client := &recordingClient{err: errors.New("register failed")}
@@ -107,7 +123,7 @@ func TestBindShadowAccountRecordsFailureAndAllowsRetry(t *testing.T) {
 func TestSyncPhoneChangeUsesExistingActiveBinding(t *testing.T) {
 	now := time.Date(2026, 6, 1, 1, 2, 3, 0, time.UTC)
 	client := &recordingClient{result: CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}}
-	svc := New(NewMemoryStore(), client, Options{Enabled: true, Now: func() time.Time { return now }})
+	svc := New(NewMemoryStore(), client, Options{Enabled: true, Now: func() time.Time { return now }, AuthCodePrefix: "bjsbx"})
 
 	if _, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_1", Phone: "13800138000"}); err != nil {
 		t.Fatalf("bind shadow account: %v", err)
@@ -129,6 +145,13 @@ func TestSyncPhoneChangeUsesExistingActiveBinding(t *testing.T) {
 	}
 	if client.lastUpdate.OldPhoneNumber != "13800138000" || client.lastUpdate.NewPhoneNumber != "13900139000" || client.lastUpdate.VerifyCode != "123456" || client.lastUpdate.AuthCode == "" {
 		t.Fatalf("unexpected update payload: %+v", client.lastUpdate)
+	}
+	const prefix = "bjsbx."
+	if !strings.HasPrefix(client.lastUpdate.AuthCode, prefix) {
+		t.Fatalf("expected outgoing auth code prefix %q, got %q", prefix, client.lastUpdate.AuthCode)
+	}
+	if _, err := svc.ConsumeAuthCode(context.Background(), strings.TrimPrefix(client.lastUpdate.AuthCode, prefix)); err != nil {
+		t.Fatalf("expected raw auth code stored without routing prefix to be consumable: %v", err)
 	}
 }
 
@@ -235,7 +258,7 @@ func TestSyncPhoneChangeKeepsSyntheticBindingRetryableWhenRegisterFails(t *testi
 func TestSaveBasicAuthIssuesAuthCodeForActiveBinding(t *testing.T) {
 	now := time.Date(2026, 6, 1, 1, 2, 3, 0, time.UTC)
 	client := &recordingClient{result: CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}}
-	svc := New(NewMemoryStore(), client, Options{Enabled: true, Now: func() time.Time { return now }})
+	svc := New(NewMemoryStore(), client, Options{Enabled: true, Now: func() time.Time { return now }, AuthCodePrefix: "shprod"})
 
 	if _, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_1", Phone: "13800138000"}); err != nil {
 		t.Fatalf("bind shadow account: %v", err)
@@ -255,6 +278,9 @@ func TestSaveBasicAuthIssuesAuthCodeForActiveBinding(t *testing.T) {
 	}
 	if client.lastBasicAuth.AuthCode == "" || client.lastBasicAuth.Name != "张三" || client.lastBasicAuth.IDCard != "11010519491231002X" {
 		t.Fatalf("unexpected basic auth input: %+v", client.lastBasicAuth)
+	}
+	if !strings.HasPrefix(client.lastBasicAuth.AuthCode, "shprod.") {
+		t.Fatalf("expected outgoing auth code prefix, got %q", client.lastBasicAuth.AuthCode)
 	}
 	if client.lastBasicAuth.ClientIP != "127.0.0.1" || client.lastBasicAuth.ClientUA != "agent" {
 		t.Fatalf("expected client context to be forwarded, got %+v", client.lastBasicAuth)
@@ -295,6 +321,35 @@ func TestAuthCodeIsOneTimeAndExpires(t *testing.T) {
 	current = now.Add(2 * time.Minute)
 	if _, err := svc.ConsumeAuthCode(context.Background(), expiring.Code); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected expired code to return ErrNotFound, got %v", err)
+	}
+}
+
+func TestIssueExternalAuthCodeAddsRoutingPrefixWithoutChangingStoredCode(t *testing.T) {
+	now := time.Date(2026, 6, 1, 1, 2, 3, 0, time.UTC)
+	svc := New(NewMemoryStore(), nil, Options{
+		Enabled:        true,
+		Now:            func() time.Time { return now },
+		AuthCodePrefix: ".bjsbx.",
+	})
+
+	code, err := svc.IssueExternalAuthCode(context.Background(), "usr_1", "")
+	if err != nil {
+		t.Fatalf("issue external auth code: %v", err)
+	}
+	if !strings.HasPrefix(code.Code, "bjsbx.") {
+		t.Fatalf("expected external auth code to contain routing prefix, got %q", code.Code)
+	}
+
+	rawCode := strings.TrimPrefix(code.Code, "bjsbx.")
+	consumed, err := svc.ConsumeAuthCode(context.Background(), rawCode)
+	if err != nil {
+		t.Fatalf("consume stored raw auth code: %v", err)
+	}
+	if consumed.UserID != "usr_1" {
+		t.Fatalf("expected auth code for usr_1, got %+v", consumed)
+	}
+	if _, err := svc.ConsumeAuthCode(context.Background(), code.Code); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected prefixed transport code not to be stored directly, got %v", err)
 	}
 }
 

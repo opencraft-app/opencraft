@@ -150,6 +150,7 @@ export function loadReleaseMatrix(matrixPath = process.env.FRONTEND_RELEASE_MATR
       projectName: ensureNonEmptyString(combo.projectName, "projectName", id),
       requiredSecretEnv: ensureStringArray(combo.requiredSecretEnv, "requiredSecretEnv", id),
       authApiBaseUrl: ensureNonEmptyString(combo.authApiBaseUrl, "authApiBaseUrl", id),
+      appEnv: ensureOptionalString(combo.appEnv, "appEnv", id) ?? "production",
       siteUrl: ensureOptionalString(combo.siteUrl, "siteUrl", id),
       outputDir: ensureNonEmptyString(combo.outputDir, "outputDir", id),
       deployEnv: ensureStringMap(combo.deployEnv, "deployEnv", id),
@@ -242,6 +243,8 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
     VITE_AUTH_API_BASE_URL: combo.authApiBaseUrl,
     NEXT_PUBLIC_REGION: combo.region,
     NEXT_PUBLIC_AUTH_API_BASE_URL: combo.authApiBaseUrl,
+    NEXT_PUBLIC_APP_ENV: combo.appEnv ?? "production",
+    VITE_APP_ENV: combo.appEnv ?? "production",
   };
 
   if (combo.siteUrl) {
@@ -259,20 +262,28 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
   const aegis = combo.observability?.aegis;
   if (aegis) {
     nextEnv.VITE_AEGIS_ENABLED = aegis.enabled ?? "auto";
+    nextEnv.NEXT_PUBLIC_AEGIS_ENABLED = aegis.enabled ?? "auto";
     if (aegis.id) {
       nextEnv.VITE_AEGIS_ID = aegis.id;
+      nextEnv.NEXT_PUBLIC_AEGIS_ID = aegis.id;
     } else {
       delete nextEnv.VITE_AEGIS_ID;
+      delete nextEnv.NEXT_PUBLIC_AEGIS_ID;
     }
     if (aegis.hostUrl) {
       nextEnv.VITE_AEGIS_HOST_URL = aegis.hostUrl;
+      nextEnv.NEXT_PUBLIC_AEGIS_HOST_URL = aegis.hostUrl;
     } else {
       delete nextEnv.VITE_AEGIS_HOST_URL;
+      delete nextEnv.NEXT_PUBLIC_AEGIS_HOST_URL;
     }
   } else {
     nextEnv.VITE_AEGIS_ENABLED = "false";
+    nextEnv.NEXT_PUBLIC_AEGIS_ENABLED = "false";
     delete nextEnv.VITE_AEGIS_ID;
+    delete nextEnv.NEXT_PUBLIC_AEGIS_ID;
     delete nextEnv.VITE_AEGIS_HOST_URL;
+    delete nextEnv.NEXT_PUBLIC_AEGIS_HOST_URL;
   }
 
   const posthog = combo.observability?.posthog;

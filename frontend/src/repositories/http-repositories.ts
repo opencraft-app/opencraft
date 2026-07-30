@@ -1,5 +1,6 @@
 import { planCatalog } from "@/domain/plan-catalog";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 import type {
   AuthSessionSnapshot,
   BillingSummary,
@@ -35,6 +36,7 @@ import type {
   Repositories,
   SettingsSnapshot,
   TatDeviceBindResult,
+  TencentCloudRedirectResult,
   WorkerActionStatusLog,
   WorkerActionStatusResult,
   WorkspaceSnapshot,
@@ -963,7 +965,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       return payload.items ?? [];
     },
 
-    async execDebugCommand(botId, command) {
+    async execDebugCommand(botId, command, options) {
       // debug/exec 协议：命令执行失败时后端会返回 HTTP 500，但 body.details
       // 里仍带有完整的命令结果（status/exit_code/output），需要把这种「业务
       // 失败但有结果」的情况和真正的「接口错误」区分开。
@@ -979,16 +981,27 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         headers.set("Authorization", `Bearer ${authToken}`);
       }
 
+      const abortController = new AbortController();
+      const timeoutMs = options?.timeoutMs;
+      const timeoutId = typeof timeoutMs === "number" && timeoutMs > 0
+        ? setTimeout(() => abortController.abort(), timeoutMs)
+        : undefined;
       let response: Response;
       try {
         response = await fetch(buildUrl(baseUrl, path), {
           method: "POST",
           credentials: "include",
           headers,
-          body: JSON.stringify({ command, run_as_user: "agentuser" }),
+          body: JSON.stringify(createDebugExecRequestBody(command)),
+          signal: abortController.signal,
         });
       } catch {
+        if (abortController.signal.aborted) {
+          throw new Error(`debug_exec_timeout:${timeoutMs ?? 0}`);
+        }
         throw createNetworkUnavailableError();
+      } finally {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
       }
 
       let body: unknown = null;
@@ -1249,6 +1262,39 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       writeStoredAuthToken(null);
     }
   },
+  async startRealnameFaceIdAttempt(input) {
+    return request(baseUrl, "/auth/realname/faceid/attempts", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async getCurrentRealnameFaceIdAttempt() {
+    return request(baseUrl, "/auth/realname/faceid/attempts/current", {
+      method: "GET",
+    });
+  },
+  async getRealnameFaceIdAttempt(attemptId) {
+    return request(baseUrl, `/auth/realname/faceid/attempts/${encodeURIComponent(attemptId)}`, {
+      method: "GET",
+    });
+  },
+  async sendRealnameFaceIdPhoneCode(attemptId, input) {
+    return request(baseUrl, `/auth/realname/faceid/attempts/${encodeURIComponent(attemptId)}/send-phone-code`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  async verifyRealnameFaceIdPhone(attemptId, input) {
+    return request(baseUrl, `/auth/realname/faceid/attempts/${encodeURIComponent(attemptId)}/verify-phone`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  async finalizeRealnameFaceIdAttempt(attemptId) {
+    return request(baseUrl, `/auth/realname/faceid/attempts/${encodeURIComponent(attemptId)}/finalize`, {
+      method: "POST",
+    });
+  },
   async verifyRealname(input) {
     return request<RealnameVerifyResult>(baseUrl, "/auth/realname/verify", {
       method: "POST",
@@ -1315,6 +1361,12 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
           }
         : undefined,
     };
+  },
+  async createTencentCloudRedirect(targetPath): Promise<TencentCloudRedirectResult> {
+    return request<TencentCloudRedirectResult>(baseUrl, "/auth/tencent-cloud/redirect", {
+      method: "POST",
+      body: targetPath ? { targetPath } : {},
+    });
   },
   getOAuthStartUrl(provider, options) {
     const base = typeof window !== "undefined" ? window.location.origin : "https://lightclaw.tech";

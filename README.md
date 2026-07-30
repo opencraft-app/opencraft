@@ -5,9 +5,9 @@
 
 ## 这是什么项目
 
-这是 `Lightclaw` 的主 monorepo。
+这是 `LightVela` 的主 monorepo。
 
-`Lightclaw` 当前是一套围绕“用户申请机器人实例 -> 分配 sandbox 运行环境 -> 通过 gateway 对外提供能力 -> 前后台分别管理和使用”的完整系统。这个仓库承载的不是单个服务，而是整条主链路：
+`LightVela` 当前是一套围绕“用户申请机器人实例 -> 分配 sandbox 运行环境 -> 通过 gateway 对外提供能力 -> 前后台分别管理和使用”的完整系统。这个仓库承载的不是单个服务，而是整条主链路：
 
 - 用户前台与营销站点：`frontend`
 - 用户认证、邀请与账户体系：`user/auth`
@@ -44,6 +44,61 @@
 - 沙箱资源池：`sandbox`
 - 管理终端：`nextgen-dashboard`
 - 环境与云资源：`infra_pulumi`
+
+## 本地 Kubernetes 开发环境
+
+仓库提供一套不依赖云资源、Argo CD 或 CI/CD 的 `localstack` 环境。它复用
+各服务现有 `k8s/base` 和 Kustomize 变量渲染，在本机 Kubernetes 中运行
+MySQL、Redis、认证、支付、订阅、AI Gateway、Mock Sandbox、统一网关、
+前端和外部服务 Mock。
+
+```bash
+make local-stack-doctor
+make local-stack-up
+```
+
+默认入口：
+
+- 前端：`http://localhost:5173`
+- API Gateway：`http://localhost:8085`
+
+环境模型、Secret 覆盖和清理命令见
+[`deploy/localstack/README.md`](deploy/localstack/README.md)。
+
+## Agent 自动化玩法
+
+仓库已经内置工蜂和蓝盾 Skill。用户只需要说明目标，并通过当前本机会话安全提供对应凭据，Agent 就可以按仓库规范完成自动化操作，无需用户手工拼 API 请求。
+
+### 自动创建和管理 MR
+
+- Skill：`.skills/gongfeng/SKILL.md`
+- 能力：创建分支、查询提交、提交并推送代码、创建/查询/评审/合并 MR、管理 MR 评论
+- 所需凭据：工蜂个人访问令牌
+- 典型指令：`提交当前改动，创建 MR 到 master，通过检查后合入`
+
+Agent 会通过 `mcporter-internal call gongfeng.*` 调用工蜂能力，并在执行提交、推送、创建 MR 等不可逆操作前展示变更范围和 MR 信息供用户确认。
+
+### 管理蓝盾流水线
+
+- Skill：`.skills/devops-pipeline/SKILL.md`
+- 能力：查询流水线和构建历史、读取启动参数、启动/停止构建、查询构建状态、修改流水线参数
+- 所需凭据：`BK_CI_ACCESS_TOKEN`
+- 典型指令：`查询 trade 发布流水线，展示启动参数，确认后启动并跟踪到结束`
+
+凭据只应在当前本机会话或本地环境中临时注入，例如：
+
+```text
+工蜂令牌：<GONGFENG_PERSONAL_ACCESS_TOKEN>
+BK_CI_ACCESS_TOKEN：<BK_CI_ACCESS_TOKEN>
+```
+
+安全约束：
+
+- 不要把真实令牌写入 README、脚本、提交信息、流水线参数示例或其他版本控制文件
+- 蓝盾令牌优先通过本地环境变量 `BK_CI_ACCESS_TOKEN` 提供
+- 工蜂令牌只用于当前会话的 `mcporter-internal` 鉴权
+- 启动/停止流水线或修改流水线参数前，Agent 必须展示完整目标和参数并获得用户明确确认
+- 凭据一旦误入提交、日志或公开会话，应立即撤销并重新生成
 
 ## Infra 与 Deploy 标准链路
 
@@ -122,7 +177,36 @@ git push git@git.woa.com:wisp/velalink.git \
 
 详细说明见 [`velalink/MONO2_SUBTREE.md`](velalink/MONO2_SUBTREE.md)。
 
-### 3. Frontend 发布到 Cloudflare Pages
+### 3. LLMGateway subtree 协作模型
+
+`velagw/` 是 `git@git.woa.com:wisp/velagw.git` 的完整 squash-style subtree。
+mono2 可以直接开发和 review LLMGateway，同时用标准 subtree 命令与独立上游双向同步。
+
+常用命令：
+
+```bash
+# 拉取 velagw 上游 master 到 mono2/velagw
+git subtree pull --prefix=velagw \
+  git@git.woa.com:wisp/velagw.git master --squash
+
+# 从 mono2/velagw 切出可推给 velagw 上游的分支
+git subtree split --prefix=velagw -b velagw/from-mono2-topic
+git push git@git.woa.com:wisp/velagw.git \
+  velagw/from-mono2-topic:codex/from-mono2-topic
+```
+
+源码嵌入不等于发布迁移完成。`velagw/` 接入 mono2 统一 Argo/CD 入口前，仍按其目录内现有发布定义维护。
+详细说明见 [`velagw/MONO2_SUBTREE.md`](velagw/MONO2_SUBTREE.md)。
+
+### 4. NewAPI subtree 协作模型
+
+`new-api/` 是 `https://github.com/QuantumNous/new-api.git` 的 squash-style subtree。
+初始导入版本与当时北京、上海 LLMGateway 运行镜像的源码 revision 一致。
+
+源码变更由 `.ci/new-api.yml` 构建并推送到北京、上海 TCR，但不会自动修改 GitOps 或发布环境。
+详细说明见 [`new-api/MONO2_SUBTREE.md`](new-api/MONO2_SUBTREE.md)。
+
+### 5. Frontend 发布到 Cloudflare Pages
 
 当前 `frontend` 的 Cloudflare Pages 实战发布方式是：
 
@@ -716,7 +800,7 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
 - [images](images)
   - 镜像辅助内容、envd daemon 源码、agent/helper、小工具镜像
 - [ctl](ctl)
-  - 当前 Lightclaw 主链路的一部分
+  - 当前 LightVela 主链路的一部分
   - 负责实例资源、bot 归属事实等控制面能力
 - [ai-gateway](ai-gateway)
   - 独立 AI 网关方向服务
@@ -740,7 +824,7 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
 - 独立旁支服务
 - 镜像与运维辅助材料
 
-所以这个仓库不是“一个应用”，而是一个以 `Lightclaw` 为中心的小型平台仓库。
+所以这个仓库不是“一个应用”，而是一个以 `LightVela` 为中心的小型平台仓库。
 # 测试环境 user-assets 桶
 
 资源由 [infra_pulumi](infra_pulumi) 纳管：
@@ -761,3 +845,5 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
 ### 凭据配置和密钥
 为了安全，我们的凭据和密钥都防止在单独的repo中，这个repo由 vaultbox 文件夹管理。
 vaultbox 是一个由本地启动的服务器，
+
+CI trigger note: 2026-07-21 lightclaw-auth rebuild after GitOps validation fix.

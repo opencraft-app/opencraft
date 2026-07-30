@@ -1,0 +1,4 @@
+interface:
+  display_name: "LightVela Skills 页面维护"
+  short_description: "维护国内站和国际站 Agent Skills Discover、Featured、Search 与 My Skills 页面"
+  default_prompt: "请使用 lv-sitepage-skills 维护 LightVela Skills 页面；如果未指定站点，先让我选择国内站、国际站或两站，再选择新增/修改分类或 Featured 卡片，并收集所需名称、关键词、完整技能 ID 和素材信息。"

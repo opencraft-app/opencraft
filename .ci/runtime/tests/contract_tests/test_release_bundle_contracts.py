@@ -50,6 +50,7 @@ BUSINESS_WORKFLOWS = {
     ".ci/staticpages.yml",
     ".ci/subscription.yml",
     ".ci/trade.yml",
+    ".ci/velagw.yml",
 }
 
 PROD_DB_MIGRATION_WORKFLOWS = {
@@ -59,7 +60,42 @@ PROD_DB_MIGRATION_WORKFLOWS = {
     ".ci/payment.yml",
     ".ci/sandbox.yml",
     ".ci/subscription.yml",
+    ".ci/trade.yml",
 }
+
+
+def load_velagw_resources(env: str) -> tuple[dict, list[dict]]:
+    service_root = REPO_ROOT / "argocd/services/velagw" / env
+    kustomization = yaml.safe_load((service_root / "kustomization.yaml").read_text())
+    docs = load_kustomization_resources(service_root, kustomization)
+    return kustomization, docs
+
+
+def load_kustomization_resources(root: Path, kustomization: dict) -> list[dict]:
+    docs = []
+    for resource in kustomization.get("resources", []):
+        path = (root / resource).resolve()
+        if path.is_dir():
+            child = yaml.safe_load((path / "kustomization.yaml").read_text())
+            docs.extend(load_kustomization_resources(path, child))
+            continue
+        docs.extend(doc for doc in yaml.safe_load_all(path.read_text()) if doc)
+    return docs
+
+
+def load_platform_env(env: str) -> dict[str, str]:
+    content = (REPO_ROOT / "argocd/services/velagw" / env / "velagw-platform.env").read_text()
+    return {
+        key: value
+        for line in content.splitlines()
+        if line and not line.startswith("#")
+        for key, separator, value in [line.partition("=")]
+        if separator
+    }
+
+
+def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
+    return load_velagw_resources("shprod")
 
 
 class ReleaseBundleContractTests(unittest.TestCase):
@@ -87,6 +123,40 @@ class ReleaseBundleContractTests(unittest.TestCase):
                     self.assertFalse(bundles)
                 else:
                     self.assertEqual(list(bundles), [path.stem])
+
+    def test_beijing_ctl_routes_only_the_llmgateway_canary(self) -> None:
+        secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/beijing-sandbox/ctl-runtime-secrets.sops.yaml").read_text()
+        )
+        values = secret.get("stringData") or {}
+
+        self.assertEqual(
+            values.get("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"),
+            "usr_31b0bd10d198d7aa7012fbf0,usr_cd57811ec414ce48e8d40c6c",
+        )
+        self.assertEqual(
+            values.get("CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST"),
+            "usr_31b0bd10d198d7aa7012fbf0,usr_cd57811ec414ce48e8d40c6c",
+        )
+
+    def test_shprod_ctl_routes_new_users_and_bot_creates_to_llmgateway(self) -> None:
+        secret = yaml.safe_load(
+            (REPO_ROOT / "argocd/secrets/shprod/ctl-runtime-secrets.sops.yaml").read_text()
+        )
+        values = secret.get("stringData") or {}
+
+        self.assertEqual(values.get("CTL_LLMGATEWAY_BASE_URL"), "https://token-admin.lightvela.com")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_DEFAULT_BASE_URL"), "https://token.lightvela.com/v1")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_DEFAULT_MODEL_ID"), "auto")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"), "*")
+        self.assertEqual(values.get("CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST"), "*")
+        self.assertEqual(
+            values.get("CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST"),
+            "usr_58b6bb1f68ba7f46584bd282",
+        )
+        for key in ("CTL_LLMGATEWAY_ADMIN_TOKEN", "CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN"):
+            with self.subTest(key=key):
+                self.assertRegex(values.get(key, ""), r"^ENC\[")
 
     def test_playground_auto_release_workflows_match_build_contracts(self) -> None:
         manifest = load_manifest()
@@ -125,6 +195,48 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn(f"argocd/secrets/{PLAYGROUND_ENV}/ai-gateway-runtime-secrets.sops.yaml", bundle.publish_paths)
         self.assertNotIn("argocd/catalogs/sandbox/beijing-sandbox-2/ai-gateway.yaml", bundle.publish_paths)
+
+    def test_user_auth_prod_projection_covers_ksops_secret_files(self) -> None:
+        manifest = load_manifest()
+
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                bundle = require_build_metadata(load_bundle(manifest, "user-auth", env))
+                service_root = REPO_ROOT / "argocd" / "services" / "lightclaw-auth" / env
+                referenced_secrets = {
+                    (generator.parent / secret_path).resolve().relative_to(REPO_ROOT).as_posix()
+                    for generator in service_root.glob("ksops*-generator.yaml")
+                    for secret_path in (yaml.safe_load(generator.read_text()) or {}).get("files", [])
+                }
+
+                self.assertFalse(
+                    referenced_secrets - set(bundle.publish_paths),
+                    f"user-auth/{env} publish projection misses KSOPS secrets: "
+                    f"{sorted(referenced_secrets - set(bundle.publish_paths))}",
+                )
+
+    def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
+        for env in ("beijing-sandbox", "shprod"):
+            with self.subTest(env=env):
+                source_patch = next(
+                    doc
+                    for doc in yaml.safe_load_all(
+                        (REPO_ROOT / f"user/auth/k8s/overlays/{env}/patch-realname-faceid.yaml").read_text()
+                    )
+                    if doc.get("kind") == "ConfigMap"
+                )
+                deploy_patch = next(
+                    doc
+                    for doc in yaml.safe_load_all(
+                        (REPO_ROOT / f"argocd/services/lightclaw-auth/{env}/patch-shadowbinding.yaml").read_text()
+                    )
+                    if doc.get("kind") == "ConfigMap"
+                )
+                source_mode = source_patch["data"]["LIGHTCLAW_REALNAME_ASSURANCE_MODE"]
+                deploy_mode = deploy_patch["data"]["LIGHTCLAW_REALNAME_ASSURANCE_MODE"]
+
+                self.assertEqual(source_mode, "faceless")
+                self.assertEqual(deploy_mode, source_mode)
 
     def test_korea_playground_env_uses_kr_registry_and_seoul_catalog_root(self) -> None:
         manifest = load_manifest()
@@ -211,6 +323,583 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("argocd/projects/shanghai-workers.yaml", bundle.publish_paths)
         self.assertIn("argocd/clusters/shanghai-workers.yaml", bundle.publish_paths)
         self.assertIn("argocd/secrets/shanghai-workers/workers-runtime-secrets.sops.yaml", bundle.publish_paths)
+
+    def test_velagw_release_bundle_targets_beijing_llmgateway_cluster(self) -> None:
+        manifest = load_manifest()
+
+        bundle = require_build_metadata(load_bundle(manifest, "velagw", "beijing-llmgateway"))
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/velagw.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+        app = yaml.safe_load((REPO_ROOT / "argocd/apps/beijing-llmgateway/velagw.yaml").read_text())
+        project = yaml.safe_load((REPO_ROOT / "argocd/projects/beijing-llmgateway.yaml").read_text())
+        cluster = yaml.safe_load((REPO_ROOT / "argocd/clusters/beijing-llmgateway.yaml").read_text())
+        service_root = REPO_ROOT / "argocd/services/velagw/beijing-llmgateway"
+        kustomization = yaml.safe_load((service_root / "kustomization.yaml").read_text())
+        workloads = (service_root / "workloads.yaml").read_text()
+        workload_docs = list(yaml.safe_load_all(workloads))
+        shard_manager_docs = list(yaml.safe_load_all((service_root / "shard-manager.yaml").read_text()))
+        traffic = next(
+            doc
+            for doc in workload_docs
+            if doc
+            and doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-traffic"
+        )
+        traffic_container = next(
+            container
+            for container in traffic["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "traffic"
+        )
+        traffic_env = {entry["name"]: entry.get("value") for entry in traffic_container.get("env", [])}
+        core_worker = next(
+            doc
+            for doc in workload_docs
+            if doc
+            and doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-worker-core"
+        )
+        core_worker_container = next(
+            container
+            for container in core_worker["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "worker"
+        )
+        core_worker_env = {
+            entry["name"]: entry.get("value") for entry in core_worker_container.get("env", [])
+        }
+
+        self.assertEqual(bundle.image_repo, "lightclaw-bj82.tencentcloudcr.com/llmgateway/llmgateway")
+        self.assertEqual(parameters.get("SERVICE"), "velagw")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod,sgprod")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-llmgateway")
+        self.assertEqual(app["spec"]["destination"]["name"], "beijing-llmgateway")
+        self.assertEqual(app["spec"]["source"]["path"], "argocd/services/velagw/beijing-llmgateway")
+        self.assertEqual(cluster["spec"]["namespaces"], ["llmgateway"])
+        self.assertTrue(cluster["spec"]["clusterResources"])
+        self.assertIn("argocd/services/velagw/beijing-llmgateway/**", bundle.publish_paths)
+        self.assertNotIn("kind: Secret", workloads)
+        self.assertNotIn("kind: LLMFleet", workloads)
+        self.assertNotIn("llmgateway-set-manager", workloads)
+        self.assertEqual(traffic_env.get("LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED"), "true")
+        self.assertEqual(core_worker_env.get("LLMGATEWAY_SET_AUTOSCALER_RUNTIME_BACKEND"), "velagwset")
+        self.assertEqual(core_worker_env.get("LLMGATEWAY_SET_AUTOSCALER_WRITER_EPOCH"), "2")
+        self.assertEqual(
+            kustomization.get("resources"),
+            [
+                "workloads.yaml",
+                "llmfleet-rgd.yaml",
+                "velagwset-crd.yaml",
+                "velagwset-delete-policy.yaml",
+                "velagwset-controller.yaml",
+                "velagwset-provisioner.yaml",
+                "shard-manager.yaml",
+                "release-bootstrap.yaml",
+            ],
+        )
+        cluster_resource_whitelist = {
+            (entry.get("group"), entry.get("kind"))
+            for entry in project["spec"].get("clusterResourceWhitelist", [])
+        }
+        self.assertTrue(
+            {
+                ("kro.run", "ResourceGraphDefinition"),
+                ("apiextensions.k8s.io", "CustomResourceDefinition"),
+                ("admissionregistration.k8s.io", "ValidatingAdmissionPolicy"),
+                ("admissionregistration.k8s.io", "ValidatingAdmissionPolicyBinding"),
+            }
+            <= cluster_resource_whitelist
+        )
+        image_replacement_targets = {
+            (target.get("select") or {}).get("name")
+            for replacement in kustomization.get("replacements", [])
+            if (replacement.get("source") or {}).get("fieldPath") == "data.VELAGW_IMAGE"
+            for target in replacement.get("targets", [])
+        }
+        self.assertIn("velagwset-controller", image_replacement_targets)
+        self.assertIn("velagwset-provisioner", image_replacement_targets)
+        self.assertIn("llmgateway-shard-manager", image_replacement_targets)
+        self.assertIn("llmgateway-release-bootstrap", image_replacement_targets)
+        shard_manager = next(
+            doc
+            for doc in shard_manager_docs
+            if doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-shard-manager"
+        )
+        self.assertEqual(shard_manager["spec"].get("replicas"), 2)
+        shard_manager_container = next(
+            container
+            for container in shard_manager["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "shard-manager"
+        )
+        self.assertIn("--leader-elect", shard_manager_container.get("args", []))
+        shard_manager_env = {
+            entry["name"]: entry for entry in shard_manager_container.get("env", [])
+        }
+        self.assertEqual(
+            shard_manager_env["INTERNAL_SERVICE_TOKEN"]["valueFrom"]["secretKeyRef"],
+            {"name": "llmgateway-control-runtime", "key": "INTERNAL_SERVICE_TOKEN"},
+        )
+        shard_manager_role = next(
+            doc
+            for doc in shard_manager_docs
+            if doc.get("kind") == "Role"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-shard-manager"
+        )
+        llmfleet_rule = next(
+            rule
+            for rule in shard_manager_role["rules"]
+            if "llmfleets" in rule.get("resources", [])
+        )
+        self.assertEqual(llmfleet_rule.get("verbs"), ["get", "list", "watch"])
+        self.assertNotIn(
+            "VELAGW_PROVISIONER_IMAGE=",
+            (service_root / "velagw-platform.env").read_text(),
+        )
+        for resource in (
+            "llmfleet-rgd.yaml",
+            "velagwset-crd.yaml",
+            "velagwset-delete-policy.yaml",
+            "velagwset-controller.yaml",
+            "velagwset-provisioner.yaml",
+            "shard-manager.yaml",
+        ):
+            with self.subTest(resource=resource):
+                self.assertTrue((service_root / resource).is_file())
+
+        for resource in ("llmfleet-rgd.yaml", "velagwset-crd.yaml", "velagwset-delete-policy.yaml"):
+            with self.subTest(resource=resource):
+                self.assertEqual(
+                    (service_root / resource).read_text(),
+                    (REPO_ROOT / "velagw/deploy/k8s/prod/gitops-base" / resource).read_text().replace(
+                        "# Shared by every production VelaGW regional overlay.\n",
+                        "",
+                        1,
+                    ),
+                )
+                for document in yaml.safe_load_all((service_root / resource).read_text()):
+                    annotations = ((document or {}).get("metadata") or {}).get("annotations") or {}
+                    self.assertIn(
+                        "Prune=false",
+                        annotations.get("argocd.argoproj.io/sync-options", ""),
+                    )
+
+    def test_velagw_image_build_runs_backend_and_console_tests(self) -> None:
+        dockerfile = (REPO_ROOT / "velagw/Dockerfile").read_text()
+        dockerignore = (REPO_ROOT / "velagw/.dockerignore").read_text().splitlines()
+
+        self.assertIn("RUN apk add --no-cache bash curl git jq", dockerfile)
+        self.assertIn("COPY .gitignore ./.gitignore", dockerfile)
+        self.assertNotIn(".gitignore", dockerignore)
+        for package_root in ("cmd", "internal", "deploy", "docs", "k8s", "openspec", "test"):
+            with self.subTest(package_root=package_root):
+                self.assertIn(f"COPY {package_root} ./{package_root}", dockerfile)
+
+        go_test = dockerfile.index("RUN git init --quiet && go test ./...")
+        go_build = dockerfile.index("RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build")
+        console_install = dockerfile.index("RUN corepack enable && pnpm install --frozen-lockfile")
+        console_test = dockerfile.index("RUN pnpm test")
+        console_build = dockerfile.index("RUN pnpm run build")
+
+        self.assertLess(go_test, go_build)
+        self.assertLess(console_install, console_test)
+        self.assertLess(console_test, console_build)
+
+    def test_velagw_release_bundle_targets_shanghai_production_cluster(self) -> None:
+        manifest = load_manifest()
+
+        bundle = require_build_metadata(load_bundle(manifest, "velagw", "shprod"))
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/velagw.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+        app = yaml.safe_load((REPO_ROOT / "argocd/apps/shprod/velagw.yaml").read_text())
+        project = yaml.safe_load((REPO_ROOT / "argocd/projects/shprod-velagw.yaml").read_text())
+        cluster = yaml.safe_load((REPO_ROOT / "argocd/clusters/shanghai-llmgateway-prod.yaml").read_text())
+
+        self.assertEqual(bundle.image_repo, "lightclaw-shprod.tencentcloudcr.com/llmgateway/llmgateway")
+        self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "shprod")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod,sgprod")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-llmgateway")
+        self.assertTrue(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
+
+        self.assertEqual(app["spec"]["project"], "shprod-velagw")
+        self.assertEqual(app["spec"]["source"]["repoURL"], "git@git.woa.com:wisp/mono2.git")
+        self.assertEqual(app["spec"]["source"]["targetRevision"], "gitops")
+        self.assertEqual(app["spec"]["source"]["path"], "argocd/services/velagw/shprod")
+        self.assertEqual(app["spec"]["destination"]["name"], "shanghai-llmgateway-prod")
+        self.assertEqual(app["spec"]["destination"]["namespace"], "llmgateway")
+        self.assertNotIn("automated", app["spec"].get("syncPolicy") or {})
+
+        self.assertEqual(project["spec"]["sourceRepos"], ["git@git.woa.com:wisp/mono2.git"])
+        self.assertEqual(
+            project["spec"]["destinations"],
+            [{"namespace": "llmgateway", "name": "shanghai-llmgateway-prod"}],
+        )
+        self.assertEqual(cluster["spec"]["server"], "https://43.180.150.109:443")
+        self.assertEqual(cluster["spec"]["tlsServerName"], "cls-baiv5l5p.ccs.tencent-cloud.com")
+        self.assertEqual(cluster["spec"]["projectPath"], "argocd/projects/shprod-velagw.yaml")
+        self.assertEqual(cluster["spec"]["namespaces"], ["llmgateway"])
+        self.assertTrue(cluster["spec"]["clusterResources"])
+
+        self.assertIn("argocd/apps/shprod/velagw.yaml", bundle.publish_paths)
+        self.assertIn("argocd/projects/shprod-velagw.yaml", bundle.publish_paths)
+        self.assertIn("argocd/clusters/shanghai-llmgateway-prod.yaml", bundle.publish_paths)
+        self.assertIn("argocd/services/velagw/shprod/**", bundle.publish_paths)
+        self.assertIn("velagw/deploy/k8s/prod/gitops-base/**", bundle.publish_paths)
+
+        kustomization, resource_docs = load_velagw_shprod_resources()
+        kinds = {doc.get("kind") for doc in resource_docs}
+        self.assertNotIn("Secret", kinds)
+        self.assertNotIn("Namespace", kinds)
+        self.assertNotIn("LLMFleet", kinds)
+        self.assertIn("ResourceGraphDefinition", kinds)
+        self.assertIn("CustomResourceDefinition", kinds)
+        self.assertIn("ValidatingAdmissionPolicy", kinds)
+        self.assertIn("ValidatingAdmissionPolicyBinding", kinds)
+        self.assertEqual(
+            kustomization.get("resources"),
+            ["../../../../velagw/deploy/k8s/prod/gitops-base"],
+        )
+
+        cluster_resource_whitelist = {
+            (entry.get("group"), entry.get("kind"))
+            for entry in project["spec"].get("clusterResourceWhitelist", [])
+        }
+        self.assertTrue(
+            {
+                ("kro.run", "ResourceGraphDefinition"),
+                ("apiextensions.k8s.io", "CustomResourceDefinition"),
+                ("admissionregistration.k8s.io", "ValidatingAdmissionPolicy"),
+                ("admissionregistration.k8s.io", "ValidatingAdmissionPolicyBinding"),
+            }
+            <= cluster_resource_whitelist
+        )
+
+        traffic = next(
+            doc
+            for doc in resource_docs
+            if doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-traffic"
+        )
+        traffic_container = next(
+            container
+            for container in traffic["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "traffic"
+        )
+        traffic_env = {entry["name"]: entry.get("value") for entry in traffic_container.get("env", [])}
+        self.assertEqual(traffic_env.get("LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED"), "true")
+
+        core_worker = next(
+            doc
+            for doc in resource_docs
+            if doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-worker-core"
+        )
+        core_worker_container = next(
+            container
+            for container in core_worker["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "worker"
+        )
+        core_worker_env = {
+            entry["name"]: entry.get("value") for entry in core_worker_container.get("env", [])
+        }
+        self.assertEqual(core_worker_env.get("LLMGATEWAY_SET_AUTOSCALER_RUNTIME_BACKEND"), "velagwset")
+        self.assertEqual(core_worker_env.get("LLMGATEWAY_SET_AUTOSCALER_WRITER_EPOCH"), "2")
+
+        deployments = {
+            (doc.get("metadata") or {}).get("name"): doc
+            for doc in resource_docs
+            if doc.get("kind") == "Deployment"
+        }
+        controller = deployments["velagwset-controller"]
+        provisioner = deployments["velagwset-provisioner"]
+        shard_manager = deployments["llmgateway-shard-manager"]
+        self.assertEqual(controller["spec"].get("replicas"), 2)
+        self.assertEqual(provisioner["spec"].get("replicas"), 2)
+        self.assertEqual(shard_manager["spec"].get("replicas"), 2)
+        shard_manager_container = next(
+            container
+            for container in shard_manager["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "shard-manager"
+        )
+        self.assertIn("--leader-elect", shard_manager_container.get("args", []))
+        shard_manager_env = {
+            entry["name"]: entry for entry in shard_manager_container.get("env", [])
+        }
+        self.assertEqual(
+            shard_manager_env["INTERNAL_SERVICE_TOKEN"]["valueFrom"]["secretKeyRef"],
+            {"name": "llmgateway-control-runtime", "key": "INTERNAL_SERVICE_TOKEN"},
+        )
+        shard_manager_role = next(
+            doc
+            for doc in resource_docs
+            if doc.get("kind") == "Role"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-shard-manager"
+        )
+        llmfleet_rule = next(
+            rule
+            for rule in shard_manager_role["rules"]
+            if "llmfleets" in rule.get("resources", [])
+        )
+        self.assertEqual(llmfleet_rule.get("verbs"), ["get", "list", "watch"])
+
+        controller_container = next(
+            container
+            for container in controller["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "controller"
+        )
+        self.assertIn("--leader-elect", controller_container.get("args", []))
+        self.assertNotIn("envFrom", controller_container)
+
+        provisioner_container = next(
+            container
+            for container in provisioner["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "provisioner"
+        )
+        provisioner_env = {
+            entry["name"]: entry for entry in provisioner_container.get("env", [])
+        }
+        self.assertEqual(provisioner_env["LLMGATEWAY_CONTROL_URL"].get("value"), "http://llmgateway-control")
+        self.assertEqual(provisioner_env["LLMGATEWAY_SET_SOURCE"].get("value"), "prod")
+        self.assertEqual(provisioner_env["LLMGATEWAY_FLEET"].get("value"), "prod")
+        self.assertEqual(
+            load_platform_env("shprod")["VELAGW_VELAGWSET_SERVERLESS_TRAFFIC"],
+            "true",
+        )
+        self.assertEqual(
+            provisioner_env["INTERNAL_SERVICE_TOKEN"]["valueFrom"]["secretKeyRef"],
+            {"name": "llmgateway-control-runtime", "key": "INTERNAL_SERVICE_TOKEN"},
+        )
+
+        image_replacement_targets = {
+            (target.get("select") or {}).get("name")
+            for replacement in kustomization.get("replacements", [])
+            if (replacement.get("source") or {}).get("fieldPath") == "data.VELAGW_IMAGE"
+            for target in replacement.get("targets", [])
+        }
+        self.assertIn("velagwset-controller", image_replacement_targets)
+        self.assertIn("velagwset-provisioner", image_replacement_targets)
+        self.assertIn("llmgateway-shard-manager", image_replacement_targets)
+        self.assertIn("llmgateway-release-bootstrap", image_replacement_targets)
+        self.assertFalse(
+            any(
+                doc.get("kind") == "CronJob"
+                and (doc.get("metadata") or {}).get("name") == "llmgateway-set-manager"
+                for doc in resource_docs
+            )
+        )
+        bootstrap = next(
+            doc
+            for doc in resource_docs
+            if doc.get("kind") == "Job"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-release-bootstrap"
+        )
+        self.assertEqual(bootstrap["metadata"]["annotations"]["argocd.argoproj.io/hook"], "PostSync")
+
+    def test_velagw_release_bundle_targets_johorbahru_sgprod_cluster(self) -> None:
+        manifest = load_manifest()
+
+        bundle = require_build_metadata(load_bundle(manifest, "velagw", "sgprod"))
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/velagw.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+        app = yaml.safe_load((REPO_ROOT / "argocd/apps/sgprod/velagw.yaml").read_text())
+        project = yaml.safe_load((REPO_ROOT / "argocd/projects/sgprod-velagw.yaml").read_text())
+        cluster = yaml.safe_load((REPO_ROOT / "argocd/clusters/johorbahru-llmgateway-prod.yaml").read_text())
+        service_root = REPO_ROOT / "argocd/services/velagw/sgprod"
+        kustomization, resource_docs = load_velagw_resources("sgprod")
+
+        self.assertEqual(bundle.image_repo, "lightclaw-sgprod.tencentcloudcr.com/lightclaw/velagw")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway,shprod,sgprod")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-llmgateway")
+        self.assertTrue(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
+
+        self.assertEqual(app["spec"]["project"], "sgprod-velagw")
+        self.assertEqual(app["spec"]["source"]["targetRevision"], "gitops")
+        self.assertEqual(app["spec"]["source"]["path"], "argocd/services/velagw/sgprod")
+        self.assertEqual(app["spec"]["destination"]["name"], "johorbahru-llmgateway-prod")
+        self.assertEqual(app["spec"]["destination"]["namespace"], "llmgateway")
+        self.assertNotIn("automated", app["spec"].get("syncPolicy") or {})
+
+        self.assertEqual(
+            project["spec"]["destinations"],
+            [{"namespace": "llmgateway", "name": "johorbahru-llmgateway-prod"}],
+        )
+        self.assertEqual(cluster["spec"]["server"], "https://k8s-jhb.lightvela.com")
+        self.assertEqual(cluster["spec"]["projectPath"], "argocd/projects/sgprod-velagw.yaml")
+        self.assertEqual(cluster["spec"]["namespaces"], ["llmgateway"])
+        self.assertTrue(cluster["spec"]["clusterResources"])
+
+        self.assertIn("argocd/apps/sgprod/velagw.yaml", bundle.publish_paths)
+        self.assertIn("argocd/projects/sgprod-velagw.yaml", bundle.publish_paths)
+        self.assertIn("argocd/clusters/johorbahru-llmgateway-prod.yaml", bundle.publish_paths)
+        self.assertIn("argocd/services/velagw/sgprod/**", bundle.publish_paths)
+        self.assertIn("velagw/deploy/k8s/prod/gitops-base/**", bundle.publish_paths)
+
+        kinds = {doc.get("kind") for doc in resource_docs}
+        self.assertNotIn("Secret", kinds)
+        self.assertNotIn("Namespace", kinds)
+        self.assertNotIn("LLMFleet", kinds)
+
+        workloads = [
+            doc
+            for doc in resource_docs
+            if doc.get("kind") in {"Deployment", "Service"}
+        ]
+        core_worker = next(
+            doc
+            for doc in workloads
+            if doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-worker-core"
+        )
+        core_container = next(
+            container
+            for container in core_worker["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "worker"
+        )
+        core_env = {entry["name"]: entry.get("value") for entry in core_container.get("env", [])}
+        self.assertEqual(core_env.get("LLMGATEWAY_SET_AUTOSCALER_ENABLED"), "true")
+        platform = load_platform_env("sgprod")
+        self.assertEqual(platform["VELAGW_SET_AUTOSCALER_MIN_WARM_SETS"], "2")
+
+        provisioner = next(
+            doc
+            for doc in workloads
+            if doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "velagwset-provisioner"
+        )
+        provisioner_container = next(
+            container
+            for container in provisioner["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "provisioner"
+        )
+        provisioner_env = {
+            entry["name"]: entry.get("value") for entry in provisioner_container.get("env", [])
+        }
+        self.assertEqual(platform["VELAGW_VELAGWSET_SERVERLESS_TRAFFIC"], "false")
+
+        traffic_service = next(
+            doc
+            for doc in workloads
+            if doc.get("kind") == "Service"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-traffic"
+        )
+        protocol = platform["VELAGW_TRAFFIC_PROTOCOL"]
+        self.assertIn("token-jhb.lightvela.ai", protocol)
+        self.assertIn("token-jhb-lightvela-ai-cert", protocol)
+
+        image_pin = (service_root / "velagw-platform.env").read_text()
+        self.assertIn("lightclaw-sgprod.tencentcloudcr.com/lightclaw/velagw@sha256:", image_pin)
+
+    def test_velagw_production_overlays_share_one_structural_base(self) -> None:
+        base = REPO_ROOT / "velagw/deploy/k8s/prod/gitops-base"
+        expected_base_files = {
+            "kustomization.yaml",
+            "workloads.yaml",
+            "llmfleet-rgd.yaml",
+            "velagwset-crd.yaml",
+            "velagwset-delete-policy.yaml",
+            "velagwset-controller.yaml",
+            "velagwset-provisioner.yaml",
+            "shard-manager.yaml",
+            "release-bootstrap.yaml",
+        }
+        self.assertEqual(
+            {path.name for path in base.iterdir() if path.is_file()},
+            expected_base_files,
+        )
+
+        overlays = [REPO_ROOT / "argocd/services/velagw" / env for env in ("shprod", "sgprod")]
+        for overlay in overlays:
+            with self.subTest(overlay=overlay.name):
+                self.assertEqual(
+                    {path.name for path in overlay.iterdir() if path.is_file()},
+                    {"README.md", "kustomization.yaml", "velagw-platform.env"},
+                )
+                kustomization = yaml.safe_load((overlay / "kustomization.yaml").read_text())
+                self.assertEqual(
+                    kustomization.get("resources"),
+                    ["../../../../velagw/deploy/k8s/prod/gitops-base"],
+                )
+
+        self.assertEqual(
+            (overlays[0] / "kustomization.yaml").read_text(),
+            (overlays[1] / "kustomization.yaml").read_text(),
+        )
+
+        expected_keys = {
+            "VELAGW_IMAGE",
+            "VELAGW_DEPLOYED_AT",
+            "VELAGW_OTEL_SERVICE_VERSION",
+            "VELAGW_CLUSTER_NAME",
+            "VELAGW_CLOUD_REGION",
+            "VELAGW_CONTROL_PROTOCOL",
+            "VELAGW_TRAFFIC_PROTOCOL",
+            "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS",
+            "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC",
+        }
+        expected_region_values = {
+            "shprod": {
+                "VELAGW_CLUSTER_NAME": "shanghai-llmgateway-prod",
+                "VELAGW_CLOUD_REGION": "ap-shanghai",
+                "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS": "4",
+                "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC": "true",
+            },
+            "sgprod": {
+                "VELAGW_CLUSTER_NAME": "johorbahru-llmgateway-prod",
+                "VELAGW_CLOUD_REGION": "ap-johorbahru",
+                "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS": "2",
+                "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC": "false",
+            },
+        }
+        for env, expected in expected_region_values.items():
+            with self.subTest(env=env):
+                platform = load_platform_env(env)
+                self.assertEqual(set(platform), expected_keys)
+                self.assertEqual(
+                    {key: platform[key] for key in expected},
+                    expected,
+                )
+
+    def test_velagw_beijing_otel_version_matches_subtree_source(self) -> None:
+        marker = {}
+        for line in (REPO_ROOT / "velagw/.mono2-subtree").read_text().splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                marker[key] = value
+        expected_version = marker["upstream_commit"][:7]
+
+        workloads = yaml.safe_load_all(
+            (REPO_ROOT / "argocd/services/velagw/beijing-llmgateway/workloads.yaml").read_text()
+        )
+        actual_versions = {}
+        for workload in workloads:
+            if not workload or workload.get("kind") not in {"Deployment", "CronJob"}:
+                continue
+            if workload["kind"] == "CronJob":
+                pod_spec = workload["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+            else:
+                pod_spec = workload["spec"]["template"]["spec"]
+            for container in pod_spec.get("containers", []):
+                env = {entry["name"]: entry.get("value") for entry in container.get("env", [])}
+                if "OTEL_SERVICE_VERSION" in env:
+                    actual_versions[f"{workload['kind']}/{workload['metadata']['name']}/{container['name']}"] = env[
+                        "OTEL_SERVICE_VERSION"
+                    ]
+
+        self.assertTrue(actual_versions)
+        self.assertEqual(set(actual_versions.values()), {expected_version}, actual_versions)
+
+    def test_velagw_production_otel_versions_match_subtree_source(self) -> None:
+        marker = {}
+        for line in (REPO_ROOT / "velagw/.mono2-subtree").read_text().splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                marker[key] = value
+        expected_version = marker["upstream_commit"][:7]
+
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                self.assertEqual(
+                    load_platform_env(env)["VELAGW_OTEL_SERVICE_VERSION"],
+                    expected_version,
+                )
 
     def test_workers_shanghai_overlay_uses_temporal_worker_deployment(self) -> None:
         rescue_deployment = yaml.safe_load(
@@ -467,43 +1156,46 @@ class ReleaseBundleContractTests(unittest.TestCase):
         stage_by_name = {stage.get("name"): stage for stage in stages}
 
         build_stage = stage_by_name["构建 Hermes CVM 镜像"]
+        beijing_preflight_stage = stage_by_name["预检北京主沙箱 Hermes 更新目标"]
+        beijing_approval_stage = stage_by_name["确认刷新并修补北京主沙箱 Hermes"]
+        beijing_refresh_stage = stage_by_name["刷新北京主沙箱 Hermes pools"]
+        beijing_repair_stage = stage_by_name["升级存量北京主沙箱 Hermes VM"]
         singapore_preflight_stage = stage_by_name["预检新加坡生产 Hermes 更新目标"]
         singapore_approval_stage = stage_by_name["确认刷新并修补新加坡生产 Hermes"]
         singapore_refresh_stage = stage_by_name["刷新新加坡生产 Hermes pools"]
         singapore_repair_stage = stage_by_name["升级存量新加坡生产 Hermes VM"]
-        beijing_approval_stage = stage_by_name["确认刷新并修补北京主沙箱 Hermes"]
-        beijing_refresh_stage = stage_by_name["刷新北京主沙箱 Hermes pools"]
-        beijing_repair_stage = stage_by_name["升级存量北京主沙箱 Hermes VM"]
         shanghai_approval_stage = stage_by_name["确认刷新并修补上海生产 Hermes"]
         shanghai_refresh_stage = stage_by_name["刷新上海生产 Hermes pools"]
         shanghai_repair_stage = stage_by_name["升级存量上海生产 Hermes VM"]
         prod_if = "${{ ci.branch }} == master"
         reviewers = ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]
-        singapore_reviews = (((singapore_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         beijing_reviews = (((beijing_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+        singapore_reviews = (((singapore_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         shanghai_reviews = (((shanghai_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
 
+        self.assertEqual(beijing_approval_stage.get("if"), prod_if)
+        self.assertEqual(beijing_preflight_stage.get("if"), prod_if)
+        self.assertEqual(beijing_refresh_stage.get("if"), prod_if)
+        self.assertEqual(beijing_repair_stage.get("if"), prod_if)
         self.assertEqual(singapore_approval_stage.get("if"), prod_if)
         self.assertEqual(singapore_preflight_stage.get("if"), prod_if)
         self.assertEqual(singapore_refresh_stage.get("if"), prod_if)
         self.assertEqual(singapore_repair_stage.get("if"), prod_if)
-        self.assertEqual(beijing_approval_stage.get("if"), prod_if)
-        self.assertEqual(beijing_refresh_stage.get("if"), prod_if)
-        self.assertEqual(beijing_repair_stage.get("if"), prod_if)
         self.assertEqual(shanghai_approval_stage.get("if"), prod_if)
         self.assertEqual(shanghai_refresh_stage.get("if"), prod_if)
         self.assertEqual(shanghai_repair_stage.get("if"), prod_if)
-        self.assertEqual(singapore_reviews.get("reviewers"), reviewers)
         self.assertEqual(beijing_reviews.get("reviewers"), reviewers)
+        self.assertEqual(singapore_reviews.get("reviewers"), reviewers)
         self.assertEqual(shanghai_reviews.get("reviewers"), reviewers)
-        self.assertLess(stages.index(build_stage), stages.index(singapore_preflight_stage))
+        self.assertLess(stages.index(build_stage), stages.index(beijing_preflight_stage))
+        self.assertLess(stages.index(beijing_preflight_stage), stages.index(beijing_approval_stage))
+        self.assertLess(stages.index(beijing_approval_stage), stages.index(beijing_refresh_stage))
+        self.assertLess(stages.index(beijing_refresh_stage), stages.index(beijing_repair_stage))
+        self.assertLess(stages.index(beijing_repair_stage), stages.index(singapore_preflight_stage))
         self.assertLess(stages.index(singapore_preflight_stage), stages.index(singapore_approval_stage))
         self.assertLess(stages.index(singapore_approval_stage), stages.index(singapore_refresh_stage))
         self.assertLess(stages.index(singapore_refresh_stage), stages.index(singapore_repair_stage))
-        self.assertLess(stages.index(singapore_repair_stage), stages.index(beijing_approval_stage))
-        self.assertLess(stages.index(beijing_approval_stage), stages.index(beijing_refresh_stage))
-        self.assertLess(stages.index(beijing_refresh_stage), stages.index(beijing_repair_stage))
-        self.assertLess(stages.index(beijing_repair_stage), stages.index(shanghai_approval_stage))
+        self.assertLess(stages.index(singapore_repair_stage), stages.index(shanghai_approval_stage))
         self.assertLess(stages.index(shanghai_approval_stage), stages.index(shanghai_refresh_stage))
         self.assertLess(stages.index(shanghai_refresh_stage), stages.index(shanghai_repair_stage))
 
@@ -530,6 +1222,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("HERMES_REPAIR_ENV_SPEC", workflow_text)
         self.assertIn("sgprod:ap-singapore:kubeconfig_sgprod", workflow_text)
         self.assertIn("HERMES_SINGAPORE_HERMES_LEGACY_POOL_IDS", workflow_text)
+        self.assertIn("预检北京主沙箱 Hermes 更新目标", workflow_text)
+        self.assertIn("hermes-beijing-sandbox-preflight-vms", workflow_text)
+        self.assertIn("No Beijing Hermes VM rows found; abort before manual approval", workflow_text)
+        self.assertIn("resolve_hermes_image_id.py --region ap-beijing --image-name \"$HERMES_IMAGE_NAME\"", workflow_text)
         self.assertIn("预检新加坡生产 Hermes 更新目标", workflow_text)
         self.assertIn("hermes-sgprod-preflight-vms", workflow_text)
         self.assertIn("No Singapore Hermes VM rows found; abort before manual approval", workflow_text)
@@ -541,8 +1237,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("shprod:ap-shanghai:kubeconfig_shprod", workflow_text)
         self.assertIn("HERMES_SHANGHAI_HERMES_LEGACY_POOL_IDS", workflow_text)
         self.assertIn("pool-bj8,pool-c0,pool-c1,pool-c2,pool-c3,pool-c4,pool-c5", workflow_text)
-        self.assertLess(workflow_text.index("sgprod:ap-singapore:kubeconfig_sgprod"), workflow_text.index("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox"))
-        self.assertLess(workflow_text.index("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox"), workflow_text.index("shprod:ap-shanghai:kubeconfig_shprod"))
+        self.assertLess(workflow_text.index("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox"), workflow_text.index("sgprod:ap-singapore:kubeconfig_sgprod"))
+        self.assertLess(workflow_text.index("sgprod:ap-singapore:kubeconfig_sgprod"), workflow_text.index("shprod:ap-shanghai:kubeconfig_shprod"))
         self.assertNotIn("<<'PY'", workflow_text)
         self.assertNotIn("默认目标：shprod", workflow_text)
         self.assertNotIn('HERMES_TAT_COMMAND_ID is required for existing Hermes VM upgrade', workflow_text)
@@ -577,7 +1273,13 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("selected = []", refresh_script.read_text())
         self.assertIn("SKU endpoint unavailable; pool patch will continue", refresh_script.read_text())
         self.assertIn("print_pool_discovery_debug", refresh_script.read_text())
-        self.assertNotIn("reuse=", (REPO_ROOT / "images/hermes-image-trigger").read_text())
+        trigger_text = (REPO_ROOT / "images/hermes-image-trigger").read_text()
+        committed_reuse_pins = [
+            match.group(1)
+            for match in re.finditer(r"(?:^|\s)reuse=([^\s]*)", trigger_text)
+            if match.group(1)
+        ]
+        self.assertEqual([], committed_reuse_pins)
         create_script_text = create_script.read_text()
         self.assertIn("tccli tat CreateCommand", create_script_text)
         self.assertIn("--CommandType SHELL", create_script_text)
@@ -611,15 +1313,43 @@ class ReleaseBundleContractTests(unittest.TestCase):
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
 
         self.assertIn('FRONTEND_PREVIEW_RUNTIME_REF="${FRONTEND_PREVIEW_RUNTIME_REF:-origin/master}"', workflow_text)
-        self.assertIn("git fetch --no-tags --depth=1 origin +master:refs/remotes/origin/master", workflow_text)
+        self.assertIn("GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}", workflow_text)
+        self.assertIn("source .ci/init.sh", workflow_text)
+        self.assertIn("ci_git_fetch_origin --no-tags --depth=1 +refs/heads/master:refs/remotes/origin/master", workflow_text)
         self.assertIn('git archive --format=tar "$FRONTEND_PREVIEW_RUNTIME_REF" .ci', workflow_text)
         self.assertIn('bash "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/publish_frontend_preview.sh"', workflow_text)
         self.assertNotIn('"$PNPM_BIN" exec vite build', workflow_text)
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/publish_frontend_preview.sh").read_text()
         self.assertIn('"$PNPM_BIN" run build:next', command_text)
+        self.assertIn('rm -rf .next out "$output_dir"', command_text)
         self.assertIn('source "$CI_DIR/init.sh"', command_text)
         self.assertIn('python3 "$CI_DIR/runtime/commands/upload_staticpages_preview.py"', command_text)
+
+        package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
+        self.assertIn("node scripts/clean-next-build-state.mjs", package_json["scripts"]["build:next"])
+
+    def test_frontend_preview_builds_from_an_isolated_source_directory(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
+
+        self.assertIn(
+            'FRONTEND_PREVIEW_SOURCE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/frontend-preview-source.XXXXXX")"',
+            workflow_text,
+        )
+        self.assertIn(
+            'git archive --format=tar "$FRONTEND_PREVIEW_SHA" | tar -xf - -C "$FRONTEND_PREVIEW_SOURCE_DIR"',
+            workflow_text,
+        )
+        self.assertIn('export REPO_ROOT="$FRONTEND_PREVIEW_SOURCE_DIR"', workflow_text)
+        self.assertIn('rm -rf "$FRONTEND_PREVIEW_RUNTIME_DIR" "$FRONTEND_PREVIEW_SOURCE_DIR"', workflow_text)
+        self.assertLess(
+            workflow_text.index('git archive --format=tar "$FRONTEND_PREVIEW_SHA"'),
+            workflow_text.index('export REPO_ROOT="$FRONTEND_PREVIEW_SOURCE_DIR"'),
+        )
+        self.assertLess(
+            workflow_text.index('export REPO_ROOT="$FRONTEND_PREVIEW_SOURCE_DIR"'),
+            workflow_text.index('bash "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/publish_frontend_preview.sh"'),
+        )
 
     def test_frontend_preview_builds_cn_and_intl_with_separate_api_bases(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/runtime/commands/publish_frontend_preview.sh").read_text()
@@ -637,9 +1367,16 @@ class ReleaseBundleContractTests(unittest.TestCase):
     def test_frontend_mr_guard_runs_typecheck_and_frontend_builds(self) -> None:
         package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
         guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
+        artifact_builder_text = (REPO_ROOT / "frontend/scripts/build-release-artifacts.mjs").read_text()
 
         frontend_scripts = package_json["scripts"]
         self.assertEqual(frontend_scripts["check"], frontend_scripts["check:next"])
+        for script_name in ("build", "build:cn", "build:global"):
+            self.assertIn("next build", frontend_scripts[script_name])
+            self.assertNotIn("--webpack", frontend_scripts[script_name])
+        self.assertIn("next build --webpack", frontend_scripts["build:next"])
+        self.assertIn('["exec", "next", "build"]', artifact_builder_text)
+        self.assertNotIn("--webpack", artifact_builder_text)
         recursive_pnpm_scripts = {
             name: script
             for name, script in frontend_scripts.items()
@@ -661,6 +1398,17 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("NEXT_PUBLIC_AUTH_API_BASE_URL=https://lightclaw.tech", guard_text)
         self.assertIn("rm -rf out", guard_text)
         self.assertNotIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
+
+    def test_frontend_mr_guard_disables_turbopack_build_cache(self) -> None:
+        guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
+        next_config_text = (REPO_ROOT / "frontend/next.config.mjs").read_text()
+
+        self.assertNotIn("turbopackFileSystemCacheForBuild", next_config_text)
+        self.assertNotIn("FRONTEND_NEXT_CACHE", guard_text)
+        self.assertNotIn("frontend_next_cache", guard_text)
+        self.assertNotIn("restore_frontend_next_cache", guard_text)
+        self.assertNotIn("save_frontend_next_cache", guard_text)
+        self.assertIn('rm -rf .next out', guard_text)
 
     def test_prod_db_migration_workflow_is_manual_dry_run_then_check_in_then_apply(self) -> None:
         workflow_path = REPO_ROOT / ".ci/db-migration.yml"
@@ -770,9 +1518,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
             expected_playground_auto_pin_envs="auto",
         )
 
-    def test_trade_workflow_builds_beijing_and_playground(self) -> None:
+    def test_trade_workflow_builds_beijing_shprod_and_playground(self) -> None:
         manifest = load_manifest()
         bundle = require_build_metadata(load_bundle(manifest, "trade", "beijing-sandbox"))
+        shprod_bundle = require_build_metadata(load_bundle(manifest, "trade", "shprod"))
         playground_bundle = require_build_metadata(load_bundle(manifest, "trade", PLAYGROUND_ENV))
         workflow = yaml.safe_load((REPO_ROOT / ".ci/trade.yml").read_text())
 
@@ -786,6 +1535,16 @@ class ReleaseBundleContractTests(unittest.TestCase):
             bundle.publish_paths,
         )
         self.assertIn("trade/k8s/base/**", bundle.publish_paths)
+        self.assertEqual(shprod_bundle.image_repo, "lightclaw-shprod.tencentcloudcr.com/lightclaw/trade")
+        self.assertIn("argocd/services/trade/shprod/**", shprod_bundle.publish_paths)
+        self.assertIn("argocd/services/trade/common/**", shprod_bundle.publish_paths)
+        self.assertIn("argocd/apps/shprod/trade.yaml", shprod_bundle.publish_paths)
+        self.assertIn("argocd/projects/shprod-trade.yaml", shprod_bundle.publish_paths)
+        self.assertIn(
+            "argocd/secrets/shprod/trade-runtime-secrets.sops.yaml",
+            shprod_bundle.publish_paths,
+        )
+        self.assertIn("trade/k8s/base/**", shprod_bundle.publish_paths)
         self.assertEqual(playground_bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/trade")
         self.assertIn(f"argocd/services/trade/{PLAYGROUND_ENV}/**", playground_bundle.publish_paths)
         self.assertIn(
@@ -796,7 +1555,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow,
             expected_service="trade",
             expected_pin_targets="trade",
-            expected_master_build_envs="beijing-sandbox",
+            expected_master_build_envs="beijing-sandbox,shprod",
             expected_master_auto_pin_envs="beijing-sandbox",
             expected_playground_build_envs="auto",
             expected_playground_auto_pin_envs="auto",
@@ -1085,7 +1844,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 self.assertIsNot(params.get("ENABLE_MASTER_PROD_PROMOTE"), False)
 
     def test_service_release_workflows_without_prod_matrix_disable_prod_promote(self) -> None:
-        for workflow_path in [REPO_ROOT / ".ci/staticpages.yml", REPO_ROOT / ".ci/trade.yml"]:
+        for workflow_path in [REPO_ROOT / ".ci/staticpages.yml"]:
             with self.subTest(workflow=workflow_path.name):
                 workflow = yaml.safe_load(workflow_path.read_text()) or {}
                 params = (workflow.get("extends") or {}).get("parameters") or {}
@@ -1226,6 +1985,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         required_by_env = {
             "beijing-sandbox": "TCR_BEIJING_PASSWORD",
             "beijing-sandbox-2": "TCR_BEIJING_PASSWORD",
+            "beijing-llmgateway": "TCR_BEIJING_LLMGATEWAY_PASSWORD",
             "sandbox-kr-1": "TCR_KR1_PASSWORD",
             "shprod": "TCR_SHPROD_PASSWORD",
             "shanghai-workers": "TCR_SHPROD_PASSWORD",

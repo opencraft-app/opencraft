@@ -1,0 +1,58 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - manifests.yaml
+  - adapter.yaml
+  - persistence.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: shadow-config
+    namespace: shadow
+    behavior: merge
+    literals:
+      - SHADOW_PROVIDER=tencent
+      - SHADOW_PLATFORM=lightclaw-local
+      - SHADOW_STORAGE_DRIVER=sqlite
+      - SHADOW_STORAGE_DSN=file:/var/lib/shadow/shadow.db?_pragma=busy_timeout(5000)
+      - SHADOW_ACCOUNT_ENDPOINT=account.test.tencentcloudapi.com
+      - SHADOW_CAM_ENDPOINT=cam.test.tencentcloudapi.com
+      - SHADOW_STS_ENDPOINT=sts.test.tencentcloudapi.com
+      - SHADOW_BILLING_MODE=fake
+      - SHADOW_CLOUDLADDER_ENABLED=true
+      - SHADOW_CLOUDLADDER_GATEWAY_BASE_URL=http://cloudladdergateway.cloudladdergateway.svc.cluster.local:8095
+      - SHADOW_CLOUDLADDER_CALLER=shadow
+      - SHADOW_CLOUDLADDER_ACCOUNT_ROUTE_ID=tcapi-account-cn-test
+      - SHADOW_CLOUDLADDER_CAM_ROUTE_ID=tcapi-cam-cn-test
+      - SHADOW_CLOUDLADDER_STS_ROUTE_ID=tcapi-sts-cn-test
+      - SHADOW_REQUEST_TIMEOUT=10s
+  - name: shadow-trade-adapter
+    namespace: shadow
+    files:
+      - server.mjs=adapter.mjs
+secretGenerator:
+  - name: shadow-runtime-secrets
+    namespace: shadow
+    envs:
+      - secrets.defaults.env
+images:
+  - name: REPLACE_SHADOW_IMAGE
+    newName: lightclaw-local/shadow
+    newTag: dev
+patches:
+  - target:
+      kind: Deployment
+      name: shadow
+      namespace: shadow
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/volumes/0
+        value:
+          name: shadow-data
+          persistentVolumeClaim:
+            claimName: shadow-data
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: lightclaw-localstack
+    includeSelectors: false
+    includeTemplates: true

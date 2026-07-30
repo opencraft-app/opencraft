@@ -85,28 +85,28 @@ func buildOAuthReturnToAllowlist(hosts []string) oauthReturnToAllowlist {
 	return allowlist
 }
 
-func readReturnToFromRequest(request *http.Request) string {
+func (h *Handler) readValidatedReturnToFromRequest(request *http.Request) string {
 	if request == nil || request.URL == nil {
 		return ""
 	}
-	return strings.TrimSpace(request.URL.Query().Get("return_to"))
+	rawURL := strings.TrimSpace(request.URL.Query().Get("return_to"))
+	if h == nil {
+		return validatedReturnToURL(rawURL)
+	}
+	return h.validatedReturnToURL(rawURL)
 }
 
-func setOAuthReturnToCookie(ctx *gin.Context, cookieName string, cookiePath string, rawURL string, cookieSecure bool, ttl time.Duration, validate func(string) string) {
+func setOAuthReturnToCookie(ctx *gin.Context, cookieName string, cookiePath string, validatedURL string, cookieSecure bool, ttl time.Duration) {
 	if ctx == nil {
 		return
 	}
-	if validate == nil {
-		validate = validatedReturnToURL
-	}
-	validated := validate(rawURL)
-	if validated == "" {
+	if strings.TrimSpace(validatedURL) == "" {
 		clearOAuthReturnToCookie(ctx, cookieName, cookiePath, cookieSecure)
 		return
 	}
 	http.SetCookie(ctx.Writer, &http.Cookie{
 		Name:     cookieName,
-		Value:    validated,
+		Value:    validatedURL,
 		Path:     cookiePath,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
@@ -139,6 +139,13 @@ func readOAuthReturnToCookie(request *http.Request, cookieName string) string {
 		return ""
 	}
 	return strings.TrimSpace(cookie.Value)
+}
+
+func (h *Handler) readValidatedOAuthReturnToCookie(request *http.Request, cookieName string) string {
+	if h == nil {
+		return validatedReturnToURL(readOAuthReturnToCookie(request, cookieName))
+	}
+	return h.validatedReturnToURL(readOAuthReturnToCookie(request, cookieName))
 }
 
 func validatedReturnToURL(rawURL string) string {
@@ -326,6 +333,43 @@ func appendSessionTokenToReturnTo(rawURL string, sessionToken string) string {
 	return parsed.String()
 }
 
+func oauthFrontendURL(baseURL string, path string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return path
+	}
+	if strings.HasPrefix(path, "/") {
+		return base + path
+	}
+	return base + "/" + path
+}
+
+func oauthSuccessFrontendURL(baseURL string, path string, sessionToken string) string {
+	redirectURL := oauthFrontendURL(baseURL, path)
+	if strings.TrimSpace(sessionToken) == "" {
+		return redirectURL
+	}
+
+	parsed, err := url.Parse(redirectURL)
+	if err != nil {
+		return ""
+	}
+	if parsed.Scheme == "" && parsed.Host == "" && strings.HasPrefix(redirectURL, "/") {
+		fragment := url.Values{}
+		fragment.Set("session_token", strings.TrimSpace(sessionToken))
+		parsed.Fragment = fragment.Encode()
+		return parsed.String()
+	}
+	if parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.Opaque != "" {
+		return ""
+	}
+
+	fragment := url.Values{}
+	fragment.Set("session_token", strings.TrimSpace(sessionToken))
+	parsed.Fragment = fragment.Encode()
+	return parsed.String()
+}
+
 func appendQueryParamToReturnTo(rawURL string, name string, value string) string {
 	redirectURL := strings.TrimSpace(rawURL)
 	paramName := strings.TrimSpace(name)
@@ -345,25 +389,35 @@ func appendQueryParamToReturnTo(rawURL string, name string, value string) string
 	return parsed.String()
 }
 
-func (h *Handler) oauthSuccessRedirectURL(ctx *gin.Context, returnTo string, defaultRedirectURL string, session *service.AuthSession) string {
-	validated := h.validatedReturnToURL(returnTo)
-	if validated == "" {
+func (h *Handler) oauthSuccessRedirectURL(ctx *gin.Context, validatedSuccessTarget string, defaultRedirectURL string, session *service.AuthSession) string {
+	if validatedSuccessTarget == "" {
 		return defaultRedirectURL
 	}
-	if isDeviceBindReturnTo(validated) {
-		token, expiresAt, err := h.deviceBindTokens.Issue(session, validated)
+	if isDeviceBindReturnTo(validatedSuccessTarget) {
+		token, expiresAt, err := h.deviceBindTokens.Issue(session, validatedSuccessTarget)
 		if err != nil {
 			if ctx != nil {
 				requestLogger(ctx, nil).Error("issue device bind token failed", "err", err)
 			}
-			return appendOAuthErrorToReturnTo(validated, "device_bind_token_unavailable")
+			return appendOAuthErrorToReturnTo(validatedSuccessTarget, "device_bind_token_unavailable")
 		}
-		return appendDeviceBindTokenToReturnTo(validated, token, expiresAt)
+		return appendDeviceBindTokenToReturnTo(validatedSuccessTarget, token, expiresAt)
 	}
 	if session == nil {
-		return validated
+		return validatedSuccessTarget
 	}
-	return appendSessionTokenToReturnTo(validated, session.Token)
+	return appendSessionTokenToReturnTo(validatedSuccessTarget, session.Token)
+}
+
+func (h *Handler) redirectOAuthSuccess(ctx *gin.Context, validatedSuccessTarget string, defaultRedirectURL string, session *service.AuthSession) {
+	successTarget := ""
+	if h == nil {
+		successTarget = validatedReturnToURL(validatedSuccessTarget)
+	} else {
+		successTarget = h.validatedReturnToURL(validatedSuccessTarget)
+	}
+	// NOCA:open_redirect(successTarget is allowlist-validated immediately before redirect)
+	ctx.Redirect(http.StatusTemporaryRedirect, h.oauthSuccessRedirectURL(ctx, successTarget, defaultRedirectURL, session))
 }
 
 func appendOAuthErrorToReturnTo(rawURL string, code string) string {

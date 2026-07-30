@@ -7,6 +7,8 @@ import { useTranslation } from "react-i18next";
 
 import { LanguageSwitcher, type LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { DATONG_PAGE_IDS } from "@/observability/datong";
+import { trackDatongClick } from "@/observability/datong-tracker";
 import {
   isPublicSiteNavActive,
   PUBLIC_SITE_NAV_ITEMS,
@@ -75,7 +77,7 @@ const appearanceClass: Record<HeaderAppearance, string> = {
   solid: "border-b border-black/5 bg-white/90 backdrop-blur-[20px]",
 };
 
-const headerContentClass = "relative mx-auto flex h-[60px] max-w-[1600px] items-center justify-between px-6 md:px-[80px]";
+const headerContentClass = "relative mx-auto flex h-[60px] max-w-[1600px] items-center justify-between px-6 lg:px-10 xl:px-[80px]";
 
 const textClass: Record<HeaderAppearance, string> = {
   immersive: "text-black/90",
@@ -156,13 +158,13 @@ function useIsDesktop(): boolean {
   const [isDesktop, setIsDesktop] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     if (!window.matchMedia) return true;
-    return window.matchMedia("(min-width: 768px)").matches;
+    return window.matchMedia("(min-width: 1024px)").matches;
   });
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!window.matchMedia) return;
-    const mql = window.matchMedia("(min-width: 768px)");
+    const mql = window.matchMedia("(min-width: 1024px)");
     const handler = (event: MediaQueryListEvent) => setIsDesktop(event.matches);
     mql.addEventListener("change", handler);
     return () => mql.removeEventListener("change", handler);
@@ -226,6 +228,15 @@ export function PublicSiteHeader({
   const logoHref = publicSiteHref("/", locale, { localized });
   const textColorClass = textClass[appearance];
   const handleCreateClick = onCreateClick ?? onLoginClick;
+  const trackedCreateClick = handleCreateClick
+    ? () => {
+        trackDatongClick("header_create_now_btn", {
+          pgid: DATONG_PAGE_IDS.HOME,
+          params: { target: isAuthenticated ? "/agents" : "login" },
+        });
+        handleCreateClick();
+      }
+    : undefined;
   const createHref = "/agents";
   const loginHref = "/auth/sign-in";
   const renderLanguage = (variant: LanguageSwitcherVariant) => (
@@ -287,7 +298,7 @@ export function PublicSiteHeader({
 
         {showNav && (
           <nav
-            className="lw-public-site-header__nav absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-8 md:flex"
+            className="lw-public-site-header__nav mx-auto hidden items-center justify-center gap-5 px-4 lg:flex xl:gap-8 xl:px-8"
             aria-label="Primary navigation"
           >
             {renderNavLinks()}
@@ -297,27 +308,28 @@ export function PublicSiteHeader({
         {authControls}
 
         {!usesAuthControlsSlot && showUnauthenticatedActions && authLoading && (
-          <div data-testid="site-header-auth-loading" className="hidden shrink-0 items-center gap-3 md:flex" aria-hidden="true">
+          <div data-testid="site-header-auth-loading" className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3" aria-hidden="true">
+            {showLanguageSwitcher && <span className="h-[36px] w-[70px] rounded-[100px] bg-black/[0.04]" />}
             <span className="h-[36px] w-[96px] rounded-[100px] bg-black/[0.06]" />
             <span className="h-[36px] w-[64px] rounded-[100px] bg-black/[0.04]" />
-            {showLanguageSwitcher && <span className="h-[36px] w-[70px] rounded-[100px] bg-black/[0.04]" />}
           </div>
         )}
 
         {!usesAuthControlsSlot && showUnauthenticatedActions && !authLoading && !isAuthenticated && (
-          <div className="hidden shrink-0 items-center gap-3 md:flex">
-            {handleCreateClick ? (
+          <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3">
+            {showLanguageSwitcher && renderLanguage("dropdown")}
+            {trackedCreateClick ? (
               <button
                 type="button"
-                onClick={handleCreateClick}
-                className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-5 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg"
+                onClick={trackedCreateClick}
+                className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
               >
                 {copy.createNow}
               </button>
             ) : (
               <a
                 href={createHref}
-                className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-5 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg"
+                className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
               >
                 {copy.createNow}
               </a>
@@ -327,7 +339,7 @@ export function PublicSiteHeader({
                 type="button"
                 onClick={onLoginClick}
                 className={cn(
-                  "inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-4 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors",
+                  "inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-3 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors xl:px-4",
                   secondaryButtonClass[appearance],
                 )}
               >
@@ -337,14 +349,13 @@ export function PublicSiteHeader({
               <a
                 href={loginHref}
                 className={cn(
-                  "inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-4 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors",
+                  "inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-3 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors xl:px-4",
                   secondaryButtonClass[appearance],
                 )}
               >
                 {copy.login}
               </a>
             )}
-            {showLanguageSwitcher && renderLanguage("dropdown")}
           </div>
         )}
 
@@ -356,7 +367,7 @@ export function PublicSiteHeader({
         )}
 
         {(showNav || (!usesAuthControlsSlot && showUnauthenticatedActions)) && (
-        <div className={cn("flex items-center gap-2 md:hidden", usesAuthControlsSlot || isAuthenticated ? "" : "ml-auto")}>
+        <div className={cn("flex items-center gap-2 lg:hidden", usesAuthControlsSlot || isAuthenticated ? "" : "ml-auto")}>
           {!usesAuthControlsSlot && showUnauthenticatedActions && !authLoading && !isAuthenticated && (
             onLoginClick ? (
               <button
@@ -399,20 +410,20 @@ export function PublicSiteHeader({
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="absolute left-0 right-0 top-full border-b border-black/5 bg-white/95 shadow-lg backdrop-blur-[20px] md:hidden"
+            className="absolute left-0 right-0 top-full border-b border-black/5 bg-white/95 shadow-lg backdrop-blur-[20px] lg:hidden"
           >
             <div className="mx-auto flex max-w-[1440px] flex-col gap-2 px-6 py-4">
               {showNav && renderNavLinks(true)}
 
               {!usesAuthControlsSlot && showUnauthenticatedActions && !authLoading && !isAuthenticated && (
                 <div className="border-t border-black/5 pt-3">
-                  {handleCreateClick ? (
+                  {trackedCreateClick ? (
                     <button
                       type="button"
                       data-testid="site-header-mobile-create"
                       onClick={() => {
                         setMenuOpen(false);
-                        handleCreateClick();
+                        trackedCreateClick();
                       }}
                       className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-full bg-black/90 px-5 py-3 text-[14px] font-medium text-white"
                     >

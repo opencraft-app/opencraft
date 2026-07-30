@@ -48,6 +48,22 @@ export interface RealnameVerifyResult {
   shadowBindingStatus?: string;
 }
 
+export type RealnameFaceIdAttemptState =
+  | "pending"
+  | "face_succeeded"
+  | "phone_pending"
+  | "shadow_pending"
+  | "succeeded"
+  | "failed"
+  | "expired";
+
+export interface RealnameFaceIdAttempt {
+  attemptId: string;
+  state: RealnameFaceIdAttemptState;
+  verificationUrl?: string;
+  expiresAt?: string;
+}
+
 export interface RealnamePhoneVerifyResult {
   ok: boolean;
   realnameLevel: string;
@@ -81,6 +97,11 @@ export interface TatDeviceBindResult {
   };
 }
 
+export interface TencentCloudRedirectResult {
+  redirectUrl: string;
+  expiresAt: string;
+}
+
 export interface AuthRepository {
   signInWithCode(input: { phone: string; code?: string; inviteCode?: string }): Promise<AuthSessionSnapshot>;
   prepareInviteCode(code: string): Promise<void>;
@@ -97,6 +118,12 @@ export interface AuthRepository {
   updateProfile(input: { name: string }): Promise<User>;
   uploadAvatar(file: File): Promise<User>;
   deleteAccount(): Promise<void>;
+  startRealnameFaceIdAttempt(input: { name: string; idCard: string; consent: boolean }): Promise<RealnameFaceIdAttempt>;
+  getCurrentRealnameFaceIdAttempt(): Promise<RealnameFaceIdAttempt>;
+  getRealnameFaceIdAttempt(attemptId: string): Promise<RealnameFaceIdAttempt>;
+  sendRealnameFaceIdPhoneCode(attemptId: string, input?: { phone?: string }): Promise<SendSmsCodeResult>;
+  verifyRealnameFaceIdPhone(attemptId: string, input: { code: string; phone?: string }): Promise<RealnameFaceIdAttempt>;
+  finalizeRealnameFaceIdAttempt(attemptId: string): Promise<RealnameFaceIdAttempt>;
   /** 实名认证：POST /auth/realname/verify */
   verifyRealname(input: { name: string; idCard: string }): Promise<RealnameVerifyResult>;
   sendSmsCode(input: { phone: string }): Promise<SendSmsCodeResult>;
@@ -107,6 +134,7 @@ export interface AuthRepository {
   /** 邮箱绑定：POST /auth/email/bind/request */
   requestEmailBind(input: { email: string }): Promise<{ cooldownSeconds: number }>;
   createTatDeviceBind(input: { callbackUrl: string; deviceName?: string }): Promise<TatDeviceBindResult>;
+  createTencentCloudRedirect(targetPath?: string): Promise<TencentCloudRedirectResult>;
   getOAuthStartUrl(provider: OAuthProvider, options?: OAuthStartOptions): string | null;
   signInAsGuest(): Promise<AuthSessionSnapshot>;
   signOut(): Promise<void>;
@@ -313,7 +341,11 @@ export interface BotRepository {
   cancelWeixinLoginSession(botId: string, sessionId: string): Promise<WeixinLoginSession>;
   subscribeWeixinLoginSessionEvents(botId: string, sessionId: string, signal?: AbortSignal): AsyncIterable<{ event: string; data: unknown }>;
   listSoulTemplates(): Promise<SoulTemplate[]>;
-  execDebugCommand(botId: string, command: string): Promise<{ status: string; exitCode: number; output: string }>;
+  execDebugCommand(
+    botId: string,
+    command: string,
+    options?: { timeoutMs?: number },
+  ): Promise<{ status: string; exitCode: number; output: string }>;
   startRescueExport(botId: string): Promise<WorkerActionStartResult>;
   getRescueExportStatus(botId: string): Promise<WorkerActionStatusResult | null>;
   importHermesWorkspace(botId: string, file: File): Promise<WorkerActionStartResult>;

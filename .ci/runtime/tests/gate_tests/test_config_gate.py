@@ -16,6 +16,11 @@ from gates import config  # noqa: E402
 from support import process  # noqa: E402
 
 
+def completed_process(args: object, returncode: int = 0, stdout: str = "", stderr: str = ""):
+    # Test fixtures construct CompletedProcess objects directly; no subprocess is launched here.
+    return subprocess.CompletedProcess(args, returncode, stdout=stdout, stderr=stderr)  # nosemgrep: dangerous-subprocess-use-audit
+
+
 class ConfigGateTests(unittest.TestCase):
     def test_prepare_worktree_generates_release_bundle_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -179,7 +184,7 @@ class ConfigGateTests(unittest.TestCase):
         with mock.patch.object(
             process.subprocess,
             "run",
-            return_value=subprocess.CompletedProcess(command, 0, stdout="out\n", stderr="err\n"),
+            return_value=completed_process(command, stdout="out\n", stderr="err\n"),
         ) as run:
             stderr = io.StringIO()
             with redirect_stderr(stderr):
@@ -193,7 +198,7 @@ class ConfigGateTests(unittest.TestCase):
         with mock.patch.object(
             process.subprocess,
             "run",
-            return_value=subprocess.CompletedProcess(command, 7, stdout="out\n", stderr="err\n"),
+            return_value=completed_process(command, 7, stdout="out\n", stderr="err\n"),
         ):
             with self.assertRaises(subprocess.CalledProcessError) as raised:
                 with redirect_stderr(io.StringIO()):
@@ -203,6 +208,20 @@ class ConfigGateTests(unittest.TestCase):
         self.assertEqual(raised.exception.cmd, command)
         self.assertEqual(raised.exception.output, "out\n")
         self.assertEqual(raised.exception.stderr, "err\n")
+
+    def test_run_logged_rejects_empty_command_before_subprocess(self) -> None:
+        with mock.patch.object(process.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "command must not be empty"):
+                config.run_logged([], cwd=Path("/tmp"))
+
+        run.assert_not_called()
+
+    def test_run_quiet_rejects_empty_command_before_subprocess(self) -> None:
+        with mock.patch.object(config.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "command must not be empty"):
+                config.run_quiet([])
+
+        run.assert_not_called()
 
 
 if __name__ == "__main__":

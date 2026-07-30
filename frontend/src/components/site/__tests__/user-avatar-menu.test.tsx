@@ -17,7 +17,7 @@ vi.mock("@/contexts/session-context", () => ({
   useSession: () => useSession(),
 }));
 
-vi.mock("@/contexts/openclaw-context", () => ({
+vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => useOpenClaw(),
 }));
 
@@ -174,5 +174,30 @@ describe("UserAvatarMenu", () => {
     expect(shown).toBe(true);
 
     expect(screen.getByRole("link", { name: "工作台" })).toHaveAttribute("href", "/agents/workbench");
+  });
+
+  it("keeps the product feedback menu item hidden until show() reveals it", () => {
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: { code: "launch" },
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: null,
+    });
+
+    render(<UserAvatarMenu />);
+
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "用户反馈" })).not.toBeInTheDocument();
+
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+
+    expect(screen.getByRole("link", { name: "产品反馈" })).toHaveAttribute("href", "/support");
   });
 });

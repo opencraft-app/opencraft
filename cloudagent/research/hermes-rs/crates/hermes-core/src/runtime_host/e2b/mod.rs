@@ -390,7 +390,7 @@ impl SessionSandbox {
                 // command_prefix is a capability host boundary such as Wisp exec.
                 // The target runtime may not expose the outer /workspace path, so
                 // prefixed commands must rely on their own absolute paths.
-                format!("{prefix} {}", shell_quote(&command))
+                format!("{prefix} {}", shell_quote(command))
             }
             _ => format!("cd {} && {}", shell_quote(&self.workspace_root), command),
         };
@@ -668,11 +668,11 @@ impl SessionSandbox {
                     stdout = %result.stdout,
                     stderr = %result.stderr
                 );
-                return Err(error);
+                Err(error)
             }
             Err(error) => {
                 warn!(event = "workspace_runtime_shutdown_failed", sandbox_id = %inner.sandbox.sandbox_id, error = %error);
-                return Err(error);
+                Err(error)
             }
         }
     }

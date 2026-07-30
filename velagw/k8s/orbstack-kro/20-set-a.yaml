@@ -1,0 +1,9 @@
+apiVersion: llmgateway.io/v1alpha1
+kind: LLMSet
+metadata:
+  name: set-a
+  namespace: llmgateway-kro-demo
+spec:
+  name: set-a
+  replicas: 1
+  sessionSecret: llmgateway-kro-set-a-session-secret

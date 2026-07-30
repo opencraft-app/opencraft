@@ -3,7 +3,9 @@
 
 import importlib.util
 import sys
+import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -15,6 +17,51 @@ SPEC.loader.exec_module(build_image)
 
 
 class ImageSyncTests(unittest.TestCase):
+    def test_local_command_only_allows_explicit_empty_arguments(self):
+        with mock.patch.object(
+            build_image.subprocess,
+            "run",
+            return_value=build_image.subprocess.CompletedProcess([], 0),
+        ) as run:
+            build_image.run_cmd(
+                ["ssh-keygen", "-N", ""],
+                allow_empty_indices=(2,),
+            )
+
+        run.assert_called_once()
+        with self.assertRaisesRegex(
+            ValueError,
+            "local command argument must not be empty",
+        ):
+            build_image.run_cmd(["ssh-keygen", "-N", ""])
+
+    def test_temp_keypair_marks_empty_passphrase_as_intentional(self):
+        with tempfile.TemporaryDirectory() as key_dir:
+            Path(key_dir, "id_rsa.pub").write_text(
+                "ssh-rsa test-public-key\n",
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(build_image.tempfile, "mkdtemp", return_value=key_dir),
+                mock.patch.object(build_image, "run_cmd") as run,
+            ):
+                result = build_image.create_temp_ssh_keypair_local()
+
+        self.assertEqual(result["public_key_text"], "ssh-rsa test-public-key")
+        run.assert_called_once()
+        self.assertEqual(run.call_args.kwargs["allow_empty_indices"], (7,))
+
+    def test_ssh_command_rejects_empty_dynamic_arguments(self):
+        with mock.patch.object(build_image.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "ssh command argument must not be empty"):
+                build_image.run_ssh_command("ubuntu@example.com", "22", "")
+
+        run.assert_not_called()
+
+    def test_tccli_command_rejects_empty_dynamic_arguments(self):
+        with self.assertRaisesRegex(ValueError, "tccli argument must not be empty"):
+            build_image.run_tccli("cvm", "DescribeImages", "ap-seoul", ["--ImageIds", ""])
+
     def test_hermes_deploy_injects_resolved_backend_blueprint_id(self):
         calls = []
         original_ensure = build_image.ensure_remote_build_assets

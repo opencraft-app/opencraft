@@ -13,6 +13,10 @@ import (
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/shadowbinding"
 )
 
+func fixedVerificationCode(code string) func(int) (string, error) {
+	return func(int) (string, error) { return code, nil }
+}
+
 func TestSharedStoreEnforcesCooldownAcrossServiceInstances(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{
 		Now:                fixedNow,
@@ -36,6 +40,102 @@ func TestSharedStoreEnforcesCooldownAcrossServiceInstances(t *testing.T) {
 	}
 	if authErr.Code != "sms_cooldown" {
 		t.Fatalf("expected sms_cooldown, got %s", authErr.Code)
+	}
+}
+
+func TestFacelessRealnameSkipsFaceCaptureAndUsesFaceIDPhoneProofFlow(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true})
+	shadowClient := &stubShadowRegisterClient{
+		result: shadowbinding.CloudRegisterResult{Uin: 300000000071, OwnerUin: 300000000071, AppID: 1250000000},
+	}
+	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), shadowClient, shadowbinding.Options{Enabled: true, Now: fixedNow})
+	svc := NewWithStore(store, Options{
+		Now:                       fixedNow,
+		VerificationCodeGenerator: fixedVerificationCode("111111"),
+		RealnameVerifier:          stubRealnameVerifier{result: RealnameProviderResult{Result: "0"}},
+		RealnameCipher:            stubRealnameCipher{},
+		RealnameFaceID: RealnameFaceIDConfig{
+			Mode:      RealnameAssuranceModeFaceless,
+			DigestKey: []byte("0123456789abcdef0123456789abcdef"),
+		},
+		ShadowBinding:              shadowSvc,
+		ShadowBasicAuthSyncEnabled: true,
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "faceless@example.invalid", "13800138118")
+
+	started, err := svc.StartRealnameFaceIDAttempt(context.Background(), session.Token, RealnameFaceIDStartInput{
+		Name: "张三", IDCard: "11010519491231002X", ClientIP: "127.0.0.1", ClientUA: "test", ConsentAccepted: true,
+	})
+	if err != nil {
+		t.Fatalf("start faceless realname: %v", err)
+	}
+	if started.VerifyURL != "" {
+		t.Fatalf("faceless flow must not issue a face-capture URL, got %+v", started)
+	}
+	attempt, err := store.GetRealnameFaceIDAttempt(context.Background(), started.AttemptID)
+	if err != nil {
+		t.Fatalf("load faceless attempt: %v", err)
+	}
+	if attempt.State != RealnameFaceIDStateFaceSucceeded || attempt.FaceVerifiedAt == nil {
+		t.Fatalf("faceless flow must enter the FaceID phone-proof stage, got %+v", attempt)
+	}
+
+	if _, err := svc.SendRealnameFaceIDPhoneCode(context.Background(), session.Token, RealnameFaceIDPhoneCodeInput{
+		AttemptID: started.AttemptID, ClientIP: "127.0.0.1",
+	}); err != nil {
+		t.Fatalf("send FaceID-flow shadow phone code: %v", err)
+	}
+	if shadowClient.smsCalls != 1 || shadowClient.lastSMS.Phone != "13800138118" {
+		t.Fatalf("expected Tencent safety-phone SMS for current user, got calls=%d input=%+v", shadowClient.smsCalls, shadowClient.lastSMS)
+	}
+
+	verified, err := svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
+		AttemptID: started.AttemptID, Code: "888888", ClientIP: "127.0.0.1", ClientUA: "test",
+	})
+	if err != nil {
+		t.Fatalf("verify Tencent safety-phone code: %v", err)
+	}
+	if verified.State != RealnameFaceIDStateSucceeded {
+		t.Fatalf("expected faceless FaceID-flow verification to complete, got %+v", verified)
+	}
+}
+
+func TestFacelessRealnameRequiresTwoFactorVerifier(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true})
+	svc := NewWithStore(store, Options{
+		Now:            fixedNow,
+		RealnameCipher: stubRealnameCipher{},
+		RealnameFaceID: RealnameFaceIDConfig{
+			Mode:      RealnameAssuranceModeFaceless,
+			DigestKey: []byte("0123456789abcdef0123456789abcdef"),
+		},
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "faceless-no-verifier@example.invalid", "13800138119")
+
+	_, err := svc.StartRealnameFaceIDAttempt(context.Background(), session.Token, RealnameFaceIDStartInput{
+		Name: "张三", IDCard: "11010519491231002X", ConsentAccepted: true,
+	})
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "realname_unavailable" {
+		t.Fatalf("faceless mode must fail closed without two-factor verifier, got %#v", err)
+	}
+}
+
+func TestFacelessRealnameRejectsLegacyVerifyEndpoint(t *testing.T) {
+	svc := New(Options{
+		Now:              fixedNow,
+		RealnameVerifier: stubRealnameVerifier{result: RealnameProviderResult{Result: "0"}},
+		RealnameCipher:   stubRealnameCipher{},
+		RealnameFaceID:   RealnameFaceIDConfig{Mode: RealnameAssuranceModeFaceless},
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "faceless-legacy-endpoint@example.invalid", "13800138120")
+
+	_, err := svc.VerifyRealname(context.Background(), session.Token, RealnameVerifyInput{
+		Name: "张三", IDCard: "11010519491231002X",
+	})
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "realname_faceid_required" {
+		t.Fatalf("faceless mode must use the attempt state machine, got %#v", err)
 	}
 }
 
@@ -159,10 +259,131 @@ func TestSendVerificationCodeEnforcesCooldown(t *testing.T) {
 	}
 }
 
-func TestSendVerificationCodeUsesConfiguredDefaultSMSCode(t *testing.T) {
+func TestVerificationSendRateLimitUsesClientIPAcrossRecipients(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	svc := NewWithStore(store, Options{Now: fixedNow})
+
+	for i := 0; i < 100; i++ {
+		phone := fmt.Sprintf("138%08d", i)
+		if _, err := svc.SendVerificationCodeForClient(context.Background(), phone, "203.0.113.10"); err != nil {
+			t.Fatalf("send %d failed: %v", i+1, err)
+		}
+	}
+
+	_, err := svc.SendVerificationCodeForClient(context.Background(), "13900000000", "203.0.113.10")
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "verification_rate_limited" || authErr.Status != http.StatusTooManyRequests {
+		t.Fatalf("expected verification_rate_limited 429, got %#v", err)
+	}
+}
+
+func TestVerificationCheckRateLimitUsesRecipientAndClientIP(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	svc := NewWithStore(store, Options{Now: fixedNow})
+	phone := "13800138000"
+
+	for i := 0; i < 10; i++ {
+		_, _ = svc.VerifySMS(context.Background(), VerifySMSInput{
+			Phone:    phone,
+			Code:     "000000",
+			ClientIP: fmt.Sprintf("203.0.113.%d", i+1),
+		})
+	}
+
+	_, err := svc.VerifySMS(context.Background(), VerifySMSInput{
+		Phone:    phone,
+		Code:     "000000",
+		ClientIP: "203.0.113.200",
+	})
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "verification_rate_limited" || authErr.Status != http.StatusTooManyRequests {
+		t.Fatalf("expected recipient verification_rate_limited 429, got %#v", err)
+	}
+
+	for i := 0; i < 10; i++ {
+		_, _ = svc.VerifySMS(context.Background(), VerifySMSInput{
+			Phone:    fmt.Sprintf("139%08d", i),
+			Code:     "000000",
+			ClientIP: "198.51.100.20",
+		})
+	}
+	_, err = svc.VerifySMS(context.Background(), VerifySMSInput{
+		Phone:    "13700000000",
+		Code:     "000000",
+		ClientIP: "198.51.100.20",
+	})
+	if !errors.As(err, &authErr) || authErr.Code != "verification_rate_limited" || authErr.Status != http.StatusTooManyRequests {
+		t.Fatalf("expected IP verification_rate_limited 429, got %#v", err)
+	}
+}
+
+func TestNumericVerificationCodesAreRandomSixDigits(t *testing.T) {
+	seen := make(map[string]struct{})
+	for i := 0; i < 32; i++ {
+		code, err := newNumericVerificationCode(6)
+		if err != nil {
+			t.Fatalf("generate code: %v", err)
+		}
+		if len(code) != 6 || strings.Trim(code, "0123456789") != "" {
+			t.Fatalf("expected six digits, got %q", code)
+		}
+		seen[code] = struct{}{}
+	}
+	if len(seen) < 2 {
+		t.Fatal("expected randomized verification codes")
+	}
+}
+
+func TestVerificationPolicyControlsMaximumFailures(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	svc := NewWithStore(store, Options{
+		Now: fixedNow,
+		Verification: VerificationPolicy{
+			MaxFailures: 2,
+		},
+	})
+
+	if _, err := svc.SendVerificationCode(context.Background(), "13800138000"); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		_, _ = svc.VerifySMS(context.Background(), VerifySMSInput{Phone: "13800138000", Code: "000000"})
+	}
+	store.mu.Lock()
+	_, exists := store.smsChallenges["13800138000"]
+	store.mu.Unlock()
+	if exists {
+		t.Fatal("expected challenge to be deleted after configured maximum failures")
+	}
+}
+
+func TestVerificationDeliveryErrorMapsProviderControls(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{name: "provider rate limit", err: errors.New("[TencentCloudSDKError] Code=LimitExceeded.PhoneNumberOneHourLimit, Message=too frequent"), status: http.StatusTooManyRequests, code: "verification_provider_rate_limited"},
+		{name: "provider blacklist", err: errors.New("[TencentCloudSDKError] Code=FailedOperation.InBlacklist, Message=blocked"), status: http.StatusForbidden, code: "verification_provider_rejected"},
+		{name: "provider credentials", err: errors.New("[TencentCloudSDKError] Code=AuthFailure.SecretIdNotFound, Message=bad credential"), status: http.StatusBadGateway, code: "sms_failed"},
+		{name: "provider outage", err: errors.New("network unavailable"), status: http.StatusBadGateway, code: "sms_failed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := verificationDeliveryError(tt.err, "sms_failed", "短信发送失败。")
+			var authErr *Error
+			if !errors.As(err, &authErr) || authErr.Status != tt.status || authErr.Code != tt.code {
+				t.Fatalf("unexpected mapped error: %#v", err)
+			}
+		})
+	}
+}
+
+func TestSendVerificationCodeUsesInjectedGenerator(t *testing.T) {
 	svc := New(Options{
-		Now:            fixedNow,
-		DefaultSMSCode: "123456",
+		Now:                       fixedNow,
+		VerificationCodeGenerator: fixedVerificationCode("123456"),
 	})
 
 	if _, err := svc.SendVerificationCode(context.Background(), "13800138000"); err != nil {
@@ -344,8 +565,8 @@ func TestVerifyRealnameSyncsShadowBasicAuthWhenBindingIsActive(t *testing.T) {
 	client := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}}
 	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), client, shadowbinding.Options{Enabled: true, Now: fixedNow})
 	svc := NewWithStore(store, Options{
-		Now:            fixedNow,
-		DefaultSMSCode: "111111",
+		Now:                       fixedNow,
+		VerificationCodeGenerator: fixedVerificationCode("111111"),
 		RealnameVerifier: stubRealnameVerifier{result: RealnameProviderResult{
 			Result:    "0",
 			RequestID: "req-success",
@@ -391,8 +612,8 @@ func TestVerifyRealnameDoesNotSyncShadowBasicAuthByDefault(t *testing.T) {
 	client := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}}
 	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), client, shadowbinding.Options{Enabled: true, Now: fixedNow})
 	svc := NewWithStore(store, Options{
-		Now:            fixedNow,
-		DefaultSMSCode: "111111",
+		Now:                       fixedNow,
+		VerificationCodeGenerator: fixedVerificationCode("111111"),
 		RealnameVerifier: stubRealnameVerifier{result: RealnameProviderResult{
 			Result:    "0",
 			RequestID: "req-default-no-basic-auth-sync",
@@ -432,8 +653,8 @@ func TestVerifyRealnameKeepsLocalSuccessWhenShadowBasicAuthSyncFails(t *testing.
 	}
 	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), client, shadowbinding.Options{Enabled: true, Now: fixedNow})
 	svc := NewWithStore(store, Options{
-		Now:            fixedNow,
-		DefaultSMSCode: "111111",
+		Now:                       fixedNow,
+		VerificationCodeGenerator: fixedVerificationCode("111111"),
 		RealnameVerifier: stubRealnameVerifier{result: RealnameProviderResult{
 			Result:    "0",
 			RequestID: "req-success",
@@ -582,6 +803,64 @@ func TestVerifyRealnamePhoneWithShadowRequiresBindingSuccess(t *testing.T) {
 	}
 }
 
+func TestIssueTencentCloudConsoleAuthCodeUsesCurrentUsersActiveBinding(t *testing.T) {
+	shadowSvc := shadowbinding.New(
+		shadowbinding.NewMemoryStore(),
+		&stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}},
+		shadowbinding.Options{Enabled: true, Now: fixedNow, AuthCodePrefix: "bjsbx"},
+	)
+	svc := NewWithStore(
+		NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true}),
+		Options{Now: fixedNow, ShadowBinding: shadowSvc},
+	)
+	session := mustPasswordSessionWithPhone(t, svc, "console-login@example.invalid", "13800138090")
+	if _, err := shadowSvc.BindShadowAccount(context.Background(), shadowbinding.BindInput{
+		UserID: session.User.ID,
+		Phone:  session.User.Phone,
+	}); err != nil {
+		t.Fatalf("seed active shadow binding: %v", err)
+	}
+
+	code, err := svc.IssueTencentCloudConsoleAuthCode(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("issue Tencent Cloud console auth code: %v", err)
+	}
+	if !strings.HasPrefix(code.Code, "bjsbx.") {
+		t.Fatalf("expected Beijing routing prefix, got %q", code.Code)
+	}
+	if got, want := code.ExpiresAt, fixedNow().Add(10*time.Minute); !got.Equal(want) {
+		t.Fatalf("expected expiry %s, got %s", want, got)
+	}
+
+	rawCode := strings.TrimPrefix(code.Code, "bjsbx.")
+	consumed, err := shadowSvc.ConsumeAuthCode(context.Background(), rawCode)
+	if err != nil {
+		t.Fatalf("consume issued raw auth code: %v", err)
+	}
+	if got, want := consumed.UserID, session.User.ID; got != want {
+		t.Fatalf("expected code for current user %q, got %q", want, got)
+	}
+}
+
+func TestIssueTencentCloudConsoleAuthCodeRequiresActiveBinding(t *testing.T) {
+	shadowSvc := shadowbinding.New(
+		shadowbinding.NewMemoryStore(),
+		&stubShadowRegisterClient{},
+		shadowbinding.Options{Enabled: true, Now: fixedNow},
+	)
+	svc := NewWithStore(
+		NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true}),
+		Options{Now: fixedNow, ShadowBinding: shadowSvc},
+	)
+	session := mustPasswordSessionWithPhone(t, svc, "console-no-binding@example.invalid", "13800138091")
+
+	_, err := svc.IssueTencentCloudConsoleAuthCode(context.Background(), session.Token)
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "shadow_binding_not_ready" || authErr.Status != http.StatusConflict {
+		t.Fatalf("expected shadow_binding_not_ready 409, got %#v", err)
+	}
+}
+
 func TestVerifyRealnamePhoneWithShadowUsesTencentCode(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true})
 	client := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}}
@@ -642,7 +921,7 @@ func TestVerifyRealnamePhoneMapsTencentPhoneBound(t *testing.T) {
 }
 
 func TestVerifyPhoneChangeUpdatesCurrentUserPhone(t *testing.T) {
-	svc := New(Options{Now: fixedNow, DefaultSMSCode: "654321"})
+	svc := New(Options{Now: fixedNow, VerificationCodeGenerator: fixedVerificationCode("654321")})
 	if _, err := svc.SendVerificationCode(context.Background(), "13800138000"); err != nil {
 		t.Fatalf("send initial sms: %v", err)
 	}
@@ -718,7 +997,7 @@ func TestPhoneChangeUsesTencentCodeForActiveShadowBinding(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{Now: fixedNow})
 	client := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}}
 	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), client, shadowbinding.Options{Enabled: true, Now: fixedNow})
-	svc := NewWithStore(store, Options{Now: fixedNow, DefaultSMSCode: "111111", ShadowBinding: shadowSvc})
+	svc := NewWithStore(store, Options{Now: fixedNow, VerificationCodeGenerator: fixedVerificationCode("111111"), ShadowBinding: shadowSvc})
 	if _, err := svc.SendVerificationCode(context.Background(), "13800138000"); err != nil {
 		t.Fatalf("send initial sms: %v", err)
 	}
@@ -755,7 +1034,7 @@ func TestPhoneChangeUsesTencentCodeForInitialShadowBinding(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{Now: fixedNow})
 	client := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}}
 	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), client, shadowbinding.Options{Enabled: true, Now: fixedNow})
-	svc := NewWithStore(store, Options{Now: fixedNow, DefaultSMSCode: "111111", ShadowBinding: shadowSvc})
+	svc := NewWithStore(store, Options{Now: fixedNow, VerificationCodeGenerator: fixedVerificationCode("111111"), ShadowBinding: shadowSvc})
 	if _, err := svc.SendVerificationCode(context.Background(), "13800138000"); err != nil {
 		t.Fatalf("send initial sms: %v", err)
 	}
@@ -790,7 +1069,7 @@ func TestPhoneChangeUsesTencentCodeForInitialShadowBinding(t *testing.T) {
 func TestSendShadowBindingCodeUsesTencentSMSWhenShadowEnabled(t *testing.T) {
 	client := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}}
 	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), client, shadowbinding.Options{Enabled: true, Now: fixedNow})
-	svc := NewWithStore(NewMemoryStore(StoreOptions{Now: fixedNow}), Options{Now: fixedNow, DefaultSMSCode: "111111", ShadowBinding: shadowSvc})
+	svc := NewWithStore(NewMemoryStore(StoreOptions{Now: fixedNow}), Options{Now: fixedNow, VerificationCodeGenerator: fixedVerificationCode("111111"), ShadowBinding: shadowSvc})
 
 	if _, err := svc.SendShadowBindingCode(context.Background(), "13800138000", "127.0.0.1"); err != nil {
 		t.Fatalf("send shadow binding sms: %v", err)
@@ -806,7 +1085,7 @@ func TestPhoneChangeMapsTencentPhoneBound(t *testing.T) {
 		err: errors.New("[TencentCloudSDKError] Code=LimitExceeded.PhoneNumBound, Message=Phone number binding exceeds limit"),
 	}
 	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), client, shadowbinding.Options{Enabled: true, Now: fixedNow})
-	svc := NewWithStore(store, Options{Now: fixedNow, DefaultSMSCode: "111111", ShadowBinding: shadowSvc})
+	svc := NewWithStore(store, Options{Now: fixedNow, VerificationCodeGenerator: fixedVerificationCode("111111"), ShadowBinding: shadowSvc})
 	if _, err := svc.SendVerificationCode(context.Background(), "13800138000"); err != nil {
 		t.Fatalf("send initial sms: %v", err)
 	}
@@ -836,7 +1115,7 @@ func TestPhoneChangeMapsTencentVerifyCodeMismatch(t *testing.T) {
 		result: shadowbinding.CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000},
 	}
 	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), client, shadowbinding.Options{Enabled: true, Now: fixedNow})
-	svc := NewWithStore(store, Options{Now: fixedNow, DefaultSMSCode: "111111", ShadowBinding: shadowSvc})
+	svc := NewWithStore(store, Options{Now: fixedNow, VerificationCodeGenerator: fixedVerificationCode("111111"), ShadowBinding: shadowSvc})
 	if _, err := svc.SendVerificationCode(context.Background(), "13800138000"); err != nil {
 		t.Fatalf("send initial sms: %v", err)
 	}
@@ -851,6 +1130,9 @@ func TestPhoneChangeMapsTencentVerifyCodeMismatch(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("bind shadow account: %v", err)
 	}
+	if _, err := svc.SendPhoneChangeCode(context.Background(), session.Token, "13900139000", "127.0.0.1"); err != nil {
+		t.Fatalf("send phone change code: %v", err)
+	}
 	client.err = errors.New("[TencentCloudSDKError] Code=OperationDenied.VerifyCodeNotMatch, Message=phone verify code error")
 	_, err = svc.VerifyPhoneChange(context.Background(), session.Token, PhoneChangeVerifyInput{
 		Phone: "13900139000",
@@ -859,6 +1141,75 @@ func TestPhoneChangeMapsTencentVerifyCodeMismatch(t *testing.T) {
 	var authErr *Error
 	if !errors.As(err, &authErr) || authErr.Code != "invalid_sms_code" || authErr.Status != http.StatusBadRequest {
 		t.Fatalf("expected invalid sms code mapping, got %#v", err)
+	}
+}
+
+func TestShadowPhoneChangeDeletesChallengeAfterFiveWrongCodes(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	client := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000}}
+	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), client, shadowbinding.Options{Enabled: true, Now: fixedNow})
+	svc := NewWithStore(store, Options{Now: fixedNow, VerificationCodeGenerator: fixedVerificationCode("111111"), ShadowBinding: shadowSvc})
+	if _, err := svc.SendVerificationCode(context.Background(), "13800138001"); err != nil {
+		t.Fatalf("send initial sms: %v", err)
+	}
+	session, err := svc.VerifySMS(context.Background(), VerifySMSInput{Name: "防爆破用户", Phone: "13800138001", Code: "111111"})
+	if err != nil {
+		t.Fatalf("verify initial sms: %v", err)
+	}
+	if _, err := shadowSvc.BindShadowAccount(context.Background(), shadowbinding.BindInput{UserID: session.User.ID, Phone: session.User.Phone, VerifyCode: "111111"}); err != nil {
+		t.Fatalf("bind shadow account: %v", err)
+	}
+	if _, err := svc.SendPhoneChangeCode(context.Background(), session.Token, "13900139001", "127.0.0.1"); err != nil {
+		t.Fatalf("send phone change code: %v", err)
+	}
+	client.err = errors.New("[TencentCloudSDKError] Code=OperationDenied.VerifyCodeNotMatch, Message=phone verify code error")
+	for attempt := 1; attempt <= 5; attempt++ {
+		_, err := svc.VerifyPhoneChange(context.Background(), session.Token, PhoneChangeVerifyInput{Phone: "13900139001", Code: "wrong"})
+		var authErr *Error
+		if !errors.As(err, &authErr) || authErr.Code != "invalid_sms_code" {
+			t.Fatalf("attempt %d: expected invalid_sms_code, got %#v", attempt, err)
+		}
+	}
+	if client.updateCalls != 5 {
+		t.Fatalf("expected five provider attempts, got %d", client.updateCalls)
+	}
+	_, err = svc.VerifyPhoneChange(context.Background(), session.Token, PhoneChangeVerifyInput{Phone: "13900139001", Code: "wrong"})
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "sms_code_not_found" {
+		t.Fatalf("expected exhausted challenge to require a new code, got %#v", err)
+	}
+	if client.updateCalls != 5 {
+		t.Fatalf("exhausted challenge must block provider calls, got %d", client.updateCalls)
+	}
+}
+
+func TestExternalSMSReservationIsSingleFlightAndGenerationBound(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	now := fixedNow()
+	if _, err := store.SendVerificationCode(context.Background(), "13900139002", "111111", now, 5*time.Minute, time.Minute, 5); err != nil {
+		t.Fatalf("send first challenge: %v", err)
+	}
+	first, err := store.ReserveExternalSMSChallenge(context.Background(), "13900139002", "reservation-1", now)
+	if err != nil {
+		t.Fatalf("reserve first challenge: %v", err)
+	}
+	if _, err := store.ReserveExternalSMSChallenge(context.Background(), "13900139002", "reservation-2", now); err == nil {
+		t.Fatal("parallel reservation must be rejected")
+	}
+
+	secondNow := now.Add(time.Minute)
+	if _, err := store.SendVerificationCode(context.Background(), "13900139002", "222222", secondNow, 5*time.Minute, time.Minute, 5); err != nil {
+		t.Fatalf("send replacement challenge: %v", err)
+	}
+	if err := store.ConsumeExternalSMSChallenge(context.Background(), first); err != nil {
+		t.Fatalf("consume stale reservation: %v", err)
+	}
+	second, err := store.ReserveExternalSMSChallenge(context.Background(), "13900139002", "reservation-3", secondNow)
+	if err != nil {
+		t.Fatalf("stale reservation must not delete replacement challenge: %v", err)
+	}
+	if second.Generation == first.Generation {
+		t.Fatalf("replacement challenge must advance generation: first=%d second=%d", first.Generation, second.Generation)
 	}
 }
 
@@ -1883,6 +2234,8 @@ func TestRetryRealnameSyncPromotesAfterStoredRealname(t *testing.T) {
 		t.Fatalf("expected failed sync before retry, got %+v", failedProfile)
 	}
 
+	passNotifier := &recordingPassBillingMigrationNotifier{}
+	svc.passBillingMigrationNotifier = passNotifier
 	client.basicAuthErr = nil
 	result, err := svc.RetryRealnameSync(context.Background(), session.Token, "127.0.0.1", "agent")
 	if err != nil {
@@ -1893,6 +2246,24 @@ func TestRetryRealnameSyncPromotesAfterStoredRealname(t *testing.T) {
 	}
 	if client.lastBasicAuth.Name != "张三" || client.lastBasicAuth.IDCard != "11010519491231002X" || client.lastBasicAuth.ClientIP != "127.0.0.1" || client.lastBasicAuth.ClientUA != "agent" {
 		t.Fatalf("expected retry to use stored realname and client context, got %+v", client.lastBasicAuth)
+	}
+	if len(passNotifier.calls) != 1 {
+		t.Fatalf("expected retry success to notify pass billing migration once, got %d", len(passNotifier.calls))
+	}
+	if got := passNotifier.calls[0]; got.UserID != session.User.ID || got.Uin != 300000000056 || got.AppID != 1250000000 {
+		t.Fatalf("unexpected pass billing migration binding: %+v", got)
+	}
+
+	passNotifier.calls = nil
+	again, err := svc.RetryRealnameSync(context.Background(), session.Token, "127.0.0.1", "agent")
+	if err != nil {
+		t.Fatalf("retry realname sync after success: %v", err)
+	}
+	if !again.OK || again.RealnameSyncStatus != RealnameSyncStatusSucceeded {
+		t.Fatalf("unexpected already-synced retry result: %+v", again)
+	}
+	if len(passNotifier.calls) != 1 {
+		t.Fatalf("expected already-synced retry to notify pass billing migration once, got %d", len(passNotifier.calls))
 	}
 }
 

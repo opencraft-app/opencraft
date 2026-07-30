@@ -113,6 +113,9 @@ func main() {
 		SiteKind: cfg.SiteKind,
 		// 北京 2 预发布接入 2026-06-12：region 字段 override（LIGHTVELA_TRADE_REGION env）。
 		RegionOverride: cfg.RegionOverride,
+		// 询价专用 shadow binding 兜底身份；付费下单仍由 placeorder 强校验真实绑定。
+		InquiryFallbackUin:   cfg.InquiryFallbackUin,
+		InquiryFallbackAppID: cfg.InquiryFallbackAppID,
 		// 点石活动接入（设计稿 §5.3）：同进同退，都为 nil 时 inquiry 走 jifei 单路径。
 		ActivityResolver: activityResolver,
 		DianshiClient:    dianshiClient,

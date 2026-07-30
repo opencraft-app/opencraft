@@ -1011,6 +1011,9 @@ func TestWispOuterPrepareScriptUsesFlattenedEROFSRootfs(t *testing.T) {
 	if !strings.HasSuffix(defaultWispPackageURL, ".erofs") {
 		t.Fatalf("default Wisp package must be the flattened EROFS artifact, got %q", defaultWispPackageURL)
 	}
+	if !strings.Contains(defaultWispPackageURL, "/workspace/releases/") {
+		t.Fatalf("default Wisp package must point at the release artifact path, got %q", defaultWispPackageURL)
+	}
 	script := wispOuterPrepareScript()
 	for _, want := range []string{
 		`*.erofs) pkg_format="${pkg_format:-erofs}"`,

@@ -41,44 +41,53 @@ import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/produc
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
-import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
+import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
+import { usePaidBillingEnabled } from "@/contexts/runtime-config-context";
 import { useT, t as rawT } from "@/i18n/t";
+import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
+import type { IModelProvider } from "@tencent/tea-sdk-lightclaw";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
-import { AppLink, useAppLocation, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
+import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
   AGENT_SECTION_PATH_BY_ID,
+  getAgentSectionHref,
   type AgentSettingsSectionId,
 } from "@/lib/agent-routes";
 import type { WorkerActionStatusResult } from "@/repositories/types";
 import {
   createMonoDebugExecAdapter,
-} from "@/pages/marketing/openclaw-tat-adapter";
-import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
-import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
+} from "@/pages/marketing/agent-tat-adapter";
+import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
+import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
+import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
+import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
 import {
-  buildHermesMemoryReadCommand,
-  buildHermesMemoryLimitCommand,
+  fetchHermesMemorySnapshot,
   getHermesMemoryLimitBounds,
   getMemoryUsagePercent,
   isHermesMemoryLimitNearUsage,
-  parseHermesMemorySnapshot,
   splitHermesMemoryEntries,
   toSingleLineMemoryEntry,
   validateHermesMemoryLimit,
   type HermesMemorySnapshot,
   type HermesMemoryLimitTarget,
   type HermesMemoryLimitValidation,
-} from "@/pages/marketing/openclaw-memory";
-import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
-import { HermesAgentSkillsPanel, type HermesAgentSkillsPanelProps } from "@/pages/marketing/hermes-agent-skills-panel";
-import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
-import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
+} from "@/pages/marketing/agent-memory";
+import {
+  canStartHermesMemoryLimitSave,
+  isHermesMemoryOperationCurrent,
+  saveHermesMemoryLimit as executeHermesMemoryLimitSave,
+} from "@/pages/marketing/agent-memory-save";
+import { BuddyPanel } from "@/pages/marketing/agent-buddy-panel";
+import { HermesAgentSkillsPanel } from "@/pages/marketing/agent-skills-panel";
+import { AchievementsPanel } from "@/pages/marketing/agent-achievements-panel";
+import { HermesAgentAutomationsPanel } from "@/pages/marketing/agent-automations-panel";
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
 import { StableTeaSdkPanelHost } from "@/pages/marketing/agent-settings-sdk-stable-host";
 import {
@@ -87,9 +96,10 @@ import {
   getWorkspaceTaskPhaseLabel,
   isWorkspaceActionRunning,
   selectCurrentWorkspaceTask,
+  shouldShowWorkspaceRecoveryPanel,
   type WorkspaceActionKind,
 } from "@/pages/marketing/agent-workspace-recovery";
-import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
+import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/agent-create-availability";
 import {
   getRestartBlockReason,
   isActiveBotRestarting as computeIsActiveBotRestarting,
@@ -98,7 +108,7 @@ import {
   setErrorForBot,
   clearErrorForBot,
   type RestartErrors,
-} from "@/pages/marketing/openclaw-restart-gateway";
+} from "@/pages/marketing/agent-restart-gateway";
 import {
   getResetBlockReason,
   getAcliResetBlockReason,
@@ -109,8 +119,13 @@ import {
   truncateExecOutput,
   ACLI_RESET_COMMAND,
   RESET_BLOCK_REASON,
-} from "@/pages/marketing/openclaw-reset-config";
+} from "@/pages/marketing/agent-reset-config";
 import { toast } from "@/lib/toast";
+import { isPaidBillingEnabled } from "@/lib/billing-flow";
+import { getPassExpiryReminder } from "@/lib/pass-renewal";
+import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
+import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
+import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 
 const AgentChatPanel = lazy(() =>
   import("@/pages/marketing/agent-chat-panel").then((module) => ({ default: module.AgentChatPanel })),
@@ -165,10 +180,17 @@ type TeaSdkPanelProps = {
 type TeaSdkRuntime = {
   ChannelPanel: ComponentType<TeaSdkPanelProps>;
   ModelPanel: ComponentType<TeaSdkPanelProps>;
-  SkillPanel: ComponentType<TeaSdkPanelProps>;
+  /** SDK 的 useModelProviders hook（动态 import 获取，避免静态 import 破坏 SSG） */
+  useModelProviders: (params?: {
+    isI18n?: boolean;
+    useEnglish?: boolean;
+    rainbowBaseUrl?: string;
+    app?: string;
+  }) => IModelProvider[] | undefined;
   createProductConfig: (args: {
     runCommand: TeaSdkProductConfig["runCommand"];
     getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
+    modelProviders?: IModelProvider[];
   }) => TeaSdkProductConfig;
   getGatewayRestartCommand: () => string;
   getProviderSaveCommand: (config: {
@@ -204,21 +226,47 @@ function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
       const hermesScripts = lightVelaHermesScripts.hermes;
       const hermesGatewayCommands = hermesScripts.gateway;
       const hermesModelCommands = hermesScripts.model;
+      const useModelProviders: TeaSdkRuntime["useModelProviders"] =
+        typeof sdk.useModelProviders === "function"
+          ? sdk.useModelProviders
+          : () => undefined;
 
       const runtime: TeaSdkRuntime = {
         ChannelPanel: sdk.ChannelPanel as unknown as ComponentType<TeaSdkPanelProps>,
         ModelPanel: sdk.ModelPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        SkillPanel: sdk.SkillPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        createProductConfig: ({ runCommand, getInvocationTask }) => ({
-          ...sdk.createLighthouseConfig({
+        useModelProviders,
+        createProductConfig: ({ runCommand, getInvocationTask, modelProviders }) => {
+          const config = sdk.createLighthouseConfig({
             agentType: "hermes",
             supportsTencentCloudApi: false,
             isI18n: isGlobal,
-          }),
-          acliProduct: "lightvela",
-          runCommand,
-          getInvocationTask,
-        }),
+            modelProviders,
+          });
+          // SDK 的 getFilteredModelProviderList 用 IS_I18N（来自 window.LOGIN_INFO.area）
+          // 做国内/国际站过滤，但 mono2 不设置 window.LOGIN_INFO，导致 IS_I18N 恒为 false，
+          // 国际站会错误隐藏 OpenAI/Anthropic 等海外 provider。这里用 mono2 的 isGlobal
+          // 覆盖过滤逻辑，绕过 SDK 的模块级常量。
+          const hiddenProviders = isGlobal
+            ? sdk.I18N_HIDDEN_PROVIDERS
+            : sdk.DOMESTIC_HIDDEN_PROVIDERS;
+          return {
+            ...config,
+            acliProduct: "lightvela",
+            runCommand,
+            getInvocationTask,
+            getFilteredModelProviders: (region?: string) => {
+              const filtered = config.modelProviders.filter(
+                (p) => !hiddenProviders.includes(p.value),
+              );
+              if (region === "ap-hongkong") {
+                return filtered.filter(
+                  (p) => !sdk.HK_REGION_HIDDEN_PROVIDERS.includes(p.value),
+                );
+              }
+              return filtered;
+            },
+          };
+        },
         getGatewayRestartCommand: () => hermesGatewayCommands.getRestartCommand(),
         getProviderSaveCommand: (config) => hermesModelCommands.getProviderSaveCommand(config),
         getModelSwitchCommand: (modelFullId) => hermesModelCommands.getModelSwitchCommand(modelFullId),
@@ -252,22 +300,21 @@ function TeaSdkSettingsPanel({
   instance,
   featureFlags,
   productConfigArgs,
+  useEnglish,
 }: {
-  kind: "channel" | "model" | "skill";
+  kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
   featureFlags: TeaSdkFeatureFlags;
   productConfigArgs: {
     runCommand: TeaSdkProductConfig["runCommand"];
     getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
   };
+  /** 是否取英文文案（语言维度），传给 SDK useModelProviders */
+  useEnglish: boolean;
 }) {
   const t = useT();
   const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
   const [error, setError] = useState<string | null>(() => teaSdkRuntimeError?.message ?? null);
-  const productConfig = useMemo(
-    () => runtime ? runtime.createProductConfig(productConfigArgs) : null,
-    [runtime, productConfigArgs],
-  );
 
   useEffect(() => {
     if (teaSdkRuntimeCache) {
@@ -296,16 +343,48 @@ function TeaSdkSettingsPanel({
     );
   }
 
-  if (!runtime || !productConfig) {
+  if (!runtime) {
     return <TeaSdkRuntimeLoading />;
   }
 
-  const Panel =
-    kind === "channel"
-      ? runtime.ChannelPanel
-      : kind === "model"
-        ? runtime.ModelPanel
-        : runtime.SkillPanel;
+  return (
+    <TeaSdkSettingsPanelReady
+      runtime={runtime}
+      kind={kind}
+      instance={instance}
+      featureFlags={featureFlags}
+      productConfigArgs={productConfigArgs}
+      useEnglish={useEnglish}
+    />
+  );
+}
+
+/** runtime 已就绪的内层组件，无条件调 hook（遵守 Rules of Hooks） */
+function TeaSdkSettingsPanelReady({
+  runtime,
+  kind,
+  instance,
+  featureFlags,
+  productConfigArgs,
+  useEnglish,
+}: {
+  runtime: TeaSdkRuntime;
+  kind: "channel" | "model";
+  instance: TeaSdkInstanceInfo;
+  featureFlags: TeaSdkFeatureFlags;
+  productConfigArgs: {
+    runCommand: TeaSdkProductConfig["runCommand"];
+    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
+  };
+  useEnglish: boolean;
+}) {
+  const modelProviders = runtime.useModelProviders({ isI18n: isGlobal, useEnglish });
+  const productConfig = useMemo(
+    () => runtime.createProductConfig({ ...productConfigArgs, modelProviders }),
+    [runtime, productConfigArgs, modelProviders],
+  );
+
+  const Panel = kind === "channel" ? runtime.ChannelPanel : runtime.ModelPanel;
 
   return (
     <StableTeaSdkPanelHost>
@@ -313,78 +392,6 @@ function TeaSdkSettingsPanel({
         instance={instance}
         featureFlags={featureFlags}
         productConfig={productConfig}
-      />
-    </StableTeaSdkPanelHost>
-  );
-}
-
-function HermesAgentSkillsRuntimePanel({
-  botId,
-  execDebugCommand,
-  featureFlags,
-  initialSectionSlug,
-  instance,
-  productConfigArgs,
-}: {
-  botId: string;
-  execDebugCommand: HermesAgentSkillsPanelProps["execDebugCommand"];
-  featureFlags: TeaSdkFeatureFlags;
-  initialSectionSlug?: string;
-  instance: TeaSdkInstanceInfo;
-  productConfigArgs: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-  };
-}) {
-  const t = useT();
-  const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
-  const [error, setError] = useState<string | null>(() => teaSdkRuntimeError?.message ?? null);
-  const productConfig = useMemo(
-    () => runtime ? runtime.createProductConfig(productConfigArgs) : null,
-    [runtime, productConfigArgs],
-  );
-
-  useEffect(() => {
-    if (teaSdkRuntimeCache) {
-      setRuntime(teaSdkRuntimeCache);
-      setError(null);
-      return;
-    }
-    let cancelled = false;
-    void loadTeaSdkRuntime()
-      .then((nextRuntime) => {
-        if (!cancelled) setRuntime(nextRuntime);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (error) {
-    return (
-      <div className="rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-        {t("加载配置面板失败：{{message}}", { message: error })}
-      </div>
-    );
-  }
-
-  if (!runtime || !productConfig) {
-    return <TeaSdkRuntimeLoading />;
-  }
-
-  return (
-    <StableTeaSdkPanelHost>
-      <HermesAgentSkillsPanel
-        botId={botId}
-        execDebugCommand={execDebugCommand}
-        featureFlags={featureFlags}
-        initialSectionSlug={initialSectionSlug}
-        instance={instance}
-        productConfig={productConfig}
-        SkillPanel={runtime.SkillPanel}
       />
     </StableTeaSdkPanelHost>
   );
@@ -684,6 +691,7 @@ const MemoryLimitCard = ({
   used,
   limit,
   isSaving,
+  isDisabled,
   saveError,
   onSaveLimit,
   onDraftChange,
@@ -695,6 +703,7 @@ const MemoryLimitCard = ({
   used: number;
   limit: number;
   isSaving: boolean;
+  isDisabled: boolean;
   saveError: string | null;
   onSaveLimit: (target: HermesMemoryLimitTarget, value: number, existingChars: number) => Promise<boolean>;
   onDraftChange: (target: HermesMemoryLimitTarget) => void;
@@ -713,7 +722,7 @@ const MemoryLimitCard = ({
   const helperMessage = displayError
     || (shouldWarnNearUsage
       ? t("新上限接近当前用量，后续记忆可能无法继续写入或触发自动淘汰。")
-      : t("可设置范围：{{min}}-{{max}} 字符。保存后会重启 Hermes 网关，可能短暂中断会话。", { min: bounds.min, max: bounds.max }));
+      : t("可设置范围：{{min}}-{{max}} 字符。保存后会重启 Hermes Agent 网关，可能短暂中断会话。", { min: bounds.min, max: bounds.max }));
 
   useEffect(() => {
     if (!isEditing) {
@@ -742,7 +751,7 @@ const MemoryLimitCard = ({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-black/85">{title}</p>
-          <p className="mt-1 max-w-[28rem] text-xs leading-relaxed text-black/45">{description}</p>
+          <p className="mt-1 max-w-lg text-pretty text-xs leading-relaxed text-black/45">{description}</p>
         </div>
         <span className="shrink-0 rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
           {percent}%
@@ -765,7 +774,7 @@ const MemoryLimitCard = ({
               setTouched(true);
               onDraftChange(target);
             }}
-            disabled={isSaving}
+            disabled={isDisabled}
             className="h-9 w-28 rounded-md border border-black/[0.10] bg-white px-3 text-sm tabular-nums text-black/85 outline-none transition-colors focus:border-black/30 disabled:cursor-not-allowed disabled:opacity-60"
           />
         ) : (
@@ -781,7 +790,11 @@ const MemoryLimitCard = ({
               setTouched(false);
               setIsEditing(true);
             }}
-            className="ml-1 inline-flex h-7 items-center rounded-md border border-black/[0.10] bg-white px-2.5 text-xs font-medium text-black/55 transition-colors hover:border-black/[0.18] hover:bg-black/[0.04] hover:text-black/80"
+            disabled={isDisabled}
+            className={cn(
+              "ml-1 inline-flex h-7 items-center rounded-md border border-black/[0.10] bg-white px-2.5 text-xs font-medium text-black/55 transition-colors hover:border-black/[0.18] hover:bg-black/[0.04] hover:text-black/80",
+              isDisabled && "cursor-not-allowed opacity-45",
+            )}
           >
             {t("调整限额")}
           </button>
@@ -790,10 +803,10 @@ const MemoryLimitCard = ({
             <button
               type="button"
               onClick={handleSave}
-              disabled={isSaving || !validation.ok}
+              disabled={isDisabled || !validation.ok}
               className={cn(
                 "ml-1 inline-flex h-8 items-center gap-1.5 rounded-md bg-black px-3 text-xs font-medium text-white transition-colors hover:bg-black/85",
-                (isSaving || !validation.ok) && "cursor-not-allowed opacity-45",
+                (isDisabled || !validation.ok) && "cursor-not-allowed opacity-45",
               )}
             >
               {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -802,10 +815,10 @@ const MemoryLimitCard = ({
             <button
               type="button"
               onClick={handleCancel}
-              disabled={isSaving}
+              disabled={isDisabled}
               className={cn(
                 "inline-flex h-8 items-center rounded-md border border-black/[0.08] bg-white px-3 text-xs font-medium text-black/55 transition-colors hover:bg-black/[0.04] hover:text-black/75",
-                isSaving && "cursor-not-allowed opacity-45",
+                isDisabled && "cursor-not-allowed opacity-45",
               )}
             >
               {t("取消")}
@@ -894,7 +907,7 @@ const MemoryPanel = ({
   return (
     <div className="space-y-4">
       <AgentSectionHeader
-        title={t("记忆")}
+        title={t("持久记忆")}
         description={t("查看当前 Hermes Agent 的记忆和用户画像文件")}
         actions={(
           <button
@@ -931,10 +944,11 @@ const MemoryPanel = ({
             <MemoryLimitCard
               target="memory"
               title={t("记忆统计")}
-              description={t("MEMORY.md：帮 Agent 长期记住项目背景、运行环境和常用约定。")}
+              description={t("MEMORY.md：跨会话长期记忆文件，主要保存项目环境事实、工作约定和经验教训等。")}
               used={snapshot.memoryChars}
               limit={snapshot.memoryCharLimit}
               isSaving={savingLimitTarget === "memory"}
+              isDisabled={savingLimitTarget !== null}
               saveError={limitSaveError?.target === "memory" ? limitSaveError.message : null}
               onSaveLimit={onSaveLimit}
               onDraftChange={onDraftChange}
@@ -947,6 +961,7 @@ const MemoryPanel = ({
               used={snapshot.userChars}
               limit={snapshot.userCharLimit}
               isSaving={savingLimitTarget === "user"}
+              isDisabled={savingLimitTarget !== null}
               saveError={limitSaveError?.target === "user" ? limitSaveError.message : null}
               onSaveLimit={onSaveLimit}
               onDraftChange={onDraftChange}
@@ -1157,10 +1172,14 @@ export const ChannelSection = () => {
   /* ── 启动微信扫码流程 ── */
   const handleWechatAuth = useCallback(async () => {
     if (!selectedBot) {
-      setChannelNotice(t("请先创建并选择一个 Hermes，再接入通道。"));
+      setChannelNotice(t("请先创建并选择一个 Hermes Agent，再接入通道。"));
       return;
     }
 
+    trackDatongClick("channel_connect_btn", {
+      pgid: DATONG_PAGE_IDS.AGENT_CHANNELS,
+      params: { bot_id: selectedBot.id, channel_type: "wechat" },
+    });
     setShowQrModal(true);
     setWxStatus("creating");
     setWxQrUrl("");
@@ -1294,6 +1313,10 @@ export const ChannelSection = () => {
       return;
     }
 
+    trackDatongClick("channel_connect_btn", {
+      pgid: DATONG_PAGE_IDS.AGENT_CHANNELS,
+      params: { bot_id: selectedBot.id, channel_type: "qq" },
+    });
     setSubmitting(true);
     setChannelNotice(null);
     try {
@@ -1301,6 +1324,10 @@ export const ChannelSection = () => {
         appId: qqAppId,
         appSecret: qqAppSecret,
         account: qqAccount || undefined,
+      });
+      trackDatongEvent(DATONG_EVENTS.CHANNEL_CONNECT_SUCCESS, {
+        pgid: DATONG_PAGE_IDS.AGENT_CHANNELS,
+        params: { bot_id: selectedBot.id, channel_type: "qq" },
       });
       const nextChannels: ConnectedChannel[] = selectedBot.connectedChannels.includes("qq")
         ? selectedBot.connectedChannels
@@ -1460,7 +1487,7 @@ export const ChannelSection = () => {
         )}
 
         <div className="space-y-2">
-          <label className="lw-label block">选择要配置的 Hermes</label>
+          <label className="lw-label block">选择要配置的 Hermes Agent</label>
           <select
             value={selectedBotId}
             onChange={(event) => setSelectedBotId(event.target.value)}
@@ -1469,12 +1496,12 @@ export const ChannelSection = () => {
           >
             {configurableBots.length ? configurableBots.map((bot) => (
               <option key={bot.id} value={bot.id}>{bot.name}</option>
-            )) : <option value="">暂无可配置 Hermes</option>}
+            )) : <option value="">暂无可配置 Hermes Agent</option>}
           </select>
         </div>
 
         {/* Channel selection */}
-        <p className="text-sm text-[var(--text-secondary)]" style={{ marginBottom: 25 }}>选择一个聊天软件接入你的 Hermes</p>
+        <p className="text-sm text-[var(--text-secondary)]" style={{ marginBottom: 25 }}>选择一个聊天软件接入你的 Hermes Agent</p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {/* QQ */}
           <button
@@ -1490,7 +1517,7 @@ export const ChannelSection = () => {
               <img src="https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/43adbcec-a954-4809-9310-1237e3981f99.png" alt="QQ" className="h-8 w-8 object-contain" />
             </div>
             <h4 className="text-sm font-bold" style={{ color: "var(--lw-fg)" }}>QQ</h4>
-            <p className="text-xs leading-relaxed text-[var(--text-secondary)]">通过QQ机器人与 Hermes 对话</p>
+            <p className="text-xs leading-relaxed text-[var(--text-secondary)]">通过QQ机器人与 Hermes Agent 对话</p>
             {selectedChannel === "qq" && (
               <div className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full shadow-[var(--shadow-soft)]" style={{ background: "var(--lw-accent)" }}>
                 <Check className="h-3 w-3 text-white" />
@@ -2275,6 +2302,10 @@ const ChannelModal = ({ bot, onClose }: { bot: { id: string; name: string; conne
         if (status) setWxStatus(status);
         if (snapshot.error_message) setWxError(snapshot.error_message);
         if (status === "success") {
+          trackDatongEvent(DATONG_EVENTS.CHANNEL_CONNECT_SUCCESS, {
+            pgid: DATONG_PAGE_IDS.AGENT_CHANNELS,
+            params: { bot_id: botId, channel_type: "wechat" },
+          });
           const next: ConnectedChannel[] = connectedChannels.includes("wechat") ? connectedChannels : [...connectedChannels, "wechat"];
           updateBot(botId, { connectedChannels: next });
           return;
@@ -2290,6 +2321,10 @@ const ChannelModal = ({ bot, onClose }: { bot: { id: string; name: string; conne
   /* ── 启动微信扫码流程 ── */
   const handleWechatAuth = useCallback(async () => {
     cancelledRef.current = false;
+    trackDatongClick("channel_connect_btn", {
+      pgid: DATONG_PAGE_IDS.AGENT_CHANNELS,
+      params: { bot_id: bot.id, channel_type: "wechat" },
+    });
     setShowQrModal(true);
     setWxStatus("creating");
     setWxQrUrl("");
@@ -2395,6 +2430,10 @@ const ChannelModal = ({ bot, onClose }: { bot: { id: string; name: string; conne
 
   const handleQqSubmit = async () => {
     if (!qqAppId.trim() || !qqAppSecret.trim()) return;
+    trackDatongClick("channel_connect_btn", {
+      pgid: DATONG_PAGE_IDS.AGENT_CHANNELS,
+      params: { bot_id: bot.id, channel_type: "qq" },
+    });
     setSubmitting(true);
     setChannelNotice(null);
     try {
@@ -2402,6 +2441,10 @@ const ChannelModal = ({ bot, onClose }: { bot: { id: string; name: string; conne
         appId: qqAppId,
         appSecret: qqAppSecret,
         account: qqAccount || undefined,
+      });
+      trackDatongEvent(DATONG_EVENTS.CHANNEL_CONNECT_SUCCESS, {
+        pgid: DATONG_PAGE_IDS.AGENT_CHANNELS,
+        params: { bot_id: bot.id, channel_type: "qq" },
       });
       const nextChannels: ConnectedChannel[] = connectedChannels.includes("qq")
         ? connectedChannels
@@ -2562,7 +2605,7 @@ const ChannelModal = ({ bot, onClose }: { bot: { id: string; name: string; conne
             )}
 
             {/* Channel selection */}
-            <p className="text-sm text-[var(--text-secondary)]" style={{ marginBottom: "20px" }}>选择一个聊天软件接入你的 Hermes</p>
+            <p className="text-sm text-[var(--text-secondary)]" style={{ marginBottom: "20px" }}>选择一个聊天软件接入你的 Hermes Agent</p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
               {/* QQ */}
               <button
@@ -2897,7 +2940,7 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 const RESCUE_EXPORT_POLL_INTERVAL_MS = 5000;
 const HERMES_WORKSPACE_EXPORT_PATH = "/home/agentuser/.hermes";
 const RESCUE_EXPORT_TERMINAL_PHASES = new Set(["completed", "failed"]);
-const TEA_SDK_SECTIONS = new Set<AgentSettingsSectionId>(["channel", "model", "skill"]);
+const TEA_SDK_SECTIONS = new Set<AgentSettingsSectionId>(["channel", "model"]);
 
 type WorkspaceConfirmState =
   | { kind: "export" }
@@ -2967,12 +3010,17 @@ export const AgentSettingsPage = ({
 } = {}) => {
   const t = useT();
   const navigate = useAppNavigate();
-  const location = useAppLocation();
   const [searchParams] = useAppSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
-  const { bots, botsLoading, deleteBot, user, refreshBots, isSubscribed, addBot } = useOpenClaw();
+  const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass } = useOpenClaw();
   const repositories = useRepositories();
+  const paidBillingEnabled = usePaidBillingEnabled();
+  const paidBillingActive = isCN && isPaidBillingEnabled(paidBillingEnabled);
+  const {
+    commandLifecycle: automationModelCommandLifecycle,
+    confirmationDialog: automationModelSwitchDialog,
+  } = useAutomationAwareModelSwitch();
   // 账号 id：来自 /auth/profile 下发的 session.user.id，用于 LightVelaPanel.userId 等场景
   const { session } = useSession();
   const accountId = session.user?.id ?? "";
@@ -3010,8 +3058,6 @@ export const AgentSettingsPage = ({
     () => findCompletedCreatingBot(visibleBots, requestedCreatingBotId),
     [visibleBots, requestedCreatingBotId],
   );
-
-
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
 
@@ -3026,6 +3072,7 @@ export const AgentSettingsPage = ({
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
   const [isAgentActionMenuOpen, setIsAgentActionMenuOpen] = useState(false);
+  const [renewPassModalOpen, setRenewPassModalOpen] = useState(false);
   const agentActionMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!isAgentActionMenuOpen) return undefined;
@@ -3056,6 +3103,14 @@ export const AgentSettingsPage = ({
   }, [visibleBots, activeTabId, isCreating]);
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const activeBotStatus = activeBot?.status;
+  const passExpiryReminder = useMemo(
+    () => (paidBillingActive ? getPassExpiryReminder(activePass) : null),
+    [activePass, paidBillingActive],
+  );
+  const handleRenewPassSuccess = useCallback(async () => {
+    setRenewPassModalOpen(false);
+    await refreshPasses();
+  }, [refreshPasses]);
   const isInitialBotsLoading = shouldShowAgentSettingsDataLoading({
     botsLoading,
     isCreating,
@@ -3199,15 +3254,20 @@ export const AgentSettingsPage = ({
   const [savingMemoryLimitTarget, setSavingMemoryLimitTarget] = useState<HermesMemoryLimitTarget | null>(null);
   const [memoryLimitSaveError, setMemoryLimitSaveError] = useState<{ target: HermesMemoryLimitTarget; message: string } | null>(null);
   const memoryRequestIdRef = useRef(0);
+  const memorySaveRequestIdRef = useRef(0);
+  const memorySaveInFlightRef = useRef<number | null>(null);
+  const activeMemoryBotIdRef = useRef(activeBotId);
+  activeMemoryBotIdRef.current = activeBotId;
 
   const loadHermesMemory = useCallback(async (options?: { clearSnapshot?: boolean }): Promise<HermesMemorySnapshot | null> => {
     const requestId = memoryRequestIdRef.current + 1;
     memoryRequestIdRef.current = requestId;
+    const requestedBotId = activeBotId;
 
-    if (!activeBotId) {
+    if (!requestedBotId) {
       setMemorySnapshot(null);
       setMemoryStatus("error");
-      setMemoryError(rawT("未找到当前 Hermes 实例。"));
+      setMemoryError(rawT("未找到当前 Hermes Agent 实例。"));
       return null;
     }
 
@@ -3224,23 +3284,27 @@ export const AgentSettingsPage = ({
     setMemoryStatus("loading");
     setMemoryError(null);
     try {
-      const result = await repositories.bots.execDebugCommand(activeBotId, buildHermesMemoryReadCommand());
-      if (memoryRequestIdRef.current !== requestId) return null;
-      if (!isExecCommandSucceeded(result)) {
-        throw new Error(
-          rawT("记忆读取命令执行失败：{{detail}}", {
-            detail: truncateExecOutput(result.output, result.status),
-          }),
-        );
-      }
-      const snapshot = parseHermesMemorySnapshot(result.output);
+      const snapshot = await fetchHermesMemorySnapshot(repositories.bots, requestedBotId);
+      if (!isHermesMemoryOperationCurrent({
+        activeBotId: activeMemoryBotIdRef.current,
+        requestedBotId,
+        latestRequestId: memoryRequestIdRef.current,
+        requestId,
+      })) return null;
       setMemorySnapshot(snapshot);
       setMemoryStatus("ready");
       return snapshot;
     } catch (err) {
-      if (memoryRequestIdRef.current !== requestId) return null;
+      if (!isHermesMemoryOperationCurrent({
+        activeBotId: activeMemoryBotIdRef.current,
+        requestedBotId,
+        latestRequestId: memoryRequestIdRef.current,
+        requestId,
+      })) return null;
       setMemoryStatus("error");
-      setMemoryError(err instanceof Error ? err.message : rawT("记忆读取失败，请稍后重试。"));
+      setMemoryError(rawT("记忆读取命令执行失败：{{detail}}", {
+        detail: err instanceof Error ? err.message : rawT("未知错误"),
+      }));
       return null;
     }
   }, [activeBotId, activeBotStatus, repositories]);
@@ -3249,13 +3313,10 @@ export const AgentSettingsPage = ({
     setMemoryLimitSaveError((prev) => prev?.target === target ? null : prev);
   }, []);
 
-  const getSnapshotLimitValue = useCallback((snapshot: HermesMemorySnapshot, target: HermesMemoryLimitTarget) => (
-    target === "memory" ? snapshot.memoryCharLimit : snapshot.userCharLimit
-  ), []);
-
   const saveHermesMemoryLimit = useCallback(async (target: HermesMemoryLimitTarget, value: number, existingChars: number) => {
-    if (!activeBotId) {
-      setMemoryLimitSaveError({ target, message: rawT("未找到当前 Hermes 实例。") });
+    const requestedBotId = activeBotId;
+    if (!requestedBotId) {
+      setMemoryLimitSaveError({ target, message: rawT("未找到当前 Hermes Agent 实例。") });
       return false;
     }
 
@@ -3263,51 +3324,82 @@ export const AgentSettingsPage = ({
       setMemoryLimitSaveError({ target, message: rawT("实例运行后才能调整记忆上限。") });
       return false;
     }
+    if (
+      !canStartHermesMemoryLimitSave(savingMemoryLimitTarget)
+      || memorySaveInFlightRef.current !== null
+    ) {
+      return false;
+    }
 
+    trackDatongEvent(DATONG_EVENTS.MEMORY_QUOTA_UPDATE, {
+      pgid: DATONG_PAGE_IDS.AGENT_MEMORY,
+      params: { bot_id: requestedBotId, target, old_quota: existingChars, new_quota: value },
+    });
+    const requestId = memorySaveRequestIdRef.current + 1;
+    memorySaveRequestIdRef.current = requestId;
+    memorySaveInFlightRef.current = requestId;
     setSavingMemoryLimitTarget(target);
     setMemoryLimitSaveError(null);
+
+    const isCurrentRequest = () => isHermesMemoryOperationCurrent({
+      activeBotId: activeMemoryBotIdRef.current,
+      requestedBotId,
+      latestRequestId: memorySaveRequestIdRef.current,
+      requestId,
+    });
+
     try {
-      const command = buildHermesMemoryLimitCommand(target, value, existingChars);
-      const result = await repositories.bots.execDebugCommand(activeBotId, command);
-      if (!isExecCommandSucceeded(result)) {
-        throw new Error(
-          rawT("记忆上限调整失败：{{detail}}", {
-            detail: truncateExecOutput(result.output, result.status),
-          }),
-        );
-      }
+      const saveResult = await executeHermesMemoryLimitSave({
+        bots: repositories.bots,
+        botId: requestedBotId,
+        target,
+        value,
+        existingChars,
+        getGatewayRestartCommand: async () => {
+          const teaSdkRuntime = await loadTeaSdkRuntime();
+          return teaSdkRuntime.getGatewayRestartCommand();
+        },
+      });
+      if (!isCurrentRequest()) return false;
 
-      const teaSdkRuntime = await loadTeaSdkRuntime();
-      const restartResult = await repositories.bots.execDebugCommand(activeBotId, teaSdkRuntime.getGatewayRestartCommand());
-      const restartError = buildRestartErrorMessage(restartResult);
-      if (restartError) {
-        await loadHermesMemory({ clearSnapshot: false });
+      if (saveResult.status === "failed") {
         setMemoryLimitSaveError({
           target,
-          message: rawT("配置已保存，但 Hermes 网关重启失败。请到「设置 → 重启网关」手动重启，或稍后重试。"),
+          message: rawT("记忆上限调整失败：{{detail}}", { detail: saveResult.error.message }),
         });
         return false;
       }
 
-      const snapshot = await loadHermesMemory({ clearSnapshot: false });
-      if (!snapshot || getSnapshotLimitValue(snapshot, target) !== value) {
+      if (saveResult.status === "partial") {
         setMemoryLimitSaveError({
           target,
-          message: rawT("配置命令已执行，但回读未生效，请刷新后重试。"),
+          message: rawT("配置已保存，但后续步骤失败。请刷新页面确认最新配置；如网关未重启，请到「设置 → 重启网关」手动重启。"),
         });
         return false;
       }
 
-      toast.success(rawT("修改成功，Hermes 网关已重启。"));
+      setMemorySnapshot(saveResult.snapshot);
+      setMemoryStatus("ready");
+      setMemoryError(null);
+      toast.success(rawT("修改成功，Hermes Agent 网关已重启。"));
       return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : rawT("记忆上限调整失败，请稍后重试。");
-      setMemoryLimitSaveError({ target, message });
-      return false;
     } finally {
-      setSavingMemoryLimitTarget(null);
+      if (memorySaveInFlightRef.current === requestId) {
+        memorySaveInFlightRef.current = null;
+      }
+      if (isCurrentRequest()) {
+        setSavingMemoryLimitTarget(null);
+      }
     }
-  }, [activeBotId, activeBotStatus, getSnapshotLimitValue, loadHermesMemory, repositories]);
+  }, [activeBotId, activeBotStatus, repositories, savingMemoryLimitTarget]);
+
+  useEffect(() => {
+    memoryRequestIdRef.current += 1;
+    memorySaveRequestIdRef.current += 1;
+    memorySaveInFlightRef.current = null;
+    setSavingMemoryLimitTarget(null);
+    setMemoryLimitSaveError(null);
+  }, [activeBotId]);
 
   useEffect(() => {
     if (activeSection !== "memory") return;
@@ -3320,8 +3412,8 @@ export const AgentSettingsPage = ({
    * 自定义 `runCommand` + `getInvocationTask` 把命令下发到 mono 后端。
    *
    * 和存量业务（channel 配置、onboard、debug 排错等）保持一致，走通用
-   * 入口 `POST /v1/instances/:botId/debug/exec`（envd process stream），
-   * 不再使用腾讯云 TAT。
+   * 入口 `POST /v1/instances/:botId/debug/exec`。国际站由后端直接使用腾讯云
+   * TAT PtyExecCmdStream，国内站保持原 envd 执行链路。
    *
    * 业务约定：把 `activeBot.id` 作为 SDK `IInstanceInfo.InstanceId` 传入，
    * SDK 内部 `InstanceIds: [instance.InstanceId]` 原样透传给适配器，
@@ -3336,8 +3428,9 @@ export const AgentSettingsPage = ({
           const token = readStoredAuthToken();
           return token ? `Bearer ${token}` : undefined;
         },
+        commandLifecycle: automationModelCommandLifecycle,
       }),
-    [],
+    [automationModelCommandLifecycle],
   );
 
   /**
@@ -3368,6 +3461,10 @@ export const AgentSettingsPage = ({
 
   const handleDelete = async () => {
     if (!activeBot || deleteInput !== activeBot.name) return;
+    trackDatongClick("agent_delete_btn", {
+      pgid: DATONG_PAGE_IDS.AGENTS_HOME,
+      params: { bot_id: activeBot.id },
+    });
     setDeleteError(null);
     try {
       await deleteBot(activeBot.id);
@@ -3406,6 +3503,10 @@ export const AgentSettingsPage = ({
     const targetBotId = activeBot?.id;
     if (!targetBotId) return;
 
+    trackDatongEvent(DATONG_EVENTS.DIAGNOSTICS_ACTION, {
+      pgid: DATONG_PAGE_IDS.AGENT_DIAGNOSTICS,
+      params: { bot_id: targetBotId, action: "reset_config" },
+    });
     setResetting(true);
     try {
       const result = await repositories.bots.resetInstanceConfig(targetBotId);
@@ -3481,6 +3582,10 @@ export const AgentSettingsPage = ({
     const targetBotId = activeBot?.id;
     if (!targetBotId) return;
 
+    trackDatongEvent(DATONG_EVENTS.DIAGNOSTICS_ACTION, {
+      pgid: DATONG_PAGE_IDS.AGENT_DIAGNOSTICS,
+      params: { bot_id: targetBotId, action: "reset_agent" },
+    });
     setResettingAcli(true);
     setAcliResetConsole([`$ ${ACLI_RESET_COMMAND}`]);
     setShowAcliResetConfirm(false);
@@ -3536,6 +3641,10 @@ export const AgentSettingsPage = ({
   const handleRestartGateway = async () => {
     if (getRestartBlockReason(activeBot, restartingBotIds)) return;
     const targetBotId = activeBot!.id;
+    trackDatongClick("agent_restart_btn", {
+      pgid: DATONG_PAGE_IDS.AGENTS_HOME,
+      params: { bot_id: targetBotId },
+    });
     setRestartingBotIds((prev) => new Set(prev).add(targetBotId));
     setRestartErrors((prev) => clearErrorForBot(prev, targetBotId));
     try {
@@ -3756,32 +3865,39 @@ export const AgentSettingsPage = ({
     memoryV2: false,
     qqbotplugin: false,
   }), []);
+  // 从七彩石拉取模型列表移到 TeaSdkSettingsPanel（需 runtime.useModelProviders）
+  const { i18n } = useTranslation();
+  const useEnglish = !!i18n.language?.startsWith("en");
   const sdkProductConfigArgs = useMemo(() => ({
     runCommand: commandAdapter.runCommand,
     getInvocationTask: commandAdapter.getInvocationTask,
   }), [commandAdapter]);
+  const shouldExposeWorkspaceRecoveryPanel = shouldShowWorkspaceRecoveryPanel({
+    isGlobalRegion: isGlobal,
+    hiddenToolsRevealed: showHiddenAgentTools,
+  });
 
   useEffect(() => {
-    if (activeSection !== "diagnostics" || !activeBot?.id) return;
+    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeBot?.id) return;
     void loadRescueExportStatus(activeBot.id).catch(() => undefined);
     void loadHermesImportStatus(activeBot.id).catch(() => undefined);
-  }, [activeSection, activeBot?.id, loadRescueExportStatus, loadHermesImportStatus]);
+  }, [activeSection, activeBot?.id, loadRescueExportStatus, loadHermesImportStatus, shouldExposeWorkspaceRecoveryPanel]);
 
   useEffect(() => {
-    if (activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeExportStatus)) return;
+    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeExportStatus)) return;
     const timer = window.setInterval(() => {
       void loadRescueExportStatus(activeBot.id).catch(() => undefined);
     }, RESCUE_EXPORT_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [activeSection, activeBot?.id, activeExportStatus?.phase, loadRescueExportStatus]);
+  }, [activeSection, activeBot?.id, activeExportStatus?.phase, loadRescueExportStatus, shouldExposeWorkspaceRecoveryPanel]);
 
   useEffect(() => {
-    if (activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeImportStatus)) return;
+    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeImportStatus)) return;
     const timer = window.setInterval(() => {
       void loadHermesImportStatus(activeBot.id).catch(() => undefined);
     }, RESCUE_EXPORT_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [activeSection, activeBot?.id, activeImportStatus?.phase, loadHermesImportStatus]);
+  }, [activeSection, activeBot?.id, activeImportStatus?.phase, loadHermesImportStatus, shouldExposeWorkspaceRecoveryPanel]);
 
   useEffect(() => {
     return installOpenClawConsoleHelpers({
@@ -3933,7 +4049,7 @@ export const AgentSettingsPage = ({
       if (cancelled) return;
 
       if (Date.now() - startedAt >= CREATING_MAX_WAIT_MS) {
-        setCreationError(t("Hermes 仍在创建中，请稍后刷新页面查看状态。"));
+        setCreationError(t("Hermes Agent 仍在创建中，请稍后刷新页面查看状态。"));
         return;
       }
 
@@ -3961,6 +4077,10 @@ export const AgentSettingsPage = ({
   ]);
 
   const handleCreateNew = () => {
+    trackDatongClick("agent_create_start_btn", {
+      pgid: DATONG_PAGE_IDS.AGENTS_HOME,
+      params: { bots_count: bots.length },
+    });
     if (createLimitMessage) {
       setDirectCreateError(createLimitMessage);
       return;
@@ -3976,8 +4096,13 @@ export const AgentSettingsPage = ({
   };
 
   const handleConfirmCreate = async () => {
+    trackDatongClick("agent_create_confirm_btn", {
+      pgid: DATONG_PAGE_IDS.AGENT_CREATING,
+      params: {},
+    });
     setDirectCreating(true);
     setDirectCreateError(null);
+    const createStart = Date.now();
     try {
       const newBot = await addBot({
         name: t("我的Hermes"),
@@ -3987,26 +4112,19 @@ export const AgentSettingsPage = ({
         soulTemplateId: undefined,
         status: "running",
       });
+      trackDatongEvent(DATONG_EVENTS.AGENT_CREATE_SUCCESS, {
+        pgid: DATONG_PAGE_IDS.AGENT_CREATING,
+        params: {
+          bot_id: newBot.id,
+          create_duration_ms: Date.now() - createStart,
+        },
+      });
       setShowCreateConfirm(false);
       // 进入页面内 loading 状态，带上新 bot id 供轮询定位
       setIsCreating(true);
       navigate(`${AGENTS_HOME_PATH}?creating=${encodeURIComponent(newBot.id)}`, { replace: true });
     } catch (err) {
-      const raw = err instanceof Error ? err.message : "";
-      // 将后端错误映射为用户友好文案
-      let friendlyMsg: string;
-      if (/quota|limit|exceed/i.test(raw)) {
-        friendlyMsg = t("当前套餐的 Agent 配额已满，请升级套餐或删除现有 Agent 后重试。");
-      } else if (/resource|sandbox|pool|exhaust/i.test(raw)) {
-        friendlyMsg = t("云端资源暂时紧张，请稍后再试。");
-      } else if (/timeout|timed?\s*out/i.test(raw)) {
-        friendlyMsg = t("创建超时，请稍后重试。");
-      } else if (/network|fetch|connect/i.test(raw)) {
-        friendlyMsg = t("网络异常，请检查网络后重试。");
-      } else {
-        friendlyMsg = raw || t("创建失败，请稍后重试。");
-      }
-      setDirectCreateError(friendlyMsg);
+      setDirectCreateError(getAgentCreateErrorMessage(err, (message) => t(message)));
     } finally {
       setDirectCreating(false);
     }
@@ -4058,10 +4176,10 @@ export const AgentSettingsPage = ({
         return t("导出环境启动超时，Agent 所在云主机仍在准备中。请稍后重试。");
       case "远程命令通道暂时不可用，请稍后重试。":
         return t("远程命令通道暂时不可用，请稍后重试。");
-      case "备份包无法识别或已损坏，请重新选择 Hermes 导出的 zip 文件。":
-        return t("备份包无法识别或已损坏，请重新选择 Hermes 导出的 zip 文件。");
-      case "请选择 Hermes 导出的 zip 文件。":
-        return t("请选择 Hermes 导出的 zip 文件。");
+      case "备份包无法识别或已损坏，请重新选择 Hermes Agent 导出的 zip 文件。":
+        return t("备份包无法识别或已损坏，请重新选择 Hermes Agent 导出的 zip 文件。");
+      case "请选择 Hermes Agent 导出的 zip 文件。":
+        return t("请选择 Hermes Agent 导出的 zip 文件。");
       case "请先在账号页绑定邮箱。":
         return t("请先在账号页绑定邮箱。");
       case "恢复过程中遇到异常，请稍后重试。":
@@ -4156,8 +4274,8 @@ export const AgentSettingsPage = ({
     return workspaceDetailsOpen ? t("收起备份或恢复详情") : t("查看备份或恢复详情");
   };
   const workspaceCopyLabel = activeWorkspaceTask?.kind === "export" ? t("复制备份信息") : t("复制恢复信息");
-  const workspaceRecoveryPanel = activeBot ? (
-    <section className="rounded-md border border-black/[0.08] bg-white p-5 shadow-sm">
+  const workspaceRecoveryPanel = shouldExposeWorkspaceRecoveryPanel && activeBot ? (
+    <section className="rounded-md border border-black/[0.08] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
       <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
         <h3 className="text-base font-semibold text-black/90 text-balance">{t("Agent 备份与恢复")}</h3>
         {needsEmailBinding && (
@@ -4207,7 +4325,7 @@ export const AgentSettingsPage = ({
                 ? workspaceLastLogTime
                   ? t("最近更新：{{time}}", { time: formatExportLogTime(workspaceLastLogTime) })
                   : t("正在等待任务状态更新")
-                : t("可以备份当前 Agent，或从 Hermes zip 备份恢复。")}
+                : t("可以备份当前 Agent，或从 Hermes Agent zip 备份恢复。")}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -4325,9 +4443,10 @@ export const AgentSettingsPage = ({
   return (
     <div className="flex min-h-dvh flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
       {showHeader && <ProductReturnHomeHeader reloadLanguageAfterSwitch />}
+      {automationModelSwitchDialog}
 
       <Dialog
-        open={Boolean(workspaceConfirm)}
+        open={shouldExposeWorkspaceRecoveryPanel && Boolean(workspaceConfirm)}
         onOpenChange={(open) => {
           if (!open) setWorkspaceConfirm(null);
         }}
@@ -4390,12 +4509,12 @@ export const AgentSettingsPage = ({
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-black/80" title={workspaceConfirm.file?.name}>
-                            {workspaceConfirm.file ? workspaceConfirm.file.name : t("选择 Hermes zip 备份包")}
+                            {workspaceConfirm.file ? workspaceConfirm.file.name : t("选择 Hermes Agent zip 备份包")}
                           </p>
                           <p className="mt-1 text-xs text-black/45">
                             {workspaceConfirm.file
                               ? formatWorkspaceImportFileSize(workspaceConfirm.file.size)
-                              : t("支持 Hermes 导出的 .zip 备份包。")}
+                              : t("支持 Hermes Agent 导出的 .zip 备份包。")}
                           </p>
                         </div>
                         <button
@@ -4409,7 +4528,7 @@ export const AgentSettingsPage = ({
                       </div>
                       {!workspaceConfirm.file && (
                         <p id="workspace-import-file-helper" className="mt-2 text-xs text-black/45">
-                          {t("请选择 Hermes 导出的 zip 备份包后再确认恢复。")}
+                          {t("请选择 Hermes Agent 导出的 zip 备份包后再确认恢复。")}
                         </p>
                       )}
                     </div>
@@ -4733,6 +4852,17 @@ export const AgentSettingsPage = ({
         document.body,
       )}
 
+      <AnimatePresence>
+        {renewPassModalOpen && activePass && (
+          <RenewPassModal
+            key="renew-pass"
+            pass={activePass}
+            onClose={() => setRenewPassModalOpen(false)}
+            onSuccess={() => void handleRenewPassSuccess()}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Channel Modal */}
       {showChannelModal && activeBot && (
         <ChannelModal bot={activeBot} onClose={() => setShowChannelModal(false)} />
@@ -4827,16 +4957,38 @@ export const AgentSettingsPage = ({
                           <span className="lv-agent-profile-name" title={activeBot.name}>
                             {truncateBotName(activeBot.name)}
                           </span>
-                          <span className="lv-agent-status">
-                            {isActiveBotRestarting ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <span
-                                className="inline-block h-1.5 w-1.5 rounded-full"
-                                style={{ background: getBotStatusColor(activeBot.status) }}
-                              />
+                          <span className="lv-agent-status-row">
+                            <span className="lv-agent-status">
+                              {isActiveBotRestarting ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <span
+                                  className="inline-block h-1.5 w-1.5 rounded-full"
+                                  style={{ background: getBotStatusColor(activeBot.status) }}
+                                />
+                              )}
+                              {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                            </span>
+                            {passExpiryReminder && activePass && (
+                              <button
+                                type="button"
+                                className={cn("lv-agent-renewal-badge", `is-${passExpiryReminder.level}`)}
+                                title={passExpiryReminder.tooltip}
+                                aria-label={t("套餐{{time}}，点击续费", { time: passExpiryReminder.tooltip })}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setRenewPassModalOpen(true);
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.stopPropagation();
+                                  }
+                                }}
+                              >
+                                <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                                {passExpiryReminder.label}
+                              </button>
                             )}
-                            {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
                           </span>
                         </span>
                         <div
@@ -4951,7 +5103,7 @@ export const AgentSettingsPage = ({
                       {showHiddenAgentTools ? (
                         <>
                           <AppLink
-                            to={`${AGENT_SECTION_PATH_BY_ID.terminal}${location.search}`}
+                            to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
                             aria-current={activeSection === "terminal" ? "page" : undefined}
                             className={cn(
                               "lw-settings-nav-item lv-agents-nav-item",
@@ -4964,7 +5116,7 @@ export const AgentSettingsPage = ({
                             <span className="flex-1 text-left">{t("终端")}</span>
                           </AppLink>
                           <AppLink
-                            to={`${AGENT_SECTION_PATH_BY_ID.browser}${location.search}`}
+                            to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
                             aria-current={activeSection === "browser" ? "page" : undefined}
                             className={cn(
                               "lw-settings-nav-item lv-agents-nav-item",
@@ -4983,7 +5135,7 @@ export const AgentSettingsPage = ({
                         return (
                           <AppLink
                             key={section.id}
-                            to={`${section.path}${location.search}`}
+                            to={getAgentSectionHref(section.path, searchParams)}
                             aria-current={isActive ? "page" : undefined}
                             className={cn(
                               "lw-settings-nav-item lv-agents-nav-item",
@@ -5029,6 +5181,7 @@ export const AgentSettingsPage = ({
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
                               productConfigArgs={sdkProductConfigArgs}
+                              useEnglish={useEnglish}
                             />
                           )}
                           {activeSection === "model" && (
@@ -5037,16 +5190,14 @@ export const AgentSettingsPage = ({
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
                               productConfigArgs={sdkProductConfigArgs}
+                              useEnglish={useEnglish}
                             />
                           )}
                           {activeSection === "skill" && (
-                            <HermesAgentSkillsRuntimePanel
+                            <HermesAgentSkillsPanel
                               botId={activeBot.id}
                               execDebugCommand={repositories.bots.execDebugCommand}
-                              instance={sdkInstance}
-                              featureFlags={sdkFeatureFlags}
                               initialSectionSlug={initialSectionSlug}
-                              productConfigArgs={sdkProductConfigArgs}
                             />
                           )}
                           {activeSection === "buddy" && (
@@ -5056,7 +5207,7 @@ export const AgentSettingsPage = ({
                             <AchievementsPanel botId={activeBot.id} botName={activeBot.name} />
                           )}
                           {activeSection === "automations" && (
-                            <AutomationsPanel botId={activeBot.id} />
+                            <HermesAgentAutomationsPanel botId={activeBot.id} />
                           )}
                           {activeSection === "diagnostics" && (
                             <AgentDiagnosticsPanel

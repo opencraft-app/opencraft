@@ -24,3 +24,8 @@
 - migration Job 当前不属于 service-local 发布主线
 - `gateway-dashboard` 已独立到自己的发布链路
 - `generated/` 一律不提交 Git
+
+## CI Trigger Notes
+
+- 2026-07-08: ci-retrigger for shprod ai-gateway release image build.
+- 2026-07-08: ci-retrigger after release image visibility gate retry fix.

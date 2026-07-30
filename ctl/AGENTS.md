@@ -73,6 +73,7 @@
   | 超时 | 15s + 10s 双段 | 30s 单段 |
 
 - **本接口不创建本地 pass**：`CreatePassOrder` / `CreatePassOrderAndPay` 都只下 jifei 订单，pass 实体的最终发货发生在回调链路 `jifei → trade.checkCreate → trade.createResource → ctl.CompletePass`（v4 收敛：路径用 `complete` 而非 `from-jifei`）。
+- **AI 订阅幂等键**：付费新购发货向 LLMGateway 传 `trade:<deal_name>`；试用发放传 `trial:<user_id>:<bundle_id>`。现有 `RenewPass` 仍使用独立的异步 `ExtendSubscription` 状态机。LLMGateway 只做调用幂等，不承接 trade 的订单补偿状态机。
 - **互斥占用判定（Q66 / Q69 极简收敛）**：`GET /internal/ctl/passes` handler 直接复用 `Logic.DescribePasses(userID)` 返回原始数组，**handler 层不做任何状态过滤**；trade 业务层只判断 `len > 0` 即报互斥占用，不再做 active 三元判定（ExpiredTime / IsolatedTime / DeletedTime）/ 不再校验 quota / CreditAvailable 维度。
 - **ctl 不调 shadow**（Q12 / Q30）：所有 (uin, appId) 换算由 trade 内部完成，ctl 调 trade 内部 RPC 时只透传 `external_user_id`。
 - **ctl 库零新增表**（Q29 / Q35）：付费 pass 改动收敛在现有 `ctl.pass` 表 ALTER（仅 +1 列 `renew_flag VARCHAR(16)` 默认 `MANUAL_RENEW`）+ 新增 internal HTTP 路由 + 新增反向回调入口三件事；不建 `ctl_pass_quota` / `ctl_plan` / `pass_pending_order` 等伴生表。
@@ -101,3 +102,6 @@
 ## CI 触发说明
 
 - `ctl` 流水线的 webhook paths 监听 `ctl/**`；当只修复共享 CI runtime 但需要重跑 ctl gate 时，可用本文件承载无运行时影响的触发说明变更。
+- 2026-07-09 trigger note：ticket sandbox profile 修复合入后，重跑 ctl gate 以恢复 shprod promote 链路。
+- 2026-07-09 trigger note：ticket release bundle contract 临时下线后，重跑 ctl gate 以解除 ticket closure 阻塞。
+- 2026-07-10 trigger note：删除 ticket sandbox catalog 后，重跑 ctl gate 以匹配 gitops 投影状态。

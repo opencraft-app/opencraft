@@ -1,0 +1,4 @@
+# Backend region is the COS bucket location, not the workload region.
+region = "ap-beijing"
+bucket = "llmgateway-prod-tfstate-<appid>"
+prefix = "llmgateway/sgprod/johorbahru"

@@ -181,6 +181,8 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 
 	// Pass 路由
 	mux.HandleFunc("/admin/api/ctl/passes", ph.handleAdminPasses)
+	mux.HandleFunc("/admin/api/ctl/passes/billing-migration", ph.handleAdminPassBillingMigration)
+	mux.HandleFunc("/admin/api/ctl/passes/free-credit", ph.handleAdminPassesFreeCredit)
 	mux.HandleFunc("/admin/api/ctl/passes/order", ph.handleAdminPassesOrder)
 	// /admin/api/ctl/passes/order-url — v1.7.31 接口拆分：拉取支付 URL
 	mux.HandleFunc("/admin/api/ctl/passes/order-url", ph.handleAdminPassesOrderUrl)
@@ -326,7 +328,7 @@ func normalizePath(path string) string {
 		"/v1/bundles", "/v1/passes", "/v1/passes/order", "/v1/passes/order-and-pay",
 		"/v1/integrations/agentchat/introspect",
 		"/admin/api/ctl/bundles", "/admin/api/ctl/passes", "/admin/api/ctl/passes/order",
-		"/admin/api/ctl/passes/order-and-pay",
+		"/admin/api/ctl/passes/free-credit", "/admin/api/ctl/passes/order-and-pay",
 		"/admin/api/ctl/dianshi/orders",
 		"/internal/ctl/passes",
 		"/internal/ctl/passes/complete":
@@ -1090,7 +1092,7 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			h.streamDebugCommand(w, r, ctx, instanceID, &req)
 			return
 		}
-		resp, err := h.logic.ExecDebugCommand(ctx, instanceID, req.Command, req.RunAsUser)
+		resp, err := h.logic.ExecDebugCommandWithBackend(ctx, instanceID, req.Command, req.RunAsUser, req.ExecutionBackend)
 		if err != nil {
 			writeHTTPError(w, r, err)
 			return
@@ -1131,7 +1133,7 @@ func (h *instanceHandler) streamDebugCommand(w http.ResponseWriter, r *http.Requ
 		return nil
 	}
 
-	if err := h.logic.StreamDebugCommand(ctx, instanceID, req.Command, req.RunAsUser, flushEvent); err != nil {
+	if err := h.logic.StreamDebugCommandWithBackend(ctx, instanceID, req.Command, req.RunAsUser, req.ExecutionBackend, flushEvent); err != nil {
 		if !started {
 			writeHTTPError(w, r, err)
 			return

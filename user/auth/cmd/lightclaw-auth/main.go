@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"log/slog"
 	"net/http"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/ses"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/shadowbinding"
+	phonesms "github.com/openclaw/openclaw/mono/backend/auth/internal/sms"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
 
@@ -32,17 +34,38 @@ func main() {
 	contentAuditClient := buildContentAuditClient(logger, contentAuditConfig)
 	stores := newStores(contentAuditConfig.Enabled)
 	shadowBinding := buildShadowBindingService(stores.shadow, logger)
+	phoneAuthEnabled := envOrDefault("LIGHTCLAW_PHONE_AUTH_ENABLED", "false") == "true"
+	phoneAuthSMSSender := buildPhoneAuthSMSSender(logger)
+	realnameClient := buildRealnameClient(logger)
+	realnameCipher := buildRealnameCipher(logger)
+	realnameFaceIDConfig := buildRealnameFaceIDConfig()
+	shadowBasicAuthSyncEnabled := envOrDefault("SHADOW_BASIC_AUTH_SYNC_ENABLED", "false") == "true"
+	_, durableStore := stores.auth.(*service.MySQLStore)
+	if err := service.ValidateRealnameFaceIDStartup(realnameFaceIDConfig, realnameClient, realnameCipher, shadowBinding, shadowBasicAuthSyncEnabled, durableStore); err != nil {
+		logger.Error("invalid realname FaceID startup config", "err", err)
+		os.Exit(1)
+	}
 	publicBaseURL := envOrDefault("LIGHTCLAW_PUBLIC_BASE_URL", "https://lightclaw.tech")
 	frontendBaseURL := envOrDefault("LIGHTCLAW_FRONTEND_BASE_URL", publicBaseURL)
 	authService := service.NewWithStore(stores.auth, service.Options{
-		SessionTTL:                 sessionTTL,
-		DefaultSMSCode:             envOrDefault("LIGHTCLAW_DEV_SMS_CODE", ""),
-		RealnameVerifier:           buildRealnameVerifier(logger),
-		RealnameCipher:             buildRealnameCipher(logger),
-		ContentAudit:               contentAuditConfig,
-		ContentAuditClient:         contentAuditClient,
-		ShadowBinding:              shadowBinding,
-		ShadowBasicAuthSyncEnabled: envOrDefault("SHADOW_BASIC_AUTH_SYNC_ENABLED", "false") == "true",
+		SessionTTL: sessionTTL,
+		PhoneAuth: service.PhoneAuthConfig{
+			Enabled:   phoneAuthEnabled,
+			SMSSender: phoneAuthSMSSender,
+		},
+		RealnameVerifier:       realnameClient,
+		RealnameFaceIDVerifier: realnameClient,
+		RealnameCipher:         realnameCipher,
+		RealnameFaceID:         realnameFaceIDConfig,
+		ContentAudit:           contentAuditConfig,
+		ContentAuditClient:     contentAuditClient,
+		ShadowBinding:          shadowBinding,
+		PassBillingMigration: service.NewHTTPPassBillingMigrationNotifier(service.PassBillingMigrationNotifierConfig{
+			BaseURL: envOrDefault("CTL_INTERNAL_BASE_URL", ""),
+			Token:   envOrDefault("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", ""),
+			Timeout: parseDurationEnv("PASS_BILLING_MIGRATION_TIMEOUT", 10*time.Second),
+		}),
+		ShadowBasicAuthSyncEnabled: shadowBasicAuthSyncEnabled,
 		EmailBind: service.EmailBindConfig{
 			Enabled:         envOrDefault("LIGHTCLAW_EMAIL_BIND_ENABLED", "false") == "true",
 			TokenTTL:        time.Duration(envInt64OrDefault("LIGHTCLAW_EMAIL_BIND_TOKEN_TTL_SECONDS", 1800)) * time.Second,
@@ -75,6 +98,7 @@ func main() {
 		E2EAuthToken:               envOrDefault("LIGHTVELA_E2E_AUTH_TOKEN", ""),
 		ShadowBindingInternalToken: envOrDefault("SHADOW_BINDING_INTERNAL_TOKEN", ""),
 		ShadowTencentCallbackToken: envOrDefault("SHADOW_TENCENT_CALLBACK_TOKEN", envOrDefault("SHADOW_CALLBACK_TOKEN", "")),
+		TrustedProxyCIDRs:          parseCSVEnv("LIGHTCLAW_TRUSTED_PROXY_CIDRS"),
 	})
 
 	address := envOrDefault("LIGHTCLAW_AUTH_ADDR", ":8081")
@@ -270,9 +294,32 @@ func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger) *
 		client = tencentClient
 	}
 	return shadowbinding.New(store, client, shadowbinding.Options{
-		Enabled:     true,
-		AuthCodeTTL: parseDurationEnv("SHADOW_AUTH_CODE_TTL", 10*time.Minute),
+		Enabled:        true,
+		AuthCodeTTL:    parseDurationEnv("SHADOW_AUTH_CODE_TTL", 10*time.Minute),
+		AuthCodePrefix: envOrDefault("SHADOW_AUTH_CODE_PREFIX", ""),
+		UserNamePrefix: envOrDefault("SHADOW_USER_NAME_PREFIX", ""),
 	})
+}
+
+func buildPhoneAuthSMSSender(logger *slog.Logger) service.PhoneAuthSMSSender {
+	if envOrDefault("LIGHTCLAW_PHONE_AUTH_ENABLED", "false") != "true" {
+		return nil
+	}
+	client, err := phonesms.New(phonesms.Config{
+		SecretID:   envOrDefault("LIGHTCLAW_SMS_SECRET_ID", ""),
+		SecretKey:  envOrDefault("LIGHTCLAW_SMS_SECRET_KEY", ""),
+		Region:     envOrDefault("LIGHTCLAW_SMS_REGION", "ap-guangzhou"),
+		Endpoint:   envOrDefault("LIGHTCLAW_SMS_ENDPOINT", "sms.internal.tencentcloudapi.com"),
+		SDKAppID:   envOrDefault("LIGHTCLAW_SMS_SDK_APP_ID", "1401097405"),
+		SignName:   envOrDefault("LIGHTCLAW_SMS_SIGN_NAME", "腾讯云"),
+		TemplateID: envOrDefault("LIGHTCLAW_SMS_TEMPLATE_ID", "2683912"),
+	})
+	if err != nil {
+		logger.Warn("phone auth sms sender disabled due to invalid config", "err", err)
+		return nil
+	}
+	logger.Info("phone auth sms sender enabled")
+	return client
 }
 
 func parseDurationEnv(key string, fallback time.Duration) time.Duration {
@@ -306,11 +353,14 @@ func buildQQOAuthConfig() *httpapi.QQOAuthConfig {
 	frontendBaseURL, publicBaseURL := oauthBaseURLs()
 
 	return &httpapi.QQOAuthConfig{
-		AppID:           appID,
-		AppKey:          appKey,
-		RedirectURI:     envOrDefault("LIGHTCLAW_QQ_REDIRECT_URI", "https://lightclaw.tech/auth/oauth/qq/callback"),
-		FrontendBaseURL: frontendBaseURL,
-		PublicBaseURL:   publicBaseURL,
+		AppID:                appID,
+		AppKey:               appKey,
+		RedirectURI:          envOrDefault("LIGHTCLAW_QQ_REDIRECT_URI", "https://lightclaw.tech/auth/oauth/qq/callback"),
+		AuthorizeURL:         envOrDefault("LIGHTCLAW_QQ_AUTHORIZE_URL", ""),
+		APIBaseURL:           envOrDefault("LIGHTCLAW_QQ_API_BASE_URL", ""),
+		FrontendBaseURL:      frontendBaseURL,
+		PublicBaseURL:        publicBaseURL,
+		RegistrationDisabled: envOrDefault("LIGHTCLAW_QQ_REGISTRATION_ENABLED", "false") != "true",
 	}
 }
 
@@ -374,15 +424,16 @@ func buildGitHubOAuthConfig() *httpapi.GitHubOAuthConfig {
 	frontendBaseURL, publicBaseURL := oauthBaseURLs()
 
 	return &httpapi.GitHubOAuthConfig{
-		ClientID:        clientID,
-		ClientSecret:    clientSecret,
-		RedirectURI:     envOrDefault("LIGHTCLAW_GITHUB_REDIRECT_URI", oauthCallbackURL(publicBaseURL, "/auth/oauth/github/callback")),
-		FrontendBaseURL: frontendBaseURL,
-		PublicBaseURL:   publicBaseURL,
+		ClientID:             clientID,
+		ClientSecret:         clientSecret,
+		RedirectURI:          envOrDefault("LIGHTCLAW_GITHUB_REDIRECT_URI", oauthCallbackURL(publicBaseURL, "/auth/oauth/github/callback")),
+		FrontendBaseURL:      frontendBaseURL,
+		PublicBaseURL:        publicBaseURL,
+		RegistrationDisabled: envOrDefault("LIGHTCLAW_GITHUB_REGISTRATION_ENABLED", "false") != "true",
 	}
 }
 
-func buildRealnameVerifier(logger *slog.Logger) service.RealnameVerifier {
+func buildRealnameClient(logger *slog.Logger) *realname.Client {
 	secretID := strings.TrimSpace(os.Getenv("TENCENT_REALNAME_SECRET_ID"))
 	secretKey := strings.TrimSpace(os.Getenv("TENCENT_REALNAME_SECRET_KEY"))
 	if secretID == "" || secretKey == "" {
@@ -400,6 +451,27 @@ func buildRealnameVerifier(logger *slog.Logger) service.RealnameVerifier {
 	}
 	logger.Info("realname verifier enabled")
 	return client
+}
+
+func buildRealnameFaceIDConfig() service.RealnameFaceIDConfig {
+	return service.RealnameFaceIDConfig{
+		Mode:        service.RealnameAssuranceMode(strings.TrimSpace(envOrDefault("LIGHTCLAW_REALNAME_ASSURANCE_MODE", "legacy"))),
+		RuleID:      strings.TrimSpace(os.Getenv("TENCENT_REALNAME_FACEID_RULE_ID")),
+		AccountID:   strings.TrimSpace(os.Getenv("TENCENT_REALNAME_ACCOUNT_ID")),
+		RedirectURL: strings.TrimSpace(os.Getenv("TENCENT_REALNAME_FACEID_REDIRECT_URL")),
+		DigestKey:   decodeRealnameDigestKey(os.Getenv("REALNAME_ENCRYPTION_KEY")),
+		DailyQuota:  int(envInt64OrDefault("LIGHTCLAW_REALNAME_FACEID_DAILY_QUOTA", 5)),
+		AttemptTTL:  parseDurationEnv("LIGHTCLAW_REALNAME_FACEID_ATTEMPT_TTL", 2*time.Hour),
+		LeaseTTL:    parseDurationEnv("LIGHTCLAW_REALNAME_FACEID_LEASE_TTL", 30*time.Second),
+	}
+}
+
+func decodeRealnameDigestKey(value string) []byte {
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(value))
+	if err != nil || len(decoded) != 32 {
+		return nil
+	}
+	return decoded
 }
 
 func buildTATRegisterIssuer(logger *slog.Logger) tat.RegisterCodeIssuer {

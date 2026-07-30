@@ -21,6 +21,7 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/logic/queryflow"
 	"git.woa.com/wisp/mono/trade/internal/logic/renewresource"
 	"git.woa.com/wisp/mono/trade/internal/logic/resourcequery"
+	"git.woa.com/wisp/mono/trade/internal/logic/transferresource"
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
 
@@ -106,7 +107,7 @@ type ServerConfig struct {
 
 	// RegionOverride（北京 2 预发布接入 2026-06-12 新增）：腾讯云 region 字面量 override。
 	//
-	// 取值：空 / "ap-guangzhou" / "ap-beijing" / "ap-singapore" 等（注册在 region.regionTable）。
+	// 取值：空 / "ap-guangzhou" / "ap-beijing" / "ap-shanghai" / "ap-singapore" 等（注册在 region.regionTable）。
 	// 由 LIGHTVELA_TRADE_REGION env 注入，未注册字面量在 config.Load 期 fail-fast。
 	// 与 SiteKind 同路径透穿到上述 5 个下游注入点。
 	RegionOverride string
@@ -241,6 +242,15 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 		RegionOverride: cfg.RegionOverride,
 	})
 
+	// 9. 注册 transferResource 真 handler（外部资源迁入）。
+	//    计费迁移单回调 trade 后，trade 反向调 ctl /internal/ctl/passes/transfer，
+	//    仅迁移既有 pass 的 bundle/uin/app_id，不创建新 pass。
+	transferresource.Install(dispatcher, transferresource.Deps{
+		FlowStore: cfg.FlowStore,
+		CTLClient: cfg.CTLClient,
+		Builder:   builder,
+	})
+
 	router.POST("/trade/jifei/callback", jifei.CallbackHandler(dispatcher))
 
 	// 6. 注册内部 RPC（迭代 8A + Sub-4 callback）。
@@ -248,6 +258,7 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 	//    nil 时 /internal/trade/* 路由不挂载（实现：Install 内部 panic 仅在 Service 注入时触发）。
 	//    FlowStore 注入后挂载 POST /internal/trade/flows/:flowID/complete（Sub-4 ctl→trade callback）。
 	if cfg.InquiryService != nil && cfg.PlaceOrderService != nil {
+		provisionedOrderStore, _ := cfg.OrderStore.(store.ProvisionedCreateOrderStore)
 		internalapi.Install(router, internalapi.Deps{
 			InternalServiceToken: cfg.InternalServiceToken,
 			Inquiry:              cfg.InquiryService,
@@ -259,7 +270,8 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 			JifeiClient: cfg.JifeiClient,
 			// v1.7.32 订单状态反查（设计稿 .tmp/ctl-order-status-query-design.md §5.4）：
 			// nil 时 internalapi 不挂载 /internal/trade/orders/:dealName/query-status 路由。
-			OrderStatus: cfg.OrderStatusService,
+			OrderStatus:           cfg.OrderStatusService,
+			ProvisionedOrderStore: provisionedOrderStore,
 			// v1.7.x A6.3：SiteKind 透传给 deleteResourceHandler（装配期解析为 region 三元组）。
 			SiteKind: cfg.SiteKind,
 			// 北京 2 预发布接入 2026-06-12：region 字段 override，与 SiteKind 同路径。

@@ -60,6 +60,8 @@ type DianshiRecordFilter struct {
 	BundleID       string
 	DealName       string
 	Limit          int
+	Page           int
+	PageSize       int
 }
 
 // ActivityStore 抽象点石活动相关的 DAO 接口，便于 logic/activity Resolver 单测 mock。
@@ -96,7 +98,7 @@ type ActivityStore interface {
 type DianshiAdminStore interface {
 	ListDianshiOrders(ctx context.Context, filter DianshiRecordFilter) ([]*TradeOrder, error)
 	DeleteDianshiOrder(ctx context.Context, dealName string) (int64, error)
-	ListUserActivityParticipations(ctx context.Context, filter DianshiRecordFilter) ([]*UserActivityParticipation, error)
+	ListUserActivityParticipations(ctx context.Context, filter DianshiRecordFilter) ([]*UserActivityParticipation, int64, error)
 	DeleteUserActivityParticipation(ctx context.Context, id int64) (int64, error)
 }
 
@@ -214,23 +216,30 @@ func (s *MySQLStore) InsertUserParticipation(
 }
 
 // ListUserActivityParticipations 查询点石活动参与记录，用于后台管理排障和重试。
-func (s *MySQLStore) ListUserActivityParticipations(ctx context.Context, filter DianshiRecordFilter) ([]*UserActivityParticipation, error) {
+func (s *MySQLStore) ListUserActivityParticipations(ctx context.Context, filter DianshiRecordFilter) ([]*UserActivityParticipation, int64, error) {
 	if s == nil || s.db == nil {
-		return nil, fmt.Errorf("trade_user_activity_participation: store is nil")
+		return nil, 0, fmt.Errorf("trade_user_activity_participation: store is nil")
 	}
 	where, args := buildDianshiFilterWhere(filter, false)
+	countArgs := append([]any(nil), args...)
+	countQuery := `SELECT COUNT(*) FROM trade_user_activity_participation` + where
+	var total int64
+	if err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("trade_user_activity_participation: count: %w", err)
+	}
+
 	q := `
 		SELECT id, uin, app_id, external_user_id, activity_id, bundle_id, act_id,
 		       deal_name, big_deal_no, created_time
 		  FROM trade_user_activity_participation
 	` + where + `
 		 ORDER BY created_time DESC, id DESC
-		 LIMIT ?
+		 LIMIT ? OFFSET ?
 	`
-	args = append(args, normalizedDianshiLimit(filter.Limit))
+	args = append(args, normalizedDianshiPageSize(filter), normalizedDianshiOffset(filter))
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("trade_user_activity_participation: list: %w", err)
+		return nil, 0, fmt.Errorf("trade_user_activity_participation: list: %w", err)
 	}
 	defer rows.Close()
 
@@ -241,14 +250,14 @@ func (s *MySQLStore) ListUserActivityParticipations(ctx context.Context, filter 
 			&row.ID, &row.Uin, &row.AppID, &row.ExternalUserID, &row.ActivityID,
 			&row.BundleID, &row.ActID, &row.DealName, &row.BigDealNo, &row.CreatedTime,
 		); err != nil {
-			return nil, fmt.Errorf("trade_user_activity_participation: scan: %w", err)
+			return nil, 0, fmt.Errorf("trade_user_activity_participation: scan: %w", err)
 		}
 		result = append(result, &row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("trade_user_activity_participation: rows: %w", err)
+		return nil, 0, fmt.Errorf("trade_user_activity_participation: rows: %w", err)
 	}
-	return result, nil
+	return result, total, nil
 }
 
 // DeleteUserActivityParticipation 删除点石活动参与记录，使用户可重新走点石活动下单。
@@ -308,4 +317,25 @@ func normalizedDianshiLimit(limit int) int {
 		return 200
 	}
 	return limit
+}
+
+func normalizedDianshiPageSize(filter DianshiRecordFilter) int {
+	if filter.PageSize > 0 {
+		if filter.PageSize > 200 {
+			return 200
+		}
+		return filter.PageSize
+	}
+	return normalizedDianshiLimit(filter.Limit)
+}
+
+func normalizedDianshiPage(filter DianshiRecordFilter) int {
+	if filter.Page <= 0 {
+		return 1
+	}
+	return filter.Page
+}
+
+func normalizedDianshiOffset(filter DianshiRecordFilter) int {
+	return (normalizedDianshiPage(filter) - 1) * normalizedDianshiPageSize(filter)
 }

@@ -62,6 +62,8 @@ class PromotionPolicy:
     def verify_args(self) -> list[str]:
         if self.verify_mode == VerifyMode.MERGE_ONLY:
             return ["--merge-only", "--merge-wait-seconds", "3600", "--merge-poll-seconds", "15"]
+        if self.verify_mode == VerifyMode.ARGO_CONVERGENCE and self.required_argo_sync == "manual":
+            return ["--wait-seconds", "1800", "--poll-seconds", "15"]
         return []
 
 
@@ -109,6 +111,29 @@ PROMOTION_POLICIES: tuple[PromotionPolicy, ...] = (
         verify_mode=VerifyMode.ARGO_CONVERGENCE,
         kustomize_mode=KustomizeMode.FULL,
         gate_denied_behavior=GateDeniedBehavior.FAIL,
+    ),
+    PromotionPolicy(
+        env="beijing-llmgateway",
+        branch_prefix="promote-beijing-llmgateway-",
+        display_name="北京 LLMGateway 测试",
+        auto_merge=True,
+        auto_sync=True,
+        cleanup_source_branch=True,
+        verify_mode=VerifyMode.ARGO_CONVERGENCE,
+        kustomize_mode=KustomizeMode.FULL,
+        gate_denied_behavior=GateDeniedBehavior.FAIL,
+    ),
+    PromotionPolicy(
+        env="shprod",
+        branch_prefix="promote-shprod-velagw-",
+        display_name="上海生产 VelaGW",
+        auto_merge=True,
+        auto_sync=False,
+        cleanup_source_branch=False,
+        verify_mode=VerifyMode.ARGO_CONVERGENCE,
+        kustomize_mode=KustomizeMode.CHANGED_ONLY,
+        gate_denied_behavior=GateDeniedBehavior.SKIP,
+        required_argo_sync="manual",
     ),
     PromotionPolicy(
         env="shprod",

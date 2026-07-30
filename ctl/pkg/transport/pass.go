@@ -25,8 +25,42 @@ type CompletePassRequest struct {
 	TimeUnit  string `json:"time_unit"`            // 时长单位 "m"（月）/ "d"（天）（必填）
 	Uin       int64  `json:"uin"`                  // 腾讯云主账号 uin（必填）
 	AppID     int64  `json:"app_id"`               // 腾讯云 appId（必填）
-	DealName  string `json:"deal_name"`            // jifei 订单号（必填，仅记日志，pass 表不持久化）
+	DealName  string `json:"deal_name"`            // jifei 订单号（必填，用于生成 ai-gateway 订阅幂等键；pass 表不持久化）
 	RenewFlag string `json:"renew_flag,omitempty"` // 续费标记，v4 收敛：协议层预留字段，本期 logic 内部写死 MANUAL_RENEW，trade 透传值暂不生效
+}
+
+// PassBillingMigrationRequest 通知 ctl 尝试把存量免费 pass 迁移到计费资源。
+//
+// auth 只传影子账号绑定结果，不传目标套餐；source/target bundle 由 ctl 业务策略决定。
+type PassBillingMigrationRequest struct {
+	UserID string `json:"user_id"`
+	Uin    int64  `json:"uin"`
+	AppID  int64  `json:"app_id"`
+}
+
+type PassBillingMigrationResult struct {
+	Status     string `json:"status"`
+	PassID     string `json:"pass_id,omitempty"`
+	BundleID   string `json:"bundle_id,omitempty"`
+	DealName   string `json:"deal_name,omitempty"`
+	BigOrderID string `json:"big_order_id,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
+// TransferPassRequest 是 trade 在 jifei transferResource 回调后反向调用 ctl 的请求。
+//
+// 本接口只迁移既有免费 pass 的计费归属，不创建 pass、不改 quota/subscription。
+type TransferPassRequest struct {
+	PassID         string `json:"pass_id"`
+	UserID         string `json:"user_id,omitempty"`
+	SourceBundleID string `json:"source_bundle_id,omitempty"`
+	TargetBundleID string `json:"target_bundle_id"`
+	OldUin         int64  `json:"old_uin"`
+	OldAppID       int64  `json:"old_app_id"`
+	NewUin         int64  `json:"new_uin"`
+	NewAppID       int64  `json:"new_app_id"`
+	DealName       string `json:"deal_name"`
+	BigOrderID     string `json:"big_order_id,omitempty"`
 }
 
 // ModifyPassRequest 修改权益请求
@@ -60,8 +94,10 @@ type PassResponse struct {
 	Status string `json:"status"`
 
 	// Credit 字段（CTL 运行时填充）
-	CreditTotal     int64 `json:"credit_total"`
-	CreditAvailable int64 `json:"credit_available"`
+	CreditTotal         int64 `json:"credit_total"`
+	CreditAvailable     int64 `json:"credit_available"`
+	FreeCreditTotal     int64 `json:"free_credit_total"`
+	FreeCreditAvailable int64 `json:"free_credit_available"`
 
 	// AgentQuota 字段（v1.7.23 B18 新增, v1.7.24 B19 修订；CTL 运行时填充，DB 不持久化）
 	//   - AgentQuotaTotal     = user_resource_quota.total
@@ -78,7 +114,10 @@ type PassResponse struct {
 
 // ListPassesResponse 查询 Pass 列表响应（admin / internal 接口使用）
 type ListPassesResponse struct {
-	Passes []*PassResponse `json:"passes"`
+	Passes   []*PassResponse `json:"passes"`
+	Total    int64           `json:"total,omitempty"`
+	Page     int             `json:"page,omitempty"`
+	PageSize int             `json:"page_size,omitempty"`
 }
 
 // UserPassResponse 是用户面 GET /v1/passes / POST /v1/passes 响应单条 pass（v1.7.23 B18）。
@@ -111,13 +150,33 @@ type UserPassResponse struct {
 	AgentQuotaAvailable int64 `json:"agent_quota_available"`
 
 	// Credit 积分
-	CreditTotal     int64 `json:"credit_total"`
-	CreditAvailable int64 `json:"credit_available"`
+	CreditTotal         int64 `json:"credit_total"`
+	CreditAvailable     int64 `json:"credit_available"`
+	FreeCreditTotal     int64 `json:"free_credit_total"`
+	FreeCreditAvailable int64 `json:"free_credit_available"`
 }
 
 // ListUserPassesResponse 用户面查询 Pass 列表响应（v1.7.23 B18，对偶 ListPassesResponse）
 type ListUserPassesResponse struct {
 	Passes []*UserPassResponse `json:"passes"`
+}
+
+// GrantFreeCreditRequest 后台给用户发放免费/额外积分。
+//
+// CTL 只负责业务命名和过期时间绑定；LLMGateway 只看到一条普通 named subscription。
+type GrantFreeCreditRequest struct {
+	UserID         string `json:"user_id"`
+	PlanID         string `json:"plan_id"`
+	Source         string `json:"source,omitempty"`
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+type GrantFreeCreditResponse struct {
+	UserID           string    `json:"user_id"`
+	PlanID           string    `json:"plan_id"`
+	SubscriptionID   string    `json:"subscription_id"`
+	SubscriptionName string    `json:"subscription_name"`
+	PeriodEnd        time.Time `json:"period_end"`
 }
 
 // === jifei 反查接口三件套 transport DTOs（billing-integration B11A 新增）===

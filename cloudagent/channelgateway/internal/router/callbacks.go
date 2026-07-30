@@ -73,6 +73,9 @@ func (DefaultChannelCallbacks) HandleACPError(stage CallbackStage, err error) (s
 	if isRuntimeOwnershipError(err) {
 		return runtimeBusyReply, true
 	}
+	if stage == CallbackStagePrompt && !isRecoverableRuntimeError(err) && !isMissingACPSessionError(err) {
+		return turnScopedPromptFailedReply, true
+	}
 	switch stage {
 	case CallbackStageLoadSession, CallbackStageNewSession, CallbackStagePrompt, CallbackStageReset:
 		return runtimeRecoveryFailedReply, true

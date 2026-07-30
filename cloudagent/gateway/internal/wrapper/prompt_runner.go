@@ -736,14 +736,23 @@ func (g *ACPGateway) finishFailedPrompt(ws *WSConn, id json.RawMessage, appEnvel
 	}
 	g.mu.Lock()
 	if session, ok := g.sessions[sessionID]; ok && sessionPromptRun(session, run) && session.RuntimeGeneration == run.Generation {
+		turnScopedFailure := workerFailureIsTurnScoped(err)
+		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_prompt_failure_classified session_id=%s generation=%d run_id=%s code=%s turn_scoped=%t state_before=%s error=%s\n",
+			sessionID, session.RuntimeGeneration, run.JobID, quoteServerField(workerFailureCode(err)), turnScopedFailure, session.State, quoteServerField(err.Error()))
 		removeSessionPromptRun(session, run)
 		rememberCompletedPromptRun(session, run)
 		if sessionHasPromptRuns(session) {
 			session.State = acpRuntimeStatePrompting
+		} else if turnScopedFailure {
+			session.State = acpRuntimeStateReady
 		} else {
 			session.State = acpRuntimeStateFailed
 		}
-		session.LastRuntimeError = err.Error()
+		if turnScopedFailure {
+			session.LastRuntimeError = ""
+		} else {
+			session.LastRuntimeError = err.Error()
+		}
 		session.UpdatedAt = time.Now().UTC()
 		if g.store != nil && run.TurnID != "" && run.AssistantMessageID != "" {
 			_ = g.store.FailACPTurn(run.TurnID, run.AssistantMessageID, err.Error())

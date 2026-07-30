@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,23 +37,25 @@ type GitHubOAuthToken struct {
 
 // GitHubOAuthConfig 是 GitHub OAuth 的配置结构体。
 type GitHubOAuthConfig struct {
-	ClientID        string
-	ClientSecret    string
-	RedirectURI     string
-	FrontendBaseURL string
-	PublicBaseURL   string
-	StateTTL        time.Duration
-	Client          GitHubOAuthClient
+	ClientID             string
+	ClientSecret         string
+	RedirectURI          string
+	FrontendBaseURL      string
+	PublicBaseURL        string
+	StateTTL             time.Duration
+	Client               GitHubOAuthClient
+	RegistrationDisabled bool
 }
 
 type githubOAuth struct {
-	clientID        string
-	clientSecret    string
-	redirectURI     string
-	frontendBaseURL string
-	publicBaseURL   string
-	stateTTL        time.Duration
-	client          GitHubOAuthClient
+	clientID             string
+	clientSecret         string
+	redirectURI          string
+	frontendBaseURL      string
+	publicBaseURL        string
+	stateTTL             time.Duration
+	client               GitHubOAuthClient
+	registrationDisabled bool
 }
 
 func newGitHubOAuth(config *GitHubOAuthConfig) *githubOAuth {
@@ -82,13 +85,14 @@ func newGitHubOAuth(config *GitHubOAuthConfig) *githubOAuth {
 	}
 
 	return &githubOAuth{
-		clientID:        clientID,
-		clientSecret:    clientSecret,
-		redirectURI:     redirectURI,
-		frontendBaseURL: strings.TrimRight(strings.TrimSpace(config.FrontendBaseURL), "/"),
-		publicBaseURL:   strings.TrimRight(strings.TrimSpace(config.PublicBaseURL), "/"),
-		stateTTL:        stateTTL,
-		client:          client,
+		clientID:             clientID,
+		clientSecret:         clientSecret,
+		redirectURI:          redirectURI,
+		frontendBaseURL:      strings.TrimRight(strings.TrimSpace(config.FrontendBaseURL), "/"),
+		publicBaseURL:        strings.TrimRight(strings.TrimSpace(config.PublicBaseURL), "/"),
+		stateTTL:             stateTTL,
+		client:               client,
+		registrationDisabled: config.RegistrationDisabled,
 	}
 }
 
@@ -119,7 +123,8 @@ func (h *Handler) StartGitHubOAuth(ctx *gin.Context) {
 		Secure:   h.cookieSecure,
 		MaxAge:   int(h.githubOAuth.stateTTL / time.Second),
 	})
-	setOAuthReturnToCookie(ctx, githubOAuthReturnToCookieName, githubOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.githubOAuth.stateTTL, h.validatedReturnToURL)
+	validatedReturnTo := h.readValidatedReturnToFromRequest(ctx.Request)
+	setOAuthReturnToCookie(ctx, githubOAuthReturnToCookieName, githubOAuthStateCookiePath, validatedReturnTo, h.cookieSecure, h.githubOAuth.stateTTL)
 
 	ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.authorizeURL(startState.StateParam, startState.RedirectURI))
 }
@@ -143,7 +148,7 @@ func (h *Handler) HandleGitHubOAuthCallback(ctx *gin.Context) {
 			return
 		}
 		if isOAuthRelayIssuerCallback(ctx.Request, relayState) {
-			target, err := relayCallbackURLWithOriginalQuery(relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
+			target, err := relayCallbackURLWithOriginalQuery("github", relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
 			if err != nil {
 				logger.Warn("github oauth relay callback failed", "stage", "target_query", "err", err)
 				ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_state_mismatch"))
@@ -162,10 +167,10 @@ func (h *Handler) HandleGitHubOAuthCallback(ctx *gin.Context) {
 		if cookie, err := ctx.Request.Cookie(githubOAuthStateCookieName); err == nil {
 			expectedState = strings.TrimSpace(cookie.Value)
 		}
-		returnTo := readOAuthReturnToCookie(ctx.Request, githubOAuthReturnToCookieName)
+		validatedSuccessTarget := h.readValidatedOAuthReturnToCookie(ctx.Request, githubOAuthReturnToCookieName)
 		h.clearGitHubOAuthStateCookie(ctx)
 		clearOAuthReturnToCookie(ctx, githubOAuthReturnToCookieName, githubOAuthStateCookiePath, h.cookieSecure)
-		h.handleGitHubOAuthCallbackAfterState(ctx, code, relayState.Nonce, expectedState, returnTo, exchangeRedirectURI, logger)
+		h.handleGitHubOAuthCallbackAfterState(ctx, code, relayState.Nonce, expectedState, validatedSuccessTarget, exchangeRedirectURI, logger)
 		return
 	}
 
@@ -173,13 +178,13 @@ func (h *Handler) HandleGitHubOAuthCallback(ctx *gin.Context) {
 	if cookie, err := ctx.Request.Cookie(githubOAuthStateCookieName); err == nil {
 		expectedState = strings.TrimSpace(cookie.Value)
 	}
-	returnTo := readOAuthReturnToCookie(ctx.Request, githubOAuthReturnToCookieName)
+	validatedSuccessTarget := h.readValidatedOAuthReturnToCookie(ctx.Request, githubOAuthReturnToCookieName)
 	h.clearGitHubOAuthStateCookie(ctx)
 	clearOAuthReturnToCookie(ctx, githubOAuthReturnToCookieName, githubOAuthStateCookiePath, h.cookieSecure)
-	h.handleGitHubOAuthCallbackAfterState(ctx, code, state, expectedState, returnTo, exchangeRedirectURI, logger)
+	h.handleGitHubOAuthCallbackAfterState(ctx, code, state, expectedState, validatedSuccessTarget, exchangeRedirectURI, logger)
 }
 
-func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code string, state string, expectedState string, returnTo string, exchangeRedirectURI string, logger interface {
+func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code string, state string, expectedState string, validatedSuccessTarget string, exchangeRedirectURI string, logger interface {
 	Warn(msg string, keysAndValues ...any)
 	Error(msg string, keysAndValues ...any)
 	Info(msg string, keysAndValues ...any)
@@ -211,6 +216,7 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 		return
 	}
 	identity.InviteCode = h.inviteTicketFromRequest(ctx)
+	identity.RegistrationDisabled = h.githubOAuth.registrationDisabled
 	session, err := h.service.SignInWithOAuth(requestCtx, identity)
 	if err != nil {
 		logger.Error(
@@ -220,6 +226,11 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 			"subject", identity.ProviderSubject,
 			"err", err,
 		)
+		var serviceErr *service.Error
+		if errors.As(err, &serviceErr) && serviceErr.Code == "oauth_registration_disabled" {
+			ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_registration_disabled"))
+			return
+		}
 		ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_sign_in_failed"))
 		return
 	}
@@ -228,8 +239,7 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 	h.clearInviteTicketCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "github", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
-	redirectURL := h.oauthSuccessRedirectURL(ctx, returnTo, h.githubOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
-	ctx.Redirect(http.StatusTemporaryRedirect, redirectURL)
+	h.redirectOAuthSuccess(ctx, validatedSuccessTarget, h.githubOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 }
 
 func (h *Handler) clearGitHubOAuthStateCookie(ctx *gin.Context) {
@@ -265,20 +275,7 @@ func (g *githubOAuth) frontendURL(request *http.Request, path string) string {
 }
 
 func (g *githubOAuth) successFrontendURL(request *http.Request, path string, sessionToken string) string {
-	redirectURL := g.frontendURL(request, path)
-	if strings.TrimSpace(sessionToken) == "" {
-		return redirectURL
-	}
-
-	parsed, err := url.Parse(redirectURL)
-	if err != nil {
-		return redirectURL
-	}
-
-	fragment := url.Values{}
-	fragment.Set("session_token", strings.TrimSpace(sessionToken))
-	parsed.Fragment = fragment.Encode()
-	return parsed.String()
+	return oauthSuccessFrontendURL(g.frontendBaseURLForRequest(request), path, sessionToken)
 }
 
 func (g *githubOAuth) redirectURIForRequest(request *http.Request) string {

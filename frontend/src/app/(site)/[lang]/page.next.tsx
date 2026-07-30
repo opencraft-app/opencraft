@@ -20,6 +20,8 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
       routeLocale.locale === 'en-US'
         ? 'LightVela | Your Personal Cloud AI Agent'
         : 'LightVela｜云端专属个人 Agent',
+    /* 首页 title 已自带品牌名，跳过 root 模板，避免重复的 `| LightVela` 后缀 */
+    titleAbsolute: true,
     description:
       routeLocale.locale === 'en-US'
         ? 'LightVela is a cloud Agent hosting product from the Tencent Lighthouse team.'

@@ -89,6 +89,7 @@ type Config struct {
 	// 接入 2026-06-12 新增）。取值为腾讯云 region 字面量（kebab-case 全小写），例：
 	//   - "ap-guangzhou" → 1 / 100001 / "广州"
 	//   - "ap-beijing"   → 8 / 800001 / "北京"
+	//   - "ap-shanghai"  → 4 / 400001 / "上海"
 	//   - "ap-singapore" → 9 / 900001 / "Singapore"
 	//
 	// 取值优先级：override 非空且命中 region.regionTable 时优先于 SiteKind 兑底；空字符串
@@ -98,6 +99,12 @@ type Config struct {
 	// 由环境变量 `LIGHTVELA_TRADE_REGION` 注入，未注册字面量在 Load() 期 fail-fast。
 	// 该值贯穿与 SiteKind 同样的 7 处下游 Deps 注入点。
 	RegionOverride string
+
+	// 询价专用影子账号兜底身份。仅 trade/inquiry.Quote 在用户未绑定 shadow binding 时用于展示价格；
+	// 下单 / 下单并支付 / 续费下单仍由 placeorder 包强校验真实 shadow binding。
+	// 两个 env 必须同进同退；都为空时禁用兜底并保持历史错误语义。
+	InquiryFallbackUin   string
+	InquiryFallbackAppID string
 
 	// 点石活动接入（设计稿 .tmp/dianshi-activity-bundle-design.md §5.1 / §8）：
 	//   - DianshiPriceBaseURL：clgateway dianshi-price route 入口（env DIANSHI_PRICE_BASE_URL）
@@ -155,6 +162,10 @@ func Load() (Config, error) {
 		// 北京 2 预发布接入（2026-06-12）：region 字段 override，未配则按 SiteKind 兜底
 		RegionOverride: strings.TrimSpace(os.Getenv("LIGHTVELA_TRADE_REGION")),
 
+		// 询价专用兜底账号：未绑定 shadow binding 时仅用于 Quote 拿价格，不影响付费下单强校验。
+		InquiryFallbackUin:   strings.TrimSpace(os.Getenv("TRADE_INQUIRY_FALLBACK_UIN")),
+		InquiryFallbackAppID: strings.TrimSpace(os.Getenv("TRADE_INQUIRY_FALLBACK_APP_ID")),
+
 		// 点石活动接入（设计稿 §8）：两个 env 同进同退；都为空时 main.go 不装配 Resolver/DianshiClient。
 		DianshiPriceBaseURL: strings.TrimSpace(os.Getenv("DIANSHI_PRICE_BASE_URL")),
 		DianshiOrderBaseURL: strings.TrimSpace(os.Getenv("DIANSHI_ORDER_BASE_URL")),
@@ -179,9 +190,15 @@ func Load() (Config, error) {
 		if _, ok := region.LookupByRegion(cfg.RegionOverride); !ok {
 			return Config{}, fmt.Errorf(
 				"LIGHTVELA_TRADE_REGION=%q is not a registered region; "+
-					"supported: ap-guangzhou / ap-beijing / ap-singapore",
+					"supported: ap-guangzhou / ap-beijing / ap-shanghai / ap-singapore",
 				cfg.RegionOverride)
 		}
+	}
+	if (cfg.InquiryFallbackUin == "") != (cfg.InquiryFallbackAppID == "") {
+		return Config{}, fmt.Errorf(
+			"TRADE_INQUIRY_FALLBACK_UIN and TRADE_INQUIRY_FALLBACK_APP_ID must be configured together "+
+				"(uin=%q, app_id=%q)",
+			cfg.InquiryFallbackUin, cfg.InquiryFallbackAppID)
 	}
 	// 点石活动接入（设计稿 §5.8）：DIANSHI_PRICE_BASE_URL 与 DIANSHI_ORDER_BASE_URL
 	// 必须同进同退——任一只配置一边都会让"能询价但下不了单 / 能下单却没询过价"的跛脚状态

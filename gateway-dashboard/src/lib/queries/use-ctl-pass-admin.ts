@@ -5,6 +5,9 @@ interface CtlEnvelope<T> {
   data?: T;
 }
 
+const CTL_ADMIN_PASSES_QUERY_KEY = ["ctl-admin", "passes"] as const;
+const CTL_ADMIN_DIANSHI_RECORDS_QUERY_KEY = ["ctl-admin", "dianshi-records"] as const;
+
 export interface CtlBundle {
   bundle_id: string;
   bundle_name: string;
@@ -56,6 +59,15 @@ export interface CtlRefundPassResult {
   submitted_at: string;
 }
 
+export interface CtlPassBillingMigrationResult {
+  status: string;
+  pass_id?: string;
+  bundle_id?: string;
+  deal_name?: string;
+  big_order_id?: string;
+  message?: string;
+}
+
 export interface CtlDianshiParticipation {
   id: number;
   uin: string;
@@ -75,6 +87,9 @@ interface CtlBundleListData {
 
 interface CtlPassListData {
   passes?: CtlPass[];
+  total?: number;
+  page?: number;
+  page_size?: number;
 }
 
 interface CtlDeletePassResult {
@@ -84,14 +99,22 @@ interface CtlDeletePassResult {
 export interface CtlPassFilters {
   userID?: string;
   bundleID?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface CtlDianshiRecordFilters {
   userID?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 interface CtlDianshiRecordsData {
   participations?: CtlDianshiParticipation[];
+  participations_total?: number;
+  page?: number;
+  page_size?: number;
 }
 
 interface CtlDeleteDianshiRecordResult {
@@ -118,32 +141,45 @@ export function useCtlAdminBundles() {
 
 export function useCtlAdminPasses(filters: CtlPassFilters) {
   return useQuery({
-    queryKey: ["ctl-admin", "passes", filters],
+    queryKey: [...CTL_ADMIN_PASSES_QUERY_KEY, filters],
     queryFn: async () => {
       const envelope = await apiClient<CtlEnvelope<CtlPassListData>>("ctl/admin/passes", {
         params: {
           user_id: filters.userID || undefined,
           bundle_id: filters.bundleID || undefined,
+          status: filters.status && filters.status !== "all" ? filters.status : undefined,
+          page: filters.page,
+          page_size: filters.pageSize,
         },
       });
-      return unwrapCtlData(envelope).passes ?? [];
+      const data = unwrapCtlData(envelope);
+      return {
+        passes: data.passes ?? [],
+        total: data.total ?? data.passes?.length ?? 0,
+        page: data.page ?? filters.page ?? 1,
+        page_size: data.page_size ?? filters.pageSize ?? 20,
+      };
     },
   });
 }
 
 export function useCtlDianshiRecords(filters: CtlDianshiRecordFilters) {
   return useQuery({
-    queryKey: ["ctl-admin", "dianshi-records", filters],
+    queryKey: [...CTL_ADMIN_DIANSHI_RECORDS_QUERY_KEY, filters],
     queryFn: async () => {
       const envelope = await apiClient<CtlEnvelope<CtlDianshiRecordsData>>("ctl/admin/dianshi/orders", {
         params: {
           external_user_id: filters.userID?.trim() || undefined,
-          limit: 100,
+          page: filters.page,
+          page_size: filters.pageSize,
         },
       });
       const data = unwrapCtlData(envelope);
       return {
         participations: data.participations ?? [],
+        total: data.participations_total ?? data.participations?.length ?? 0,
+        page: data.page ?? filters.page ?? 1,
+        page_size: data.page_size ?? filters.pageSize ?? 20,
       };
     },
   });
@@ -172,7 +208,7 @@ export function useCtlRefundPass() {
         }
       ).then(unwrapCtlData),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ctl-admin", "passes"] });
+      queryClient.invalidateQueries({ queryKey: CTL_ADMIN_PASSES_QUERY_KEY });
     },
   });
 }
@@ -189,7 +225,28 @@ export function useCtlDestroyPass() {
         }
       ).then(unwrapCtlData),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ctl-admin", "passes"] });
+      queryClient.invalidateQueries({ queryKey: CTL_ADMIN_PASSES_QUERY_KEY });
+    },
+  });
+}
+
+export function useCtlPassBillingMigration() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userID, uin, appID }: { userID: string; uin: number; appID: number }) =>
+      apiClient<CtlEnvelope<CtlPassBillingMigrationResult>>(
+        "ctl/admin/passes/billing-migration",
+        {
+          method: "POST",
+          body: {
+            user_id: userID,
+            uin,
+            app_id: appID,
+          },
+        }
+      ).then(unwrapCtlData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CTL_ADMIN_PASSES_QUERY_KEY });
     },
   });
 }
@@ -203,7 +260,7 @@ export function useCtlDeleteDianshiParticipation() {
         { method: "DELETE" }
       ).then(unwrapCtlData),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ctl-admin", "dianshi-records"] });
+      queryClient.invalidateQueries({ queryKey: CTL_ADMIN_DIANSHI_RECORDS_QUERY_KEY });
     },
   });
 }

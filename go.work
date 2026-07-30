@@ -5,6 +5,7 @@ use (
 	./cloudladdergateway
 	./ctl
 	./images/envd
+	./velagw
 	./nextgen-dashboard
 	./nextgen-dashboard-client
 	./payment

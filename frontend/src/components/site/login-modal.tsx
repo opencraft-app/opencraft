@@ -1,13 +1,15 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
+import { PhoneLoginForm } from "@/components/auth/phone-login-form";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
 import { CN_PRIVACY_POLICY_URL } from "@/constants/legal";
 import { useT } from "@/i18n/t";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
+import { installShowPhoneLoginHelper, usePhoneLoginVisibility } from "@/lib/phone-login-visibility";
 import {
   ALLOW_GITHUB_EASTER_EGG,
   redirectToOAuthStart,
@@ -18,9 +20,45 @@ import {
 import { assetUrl } from "@/lib/asset-url";
 import { isGlobal } from "@/lib/region";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATIONS } from "@/observability/posthog";
+import { trackDatongEvent } from "@/observability/datong-tracker";
+import { DATONG_EVENTS } from "@/observability/datong";
 
 const qqLogo = assetUrl("/login/qq-logo.png");
 const wechatLogo = assetUrl("/login/wechat-logo.png");
+
+/**
+ * OAuth 登录是整页跳转（redirectToOAuthStart → 第三方 → 回跳 → 重新 hydrate session），
+ * 跳转前的 provider 在回跳后已丢失。这里用 sessionStorage 把 provider 暂存到回跳后，
+ * 供 login_success 上报 `method` 参数使用。上报后清除。
+ *
+ * is_new_user：后端 AuthSessionSnapshot / User 暂未下发该字段，本期不上报，
+ * 待后端补字段后再加。
+ */
+const LOGIN_PROVIDER_STORAGE_KEY = "lc_login_provider";
+
+const rememberLoginProvider = (provider: OAuthProvider) => {
+  try {
+    sessionStorage.setItem(LOGIN_PROVIDER_STORAGE_KEY, provider);
+  } catch {
+    /* sessionStorage 不可用时静默降级：method 字段缺失，不阻断登录 */
+  }
+};
+
+const readLoginProvider = (): string | undefined => {
+  try {
+    return sessionStorage.getItem(LOGIN_PROVIDER_STORAGE_KEY) ?? undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const clearLoginProvider = () => {
+  try {
+    sessionStorage.removeItem(LOGIN_PROVIDER_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+};
 
 /**
  * OAuth 按钮在弹窗中的视觉配置
@@ -144,19 +182,41 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
   const { session } = useSession();
   const t = useT();
   const showGitHubLogin = useGitHubLoginVisibility();
+  const showPhoneLogin = usePhoneLoginVisibility();
 
   const [mounted, setMounted] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [showAgreeHint, setShowAgreeHint] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [phoneLoginOpen, setPhoneLoginOpen] = useState(false);
+  // 确保 login_success 只上报一次（session.stage 变化可能触发多次 useEffect）
+  const loginReportedRef = useRef(false);
 
   useEffect(() => setMounted(true), []);
   useEffect(() => installShowGitHubLoginHelper(), []);
+  useEffect(() => installShowPhoneLoginHelper(), []);
+
+  // modal 关闭时重置 loginReportedRef，确保登出后再次登录能正常上报 login_success
+  useEffect(() => {
+    if (!open) {
+      loginReportedRef.current = false;
+    }
+  }, [open]);
 
   // 当用户已登录时自动关闭弹窗并触发 onSuccess
   useEffect(() => {
     if (!open) return;
     if (session.stage === "authenticated" && session.user) {
+      if (!loginReportedRef.current) {
+        loginReportedRef.current = true;
+        const loginMethod = readLoginProvider();
+        trackDatongEvent(DATONG_EVENTS.LOGIN_SUCCESS, {
+          params: {
+            method: loginMethod ?? "unknown",
+          },
+        });
+        clearLoginProvider();
+      }
       onClose();
       onSuccess?.();
     }
@@ -202,6 +262,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
     if (!loginUrl) return;
     setError(null);
     captureProductEvent(PRODUCT_ANALYTICS_EVENTS.OAUTH_PROVIDER_CLICKED, { provider });
+    rememberLoginProvider(provider);
     redirectToOAuthStart(loginUrl);
   };
 
@@ -288,6 +349,21 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                   );
                 });
               })()}
+              {showPhoneLogin ? (
+                phoneLoginOpen ? (
+                  <PhoneLoginForm beforeAction={checkAgreed} />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setPhoneLoginOpen(true)}
+                    aria-disabled={!agreed}
+                    className={`${BUTTON_BASE_CLASS} ${!agreed ? AGREEMENT_PENDING_BUTTON_CLASS : ""}`}
+                    style={{ background: "#fff", borderColor: "#E6E9EF", color: "#202020" }}
+                  >
+                    <span>{t("手机号登录")}</span>
+                  </button>
+                )
+              ) : null}
             </div>
 
             {/* Agreement — 放在登录按钮下方，必须先同意 */}

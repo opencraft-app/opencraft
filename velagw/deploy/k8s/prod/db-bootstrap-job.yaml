@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: llmgateway-db-bootstrap
+  namespace: llmgateway
+type: Opaque
+stringData:
+  db-bootstrap.yaml: |
+    control:
+      admin_dsn: "root:${CONTROL_MYSQL_ROOT_PASSWORD}@tcp(${CONTROL_MYSQL_HOST}:3306)/"
+      database: "llmgateway"
+      app_user: "llmgateway_app"
+      app_password: "${LLMGATEWAY_APP_MYSQL_PASSWORD}"
+    shards:
+      - id: "shard-a"
+        name: "shard-a"
+        admin_dsn: "root:${SHARD_A_MYSQL_ROOT_PASSWORD}@tcp(${SHARD_A_MYSQL_HOST}:3306)/"
+        endpoint: "${SHARD_A_MYSQL_HOST}:3306"
+        app_user: "newapi_app"
+        app_password: "${NEWAPI_APP_MYSQL_PASSWORD}"
+        database_pattern: "newapi_%"
+        max_connections: 1000
+        reserved_connections: 100
+      - id: "shard-b"
+        name: "shard-b"
+        admin_dsn: "root:${SHARD_B_MYSQL_ROOT_PASSWORD}@tcp(${SHARD_B_MYSQL_HOST}:3306)/"
+        endpoint: "${SHARD_B_MYSQL_HOST}:3306"
+        app_user: "newapi_app"
+        app_password: "${NEWAPI_APP_MYSQL_PASSWORD}"
+        database_pattern: "newapi_%"
+        max_connections: 1000
+        reserved_connections: 100
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: llmgateway-db-bootstrap
+  namespace: llmgateway
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: db-bootstrap
+          image: llmgateway:prod
+          imagePullPolicy: IfNotPresent
+          command:
+            - /usr/local/bin/llmgateway-db-bootstrap
+          env:
+            - name: LLMGATEWAY_DB_BOOTSTRAP_CONFIG
+              value: /etc/llmgateway/db-bootstrap.yaml
+          volumeMounts:
+            - name: config
+              mountPath: /etc/llmgateway
+              readOnly: true
+      volumes:
+        - name: config
+          secret:
+            secretName: llmgateway-db-bootstrap

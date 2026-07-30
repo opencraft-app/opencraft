@@ -8,7 +8,7 @@ import { renderNextPublicSiteHeaderLink } from './user-menu-link';
 
 export function SubscribePageClient() {
   return (
-    <AppRouteShell loadingFallback={<ProductSetupRouteLoading />}>
+    <AppRouteShell loadingFallback={<ProductSetupRouteLoading />} requireAuth={false}>
       <SubscribePage
         authControls={<PublicHeaderAuthIsland />}
         publicLocalized

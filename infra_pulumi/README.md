@@ -32,6 +32,8 @@
 export PATH="$HOME/.pulumi/bin:$PATH"
 export TENCENTCLOUD_SECRET_ID=...
 export TENCENTCLOUD_SECRET_KEY=...
+# SCF 运行时为 Python 3.10；本地存在多个 Python 时显式指定可用的打包解释器
+export SCF_BUILD_PYTHON=/path/to/working/python3
 ```
 
 ### 1. 设置资源密码
@@ -80,6 +82,13 @@ cd infra_pulumi
 GOWORK=off go run ./cmd/infractl up --stack beijing-sandbox
 ```
 
+只发布到期短信通知组件时，使用组件 scope。该模式不会同步或改写整个平台的 deploy 输出：
+
+```bash
+INFRA_COMPONENT_SCOPE=notify GOWORK=off go run ./cmd/infractl preview --stack beijing-sandbox
+INFRA_COMPONENT_SCOPE=notify GOWORK=off go run ./cmd/infractl up --stack beijing-sandbox
+```
+
 ### 5. 只同步部署输出
 
 如果云资源不需要变更，只想把最新 infra 输出重新写回部署层：
@@ -115,6 +124,7 @@ GOWORK=off go run ./cmd/infractl validate --stack beijing-sandbox
 - `infra-pulumi:registryPullServer`
 - `infra-pulumi:registryPullUsername`
 - `infra-pulumi:registryPullPassword`
+- `infra-pulumi:notifyTestAllowlistSHA256`（仅非生产环境，保存允许接收测试短信的号码 SHA-256）
 
 更多说明见 [secrets/README.md](secrets/README.md)。
 
@@ -201,6 +211,25 @@ GOWORK=off go run ./cmd/infractl validate --stack beijing-sandbox
 - `ctl-mq-redis-<env_short>`
 - `sandbox-route-redis-<env_short>`
 - `jumpserver-<env_short>`
+
+### Pass 到期短信通知
+
+`stacks.notify` 管理两个位于业务 VPC 内的 SCF：
+
+- scanner：每天按北京时间扫描 D-7 和 D0 到期 Pass，分页读取只读 DB，并用 Lua 原子写入 Redis Stream 与 60 天防重键。
+- worker：消费 Redis Stream，发送前再次检查 Pass 的到期时间和状态；续费或状态变化的消息会取消。短信按 Redis TIME 令牌桶限制为 15 QPS。
+
+运行状态、队列、重试集合、扫描水位和防重信息都按环境写入 Redis。成功、失败、取消和不确定状态保留 60 天；已 ACK 的 Stream 消息会删除。明确限流最多重试 5 次，短信请求结果不确定时标记 `unknown`，不自动重发。
+
+非生产环境必须开启 `test_allowlist_enabled` 并配置 `notifyTestAllowlistSHA256`；生产环境会拒绝启用测试白名单。scanner 和 worker 的 SCF 超时均为 900 秒，worker 在 840 秒主动退出，后续定时触发继续处理剩余消息。
+
+上海生产按以下三步上线，每一步都先 preview，再经人工确认执行 up：
+
+1. `manage_triggers: false`、`triggers_enabled: false`：只创建 SSM、CAM 和两个 SCF，不创建定时器。验证 SCF 为 `Active / Available` 后，手动 dry-run scanner，只读 DB 且不入队。
+2. `manage_triggers: true`、`triggers_enabled: false`：创建两个关闭状态的 timer，核对 scanner 为每天 09:00、worker 为每 15 分钟。
+3. `manage_triggers: true`、`triggers_enabled: true`：启用 timer。先手动执行 scanner 并观察 CLS、Redis 状态和短信统计，再开启自动调度。
+
+生产回滚优先把 `triggers_enabled` 改回 `false` 并执行 notify scope update，停止新增扫描和消费。不要直接清空 Redis；排障确认后可重新开启 worker 继续消费。代码回滚使用上一版本 SCF zip，防重键和状态键仍按 60 天 TTL 保留。
 
 ### 运行时自动推导
 

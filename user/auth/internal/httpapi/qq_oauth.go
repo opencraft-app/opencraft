@@ -5,6 +5,7 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,8 @@ import (
 const qqOAuthStateCookieName = "lc_qq_oauth_state"
 const qqOAuthStateCookiePath = "/auth/oauth/qq/callback"
 const qqOAuthReturnToCookieName = "lc_qq_oauth_return_to"
+const defaultQQOAuthAuthorizeURL = "https://graph.qq.com/oauth2.0/authorize"
+const defaultQQOAuthAPIBaseURL = "https://graph.qq.com"
 
 type QQOAuthClient interface {
 	ExchangeCode(ctx context.Context, code string, redirectURI string) (*QQOAuthToken, error)
@@ -34,22 +37,27 @@ type QQOAuthToken struct {
 }
 
 type QQOAuthConfig struct {
-	AppID           string
-	AppKey          string
-	RedirectURI     string
-	FrontendBaseURL string
-	PublicBaseURL   string
-	StateTTL        time.Duration
-	Client          QQOAuthClient
+	AppID                string
+	AppKey               string
+	RedirectURI          string
+	AuthorizeURL         string
+	APIBaseURL           string
+	FrontendBaseURL      string
+	PublicBaseURL        string
+	StateTTL             time.Duration
+	Client               QQOAuthClient
+	RegistrationDisabled bool
 }
 
 type qqOAuth struct {
-	appID           string
-	redirectURI     string
-	frontendBaseURL string
-	publicBaseURL   string
-	stateTTL        time.Duration
-	client          QQOAuthClient
+	appID                string
+	redirectURI          string
+	authorizeEndpoint    string
+	frontendBaseURL      string
+	publicBaseURL        string
+	stateTTL             time.Duration
+	client               QQOAuthClient
+	registrationDisabled bool
 }
 
 func newQQOAuth(config *QQOAuthConfig) *qqOAuth {
@@ -63,6 +71,14 @@ func newQQOAuth(config *QQOAuthConfig) *qqOAuth {
 	if appID == "" || appKey == "" || redirectURI == "" {
 		return nil
 	}
+	authorizeURL := strings.TrimSpace(config.AuthorizeURL)
+	if authorizeURL == "" {
+		authorizeURL = defaultQQOAuthAuthorizeURL
+	}
+	apiBaseURL := strings.TrimRight(strings.TrimSpace(config.APIBaseURL), "/")
+	if apiBaseURL == "" {
+		apiBaseURL = defaultQQOAuthAPIBaseURL
+	}
 
 	stateTTL := config.StateTTL
 	if stateTTL <= 0 {
@@ -75,17 +91,20 @@ func newQQOAuth(config *QQOAuthConfig) *qqOAuth {
 			appID:       appID,
 			appKey:      appKey,
 			redirectURI: redirectURI,
+			apiBaseURL:  apiBaseURL,
 			httpClient:  http.DefaultClient,
 		}
 	}
 
 	return &qqOAuth{
-		appID:           appID,
-		redirectURI:     redirectURI,
-		frontendBaseURL: strings.TrimRight(strings.TrimSpace(config.FrontendBaseURL), "/"),
-		publicBaseURL:   strings.TrimRight(strings.TrimSpace(config.PublicBaseURL), "/"),
-		stateTTL:        stateTTL,
-		client:          client,
+		appID:                appID,
+		redirectURI:          redirectURI,
+		authorizeEndpoint:    authorizeURL,
+		frontendBaseURL:      strings.TrimRight(strings.TrimSpace(config.FrontendBaseURL), "/"),
+		publicBaseURL:        strings.TrimRight(strings.TrimSpace(config.PublicBaseURL), "/"),
+		stateTTL:             stateTTL,
+		client:               client,
+		registrationDisabled: config.RegistrationDisabled,
 	}
 }
 
@@ -115,7 +134,8 @@ func (h *Handler) StartQQOAuth(ctx *gin.Context) {
 		Secure:   h.cookieSecure,
 		MaxAge:   int(h.qqOAuth.stateTTL / time.Second),
 	})
-	setOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.qqOAuth.stateTTL, h.validatedReturnToURL)
+	validatedReturnTo := h.readValidatedReturnToFromRequest(ctx.Request)
+	setOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, validatedReturnTo, h.cookieSecure, h.qqOAuth.stateTTL)
 
 	ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.authorizeURL(startState.StateParam, startState.RedirectURI))
 }
@@ -138,7 +158,7 @@ func (h *Handler) HandleQQOAuthCallback(ctx *gin.Context) {
 			return
 		}
 		if isOAuthRelayIssuerCallback(ctx.Request, relayState) {
-			target, err := relayCallbackURLWithOriginalQuery(relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
+			target, err := relayCallbackURLWithOriginalQuery("qq", relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
 			if err != nil {
 				logger.Warn("qq oauth relay callback failed", "stage", "target_query", "err", err)
 				ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_state_mismatch"))
@@ -157,10 +177,10 @@ func (h *Handler) HandleQQOAuthCallback(ctx *gin.Context) {
 		if cookie, err := ctx.Request.Cookie(qqOAuthStateCookieName); err == nil {
 			expectedState = strings.TrimSpace(cookie.Value)
 		}
-		returnTo := readOAuthReturnToCookie(ctx.Request, qqOAuthReturnToCookieName)
+		validatedSuccessTarget := h.readValidatedOAuthReturnToCookie(ctx.Request, qqOAuthReturnToCookieName)
 		h.clearQQOAuthStateCookie(ctx)
 		clearOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, h.cookieSecure)
-		h.handleQQOAuthCallbackAfterState(ctx, code, relayState.Nonce, expectedState, returnTo, exchangeRedirectURI, logger)
+		h.handleQQOAuthCallbackAfterState(ctx, code, relayState.Nonce, expectedState, validatedSuccessTarget, exchangeRedirectURI, logger)
 		return
 	}
 
@@ -168,13 +188,13 @@ func (h *Handler) HandleQQOAuthCallback(ctx *gin.Context) {
 	if cookie, err := ctx.Request.Cookie(qqOAuthStateCookieName); err == nil {
 		expectedState = strings.TrimSpace(cookie.Value)
 	}
-	returnTo := readOAuthReturnToCookie(ctx.Request, qqOAuthReturnToCookieName)
+	validatedSuccessTarget := h.readValidatedOAuthReturnToCookie(ctx.Request, qqOAuthReturnToCookieName)
 	h.clearQQOAuthStateCookie(ctx)
 	clearOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, h.cookieSecure)
-	h.handleQQOAuthCallbackAfterState(ctx, code, state, expectedState, returnTo, exchangeRedirectURI, logger)
+	h.handleQQOAuthCallbackAfterState(ctx, code, state, expectedState, validatedSuccessTarget, exchangeRedirectURI, logger)
 }
 
-func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string, state string, expectedState string, returnTo string, exchangeRedirectURI string, logger interface {
+func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string, state string, expectedState string, validatedSuccessTarget string, exchangeRedirectURI string, logger interface {
 	Warn(msg string, keysAndValues ...any)
 	Error(msg string, keysAndValues ...any)
 	Info(msg string, keysAndValues ...any)
@@ -206,6 +226,7 @@ func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string,
 		return
 	}
 	identity.InviteCode = h.inviteTicketFromRequest(ctx)
+	identity.RegistrationDisabled = h.qqOAuth.registrationDisabled
 	session, err := h.service.SignInWithOAuth(requestCtx, identity)
 	if err != nil {
 		logger.Error(
@@ -215,6 +236,11 @@ func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string,
 			"subject", identity.ProviderSubject,
 			"err", err,
 		)
+		var serviceErr *service.Error
+		if errors.As(err, &serviceErr) && serviceErr.Code == "oauth_registration_disabled" {
+			ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_registration_disabled"))
+			return
+		}
 		ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_sign_in_failed"))
 		return
 	}
@@ -226,8 +252,7 @@ func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string,
 	h.clearInviteTicketCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "qq", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
-	redirectURL := h.oauthSuccessRedirectURL(ctx, returnTo, h.qqOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
-	ctx.Redirect(http.StatusTemporaryRedirect, redirectURL)
+	h.redirectOAuthSuccess(ctx, validatedSuccessTarget, h.qqOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 }
 
 func (h *Handler) clearQQOAuthStateCookie(ctx *gin.Context) {
@@ -249,7 +274,7 @@ func (q *qqOAuth) authorizeURL(state string, redirectURI string) string {
 	query.Set("redirect_uri", strings.TrimSpace(redirectURI))
 	query.Set("state", state)
 	query.Set("scope", "get_user_info")
-	return "https://graph.qq.com/oauth2.0/authorize?" + query.Encode()
+	return q.authorizeEndpoint + "?" + query.Encode()
 }
 
 func (q *qqOAuth) frontendURL(request *http.Request, path string) string {
@@ -264,20 +289,7 @@ func (q *qqOAuth) frontendURL(request *http.Request, path string) string {
 }
 
 func (q *qqOAuth) successFrontendURL(request *http.Request, path string, sessionToken string) string {
-	redirectURL := q.frontendURL(request, path)
-	if strings.TrimSpace(sessionToken) == "" {
-		return redirectURL
-	}
-
-	parsed, err := url.Parse(redirectURL)
-	if err != nil {
-		return redirectURL
-	}
-
-	fragment := url.Values{}
-	fragment.Set("session_token", strings.TrimSpace(sessionToken))
-	parsed.Fragment = fragment.Encode()
-	return parsed.String()
+	return oauthSuccessFrontendURL(q.frontendBaseURLForRequest(request), path, sessionToken)
 }
 
 func (q *qqOAuth) redirectURIForRequest(request *http.Request) string {
@@ -351,6 +363,7 @@ type qqOAuthHTTPClient struct {
 	appID       string
 	appKey      string
 	redirectURI string
+	apiBaseURL  string
 	httpClient  *http.Client
 }
 
@@ -363,7 +376,7 @@ func (c *qqOAuthHTTPClient) ExchangeCode(ctx context.Context, code string, redir
 	query.Set("redirect_uri", strings.TrimSpace(redirectURI))
 	query.Set("fmt", "json")
 
-	body, err := c.doGET(ctx, "https://graph.qq.com/oauth2.0/token?"+query.Encode())
+	body, err := c.doGET(ctx, c.endpoint("/oauth2.0/token")+"?"+query.Encode())
 	if err != nil {
 		return nil, err
 	}
@@ -399,7 +412,7 @@ func (c *qqOAuthHTTPClient) loadOpenID(ctx context.Context, accessToken string) 
 	query := url.Values{}
 	query.Set("access_token", accessToken)
 
-	body, err := c.doGET(ctx, "https://graph.qq.com/oauth2.0/me?"+query.Encode())
+	body, err := c.doGET(ctx, c.endpoint("/oauth2.0/me")+"?"+query.Encode())
 	if err != nil {
 		return "", err
 	}
@@ -433,7 +446,7 @@ func (c *qqOAuthHTTPClient) loadProfile(ctx context.Context, accessToken string,
 	query.Set("oauth_consumer_key", c.appID)
 	query.Set("openid", openID)
 
-	body, err := c.doGET(ctx, "https://graph.qq.com/user/get_user_info?"+query.Encode())
+	body, err := c.doGET(ctx, c.endpoint("/user/get_user_info")+"?"+query.Encode())
 	if err != nil {
 		return nil, err
 	}
@@ -467,6 +480,17 @@ func (c *qqOAuthHTTPClient) doGET(ctx context.Context, requestURL string) ([]byt
 		return nil, fmt.Errorf("qq oauth request failed: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return body, nil
+}
+
+func (c *qqOAuthHTTPClient) endpoint(path string) string {
+	baseURL := strings.TrimRight(strings.TrimSpace(c.apiBaseURL), "/")
+	if baseURL == "" {
+		baseURL = defaultQQOAuthAPIBaseURL
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return baseURL + path
 }
 
 type qqUserInfoResponse struct {

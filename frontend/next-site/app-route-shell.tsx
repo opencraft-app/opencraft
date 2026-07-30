@@ -253,7 +253,7 @@ function NextMarketingAuthGate({ children, loadingFallback }: { children: ReactN
         <div className="mx-auto flex max-w-md flex-col items-center px-6 text-center">
           <h2 className="text-xl font-bold" style={{ color: '#333', marginBottom: 16 }}>{t('请先登录')}</h2>
           <p className="text-sm leading-relaxed" style={{ color: '#999', marginBottom: 48 }}>
-            {t('登录后即可创建和管理你的 Hermes')}
+            {t('登录后即可创建和管理你的 Hermes Agent')}
           </p>
           <button
             type="button"
@@ -276,9 +276,15 @@ function NextMarketingAuthGate({ children, loadingFallback }: { children: ReactN
 export function AppRouteShell({
   children,
   loadingFallback = <ProductSetupRouteLoading />,
+  requireAuth = true,
 }: {
   children: ReactNode;
   loadingFallback?: ReactNode;
+  /**
+   * 是否需要登录才能进入。默认 true（账号 / 订单 / 工作台 / 选套餐等页面强制登录）。
+   * 定价页（subscribe）传 false：未登录用户可直接浏览静态价格，登录引导下沉到点「订阅」按钮时。
+   */
+  requireAuth?: boolean;
 }) {
   const fallback = loadingFallback;
 
@@ -287,9 +293,13 @@ export function AppRouteShell({
       <NextAppNavigationProvider>
         <RumUserBridge />
         <ThemeStyleInjector />
-        <NextMarketingAuthGate loadingFallback={fallback}>
-          {children}
-        </NextMarketingAuthGate>
+        {requireAuth ? (
+          <NextMarketingAuthGate loadingFallback={fallback}>
+            {children}
+          </NextMarketingAuthGate>
+        ) : (
+          children
+        )}
       </NextAppNavigationProvider>
     </Suspense>
   );

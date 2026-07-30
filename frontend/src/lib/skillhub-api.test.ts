@@ -38,8 +38,8 @@ describe("skillhub-api", () => {
   });
 
   describe("resolveSkillHubApiBase", () => {
-    it("uses the CORS-enabled SkillHub public API in dev", () => {
-      expect(resolveSkillHubApiBase({ DEV: true })).toBe("https://lightmake.cloud");
+    it("uses the local SkillHub proxy in dev", () => {
+      expect(resolveSkillHubApiBase({ DEV: true })).toBe("/__skillhub_api");
     });
 
     it("uses the official SkillHub API outside dev", () => {
@@ -48,7 +48,7 @@ describe("skillhub-api", () => {
 
     it("treats Next development mode as local dev when Vite env is unavailable", () => {
       vi.stubEnv("NODE_ENV", "development");
-      expect(resolveSkillHubApiBase(undefined)).toBe("https://lightmake.cloud");
+      expect(resolveSkillHubApiBase(undefined)).toBe("/__skillhub_api");
     });
   });
 
@@ -60,13 +60,13 @@ describe("skillhub-api", () => {
 
     it("uses the SkillHub public souls endpoint", async () => {
       await fetchSouls();
-      expect(fetchMock).toHaveBeenCalledWith("https://lightmake.cloud/api/v1/souls");
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub_api/api/v1/souls");
     });
 
     it("appends paging query parameters", async () => {
       await fetchSouls({ page: 2, pageSize: 30 });
       expect(fetchMock).toHaveBeenCalledWith(
-        "https://lightmake.cloud/api/v1/souls?page=2&pageSize=30",
+        "/__skillhub_api/api/v1/souls?page=2&pageSize=30",
       );
     });
 
@@ -82,7 +82,7 @@ describe("skillhub-api", () => {
     it("URL-encodes the slug", async () => {
       const fetchMock = mockFetch({ slug: "a b" });
       await fetchSoulDetail("a b");
-      expect(fetchMock).toHaveBeenCalledWith("https://lightmake.cloud/api/v1/souls/a%20b");
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub_api/api/v1/souls/a%20b");
     });
   });
 
@@ -90,14 +90,30 @@ describe("skillhub-api", () => {
     it("uses the SkillHub public skillsets endpoint", async () => {
       const fetchMock = mockFetch({ skillSets: [] });
       await fetchSkillSets();
-      expect(fetchMock).toHaveBeenCalledWith("https://lightmake.cloud/api/v1/skillsets");
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub_api/api/v1/skillsets");
     });
 
     it("appends scene, keyword and paging query parameters", async () => {
       const fetchMock = mockFetch({ skillSets: [] });
       await fetchSkillSets({ scene: "finance", keyword: " report ", page: 2, pageSize: 6 });
       expect(fetchMock).toHaveBeenCalledWith(
-        "https://lightmake.cloud/api/v1/skillsets?keyword=report&scene=finance&page=2&pageSize=6",
+        "/__skillhub_api/api/v1/skillsets?keyword=report&scene=finance&page=2&pageSize=6",
+      );
+    });
+
+    it("allows newly-added SkillHub scenes without frontend type changes", async () => {
+      const fetchMock = mockFetch({ skillSets: [] });
+      await fetchSkillSets({ scene: "mysticism" });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/__skillhub_api/api/v1/skillsets?scene=mysticism",
+      );
+    });
+
+    it("passes the requested locale to the SkillHub endpoint", async () => {
+      const fetchMock = mockFetch({ skillSets: [] });
+      await fetchSkillSets({ lang: "en" });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/__skillhub_api/api/v1/skillsets?lang=en",
       );
     });
   });
@@ -106,7 +122,15 @@ describe("skillhub-api", () => {
     it("URL-encodes the slug", async () => {
       const fetchMock = mockFetch({ slug: "finance pack", skillSlugs: [] });
       await fetchSkillSetDetail("finance pack");
-      expect(fetchMock).toHaveBeenCalledWith("https://lightmake.cloud/api/v1/skillsets/finance%20pack");
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub_api/api/v1/skillsets/finance%20pack");
+    });
+
+    it("passes the requested locale for localized package details", async () => {
+      const fetchMock = mockFetch({ slug: "legal-contract-review", skillSlugs: [] });
+      await fetchSkillSetDetail("legal-contract-review", { lang: "en" });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/__skillhub_api/api/v1/skillsets/legal-contract-review?lang=en",
+      );
     });
   });
 
@@ -117,7 +141,7 @@ describe("skillhub-api", () => {
         slug: "qa plan",
         displayName: "QA Test Plan Generator",
       });
-      expect(fetchMock).toHaveBeenCalledWith("https://lightmake.cloud/api/v1/skills/qa%20plan");
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub_api/api/v1/skills/qa%20plan");
     });
   });
 
@@ -125,7 +149,7 @@ describe("skillhub-api", () => {
     it("uses the SkillHub public skill files endpoint", async () => {
       const fetchMock = mockFetch({ files: [{ path: "SKILL.md", size: 1, sha256: "abc" }] });
       await expect(fetchSkillFiles("tdd guide")).resolves.toEqual([{ path: "SKILL.md", size: 1, sha256: "abc" }]);
-      expect(fetchMock).toHaveBeenCalledWith("https://lightmake.cloud/api/v1/skills/tdd%20guide/files");
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub_api/api/v1/skills/tdd%20guide/files");
     });
   });
 
@@ -133,7 +157,7 @@ describe("skillhub-api", () => {
     it("URL-encodes the slug and path", async () => {
       const fetchMock = mockFetch("# Skill");
       await fetchSkillFile("tdd guide", "docs/SKILL.md");
-      expect(fetchMock).toHaveBeenCalledWith("https://lightmake.cloud/api/v1/skills/tdd%20guide/file?path=docs%2FSKILL.md");
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub_api/api/v1/skills/tdd%20guide/file?path=docs%2FSKILL.md");
     });
   });
 

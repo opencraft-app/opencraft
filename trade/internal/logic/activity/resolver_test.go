@@ -19,6 +19,7 @@ type fakeActivityStore struct {
 	getErr        error
 	participation map[string]bool // key = uin + "|" + activityID
 	hasErr        error
+	hasCalls      int
 }
 
 func newFakeActivityStore() *fakeActivityStore {
@@ -40,6 +41,7 @@ func (f *fakeActivityStore) GetBundleActivityByBundleID(_ context.Context, bundl
 }
 
 func (f *fakeActivityStore) HasUserParticipated(_ context.Context, uin string, activityID int64) (bool, error) {
+	f.hasCalls++
 	if f.hasErr != nil {
 		return false, f.hasErr
 	}
@@ -62,7 +64,7 @@ func keyOf(uin string, activityID int64) string {
 func TestResolver_NonActivityBundle(t *testing.T) {
 	f := newFakeActivityStore()
 	r := NewResolver(f)
-	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), "bundle_other", "815836472")
+	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), "bundle_other", "815836472", 1, "m")
 	if err != nil {
 		t.Fatalf("err=%v", err)
 	}
@@ -80,7 +82,7 @@ func TestResolver_ActivityInactive(t *testing.T) {
 		BundleID: "bundle_launch_01", ActivityID: 164273735574009, ActID: 1862147936410255, Active: false,
 	}
 	r := NewResolver(f)
-	mapping, useDianshi, err := r.ResolveForPlaceOrder(context.Background(), "bundle_launch_01", "815836472")
+	mapping, useDianshi, err := r.ResolveForPlaceOrder(context.Background(), "bundle_launch_01", "815836472", 1, "m")
 	if err != nil {
 		t.Fatalf("err=%v", err)
 	}
@@ -100,7 +102,7 @@ func TestResolver_NotParticipated_UseDianshi(t *testing.T) {
 	}
 	r := NewResolver(f)
 
-	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "815836472")
+	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "815836472", 1, "m")
 	if err != nil {
 		t.Fatalf("err=%v", err)
 	}
@@ -112,9 +114,40 @@ func TestResolver_NotParticipated_UseDianshi(t *testing.T) {
 	}
 
 	// 同样路径下 ResolveForPlaceOrder 行为应一致
-	_, useDianshi2, err := r.ResolveForPlaceOrder(context.Background(), "bundle_launch_01", "815836472")
+	_, useDianshi2, err := r.ResolveForPlaceOrder(context.Background(), "bundle_launch_01", "815836472", 1, "m")
 	if err != nil || !useDianshi2 {
 		t.Errorf("ResolveForPlaceOrder should use dianshi too, useDianshi=%v err=%v", useDianshi2, err)
+	}
+}
+
+func TestResolver_NotOneMonth_FallbackJifei(t *testing.T) {
+	f := newFakeActivityStore()
+	f.bundles["bundle_launch_01"] = &store.BundleActivity{
+		BundleID: "bundle_launch_01", ActivityID: 164273735574009, ActID: 1862147936410255,
+		SecretKey: "demo_secret", Active: true,
+	}
+	r := NewResolver(f)
+
+	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "815836472", 14, "d")
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if useDianshi {
+		t.Errorf("14d should fall back to jifei")
+	}
+	if mapping == nil || mapping.ActivityID != 164273735574009 {
+		t.Errorf("mapping should still be returned for log: %+v", mapping)
+	}
+	if f.hasCalls != 0 {
+		t.Errorf("participation should not be queried for non-1m request, calls=%d", f.hasCalls)
+	}
+
+	_, useDianshi, err = r.ResolveForPlaceOrder(context.Background(), "bundle_launch_01", "815836472", 2, "m")
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if useDianshi {
+		t.Errorf("2m should fall back to jifei")
 	}
 }
 
@@ -126,7 +159,7 @@ func TestResolver_AlreadyParticipated_FallbackJifei(t *testing.T) {
 	f.participation[keyOf("815836472", 164273735574009)] = true
 
 	r := NewResolver(f)
-	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), "bundle_launch_ai_01", "815836472")
+	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), "bundle_launch_ai_01", "815836472", 1, "m")
 	if err != nil {
 		t.Fatalf("err=%v", err)
 	}
@@ -142,7 +175,7 @@ func TestResolver_DBError_BundleActivity(t *testing.T) {
 	f := newFakeActivityStore()
 	f.getErr = errors.New("db boom")
 	r := NewResolver(f)
-	_, _, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "815836472")
+	_, _, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "815836472", 1, "m")
 	if err == nil {
 		t.Fatal("expect db err")
 	}
@@ -155,7 +188,7 @@ func TestResolver_DBError_Participation(t *testing.T) {
 	}
 	f.hasErr = errors.New("db boom")
 	r := NewResolver(f)
-	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "815836472")
+	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "815836472", 1, "m")
 	if err == nil {
 		t.Fatal("expect db err")
 	}
@@ -170,17 +203,17 @@ func TestResolver_DBError_Participation(t *testing.T) {
 func TestResolver_RequiredArgs(t *testing.T) {
 	f := newFakeActivityStore()
 	r := NewResolver(f)
-	if _, _, err := r.ResolveForInquiry(context.Background(), "", "815836472"); err == nil {
+	if _, _, err := r.ResolveForInquiry(context.Background(), "", "815836472", 1, "m"); err == nil {
 		t.Error("expect err on empty bundleID")
 	}
-	if _, _, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", ""); err == nil {
+	if _, _, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "", 1, "m"); err == nil {
 		t.Error("expect err on empty uin")
 	}
 }
 
 func TestResolver_NilStore(t *testing.T) {
 	r := NewResolver(nil)
-	if _, _, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "815836472"); err == nil {
+	if _, _, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "815836472", 1, "m"); err == nil {
 		t.Error("expect err on nil store")
 	}
 }

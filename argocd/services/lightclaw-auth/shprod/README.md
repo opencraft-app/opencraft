@@ -14,8 +14,11 @@
 - `delete-jobs.yaml`
 - `delete-shared-bootstrap.yaml`
 - `ksops-secret-generator.yaml`
+- `ksops-shadow-runtime-secret-generator.yaml`
+- `realname-faceid-reconciliation-worker.yaml`
 - `auth-platform.env`
 - `../../../secrets/shprod/lightclaw-auth-secrets.sops.yaml`
+- `../../../secrets/shprod/shadow-runtime-secrets.sops.yaml`
 
 ## Current Runtime Contract
 
@@ -35,6 +38,8 @@
 - `AUTH_WECHAT_OFFICIAL_ACCOUNT_APP_ID`
 - `AUTH_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI`
 - `AUTH_DEPLOYED_AT`
+- `LIGHTCLAW_REALNAME_ASSURANCE_MODE=faceless` keeps the FaceID attempt state machine while skipping face capture.
+- `SHADOW_BASIC_AUTH_SYNC_ENABLED=true` keeps phone proof and Shadow synchronization in the verification chain.
 
 Secret 键：
 
@@ -49,11 +54,21 @@ Secret 键：
 - `TENCENT_REALNAME_SECRET_ID`
 - `TENCENT_REALNAME_SECRET_KEY`
 - `TENCENT_REALNAME_ENDPOINT`
+- `TENCENT_REALNAME_FACEID_RULE_ID`
+- `TENCENT_REALNAME_ACCOUNT_ID`
+- `TENCENT_REALNAME_FACEID_REDIRECT_URL`
 - `REALNAME_ENCRYPTION_KEY`
 - `LIGHTCLAW_WECHAT_APP_SECRET`
 - `LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_APP_SECRET`
 - `MYSQL_DSN`
 - `MYSQL_ROOT_PASSWORD`
+
+Shadow runtime secret keys used by the reconciliation worker:
+
+- `SHADOW_SECRET_ID`
+- `SHADOW_SECRET_KEY`
+- `CLOUDLADDER_SHADOW_HMAC_SECRET`
+- `SHADOW_TENCENT_CALLBACK_TOKEN`
 
 ## Note
 

@@ -46,8 +46,9 @@ type PolarisDiscoveryConfig struct {
 }
 
 type BackendConfig struct {
-	Alias    string         `yaml:"alias"`
-	Upstream UpstreamConfig `yaml:"upstream"`
+	Alias     string         `yaml:"alias"`
+	EnvPrefix string         `yaml:"env_prefix"`
+	Upstream  UpstreamConfig `yaml:"upstream"`
 }
 
 type AuthConfig struct {
@@ -119,10 +120,28 @@ type WebhookConfig struct {
 }
 
 type ExternalRoute struct {
-	Path         string   `yaml:"path"`
-	Methods      []string `yaml:"methods"`
-	RouteID      string   `yaml:"route_id"`
-	UpstreamPath string   `yaml:"upstream_path"`
+	Path               string                      `yaml:"path"`
+	Methods            []string                    `yaml:"methods"`
+	RouteID            string                      `yaml:"route_id"`
+	UpstreamPath       string                      `yaml:"upstream_path"`
+	AuthCodeRoutes     []ExternalAuthCodeRoute     `yaml:"auth_code_routes"`
+	UserIDRoutes       []ExternalUserIDRoute       `yaml:"user_id_routes"`
+	UserIDPrefixRoutes []ExternalUserIDPrefixRoute `yaml:"user_id_prefix_routes"`
+}
+
+type ExternalAuthCodeRoute struct {
+	Prefix  string `yaml:"prefix"`
+	RouteID string `yaml:"route_id"`
+}
+
+type ExternalUserIDRoute struct {
+	UserID  string `yaml:"user_id"`
+	RouteID string `yaml:"route_id"`
+}
+
+type ExternalUserIDPrefixRoute struct {
+	Prefix  string `yaml:"prefix"`
+	RouteID string `yaml:"route_id"`
 }
 
 func Load(path string) (Config, error) {
@@ -181,6 +200,8 @@ func Load(path string) (Config, error) {
 	if !cfg.Audit.Stdout && !cfg.Audit.OTLP.Enabled {
 		cfg.Audit.Stdout = true
 	}
+	applyBackendEnvOverrides(&cfg)
+	applyRouteEnvOverrides(&cfg)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -307,12 +328,119 @@ func (c Config) Validate() error {
 		if strings.TrimSpace(route.UpstreamPath) != "" && !strings.HasPrefix(route.UpstreamPath, "/") {
 			return fmt.Errorf("external_routes[%d].upstream_path must start with /", i)
 		}
+		prefixes := make(map[string]struct{}, len(route.AuthCodeRoutes))
+		for j, authCodeRoute := range route.AuthCodeRoutes {
+			prefix := strings.TrimSpace(authCodeRoute.Prefix)
+			if prefix == "" || !strings.HasSuffix(prefix, ".") {
+				return fmt.Errorf("external_routes[%d].auth_code_routes[%d].prefix must be non-empty and end with .", i, j)
+			}
+			if _, exists := prefixes[prefix]; exists {
+				return fmt.Errorf("external_routes[%d].auth_code_routes[%d].prefix %q is duplicated", i, j, prefix)
+			}
+			prefixes[prefix] = struct{}{}
+			if strings.TrimSpace(authCodeRoute.RouteID) == "" {
+				return fmt.Errorf("external_routes[%d].auth_code_routes[%d].route_id is required", i, j)
+			}
+			if _, ok := seen[authCodeRoute.RouteID]; !ok {
+				return fmt.Errorf("external_routes[%d].auth_code_routes[%d] references unknown route %q", i, j, authCodeRoute.RouteID)
+			}
+		}
+		userIDs := make(map[string]struct{}, len(route.UserIDRoutes))
+		for j, userIDRoute := range route.UserIDRoutes {
+			userID := strings.TrimSpace(userIDRoute.UserID)
+			if userID == "" {
+				return fmt.Errorf("external_routes[%d].user_id_routes[%d].user_id is required", i, j)
+			}
+			if _, exists := userIDs[userID]; exists {
+				return fmt.Errorf("external_routes[%d].user_id_routes[%d].user_id %q is duplicated", i, j, userID)
+			}
+			userIDs[userID] = struct{}{}
+			if strings.TrimSpace(userIDRoute.RouteID) == "" {
+				return fmt.Errorf("external_routes[%d].user_id_routes[%d].route_id is required", i, j)
+			}
+			if _, ok := seen[userIDRoute.RouteID]; !ok {
+				return fmt.Errorf("external_routes[%d].user_id_routes[%d] references unknown route %q", i, j, userIDRoute.RouteID)
+			}
+		}
+		userIDPrefixes := make(map[string]struct{}, len(route.UserIDPrefixRoutes))
+		for j, userIDPrefixRoute := range route.UserIDPrefixRoutes {
+			prefix := strings.TrimSpace(userIDPrefixRoute.Prefix)
+			if prefix == "" || !strings.HasSuffix(prefix, "_") {
+				return fmt.Errorf("external_routes[%d].user_id_prefix_routes[%d].prefix must be non-empty and end with _", i, j)
+			}
+			if _, exists := userIDPrefixes[prefix]; exists {
+				return fmt.Errorf("external_routes[%d].user_id_prefix_routes[%d].prefix %q is duplicated", i, j, prefix)
+			}
+			userIDPrefixes[prefix] = struct{}{}
+			if strings.TrimSpace(userIDPrefixRoute.RouteID) == "" {
+				return fmt.Errorf("external_routes[%d].user_id_prefix_routes[%d].route_id is required", i, j)
+			}
+			if _, ok := seen[userIDPrefixRoute.RouteID]; !ok {
+				return fmt.Errorf("external_routes[%d].user_id_prefix_routes[%d] references unknown route %q", i, j, userIDPrefixRoute.RouteID)
+			}
+		}
 	}
 	return nil
 }
 
 func normalizeRouteMode(mode string) string {
 	return strings.ToLower(strings.TrimSpace(mode))
+}
+
+func applyBackendEnvOverrides(cfg *Config) {
+	for i := range cfg.Backends {
+		alias := strings.TrimSpace(cfg.Backends[i].Alias)
+		if alias == "" {
+			continue
+		}
+		envPrefix := strings.TrimSpace(cfg.Backends[i].EnvPrefix)
+		if envPrefix == "" {
+			envPrefix = "CLOUDLADDERGATEWAY_BACKEND_" + envToken(alias)
+		}
+		if value := strings.TrimSpace(os.Getenv(envPrefix + "_BASE_URL")); value != "" {
+			cfg.Backends[i].Upstream.BaseURL = value
+		}
+		if value := strings.TrimSpace(os.Getenv(envPrefix + "_HOST_HEADER")); value != "" {
+			if cfg.Backends[i].Upstream.Headers == nil {
+				cfg.Backends[i].Upstream.Headers = map[string]string{}
+			}
+			cfg.Backends[i].Upstream.Headers["Host"] = value
+		}
+	}
+}
+
+func applyRouteEnvOverrides(cfg *Config) {
+	for i := range cfg.Routes {
+		routeID := strings.TrimSpace(cfg.Routes[i].ID)
+		if routeID == "" {
+			continue
+		}
+		envPrefix := "CLOUDLADDERGATEWAY_ROUTE_" + envToken(routeID)
+		if value := strings.TrimSpace(os.Getenv(envPrefix + "_BASE_URL")); value != "" {
+			cfg.Routes[i].Upstream.BaseURL = value
+		}
+		if value := strings.TrimSpace(os.Getenv(envPrefix + "_HOST_HEADER")); value != "" {
+			if cfg.Routes[i].Upstream.Headers == nil {
+				cfg.Routes[i].Upstream.Headers = map[string]string{}
+			}
+			cfg.Routes[i].Upstream.Headers["Host"] = value
+		}
+	}
+}
+
+func envToken(value string) string {
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r - 'a' + 'A')
+		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 func trustedHost(upstream UpstreamConfig) (string, bool) {

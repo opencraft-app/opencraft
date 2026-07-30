@@ -18,6 +18,14 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 COMMAND_DIR = RUNTIME_DIR / "commands"
 
 
+def _run_subprocess(command: list[str], **kwargs) -> subprocess.CompletedProcess:
+    if not command:
+        raise ValueError("command must not be empty")
+    if any(not isinstance(part, str) or not part for part in command):
+        raise ValueError("command arguments must be non-empty strings")
+    return subprocess.run(command, **kwargs)  # nosemgrep: dangerous-subprocess-use-audit
+
+
 @dataclass(frozen=True)
 class ReleaseTrailerSelection:
     trailers: dict[str, str]
@@ -38,7 +46,7 @@ class ReleaseTrailerSelection:
 
 def _run(command: list[str], *, cwd: Path | None = None) -> None:
     print("+ " + " ".join(command), flush=True)
-    subprocess.run(command, cwd=str(cwd) if cwd else None, check=True)
+    _run_subprocess(command, cwd=str(cwd) if cwd else None, check=True)
 
 
 def _git_output(args: list[str], *, cwd: Path) -> str:
@@ -58,7 +66,7 @@ def _commit_trailers(repo_root: Path, revision: str = "HEAD") -> dict[str, str]:
 
 
 def _git_success(args: list[str], *, cwd: Path) -> bool:
-    return subprocess.run(
+    return _run_subprocess(
         ["git", "-C", str(cwd), *args],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -75,7 +83,7 @@ def _resolve_revision(repo_root: Path, name: str) -> str:
 
 
 def _fetch_branch(repo_root: Path, branch: str) -> None:
-    subprocess.run(
+    _run_subprocess(
         [
             "git",
             "-C",
@@ -221,7 +229,7 @@ def _print_policy(source_branch: str, policy: PromotionPolicy, stage: str) -> No
 
 def _print_release_view(repo_root: Path, source_branch: str, target_branch: str, stage: str) -> None:
     if (
-        subprocess.run(
+        _run_subprocess(
             ["git", "-C", str(repo_root), "rev-parse", "--is-inside-work-tree"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

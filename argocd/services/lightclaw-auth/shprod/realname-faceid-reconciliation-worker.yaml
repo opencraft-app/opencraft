@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lightclaw-auth-realname-faceid-worker
+  namespace: user-auth
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lightclaw-auth-realname-faceid-worker
+  template:
+    metadata:
+      labels:
+        app: lightclaw-auth-realname-faceid-worker
+      annotations:
+        lightclaw-auth.clawhub.dev/redeploy-at: REPLACE_AUTH_DEPLOYED_AT
+    spec:
+      nodeSelector:
+        pool: REPLACE_AUTH_NODE_POOL
+      containers:
+        - name: realname-faceid-worker
+          image: REPLACE_AUTH_IMAGE
+          imagePullPolicy: Always
+          command:
+            - lightclaw-auth-realname-faceid-worker
+          envFrom:
+            - configMapRef:
+                name: lightclaw-auth-config
+            - secretRef:
+                name: lightclaw-auth-secrets
+            - secretRef:
+                name: shadow-runtime-secrets
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi

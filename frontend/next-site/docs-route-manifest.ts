@@ -15,15 +15,23 @@ export const DOCS_ROUTE_SLUGS = {
       "core-concepts"
     ],
     [
+      "who-is-lightvela-for"
+    ],
+    [
+      "plans"
+    ],
+    [
+      "credits"
+    ],
+    [
+      "create-first-hermes"
+    ],
+    [
       "configuration"
     ],
     [
       "configuration",
       "model"
-    ],
-    [
-      "configuration",
-      "channel-wechat"
     ],
     [
       "configuration",
@@ -36,6 +44,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "channel-discord"
+    ],
+    [
+      "configuration",
+      "channel-wechat"
     ],
     [
       "configuration",
@@ -55,26 +67,78 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "memory"
+    ],
+    [
+      "configuration",
       "automation"
+    ],
+    [
+      "configuration",
+      "files"
     ],
     [
       "configuration",
       "agent-chat"
     ],
     [
-      "faq"
+      "configuration",
+      "diagnostics"
+    ],
+    [
+      "configuration",
+      "multiple-models"
+    ],
+    [
+      "use-cases",
+      "personal-ai-assistant"
+    ],
+    [
+      "use-cases",
+      "chinese-messaging-channels"
+    ],
+    [
+      "use-cases",
+      "daily-summary"
+    ],
+    [
+      "use-cases",
+      "hermes-agent-24-7"
+    ],
+    [
+      "use-cases",
+      "memory-and-knowledge"
+    ],
+    [
+      "compare",
+      "lightvela-vs-localhost-ai-agent"
+    ],
+    [
+      "compare",
+      "lightvela-vs-hostinger"
+    ],
+    [
+      "compare",
+      "lightvela-vs-manus"
+    ],
+    [
+      "compare",
+      "lightvela-vs-chatgpt"
+    ],
+    [
+      "compare",
+      "lightvela-vs-genspark"
     ],
     [
       "faq",
       "using-lightvela-safely"
+    ],
+    [
+      "contact-us"
     ]
   ],
   "zh-cn": [
     [],
-    [
-      "announcements",
-      "public-beta"
-    ],
     [
       "overview"
     ],
@@ -82,10 +146,26 @@ export const DOCS_ROUTE_SLUGS = {
       "quickstart"
     ],
     [
+      "core-concepts"
+    ],
+    [
+      "who-is-lightvela-for"
+    ],
+    [
       "account"
     ],
     [
-      "core-concepts"
+      "announcements",
+      "public-beta"
+    ],
+    [
+      "plans"
+    ],
+    [
+      "credits"
+    ],
+    [
+      "create-first-hermes"
     ],
     [
       "configuration"
@@ -126,15 +206,23 @@ export const DOCS_ROUTE_SLUGS = {
       "core-concepts"
     ],
     [
+      "who-is-lightvela-for"
+    ],
+    [
+      "plans"
+    ],
+    [
+      "credits"
+    ],
+    [
+      "create-first-hermes"
+    ],
+    [
       "configuration"
     ],
     [
       "configuration",
       "model"
-    ],
-    [
-      "configuration",
-      "channel-wechat"
     ],
     [
       "configuration",
@@ -147,6 +235,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "channel-discord"
+    ],
+    [
+      "configuration",
+      "channel-wechat"
     ],
     [
       "configuration",
@@ -166,18 +258,74 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "memory"
+    ],
+    [
+      "configuration",
       "automation"
+    ],
+    [
+      "configuration",
+      "files"
     ],
     [
       "configuration",
       "agent-chat"
     ],
     [
-      "faq"
+      "configuration",
+      "diagnostics"
+    ],
+    [
+      "configuration",
+      "multiple-models"
+    ],
+    [
+      "use-cases",
+      "personal-ai-assistant"
+    ],
+    [
+      "use-cases",
+      "chinese-messaging-channels"
+    ],
+    [
+      "use-cases",
+      "daily-summary"
+    ],
+    [
+      "use-cases",
+      "hermes-agent-24-7"
+    ],
+    [
+      "use-cases",
+      "memory-and-knowledge"
+    ],
+    [
+      "compare",
+      "lightvela-vs-localhost-ai-agent"
+    ],
+    [
+      "compare",
+      "lightvela-vs-hostinger"
+    ],
+    [
+      "compare",
+      "lightvela-vs-manus"
+    ],
+    [
+      "compare",
+      "lightvela-vs-chatgpt"
+    ],
+    [
+      "compare",
+      "lightvela-vs-genspark"
     ],
     [
       "faq",
       "using-lightvela-safely"
+    ],
+    [
+      "contact-us"
     ]
   ]
 } as const satisfies Record<DocsRouteLocale, readonly (readonly string[])[]>;

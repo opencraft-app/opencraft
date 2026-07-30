@@ -257,6 +257,54 @@ type TerminalSessionStarter interface {
 	StartTerminalSession(ctx context.Context, region, instanceID string) (TerminalSession, error)
 }
 
+const (
+	TerminalCommandEventStarted = "started"
+	TerminalCommandEventOutput  = "output"
+
+	TerminalCommandErrorTimeout  = "TIMEOUT"
+	TerminalCommandErrorCanceled = "CANCELED"
+	TerminalCommandErrorProtocol = "PROTOCOL_ERROR"
+)
+
+type TerminalCommandStreamRequest struct {
+	Region           string
+	InstanceID       string
+	Command          string
+	Username         string
+	WorkingDirectory string
+	TimeoutSeconds   int
+}
+
+type TerminalCommandStreamEvent struct {
+	Type        string
+	ExecutionID string
+	Index       int
+	Chunk       string
+}
+
+type TerminalCommandResult struct {
+	ExecutionID string
+	ExitCode    int
+}
+
+type TerminalCommandStreamError struct {
+	Code    string
+	Message string
+}
+
+func (e *TerminalCommandStreamError) Error() string {
+	if e == nil || strings.TrimSpace(e.Message) == "" {
+		return "tat terminal command stream failed"
+	}
+	return e.Message
+}
+
+// TerminalCommandStreamer is the internal server-side TAT PTY command stream
+// capability. Implementations invoke emit after PtyReady and for ordered output.
+type TerminalCommandStreamer interface {
+	StreamTerminalCommand(ctx context.Context, req TerminalCommandStreamRequest, emit func(TerminalCommandStreamEvent) error) (TerminalCommandResult, error)
+}
+
 // EnvdHupper is an optional capability for providers that can signal envd inside the instance.
 // It's intentionally not part of CloudProvider to keep the core interface minimal.
 type EnvdHupper interface {

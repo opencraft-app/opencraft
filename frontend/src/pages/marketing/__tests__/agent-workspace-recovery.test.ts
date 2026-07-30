@@ -6,6 +6,7 @@ import {
   getWorkspaceTaskPhaseLabel,
   isWorkspaceActionRunning,
   selectCurrentWorkspaceTask,
+  shouldShowWorkspaceRecoveryPanel,
   type WorkspaceActionKind,
 } from "../agent-workspace-recovery";
 import type { WorkerActionStatusResult } from "@/repositories/types";
@@ -55,7 +56,7 @@ describe("workspace recovery helpers", () => {
       "远程命令通道暂时不可用，请稍后重试。",
     );
     expect(describeWorkspaceActionError("import", "bad zip member: foo").message).toBe(
-      "备份包无法识别或已损坏，请重新选择 Hermes 导出的 zip 文件。",
+      "备份包无法识别或已损坏，请重新选择 Hermes Agent 导出的 zip 文件。",
     );
   });
 
@@ -70,5 +71,11 @@ describe("workspace recovery helpers", () => {
       "当前已有 Agent 备份任务运行中。",
     );
     expect(buildWorkspaceActionDisabledReason({ hasActiveBot: true, botRunning: true, hasEmail: true })).toBeNull();
+  });
+
+  it("keeps workspace recovery hidden on global until hidden tools are revealed", () => {
+    expect(shouldShowWorkspaceRecoveryPanel({ isGlobalRegion: false, hiddenToolsRevealed: false })).toBe(true);
+    expect(shouldShowWorkspaceRecoveryPanel({ isGlobalRegion: true, hiddenToolsRevealed: false })).toBe(false);
+    expect(shouldShowWorkspaceRecoveryPanel({ isGlobalRegion: true, hiddenToolsRevealed: true })).toBe(true);
   });
 });

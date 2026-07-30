@@ -9,6 +9,7 @@ import os
 import shlex
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
@@ -29,6 +30,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image", required=True, help="Image reference or JSON payload with images mapping")
     parser.add_argument("--docker-bin", default=os.environ.get("DOCKER_BIN", "docker"))
     parser.add_argument("--skip-login", action="store_true", help="Do not run docker login before inspecting images")
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=int(os.environ.get("IMAGE_EXISTENCE_RETRIES", "0")),
+        help="Number of retries when one or more images are missing",
+    )
+    parser.add_argument(
+        "--retry-interval-seconds",
+        type=int,
+        default=int(os.environ.get("IMAGE_EXISTENCE_RETRY_INTERVAL_SECONDS", "5")),
+        help="Seconds to wait between image existence retries",
+    )
     parser.add_argument("--format", choices=("text", "json", "dotenv"), default="text")
     return parser.parse_args()
 
@@ -67,20 +80,20 @@ def registry_from_image(image: str) -> str:
     return image.split("/", 1)[0]
 
 
-def credential_fingerprint(credential: str) -> str:
-    return hashlib.sha256(credential.encode()).hexdigest()[:12]
+def password_fingerprint(password: str) -> str:  # pragma: allowlist secret -- parameter name, not a literal secret
+    return hashlib.sha256(password.encode()).hexdigest()[:12]
 
 
 def docker_login(registry: str, docker_bin: str, run: RunCommand = subprocess.run) -> bool:
     username = os.environ.get("REGISTRY_USERNAME", "").strip()
-    credential = os.environ.get("REGISTRY_PASSWORD", "").strip()
-    if not username or not credential:
+    password = os.environ.get("REGISTRY_PASSWORD", "").strip()  # pragma: allowlist secret -- registry credential variable, not a literal secret
+    if not username or not password:
         return False
 
     try:
         run(
             [docker_bin, "login", "-u", username, "--password-stdin", registry],
-            input=credential,
+            input=password,
             text=True,
             check=True,
             capture_output=True,
@@ -91,7 +104,7 @@ def docker_login(registry: str, docker_bin: str, run: RunCommand = subprocess.ru
             (
                 "docker login failed before image existence check: "
                 f"registry={registry} username={username} password_source={source} "
-                f"credential_len={len(credential)} credential_fingerprint={credential_fingerprint(credential)}"
+                f"password_len={len(password)} password_fingerprint={password_fingerprint(password)}"
             ),
             file=sys.stderr,
         )
@@ -168,6 +181,37 @@ def verify_images(
     return results
 
 
+def verify_images_with_retry(
+    images: Sequence[str | ImageReference],
+    *,
+    docker_bin: str = "docker",
+    skip_login: bool = False,
+    retries: int = 0,
+    retry_interval_seconds: int = 5,
+    run: RunCommand = subprocess.run,
+) -> list[ImageCheckResult]:
+    attempts = max(retries, 0) + 1
+    sleep_seconds = max(retry_interval_seconds, 1)
+    results: list[ImageCheckResult] = []
+
+    for attempt in range(1, attempts + 1):
+        results = verify_images(images, docker_bin=docker_bin, skip_login=skip_login, run=run)
+        if all(result.exists for result in results):
+            return results
+        if attempt >= attempts:
+            return results
+
+        missing = ", ".join(result.image for result in results if not result.exists)
+        print(
+            f"image existence check did not pass; retrying in {sleep_seconds}s "
+            f"attempt={attempt}/{attempts} missing={missing}",
+            file=sys.stderr,
+        )
+        time.sleep(sleep_seconds)
+
+    return results
+
+
 def digest_ref(image: str, digest: str) -> str:
     if not digest:
         raise ValueError(f"image digest is missing for {image}")
@@ -235,7 +279,13 @@ def main() -> int:
     args = parse_args()
     try:
         refs = image_reference_entries(args.image)
-        results = verify_images(refs, docker_bin=args.docker_bin, skip_login=args.skip_login)
+        results = verify_images_with_retry(
+            refs,
+            docker_bin=args.docker_bin,
+            skip_login=args.skip_login,
+            retries=args.retries,
+            retry_interval_seconds=args.retry_interval_seconds,
+        )
     except (ValueError, FileNotFoundError, subprocess.CalledProcessError) as exc:
         print(str(exc), file=sys.stderr)
         return 1

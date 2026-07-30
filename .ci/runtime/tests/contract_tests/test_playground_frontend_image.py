@@ -14,6 +14,11 @@ from contracts.playground_frontend_image import (  # noqa: E402
 )
 
 
+def completed_process(args: object, returncode: int = 0, stdout: str = "", stderr: str = ""):
+    # Test fixtures construct CompletedProcess objects directly; no subprocess is launched here.
+    return subprocess.CompletedProcess(args, returncode, stdout=stdout, stderr=stderr)  # nosemgrep: dangerous-subprocess-use-audit
+
+
 class PlaygroundFrontendImageTests(unittest.TestCase):
     def test_source_id_from_frontend_playground_tag(self) -> None:
         self.assertEqual(source_id_from_tag("frontend-sandbox-bj-6-d28bf7b09cab"), "d28bf7b09cab")
@@ -38,8 +43,8 @@ class PlaygroundFrontendImageTests(unittest.TestCase):
         def fake_run(command, **kwargs):
             calls.append(command)
             if command[1:3] == ["manifest", "inspect"]:
-                return subprocess.CompletedProcess(command, 0, stdout='{"Descriptor":{"digest":"sha256:target"}}', stderr="")
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+                return completed_process(command, stdout='{"Descriptor":{"digest":"sha256:target"}}')
+            return completed_process(command)
 
         result = ensure_playground_frontend_image(
             target_image="registry.example.com/app/frontend:frontend-sandbox-bj-6-d28bf7b09cab",
@@ -56,10 +61,10 @@ class PlaygroundFrontendImageTests(unittest.TestCase):
         def fake_run(command, **kwargs):
             image = command[-1]
             if command[1:3] == ["manifest", "inspect"] and "sandbox-bj-5" in image:
-                return subprocess.CompletedProcess(command, 0, stdout='{"Descriptor":{"digest":"sha256:source"}}', stderr="")
+                return completed_process(command, stdout='{"Descriptor":{"digest":"sha256:source"}}')
             if command[1:3] == ["manifest", "inspect"]:
-                return subprocess.CompletedProcess(command, 1, stdout="", stderr="manifest unknown")
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+                return completed_process(command, 1, stderr="manifest unknown")
+            return completed_process(command)
 
         result = ensure_playground_frontend_image(
             target_image="registry.example.com/app/frontend:frontend-sandbox-bj-6-d28bf7b09cab",
@@ -81,13 +86,13 @@ class PlaygroundFrontendImageTests(unittest.TestCase):
             if command[1:3] == ["manifest", "inspect"]:
                 image = command[-1]
                 if "sandbox-bj-5" in image:
-                    return subprocess.CompletedProcess(command, 0, stdout='{"Descriptor":{"digest":"sha256:source"}}', stderr="")
+                    return completed_process(command, stdout='{"Descriptor":{"digest":"sha256:source"}}')
                 if target_seen:
-                    return subprocess.CompletedProcess(command, 0, stdout='{"Descriptor":{"digest":"sha256:target"}}', stderr="")
-                return subprocess.CompletedProcess(command, 1, stdout="", stderr="manifest unknown")
+                    return completed_process(command, stdout='{"Descriptor":{"digest":"sha256:target"}}')
+                return completed_process(command, 1, stderr="manifest unknown")
             if command[1] == "push":
                 target_seen = True
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+            return completed_process(command)
 
         result = ensure_playground_frontend_image(
             target_image="registry.example.com/app/frontend:frontend-sandbox-bj-6-d28bf7b09cab",

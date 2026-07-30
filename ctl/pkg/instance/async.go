@@ -11,11 +11,14 @@ import (
 	"time"
 
 	paigateway "ctl/pkg/adapter/aigateway"
+	pllmgateway "ctl/pkg/adapter/llmgateway"
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
 	instancebirth "ctl/pkg/instancebirth"
+	entitlementmigration "ctl/pkg/logic/entitlementmigration"
+	"ctl/pkg/logic/gatewayroute"
 	"ctl/pkg/metric"
 	modelfactory "ctl/pkg/model/factory"
 	modelinstance "ctl/pkg/model/instance"
@@ -892,7 +895,7 @@ func (l *logic) RunDestroyInstanceTask(ctx pctx.Context, payload *DestroyInstanc
 	}
 
 	if strings.TrimSpace(entity.AiGatewayKeyID) != "" {
-		if err := l.revokeAiGatewayApiKey(ctx, entity.AiGatewayKeyID); err != nil && !isAiGatewayKeyNotFound(err) {
+		if err := l.revokeInstanceGatewayAPIKey(ctx, entity); err != nil {
 			return fmt.Errorf("revoke ai-gateway api key: %w", err)
 		}
 	}
@@ -927,7 +930,7 @@ func (l *logic) FinalizeDestroyInstanceTaskFailure(ctx pctx.Context, payload *De
 //     不能让 sandbox 偶发缺失阻塞父 IsolatePass 收尾）
 //     - sandbox already-paused   → 视为成功，继续 CAS
 //     - 其它错误                 → 冒泡，触发父 task 重试
-//  4. CAS Running → Paused（与 PauseInstance 同语义）
+//  4. CAS Running/Resuming → Paused（同时接管用户恢复流程的中间态）
 func (l *logic) RunIsolateInstanceTask(ctx pctx.Context, payload *common.IsolateInstanceTaskPayload) error {
 	if payload == nil || strings.TrimSpace(payload.InstanceID) == "" {
 		return errcode.ErrInstanceInvalidParam
@@ -954,7 +957,7 @@ func (l *logic) RunIsolateInstanceTask(ctx pctx.Context, payload *common.Isolate
 			zap.String("status", entity.Status),
 		)
 		return nil
-	case modelinstance.InstanceStatusRunning:
+	case modelinstance.InstanceStatusRunning, modelinstance.InstanceStatusResuming:
 		// 正常路径
 	default:
 		// Creating / Deleting 等中间态：让框架按 60s interval 重试，等其先到 Running/终态
@@ -991,7 +994,7 @@ func (l *logic) RunIsolateInstanceTask(ctx pctx.Context, payload *common.Isolate
 	if err := l.instanceDao.TransitionStatus(
 		ctx,
 		entity.Id,
-		[]string{modelinstance.InstanceStatusRunning},
+		[]string{modelinstance.InstanceStatusRunning, modelinstance.InstanceStatusResuming},
 		modelinstance.InstanceStatusPaused,
 	); err != nil {
 		// CAS 失败常见于并发被 PauseInstance 改了状态：再次 GetByInstanceID 兜底
@@ -1066,7 +1069,8 @@ func (l *logic) RunRenewInstanceTask(ctx pctx.Context, payload *common.RenewInst
 		return fmt.Errorf("instance status=%s not eligible for renew yet", entity.Status)
 	}
 
-	if entity.SandboxId != "" && !isPendingSandboxID(entity.SandboxId) {
+	wasPaused := entity.Status == modelinstance.InstanceStatusPaused
+	if wasPaused && entity.SandboxId != "" && !isPendingSandboxID(entity.SandboxId) {
 		// ResumeSandbox 默认请求体（不带 timeout 覆盖；timeout 维持 sandbox 服务侧默认值）
 		// 与 ResumeInstance 主路径一致，但本子 task 是系统侧自动续费，不强制重置 timeout
 		if _, err := l.sandboxAdapter.ResumeSandbox(ctx, entity.SandboxId, &psandbox.ResumeSandboxRequest{}); err != nil {
@@ -1089,28 +1093,46 @@ func (l *logic) RunRenewInstanceTask(ctx pctx.Context, payload *common.RenewInst
 				return fmt.Errorf("resume sandbox: %w", err)
 			}
 		}
-	} else {
+	} else if wasPaused {
 		logger.Warn("renew task: instance has no usable sandbox, skip resume call",
 			zap.String("sandbox_id", entity.SandboxId),
 		)
 	}
 
-	if err := l.instanceDao.TransitionStatus(
-		ctx,
-		entity.Id,
-		[]string{modelinstance.InstanceStatusPaused},
-		modelinstance.InstanceStatusRunning,
-	); err != nil {
-		// CAS 失败常见于并发被 ResumeInstance 改了状态：再次 GetByInstanceID 兜底
-		current, getErr := l.instanceDao.GetByInstanceID(ctx, entity.InstanceId)
-		if getErr == nil && current.Status == modelinstance.InstanceStatusRunning {
-			logger.Info("renew task: state already running after CAS reject, success")
-			return nil
+	if wasPaused {
+		if err := l.instanceDao.TransitionStatus(
+			ctx,
+			entity.Id,
+			[]string{modelinstance.InstanceStatusPaused},
+			modelinstance.InstanceStatusRunning,
+		); err != nil {
+			// CAS 失败常见于并发被 ResumeInstance 改了状态：再次 GetByInstanceID 兜底
+			current, getErr := l.instanceDao.GetByInstanceID(ctx, entity.InstanceId)
+			if getErr == nil && current.Status == modelinstance.InstanceStatusRunning {
+				logger.Info("renew task: state already running after CAS reject, continue")
+				entity = current
+			} else {
+				return fmt.Errorf("persist running state: %w", err)
+			}
+		} else {
+			logger.Info("renew task: instance resumed successfully")
+			entity.Status = modelinstance.InstanceStatusRunning
 		}
-		return fmt.Errorf("persist running state: %w", err)
 	}
-	logger.Info("renew task: instance resumed successfully")
+
 	return nil
+}
+
+func (l *logic) revokeGatewayAPIKey(ctx pctx.Context, backend gatewayBackend, keyID string) error {
+	if strings.TrimSpace(keyID) == "" {
+		return nil
+	}
+	if backend == gatewayBackendLLMGateway {
+		// LLMGateway keys belong to the user, not an instance. Instance
+		// compensation, migration, reset, and destruction must preserve them.
+		return nil
+	}
+	return l.revokeLegacyAiGatewayAPIKey(ctx, keyID)
 }
 
 // FinalizeRenewInstanceTaskFailure 子 task RenewInstance 失败兜底
@@ -1676,46 +1698,212 @@ func (l *logic) persistGatewayAuthTokenWithStatuses(ctx pctx.Context, entity *mo
 	return nil
 }
 
-// createAiGatewayApiKey 调用 AI-Gateway 为用户创建 API Key
-func (l *logic) createAiGatewayApiKey(ctx pctx.Context, userID, instanceID string) (*paigateway.CreateApiKeyResponse, error) {
-	if l.aiGatewayAdapter == nil {
-		return nil, fmt.Errorf("aiGatewayAdapter not configured")
-	}
-	l.logger.Info("ai-gateway create-api-key started",
-		zap.String("instance_id", instanceID),
-		zap.String("user_id", userID),
-	)
-	resp, err := l.aiGatewayAdapter.CreateApiKey(ctx, userID, "default")
-	if err != nil {
-		l.logger.Warn("ai-gateway create-api-key failed",
-			zap.String("instance_id", instanceID),
-			zap.String("user_id", userID),
-			zap.Error(err),
-		)
-		return nil, fmt.Errorf("ai-gateway create-api-key: %w", err)
-	}
-	if strings.TrimSpace(resp.KeyID) == "" {
-		return nil, fmt.Errorf("ai-gateway create-api-key: missing key_id")
-	}
-	if strings.TrimSpace(resp.APIKey) == "" {
-		return nil, fmt.Errorf("ai-gateway create-api-key: missing api_key")
-	}
-	l.logger.Info("ai-gateway create-api-key succeeded",
-		zap.String("instance_id", instanceID),
-		zap.String("user_id", userID),
-		zap.String("key_id", resp.KeyID),
-	)
-	return resp, nil
+type gatewayBackend string
+
+const (
+	gatewayBackendAiGateway  gatewayBackend = "ai-gateway"
+	gatewayBackendLLMGateway gatewayBackend = "llmgateway"
+)
+
+type gatewayAPIKey struct {
+	APIKey    string
+	KeyID     string
+	KeyPrefix string
 }
 
-func (l *logic) revokeAiGatewayApiKey(ctx pctx.Context, keyID string) error {
+type gatewayRuntimeConfig struct {
+	DefaultBaseURL       string
+	DefaultModelID       string
+	DefaultCompatibility string
+}
+
+func (l *logic) resolveProvisionGateway(ctx pctx.Context, userID, instanceID string) gatewayBackend {
+	if gateway, ok, err := gatewayroute.Get(userID); err != nil {
+		l.logger.Warn("resolve instance gateway backend: get recorded subscription gateway failed, fallback to probe",
+			zap.String("instance_id", instanceID),
+			zap.String("user_id", userID),
+			zap.Error(err))
+	} else if ok {
+		switch gateway {
+		case gatewayroute.GatewayAIGateway:
+			return gatewayBackendAiGateway
+		case gatewayroute.GatewayLLMGateway:
+			if config.LLMGatewayEnabled() {
+				return gatewayBackendLLMGateway
+			}
+			l.logger.Warn("resolve instance gateway backend: llmgateway route disabled by explicit configuration gate, use ai-gateway",
+				zap.String("instance_id", instanceID),
+				zap.String("user_id", userID))
+			return gatewayBackendAiGateway
+		default:
+			l.logger.Warn("resolve instance gateway backend: unknown recorded subscription gateway, fallback to probe",
+				zap.String("instance_id", instanceID),
+				zap.String("user_id", userID),
+				zap.String("gateway", gateway))
+		}
+	}
+
+	if l.aiGatewayAdapter != nil {
+		sub, err := l.aiGatewayAdapter.GetActiveSubscription(ctx, userID)
+		if err == nil && sub != nil {
+			gatewayroute.RecordBestEffort(l.logger, userID, gatewayroute.GatewayAIGateway, sub.ID, sub.PlanID, gatewayroute.SourceDetectActiveSubscription)
+			l.logger.Info("resolved instance gateway backend from ai-gateway active subscription",
+				zap.String("instance_id", instanceID),
+				zap.String("user_id", userID))
+			return gatewayBackendAiGateway
+		}
+		if err != nil && !isLegacyGatewayDisabled(err) {
+			l.logger.Warn("resolve instance gateway backend: get ai-gateway active subscription failed, use llmgateway",
+				zap.String("instance_id", instanceID),
+				zap.String("user_id", userID),
+				zap.Error(err))
+		}
+	}
+	if gatewayroute.NewAllocationGateway(userID) != gatewayroute.GatewayLLMGateway {
+		return gatewayBackendAiGateway
+	}
+	if l.llmGatewayAdapter != nil {
+		sub, err := l.llmGatewayAdapter.GetActiveSubscription(ctx, userID)
+		if err == nil && sub != nil {
+			gatewayroute.RecordBestEffort(l.logger, userID, gatewayroute.GatewayLLMGateway, sub.ID, sub.PlanID, gatewayroute.SourceDetectActiveSubscription)
+		} else if err != nil {
+			l.logger.Warn("resolve instance gateway backend: get llmgateway active subscription failed, use llmgateway",
+				zap.String("instance_id", instanceID),
+				zap.String("user_id", userID),
+				zap.Error(err))
+		}
+	}
+	return gatewayBackendLLMGateway
+}
+
+func (l *logic) resolveCreateProvisionGateway(ctx pctx.Context, userID, instanceID string) gatewayBackend {
+	if config.LLMGatewayAllowsBotCreateMigration(userID) {
+		return gatewayBackendLLMGateway
+	}
+	return l.resolveProvisionGateway(ctx, userID, instanceID)
+}
+
+func (l *logic) gatewayRuntimeConfig(backend gatewayBackend) (*gatewayRuntimeConfig, error) {
+	if config.ServerConf == nil || config.ServerConf.AdapterConfig == nil {
+		return nil, fmt.Errorf("adapter config not configured")
+	}
+	if backend == gatewayBackendAiGateway {
+		conf := config.ServerConf.AdapterConfig.AiGateway
+		if conf == nil {
+			return nil, fmt.Errorf("ai-gateway config not configured")
+		}
+		return &gatewayRuntimeConfig{
+			DefaultBaseURL:       conf.DefaultBaseURL,
+			DefaultModelID:       conf.DefaultModelID,
+			DefaultCompatibility: conf.DefaultCompatibility,
+		}, nil
+	}
+	conf := config.ServerConf.AdapterConfig.LLMGateway
+	if conf == nil {
+		return nil, fmt.Errorf("llmgateway config not configured")
+	}
+	return &gatewayRuntimeConfig{
+		DefaultBaseURL:       conf.DefaultBaseURL,
+		DefaultModelID:       conf.DefaultModelID,
+		DefaultCompatibility: conf.DefaultCompatibility,
+	}, nil
+}
+
+// createAiGatewayApiKey 在用户与权益准备完成后调用选定网关创建 API Key。
+// 所有实例侧签发入口必须经过这里，避免产生可鉴权但没有可用额度的密钥。
+func (l *logic) createAiGatewayApiKey(ctx pctx.Context, backend gatewayBackend, userID, instanceID string) (*gatewayAPIKey, error) {
+	if err := l.ensureAiGatewayUser(ctx, backend, userID, "", instanceID); err != nil {
+		return nil, err
+	}
+	if backend == gatewayBackendLLMGateway {
+		if err := l.ensureLegacyPassEntitlement(ctx, userID); err != nil {
+			return nil, fmt.Errorf("ensure llmgateway pass entitlement: %w", err)
+		}
+	}
+	l.logger.Info("gateway create-api-key started",
+		zap.String("instance_id", instanceID),
+		zap.String("user_id", userID),
+		zap.String("gateway", string(backend)),
+	)
+	var (
+		keyID     string
+		apiKey    string
+		keyPrefix string
+		err       error
+	)
+	if backend == gatewayBackendAiGateway {
+		if l.aiGatewayAdapter == nil {
+			return nil, fmt.Errorf("aiGatewayAdapter not configured")
+		}
+		var resp *paigateway.CreateApiKeyResponse
+		resp, err = l.aiGatewayAdapter.CreateApiKey(ctx, userID, "default")
+		if resp != nil {
+			keyID = resp.KeyID
+			apiKey = resp.APIKey
+			keyPrefix = resp.KeyPrefix
+		}
+	} else {
+		if l.llmGatewayAdapter == nil {
+			return nil, fmt.Errorf("llmGatewayAdapter not configured")
+		}
+		var resp *pllmgateway.CreateApiKeyResponse
+		resp, err = l.llmGatewayAdapter.CreateApiKey(ctx, userID, "default")
+		if resp != nil {
+			keyID = resp.KeyID
+			apiKey = resp.APIKey
+			keyPrefix = resp.KeyPrefix
+		}
+	}
+	if err != nil {
+		l.logger.Warn("gateway create-api-key failed",
+			zap.String("instance_id", instanceID),
+			zap.String("user_id", userID),
+			zap.String("gateway", string(backend)),
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("%s create-api-key: %w", backend, err)
+	}
+	if strings.TrimSpace(keyID) == "" {
+		return nil, fmt.Errorf("%s create-api-key: missing key_id", backend)
+	}
+	if strings.TrimSpace(apiKey) == "" {
+		return nil, fmt.Errorf("%s create-api-key: missing api_key", backend)
+	}
+	l.logger.Info("gateway create-api-key succeeded",
+		zap.String("instance_id", instanceID),
+		zap.String("user_id", userID),
+		zap.String("gateway", string(backend)),
+		zap.String("key_id", keyID),
+	)
+	return &gatewayAPIKey{KeyID: keyID, APIKey: apiKey, KeyPrefix: keyPrefix}, nil
+}
+
+func (l *logic) revokeLegacyAiGatewayAPIKey(ctx pctx.Context, keyID string) error {
 	if strings.TrimSpace(keyID) == "" {
 		return nil
 	}
 	if l.aiGatewayAdapter == nil {
-		return fmt.Errorf("aiGatewayAdapter not configured")
+		return nil
 	}
-	return l.aiGatewayAdapter.RevokeApiKey(ctx, keyID)
+	err := l.aiGatewayAdapter.RevokeApiKey(ctx, keyID)
+	if err == nil || isLegacyGatewayDisabled(err) || isAiGatewayKeyNotFound(err) {
+		return nil
+	}
+	return err
+}
+
+func (l *logic) revokeInstanceGatewayAPIKey(ctx pctx.Context, entity *modelinstance.Entity) error {
+	if entity == nil || strings.TrimSpace(entity.AiGatewayKeyID) == "" {
+		return nil
+	}
+	gateway, ok, err := gatewayroute.Get(entity.UserId)
+	if err != nil {
+		return fmt.Errorf("resolve instance gateway: %w", err)
+	}
+	if ok && gateway == gatewayroute.GatewayLLMGateway {
+		return nil
+	}
+	return l.revokeLegacyAiGatewayAPIKey(ctx, entity.AiGatewayKeyID)
 }
 
 func isDuplicateKeyError(err error) bool {
@@ -1732,6 +1920,10 @@ func isAiGatewayKeyNotFound(err error) bool {
 	return strings.Contains(err.Error(), "status 404")
 }
 
+func isLegacyGatewayDisabled(err error) bool {
+	return errors.Is(err, paigateway.ErrAiGatewayNotConfigured)
+}
+
 func currentPodNameForDebug() string {
 	if name := os.Getenv("POD_NAME"); name != "" {
 		return name
@@ -1744,60 +1936,83 @@ func currentPodNameForDebug() string {
 
 func (l *logic) aiGatewayProvisioningEnabled() bool {
 	conf := config.ServerConf.AdapterConfig
-	if conf == nil || conf.AiGateway == nil {
+	if conf == nil {
 		return false
 	}
-	return strings.TrimSpace(conf.AiGateway.BaseURL) != ""
+	return (conf.AiGateway != nil && strings.TrimSpace(conf.AiGateway.BaseURL) != "") ||
+		(conf.LLMGateway != nil && strings.TrimSpace(conf.LLMGateway.BaseURL) != "")
 }
 
-func (l *logic) ensureAiGatewayUser(ctx pctx.Context, userID, nickname, instanceID string) error {
-	if l.aiGatewayAdapter == nil {
-		return fmt.Errorf("aiGatewayAdapter not configured")
-	}
-	l.logger.Info("ai-gateway ensure-user started",
+func (l *logic) ensureAiGatewayUser(ctx pctx.Context, backend gatewayBackend, userID, nickname, instanceID string) error {
+	l.logger.Info("gateway ensure-user started",
 		zap.String("instance_id", instanceID),
 		zap.String("user_id", userID),
+		zap.String("gateway", string(backend)),
 	)
-	resp, err := l.aiGatewayAdapter.EnsureUser(ctx, userID, nickname)
+	result := ""
+	var err error
+	if backend == gatewayBackendAiGateway {
+		if l.aiGatewayAdapter == nil {
+			return fmt.Errorf("aiGatewayAdapter not configured")
+		}
+		var resp *paigateway.EnsureUserResponse
+		resp, err = l.aiGatewayAdapter.EnsureUser(ctx, userID, nickname)
+		if resp != nil {
+			result = resp.Result
+		}
+	} else {
+		if l.llmGatewayAdapter == nil {
+			return fmt.Errorf("llmGatewayAdapter not configured")
+		}
+		var resp *pllmgateway.EnsureUserResponse
+		resp, err = l.llmGatewayAdapter.EnsureUser(ctx, userID, nickname)
+		if resp != nil {
+			result = resp.Result
+		}
+	}
 	if err != nil {
-		l.logger.Warn("ai-gateway ensure-user failed",
+		l.logger.Warn("gateway ensure-user failed",
 			zap.String("instance_id", instanceID),
 			zap.String("user_id", userID),
+			zap.String("gateway", string(backend)),
 			zap.Error(err),
 		)
-		return fmt.Errorf("ai-gateway ensure-user: %w", err)
+		return fmt.Errorf("%s ensure-user: %w", backend, err)
 	}
-	l.logger.Info("ai-gateway ensure-user succeeded",
+	l.logger.Info("gateway ensure-user succeeded",
 		zap.String("instance_id", instanceID),
 		zap.String("user_id", userID),
-		zap.String("result", strings.TrimSpace(resp.Result)),
+		zap.String("gateway", string(backend)),
+		zap.String("result", strings.TrimSpace(result)),
 	)
 	return nil
 }
 
 func (l *logic) provisionAiGatewayOnCreate(ctx pctx.Context, entity *modelinstance.Entity, sandboxID string) error {
-	if err := l.ensureAiGatewayUser(ctx, ctx.GetUserID(), "", entity.InstanceId); err != nil {
-		return err
-	}
-	apiKeyResp, err := l.createAiGatewayApiKey(ctx, ctx.GetUserID(), entity.InstanceId)
+	backend := l.resolveCreateProvisionGateway(ctx, ctx.GetUserID(), entity.InstanceId)
+	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, ctx.GetUserID(), entity.InstanceId)
 	if err != nil {
 		return err
 	}
 	gatewayAuthToken, err := generateGatewayAuthToken()
 	if err != nil {
-		_ = l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
+		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
 		return err
 	}
 
 	revokeIfNeeded := func(stageErr error) error {
-		revokeErr := l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
+		revokeErr := l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
 		if revokeErr != nil {
 			return fmt.Errorf("%w; revoke key %s: %v", stageErr, apiKeyResp.KeyID, revokeErr)
 		}
 		return stageErr
 	}
 
-	if err := l.configureOnboard(ctx, sandboxID, apiKeyResp.APIKey, gatewayAuthToken); err != nil {
+	gwConf, err := l.gatewayRuntimeConfig(backend)
+	if err != nil {
+		return revokeIfNeeded(err)
+	}
+	if err := l.configureOnboard(ctx, sandboxID, apiKeyResp.APIKey, gatewayAuthToken, gwConf); err != nil {
 		return revokeIfNeeded(fmt.Errorf("configure onboard: %w", err))
 	}
 
@@ -1813,6 +2028,14 @@ func (l *logic) provisionAiGatewayOnCreate(ctx pctx.Context, entity *modelinstan
 	return nil
 }
 
+func (l *logic) ensureLegacyPassEntitlement(ctx pctx.Context, userID string) error {
+	if l.legacyPassEntitlementEnsurer != nil {
+		return l.legacyPassEntitlementEnsurer(ctx, userID, time.Now().UTC())
+	}
+	_, err := entitlementmigration.EnsureLegacyPassEntitlement(ctx, userID, time.Now().UTC())
+	return err
+}
+
 const hermesRuntimeUser = "agentuser"
 const hermesDefaultProviderName = "custom"
 
@@ -1825,15 +2048,17 @@ const hermesDefaultProviderName = "custom"
 //
 // 历史上这里走的是 `openclaw onboard` + gateway config patch；那套逻辑已保留在
 // legacy helper 中，仅作回滚/排障参考，不再作为 Hermes create-time 初始化路径。
-func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey string, gatewayAuthToken string) error {
+func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey string, gatewayAuthToken string, gwConf *gatewayRuntimeConfig) error {
 	if strings.TrimSpace(apiKey) == "" {
 		return fmt.Errorf("api_key is empty")
 	}
 	if strings.TrimSpace(gatewayAuthToken) == "" {
 		return fmt.Errorf("gateway auth token is empty")
 	}
+	if gwConf == nil {
+		return fmt.Errorf("gateway runtime config is nil")
+	}
 
-	gwConf := config.ServerConf.AdapterConfig.AiGateway
 	baseURL := gwConf.DefaultBaseURL      // 技术债：后续从 provisionResp 读取
 	modelID := gwConf.DefaultModelID      // 技术债：后续从 provisionResp 读取
 	compat := gwConf.DefaultCompatibility // 技术债：后续从 provisionResp 读取
@@ -1885,6 +2110,48 @@ func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey stri
 		zap.String("provider_id", providerID),
 		zap.String("model_id", modelID),
 	)
+	return nil
+}
+
+// configureGatewayRuntimeAndRestart applies a new platform provider/key and
+// restarts the Agent gateway in the same sandbox process. It intentionally does
+// not reset the whole backend configuration, preserving user-managed providers.
+func (l *logic) configureGatewayRuntimeAndRestart(ctx pctx.Context, sandboxID string, apiKey string, gwConf *gatewayRuntimeConfig) error {
+	if strings.TrimSpace(apiKey) == "" {
+		return fmt.Errorf("api_key is empty")
+	}
+	if gwConf == nil || strings.TrimSpace(gwConf.DefaultBaseURL) == "" || strings.TrimSpace(gwConf.DefaultModelID) == "" {
+		return fmt.Errorf("default_base_url or default_model_id not configured")
+	}
+	installResult, err := l.execSandboxProcessCommand(ctx, sandboxID, "hermes_ensure_model_cli", &psandbox.ProcessStartRequest{
+		Cmd:  "/bin/bash",
+		Args: []string{"-l", "-c", renderHermesEnsureModelCLICommand()},
+	}, 60)
+	if err != nil {
+		return fmt.Errorf("exec ensure hermes model cli command: %w", err)
+	}
+	if !sandboxCommandSucceeded(installResult) {
+		return fmt.Errorf("ensure hermes model cli command failed: %s", sandboxCommandFailureDetail(installResult))
+	}
+
+	command := shellUserCommand(hermesRuntimeUser, renderHermesModelSetAndRestartCommand(
+		gwConf.DefaultModelID,
+		hermesDefaultProviderName,
+		gwConf.DefaultBaseURL,
+		apiKey,
+		gwConf.DefaultCompatibility,
+	))
+	result, err := l.execSandboxProcessCommand(ctx, sandboxID, "hermes_model_set_and_restart", &psandbox.ProcessStartRequest{
+		Cmd:  "/bin/bash",
+		Args: []string{"-l", "-c", command},
+		Env:  shellUserEnv(hermesRuntimeUser),
+	}, 120)
+	if err != nil {
+		return fmt.Errorf("exec hermes model set and restart command: %w", err)
+	}
+	if !sandboxCommandSucceeded(result) {
+		return fmt.Errorf("hermes model set and restart command failed: %s", sandboxCommandFailureDetail(result))
+	}
 	return nil
 }
 
@@ -1985,6 +2252,14 @@ func truncateForLog(value string, max int) string {
 }
 
 func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat string) string {
+	return renderHermesModelCommand(modelID, providerName, baseURL, apiKey, compat, false)
+}
+
+func renderHermesModelSetAndRestartCommand(modelID, providerName, baseURL, apiKey, compat string) string {
+	return renderHermesModelCommand(modelID, providerName, baseURL, apiKey, compat, true)
+}
+
+func renderHermesModelCommand(modelID, providerName, baseURL, apiKey, compat string, restart bool) string {
 	modelName := hermesModelName(modelID)
 	acliParts := []string{
 		fmt.Sprintf(`--name %s`, shellQuoteArg(providerName)),
@@ -2019,6 +2294,7 @@ func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat 
 	harnessArgs := strings.Join(harnessParts, " ")
 	secretExport := `ACLI_SECRET_API_KEY=` + shellQuoteArg(apiKey)
 	lines := []string{
+		`set -euo pipefail`,
 		`if command -v acli >/dev/null 2>&1; then`,
 		`  ` + secretExport,
 		fmt.Sprintf(`  save_output="$(acli provider save %s)"`, acliArgs),
@@ -2055,6 +2331,15 @@ func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat 
 		`  exit 127`,
 		`fi`,
 	)
+	if restart {
+		lines = append(lines,
+			`if command -v acli >/dev/null 2>&1; then`,
+			`  acli gateway restart`,
+			`else`,
+			`  harness gateway restart`,
+			`fi`,
+		)
+	}
 	return strings.Join(lines, "\n")
 }
 

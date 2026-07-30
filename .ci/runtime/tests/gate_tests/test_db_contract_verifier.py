@@ -29,6 +29,16 @@ from gates.db_contract_verifier import (  # noqa: E402
 )
 
 
+def completed_process(
+    args: object = (),
+    returncode: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+):
+    # Test fixtures construct CompletedProcess objects directly; no subprocess is launched here.
+    return subprocess.CompletedProcess(args=args, returncode=returncode, stdout=stdout, stderr=stderr)  # nosemgrep: dangerous-subprocess-use-audit
+
+
 class DbContractVerifierTests(unittest.TestCase):
     def test_max_migration_version_reads_repo_migration_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -595,7 +605,7 @@ class DbContractVerifierTests(unittest.TestCase):
 
         with mock.patch(
             "gates.db_contract_verifier.kubectl",
-            return_value=subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps(secret_json), stderr=""),
+            return_value=completed_process(args=[], stdout=json.dumps(secret_json)),
         ) as kubectl:
             apply_playground_ctl_runtime_env(
                 kubeconfig="/tmp/kubeconfig",
@@ -698,15 +708,15 @@ class DbContractVerifierTests(unittest.TestCase):
 
         with mock.patch(
             "gates.db_contract_verifier.kubectl",
-            return_value=subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            return_value=completed_process(args=[]),
         ) as kubectl:
             apply_manifest("/tmp/kubeconfig", manifest)
 
         self.assertIn("--validate=false", kubectl.call_args.args[1])
 
     def test_kubectl_retries_transient_eof(self) -> None:
-        transient = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr='Get "https://cluster": EOF')
-        success = subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
+        transient = completed_process(args=[], returncode=1, stderr='Get "https://cluster": EOF')
+        success = completed_process(args=[], stdout="ok")
 
         with (
             mock.patch("gates.db_contract_verifier.subprocess.run", side_effect=[transient, success]) as run,
@@ -717,6 +727,13 @@ class DbContractVerifierTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(run.call_count, 2)
         sleep.assert_called_once_with(3)
+
+    def test_kubectl_rejects_empty_dynamic_args_before_subprocess(self) -> None:
+        with mock.patch("gates.db_contract_verifier.subprocess.run") as run:
+            with self.assertRaisesRegex(ValueError, "kubectl argument must not be empty"):
+                kubectl("/tmp/kubeconfig", ["get", ""])
+
+        run.assert_not_called()
 
 
 if __name__ == "__main__":

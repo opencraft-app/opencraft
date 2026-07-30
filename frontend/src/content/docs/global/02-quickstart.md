@@ -6,8 +6,6 @@
 
 - 登录 LightVela
 
-- 完成实名认证（首次必做）
-
 - 开通启航套餐并创建 Hermes 实例
 
 - 接入 WeChat / Telegram / WhatsApp / Discord 通道

@@ -9,6 +9,7 @@ package inquiry
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -27,12 +28,12 @@ type fakeResolver struct {
 	calls      int
 }
 
-func (f *fakeResolver) ResolveForInquiry(_ context.Context, _, _ string) (*activity.Mapping, bool, error) {
+func (f *fakeResolver) ResolveForInquiry(_ context.Context, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
 	f.calls++
 	return f.mapping, f.useDianshi, f.err
 }
 
-func (f *fakeResolver) ResolveForPlaceOrder(_ context.Context, _, _ string) (*activity.Mapping, bool, error) {
+func (f *fakeResolver) ResolveForPlaceOrder(_ context.Context, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
 	f.calls++
 	return f.mapping, f.useDianshi, f.err
 }
@@ -66,8 +67,9 @@ func newFakeDianshiSuccess() *fakeDianshi {
 		priceResp: &dianshiclient.GetPriceResponse{
 			PriceItems: []dianshiclient.PriceItem{{
 				ActID: 1862147936410255, AmountUnit: "pent", Currency: "CNY", Pid: 1016641,
-				Price: 990, TotalCost: 990, RealCost: 0, // 限时免费 0 元
-				ProductCode: "p_lighthouse", SubProductCode: "sp_lighthouse_lightvela_ai_mc",
+				Price: 9500, TotalCost: 9500, RealCost: 4750, // 点石 5 折，真实出参 policy_detail.total=50
+				PolicyDetail: json.RawMessage(`{"activity":50,"combine":50,"common":100,"total":50,"user":100}`),
+				ProductCode:  "p_lighthouse", SubProductCode: "sp_lighthouse_lightvela_ai_mc",
 				TimeSpan: 1, TimeUnit: "m",
 			}},
 		},
@@ -78,7 +80,7 @@ func TestQuote_DianshiBranch_NotParticipated(t *testing.T) {
 	jc := &fakeJifei{}
 	dc := newFakeDianshiSuccess()
 	r := &fakeResolver{
-		mapping:    &activity.Mapping{BundleID: "bundle_launch_01", ActivityID: 164273735574009, ActID: 1862147936410255, Active: true, TimeSpanUnit: "7d"},
+		mapping:    &activity.Mapping{BundleID: "bundle_launch_01", ActivityID: 164273735574009, ActID: 1862147936410255, Active: true, TimeSpanUnit: "14d"},
 		useDianshi: true,
 	}
 	svc := New(Deps{
@@ -113,15 +115,15 @@ func TestQuote_DianshiBranch_NotParticipated(t *testing.T) {
 	}
 	// preference_param 4 字段拼装断言（联调期实测推翻设计稿 §5.1 "固定 {}" 后的新套路）。
 	//   - regionId       = s.region.RegionID（SiteKind="" + RegionOverride="" 藦 cn 兜底 = 1）
-	//   - timeSpanUnit   = mapping.TimeSpanUnit
+	//   - timeSpanUnit   = req.TimeSpan + req.TimeUnit；仅启航套餐这样展示 1 个月原价
 	//   - subProductCode = def.SubProductCode（stdDef 里是 sp_linux_small）
 	//   - bundleId       = mapping.BundleID
 	prefParam := dc.lastPriceReq.Goods[0].PreferenceParam
 	if got, _ := prefParam["regionId"].(int); got != 1 {
 		t.Errorf("preference_param.regionId=%v want 1", prefParam["regionId"])
 	}
-	if got, _ := prefParam["timeSpanUnit"].(string); got != "7d" {
-		t.Errorf("preference_param.timeSpanUnit=%v want 7d", prefParam["timeSpanUnit"])
+	if got, _ := prefParam["timeSpanUnit"].(string); got != "1m" {
+		t.Errorf("preference_param.timeSpanUnit=%v want 1m", prefParam["timeSpanUnit"])
 	}
 	if got, _ := prefParam["subProductCode"].(string); got != "sp_linux_small" {
 		t.Errorf("preference_param.subProductCode=%v want sp_linux_small", prefParam["subProductCode"])
@@ -129,8 +131,42 @@ func TestQuote_DianshiBranch_NotParticipated(t *testing.T) {
 	if got, _ := prefParam["bundleId"].(string); got != "bundle_launch_01" {
 		t.Errorf("preference_param.bundleId=%v want bundle_launch_01", prefParam["bundleId"])
 	}
-	if res.RealTotalCost != "0" || res.TotalCost != "990" {
-		t.Errorf("RealTotalCost=%s TotalCost=%s want 0/990", res.RealTotalCost, res.TotalCost)
+	if res.RealTotalCost != "4750" || res.TotalCost != "9500" {
+		t.Errorf("RealTotalCost=%s TotalCost=%s want 4750/9500", res.RealTotalCost, res.TotalCost)
+	}
+	if res.Discount != 50 {
+		t.Errorf("Discount=%v want 50", res.Discount)
+	}
+}
+
+func TestQuote_DianshiBranch_NonLaunchBundleKeepsActivityTimeSpanUnit(t *testing.T) {
+	jc := &fakeJifei{}
+	dc := newFakeDianshiSuccess()
+	r := &fakeResolver{
+		mapping:    &activity.Mapping{BundleID: "bundle_launch_ai_01", ActivityID: 164273735574009, ActID: 1862147936410256, Active: true, TimeSpanUnit: "14d"},
+		useDianshi: true,
+	}
+	svc := New(Deps{
+		CTLClient:        &fakeCTL{getBundleByIDFn: func(_ context.Context, _ string) (*ctlclient.BundleDetail, error) { return stdBundle(), nil }},
+		BundleStore:      &fakeBundleStore{def: stdDef()},
+		JifeiClient:      jc,
+		ActivityResolver: r,
+		DianshiClient:    dc,
+	})
+
+	_, err := svc.Quote(context.Background(), QuoteRequest{
+		BundleID: "bundle_launch_ai_01", Uin: "815836472",
+		TimeSpan: 1, TimeUnit: "m", GoodsNum: 1, PayMode: 1,
+	})
+	if err != nil {
+		t.Fatalf("Quote err=%v", err)
+	}
+	prefParam := dc.lastPriceReq.Goods[0].PreferenceParam
+	if got, _ := prefParam["timeSpanUnit"].(string); got != "14d" {
+		t.Errorf("preference_param.timeSpanUnit=%v want 14d", prefParam["timeSpanUnit"])
+	}
+	if got, _ := prefParam["bundleId"].(string); got != "bundle_launch_ai_01" {
+		t.Errorf("preference_param.bundleId=%v want bundle_launch_ai_01", prefParam["bundleId"])
 	}
 }
 

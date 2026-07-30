@@ -16,6 +16,7 @@ import (
 
 	paigateway "ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	pllmgateway "ctl/pkg/adapter/llmgateway"
 	popenclawgateway "ctl/pkg/adapter/openclawgateway"
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/adapter/shadow"
@@ -108,44 +109,37 @@ func (s *stubSandboxAdapter) SendProcessSignal(_ context.Context, _ string, _ ui
 
 // --- Stub AI Gateway Adapter ---
 
-type stubAiGatewayAdapter struct{}
+type stubLLMGatewayAdapter struct{}
 
-func (s *stubAiGatewayAdapter) CreateApiKey(_ context.Context, _ string, _ string) (*paigateway.CreateApiKeyResponse, error) {
+func (s *stubLLMGatewayAdapter) CreateApiKey(_ context.Context, _ string, _ string) (*pllmgateway.CreateApiKeyResponse, error) {
 	return nil, fmt.Errorf("ai gateway not configured in test")
 }
 
-func (s *stubAiGatewayAdapter) EnsureUser(_ context.Context, userID string, nickname string) (*paigateway.EnsureUserResponse, error) {
-	return &paigateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
+func (s *stubLLMGatewayAdapter) EnsureUser(_ context.Context, userID string, nickname string) (*pllmgateway.EnsureUserResponse, error) {
+	return &pllmgateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
 }
 
-func (s *stubAiGatewayAdapter) RevokeApiKey(_ context.Context, _ string) error {
+func (s *stubLLMGatewayAdapter) RevokeApiKey(_ context.Context, _ string) error {
 	return nil
 }
 
-func (s *stubAiGatewayAdapter) GetUserUsage(_ context.Context, _ string) (*paigateway.UserUsageResponse, error) {
-	return &paigateway.UserUsageResponse{}, nil
+func (s *stubLLMGatewayAdapter) GetUserUsage(_ context.Context, _ string) (*pllmgateway.UserUsageResponse, error) {
+	return &pllmgateway.UserUsageResponse{}, nil
 }
 
-func (s *stubAiGatewayAdapter) GetPlan(_ context.Context, planID string) (*paigateway.Plan, error) {
-	return &paigateway.Plan{ID: planID, IsActive: true}, nil
+func (s *stubLLMGatewayAdapter) GetPlan(_ context.Context, planID string) (*pllmgateway.Plan, error) {
+	return &pllmgateway.Plan{ID: planID, IsActive: true}, nil
 }
 
-func (s *stubAiGatewayAdapter) ApplySubscription(_ context.Context, req *paigateway.ApplySubscriptionRequest) (*paigateway.Subscription, error) {
-	return &paigateway.Subscription{UserID: req.UserID, PlanID: req.PlanID, Status: "active"}, nil
+func (s *stubLLMGatewayAdapter) ApplySubscription(_ context.Context, req *pllmgateway.ApplySubscriptionRequest) (*pllmgateway.Subscription, error) {
+	return &pllmgateway.Subscription{UserID: req.UserID, PlanID: req.PlanID, Status: "active"}, nil
 }
 
-func (s *stubAiGatewayAdapter) ExtendSubscription(_ context.Context, req *paigateway.ExtendSubscriptionRequest) (*paigateway.ExtendSubscriptionResponse, error) {
-	return &paigateway.ExtendSubscriptionResponse{
-		Subscription: &paigateway.Subscription{UserID: req.UserID, Status: "active"},
-		Updated:      true,
-	}, nil
-}
-
-func (s *stubAiGatewayAdapter) CancelSubscription(_ context.Context, _ string) error {
+func (s *stubLLMGatewayAdapter) CancelSubscription(_ context.Context, _ string) error {
 	return nil
 }
 
-func (s *stubAiGatewayAdapter) GetActiveSubscription(_ context.Context, _ string) (*paigateway.Subscription, error) {
+func (s *stubLLMGatewayAdapter) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
 	return nil, nil
 }
 
@@ -153,13 +147,14 @@ func (s *stubAiGatewayAdapter) GetActiveSubscription(_ context.Context, _ string
 
 type stubAdapterFactory struct {
 	sandbox   psandbox.Adapter
-	aigateway paigateway.Adapter
+	aigateway pllmgateway.Adapter
 }
 
-func (f *stubAdapterFactory) SandboxAdapter() psandbox.Adapter     { return f.sandbox }
-func (f *stubAdapterFactory) StsAdapter() sts.Adapter              { return nil }
-func (f *stubAdapterFactory) WhitelistAdapter() whitelist.Adapter  { return nil }
-func (f *stubAdapterFactory) AiGatewayAdapter() paigateway.Adapter { return f.aigateway }
+func (f *stubAdapterFactory) SandboxAdapter() psandbox.Adapter       { return f.sandbox }
+func (f *stubAdapterFactory) StsAdapter() sts.Adapter                { return nil }
+func (f *stubAdapterFactory) WhitelistAdapter() whitelist.Adapter    { return nil }
+func (f *stubAdapterFactory) AiGatewayAdapter() paigateway.Adapter   { return nil }
+func (f *stubAdapterFactory) LLMGatewayAdapter() pllmgateway.Adapter { return f.aigateway }
 func (f *stubAdapterFactory) OpenClawGatewayAdapter() popenclawgateway.Adapter {
 	return nil
 }
@@ -170,7 +165,7 @@ func installStubAdapterFactory(sandbox psandbox.Adapter) func() {
 	original := adapterfactory.DefaultAdapterFactory
 	adapterfactory.DefaultAdapterFactory = &stubAdapterFactory{
 		sandbox:   sandbox,
-		aigateway: &stubAiGatewayAdapter{},
+		aigateway: &stubLLMGatewayAdapter{},
 	}
 	return func() {
 		adapterfactory.DefaultAdapterFactory = original

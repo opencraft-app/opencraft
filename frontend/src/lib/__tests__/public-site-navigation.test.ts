@@ -37,3 +37,17 @@ describe("publicSiteHref", () => {
     expect(publicSiteHref("/changelog", "zh-CN", { localized: true })).toBe("/zh-sg/changelog");
   });
 });
+
+describe("PUBLIC_SITE_NAV_ITEMS pricing entry", () => {
+  it("exposes a pricing entry pointing to /subscribe visible on the global site", async () => {
+    const { PUBLIC_SITE_NAV_ITEMS } = await loadPublicSiteNavigation("global");
+
+    const pricing = PUBLIC_SITE_NAV_ITEMS.find((item) => item.section === "pricing");
+
+    expect(pricing).toBeDefined();
+    expect(pricing?.href).toBe("/subscribe");
+    // 国际站也需展示 Pricing 入口：不应再被 cnOnly 限制为仅国内站。
+    expect(pricing?.cnOnly).toBeFalsy();
+    expect(pricing?.label["en-US"]).toBe("Pricing");
+  });
+});

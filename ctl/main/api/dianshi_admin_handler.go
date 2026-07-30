@@ -106,6 +106,8 @@ func (h *dianshiAdminHandler) deleteDianshiParticipation(w http.ResponseWriter, 
 }
 
 func parseDianshiRecordFilter(r *http.Request) (tradeadapter.DianshiRecordFilter, error) {
+	const maxDianshiRecordPageSize = 100
+
 	query := r.URL.Query()
 	filter := tradeadapter.DianshiRecordFilter{
 		ExternalUserID: strings.TrimSpace(query.Get("external_user_id")),
@@ -126,6 +128,24 @@ func parseDianshiRecordFilter(r *http.Request) (tradeadapter.DianshiRecordFilter
 			return filter, errcode.Wrap(errcode.ErrInvalidParam, "limit must be a positive integer")
 		}
 		filter.Limit = limit
+	}
+	if raw := strings.TrimSpace(query.Get("page")); raw != "" {
+		page, err := strconv.Atoi(raw)
+		if err != nil || page <= 0 {
+			return filter, errcode.Wrap(errcode.ErrInvalidParam, "page must be a positive integer")
+		}
+		filter.Page = page
+	}
+	if raw := strings.TrimSpace(query.Get("page_size")); raw != "" {
+		pageSize, err := strconv.Atoi(raw)
+		if err != nil || pageSize <= 0 {
+			return filter, errcode.Wrap(errcode.ErrInvalidParam, "page_size must be a positive integer")
+		}
+		if pageSize > maxDianshiRecordPageSize {
+			return filter, errcode.Wrap(errcode.ErrInvalidParam,
+				"page_size %d exceeds max %d", pageSize, maxDianshiRecordPageSize)
+		}
+		filter.PageSize = pageSize
 	}
 	return filter, nil
 }

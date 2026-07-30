@@ -255,8 +255,8 @@ func (d *Daemon) shutdown(ctx context.Context) {
 		_ = d.adminTCPLn.Close()
 	}
 	_ = d.releaseSingleInstanceLock()
-	_ = os.Remove(d.rt.cfg.EnvSocketHostPath)
-	_ = os.Remove(d.rt.cfg.AdminSocketPath)
+	_ = removeDaemonFile(d.rt.cfg.EnvSocketHostPath)
+	_ = removeDaemonFile(d.rt.cfg.AdminSocketPath)
 }
 
 func (d *Daemon) adminMux() http.Handler {
@@ -308,8 +308,10 @@ func (d *Daemon) envMux() http.Handler {
 
 func (d *Daemon) ensureEnvListenerLocked() error {
 	if d.envLn != nil {
-		if info, err := os.Stat(d.rt.cfg.EnvSocketHostPath); err == nil && info.Mode()&os.ModeSocket != 0 {
-			return nil
+		if path, err := normalizeDaemonFilePath(d.rt.cfg.EnvSocketHostPath); err == nil {
+			if info, err := os.Stat(path); err == nil && info.Mode()&os.ModeSocket != 0 {
+				return nil
+			}
 		}
 		if err := d.closeEnvListenerLocked(); err != nil {
 			return err
@@ -337,7 +339,7 @@ func (d *Daemon) closeEnvListenerLocked() error {
 		_ = d.envLn.Close()
 		d.envLn = nil
 	}
-	_ = os.Remove(d.rt.cfg.EnvSocketHostPath)
+	_ = removeDaemonFile(d.rt.cfg.EnvSocketHostPath)
 	return nil
 }
 
@@ -425,7 +427,10 @@ func (d *Daemon) handleAdminCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func workspaceLayoutConfigForCreate(configFile string, baseCfg config.Config, name string) (config.Config, error) {
-	overlayPath := config.ContainerOverlayPath(configFile, name)
+	overlayPath, err := config.ContainerOverlayPath(configFile, name)
+	if err != nil {
+		return config.Config{}, err
+	}
 	if _, err := os.Stat(overlayPath); err != nil {
 		if os.IsNotExist(err) {
 			return baseCfg, nil
@@ -774,7 +779,11 @@ func (d *Daemon) runtimeForNameLocked(name string) (*Runtime, error) {
 func decodeRuntimeRequest(r *http.Request) (runtimeRequest, error) {
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if r.Method == http.MethodGet || r.Body == nil {
-		return runtimeRequest{Name: name}, nil
+		validatedName, err := validateRuntimeRequestName(name)
+		if err != nil {
+			return runtimeRequest{}, err
+		}
+		return runtimeRequest{Name: validatedName}, nil
 	}
 	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
@@ -782,7 +791,11 @@ func decodeRuntimeRequest(r *http.Request) (runtimeRequest, error) {
 		return runtimeRequest{}, badRequest("could not read request body", nil)
 	}
 	if len(bytes.TrimSpace(body)) == 0 {
-		return runtimeRequest{Name: name}, nil
+		validatedName, err := validateRuntimeRequestName(name)
+		if err != nil {
+			return runtimeRequest{}, err
+		}
+		return runtimeRequest{Name: validatedName}, nil
 	}
 	var req runtimeRequest
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -791,7 +804,23 @@ func decodeRuntimeRequest(r *http.Request) (runtimeRequest, error) {
 	if strings.TrimSpace(req.Name) == "" {
 		req.Name = name
 	}
+	validatedName, err := validateRuntimeRequestName(req.Name)
+	if err != nil {
+		return runtimeRequest{}, err
+	}
+	req.Name = validatedName
 	return req, nil
+}
+
+func validateRuntimeRequestName(name string) (string, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "", nil
+	}
+	if err := config.ValidateWorkspaceName(trimmed); err != nil {
+		return "", badRequest("invalid container name", map[string]any{"name": trimmed})
+	}
+	return trimmed, nil
 }
 
 func decodeBackendBindRequest(r *http.Request, nameFromPath string) (backendBindRequest, error) {
@@ -967,6 +996,10 @@ func (r *Runtime) runtimeInfo(ctx context.Context) (RuntimeInfo, error) {
 }
 
 func CallUnixJSON(ctx context.Context, socketPath, method, urlPath string, body any, out any) error {
+	socketPath, err := normalizeDaemonFilePath(socketPath)
+	if err != nil {
+		return err
+	}
 	if !strings.HasPrefix(urlPath, "/") {
 		urlPath = "/" + urlPath
 	}
@@ -1011,10 +1044,14 @@ func CallUnixJSON(ctx context.Context, socketPath, method, urlPath string, body 
 }
 
 func listenUnix(path string, mode os.FileMode) (net.Listener, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	path, err := normalizeDaemonFilePath(path)
+	if err != nil {
 		return nil, err
 	}
-	_ = os.Remove(path)
+	if err := ensureDaemonFileParent(path); err != nil {
+		return nil, err
+	}
+	_ = removeDaemonFile(path)
 	ln, err := net.Listen("unix", path)
 	if err != nil {
 		return nil, err
@@ -1027,8 +1064,11 @@ func listenUnix(path string, mode os.FileMode) (net.Listener, error) {
 }
 
 func (d *Daemon) acquireSingleInstanceLock() error {
-	path := d.rt.cfg.DaemonLockFile
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	path, err := normalizeDaemonFilePath(d.rt.cfg.DaemonLockFile)
+	if err != nil {
+		return err
+	}
+	if err := ensureDaemonFileParent(path); err != nil {
 		return err
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
@@ -1071,14 +1111,48 @@ func (d *Daemon) releaseSingleInstanceLock() error {
 	if d.lockFile == nil {
 		return nil
 	}
-	path := d.rt.cfg.DaemonLockFile
+	path, err := normalizeDaemonFilePath(d.rt.cfg.DaemonLockFile)
+	if err != nil {
+		return err
+	}
 	f := d.lockFile
 	d.lockFile = nil
 	_ = f.Truncate(0)
 	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 	_ = f.Close()
-	_ = os.Remove(path)
+	_ = removeDaemonFile(path)
 	return nil
+}
+
+func normalizeDaemonFilePath(path string) (string, error) {
+	path, err := normalizeLocalFilePath(path)
+	if err != nil {
+		return "", err
+	}
+	if path == string(os.PathSeparator) {
+		return "", errors.New("daemon file path must not be root")
+	}
+	return path, nil
+}
+
+func ensureDaemonFileParent(path string) error {
+	path, err := normalizeDaemonFilePath(path)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(path)
+	if dir == string(os.PathSeparator) {
+		return nil
+	}
+	return os.MkdirAll(dir, 0o755)
+}
+
+func removeDaemonFile(path string) error {
+	path, err := normalizeDaemonFilePath(path)
+	if err != nil {
+		return err
+	}
+	return os.Remove(path)
 }
 
 func readPIDFile(f *os.File) int {
@@ -1134,6 +1208,7 @@ func classifyError(err error) *apiError {
 	case strings.Contains(lower, "requires a container name"),
 		strings.Contains(lower, "container name is required"),
 		strings.Contains(lower, "workspace name must not be empty"),
+		strings.Contains(lower, "workspace name") && strings.Contains(lower, "unsupported character"),
 		strings.Contains(lower, "invalid json request body"):
 		return &apiError{Status: http.StatusBadRequest, Code: "invalid_request", Message: msg}
 	case strings.Contains(lower, "runtime is not started"),

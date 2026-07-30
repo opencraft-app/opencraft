@@ -11,7 +11,9 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
+from typing import Any
 
 from contracts.bundles import ImageTarget, is_playground_env, load_bundle, load_manifest, playground_region, require_build_metadata
 from contracts.image_existence import ImageCheckResult, verify_images
@@ -19,6 +21,16 @@ from contracts.image_existence import ImageCheckResult, verify_images
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = RUNTIME_DIR.parents[1]
+
+
+def validate_command(command: list[str]) -> list[str]:
+    if not command or not all(isinstance(part, str) and part for part in command):
+        raise ValueError("command must be a non-empty list of non-empty strings")
+    return command
+
+
+def run_command(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[Any]:
+    return subprocess.run(validate_command(command), **kwargs)  # nosemgrep: dangerous-subprocess-use-audit
 
 
 def playground_frontend_auth_api_base_url(env: str) -> str:
@@ -43,29 +55,53 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip docker build when the exact target image tag already exists in the remote registry",
     )
+    parser.add_argument(
+        "--push-verify-timeout-seconds",
+        type=int,
+        default=int(os.environ.get("RELEASE_IMAGE_PUSH_VERIFY_TIMEOUT_SECONDS", "300")),
+        help="Seconds to wait for a pushed image manifest to become readable in the remote registry",
+    )
+    parser.add_argument(
+        "--push-verify-interval-seconds",
+        type=int,
+        default=int(os.environ.get("RELEASE_IMAGE_PUSH_VERIFY_INTERVAL_SECONDS", "5")),
+        help="Seconds between pushed image manifest visibility checks",
+    )
+    parser.add_argument(
+        "--push-max-attempts",
+        type=int,
+        default=int(os.environ.get("RELEASE_IMAGE_PUSH_MAX_ATTEMPTS", "3")),
+        help="Maximum docker login/push attempts for transient registry failures",
+    )
+    parser.add_argument(
+        "--push-retry-interval-seconds",
+        type=int,
+        default=int(os.environ.get("RELEASE_IMAGE_PUSH_RETRY_INTERVAL_SECONDS", "10")),
+        help="Base seconds between docker push retries; multiplied by the failed attempt number",
+    )
     parser.add_argument("--image-output-file", help="Optional file path to receive the built image ref")
     return parser.parse_args()
 
 
 def docker_login(image_repo: str) -> None:
     raw_username = os.environ.get("REGISTRY_USERNAME", "")
-    raw_credential = os.environ.get("REGISTRY_PASSWORD", "")
+    raw_password = os.environ.get("REGISTRY_PASSWORD", "")
     username = raw_username.strip()
-    credential = raw_credential.strip()
-    if not username or not credential:
+    password = raw_password.strip()  # pragma: allowlist secret -- registry credential variable, not a literal secret
+    if not username or not password:
         return
 
     registry = image_repo.split("/", 1)[0]
     try:
-        subprocess.run(
+        run_command(
             ["docker", "login", "-u", username, "--password-stdin", registry],
-            input=credential.encode(),
+            input=password.encode(),
             check=True,
             capture_output=True,
         )
     except subprocess.CalledProcessError as exc:
         source = os.environ.get("REGISTRY_PASSWORD_SOURCE", "unknown")
-        fingerprint = hashlib.sha256(credential.encode()).hexdigest()[:12]
+        fingerprint = hashlib.sha256(password.encode()).hexdigest()[:12]
         print(
             (
                 "docker login failed: "
@@ -74,9 +110,9 @@ def docker_login(image_repo: str) -> None:
                 f"username_raw_len={len(raw_username)} "
                 f"username_len={len(username)} "
                 f"password_source={source} "
-                f"password_raw_len={len(raw_credential)} "
-                f"password_len={len(credential)} "
-                f"password_trimmed={'yes' if raw_credential != credential else 'no'} "
+                f"password_raw_len={len(raw_password)} "
+                f"password_len={len(password)} "
+                f"password_trimmed={'yes' if raw_password != password else 'no'} "
                 f"password_fingerprint={fingerprint}"
             ),
             file=sys.stderr,
@@ -84,6 +120,62 @@ def docker_login(image_repo: str) -> None:
         if exc.stderr:
             print(exc.stderr.decode(errors="replace"), file=sys.stderr)
         raise
+
+
+def push_image_with_retry(
+    image_repo: str,
+    image: str,
+    *,
+    max_attempts: int,
+    retry_interval_seconds: int,
+) -> None:
+    attempts = max(max_attempts, 1)
+    base_sleep_seconds = max(retry_interval_seconds, 1)
+    last_error: subprocess.CalledProcessError | None = None
+    last_phase = "push"
+
+    for attempt in range(1, attempts + 1):
+        try:
+            docker_login(image_repo)
+        except subprocess.CalledProcessError as exc:
+            last_error = exc
+            last_phase = "login"
+            print(
+                f"docker login attempt failed: image={image} attempt={attempt}/{attempts}",
+                file=sys.stderr,
+            )
+        else:
+            try:
+                run_command(["docker", "push", image], check=True)
+                return
+            except subprocess.CalledProcessError as exc:
+                last_error = exc
+                last_phase = "push"
+                print(
+                    f"docker push attempt failed: image={image} attempt={attempt}/{attempts}",
+                    file=sys.stderr,
+                )
+
+                result = verify_images([image], skip_login=True)[0]
+                if result.exists:
+                    digest_suffix = f" digest={result.digest}" if result.digest else ""
+                    print(f"docker push command failed but remote image is visible: {image}{digest_suffix}")
+                    return
+
+        if attempt >= attempts:
+            break
+
+        sleep_seconds = base_sleep_seconds * attempt
+        print(
+            f"retrying docker {last_phase} in {sleep_seconds}s: "
+            f"image={image} next_attempt={attempt + 1}/{attempts}",
+            file=sys.stderr,
+        )
+        time.sleep(sleep_seconds)
+
+    raise RuntimeError(
+        f"docker {last_phase} failed after {attempts} attempts: image={image}"
+    ) from last_error
 
 
 def single_target_from_bundle(service: str, dockerfile: str, build_context: str, image_repo: str) -> ImageTarget:
@@ -165,7 +257,7 @@ def print_runner_diagnostics() -> None:
     ):
         print(f"+ {' '.join(cmd)}")
         try:
-            subprocess.run(cmd, check=False)
+            run_command(cmd, check=False)
         except FileNotFoundError:
             print(f"{cmd[0]}: command not found")
 
@@ -174,7 +266,7 @@ def docker_daemon_available() -> bool:
     if shutil.which("docker") is None:
         return False
     try:
-        return subprocess.run(
+        return run_command(
             ["docker", "info"],
             check=False,
             stdout=subprocess.DEVNULL,
@@ -184,7 +276,49 @@ def docker_daemon_available() -> bool:
         return False
 
 
-def build_target(target: ImageTarget, tag: str, platform: str, push: bool, build_args: dict[str, str]) -> str:
+def wait_for_remote_image(
+    image: str,
+    *,
+    timeout_seconds: int,
+    interval_seconds: int,
+) -> ImageCheckResult:
+    deadline = time.monotonic() + max(timeout_seconds, 0)
+    attempt = 0
+    last_result = ImageCheckResult(image=image, exists=False)
+
+    while True:
+        attempt += 1
+        results = verify_images([image])
+        last_result = results[0]
+        if last_result.exists and last_result.digest:
+            print(f"pushed image is visible: {image} digest={last_result.digest}")
+            return last_result
+
+        if time.monotonic() >= deadline:
+            break
+
+        sleep_seconds = max(interval_seconds, 1)
+        print(f"pushed image is not visible yet; retrying in {sleep_seconds}s: {image} attempt={attempt}")
+        time.sleep(sleep_seconds)
+
+    raise RuntimeError(
+        f"pushed image did not become visible before timeout: {image} "
+        f"timeout_seconds={timeout_seconds} exists={last_result.exists} digest={last_result.digest or '-'}"
+    )
+
+
+def build_target(
+    target: ImageTarget,
+    tag: str,
+    platform: str,
+    push: bool,
+    build_args: dict[str, str],
+    *,
+    push_verify_timeout_seconds: int = 300,
+    push_verify_interval_seconds: int = 5,
+    push_max_attempts: int = 3,
+    push_retry_interval_seconds: int = 10,
+) -> str:
     image = image_for_target(target, tag)
     cmd = docker_build_command(target, image, platform, build_args)
     if build_args:
@@ -197,10 +331,19 @@ def build_target(target: ImageTarget, tag: str, platform: str, push: bool, build
         if not env_flag("PRINT_RUNNER_DIAGNOSTICS"):
             print_runner_diagnostics()
         raise RuntimeError("docker daemon unavailable")
-    subprocess.run(cmd, cwd=REPO_ROOT, check=True)
+    run_command(cmd, cwd=REPO_ROOT, check=True)
     if push:
-        docker_login(target.image_repo)
-        subprocess.run(["docker", "push", image], check=True)
+        push_image_with_retry(
+            target.image_repo,
+            image,
+            max_attempts=push_max_attempts,
+            retry_interval_seconds=push_retry_interval_seconds,
+        )
+        wait_for_remote_image(
+            image,
+            timeout_seconds=push_verify_timeout_seconds,
+            interval_seconds=push_verify_interval_seconds,
+        )
     return image
 
 
@@ -242,7 +385,17 @@ def main() -> int:
                 return 0
             print("remote release image missing; continue with docker build")
         for target in targets:
-            image = build_target(target, args.tag, args.platform, args.push, build_args)
+            image = build_target(
+                target,
+                args.tag,
+                args.platform,
+                args.push,
+                build_args,
+                push_verify_timeout_seconds=args.push_verify_timeout_seconds,
+                push_verify_interval_seconds=args.push_verify_interval_seconds,
+                push_max_attempts=args.push_max_attempts,
+                push_retry_interval_seconds=args.push_retry_interval_seconds,
+            )
             built[image_key(args.service, target)] = image
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)

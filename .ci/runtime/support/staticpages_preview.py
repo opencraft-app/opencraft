@@ -251,18 +251,16 @@ def upload(args: argparse.Namespace) -> int:
             _upload_archive(args, token, preview_name, sha, archive_file, 0)
             return 0
 
-        with tempfile.NamedTemporaryFile(prefix="staticpages-upload-", suffix=".tar.gz") as body:
-            body_path = Path(body.name)
+        with tempfile.TemporaryDirectory(prefix="staticpages-upload-") as tmp:
+            body_path = Path(tmp) / "body.tar.gz"
             write_tar_gzip_archive(body_path, artifact_dir, files)
-            body.flush()
             _upload_archive(args, token, preview_name, sha, body_path, len(files))
             return 0
 
     boundary = f"----staticpages-{uuid4().hex}"
-    with tempfile.NamedTemporaryFile(prefix="staticpages-upload-", suffix=".multipart") as body:
-        body_path = Path(body.name)
+    with tempfile.TemporaryDirectory(prefix="staticpages-upload-") as tmp:
+        body_path = Path(tmp) / "body.multipart"
         write_multipart_body(body_path, artifact_dir, files, boundary)
-        body.flush()
         _upload_multipart(args, token, preview_name, sha, body_path, boundary, len(files))
     return 0
 

@@ -14,13 +14,13 @@ This page introduces the overall console structure and the function of each butt
 
 - How to enter the console
 
-- Hermes instance information button
+- Hermes Agent instance information button
 
 - Functions and entry points of the three configuration buttons
 
 - Success state after configuration
 
-- Common operations such as switching models, connecting multiple channels, and recreating Hermes
+- Common operations such as switching models, connecting multiple channels, and recreating Hermes Agent
 
 ---
 
@@ -30,11 +30,11 @@ After signing in, click "My Hermes" in the upper-right corner to enter the conso
 
 ---
 
-## Hermes instance information
+## Hermes Agent instance information
 
-The top of the console contains Hermes tabs. Each tab represents one Hermes instance (the Launch plan supports only 1). The "+ Create" button on the right becomes unavailable after the instance limit is reached.
+The top of the console contains Hermes Agent tabs. Each tab represents one Hermes Agent instance (the Launch plan supports only 1). The "+ Create" button on the right becomes unavailable after the instance limit is reached.
 
-After selecting a Hermes, its basic information is shown below:
+After selecting a Hermes Agent, its basic information is shown below:
 
 - Avatar
 
@@ -48,7 +48,7 @@ After selecting a Hermes, its basic information is shown below:
 
 > ⚠️ **Deletion is irreversible**
 >
-> Clicking the trash icon permanently deletes the Hermes instance, including all conversation memory, connected channels, and installed skills. If the Launch plan quota still allows it, you can create a new Hermes afterward.
+> Clicking the trash icon permanently deletes the Hermes Agent instance, including all conversation memory, connected channels, and installed skills. If the Launch plan quota still allows it, you can create a new Hermes Agent afterward.
 
 ---
 
@@ -60,7 +60,7 @@ The three buttons are arranged from left to right. The recommended configuration
 
 ![](./images/4-2.webp)
 
-**Purpose**: Connect Hermes to messaging platforms and provide conversation entry points for users.
+**Purpose**: Connect Hermes Agent to messaging platforms and provide conversation entry points for users.
 
 **Access methods by channel**:
 
@@ -84,13 +84,13 @@ For details, see [Configure Channel - WeChat](./configuration/channel-wechat.md)
 
 ![](./images/4-1.webp)
 
-**Purpose**: Configure a large language model for Hermes. The Launch plan includes 100 trial credits, so you can skip this step at first and configure a model after the credits run out.
+**Purpose**: Configure a large language model for Hermes Agent. The Launch plan includes 100 trial credits, so you can skip this step at first and configure a model after the credits run out.
 
 **Button provides**: Source dropdown (Model Coding Plan / Model API / Custom Model), model dropdown, API Key input, provider introduction, link to obtain API Key, and "Current model" list.
 
 > ⚠️ **Only one model is active**
 >
-> Currently, each Hermes can have only one active model configuration. A new "Add as default" action overwrites the existing configuration.
+> Currently, each Hermes Agent can have only one active model configuration. A new "Add as default" action overwrites the existing configuration.
 
 For details, see [Configure Models](./configuration/model.md).
 
@@ -100,13 +100,13 @@ For details, see [Configure Models](./configuration/model.md).
 
 ![](./images/4-3.webp)
 
-**Purpose**: Extend Hermes capabilities, such as organizing to-dos, generating daily reports, and searching the web.
+**Purpose**: Extend Hermes Agent capabilities, such as organizing to-dos, generating daily reports, and searching the web.
 
 **Button provides**: Skill name search box, "Install Skill" button, "Go to SkillHub" link, and "Installed skills" list. Before installation, confirm the exact skill name in [SkillHub](https://skillhub.tencent.com).
 
 > ⚠️ **Install only trusted skills**
 >
-> Skills have permission to call Hermes capabilities at runtime. Only install skills from trusted sources.
+> Skills have permission to call Hermes Agent capabilities at runtime. Only install skills from trusted sources.
 
 For details, see [Configure Skills](./configuration/skill.md).
 
@@ -122,7 +122,7 @@ After configuration is complete, the console should show the following state:
 
 - "Installed skills" can be configured as needed and may be empty
 
-Once "Connected channels" has at least one record, you can find the bot in the corresponding messaging platform and start a conversation. Hermes will generate replies using the default model or Launch trial credits.
+Once "Connected channels" has at least one record, you can find the bot in the corresponding messaging platform and start a conversation. Hermes Agent will generate replies using the default model or Launch trial credits.
 
 ---
 
@@ -134,11 +134,11 @@ In the "Model" button, choose the source and model again, enter the API Key, and
 
 ### Connect multiple channels
 
-In the "Channel" button, switch dropdown options one by one and click "Authorize Access". Multiple channels point to the same Hermes and share memory and Agent behavior.
+In the "Channel" button, switch dropdown options one by one and click "Authorize Access". Multiple channels point to the same Hermes Agent and share memory and Agent behavior.
 
-### Recreate Hermes
+### Recreate Hermes Agent
 
-Click the trash icon on the right side of the basic information button to delete the current Hermes, then click "+ Create Hermes" to create it again. **All conversation memory will be lost**.
+Click the trash icon on the right side of the basic information button to delete the current Hermes Agent, then click "+ Create Hermes Agent" to create it again. **All conversation memory will be lost**.
 
 ---
 

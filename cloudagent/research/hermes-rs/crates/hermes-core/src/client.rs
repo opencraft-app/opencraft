@@ -16,6 +16,7 @@ use reqwest::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use tracing::{debug, error, info, instrument};
 
 use crate::config::{runtime_config, ClientSettings};
@@ -269,6 +270,8 @@ pub struct Message {
     pub name: Option<String>,
     pub tool_call_id: Option<String>,
     pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<HashMap<String, Value>>,
 }
 
 impl Message {
@@ -281,6 +284,7 @@ impl Message {
             name: None,
             tool_call_id: None,
             tool_calls: None,
+            metadata: None,
         }
     }
 
@@ -308,6 +312,7 @@ impl Message {
             tool_call_id: Some(tool_call_id.into()),
             name: None,
             tool_calls: None,
+            metadata: None,
         }
     }
 
@@ -323,6 +328,15 @@ impl Message {
         if !reasoning.trim().is_empty() {
             self.reasoning = Some(reasoning);
         }
+        self
+    }
+
+    /// Add local metadata. Metadata is persisted locally but never sent to
+    /// OpenAI-compatible providers.
+    pub fn with_metadata(mut self, key: impl Into<String>, value: Value) -> Self {
+        self.metadata
+            .get_or_insert_with(HashMap::new)
+            .insert(key.into(), value);
         self
     }
 
@@ -371,6 +385,7 @@ impl Default for Message {
             name: None,
             tool_call_id: None,
             tool_calls: None,
+            metadata: None,
         }
     }
 }
@@ -493,7 +508,21 @@ pub struct StreamingToolCallDelta {
     #[serde(rename = "type", default)]
     pub call_type: Option<String>,
     #[serde(default)]
-    pub function: Option<ToolCallFunction>,
+    pub function: Option<StreamingToolCallFunctionDelta>,
+}
+
+/// Function delta in a streaming tool call.
+///
+/// OpenAI-compatible providers commonly send the first chunk with the function
+/// name and subsequent chunks with only argument fragments. Both fields must be
+/// optional here; otherwise serde drops valid argument-only chunks and leaves a
+/// malformed partial JSON string to be executed.
+#[derive(Debug, Clone, Deserialize)]
+pub struct StreamingToolCallFunctionDelta {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub arguments: Option<String>,
 }
 
 /// SSE streaming response wrapper
@@ -645,6 +674,17 @@ mod tests {
     }
 
     #[test]
+    fn message_metadata_is_local_only() {
+        let msg = Message::user("compressed")
+            .with_metadata("_compressed_summary", serde_json::json!(true));
+        let value = msg.to_value();
+
+        assert_eq!(value["role"], "user");
+        assert!(value.get("_compressed_summary").is_none());
+        assert!(value.get("metadata").is_none());
+    }
+
+    #[test]
     fn test_tool_message() {
         let msg = Message::tool("call_123", "Result: 42");
         let value = msg.to_value();
@@ -687,6 +727,42 @@ mod tests {
 
         assert_eq!(event.choices[0].delta.content.as_deref(), Some("Done"));
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn streaming_tool_call_delta_accepts_argument_only_chunks() {
+        let event: ChatStreamEvent = serde_json::from_value(serde_json::json!({
+            "id": "evt_1",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "demo",
+            "choices": [{
+                "index": 0,
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "function": {
+                            "arguments": "CLOUDAGENT_TOOL_OK\"}"
+                        }
+                    }]
+                },
+                "finish_reason": null
+            }]
+        }))
+        .expect("argument-only streaming tool delta should deserialize");
+
+        let tool_calls = event.choices[0]
+            .delta
+            .tool_calls
+            .as_ref()
+            .expect("tool call delta should be present");
+        let function = tool_calls[0]
+            .function
+            .as_ref()
+            .expect("function delta should be present");
+
+        assert_eq!(function.name.as_deref(), None);
+        assert_eq!(function.arguments.as_deref(), Some("CLOUDAGENT_TOOL_OK\"}"));
     }
 
     #[tokio::test]

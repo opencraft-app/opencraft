@@ -1,0 +1,46 @@
+#cloud-config
+write_files:
+  - path: /etc/sysctl.d/99-vpc-nat.conf
+    owner: root:root
+    permissions: "0644"
+    content: |
+      net.ipv4.ip_forward = 1
+      net.netfilter.nf_conntrack_max = 1048576
+      net.netfilter.nf_conntrack_tcp_timeout_established = 10800
+  - path: /usr/local/sbin/configure-vpc-nat.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      wan_iface="$(ip -4 route show default | awk 'NR == 1 { print $5 }')"
+      test -n "$${wan_iface}"
+      sysctl --system
+%{ for cidr in source_cidrs ~}
+      iptables -t nat -C POSTROUTING -s ${cidr} -o "$${wan_iface}" -j MASQUERADE 2>/dev/null ||
+        iptables -t nat -A POSTROUTING -s ${cidr} -o "$${wan_iface}" -j MASQUERADE
+      iptables -C FORWARD -s ${cidr} -o "$${wan_iface}" -j ACCEPT 2>/dev/null ||
+        iptables -A FORWARD -s ${cidr} -o "$${wan_iface}" -j ACCEPT
+      iptables -C FORWARD -d ${cidr} -i "$${wan_iface}" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null ||
+        iptables -A FORWARD -d ${cidr} -i "$${wan_iface}" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+%{ endfor ~}
+  - path: /etc/systemd/system/vpc-nat.service
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Configure this CVM as a VPC internet gateway
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/configure-vpc-nat.sh
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+runcmd:
+  - [systemctl, daemon-reload]
+  - [systemctl, enable, --now, vpc-nat.service]

@@ -104,6 +104,7 @@ type stubLogic struct {
 	debugInstanceID                        string
 	debugCommand                           string
 	debugRunAsUser                         string
+	debugExecutionBackend                  string
 	debugResp                              *transport.ExecDebugCommandResponse
 	debugErr                               error
 	debugStreamEvents                      []transport.ExecDebugCommandStreamEvent
@@ -243,6 +244,16 @@ func (s *stubLogic) StreamDebugCommand(ctx pctx.Context, instanceID string, comm
 		return s.debugStreamErr
 	}
 	return errors.New("unexpected call")
+}
+
+func (s *stubLogic) ExecDebugCommandWithBackend(ctx pctx.Context, instanceID string, commandType string, runAsUser string, executionBackend string) (*transport.ExecDebugCommandResponse, error) {
+	s.debugExecutionBackend = executionBackend
+	return s.ExecDebugCommand(ctx, instanceID, commandType, runAsUser)
+}
+
+func (s *stubLogic) StreamDebugCommandWithBackend(ctx pctx.Context, instanceID string, commandType string, runAsUser string, executionBackend string, onEvent func(transport.ExecDebugCommandStreamEvent) error) error {
+	s.debugExecutionBackend = executionBackend
+	return s.StreamDebugCommand(ctx, instanceID, commandType, runAsUser, onEvent)
 }
 
 func (s *stubLogic) GetWorkspaceFiles(ctx pctx.Context, instanceID string, fileName string) (*transport.WorkspaceFilesResponse, error) {
@@ -1407,7 +1418,7 @@ func TestListOperationsReturnsSuccessEnvelope(t *testing.T) {
 }
 
 func TestExecDebugCommandPassesRunAsUser(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/debug/exec", strings.NewReader(`{"command":"echo hello","run_as_user":"agentuser"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/debug/exec", strings.NewReader(`{"command":"echo hello","run_as_user":"agentuser","execution_backend":"tat"}`))
 	req.Header.Set(headerUserID, "user-1")
 	rec := httptest.NewRecorder()
 
@@ -1428,6 +1439,9 @@ func TestExecDebugCommandPassesRunAsUser(t *testing.T) {
 	stub := handler.logic.(*stubLogic)
 	if stub.debugInstanceID != "ins-1" || stub.debugCommand != "echo hello" || stub.debugRunAsUser != "agentuser" {
 		t.Fatalf("unexpected debug call capture: instance=%q command=%q runAs=%q", stub.debugInstanceID, stub.debugCommand, stub.debugRunAsUser)
+	}
+	if stub.debugExecutionBackend != "tat" {
+		t.Fatalf("expected execution backend forwarded, got %q", stub.debugExecutionBackend)
 	}
 
 	var payload struct {
@@ -1530,7 +1544,7 @@ func TestNewRequestContextCapturesSessionCookie(t *testing.T) {
 }
 
 func TestExecDebugCommandStreamsSSE(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/debug/exec", strings.NewReader(`{"command":"echo hello","run_as_user":"agentuser"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/debug/exec", strings.NewReader(`{"command":"echo hello","run_as_user":"agentuser","execution_backend":"tat"}`))
 	req.Header.Set(headerUserID, "user-1")
 	req.Header.Set("Accept", "text/event-stream")
 	rec := &streamingRecorder{ResponseRecorder: httptest.NewRecorder()}
@@ -1566,6 +1580,9 @@ func TestExecDebugCommandStreamsSSE(t *testing.T) {
 	stub := handler.logic.(*stubLogic)
 	if stub.debugRunAsUser != "agentuser" {
 		t.Fatalf("expected run_as_user forwarded to logic, got %q", stub.debugRunAsUser)
+	}
+	if stub.debugExecutionBackend != "tat" {
+		t.Fatalf("expected execution backend forwarded, got %q", stub.debugExecutionBackend)
 	}
 }
 

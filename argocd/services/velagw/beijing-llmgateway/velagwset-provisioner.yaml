@@ -1,0 +1,133 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: velagwset-provisioner
+  namespace: llmgateway
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: velagwset-provisioner
+  namespace: llmgateway
+rules:
+  - apiGroups: ["llmgateway.io"]
+    resources: ["llmfleets"]
+    verbs: ["get"]
+  - apiGroups: ["gateway.lightvela.com"]
+    resources: ["velagwsets"]
+    verbs: ["get", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "create"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: velagwset-provisioner
+  namespace: llmgateway
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: velagwset-provisioner
+subjects:
+  - kind: ServiceAccount
+    name: velagwset-provisioner
+    namespace: llmgateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: velagwset-provisioner
+  namespace: llmgateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: velagwset-provisioner
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: velagwset-provisioner
+  namespace: llmgateway
+  labels:
+    app.kubernetes.io/name: velagwset-provisioner
+    app.kubernetes.io/part-of: velagw
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: velagwset-provisioner
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: velagwset-provisioner
+        app.kubernetes.io/part-of: velagw
+    spec:
+      serviceAccountName: velagwset-provisioner
+      automountServiceAccountToken: true
+      imagePullSecrets:
+        - name: tcr-pull-secret
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: provisioner
+          image: lightclaw-bj82.tencentcloudcr.com/llmgateway/llmgateway@sha256:cdadce421ce47e03877aa499fd8d7155bba0eff29ff1c564ec37bc948320e26f
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/local/bin/velagwset-provisioner"]
+          env:
+            - name: LLMGATEWAY_CONTROL_URL
+              value: http://llmgateway-control
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llmgateway-control-runtime
+                  key: INTERNAL_SERVICE_TOKEN
+            - name: LLMGATEWAY_IMAGE
+              value: lightclaw-bj82.tencentcloudcr.com/llmgateway/llmgateway@sha256:d287beb329f9fb1047fc04a50229f874c62c5610499fc1f7db047d0c23a2035d
+            - name: LLMGATEWAY_VELAGWSET_IMAGE_PULL_SECRET
+              value: tcr-pull-secret
+            - name: LLMGATEWAY_VELAGWSET_SERVERLESS_TRAFFIC
+              value: "true"
+            - name: LLMGATEWAY_SET_SOURCE
+              value: prod
+            - name: LLMGATEWAY_FLEET
+              value: prod
+            - name: LLMGATEWAY_VELAGWSET_PROVISION_INTERVAL
+              value: 5s
+            - name: LLMGATEWAY_VELAGWSET_PROVISION_LEASE
+              value: 60s
+            - name: LLMGATEWAY_VELAGWSET_PROVISION_LIMIT
+              value: "50"
+            - name: LLMGATEWAY_VELAGWSET_UPGRADE_ENABLED
+              value: "true"
+            - name: LLMGATEWAY_VELAGWSET_DECOMMISSION_ENABLED
+              value: "true"
+            - name: LLMGATEWAY_SET_UPGRADE_PROBE_MODEL
+              value: llmgw-mock-chat
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

@@ -52,6 +52,12 @@ func TestClassifyError(t *testing.T) {
 			code:   "invalid_request",
 		},
 		{
+			name:   "invalid workspace name",
+			err:    errors.New(`workspace name "../escape" contains unsupported character '/'`),
+			status: http.StatusBadRequest,
+			code:   "invalid_request",
+		},
+		{
 			name:   "already running",
 			err:    errors.New("wisp daemon already running (pid 123)"),
 			status: http.StatusConflict,
@@ -67,6 +73,143 @@ func TestClassifyError(t *testing.T) {
 					tc.err, got.Status, got.Code, tc.status, tc.code)
 			}
 		})
+	}
+}
+
+func TestRuntimeForWispRejectsTraversalName(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.jsonnet")
+	if err := os.WriteFile(configPath, []byte(`{
+  WISP_NAME: "default",
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConfigFile = configPath
+	d := NewDaemon(New(cfg))
+	if _, err := d.runtimeForWispLocked("../escape"); err == nil {
+		t.Fatal("runtimeForWispLocked should reject traversal workspace name")
+	} else if got := classifyError(err); got.Status != http.StatusBadRequest {
+		t.Fatalf("status=%d code=%s err=%v", got.Status, got.Code, err)
+	}
+}
+
+func TestListenUnixNormalizesSocketPath(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	ln, err := listenUnix(filepath.Join(".", "sockets", "nested", "..", "api.sock"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	socketPath := filepath.Join(dir, "sockets", "api.sock")
+	info, err := os.Stat(socketPath)
+	if err != nil {
+		t.Fatalf("stat normalized socket: %v", err)
+	}
+	if info.Mode()&os.ModeSocket == 0 {
+		t.Fatalf("expected socket mode, got %v", info.Mode())
+	}
+	if _, err := listenUnix(string(os.PathSeparator), 0o600); err == nil || !strings.Contains(err.Error(), "must not be root") {
+		t.Fatalf("listen root err=%v", err)
+	}
+}
+
+func TestCallUnixJSONNormalizesSocketPath(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	ln, err := listenUnix(filepath.Join(".", "api.sock"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"name":"ok"}`))
+	})}
+	go func() {
+		_ = server.Serve(ln)
+	}()
+	t.Cleanup(func() {
+		_ = server.Close()
+		_ = ln.Close()
+	})
+
+	var out struct {
+		Name string `json:"name"`
+	}
+	if err := CallUnixJSON(context.Background(), filepath.Join(".", "nested", "..", "api.sock"), http.MethodGet, "/info", nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Name != "ok" {
+		t.Fatalf("Name=%q", out.Name)
+	}
+}
+
+func TestDaemonLockFileNormalizesPath(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	d := NewDaemon(New(config.Config{DaemonLockFile: filepath.Join(".", "locks", "..", "daemon.lock")}))
+	if err := d.acquireSingleInstanceLock(); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(dir, "daemon.lock")
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("stat normalized lock file: %v", err)
+	}
+	if err := d.releaseSingleInstanceLock(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Fatalf("expected lock file removed, stat err=%v", err)
+	}
+}
+
+func TestDecodeRuntimeRequestRejectsTraversalName(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/runtime/start?name=../escape", strings.NewReader(`{}`))
+	if _, err := decodeRuntimeRequest(req); err == nil {
+		t.Fatal("decodeRuntimeRequest should reject traversal workspace name")
+	} else if got := classifyError(err); got.Status != http.StatusBadRequest {
+		t.Fatalf("status=%d code=%s err=%v", got.Status, got.Code, err)
 	}
 }
 

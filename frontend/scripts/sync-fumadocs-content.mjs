@@ -11,19 +11,54 @@ const routeManifestPath = join(frontendRoot, 'next-site', 'docs-route-manifest.t
 const buildRegion = process.env.NEXT_PUBLIC_REGION || process.env.VITE_REGION || process.env.FRONTEND_RELEASE_REGION || 'cn';
 const defaultDocsOutputPrefix = buildRegion === 'global' ? 'en-us' : 'zh-cn';
 
+/**
+ * 国内站文档（lightvela.com/docs）单一数据源。
+ * 按 GEO 导航方案组织为 9 大分组；`group` 字段决定侧边栏分组与顺序。
+ * 部分为占位页（仅标题骨架，正文后续补齐），源 md 已在 src/content/docs 下创建。
+ */
 const cnDocs = [
-  { slug: 'announcements/public-beta', title: 'LightVela 公测计划及付费版本预告', file: 'announcements/public-beta.md', group: '产品公告', description: '' },
-  { slug: 'overview', title: 'LightVela 是什么', file: '01-overview.md', group: '开始使用', description: '云端托管 Hermes Agent，越聊越懂的智能伙伴。' },
-  { slug: 'quickstart', title: '快速开始', file: '02-quickstart.md', group: '开始使用', description: '5 分钟跑通第一个 LightVela 对话。' },
-  { slug: 'account', title: '账号与实名认证', file: '03-account.md', group: '开始使用', description: '账号管理与实名认证流程。' },
-  { slug: 'core-concepts', title: '核心概念', file: '04-core-concepts.md', group: '开始使用', description: '理解 Hermes、模型、通道和技能。' },
-  { slug: 'configuration/index', title: '配置总览', file: '05-configuration.md', group: '配置指南', description: 'LightVela 管理台配置流程。' },
-  { slug: 'configuration/model', title: '配置模型', file: 'configuration/model.md', group: '配置指南', description: '接入和管理 Hermes 使用的大语言模型。' },
-  { slug: 'configuration/channel-wechat', title: '配置通道 - 微信', file: 'configuration/channel-wechat.md', group: '配置指南', description: '通过微信与 Hermes Agent 对话。' },
-  { slug: 'configuration/channel-feishu', title: '配置通道 - 飞书', file: 'configuration/channel-feishu.md', group: '配置指南', description: '通过飞书与 Hermes Agent 对话。' },
-  { slug: 'configuration/channel-qq', title: '配置通道 - QQ', file: 'configuration/channel-qq.md', group: '配置指南', description: '通过 QQ 与 Hermes Agent 对话。' },
-  { slug: 'configuration/skill', title: '配置技能', file: 'configuration/skill.md', group: '配置指南', description: '安装技能包，扩展 Hermes 能力。' },
-  { slug: 'faq', title: '常见问题 FAQ', file: '07-faq.md', group: '参考', description: 'LightVela 常见问题。' },
+  // 产品入门
+  { slug: 'overview', title: 'LightVela 是什么', file: '01-overview.md', group: '产品入门', description: 'LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，让每个人都能拥有认识你、记得你、越聊越懂你的专属 AI 伙伴。你的 Agent 7×24 小时在线、独立运行、随时可对话，模型、工具、人设都由你自己决定。' },
+  { slug: 'quickstart', title: '快速开始', file: '02-quickstart.md', group: '产品入门', description: '5 分钟跑通第一个 LightVela 对话。' },
+  { slug: 'core-concepts', title: '核心概念', file: '04-core-concepts.md', group: '产品入门', description: '理解 Hermes、模型、通道和技能。' },
+  { slug: 'who-is-lightvela-for', title: 'LightVela 适合哪些人使用？', file: 'who-is-lightvela-for.md', group: '产品入门', description: 'LightVela 适合想拥有长期在线、越聊越懂你的专属 AI 伙伴，却不想碰服务器、容器和 API 鉴权的用户。本页梳理目标用户画像、典型使用场景与前置条件，帮你判断是否适合。' },
+  // 账号、套餐与开通
+  { slug: 'account', title: '账号与实名认证', file: '03-account.md', group: '账号、套餐与开通', description: '账号管理与实名认证流程。' },
+  { slug: 'announcements/public-beta', title: '公测公告', file: 'announcements/public-beta.md', group: '账号、套餐与开通', description: '' },
+  { slug: 'plans', title: '套餐说明', file: 'plans.md', group: '账号、套餐与开通', description: 'LightVela 提供启航 Launch、巡游 Cruise、远航 Voyage 三档套餐，各含独立云端环境、专属存储与每月模型积分。本页说明各档定位、规格、权益与计费，帮你按需选择。' },
+  { slug: 'credits', title: '体验积分说明', file: 'credits.md', group: '账号、套餐与开通', description: '模型积分是 LightVela 计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 token 消耗。本页说明积分定义、发放、消耗方式及与套餐、模型的关系。' },
+  { slug: 'create-first-hermes', title: '如何开通第一个 Hermes 智能体伙伴？', file: 'create-first-hermes.md', group: '账号、套餐与开通', description: '开通第一个 Hermes 智能体伙伴的完整流程：登录账号、完成实名认证、选择并开通套餐、平台自动创建，再配置模型与通道让 Agent 7×24 小时在线运行。' },
+  // 功能与配置
+  { slug: 'configuration/index', title: '配置总览', file: '05-configuration.md', group: '功能与配置', description: 'LightVela 管理台配置流程。' },
+  { slug: 'configuration/model', title: '配置模型', file: 'configuration/model.md', group: '功能与配置', description: '接入和管理 Hermes 使用的大语言模型。' },
+  { slug: 'configuration/channel-wechat', title: '配置通道 - 微信', file: 'configuration/channel-wechat.md', group: '功能与配置', description: '通过微信与 Hermes Agent 对话。' },
+  { slug: 'configuration/channel-feishu', title: '配置通道 - 飞书', file: 'configuration/channel-feishu.md', group: '功能与配置', description: '通过飞书与 Hermes Agent 对话。' },
+  { slug: 'configuration/channel-qq', title: '配置通道 - QQ', file: 'configuration/channel-qq.md', group: '功能与配置', description: '通过 QQ 与 Hermes Agent 对话。' },
+  { slug: 'configuration/skill', title: '配置技能', file: 'configuration/skill.md', group: '功能与配置', description: '安装技能包，扩展 Hermes 能力。' },
+  // 问题排查
+  { slug: 'faq', title: '常见问题 FAQ', file: '07-faq.md', group: '问题排查', description: '' },
+];
+
+/** 国内站侧边栏分组顺序（GEO 导航方案的 9 大分组） */
+const CN_GROUP_ORDER = [
+  '产品入门',
+  '账号、套餐与开通',
+  '功能与配置',
+  '问题排查',
+  '联系与支持',
+];
+
+/** 国际站侧边栏分组顺序（GEO 导航方案的 9 大分组） */
+const GLOBAL_GROUP_ORDER = [
+  'Getting Started',
+  'Plans & Activation',
+  'Features & Configuration',
+  'Use Cases',
+  'Compare & Choose',
+  'Troubleshooting',
+  'Security, Privacy & Data',
+  'Advanced',
+  'Support',
 ];
 
 const globalDocs = [
@@ -58,10 +93,50 @@ const globalDocs = [
     },
   },
   {
+    slug: 'who-is-lightvela-for',
+    title: { 'en-US': 'Who Is LightVela For?', 'zh-CN': 'LightVela 适合哪些人使用？' },
+    file: 'who-is-lightvela-for.md',
+    group: { 'en-US': 'Getting Started', 'zh-CN': '开始使用' },
+    description: {
+      'en-US': 'Learn who LightVela is designed for, including people who want a cloud-hosted personal AI companion without managing servers or infrastructure.',
+      'zh-CN': '了解 LightVela 适合哪些用户，包括希望拥有云端托管个人 AI 伙伴、又不想管理服务器或基础设施的人。',
+    },
+  },
+  {
+    slug: 'plans',
+    title: { 'en-US': 'Plans', 'zh-CN': '套餐说明' },
+    file: 'plans.md',
+    group: { 'en-US': 'Plans & Activation', 'zh-CN': '套餐与开通' },
+    description: {
+      'en-US': 'Compare LightVela plans, isolated cloud resources, monthly model credits, and the current international beta activation flow.',
+      'zh-CN': '对比 LightVela 套餐、独立云端资源、每月模型积分与当前国际站内测开通流程。',
+    },
+  },
+  {
+    slug: 'credits',
+    title: { 'en-US': 'Credits', 'zh-CN': '体验积分说明' },
+    file: 'credits.md',
+    group: { 'en-US': 'Plans & Activation', 'zh-CN': '套餐与开通' },
+    description: {
+      'en-US': 'Learn how LightVela model credits are allocated, consumed by token usage, and related to plans and models.',
+      'zh-CN': '了解 LightVela 模型积分如何发放、如何随 token 用量消耗，以及与套餐和模型的关系。',
+    },
+  },
+  {
+    slug: 'create-first-hermes',
+    title: { 'en-US': 'How Do I Activate My First Hermes Instance?', 'zh-CN': '如何开通第一个 Hermes 实例？' },
+    file: 'create-first-hermes.md',
+    group: { 'en-US': 'Plans & Activation', 'zh-CN': '套餐与开通' },
+    description: {
+      'en-US': 'Activate your first Hermes instance with Google or GitHub, an available plan, automatic cloud provisioning, and an international messaging channel.',
+      'zh-CN': '使用 Google 或 GitHub、当前可用套餐、云端自动创建和国际消息通道开通第一个 Hermes 实例。',
+    },
+  },
+  {
     slug: 'configuration/index',
     title: { 'en-US': 'Configuration Overview', 'zh-CN': '配置总览' },
     file: '05-configuration.md',
-    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: {
       'en-US': 'Review the LightVela console configuration flow.',
       'zh-CN': 'LightVela 管理台配置流程。',
@@ -71,27 +146,17 @@ const globalDocs = [
     slug: 'configuration/model',
     title: { 'en-US': 'Configure Models', 'zh-CN': '配置模型' },
     file: 'configuration/model.md',
-    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: {
       'en-US': 'Connect and manage the language models used by Hermes.',
       'zh-CN': '接入和管理 Hermes 使用的大语言模型。',
     },
   },
   {
-    slug: 'configuration/channel-wechat',
-    title: { 'en-US': 'WeChat', 'zh-CN': 'WeChat' },
-    file: 'configuration/channel-wechat.md',
-    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
-    description: {
-      'en-US': 'Connect WeChat to your Hermes Agent.',
-      'zh-CN': '通过微信与 Hermes Agent 对话。',
-    },
-  },
-  {
     slug: 'configuration/channel-telegram',
     title: { 'en-US': 'Telegram', 'zh-CN': 'Telegram' },
     file: 'configuration/channel-telegram.md',
-    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: {
       'en-US': 'Connect Telegram to your Hermes Agent.',
       'zh-CN': '通过 Telegram 与 Hermes Agent 对话。',
@@ -101,7 +166,7 @@ const globalDocs = [
     slug: 'configuration/channel-whatsapp',
     title: { 'en-US': 'WhatsApp', 'zh-CN': 'WhatsApp' },
     file: 'configuration/channel-whatsapp.md',
-    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: {
       'en-US': 'Connect WhatsApp to your Hermes Agent.',
       'zh-CN': '通过 WhatsApp 与 Hermes Agent 对话。',
@@ -111,17 +176,27 @@ const globalDocs = [
     slug: 'configuration/channel-discord',
     title: { 'en-US': 'Discord', 'zh-CN': 'Discord' },
     file: 'configuration/channel-discord.md',
-    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: {
       'en-US': 'Connect Discord to your Hermes Agent.',
       'zh-CN': '通过 Discord 与 Hermes Agent 对话。',
     },
   },
   {
+    slug: 'configuration/channel-wechat',
+    title: { 'en-US': 'WeChat', 'zh-CN': 'WeChat' },
+    file: 'configuration/channel-wechat.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: {
+      'en-US': 'Connect WeChat to your Hermes Agent.',
+      'zh-CN': '通过微信与 Hermes Agent 对话。',
+    },
+  },
+  {
     slug: 'configuration/channel-qq',
     title: { 'en-US': 'QQ', 'zh-CN': 'QQ' },
     file: 'configuration/channel-qq.md',
-    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: {
       'en-US': 'Connect QQ to your Hermes Agent.',
       'zh-CN': '通过 QQ 与 Hermes Agent 对话。',
@@ -131,7 +206,7 @@ const globalDocs = [
     slug: 'configuration/channel-wecom',
     title: { 'en-US': 'WeCom', 'zh-CN': '企业微信' },
     file: 'configuration/channel-wecom.md',
-    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: {
       'en-US': 'Connect WeCom to your Hermes Agent.',
       'zh-CN': '通过企业微信与 Hermes Agent 对话。',
@@ -141,7 +216,7 @@ const globalDocs = [
     slug: 'configuration/channel-feishu',
     title: { 'en-US': 'Lark', 'zh-CN': '飞书' },
     file: 'configuration/channel-feishu.md',
-    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: {
       'en-US': 'Connect Lark to your Hermes Agent.',
       'zh-CN': '通过飞书与 Hermes Agent 对话。',
@@ -151,53 +226,164 @@ const globalDocs = [
     slug: 'configuration/skill',
     title: { 'en-US': 'Configure Skills', 'zh-CN': '配置技能' },
     file: 'configuration/skill.md',
-    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: {
       'en-US': 'Install skills to extend Hermes capabilities.',
       'zh-CN': '安装技能包，扩展 Hermes 能力。',
     },
   },
   {
+    slug: 'configuration/memory',
+    title: { 'en-US': 'Memory Management', 'zh-CN': '记忆管理' },
+    file: 'configuration/memory.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: {
+      'en-US': 'Learn how Hermes stores and manages long-term memories and user profiles across devices and messaging channels.',
+      'zh-CN': '了解 Hermes 如何跨设备和消息通道存储、管理长期记忆与用户画像。',
+    },
+  },
+  {
     slug: 'configuration/automation',
     title: { 'en-US': 'Automations', 'zh-CN': '自动任务' },
     file: 'configuration/automation.md',
-    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: {
       'en-US': 'Create scheduled automations for your Hermes Agent.',
       'zh-CN': '为 Hermes Agent 创建定时自动任务。',
     },
   },
   {
+    slug: 'configuration/files',
+    title: { 'en-US': 'Cloud Storage', 'zh-CN': '云存储' },
+    file: 'configuration/files.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
     slug: 'configuration/agent-chat',
     title: { 'en-US': 'Chat', 'zh-CN': '对话' },
     file: 'configuration/agent-chat.md',
-    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: {
       'en-US': 'Chat with Hermes and inspect conversation behavior.',
       'zh-CN': '与 Hermes 对话并查看会话行为。',
     },
   },
   {
-    slug: 'faq',
-    title: { 'en-US': 'FAQ', 'zh-CN': '常见问题 FAQ' },
-    file: '07-faq.md',
-    group: { 'en-US': 'Reference', 'zh-CN': '参考' },
-    description: {
-      'en-US': 'Answers to common LightVela questions.',
-      'zh-CN': 'LightVela 常见问题。',
-    },
+    slug: 'configuration/diagnostics',
+    title: { 'en-US': 'Diagnostics', 'zh-CN': '诊断中心' },
+    file: 'configuration/diagnostics.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'configuration/multiple-models',
+    title: { 'en-US': 'Model Switching', 'zh-CN': '模型切换' },
+    file: 'configuration/multiple-models.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'use-cases/personal-ai-assistant',
+    title: { 'en-US': 'How to Build a Personal AI Assistant with LightVela', 'zh-CN': '如何用 LightVela 搭建个人 AI 助手？' },
+    file: 'use-cases/personal-ai-assistant.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'use-cases/chinese-messaging-channels',
+    title: { 'en-US': 'How to Connect an AI Agent to Messaging Platforms', 'zh-CN': '如何把 AI Agent 接入消息平台？' },
+    file: 'use-cases/chinese-messaging-channels.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'use-cases/daily-summary',
+    title: { 'en-US': 'How to Create Daily Summaries with Hermes Agent', 'zh-CN': '如何用 Hermes Agent 做每日信息总结？' },
+    file: 'use-cases/daily-summary.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'use-cases/hermes-agent-24-7',
+    title: { 'en-US': 'How to Keep a Hermes Agent Online 24/7', 'zh-CN': '如何让 Hermes Agent 7×24 小时在线？' },
+    file: 'use-cases/hermes-agent-24-7.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'use-cases/memory-and-knowledge',
+    title: { 'en-US': 'How to Manage Long-Term Memory and Personal Knowledge with an Agent', 'zh-CN': '如何用 Agent 管理长期记忆和个人知识？' },
+    file: 'use-cases/memory-and-knowledge.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'compare/lightvela-vs-localhost-ai-agent',
+    title: { 'en-US': 'LightVela vs Selfhost Agent: Which is best?', 'zh-CN': 'LightVela vs 本地部署 Agent：哪个更好？' },
+    file: 'compare/lightvela-vs-localhost-ai-agent.md',
+    group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'compare/lightvela-vs-hostinger',
+    title: { 'en-US': 'LightVela vs Hostinger: Which is best VPS for agent hosting?', 'zh-CN': 'LightVela vs Hostinger：哪个 VPS 更适合托管 Agent？' },
+    file: 'compare/lightvela-vs-hostinger.md',
+    group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'compare/lightvela-vs-manus',
+    title: { 'en-US': 'LightVela vs Manus: Which is best to host your AI Agent?', 'zh-CN': 'LightVela vs Manus：哪个更适合托管你的 AI Agent？' },
+    file: 'compare/lightvela-vs-manus.md',
+    group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'compare/lightvela-vs-chatgpt',
+    title: { 'en-US': 'LightVela vs ChatGPT: Which is best to build your personal AI assistant?', 'zh-CN': 'LightVela vs ChatGPT：哪个更适合搭建个人 AI 助手？' },
+    file: 'compare/lightvela-vs-chatgpt.md',
+    group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'compare/lightvela-vs-genspark',
+    title: { 'en-US': 'LightVela vs Genspark: Which is best to host your AI Agent?', 'zh-CN': 'LightVela vs Genspark：哪个更适合托管你的 AI Agent？' },
+    file: 'compare/lightvela-vs-genspark.md',
+    group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
+    description: { 'en-US': '', 'zh-CN': '' },
   },
   {
     slug: 'faq/using-lightvela-safely',
     title: { 'en-US': 'Using LightVela Safely', 'zh-CN': '安全使用 LightVela' },
     file: 'faq/using-lightvela-safely.md',
-    group: { 'en-US': 'Reference', 'zh-CN': '参考' },
+    group: { 'en-US': 'Security, Privacy & Data', 'zh-CN': '安全、隐私与数据' },
     description: {
       'en-US': 'Guidance for using LightVela safely and responsibly.',
       'zh-CN': '安全、负责任地使用 LightVela 的建议。',
     },
   },
+  {
+    slug: 'contact-us',
+    title: { 'en-US': 'Contact Us', 'zh-CN': '联系我们' },
+    file: 'contact-us.md',
+    group: { 'en-US': 'Support', 'zh-CN': '联系与支持' },
+    description: {
+      'en-US': 'Join the LightVela beta community, talk to the product team directly, and keep sending us your usage questions, product suggestions, and real-world feedback.',
+      'zh-CN': '加入 LightVela 内测交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。',
+    },
+  },
 ];
+
+const globalDocsForEnglish = globalDocs.filter(
+  (doc) =>
+    existsSync(join(sourceRoot, 'en', doc.file)) ||
+    existsSync(join(sourceRoot, 'global', doc.file)),
+);
+
+const globalDocsForChinese = globalDocs.filter((doc) =>
+  existsSync(join(sourceRoot, 'global', doc.file)),
+);
 
 const docSets = [
   {
@@ -205,10 +391,8 @@ const docSets = [
     sourcePrefix: 'en',
     fallbackSourcePrefix: 'global',
     locale: 'en-US',
-    docs: globalDocs,
+    docs: globalDocsForEnglish,
     title: 'LightVela Docs',
-    configurationTitle: 'Configuration Guide',
-    referenceTitle: 'Reference',
   },
   {
     outputPrefix: 'zh-cn',
@@ -216,17 +400,13 @@ const docSets = [
     locale: 'zh-CN',
     docs: cnDocs,
     title: 'LightVela 文档',
-    configurationTitle: '配置指南',
-    referenceTitle: '参考',
   },
   {
     outputPrefix: 'zh-sg',
     sourcePrefix: 'global',
     locale: 'zh-SG',
-    docs: globalDocs,
+    docs: globalDocsForChinese,
     title: 'LightVela 文档',
-    configurationTitle: '配置指南',
-    referenceTitle: '参考',
   },
 ];
 
@@ -261,8 +441,9 @@ function stripTitle(markdown, title) {
   return markdown.replace(new RegExp(`^#\\s+${escapeRegExp(title)}\\s*\\n+`), '').trim();
 }
 
-function allDocsForLinks() {
-  return [...cnDocs, ...globalDocs];
+function allDocsForLinks(outputPrefix) {
+  const localeDocs = outputPrefix === 'zh-sg' ? globalDocsForChinese : globalDocsForEnglish;
+  return [...cnDocs, ...localeDocs];
 }
 
 function fileToHrefFor(outputPrefix) {
@@ -270,7 +451,7 @@ function fileToHrefFor(outputPrefix) {
     outputPrefix && outputPrefix !== defaultDocsOutputPrefix
       ? `/${outputPrefix}/docs`
       : '/docs';
-  const entries = allDocsForLinks().flatMap((doc) => {
+  const entries = allDocsForLinks(outputPrefix).flatMap((doc) => {
     const slug = doc.slug.replace(/\/index$/, '');
     return [
       [doc.file, `${prefix}/${slug}`],
@@ -353,69 +534,37 @@ function copyImages() {
   }
 }
 
-function writeMetaForDocSet(docSet) {
+/**
+ * 数据驱动生成分组 meta。按 groupOrder 用 fumadocs 分隔符
+ * `---分组名---` 列出页面，组内顺序与 docSet.docs 一致。
+ */
+function writeGroupedMeta(docSet, groupOrder, groupLocale) {
   const root = join(outputRoot, docSet.outputPrefix);
-  const isCnLocale = docSet.outputPrefix === 'zh-cn';
   ensureDir(root);
+
+  const pages = [];
+  for (const group of groupOrder) {
+    const groupDocs = docSet.docs.filter((doc) => textFor(doc.group, groupLocale) === group);
+    if (groupDocs.length === 0) continue;
+    pages.push(`---${textFor(groupDocs[0].group, docSet.locale)}---`);
+    for (const doc of groupDocs) {
+      // 根 meta 用相对该 locale 根的 slug 路径引用页面
+      pages.push(doc.slug);
+    }
+  }
+
   writeFileSync(
     join(root, 'meta.json'),
-    `${JSON.stringify(
-      {
-        title: docSet.title,
-        pages: [...(isCnLocale ? ['announcements'] : []), 'overview', 'quickstart', ...(isCnLocale ? ['account'] : []), 'core-concepts', 'configuration', 'faq'],
-      },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify({ title: docSet.title, pages }, null, 2)}\n`,
   );
-  ensureDir(join(root, 'configuration'));
-  writeFileSync(
-    join(root, 'configuration', 'meta.json'),
-    `${JSON.stringify(
-      {
-        title: docSet.configurationTitle,
-        pages: [
-          'index',
-          'model',
-          'channel-wechat',
-          ...(isCnLocale ? [] : ['channel-telegram', 'channel-whatsapp', 'channel-discord']),
-          'channel-feishu',
-          'channel-qq',
-          ...(isCnLocale ? [] : ['channel-wecom']),
-          'skill',
-          ...(isCnLocale ? [] : ['automation', 'agent-chat']),
-        ],
-      },
-      null,
-      2,
-    )}\n`,
-  );
-  if (isCnLocale) {
-    ensureDir(join(root, 'announcements'));
-    writeFileSync(
-      join(root, 'announcements', 'meta.json'),
-      `${JSON.stringify(
-        {
-          title: '产品公告',
-          pages: ['public-beta'],
-        },
-        null,
-        2,
-      )}\n`,
-    );
+}
+
+function writeMetaForDocSet(docSet) {
+  if (docSet.outputPrefix === 'zh-cn') {
+    writeGroupedMeta(docSet, CN_GROUP_ORDER, 'zh-CN');
+  } else {
+    writeGroupedMeta(docSet, GLOBAL_GROUP_ORDER, 'en-US');
   }
-  ensureDir(join(root, 'faq'));
-  writeFileSync(
-    join(root, 'faq', 'meta.json'),
-    `${JSON.stringify(
-      {
-        title: docSet.referenceTitle,
-        pages: isCnLocale ? [] : ['using-lightvela-safely'],
-      },
-      null,
-      2,
-    )}\n`,
-  );
 }
 
 function slugSegments(slug) {

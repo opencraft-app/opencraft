@@ -48,6 +48,8 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '409':
           $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
   /auth/password/forgot:
     post:
       operationId: forgotPassword
@@ -108,6 +110,8 @@ paths:
         '403':
           $ref: '#/components/responses/ErrorResponse'
         '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '429':
           $ref: '#/components/responses/ErrorResponse'
   /auth/invite/validate:
     post:
@@ -242,9 +246,233 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '429':
           $ref: '#/components/responses/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ErrorResponse'
         '502':
           $ref: '#/components/responses/ErrorResponse'
         '503':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/realname/faceid/attempts:
+    post:
+      operationId: startRealnameFaceIDAttempt
+      summary: Start a FaceID real-name verification attempt
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RealnameFaceIDStartRequest'
+      responses:
+        '200':
+          description: Attempt created or reused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RealnameFaceIDAttemptResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/realname/faceid/attempts/{attemptId}:
+    get:
+      operationId: getRealnameFaceIDAttempt
+      summary: Reconcile and read an owned FaceID attempt
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Current attempt state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RealnameFaceIDAttemptResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/realname/faceid/attempts/current:
+    get:
+      operationId: getCurrentRealnameFaceIDAttempt
+      summary: Read the current recoverable FaceID attempt for the authenticated user
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      responses:
+        '200':
+          description: Current recoverable attempt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RealnameFaceIDAttemptResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/realname/faceid/attempts/{attemptId}/verify-phone:
+    post:
+      operationId: verifyRealnameFaceIDPhone
+      summary: Verify the current phone through Shadow binding for a FaceID attempt
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RealnameFaceIDPhoneRequest'
+      responses:
+        '200':
+          description: Phone proof recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RealnameFaceIDAttemptResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/realname/faceid/attempts/{attemptId}/send-phone-code:
+    post:
+      operationId: sendRealnameFaceIDPhoneCode
+      summary: Send a Shadow verification code to the current phone for a FaceID attempt
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RealnameFaceIDPhoneCodeRequest'
+      responses:
+        '200':
+          description: Code issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendSmsResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/realname/faceid/attempts/{attemptId}/finalize:
+    post:
+      operationId: finalizeRealnameFaceIDAttempt
+      summary: Synchronize an attempt to Shadow and activate final verification
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Final verification activated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RealnameFaceIDAttemptResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/realname/faceid/callback:
+    get:
+      operationId: handleRealnameFaceIDCallback
+      summary: Receive a Tencent FaceID browser redirect
+      parameters:
+        - name: BizToken
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Safe browser completion page
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
           $ref: '#/components/responses/ErrorResponse'
   /auth/realname/verify:
     post:
@@ -270,6 +498,8 @@ paths:
         '400':
           $ref: '#/components/responses/ErrorResponse'
         '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
           $ref: '#/components/responses/ErrorResponse'
         '502':
           $ref: '#/components/responses/ErrorResponse'
@@ -301,6 +531,12 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '403':
           $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
   /auth/realname/sync/retry:
     post:
       operationId: retryRealnameSync
@@ -320,6 +556,8 @@ paths:
         '401':
           $ref: '#/components/responses/ErrorResponse'
         '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
           $ref: '#/components/responses/ErrorResponse'
         '502':
           $ref: '#/components/responses/ErrorResponse'
@@ -356,6 +594,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/ShadowBindingResponse'
         '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/tencent-cloud/redirect:
+    post:
+      operationId: createTencentCloudRedirect
+      summary: Create a one-time Tencent Cloud console login redirect for the current user
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TencentCloudRedirectRequest'
+      responses:
+        '200':
+          description: One-time Tencent Cloud console login redirect
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TencentCloudRedirectResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
           $ref: '#/components/responses/ErrorResponse'
   /auth/profile/avatar:
     get:
@@ -468,6 +734,13 @@ components:
           type: boolean
         realnameLevel:
           type: string
+        realnameAssuranceMode:
+          type: string
+          enum:
+            - legacy
+            - faceless
+            - observe
+            - face_required
         realnameSyncStatus:
           type: string
           description: Status of syncing the verified real-name identity to the account system.
@@ -488,6 +761,56 @@ components:
           type: string
         idCard:
           type: string
+    RealnameFaceIDStartRequest:
+      type: object
+      required:
+        - name
+        - idCard
+        - consent
+      properties:
+        name:
+          type: string
+        idCard:
+          type: string
+        consent:
+          type: boolean
+    RealnameFaceIDPhoneRequest:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          type: string
+        phone:
+          type: string
+    RealnameFaceIDPhoneCodeRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+    RealnameFaceIDAttemptResponse:
+      type: object
+      required:
+        - attemptId
+        - state
+      properties:
+        attemptId:
+          type: string
+        state:
+          type: string
+          enum:
+            - pending
+            - face_succeeded
+            - phone_pending
+            - shadow_pending
+            - succeeded
+            - failed
+            - expired
+        verificationUrl:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
     RealnameVerifyResponse:
       type: object
       required:
@@ -613,6 +936,24 @@ components:
       properties:
         binding:
           $ref: '#/components/schemas/ShadowBinding'
+    TencentCloudRedirectRequest:
+      type: object
+      properties:
+        targetPath:
+          type: string
+          description: Relative path inside console.cloud.tencent.com. Defaults to the account cancellation page.
+    TencentCloudRedirectResponse:
+      type: object
+      required:
+        - redirectUrl
+        - expiresAt
+      properties:
+        redirectUrl:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time
     AuthSession:
       type: object
       required:
@@ -716,7 +1057,6 @@ components:
     VerifySmsRequest:
       type: object
       required:
-        - name
         - phone
         - code
       properties:

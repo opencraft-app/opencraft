@@ -13,6 +13,7 @@ package instance
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -24,6 +25,36 @@ import (
 
 	"go.uber.org/zap"
 )
+
+func TestRunRenewInstanceTaskIgnoresLegacyTargetGatewayPayload(t *testing.T) {
+	var payload common.RenewInstanceTaskPayload
+	if err := json.Unmarshal([]byte(`{
+		"instance_id":"ins-renew-running",
+		"pass_id":"pass-renew-running",
+		"target_gateway":"llm_gateway"
+	}`), &payload); err != nil {
+		t.Fatalf("unmarshal legacy payload: %v", err)
+	}
+
+	dao := &renewInstanceDaoStub{entity: &modelinstance.Entity{
+		Id:         200,
+		InstanceId: "ins-renew-running",
+		UserId:     "user-renew-running",
+		Status:     modelinstance.InstanceStatusRunning,
+		SandboxId:  "sbx-renew-running",
+	}}
+	l := &logic{
+		instanceDao: dao,
+		logger:      zap.NewNop(),
+	}
+
+	if err := l.RunRenewInstanceTask(pctx.NewContext(nil).WithUserID("user-renew-running"), &payload); err != nil {
+		t.Fatalf("legacy target_gateway must not trigger renewal migration: %v", err)
+	}
+	if dao.transitionCalls != 0 {
+		t.Fatalf("running instance should stay unchanged, transition calls = %d", dao.transitionCalls)
+	}
+}
 
 // renewInstanceDaoStub 仅实现 RunRenewInstanceTask 走过的两个 DAO 方法。
 //

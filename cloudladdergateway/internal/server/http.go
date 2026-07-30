@@ -1,7 +1,9 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -60,11 +62,21 @@ func invokeExternalHTTP(engine *proxy.Engine, authenticator *auth.Authenticator,
 		upstreamPath = externalRoute.Path
 	}
 	return func(c *gin.Context) {
-		if !engine.HasRoute(externalRoute.RouteID) {
+		body, err := readHTTPBody(c.Request, maxBodyBytes)
+		if err != nil {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})
+			return
+		}
+		routeID, body, err := resolveExternalAuthCodeRoute(externalRoute, body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if !engine.HasRoute(routeID) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
 		}
-		invokeResolvedHTTP(c, engine, authenticator, maxBodyBytes, externalRoute.RouteID, upstreamPath)
+		invokeResolvedHTTPWithBody(c, engine, authenticator, routeID, upstreamPath, body)
 	}
 }
 
@@ -74,6 +86,10 @@ func invokeResolvedHTTP(c *gin.Context, engine *proxy.Engine, authenticator *aut
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})
 		return
 	}
+	invokeResolvedHTTPWithBody(c, engine, authenticator, routeID, proxyPath, body)
+}
+
+func invokeResolvedHTTPWithBody(c *gin.Context, engine *proxy.Engine, authenticator *auth.Authenticator, routeID string, proxyPath string, body []byte) {
 	if err := authenticator.Verify(auth.RequestFromHTTP(c.Request, routeID, proxyPath, body)); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
@@ -109,6 +125,63 @@ func invokeResolvedHTTP(c *gin.Context, engine *proxy.Engine, authenticator *aut
 	c.Writer.Header().Set("X-CloudLadder-Upstream-URL", resp.UpstreamURL)
 	c.Writer.WriteHeader(resp.StatusCode)
 	_, _ = c.Writer.Write(resp.Body)
+}
+
+func resolveExternalAuthCodeRoute(externalRoute config.ExternalRoute, body []byte) (string, []byte, error) {
+	if len(externalRoute.AuthCodeRoutes) == 0 && len(externalRoute.UserIDRoutes) == 0 && len(externalRoute.UserIDPrefixRoutes) == 0 {
+		return externalRoute.RouteID, body, nil
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return externalRoute.RouteID, body, nil
+	}
+	callback, ok := payload["interface"].(map[string]any)
+	if !ok {
+		return externalRoute.RouteID, body, nil
+	}
+	para, ok := callback["para"].(map[string]any)
+	if !ok {
+		return externalRoute.RouteID, body, nil
+	}
+	if callback["interfaceName"] == "qcloud.saas.checkSaaSAccountExist" {
+		userID, _ := para["user_id"].(string)
+		for _, candidate := range externalRoute.UserIDRoutes {
+			if userID == candidate.UserID {
+				return candidate.RouteID, body, nil
+			}
+		}
+		for _, candidate := range externalRoute.UserIDPrefixRoutes {
+			if strings.HasPrefix(userID, candidate.Prefix) {
+				return candidate.RouteID, body, nil
+			}
+		}
+		return externalRoute.RouteID, body, nil
+	}
+	if callback["interfaceName"] != "qcloud.saas.checkSaaSAuthCode" {
+		return externalRoute.RouteID, body, nil
+	}
+	authCode, ok := para["auth_code"].(string)
+	if !ok || authCode == "" {
+		return externalRoute.RouteID, body, nil
+	}
+	for _, candidate := range externalRoute.AuthCodeRoutes {
+		if strings.HasPrefix(authCode, candidate.Prefix) {
+			rawCode := strings.TrimPrefix(authCode, candidate.Prefix)
+			if rawCode == "" {
+				return "", nil, fmt.Errorf("callback auth_code has no value after routing prefix")
+			}
+			para["auth_code"] = rawCode
+			updatedBody, err := json.Marshal(payload)
+			if err != nil {
+				return "", nil, fmt.Errorf("encode callback body: %w", err)
+			}
+			return candidate.RouteID, updatedBody, nil
+		}
+	}
+	if strings.Contains(authCode, ".") {
+		return "", nil, fmt.Errorf("callback auth_code has an unsupported routing prefix")
+	}
+	return externalRoute.RouteID, body, nil
 }
 
 func firstHeader(headers http.Header, names ...string) string {

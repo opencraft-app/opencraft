@@ -1,0 +1,1192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LightVela 产品能力迭代总览</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202b;
+      --muted: #657386;
+      --line: #d9e0e8;
+      --soft-line: #e9edf2;
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --primary: #2563c7;
+      --primary-soft: #eaf2ff;
+      --teal: #087f7a;
+      --amber: #aa6500;
+      --rose: #a43e58;
+      --shadow: 0 8px 24px rgba(30, 45, 64, 0.07);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      letter-spacing: 0;
+    }
+
+    main {
+      width: min(1440px, calc(100% - 32px));
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 18px 0;
+    }
+
+    .roadmap-screen {
+      min-height: calc(100vh - 18px);
+    }
+
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      min-height: 48px;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.15;
+      font-weight: 700;
+    }
+
+    .header-note {
+      margin: 0 0 2px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+      text-align: right;
+    }
+
+    .overview {
+      display: grid;
+      grid-template-columns: minmax(0, 2.15fr) minmax(360px, 1fr);
+      gap: 12px;
+    }
+
+    .main-column {
+      display: grid;
+      grid-template-rows: auto auto;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .module {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .primary-module {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      gap: 12px;
+      min-width: 0;
+      padding: 16px;
+      border-top: 4px solid var(--primary);
+    }
+
+    .side-column {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .side-module {
+      min-width: 0;
+      padding: 14px 15px;
+    }
+
+    .foundation-module {
+      border-top: 4px solid var(--teal);
+    }
+
+    .cloud-module {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      border-top: 4px solid var(--amber);
+    }
+
+    .experience-module {
+      border-top: 4px solid var(--rose);
+    }
+
+    .module-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .module-index {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.25;
+      font-weight: 700;
+    }
+
+    .module-summary {
+      max-width: 460px;
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      text-align: right;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .iteration {
+      position: relative;
+      min-width: 0;
+      padding: 11px 10px 10px;
+      border: 1px solid var(--soft-line);
+      border-radius: 6px;
+      background: #fafbfd;
+    }
+
+    .iteration:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      z-index: 2;
+      top: 26px;
+      right: -9px;
+      width: 10px;
+      height: 2px;
+      background: var(--primary);
+    }
+
+    .iteration-number {
+      margin: 0 0 5px;
+      color: var(--primary);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .iteration h3 {
+      min-height: 38px;
+      margin: 0 0 8px;
+      font-size: 14px;
+      line-height: 1.35;
+      font-weight: 650;
+    }
+
+    .key-list,
+    .compact-list,
+    .billing-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .key-list {
+      display: grid;
+      gap: 5px;
+    }
+
+    .key-list li {
+      position: relative;
+      padding-left: 10px;
+      color: #344255;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .key-list li::before {
+      content: "";
+      position: absolute;
+      top: 0.55em;
+      left: 0;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--primary);
+    }
+
+    .scenario-area {
+      min-height: 0;
+      padding-top: 11px;
+      border-top: 1px solid var(--soft-line);
+    }
+
+    .section-heading {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 9px;
+    }
+
+    .section-heading h3,
+    .side-section h3 {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.3;
+      font-weight: 700;
+    }
+
+    .section-label {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.3;
+    }
+
+    .scenario-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .scenario {
+      min-width: 0;
+      padding: 10px 11px;
+      border-left: 3px solid var(--primary);
+      background: var(--primary-soft);
+    }
+
+    .scenario-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+
+    .scenario h4,
+    .billing-site h4 {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.3;
+      font-weight: 700;
+    }
+
+    .scenario p {
+      margin: 0;
+      color: #425267;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .dogfood {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 11px;
+      border: 1px solid #cad9f2;
+      border-radius: 6px;
+      background: #f0f5ff;
+      color: #40516a;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .dogfood strong {
+      flex: 0 0 auto;
+      color: var(--primary);
+      font-size: 12px;
+    }
+
+    .info {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 17px;
+      height: 17px;
+      padding: 0;
+      border: 1px solid #bdc9d8;
+      border-radius: 50%;
+      color: #50627a;
+      background: var(--panel);
+      font-family: Georgia, serif;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: help;
+    }
+
+    .tooltip {
+      position: absolute;
+      z-index: 10;
+      left: 50%;
+      bottom: calc(100% + 8px);
+      width: 240px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #17202b;
+      color: #ffffff;
+      box-shadow: 0 8px 20px rgba(23, 32, 43, 0.2);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Microsoft YaHei", sans-serif;
+      font-size: 11px;
+      font-weight: 400;
+      line-height: 1.5;
+      text-align: left;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 3px);
+      transition: opacity 140ms ease, transform 140ms ease;
+    }
+
+    .info:hover .tooltip,
+    .info:focus .tooltip {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    .side-column .tooltip {
+      right: 0;
+      left: auto;
+      transform: translate(0, 3px);
+    }
+
+    .side-column .info:hover .tooltip,
+    .side-column .info:focus .tooltip {
+      transform: translate(0, 0);
+    }
+
+    .side-module .module-heading {
+      margin-bottom: 10px;
+    }
+
+    .side-module .module-summary {
+      max-width: 200px;
+      font-size: 11px;
+    }
+
+    .foundation-content {
+      display: grid;
+      grid-template-columns:
+        minmax(0, 1.8fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1.1fr);
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .side-section {
+      min-width: 0;
+    }
+
+    .billing-section {
+      padding-right: 12px;
+      border-right: 1px solid var(--soft-line);
+    }
+
+    .side-section-heading {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 7px;
+    }
+
+    .billing-sites {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .billing-site {
+      min-width: 0;
+      padding: 8px 9px;
+      border-radius: 6px;
+      background: #f7faf9;
+    }
+
+    .billing-site h4 {
+      margin-bottom: 5px;
+      color: var(--teal);
+    }
+
+    .billing-list {
+      display: grid;
+      gap: 3px;
+    }
+
+    .billing-list li,
+    .compact-list li {
+      position: relative;
+      padding-left: 9px;
+      color: #465568;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .billing-list li::before,
+    .compact-list li::before {
+      content: "·";
+      position: absolute;
+      left: 0;
+      color: var(--teal);
+      font-weight: 700;
+    }
+
+    .service-section {
+      padding-right: 12px;
+      border-right: 1px solid var(--soft-line);
+    }
+
+    .account-section {
+      padding-right: 12px;
+      border-right: 1px solid var(--soft-line);
+    }
+
+    .compact-list {
+      display: grid;
+      gap: 4px;
+    }
+
+    .direction-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      grid-template-rows: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .direction {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-width: 0;
+      padding: 12px 13px;
+      border-left: 3px solid var(--amber);
+      background: #fff9ef;
+    }
+
+    .direction h3 {
+      display: flex;
+      align-items: flex-start;
+      gap: 5px;
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.35;
+      font-weight: 700;
+    }
+
+    .direction p {
+      margin: 7px 0 0;
+      color: #5c5142;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .direction-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .direction-tag {
+      padding: 4px 7px;
+      border: 1px solid #ead8b7;
+      border-radius: 4px;
+      color: #75541f;
+      background: #fffdf8;
+      font-size: 10px;
+      font-weight: 650;
+      line-height: 1.2;
+    }
+
+    .experience-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .experience-item {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      min-height: 48px;
+      padding: 8px 10px;
+      border-left: 3px solid var(--rose);
+      background: #fff6f8;
+      color: #39485b;
+      font-size: 12px;
+      font-weight: 650;
+      line-height: 1.35;
+    }
+
+    .capability-screen {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 54px 0 42px;
+    }
+
+    .capability-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 20px;
+    }
+
+    .capability-header h2 {
+      margin-top: 3px;
+      font-size: 26px;
+    }
+
+    .source-note {
+      margin: 0 0 2px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+      text-align: right;
+    }
+
+    .capability-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      border-top: 4px solid var(--primary);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .capability-table col:first-child {
+      width: 29%;
+    }
+
+    .capability-table th,
+    .capability-table td {
+      padding: 17px 20px;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .capability-table th {
+      color: var(--muted);
+      background: #f4f7fb;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+
+    .capability-table td:first-child {
+      background: #fafbfd;
+    }
+
+    .stage-cell {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .stage-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      color: var(--primary);
+      background: var(--primary-soft);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .stage-title {
+      margin: 3px 0 0;
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+
+    .basis-list {
+      display: grid;
+      gap: 6px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .basis-list li {
+      position: relative;
+      padding-left: 14px;
+      color: #3f4f63;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .basis-list li::before {
+      content: "";
+      position: absolute;
+      top: 0.63em;
+      left: 0;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--primary);
+    }
+
+    @media (max-width: 1120px) {
+      main {
+        width: min(100% - 24px, 1440px);
+        padding: 12px 0;
+      }
+
+      .overview {
+        grid-template-columns: 1fr;
+      }
+
+      .main-column,
+      .side-column {
+        grid-template-rows: auto;
+      }
+
+      .foundation-content {
+        grid-template-columns: 1.8fr repeat(3, minmax(0, 1fr));
+      }
+
+    }
+
+    @media (max-width: 760px) {
+      header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .header-note,
+      .module-summary {
+        text-align: left;
+      }
+
+      .primary-module,
+      .side-module {
+        padding: 13px;
+      }
+
+      .module-heading {
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .timeline,
+      .direction-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .iteration h3 {
+        min-height: 0;
+      }
+
+      .iteration:not(:last-child)::after {
+        top: auto;
+        right: auto;
+        bottom: -9px;
+        left: 24px;
+        width: 2px;
+        height: 10px;
+      }
+
+      .scenario-grid,
+      .foundation-content,
+      .experience-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .capability-screen {
+        min-height: 0;
+        padding-top: 42px;
+      }
+
+      .capability-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .source-note {
+        text-align: left;
+      }
+
+      .capability-table,
+      .capability-table tbody,
+      .capability-table tr,
+      .capability-table td {
+        display: block;
+        width: 100%;
+      }
+
+      .capability-table thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+      }
+
+      .capability-table tr + tr td:first-child {
+        border-top-width: 8px;
+        border-top-color: var(--bg);
+      }
+
+      .capability-table td:last-child {
+        border-top: 0;
+      }
+
+      .billing-section {
+        padding: 0 0 10px;
+        border-right: 0;
+        border-bottom: 1px solid var(--soft-line);
+      }
+
+      .service-section {
+        padding: 0 0 10px;
+        border-right: 0;
+        border-bottom: 1px solid var(--soft-line);
+      }
+
+      .account-section {
+        padding: 0 0 10px;
+        border-right: 0;
+        border-bottom: 1px solid var(--soft-line);
+      }
+
+      .tooltip {
+        left: 0;
+        transform: translate(0, 3px);
+      }
+
+      .info:hover .tooltip,
+      .info:focus .tooltip {
+        transform: translate(0, 0);
+      }
+    }
+
+    @media (max-width: 440px) {
+      main {
+        width: min(100% - 16px, 1440px);
+      }
+
+      h1 {
+        font-size: 24px;
+      }
+
+      .billing-sites {
+        grid-template-columns: 1fr;
+      }
+
+      .dogfood {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .capability-header h2 {
+        font-size: 22px;
+      }
+
+      .capability-table th,
+      .capability-table td {
+        padding: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="roadmap-screen" aria-labelledby="roadmap-title">
+      <header>
+        <h1 id="roadmap-title">LightVela 产品能力迭代总览</h1>
+        <p class="header-note">自动任务是云端重点能力，基础建设、云服务探索与体验提升并行推进</p>
+      </header>
+
+      <div class="overview">
+      <div class="main-column">
+      <section class="module primary-module" aria-labelledby="module-automatic-task">
+        <div class="module-heading">
+          <div>
+            <span class="module-index">Module 01 · 核心主线</span>
+            <h2 id="module-automatic-task">自动任务与场景化持续执行</h2>
+          </div>
+          <p class="module-summary">让 Agent 在用户不在场时持续执行、保持状态，并将结果沉淀为可复用资产。</p>
+        </div>
+
+        <ol class="timeline" aria-label="自动任务五个迭代阶段">
+          <li class="iteration">
+            <p class="iteration-number">01</p>
+            <h3>事件触发与技能引入</h3>
+            <ul class="key-list">
+              <li>Webhook 触发</li>
+              <li>绑定 Skill</li>
+            </ul>
+          </li>
+          <li class="iteration">
+            <p class="iteration-number">02</p>
+            <h3>执行记录与结果沉淀</h3>
+            <ul class="key-list">
+              <li>执行任务、记录</li>
+              <li>云存储结果</li>
+            </ul>
+          </li>
+          <li class="iteration">
+            <p class="iteration-number">03</p>
+            <h3>任务目标与输入来源</h3>
+            <ul class="key-list">
+              <li>输入任务目标</li>
+              <li>输入参考来源</li>
+            </ul>
+          </li>
+          <li class="iteration">
+            <p class="iteration-number">04</p>
+            <h3>异常处理与下次动作</h3>
+            <ul class="key-list">
+              <li>失败、超时重试</li>
+              <li>确认通知</li>
+            </ul>
+          </li>
+          <li class="iteration">
+            <p class="iteration-number">05</p>
+            <h3>复用与流转方向</h3>
+            <ul class="key-list">
+              <li>任务能力复用</li>
+              <li>结果流转接续</li>
+            </ul>
+          </li>
+        </ol>
+
+        <div class="scenario-area">
+          <div class="section-heading">
+            <h3>场景验证</h3>
+            <span class="section-label">四类持续任务并行探索</span>
+          </div>
+          <div class="scenario-grid">
+            <article class="scenario">
+              <div class="scenario-title">
+                <h4>监控提醒类</h4>
+                <button class="info" type="button" aria-label="监控提醒类说明">
+                  i
+                  <span class="tooltip" role="tooltip">持续观察外部变化，在命中条件时通知用户。</span>
+                </button>
+              </div>
+              <p>价格、舆情、工单、部署、账单、MR、故障、竞品更新</p>
+            </article>
+            <article class="scenario">
+              <div class="scenario-title">
+                <h4>周期汇总类</h4>
+                <button class="info" type="button" aria-label="周期汇总类说明">
+                  i
+                  <span class="tooltip" role="tooltip">按固定周期整理信息，形成可查看和复用的结果。</span>
+                </button>
+              </div>
+              <p>日报、竞品动态、用户反馈、数据报告、行业动态</p>
+            </article>
+            <article class="scenario">
+              <div class="scenario-title">
+                <h4>持续维护类</h4>
+                <button class="info" type="button" aria-label="持续维护类说明">
+                  i
+                  <span class="tooltip" role="tooltip">持续更新一份长期存在、不断生长的工作成果。</span>
+                </button>
+              </div>
+              <p>知识库、需求池、FAQ、项目看板、内容更新、客户跟进</p>
+            </article>
+            <article class="scenario">
+              <div class="scenario-title">
+                <h4>长时间等待类</h4>
+                <button class="info" type="button" aria-label="长时间等待类说明">
+                  i
+                  <span class="tooltip" role="tooltip">在云端承接耗时任务，等待完成后沉淀并通知结果。</span>
+                </button>
+              </div>
+              <p>测试、爬取、异步审批、批量生成、批处理、资料收集</p>
+            </article>
+          </div>
+        </div>
+
+        <div class="dogfood">
+          <strong>Eat our own dogfood</strong>
+          <span>能力上线前运行真实任务，并验证结果是否被打开、复用、修改和接续。</span>
+        </div>
+      </section>
+
+        <section class="module side-module foundation-module" aria-labelledby="module-foundation">
+          <div class="module-heading">
+            <div>
+              <span class="module-index">Module 02</span>
+              <h2 id="module-foundation">基础功能体系建设</h2>
+            </div>
+            <p class="module-summary">商业化、服务、账号与 API 资源运营基础能力</p>
+          </div>
+
+          <div class="foundation-content">
+            <section class="side-section billing-section" aria-labelledby="billing-title">
+              <div class="side-section-heading">
+                <h3 id="billing-title">计费能力</h3>
+                <button class="info" type="button" aria-label="计费能力说明">
+                  i
+                  <span class="tooltip" role="tooltip">分别完善国内站与国际站的套餐、续费、订阅、支付和 AI 积分售卖能力。</span>
+                </button>
+              </div>
+              <div class="billing-sites">
+                <div class="billing-site">
+                  <h4>国内站</h4>
+                  <ul class="billing-list">
+                    <li>续费</li>
+                    <li>套餐配置升级</li>
+                    <li>AI 积分单独售卖</li>
+                    <li>用户签约支付</li>
+                    <li>用户订阅消息机制</li>
+                  </ul>
+                </div>
+                <div class="billing-site">
+                  <h4>国际站</h4>
+                  <ul class="billing-list">
+                    <li>套餐新建</li>
+                    <li>套餐续费</li>
+                    <li>套餐配置升级</li>
+                    <li>套餐持续订阅</li>
+                    <li>消息订阅</li>
+                    <li>AI 积分上架</li>
+                  </ul>
+                </div>
+              </div>
+            </section>
+
+            <section class="side-section service-section" aria-labelledby="service-title">
+              <div class="side-section-heading">
+                <h3 id="service-title">用户反馈机制</h3>
+                <button class="info" type="button" aria-label="用户反馈机制说明">
+                  i
+                  <span class="tooltip" role="tooltip">建设 LightVela 产品内在线服务入口，连接腾讯云安灯系统承接反馈、咨询与问题处理。</span>
+                </button>
+              </div>
+              <ul class="compact-list">
+                <li>产品内在线服务</li>
+                <li>连接腾讯云安灯系统</li>
+              </ul>
+            </section>
+
+            <section class="side-section account-section" aria-labelledby="account-title">
+              <div class="side-section-heading">
+                <h3 id="account-title">账号体系</h3>
+                <button class="info" type="button" aria-label="账号体系说明">
+                  i
+                  <span class="tooltip" role="tooltip">国内站支持手机号登录及 QQ、微信绑定；国际站支持邮箱登录及 GitHub、Discord 绑定。</span>
+                </button>
+              </div>
+              <ul class="compact-list">
+                <li>账号注销</li>
+                <li>国内站手机号登录</li>
+                <li>国际站邮箱登录</li>
+                <li>第三方账号绑定</li>
+              </ul>
+            </section>
+
+            <section class="side-section" aria-labelledby="ai-gateway-title">
+              <div class="side-section-heading">
+                <h3 id="ai-gateway-title">AI 网关改造</h3>
+                <button class="info" type="button" aria-label="AI 网关改造说明">
+                  i
+                  <span class="tooltip" role="tooltip">扩展 AI 网关的资源接入与运营承载范围。</span>
+                </button>
+              </div>
+              <ul class="compact-list">
+                <li>升级现有 ai-gateway</li>
+                <li>支撑更多 API 资源运营</li>
+              </ul>
+            </section>
+          </div>
+        </section>
+
+        </div>
+
+        <div class="side-column">
+
+        <section class="module side-module cloud-module" aria-labelledby="module-cloud">
+          <div class="module-heading">
+            <div>
+              <span class="module-index">Module 03</span>
+              <h2 id="module-cloud">Agent 场景 + 云服务探索</h2>
+            </div>
+          </div>
+          <div class="direction-grid">
+            <article class="direction">
+              <h3>
+                Agent 云端主机部署（海外市场）
+                <button class="info" type="button" aria-label="Agent 云端主机部署说明">
+                  i
+                  <span class="tooltip" role="tooltip">基于云主机部署 Agent，底层复用 Lighthouse 能力。</span>
+                </button>
+              </h3>
+              <p>基于云主机部署 Agent，底层复用 Lighthouse 能力。</p>
+            </article>
+            <article class="direction">
+              <h3>
+                云端场景能力扩展
+                <button class="info" type="button" aria-label="云端场景能力扩展说明">
+                  i
+                  <span class="tooltip" role="tooltip">引入联网搜索、音频、视频和图片等云端能力，扩展 Agent 可处理的任务场景。</span>
+                </button>
+              </h3>
+              <div class="direction-tags" aria-label="云端场景扩展能力">
+                <span class="direction-tag">联网搜索</span>
+                <span class="direction-tag">音频能力</span>
+                <span class="direction-tag">视频能力</span>
+                <span class="direction-tag">图片能力</span>
+              </div>
+            </article>
+            <article class="direction">
+              <h3>
+                Agent 记忆增强
+                <button class="info" type="button" aria-label="Agent 记忆增强说明">
+                  i
+                  <span class="tooltip" role="tooltip">探索更向量化、体系化的知识与记忆能力。</span>
+                </button>
+              </h3>
+              <p>探索更向量化、体系化的知识与记忆能力。</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="module side-module experience-module" aria-labelledby="module-experience">
+          <div class="module-heading">
+            <div>
+              <span class="module-index">Module 04</span>
+              <h2 id="module-experience">基础能力体验提升</h2>
+            </div>
+          </div>
+          <div class="experience-grid">
+            <div class="experience-item">模型配置体验提升</div>
+            <div class="experience-item">云端对话体验提升</div>
+          </div>
+        </section>
+        </div>
+      </div>
+    </section>
+
+    <section class="capability-screen" aria-labelledby="hermes-capability-title">
+      <div class="capability-header">
+        <div>
+          <span class="module-index">Automatic Task Foundation</span>
+          <h2 id="hermes-capability-title">自动任务规划与 Hermes 能力基础</h2>
+        </div>
+        <p class="source-note">Hermes Agent main · 56e2ba5e · 2026-07-17</p>
+      </div>
+
+      <table class="capability-table">
+        <colgroup>
+          <col>
+          <col>
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col">规划阶段</th>
+            <th scope="col">Hermes 基础</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="stage-cell">
+                <span class="stage-number">01</span>
+                <p class="stage-title">事件触发与技能引入</p>
+              </div>
+            </td>
+            <td>
+              <ul class="basis-list">
+                <li>Cron 支持定时、间隔与单次调度，任务可绑定多个 Skill。</li>
+                <li>Webhook 支持事件类型、过滤规则、脚本转换、Skill 和多渠道投递。</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="stage-cell">
+                <span class="stage-number">02</span>
+                <p class="stage-title">执行记录与结果沉淀</p>
+              </div>
+            </td>
+            <td>
+              <ul class="basis-list">
+                <li>每次 Cron 运行生成独立 Session，完整消息、工具调用和状态写入 SQLite。</li>
+                <li>结果按任务和运行时间保存为 Markdown，默认保留最近 50 次，并提供运行历史 API。</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="stage-cell">
+                <span class="stage-number">03</span>
+                <p class="stage-title">任务目标与输入来源</p>
+              </div>
+            </td>
+            <td>
+              <ul class="basis-list">
+                <li>Prompt 可承载任务目标，支持预执行脚本输出和 Webhook payload 作为实时输入。</li>
+                <li>支持 context_from 引用前置任务最新结果，workdir 可引入项目文件与上下文。</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="stage-cell">
+                <span class="stage-number">04</span>
+                <p class="stage-title">异常处理与下次动作</p>
+              </div>
+            </td>
+            <td>
+              <ul class="basis-list">
+                <li>已有 Agent 无活动超时、脚本超时、错误状态和失败消息投递。</li>
+                <li>支持手动重新运行，Cron 安全审批可设置为拒绝或自动通过。</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="stage-cell">
+                <span class="stage-number">05</span>
+                <p class="stage-title">复用与流转方向</p>
+              </div>
+            </td>
+            <td>
+              <ul class="basis-list">
+                <li>支持任务结果串联、可接续消息、Profiles 和 Skill bundles。</li>
+                <li>Kanban 提供持久化任务、附件、运行记录与多 Agent 工作者调度基础。</li>
+              </ul>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

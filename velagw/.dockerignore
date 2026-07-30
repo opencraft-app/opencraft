@@ -1,0 +1,12 @@
+.git
+.env
+.env.local
+llmgateway
+web/.env
+web/.env.local
+web/node_modules
+web/dist
+web/tsconfig.tsbuildinfo
+test/e2e/.env
+test/e2e/.env.local
+test/e2e/.tmp

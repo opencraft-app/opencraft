@@ -5,6 +5,7 @@ package instance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 
 	paigateway "ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	pllmgateway "ctl/pkg/adapter/llmgateway"
 	popenclawgateway "ctl/pkg/adapter/openclawgateway"
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/adapter/shadow"
@@ -24,6 +26,7 @@ import (
 	"ctl/pkg/adapter/whitelist"
 	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
+	"ctl/pkg/logic/gatewayroute"
 	"ctl/pkg/logic/objectid"
 	modelfactory "ctl/pkg/model/factory"
 	modelinstance "ctl/pkg/model/instance"
@@ -261,6 +264,9 @@ func (s *stubSandboxAdapterInline) Refresh(_ context.Context, _ string, _ int32)
 func (s *stubSandboxAdapterInline) GetLogs(_ context.Context, _ string, _ *psandbox.GetLogsRequest) (*psandbox.SandboxLogs, error) {
 	return nil, nil
 }
+func (s *stubSandboxAdapterInline) StartTerminalSession(_ context.Context, _ string) (*psandbox.TerminalSession, error) {
+	return nil, nil
+}
 func (s *stubSandboxAdapterInline) ExecCommand(_ context.Context, _ string, _ string, _ int) (*psandbox.ExecCommandResult, error) {
 	return &psandbox.ExecCommandResult{Status: "SUCCESS"}, nil
 }
@@ -283,53 +289,64 @@ func (s *stubSandboxAdapterInline) GetSnapshotStatus(_ context.Context, _, _ str
 	return nil, nil
 }
 
-type stubAiGatewayAdapterInline struct{}
+type stubLLMGatewayAdapterInline struct{}
 
-func (s *stubAiGatewayAdapterInline) CreateApiKey(_ context.Context, _ string, _ string) (*paigateway.CreateApiKeyResponse, error) {
+func (s *stubLLMGatewayAdapterInline) CreateApiKey(_ context.Context, _ string, _ string) (*pllmgateway.CreateApiKeyResponse, error) {
 	return nil, fmt.Errorf("ai gateway not configured")
 }
 
-func (s *stubAiGatewayAdapterInline) EnsureUser(_ context.Context, userID string, nickname string) (*paigateway.EnsureUserResponse, error) {
-	return &paigateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
+func (s *stubLLMGatewayAdapterInline) EnsureUser(_ context.Context, userID string, nickname string) (*pllmgateway.EnsureUserResponse, error) {
+	return &pllmgateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
 }
 
-func (s *stubAiGatewayAdapterInline) RevokeApiKey(_ context.Context, _ string) error {
+func (s *stubLLMGatewayAdapterInline) RevokeApiKey(_ context.Context, _ string) error {
 	return nil
 }
 
-func (s *stubAiGatewayAdapterInline) GetUserUsage(_ context.Context, _ string) (*paigateway.UserUsageResponse, error) {
-	return &paigateway.UserUsageResponse{}, nil
+func (s *stubLLMGatewayAdapterInline) GetUserUsage(_ context.Context, _ string) (*pllmgateway.UserUsageResponse, error) {
+	return &pllmgateway.UserUsageResponse{}, nil
 }
 
-func (s *stubAiGatewayAdapterInline) GetPlan(_ context.Context, _ string) (*paigateway.Plan, error) {
+func (s *stubLLMGatewayAdapterInline) GetPlan(_ context.Context, _ string) (*pllmgateway.Plan, error) {
 	return nil, fmt.Errorf("plan lookup not configured")
 }
 
-func (s *stubAiGatewayAdapterInline) ApplySubscription(_ context.Context, _ *paigateway.ApplySubscriptionRequest) (*paigateway.Subscription, error) {
+func (s *stubLLMGatewayAdapterInline) ApplySubscription(_ context.Context, _ *pllmgateway.ApplySubscriptionRequest) (*pllmgateway.Subscription, error) {
 	return nil, fmt.Errorf("subscription apply not configured")
 }
 
-func (s *stubAiGatewayAdapterInline) ExtendSubscription(_ context.Context, _ *paigateway.ExtendSubscriptionRequest) (*paigateway.ExtendSubscriptionResponse, error) {
-	return nil, fmt.Errorf("subscription extend not configured")
-}
-
-func (s *stubAiGatewayAdapterInline) CancelSubscription(_ context.Context, _ string) error {
+func (s *stubLLMGatewayAdapterInline) CancelSubscription(_ context.Context, _ string) error {
 	return nil
 }
 
-func (s *stubAiGatewayAdapterInline) GetActiveSubscription(_ context.Context, _ string) (*paigateway.Subscription, error) {
+func (s *stubLLMGatewayAdapterInline) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
 	return nil, nil
+}
+func (s *stubLLMGatewayAdapterInline) ListActiveSubscriptions(_ context.Context, _ string) (*pllmgateway.ActiveSubscriptionList, error) {
+	return &pllmgateway.ActiveSubscriptionList{Subscriptions: []pllmgateway.Subscription{}}, nil
+}
+
+type stubLegacyAIGatewayAdapterInline struct {
+	paigateway.Adapter
+	revokedKeyIDs []string
+	revokeErr     error
+}
+
+func (s *stubLegacyAIGatewayAdapterInline) RevokeApiKey(_ context.Context, keyID string) error {
+	s.revokedKeyIDs = append(s.revokedKeyIDs, keyID)
+	return s.revokeErr
 }
 
 type inlineStubAdapterFactory struct {
 	sandbox   psandbox.Adapter
-	aigateway paigateway.Adapter
+	aigateway pllmgateway.Adapter
 }
 
-func (f *inlineStubAdapterFactory) SandboxAdapter() psandbox.Adapter     { return f.sandbox }
-func (f *inlineStubAdapterFactory) StsAdapter() sts.Adapter              { return nil }
-func (f *inlineStubAdapterFactory) WhitelistAdapter() whitelist.Adapter  { return nil }
-func (f *inlineStubAdapterFactory) AiGatewayAdapter() paigateway.Adapter { return f.aigateway }
+func (f *inlineStubAdapterFactory) SandboxAdapter() psandbox.Adapter       { return f.sandbox }
+func (f *inlineStubAdapterFactory) StsAdapter() sts.Adapter                { return nil }
+func (f *inlineStubAdapterFactory) WhitelistAdapter() whitelist.Adapter    { return nil }
+func (f *inlineStubAdapterFactory) AiGatewayAdapter() paigateway.Adapter   { return nil }
+func (f *inlineStubAdapterFactory) LLMGatewayAdapter() pllmgateway.Adapter { return f.aigateway }
 func (f *inlineStubAdapterFactory) OpenClawGatewayAdapter() popenclawgateway.Adapter {
 	return nil
 }
@@ -340,7 +357,7 @@ func installInlineStubFactory(sandbox psandbox.Adapter) func() {
 	original := adapterfactory.DefaultAdapterFactory
 	adapterfactory.DefaultAdapterFactory = &inlineStubAdapterFactory{
 		sandbox:   sandbox,
-		aigateway: &stubAiGatewayAdapterInline{},
+		aigateway: &stubLLMGatewayAdapterInline{},
 	}
 	return func() {
 		adapterfactory.DefaultAdapterFactory = original
@@ -623,4 +640,94 @@ func TestInlineDestroyTask_Success(t *testing.T) {
 		Order("id DESC").First(&taskEntity).Error
 	require.NoError(t, dbErr)
 	assert.Equal(t, taskmodel.StateSuccess, taskEntity.TaskState)
+}
+
+func TestInlineDestroyTask_PreservesLLMGatewayUserKey(t *testing.T) {
+	_, _ = setupEnqueueTestEnv(t)
+
+	var deletedSandboxID string
+	sandboxStub := &stubSandboxAdapterInline{
+		deleteFunc: func(_ context.Context, sandboxID string) error {
+			deletedSandboxID = sandboxID
+			return nil
+		},
+	}
+	restore := installInlineStubFactory(sandboxStub)
+	defer restore()
+
+	userID := "user-inline-destroy-llmgateway"
+	instanceID := "ins-inline-destroy-llmgateway"
+	keyID := "llmgateway-external-key-id"
+
+	insertInlineInstance(t, instanceID, userID, modelinstance.InstanceStatusRunning, "sbx-llmgateway")
+	require.NoError(t, resource.GormDB.Table(modelinstance.TableName).
+		Where(modelinstance.ColumnInstanceID+" = ?", instanceID).
+		Update(modelinstance.ColumnAiGatewayKeyID, keyID).Error)
+	require.NoError(t, gatewayroute.Record(
+		userID,
+		gatewayroute.GatewayLLMGateway,
+		"subscription-llmgateway",
+		"plan-llmgateway",
+		gatewayroute.SourceDetectActiveSubscription,
+	))
+	insertInlineQuota(t, userID)
+
+	instanceDao := modelfactory.DefaultDaoFactory.InstanceDao(nil)
+	quotaDao := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(nil)
+	l := NewLogicForTest(instanceDao, quotaDao, sandboxStub, nil, nil, zap.NewNop(), "test-template")
+	legacyGateway := &stubLegacyAIGatewayAdapterInline{revokeErr: errors.New("legacy key revoke must not run")}
+	l.(*logic).aiGatewayAdapter = legacyGateway
+
+	ctx := testutil.NewContext(t, userID)
+	resp, err := l.DestroyInstance(ctx, instanceID)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, modelinstance.InstanceStatusDeleted, resp.Status)
+	assert.Empty(t, legacyGateway.revokedKeyIDs)
+	assert.Equal(t, "sbx-llmgateway", deletedSandboxID)
+}
+
+func TestInlineDestroyTask_RevokesLegacyAIGatewayKey(t *testing.T) {
+	_, _ = setupEnqueueTestEnv(t)
+
+	var deletedSandboxID string
+	sandboxStub := &stubSandboxAdapterInline{
+		deleteFunc: func(_ context.Context, sandboxID string) error {
+			deletedSandboxID = sandboxID
+			return nil
+		},
+	}
+	restore := installInlineStubFactory(sandboxStub)
+	defer restore()
+
+	userID := "user-inline-destroy-ai-gateway"
+	instanceID := "ins-inline-destroy-ai-gateway"
+	keyID := "legacy-ai-gateway-key-id"
+
+	insertInlineInstance(t, instanceID, userID, modelinstance.InstanceStatusRunning, "sbx-ai-gateway")
+	require.NoError(t, resource.GormDB.Table(modelinstance.TableName).
+		Where(modelinstance.ColumnInstanceID+" = ?", instanceID).
+		Update(modelinstance.ColumnAiGatewayKeyID, keyID).Error)
+	require.NoError(t, gatewayroute.Record(
+		userID,
+		gatewayroute.GatewayAIGateway,
+		"subscription-ai-gateway",
+		"plan-ai-gateway",
+		gatewayroute.SourceDetectActiveSubscription,
+	))
+	insertInlineQuota(t, userID)
+
+	instanceDao := modelfactory.DefaultDaoFactory.InstanceDao(nil)
+	quotaDao := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(nil)
+	l := NewLogicForTest(instanceDao, quotaDao, sandboxStub, nil, nil, zap.NewNop(), "test-template")
+	legacyGateway := &stubLegacyAIGatewayAdapterInline{}
+	l.(*logic).aiGatewayAdapter = legacyGateway
+
+	ctx := testutil.NewContext(t, userID)
+	resp, err := l.DestroyInstance(ctx, instanceID)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, modelinstance.InstanceStatusDeleted, resp.Status)
+	assert.Equal(t, []string{keyID}, legacyGateway.revokedKeyIDs)
+	assert.Equal(t, "sbx-ai-gateway", deletedSandboxID)
 }

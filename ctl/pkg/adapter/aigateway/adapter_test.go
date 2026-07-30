@@ -3,6 +3,7 @@ package aigateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -61,7 +62,7 @@ func TestEnsureUserRequiresInternalToken(t *testing.T) {
 	}, nil)
 
 	_, err := adapter.EnsureUser(context.Background(), "usr_test", "")
-	if err == nil || err.Error() != "ai-gateway internal_service_token not configured" {
+	if !errors.Is(err, ErrAiGatewayNotConfigured) {
 		t.Fatalf("expected internal token error, got %v", err)
 	}
 }

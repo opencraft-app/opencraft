@@ -1,0 +1,144 @@
+{
+  "listen_addr": "0.0.0.0:8080",
+  "openai": [
+    {
+      "name": "llmgateway-regression",
+      "match": {
+        "match_type": "contains",
+        "message": {
+          "role": "user",
+          "content": "reply with regression-marker"
+        }
+      },
+      "response": {
+        "id": "chatcmpl-llmgw-regression",
+        "object": "chat.completion",
+        "created": 1790000000,
+        "model": "llmgw-mock-chat",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "cloud regression answer"
+            },
+            "finish_reason": "stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "platform-key-route",
+      "match": {
+        "match_type": "contains",
+        "message": {
+          "role": "user",
+          "content": "你好"
+        },
+        "headers": [
+          { "name": "Authorization", "value": "sk-mockllm-local", "match_type": "contains" }
+        ]
+      },
+      "response": {
+        "id": "chatcmpl-llmgw-platform",
+        "object": "chat.completion",
+        "created": 1783296000,
+        "model": "llmgw-mock-chat",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mockllm platform answer: 平台渠道已命中。"
+            },
+            "finish_reason": "stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "byok-provider-a-route",
+      "match": {
+        "match_type": "contains",
+        "message": {
+          "role": "user",
+          "content": "你好"
+        },
+        "headers": [
+          { "name": "Authorization", "value": "sk-mockllm-byok-a", "match_type": "contains" }
+        ]
+      },
+      "response": {
+        "id": "chatcmpl-llmgw-byok-a",
+        "object": "chat.completion",
+        "created": 1783296000,
+        "model": "llmgw-mock-chat",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mockllm byok-a answer: 用户私有 BYOK 渠道已命中。"
+            },
+            "finish_reason": "stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "byok-provider-b-route",
+      "match": {
+        "match_type": "contains",
+        "message": {
+          "role": "user",
+          "content": "你好"
+        },
+        "headers": [
+          { "name": "Authorization", "value": "sk-mockllm-byok-b", "match_type": "contains" }
+        ]
+      },
+      "response": {
+        "id": "chatcmpl-llmgw-byok-b",
+        "object": "chat.completion",
+        "created": 1783296000,
+        "model": "llmgw-mock-chat",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mockllm byok-b answer: 用户私有备用 BYOK 渠道已命中。"
+            },
+            "finish_reason": "stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "local-chat-hello-zh",
+      "match": {
+        "match_type": "contains",
+        "message": {
+          "role": "user",
+          "content": "你好"
+        }
+      },
+      "response": {
+        "id": "chatcmpl-llmgw-mock",
+        "object": "chat.completion",
+        "created": 1783296000,
+        "model": "llmgw-mock-chat",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "mockllm local answer: 你好，LLMGateway 的本地 OpenAI-compatible 链路可用。"
+            },
+            "finish_reason": "stop"
+          }
+        ]
+      }
+    }
+  ]
+}

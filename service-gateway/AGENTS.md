@@ -17,3 +17,5 @@
 - `generated/` 是本地生成物，不提交 Git
 
 <!-- retrigger 2026-06-16: MR !1591 (4365404cf28a) 触发的 promote-beijing-sandbox-service-gateway-service-gateway-4365404cf28a -> gitops MR !1593 因 service-gateway-platform.env 与 vibebase promote (fb6ea4434) 冲突 cannot_be_merged，build #716 stage-3 FAILED；本 commit 无业务改动，仅命中 .ci/service-gateway.yml paths 触发流水线基于最新 gitops 重新生成 promote 分支 + MR，让 trade-jifei-callback public route 真正落到 beijing-sandbox -->
+
+<!-- retrigger 2026-07-08: shprod service-gateway release after billing dependency rollout. -->

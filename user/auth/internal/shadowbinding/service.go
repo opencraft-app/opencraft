@@ -14,17 +14,21 @@ import (
 )
 
 type Options struct {
-	Enabled     bool
-	Now         func() time.Time
-	AuthCodeTTL time.Duration
+	Enabled        bool
+	Now            func() time.Time
+	AuthCodeTTL    time.Duration
+	AuthCodePrefix string
+	UserNamePrefix string
 }
 
 type Service struct {
-	store       Store
-	client      TencentCloudClient
-	enabled     bool
-	now         func() time.Time
-	authCodeTTL time.Duration
+	store          Store
+	client         TencentCloudClient
+	enabled        bool
+	now            func() time.Time
+	authCodeTTL    time.Duration
+	authCodePrefix string
+	userNamePrefix string
 }
 
 func New(store Store, client TencentCloudClient, opts Options) *Service {
@@ -36,10 +40,20 @@ func New(store Store, client TencentCloudClient, opts Options) *Service {
 	if ttl <= 0 {
 		ttl = 10 * time.Minute
 	}
-	return &Service{store: store, client: client, enabled: opts.Enabled, now: now, authCodeTTL: ttl}
+	return &Service{store: store, client: client, enabled: opts.Enabled, now: now, authCodeTTL: ttl, authCodePrefix: strings.Trim(strings.TrimSpace(opts.AuthCodePrefix), "."), userNamePrefix: strings.TrimSpace(opts.UserNamePrefix)}
 }
 
 func (s *Service) Enabled() bool { return s != nil && s.enabled }
+
+func (s *Service) Ready() bool {
+	if s == nil || !s.enabled || s.store == nil || s.client == nil {
+		return false
+	}
+	if reporter, ok := s.client.(interface{ Available() bool }); ok {
+		return reporter.Available()
+	}
+	return true
+}
 
 func (s *Service) GetBindingByUserID(ctx context.Context, userID string) (Binding, error) {
 	if s == nil || s.store == nil {
@@ -123,7 +137,7 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 		}
 	}
 
-	shadowUserName := shadowUserNameForUser(userID)
+	shadowUserName := s.shadowUserNameForUser(userID)
 	binding, err := s.store.SavePendingBinding(ctx, userID, shadowUserName, now)
 	if err != nil {
 		return Binding{}, err
@@ -176,7 +190,7 @@ func (s *Service) SyncPhoneChange(ctx context.Context, in PhoneChangeInput) (Bin
 			OldPhoneNumber:      strings.TrimSpace(in.OldPhone),
 			NewPhoneCountryCode: "86",
 			NewPhoneNumber:      strings.TrimSpace(in.NewPhone),
-			AuthCode:            authCode.Code,
+			AuthCode:            s.externalAuthCode(authCode.Code),
 			VerifyCode:          strings.TrimSpace(in.VerifyCode),
 		}); err != nil {
 			return existing, err
@@ -215,6 +229,12 @@ func (s *Service) SaveBasicAuth(ctx context.Context, in BasicAuthInput) error {
 	if binding.Status != StatusActive {
 		return errors.New("shadow binding is not active")
 	}
+	if binding.BasicAuthStatus == BasicAuthStatusSucceeded &&
+		binding.BasicAuthSourceAttemptID == strings.TrimSpace(in.SourceAttemptID) &&
+		binding.BasicAuthIdentityHash == strings.TrimSpace(in.IdentityHash) &&
+		binding.BasicAuthPhoneHash == strings.TrimSpace(in.PhoneHash) {
+		return nil
+	}
 	if !s.enabled || s.client == nil {
 		return errors.New("shadow binding client is not configured")
 	}
@@ -248,7 +268,7 @@ func (s *Service) SaveBasicAuth(ctx context.Context, in BasicAuthInput) error {
 		"auth_code_expires_at", authCode.ExpiresAt.UTC().Format(time.RFC3339),
 	)
 	if err := s.client.SaveBasicAuthForSaaS(ctx, CloudSaveBasicAuthInput{
-		AuthCode:    authCode.Code,
+		AuthCode:    s.externalAuthCode(authCode.Code),
 		AccountType: accountType,
 		Name:        name,
 		IDCard:      strings.TrimSpace(in.IDCard),
@@ -265,7 +285,14 @@ func (s *Service) SaveBasicAuth(ctx context.Context, in BasicAuthInput) error {
 		)
 		return err
 	}
-	if _, err := s.store.MarkBasicAuthSucceeded(ctx, userID, s.now()); err != nil {
+	if _, err := s.store.MarkBasicAuthSucceeded(
+		ctx,
+		userID,
+		strings.TrimSpace(in.SourceAttemptID),
+		strings.TrimSpace(in.IdentityHash),
+		strings.TrimSpace(in.PhoneHash),
+		s.now(),
+	); err != nil {
 		slog.WarnContext(ctx, "shadow binding basic auth sync state update failed",
 			"user_id", userID,
 			"shadow_user_name", binding.ShadowUserName,
@@ -287,7 +314,7 @@ func (s *Service) registerPhoneChangeAccount(ctx context.Context, userID string,
 	if !s.enabled || s.client == nil {
 		return Binding{}, errors.New("shadow binding client is not configured")
 	}
-	shadowUserName := shadowUserNameForUser(userID)
+	shadowUserName := s.shadowUserNameForUser(userID)
 	existing, getErr := s.store.GetBindingByUserID(ctx, userID)
 	if getErr != nil {
 		return Binding{}, getErr
@@ -341,6 +368,24 @@ func (s *Service) IssueAuthCode(ctx context.Context, userID string, purpose stri
 	return s.store.IssueAuthCode(ctx, strings.TrimSpace(userID), strings.TrimSpace(purpose), s.authCodeTTL, s.now())
 }
 
+func (s *Service) IssueExternalAuthCode(ctx context.Context, userID string, purpose string) (AuthCode, error) {
+	code, err := s.IssueAuthCode(ctx, userID, purpose)
+	if err != nil {
+		return AuthCode{}, err
+	}
+	code.Code = s.externalAuthCode(code.Code)
+	return code, nil
+}
+
+// externalAuthCode decorates the opaque code only while it travels through
+// TencentCloud. The raw code remains the value persisted and consumed locally.
+func (s *Service) externalAuthCode(code string) string {
+	if s == nil || s.authCodePrefix == "" {
+		return code
+	}
+	return s.authCodePrefix + "." + code
+}
+
 func (s *Service) ConsumeAuthCode(ctx context.Context, code string) (AuthCode, error) {
 	if s == nil || s.store == nil {
 		return AuthCode{}, ErrNotFound
@@ -354,6 +399,10 @@ func shadowUserNameForUser(userID string) string {
 	number := new(big.Int).SetBytes(sum[:])
 	number.Mod(number, big.NewInt(10_000_000_000))
 	return fmt.Sprintf("u%010d", number.Int64())
+}
+
+func (s *Service) shadowUserNameForUser(userID string) string {
+	return s.userNamePrefix + shadowUserNameForUser(userID)
 }
 
 func newAuthCode() (string, error) {

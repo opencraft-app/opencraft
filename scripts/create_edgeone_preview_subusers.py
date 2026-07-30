@@ -25,6 +25,7 @@ import stat
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +53,16 @@ class UserResult:
     access_key_id: str
     secret_access_key: str
     attached_policy_ids: list[int]
+
+
+def validate_command(command: list[str]) -> list[str]:
+    if not command or not all(isinstance(part, str) and part for part in command):
+        raise ValueError("command must be a non-empty list of non-empty strings")
+    return command
+
+
+def run_command(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[Any]:
+    return subprocess.run(validate_command(command), **kwargs)  # nosemgrep: dangerous-subprocess-use-audit
 
 
 def parse_args() -> argparse.Namespace:
@@ -98,7 +109,7 @@ def run_tccli(secret_id: str, secret_key: str, args: list[str]) -> dict[str, Any
         "--secretKey",
         secret_key,
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = run_command(cmd, capture_output=True, text=True)
     stdout = proc.stdout.strip()
     stderr = proc.stderr.strip()
     if proc.returncode != 0:
@@ -273,6 +284,10 @@ def write_secure_json(path: Path, data: Any) -> None:
     os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
 
 
+def utc_timestamp() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def main() -> int:
     args = parse_args()
     secret_id = env_or_die("TENCENTCLOUD_SECRET_ID")
@@ -326,7 +341,7 @@ def main() -> int:
     write_secure_json(
         output_path,
         {
-            "generated_at": os.popen("date -u '+%Y-%m-%dT%H:%M:%SZ'").read().strip(),
+            "generated_at": utc_timestamp(),
             "policy_ids": policy_ids,
             "results": [r.__dict__ for r in results],
         },

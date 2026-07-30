@@ -34,7 +34,7 @@ def run_image_gate(
         "set -euo pipefail\n"
         'source "$1/.ci/init.sh"\n'
         'ci_set_registry_credentials "$2"\n'
-        'python3 "$3/verify_image_exists.py" --image "$4" --format dotenv\n'
+        'python3 "$3/verify_image_exists.py" --image "$4" --format dotenv --retries 60 --retry-interval-seconds 5\n'
     )
     result = subprocess.run(
         ["bash", "-c", script, "bash", str(runtime_repo_root), env, str(runtime_command_dir), image],

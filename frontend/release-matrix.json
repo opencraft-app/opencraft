@@ -12,6 +12,7 @@
         "CLOUDFLARE_ACCOUNT_ID"
       ],
       "authApiBaseUrl": "https://lightclaw.tech",
+      "appEnv": "staging",
       "outputDir": "out",
       "observability": {
         "aegis": {
@@ -33,6 +34,7 @@
         "CLOUDFLARE_ACCOUNT_ID"
       ],
       "authApiBaseUrl": "https://api-sandbox-kr-1.lightclaw.tech",
+      "appEnv": "staging",
       "outputDir": "out",
       "deployEnv": {
         "NEXT_PUBLIC_PAID_BILLING_ENABLED": "true",
@@ -60,6 +62,7 @@
         "EDGEONE_API_TOKEN"
       ],
       "authApiBaseUrl": "https://api.lightvela.com",
+      "appEnv": "production",
       "siteUrl": "https://lightvela.com",
       "outputDir": "out",
       "observability": {
@@ -72,6 +75,9 @@
       "deployEnv": {
         "EDGEONE_PAGES_AREA": "global",
         "EDGEONE_PAGES_ENV": "production",
+        "NEXT_PUBLIC_WECHAT_PAY_AUTH_BASE_URL": "https://api.lightvela.com",
+        "NEXT_PUBLIC_WX_BUY_HOST": "buy.cloud.tencent.com",
+        "NEXT_PUBLIC_WX_PAY_PRODUCT_ID": "lightvela_pro_v1",
         "NEXT_VERSION_STATIC_ASSETS": "1"
       }
     },
@@ -87,6 +93,7 @@
         "POSTHOG_PROJECT_TOKEN"
       ],
       "authApiBaseUrl": "https://api.lightvela.ai",
+      "appEnv": "production",
       "siteUrl": "https://lightvela.ai",
       "outputDir": "out",
       "observability": {

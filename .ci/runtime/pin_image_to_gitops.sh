@@ -45,6 +45,7 @@ env_display_name() {
     beijing-sandbox) printf '北京测试' ;;
     beijing-sandbox-2) printf '北京测试2' ;;
     devcloud-dep) printf 'DevCloud dep' ;;
+    beijing-llmgateway) printf '北京 LLMGateway 测试' ;;
     sandbox-bj-*) printf '北京 Playground %s' "$1" ;;
     sandbox-kr-*) printf '韩国 Playground %s' "$1" ;;
     shprod) printf '上海正式' ;;

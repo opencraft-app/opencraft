@@ -28,6 +28,106 @@ routes:
 	}
 }
 
+func TestLoadAppliesRouteBaseURLOverride(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BASE_URL", "https://api-sandbox-kr-1.lightclaw.tech")
+	t.Setenv("CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_JP_BASE_URL", "https://api-sandbox-kr-1.lightclaw.tech")
+	t.Setenv("CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_SG_BASE_URL", "https://api-sandbox-kr-1.lightclaw.tech")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+routes:
+  - id: jifei-callback
+    upstream:
+      base_url: "https://lightclaw.tech"
+  - id: jifei-callback-jp
+    upstream:
+      base_url: "https://kr.lightclaw.tech"
+  - id: jifei-callback-sg
+    upstream:
+      base_url: "https://api.lightvela.ai"
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := cfg.Routes[0].Upstream.BaseURL; got != "https://api-sandbox-kr-1.lightclaw.tech" {
+		t.Fatalf("route base_url override = %q", got)
+	}
+	if got := cfg.Routes[1].Upstream.BaseURL; got != "https://api-sandbox-kr-1.lightclaw.tech" {
+		t.Fatalf("regional route base_url override = %q", got)
+	}
+	if got := cfg.Routes[2].Upstream.BaseURL; got != "https://api-sandbox-kr-1.lightclaw.tech" {
+		t.Fatalf("singapore route base_url override = %q", got)
+	}
+}
+
+func TestLoadAppliesRouteHostHeaderOverride(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_ROUTE_JIFEI_TEST_HOST_HEADER", "test.trade-intl.billing.tencentyun.com")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+backends:
+  - alias: jifei-test
+    upstream:
+      base_url: "http://9.139.137.40"
+      headers:
+        Host: trade.itd.com
+routes:
+  - id: jifei-test
+    upstream:
+      backend: jifei-test
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	upstream, err := cfg.ResolveUpstream("jifei-test", cfg.Routes[0].Upstream)
+	if err != nil {
+		t.Fatalf("resolve upstream: %v", err)
+	}
+	if got := upstream.Headers["Host"]; got != "test.trade-intl.billing.tencentyun.com" {
+		t.Fatalf("route Host override = %q", got)
+	}
+}
+
+func TestLoadAppliesBackendBaseURLOverride(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_BASE_URL", "https://api.lightvela.com")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+backends:
+  - alias: lightclaw-auth-beijing-sandbox
+    env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+routes:
+  - id: tencentcloud-account-callback-beijing-sandbox
+    upstream:
+      backend: lightclaw-auth-beijing-sandbox
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	upstream, err := cfg.ResolveUpstream("tencentcloud-account-callback-beijing-sandbox", cfg.Routes[0].Upstream)
+	if err != nil {
+		t.Fatalf("resolve upstream: %v", err)
+	}
+	if got := upstream.BaseURL; got != "https://api.lightvela.com" {
+		t.Fatalf("backend base_url override = %q", got)
+	}
+	if got := cfg.Routes[0].Upstream.Backend; got != "lightclaw-auth-beijing-sandbox" {
+		t.Fatalf("route backend = %q", got)
+	}
+}
+
 func TestExampleConfigLoads(t *testing.T) {
 	t.Setenv("CLOUDLADDER_PAYMENT_HMAC_SECRET", "test-secret")
 	cfg, err := Load("../../config.example.yaml")
@@ -35,29 +135,30 @@ func TestExampleConfigLoads(t *testing.T) {
 		t.Fatalf("load example config: %v", err)
 	}
 	wantRoutes := map[string]bool{
-		"billing-trade-cn-test":                         false,
-		"billing-trade-cn-pre":                          false,
-		"billing-trade-cn-prod":                         false,
-		"billing-trade-intl-test":                       false,
-		"billing-trade-intl-pre":                        false,
-		"billing-trade-intl-prod":                       false,
-		"tcapi-account-cn-dev":                          false,
-		"tcapi-billing-cn-dev":                          false,
-		"tcapi-account-cn-test":                         false,
-		"tcapi-cam-cn-test":                             false,
-		"tcapi-sts-cn-test":                             false,
-		"tcapi-account-cn-prod":                         false,
-		"tcapi-cam-cn-prod":                             false,
-		"tcapi-sts-cn-prod":                             false,
-		"jifei-test":                                    false,
-		"shadow-account-test":                           false,
-		"shadow-cam-test":                               false,
-		"shadow-sts-test":                               false,
-		"shadow-account-prod":                           false,
-		"shadow-cam-prod":                               false,
-		"shadow-sts-prod":                               false,
-		"shadow-billing-api-test":                       false,
-		"tencentcloud-account-callback-beijing-sandbox": false,
+		"billing-trade-cn-test":                false,
+		"billing-trade-cn-pre":                 false,
+		"billing-trade-cn-prod":                false,
+		"billing-trade-intl-test":              false,
+		"billing-trade-intl-pre":               false,
+		"billing-trade-intl-prod":              false,
+		"tcapi-account-cn-dev":                 false,
+		"tcapi-billing-cn-dev":                 false,
+		"tcapi-account-cn-test":                false,
+		"tcapi-cam-cn-test":                    false,
+		"tcapi-sts-cn-test":                    false,
+		"tcapi-account-cn-prod":                false,
+		"tcapi-cam-cn-prod":                    false,
+		"tcapi-sts-cn-prod":                    false,
+		"jifei-test":                           false,
+		"shadow-account-test":                  false,
+		"shadow-cam-test":                      false,
+		"shadow-sts-test":                      false,
+		"shadow-account-prod":                  false,
+		"shadow-cam-prod":                      false,
+		"shadow-sts-prod":                      false,
+		"shadow-billing-api-test":              false,
+		"tencentcloud-account-callback-bjsbx":  false,
+		"tencentcloud-account-callback-shprod": false,
 	}
 	for _, route := range cfg.Routes {
 		if _, ok := wantRoutes[route.ID]; ok {
@@ -78,8 +179,10 @@ func TestExampleConfigLoads(t *testing.T) {
 				wantBackend = "tcapi-sts-cn-prod"
 			case "shadow-billing-api-test":
 				wantBackend = "tcapi-billing-cn-dev"
-			case "tencentcloud-account-callback-beijing-sandbox":
-				wantBackend = "lightclaw-auth-beijing-sandbox"
+			case "tencentcloud-account-callback-bjsbx":
+				wantBackend = "lightclaw-auth-bjsbx"
+			case "tencentcloud-account-callback-shprod":
+				wantBackend = "lightclaw-auth-shprod"
 			}
 			if route.Upstream.Backend != wantBackend {
 				t.Fatalf("route %q should use matching backend alias, got %q", route.ID, route.Upstream.Backend)
@@ -96,6 +199,56 @@ func TestExampleConfigLoads(t *testing.T) {
 	}
 	if len(cfg.External) != 1 || cfg.External[0].Path != "/internal/tencentcloud/account" {
 		t.Fatalf("example config missing TencentCloud callback external route: %+v", cfg.External)
+	}
+	if got := cfg.External[0].AuthCodeRoutes; len(got) != 2 || got[0].Prefix != "bjsbx." || got[1].Prefix != "shprod." {
+		t.Fatalf("example config missing auth-code callback routes: %+v", got)
+	}
+	if got := cfg.External[0].UserIDRoutes; len(got) != 1 || got[0].UserID != "u4912323654" || got[0].RouteID != "tencentcloud-account-callback-bjsbx" {
+		t.Fatalf("example config missing legacy user-id callback route: %+v", got)
+	}
+	if got := cfg.External[0].UserIDPrefixRoutes; len(got) != 1 || got[0].Prefix != "bjsbx_" || got[0].RouteID != "tencentcloud-account-callback-bjsbx" {
+		t.Fatalf("example config missing user-id prefix callback route: %+v", got)
+	}
+}
+
+func TestExampleConfigIncludesRegionalJifeiCallbacks(t *testing.T) {
+	cfg, err := Load("../../config.example.yaml")
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+
+	wantBaseURL := map[string]string{
+		"jifei-callback-bj":  "https://lightclaw.tech",
+		"jifei-callback-sh":  "https://api.lightvela.com",
+		"jifei-callback-gz":  "https://lightclaw.tech",
+		"jifei-callback-cd":  "https://lightclaw.tech",
+		"jifei-callback-nj":  "https://lightclaw.tech",
+		"jifei-callback-hk":  "https://kr.lightclaw.tech",
+		"jifei-callback-jp":  "https://kr.lightclaw.tech",
+		"jifei-callback-kr":  "https://kr.lightclaw.tech",
+		"jifei-callback-jkt": "https://kr.lightclaw.tech",
+		"jifei-callback-sg":  "https://api.lightvela.ai",
+		"jifei-callback-th":  "https://kr.lightclaw.tech",
+	}
+
+	for _, route := range cfg.Routes {
+		want, ok := wantBaseURL[route.ID]
+		if !ok {
+			continue
+		}
+		if route.Condition != `request.method == "POST"` {
+			t.Fatalf("route %q condition = %q", route.ID, route.Condition)
+		}
+		if got := route.Upstream.BaseURL; got != want {
+			t.Fatalf("route %q base_url = %q, want %q", route.ID, got, want)
+		}
+		if len(route.Upstream.AllowedMethods) != 1 || route.Upstream.AllowedMethods[0] != "POST" {
+			t.Fatalf("route %q allowed_methods = %#v", route.ID, route.Upstream.AllowedMethods)
+		}
+		delete(wantBaseURL, route.ID)
+	}
+	for routeID := range wantBaseURL {
+		t.Fatalf("example config missing regional callback route %q", routeID)
 	}
 }
 

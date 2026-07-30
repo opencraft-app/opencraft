@@ -11,6 +11,7 @@ import (
 
 	paigateway "ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	pllmgateway "ctl/pkg/adapter/llmgateway"
 	popenclawgateway "ctl/pkg/adapter/openclawgateway"
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/config"
@@ -70,6 +71,8 @@ type Logic interface {
 	GetInstanceLogs(ctx pctx.Context, instanceID string, start *int64, limit *int32) (*psandbox.SandboxLogs, error)
 	ExecDebugCommand(ctx pctx.Context, instanceID string, commandType string, runAsUser string) (*transport.ExecDebugCommandResponse, error)
 	StreamDebugCommand(ctx pctx.Context, instanceID string, commandType string, runAsUser string, onEvent func(transport.ExecDebugCommandStreamEvent) error) error
+	ExecDebugCommandWithBackend(ctx pctx.Context, instanceID string, commandType string, runAsUser string, executionBackend string) (*transport.ExecDebugCommandResponse, error)
+	StreamDebugCommandWithBackend(ctx pctx.Context, instanceID string, commandType string, runAsUser string, executionBackend string, onEvent func(transport.ExecDebugCommandStreamEvent) error) error
 	GetWorkspaceFiles(ctx pctx.Context, instanceID string, fileName string) (*transport.WorkspaceFilesResponse, error)
 	UpdateWorkspaceFile(ctx pctx.Context, instanceID string, req *transport.UpdateWorkspaceFileRequest) (*transport.WorkspaceFileResponse, error)
 	UploadWorkspaceAttachment(ctx pctx.Context, instanceID string, req *transport.UploadWorkspaceAttachmentRequest) (*transport.WorkspaceUploadResponse, error)
@@ -104,24 +107,27 @@ type Logic interface {
 }
 
 type logic struct {
-	instanceDao            modelinstance.Dao
-	taskDao                taskmodel.Dao
-	channelLoginSessionDao channelloginsession.Dao
-	quotaDao               quota.Dao
-	sandboxAdapter         psandbox.Adapter
-	aiGatewayAdapter       paigateway.Adapter
-	openclawGatewayAdapter popenclawgateway.Adapter
-	producer               mq.Producer
-	operationHistoryDao    operationhistory.Dao
-	objectIdLogic          objectid.Logic
-	logger                 *zap.Logger
-	defaultTemplateClass   string
-	defaultTemplate        string
-	defaultSKUID           string
-	candidateTemplates     []string
-	executeTasksInline     bool
-	weixinHub              *weixinLoginHub
-	churnGuard             *createChurnGuard
+	instanceDao                  modelinstance.Dao
+	passLister                   userPassLister
+	taskDao                      taskmodel.Dao
+	channelLoginSessionDao       channelloginsession.Dao
+	quotaDao                     quota.Dao
+	sandboxAdapter               psandbox.Adapter
+	aiGatewayAdapter             paigateway.Adapter
+	llmGatewayAdapter            pllmgateway.Adapter
+	openclawGatewayAdapter       popenclawgateway.Adapter
+	producer                     mq.Producer
+	operationHistoryDao          operationhistory.Dao
+	objectIdLogic                objectid.Logic
+	logger                       *zap.Logger
+	defaultTemplateClass         string
+	defaultTemplate              string
+	defaultSKUID                 string
+	candidateTemplates           []string
+	executeTasksInline           bool
+	weixinHub                    *weixinLoginHub
+	churnGuard                   *createChurnGuard
+	legacyPassEntitlementEnsurer func(stdctx.Context, string, time.Time) error
 }
 
 func NewLogic() Logic {
@@ -134,11 +140,13 @@ func NewLogic() Logic {
 	defaultTemplate := defaultTemplateIDFromConfig(instanceConf)
 	return &logic{
 		instanceDao:            modelfactory.DefaultDaoFactory.InstanceDao(nil),
+		passLister:             modelfactory.DefaultDaoFactory.PassDao(nil),
 		channelLoginSessionDao: modelfactory.DefaultDaoFactory.ChannelLoginSessionDao(nil),
 		taskDao:                modelfactory.DefaultDaoFactory.TaskDao(nil),
 		quotaDao:               modelfactory.DefaultDaoFactory.UserResourceQuotaDao(nil),
 		sandboxAdapter:         adapterfactory.DefaultAdapterFactory.SandboxAdapter(),
 		aiGatewayAdapter:       adapterfactory.DefaultAdapterFactory.AiGatewayAdapter(),
+		llmGatewayAdapter:      adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter(),
 		openclawGatewayAdapter: adapterfactory.DefaultAdapterFactory.OpenClawGatewayAdapter(),
 		producer:               defaultProducer(),
 		operationHistoryDao:    modelfactory.DefaultDaoFactory.OperationHistoryDao(nil),
@@ -154,15 +162,15 @@ func NewLogic() Logic {
 	}
 }
 
-func NewLogicForTest(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxAdapter psandbox.Adapter, aiGatewayAdapter paigateway.Adapter, opHistoryDao operationhistory.Dao, logger *zap.Logger, defaultTemplate string, candidateTemplates ...string) Logic {
+func NewLogicForTest(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxAdapter psandbox.Adapter, aiGatewayAdapter pllmgateway.Adapter, opHistoryDao operationhistory.Dao, logger *zap.Logger, defaultTemplate string, candidateTemplates ...string) Logic {
 	return newLogicForTest(instanceDao, quotaDao, sandboxAdapter, aiGatewayAdapter, opHistoryDao, logger, "", defaultTemplate, candidateTemplates...)
 }
 
-func NewLogicForTestWithTemplateClass(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxAdapter psandbox.Adapter, aiGatewayAdapter paigateway.Adapter, opHistoryDao operationhistory.Dao, logger *zap.Logger, templateClassID string, defaultTemplate string, candidateTemplates ...string) Logic {
+func NewLogicForTestWithTemplateClass(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxAdapter psandbox.Adapter, aiGatewayAdapter pllmgateway.Adapter, opHistoryDao operationhistory.Dao, logger *zap.Logger, templateClassID string, defaultTemplate string, candidateTemplates ...string) Logic {
 	return newLogicForTest(instanceDao, quotaDao, sandboxAdapter, aiGatewayAdapter, opHistoryDao, logger, templateClassID, defaultTemplate, candidateTemplates...)
 }
 
-func newLogicForTest(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxAdapter psandbox.Adapter, aiGatewayAdapter paigateway.Adapter, opHistoryDao operationhistory.Dao, logger *zap.Logger, templateClassID string, defaultTemplate string, candidateTemplates ...string) Logic {
+func newLogicForTest(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxAdapter psandbox.Adapter, aiGatewayAdapter pllmgateway.Adapter, opHistoryDao operationhistory.Dao, logger *zap.Logger, templateClassID string, defaultTemplate string, candidateTemplates ...string) Logic {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -173,7 +181,7 @@ func newLogicForTest(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxA
 		taskDao:                modelfactory.DefaultDaoFactory.TaskDao(nil),
 		quotaDao:               quotaDao,
 		sandboxAdapter:         sandboxAdapter,
-		aiGatewayAdapter:       aiGatewayAdapter,
+		llmGatewayAdapter:      aiGatewayAdapter,
 		// Mia: test helper should not accidentally inherit a half-dead global Redis client.
 		// Inline task execution already covers the business path we care about here.
 		producer:             noopProducer{},
@@ -826,10 +834,12 @@ func (l *logic) StartTerminalSession(ctx pctx.Context, instanceID string) (*tran
 	if strings.TrimSpace(instanceID) == "" {
 		return nil, errcode.ErrInstanceInvalidParam
 	}
-
 	entity, err := l.instanceDao.GetByInstanceID(ctx, instanceID)
 	if err != nil {
 		return nil, err
+	}
+	if err := l.requireActivePass(ctx); err != nil {
+		return nil, activePassGuardError("start terminal session", err)
 	}
 	if strings.TrimSpace(entity.SandboxId) == "" {
 		return nil, errcode.ErrSandboxNotFound
@@ -1025,7 +1035,6 @@ func (l *logic) ResumeInstance(ctx pctx.Context, instanceID string, req *transpo
 	if !isValidInstanceTimeout(timeout) {
 		return nil, errcode.ErrInstanceInvalidParam
 	}
-
 	entity, err := l.instanceDao.GetByInstanceID(ctx, instanceID)
 	if err != nil {
 		return nil, err
@@ -1033,11 +1042,40 @@ func (l *logic) ResumeInstance(ctx pctx.Context, instanceID string, req *transpo
 	if entity.Status != modelinstance.InstanceStatusPaused {
 		return nil, errcode.ErrInstanceStatusInvalid
 	}
+	if err := l.requireActivePass(ctx); err != nil {
+		return nil, activePassGuardError("resume instance", err)
+	}
+	if err := l.instanceDao.TransitionStatus(
+		ctx,
+		entity.Id,
+		[]string{modelinstance.InstanceStatusPaused},
+		modelinstance.InstanceStatusResuming,
+	); err != nil {
+		return nil, err
+	}
+	entity.Status = modelinstance.InstanceStatusResuming
+	if err := l.requireActivePass(ctx); err != nil {
+		l.rollbackResumingInstance(ctx, entity)
+		return nil, activePassGuardError("resume instance", err)
+	}
 
 	timeoutAt := time.Now().UTC().Add(time.Duration(timeout) * time.Second)
 	sandboxReq := &psandbox.ResumeSandboxRequest{Timeout: &timeout}
 	if err := l.resumeSandbox(ctx, entity, sandboxReq); err != nil {
+		l.rollbackResumingInstance(ctx, entity)
 		return nil, err
+	}
+	if err := l.requireActivePass(ctx); err != nil {
+		if pauseErr := l.sandboxAdapter.PauseSandbox(ctx, entity.SandboxId); pauseErr != nil {
+			l.logger.Error("compensating sandbox pause failed after pass became inactive",
+				zap.Error(pauseErr),
+				zap.String("instance_id", entity.InstanceId),
+				zap.String("sandbox_id", entity.SandboxId),
+			)
+			return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "compensating pause after pass check: %v", pauseErr)
+		}
+		l.rollbackResumingInstance(ctx, entity)
+		return nil, activePassGuardError("resume instance", err)
 	}
 
 	updates := map[string]interface{}{
@@ -1047,7 +1085,7 @@ func (l *logic) ResumeInstance(ctx pctx.Context, instanceID string, req *transpo
 	if err := l.instanceDao.UpdateWithStatusPrecondition(
 		ctx,
 		entity.Id,
-		[]string{modelinstance.InstanceStatusPaused},
+		[]string{modelinstance.InstanceStatusResuming},
 		updates,
 	); err != nil {
 		l.logger.Error("persist running state failed after sandbox resume",
@@ -1055,12 +1093,40 @@ func (l *logic) ResumeInstance(ctx pctx.Context, instanceID string, req *transpo
 			zap.String("instance_id", entity.InstanceId),
 			zap.String("sandbox_id", entity.SandboxId),
 		)
+		if pauseErr := l.sandboxAdapter.PauseSandbox(ctx, entity.SandboxId); pauseErr == nil {
+			l.rollbackResumingInstance(ctx, entity)
+		} else {
+			l.logger.Error("compensating sandbox pause failed after resume persistence error",
+				zap.Error(pauseErr),
+				zap.String("instance_id", entity.InstanceId),
+				zap.String("sandbox_id", entity.SandboxId),
+			)
+		}
 		return nil, err
 	}
 	entity.Status = modelinstance.InstanceStatusRunning
 	entity.TimeoutAt = timeoutAt
 
 	return toInstanceResponse(entity, true), nil
+}
+
+func (l *logic) rollbackResumingInstance(ctx pctx.Context, entity *modelinstance.Entity) {
+	if entity == nil || entity.Status != modelinstance.InstanceStatusResuming {
+		return
+	}
+	if err := l.instanceDao.TransitionStatus(
+		ctx,
+		entity.Id,
+		[]string{modelinstance.InstanceStatusResuming},
+		modelinstance.InstanceStatusPaused,
+	); err != nil {
+		l.logger.Error("rollback resuming instance failed",
+			zap.Error(err),
+			zap.String("instance_id", entity.InstanceId),
+		)
+		return
+	}
+	entity.Status = modelinstance.InstanceStatusPaused
 }
 
 func (l *logic) SetInstanceTimeout(ctx pctx.Context, instanceID string, req *transport.SetTimeoutRequest) (resp *transport.InstanceResponse, retErr error) {
@@ -1077,7 +1143,6 @@ func (l *logic) SetInstanceTimeout(ctx pctx.Context, instanceID string, req *tra
 	if req == nil || req.Timeout == nil || !isValidInstanceTimeout(*req.Timeout) {
 		return nil, errcode.ErrInstanceInvalidParam
 	}
-
 	entity, err := l.instanceDao.GetByInstanceID(ctx, instanceID)
 	if err != nil {
 		return nil, err
@@ -1086,6 +1151,9 @@ func (l *logic) SetInstanceTimeout(ctx pctx.Context, instanceID string, req *tra
 	case modelinstance.InstanceStatusRunning, modelinstance.InstanceStatusPaused:
 	default:
 		return nil, errcode.ErrInstanceStatusInvalid
+	}
+	if err := l.requireActivePass(ctx); err != nil {
+		return nil, activePassGuardError("set instance timeout", err)
 	}
 
 	timeoutAt := time.Now().UTC().Add(time.Duration(*req.Timeout) * time.Second)
@@ -1657,6 +1725,18 @@ var allowedDebugRunAsUsers = map[string]struct{}{
 	"agentuser": {},
 }
 
+const debugExecutionBackendTAT = "tat"
+
+func normalizeDebugExecutionBackend(raw string) (string, error) {
+	backend := strings.ToLower(strings.TrimSpace(raw))
+	switch backend {
+	case "", debugExecutionBackendTAT:
+		return backend, nil
+	default:
+		return "", errcode.Wrap(errcode.ErrInstanceInvalidParam, "execution_backend %q is not supported", raw)
+	}
+}
+
 func normalizeDebugRunAsUser(raw string) (string, error) {
 	user := strings.TrimSpace(raw)
 	if user == "" {
@@ -1686,13 +1766,6 @@ func (l *logic) prepareDebugCommand(ctx pctx.Context, instanceID string, command
 	if err != nil {
 		return nil, "", "", "", nil, 0, err
 	}
-	command := spec.bash
-	var processEnv map[string]string
-	if normalizedRunAsUser != "" {
-		command = shellUserCommand(normalizedRunAsUser, command)
-		processEnv = shellUserEnv(normalizedRunAsUser)
-	}
-
 	entity, err := l.instanceDao.GetByInstanceID(ctx, instanceID)
 	if err != nil {
 		return nil, "", "", "", nil, 0, err
@@ -1700,7 +1773,10 @@ func (l *logic) prepareDebugCommand(ctx pctx.Context, instanceID string, command
 	if entity.Status != modelinstance.InstanceStatusRunning {
 		return nil, "", "", "", nil, 0, errcode.Wrap(errcode.ErrDebugNotSupported, "instance status is %s, expected running", entity.Status)
 	}
-	return entity, commandKind, command, normalizedRunAsUser, processEnv, spec.timeoutSec, nil
+	if err := l.requireActivePass(ctx); err != nil {
+		return nil, "", "", "", nil, 0, activePassGuardError("execute debug command", err)
+	}
+	return entity, commandKind, spec.bash, normalizedRunAsUser, nil, spec.timeoutSec, nil
 }
 
 func (e *debugExecError) Error() string {
@@ -1754,9 +1830,37 @@ func newDebugExecError(cause error, result *psandbox.ExecCommandResult, runAsUse
 
 // ExecDebugCommand executes either a built-in debug alias or a raw bash command on the instance's sandbox via envd process stream.
 func (l *logic) ExecDebugCommand(ctx pctx.Context, instanceID string, commandType string, runAsUser string) (*transport.ExecDebugCommandResponse, error) {
+	return l.ExecDebugCommandWithBackend(ctx, instanceID, commandType, runAsUser, "")
+}
+
+func (l *logic) ExecDebugCommandWithBackend(ctx pctx.Context, instanceID string, commandType string, runAsUser string, executionBackend string) (*transport.ExecDebugCommandResponse, error) {
+	backend, err := normalizeDebugExecutionBackend(executionBackend)
+	if err != nil {
+		return nil, err
+	}
 	entity, commandKind, command, normalizedRunAsUser, processEnv, timeoutSec, err := l.prepareDebugCommand(ctx, instanceID, commandType, runAsUser)
 	if err != nil {
 		return nil, err
+	}
+	if backend == debugExecutionBackendTAT {
+		if normalizedRunAsUser == "" {
+			normalizedRunAsUser = "agentuser"
+		}
+		result, execErr := l.execSandboxPtyCommandStream(ctx, entity.SandboxId, commandKind, command, normalizedRunAsUser, timeoutSec, nil)
+		if execErr != nil {
+			if errors.Is(execErr, errcode.ErrSandboxTimeout) {
+				return nil, newDebugExecError(errcode.ErrDebugExecTimeout, result, normalizedRunAsUser)
+			}
+			return nil, newDebugExecError(errcode.Wrap(errcode.ErrDebugExecFailed, "%v", execErr), result, normalizedRunAsUser)
+		}
+		if !sandboxCommandSucceeded(result) {
+			return nil, newDebugExecError(errcode.Wrap(errcode.ErrDebugExecFailed, "%s", sandboxCommandFailureDetail(result)), result, normalizedRunAsUser)
+		}
+		return buildExecDebugCommandResponse(result, normalizedRunAsUser), nil
+	}
+	if normalizedRunAsUser != "" {
+		command = shellUserCommand(normalizedRunAsUser, command)
+		processEnv = shellUserEnv(normalizedRunAsUser)
 	}
 
 	result, err := l.execSandboxProcessCommand(ctx, entity.SandboxId, commandKind, &psandbox.ProcessStartRequest{
@@ -1782,9 +1886,27 @@ func (l *logic) ExecDebugCommand(ctx pctx.Context, instanceID string, commandTyp
 // stdout/stderr chunks through the provided callback. It keeps synchronous JSON
 // semantics unchanged by existing ExecDebugCommand while enabling SSE clients.
 func (l *logic) StreamDebugCommand(ctx pctx.Context, instanceID string, commandType string, runAsUser string, onEvent func(transport.ExecDebugCommandStreamEvent) error) error {
+	return l.StreamDebugCommandWithBackend(ctx, instanceID, commandType, runAsUser, "", onEvent)
+}
+
+func (l *logic) StreamDebugCommandWithBackend(ctx pctx.Context, instanceID string, commandType string, runAsUser string, executionBackend string, onEvent func(transport.ExecDebugCommandStreamEvent) error) error {
+	backend, err := normalizeDebugExecutionBackend(executionBackend)
+	if err != nil {
+		return err
+	}
 	entity, _, command, normalizedRunAsUser, processEnv, timeoutSec, err := l.prepareDebugCommand(ctx, instanceID, commandType, runAsUser)
 	if err != nil {
 		return err
+	}
+	if backend == debugExecutionBackendTAT {
+		if normalizedRunAsUser == "" {
+			normalizedRunAsUser = "agentuser"
+		}
+		return l.streamDebugCommandWithPty(ctx, entity.SandboxId, command, normalizedRunAsUser, timeoutSec, onEvent)
+	}
+	if normalizedRunAsUser != "" {
+		command = shellUserCommand(normalizedRunAsUser, command)
+		processEnv = shellUserEnv(normalizedRunAsUser)
 	}
 
 	runCtx, cancel := stdctx.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
@@ -1916,6 +2038,73 @@ func (l *logic) StreamDebugCommand(ctx pctx.Context, instanceID string, commandT
 	return nil
 }
 
+func (l *logic) streamDebugCommandWithPty(
+	ctx pctx.Context,
+	sandboxID, command, runAsUser string,
+	timeoutSec int,
+	onEvent func(transport.ExecDebugCommandStreamEvent) error,
+) error {
+	terminalEmitted := false
+	result, err := l.execSandboxPtyCommandStream(
+		ctx,
+		sandboxID,
+		"debug_tat",
+		command,
+		runAsUser,
+		timeoutSec,
+		func(event psandbox.PtyExecStreamEvent, current *psandbox.ExecCommandResult) error {
+			switch event.Type {
+			case "started":
+				if onEvent == nil {
+					return nil
+				}
+				return onEvent(transport.ExecDebugCommandStreamEvent{
+					Type:         "started",
+					InvocationID: current.InvocationID,
+					CommandID:    current.CommandID,
+					RunAsUser:    runAsUser,
+				})
+			case "output":
+				if onEvent == nil || event.Chunk == "" {
+					return nil
+				}
+				return onEvent(transport.ExecDebugCommandStreamEvent{
+					Type:         "stdout",
+					Stream:       "stdout",
+					Chunk:        event.Chunk,
+					InvocationID: current.InvocationID,
+					CommandID:    current.CommandID,
+					RunAsUser:    runAsUser,
+				})
+			case "finished", "error":
+				terminalEmitted = true
+				if onEvent == nil {
+					return nil
+				}
+				return onEvent(transport.ExecDebugCommandStreamEvent{
+					Type:         "finished",
+					InvocationID: current.InvocationID,
+					CommandID:    current.CommandID,
+					RunAsUser:    runAsUser,
+					Response:     buildExecDebugCommandResponse(current, runAsUser),
+				})
+			default:
+				return nil
+			}
+		},
+	)
+	if err != nil {
+		if terminalEmitted {
+			return nil
+		}
+		if errors.Is(err, errcode.ErrSandboxTimeout) {
+			return newDebugExecError(errcode.ErrDebugExecTimeout, result, runAsUser)
+		}
+		return newDebugExecError(errcode.Wrap(errcode.ErrDebugExecFailed, "%v", err), result, runAsUser)
+	}
+	return nil
+}
+
 const channelConfigExecTimeoutSec = 60
 
 // ConfigureChannel 在实例的 sandbox 中配置指定通道（添加通道 + 重启 gateway）
@@ -1930,13 +2119,15 @@ func (l *logic) ConfigureChannel(ctx pctx.Context, instanceID string, req *trans
 	if req == nil || strings.TrimSpace(req.Channel) == "" || strings.TrimSpace(req.Token) == "" {
 		return nil, errcode.ErrChannelInvalidParam
 	}
-
 	entity, err := l.instanceDao.GetByInstanceID(ctx, instanceID)
 	if err != nil {
 		return nil, err
 	}
 	if entity.Status != modelinstance.InstanceStatusRunning {
 		return nil, errcode.ErrInstanceStatusInvalid
+	}
+	if err := l.requireActivePass(ctx); err != nil {
+		return nil, activePassGuardError("configure channel", err)
 	}
 
 	if strings.EqualFold(strings.TrimSpace(req.Channel), "qqbot") {

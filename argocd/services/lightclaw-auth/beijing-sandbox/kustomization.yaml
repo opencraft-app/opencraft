@@ -4,6 +4,8 @@ namespace: user-auth
 components:
 - ../common
 - ../profiles/sandbox
+resources:
+- realname-faceid-reconciliation-worker.yaml
 generators:
 - ksops-secret-generator.yaml
 - ksops-content-audit-secret-generator.yaml
@@ -27,7 +29,39 @@ patches:
         secretRef:
           name: lightvela-e2e-auth-secrets
 - path: patch-shadowbinding.yaml
+- path: patch-phone-auth.yaml
 configMapGenerator:
 - name: auth-platform-values
   envs:
   - auth-platform.env
+replacements:
+- source:
+    kind: ConfigMap
+    name: auth-platform-values
+    fieldPath: data.AUTH_NODE_POOL
+  targets:
+  - select:
+      kind: Deployment
+      name: lightclaw-auth-realname-faceid-worker
+    fieldPaths:
+    - spec.template.spec.nodeSelector.pool
+- source:
+    kind: ConfigMap
+    name: auth-platform-values
+    fieldPath: data.AUTH_IMAGE
+  targets:
+  - select:
+      kind: Deployment
+      name: lightclaw-auth-realname-faceid-worker
+    fieldPaths:
+    - spec.template.spec.containers.0.image
+- source:
+    kind: ConfigMap
+    name: auth-platform-values
+    fieldPath: data.AUTH_DEPLOYED_AT
+  targets:
+  - select:
+      kind: Deployment
+      name: lightclaw-auth-realname-faceid-worker
+    fieldPaths:
+    - spec.template.metadata.annotations.[lightclaw-auth.clawhub.dev/redeploy-at]

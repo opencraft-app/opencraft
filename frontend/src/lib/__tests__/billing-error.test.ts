@@ -98,9 +98,14 @@ describe("billing-error", () => {
       expect(resolveBillingErrorMessage(err)).toBe("自定义错误");
     });
 
+    it("RepositoryError 透传旧系统繁忙文案时统一为刷新提示", () => {
+      const err = new RepositoryError("系统繁忙，请稍后再试。", 500, "UNKNOWN_CODE_XYZ");
+      expect(resolveBillingErrorMessage(err)).toBe("系统繁忙，请刷新页面后重试");
+    });
+
     it("RepositoryError message 为空 + 5xx 状态时返回 5xx 兜底", () => {
       const err = new RepositoryError("", 503);
-      expect(resolveBillingErrorMessage(err)).toBe("系统繁忙，请稍后再试。");
+      expect(resolveBillingErrorMessage(err)).toBe("系统繁忙，请刷新页面后重试");
     });
 
     it("RepositoryError message 为空 + 4xx 状态时返回 4xx 兜底", () => {

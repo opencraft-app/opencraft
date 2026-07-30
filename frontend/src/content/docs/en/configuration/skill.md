@@ -2,11 +2,9 @@
 
 Skills are additional capability packages callable by Hermes. They extend concrete task handling beyond basic conversation, such as automatically organizing to-dos, generating daily reports, browsing web pages, searching news, generating images, and more.
 
-All skills come from [ClawHub](https://clawhub.ai/), the skill marketplace shared by OpenClaw and Hermes.
+All skills come from [**Skills.sh**](https://skills.sh/) and [**ClawHub**](https://clawhub.ai/) — the skill marketplaces shared by OpenClaw and Hermes.
 
 ## This page covers
-
-- Introduction to ClawHub
 
 - Relationship between Hermes and skills
 
@@ -55,56 +53,23 @@ Hermes automatically determines whether to call the corresponding skill based on
 
 ---
 
-## ClawHub
-
-ClawHub is the skill marketplace launched by OpenClaw:
-
-🔗 [https://clawhub.ai/](https://clawhub.ai/)
-
-Features:
-
-- Browse listed tools / skills
-
-- View tool descriptions, usage methods, and related information
-
-- Record the tool name and install or call it by name in the Hermes / OpenClaw conversation environment
-
-![](../images/clawhub-overview-global.webp)
-
-> 💡 **Browse in ClawHub first, then install or use in LightVela**
-> 
-> LightVela installs skills by name. You need to confirm the exact target skill name in ClawHub first.
-
 ---
 
 ## Method 1: Install through the console panel (coming soon)
 
-The LightVela console provides a visual skill configuration entry in the "Skills" button. You can enter the skill name found in ClawHub and install it quickly.
+The LightVela console provides a visual skill configuration entry in the "Skills" button. You can enter a skill name found on Skills.sh or ClawHub and install it quickly.
 
-### 1. Confirm the target skill in ClawHub
-
-Visit [https://clawhub.ai/](https://clawhub.ai/) to browse or search for the skill you need.
-
-Using an email scenario as an example, find the `gmail` skill. It lets Hermes receive, send, and query emails. Record the skill name shown on the skill details page (in this case, `gmail`) and use it later to complete installation.
-
-![](../images/clawhub-gmail-global.webp)
-
-### 2. Enter the LightVela console
+### 1. Enter the LightVela console
 
 Sign in to LightVela, click "My AI Partners" in the upper-right corner to enter the console, and find the "Skills" button.
 
-### 3. Search and install
+### 2. Search and install
 
-Enter the recorded skill name in the search box (such as `gmail`) and click the **Install Skill** button.
+Enter the recorded skill name in the search box (such as `gmail`) and click the **+** button.
 
 ![](../images/clawhub-install-global-en.webp)
 
-Wait a moment. After installation succeeds, the skill appears in the "Installed skills" list.
-
-![](../images/clawhub-installed-global-en.webp)
-
-
-### 4. Confirm availability in conversation
+### 3. Confirm availability in conversation
 
 Return to a connected channel (WeChat / Telegram / WhatsApp / Discord). First ask Hermes to update its skill list, then check the currently available skills:
 
@@ -122,7 +87,7 @@ If the newly installed skill appears in the list, you can start using it in conv
 
 ## Method 2: Install directly through conversation
 
-In addition to using the console panel, you can also ask Hermes to install a skill directly through conversation. The skill to install still needs to be listed on ClawHub.
+In addition to using the console panel, you can also ask Hermes to install a skill directly through conversation. The skill to install still needs to be listed on Skills.sh or ClawHub.
 
 ### 1. Confirm the conversation channel is available
 
@@ -130,23 +95,23 @@ First make sure Hermes is connected to at least one channel (WeChat / Telegram /
 
 ### 2. Tell Hermes which skill to install
 
-Use the command below as a reference. Tell Hermes what skill you want to install and replace `[skill name]` with the actual name from ClawHub:
+Use the command below as a reference. Tell Hermes what skill you want to install and replace `[skill name]` with the actual name from Skills.sh or ClawHub:
 
 ```
-Please install a skill from ClawHub. Its name is [skill name]
+Please install a skill from Skills.sh or ClawHub. Its name is [skill name]
 ```
 
 For example, to install `mcd` (McDonald's assistant):
 
 ```
-Please install a skill from ClawHub. Its name is mcd
+Please install a skill from Skills.sh or ClawHub. Its name is mcd
 ```
 
 If everything goes well, Hermes will complete the installation directly and tell you the result.
 
 > ⚠️ **Secondary confirmation for high-risk skills**
 > 
-> If the selected skill is marked as high-risk in ClawHub (it may contain unsafe behavior), Hermes will remind you and request secondary confirmation before installation. Please make sure you fully understand the behavior of the skill before deciding whether to continue. If you are unsure, proceed with caution.
+> If the selected skill is marked as high-risk on Skills.sh or ClawHub (it may contain unsafe behavior), Hermes will remind you and request secondary confirmation before installation. Please make sure you fully understand the behavior of the skill before deciding whether to continue. If you are unsure, proceed with caution.
 
 ### 3. Verify the installation result
 
@@ -166,7 +131,7 @@ Please show me how to use mcd
 
 ## Skill usage examples
 
-Using the `agent-browser` browser-operation skill on ClawHub as an example, after installation you can ask Hermes to perform the following tasks.
+Using the `agent-browser` browser-operation skill as an example, after installation you can ask Hermes to perform the following tasks.
 
 > ℹ️ **Note**
 > 
@@ -249,8 +214,6 @@ Check again what skills you currently have installed
 
 ## Installation safety tips
 
-> ⚠️ **Safety confirmation before installation**
-
 Skills have permission to call Hermes capabilities at runtime and may involve:
 
 - Calling external APIs (consuming the corresponding quota)
@@ -259,10 +222,9 @@ Skills have permission to call Hermes capabilities at runtime and may involve:
 
 - Running scheduled operations
 
-
 Before installation, confirm that the skill author is trustworthy. We recommend:
 
-- Prefer officially verified skills on ClawHub
+- Prefer officially verified skills on Skills.sh or ClawHub
 
 - Prefer skills with high downloads and good reviews
 
@@ -277,9 +239,9 @@ Before installation, confirm that the skill author is trustworthy. We recommend:
 
 ### Cannot find a skill
 
-**Possible cause**: The name is misspelled, or the skill has been removed from ClawHub.
+**Possible cause**: The name is misspelled, or the skill has been removed from Skills.sh or ClawHub.
 
-**Solution**: Go to [ClawHub](https://clawhub.ai/) to confirm the exact skill name and current status.
+**Solution**: Go to [**Skills.sh**](https://skills.sh/) or [**ClawHub**](https://clawhub.ai/) to confirm the exact skill name and current status.
 
 ### Installation succeeds but does not take effect in conversation
 
@@ -294,7 +256,7 @@ Before installation, confirm that the skill author is trustworthy. We recommend:
 
 ### Installation says "rate limit triggered, please try again later"
 
-**Possible cause**: ClawHub applies API rate limits to protect service stability.
+**Possible cause**: Skills.sh and ClawHub apply API rate limits to protect service stability.
 
 **Solution**: Wait for a while and try again. We recommend avoiding peak hours.
 
@@ -311,7 +273,7 @@ Before installation, confirm that the skill author is trustworthy. We recommend:
 
 **Solution**:
 
-- Check the skill's comments and latest version information in ClawHub
+- Check the skill's comments and latest version information on Skills.sh or ClawHub
 
 - Try switching to a model that supports tool calling
 
@@ -326,7 +288,7 @@ Before installation, confirm that the skill author is trustworthy. We recommend:
 
 ### How to develop skills
 
-See ClawHub developer documentation (if available).
+See Skills.sh and ClawHub developer documentation (if available).
 
 ---
 

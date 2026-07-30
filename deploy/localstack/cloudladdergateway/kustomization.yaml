@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - manifests.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: cloudladdergateway-config
+    namespace: cloudladdergateway
+    files:
+      - config.yaml=config.yaml
+secretGenerator:
+  - name: cloudladdergateway-runtime-secrets
+    namespace: cloudladdergateway
+    envs:
+      - secrets.defaults.env
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: lightclaw-localstack
+    includeSelectors: false
+    includeTemplates: true

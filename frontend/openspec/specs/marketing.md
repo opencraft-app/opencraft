@@ -23,7 +23,7 @@
 | `/dashboard/setup`     | `OpenClawSetupPage`    | OpenClaw 初始化设置 |
 | `/dashboard/success`   | `OpenClawSuccessPage`  | 创建成功落地 |
 | `/agents`              | `OpenClawSettingsPage` | Agent 控制台（默认通道页，业务核心） |
-| `/agents/:section`     | `OpenClawSettingsPage` | Agent 能力分区；支持 channels / models / skills / persona / automations / memory / achievements / files / chat；国际站直达 persona / chat 时回到 `/agents` |
+| `/agents/:section`     | `OpenClawSettingsPage` | Agent 能力分区；支持 channels / models / skills / persona / automations / memory / achievements / files / chat / diagnostics；国际站直达 persona / chat 时回到 `/agents` |
 | `/account`             | `AccountPage`          | 个人中心（41KB / 1084 行，含实名认证入口） |
 | `/account/orders`      | `AccountOrdersPage`    | 订单列表（14KB） |
 | `/dashboard`（裸路径） | `<Navigate>`           | 兼容跳 `/agents` |
@@ -121,6 +121,24 @@
   - 灰度/回滚
 - `openclaw-console-helpers.ts` — 控制台辅助函数
 - `openclaw-tat-adapter.ts` — 与 TAT（腾讯自动化工具）适配器
+
+### 自动任务与场景任务内部实现
+
+- `/agents/automations` 由 `hermes-agent-automations-panel.tsx` 承载，复用
+  `lib/hermes-cron-client.ts` 管理普通自动任务模板、创建、编辑、暂停、恢复、删除和最近执行。
+- `pages/marketing/scenario-tasks/` 保留场景配置、prompt/schedule builder、安装弹窗、启用确认弹窗和目标单测。
+- **当前产品状态（2026-07-14 起）**：国内站与国际站均不渲染 `ScenarioTaskGrid`，也不提供场景任务的用户可达入口；现有普通自动任务能力不受影响。不得仅根据目录仍存在就推断场景卡片已经上线。
+- 场景扫码实现调用 `acli gateway qr-url --platform <platform> --wait true`。由于命令会在扫码完成前持续运行，前端必须通过可取消的 SSE `debug/exec` 流式读取 stdout，在二维码 URL 出现后立即展示；关闭、刷新或重试时取消旧请求。
+- 若未来重新开放场景入口，必须重新完成产品范围确认、双站验收、i18n 和浏览器回归，并同步更新本 Spec。
+
+### Agent 诊断中心
+
+- `agent-settings-page.tsx` 在 `/agents/diagnostics` 承载诊断中心。
+- Agent 备份与恢复入口：
+  - 国内站默认展示，维持既有诊断中心路径。
+  - 国际站默认隐藏，不渲染备份 / 恢复面板，不挂载确认弹窗，不查询导出 / 导入状态，也不启动轮询。
+  - 国际站仅在控制台执行 `show()`、令隐藏工具可见后展示，行为与“终端”“浏览器”等隐藏入口保持一致。
+  - 该显隐规则只影响前端诊断入口，不改变后端 worker action、备份包格式或恢复流程。
 
 ### 订阅与账户
 
@@ -225,6 +243,32 @@
 - `openclaw-console-helpers.test.ts` — 控制台辅助函数
 - `marketing-header-actions.test.tsx` — 营销头部动作
 - `login-modal.test.tsx` — 跨页面登录弹窗
+
+## Skills 已安装列表与批量卸载（增量设计）
+
+### 范围与布局
+
+- 国内站与国际站共用同一套已安装列表和批量卸载交互；不改变两站各自的 registry 数据源与卸载命令。
+- 已安装技能使用单个扁平列表容器，每个技能占一整行，行与行之间使用分隔线；不再把每个技能渲染成有独立边框、圆角和间距的卡片。
+- 每行展示名称、raw ID、可选版本和单项垃圾桶，不渲染技能图标或 SkillHub 图标链接。
+- 每行操作区从左到右为：方形批量选择按钮、红色单项卸载垃圾桶。选择按钮必须提供 `aria-pressed` 和包含技能名的可访问名称。
+- 已安装标题行左侧展示“已安装”及总数，最右侧展示“批量卸载 / Batch Uninstall”。没有选择时禁用，选择后显示选中数量并启用。
+
+### 状态与数据流
+
+- 批量选择使用 `registry + rawId` 的既有技能身份，不使用展示名称或短 slug 作为唯一标识。
+- 已安装列表刷新后，只保留仍存在于列表中的选择，避免对已经消失的技能继续执行卸载。
+- 单项卸载沿用现有确认弹窗和真实卸载逻辑；批量卸载使用同一个破坏性确认入口，但明确展示选中数量。
+- 批量卸载按用户选中顺序串行执行，避免多个实例命令相互竞争；全部完成后只刷新一次已安装列表。
+- 成功项从选择中移除；失败项保留选择。全部成功显示批量卸载成功 Toast，部分失败显示成功/失败数量，且不吞掉数据层返回的单项错误语义。
+- 批量执行期间禁用所有批量选择、单项垃圾桶和批量卸载按钮，避免重复提交或列表状态漂移。
+
+### 边界与验收
+
+- loading 和空态不显示可操作的批量卸载按钮；非空列表标题行始终保留按钮位置，避免选择时布局跳动。
+- 单项卸载、Hermes 嵌套目录删除、市场卸载命令、安装批量选择和已安装数量统计保持现有行为。
+- 组件测试覆盖国内站与国际站：扁平分隔行、操作顺序、禁用态、选择计数、确认门禁、串行批量卸载、成功清理和失败保留。
+- 新增中文文案必须补齐英文翻译，并通过目标 Vitest、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
 
 ## 已知技术债
 

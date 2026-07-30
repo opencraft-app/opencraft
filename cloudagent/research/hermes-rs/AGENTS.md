@@ -20,6 +20,7 @@
 
 ## CloudAgent Runtime Boundary Rules
 
+- CI trigger note 2026-07-04: rebuild runtime artifact after tool-call argument validation reached master.
 - `crates/hermes-sidecar/src/main.rs` is an entrypoint and daemon coordinator. Do not add new session, protocol, stage-files, runtime-host, or client behavior there; put it in a semantic module such as `client.rs`, `http.rs`, `session_api.rs`, `event_projection.rs`, `stage_files.rs`, or `config_bootstrap.rs`.
 - `crates/hermes-core/src/runtime/mod.rs` is the runtime facade. Keep actor, inbox, pump, cancellation, persistence, and executor details in dedicated `runtime/*` modules and re-export only intentional public API.
 - `crates/hermes-core/src/tools/mod.rs` is the tool facade. Keep schema/context/provider/router/registry/lifecycle/gate concerns split into dedicated `tools/*` modules.

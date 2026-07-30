@@ -60,6 +60,20 @@ class PromotionPolicyTests(unittest.TestCase):
         self.assertFalse(policy.cleanup_source_branch)
         self.assertEqual(policy.required_argo_sync, "manual")
 
+    def test_velagw_shprod_policy_waits_for_manual_sync_convergence(self) -> None:
+        policy = promotion_policy.policy_for_branch("promote-shprod-velagw-velagw-abc123")
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.env, "shprod")
+        self.assertEqual(policy.display_name, "上海生产 VelaGW")
+        self.assertEqual(policy.kustomize_args, ["--changed-only"])
+        self.assertEqual(policy.verify_mode.value, "argo_convergence")
+        self.assertEqual(policy.verify_args, ["--wait-seconds", "1800", "--poll-seconds", "15"])
+        self.assertTrue(policy.auto_merge)
+        self.assertFalse(policy.auto_sync)
+        self.assertFalse(policy.cleanup_source_branch)
+        self.assertEqual(policy.required_argo_sync, "manual")
+
     def test_sgprod_policy_matches_production_manual_sync_shape(self) -> None:
         policy = promotion_policy.policy_for_branch("promote-sgprod-lightclaw-auth-abc123")
 
@@ -82,6 +96,18 @@ class PromotionPolicyTests(unittest.TestCase):
         self.assertIsNotNone(policy)
         self.assertEqual(policy.env, "shanghai-workers")
         self.assertEqual(policy.display_name, "上海 Worker")
+        self.assertEqual(policy.kustomize_mode.value, "full")
+        self.assertEqual(policy.verify_mode.value, "argo_convergence")
+        self.assertTrue(policy.auto_merge)
+        self.assertTrue(policy.auto_sync)
+        self.assertTrue(policy.cleanup_source_branch)
+
+    def test_beijing_llmgateway_policy_auto_merges_and_syncs(self) -> None:
+        policy = promotion_policy.policy_for_branch("promote-beijing-llmgateway-velagw-abc123")
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.env, "beijing-llmgateway")
+        self.assertEqual(policy.display_name, "北京 LLMGateway 测试")
         self.assertEqual(policy.kustomize_mode.value, "full")
         self.assertEqual(policy.verify_mode.value, "argo_convergence")
         self.assertTrue(policy.auto_merge)
@@ -326,6 +352,31 @@ class PromotionCommandTests(unittest.TestCase):
         self.assertIn("--merge-only", command)
         self.assertIn("--merge-wait-seconds", command)
         self.assertIn("3600", command)
+
+    def test_verify_command_waits_for_velagw_shprod_argo_convergence(self) -> None:
+        with tempfile.TemporaryDirectory() as repo:
+            commands: list[list[str]] = []
+            with mock.patch.object(gitops_promotion, "_run", side_effect=lambda command, cwd=None: commands.append(command)):
+                exit_code = gitops_promotion.verify_main(
+                    [
+                        "--repo-root",
+                        repo,
+                        "--source-branch",
+                        "promote-shprod-velagw-velagw-tag",
+                        "--target-branch",
+                        "gitops",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(commands), 1)
+        command = commands[0]
+        self.assertIn("verify_gitops_release.py", command[1])
+        self.assertNotIn("--merge-only", command)
+        self.assertIn("--wait-seconds", command)
+        self.assertIn("1800", command)
+        self.assertIn("--poll-seconds", command)
+        self.assertIn("15", command)
 
     def test_cleanup_command_skips_shprod_without_api_call(self) -> None:
         with tempfile.TemporaryDirectory() as repo:

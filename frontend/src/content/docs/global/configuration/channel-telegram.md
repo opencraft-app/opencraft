@@ -1,19 +1,19 @@
 # 配置通道 - Telegram
 
-Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes 接入 Telegram 私聊或群组场景。
+Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接入 Telegram 私聊或群组场景。
 
 ## 本页覆盖
 
 - 使用手机 Telegram 扫码或打开链接授权
 
-- 在 Telegram 中与 Hermes 进行对话
+- 在 Telegram 中与 Hermes Agent 进行对话
 
 
 > 💡 **准备工作**
 >
 > -   一台装有 Telegram 的手机
 >
-> -   完成 [模型配置](./configuration/model.md)（或使用启航套餐预置的 100 体验积分）
+> -   完成 [模型配置](./model.md)（或使用启航套餐预置的 100 体验积分）
 >
 
 ---
@@ -68,7 +68,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes 接入 Tel
 你好
 ```
 
-几秒内收到 Hermes 回复。
+几秒内收到 Hermes Agent 回复。
 
 <img src="../images/telegram-botfather-6-global.webp" alt="" width="360" />
 
@@ -80,7 +80,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes 接入 Tel
 
 - Telegram 联系人中可查找到对应机器人
 
-- 发送消息后能收到 Hermes 回复
+- 发送消息后能收到 Hermes Agent 回复
 
 
 ---
@@ -101,7 +101,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes 接入 Tel
 
 > ℹ️ **实际处理能力取决于模型**
 >
-> 上表仅代表 Telegram 机器人在消息通道层面支持接收、回复的类型。能否实际完成处理图片、文件等任务，还取决于 Hermes 所接入的大语言模型是否具备对应的处理能力。
+> 上表仅代表 Telegram 机器人在消息通道层面支持接收、回复的类型。能否实际完成处理图片、文件等任务，还取决于 Hermes Agent 所接入的大语言模型是否具备对应的处理能力。
 
 ---
 
@@ -117,7 +117,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes 接入 Tel
 | 发送消息后无回复 | 模型未配置、体验积分耗尽，或机器人尚未成功接入 | 检查「1. 模型」卡片的「当前模型」状态，并确认 Telegram 通道显示为已接入 |
 | 机器人无法接收群消息 | Telegram 群组隐私模式限制 | 在 BotFather 中检查 Bot Settings，必要时关闭 Group Privacy，或在群内 @ 机器人发送消息 |
 | 如何解除绑定 | — | 在「已接入通道」列表中删除该 Telegram 记录 |
-| 同一个 Telegram Bot 能否接入多个 Hermes | 通常不建议，一个 Bot Token 应绑定一个 Hermes | 如需多个 Hermes，建议分别创建不同的 Telegram Bot |
+| 同一个 Telegram Bot 能否接入多个 Hermes Agent | 通常不建议，一个 Bot Token 应绑定一个 Hermes Agent | 如需多个 Hermes Agent，建议分别创建不同的 Telegram Bot |
 
 ---
 
@@ -133,10 +133,10 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes 接入 Tel
 
 ## 下一步
 
-- [配置通道 - WhatsApp](./configuration/channel-whatsapp.md) — 国际用户沟通与客户服务
+- [配置通道 - WhatsApp](./channel-whatsapp.md) — 国际用户沟通与客户服务
 
-- [配置通道 - Discord](./configuration/channel-discord.md) — 社群运营与开发者社区
+- [配置通道 - Discord](./channel-discord.md) — 社群运营与开发者社区
 
-- [配置通道 - QQ](./configuration/channel-qq.md) — 手动创建机器人，AppID/AppSecret 接入
+- [配置通道 - QQ](./channel-qq.md) — 手动创建机器人，AppID/AppSecret 接入
 
-- [配置技能](./configuration/skill.md) — 扩展 Hermes 能力
+- [配置技能](./skill.md) — 扩展 Hermes Agent 能力

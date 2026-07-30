@@ -105,11 +105,12 @@ export async function runFrontendArtifactBuildCommand(scriptName, env = process.
   }
 
   rmSync(outputDir, { recursive: true, force: true });
+  rmSync(".next", { recursive: true, force: true });
   rmSync("out", { recursive: true, force: true });
   await runner(nodeBin(env), ["scripts/subset-fonts.mjs"], env);
   await runner(nodeBin(env), ["scripts/sync-fumadocs-content.mjs"], env);
   await runner(pnpmBin(env), ["exec", "fumadocs-mdx"], env);
-  await runner(pnpmBin(env), ["exec", "next", "build", "--webpack"], env);
+  await runner(pnpmBin(env), ["exec", "next", "build"], env);
   await runner(nodeBin(env), ["scripts/version-next-static-assets.mjs"], env);
   await runner(nodeBin(env), ["scripts/fix-next-static-html-lang.mjs"], env);
   await runner(nodeBin(env), ["scripts/format-next-static-html.mjs"], env);

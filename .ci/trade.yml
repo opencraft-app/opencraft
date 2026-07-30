@@ -10,6 +10,8 @@ on:
     paths:
       - trade/**
       - argocd/services/trade/**
+      - argocd/apps/shprod/trade.yaml
+      - argocd/projects/shprod-trade.yaml
       - argocd/catalogs/sandbox/beijing-sandbox/trade.yaml
       - argocd/catalogs/playground/beijing-playground/*/trade.yaml
       - argocd/catalogs/playground/seoul-playground/*/trade.yaml
@@ -33,8 +35,9 @@ extends:
     BUNDLE: trade
     DISPLAY_NAME: trade
     DEFAULT_TARGET_ENV: beijing-sandbox
-    MASTER_BUILD_ENVS: beijing-sandbox
+    MASTER_BUILD_ENVS: beijing-sandbox,shprod
     MASTER_AUTO_PIN_ENVS: beijing-sandbox
-    ENABLE_MASTER_PROD_PROMOTE: false
+    ENABLE_MASTER_PROD_DB_MIGRATION: true
+    ENABLE_MASTER_PROD_PROMOTE: true
     PLAYGROUND_BUILD_ENVS: auto
     PLAYGROUND_AUTO_PIN_ENVS: auto

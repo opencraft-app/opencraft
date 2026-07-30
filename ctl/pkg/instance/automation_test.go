@@ -2,10 +2,12 @@ package instance
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
-	paigateway "ctl/pkg/adapter/aigateway"
+	pllmgateway "ctl/pkg/adapter/llmgateway"
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
@@ -21,56 +23,56 @@ type automationGatewayAdapterStub struct {
 	handler func(method string, params interface{}, out interface{}) error
 }
 
-type automationAiGatewayAdapterStub struct {
-	createResp   *paigateway.CreateApiKeyResponse
+type automationLLMGatewayAdapterStub struct {
+	createResp   *pllmgateway.CreateApiKeyResponse
 	createErr    error
+	createCalls  int
+	ensureCalls  int
 	revokedKeyID string
 }
 
-func (s *automationAiGatewayAdapterStub) CreateApiKey(_ context.Context, _ string, _ string) (*paigateway.CreateApiKeyResponse, error) {
+func (s *automationLLMGatewayAdapterStub) CreateApiKey(_ context.Context, _ string, _ string) (*pllmgateway.CreateApiKeyResponse, error) {
+	s.createCalls++
 	if s.createErr != nil {
 		return nil, s.createErr
 	}
 	if s.createResp != nil {
 		return s.createResp, nil
 	}
-	return &paigateway.CreateApiKeyResponse{KeyID: "key_new", APIKey: "api_new"}, nil
+	return &pllmgateway.CreateApiKeyResponse{KeyID: "key_new", APIKey: "api_new"}, nil
 }
 
-func (s *automationAiGatewayAdapterStub) EnsureUser(_ context.Context, userID string, nickname string) (*paigateway.EnsureUserResponse, error) {
-	return &paigateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
+func (s *automationLLMGatewayAdapterStub) EnsureUser(_ context.Context, userID string, nickname string) (*pllmgateway.EnsureUserResponse, error) {
+	s.ensureCalls++
+	return &pllmgateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
 }
 
-func (s *automationAiGatewayAdapterStub) RevokeApiKey(_ context.Context, keyID string) error {
+func (s *automationLLMGatewayAdapterStub) RevokeApiKey(_ context.Context, keyID string) error {
 	s.revokedKeyID = keyID
 	return nil
 }
 
-func (s *automationAiGatewayAdapterStub) GetUserUsage(_ context.Context, _ string) (*paigateway.UserUsageResponse, error) {
-	return &paigateway.UserUsageResponse{}, nil
+func (s *automationLLMGatewayAdapterStub) GetUserUsage(_ context.Context, _ string) (*pllmgateway.UserUsageResponse, error) {
+	return &pllmgateway.UserUsageResponse{}, nil
 }
 
-func (s *automationAiGatewayAdapterStub) GetPlan(_ context.Context, planID string) (*paigateway.Plan, error) {
-	return &paigateway.Plan{ID: planID}, nil
+func (s *automationLLMGatewayAdapterStub) GetPlan(_ context.Context, planID string) (*pllmgateway.Plan, error) {
+	return &pllmgateway.Plan{ID: planID}, nil
 }
 
-func (s *automationAiGatewayAdapterStub) ApplySubscription(_ context.Context, req *paigateway.ApplySubscriptionRequest) (*paigateway.Subscription, error) {
-	return &paigateway.Subscription{UserID: req.UserID, PlanID: req.PlanID}, nil
+func (s *automationLLMGatewayAdapterStub) ApplySubscription(_ context.Context, req *pllmgateway.ApplySubscriptionRequest) (*pllmgateway.Subscription, error) {
+	return &pllmgateway.Subscription{UserID: req.UserID, PlanID: req.PlanID}, nil
 }
 
-func (s *automationAiGatewayAdapterStub) ExtendSubscription(_ context.Context, req *paigateway.ExtendSubscriptionRequest) (*paigateway.ExtendSubscriptionResponse, error) {
-	return &paigateway.ExtendSubscriptionResponse{
-		Subscription: &paigateway.Subscription{UserID: req.UserID},
-		Updated:      true,
-	}, nil
-}
-
-func (s *automationAiGatewayAdapterStub) CancelSubscription(_ context.Context, _ string) error {
+func (s *automationLLMGatewayAdapterStub) CancelSubscription(_ context.Context, _ string) error {
 	return nil
 }
 
-func (s *automationAiGatewayAdapterStub) GetActiveSubscription(_ context.Context, _ string) (*paigateway.Subscription, error) {
+func (s *automationLLMGatewayAdapterStub) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
 	return nil, nil
+}
+func (s *automationLLMGatewayAdapterStub) ListActiveSubscriptions(_ context.Context, _ string) (*pllmgateway.ActiveSubscriptionList, error) {
+	return &pllmgateway.ActiveSubscriptionList{Subscriptions: []pllmgateway.Subscription{}}, nil
 }
 
 func (s *automationGatewayAdapterStub) Call(_ context.Context, _ string, _ string, method string, params interface{}, out interface{}) error {
@@ -86,12 +88,14 @@ func TestListAutomationSchedulesBackfillsGatewayAuthMaterialForRunningInstance(t
 	prevConf := config.ServerConf
 	config.ServerConf = &config.GlobalConfig{
 		AdapterConfig: &config.AdapterConfig{
-			AiGateway: &config.AiGatewayConfig{
-				BaseURL:              "https://aigateway.test",
-				DefaultBaseURL:       "https://model.internal/v1",
-				DefaultModelID:       "kimi-k2.5",
-				DefaultCompatibility: "openai",
-				DefaultGatewayPort:   18789,
+			LLMGateway: &config.LLMGatewayConfig{
+				Enabled:                    true,
+				BaseURL:                    "https://llmgateway.test",
+				DefaultBaseURL:             "https://model.internal/v1",
+				DefaultModelID:             "kimi-k2.5",
+				DefaultCompatibility:       "openai",
+				DefaultGatewayPort:         18789,
+				NewAllocationUserAllowlist: []string{"*"},
 			},
 		},
 	}
@@ -111,8 +115,8 @@ func TestListAutomationSchedulesBackfillsGatewayAuthMaterialForRunningInstance(t
 			},
 		},
 	}
-	aiGateway := &automationAiGatewayAdapterStub{
-		createResp: &paigateway.CreateApiKeyResponse{
+	aiGateway := &automationLLMGatewayAdapterStub{
+		createResp: &pllmgateway.CreateApiKeyResponse{
 			KeyID:  "key_new",
 			APIKey: "api_key_new",
 		},
@@ -137,10 +141,11 @@ func TestListAutomationSchedulesBackfillsGatewayAuthMaterialForRunningInstance(t
 		instanceDao: &commandInstanceDaoStub{
 			entity: entity,
 		},
-		sandboxAdapter:         sandbox,
-		aiGatewayAdapter:       aiGateway,
-		openclawGatewayAdapter: adapter,
-		logger:                 zap.NewNop(),
+		sandboxAdapter:               sandbox,
+		llmGatewayAdapter:            aiGateway,
+		openclawGatewayAdapter:       adapter,
+		logger:                       zap.NewNop(),
+		legacyPassEntitlementEnsurer: legacyPassEntitlementAlreadyReady,
 	}
 	ctx := pctx.NewContext(nil).WithUserID("user-1")
 
@@ -163,8 +168,52 @@ func TestListAutomationSchedulesBackfillsGatewayAuthMaterialForRunningInstance(t
 	if len(sandbox.processCalls) != 2 {
 		t.Fatalf("expected onboard and gateway patch commands to run, got %d", len(sandbox.processCalls))
 	}
-	if aiGateway.revokedKeyID != "key_old" {
-		t.Fatalf("expected previous key to be revoked, got %s", aiGateway.revokedKeyID)
+	if aiGateway.revokedKeyID != "" {
+		t.Fatalf("LLMGateway user key must survive automation backfill, got revoked key %s", aiGateway.revokedKeyID)
+	}
+}
+
+func TestAutomationBackfillDoesNotIssueLLMGatewayKeyWhenEntitlementPreparationFails(t *testing.T) {
+	prevConf := config.ServerConf
+	config.ServerConf = &config.GlobalConfig{
+		AdapterConfig: &config.AdapterConfig{
+			LLMGateway: &config.LLMGatewayConfig{
+				Enabled:                    true,
+				BaseURL:                    "https://llmgateway.test",
+				NewAllocationUserAllowlist: []string{"*"},
+			},
+		},
+	}
+	t.Cleanup(func() { config.ServerConf = prevConf })
+
+	llmGateway := &automationLLMGatewayAdapterStub{}
+	logic := &logic{
+		llmGatewayAdapter: llmGateway,
+		logger:            zap.NewNop(),
+		legacyPassEntitlementEnsurer: func(_ context.Context, userID string, _ time.Time) error {
+			if userID != "user-automation-entitlement-fail" {
+				t.Fatalf("userID = %q", userID)
+			}
+			return errors.New("entitlement unavailable")
+		},
+	}
+
+	err := logic.ensureAutomationGatewayAuthMaterial(
+		pctx.NewContext(nil).WithUserID("user-automation-entitlement-fail"),
+		&instance.Entity{
+			InstanceId: "ins-automation-entitlement-fail",
+			SandboxId:  "sbx-automation-entitlement-fail",
+			Status:     instance.InstanceStatusRunning,
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "entitlement unavailable") {
+		t.Fatalf("error = %v", err)
+	}
+	if llmGateway.createCalls != 0 {
+		t.Fatalf("create-api-key calls = %d, want 0", llmGateway.createCalls)
+	}
+	if llmGateway.ensureCalls != 1 {
+		t.Fatalf("ensure-user calls = %d, want 1", llmGateway.ensureCalls)
 	}
 }
 

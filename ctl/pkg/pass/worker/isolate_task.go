@@ -177,6 +177,9 @@ func (t *isolatePassTask) execute(ctx pctx.Context) (string, error) {
 	// 已经到达终态：上一次 execute 已 CAS isolating → isolated，本次只需 markSuccess
 	if passEntity.Status == modelpass.StatusIsolated {
 		logger.Info("pass already isolated, short-circuit parent task")
+		if err := logicpass.CancelAiGatewayEntitlement(logger, passEntity.UserID); err != nil {
+			return "", fmt.Errorf("repair isolated ai-gateway entitlement: %w", err)
+		}
 		// pass 终态但 trade callback 上一轮可能没成功，best-effort 再补一次
 		t.notifyTradeFlowCompleted(ctx, logger)
 		return t.markSuccess(ctx)
@@ -295,7 +298,17 @@ func (t *isolatePassTask) execute(ctx pctx.Context) (string, error) {
 		return "", fmt.Errorf("waiting for %d pending + %d failed-to-redispatch child task(s)", pendingCount, failedCount)
 	}
 
-	// 5. 全部子 task 终态 → CAS isolating → isolated
+	// 5. 全部子 task 终态后，先撤销长期 AI 权益。失败时保持 isolating 并重试，
+	// 防止本地已经进入 isolated，但 VelaGW 仍允许模型调用。
+	userID = passEntity.UserID
+	if t.in.UserID != "" {
+		userID = t.in.UserID
+	}
+	if err := logicpass.CancelAiGatewayEntitlement(logger, userID); err != nil {
+		return "", fmt.Errorf("cancel ai-gateway entitlement before isolate: %w", err)
+	}
+
+	// 6. CAS isolating → isolated
 	//
 	// 设计稿：trade-pass-isolate-design.md §11-Q22 钦点 — 父 task 终态须同时写
 	// status='isolated' + isolated_time=NOW()（不再视 isolated_time 为"预留字段"）。
@@ -359,8 +372,8 @@ func (t *isolatePassTask) execute(ctx pctx.Context) (string, error) {
 	// 退费向前缩短。生命周期隔离分支（NewDeadline == nil）不动 ai-gateway：pass.expired_time
 	// 本身也不变，ai-gateway 保持原值与 ctl 自然一致。
 	//
-	// 失败语义（与隔离父 task 永不放弃对偶）：调用失败（非 ErrAiGatewayPlanNotFound
-	// / 非 ErrAiGatewayRouteNotFound）返 err 让父 task 重试 30s × INT64_MAX。路由 404
+	// 失败语义（与隔离父 task 永不放弃对偶）：调用失败（非 ErrLLMGatewayPlanNotFound
+	// / 非 ErrLLMGatewayRouteNotFound）返 err 让父 task 重试 30s × INT64_MAX。路由 404
 	// 则在调试期不阻断主链（记 Warn），避免 ai-gateway 镜像迟后于 R-MR-4 时完全阻住隔离
 	// 完成。UserID 为空（老 payload 兑现场景）跳过并 Warn。
 	if t.in.NewDeadline != nil {
@@ -429,6 +442,9 @@ func (t *isolatePassTask) idempotentCheck(ctx pctx.Context) (string, error) {
 	}
 	if passEntity.Status == modelpass.StatusIsolated {
 		ctx.Logger().Info("idempotent check: pass already isolated", zap.String("pass_id", t.in.PassID))
+		if err := logicpass.CancelAiGatewayEntitlement(ctx.Logger(), passEntity.UserID); err != nil {
+			return "", fmt.Errorf("idempotent repair isolated entitlement: %w", err)
+		}
 		// pass 已经 isolated，但 trade 侧 trade_flow 可能还停在 in_progress
 		// （前一轮 markSuccess 后 callback 失败了），这里再补一次 best-effort
 		t.notifyTradeFlowCompleted(ctx, ctx.Logger())

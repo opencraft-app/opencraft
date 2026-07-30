@@ -1,0 +1,312 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llmgateway-worker-maintenance
+  namespace: llmgateway-kro-demo
+  labels:
+    app.kubernetes.io/name: llmgateway-worker-maintenance
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: llmgateway-kro-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: llmgateway-worker-maintenance
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: llmgateway-worker-maintenance
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/part-of: llmgateway-kro-demo
+    spec:
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z llmgateway-mysql 3306; do sleep 2; done"]
+      containers:
+        - name: worker
+          image: llmgateway:local
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/local/bin/llmgateway-worker"]
+          env:
+            - name: LLMGATEWAY_WORKER_POOL
+              value: maintenance
+            - name: LLMGATEWAY_SQL_DSN
+              value: root:123456@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
+            - name: LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL
+              value: redis://:123456@shared-redis-a:6379/0
+            - name: NEWAPI_SET_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef: {name: llmgateway-control-admin, key: set-root-username}
+            - name: NEWAPI_SET_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: llmgateway-control-admin, key: set-root-password}
+            - name: LLMGATEWAY_MAINTENANCE_WORKER_POLL_INTERVAL
+              value: 1s
+            - name: LLMGATEWAY_MAINTENANCE_WORKER_LEASE_TTL
+              value: 5m
+            - name: LLMGATEWAY_MAINTENANCE_WORKER_BATCH_SIZE
+              value: "1000"
+            - name: LLMGATEWAY_SQL_MAX_OPEN_CONNS
+              value: "12"
+            - name: LLMGATEWAY_SQL_MAX_IDLE_CONNS
+              value: "4"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llmgateway-worker-core
+  namespace: llmgateway-kro-demo
+  labels:
+    app.kubernetes.io/name: llmgateway-worker-core
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: llmgateway-kro-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: llmgateway-worker-core
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: llmgateway-worker-core
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/part-of: llmgateway-kro-demo
+    spec:
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z llmgateway-mysql 3306; do echo "waiting for llmgateway mysql"; sleep 2; done
+      containers:
+        - name: worker
+          image: llmgateway:local
+          imagePullPolicy: IfNotPresent
+          command:
+            - /usr/local/bin/llmgateway-worker
+          env:
+            - name: LLMGATEWAY_WORKER_POOL
+              value: core
+            - name: LLMGATEWAY_SQL_DSN
+              value: root:123456@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
+            - name: LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL
+              value: redis://:123456@shared-redis-a:6379/0
+            - name: CLUSTER_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llmgateway-control-admin
+                  key: token
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llmgateway-control-admin
+                  key: internal-token
+            - name: NEWAPI_SET_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: llmgateway-control-admin
+                  key: set-root-username
+            - name: NEWAPI_SET_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: llmgateway-control-admin
+                  key: set-root-password
+            - name: LLMGATEWAY_WORKER_POLL_INTERVAL
+              value: 5s
+            - name: LLMGATEWAY_WORKER_LEASE_TTL
+              value: 1m
+            - name: LLMGATEWAY_SQL_MAX_OPEN_CONNS
+              value: "12"
+            - name: LLMGATEWAY_SQL_MAX_IDLE_CONNS
+              value: "4"
+            - name: LLMGATEWAY_SET_AUTOSCALER_ENABLED
+              value: "false"
+            - name: LLMGATEWAY_SET_AUTOSCALER_SOURCE
+              value: kro
+            - name: LLMGATEWAY_SET_AUTOSCALER_NAMESPACE
+              value: llmgateway-kro-demo
+            - name: LLMGATEWAY_SET_AUTOSCALER_FLEET
+              value: fleet-demo
+            - name: LLMGATEWAY_SET_AUTOSCALER_MAX_USERS_PER_SET
+              value: "10000"
+            - name: LLMGATEWAY_SET_AUTOSCALER_TARGET_UTILIZATION
+              value: "0.70"
+            - name: LLMGATEWAY_SET_AUTOSCALER_MIN_READY_FREE_USERS
+              value: "3000"
+            - name: LLMGATEWAY_SET_AUTOSCALER_MIN_WARM_SETS
+              value: "0"
+            - name: LLMGATEWAY_SET_AUTOSCALER_MAX_SCALE_UP_PER_CYCLE
+              value: "1"
+            - name: LLMGATEWAY_SET_AUTOSCALER_SET_ID_PREFIX
+              value: set-auto
+            - name: LLMGATEWAY_SET_AUTOSCALER_SHARD_REFS
+              value: shard-a,shard-b
+            - name: LLMGATEWAY_SET_AUTOSCALER_REDIS_DB_START
+              value: "10"
+            - name: LLMGATEWAY_SET_AUTOSCALER_REDIS_DB_LIMIT
+              value: "16"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llmgateway-worker-admin
+  namespace: llmgateway-kro-demo
+  labels:
+    app.kubernetes.io/name: llmgateway-worker-admin
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: llmgateway-kro-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: llmgateway-worker-admin
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: llmgateway-worker-admin
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/part-of: llmgateway-kro-demo
+    spec:
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "until nc -z llmgateway-mysql 3306; do sleep 2; done"]
+      containers:
+        - name: worker
+          image: llmgateway:local
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/local/bin/llmgateway-worker"]
+          env:
+            - name: LLMGATEWAY_WORKER_POOL
+              value: admin
+            - name: LLMGATEWAY_SQL_DSN
+              value: root:123456@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
+            - name: LLMGATEWAY_ADMIN_WORKER_POLL_INTERVAL
+              value: 1s
+            - name: LLMGATEWAY_ADMIN_WORKER_LEASE_TTL
+              value: 5m
+            - name: LLMGATEWAY_SQL_MAX_OPEN_CONNS
+              value: "12"
+            - name: LLMGATEWAY_SQL_MAX_IDLE_CONNS
+              value: "4"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llmgateway-worker-byok
+  namespace: llmgateway-kro-demo
+  labels:
+    app.kubernetes.io/name: llmgateway-worker-byok
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: llmgateway-kro-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: llmgateway-worker-byok
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: llmgateway-worker-byok
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/part-of: llmgateway-kro-demo
+    spec:
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z llmgateway-mysql 3306; do sleep 2; done"]
+      containers:
+        - name: worker
+          image: llmgateway:local
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/local/bin/llmgateway-worker"]
+          env:
+            - name: LLMGATEWAY_WORKER_POOL
+              value: byok
+            - name: LLMGATEWAY_SQL_DSN
+              value: root:123456@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
+            - name: LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL
+              value: redis://:123456@shared-redis-a:6379/0
+            - name: NEWAPI_SET_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef: {name: llmgateway-control-admin, key: set-root-username}
+            - name: NEWAPI_SET_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: llmgateway-control-admin, key: set-root-password}
+            - name: LLMGATEWAY_BYOK_WORKER_POLL_INTERVAL
+              value: 1s
+            - name: LLMGATEWAY_BYOK_WORKER_LEASE_TTL
+              value: 5m
+            - name: LLMGATEWAY_BYOK_WORKER_MAX_CONCURRENCY
+              value: "8"
+            - name: LLMGATEWAY_BYOK_WORKER_SET_CONCURRENCY
+              value: "4"
+            - name: LLMGATEWAY_SQL_MAX_OPEN_CONNS
+              value: "12"
+            - name: LLMGATEWAY_SQL_MAX_IDLE_CONNS
+              value: "4"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llmgateway-worker-observer
+  namespace: llmgateway-kro-demo
+  labels:
+    app.kubernetes.io/name: llmgateway-worker-observer
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: llmgateway-kro-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: llmgateway-worker-observer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: llmgateway-worker-observer
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/part-of: llmgateway-kro-demo
+    spec:
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z llmgateway-mysql 3306; do sleep 2; done"]
+      containers:
+        - name: worker
+          image: llmgateway:local
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/local/bin/llmgateway-worker"]
+          env:
+            - name: LLMGATEWAY_WORKER_POOL
+              value: observer
+            - name: LLMGATEWAY_SQL_DSN
+              value: root:123456@tcp(llmgateway-mysql:3306)/llmgateway?parseTime=true&loc=UTC&charset=utf8mb4
+            - name: NEWAPI_SET_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef: {name: llmgateway-control-admin, key: set-root-username}
+            - name: NEWAPI_SET_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: llmgateway-control-admin, key: set-root-password}
+            - name: LLMGATEWAY_WORKER_POLL_INTERVAL
+              value: 2s
+            - name: LLMGATEWAY_WORKER_LEASE_TTL
+              value: 1m
+            - name: LLMGATEWAY_OBSERVER_SEED_BATCH_SIZE
+              value: "1000"
+            - name: LLMGATEWAY_OBSERVER_WORKER_POLL_INTERVAL
+              value: 1s
+            - name: LLMGATEWAY_OBSERVER_WORKER_LEASE_TTL
+              value: 5m
+            - name: LLMGATEWAY_OBSERVER_WORKER_MAX_CONCURRENCY
+              value: "8"
+            - name: LLMGATEWAY_OBSERVER_WORKER_SET_CONCURRENCY
+              value: "4"
+            - name: LLMGATEWAY_SQL_MAX_OPEN_CONNS
+              value: "12"
+            - name: LLMGATEWAY_SQL_MAX_IDLE_CONNS
+              value: "4"

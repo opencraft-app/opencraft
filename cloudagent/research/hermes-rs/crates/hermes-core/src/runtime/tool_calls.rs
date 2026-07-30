@@ -1,6 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use crate::client::{ChatStreamEvent, ToolCall};
+use crate::client::{ChatStreamEvent, Message, Role, ToolCall};
+use crate::error::{Error, Result};
+use crate::schema::ToolSchema;
+use crate::tools::ToolResult;
+use serde_json::Value;
 
 #[derive(Debug, Default)]
 pub(crate) struct StreamingToolCallAccumulator {
@@ -24,15 +28,20 @@ impl StreamingToolCallAccumulator {
                         state.id = Some(id.clone());
                     }
                     if let Some(function) = &delta.function {
-                        if !function.name.is_empty() {
-                            if state.name.is_empty() || function.name.starts_with(&state.name) {
-                                state.name = function.name.clone();
-                            } else if !state.name.ends_with(&function.name) {
-                                state.name.push_str(&function.name);
+                        if let Some(name) = function.name.as_deref().filter(|name| !name.is_empty())
+                        {
+                            if state.name.is_empty() || name.starts_with(&state.name) {
+                                state.name = name.to_string();
+                            } else if !state.name.ends_with(name) {
+                                state.name.push_str(name);
                             }
                         }
-                        if !function.arguments.is_empty() {
-                            state.arguments.push_str(&function.arguments);
+                        if let Some(arguments) = function
+                            .arguments
+                            .as_deref()
+                            .filter(|arguments| !arguments.is_empty())
+                        {
+                            state.arguments.push_str(arguments);
                         }
                     }
                 }
@@ -95,6 +104,244 @@ pub(crate) fn merge_stream_tool_call(tool_calls: &mut Vec<ToolCall>, tool_call: 
     } else {
         tool_calls.push(tool_call);
     }
+}
+
+pub(crate) fn normalize_tool_calls(tool_calls: Vec<ToolCall>) -> Result<Vec<ToolCall>> {
+    tool_calls
+        .into_iter()
+        .map(normalize_tool_call)
+        .collect::<Result<Vec<_>>>()
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ProviderMessageSanitization {
+    pub invalid_assistant_tool_messages: usize,
+    pub dropped_tool_results: usize,
+    pub normalized_tool_calls: usize,
+    pub repaired_tool_calls: usize,
+}
+
+impl ProviderMessageSanitization {
+    pub(crate) fn changed(&self) -> bool {
+        self.invalid_assistant_tool_messages > 0
+            || self.dropped_tool_results > 0
+            || self.normalized_tool_calls > 0
+            || self.repaired_tool_calls > 0
+    }
+}
+
+pub(crate) fn sanitize_messages_for_provider(
+    messages: &[Message],
+    tool_schemas: &[ToolSchema],
+) -> (Vec<Message>, ProviderMessageSanitization) {
+    let mut sanitized = Vec::with_capacity(messages.len());
+    let mut stats = ProviderMessageSanitization::default();
+    let mut pending_tool_call_ids = BTreeSet::new();
+    let schemas = tool_schema_map(tool_schemas);
+
+    for message in messages {
+        match message.role {
+            Role::Assistant => {
+                pending_tool_call_ids.clear();
+                let mut sanitized_message = message.clone();
+
+                if let Some(tool_calls) = sanitized_message.tool_calls.take() {
+                    let mut normalized = Vec::with_capacity(tool_calls.len());
+                    let mut invalid_count = 0;
+                    let mut repaired_count = 0;
+
+                    for tool_call in tool_calls.clone() {
+                        match normalize_tool_call_for_provider(tool_call, &schemas) {
+                            Ok((tool_call, repaired)) => {
+                                if repaired {
+                                    repaired_count += 1;
+                                }
+                                normalized.push(tool_call);
+                            }
+                            Err(_) => {
+                                invalid_count += 1;
+                            }
+                        }
+                    }
+
+                    if !normalized.is_empty() {
+                        if !tool_calls_equal(&normalized, &tool_calls) {
+                            stats.normalized_tool_calls += normalized.len();
+                        }
+                        stats.repaired_tool_calls += repaired_count;
+                        for tool_call in &normalized {
+                            pending_tool_call_ids.insert(tool_call.id.clone());
+                        }
+                        sanitized_message.tool_calls = Some(normalized);
+                    }
+                    if invalid_count > 0 {
+                        stats.invalid_assistant_tool_messages += invalid_count;
+                    }
+                }
+
+                sanitized.push(sanitized_message);
+            }
+            Role::Tool => {
+                let keep_tool_result = message
+                    .tool_call_id
+                    .as_ref()
+                    .is_some_and(|tool_call_id| pending_tool_call_ids.remove(tool_call_id));
+                if keep_tool_result {
+                    sanitized.push(message.clone());
+                } else {
+                    stats.dropped_tool_results += 1;
+                }
+            }
+            _ => {
+                pending_tool_call_ids.clear();
+                sanitized.push(message.clone());
+            }
+        }
+    }
+
+    (sanitized, stats)
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct PreparedToolCalls {
+    pub history_tool_calls: Vec<ToolCall>,
+    pub executable_tool_calls: Vec<ToolCall>,
+    pub rejected_tool_results: Vec<(String, ToolResult)>,
+    pub repaired_tool_calls: usize,
+}
+
+pub(crate) fn prepare_tool_calls_for_history(
+    tool_calls: Vec<ToolCall>,
+    tool_schemas: &[ToolSchema],
+) -> Result<PreparedToolCalls> {
+    let schemas = tool_schema_map(tool_schemas);
+    let mut prepared = PreparedToolCalls::default();
+
+    for tool_call in tool_calls {
+        match normalize_tool_call_for_schema(tool_call.clone(), &schemas) {
+            Ok(normalized) => {
+                prepared.history_tool_calls.push(normalized.clone());
+                prepared.executable_tool_calls.push(normalized);
+            }
+            Err(error) => {
+                let tool_name = tool_call.function.name.trim();
+                let Some(schema) = schemas.get(tool_name) else {
+                    return Err(error);
+                };
+                let Some(repaired) = repair_tool_call_for_provider(tool_call, schema) else {
+                    return Err(error);
+                };
+                let error_text = format!(
+                    "Invalid arguments for tool '{}': {}. The tool was not executed; call it again with valid arguments.",
+                    repaired.function.name, error
+                );
+                prepared.rejected_tool_results.push((
+                    repaired.function.name.clone(),
+                    ToolResult::error(&repaired.id, error_text),
+                ));
+                prepared.history_tool_calls.push(repaired);
+                prepared.repaired_tool_calls += 1;
+            }
+        }
+    }
+
+    Ok(prepared)
+}
+
+fn normalize_tool_call(mut tool_call: ToolCall) -> Result<ToolCall> {
+    let tool_name = tool_call.function.name.trim();
+    if tool_name.is_empty() {
+        return Err(Error::InvalidToolArgs {
+            name: "<unknown>".to_string(),
+            details: "tool call function name is empty".to_string(),
+        });
+    }
+
+    tool_call.function.name = tool_name.to_string();
+    tool_call.function.arguments =
+        normalize_tool_arguments(&tool_call.function.name, &tool_call.function.arguments)?;
+    Ok(tool_call)
+}
+
+fn normalize_tool_call_for_schema(
+    tool_call: ToolCall,
+    schemas: &BTreeMap<&str, &ToolSchema>,
+) -> Result<ToolCall> {
+    let normalized = normalize_tool_call(tool_call)?;
+    if let Some(schema) = schemas.get(normalized.function.name.as_str()) {
+        let arguments =
+            serde_json::from_str::<Value>(&normalized.function.arguments).map_err(|error| {
+                Error::InvalidToolArgs {
+                    name: normalized.function.name.clone(),
+                    details: format!(
+                        "function.arguments must be a valid JSON object string: {error}"
+                    ),
+                }
+            })?;
+        schema.validate_args(&arguments)?;
+    }
+    Ok(normalized)
+}
+
+fn normalize_tool_call_for_provider(
+    tool_call: ToolCall,
+    schemas: &BTreeMap<&str, &ToolSchema>,
+) -> Result<(ToolCall, bool)> {
+    match normalize_tool_call_for_schema(tool_call.clone(), schemas) {
+        Ok(normalized) => Ok((normalized, false)),
+        Err(error) => {
+            let tool_name = tool_call.function.name.trim();
+            if let Some(schema) = schemas.get(tool_name) {
+                if let Some(repaired) = repair_tool_call_for_provider(tool_call, schema) {
+                    return Ok((repaired, true));
+                }
+            }
+            Err(error)
+        }
+    }
+}
+
+fn repair_tool_call_for_provider(mut tool_call: ToolCall, schema: &ToolSchema) -> Option<ToolCall> {
+    let arguments = schema.provider_safe_args()?;
+    tool_call.function.name = schema.name.clone();
+    tool_call.function.arguments = serde_json::to_string(&arguments).ok()?;
+    Some(tool_call)
+}
+
+fn tool_schema_map(tool_schemas: &[ToolSchema]) -> BTreeMap<&str, &ToolSchema> {
+    tool_schemas
+        .iter()
+        .map(|schema| (schema.name.as_str(), schema))
+        .collect()
+}
+
+fn tool_calls_equal(left: &[ToolCall], right: &[ToolCall]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right.iter()).all(|(left, right)| {
+            left.id == right.id
+                && left.function.name == right.function.name
+                && left.function.arguments == right.function.arguments
+        })
+}
+
+fn normalize_tool_arguments(tool_name: &str, arguments: &str) -> Result<String> {
+    let trimmed = arguments.trim();
+    if trimmed.is_empty() {
+        return Ok("{}".to_string());
+    }
+
+    let value = serde_json::from_str::<Value>(trimmed).map_err(|error| Error::InvalidToolArgs {
+        name: tool_name.to_string(),
+        details: format!("function.arguments must be a valid JSON object string: {error}"),
+    })?;
+    if !value.is_object() {
+        return Err(Error::InvalidToolArgs {
+            name: tool_name.to_string(),
+            details: "function.arguments must decode to a JSON object".to_string(),
+        });
+    }
+
+    serde_json::to_string(&value).map_err(Error::JsonDecode)
 }
 
 #[derive(Default)]
@@ -199,7 +446,7 @@ pub(crate) fn strip_tool_call_markup(content: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::client::{ToolCall, ToolCallFunction};
+    use crate::client::{Message, ToolCall, ToolCallFunction};
 
     use super::*;
 
@@ -262,6 +509,220 @@ mod tests {
     }
 
     #[test]
+    fn normalize_tool_calls_compacts_valid_json_arguments() {
+        let normalized = normalize_tool_calls(vec![ToolCall {
+            id: "call_1".to_string(),
+            function: ToolCallFunction {
+                name: " terminal ".to_string(),
+                arguments: " { \"command\" : \"pwd\" } ".to_string(),
+            },
+        }])
+        .expect("valid tool call should normalize");
+
+        assert_eq!(normalized[0].function.name, "terminal");
+        assert_eq!(normalized[0].function.arguments, "{\"command\":\"pwd\"}");
+    }
+
+    #[test]
+    fn normalize_tool_calls_turns_empty_arguments_into_object() {
+        let normalized = normalize_tool_calls(vec![ToolCall {
+            id: "call_1".to_string(),
+            function: ToolCallFunction {
+                name: "datetime".to_string(),
+                arguments: "".to_string(),
+            },
+        }])
+        .expect("empty arguments represent no-arg function calls");
+
+        assert_eq!(normalized[0].function.arguments, "{}");
+    }
+
+    #[test]
+    fn normalize_tool_calls_rejects_malformed_arguments() {
+        let error = normalize_tool_calls(vec![ToolCall {
+            id: "call_bad".to_string(),
+            function: ToolCallFunction {
+                name: "terminal".to_string(),
+                arguments: "{\"command\":".to_string(),
+            },
+        }])
+        .expect_err("malformed arguments must not enter history");
+
+        assert!(error.to_string().contains("Invalid tool arguments"));
+    }
+
+    #[test]
+    fn normalize_tool_calls_rejects_non_object_arguments() {
+        let error = normalize_tool_calls(vec![ToolCall {
+            id: "call_bad".to_string(),
+            function: ToolCallFunction {
+                name: "terminal".to_string(),
+                arguments: "\"pwd\"".to_string(),
+            },
+        }])
+        .expect_err("arguments must be JSON objects");
+
+        assert!(error.to_string().contains("JSON object"));
+    }
+
+    #[test]
+    fn sanitize_messages_for_provider_strips_invalid_legacy_tool_call() {
+        let messages = vec![
+            Message::user("list files"),
+            Message::assistant("I will inspect the workspace").with_tool_calls(vec![ToolCall {
+                id: "call_bad".to_string(),
+                function: ToolCallFunction {
+                    name: "terminal".to_string(),
+                    arguments: "{\"command\":".to_string(),
+                },
+            }]),
+            Message::tool("call_bad", "{\"ok\":false}"),
+            Message::user("continue"),
+        ];
+
+        let (sanitized, stats) = sanitize_messages_for_provider(&messages, &[]);
+
+        assert_eq!(stats.invalid_assistant_tool_messages, 1);
+        assert_eq!(stats.dropped_tool_results, 1);
+        assert_eq!(sanitized.len(), 3);
+        assert!(sanitized[1].tool_calls.is_none());
+        assert!(sanitized
+            .iter()
+            .all(|message| message.tool_call_id.as_deref() != Some("call_bad")));
+    }
+
+    #[test]
+    fn sanitize_messages_for_provider_keeps_valid_tool_call_and_result() {
+        let messages = vec![
+            Message::user("pwd"),
+            Message::assistant("").with_tool_calls(vec![ToolCall {
+                id: "call_ok".to_string(),
+                function: ToolCallFunction {
+                    name: " terminal ".to_string(),
+                    arguments: " { \"command\" : \"pwd\" } ".to_string(),
+                },
+            }]),
+            Message::tool("call_ok", "/workspace"),
+        ];
+
+        let (sanitized, stats) = sanitize_messages_for_provider(&messages, &[]);
+
+        assert_eq!(stats.invalid_assistant_tool_messages, 0);
+        assert_eq!(stats.dropped_tool_results, 0);
+        assert_eq!(stats.normalized_tool_calls, 1);
+        assert_eq!(sanitized.len(), 3);
+        let tool_calls = sanitized[1]
+            .tool_calls
+            .as_ref()
+            .expect("valid tool calls should be retained");
+        assert_eq!(tool_calls[0].function.name, "terminal");
+        assert_eq!(tool_calls[0].function.arguments, "{\"command\":\"pwd\"}");
+        assert_eq!(sanitized[2].tool_call_id.as_deref(), Some("call_ok"));
+    }
+
+    #[test]
+    fn sanitize_messages_for_provider_drops_orphan_tool_result() {
+        let messages = vec![
+            Message::tool("missing_call", "stale output"),
+            Message::user("hello"),
+        ];
+
+        let (sanitized, stats) = sanitize_messages_for_provider(&messages, &[]);
+
+        assert_eq!(stats.dropped_tool_results, 1);
+        assert_eq!(sanitized.len(), 1);
+        assert_eq!(sanitized[0].content, "hello");
+    }
+
+    #[test]
+    fn sanitize_messages_for_provider_repairs_schema_invalid_tool_call() {
+        let read_file = ToolSchema::new(
+            "read_file",
+            "Read a file",
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" }
+                },
+                "required": ["path"]
+            }),
+        );
+        let messages = vec![
+            Message::user("read a file"),
+            Message::assistant("").with_tool_calls(vec![ToolCall {
+                id: "call_bad_read".to_string(),
+                function: ToolCallFunction {
+                    name: "read_file".to_string(),
+                    arguments: r#"{"text":"{\"path\": "}"#.to_string(),
+                },
+            }]),
+            Message::tool("call_bad_read", "Invalid JSON: EOF while parsing a value"),
+            Message::user("continue"),
+        ];
+
+        let (sanitized, stats) = sanitize_messages_for_provider(&messages, &[read_file]);
+
+        assert_eq!(stats.invalid_assistant_tool_messages, 0);
+        assert_eq!(stats.dropped_tool_results, 0);
+        assert_eq!(stats.repaired_tool_calls, 1);
+        let tool_calls = sanitized[1]
+            .tool_calls
+            .as_ref()
+            .expect("schema-invalid known tool call should be repaired");
+        assert_eq!(tool_calls[0].id, "call_bad_read");
+        assert_eq!(tool_calls[0].function.name, "read_file");
+        assert_eq!(tool_calls[0].function.arguments, r#"{"path":""}"#);
+        assert_eq!(sanitized[2].tool_call_id.as_deref(), Some("call_bad_read"));
+    }
+
+    #[test]
+    fn prepare_tool_calls_for_history_converts_schema_invalid_call_to_tool_error() {
+        let read_file = ToolSchema::new(
+            "read_file",
+            "Read a file",
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" }
+                },
+                "required": ["path"]
+            }),
+        );
+
+        let prepared = prepare_tool_calls_for_history(
+            vec![ToolCall {
+                id: "call_bad_read".to_string(),
+                function: ToolCallFunction {
+                    name: "read_file".to_string(),
+                    arguments: r#"{"text":"{\"path\": "}"#.to_string(),
+                },
+            }],
+            &[read_file],
+        )
+        .expect("known schema-invalid tool calls should become model-visible tool errors");
+
+        assert_eq!(prepared.history_tool_calls.len(), 1);
+        assert_eq!(
+            prepared.history_tool_calls[0].function.arguments,
+            r#"{"path":""}"#
+        );
+        assert!(prepared.executable_tool_calls.is_empty());
+        assert_eq!(prepared.rejected_tool_results.len(), 1);
+        assert_eq!(prepared.rejected_tool_results[0].0, "read_file");
+        assert_eq!(
+            prepared.rejected_tool_results[0].1.tool_call_id,
+            "call_bad_read"
+        );
+        assert!(!prepared.rejected_tool_results[0].1.success);
+        assert!(prepared.rejected_tool_results[0]
+            .1
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Missing required field: path"));
+    }
+
+    #[test]
     fn streaming_tool_call_accumulator_merges_split_native_deltas() {
         let mut accumulator = StreamingToolCallAccumulator::default();
 
@@ -280,9 +741,9 @@ mod tests {
                         index: 0,
                         id: Some("call_function_terminal_1".to_string()),
                         call_type: Some("function".to_string()),
-                        function: Some(ToolCallFunction {
-                            name: "terminal".to_string(),
-                            arguments: r#"{"command":"pwd"#.to_string(),
+                        function: Some(crate::client::StreamingToolCallFunctionDelta {
+                            name: Some("terminal".to_string()),
+                            arguments: Some(r#"{"command":"pwd"#.to_string()),
                         }),
                     }]),
                 },
@@ -305,9 +766,9 @@ mod tests {
                         index: 0,
                         id: None,
                         call_type: Some("function".to_string()),
-                        function: Some(ToolCallFunction {
-                            name: String::new(),
-                            arguments: r#" && cat hello.txt"}"#.to_string(),
+                        function: Some(crate::client::StreamingToolCallFunctionDelta {
+                            name: None,
+                            arguments: Some(r#" && cat hello.txt"}"#.to_string()),
                         }),
                     }]),
                 },
@@ -322,6 +783,66 @@ mod tests {
         assert_eq!(
             tool_calls[0].function.arguments,
             r#"{"command":"pwd && cat hello.txt"}"#
+        );
+    }
+
+    #[test]
+    fn streaming_tool_call_accumulator_keeps_deserialized_argument_only_chunks() {
+        let first: crate::client::ChatStreamEvent = serde_json::from_value(serde_json::json!({
+            "id": "evt_1",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call_terminal_1",
+                        "type": "function",
+                        "function": {
+                            "name": "terminal",
+                            "arguments": "{\"command\":\"printf "
+                        }
+                    }]
+                },
+                "finish_reason": null
+            }]
+        }))
+        .expect("first tool chunk should deserialize");
+
+        let second: crate::client::ChatStreamEvent = serde_json::from_value(serde_json::json!({
+            "id": "evt_2",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "function": {
+                            "arguments": "CLOUDAGENT_TOOL_OK\"}"
+                        }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        }))
+        .expect("argument-only tool chunk should deserialize");
+
+        let mut accumulator = StreamingToolCallAccumulator::default();
+        accumulator.feed_event(&first);
+        accumulator.feed_event(&second);
+
+        let normalized =
+            normalize_tool_calls(accumulator.finish()).expect("merged tool args should normalize");
+        assert_eq!(normalized.len(), 1);
+        assert_eq!(normalized[0].id, "call_terminal_1");
+        assert_eq!(normalized[0].function.name, "terminal");
+        assert_eq!(
+            normalized[0].function.arguments,
+            r#"{"command":"printf CLOUDAGENT_TOOL_OK"}"#
         );
     }
 

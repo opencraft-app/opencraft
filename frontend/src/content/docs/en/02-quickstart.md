@@ -6,8 +6,6 @@ This tutorial walks through the full process from signing in to receiving a Herm
 
 - Signing in to LightVela
 
-- Completing real-name verification (required on first use)
-
 - Activating the Launch plan and creating a Hermes instance
 
 - Connecting WeChat / Telegram / WhatsApp / Discord channels

@@ -12,8 +12,11 @@ import (
 )
 
 type dianshiRecordsResponse struct {
-	Orders         []*dianshiOrderDTO         `json:"orders"`
-	Participations []*dianshiParticipationDTO `json:"participations"`
+	Orders              []*dianshiOrderDTO         `json:"orders"`
+	Participations      []*dianshiParticipationDTO `json:"participations"`
+	ParticipationsTotal int64                      `json:"participations_total"`
+	Page                int                        `json:"page,omitempty"`
+	PageSize            int                        `json:"page_size,omitempty"`
 }
 
 type dianshiOrderDTO struct {
@@ -62,7 +65,7 @@ func listDianshiRecordsHandler(adminStore store.DianshiAdminStore) gin.HandlerFu
 			})
 			return
 		}
-		participations, err := adminStore.ListUserActivityParticipations(c.Request.Context(), filter)
+		participations, participationsTotal, err := adminStore.ListUserActivityParticipations(c.Request.Context(), filter)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"code":    "InternalError",
@@ -71,8 +74,11 @@ func listDianshiRecordsHandler(adminStore store.DianshiAdminStore) gin.HandlerFu
 			return
 		}
 		c.JSON(http.StatusOK, dianshiRecordsResponse{
-			Orders:         mapDianshiOrders(orders),
-			Participations: mapDianshiParticipations(participations),
+			Orders:              mapDianshiOrders(orders),
+			Participations:      mapDianshiParticipations(participations),
+			ParticipationsTotal: participationsTotal,
+			Page:                normalizedDianshiPage(filter),
+			PageSize:            normalizedDianshiPageSize(filter),
 		})
 	}
 }
@@ -138,7 +144,44 @@ func parseDianshiRecordFilter(c *gin.Context) (store.DianshiRecordFilter, bool) 
 		}
 		filter.Limit = limit
 	}
+	if raw := strings.TrimSpace(c.Query("page")); raw != "" {
+		page, err := strconv.Atoi(raw)
+		if err != nil || page <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": "page must be a positive integer"})
+			return filter, false
+		}
+		filter.Page = page
+	}
+	if raw := strings.TrimSpace(c.Query("page_size")); raw != "" {
+		pageSize, err := strconv.Atoi(raw)
+		if err != nil || pageSize <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": "page_size must be a positive integer"})
+			return filter, false
+		}
+		if pageSize > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": "page_size exceeds max 100"})
+			return filter, false
+		}
+		filter.PageSize = pageSize
+	}
 	return filter, true
+}
+
+func normalizedDianshiPage(filter store.DianshiRecordFilter) int {
+	if filter.Page <= 0 {
+		return 1
+	}
+	return filter.Page
+}
+
+func normalizedDianshiPageSize(filter store.DianshiRecordFilter) int {
+	if filter.PageSize > 0 {
+		return filter.PageSize
+	}
+	if filter.Limit > 0 {
+		return filter.Limit
+	}
+	return 50
 }
 
 func mapDianshiOrders(orders []*store.TradeOrder) []*dianshiOrderDTO {

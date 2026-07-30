@@ -1,0 +1,9 @@
+region             = "ap-beijing"
+bucket_name_prefix = "llmgateway-prod-tfstate"
+
+# Keep false for state buckets. Destroying state history should be a deliberate manual action.
+force_clean = false
+
+tags = {
+  owner = "llmgateway"
+}

@@ -1,0 +1,36 @@
+# Shared by every production VelaGW regional overlay.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: velagwset-delete-protection
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["gateway.lightvela.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["DELETE"]
+        resources: ["velagwsets"]
+  validations:
+    - expression: >-
+        has(oldObject.spec.decommissionApproval) &&
+        oldObject.spec.decommissionApproval.requestID != '' &&
+        oldObject.spec.decommissionApproval.attempt > 0 &&
+        oldObject.spec.decommissionApproval.crUID == string(oldObject.metadata.uid) &&
+        oldObject.spec.decommissionApproval.fleetRef == oldObject.spec.fleetRef &&
+        oldObject.spec.decommissionApproval.shardRef == oldObject.spec.shardRef &&
+        oldObject.spec.decommissionApproval.databaseName == oldObject.spec.databaseName &&
+        oldObject.spec.decommissionApproval.redisDB == oldObject.spec.redisDB
+      message: VelaGWSet deletion requires a matching immutable decommission approval
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: velagwset-delete-protection
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  policyName: velagwset-delete-protection
+  validationActions: [Deny]

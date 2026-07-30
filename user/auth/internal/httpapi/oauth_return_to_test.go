@@ -1,10 +1,14 @@
 package httpapi
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 )
@@ -145,6 +149,120 @@ func TestValidatedReturnToURLAllowsBrowserExtensionCallback(t *testing.T) {
 	}
 }
 
+func TestReadValidatedOAuthReturnToCookie(t *testing.T) {
+	t.Parallel()
+
+	handler := &Handler{
+		returnToAllow: buildOAuthReturnToAllowlist([]string{"lightclaw.cn"}),
+	}
+
+	req, err := http.NewRequest(http.MethodGet, "/", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.AddCookie(&http.Cookie{
+		Name:  "oauth_return_to",
+		Value: "https://preview.foo.lightclaw.cn/dashboard",
+	})
+	if got, want := handler.readValidatedOAuthReturnToCookie(req, "oauth_return_to"), "https://preview.foo.lightclaw.cn/dashboard"; got != want {
+		t.Fatalf("readValidatedOAuthReturnToCookie() = %q, want %q", got, want)
+	}
+
+	req, err = http.NewRequest(http.MethodGet, "/", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.AddCookie(&http.Cookie{
+		Name:  "oauth_return_to",
+		Value: "https://evil.example.com/dashboard",
+	})
+	if got := handler.readValidatedOAuthReturnToCookie(req, "oauth_return_to"); got != "" {
+		t.Fatalf("expected external return_to to be rejected, got %q", got)
+	}
+}
+
+func TestReadValidatedReturnToFromRequest(t *testing.T) {
+	t.Parallel()
+
+	handler := &Handler{
+		returnToAllow: buildOAuthReturnToAllowlist([]string{"lightclaw.cn"}),
+	}
+
+	req, err := http.NewRequest(http.MethodGet, "/?return_to=https%3A%2F%2Fpreview.foo.lightclaw.cn%2Fdashboard", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if got, want := handler.readValidatedReturnToFromRequest(req), "https://preview.foo.lightclaw.cn/dashboard"; got != want {
+		t.Fatalf("readValidatedReturnToFromRequest() = %q, want %q", got, want)
+	}
+
+	req, err = http.NewRequest(http.MethodGet, "/?return_to=https%3A%2F%2Fevil.example.com%2Fdashboard", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if got := handler.readValidatedReturnToFromRequest(req); got != "" {
+		t.Fatalf("expected external return_to to be rejected, got %q", got)
+	}
+}
+
+func TestOAuthStartRejectsExternalReturnToAcrossProviders(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		router     *gin.Engine
+		startPath  string
+		cookieName string
+	}{
+		{
+			name:       "wechat",
+			router:     newAuthTestRouterWithWeChat(&stubWeChatOAuthClient{}),
+			startPath:  "/auth/oauth/wechat/start",
+			cookieName: wechatOAuthReturnToCookieName,
+		},
+		{
+			name:       "google",
+			router:     newAuthTestRouterWithGoogle(&stubGoogleOAuthClient{}),
+			startPath:  "/auth/oauth/google/start",
+			cookieName: googleOAuthReturnToCookieName,
+		},
+		{
+			name:       "qq",
+			router:     newAuthTestRouterWithQQ(&stubQQOAuthClient{}),
+			startPath:  "/auth/oauth/qq/start",
+			cookieName: qqOAuthReturnToCookieName,
+		},
+		{
+			name:       "github",
+			router:     newAuthTestRouterWithGitHub(&stubGitHubOAuthClient{}),
+			startPath:  "/auth/oauth/github/start",
+			cookieName: githubOAuthReturnToCookieName,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := performJSONRequest(
+				t,
+				tc.router,
+				http.MethodGet,
+				tc.startPath+"?return_to="+url.QueryEscape("https://evil.example.com/dashboard"),
+				nil,
+			)
+			if recorder.Code != http.StatusTemporaryRedirect {
+				t.Fatalf("expected 307 from oauth start, got %d: %s", recorder.Code, recorder.Body.String())
+			}
+			cookie := cookieFromRecorderByName(t, recorder, tc.cookieName)
+			if cookie.Value != "" || cookie.MaxAge >= 0 {
+				t.Fatalf("expected invalid return_to cookie to be cleared, got value=%q max_age=%d", cookie.Value, cookie.MaxAge)
+			}
+		})
+	}
+}
+
 func TestAppendSessionTokenToReturnTo(t *testing.T) {
 	t.Parallel()
 
@@ -152,6 +270,60 @@ func TestAppendSessionTokenToReturnTo(t *testing.T) {
 	want := "https://preview.foo.lightclaw.cn/dashboard/settings?tab=1#wechat&session_token=session-123"
 	if got != want {
 		t.Fatalf("appendSessionTokenToReturnTo() = %q, want %q", got, want)
+	}
+}
+
+func TestOAuthSuccessFrontendURLRejectsInvalidBaseURL(t *testing.T) {
+	t.Parallel()
+
+	if got := oauthSuccessFrontendURL("://bad", "/", "session-123"); got != "" {
+		t.Fatalf("expected invalid frontend base url to be rejected, got %q", got)
+	}
+}
+
+func TestOAuthSuccessFrontendURLAppendsSessionToken(t *testing.T) {
+	t.Parallel()
+
+	got := oauthSuccessFrontendURL("https://lightclaw.pages.dev", "/", "session-123")
+	want := "https://lightclaw.pages.dev/#session_token=session-123"
+	if got != want {
+		t.Fatalf("oauthSuccessFrontendURL() = %q, want %q", got, want)
+	}
+}
+
+func TestOAuthSuccessFrontendURLKeepsRelativeFallback(t *testing.T) {
+	t.Parallel()
+
+	got := oauthSuccessFrontendURL("", "/", "session-123")
+	want := "/#session_token=session-123"
+	if got != want {
+		t.Fatalf("oauthSuccessFrontendURL() = %q, want %q", got, want)
+	}
+}
+
+func TestRedirectOAuthSuccessRevalidatesTarget(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	request, err := http.NewRequest(http.MethodGet, "/oauth/callback", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	ctx.Request = request
+	handler := &Handler{
+		returnToAllow: buildOAuthReturnToAllowlist([]string{"lightclaw.cn"}),
+	}
+
+	handler.redirectOAuthSuccess(ctx, "https://evil.example.com/dashboard", "/fallback", &service.AuthSession{
+		Token: "session-123",
+		User:  service.User{ID: "user-123"},
+	})
+
+	if recorder.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("status=%d want %d", recorder.Code, http.StatusTemporaryRedirect)
+	}
+	if got, want := recorder.Header().Get("Location"), "/fallback"; got != want {
+		t.Fatalf("Location=%q want %q", got, want)
 	}
 }
 

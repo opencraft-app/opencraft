@@ -431,10 +431,10 @@ def build_job_manifest(
 
 
 def kubectl(kubeconfig: str, args: list[str], *, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
-    command = ["kubectl", "--kubeconfig", kubeconfig, *args]
+    command = validate_kubectl_args(["kubectl", "--kubeconfig", kubeconfig, *args])
     result: subprocess.CompletedProcess[str] | None = None
     for attempt in range(3):
-        result = subprocess.run(
+        result = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
             command,
             input=input_text,
             capture_output=True,
@@ -446,6 +446,21 @@ def kubectl(kubeconfig: str, args: list[str], *, input_text: str | None = None) 
             time.sleep(3)
     assert result is not None
     return result
+
+
+def validate_kubectl_args(command: list[str]) -> list[str]:
+    if not command:
+        raise ValueError("kubectl command must not be empty")
+    normalized: list[str] = []
+    for arg in command:
+        if not isinstance(arg, str):
+            raise TypeError("kubectl argument must be str")
+        if not arg:
+            raise ValueError("kubectl argument must not be empty")
+        if "\x00" in arg:
+            raise ValueError("kubectl argument must not contain NUL")
+        normalized.append(arg)
+    return normalized
 
 
 def is_transient_kubectl_error(result: subprocess.CompletedProcess[str]) -> bool:

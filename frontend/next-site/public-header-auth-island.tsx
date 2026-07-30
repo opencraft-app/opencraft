@@ -7,13 +7,15 @@ import { useTranslation } from 'react-i18next';
 import { LoginModal } from '@/components/site/login-modal';
 import type { HeaderAppearance } from '@/components/site/public-site-header';
 import { UserAvatarMenu } from '@/components/site/user-avatar-menu';
-import { useOpenClaw } from '@/contexts/openclaw-context';
+import { useOpenClaw } from '@/contexts/agent-context';
 import { useSession } from '@/contexts/session-context';
 import { oauthErrorMessage } from '@/lib/oauth';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
 import { cn } from '@/lib/utils';
 import { AGENTS_HOME_PATH, getAgentCreatingPath } from '@/lib/agent-routes';
+import { DATONG_PAGE_IDS } from '@/observability/datong';
+import { trackDatongClick } from '@/observability/datong-tracker';
 
 import { renderNextLanguageSwitcher } from './language-switcher';
 
@@ -42,6 +44,11 @@ type PublicHeaderAuthIslandProps = {
   locale?: PublicSiteLocale;
   oauthError?: string | null;
   showLanguageSwitcher?: boolean;
+  /**
+   * 未登录转化引导：为 true 时右上角主按钮文案改为「免费试用」，
+   * 未登录点击直接跳转订阅套餐页（而非弹出登录框）。仅首页启用。
+   */
+  promoteFreeTrial?: boolean;
 };
 
 function PublicHeaderAuthControls({
@@ -49,6 +56,7 @@ function PublicHeaderAuthControls({
   locale,
   oauthError = null,
   showLanguageSwitcher = isGlobal,
+  promoteFreeTrial = false,
 }: PublicHeaderAuthIslandProps) {
   const router = useRouter();
   const { i18n } = useTranslation();
@@ -58,6 +66,12 @@ function PublicHeaderAuthControls({
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
   const activeLocale: PublicSiteLocale = locale ?? (i18n.language?.startsWith('zh') ? 'zh-SG' : 'en-US');
   const copy = copyByLocale[activeLocale] || copyByLocale['en-US'];
+  // 未登录转化引导：主按钮文案改为「免费试用」（英文站为 Free trial）
+  const createLabel = promoteFreeTrial
+    ? activeLocale.startsWith('zh')
+      ? '免费试用'
+      : 'Free trial'
+    : copy.createNow;
 
   useEffect(() => {
     if (oauthError) {
@@ -66,7 +80,29 @@ function PublicHeaderAuthControls({
   }, [oauthError]);
 
   const goToCreate = () => {
+    const target = !isAuthenticated
+      ? promoteFreeTrial
+        ? '/subscribe'
+        : 'login_modal'
+      : isSubscribed
+        ? bots.length > 0
+          ? AGENTS_HOME_PATH
+          : getAgentCreatingPath(true)
+        : '/subscribe';
+    trackDatongClick('header_create_now_btn', {
+      pgid: DATONG_PAGE_IDS.HOME,
+      params: {
+        has_bots: bots.length > 0,
+        target,
+      },
+    });
     if (!isAuthenticated) {
+      // 首页转化引导：未登录点击「免费试用」直接进入订阅套餐页；
+      // 其它页面维持原有「弹出登录框」行为。
+      if (promoteFreeTrial) {
+        router.push('/subscribe');
+        return;
+      }
       setShowLogin(true);
       return;
     }
@@ -80,12 +116,12 @@ function PublicHeaderAuthControls({
   if (!authReady) {
     return (
       <>
-        <div className="hidden shrink-0 items-center gap-3 md:flex" aria-hidden="true">
+        <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3" aria-hidden="true">
+          {showLanguageSwitcher && <span className="h-[36px] w-[70px] rounded-[100px] bg-black/[0.04]" />}
           <span className="h-[36px] w-[96px] rounded-[100px] bg-black/[0.06]" />
           <span className="h-[36px] w-[64px] rounded-[100px] bg-black/[0.04]" />
-          {showLanguageSwitcher && <span className="h-[36px] w-[70px] rounded-[100px] bg-black/[0.04]" />}
         </div>
-        <div className="ml-auto flex items-center gap-2 md:hidden" aria-hidden="true">
+        <div className="ml-auto flex items-center gap-2 lg:hidden" aria-hidden="true">
           <span className="h-[32px] w-[58px] rounded-[100px] bg-black/[0.05]" />
         </div>
       </>
@@ -95,11 +131,11 @@ function PublicHeaderAuthControls({
   if (isAuthenticated) {
     return (
       <>
-        <div className="hidden shrink-0 items-center gap-3 md:flex">
+        <div className="hidden shrink-0 items-center gap-2 lg:flex xl:gap-3">
           {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
           <UserAvatarMenu />
         </div>
-        <div className="ml-auto flex items-center gap-2 md:hidden">
+        <div className="ml-auto flex items-center gap-2 lg:hidden">
           <UserAvatarMenu />
         </div>
       </>
@@ -108,30 +144,39 @@ function PublicHeaderAuthControls({
 
   return (
     <>
-      <div className="hidden shrink-0 items-center gap-3 md:flex">
+      <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3">
+        {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
         <button
           type="button"
           onClick={goToCreate}
-          className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-5 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg"
+          className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
         >
-          {copy.createNow}
+          {createLabel}
         </button>
         <button
           type="button"
-          onClick={() => setShowLogin(true)}
+          onClick={() => {
+            trackDatongClick('header_login_btn', { pgid: DATONG_PAGE_IDS.HOME });
+            setShowLogin(true);
+          }}
           className={cn(
-            'inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-4 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors',
+            'inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-3 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors xl:px-4',
             secondaryButtonClass[appearance],
           )}
         >
           {copy.login}
         </button>
-        {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
       </div>
-      <div className="ml-auto flex items-center gap-2 md:hidden">
+      <div className="ml-auto flex items-center gap-2 lg:hidden">
         <button
           type="button"
-          onClick={() => setShowLogin(true)}
+          onClick={() => {
+            trackDatongClick('header_login_btn', {
+              pgid: DATONG_PAGE_IDS.HOME,
+              params: { surface: 'mobile' },
+            });
+            setShowLogin(true);
+          }}
           className={cn(
             'inline-flex h-[32px] cursor-pointer items-center justify-center rounded-[100px] px-3 font-heading text-[13px] font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors',
             secondaryButtonClass[appearance],

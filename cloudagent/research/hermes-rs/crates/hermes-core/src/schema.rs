@@ -5,7 +5,7 @@
 
 use schemars::schema::{InstanceType, Schema, SchemaObject, StringValidation};
 use schemars::{schema_for, JsonSchema};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::error::{Error, Result};
 
@@ -76,7 +76,128 @@ impl ToolSchema {
             }
         }
 
+        if let Some(properties) = self
+            .parameters
+            .get("properties")
+            .and_then(|p| p.as_object())
+        {
+            let args_object = args.as_object().expect("args object checked above");
+            for (key, value) in args_object {
+                let Some(property_schema) = properties.get(key) else {
+                    continue;
+                };
+                if !value_matches_schema(value, property_schema) {
+                    return Err(Error::InvalidToolArgs {
+                        name: self.name.clone(),
+                        details: format!("Invalid type for field: {}", key),
+                    });
+                }
+            }
+        }
+
         Ok(())
+    }
+
+    /// Build a minimal provider-safe argument object for a schema.
+    ///
+    /// This is used only to keep OpenAI-compatible protocol history valid when
+    /// a model emits malformed or schema-invalid tool arguments. The repaired
+    /// call is paired with an error tool result and is never executed.
+    pub fn provider_safe_args(&self) -> Option<Value> {
+        let mut args = Map::new();
+        let properties = self
+            .parameters
+            .get("properties")
+            .and_then(|p| p.as_object());
+
+        if let Some(required) = self.parameters.get("required").and_then(|r| r.as_array()) {
+            for req_field in required {
+                let key = req_field.as_str()?;
+                let field_schema = properties.and_then(|fields| fields.get(key));
+                let value = field_schema
+                    .and_then(default_value_for_schema)
+                    .unwrap_or(Value::Null);
+                args.insert(key.to_string(), value);
+            }
+        }
+
+        let value = Value::Object(args);
+        self.validate_args(&value).ok()?;
+        Some(value)
+    }
+}
+
+fn value_matches_schema(value: &Value, schema: &Value) -> bool {
+    if let Some(any_of) = schema.get("anyOf").and_then(|value| value.as_array()) {
+        return any_of
+            .iter()
+            .any(|schema| value_matches_schema(value, schema));
+    }
+    if let Some(one_of) = schema.get("oneOf").and_then(|value| value.as_array()) {
+        return one_of
+            .iter()
+            .any(|schema| value_matches_schema(value, schema));
+    }
+
+    let Some(types) = schema_types(schema) else {
+        return true;
+    };
+    types.iter().any(|schema_type| match *schema_type {
+        "null" => value.is_null(),
+        "boolean" => value.is_boolean(),
+        "object" => value.is_object(),
+        "array" => value.is_array(),
+        "number" => value.is_number(),
+        "integer" => value.as_i64().is_some() || value.as_u64().is_some(),
+        "string" => value.is_string(),
+        _ => true,
+    })
+}
+
+fn default_value_for_schema(schema: &Value) -> Option<Value> {
+    if let Some(default) = schema.get("default") {
+        return Some(default.clone());
+    }
+    if let Some(enum_values) = schema.get("enum").and_then(|value| value.as_array()) {
+        if let Some(first) = enum_values.first() {
+            return Some(first.clone());
+        }
+    }
+    if let Some(any_of) = schema.get("anyOf").and_then(|value| value.as_array()) {
+        return any_of.iter().find_map(default_value_for_schema);
+    }
+    if let Some(one_of) = schema.get("oneOf").and_then(|value| value.as_array()) {
+        return one_of.iter().find_map(default_value_for_schema);
+    }
+
+    schema_types(schema).and_then(|types| {
+        types
+            .iter()
+            .find(|schema_type| **schema_type != "null")
+            .or_else(|| types.first())
+            .and_then(|schema_type| match *schema_type {
+                "string" => Some(json!("")),
+                "integer" => Some(json!(0)),
+                "number" => Some(json!(0.0)),
+                "boolean" => Some(json!(false)),
+                "array" => Some(json!([])),
+                "object" => Some(json!({})),
+                "null" => Some(Value::Null),
+                _ => None,
+            })
+    })
+}
+
+fn schema_types(schema: &Value) -> Option<Vec<&str>> {
+    match schema.get("type")? {
+        Value::String(schema_type) => Some(vec![schema_type.as_str()]),
+        Value::Array(schema_types) => Some(
+            schema_types
+                .iter()
+                .filter_map(|schema_type| schema_type.as_str())
+                .collect(),
+        ),
+        _ => None,
     }
 }
 

@@ -7,7 +7,7 @@ alpine_version="${ALPINE_VERSION:-3.20}"
 image_size="${IMAGE_SIZE:-512M}"
 out="${DST_ROOTFS_IMAGE:-$repo_root/assets/rootfs/images/alpine-${goarch}.img}"
 rootfs_url="${ALPINE_ROOTFS_URL:-}"
-apk_repository="${ALPINE_APK_REPOSITORY:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"
+apk_repository="${ALPINE_APK_REPOSITORY:-https://mirrors.tencent.com/alpine/v3.23}"
 builder_image="${WISP_ROOTFS_BUILDER_IMAGE:-golang:1.25-bookworm}"
 tmp="${TMPDIR:-/tmp}/wisp-alpine-rootfs-$$"
 

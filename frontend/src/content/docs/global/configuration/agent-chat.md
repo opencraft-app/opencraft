@@ -1,24 +1,24 @@
 # 对话
 
-前往「对话」页面，即可通过聊天窗口和 Hermes 智能代理交互。
+前往「对话」页面，即可通过聊天窗口和 Hermes Agent 智能代理交互。
 
 > ℹ️ **温馨提示**
 >
 > AgentChat 当前内置提示语以中文为主，多语言文案正在补齐。
 
-![](../images/agentchat-1-global.webp)
+![LightVela 管理台中的对话页面](../images/chat-overview.png)
 
 ---
 
 ## 对话记忆
 
-Hermes 智能代理具备随对话自主迭代进化的特性。前往「记忆」页面，查看更多记忆功能相关说明。
+Hermes Agent 智能代理具备随对话自主迭代进化的特性。前往「记忆」页面，查看更多记忆功能相关说明。
 
-![](../images/agentchat-2-global.webp)
+![记忆管理页面](../images/memory-management-overview.png)
 
 ### 记忆运行原理
 
-Hermes 依靠两套机制自动积累长期记忆：
+Hermes Agent 依靠两套机制自动积累长期记忆：
 
 - **上下文压缩**：提炼长对话里的关键信息，固化为长效记忆。
 
@@ -32,6 +32,6 @@ Hermes 依靠两套机制自动积累长期记忆：
 
 - `USER.md`：记录用户个人偏好、使用习惯、沟通风格
 
-仅留存具备长期使用价值的内容，让 Hermes 在后续对话中给出连贯、个性化的回复。
+仅留存具备长期使用价值的内容，让 Hermes Agent 在后续对话中给出连贯、个性化的回复。
 
 ---

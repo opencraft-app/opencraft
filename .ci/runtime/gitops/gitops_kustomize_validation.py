@@ -21,8 +21,24 @@ from support.yaml import load_mapping
 
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
-SUPPORTED_DIRECT_APP_ENVS = {"shprod", "sgprod", "tkexgz", "tkexsg", "devcloud-dep", "shanghai-workers"}
+SUPPORTED_DIRECT_APP_ENVS = {
+    "shprod",
+    "sgprod",
+    "tkexgz",
+    "tkexsg",
+    "devcloud-dep",
+    "shanghai-workers",
+    "beijing-llmgateway",
+}
 PLACEHOLDER_RE = re.compile(r"\bREPLACE_[A-Z0-9_]+\b")
+
+
+def run_command(command: list[str], **kwargs):
+    if not command:
+        raise ValueError("command must not be empty")
+    if any(not isinstance(part, str) or not part for part in command):
+        raise ValueError("command arguments must be non-empty strings")
+    return subprocess.run(command, **kwargs)  # nosemgrep: dangerous-subprocess-use-audit
 
 
 @dataclass(frozen=True)
@@ -99,6 +115,10 @@ def changed_direct_app_services_from_paths(paths: list[str], env: str) -> set[st
                 services.add(parts[2])
         elif path.startswith(app_prefix) and path.endswith(".yaml"):
             services.add(Path(path).stem)
+        else:
+            source_service = source_service_for_path(path)
+            if source_service:
+                services.add(source_service)
     return services
 
 
@@ -159,7 +179,7 @@ def merge_targets(primary: list[KustomizeTarget], extra: list[KustomizeTarget]) 
 
 
 def changed_files(repo_root: Path, env: str) -> list[str]:
-    result = subprocess.run(
+    result = run_command(
         ["git", "diff", "--name-only", "HEAD~1..HEAD"],
         cwd=repo_root,
         capture_output=True,
@@ -167,7 +187,7 @@ def changed_files(repo_root: Path, env: str) -> list[str]:
         check=False,
     )
     if result.returncode != 0:
-        result = subprocess.run(
+        result = run_command(
             ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
             cwd=repo_root,
             capture_output=True,
@@ -196,6 +216,7 @@ def source_service_for_path(path: str) -> str:
         "session",
         "subscription",
         "trade",
+        "velagw",
         "workers",
     }:
         return first
@@ -250,7 +271,7 @@ def validate_target(repo_root: Path, target: KustomizeTarget, kustomize_bin: str
         "--enable-alpha-plugins",
         "--enable-exec",
     ]
-    result = subprocess.run(
+    result = run_command(
         command,
         cwd=repo_root,
         capture_output=True,

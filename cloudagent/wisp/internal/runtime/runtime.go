@@ -440,7 +440,9 @@ func (r *Runtime) logStopState(ctx context.Context, phase, checkpointID string) 
 	}
 	checkpointStat := "not_requested"
 	if checkpointID != "" {
-		checkpointStat = r.imageFingerprintForLog(filepath.Join(r.cfg.CheckpointsRoot, checkpointID, "root-upper.img"))
+		if _, checkpointImg, err := r.checkpointImagePath(checkpointID); err == nil {
+			checkpointStat = r.imageFingerprintForLog(checkpointImg)
+		}
 	}
 	r.log("runtime.stop_state phase=%s container=%s container_state=%s active_img=%s active_fingerprint=%s checkpoint=%s checkpoint_fingerprint=%s loop_dev=%s loop_attached=%t mounts=%s",
 		phase,
@@ -741,11 +743,10 @@ func (r *Runtime) createCheckpoint(ctx context.Context, checkpointID, class, tri
 	if err := r.ensureDirs(); err != nil {
 		return CheckpointMetadata{}, err
 	}
-	checkpointID = strings.TrimSpace(checkpointID)
-	if checkpointID == "" || strings.Contains(checkpointID, "/") || checkpointID == "." || checkpointID == ".." {
-		return CheckpointMetadata{}, fmt.Errorf("invalid checkpoint id: %q", checkpointID)
+	checkpointID, checkpointDir, err := r.checkpointDirPath(checkpointID)
+	if err != nil {
+		return CheckpointMetadata{}, err
 	}
-	checkpointDir := filepath.Join(r.cfg.CheckpointsRoot, checkpointID)
 	checkpointImg := filepath.Join(checkpointDir, "root-upper.img")
 	if _, err := os.Stat(checkpointDir); err == nil {
 		return CheckpointMetadata{}, fmt.Errorf("checkpoint already exists: %s", checkpointID)
@@ -973,11 +974,10 @@ func (r *Runtime) RestoreCheckpoint(ctx context.Context, checkpointID string) er
 	if err := requireRoot(); err != nil {
 		return err
 	}
-	checkpointID = strings.TrimSpace(checkpointID)
-	if checkpointID == "" || strings.Contains(checkpointID, "/") || checkpointID == "." || checkpointID == ".." {
-		return fmt.Errorf("invalid checkpoint id: %q", checkpointID)
+	checkpointID, checkpointImg, err := r.checkpointImagePath(checkpointID)
+	if err != nil {
+		return err
 	}
-	checkpointImg := filepath.Join(r.cfg.CheckpointsRoot, checkpointID, "root-upper.img")
 	info, err := os.Stat(checkpointImg)
 	if err != nil {
 		return fmt.Errorf("checkpoint image not found: %s", checkpointImg)
@@ -1041,14 +1041,10 @@ func (r *Runtime) RestoreCheckpoint(ctx context.Context, checkpointID string) er
 }
 
 func (r *Runtime) promoteCheckpointToActive(ctx context.Context, checkpointID string) error {
-	checkpointID = strings.TrimSpace(checkpointID)
-	if checkpointID == "" {
-		return errors.New("checkpoint id is required")
+	checkpointID, checkpointImg, err := r.checkpointImagePath(checkpointID)
+	if err != nil {
+		return err
 	}
-	if strings.Contains(checkpointID, "/") || checkpointID == "." || checkpointID == ".." {
-		return fmt.Errorf("invalid checkpoint id: %q", checkpointID)
-	}
-	checkpointImg := filepath.Join(r.cfg.CheckpointsRoot, checkpointID, "root-upper.img")
 	if _, err := os.Stat(checkpointImg); err != nil {
 		return fmt.Errorf("checkpoint image not found: %s: %w", checkpointImg, err)
 	}
@@ -1199,14 +1195,10 @@ func (r *Runtime) GetCheckpoint(ctx context.Context, checkpointID string) (Check
 	if err := requireRoot(); err != nil {
 		return CheckpointMetadata{}, err
 	}
-	checkpointID = strings.TrimSpace(checkpointID)
-	if checkpointID == "" {
-		return CheckpointMetadata{}, errors.New("checkpoint id is required")
+	checkpointID, dir, err := r.checkpointDirPath(checkpointID)
+	if err != nil {
+		return CheckpointMetadata{}, err
 	}
-	if strings.Contains(checkpointID, "/") || checkpointID == "." || checkpointID == ".." {
-		return CheckpointMetadata{}, fmt.Errorf("invalid checkpoint id: %q", checkpointID)
-	}
-	dir := filepath.Join(r.cfg.CheckpointsRoot, checkpointID)
 	if _, err := os.Stat(dir); err != nil {
 		if os.IsNotExist(err) {
 			return CheckpointMetadata{}, fmt.Errorf("checkpoint not found: %s", checkpointID)
@@ -1231,11 +1223,10 @@ func (r *Runtime) DeleteCheckpoint(ctx context.Context, checkpointID string) err
 	if err := requireRoot(); err != nil {
 		return err
 	}
-	checkpointID = strings.TrimSpace(checkpointID)
-	if checkpointID == "" {
-		return errors.New("checkpoint id is required")
+	checkpointID, dir, err := r.checkpointDirPath(checkpointID)
+	if err != nil {
+		return err
 	}
-	dir := filepath.Join(r.cfg.CheckpointsRoot, checkpointID)
 	if _, err := os.Stat(dir); err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("checkpoint not found: %s", checkpointID)
@@ -1247,6 +1238,54 @@ func (r *Runtime) DeleteCheckpoint(ctx context.Context, checkpointID string) err
 	}
 	r.log("Checkpoint deleted: %s", checkpointID)
 	return nil
+}
+
+func (r *Runtime) checkpointDirPath(checkpointID string) (string, string, error) {
+	checkpointID, err := validateCheckpointID(checkpointID)
+	if err != nil {
+		return "", "", err
+	}
+	root, err := normalizeLocalFilePath(r.cfg.CheckpointsRoot)
+	if err != nil {
+		return "", "", err
+	}
+	dir := filepath.Clean(filepath.Join(root, checkpointID))
+	if !pathWithinRoot(root, dir) {
+		return "", "", fmt.Errorf("invalid checkpoint path: %s", checkpointID)
+	}
+	return checkpointID, dir, nil
+}
+
+func (r *Runtime) checkpointImagePath(checkpointID string) (string, string, error) {
+	checkpointID, dir, err := r.checkpointDirPath(checkpointID)
+	if err != nil {
+		return "", "", err
+	}
+	return checkpointID, filepath.Join(dir, "root-upper.img"), nil
+}
+
+func validateCheckpointID(checkpointID string) (string, error) {
+	checkpointID = strings.TrimSpace(checkpointID)
+	if checkpointID == "" {
+		return "", errors.New("checkpoint id is required")
+	}
+	if strings.Contains(checkpointID, "/") || checkpointID == "." || checkpointID == ".." {
+		return "", fmt.Errorf("invalid checkpoint id: %q", checkpointID)
+	}
+	return checkpointID, nil
+}
+
+func pathWithinRoot(root, path string) bool {
+	root = filepath.Clean(root)
+	path = filepath.Clean(path)
+	if path == root {
+		return true
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel != "." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && rel != ".."
 }
 
 func (r *Runtime) ensureJuiceFSCloneSupported(target string) error {
@@ -2765,7 +2804,10 @@ type sparseRootUpperExtent struct {
 
 func (r *Runtime) extractBlankActiveImageTemplateSparse(ctx context.Context) (bool, error) {
 	_ = ctx
-	src := strings.TrimSpace(r.cfg.BlankRootUpperSparse)
+	src, err := normalizeLocalFilePath(r.cfg.BlankRootUpperSparse)
+	if err != nil {
+		return false, err
+	}
 	st, err := os.Stat(src)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -2880,6 +2922,14 @@ func (r *Runtime) extractBlankActiveImageTemplateTar(ctx context.Context) (bool,
 }
 
 func sparseCopyFile(src, dst string) error {
+	src, err := normalizeLocalFilePath(src)
+	if err != nil {
+		return err
+	}
+	dst, err = normalizeLocalFilePath(dst)
+	if err != nil {
+		return err
+	}
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -2926,6 +2976,18 @@ func sparseCopyFile(src, dst string) error {
 		return err
 	}
 	return out.Truncate(size)
+}
+
+func normalizeLocalFilePath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", errors.New("file path is required")
+	}
+	abs, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(abs), nil
 }
 
 var errSparseSeekUnsupported = errors.New("sparse seek unsupported")
@@ -3795,7 +3857,7 @@ func (r *Runtime) applyOuterCgroupPolicy(ctx context.Context) error {
 
 func (r *Runtime) configureOuterCgroup() error {
 	for _, dir := range []string{r.cfg.CgroupRoot, r.cfg.CgroupParent, r.cfg.CgroupRuntimeParent, r.cfg.CgroupUserParent, r.cfg.CgroupUserContainer} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := ensureLocalDir(dir); err != nil {
 			return err
 		}
 	}
@@ -3813,8 +3875,8 @@ func (r *Runtime) configureOuterCgroup() error {
 		userMemMax = 268435456
 	}
 	userMemHigh := parseInt64OrDefault(r.cfg.UserMemoryHighBytes, userMemMax*r.cfg.MemoryHighPercent/100)
-	_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserParent, "memory.max"), strconv.FormatInt(userMemMax, 10))
-	_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserParent, "memory.high"), strconv.FormatInt(userMemHigh, 10))
+	maybeWriteCgroupFile(r.cfg.CgroupUserParent, "memory.max", strconv.FormatInt(userMemMax, 10))
+	maybeWriteCgroupFile(r.cfg.CgroupUserParent, "memory.high", strconv.FormatInt(userMemHigh, 10))
 
 	totalMilli := int64(runtime.NumCPU() * 1000)
 	userMilli := parseInt64OrDefault(r.cfg.UserCPUMaxMillicores, totalMilli-r.cfg.CPUReserveMillicores)
@@ -3822,13 +3884,13 @@ func (r *Runtime) configureOuterCgroup() error {
 		userMilli = 100
 	}
 	if userMilli >= totalMilli {
-		_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserParent, "cpu.max"), fmt.Sprintf("max %d", r.cfg.CPUPeriodUS))
+		maybeWriteCgroupFile(r.cfg.CgroupUserParent, "cpu.max", fmt.Sprintf("max %d", r.cfg.CPUPeriodUS))
 	} else {
 		quota := userMilli * r.cfg.CPUPeriodUS / 1000
 		if quota < 1000 {
 			quota = 1000
 		}
-		_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserParent, "cpu.max"), fmt.Sprintf("%d %d", quota, r.cfg.CPUPeriodUS))
+		maybeWriteCgroupFile(r.cfg.CgroupUserParent, "cpu.max", fmt.Sprintf("%d %d", quota, r.cfg.CPUPeriodUS))
 	}
 
 	userPIDsMax := int64(1024)
@@ -3840,17 +3902,23 @@ func (r *Runtime) configureOuterCgroup() error {
 			userPIDsMax = 32
 		}
 	}
-	_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserParent, "pids.max"), strconv.FormatInt(userPIDsMax, 10))
-	_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserContainer, "memory.max"), "max")
-	_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserContainer, "memory.high"), "max")
-	_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserContainer, "pids.max"), "max")
-	_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserContainer, "cpu.max"), fmt.Sprintf("max %d", r.cfg.CPUPeriodUS))
+	maybeWriteCgroupFile(r.cfg.CgroupUserParent, "pids.max", strconv.FormatInt(userPIDsMax, 10))
+	maybeWriteCgroupFile(r.cfg.CgroupUserContainer, "memory.max", "max")
+	maybeWriteCgroupFile(r.cfg.CgroupUserContainer, "memory.high", "max")
+	maybeWriteCgroupFile(r.cfg.CgroupUserContainer, "pids.max", "max")
+	maybeWriteCgroupFile(r.cfg.CgroupUserContainer, "cpu.max", fmt.Sprintf("max %d", r.cfg.CPUPeriodUS))
 	return nil
 }
 
 func (r *Runtime) enableCgroupControllers(dir string) {
-	subtree := filepath.Join(dir, "cgroup.subtree_control")
-	controllersFile := filepath.Join(dir, "cgroup.controllers")
+	subtree, err := cgroupFilePath(dir, "cgroup.subtree_control")
+	if err != nil {
+		return
+	}
+	controllersFile, err := cgroupFilePath(dir, "cgroup.controllers")
+	if err != nil {
+		return
+	}
 	if _, err := os.Stat(subtree); err != nil {
 		return
 	}
@@ -3868,16 +3936,58 @@ func (r *Runtime) assignContainerToOuterCgroup(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(r.cfg.CgroupUserContainer, 0o755); err != nil {
+	if err := ensureLocalDir(r.cfg.CgroupUserContainer); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(r.cfg.CgroupUserContainer, "cgroup.procs"), []byte(pid+"\n"), 0o644)
+	procsFile, err := cgroupFilePath(r.cfg.CgroupUserContainer, "cgroup.procs")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(procsFile, []byte(pid+"\n"), 0o644)
 }
 
 func (r *Runtime) cleanupOuterCgroup() {
 	for _, dir := range []string{r.cfg.CgroupUserContainer, r.cfg.CgroupRuntimeParent, r.cfg.CgroupUserParent, r.cfg.CgroupParent, r.cfg.CgroupRoot} {
-		_ = os.Remove(dir)
+		_ = removeLocalDir(dir)
 	}
+}
+
+func removeLocalDir(path string) error {
+	path, err := normalizeLocalFilePath(path)
+	if err != nil {
+		return err
+	}
+	if path == string(os.PathSeparator) {
+		return errors.New("refuse to remove root directory")
+	}
+	return os.Remove(path)
+}
+
+func ensureLocalDir(path string) error {
+	path, err := normalizeLocalFilePath(path)
+	if err != nil {
+		return err
+	}
+	if path == string(os.PathSeparator) {
+		return errors.New("refuse to create root directory")
+	}
+	return os.MkdirAll(path, 0o755)
+}
+
+func cgroupFilePath(dir, name string) (string, error) {
+	dir, err := normalizeLocalFilePath(dir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name), nil
+}
+
+func maybeWriteCgroupFile(dir, name, value string) {
+	path, err := cgroupFilePath(dir, name)
+	if err != nil {
+		return
+	}
+	_ = maybeWriteFile(path, value)
 }
 
 func (r *Runtime) containerExists(ctx context.Context) (bool, error) {

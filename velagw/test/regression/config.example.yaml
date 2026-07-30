@@ -1,0 +1,36 @@
+scenario: preprod_release_gate
+target:
+  namespace: llmgateway
+  trafficDeployment: llmgateway-traffic
+  controlURL: http://llmgateway-control
+  trafficURL: http://llmgateway-traffic
+  mockURL: http://cloud-mockllm:8080
+  pacerURL: http://llmgateway-regression-pacer:18082
+  targetSets: [set-auto-000001]
+  planID: regression-monthly
+  channelBundleID: regression-mock-channel
+  pricingBundleID: golden-channels
+  model: llmgw-regression-chat
+  longStreamModel: llmgw-regression-long
+  marker: cloud regression answer
+rollout:
+  sseDuration: 3m
+  pinnedStreamHeadroom: 30s
+  requestInterval: 1s
+  timeout: 15m
+controlPlaneOutage:
+  controlDeployment: llmgateway-control
+  workerDeployments:
+    - llmgateway-worker-admin
+    - llmgateway-worker-byok
+    - llmgateway-worker-core
+    - llmgateway-worker-maintenance
+    - llmgateway-worker-observer
+  managerCronJob: llmgateway-set-manager
+  backlogJob: refresh_set_capacity
+  outageDuration: 90s
+  trafficInterval: 1s
+  minimumSamples: 60
+  recoveryTimeout: 5m
+cleanup:
+  preserveOnFailure: true

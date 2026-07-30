@@ -37,12 +37,12 @@ const readBooleanLike = (value: string | undefined): boolean | null => {
 const readBuildTimePaidBillingDefault = (): boolean =>
   readBooleanLike(typeof process !== "undefined" ? process.env.NEXT_PUBLIC_PAID_BILLING_ENABLED : undefined) ??
   readBooleanLike(import.meta.env?.VITE_PAID_BILLING_ENABLED) ??
-  false;
+  true;
 
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   features: {
     paidBillingEnabled: readBuildTimePaidBillingDefault(),
-    realnamePhoneVerificationEnabled: false,
+    realnamePhoneVerificationEnabled: true,
   },
 };
 

@@ -16,6 +16,25 @@ items:
     app.kubernetes.io/managed-by: argocd
   annotations:
     managed-by: export_ssm_to_sops.py
+- id: ctl-runtime-secrets
+  secret_name: mono-sgprod-ctl-runtime-secrets
+  version_id: v1
+  namespace: ctl
+  kubernetes_resource_name: ctl-runtime-secrets
+  kubernetes_resource_kind: Secret
+  output_path: argocd/secrets/sgprod/ctl-runtime-secrets.sops.yaml
+  secret_type: Opaque
+  plaintext_keys:
+  - CTL_LLMGATEWAY_BASE_URL
+  - CTL_LLMGATEWAY_DEFAULT_BASE_URL
+  - CTL_LLMGATEWAY_DEFAULT_MODEL_ID
+  - CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
+  - CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
+  labels:
+    app.kubernetes.io/name: ctl
+    app.kubernetes.io/managed-by: argocd
+  annotations:
+    managed-by: export_ssm_to_sops.py
 - id: ctl-conf-rewrite
   secret_name: mono-sgprod-ctl-conf-rewrite
   namespace: ctl

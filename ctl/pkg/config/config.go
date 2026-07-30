@@ -219,15 +219,157 @@ func parseAdapterConf() {
 	if ServerConf.AdapterConfig.AiGateway.DefaultCompatibility == "" {
 		ServerConf.AdapterConfig.AiGateway.DefaultCompatibility = "openai"
 	}
+
+	if ServerConf.AdapterConfig.LLMGateway == nil {
+		ServerConf.AdapterConfig.LLMGateway = &LLMGatewayConfig{}
+	}
+	llmGatewayBaseURL := firstNonEmptyEnv("CTL_LLMGATEWAY_BASE_URL")
+	llmGatewayAdminToken := firstNonEmptyEnv("CTL_LLMGATEWAY_ADMIN_TOKEN")
+	llmGatewayInternalToken := firstNonEmptyEnv("CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN")
+	ServerConf.AdapterConfig.LLMGateway.NewAllocationUserAllowlist = uniqueNonEmptyCSV(
+		os.Getenv("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"),
+	)
+	ServerConf.AdapterConfig.LLMGateway.BotCreateMigrationUserAllowlist = uniqueNonEmptyCSV(
+		os.Getenv("CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST"),
+	)
+	ServerConf.AdapterConfig.LLMGateway.Enabled = llmGatewayBaseURL != "" &&
+		llmGatewayAdminToken != "" && llmGatewayInternalToken != ""
+	if ServerConf.AdapterConfig.LLMGateway.Enabled {
+		ServerConf.AdapterConfig.LLMGateway.BaseURL = llmGatewayBaseURL
+		ServerConf.AdapterConfig.LLMGateway.AdminToken = llmGatewayAdminToken
+		ServerConf.AdapterConfig.LLMGateway.InternalServiceToken = llmGatewayInternalToken
+		if value := firstNonEmptyEnv("CTL_LLMGATEWAY_DEFAULT_BASE_URL"); value != "" {
+			ServerConf.AdapterConfig.LLMGateway.DefaultBaseURL = value
+		}
+		if value := firstNonEmptyEnv("CTL_LLMGATEWAY_DEFAULT_MODEL_ID"); value != "" {
+			ServerConf.AdapterConfig.LLMGateway.DefaultModelID = value
+		}
+	} else {
+		resetLLMGatewayForLegacyFallback(ServerConf.AdapterConfig.LLMGateway)
+	}
+	fillLLMGatewayFromLegacyAiGateway(ServerConf.AdapterConfig.LLMGateway, ServerConf.AdapterConfig.AiGateway)
+	if ServerConf.AdapterConfig.LLMGateway.Timeout <= 0 {
+		ServerConf.AdapterConfig.LLMGateway.Timeout = 10
+	}
+	if ServerConf.AdapterConfig.LLMGateway.DefaultGatewayPort <= 0 {
+		ServerConf.AdapterConfig.LLMGateway.DefaultGatewayPort = 18789
+	}
+	if ServerConf.AdapterConfig.LLMGateway.DefaultCompatibility == "" {
+		ServerConf.AdapterConfig.LLMGateway.DefaultCompatibility = "openai"
+	}
 }
 
-func firstNonEmptyEnv(keys ...string) string {
-	for _, key := range keys {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+func resetLLMGatewayForLegacyFallback(conf *LLMGatewayConfig) {
+	if conf == nil {
+		return
+	}
+	conf.BaseURL = ""
+	conf.AdminToken = ""
+	conf.InternalServiceToken = ""
+	conf.Timeout = 0
+	conf.DefaultBaseURL = ""
+	conf.DefaultModelID = ""
+	conf.DefaultCompatibility = ""
+	conf.DefaultGatewayPort = 0
+	conf.DefaultProviderID = ""
+	conf.NewAllocationUserAllowlist = nil
+	conf.BotCreateMigrationUserAllowlist = nil
+}
+
+func LLMGatewayEnabled() bool {
+	return ServerConf != nil && ServerConf.AdapterConfig != nil &&
+		ServerConf.AdapterConfig.LLMGateway != nil && ServerConf.AdapterConfig.LLMGateway.Enabled
+}
+
+// LLMGatewayAllowsNewUser reports whether an unassigned user may be allocated
+// to LLMGateway. Existing user_subscription_gateway records remain authoritative.
+func LLMGatewayAllowsNewUser(userID string) bool {
+	if !LLMGatewayEnabled() {
+		return false
+	}
+	return userAllowlistMatches(ServerConf.AdapterConfig.LLMGateway.NewAllocationUserAllowlist, userID)
+}
+
+// LLMGatewayAllowsBotCreateMigration reports whether an existing legacy user
+// may move to LLMGateway while creating a new bot. It deliberately does not
+// affect pass renewal, reset, or other instance maintenance paths.
+func LLMGatewayAllowsBotCreateMigration(userID string) bool {
+	if !LLMGatewayEnabled() {
+		return false
+	}
+	return userAllowlistMatches(ServerConf.AdapterConfig.LLMGateway.BotCreateMigrationUserAllowlist, userID)
+}
+
+func userAllowlistMatches(allowlist []string, userID string) bool {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return false
+	}
+	for _, allowed := range allowlist {
+		if allowed == "*" || allowed == userID {
+			return true
+		}
+	}
+	return false
+}
+
+func fillLLMGatewayFromLegacyAiGateway(dst *LLMGatewayConfig, legacy *AiGatewayConfig) {
+	if dst == nil || legacy == nil {
+		return
+	}
+	if dst.BaseURL == "" {
+		dst.BaseURL = legacy.BaseURL
+	}
+	if dst.AdminToken == "" {
+		dst.AdminToken = legacy.AdminToken
+	}
+	if dst.InternalServiceToken == "" {
+		dst.InternalServiceToken = legacy.InternalServiceToken
+	}
+	if dst.Timeout <= 0 {
+		dst.Timeout = legacy.Timeout
+	}
+	if dst.DefaultBaseURL == "" {
+		dst.DefaultBaseURL = legacy.DefaultBaseURL
+	}
+	if dst.DefaultModelID == "" {
+		dst.DefaultModelID = legacy.DefaultModelID
+	}
+	if dst.DefaultCompatibility == "" {
+		dst.DefaultCompatibility = legacy.DefaultCompatibility
+	}
+	if dst.DefaultGatewayPort <= 0 {
+		dst.DefaultGatewayPort = legacy.DefaultGatewayPort
+	}
+	if dst.DefaultProviderID == "" {
+		dst.DefaultProviderID = legacy.DefaultProviderID
+	}
+}
+
+func firstNonEmptyEnv(names ...string) string {
+	for _, name := range names {
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
 			return value
 		}
 	}
 	return ""
+}
+
+func uniqueNonEmptyCSV(value string) []string {
+	items := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		items = append(items, item)
+	}
+	return items
 }
 
 func parseAllServiceRoleConf() {

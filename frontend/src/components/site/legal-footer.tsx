@@ -69,9 +69,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               <>
                 ·
                 <a
-                  href={PRODUCT_FEEDBACK_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href="/support"
                   className={footerLinkClass}
                 >
                   {t("产品反馈")}

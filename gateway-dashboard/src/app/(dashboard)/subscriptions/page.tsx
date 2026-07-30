@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowRightLeft, MoreHorizontal, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -34,6 +35,7 @@ import {
   useCtlDeleteDianshiParticipation,
   useCtlDestroyPass,
   useCtlDianshiRecords,
+  useCtlPassBillingMigration,
   useCtlRefundPass,
 } from "@/lib/queries/use-ctl-pass-admin";
 import { formatDateTime, formatNumber, statusVariant } from "@/lib/utils";
@@ -61,12 +63,27 @@ function passActionLabel(pass: CtlPass) {
   return `${pass.pass_id} / ${pass.user_id}`;
 }
 
+function parsePositiveIntegerInput(value: string) {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return Number.NaN;
+  }
+  return Number.parseInt(trimmed, 10);
+}
+
 export default function SubscriptionsPage() {
   const [userID, setUserID] = useState("");
   const [bundleID, setBundleID] = useState("all");
   const [status, setStatus] = useState("all");
+  const [passPage, setPassPage] = useState(1);
+  const [passPageSize, setPassPageSize] = useState(20);
+  const [dianshiPage, setDianshiPage] = useState(1);
+  const [dianshiPageSize, setDianshiPageSize] = useState(20);
   const [refundTarget, setRefundTarget] = useState<CtlPass | null>(null);
   const [destroyTarget, setDestroyTarget] = useState<CtlPass | null>(null);
+  const [billingMigrationTarget, setBillingMigrationTarget] = useState<CtlPass | null>(null);
+  const [billingMigrationUin, setBillingMigrationUin] = useState("");
+  const [billingMigrationAppID, setBillingMigrationAppID] = useState("");
   const [deleteDianshiParticipationTarget, setDeleteDianshiParticipationTarget] =
     useState<CtlDianshiParticipation | null>(null);
 
@@ -74,24 +91,38 @@ export default function SubscriptionsPage() {
   const passes = useCtlAdminPasses({
     userID: userID.trim() || undefined,
     bundleID: bundleID === "all" ? undefined : bundleID,
+    status,
+    page: passPage,
+    pageSize: passPageSize,
   });
   const refundPass = useCtlRefundPass();
   const destroyPass = useCtlDestroyPass();
+  const passBillingMigration = useCtlPassBillingMigration();
   const dianshiRecords = useCtlDianshiRecords({
     userID: userID.trim() || undefined,
+    page: dianshiPage,
+    pageSize: dianshiPageSize,
   });
   const deleteDianshiParticipation = useCtlDeleteDianshiParticipation();
 
   const bundleItems = bundles.data ?? [];
-  const passItems = useMemo(() => {
-    const items = passes.data ?? [];
-    if (status === "all") {
-      return items;
-    }
-    return items.filter((item) => item.status === status);
-  }, [passes.data, status]);
+  const passItems = passes.data?.passes ?? [];
 
   const dianshiParticipationItems = dianshiRecords.data?.participations ?? [];
+  const billingMigrationUinNumber = parsePositiveIntegerInput(billingMigrationUin);
+  const billingMigrationAppIDNumber = parsePositiveIntegerInput(billingMigrationAppID);
+  const canSubmitBillingMigration =
+    Boolean(billingMigrationTarget) &&
+    Number.isFinite(billingMigrationUinNumber) &&
+    billingMigrationUinNumber > 0 &&
+    Number.isFinite(billingMigrationAppIDNumber) &&
+    billingMigrationAppIDNumber > 0;
+
+  const openBillingMigrationDialog = useCallback((pass: CtlPass) => {
+    setBillingMigrationTarget(pass);
+    setBillingMigrationUin(pass.uin > 0 ? String(pass.uin) : "");
+    setBillingMigrationAppID(pass.app_id > 0 ? String(pass.app_id) : "");
+  }, []);
 
   async function handleRefundPass() {
     if (!refundTarget) {
@@ -122,6 +153,24 @@ export default function SubscriptionsPage() {
       setDestroyTarget(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "销毁失败");
+    }
+  }
+
+  async function handlePassBillingMigration() {
+    if (!billingMigrationTarget || !canSubmitBillingMigration) {
+      return;
+    }
+    try {
+      const result = await passBillingMigration.mutateAsync({
+        userID: billingMigrationTarget.user_id,
+        uin: billingMigrationUinNumber,
+        appID: billingMigrationAppIDNumber,
+      });
+      const summary = result.deal_name || result.message || result.status;
+      toast.success(`接入计费结果：${summary}`);
+      setBillingMigrationTarget(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "接入计费失败");
     }
   }
 
@@ -281,6 +330,10 @@ export default function SubscriptionsPage() {
                 <RotateCcw className="mr-2 h-4 w-4" />
                 退款
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openBillingMigrationDialog(row.original)}>
+                <ArrowRightLeft className="mr-2 h-4 w-4" />
+                接入计费
+              </DropdownMenuItem>
               <DropdownMenuItem variant="destructive" onClick={() => setDestroyTarget(row.original)}>
                 <Trash2 className="mr-2 h-4 w-4" />
                 销毁
@@ -290,7 +343,7 @@ export default function SubscriptionsPage() {
         ),
       },
     ],
-    []
+    [openBillingMigrationDialog]
   );
 
   const dianshiParticipationColumns = useMemo<ColumnDef<CtlDianshiParticipation>[]>(
@@ -385,10 +438,20 @@ export default function SubscriptionsPage() {
             <Input
               placeholder="用户 ID"
               value={userID}
-              onChange={(event) => setUserID(event.target.value)}
+              onChange={(event) => {
+                setUserID(event.target.value);
+                setPassPage(1);
+                setDianshiPage(1);
+              }}
               className="max-w-md"
             />
-            <Select value={bundleID} onValueChange={(value) => setBundleID(value ?? "all")}>
+            <Select
+              value={bundleID}
+              onValueChange={(value) => {
+                setBundleID(value ?? "all");
+                setPassPage(1);
+              }}
+            >
               <SelectTrigger className="w-[220px]">
                 <SelectValue placeholder="Bundle" />
               </SelectTrigger>
@@ -401,7 +464,13 @@ export default function SubscriptionsPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={status} onValueChange={(value) => setStatus(value ?? "all")}>
+            <Select
+              value={status}
+              onValueChange={(value) => {
+                setStatus(value ?? "all");
+                setPassPage(1);
+              }}
+            >
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Pass 状态" />
               </SelectTrigger>
@@ -423,7 +492,15 @@ export default function SubscriptionsPage() {
           <DataTable
             columns={passColumns}
             data={passItems}
-            total={passItems.length}
+            total={passes.data?.total ?? 0}
+            page={passes.data?.page ?? passPage}
+            pageSize={passes.data?.page_size ?? passPageSize}
+            pageSizeOptions={[20, 50, 100]}
+            onPageChange={setPassPage}
+            onPageSizeChange={(size) => {
+              setPassPageSize(size);
+              setPassPage(1);
+            }}
             isLoading={passes.isLoading}
           />
         </CardContent>
@@ -455,7 +532,15 @@ export default function SubscriptionsPage() {
               <DataTable
                 columns={dianshiParticipationColumns}
                 data={dianshiParticipationItems}
-                total={dianshiParticipationItems.length}
+                total={dianshiRecords.data?.total ?? 0}
+                page={dianshiRecords.data?.page ?? dianshiPage}
+                pageSize={dianshiRecords.data?.page_size ?? dianshiPageSize}
+                pageSizeOptions={[20, 50, 100]}
+                onPageChange={setDianshiPage}
+                onPageSizeChange={(size) => {
+                  setDianshiPageSize(size);
+                  setDianshiPage(1);
+                }}
                 isLoading={dianshiRecords.isLoading}
               />
             </div>
@@ -496,6 +581,54 @@ export default function SubscriptionsPage() {
         onConfirm={handleDestroyPass}
         loading={destroyPass.isPending}
       />
+
+      <Dialog open={!!billingMigrationTarget} onOpenChange={(open) => {
+        if (!open) {
+          setBillingMigrationTarget(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>接入计费</DialogTitle>
+            <DialogDescription>
+              将 {billingMigrationTarget ? passActionLabel(billingMigrationTarget) : ""} 从免费套餐迁移到启航 01。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="billing-migration-uin">UIN</Label>
+              <Input
+                id="billing-migration-uin"
+                inputMode="numeric"
+                value={billingMigrationUin}
+                onChange={(event) => setBillingMigrationUin(event.target.value)}
+                placeholder="影子账号 UIN"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="billing-migration-app-id">AppID</Label>
+              <Input
+                id="billing-migration-app-id"
+                inputMode="numeric"
+                value={billingMigrationAppID}
+                onChange={(event) => setBillingMigrationAppID(event.target.value)}
+                placeholder="影子账号 AppID"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBillingMigrationTarget(null)}>
+              取消
+            </Button>
+            <Button
+              onClick={handlePassBillingMigration}
+              disabled={!canSubmitBillingMigration || passBillingMigration.isPending}
+            >
+              确认接入
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={!!deleteDianshiParticipationTarget}

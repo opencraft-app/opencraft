@@ -22,6 +22,7 @@ type Dao interface {
 	ListByBundleID(bundleID string) ([]*Entity, error)
 	ListByAppID(appID int64) ([]*Entity, error)
 	ListByFilters(userID *string, bundleID *string) ([]*Entity, error)
+	ListByFiltersPage(userID *string, bundleID *string, status *string, limit, offset int) ([]*Entity, int64, error)
 	Create(entity *Entity) error
 	UpdateByPassID(passID string, updates map[string]interface{}) error
 
@@ -292,6 +293,34 @@ func (d *dao) ListByFilters(userID *string, bundleID *string) ([]*Entity, error)
 	return entities, nil
 }
 
+func (d *dao) ListByFiltersPage(userID *string, bundleID *string, status *string, limit, offset int) ([]*Entity, int64, error) {
+	var scopes []func(*gorm.DB) *gorm.DB
+	if userID != nil {
+		scopes = append(scopes, model.WhereEqual(ColumnUserID, *userID))
+	}
+	if bundleID != nil {
+		scopes = append(scopes, model.WhereEqual(ColumnBundleID, *bundleID))
+	}
+	if status != nil {
+		scopes = append(scopes, model.WhereEqual(ColumnStatus, *status))
+	}
+
+	var total int64
+	if err := d.DB().Model(&Entity{}).Scopes(scopes...).Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("ListByFiltersPage count: %w", err)
+	}
+
+	var entities []*Entity
+	if err := d.DB().
+		Scopes(scopes...).
+		Order(model.ColumnCreatedTime + " DESC, " + ColumnPassID + " ASC").
+		Limit(limit).Offset(offset).
+		Find(&entities).Error; err != nil {
+		return nil, 0, fmt.Errorf("ListByFiltersPage list: %w", err)
+	}
+	return entities, total, nil
+}
+
 func (d *dao) Create(entity *Entity) error {
 	return d.Insert(entity)
 }
@@ -369,8 +398,8 @@ func (d *dao) CreatePassWithQuota(entity *Entity, userID string, agentQuota int6
 // ListDistinctAppIDsByBundleIDs 详见 Dao 接口注释
 func (d *dao) ListDistinctAppIDsByBundleIDs(bundleIDs []string, limit, offset int) ([]int64, int64, error) {
 	// 分页查询 DISTINCT app_id
-	listQuery := d.DB().Distinct(ColumnAppID)
-	countQuery := d.DB() // count 查 DISTINCT 数量，单独构造（避免 DISTINCT 影响 listQuery 状态）
+	listQuery := d.DB().Distinct(ColumnAppID).Where(fmt.Sprintf("%s > ?", ColumnAppID), 0)
+	countQuery := d.DB().Where(fmt.Sprintf("%s > ?", ColumnAppID), 0) // count 查 DISTINCT 数量，单独构造（避免 DISTINCT 影响 listQuery 状态）
 
 	if len(bundleIDs) > 0 {
 		listQuery = listQuery.Where(fmt.Sprintf("%s IN ?", ColumnBundleID), bundleIDs)

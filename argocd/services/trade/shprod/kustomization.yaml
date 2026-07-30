@@ -1,0 +1,18 @@
+# trade 上海正式（shprod）deploy-facing 环境特化
+#
+# 与 beijing-sandbox 同样按现网计费形态接入，但地域 override 使用 ap-shanghai。
+# 本目录不启用 migration job；生产 DB migration 由 service-release 的生产 DB
+# migration 阶段人工准入后受控执行。
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: trade
+components:
+  - ../common
+generators:
+  - ksops-secret-generator.yaml
+configMapGenerator:
+  - name: trade-platform-values
+    envs:
+      - trade-platform.env
+patches:
+  - path: patch-account-binding.yaml

@@ -2,6 +2,7 @@ import { MemoryRouter } from "react-router-dom";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LandingPage } from "@/pages/marketing/landing-page";
+import { isGlobal } from "@/lib/region";
 
 const sessionState = vi.hoisted(() => ({
   authReady: true,
@@ -13,7 +14,7 @@ vi.mock("@/contexts/session-context", () => ({
   useSession: () => sessionState,
 }));
 
-vi.mock("@/contexts/openclaw-context", () => ({
+vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => ({
     bots: [],
     isSubscribed: false,
@@ -61,6 +62,26 @@ vi.mock("@/imports/Frame2147230025/sections/CtaSection", () => ({
 vi.mock("@/components/site/product-chrome", () => ({
   ProductFooter: () => <div>footer</div>,
 }));
+vi.mock("@/pages/marketing/scenario-tasks/ScenarioTaskLauncher", () => ({
+  ScenarioTaskLauncher: ({
+    children,
+  }: {
+    children: (state: {
+      installedScenarioIds: ReadonlySet<string>;
+      myTasksHref: string;
+      openScenarioInstaller: () => void;
+    }) => React.ReactNode;
+  }) => children({
+    installedScenarioIds: new Set(),
+    myTasksHref: "/agents/automations",
+    openScenarioInstaller: () => undefined,
+  }),
+}));
+vi.mock("@/pages/marketing/scenario-tasks/OverviewAutomationTasksSection", () => ({
+  OverviewAutomationTasksSection: ({ packs }: { packs: Array<{ name: string }> }) => (
+    <div data-testid="overview-automations">{packs.map((pack) => pack.name).join("|")}</div>
+  ),
+}));
 
 afterEach(() => {
   sessionState.authReady = true;
@@ -70,6 +91,18 @@ afterEach(() => {
 });
 
 describe("LandingPage", () => {
+  it("renders the overview automations on the public home page", () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <LandingPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId("overview-automations")).toHaveTextContent(
+      isGlobal ? "Water & medication reminders" : "喝水与吃药提醒",
+    );
+  });
+
   it("renders the signed-in header state after the global session hydrates", () => {
     sessionState.isAuthenticated = true;
     sessionState.session = {

@@ -17,6 +17,11 @@ require (
 )
 
 require (
+	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms v1.0.1096 // indirect
+)
+
+require (
 	cloud.google.com/go/compute/metadata v0.8.0 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect

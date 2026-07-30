@@ -93,8 +93,11 @@ func (h *passHandler) createTrialPassUser(w http.ResponseWriter, r *http.Request
 
 // getPasses GET /admin/api/ctl/passes — 后台管理
 func (h *passHandler) getPasses(w http.ResponseWriter, r *http.Request) {
+	const maxAdminPassPageSize = 100
+
 	var userID *string
 	var bundleID *string
+	var status *string
 
 	if uid := strings.TrimSpace(r.URL.Query().Get("user_id")); uid != "" {
 		userID = &uid
@@ -102,8 +105,22 @@ func (h *passHandler) getPasses(w http.ResponseWriter, r *http.Request) {
 	if bid := strings.TrimSpace(r.URL.Query().Get("bundle_id")); bid != "" {
 		bundleID = &bid
 	}
+	if st := strings.TrimSpace(r.URL.Query().Get("status")); st != "" && st != "all" {
+		status = &st
+	}
 
-	details, err := h.logic.GetPasses(userID, bundleID)
+	page, pageSize, err := parsePagination(r)
+	if err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+	if pageSize > maxAdminPassPageSize {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam,
+			"page_size %d exceeds max %d", pageSize, maxAdminPassPageSize))
+		return
+	}
+
+	details, total, err := h.logic.GetPassesPage(userID, bundleID, status, page, pageSize)
 	if err != nil {
 		writeHTTPError(w, r, err)
 		return
@@ -113,7 +130,12 @@ func (h *passHandler) getPasses(w http.ResponseWriter, r *http.Request) {
 	for _, d := range details {
 		passes = append(passes, detailToPassResponse(d))
 	}
-	writeSuccess(w, r, http.StatusOK, &transport.ListPassesResponse{Passes: passes})
+	writeSuccess(w, r, http.StatusOK, &transport.ListPassesResponse{
+		Passes:   passes,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+	})
 }
 
 // modifyPass PUT /admin/api/ctl/passes — 后台管理
@@ -140,6 +162,16 @@ func (h *passHandler) modifyPass(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeSuccess(w, r, http.StatusOK, detailToPassResponse(detail))
+}
+
+// handleAdminPassBillingMigration POST /admin/api/ctl/passes/billing-migration
+func (h *passHandler) handleAdminPassBillingMigration(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	h.handlePassBillingMigration(w, r)
 }
 
 // describePasses GET /v1/passes — 用户可见
@@ -197,6 +229,28 @@ func (h *passHandler) handleAdminPassesOrder(w http.ResponseWriter, r *http.Requ
 	}
 
 	result, err := h.logic.CreatePassOrder(body.UserID, &body.CreatePassOrderRequest)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
+// handleAdminPassesFreeCredit POST /admin/api/ctl/passes/free-credit — 后台发放免费/额外积分
+func (h *passHandler) handleAdminPassesFreeCredit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	var req transport.GrantFreeCreditRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+
+	result, err := h.logic.GrantFreeCredit(&req)
 	if err != nil {
 		writeHTTPError(w, r, err)
 		return
@@ -385,6 +439,8 @@ func (h *passHandler) handleAdminPassesOrderUrl(w http.ResponseWriter, r *http.R
 //     trade.checkCreate 反向调，按 user_id 查该用户**全部** pass 记录做互斥占用判定（Q69）
 //   - POST /internal/ctl/passes/complete —
 //     trade 反向调，完成付费 pass 发货
+//   - POST /internal/ctl/passes/transfer —
+//     trade.transferResource 反向调，把存量免费 pass 绑定为计费资源
 //   - GET  /internal/ctl/passes/app-ids?bundle_ids=&page_no=&page_size= —
 //     trade.getAllAppIds 反向调，反查 app_id 列表（B11A 新增）
 //   - GET  /internal/ctl/passes/by-app?app_id=&bundle_ids=&page_no=&page_size= —
@@ -421,6 +477,10 @@ func (h *passHandler) handleInternalPasses(w http.ResponseWriter, r *http.Reques
 		switch parts[0] {
 		case "complete":
 			h.completePass(w, r)
+		case "transfer":
+			h.transferPass(w, r)
+		case "billing-migration":
+			h.internalPassBillingMigration(w, r)
 		case "app-ids":
 			h.listInternalPassAppIDs(w, r)
 		case "by-app":
@@ -672,6 +732,52 @@ func (h *passHandler) completePass(w http.ResponseWriter, r *http.Request) {
 	writeSuccess(w, r, http.StatusOK, detailToPassResponse(detail))
 }
 
+// transferPass POST /internal/ctl/passes/transfer — trade 反向回调迁移既有 pass
+func (h *passHandler) transferPass(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	var req transport.TransferPassRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+
+	detail, err := h.logic.TransferPassFromBilling(&req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, detailToPassResponse(detail))
+}
+
+// internalPassBillingMigration POST /internal/ctl/passes/billing-migration
+func (h *passHandler) internalPassBillingMigration(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	h.handlePassBillingMigration(w, r)
+}
+
+func (h *passHandler) handlePassBillingMigration(w http.ResponseWriter, r *http.Request) {
+	var req transport.PassBillingMigrationRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+	result, err := h.logic.MigrateFreeTrialPassToBilling(&req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
 // detailToPassResponse 将 PassDetail 转换为 admin / internal 接口响应（含 uin/app_id 等内部字段）
 func detailToPassResponse(d *passlogic.PassDetail) *transport.PassResponse {
 	return &transport.PassResponse{
@@ -689,6 +795,8 @@ func detailToPassResponse(d *passlogic.PassDetail) *transport.PassResponse {
 		Status:              d.Status,
 		CreditTotal:         d.CreditTotal,
 		CreditAvailable:     d.CreditAvailable,
+		FreeCreditTotal:     d.FreeCreditTotal,
+		FreeCreditAvailable: d.FreeCreditAvailable,
 		AgentQuotaTotal:     d.AgentQuotaTotal,
 		AgentQuotaAvailable: d.AgentQuotaAvailable,
 		RenewFlag:           d.RenewFlag,
@@ -716,6 +824,8 @@ func detailToUserPassResponse(d *passlogic.PassDetail) *transport.UserPassRespon
 		AgentQuotaAvailable: d.AgentQuotaAvailable,
 		CreditTotal:         d.CreditTotal,
 		CreditAvailable:     d.CreditAvailable,
+		FreeCreditTotal:     d.FreeCreditTotal,
+		FreeCreditAvailable: d.FreeCreditAvailable,
 	}
 }
 

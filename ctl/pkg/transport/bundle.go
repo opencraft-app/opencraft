@@ -4,14 +4,51 @@ import "time"
 
 // === Bundle Transport DTOs ===
 
+// DisplayFeature 套餐功能特性项（user-facing 下发，前端直接渲染，不再按 tier 名硬编码）。
+//
+// 替代订阅页 subscribe-page.tsx 中硬编码的能力位（7×24 在线 / Hermes 自主进化 /
+// 自动任务 / 技能安装(包) / 多通道 / 长期记忆 等）。
+type DisplayFeature struct {
+	// Key 稳定语义键，前端据此映射图标（icon），与文案解耦。
+	// 约定枚举（可扩展）：env / storage / credit / online_247 / self_evolution /
+	//   auto_task / skill_install / skill_pack / multi_channel / long_memory / config_panel
+	Key string `json:"key"`
+	// Label 展示文案（后端直出中文；i18n 由前端字典兜底）。
+	Label string `json:"label"`
+	// Value 右侧数值/描述；为空时前端展示为"✓ 勾选"样式（纯能力位）。
+	Value string `json:"value,omitempty"`
+	// Included 是否包含该能力；false 可用于"不含 xx"置灰展示（本期一般恒为 true）。
+	Included bool `json:"included"`
+	// Highlight 是否高亮强调（如核心卖点）。
+	Highlight bool `json:"highlight,omitempty"`
+}
+
+// DisplayPromotion 促销角标（user-facing），无促销时整体为 nil。
+type DisplayPromotion struct {
+	// Label 角标文案，如"免费 14 天""首月 5 折""首月 6 折"。
+	Label string `json:"label"`
+	// Kind 促销类型：free_trial（免费试用）/ first_period_discount（首期折扣）/ none。
+	Kind string `json:"kind"`
+	// Discount 折扣率(0,1)；如 0.5=5折、0.6=6折；free_trial 时为 0。
+	Discount float64 `json:"discount,omitempty"`
+	// FirstPeriodOnly 折扣是否仅首期生效（首月 6 折后续原价 → true）。
+	FirstPeriodOnly bool `json:"first_period_only,omitempty"`
+}
+
 // ImportBundleRequest 导入套餐请求（不存在则创建，存在则覆盖）
 type ImportBundleRequest struct {
 	BundleID   string `json:"bundle_id"`
 	BundleName string `json:"bundle_name"`
 	// BundleType 套餐类型（必填）：free / general / ai。
-	BundleType      string           `json:"bundle_type"`
-	Description     []BundleDescItem `json:"description"`
-	AgentQuota      int64            `json:"agent_quota"`
+	BundleType  string           `json:"bundle_type"`
+	Description []BundleDescItem `json:"description"`
+	// Features 功能特性列表（可空），handler 序列化为 JSON 字符串存储。
+	Features []DisplayFeature `json:"features,omitempty"`
+	// Tagline 一句话卖点（可空）。
+	Tagline string `json:"tagline,omitempty"`
+	// Promotion 促销角标（可空），nil 表示无促销。
+	Promotion  *DisplayPromotion `json:"promotion,omitempty"`
+	AgentQuota int64             `json:"agent_quota"`
 	Credit          int64            `json:"credit"`
 	TimeSpan        int              `json:"time_span"`
 	TimeUnit        string           `json:"time_unit"`
@@ -35,9 +72,15 @@ type ModifyBundlesRequest struct {
 	BundleIDs  []string `json:"bundle_ids"`
 	BundleName *string  `json:"bundle_name,omitempty"`
 	// BundleType 套餐类型，nil = 不修改；非 nil 时必须为 free / general / ai。
-	BundleType      *string `json:"bundle_type,omitempty"`
-	Description     *string `json:"description,omitempty"` // raw JSON string
-	BundleState     *string `json:"bundle_state,omitempty"`
+	BundleType  *string `json:"bundle_type,omitempty"`
+	Description *string `json:"description,omitempty"` // raw JSON string
+	// Features 功能特性列表 raw JSON string（数组），nil = 不修改。
+	Features *string `json:"features,omitempty"`
+	// Tagline 一句话卖点，nil = 不修改。
+	Tagline *string `json:"tagline,omitempty"`
+	// Promotion 促销角标 raw JSON string（对象），nil = 不修改；传 "null" / "{}" 可清空。
+	Promotion   *string `json:"promotion,omitempty"`
+	BundleState *string `json:"bundle_state,omitempty"`
 	AgentQuota      *int64  `json:"agent_quota,omitempty"`
 	Credit          *int64  `json:"credit,omitempty"`
 	TimeSpan        *int    `json:"time_span,omitempty"`
@@ -56,12 +99,15 @@ type BundleResponse struct {
 	BundleID   string `json:"bundle_id"`
 	BundleName string `json:"bundle_name"`
 	// BundleType 套餐类型：free / general / ai。
-	BundleType      string      `json:"bundle_type"`
-	Description     interface{} `json:"description"`
-	BundleState     string      `json:"bundle_state"`
-	AgentQuota      int64       `json:"agent_quota"`
-	Credit          int64       `json:"credit"`
-	TimeSpan        int         `json:"time_span"`
+	BundleType      string            `json:"bundle_type"`
+	Description     interface{}       `json:"description"`
+	Features        []DisplayFeature  `json:"features"`
+	Tagline         string            `json:"tagline"`
+	Promotion       *DisplayPromotion `json:"promotion,omitempty"`
+	BundleState     string            `json:"bundle_state"`
+	AgentQuota      int64             `json:"agent_quota"`
+	Credit          int64             `json:"credit"`
+	TimeSpan        int               `json:"time_span"`
 	TimeUnit        string      `json:"time_unit"`
 	AiGatewayPlanID string      `json:"ai_gateway_plan_id,omitempty"`
 	// === bundle-instance-spec 设计稿 Q5=b / Q-FRONT-1=b：admin-gateway 出参暴露完整规格 ===
@@ -100,6 +146,12 @@ type UserBundleResponse struct {
 	Credit           int64       `json:"credit"`
 	BundleSalesState string      `json:"bundle_sales_state"`
 
+	// === 展示化字段（PRD 2026-07-14 功能点 3/6/7）：替代订阅页前端硬编码 ===
+	// 登录与否都完整下发（bundle 静态配置，不依赖 trade 询价）。
+	Features  []DisplayFeature  `json:"features"`            // 功能特性列表；空配置返回 []
+	Tagline   string            `json:"tagline"`             // 一句话卖点；空配置返回 ""
+	Promotion *DisplayPromotion `json:"promotion,omitempty"` // 促销角标；无促销时省略
+
 	// === bundle-instance-spec 设计稿 Q-FRONT-1=b：user-facing 结构化暴露 3 个量化字段 ===
 	// 不暴露 instance_spec_id（ctl 内部抽象 ID，前端不该按 ID 字符串映射文案）
 	// 字段名不带单位后缀（v9 拍板）；memory 与 system_disk_size 单位统一为 GB。
@@ -131,7 +183,7 @@ type BundlePrice struct {
 // GET /internal/ctl/bundles/{bundleId} 拿到 bundle 业务规格做 state / sales_state 自校验。
 //
 // 严格精简（Q33 / Q25 / Q37 拍板，2026-05-08 v3 校正）：
-//   - 不含 ai_gateway_plans / ai_gateway_plan_id：DB 内部字段，唯一消费方 ctl/pass，trade 不感知；
+//   - 不含 ai_gateway_plans / ai_gateway_plan_id：网关内部字段，trade 不感知；
 //   - 不含 sub_product_code：归 trade 库 trade_bundle_definition，ctl 完全不感知；
 //   - 不含 time_span / time_unit：时长由 CreatePass 入参 (period, timeUnit) 决定，trade checkCreate 不需要时长。
 //
