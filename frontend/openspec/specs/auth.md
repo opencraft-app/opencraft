@@ -3,7 +3,7 @@
 ## 概述
 
 认证模块负责用户的注册、登录、邀请码校验、OAuth 第三方登录、会话管理等核心身份能力。
-当前主路径为 **手机号 + 短信验证码**，邮箱密码登录、忘记密码已收敛。
+独立登录页 `/auth/sign-in` 的主路径为 **手机号 + 短信验证码**，邮箱密码登录、忘记密码已收敛；站点共享登录弹窗按区域展示推荐登录方式。
 
 ## 页面 / 路由
 
@@ -79,7 +79,7 @@ SessionProvider 监听此事件自动 `SIGN_OUT` 并跳转登录。
 
 ## 业务规则
 
-1. **主路径唯一**：所有新用户默认走手机号 + 验证码，邮箱密码流程已下线。
+1. **手机号认证主路径**：`/auth/sign-in` 独立登录页默认走手机号 + 验证码，邮箱密码流程已下线；共享登录弹窗可按站点策略优先展示 OAuth 推荐方式。
 2. **邀请码策略**：登录/注册时可选携带邀请码；也可通过 `/auth/invite` 独立校验。
 3. **验证码冷却**：发送后返回 `cooldownSeconds`，前端基于 `verificationCooldownUntil`
    时间戳驱动 UI 倒计时，禁止重复发送。
@@ -89,9 +89,11 @@ SessionProvider 监听此事件自动 `SIGN_OUT` 并跳转登录。
    - `MarketingAuthGuard`：未登录用户访问营销域业务页时弹出登录弹窗
    - `AuthenticatedGuard` + `PlanGuard`：登录后未选套餐者强制进入 `/plans/select`
    - `AppAccessGuard`：控制台访问权限（需要套餐 + Bot）
-6. **OAuth 区域差异（编译期分支）**：登录页 OAuth 入口由 `VISIBLE_OAUTH_PROVIDERS`（`src/lib/oauth.ts`）按 `isGlobal` 选定，**未选中的渠道会被 Tree-shake 不进 bundle**：
-   - 国内站：`["qq", "wechat"]`；GitHub 仅作为彩蛋入口，需通过 `useGitHubLoginVisibility` + `show_github_login()` 控制台命令显式启用，由 `ALLOW_GITHUB_EASTER_EGG = !isGlobal` 看守。
-   - 国际站：`["google", "github"]`；不展示 QQ / 微信。
+6. **OAuth 区域差异（编译期分支）**：OAuth 渠道由 `VISIBLE_OAUTH_PROVIDERS`（`src/lib/oauth.ts`）按 `isGlobal` 选定，**未选中的渠道会被 Tree-shake 不进 bundle**：
+   - 国内站共享登录弹窗：维护 `wechat | phone | qq` 前端状态机，打开默认展示微信登录；手机号与 QQ 作为底部其他登录方式。微信和 QQ 均复用现有 OAuth start URL 跳转，不新增微信弹窗配置接口。
+   - 国内站 `/auth/sign-in` 独立页：手机号登录仍受 `show_phone_login()` 彩蛋控制，OAuth 入口沿用国内渠道。
+   - 国内站 GitHub：仅作为彩蛋入口，需通过 `useGitHubLoginVisibility` + `show_github_login()` 控制台命令显式启用，由 `ALLOW_GITHUB_EASTER_EGG = !isGlobal` 看守。
+   - 国际站：`["google", "github"]`；不展示 QQ / 微信，登录弹窗保持原有 Google / GitHub 行为。
    渠道未对接或临时关闭时 `getOAuthStartUrl(provider)` 返回 `null`，UI 隐藏对应按钮。所有 OAuth 错误通过 `oauthErrorMessage()` 统一映射为可读中文文案，禁止把原始 error code 暴露给用户。
 7. **实名认证**：
    - 状态以 `user.realnameVerified` 为**唯一真源**，页面通过 session 派生，不在
