@@ -2813,23 +2813,6 @@ export const AccountPage = () => {
             <SubscriptionSection subscription={subscription} pass={activePass} />
 
             {isGlobal && <SavedCardsSection />}
-
-            {/* ── Sign out (page bottom) ── */}
-            <motion.div variants={fadeIn} className="flex justify-center pt-2">
-              <button
-                onClick={() => void handleSignOut()}
-                className="inline-flex items-center justify-center rounded-full bg-white px-6 py-2.5 transition-colors hover:bg-[rgba(0,0,0,0.03)]"
-                style={{
-                  border: "1px solid #E6E9EF",
-                  fontSize: 14,
-                  lineHeight: "22px",
-                  color: "rgba(0,0,0,0.9)",
-                  boxShadow: "0px 2px 0px 0px rgba(187, 187, 187, 0.05)",
-                }}
-              >
-                {t("退出登录")}
-              </button>
-            </motion.div>
           </motion.div>
         </section>
       </main>
