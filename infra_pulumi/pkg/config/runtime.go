@@ -11,18 +11,19 @@ import (
 )
 
 type RuntimeConfig struct {
-	EnvironmentName        string
-	InventoryPath          string
-	EnableImport           bool
-	ProjectRoot            string
-	SecretID               string
-	SecretKey              string
-	NodePassword           pulumi.StringOutput
-	DBPassword             pulumi.StringOutput
-	RedisPassword          pulumi.StringOutput
-	RegistryPullServer     string
-	StorageAccessKeyImport string
-	Reconcile              ReconcileConfig
+	EnvironmentName           string
+	InventoryPath             string
+	EnableImport              bool
+	ProjectRoot               string
+	SecretID                  string
+	SecretKey                 string
+	NodePassword              pulumi.StringOutput
+	DBPassword                pulumi.StringOutput
+	RedisPassword             pulumi.StringOutput
+	NotifyTestAllowlistSHA256 pulumi.StringOutput
+	RegistryPullServer        string
+	StorageAccessKeyImport    string
+	Reconcile                 ReconcileConfig
 }
 
 type ReconcileConfig struct {
@@ -33,15 +34,16 @@ type ReconcileConfig struct {
 func LoadRuntimeConfig(ctx *pulumi.Context) (*RuntimeConfig, error) {
 	cfg := pconfig.New(ctx, "infra-pulumi")
 	runtime := &RuntimeConfig{
-		EnvironmentName:    cfg.Require("environmentName"),
-		InventoryPath:      cfg.Require("inventoryPath"),
-		EnableImport:       cfg.GetBool("enableImport"),
-		SecretID:           getenvOrEmpty("TENCENTCLOUD_SECRET_ID"),
-		SecretKey:          getenvOrEmpty("TENCENTCLOUD_SECRET_KEY"),
-		NodePassword:       cfg.RequireSecret("nodePassword"),
-		DBPassword:         cfg.RequireSecret("dbPassword"),
-		RedisPassword:      cfg.RequireSecret("redisPassword"),
-		RegistryPullServer: cfg.Get("registryPullServer"),
+		EnvironmentName:           cfg.Require("environmentName"),
+		InventoryPath:             cfg.Require("inventoryPath"),
+		EnableImport:              cfg.GetBool("enableImport"),
+		SecretID:                  getenvOrEmpty("TENCENTCLOUD_SECRET_ID"),
+		SecretKey:                 getenvOrEmpty("TENCENTCLOUD_SECRET_KEY"),
+		NodePassword:              cfg.RequireSecret("nodePassword"),
+		DBPassword:                cfg.RequireSecret("dbPassword"),
+		RedisPassword:             cfg.RequireSecret("redisPassword"),
+		NotifyTestAllowlistSHA256: cfg.GetSecret("notifyTestAllowlistSHA256"),
+		RegistryPullServer:        cfg.Get("registryPullServer"),
 	}
 	if strings.TrimSpace(runtime.RegistryPullServer) == "" {
 		runtime.RegistryPullServer = "ccr.ccs.tencentyun.com"
