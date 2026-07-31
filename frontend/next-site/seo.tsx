@@ -60,7 +60,8 @@ const LOCALE_TO_OG_LOCALE: Record<SeoLocale, string> = {
   'en-US': 'en_US',
   'zh-CN': 'zh_CN',
   'zh-SG': 'zh_SG',
-  'zh-Hant': 'zh_Hant',
+  // OpenGraph 无 `zh_Hant` 泛区标准；繁体站采用香港用语（OpenCC cn→hk），故用 `zh_HK`。
+  'zh-Hant': 'zh_HK',
 };
 
 const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {

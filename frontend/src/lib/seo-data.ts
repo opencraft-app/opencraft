@@ -493,7 +493,8 @@ const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   zh: "zh_CN",
   "zh-cn": "zh_CN",
   "zh-sg": "zh_SG",
-  "zh-hant": "zh_Hant",
+  // OpenGraph 无 `zh_Hant` 泛区标准；繁体站采用香港用语（OpenCC cn→hk），故用 `zh_HK`。
+  "zh-hant": "zh_HK",
 };
 
 function safeDecodeURIComponent(value: string): string {
