@@ -23,6 +23,7 @@ function langForOutputPath(path) {
   if (relative.startsWith('en-us/')) return 'en-US';
   if (relative.startsWith('zh-cn/')) return 'zh-CN';
   if (relative.startsWith('zh-sg/')) return 'zh-SG';
+  if (relative.startsWith('zh-hant/')) return 'zh-Hant';
   return defaultHtmlLang;
 }
 

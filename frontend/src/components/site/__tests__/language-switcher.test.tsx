@@ -19,8 +19,13 @@ describe("LanguageSwitcher", () => {
     const options = screen.getAllByRole("option");
     expect(options.map((option) => option.textContent)).toEqual(
       isGlobal
-        ? ["International Site - English", "International Site - 中文", "中国站"]
-        : ["中国站", "国际站 - 中文", "国际站 - English"],
+        ? [
+            "International Site - English",
+            "International Site - 简体中文",
+            "International Site - 繁體中文",
+            "中国站",
+          ]
+        : ["中国站", "国际站 - 简体中文", "国际站 - English"],
     );
     expect(options[0]).toHaveAttribute("aria-selected", "true");
 
@@ -37,7 +42,7 @@ describe("LanguageSwitcher", () => {
     render(<LanguageSwitcher activeLocale={isGlobal ? "en-US" : "zh-CN"} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Change language" }));
-    fireEvent.click(screen.getByRole("option", { name: isGlobal ? "中国站" : "国际站 - 中文" }));
+    fireEvent.click(screen.getByRole("option", { name: isGlobal ? "中国站" : "国际站 - 简体中文" }));
 
     expect(openSpy).toHaveBeenCalledWith(
       isGlobal ? "https://lightvela.com" : "https://lightvela.ai/zh-sg/",

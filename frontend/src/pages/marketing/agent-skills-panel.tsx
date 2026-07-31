@@ -30,6 +30,7 @@ import {
   type SkillsDemoMode,
   type SkillsDemoTab,
 } from "@/pages/marketing/skills-demo/SkillsDemoPanel";
+import { ZhHantScope } from "@/pages/marketing/tea-sdk-zh-hant-observer";
 
 type LearnSkillSourceKind = "cloud" | "url" | "notes" | "upload";
 type LearnSkillStatus = "idle" | "loading" | "learning" | "success" | "error";
@@ -1257,7 +1258,8 @@ export function HermesAgentSkillsPanel({
   const [skillsPanelRevision, refreshSkillsPanel] = useState(0);
 
   return (
-    <Tabs value="skills" className="min-w-0">
+    <ZhHantScope className="min-w-0">
+      <Tabs value="skills" className="min-w-0">
       <div className="mb-1 flex min-w-0 flex-wrap items-center gap-3">
         <TabsList
           aria-label={t("技能页面切换")}
@@ -1309,6 +1311,7 @@ export function HermesAgentSkillsPanel({
           )}
         />
       </TabsContent>
-    </Tabs>
+      </Tabs>
+    </ZhHantScope>
   );
 }

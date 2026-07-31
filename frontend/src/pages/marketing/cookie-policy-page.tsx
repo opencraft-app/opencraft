@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { AppLink } from "@/lib/app-navigation";
+import { isZhLocale, useZhHantDeep } from "@/lib/zh-hant";
 
 type CookieTableRow = {
   cookie: string;
@@ -354,7 +355,8 @@ const CookieTable = ({ copy, rows }: { copy: CookiePolicyCopy; rows: CookieTable
 
 export const CookiePolicyPage = () => {
   const { i18n } = useTranslation();
-  const copy = i18n.language === "zh-CN" ? zh : en;
+  // 繁体（zh-Hant）时对简体源文案做 OpenCC 简→繁转换；简体原样，英文用 en
+  const copy = useZhHantDeep(isZhLocale(i18n.language) ? zh : en);
 
   return (
     <div className="min-h-dvh bg-[#F7F8FA] text-slate-950">

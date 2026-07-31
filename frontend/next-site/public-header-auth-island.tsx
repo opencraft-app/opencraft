@@ -18,6 +18,7 @@ import { DATONG_PAGE_IDS } from '@/observability/datong';
 import { trackDatongClick } from '@/observability/datong-tracker';
 
 import { renderNextLanguageSwitcher } from './language-switcher';
+import { EN_US_LOCALE, ZH_CN_LOCALE, ZH_HANT_LOCALE, ZH_SG_LOCALE } from './public-locale';
 
 const secondaryButtonClass: Record<HeaderAppearance, string> = {
   immersive: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
@@ -25,19 +26,36 @@ const secondaryButtonClass: Record<HeaderAppearance, string> = {
 };
 
 const copyByLocale: Record<PublicSiteLocale, { createNow: string; login: string }> = {
-  'en-US': {
+  [EN_US_LOCALE]: {
     createNow: 'Create Now',
     login: 'Sign In',
   },
-  'zh-CN': {
+  [ZH_CN_LOCALE]: {
     createNow: '立即创建',
     login: '登录',
   },
-  'zh-SG': {
+  [ZH_SG_LOCALE]: {
     createNow: '立即创建',
     login: '登录',
+  },
+  [ZH_HANT_LOCALE]: {
+    createNow: '立即創建',
+    login: '登入',
   },
 };
+
+/**
+ * 未显式传入 `locale` prop 时的兜底：从运行时 `i18n.language` 推断当前 locale。
+ *
+ * 注意繁体必须优先于「以 zh 开头」的简体判断 —— 否则 `zh-Hant` 会误落到
+ * 简体 `ZH_SG_LOCALE`，导致繁体站头部按钮显示简体文案（「立即创建/登录」
+ * 而非「立即創建/登入」）。
+ */
+function inferLocaleFromI18n(language: string | undefined): PublicSiteLocale {
+  if (language === ZH_HANT_LOCALE || language?.startsWith('zh-Hant')) return ZH_HANT_LOCALE;
+  if (language?.startsWith('zh')) return ZH_SG_LOCALE;
+  return EN_US_LOCALE;
+}
 
 type PublicHeaderAuthIslandProps = {
   appearance?: HeaderAppearance;
@@ -64,13 +82,15 @@ function PublicHeaderAuthControls({
   const { bots, isSubscribed } = useOpenClaw();
   const [showLogin, setShowLogin] = useState(false);
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
-  const activeLocale: PublicSiteLocale = locale ?? (i18n.language?.startsWith('zh') ? 'zh-SG' : 'en-US');
-  const copy = copyByLocale[activeLocale] || copyByLocale['en-US'];
-  // 未登录转化引导：主按钮文案改为「免费试用」（英文站为 Free trial）
+  const activeLocale: PublicSiteLocale = locale ?? inferLocaleFromI18n(i18n.language);
+  const copy = copyByLocale[activeLocale] || copyByLocale[EN_US_LOCALE];
+  // 未登录转化引导：主按钮文案改为「免费试用」（英文站为 Free trial、繁体为「免費試用」）
   const createLabel = promoteFreeTrial
-    ? activeLocale.startsWith('zh')
-      ? '免费试用'
-      : 'Free trial'
+    ? activeLocale === ZH_HANT_LOCALE
+      ? '免費試用'
+      : activeLocale.startsWith('zh')
+        ? '免费试用'
+        : 'Free trial'
     : copy.createNow;
 
   useEffect(() => {

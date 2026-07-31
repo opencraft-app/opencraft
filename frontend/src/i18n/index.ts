@@ -26,6 +26,27 @@ import { initReactI18next } from "react-i18next";
 import { DEFAULT_LOCALE, readLocaleFromPath } from "@/lib/region";
 import enUS from "./generated/en-US.json";
 import zhCN from "./generated/zh-CN.json";
+import zhHant from "./generated/zh-Hant.json";
+
+/**
+ * i18next 支持的语言代码常量（单一来源）。
+ *
+ * 注意：这里刻意在 i18n 模块内自持一份，而不是复用 `@/lib/public-site-routing`
+ * 的 `PUBLIC_SITE_LOCALES`。原因：
+ *   - i18n 是纯客户端 SPA 层，`public-site-routing` 是 Next.js SSR / marketing 站层，
+ *     两者构建时可能被独立打包，避免跨层耦合。
+ *   - 二者数值必须一致，但语义域不同：这里是"i18next resource key"，
+ *     那边是"公开站点 URL locale 前缀"。
+ * 若增删语言，请两处同步更新。
+ */
+const SUPPORTED_LOCALES = {
+  ZH_CN: "zh-CN",
+  EN_US: "en-US",
+  ZH_HANT: "zh-Hant",
+} as const;
+
+/** i18next 支持的 locale 联合类型 */
+export type SupportedLocale = (typeof SUPPORTED_LOCALES)[keyof typeof SUPPORTED_LOCALES];
 
 /** 本地存储 key，用户手动切换语言时持久化 */
 const LOCALE_STORAGE_KEY = "lw-locale";
@@ -56,11 +77,12 @@ const initialLocale =
 
 void i18n.use(initReactI18next).init({
   resources: {
-    "zh-CN": { translation: zhCN },
-    "en-US": { translation: enUS },
+    [SUPPORTED_LOCALES.ZH_CN]: { translation: zhCN },
+    [SUPPORTED_LOCALES.EN_US]: { translation: enUS },
+    [SUPPORTED_LOCALES.ZH_HANT]: { translation: zhHant },
   },
   lng: initialLocale,
-  fallbackLng: "zh-CN",
+  fallbackLng: SUPPORTED_LOCALES.ZH_CN,
   interpolation: {
     /* React 已自动转义，无需二次转义 */
     escapeValue: false,
@@ -74,7 +96,7 @@ void i18n.use(initReactI18next).init({
  * 手动切换语言并持久化
  * @example setLocale('en-US')
  */
-export const setLocale = (locale: "zh-CN" | "en-US"): void => {
+export const setLocale = (locale: SupportedLocale): void => {
   try {
     window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
   } catch {

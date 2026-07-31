@@ -6,6 +6,14 @@ import { isGlobal, type Region } from '@/lib/region';
 import type { DocsRouteLocale } from './docs-route-manifest';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { DEFAULT_PUBLIC_ROUTE_LOCALE, type PublicUrlLang } from './public-locale';
+import {
+  EN_US_LOCALE,
+  EN_US_URL_LANG,
+  ZH_CN_URL_LANG,
+  ZH_HANT_LOCALE,
+  ZH_HANT_URL_LANG,
+  ZH_SG_URL_LANG,
+} from './public-locale';
 
 export type SeoLocale = PublicSiteLocale;
 
@@ -38,18 +46,22 @@ const LOCALE_TO_URL_LANG: Record<SeoLocale, PublicUrlLang> = {
   'en-US': 'en-us',
   'zh-CN': 'zh-cn',
   'zh-SG': 'zh-sg',
+  'zh-Hant': 'zh-hant',
 };
 
 const URL_LANG_TO_LOCALE: Record<PublicUrlLang, SeoLocale> = {
   'en-us': 'en-US',
   'zh-cn': 'zh-CN',
   'zh-sg': 'zh-SG',
+  'zh-hant': 'zh-Hant',
 };
 
 const LOCALE_TO_OG_LOCALE: Record<SeoLocale, string> = {
   'en-US': 'en_US',
   'zh-CN': 'zh_CN',
   'zh-SG': 'zh_SG',
+  // OpenGraph 无 `zh_Hant` 泛区标准；繁体站采用香港用语（OpenCC cn→hk），故用 `zh_HK`。
+  'zh-Hant': 'zh_HK',
 };
 
 const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {
@@ -87,12 +99,37 @@ const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {
     'WhatsApp bot',
     'Discord bot',
   ],
+  'zh-Hant': [
+    'LightVela',
+    '雲端 Agent',
+    '個人 Agent',
+    'AI 夥伴',
+    'Hermes Agent',
+    'Agent 託管',
+    'Telegram bot',
+    'WhatsApp bot',
+    'Discord bot',
+  ],
 };
 
-export const SEO_PUBLIC_URL_LANGS = (isGlobal ? ['en-us', 'zh-sg'] : ['zh-cn']) as readonly PublicUrlLang[];
-export const SEO_DOCS_ROUTE_LOCALES = (isGlobal ? ['en-us', 'zh-sg'] : ['zh-cn']) as readonly DocsRouteLocale[];
-export const SEO_ALL_PUBLIC_URL_LANGS = ['zh-cn', 'en-us', 'zh-sg'] as const satisfies readonly PublicUrlLang[];
-export const SEO_ALL_DOCS_ROUTE_LOCALES = ['zh-cn', 'en-us', 'zh-sg'] as const satisfies readonly DocsRouteLocale[];
+export const SEO_PUBLIC_URL_LANGS = (
+  isGlobal ? [EN_US_URL_LANG, ZH_SG_URL_LANG, ZH_HANT_URL_LANG] : [ZH_CN_URL_LANG]
+) as readonly PublicUrlLang[];
+export const SEO_DOCS_ROUTE_LOCALES = (
+  isGlobal ? [EN_US_URL_LANG, ZH_SG_URL_LANG, ZH_HANT_URL_LANG] : [ZH_CN_URL_LANG]
+) as readonly DocsRouteLocale[];
+export const SEO_ALL_PUBLIC_URL_LANGS = [
+  ZH_CN_URL_LANG,
+  EN_US_URL_LANG,
+  ZH_SG_URL_LANG,
+  ZH_HANT_URL_LANG,
+] as const satisfies readonly PublicUrlLang[];
+export const SEO_ALL_DOCS_ROUTE_LOCALES = [
+  ZH_CN_URL_LANG,
+  EN_US_URL_LANG,
+  ZH_SG_URL_LANG,
+  ZH_HANT_URL_LANG,
+] as const satisfies readonly DocsRouteLocale[];
 
 export function siteUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL;
@@ -123,7 +160,8 @@ export function localeFromUrlLang(lang: PublicUrlLang): SeoLocale {
 }
 
 export function urlLangForLocale(locale: SeoLocale): PublicUrlLang {
-  if (isGlobal && locale.startsWith('zh')) return 'zh-sg';
+  if (isGlobal && locale === ZH_HANT_LOCALE) return ZH_HANT_URL_LANG;
+  if (isGlobal && locale.startsWith('zh')) return ZH_SG_URL_LANG;
   return LOCALE_TO_URL_LANG[locale];
 }
 
@@ -141,7 +179,7 @@ export function localizedDocsPath(locale: DocsRouteLocale | 'default', slug: rea
 }
 
 export function canonicalDocsPath(locale: DocsRouteLocale | 'default', slug: readonly string[]): string {
-  if (isGlobal && locale === 'en-us') return localizedDocsPath('default', slug);
+  if (isGlobal && locale === EN_US_URL_LANG) return localizedDocsPath('default', slug);
   return localizedDocsPath(locale, slug);
 }
 
@@ -153,7 +191,7 @@ export function buildPublicAlternates(path: string): Record<string, string> {
 
   for (const lang of SEO_ALL_PUBLIC_URL_LANGS) {
     const locale = localeFromUrlLang(lang);
-    const localizedPath = lang === 'en-us' ? publicPath : localizedPublicPath(publicPath, lang);
+    const localizedPath = lang === EN_US_URL_LANG ? publicPath : localizedPublicPath(publicPath, lang);
     alternates[locale] = absolutePageUrlForUrlLang(lang, localizedPath);
   }
 
@@ -164,22 +202,22 @@ export function buildDocsAlternates(
   slug: readonly string[],
   availableLocales: readonly DocsRouteLocale[],
 ): Record<string, string> {
-  const defaultLocale = availableLocales.includes('en-us')
-    ? 'en-us'
-    : availableLocales.includes('zh-sg')
-      ? 'zh-sg'
+  const defaultLocale = availableLocales.includes(EN_US_URL_LANG)
+    ? EN_US_URL_LANG
+    : availableLocales.includes(ZH_SG_URL_LANG)
+      ? ZH_SG_URL_LANG
       : availableLocales[0];
   const alternates: Record<string, string> = {};
 
   if (defaultLocale) {
-    const defaultPath = defaultLocale === 'en-us'
+    const defaultPath = defaultLocale === EN_US_URL_LANG
       ? localizedDocsPath('default', slug)
       : localizedDocsPath(defaultLocale, slug);
     alternates['x-default'] = absolutePageUrlForUrlLang(defaultLocale, defaultPath);
   }
 
   for (const locale of availableLocales) {
-    const localizedPath = locale === 'en-us'
+    const localizedPath = locale === EN_US_URL_LANG
       ? localizedDocsPath('default', slug)
       : localizedDocsPath(locale, slug);
     alternates[localeFromUrlLang(locale)] = absolutePageUrlForUrlLang(locale, localizedPath);
@@ -270,7 +308,7 @@ export function SiteJsonLd() {
 }
 
 export function SoftwareApplicationJsonLd({ locale = DEFAULT_PUBLIC_ROUTE_LOCALE.locale }: { locale?: SeoLocale }) {
-  const isEnglish = locale === 'en-US';
+  const isEnglish = locale === EN_US_LOCALE;
   return (
     <JsonLd
       id="lightvela-software-jsonld"
@@ -336,7 +374,7 @@ export function absoluteUrlForSeoRegion(region: SeoSiteRegion, path: string): st
 }
 
 export function absoluteUrlForUrlLang(lang: PublicUrlLang, path: string): string {
-  return absoluteUrlForSeoRegion(lang === 'zh-cn' ? 'cn' : 'global', path);
+  return absoluteUrlForSeoRegion(lang === ZH_CN_URL_LANG ? 'cn' : 'global', path);
 }
 
 export function absolutePageUrlForSeoRegion(region: SeoSiteRegion, path: string): string {
@@ -345,7 +383,7 @@ export function absolutePageUrlForSeoRegion(region: SeoSiteRegion, path: string)
 }
 
 export function absolutePageUrlForUrlLang(lang: PublicUrlLang, path: string): string {
-  return absolutePageUrlForSeoRegion(lang === 'zh-cn' ? 'cn' : 'global', path);
+  return absolutePageUrlForSeoRegion(lang === ZH_CN_URL_LANG ? 'cn' : 'global', path);
 }
 
 export function lastModified(): string | undefined {
@@ -381,12 +419,14 @@ export function normalizePath(path: string): string {
 
 function stripPublicLocalePrefix(path: string): string {
   const normalizedPath = normalizePath(path);
-  const barePath = normalizedPath.replace(/^\/(?:en-us|zh-cn|zh-sg)(?=\/|$)/, '');
+  // 从 PUBLIC_URL_LANGS 派生正则源，避免手写 `en-us|zh-cn|zh-sg|zh-hant` 与常量脱节。
+  const prefixPattern = new RegExp(`^/(?:${SEO_ALL_PUBLIC_URL_LANGS.join('|')})(?=/|$)`);
+  const barePath = normalizedPath.replace(prefixPattern, '');
   return barePath || '/';
 }
 
 function canonicalPathForLocale(path: string, locale: SeoLocale): string {
-  if (isGlobal && locale === 'en-US') return stripPublicLocalePrefix(path);
+  if (isGlobal && locale === EN_US_LOCALE) return stripPublicLocalePrefix(path);
   return normalizePath(path);
 }
 
