@@ -14,6 +14,8 @@ const textInputs = [
   join(frontendRoot, 'src', 'components', 'site', 'landing-cta-footer-links.tsx'),
   join(frontendRoot, 'src', 'i18n', 'generated', 'zh-CN.json'),
   join(frontendRoot, 'src', 'i18n', 'generated', 'en-US.json'),
+  // 繁体（zh-Hant）文案：确保字体子集包含繁体专用字形，避免国际站繁体页面缺字。
+  join(frontendRoot, 'src', 'i18n', 'generated', 'zh-Hant.json'),
 ];
 
 const preservedText = [

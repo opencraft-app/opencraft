@@ -17,17 +17,57 @@
  * 兜底策略：
  *   - 脚本未跑 / 新增中文暂未收录 → 直接回显中文原文（保证页面不白屏）
  *   - 开发环境 DEV 会 console.warn 提醒尽快跑一次 extract
+ *
+ * SSR 场景（Next.js App Router）：
+ *   - 顶层用 `<LocaleOverrideProvider locale="zh-Hant">` 注入路由 locale，
+ *     `useT()` 会走 `useTranslation({ lng })` 显式指定语言 —— 与全局
+ *     `i18n.language` 无关，避免服务端多请求共享单例导致的 mismatch。
+ *   - 未提供 override 时（Vite SPA / 老代码路径）保持原行为：走全局单例。
  */
 
+import { createContext, createElement, useContext } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useCallback } from "react";
 
 import zhToKey from "./generated/zh-to-key.json";
+import i18n from "./index";
 
 /** 反查表类型：中文 → hash key */
 type ZhToKeyMap = Record<string, string>;
 
 const zhToKeyMap = zhToKey as ZhToKeyMap;
+
+/** 支持的 i18n locale —— 与 src/i18n/index.ts 中的 resources 保持一致 */
+export type I18nLocale = "zh-CN" | "en-US" | "zh-Hant";
+
+/**
+ * Locale override context —— 由路由层（例如 Next.js App Router 的 layout）
+ * 注入当前路径对应的 locale，让 `useT()` 在 SSR/CSR 首帧渲染时都能拿到
+ * 一致的语言，避免 hydration mismatch。
+ *
+ * `null` 表示"不 override，走 i18n.language 全局单例"。
+ */
+const LocaleOverrideContext = createContext<I18nLocale | null>(null);
+
+/**
+ * 顶层 Provider —— 通常用在 Next.js layout（server component）或 SSR 感知的
+ * client wrapper 里。可以嵌套（子 provider 覆盖父级）。
+ *
+ * 传 `null` 或不传时表现为透传，不做覆盖。
+ */
+export function LocaleOverrideProvider({
+  locale,
+  children,
+}: {
+  locale: I18nLocale | null;
+  children: ReactNode;
+}) {
+  return createElement(LocaleOverrideContext.Provider, { value: locale }, children);
+}
+
+/** 读取当前 context 里的 locale override（可能为 null） */
+export const useLocaleOverride = (): I18nLocale | null => useContext(LocaleOverrideContext);
 
 /**
  * 本地插值：对 "{{name}}" 形式的占位符做简单字符串替换。
@@ -67,13 +107,18 @@ const warnMissing = (zh: string): void => {
  * Hook：返回一个参数为「中文原文」的 t 函数。
  * 支持 i18next 的 interpolation（第二个参数为 options）。
  *
+ * 若上层 `<LocaleOverrideProvider>` 提供了 locale，则以 explicit `lng` 方式
+ * 调用 `useTranslation`（走 `i18n.getFixedT(lng, ...)`，同步且与全局
+ * `i18n.language` 无关）—— 保证 SSR/CSR 首帧一致。
+ *
  * @example
  *   const t = useT();
  *   t("立即创建");
  *   t("© {{year}} LightVela 版权所有", { year: 2026 });
  */
 export const useT = (): ((zh: string, options?: Record<string, unknown>) => string) => {
-  const { t: rawT } = useTranslation();
+  const lngOverride = useLocaleOverride();
+  const { t: rawT } = useTranslation(undefined, lngOverride ? { lng: lngOverride } : undefined);
   return useCallback((zh: string, options?: Record<string, unknown>) => {
     const key = zhToKeyMap[zh];
     if (!key) {
@@ -91,8 +136,6 @@ export const useT = (): ((zh: string, options?: Record<string, unknown>) => stri
  * 内部直接拿 i18next 单例，不受 React 渲染节奏影响；
  * 但切换语言后 **不会** 自动重渲染使用方，需要调用方自行感知。
  */
-import i18n from "./index";
-
 export const t = (zh: string, options?: Record<string, unknown>): string => {
   const key = zhToKeyMap[zh];
   if (!key) {

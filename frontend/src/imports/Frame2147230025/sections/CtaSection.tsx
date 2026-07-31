@@ -8,7 +8,8 @@ import { useT } from '@/i18n/t';
 
 function CreateButton({ onClick, label }: { onClick?: () => void; label?: string }) {
   const t = useT();
-  const buttonLabel = label ?? t("立即创建");
+  // 未传 label 的场景（匿名/未订阅）默认展示「免费试用」转化引导
+  const buttonLabel = label ?? t("免费试用");
   return (
     <button
       type="button"
@@ -106,7 +107,7 @@ function TitleBlock({ offsetX, offsetY }: { offsetX: number; offsetY: number }) 
 
 interface CtaSectionProps {
   onCreateClick?: () => void;
-  /** 主按钮文案；未登录默认「立即创建」，已登录由上层传入「我的智能体伙伴」 */
+  /** 主按钮文案；未登录/未订阅默认「免费试用」，已登录已订阅由上层传入「立即创建」「我的智能体伙伴」 */
   ctaLabel?: string;
 }
 

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
-import type { Pass } from "@/domain/types";
+import type { Pass, User } from "@/domain/types";
 import { AgentSettingsPage } from "@/pages/marketing/agent-settings-page";
 import type { OpenClawBot } from "@/contexts/agent-context";
 
@@ -12,9 +12,11 @@ const getRenewPrice = vi.fn();
 const createRenewOrder = vi.fn();
 const listMyPasses = vi.fn();
 const execDebugCommand = vi.fn();
+const refreshProfile = vi.fn();
 
 let activePass: Pass | null = null;
 let bots: OpenClawBot[] = [];
+let currentSessionUser: User;
 
 vi.mock("@/i18n/t", () => ({
   t: (text: string, options?: Record<string, unknown>) => text.replace(/\{\{\s*(\w+)\s*\}\}/g, (raw, name: string) => {
@@ -28,27 +30,31 @@ vi.mock("@/i18n/t", () => ({
 }));
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ i18n: { language: "zh-CN" } }),
+  useTranslation: () => ({ i18n: { language: "zh-CN", resolvedLanguage: "zh-CN" } }),
+  initReactI18next: { type: "3rdParty", init: () => {} },
 }));
 
 vi.mock("@/lib/region", () => ({
   DEFAULT_LOCALE: "zh-CN",
   isCN: true,
   isGlobal: false,
+  readLocaleFromPath: () => null,
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => true,
+  useRealnamePhoneVerificationEnabled: () => false,
 }));
 
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => ({
     session: {
-      user: { id: "usr_agent_renewal", email: "user@example.com" },
+      user: currentSessionUser,
       currentSubscription: null,
     },
     isAuthenticated: true,
     authReady: true,
+    refreshProfile,
   }),
 }));
 
@@ -141,6 +147,15 @@ describe("AgentSettingsPage renewal reminder", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.setSystemTime(new Date("2026-07-27T00:00:00.000Z"));
+    currentSessionUser = {
+      id: "usr_agent_renewal",
+      name: "Agent User",
+      email: "user@example.com",
+      inviteRequired: false,
+      realnameVerified: true,
+      realnameLevel: "idcard_2fa",
+      createdAt: "2026-07-01T00:00:00.000Z",
+    };
     bots = [buildBot()];
     activePass = buildPass();
     getRenewPrice.mockResolvedValue({
@@ -179,5 +194,35 @@ describe("AgentSettingsPage renewal reminder", () => {
 
     expect(await screen.findByText("续费套餐")).toBeInTheDocument();
     expect(screen.getByText("生效中")).toBeInTheDocument();
+  });
+
+  it("shows the realname guide in the renewal modal when an unverified user clicks the renewal reminder", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    currentSessionUser = {
+      ...currentSessionUser,
+      realnameVerified: false,
+      realnameLevel: "none",
+    };
+
+    renderAgentSettingsPage();
+
+    const reminder = screen.getByRole("button", { name: "套餐剩余 3 天到期，点击续费" });
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(reminder);
+
+    expect(await screen.findByText("续费套餐")).toBeInTheDocument();
+    expect(await screen.findByText("续费前需先")).toBeInTheDocument();
+    expect(screen.getByText("，完成后再确认续费。")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "更新实名认证信息" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "确认续费" })).toBeDisabled();
+    expect(screen.queryByRole("dialog", { name: "实名认证" })).not.toBeInTheDocument();
+    expect(getRenewPrice).not.toHaveBeenCalled();
+    expect(createRenewOrder).not.toHaveBeenCalled();
+
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(
+      screen.getByRole("button", { name: "更新实名认证信息" }),
+    );
+
+    expect(screen.queryByText("续费套餐")).not.toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "实名认证" })).toBeInTheDocument();
   });
 });

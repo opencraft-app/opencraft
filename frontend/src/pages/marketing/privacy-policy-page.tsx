@@ -4,6 +4,7 @@ import { Fragment, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { AppLink } from "@/lib/app-navigation";
+import { isZhLocale, useZhHantDeep } from "@/lib/zh-hant";
 
 interface PolicyCopy {
   backHome: string;
@@ -593,9 +594,10 @@ const TextSection = ({ id, title, paragraphs, bullets }: { id?: string; title: s
 
 export const PrivacyPolicyPage = () => {
   const { i18n } = useTranslation();
-  const isZh = i18n.language === "zh-CN";
-  const copy = isZh ? zh : en;
-  const security = isZh ? sectionFour.zh : sectionFour.en;
+  const isZh = isZhLocale(i18n.language);
+  // 繁体（zh-Hant）时对简体源文案做 OpenCC 简→繁转换；简体原样，英文用 en
+  const copy = useZhHantDeep(isZh ? zh : en);
+  const security = useZhHantDeep(isZh ? sectionFour.zh : sectionFour.en);
 
   return (
     <div className="min-h-dvh bg-[#F7F8FA] text-slate-950">

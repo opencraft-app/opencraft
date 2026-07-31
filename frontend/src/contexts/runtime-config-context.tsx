@@ -110,6 +110,9 @@ const fetchRuntimeConfig = async (): Promise<RuntimeConfig> => {
     return applyRuntimeOverrides(DEFAULT_RUNTIME_CONFIG);
   }
   const baseUrl = resolveConfiguredAuthApiBaseUrl();
+  if (baseUrl === null) {
+    return DEFAULT_RUNTIME_CONFIG;
+  }
   const response = await fetch(`${baseUrl}/v1/frontend/runtime-config`, {
     method: "GET",
     headers: { accept: "application/json" },

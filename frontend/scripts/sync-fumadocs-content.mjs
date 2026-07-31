@@ -2,6 +2,60 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync,
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import * as OpenCC from 'opencc-js';
+
+/**
+ * 繁體中文（zh-Hant）文檔转换。
+ *
+ * 与 UI 文案链路（`scripts/i18n-zh-hant.mjs` + `src/lib/zh-hant.ts` +
+ * `src/lib/zh-hant-overrides.ts`）**必须完全一致**：
+ *   1. OpenCC `cn → hk`（香港繁体字形，仅字形层简→繁，不做台湾词汇替换。
+ *      因此保留港式用词，如「軟件 / 網絡 / 視頻 / 智能 / 信息」，
+ *      而非台湾的「軟體 / 網路 / 影片 / 智慧 / 資訊」。）
+ *   2. 叠加 ZH_HANT_TERM_OVERRIDES（与 `zh-hant-overrides.ts` 的 TERM_OVERRIDES 同步）。
+ *
+ * ⚠️ 若此处术语表增删条目，请同步 `src/lib/zh-hant-overrides.ts`（.mjs 不能 import .ts，
+ *    只能手动保持一致），否则同一 `/zh-hant/` 语言下用户在 docs 与 UI 中看到的用词会漂移。
+ *
+ * 只转换中文字符，英文 / 代码 / URL（ASCII）与占位符原样保留。
+ */
+const toTraditional = OpenCC.Converter({ from: 'cn', to: 'hk' });
+const ZH_HANT_TERM_OVERRIDES = {
+  // 港澳日常几乎都写「群」而非港标本字「羣」（微信、报刊、社交媒体一致）
+  羣: '群',
+};
+
+/**
+ * 语言代码常量（单一来源，避免文件内 'zh-CN' / 'en-US' / 'zh-Hant' / 'zh-SG' 魔法字符串散落）。
+ *
+ * ⚠️ `.mjs` 无法 import `src/lib/public-site-routing.ts` 的 `PUBLIC_SITE_LOCALES`，
+ * 只能在此手动维护同名镜像。如需增删语言，请同步这两个文件。
+ */
+const LOCALES = Object.freeze({
+  EN_US: 'en-US',
+  ZH_CN: 'zh-CN',
+  ZH_SG: 'zh-SG',
+  ZH_HANT: 'zh-Hant',
+});
+
+/** URL 前缀（对应 fumadocs 输出目录），与 `PUBLIC_URL_LANGS` 保持一致。 */
+const URL_LANGS = Object.freeze({
+  EN_US: 'en-us',
+  ZH_CN: 'zh-cn',
+  ZH_SG: 'zh-sg',
+  ZH_HANT: 'zh-hant',
+});
+
+function convertTraditional(text) {
+  if (typeof text !== 'string' || text.length === 0) return text;
+  let out = toTraditional(text);
+  for (const [from, to] of Object.entries(ZH_HANT_TERM_OVERRIDES)) {
+    if (from === to) continue;
+    out = out.split(from).join(to);
+  }
+  return out;
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = join(here, '..');
 const sourceRoot = join(frontendRoot, 'src', 'content', 'docs');
@@ -296,6 +350,8 @@ const globalDocs = [
     file: 'use-cases/chinese-messaging-channels.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    // 中文正文尚未落地（仅英文源被简→繁转成占位），中文站暂不展示。
+    hiddenForLocales: [LOCALES.ZH_SG, LOCALES.ZH_HANT],
   },
   {
     slug: 'use-cases/daily-summary',
@@ -303,6 +359,7 @@ const globalDocs = [
     file: 'use-cases/daily-summary.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hiddenForLocales: [LOCALES.ZH_SG, LOCALES.ZH_HANT],
   },
   {
     slug: 'use-cases/hermes-agent-24-7',
@@ -310,6 +367,7 @@ const globalDocs = [
     file: 'use-cases/hermes-agent-24-7.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hiddenForLocales: [LOCALES.ZH_SG, LOCALES.ZH_HANT],
   },
   {
     slug: 'use-cases/memory-and-knowledge',
@@ -317,6 +375,7 @@ const globalDocs = [
     file: 'use-cases/memory-and-knowledge.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hiddenForLocales: [LOCALES.ZH_SG, LOCALES.ZH_HANT],
   },
   {
     slug: 'compare/lightvela-vs-localhost-ai-agent',
@@ -381,32 +440,53 @@ const globalDocsForEnglish = globalDocs.filter(
     existsSync(join(sourceRoot, 'global', doc.file)),
 );
 
-const globalDocsForChinese = globalDocs.filter((doc) =>
-  existsSync(join(sourceRoot, 'global', doc.file)),
-);
+/** 判断 doc 是否对某 locale 隐藏（仅按 hiddenForLocales 白名单）。 */
+function isHiddenFor(doc, locale) {
+  return Array.isArray(doc.hiddenForLocales) && doc.hiddenForLocales.includes(locale);
+}
+
+/**
+ * zh-SG / zh-Hant 共用的中文文档集合。
+ * 部分英文源尚未沉淀中文正文，标注 `hiddenForLocales` 后在中文站不生成对应页面
+ * （包括路由、meta.json 侧边栏与 route manifest），避免出现繁体标题 + 英文占位的效果。
+ */
+function globalDocsForChineseLocale(locale) {
+  return globalDocs.filter(
+    (doc) => existsSync(join(sourceRoot, 'global', doc.file)) && !isHiddenFor(doc, locale),
+  );
+}
 
 const docSets = [
   {
-    outputPrefix: 'en-us',
+    outputPrefix: URL_LANGS.EN_US,
     sourcePrefix: 'en',
     fallbackSourcePrefix: 'global',
-    locale: 'en-US',
+    locale: LOCALES.EN_US,
     docs: globalDocsForEnglish,
     title: 'LightVela Docs',
   },
   {
-    outputPrefix: 'zh-cn',
+    outputPrefix: URL_LANGS.ZH_CN,
     sourcePrefix: '',
-    locale: 'zh-CN',
+    locale: LOCALES.ZH_CN,
     docs: cnDocs,
     title: 'LightVela 文档',
   },
   {
-    outputPrefix: 'zh-sg',
+    outputPrefix: URL_LANGS.ZH_SG,
     sourcePrefix: 'global',
-    locale: 'zh-SG',
-    docs: globalDocsForChinese,
+    locale: LOCALES.ZH_SG,
+    docs: globalDocsForChineseLocale(LOCALES.ZH_SG),
     title: 'LightVela 文档',
+  },
+  {
+    // 繁體中文文檔：与 zh-sg 同源（global 简体），生成时逐条做简→繁转换。
+    outputPrefix: URL_LANGS.ZH_HANT,
+    sourcePrefix: 'global',
+    locale: LOCALES.ZH_HANT,
+    docs: globalDocsForChineseLocale(LOCALES.ZH_HANT),
+    title: 'LightVela 文件',
+    convertToTraditional: true,
   },
 ];
 
@@ -433,8 +513,11 @@ function escapeRegExp(value) {
 
 function textFor(value, locale) {
   if (typeof value === 'string') return value;
-  if (locale === 'zh-SG') return value?.['zh-CN'] ?? value?.['en-US'] ?? '';
-  return value?.[locale] ?? value?.['en-US'] ?? '';
+  // zh-SG / zh-Hant 均以简体（zh-CN）为文本底稿；zh-Hant 会在写盘时再做简→繁转换。
+  if (locale === LOCALES.ZH_SG || locale === LOCALES.ZH_HANT) {
+    return value?.[LOCALES.ZH_CN] ?? value?.[LOCALES.EN_US] ?? '';
+  }
+  return value?.[locale] ?? value?.[LOCALES.EN_US] ?? '';
 }
 
 function stripTitle(markdown, title) {
@@ -442,7 +525,14 @@ function stripTitle(markdown, title) {
 }
 
 function allDocsForLinks(outputPrefix) {
-  const localeDocs = outputPrefix === 'zh-sg' ? globalDocsForChinese : globalDocsForEnglish;
+  let localeDocs;
+  if (outputPrefix === URL_LANGS.ZH_SG) {
+    localeDocs = globalDocsForChineseLocale(LOCALES.ZH_SG);
+  } else if (outputPrefix === URL_LANGS.ZH_HANT) {
+    localeDocs = globalDocsForChineseLocale(LOCALES.ZH_HANT);
+  } else {
+    localeDocs = globalDocsForEnglish;
+  }
   return [...cnDocs, ...localeDocs];
 }
 
@@ -493,15 +583,20 @@ function sourcePathFor(docSet, file) {
 }
 
 function writeDoc(docSet, doc) {
-  const title = textFor(doc.title, docSet.locale);
-  const description = textFor(doc.description, docSet.locale);
+  const convert = docSet.convertToTraditional ? convertTraditional : (value) => value;
+  // rawTitle 为简体底稿，用于从原始 md 中剥离一级标题；title/description/body 写盘时再转繁。
+  const rawTitle = textFor(doc.title, docSet.locale);
+  const title = convert(rawTitle);
+  const description = convert(textFor(doc.description, docSet.locale));
   const inputPath = sourcePathFor(docSet, doc.file);
   if (!existsSync(inputPath)) {
     throw new Error(`missing LightVela doc source: ${inputPath}`);
   }
 
   const raw = readFileSync(inputPath, 'utf8').replace(/\r\n/g, '\n');
-  const body = normalizeMarkdownLinks(stripTitle(raw, title), doc.file, docSet.outputPrefix, docSet.locale);
+  const body = convert(
+    normalizeMarkdownLinks(stripTitle(raw, rawTitle), doc.file, docSet.outputPrefix, docSet.locale),
+  );
   const outputPath = join(outputRoot, docSet.outputPrefix, `${doc.slug}.mdx`);
   ensureDir(dirname(outputPath));
   writeFileSync(
@@ -539,6 +634,7 @@ function copyImages() {
  * `---分组名---` 列出页面，组内顺序与 docSet.docs 一致。
  */
 function writeGroupedMeta(docSet, groupOrder, groupLocale) {
+  const convert = docSet.convertToTraditional ? convertTraditional : (value) => value;
   const root = join(outputRoot, docSet.outputPrefix);
   ensureDir(root);
 
@@ -546,7 +642,7 @@ function writeGroupedMeta(docSet, groupOrder, groupLocale) {
   for (const group of groupOrder) {
     const groupDocs = docSet.docs.filter((doc) => textFor(doc.group, groupLocale) === group);
     if (groupDocs.length === 0) continue;
-    pages.push(`---${textFor(groupDocs[0].group, docSet.locale)}---`);
+    pages.push(`---${convert(textFor(groupDocs[0].group, docSet.locale))}---`);
     for (const doc of groupDocs) {
       // 根 meta 用相对该 locale 根的 slug 路径引用页面
       pages.push(doc.slug);
@@ -560,10 +656,10 @@ function writeGroupedMeta(docSet, groupOrder, groupLocale) {
 }
 
 function writeMetaForDocSet(docSet) {
-  if (docSet.outputPrefix === 'zh-cn') {
-    writeGroupedMeta(docSet, CN_GROUP_ORDER, 'zh-CN');
+  if (docSet.outputPrefix === URL_LANGS.ZH_CN) {
+    writeGroupedMeta(docSet, CN_GROUP_ORDER, LOCALES.ZH_CN);
   } else {
-    writeGroupedMeta(docSet, GLOBAL_GROUP_ORDER, 'en-US');
+    writeGroupedMeta(docSet, GLOBAL_GROUP_ORDER, LOCALES.EN_US);
   }
 }
 

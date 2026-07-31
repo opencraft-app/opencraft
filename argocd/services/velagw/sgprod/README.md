@@ -29,3 +29,8 @@ This cell uses standard TKE nodes, one 4C8G node in each availability zone.
 Set autoscaling keeps a minimum of two warm Sets across the two shards. Each
 shard is capped at four Sets until node capacity and production traffic justify
 raising the regional limit.
+
+Public endpoints:
+
+- Control plane: `https://token-admin.lightvela.ai`
+- Traffic plane: `https://token.lightvela.ai/v1`

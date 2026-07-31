@@ -3,6 +3,7 @@
 import { useTranslation } from "react-i18next";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { AppLink } from "@/lib/app-navigation";
+import { isZhLocale, useZhHantDeep } from "@/lib/zh-hant";
 import noticeText from "@/content/legal/open-source-licenses.txt?raw";
 
 const copy = {
@@ -24,7 +25,8 @@ const copy = {
 
 export const OpenSourceLicensesPage = () => {
   const { i18n } = useTranslation();
-  const text = i18n.language === "zh-CN" ? copy.zh : copy.en;
+  // 繁体（zh-Hant）时对简体源文案做 OpenCC 简→繁转换；简体原样，英文用 en
+  const text = useZhHantDeep(isZhLocale(i18n.language) ? copy.zh : copy.en);
 
   return (
     <div className="min-h-dvh bg-[#F7F8FA] text-slate-950">

@@ -31,6 +31,7 @@
  * 避免 SDK 自动 init 的 tree-shake 风险。
  */
 import { isGlobal } from "@/lib/region";
+import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { initI18n } from "@tencent/tea-sdk-lightclaw";
 // 静态 import 英文词条。这一行**必须**保留为静态 import——异步 `await import(...)`
 // 会被 React 渲染抢跑，导致 SDK 模块缓存里的 t() 求值出 undefined。
@@ -41,13 +42,23 @@ const LOCALE_STORAGE_KEY = "lw-locale";
 
 /**
  * 读取用户在 LanguageSwitcher 上手动切换并持久化的语言偏好。
- * 返回值与 mono2 i18n 的 Locale 类型对齐：'zh-CN' | 'en-US' | null（未设置）。
+ * 返回值与 mono2 i18n 的 Locale 类型对齐；未识别的值返回 null。
+ *
+ * 注意：`zh-Hant`（繁体）与 `zh-SG`（新加坡中文）都视为「中文源」——SDK 依旧
+ * 以空词条初始化输出简体源文案，繁体字形由 `tea-sdk-zh-hant-observer` 在渲染后
+ * 用 OpenCC `cn→hk` 就地转换。
  */
-function readStoredLocale(): "zh-CN" | "en-US" | null {
+type StoredLocale = PublicSiteLocaleCode;
+// 校验用的可迭代 whitelist；派生自 PUBLIC_SITE_LOCALES 常量，避免手写 4 个字面量。
+const STORED_LOCALE_WHITELIST: readonly StoredLocale[] = Object.values(PUBLIC_SITE_LOCALES);
+
+function readStoredLocale(): StoredLocale | null {
   if (typeof window === "undefined") return null;
   try {
     const v = window.localStorage.getItem(LOCALE_STORAGE_KEY);
-    return v === "zh-CN" || v === "en-US" ? v : null;
+    return v !== null && (STORED_LOCALE_WHITELIST as readonly string[]).includes(v)
+      ? (v as StoredLocale)
+      : null;
   } catch {
     return null;
   }
@@ -57,17 +68,17 @@ function readStoredLocale(): "zh-CN" | "en-US" | null {
  * 是否英文环境。
  *
  * 决策表：
- *   | lw-locale | isGlobal | isEnglishEnv |
- *   | --------- | -------- | ------------ |
- *   | en-US     | -        | true         |
- *   | zh-CN     | -        | false        |
- *   | (未设置)   | true     | true         |
- *   | (未设置)   | false    | false        |
+ *   | lw-locale         | isGlobal | isEnglishEnv |
+ *   | ----------------- | -------- | ------------ |
+ *   | en-US             | -        | true         |
+ *   | zh-CN/zh-SG/zh-Hant| -       | false        |
+ *   | (未设置)           | true     | true         |
+ *   | (未设置)           | false    | false        |
  */
 export const isEnglishEnv: boolean = (() => {
   const stored = readStoredLocale();
-  if (stored === "en-US") return true;
-  if (stored === "zh-CN") return false;
+  if (stored === PUBLIC_SITE_LOCALES.EN_US) return true;
+  if (stored !== null) return false;
   return isGlobal;
 })();
 

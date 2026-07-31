@@ -12,6 +12,15 @@ const SANDBOX_CAPACITY_CODES = new Set([
 
 const identity: Translate = (message) => message;
 
+const _I18N_AGENT_CREATE_ERROR_MESSAGE_KEYS = (t: Translate) => [
+  t("当前套餐的 Agent 配额已满，请升级套餐或删除现有 Agent 后重试。"),
+  t("当前资源暂时售罄，请稍后再试。"),
+  t("创建超时，请稍后重试。"),
+  t("网络异常，请检查网络后重试。"),
+  t("创建失败，请稍后重试。"),
+];
+void _I18N_AGENT_CREATE_ERROR_MESSAGE_KEYS;
+
 export const getAgentCreateErrorMessage = (
   error: unknown,
   translate: Translate = identity,

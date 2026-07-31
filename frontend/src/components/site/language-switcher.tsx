@@ -21,13 +21,13 @@ import { useTranslation } from "react-i18next";
 
 import { setLocale } from "@/i18n";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
-import { shouldLocalizePublicPath, stripPublicSiteLocalePrefix } from "@/lib/public-site-routing";
+import { PUBLIC_SITE_LOCALES, shouldLocalizePublicPath, stripPublicSiteLocalePrefix } from "@/lib/public-site-routing";
 import { isGlobal, switchLocaleInPath } from "@/lib/region";
 
 export type LanguageSwitcherVariant = "dropdown" | "inline";
 export type LanguageSwitcherNavigate = (targetUrl: string) => void;
 
-type I18nLocale = "zh-CN" | "en-US";
+type I18nLocale = "zh-CN" | "en-US" | "zh-Hant";
 
 type Option = {
   value: PublicSiteLocale;
@@ -37,9 +37,10 @@ type Option = {
   label: string;
 };
 
-const EN_OPTION: Option = { value: "en-US", short: "EN", label: "Intl - English" };
-const ZH_CN_OPTION: Option = { value: "zh-CN", short: "中", label: "Intl - 中文" };
-const ZH_SG_OPTION: Option = { value: "zh-SG", short: "中", label: "Intl - 中文" };
+const EN_OPTION: Option = { value: PUBLIC_SITE_LOCALES.EN_US, short: "EN", label: "Intl - English" };
+const ZH_CN_OPTION: Option = { value: PUBLIC_SITE_LOCALES.ZH_CN, short: "中", label: "Intl - 中文" };
+const ZH_SG_OPTION: Option = { value: PUBLIC_SITE_LOCALES.ZH_SG, short: "简", label: "Intl - 简体中文" };
+const ZH_HANT_OPTION: Option = { value: PUBLIC_SITE_LOCALES.ZH_HANT, short: "繁", label: "Intl - 繁體中文" };
 const CHINA_SITE_URL = "https://lightvela.com";
 const INTL_SITE_URL = "https://lightvela.ai";
 
@@ -48,8 +49,25 @@ function chineseOption(): Option {
 }
 
 function currentOption(lang: string | undefined): Option {
+  if (lang === PUBLIC_SITE_LOCALES.ZH_HANT) return ZH_HANT_OPTION;
   if (lang?.startsWith("zh")) return chineseOption();
   return EN_OPTION;
+}
+
+/**
+ * 下拉菜单里每个语言项的显示名。
+ * 需明确区分「简体中文 / 繁體中文 / English」，不能笼统显示为「中文」，
+ * 否则国际站同时存在简体（zh-SG/zh-CN）与繁体（zh-Hant）时用户无法分辨。
+ */
+function dropdownOptionLabel(opt: Option): string {
+  const sitePrefix = isGlobal ? "International Site - " : "国际站 - ";
+  const name =
+    opt.value === PUBLIC_SITE_LOCALES.EN_US
+      ? "English"
+      : opt.value === PUBLIC_SITE_LOCALES.ZH_HANT
+        ? "繁體中文"
+        : "简体中文";
+  return sitePrefix + name;
 }
 
 function languageFromPublicLocale(locale: PublicSiteLocale | undefined): PublicSiteLocale | undefined {
@@ -58,7 +76,8 @@ function languageFromPublicLocale(locale: PublicSiteLocale | undefined): PublicS
 }
 
 function i18nLocaleForPublicLocale(locale: PublicSiteLocale): I18nLocale {
-  return locale.startsWith("zh") ? "zh-CN" : "en-US";
+  if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return PUBLIC_SITE_LOCALES.ZH_HANT;
+  return locale.startsWith("zh") ? PUBLIC_SITE_LOCALES.ZH_CN : PUBLIC_SITE_LOCALES.EN_US;
 }
 
 /**
@@ -159,7 +178,7 @@ function DropdownSwitcher({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const active = currentOption(activeLocale ?? i18n.language);
-  const options = [EN_OPTION, chineseOption()] as const;
+  const options = [EN_OPTION, chineseOption(), ZH_HANT_OPTION] as const;
 
   /* 点击外部关闭下拉 */
   useEffect(() => {
@@ -235,11 +254,7 @@ function DropdownSwitcher({
                     selected ? "font-semibold text-black/90" : "font-normal text-black/80"
                   }`}
                 >
-                  <span>
-                    {isGlobal
-                      ? opt.value.startsWith("zh") ? "International Site - 中文" : "International Site - English"
-                      : opt.value.startsWith("zh") ? "国际站 - 中文" : "国际站 - English"}
-                  </span>
+                  <span>{dropdownOptionLabel(opt)}</span>
                   {selected && <Check className="h-[14px] w-[14px]" />}
                 </button>
               </li>
@@ -267,7 +282,7 @@ function InlineSwitcher({
 }) {
   const { i18n } = useTranslation();
   const active = currentOption(activeLocale ?? i18n.language);
-  const options = [EN_OPTION, chineseOption()] as const;
+  const options = [EN_OPTION, chineseOption(), ZH_HANT_OPTION] as const;
 
   return (
     <div className="flex flex-col gap-2">

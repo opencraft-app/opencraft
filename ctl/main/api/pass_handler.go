@@ -1200,7 +1200,7 @@ func (h *passHandler) adminRenewPassOrder(w http.ResponseWriter, r *http.Request
 //   - 400 PASS_INVALID_PARAM：缺 pass_id / period / time_unit 或 time_unit ∉ {m,d,y}
 //   - 401 UNAUTHORIZED：缺 X-User-Id
 //   - 404 PASS_NOT_FOUND：pass_id 不存在或不属于当前用户（防越权续费）
-//   - 422 PASS_SHADOW_BINDING_NOT_FOUND：用户尚未实名 / 未绑云账号
+//   - 403 PASS_SHADOW_BINDING_REQUIRED：用户尚未实名 / 未绑云账号
 //   - 5xx：trade / shadow / DB 异常
 //
 // 注：v1.7.22 B17 后已废弃 409 PASS_BUNDLE_OFFLINE（套餐下架不阻断续费，仅阻断新购）
@@ -1300,6 +1300,7 @@ func (h *passHandler) adminRenewPassOrderUrl(w http.ResponseWriter, r *http.Requ
 //   - 400 PASS_INVALID_PARAM：缺 period / time_unit 或 time_unit ∉ {m,d,y}
 //   - 401 UNAUTHORIZED：缺 X-User-Id
 //   - 404 PASS_NOT_FOUND：pass_id 不存在或不属于当前用户（防越权）
+//   - 403 PASS_SHADOW_BINDING_REQUIRED：用户尚未实名 / 未绑云账号
 //   - 5xx：trade / DB 异常
 //
 // 注：v1.7.22 B17 后已废弃 409 PASS_BUNDLE_OFFLINE（套餐下架不阻断续费询价，仅阻断新购询价）
@@ -1397,7 +1398,7 @@ func (h *passHandler) adminRenewPassPrice(w http.ResponseWriter, r *http.Request
 //   - 400 PASS_INVALID_PARAM：缺 period / time_unit 或 time_unit ∉ {m,d,y}
 //   - 401 UNAUTHORIZED：缺 X-User-Id
 //   - 404 PASS_NOT_FOUND：pass_id 不存在或不属于当前用户（防越权续费）
-//   - 422 PASS_SHADOW_BINDING_NOT_FOUND：用户尚未实名 / 未绑云账号
+//   - 403 PASS_SHADOW_BINDING_REQUIRED：用户尚未实名 / 未绑云账号
 //   - 5xx：trade / shadow / DB 异常
 //
 // 注：v1.7.22 B17 后已废弃 409 PASS_BUNDLE_OFFLINE（套餐下架不阻断续费，仅阻断新购）
