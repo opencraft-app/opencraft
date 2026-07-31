@@ -59,9 +59,10 @@ export const centsToYuan = (cents: string | number): number => {
 };
 
 /**
- * 把元价格格式化为「¥49.00」字符串
+ * 把元价格格式化为「¥49.00」/「$7.50」字符串
  */
 export const formatYuan = (yuan: number, currency = "CNY"): string => {
+  if (currency === "USD") return `$${yuan.toFixed(2)}`;
   if (currency !== "CNY") return `${yuan} ${currency}`;
   return `¥${yuan.toFixed(2)}`;
 };
