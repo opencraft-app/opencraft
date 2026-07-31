@@ -89,6 +89,7 @@ type Entity struct {
 	StaticSoldOut         bool   `gorm:"column:static_sold_out"` // 静态售罄标记
 	BundleSalesAvailCount int    `gorm:"column:bundle_sales_available_count"`
 	BundleSalesTotalCount int    `gorm:"column:bundle_sales_total_count"`
+	StaticSiteQuota       string `gorm:"column:static_site_quota;type:json" // 静态建站配额JSON`
 }
 
 func (Entity) TableName() string {
@@ -101,4 +102,15 @@ func (e *Entity) SalesState() string {
 		return SalesStateSoldOut
 	}
 	return SalesStateAvailable
+}
+
+// 新增字段（迁移 000028）
+
+// ColumnStaticSiteQuota 静态建站配额JSON列名
+const ColumnStaticSiteQuota = "static_site_quota"
+
+// StaticSiteQuota 静态建站配额（JSON字符串，可能为空）
+// 由 ctl/pkg/logic/website 解析为 website.BundleStaticSiteQuota
+func (e *Entity) GetStaticSiteQuota() string {
+	return e.StaticSiteQuota
 }

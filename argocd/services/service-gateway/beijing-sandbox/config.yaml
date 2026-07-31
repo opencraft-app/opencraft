@@ -137,6 +137,14 @@ routes:
     methods: [POST, OPTIONS]
     upstream: http://trade.trade.svc.cluster.local
     access: public
+  - name: ctl-websites
+    prefix: /v1/websites
+    methods: [GET, POST, DELETE, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: authenticated
+    auth_strategy: session
+    response_header_timeout: 30s
+
   - name: auth
     prefix: /auth
     methods: [GET, POST, PUT, DELETE, OPTIONS]
