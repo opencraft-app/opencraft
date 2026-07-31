@@ -459,11 +459,12 @@ const mapBundleToPlan = (
    *   - `paidBillingEnabled=true`（开关已开启，新逻辑）：
    *       国内站（isGlobal=false）消费后端真实价格 bundle.price.real_total_cost；
    *         无价（trade 故障 / 未登录）时禁用按钮、不展示促销徽章。
-   *       国际站（isGlobal=true）暂时仍保持「限时免费」内测策略，待海外计费闭环后再切换。
+   *       国际站（isGlobal=true）登录后走真实计费展示（联调阶段用 mock price，见 fillMockPriceForBundles）；
+   *       未登录仍走「限时免费」免费试用视觉。
    */
   const soldOut = bundle.bundle_sales_state === "SOLD_OUT";
-  /* 计费开关未开启时无论国内外都视为免费视觉；开启后仅国内站进入真实计费。 */
-  const paid = paidBillingEnabled && !isGlobal;
+  /* 计费开关开启后：国内站进入真实计费；国际站登录后进入真实计费（mock price），未登录走免费视觉。 */
+  const paid = paidBillingEnabled && (!isGlobal || isLoggedIn);
   /** 国内站要展示的真实金额（元）；后端 bundle.price.real_total_cost 单位是分，
    *  展示前需调 centsToYuan 转为元；后端 price 为 null 时返回 null 并标记为「暂无报价」禁用 */
   const realPriceYuan =
@@ -775,6 +776,43 @@ const STATIC_GENERAL_DESC: BundleDescriptionEntry[] = [
  * bundle_id 与线上真实配置一致（见 scripts/seed_trade_shprod_bundle_definition.sql），
  * 但未登录不会触发下单（点订阅先引导登录），仅用于展示。
  */
+/**
+ * 国际站联调 mock price 填充（联调阶段临时，后台 price 就位后删除）。
+ *
+ * 后台 listBundles 返回的 bundle.price 字段尚未就绪时，用静态 mock 价格填充，
+ * 让国际站登录后能走完整计费展示 + 下单流程。
+ *
+ * mock 价格（USD，单位分）：按 bundle_id + 时长（月/季）映射；
+ * voyage（敬请期待）不填，保持 price=null。
+ */
+const MOCK_INTL_PRICE_CENTS: Record<string, { monthly: number; quarterly: number }> = {
+  bundle_launch_01: { monthly: 750, quarterly: 2250 },
+  bundle_launch_ai_01: { monthly: 1100, quarterly: 3300 },
+  bundle_cruise_01: { monthly: 1500, quarterly: 4500 },
+  bundle_cruise_ai_01: { monthly: 2200, quarterly: 6600 },
+};
+
+const fillMockPriceForBundles = (bundles: Bundle[]): Bundle[] => {
+  if (!isGlobal) return bundles;
+  return bundles.map((b) => {
+    if (b.price) return b;
+    const mock = MOCK_INTL_PRICE_CENTS[b.bundle_id];
+    if (!mock) return b;
+    const isQuarterly = b.time_unit === "m" && b.time_span === 3;
+    const cents = isQuarterly ? mock.quarterly : mock.monthly;
+    return {
+      ...b,
+      price: {
+        price: cents,
+        total_cost: cents,
+        real_total_cost: cents,
+        currency: "USD",
+        discount: 0,
+      },
+    };
+  });
+};
+
 const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
   const span = durationKey === "quarterly" ? 3 : 1;
   const base = {
@@ -1941,6 +1979,7 @@ const CreditCardConfirmOrderModal = ({
   onCancel: () => void;
   onPay: () => void;
 }) => {
+  const t = useT();
   const [view, setView] = useState<"order" | "bindCard" | "success">("order");
   const [autoRenew, setAutoRenew] = useState(false);
   /* 纯前端演示的绑卡状态：仅保留卡尾号用于回显 */
@@ -2619,7 +2658,7 @@ export const SubscribePage = ({
             : undefined,
         );
         if (!cancelled) {
-          setBundles(list);
+          setBundles(fillMockPriceForBundles(list));
         }
       } catch (err) {
         if (!cancelled) {
