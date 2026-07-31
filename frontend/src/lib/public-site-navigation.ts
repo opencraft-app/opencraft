@@ -7,7 +7,7 @@ import {
 } from "@/lib/public-site-routing";
 
 export type PublicSiteLocale = "zh-CN" | "zh-SG" | "en-US";
-export type PublicSiteSection = "overview" | "pricing" | "changelog" | "docs" | "about" | "support";
+export type PublicSiteSection = "overview" | "pricing" | "changelog" | "docs" | "blog" | "about" | "support";
 
 export type PublicSiteNavItem = {
   section: PublicSiteSection;
@@ -22,6 +22,7 @@ export const PUBLIC_SITE_NAV_ITEMS: readonly PublicSiteNavItem[] = [
   { section: "pricing", href: "/subscribe", label: { "zh-CN": "定价", "zh-SG": "定价", "en-US": "Pricing" } },
   { section: "changelog", href: "/changelog", label: { "zh-CN": "更新日志", "zh-SG": "更新日志", "en-US": "Changelog" } },
   { section: "docs", href: "/docs/overview", label: { "zh-CN": "产品文档", "zh-SG": "产品文档", "en-US": "Docs" } },
+  { section: "blog", href: "/blog", label: { "zh-CN": "科普", "zh-SG": "科普", "en-US": "Blog" } },
   { section: "about", href: "/about", label: { "zh-CN": "关于我们", "zh-SG": "关于我们", "en-US": "About" } },
   // 「产品反馈」不再作为顶部导航项，改为从用户头像菜单入口进入 /support。
   // 页面本身与 legal-footer 链接保留；section 类型继续保留 "support"，

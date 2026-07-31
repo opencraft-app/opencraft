@@ -6,6 +6,7 @@ export const PUBLIC_LOCALIZED_PATH_PREFIXES = [
   "/docs",
   "/about",
   "/changelog",
+  "/blog",
   "/privacy-policy",
   "/cookie-policy",
   "/open-source-licenses",
