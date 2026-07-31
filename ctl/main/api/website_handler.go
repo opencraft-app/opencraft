@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"ctl/pkg/errcode"
@@ -76,9 +77,19 @@ func (h *websiteHandler) handleWebsitesByID(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-// handleInternalOperations 处理 /internal/ctl/websites/operations/{opId}/complete|fail
+// handleInternalOperations 处理 /internal/ctl/websites/operations[/{opId}/complete|fail]
 func (h *websiteHandler) handleInternalOperations(w http.ResponseWriter, r *http.Request) {
+	// GET /internal/ctl/websites/operations?status=created — worker 轮询待执行操作
+	if r.Method == http.MethodGet && (r.URL.Path == "/internal/ctl/websites/operations" || r.URL.Path == "/internal/ctl/websites/operations/") {
+		h.handleListPendingOperations(w, r)
+		return
+	}
+
 	path := strings.TrimPrefix(r.URL.Path, "/internal/ctl/websites/operations/")
+	if path == "" {
+		writeHTTPError(w, r, errcode.ErrWebsiteOperationNotFound)
+		return
+	}
 	parts := strings.SplitN(path, "/", 2)
 	if len(parts) < 2 {
 		writeHTTPError(w, r, errcode.ErrWebsiteOperationNotFound)
@@ -290,6 +301,30 @@ func (h *websiteHandler) handleReleases(w http.ResponseWriter, r *http.Request, 
 	default:
 		writeHTTPError(w, r, errcode.ErrWebsiteReleaseNotFound)
 	}
+}
+
+// handleListPendingOperations GET /internal/ctl/websites/operations?status=created
+func (h *websiteHandler) handleListPendingOperations(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	if status == "" {
+		status = "created"
+	}
+	limit := 20
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 100 {
+			limit = v
+		}
+	}
+
+	ops, err := h.logic.ListPendingOperations(status, limit)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, map[string]interface{}{
+		"operations": ops,
+		"count":     len(ops),
+	})
 }
 
 // ---- GET /v1/websites/{siteId}/operations/{opId} ----

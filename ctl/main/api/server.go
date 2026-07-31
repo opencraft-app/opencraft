@@ -218,6 +218,7 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	wh := &websiteHandler{logic: websitelogic.NewLogic()}
 	mux.HandleFunc("/v1/websites", wh.handleWebsitesRoot)
 	mux.HandleFunc("/v1/websites/", wh.handleWebsitesByID)
+	mux.HandleFunc("/internal/ctl/websites/operations", wh.handleInternalOperations)
 	mux.HandleFunc("/internal/ctl/websites/operations/", wh.handleInternalOperations)
 	mux.HandleFunc("/s/", wh.handleSiteProxy)
 

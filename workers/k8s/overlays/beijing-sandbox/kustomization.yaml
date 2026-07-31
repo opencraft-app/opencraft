@@ -5,6 +5,7 @@ namespace: temporal-workers
 
 resources:
 - ../../base
+- website-deployer
 
 generatorOptions:
   disableNameSuffixHash: true

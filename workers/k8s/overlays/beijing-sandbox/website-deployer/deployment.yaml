@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: website-deployer
+  namespace: temporal-workers
+imagePullSecrets:
+- name: tcr.ipsqcloudregistrykey
+- name: tcr.ipstcr-regcred
+- name: tcr.ipstcr-lightclaw-secret
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: website-deployer
+  namespace: temporal-workers
+  labels:
+    app: website-deployer
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: website-deployer
+  template:
+    metadata:
+      labels:
+        app: website-deployer
+    spec:
+      serviceAccountName: website-deployer
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: website-deployer
+        image: REPLACE_WORKERS_IMAGE
+        imagePullPolicy: IfNotPresent
+        command:
+        - /usr/local/bin/website-deployer
+        env:
+        - name: CTL_BASE_URL
+          value: "http://ctl-api.ctl.svc.cluster.local"
+        - name: POLL_INTERVAL_SECONDS
+          value: "10"
+        - name: WEBSITE_COS_BUCKET
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: WEBSITE_COS_BUCKET
+        - name: WEBSITE_COS_REGION
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: WEBSITE_COS_REGION
+        - name: WEBSITE_COS_SECRET_ID
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: WEBSITE_COS_SECRET_ID
+        - name: WEBSITE_COS_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: WEBSITE_COS_SECRET_KEY
+        - name: CLOUDBASE_STATIC_COS_BUCKET
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: CLOUDBASE_STATIC_COS_BUCKET
+        - name: CLOUDBASE_STATIC_COS_REGION
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: CLOUDBASE_STATIC_COS_REGION
+        - name: CLOUDBASE_STATIC_COS_SECRET_ID
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: CLOUDBASE_STATIC_COS_SECRET_ID
+        - name: CLOUDBASE_STATIC_COS_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: CLOUDBASE_STATIC_COS_SECRET_KEY
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi

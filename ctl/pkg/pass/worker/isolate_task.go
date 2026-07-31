@@ -22,6 +22,8 @@ import (
 	"ctl/pkg/taskruntime"
 	taskcommon "ctl/pkg/taskruntime/common"
 
+	websitelogic "ctl/pkg/logic/website"
+
 	"go.uber.org/zap"
 )
 
@@ -179,6 +181,10 @@ func (t *isolatePassTask) execute(ctx pctx.Context) (string, error) {
 		logger.Info("pass already isolated, short-circuit parent task")
 		if err := logicpass.CancelAiGatewayEntitlement(logger, passEntity.UserID); err != nil {
 			return "", fmt.Errorf("repair isolated ai-gateway entitlement: %w", err)
+		}
+		// best-effort 挂起用户站点（失败不阻塞隔离流程）
+		if err := websitelogic.IsolateSitesOnPassExpired(logger, passEntity.UserID); err != nil {
+			logger.Warn("website isolate sites on pass expired failed", zap.Error(err))
 		}
 		// pass 终态但 trade callback 上一轮可能没成功，best-effort 再补一次
 		t.notifyTradeFlowCompleted(ctx, logger)
@@ -393,6 +399,13 @@ func (t *isolatePassTask) execute(ctx pctx.Context) (string, error) {
 	}
 
 	logger.Info("isolate pass parent task completed")
+
+	// best-effort 挂起用户站点（失败不阻塞隔离流程）
+	if t.in.UserID != "" {
+		if err := websitelogic.IsolateSitesOnPassExpired(logger, t.in.UserID); err != nil {
+			logger.Warn("website isolate sites on pass expired failed", zap.Error(err))
+		}
+	}
 
 	// best-effort 反向调 trade callback 推进 trade_flow 终态（端到端闭环 §10 Q22-I-E）
 	t.notifyTradeFlowCompleted(ctx, logger)

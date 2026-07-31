@@ -24,6 +24,10 @@ type SiteDao interface {
 	UpdateCloudPathAndURL(siteID, cloudPath, publicURL string) error
 	SoftDelete(siteID string) error
 	CountActiveByUserID(userID string) (int64, error)
+	ListSuspendedByUserID(userID string) ([]*SiteEntity, error)
+	SuspendActiveByUserID(userID string) (int64, error)
+	ReactivateSuspendedByUserID(userID string) (int64, error)
+	GetByIdempotencyKey(userID, idempotencyKey string) (*SiteEntity, error)
 }
 
 type siteDao struct {
@@ -131,17 +135,61 @@ func (d *siteDao) CountActiveByUserID(userID string) (int64, error) {
 	return count, err
 }
 
+func (d *siteDao) ListSuspendedByUserID(userID string) ([]*SiteEntity, error) {
+	var entities []*SiteEntity
+	err := resource.GormDB.Table(d.TableName).
+		Where("user_id = ? AND status = ?", userID, SiteStatusSuspended).
+		Find(&entities).Error
+	return entities, err
+}
+
+// SuspendActiveByUserID Pass到期时挂起用户所有active站点
+func (d *siteDao) SuspendActiveByUserID(userID string) (int64, error) {
+	result := resource.GormDB.Table(d.TableName).
+		Where("user_id = ? AND status = ?", userID, SiteStatusActive).
+		Update("status", SiteStatusSuspended)
+	return result.RowsAffected, result.Error
+}
+
+// ReactivateSuspendedByUserID Pass续费后恢复suspended站点为active
+func (d *siteDao) ReactivateSuspendedByUserID(userID string) (int64, error) {
+	result := resource.GormDB.Table(d.TableName).
+		Where("user_id = ? AND status = ?", userID, SiteStatusSuspended).
+		Update("status", SiteStatusActive)
+	return result.RowsAffected, result.Error
+}
+
+// GetByIdempotencyKey 幂等查询（通过site_id格式约定实现，一期用name+user_id去重）
+func (d *siteDao) GetByIdempotencyKey(userID, idempotencyKey string) (*SiteEntity, error) {
+	if idempotencyKey == "" {
+		return nil, nil
+	}
+	var entity SiteEntity
+	err := resource.GormDB.Table(d.TableName).
+		Where("user_id = ? AND name = ? AND status != ?",
+			userID, idempotencyKey, SiteStatusDeleted).
+		First(&entity).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &entity, nil
+}
+
 // ---- Release DAO ----
 
 type ReleaseDao interface {
 	model.Dao
 	CreateRelease(entity *ReleaseEntity) error
+	CreateReleaseTx(tx *gorm.DB, entity *ReleaseEntity) error
 	GetByReleaseID(releaseID string) (*ReleaseEntity, error)
 	ListBySiteID(siteID string, page, pageSize int) ([]*ReleaseEntity, int64, error)
 	UpdateStatus(releaseID, newStatus, errorMessage string) error
 	GetActiveBySiteID(siteID string) (*ReleaseEntity, error)
 	CountDeploysToday(siteID string) (int64, error)
-	GetNextVersion(siteID string) (int, error)
+	GetNextVersionTx(tx *gorm.DB, siteID string) (int, error)
 }
 
 type releaseDao struct {
@@ -157,6 +205,13 @@ func (d *releaseDao) CreateRelease(entity *ReleaseEntity) error {
 		return errors.New("entity is nil")
 	}
 	return resource.GormDB.Table(d.TableName).Create(entity).Error
+}
+
+func (d *releaseDao) CreateReleaseTx(tx *gorm.DB, entity *ReleaseEntity) error {
+	if entity == nil {
+		return errors.New("entity is nil")
+	}
+	return tx.Table(d.TableName).Create(entity).Error
 }
 
 func (d *releaseDao) GetByReleaseID(releaseID string) (*ReleaseEntity, error) {
@@ -233,9 +288,10 @@ func (d *releaseDao) CountDeploysToday(siteID string) (int64, error) {
 	return count, err
 }
 
-func (d *releaseDao) GetNextVersion(siteID string) (int, error) {
+// GetNextVersionTx 在事务内获取下一个版本号（行锁防并发）
+func (d *releaseDao) GetNextVersionTx(tx *gorm.DB, siteID string) (int, error) {
 	var maxVersion int
-	err := resource.GormDB.Table(d.TableName).
+	err := tx.Table(d.TableName).
 		Where("site_id = ?", siteID).
 		Select("COALESCE(MAX(version), 0)").
 		Scan(&maxVersion).Error
@@ -250,6 +306,8 @@ type OperationDao interface {
 	GetByOperationID(operationID string) (*OperationEntity, error)
 	UpdateStatus(operationID, newStatus, errorMessage string) error
 	ListBySiteID(siteID string, page, pageSize int) ([]*OperationEntity, int64, error)
+	ListByStatus(status string, limit int) ([]*OperationEntity, error)
+	UpdateStatusTx(tx *gorm.DB, operationID, newStatus, errorMessage string) error
 }
 
 type operationDao struct {
@@ -291,6 +349,16 @@ func (d *operationDao) UpdateStatus(operationID, newStatus, errorMessage string)
 		Updates(updates).Error
 }
 
+func (d *operationDao) UpdateStatusTx(tx *gorm.DB, operationID, newStatus, errorMessage string) error {
+	updates := map[string]interface{}{"status": newStatus}
+	if errorMessage != "" {
+		updates["error_message"] = errorMessage
+	}
+	return tx.Table(d.TableName).
+		Where("operation_id = ?", operationID).
+		Updates(updates).Error
+}
+
 func (d *operationDao) ListBySiteID(siteID string, page, pageSize int) ([]*OperationEntity, int64, error) {
 	if page <= 0 {
 		page = 1
@@ -314,6 +382,16 @@ func (d *operationDao) ListBySiteID(siteID string, page, pageSize int) ([]*Opera
 		Offset(offset).Limit(pageSize).
 		Find(&entities).Error
 	return entities, total, err
+}
+
+func (d *operationDao) ListByStatus(status string, limit int) ([]*OperationEntity, error) {
+	var entities []*OperationEntity
+	err := resource.GormDB.Table(d.TableName).
+		Where("status = ?", status).
+		Order("created_time ASC, id ASC").
+		Limit(limit).
+		Find(&entities).Error
+	return entities, err
 }
 
 // ---- Usage Daily DAO ----
