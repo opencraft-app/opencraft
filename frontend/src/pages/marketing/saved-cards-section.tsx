@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Trash2 } from "lucide-react";
 import { useT, t as rawT } from "@/i18n/t";
 
 export interface SavedCard {
@@ -75,7 +77,7 @@ const brandLabel = (brand: SavedCard["brand"]): string =>
  * 纯前端占位实现：数据仅存 useState，不发起后端请求。
  * CVC 不存入 SavedCard（PCI 口径）。
  */
-export const SavedCardsSection = (): JSX.Element => {
+export const SavedCardsSection = (): ReactElement => {
   const t = useT();
   const [cards, setCards] = useState<SavedCard[]>(() => buildInitialCards());
   const [showAddForm, setShowAddForm] = useState(false);
@@ -123,121 +125,220 @@ export const SavedCardsSection = (): JSX.Element => {
 
   const handleConfirmRemove = (id: string): void => {
     setCards((prev) => {
-      const next = prev.filter((c) => c.id !== id);
-      // 移除的是默认卡且列表非空：自动选剩余首张为默认
-      const removedWasDefault = prev.find((c) => c.id === id)?.isDefault ?? false;
-      if (removedWasDefault && next.length > 0) {
-        next[0] = { ...next[0], isDefault: true };
+      // 防御性拦截：默认卡不允许解绑；仅剩一张时不允许解绑
+      const target = prev.find((c) => c.id === id);
+      if (!target || target.isDefault || prev.length <= 1) {
+        return prev;
       }
-      return next;
+      return prev.filter((c) => c.id !== id);
     });
     setConfirmRemoveId(null);
   };
 
+  const inputClassName =
+    "h-11 w-full rounded-md border px-3 text-sm outline-none transition-shadow duration-150 focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklab,var(--lw-accent)_25%,transparent)]";
+
+  // 待确认解绑的卡对象（驱动弹窗展示）
+  const confirmCard = confirmRemoveId ? cards.find((c) => c.id === confirmRemoveId) ?? null : null;
+
   return (
-    <section className="mx-auto px-6 md:px-8" style={{ maxWidth: 800 }}>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-bold">{t("签约卡管理")}</h2>
+    <div
+      className="overflow-hidden bg-white"
+      style={{ border: "1px solid #E6E9EF", borderRadius: 16 }}
+    >
+      {/* Header — 与订阅套餐区块一致 */}
+      <div
+        className="flex items-center justify-between px-5 py-5 md:px-8 md:py-8"
+        style={{ borderBottom: "1px solid #E6E9EF" }}
+      >
+        <h3 className="text-[18px] md:text-[20px]" style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}>
+          {t("签约卡管理")}
+        </h3>
         {!showAddForm && (
           <button
             type="button"
             onClick={() => setShowAddForm(true)}
-            className="text-sm font-medium text-blue-600 hover:underline"
+            className="text-sm font-semibold transition-colors"
+            style={{ color: "var(--lw-accent)" }}
           >
             {t("添加卡片")}
           </button>
         )}
       </div>
 
-      {/* 卡列表 */}
-      {cards.length === 0 ? (
-        <p className="text-sm text-gray-500 py-8 text-center">{t("还没有绑定卡片")}</p>
-      ) : (
-        <ul className="space-y-3">
-          {cards.map((card) => (
-            <li key={card.id} className="flex items-center justify-between p-4 rounded-lg border border-gray-200">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold">{brandLabel(card.brand)}</span>
-                  <span className="text-gray-500">•••• {card.last4}</span>
-                  {card.isDefault && (
-                    <span className="px-2 py-0.5 text-xs rounded bg-blue-100 text-blue-700">{t("默认")}</span>
-                  )}
+      {/* 内容区 */}
+      <div className="px-5 py-6 md:px-8 md:py-8">
+        {/* 卡列表 */}
+        {cards.length === 0 && !showAddForm ? (
+          <p className="py-8 text-center text-sm" style={{ color: "#999" }}>{t("还没有绑定卡片")}</p>
+        ) : (
+          <div className="space-y-5">
+            {cards.map((card, idx) => (
+              <div key={card.id}>
+                {idx > 0 && <div className="mb-5" style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-sm font-bold" style={{ color: "#333" }}>{brandLabel(card.brand)}</span>
+                      <span style={{ color: "#999" }}>•••• {card.last4}</span>
+                      {card.isDefault && (
+                        <span
+                          className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold"
+                          style={{ background: "rgba(230,111,98,0.06)", color: "var(--lw-accent)", borderRadius: "6px" }}
+                        >
+                          {t("默认")}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1.5 text-xs" style={{ color: "#999" }}>{card.expiry} · {card.holderName}</p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    {!card.isDefault && (
+                      <button type="button" onClick={() => handleSetDefault(card.id)} className="text-sm font-medium" style={{ color: "#666" }}>
+                        {t("设为默认")}
+                      </button>
+                    )}
+                    {/* 默认卡不允许解绑；仅剩一张卡时不允许解绑 */}
+                    {!card.isDefault && cards.length > 1 && (
+                      <button type="button" onClick={() => setConfirmRemoveId(card.id)} className="text-sm font-medium" style={{ color: "#cf3d4c" }}>{t("解绑")}</button>
+                    )}
+                  </div>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">{card.expiry} · {card.holderName}</p>
               </div>
-              <div className="flex items-center gap-2">
-                {!card.isDefault && (
-                  <button type="button" onClick={() => handleSetDefault(card.id)} className="text-sm text-gray-600 hover:underline">
-                    {t("设为默认")}
-                  </button>
-                )}
-                {confirmRemoveId === card.id ? (
-                  <>
-                    <button type="button" onClick={() => handleConfirmRemove(card.id)} className="text-sm text-red-600 hover:underline">{t("确认")}</button>
-                    <button type="button" onClick={() => setConfirmRemoveId(null)} className="text-sm text-gray-500 hover:underline">{t("取消")}</button>
-                  </>
-                ) : (
-                  <button type="button" onClick={() => setConfirmRemoveId(card.id)} className="text-sm text-red-600 hover:underline">{t("解绑")}</button>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+            ))}
+          </div>
+        )}
 
-      {/* 绑卡表单（内联展开） */}
-      {showAddForm && (
-        <div className="mt-4 p-4 rounded-lg border border-gray-200 bg-gray-50">
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium mb-1">{t("卡号")}</label>
-              <input
-                value={cardNumber}
-                onChange={(e) => setCardNumber(e.target.value)}
-                placeholder={t("卡号")}
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
-              />
-            </div>
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <label className="block text-sm font-medium mb-1">{t("有效期")}</label>
+        {/* 绑卡表单（内联展开） */}
+        {showAddForm && (
+          <div className={cards.length > 0 ? "mt-6 pt-6" : ""} style={cards.length > 0 ? { borderTop: "1px solid rgba(0,0,0,0.06)" } : undefined}>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium" style={{ color: "#333" }}>{t("卡号")}</label>
                 <input
-                  value={expiry}
-                  onChange={(e) => setExpiry(formatExpiry(e.target.value))}
-                  placeholder="MM/YY"
-                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                  value={cardNumber}
+                  onChange={(e) => setCardNumber(e.target.value)}
+                  placeholder={t("卡号")}
+                  className={inputClassName}
+                  style={{ borderColor: "#E6E9EF" }}
                 />
               </div>
-              <div className="flex-1">
-                <label className="block text-sm font-medium mb-1">{t("安全码")}</label>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="mb-1 block text-sm font-medium" style={{ color: "#333" }}>{t("有效期")}</label>
+                  <input
+                    value={expiry}
+                    onChange={(e) => setExpiry(formatExpiry(e.target.value))}
+                    placeholder="MM/YY"
+                    className={inputClassName}
+                    style={{ borderColor: "#E6E9EF" }}
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="mb-1 block text-sm font-medium" style={{ color: "#333" }}>{t("安全码")}</label>
+                  <input
+                    value={cvc}
+                    onChange={(e) => setCvc(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    placeholder="CVC"
+                    className={inputClassName}
+                    style={{ borderColor: "#E6E9EF" }}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium" style={{ color: "#333" }}>{t("持卡人姓名")}</label>
                 <input
-                  value={cvc}
-                  onChange={(e) => setCvc(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                  placeholder="CVC"
-                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                  value={holder}
+                  onChange={(e) => setHolder(e.target.value)}
+                  placeholder={t("持卡人姓名")}
+                  className={inputClassName}
+                  style={{ borderColor: "#E6E9EF" }}
                 />
               </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">{t("持卡人姓名")}</label>
-              <input
-                value={holder}
-                onChange={(e) => setHolder(e.target.value)}
-                placeholder={t("持卡人姓名")}
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
-              />
-            </div>
-            {/* formError 已通过 t() 翻译为当前 locale 文案 */}
-            {formError && <p className="text-sm text-red-600">{formError}</p>}
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => { resetForm(); setShowAddForm(false); }} className="px-4 py-2 text-sm text-gray-600 hover:underline">{t("取消")}</button>
-              <button type="button" onClick={handleSaveCard} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700">{t("保存")}</button>
+              {/* formError 已通过 t() 翻译为当前 locale 文案 */}
+              {formError && <p className="text-sm" style={{ color: "#cf3d4c" }}>{formError}</p>}
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { resetForm(); setShowAddForm(false); }}
+                  className="rounded-full px-5 py-2.5 text-sm font-medium transition-colors"
+                  style={{ color: "#666" }}
+                >
+                  {t("取消")}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveCard}
+                  className="inline-flex items-center justify-center rounded-full bg-[#202020] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-black"
+                >
+                  {t("保存")}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </section>
+        )}
+      </div>
+
+      {/* 解绑确认弹窗 */}
+      <AnimatePresence>
+        {confirmCard && (
+          <motion.div
+            className="fixed inset-0 z-[100] flex items-center justify-center"
+            style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setConfirmRemoveId(null)}
+          >
+            <motion.div
+              className="relative mx-4 w-full max-w-[420px] overflow-hidden rounded-2xl bg-white"
+              style={{ boxShadow: "0 20px 60px -10px rgba(0,0,0,0.2)" }}
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-7 pb-6 pt-7">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "rgba(207,61,76,0.08)" }}>
+                    <Trash2 className="h-[18px] w-[18px]" style={{ color: "#cf3d4c" }} />
+                  </div>
+                  <h3 className="m-0 text-[16px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
+                    {t("解绑卡片")}
+                  </h3>
+                </div>
+                <p className="text-sm leading-relaxed" style={{ margin: "12px 0 24px 0", color: "#666" }}>
+                  {t("确认解绑 {{brand}} •••• {{last4}} 吗？解绑后该卡将从你的账户移除。", {
+                    brand: brandLabel(confirmCard.brand),
+                    last4: confirmCard.last4,
+                  })}
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmRemoveId(null)}
+                    className="flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)]"
+                    style={{ borderColor: "rgba(0,0,0,0.1)", color: "#333" }}
+                  >
+                    {t("取消")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleConfirmRemove(confirmCard.id)}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors"
+                    style={{ background: "#cf3d4c" }}
+                  >
+                    {t("确认解绑")}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 };
 
