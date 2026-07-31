@@ -6,15 +6,16 @@ import { useT } from '@/i18n/t';
 // 设计稿基准尺寸 1894 × 1007（Figma 实际画布）
 
 interface HeroSectionProps {
-  /** 「立即创建」按钮点击回调；不传时按钮仍可点击但无业务行为 */
+  /** 主按钮点击回调；不传时按钮仍可点击但无业务行为 */
   onCreateClick?: () => void;
-  /** 主按钮文案；未登录默认「立即创建」，已登录由上层传入「我的智能体伙伴」 */
+  /** 主按钮文案；未登录/未订阅默认「免费试用」，已登录已订阅由上层传入「立即创建」「我的智能体伙伴」 */
   ctaLabel?: string;
 }
 
 export default function HeroSection({ onCreateClick, ctaLabel }: HeroSectionProps = {}) {
   const t = useT();
-  const buttonLabel = ctaLabel ?? t("立即创建");
+  // 未传 ctaLabel 的场景（如未登录静态预渲染）默认展示「免费试用」转化引导
+  const buttonLabel = ctaLabel ?? t("免费试用");
   const sectionRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   // 视频至少已加载首帧后淡入（此前显示静态占位图，避免视频未就绪时的黑屏/空白）

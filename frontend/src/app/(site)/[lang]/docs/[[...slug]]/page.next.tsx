@@ -12,14 +12,20 @@ import { LightVelaDocsHeader } from '@next-site/docs-header';
 import { PublicSiteLocaleBridge } from '@next-site/public-site-providers';
 import { isGlobal } from '@/lib/region';
 import type { PublicSiteLocale } from '../../../../lib/public-site-navigation';
+import { PUBLIC_SITE_LOCALES, PUBLIC_URL_LANGS } from '@/lib/public-site-routing';
 
 const DOCS_LOCALE_TO_PUBLIC_LOCALE: Record<DocsRouteLocale, PublicSiteLocale> = {
-  'en-us': 'en-US',
-  'zh-cn': 'zh-CN',
-  'zh-sg': 'zh-SG',
+  [PUBLIC_URL_LANGS.EN_US]: PUBLIC_SITE_LOCALES.EN_US,
+  [PUBLIC_URL_LANGS.ZH_CN]: PUBLIC_SITE_LOCALES.ZH_CN,
+  [PUBLIC_URL_LANGS.ZH_SG]: PUBLIC_SITE_LOCALES.ZH_SG,
+  [PUBLIC_URL_LANGS.ZH_HANT]: PUBLIC_SITE_LOCALES.ZH_HANT,
 };
 
-const REGION_DOCS_ROUTE_LOCALES = (isGlobal ? ['en-us', 'zh-sg'] : ['zh-cn']) as readonly DocsRouteLocale[];
+const REGION_DOCS_ROUTE_LOCALES = (
+  isGlobal
+    ? [PUBLIC_URL_LANGS.EN_US, PUBLIC_URL_LANGS.ZH_SG, PUBLIC_URL_LANGS.ZH_HANT]
+    : [PUBLIC_URL_LANGS.ZH_CN]
+) as readonly DocsRouteLocale[];
 
 function docsRouteLocale(lang: string): DocsRouteLocale {
   if ((REGION_DOCS_ROUTE_LOCALES as readonly string[]).includes(lang)) return lang as DocsRouteLocale;
