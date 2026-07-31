@@ -30,8 +30,6 @@ import (
 	"ctl/pkg/taskruntime"
 	taskcommon "ctl/pkg/taskruntime/common"
 
-	websitelogic "ctl/pkg/logic/website"
-
 	"go.uber.org/zap"
 )
 
@@ -196,14 +194,6 @@ func (t *destroyPassTask) finalizePostPassDeleted(ctx pctx.Context, logger *zap.
 		}
 	}
 	logger.Info("destroy pass parent task finalized successfully")
-
-	// best-effort 清理用户站点（失败不阻塞销毁流程）
-	if t.in.UserID != "" {
-		if err := websitelogic.DeleteAllSitesOnPassDestroyed(logger, t.in.UserID); err != nil {
-			logger.Warn("website delete all sites on pass destroyed failed", zap.Error(err))
-		}
-	}
-
 	return t.markSuccess(ctx)
 }
 
