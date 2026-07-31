@@ -30,6 +30,7 @@ import (
 	"ctl/pkg/resource"
 	"ctl/pkg/tracing"
 	"ctl/pkg/transport"
+	websitelogic "ctl/pkg/logic/website"
 
 	adapterfactory "ctl/pkg/adapter/factory"
 
@@ -212,6 +213,14 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	//   GET /v1/orders/{dealName}/status — 前端轮询订单支付状态（X-User-Id 鉴权）
 	// 设计稿：.tmp/ctl-order-status-query-design.md §5.5 + Q-OS-1/Q-OS-3/Q-OS-7 拍板。
 	mux.HandleFunc("/v1/orders/", oh.handleUserOrders)
+
+	// Website 路由
+	wh := &websiteHandler{logic: websitelogic.NewLogic()}
+	mux.HandleFunc("/v1/websites", wh.handleWebsitesRoot)
+	mux.HandleFunc("/v1/websites/", wh.handleWebsitesByID)
+	mux.HandleFunc("/internal/ctl/websites/operations", wh.handleInternalOperations)
+	mux.HandleFunc("/internal/ctl/websites/operations/", wh.handleInternalOperations)
+	mux.HandleFunc("/s/", wh.handleSiteProxy)
 
 	return requestMetadataMiddleware(metricsMiddleware(notFoundMiddleware(mux)))
 }
