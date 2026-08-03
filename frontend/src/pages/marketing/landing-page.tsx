@@ -89,7 +89,7 @@ export const LandingPageView = ({
       location: PRODUCT_ANALYTICS_LOCATIONS.PUBLIC_LANDING,
     });
     const target = !isAuthenticated
-      ? AGENTS_HOME_PATH
+      ? SUBSCRIBE_PATH
       : !isSubscribed
         ? SUBSCRIBE_PATH
         : bots.length > 0
@@ -102,9 +102,9 @@ export const LandingPageView = ({
         target,
       },
     });
-    // 未登录：进入创建流程入口（产品壳内会引导登录）
+    // 未登录：跳订阅套餐页（未登录可浏览静态价格，点「订阅」时再引导登录）
     if (!isAuthenticated) {
-      navigateTo(AGENTS_HOME_PATH);
+      navigateTo(SUBSCRIBE_PATH);
       return;
     }
     // 功能点1：首页「创建」不再前置实名认证，已登录用户直接进入后续流程。

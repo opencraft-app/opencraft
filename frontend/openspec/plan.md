@@ -1,3 +1,24 @@
+# 2026-07-31 Hermes 版本升级公告
+
+**Status:** 前端实现完成，待用户验收后再提交 / MR；关联 Vitest 受当前 jsdom 依赖链阻塞。
+
+**Goal:** 基于最新 `master` 在首页公告条挂今晚 Hermes 版本升级提醒，国内站与国际站均展示对应时区文案。
+
+**Scope:** 仅更新首页公告条、对应中英文 i18n 字典和本计划；不调整公告视觉结构、路由、登录态、后端接口或其他公告轮播逻辑。
+
+## Tasks
+
+- [x] 将 Hermes 升级公告切换到 2026-07-31 22:00 至 2026-08-01 02:00。
+  - 国内站文案使用北京时间。
+  - 国际站文案使用新加坡时间。
+  - 公告 ID 更新，避免复用上一次关闭记忆。
+  - 过期时间为 UTC 2026-07-31 18:00。
+- [x] 更新 i18n 生成字典并补齐英文翻译。
+- [x] 完成基础验证：`pnpm i18n:check`、`pnpm check`、global 环境 `pnpm check`、`git diff --check`、公告静态 smoke。
+- [ ] 关联 Vitest 复跑：当前 `vitest related src/components/site/maintenance-announcement-banner.tsx` 被 `jsdom@28.1.0 -> html-encoding-sniffer@6.0.0 -> @exodus/bytes` 的 `ERR_REQUIRE_ESM` 阻塞，未进入业务断言。
+
+---
+
 # 国内站登录弹窗交互优化 Implementation Plan
 
 **Status:** 前端实现已完成，待用户验收后再提交 / MR / 归档。
