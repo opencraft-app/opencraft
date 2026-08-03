@@ -7,6 +7,7 @@
 | `codedog-lint-fix` | 智研 CodeDog / CodeLint 问题获取、筛选、分析、修复、验证与 MR 交付 |
 | `gongfeng` | 工蜂仓库操作、分支管理、MR 创建/查询、MR 评论、代码审查、文件操作、提交查询 |
 | `devops-pipeline` | 蓝盾流水线、CI/CD、构建查询、构建启动/取消、构建状态、流水线参数修改 |
+| `lightvela-web-validation` | LightVela 登录、订阅、续费、实名、受保护页面等 Web 能力的状态矩阵验证、桌面/移动端截图留证和 HTML 报告输出 |
 | `tencent-tat-instance-mining` | 通过腾讯云 TAT/自动化助手批量采集 Hermes CVM 实例数据，统计 Token、Session、通道配置，并可按账号表合并分析 |
 | `baseline-ui` | UI 组件、Tailwind 样式、排版层级、布局反模式、前端界面一致性检查 |
 | `better-icons` | 搜索、选择、替换图标，或需要从 Iconify 图标库获取 SVG |
