@@ -1,0 +1,4 @@
+interface:
+  display_name: "LightVela Web 验证"
+  short_description: "LightVela web capability validation"
+  default_prompt: "Use this skill to design and run a LightVela Web capability validation with state matrix cases, screenshots, evidence, and an HTML report."
