@@ -1,7 +1,5 @@
 # Hermes Agent 的长期记忆治理：少而准的四条铁律
 
-[RECOMMEND ADD IMAGE: 对照示意图。左侧一个塞满杂乱纸条、快要溢出的盒子（"记得多而杂"），右侧一个只放着少量整齐卡片的盒子（"少而准"）。右侧盒盖上有一道明确的容量刻度线。 —— 直观传达"有界"与"取舍"才是记忆质量的来源。]
-
 > **LightVela 是什么：** LightVela 是一个云端个人 AI Agent 平台，帮助用户运行具备长期记忆、Skills、自动化任务和多渠道接入能力的 Agent。[访问 LightVela](https://lightvela.ai/?from=social_techpedia)
 
 "AI 助手记得越多越聪明"——这是个流传很广的误解。

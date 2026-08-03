@@ -1,7 +1,5 @@
 # How Does Hermes Agent Remember You?
 
-[RECOMMEND ADD IMAGE: A sticky-note analogy visual. Four objects left to right: a sticky note on a monitor bezel (user profile), an open journal on a desk (factual archive), an archive box in a cabinet (session archive), and a hand mid-typing (Skills / muscle memory). — Uses everyday objects to convey each layer's role and how often it is loaded.]
-
 > **What is LightVela?** LightVela is a cloud-hosted personal AI agent platform for running an always-on agent with memory, skills, automations, and messaging channels. [Visit LightVela](https://lightvela.ai/?from=social_techpedia)
 
 The moment most AI assistants disappoint you is not when they get an answer wrong. It is when you have to ask: "**Didn't you just tell me this last time?**"

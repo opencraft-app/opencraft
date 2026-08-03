@@ -1,7 +1,5 @@
 # Hermes Agent vs OpenClaw: Fundamental Differences Between Two Open-Source Agents
 
-[RECOMMEND ADD IMAGE: 16:9 comparison hero. Soft lavender background, one straight divider at the exact center; LightVela brand icon on the left half (reference assets/lightvela-brand-icon.png), and on the right half one abstract gateway/multi-channel routing object standing in for OpenClaw. Keep it sparse — a single principal object per side. — Signals at a glance that this article compares "accumulation vs connection".]
-
 > **What is LightVela?** LightVela is a cloud-hosted personal AI agent platform for running an always-on agent with memory, skills, automations, and messaging channels. [Visit LightVela](https://lightvela.ai/?from=social_techpedia)
 
 If you want a long-term assistant that **understands you better over time**, choose Hermes Agent: it treats long-term memory as a first-class citizen, and the agent itself decides what to remember and when to promote an experience into a reusable Skill. If you want an automation hub that **connects to every channel in your life** — 25+ models, 20+ messaging platforms, with every rule defined by you — OpenClaw is the better fit.

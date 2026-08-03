@@ -1,7 +1,5 @@
 # Why USER.md and MEMORY.md Cannot Be Merged
 
-[RECOMMEND ADD IMAGE: A side-by-side visual. On the left, a sticky note on a monitor bezel with structured fields (name, role, communication preference); on the right, an open journal with dated entries. A divider between them emphasizes that the two ledgers evolve independently. — Conveys at a glance that profile and archive are two different kinds of memory.]
-
 > **What is LightVela?** LightVela is a cloud-hosted personal AI agent platform for running an always-on agent with memory, skills, automations, and messaging channels. [Visit LightVela](https://lightvela.ai/?from=social_techpedia)
 
 Hermes Agent's two long-term memory notes add up to only about **1,300 tokens** — remarkably restrained in an era of six-figure context windows. What surprises people more: it insists on keeping those 1,300 tokens in **two separate files** instead of merging them.

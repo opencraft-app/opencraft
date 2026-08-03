@@ -1,7 +1,5 @@
 # Hermes Agent 是怎么"记住你"的？
 
-[RECOMMEND ADD IMAGE: 一张便利贴类比图。从左到右四个物件：贴在显示器边框的便利贴（USER.md）、桌上摊开的日记本（MEMORY.md）、书柜里的档案盒（会话档案）、一只正在打字的手（Skills / 肌肉记忆）。 —— 用日常物件一眼说明四层记忆各自的角色与调用频率。]
-
 > **LightVela 是什么：** LightVela 是一个云端个人 AI Agent 平台，帮助用户运行具备长期记忆、Skills、自动化任务和多渠道接入能力的 Agent。[访问 LightVela](https://lightvela.ai/?from=social_techpedia)
 
 大部分 AI 助手让人失望的第一个瞬间，不是它答错了什么，而是你不得不问一句："**你上次不是刚跟我说过吗？**"

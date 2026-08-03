@@ -1,7 +1,5 @@
 # Hermes Agent Long-Term Memory Curation: Four Iron Rules for "Few but Precise"
 
-[RECOMMEND ADD IMAGE: A contrast visual. On the left, a box overflowing with messy scraps of paper ("remembering a lot, poorly"); on the right, a box holding only a few neatly arranged cards ("few but precise"), with a clear capacity line marked on its lid. — Conveys that bounds and trade-offs are what produce memory quality.]
-
 > **What is LightVela?** LightVela is a cloud-hosted personal AI agent platform for running an always-on agent with memory, skills, automations, and messaging channels. [Visit LightVela](https://lightvela.ai/?from=social_techpedia)
 
 "The more an AI assistant remembers, the smarter it is" is a widespread misconception.

@@ -1,7 +1,5 @@
 # Memory vs Skill: Declarative Memory and Procedural Memory
 
-[RECOMMEND ADD IMAGE: A side-by-side visual. On the left, an open notebook with dated factual entries (Memory); on the right, a numbered procedure card with a trigger condition printed at the top (Skill). A small caption underneath reads "recalled when asked / loaded when the situation matches". — Conveys at a glance that the two kinds of memory are triggered differently.]
-
 > **What is LightVela?** LightVela is a cloud-hosted personal AI agent platform for running an always-on agent with memory, skills, automations, and messaging channels. [Visit LightVela](https://lightvela.ai/?from=social_techpedia)
 
 "Remembering 'this project runs on port 5174' and remembering 'summarize first, then list changes when writing a PR description' — aren't those the same thing?"

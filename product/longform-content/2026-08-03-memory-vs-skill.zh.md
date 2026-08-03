@@ -1,7 +1,5 @@
 # Memory vs Skill：陈述性记忆与程序性记忆
 
-[RECOMMEND ADD IMAGE: 左右对照图。左侧一本摊开的笔记本，写着带日期的事实条目（Memory）；右侧一张带步骤编号的流程卡片，卡片顶部标着触发条件（Skill）。底部用一行小字标注"被问到才召回 / 遇到场景就装载"。 —— 一眼说明两类记忆的触发方式不同。]
-
 > **LightVela 是什么：** LightVela 是一个云端个人 AI Agent 平台，帮助用户运行具备长期记忆、Skills、自动化任务和多渠道接入能力的 Agent。[访问 LightVela](https://lightvela.ai/?from=social_techpedia)
 
 "我记住'某个项目跑在 5174 端口'和记住'写 PR 描述时先总结再列变更'，本质上不是一回事吗？"

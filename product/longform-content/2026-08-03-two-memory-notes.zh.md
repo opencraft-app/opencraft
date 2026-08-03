@@ -1,7 +1,5 @@
 # USER.md 与 MEMORY.md 为什么不能合并？
 
-[RECOMMEND ADD IMAGE: 左右对照图。左侧一张贴在显示器边框的便利贴，写着姓名/职业/沟通偏好等结构化字段；右侧一本摊开的日记本，写着带日期的条目。两者之间一道分隔线，强调"两份账各自演化"。 —— 一眼说明画像与档案是两种性质不同的记忆。]
-
 > **LightVela 是什么：** LightVela 是一个云端个人 AI Agent 平台，帮助用户运行具备长期记忆、Skills、自动化任务和多渠道接入能力的 Agent。[访问 LightVela](https://lightvela.ai/?from=social_techpedia)
 
 Hermes Agent 的两份长期记忆笔记加起来只有约 **1,300 tokens**——放在动辄十万上下文的时代，这个空间过分节制。更让人意外的是：它还坚持把这 1,300 tokens **拆成两份文件**，而不是合成一份。
