@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: lightvela-playground-sandbox-kr-1
+components:
+- ../common
+generators:
+- ksops-secret-generator.yaml
+configMapGenerator:
+- name: gateway-dashboard-platform-values
+  envs:
+  - gateway-dashboard-platform.env
+patches:
+- path: delete-shared-namespace.yaml
+- path: delete-shared-serviceaccount.yaml
+- path: delete-logconfig.yaml
