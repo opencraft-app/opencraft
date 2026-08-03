@@ -276,9 +276,10 @@ type inquiryBatchResponse struct {
 // inquiryBatchHandler 处理批量询价。
 //
 // 实现策略：
-//   - 入参 BundleIDs 长度 N → 内部串行 N 次 Quote 调用（jifei 询价 SDK 已支持单次 ResInfo[]
-//     批量但本期 inquiry.Service 接口先按 1 调用 1 bundle 落地，未来如需要批次合并可扩展
-//     Service 接口）
+//   - 入参 BundleIDs 长度 N → inquiry.Service.QuoteBatch 合并普通 jifei bundle 为一次
+//     GetPrice(resInfo[]) 调用
+//   - jifei 返回 data[] 与入参 resInfo[] 按下标匹配，QuoteBatch 负责保持 Prices[] 与
+//     BundleIDs 原顺序一致
 //   - 任一 bundle 询价失败 → 整批失败（与 jifei adapter InquiryBatch 设计一致）
 func inquiryBatchHandler(svc *inquiry.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -298,29 +299,24 @@ func inquiryBatchHandler(svc *inquiry.Service) gin.HandlerFunc {
 			return
 		}
 
-		results := make([]*inquiry.QuoteResult, 0, len(req.BundleIDs))
-		for _, bid := range req.BundleIDs {
-			r, err := svc.Quote(c.Request.Context(), inquiry.QuoteRequest{
-				ExternalUserID: req.ExternalUserID,
-				Uin:            req.Uin,
-				AppID:          req.AppID,
-				BundleID:       bid,
-				TimeSpan:       req.Period,
-				TimeUnit:       req.TimeUnit,
-				GoodsNum:       req.GoodsNum,
-				PayMode:        req.PayMode,
-				// Q41 修订 2026-05-11：RegionID 不再透传，trade 内部固定 1（广州）
+		results, err := svc.QuoteBatch(c.Request.Context(), inquiry.QuoteBatchRequest{
+			ExternalUserID: req.ExternalUserID,
+			Uin:            req.Uin,
+			AppID:          req.AppID,
+			BundleIDs:      req.BundleIDs,
+			TimeSpan:       req.Period,
+			TimeUnit:       req.TimeUnit,
+			GoodsNum:       req.GoodsNum,
+			PayMode:        req.PayMode,
+			// Q41 修订 2026-05-11：RegionID 不再透传，trade 内部固定 1（广州）
+		})
+		if err != nil {
+			code, status := classifyInquiryError(err)
+			c.JSON(status, gin.H{
+				"code":    code,
+				"message": err.Error(),
 			})
-			if err != nil {
-				code, status := classifyInquiryError(err)
-				c.JSON(status, gin.H{
-					"code":     code,
-					"message":  err.Error(),
-					"bundleId": bid,
-				})
-				return
-			}
-			results = append(results, r)
+			return
 		}
 		c.JSON(http.StatusOK, inquiryBatchResponse{Prices: results})
 	}

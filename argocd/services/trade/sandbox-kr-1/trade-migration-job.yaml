@@ -49,7 +49,7 @@ spec:
               SQL
       containers:
         - name: trade-migrate
-          image: lightclaw-kr1.tencentcloudcr.com/lightclaw/trade@sha256:2a1b099ec5cce685a235adfbf834fa2d0f368655611c0b0030bdda2966d48f28
+          image: REPLACE_TRADE_IMAGE
           command:
             - /usr/local/bin/trade-migrate
           envFrom:
