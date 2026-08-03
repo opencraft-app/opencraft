@@ -45,12 +45,20 @@ export function LightVelaDocsPage({ prefix, slug }: { prefix?: DocsLocalePrefix;
   return (
     <>
       <DocsPage toc={page.data.toc} full={page.data.full} className="lv-docs-page">
-        <DocsTitle className="lv-docs-title !mb-3 !text-[2rem] !font-bold !leading-[1.2] !tracking-normal">
+        <DocsTitle
+          className={
+            page.data.hide_description
+              ? 'lv-docs-title !mb-6 !text-[2rem] !font-bold !leading-[1.2] !tracking-normal'
+              : 'lv-docs-title !mb-3 !text-[2rem] !font-bold !leading-[1.2] !tracking-normal'
+          }
+        >
           {page.data.title}
         </DocsTitle>
-        <DocsDescription className="lv-docs-description !mb-8 !text-base !leading-[1.7]">
-          {page.data.description}
-        </DocsDescription>
+        {page.data.hide_description ? null : (
+          <DocsDescription className="lv-docs-description !mb-8 !text-base !leading-[1.7]">
+            {page.data.description}
+          </DocsDescription>
+        )}
         <DocsBody className="prose-doc lv-docs-prose">
           <MDX components={getMDXComponents()} />
         </DocsBody>
