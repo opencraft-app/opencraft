@@ -545,7 +545,17 @@ const mapBundleToPlan = (
           ? `${Math.round((displayPriceYuan / originalPriceYuan) * 100) / 10}折`
           : undefined;
     } else if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
-      promoTag = `${Math.round(backendDiscount * 100) / 10}折`;
+      /* 国际站 AI 增强版月付有真实折扣时展示「首月 6 折」；其他场景按比值展示「X折」。
+         无折扣（d=0/1/undefined）时不进入本分支，由 else 兜底为 undefined — 满足「有折扣才展示」。 */
+      const nm = bundle.bundle_name ?? "";
+      const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
+      const isCruise = nm.includes("巡游") || nm.toLowerCase().includes("cruise");
+      const isAi = bundle.bundle_type === "ai";
+      if (isGlobal && (isLaunch || isCruise) && isAi) {
+        promoTag = t("首月 6 折");
+      } else {
+        promoTag = `${Math.round(backendDiscount * 100) / 10}折`;
+      }
     } else {
       const nm = bundle.bundle_name ?? "";
       const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
@@ -554,7 +564,10 @@ const mapBundleToPlan = (
       if (isLaunch) {
         if (withToken) {
           /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
-          promoTag = t("首月 6 折");
+          /* 国内站保持原样总是展示「首月 6 折」；国际站依赖后端真实 discount（在前面 0<d<1 分支处理） */
+          if (!isGlobal) {
+            promoTag = t("首月 6 折");
+          }
         } else if (!isLoggedIn || backendDiscount === 0) {
           /* 启航01：未登录直接展示「免费 14 天」；已登录需 discount=0 */
           promoTag = t("首单免费 14 天");
@@ -563,7 +576,10 @@ const mapBundleToPlan = (
       } else if (isCruise) {
         if (withToken) {
           /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
-          promoTag = t("首月 6 折");
+          /* 国内站保持原样总是展示「首月 6 折」；国际站依赖后端真实 discount（在前面 0<d<1 分支处理） */
+          if (!isGlobal) {
+            promoTag = t("首月 6 折");
+          }
         } else if (!isLoggedIn || backendDiscount === 50) {
           /* 巡游01：未登录直接展示「首月 5 折」；已登录需 discount=50 */
           promoTag = t("首月 5 折");
@@ -2355,17 +2371,20 @@ const CreditCardConfirmOrderModal = ({
  */
 const PaymentPendingModal = ({
   bridgeUrl,
+  redirectUrl,
   onCancel,
   onManualConfirm,
   onRefresh,
   refreshing,
   t,
 }: {
-  /** 中转页绝对 URL，用作 QRCode value */
-  bridgeUrl: string;
+  /** 国内站：中转页绝对 URL，用作 QRCode value */
+  bridgeUrl?: string;
+  /** 国际站：信用卡 hosted page URL（pay_url），用于「重新打开支付页」 */
+  redirectUrl?: string;
   onCancel: () => void;
   onManualConfirm: () => void;
-  /** 「刷新」按钮：重新生成二维码（重新下单换新 auth_code） */
+  /** 「刷新」按钮：重新生成二维码（重新下单换新 auth_code）— 仅国内站 bridge 模式 */
   onRefresh: () => void;
   /** 刷新进行中（重新下单的网络往返期间），用于禁用按钮防止重复请求 */
   refreshing: boolean;
@@ -2403,10 +2422,12 @@ const PaymentPendingModal = ({
             {t("请完成支付")}
           </h3>
           <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 24px" }}>
-            {t("请使用微信扫描下方二维码完成支付")}
+            {bridgeUrl
+              ? t("请使用微信扫描下方二维码完成支付")
+              : t("信用卡支付页已在新窗口打开，完成支付后本页将自动跳转")}
           </p>
 
-          {/* bridge 模式：渲染中转页 URL 的二维码，用户在微信扫码后由中转页负责走 OAuth + wxSign */}
+          {/* 国内站 bridge 模式：渲染中转页 URL 的二维码，用户在微信扫码后由中转页负责走 OAuth + wxSign */}
           {bridgeUrl && (
             <div
               style={{
@@ -2423,38 +2444,81 @@ const PaymentPendingModal = ({
             </div>
           )}
 
+          {/* 国际站信用卡模式：展示支付页已打开的提示 */}
+          {redirectUrl && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 20,
+                padding: 24,
+                borderRadius: 12,
+                background: colors.warmWhite,
+              }}
+            >
+              <CreditCard style={{ width: 36, height: 36, color: colors.primary }} />
+              <span style={{ fontSize: 13, color: colors.warmGray500 }}>{t("信用卡支付")}</span>
+            </div>
+          )}
+
           <p style={{ fontSize: 13, color: colors.warmGray500, textAlign: "center", margin: "0 0 20px" }}>
             {t("支付完成后，需等待约15秒完成下单")}
           </p>
 
-          {/* 底部按钮区：仅「刷新」（重新生成二维码） */}
+          {/* 底部按钮区：国内站「刷新」重新生成二维码；国际站「重新打开支付页」 */}
           <div style={{ display: "flex", flexDirection: "row", gap: 12 }}>
-            <button
-              onClick={onRefresh}
-              disabled={refreshing}
-              style={{
-                flex: 1,
-                padding: "12px 16px",
-                borderRadius: 8,
-                border: `1px solid ${colors.primary}`,
-                background: colors.white,
-                color: colors.primary,
-                fontSize: 15,
-                fontWeight: 600,
-                cursor: refreshing ? "not-allowed" : "pointer",
-                opacity: refreshing ? 0.6 : 1,
-                transition: "background 0.15s, color 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                if (refreshing) return;
-                e.currentTarget.style.background = colors.warmWhite;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = colors.white;
-              }}
-            >
-              {refreshing ? t("刷新中...") : t("刷新")}
-            </button>
+            {bridgeUrl ? (
+              <button
+                onClick={onRefresh}
+                disabled={refreshing}
+                style={{
+                  flex: 1,
+                  padding: "12px 16px",
+                  borderRadius: 8,
+                  border: `1px solid ${colors.primary}`,
+                  background: colors.white,
+                  color: colors.primary,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  cursor: refreshing ? "not-allowed" : "pointer",
+                  opacity: refreshing ? 0.6 : 1,
+                  transition: "background 0.15s, color 0.15s",
+                }}
+                onMouseEnter={(e) => {
+                  if (refreshing) return;
+                  e.currentTarget.style.background = colors.warmWhite;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = colors.white;
+                }}
+              >
+                {refreshing ? t("刷新中...") : t("刷新")}
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  if (redirectUrl) window.open(redirectUrl, "_blank", "noopener,noreferrer");
+                }}
+                style={{
+                  flex: 1,
+                  padding: "12px 16px",
+                  borderRadius: 8,
+                  border: `1px solid ${colors.primary}`,
+                  background: colors.white,
+                  color: colors.primary,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  transition: "background 0.15s, color 0.15s",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = colors.warmWhite; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = colors.white; }}
+              >
+                {t("重新打开支付页")}
+              </button>
+            )}
           </div>
         </div>
       </motion.div>
@@ -2744,13 +2808,15 @@ export const SubscribePage = ({
     return groups;
   }, [planList, t]);
 
-  /* 付费过程上下文：仅在国内站走付费链路时使用。
-     v1.7.31 起统一走 bridge 中转页二维码方案；不再保留 fallback 新窗口模式。
-     保存当前订单 deal_names + 已选套餐 + 二维码 URL，供 PaymentPendingModal 渲染 QRCode。 */
+  /* 付费过程上下文：国内站走 bridge 中转页二维码方案；国际站走信用卡 hosted page 跳转。
+     保存当前订单 deal_names + 已选套餐 + 支付页 URL，供 PaymentPendingModal 渲染。 */
   const [paymentContext, setPaymentContext] = useState<{
     plan: PlanInfo;
     dealNames: string[];
-    bridgeUrl: string;
+    /** 国内站：中转页二维码 URL */
+    bridgeUrl?: string;
+    /** 国际站：信用卡 hosted page URL（getPassOrderUrl 返回的 pay_url） */
+    redirectUrl?: string;
   } | null>(null);
 
   /* 引用快照供 useCallback 中读取最新 paymentContext，避免重复触发依赖 */
@@ -2879,17 +2945,15 @@ export const SubscribePage = ({
   }, [isSubscribed, repositories.plans, finalizeBot, paidBillingActive, aiDuration]);
 
   /**
-   * 国际站信用卡直付链路（联调阶段）。
+   * 国际站信用卡支付链路（正式）。
    *
-   * 与国内站 startPaidPassOrder 的区别：不走微信二维码扫码，直接调
-   * `POST /v1/passes/order-and-pay` 一体化下单+支付（后端同步扣款），
-   * 返回 `{ deal_name, big_order_id }`，无需再拉 pay_url / 轮询二维码。
+   * 与国内站 startPaidPassOrder 的区别：不走微信扫码，走信用卡 hosted page 跳转：
+   *   1. createPassOrder 拿 deal_names
+   *   2. getPassOrderUrl（PC 端 Bearer）拿 pay_url（信用卡支付页 URL）+ need_charge
+   *   3. need_charge=0 时零元订单已支付成功，直接接棒 finalize；
+   *      否则 window.open 新窗口打开支付页，进入 paying 阶段
+   *   4. paying 阶段轮询 listMyPasses，检测到新生效 pass 后 finalizeBot 接棒
    *
-   * ⚠️ `order-and-pay` 后端注释明确「仅联调测试 / e2e，现网禁用」；
-   *    现网国际站正式链路应改走 createPassOrder + getPassOrderUrl 拉信用卡支付页，
-   *    待签约支付正式接口就绪后切换。
-   *
-   * 支付成功（同步）→ refreshPasses 拿新生效 pass → finalizeBot 创建实例并跳转。
    * 抛错由 executeCreateBot 的 try/catch 统一走错误映射（realname_required / invite 等）。
    */
   const startIntlCardPay = useCallback(async (plan: PlanInfo) => {
@@ -2906,17 +2970,31 @@ export const SubscribePage = ({
       await finalizeBot(plan);
       return;
     }
-    /* 一体化下单+支付：order-and-pay 同步扣款，返回 deal_name + big_order_id（仅审计用） */
-    await repositories.plans.createPassOrderAndPay({
+    /* 1. 下单拿 deal_names */
+    const order = await repositories.plans.createPassOrder({
       bundle_id: plan.raw.bundle_id,
       period: aiDuration.period,
       time_unit: aiDuration.time_unit,
     });
-    /* 同步支付完成 → 刷新 pass 列表拿到新生效 pass → finalize 创建实例并跳转 */
-    await refreshPasses();
-    await finalizeBot(plan);
-    setModalStep("closed");
-    setSelectedPlan(null);
+    /* 2. 拉信用卡支付页 URL（PC 端 Bearer 鉴权） */
+    const orderUrl = await repositories.plans.getPassOrderUrl({
+      deal_names: order.deal_names,
+      platform: "pc",
+    });
+    /* 3. need_charge=0：零元订单已支付成功，直接接棒 finalize */
+    if (orderUrl.need_charge === 0) {
+      await refreshPasses();
+      await finalizeBot(plan);
+      setModalStep("closed");
+      setSelectedPlan(null);
+      return;
+    }
+    /* 4. 新窗口打开信用卡 hosted page；进入 paying 阶段轮询接棒 */
+    if (orderUrl.pay_url) {
+      window.open(orderUrl.pay_url, "_blank", "noopener,noreferrer");
+    }
+    setPaymentContext({ plan, dealNames: order.deal_names, redirectUrl: orderUrl.pay_url });
+    setModalStep("paying");
   }, [isSubscribed, repositories.plans, finalizeBot, refreshPasses, aiDuration]);
 
   /* finalizeBot 的 ref 镜像 — 见 isSubscribedRef 的注释，目的相同：
@@ -3467,6 +3545,7 @@ export const SubscribePage = ({
           <PaymentPendingModal
             key="paying"
             bridgeUrl={paymentContext.bridgeUrl}
+            redirectUrl={paymentContext.redirectUrl}
             onCancel={handleCloseModal}
             onManualConfirm={handleManualConfirm}
             onRefresh={() => void handleRefreshPayment()}
