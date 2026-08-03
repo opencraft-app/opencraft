@@ -1266,6 +1266,26 @@ const PlanCard = ({
                 {plan.promoTag}
               </span>
             )}
+            {/* 「我已完成支付」：轮询超时兜底，手动触发 refreshPasses + finalizeBot */}
+            <button
+              onClick={onManualConfirm}
+              style={{
+                flex: 1,
+                padding: "12px 16px",
+                borderRadius: 8,
+                border: "none",
+                background: colors.primary,
+                color: colors.white,
+                fontSize: 15,
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "opacity 0.15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.9"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
+            >
+              {t("我已完成支付")}
+            </button>
           </div>
           {plan.badge && plan.badgeStyle === "tag" && (
             <span
@@ -1487,6 +1507,26 @@ const PlanCard = ({
                 {plan.originalPrice}
               </span>
             )}
+            {/* 「我已完成支付」：轮询超时兜底，手动触发 refreshPasses + finalizeBot */}
+            <button
+              onClick={onManualConfirm}
+              style={{
+                flex: 1,
+                padding: "12px 16px",
+                borderRadius: 8,
+                border: "none",
+                background: colors.primary,
+                color: colors.white,
+                fontSize: 15,
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "opacity 0.15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.9"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
+            >
+              {t("我已完成支付")}
+            </button>
           </div>
         ) : (
           /* 兜底：price 为空且非售罄非占位（理论上不会走到），保留占位高度避免塌陷 */
@@ -1549,6 +1589,26 @@ const PlanCard = ({
                 {isSoldOut ? t("明天 10:00 再来试试") : t("稍后再看")}
               </p>
             )}
+            {/* 「我已完成支付」：轮询超时兜底，手动触发 refreshPasses + finalizeBot */}
+            <button
+              onClick={onManualConfirm}
+              style={{
+                flex: 1,
+                padding: "12px 16px",
+                borderRadius: 8,
+                border: "none",
+                background: colors.primary,
+                color: colors.white,
+                fontSize: 15,
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "opacity 0.15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.9"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
+            >
+              {t("我已完成支付")}
+            </button>
           </div>
         ) : (
           <ul style={{ listStyle: "none", padding: 0, margin: 0, flex: 1, display: "flex", flexDirection: "column", gap: 16, order: 5 }}>
@@ -2519,6 +2579,26 @@ const PaymentPendingModal = ({
                 {t("重新打开支付页")}
               </button>
             )}
+            {/* 「我已完成支付」：轮询超时兜底，手动触发 refreshPasses + finalizeBot */}
+            <button
+              onClick={onManualConfirm}
+              style={{
+                flex: 1,
+                padding: "12px 16px",
+                borderRadius: 8,
+                border: "none",
+                background: colors.primary,
+                color: colors.white,
+                fontSize: 15,
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "opacity 0.15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.9"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
+            >
+              {t("我已完成支付")}
+            </button>
           </div>
         </div>
       </motion.div>
@@ -2970,31 +3050,46 @@ export const SubscribePage = ({
       await finalizeBot(plan);
       return;
     }
-    /* 1. 下单拿 deal_names */
-    const order = await repositories.plans.createPassOrder({
-      bundle_id: plan.raw.bundle_id,
-      period: aiDuration.period,
-      time_unit: aiDuration.time_unit,
-    });
-    /* 2. 拉信用卡支付页 URL（PC 端 Bearer 鉴权） */
-    const orderUrl = await repositories.plans.getPassOrderUrl({
-      deal_names: order.deal_names,
-      platform: "pc",
-    });
-    /* 3. need_charge=0：零元订单已支付成功，直接接棒 finalize */
-    if (orderUrl.need_charge === 0) {
-      await refreshPasses();
-      await finalizeBot(plan);
-      setModalStep("closed");
-      setSelectedPlan(null);
-      return;
+    /* 同步打开占位窗口：window.open 必须在用户手势同步调用栈内，跨 await（网络往返）后
+       会被浏览器弹窗拦截。先开 about:blank 占位，拿到 pay_url 后再赋值 location 跳转。 */
+    const payWindow = window.open("about:blank", "_blank");
+    try {
+      /* 1. 下单拿 deal_names */
+      const order = await repositories.plans.createPassOrder({
+        bundle_id: plan.raw.bundle_id,
+        period: aiDuration.period,
+        time_unit: aiDuration.time_unit,
+      });
+      /* 2. 拉信用卡支付页 URL（PC 端 Bearer 鉴权） */
+      const orderUrl = await repositories.plans.getPassOrderUrl({
+        deal_names: order.deal_names,
+        platform: "pc",
+      });
+      /* 3. need_charge=0：零元订单已支付成功，关闭占位窗口，直接接棒 finalize */
+      if (orderUrl.need_charge === 0) {
+        payWindow?.close();
+        await refreshPasses();
+        await finalizeBot(plan);
+        setModalStep("closed");
+        setSelectedPlan(null);
+        return;
+      }
+      /* 4. need_charge=1：占位窗口跳转信用卡 hosted page；pay_url 为空视为异常 */
+      if (!orderUrl.pay_url) {
+        throw new Error("trade generate pay url: empty pay_url");
+      }
+      if (payWindow) {
+        payWindow.location.href = orderUrl.pay_url;
+      } else {
+        /* 占位窗口被拦截（浏览器弹窗限制）：兜底当前页跳转 */
+        window.location.assign(orderUrl.pay_url);
+      }
+      setPaymentContext({ plan, dealNames: order.deal_names, redirectUrl: orderUrl.pay_url });
+      setModalStep("paying");
+    } catch (err) {
+      payWindow?.close();
+      throw err;
     }
-    /* 4. 新窗口打开信用卡 hosted page；进入 paying 阶段轮询接棒 */
-    if (orderUrl.pay_url) {
-      window.open(orderUrl.pay_url, "_blank", "noopener,noreferrer");
-    }
-    setPaymentContext({ plan, dealNames: order.deal_names, redirectUrl: orderUrl.pay_url });
-    setModalStep("paying");
   }, [isSubscribed, repositories.plans, finalizeBot, refreshPasses, aiDuration]);
 
   /* finalizeBot 的 ref 镜像 — 见 isSubscribedRef 的注释，目的相同：
@@ -3067,8 +3162,8 @@ export const SubscribePage = ({
          国际站维持「paidBillingActive 开关 + skipPayment」组合控制。 */
       if ((!isGlobal || paidBillingActive) && !plan.skipPayment) {
         if (isGlobal) {
-          /* 国际站付费链路：信用卡直付（order-and-pay 一体化，联调阶段）。
-             同步扣款成功后 startIntlCardPay 内部已 refreshPasses + finalizeBot，
+          /* 国际站付费链路：信用卡 hosted page 跳转（createPassOrder + getPassOrderUrl）。
+             startIntlCardPay 内部新窗口打开支付页 + 进入 paying 轮询接棒 finalizeBot，
              这里不能继续往下 addBot/navigate，finalize 已处理跳转。 */
           await startIntlCardPay(plan);
         } else {
