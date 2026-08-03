@@ -12,7 +12,6 @@ import {
   SEO_PUBLIC_URL_LANGS,
   seoRegion,
 } from '@next-site/seo';
-import { listBlogArticleSlugs } from '@/pages/marketing/blog-content';
 
 export const dynamic = 'force-static';
 
@@ -56,13 +55,10 @@ function sameSlug(left: readonly string[], right: readonly string[]): boolean {
 
 export function GET() {
   const globalBuild = seoRegion() === 'global';
-  const blogArticlePaths = listBlogArticleSlugs().map((slug) => `/blog/${slug}`);
   const publicPaths = [
     '/',
     '/about',
     '/changelog',
-    '/blog',
-    ...blogArticlePaths,
     '/privacy-policy',
     '/cookie-policy',
     '/open-source-licenses',

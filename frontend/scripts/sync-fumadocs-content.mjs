@@ -89,6 +89,12 @@ const cnDocs = [
   { slug: 'configuration/channel-feishu', title: '配置通道 - 飞书', file: 'configuration/channel-feishu.md', group: '功能与配置', description: '通过飞书与 Hermes Agent 对话。' },
   { slug: 'configuration/channel-qq', title: '配置通道 - QQ', file: 'configuration/channel-qq.md', group: '功能与配置', description: '通过 QQ 与 Hermes Agent 对话。' },
   { slug: 'configuration/skill', title: '配置技能', file: 'configuration/skill.md', group: '功能与配置', description: '安装技能包，扩展 Hermes 能力。' },
+  // Hermes Agent 解读（长文科普，帮助用户理解 Hermes Agent 的设计与原理）
+  { slug: 'hermes-agent/hermes-vs-openclaw', title: 'Hermes Agent vs OpenClaw：两个开源 Agent 的根本差别', file: 'hermes-agent/01-hermes-vs-openclaw.md', group: 'Hermes Agent 解读', description: '对比 Hermes Agent 与 OpenClaw 两个开源 Agent 在长期记忆、Skill 生态、多平台接入等维度的根本差别，帮你判断哪一个更贴近你的使用场景。', hideDescription: true },
+  { slug: 'hermes-agent/why-hermes-remembers-you', title: 'Hermes Agent 是怎么"记住你"的？', file: 'hermes-agent/02-why-hermes-remembers-you.md', group: 'Hermes Agent 解读', description: '揭秘 Hermes Agent 长期记忆背后的四层分工系统：USER.md、MEMORY.md、SQLite+FTS5 会话档案与 Skills，以及写入/召回时机的工程实现。', hideDescription: true },
+  { slug: 'hermes-agent/user-md-vs-memory-md', title: 'USER.md 与 MEMORY.md 为什么不能合并？', file: 'hermes-agent/03-user-md-vs-memory-md.md', group: 'Hermes Agent 解读', description: '从容量、加载策略、更新语义三条硬约束，解释 Hermes Agent 为什么把长期记忆拆成 USER.md 与 MEMORY.md 两份笔记，而不是合并成一份。', hideDescription: true },
+  { slug: 'hermes-agent/hermes-memory-curation', title: 'Hermes Agent 的长期记忆治理：少而准的四条铁律', file: 'hermes-agent/04-hermes-memory-curation.md', group: 'Hermes Agent 解读', description: '解析 Hermes Agent 长期记忆治理的四条铁律：有界、冻结、透明、自我整合，以及它们如何保证记忆"少而准"而不是"多而乱"。', hideDescription: true },
+  { slug: 'hermes-agent/memory-vs-skill', title: 'Memory vs Skill：陈述性记忆与程序性记忆', file: 'hermes-agent/05-memory-vs-skill.md', group: 'Hermes Agent 解读', description: '从认知心理学的陈述性记忆与程序性记忆出发，解释 Hermes Agent 为什么把长期记忆拆成 Memory 与 Skill 两条腿，以及两者的触发方式、表达形式、演化速度差异。', hideDescription: true },
   // 问题排查
   { slug: 'faq', title: '常见问题 FAQ', file: '07-faq.md', group: '问题排查', description: '' },
 ];
@@ -98,6 +104,7 @@ const CN_GROUP_ORDER = [
   '产品入门',
   '账号、套餐与开通',
   '功能与配置',
+  'Hermes Agent 解读',
   '问题排查',
   '联系与支持',
 ];
@@ -109,6 +116,7 @@ const GLOBAL_GROUP_ORDER = [
   'Features & Configuration',
   'Use Cases',
   'Compare & Choose',
+  'Hermes Agent Deep Dive',
   'Troubleshooting',
   'Security, Privacy & Data',
   'Advanced',
@@ -423,6 +431,76 @@ const globalDocs = [
     },
   },
   {
+    slug: 'hermes-agent/hermes-vs-openclaw',
+    title: {
+      'en-US': 'Hermes Agent vs OpenClaw: Fundamental Differences Between Two Open-Source Agents',
+      'zh-CN': 'Hermes Agent vs OpenClaw：两个开源 Agent 的根本差别',
+    },
+    file: 'hermes-agent/01-hermes-vs-openclaw.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Compare Hermes Agent and OpenClaw across long-term memory, skill ecosystems, and multi-platform integration to see which open-source agent fits your use case.',
+      'zh-CN': '对比 Hermes Agent 与 OpenClaw 两个开源 Agent 在长期记忆、Skill 生态、多平台接入等维度的根本差别，帮你判断哪一个更贴近你的使用场景。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/why-hermes-remembers-you',
+    title: {
+      'en-US': 'How Does Hermes Agent Remember You?',
+      'zh-CN': 'Hermes Agent 是怎么"记住你"的？',
+    },
+    file: 'hermes-agent/02-why-hermes-remembers-you.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Uncover the four-layer long-term memory system behind Hermes Agent: USER.md, MEMORY.md, SQLite+FTS5 conversation archive, and Skills, plus how writes and recalls are engineered.',
+      'zh-CN': '揭秘 Hermes Agent 长期记忆背后的四层分工系统：USER.md、MEMORY.md、SQLite+FTS5 会话档案与 Skills，以及写入/召回时机的工程实现。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/user-md-vs-memory-md',
+    title: {
+      'en-US': 'Why USER.md and MEMORY.md Cannot Be Merged',
+      'zh-CN': 'USER.md 与 MEMORY.md 为什么不能合并？',
+    },
+    file: 'hermes-agent/03-user-md-vs-memory-md.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Three hard constraints — capacity, loading strategy, and update semantics — explain why Hermes Agent keeps long-term memory in two separate notes instead of a single merged file.',
+      'zh-CN': '从容量、加载策略、更新语义三条硬约束，解释 Hermes Agent 为什么把长期记忆拆成 USER.md 与 MEMORY.md 两份笔记，而不是合并成一份。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/hermes-memory-curation',
+    title: {
+      'en-US': 'Hermes Agent Long-Term Memory Curation: Four Iron Rules for "Few but Precise"',
+      'zh-CN': 'Hermes Agent 的长期记忆治理：少而准的四条铁律',
+    },
+    file: 'hermes-agent/04-hermes-memory-curation.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Break down the four iron rules — bounded, frozen, transparent, self-consolidating — that keep Hermes Agent long-term memory precise rather than bloated.',
+      'zh-CN': '解析 Hermes Agent 长期记忆治理的四条铁律：有界、冻结、透明、自我整合，以及它们如何保证记忆"少而准"而不是"多而乱"。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/memory-vs-skill',
+    title: {
+      'en-US': 'Memory vs Skill: Declarative Memory and Procedural Memory',
+      'zh-CN': 'Memory vs Skill：陈述性记忆与程序性记忆',
+    },
+    file: 'hermes-agent/05-memory-vs-skill.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Grounded in declarative vs procedural memory from cognitive science, explain why Hermes Agent splits long-term memory into Memory and Skill, and how they differ in trigger, form, and evolution speed.',
+      'zh-CN': '从认知心理学的陈述性记忆与程序性记忆出发，解释 Hermes Agent 为什么把长期记忆拆成 Memory 与 Skill 两条腿，以及两者的触发方式、表达形式、演化速度差异。',
+    },
+    hideDescription: true,
+  },
+  {
     slug: 'contact-us',
     title: { 'en-US': 'Contact Us', 'zh-CN': '联系我们' },
     file: 'contact-us.md',
@@ -436,8 +514,9 @@ const globalDocs = [
 
 const globalDocsForEnglish = globalDocs.filter(
   (doc) =>
-    existsSync(join(sourceRoot, 'en', doc.file)) ||
-    existsSync(join(sourceRoot, 'global', doc.file)),
+    (existsSync(join(sourceRoot, 'en', doc.file)) ||
+      existsSync(join(sourceRoot, 'global', doc.file))) &&
+    !isHiddenFor(doc, LOCALES.EN_US),
 );
 
 /** 判断 doc 是否对某 locale 隐藏（仅按 hiddenForLocales 白名单）。 */
@@ -605,6 +684,9 @@ function writeDoc(docSet, doc) {
       '---',
       `title: ${JSON.stringify(title)}`,
       `description: ${JSON.stringify(description)}`,
+      // 正文自带「摘要 / Summary」段的文章（如 Hermes Agent 解读系列），页面上不再
+      // 重复渲染 description 段落；description 仍写入 frontmatter 供 SEO meta 使用。
+      ...(doc.hideDescription ? ['hide_description: true'] : []),
       `source_path: ${JSON.stringify(relative(frontendRoot, inputPath))}`,
       '---',
       '',

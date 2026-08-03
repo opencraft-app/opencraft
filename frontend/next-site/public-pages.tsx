@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AboutPage } from '@/pages/marketing/about-page';
 import { ChangelogPage } from '@/pages/marketing/changelog-page';
-import { BlogArticlePage, BlogListPage } from '@/pages/marketing/blog-page';
 import { LandingPageView } from '@/pages/marketing/landing-page';
 import { SUBSCRIBE_PATH } from '@/lib/agent-routes';
 
@@ -140,54 +139,3 @@ export function PublicChangelogPage({
   );
 }
 
-export type PublicBlogListPageProps = Partial<PublicRouteLocale> & {
-  initialCategoryId?: string | null;
-};
-
-export function PublicBlogListPage({
-  locale = DEFAULT_PUBLIC_ROUTE_LOCALE.locale,
-  localized = DEFAULT_PUBLIC_ROUTE_LOCALE.localized,
-  initialCategoryId = null,
-}: PublicBlogListPageProps = {}) {
-  const pathname = usePathname() || '/';
-
-  return (
-    <PublicSiteLocaleBridge locale={locale}>
-      <BlogListPage
-        authControls={<PublicHeaderAuthIsland locale={locale} />}
-        currentPath={pathname}
-        publicLocale={locale}
-        publicLocalized={localized}
-        initialCategoryId={initialCategoryId}
-        renderLink={renderNextPublicSiteHeaderLink}
-        renderLanguageSwitcher={renderNextLanguageSwitcher}
-      />
-    </PublicSiteLocaleBridge>
-  );
-}
-
-export type PublicBlogArticlePageProps = Partial<PublicRouteLocale> & {
-  slug: string;
-};
-
-export function PublicBlogArticlePage({
-  locale = DEFAULT_PUBLIC_ROUTE_LOCALE.locale,
-  localized = DEFAULT_PUBLIC_ROUTE_LOCALE.localized,
-  slug,
-}: PublicBlogArticlePageProps) {
-  const pathname = usePathname() || '/';
-
-  return (
-    <PublicSiteLocaleBridge locale={locale}>
-      <BlogArticlePage
-        slug={slug}
-        authControls={<PublicHeaderAuthIsland locale={locale} />}
-        currentPath={pathname}
-        publicLocale={locale}
-        publicLocalized={localized}
-        renderLink={renderNextPublicSiteHeaderLink}
-        renderLanguageSwitcher={renderNextLanguageSwitcher}
-      />
-    </PublicSiteLocaleBridge>
-  );
-}

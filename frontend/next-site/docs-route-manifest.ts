@@ -134,6 +134,26 @@ export const DOCS_ROUTE_SLUGS = {
       "using-lightvela-safely"
     ],
     [
+      "hermes-agent",
+      "hermes-vs-openclaw"
+    ],
+    [
+      "hermes-agent",
+      "why-hermes-remembers-you"
+    ],
+    [
+      "hermes-agent",
+      "user-md-vs-memory-md"
+    ],
+    [
+      "hermes-agent",
+      "hermes-memory-curation"
+    ],
+    [
+      "hermes-agent",
+      "memory-vs-skill"
+    ],
+    [
       "contact-us"
     ]
   ],
@@ -189,6 +209,26 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "skill"
+    ],
+    [
+      "hermes-agent",
+      "hermes-vs-openclaw"
+    ],
+    [
+      "hermes-agent",
+      "why-hermes-remembers-you"
+    ],
+    [
+      "hermes-agent",
+      "user-md-vs-memory-md"
+    ],
+    [
+      "hermes-agent",
+      "hermes-memory-curation"
+    ],
+    [
+      "hermes-agent",
+      "memory-vs-skill"
     ],
     [
       "faq"
@@ -309,6 +349,26 @@ export const DOCS_ROUTE_SLUGS = {
       "using-lightvela-safely"
     ],
     [
+      "hermes-agent",
+      "hermes-vs-openclaw"
+    ],
+    [
+      "hermes-agent",
+      "why-hermes-remembers-you"
+    ],
+    [
+      "hermes-agent",
+      "user-md-vs-memory-md"
+    ],
+    [
+      "hermes-agent",
+      "hermes-memory-curation"
+    ],
+    [
+      "hermes-agent",
+      "memory-vs-skill"
+    ],
+    [
       "contact-us"
     ]
   ],
@@ -425,6 +485,26 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "faq",
       "using-lightvela-safely"
+    ],
+    [
+      "hermes-agent",
+      "hermes-vs-openclaw"
+    ],
+    [
+      "hermes-agent",
+      "why-hermes-remembers-you"
+    ],
+    [
+      "hermes-agent",
+      "user-md-vs-memory-md"
+    ],
+    [
+      "hermes-agent",
+      "hermes-memory-curation"
+    ],
+    [
+      "hermes-agent",
+      "memory-vs-skill"
     ],
     [
       "contact-us"
