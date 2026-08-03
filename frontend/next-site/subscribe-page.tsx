@@ -1266,26 +1266,6 @@ const PlanCard = ({
                 {plan.promoTag}
               </span>
             )}
-            {/* 「我已完成支付」：轮询超时兜底，手动触发 refreshPasses + finalizeBot */}
-            <button
-              onClick={onManualConfirm}
-              style={{
-                flex: 1,
-                padding: "12px 16px",
-                borderRadius: 8,
-                border: "none",
-                background: colors.primary,
-                color: colors.white,
-                fontSize: 15,
-                fontWeight: 600,
-                cursor: "pointer",
-                transition: "opacity 0.15s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.9"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
-            >
-              {t("我已完成支付")}
-            </button>
           </div>
           {plan.badge && plan.badgeStyle === "tag" && (
             <span
@@ -1507,26 +1487,6 @@ const PlanCard = ({
                 {plan.originalPrice}
               </span>
             )}
-            {/* 「我已完成支付」：轮询超时兜底，手动触发 refreshPasses + finalizeBot */}
-            <button
-              onClick={onManualConfirm}
-              style={{
-                flex: 1,
-                padding: "12px 16px",
-                borderRadius: 8,
-                border: "none",
-                background: colors.primary,
-                color: colors.white,
-                fontSize: 15,
-                fontWeight: 600,
-                cursor: "pointer",
-                transition: "opacity 0.15s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.9"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
-            >
-              {t("我已完成支付")}
-            </button>
           </div>
         ) : (
           /* 兜底：price 为空且非售罄非占位（理论上不会走到），保留占位高度避免塌陷 */
@@ -1589,26 +1549,6 @@ const PlanCard = ({
                 {isSoldOut ? t("明天 10:00 再来试试") : t("稍后再看")}
               </p>
             )}
-            {/* 「我已完成支付」：轮询超时兜底，手动触发 refreshPasses + finalizeBot */}
-            <button
-              onClick={onManualConfirm}
-              style={{
-                flex: 1,
-                padding: "12px 16px",
-                borderRadius: 8,
-                border: "none",
-                background: colors.primary,
-                color: colors.white,
-                fontSize: 15,
-                fontWeight: 600,
-                cursor: "pointer",
-                transition: "opacity 0.15s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.9"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
-            >
-              {t("我已完成支付")}
-            </button>
           </div>
         ) : (
           <ul style={{ listStyle: "none", padding: 0, margin: 0, flex: 1, display: "flex", flexDirection: "column", gap: 16, order: 5 }}>
