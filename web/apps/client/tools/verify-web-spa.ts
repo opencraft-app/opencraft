@@ -11,7 +11,7 @@ const routePaths = [
   "/s/atlas/dm/new?peerMemberId=019fb723-68b8-79ac-b31e-9d0a657c43ed",
 ];
 
-const remoteOrigin = process.env.RAFT_WEB_VERIFY_ORIGIN?.replace(/\/$/u, "");
+const remoteOrigin = process.env.VELA_WEB_VERIFY_ORIGIN?.replace(/\/$/u, "");
 
 if (remoteOrigin) {
   for (const path of routePaths) {

@@ -123,7 +123,7 @@ describe("ChannelChatService", () => {
     expect(createTextAtMessage).toHaveBeenCalledWith({
       cloudCustomData: JSON.stringify({
         clientRequestId: "request-1",
-        schema: "raft.client-message/v2",
+        schema: "vela.client-message/v2",
       }),
       conversationType: "GROUP",
       payload: {
@@ -187,7 +187,7 @@ describe("ChannelChatService", () => {
           senderId: "agent-im-1",
           senderName: "研究助手",
         },
-        schema: "raft.client-message/v2",
+        schema: "vela.client-message/v2",
       }),
       conversationType: "GROUP",
       needReadReceipt: true,
@@ -276,7 +276,7 @@ describe("ChannelChatService", () => {
       expect.objectContaining({
         cloudCustomData: JSON.stringify({
           clientRequestId: "thread-request-1",
-          schema: "raft.thread-reply/v1",
+          schema: "vela.thread-reply/v1",
           thread: {
             role: "reply",
             rootMessageRef: {
@@ -623,7 +623,7 @@ describe("ChannelChatService", () => {
     expect(createImageMessage).toHaveBeenCalledWith({
       cloudCustomData: JSON.stringify({
         clientRequestId: "request-image-1",
-        schema: "raft.client-message/v2",
+        schema: "vela.client-message/v2",
       }),
       conversationType: "GROUP",
       onProgress: expect.any(Function),
@@ -806,7 +806,7 @@ describe("ChannelChatService", () => {
           title: "核对腾讯消息协议",
         }),
         description: "Task",
-        extension: "raft.task-message/v1",
+        extension: "vela.task-message/v1",
       },
       status: "unSend",
       type: "TIMCustomElem",
@@ -859,12 +859,12 @@ describe("ChannelChatService", () => {
     expect(createCustomMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         cloudCustomData: expect.stringContaining(
-          '"schema":"raft.task-message/v1"',
+          '"schema":"vela.task-message/v1"',
         ),
         payload: {
           data: expect.stringContaining('"taskId":"task-1"'),
           description: "Task",
-          extension: "raft.task-message/v1",
+          extension: "vela.task-message/v1",
         },
       }),
     );

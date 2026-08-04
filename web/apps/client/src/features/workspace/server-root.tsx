@@ -1,4 +1,4 @@
-import type {Channel, Server} from "@raft-platform/client-core";
+import type {Channel, Server} from "@vela/client-core";
 import {Redirect, type Href} from "expo-router";
 import {RouteStatusScreen} from "@/ui";
 
@@ -20,7 +20,7 @@ export function ServerRoot({
   if (channelId) {
     return (
       <>
-        <RouteTitle title={`${server.name} · RAFT`} />
+        <RouteTitle title={`${server.name} · VELA`} />
         <Redirect
           href={currentBrowserHref(
             workspaceSectionHref(server.slug, "chat", channelId),
@@ -31,7 +31,7 @@ export function ServerRoot({
   }
   return (
     <>
-      <RouteTitle title={`${server.name} · RAFT`} />
+      <RouteTitle title={`${server.name} · VELA`} />
       <RouteStatusScreen
         description="Server 已打开，频道仍在消息服务中准备。同步完成后重新打开此链接即可进入。"
         title="频道正在同步"

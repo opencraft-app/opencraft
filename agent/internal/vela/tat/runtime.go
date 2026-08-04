@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/QuantumNous/new-api/common"
+	"velachat/agent/internal/common"
 )
 
 var (

@@ -21,7 +21,7 @@
 - Go API：`http://127.0.0.1:18080`
 - Expo Web：`http://127.0.0.1:8081`
 
-脚本从自身位置确定后端目录，并优先使用 `RAFT_WEB_DIR`；未设置时按当前工作区拓扑查找 `../../new-api/raft-web`。端口和监听地址可通过本地配置覆盖。
+脚本从自身位置确定后端目录，并优先使用 `VELA_WEB_DIR`；未设置时按当前工作区拓扑查找 `../../new-api/vela-web`。端口和监听地址可通过本地配置覆盖。
 
 ## 本地状态
 
@@ -61,7 +61,7 @@
 ## 前后端边界
 
 - API 不托管 SPA。
-- Expo 通过 `EXPO_PUBLIC_RAFT_API_URL` 连接本地 API。
+- Expo 通过 `EXPO_PUBLIC_VELA_API_URL` 连接本地 API。
 - 后端 CORS 仍由应用配置控制；脚本不做代理、不改业务路由。
 - 腾讯云 IM 消息仍由浏览器 SDK 直连；脚本只提供控制面 API 与 Web 开发服务器。
 

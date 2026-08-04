@@ -665,7 +665,7 @@ func storedEnrollmentArtifact(
 		objectKey, digest = machine.EnrollmentSignatureObject, machine.EnrollmentSignatureSha256
 	case "install.sh":
 		objectKey, digest = machine.EnrollmentInstallerObject, machine.EnrollmentInstallerSha256
-	case "raft-computer-go":
+	case "vela-computer":
 		objectKey, digest = machine.EnrollmentProgramObject, machine.EnrollmentProgramSha256
 		if machine.EnrollmentProgramSize == nil || *machine.EnrollmentProgramSize <= 0 {
 			return "", [32]byte{}, 0, false

@@ -21,7 +21,7 @@ func TestVelaReleasePackagesSingleEmbeddedIMHost(t *testing.T) {
 	script := filepath.Join(filepath.Dir(sourceFile), "build-vela-release.sh")
 	root := t.TempDir()
 	agent := filepath.Join(root, "canonical-agent")
-	agentContent := "#!/bin/sh\nprintf '%s\\n' '{\"mode\":\"vela\",\"name\":\"raft-computer-go\",\"version\":\"v0.1.0\"}'\n"
+	agentContent := "#!/bin/sh\nprintf '%s\\n' '{\"mode\":\"vela\",\"name\":\"vela-computer\",\"version\":\"v0.1.0\"}'\n"
 	writeExecutable(t, agent, agentContent)
 	output := filepath.Join(root, "release")
 
@@ -39,7 +39,7 @@ func TestVelaReleasePackagesSingleEmbeddedIMHost(t *testing.T) {
 		t.Fatalf("build release: %v: %s", err, combined)
 	}
 
-	assertReleaseFile(t, output, "raft-computer-go", agentContent)
+	assertReleaseFile(t, output, "vela-computer", agentContent)
 	if _, err := os.Stat(filepath.Join(output, "chatserver-im-bridge")); !os.IsNotExist(err) {
 		t.Fatal("release still contains the obsolete IM Bridge")
 	}
@@ -54,7 +54,7 @@ func TestVelaReleasePackagesSingleEmbeddedIMHost(t *testing.T) {
 		name    string
 		content string
 	}{
-		{"raft-computer-go", agentContent},
+		{"vela-computer", agentContent},
 	} {
 		sum := sha256.Sum256([]byte(item.content))
 		expected := hex.EncodeToString(sum[:]) + "  " + item.name
@@ -134,7 +134,7 @@ func TestVelaReleaseRejectsBinaryWithDifferentVersion(t *testing.T) {
 	script := filepath.Join(filepath.Dir(sourceFile), "build-vela-release.sh")
 	root := t.TempDir()
 	agent := filepath.Join(root, "canonical-agent")
-	writeExecutable(t, agent, "#!/bin/sh\nprintf '%s\\n' '{\"mode\":\"vela\",\"name\":\"raft-computer-go\",\"version\":\"v9.9.9\"}'\n")
+	writeExecutable(t, agent, "#!/bin/sh\nprintf '%s\\n' '{\"mode\":\"vela\",\"name\":\"vela-computer\",\"version\":\"v9.9.9\"}'\n")
 	command := exec.Command(
 		"sh", script,
 		"--version", "v0.1.0",

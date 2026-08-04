@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/filelock"
+	"velachat/agent/internal/filelock"
 )
 
 var ErrManagedProfileRuntimeBusy = errors.New(
@@ -93,7 +93,7 @@ func AcquireManagedProfileRuntimeLease(
 	path := filepath.Join(
 		filepath.Clean(trustedHome),
 		".hermes",
-		".raft-computer-go",
+		".vela-computer",
 		"runtime-locks",
 		profileName+".lock",
 	)

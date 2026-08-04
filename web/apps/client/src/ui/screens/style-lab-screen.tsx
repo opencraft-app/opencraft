@@ -11,7 +11,7 @@ import type {
   Message,
   Server,
   Task,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import { useState } from "react";
 import {
   Pressable,
@@ -29,7 +29,7 @@ import { TasksScreen } from "./tasks-screen";
 import { WorkspaceShell } from "../layouts/workspace-shell";
 import type { TerminalSurfaceController } from "../components/terminal-panel";
 import { layoutMode } from "../layout-mode";
-import { raftTheme } from "../tokens";
+import { velaTheme } from "../tokens";
 
 const server: Server = {
   description: "Human 与 Agent 的产品协作空间",
@@ -276,23 +276,23 @@ const directConversations: DirectConversation[] = [
 
 const styleLabImageUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
   <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
-    <rect width="1280" height="720" fill="${raftTheme.semantic.color.surfaceSubtle}"/>
-    <text x="84" y="104" fill="${raftTheme.semantic.color.textPrimary}" font-family="sans-serif" font-size="42" font-weight="700">Human 与 Agent 协作拓扑</text>
-    <text x="84" y="154" fill="${raftTheme.semantic.color.textMuted}" font-family="sans-serif" font-size="22">腾讯云 IM 负责消息，平台维护业务事实</text>
-    <path d="M356 360h174M750 360h174" stroke="${raftTheme.semantic.color.brandAccent}" stroke-width="8" stroke-linecap="round"/>
-    <path d="m510 340 30 20-30 20M904 340l30 20-30 20" fill="none" stroke="${raftTheme.semantic.color.brandAccent}" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect x="84" y="250" width="272" height="220" rx="34" fill="${raftTheme.semantic.color.sectionSurface}" stroke="${raftTheme.semantic.color.surfaceMuted}" stroke-width="3"/>
-    <rect x="530" y="250" width="220" height="220" rx="34" fill="${raftTheme.semantic.color.selectionSurface}" stroke="${raftTheme.semantic.color.borderInteractive}" stroke-width="3"/>
-    <rect x="924" y="250" width="272" height="220" rx="34" fill="${raftTheme.semantic.color.sectionSurface}" stroke="${raftTheme.semantic.color.surfaceMuted}" stroke-width="3"/>
-    <circle cx="220" cy="326" r="32" fill="${raftTheme.semantic.color.avatarAccountSurface}"/>
-    <text x="220" y="338" fill="${raftTheme.semantic.color.textInverse}" font-family="sans-serif" font-size="30" text-anchor="middle">人</text>
-    <text x="220" y="406" fill="${raftTheme.semantic.color.textPrimary}" font-family="sans-serif" font-size="34" font-weight="700" text-anchor="middle">Human</text>
-    <text x="640" y="350" fill="${raftTheme.semantic.color.brandAccent}" font-family="sans-serif" font-size="34" font-weight="700" text-anchor="middle">Channel</text>
-    <text x="640" y="397" fill="${raftTheme.semantic.color.textMuted}" font-family="sans-serif" font-size="23" text-anchor="middle">消息与上下文</text>
-    <rect x="1028" y="294" width="64" height="64" rx="18" fill="${raftTheme.semantic.color.brandAccent}"/>
-    <text x="1060" y="338" fill="${raftTheme.semantic.color.textInverse}" font-family="sans-serif" font-size="33" text-anchor="middle">A</text>
-    <text x="1060" y="406" fill="${raftTheme.semantic.color.textPrimary}" font-family="sans-serif" font-size="34" font-weight="700" text-anchor="middle">Agent</text>
-    <text x="84" y="618" fill="${raftTheme.semantic.color.textMuted}" font-family="sans-serif" font-size="22">Style Lab · 图片预览回归样本</text>
+    <rect width="1280" height="720" fill="${velaTheme.semantic.color.surfaceSubtle}"/>
+    <text x="84" y="104" fill="${velaTheme.semantic.color.textPrimary}" font-family="sans-serif" font-size="42" font-weight="700">Human 与 Agent 协作拓扑</text>
+    <text x="84" y="154" fill="${velaTheme.semantic.color.textMuted}" font-family="sans-serif" font-size="22">腾讯云 IM 负责消息，平台维护业务事实</text>
+    <path d="M356 360h174M750 360h174" stroke="${velaTheme.semantic.color.brandAccent}" stroke-width="8" stroke-linecap="round"/>
+    <path d="m510 340 30 20-30 20M904 340l30 20-30 20" fill="none" stroke="${velaTheme.semantic.color.brandAccent}" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="84" y="250" width="272" height="220" rx="34" fill="${velaTheme.semantic.color.sectionSurface}" stroke="${velaTheme.semantic.color.surfaceMuted}" stroke-width="3"/>
+    <rect x="530" y="250" width="220" height="220" rx="34" fill="${velaTheme.semantic.color.selectionSurface}" stroke="${velaTheme.semantic.color.borderInteractive}" stroke-width="3"/>
+    <rect x="924" y="250" width="272" height="220" rx="34" fill="${velaTheme.semantic.color.sectionSurface}" stroke="${velaTheme.semantic.color.surfaceMuted}" stroke-width="3"/>
+    <circle cx="220" cy="326" r="32" fill="${velaTheme.semantic.color.avatarAccountSurface}"/>
+    <text x="220" y="338" fill="${velaTheme.semantic.color.textInverse}" font-family="sans-serif" font-size="30" text-anchor="middle">人</text>
+    <text x="220" y="406" fill="${velaTheme.semantic.color.textPrimary}" font-family="sans-serif" font-size="34" font-weight="700" text-anchor="middle">Human</text>
+    <text x="640" y="350" fill="${velaTheme.semantic.color.brandAccent}" font-family="sans-serif" font-size="34" font-weight="700" text-anchor="middle">Channel</text>
+    <text x="640" y="397" fill="${velaTheme.semantic.color.textMuted}" font-family="sans-serif" font-size="23" text-anchor="middle">消息与上下文</text>
+    <rect x="1028" y="294" width="64" height="64" rx="18" fill="${velaTheme.semantic.color.brandAccent}"/>
+    <text x="1060" y="338" fill="${velaTheme.semantic.color.textInverse}" font-family="sans-serif" font-size="33" text-anchor="middle">A</text>
+    <text x="1060" y="406" fill="${velaTheme.semantic.color.textPrimary}" font-family="sans-serif" font-size="34" font-weight="700" text-anchor="middle">Agent</text>
+    <text x="84" y="618" fill="${velaTheme.semantic.color.textMuted}" font-family="sans-serif" font-size="22">Style Lab · 图片预览回归样本</text>
   </svg>
 `)}`;
 
@@ -325,7 +325,7 @@ const messages: Message[] = [
     id: "stylelab-message-task",
     kind: "task",
     mentions: [],
-    rawType: "RAFT_TASK",
+    rawType: "VELA_TASK",
     reactions: [],
     read: { state: "unknown" },
     senderId: "stylelab-im-atlas",
@@ -1003,7 +1003,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   previewButtonSelected: {
     backgroundColor: theme.semantic.color.selectionSurface,
-    borderColor: raftTheme.semantic.color.borderInteractive,
+    borderColor: velaTheme.semantic.color.borderInteractive,
   },
   previewButtonText: {
     color: theme.semantic.color.textMuted,

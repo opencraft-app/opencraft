@@ -6,7 +6,7 @@ does not replace Hermes ACP.
 
 ## Temporary cloud identity
 
-The internal Runtime identity is `hermes-gateway`. The current hosted Raft
+The internal Runtime identity is `hermes-gateway`. The current hosted Vela
 baseline has no first-class Hermes Gateway value, so the registration
 temporarily uses wire identity `pi`:
 
@@ -31,7 +31,7 @@ model; any non-default model must exactly match the live Gateway
 Every launch uses the same deterministic native Profile as Hermes ACP:
 
 ```text
-~/.hermes/profiles/raft-<first-32-hex-of-sha256-agent-id>
+~/.hermes/profiles/vela-<first-32-hex-of-sha256-agent-id>
 ```
 
 The Gateway process receives that directory as `HERMES_HOME`; the captured OS
@@ -56,7 +56,7 @@ Startup is ordered:
 7. submit the composed standing policy and current wake input.
 
 The process-local `session_id` is launch-fenced and never persisted as the
-Raft session. `stored_session_id`/`session_key` is the durable
+Vela session. `stored_session_id`/`session_key` is the durable
 `RuntimeSession.SessionID`. Only explicit RPC code `4007` (`session not found`)
 permits a cold start; malformed success responses, permission failures,
 transport failures, and other RPC errors fail startup.
@@ -81,7 +81,7 @@ resolved immediately and session-scoped:
 
 - approval uses `HERMES_ACP_PERMISSION_POLICY` (`deny`, `once`, or `session`)
   and never escalates when the requested choice is unavailable;
-- clarify receives a fixed instruction to ask through the current Raft
+- clarify receives a fixed instruction to ask through the current Vela
   conversation and wait for a later message;
 - sudo, secret, and terminal-read requests receive empty responses;
 - malformed or unknown blocking requests fail closed.
@@ -92,7 +92,7 @@ environment values are not logged.
 
 ## Deliberate limits
 
-- Local Hermes subagents remain activity inside their parent Raft Agent; they
+- Local Hermes subagents remain activity inside their parent Vela Agent; they
   are not independent cloud Agents.
 - The temporary Pi label is visible platform debt.
 - The managed Profile is isolation and configuration ownership, not an OS

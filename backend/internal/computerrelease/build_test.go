@@ -22,7 +22,7 @@ func TestBuildCreatesSignedImmutableBundleAndLoadableCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := t.TempDir()
-	program := filepath.Join(root, "raft-computer-go")
+	program := filepath.Join(root, "vela-computer")
 	installer := filepath.Join(root, "install.sh")
 	if err := os.WriteFile(program, []byte("program-bytes"), 0o700); err != nil {
 		t.Fatal(err)
@@ -73,7 +73,7 @@ func TestBuildRendersTrustedInstallerWhenNoInstallerPathIsProvided(t *testing.T)
 		t.Fatal(err)
 	}
 	root := t.TempDir()
-	program := filepath.Join(root, "raft-computer-go")
+	program := filepath.Join(root, "vela-computer")
 	if err := os.WriteFile(program, []byte("program-bytes"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestBuildRendersTrustedInstallerWhenNoInstallerPathIsProvided(t *testing.T)
 	}
 	checks := []string{
 		"#!/bin/sh", "set -eu", "/usr/bin/curl -q", "max-redirs = 1",
-		"Authorization: Enrollment", "raft-computer-go", "--token-file",
+		"Authorization: Enrollment", "vela-computer", "--token-file",
 		"--manifest-file", "--signature-file", "--signing-public-key",
 		base64.RawStdEncoding.EncodeToString(publicKey),
 		hex.EncodeToString(bundle.Release.Program.SHA256[:]),
@@ -114,7 +114,7 @@ func TestGeneratedInstallerRequiresExplicitHTTPOptIn(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := t.TempDir()
-	program := filepath.Join(root, "raft-computer-go")
+	program := filepath.Join(root, "vela-computer")
 	if err := os.WriteFile(program, []byte("program-bytes"), 0o700); err != nil {
 		t.Fatal(err)
 	}

@@ -6,7 +6,7 @@ import type {
   Operation,
   Server,
   UpdateAgentInput,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import { useEffect, useMemo, useState } from "react";
 import {
   ScrollView,

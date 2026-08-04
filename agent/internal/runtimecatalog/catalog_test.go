@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeprompt"
+	"velachat/agent/internal/runtimeapi"
+	"velachat/agent/internal/runtimeprompt"
 )
 
 func TestNewRejectsInvalidRegistrations(t *testing.T) {
@@ -230,7 +230,7 @@ func TestSnapshotMapsWireRuntimeToInternalPlannerIdentity(t *testing.T) {
 			plan.StandingPrompt,
 			runtimeprompt.SharedConversationPolicyMarker,
 		) != 1 ||
-		!strings.Contains(plan.StandingPrompt, "You are Raft Agent agent-test.") {
+		!strings.Contains(plan.StandingPrompt, "You are Vela Agent agent-test.") {
 		t.Fatalf("catalog-composed standing prompt = %q", plan.StandingPrompt)
 	}
 	if _, err := resolved.LaunchPlanner.PlanLaunch(runtimeapi.LaunchInput{

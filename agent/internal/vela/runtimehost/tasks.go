@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeactor"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/platform"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/runtimeactor"
+	"velachat/agent/internal/runtimeapi"
+	"velachat/agent/internal/vela/platform"
 )
 
 func (a *Adapter) ReconcileTasks(ctx context.Context) error {
@@ -126,7 +126,7 @@ func taskDeliveryText(value platform.Task) string {
 		description = "\n\n" + strings.TrimSpace(*value.Description)
 	}
 	return fmt.Sprintf(
-		"You were assigned Task #%d: %s%s\n\nFirst claim it with `raft task claim --target %q --number %d`. Work on it, then report progress with `raft task update --target %q --number %d --status in_review` or completion with status done.",
+		"You were assigned Task #%d: %s%s\n\nFirst claim it with `vela task claim --target %q --number %d`. Work on it, then report progress with `vela task update --target %q --number %d --status in_review` or completion with status done.",
 		value.Number, strings.TrimSpace(value.Title), description,
 		"server:"+value.ServerID, value.Number,
 		"server:"+value.ServerID, value.Number,

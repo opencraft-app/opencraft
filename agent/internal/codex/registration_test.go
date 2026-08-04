@@ -3,7 +3,7 @@ package codex
 import (
 	"testing"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/runtimeapi"
 )
 
 func TestRegistrationDeclaresCodexAndCreatesFreshDrivers(t *testing.T) {

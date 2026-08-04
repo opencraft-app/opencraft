@@ -561,7 +561,7 @@ func hasEagerFocusable(node *NativeNode) bool {
 
 type navigationBackIntent struct{}
 
-func (navigationBackIntent) IntentType() ui.IntentType { return "raft.spike.navigation-back" }
+func (navigationBackIntent) IntentType() ui.IntentType { return "vela.spike.navigation-back" }
 
 type focusSentinel struct{}
 

@@ -6,12 +6,12 @@
       "name": "velachat-web",
     },
     "apps/client": {
-      "name": "@raft-platform/client",
+      "name": "@vela/client",
       "version": "0.0.0",
       "dependencies": {
         "@expo-google-fonts/space-grotesk": "0.4.1",
         "@expo-google-fonts/space-mono": "0.4.2",
-        "@raft-platform/client-core": "workspace:*",
+        "@vela/client-core": "workspace:*",
         "@react-native-async-storage/async-storage": "2.2.0",
         "@tencentcloud/chat": "3.6.6",
         "@xterm/addon-fit": "^0.11.0",
@@ -50,7 +50,7 @@
       },
     },
     "packages/client-core": {
-      "name": "@raft-platform/client-core",
+      "name": "@vela/client-core",
       "version": "0.0.0",
       "devDependencies": {
         "@types/node": "24.1.0",
@@ -455,9 +455,9 @@
 
     "@radix-ui/react-use-layout-effect": ["@radix-ui/react-use-layout-effect@1.1.4", "", { "peerDependencies": { "@types/react": "*", "react": "^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc" }, "optionalPeers": ["@types/react"] }, "sha512-K20DkRkUwDnxEYMBPcg3Y6voLkEy5p5QQmszZgLngKKiC7dzBR/aEuK3w1qlx2JWDUNH6FluahYdgR3BP+QbYw=="],
 
-    "@raft-platform/client": ["@raft-platform/client@workspace:apps/client"],
+    "@vela/client": ["@vela/client@workspace:apps/client"],
 
-    "@raft-platform/client-core": ["@raft-platform/client-core@workspace:packages/client-core"],
+    "@vela/client-core": ["@vela/client-core@workspace:packages/client-core"],
 
     "@react-native-async-storage/async-storage": ["@react-native-async-storage/async-storage@2.2.0", "", { "dependencies": { "merge-options": "^3.0.4" }, "peerDependencies": { "react-native": "^0.0.0-0 || >=0.65 <1.0" } }, "sha512-gvRvjR5JAaUZF8tv2Kcq/Gbt3JHwbKFYfmb445rhOj6NUMx3qPLixmDx5pZAyb9at1bYvJ4/eTUipU5aki45xw=="],
 

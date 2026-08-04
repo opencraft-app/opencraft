@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/filelock"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/filelock"
 )
 
 func TestNativeProfileProvisionerCreatesAndReusesManagedProfile(t *testing.T) {

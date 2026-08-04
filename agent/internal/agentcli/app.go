@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/agentapi"
+	"velachat/agent/internal/agentapi"
+	"velachat/agent/internal/common"
 )
 
 type Options struct {
@@ -63,12 +63,12 @@ func NewFromEnvironmentWithVersion(
 	return NewWithDependencies(Dependencies{
 		ClientProvider: func(context.Context) (*agentapi.Client, error) {
 			proxyURL := environment.First(
-				"SLOCK_AGENT_PROXY_URL",
-				"RAFT_AGENT_PROXY_URL",
+				"VELA_AGENT_PROXY_URL",
+				"VELA_AGENT_PROXY_URL",
 			)
 			tokenFile := environment.First(
-				"SLOCK_AGENT_PROXY_TOKEN_FILE",
-				"RAFT_AGENT_PROXY_TOKEN_FILE",
+				"VELA_AGENT_PROXY_TOKEN_FILE",
+				"VELA_AGENT_PROXY_TOKEN_FILE",
 			)
 			if proxyURL == "" || tokenFile == "" {
 				return nil, errors.New("Agent proxy environment is missing")
@@ -159,11 +159,11 @@ func (a *App) runAuthWhoami(args []string) int {
 		_, _ = fmt.Fprintf(a.stderr, "unexpected argument %q\n", args[0])
 		return 2
 	}
-	agentID := strings.TrimSpace(os.Getenv("SLOCK_AGENT_ID"))
-	proxyURL := strings.TrimSpace(os.Getenv("SLOCK_AGENT_PROXY_URL"))
-	serverID := strings.TrimSpace(os.Getenv("SLOCK_SERVER_ID"))
-	tokenFile := strings.TrimSpace(os.Getenv("SLOCK_AGENT_PROXY_TOKEN_FILE"))
-	tokenLiteral := strings.TrimSpace(os.Getenv("SLOCK_AGENT_PROXY_TOKEN"))
+	agentID := strings.TrimSpace(os.Getenv("VELA_AGENT_ID"))
+	proxyURL := strings.TrimSpace(os.Getenv("VELA_AGENT_PROXY_URL"))
+	serverID := strings.TrimSpace(os.Getenv("VELA_SERVER_ID"))
+	tokenFile := strings.TrimSpace(os.Getenv("VELA_AGENT_PROXY_TOKEN_FILE"))
+	tokenLiteral := strings.TrimSpace(os.Getenv("VELA_AGENT_PROXY_TOKEN"))
 	if agentID == "" || proxyURL == "" || tokenFile == "" && tokenLiteral == "" {
 		_, _ = fmt.Fprintln(a.stderr, "managed Agent context is incomplete")
 		return 1
@@ -289,7 +289,7 @@ func (a *App) runUserInfo(ctx context.Context, args []string) int {
 		return a.writeCommandError(
 			"User not found or not visible: @"+name,
 			"NOT_FOUND",
-			"Run `raft server info` to inspect visible users.",
+			"Run `vela server info` to inspect visible users.",
 		)
 	}
 	text := formatVelaUserInfo(kind, *user)
@@ -411,7 +411,7 @@ func (a *App) runChannelInfo(ctx context.Context, args []string) int {
 		return a.writeCommandError(
 			"Channel not found or not visible: "+target,
 			"NOT_FOUND",
-			"Run `raft server info` to inspect visible channels, or ask a channel member to add you if this is private.",
+			"Run `vela server info` to inspect visible channels, or ask a channel member to add you if this is private.",
 		)
 	}
 
@@ -987,7 +987,7 @@ func messageSendRequest(args []string, stdin io.Reader) (agentapi.Request, error
 	target := strings.TrimSpace(parsed.last("--target"))
 	if target == "" {
 		return agentapi.Request{}, errors.New(
-			"--target is required; use raft message send --target <target> --text <message>",
+			"--target is required; use vela message send --target <target> --text <message>",
 		)
 	}
 	content := parsed.last("--text")
@@ -1342,7 +1342,7 @@ func (a *App) uploadAttachment(ctx context.Context, args []string) int {
 		a.stdout,
 		"File uploaded: %s (%.1fKB)\n"+
 			"Attachment ID: %s\n\n"+
-			"Use this ID with raft message send --attachment-id %s "+
+			"Use this ID with vela message send --attachment-id %s "+
 			"to include it in a message.\n",
 		result.Filename,
 		result.SizeBytes/1024,

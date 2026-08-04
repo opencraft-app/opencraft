@@ -83,7 +83,7 @@ func Build(config BuildConfig) (Bundle, error) {
 		return Bundle{}, err
 	}
 	bundle := Bundle{
-		ProgramPath:   filepath.Join(targetDirectory, "raft-computer-go"),
+		ProgramPath:   filepath.Join(targetDirectory, "vela-computer"),
 		InstallerPath: filepath.Join(targetDirectory, "install.sh"),
 		ManifestPath:  filepath.Join(config.OutputDirectory, "manifest.json"),
 		SignaturePath: filepath.Join(config.OutputDirectory, "manifest.sig"),
@@ -93,7 +93,7 @@ func Build(config BuildConfig) (Bundle, error) {
 		return Bundle{}, err
 	}
 	root := "computer/releases/" + config.Version + "/"
-	program, err := artifactFor(bundle.ProgramPath, root+config.Target+"/raft-computer-go")
+	program, err := artifactFor(bundle.ProgramPath, root+config.Target+"/vela-computer")
 	if err != nil {
 		return Bundle{}, err
 	}
@@ -101,7 +101,7 @@ func Build(config BuildConfig) (Bundle, error) {
 		Schema: manifestSchema, Version: config.Version, Target: config.Target,
 		SigningKeyID: config.SigningKeyID,
 		Files: []manifestFileDocument{{
-			Name: "raft-computer-go", ObjectKey: program.ObjectKey,
+			Name: "vela-computer", ObjectKey: program.ObjectKey,
 			SHA256: hex.EncodeToString(program.SHA256[:]), Size: program.Size,
 		}},
 	}
@@ -257,16 +257,16 @@ verify_sha256() {
 
 fetch manifest.json "$work/manifest.json"
 fetch manifest.sig "$work/manifest.sig"
-fetch raft-computer-go "$work/raft-computer-go"
+fetch vela-computer "$work/vela-computer"
 verify_sha256 '@@MANIFEST_HASH@@' "$work/manifest.json"
 verify_sha256 '@@SIGNATURE_HASH@@' "$work/manifest.sig"
-verify_sha256 '@@PROGRAM_HASH@@' "$work/raft-computer-go"
-[ "$(/usr/bin/stat -f %z "$work/raft-computer-go")" = '@@PROGRAM_SIZE@@' ] || {
+verify_sha256 '@@PROGRAM_HASH@@' "$work/vela-computer"
+[ "$(/usr/bin/stat -f %z "$work/vela-computer")" = '@@PROGRAM_SIZE@@' ] || {
   /usr/bin/printf '%s\n' '程序大小校验失败' >&2
   exit 65
 }
-/bin/chmod 0700 "$work/raft-computer-go"
-"$work/raft-computer-go" install \
+/bin/chmod 0700 "$work/vela-computer"
+"$work/vela-computer" install \
   --platform-url "$platform_url" \
   --token-file "$token_file" \
   --manifest-file "$work/manifest.json" \

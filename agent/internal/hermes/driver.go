@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/runtimeapi"
 )
 
 const (
@@ -117,11 +117,6 @@ func (driver *Driver) Start(
 	}()
 	environment := copyEnvironment(request.Environment)
 
-	// RAFT_PROFILE and SLOCK_PROFILE select the external wake-bridge
-	// credential store. A Computer-managed launch must instead use the
-	// generated launch-scoped raft wrapper and capability token.
-	delete(environment, "RAFT_PROFILE")
-	delete(environment, "SLOCK_PROFILE")
 	delete(environment, "HERMES_HOME")
 	delete(environment, "HERMES_PROFILE")
 	environment["HOME"] = host.TrustedHome
@@ -179,7 +174,7 @@ func (driver *Driver) Start(
 		readDone:         make(chan struct{}),
 		stderrDone:       make(chan struct{}),
 		launchID:         request.LaunchID,
-		captureStderr:    environment["RAFT_COMPUTER_GO_TRACE_HERMES_ACP"] == "1",
+		captureStderr:    environment["VELA_TRACE_HERMES_ACP"] == "1",
 		permissionPolicy: permissionPolicy(environment),
 		toolNames:        make(map[string]string),
 		runtimeLease:     runtimeLease,
@@ -205,7 +200,7 @@ func (driver *Driver) Start(
 			"terminal": false,
 		},
 		"clientInfo": map[string]string{
-			"name":    "raft-computer-go",
+			"name":    "vela-computer",
 			"version": driver.version,
 		},
 	})

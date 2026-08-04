@@ -83,35 +83,16 @@ func TestCanaryManifest固定三副本迁移Job与非Root健康检查(t *testing
 	}
 }
 
-func TestCanaryComputerReleaseCatalogIsNonSecretAndImmutable(t *testing.T) {
+func TestCanaryBackendReusesSeparatelyPublishedComputerRelease(t *testing.T) {
 	root := deploymentRoot(t)
-	catalog := read(t, filepath.Join(root, "computer-release-configmap.yaml"))
-	for _, want := range []string{
-		"kind: ConfigMap",
-		"name: chatserver-computer-release-v0-1-31",
-		"immutable: true",
-		`"version": "v0.1.31"`,
-		`"target": "darwin-arm64"`,
-		`"signingKeyId": "computer-release-2026-08-04-v031"`,
-		`"objectKey": "computer/releases/v0.1.31/manifest.json"`,
-		`"sha256": "02247d702fe08d24717e7bcf7a0956a481e784806c26dbcfabb835ea1a000410"`,
-		`"sha256": "8da8583d3c5d668c0ecfdbfe9c88209e21159bfa20457d3695412950997092b9"`,
-		`"sha256": "01f533c74b0d8577a93101d0ddb338cf172cb66e5808ae77cd34d7f2d5040a25"`,
-	} {
-		if !strings.Contains(catalog, want) {
-			t.Errorf("computer-release-configmap.yaml 缺少 %q", want)
-		}
-	}
-	for _, forbidden := range []string{
-		"private", "SecretId", "SecretKey", "ed25519.private",
-	} {
-		if strings.Contains(catalog, forbidden) {
-			t.Errorf("Computer release ConfigMap 泄漏 %q", forbidden)
-		}
-	}
 	kustomization := read(t, filepath.Join(root, "kustomization.yaml"))
-	if !strings.Contains(kustomization, "computer-release-configmap.yaml") {
-		t.Fatal("kustomization.yaml 未包含 Computer release ConfigMap")
+	if strings.Contains(kustomization, "computer-release-configmap.yaml") {
+		t.Fatal("后台发布不应内嵌 Computer release catalog")
+	}
+	deployment := read(t, filepath.Join(root, "deployment.yaml"))
+	if !strings.Contains(deployment, "name: computer-release") ||
+		!strings.Contains(deployment, "subPath: release.catalog.json") {
+		t.Fatal("后台 Deployment 必须挂载独立发布的 Computer catalog")
 	}
 }
 

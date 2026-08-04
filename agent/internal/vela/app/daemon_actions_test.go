@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	velacli "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/cli"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/managementipc"
+	velacli "velachat/agent/internal/vela/cli"
+	"velachat/agent/internal/vela/managementipc"
 )
 
 func TestActionsResolveStateRootAndDelegateComputerLifecycle(t *testing.T) {

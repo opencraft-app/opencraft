@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/hermes"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeprompt"
+	"velachat/agent/internal/hermes"
+	"velachat/agent/internal/runtimeapi"
+	"velachat/agent/internal/runtimeprompt"
 )
 
 type Options struct {

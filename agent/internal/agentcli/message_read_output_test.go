@@ -10,13 +10,13 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/QuantumNous/new-api/common"
+	"velachat/agent/internal/common"
 )
 
 func TestMessageReadFormatsCursorAwareHistoryAndRecordsSequence(t *testing.T) {
-	t.Setenv("SLOCK_AGENT_ID", "agent-read")
+	t.Setenv("VELA_AGENT_ID", "agent-read")
 	stateRoot := t.TempDir()
-	t.Setenv("SLOCK_CLI_CONSUMED_SEQ_STATE_DIR", stateRoot)
+	t.Setenv("VELA_CLI_CONSUMED_SEQ_STATE_DIR", stateRoot)
 
 	server := httptest.NewServer(http.HandlerFunc(func(
 		response http.ResponseWriter,
@@ -77,7 +77,7 @@ func TestMessageReadFormatsCursorAwareHistoryAndRecordsSequence(t *testing.T) {
 		"History is limited by the fixture.\n\n" +
 		"[1/2 seq=3 msg=11111111-aaaa time=- type=human replyCount=2 " +
 		"replyTarget=#general:11111111] @alice — Human: first " +
-		"[1 attachment: notes.txt (id:attachment-1) — use raft attachment view to download]\n" +
+		"[1 attachment: notes.txt (id:attachment-1) — use vela attachment view to download]\n" +
 		"[2/2 seq=9 msg=22222222-bbbb time=- type=agent] @builder: second " +
 		"[task #7 status=open assignee=@alice]\n\n" +
 		"End of window: 2/2 shown.\n"
@@ -87,7 +87,7 @@ func TestMessageReadFormatsCursorAwareHistoryAndRecordsSequence(t *testing.T) {
 
 	raw, err := os.ReadFile(filepath.Join(
 		stateRoot,
-		"slock-cli-consumed-seq",
+		"vela-cli-consumed-seq",
 		"agent-read",
 		"consumed-seqs.json",
 	))

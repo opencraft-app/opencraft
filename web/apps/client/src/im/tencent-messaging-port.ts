@@ -16,7 +16,7 @@ import {
   type SendTaskInput,
   type SendTextInput,
   type Unsubscribe,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import type {
   ChannelChatService,
   SdkMessage,

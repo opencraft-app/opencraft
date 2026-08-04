@@ -23,7 +23,6 @@ original_secret=
 original_args=
 canonical_args=
 original_computer_release_configmap=
-canonical_computer_release_configmap=
 
 usage() {
   cat <<'EOF'
@@ -144,13 +143,6 @@ kubectl create --dry-run=client -f "$repository_root/deploy/k8s/deployment.yaml"
 canonical_args=$(jq -c '.spec.template.spec.containers[] | select(.name == "chatserver") | .args' \
   "$temporary_root/canonical-deployment.json")
 [ "$canonical_args" != null ] || fail "正式 Deployment 缺少 chatserver 启动参数"
-canonical_computer_release_configmap=$(jq -r '.spec.template.spec.volumes[] | select(.name == "computer-release") | .configMap.name' \
-  "$temporary_root/canonical-deployment.json")
-[ -n "$canonical_computer_release_configmap" ] && [ "$canonical_computer_release_configmap" != null ] || fail "正式 Deployment 缺少 Computer 发布目录"
-kubectl create --dry-run=client -f "$repository_root/deploy/k8s/computer-release-configmap.yaml" -o json \
-  >"$temporary_root/canonical-computer-release.json"
-catalog_name=$(jq -r '.metadata.name' "$temporary_root/canonical-computer-release.json")
-[ "$catalog_name" = "$canonical_computer_release_configmap" ] || fail "Computer 发布目录与 Deployment 不匹配"
 kubectl --kubeconfig "$kubeconfig" -n "$namespace" get secret "$source_secret" -o json >"$temporary_root/source-secret.json"
 
 target_secret="chatserver-canary-$release_id-secrets"
@@ -286,17 +278,9 @@ if ! wait_for_job "$verify_job" 60; then
 fi
 
 echo "[7/8] 精确切换 Deployment 并等待 rollout……"
-if kubectl --kubeconfig "$kubeconfig" -n "$namespace" get configmap "$canonical_computer_release_configmap" -o json \
-  >"$temporary_root/live-computer-release.json" 2>/dev/null; then
-  canonical_catalog_data=$(jq -S -c '.data' "$temporary_root/canonical-computer-release.json")
-  live_catalog_data=$(jq -S -c '.data' "$temporary_root/live-computer-release.json")
-  [ "$canonical_catalog_data" = "$live_catalog_data" ] || fail "Computer 发布目录已存在且内容不同；拒绝覆盖"
-else
-  kubectl --kubeconfig "$kubeconfig" create -f "$repository_root/deploy/k8s/computer-release-configmap.yaml" >/dev/null
-fi
 kubectl --kubeconfig "$kubeconfig" -n "$namespace" patch deployment "$deployment" \
   --type=strategic \
-  -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"agentnetwork.io/release-id\":\"$release_id\",\"agentnetwork.io/database\":\"$fresh_database\"}},\"spec\":{\"containers\":[{\"name\":\"chatserver\",\"image\":\"$image\",\"args\":$canonical_args}],\"volumes\":[{\"name\":\"computer-release\",\"configMap\":{\"name\":\"$canonical_computer_release_configmap\",\"defaultMode\":292}},{\"name\":\"secrets\",\"secret\":{\"secretName\":\"$target_secret\",\"defaultMode\":288}}]}}}}" \
+  -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"agentnetwork.io/release-id\":\"$release_id\",\"agentnetwork.io/database\":\"$fresh_database\"}},\"spec\":{\"containers\":[{\"name\":\"chatserver\",\"image\":\"$image\",\"args\":$canonical_args}],\"volumes\":[{\"name\":\"computer-release\",\"configMap\":{\"name\":\"$original_computer_release_configmap\",\"defaultMode\":292}},{\"name\":\"secrets\",\"secret\":{\"secretName\":\"$target_secret\",\"defaultMode\":288}}]}}}}" \
   >/dev/null
 live_patched=true
 kubectl --kubeconfig "$kubeconfig" -n "$namespace" rollout status "deployment/$deployment" --timeout=600s

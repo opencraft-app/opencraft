@@ -1,4 +1,4 @@
-import type { Message } from "@raft-platform/client-core";
+import type { Message } from "@vela/client-core";
 import {useEffect, useRef, useState} from "react";
 import {
   ActivityIndicator,
@@ -21,7 +21,7 @@ import Undo2 from "lucide-react-native/icons/undo-2";
 import X from "lucide-react-native/icons/x";
 
 import {MessageViewport} from "./message-viewport/message-viewport";
-import {breakpoints, raftTheme} from "../theme";
+import {breakpoints, velaTheme} from "../theme";
 
 export interface MessageListProps {
   conversationKey: string;
@@ -273,7 +273,7 @@ function MessageRow({
   const [actionFocused, setActionFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const actionable =
-    message.rawType !== "RAFT_MESSAGE_UNAVAILABLE" &&
+    message.rawType !== "VELA_MESSAGE_UNAVAILABLE" &&
     message.rawType !== "TIMRevokedElem" &&
     message.delivery.state === "sent";
   const actionVisible = hovered || actionFocused || actionsOpen;
@@ -312,7 +312,7 @@ function MessageRow({
     <Pressable
       accessible={false}
       accessibilityState={{selected: focused}}
-      delayLongPress={raftTheme.semantic.interaction.longPressDelay}
+      delayLongPress={velaTheme.semantic.interaction.longPressDelay}
       onLongPress={
         !pointerActions && actionable
           ? () => onActionsOpenChange(!actionsOpen)
@@ -397,7 +397,7 @@ function MessageRow({
             ? moreActionButton
             : null}
         </View>
-        {message.rawType !== "RAFT_MESSAGE_UNAVAILABLE" ? (
+        {message.rawType !== "VELA_MESSAGE_UNAVAILABLE" ? (
           <>
             {message.direction === "outgoing" &&
             message.delivery.state === "sent" &&

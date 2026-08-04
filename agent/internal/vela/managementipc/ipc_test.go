@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
+	"velachat/agent/internal/common"
 )
 
 const testRequestID = "018f0c9e-7b18-7abc-8def-0123456789ab"

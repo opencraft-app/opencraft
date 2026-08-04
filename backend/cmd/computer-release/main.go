@@ -56,7 +56,7 @@ func run(ctx context.Context, args []string) error {
 	flags.StringVar(&architecture, "architecture", "arm64", "CPU 架构")
 	flags.StringVar(&keyID, "signing-key-id", "", "Ed25519 签名密钥 ID")
 	flags.StringVar(&privateKeyFile, "private-key-file", "", "0600 Ed25519 私钥文件")
-	flags.StringVar(&programPath, "program", "", "raft-computer-go 绝对路径")
+	flags.StringVar(&programPath, "program", "", "vela-computer 绝对路径")
 	flags.StringVar(&installerPath, "installer", "", "install.sh 绝对路径")
 	flags.StringVar(&outputDirectory, "output", "", "新发布目录绝对路径")
 	flags.BoolVar(&publish, "publish", false, "构建后上传私有 COS")

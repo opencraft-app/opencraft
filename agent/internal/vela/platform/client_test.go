@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
+	"velachat/agent/internal/common"
 )
 
 var testNow = time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/runtimeapi"
 )
 
 func TestPersistentPlannerPreservesExplicitOpaqueReplyTarget(t *testing.T) {
@@ -30,7 +30,7 @@ func TestPersistentPlannerPreservesExplicitOpaqueReplyTarget(t *testing.T) {
 	}
 	if !strings.Contains(
 		plan.Prompt,
-		`read: `+"`"+`raft message read --target "`+target+
+		`read: `+"`"+`vela message read --target "`+target+
 			`" --around "message_1"`+"`",
 	) {
 		t.Fatalf("Prompt does not preserve explicit target:\n%s", plan.Prompt)
@@ -49,12 +49,12 @@ func TestTransientWakePromptPreservesPlatformTaskPayload(t *testing.T) {
 		"sender_name":"platform",
 		"source":"task",
 		"target":"server:server-1",
-		"text":"Claim Task #7 with raft task claim."
+		"text":"Claim Task #7 with vela task claim."
 	}`)
 	prompt := transientWakePrompt(raw)
 	for _, fragment := range []string{
 		"[target=server:server-1 msg=task-1:3 time=- type=task]",
-		"@platform: Claim Task #7 with raft task claim.",
+		"@platform: Claim Task #7 with vela task claim.",
 	} {
 		if !strings.Contains(prompt, fragment) {
 			t.Fatalf("task wake prompt = %q, missing %q", prompt, fragment)

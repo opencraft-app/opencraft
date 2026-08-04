@@ -21,7 +21,7 @@ import {
 import { StyleSheet } from "react-native-unistyles";
 import ArrowDown from "lucide-react-native/icons/arrow-down";
 
-import { raftTheme } from "../../tokens";
+import { velaTheme } from "../../tokens";
 
 import {
   calculatePrependOffset,
@@ -316,9 +316,9 @@ export function MessageViewport<Item>({
           testID="new-messages-button"
         >
           <ArrowDown
-            color={raftTheme.semantic.color.iconAccent}
-            size={raftTheme.semantic.icon.size.large}
-            strokeWidth={raftTheme.semantic.icon.stroke.strong}
+            color={velaTheme.semantic.color.iconAccent}
+            size={velaTheme.semantic.icon.size.large}
+            strokeWidth={velaTheme.semantic.icon.stroke.strong}
           />
           <View
             pointerEvents="none"

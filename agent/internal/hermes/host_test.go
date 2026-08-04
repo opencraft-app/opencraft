@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/runtimeapi"
 )
 
 func TestPrepareManagedHostReturnsProtocolNeutralProfileMetadata(t *testing.T) {
@@ -42,11 +42,11 @@ func TestManagedProfileRuntimeLeaseIsPerProfileAndReleasable(t *testing.T) {
 	trustedHome := t.TempDir()
 	firstHost := ManagedHost{
 		TrustedHome: trustedHome,
-		ProfileName: "raft-profile-a",
+		ProfileName: "vela-profile-a",
 	}
 	secondHost := ManagedHost{
 		TrustedHome: trustedHome,
-		ProfileName: "raft-profile-b",
+		ProfileName: "vela-profile-b",
 	}
 	first, err := AcquireManagedProfileRuntimeLease(
 		context.Background(),
@@ -97,7 +97,7 @@ func TestManagedProfileRuntimeLeaseIsPerProfileAndReleasable(t *testing.T) {
 	wantLockDir := filepath.Join(
 		trustedHome,
 		".hermes",
-		".raft-computer-go",
+		".vela-computer",
 		"runtime-locks",
 	)
 	if filepath.Dir(reacquired.path) != wantLockDir {

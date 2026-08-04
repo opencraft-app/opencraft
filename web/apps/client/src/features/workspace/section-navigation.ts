@@ -2,8 +2,8 @@ import type {
   ActiveConversation,
   Channel,
   Server,
-} from "@raft-platform/client-core";
-import {channelAddress} from "@raft-platform/client-core";
+} from "@vela/client-core";
+import {channelAddress} from "@vela/client-core";
 import type { WorkspaceSection } from "@/ui";
 
 export type ConversationRouteTarget =
@@ -109,11 +109,11 @@ export function withCanonicalRouteSearch(
 ): string {
   let target: URL;
   try {
-    target = new URL(href, "https://raft.invalid");
+    target = new URL(href, "https://vela.invalid");
   } catch {
     return href;
   }
-  if (target.origin !== "https://raft.invalid") return href;
+  if (target.origin !== "https://vela.invalid") return href;
   const search = new URLSearchParams(target.search);
   search.delete("backend");
   const canonical = new URLSearchParams(
@@ -141,12 +141,12 @@ export function safeReturnTo(
 
   let url: URL;
   try {
-    url = new URL(value, "https://raft.invalid");
+    url = new URL(value, "https://vela.invalid");
   } catch {
     return "/";
   }
   if (
-    url.origin !== "https://raft.invalid" ||
+    url.origin !== "https://vela.invalid" ||
     !isKnownInternalPath(url.pathname)
   ) {
     return "/";

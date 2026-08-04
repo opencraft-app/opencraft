@@ -19,8 +19,8 @@ import type {
   Server,
   Task,
   TerminalSession,
-} from "@raft-platform/client-core";
-import { PlatformError } from "@raft-platform/client-core";
+} from "@vela/client-core";
+import { PlatformError } from "@vela/client-core";
 import {
   createAppStore,
   mentionableAgents,
@@ -2294,7 +2294,7 @@ describe("app store", () => {
     expect(store.getState().threadMessages).toEqual([
       expect.objectContaining({
         id: "reply-message-unavailable",
-        rawType: "RAFT_MESSAGE_UNAVAILABLE",
+        rawType: "VELA_MESSAGE_UNAVAILABLE",
         reference: expect.objectContaining({
           messageId: "reply-message-unavailable",
           sequence: 108,

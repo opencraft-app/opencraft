@@ -1,4 +1,4 @@
-import type {Server} from "@raft-platform/client-core";
+import type {Server} from "@vela/client-core";
 import {useEffect} from "react";
 import {useShallow} from "zustand/react/shallow";
 

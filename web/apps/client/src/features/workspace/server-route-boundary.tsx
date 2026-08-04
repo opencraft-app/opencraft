@@ -1,4 +1,4 @@
-import type {Server} from "@raft-platform/client-core";
+import type {Server} from "@vela/client-core";
 import {Redirect, useRouter, type Href} from "expo-router";
 import {useEffect, useRef, type ReactNode} from "react";
 import {LoadingScreen, RouteStatusScreen} from "@/ui";

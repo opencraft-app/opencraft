@@ -13,7 +13,7 @@ interface JoinIntentEnvelope {
 const intentTTL = 30 * 60_000;
 
 export class SessionJoinIntentStore {
-  private static readonly storageKey = "raft.client.join-intent.v1";
+  private static readonly storageKey = "vela.client.join-intent.v1";
 
   public constructor(private readonly storage: SessionStorageLike) {}
 

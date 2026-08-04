@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/agentgateway"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/host"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
+	"velachat/agent/internal/vela/agentgateway"
+	"velachat/agent/internal/vela/host"
+	"velachat/agent/internal/vela/im"
 )
 
 func TestWriteHostFailureUsesOnlySafeAllowlistedFields(t *testing.T) {

@@ -55,7 +55,7 @@ func LoadCatalog(filename string) (computerport.ReleaseBinding, error) {
 		"manifest":  root + "manifest.json",
 		"signature": root + "manifest.sig",
 		"installer": root + document.Target + "/install.sh",
-		"program":   root + document.Target + "/raft-computer-go",
+		"program":   root + document.Target + "/vela-computer",
 	}
 	manifest, err := parseArtifact(document.Manifest, want["manifest"])
 	if err != nil {

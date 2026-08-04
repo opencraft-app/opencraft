@@ -11,15 +11,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/agentgateway"
-	velacli "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/cli"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/gojaim"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/host"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/humantui"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
-	velainstall "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/install"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/tat"
 	"github.com/google/uuid"
+	"velachat/agent/internal/vela/agentgateway"
+	velacli "velachat/agent/internal/vela/cli"
+	"velachat/agent/internal/vela/gojaim"
+	"velachat/agent/internal/vela/host"
+	"velachat/agent/internal/vela/humantui"
+	"velachat/agent/internal/vela/im"
+	velainstall "velachat/agent/internal/vela/install"
+	"velachat/agent/internal/vela/tat"
 )
 
 var (

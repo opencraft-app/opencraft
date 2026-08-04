@@ -3,7 +3,7 @@ module.exports = {
   testMatch: ["<rootDir>/src/**/*.test.ts", "<rootDir>/src/**/*.test.tsx"],
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
-    "^@raft-platform/client-core$":
+    "^@vela/client-core$":
       "<rootDir>/../../packages/client-core/src/index.ts",
     "^@/(.*)$": "<rootDir>/src/$1",
     "^lucide-react-native$": "<rootDir>/src/ui/test/lucide-react-native.tsx",

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/agentapi"
+	"velachat/agent/internal/agentapi"
 )
 
 const (
@@ -237,7 +237,7 @@ func formatHistory(
 		sequence := numberText(*data.LastReadSequence)
 		lines = append(lines, fmt.Sprintf(
 			"Server unread cursor before this read: seq %s. "+
-				"Use raft message read --target \"%s\" --after %s "+
+				"Use vela message read --target \"%s\" --after %s "+
 				"to browse newer messages.",
 			sequence,
 			target,

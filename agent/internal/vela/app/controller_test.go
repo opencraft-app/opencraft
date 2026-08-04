@@ -18,12 +18,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	rootstate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/state"
-	velacli "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/cli"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/daemon"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/platform"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/tat"
+	"velachat/agent/internal/common"
+	rootstate "velachat/agent/internal/state"
+	velacli "velachat/agent/internal/vela/cli"
+	"velachat/agent/internal/vela/daemon"
+	"velachat/agent/internal/vela/platform"
+	"velachat/agent/internal/vela/tat"
 )
 
 func TestWriteRuntimeCatalogStatusIsStableAndPathFree(t *testing.T) {

@@ -4,7 +4,7 @@ import { StyleSheet } from "react-native-unistyles";
 import Search from "lucide-react-native/icons/search";
 import X from "lucide-react-native/icons/x";
 
-import { raftTheme } from "../tokens";
+import { velaTheme } from "../tokens";
 
 export interface UserPickerSection<T> {
   emptyText?: string;
@@ -60,15 +60,15 @@ export function UserPicker<T>({
     <View style={styles.root}>
       <View style={styles.search}>
         <Search
-          color={raftTheme.semantic.color.iconMuted}
-          size={raftTheme.semantic.icon.size.small}
-          strokeWidth={raftTheme.semantic.icon.stroke.regular}
+          color={velaTheme.semantic.color.iconMuted}
+          size={velaTheme.semantic.icon.size.small}
+          strokeWidth={velaTheme.semantic.icon.stroke.regular}
         />
         <TextInput
           accessibilityLabel={accessibilityLabel}
           onChangeText={setQuery}
           placeholder={placeholder}
-          placeholderTextColor={raftTheme.semantic.color.fieldPlaceholder}
+          placeholderTextColor={velaTheme.semantic.color.fieldPlaceholder}
           style={styles.searchInput}
           value={query}
         />
@@ -76,14 +76,14 @@ export function UserPicker<T>({
           <Pressable
             accessibilityLabel={clearAccessibilityLabel}
             accessibilityRole="button"
-            hitSlop={raftTheme.semantic.interaction.hitTargetInset}
+            hitSlop={velaTheme.semantic.interaction.hitTargetInset}
             onPress={() => setQuery("")}
             style={styles.searchClear}
           >
             <X
-              color={raftTheme.semantic.color.iconMuted}
-              size={raftTheme.semantic.icon.size.small}
-              strokeWidth={raftTheme.semantic.icon.stroke.regular}
+              color={velaTheme.semantic.color.iconMuted}
+              size={velaTheme.semantic.icon.size.small}
+              strokeWidth={velaTheme.semantic.icon.stroke.regular}
             />
           </Pressable>
         ) : null}

@@ -8,8 +8,8 @@ import type {
   SendAttachmentInput,
   SendTaskInput,
   SendTextInput,
-} from "@raft-platform/client-core";
-import {mergeMessages} from "@raft-platform/client-core";
+} from "@vela/client-core";
+import {mergeMessages} from "@vela/client-core";
 import {
   defaultTencentMessageTypes,
   normalizeTencentMessage,
@@ -318,7 +318,7 @@ export class ChannelChatService {
     const draft = this.sdk.createCustomMessage({
       cloudCustomData: JSON.stringify({
         clientRequestId: input.clientRequestId,
-        schema: "raft.task-message/v1",
+        schema: "vela.task-message/v1",
         task,
       }),
       conversationType: this.conversationType(input.channel),
@@ -328,7 +328,7 @@ export class ChannelChatService {
       payload: {
         data: JSON.stringify(task),
         description: "Task",
-        extension: "raft.task-message/v1",
+        extension: "vela.task-message/v1",
       },
       to: targetId(input.channel),
     });
@@ -525,7 +525,7 @@ function messageMetadata(
   if ("thread" in input && input.thread) {
     return JSON.stringify({
       clientRequestId: input.clientRequestId,
-      schema: "raft.thread-reply/v1",
+      schema: "vela.thread-reply/v1",
       thread: {
         role: "reply",
         rootMessageRef: input.thread.rootMessageRef,
@@ -536,7 +536,7 @@ function messageMetadata(
   return JSON.stringify({
     clientRequestId: input.clientRequestId,
     ...(input.quote ? {quote: input.quote} : {}),
-    schema: "raft.client-message/v2",
+    schema: "vela.client-message/v2",
   });
 }
 

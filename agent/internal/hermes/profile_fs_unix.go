@@ -10,8 +10,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/QuantumNous/new-api/common"
 	"golang.org/x/sys/unix"
+	"velachat/agent/internal/common"
 )
 
 const managedProfileMarkerMaximum = 64 * 1024
@@ -370,7 +370,7 @@ func writeManagedProfileMarker(profileHome string, marker any) error {
 	if _, err := rand.Read(random); err != nil {
 		return err
 	}
-	tempName := ".raft-profile-marker-" + hex.EncodeToString(random) + ".tmp"
+	tempName := ".vela-profile-marker-" + hex.EncodeToString(random) + ".tmp"
 	tempFD, err := unix.Openat(
 		rootFD,
 		tempName,

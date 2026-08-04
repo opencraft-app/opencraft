@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const EnvironmentName = "RAFT_COMPUTER_HOME"
+const EnvironmentName = "VELA_COMPUTER_HOME"
 
 var ErrWorkingDirectory = errors.New("无法解析 Vela Computer 工作目录")
 

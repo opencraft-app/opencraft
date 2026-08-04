@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	atomicstate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/state"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
+	atomicstate "velachat/agent/internal/state"
+	"velachat/agent/internal/vela/im"
 )
 
 const (

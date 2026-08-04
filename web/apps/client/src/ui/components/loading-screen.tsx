@@ -1,17 +1,17 @@
 import { ActivityIndicator, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { BrandMark } from "./brand-mark";
-import { raftTheme } from "../tokens";
+import { velaTheme } from "../tokens";
 
 export function LoadingScreen() {
   return (
     <View style={styles.loading}>
       <BrandMark />
       <ActivityIndicator
-        color={raftTheme.semantic.color.iconAccent}
+        color={velaTheme.semantic.color.iconAccent}
         size="small"
       />
-      <Text style={styles.label}>正在连接 RAFT</Text>
+      <Text style={styles.label}>正在连接 VELA</Text>
     </View>
   );
 }

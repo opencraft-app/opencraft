@@ -32,7 +32,7 @@ usage() {
   --release-output /absolute/path/to/release-evidence \
   [--health-base-url http://9.135.236.64]
 
-脚本会测试并构建唯一 macOS ARM64 raft-computer-go，生成和独立验签 release，
+脚本会测试并构建唯一 macOS ARM64 vela-computer，生成和独立验签 release，
 禁止覆盖发布私有 COS，创建唯一 catalog ConfigMap，切换 3 副本 Canary 并验收。
 签名私钥和腾讯云凭据不会写入仓库、Kubernetes、Agent 或日志。
 EOF
@@ -151,9 +151,9 @@ done
 unset encoded
 
 echo "[3/7] 构建唯一 macOS ARM64 单二进制……"
-agent_binary="$temporary_root/raft-computer-go"
+agent_binary="$temporary_root/vela-computer"
 "$agent_source/scripts/build-vela-macos-arm64.sh" --version "$version" --output "$agent_binary" >/dev/null
-expected_version="{\"mode\":\"vela\",\"name\":\"raft-computer-go\",\"version\":\"$version\"}"
+expected_version="{\"mode\":\"vela\",\"name\":\"vela-computer\",\"version\":\"$version\"}"
 [ "$("$agent_binary" version --json)" = "$expected_version" ] || fail "构建产物版本不匹配"
 program_hash=$(shasum -a 256 "$agent_binary" | awk '{print $1}')
 [ "${#program_hash}" -eq 64 ] || fail "Agent SHA-256 无效"

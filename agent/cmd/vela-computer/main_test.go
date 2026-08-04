@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/managementipc"
+	"velachat/agent/internal/vela/managementipc"
 )
 
 func TestRunVelaVersionDoesNotTouchStateOrNetwork(t *testing.T) {

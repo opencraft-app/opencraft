@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/reactvaxis"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/reactvaxis/nativemodule"
 	"github.com/dop251/goja"
+	"velachat/agent/internal/reactvaxis"
+	"velachat/agent/internal/reactvaxis/nativemodule"
 )
 
 func TestCallResolvesOnOwningRuntimeLoop(t *testing.T) {
@@ -20,10 +20,10 @@ func TestCallResolvesOnOwningRuntimeLoop(t *testing.T) {
 		return map[string]any{"value": payload.(map[string]any)["value"]}, nil
 	})
 	source := `
-globalThis.__raftTui = {
+globalThis.__velaTui = {
   start() {
-    __raftNativeModules.call("platform.v1", "echo", {value: "你好"}, {requestId: "r1"})
-      .then(result => __raftNative.commit({type: "Text", testId: "result", text: result.value}));
+    __velaNativeModules.call("platform.v1", "echo", {value: "你好"}, {requestId: "r1"})
+      .then(result => __velaNative.commit({type: "Text", testId: "result", text: result.value}));
   }, dispatch() {}, resize() {}
 };`
 	runtime := newRuntime(t, source, registry)
@@ -52,14 +52,14 @@ func TestSubscriptionUsesBoundedSequenceAndStopsAfterUnsubscribe(t *testing.T) {
 		return ctx.Err()
 	})
 	source := `
-globalThis.__raftNativeModuleDispatch = event => {
+globalThis.__velaNativeModuleDispatch = event => {
   if (event.kind === "event") {
-    __raftNative.commit({type: "Text", testId: "event", text: String(event.sequence)});
-    if (event.sequence === 2) __raftNativeModules.unsubscribe(event.subscriptionId);
+    __velaNative.commit({type: "Text", testId: "event", text: String(event.sequence)});
+    if (event.sequence === 2) __velaNativeModules.unsubscribe(event.subscriptionId);
   }
 };
-globalThis.__raftTui = {
-  start() { __raftNativeModules.subscribe("messaging.v1", "messages", {}, {subscriptionId: "s1", launchId: "l1"}); },
+globalThis.__velaTui = {
+  start() { __velaNativeModules.subscribe("messaging.v1", "messages", {}, {subscriptionId: "s1", launchId: "l1"}); },
   dispatch() {}, resize() {}
 };`
 	runtime := newRuntime(t, source, registry)
@@ -87,10 +87,10 @@ func TestCallDeadlineCancelsHandlerAndReturnsStableError(t *testing.T) {
 		return nil, ctx.Err()
 	})
 	source := `
-globalThis.__raftTui = {
+globalThis.__velaTui = {
   start() {
-    __raftNativeModules.call("platform.v1", "slow", {}, {requestId: "r-deadline", deadlineMs: 10})
-      .catch(error => __raftNative.commit({type: "Text", testId: "error", text: error.code + ":" + error.requestId}));
+    __velaNativeModules.call("platform.v1", "slow", {}, {requestId: "r-deadline", deadlineMs: 10})
+      .catch(error => __velaNative.commit({type: "Text", testId: "error", text: error.code + ":" + error.requestId}));
   }, dispatch() {}, resize() {}
 };`
 	runtime := newRuntime(t, source, registry)
@@ -115,10 +115,10 @@ func TestCallRejectsPayloadAboveRegistryLimitBeforeHandler(t *testing.T) {
 		return payload, nil
 	})
 	source := `
-globalThis.__raftTui = {
+globalThis.__velaTui = {
   start() {
-    __raftNativeModules.call("platform.v1", "echo", {value: "abcdefghijklmnopqrstuvwxyz"}, {requestId: "r-large"})
-      .catch(error => __raftNative.commit({type: "Text", testId: "error", text: error.code}));
+    __velaNativeModules.call("platform.v1", "echo", {value: "abcdefghijklmnopqrstuvwxyz"}, {requestId: "r-large"})
+      .catch(error => __velaNative.commit({type: "Text", testId: "error", text: error.code}));
   }, dispatch() {}, resize() {}
 };`
 	runtime := newRuntime(t, source, registry)
@@ -160,7 +160,7 @@ func TestSubscriptionOverflowDropsOldLaunchAndUsesIndependentResyncControl(t *te
 	}
 	var mu sync.Mutex
 	events := make([]map[string]any, 0, 2)
-	if err := vm.Set("__raftNativeModuleDispatch", func(call goja.FunctionCall) goja.Value {
+	if err := vm.Set("__velaNativeModuleDispatch", func(call goja.FunctionCall) goja.Value {
 		var event map[string]any
 		if err := vm.ExportTo(call.Argument(0), &event); err != nil {
 			panic(vm.NewGoError(err))
@@ -172,7 +172,7 @@ func TestSubscriptionOverflowDropsOldLaunchAndUsesIndependentResyncControl(t *te
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := vm.RunString(`__raftNativeModules.subscribe("messaging.v1", "messages", {}, {subscriptionId:"s-overflow", launchId:"l1"})`); err != nil {
+	if _, err := vm.RunString(`__velaNativeModules.subscribe("messaging.v1", "messages", {}, {subscriptionId:"s-overflow", launchId:"l1"})`); err != nil {
 		t.Fatal(err)
 	}
 

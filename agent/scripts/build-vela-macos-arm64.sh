@@ -3,7 +3,7 @@ set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 version=
-output="$project_dir/dist/raft-computer-go"
+output="$project_dir/dist/vela-computer"
 
 usage() {
   echo "usage: build-vela-macos-arm64.sh --version vX.Y.Z [--output ABSOLUTE_PATH]" >&2
@@ -46,7 +46,7 @@ cargo build \
 
 output_directory=$(dirname -- "$output")
 mkdir -p "$output_directory"
-temporary=$(mktemp "$output_directory/.raft-computer-go.XXXXXX")
+temporary=$(mktemp "$output_directory/.vela-computer.XXXXXX")
 trap 'rm -f "$temporary"' EXIT HUP INT TERM
 (
   cd "$project_dir"
@@ -56,7 +56,7 @@ trap 'rm -f "$temporary"' EXIT HUP INT TERM
       -tags vela_tat_cgo \
       -ldflags "-X main.version=$version" \
       -o "$temporary" \
-      ./cmd/raft-computer-go
+      ./cmd/vela-computer
 )
 chmod 0755 "$temporary"
 mv "$temporary" "$output"

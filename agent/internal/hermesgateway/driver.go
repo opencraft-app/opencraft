@@ -16,16 +16,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/hermes"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/hermes"
+	"velachat/agent/internal/runtimeapi"
 )
 
 const (
 	gatewayProbeTimeout   = 10 * time.Second
 	gatewayStartupTimeout = 30 * time.Second
 	gatewayStopTimeout    = 3 * time.Second
-	headlessClarifyAnswer = "No native interactive UI is available. Ask the user through the current Raft conversation and wait for a new message."
+	headlessClarifyAnswer = "No native interactive UI is available. Ask the user through the current Vela conversation and wait for a new message."
 )
 
 type pythonCandidate struct {
@@ -321,8 +321,8 @@ func (driver *Driver) queryDefaultModelOptions(
 	environment["PYTHONUNBUFFERED"] = "1"
 	delete(environment, "HERMES_HOME")
 	delete(environment, "HERMES_PROFILE")
-	delete(environment, "RAFT_PROFILE")
-	delete(environment, "SLOCK_PROFILE")
+	delete(environment, "VELA_PROFILE")
+	delete(environment, "VELA_PROFILE")
 
 	args := append([]string(nil), candidate.ArgsPrefix...)
 	args = append(args, "-u", "-m", "tui_gateway.entry")
@@ -442,8 +442,8 @@ func (driver *Driver) Start(
 	}()
 
 	environment := sanitizeProcessEnvironment(request.Environment)
-	delete(environment, "RAFT_PROFILE")
-	delete(environment, "SLOCK_PROFILE")
+	delete(environment, "VELA_PROFILE")
+	delete(environment, "VELA_PROFILE")
 	delete(environment, "HERMES_PROFILE")
 	environment["HOME"] = host.TrustedHome
 	environment["HERMES_HOME"] = host.ProfileHome
@@ -634,7 +634,7 @@ func (session *gatewaySession) open(
 		err := session.transport.Call(ctx, "session.resume", map[string]any{
 			"session_id": requested,
 			"cwd":        workingDirectory,
-			"source":     "raft-computer",
+			"source":     "vela-computer",
 		}, &resumed)
 		if err == nil {
 			liveID, storedID := resumed.identity()
@@ -655,7 +655,7 @@ func (session *gatewaySession) open(
 	}
 	params := map[string]any{
 		"cwd":    workingDirectory,
-		"source": "raft-computer",
+		"source": "vela-computer",
 	}
 	if model := strings.TrimSpace(request.Model); model != "" && model != "default" {
 		params["model"] = model
@@ -1067,7 +1067,7 @@ func (session *gatewaySession) traceGatewayEvent(
 	liveID string,
 	matchesSession bool,
 ) {
-	if os.Getenv("RAFT_COMPUTER_GO_TRACE_HERMES_EVENTS") != "1" {
+	if os.Getenv("VELA_TRACE_HERMES_EVENTS") != "1" {
 		return
 	}
 	_, _, active := session.identity()

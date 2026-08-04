@@ -13,13 +13,13 @@ describe("RouteTitle", () => {
       globalThis,
       "document",
     );
-    const mockDocument = {title: "Raft"};
+    const mockDocument = {title: "Vela"};
     Object.defineProperty(globalThis, "document", {
       configurable: true,
       value: mockDocument,
     });
-    const screen = await render(<RouteTitle title="登录 · RAFT" />);
-    expect(mockDocument.title).toBe("登录 · RAFT");
+    const screen = await render(<RouteTitle title="登录 · VELA" />);
+    expect(mockDocument.title).toBe("登录 · VELA");
 
     await screen.rerender(<RouteTitle title="# 闲聊 · Atlas" />);
     expect(mockDocument.title).toBe("# 闲聊 · Atlas");

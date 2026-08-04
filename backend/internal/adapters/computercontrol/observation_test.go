@@ -300,7 +300,7 @@ func TestHeartbeatRenewsOnlyExactCurrentLaunchBeforeFirstObservation(t *testing.
 		ID: controlHeartbeatID, ServerID: controlRepoServerID,
 		ComputerID: controlRepoComputerID, AssignmentEpoch: controlRepoEpoch,
 		AssignmentRevision: 4, DaemonVersion: "1.0.0",
-		DaemonBuildID: "raft-computer-go/1.0.0+git.test;platform-v1-launch-fence-1",
+		DaemonBuildID: "vela-computer/1.0.0+git.test;platform-v1-launch-fence-1",
 		TATState:      "online", ReconcileState: "healthy",
 		Agents: []computercontrolport.HeartbeatAgent{{
 			AgentID: controlRepoAgentID, AssignmentEpoch: controlRepoEpoch,
@@ -318,7 +318,7 @@ func TestHeartbeatRenewsOnlyExactCurrentLaunchBeforeFirstObservation(t *testing.
 	}
 	machine, err := handle.Client().Computer.Get(context.Background(), controlRepoComputerID)
 	if err != nil || machine.DaemonBuildID == nil ||
-		*machine.DaemonBuildID != "raft-computer-go/1.0.0+git.test;platform-v1-launch-fence-1" {
+		*machine.DaemonBuildID != "vela-computer/1.0.0+git.test;platform-v1-launch-fence-1" {
 		t.Fatalf("Computer build projection = %#v, %v", machine, err)
 	}
 }

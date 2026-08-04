@@ -10,14 +10,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeactor"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimecatalog"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/agentgateway"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/daemon"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/host"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/platform"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/runtimehost"
-	velastate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/state"
+	"velachat/agent/internal/runtimeactor"
+	"velachat/agent/internal/runtimecatalog"
+	"velachat/agent/internal/vela/agentgateway"
+	"velachat/agent/internal/vela/daemon"
+	"velachat/agent/internal/vela/host"
+	"velachat/agent/internal/vela/platform"
+	"velachat/agent/internal/vela/runtimehost"
+	velastate "velachat/agent/internal/vela/state"
 )
 
 // managedAgentFactory is the app-layer composition root for one AgentCell.

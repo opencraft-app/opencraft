@@ -47,11 +47,11 @@ describe("PersistentDirectSendIntentStore", () => {
 
   it("drops malformed persisted data instead of blocking chat startup", async () => {
     const storage = new MemoryStorage();
-    storage.setItem("raft.client.direct-send-intents.v1", "not-json");
+    storage.setItem("vela.client.direct-send-intents.v1", "not-json");
     const store = new PersistentDirectSendIntentStore(storage);
 
     await expect(store.load("account-1:server-1:member-2")).resolves.toBeNull();
-    expect(storage.values.has("raft.client.direct-send-intents.v1")).toBe(false);
+    expect(storage.values.has("vela.client.direct-send-intents.v1")).toBe(false);
   });
 
   it("removes only the completed member-pair intent", async () => {

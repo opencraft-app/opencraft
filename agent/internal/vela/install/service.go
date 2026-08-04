@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/filelock"
-	rootstate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/state"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/tat"
 	"github.com/google/uuid"
+	"velachat/agent/internal/filelock"
+	rootstate "velachat/agent/internal/state"
+	"velachat/agent/internal/vela/tat"
 )
 
 var (
@@ -396,7 +396,7 @@ func installProgram(source string, root string, release VerifiedRelease) (string
 		return "", ErrReleaseInvalid
 	}
 	defer input.Close()
-	output, err := os.CreateTemp(bin, ".raft-computer-go-*.tmp")
+	output, err := os.CreateTemp(bin, ".vela-computer-*.tmp")
 	if err != nil {
 		return "", err
 	}

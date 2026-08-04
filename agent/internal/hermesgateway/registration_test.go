@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/runtimeapi"
 )
 
 func TestRegistrationUsesDedicatedInternalIdentityAndPiWireAlias(t *testing.T) {
@@ -32,14 +32,14 @@ func TestProcessEnvironmentFirewallStripsPiControlledCredentials(t *testing.T) {
 	input := map[string]string{
 		"DEEPSEEK_API_KEY": "secret-pi-value",
 		"PATH":             "/trusted/bin",
-		"RAFT_AGENT_ID":    "agent-1",
+		"VELA_AGENT_ID":    "agent-1",
 	}
 	sanitized := sanitizeProcessEnvironment(input)
 	if _, ok := sanitized["DEEPSEEK_API_KEY"]; ok {
 		t.Fatal("Pi-controlled DEEPSEEK_API_KEY crossed the Gateway boundary")
 	}
 	if sanitized["PATH"] != input["PATH"] ||
-		sanitized["RAFT_AGENT_ID"] != input["RAFT_AGENT_ID"] {
+		sanitized["VELA_AGENT_ID"] != input["VELA_AGENT_ID"] {
 		t.Fatalf("unrelated environment changed: %#v", sanitized)
 	}
 	if input["DEEPSEEK_API_KEY"] != "secret-pi-value" {

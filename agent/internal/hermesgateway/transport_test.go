@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
+	"velachat/agent/internal/common"
 )
 
 func TestTransportCorrelatesOutOfOrderResponses(t *testing.T) {

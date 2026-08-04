@@ -1,9 +1,8 @@
-module github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client
+module velachat/agent
 
 go 1.25.1
 
 require (
-	github.com/QuantumNous/new-api v0.0.0
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
 	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14
 	github.com/google/uuid v1.6.0
@@ -23,5 +22,3 @@ require (
 	golang.org/x/term v0.10.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
 )
-
-replace github.com/QuantumNous/new-api => ./shim/new-api

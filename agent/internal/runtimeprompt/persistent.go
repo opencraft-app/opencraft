@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/runtimeapi"
 )
 
 const responseTargetHint = "Reply in the channel or create/reply in a thread as appropriate; " +
@@ -315,7 +315,7 @@ func durableWakePromptBatch(rawMessages []json.RawMessage) string {
 		changedTargetCount(len(rows)),
 		pluralSuffix(len(rows)),
 	)
-	lines := []string{"[Slock inbox notice:", header}
+	lines := []string{"[Vela inbox notice:", header}
 	for _, row := range rows {
 		first := row.messages[0]
 		latest := row.messages[len(row.messages)-1]
@@ -365,7 +365,7 @@ func durableWakePromptBatch(rawMessages []json.RawMessage) string {
 		lines = append(lines, row.target+"  "+strings.Join(details, " · "))
 		if latest.messageID != "" {
 			lines = append(lines, fmt.Sprintf(
-				"read: `raft message read --target %q --around %q`",
+				"read: `vela message read --target %q --around %q`",
 				row.target,
 				latest.messageID,
 			))
@@ -375,7 +375,7 @@ func durableWakePromptBatch(rawMessages []json.RawMessage) string {
 	return strings.Join(lines, "\n")
 }
 
-const nonMemberMentionReplyGuidance = "[Raft notice: You were notified as a " +
+const nonMemberMentionReplyGuidance = "[Vela notice: You were notified as a " +
 	"non-member, so you cannot reply in that channel. If no reply is needed, " +
 	"no action is required. Otherwise, DM the person who mentioned you or join " +
 	"the channel to participate.]"
@@ -575,11 +575,11 @@ func unreadResumePrompt(raw json.RawMessage) (string, bool) {
 	}
 	return "You have unread messages from while you were offline:\n" +
 		strings.Join(lines, "\n") +
-		"\n\nUse `raft message read` to catch up on the channels listed above, then stop. " +
-		"Read each listed channel at most once unless a read fails. Do NOT call `raft message check` " +
+		"\n\nUse `vela message read` to catch up on the channels listed above, then stop. " +
+		"Read each listed channel at most once unless a read fails. Do NOT call `vela message check` " +
 		"in this mode. If the history reveals a direct request, assignment, @mention, review request, " +
 		"or task clearly addressed to you, switch into active handling instead of stopping: reply using " +
-		"`raft message send --target <exact target>` and claim the relevant task with `raft task claim` " +
+		"`vela message send --target <exact target>` and claim the relevant task with `vela task claim` " +
 		"before starting work. Otherwise, do NOT send any message in this mode. " +
 		persistentMessageDeliveryText, true
 }

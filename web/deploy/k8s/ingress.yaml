@@ -1,58 +1,58 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: raft-platform
-  namespace: raft-platform
+  name: vela-platform
+  namespace: vela-platform
   labels:
-    app.kubernetes.io/part-of: raft-platform
+    app.kubernetes.io/part-of: vela-platform
   annotations:
     kubernetes.io/ingress.class: qcloud
     kubernetes.io/ingress.rule-mix: "true"
-    kubernetes.io/ingress.http-rules: '[{"host":"raft.lightvela.com","path":"/v1","backend":{"serviceName":"raft-api","servicePort":"80"}},{"host":"raft.lightvela.com","path":"/internal","backend":{"serviceName":"raft-api","servicePort":"80"}},{"host":"raft.lightvela.com","path":"/healthz","backend":{"serviceName":"raft-api","servicePort":"80"}},{"host":"raft.lightvela.com","path":"/readyz","backend":{"serviceName":"raft-api","servicePort":"80"}},{"host":"raft.lightvela.com","path":"/","backend":{"serviceName":"raft-web-static","servicePort":"80"}}]'
-    kubernetes.io/ingress.https-rules: '[{"host":"raft.lightvela.com","path":"/v1","backend":{"serviceName":"raft-api","servicePort":"80"}},{"host":"raft.lightvela.com","path":"/internal","backend":{"serviceName":"raft-api","servicePort":"80"}},{"host":"raft.lightvela.com","path":"/healthz","backend":{"serviceName":"raft-api","servicePort":"80"}},{"host":"raft.lightvela.com","path":"/readyz","backend":{"serviceName":"raft-api","servicePort":"80"}},{"host":"raft.lightvela.com","path":"/","backend":{"serviceName":"raft-web-static","servicePort":"80"}}]'
+    kubernetes.io/ingress.http-rules: '[{"host":"vela.lightvela.com","path":"/v1","backend":{"serviceName":"vela-api","servicePort":"80"}},{"host":"vela.lightvela.com","path":"/internal","backend":{"serviceName":"vela-api","servicePort":"80"}},{"host":"vela.lightvela.com","path":"/healthz","backend":{"serviceName":"vela-api","servicePort":"80"}},{"host":"vela.lightvela.com","path":"/readyz","backend":{"serviceName":"vela-api","servicePort":"80"}},{"host":"vela.lightvela.com","path":"/","backend":{"serviceName":"vela-web-static","servicePort":"80"}}]'
+    kubernetes.io/ingress.https-rules: '[{"host":"vela.lightvela.com","path":"/v1","backend":{"serviceName":"vela-api","servicePort":"80"}},{"host":"vela.lightvela.com","path":"/internal","backend":{"serviceName":"vela-api","servicePort":"80"}},{"host":"vela.lightvela.com","path":"/healthz","backend":{"serviceName":"vela-api","servicePort":"80"}},{"host":"vela.lightvela.com","path":"/readyz","backend":{"serviceName":"vela-api","servicePort":"80"}},{"host":"vela.lightvela.com","path":"/","backend":{"serviceName":"vela-web-static","servicePort":"80"}}]'
     kubernetes.io/ingress.extensiveParameters: '{"AddressIPVersion":"IPV4","InternetAccessible":{"InternetChargeType":"TRAFFIC_POSTPAID_BY_HOUR","InternetMaxBandwidthOut":20}}'
 spec:
   ingressClassName: qcloud
   rules:
-    - host: raft.lightvela.com
+    - host: vela.lightvela.com
       http:
         paths:
           - path: /v1
             pathType: Prefix
             backend:
               service:
-                name: raft-api
+                name: vela-api
                 port:
                   number: 80
           - path: /internal
             pathType: Prefix
             backend:
               service:
-                name: raft-api
+                name: vela-api
                 port:
                   number: 80
           - path: /healthz
             pathType: Exact
             backend:
               service:
-                name: raft-api
+                name: vela-api
                 port:
                   number: 80
           - path: /readyz
             pathType: Exact
             backend:
               service:
-                name: raft-api
+                name: vela-api
                 port:
                   number: 80
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: raft-web-static
+                name: vela-web-static
                 port:
                   number: 80
   tls:
     - hosts:
-        - raft.lightvela.com
+        - vela.lightvela.com
       secretName: lightvela-wildcard

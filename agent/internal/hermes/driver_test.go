@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeprompt"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/runtimeapi"
+	"velachat/agent/internal/runtimeprompt"
 )
 
 type hermesTestSession = session
@@ -194,8 +194,6 @@ func TestDriverStartProvisionsManagedNativeProfileAndIgnoresCloudOverrides(
 			"HERMES_PROFILE":            "cloud-selected-profile",
 			"HERMES_EXPECT_PROFILE":     selection.Name,
 			"HERMES_EXPECT_HOME":        trustedHome,
-			"RAFT_PROFILE":              "must-be-scrubbed",
-			"SLOCK_PROFILE":             "must-also-be-scrubbed",
 		},
 	})
 	if err != nil {
@@ -236,8 +234,6 @@ func TestDriverStartMapsACPEventsPermissionAndProfileHome(t *testing.T) {
 			"HERMES_EXPECT_PROFILE":     profile.Name,
 			"HERMES_EXPECT_HOME":        home,
 			"HOME":                      home,
-			"RAFT_PROFILE":              "must-be-scrubbed",
-			"SLOCK_PROFILE":             "must-also-be-scrubbed",
 		},
 	})
 	if err != nil {
@@ -960,9 +956,7 @@ func TestHermesACPHelperProcess(t *testing.T) {
 	if expectedHome != "" && os.Getenv("HOME") != expectedHome {
 		os.Exit(49)
 	}
-	if os.Getenv("RAFT_PROFILE") != "" ||
-		os.Getenv("SLOCK_PROFILE") != "" ||
-		os.Getenv("HERMES_HOME") != "" ||
+	if os.Getenv("HERMES_HOME") != "" ||
 		os.Getenv("HERMES_PROFILE") != "" {
 		os.Exit(42)
 	}
@@ -1158,9 +1152,9 @@ func runHermesACPHelper() {
 				"update": map[string]any{
 					"sessionUpdate": "tool_call",
 					"toolCallId":    "tool-1",
-					"title":         "raft inbox check",
+					"title":         "vela inbox check",
 					"status":        "in_progress",
-					"rawInput":      map[string]string{"command": "raft inbox check"},
+					"rawInput":      map[string]string{"command": "vela inbox check"},
 				},
 			})
 			permissionPromptID = append(json.RawMessage(nil), message.ID...)

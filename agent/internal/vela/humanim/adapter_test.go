@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/humanplatform"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
+	"velachat/agent/internal/vela/humanplatform"
+	"velachat/agent/internal/vela/im"
 )
 
 type fakeIssuer struct{ session humanplatform.IMSession }

@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/agentapi"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/platform"
+	"velachat/agent/internal/agentapi"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/vela/im"
+	"velachat/agent/internal/vela/platform"
 )
 
 func newTestGateway(t *testing.T, config Config) (*Gateway, error) {
@@ -188,8 +188,8 @@ func TestGatewayBridgesTaskCommandsToRuntimeTaskAPI(t *testing.T) {
 	}
 	environment := gateway.RuntimeEnvironment()
 	client, err := agentapi.New(agentapi.ClientOptions{
-		BaseURL:   environment["SLOCK_AGENT_PROXY_URL"],
-		TokenFile: environment["SLOCK_AGENT_PROXY_TOKEN_FILE"],
+		BaseURL:   environment["VELA_AGENT_PROXY_URL"],
+		TokenFile: environment["VELA_AGENT_PROXY_TOKEN_FILE"],
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -597,7 +597,7 @@ func TestGatewayLoadsDirectoryAndUsesHumanReadableTargets(t *testing.T) {
 	}
 
 	environment := gateway.RuntimeEnvironment()
-	if _, exists := environment["RAFT_AGENT_CLI_PROFILE"]; exists {
+	if _, exists := environment["VELA_AGENT_CLI_PROFILE"]; exists {
 		t.Fatalf("已删除的 CLI profile 仍被注入")
 	}
 	client := newGatewayTestClient(t, environment)
@@ -1151,13 +1151,13 @@ func TestGatewayStagesSendsProjectsAndDownloadsTencentAttachment(t *testing.T) {
 	downloadID := events.Events[0].Attachments[0].ID
 	rawRequest, err := http.NewRequest(
 		http.MethodGet,
-		gateway.RuntimeEnvironment()["SLOCK_AGENT_PROXY_URL"]+agentapi.BasePath+"/attachments/"+downloadID,
+		gateway.RuntimeEnvironment()["VELA_AGENT_PROXY_URL"]+agentapi.BasePath+"/attachments/"+downloadID,
 		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tokenData, err := os.ReadFile(gateway.RuntimeEnvironment()["SLOCK_AGENT_PROXY_TOKEN_FILE"])
+	tokenData, err := os.ReadFile(gateway.RuntimeEnvironment()["VELA_AGENT_PROXY_TOKEN_FILE"])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1184,7 +1184,7 @@ func TestGatewayStagesSendsProjectsAndDownloadsTencentAttachment(t *testing.T) {
 	gateway.mu.Unlock()
 	revokedRequest, err := http.NewRequest(
 		http.MethodGet,
-		gateway.RuntimeEnvironment()["SLOCK_AGENT_PROXY_URL"]+agentapi.BasePath+"/attachments/"+downloadID,
+		gateway.RuntimeEnvironment()["VELA_AGENT_PROXY_URL"]+agentapi.BasePath+"/attachments/"+downloadID,
 		nil,
 	)
 	if err != nil {
@@ -1339,7 +1339,7 @@ func TestGatewaySendsTencentThreadReplyThenRegistersStableReference(t *testing.T
 	}
 	var metadata map[string]any
 	if err := common.Unmarshal([]byte(transport.request.CloudCustomData), &metadata); err != nil ||
-		metadata["schema"] != "raft.message/v1" || metadata["serverId"] != serverID ||
+		metadata["schema"] != "vela.message/v1" || metadata["serverId"] != serverID ||
 		metadata["conversationId"] != channelID ||
 		metadata["parentMessageId"] != "root-message-12345678" ||
 		metadata["rootMessageId"] != "root-message-12345678" {
@@ -1532,12 +1532,12 @@ func TestThreadMetadataParserKeepsReadCompatibility(t *testing.T) {
 	}{
 		{
 			name: "current web envelope",
-			value: fmt.Sprintf(`{"schema":"raft.message/v1","serverId":%q,"conversationId":%q,"clientRequestId":"request-1","parentMessageId":%q,"rootMessageId":%q,"mentionedMemberIds":[],"attachmentIds":[]}`,
+			value: fmt.Sprintf(`{"schema":"vela.message/v1","serverId":%q,"conversationId":%q,"clientRequestId":"request-1","parentMessageId":%q,"rootMessageId":%q,"mentionedMemberIds":[],"attachmentIds":[]}`,
 				serverID, channelID, rootID, rootID),
 		},
 		{
 			name: "legacy flat envelope",
-			value: fmt.Sprintf(`{"type":"raft.thread-reply/v1","threadId":%q,"channelId":%q,"rootMessageId":%q}`,
+			value: fmt.Sprintf(`{"type":"vela.thread-reply/v1","threadId":%q,"channelId":%q,"rootMessageId":%q}`,
 				threadID, channelID, rootID),
 		},
 	} {
@@ -1594,8 +1594,8 @@ func TestGatewayExposesObservedInboxAndSendsThroughBoundTransport(t *testing.T) 
 	}
 	environment := gateway.RuntimeEnvironment()
 	client, err := agentapi.New(agentapi.ClientOptions{
-		BaseURL:   environment["SLOCK_AGENT_PROXY_URL"],
-		TokenFile: environment["SLOCK_AGENT_PROXY_TOKEN_FILE"],
+		BaseURL:   environment["VELA_AGENT_PROXY_URL"],
+		TokenFile: environment["VELA_AGENT_PROXY_TOKEN_FILE"],
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1838,7 +1838,7 @@ func TestGatewayRejectsUnknownTokenAndUnobservedTarget(t *testing.T) {
 
 	request, err := http.NewRequest(
 		http.MethodGet,
-		environment["SLOCK_AGENT_PROXY_URL"]+
+		environment["VELA_AGENT_PROXY_URL"]+
 			"/internal/agent-api/inbox",
 		nil,
 	)
@@ -1856,8 +1856,8 @@ func TestGatewayRejectsUnknownTokenAndUnobservedTarget(t *testing.T) {
 	}
 
 	client, err := agentapi.New(agentapi.ClientOptions{
-		BaseURL:   environment["SLOCK_AGENT_PROXY_URL"],
-		TokenFile: environment["SLOCK_AGENT_PROXY_TOKEN_FILE"],
+		BaseURL:   environment["VELA_AGENT_PROXY_URL"],
+		TokenFile: environment["VELA_AGENT_PROXY_TOKEN_FILE"],
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -1,18 +1,18 @@
 {
   "expo": {
-    "name": "Raft",
-    "slug": "raft-client",
+    "name": "Vela",
+    "slug": "vela-client",
     "version": "0.1.0",
     "orientation": "default",
-    "scheme": "raft",
+    "scheme": "vela",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "build.raft.client"
+      "bundleIdentifier": "build.vela.client"
     },
     "android": {
-      "package": "build.raft.client",
+      "package": "build.vela.client",
       "edgeToEdgeEnabled": true
     },
     "web": {

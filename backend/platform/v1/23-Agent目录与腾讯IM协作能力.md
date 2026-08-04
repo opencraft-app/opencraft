@@ -10,7 +10,7 @@ Vela Agent 获得与当前产品一致的协作能力：
 - 读取当前 Server 内真实且有权可见的 Channel、Human 和 Agent 目录；
 - 通过腾讯 IM 读取历史、搜索消息、参与 Thread、添加 Reaction、发送和下载附件；
 - 通过 Runtime API 管理自己的 Reminder，并把 Reminder 锚定到消息或 Thread；
-- Vela Runtime 中的 `raft` CLI 只显示已经端到端实现的命令；
+- Vela Runtime 中的 `vela` CLI 只显示已经端到端实现的命令；
 - 不增加 Workspace 浏览，也不增加 Runtime Driver。
 
 本设计延续既有原则：
@@ -43,7 +43,7 @@ Vela Agent 获得与当前产品一致的协作能力：
 - 使用短期 Agent UserSig 直连腾讯 IM；
 - 把平台目录转换成 Agent 可读的 `#channel`、`@member` 和 Thread target；
 - 在本地执行 capability、可见性和目标校验；
-- 将 `raft` CLI 操作翻译为 Runtime API 或腾讯 IM 操作；
+- 将 `vela` CLI 操作翻译为 Runtime API 或腾讯 IM 操作；
 - 保存有界的本地消息引用索引，不保存聊天正文；
 - 对附件路径、下载 URL、请求体和搜索工作量执行安全限制。
 
@@ -53,16 +53,16 @@ Vela Agent 获得与当前产品一致的协作能力：
 - Agent Workspace 浏览、机器 Workspace、VFS 或 Skill 扩展；
 - 新 Runtime Driver 或原版 Runtime 全量兼容；
 - Activity、reasoning、tool call 的 Web 实时投影；
-- Vela 模式下未贯通的兼容命令。
+- 尚未端到端实现的命令。
 
 ## 3. 为什么保留薄 Thread 索引
 
-当前 Web 的消息归一化入口识别 `raft.message/v1`。Thread 回复在这个基础信封中同时
+当前 Web 的消息归一化入口识别 `vela.message/v1`。Thread 回复在这个基础信封中同时
 携带 `parentMessageId/rootMessageId` 和 `thread` 扩展：
 
 ```json
 {
-  "schema": "raft.message/v1",
+  "schema": "vela.message/v1",
   "serverId": "019...",
   "conversationId": "019...",
   "clientRequestId": "019...",
@@ -83,10 +83,8 @@ Vela Agent 获得与当前产品一致的协作能力：
 }
 ```
 
-这样现有 Web 无需理解新的顶层 schema 就能立即把 Agent 回复放回正确 Thread；
-`thread.threadId/rootMessageRef` 则供薄索引和更严格的新客户端使用。Vela 只发送上述
-规范格式，但读取时兼容早期扁平 `type=raft.thread-reply/v1` 和旧的嵌套
-`schema=raft.thread-reply/v1`，用于恢复已经存在的消息。
+Web 依据这个信封把 Agent 回复放回正确 Thread；`thread.threadId/rootMessageRef` 则供
+薄索引和客户端校验使用。Vela 只发送和读取上述规范格式，格式无效的扩展按普通消息处理。
 
 Web 打开 Thread 时会先向 Chatserver ensure Thread，再使用 `threadId` 拉取/登记引用。
 因此本期保留已有 `message_thread_refs` 和 Thread API 作为薄索引：
@@ -236,7 +234,7 @@ AttachmentTransport
 
 - Thread 仅允许建立在 Channel 消息上，C2C 不支持；
 - Vela 用根消息引用调用 Runtime Thread resolve，获得稳定 `threadId`；
-- 回复消息写入 Web 可直接识别的 `raft.message/v1` `cloudCustomData`，并附带
+- 回复消息写入 Web 可直接识别的 `vela.message/v1` `cloudCustomData`，并附带
   `thread` 扩展；
 - 腾讯 IM 接受消息后，Vela向 Runtime Thread register API 登记回复引用；
 - register 失败不得重复发送 IM 消息，只保留可重试的引用登记；
@@ -351,14 +349,10 @@ anchor_message_ref_json
 `server_id` 继续作为 TDSQL shardkey；锚点不创建跨表外键。写入时应用层验证
 Channel/Thread 属于同一 Server。Human 创建的无锚 Reminder 保持兼容。
 
-## 9. Vela `raft` CLI
+## 9. Vela `vela` CLI
 
-新增静态命令 Profile：
-
-- Raft mode：保留现有完整兼容命令树；
-- Vela mode：Gateway 在 Runtime 环境写入 `RAFT_AGENT_CLI_PROFILE=vela-v1`；
-- help/version 不依赖网络；
-- Profile 只注册真实已实现命令，不注册后再返回 `route_not_exposed`。
+Vela 只有一棵命令树。help/version 不依赖网络，只注册真实已实现的命令，不注册后再返回
+`route_not_exposed`。
 
 本期 Vela 命令面：
 
@@ -390,14 +384,14 @@ reminder log
 不显示：Channel 管理、Thread unfollow、Task create/unclaim、Attachment comments、
 Mention、Profile、Integration、Migration、Action、Manual/Knowledge 和 Workspace。
 
-Thread 不增加平行命令族，继续使用原版 target 语义：
+Thread 不增加平行命令族，使用统一 target 语义：
 
 ```text
-raft message read --target '#general:<root-prefix>'
-raft message send --target '#general:<root-prefix>' --text '...'
+vela message read --target '#general:<root-prefix>'
+vela message send --target '#general:<root-prefix>' --text '...'
 ```
 
-Vela Profile 同时收窄命令参数：`message read` 只公开真实生效的 `--target`、
+命令参数同样只暴露真实能力：`message read` 只公开真实生效的 `--target`、
 `--after`、`--limit`；`message search` 只公开 `--query`、`--target`、`--limit`、
 `--offset`；不显示尚未贯通的 `--around`、`--before`、sender/sort 过滤或旧草稿参数。
 
@@ -433,7 +427,7 @@ Vela Profile 同时收窄命令参数：`message read` 只公开真实生效的 
 ### Phase 3：Thread、Reaction、附件
 
 - Runtime Thread resolve/register；
-- `raft.message/v1 + thread` 发送，以及旧 Thread 元数据只读解析；
+- `vela.message/v1 + thread` 发送与解析；
 - Reaction add/remove；
 - Goja File/Blob bridge、附件上传和安全下载；
 - Human Web ↔ Agent 的双向 Thread/Reaction/附件测试。
@@ -452,7 +446,7 @@ Vela Profile 同时收窄命令参数：`message read` 只公开真实生效的 
 - clean-room 和凭据扫描；
 - 真实 Canary：Human/Agent 目录、历史、搜索、Thread 双向回复、Reaction、附件、
   Reminder 触发、离线恢复和旧 credential 拒绝；
-- 验证 Vela `raft --help` 不出现任何未实现命令；
+- 验证 Vela `vela --help` 不出现任何未实现命令；
 - 验证没有 Workspace 路由或新 Runtime registration 被引入。
 
 ## 12. 完成定义
@@ -463,6 +457,6 @@ Vela Profile 同时收窄命令参数：`message read` 只公开真实生效的 
 2. 历史和搜索来自腾讯 IM，而不是 Gateway 内存或 Chatserver 消息表；
 3. Thread、Reaction、附件在人类客户端和 Agent 之间真实互通；
 4. Agent 能完整管理自己的 Reminder，消息/Thread 锚点可回到原会话；
-5. Vela `raft` 只显示并执行本期真实命令；
+5. Vela `vela` 只显示并执行本期真实命令；
 6. Chatserver 仍不保存聊天正文，Vela 不新增 Workspace 和 Runtime 能力；
 7. 自动测试和真实 Canary 均通过。

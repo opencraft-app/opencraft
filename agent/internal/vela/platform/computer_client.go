@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/daemon"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/vela/daemon"
 )
 
 var (

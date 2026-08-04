@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/agentgateway"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/ingress"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/platform"
+	"velachat/agent/internal/runtimeapi"
+	"velachat/agent/internal/vela/agentgateway"
+	"velachat/agent/internal/vela/im"
+	"velachat/agent/internal/vela/ingress"
+	"velachat/agent/internal/vela/platform"
 )
 
 func TestAdapterAcceptsHumanReadableTargetFromRealGateway(t *testing.T) {

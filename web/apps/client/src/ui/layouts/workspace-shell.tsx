@@ -13,8 +13,8 @@ import type {
   MessageThread,
   Server,
   UpdateChannelInput,
-} from "@raft-platform/client-core";
-import { channelAddress } from "@raft-platform/client-core";
+} from "@vela/client-core";
+import { channelAddress } from "@vela/client-core";
 import {
   createContext,
   useEffect,
@@ -71,7 +71,7 @@ import {
   visibleMemberHandle,
 } from "../member-identity";
 import { workspaceLayoutMode } from "../workspace-layout-mode";
-import { raftTheme } from "../tokens";
+import { velaTheme } from "../tokens";
 import {
   ConversationPresentation,
   type ConversationPageModel,
@@ -1472,7 +1472,7 @@ function ServerRail({
 
   return (
     <View style={styles.serverRail} testID="server-rail">
-      <View accessibilityLabel="Raft" style={styles.railBrand}>
+      <View accessibilityLabel="Vela" style={styles.railBrand}>
         <BrandMark compact />
       </View>
       {servers.length > 1 ? (
@@ -1567,9 +1567,9 @@ function ServerRail({
                     ]}
                   >
                     <LogOut
-                      color={raftTheme.semantic.color.iconMuted}
-                      size={raftTheme.semantic.icon.size.small}
-                      strokeWidth={raftTheme.semantic.icon.stroke.regular}
+                      color={velaTheme.semantic.color.iconMuted}
+                      size={velaTheme.semantic.icon.size.small}
+                      strokeWidth={velaTheme.semantic.icon.stroke.regular}
                     />
                     <Text style={styles.accountLogoutText}>退出当前账号</Text>
                   </Pressable>
@@ -1588,9 +1588,9 @@ function ServerRail({
             ]}
           >
             <LogOut
-              color={raftTheme.semantic.color.iconMuted}
-              size={raftTheme.semantic.icon.size.medium}
-              strokeWidth={raftTheme.semantic.icon.stroke.regular}
+              color={velaTheme.semantic.color.iconMuted}
+              size={velaTheme.semantic.icon.size.medium}
+              strokeWidth={velaTheme.semantic.icon.stroke.regular}
             />
           </Pressable>
         ) : null}
@@ -1639,11 +1639,11 @@ function RailSectionNavigationItem({
             <NavigationIcon
               color={
                 selected
-                  ? raftTheme.semantic.color.iconAccent
-                  : raftTheme.semantic.color.iconMuted
+                  ? velaTheme.semantic.color.iconAccent
+                  : velaTheme.semantic.color.iconMuted
               }
-              size={raftTheme.semantic.icon.size.feature}
-              strokeWidth={selected ? raftTheme.semantic.icon.stroke.strong : raftTheme.semantic.icon.stroke.regular}
+              size={velaTheme.semantic.icon.size.feature}
+              strokeWidth={selected ? velaTheme.semantic.icon.stroke.strong : velaTheme.semantic.icon.stroke.regular}
             />
           </View>
         </Pressable>
@@ -1855,24 +1855,24 @@ function ConversationSidebar({
             </Text>
           </View>
           <Ellipsis
-            color={raftTheme.semantic.color.iconMuted}
-            size={raftTheme.semantic.icon.size.small}
-            strokeWidth={raftTheme.semantic.icon.stroke.regular}
+            color={velaTheme.semantic.color.iconMuted}
+            size={velaTheme.semantic.icon.size.small}
+            strokeWidth={velaTheme.semantic.icon.stroke.regular}
           />
         </Pressable>
       </MaybeLink>
       {!directPickerOpen ? (
         <View style={styles.sidebarSearchWrap}>
           <Search
-            color={raftTheme.semantic.color.iconMuted}
-            size={raftTheme.semantic.icon.size.compact}
-            strokeWidth={raftTheme.semantic.icon.stroke.regular}
+            color={velaTheme.semantic.color.iconMuted}
+            size={velaTheme.semantic.icon.size.compact}
+            strokeWidth={velaTheme.semantic.icon.stroke.regular}
           />
           <TextInput
             accessibilityLabel="搜索频道、私信与成员"
             onChangeText={setFilter}
             placeholder="搜索频道、私信与成员"
-            placeholderTextColor={raftTheme.semantic.color.fieldPlaceholder}
+            placeholderTextColor={velaTheme.semantic.color.fieldPlaceholder}
             style={styles.sidebarSearchInput}
             value={filter}
           />
@@ -1880,14 +1880,14 @@ function ConversationSidebar({
             <Pressable
               accessibilityLabel="清除会话搜索"
               accessibilityRole="button"
-              hitSlop={raftTheme.semantic.interaction.hitTargetInset}
+              hitSlop={velaTheme.semantic.interaction.hitTargetInset}
               onPress={() => setFilter("")}
               style={styles.sidebarSearchClear}
             >
               <X
-                color={raftTheme.semantic.color.iconMuted}
-                size={raftTheme.semantic.icon.size.compact}
-                strokeWidth={raftTheme.semantic.icon.stroke.regular}
+                color={velaTheme.semantic.color.iconMuted}
+                size={velaTheme.semantic.icon.size.compact}
+                strokeWidth={velaTheme.semantic.icon.stroke.regular}
               />
             </Pressable>
           ) : null}
@@ -1905,30 +1905,30 @@ function ConversationSidebar({
                   <Pressable
                     accessibilityLabel="新建 Channel"
                     accessibilityRole="button"
-                    hitSlop={raftTheme.semantic.interaction.hitTargetInset}
+                    hitSlop={velaTheme.semantic.interaction.hitTargetInset}
                     onPress={onCreateChannel}
                     style={styles.sidebarActionButton}
                     testID="channel-create-action"
                   >
                     <Plus
-                      color={raftTheme.semantic.color.iconMuted}
-                      size={raftTheme.semantic.icon.size.small}
-                      strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+                      color={velaTheme.semantic.color.iconMuted}
+                      size={velaTheme.semantic.icon.size.small}
+                      strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
                     />
                   </Pressable>
                   {currentChannel?.systemKey !== "all" && currentChannel ? (
                     <Pressable
                       accessibilityLabel={`编辑 Channel ${currentChannel.name}`}
                       accessibilityRole="button"
-                      hitSlop={raftTheme.semantic.interaction.hitTargetInset}
+                      hitSlop={velaTheme.semantic.interaction.hitTargetInset}
                       onPress={onEditChannel}
                       style={styles.sidebarActionButton}
                       testID="channel-edit-action"
                     >
                       <Pencil
-                        color={raftTheme.semantic.color.iconMuted}
-                        size={raftTheme.semantic.icon.size.compact}
-                        strokeWidth={raftTheme.semantic.icon.stroke.regular}
+                        color={velaTheme.semantic.color.iconMuted}
+                        size={velaTheme.semantic.icon.size.compact}
+                        strokeWidth={velaTheme.semantic.icon.stroke.regular}
                       />
                     </Pressable>
                   ) : null}
@@ -1936,14 +1936,14 @@ function ConversationSidebar({
                     <Pressable
                       accessibilityLabel={`管理 Channel ${currentChannel.name} 的成员`}
                       accessibilityRole="button"
-                      hitSlop={raftTheme.semantic.interaction.hitTargetInset}
+                      hitSlop={velaTheme.semantic.interaction.hitTargetInset}
                       onPress={onManageMembers}
                       style={styles.sidebarActionButton}
                     >
                       <UsersRound
-                        color={raftTheme.semantic.color.iconMuted}
-                        size={raftTheme.semantic.icon.size.small}
-                        strokeWidth={raftTheme.semantic.icon.stroke.regular}
+                        color={velaTheme.semantic.color.iconMuted}
+                        size={velaTheme.semantic.icon.size.small}
+                        strokeWidth={velaTheme.semantic.icon.stroke.regular}
                       />
                     </Pressable>
                   ) : null}
@@ -1973,9 +1973,9 @@ function ConversationSidebar({
               style={styles.sidebarAddButton}
             >
               <Plus
-                color={raftTheme.semantic.color.iconMuted}
-                size={raftTheme.semantic.icon.size.small}
-                strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+                color={velaTheme.semantic.color.iconMuted}
+                size={velaTheme.semantic.icon.size.small}
+                strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
               />
             </Pressable>
           ) : null}
@@ -2260,11 +2260,11 @@ function ChannelList({
                 <Hash
                   color={
                     selected
-                      ? raftTheme.semantic.color.iconAccent
-                      : raftTheme.semantic.color.iconMuted
+                      ? velaTheme.semantic.color.iconAccent
+                      : velaTheme.semantic.color.iconMuted
                   }
-                  size={raftTheme.semantic.icon.size.compact}
-                  strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+                  size={velaTheme.semantic.icon.size.compact}
+                  strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
                 />
               </View>
               <View style={styles.channelButtonCopy}>
@@ -2365,7 +2365,7 @@ function ChatActionErrorToast({
     setVisible(true);
     const timer = setTimeout(
       () => setVisible(false),
-      raftTheme.semantic.motion.toastDuration,
+      velaTheme.semantic.motion.toastDuration,
     );
     return () => clearTimeout(timer);
   }, [message]);
@@ -2387,9 +2387,9 @@ function ChatActionErrorToast({
       >
         <View style={styles.chatErrorToastIcon}>
           <CircleAlert
-            color={raftTheme.semantic.color.statusDanger}
-            size={raftTheme.semantic.icon.size.medium}
-            strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+            color={velaTheme.semantic.color.statusDanger}
+            size={velaTheme.semantic.icon.size.medium}
+            strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
           />
         </View>
         <Text numberOfLines={3} style={styles.chatErrorToastText}>
@@ -2402,9 +2402,9 @@ function ChatActionErrorToast({
           style={styles.chatErrorToastClose}
         >
           <X
-            color={raftTheme.semantic.color.iconMuted}
-            size={raftTheme.semantic.icon.size.small}
-            strokeWidth={raftTheme.semantic.icon.stroke.regular}
+            color={velaTheme.semantic.color.iconMuted}
+            size={velaTheme.semantic.icon.size.small}
+            strokeWidth={velaTheme.semantic.icon.stroke.regular}
           />
         </Pressable>
       </View>
@@ -2586,15 +2586,15 @@ function MessageStage({
             <View style={styles.messageHeaderIcon}>
               {direct ? (
                 <AtSign
-                  color={raftTheme.semantic.color.iconAccent}
-                  size={raftTheme.semantic.icon.size.medium}
-                  strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+                  color={velaTheme.semantic.color.iconAccent}
+                  size={velaTheme.semantic.icon.size.medium}
+                  strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
                 />
               ) : (
                 <Hash
-                  color={raftTheme.semantic.color.iconAccent}
-                  size={raftTheme.semantic.icon.size.medium}
-                  strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+                  color={velaTheme.semantic.color.iconAccent}
+                  size={velaTheme.semantic.icon.size.medium}
+                  strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
                 />
               )}
             </View>
@@ -2643,9 +2643,9 @@ function MessageStage({
               style={styles.headerActionButton}
             >
               <Search
-                color={raftTheme.semantic.color.iconSecondary}
-                size={raftTheme.semantic.icon.size.medium}
-                strokeWidth={raftTheme.semantic.icon.stroke.regular}
+                color={velaTheme.semantic.color.iconSecondary}
+                size={velaTheme.semantic.icon.size.medium}
+                strokeWidth={velaTheme.semantic.icon.stroke.regular}
               />
             </Pressable>
             {!direct ? (
@@ -2657,9 +2657,9 @@ function MessageStage({
                 style={styles.headerMembersButton}
               >
                 <UsersRound
-                  color={raftTheme.semantic.color.iconSecondary}
-                  size={raftTheme.semantic.icon.size.medium}
-                  strokeWidth={raftTheme.semantic.icon.stroke.regular}
+                  color={velaTheme.semantic.color.iconSecondary}
+                  size={velaTheme.semantic.icon.size.medium}
+                  strokeWidth={velaTheme.semantic.icon.stroke.regular}
                 />
                 <Text style={styles.headerMembersText}>
                   {channelMemberCount} 位成员
@@ -2853,9 +2853,9 @@ function MessageSearchPanel({
         >
           <View testID="message-search-close-icon">
             <X
-              color={raftTheme.semantic.color.iconSecondary}
-              size={raftTheme.semantic.icon.size.medium}
-              strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+              color={velaTheme.semantic.color.iconSecondary}
+              size={velaTheme.semantic.icon.size.medium}
+              strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
             />
           </View>
         </Pressable>
@@ -2930,9 +2930,9 @@ function MessageSearchPanel({
                   </Text>
                   {locating ? null : (
                     <ArrowRight
-                      color={raftTheme.semantic.color.iconAccent}
-                      size={raftTheme.semantic.icon.size.compact}
-                      strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+                      color={velaTheme.semantic.color.iconAccent}
+                      size={velaTheme.semantic.icon.size.compact}
+                      strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
                     />
                   )}
                 </View>
@@ -3068,15 +3068,15 @@ function CompactHeader({
           <View testID="compact-header-menu-icon">
             {navigationOpen ? (
               <X
-                color={raftTheme.semantic.color.iconAccent}
-                size={raftTheme.semantic.icon.size.large}
-                strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+                color={velaTheme.semantic.color.iconAccent}
+                size={velaTheme.semantic.icon.size.large}
+                strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
               />
             ) : (
               <Menu
-                color={raftTheme.semantic.color.iconAccent}
-                size={raftTheme.semantic.icon.size.large}
-                strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+                color={velaTheme.semantic.color.iconAccent}
+                size={velaTheme.semantic.icon.size.large}
+                strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
               />
             )}
           </View>
@@ -3086,7 +3086,7 @@ function CompactHeader({
         <Text numberOfLines={1} style={styles.compactEyebrow}>
           {activeDirectConversation
             ? directConversationDescription(activeDirectMember)
-            : `${server?.name ?? "RAFT"}${channel ? ` · ${channelKindLongLabel(channel)}` : ""}${connectionLabel ? ` · ${connectionLabel}` : ""}`}
+            : `${server?.name ?? "VELA"}${channel ? ` · ${channelKindLongLabel(channel)}` : ""}${connectionLabel ? ` · ${connectionLabel}` : ""}`}
         </Text>
         <Text numberOfLines={1} style={styles.compactTitle}>
           {navigationOpen
@@ -3111,9 +3111,9 @@ function CompactHeader({
         >
           <View testID="compact-header-search-icon">
             <Search
-              color={raftTheme.semantic.color.iconSecondary}
-              size={raftTheme.semantic.icon.size.medium}
-              strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+              color={velaTheme.semantic.color.iconSecondary}
+              size={velaTheme.semantic.icon.size.medium}
+              strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
             />
           </View>
         </Pressable>
@@ -3130,9 +3130,9 @@ function CompactHeader({
           style={styles.compactMembersButton}
         >
           <UsersRound
-            color={raftTheme.semantic.color.iconSecondary}
-            size={raftTheme.semantic.icon.size.medium}
-            strokeWidth={raftTheme.semantic.icon.stroke.regular}
+            color={velaTheme.semantic.color.iconSecondary}
+            size={velaTheme.semantic.icon.size.medium}
+            strokeWidth={velaTheme.semantic.icon.stroke.regular}
           />
           <Text style={styles.compactMembersCount}>{channelMemberCount}</Text>
         </Pressable>
@@ -3228,9 +3228,9 @@ function ChannelManagementPanel({
         >
           {member.kind === "agent" ? (
             <Bot
-              color={raftTheme.semantic.color.iconAccent}
-              size={raftTheme.semantic.icon.size.small}
-              strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+              color={velaTheme.semantic.color.iconAccent}
+              size={velaTheme.semantic.icon.size.small}
+              strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
             />
           ) : (
             <Text style={styles.channelMemberAvatarText}>
@@ -3313,9 +3313,9 @@ function ChannelManagementPanel({
         >
           <View testID="channel-management-close-icon">
             <X
-              color={raftTheme.semantic.color.iconSecondary}
-              size={raftTheme.semantic.icon.size.medium}
-              strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+              color={velaTheme.semantic.color.iconSecondary}
+              size={velaTheme.semantic.icon.size.medium}
+              strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
             />
           </View>
         </Pressable>
@@ -3482,15 +3482,15 @@ function ChannelManagementPanel({
               <View style={styles.channelMemberConfirmMark}>
                 {pendingRemoval.imUserId === currentImUserId ? (
                   <LogOut
-                    color={raftTheme.semantic.color.statusDanger}
-                    size={raftTheme.semantic.icon.size.feature}
-                    strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+                    color={velaTheme.semantic.color.statusDanger}
+                    size={velaTheme.semantic.icon.size.feature}
+                    strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
                   />
                 ) : (
                   <UsersRound
-                    color={raftTheme.semantic.color.statusDanger}
-                    size={raftTheme.semantic.icon.size.feature}
-                    strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+                    color={velaTheme.semantic.color.statusDanger}
+                    size={velaTheme.semantic.icon.size.feature}
+                    strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
                   />
                 )}
               </View>
@@ -3692,15 +3692,15 @@ function CompactConversationPicker({
       </View>
       <View style={styles.compactDirectorySearch}>
         <Search
-          color={raftTheme.semantic.color.iconMuted}
-          size={raftTheme.semantic.icon.size.small}
-          strokeWidth={raftTheme.semantic.icon.stroke.regular}
+          color={velaTheme.semantic.color.iconMuted}
+          size={velaTheme.semantic.icon.size.small}
+          strokeWidth={velaTheme.semantic.icon.stroke.regular}
         />
         <TextInput
           accessibilityLabel="搜索频道、私信与成员"
           onChangeText={setFilter}
           placeholder="搜索频道、私信与成员"
-          placeholderTextColor={raftTheme.semantic.color.fieldPlaceholder}
+          placeholderTextColor={velaTheme.semantic.color.fieldPlaceholder}
           style={styles.compactDirectorySearchInput}
           value={filter}
         />
@@ -3708,14 +3708,14 @@ function CompactConversationPicker({
           <Pressable
             accessibilityLabel="清除会话搜索"
             accessibilityRole="button"
-            hitSlop={raftTheme.semantic.interaction.hitTargetInset}
+            hitSlop={velaTheme.semantic.interaction.hitTargetInset}
             onPress={() => setFilter("")}
             style={styles.compactDirectorySearchClear}
           >
             <X
-              color={raftTheme.semantic.color.iconMuted}
-              size={raftTheme.semantic.icon.size.small}
-              strokeWidth={raftTheme.semantic.icon.stroke.regular}
+              color={velaTheme.semantic.color.iconMuted}
+              size={velaTheme.semantic.icon.size.small}
+              strokeWidth={velaTheme.semantic.icon.stroke.regular}
             />
           </Pressable>
         ) : null}
@@ -3742,9 +3742,9 @@ function CompactConversationPicker({
             <View style={styles.compactActionContent}>
               <View testID="compact-channel-create-icon">
                 <Plus
-                  color={raftTheme.semantic.color.iconAccent}
-                  size={raftTheme.semantic.icon.size.small}
-                  strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+                  color={velaTheme.semantic.color.iconAccent}
+                  size={velaTheme.semantic.icon.size.small}
+                  strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
                 />
               </View>
               <Text style={styles.channelManagementButtonText}>新建</Text>
@@ -3759,9 +3759,9 @@ function CompactConversationPicker({
             >
               <View style={styles.compactActionContent}>
                 <Pencil
-                  color={raftTheme.semantic.color.iconSecondary}
-                  size={raftTheme.semantic.icon.size.small}
-                  strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+                  color={velaTheme.semantic.color.iconSecondary}
+                  size={velaTheme.semantic.icon.size.small}
+                  strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
                 />
                 <Text style={styles.channelManagementButtonText}>编辑</Text>
               </View>
@@ -3776,9 +3776,9 @@ function CompactConversationPicker({
             >
               <View style={styles.compactActionContent}>
                 <UsersRound
-                  color={raftTheme.semantic.color.iconSecondary}
-                  size={raftTheme.semantic.icon.size.small}
-                  strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+                  color={velaTheme.semantic.color.iconSecondary}
+                  size={velaTheme.semantic.icon.size.small}
+                  strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
                 />
                 <Text style={styles.channelManagementButtonText}>成员</Text>
               </View>
@@ -3811,9 +3811,9 @@ function CompactConversationPicker({
                 >
                   <View style={styles.compactChannelIdentity}>
                     <Hash
-                      color={raftTheme.semantic.color.iconMuted}
-                      size={raftTheme.semantic.icon.size.small}
-                      strokeWidth={raftTheme.semantic.icon.stroke.regular}
+                      color={velaTheme.semantic.color.iconMuted}
+                      size={velaTheme.semantic.icon.size.small}
+                      strokeWidth={velaTheme.semantic.icon.stroke.regular}
                     />
                     <View style={styles.channelButtonCopy}>
                       <View style={styles.channelNameRow}>
@@ -3854,9 +3854,9 @@ function CompactConversationPicker({
                   ) : (
                     <View testID={`compact-channel-chevron-${channel.name}`}>
                       <ChevronRight
-                        color={raftTheme.semantic.color.iconMuted}
-                        size={raftTheme.semantic.icon.size.medium}
-                        strokeWidth={raftTheme.semantic.icon.stroke.regular}
+                        color={velaTheme.semantic.color.iconMuted}
+                        size={velaTheme.semantic.icon.size.medium}
+                        strokeWidth={velaTheme.semantic.icon.stroke.regular}
                       />
                     </View>
                   )}
@@ -3886,9 +3886,9 @@ function CompactConversationPicker({
         >
           <View style={styles.compactActionContent}>
             <Plus
-              color={raftTheme.semantic.color.iconAccent}
-              size={raftTheme.semantic.icon.size.small}
-              strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+              color={velaTheme.semantic.color.iconAccent}
+              size={velaTheme.semantic.icon.size.small}
+              strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
             />
             <Text style={styles.channelManagementButtonText}>新建私信</Text>
           </View>
@@ -3955,9 +3955,9 @@ function CompactConversationPicker({
                     </Text>
                   ) : (
                     <ChevronRight
-                      color={raftTheme.semantic.color.iconMuted}
-                      size={raftTheme.semantic.icon.size.medium}
-                      strokeWidth={raftTheme.semantic.icon.stroke.regular}
+                      color={velaTheme.semantic.color.iconMuted}
+                      size={velaTheme.semantic.icon.size.medium}
+                      strokeWidth={velaTheme.semantic.icon.stroke.regular}
                     />
                   )}
                 </Pressable>
@@ -3995,9 +3995,9 @@ function CompactConversationPicker({
         >
           <View style={styles.compactActionContent}>
             <LogOut
-              color={raftTheme.semantic.color.iconMuted}
-              size={raftTheme.semantic.icon.size.small}
-              strokeWidth={raftTheme.semantic.icon.stroke.regular}
+              color={velaTheme.semantic.color.iconMuted}
+              size={velaTheme.semantic.icon.size.small}
+              strokeWidth={velaTheme.semantic.icon.stroke.regular}
             />
             <Text style={styles.channelManagementButtonText}>退出当前账号</Text>
           </View>
@@ -4047,9 +4047,9 @@ function DirectConversationPicker({
           style={styles.searchClose}
         >
           <X
-            color={raftTheme.semantic.color.iconSecondary}
-            size={raftTheme.semantic.icon.size.medium}
-            strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+            color={velaTheme.semantic.color.iconSecondary}
+            size={velaTheme.semantic.icon.size.medium}
+            strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
           />
         </Pressable>
       </View>
@@ -4099,9 +4099,9 @@ function DirectPickerSearchEmptyState() {
     <View style={styles.directPickerSearchEmpty}>
       <View style={styles.directPickerEmptyIcon}>
         <Search
-          color={raftTheme.semantic.color.iconAccent}
-          size={raftTheme.semantic.icon.size.large}
-          strokeWidth={raftTheme.semantic.icon.stroke.regular}
+          color={velaTheme.semantic.color.iconAccent}
+          size={velaTheme.semantic.icon.size.large}
+          strokeWidth={velaTheme.semantic.icon.stroke.regular}
         />
       </View>
       <Text style={styles.directPickerEmptyTitle}>没有找到匹配的私信对象</Text>
@@ -4121,9 +4121,9 @@ function DirectPickerEmptyState({
     <View style={styles.directPickerEmpty}>
       <View style={styles.directPickerEmptyIcon}>
         <UsersRound
-          color={raftTheme.semantic.color.iconAccent}
-          size={raftTheme.semantic.icon.size.large}
-          strokeWidth={raftTheme.semantic.icon.stroke.regular}
+          color={velaTheme.semantic.color.iconAccent}
+          size={velaTheme.semantic.icon.size.large}
+          strokeWidth={velaTheme.semantic.icon.stroke.regular}
         />
       </View>
       <Text style={styles.directPickerEmptyTitle}>暂无新的私信对象</Text>
@@ -4138,9 +4138,9 @@ function DirectPickerEmptyState({
       >
         <Text style={styles.directPickerEmptyActionText}>查看成员</Text>
         <ArrowRight
-          color={raftTheme.semantic.color.iconInverse}
-          size={raftTheme.semantic.icon.size.small}
-          strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+          color={velaTheme.semantic.color.iconInverse}
+          size={velaTheme.semantic.icon.size.small}
+          strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
         />
       </Pressable>
     </View>
@@ -4199,19 +4199,19 @@ function MobileBottomNavigation({
               >
                 {item.id === "chat" && navigationOpen ? (
                   <ArrowLeft
-                    color={raftTheme.semantic.color.iconAccent}
-                    size={raftTheme.semantic.icon.size.large}
-                    strokeWidth={raftTheme.semantic.icon.stroke.emphasis}
+                    color={velaTheme.semantic.color.iconAccent}
+                    size={velaTheme.semantic.icon.size.large}
+                    strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
                   />
                 ) : (
                   <NavigationIcon
                     color={
                       selected
-                        ? raftTheme.semantic.color.iconAccent
-                        : raftTheme.semantic.color.iconMuted
+                        ? velaTheme.semantic.color.iconAccent
+                        : velaTheme.semantic.color.iconMuted
                     }
-                    size={raftTheme.semantic.icon.size.large}
-                    strokeWidth={selected ? raftTheme.semantic.icon.stroke.emphasis : raftTheme.semantic.icon.stroke.regular}
+                    size={velaTheme.semantic.icon.size.large}
+                    strokeWidth={selected ? velaTheme.semantic.icon.stroke.emphasis : velaTheme.semantic.icon.stroke.regular}
                   />
                 )}
                 <Text numberOfLines={1} style={styles.mobileNavigationLabel}>
@@ -4355,19 +4355,19 @@ const styles = StyleSheet.create((theme) => ({
   },
   accountRailButtonActive: {
     backgroundColor: theme.semantic.color.selectionSurface,
-    borderColor: raftTheme.semantic.color.borderInteractive,
+    borderColor: velaTheme.semantic.color.borderInteractive,
   },
   accountStatusDot: {
-    backgroundColor: raftTheme.semantic.color.statusWarning,
+    backgroundColor: velaTheme.semantic.color.statusWarning,
     borderRadius: theme.semantic.radius.circle,
     height: theme.recipes.identity.statusDotSize,
     width: theme.recipes.identity.statusDotSize,
   },
   accountStatusDotError: {
-    backgroundColor: raftTheme.semantic.color.statusDanger,
+    backgroundColor: velaTheme.semantic.color.statusDanger,
   },
   accountStatusDotReady: {
-    backgroundColor: raftTheme.semantic.color.statusPositive,
+    backgroundColor: velaTheme.semantic.color.statusPositive,
   },
   accountStatusRow: {
     alignItems: "center",
@@ -4524,7 +4524,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing.lg,
   },
   directPickerEmptyActionText: {
-    color: raftTheme.semantic.color.actionPrimaryText,
+    color: velaTheme.semantic.color.actionPrimaryText,
     ...theme.semantic.typography.bodyCompactEmphasis,
   },
   directPickerEmptyDescription: {
@@ -4651,7 +4651,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   channelMemberConfirmBackdrop: {
     alignItems: "center",
-    backgroundColor: raftTheme.semantic.color.modalBackdrop,
+    backgroundColor: velaTheme.semantic.color.modalBackdrop,
     flex: 1,
     justifyContent: "center",
     padding: theme.spacing.lg,
@@ -4731,7 +4731,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   channelMembershipContext: {
     backgroundColor: theme.semantic.color.statusInfoSurface,
-    borderColor: raftTheme.semantic.color.statusInfoDivider,
+    borderColor: velaTheme.semantic.color.statusInfoDivider,
     borderRadius: theme.semantic.radius.control,
     borderWidth: theme.semantic.stroke.hairline,
     paddingHorizontal: theme.spacing.md,
@@ -4859,7 +4859,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   channelIcon: {
     alignItems: "center",
-    backgroundColor: raftTheme.semantic.color.surfaceSubtle,
+    backgroundColor: velaTheme.semantic.color.surfaceSubtle,
     borderRadius: theme.semantic.radius.compactControl,
     height: theme.recipes.iconControl.denseSize,
     justifyContent: "center",
@@ -4886,7 +4886,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.semantic.color.surfaceMuted,
   },
   channelKindBadgeSystem: {
-    backgroundColor: raftTheme.semantic.color.statusInfoSurface,
+    backgroundColor: velaTheme.semantic.color.statusInfoSurface,
   },
   channelKindBadgeText: {
     color: theme.semantic.color.textMuted,
@@ -4952,7 +4952,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   compactChannelButtonSelected: {
     backgroundColor: theme.semantic.color.selectionSurface,
-    borderColor: raftTheme.semantic.color.borderSelected,
+    borderColor: velaTheme.semantic.color.borderSelected,
   },
   compactChannelActions: {
     flexDirection: "row",
@@ -5091,7 +5091,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   compactServerButtonSelected: {
     backgroundColor: theme.semantic.color.selectionSurface,
-    borderColor: raftTheme.semantic.color.borderSelected,
+    borderColor: velaTheme.semantic.color.borderSelected,
   },
   compactServerInitial: {
     backgroundColor: theme.semantic.color.avatarServerSurface,
@@ -5157,7 +5157,7 @@ const styles = StyleSheet.create((theme) => ({
   chatErrorToast: {
     alignItems: "center",
     backgroundColor: theme.semantic.color.overlaySurface,
-    borderColor: raftTheme.semantic.color.borderDanger,
+    borderColor: velaTheme.semantic.color.borderDanger,
     borderRadius: theme.semantic.radius.control,
     borderWidth: theme.semantic.stroke.hairline,
     flexDirection: "row",
@@ -5177,7 +5177,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   chatErrorToastIcon: {
     alignItems: "center",
-    backgroundColor: raftTheme.semantic.color.statusDangerSurface,
+    backgroundColor: velaTheme.semantic.color.statusDangerSurface,
     borderRadius: theme.semantic.radius.circle,
     height: theme.recipes.iconControl.compactSize,
     justifyContent: "center",
@@ -5302,7 +5302,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.semantic.color.statusNeutral,
   },
   onlineAgentsText: {
-    color: raftTheme.semantic.color.statusPositiveText,
+    color: velaTheme.semantic.color.statusPositiveText,
     ...theme.semantic.typography.navigationLabel,
   },
   onlineAgentsTextEmpty: {
@@ -5435,11 +5435,11 @@ const styles = StyleSheet.create((theme) => ({
     left: theme.recipes.overlay.railTooltipLeftInset,
     paddingHorizontal: theme.spacing.md,
     position: "absolute",
-    shadowColor: raftTheme.shadows.overlay.color,
+    shadowColor: velaTheme.shadows.overlay.color,
     elevation: theme.semantic.elevation.overlay,
-    shadowOffset: { height: raftTheme.shadows.overlay.offsetY, width: 0 },
-    shadowOpacity: raftTheme.shadows.overlay.opacity,
-    shadowRadius: raftTheme.shadows.overlay.radius,
+    shadowOffset: { height: velaTheme.shadows.overlay.offsetY, width: 0 },
+    shadowOpacity: velaTheme.shadows.overlay.opacity,
+    shadowRadius: velaTheme.shadows.overlay.radius,
     top: theme.recipes.overlay.railTooltipTopInset,
     zIndex: theme.semantic.layer.tooltip,
   },
@@ -5458,7 +5458,7 @@ const styles = StyleSheet.create((theme) => ({
     width: theme.recipes.identity.avatarProminentSize,
   },
   humanAvatarStatus: {
-    backgroundColor: raftTheme.semantic.color.statusWarning,
+    backgroundColor: velaTheme.semantic.color.statusWarning,
     borderColor: theme.semantic.color.paneSurface,
     borderRadius: theme.semantic.radius.circle,
     borderWidth: theme.semantic.stroke.statusRing,
@@ -5469,10 +5469,10 @@ const styles = StyleSheet.create((theme) => ({
     width: theme.recipes.identity.presenceDotSize,
   },
   humanAvatarStatusError: {
-    backgroundColor: raftTheme.semantic.color.statusDanger,
+    backgroundColor: velaTheme.semantic.color.statusDanger,
   },
   humanAvatarStatusReady: {
-    backgroundColor: raftTheme.semantic.color.statusPositive,
+    backgroundColor: velaTheme.semantic.color.statusPositive,
   },
   humanAvatarText: {
     color: theme.semantic.color.textInverse,
@@ -5544,7 +5544,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   searchPanelError: {
     backgroundColor: theme.semantic.color.statusDangerSurface,
-    borderColor: raftTheme.semantic.color.borderDanger,
+    borderColor: velaTheme.semantic.color.borderDanger,
     borderRadius: theme.semantic.radius.control,
     borderWidth: theme.semantic.stroke.hairline,
     gap: theme.spacing.xs,
@@ -5624,8 +5624,8 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: 0,
   },
   searchLocateError: {
-    backgroundColor: raftTheme.semantic.color.statusWarningSurface,
-    borderColor: raftTheme.semantic.color.statusWarningDivider,
+    backgroundColor: velaTheme.semantic.color.statusWarningSurface,
+    borderColor: velaTheme.semantic.color.statusWarningDivider,
     borderRadius: theme.semantic.radius.control,
     borderWidth: theme.semantic.stroke.hairline,
     gap: theme.spacing.xxs,
@@ -5669,7 +5669,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   serverMarkSelected: {
     backgroundColor: theme.semantic.color.avatarServerSurface,
-    borderColor: raftTheme.semantic.color.borderSelected,
+    borderColor: velaTheme.semantic.color.borderSelected,
   },
   serverMarkText: {
     ...theme.semantic.typography.messageBody,

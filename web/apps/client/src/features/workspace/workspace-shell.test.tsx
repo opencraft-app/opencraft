@@ -9,7 +9,7 @@ import type {
   MessageThread,
   Operation,
   Server,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import {act, fireEvent, render, within} from "@testing-library/react-native";
 import { cloneElement, type ReactElement } from "react";
 import {Text} from "react-native";
@@ -623,7 +623,7 @@ describe("WorkspaceShell", () => {
     expect(countLegacyPointerEvents(screen.toJSON())).toBe(0);
   });
 
-  it("renders the Raft Server, Channel and Message hierarchy on wide screens", async () => {
+  it("renders the Vela Server, Channel and Message hierarchy on wide screens", async () => {
     const screen = await render(
       <WorkspaceShell
         agents={[agent]}
@@ -2211,7 +2211,7 @@ describe("WorkspaceShell", () => {
     expect(screen.getByTestId("compact-header-menu-icon")).toBeVisible();
   });
 
-  it("renders a Raft right-side Thread panel and keeps it independently closable", async () => {
+  it("renders a Vela right-side Thread panel and keeps it independently closable", async () => {
     const onCloseThread = jest.fn();
     const onRetryThreadReplyIndex = jest.fn();
     const onSendThreadReply = jest.fn();

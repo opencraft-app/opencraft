@@ -92,7 +92,7 @@ func (service *ArtifactService) Resolve(
 
 func validArtifactFile(file string) bool {
 	switch strings.TrimSpace(file) {
-	case "manifest.json", "manifest.sig", "install.sh", "raft-computer-go":
+	case "manifest.json", "manifest.sig", "install.sh", "vela-computer":
 		return true
 	default:
 		return false

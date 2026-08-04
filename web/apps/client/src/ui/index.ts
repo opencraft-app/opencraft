@@ -122,7 +122,7 @@ export {
   type MembersScreenProps,
 } from "./screens/members-screen";
 export {StyleLabScreen} from "./screens/style-lab-screen";
-export { raftFontAssets, useRaftFonts } from "./font-assets";
+export { velaFontAssets, useVelaFonts } from "./font-assets";
 export { useAppActive } from "./use-app-active";
 export { AuthScreen } from "./screens/auth-screen";
 export {

@@ -13,9 +13,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"velachat/agent/internal/common"
 )
 
 var (
@@ -104,7 +104,7 @@ func NewRoot(config RootConfig) (*cobra.Command, error) {
 		return nil, ErrInvalidConfig
 	}
 	root := &cobra.Command{
-		Use:           "raft-computer-go",
+		Use:           "vela-computer",
 		Short:         "Vela Computer 单机运行宿主",
 		Long:          "Vela Computer 通过腾讯 TAT 接收机器控制，并通过腾讯云 IM 承载 Agent 实时聊天。",
 		SilenceUsage:  true,
@@ -355,14 +355,14 @@ func newVersionCommand(version string) *cobra.Command {
 			if !asJSON {
 				_, err := fmt.Fprintf(
 					command.OutOrStdout(),
-					"raft-computer-go vela %s\n",
+					"vela-computer vela %s\n",
 					version,
 				)
 				return err
 			}
 			encoded, err := common.Marshal(versionReport{
 				Mode:    "vela",
-				Name:    "raft-computer-go",
+				Name:    "vela-computer",
 				Version: version,
 			})
 			if err != nil {
@@ -453,12 +453,12 @@ func validateTUIPlatformURL(
 		if strings.EqualFold(host, "localhost") ||
 			(address != nil && address.IsLoopback()) {
 			return fmt.Errorf(
-				"%w：本地 HTTP 默认禁用；开发环境请设置 RAFT_COMPUTER_GO_ALLOW_INSECURE_LOOPBACK=1",
+				"%w：本地 HTTP 默认禁用；开发环境请设置 VELA_ALLOW_INSECURE_LOOPBACK=1",
 				ErrInvalidArguments,
 			)
 		}
 		return fmt.Errorf(
-			"%w：远程 HTTP 默认禁用；开发环境请设置 RAFT_COMPUTER_GO_ALLOW_INSECURE_HTTP=1",
+			"%w：远程 HTTP 默认禁用；开发环境请设置 VELA_ALLOW_INSECURE_HTTP=1",
 			ErrInvalidArguments,
 		)
 	}

@@ -13,15 +13,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/agentapi"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/state"
+	"velachat/agent/internal/agentapi"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/state"
 )
 
 const (
 	maxMessageDrainRounds = 50
 
-	nonMemberMentionGuidance = "[Raft notice: You were notified as a non-member, " +
+	nonMemberMentionGuidance = "[Vela notice: You were notified as a non-member, " +
 		"so you cannot reply in that channel. If no reply is needed, no action is " +
 		"required. Otherwise, DM the person who mentioned you or join the channel " +
 		"to participate.]"
@@ -163,7 +163,7 @@ func (a *App) runMessageCheck(ctx context.Context, args []string) int {
 	output := formatMessages(messages)
 	switch {
 	case hasMore:
-		output += "\nMore messages are pending. Run `raft message check` again.\n"
+		output += "\nMore messages are pending. Run `vela message check` again.\n"
 	case drainComplete:
 		output += "\nNo more new messages.\n"
 	default:
@@ -325,7 +325,7 @@ func formatAttachmentSuffix(attachments []agentAttachment) string {
 		))
 	}
 	return fmt.Sprintf(
-		" [%d attachment%s: %s — use raft attachment view to download]",
+		" [%d attachment%s: %s — use vela attachment view to download]",
 		len(attachments),
 		pluralSuffix(len(attachments)),
 		strings.Join(items, ", "),
@@ -477,7 +477,7 @@ func recordConsumedSequences(messages []agentMessage) {
 }
 
 func recordConsumedSequenceUpdates(updates map[string]float64) {
-	agentID := strings.TrimSpace(os.Getenv("SLOCK_AGENT_ID"))
+	agentID := strings.TrimSpace(os.Getenv("VELA_AGENT_ID"))
 	store, relativePath, ok := consumedSequenceStore(agentID)
 	if !ok {
 		return
@@ -509,7 +509,7 @@ func consumedSequenceStore(agentID string) (*state.Store, string, bool) {
 		agentID == ".." {
 		return nil, "", false
 	}
-	root := strings.TrimSpace(os.Getenv("SLOCK_CLI_CONSUMED_SEQ_STATE_DIR"))
+	root := strings.TrimSpace(os.Getenv("VELA_CLI_CONSUMED_SEQ_STATE_DIR"))
 	if root == "" {
 		home, err := os.UserHomeDir()
 		if err != nil || !filepath.IsAbs(home) {
@@ -520,11 +520,11 @@ func consumedSequenceStore(agentID string) (*state.Store, string, bool) {
 			"agents",
 			agentID,
 			"runtime",
-			"slock-cli-consumed-seq.json",
+			"vela-cli-consumed-seq.json",
 		), true
 	}
 	return state.New(root), filepath.Join(
-		"slock-cli-consumed-seq",
+		"vela-cli-consumed-seq",
 		agentID,
 		"consumed-seqs.json",
 	), true

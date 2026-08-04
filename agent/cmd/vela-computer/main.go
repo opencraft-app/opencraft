@@ -11,10 +11,10 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/agentcli"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/state"
-	velaapp "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/app"
-	velacli "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/cli"
+	"velachat/agent/internal/agentcli"
+	"velachat/agent/internal/state"
+	velaapp "velachat/agent/internal/vela/app"
+	velacli "velachat/agent/internal/vela/cli"
 )
 
 var version = "0.1.0-dev"
@@ -33,10 +33,10 @@ func main() {
 
 func runVela(ctx context.Context, args []string) int {
 	allowInsecureLoopback := os.Getenv(
-		"RAFT_COMPUTER_GO_ALLOW_INSECURE_LOOPBACK",
+		"VELA_ALLOW_INSECURE_LOOPBACK",
 	) == "1"
 	allowInsecureHTTP := os.Getenv(
-		"RAFT_COMPUTER_GO_ALLOW_INSECURE_HTTP",
+		"VELA_ALLOW_INSECURE_HTTP",
 	) == "1"
 	root, err := stateRoot()
 	if err != nil {
@@ -95,7 +95,7 @@ func runAgentCLI(ctx context.Context, args []string) int {
 }
 
 func stateRoot() (string, error) {
-	if configured := strings.TrimSpace(os.Getenv("RAFT_COMPUTER_GO_HOME")); configured != "" {
+	if configured := strings.TrimSpace(os.Getenv("VELA_HOME")); configured != "" {
 		absolute, err := filepath.Abs(configured)
 		if err != nil {
 			return "", err

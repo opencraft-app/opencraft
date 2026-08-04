@@ -13,7 +13,7 @@ import type {
   MessageThreadLink,
   TaskMessageContent,
   VideoMessageContent,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 
 export interface SdkMessage {
   ID: string;
@@ -222,8 +222,8 @@ function customContent(
   const extension = stringValue(payload.extension);
   const data = stringValue(payload.data);
   const taskData =
-    metadata.schema === "raft.task-message/v1" ||
-    extension === "raft.task-message/v1"
+    metadata.schema === "vela.task-message/v1" ||
+    extension === "vela.task-message/v1"
       ? metadata.task ?? parseRecord(data)
       : undefined;
   const task = taskData ? taskContent(taskData) : undefined;

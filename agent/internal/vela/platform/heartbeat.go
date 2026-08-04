@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
+	"velachat/agent/internal/common"
 )
 
 var ErrInvalidComputerHeartbeat = errors.New("Computer heartbeat 无效")

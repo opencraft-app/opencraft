@@ -4,7 +4,7 @@ import type {
   CreateComputerInput,
   RegistrationScript,
   Server,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import { useMemo, useState } from "react";
 import {
   ScrollView,

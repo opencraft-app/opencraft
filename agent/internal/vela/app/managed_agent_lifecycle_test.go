@@ -15,14 +15,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeactor"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimecatalog"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/agentgateway"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/daemon"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/platform"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/runtimeactor"
+	"velachat/agent/internal/runtimeapi"
+	"velachat/agent/internal/runtimecatalog"
+	"velachat/agent/internal/vela/agentgateway"
+	"velachat/agent/internal/vela/daemon"
+	"velachat/agent/internal/vela/im"
+	"velachat/agent/internal/vela/platform"
 )
 
 const managedLifecycleAgentID = "018f0c9e-7b14-7abc-8def-0123456789ab"

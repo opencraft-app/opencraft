@@ -31,7 +31,7 @@ var credentialPatterns = []struct {
 		pattern: regexp.MustCompile(`\bgh[opusr]_[A-Za-z0-9]{30,}\b`),
 	},
 	{
-		name:    "Raft credential",
+		name:    "Vela credential",
 		pattern: regexp.MustCompile(`\b(?:sk|sap)_[A-Za-z0-9_-]{24,}\b`),
 	},
 }
@@ -87,7 +87,7 @@ func TestCanonicalTreeContainsNoObsoleteNodeBridgeArtifacts(t *testing.T) {
 		"sea-config.generated.json",
 		"manifest.json",
 		"NODE-LICENSE",
-		"raft-computer-im-bridge",
+		"vela-computer-im-bridge",
 	} {
 		path := filepath.Join(legacyRelease, name)
 		if _, err := os.Lstat(path); err == nil {

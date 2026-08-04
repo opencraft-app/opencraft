@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/agentapi"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/platform"
+	"velachat/agent/internal/agentapi"
+	"velachat/agent/internal/vela/platform"
 )
 
 func TestHubSharesListenerAndIsolatesLaunchRegistrations(t *testing.T) {
@@ -91,12 +91,12 @@ func TestHubSharesListenerAndIsolatesLaunchRegistrations(t *testing.T) {
 			"proxy.token",
 		)
 		if !strings.HasSuffix(
-			filepath.Clean(item.environment["SLOCK_AGENT_PROXY_TOKEN_FILE"]),
+			filepath.Clean(item.environment["VELA_AGENT_PROXY_TOKEN_FILE"]),
 			string(os.PathSeparator)+wantSuffix,
 		) {
 			t.Fatalf(
 				"launch token path = %q, want suffix %q",
-				item.environment["SLOCK_AGENT_PROXY_TOKEN_FILE"],
+				item.environment["VELA_AGENT_PROXY_TOKEN_FILE"],
 				wantSuffix,
 			)
 		}
@@ -104,41 +104,32 @@ func TestHubSharesListenerAndIsolatesLaunchRegistrations(t *testing.T) {
 			item.environment["PATH"],
 			string(os.PathListSeparator),
 		)[0]
-		raftWrapper, readErr := os.ReadFile(
-			filepath.Join(wrapperDirectory, "raft"),
+		velaWrapper, readErr := os.ReadFile(
+			filepath.Join(wrapperDirectory, "vela"),
 		)
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
-		slockWrapper, readErr := os.ReadFile(
-			filepath.Join(wrapperDirectory, "slock"),
-		)
-		if readErr != nil {
-			t.Fatal(readErr)
-		}
-		if string(raftWrapper) != string(slockWrapper) {
-			t.Fatal("raft and slock wrappers differ")
-		}
-		if strings.Contains(string(raftWrapper), "RAFT_AGENT_CLI_PROFILE") {
-			t.Fatalf("wrapper 仍包含已删除的 CLI profile：%q", raftWrapper)
+		if strings.Contains(string(velaWrapper), "VELA_AGENT_CLI_PROFILE") {
+			t.Fatalf("wrapper 仍包含已删除的 CLI profile：%q", velaWrapper)
 		}
 	}
-	if environmentA["SLOCK_AGENT_PROXY_URL"] !=
-		environmentB["SLOCK_AGENT_PROXY_URL"] {
+	if environmentA["VELA_AGENT_PROXY_URL"] !=
+		environmentB["VELA_AGENT_PROXY_URL"] {
 		t.Fatalf(
 			"Gateway URL A=%q B=%q",
-			environmentA["SLOCK_AGENT_PROXY_URL"],
-			environmentB["SLOCK_AGENT_PROXY_URL"],
+			environmentA["VELA_AGENT_PROXY_URL"],
+			environmentB["VELA_AGENT_PROXY_URL"],
 		)
 	}
 	tokenA, err := os.ReadFile(
-		environmentA["SLOCK_AGENT_PROXY_TOKEN_FILE"],
+		environmentA["VELA_AGENT_PROXY_TOKEN_FILE"],
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tokenB, err := os.ReadFile(
-		environmentB["SLOCK_AGENT_PROXY_TOKEN_FILE"],
+		environmentB["VELA_AGENT_PROXY_TOKEN_FILE"],
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -226,7 +217,7 @@ func TestHubRevokesOnlyTheClosedLaunchToken(t *testing.T) {
 	environmentA := agentA.RuntimeEnvironment()
 	environmentB := agentB.RuntimeEnvironment()
 	tokenA, err := os.ReadFile(
-		environmentA["SLOCK_AGENT_PROXY_TOKEN_FILE"],
+		environmentA["VELA_AGENT_PROXY_TOKEN_FILE"],
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -235,14 +226,14 @@ func TestHubRevokesOnlyTheClosedLaunchToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Dir(
-		environmentA["SLOCK_AGENT_PROXY_TOKEN_FILE"],
+		environmentA["VELA_AGENT_PROXY_TOKEN_FILE"],
 	)); !os.IsNotExist(err) {
 		t.Fatalf("closed launch directory remains: %v", err)
 	}
 
 	request, err := http.NewRequest(
 		http.MethodGet,
-		environmentA["SLOCK_AGENT_PROXY_URL"]+
+		environmentA["VELA_AGENT_PROXY_URL"]+
 			agentapi.BasePath+"/inbox",
 		nil,
 	)
@@ -324,14 +315,14 @@ func TestHubRequiresBearerAuthorizationScheme(t *testing.T) {
 	defer gateway.Close(context.Background())
 	environment := gateway.RuntimeEnvironment()
 	token, err := os.ReadFile(
-		environment["SLOCK_AGENT_PROXY_TOKEN_FILE"],
+		environment["VELA_AGENT_PROXY_TOKEN_FILE"],
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request, err := http.NewRequest(
 		http.MethodGet,
-		environment["SLOCK_AGENT_PROXY_URL"]+
+		environment["VELA_AGENT_PROXY_URL"]+
 			agentapi.BasePath+"/inbox",
 		nil,
 	)
@@ -355,8 +346,8 @@ func newGatewayTestClient(
 ) *agentapi.Client {
 	t.Helper()
 	client, err := agentapi.New(agentapi.ClientOptions{
-		BaseURL:   environment["SLOCK_AGENT_PROXY_URL"],
-		TokenFile: environment["SLOCK_AGENT_PROXY_TOKEN_FILE"],
+		BaseURL:   environment["VELA_AGENT_PROXY_URL"],
+		TokenFile: environment["VELA_AGENT_PROXY_TOKEN_FILE"],
 	})
 	if err != nil {
 		t.Fatal(err)

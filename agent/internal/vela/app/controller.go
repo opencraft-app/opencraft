@@ -12,16 +12,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/filelock"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimecatalog"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimes"
-	rootstate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/state"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/agentgateway"
-	velacli "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/cli"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/daemon"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/platform"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/tat"
 	"github.com/google/uuid"
+	"velachat/agent/internal/filelock"
+	"velachat/agent/internal/runtimecatalog"
+	"velachat/agent/internal/runtimes"
+	rootstate "velachat/agent/internal/state"
+	"velachat/agent/internal/vela/agentgateway"
+	velacli "velachat/agent/internal/vela/cli"
+	"velachat/agent/internal/vela/daemon"
+	"velachat/agent/internal/vela/platform"
+	"velachat/agent/internal/vela/tat"
 )
 
 var (

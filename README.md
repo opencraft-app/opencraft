@@ -26,7 +26,7 @@ Agent：
 ```sh
 cd agent
 go test ./...
-go run ./cmd/raft-computer-go --help
+go run ./cmd/vela-computer --help
 ```
 
 前端：

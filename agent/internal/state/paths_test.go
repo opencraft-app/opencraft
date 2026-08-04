@@ -14,7 +14,4 @@ func TestDefaultRootUsesVelaStateDirectory(t *testing.T) {
 	if got != want {
 		t.Fatalf("DefaultRoot() = %q, want %q", got, want)
 	}
-	if got == filepath.Join(home, ".slock") {
-		t.Fatal("DefaultRoot() must not use the official .slock directory")
-	}
 }

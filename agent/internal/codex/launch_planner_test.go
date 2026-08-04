@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/runtimeapi"
 )
 
 func TestLaunchPlannerPreservesCodexStartAndResumePrompts(t *testing.T) {
@@ -93,10 +93,10 @@ func TestLaunchPlannerCombinesDurableWakeAndBufferedPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "[Slock inbox notice:\n" +
+	want := "[Vela inbox notice:\n" +
 		"Inbox update: 2 unread messages total; 1 changed target\n" +
 		"#general  pending: 2 messages · first msg=message-0001 · latest sender @bob · latest msg=message-0002\n" +
-		"read: `raft message read --target \"#general\" --around \"message-0002\"`\n" +
+		"read: `vela message read --target \"#general\" --around \"message-0002\"`\n" +
 		"]"
 	if plan.Prompt != want {
 		t.Fatalf("Prompt = %q, want %q", plan.Prompt, want)

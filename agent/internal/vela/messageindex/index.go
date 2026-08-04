@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	rootstate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/state"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
+	rootstate "velachat/agent/internal/state"
+	"velachat/agent/internal/vela/im"
 )
 
 const indexRelativePath = "im/message-refs-v1.json"
@@ -193,7 +193,7 @@ func validTarget(value string) bool {
 	if value[0] == '#' || value[0] == '@' {
 		return true
 	}
-	// Legacy targets are accepted only so existing Raft-mode state remains
+	// Legacy targets are accepted only so existing Vela-mode state remains
 	// readable. A directory-backed Vela Gateway never issues these aliases.
 	return strings.HasPrefix(value, "c2c:") ||
 		strings.HasPrefix(value, "group:") ||

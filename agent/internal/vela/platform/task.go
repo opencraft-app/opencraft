@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
+	"velachat/agent/internal/common"
 )
 
 const maxRuntimeTaskResponseBytes = 2 << 20

@@ -1,11 +1,11 @@
 # Managed Hermes ACP Runtime
 
-`hermes-acp` runs one Hermes ACP subprocess for one active Raft Agent launch.
-It is a managed Computer Runtime, not the external Raft CLI wake bridge.
+`hermes-acp` runs one Hermes ACP subprocess for one active Vela Agent launch.
+It is a managed Computer Runtime, not the external Vela CLI wake bridge.
 
 ## Platform configuration
 
-The internal Driver identity is `hermes-acp`. The current hosted Raft baseline
+The internal Driver identity is `hermes-acp`. The current hosted Vela baseline
 does not expose arbitrary Runtime IDs in its Agent creator, so this build uses
 the otherwise unused `opencode` wire slot for compatibility. The Web UI will
 temporarily label the Runtime as OpenCode even though the Computer starts
@@ -34,10 +34,10 @@ the Hermes Profile; the cloud configuration does not select it:
 }
 ```
 
-Each Raft Agent gets one native Hermes named Profile:
+Each Vela Agent gets one native Hermes named Profile:
 
 ```text
-~/.hermes/profiles/raft-<first-32-hex-of-sha256-agent-id>
+~/.hermes/profiles/vela-<first-32-hex-of-sha256-agent-id>
 ```
 
 On first start the Driver runs the selected Hermes executable with
@@ -103,8 +103,8 @@ ACP session history emitted while `session/load` is running is suppressed so
 old assistant text is not reported as a new cloud reply.
 
 Every launch inherits the same Computer capability environment as Codex,
-including the generated `raft`/`slock` wrapper and loopback gateway. Inherited
-`RAFT_PROFILE` and `SLOCK_PROFILE` are removed before Hermes starts so an
+including the generated `vela`/`Vela` wrapper and loopback gateway. Inherited
+`VELA_PROFILE` and `VELA_PROFILE` are removed before Hermes starts so an
 external wake-bridge login cannot override launch-scoped Computer identity.
 
 ## Permission policy
@@ -142,10 +142,10 @@ denied capability.
   are terminal transport failures. Known late response IDs are ignored after
   fencing.
 - ACP stderr is discarded by default. Setting
-  `RAFT_COMPUTER_GO_TRACE_HERMES_ACP=1` retains only a bounded, redacted
+  `VELA_TRACE_HERMES_ACP=1` retains only a bounded, redacted
   diagnostic tail for unexpected process failures; credentials and tokens are
   removed before an error reaches logs or activity.
-- `RAFT_PROFILE` remains reserved for the separate Raft CLI wake bridge and is
+- `VELA_PROFILE` remains reserved for the separate Vela CLI wake bridge and is
   intentionally unrelated to the managed Hermes Profile.
 - Local mock-ACP tests cover initialization, profile selection, permissions,
   two concurrent Agent Profiles/workspaces, permissions, event normalization,

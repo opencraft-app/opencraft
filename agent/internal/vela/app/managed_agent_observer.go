@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/daemon"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/platform"
 	"github.com/google/uuid"
+	"velachat/agent/internal/vela/daemon"
+	"velachat/agent/internal/vela/platform"
 )
 
 var ErrManagedAgentObservationStale = errors.New(

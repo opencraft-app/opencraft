@@ -1,8 +1,8 @@
 package codex
 
 import (
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeprompt"
+	"velachat/agent/internal/runtimeapi"
+	"velachat/agent/internal/runtimeprompt"
 )
 
 // Kept in the Codex package for compatibility with the existing fixture tests.

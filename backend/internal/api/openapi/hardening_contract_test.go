@@ -12,12 +12,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestReleasedSpecsRemainFrozenWhileCurrentAdvancesToFourZero(t *testing.T) {
+func TestReleasedSpecsRemainFrozenWhileCurrentAdvancesToFiveZero(t *testing.T) {
 	main := loadYAML(t, filepath.Join("..", "..", "..", "platform", "v1", "openapi.yaml"))
 	bootstrap := loadYAML(t, filepath.Join("..", "..", "..", "platform", "v1", "computer-bootstrap.openapi.yaml"))
 	for name, spec := range map[string]map[string]any{"main": main, "bootstrap": bootstrap} {
-		if got := nestedString(t, spec, "info", "version"); got != "4.0.0" {
-			t.Errorf("%s info.version = %q，期望 4.0.0", name, got)
+		if got := nestedString(t, spec, "info", "version"); got != "5.0.0" {
+			t.Errorf("%s info.version = %q，期望 5.0.0", name, got)
 		}
 	}
 	for name, path := range map[string]string{

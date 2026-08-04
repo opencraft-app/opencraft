@@ -13,9 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/humanplatform"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/vela/humanplatform"
+	"velachat/agent/internal/vela/im"
 )
 
 var (
@@ -447,7 +447,7 @@ func (a *Adapter) SendText(ctx context.Context, input SendTextInput) (Message, e
 	for _, mention := range input.Mentions {
 		mentions = append(mentions, mention.IMUserID)
 	}
-	metadata := map[string]any{"schema": "raft.client-message/v2", "clientRequestId": input.ClientRequestID}
+	metadata := map[string]any{"schema": "vela.client-message/v2", "clientRequestId": input.ClientRequestID}
 	if input.Quote != nil {
 		metadata["quote"] = input.Quote
 	}

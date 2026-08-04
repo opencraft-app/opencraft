@@ -16,7 +16,7 @@ describe("BrowserCredentialStore", () => {
     await store.saveRefreshToken("refresh-token");
 
     expect([...values.entries()]).toEqual([
-      ["raft.client.refresh-token", "refresh-token"],
+      ["vela.client.refresh-token", "refresh-token"],
     ]);
     expect(await store.loadRefreshToken()).toBe("refresh-token");
 

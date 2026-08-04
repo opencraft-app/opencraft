@@ -134,7 +134,7 @@ describe("normalizeTencentMessage", () => {
             senderId: "human-2",
             senderName: "小林",
           },
-          schema: "raft.task-message/v1",
+          schema: "vela.task-message/v1",
           task: {
             assigneeId: null,
             sourceMessageRef: "root-1",
@@ -152,7 +152,7 @@ describe("normalizeTencentMessage", () => {
             title: "核对腾讯消息协议",
           }),
           description: "Task",
-          extension: "raft.task-message/v1",
+          extension: "vela.task-message/v1",
         },
         type: "TIMCustomElem",
       }),
@@ -219,7 +219,7 @@ describe("normalizeTencentMessage", () => {
       rawMessage({
         cloudCustomData: JSON.stringify({
           clientRequestId: "thread-request-1",
-          schema: "raft.thread-reply/v1",
+          schema: "vela.thread-reply/v1",
           thread: {
             role: "reply",
             rootMessageRef: {

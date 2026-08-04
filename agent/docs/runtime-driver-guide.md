@@ -104,7 +104,7 @@ completion to the cloud without inspecting the Runtime ID.
 
 For persistent request/response protocols, the adapter must model the native
 accepted-request lifecycle explicitly. Streamed text, process quiescence, and
-process exit are not substitutes for an authoritative response. If one Raft
+process exit are not substitutes for an authoritative response. If one Vela
 turn can create multiple native prompt requests, the adapter owns their
 ordering and must emit exactly one normalized completion only after the whole
 accepted request family reaches its native terminal boundary. Stop, reconnect,
@@ -113,7 +113,7 @@ and transport failure must fence delayed output from the old session.
 ## Standing prompt contract
 
 The Runtime catalog composes every successful launch plan with the versioned
-shared Raft conversation policy. This applies even when a registration supplies
+shared Vela conversation policy. This applies even when a registration supplies
 a custom planner or a wire Runtime alias. A Driver may return additional
 Runtime-specific standing instructions; the catalog preserves them before the
 shared policy, whose conflict rules take precedence.
@@ -159,7 +159,7 @@ practical:
 
 - both register through `internal/runtimes/builtins.go`;
 - both receive the same launch-scoped workspace, capability proxy, generated
-  `raft` wrapper, identity, and environment;
+  `vela` wrapper, identity, and environment;
 - both use a persistent-process launch planner without leaking a concrete
   Runtime ID into Controller, Core, or Agent Manager;
 - both transport the same catalog-composed standing policy through their

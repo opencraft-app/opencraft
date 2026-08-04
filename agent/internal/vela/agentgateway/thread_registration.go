@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 
-	rootstate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/state"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/platform"
+	rootstate "velachat/agent/internal/state"
+	"velachat/agent/internal/vela/im"
+	"velachat/agent/internal/vela/platform"
 )
 
 const (

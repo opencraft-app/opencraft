@@ -5,7 +5,7 @@ import type {
   Member,
   Operation,
   Server,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import {
   act,
   fireEvent,

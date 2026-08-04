@@ -1,28 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: raft-web-static
-  namespace: raft-platform
+  name: vela-web-static
+  namespace: vela-platform
   labels:
-    app.kubernetes.io/name: raft-web-static
-    app.kubernetes.io/part-of: raft-platform
+    app.kubernetes.io/name: vela-web-static
+    app.kubernetes.io/part-of: vela-platform
 spec:
   replicas: 1
   revisionHistoryLimit: 3
   selector:
     matchLabels:
-      app.kubernetes.io/name: raft-web-static
+      app.kubernetes.io/name: vela-web-static
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: raft-web-static
-        app.kubernetes.io/part-of: raft-platform
+        app.kubernetes.io/name: vela-web-static
+        app.kubernetes.io/part-of: vela-platform
     spec:
       imagePullSecrets:
         - name: tcr.ipstcr-regcred
       containers:
         - name: static
-          image: lightclaw-bj8.tencentcloudcr.com/lightclaw/raft-platform-web@sha256:c7a72e0b4cdfe9a3d23e1395a0cf80892ebd7eb58e77cbe40ac3c28d1b61de2e
+          image: lightclaw-bj8.tencentcloudcr.com/lightclaw/vela-platform-web@sha256:c7a72e0b4cdfe9a3d23e1395a0cf80892ebd7eb58e77cbe40ac3c28d1b61de2e
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -70,15 +70,15 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: raft-web-static
-  namespace: raft-platform
+  name: vela-web-static
+  namespace: vela-platform
   labels:
-    app.kubernetes.io/name: raft-web-static
-    app.kubernetes.io/part-of: raft-platform
+    app.kubernetes.io/name: vela-web-static
+    app.kubernetes.io/part-of: vela-platform
 spec:
   type: NodePort
   selector:
-    app.kubernetes.io/name: raft-web-static
+    app.kubernetes.io/name: vela-web-static
   ports:
     - name: http
       port: 80

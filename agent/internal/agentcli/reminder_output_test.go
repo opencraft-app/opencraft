@@ -31,7 +31,7 @@ func TestFormatReminderCommandResultPreservesTypeWarningAndFiredFallback(
 	const scheduledWant = "Reminder scheduled: #abcd1234 " +
 		"(recurring · every 1 day) \"Review deploy\"\n" +
 		"Next: 2026-07-26T09:00:00Z\n" +
-		"(to modify: snooze/update/cancel; raft reminder --help)\n" +
+		"(to modify: snooze/update/cancel; vela reminder --help)\n" +
 		"Warning: The next occurrence is close."
 	if scheduled != scheduledWant {
 		t.Fatalf("scheduled:\n%s\nwant:\n%s", scheduled, scheduledWant)

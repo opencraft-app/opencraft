@@ -3,7 +3,7 @@ import type {
   HumanImSession,
   Message,
   MessagingLifecycleEvent,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import type { SdkMessage } from "./channel-chat-service";
 import { TencentMessagingPort } from "./tencent-messaging-port";
 

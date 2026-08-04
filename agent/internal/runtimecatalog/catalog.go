@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeprompt"
+	"velachat/agent/internal/runtimeapi"
+	"velachat/agent/internal/runtimeprompt"
 )
 
 var runtimeIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/reactvaxis"
+	"velachat/agent/internal/reactvaxis"
 )
 
 //go:embed assets/human-client.bundle.js
@@ -22,7 +22,7 @@ func EmbeddedBundle() (reactvaxis.Bundle, error) {
 		strings.Contains(bundleSource, "expo-router") ||
 		strings.Contains(bundleSource, "react-dom") ||
 		strings.Contains(bundleSource, "require(") ||
-		!strings.Contains(bundleSource, "__raftTui") ||
+		!strings.Contains(bundleSource, "__velaTui") ||
 		!strings.Contains(bundleSource, "auth-form-panel") ||
 		!strings.Contains(bundleSource, "terminal-management-frame") {
 		return reactvaxis.Bundle{}, errors.New("Human TUI bundle 内容无效")
@@ -33,7 +33,7 @@ func EmbeddedBundle() (reactvaxis.Bundle, error) {
 		return reactvaxis.Bundle{}, errors.New("Human TUI bundle SHA-256 漂移")
 	}
 	return reactvaxis.Bundle{
-		Name: "raft-human-client", Protocol: reactvaxis.ProtocolV2,
+		Name: "vela-human-client", Protocol: reactvaxis.ProtocolV2,
 		Source: bundleSource, SHA256: actual,
 	}, nil
 }

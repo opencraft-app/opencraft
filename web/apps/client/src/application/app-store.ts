@@ -52,7 +52,7 @@ import {
   type UpdateMemberInput,
   type UpdateReminderInput,
   type UpdateTaskInput,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
 import { productErrorMessage } from "./product-language";
@@ -4451,7 +4451,7 @@ function unavailableThreadMessage(
   return {
     content: {
       kind: "unsupported",
-      rawType: "RAFT_MESSAGE_UNAVAILABLE",
+      rawType: "VELA_MESSAGE_UNAVAILABLE",
     },
     conversationId: `GROUP${
       reply.messageRef.topicId ?? reply.messageRef.groupId ?? thread.channelId
@@ -4462,7 +4462,7 @@ function unavailableThreadMessage(
     id: reply.messageRef.messageId,
     kind: "unsupported",
     mentions: [],
-    rawType: "RAFT_MESSAGE_UNAVAILABLE",
+    rawType: "VELA_MESSAGE_UNAVAILABLE",
     reactions: [],
     read: { state: "unknown" },
     reference: reply.messageRef,

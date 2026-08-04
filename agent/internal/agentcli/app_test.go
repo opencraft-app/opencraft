@@ -3,8 +3,6 @@ package agentcli
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,110 +11,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/agentapi"
+	"velachat/agent/internal/agentapi"
+	"velachat/agent/internal/common"
 )
-
-func TestOfficialCommandTopologyEvidenceIsPinned(t *testing.T) {
-	t.Parallel()
-
-	manifestPath := filepath.Join(
-		"..", "..", "docs", "legacy", "raft-1.0.13", "agent-cli-evidence.json",
-	)
-	data, err := os.ReadFile(manifestPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var manifest struct {
-		Schema   string `json:"schema"`
-		Baseline struct {
-			Version string `json:"version"`
-		} `json:"baseline"`
-		Source struct {
-			Path              string `json:"path"`
-			SHA256            string `json:"sha256"`
-			DefinitionsStart  int    `json:"definitionsStartLine"`
-			DefinitionsEnd    int    `json:"definitionsEndLine"`
-			RegistrationStart int    `json:"registrationStartLine"`
-			RegistrationEnd   int    `json:"registrationEndLine"`
-		} `json:"source"`
-		Families []struct {
-			Name     string   `json:"name"`
-			Commands []string `json:"commands"`
-		} `json:"families"`
-	}
-	if err := common.Unmarshal(data, &manifest); err != nil {
-		t.Fatal(err)
-	}
-	if manifest.Schema != "raft-computer-go.agent-cli-evidence.v1" ||
-		manifest.Baseline.Version != "1.0.13" ||
-		manifest.Source.DefinitionsStart != 52513 ||
-		manifest.Source.DefinitionsEnd != 55635 ||
-		manifest.Source.RegistrationStart != 55658 ||
-		manifest.Source.RegistrationEnd != 55733 {
-		t.Fatalf("Agent CLI evidence metadata = %#v", manifest)
-	}
-	pinnedDigest, err := hex.DecodeString(manifest.Source.SHA256)
-	if err != nil || len(pinnedDigest) != sha256.Size {
-		t.Fatalf("Agent CLI source sha256 is not a valid SHA-256 digest: %q", manifest.Source.SHA256)
-	}
-	source, err := os.ReadFile(filepath.Join(
-		filepath.Dir(manifestPath),
-		manifest.Source.Path,
-	))
-	if err != nil && !os.IsNotExist(err) {
-		t.Fatal(err)
-	}
-	if err == nil {
-		digest := sha256.Sum256(source)
-		if actual := hex.EncodeToString(digest[:]); actual != manifest.Source.SHA256 {
-			t.Fatalf("Agent CLI source sha256 = %s, want %s", actual, manifest.Source.SHA256)
-		}
-	}
-	expected := map[string][]string{
-		"auth":        {"whoami"},
-		"agent":       {"list", "login", "login start", "login wait", "login status", "bridge"},
-		"channel":     {"info", "members", "create", "update", "archive", "unarchive", "add-member", "remove-member", "join", "leave", "mute", "unmute"},
-		"thread":      {"unfollow"},
-		"server":      {"info", "update"},
-		"user":        {"info"},
-		"manual":      {"get", "search"},
-		"knowledge":   {"get", "search"},
-		"inbox":       {"check"},
-		"message":     {"send", "check", "read", "search", "resolve", "react"},
-		"attachment":  {"upload", "view", "comments"},
-		"task":        {"list", "create", "claim", "unclaim", "update"},
-		"mention":     {"pending", "notify", "add"},
-		"profile":     {"show", "update"},
-		"integration": {"list", "login", "env", "invoke", "app prepare register", "app prepare recover-owner", "app rotate-secret", "app transfer-owner", "app update", "app list", "app status"},
-		"reminder":    {"schedule", "list", "cancel", "snooze", "update", "log"},
-		"migrate":     {"export", "import", "status", "ready", "arrived"},
-		"action":      {"prepare"},
-	}
-	if len(manifest.Families) != len(expected) {
-		t.Fatalf("Agent CLI families = %d, want %d", len(manifest.Families), len(expected))
-	}
-	seen := make(map[string]bool, len(manifest.Families))
-	for _, family := range manifest.Families {
-		want, ok := expected[family.Name]
-		if !ok || seen[family.Name] || !sameCommandPaths(family.Commands, want) {
-			t.Fatalf("Agent CLI family evidence = %#v, want %v", family, want)
-		}
-		seen[family.Name] = true
-	}
-}
-
-func sameCommandPaths(left []string, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
-}
 
 func TestMessageSendBuildsTypedAgentAPICall(t *testing.T) {
 	t.Parallel()
@@ -244,7 +141,7 @@ func TestMessageSendMissingTargetSuggestsCanonicalRecovery(t *testing.T) {
 	_, err := messageSendRequest([]string{"--text", "hello"}, nil)
 	if err == nil || !strings.Contains(
 		err.Error(),
-		"raft message send --target <target>",
+		"vela message send --target <target>",
 	) {
 		t.Fatalf("error = %v", err)
 	}

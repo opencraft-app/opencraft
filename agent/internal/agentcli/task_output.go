@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/agentapi"
+	"velachat/agent/internal/agentapi"
+	"velachat/agent/internal/common"
 )
 
 type taskListResponse struct {
@@ -165,7 +165,7 @@ func formatTaskClaim(target string, response taskClaimResponse) string {
 			))
 			if result.TaskNumber != nil && result.MessageID != "" {
 				threadHints = append(threadHints, fmt.Sprintf(
-					"#%d → raft message send --target %q",
+					"#%d → vela message send --target %q",
 					*result.TaskNumber,
 					canonicalTaskTarget(target)+":"+shortID(result.MessageID),
 				))

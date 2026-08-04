@@ -3,7 +3,7 @@ package agentgateway
 import (
 	"sync"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
+	"velachat/agent/internal/vela/im"
 )
 
 // TransportSlot tracks the currently authenticated IM launch without giving

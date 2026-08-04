@@ -1,5 +1,5 @@
 // Package managementipc implements the local Vela Computer management
-// protocol. It is intentionally separate from the legacy Raft service IPC.
+// protocol. It is intentionally separate from the legacy Vela service IPC.
 package managementipc
 
 import (
@@ -14,8 +14,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/google/uuid"
+	"velachat/agent/internal/common"
 )
 
 const (

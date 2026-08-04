@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/agentapi"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"velachat/agent/internal/agentapi"
 )
 
 const (
@@ -150,7 +150,7 @@ func (a *App) renderCommandError(command *cobra.Command, err error) int {
 		_, _ = fmt.Fprintln(a.stderr, "Error:", message)
 	}
 	if class == ExitUsage {
-		helpPath := "raft"
+		helpPath := "vela"
 		if command != nil && command.CommandPath() != "" {
 			helpPath = command.CommandPath()
 		}
@@ -161,7 +161,7 @@ func (a *App) renderCommandError(command *cobra.Command, err error) int {
 
 func (a *App) newRootCommand() *cobra.Command {
 	root := &cobra.Command{
-		Use:           "raft",
+		Use:           "vela",
 		Short:         "Work from a managed Agent runtime",
 		Version:       a.dependencies.Version,
 		SilenceErrors: true,

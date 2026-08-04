@@ -233,10 +233,10 @@ export function WorkspaceConversationScreen({
       <RouteTitle
         title={
           currentChannel
-            ? `# ${currentChannel.name} · ${activeServerSlug ?? "RAFT"}`
+            ? `# ${currentChannel.name} · ${activeServerSlug ?? "VELA"}`
             : directName
-              ? `@ ${directName} · ${activeServerSlug ?? "RAFT"}`
-              : "RAFT"
+              ? `@ ${directName} · ${activeServerSlug ?? "VELA"}`
+              : "VELA"
         }
       />
       <WorkspaceShell

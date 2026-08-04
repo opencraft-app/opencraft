@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/runtimeapi"
 )
 
 func (session *session) handleSessionUpdate(raw json.RawMessage) {

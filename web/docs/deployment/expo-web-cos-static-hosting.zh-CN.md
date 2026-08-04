@@ -11,7 +11,7 @@
 
 ```sh
 cd apps/client
-EXPO_PUBLIC_RAFT_API_URL=https://api.example.com bun run build:web
+EXPO_PUBLIC_VELA_API_URL=https://api.example.com bun run build:web
 ```
 
 构建产物位于 `apps/client/dist/`，可整体上传到 COS。
@@ -39,7 +39,7 @@ EXPO_PUBLIC_RAFT_API_URL=https://api.example.com bun run build:web
 
 - Go API 只允许正式前端域名进行 CORS 请求，并允许携带平台认证所需的请求头；
 - 腾讯云 IM 的 `SDKAppID` 可以出现在前端，UserSig 私钥只能留在 Go 后台；
-- `EXPO_PUBLIC_RAFT_API_URL` 是公开配置，不得包含密钥；
+- `EXPO_PUBLIC_VELA_API_URL` 是公开配置，不得包含密钥；
 - `?backend=` 只在 `localhost`、`127.0.0.1` 或回环 IPv6 页面生效，正式域名会忽略并移除它。
 
 ## 验证
@@ -55,7 +55,7 @@ bun run verify:web-fallback
 部署后验证 COS/CDN 的真实回退规则：
 
 ```sh
-RAFT_WEB_VERIFY_ORIGIN=https://app.example.com bun run verify:web-fallback
+VELA_WEB_VERIFY_ORIGIN=https://app.example.com bun run verify:web-fallback
 ```
 
 验证器会直接请求 Server 根、Channel、四个管理页和 DM 深链接，并要求返回 HTTP 200 与 HTML。

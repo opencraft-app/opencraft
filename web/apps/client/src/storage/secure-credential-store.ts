@@ -1,4 +1,4 @@
-import type { CredentialStore } from "@raft-platform/client-core";
+import type { CredentialStore } from "@vela/client-core";
 
 interface SecureStorageLike {
   deleteItemAsync(key: string): Promise<void>;
@@ -7,7 +7,7 @@ interface SecureStorageLike {
 }
 
 export class SecureCredentialStore implements CredentialStore {
-  private static readonly refreshTokenKey = "raft.client.refresh-token";
+  private static readonly refreshTokenKey = "vela.client.refresh-token";
   private exclusiveTail: Promise<void> = Promise.resolve();
 
   public constructor(private readonly storage: SecureStorageLike) {}

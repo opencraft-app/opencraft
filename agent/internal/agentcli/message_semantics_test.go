@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/agentapi"
+	"velachat/agent/internal/agentapi"
+	"velachat/agent/internal/common"
 )
 
 func TestMessageSendReadsStdinAndUsesObservedBodyFields(t *testing.T) {

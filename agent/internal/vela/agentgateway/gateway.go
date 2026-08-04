@@ -24,14 +24,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/agentapi"
-	rootstate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/state"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/attachmentstore"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/messageindex"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/platform"
 	"github.com/google/uuid"
+	"velachat/agent/internal/agentapi"
+	"velachat/agent/internal/common"
+	rootstate "velachat/agent/internal/state"
+	"velachat/agent/internal/vela/attachmentstore"
+	"velachat/agent/internal/vela/im"
+	"velachat/agent/internal/vela/messageindex"
+	"velachat/agent/internal/vela/platform"
 )
 
 const (
@@ -236,8 +236,7 @@ func (h *Hub) Register(config Config) (*Gateway, error) {
 	); err != nil {
 		return nil, err
 	}
-	wrapperRelative := filepath.Join(launchRelative, "bin", "raft")
-	slockWrapperRelative := filepath.Join(launchRelative, "bin", "slock")
+	wrapperRelative := filepath.Join(launchRelative, "bin", "vela")
 	wrapper := "#!/bin/sh\n" +
 		"exec " +
 		shellQuote(config.Executable) +
@@ -247,15 +246,6 @@ func (h *Hub) Register(config Config) (*Gateway, error) {
 		[]byte(wrapper),
 		0o700,
 	); err != nil {
-		_ = store.Remove(tokenRelative)
-		return nil, err
-	}
-	if err := store.WriteFile(
-		slockWrapperRelative,
-		[]byte(wrapper),
-		0o700,
-	); err != nil {
-		_ = store.Remove(wrapperRelative)
 		_ = store.Remove(tokenRelative)
 		return nil, err
 	}
@@ -285,7 +275,6 @@ func (h *Hub) Register(config Config) (*Gateway, error) {
 		h.mu.Unlock()
 		_ = store.Remove(tokenRelative)
 		_ = store.Remove(wrapperRelative)
-		_ = store.Remove(slockWrapperRelative)
 		return nil, ErrGatewayUnavailable
 	}
 	h.registrations[token] = gateway
@@ -622,14 +611,12 @@ func (g *Gateway) RuntimeEnvironment() map[string]string {
 		"consumed",
 	)
 	return map[string]string{
-		"SLOCK_AGENT_ID":                   g.config.AgentID,
-		"SLOCK_SERVER_ID":                  g.config.ServerID,
-		"SLOCK_AGENT_PROXY_URL":            g.baseURL,
-		"SLOCK_AGENT_PROXY_TOKEN_FILE":     g.tokenFile,
-		"SLOCK_CLI_CONSUMED_SEQ_STATE_DIR": consumed,
-		"RAFT_AGENT_PROXY_URL":             g.baseURL,
-		"RAFT_AGENT_PROXY_TOKEN_FILE":      g.tokenFile,
-		"PATH":                             path,
+		"VELA_AGENT_ID":                   g.config.AgentID,
+		"VELA_SERVER_ID":                  g.config.ServerID,
+		"VELA_AGENT_PROXY_URL":            g.baseURL,
+		"VELA_AGENT_PROXY_TOKEN_FILE":     g.tokenFile,
+		"VELA_CLI_CONSUMED_SEQ_STATE_DIR": consumed,
+		"PATH":                            path,
 	}
 }
 
@@ -776,8 +763,8 @@ func parseThreadCloudMetadata(value string) (threadCloudMetadata, bool) {
 		if envelope.Thread != nil && rootMessageID == "" {
 			rootMessageID = strings.TrimSpace(envelope.Thread.RootMessageRef.MessageID)
 		}
-		if (envelope.Schema == "raft.message/v1" ||
-			envelope.Schema == "raft.thread-reply/v1") &&
+		if (envelope.Schema == "vela.message/v1" ||
+			envelope.Schema == "vela.thread-reply/v1") &&
 			len(rootMessageID) >= 8 &&
 			(envelope.ServerID == "" || isUUIDv7(envelope.ServerID)) &&
 			(envelope.ConversationID == "" || isUUIDv7(envelope.ConversationID)) {
@@ -797,7 +784,7 @@ func parseThreadCloudMetadata(value string) (threadCloudMetadata, bool) {
 	}
 	var legacy legacyThreadCloudMetadata
 	if err := common.Unmarshal([]byte(value), &legacy); err != nil ||
-		legacy.Type != "raft.thread-reply/v1" ||
+		legacy.Type != "vela.thread-reply/v1" ||
 		!isUUIDv7(legacy.ThreadID) || !isUUIDv7(legacy.ChannelID) ||
 		len(strings.TrimSpace(legacy.RootMessageID)) < 8 {
 		return threadCloudMetadata{}, false
@@ -2319,7 +2306,7 @@ func (g *Gateway) serveThreadSend(
 		return
 	}
 	metadata, err := common.Marshal(threadMessageEnvelope{
-		Schema: "raft.message/v1", ServerID: g.config.ServerID,
+		Schema: "vela.message/v1", ServerID: g.config.ServerID,
 		ConversationID: channelID, ClientRequestID: clientRequestID.String(),
 		ParentMessageID: root.Ref.MessageID(), RootMessageID: root.Ref.MessageID(),
 		MentionedMemberIDs: []string{}, AttachmentIDs: []string{},

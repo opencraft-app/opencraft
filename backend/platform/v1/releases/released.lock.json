@@ -8,6 +8,8 @@
     "platform/v1/releases/3.0.0.computer-bootstrap.openapi.yaml": "43d2aad64647dc0f650143d0827a8f6f2f3ba60dabcabae94fa6f48a3f06c1b0",
     "platform/v1/releases/3.0.0.openapi.yaml": "d3069f403dbe7617285f6f5269052a8033ba2aeb0a4d2420dd82af82480d0b64",
     "platform/v1/releases/4.0.0.computer-bootstrap.openapi.yaml": "4219be98295c66c113f8b6bf0d1465079be8aee0524df59bd49bb6a025263790",
-    "platform/v1/releases/4.0.0.openapi.yaml": "2dbd2f630fcf8fe2a20e319d2974196552c97ecc881287a1d786085b40de897e"
+    "platform/v1/releases/4.0.0.openapi.yaml": "2dbd2f630fcf8fe2a20e319d2974196552c97ecc881287a1d786085b40de897e",
+    "platform/v1/releases/5.0.0.computer-bootstrap.openapi.yaml": "d419b5e947b631f87e2f8e088fd1493a32e0c9795a2609707cffc298419dfcb3",
+    "platform/v1/releases/5.0.0.openapi.yaml": "375fd10f6ed3247b86fdc014833e9268f8c196e2ddbc366e9ab016abbcc0bcaa"
   }
 }

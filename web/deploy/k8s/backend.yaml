@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: raft-api-data
-  namespace: raft-platform
+  name: vela-api-data
+  namespace: vela-platform
   labels:
-    app.kubernetes.io/name: raft-api
-    app.kubernetes.io/part-of: raft-platform
+    app.kubernetes.io/name: vela-api
+    app.kubernetes.io/part-of: vela-platform
 spec:
   accessModes:
     - ReadWriteOnce
@@ -17,11 +17,11 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: raft-api
-  namespace: raft-platform
+  name: vela-api
+  namespace: vela-platform
   labels:
-    app.kubernetes.io/name: raft-api
-    app.kubernetes.io/part-of: raft-platform
+    app.kubernetes.io/name: vela-api
+    app.kubernetes.io/part-of: vela-platform
 spec:
   replicas: 1
   strategy:
@@ -29,12 +29,12 @@ spec:
   revisionHistoryLimit: 3
   selector:
     matchLabels:
-      app.kubernetes.io/name: raft-api
+      app.kubernetes.io/name: vela-api
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: raft-api
-        app.kubernetes.io/part-of: raft-platform
+        app.kubernetes.io/name: vela-api
+        app.kubernetes.io/part-of: vela-platform
     spec:
       imagePullSecrets:
         - name: tcr.ipstcr-regcred
@@ -70,7 +70,7 @@ spec:
               mountPath: /var/lib/chatserver
       containers:
         - name: api
-          image: lightclaw-bj8.tencentcloudcr.com/lightclaw/raft-platform-api@sha256:3bb3ad8f1aed54d1b4152f502a87a4f541120ffcc90baf80aab0b23d875ba987
+          image: lightclaw-bj8.tencentcloudcr.com/lightclaw/vela-platform-api@sha256:3bb3ad8f1aed54d1b4152f502a87a4f541120ffcc90baf80aab0b23d875ba987
           imagePullPolicy: IfNotPresent
           args:
             - serve
@@ -91,13 +91,13 @@ spec:
             - --im-callback-token-file
             - /var/run/secrets/chatserver/im-callback.token
             - --agent-artifact-base-url
-            - https://raft.lightvela.com/artifacts
+            - https://vela.lightvela.com/artifacts
             - --agent-artifact-version
             - v0.1.3-canary.20260731
             - --platform-public-url
-            - https://raft.lightvela.com
+            - https://vela.lightvela.com
             - --cors-origin
-            - https://raft.lightvela.com
+            - https://vela.lightvela.com
           ports:
             - name: http
               containerPort: 8080
@@ -139,10 +139,10 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: raft-api-data
+            claimName: vela-api-data
         - name: secrets
           secret:
-            secretName: raft-api-secrets
+            secretName: vela-api-secrets
             defaultMode: 0440
         - name: tmp
           emptyDir: {}
@@ -150,15 +150,15 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: raft-api
-  namespace: raft-platform
+  name: vela-api
+  namespace: vela-platform
   labels:
-    app.kubernetes.io/name: raft-api
-    app.kubernetes.io/part-of: raft-platform
+    app.kubernetes.io/name: vela-api
+    app.kubernetes.io/part-of: vela-platform
 spec:
   type: NodePort
   selector:
-    app.kubernetes.io/name: raft-api
+    app.kubernetes.io/name: vela-api
   ports:
     - name: http
       port: 80

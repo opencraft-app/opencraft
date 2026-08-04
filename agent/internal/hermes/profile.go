@@ -21,7 +21,7 @@ func managedProfileName(agentID string) (string, error) {
 		return "", errors.New("Hermes managed Profile requires an Agent ID")
 	}
 	digest := sha256.Sum256([]byte(agentID))
-	return "raft-" + hex.EncodeToString(digest[:16]), nil
+	return "vela-" + hex.EncodeToString(digest[:16]), nil
 }
 
 func managedProfileSelection(

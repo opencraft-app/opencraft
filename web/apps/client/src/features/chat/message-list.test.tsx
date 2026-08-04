@@ -1,4 +1,4 @@
-import type { Message } from "@raft-platform/client-core";
+import type { Message } from "@vela/client-core";
 import { fireEvent, render } from "@testing-library/react-native";
 import {Linking, Platform, StyleSheet as RNStyleSheet} from "react-native";
 
@@ -214,7 +214,7 @@ describe("MessageList", () => {
     jest.useRealTimers();
   });
 
-  it("keeps image messages media-first while exposing Raft message actions", async () => {
+  it("keeps image messages media-first while exposing Vela message actions", async () => {
     const onQuote = jest.fn();
     const onCreateTask = jest.fn();
     const onOpenThread = jest.fn();
@@ -716,7 +716,7 @@ describe("MessageList", () => {
             },
             id: "task-compact-message",
             kind: "task",
-            rawType: "RAFT_TASK",
+            rawType: "VELA_TASK",
           }),
         ]}
         onLoadOlder={jest.fn()}
@@ -877,11 +877,11 @@ describe("MessageList", () => {
     const unavailable = message({
       content: {
         kind: "unsupported",
-        rawType: "RAFT_MESSAGE_UNAVAILABLE",
+        rawType: "VELA_MESSAGE_UNAVAILABLE",
       },
       id: "missing-message-1",
       kind: "unsupported",
-      rawType: "RAFT_MESSAGE_UNAVAILABLE",
+      rawType: "VELA_MESSAGE_UNAVAILABLE",
       text: "消息已不可用",
     });
     const screen = await render(

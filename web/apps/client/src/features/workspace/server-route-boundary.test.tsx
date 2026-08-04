@@ -1,5 +1,5 @@
 import {act, fireEvent, render, waitFor} from "@testing-library/react-native";
-import type {Server} from "@raft-platform/client-core";
+import type {Server} from "@vela/client-core";
 import {Text} from "react-native";
 import {createStore} from "zustand/vanilla";
 

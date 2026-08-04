@@ -4,10 +4,10 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
+	"velachat/agent/internal/common"
 )
 
-const reminderModifyHint = "(to modify: snooze/update/cancel; raft reminder --help)"
+const reminderModifyHint = "(to modify: snooze/update/cancel; vela reminder --help)"
 
 type reminderRecurrenceView struct {
 	Kind        string `json:"kind"`

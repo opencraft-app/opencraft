@@ -100,7 +100,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 				return goja.Undefined()
 			},
 		}
-		if err := vm.Set("__raftNative", bridge); err != nil {
+		if err := vm.Set("__velaNative", bridge); err != nil {
 			initialized <- fmt.Errorf("安装 ReactVaxis bridge: %w", err)
 			return
 		}
@@ -117,9 +117,9 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 			initialized <- fmt.Errorf("执行 %s bundle: %w", config.Bundle.Name, err)
 			return
 		}
-		facade, ok := vm.Get("__raftTui").(*goja.Object)
+		facade, ok := vm.Get("__velaTui").(*goja.Object)
 		if !ok {
-			initialized <- errors.New("ReactVaxis bundle 未导出 __raftTui")
+			initialized <- errors.New("ReactVaxis bundle 未导出 __velaTui")
 			return
 		}
 		if config.Bundle.Protocol == ProtocolV2 {
@@ -210,14 +210,14 @@ func (r *Runtime) Dispatch(handlerID string, payload map[string]any) {
 		return
 	}
 	if !r.loop.RunOnLoop(func(vm *goja.Runtime) {
-		facade, ok := vm.Get("__raftTui").(*goja.Object)
+		facade, ok := vm.Get("__velaTui").(*goja.Object)
 		if !ok {
-			r.report(errors.New("__raftTui 已丢失"))
+			r.report(errors.New("__velaTui 已丢失"))
 			return
 		}
 		dispatch, ok := goja.AssertFunction(facade.Get("dispatch"))
 		if !ok {
-			r.report(errors.New("__raftTui.dispatch 不可调用"))
+			r.report(errors.New("__velaTui.dispatch 不可调用"))
 			return
 		}
 		if _, err := dispatch(facade, vm.ToValue(handlerID), vm.ToValue(payload)); err != nil {
@@ -233,14 +233,14 @@ func (r *Runtime) Resize(width, height int) {
 		return
 	}
 	if !r.loop.RunOnLoop(func(vm *goja.Runtime) {
-		facade, ok := vm.Get("__raftTui").(*goja.Object)
+		facade, ok := vm.Get("__velaTui").(*goja.Object)
 		if !ok {
-			r.report(errors.New("__raftTui 已丢失"))
+			r.report(errors.New("__velaTui 已丢失"))
 			return
 		}
 		resize, ok := goja.AssertFunction(facade.Get("resize"))
 		if !ok {
-			r.report(errors.New("__raftTui.resize 不可调用"))
+			r.report(errors.New("__velaTui.resize 不可调用"))
 			return
 		}
 		if _, err := resize(facade, vm.ToValue(width), vm.ToValue(height)); err != nil {

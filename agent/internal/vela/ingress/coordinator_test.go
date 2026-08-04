@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
-	velastate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/state"
+	"velachat/agent/internal/vela/im"
+	velastate "velachat/agent/internal/vela/state"
 )
 
 func TestCoordinatorDoesNotLetOneConversationBlockAnother(t *testing.T) {

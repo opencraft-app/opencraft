@@ -1,11 +1,11 @@
 import type {
   TerminalControllerState,
   TerminalControlKey,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import { useEffect, useRef, useState } from "react";
 
 import { computeTerminalOutputPatch } from "../../terminal/terminal-output-sync";
-import { raftTheme } from "../tokens";
+import { velaTheme } from "../tokens";
 
 export interface TerminalSurfaceController {
   close(): void;
@@ -54,15 +54,15 @@ export function TerminalPanel({
           allowProposedApi: false,
           convertEol: false,
           cursorBlink: true,
-          ...raftTheme.terminal.xtermOptions,
-          rows: raftTheme.terminal.initialRows,
+          ...velaTheme.terminal.xtermOptions,
+          rows: velaTheme.terminal.initialRows,
           screenReaderMode: true,
-          scrollback: raftTheme.terminal.scrollbackLines,
+          scrollback: velaTheme.terminal.scrollbackLines,
           theme: {
-            background: raftTheme.terminal.surface,
-            foreground: raftTheme.terminal.text,
-            cursor: raftTheme.terminal.cursor,
-            selectionBackground: raftTheme.terminal.selection,
+            background: velaTheme.terminal.surface,
+            foreground: velaTheme.terminal.text,
+            cursor: velaTheme.terminal.cursor,
+            selectionBackground: velaTheme.terminal.selection,
           },
         });
         const fit = new FitAddon();
@@ -182,21 +182,21 @@ const terminalStatusLabel: Record<TerminalControllerState["status"], string> = {
 
 const styles = {
   button: {
-    background: raftTheme.semantic.color.sectionSurface,
-    border: `${raftTheme.semantic.stroke.hairline}px solid ${raftTheme.semantic.color.borderControl}`,
-    borderRadius: raftTheme.semantic.radius.control,
-    color: raftTheme.semantic.color.textPrimary,
+    background: velaTheme.semantic.color.sectionSurface,
+    border: `${velaTheme.semantic.stroke.hairline}px solid ${velaTheme.semantic.color.borderControl}`,
+    borderRadius: velaTheme.semantic.radius.control,
+    color: velaTheme.semantic.color.textPrimary,
     cursor: "pointer",
-    font: `${raftTheme.semantic.typography.button.fontWeight} ${raftTheme.semantic.typography.button.fontSize}px/${raftTheme.semantic.typography.button.lineHeight}px ${raftTheme.semantic.typography.button.fontFamily}`,
-    minHeight: raftTheme.recipes.control.height,
-    padding: `0 ${raftTheme.spacing.lg}px`,
+    font: `${velaTheme.semantic.typography.button.fontWeight} ${velaTheme.semantic.typography.button.fontSize}px/${velaTheme.semantic.typography.button.lineHeight}px ${velaTheme.semantic.typography.button.fontFamily}`,
+    minHeight: velaTheme.recipes.control.height,
+    padding: `0 ${velaTheme.spacing.lg}px`,
   },
   error: {
-    background: raftTheme.semantic.color.statusDangerSurface,
-    borderRadius: raftTheme.semantic.radius.control,
-    color: raftTheme.semantic.color.statusDangerText,
-    font: `${raftTheme.semantic.typography.bodyCompactEmphasis.fontWeight} ${raftTheme.semantic.typography.bodyCompactEmphasis.fontSize}px/${raftTheme.semantic.typography.bodyCompactEmphasis.lineHeight}px ${raftTheme.semantic.typography.bodyCompactEmphasis.fontFamily}`,
-    padding: raftTheme.spacing.md,
+    background: velaTheme.semantic.color.statusDangerSurface,
+    borderRadius: velaTheme.semantic.radius.control,
+    color: velaTheme.semantic.color.statusDangerText,
+    font: `${velaTheme.semantic.typography.bodyCompactEmphasis.fontWeight} ${velaTheme.semantic.typography.bodyCompactEmphasis.fontSize}px/${velaTheme.semantic.typography.bodyCompactEmphasis.lineHeight}px ${velaTheme.semantic.typography.bodyCompactEmphasis.fontFamily}`,
+    padding: velaTheme.spacing.md,
   },
   header: {
     alignItems: "center",
@@ -204,41 +204,41 @@ const styles = {
     justifyContent: "space-between",
   },
   panel: {
-    background: raftTheme.semantic.color.sectionSurface,
-    border: `${raftTheme.semantic.stroke.hairline}px solid ${raftTheme.semantic.color.borderControl}`,
-    borderRadius: raftTheme.semantic.radius.section,
+    background: velaTheme.semantic.color.sectionSurface,
+    border: `${velaTheme.semantic.stroke.hairline}px solid ${velaTheme.semantic.color.borderControl}`,
+    borderRadius: velaTheme.semantic.radius.section,
     boxSizing: "border-box",
     display: "flex",
     flexDirection: "column",
-    gap: raftTheme.spacing.md,
-    height: `calc(100dvh - ${raftTheme.recipes.terminalPanel.viewportChromeOffset}px)`,
-    margin: `clamp(${raftTheme.spacing.lg}px, 2vw, ${raftTheme.spacing.xl}px)`,
-    minHeight: raftTheme.recipes.terminalPanel.panelMinHeight,
+    gap: velaTheme.spacing.md,
+    height: `calc(100dvh - ${velaTheme.recipes.terminalPanel.viewportChromeOffset}px)`,
+    margin: `clamp(${velaTheme.spacing.lg}px, 2vw, ${velaTheme.spacing.xl}px)`,
+    minHeight: velaTheme.recipes.terminalPanel.panelMinHeight,
     overflow: "hidden",
-    padding: raftTheme.spacing.lg,
+    padding: velaTheme.spacing.lg,
   },
   status: {
-    color: raftTheme.semantic.color.textMuted,
-    font: raftTheme.terminal.cssFont,
-    marginTop: raftTheme.spacing.xs,
+    color: velaTheme.semantic.color.textMuted,
+    font: velaTheme.terminal.cssFont,
+    marginTop: velaTheme.spacing.xs,
   },
   terminal: {
-    background: raftTheme.terminal.surface,
-    borderRadius: raftTheme.semantic.radius.control,
+    background: velaTheme.terminal.surface,
+    borderRadius: velaTheme.semantic.radius.control,
     flex: 1,
     minHeight: 0,
     overflow: "hidden",
-    padding: raftTheme.spacing.md,
+    padding: velaTheme.spacing.md,
   },
   title: {
-    color: raftTheme.semantic.color.textPrimary,
-    font: `${raftTheme.semantic.typography.controlGlyph.fontWeight} ${raftTheme.semantic.typography.controlGlyph.fontSize}px/${raftTheme.semantic.typography.controlGlyph.lineHeight}px ${raftTheme.semantic.typography.controlGlyph.fontFamily}`,
+    color: velaTheme.semantic.color.textPrimary,
+    font: `${velaTheme.semantic.typography.controlGlyph.fontWeight} ${velaTheme.semantic.typography.controlGlyph.fontSize}px/${velaTheme.semantic.typography.controlGlyph.lineHeight}px ${velaTheme.semantic.typography.controlGlyph.fontFamily}`,
   },
   warning: {
-    background: raftTheme.semantic.color.statusWarningSurface,
-    borderRadius: raftTheme.semantic.radius.control,
-    color: raftTheme.semantic.color.statusWarningText,
-    font: `${raftTheme.semantic.typography.bodySmallEmphasis.fontWeight} ${raftTheme.semantic.typography.bodySmallEmphasis.fontSize}px/${raftTheme.semantic.typography.bodySmallEmphasis.lineHeight}px ${raftTheme.semantic.typography.bodySmallEmphasis.fontFamily}`,
-    padding: raftTheme.spacing.md,
+    background: velaTheme.semantic.color.statusWarningSurface,
+    borderRadius: velaTheme.semantic.radius.control,
+    color: velaTheme.semantic.color.statusWarningText,
+    font: `${velaTheme.semantic.typography.bodySmallEmphasis.fontWeight} ${velaTheme.semantic.typography.bodySmallEmphasis.fontSize}px/${velaTheme.semantic.typography.bodySmallEmphasis.lineHeight}px ${velaTheme.semantic.typography.bodySmallEmphasis.fontFamily}`,
+    padding: velaTheme.spacing.md,
   },
 } as const;

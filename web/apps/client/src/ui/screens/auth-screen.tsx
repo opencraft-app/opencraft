@@ -10,7 +10,7 @@ import {
 import { StyleSheet } from "react-native-unistyles";
 
 import { BrandMark } from "../components/brand-mark";
-import { raftTheme } from "../tokens";
+import { velaTheme } from "../tokens";
 
 interface LoginInput {
   email: string;
@@ -137,7 +137,7 @@ export function AuthScreen({
             ]}
           >
             {loading ? (
-              <ActivityIndicator color={raftTheme.semantic.color.iconInverse} />
+              <ActivityIndicator color={velaTheme.semantic.color.iconInverse} />
             ) : (
               <Text style={styles.primaryButtonText}>
                 {mode === "login" ? "登录" : "注册并继续"}
@@ -177,7 +177,7 @@ function LabeledInput(
       <Text style={styles.label}>{label}</Text>
       <TextInput
         {...inputProps}
-        placeholderTextColor={raftTheme.semantic.color.fieldPlaceholder}
+        placeholderTextColor={velaTheme.semantic.color.fieldPlaceholder}
         style={[styles.input, error && styles.inputInvalid, style]}
       />
       {error ? (

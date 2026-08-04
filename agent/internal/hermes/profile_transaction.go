@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/state"
+	"velachat/agent/internal/state"
 )
 
 const (
@@ -58,7 +58,7 @@ func (p *nativeProfileProvisioner) newTransaction(
 
 func (p *nativeProfileProvisioner) transactionStore() *state.Store {
 	return state.New(
-		filepath.Join(p.trustedHome, ".hermes", ".raft-computer-go"),
+		filepath.Join(p.trustedHome, ".hermes", ".vela-computer"),
 	)
 }
 
@@ -74,7 +74,7 @@ func (p *nativeProfileProvisioner) transactionPath(
 	return filepath.Join(
 		p.trustedHome,
 		".hermes",
-		".raft-computer-go",
+		".vela-computer",
 		p.transactionRelativePath(profileName),
 	)
 }

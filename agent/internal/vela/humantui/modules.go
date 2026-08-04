@@ -5,10 +5,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/reactvaxis/nativemodule"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/humanim"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/humanplatform"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/reactvaxis/nativemodule"
+	"velachat/agent/internal/vela/humanim"
+	"velachat/agent/internal/vela/humanplatform"
 )
 
 func registerModules(registry *nativemodule.Registry, platform *humanplatform.Client, messaging *humanim.Adapter) {

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
+	"velachat/agent/internal/vela/im"
 )
 
 func TestTransportImplementsEmbeddedLoginSendAndHistory(t *testing.T) {
@@ -58,7 +58,7 @@ func TestTransportImplementsEmbeddedLoginSendAndHistory(t *testing.T) {
 							"payload": map[string]any{
 								"text": "hello",
 							},
-							"cloudCustomData": `{"type":"raft.thread-reply/v1","threadId":"thread-1"}`,
+							"cloudCustomData": `{"type":"vela.thread-reply/v1","threadId":"thread-1"}`,
 						},
 					},
 				},
@@ -99,7 +99,7 @@ func TestTransportImplementsEmbeddedLoginSendAndHistory(t *testing.T) {
 		im.SendTextRequest{
 			Conversation:    conversation,
 			Text:            "reply",
-			CloudCustomData: `{"type":"raft.thread-reply/v1","threadId":"thread-1"}`,
+			CloudCustomData: `{"type":"vela.thread-reply/v1","threadId":"thread-1"}`,
 		},
 	)
 	if err != nil {
@@ -109,7 +109,7 @@ func TestTransportImplementsEmbeddedLoginSendAndHistory(t *testing.T) {
 		receipt.TimestampMS != 1_700_000_000_000 || receipt.Sequence != 8 {
 		t.Fatalf("receipt = %#v", receipt)
 	}
-	if got := fake.requests[1]["cloud_custom_data"]; got != `{"type":"raft.thread-reply/v1","threadId":"thread-1"}` {
+	if got := fake.requests[1]["cloud_custom_data"]; got != `{"type":"vela.thread-reply/v1","threadId":"thread-1"}` {
 		t.Fatalf("cloud_custom_data = %#v", got)
 	}
 	attachmentReceipt, err := transport.SendAttachment(
@@ -119,7 +119,7 @@ func TestTransportImplementsEmbeddedLoginSendAndHistory(t *testing.T) {
 			Filename:        "说明.txt",
 			MIMEType:        "text/plain",
 			Data:            []byte("你好"),
-			CloudCustomData: `{"type":"raft.thread-reply/v1","threadId":"thread-1"}`,
+			CloudCustomData: `{"type":"vela.thread-reply/v1","threadId":"thread-1"}`,
 		},
 	)
 	if err != nil {
@@ -167,7 +167,7 @@ func TestTransportImplementsEmbeddedLoginSendAndHistory(t *testing.T) {
 	if len(page.Messages) != 1 ||
 		page.Messages[0].Ref.MessageID() != "incoming-1" ||
 		page.Messages[0].SenderUserID != "human-1" ||
-		page.Messages[0].CloudCustomData != `{"type":"raft.thread-reply/v1","threadId":"thread-1"}` ||
+		page.Messages[0].CloudCustomData != `{"type":"vela.thread-reply/v1","threadId":"thread-1"}` ||
 		len(page.Messages[0].Elements) != 1 ||
 		page.Messages[0].Elements[0].Text != "hello" {
 		t.Fatalf("page = %#v", page)

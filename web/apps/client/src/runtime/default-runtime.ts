@@ -1,5 +1,5 @@
 import TencentCloudChat from "@tencentcloud/chat";
-import { PlatformApi } from "@raft-platform/client-core";
+import { PlatformApi } from "@vela/client-core";
 import TIMUploadPlugin from "tim-upload-plugin";
 import { createAppStore } from "../application/app-store";
 import { ChannelChatService } from "../im/channel-chat-service";
@@ -22,7 +22,7 @@ export function createDefaultStore() {
       typeof globalThis.location === "undefined"
         ? undefined
         : globalThis.location.origin,
-    environmentUrl: process.env.EXPO_PUBLIC_RAFT_API_URL,
+    environmentUrl: process.env.EXPO_PUBLIC_VELA_API_URL,
     search:
       typeof globalThis.location === "undefined"
         ? undefined

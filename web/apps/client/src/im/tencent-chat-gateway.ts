@@ -3,7 +3,7 @@ import {
   type ConversationSummary,
   type ConversationSummarySnapshot,
   type HumanImSession,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import type { ChatSdk, SdkMessage } from "./channel-chat-service";
 import {
   defaultTencentMessageTypes,

@@ -999,7 +999,7 @@ export interface paths {
             path: {
                 version: string;
                 target: "darwin-arm64";
-                file: "manifest.json" | "manifest.sig" | "install.sh" | "raft-computer-go";
+                file: "manifest.json" | "manifest.sig" | "install.sh" | "vela-computer";
             };
             cookie?: never;
         };
@@ -4058,7 +4058,7 @@ export interface operations {
             path: {
                 version: string;
                 target: "darwin-arm64";
-                file: "manifest.json" | "manifest.sig" | "install.sh" | "raft-computer-go";
+                file: "manifest.json" | "manifest.sig" | "install.sh" | "vela-computer";
             };
             cookie?: never;
         };

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	rootstate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/state"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/tat"
+	rootstate "velachat/agent/internal/state"
+	"velachat/agent/internal/vela/tat"
 )
 
 func TestServiceReusesStagedSecretAndCompletesFirstInstall(t *testing.T) {

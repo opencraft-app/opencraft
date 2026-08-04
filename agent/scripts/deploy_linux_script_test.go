@@ -18,7 +18,7 @@ func TestLinuxDeployUploadsAndRequestsChecksumVerifiedInstall(t *testing.T) {
 	}
 	script := filepath.Join(filepath.Dir(sourceFile), "deploy-linux.sh")
 	root := t.TempDir()
-	source := filepath.Join(root, "raft-computer-go-linux-amd64")
+	source := filepath.Join(root, "vela-computer-linux-amd64")
 	if err := os.WriteFile(source, []byte("linux fixture"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestLinuxDeployUploadsAndRequestsChecksumVerifiedInstall(t *testing.T) {
 		"--source",
 		source,
 		"--destination",
-		"/usr/local/bin/raft-computer-go",
+		"/usr/local/bin/vela-computer",
 	)
 	command.Env = append(
 		os.Environ(),
@@ -67,7 +67,7 @@ func TestLinuxDeployUploadsAndRequestsChecksumVerifiedInstall(t *testing.T) {
 	text := string(log)
 	if !strings.Contains(
 		text,
-		"scp <"+source+"> <root@example.test:/usr/local/bin/raft-computer-go.upload.",
+		"scp <"+source+"> <root@example.test:/usr/local/bin/vela-computer.upload.",
 	) {
 		t.Fatalf("missing scoped upload: %s", text)
 	}
@@ -88,7 +88,7 @@ func TestLinuxDeployRejectsUnsafeDestinationBeforeSCP(t *testing.T) {
 		t.Fatal("cannot resolve deploy script path")
 	}
 	script := filepath.Join(filepath.Dir(sourceFile), "deploy-linux.sh")
-	source := filepath.Join(t.TempDir(), "raft-computer-go")
+	source := filepath.Join(t.TempDir(), "vela-computer")
 	if err := os.WriteFile(source, []byte("fixture"), 0o700); err != nil {
 		t.Fatal(err)
 	}

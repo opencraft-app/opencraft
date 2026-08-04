@@ -1,4 +1,4 @@
-import {TerminalController, type Server} from "@raft-platform/client-core";
+import {TerminalController, type Server} from "@vela/client-core";
 import {useRouter, type Href} from "expo-router";
 import {useShallow} from "zustand/react/shallow";
 
@@ -39,7 +39,7 @@ export function ExpoManagementRouteSurface({
 
   return (
     <>
-      <RouteTitle title={`${sectionTitle[section]} · ${server.name} · RAFT`} />
+      <RouteTitle title={`${sectionTitle[section]} · ${server.name} · VELA`} />
       <ManagementRouteSurface
         {...(section === "computers"
           ? {

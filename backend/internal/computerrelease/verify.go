@@ -32,7 +32,7 @@ func OpenVerifiedBundle(config BundleVerificationConfig) (Bundle, error) {
 	directory := filepath.Clean(config.Directory)
 	return Bundle{
 		Release:       release,
-		ProgramPath:   filepath.Join(directory, release.Target, "raft-computer-go"),
+		ProgramPath:   filepath.Join(directory, release.Target, "vela-computer"),
 		InstallerPath: filepath.Join(directory, release.Target, "install.sh"),
 		ManifestPath:  filepath.Join(directory, "manifest.json"),
 		SignaturePath: filepath.Join(directory, "manifest.sig"),
@@ -58,7 +58,7 @@ func VerifyBundle(config BundleVerificationConfig) (computerport.ReleaseBinding,
 		binding computerport.ArtifactBinding
 		path    string
 	}{
-		{release.Program, filepath.Join(directory, release.Target, "raft-computer-go")},
+		{release.Program, filepath.Join(directory, release.Target, "vela-computer")},
 		{release.Installer, filepath.Join(directory, release.Target, "install.sh")},
 		{release.Manifest, filepath.Join(directory, "manifest.json")},
 		{release.Signature, filepath.Join(directory, "manifest.sig")},
@@ -101,8 +101,8 @@ func verifySignedManifest(
 	}
 	program := document.Files[0]
 	wantObject := "computer/releases/" + release.Version + "/" +
-		release.Target + "/raft-computer-go"
-	if program.Name != "raft-computer-go" || program.ObjectKey != wantObject ||
+		release.Target + "/vela-computer"
+	if program.Name != "vela-computer" || program.ObjectKey != wantObject ||
 		path.Clean(program.ObjectKey) != program.ObjectKey ||
 		program.Size != release.Program.Size ||
 		strings.ToLower(program.SHA256) != program.SHA256 {

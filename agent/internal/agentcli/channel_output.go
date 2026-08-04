@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
+	"velachat/agent/internal/common"
 )
 
 type channelView struct {
@@ -111,7 +111,7 @@ func formatChannelInfo(channel channelView, memberCounts *channelMemberCounts) s
 		lines = append(lines, fmt.Sprintf("Members: %d (%d agents, %d humans)",
 			memberCounts.Agents+memberCounts.Humans, memberCounts.Agents, memberCounts.Humans))
 	}
-	lines = append(lines, "", fmt.Sprintf("More: raft channel members %q", channelReference(channel.Name)))
+	lines = append(lines, "", fmt.Sprintf("More: vela channel members %q", channelReference(channel.Name)))
 	return strings.Join(lines, "\n") + "\n"
 }
 

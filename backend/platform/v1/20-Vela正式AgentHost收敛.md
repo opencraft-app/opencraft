@@ -4,20 +4,19 @@
 
 ## 1. 唯一程序与入口
 
-端侧唯一程序为 `raft-computer-go`，唯一常驻入口为：
+端侧唯一程序为 `vela-computer`，唯一常驻入口为：
 
 ```text
-raft-computer-go daemon run
+vela-computer daemon run
 ```
 
-程序没有 Raft/Vela mode 选择器、根级 `run`、`__service` 或 `__run`。隐藏
-`__agent-cli` 只为 workspace 中的 `raft` / `slock` wrapper 提供 Agent-facing 能力，不是
-第二个 daemon。
+程序没有 mode 选择器、根级 `run`、`__service` 或 `__run`。隐藏 `__agent-cli` 只为
+workspace 中的 `vela` wrapper 提供 Agent-facing 能力，不是第二个 daemon。
 
 ## 2. 单进程拓扑
 
 ```text
-raft-computer-go daemon
+vela-computer daemon
   ├── native TAT core
   ├── Assignment reconciler
   ├── RuntimeActor × N
@@ -57,11 +56,11 @@ RuntimeActor 管理，不拥有 Computer credential、CAM 密钥或其他 Agent 
 
 ## 5. 发布契约
 
-Chatserver 只负责签名、发布和分发外部构建好的 `raft-computer-go`：
+Chatserver 只负责签名、发布和分发外部构建好的 `vela-computer`：
 
 ```text
 <release>/<target>/
-├── raft-computer-go
+├── vela-computer
 ├── install.sh
 ├── manifest.json
 └── manifest.sig
@@ -77,4 +76,3 @@ Chatserver 只负责签名、发布和分发外部构建好的 `raft-computer-go
 - 发布物只有一个自研端侧可执行文件；
 - 首次安装、TAT、Assignment、IM、Runtime、heartbeat 和 LaunchAgent 闭环通过；
 - Chatserver 仓库不存在端侧 Host、TAT receiver 或 IM Bridge 源码。
-

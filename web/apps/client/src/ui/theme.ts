@@ -1,7 +1,7 @@
 export {
   breakpoints,
   computerSupportStackBreakpoint,
-  raftTheme,
-  type RaftTheme,
+  velaTheme,
+  type VelaTheme,
   workspaceShellWideBreakpoint,
 } from "./tokens";

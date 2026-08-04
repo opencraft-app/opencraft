@@ -869,7 +869,7 @@ func repositoryEnrollmentRelease() computerport.ReleaseBinding {
 		Manifest:  computerport.ArtifactBinding{ObjectKey: "computer/releases/0.1.0/manifest.json", SHA256: sha256.Sum256([]byte("manifest")), Size: 512},
 		Signature: computerport.ArtifactBinding{ObjectKey: "computer/releases/0.1.0/manifest.sig", SHA256: sha256.Sum256([]byte("signature")), Size: 64},
 		Installer: computerport.ArtifactBinding{ObjectKey: "computer/releases/0.1.0/darwin-arm64/install.sh", SHA256: sha256.Sum256([]byte("installer")), Size: 1024},
-		Program:   computerport.ArtifactBinding{ObjectKey: "computer/releases/0.1.0/darwin-arm64/raft-computer-go", SHA256: sha256.Sum256([]byte("program")), Size: 8 << 20},
+		Program:   computerport.ArtifactBinding{ObjectKey: "computer/releases/0.1.0/darwin-arm64/vela-computer", SHA256: sha256.Sum256([]byte("program")), Size: 8 << 20},
 	}
 }
 

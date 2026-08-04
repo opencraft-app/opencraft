@@ -58,7 +58,7 @@ func TestHiddenInstallDispatchesVerifiedFirstInstallInputs(t *testing.T) {
 		"--signing-public-key", "test-public-key",
 		"--release-version", "0.2.0",
 		"--target", "darwin-arm64",
-		"--program-file", filepath.Join(rootDirectory, "raft-computer-go"),
+		"--program-file", filepath.Join(rootDirectory, "vela-computer"),
 		"--installation-root", filepath.Join(rootDirectory, ".vela"),
 	})
 	if err := root.Execute(); err != nil {
@@ -68,7 +68,7 @@ func TestHiddenInstallDispatchesVerifiedFirstInstallInputs(t *testing.T) {
 		t.Fatalf("last call = %q", actions.LastCall())
 	}
 	options := actions.install
-	if options.ProgramFile != filepath.Join(rootDirectory, "raft-computer-go") ||
+	if options.ProgramFile != filepath.Join(rootDirectory, "vela-computer") ||
 		options.InstallationRoot != filepath.Join(rootDirectory, ".vela") ||
 		options.StateDirectory != filepath.Join(rootDirectory, ".vela", "state") ||
 		!options.AllowInsecurePlatformHTTP {
@@ -107,7 +107,7 @@ func TestVersionDoesNotCallDaemon(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := strings.TrimSpace(output.String()); got !=
-		"raft-computer-go vela test-version" {
+		"vela-computer vela test-version" {
 		t.Fatalf("version output = %q", got)
 	}
 	if actions.TotalCalls() != 0 {
@@ -125,7 +125,7 @@ func TestVersionJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := strings.TrimSpace(output.String()); got !=
-		`{"mode":"vela","name":"raft-computer-go","version":"test-version"}` {
+		`{"mode":"vela","name":"vela-computer","version":"test-version"}` {
 		t.Fatalf("version JSON = %q", got)
 	}
 }
@@ -236,7 +236,7 @@ func TestTUIAllowsRemoteHTTPOnlyForExplicitDevelopmentOverride(t *testing.T) {
 	deniedRoot.SetArgs(args)
 	if err := deniedRoot.Execute(); !errors.Is(err, ErrInvalidArguments) {
 		t.Fatalf("default remote HTTP TUI error = %v, want ErrInvalidArguments", err)
-	} else if !strings.Contains(err.Error(), "RAFT_COMPUTER_GO_ALLOW_INSECURE_HTTP=1") {
+	} else if !strings.Contains(err.Error(), "VELA_ALLOW_INSECURE_HTTP=1") {
 		t.Fatalf("default remote HTTP TUI error = %q, want development override hint", err)
 	}
 

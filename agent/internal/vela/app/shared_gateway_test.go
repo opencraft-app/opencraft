@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/agentgateway"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/daemon"
+	"velachat/agent/internal/vela/agentgateway"
+	"velachat/agent/internal/vela/daemon"
 )
 
 func TestManagedAgentFactoryRegistersEveryLaunchOnInjectedHub(
@@ -43,8 +43,8 @@ func TestManagedAgentFactoryRegistersEveryLaunchOnInjectedHub(
 	defer agentA.Close(context.Background())
 	agentB := register("agent_b", "server_b", "launch-b")
 	defer agentB.Close(context.Background())
-	if agentA.RuntimeEnvironment()["SLOCK_AGENT_PROXY_URL"] !=
-		agentB.RuntimeEnvironment()["SLOCK_AGENT_PROXY_URL"] {
+	if agentA.RuntimeEnvironment()["VELA_AGENT_PROXY_URL"] !=
+		agentB.RuntimeEnvironment()["VELA_AGENT_PROXY_URL"] {
 		t.Fatal("managed Agent launches did not share the daemon GatewayHub")
 	}
 }

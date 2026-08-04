@@ -4,7 +4,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import {
   NavigationLinkProvider,
   useAppActive,
-  useRaftFonts,
+  useVelaFonts,
 } from "@/ui";
 import {ExpoNavigationLink} from "../features/navigation/expo-navigation-link";
 import { AppRuntimeProvider, useAppRuntime } from "../runtime/app-runtime";
@@ -12,7 +12,7 @@ import { createDefaultStore } from "../runtime/default-runtime";
 
 export default function RootLayout() {
   const [store] = useState(createDefaultStore);
-  const [fontsLoaded, fontError] = useRaftFonts();
+  const [fontsLoaded, fontError] = useVelaFonts();
 
   if (!fontsLoaded && !fontError) {
     return null;

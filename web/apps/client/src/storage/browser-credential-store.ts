@@ -1,4 +1,4 @@
-import type { CredentialStore } from "@raft-platform/client-core";
+import type { CredentialStore } from "@vela/client-core";
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -7,7 +7,7 @@ interface StorageLike {
 }
 
 export class BrowserCredentialStore implements CredentialStore {
-  private static readonly refreshTokenKey = "raft.client.refresh-token";
+  private static readonly refreshTokenKey = "vela.client.refresh-token";
   private exclusiveTail: Promise<void> = Promise.resolve();
 
   public constructor(private readonly storage: StorageLike) {}

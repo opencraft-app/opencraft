@@ -110,7 +110,7 @@ describe("HomeRoute", () => {
       </AppRuntimeProvider>,
     );
 
-    expect(screen.getByText("正在连接 RAFT")).toBeVisible();
+    expect(screen.getByText("正在连接 VELA")).toBeVisible();
     expect(screen.getByTestId("agent-network-mark")).toBeVisible();
     expect(screen.queryByText("R")).toBeNull();
     expect(screen.queryByLabelText("Server 名称")).toBeNull();

@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/agentapi"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"velachat/agent/internal/agentapi"
 )
 
 func TestAgentCLIExposesOnlyVelaCommands(t *testing.T) {
@@ -159,7 +159,7 @@ func TestCobraUsageErrorIsRenderedOnceAndDoesNotAcquireClient(t *testing.T) {
 	if got := strings.Count(stderr.String(), "Error:"); got != 1 {
 		t.Fatalf("Error prefix count = %d, stderr=%q", got, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), `Run "raft message send --help" for usage.`) {
+	if !strings.Contains(stderr.String(), `Run "vela message send --help" for usage.`) {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 }

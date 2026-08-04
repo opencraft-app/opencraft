@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/gatedsteering"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/gatedsteering"
+	"velachat/agent/internal/runtimeapi"
 )
 
 var (
@@ -1513,7 +1513,7 @@ eventLoop:
 			}
 		}
 		m.mu.Unlock()
-		if os.Getenv("RAFT_COMPUTER_GO_TRACE_CODEX_METHODS") == "1" &&
+		if os.Getenv("VELA_TRACE_CODEX_METHODS") == "1" &&
 			event.Kind == runtimeapi.EventTurnCompletion {
 			_, _ = fmt.Fprintf(
 				os.Stderr,

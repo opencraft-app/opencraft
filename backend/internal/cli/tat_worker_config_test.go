@@ -23,4 +23,3 @@ func TestProductionTATWorkerLeaseCoversMultiRequestInspection(t *testing.T) {
 		t.Fatalf("TAT Worker PollDelay = %s", config.PollDelay)
 	}
 }
-

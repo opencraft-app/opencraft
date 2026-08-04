@@ -1,4 +1,4 @@
-import type { AttachmentSource } from "@raft-platform/client-core";
+import type { AttachmentSource } from "@vela/client-core";
 
 interface PickedAttachmentAsset {
   file?: unknown;

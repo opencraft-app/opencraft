@@ -5,7 +5,7 @@ import {
   type TextSocketEvent,
   type TextSocketFactory,
   type TerminalOpener,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 
 export interface WebSocketLike {
   close(): void;

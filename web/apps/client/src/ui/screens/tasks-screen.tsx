@@ -8,7 +8,7 @@ import type {
   Task,
   UpdateReminderInput,
   UpdateTaskInput,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import { useEffect, useMemo, useState } from "react";
 import {
   ScrollView,

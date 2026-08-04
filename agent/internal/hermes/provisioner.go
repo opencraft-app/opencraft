@@ -10,14 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/filelock"
+	"velachat/agent/internal/filelock"
 )
 
 const (
-	managedProfileMarkerName    = ".raft-computer-go-profile.json"
+	managedProfileMarkerName    = ".vela-computer-profile.json"
 	managedProfileMarkerSchema  = 1
 	managedProfileNaming        = "sha256-128-v1"
-	managedProfileClient        = "raft-computer-go"
+	managedProfileClient        = "vela-computer"
 	profileCommandOutputMaximum = 64 * 1024
 	defaultProfileLockWait      = 5 * time.Second
 	profileLockPollInterval     = 25 * time.Millisecond
@@ -239,7 +239,7 @@ func (p *nativeProfileProvisioner) lockPath(profileName string) string {
 	return filepath.Join(
 		p.trustedHome,
 		".hermes",
-		".raft-computer-go",
+		".vela-computer",
 		"profile-locks",
 		profileName+".lock",
 	)

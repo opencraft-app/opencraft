@@ -82,16 +82,16 @@ func TestOpenAPI兼容门禁使用当前主版本基线(t *testing.T) {
 	}
 	text := string(content)
 	for _, required := range []string{
-		"4.0.0.openapi.yaml",
-		"4.0.0.computer-bootstrap.openapi.yaml",
+		"5.0.0.openapi.yaml",
+		"5.0.0.computer-bootstrap.openapi.yaml",
 	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("check-openapi-compatibility.sh 缺少 %q", required)
 		}
 	}
 	for _, stale := range []string{
-		"3.0.0.openapi.yaml",
-		"3.0.0.computer-bootstrap.openapi.yaml",
+		"4.0.0.openapi.yaml",
+		"4.0.0.computer-bootstrap.openapi.yaml",
 	} {
 		if strings.Contains(text, stale) {
 			t.Errorf("check-openapi-compatibility.sh 仍使用旧主版本 %q", stale)
@@ -158,7 +158,7 @@ func TestRelease只发布内嵌IM的CanonicalGoHost(t *testing.T) {
 	}
 	for _, required := range []string{
 		"CHATSERVER_AGENT_BINARY",
-		`"$release_directory/raft-computer-go"`,
+		`"$release_directory/vela-computer"`,
 		`"$release_directory/SHA256SUMS"`,
 	} {
 		if !strings.Contains(script, required) {
@@ -250,10 +250,7 @@ func TestCanary发布脚本固定全新数据库和安全Rollout合同(t *testin
 		"deploy/k8s/deployment.yaml",
 		"canonical_args",
 		"original_args",
-		"deploy/k8s/computer-release-configmap.yaml",
-		"canonical_computer_release_configmap",
 		"original_computer_release_configmap",
-		"Computer 发布目录已存在且内容不同",
 		"sha256:",
 		"go test -p 1",
 		"mktemp -d",

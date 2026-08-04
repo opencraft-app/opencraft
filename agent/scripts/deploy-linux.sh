@@ -3,9 +3,9 @@
 set -eu
 
 script_directory=$(CDPATH= cd "$(dirname "$0")" && pwd)
-source_path="$script_directory/../bin/raft-computer-go-linux-amd64"
+source_path="$script_directory/../bin/vela-computer-linux-amd64"
 host=""
-destination="/usr/local/bin/raft-computer-go"
+destination="/usr/local/bin/vela-computer"
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
@@ -104,7 +104,7 @@ if [ -f "$destination" ]; then
 	current=$(sha256sum "$destination" | awk '{print $1}')
 	if [ "$current" = "$expected" ]; then
 		rm -f "$upload"
-		echo "raft-computer-go is already installed with checksum $expected"
+		echo "vela-computer is already installed with checksum $expected"
 		exit 0
 	fi
 	backup="${destination}.previous.$(date -u +%Y%m%dT%H%M%SZ)"

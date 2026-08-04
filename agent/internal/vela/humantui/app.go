@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/reactvaxis"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/reactvaxis/nativemodule"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/gojaim"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/humanim"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/humanplatform"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
+	"velachat/agent/internal/reactvaxis"
+	"velachat/agent/internal/reactvaxis/nativemodule"
+	"velachat/agent/internal/vela/gojaim"
+	"velachat/agent/internal/vela/humanim"
+	"velachat/agent/internal/vela/humanplatform"
+	"velachat/agent/internal/vela/im"
 )
 
 type Config struct {

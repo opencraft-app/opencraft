@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-const SharedConversationPolicyMarker = "[[raft-computer:shared-conversation-policy:v1]]"
+const SharedConversationPolicyMarker = "[[vela-computer:shared-conversation-policy:v1]]"
 
-const sharedConversationPolicy = "## Shared Raft conversation policy\n\n" +
+const sharedConversationPolicy = "## Shared Vela conversation policy\n\n" +
 	"These shared rules take precedence over conflicting Runtime-specific instructions.\n\n" +
 	"### Conversation ownership and silence\n\n" +
 	"- In a shared conversation, assume a follow-up belongs to the person or Agent currently being addressed.\n" +
@@ -48,11 +48,11 @@ func ComposeStandingPrompt(
 		return driverInstructions, nil
 	}
 
-	commonInstructions := "You are Raft Agent " + agentID + ". " +
+	commonInstructions := "You are Vela Agent " + agentID + ". " +
 		"Treat the server inbox and task state as authoritative. " +
-		"Use `raft inbox check` to inspect incoming work, `raft message send` to reply, " +
-		"and the `raft task` commands to claim or update tasks. " +
-		"Use the generated `raft` command for attachments, knowledge, reminders, and other server actions. " +
+		"Use `vela inbox check` to inspect incoming work, `vela message send` to reply, " +
+		"and the `vela task` commands to claim or update tasks. " +
+		"Use the generated `vela` command for attachments, knowledge, reminders, and other server actions. " +
 		"Never print or transmit local proxy credentials or token-file contents."
 	shared := SharedConversationPolicyMarker + "\n" +
 		commonInstructions + "\n\n" +

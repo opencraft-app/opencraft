@@ -10,8 +10,8 @@ import (
 
 func TestRuntimeAcceptsVersionedVerifiedApplicationBundle(t *testing.T) {
 	source := `
-globalThis.__raftTui = {
-  start() { __raftNative.commit({type: "View", testId: "root"}); },
+globalThis.__velaTui = {
+  start() { __velaNative.commit({type: "View", testId: "root"}); },
   dispatch() {},
   resize() {}
 };`
@@ -44,12 +44,12 @@ func TestRuntimeRejectsBundleHashAndProtocolMismatch(t *testing.T) {
 	for name, bundle := range map[string]Bundle{
 		"hash": {
 			Name: "bad-hash", Protocol: ProtocolV1,
-			SHA256: "00", Source: "globalThis.__raftTui = {};",
+			SHA256: "00", Source: "globalThis.__velaTui = {};",
 		},
 		"protocol": {
 			Name: "bad-protocol", Protocol: "reactvaxis/v3",
-			SHA256: hashString("globalThis.__raftTui = {};"),
-			Source: "globalThis.__raftTui = {};",
+			SHA256: hashString("globalThis.__velaTui = {};"),
+			Source: "globalThis.__velaTui = {};",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -62,9 +62,9 @@ func TestRuntimeRejectsBundleHashAndProtocolMismatch(t *testing.T) {
 
 func TestRuntimeAcceptsV2OnlyWhenBundleSelfDeclaresMatchingProtocol(t *testing.T) {
 	source := `
-globalThis.__raftTui = {
+globalThis.__velaTui = {
   protocol: "reactvaxis/v2",
-  start() { __raftNative.commit({type: "View", testId: "v2-root"}); },
+  start() { __velaNative.commit({type: "View", testId: "v2-root"}); },
   dispatch() {},
   resize() {}
 };`
@@ -90,8 +90,8 @@ globalThis.__raftTui = {
 
 func TestRuntimeRejectsV2MissingOrMismatchedSelfDeclaration(t *testing.T) {
 	for name, source := range map[string]string{
-		"missing":  `globalThis.__raftTui = {start() {}, dispatch() {}, resize() {}};`,
-		"mismatch": `globalThis.__raftTui = {protocol: "reactvaxis/v1", start() {}, dispatch() {}, resize() {}};`,
+		"missing":  `globalThis.__velaTui = {start() {}, dispatch() {}, resize() {}};`,
+		"mismatch": `globalThis.__velaTui = {protocol: "reactvaxis/v1", start() {}, dispatch() {}, resize() {}};`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := NewRuntime(RuntimeConfig{Bundle: Bundle{

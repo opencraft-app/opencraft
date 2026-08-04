@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeprompt"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/runtimeapi"
+	"velachat/agent/internal/runtimeprompt"
 )
 
 func TestDriverRunsCodexAppServerAndNormalizesEvents(t *testing.T) {
@@ -34,7 +34,7 @@ func TestDriverRunsCodexAppServerAndNormalizesEvents(t *testing.T) {
 		WorkingDirectory: t.TempDir(),
 		Prompt:           "hello",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER": "1",
+			"VELA_CODEX_HELPER": "1",
 		},
 	})
 	if err != nil {
@@ -115,8 +115,8 @@ func TestDriverForwardsSharedStandingPolicyToThreadStartAndResume(t *testing.T) 
 				StandingPrompt:   standingPrompt,
 				SessionID:        testCase.sessionID,
 				Environment: map[string]string{
-					"RAFT_CODEX_HELPER":             "1",
-					"RAFT_CODEX_HELPER_REQUEST_LOG": requestLog,
+					"VELA_CODEX_HELPER":             "1",
+					"VELA_CODEX_HELPER_REQUEST_LOG": requestLog,
 				},
 			})
 			if err != nil {
@@ -158,8 +158,8 @@ func TestDriverExposesObservedAndConfiguredRuntimeHome(t *testing.T) {
 		WorkingDirectory: workingDirectory,
 		Prompt:           "Start.",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":      "1",
-			"RAFT_CODEX_HELPER_MODE": "runtime-home",
+			"VELA_CODEX_HELPER":      "1",
+			"VELA_CODEX_HELPER_MODE": "runtime-home",
 			"CODEX_HOME":             ".configured-codex-home",
 		},
 	})
@@ -198,7 +198,7 @@ func TestDriverUsesDefaultRuntimeHomeWhenConfiguredValueIsBlank(t *testing.T) {
 		WorkingDirectory: workingDirectory,
 		Prompt:           "Start.",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER": "1",
+			"VELA_CODEX_HELPER": "1",
 			"CODEX_HOME":        " \t ",
 		},
 	})
@@ -239,9 +239,9 @@ func TestDriverEchoesUnsupportedServerRequestIDs(t *testing.T) {
 		WorkingDirectory: t.TempDir(),
 		Prompt:           "Start.",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":              "1",
-			"RAFT_CODEX_HELPER_MODE":         "server-request-envelope",
-			"RAFT_CODEX_HELPER_RESPONSE_LOG": responseLog,
+			"VELA_CODEX_HELPER":              "1",
+			"VELA_CODEX_HELPER_MODE":         "server-request-envelope",
+			"VELA_CODEX_HELPER_RESPONSE_LOG": responseLog,
 		},
 	})
 	if err != nil {
@@ -293,8 +293,8 @@ func TestDriverRejectsWhitespaceInitializeUserAgent(t *testing.T) {
 		WorkingDirectory: t.TempDir(),
 		Prompt:           "Start.",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":      "1",
-			"RAFT_CODEX_HELPER_MODE": "initialize-whitespace-user-agent",
+			"VELA_CODEX_HELPER":      "1",
+			"VELA_CODEX_HELPER_MODE": "initialize-whitespace-user-agent",
 		},
 	})
 	if session != nil {
@@ -326,8 +326,8 @@ func TestDriverPinsInitialTurnToStartupResultBeforeLaterThreadNotification(
 		WorkingDirectory: t.TempDir(),
 		Prompt:           "preserve startup thread order",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":      "1",
-			"RAFT_CODEX_HELPER_MODE": "startup-thread-order",
+			"VELA_CODEX_HELPER":      "1",
+			"VELA_CODEX_HELPER_MODE": "startup-thread-order",
 		},
 	})
 	if err != nil {
@@ -362,10 +362,10 @@ func TestCodexAppServerHelper(t *testing.T) {
 			os.Exit(0)
 		}
 	}
-	if os.Getenv("RAFT_CODEX_HELPER") != "1" {
+	if os.Getenv("VELA_CODEX_HELPER") != "1" {
 		return
 	}
-	mode := os.Getenv("RAFT_CODEX_HELPER_MODE")
+	mode := os.Getenv("VELA_CODEX_HELPER_MODE")
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		var request struct {
@@ -535,10 +535,10 @@ func TestCodexAppServerHelper(t *testing.T) {
 				prompt := helperTurnText(request.Params)
 				if !strings.Contains(
 					prompt,
-					"Codex could not resume its previous thread; Slock started a fresh Codex thread.",
+					"Codex could not resume its previous thread; Vela started a fresh Codex thread.",
 				) || !strings.Contains(
 					prompt,
-					"Use Slock conversation history and local MEMORY.md/notes as the recovery point; do not assume prior Codex thread context is loaded.",
+					"Use Vela conversation history and local MEMORY.md/notes as the recovery point; do not assume prior Codex thread context is loaded.",
 				) || !strings.HasSuffix(prompt, "Continue queued work.") {
 					helperWrite(map[string]any{
 						"jsonrpc": "2.0",
@@ -696,8 +696,8 @@ func TestCodexAppServerHelper(t *testing.T) {
 func TestDriverExecutableCandidatesFallThroughDeduplicateAndStaySelected(
 	t *testing.T,
 ) {
-	t.Setenv("RAFT_CODEX_HELPER", "1")
-	t.Setenv("RAFT_CODEX_HELPER_MODE", "models")
+	t.Setenv("VELA_CODEX_HELPER", "1")
+	t.Setenv("VELA_CODEX_HELPER_MODE", "models")
 	rejected := filepath.Join(t.TempDir(), "incompatible-codex")
 
 	driver := New(Options{})
@@ -751,7 +751,7 @@ func TestDriverExecutableCandidatesFallThroughDeduplicateAndStaySelected(
 		AgentID:          "agent-candidate-selection",
 		LaunchID:         "launch-candidate-selection",
 		WorkingDirectory: t.TempDir(),
-		Environment:      map[string]string{"RAFT_CODEX_HELPER": "1"},
+		Environment:      map[string]string{"VELA_CODEX_HELPER": "1"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -817,8 +817,8 @@ func TestDriverExecutableCandidatesReportEveryRejection(t *testing.T) {
 }
 
 func TestDriverDetectsPaginatedCodexAppServerModels(t *testing.T) {
-	t.Setenv("RAFT_CODEX_HELPER", "1")
-	t.Setenv("RAFT_CODEX_HELPER_MODE", "models")
+	t.Setenv("VELA_CODEX_HELPER", "1")
+	t.Setenv("VELA_CODEX_HELPER_MODE", "models")
 
 	driver := New(Options{
 		Executable: os.Args[0],
@@ -859,8 +859,8 @@ func TestDriverFallsBackToCodexCacheWhenAppServerHasNoUsableModels(
 	home := t.TempDir()
 	writeCodexModelCacheFixture(t, home)
 	t.Setenv("CODEX_HOME", home)
-	t.Setenv("RAFT_CODEX_HELPER", "1")
-	t.Setenv("RAFT_CODEX_HELPER_MODE", "models-empty")
+	t.Setenv("VELA_CODEX_HELPER", "1")
+	t.Setenv("VELA_CODEX_HELPER_MODE", "models-empty")
 
 	driver := New(Options{
 		Executable: os.Args[0],
@@ -966,8 +966,8 @@ func TestDetectCodexModelsFromCacheDoesNotSkipMalformedPrimary(t *testing.T) {
 
 func TestDriverReturnsUnsupportedWhenModelDiscoveryIsExhausted(t *testing.T) {
 	t.Setenv("CODEX_HOME", t.TempDir())
-	t.Setenv("RAFT_CODEX_HELPER", "1")
-	t.Setenv("RAFT_CODEX_HELPER_MODE", "models-empty")
+	t.Setenv("VELA_CODEX_HELPER", "1")
+	t.Setenv("VELA_CODEX_HELPER_MODE", "models-empty")
 	driver := New(Options{
 		Executable: os.Args[0],
 		ArgsPrefix: []string{"-test.run=TestCodexAppServerHelper", "--"},
@@ -1007,8 +1007,8 @@ func TestDriverPrefersUsableAppServerModelsOverCache(t *testing.T) {
 	home := t.TempDir()
 	writeCodexModelCacheFixture(t, home)
 	t.Setenv("CODEX_HOME", home)
-	t.Setenv("RAFT_CODEX_HELPER", "1")
-	t.Setenv("RAFT_CODEX_HELPER_MODE", "models")
+	t.Setenv("VELA_CODEX_HELPER", "1")
+	t.Setenv("VELA_CODEX_HELPER_MODE", "models")
 	driver := New(Options{
 		Executable: os.Args[0],
 		ArgsPrefix: []string{"-test.run=TestCodexAppServerHelper", "--"},
@@ -1023,8 +1023,8 @@ func TestDriverPrefersUsableAppServerModelsOverCache(t *testing.T) {
 }
 
 func TestDriverModelDiscoveryIgnoresServerRequestMatchingPendingID(t *testing.T) {
-	t.Setenv("RAFT_CODEX_HELPER", "1")
-	t.Setenv("RAFT_CODEX_HELPER_MODE", "models-server-request")
+	t.Setenv("VELA_CODEX_HELPER", "1")
+	t.Setenv("VELA_CODEX_HELPER_MODE", "models-server-request")
 
 	driver := New(Options{
 		Executable: os.Args[0],
@@ -1045,8 +1045,8 @@ func TestDriverModelDiscoveryFallsBackAfterIncompatibleInitialize(t *testing.T) 
 	home := t.TempDir()
 	writeCodexModelCacheFixture(t, home)
 	t.Setenv("CODEX_HOME", home)
-	t.Setenv("RAFT_CODEX_HELPER", "1")
-	t.Setenv("RAFT_CODEX_HELPER_MODE", "initialize-whitespace-user-agent")
+	t.Setenv("VELA_CODEX_HELPER", "1")
+	t.Setenv("VELA_CODEX_HELPER_MODE", "initialize-whitespace-user-agent")
 
 	driver := New(Options{
 		Executable: os.Args[0],
@@ -1062,8 +1062,8 @@ func TestDriverModelDiscoveryFallsBackAfterIncompatibleInitialize(t *testing.T) 
 }
 
 func TestDriverModelDiscoveryHonorsContextDeadline(t *testing.T) {
-	t.Setenv("RAFT_CODEX_HELPER", "1")
-	t.Setenv("RAFT_CODEX_HELPER_MODE", "models-hang")
+	t.Setenv("VELA_CODEX_HELPER", "1")
+	t.Setenv("VELA_CODEX_HELPER_MODE", "models-hang")
 
 	driver := New(Options{
 		Executable: os.Args[0],
@@ -1081,8 +1081,8 @@ func TestDriverModelDiscoveryFallsBackAfterMalformedModelList(t *testing.T) {
 	home := t.TempDir()
 	writeCodexModelCacheFixture(t, home)
 	t.Setenv("CODEX_HOME", home)
-	t.Setenv("RAFT_CODEX_HELPER", "1")
-	t.Setenv("RAFT_CODEX_HELPER_MODE", "models-malformed")
+	t.Setenv("VELA_CODEX_HELPER", "1")
+	t.Setenv("VELA_CODEX_HELPER_MODE", "models-malformed")
 
 	driver := New(Options{
 		Executable: os.Args[0],
@@ -1112,8 +1112,8 @@ func TestDriverSuppressesNonFinalAgentMessageDelta(t *testing.T) {
 		WorkingDirectory: t.TempDir(),
 		Prompt:           "start",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":      "1",
-			"RAFT_CODEX_HELPER_MODE": "non-final-agent-message",
+			"VELA_CODEX_HELPER":      "1",
+			"VELA_CODEX_HELPER_MODE": "non-final-agent-message",
 		},
 	})
 	if err != nil {
@@ -3550,8 +3550,8 @@ func TestDriverMapsFastExecutionModeToCodexServiceTier(t *testing.T) {
 		WorkingDirectory: t.TempDir(),
 		ExecutionMode:    "fast",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":      "1",
-			"RAFT_CODEX_HELPER_MODE": "require-fast-tier",
+			"VELA_CODEX_HELPER":      "1",
+			"VELA_CODEX_HELPER_MODE": "require-fast-tier",
 		},
 	})
 	if err != nil {
@@ -3573,8 +3573,8 @@ func TestDriverMarksAcceptedInitialPromptAsNonEmptyTurnEvidence(t *testing.T) {
 		WorkingDirectory: t.TempDir(),
 		Prompt:           "this accepted prompt must produce evidence",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":      "1",
-			"RAFT_CODEX_HELPER_MODE": "zero-evidence-started",
+			"VELA_CODEX_HELPER":      "1",
+			"VELA_CODEX_HELPER_MODE": "zero-evidence-started",
 		},
 	})
 	if err != nil {
@@ -3601,8 +3601,8 @@ func TestDriverIgnoresRootTurnIDForCorrelatedInputEvidence(t *testing.T) {
 		WorkingDirectory: t.TempDir(),
 		Prompt:           "this accepted prompt has only a root response turn ID",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":      "1",
-			"RAFT_CODEX_HELPER_MODE": "root-turn-id-zero-evidence",
+			"VELA_CODEX_HELPER":      "1",
+			"VELA_CODEX_HELPER_MODE": "root-turn-id-zero-evidence",
 		},
 	})
 	if err != nil {
@@ -3628,8 +3628,8 @@ func TestDriverMarksAcceptedIdleDeliveryAsNonEmptyTurnEvidence(t *testing.T) {
 		LaunchID:         "launch-zero-evidence-delivery",
 		WorkingDirectory: t.TempDir(),
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":      "1",
-			"RAFT_CODEX_HELPER_MODE": "zero-evidence-started",
+			"VELA_CODEX_HELPER":      "1",
+			"VELA_CODEX_HELPER_MODE": "zero-evidence-started",
 		},
 	})
 	if err != nil {
@@ -3698,8 +3698,8 @@ func TestDriverFallsBackToFreshThreadWhenResumeStateIsMissing(t *testing.T) {
 		WorkingDirectory: t.TempDir(),
 		SessionID:        "thread-missing",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":      "1",
-			"RAFT_CODEX_HELPER_MODE": "resume-missing",
+			"VELA_CODEX_HELPER":      "1",
+			"VELA_CODEX_HELPER_MODE": "resume-missing",
 		},
 	})
 	if err != nil {
@@ -3766,8 +3766,8 @@ func TestDriverDoesNotColdStartForUnrelatedResumeErrors(t *testing.T) {
 				WorkingDirectory: t.TempDir(),
 				SessionID:        "thread-existing",
 				Environment: map[string]string{
-					"RAFT_CODEX_HELPER":      "1",
-					"RAFT_CODEX_HELPER_MODE": mode,
+					"VELA_CODEX_HELPER":      "1",
+					"VELA_CODEX_HELPER_MODE": mode,
 				},
 			})
 			if err == nil || !strings.Contains(err.Error(), "thread/resume") {
@@ -3791,8 +3791,8 @@ func TestDriverPrependsRecoveryNoticeToFreshThreadPrompt(t *testing.T) {
 		SessionID:        "thread-missing",
 		Prompt:           "Continue queued work.",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":      "1",
-			"RAFT_CODEX_HELPER_MODE": "resume-missing-require-notice",
+			"VELA_CODEX_HELPER":      "1",
+			"VELA_CODEX_HELPER_MODE": "resume-missing-require-notice",
 		},
 	})
 	if err != nil {
@@ -3819,8 +3819,8 @@ func TestDriverSteersActiveTurn(t *testing.T) {
 		WorkingDirectory: t.TempDir(),
 		Prompt:           "initial",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":      "1",
-			"RAFT_CODEX_HELPER_MODE": "busy-steer",
+			"VELA_CODEX_HELPER":      "1",
+			"VELA_CODEX_HELPER_MODE": "busy-steer",
 		},
 	})
 	if err != nil {
@@ -3860,8 +3860,8 @@ func TestDriverReturnsTypedBoundaryRetryWhenLocalSteeringGateIsClosed(t *testing
 		WorkingDirectory: t.TempDir(),
 		Prompt:           "initial",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":      "1",
-			"RAFT_CODEX_HELPER_MODE": "busy-steer",
+			"VELA_CODEX_HELPER":      "1",
+			"VELA_CODEX_HELPER_MODE": "busy-steer",
 		},
 	})
 	if err != nil {
@@ -3909,8 +3909,8 @@ func TestDriverReturnsTypedBusyDeliveryRejection(t *testing.T) {
 		WorkingDirectory: t.TempDir(),
 		Prompt:           "initial",
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":      "1",
-			"RAFT_CODEX_HELPER_MODE": "busy-steer-reject",
+			"VELA_CODEX_HELPER":      "1",
+			"VELA_CODEX_HELPER_MODE": "busy-steer-reject",
 		},
 	})
 	if err != nil {
@@ -3951,7 +3951,7 @@ func TestDriverSessionOutlivesSuccessfulStartupContext(t *testing.T) {
 		LaunchID:         "launch-detached",
 		WorkingDirectory: t.TempDir(),
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER": "1",
+			"VELA_CODEX_HELPER": "1",
 		},
 	})
 	if err != nil {
@@ -3992,7 +3992,7 @@ func TestDriverReportsNativeProcessLiveness(t *testing.T) {
 		LaunchID:         "launch-liveness",
 		WorkingDirectory: t.TempDir(),
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER": "1",
+			"VELA_CODEX_HELPER": "1",
 		},
 	})
 	if err != nil {
@@ -4040,8 +4040,8 @@ func TestDriverReportsAppServerCrashDuringInitialization(t *testing.T) {
 		LaunchID:         "launch-crash",
 		WorkingDirectory: t.TempDir(),
 		Environment: map[string]string{
-			"RAFT_CODEX_HELPER":      "1",
-			"RAFT_CODEX_HELPER_MODE": "crash-initialize",
+			"VELA_CODEX_HELPER":      "1",
+			"VELA_CODEX_HELPER_MODE": "crash-initialize",
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "initialize Codex app-server") {
@@ -4094,7 +4094,7 @@ type codexHelperUnsupportedResponse struct {
 
 func wantUnsupportedServerRequestMessage(method string) string {
 	return `Codex app-server request "` + method +
-		`" is not supported by the non-interactive Slock daemon`
+		`" is not supported by the non-interactive Vela daemon`
 }
 
 func wantUnsupportedInitializeResultMessage() string {
@@ -4160,7 +4160,7 @@ func decodeCodexHelperUnsupportedResponses(
 }
 
 func appendCodexHelperResponse(raw []byte) {
-	path := strings.TrimSpace(os.Getenv("RAFT_CODEX_HELPER_RESPONSE_LOG"))
+	path := strings.TrimSpace(os.Getenv("VELA_CODEX_HELPER_RESPONSE_LOG"))
 	if path == "" {
 		return
 	}
@@ -4175,7 +4175,7 @@ func appendCodexHelperResponse(raw []byte) {
 }
 
 func appendCodexHelperRequest(raw []byte) {
-	path := strings.TrimSpace(os.Getenv("RAFT_CODEX_HELPER_REQUEST_LOG"))
+	path := strings.TrimSpace(os.Getenv("VELA_CODEX_HELPER_REQUEST_LOG"))
 	if path == "" {
 		return
 	}
@@ -4658,7 +4658,7 @@ func TestSessionLiveStdoutReadFailureDoesNotEmitRuntimeError(t *testing.T) {
 }
 
 func TestSessionLiveStdoutCanTraceMethodNamesWithoutPayloads(t *testing.T) {
-	t.Setenv("RAFT_COMPUTER_GO_TRACE_CODEX_METHODS", "1")
+	t.Setenv("VELA_TRACE_CODEX_METHODS", "1")
 
 	tracePath := filepath.Join(t.TempDir(), "codex-methods.log")
 	traceFile, err := os.OpenFile(tracePath, os.O_CREATE|os.O_RDWR, 0o600)
@@ -4698,7 +4698,7 @@ func TestSessionLiveStdoutCanTraceMethodNamesWithoutPayloads(t *testing.T) {
 }
 
 func TestSessionLiveStdoutTracesCompletionThreadMatchWithoutIdentityValue(t *testing.T) {
-	t.Setenv("RAFT_COMPUTER_GO_TRACE_CODEX_METHODS", "1")
+	t.Setenv("VELA_TRACE_CODEX_METHODS", "1")
 
 	tracePath := filepath.Join(t.TempDir(), "codex-completion-identity.log")
 	traceFile, err := os.OpenFile(tracePath, os.O_CREATE|os.O_RDWR, 0o600)
@@ -4742,7 +4742,7 @@ func TestSessionLiveStdoutTracesCompletionThreadMatchWithoutIdentityValue(t *tes
 }
 
 func TestSessionLiveStdoutTracesMatchingCompletionEmission(t *testing.T) {
-	t.Setenv("RAFT_COMPUTER_GO_TRACE_CODEX_METHODS", "1")
+	t.Setenv("VELA_TRACE_CODEX_METHODS", "1")
 
 	tracePath := filepath.Join(t.TempDir(), "codex-completion-emission.log")
 	traceFile, err := os.OpenFile(tracePath, os.O_CREATE|os.O_RDWR, 0o600)

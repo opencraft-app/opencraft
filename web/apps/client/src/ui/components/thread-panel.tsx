@@ -1,4 +1,4 @@
-import type { Agent, Message, MessageThread } from "@raft-platform/client-core";
+import type { Agent, Message, MessageThread } from "@vela/client-core";
 import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";

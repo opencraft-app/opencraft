@@ -3,7 +3,7 @@ package agentcli
 import (
 	"testing"
 
-	"github.com/QuantumNous/new-api/common"
+	"velachat/agent/internal/common"
 )
 
 func TestFormatChannelMembersResult(t *testing.T) {

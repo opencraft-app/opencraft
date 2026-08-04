@@ -125,7 +125,7 @@ func enrollmentRelease() computerport.ReleaseBinding {
 			SHA256:    sha256.Sum256([]byte("installer")), Size: 1024,
 		},
 		Program: computerport.ArtifactBinding{
-			ObjectKey: "computer/releases/0.1.0/darwin-arm64/raft-computer-go",
+			ObjectKey: "computer/releases/0.1.0/darwin-arm64/vela-computer",
 			SHA256:    sha256.Sum256([]byte("program")), Size: 8 << 20,
 		},
 	}

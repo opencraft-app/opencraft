@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/agentapi"
+	"velachat/agent/internal/agentapi"
 )
 
 type managedInput struct {

@@ -1,10 +1,10 @@
 package runtimes
 
 import (
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/codex"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/hermes"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/hermesgateway"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/codex"
+	"velachat/agent/internal/hermes"
+	"velachat/agent/internal/hermesgateway"
+	"velachat/agent/internal/runtimeapi"
 )
 
 type Options struct {

@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/ingress"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/platform"
-	velastate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/state"
+	"velachat/agent/internal/vela/im"
+	"velachat/agent/internal/vela/ingress"
+	"velachat/agent/internal/vela/platform"
+	velastate "velachat/agent/internal/vela/state"
 )
 
 func TestHostRenewsIMWithoutClosingRuntime(t *testing.T) {

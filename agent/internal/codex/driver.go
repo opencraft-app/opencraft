@@ -19,8 +19,8 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/runtimeapi"
 )
 
 const (
@@ -29,8 +29,8 @@ const (
 	modelProbeTimeout = 5 * time.Second
 	maxModelPages     = 5
 
-	missingResumeMessage = "Codex could not resume its previous thread; Slock started a fresh Codex thread."
-	missingResumeDetails = "Use Slock conversation history and local MEMORY.md/notes as the recovery point; do not assume prior Codex thread context is loaded."
+	missingResumeMessage = "Codex could not resume its previous thread; Vela started a fresh Codex thread."
+	missingResumeDetails = "Use Vela conversation history and local MEMORY.md/notes as the recovery point; do not assume prior Codex thread context is loaded."
 	codexRPCFailureText  = "Codex app-server request failed"
 )
 
@@ -69,7 +69,7 @@ func decodeCodexInitializeResult(
 
 func unsupportedCodexServerRequestText(method string) string {
 	return `Codex app-server request "` + method +
-		`" is not supported by the non-interactive Slock daemon`
+		`" is not supported by the non-interactive Vela daemon`
 }
 
 type Options struct {
@@ -144,7 +144,7 @@ func (d *Driver) detectModelsFromAppServer(
 		done:       done,
 	}
 	initialize, err := client.request(probeCtx, "initialize", map[string]any{
-		"clientInfo":   map[string]string{"name": "raft-computer-go", "version": d.version},
+		"clientInfo":   map[string]string{"name": "vela-computer", "version": d.version},
 		"capabilities": map[string]bool{"experimentalApi": true},
 	})
 	if err != nil {
@@ -495,7 +495,7 @@ func (d *Driver) Start(ctx context.Context, request runtimeapi.StartRequest) (ru
 	startupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	initialize, err := session.request(startupCtx, "initialize", map[string]any{
-		"clientInfo":   map[string]string{"name": "raft-computer-go", "version": d.version},
+		"clientInfo":   map[string]string{"name": "vela-computer", "version": d.version},
 		"capabilities": map[string]bool{"experimentalApi": true},
 	})
 	if err != nil {
@@ -1047,7 +1047,7 @@ func (s *session) readStdout(reader io.Reader) {
 		if err != nil {
 			continue
 		}
-		if os.Getenv("RAFT_COMPUTER_GO_TRACE_CODEX_METHODS") == "1" &&
+		if os.Getenv("VELA_TRACE_CODEX_METHODS") == "1" &&
 			message.hasMethod &&
 			message.methodValid &&
 			message.Method != "" {
@@ -1964,7 +1964,7 @@ func (s *session) emit(event runtimeapi.Event) {
 		emitted = true
 	case <-s.done:
 	}
-	if os.Getenv("RAFT_COMPUTER_GO_TRACE_CODEX_METHODS") == "1" &&
+	if os.Getenv("VELA_TRACE_CODEX_METHODS") == "1" &&
 		event.Kind == runtimeapi.EventTurnCompletion {
 		_, _ = fmt.Fprintf(
 			os.Stderr,

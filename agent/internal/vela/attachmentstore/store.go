@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	rootstate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/state"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
 	"github.com/google/uuid"
+	rootstate "velachat/agent/internal/state"
+	"velachat/agent/internal/vela/im"
 )
 
 const MaxAttachmentBytes = 50 << 20

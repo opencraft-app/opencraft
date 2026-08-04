@@ -18,14 +18,14 @@ else
 fi
 
 go tool oasdiff breaking \
-  platform/v1/releases/4.0.0.openapi.yaml \
+  platform/v1/releases/5.0.0.openapi.yaml \
   platform/v1/openapi.yaml \
   --severity-levels "$levels" \
   --fail-on WARN \
   --format text
 
 go tool oasdiff breaking \
-  platform/v1/releases/4.0.0.computer-bootstrap.openapi.yaml \
+  platform/v1/releases/5.0.0.computer-bootstrap.openapi.yaml \
   platform/v1/computer-bootstrap.openapi.yaml \
   --severity-levels "$levels" \
   --fail-on WARN \

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import {
   breakpoints,
   computerSupportStackBreakpoint,
-  raftTheme,
+  velaTheme,
 } from "./theme";
 import { interfaceFontFamilies } from "./tokens";
 
@@ -20,13 +20,13 @@ function runtimeUiFiles(directory: string): string[] {
     );
 }
 
-describe("Raft universal theme", () => {
+describe("Vela universal theme", () => {
   it("uses the approved HeroUI light semantic tokens", () => {
-    expect(raftTheme).not.toHaveProperty("colors");
-    expect(raftTheme).not.toHaveProperty("fonts");
-    expect(raftTheme).not.toHaveProperty("radii");
-    expect(raftTheme).not.toHaveProperty("sizes");
-    expect(raftTheme.shadows).toEqual({
+    expect(velaTheme).not.toHaveProperty("colors");
+    expect(velaTheme).not.toHaveProperty("fonts");
+    expect(velaTheme).not.toHaveProperty("radii");
+    expect(velaTheme).not.toHaveProperty("sizes");
+    expect(velaTheme.shadows).toEqual({
       card: {
         color: "rgba(0, 0, 0, 0.04)",
         offsetY: 2,
@@ -46,7 +46,7 @@ describe("Raft universal theme", () => {
         radius: 16,
       },
     });
-    expect(raftTheme.spacing).toEqual({
+    expect(velaTheme.spacing).toEqual({
       xxs: 2,
       xs: 4,
       sm: 8,
@@ -55,7 +55,7 @@ describe("Raft universal theme", () => {
       xl: 24,
       xxl: 32,
     });
-    expect(raftTheme.terminal).toEqual({
+    expect(velaTheme.terminal).toEqual({
       cssFont: "13px/18px 'Space Mono', ui-monospace, monospace",
       cursor: "#6E9CFF",
       initialRows: 24,
@@ -80,7 +80,7 @@ describe("Raft universal theme", () => {
   });
 
   it("defines the restrained desktop workspace through semantic roles and one recipe", () => {
-    expect(raftTheme.semantic).toEqual({
+    expect(velaTheme.semantic).toEqual({
       color: {
         actionDangerBorder: "#F31260",
         actionDangerEmphasisSurface: "#F31260",
@@ -508,7 +508,7 @@ describe("Raft universal theme", () => {
         },
       },
     });
-    expect(raftTheme.recipes.desktopWorkspace).toEqual({
+    expect(velaTheme.recipes.desktopWorkspace).toEqual({
       composerHorizontalPadding: 16,
       composerMinHeight: 72,
       composerVerticalPadding: 12,
@@ -520,14 +520,14 @@ describe("Raft universal theme", () => {
       railWidth: 72,
       sidebarWidth: 312,
     });
-    expect(raftTheme.recipes.compactWorkspace).toEqual({
+    expect(velaTheme.recipes.compactWorkspace).toEqual({
       bottomNavigationHeight: 68,
       composerMinHeight: 64,
       listRowMinHeight: 48,
       navigationItemMinWidth: 0,
       switcherRowMinHeight: 52,
     });
-    expect(raftTheme.recipes.authWorkspace).toEqual({
+    expect(velaTheme.recipes.authWorkspace).toEqual({
       cardPadding: 40,
       compactPanelMaxWidth: 640,
       controlHeight: 48,
@@ -542,7 +542,7 @@ describe("Raft universal theme", () => {
       statementMaxWidth: 620,
       statementMinHeight: 550,
     });
-    expect(raftTheme.recipes.conversationWorkspace).toEqual({
+    expect(velaTheme.recipes.conversationWorkspace).toEqual({
       channelManagementActionMinWidth: 64,
       channelMemberRowMinHeight: 60,
       compactActionGap: 3,
@@ -554,24 +554,24 @@ describe("Raft universal theme", () => {
       messageRowGap: 10,
       toastTopInset: 72,
     });
-    expect(raftTheme.recipes.control).toEqual({
+    expect(velaTheme.recipes.control).toEqual({
       height: 44,
       squareSize: 44,
     });
-    expect(raftTheme.recipes.contentMeasure).toEqual({
+    expect(velaTheme.recipes.contentMeasure).toEqual({
       codeBlockMaxHeight: 180,
       compactMaxWidth: 440,
       messageMaxWidth: 760,
       noticeMaxWidth: 560,
       readingMaxWidth: 520,
     });
-    expect(raftTheme.recipes.iconControl).toEqual({
+    expect(velaTheme.recipes.iconControl).toEqual({
       compactSize: 32,
       denseSize: 36,
       microSize: 28,
       smallSize: 38,
     });
-    expect(raftTheme.recipes.identity).toEqual({
+    expect(velaTheme.recipes.identity).toEqual({
       avatarAccountSize: 52,
       avatarCompactSize: 32,
       avatarNavigationSize: 40,
@@ -585,7 +585,7 @@ describe("Raft universal theme", () => {
       presenceDotSize: 10,
       statusDotSize: 7,
     });
-    expect(raftTheme.recipes.emptyState).toEqual({
+    expect(velaTheme.recipes.emptyState).toEqual({
       iconSize: 48,
       loadingMinHeight: 260,
       orbitCoreSize: 10,
@@ -595,7 +595,7 @@ describe("Raft universal theme", () => {
       timelineMinHeight: 300,
       workspaceMinHeight: 360,
     });
-    expect(raftTheme.recipes.managementWorkspace).toEqual({
+    expect(velaTheme.recipes.managementWorkspace).toEqual({
       actionHeight: 44,
       collectionActionHeight: 52,
       collectionCompactHeight: 96,
@@ -626,13 +626,13 @@ describe("Raft universal theme", () => {
       switcherTriggerMinHeight: 64,
       textareaMinHeight: 96,
     });
-    expect(raftTheme.recipes.resourceIdentity).toEqual({
+    expect(velaTheme.recipes.resourceIdentity).toEqual({
       factMinHeight: 64,
       factMinWidth: 140,
       headerPaddingBottom: 20,
       markSize: 48,
     });
-    expect(raftTheme.recipes.messageTimeline).toEqual({
+    expect(velaTheme.recipes.messageTimeline).toEqual({
       attachmentMinWidth: 210,
       deliveryMinHeight: 18,
       imageMaxHeight: 320,
@@ -642,7 +642,7 @@ describe("Raft universal theme", () => {
       taskCardMinWidth: 240,
       touchActionSize: 32,
     });
-    expect(raftTheme.recipes.overlay).toEqual({
+    expect(velaTheme.recipes.overlay).toEqual({
       accountPopoverBottomInset: 4,
       accountPopoverLeftInset: 66,
       accountMenuWidth: 280,
@@ -657,7 +657,7 @@ describe("Raft universal theme", () => {
       threadPanelMinWidth: 340,
       threadPanelWidth: 390,
     });
-    expect(raftTheme.recipes.status).toEqual({
+    expect(velaTheme.recipes.status).toEqual({
       badgeMinSize: 18,
       bannerMinHeight: 52,
       chipMinHeight: 28,
@@ -667,10 +667,10 @@ describe("Raft universal theme", () => {
       summaryMinHeight: 30,
       toastMinHeight: 48,
     });
-    expect(raftTheme.recipes.taskWorkspace).toEqual({
+    expect(velaTheme.recipes.taskWorkspace).toEqual({
       compactListMaxHeight: 196,
     });
-    expect(raftTheme.recipes.terminalPanel).toEqual({
+    expect(velaTheme.recipes.terminalPanel).toEqual({
       controlMinWidth: 52,
       outputMinHeight: 260,
       panelMinHeight: 480,
@@ -711,7 +711,7 @@ describe("Raft universal theme", () => {
       /theme\.colors\./u,
       /theme\.fonts\./u,
       /theme\.radii\./u,
-      /(?:theme|raftTheme)\.sizes\./u,
+      /(?:theme|velaTheme)\.sizes\./u,
       /semantic\.color\.(?:contentSurface|divider)\b/u,
       /"transparent"/u,
       /theme\.sizes\.(?:header|managementHeader)\b/u,
@@ -720,12 +720,12 @@ describe("Raft universal theme", () => {
       /\bborder\s*:\s*`?1px\b/u,
       /opacity\s*:\s*0\.[0-9]+\b/u,
       /(?:fontFamily|fontSize|fontWeight|letterSpacing|lineHeight)\s*:/u,
-      /(?:color\s*:\s*|color=\{)(?:theme|raftTheme)\.semantic\.color\.(?:contentSurface|navigationSurface|selectionSurface)/u,
-      /backgroundColor\s*:\s*(?:theme|raftTheme)\.semantic\.color\.(?:textPrimary|textMuted|textInverse|iconPrimary|iconSecondary|iconMuted)/u,
+      /(?:color\s*:\s*|color=\{)(?:theme|velaTheme)\.semantic\.color\.(?:contentSurface|navigationSurface|selectionSurface)/u,
+      /backgroundColor\s*:\s*(?:theme|velaTheme)\.semantic\.color\.(?:textPrimary|textMuted|textInverse|iconPrimary|iconSecondary|iconMuted)/u,
       /\bsize=\{[^}\n]*\b\d+(?:\.\d+)?\b[^}\n]*\}/u,
       /\bstrokeWidth=\{[^}\n]*\b\d+(?:\.\d+)?\b[^}\n]*\}/u,
       /\bzIndex\s*:\s*[\d_]+/u,
-      /shadowOpacity\s*:\s*(?:theme|raftTheme)\.semantic\.elevation\.(?:docked|pane|section)/u,
+      /shadowOpacity\s*:\s*(?:theme|velaTheme)\.semantic\.elevation\.(?:docked|pane|section)/u,
       /shadows\.(?:soft|surface)\b/u,
       /(?:height|minHeight|minWidth|width)\s*:\s*44\b/u,
       /(?:gap|rowGap|columnGap|margin(?:Top|Right|Bottom|Left|Horizontal|Vertical)?|padding(?:Top|Right|Bottom|Left|Horizontal|Vertical)?)\s*:\s*[1-9][\d_]*(?:\.\d+)?\b/u,
@@ -763,7 +763,7 @@ describe("Raft universal theme", () => {
     const offenders = runtimeUiFiles(join(process.cwd(), "src", "ui"))
       .filter((path) => !path.endsWith("tokens.ts"))
       .filter((path) =>
-        /color=\{[\s\S]{0,320}?(?:theme|raftTheme)\.semantic\.color\.brandAccent(?:Strong)?/u.test(
+        /color=\{[\s\S]{0,320}?(?:theme|velaTheme)\.semantic\.color\.brandAccent(?:Strong)?/u.test(
           readFileSync(path, "utf8"),
         ),
       )

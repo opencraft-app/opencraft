@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/dop251/goja"
+	"velachat/agent/internal/common"
 )
 
 const ProtocolV1 = "reactvaxis-native-module/v1"
@@ -167,7 +167,7 @@ func (r *Registry) Install(vm *goja.Runtime) error {
 			return goja.Undefined()
 		},
 	}
-	return vm.Set("__raftNativeModules", bridge)
+	return vm.Set("__velaNativeModules", bridge)
 }
 
 func (r *Registry) call(vm *goja.Runtime, call goja.FunctionCall) goja.Value {
@@ -388,7 +388,7 @@ func (r *Registry) dispatch(event map[string]any) {
 }
 
 func (r *Registry) invokeDispatch(vm *goja.Runtime, event map[string]any) {
-	dispatch, ok := goja.AssertFunction(vm.Get("__raftNativeModuleDispatch"))
+	dispatch, ok := goja.AssertFunction(vm.Get("__velaNativeModuleDispatch"))
 	if !ok {
 		return
 	}

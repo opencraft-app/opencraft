@@ -35,7 +35,7 @@ export default function RegisterRoute() {
 
   return (
     <>
-      <RouteTitle title="注册 · RAFT" />
+      <RouteTitle title="注册 · VELA" />
       <AuthScreen
         error={error}
         loading={authStatus === "signing_in"}

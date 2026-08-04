@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/daemon"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/platform"
+	"velachat/agent/internal/vela/daemon"
+	"velachat/agent/internal/vela/platform"
 )
 
 func TestManagedAgentObserverCloseDropsPendingStateBeforeInitialization(

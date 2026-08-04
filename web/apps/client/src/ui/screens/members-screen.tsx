@@ -6,7 +6,7 @@ import type {
   Member,
   Server,
   UpdateMemberInput,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import { useMemo, useState } from "react";
 import {
   ScrollView,

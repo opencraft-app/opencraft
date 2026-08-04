@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
+	"velachat/agent/internal/vela/im"
 )
 
 func TestConversationsIncludesZeroUnreadAndStableTitles(t *testing.T) {

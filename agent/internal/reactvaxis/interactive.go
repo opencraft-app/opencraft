@@ -123,4 +123,4 @@ func rootInteractionShell(child ui.Widget) ui.Widget {
 
 type quitIntent struct{}
 
-func (quitIntent) IntentType() ui.IntentType { return "raft.reactvaxis.quit" }
+func (quitIntent) IntentType() ui.IntentType { return "vela.reactvaxis.quit" }

@@ -46,7 +46,7 @@ func TestAttachmentUploadUsesOfficialReceiptText(t *testing.T) {
 	}
 	const expected = "File uploaded: artifact.txt (1.5KB)\n" +
 		"Attachment ID: attachment11111111\n\n" +
-		"Use this ID with raft message send --attachment-id " +
+		"Use this ID with vela message send --attachment-id " +
 		"attachment11111111 to include it in a message.\n"
 	if stdout.String() != expected {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), expected)

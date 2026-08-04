@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	velacli "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/cli"
-	velainstall "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/install"
+	velacli "velachat/agent/internal/vela/cli"
+	velainstall "velachat/agent/internal/vela/install"
 )
 
 func (a *Actions) Install(ctx context.Context, options velacli.InstallOptions) error {

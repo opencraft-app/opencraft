@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	velacli "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/cli"
-	velainstall "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/install"
+	velacli "velachat/agent/internal/vela/cli"
+	velainstall "velachat/agent/internal/vela/install"
 )
 
 func TestInstallDelegatesCanonicalFirstInstallOptions(t *testing.T) {
@@ -28,7 +28,7 @@ func TestInstallDelegatesCanonicalFirstInstallOptions(t *testing.T) {
 		TokenFile: filepath.Join(root, "token"), ManifestFile: filepath.Join(root, "manifest"),
 		SignatureFile: filepath.Join(root, "signature"), SigningPublicKey: "key",
 		ReleaseVersion: "0.2.0", Target: "darwin-arm64",
-		ProgramFile:      filepath.Join(root, "raft-computer-go"),
+		ProgramFile:      filepath.Join(root, "vela-computer"),
 		InstallationRoot: filepath.Join(root, ".vela"),
 		StateDirectory:   filepath.Join(root, ".vela", "state"),
 	}

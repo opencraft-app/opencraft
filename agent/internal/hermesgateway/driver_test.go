@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/hermes"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/hermes"
+	"velachat/agent/internal/runtimeapi"
 )
 
 func TestDriverProbeValidatesPythonGatewayModuleAndHermesProfiles(t *testing.T) {
@@ -238,7 +238,7 @@ func TestDriverRunsGatewayAndMapsTerminalCompletion(t *testing.T) {
 			AgentID:          "agent-gateway-completion",
 			LaunchID:         "launch-gateway-completion",
 			WorkingDirectory: t.TempDir(),
-			Prompt:           "hello from Raft",
+			Prompt:           "hello from Vela",
 			Environment: map[string]string{
 				"GO_WANT_HERMES_GATEWAY_HELPER": "1",
 				"DEEPSEEK_API_KEY":              "must-not-cross",
@@ -650,7 +650,7 @@ func runGatewayHelper() {
 	if hermesHome := os.Getenv("HERMES_HOME"); hermesHome != "" &&
 		!strings.Contains(
 			filepath.ToSlash(hermesHome),
-			"/.hermes/profiles/raft-",
+			"/.hermes/profiles/vela-",
 		) {
 		os.Exit(42)
 	}

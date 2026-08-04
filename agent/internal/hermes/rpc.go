@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/runtimeapi"
 )
 
 type rpcError struct {
@@ -514,7 +514,7 @@ func (session *session) handleServerRequest(message rpcMessage) {
 		"id":      message.ID,
 		"error": map[string]any{
 			"code":    -32601,
-			"message": "method not supported by raft-computer-go ACP client",
+			"message": "method not supported by vela-computer ACP client",
 		},
 	})
 }

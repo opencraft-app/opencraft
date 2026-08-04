@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
+	"velachat/agent/internal/common"
 )
 
 func TestClientCallsRegisteredRouteWithLaunchToken(t *testing.T) {
@@ -326,14 +326,14 @@ func TestClientAcceptsMinimumVelaResponseShapes(t *testing.T) {
 	}
 }
 
-func TestRemovedRaftRouteIsNotRegistered(t *testing.T) {
+func TestRemovedVelaRouteIsNotRegistered(t *testing.T) {
 	t.Parallel()
 
 	if _, ok := Lookup(Operation("migration.begin")); ok {
-		t.Fatal("removed Raft migration route remains registered")
+		t.Fatal("removed Vela migration route remains registered")
 	}
 	if _, ok := Match(http.MethodPost, BasePath+"/migrations"); ok {
-		t.Fatal("removed Raft migration path remains matchable")
+		t.Fatal("removed Vela migration path remains matchable")
 	}
 }
 

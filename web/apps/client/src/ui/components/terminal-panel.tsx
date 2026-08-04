@@ -1,7 +1,7 @@
 import type {
   TerminalControllerState,
   TerminalControlKey,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import { useEffect, useRef, useState } from "react";
 import {
   AppState,

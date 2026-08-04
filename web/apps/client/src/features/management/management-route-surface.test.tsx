@@ -1,4 +1,4 @@
-import type {Account, Server} from "@raft-platform/client-core";
+import type {Account, Server} from "@vela/client-core";
 import {render, waitFor} from "@testing-library/react-native";
 import {createStore} from "zustand/vanilla";
 

@@ -1,4 +1,4 @@
-import type {Operation} from "@raft-platform/client-core";
+import type {Operation} from "@vela/client-core";
 import {fireEvent, render} from "@testing-library/react-native";
 
 import {OperationStatusList} from "@/ui";

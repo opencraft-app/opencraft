@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
-	velastate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/state"
+	"velachat/agent/internal/runtimeapi"
+	velastate "velachat/agent/internal/vela/state"
 )
 
 func TestAdapterPersistsRuntimeStateOutsideWorkspace(t *testing.T) {

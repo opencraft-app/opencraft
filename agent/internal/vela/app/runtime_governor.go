@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/daemon"
+	"velachat/agent/internal/runtimeapi"
+	"velachat/agent/internal/vela/daemon"
 )
 
 type governedResolver struct {

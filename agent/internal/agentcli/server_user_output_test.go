@@ -41,7 +41,7 @@ func TestVelaServerInfoRendersAuthoritativeDirectory(t *testing.T) {
 	if got := stdout.String(); got != want {
 		t.Fatalf("stdout:\n%s\nwant:\n%s", got, want)
 	}
-	for _, unavailable := range []string{"--channels", "--full", "raft channel join", "Workspace", "Runtime"} {
+	for _, unavailable := range []string{"--channels", "--full", "vela channel join", "Workspace", "Runtime"} {
 		if strings.Contains(stdout.String(), unavailable) {
 			t.Errorf("directory exposes removed surface %q", unavailable)
 		}

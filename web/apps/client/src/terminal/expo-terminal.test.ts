@@ -1,4 +1,4 @@
-import type {TerminalSession} from "@raft-platform/client-core";
+import type {TerminalSession} from "@vela/client-core";
 
 import {
   createExpoTerminalOpener,

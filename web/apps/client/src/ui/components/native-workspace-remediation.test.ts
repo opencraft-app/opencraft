@@ -9,7 +9,7 @@ describe("native workspace remediation", () => {
   it("keeps authentication focused on the account task", () => {
     const source = read("../screens/auth-screen.tsx");
 
-    expect(source).not.toContain("RAFT / AGENT NETWORK");
+    expect(source).not.toContain("VELA / AGENT NETWORK");
     expect(source).not.toContain("styles.statement");
     expect(source).not.toContain("auth-account-icon");
   });
@@ -26,7 +26,7 @@ describe("native workspace remediation", () => {
     const source = read("route-status-screen.tsx");
 
     expect(source).not.toContain("styles.card");
-    expect(source).not.toContain(">RAFT<");
+    expect(source).not.toContain(">VELA<");
     expect(source).toContain('testID="route-status-surface"');
   });
 

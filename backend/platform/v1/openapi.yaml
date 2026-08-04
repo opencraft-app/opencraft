@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Chatserver Platform API
-  version: 4.0.0
+  version: 5.0.0
   license:
     name: Proprietary
   description: |
@@ -1453,7 +1453,7 @@ paths:
         required: true
         schema:
           type: string
-          enum: [manifest.json, manifest.sig, install.sh, raft-computer-go]
+          enum: [manifest.json, manifest.sig, install.sh, vela-computer]
     get:
       tags: [Computers]
       operationId: getComputerArtifact

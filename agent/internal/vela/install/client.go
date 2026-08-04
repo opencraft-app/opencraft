@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/google/uuid"
+	"velachat/agent/internal/common"
 )
 
 var (

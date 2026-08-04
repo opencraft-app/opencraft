@@ -1,4 +1,4 @@
-import type {Server} from "@raft-platform/client-core";
+import type {Server} from "@vela/client-core";
 import {useLocalSearchParams} from "expo-router";
 
 import {ExpoManagementRouteSurface} from "../../../../features/management/expo-management-route-surface";

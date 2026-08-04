@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
+	"velachat/agent/internal/runtimeapi"
 )
 
 func TestRegistrationDeclaresPersistentDirectDelivery(t *testing.T) {
@@ -30,7 +30,7 @@ func TestRegistrationDeclaresPersistentDirectDelivery(t *testing.T) {
 	}
 	if plan.Prompt != "Start." ||
 		!strings.Contains(plan.StandingPrompt, "agent-1") ||
-		!strings.Contains(plan.StandingPrompt, "`raft inbox check`") {
+		!strings.Contains(plan.StandingPrompt, "`vela inbox check`") {
 		t.Fatalf("launch plan = %#v", plan)
 	}
 }

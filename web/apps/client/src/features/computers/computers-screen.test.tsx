@@ -5,7 +5,7 @@ import type {
   RegistrationScript,
   Server,
   TerminalControllerState,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import {
   act,
   fireEvent,

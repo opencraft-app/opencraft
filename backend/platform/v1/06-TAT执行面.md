@@ -2,11 +2,11 @@
 
 ## 1. 固定边界
 
-Platform v1 只发布一个 macOS ARM64 端侧程序：`raft-computer-go`。它以当前登录用户
+Platform v1 只发布一个 macOS ARM64 端侧程序：`vela-computer`。它以当前登录用户
 运行，不需要 Root；腾讯 TAT 以 Rust staticlib 经 CGO 链入同一进程，腾讯 IM SDK 以
 Goja + 单文件 JavaScript 链入同一进程。
 
-机器上不存在独立 TAT、Node、IM Bridge、每 Agent Manager 或旧 Raft runner 进程。Codex、
+机器上不存在独立 TAT、Node、IM Bridge、每 Agent Manager 或历史 runner 进程。Codex、
 Hermes 等模型 Runtime 仍可按 Agent 配置作为受控子进程启动。
 
 ```text
@@ -16,7 +16,7 @@ Chatserver
   └── 腾讯云 IM 管理 API：身份与短期 UserSig
           │
           ▼
-raft-computer-go daemon run
+vela-computer daemon run
   ├── 内嵌 TAT core ↔ 腾讯 TAT wire
   ├── RuntimeActor × N
   └── 内嵌 LiteChat ↔ 腾讯 IM wire
@@ -29,7 +29,7 @@ TAT 不承载 Agent Assignment。Assignment 由 Computer 使用短期平台 Sess
 ## 2. 首次安装与注册
 
 1. 用户在 Web 创建 Computer，后台签发一次性短码。
-2. 安装入口下载 `install.sh`、manifest、签名和 `raft-computer-go`，并校验固定 SHA-256。
+2. 安装入口下载 `install.sh`、manifest、签名和 `vela-computer`，并校验固定 SHA-256。
 3. 二进制再次校验 Ed25519 manifest、版本、target、程序大小与 SHA-256。
 4. 二进制用短码 claim Computer，原子写入 Computer credential；短码和安装期随机材料随即
    删除。
@@ -37,7 +37,7 @@ TAT 不承载 Agent Assignment。Assignment 由 Computer 使用短期平台 Sess
    `agent-network-computer-id=<computerID>` 标签。
 6. 二进制把注册材料直接交给内嵌 TAT C ABI；不执行后台下发的 shell，不生成第二个程序。
 7. 后台按稳定标签绑定唯一 `rins-*` 托管实例。
-8. 安装器写入用户级 LaunchAgent 并启动 `raft-computer-go daemon run`。
+8. 安装器写入用户级 LaunchAgent 并启动 `vela-computer daemon run`。
 
 首次安装只有一个小型 crash-safe journal，用于同一次安装失败后的安全续跑。项目尚未发布，
 不存在旧 Computer 或旧 Agent，不读取旧状态、不迁移旧版本，也不提供模式兼容入口。
@@ -46,7 +46,7 @@ TAT 不承载 Agent Assignment。Assignment 由 Computer 使用短期平台 Sess
 
 ```text
 ~/.vela/
-├── bin/raft-computer-go
+├── bin/vela-computer
 ├── state/
 │   ├── config.json
 │   ├── computer.credential
@@ -92,4 +92,3 @@ TAT 不承载 Agent Assignment。Assignment 由 Computer 使用短期平台 Sess
 - Assignment 可启动多个 Agent；每个 Agent 用自己的 UserSig 登录 IM。
 - DM、Topic mention、Runtime 回复、未读历史恢复和去重闭环通过。
 - 杀掉 daemon、Runtime 或网络连接后可恢复，旧 launch 输出不会污染当前 Agent。
-

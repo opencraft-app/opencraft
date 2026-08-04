@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	velacli "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/cli"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/daemon"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/localstate"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/managementipc"
+	"velachat/agent/internal/common"
+	velacli "velachat/agent/internal/vela/cli"
+	"velachat/agent/internal/vela/daemon"
+	"velachat/agent/internal/vela/localstate"
+	"velachat/agent/internal/vela/managementipc"
 )
 
 var ErrComputerControllerUnavailable = errors.New(

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"sync"
 
-	atomicstate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/state"
+	atomicstate "velachat/agent/internal/state"
 )
 
 const (

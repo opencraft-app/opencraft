@@ -1,9 +1,9 @@
 import { StyleSheet } from "react-native-unistyles";
 
-import { breakpoints, raftTheme } from "./tokens";
+import { breakpoints, velaTheme } from "./tokens";
 
 const appThemes = {
-  raft: raftTheme,
+  vela: velaTheme,
 };
 
 type AppBreakpoints = typeof breakpoints;
@@ -18,7 +18,7 @@ declare module "react-native-unistyles" {
 StyleSheet.configure({
   breakpoints,
   settings: {
-    initialTheme: "raft",
+    initialTheme: "vela",
   },
   themes: appThemes,
 });

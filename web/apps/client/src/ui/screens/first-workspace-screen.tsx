@@ -10,7 +10,7 @@ import {
 import { StyleSheet } from "react-native-unistyles";
 import { BrandMark } from "../components/brand-mark";
 import { WorkspaceSetupPresentation } from "../presentation";
-import { raftTheme } from "../tokens";
+import { velaTheme } from "../tokens";
 
 export interface FirstWorkspaceInput {
   channelName: string;
@@ -269,7 +269,7 @@ export function FirstWorkspaceScreen({
               {loading ? (
                 <View style={styles.loadingRow}>
                   <ActivityIndicator
-                    color={raftTheme.semantic.color.iconInverse}
+                    color={velaTheme.semantic.color.iconInverse}
                   />
                   <Text style={styles.primaryButtonText}>{stageLabel}</Text>
                 </View>
@@ -325,7 +325,7 @@ function LabeledInput(
       <TextInput
         {...inputProps}
         editable={inputProps.editable}
-        placeholderTextColor={raftTheme.semantic.color.fieldPlaceholder}
+        placeholderTextColor={velaTheme.semantic.color.fieldPlaceholder}
         style={styles.input}
       />
     </View>

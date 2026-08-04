@@ -2,12 +2,12 @@
 
 ## 唯一运行模式
 
-`raft-computer-go daemon run` 是 Chatserver Platform v1 的唯一 Computer daemon 入口。
+`vela-computer daemon run` 是 Chatserver Platform v1 的唯一 Computer daemon 入口。
 项目尚未发布，不提供 `--mode`、根级 `run` 或旧服务角色兼容层。
 
 ```text
 Chatserver / 腾讯云 TAT
-  → raft-computer-go daemon run
+  → vela-computer daemon run
   → 内嵌 LiteChat / 腾讯云 IM
   → RuntimeActor / Codex 或 Hermes
 ```
@@ -21,7 +21,7 @@ Chatserver 定义 Agent、签发短期 Runtime Session/UserSig 并编排 TAT。A
 
 ```text
 <version>/<platform-arch>/
-├── raft-computer-go
+├── vela-computer
 ├── SHA256SUMS
 └── VERSION
 ```
@@ -33,18 +33,18 @@ Chatserver 定义 Agent、签发短期 Runtime Session/UserSig 并编排 TAT。A
 ```bash
 ./scripts/build-vela-macos-arm64.sh \
   --version v0.1.0 \
-  --output /absolute/path/raft-computer-go
+  --output /absolute/path/vela-computer
 
 ./scripts/build-vela-release.sh \
   --version v0.1.0 \
-  --agent-binary /absolute/path/raft-computer-go \
+  --agent-binary /absolute/path/vela-computer \
   --out-dir /absolute/path/release/darwin-arm64
 
 go test ./...
 go test -race ./internal/vela/... ./internal/runtimeactor/... ./internal/agentcli/...
 go vet ./...
 
-/absolute/path/release/darwin-arm64/raft-computer-go version
+/absolute/path/release/darwin-arm64/vela-computer version
 cd /absolute/path/release/darwin-arm64 && shasum -a 256 -c SHA256SUMS
 ```
 

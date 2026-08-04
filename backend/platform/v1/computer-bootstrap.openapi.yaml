@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Agent Network Computer Bootstrap API
-  version: 4.0.0
+  version: 5.0.0
   description: 仅供已完成 claim、尚在接入阶段的 Computer 获取可恢复 provider 注册材料。
 servers:
   - url: /v1

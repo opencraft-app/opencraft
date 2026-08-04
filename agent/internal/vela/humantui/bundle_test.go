@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/reactvaxis"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
 	"go.rockorager.dev/vaxis/ui"
+	"velachat/agent/internal/reactvaxis"
+	"velachat/agent/internal/vela/im"
 )
 
 func TestEmbeddedBundleIsVersionedAndVerified(t *testing.T) {
@@ -21,7 +21,7 @@ func TestEmbeddedBundleIsVersionedAndVerified(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.Name != "raft-human-client" || bundle.Protocol != reactvaxis.ProtocolV2 ||
+	if bundle.Name != "vela-human-client" || bundle.Protocol != reactvaxis.ProtocolV2 ||
 		!strings.Contains(bundle.Source, "reactvaxis/v2") ||
 		!strings.Contains(bundle.Source, "terminal-management-frame") ||
 		bundle.Source == "" || bundle.SHA256 != expectedBundleSHA256() {

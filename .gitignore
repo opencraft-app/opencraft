@@ -32,7 +32,7 @@ backend/dist/
 agent/bin/
 agent/build/
 agent/dist/
-agent/raft-computer-go
+agent/vela-computer
 agent/native/tat-agent/target/
 
 # JavaScript / 前端构建产物

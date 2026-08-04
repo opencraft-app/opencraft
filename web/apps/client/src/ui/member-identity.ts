@@ -1,4 +1,4 @@
-import type {Member} from "@raft-platform/client-core";
+import type {Member} from "@vela/client-core";
 
 const generatedHumanHandlePattern = /^u_[A-Z0-9]{16,}$/u;
 

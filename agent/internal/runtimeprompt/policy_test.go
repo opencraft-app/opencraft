@@ -14,8 +14,8 @@ func TestComposeStandingPromptDefinesSharedConversationPolicy(t *testing.T) {
 	}
 	required := []string{
 		SharedConversationPolicyMarker,
-		"You are Raft Agent agent-policy.",
-		"Shared Raft conversation policy",
+		"You are Vela Agent agent-policy.",
+		"Shared Vela conversation policy",
 		"clearly continues an active conversation already owned by you",
 		"`mentioned` and other attention metadata are helpful signals, not authoritative proof",
 		"remain silent",
@@ -40,7 +40,7 @@ func TestComposeStandingPromptIsDeterministicAndIdempotent(t *testing.T) {
 	t.Parallel()
 
 	driverInstructions := "Driver-specific instructions.\n" +
-		"## Shared Raft conversation policy\n" +
+		"## Shared Vela conversation policy\n" +
 		"This similar heading is not the versioned marker."
 	composed, err := ComposeStandingPrompt("agent-compose", driverInstructions)
 	if err != nil {
@@ -53,7 +53,7 @@ func TestComposeStandingPromptIsDeterministicAndIdempotent(t *testing.T) {
 		t.Fatalf("shared marker count = %d:\n%s",
 			strings.Count(composed, SharedConversationPolicyMarker), composed)
 	}
-	if strings.Count(composed, "You are Raft Agent agent-compose.") != 1 {
+	if strings.Count(composed, "You are Vela Agent agent-compose.") != 1 {
 		t.Fatalf("Agent identity count is not one:\n%s", composed)
 	}
 

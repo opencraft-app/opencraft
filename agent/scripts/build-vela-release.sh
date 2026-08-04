@@ -52,7 +52,7 @@ if [ ! -f "$agent_binary" ] || [ -L "$agent_binary" ] || [ ! -x "$agent_binary" 
 	echo "build-vela-release: agent binary is not a safe executable" >&2
 	exit 1
 fi
-expected_version='{"mode":"vela","name":"raft-computer-go","version":"'"$version"'"}'
+expected_version='{"mode":"vela","name":"vela-computer","version":"'"$version"'"}'
 actual_version=$("$agent_binary" version --json 2>/dev/null) || {
 	echo "build-vela-release: cannot read binary version" >&2
 	exit 1
@@ -80,7 +80,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-install -m 0755 "$agent_binary" "$stage/raft-computer-go"
+install -m 0755 "$agent_binary" "$stage/vela-computer"
 if command -v shasum >/dev/null 2>&1; then
 	checksum() {
 		shasum -a 256 "$1" | awk '{print $1}'
@@ -94,9 +94,9 @@ else
 	exit 1
 fi
 
-agent_checksum=$(checksum "$stage/raft-computer-go")
+agent_checksum=$(checksum "$stage/vela-computer")
 {
-	printf '%s  %s\n' "$agent_checksum" "raft-computer-go"
+	printf '%s  %s\n' "$agent_checksum" "vela-computer"
 } >"$stage/SHA256SUMS"
 printf '%s\n' "$version" >"$stage/VERSION"
 chmod 0644 "$stage/SHA256SUMS" "$stage/VERSION"

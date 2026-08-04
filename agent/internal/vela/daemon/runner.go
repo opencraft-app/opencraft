@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/filelock"
-	rootstate "github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/state"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/managementipc"
 	"github.com/google/uuid"
+	"velachat/agent/internal/common"
+	"velachat/agent/internal/filelock"
+	rootstate "velachat/agent/internal/state"
+	"velachat/agent/internal/vela/managementipc"
 )
 
 const (

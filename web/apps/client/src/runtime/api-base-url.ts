@@ -1,4 +1,4 @@
-import { normalizeApiBaseUrl } from "@raft-platform/client-core";
+import { normalizeApiBaseUrl } from "@vela/client-core";
 
 interface ApiBaseUrlInput {
   browserHostname?: string;

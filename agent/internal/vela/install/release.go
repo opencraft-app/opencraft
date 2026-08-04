@@ -15,12 +15,12 @@ import (
 	"path"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
+	"velachat/agent/internal/common"
 )
 
 const (
 	ManifestSchema  = "agent-network-computer-release/v1"
-	ProgramName     = "raft-computer-go"
+	ProgramName     = "vela-computer"
 	maxManifestSize = 64 * 1024
 )
 

@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/QuantumNous/new-api/common"
+	"velachat/agent/internal/common"
 )
 
 func TestMessageCheckDrainsMultiplePagesAndFormatsMessages(t *testing.T) {
@@ -90,7 +90,7 @@ func TestMessageCheckDrainsMultiplePagesAndFormatsMessages(t *testing.T) {
 	}
 	const want = "[target=#general msg=message2 time=- type=agent] " +
 		"@builder — Build agent: first " +
-		"[1 attachment: notes.txt (id:attachment-1) — use raft attachment view to download] " +
+		"[1 attachment: notes.txt (id:attachment-1) — use vela attachment view to download] " +
 		"[task #7 status=open assignee=@alice]\n" +
 		"[target=#general msg=message9 time=- type=human] @alice: second\n" +
 		"No more new messages.\n"
@@ -151,7 +151,7 @@ func TestMessageCheckReturnsPartialMessagesWhenLaterPageFails(t *testing.T) {
 	}
 	const want = "[target=dm:@alice msg=abcdef01 time=- type=human] " +
 		"@alice: keep this\n" +
-		"More messages are pending. Run `raft message check` again.\n"
+		"More messages are pending. Run `vela message check` again.\n"
 	if got := stdout.String(); got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
@@ -229,16 +229,16 @@ func TestMessageCheckStopsAfterFiftyDrainRounds(t *testing.T) {
 	}
 	if got := stdout.String(); !strings.HasSuffix(
 		got,
-		"More messages are pending. Run `raft message check` again.\n",
+		"More messages are pending. Run `vela message check` again.\n",
 	) {
 		t.Fatalf("stdout suffix = %q", got)
 	}
 }
 
 func TestMessageCheckRecordsMaximumConsumedSequencePerTarget(t *testing.T) {
-	t.Setenv("SLOCK_AGENT_ID", "agent-consumed")
+	t.Setenv("VELA_AGENT_ID", "agent-consumed")
 	stateRoot := t.TempDir()
-	t.Setenv("SLOCK_CLI_CONSUMED_SEQ_STATE_DIR", stateRoot)
+	t.Setenv("VELA_CLI_CONSUMED_SEQ_STATE_DIR", stateRoot)
 
 	server := httptest.NewServer(http.HandlerFunc(func(
 		response http.ResponseWriter,
@@ -280,7 +280,7 @@ func TestMessageCheckRecordsMaximumConsumedSequencePerTarget(t *testing.T) {
 	}
 	statePath := filepath.Join(
 		stateRoot,
-		"slock-cli-consumed-seq",
+		"vela-cli-consumed-seq",
 		"agent-consumed",
 		"consumed-seqs.json",
 	)
@@ -310,7 +310,7 @@ func TestMessageCheckRecordsMaximumConsumedSequencePerTarget(t *testing.T) {
 func TestConsumedSequenceFallbackStaysInsideVelaState(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("SLOCK_CLI_CONSUMED_SEQ_STATE_DIR", "")
+	t.Setenv("VELA_CLI_CONSUMED_SEQ_STATE_DIR", "")
 
 	store, relative, ok := consumedSequenceStore("agent-consumed")
 	if !ok {
@@ -323,7 +323,7 @@ func TestConsumedSequenceFallbackStaysInsideVelaState(t *testing.T) {
 		"agents",
 		"agent-consumed",
 		"runtime",
-		"slock-cli-consumed-seq.json",
+		"vela-cli-consumed-seq.json",
 	); got != want {
 		t.Fatalf("relative path = %q, want %q", got, want)
 	}

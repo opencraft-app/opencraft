@@ -1,4 +1,4 @@
-import type { HumanImSession } from "@raft-platform/client-core";
+import type { HumanImSession } from "@vela/client-core";
 import type { SdkMessage } from "./channel-chat-service";
 import {
   TencentChatGateway,

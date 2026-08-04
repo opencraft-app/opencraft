@@ -17,7 +17,7 @@ interface DirectSendIntentEnvelope {
 export class PersistentDirectSendIntentStore
   implements DirectSendIntentStore
 {
-  private static readonly storageKey = "raft.client.direct-send-intents.v1";
+  private static readonly storageKey = "vela.client.direct-send-intents.v1";
   private exclusiveTail: Promise<void> = Promise.resolve();
 
   public constructor(private readonly storage: PersistentStorageLike) {}

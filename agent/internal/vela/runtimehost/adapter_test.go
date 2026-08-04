@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeactor"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/runtimeapi"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/host"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/im"
-	"github.com/QuantumNous/new-api/research/raft-computer-1.0.13/go-client/internal/vela/platform"
+	"velachat/agent/internal/runtimeactor"
+	"velachat/agent/internal/runtimeapi"
+	"velachat/agent/internal/vela/host"
+	"velachat/agent/internal/vela/im"
+	"velachat/agent/internal/vela/platform"
 )
 
 func TestAdapterClassifiesGatewayAndRuntimeFailures(t *testing.T) {
@@ -216,7 +216,7 @@ func (f *fakeCapabilityGateway) RegisterMessage(message im.IncomingMessage) (str
 }
 
 func (*fakeCapabilityGateway) RuntimeEnvironment() map[string]string {
-	return map[string]string{"SLOCK_AGENT_PROXY_URL": "http://127.0.0.1:12345"}
+	return map[string]string{"VELA_AGENT_PROXY_URL": "http://127.0.0.1:12345"}
 }
 
 func incomingMessage(t *testing.T, messageID, text string) im.IncomingMessage {

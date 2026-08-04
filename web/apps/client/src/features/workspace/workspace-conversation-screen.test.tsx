@@ -40,7 +40,7 @@ describe("WorkspaceConversationScreen", () => {
       </AppRuntimeProvider>,
     );
 
-    expect(screen.getByText("正在连接 RAFT")).toBeVisible();
+    expect(screen.getByText("正在连接 VELA")).toBeVisible();
     expect(selectDirectConversation).not.toHaveBeenCalled();
 
     await act(async () => {

@@ -4,7 +4,7 @@ import type {
   Reminder,
   Server,
   Task,
-} from "@raft-platform/client-core";
+} from "@vela/client-core";
 import {
   act,
   fireEvent,

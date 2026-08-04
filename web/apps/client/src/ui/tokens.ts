@@ -63,7 +63,7 @@ export const workspaceShellWideBreakpoint = 960;
 // shared workspace shell before they can sit comfortably side by side.
 export const computerSupportStackBreakpoint = 1_080;
 
-export const raftTheme = {
+export const velaTheme = {
   semantic: {
     color: {
       actionDangerBorder: palette.pink500,
@@ -696,4 +696,4 @@ export const raftTheme = {
   },
 } as const;
 
-export type RaftTheme = typeof raftTheme;
+export type VelaTheme = typeof velaTheme;

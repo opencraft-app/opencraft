@@ -131,7 +131,7 @@ func TestServeCLIPublicComputerEnrollmentRoutesAreNotShadowedByComputerAPI(t *te
   "manifest":{"objectKey":"computer/releases/0.1.0/manifest.json","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":101},
   "signature":{"objectKey":"computer/releases/0.1.0/manifest.sig","sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","size":102},
   "installer":{"objectKey":"computer/releases/0.1.0/darwin-arm64/install.sh","sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","size":103},
-  "program":{"objectKey":"computer/releases/0.1.0/darwin-arm64/raft-computer-go","sha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","size":104}
+  "program":{"objectKey":"computer/releases/0.1.0/darwin-arm64/vela-computer","sha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","size":104}
 }`,
 		0o600,
 	)

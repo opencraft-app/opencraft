@@ -84,10 +84,10 @@ Provider 抽象、自研 Computer WebSocket 和系统级特权安装均不在 v1
 - 基于腾讯官方 HMAC-SHA256 实现的服务端短期 UserSig；
 - OpenAPI 校验、统一错误、敏感响应头与本地认证限流；
 - 显式 `serve` API+IM Worker 单进程启动命令。
-- 正式 `raft-computer-go daemon run` Host 已支持 Codex、Hermes ACP 与
+- 正式 `vela-computer daemon run` Host 已支持 Codex、Hermes ACP 与
   Hermes Gateway；
 - Agent 直接登录腾讯云 IM，按 `replyPolicy` 过滤消息并按会话保序；
-- Runtime 只有显式调用 `raft message reply --text <text>` 才会发出聊天消息；
+- Runtime 只有显式调用 `vela message reply --text <text>` 才会发出聊天消息；
 - 输入处理账本与发送动作账本均不保存正文，发送结果不确定时禁止自动重放；
 - Human 可经平台签发一次性 TAT PTY Session，终端字节流不经过 Go 后台。
 
@@ -164,11 +164,11 @@ go run ./cmd/chatserver serve \
 
 ## Agent 自动回复
 
-用户级 LaunchAgent 只启动一个 `raft-computer-go daemon run`。daemon 通过平台 HTTPS
+用户级 LaunchAgent 只启动一个 `vela-computer daemon run`。daemon 通过平台 HTTPS
 长轮询 Computer Assignment，在同一进程内为多个 Agent 创建 RuntimeActor；每个 Agent
 使用自己的短期 Runtime Session 和 UserSig，通过内嵌 LiteChat 直连腾讯云 IM。
 
-模型进程得到的 `raft` 是共享回环 Gateway 生成的本地 wrapper，没有腾讯云管理密钥，
+模型进程得到的 `vela` 是共享回环 Gateway 生成的本地 wrapper，没有腾讯云管理密钥，
 也不能自行选择其他 Agent 的身份。当前完整 Runtime 为 `codex`、`hermes-acp` 与
 `hermes-gateway`。Chatserver 不包含第二套 Agent Host、IM Bridge 或 TAT receiver。
 
@@ -198,14 +198,14 @@ go run ./cmd/computer-release keygen \
 # 在 canonical go-client 工程中构建已静态链接 TAT 的唯一端侧程序
 ./scripts/build-vela-macos-arm64.sh \
   --version v0.1.1 \
-  --output /绝对路径/raft-computer-go
+  --output /绝对路径/vela-computer
 
 go run ./cmd/computer-release \
   --version v0.1.1 --target darwin-arm64 \
   --os-type macos --architecture arm64 \
   --signing-key-id computer-release-2026-08-02 \
   --private-key-file /安全目录/ed25519.private \
-  --program /绝对路径/raft-computer-go \
+  --program /绝对路径/vela-computer \
   --output /全新绝对路径/release
 
 go run ./cmd/computer-release verify \

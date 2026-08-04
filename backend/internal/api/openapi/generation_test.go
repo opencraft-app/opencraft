@@ -61,8 +61,8 @@ func TestAgentComputerBindingIsRequiredAndNonNullable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load embedded OpenAPI: %v", err)
 	}
-	if spec.Info == nil || spec.Info.Version != "4.0.0" {
-		t.Fatalf("OpenAPI version = %#v, want 4.0.0", spec.Info)
+	if spec.Info == nil || spec.Info.Version != "5.0.0" {
+		t.Fatalf("OpenAPI version = %#v, want 5.0.0", spec.Info)
 	}
 	for _, name := range []string{"Agent", "CreateAgentRequest"} {
 		reference := spec.Components.Schemas[name]
