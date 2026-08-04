@@ -537,6 +537,8 @@ export function createAppStore(
   const pollLimit = dependencies.provisioningPollLimit ?? 40;
   const sleep = dependencies.sleep ?? delay;
   const refreshFreshnessMs = 15_000;
+  const channelReadinessPollIntervalMs = 1_000;
+  const channelReadinessPollLimit = 15;
 
   function refreshKey(serverId: string, resource: string): string {
     return `${serverId}:${resource}`;
@@ -1953,7 +1955,8 @@ export function createAppStore(
       if (
         current.currentServerId === serverId &&
         current.targetServerId === serverId &&
-        current.serverContextStatus === "ready"
+        current.serverContextStatus === "ready" &&
+        current.channels.some((channel) => channelAddress(channel) !== null)
       ) {
         return;
       }
@@ -2010,13 +2013,35 @@ export function createAppStore(
             allowedConversations: [],
             generation: selection,
           });
-          const [channels, agents, members, directResources] = await Promise.all([
-            dependencies.platform.listChannels(serverId),
-            dependencies.platform.listAgents(serverId),
-            dependencies.platform.listMembers(serverId),
-            dependencies.platform.listDirectConversations(serverId),
-          ]);
+          const [initialChannels, agents, members, directResources] =
+            await Promise.all([
+              dependencies.platform.listChannels(serverId),
+              dependencies.platform.listAgents(serverId),
+              dependencies.platform.listMembers(serverId),
+              dependencies.platform.listDirectConversations(serverId),
+            ]);
           if (selection !== serverSelection) return;
+          let channels = initialChannels;
+          for (
+            let attempt = 0;
+            attempt < channelReadinessPollLimit &&
+            !channels.some((channel) => channelAddress(channel) !== null) &&
+            channels.some(
+              (channel) =>
+                channel.joined && channel.imState === "provisioning",
+            );
+            attempt += 1
+          ) {
+            await sleep(channelReadinessPollIntervalMs);
+            if (selection !== serverSelection) return;
+            try {
+              channels = await dependencies.platform.listChannels(serverId);
+            } catch (error) {
+              if (attempt === channelReadinessPollLimit - 1) throw error;
+              continue;
+            }
+            if (selection !== serverSelection) return;
+          }
           const directConversations = projectDirectConversationResources(
             directResources,
             get().account,

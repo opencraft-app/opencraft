@@ -737,6 +737,162 @@ describe("app store", () => {
     expect(store.getState().serverContextStatus).toBe("ready");
   });
 
+  it("recovers a joined provisioning Channel without a page refresh", async () => {
+    const provisioningChannel: Channel = {
+      ...allMembersChannel,
+      imState: "provisioning",
+    };
+    const deps = dependencies();
+    const sleep = jest.fn(async () => undefined);
+    deps.sleep = sleep;
+    deps.platform.listChannels = jest
+      .fn()
+      .mockResolvedValueOnce([provisioningChannel])
+      .mockResolvedValueOnce([allMembersChannel]);
+    const store = createAppStore(deps);
+
+    await store.getState().initialize();
+    await store.getState().selectServer(server.id);
+
+    expect(deps.platform.listChannels).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(1_000);
+    expect(store.getState()).toMatchObject({
+      channels: [allMembersChannel],
+      currentServerId: server.id,
+      serverContextStatus: "ready",
+    });
+  });
+
+  it("keeps recovering after one transient Channel refresh failure", async () => {
+    const provisioningChannel: Channel = {
+      ...allMembersChannel,
+      imState: "provisioning",
+    };
+    const deps = dependencies();
+    deps.sleep = jest.fn(async () => undefined);
+    deps.platform.listChannels = jest
+      .fn()
+      .mockResolvedValueOnce([provisioningChannel])
+      .mockRejectedValueOnce(new Error("temporary Channel read failure"))
+      .mockResolvedValueOnce([allMembersChannel]);
+    const store = createAppStore(deps);
+
+    await store.getState().initialize();
+    await store.getState().selectServer(server.id);
+
+    expect(deps.platform.listChannels).toHaveBeenCalledTimes(3);
+    expect(store.getState()).toMatchObject({
+      channels: [allMembersChannel],
+      currentServerId: server.id,
+      error: null,
+      serverContextStatus: "ready",
+    });
+  });
+
+  it("lets the same Server start a fresh Channel recovery after the bounded wait", async () => {
+    const provisioningChannel: Channel = {
+      ...allMembersChannel,
+      imState: "provisioning",
+    };
+    const deps = dependencies();
+    deps.sleep = jest.fn(async () => undefined);
+    deps.platform.listChannels = jest
+      .fn()
+      .mockResolvedValueOnce([provisioningChannel]);
+    for (let attempt = 0; attempt < 15; attempt += 1) {
+      (deps.platform.listChannels as jest.Mock).mockResolvedValueOnce([
+        provisioningChannel,
+      ]);
+    }
+    (deps.platform.listChannels as jest.Mock).mockResolvedValueOnce([
+      allMembersChannel,
+    ]);
+    const store = createAppStore(deps);
+
+    await store.getState().initialize();
+    await store.getState().selectServer(server.id);
+
+    expect(deps.platform.listChannels).toHaveBeenCalledTimes(16);
+    expect(store.getState()).toMatchObject({
+      channels: [provisioningChannel],
+      currentServerId: server.id,
+      serverContextStatus: "ready",
+    });
+
+    await store.getState().selectServer(server.id);
+
+    expect(deps.platform.listChannels).toHaveBeenCalledTimes(17);
+    expect(store.getState()).toMatchObject({
+      channels: [allMembersChannel],
+      currentServerId: server.id,
+      serverContextStatus: "ready",
+    });
+  });
+
+  it("does not poll when the Channel snapshot has no joined provisioning resource", async () => {
+    const deps = dependencies();
+    deps.sleep = jest.fn(async () => undefined);
+    deps.platform.listChannels = jest.fn(async () => []);
+    const store = createAppStore(deps);
+
+    await store.getState().initialize();
+    await store.getState().selectServer(server.id);
+
+    expect(deps.platform.listChannels).toHaveBeenCalledTimes(1);
+    expect(deps.sleep).not.toHaveBeenCalled();
+    expect(store.getState()).toMatchObject({
+      channels: [],
+      currentServerId: server.id,
+      serverContextStatus: "ready",
+    });
+  });
+
+  it("stops an old Channel recovery when another Server is selected", async () => {
+    const mono: Server = {
+      ...server,
+      id: "server-2",
+      name: "Mono",
+      slug: "mono",
+    };
+    const monoChannel: Channel = {
+      ...allMembersChannel,
+      id: "channel-mono-all",
+      serverId: mono.id,
+    };
+    const provisioningChannel: Channel = {
+      ...allMembersChannel,
+      imState: "provisioning",
+    };
+    const deps = dependencies();
+    deps.platform.listServers = jest.fn(async () => [server, mono]);
+    deps.platform.listChannels = jest.fn(async (serverId: string) =>
+      serverId === mono.id ? [monoChannel] : [provisioningChannel],
+    );
+    let releaseSleep: (() => void) | undefined;
+    deps.sleep = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseSleep = resolve;
+        }),
+    );
+    const store = createAppStore(deps);
+    await store.getState().initialize();
+
+    const atlasSelection = store.getState().selectServer(server.id);
+    await eventually(() => expect(releaseSleep).toBeDefined());
+    await store.getState().selectServer(mono.id);
+    releaseSleep?.();
+    await atlasSelection;
+
+    expect(deps.platform.listChannels).toHaveBeenCalledTimes(2);
+    expect(store.getState()).toMatchObject({
+      channels: [monoChannel],
+      currentServerId: mono.id,
+      serverContextStatus: "ready",
+      targetServerId: mono.id,
+    });
+  });
+
   it("drops stale Server context completion after the route target changes", async () => {
     const mono: Server = {
       ...server,
