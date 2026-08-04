@@ -537,9 +537,8 @@ mod test {
 
     #[test]
     fn task_script_is_owned_by_tat_state() {
-        let state_root = temp_dir().join(format!("vela-tat-test-{}", std::process::id()));
-        crate::common::config::initialize_state_root(&state_root).unwrap();
-        let state_root = state_root.canonicalize().unwrap();
+        crate::common::config::initialize_test_state_root();
+        let state_root = crate::common::config::state_root().unwrap();
         let info = TaskInfo {
             task_id: "invt-state-root".to_string(),
             user: User::new(&get_current_username()).unwrap(),

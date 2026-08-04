@@ -86,6 +86,15 @@ pub fn state_root() -> Result<&'static Path> {
         .ok_or_else(|| anyhow!("TAT state root is not initialized"))
 }
 
+#[cfg(test)]
+pub fn initialize_test_state_root() {
+    static INITIALIZED: OnceLock<()> = OnceLock::new();
+    INITIALIZED.get_or_init(|| {
+        let path = std::env::temp_dir().join(format!("vela-tat-test-{}", std::process::id()));
+        initialize_state_root(path).expect("initialize test TAT state root");
+    });
+}
+
 async fn load_config() -> Result<&'static RwLock<Config>> {
     static ONCE: OnceCell<RwLock<Config>> = OnceCell::const_new();
     let path = config_path()?;

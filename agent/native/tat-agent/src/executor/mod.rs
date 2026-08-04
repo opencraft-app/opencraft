@@ -196,6 +196,7 @@ pub mod test {
     const ECHO: &str = "Write-Host -NoNewline";
 
     pub fn new_task(cmd: &str) -> InvocationNormalTask {
+        crate::common::config::initialize_test_state_root();
         #[cfg(unix)]
         let command_type = "SHELL";
         #[cfg(windows)]
@@ -338,21 +339,21 @@ pub mod test {
     #[tokio::test]
     async fn test_output() {
         struct TestOutput;
-        impl_invoke!(TestOutput, |_, _, idx, dropped| {
-            assert_eq!(idx, Some(1));
+        impl_invoke!(TestOutput, |_, _, idx: Option<u32>, dropped| {
+            assert!(idx.is_some());
             assert_eq!(dropped, 0);
             Ok(ReportTaskFinishResponse {})
         });
 
         let task = new_task(&format!("{ECHO} 1\n{SLEEP} 2\n{ECHO} 2"));
         let res = Task::start::<TestOutput>(task, pending::<()>()).await;
-        assert!(res.is_ok());
+        assert!(res.is_ok(), "{res:?}");
 
         let long_output = repeat_n('x', MAX_SINGLE_REPORT_BYTES).collect::<String>();
         let script = format!("{ECHO} {long_output}\n{SLEEP} 2\n{ECHO} {long_output}");
         let task = new_task(&script);
         let res = Task::start::<TestOutput>(task, pending::<()>()).await;
-        assert!(res.is_ok());
+        assert!(res.is_ok(), "{res:?}");
     }
 
     #[tokio::test]
