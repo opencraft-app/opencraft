@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"velachat/agent/internal/runtimecatalog"
 	"velachat/agent/internal/vela/agentgateway"
 	velacli "velachat/agent/internal/vela/cli"
 	"velachat/agent/internal/vela/gojaim"
@@ -42,6 +43,7 @@ type Config struct {
 	CodexExecutable       string
 	Controller            ComputerController
 	InstallerFactory      InstallerFactory
+	runtimeSnapshot       func(context.Context) *runtimecatalog.Snapshot
 }
 
 type FirstInstaller interface {

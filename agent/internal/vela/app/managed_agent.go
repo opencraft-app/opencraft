@@ -24,14 +24,15 @@ import (
 // AgentCell owns the attempt lifetime; this factory only constructs and hands
 // off the Host and its private resources.
 type managedAgentFactory struct {
-	root       string
-	stderr     io.Writer
-	runtimes   *runtimecatalog.Snapshot
-	governor   *daemon.LaunchGovernor
-	sessions   *computerSessionManager
-	client     *platform.Client
-	transports host.TransportFactory
-	gatewayHub *agentgateway.Hub
+	root          string
+	stderr        io.Writer
+	runtimes      *runtimecatalog.Snapshot
+	runtimeFuture *runtimeSnapshotFuture
+	governor      *daemon.LaunchGovernor
+	sessions      *computerSessionManager
+	client        *platform.Client
+	transports    host.TransportFactory
+	gatewayHub    *agentgateway.Hub
 }
 
 func (f *managedAgentFactory) Start(
@@ -41,6 +42,17 @@ func (f *managedAgentFactory) Start(
 	assignment := request.Launch.Assignment
 	provisionalFence := request.Launch.Fence
 	if request.Lifetime == nil || request.Lease == nil {
+		return nil, daemon.ErrInvalidRegistryConfig
+	}
+	runtimeSnapshot := f.runtimes
+	if runtimeSnapshot == nil && f.runtimeFuture != nil {
+		var err error
+		runtimeSnapshot, err = f.runtimeFuture.Wait(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if runtimeSnapshot == nil {
 		return nil, daemon.ErrInvalidRegistryConfig
 	}
 	lease, ok := request.Lease.Current()
@@ -121,7 +133,7 @@ func (f *managedAgentFactory) Start(
 	runtimeActor, err := runtimeactor.New(runtimeactor.Options{
 		AgentID: assignment.AgentID,
 		Runtimes: &governedResolver{
-			next:     f.runtimes,
+			next:     runtimeSnapshot,
 			governor: f.governor,
 			timeout:  60 * time.Second,
 		},
@@ -152,7 +164,7 @@ func (f *managedAgentFactory) Start(
 		StateDirectory:   agentDirectory,
 		WorkingDirectory: workspaceDirectory,
 		Actor:            runtimeActor,
-		Runtimes:         f.runtimes,
+		Runtimes:         runtimeSnapshot,
 		Gateway:          gateway,
 		ReminderClient:   f.client,
 		TaskClient:       f.client,

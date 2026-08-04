@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -85,20 +86,101 @@ func (launcher *userLaunchAgent) Start(ctx context.Context, spec LaunchSpec) err
 		return errors.New("无法停止旧 Vela Computer LaunchAgent")
 	}
 	if output, err := run(ctx, "bootstrap", domain, path); err != nil {
-		if inspectErr := waitForLaunchAgentState(ctx, run, service, true); inspectErr != nil {
+		if inspectErr := waitForLaunchAgentRunning(
+			ctx, run, service, path, spec.ProgramPath,
+		); inspectErr != nil {
 			return errors.New("无法注册 Vela Computer LaunchAgent: " + string(bytes.TrimSpace(output)))
-		}
-	}
-	if output, err := run(ctx, "kickstart", "-k", service); err != nil {
-		if inspectErr := waitForLaunchAgentState(ctx, run, service, true); inspectErr != nil {
-			return errors.New("无法启动 Vela Computer LaunchAgent: " + string(bytes.TrimSpace(output)))
 		}
 		return nil
 	}
-	if err := waitForLaunchAgentState(ctx, run, service, true); err != nil {
+	if err := waitForLaunchAgentRunning(
+		ctx, run, service, path, spec.ProgramPath,
+	); err != nil {
 		return errors.New("无法确认 Vela Computer LaunchAgent 已启动")
 	}
 	return nil
+}
+
+func waitForLaunchAgentRunning(
+	ctx context.Context,
+	run launchctlCommand,
+	service string,
+	plistPath string,
+	programPath string,
+) error {
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	stablePID := 0
+	for {
+		output, err := run(ctx, "print", service)
+		if err == nil {
+			observation, parseErr := parseLaunchAgentObservation(output)
+			if parseErr == nil && (observation.plistPath != filepath.Clean(plistPath) ||
+				observation.programPath != filepath.Clean(programPath)) {
+				return errors.New("LaunchAgent identity mismatch")
+			}
+			if parseErr == nil && observation.running && observation.pid > 0 {
+				if observation.pid == stablePID {
+					return nil
+				}
+				stablePID = observation.pid
+			} else {
+				stablePID = 0
+			}
+		} else {
+			stablePID = 0
+		}
+		retry := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			if !retry.Stop() {
+				<-retry.C
+			}
+			return ctx.Err()
+		case <-deadline.C:
+			if !retry.Stop() {
+				<-retry.C
+			}
+			return errors.New("launchd running attestation timeout")
+		case <-retry.C:
+		}
+	}
+}
+
+type launchAgentObservation struct {
+	plistPath   string
+	programPath string
+	pid         int
+	running     bool
+}
+
+func parseLaunchAgentObservation(output []byte) (launchAgentObservation, error) {
+	var observation launchAgentObservation
+	for _, line := range strings.Split(string(output), "\n") {
+		parts := strings.SplitN(strings.TrimSpace(line), " = ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key, value := parts[0], strings.TrimSpace(parts[1])
+		switch key {
+		case "path":
+			observation.plistPath = filepath.Clean(value)
+		case "program":
+			observation.programPath = filepath.Clean(value)
+		case "state":
+			observation.running = value == "running"
+		case "pid":
+			pid, err := strconv.Atoi(value)
+			if err == nil {
+				observation.pid = pid
+			}
+		}
+	}
+	if !filepath.IsAbs(observation.plistPath) ||
+		!filepath.IsAbs(observation.programPath) {
+		return launchAgentObservation{}, errors.New("LaunchAgent observation invalid")
+	}
+	return observation, nil
 }
 
 func waitForLaunchAgentState(

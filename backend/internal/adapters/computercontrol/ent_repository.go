@@ -105,6 +105,61 @@ func (repository *EntRepository) UseCurrentCredential(
 	return identity, returnErr
 }
 
+// RefreshSessionLease records that a fully issued Computer session reached
+// the daemon. It intentionally does not acknowledge an assignment fence.
+func (repository *EntRepository) RefreshSessionLease(
+	ctx context.Context,
+	route computerauthport.Route,
+	seenAt time.Time,
+) error {
+	if !validControlRoute(route) || seenAt.IsZero() {
+		return computercontrolport.ErrCredentialNotCurrent
+	}
+	seenAt = seenAt.UTC()
+	return repository.handle.WithTx(ctx, func(ctx context.Context, tx *ent.Tx) error {
+		credentials, err := tx.ComputerRuntimeCredential.Update().
+			Where(
+				computerruntimecredential.ServerIDEQ(route.ServerID),
+				computerruntimecredential.ComputerIDEQ(route.ComputerID),
+				computerruntimecredential.VersionEQ(int64(route.Version)),
+				computerruntimecredential.RevokedAtIsNil(),
+				computerruntimecredential.Or(
+					computerruntimecredential.And(
+						computerruntimecredential.StateEQ("active"),
+						computerruntimecredential.ExpiresAtGT(seenAt),
+					),
+					computerruntimecredential.And(
+						computerruntimecredential.StateEQ("grace"),
+						computerruntimecredential.GraceExpiresAtGT(seenAt),
+					),
+				),
+			).
+			SetLastUsedAt(seenAt).
+			Save(ctx)
+		if err != nil {
+			return err
+		}
+		if credentials != 1 {
+			return computercontrolport.ErrCredentialNotCurrent
+		}
+		computers, err := tx.Computer.Update().
+			Where(
+				computer.ServerIDEQ(route.ServerID),
+				computer.IDEQ(route.ComputerID),
+				computer.LifecycleStateEQ("active"),
+			).
+			SetHostLastSeenAt(seenAt).
+			Save(ctx)
+		if err != nil {
+			return err
+		}
+		if computers != 1 {
+			return computercontrolport.ErrCredentialNotCurrent
+		}
+		return nil
+	})
+}
+
 // GetAssignmentSnapshot returns a stable, Agent-ID ordered full snapshot.
 func (repository *EntRepository) GetAssignmentSnapshot(
 	ctx context.Context,

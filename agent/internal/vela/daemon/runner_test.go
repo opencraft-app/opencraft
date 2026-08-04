@@ -460,7 +460,7 @@ func TestRunnerSendsHeartbeatFromAppliedAssignment(t *testing.T) {
 		Registry:          registry,
 		Now:               time.Now,
 		HeartbeatSink:     heartbeats,
-		HeartbeatInterval: 10 * time.Millisecond,
+		HeartbeatInterval: time.Hour,
 		RetryDelay:        func(int) time.Duration { return 0 },
 	})
 	if err != nil {
@@ -469,7 +469,7 @@ func TestRunnerSendsHeartbeatFromAppliedAssignment(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- runner.Run(ctx) }()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(500 * time.Millisecond)
 	for len(heartbeats.copy()) == 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("heartbeat was not sent")
@@ -526,6 +526,98 @@ func TestHeartbeatDoesNotAdvertiseUnhealthyCellAsOnline(t *testing.T) {
 	}
 }
 
+func TestHeartbeatWakeSkipsAnAlreadySentAssignmentFence(t *testing.T) {
+	registry, err := NewRegistry(RegistryConfig{
+		Factory: &fakeFactory{}, MaxConcurrent: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &fakeHeartbeatSink{}
+	runner, err := NewRunner(RunnerConfig{
+		StateRoot: shortDaemonRoot(t), Version: "test-version",
+		ComputerID: testComputerID, Source: &fakeAssignmentSource{},
+		Registry: registry, HeartbeatSink: sink,
+		HeartbeatInterval: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.setStatus(Status{
+		Online: true, Version: "test-version",
+		Assignment:     AssignmentStatus{Epoch: testEpoch, Revision: 3},
+		ReconcileState: "healthy",
+	})
+	runner.signalHeartbeat()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		runner.runHeartbeats(ctx)
+		close(done)
+	}()
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for len(sink.copy()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if len(sink.copy()) != 1 {
+		t.Fatalf("initial heartbeat count = %d", len(sink.copy()))
+	}
+	runner.signalHeartbeat()
+	time.Sleep(25 * time.Millisecond)
+	if len(sink.copy()) != 1 {
+		t.Fatalf("duplicate heartbeat count = %d", len(sink.copy()))
+	}
+	cancel()
+	<-done
+}
+
+func TestHeartbeatRetrySwitchesToTheLatestAssignmentFence(t *testing.T) {
+	registry, err := NewRegistry(RegistryConfig{
+		Factory: &fakeFactory{}, MaxConcurrent: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &scriptedHeartbeatSink{}
+	runner, err := NewRunner(RunnerConfig{
+		StateRoot: shortDaemonRoot(t), Version: "test-version",
+		ComputerID: testComputerID, Source: &fakeAssignmentSource{},
+		Registry: registry, HeartbeatSink: sink,
+		HeartbeatInterval: time.Hour,
+		RetryDelay:        func(int) time.Duration { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.setStatus(Status{
+		Online: true, Version: "test-version",
+		Assignment:     AssignmentStatus{Epoch: testEpoch, Revision: 3},
+		ReconcileState: "healthy",
+	})
+	sink.send = func(attempt int, _ Heartbeat) error {
+		if attempt != 1 {
+			return nil
+		}
+		status := runner.Status()
+		status.Assignment.Revision = 4
+		runner.setStatus(status)
+		return errors.New("transient heartbeat failure")
+	}
+	sent, fence := runner.sendLatestHeartbeat(
+		context.Background(), false, heartbeatFence{},
+	)
+	if !sent || fence != (heartbeatFence{epoch: testEpoch, revision: 4}) {
+		t.Fatalf("send result = %v, %#v", sent, fence)
+	}
+	values := sink.copy()
+	if len(values) != 2 ||
+		values[0].AssignmentRevision != 3 ||
+		values[1].AssignmentRevision != 4 ||
+		values[0].HeartbeatID == values[1].HeartbeatID {
+		t.Fatalf("heartbeat attempts = %#v", values)
+	}
+}
+
 type fakeAssignmentSource struct {
 	mu       sync.Mutex
 	results  []PollResult
@@ -536,6 +628,34 @@ type fakeAssignmentSource struct {
 type fakeHeartbeatSink struct {
 	mu     sync.Mutex
 	values []Heartbeat
+}
+
+type scriptedHeartbeatSink struct {
+	mu      sync.Mutex
+	values  []Heartbeat
+	attempt int
+	send    func(int, Heartbeat) error
+}
+
+func (s *scriptedHeartbeatSink) Send(
+	_ context.Context,
+	value Heartbeat,
+) error {
+	s.mu.Lock()
+	s.attempt++
+	attempt := s.attempt
+	s.values = append(s.values, value)
+	s.mu.Unlock()
+	if s.send == nil {
+		return nil
+	}
+	return s.send(attempt, value)
+}
+
+func (s *scriptedHeartbeatSink) copy() []Heartbeat {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]Heartbeat(nil), s.values...)
 }
 
 func (s *fakeHeartbeatSink) Send(

@@ -442,12 +442,29 @@ func (c *defaultComputerController) Run(
 	if err != nil {
 		return err
 	}
-	runtimeSnapshot := catalog.Snapshot(ctx)
-	writeRuntimeCatalogStatus(
-		c.config.Stderr,
-		runtimeSnapshot.RuntimeIDs(),
-		strings.TrimSpace(c.config.CodexExecutable) != "",
-	)
+	runtimeFuture := newRuntimeSnapshotFuture()
+	probeContext, cancelRuntimeProbe := context.WithCancel(ctx)
+	runtimeProbeDone := make(chan struct{})
+	snapshotRuntimeCatalog := catalog.Snapshot
+	if c.config.runtimeSnapshot != nil {
+		snapshotRuntimeCatalog = c.config.runtimeSnapshot
+	}
+	go func() {
+		defer close(runtimeProbeDone)
+		snapshot := snapshotRuntimeCatalog(probeContext)
+		runtimeFuture.Publish(snapshot)
+		if snapshot != nil {
+			writeRuntimeCatalogStatus(
+				c.config.Stderr,
+				snapshot.RuntimeIDs(),
+				strings.TrimSpace(c.config.CodexExecutable) != "",
+			)
+		}
+	}()
+	defer func() {
+		cancelRuntimeProbe()
+		<-runtimeProbeDone
+	}()
 	governor, err := daemon.NewLaunchGovernor(daemon.LaunchGovernorConfig{})
 	if err != nil {
 		return err
@@ -466,14 +483,14 @@ func (c *defaultComputerController) Run(
 		_ = gatewayHub.Close(closeContext)
 	}()
 	factory := &managedAgentFactory{
-		root:       root,
-		stderr:     c.config.Stderr,
-		runtimes:   runtimeSnapshot,
-		governor:   governor,
-		sessions:   sessions,
-		client:     client,
-		transports: c.config.Transports,
-		gatewayHub: gatewayHub,
+		root:          root,
+		stderr:        c.config.Stderr,
+		runtimeFuture: runtimeFuture,
+		governor:      governor,
+		sessions:      sessions,
+		client:        client,
+		transports:    c.config.Transports,
+		gatewayHub:    gatewayHub,
 	}
 	registry, err := daemon.NewRegistry(daemon.RegistryConfig{
 		Factory:       factory,

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"velachat/agent/internal/common"
+	"velachat/agent/internal/runtimecatalog"
 	rootstate "velachat/agent/internal/state"
 	velacli "velachat/agent/internal/vela/cli"
 	"velachat/agent/internal/vela/daemon"
@@ -156,6 +157,8 @@ func TestDefaultControllerRunsComputerSessionAndAssignmentLoop(
 	}
 	var output synchronizedBuffer
 	tatRuntime := &fakeTATRuntime{}
+	runtimeProbeStarted := make(chan struct{})
+	releaseRuntimeProbe := make(chan struct{})
 	actions, err := NewActions(Config{
 		Version:               "test-version",
 		Stdout:                &output,
@@ -164,6 +167,19 @@ func TestDefaultControllerRunsComputerSessionAndAssignmentLoop(
 		AllowInsecureLoopback: true,
 		TAT:                   tatRuntime,
 		HeartbeatInterval:     10 * time.Millisecond,
+		runtimeSnapshot: func(ctx context.Context) *runtimecatalog.Snapshot {
+			close(runtimeProbeStarted)
+			select {
+			case <-ctx.Done():
+			case <-releaseRuntimeProbe:
+			}
+			catalog, catalogErr := runtimecatalog.New(nil)
+			if catalogErr != nil {
+				t.Errorf("empty Runtime Catalog: %v", catalogErr)
+				return nil
+			}
+			return catalog.Snapshot(ctx)
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -175,6 +191,19 @@ func TestDefaultControllerRunsComputerSessionAndAssignmentLoop(
 			StateOptions: velacli.StateOptions{StateDir: root},
 		})
 	}()
+	select {
+	case <-runtimeProbeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("Runtime probe did not start")
+	}
+	sessionDeadline := time.Now().Add(500 * time.Millisecond)
+	for sessionCalls.Load() == 0 && time.Now().Before(sessionDeadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if sessionCalls.Load() == 0 {
+		t.Fatal("Computer session was blocked by Runtime discovery")
+	}
+	close(releaseRuntimeProbe)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		output.Reset()

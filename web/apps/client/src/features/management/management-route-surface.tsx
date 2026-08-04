@@ -44,6 +44,18 @@ export function ManagementRouteSurface({
   const state = useAppState(
     useShallow(value => selectManagementState(value, section)),
   );
+  const neverObservedComputerKey =
+    section === "computers"
+      ? state.computers
+          .filter(
+            computer =>
+              computer.lifecycleState !== "removed" &&
+              computer.lastObservedAt == null,
+          )
+          .map(computer => computer.id)
+          .sort()
+          .join(",")
+      : "";
 
   useEffect(() => {
     if (section === "agents") {
@@ -69,6 +81,27 @@ export function ManagementRouteSurface({
     }
     return () => store.getState().cancelOperationPolling();
   }, [section, server.id, store]);
+
+  useEffect(() => {
+    if (section !== "computers" || neverObservedComputerKey === "") return;
+    const expiresAt = Date.now() + 120_000;
+    let refreshing = false;
+    const interval = setInterval(() => {
+      if (Date.now() >= expiresAt) {
+        clearInterval(interval);
+        return;
+      }
+      if (refreshing) return;
+      refreshing = true;
+      void store
+        .getState()
+        .refreshComputers({force: true})
+        .finally(() => {
+          refreshing = false;
+        });
+    }, 2_000);
+    return () => clearInterval(interval);
+  }, [neverObservedComputerKey, section, server.id, store]);
 
   useEffect(() => {
     if (section !== "agents" && section !== "members") return;

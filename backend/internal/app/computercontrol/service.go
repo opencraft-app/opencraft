@@ -89,6 +89,24 @@ func (service *Service) CreateSession(
 	if err != nil || strings.TrimSpace(accessToken) == "" {
 		return Session{}, apperror.New("internal_error", "暂时无法签发 Computer 会话", err)
 	}
+	if err := service.repository.RefreshSessionLease(
+		ctx,
+		route,
+		now,
+	); err != nil {
+		if errors.Is(err, computercontrolport.ErrCredentialNotCurrent) {
+			return Session{}, apperror.New(
+				"computer_credential_revoked",
+				"Computer credential 已失效",
+				err,
+			)
+		}
+		return Session{}, apperror.New(
+			"internal_error",
+			"暂时无法创建 Computer 会话",
+			err,
+		)
+	}
 	return Session{
 		AccessToken:        accessToken,
 		ExpiresAt:          expiresAt,

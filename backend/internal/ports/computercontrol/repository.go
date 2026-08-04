@@ -40,6 +40,11 @@ type Repository interface {
 		computerauthport.Route,
 		time.Time,
 	) (SessionIdentity, error)
+	RefreshSessionLease(
+		context.Context,
+		computerauthport.Route,
+		time.Time,
+	) error
 }
 
 type Assignment struct {

@@ -118,9 +118,10 @@ type assignmentCursorState struct {
 }
 
 type Runner struct {
-	config RunnerConfig
-	mu     sync.RWMutex
-	status Status
+	config        RunnerConfig
+	mu            sync.RWMutex
+	status        Status
+	heartbeatWake chan struct{}
 }
 
 func NewRunner(config RunnerConfig) (*Runner, error) {
@@ -143,7 +144,10 @@ func NewRunner(config RunnerConfig) (*Runner, error) {
 	if config.HeartbeatSink != nil && config.HeartbeatInterval <= 0 {
 		config.HeartbeatInterval = 60 * time.Second
 	}
-	return &Runner{config: config}, nil
+	return &Runner{
+		config:        config,
+		heartbeatWake: make(chan struct{}, 1),
+	}, nil
 }
 
 func (r *Runner) Run(ctx context.Context) error {
@@ -241,6 +245,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			SnapshotHash: cursor.SnapshotHash,
 		}
 		r.setStatus(status)
+		r.signalHeartbeat()
 	}
 	failures := 0
 	firstPoll := true
@@ -320,6 +325,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		if err := store.Write(daemonStatePath, status); err != nil {
 			return err
 		}
+		r.signalHeartbeat()
 	}
 }
 
@@ -344,37 +350,104 @@ func validateSnapshotAgainstCursor(
 func (r *Runner) runHeartbeats(ctx context.Context) {
 	timer := time.NewTimer(r.config.HeartbeatInterval)
 	defer timer.Stop()
+	var lastSuccessfullySent heartbeatFence
 	for {
+		force := false
 		select {
 		case <-ctx.Done():
 			return
+		case <-r.heartbeatWake:
 		case <-timer.C:
+			force = true
 		}
-		status := r.Status()
-		if status.Assignment.Revision > 0 {
-			heartbeat, err := r.newHeartbeat(status)
-			if err == nil {
-				failures := 0
-				for {
-					err = r.config.HeartbeatSink.Send(ctx, heartbeat)
-					if err == nil {
-						break
-					}
-					if ctx.Err() != nil {
-						return
-					}
-					failures++
-					if waitForRetry(
-						ctx,
-						r.config.RetryDelay(failures),
-					) != nil {
-						return
-					}
-				}
-			}
+		sent, fence := r.sendLatestHeartbeat(
+			ctx,
+			force,
+			lastSuccessfullySent,
+		)
+		if ctx.Err() != nil {
+			return
 		}
-		timer.Reset(r.config.HeartbeatInterval)
+		if sent {
+			lastSuccessfullySent = fence
+			resetHeartbeatTimer(timer, r.config.HeartbeatInterval)
+		} else if force {
+			resetHeartbeatTimer(timer, r.config.HeartbeatInterval)
+		}
 	}
+}
+
+type heartbeatFence struct {
+	epoch    string
+	revision int64
+}
+
+func (r *Runner) sendLatestHeartbeat(
+	ctx context.Context,
+	force bool,
+	lastSuccessfullySent heartbeatFence,
+) (bool, heartbeatFence) {
+	status := r.Status()
+	fence := heartbeatFence{
+		epoch: status.Assignment.Epoch, revision: status.Assignment.Revision,
+	}
+	if fence.revision < 1 || !force && fence == lastSuccessfullySent {
+		return false, heartbeatFence{}
+	}
+	heartbeat, err := r.newHeartbeat(status)
+	if err != nil {
+		return false, heartbeatFence{}
+	}
+	failures := 0
+	for {
+		err = r.config.HeartbeatSink.Send(ctx, heartbeat)
+		if err == nil {
+			return true, fence
+		}
+		if ctx.Err() != nil {
+			return false, heartbeatFence{}
+		}
+		failures++
+		if waitForRetry(ctx, r.config.RetryDelay(failures)) != nil {
+			return false, heartbeatFence{}
+		}
+		status = r.Status()
+		currentFence := heartbeatFence{
+			epoch:    status.Assignment.Epoch,
+			revision: status.Assignment.Revision,
+		}
+		if currentFence.revision < 1 {
+			continue
+		}
+		if currentFence != fence {
+			fence = currentFence
+			heartbeat, err = r.newHeartbeat(status)
+			if err != nil {
+				return false, heartbeatFence{}
+			}
+			failures = 0
+		}
+	}
+}
+
+func (r *Runner) signalHeartbeat() {
+	if r == nil || r.heartbeatWake == nil {
+		return
+	}
+	select {
+	case r.heartbeatWake <- struct{}{}:
+	default:
+	}
+}
+
+func resetHeartbeatTimer(timer *time.Timer, interval time.Duration) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	timer.Reset(interval)
 }
 
 func (r *Runner) newHeartbeat(status Status) (Heartbeat, error) {

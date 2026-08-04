@@ -31,7 +31,7 @@ const (
 
 var controlRepoNow = time.Date(2026, 8, 1, 17, 0, 0, 0, time.UTC)
 
-func TestEntRepositoryUsesCurrentCredentialAndReturnsAssignmentFence(t *testing.T) {
+func TestEntRepositoryUsesCredentialThenRefreshesSessionLease(t *testing.T) {
 	repository, handle := openControlRepository(t)
 	seedControlComputer(t, handle, "active")
 	seedControlCredential(t, handle, "active", controlRepoNow.Add(time.Hour))
@@ -55,6 +55,39 @@ func TestEntRepositoryUsesCurrentCredentialAndReturnsAssignmentFence(t *testing.
 	if err != nil || entity.LastUsedAt == nil || !entity.LastUsedAt.Equal(controlRepoNow) {
 		t.Fatalf("last_used_at = %v, %v", entity.LastUsedAt, err)
 	}
+	machine, err := handle.Client().Computer.Get(
+		context.Background(),
+		controlRepoComputerID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if machine.HostLastSeenAt != nil {
+		t.Fatalf("credential use refreshed session lease at %s", machine.HostLastSeenAt)
+	}
+	if err := repository.RefreshSessionLease(
+		context.Background(),
+		computerauthport.Route{
+			ServerID: controlRepoServerID, ComputerID: controlRepoComputerID,
+			Version: 1,
+		},
+		controlRepoNow,
+	); err != nil {
+		t.Fatal(err)
+	}
+	machine, err = handle.Client().Computer.Get(
+		context.Background(),
+		controlRepoComputerID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if machine.HostLastSeenAt == nil ||
+		!machine.HostLastSeenAt.Equal(controlRepoNow) ||
+		machine.AssignmentEpoch != controlRepoEpoch ||
+		machine.AssignmentRevision != 4 {
+		t.Fatalf("Computer session lease = %#v", machine)
+	}
 }
 
 func TestEntRepositoryRejectsExpiredCredentialWithoutUpdatingUsage(t *testing.T) {
@@ -75,6 +108,49 @@ func TestEntRepositoryRejectsExpiredCredentialWithoutUpdatingUsage(t *testing.T)
 	}
 	if entity.LastUsedAt != nil {
 		t.Fatalf("last_used_at = %v", entity.LastUsedAt)
+	}
+}
+
+func TestEntRepositoryRejectsSessionLeaseAfterCredentialRotation(t *testing.T) {
+	repository, handle := openControlRepository(t)
+	seedControlComputer(t, handle, "active")
+	seedControlCredential(t, handle, "active", controlRepoNow.Add(time.Hour))
+	if _, err := repository.UseCurrentCredential(
+		context.Background(),
+		computerauthport.Route{
+			ServerID: controlRepoServerID, ComputerID: controlRepoComputerID,
+			Version: 1,
+		},
+		controlRepoNow,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.Client().ComputerRuntimeCredential.Update().
+		Where(computerruntimecredential.IDEQ(controlRepoCredentialID)).
+		SetState("revoked").
+		SetRevokedAt(controlRepoNow).
+		Save(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	err := repository.RefreshSessionLease(
+		context.Background(),
+		computerauthport.Route{
+			ServerID: controlRepoServerID, ComputerID: controlRepoComputerID,
+			Version: 1,
+		},
+		controlRepoNow,
+	)
+	if !errors.Is(err, computercontrolport.ErrCredentialNotCurrent) {
+		t.Fatalf("RefreshSessionLease() error = %v", err)
+	}
+	machine, err := handle.Client().Computer.Get(
+		context.Background(), controlRepoComputerID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if machine.HostLastSeenAt != nil {
+		t.Fatalf("rotated credential refreshed lease at %s", machine.HostLastSeenAt)
 	}
 }
 

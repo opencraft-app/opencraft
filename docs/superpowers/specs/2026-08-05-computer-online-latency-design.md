@@ -46,10 +46,13 @@ component 和管理 IPC，随即开始 Computer session/assignment 控制链路�
 
 ### Session 建连即上线，首份 assignment 后立即心跳
 
-Runner 首次 assignment poll 会先用长期 Computer credential 换取短期 Computer session。后台在成功
-校验 current credential 并签发 session 的同一事务中更新 Computer `host_last_seen_at`。该更新只证明
-daemon 已建立控制会话，不携带或确认任何 applied assignment revision；因此不会虚假 ACK、抑制 snapshot
-重发，也不会触发基于“当前 assignment + running set”的 Agent 收敛逻辑。
+Runner 首次 assignment poll 会先用长期 Computer credential 换取短期 Computer session。后台先校验
+current credential 并生成短期 token，随后在同一数据库事务中以完整 credential route/version/current
+状态执行一次受条件约束的写锁定，再更新 active Computer 的 `host_last_seen_at`；任一受影响行数不是 1
+都回滚并且不向调用方返回 token。这样签名失败不会误报在线，删除或 credential 轮换发生在两阶段之间
+时，旧 daemon 也不能续租或取得旧 token。该更新只证明 daemon 已建立控制会话，不携带或确认任何
+applied assignment revision；因此不会虚假 ACK、抑制 snapshot 重发，也不会触发基于“当前 assignment
++ running set”的 Agent 收敛逻辑。
 
 heartbeat 继续只携带本地已经应用的 assignment fence。Runner 的 heartbeat goroutine 使用容量为 1 的
 合并唤醒通道：启动时先检查持久 cursor；每次成功应用新 snapshot 后写入当前状态并非阻塞唤醒。通道

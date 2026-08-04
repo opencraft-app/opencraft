@@ -15,11 +15,13 @@ import (
 	"testing"
 )
 
-func TestLaunchAgentAcceptsBootstrapErrorWhenServiceIsLoaded(t *testing.T) {
+func TestLaunchAgentAcceptsBootstrapErrorWhenExpectedServiceIsStablyRunning(t *testing.T) {
 	home := t.TempDir()
 	root := filepath.Join(t.TempDir(), "computer")
 	var calls [][]string
 	printCalls := 0
+	program := filepath.Join(root, "bin", ProgramName)
+	plist := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
 	launcher := &userLaunchAgent{
 		home: home,
 		uid:  os.Geteuid(),
@@ -27,7 +29,7 @@ func TestLaunchAgentAcceptsBootstrapErrorWhenServiceIsLoaded(t *testing.T) {
 		run: func(_ context.Context, arguments ...string) ([]byte, error) {
 			calls = append(calls, append([]string(nil), arguments...))
 			switch arguments[0] {
-			case "bootout", "kickstart":
+			case "bootout":
 				return nil, nil
 			case "bootstrap":
 				return []byte("Bootstrap failed: 5: Input/output error"),
@@ -37,7 +39,7 @@ func TestLaunchAgentAcceptsBootstrapErrorWhenServiceIsLoaded(t *testing.T) {
 				if printCalls == 1 {
 					return nil, errors.New("service not found")
 				}
-				return []byte("state = running"), nil
+				return launchAgentPrint(plist, program, 4242), nil
 			default:
 				t.Fatalf("unexpected launchctl arguments: %v", arguments)
 				return nil, errors.New("unexpected launchctl arguments")
@@ -56,9 +58,8 @@ func TestLaunchAgentAcceptsBootstrapErrorWhenServiceIsLoaded(t *testing.T) {
 	want := [][]string{
 		{"bootout", service},
 		{"print", service},
-		{"bootstrap", domain, filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")},
+		{"bootstrap", domain, plist},
 		{"print", service},
-		{"kickstart", "-k", service},
 		{"print", service},
 	}
 	if !reflect.DeepEqual(calls, want) {
@@ -66,29 +67,28 @@ func TestLaunchAgentAcceptsBootstrapErrorWhenServiceIsLoaded(t *testing.T) {
 	}
 }
 
-func TestLaunchAgentAcceptsKickstartErrorWhenServiceRemainsLoaded(t *testing.T) {
+func TestLaunchAgentRejectsBootstrapErrorWhenLoadedServiceHasWrongProgram(t *testing.T) {
 	home := t.TempDir()
 	root := filepath.Join(t.TempDir(), "computer")
-	var calls [][]string
 	printCalls := 0
+	plist := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
 	launcher := &userLaunchAgent{
 		home: home,
 		uid:  os.Geteuid(),
 		gid:  os.Getegid(),
 		run: func(_ context.Context, arguments ...string) ([]byte, error) {
-			calls = append(calls, append([]string(nil), arguments...))
 			switch arguments[0] {
-			case "bootout", "bootstrap":
+			case "bootout":
 				return nil, nil
-			case "kickstart":
-				return []byte("Kickstart failed: 5: Input/output error"),
+			case "bootstrap":
+				return []byte("Bootstrap failed: 5: Input/output error"),
 					errors.New("exit status 5")
 			case "print":
 				printCalls++
 				if printCalls == 1 {
 					return nil, errors.New("service not found")
 				}
-				return []byte("state = running"), nil
+				return launchAgentPrint(plist, "/tmp/not-vela-computer", 4242), nil
 			default:
 				t.Fatalf("unexpected launchctl arguments: %v", arguments)
 				return nil, errors.New("unexpected launchctl arguments")
@@ -99,20 +99,8 @@ func TestLaunchAgentAcceptsKickstartErrorWhenServiceRemainsLoaded(t *testing.T) 
 		Label: launchAgentLabel, ProgramPath: filepath.Join(root, "bin", ProgramName),
 		InstallationRoot: root, StateDirectory: filepath.Join(root, "state"),
 	}
-	if err := launcher.Start(context.Background(), spec); err != nil {
-		t.Fatalf("Start() rejected a loaded service: %v", err)
-	}
-	domain := "gui/" + strconv.Itoa(os.Geteuid())
-	service := domain + "/" + launchAgentLabel
-	want := [][]string{
-		{"bootout", service},
-		{"print", service},
-		{"bootstrap", domain, filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")},
-		{"kickstart", "-k", service},
-		{"print", service},
-	}
-	if !reflect.DeepEqual(calls, want) {
-		t.Fatalf("launchctl calls = %v, want %v", calls, want)
+	if err := launcher.Start(context.Background(), spec); err == nil {
+		t.Fatal("Start() accepted a service running the wrong program")
 	}
 }
 
@@ -121,6 +109,8 @@ func TestLaunchAgentWaitsForBootoutBeforeAttestingReplacement(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "computer")
 	var calls [][]string
 	printCalls := 0
+	program := filepath.Join(root, "bin", ProgramName)
+	plist := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
 	launcher := &userLaunchAgent{
 		home: home,
 		uid:  os.Geteuid(),
@@ -128,7 +118,7 @@ func TestLaunchAgentWaitsForBootoutBeforeAttestingReplacement(t *testing.T) {
 		run: func(_ context.Context, arguments ...string) ([]byte, error) {
 			calls = append(calls, append([]string(nil), arguments...))
 			switch arguments[0] {
-			case "bootout", "kickstart":
+			case "bootout":
 				return nil, nil
 			case "bootstrap":
 				return []byte("Bootstrap failed: 5: Input/output error"),
@@ -138,7 +128,7 @@ func TestLaunchAgentWaitsForBootoutBeforeAttestingReplacement(t *testing.T) {
 				if printCalls == 2 {
 					return nil, errors.New("service not found")
 				}
-				return []byte("state = running"), nil
+				return launchAgentPrint(plist, program, 4242), nil
 			default:
 				t.Fatalf("unexpected launchctl arguments: %v", arguments)
 				return nil, errors.New("unexpected launchctl arguments")
@@ -158,14 +148,20 @@ func TestLaunchAgentWaitsForBootoutBeforeAttestingReplacement(t *testing.T) {
 		{"bootout", service},
 		{"print", service},
 		{"print", service},
-		{"bootstrap", domain, filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")},
+		{"bootstrap", domain, plist},
 		{"print", service},
-		{"kickstart", "-k", service},
 		{"print", service},
 	}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("launchctl calls = %v, want %v", calls, want)
 	}
+}
+
+func launchAgentPrint(plist, program string, pid int) []byte {
+	return []byte("path = " + plist + "\n" +
+		"state = running\n" +
+		"program = " + program + "\n" +
+		"pid = " + strconv.Itoa(pid) + "\n")
 }
 
 func TestRenderLaunchAgentUsesCanonicalDaemonAndContainsNoCredential(t *testing.T) {

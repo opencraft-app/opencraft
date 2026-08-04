@@ -25,6 +25,8 @@ type fakeControlRepository struct {
 	err      error
 	route    computerauthport.Route
 	usedAt   time.Time
+	leaseAt  time.Time
+	leaseErr error
 }
 
 func (repository *fakeControlRepository) UseCurrentCredential(
@@ -35,6 +37,20 @@ func (repository *fakeControlRepository) UseCurrentCredential(
 	repository.route = route
 	repository.usedAt = usedAt
 	return repository.identity, repository.err
+}
+
+func (repository *fakeControlRepository) RefreshSessionLease(
+	_ context.Context,
+	route computerauthport.Route,
+	seenAt time.Time,
+) error {
+	if route != (computerauthport.Route{
+		ServerID: controlServerID, ComputerID: controlComputerID, Version: 2,
+	}) {
+		return errors.New("unexpected Computer identity")
+	}
+	repository.leaseAt = seenAt
+	return repository.leaseErr
 }
 
 type fakeTokenSigner struct {
@@ -94,8 +110,39 @@ func TestServiceCreatesFifteenMinuteComputerSessionWithAssignmentFence(t *testin
 		t.Fatalf("signed claims = %#v", tokens.claims)
 	}
 	if repository.route != (computerauthport.Route{ServerID: controlServerID, ComputerID: controlComputerID, Version: 2}) ||
-		!repository.usedAt.Equal(controlNow) {
-		t.Fatalf("repository use = %#v at %s", repository.route, repository.usedAt)
+		!repository.usedAt.Equal(controlNow) ||
+		!repository.leaseAt.Equal(controlNow) {
+		t.Fatalf(
+			"repository use = %#v at %s, lease at %s",
+			repository.route,
+			repository.usedAt,
+			repository.leaseAt,
+		)
+	}
+}
+
+func TestServiceDoesNotRefreshSessionLeaseWhenTokenSigningFails(t *testing.T) {
+	repository := &fakeControlRepository{identity: computercontrolport.SessionIdentity{
+		ServerID: controlServerID, ComputerID: controlComputerID,
+		CredentialVersion: 2, AssignmentEpoch: controlEpoch,
+		AssignmentRevision: 7,
+	}}
+	service, err := NewService(
+		repository,
+		&fakeTokenSigner{err: errors.New("signing unavailable")},
+		fixedClock{now: controlNow},
+		Config{AccessTTL: 15 * time.Minute},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateSession(
+		context.Background(), controlServerID, controlComputerID, 2,
+	); apperror.CodeOf(err) != "internal_error" {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	if !repository.leaseAt.IsZero() {
+		t.Fatalf("session lease refreshed at %s", repository.leaseAt)
 	}
 }
 
