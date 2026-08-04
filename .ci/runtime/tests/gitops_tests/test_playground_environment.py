@@ -32,6 +32,7 @@ from gitops.playground_environment import (
     generated_playground_files,
     PlaygroundRuntimeSecretValues,
     PLAYGROUND_RUNTIME_SECRET_FILE,
+    PLAYGROUND_RUNTIME_KSOPS_GENERATOR,
     PLAYGROUND_RUNTIME_SECRET_NAME,
     PLAYGROUND_PULL_SECRET_NAMES,
     playground_database_grants,
@@ -558,6 +559,7 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
         self.assertEqual(profile.cloud_region, "ap-tokyo")
         self.assertEqual(profile.zones, ("ap-tokyo-1", "ap-tokyo-2"))
         self.assertEqual(profile.node_pool, "general-jp1")
+        self.assertEqual(profile.pull_secret_name, "tcr.ipstcr-lightclaw-secret")
         self.assertEqual(profile.site_mode, "international")
         self.assertEqual(profile.data_plane_mode, "managed")
         self.assertEqual(profile.mysql_host, "10.79.192.15")
@@ -585,7 +587,7 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
         self.assertEqual(stacks["redis"]["ctl_mq"]["existing_endpoint"], profile.redis_addr)
         self.assertEqual(stacks["redis"]["sandbox_route"]["existing_endpoint"], profile.sandbox_redis_addr)
 
-    def test_japan_plan_renders_managed_data_plane_without_env_bootstrap(self) -> None:
+    def test_japan_plan_renders_managed_data_plane_with_namespace_foundation(self) -> None:
         with TemporaryDirectory() as tmp:
             repo = Path(tmp)
             create_playground_fixture(repo, include_international_services=True)
@@ -606,8 +608,13 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
         self.assertEqual(plan.playground_root, "argocd/catalogs/playground/tokyo-playground")
         self.assertEqual(plan.cluster_name, "tokyo-playground")
         self.assertEqual(plan.project, "tokyo-playground")
-        self.assertFalse(any("env-bootstrap" in item.target.as_posix() for item in plan.files))
-        self.assertEqual(generated_playground_files(plan), ())
+        generated_targets = [item.target.name for item in generated_playground_files(plan)]
+        self.assertIn("env-bootstrap.yaml", generated_targets)
+        self.assertIn("namespace.yaml", generated_targets)
+        self.assertIn("serviceaccount.yaml", generated_targets)
+        self.assertNotIn("mysql.yaml", generated_targets)
+        self.assertNotIn("redis.yaml", generated_targets)
+        self.assertNotIn(PLAYGROUND_RUNTIME_KSOPS_GENERATOR, generated_targets)
         self.assertIn("AI_GATEWAY_MYSQL_HOST=10.79.192.15", rendered)
         self.assertIn("AI_GATEWAY_REDIS_ADDR=10.79.192.2:6379", rendered)
         self.assertIn("SANDBOX_MYSQL_HOST=10.79.192.15", rendered)
@@ -624,10 +631,48 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
 
         self.assertFalse(any("/argocd/secrets/" in item.target.as_posix() for item in plan.files))
 
+    def test_japan_managed_plan_validation_does_not_require_secret_targets(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo, include_international_services=True)
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-jp-1")
+
+            errors = validate_clone_plan(plan)
+
+        self.assertNotIn("no secret files would be copied", errors)
+
+    def test_japan_create_cli_uses_profile_cluster_and_project_defaults(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo, include_international_services=True)
+            output = StringIO()
+
+            with redirect_stdout(output):
+                result = create_playground_main(
+                    [
+                        "--repo-root",
+                        str(repo),
+                        "--from-env",
+                        "sandbox-bj-3",
+                        "--to-env",
+                        "sandbox-jp-1",
+                    ]
+                )
+
+        self.assertEqual(result, 0)
+        rendered_output = output.getvalue()
+        self.assertIn("目标 cluster/project：tokyo-playground/tokyo-playground", rendered_output)
+        self.assertIn("使用托管 MySQL/Redis", rendered_output)
+        self.assertNotIn("最小 playground-runtime-secrets", rendered_output)
+
     def test_japan_render_closure_has_no_beijing_runtime_references(self) -> None:
         with TemporaryDirectory() as tmp:
             repo = Path(tmp)
             create_playground_fixture(repo, include_international_services=True)
+            soul = repo / "argocd/services/ctl/sandbox-bj-3/souls/SOUL-pro.md"
+            soul.parent.mkdir(parents=True)
+            soul.write_text("runtime soul asset\n")
+            (repo / "argocd/services/trade/sandbox-bj-3/NOTES.md").write_text("operator notes\n")
             plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-jp-1")
 
             rendered_files = rendered_clone_plan_files(plan)
@@ -637,10 +682,12 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
         self.assertTrue(
             any("argocd/catalogs/playground/tokyo-playground/sandbox-jp-1" in path for path in rendered_targets)
         )
-        self.assertFalse(any("env-bootstrap" in path for path in rendered_targets))
+        self.assertTrue(any("env-bootstrap" in path for path in rendered_targets))
         self.assertFalse(any(PLAYGROUND_RUNTIME_SECRET_FILE in path for path in rendered_targets))
         self.assertFalse(any("/argocd/secrets/sandbox-jp-1/" in path for path in rendered_targets))
-        self.assertFalse(any(path.endswith(".md") for path in rendered_targets))
+        self.assertTrue(any(path.endswith("souls/SOUL-pro.md") for path in rendered_targets))
+        self.assertFalse(any(path.endswith("README.md") for path in rendered_targets))
+        self.assertFalse(any(path.endswith("NOTES.md") for path in rendered_targets))
         self.assertFalse(any("tcr-bj8" in path for path in rendered_targets))
         for expected in (
             "LIGHTVELA_SITE_KIND=intl",
@@ -655,6 +702,7 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
             "CTL_CLS_TOPIC_ID=",
             'region = "ap-tokyo"',
             "NEXTGEN_DASHBOARD_IMAGE=lightclaw-jp1.tencentcloudcr.com/lightclaw/nextgen-dashboard:fixture",
+            "tcr.ipstcr-lightclaw-secret",
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, rendered_text)
@@ -800,6 +848,32 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
         self.assertIn(PLAYGROUND_RUNTIME_SECRET_FILE, stdout.getvalue())
+
+    def test_contract_checker_accepts_japan_managed_runtime_foundation(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo, include_international_services=True)
+            write_clone_plan_for_test(build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-jp-1"))
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                exit_code = check_playground_contract_main(
+                    [
+                        "--repo-root",
+                        str(repo),
+                        "--env",
+                        "sandbox-jp-1",
+                        "--playground-root",
+                        "argocd/catalogs/playground/tokyo-playground",
+                        "--cluster-name",
+                        "tokyo-playground",
+                        "--project",
+                        "tokyo-playground",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("managed MySQL/Redis contract passed", stdout.getvalue())
 
     def test_contract_checker_rejects_broad_runtime_secret_refs(self) -> None:
         with TemporaryDirectory() as tmp:

@@ -212,8 +212,8 @@ def parse_create_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--from-env", default=DEFAULT_FROM_ENV)
     parser.add_argument("--to-env", required=True)
     parser.add_argument("--playground-root", default=DEFAULT_PLAYGROUND_ROOT)
-    parser.add_argument("--cluster-name", default=DEFAULT_CLUSTER_NAME)
-    parser.add_argument("--project", default=DEFAULT_PROJECT)
+    parser.add_argument("--cluster-name")
+    parser.add_argument("--project")
     parser.add_argument("--namespace")
     parser.add_argument("--api-host")
     parser.add_argument("--sandbox-host")
@@ -337,7 +337,7 @@ def playground_environment_profile(env: str) -> PlaygroundEnvironmentProfile:
             node_pool="general-jp1",
             site_mode="international",
             data_plane_mode="managed",
-            pull_secret_name="tcr.jp1-lightclaw-secret",
+            pull_secret_name="tcr.ipstcr-lightclaw-secret",
             pull_secret_file="tcr-jp1-lightclaw-secret.sops.yaml",
             mysql_host="10.79.192.15",
             redis_addr="10.79.192.2:6379",
@@ -603,9 +603,13 @@ def build_playground_clone_plan(
         if profile.data_plane_mode == "managed" and service == "env-bootstrap":
             continue
         for source in collect_files_under(service_dir):
-            if profile.data_plane_mode == "managed" and source.suffix.lower() == ".md":
-                continue
             rel = source.relative_to(service_dir)
+            if (
+                profile.data_plane_mode == "managed"
+                and source.suffix.lower() == ".md"
+                and "souls" not in rel.parts
+            ):
+                continue
             files.append(CloneFile(source, repo_root / "argocd/services" / service / to_env / rel))
 
     if profile.data_plane_mode == "namespace-local":
@@ -976,7 +980,24 @@ def encrypt_sops_yaml_bytes(payload: dict[str, Any], recipients: Sequence[str], 
 
 def generated_playground_files(plan: PlaygroundClonePlan) -> tuple[GeneratedFile, ...]:
     if plan.profile.data_plane_mode == "managed":
-        return ()
+        return (
+            GeneratedFile(
+                plan.repo_root / catalog_dir(plan.playground_root, plan.to_env) / "env-bootstrap.yaml",
+                env_bootstrap_catalog_text(plan),
+            ),
+            GeneratedFile(
+                plan.repo_root / "argocd/services/env-bootstrap" / plan.to_env / "kustomization.yaml",
+                env_bootstrap_kustomization_text(plan),
+            ),
+            GeneratedFile(
+                plan.repo_root / "argocd/services/env-bootstrap" / plan.to_env / "namespace.yaml",
+                env_bootstrap_namespace_text(plan),
+            ),
+            GeneratedFile(
+                plan.repo_root / "argocd/services/env-bootstrap" / plan.to_env / "serviceaccount.yaml",
+                env_bootstrap_serviceaccount_text(plan),
+            ),
+        )
     return (
         GeneratedFile(
             plan.repo_root / catalog_dir(plan.playground_root, plan.to_env) / "env-bootstrap.yaml",
@@ -1027,6 +1048,17 @@ def env_bootstrap_catalog_text(plan: PlaygroundClonePlan) -> str:
 
 
 def env_bootstrap_kustomization_text(plan: PlaygroundClonePlan) -> str:
+    if plan.profile.data_plane_mode == "managed":
+        return yaml.safe_dump(
+            {
+                "apiVersion": "kustomize.config.k8s.io/v1beta1",
+                "kind": "Kustomization",
+                "namespace": plan.namespace,
+                "resources": ["namespace.yaml", "serviceaccount.yaml"],
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        )
     resources = ["namespace.yaml", "serviceaccount.yaml", "mysql.yaml", "redis.yaml"]
     generators = [PLAYGROUND_RUNTIME_KSOPS_GENERATOR]
     if any(item.target.name == "ksops-pull-secret-generator.yaml" for item in plan.files):
@@ -1076,6 +1108,11 @@ def env_bootstrap_namespace_text(plan: PlaygroundClonePlan) -> str:
 
 
 def env_bootstrap_serviceaccount_text(plan: PlaygroundClonePlan) -> str:
+    pull_secret_names = (
+        (plan.profile.pull_secret_name,)
+        if plan.profile.data_plane_mode == "managed"
+        else PLAYGROUND_PULL_SECRET_NAMES
+    )
     return yaml.safe_dump(
         {
             "apiVersion": "v1",
@@ -1084,7 +1121,7 @@ def env_bootstrap_serviceaccount_text(plan: PlaygroundClonePlan) -> str:
                 "name": "default",
                 "namespace": plan.namespace,
             },
-            "imagePullSecrets": [{"name": name} for name in PLAYGROUND_PULL_SECRET_NAMES],
+            "imagePullSecrets": [{"name": name} for name in pull_secret_names],
         },
         allow_unicode=True,
         sort_keys=False,
@@ -1274,7 +1311,7 @@ def validate_clone_plan(plan: PlaygroundClonePlan) -> list[str]:
         errors.append("no catalog files would be generated")
     if not service_targets:
         errors.append("no service sourcePath files would be generated")
-    if not secret_targets:
+    if plan.profile.data_plane_mode == "namespace-local" and not secret_targets:
         errors.append("no secret files would be copied")
     service_dirs = {
         path.parent.relative_to(plan.repo_root).as_posix()
@@ -1346,16 +1383,22 @@ def clone_plan_warnings(plan: PlaygroundClonePlan) -> list[str]:
         warnings.append(
             "将复制并重新加密源环境 SOPS secret；脚本会改 metadata、Redis 密码，并把 sandbox MySQL 密码对齐到新环境 root 密码。强隔离环境必须重新生成 SSM/SOPS 后再发布。"
         )
-    warnings.append(
-        "将为目标环境生成新的最小 playground-runtime-secrets SOPS 文件，只包含 MYSQL_ROOT_PASSWORD/REDIS_PASSWORD；缺少 sops 或 age key 时 --write 会直接失败。"
-    )
+    if plan.profile.data_plane_mode == "namespace-local":
+        warnings.append(
+            "将为目标环境生成新的最小 playground-runtime-secrets SOPS 文件，只包含 MYSQL_ROOT_PASSWORD/REDIS_PASSWORD；缺少 sops 或 age key 时 --write 会直接失败。"
+        )
+    else:
+        warnings.append("目标环境使用托管 MySQL/Redis；发布前必须单独生成该环境的 SSM/SOPS 密钥。")
     if plan.tls_secret_name:
         warnings.append(
             f"计划替换 sandbox TLS secret 为 {plan.tls_secret_name}；只有证书 SAN 覆盖 {plan.wildcard_host} 时才应启用 wildcard HTTPS，否则保持 HTTP-only。"
         )
-    warnings.append(
-        "DNS、证书申请、qcloud cert id、Argo refresh 仍是外部动作；MySQL/Redis 运行时会进入 GitOps closure，DB schema bootstrap 仍需合入后执行。"
-    )
+    if plan.profile.data_plane_mode == "namespace-local":
+        warnings.append(
+            "DNS、证书申请、qcloud cert id、Argo refresh 仍是外部动作；MySQL/Redis 运行时会进入 GitOps closure，DB schema bootstrap 仍需合入后执行。"
+        )
+    else:
+        warnings.append("DNS、证书申请、qcloud cert id、镜像准备和 Argo cluster onboarding 仍是外部动作。")
     return warnings
 
 
@@ -1781,6 +1824,10 @@ def check_playground_stateful_runtime_contract(
     namespace: str,
     apps: Sequence[CatalogApp],
 ) -> CheckResult:
+    profile = playground_environment_profile(env)
+    if profile.data_plane_mode == "managed":
+        return check_playground_managed_runtime_contract(repo_root, env, namespace, apps, profile)
+
     errors: list[str] = []
     warnings: list[str] = []
     env_bootstrap = next((app for app in apps if app.service == "env-bootstrap"), None)
@@ -1934,6 +1981,86 @@ def check_playground_stateful_runtime_contract(
     if errors:
         actions = ("修复 env-bootstrap StatefulSet/PVC 和业务 MYSQL_HOST/REDIS_ADDR 后重跑。",)
     return CheckResult("Playground stateful runtime contract", status, tuple(lines), actions)
+
+
+def check_playground_managed_runtime_contract(
+    repo_root: Path,
+    env: str,
+    namespace: str,
+    apps: Sequence[CatalogApp],
+    profile: PlaygroundEnvironmentProfile,
+) -> CheckResult:
+    errors: list[str] = []
+    env_bootstrap = next((app for app in apps if app.service == "env-bootstrap"), None)
+    source_root = repo_root / (
+        env_bootstrap.source_path if env_bootstrap else f"argocd/services/env-bootstrap/{env}"
+    )
+    if env_bootstrap is None:
+        errors.append("missing env-bootstrap catalog app; managed environments still require namespace ownership")
+
+    kustomization_path = source_root / "kustomization.yaml"
+    if not kustomization_path.is_file():
+        errors.append(f"missing {kustomization_path.relative_to(repo_root)}")
+    else:
+        payload = load_yaml_mapping(kustomization_path.read_text(), kustomization_path.as_posix())
+        resources = {str(item) for item in payload.get("resources") or []}
+        if payload.get("namespace") != namespace:
+            errors.append(
+                f"{kustomization_path.relative_to(repo_root)} namespace={payload.get('namespace')}, expected={namespace}"
+            )
+        for required in ("namespace.yaml", "serviceaccount.yaml"):
+            if required not in resources:
+                errors.append(f"{kustomization_path.relative_to(repo_root)} missing resource {required}")
+        for forbidden in ("mysql.yaml", "redis.yaml"):
+            if forbidden in resources:
+                errors.append(f"{kustomization_path.relative_to(repo_root)} must not include {forbidden}")
+
+    namespace_path = source_root / "namespace.yaml"
+    if not namespace_path.is_file():
+        errors.append(f"missing {namespace_path.relative_to(repo_root)}")
+    else:
+        payload = load_yaml_mapping(namespace_path.read_text(), namespace_path.as_posix())
+        if (payload.get("metadata") or {}).get("name") != namespace:
+            errors.append(f"{namespace_path.relative_to(repo_root)} must create Namespace/{namespace}")
+
+    serviceaccount_path = source_root / "serviceaccount.yaml"
+    if not serviceaccount_path.is_file():
+        errors.append(f"missing {serviceaccount_path.relative_to(repo_root)}")
+    else:
+        payload = load_yaml_mapping(serviceaccount_path.read_text(), serviceaccount_path.as_posix())
+        refs = {
+            str(item.get("name"))
+            for item in payload.get("imagePullSecrets") or []
+            if isinstance(item, dict)
+        }
+        if profile.pull_secret_name not in refs:
+            errors.append(
+                f"{serviceaccount_path.relative_to(repo_root)} missing imagePullSecret {profile.pull_secret_name}"
+            )
+
+    redis_endpoints = {profile.redis_addr, profile.sandbox_redis_addr}
+    for app in apps:
+        source_path = repo_root / app.source_path
+        if not source_path.is_dir():
+            continue
+        for path in source_path.glob("*.env"):
+            values = load_env_file(path)
+            for key, value in values.items():
+                if key.endswith("MYSQL_HOST") and value != profile.mysql_host:
+                    errors.append(
+                        f"{path.relative_to(repo_root)} {key}={value}, expected managed host {profile.mysql_host}"
+                    )
+                if key.endswith("REDIS_ADDR") and value not in redis_endpoints:
+                    errors.append(
+                        f"{path.relative_to(repo_root)} {key}={value}, expected one of {sorted(redis_endpoints)}"
+                    )
+
+    lines = tuple(errors) or (
+        f"managed MySQL/Redis contract passed: mysql={profile.mysql_host} redis={profile.redis_addr} sandbox_redis={profile.sandbox_redis_addr}",
+        f"namespace foundation uses imagePullSecret {profile.pull_secret_name}",
+    )
+    actions = ("修复托管端点或 namespace foundation 后重跑。",) if errors else ()
+    return CheckResult("Playground managed runtime contract", "fail" if errors else "ok", lines, actions)
 
 
 def resolve_host(host: str, timeout_seconds: float) -> tuple[str, ...]:
@@ -2476,11 +2603,14 @@ def print_clone_plan(plan: PlaygroundClonePlan, *, write: bool, force: bool, wri
         print(f"- {path.relative_to(plan.repo_root)}")
     print("=" * 60)
     print("将自动替换：env、namespace、sourcePath、app 名、DB name、Redis prefix、内部 service DNS、域名。")
-    print(
-        "将自动生成：namespace-local MySQL/Redis StatefulSet + PVC，并把 MYSQL_HOST/REDIS_ADDR 指向 namespace 内 Service。"
-    )
-    print("将自动生成：最小 playground-runtime-secrets SOPS 文件，包含新的 MYSQL_ROOT_PASSWORD / REDIS_PASSWORD。")
-    print("风险提示：将复制并重新加密源环境 SOPS secret；只改 metadata 与 Redis 密码对齐。如需强隔离，必须重新生成 SSM/SOPS。")
+    if plan.profile.data_plane_mode == "namespace-local":
+        print(
+            "将自动生成：namespace-local MySQL/Redis StatefulSet + PVC，并把 MYSQL_HOST/REDIS_ADDR 指向 namespace 内 Service。"
+        )
+        print("将自动生成：最小 playground-runtime-secrets SOPS 文件，包含新的 MYSQL_ROOT_PASSWORD / REDIS_PASSWORD。")
+        print("风险提示：将复制并重新加密源环境 SOPS secret；只改 metadata 与 Redis 密码对齐。如需强隔离，必须重新生成 SSM/SOPS。")
+    else:
+        print("将使用托管 MySQL/Redis；不会生成 namespace-local 数据面或 playground-runtime-secrets。")
     print("需要 Agent/人工确认：DNS/证书、SSM/SOPS 是否需要重新生成、是否触发 Argo refresh、是否纳入 drift audit。")
     warnings = clone_plan_warnings(plan)
     if warnings:
