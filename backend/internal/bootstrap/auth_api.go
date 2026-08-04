@@ -72,13 +72,14 @@ type HumanAPIConfig struct {
 
 // PlatformAPIConfig 在 Human API 上增加首组 Server/Member 管理面。
 type PlatformAPIConfig struct {
-	Human              HumanAPIConfig
-	IMResourceKey      []byte
-	ServerCreationWait time.Duration
-	TATRegistrar       tencenttatport.Registrar
-	TerminalIssuer     tencenttatport.TerminalSessionIssuer
-	ManagedTATRegion   string
-	ComputerEnrollment *ComputerEnrollmentAPIConfig
+	Human                    HumanAPIConfig
+	IMResourceKey            []byte
+	ServerCreationWait       time.Duration
+	TATRegistrar             tencenttatport.Registrar
+	TATManagedInstanceFinder tencenttatport.ManagedInstanceFinder
+	TerminalIssuer           tencenttatport.TerminalSessionIssuer
+	ManagedTATRegion         string
+	ComputerEnrollment       *ComputerEnrollmentAPIConfig
 }
 
 // ComputerEnrollmentAPIConfig 固定一个已签名 release，并为私有对象提供短期 URL。
@@ -135,7 +136,8 @@ func NewPlatformAPIHandler(config PlatformAPIConfig) (http.Handler, error) {
 		len(config.IMResourceKey) < 32 ||
 		config.ServerCreationWait <= 0 ||
 		config.TATRegistrar == nil ||
-		config.TerminalIssuer == nil {
+		config.TerminalIssuer == nil ||
+		(config.ComputerEnrollment != nil && config.TATManagedInstanceFinder == nil) {
 		return nil, errors.New("Platform API 配置无效")
 	}
 	humanRepository, err := humanaccountadapter.NewEntRepository(
@@ -257,14 +259,15 @@ func NewPlatformAPIHandler(config PlatformAPIConfig) (http.Handler, error) {
 			idport.UUIDv7{},
 			clockport.System{},
 			appcomputer.EnrollmentConfig{
-				Release:           enrollmentConfig.Release,
-				PlatformBaseURL:   enrollmentConfig.PlatformBaseURL,
-				AllowInsecureHTTP: enrollmentConfig.AllowInsecureHTTP,
-				TokenTTL:          enrollmentConfig.TokenTTL,
-				CredentialTTL:     enrollmentConfig.CredentialTTL,
-				Random:            rand.Reader,
-				ReplacementKey:    computerReplacementGrantKey(config.Human.Auth.AccessTokenKey),
-				ReplacementTTL:    5 * time.Minute,
+				Release:               enrollmentConfig.Release,
+				PlatformBaseURL:       enrollmentConfig.PlatformBaseURL,
+				AllowInsecureHTTP:     enrollmentConfig.AllowInsecureHTTP,
+				TokenTTL:              enrollmentConfig.TokenTTL,
+				CredentialTTL:         enrollmentConfig.CredentialTTL,
+				Random:                rand.Reader,
+				ReplacementKey:        computerReplacementGrantKey(config.Human.Auth.AccessTokenKey),
+				ReplacementTTL:        5 * time.Minute,
+				ManagedInstanceFinder: config.TATManagedInstanceFinder,
 			},
 		)
 		if err != nil {

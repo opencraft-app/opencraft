@@ -1000,12 +1000,13 @@ func serveHumanPlatform(
 			UserSigTTL:    time.Hour,
 			UserSigIssuer: userSigs,
 		},
-		IMResourceKey:      identityKey,
-		ServerCreationWait: 10 * time.Second,
-		TATRegistrar:       tatClient,
-		TerminalIssuer:     terminalIssuer,
-		ManagedTATRegion:   cfg.managedTATRegion,
-		ComputerEnrollment: computerEnrollmentConfig,
+		IMResourceKey:            identityKey,
+		ServerCreationWait:       10 * time.Second,
+		TATRegistrar:             tatClient,
+		TATManagedInstanceFinder: tatClient,
+		TerminalIssuer:           terminalIssuer,
+		ManagedTATRegion:         cfg.managedTATRegion,
+		ComputerEnrollment:       computerEnrollmentConfig,
 	})
 	if err != nil {
 		return apperror.New("CONFIG_INVALID", "无法组装平台 API", err)

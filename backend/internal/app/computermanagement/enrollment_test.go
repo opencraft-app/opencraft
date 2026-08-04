@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"chatserver/internal/apperror"
 	computerport "chatserver/internal/ports/computer"
+	tencenttatport "chatserver/internal/ports/tencenttat"
 )
 
 const enrollmentCredentialID = "0198f4c2-7a37-7af3-a01e-0fcb31e9d84e"
@@ -33,6 +35,8 @@ type enrollmentRepository struct {
 	inspectCommand           computerport.InspectCredentialCommand
 	replacementAuthorization computerport.ReplacementAuthorization
 	replacementCommand       computerport.AuthorizeReplacementCommand
+	replacementErrors        []error
+	replacementCalls         int
 	err                      error
 }
 
@@ -104,7 +108,30 @@ func (repository *enrollmentRepository) AuthorizeReplacement(
 	command computerport.AuthorizeReplacementCommand,
 ) (computerport.ReplacementAuthorization, error) {
 	repository.replacementCommand = command
+	repository.replacementCalls++
+	if len(repository.replacementErrors) >= repository.replacementCalls {
+		return repository.replacementAuthorization,
+			repository.replacementErrors[repository.replacementCalls-1]
+	}
 	return repository.replacementAuthorization, repository.err
+}
+
+type enrollmentManagedFinder struct {
+	region     string
+	computerID string
+	instance   tencenttatport.ManagedInstance
+	found      bool
+	err        error
+}
+
+func (finder *enrollmentManagedFinder) FindManagedByComputerTag(
+	_ context.Context,
+	region string,
+	computerID string,
+) (tencenttatport.ManagedInstance, bool, error) {
+	finder.region = region
+	finder.computerID = computerID
+	return finder.instance, finder.found, finder.err
 }
 
 func (repository *enrollmentRepository) ResolveEnrollmentArtifact(
@@ -405,7 +432,7 @@ func TestEnrollmentServiceRedeemsSetupCodeWithoutPassingPlaintextToRepository(t 
 	}
 	service, err := NewEnrollmentService(
 		repository,
-		&fixedIDs{},
+		&fixedIDs{values: []string{enrollmentCredentialID}},
 		fixedClock{now: now},
 		EnrollmentConfig{
 			Release: enrollmentRelease(), TokenTTL: 15 * time.Minute,
@@ -602,6 +629,136 @@ func TestEnrollmentServicePreflightSignsReplacementGrantForRetiredIdentity(t *te
 		repository.claim.Replacement.BindingHash != hex.EncodeToString(bindingHash[:]) ||
 		repository.claim.Replacement.ProgramSHA256 != enrollmentRelease().Program.SHA256 {
 		t.Fatalf("replacement claim = %#v", repository.claim)
+	}
+}
+
+func TestEnrollmentServiceRecoversMissingRetiredBindingFromProviderTag(t *testing.T) {
+	now := time.Date(2026, 8, 5, 4, 0, 0, 0, time.UTC)
+	oldPart := base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("o", 32)))
+	newToken, err := newEnrollmentToken(
+		testServerID, replacementComputerID, 4, []byte(strings.Repeat("n", 32)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindingHash := sha256.Sum256([]byte("ap-beijing\x00rins-old-mac"))
+	repository := &enrollmentRepository{
+		inspection: computerport.CredentialInspection{
+			ServerID: testServerID, ComputerID: testComputerID, Version: 3,
+			SecretDigest: sha256.Sum256([]byte(oldPart)), CredentialState: "revoked",
+			ComputerState: "removed", ComputerRevision: 7,
+		},
+		replacementAuthorization: computerport.ReplacementAuthorization{
+			OldComputerRevision: 7,
+			BindingHash:         hex.EncodeToString(bindingHash[:]),
+		},
+		replacementErrors: []error{computerport.ErrReplacementBindingMissing},
+		result: computerport.EnrollmentClaim{
+			ServerID: testServerID, ComputerID: replacementComputerID,
+			CredentialID: enrollmentCredentialID, CredentialVersion: 1,
+			ExpiresAt: now.Add(time.Hour), Created: true,
+		},
+	}
+	finder := &enrollmentManagedFinder{
+		found: true,
+		instance: tencenttatport.ManagedInstance{
+			InstanceID: "rins-old-mac", OS: tencenttatport.OSLinux, Online: true,
+		},
+	}
+	service, err := NewEnrollmentService(
+		repository,
+		&fixedIDs{values: []string{enrollmentCredentialID}},
+		fixedClock{now: now},
+		EnrollmentConfig{
+			Release: enrollmentRelease(), TokenTTL: time.Minute,
+			CredentialTTL: time.Hour, PlatformBaseURL: "https://platform.example.cn",
+			Random:         strings.NewReader(strings.Repeat("z", 32)),
+			ReplacementKey: []byte(strings.Repeat("k", 32)), ReplacementTTL: 5 * time.Minute,
+			ManagedInstanceFinder: finder,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Preflight(context.Background(), PreflightCommand{
+		Credential: "crc_" + testServerID + "." + testComputerID + ".3." + oldPart,
+		Replacement: &ReplacementRequest{
+			EnrollmentToken: newToken, TATRegion: "ap-beijing", TATInstanceID: "rins-old-mac",
+		},
+	})
+	if err != nil || result.Status != "removed" || result.ReplacementGrant == "" {
+		t.Fatalf("Preflight(recover binding) = (%#v, %v)", result, err)
+	}
+	if repository.replacementCalls != 1 || finder.region != "ap-beijing" ||
+		finder.computerID != testComputerID {
+		t.Fatalf("recovery calls=%d finder=%#v authorization=%#v",
+			repository.replacementCalls, finder, repository.replacementAuthorization)
+	}
+	if _, err := service.Claim(context.Background(), ClaimCommand{
+		Token: newToken, OSType: "macos", Architecture: "arm64",
+		InstallerVersion: "0.1.0", CredentialDigest: sha256.Sum256([]byte("new-secret")),
+		ReplacementGrant: result.ReplacementGrant,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.claim.Replacement == nil || !repository.claim.Replacement.ProviderAttested {
+		t.Fatalf("replacement claim = %#v", repository.claim.Replacement)
+	}
+}
+
+func TestEnrollmentServiceDoesNotRecoverBindingForDifferentProviderInstance(t *testing.T) {
+	now := time.Date(2026, 8, 5, 4, 0, 0, 0, time.UTC)
+	oldPart := base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("o", 32)))
+	newToken, err := newEnrollmentToken(
+		testServerID, replacementComputerID, 4, []byte(strings.Repeat("n", 32)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindingHash := sha256.Sum256([]byte("ap-beijing\x00rins-old-mac"))
+	repository := &enrollmentRepository{
+		inspection: computerport.CredentialInspection{
+			ServerID: testServerID, ComputerID: testComputerID, Version: 3,
+			SecretDigest: sha256.Sum256([]byte(oldPart)), CredentialState: "revoked",
+			ComputerState: "removed", ComputerRevision: 7,
+		},
+		replacementErrors: []error{computerport.ErrReplacementBindingMissing},
+		replacementAuthorization: computerport.ReplacementAuthorization{
+			OldComputerRevision: 7,
+			BindingHash:         hex.EncodeToString(bindingHash[:]),
+		},
+	}
+	finder := &enrollmentManagedFinder{
+		found: true,
+		instance: tencenttatport.ManagedInstance{
+			InstanceID: "rins-different-mac", OS: tencenttatport.OSLinux, Online: true,
+		},
+	}
+	service, err := NewEnrollmentService(
+		repository,
+		&fixedIDs{},
+		fixedClock{now: now},
+		EnrollmentConfig{
+			Release: enrollmentRelease(), TokenTTL: time.Minute,
+			CredentialTTL: time.Hour, PlatformBaseURL: "https://platform.example.cn",
+			Random:         strings.NewReader(strings.Repeat("z", 32)),
+			ReplacementKey: []byte(strings.Repeat("k", 32)), ReplacementTTL: 5 * time.Minute,
+			ManagedInstanceFinder: finder,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.Preflight(context.Background(), PreflightCommand{
+		Credential: "crc_" + testServerID + "." + testComputerID + ".3." + oldPart,
+		Replacement: &ReplacementRequest{
+			EnrollmentToken: newToken, TATRegion: "ap-beijing", TATInstanceID: "rins-old-mac",
+		},
+	})
+	if apperror.CodeOf(err) != "computer_replacement_identity_mismatch" ||
+		repository.replacementCalls != 1 {
+		t.Fatalf("Preflight(mismatched provider) error=%v calls=%d",
+			err, repository.replacementCalls)
 	}
 }
 

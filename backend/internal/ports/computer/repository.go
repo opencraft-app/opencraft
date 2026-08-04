@@ -27,6 +27,7 @@ var (
 	ErrTATBindingInconsistent       = errors.New("Computer TAT binding 状态不一致")
 	ErrCredentialInspectionNotFound = errors.New("Computer credential inspection 不存在")
 	ErrReplacementIdentityMismatch  = errors.New("Computer replacement identity 不匹配")
+	ErrReplacementBindingMissing    = errors.New("Computer replacement binding 缺失")
 	ErrProviderIdentityGone         = errors.New("Computer provider identity 已销毁")
 	ErrReplacementReleaseMismatch   = errors.New("Computer replacement release 不匹配")
 )
@@ -116,6 +117,7 @@ type ReplacementClaim struct {
 	ReleaseVersion       string
 	Target               string
 	ProgramSHA256        [32]byte
+	ProviderAttested     bool
 	GrantExpired         bool
 }
 
@@ -169,6 +171,7 @@ type AuthorizeReplacementCommand struct {
 type ReplacementAuthorization struct {
 	OldComputerRevision int64
 	BindingHash         string
+	ProviderAttested    bool
 }
 
 // StoreSetupCodeCommand 只保存不可逆摘要和稳定路由，不保存短码明文。

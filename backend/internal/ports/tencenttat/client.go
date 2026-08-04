@@ -278,6 +278,15 @@ type Registrar interface {
 	CreateRegistration(context.Context, RegistrationRequest) (Registration, error)
 }
 
+// ManagedInstanceFinder 按平台写入的 Computer 标签读取唯一托管实例事实。
+type ManagedInstanceFinder interface {
+	FindManagedByComputerTag(
+		context.Context,
+		string,
+		string,
+	) (ManagedInstance, bool, error)
+}
+
 // TerminalTarget 是内部 Session Issuer 使用的稳定 Computer/TAT locator。
 // sandboxId、poolId 等供应商私有字段不得进入该结构。
 type TerminalTarget struct {
@@ -325,15 +334,11 @@ type TerminalSessionIssuer interface {
 
 // Client 执行固定命令并查询云端事实。
 type Client interface {
+	ManagedInstanceFinder
 	Run(context.Context, Command) (Invocation, error)
 	FindByOperation(context.Context, Target, string) (Invocation, bool, error)
 	Inspect(context.Context, Target, string) (Invocation, error)
 	Probe(context.Context, Target) (AgentStatus, error)
-	FindManagedByComputerTag(
-		context.Context,
-		string,
-		string,
-	) (ManagedInstance, bool, error)
 }
 
 type classifiedError interface {

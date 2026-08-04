@@ -23,19 +23,21 @@ import (
 	clockport "chatserver/internal/ports/clock"
 	computerport "chatserver/internal/ports/computer"
 	idport "chatserver/internal/ports/id"
+	tencenttatport "chatserver/internal/ports/tencenttat"
 )
 
 var releaseComponent = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 type EnrollmentConfig struct {
-	Release           computerport.ReleaseBinding
-	PlatformBaseURL   string
-	AllowInsecureHTTP bool
-	TokenTTL          time.Duration
-	CredentialTTL     time.Duration
-	Random            io.Reader
-	ReplacementKey    []byte
-	ReplacementTTL    time.Duration
+	Release               computerport.ReleaseBinding
+	PlatformBaseURL       string
+	AllowInsecureHTTP     bool
+	TokenTTL              time.Duration
+	CredentialTTL         time.Duration
+	Random                io.Reader
+	ReplacementKey        []byte
+	ReplacementTTL        time.Duration
+	ManagedInstanceFinder tencenttatport.ManagedInstanceFinder
 }
 
 type EnrollmentService struct {
@@ -393,7 +395,9 @@ func (service *EnrollmentService) verifyReplacementGrant(
 		NewServerID:   claims.NewServerID, NewComputerID: claims.NewComputerID,
 		NewGeneration: claims.NewGeneration, NewTokenHash: tokenHash,
 		ReleaseVersion: claims.ReleaseVersion, Target: claims.Target,
-		ProgramSHA256: programSHA256, GrantExpired: !now.Before(expiresAt),
+		ProgramSHA256:    programSHA256,
+		ProviderAttested: claims.ProviderAttested,
+		GrantExpired:     !now.Before(expiresAt),
 	}, nil
 }
 
@@ -490,6 +494,11 @@ func (service *EnrollmentService) authorizeReplacement(
 		RequestedAt:   service.clock.Now().UTC(),
 	}
 	authorization, err := service.repository.AuthorizeReplacement(ctx, command)
+	if errors.Is(err, computerport.ErrReplacementBindingMissing) {
+		authorization, err = service.attestMissingReplacementBinding(
+			ctx, command, authorization,
+		)
+	}
 	switch {
 	case errors.Is(err, computerport.ErrProviderIdentityGone):
 		return PreflightResult{Status: "provider_identity_gone"}, nil
@@ -502,6 +511,8 @@ func (service *EnrollmentService) authorizeReplacement(
 		return PreflightResult{}, apperror.New(
 			"computer_replacement_identity_mismatch", "Computer replacement identity 不匹配", err,
 		)
+	case apperror.CodeOf(err) != "":
+		return PreflightResult{}, err
 	case err != nil:
 		return PreflightResult{}, apperror.New("internal_error", "暂时无法检查 Computer replacement", err)
 	}
@@ -514,6 +525,35 @@ func (service *EnrollmentService) authorizeReplacement(
 		return PreflightResult{}, apperror.New("internal_error", "暂时无法签发 Computer replacement", err)
 	}
 	return PreflightResult{Status: "removed", ReplacementGrant: grant}, nil
+}
+
+func (service *EnrollmentService) attestMissingReplacementBinding(
+	ctx context.Context,
+	command computerport.AuthorizeReplacementCommand,
+	authorization computerport.ReplacementAuthorization,
+) (computerport.ReplacementAuthorization, error) {
+	if service.config.ManagedInstanceFinder == nil ||
+		authorization.OldComputerRevision < 1 || len(authorization.BindingHash) != 64 {
+		return computerport.ReplacementAuthorization{},
+			computerport.ErrReplacementIdentityMismatch
+	}
+	instance, found, err := service.config.ManagedInstanceFinder.FindManagedByComputerTag(
+		ctx, command.TATRegion, command.OldComputerID,
+	)
+	if err != nil {
+		return computerport.ReplacementAuthorization{}, apperror.New(
+			"tencent_unavailable", "暂时无法验证 Computer provider identity", err,
+		)
+	}
+	if !found || instance.InstanceID != command.TATInstanceID ||
+		!tencenttatport.ObservedOSCompatible(
+			tencenttatport.OS(service.config.Release.OSType), instance.OS,
+		) {
+		return computerport.ReplacementAuthorization{},
+			computerport.ErrReplacementIdentityMismatch
+	}
+	authorization.ProviderAttested = true
+	return authorization, nil
 }
 
 type replacementGrantClaims struct {
@@ -532,6 +572,7 @@ type replacementGrantClaims struct {
 	ReleaseVersion       string `json:"rel"`
 	Target               string `json:"tgt"`
 	ProgramSHA256        string `json:"prg"`
+	ProviderAttested     bool   `json:"pat,omitempty"`
 	IssuedAt             int64  `json:"iat"`
 	ExpiresAt            int64  `json:"exp"`
 }
@@ -550,7 +591,8 @@ func (service *EnrollmentService) signReplacementGrant(
 		BindingHash: authorization.BindingHash, TATRegion: command.TATRegion,
 		TATInstanceID: command.TATInstanceID, ReleaseVersion: command.ReleaseVersion,
 		Target: command.Target, ProgramSHA256: hex.EncodeToString(command.ProgramSHA256[:]),
-		IssuedAt: issuedAt.Unix(), ExpiresAt: issuedAt.Add(service.config.ReplacementTTL).Unix(),
+		ProviderAttested: authorization.ProviderAttested,
+		IssuedAt:         issuedAt.Unix(), ExpiresAt: issuedAt.Add(service.config.ReplacementTTL).Unix(),
 	}
 	payload, err := json.Marshal(claims)
 	if err != nil {

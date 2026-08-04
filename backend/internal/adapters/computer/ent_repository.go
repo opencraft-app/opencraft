@@ -631,6 +631,19 @@ func (repository *EntRepository) ClaimEnrollment(
 				Save(ctx); err != nil {
 				return err
 			}
+		} else if command.Replacement != nil && command.Replacement.ProviderAttested {
+			if _, err := tx.TATInstanceBinding.Create().
+				SetBindingHash(command.Replacement.BindingHash).
+				SetTatRegion(command.Replacement.TATRegion).
+				SetTatInstanceID(command.Replacement.TATInstanceID).
+				SetServerID(command.ServerID).
+				SetComputerID(command.ComputerID).
+				SetState("active").
+				SetCreatedAt(command.ClaimedAt.UTC()).
+				SetUpdatedAt(command.ClaimedAt.UTC()).
+				Save(ctx); err != nil {
+				return err
+			}
 		}
 		credential, err := tx.ComputerRuntimeCredential.Create().
 			SetID(command.CredentialID).
@@ -748,26 +761,6 @@ func (repository *EntRepository) AuthorizeReplacement(
 	if !credentialExists {
 		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementIdentityMismatch
 	}
-	hash := computerTATBindingHash(command.TATRegion, command.TATInstanceID)
-	binding, err := repository.handle.Client().TATInstanceBinding.Query().
-		Where(tatinstancebinding.BindingHashEQ(hash)).
-		Only(ctx)
-	if ent.IsNotFound(err) {
-		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementIdentityMismatch
-	}
-	if err != nil {
-		return computerport.ReplacementAuthorization{}, err
-	}
-	if binding.ServerID != command.OldServerID || binding.ComputerID != command.OldComputerID ||
-		binding.TatRegion != command.TATRegion || binding.TatInstanceID != command.TATInstanceID {
-		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementIdentityMismatch
-	}
-	if binding.State == "purged" {
-		return computerport.ReplacementAuthorization{}, computerport.ErrProviderIdentityGone
-	}
-	if binding.State != "retired" {
-		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementIdentityMismatch
-	}
 	newMachine, err := repository.handle.Client().Computer.Query().
 		Where(
 			computerentity.ServerIDEQ(command.NewServerID),
@@ -798,6 +791,29 @@ func (repository *EntRepository) AuthorizeReplacement(
 		len(*newMachine.EnrollmentProgramSha256) != sha256.Size ||
 		subtle.ConstantTimeCompare(*newMachine.EnrollmentProgramSha256, command.ProgramSHA256[:]) != 1 {
 		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementReleaseMismatch
+	}
+	hash := computerTATBindingHash(command.TATRegion, command.TATInstanceID)
+	binding, err := repository.handle.Client().TATInstanceBinding.Query().
+		Where(tatinstancebinding.BindingHashEQ(hash)).
+		Only(ctx)
+	if ent.IsNotFound(err) {
+		return computerport.ReplacementAuthorization{
+			OldComputerRevision: oldMachine.Revision,
+			BindingHash:         hash,
+		}, computerport.ErrReplacementBindingMissing
+	}
+	if err != nil {
+		return computerport.ReplacementAuthorization{}, err
+	}
+	if binding.ServerID != command.OldServerID || binding.ComputerID != command.OldComputerID ||
+		binding.TatRegion != command.TATRegion || binding.TatInstanceID != command.TATInstanceID {
+		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementIdentityMismatch
+	}
+	if binding.State == "purged" {
+		return computerport.ReplacementAuthorization{}, computerport.ErrProviderIdentityGone
+	}
+	if binding.State != "retired" {
+		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementIdentityMismatch
 	}
 	return computerport.ReplacementAuthorization{
 		OldComputerRevision: oldMachine.Revision, BindingHash: hash,
@@ -1021,6 +1037,10 @@ func validateReplacementClaim(
 		Where(tatinstancebinding.BindingHashEQ(replacement.BindingHash)).
 		Only(ctx)
 	if ent.IsNotFound(err) {
+		if machine.EnrollmentClaimedAt == nil && replacement.ProviderAttested &&
+			!replacement.GrantExpired {
+			return nil, nil
+		}
 		return nil, computerport.ErrReplacementIdentityMismatch
 	}
 	if err != nil {
