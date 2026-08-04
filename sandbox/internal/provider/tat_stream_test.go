@@ -33,13 +33,15 @@ func TestTencentTerminalCommandStreamUsesPtyExecCmdStreamAndOrdersChunks(t *test
 
 		start := readJSONFrame(t, conn)
 		assertFrameData(t, start, "PtyStart", map[string]any{
-			"SessionId":        "session-1",
-			"Cols":             float64(defaultTerminalCols),
-			"Rows":             float64(defaultTerminalRows),
-			"MaxIdleTime":      float64(30),
-			"Username":         terminalCommandUsername,
-			"WorkingDirectory": terminalCommandWorkingDirectory,
+			"SessionId":   "session-1",
+			"UserName":    terminalCommandUsername,
+			"NoShell":     true,
+			"MaxIdleTime": float64(30),
 		})
+		channelID, ok := start.Data["ChannelId"].(string)
+		if !ok || strings.TrimSpace(channelID) == "" {
+			t.Fatalf("expected non-empty PtyStart.ChannelId, got %#v", start.Data["ChannelId"])
+		}
 		writeJSONFrame(t, conn, map[string]any{"Type": "PtyReady"})
 
 		exec := readBSONFrame(t, conn)
@@ -49,6 +51,9 @@ func TestTencentTerminalCommandStreamUsesPtyExecCmdStreamAndOrdersChunks(t *test
 		if exec.Data.SessionID != "session-1" {
 			t.Fatalf("expected session-1, got %q", exec.Data.SessionID)
 		}
+		if exec.Data.ChannelID != channelID {
+			t.Fatalf("expected exec ChannelId %q, got %q", channelID, exec.Data.ChannelID)
+		}
 		if exec.Data.CustomData == "" {
 			t.Fatal("expected non-empty CustomData")
 		}
@@ -56,12 +61,15 @@ func TestTencentTerminalCommandStreamUsesPtyExecCmdStreamAndOrdersChunks(t *test
 			t.Fatalf("unexpected exec request: %+v", exec.Data.Data)
 		}
 
-		writeBSONChunk(t, conn, exec.Data.CustomData, 2, []byte{0xbd, 0xa0, '\n'}, true, 7)
-		writeBSONChunk(t, conn, exec.Data.CustomData, 0, []byte("hello "), false, 0)
-		writeBSONChunk(t, conn, exec.Data.CustomData, 1, []byte{0xe4}, false, 0)
+		writeBSONChunk(t, conn, channelID, exec.Data.CustomData, 2, []byte{0xbd, 0xa0, '\n'}, true, 7)
+		writeBSONChunk(t, conn, channelID, exec.Data.CustomData, 0, []byte("hello "), false, 0)
+		writeBSONChunk(t, conn, channelID, exec.Data.CustomData, 1, []byte{0xe4}, false, 0)
 
 		stop := readJSONFrame(t, conn)
-		assertFrameData(t, stop, "PtyStop", map[string]any{"SessionId": "session-1"})
+		assertFrameData(t, stop, "PtyStop", map[string]any{
+			"SessionId": "session-1",
+			"ChannelId": channelID,
+		})
 	})
 	defer server.Close()
 
@@ -249,6 +257,7 @@ type tatTestExecFrame struct {
 	Type string `bson:"Type"`
 	Data struct {
 		SessionID  string `bson:"SessionId"`
+		ChannelID  string `bson:"ChannelId"`
 		CustomData string `bson:"CustomData"`
 		Data       struct {
 			Cmd     string `bson:"Cmd"`
@@ -319,12 +328,13 @@ func writeJSONFrame(t *testing.T, conn *websocket.Conn, frame any) {
 	}
 }
 
-func writeBSONChunk(t *testing.T, conn *websocket.Conn, customData string, index int, data []byte, isLast bool, exitCode int) {
+func writeBSONChunk(t *testing.T, conn *websocket.Conn, channelID, customData string, index int, data []byte, isLast bool, exitCode int) {
 	t.Helper()
 	payload, err := bson.Marshal(map[string]any{
 		"Type": "PtyExecCmdStream",
 		"Data": map[string]any{
 			"SessionId":  "session-1",
+			"ChannelId":  channelID,
 			"CustomData": customData,
 			"Data": map[string]any{
 				"Index":    index,
