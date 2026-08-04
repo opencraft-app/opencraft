@@ -70,7 +70,9 @@ func TestLoadManagedComputerConfigPreservesInsecureHTTPOptIn(t *testing.T) {
 func TestDefaultControllerRunsComputerSessionAndAssignmentLoop(
 	t *testing.T,
 ) {
-	t.Parallel()
+	// Runtime discovery intentionally probes the local machine. Keep the two
+	// controller integration tests serial so unrelated parallel runtime tests
+	// cannot consume their bounded daemon-start window.
 
 	now := time.Now().UTC()
 	snapshot := daemon.Snapshot{
@@ -238,7 +240,7 @@ func TestDefaultControllerRunsComputerSessionAndAssignmentLoop(
 }
 
 func TestDefaultControllerStartsTatBeforeFirstComputerSession(t *testing.T) {
-	t.Parallel()
+	// See TestDefaultControllerRunsComputerSessionAndAssignmentLoop.
 
 	now := time.Now().UTC()
 	snapshot := daemon.Snapshot{
