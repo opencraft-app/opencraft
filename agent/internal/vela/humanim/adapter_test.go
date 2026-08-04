@@ -125,6 +125,7 @@ func TestRealtimeTopicProjectsMessagesInOrder(t *testing.T) {
 			return nil
 		})
 	}()
+	waitForSubscriber(t, adapter, "messages")
 	transport.events <- im.Event{Type: im.EventMessage, Message: &im.IncomingMessage{
 		Ref: reference, SenderUserID: "human-2", Elements: []im.Element{{Type: im.ElementText, Text: "实时"}},
 	}}
