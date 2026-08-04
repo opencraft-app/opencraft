@@ -4,10 +4,11 @@ import {
   statSync,
 } from "node:fs";
 import { relative, resolve } from "node:path";
+import {fileURLToPath} from "node:url";
 
 import { findCredentialLeaks } from "../src/security/credential-scan";
 
-const projectRoot = resolve(import.meta.dir, "..");
+const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const sourceRoot = resolve(projectRoot, "src");
 
 function sourceFiles(directory: string): string[] {
