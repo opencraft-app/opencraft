@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { BEIAN_URL, CN_PRIVACY_POLICY_URL, ICP_LICENSE, shouldShowICP } from "@/constants/legal";
+import { useTranslation } from "react-i18next";
+import {
+  BEIAN_URL,
+  CN_PRIVACY_POLICY_URL,
+  CN_TERMS_OF_SERVICE_URL,
+  getGlobalTermsOfServiceUrl,
+  ICP_LICENSE,
+  shouldShowICP,
+} from "@/constants/legal";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useT } from "@/i18n/t";
 import { isCN, isGlobal } from "@/lib/region";
@@ -12,8 +20,10 @@ interface LegalFooterProps {
 export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
   const currentYear = new Date().getFullYear();
   const t = useT();
+  const { i18n } = useTranslation();
   const showICP = shouldShowICP();
   const [showQR, setShowQR] = useState(false);
+  const globalTermsOfServiceUrl = getGlobalTermsOfServiceUrl(i18n.language);
   const footerLinkClass = "lw-site-link lw-site-link--muted transition-colors";
   const showInlineICP = showICP && icpPlacement === "inline";
   const showRightICP = showICP && icpPlacement === "right";
@@ -57,14 +67,25 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               </a>
             )}
             ·
-            <a
-              href="https://cloud.tencent.com/document/product/301/48034"
-              target="_blank"
-              rel="noopener noreferrer"
-              className={footerLinkClass}
-            >
-              {t("服务条款")}
-            </a>
+            {isGlobal ? (
+              <a
+                href={globalTermsOfServiceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={footerLinkClass}
+              >
+                {t("服务条款")}
+              </a>
+            ) : (
+              <a
+                href={CN_TERMS_OF_SERVICE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={footerLinkClass}
+              >
+                {t("服务条款")}
+              </a>
+            )}
             {isCN ? (
               <>
                 ·

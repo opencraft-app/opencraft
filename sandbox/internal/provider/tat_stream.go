@@ -36,6 +36,7 @@ type tatStreamFrame struct {
 
 type tatStreamEnvelope struct {
 	SessionID  string         `json:"SessionId,omitempty" bson:"SessionId,omitempty"`
+	ChannelID  string         `json:"ChannelId,omitempty" bson:"ChannelId,omitempty"`
 	CustomData string         `json:"CustomData,omitempty" bson:"CustomData,omitempty"`
 	Message    string         `json:"Message,omitempty" bson:"Message,omitempty"`
 	ErrMsg     string         `json:"ErrMsg,omitempty" bson:"ErrMsg,omitempty"`
@@ -75,13 +76,16 @@ func (s *tatStreamSocket) writeBSON(frame any) error {
 	return s.conn.WriteMessage(websocket.BinaryMessage, payload)
 }
 
-func (s *tatStreamSocket) cleanup(sessionID string) {
+func (s *tatStreamSocket) cleanup(sessionID, channelID string) {
 	s.cleanupOnce.Do(func() {
 		s.writeMu.Lock()
 		_ = s.conn.SetWriteDeadline(time.Now().Add(tatStreamCleanupTimeout))
 		_ = s.conn.WriteJSON(map[string]any{
 			"Type": "PtyStop",
-			"Data": map[string]any{"SessionId": sessionID},
+			"Data": map[string]any{
+				"SessionId": sessionID,
+				"ChannelId": channelID,
+			},
 		})
 		s.writeMu.Unlock()
 		_ = s.conn.Close()
@@ -147,14 +151,15 @@ func (p *TencentCloudProvider) StreamTerminalCommand(ctx context.Context, req Te
 	}
 	conn.SetReadLimit(maxTerminalReorderBytes + 64*1024)
 	socket := &tatStreamSocket{conn: conn}
-	defer socket.cleanup(session.SessionID)
+	channelID := "exec-" + uuid.NewString()
+	defer socket.cleanup(session.SessionID, channelID)
 
 	watchDone := make(chan struct{})
 	defer close(watchDone)
 	go func() {
 		select {
 		case <-runCtx.Done():
-			socket.cleanup(session.SessionID)
+			socket.cleanup(session.SessionID, channelID)
 		case <-watchDone:
 		}
 	}()
@@ -186,12 +191,11 @@ func (p *TencentCloudProvider) StreamTerminalCommand(ctx context.Context, req Te
 	if err := socket.writeJSON(map[string]any{
 		"Type": "PtyStart",
 		"Data": map[string]any{
-			"SessionId":        session.SessionID,
-			"Cols":             defaultTerminalCols,
-			"Rows":             defaultTerminalRows,
-			"MaxIdleTime":      timeoutSeconds,
-			"Username":         terminalCommandUsername,
-			"WorkingDirectory": terminalCommandWorkingDirectory,
+			"SessionId":   session.SessionID,
+			"ChannelId":   channelID,
+			"UserName":    terminalCommandUsername,
+			"NoShell":     true,
+			"MaxIdleTime": timeoutSeconds,
 		},
 	}); err != nil {
 		return TerminalCommandResult{}, classifyStreamError(ctx, runCtx, "pty start failed", err)
@@ -213,6 +217,7 @@ func (p *TencentCloudProvider) StreamTerminalCommand(ctx context.Context, req Te
 		Type: "PtyExecCmdStream",
 		Data: tatStreamEnvelope{
 			SessionID:  session.SessionID,
+			ChannelID:  channelID,
 			CustomData: customData,
 			Data: tatStreamChunk{
 				Cmd:     req.Command,
@@ -223,7 +228,7 @@ func (p *TencentCloudProvider) StreamTerminalCommand(ctx context.Context, req Te
 		return TerminalCommandResult{}, classifyStreamError(ctx, runCtx, "command request failed", err)
 	}
 
-	result, err := readTerminalCommandChunks(runCtx, conn, customData, executionID, emit)
+	result, err := readTerminalCommandChunks(runCtx, conn, channelID, customData, executionID, emit)
 	if err != nil {
 		return TerminalCommandResult{}, classifyStreamError(ctx, runCtx, "command stream failed", err)
 	}
@@ -250,7 +255,7 @@ func waitForPtyReady(ctx context.Context, conn *websocket.Conn) error {
 	}
 }
 
-func readTerminalCommandChunks(ctx context.Context, conn *websocket.Conn, customData, executionID string, emit func(TerminalCommandStreamEvent) error) (TerminalCommandResult, error) {
+func readTerminalCommandChunks(ctx context.Context, conn *websocket.Conn, channelID, customData, executionID string, emit func(TerminalCommandStreamEvent) error) (TerminalCommandResult, error) {
 	pending := make(map[int]tatStreamChunk)
 	bufferedBytes := 0
 	nextIndex := 0
@@ -272,6 +277,9 @@ func readTerminalCommandChunks(ctx context.Context, conn *websocket.Conn, custom
 		}
 		if frame.Type != "PtyExecCmdStream" {
 			return TerminalCommandResult{}, fmt.Errorf("unexpected command stream frame: %s", frame.Type)
+		}
+		if frame.Data.ChannelID != channelID {
+			return TerminalCommandResult{}, errors.New("command stream channel mismatch")
 		}
 		if frame.Data.CustomData != customData {
 			return TerminalCommandResult{}, errors.New("command stream correlation mismatch")

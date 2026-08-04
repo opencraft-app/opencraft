@@ -20,6 +20,7 @@ import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATI
 import { DATONG_PAGE_IDS } from "@/observability/datong";
 import { trackDatongClick } from "@/observability/datong-tracker";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
+import { useZhHantDeep } from "@/lib/zh-hant";
 import {
   AGENTS_HOME_PATH,
   SUBSCRIBE_PATH,
@@ -70,10 +71,11 @@ export const LandingPageView = ({
   const { bots, isSubscribed } = useOpenClaw();
   const oauthError = useMemo(() => new URLSearchParams(locationSearch).get("oauth_error"), [locationSearch]);
   const oauthInitialError = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
-  const overviewScenarioTaskPacks = useMemo(
+  const rawOverviewScenarioTaskPacks = useMemo(
     () => getOverviewScenarioTaskPacks(publicLocale ?? (isGlobal ? "en-US" : "zh-CN")),
     [publicLocale],
   );
+  const overviewScenarioTaskPacks = useZhHantDeep(rawOverviewScenarioTaskPacks);
   const [showLogin, setShowLogin] = useState(false);
 
   useEffect(() => {
