@@ -1,0 +1,14 @@
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - generic [ref=e8]: git.woa.com
+    - text: 访问失败，请尝试以下方法后再次访问
+  - generic [ref=e9]:
+    - paragraph [ref=e10]:
+      - text: 1. 打开并登录iOA进行访问，如仍无法访问，可尝试单击iOA修复工具 2. 如没有安装iOA，请在这里
+      - link "下载" [ref=e11] [cursor=pointer]:
+        - /url: https://ioa.tencent.com/
+      - text: ，安装完成后即可访问
+    - paragraph [ref=e12]:
+      - text: 如以上方法仍未解决您的问题，请企业微信联系
+      - link "8000助手" [ref=e13] [cursor=pointer]:
+        - /url: javascript:;

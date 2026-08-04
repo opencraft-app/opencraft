@@ -1,0 +1,951 @@
+// Package website 静态建站业务逻辑
+package website
+
+import (
+	"context"
+	crand "crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/tencentyun/cos-go-sdk-v5"
+
+	"ctl/pkg/errcode"
+	"ctl/pkg/model/bundle"
+	"ctl/pkg/model/idgen"
+	"ctl/pkg/model/pass"
+	quota "ctl/pkg/model/userresourcequota"
+	"ctl/pkg/model/website"
+	"ctl/pkg/resource"
+
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+// ---- 返回类型 ----
+
+type Capability struct {
+	MaxSites            int   `json:"max_sites"`
+	UsedSites           int   `json:"used_sites"`
+	MonthlyTrafficBytes int64 `json:"monthly_traffic_bytes"`
+	UsedTrafficBytes    int64 `json:"used_traffic_bytes"`
+	StorageBytes        int64 `json:"storage_bytes"`
+	MaxArtifactSize     int64 `json:"max_artifact_size"`
+	MaxFiles            int   `json:"max_files"`
+}
+
+type CreateSiteResult struct {
+	SiteID      string `json:"site_id"`
+	OperationID string `json:"operation_id"`
+}
+
+type CreateReleaseRequest struct {
+	ArtifactHash string `json:"artifact_hash"`
+	ArtifactSize int64  `json:"artifact_size"`
+	FileCount    int    `json:"file_count"`
+}
+
+type CreateReleaseResult struct {
+	ReleaseID    string `json:"release_id"`
+	OperationID  string `json:"operation_id"`
+	Version      int    `json:"version"`
+	UploadURL    string `json:"upload_url"`
+	UploadMethod string `json:"upload_method"`
+}
+
+type DeleteSiteResult struct {
+	OperationID string `json:"operation_id"`
+}
+
+// ---- Logic 接口 ----
+
+type Logic interface {
+	GetCapability(userID string) (*Capability, error)
+	CreateSite(userID, bundleID, name, idempotencyKey string) (*CreateSiteResult, error)
+	ListSites(userID string, page, pageSize int) ([]*website.SiteEntity, int64, error)
+	GetSite(userID, siteID string) (*website.SiteEntity, error)
+	CreateRelease(userID, siteID string, req CreateReleaseRequest) (*CreateReleaseResult, error)
+	ListReleases(userID, siteID string, page, pageSize int) ([]*website.ReleaseEntity, int64, error)
+	GetOperation(userID, operationID string) (*website.OperationEntity, error)
+	GetOperationInternal(operationID string) (*website.OperationEntity, error)
+	ListPendingOperations(status string, limit int) ([]*website.OperationEntity, error)
+	ClaimOperation(operationID, workerID string, leaseTTL time.Duration) (*website.OperationEntity, bool, error)
+	CompleteOperation(operationID, leaseToken, cloudPath, publicURL string) error
+	FailOperation(operationID, leaseToken, errorMessage string) error
+	DeleteSite(userID, siteID string) (*DeleteSiteResult, error)
+	// Pass 生命周期联动
+	OnPassIsolated(userID string) error
+	OnPassRenewed(userID string) error
+}
+
+// ---- 实现 ----
+
+type logic struct {
+	siteDao      website.SiteDao
+	releaseDao   website.ReleaseDao
+	operationDao website.OperationDao
+	passDao      pass.Dao
+	bundleDao    bundle.Dao
+	quotaDao     quota.Dao
+	idgenDao     idgen.Dao
+	logger       *zap.Logger
+}
+
+func NewLogic() Logic {
+	return &logic{
+		siteDao:      website.NewSiteDao(),
+		releaseDao:   website.NewReleaseDao(),
+		operationDao: website.NewOperationDao(),
+		passDao:      pass.NewDao(),
+		bundleDao:    bundle.NewDao(),
+		quotaDao:     quota.NewDao(),
+		idgenDao:     idgen.NewDao(),
+		logger:       resource.ZapLogger,
+	}
+}
+
+func isOperationClaimable(status string, leaseExpiresAt *time.Time, now time.Time) bool {
+	return status == website.OpStatusCreated ||
+		(status == website.OpStatusRunning && leaseExpiresAt != nil && leaseExpiresAt.Before(now))
+}
+
+func isCurrentOperationGeneration(operationGeneration, siteGeneration int64) bool {
+	return operationGeneration == siteGeneration
+}
+
+// ---- 辅助函数 ----
+
+func (l *logic) getActivePass(userID string) (*pass.Entity, error) {
+	passes, err := l.passDao.ListByUserID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("list passes: %w", err)
+	}
+	for _, p := range passes {
+		if p.Status == pass.StatusActive && p.ExpiredTime.After(time.Now()) {
+			return p, nil
+		}
+	}
+	return nil, errcode.ErrWebsitePassInactive
+}
+
+func (l *logic) getBundleQuota(bundleID string) (*website.BundleStaticSiteQuota, error) {
+	b, err := l.bundleDao.GetByBundleID(bundleID)
+	if err != nil {
+		return nil, fmt.Errorf("get bundle: %w", err)
+	}
+	if b.StaticSiteQuota == "" {
+		return nil, errcode.ErrWebsiteNoQuota
+	}
+	var q website.BundleStaticSiteQuota
+	if err := json.Unmarshal([]byte(b.StaticSiteQuota), &q); err != nil {
+		return nil, fmt.Errorf("unmarshal static_site_quota: %w", err)
+	}
+	if q.MaxSites <= 0 {
+		return nil, errcode.ErrWebsiteNoQuota
+	}
+	return &q, nil
+}
+
+func (l *logic) generateID(name, prefix string) (string, error) {
+	// 8 字节随机 hex，16 字符，防枚举 + 防碰撞
+	b := make([]byte, 8)
+	if _, err := crand.Read(b); err != nil {
+		return "", fmt.Errorf("generate random id: %w", err)
+	}
+	return fmt.Sprintf("%s-%s", prefix, hex.EncodeToString(b)), nil
+}
+
+// notifyDeployer LPUSH 操作 ID 到 Redis，通知 deployer 立即处理
+func (l *logic) notifyDeployer(operationID string) {
+	if resource.RedisMainClient == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := resource.RedisMainClient.LPush(ctx, "website:operations:pending", operationID).Err(); err != nil {
+		l.logger.Warn("notify deployer LPUSH failed", zap.String("op", operationID), zap.Error(err))
+	}
+}
+
+func (l *logic) ensureQuotaInitialized(userID, bundleID string, q *website.BundleStaticSiteQuota) error {
+	existing, err := l.quotaDao.SelectQuota(userID, website.ResourceNameWebsiteSite, bundleID)
+	if err != nil {
+		return fmt.Errorf("select site quota: %w", err)
+	}
+	if existing != nil {
+		// 检测套餐变更：quota行中的resource_key存储了初始化时的bundle_id
+		if existing.ResourceKey != bundleID {
+			// 套餐变更：重新计算配额
+			usedSites, err := l.siteDao.CountActiveByUserID(userID)
+			if err != nil {
+				return fmt.Errorf("count sites for quota reconcile: %w", err)
+			}
+			newTotal := int64(q.MaxSites)
+			newAvailable := newTotal - usedSites
+			if newAvailable < 0 {
+				newAvailable = 0 // 超额情况：用户已有站点数超过新套餐上限
+			}
+			result := resource.GormDB.Table(quota.TableName).
+				Where(quota.ColumnUserID+" = ? AND "+quota.ColumnResourceName+" = ? AND "+quota.ColumnResourceKey+" = ?",
+					userID, website.ResourceNameWebsiteSite, existing.ResourceKey).
+				Updates(map[string]interface{}{
+					quota.ColumnResourceKey:            bundleID,
+					quota.ColumnResourceQuotaTotal:     newTotal,
+					quota.ColumnResourceQuotaAvailable: newAvailable,
+				})
+			if result.Error != nil {
+				return fmt.Errorf("reconcile quota on bundle change: %w", result.Error)
+			}
+			l.logger.Info("website quota reconciled on bundle change",
+				zap.String("user_id", userID),
+				zap.String("old_bundle", existing.ResourceKey),
+				zap.String("new_bundle", bundleID),
+				zap.Int64("new_total", newTotal),
+				zap.Int64("new_available", newAvailable),
+			)
+		}
+		return nil
+	}
+	// 首次初始化：resource_key存储bundle_id用于后续套餐变更检测
+	entity := &quota.Entity{
+		UserID:                 userID,
+		ResourceName:           website.ResourceNameWebsiteSite,
+		ResourceKey:            bundleID,
+		ResourceQuotaAvailable: int64(q.MaxSites),
+		ResourceQuotaTotal:     int64(q.MaxSites),
+	}
+	return resource.GormDB.Table(quota.TableName).Create(entity).Error
+}
+
+// ---- 安全校验 ----
+
+// validateArtifactHash 校验制品哈希格式
+func validateArtifactHash(hash string) bool {
+	if hash == "" {
+		return false
+	}
+	// 接受 sha256:xxx 或纯hex
+	if strings.HasPrefix(hash, "sha256:") {
+		hash = strings.TrimPrefix(hash, "sha256:")
+	}
+	if len(hash) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(hash)
+	return err == nil
+}
+
+// validateFilePath 防路径穿越
+func validateFilePath(path string) bool {
+	cleaned := filepath.Clean(path)
+	if strings.Contains(cleaned, "..") || strings.HasPrefix(cleaned, "/") || strings.HasPrefix(cleaned, "\\") {
+		return false
+	}
+	return true
+}
+
+// ---- GetCapability ----
+
+func (l *logic) GetCapability(userID string) (*Capability, error) {
+	p, err := l.getActivePass(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	q, err := l.getBundleQuota(p.BundleID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := l.ensureQuotaInitialized(userID, p.BundleID, q); err != nil {
+		l.logger.Warn("ensure quota init failed", zap.Error(err))
+	}
+
+	usedSites, err := l.siteDao.CountActiveByUserID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("count sites: %w", err)
+	}
+
+	return &Capability{
+		MaxSites:            q.MaxSites,
+		UsedSites:           int(usedSites),
+		MonthlyTrafficBytes: q.MonthlyTrafficBytes,
+		UsedTrafficBytes:    0, // 一期不做流量监控
+		StorageBytes:        q.StorageBytes,
+		MaxArtifactSize:     q.MaxArtifactSize,
+		MaxFiles:            q.MaxFiles,
+	}, nil
+}
+
+// ---- CreateSite（含幂等性）----
+
+func (l *logic) CreateSite(userID, bundleID, name, idempotencyKey string) (*CreateSiteResult, error) {
+	p, err := l.getActivePass(userID)
+	if err != nil {
+		return nil, err
+	}
+	if p.BundleID != bundleID {
+		return nil, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "bundle_id does not match current pass")
+	}
+
+	bundleQuota, err := l.getBundleQuota(bundleID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 懒初始化配额：确保用户配额记录存在
+	if err := l.ensureQuotaInitialized(userID, bundleID, bundleQuota); err != nil {
+		l.logger.Warn("ensure quota init failed", zap.Error(err))
+	}
+
+	// 幂等：如果 idempotencyKey 非空，查是否已存在同名的未删除站点
+	if idempotencyKey != "" {
+		existing, err := l.siteDao.GetByIdempotencyKey(userID, idempotencyKey)
+		if err != nil {
+			return nil, fmt.Errorf("check idempotency: %w", err)
+		}
+		if existing != nil {
+			// 返回已存在的站点信息（幂等成功）
+			return &CreateSiteResult{
+				SiteID:      existing.SiteID,
+				OperationID: "", // 原始操作ID已不可恢复，返回空
+			}, nil
+		}
+	}
+
+	siteID, err := l.generateID("website_site", "ws")
+	if err != nil {
+		return nil, err
+	}
+	operationID, err := l.generateID("website_operation", "wo")
+	if err != nil {
+		return nil, err
+	}
+
+	// 选择 TCB 环境
+	tcbEnv, err := selectTCBEnv()
+	if err != nil {
+		return nil, err
+	}
+
+	err = resource.GormDB.Transaction(func(tx *gorm.DB) error {
+		// 原子扣席位
+		result := tx.Table(quota.TableName).
+			Where(quota.ColumnUserID+" = ? AND "+quota.ColumnResourceName+" = ? AND "+
+				quota.ColumnResourceKey+" = ? AND "+quota.ColumnResourceQuotaAvailable+" >= ?",
+				userID, website.ResourceNameWebsiteSite, bundleID, int64(1)).
+			Update(quota.ColumnResourceQuotaAvailable, gorm.Expr(quota.ColumnResourceQuotaAvailable+" - ?", int64(1)))
+		if result.Error != nil {
+			return fmt.Errorf("alloc site quota: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return errcode.ErrWebsiteQuotaExceeded
+		}
+
+		site := &website.SiteEntity{
+			SiteID:              siteID,
+			PassID:              p.PassID,
+			BundleID:            bundleID,
+			Name:                name,
+			Status:              website.SiteStatusCreating,
+			TCBEnvID:            tcbEnv.EnvID,
+			OperationGeneration: 1,
+		}
+		site.UserID = userID
+		if err := tx.Table(website.SitesTable).Create(site).Error; err != nil {
+			return fmt.Errorf("create site: %w", err)
+		}
+
+		op := &website.OperationEntity{
+			OperationID:    operationID,
+			SiteID:         siteID,
+			OperationType:  website.OpTypeCreate,
+			Status:         website.OpStatusCreated,
+			SiteGeneration: 1,
+		}
+		op.UserID = userID
+		if err := tx.Table(website.OperationsTable).Create(op).Error; err != nil {
+			return fmt.Errorf("create operation: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	l.logger.Info("website site created",
+		zap.String("site_id", siteID),
+		zap.String("user_id", userID),
+		zap.String("operation_id", operationID),
+	)
+
+	l.notifyDeployer(operationID)
+
+	return &CreateSiteResult{
+		SiteID:      siteID,
+		OperationID: operationID,
+	}, nil
+}
+
+// ---- ListSites ----
+
+func (l *logic) ListSites(userID string, page, pageSize int) ([]*website.SiteEntity, int64, error) {
+	return l.siteDao.ListByUserID(userID, page, pageSize)
+}
+
+// ---- GetSite ----
+
+func (l *logic) GetSite(userID, siteID string) (*website.SiteEntity, error) {
+	site, err := l.siteDao.GetBySiteIDForUser(userID, siteID)
+	if err != nil {
+		return nil, err
+	}
+	if site == nil {
+		return nil, errcode.ErrWebsiteNotFound
+	}
+	return site, nil
+}
+
+// ---- CreateRelease（并发安全：事务内GetNextVersion）----
+
+func (l *logic) CreateRelease(userID, siteID string, req CreateReleaseRequest) (*CreateReleaseResult, error) {
+	site, err := l.siteDao.GetBySiteIDForUser(userID, siteID)
+	if err != nil {
+		return nil, fmt.Errorf("get site: %w", err)
+	}
+	if site == nil {
+		return nil, errcode.ErrWebsiteNotFound
+	}
+	if site.Status != website.SiteStatusCreating && site.Status != website.SiteStatusActive {
+		return nil, errcode.ErrWebsiteNotActive
+	}
+
+	p, err := l.getActivePass(userID)
+	if err != nil {
+		return nil, err
+	}
+	q, err := l.getBundleQuota(p.BundleID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 安全校验
+	if req.ArtifactHash != "" && !validateArtifactHash(req.ArtifactHash) {
+		return nil, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "invalid artifact_hash format")
+	}
+	if q.MaxArtifactSize > 0 && req.ArtifactSize > q.MaxArtifactSize {
+		return nil, errcode.ErrWebsiteArtifactTooLarge
+	}
+	if q.MaxFiles > 0 && req.FileCount > q.MaxFiles {
+		return nil, errcode.ErrWebsiteFileCountExceeded
+	}
+
+	releaseID, err := l.generateID("website_release", "wr")
+	if err != nil {
+		return nil, err
+	}
+	operationID, err := l.generateID("website_operation", "wo")
+	if err != nil {
+		return nil, err
+	}
+
+	// The site row serializes version allocation and advances the fencing generation.
+	var version int
+	err = resource.GormDB.Transaction(func(tx *gorm.DB) error {
+		var lockedSite website.SiteEntity
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Table(website.SitesTable).
+			Where("site_id = ? AND user_id = ?", siteID, userID).
+			First(&lockedSite).Error; err != nil {
+			return fmt.Errorf("lock site: %w", err)
+		}
+		if lockedSite.Status != website.SiteStatusCreating && lockedSite.Status != website.SiteStatusActive {
+			return errcode.ErrWebsiteNotActive
+		}
+		site = &lockedSite
+		site.OperationGeneration++
+		if err := tx.Table(website.SitesTable).Where("site_id = ?", siteID).
+			Update("operation_generation", site.OperationGeneration).Error; err != nil {
+			return fmt.Errorf("advance site generation: %w", err)
+		}
+
+		v, err := l.releaseDao.GetNextVersionTx(tx, siteID)
+		if err != nil {
+			return fmt.Errorf("get next version: %w", err)
+		}
+		version = v
+
+		release := &website.ReleaseEntity{
+			ReleaseID:    releaseID,
+			SiteID:       siteID,
+			Version:      version,
+			Status:       website.ReleaseStatusPending,
+			ArtifactHash: req.ArtifactHash,
+			ArtifactSize: req.ArtifactSize,
+			FileCount:    req.FileCount,
+		}
+		release.UserID = userID
+		if err := l.releaseDao.CreateReleaseTx(tx, release); err != nil {
+			return fmt.Errorf("create release: %w", err)
+		}
+
+		op := &website.OperationEntity{
+			OperationID:    operationID,
+			SiteID:         siteID,
+			ReleaseID:      releaseID,
+			OperationType:  website.OpTypeDeploy,
+			Status:         website.OpStatusCreated,
+			SiteGeneration: site.OperationGeneration,
+		}
+		op.UserID = userID
+		if err := tx.Table(website.OperationsTable).Create(op).Error; err != nil {
+			return fmt.Errorf("create operation: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// COS 预签名上传 URL
+	// 一期：制品上传到 COS，路径格式 website-artifacts/{siteID}/{releaseID}.zip
+	// 如果 COS 配置不可用，返回空（Agent 可通过其他方式上传）
+	uploadURL := generateUploadURL(site.TCBEnvID, siteID, releaseID)
+
+	l.notifyDeployer(operationID)
+
+	return &CreateReleaseResult{
+		ReleaseID:    releaseID,
+		OperationID:  operationID,
+		Version:      version,
+		UploadURL:    uploadURL,
+		UploadMethod: "PUT",
+	}, nil
+}
+
+// generateUploadURL 生成 CloudBase COS 预签名 PUT 上传 URL，有效期 1 小时
+// 根据站点的 tcb_env_id 选择对应的 TCB 环境 COS 凭据
+func generateUploadURL(tcbEnvID, siteID, releaseID string) string {
+	env := getTCBEnvByID(tcbEnvID)
+	if env == nil {
+		return ""
+	}
+	secretID, secretKey := getMainAccountSecrets()
+	if env.COSBucket == "" || env.COSRegion == "" || secretID == "" || secretKey == "" {
+		return ""
+	}
+
+	bucketURL, err := url.Parse(fmt.Sprintf("https://%s.cos.%s.myqcloud.com", env.COSBucket, env.COSRegion))
+	if err != nil {
+		return ""
+	}
+	client := cos.NewClient(&cos.BaseURL{BucketURL: bucketURL}, &http.Client{})
+
+	// 制品 zip 放在 _artifacts/ prefix 下，与站点文件 sites/ 分开
+	key := fmt.Sprintf("_artifacts/%s/%s.zip", siteID, releaseID)
+	presignedURL, err := client.Object.GetPresignedURL(context.Background(), http.MethodPut, key, secretID, secretKey, time.Hour, nil)
+	if err != nil {
+		return ""
+	}
+	return presignedURL.String()
+}
+
+// ---- ListReleases ----
+
+func (l *logic) ListReleases(userID, siteID string, page, pageSize int) ([]*website.ReleaseEntity, int64, error) {
+	site, err := l.siteDao.GetBySiteIDForUser(userID, siteID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if site == nil {
+		return nil, 0, errcode.ErrWebsiteNotFound
+	}
+	return l.releaseDao.ListBySiteID(siteID, page, pageSize)
+}
+
+// ---- GetOperation ----
+
+func (l *logic) GetOperation(userID, operationID string) (*website.OperationEntity, error) {
+	op, err := l.operationDao.GetByOperationID(operationID)
+	if err != nil {
+		return nil, err
+	}
+	if op == nil {
+		return nil, errcode.ErrWebsiteOperationNotFound
+	}
+	// 安全校验：确保操作属于当前用户
+	if op.UserID != userID {
+		return nil, errcode.ErrWebsiteOperationNotFound
+	}
+	return op, nil
+}
+
+// ---- GetOperationInternal (for deployer internal use, no user isolation) ----
+
+func (l *logic) GetOperationInternal(operationID string) (*website.OperationEntity, error) {
+	op, err := l.operationDao.GetByOperationID(operationID)
+	if err != nil || op == nil {
+		return op, err
+	}
+	site, err := l.siteDao.GetBySiteID(op.SiteID)
+	if err != nil {
+		return nil, err
+	}
+	if site == nil {
+		return nil, errcode.ErrWebsiteNotFound
+	}
+	op.TCBEnvID = site.TCBEnvID
+	return op, nil
+}
+
+// ---- ListPendingOperations（Worker轮询接口）----
+
+func (l *logic) ListPendingOperations(status string, limit int) ([]*website.OperationEntity, error) {
+	if status == "" {
+		status = website.OpStatusCreated
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	ops, err := l.operationDao.ListByStatus(status, limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(ops) == 0 {
+		return ops, nil
+	}
+	// Batch query: collect site IDs, query all at once
+	siteIDs := make([]string, 0, len(ops))
+	seen := make(map[string]bool)
+	for _, op := range ops {
+		if !seen[op.SiteID] {
+			seen[op.SiteID] = true
+			siteIDs = append(siteIDs, op.SiteID)
+		}
+	}
+	sites, err := l.siteDao.GetBySiteIDs(siteIDs)
+	if err != nil {
+		return nil, fmt.Errorf("batch get sites for operations: %w", err)
+	}
+	siteMap := make(map[string]string, len(sites))
+	for _, s := range sites {
+		siteMap[s.SiteID] = s.TCBEnvID
+	}
+	for _, op := range ops {
+		op.TCBEnvID = siteMap[op.SiteID]
+	}
+	return ops, nil
+}
+
+// ClaimOperation atomically assigns a created (or expired) operation to one worker.
+// Redis and polling only discover work; this database transition is the ownership source of truth.
+func (l *logic) ClaimOperation(operationID, workerID string, leaseTTL time.Duration) (*website.OperationEntity, bool, error) {
+	if operationID == "" || workerID == "" {
+		return nil, false, errcode.ErrWebsiteInvalidParam
+	}
+	if leaseTTL <= 0 {
+		leaseTTL = 15 * time.Minute
+	}
+	token, err := l.generateID("website_lease", "wl")
+	if err != nil {
+		return nil, false, err
+	}
+	now := time.Now().UTC()
+	expiresAt := now.Add(leaseTTL)
+	result := resource.GormDB.Table(website.OperationsTable).
+		Where("operation_id = ? AND (status = ? OR (status = ? AND lease_expires_at IS NOT NULL AND lease_expires_at < ?))",
+			operationID, website.OpStatusCreated, website.OpStatusRunning, now).
+		Updates(map[string]interface{}{
+			"status":           website.OpStatusRunning,
+			"lease_token":      token,
+			"lease_expires_at": expiresAt,
+			"attempt":          gorm.Expr("attempt + 1"),
+			"error_message":    "",
+		})
+	if result.Error != nil {
+		return nil, false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, false, nil
+	}
+	op, err := l.GetOperationInternal(operationID)
+	if err != nil {
+		return nil, false, err
+	}
+	if op == nil || op.LeaseToken != token {
+		return nil, false, nil
+	}
+	l.logger.Info("website operation claimed", zap.String("operation_id", operationID), zap.String("worker_id", workerID), zap.Int("attempt", op.Attempt))
+	return op, true, nil
+}
+
+// ---- CompleteOperation ----
+
+func (l *logic) CompleteOperation(operationID, leaseToken, cloudPath, publicURL string) error {
+	if leaseToken == "" {
+		return errcode.ErrWebsiteOperationNotClaimed
+	}
+	err := resource.GormDB.Transaction(func(tx *gorm.DB) error {
+		var op website.OperationEntity
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table(website.OperationsTable).
+			Where("operation_id = ?", operationID).First(&op).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return errcode.ErrWebsiteOperationNotFound
+			}
+			return err
+		}
+		if op.Status == website.OpStatusSuccess && op.LeaseToken == leaseToken {
+			return nil
+		}
+		if op.Status != website.OpStatusRunning || op.LeaseToken != leaseToken {
+			return errcode.ErrWebsiteOperationNotClaimed
+		}
+
+		var site website.SiteEntity
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table(website.SitesTable).
+			Where("site_id = ?", op.SiteID).First(&site).Error; err != nil {
+			return err
+		}
+		if !isCurrentOperationGeneration(op.SiteGeneration, site.OperationGeneration) {
+			return l.markSupersededOperationTx(tx, &op)
+		}
+		if result := tx.Table(website.OperationsTable).
+			Where("operation_id = ? AND status = ? AND lease_token = ?", operationID, website.OpStatusRunning, leaseToken).
+			Updates(map[string]interface{}{"status": website.OpStatusSuccess, "error_message": "", "lease_expires_at": nil}); result.Error != nil {
+			return result.Error
+		} else if result.RowsAffected != 1 {
+			return errcode.ErrWebsiteOperationNotClaimed
+		}
+
+		switch op.OperationType {
+		case website.OpTypeCreate:
+			if err := tx.Table(website.SitesTable).Where("site_id = ?", op.SiteID).Update("status", website.SiteStatusActive).Error; err != nil {
+				return err
+			}
+			if cloudPath != "" && publicURL != "" {
+				if err := tx.Table(website.SitesTable).Where("site_id = ?", op.SiteID).
+					Updates(map[string]interface{}{"cloud_path": cloudPath, "public_url": publicURL}).Error; err != nil {
+					return err
+				}
+			}
+
+		case website.OpTypeDeploy:
+			if err := tx.Table(website.ReleasesTable).Where("release_id = ?", op.ReleaseID).
+				Update("status", website.ReleaseStatusActive).Error; err != nil {
+				return err
+			}
+			if err := tx.Table(website.SitesTable).Where("site_id = ?", op.SiteID).
+				Update("status", website.SiteStatusActive).Error; err != nil {
+				return err
+			}
+			if cloudPath != "" && publicURL != "" {
+				if err := tx.Table(website.SitesTable).Where("site_id = ?", op.SiteID).
+					Updates(map[string]interface{}{"cloud_path": cloudPath, "public_url": publicURL}).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	l.logger.Info("website operation completed",
+		zap.String("operation_id", operationID),
+	)
+	return nil
+}
+
+// ---- FailOperation ----
+
+func (l *logic) FailOperation(operationID, leaseToken, errorMessage string) error {
+	if leaseToken == "" {
+		return errcode.ErrWebsiteOperationNotClaimed
+	}
+	err := resource.GormDB.Transaction(func(tx *gorm.DB) error {
+		var op website.OperationEntity
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table(website.OperationsTable).
+			Where("operation_id = ?", operationID).First(&op).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return errcode.ErrWebsiteOperationNotFound
+			}
+			return err
+		}
+		if op.Status == website.OpStatusFailed && op.LeaseToken == leaseToken {
+			return nil
+		}
+		if op.Status != website.OpStatusRunning || op.LeaseToken != leaseToken {
+			return errcode.ErrWebsiteOperationNotClaimed
+		}
+		var site website.SiteEntity
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table(website.SitesTable).
+			Where("site_id = ?", op.SiteID).First(&site).Error; err != nil {
+			return err
+		}
+		if !isCurrentOperationGeneration(op.SiteGeneration, site.OperationGeneration) {
+			return l.markSupersededOperationTx(tx, &op)
+		}
+		if result := tx.Table(website.OperationsTable).
+			Where("operation_id = ? AND status = ? AND lease_token = ?", operationID, website.OpStatusRunning, leaseToken).
+			Updates(map[string]interface{}{"status": website.OpStatusFailed, "error_message": errorMessage, "lease_expires_at": nil}); result.Error != nil {
+			return result.Error
+		} else if result.RowsAffected != 1 {
+			return errcode.ErrWebsiteOperationNotClaimed
+		}
+
+		switch op.OperationType {
+		case website.OpTypeCreate:
+			if _, err := tx.Table(quota.TableName).
+				Where(quota.ColumnUserID+" = ? AND "+quota.ColumnResourceName+" = ? AND "+quota.ColumnResourceKey+" = ?", op.UserID, website.ResourceNameWebsiteSite, site.BundleID).
+				Update(quota.ColumnResourceQuotaAvailable, gorm.Expr("LEAST("+quota.ColumnResourceQuotaAvailable+" + 1, "+quota.ColumnResourceQuotaTotal+")")).Rows(); err != nil {
+				return err
+			}
+			return tx.Table(website.SitesTable).Where("site_id = ?", op.SiteID).
+				Updates(map[string]interface{}{"status": website.SiteStatusDeleted, "deleted_time": time.Now().UTC()}).Error
+		case website.OpTypeDeploy:
+			return tx.Table(website.ReleasesTable).Where("release_id = ?", op.ReleaseID).
+				Updates(map[string]interface{}{"status": website.ReleaseStatusFailed, "error_message": errorMessage}).Error
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	l.logger.Warn("website operation failed",
+		zap.String("operation_id", operationID),
+		zap.String("error", errorMessage),
+	)
+	return nil
+}
+
+func (l *logic) markSupersededOperationTx(tx *gorm.DB, op *website.OperationEntity) error {
+	if err := tx.Table(website.OperationsTable).Where("operation_id = ? AND status = ? AND lease_token = ?", op.OperationID, website.OpStatusRunning, op.LeaseToken).
+		Updates(map[string]interface{}{"status": website.OpStatusFailed, "error_message": "superseded by a newer site operation", "lease_expires_at": nil}).Error; err != nil {
+		return err
+	}
+	// A superseded worker has no corrective work left to do. Commit its terminal state
+	// instead of returning an error that would roll the transaction back.
+	return nil
+}
+
+// ---- DeleteSite ----
+
+func (l *logic) DeleteSite(userID, siteID string) (*DeleteSiteResult, error) {
+	site, err := l.siteDao.GetBySiteIDForUser(userID, siteID)
+	if err != nil {
+		return nil, err
+	}
+	if site == nil || site.Status == website.SiteStatusDeleted {
+		return nil, errcode.ErrWebsiteNotFound
+	}
+
+	operationID, err := l.generateID("website_operation", "wo")
+	if err != nil {
+		return nil, err
+	}
+
+	err = resource.GormDB.Transaction(func(tx *gorm.DB) error {
+		var lockedSite website.SiteEntity
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table(website.SitesTable).
+			Where("site_id = ? AND user_id = ?", siteID, userID).First(&lockedSite).Error; err != nil {
+			return err
+		}
+		if lockedSite.Status == website.SiteStatusDeleted {
+			return errcode.ErrWebsiteNotFound
+		}
+		// 释放席位
+		result := tx.Table(quota.TableName).
+			Where(quota.ColumnUserID+" = ? AND "+quota.ColumnResourceName+" = ? AND "+
+				quota.ColumnResourceKey+" = ? AND ("+quota.ColumnResourceQuotaAvailable+" + ?) <= "+quota.ColumnResourceQuotaTotal,
+				userID, website.ResourceNameWebsiteSite, lockedSite.BundleID, int64(1)).
+			Update(quota.ColumnResourceQuotaAvailable, gorm.Expr(quota.ColumnResourceQuotaAvailable+" + ?", int64(1)))
+		if result.Error != nil {
+			return fmt.Errorf("free site quota: %w", result.Error)
+		}
+
+		now := time.Now()
+		if err := tx.Table(website.SitesTable).
+			Where("site_id = ?", siteID).
+			Updates(map[string]interface{}{
+				"status":               website.SiteStatusDeleted,
+				"deleted_time":         &now,
+				"operation_generation": lockedSite.OperationGeneration + 1,
+			}).Error; err != nil {
+			return fmt.Errorf("soft delete site: %w", err)
+		}
+
+		op := &website.OperationEntity{
+			OperationID:    operationID,
+			SiteID:         siteID,
+			OperationType:  website.OpTypeDelete,
+			Status:         website.OpStatusCreated,
+			SiteGeneration: lockedSite.OperationGeneration + 1,
+		}
+		op.UserID = userID
+		if err := tx.Table(website.OperationsTable).Create(op).Error; err != nil {
+			return fmt.Errorf("create delete operation: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	l.logger.Info("website site deleted",
+		zap.String("site_id", siteID),
+		zap.String("user_id", userID),
+		zap.String("operation_id", operationID),
+	)
+
+	l.notifyDeployer(operationID)
+
+	return &DeleteSiteResult{
+		OperationID: operationID,
+	}, nil
+}
+
+// ---- Pass生命周期联动 ----
+
+// OnPassIsolated Pass到期/隔离时，挂起用户所有active站点
+func (l *logic) OnPassIsolated(userID string) error {
+	affected, err := l.siteDao.SuspendActiveByUserID(userID)
+	if err != nil {
+		return fmt.Errorf("suspend sites on pass isolated: %w", err)
+	}
+	if affected > 0 {
+		l.logger.Info("sites suspended on pass isolated",
+			zap.String("user_id", userID),
+			zap.Int64("affected", affected),
+		)
+	}
+	return nil
+}
+
+// OnPassRenewed Pass续费成功后，恢复suspended站点为active
+func (l *logic) OnPassRenewed(userID string) error {
+	affected, err := l.siteDao.ReactivateSuspendedByUserID(userID)
+	if err != nil {
+		return fmt.Errorf("reactivate sites on pass renewed: %w", err)
+	}
+	if affected > 0 {
+		l.logger.Info("sites reactivated on pass renewed",
+			zap.String("user_id", userID),
+			zap.Int64("affected", affected),
+		)
+	}
+	return nil
+}
+
+// 保留 sha256 引用以防未来需要

@@ -1,0 +1,10 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - link "LightVela" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - img "LightVela" [ref=e6]
+    - main [ref=e7]:
+      - complementary [ref=e10]:
+        - navigation [ref=e23]
+  - alert [ref=e92]
