@@ -10,7 +10,8 @@ export const GLOBAL_TERMS_OF_SERVICE_BASE_URL =
   "https://www.tencentcloud.com/document/product/301/12905";
 
 export const getGlobalTermsOfServiceUrl = (locale?: string): string => {
-  const lang = locale?.toLowerCase().startsWith("zh") ? "zh" : "en";
+  const lowerLocale = locale?.toLowerCase();
+  const lang = lowerLocale?.startsWith("zh") ? "zh" : "en";
   return `${GLOBAL_TERMS_OF_SERVICE_BASE_URL}?lang=${lang}&pg=`;
 };
 
