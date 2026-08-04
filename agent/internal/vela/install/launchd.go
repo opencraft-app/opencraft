@@ -18,6 +18,13 @@ type userLaunchAgent struct {
 	home string
 	uid  int
 	gid  int
+	run  launchctlCommand
+}
+
+type launchctlCommand func(context.Context, ...string) ([]byte, error)
+
+func systemLaunchctl(ctx context.Context, arguments ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, "/bin/launchctl", arguments...).CombinedOutput()
 }
 
 func NewUserLaunchAgent() (Launcher, error) {
@@ -25,7 +32,10 @@ func NewUserLaunchAgent() (Launcher, error) {
 	if err != nil || !filepath.IsAbs(home) || os.Geteuid() <= 0 {
 		return nil, ErrServiceInvalid
 	}
-	return &userLaunchAgent{home: filepath.Clean(home), uid: os.Geteuid(), gid: os.Getegid()}, nil
+	return &userLaunchAgent{
+		home: filepath.Clean(home), uid: os.Geteuid(), gid: os.Getegid(),
+		run: systemLaunchctl,
+	}, nil
 }
 
 func (launcher *userLaunchAgent) Start(ctx context.Context, spec LaunchSpec) error {
@@ -65,12 +75,20 @@ func (launcher *userLaunchAgent) Start(ctx context.Context, spec LaunchSpec) err
 	}
 	domain := "gui/" + strconv.Itoa(launcher.uid)
 	service := domain + "/" + spec.Label
-	_, _ = exec.CommandContext(ctx, "/bin/launchctl", "bootout", service).CombinedOutput()
-	if output, err := exec.CommandContext(ctx, "/bin/launchctl", "bootstrap", domain, path).CombinedOutput(); err != nil {
-		return errors.New("无法注册 Vela Computer LaunchAgent: " + string(bytes.TrimSpace(output)))
+	run := launcher.run
+	if run == nil {
+		run = systemLaunchctl
 	}
-	if output, err := exec.CommandContext(ctx, "/bin/launchctl", "kickstart", "-k", service).CombinedOutput(); err != nil {
-		return errors.New("无法启动 Vela Computer LaunchAgent: " + string(bytes.TrimSpace(output)))
+	_, _ = run(ctx, "bootout", service)
+	if output, err := run(ctx, "bootstrap", domain, path); err != nil {
+		if _, inspectErr := run(ctx, "print", service); inspectErr != nil {
+			return errors.New("无法注册 Vela Computer LaunchAgent: " + string(bytes.TrimSpace(output)))
+		}
+	}
+	if output, err := run(ctx, "kickstart", "-k", service); err != nil {
+		if _, inspectErr := run(ctx, "print", service); inspectErr != nil {
+			return errors.New("无法启动 Vela Computer LaunchAgent: " + string(bytes.TrimSpace(output)))
+		}
 	}
 	return nil
 }

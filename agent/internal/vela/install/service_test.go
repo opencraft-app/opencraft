@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -89,7 +90,7 @@ func TestServiceReusesStagedSecretAndCompletesFirstInstall(t *testing.T) {
 	}
 }
 
-func TestServiceRejectsDifferentReleaseBeforeReplacingInstalledProgram(t *testing.T) {
+func TestServiceUpgradesVerifiedReleaseWhileReplacingRemovedComputer(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -137,16 +138,101 @@ func TestServiceRejectsDifferentReleaseBeforeReplacingInstalledProgram(t *testin
 	verifiedContent = append([]byte(nil), newContent...)
 	verifiedVersion = "0.3.0"
 	options.ReleaseVersion = verifiedVersion
-	if err := service.Install(context.Background(), options); err == nil ||
-		err.Error() != "Update Vela Computer before replacing this installation." {
-		t.Fatalf("error = %v", err)
+	newComputerID := "019fd111-1111-7111-8111-111111111111"
+	newToken := "cen1." + testServerID + "." + newComputerID + ".2.signature"
+	if err := os.WriteFile(tokenFile, []byte(newToken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client.preflight = PreflightResult{
+		Status: PreflightRemoved, ReplacementGrant: "rpg1.payload.signature-with-enough-bytes",
+	}
+	client.claimComputerID = newComputerID
+	if err := service.Install(context.Background(), options); err != nil {
+		t.Fatalf("cross-release replacement failed: %v", err)
 	}
 	installed, err := os.ReadFile(filepath.Join(options.InstallationRoot, "bin", ProgramName))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(installed, oldContent) {
-		t.Fatalf("installed program was replaced before conflict check: %q", installed)
+	if !bytes.Equal(installed, newContent) {
+		t.Fatalf("installed program = %q, want verified replacement", installed)
+	}
+	if launcher.starts != 2 || native.inspections != 1 {
+		t.Fatalf("launcher starts=%d TAT inspections=%d", launcher.starts, native.inspections)
+	}
+	var journal installJournal
+	if err := rootstate.New(options.StateDirectory).Read(installJournalName, &journal); err != nil {
+		t.Fatal(err)
+	}
+	if journal.Version != verifiedVersion ||
+		journal.ProgramSHA256 != fmt.Sprintf("%x", sha256.Sum256(newContent)) {
+		t.Fatalf("journal release = %#v", journal)
+	}
+}
+
+func TestServiceResumesProviderRegistrationWithNewVerifiedRelease(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	program := filepath.Join(root, ProgramName)
+	content := []byte("first-release")
+	if err := os.WriteFile(program, content, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tokenFile := filepath.Join(root, "token")
+	if err := os.WriteFile(
+		tokenFile,
+		[]byte("cen1."+testServerID+"."+testComputerID+".1.signature"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	version := "0.2.0"
+	verifiedContent := append([]byte(nil), content...)
+	launcher := &recordingLauncher{failures: 1}
+	service, err := NewService(ServiceConfig{
+		Stdout: &bytes.Buffer{}, Random: bytes.NewReader(bytes.Repeat([]byte{0x44}, 128)),
+		ClientFactory: func(ClientConfig) (InstallClient, error) {
+			return &recordingInstallClient{}, nil
+		},
+		Verify: func(VerifyConfig) (VerifiedRelease, error) {
+			digest := sha256.Sum256(verifiedContent)
+			return VerifiedRelease{
+				Version: version, Target: "darwin-arm64",
+				ProgramSize: int64(len(verifiedContent)), ProgramSHA256: digest,
+			}, nil
+		},
+		TAT: &recordingTAT{}, Launcher: launcher,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := Options{
+		PlatformURL: "http://192.0.2.10", AllowInsecurePlatformHTTP: true,
+		TokenFile: tokenFile, ManifestFile: filepath.Join(root, "manifest"),
+		SignatureFile: filepath.Join(root, "signature"), SigningPublicKey: "key",
+		ReleaseVersion: version, Target: "darwin-arm64", ProgramFile: program,
+		InstallationRoot: filepath.Join(root, ".vela"),
+		StateDirectory:   filepath.Join(root, ".vela", "state"),
+	}
+	if err := service.Install(context.Background(), options); err == nil {
+		t.Fatal("first launcher failure was not returned")
+	}
+	verifiedContent = []byte("second-release")
+	version = "0.3.0"
+	options.ReleaseVersion = version
+	if err := os.WriteFile(program, verifiedContent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Install(context.Background(), options); err != nil {
+		t.Fatalf("provider registration did not resume across release: %v", err)
+	}
+	var journal installJournal
+	if err := rootstate.New(options.StateDirectory).Read(installJournalName, &journal); err != nil {
+		t.Fatal(err)
+	}
+	if journal.Stage != "complete" || journal.Version != version || launcher.starts != 2 {
+		t.Fatalf("journal=%#v launcher starts=%d", journal, launcher.starts)
 	}
 }
 
@@ -329,9 +415,16 @@ func fallbackString(value, fallback string) string {
 	return fallback
 }
 
-type recordingLauncher struct{ starts int }
+type recordingLauncher struct {
+	starts   int
+	failures int
+}
 
 func (launcher *recordingLauncher) Start(context.Context, LaunchSpec) error {
 	launcher.starts++
+	if launcher.failures > 0 {
+		launcher.failures--
+		return errors.New("temporary launch failure")
+	}
 	return nil
 }

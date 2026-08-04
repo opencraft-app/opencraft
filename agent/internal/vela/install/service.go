@@ -143,6 +143,7 @@ func (service *Service) Install(ctx context.Context, options Options) error {
 	if err != nil {
 		return err
 	}
+	adoptRelease := false
 	if !exists {
 		journal, err = service.stageInstall(store, options, release)
 		if err != nil {
@@ -151,11 +152,26 @@ func (service *Service) Install(ctx context.Context, options Options) error {
 	} else if journal.Stage == "complete" {
 		return service.replaceComplete(ctx, options, release, store, journal)
 	} else if !journalMatches(journal, options, release) {
-		return ErrInstallConflict
+		if journal.Stage != "provider_registered" ||
+			journal.PlatformURL != options.PlatformURL ||
+			journal.AllowInsecureHTTP != options.AllowInsecurePlatformHTTP ||
+			journal.Target != release.Target ||
+			(!installedProgramMatchesJournal(options.InstallationRoot, journal) &&
+				!installedProgramMatchesRelease(options.InstallationRoot, release)) {
+			return ErrInstallConflict
+		}
+		adoptRelease = true
 	}
 	programPath, err := installProgram(options.ProgramFile, options.InstallationRoot, release)
 	if err != nil {
 		return err
+	}
+	if adoptRelease {
+		journal.Version = release.Version
+		journal.ProgramSHA256 = hex.EncodeToString(release.ProgramSHA256[:])
+		if err := store.Write(installJournalName, journal); err != nil {
+			return err
+		}
 	}
 
 	claim := ClaimResult{
@@ -271,8 +287,10 @@ func (service *Service) replaceComplete(
 	store *rootstate.Store,
 	journal installJournal,
 ) error {
-	if !journalMatches(journal, options, release) ||
-		!installedProgramMatches(options.InstallationRoot, release) {
+	if journal.PlatformURL != options.PlatformURL ||
+		journal.AllowInsecureHTTP != options.AllowInsecurePlatformHTTP ||
+		journal.Target != release.Target ||
+		!installedProgramMatchesJournal(options.InstallationRoot, journal) {
 		return ErrReplacementReleaseMismatch
 	}
 	token, err := readPrivateString(options.TokenFile, 2048)
@@ -367,19 +385,28 @@ func (service *Service) replaceComplete(
 	if claim.ServerID != newServerID || claim.ComputerID != newComputerID {
 		return ErrInstallConflict
 	}
-	if err := store.WriteFile(credentialName, []byte(claim.Credential), 0o600); err != nil {
+	if _, err := installProgram(
+		options.ProgramFile,
+		options.InstallationRoot,
+		release,
+	); err != nil {
 		return err
 	}
+	journal.Version = release.Version
+	journal.ProgramSHA256 = hex.EncodeToString(release.ProgramSHA256[:])
 	journal.ServerID = claim.ServerID
 	journal.ComputerID = claim.ComputerID
 	journal.CredentialID = claim.CredentialID
 	journal.CredentialVersion = claim.Version
 	journal.CredentialExpiresAt = claim.ExpiresAt.UTC()
 	journal.Region = identity.Region
-	if err := writeManagedState(store, options, journal); err != nil {
+	if err := store.Write(installJournalName, journal); err != nil {
 		return err
 	}
-	if err := store.Write(installJournalName, journal); err != nil {
+	if err := store.WriteFile(credentialName, []byte(claim.Credential), 0o600); err != nil {
+		return err
+	}
+	if err := writeManagedState(store, options, journal); err != nil {
 		return err
 	}
 	if err := service.config.Launcher.Start(ctx, LaunchSpec{
@@ -450,13 +477,43 @@ func removeReplacementSecrets(store *rootstate.Store) error {
 	return nil
 }
 
-func installedProgramMatches(root string, release VerifiedRelease) bool {
-	content, err := os.ReadFile(filepath.Join(root, "bin", ProgramName))
-	if err != nil || int64(len(content)) != release.ProgramSize {
+func installedProgramMatchesJournal(root string, journal installJournal) bool {
+	expected, err := hex.DecodeString(journal.ProgramSHA256)
+	if err != nil || len(expected) != sha256.Size {
 		return false
 	}
-	digest := sha256.Sum256(content)
-	return subtle.ConstantTimeCompare(digest[:], release.ProgramSHA256[:]) == 1
+	path := filepath.Join(root, "bin", ProgramName)
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return false
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	digest := sha256.New()
+	_, copyErr := io.Copy(digest, file)
+	closeErr := file.Close()
+	return copyErr == nil && closeErr == nil &&
+		subtle.ConstantTimeCompare(digest.Sum(nil), expected) == 1
+}
+
+func installedProgramMatchesRelease(root string, release VerifiedRelease) bool {
+	path := filepath.Join(root, "bin", ProgramName)
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 ||
+		info.Size() != release.ProgramSize {
+		return false
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	digest := sha256.New()
+	_, copyErr := io.Copy(digest, file)
+	closeErr := file.Close()
+	return copyErr == nil && closeErr == nil &&
+		subtle.ConstantTimeCompare(digest.Sum(nil), release.ProgramSHA256[:]) == 1
 }
 
 func credentialRoute(value string) (string, string, bool) {
