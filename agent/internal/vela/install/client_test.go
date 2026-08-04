@@ -1,0 +1,116 @@
+package install
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/QuantumNous/new-api/common"
+)
+
+const (
+	testServerID     = "019fbd14-1992-73d2-bcbc-48be5a76415d"
+	testComputerID   = "019fc179-4b0f-75a4-bc6d-b8348a7ab68e"
+	testCredentialID = "019fcafe-15a6-7494-9da6-0f69a8e60c24"
+)
+
+func TestClientClaimsCredentialAndReplaysProviderBootstrap(t *testing.T) {
+	t.Parallel()
+
+	secret := []byte("01234567890123456789012345678901")
+	secretPart := base64.RawURLEncoding.EncodeToString(secret)
+	digest := sha256.Sum256([]byte(secretPart))
+	token := "cen1." + testServerID + "." + testComputerID + ".1.signature"
+	expiresAt := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	providerCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/computer/enrollments:claim":
+			if request.Header.Get("Authorization") != "Enrollment "+token {
+				t.Fatalf("claim authorization = %q", request.Header.Get("Authorization"))
+			}
+			var body map[string]any
+			if err := common.DecodeJson(request.Body, &body); err != nil {
+				t.Fatal(err)
+			}
+			if body["credentialDigest"] != hex.EncodeToString(digest[:]) ||
+				body["installerVersion"] != "0.2.0" {
+				t.Fatalf("claim body = %#v", body)
+			}
+			writer.Header().Set("Content-Type", "application/json")
+			writer.WriteHeader(http.StatusCreated)
+			writeJSON(t, writer, map[string]any{
+				"serverId": testServerID, "computerId": testComputerID,
+				"credentialId": testCredentialID, "credentialVersion": 1,
+				"expiresAt": expiresAt,
+			})
+		case "/v1/bootstrap/provider-registration":
+			providerCalls++
+			if request.Header.Get("Authorization") != "ComputerCredential crc_"+
+				testServerID+"."+testComputerID+".1."+secretPart {
+				t.Fatalf("provider authorization is invalid")
+			}
+			writer.Header().Set("Content-Type", "application/json")
+			if providerCalls == 1 {
+				writer.Header().Set("Retry-After", "1")
+				writer.WriteHeader(http.StatusAccepted)
+				writeJSON(t, writer, map[string]any{
+					"operationId": testCredentialID, "state": "pending",
+					"retryAfterSeconds": 1,
+				})
+				return
+			}
+			writeJSON(t, writer, map[string]any{
+				"operationId": testCredentialID, "state": "ready",
+				"protocol": "tencent-tat-register-v1", "region": "ap-beijing",
+				"registerCodeId": "code-id", "registerCodeValue": "code-value",
+				"tags":      []map[string]any{{"key": "agent-network-computer-id", "value": testComputerID}},
+				"expiresAt": expiresAt,
+			})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(ClientConfig{BaseURL: server.URL, HTTP: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := client.Claim(context.Background(), ClaimRequest{
+		Token: token, SecretPart: secretPart, OSType: "macos",
+		Architecture: "arm64", InstallerVersion: "0.2.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim.ServerID != testServerID || claim.ComputerID != testComputerID ||
+		claim.Version != 1 || claim.Credential == "" {
+		t.Fatalf("claim = %#v", claim)
+	}
+	pending, err := client.Provider(context.Background(), claim.Credential)
+	if err != nil || pending.Ready || pending.RetryAfter != time.Second {
+		t.Fatalf("pending = %#v, err = %v", pending, err)
+	}
+	ready, err := client.Provider(context.Background(), claim.Credential)
+	if err != nil || !ready.Ready || ready.Registration.Region != "ap-beijing" ||
+		len(ready.Registration.Tags) != 1 {
+		t.Fatalf("ready = %#v, err = %v", ready, err)
+	}
+}
+
+func writeJSON(t *testing.T, writer http.ResponseWriter, value any) {
+	t.Helper()
+	content, err := common.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Write(content); err != nil {
+		t.Fatal(err)
+	}
+}

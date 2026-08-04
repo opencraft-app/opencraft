@@ -1,0 +1,5 @@
+/bin/
+/build/
+/dist/
+/raft-computer-go
+/native/tat-agent/target/

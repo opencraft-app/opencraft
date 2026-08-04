@@ -1,0 +1,210 @@
+package httptransport
+
+import (
+	"context"
+	"encoding/hex"
+	"errors"
+	"math"
+	"strings"
+
+	"chatserver/internal/api/openapi"
+	appcomputer "chatserver/internal/app/computermanagement"
+	"chatserver/internal/apperror"
+)
+
+type computerEnrollmentService interface {
+	InstallationOptions() appcomputer.InstallationOptions
+	CreateSetupCommand(context.Context, string, string, string, int64) (appcomputer.SetupCommand, error)
+	RedeemSetupCode(context.Context, string) (appcomputer.SetupCodeScript, error)
+	Claim(context.Context, appcomputer.ClaimCommand) (appcomputer.ClaimResult, error)
+}
+
+func (handler *ComputerEnrollmentHandler) RedeemComputerSetupCode(
+	ctx context.Context,
+	request openapi.RedeemComputerSetupCodeRequestObject,
+) (openapi.RedeemComputerSetupCodeResponseObject, error) {
+	if request.Body == nil || *request.Body == "" {
+		return nil, apperror.New("setup_code_invalid", "安装码无效或已过期", nil)
+	}
+	value, err := handler.enrollment.RedeemSetupCode(ctx, string(*request.Body))
+	if err != nil {
+		return nil, err
+	}
+	if value.Script == "" || value.ExpiresAt.IsZero() {
+		return nil, invalidDomainData("Computer 安装脚本数据无效", nil)
+	}
+	return openapi.RedeemComputerSetupCode200TextResponse{
+		Body: value.Script,
+		Headers: openapi.RedeemComputerSetupCode200ResponseHeaders{
+			CacheControl: "no-store", Pragma: "no-cache",
+		},
+	}, nil
+}
+
+type computerArtifactService interface {
+	Resolve(context.Context, string, string, string, string) (appcomputer.ArtifactRedirect, error)
+}
+
+// ComputerEnrollmentHandler 隔离 Human 安装入口和 Enrollment token 入口。
+type ComputerEnrollmentHandler struct {
+	openapi.StrictServerInterface
+	enrollment computerEnrollmentService
+	artifacts  computerArtifactService
+}
+
+var _ openapi.StrictServerInterface = (*ComputerEnrollmentHandler)(nil)
+
+func NewComputerEnrollmentHandler(
+	enrollment computerEnrollmentService,
+	artifacts computerArtifactService,
+) (*ComputerEnrollmentHandler, error) {
+	if enrollment == nil || artifacts == nil {
+		return nil, errors.New("Computer enrollment 与 artifact 服务不能为空")
+	}
+	return &ComputerEnrollmentHandler{enrollment: enrollment, artifacts: artifacts}, nil
+}
+
+func (handler *ComputerEnrollmentHandler) GetComputerInstallationOptions(
+	ctx context.Context,
+	_ openapi.GetComputerInstallationOptionsRequestObject,
+) (openapi.GetComputerInstallationOptionsResponseObject, error) {
+	if _, ok := CurrentHumanPrincipal(ctx); !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	value := handler.enrollment.InstallationOptions()
+	if value.ReleaseVersion == "" || len(value.Platforms) == 0 {
+		return nil, invalidDomainData("Computer 安装平台数据无效", nil)
+	}
+	body := openapi.ComputerInstallationOptions{ReleaseVersion: value.ReleaseVersion}
+	for _, platform := range value.Platforms {
+		if platform.OSType == "" || len(platform.Architectures) == 0 {
+			return nil, invalidDomainData("Computer 安装平台数据无效", nil)
+		}
+		item := struct {
+			Architectures []openapi.ComputerInstallationOptionsPlatformsArchitectures `json:"architectures"`
+			OsType        openapi.ComputerInstallationOptionsPlatformsOsType          `json:"osType"`
+		}{OsType: openapi.ComputerInstallationOptionsPlatformsOsType(platform.OSType)}
+		for _, architecture := range platform.Architectures {
+			item.Architectures = append(
+				item.Architectures,
+				openapi.ComputerInstallationOptionsPlatformsArchitectures(architecture),
+			)
+		}
+		body.Platforms = append(body.Platforms, item)
+	}
+	return openapi.GetComputerInstallationOptions200JSONResponse(body), nil
+}
+
+func (handler *ComputerEnrollmentHandler) CreateComputerSetupCommand(
+	ctx context.Context,
+	request openapi.CreateComputerSetupCommandRequestObject,
+) (openapi.CreateComputerSetupCommandResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	expectedRevision, err := workRevision(request.Params.XResourceRevision)
+	if err != nil {
+		return nil, err
+	}
+	value, err := handler.enrollment.CreateSetupCommand(
+		ctx,
+		principal.AccountID(),
+		request.ServerId.String(),
+		request.ComputerId.String(),
+		expectedRevision,
+	)
+	if err != nil {
+		return nil, err
+	}
+	computerID, err := parseDomainID(value.ComputerID, "Computer")
+	if err != nil || value.Revision < 1 || value.ExpiresAt.IsZero() || value.Command == "" {
+		return nil, invalidDomainData("Computer 安装命令数据无效", err)
+	}
+	command := value.Command
+	return openapi.CreateComputerSetupCommand201JSONResponse{
+		Body: openapi.ComputerSetupCommand{
+			ComputerId: computerID, Command: &command,
+			ExpiresAt: value.ExpiresAt.UTC(), Revision: value.Revision,
+		},
+		Headers: openapi.CreateComputerSetupCommand201ResponseHeaders{
+			CacheControl: "no-store", Pragma: "no-cache",
+			XResourceRevision: value.Revision,
+		},
+	}, nil
+}
+
+func (handler *ComputerEnrollmentHandler) ClaimComputerEnrollment(
+	ctx context.Context,
+	request openapi.ClaimComputerEnrollmentRequestObject,
+) (openapi.ClaimComputerEnrollmentResponseObject, error) {
+	token, ok := CurrentEnrollmentToken(ctx)
+	if !ok {
+		return nil, apperror.New("enrollment_invalid", "Computer 接入凭证无效", nil)
+	}
+	if request.Body == nil || request.Body.CredentialDigest == nil ||
+		!request.Body.OsType.Valid() || !request.Body.Architecture.Valid() {
+		return nil, apperror.New("invalid_request", "Computer claim 请求无效", nil)
+	}
+	digestBytes, err := hex.DecodeString(*request.Body.CredentialDigest)
+	if err != nil || len(digestBytes) != 32 ||
+		strings.ToLower(*request.Body.CredentialDigest) != *request.Body.CredentialDigest {
+		return nil, apperror.New("invalid_request", "credentialDigest 无效", err)
+	}
+	var digest [32]byte
+	copy(digest[:], digestBytes)
+	value, err := handler.enrollment.Claim(ctx, appcomputer.ClaimCommand{
+		Token: token, OSType: string(request.Body.OsType),
+		Architecture:     string(request.Body.Architecture),
+		InstallerVersion: request.Body.InstallerVersion, CredentialDigest: digest,
+	})
+	if err != nil {
+		return nil, err
+	}
+	serverID, err := parseDomainID(value.ServerID, "Server")
+	if err != nil {
+		return nil, err
+	}
+	computerID, err := parseDomainID(value.ComputerID, "Computer")
+	if err != nil {
+		return nil, err
+	}
+	credentialID, err := parseDomainID(value.CredentialID, "Computer credential")
+	if err != nil || value.CredentialVersion == 0 || value.CredentialVersion > math.MaxInt64 ||
+		value.ExpiresAt.IsZero() {
+		return nil, invalidDomainData("Computer claim 数据无效", err)
+	}
+	return openapi.ClaimComputerEnrollment201JSONResponse{
+		Body: openapi.ComputerEnrollmentClaim{
+			ServerId: serverID, ComputerId: computerID, CredentialId: credentialID,
+			CredentialVersion: int64(value.CredentialVersion), ExpiresAt: value.ExpiresAt.UTC(),
+		},
+		Headers: openapi.ClaimComputerEnrollment201ResponseHeaders{
+			CacheControl: "no-store", Pragma: "no-cache",
+		},
+	}, nil
+}
+
+func (handler *ComputerEnrollmentHandler) GetComputerArtifact(
+	ctx context.Context,
+	request openapi.GetComputerArtifactRequestObject,
+) (openapi.GetComputerArtifactResponseObject, error) {
+	token, ok := CurrentEnrollmentToken(ctx)
+	if !ok {
+		return nil, apperror.New("enrollment_invalid", "Computer 接入凭证无效", nil)
+	}
+	value, err := handler.artifacts.Resolve(
+		ctx, token, request.Version, request.Target, request.File,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(value.URL) == "" {
+		return nil, invalidDomainData("Computer artifact 地址无效", nil)
+	}
+	return openapi.GetComputerArtifact307Response{
+		Headers: openapi.GetComputerArtifact307ResponseHeaders{
+			Location: value.URL, CacheControl: "no-store", Pragma: "no-cache",
+		},
+	}, nil
+}

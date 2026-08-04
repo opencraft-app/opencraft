@@ -1,0 +1,26 @@
+{
+  "schema": "chatserver.agent-runtime-session-test/v1",
+  "credential": "TEST-ONLY-NOT-A-REAL-RUNTIME-CREDENTIAL",
+  "agent": {
+    "id": "0198f4c2-7a33-79f2-8cd1-8ad6b57f7d1b",
+    "serverId": "0198f4c2-7a31-7c91-a6d2-7d76f9188c38",
+    "userId": "a_KG2X62I5NHEBNDMFNLTOCWLUP4LGI",
+    "replyPolicy": "mention_and_dm",
+    "credentialVersion": 3
+  },
+  "session": {
+    "accessToken": "TEST-ONLY-NOT-A-REAL-TOKEN",
+    "expiresAt": "2026-07-29T09:00:00Z",
+    "im": {
+      "sdkAppId": 1600000000,
+      "userId": "a_KG2X62I5NHEBNDMFNLTOCWLUP4LGI",
+      "userSig": "TEST-ONLY-NOT-A-REAL-USERSIG",
+      "expiresAt": "2026-07-29T09:00:00Z"
+    }
+  },
+  "invariants": [
+    "Agent Runtime 只获得自己的 UserID",
+    "Runtime credential 不进入 Session 响应",
+    "UserSig 与平台 Access Token 都是短期凭证"
+  ]
+}

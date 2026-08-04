@@ -1,0 +1,16 @@
+{
+  "name": "velachat-web",
+  "private": true,
+  "workspaces": [
+    "apps/client",
+    "packages/client-core"
+  ],
+  "scripts": {
+    "build:core": "bun run --cwd packages/client-core build",
+    "build:web": "bun run --cwd apps/client build:web",
+    "security:scan": "bun run --cwd apps/client security:scan",
+    "test": "bun run --cwd packages/client-core test && bun run --cwd apps/client test",
+    "typecheck": "bun run build:core && bun run --cwd packages/client-core typecheck && bun run --cwd apps/client typecheck",
+    "verify": "bun run typecheck && bun run test && bun run security:scan"
+  }
+}

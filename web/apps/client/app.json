@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Raft",
+    "slug": "raft-client",
+    "version": "0.1.0",
+    "orientation": "default",
+    "scheme": "raft",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "build.raft.client"
+    },
+    "android": {
+      "package": "build.raft.client",
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

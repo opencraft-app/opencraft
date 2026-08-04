@@ -1,0 +1,20 @@
+-- Add one-command Computer enrollment state without changing the published baseline.
+ALTER TABLE `computers`
+  ADD COLUMN `enrollment_generation` bigint NOT NULL DEFAULT 0 AFTER `last_reconcile_error_code`,
+  ADD COLUMN `enrollment_token_hash` binary(32) NULL AFTER `enrollment_generation`,
+  ADD COLUMN `enrollment_expires_at` datetime(3) NULL AFTER `enrollment_token_hash`,
+  ADD COLUMN `enrollment_claimed_at` datetime(3) NULL AFTER `enrollment_expires_at`,
+  ADD COLUMN `enrollment_credential_version` bigint NULL AFTER `enrollment_claimed_at`,
+  ADD COLUMN `enrollment_release_version` varchar(64) NULL AFTER `enrollment_credential_version`,
+  ADD COLUMN `enrollment_target` varchar(64) NULL AFTER `enrollment_release_version`,
+  ADD COLUMN `enrollment_architecture` varchar(64) NULL AFTER `enrollment_target`,
+  ADD COLUMN `enrollment_manifest_object` varchar(512) NULL AFTER `enrollment_architecture`,
+  ADD COLUMN `enrollment_manifest_sha256` binary(32) NULL AFTER `enrollment_manifest_object`,
+  ADD COLUMN `enrollment_signature_object` varchar(512) NULL AFTER `enrollment_manifest_sha256`,
+  ADD COLUMN `enrollment_signature_sha256` binary(32) NULL AFTER `enrollment_signature_object`,
+  ADD COLUMN `enrollment_installer_object` varchar(512) NULL AFTER `enrollment_signature_sha256`,
+  ADD COLUMN `enrollment_installer_sha256` binary(32) NULL AFTER `enrollment_installer_object`,
+  ADD COLUMN `enrollment_signing_key_id` varchar(64) NULL AFTER `enrollment_installer_sha256`,
+  ADD COLUMN `enrollment_program_object` varchar(512) NULL AFTER `enrollment_signing_key_id`,
+  ADD COLUMN `enrollment_program_sha256` binary(32) NULL AFTER `enrollment_program_object`,
+  ADD COLUMN `enrollment_program_size` bigint NULL AFTER `enrollment_program_sha256`;

@@ -1,0 +1,105 @@
+openapi: 3.0.3
+info:
+  title: Agent Network Computer Bootstrap API
+  version: 2.0.0
+  description: 仅供已完成 claim、尚在接入阶段的 Computer 获取可恢复 provider 注册材料。
+servers:
+  - url: /v1
+x-error-code-registry-source: ./openapi.yaml#/x-error-code-registry
+paths:
+  /bootstrap/provider-registration:
+    post:
+      operationId: getOrCreateProviderRegistration
+      summary: 幂等取得本机 provider 注册材料
+      security:
+        - ComputerBootstrapAuth: []
+      responses:
+        '200':
+          description: 注册材料已就绪；重复请求返回同一份尚未过期的材料。
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            Pragma: {$ref: '#/components/headers/NoCache'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProviderRegistration'}
+        '202':
+          description: 后台正在创建或恢复注册材料。
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            Pragma: {$ref: '#/components/headers/NoCache'}
+            Retry-After:
+              required: true
+              schema: {type: integer, minimum: 1, maximum: 30}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProviderRegistrationPending'}
+        default:
+          description: 稳定错误响应。
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            Pragma: {$ref: '#/components/headers/NoCache'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+components:
+  securitySchemes:
+    ComputerBootstrapAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 使用 `ComputerCredential <secret>`；只允许已 claim 的 provisioning Computer。
+  headers:
+    NoStore:
+      required: true
+      schema: {type: string, enum: [no-store]}
+    NoCache:
+      required: true
+      schema: {type: string, enum: [no-cache]}
+  schemas:
+    ProviderRegistration:
+      type: object
+      additionalProperties: false
+      required: [operationId, state, protocol, region, registerCodeId, registerCodeValue, tags, expiresAt]
+      properties:
+        operationId: {type: string, format: uuid}
+        state: {type: string, enum: [ready]}
+        protocol: {type: string, enum: [tencent-tat-register-v1]}
+        region: {type: string, minLength: 1, maxLength: 64}
+        registerCodeId: {type: string, minLength: 1, maxLength: 512}
+        registerCodeValue: {type: string, minLength: 1, maxLength: 4096}
+        tags:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: {$ref: '#/components/schemas/ProviderRegistrationTag'}
+        expiresAt: {type: string, format: date-time}
+    ProviderRegistrationTag:
+      type: object
+      additionalProperties: false
+      required: [key, value]
+      properties:
+        key: {type: string, minLength: 1, maxLength: 128}
+        value: {type: string, minLength: 1, maxLength: 256}
+    ProviderRegistrationPending:
+      type: object
+      additionalProperties: false
+      required: [operationId, state, retryAfterSeconds]
+      properties:
+        operationId: {type: string, format: uuid}
+        state: {type: string, enum: [pending, retry_wait]}
+        retryAfterSeconds: {type: integer, minimum: 1, maximum: 30}
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [code, message, requestId]
+      properties:
+        code: {type: string, minLength: 1, maxLength: 100}
+        message: {type: string, minLength: 1, maxLength: 500}
+        requestId: {type: string, minLength: 1, maxLength: 200}
+        details: {nullable: true}
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: {$ref: '#/components/schemas/ErrorDetail'}

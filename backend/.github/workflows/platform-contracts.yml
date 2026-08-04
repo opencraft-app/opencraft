@@ -1,0 +1,37 @@
+name: Platform Contracts
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.12
+          cache: true
+      - name: 提取可信主分支发布锁
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -n "$BASE_SHA" && ! "$BASE_SHA" =~ ^0+$ ]]; then
+            git show "$BASE_SHA:migrations/released.lock.json" > "$RUNNER_TEMP/migration-released.lock.json"
+            git show "$BASE_SHA:platform/v1/releases/released.lock.json" > "$RUNNER_TEMP/openapi-released.lock.json"
+            echo "CHATSERVER_MIGRATION_TRUSTED_RELEASE_LOCK=$RUNNER_TEMP/migration-released.lock.json" >> "$GITHUB_ENV"
+            echo "CHATSERVER_OPENAPI_TRUSTED_RELEASE_LOCK=$RUNNER_TEMP/openapi-released.lock.json" >> "$GITHUB_ENV"
+          fi
+      - name: 验证模型、迁移和 OpenAPI 契约
+        run: |
+          ./scripts/check-generated.sh
+          go test ./internal/database/modelcontract ./internal/database/consistency ./internal/persistedjson ./internal/transport/http

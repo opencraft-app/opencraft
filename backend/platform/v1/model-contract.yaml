@@ -1,0 +1,594 @@
+schemaVersion: 1
+tables:
+  - schema: AccountLoginIdentity
+    table: account_login_identities
+    domain: account
+    kind: registry
+    shardKey: login_hash
+    logicalId: id
+    immutableRouteFields: [login_hash]
+    references:
+      - {field: account_id, table: accounts, crossShard: true}
+    lifecycle: {field: state, values: [active, retired]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: false
+    semanticFields:
+      login_hash: hash
+      normalized_login: pii
+      account_id: reference
+      state: lifecycle
+
+  - schema: Account
+    table: accounts
+    domain: account
+    kind: authority
+    shardKey: id
+    logicalId: id
+    immutableRouteFields: [id]
+    lifecycle: {field: im_state, values: [provisioning, ready, error]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: false
+    semanticFields:
+      email: pii
+      email_normalized: pii
+      password_hash: credential
+      im_user_id: reference
+      im_state: lifecycle
+
+  - schema: AuthSession
+    table: auth_sessions
+    domain: account
+    kind: ledger
+    shardKey: account_id
+    logicalId: id
+    immutableRouteFields: [account_id]
+    references:
+      - {field: account_id, table: accounts}
+    deletePolicy: expiry
+    retention: until-expiry-plus-30d
+    rebuildable: false
+    semanticFields:
+      account_id: reference
+      family_id: reference
+      refresh_token_hash: credential
+      used_at: lifecycle
+      revoked_at: lifecycle
+
+  - schema: AccountServerMembership
+    table: account_server_memberships
+    domain: account
+    kind: projection
+    shardKey: account_id
+    logicalId: id
+    immutableRouteFields: [account_id, server_id]
+    references:
+      - {field: account_id, table: accounts}
+      - {field: server_id, table: servers, crossShard: true}
+      - {field: member_id, table: members, crossShard: true}
+    lifecycle: {field: status, values: [active, removed]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: true
+    semanticFields:
+      account_id: reference
+      server_id: reference
+      member_id: reference
+      status: lifecycle
+
+  - schema: ServerSlugRegistry
+    table: server_slug_registry
+    domain: registry
+    kind: registry
+    shardKey: slug
+    logicalId: id
+    immutableRouteFields: [slug]
+    references:
+      - {field: server_id, table: servers, crossShard: true}
+    lifecycle: {field: state, values: [reserved, active, released]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: true
+    semanticFields:
+      server_id: reference
+      state: lifecycle
+
+  - schema: Server
+    table: servers
+    domain: server
+    kind: authority
+    shardKey: id
+    logicalId: id
+    immutableRouteFields: [id]
+    references:
+      - {field: owner_member_id, table: members}
+    lifecycle: {field: im_state, values: [provisioning, ready, error]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: false
+    semanticFields:
+      owner_member_id: reference
+      im_group_id: reference
+      im_state: lifecycle
+
+  - schema: ServerInvite
+    table: server_invites
+    domain: server
+    kind: authority
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id]
+    references:
+      - {field: server_id, table: servers}
+      - {field: created_by_member_id, table: members}
+      - {field: landing_channel_id, table: channels}
+    deletePolicy: expiry
+    retention: until-expiry-plus-30d
+    rebuildable: false
+    semanticFields:
+      server_id: reference
+      token_hash: credential
+      created_by_member_id: reference
+      landing_channel_id: reference
+      revoked_at: lifecycle
+
+  - schema: Member
+    table: members
+    domain: server
+    kind: authority
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id, account_id]
+    references:
+      - {field: server_id, table: servers}
+      - {field: account_id, table: accounts, crossShard: true}
+    lifecycle: {field: status, values: [active, removing, removed]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: false
+    semanticFields:
+      server_id: reference
+      account_id: reference
+      status: lifecycle
+      im_state: lifecycle
+
+  - schema: Agent
+    table: agents
+    domain: server
+    kind: authority
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id, im_user_id]
+    requiredWhilePresent: [computer_id]
+    references:
+      - {field: server_id, table: servers}
+      - {field: computer_id, table: computers}
+      - {field: created_by_member_id, table: members}
+    lifecycle: {field: desired_state, values: [stopped, running]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: false
+    semanticFields:
+      server_id: reference
+      im_user_id: reference
+      computer_id: reference
+      created_by_member_id: reference
+      desired_state: lifecycle
+      observed_state: lifecycle
+      im_state: lifecycle
+      im_presence: lifecycle
+      im_transport_state: lifecycle
+      credential_version: lifecycle
+      current_launch_credential_version: lifecycle
+      deleted_at: lifecycle
+
+  - schema: AgentIMRoute
+    table: agent_im_routes
+    domain: registry
+    kind: registry
+    shardKey: im_user_id
+    logicalId: id
+    immutableRouteFields: [im_user_id]
+    references:
+      - {field: server_id, table: servers, crossShard: true}
+      - {field: agent_id, table: agents, crossShard: true}
+    lifecycle: {field: state, values: [active, revoked]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: true
+    semanticFields:
+      im_user_id: reference
+      server_id: reference
+      agent_id: reference
+      state: lifecycle
+
+  - schema: AgentRuntimeCredential
+    table: agent_runtime_credentials
+    domain: server
+    kind: ledger
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id, agent_id, version]
+    references:
+      - {field: server_id, table: servers}
+      - {field: agent_id, table: agents}
+    lifecycle: {field: state, values: [active, revoked]}
+    deletePolicy: expiry
+    retention: revoked-plus-30d
+    rebuildable: false
+    semanticFields:
+      server_id: reference
+      agent_id: reference
+      secret_hash: credential
+      state: lifecycle
+
+  - schema: Computer
+    table: computers
+    domain: server
+    kind: authority
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id]
+    references:
+      - {field: server_id, table: servers}
+    lifecycle: {field: lifecycle_state, values: [provisioning, active, removed]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: false
+    semanticFields:
+      server_id: reference
+      tat_instance_id: reference
+      lifecycle_state: lifecycle
+      tat_agent_state: lifecycle
+      enrollment_token_hash: credential
+      enrollment_credential_version: lifecycle
+      enrollment_manifest_sha256: hash
+      enrollment_signature_sha256: hash
+      enrollment_installer_sha256: hash
+      enrollment_program_sha256: hash
+
+  - schema: ComputerRuntimeCredential
+    table: computer_runtime_credentials
+    domain: server
+    kind: ledger
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id, computer_id, version]
+    references:
+      - {field: server_id, table: servers}
+      - {field: computer_id, table: computers}
+    lifecycle: {field: state, values: [active, grace, revoked]}
+    deletePolicy: expiry
+    retention: revoked-plus-30d
+    rebuildable: false
+    semanticFields:
+      server_id: reference
+      computer_id: reference
+      secret_hash: credential
+      state: lifecycle
+
+  - schema: ComputerSetupCode
+    table: computer_setup_codes
+    domain: registry
+    kind: registry
+    shardKey: code_hash
+    logicalId: id
+    immutableRouteFields: [code_hash, server_id, computer_id, generation]
+    references:
+      - {field: server_id, table: servers, crossShard: true}
+      - {field: computer_id, table: computers, crossShard: true}
+    deletePolicy: expiry
+    retention: until-expiry-plus-24h
+    rebuildable: false
+    semanticFields:
+      code_hash: hash
+      server_id: reference
+      computer_id: reference
+
+  - schema: ComputerAgentObservation
+    table: computer_agent_observations
+    domain: server
+    kind: ledger
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id, computer_id, agent_id, launch_id, sequence]
+    references:
+      - {field: server_id, table: servers}
+      - {field: computer_id, table: computers}
+      - {field: agent_id, table: agents}
+    deletePolicy: expiry
+    retention: 30d
+    rebuildable: false
+    semanticFields:
+      server_id: reference
+      computer_id: reference
+      agent_id: reference
+      launch_id: reference
+      state: lifecycle
+      im_transport_state: lifecycle
+      credential_version: lifecycle
+      request_hash: hash
+
+  - schema: TATInstanceBinding
+    table: tat_instance_bindings
+    domain: registry
+    kind: registry
+    shardKey: binding_hash
+    logicalId: id
+    immutableRouteFields: [binding_hash]
+    references:
+      - {field: server_id, table: servers, crossShard: true}
+      - {field: computer_id, table: computers, crossShard: true}
+    lifecycle: {field: state, values: [active, released]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: true
+    semanticFields:
+      binding_hash: hash
+      tat_instance_id: reference
+      server_id: reference
+      computer_id: reference
+      state: lifecycle
+
+  - schema: Channel
+    table: channels
+    domain: server
+    kind: authority
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id, im_group_id, im_topic_id]
+    references:
+      - {field: server_id, table: servers}
+    lifecycle: {field: im_state, values: [provisioning, ready, error]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: false
+    semanticFields:
+      server_id: reference
+      im_group_id: reference
+      im_topic_id: reference
+      im_state: lifecycle
+
+  - schema: ChannelMember
+    table: channel_members
+    domain: server
+    kind: projection
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id, channel_id, member_id]
+    references:
+      - {field: server_id, table: servers}
+      - {field: channel_id, table: channels}
+      - {field: member_id, table: members}
+    lifecycle: {field: state, values: [active, removed]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: true
+    semanticFields:
+      server_id: reference
+      channel_id: reference
+      member_id: reference
+      state: lifecycle
+      im_state: lifecycle
+
+  - schema: DirectConversation
+    table: direct_conversations
+    domain: server
+    kind: authority
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id, member_a_id, member_b_id, im_group_id]
+    references:
+      - {field: server_id, table: servers}
+      - {field: member_a_id, table: members}
+      - {field: member_b_id, table: members}
+    lifecycle: {field: status, values: [active, closing, closed]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: false
+    semanticFields:
+      server_id: reference
+      member_a_id: reference
+      member_b_id: reference
+      im_group_id: reference
+      status: lifecycle
+      im_state: lifecycle
+
+  - schema: MessageThreadRef
+    table: message_thread_refs
+    domain: server
+    kind: projection
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id, channel_id, message_id]
+    references:
+      - {field: server_id, table: servers}
+      - {field: channel_id, table: channels}
+      - {field: created_by_member_id, table: members}
+    deletePolicy: expiry
+    retention: follows-im-message-reference
+    rebuildable: true
+    semanticFields:
+      server_id: reference
+      channel_id: reference
+      thread_id: reference
+      message_id: reference
+      group_id: reference
+      topic_id: reference
+      sender_user_id: reference
+      created_by_member_id: reference
+
+  - schema: MessageThreadRead
+    table: message_thread_reads
+    domain: server
+    kind: projection
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id, thread_id, member_id]
+    references:
+      - {field: server_id, table: servers}
+      - {field: thread_id, table: message_thread_refs}
+      - {field: member_id, table: members}
+      - {field: last_read_ref_id, table: message_thread_refs}
+    deletePolicy: hard-delete
+    retention: membership-lifetime
+    rebuildable: false
+    semanticFields:
+      server_id: reference
+      thread_id: reference
+      member_id: reference
+      last_read_ref_id: reference
+
+  - schema: Task
+    table: tasks
+    domain: server
+    kind: authority
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id, number]
+    references:
+      - {field: server_id, table: servers}
+      - {field: owner_member_id, table: members}
+      - {field: created_by_member_id, table: members}
+      - {field: updated_by_member_id, table: members}
+    lifecycle: {field: status, values: [todo, in_progress, in_review, done, closed]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: false
+    semanticFields:
+      server_id: reference
+      owner_member_id: reference
+      created_by_member_id: reference
+      updated_by_member_id: reference
+      status: lifecycle
+      source_message_ref_json: opaque-json
+
+  - schema: Reminder
+    table: reminders
+    domain: server
+    kind: authority
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id, agent_id]
+    references:
+      - {field: server_id, table: servers}
+      - {field: agent_id, table: agents}
+      - {field: created_by_member_id, table: members}
+      - {field: anchor_channel_id, table: channels}
+      - {field: anchor_thread_id, table: message_thread_refs}
+    lifecycle: {field: status, values: [active, paused, completed, canceled]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: false
+    semanticFields:
+      server_id: reference
+      agent_id: reference
+      created_by_member_id: reference
+      anchor_channel_id: reference
+      anchor_thread_id: reference
+      status: lifecycle
+      anchor_message_ref_json: opaque-json
+
+  - schema: ReminderOccurrence
+    table: reminder_occurrences
+    domain: server
+    kind: ledger
+    shardKey: server_id
+    logicalId: id
+    immutableRouteFields: [server_id, reminder_id, scheduled_fire_at]
+    references:
+      - {field: server_id, table: servers}
+      - {field: reminder_id, table: reminders}
+      - {field: agent_id, table: agents}
+    lifecycle: {field: state, values: [due, acknowledged, canceled]}
+    deletePolicy: expiry
+    retention: 90d
+    rebuildable: false
+    semanticFields:
+      server_id: reference
+      reminder_id: reference
+      agent_id: reference
+      state: lifecycle
+
+  - schema: TencentOperation
+    table: tencent_operations
+    domain: infrastructure
+    kind: ledger
+    shardKey: partition_key
+    logicalId: id
+    immutableRouteFields: [partition_key, service, idempotency_key]
+    references:
+      - {field: server_id, table: servers}
+    lifecycle: {field: state, values: [pending, running, succeeded, failed]}
+    deletePolicy: expiry
+    retention: 30d-after-completion
+    rebuildable: false
+    semanticFields:
+      partition_key: reference
+      server_id: reference
+      resource_id: reference
+      request_snapshot_json: opaque-json
+      result_json: opaque-json
+      state: lifecycle
+
+  - schema: IdempotencyRecord
+    table: idempotency_records
+    domain: infrastructure
+    kind: ledger
+    shardKey: partition_key
+    logicalId: id
+    immutableRouteFields: [partition_key, scope_type, scope_id, idempotency_key]
+    deletePolicy: expiry
+    retention: until-expiry
+    rebuildable: false
+    semanticFields:
+      partition_key: reference
+      scope_id: reference
+      request_hash: hash
+      response_body_json: opaque-json
+
+  - schema: OutboxEvent
+    table: outbox_events
+    domain: infrastructure
+    kind: ledger
+    shardKey: partition_key
+    logicalId: id
+    immutableRouteFields: [partition_key]
+    references:
+      - {field: server_id, table: servers}
+    lifecycle: {field: state, values: [pending, running, succeeded, failed]}
+    deletePolicy: expiry
+    retention: 30d-after-processing
+    rebuildable: false
+    semanticFields:
+      partition_key: reference
+      server_id: reference
+      aggregate_id: reference
+      state: lifecycle
+
+crossShardWorkflows:
+  - name: account-login-registration
+    tables: [account_login_identities, accounts]
+    routeKeys: {account_login_identities: login_hash, accounts: id}
+    direction: one-way
+  - name: server-creation-projection
+    tables: [account_server_memberships, server_slug_registry, servers, members]
+    routeKeys:
+      account_server_memberships: account_id
+      server_slug_registry: slug
+      servers: id
+      members: server_id
+    direction: two-way
+  - name: agent-im-route-projection
+    tables: [agents, agent_im_routes]
+    routeKeys: {agents: server_id, agent_im_routes: im_user_id}
+    direction: two-way
+  - name: computer-tat-binding-projection
+    tables: [computers, tat_instance_bindings]
+    routeKeys: {computers: server_id, tat_instance_bindings: binding_hash}
+    direction: two-way
+  - name: computer-setup-code-route
+    tables: [computers, computer_setup_codes]
+    routeKeys: {computers: server_id, computer_setup_codes: code_hash}
+    direction: one-way

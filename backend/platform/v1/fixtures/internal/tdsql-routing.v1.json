@@ -1,0 +1,36 @@
+{
+  "schema": "chatserver.tdsql-routing-test/v1",
+  "serverGroupShard": {
+    "servers": {"shardkeyColumn": "id", "value": "0198f4c2-7a31-7c91-a6d2-7d76f9188c38"},
+    "members": {"shardkeyColumn": "server_id", "value": "0198f4c2-7a31-7c91-a6d2-7d76f9188c38"},
+    "agents": {"shardkeyColumn": "server_id", "value": "0198f4c2-7a31-7c91-a6d2-7d76f9188c38"},
+    "tasks": {"shardkeyColumn": "server_id", "value": "0198f4c2-7a31-7c91-a6d2-7d76f9188c38"},
+    "outboxEvents": {"shardkeyColumn": "partition_key", "value": "0198f4c2-7a31-7c91-a6d2-7d76f9188c38"}
+  },
+  "accountGroupShard": {
+    "accounts": {"shardkeyColumn": "id", "value": "0198f4c2-7a30-7b21-9f61-30ac8b0a1570"},
+    "authSessions": {"shardkeyColumn": "account_id", "value": "0198f4c2-7a30-7b21-9f61-30ac8b0a1570"},
+    "serverMembershipProjection": {
+      "shardkeyColumn": "account_id",
+      "value": "0198f4c2-7a30-7b21-9f61-30ac8b0a1570"
+    },
+    "outboxEvents": {"shardkeyColumn": "partition_key", "value": "0198f4c2-7a30-7b21-9f61-30ac8b0a1570"}
+  },
+  "registries": {
+    "loginHash": "sha256:TEST-ONLY-LOGIN-HASH",
+    "serverSlug": "demo-server",
+    "tatBindingHash": "sha256:TEST-ONLY-TAT-BINDING-HASH"
+  },
+  "twoPhaseCommitAllowlist": [
+    "account-login-identity-lifecycle",
+    "server-slug-lifecycle",
+    "computer-tat-binding-lifecycle"
+  ],
+  "invariants": [
+    "Server 主链路只访问同一个 server_id 分片值",
+    "Account 主链路只访问同一个 account_id 分片值",
+    "Worker 消息必须携带 partitionKey",
+    "主键和唯一索引必须包含 shardkey",
+    "数据库不使用外键"
+  ]
+}

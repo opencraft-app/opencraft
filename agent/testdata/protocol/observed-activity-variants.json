@@ -1,0 +1,165 @@
+[
+  {
+    "type": "agent:activity",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "activity": "error",
+    "activityKind": "error",
+    "detail": "Runtime stalled: no runtime events for 15m (after Running command…, queued=1)",
+    "detailKind": "runtime_stalled",
+    "entries": [],
+    "clientSeq": 2,
+    "producerFactId": "fixture_runtime_stalled_fact",
+    "observedAtMs": 4070908800001,
+    "isHeartbeat": false
+  },
+  {
+    "type": "agent:activity",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "activity": "error",
+    "activityKind": "error",
+    "detail": "Runtime stalled: no runtime events for 16m (after Using tool…, phase=reviewing, tools=2, compacting, reviewing, queued=3)",
+    "detailKind": "runtime_stalled",
+    "entries": [],
+    "clientSeq": 3,
+    "producerFactId": "fixture_gated_runtime_stalled_fact",
+    "observedAtMs": 4070908800002,
+    "isHeartbeat": false
+  },
+  {
+    "type": "agent:activity",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "activity": "working",
+    "activityKind": "working",
+    "detail": "Restarting stalled codex runtime for queued message",
+    "detailKind": "stalled_recovery",
+    "entries": [],
+    "clientSeq": 4,
+    "producerFactId": "fixture_stalled_recovery_fact",
+    "observedAtMs": 4070908800003,
+    "isHeartbeat": false
+  },
+  {
+    "type": "agent:activity",
+    "agentId": "agent_fixture",
+    "activity": "error",
+    "activityKind": "error",
+    "detail": "Runtime stopped after 3 repeated runtime errors with the same fingerprint (fc722ca715f3e15a). Last error: Provider request 303 failed for abcdef0123456789 Restart after the runtime/tooling issue is fixed.",
+    "detailKind": "runtime_error",
+    "entries": [
+      {
+        "kind": "text",
+        "text": "Error: Runtime stopped after 3 repeated runtime errors with the same fingerprint (fc722ca715f3e15a). Last error: Provider request 303 failed for abcdef0123456789 Restart after the runtime/tooling issue is fixed."
+      },
+      {
+        "kind": "status",
+        "activity": "error",
+        "activityKind": "error",
+        "detail": "Runtime stopped after 3 repeated runtime errors with the same fingerprint (fc722ca715f3e15a). Last error: Provider request 303 failed for abcdef0123456789 Restart after the runtime/tooling issue is fixed.",
+        "detailKind": "runtime_error"
+      }
+    ],
+    "runtimeError": {
+      "errorClass": "RuntimeError",
+      "errorReason": "unclassified_runtime_error",
+      "fingerprint": "fc722ca715f3e15a",
+      "reasonProvenance": "runtime_error_event"
+    },
+    "clientSeq": 5,
+    "producerFactId": "fixture_runtime_error_fingerprint_fence_fact",
+    "observedAtMs": 4070908800004,
+    "isHeartbeat": false
+  },
+  {
+    "type": "agent:activity",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "activity": "working",
+    "activityKind": "working",
+    "detail": "Compacting context",
+    "detailKind": "compacting_context",
+    "entries": [
+      {"kind": "compaction_started"},
+      {
+        "kind": "status",
+        "activity": "working",
+        "activityKind": "working",
+        "detail": "Compacting context",
+        "detailKind": "compacting_context"
+      }
+    ],
+    "clientSeq": 6,
+    "producerFactId": "fixture_compaction_started_fact",
+    "observedAtMs": 4070908800005,
+    "isHeartbeat": false
+  },
+  {
+    "type": "agent:activity",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "activity": "working",
+    "activityKind": "working",
+    "detail": "Context compaction finished",
+    "detailKind": "compaction_finished",
+    "entries": [
+      {"kind": "compaction_finished"},
+      {
+        "kind": "status",
+        "activity": "working",
+        "activityKind": "working",
+        "detail": "Context compaction finished",
+        "detailKind": "compaction_finished"
+      }
+    ],
+    "clientSeq": 7,
+    "producerFactId": "fixture_compaction_finished_fact",
+    "observedAtMs": 4070908800006,
+    "isHeartbeat": false
+  },
+  {
+    "type": "agent:activity",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "activity": "working",
+    "activityKind": "working",
+    "detail": "Reviewing changes",
+    "detailKind": "reviewing_changes",
+    "entries": [
+      {
+        "kind": "status",
+        "activity": "working",
+        "activityKind": "working",
+        "detail": "Reviewing changes",
+        "detailKind": "reviewing_changes"
+      }
+    ],
+    "clientSeq": 8,
+    "producerFactId": "fixture_review_started_fact",
+    "observedAtMs": 4070908800007,
+    "isHeartbeat": false
+  },
+  {
+    "type": "agent:activity",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "activity": "working",
+    "activityKind": "working",
+    "detail": "Review finished",
+    "detailKind": "review_finished",
+    "entries": [
+      {
+        "kind": "status",
+        "activity": "working",
+        "activityKind": "working",
+        "detail": "Review finished",
+        "detailKind": "review_finished"
+      }
+    ],
+    "clientSeq": 9,
+    "producerFactId": "fixture_review_finished_fact",
+    "observedAtMs": 4070908800008,
+    "isHeartbeat": false
+  }
+]

@@ -1,0 +1,7 @@
+package: openapi
+output: client.gen.go
+generate:
+  models: false
+  client: true
+output-options:
+  skip-prune: true

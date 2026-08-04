@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: raft-web-static
+  namespace: dep
+  labels:
+    app.kubernetes.io/name: raft-web-static
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: raft-web-static
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: raft-web-static
+        app.kubernetes.io/component: frontend
+    spec:
+      imagePullSecrets:
+        - name: csighub-skipzhang
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: static
+          image: csighub.tencentyun.com/skipzhang/raft-web-static@sha256:2132f895e6cbe06564e62bd79d48bb12285b8ef2e76f2d58bc09a86c76207606
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz-web
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz-web
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
+            - name: nginx-tmp
+              mountPath: /tmp
+      volumes:
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+        - name: nginx-tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: raft-web-static
+  namespace: dep
+  labels:
+    app.kubernetes.io/name: raft-web-static
+    app.kubernetes.io/component: frontend
+  annotations:
+    service.kubernetes.io/qcloud-loadbalancer-internal-subnetid: subnet-o7o7hnas
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: raft-web-static
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

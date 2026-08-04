@@ -1,0 +1,235 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "dialect": "tdsql-source",
+      "path": "internal/database/migrationsource/tdsql/20260801000000_baseline.sql",
+      "sha256": "8a59b693e545b9401db6d7759e0cf78a766df4ef53794dace26900a63d5c73ab",
+      "migrationId": "20260801000000",
+      "logicalMigration": "platform-baseline"
+    },
+    {
+      "dialect": "tdsql-source",
+      "path": "internal/database/migrationsource/tdsql/20260802100000_computer_enrollment.sql",
+      "sha256": "48ae1b5fa88e7171c0cefcf37bb9578d488590064fbf20e2896f20042faead0c",
+      "migrationId": "20260802100000",
+      "logicalMigration": "computer-enrollment"
+    },
+    {
+      "dialect": "tdsql-source",
+      "path": "internal/database/migrationsource/tdsql/20260802170000_reminder_anchors.sql",
+      "sha256": "336507d0aa8d402b356b06cc3d71568d26f1a5577c17e2e8ad7a038de4d0e0f6",
+      "migrationId": "20260802170000",
+      "logicalMigration": "reminder-anchors"
+    },
+    {
+      "dialect": "tdsql-source",
+      "path": "internal/database/migrationsource/tdsql/20260802180000_computer_setup_codes.sql",
+      "sha256": "8f3cd2ddd39bb9612300778ffe4fdde8618d61a8a71cc38113d4fcad6c0ffb60",
+      "migrationId": "20260802180000",
+      "logicalMigration": "computer-setup-codes"
+    },
+    {
+      "dialect": "tdsql-source",
+      "path": "internal/database/migrationsource/tdsql/20260803190328_agent_delete.sql",
+      "sha256": "563bc9585696c8768dfea9bb40b262aa4999c8ef9191e50c6807e24c2ae15bf9",
+      "migrationId": "20260803190328_agent_delete",
+      "logicalMigration": "20260803190328_agent_delete"
+    },
+    {
+      "dialect": "tdsql-source",
+      "path": "internal/database/migrationsource/tdsql/20260804110000_computer_display_name.sql",
+      "sha256": "17329dd1fdf2a25ca9ce37d606e613f99aec48f43fb861a8385c1706370f89aa",
+      "migrationId": "20260804110000_computer_display_name",
+      "logicalMigration": "20260804110000_computer_display_name"
+    },
+    {
+      "dialect": "tdsql-source",
+      "path": "internal/database/migrationsource/tdsql/20260804120000_agent_handle_reuse.sql",
+      "sha256": "e46bfe251336a9bd948265d429fd23602529a4322decce4c27fd32e197aba25c",
+      "migrationId": "20260804120000_agent_handle_reuse",
+      "logicalMigration": "20260804120000_agent_handle_reuse"
+    },
+    {
+      "dialect": "tdsql-source",
+      "path": "internal/database/migrationsource/tdsql/20260804130000_server_scoped_direct_messages.sql",
+      "sha256": "e9dae4439e0e4fcabd71c58838c7342d9314def1df4d3c0b1498c4c802f451a8",
+      "migrationId": "20260804130000_server_scoped_direct_messages",
+      "logicalMigration": "20260804130000_server_scoped_direct_messages"
+    },
+    {
+      "dialect": "tdsql-source",
+      "path": "internal/database/migrationsource/tdsql/compile.sum",
+      "sha256": "1e8b756234e5d4a770a8a9954aa0f40669f5537b0a216c17ae6885475fa5d47e",
+      "migrationId": "compile-sum",
+      "logicalMigration": "tdsql-compile-binding"
+    },
+    {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260730040159_baseline.sql",
+      "sha256": "569523da2cb4b1d838128642626dc1af950147ad67110ae90a3208395d3bdfec",
+      "migrationId": "20260730040159",
+      "logicalMigration": "platform-baseline"
+    },
+    {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260731031305_agent_presence.sql",
+      "sha256": "2bec6f4552337e6b2a836c9dbdb36e6c6d46229d453cbc50237ddef87cc661d5",
+      "migrationId": "20260731031305",
+      "logicalMigration": "agent-presence",
+      "includedInBaseline": [
+        "migrations/tdsql/20260801000000_baseline.sql",
+        "internal/database/migrationsource/tdsql/20260801000000_baseline.sql"
+      ]
+    },
+    {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260731071908_message_threads.sql",
+      "sha256": "a4d7689a97865a9993f7afc976196a7a501b2cdb914eae2ab0329569120ece64",
+      "migrationId": "20260731071908",
+      "logicalMigration": "message-threads",
+      "includedInBaseline": [
+        "migrations/tdsql/20260801000000_baseline.sql",
+        "internal/database/migrationsource/tdsql/20260801000000_baseline.sql"
+      ]
+    },
+    {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260731085052_vela_computer_daemon.sql",
+      "sha256": "87089aeead01c6f9371aab2bfd353ea9ced982a1b661928e6aab63dee7a9c160",
+      "migrationId": "20260731085052",
+      "logicalMigration": "computer-daemon",
+      "includedInBaseline": [
+        "migrations/tdsql/20260801000000_baseline.sql",
+        "internal/database/migrationsource/tdsql/20260801000000_baseline.sql"
+      ]
+    },
+    {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260801132320_agent_launch_fence.sql",
+      "sha256": "b5165f7a15d12cda6ff8ec3197265bf521e21e51e873b56b392560aea1285245",
+      "migrationId": "20260801132320",
+      "logicalMigration": "agent-launch-fence",
+      "includedInBaseline": [
+        "migrations/tdsql/20260801000000_baseline.sql",
+        "internal/database/migrationsource/tdsql/20260801000000_baseline.sql"
+      ]
+    },
+    {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260801134321_agent_launch_observation_fence.sql",
+      "sha256": "58f53e8e9e534f3010a5c6443980087ac3506d96ed2ca283c5d3eca07d4ae36f",
+      "migrationId": "20260801134321",
+      "logicalMigration": "agent-launch-observation-fence",
+      "includedInBaseline": [
+        "migrations/tdsql/20260801000000_baseline.sql",
+        "internal/database/migrationsource/tdsql/20260801000000_baseline.sql"
+      ]
+    },
+    {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260801165618_computer_enrollment.sql",
+      "sha256": "383cf8ebf7134b276291d413a629962f3d0368e7affa4616d1fa52897e2e9550",
+      "migrationId": "20260801165618",
+      "logicalMigration": "computer-enrollment"
+    },
+    {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260802082424_computer_setup_codes.sql",
+      "sha256": "fbeb46b1d510a7f585024102c0e37accee7f20decfe20de573e04a4889d4a88d",
+      "migrationId": "20260802082424",
+      "logicalMigration": "computer-setup-codes"
+    },
+    {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260802170000_reminder_anchors.sql",
+      "sha256": "f672cff01792b7d9bf628fdd654529bea60eba919ccbd72996be82f29889a8b6",
+      "migrationId": "20260802170000",
+      "logicalMigration": "reminder-anchors"
+    },
+    {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260803190328_agent_delete.sql",
+      "sha256": "ca95e354c41fa4e3c7431cee9c22d8fe1b2e321f3e61f5c7634af20d3190bc3f",
+      "migrationId": "20260803190328_agent_delete",
+      "logicalMigration": "20260803190328_agent_delete"
+    },
+    {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260804110000_computer_display_name.sql",
+      "sha256": "84574334171550a45891d0dae9362a32dee54995fb0b73cf28544e2d5ba525da",
+      "migrationId": "20260804110000_computer_display_name",
+      "logicalMigration": "20260804110000_computer_display_name"
+    },
+    {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260804120000_agent_handle_reuse.sql",
+      "sha256": "9454106d5da92f09e9cf1206288040182c4cf250cc623135299d44076aeb48ad",
+      "migrationId": "20260804120000_agent_handle_reuse",
+      "logicalMigration": "20260804120000_agent_handle_reuse"
+    },
+    {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260804130000_server_scoped_direct_messages.sql",
+      "sha256": "c6131cf0c3af1ccc031a641b4c8868fbc8c7322f61ec72bc31600dc94e54857c",
+      "migrationId": "20260804130000_server_scoped_direct_messages",
+      "logicalMigration": "20260804130000_server_scoped_direct_messages"
+    },
+    {
+      "dialect": "tdsql-runtime",
+      "path": "migrations/tdsql/20260801000000_baseline.sql",
+      "sha256": "82f5c1ae99f40185d02a72fb5e891488a753577470e3205f03e178514296fa7b",
+      "migrationId": "20260801000000",
+      "logicalMigration": "platform-baseline"
+    },
+    {
+      "dialect": "tdsql-runtime",
+      "path": "migrations/tdsql/20260802100000_computer_enrollment.sql",
+      "sha256": "48ae1b5fa88e7171c0cefcf37bb9578d488590064fbf20e2896f20042faead0c",
+      "migrationId": "20260802100000",
+      "logicalMigration": "computer-enrollment"
+    },
+    {
+      "dialect": "tdsql-runtime",
+      "path": "migrations/tdsql/20260802170000_reminder_anchors.sql",
+      "sha256": "336507d0aa8d402b356b06cc3d71568d26f1a5577c17e2e8ad7a038de4d0e0f6",
+      "migrationId": "20260802170000",
+      "logicalMigration": "reminder-anchors"
+    },
+    {
+      "dialect": "tdsql-runtime",
+      "path": "migrations/tdsql/20260802180000_computer_setup_codes.sql",
+      "sha256": "8f3cd2ddd39bb9612300778ffe4fdde8618d61a8a71cc38113d4fcad6c0ffb60",
+      "migrationId": "20260802180000",
+      "logicalMigration": "computer-setup-codes"
+    },
+    {
+      "dialect": "tdsql-runtime",
+      "path": "migrations/tdsql/20260803190328_agent_delete.sql",
+      "sha256": "563bc9585696c8768dfea9bb40b262aa4999c8ef9191e50c6807e24c2ae15bf9",
+      "migrationId": "20260803190328_agent_delete",
+      "logicalMigration": "20260803190328_agent_delete"
+    },
+    {
+      "dialect": "tdsql-runtime",
+      "path": "migrations/tdsql/20260804110000_computer_display_name.sql",
+      "sha256": "17329dd1fdf2a25ca9ce37d606e613f99aec48f43fb861a8385c1706370f89aa",
+      "migrationId": "20260804110000_computer_display_name",
+      "logicalMigration": "20260804110000_computer_display_name"
+    },
+    {
+      "dialect": "tdsql-runtime",
+      "path": "migrations/tdsql/20260804120000_agent_handle_reuse.sql",
+      "sha256": "e46bfe251336a9bd948265d429fd23602529a4322decce4c27fd32e197aba25c",
+      "migrationId": "20260804120000_agent_handle_reuse",
+      "logicalMigration": "20260804120000_agent_handle_reuse"
+    },
+    {
+      "dialect": "tdsql-runtime",
+      "path": "migrations/tdsql/20260804130000_server_scoped_direct_messages.sql",
+      "sha256": "e9dae4439e0e4fcabd71c58838c7342d9314def1df4d3c0b1498c4c802f451a8",
+      "migrationId": "20260804130000_server_scoped_direct_messages",
+      "logicalMigration": "20260804130000_server_scoped_direct_messages"
+    }
+  ]
+}

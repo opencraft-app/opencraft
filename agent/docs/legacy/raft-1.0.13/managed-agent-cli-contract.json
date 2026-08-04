@@ -1,0 +1,581 @@
+{
+  "archiveStatus": "frozen evidence; not a current Vela contract",
+  "schema": "raft-computer-go.managed-agent-cli-contract.v1",
+  "baseline": {
+    "version": "1.0.13",
+    "platform": "darwin-arm64"
+  },
+  "evidence": {
+    "path": "agent-cli-evidence.json",
+    "sha256": "74fa65d5ec64f7b33441a5d4ed6d1aa4d2fe58cc42232faf3ba2ec62e3719744"
+  },
+  "commands": [
+    {
+      "path": "auth whoami",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": []
+    },
+    {
+      "path": "channel info",
+      "positionals": { "min": 1, "max": 1, "variadic": false },
+      "flags": []
+    },
+    {
+      "path": "channel members",
+      "positionals": { "min": 1, "max": 1, "variadic": false },
+      "flags": []
+    },
+    {
+      "path": "channel create",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "name", "type": "string", "repeatable": false, "required": true },
+        { "name": "description", "type": "string", "repeatable": false, "required": false },
+        { "name": "private", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "channel update",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true },
+        { "name": "name", "type": "string", "repeatable": false, "required": false },
+        { "name": "description", "type": "string", "repeatable": false, "required": false },
+        { "name": "public", "type": "bool", "repeatable": false, "required": false },
+        { "name": "private", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "channel archive",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true }
+      ]
+    },
+    {
+      "path": "channel unarchive",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true }
+      ]
+    },
+    {
+      "path": "channel add-member",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true },
+        { "name": "user", "type": "string", "repeatable": false, "required": false },
+        { "name": "agent", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "channel remove-member",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true },
+        { "name": "user", "type": "string", "repeatable": false, "required": false },
+        { "name": "agent", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "channel join",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true }
+      ]
+    },
+    {
+      "path": "channel leave",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true }
+      ]
+    },
+    {
+      "path": "channel mute",
+      "positionals": { "min": 0, "max": 1, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "channel unmute",
+      "positionals": { "min": 0, "max": 1, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "thread unfollow",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true },
+        { "name": "reason", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "server info",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "full", "type": "bool", "repeatable": false, "required": false },
+        { "name": "channels", "type": "bool", "repeatable": false, "required": false },
+        { "name": "agents", "type": "bool", "repeatable": false, "required": false },
+        { "name": "humans", "type": "bool", "repeatable": false, "required": false },
+        { "name": "joined", "type": "bool", "repeatable": false, "required": false },
+        { "name": "query", "type": "string", "repeatable": false, "required": false },
+        { "name": "limit", "type": "int", "repeatable": false, "required": false },
+        { "name": "offset", "type": "int", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "server update",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "name", "type": "string", "repeatable": false, "required": false },
+        { "name": "avatar-file", "type": "string", "repeatable": false, "required": false },
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "user info",
+      "positionals": { "min": 1, "max": 1, "variadic": false },
+      "flags": [
+        { "name": "limit", "type": "int", "repeatable": false, "required": false },
+        { "name": "offset", "type": "int", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "manual get",
+      "positionals": { "min": 1, "max": 1, "variadic": false },
+      "flags": [
+        { "name": "intent", "type": "string", "repeatable": false, "required": false },
+        { "name": "reason", "type": "string", "repeatable": false, "required": false },
+        { "name": "turn-id", "type": "string", "repeatable": false, "required": false },
+        { "name": "trace-id", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "manual search",
+      "positionals": { "min": 1, "max": 1, "variadic": false },
+      "flags": [
+        { "name": "scope", "type": "string", "repeatable": false, "required": false },
+        { "name": "intent", "type": "string", "repeatable": false, "required": false },
+        { "name": "reason", "type": "string", "repeatable": false, "required": false },
+        { "name": "turn-id", "type": "string", "repeatable": false, "required": false },
+        { "name": "trace-id", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "inbox check",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": []
+    },
+    {
+      "path": "message send",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true },
+        { "name": "text", "type": "string", "repeatable": false, "required": false },
+        { "name": "send-draft", "type": "bool", "repeatable": false, "required": false },
+        { "name": "anyway", "type": "bool", "repeatable": false, "required": false },
+        { "name": "attachment-id", "type": "string", "repeatable": true, "required": false },
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "message check",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": []
+    },
+    {
+      "path": "message read",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": false },
+        { "name": "before", "type": "string", "repeatable": false, "required": false },
+        { "name": "after", "type": "string", "repeatable": false, "required": false },
+        { "name": "around", "type": "string", "repeatable": false, "required": false },
+        { "name": "limit", "type": "int", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "message search",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "query", "type": "string", "repeatable": false, "required": false },
+        { "name": "target", "type": "string", "repeatable": false, "required": false },
+        { "name": "sender", "type": "string", "repeatable": false, "required": false },
+        { "name": "sort", "type": "string", "repeatable": false, "required": false },
+        { "name": "before", "type": "string", "repeatable": false, "required": false },
+        { "name": "after", "type": "string", "repeatable": false, "required": false },
+        { "name": "limit", "type": "int", "repeatable": false, "required": false },
+        { "name": "offset", "type": "int", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "message resolve",
+      "positionals": { "min": 1, "max": 1, "variadic": false },
+      "flags": []
+    },
+    {
+      "path": "message react",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "message-id", "type": "string", "repeatable": false, "required": true },
+        { "name": "emoji", "type": "string", "repeatable": false, "required": true },
+        { "name": "remove", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "attachment upload",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "path", "type": "string", "repeatable": false, "required": true },
+        { "name": "target", "type": "string", "repeatable": false, "required": true },
+        { "name": "mime-type", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "attachment view",
+      "positionals": { "min": 0, "max": 1, "variadic": false },
+      "flags": [
+        { "name": "id", "type": "string", "repeatable": false, "required": false },
+        { "name": "output", "type": "string", "repeatable": false, "required": true }
+      ]
+    },
+    {
+      "path": "attachment comments",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "id", "type": "string", "repeatable": false, "required": true },
+        { "name": "limit", "type": "int", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "task list",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true },
+        { "name": "status", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "task create",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true },
+        { "name": "title", "type": "string", "repeatable": true, "required": true },
+        { "name": "assignee", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "task claim",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true },
+        { "name": "number", "type": "int", "repeatable": true, "required": false },
+        { "name": "message-id", "type": "string", "repeatable": true, "required": false }
+      ]
+    },
+    {
+      "path": "task unclaim",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true },
+        { "name": "number", "type": "int", "repeatable": false, "required": true }
+      ]
+    },
+    {
+      "path": "task update",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true },
+        { "name": "number", "type": "int", "repeatable": false, "required": true },
+        { "name": "status", "type": "string", "repeatable": false, "required": true }
+      ]
+    },
+    {
+      "path": "mention pending",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "mention notify",
+      "positionals": { "min": 1, "max": 2147483647, "variadic": true },
+      "flags": [
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "mention add",
+      "positionals": { "min": 1, "max": 2147483647, "variadic": true },
+      "flags": [
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "profile show",
+      "positionals": { "min": 0, "max": 1, "variadic": false },
+      "flags": [
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "profile update",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "avatar-file", "type": "string", "repeatable": false, "required": false },
+        { "name": "avatar-url", "type": "string", "repeatable": false, "required": false },
+        { "name": "display-name", "type": "string", "repeatable": false, "required": false },
+        { "name": "description", "type": "string", "repeatable": false, "required": false },
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "integration list",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "integration login",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "service", "type": "string", "repeatable": false, "required": true },
+        { "name": "scope", "type": "string", "repeatable": true, "required": false },
+        { "name": "target", "type": "string", "repeatable": false, "required": false },
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "integration env",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "service", "type": "string", "repeatable": false, "required": true },
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "integration invoke",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "service", "type": "string", "repeatable": false, "required": true },
+        { "name": "action", "type": "string", "repeatable": false, "required": false },
+        { "name": "list-actions", "type": "bool", "repeatable": false, "required": false },
+        { "name": "param", "type": "string", "repeatable": true, "required": false },
+        { "name": "data-json", "type": "string", "repeatable": false, "required": false },
+        { "name": "data-file", "type": "string", "repeatable": false, "required": false },
+        { "name": "scope", "type": "string", "repeatable": false, "required": false },
+        { "name": "target", "type": "string", "repeatable": false, "required": false },
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "integration app prepare register",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "client-key", "type": "string", "repeatable": false, "required": false },
+        { "name": "name", "type": "string", "repeatable": false, "required": true },
+        { "name": "redirect-url", "type": "string", "repeatable": false, "required": true },
+        { "name": "homepage-url", "type": "string", "repeatable": false, "required": false },
+        { "name": "description", "type": "string", "repeatable": false, "required": false },
+        { "name": "agent-manifest-url", "type": "string", "repeatable": false, "required": false },
+        { "name": "scope", "type": "string", "repeatable": true, "required": false },
+        { "name": "unsafe-demo-url-override", "type": "bool", "repeatable": false, "required": false },
+        { "name": "target", "type": "string", "repeatable": false, "required": true },
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "integration app prepare recover-owner",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "client", "type": "string", "repeatable": false, "required": true },
+        { "name": "to-agent", "type": "string", "repeatable": false, "required": true },
+        { "name": "target", "type": "string", "repeatable": false, "required": true },
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "integration app rotate-secret",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "client", "type": "string", "repeatable": false, "required": true },
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "integration app transfer-owner",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "client", "type": "string", "repeatable": false, "required": true },
+        { "name": "to-agent", "type": "string", "repeatable": false, "required": true },
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "integration app update",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "client", "type": "string", "repeatable": false, "required": true },
+        { "name": "name", "type": "string", "repeatable": false, "required": false },
+        { "name": "description", "type": "string", "repeatable": false, "required": false },
+        { "name": "category", "type": "string", "repeatable": false, "required": false },
+        { "name": "homepage-url", "type": "string", "repeatable": false, "required": false },
+        { "name": "redirect-url", "type": "string", "repeatable": false, "required": false },
+        { "name": "agent-manifest-url", "type": "string", "repeatable": false, "required": false },
+        { "name": "scope", "type": "string", "repeatable": true, "required": false },
+        { "name": "clear-scopes", "type": "bool", "repeatable": false, "required": false },
+        { "name": "unsafe-demo-url-override", "type": "bool", "repeatable": false, "required": false },
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "integration app list",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "integration app status",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "card", "type": "string", "repeatable": false, "required": false },
+        { "name": "client", "type": "string", "repeatable": false, "required": false },
+        { "name": "json", "type": "bool", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "reminder schedule",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "title", "type": "string", "repeatable": false, "required": true },
+        { "name": "delay-seconds", "type": "int", "repeatable": false, "required": false },
+        { "name": "fire-at", "type": "string", "repeatable": false, "required": false },
+        { "name": "repeat", "type": "string", "repeatable": false, "required": false },
+        { "name": "tz", "type": "string", "repeatable": false, "required": false },
+        { "name": "channel", "type": "string", "repeatable": false, "required": false },
+        { "name": "message-id", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "reminder list",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "all", "type": "bool", "repeatable": false, "required": false },
+        { "name": "status", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "reminder cancel",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "id", "type": "string", "repeatable": false, "required": true }
+      ]
+    },
+    {
+      "path": "reminder snooze",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "id", "type": "string", "repeatable": false, "required": true },
+        { "name": "by", "type": "string", "repeatable": false, "required": true }
+      ]
+    },
+    {
+      "path": "reminder update",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "id", "type": "string", "repeatable": false, "required": true },
+        { "name": "fire-at", "type": "string", "repeatable": false, "required": false },
+        { "name": "in", "type": "string", "repeatable": false, "required": false },
+        { "name": "cadence", "type": "string", "repeatable": false, "required": false },
+        { "name": "title", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "reminder log",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "id", "type": "string", "repeatable": false, "required": true }
+      ]
+    },
+    {
+      "path": "migrate export",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "mode", "type": "string", "repeatable": false, "required": false },
+        { "name": "target", "type": "string", "repeatable": false, "required": false },
+        { "name": "target-machine-id", "type": "string", "repeatable": false, "required": false },
+        { "name": "target-computer", "type": "string", "repeatable": false, "required": false },
+        { "name": "to", "type": "string", "repeatable": false, "required": false },
+        { "name": "prep-deadline-ms", "type": "int", "repeatable": false, "required": false },
+        { "name": "transfer-deadline-ms", "type": "int", "repeatable": false, "required": false },
+        { "name": "arrival-deadline-ms", "type": "int", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "migrate import",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target-machine-id", "type": "string", "repeatable": false, "required": false },
+        { "name": "to", "type": "string", "repeatable": false, "required": false },
+        { "name": "prep-deadline-ms", "type": "int", "repeatable": false, "required": false },
+        { "name": "transfer-deadline-ms", "type": "int", "repeatable": false, "required": false },
+        { "name": "arrival-deadline-ms", "type": "int", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "migrate status",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": []
+    },
+    {
+      "path": "migrate ready",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "manifest", "type": "string", "repeatable": false, "required": true },
+        { "name": "manifest-sha256", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "migrate arrived",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "report", "type": "string", "repeatable": false, "required": true },
+        { "name": "report-sha256", "type": "string", "repeatable": false, "required": false }
+      ]
+    },
+    {
+      "path": "action prepare",
+      "positionals": { "min": 0, "max": 0, "variadic": false },
+      "flags": [
+        { "name": "target", "type": "string", "repeatable": false, "required": true }
+      ]
+    }
+  ],
+  "excluded": {
+    "commands": [
+      "agent list",
+      "agent login",
+      "agent login start",
+      "agent login wait",
+      "agent login status",
+      "agent bridge",
+      "knowledge get",
+      "knowledge search",
+      "message events",
+      "message history",
+      "message unreact",
+      "reminder create"
+    ],
+    "flags": [
+      "channel-as-target",
+      "msg-id",
+      "message-json-object"
+    ]
+  }
+}

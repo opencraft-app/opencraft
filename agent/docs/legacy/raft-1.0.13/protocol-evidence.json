@@ -1,0 +1,743 @@
+{
+  "archiveStatus": "frozen evidence; not a current Vela contract",
+  "schema": "raft-computer-go.protocol-evidence.v1",
+  "baseline": {
+    "product": "Raft Computer",
+    "version": "1.0.13",
+    "platform": "darwin-arm64"
+  },
+  "fixtureCorpus": {
+    "path": "../testdata/protocol/observed-frames.json",
+    "sha256": "d5ef3b8e5f8f0f59de4118ff4385b1cc97b16112b76cc84884fce835aa256003",
+    "frameKey": "type",
+    "captureStatus": "not-a-network-capture",
+    "shapeStatus": "observed-contract-shape",
+    "valueStatus": "synthetic-sanitized-values",
+    "inferredPaths": {}
+  },
+  "supplementalFixtureCorpora": [
+    {
+      "id": "versioned-agent-start",
+      "path": "../testdata/protocol/evidence-backed-versioned-agent-start.json",
+      "sha256": "96111a44835128cc6e5f5da4fb9319f12e332817f780064f8cb12249365ce0d6",
+      "format": "single-frame",
+      "contractTypes": ["agent:start"],
+      "captureStatus": "not-a-network-capture",
+      "shapeStatus": "observed-contract-plus-declared-inference",
+      "valueStatus": "synthetic-sanitized-values",
+      "inferredPaths": {
+        "agent:start": ["config.runtimeConfig.futureFixtureField"]
+      }
+    },
+    {
+      "id": "forward-compatible-agent-deliver",
+      "path": "../testdata/protocol/known-agent-deliver.json",
+      "sha256": "86ecd15a60ceb74c37abcbef136cf260f9b07fc2ed54f65081cd8487b1e69810",
+      "format": "single-frame",
+      "contractTypes": ["agent:deliver"],
+      "captureStatus": "not-a-network-capture",
+      "shapeStatus": "observed-contract-plus-declared-inference",
+      "valueStatus": "synthetic-sanitized-values",
+      "inferredPaths": {
+        "agent:deliver": [
+          "message.id",
+          "futureField",
+          "futureField.preserved"
+        ]
+      }
+    },
+    {
+      "id": "activity-variants",
+      "path": "../testdata/protocol/observed-activity-variants.json",
+      "sha256": "56ff9029d938d47854188a627206ceb5b97ef182d9bf433424b7bf1fee422508",
+      "format": "frame-array",
+      "contractTypes": ["agent:activity"],
+      "captureStatus": "not-a-network-capture",
+      "shapeStatus": "observed-variant-shape",
+      "valueStatus": "synthetic-sanitized-values",
+      "inferredPaths": {}
+    }
+  ],
+  "sources": [
+    {
+      "id": "daemon-core-1.0.13",
+      "kind": "compiled-first-party-behavior-evidence",
+      "path": "../../first-party/compiled/packages/daemon/dist/chunk-O5X5Y2AC.js.compiled.js",
+      "sha256": "1329f0370e3155d866a779c206459a63a79708d84386f9612aa2696d3d6cd6e4"
+    },
+    {
+      "id": "computer-upgrade-start-1.0.13",
+      "kind": "compiled-first-party-behavior-evidence",
+      "path": "../../first-party/compiled/packages/computer/src/serviceUpgradeStart.ts.compiled.js",
+      "sha256": "c96db7a32d5202e3164e7b2753cd27ddf0fa3a3f98d0de51ad15f2bb32c32400"
+    }
+  ],
+  "contracts": [
+    {
+      "type": "agent:workspace:list",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId"],
+      "optionalFields": ["dirPath", "includeHidden"],
+      "evidence": [
+        {"startLine": 12121, "endLine": 12122, "purpose": "diagnostic field reads"},
+        {"startLine": 27998, "endLine": 28002, "purpose": "handler and response correlation"}
+      ]
+    },
+    {
+      "type": "agent:workspace:read",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "requestId", "path"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 12123, "endLine": 12124, "purpose": "diagnostic field reads"},
+        {"startLine": 28003, "endLine": 28025, "purpose": "handler and response correlation"}
+      ]
+    },
+    {
+      "type": "agent:skills:list",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId"],
+      "optionalFields": ["runtime"],
+      "evidence": [
+        {"startLine": 12125, "endLine": 12126, "purpose": "diagnostic field reads"},
+        {"startLine": 28026, "endLine": 28033, "purpose": "handler and fallback response"}
+      ]
+    },
+    {
+      "type": "agent:diagnostic:session_transcript",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "requestId"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 12127, "endLine": 12128, "purpose": "diagnostic field reads"},
+        {"startLine": 28034, "endLine": 28055, "purpose": "handler and complete fallback response"}
+      ]
+    },
+    {
+      "type": "agent:diagnostic:feedback_transcript",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "requestId", "feedbackReportId"],
+      "optionalFields": ["feedbackReportGeneratedAt", "feedbackReportTimeSource"],
+      "evidence": [
+        {"startLine": 12129, "endLine": 12130, "purpose": "diagnostic field reads"},
+        {"startLine": 28056, "endLine": 28079, "purpose": "handler, defaulting, and response correlation"}
+      ]
+    },
+    {
+      "type": "agent:activity_probe",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "probeId"],
+      "optionalFields": ["purpose"],
+      "evidence": [
+        {"startLine": 12131, "endLine": 12132, "purpose": "diagnostic field reads"},
+        {"startLine": 23923, "endLine": 23967, "purpose": "activity response semantics"},
+        {"startLine": 28080, "endLine": 28082, "purpose": "handler dispatch"}
+      ]
+    },
+    {
+      "type": "agent:activity",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": [
+        "type",
+        "agentId",
+        "activity",
+        "activityKind",
+        "detail",
+        "detailKind",
+        "clientSeq",
+        "producerFactId",
+        "isHeartbeat"
+      ],
+      "optionalFields": [
+        "entries",
+        "launchId",
+        "daemonInstanceId",
+        "observedAtMs",
+        "runtimeError",
+        "probeId"
+      ],
+      "evidence": [
+        {"startLine": 23799, "endLine": 23853, "purpose": "activity emitter and cached state"},
+        {"startLine": 23943, "endLine": 23965, "purpose": "probe response emitter"},
+        {"startLine": 24777, "endLine": 24827, "purpose": "runtime stall gate, liveness suppression, diagnostic, and error activity"},
+        {"startLine": 24832, "endLine": 24879, "purpose": "queued-message stalled recovery decision and working activity"},
+        {"startLine": 20392, "endLine": 20484, "purpose": "Agent-scoped repeated Runtime error fingerprint fence"},
+        {"startLine": 25205, "endLine": 25303, "purpose": "Runtime error fence application and final error activity"},
+        {"startLine": 25088, "endLine": 25128, "purpose": "compaction and review boundary activity variants"}
+      ]
+    },
+    {
+      "type": "agent:inbox:purge",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "channelIds"],
+      "optionalFields": ["reason"],
+      "evidence": [
+        {"startLine": 12115, "endLine": 12116, "purpose": "field reads and reason default"},
+        {"startLine": 27898, "endLine": 27902, "purpose": "handler dispatch"}
+      ]
+    },
+    {
+      "type": "agent:reset-workspace",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 12111, "endLine": 12112, "purpose": "diagnostic field read"},
+        {"startLine": 27894, "endLine": 27897, "purpose": "handler dispatch"}
+      ]
+    },
+    {
+      "type": "machine:workspace:delete",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "directoryName"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 12133, "endLine": 12134, "purpose": "diagnostic field read"},
+        {"startLine": 28089, "endLine": 28095, "purpose": "handler and result correlation"}
+      ]
+    },
+    {
+      "type": "machine:runtime_models:detect",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "runtime", "requestId"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 12135, "endLine": 12136, "purpose": "diagnostic field reads"},
+        {"startLine": 28102, "endLine": 28149, "purpose": "driver selection and result correlation"}
+      ]
+    },
+    {
+      "type": "computer:restart",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type"],
+      "requiredAnyOf": [["operationId", "requestId"]],
+      "optionalFields": ["operationId", "requestId"],
+      "evidence": [
+        {"startLine": 28166, "endLine": 28224, "purpose": "identity aliases, deduplication, and dispatch"}
+      ]
+    },
+    {
+      "type": "computer:upgrade",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type"],
+      "requiredAnyOf": [["operationId", "requestId"]],
+      "optionalFields": ["operationId", "requestId"],
+      "evidence": [
+        {"startLine": 28166, "endLine": 28224, "purpose": "identity aliases, progress callbacks, and dispatch"}
+      ]
+    },
+    {
+      "type": "computer:lifecycle:receipt",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "operationId", "phase"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 28225, "endLine": 28235, "purpose": "receipt persistence dispatch"}
+      ]
+    },
+    {
+      "type": "agent:runtime_profile:migration",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "migrationKey"],
+      "optionalFields": ["launchId", "message", "traceparent"],
+      "evidence": [
+        {"startLine": 12117, "endLine": 12118, "purpose": "diagnostic field reads"},
+        {"startLine": 23141, "endLine": 23160, "purpose": "deprecated no-op ack and done semantics"},
+        {"startLine": 27944, "endLine": 27975, "purpose": "handler dispatch and trace propagation"}
+      ]
+    },
+    {
+      "type": "agent:runtime_profile:daemon_release_notice",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "noticeKey"],
+      "optionalFields": ["launchId", "message", "traceparent"],
+      "evidence": [
+        {"startLine": 12119, "endLine": 12120, "purpose": "diagnostic field reads"},
+        {"startLine": 23245, "endLine": 23447, "purpose": "queue, injection, retry, and acknowledgement semantics"},
+        {"startLine": 27976, "endLine": 27997, "purpose": "handler dispatch and trace propagation"}
+      ]
+    },
+    {
+      "type": "reminder.upsert",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "reminder"],
+      "requiredNestedFields": {
+        "reminder": ["reminderId", "version", "fireAt"]
+      },
+      "optionalNestedFields": {
+        "reminder": ["ownerAgentId"]
+      },
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 12141, "endLine": 12142, "purpose": "nested reminder field reads"},
+        {"startLine": 26233, "endLine": 26301, "purpose": "version fencing, ownership scoping, and timer behavior"},
+        {"startLine": 28153, "endLine": 28155, "purpose": "upsert dispatch"}
+      ]
+    },
+    {
+      "type": "reminder.cancel",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "reminderId", "version"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 12143, "endLine": 12144, "purpose": "identity and version field reads"},
+        {"startLine": 26250, "endLine": 26261, "purpose": "cancel version fencing"},
+        {"startLine": 28156, "endLine": 28158, "purpose": "cancel dispatch"}
+      ]
+    },
+    {
+      "type": "reminder.snapshot",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "reminders"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 12145, "endLine": 12146, "purpose": "Agent scope and list field reads"},
+        {"startLine": 26262, "endLine": 26282, "purpose": "Agent-scoped replacement and cross-owner filtering"},
+        {"startLine": 28159, "endLine": 28162, "purpose": "snapshot dispatch"}
+      ]
+    },
+    {
+      "type": "machine:migration_transport:lease",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": [
+        "type",
+        "agentId",
+        "migrationId",
+        "migrationGeneration",
+        "sessionId",
+        "provider",
+        "leaseSource",
+        "role",
+        "transferKind",
+        "url",
+        "bearerToken",
+        "expiresAt",
+        "maxBytes"
+      ],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 12137, "endLine": 12138, "purpose": "diagnostic identity and transport field reads"},
+        {"startLine": 27320, "endLine": 27420, "purpose": "shape validation, deduplication, and role dispatch"},
+        {"startLine": 28150, "endLine": 28152, "purpose": "handler dispatch"}
+      ]
+    },
+    {
+      "type": "ready",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": [
+        "type",
+        "capabilities",
+        "runtimes",
+        "runningAgents",
+        "hostname",
+        "os",
+        "daemonVersion",
+        "computerVersion",
+        "migrationTransport"
+      ],
+      "requiredNestedFields": {
+        "migrationTransport": ["provisioned", "endpoint", "leaseSource", "observedAt"]
+      },
+      "optionalFields": ["lifecycleAcks"],
+      "evidence": [
+        {"startLine": 27246, "endLine": 27268, "purpose": "inactive and active migration readiness shapes"},
+        {"startLine": 28251, "endLine": 28287, "purpose": "ready emitter, capabilities, runtimes, identity, and optional lifecycle acknowledgements"}
+      ]
+    },
+    {
+      "type": "agent:start",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "launchId", "config"],
+      "requiredNestedFields": {
+        "config": ["runtime"]
+      },
+      "optionalNestedFields": {
+        "config": ["model", "sessionId"]
+      },
+      "optionalFields": ["operationId", "wakeMessage", "wakeMessageTransient", "resumePrompt", "resumeMessages", "unreadSummary"],
+      "evidence": [
+        {"startLine": 70, "endLine": 242, "purpose": "version-1 runtimeConfig whitelist, hydration, legacy fallback, and mode normalization"},
+        {"startLine": 1384, "endLine": 1469, "purpose": "canonical Runtime configuration materialization into launch fields"},
+        {"startLine": 16750, "endLine": 16761, "purpose": "Codex fast mode materialized as app-server serviceTier"},
+        {"startLine": 12107, "endLine": 12108, "purpose": "identity and runtime field reads"},
+        {"startLine": 1222, "endLine": 1260, "purpose": "inbox row text, flags, non-member guidance, and attention-hint projection"},
+        {"startLine": 3477, "endLine": 3521, "purpose": "target grouping, sequence ordering, flag union, and latest attention hint"},
+        {"startLine": 21634, "endLine": 21781, "purpose": "startup prompt selection and startup-inbox ownership"},
+        {"startLine": 21822, "endLine": 21851, "purpose": "start-buffer drain and visible-consumption branches"},
+        {"startLine": 25598, "endLine": 25652, "purpose": "Runtime inbox-input formatting and idle delivery"},
+        {"startLine": 27819, "endLine": 27866, "purpose": "credential mint, start buffering, wake selection, and launch execution"},
+        {"startLine": 27871, "endLine": 27888, "purpose": "handler dispatch and failed-start status"}
+      ]
+    },
+    {
+      "type": "agent:stop",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId"],
+      "optionalFields": ["launchId", "operationId"],
+      "evidence": [
+        {"startLine": 12109, "endLine": 12110, "purpose": "Agent identity field read"},
+        {"startLine": 27889, "endLine": 27893, "purpose": "handler dispatch"}
+      ]
+    },
+    {
+      "type": "agent:deliver",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "message"],
+      "optionalNestedFields": {
+        "message": ["id", "message_id", "seq", "target"]
+      },
+      "optionalFields": ["deliveryId", "launchId", "seq", "transient", "traceparent"],
+      "evidence": [
+        {"startLine": 12113, "endLine": 12114, "purpose": "delivery and message field reads"},
+        {"startLine": 27808, "endLine": 27817, "purpose": "receipt construction permits an omitted delivery identity"},
+        {"startLine": 27902, "endLine": 27912, "purpose": "delivery identity is primary and message identity is the optional fallback correlation key"},
+        {"startLine": 27902, "endLine": 27957, "purpose": "start buffering, manager acceptance, and ack semantics"}
+      ]
+    },
+    {
+      "type": "machine:workspace:scan",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 28083, "endLine": 28088, "purpose": "scan dispatch and result emission"}
+      ]
+    },
+    {
+      "type": "machine:runtimes:rescan",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 12137, "endLine": 12138, "purpose": "diagnostic event recognition"},
+        {"startLine": 28095, "endLine": 28101, "purpose": "fresh ready emission without bespoke result"}
+      ]
+    },
+    {
+      "type": "ping",
+      "direction": "cloud-to-computer",
+      "evidenceStatus": "observed-handler",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 28163, "endLine": 28165, "purpose": "pong response"}
+      ]
+    },
+    {
+      "type": "machine:shutdown",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "reason"],
+      "optionalFields": ["lifecycleAcks"],
+      "evidence": [
+        {"startLine": 27195, "endLine": 27221, "purpose": "connected shutdown notice and optional shutdown lifecycle acknowledgements"}
+      ]
+    },
+    {
+      "type": "reminder.snapshot.request",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 28385, "endLine": 28393, "purpose": "per-Agent snapshot request after control connection"}
+      ]
+    },
+    {
+      "type": "agent:runtime_profile",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "facts", "source"],
+      "requiredNestedFields": {
+        "facts": ["runtime", "executionMode", "workspacePathRef", "sessionRef"]
+      },
+      "optionalNestedFields": {
+        "facts": [
+          "workspacePathRef.label",
+          "workspacePathRef.path",
+          "workspacePathRef.reachable"
+        ]
+      },
+      "optionalFields": ["launchId", "traceparent"],
+      "evidence": [
+        {"startLine": 23181, "endLine": 23208, "purpose": "runtime profile fact construction and nullable session reference"},
+        {"startLine": 23475, "endLine": 23500, "purpose": "runtime profile wire emitter"},
+        {"startLine": 28362, "endLine": 28381, "purpose": "runtime profile replay on connect"}
+      ]
+    },
+    {
+      "type": "agent:deliver:ack",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "seq"],
+      "optionalFields": ["deliveryId", "traceparent"],
+      "evidence": [
+        {"startLine": 27808, "endLine": 27816, "purpose": "delivery receipt construction and emission"}
+      ]
+    },
+    {
+      "type": "agent:diagnostic:feedback_transcript_result",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "feedbackReportId", "requestId", "reachable"],
+      "optionalFields": ["fallbackReason", "traceBundleId", "transcriptWindow", "error"],
+      "evidence": [
+        {"startLine": 1945, "endLine": 2023, "purpose": "success and fallback result shapes"},
+        {"startLine": 28055, "endLine": 28078, "purpose": "correlated result and error emission"}
+      ]
+    },
+    {
+      "type": "agent:diagnostic:session_transcript_result",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "requestId", "runtime", "sessionId", "reachable", "path", "transcript", "sizeBytes", "truncated", "redacted", "tier"],
+      "optionalFields": ["fallbackReason", "error"],
+      "evidence": [
+        {"startLine": 23584, "endLine": 23687, "purpose": "complete transcript result construction"},
+        {"startLine": 28034, "endLine": 28054, "purpose": "correlated result and complete fallback emission"}
+      ]
+    },
+    {
+      "type": "agent:runtime_profile:daemon_release_notice:ack",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "noticeKey"],
+      "optionalFields": ["launchId", "traceparent"],
+      "evidence": [
+        {"startLine": 23425, "endLine": 23447, "purpose": "message-injection acknowledgement"},
+        {"startLine": 23455, "endLine": 23474, "purpose": "config-control acknowledgement"}
+      ]
+    },
+    {
+      "type": "agent:runtime_profile:migration:ack",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "migrationKey"],
+      "optionalFields": ["launchId", "traceparent"],
+      "evidence": [
+        {"startLine": 23141, "endLine": 23151, "purpose": "deprecated migration receipt emission"}
+      ]
+    },
+    {
+      "type": "agent:runtime_profile:migration_done",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "migrationKey"],
+      "optionalFields": ["launchId", "traceparent"],
+      "evidence": [
+        {"startLine": 23150, "endLine": 23158, "purpose": "deprecated migration terminal emission"}
+      ]
+    },
+    {
+      "type": "agent:session",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "sessionId"],
+      "optionalFields": ["launchId"],
+      "evidence": [
+        {"startLine": 25018, "endLine": 25025, "purpose": "runtime session initialization emission"},
+        {"startLine": 28345, "endLine": 28361, "purpose": "running and idle session replay on connect"}
+      ]
+    },
+    {
+      "type": "agent:skills:list_result",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "global", "workspace"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 28026, "endLine": 28032, "purpose": "success and empty-fallback result emission"}
+      ]
+    },
+    {
+      "type": "agent:status",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "status"],
+      "optionalFields": ["launchId"],
+      "evidence": [
+        {"startLine": 25356, "endLine": 25362, "purpose": "Agent status emitter"},
+        {"startLine": 27882, "endLine": 27888, "purpose": "failed-start inactive status"}
+      ]
+    },
+    {
+      "type": "agent:workspace:file_content",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "requestId", "content", "binary", "size"],
+      "optionalFields": ["mimeType", "encoding"],
+      "evidence": [
+        {"startLine": 28003, "endLine": 28024, "purpose": "success and null-content fallback emission"}
+      ]
+    },
+    {
+      "type": "agent:workspace:file_tree",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "files", "includeHidden"],
+      "optionalFields": ["dirPath"],
+      "evidence": [
+        {"startLine": 27998, "endLine": 28002, "purpose": "correlated workspace tree emission"}
+      ]
+    },
+    {
+      "type": "computer:restart:done",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "requestId", "ok"],
+      "optionalFields": ["error"],
+      "evidence": [
+        {"startLine": 28202, "endLine": 28217, "purpose": "failed restart terminal emission"},
+        {"startLine": 28332, "endLine": 28343, "purpose": "restart reconciliation emission"}
+      ]
+    },
+    {
+      "type": "computer:upgrade:done",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "requestId", "ok"],
+      "optionalFields": ["error", "newVersion"],
+      "evidence": [
+        {"startLine": 28189, "endLine": 28218, "purpose": "upgrade terminal callback and failure emission"},
+        {"startLine": 28313, "endLine": 28327, "purpose": "upgrade reconciliation emission"}
+      ]
+    },
+    {
+      "type": "computer:upgrade:progress",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "requestId", "phase"],
+      "optionalFields": ["message", "percent", "fromVersion", "targetVersion"],
+      "evidence": [
+        {"startLine": 28189, "endLine": 28199, "purpose": "correlated progress emission"},
+        {"sourceId": "computer-upgrade-start-1.0.13", "startLine": 57, "endLine": 73, "purpose": "phase and optional progress field construction"}
+      ]
+    },
+    {
+      "type": "machine:runtime_models:result",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "requestId"],
+      "requiredAnyOf": [["models", "error"]],
+      "optionalFields": ["default"],
+      "evidence": [
+        {"startLine": 28103, "endLine": 28143, "purpose": "model success, unsupported, and error result variants"}
+      ]
+    },
+    {
+      "type": "machine:workspace:delete_result",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "directoryName", "success"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 28089, "endLine": 28094, "purpose": "workspace delete result emission"}
+      ]
+    },
+    {
+      "type": "machine:workspace:scan_result",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "directories"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 28082, "endLine": 28088, "purpose": "machine workspace scan result emission"}
+      ]
+    },
+    {
+      "type": "pong",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 28163, "endLine": 28165, "purpose": "ping response emission"}
+      ]
+    },
+    {
+      "type": "reminder.fire_attempt",
+      "direction": "computer-to-cloud",
+      "evidenceStatus": "observed-emitter",
+      "sourceId": "daemon-core-1.0.13",
+      "requiredFields": ["type", "agentId", "reminderId", "version", "firedAtClient"],
+      "optionalFields": [],
+      "evidence": [
+        {"startLine": 28235, "endLine": 28247, "purpose": "local reminder fire attempt emission"}
+      ]
+    }
+  ]
+}

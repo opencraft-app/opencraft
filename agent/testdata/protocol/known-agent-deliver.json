@@ -1,0 +1,16 @@
+{
+  "type": "agent:deliver",
+  "agentId": "agent_test",
+  "launchId": "launch_test",
+  "deliveryId": "delivery_test",
+  "seq": 7,
+  "message": {
+    "id": "message_test",
+    "seq": 7,
+    "target": "#test"
+  },
+  "futureField": {
+    "preserved": true
+  }
+}
+

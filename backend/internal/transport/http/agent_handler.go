@@ -1,0 +1,443 @@
+package httptransport
+
+import (
+	"context"
+	"errors"
+	"strings"
+
+	"chatserver/internal/api/openapi"
+	appagent "chatserver/internal/app/agentmanagement"
+	"chatserver/internal/apperror"
+	agentport "chatserver/internal/ports/agent"
+)
+
+type agentService interface {
+	Create(context.Context, appagent.CreateCommand) (agentport.CreateResult, error)
+	List(context.Context, string, string) ([]agentport.Agent, error)
+	Get(context.Context, string, string, string) (agentport.Agent, error)
+	Update(
+		context.Context,
+		appagent.UpdateCommand,
+	) (agentport.Agent, error)
+	Delete(
+		context.Context,
+		appagent.DeleteCommand,
+	) (agentport.Operation, error)
+	Lifecycle(
+		context.Context,
+		appagent.LifecycleCommand,
+	) (agentport.Operation, error)
+	RotateCredential(
+		context.Context,
+		appagent.CredentialCommand,
+	) (agentport.Operation, error)
+}
+
+type AgentHandler struct {
+	openapi.StrictServerInterface
+	service agentService
+}
+
+var _ openapi.StrictServerInterface = (*AgentHandler)(nil)
+
+func NewAgentHandler(service agentService) (*AgentHandler, error) {
+	if service == nil {
+		return nil, errors.New("Agent 应用服务不能为空")
+	}
+	return &AgentHandler{service: service}, nil
+}
+
+func (handler *AgentHandler) CreateAgent(
+	ctx context.Context,
+	request openapi.CreateAgentRequestObject,
+) (openapi.CreateAgentResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	if request.Body == nil {
+		return nil, apperror.New("invalid_request", "请求体不能为空", nil)
+	}
+	computerIDValue := request.Body.ComputerId.String()
+	computerID := &computerIDValue
+	replyPolicy := ""
+	if request.Body.ReplyPolicy != nil {
+		replyPolicy = string(*request.Body.ReplyPolicy)
+	}
+	result, err := handler.service.Create(ctx, appagent.CreateCommand{
+		AccountID: principal.AccountID(), ServerID: request.ServerId.String(),
+		IdempotencyKey: request.Params.IdempotencyKey,
+		DisplayName:    request.Body.DisplayName, Handle: request.Body.Handle,
+		Description: request.Body.Description, ComputerID: computerID,
+		Runtime: agentport.Runtime{
+			Kind:  string(request.Body.Runtime.Kind),
+			Model: request.Body.Runtime.Model,
+		},
+		ReplyPolicy: replyPolicy,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resourceID, err := parseDomainID(result.Agent.ID, "Agent")
+	if err != nil {
+		return nil, err
+	}
+	operation, err := agentOperationDTO(result.Operation)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.CreateAgent202JSONResponse{
+		ResourceId: resourceID,
+		Operations: []openapi.Operation{operation},
+	}, nil
+}
+
+func (handler *AgentHandler) ListAgents(
+	ctx context.Context,
+	request openapi.ListAgentsRequestObject,
+) (openapi.ListAgentsResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	values, err := handler.service.List(
+		ctx,
+		principal.AccountID(),
+		request.ServerId.String(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	body := make(openapi.ListAgents200JSONResponse, 0, len(values))
+	for _, value := range values {
+		item, err := agentDTO(value)
+		if err != nil {
+			return nil, err
+		}
+		body = append(body, item)
+	}
+	return body, nil
+}
+
+func (handler *AgentHandler) GetAgent(
+	ctx context.Context,
+	request openapi.GetAgentRequestObject,
+) (openapi.GetAgentResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	value, err := handler.service.Get(
+		ctx,
+		principal.AccountID(),
+		request.ServerId.String(),
+		request.AgentId.String(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	body, err := agentDTO(value)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.GetAgent200JSONResponse(body), nil
+}
+
+func (handler *AgentHandler) UpdateAgent(
+	ctx context.Context,
+	request openapi.UpdateAgentRequestObject,
+) (openapi.UpdateAgentResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	if request.Body == nil {
+		return nil, apperror.New("invalid_request", "请求体不能为空", nil)
+	}
+	revision, err := workRevision(request.Params.XResourceRevision)
+	if err != nil {
+		return nil, err
+	}
+	command := appagent.UpdateCommand{
+		AccountID:      principal.AccountID(),
+		ServerID:       request.ServerId.String(),
+		AgentID:        request.AgentId.String(),
+		Revision:       revision,
+		IdempotencyKey: request.Params.IdempotencyKey,
+		DisplayName:    request.Body.DisplayName,
+		DescriptionSet: request.Body.Description != nil,
+		Description:    request.Body.Description,
+		ComputerIDSet:  request.Body.ComputerId != nil,
+	}
+	if request.Body.ComputerId != nil {
+		value := request.Body.ComputerId.String()
+		command.ComputerID = &value
+	}
+	if request.Body.Runtime != nil {
+		command.Runtime = &agentport.Runtime{
+			Kind:  string(request.Body.Runtime.Kind),
+			Model: request.Body.Runtime.Model,
+		}
+	}
+	if request.Body.ReplyPolicy != nil {
+		value := string(*request.Body.ReplyPolicy)
+		command.ReplyPolicy = &value
+	}
+	value, err := handler.service.Update(ctx, command)
+	if err != nil {
+		return nil, err
+	}
+	body, err := agentDTO(value)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.UpdateAgent200JSONResponse{
+		Body: body,
+		Headers: openapi.UpdateAgent200ResponseHeaders{
+			XResourceRevision: body.Revision,
+		},
+	}, nil
+}
+
+func (handler *AgentHandler) DeleteAgent(
+	ctx context.Context,
+	request openapi.DeleteAgentRequestObject,
+) (openapi.DeleteAgentResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	operation, err := handler.service.Delete(ctx, appagent.DeleteCommand{
+		AccountID:      principal.AccountID(),
+		ServerID:       request.ServerId.String(),
+		AgentID:        request.AgentId.String(),
+		IdempotencyKey: request.Params.IdempotencyKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resourceID, err := parseDomainID(request.AgentId.String(), "Agent")
+	if err != nil {
+		return nil, err
+	}
+	body, err := agentOperationDTO(operation)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.DeleteAgent202JSONResponse{
+		ResourceId: resourceID,
+		Operations: []openapi.Operation{body},
+	}, nil
+}
+
+func (handler *AgentHandler) DeployAgent(
+	ctx context.Context,
+	request openapi.DeployAgentRequestObject,
+) (openapi.DeployAgentResponseObject, error) {
+	value, err := handler.lifecycle(
+		ctx, request.ServerId.String(), request.AgentId.String(),
+		request.Params.IdempotencyKey, "deploy",
+	)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.DeployAgent202JSONResponse(value), nil
+}
+
+func (handler *AgentHandler) StartAgent(
+	ctx context.Context,
+	request openapi.StartAgentRequestObject,
+) (openapi.StartAgentResponseObject, error) {
+	value, err := handler.lifecycle(
+		ctx, request.ServerId.String(), request.AgentId.String(),
+		request.Params.IdempotencyKey, "start",
+	)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.StartAgent202JSONResponse(value), nil
+}
+
+func (handler *AgentHandler) StopAgent(
+	ctx context.Context,
+	request openapi.StopAgentRequestObject,
+) (openapi.StopAgentResponseObject, error) {
+	value, err := handler.lifecycle(
+		ctx, request.ServerId.String(), request.AgentId.String(),
+		request.Params.IdempotencyKey, "stop",
+	)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.StopAgent202JSONResponse(value), nil
+}
+
+func (handler *AgentHandler) RestartAgent(
+	ctx context.Context,
+	request openapi.RestartAgentRequestObject,
+) (openapi.RestartAgentResponseObject, error) {
+	value, err := handler.lifecycle(
+		ctx, request.ServerId.String(), request.AgentId.String(),
+		request.Params.IdempotencyKey, "restart",
+	)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.RestartAgent202JSONResponse(value), nil
+}
+
+func (handler *AgentHandler) RotateAgentRuntimeCredential(
+	ctx context.Context,
+	request openapi.RotateAgentRuntimeCredentialRequestObject,
+) (openapi.RotateAgentRuntimeCredentialResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	operation, err := handler.service.RotateCredential(
+		ctx,
+		appagent.CredentialCommand{
+			AccountID:      principal.AccountID(),
+			ServerID:       request.ServerId.String(),
+			AgentID:        request.AgentId.String(),
+			IdempotencyKey: request.Params.IdempotencyKey,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	body, err := agentOperationDTO(operation)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.RotateAgentRuntimeCredential202JSONResponse(body), nil
+}
+
+func (handler *AgentHandler) lifecycle(
+	ctx context.Context,
+	serverID string,
+	agentID string,
+	idempotencyKey string,
+	kind string,
+) (openapi.Operation, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return openapi.Operation{},
+			apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	operation, err := handler.service.Lifecycle(
+		ctx,
+		appagent.LifecycleCommand{
+			AccountID:      principal.AccountID(),
+			ServerID:       serverID,
+			AgentID:        agentID,
+			Kind:           kind,
+			IdempotencyKey: idempotencyKey,
+		},
+	)
+	if err != nil {
+		return openapi.Operation{}, err
+	}
+	return agentOperationDTO(operation)
+}
+
+func agentDTO(value agentport.Agent) (openapi.Agent, error) {
+	id, err := parseDomainID(value.ID, "Agent")
+	if err != nil {
+		return openapi.Agent{}, err
+	}
+	serverID, err := parseDomainID(value.ServerID, "Server")
+	if err != nil {
+		return openapi.Agent{}, err
+	}
+	if value.ComputerID == nil {
+		return openapi.Agent{}, invalidDomainData("Agent 未绑定 Computer", nil)
+	}
+	computerID, err := parseDomainID(*value.ComputerID, "Computer")
+	if err != nil {
+		return openapi.Agent{}, err
+	}
+	result := openapi.Agent{
+		Id: id, ServerId: serverID,
+		DisplayName: value.DisplayName, Handle: value.Handle,
+		Description: value.Description, ImUserId: value.IMUserID,
+		ImState:    openapi.AgentImState(value.IMState),
+		ComputerId: computerID,
+		Runtime: openapi.RuntimeConfig{
+			Kind:  openapi.RuntimeConfigKind(value.Runtime.Kind),
+			Model: value.Runtime.Model,
+		},
+		ReplyPolicy:       openapi.AgentReplyPolicy(value.ReplyPolicy),
+		DesiredState:      openapi.AgentDesiredState(value.DesiredState),
+		ObservedState:     openapi.AgentObservedState(value.ObservedState),
+		Availability:      openapi.AgentAvailability(value.Availability),
+		ImPresence:        openapi.AgentImPresence(value.IMPresence),
+		ImTransportState:  openapi.AgentImTransportState(value.IMTransportState),
+		CredentialVersion: int(value.CredentialVersion),
+		LastErrorCode:     normalizedOptionalString(value.LastErrorCode),
+		Revision:          value.Revision,
+	}
+	if value.LastObservedAt != nil {
+		observedAt := value.LastObservedAt.UTC()
+		result.LastObservedAt = &observedAt
+	}
+	if value.IMPresenceUpdatedAt != nil {
+		observedAt := value.IMPresenceUpdatedAt.UTC()
+		result.ImPresenceUpdatedAt = &observedAt
+	}
+	if value.IMTransportUpdatedAt != nil {
+		observedAt := value.IMTransportUpdatedAt.UTC()
+		result.ImTransportUpdatedAt = &observedAt
+	}
+	if value.HostLastSeenAt != nil {
+		seenAt := value.HostLastSeenAt.UTC()
+		result.HostLastSeenAt = &seenAt
+	}
+	if !result.ImState.Valid() || !result.Runtime.Kind.Valid() ||
+		!result.ReplyPolicy.Valid() || !result.DesiredState.Valid() ||
+		!result.ObservedState.Valid() || !result.Availability.Valid() ||
+		!result.ImPresence.Valid() || !result.ImTransportState.Valid() ||
+		value.CredentialVersion < 0 ||
+		result.Revision < 1 {
+		return openapi.Agent{}, invalidDomainData("Agent 数据无效", nil)
+	}
+	return result, nil
+}
+
+func agentOperationDTO(value agentport.Operation) (openapi.Operation, error) {
+	id, err := parseDomainID(value.ID, "Operation")
+	if err != nil {
+		return openapi.Operation{}, err
+	}
+	result := openapi.Operation{
+		Id: id, Service: openapi.OperationService(value.Service),
+		Kind: value.Kind, State: openapi.OperationState(value.State),
+		CreatedAt: value.CreatedAt.UTC(),
+	}
+	if value.CompletedAt != nil {
+		completedAt := value.CompletedAt.UTC()
+		result.CompletedAt = &completedAt
+	}
+	if code := strings.TrimSpace(value.LastErrorCode); code != "" {
+		result.Error = &struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		}{
+			Code: code, Message: "腾讯云操作尚未收敛",
+		}
+	}
+	if !result.Service.Valid() || !result.State.Valid() ||
+		value.CreatedAt.IsZero() {
+		return openapi.Operation{},
+			invalidDomainData("Operation 数据无效", nil)
+	}
+	return result, nil
+}
+
+func normalizedOptionalString(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}

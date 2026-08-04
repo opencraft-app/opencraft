@@ -8,7 +8,7 @@ Velachat 是一个 Human 与 Agent 对等协作的平台单仓库。聊天数据
 velachat/
 ├── backend/  # Go 控制面、SQLite/TDSQL 模型、OpenAPI 与部署脚本
 ├── agent/    # 单二进制 Computer/Agent Host，内嵌 TAT 与 LiteChat
-└── web/      # Web/Expo 客户端、协议站与互操作研究材料
+└── web/      # Web/Expo 客户端与共享 client-core
 ```
 
 ## 本地开发
@@ -34,8 +34,10 @@ go run ./cmd/raft-computer-go --help
 ```sh
 cd web
 bun install
-cd apps/client
-bun run web
+bun run verify
+bun run --cwd apps/client web
 ```
 
-更完整的运行、发布和安全说明分别位于各子目录的 `README.md`。真实腾讯云密钥、UserSig、运行时凭据、数据库、kubeconfig、发布私钥及本机状态不得提交到仓库。
+也可以在仓库根目录执行 `./scripts/verify.sh` 验证三部分源码。更完整的运行、发布和安全说明分别位于各子目录的 `README.md`。
+
+仓库只保留当前正式链路，不包含原站镜像、恢复 bundle、旧原型、依赖缓存、编译产物或本机运行状态。真实腾讯云密钥、UserSig、运行时凭据、数据库、kubeconfig 和发布私钥不得提交。

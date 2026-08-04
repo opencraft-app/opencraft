@@ -1,0 +1,10 @@
+extends:
+  - recommended
+
+rules:
+  # v1 是私有部署的专有协议，没有可公开访问的许可证 URL。OpenAPI 3.0 允许只声明
+  # license.name，因此关闭 Redocly 额外要求 URL 的建议规则。
+  info-license-strict: off
+  # 每个 operation 已有统一 default Error；精确状态码集合由
+  # platform/v1/09-权限与错误契约.md 统一规定。
+  operation-4xx-response: off

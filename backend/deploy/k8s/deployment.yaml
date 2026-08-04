@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chatserver-canary
+  namespace: dep
+  labels:
+    app.kubernetes.io/name: chatserver
+    app.kubernetes.io/instance: canary
+spec:
+  replicas: 3
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chatserver
+      app.kubernetes.io/instance: canary
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chatserver
+        app.kubernetes.io/instance: canary
+    spec:
+      imagePullSecrets:
+        - name: csighub-skipzhang
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: chatserver
+          image: csighub.tencentyun.com/skipzhang/chatserver@sha256:c929bd8e45d1b8703c5706cb052f9985c5379f2ba7d8fa23f6a3489ce6bfb307
+          imagePullPolicy: IfNotPresent
+          args:
+            - serve
+            - --database-driver
+            - tdsql
+            - --database-dsn-file
+            - /var/run/secrets/chatserver/tdsql.dsn
+            - --database-auto-migrate=false
+            - --listen
+            - 0.0.0.0:8080
+            - --jwt-key-file
+            - /var/run/secrets/chatserver/jwt.key
+            - --im-sdk-app-id
+            - "1600154578"
+            - --im-admin-user-id
+            - administrator
+            - --im-secret-key-file
+            - /var/run/secrets/chatserver/im-secret.key
+            - --im-identity-key-file
+            - /var/run/secrets/chatserver/im-identity.key
+            - --im-callback-token-file
+            - /var/run/secrets/chatserver/im-callback.token
+            - --computer-install-public-url
+            - http://9.135.236.64
+            - --allow-insecure-computer-install-http
+            - --cors-origin
+            - http://9.135.236.64
+            - --cors-origin
+            - http://127.0.0.1:51838
+            - --cors-origin
+            - http://localhost:51838
+            - --tencent-cloud-secret-id-file
+            - /var/run/secrets/chatserver/tencent-cloud-secret-id
+            - --tencent-cloud-secret-key-file
+            - /var/run/secrets/chatserver/tencent-cloud-secret-key
+            - --managed-tat-region
+            - ap-beijing
+            - --computer-release-file
+            - /etc/chatserver/computer-release/release.catalog.json
+            - --computer-artifact-bucket
+            - an-computer-1388575217
+            - --computer-artifact-region
+            - ap-beijing
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: computer-release
+              mountPath: /etc/chatserver/computer-release/release.catalog.json
+              subPath: release.catalog.json
+              readOnly: true
+            - name: secrets
+              mountPath: /var/run/secrets/chatserver
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: computer-release
+          configMap:
+            name: chatserver-computer-release-v0-1-31
+            defaultMode: 0444
+        - name: secrets
+          secret:
+            secretName: chatserver-canary-20260804-clean-v4-secrets
+            defaultMode: 0440
+        - name: tmp
+          emptyDir: {}

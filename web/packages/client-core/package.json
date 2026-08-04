@@ -1,0 +1,28 @@
+{
+  "name": "@raft-platform/client-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./tui-runtime": {
+      "types": "./dist/tui-runtime.d.ts",
+      "import": "./dist/tui-runtime.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "generate:api": "openapi-typescript contracts/platform-v1.openapi.yaml -o src/generated/openapi.ts",
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "24.1.0",
+    "openapi-typescript": "7.13.0",
+    "tsx": "4.23.1",
+    "typescript": "5.9.2"
+  }
+}

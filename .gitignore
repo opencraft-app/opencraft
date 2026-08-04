@@ -1,0 +1,52 @@
+# 本轮导入与本机工具状态
+.codex/
+**/.omx/
+**/.superpowers/
+**/.codex-*/
+
+# 编辑器与系统文件
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+
+# 本地配置、密钥和状态
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*kubeconfig*
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+
+# Go / Rust 构建产物
+backend/chatserver
+backend/build/
+backend/dist/
+agent/bin/
+agent/build/
+agent/dist/
+agent/raft-computer-go
+agent/native/tat-agent/target/
+
+# JavaScript / 前端构建产物
+**/node_modules/
+**/dist/
+**/.expo/
+**/.next/
+**/.cache/
+**/coverage/
+**/playwright-report/
+**/test-results/
+**/dogfood-output/
+
+# 仅供开发过程记录，不属于产品源码
+**/task_plan.md
+**/findings.md
+**/progress.md

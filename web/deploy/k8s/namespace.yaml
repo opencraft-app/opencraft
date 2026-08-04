@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: raft-platform
+  labels:
+    app.kubernetes.io/part-of: raft-platform
+

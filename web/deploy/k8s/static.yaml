@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: raft-web-static
+  namespace: raft-platform
+  labels:
+    app.kubernetes.io/name: raft-web-static
+    app.kubernetes.io/part-of: raft-platform
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: raft-web-static
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: raft-web-static
+        app.kubernetes.io/part-of: raft-platform
+    spec:
+      imagePullSecrets:
+        - name: tcr.ipstcr-regcred
+      containers:
+        - name: static
+          image: lightclaw-bj8.tencentcloudcr.com/lightclaw/raft-platform-web@sha256:c7a72e0b4cdfe9a3d23e1395a0cf80892ebd7eb58e77cbe40ac3c28d1b61de2e
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz-web
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz-web
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
+            - name: nginx-tmp
+              mountPath: /tmp
+      volumes:
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+        - name: nginx-tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: raft-web-static
+  namespace: raft-platform
+  labels:
+    app.kubernetes.io/name: raft-web-static
+    app.kubernetes.io/part-of: raft-platform
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: raft-web-static
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
