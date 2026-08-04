@@ -2,6 +2,7 @@ package httptransport
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -34,6 +35,7 @@ func TestComputerInstallHandlerStreamsShortCodeOnlyThroughRequestBody(t *testing
 		`https://computer.example.com/v1/computer/setup-codes:redeem`,
 		`--output "$d/setup.sh"`,
 		`/bin/sh "$d/setup.sh"`,
+		`trap '/bin/rm -rf "$d"' 0 HUP INT TERM`,
 	} {
 		if !strings.Contains(script, required) {
 			t.Errorf("bootstrap 缺少 %q：\n%s", required, script)
@@ -41,11 +43,100 @@ func TestComputerInstallHandlerStreamsShortCodeOnlyThroughRequestBody(t *testing
 	}
 	for _, forbidden := range []string{
 		`>"$d/code"`, `--header "Authorization:`, `?code=`, `CODE=`, `cen1.`,
+		`trap '/bin/rm -rf "$d"' EXIT HUP INT TERM`,
 	} {
 		if strings.Contains(script, forbidden) {
 			t.Errorf("bootstrap 含有短码落盘/外泄形态 %q：\n%s", forbidden, script)
 		}
 	}
+}
+
+func TestComputerInstallBootstrapMapsRedemptionFailuresWithoutLeakingCode(t *testing.T) {
+	const setupCode = "TEST-CODE-ONLY-0001"
+	const unsafeBody = "/usr/bin/printf 'unsafe response executed\\n'"
+	const invalidMessage = "Computer setup code is invalid, expired, or already used. Generate a new setup code and try again.\n"
+	const unexpectedMessage = "Computer setup service returned an unexpected response. Try again later.\n"
+
+	for _, test := range []struct {
+		name       string
+		status     int
+		wantStderr string
+	}{
+		{name: "invalid code", status: http.StatusUnauthorized, wantStderr: invalidMessage},
+		{name: "unexpected response", status: http.StatusServiceUnavailable, wantStderr: unexpectedMessage},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				if request.Method != http.MethodPost ||
+					request.URL.Path != "/v1/computer/setup-codes:redeem" ||
+					request.URL.RawQuery != "" {
+					t.Errorf("request = %s %s", request.Method, request.URL.String())
+				}
+				for name, values := range request.Header {
+					if strings.Contains(strings.Join(values, "\x00"), setupCode) {
+						t.Errorf("setup code leaked through header %s", name)
+					}
+				}
+				body, err := io.ReadAll(request.Body)
+				if err != nil || string(body) != setupCode {
+					t.Errorf("request body = %q, err = %v", body, err)
+				}
+				writer.WriteHeader(test.status)
+				_, _ = io.WriteString(writer, unsafeBody)
+			}))
+			defer server.Close()
+
+			handler, err := NewComputerInstallHandler(ComputerInstallHandlerConfig{
+				BaseURL: server.URL, AllowInsecureHTTP: true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			exitCode, stdout, stderr := runComputerInstallBootstrap(t, handler.script(), setupCode)
+			if exitCode == 0 || stdout != "" || stderr != test.wantStderr {
+				t.Fatalf("exit=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+			}
+			for _, forbidden := range []string{setupCode, unsafeBody, "curl:", server.URL} {
+				if strings.Contains(stdout+stderr, forbidden) {
+					t.Fatalf("bootstrap failure leaked %q: %q", forbidden, stdout+stderr)
+				}
+			}
+		})
+	}
+}
+
+func TestComputerInstallBootstrapReportsTransportFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	baseURL := server.URL
+	server.Close()
+	handler, err := NewComputerInstallHandler(ComputerInstallHandlerConfig{
+		BaseURL: baseURL, AllowInsecureHTTP: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exitCode, stdout, stderr := runComputerInstallBootstrap(t, handler.script(), "TEST-CODE-ONLY-0002")
+	const want = "Unable to contact the Computer setup service. Check your network and try again.\n"
+	if exitCode == 0 || stdout != "" || stderr != want {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+}
+
+func runComputerInstallBootstrap(t *testing.T, script string, setupCode string) (int, string, string) {
+	t.Helper()
+	command := exec.Command("/bin/sh", "-c", script, "computer-bootstrap", setupCode)
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	err := command.Run()
+	if err == nil {
+		return 0, stdout.String(), stderr.String()
+	}
+	exitError, ok := err.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("bootstrap execution failed: %v", err)
+	}
+	return exitError.ExitCode(), stdout.String(), stderr.String()
 }
 
 func TestComputerInstallBootstrapReportsMissingSetupCodeInEnglish(t *testing.T) {

@@ -1554,7 +1554,14 @@ export function createAppStore(
             computerId,
             computer.revision,
           );
-        set({ pendingAction: null });
+        set((current) => ({
+          computers: current.computers.map((item) =>
+            item.id === computerId && registration.computerId === computerId
+              ? {...item, revision: registration.revision}
+              : item,
+          ),
+          pendingAction: null,
+        }));
         return registration;
       } catch (error) {
         set({ error: errorMessage(error), pendingAction: null });

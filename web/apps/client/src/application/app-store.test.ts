@@ -2827,19 +2827,52 @@ describe("app store", () => {
     );
   });
 
-  it("returns a Computer registration script without storing the secret", async () => {
+  it("converges the Computer revision without storing registration scripts", async () => {
     const deps = dependencies();
+    deps.platform.createComputerRegistrationScript = jest
+      .fn()
+      .mockResolvedValueOnce({
+        computerId: computer.id,
+        expiresAt: "2026-07-31T08:10:00.000Z",
+        revision: 2,
+        script: "one-time-registration-material",
+      })
+      .mockResolvedValueOnce({
+        computerId: computer.id,
+        expiresAt: "2026-07-31T08:11:00.000Z",
+        revision: 3,
+        script: "replacement-registration-material",
+      });
     const store = createAppStore(deps);
     await initializeServerContext(store);
     await store.getState().refreshComputers();
-    const registration = await store
+    const first = await store
+      .getState()
+      .requestComputerRegistrationScript(computer.id);
+    const second = await store
       .getState()
       .requestComputerRegistrationScript(computer.id);
 
-    expect(store.getState().computers).toEqual([computer]);
-    expect(registration?.script).toBe("one-time-registration-material");
+    expect(deps.platform.createComputerRegistrationScript).toHaveBeenNthCalledWith(
+      1,
+      server.id,
+      computer.id,
+      1,
+    );
+    expect(deps.platform.createComputerRegistrationScript).toHaveBeenNthCalledWith(
+      2,
+      server.id,
+      computer.id,
+      2,
+    );
+    expect(store.getState().computers).toEqual([{...computer, revision: 3}]);
+    expect(first?.script).toBe("one-time-registration-material");
+    expect(second?.script).toBe("replacement-registration-material");
     expect(JSON.stringify(store.getState())).not.toContain(
       "one-time-registration-material",
+    );
+    expect(JSON.stringify(store.getState())).not.toContain(
+      "replacement-registration-material",
     );
     expect(store.getState().pendingAction).toBeNull();
   });

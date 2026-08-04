@@ -21,8 +21,9 @@ import (
 )
 
 var (
-	ErrServiceInvalid  = errors.New("Computer 首次安装配置无效")
-	ErrInstallConflict = errors.New("Computer 首次安装状态冲突")
+	ErrServiceInvalid   = errors.New("Computer 首次安装配置无效")
+	ErrInstallConflict  = errors.New("Computer 首次安装状态冲突")
+	ErrAlreadyInstalled = errors.New("Vela Computer is already installed for this macOS user.")
 )
 
 const (
@@ -140,6 +141,8 @@ func (service *Service) Install(ctx context.Context, options Options) error {
 		if err != nil {
 			return err
 		}
+	} else if journal.Stage == "complete" {
+		return ErrAlreadyInstalled
 	} else if !journalMatches(journal, options, release) {
 		return ErrInstallConflict
 	}

@@ -60,6 +60,10 @@ func TestServiceReusesStagedSecretAndCompletesFirstInstall(t *testing.T) {
 	if err := service.Install(context.Background(), options); err != nil {
 		t.Fatal(err)
 	}
+	if err := service.Install(context.Background(), options); err == nil ||
+		err.Error() != "Vela Computer is already installed for this macOS user." {
+		t.Fatalf("repeat install error = %v", err)
+	}
 	if len(client.claimSecrets) != 2 || client.claimSecrets[0] != client.claimSecrets[1] {
 		t.Fatalf("claim secrets = %#v", client.claimSecrets)
 	}
@@ -133,8 +137,9 @@ func TestServiceRejectsDifferentReleaseBeforeReplacingInstalledProgram(t *testin
 	verifiedContent = append([]byte(nil), newContent...)
 	verifiedVersion = "0.3.0"
 	options.ReleaseVersion = verifiedVersion
-	if err := service.Install(context.Background(), options); !errors.Is(err, ErrInstallConflict) {
-		t.Fatalf("error = %v, want %v", err, ErrInstallConflict)
+	if err := service.Install(context.Background(), options); err == nil ||
+		err.Error() != "Vela Computer is already installed for this macOS user." {
+		t.Fatalf("error = %v", err)
 	}
 	installed, err := os.ReadFile(filepath.Join(options.InstallationRoot, "bin", ProgramName))
 	if err != nil {

@@ -72,12 +72,26 @@ tmp_root=${TMPDIR:-/tmp}
 tmp_root=${tmp_root%/}
 [ -n "$tmp_root" ] || tmp_root=/tmp
 d=$(/usr/bin/mktemp -d "$tmp_root/an-bootstrap.XXXXXX") || exit 1
-trap '/bin/rm -rf "$d"' EXIT HUP INT TERM
-printf '%s' "$code" |
-  /usr/bin/curl -q --fail --silent --show-error \
+trap '/bin/rm -rf "$d"' 0 HUP INT TERM
+if ! status=$(printf '%s' "$code" |
+  /usr/bin/curl -q --silent \
     --proto '=` + protocol + `' --proto-redir '=https' --max-redirs 0 \
     --request POST --header 'Content-Type: text/plain' --data-binary @- \
-    --output "$d/setup.sh" ` + shellSingleQuote(handler.redeemURL) + `
+    --output "$d/setup.sh" --write-out '%{http_code}' ` + shellSingleQuote(handler.redeemURL) + `); then
+  /usr/bin/printf '%s\n' 'Unable to contact the Computer setup service. Check your network and try again.' >&2
+  exit 1
+fi
+case "$status" in
+  200) ;;
+  401|403|404|409|410)
+    /usr/bin/printf '%s\n' 'Computer setup code is invalid, expired, or already used. Generate a new setup code and try again.' >&2
+    exit 1
+    ;;
+  *)
+    /usr/bin/printf '%s\n' 'Computer setup service returned an unexpected response. Try again later.' >&2
+    exit 1
+    ;;
+esac
 /bin/sh "$d/setup.sh"
 `
 }
