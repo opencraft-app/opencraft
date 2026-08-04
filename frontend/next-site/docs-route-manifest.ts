@@ -154,6 +154,34 @@ export const DOCS_ROUTE_SLUGS = {
       "memory-vs-skill"
     ],
     [
+      "hermes-agent",
+      "model-vs-agent-layer"
+    ],
+    [
+      "hermes-agent",
+      "message-gateway"
+    ],
+    [
+      "hermes-agent",
+      "automation-scheduling"
+    ],
+    [
+      "hermes-agent",
+      "model-switching-memory"
+    ],
+    [
+      "hermes-agent",
+      "persona-user-memory"
+    ],
+    [
+      "hermes-agent",
+      "workspace-context-storage"
+    ],
+    [
+      "hermes-agent",
+      "skills-self-improvement"
+    ],
+    [
       "contact-us"
     ]
   ],
@@ -369,6 +397,34 @@ export const DOCS_ROUTE_SLUGS = {
       "memory-vs-skill"
     ],
     [
+      "hermes-agent",
+      "model-vs-agent-layer"
+    ],
+    [
+      "hermes-agent",
+      "message-gateway"
+    ],
+    [
+      "hermes-agent",
+      "automation-scheduling"
+    ],
+    [
+      "hermes-agent",
+      "model-switching-memory"
+    ],
+    [
+      "hermes-agent",
+      "persona-user-memory"
+    ],
+    [
+      "hermes-agent",
+      "workspace-context-storage"
+    ],
+    [
+      "hermes-agent",
+      "skills-self-improvement"
+    ],
+    [
       "contact-us"
     ]
   ],
@@ -505,6 +561,34 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "hermes-agent",
       "memory-vs-skill"
+    ],
+    [
+      "hermes-agent",
+      "model-vs-agent-layer"
+    ],
+    [
+      "hermes-agent",
+      "message-gateway"
+    ],
+    [
+      "hermes-agent",
+      "automation-scheduling"
+    ],
+    [
+      "hermes-agent",
+      "model-switching-memory"
+    ],
+    [
+      "hermes-agent",
+      "persona-user-memory"
+    ],
+    [
+      "hermes-agent",
+      "workspace-context-storage"
+    ],
+    [
+      "hermes-agent",
+      "skills-self-improvement"
     ],
     [
       "contact-us"

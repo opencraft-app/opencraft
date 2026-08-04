@@ -501,6 +501,104 @@ const globalDocs = [
     hideDescription: true,
   },
   {
+    slug: 'hermes-agent/model-vs-agent-layer',
+    title: {
+      'en-US': 'Can You Replace Hermes Agent\'s Brain? Model Layer vs Agent Layer',
+      'zh-CN': 'Hermes Agent 的“大脑”可以替换吗？模型层与 Agent 层如何分工',
+    },
+    file: 'hermes-agent/06-model-vs-agent-layer.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Learn which responsibilities belong to the model and which stay with the Agent, including identity, memory, tools, channels, and scheduled work.',
+      'zh-CN': '理解模型与 Agent 的职责边界，以及身份、记忆、工具、通道和自动任务为什么不随模型切换而消失。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/message-gateway',
+    title: {
+      'en-US': 'How Can One Agent Appear Across Multiple Messaging Apps?',
+      'zh-CN': '一个 Agent 如何同时出现在多个聊天软件里？拆解消息网关机制',
+    },
+    file: 'hermes-agent/07-message-gateway.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'See how a messaging gateway turns channel-specific events into a shared Agent conversation while preserving routing, context, and replies.',
+      'zh-CN': '拆解消息网关如何把不同聊天软件的事件收敛到同一个 Agent，同时保留路由、上下文和回复出口。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/automation-scheduling',
+    title: {
+      'en-US': 'How Does Hermes Agent Reach You on Schedule?',
+      'zh-CN': 'Hermes Agent 如何按时主动找你？拆解自动化调度与定时任务机制',
+    },
+    file: 'hermes-agent/08-automation-scheduling.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Understand the event, schedule, execution, and delivery layers that let an Agent proactively complete recurring work.',
+      'zh-CN': '理解事件、调度、执行和投递如何协同，让 Agent 按计划主动完成重复工作。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/model-switching-memory',
+    title: {
+      'en-US': 'Will Switching Models Make an Agent Forget?',
+      'zh-CN': '切换模型会让 Agent“失忆”吗？模型、人格与记忆的解耦设计',
+    },
+    file: 'hermes-agent/09-model-switching-memory.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Learn how a decoupled model, persona, and memory design lets an Agent change its inference engine without losing its long-term context.',
+      'zh-CN': '理解模型、人格与记忆的解耦设计如何让 Agent 更换推理引擎后仍保留长期上下文。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/persona-user-memory',
+    title: {
+      'en-US': 'Where Does Hermes Agent\'s Personality Come From?',
+      'zh-CN': 'Hermes Agent 的性格从哪里来？Persona、用户偏好与长期记忆如何共同作用',
+    },
+    file: 'hermes-agent/10-persona-user-memory.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Explore how persona rules, user preferences, and long-term memory work together to produce a stable but adaptive Agent personality.',
+      'zh-CN': '探索 Persona 规则、用户偏好和长期记忆如何共同形成稳定且会适应的 Agent 性格。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/workspace-context-storage',
+    title: {
+      'en-US': 'Where Does Hermes Agent Put Files?',
+      'zh-CN': 'Hermes Agent 把文件放在哪里？工作目录、上下文文件与存储机制',
+    },
+    file: 'hermes-agent/11-workspace-context-storage.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Learn the distinct roles of a working directory, context files, and persistent storage when an Agent creates and reuses work.',
+      'zh-CN': '了解工作目录、上下文文件和持久化存储的不同职责，以及 Agent 如何创建和复用工作成果。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/skills-self-improvement',
+    title: {
+      'en-US': 'Why Does an Agent Get Better with Use?',
+      'zh-CN': 'Agent 为什么会越用越顺手？技能沉淀、自我改进与复用机制',
+    },
+    file: 'hermes-agent/12-skills-self-improvement.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'See how reusable Skills turn successful work patterns into durable instructions that make future Agent tasks more reliable.',
+      'zh-CN': '了解可复用 Skill 如何把成功的工作模式沉淀为长期指令，让 Agent 的后续任务更可靠。',
+    },
+    hideDescription: true,
+  },
+  {
     slug: 'contact-us',
     title: { 'en-US': 'Contact Us', 'zh-CN': '联系我们' },
     file: 'contact-us.md',
