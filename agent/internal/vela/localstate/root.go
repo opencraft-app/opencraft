@@ -32,7 +32,7 @@ func ResolveRoot(
 		if home == "" || !filepath.IsAbs(home) {
 			return "", ErrWorkingDirectory
 		}
-		return filepath.Join(filepath.Clean(home), ".vela", "state"), nil
+		return filepath.Join(filepath.Clean(home), ".vela", "computer", "state"), nil
 	}
 	if !filepath.IsAbs(selected) {
 		selected = filepath.Join(workingDirectory, selected)

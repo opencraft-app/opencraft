@@ -9,7 +9,7 @@ func TestManagedAgentWorkspaceIsSiblingOfStateRoot(t *testing.T) {
 	t.Parallel()
 
 	velaRoot := filepath.Join(string(filepath.Separator), "Users", "example", ".vela")
-	factory := &managedAgentFactory{root: filepath.Join(velaRoot, "state")}
+	factory := &managedAgentFactory{root: filepath.Join(velaRoot, "computer", "state")}
 
 	got, err := factory.workspaceDirectory("019fcafe-15a6-7494-9da6-0f69a8e60c24")
 	if err != nil {

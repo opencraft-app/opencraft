@@ -28,7 +28,7 @@ func TestResolveRootPriorityAndRelativePaths(t *testing.T) {
 		},
 		{
 			name: "home directory default",
-			want: filepath.Join(string(filepath.Separator), "Users", "example", ".vela", "state"),
+			want: filepath.Join(string(filepath.Separator), "Users", "example", ".vela", "computer", "state"),
 		},
 	}
 	for _, test := range tests {

@@ -36,7 +36,8 @@ Agent-facing `vela` 只暴露 Vela 能力：身份与目录、Inbox、消息、�
 
 ## 状态与安全边界
 
-- Computer 根目录：`~/.vela`；持久状态位于 `~/.vela/state`。
+- Computer 私有根目录：`~/.vela/computer`；持久状态位于 `~/.vela/computer/state`。
+- Agent workspace 独立位于 `~/.vela/workspaces/<agentID>`，不与 Computer 私有状态混放。
 - Agent 工作区独立位于 `~/.vela/workspaces/<agentID>`，不与可清理运行状态混放。
 - 管理员可显式覆盖状态根；程序不再根据当前工作目录创建第二套隐藏状态。
 - Agent Gateway 只监听回环地址，每次 launch 使用独立 `sap_` token。

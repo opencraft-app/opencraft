@@ -277,7 +277,12 @@ func (f *managedAgentFactory) workspaceDirectory(agentID string) (string, error)
 	stateRoot := filepath.Clean(f.root)
 	workspaceRoot := filepath.Join(stateRoot, "workspaces")
 	if filepath.Base(stateRoot) == "state" {
-		workspaceRoot = filepath.Join(filepath.Dir(stateRoot), "workspaces")
+		computerRoot := filepath.Dir(stateRoot)
+		workspaceRoot = filepath.Join(computerRoot, "workspaces")
+		if filepath.Base(computerRoot) == "computer" &&
+			filepath.Base(filepath.Dir(computerRoot)) == ".vela" {
+			workspaceRoot = filepath.Join(filepath.Dir(computerRoot), "workspaces")
+		}
 	}
 	return filepath.Join(workspaceRoot, agentID), nil
 }

@@ -113,6 +113,35 @@ func TestHiddenInstallNormalizesAbsoluteTemporaryPaths(t *testing.T) {
 	}
 }
 
+func TestHiddenInstallDefaultsToPrivateComputerSubdirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	rootDirectory := t.TempDir()
+	actions := &fakeActions{}
+	root := newTestRoot(t, actions, &bytes.Buffer{})
+	root.SetArgs([]string{
+		"install",
+		"--platform-url", "http://192.0.2.10",
+		"--allow-insecure-platform-http",
+		"--token-file", filepath.Join(rootDirectory, "token"),
+		"--manifest-file", filepath.Join(rootDirectory, "manifest.json"),
+		"--signature-file", filepath.Join(rootDirectory, "manifest.sig"),
+		"--signing-public-key", "test-public-key",
+		"--release-version", "0.2.0",
+		"--target", "darwin-arm64",
+		"--program-file", filepath.Join(rootDirectory, "vela-computer"),
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	wantRoot := filepath.Join(home, ".vela", "computer")
+	if actions.install.InstallationRoot != wantRoot ||
+		actions.install.StateDirectory != filepath.Join(wantRoot, "state") {
+		t.Fatalf("install options = %#v", actions.install)
+	}
+}
+
 func TestDaemonContainsOnlyRun(t *testing.T) {
 	t.Parallel()
 

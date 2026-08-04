@@ -316,7 +316,7 @@ func TestConsumedSequenceFallbackStaysInsideVelaState(t *testing.T) {
 	if !ok {
 		t.Fatal("consumedSequenceStore() rejected a safe Agent ID")
 	}
-	if got, want := store.Root(), filepath.Join(home, ".vela", "state"); got != want {
+	if got, want := store.Root(), filepath.Join(home, ".vela", "computer", "state"); got != want {
 		t.Fatalf("store root = %q, want %q", got, want)
 	}
 	if got, want := relative, filepath.Join(

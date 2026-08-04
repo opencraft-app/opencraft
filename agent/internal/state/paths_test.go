@@ -10,7 +10,7 @@ func TestDefaultRootUsesVelaStateDirectory(t *testing.T) {
 
 	home := filepath.Join(string(filepath.Separator), "Users", "example")
 	got := DefaultRoot(home)
-	want := filepath.Join(home, ".vela", "state")
+	want := filepath.Join(home, ".vela", "computer", "state")
 	if got != want {
 		t.Fatalf("DefaultRoot() = %q, want %q", got, want)
 	}
