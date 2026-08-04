@@ -13,13 +13,38 @@ RUNTIME_DIR = REPO_ROOT / ".ci" / "runtime"
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from contracts.bundles import load_bundle, load_manifest, require_build_metadata  # noqa: E402
+from contracts.bundles import (  # noqa: E402
+    is_playground_env,
+    load_bundle,
+    load_manifest,
+    playground_catalog_root,
+    playground_region,
+    require_build_metadata,
+)
 from contracts.release_bundle_manifest import dump_manifest, merge_bundle_sources  # noqa: E402
 
 
 SANDBOX_ENV = "beijing-sandbox-2"
 PLAYGROUND_ENV = "sandbox-bj-7"
 KOREA_PLAYGROUND_ENV = "sandbox-kr-1"
+JAPAN_PLAYGROUND_ENV = "sandbox-jp-1"
+PLAYGROUND_BUILDABLE_BUNDLES = {
+    "admin-gateway",
+    "ai-gateway",
+    "ctl",
+    "frontend",
+    "gateway-dashboard",
+    "nextgen-dashboard",
+    "payment",
+    "sandbox",
+    "service-gateway",
+    "staticpages",
+    "subscription",
+    "trade",
+    "user-auth",
+    "vibebase",
+    "workers",
+}
 AUTO_RELEASE_WORKFLOWS = {
     "admin-gateway": (".ci/admin-gateway.yml", "beijing-sandbox,shprod,sgprod", "admin-gateway"),
     "ai-gateway": (".ci/ai-gateway.yml", "beijing-sandbox,shprod,sgprod", "ai-gateway"),
@@ -250,6 +275,76 @@ class ReleaseBundleContractTests(unittest.TestCase):
             bundle.publish_paths,
         )
         self.assertIn(f"argocd/secrets/{KOREA_PLAYGROUND_ENV}/ai-gateway-runtime-secrets.sops.yaml", bundle.publish_paths)
+
+    def test_japan_playground_identity_uses_tokyo_catalog(self) -> None:
+        self.assertTrue(is_playground_env(JAPAN_PLAYGROUND_ENV))
+        self.assertEqual(playground_region(JAPAN_PLAYGROUND_ENV), "jp")
+        self.assertEqual(
+            playground_catalog_root(JAPAN_PLAYGROUND_ENV),
+            "argocd/catalogs/playground/tokyo-playground",
+        )
+        for malformed in ("sandbox-jp", "sandbox-jp-", "sandbox-jp-one", "sandbox-jp-1-extra"):
+            with self.subTest(env=malformed):
+                self.assertFalse(is_playground_env(malformed))
+
+    def test_japan_playground_buildable_bundles_use_jp_registry(self) -> None:
+        manifest = load_manifest()
+        actual_buildable: set[str] = set()
+
+        for bundle_name in sorted((manifest.get("bundles") or {})):
+            try:
+                bundle = require_build_metadata(load_bundle(manifest, bundle_name, JAPAN_PLAYGROUND_ENV))
+            except ValueError:
+                continue
+            actual_buildable.add(bundle_name)
+            repositories = [target.image_repo for target in bundle.image_targets]
+            if bundle.image_repo:
+                repositories.append(bundle.image_repo)
+            self.assertTrue(repositories, bundle_name)
+            for repository in repositories:
+                with self.subTest(bundle=bundle_name, repository=repository):
+                    self.assertTrue(
+                        repository.startswith("lightclaw-jp1.tencentcloudcr.com/lightclaw/"),
+                        repository,
+                    )
+
+        self.assertEqual(actual_buildable, PLAYGROUND_BUILDABLE_BUNDLES)
+
+    def test_japan_support_does_not_activate_ci_workflows(self) -> None:
+        workflow_paths = sorted((REPO_ROOT / ".ci").glob("*.yml"))
+        workflow_paths.append(REPO_ROOT / ".ci/templates/service-release.yml")
+
+        for path in workflow_paths:
+            text = path.read_text()
+            with self.subTest(path=path.relative_to(REPO_ROOT)):
+                self.assertNotIn("playground/sandbox-jp-*", text)
+                self.assertIsNone(
+                    re.search(
+                        r"(?:MASTER|PLAYGROUND)_(?:BUILD|AUTO_PIN)_ENVS:\s*[^\n]*sandbox-jp",
+                        text,
+                    )
+                )
+
+    def test_japan_auth_ssm_manifest_declares_required_keys_without_values(self) -> None:
+        manifest_path = REPO_ROOT / "scripts/ssm_manifest.lightclaw-auth.sandbox-jp-1.yaml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+
+        self.assertEqual(manifest["defaults"]["region"], "ap-tokyo")
+        self.assertEqual(len(manifest["items"]), 1)
+        item = manifest["items"][0]
+        self.assertEqual(item["secret_name"], "mono-sandbox-jp-1-lightclaw-auth-secrets")
+        self.assertEqual(item["namespace"], "lightvela-playground-sandbox-jp-1")
+        self.assertEqual(
+            item["required_keys"],
+            [
+                "TENCENT_REALNAME_SECRET_ID",
+                "TENCENT_REALNAME_SECRET_KEY",
+                "TENCENT_REALNAME_ENDPOINT",
+                "REALNAME_ENCRYPTION_KEY",
+            ],
+        )
+        self.assertNotIn("values", item)
+        self.assertNotIn("stringData", item)
 
     def test_sandbox2_catalogs_are_promotable_or_explicitly_exempt(self) -> None:
         manifest = load_manifest()

@@ -51,6 +51,28 @@ class BuildReleaseImageTests(unittest.TestCase):
             playground_frontend_auth_api_base_url("sandbox-kr-1"),
             "https://api-sandbox-kr-1.lightclaw.tech",
         )
+        self.assertEqual(
+            playground_frontend_auth_api_base_url("sandbox-jp-1"),
+            "https://api-sandbox-jp-1.lightclaw.tech",
+        )
+
+    def test_frontend_japan_playground_build_bakes_env_scoped_auth_api_base(self) -> None:
+        self.assertEqual(
+            resolve_docker_build_args("frontend", "sandbox-jp-1"),
+            {
+                "NEXT_PUBLIC_REGION": "global",
+                "VITE_AUTH_API_BASE_URL": "https://api-sandbox-jp-1.lightclaw.tech",
+                "VITE_REGION": "global",
+            },
+        )
+
+    def test_frontend_dockerfile_accepts_region_build_arguments(self) -> None:
+        dockerfile = (REPO_ROOT / "frontend/deploy/Dockerfile").read_text()
+
+        for name in ("VITE_REGION", "NEXT_PUBLIC_REGION"):
+            with self.subTest(name=name):
+                self.assertIn(f"ARG {name}=cn", dockerfile)
+                self.assertIn(f'ENV {name}="${{{name}}}"', dockerfile)
 
     def test_frontend_non_playground_build_has_no_extra_build_args(self) -> None:
         self.assertEqual(resolve_docker_build_args("frontend", "shprod"), {})

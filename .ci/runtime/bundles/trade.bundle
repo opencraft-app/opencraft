@@ -55,3 +55,4 @@ bundles:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/trade
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/trade
       sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/trade
+      sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/trade

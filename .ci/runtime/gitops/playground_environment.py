@@ -23,6 +23,7 @@ from typing import Any, Callable, Iterable, Sequence
 
 import yaml
 
+from contracts.bundles import playground_catalog_root, playground_region
 from gitops.argocd import api_request as argocd_api_request
 from gitops.argocd import login as login_argocd
 from gitops.argocd import resolve_settings as resolve_argocd_settings
@@ -109,11 +110,37 @@ class PlaygroundRuntimeSecretValues:
 
 
 @dataclass(frozen=True)
+class PlaygroundEnvironmentProfile:
+    region_code: str
+    catalog_root: str
+    cluster_name: str
+    project: str
+    registry: str
+    cloud_region: str
+    zones: tuple[str, ...]
+    node_pool: str
+    site_mode: str
+    data_plane_mode: str
+    pull_secret_name: str
+    pull_secret_file: str
+    mysql_host: str | None = None
+    redis_addr: str | None = None
+    sandbox_redis_addr: str | None = None
+    vpc_id: str | None = None
+    support_subnet_id: str | None = None
+    support_subnet_cidr: str | None = None
+    sandbox_pool_subnets: tuple[str, ...] = ()
+    sandbox_pool_zones: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class PlaygroundClonePlan:
     repo_root: Path
     from_env: str
     to_env: str
+    source_playground_root: str
     playground_root: str
+    profile: PlaygroundEnvironmentProfile
     cluster_name: str
     project: str
     namespace: str
@@ -268,8 +295,81 @@ def env_slug(env: str) -> str:
     return env.replace("-", "_")
 
 
+def playground_environment_profile(env: str) -> PlaygroundEnvironmentProfile:
+    region_code = playground_region(env)
+    profiles = {
+        "bj": PlaygroundEnvironmentProfile(
+            region_code="bj",
+            catalog_root=playground_catalog_root(env),
+            cluster_name="beijing-playground",
+            project="beijing-playground",
+            registry="lightclaw-bj8.tencentcloudcr.com",
+            cloud_region="ap-beijing",
+            zones=(),
+            node_pool="",
+            site_mode="china",
+            data_plane_mode="namespace-local",
+            pull_secret_name="tcr.bj8-lightclaw-secret",
+            pull_secret_file="tcr-bj8-lightclaw-secret.sops.yaml",
+        ),
+        "kr": PlaygroundEnvironmentProfile(
+            region_code="kr",
+            catalog_root=playground_catalog_root(env),
+            cluster_name="seoul-playground",
+            project="seoul-playground",
+            registry="lightclaw-kr1.tencentcloudcr.com",
+            cloud_region="ap-seoul",
+            zones=("ap-seoul-1", "ap-seoul-2"),
+            node_pool="general-kr1",
+            site_mode="international",
+            data_plane_mode="namespace-local",
+            pull_secret_name="tcr.kr1-lightclaw-secret",
+            pull_secret_file="tcr-kr1-lightclaw-secret.sops.yaml",
+        ),
+        "jp": PlaygroundEnvironmentProfile(
+            region_code="jp",
+            catalog_root=playground_catalog_root(env),
+            cluster_name="tokyo-playground",
+            project="tokyo-playground",
+            registry="lightclaw-jp1.tencentcloudcr.com",
+            cloud_region="ap-tokyo",
+            zones=("ap-tokyo-1", "ap-tokyo-2"),
+            node_pool="general-jp1",
+            site_mode="international",
+            data_plane_mode="managed",
+            pull_secret_name="tcr.jp1-lightclaw-secret",
+            pull_secret_file="tcr-jp1-lightclaw-secret.sops.yaml",
+            mysql_host="10.79.192.15",
+            redis_addr="10.79.192.2:6379",
+            sandbox_redis_addr="10.79.192.16:6379",
+            vpc_id="vpc-pqciv8j8",
+            support_subnet_id="subnet-29qhnd3b",
+            support_subnet_cidr="10.79.192.0/18",
+            sandbox_pool_subnets=(
+                "subnet-3s91xc7b",
+                "subnet-j9m9bci1",
+                "subnet-pervz3t7",
+                "subnet-0uxbz2n7",
+                "subnet-p9y732st",
+                "subnet-3krxc31p",
+            ),
+            sandbox_pool_zones=(
+                "ap-tokyo-1",
+                "ap-tokyo-2",
+                "ap-tokyo-1",
+                "ap-tokyo-2",
+                "ap-tokyo-1",
+                "ap-tokyo-2",
+            ),
+        ),
+    }
+    if region_code not in profiles:
+        raise ValueError(f"unsupported playground environment: {env}")
+    return profiles[region_code]
+
+
 def ctl_database_name(env: str) -> str:
-    if re.fullmatch(r"sandbox-(bj|kr)-\d+", env):
+    if re.fullmatch(r"sandbox-(bj|kr|jp)-\d+", env):
         return f"ctl_{env_slug(env)}"
     return "ctl"
 
@@ -408,6 +508,29 @@ def source_domain_replacements(from_env: str, to_plan: PlaygroundClonePlan | Non
     return tuple(replacements)
 
 
+def source_infra_replacements(from_env: str, to_plan: PlaygroundClonePlan) -> tuple[tuple[str, str], ...]:
+    from_profile = playground_environment_profile(from_env)
+    to_profile = to_plan.profile
+    replacements: list[tuple[str, str]] = [
+        (from_profile.registry, to_profile.registry),
+        (from_profile.cluster_name, to_profile.cluster_name),
+        (from_profile.project, to_profile.project),
+        (from_profile.pull_secret_name, to_profile.pull_secret_name),
+        (from_profile.pull_secret_file, to_profile.pull_secret_file),
+    ]
+    if from_profile.node_pool and to_profile.node_pool:
+        replacements.append((from_profile.node_pool, to_profile.node_pool))
+    replacements.extend(zip(from_profile.zones, to_profile.zones, strict=False))
+    if to_profile.region_code == "jp":
+        replacements.append(
+            (
+                "ccr.ccs.tencentyun.com/clawhub",
+                f"{to_profile.registry}/lightclaw",
+            )
+        )
+    return tuple((old, new) for old, new in replacements if old and new and old != new)
+
+
 def collect_files_under(root: Path) -> list[Path]:
     return sorted(path for path in root.rglob("*") if path.is_file())
 
@@ -437,14 +560,21 @@ def build_playground_clone_plan(
     from_env: str,
     to_env: str,
     playground_root: str = DEFAULT_PLAYGROUND_ROOT,
-    cluster_name: str = DEFAULT_CLUSTER_NAME,
-    project: str = DEFAULT_PROJECT,
+    cluster_name: str | None = None,
+    project: str | None = None,
     namespace: str | None = None,
     api_host: str | None = None,
     sandbox_host: str | None = None,
     wildcard_host: str | None = None,
 ) -> PlaygroundClonePlan:
     repo_root = repo_root.resolve()
+    source_profile = playground_environment_profile(from_env)
+    profile = playground_environment_profile(to_env)
+    target_playground_root = (
+        playground_root if source_profile.region_code == profile.region_code else profile.catalog_root
+    )
+    cluster_name = cluster_name or profile.cluster_name
+    project = project or profile.project
     namespace = namespace or default_namespace(to_env)
     sandbox_host = sandbox_host or default_sandbox_host(to_env)
     wildcard_host = wildcard_host or default_wildcard_host(to_env)
@@ -455,32 +585,43 @@ def build_playground_clone_plan(
     secret_source = repo_root / "argocd/secrets" / from_env
     if not catalog_source.is_dir():
         raise FileNotFoundError(playground_gitops_checkout_hint(repo_root, from_env, playground_root))
-    if not secret_source.is_dir():
+    if profile.data_plane_mode == "namespace-local" and not secret_source.is_dir():
         raise FileNotFoundError(f"missing source secret directory: {secret_source}")
 
     files: list[CloneFile] = []
     for source in collect_files_under(catalog_source):
         rel = source.relative_to(catalog_source)
-        files.append(CloneFile(source, repo_root / catalog_dir(playground_root, to_env) / rel))
+        if profile.data_plane_mode == "managed" and source.name == "env-bootstrap.yaml":
+            continue
+        files.append(CloneFile(source, repo_root / catalog_dir(target_playground_root, to_env) / rel))
 
     service_dirs = sorted((repo_root / "argocd/services").glob(f"*/{from_env}"))
     if not service_dirs:
         raise FileNotFoundError(f"no source service directories found for {from_env}")
     for service_dir in service_dirs:
         service = service_dir.parent.name
+        if profile.data_plane_mode == "managed" and service == "env-bootstrap":
+            continue
         for source in collect_files_under(service_dir):
+            if profile.data_plane_mode == "managed" and source.suffix.lower() == ".md":
+                continue
             rel = source.relative_to(service_dir)
             files.append(CloneFile(source, repo_root / "argocd/services" / service / to_env / rel))
 
-    for source in collect_files_under(secret_source):
-        rel = source.relative_to(secret_source)
-        files.append(CloneFile(source, repo_root / "argocd/secrets" / to_env / rel))
+    if profile.data_plane_mode == "namespace-local":
+        for source in collect_files_under(secret_source):
+            rel = source.relative_to(secret_source)
+            if rel.name == source_profile.pull_secret_file:
+                rel = rel.with_name(profile.pull_secret_file)
+            files.append(CloneFile(source, repo_root / "argocd/secrets" / to_env / rel))
 
     placeholder_plan = PlaygroundClonePlan(
         repo_root=repo_root,
         from_env=from_env,
         to_env=to_env,
-        playground_root=playground_root,
+        source_playground_root=playground_root,
+        playground_root=target_playground_root,
+        profile=profile,
         cluster_name=cluster_name,
         project=project,
         namespace=namespace,
@@ -496,6 +637,7 @@ def build_playground_clone_plan(
         (from_env, to_env),
         (env_slug(from_env), env_slug(to_env)),
         *source_domain_replacements(from_env, placeholder_plan),
+        *source_infra_replacements(from_env, placeholder_plan),
     ]
     # Longer keys first avoids replacing sandbox-bj-3 before *.sandbox-bj83 aliases.
     replacements = sorted(dict(replacements).items(), key=lambda item: len(item[0]), reverse=True)
@@ -503,7 +645,9 @@ def build_playground_clone_plan(
         repo_root=repo_root,
         from_env=from_env,
         to_env=to_env,
-        playground_root=playground_root,
+        source_playground_root=playground_root,
+        playground_root=target_playground_root,
+        profile=profile,
         cluster_name=cluster_name,
         project=project,
         namespace=namespace,
@@ -524,16 +668,21 @@ def render_clone_text(
     for old, new in plan.replacements:
         text = text.replace(old, new)
     text = apply_playground_runtime_overrides(text, plan)
-    if runtime_values is not None:
-        text = apply_ctl_runtime_overrides(text, plan, runtime_values)
+    text = apply_ctl_runtime_overrides(text, plan, runtime_values)
     return "\n".join(line.rstrip() for line in text.splitlines()) + ("\n" if text.endswith("\n") else "")
 
 
 def apply_playground_runtime_overrides(text: str, plan: PlaygroundClonePlan) -> str:
-    """Point cloned playground services at namespace-local stateful dependencies."""
+    """Point cloned services at the target environment's stateful dependencies."""
 
-    mysql_host = local_mysql_host(plan.namespace)
-    redis_addr = local_redis_addr(plan.namespace)
+    if plan.profile.data_plane_mode == "managed":
+        mysql_host = plan.profile.mysql_host or ""
+        redis_addr = plan.profile.redis_addr or ""
+        sandbox_redis_addr = plan.profile.sandbox_redis_addr or redis_addr
+    else:
+        mysql_host = local_mysql_host(plan.namespace)
+        redis_addr = local_redis_addr(plan.namespace)
+        sandbox_redis_addr = redis_addr
     text = re.sub(
         r"(?m)^([A-Z0-9_]*MYSQL_HOST=).*$",
         rf"\g<1>{mysql_host}",
@@ -541,7 +690,7 @@ def apply_playground_runtime_overrides(text: str, plan: PlaygroundClonePlan) -> 
     )
     text = re.sub(
         r"(?m)^([A-Z0-9_]*REDIS_ADDR=).*$",
-        rf"\g<1>{redis_addr}",
+        lambda match: f"{match.group(1)}{sandbox_redis_addr if match.group(1).startswith('SANDBOX_') else redis_addr}",
         text,
     )
     text = re.sub(
@@ -550,24 +699,75 @@ def apply_playground_runtime_overrides(text: str, plan: PlaygroundClonePlan) -> 
         text,
     )
     text = re.sub(
-        r"(?m)^(\s*[A-Z0-9_]*REDIS_ADDR:\s*).*$",
-        rf"\g<1>{redis_addr}",
+        r"(?m)^(\s*([A-Z0-9_]*REDIS_ADDR):\s*).*$",
+        lambda match: f"{match.group(1)}{sandbox_redis_addr if match.group(2).startswith('SANDBOX_') else redis_addr}",
         text,
     )
+    if plan.profile.data_plane_mode == "managed":
+        text = apply_managed_profile_overrides(text, plan.profile)
     return text
+
+
+def apply_managed_profile_overrides(text: str, profile: PlaygroundEnvironmentProfile) -> str:
+    values = {
+        "LIGHTVELA_SITE_KIND": "intl" if profile.site_mode == "international" else "cn",
+        "TRADE_SITE_KIND": "intl" if profile.site_mode == "international" else "cn",
+        "TENCENT_REGION": profile.cloud_region,
+        "SANDBOX_VPC_ID": profile.vpc_id or "",
+        "SANDBOX_SUPPORT_SUBNET_ID": profile.support_subnet_id or "",
+        "SANDBOX_POOL_BJ8_SUBNET_ID": profile.support_subnet_id or "",
+        "SANDBOX_POOL_BJ8_ZONE": profile.zones[0] if profile.zones else "",
+        "AUTH_TRUSTED_PROXY_CIDRS": profile.support_subnet_cidr or "",
+    }
+    for index, (subnet_id, zone) in enumerate(
+        zip(profile.sandbox_pool_subnets, profile.sandbox_pool_zones, strict=True)
+    ):
+        values[f"SANDBOX_POOL_C{index}_SUBNET_ID"] = subnet_id
+        values[f"SANDBOX_POOL_C{index}_ZONE"] = zone
+
+    if profile.node_pool:
+        text = replace_config_suffix(text, "NODE_POOL", profile.node_pool)
+    if profile.support_subnet_id:
+        text = replace_config_suffix(text, "INTERNAL_SUBNET_ID", profile.support_subnet_id)
+    text = replace_config_suffix(text, "CLS_TOPIC_ID", "")
+    for key, value in values.items():
+        text = replace_config_value(text, key, value)
+    return text
+
+
+def replace_config_value(text: str, key: str, value: str) -> str:
+    text = re.sub(rf"(?m)^({re.escape(key)}=).*$", rf"\g<1>{value}", text)
+    return re.sub(rf"(?m)^(\s*{re.escape(key)}:\s*).*$", rf"\g<1>{value}", text)
+
+
+def replace_config_suffix(text: str, suffix: str, value: str) -> str:
+    escaped = re.escape(suffix)
+    text = re.sub(rf"(?m)^([A-Z0-9_]*{escaped}=).*$", rf"\g<1>{value}", text)
+    return re.sub(rf"(?m)^(\s*[A-Z0-9_]*{escaped}:\s*).*$", rf"\g<1>{value}", text)
 
 
 def apply_ctl_runtime_overrides(
     text: str,
     plan: PlaygroundClonePlan,
-    runtime_values: PlaygroundRuntimeSecretValues,
+    runtime_values: PlaygroundRuntimeSecretValues | None,
 ) -> str:
     if "server_conf_rewrite.toml" not in text:
         return text
-    mysql_host = local_mysql_host(plan.namespace)
-    redis_host = f"redis.{plan.namespace}.svc.cluster.local"
-    db_password = ctl_legacy_aes_encrypt(runtime_values.mysql_root_password)
-    redis_password = ctl_legacy_aes_encrypt(runtime_values.redis_password)
+    if plan.profile.data_plane_mode == "managed":
+        mysql_host = plan.profile.mysql_host or ""
+        redis_host = (plan.profile.redis_addr or "").rsplit(":", 1)[0]
+    else:
+        mysql_host = local_mysql_host(plan.namespace)
+        redis_host = f"redis.{plan.namespace}.svc.cluster.local"
+    if runtime_values:
+        db_password = ctl_legacy_aes_encrypt(runtime_values.mysql_root_password)
+        redis_password = ctl_legacy_aes_encrypt(runtime_values.redis_password)
+    elif plan.profile.data_plane_mode == "managed":
+        db_password = ""
+        redis_password = ""
+    else:
+        db_password = None
+        redis_password = None
     section = ""
     lines: list[str] = []
     for line in text.splitlines():
@@ -577,12 +777,14 @@ def apply_ctl_runtime_overrides(
         prefix = line[: len(line) - len(line.lstrip())]
         if section == "db" and stripped.startswith("host ="):
             line = f'{prefix}host = "{mysql_host}"'
-        elif section == "db" and stripped.startswith("password ="):
+        elif section == "db" and stripped.startswith("password =") and db_password is not None:
             line = f'{prefix}password = "{db_password}"'
         elif section == "redis" and stripped.startswith("host ="):
             line = f'{prefix}host = "{redis_host}"'
-        elif section == "redis" and stripped.startswith("pass ="):
+        elif section == "redis" and stripped.startswith("pass =") and redis_password is not None:
             line = f'{prefix}pass = "{redis_password}"'
+        elif section == "misc" and stripped.startswith("region =") and plan.profile.data_plane_mode == "managed":
+            line = f'{prefix}region = "{plan.profile.cloud_region}"'
         lines.append(line)
     return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
 
@@ -657,10 +859,17 @@ def render_sops_secret_bytes(
     metadata = payload.setdefault("metadata", {})
     if isinstance(metadata, dict):
         metadata["namespace"] = plan.namespace
+        name = str(metadata.get("name") or "")
+        for old, new in plan.replacements:
+            name = name.replace(old, new)
+        if name:
+            metadata["name"] = name
         annotations = metadata.setdefault("annotations", {})
         if isinstance(annotations, dict):
             managed_by = str(annotations.get("managed-by") or "")
-            annotations["managed-by"] = managed_by.replace(plan.from_env, plan.to_env) or f"harness-ci-{plan.to_env}-bootstrap"
+            for old, new in plan.replacements:
+                managed_by = managed_by.replace(old, new)
+            annotations["managed-by"] = managed_by or f"harness-ci-{plan.to_env}-bootstrap"
     return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False).encode()
 
 
@@ -766,6 +975,8 @@ def encrypt_sops_yaml_bytes(payload: dict[str, Any], recipients: Sequence[str], 
 
 
 def generated_playground_files(plan: PlaygroundClonePlan) -> tuple[GeneratedFile, ...]:
+    if plan.profile.data_plane_mode == "managed":
+        return ()
     return (
         GeneratedFile(
             plan.repo_root / catalog_dir(plan.playground_root, plan.to_env) / "env-bootstrap.yaml",
@@ -1033,11 +1244,12 @@ def redis_stateful_runtime_text(plan: PlaygroundClonePlan) -> str:
 
 
 def all_plan_targets(plan: PlaygroundClonePlan) -> tuple[Path, ...]:
-    return (
-        tuple(item.target for item in plan.files)
-        + tuple(item.target for item in generated_playground_files(plan))
-        + (runtime_secret_target(plan),)
+    targets = tuple(item.target for item in plan.files) + tuple(
+        item.target for item in generated_playground_files(plan)
     )
+    if plan.profile.data_plane_mode == "namespace-local":
+        targets += (runtime_secret_target(plan),)
+    return targets
 
 
 def target_conflicts(plan: PlaygroundClonePlan) -> list[Path]:
@@ -1310,24 +1522,26 @@ def rendered_clone_plan_files(
     runtime_secret_encryptor: RuntimeSecretEncryptor | None = None,
 ) -> list[RenderedFile]:
     rendered: list[RenderedFile] = []
-    runtime_values = generate_playground_runtime_values()
+    runtime_values = generate_playground_runtime_values() if plan.profile.data_plane_mode == "namespace-local" else None
     for item in plan.files:
         if item.source.name.endswith(".sops.yaml"):
             sops_runtime_values = runtime_values if runtime_secret_encryptor is None else None
             data = render_sops_secret_bytes(item.source.read_bytes(), plan, item.target, sops_runtime_values)
-        elif f"/{plan.playground_root.rstrip('/')}/{plan.from_env}/" in item.source.as_posix():
+        elif f"/{plan.source_playground_root.rstrip('/')}/{plan.from_env}/" in item.source.as_posix():
             data = render_catalog_bytes(item.source.read_bytes(), plan, runtime_values)
         else:
             data = render_clone_bytes(item.source.read_bytes(), plan, runtime_values)
         rendered.append(RenderedFile(item.target, data, item.source))
     for item in generated_playground_files(plan):
         rendered.append(RenderedFile(item.target, item.text.encode(), None))
-    encryptor = runtime_secret_encryptor or encrypt_playground_runtime_secret
-    if runtime_secret_encryptor is None:
-        runtime_secret_data = encrypt_playground_runtime_secret(plan, runtime_values)
-    else:
-        runtime_secret_data = encryptor(plan)
-    rendered.append(RenderedFile(runtime_secret_target(plan), runtime_secret_data, None))
+    if runtime_values is not None:
+        encryptor = runtime_secret_encryptor or encrypt_playground_runtime_secret
+        runtime_secret_data = (
+            encrypt_playground_runtime_secret(plan, runtime_values)
+            if runtime_secret_encryptor is None
+            else encryptor(plan)
+        )
+        rendered.append(RenderedFile(runtime_secret_target(plan), runtime_secret_data, None))
     return rendered
 
 
