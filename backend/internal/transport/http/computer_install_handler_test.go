@@ -27,6 +27,8 @@ func TestComputerInstallHandlerStreamsShortCodeOnlyThroughRequestBody(t *testing
 	script := recorder.Body.String()
 	for _, required := range []string{
 		`code=${1-}`,
+		`tmp_root=${TMPDIR:-/tmp}`,
+		`tmp_root=${tmp_root%/}`,
 		`printf '%s' "$code" |`,
 		`--data-binary @-`,
 		`https://computer.example.com/v1/computer/setup-codes:redeem`,

@@ -106,6 +106,11 @@ func TestBuildRendersTrustedInstallerWhenNoInstallerPathIsProvided(t *testing.T)
 	if bytes.Contains(installer, privateKey) || bytes.Contains(installer, []byte("curl | sh")) {
 		t.Fatal("generated installer contains private key or pipe execution")
 	}
+	if bytes.Contains(installer, []byte("${TMPDIR:-/tmp}/")) ||
+		!bytes.Contains(installer, []byte("tmp_root=${TMPDIR:-/tmp}")) ||
+		!bytes.Contains(installer, []byte("tmp_root=${tmp_root%/}")) {
+		t.Fatalf("generated installer does not normalize TMPDIR:\n%s", installer)
+	}
 }
 
 func TestGeneratedInstallerRequiresExplicitHTTPOptIn(t *testing.T) {

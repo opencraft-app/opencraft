@@ -328,6 +328,8 @@ func TestEnrollmentServiceGeneratesExplicitHTTPInstallFlow(t *testing.T) {
 		`proto = "=http,https"`,
 		`proto-redir = "=https"`,
 		`--allow-insecure-platform-http`,
+		`tmp_root=${TMPDIR:-/tmp}`,
+		`tmp_root=${tmp_root%/}`,
 	} {
 		if !strings.Contains(redeemed.Script, required) {
 			t.Fatalf("HTTP setup script missing %q: %s", required, redeemed.Script)

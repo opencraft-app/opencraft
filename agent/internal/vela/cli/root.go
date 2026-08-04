@@ -163,16 +163,17 @@ func newInstallCommand(actions Actions) *cobra.Command {
 				}
 				options.InstallationRoot = filepath.Join(home, ".vela")
 			}
-			for _, value := range []string{
-				options.TokenFile,
-				options.ManifestFile,
-				options.SignatureFile,
-				options.ProgramFile,
-				options.InstallationRoot,
+			for _, value := range []*string{
+				&options.TokenFile,
+				&options.ManifestFile,
+				&options.SignatureFile,
+				&options.ProgramFile,
+				&options.InstallationRoot,
 			} {
-				if !filepath.IsAbs(value) || filepath.Clean(value) != value {
+				if !filepath.IsAbs(*value) {
 					return ErrInvalidArguments
 				}
+				*value = filepath.Clean(*value)
 			}
 			options.StateDirectory = filepath.Join(options.InstallationRoot, "state")
 			return actions.Install(command.Context(), options)

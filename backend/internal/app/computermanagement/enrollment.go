@@ -310,7 +310,9 @@ func (service *EnrollmentService) setupShellCommand(
 		`header = "Authorization: Enrollment ` + token + `"`,
 		`url = "` + artifactURL + `"`,
 	}, "\\n") + "\\n"
-	return "umask 077; d=$(/usr/bin/mktemp -d \"${TMPDIR:-/tmp}/an-computer.XXXXXX\") || exit 1; " +
+	return "umask 077; tmp_root=${TMPDIR:-/tmp}; tmp_root=${tmp_root%/}; " +
+		"[ -n \"$tmp_root\" ] || tmp_root=/tmp; " +
+		"d=$(/usr/bin/mktemp -d \"$tmp_root/an-computer.XXXXXX\") || exit 1; " +
 		"trap '/bin/rm -rf \"$d\"' EXIT HUP INT TERM; " +
 		"/usr/bin/printf '%s' " + shellQuote(token) + " >\"$d/token\"; " +
 		"/usr/bin/printf '%b' " + shellQuote(curlConfig) + " >\"$d/curl.conf\"; " +

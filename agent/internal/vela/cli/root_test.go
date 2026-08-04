@@ -76,6 +76,43 @@ func TestHiddenInstallDispatchesVerifiedFirstInstallInputs(t *testing.T) {
 	}
 }
 
+func TestHiddenInstallNormalizesAbsoluteTemporaryPaths(t *testing.T) {
+	t.Parallel()
+
+	rootDirectory := t.TempDir()
+	actions := &fakeActions{}
+	root := newTestRoot(t, actions, &bytes.Buffer{})
+	root.SetArgs([]string{
+		"install",
+		"--platform-url", "http://192.0.2.10",
+		"--allow-insecure-platform-http",
+		"--token-file", rootDirectory + "//token",
+		"--manifest-file", rootDirectory + "//manifest.json",
+		"--signature-file", rootDirectory + "//manifest.sig",
+		"--signing-public-key", "test-public-key",
+		"--release-version", "0.2.0",
+		"--target", "darwin-arm64",
+		"--program-file", rootDirectory + "//vela-computer",
+		"--installation-root", rootDirectory + "//.vela",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	options := actions.install
+	for name, value := range map[string]string{
+		"token":        options.TokenFile,
+		"manifest":     options.ManifestFile,
+		"signature":    options.SignatureFile,
+		"program":      options.ProgramFile,
+		"install root": options.InstallationRoot,
+		"state":        options.StateDirectory,
+	} {
+		if filepath.Clean(value) != value {
+			t.Fatalf("%s path was not normalized: %q", name, value)
+		}
+	}
+}
+
 func TestDaemonContainsOnlyRun(t *testing.T) {
 	t.Parallel()
 

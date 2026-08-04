@@ -226,7 +226,10 @@ case "${platform_url#*://}" in
 esac
 [ -f "$token_file" ] || { /usr/bin/printf '%s\n' '接入凭证文件不存在' >&2; exit 66; }
 
-work=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/an-computer-install.XXXXXX") || exit 1
+tmp_root=${TMPDIR:-/tmp}
+tmp_root=${tmp_root%/}
+[ -n "$tmp_root" ] || tmp_root=/tmp
+work=$(/usr/bin/mktemp -d "$tmp_root/an-computer-install.XXXXXX") || exit 1
 trap '/bin/rm -rf "$work"' EXIT HUP INT TERM
 artifact_base=${platform_url%/}/v1/computer-artifacts/@@VERSION@@/@@TARGET@@
 allowed_protocols='=https'

@@ -68,7 +68,10 @@ if [ -z "$code" ]; then
   exit 2
 fi
 umask 077
-d=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/an-bootstrap.XXXXXX") || exit 1
+tmp_root=${TMPDIR:-/tmp}
+tmp_root=${tmp_root%/}
+[ -n "$tmp_root" ] || tmp_root=/tmp
+d=$(/usr/bin/mktemp -d "$tmp_root/an-bootstrap.XXXXXX") || exit 1
 trap '/bin/rm -rf "$d"' EXIT HUP INT TERM
 printf '%s' "$code" |
   /usr/bin/curl -q --fail --silent --show-error \
