@@ -184,6 +184,97 @@ func TestEntRepositoryCreateRejectsAccountWithoutReadyIMIdentity(
 	assertAggregateCounts(t, handle, 0)
 }
 
+func TestEntRepositoryUpdateUsesAuthoritativeMemberAndReplaysIdempotently(
+	t *testing.T,
+) {
+	repository, handle := openServerRepository(t)
+	createReadyAccount(t, handle)
+	if _, err := repository.Create(context.Background(), testCreateCommand()); err != nil {
+		t.Fatal(err)
+	}
+	description := "更新后的描述"
+	command := servermemberport.UpdateCommand{
+		AccountID: testAccountID, ServerID: testServerID, Revision: 1,
+		IdempotencyKey: "server-update-test-0001",
+		RequestHash:    sha256.Sum256([]byte("server-update-request")),
+		NameSet:        true, Name: "Vela 研究实验室",
+		DescriptionSet: true, Description: &description,
+		UpdatedAt: testNow.Add(time.Minute),
+	}
+
+	first, err := repository.Update(context.Background(), command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := repository.Update(context.Background(), command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Name != "Vela 研究实验室" || first.Description == nil ||
+		*first.Description != description || first.Revision != 2 ||
+		second.Name != first.Name || second.Revision != first.Revision ||
+		second.Description == nil || *second.Description != description {
+		t.Fatalf("updates = (%#v, %#v)", first, second)
+	}
+	entity, err := handle.Client().Server.Query().Only(context.Background())
+	if err != nil || entity.Revision != 2 || entity.Slug != "agent-lab" ||
+		entity.ImGroupID != testGroupID {
+		t.Fatalf("Server = %#v, %v", entity, err)
+	}
+	if got, err := handle.Client().IdempotencyRecord.Query().Count(context.Background()); err != nil || got != 2 {
+		t.Fatalf("idempotency count = %d, %v", got, err)
+	}
+}
+
+func TestEntRepositoryUpdateRejectsRevisionAndIdempotencyConflicts(t *testing.T) {
+	repository, handle := openServerRepository(t)
+	createReadyAccount(t, handle)
+	if _, err := repository.Create(context.Background(), testCreateCommand()); err != nil {
+		t.Fatal(err)
+	}
+	command := servermemberport.UpdateCommand{
+		AccountID: testAccountID, ServerID: testServerID, Revision: 1,
+		IdempotencyKey: "server-update-test-0001",
+		RequestHash:    sha256.Sum256([]byte("server-update-request")),
+		NameSet:        true, Name: "新的名称", UpdatedAt: testNow.Add(time.Minute),
+	}
+	if _, err := repository.Update(context.Background(), command); err != nil {
+		t.Fatal(err)
+	}
+	conflict := command
+	conflict.RequestHash = sha256.Sum256([]byte("different-update"))
+	if _, err := repository.Update(context.Background(), conflict); !errors.Is(err, servermemberport.ErrIdempotencyConflict) {
+		t.Fatalf("idempotency conflict = %v", err)
+	}
+	stale := command
+	stale.IdempotencyKey = "server-update-test-0002"
+	stale.RequestHash = sha256.Sum256([]byte("stale-update"))
+	if _, err := repository.Update(context.Background(), stale); !errors.Is(err, servermemberport.ErrRevisionConflict) {
+		t.Fatalf("revision conflict = %v", err)
+	}
+}
+
+func TestEntRepositoryUpdateRequiresAuthoritativeManagerMember(t *testing.T) {
+	repository, handle := openServerRepository(t)
+	createReadyAccount(t, handle)
+	if _, err := repository.Create(context.Background(), testCreateCommand()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.Client().Member.UpdateOneID(testMemberID).
+		SetRole("member").Save(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_, err := repository.Update(context.Background(), servermemberport.UpdateCommand{
+		AccountID: testAccountID, ServerID: testServerID, Revision: 1,
+		IdempotencyKey: "server-update-test-0001",
+		RequestHash:    sha256.Sum256([]byte("server-update-request")),
+		NameSet:        true, Name: "不允许的名称", UpdatedAt: testNow.Add(time.Minute),
+	})
+	if !errors.Is(err, servermemberport.ErrPermissionDenied) {
+		t.Fatalf("Update(member) error = %v", err)
+	}
+}
+
 func TestEntRepositoryQueriesServerAndOwnerThroughActiveMembership(
 	t *testing.T,
 ) {

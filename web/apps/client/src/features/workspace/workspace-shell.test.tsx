@@ -2586,6 +2586,9 @@ describe("WorkspaceShell", () => {
     ).toBeVisible();
     expect(desktop.getByRole("button", { name: "打开成员" })).toBeVisible();
     expect(
+      desktop.getByRole("button", {name: "打开 Server 设置"}),
+    ).toBeVisible();
+    expect(
       desktop.getByRole("button", {
         name: "查看 Channel general 的 2 位成员",
       }),
@@ -2664,6 +2667,9 @@ describe("WorkspaceShell", () => {
     );
 
     expect(compact.getByRole("button", { name: "打开成员" })).toBeVisible();
+    expect(
+      compact.queryByRole("button", {name: "打开 Server 设置"}),
+    ).toBeNull();
     expect(
       compact.getByRole("button", {
         name: "查看 Channel general 的 2 位成员",

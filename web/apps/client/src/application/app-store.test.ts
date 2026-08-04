@@ -531,6 +531,7 @@ function dependencies(): AppStoreDependencies & {
       })),
       updateAgent: jest.fn(async () => agent),
       updateChannel: jest.fn(async () => channel),
+      updateServer: jest.fn(async () => server),
       updateMember: jest.fn(async () => ownerMember),
       updateReminder: jest.fn(async () => ({
         ...reminder,
@@ -3088,6 +3089,62 @@ describe("app store", () => {
       "request-1:channel:update",
     );
     expect(store.getState().channels[0]?.visibility).toBe("public");
+  });
+
+  it("updates the selected Server with its current revision", async () => {
+    const deps = dependencies();
+    const updated = {
+      ...server,
+      description: "协作与运行时研究",
+      name: "Vela 研究实验室",
+      revision: 2,
+    };
+    deps.platform.updateServer = jest.fn(async () => updated);
+    const store = createAppStore(deps);
+    await initializeServerContext(store);
+
+    const saved = await store.getState().updateServer({
+      description: updated.description,
+      name: updated.name,
+    });
+
+    expect(saved).toBe(true);
+    expect(store.getState().servers).toEqual([updated]);
+    expect(deps.platform.updateServer).toHaveBeenCalledWith(
+      server.id,
+      {description: updated.description, name: updated.name},
+      server.revision,
+      "request-1:server:update",
+    );
+  });
+
+  it("reuses the Server update idempotency key for the same transient retry", async () => {
+    const deps = dependencies();
+    const updated = {...server, name: "Vela", revision: 2};
+    deps.platform.updateServer = jest
+      .fn()
+      .mockRejectedValueOnce(new PlatformError("NETWORK", "网络暂时不可用"))
+      .mockResolvedValueOnce(updated);
+    const store = createAppStore(deps);
+    await initializeServerContext(store);
+
+    expect(await store.getState().updateServer({name: "Vela"})).toBe(false);
+    expect(await store.getState().updateServer({name: "Vela"})).toBe(true);
+
+    expect(deps.platform.updateServer).toHaveBeenNthCalledWith(
+      1,
+      server.id,
+      {name: "Vela"},
+      server.revision,
+      "request-1:server:update",
+    );
+    expect(deps.platform.updateServer).toHaveBeenNthCalledWith(
+      2,
+      server.id,
+      {name: "Vela"},
+      server.revision,
+      "request-1:server:update",
+    );
   });
 
   it("loads, sorts and mutates Reminders inside the selected Server", async () => {

@@ -208,7 +208,7 @@ function isKnownInternalPath(pathname: string): boolean {
   if (segments.length === 2) return true;
   if (
     segments.length === 3 &&
-    ["tasks", "agents", "computers", "members"].includes(
+    ["tasks", "agents", "computers", "members", "settings"].includes(
       segments[2] ?? "",
     )
   ) {

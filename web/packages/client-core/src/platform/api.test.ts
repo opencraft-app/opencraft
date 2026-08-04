@@ -1432,6 +1432,63 @@ test("updateChannel preserves revision and idempotency on the Channel route", as
   );
 });
 
+test("updateServer preserves revision and idempotency on the Server route", async () => {
+  const credentials = credentialStore(null);
+  let mutation:
+    | {body: unknown; headers: Headers; method: string; url: string}
+    | undefined;
+  const api = new PlatformApi({
+    baseUrl: "https://api.example.test",
+    credentials,
+    fetcher: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/login")) {
+        return json(200, authResult("access-1", "refresh-1"));
+      }
+      mutation = {
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
+        headers: new Headers(init?.headers),
+        method: init?.method ?? "GET",
+        url,
+      };
+      return json(200, {
+        description: "协作与运行时研究",
+        id: "server-1",
+        imState: "ready",
+        name: "Vela 研究实验室",
+        ownerMemberId: "member-1",
+        revision: 2,
+        slug: "agent-lab",
+      });
+    },
+    now: () => new Date("2026-07-30T17:00:00.000Z"),
+  });
+  await api.login("skip@example.test", "password");
+
+  const result = await api.updateServer(
+    "server-1",
+    {description: "协作与运行时研究", name: "Vela 研究实验室"},
+    1,
+    "idem-server-update-1",
+  );
+
+  assert.equal(result.revision, 2);
+  assert.deepEqual(mutation?.body, {
+    description: "协作与运行时研究",
+    name: "Vela 研究实验室",
+  });
+  assert.equal(mutation?.method, "PATCH");
+  assert.equal(
+    mutation?.url,
+    "https://api.example.test/v1/servers/server-1",
+  );
+  assert.equal(mutation?.headers.get("X-Resource-Revision"), "1");
+  assert.equal(
+    mutation?.headers.get("Idempotency-Key"),
+    "idem-server-update-1",
+  );
+});
+
 test("resource revision zero remains valid as declared by OpenAPI", async () => {
   const api = new PlatformApi({
     baseUrl: "https://api.example.test",

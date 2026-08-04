@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"chatserver/internal/apperror"
 	clockport "chatserver/internal/ports/clock"
@@ -14,11 +16,15 @@ import (
 	servermemberport "chatserver/internal/ports/servermember"
 )
 
-type createRepository interface {
+type serverRepository interface {
 	Create(
 		context.Context,
 		servermemberport.CreateCommand,
 	) (servermemberport.CreateResult, error)
+	Update(
+		context.Context,
+		servermemberport.UpdateCommand,
+	) (servermemberport.Server, error)
 }
 
 type resourceDeriver interface {
@@ -75,9 +81,20 @@ type CreateResult struct {
 	Operation Operation
 }
 
+// UpdateCommand 是 Human 修改 Server 展示元数据的输入。
+type UpdateCommand struct {
+	AccountID      string
+	ServerID       string
+	Revision       int64
+	IdempotencyKey string
+	Name           *string
+	DescriptionSet bool
+	Description    *string
+}
+
 // Service 编排稳定 ID、本地事务和有界 Community 等待。
 type Service struct {
-	repository createRepository
+	repository serverRepository
 	observer   CreationObserver
 	resources  resourceDeriver
 	ids        idport.Generator
@@ -87,7 +104,7 @@ type Service struct {
 
 // NewService 创建 Server/Member 应用服务。
 func NewService(
-	repository createRepository,
+	repository serverRepository,
 	observer CreationObserver,
 	resources resourceDeriver,
 	ids idport.Generator,
@@ -106,6 +123,109 @@ func NewService(
 		clock:      clock,
 		config:     config,
 	}, nil
+}
+
+// Update 修改平台内的 Server 展示元数据，不改变稳定 slug 或腾讯 IM 路由。
+func (service *Service) Update(
+	ctx context.Context,
+	command UpdateCommand,
+) (servermemberport.Server, error) {
+	if err := validateUpdate(command); err != nil {
+		return servermemberport.Server{}, err
+	}
+	name := ""
+	nameSet := command.Name != nil
+	if nameSet {
+		name = strings.TrimSpace(*command.Name)
+	}
+	description := command.Description
+	if command.DescriptionSet {
+		description = normalizedDescription(command.Description)
+	}
+	value, err := service.repository.Update(ctx, servermemberport.UpdateCommand{
+		AccountID:      command.AccountID,
+		ServerID:       command.ServerID,
+		Revision:       command.Revision,
+		IdempotencyKey: strings.TrimSpace(command.IdempotencyKey),
+		RequestHash:    updateRequestHash(command),
+		NameSet:        nameSet,
+		Name:           name,
+		DescriptionSet: command.DescriptionSet,
+		Description:    description,
+		UpdatedAt:      service.clock.Now().UTC(),
+	})
+	if err != nil {
+		return servermemberport.Server{}, mapUpdateError(err)
+	}
+	return value, nil
+}
+
+func validateUpdate(command UpdateCommand) error {
+	if !isUUIDv7(command.AccountID) || !isUUIDv7(command.ServerID) ||
+		command.Revision < 1 || strings.TrimSpace(command.IdempotencyKey) == "" ||
+		(command.Name == nil && !command.DescriptionSet) {
+		return apperror.New("invalid_request", "Server 修改参数无效", nil)
+	}
+	if command.Name != nil {
+		name := strings.TrimSpace(*command.Name)
+		if name == "" || len(name) > 100 || !utf8.ValidString(name) {
+			return apperror.New("invalid_request", "Server 名称无效", nil)
+		}
+	}
+	if command.DescriptionSet && command.Description != nil &&
+		(!utf8.ValidString(*command.Description) ||
+			len(strings.TrimSpace(*command.Description)) > 1000) {
+		return apperror.New("invalid_request", "Server 描述无效", nil)
+	}
+	return nil
+}
+
+func normalizedDescription(value *string) *string {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return nil
+	}
+	normalized := strings.TrimSpace(*value)
+	return &normalized
+}
+
+func updateRequestHash(command UpdateCommand) [32]byte {
+	nameMarker, name := "0", ""
+	if command.Name != nil {
+		nameMarker, name = "1", strings.TrimSpace(*command.Name)
+	}
+	descriptionMarker, description := "0", ""
+	if command.DescriptionSet {
+		descriptionMarker = "1"
+		if command.Description != nil {
+			description = strings.TrimSpace(*command.Description)
+		}
+	}
+	return sha256.Sum256([]byte(strings.Join([]string{
+		strconv.FormatInt(command.Revision, 10),
+		nameMarker,
+		name,
+		descriptionMarker,
+		description,
+	}, "\x00")))
+}
+
+func mapUpdateError(err error) error {
+	switch {
+	case errors.Is(err, servermemberport.ErrServerNotFound):
+		return apperror.New("server_not_found", "Server 不存在", err)
+	case errors.Is(err, servermemberport.ErrPermissionDenied):
+		return apperror.New("permission_denied", "没有管理 Server 的权限", err)
+	case errors.Is(err, servermemberport.ErrRevisionConflict):
+		return apperror.New(
+			"revision_conflict",
+			"Server 已被其他操作修改，请刷新后重试",
+			err,
+		)
+	case errors.Is(err, servermemberport.ErrIdempotencyConflict):
+		return apperror.New("idempotency_conflict", "幂等键与原请求不一致", err)
+	default:
+		return apperror.New("internal_error", "暂时无法修改 Server", err)
+	}
 }
 
 // Create 先提交本地事实，再最多等待 Community 在窗口内 ready。

@@ -51,6 +51,7 @@ import {
   type UpdateChannelInput,
   type UpdateMemberInput,
   type UpdateReminderInput,
+  type UpdateServerInput,
   type UpdateTaskInput,
 } from "@vela/client-core";
 import { createStore, type StoreApi } from "zustand/vanilla";
@@ -252,6 +253,12 @@ export interface PlatformPort {
     revision: number,
     idempotencyKey: string,
   ): Promise<Channel>;
+  updateServer(
+    serverId: string,
+    input: UpdateServerInput,
+    revision: number,
+    idempotencyKey: string,
+  ): Promise<Server>;
   updateMember(
     serverId: string,
     memberId: string,
@@ -499,6 +506,7 @@ export interface AppStoreState {
   updateTask(taskId: string, input: UpdateTaskInput): Promise<void>;
   updateAgent(agentId: string, input: UpdateAgentInput): Promise<void>;
   updateChannel(channelId: string, input: UpdateChannelInput): Promise<void>;
+  updateServer(input: UpdateServerInput): Promise<boolean>;
   updateMember(memberId: string, input: UpdateMemberInput): Promise<void>;
   updateReminder(reminderId: string, input: UpdateReminderInput): Promise<void>;
   updateConversationDraft(text: string): void;
@@ -518,6 +526,10 @@ export function createAppStore(
   let directConversationEpoch = 0;
   let directConversationActive = false;
   let directConversationSyncGeneration = 0;
+  let serverUpdateAttempt: {
+    fingerprint: string;
+    idempotencyKey: string;
+  } | null = null;
   let imRecoveryPromise: Promise<void> | null = null;
   let manualReconnectPromise: Promise<void> | null = null;
   let userSigRecoveryUsed = false;
@@ -2999,6 +3011,58 @@ export function createAppStore(
         }));
       } catch (error) {
         set({ error: errorMessage(error), pendingAction: null });
+      }
+    },
+
+    async updateServer(input) {
+      const state = get();
+      if (state.pendingAction) return false;
+      const server = currentServer(state);
+      if (!server) {
+        set({error: "Server 不存在或尚未加载"});
+        return false;
+      }
+      const fingerprint = JSON.stringify({
+        input,
+        revision: server.revision,
+        serverId: server.id,
+      });
+      if (!serverUpdateAttempt || serverUpdateAttempt.fingerprint !== fingerprint) {
+        serverUpdateAttempt = {
+          fingerprint,
+          idempotencyKey: `${requestId()}:server:update`,
+        };
+      }
+      const attempt = serverUpdateAttempt;
+      set({error: null, pendingAction: "server:update"});
+      try {
+        const updated = await dependencies.platform.updateServer(
+          server.id,
+          input,
+          server.revision,
+          attempt.idempotencyKey,
+        );
+        serverUpdateAttempt = null;
+        set((current) => ({
+          pendingAction: null,
+          servers: upsertServer(current.servers, updated),
+        }));
+        return true;
+      } catch (error) {
+        if (
+          error instanceof PlatformError &&
+          error.platformCode === "revision_conflict"
+        ) {
+          try {
+            const latest = await dependencies.platform.getServer(server.id);
+            set((current) => ({servers: upsertServer(current.servers, latest)}));
+          } catch {
+            // 保留原始 revision 冲突；下一次常规刷新仍会重新获取最新事实。
+          }
+          serverUpdateAttempt = null;
+        }
+        set({error: errorMessage(error), pendingAction: null});
+        return false;
       }
     },
 

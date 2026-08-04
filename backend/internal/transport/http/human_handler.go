@@ -424,6 +424,10 @@ func newHumanRoutes(
 			serverWrapper.GetServer,
 		)
 		mux.HandleFunc(
+			"PATCH /v1/servers/{serverId}",
+			serverWrapper.UpdateServer,
+		)
+		mux.HandleFunc(
 			"GET /v1/servers/{serverId}/members",
 			serverWrapper.ListMembers,
 		)

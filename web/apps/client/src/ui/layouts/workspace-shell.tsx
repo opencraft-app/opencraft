@@ -49,6 +49,7 @@ import Monitor from "lucide-react-native/icons/monitor";
 import Pencil from "lucide-react-native/icons/pencil";
 import Plus from "lucide-react-native/icons/plus";
 import Search from "lucide-react-native/icons/search";
+import Settings from "lucide-react-native/icons/settings";
 import UsersRound from "lucide-react-native/icons/users-round";
 import X from "lucide-react-native/icons/x";
 import Ellipsis from "lucide-react-native/icons/ellipsis";
@@ -93,6 +94,7 @@ export type WorkspaceSection =
   | "chat"
   | "computers"
   | "members"
+  | "settings"
   | "tasks";
 
 export interface NavigationLinkProps {
@@ -225,6 +227,7 @@ export interface PlatformFrameProps {
   account?: Account | null;
   activeSection: WorkspaceSection;
   children: ReactNode;
+  canManageServer?: boolean;
   currentServerId: string | null;
   navigation: ReactNode;
   imStatus?: WorkspaceImStatus;
@@ -241,6 +244,7 @@ export function PlatformFrame({
   account,
   activeSection,
   children,
+  canManageServer = false,
   currentServerId,
   navigation,
   imStatus,
@@ -261,6 +265,7 @@ export function PlatformFrame({
         {children}
         <MobileBottomNavigation
           activeSection={activeSection}
+          canManageServer={canManageServer}
           navigationOpen={false}
           onNavigateSection={onNavigateSection}
           onToggle={() => onNavigateSection("chat")}
@@ -275,6 +280,7 @@ export function PlatformFrame({
       <ServerRail
         account={account}
         activeSection={activeSection}
+        canManageServer={canManageServer}
         currentServerId={currentServerId}
         imStatus={imStatus}
         onNavigateSection={onNavigateSection}
@@ -1271,6 +1277,9 @@ function GraphicalWorkspaceShell({
         {messageSearchOpen ? null : (
           <MobileBottomNavigation
             activeSection={activeSection}
+            canManageServer={
+              currentMember?.role === "owner" || currentMember?.role === "admin"
+            }
             navigationOpen={conversationPickerOpen}
             onNavigateSection={onNavigateSection}
             onToggle={() =>
@@ -1290,6 +1299,9 @@ function GraphicalWorkspaceShell({
       <ServerRail
         account={account}
         activeSection={activeSection}
+        canManageServer={
+          currentMember?.role === "owner" || currentMember?.role === "admin"
+        }
         currentServerId={currentServerId}
         imStatus={imStatus}
         onNavigateSection={onNavigateSection}
@@ -1446,6 +1458,7 @@ function GraphicalWorkspaceShell({
 function ServerRail({
   account,
   activeSection,
+  canManageServer,
   currentServerId,
   imStatus,
   onNavigateSection,
@@ -1466,6 +1479,7 @@ function ServerRail({
   | "serverHref"
   | "servers"
 > & {
+  canManageServer: boolean;
   imStatus?: WorkspaceImStatus;
 }) {
   const [accountOpen, setAccountOpen] = useState(false);
@@ -1513,7 +1527,7 @@ function ServerRail({
         </ScrollView>
       ) : null}
       <View style={styles.railNavigation} testID="rail-navigation">
-        {sectionNavigation.map((item) => {
+        {visibleSectionNavigation(canManageServer).map((item) => {
           const selected = item.id === activeSection;
           const href = sectionHref?.(item.id);
           return (
@@ -4149,12 +4163,14 @@ function DirectPickerEmptyState({
 
 function MobileBottomNavigation({
   activeSection,
+  canManageServer,
   navigationOpen,
   onNavigateSection,
   onToggle,
   sectionHref,
 }: {
   activeSection: WorkspaceSection;
+  canManageServer: boolean;
   navigationOpen: boolean;
   onNavigateSection(section: WorkspaceSection): void;
   onToggle(): void;
@@ -4162,7 +4178,7 @@ function MobileBottomNavigation({
 }) {
   return (
     <View style={styles.mobileBottomNavigation} testID="mobile-bottom-nav">
-      {sectionNavigation.map((item) => {
+      {visibleSectionNavigation(canManageServer).map((item) => {
         const selected = item.id === activeSection;
         const chatLabel = navigationOpen ? "返回聊天" : "选择会话";
         const togglesPicker = item.id === "chat" && selected;
@@ -4277,7 +4293,19 @@ const sectionNavigation: Array<{
     id: "members",
     label: "成员",
   },
+  {
+    accessibilityLabel: "打开 Server 设置",
+    icon: Settings,
+    id: "settings",
+    label: "设置",
+  },
 ];
+
+function visibleSectionNavigation(canManageServer: boolean) {
+  return canManageServer
+    ? sectionNavigation
+    : sectionNavigation.filter(item => item.id !== "settings");
+}
 
 const styles = StyleSheet.create((theme) => ({
   accountDisplayName: {

@@ -564,6 +564,7 @@ export function MembersScreen(props: MembersScreenProps) {
     <PlatformFrame
       account={currentAccount}
       activeSection="members"
+      canManageServer={canManage}
       currentServerId={currentServerId}
       imStatus={imStatus}
       navigation={stackedCollection ? null : desktopNavigation}

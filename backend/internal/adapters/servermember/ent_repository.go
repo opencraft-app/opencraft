@@ -293,6 +293,137 @@ func decodeAcceptedLocator(value string) (acceptedLocator, error) {
 	}, nil
 }
 
+// Update 在 Server 分区内授权、幂等检查并以 revision CAS 修改展示元数据。
+func (repository *EntRepository) Update(
+	ctx context.Context,
+	command servermemberport.UpdateCommand,
+) (result servermemberport.Server, returnErr error) {
+	returnErr = repository.handle.WithTx(
+		ctx,
+		func(ctx context.Context, tx *ent.Tx) error {
+			actor, err := tx.Member.Query().
+				Where(
+					member.ServerIDEQ(command.ServerID),
+					member.AccountIDEQ(command.AccountID),
+					member.KindEQ("human"),
+					member.StatusEQ("active"),
+				).
+				Only(ctx)
+			if ent.IsNotFound(err) {
+				return servermemberport.ErrServerNotFound
+			}
+			if err != nil {
+				return err
+			}
+			if actor.Role != "owner" && actor.Role != "admin" {
+				return servermemberport.ErrPermissionDenied
+			}
+			stored, err := tx.IdempotencyRecord.Query().
+				Where(
+					idempotencyrecord.PartitionKeyEQ(command.ServerID),
+					idempotencyrecord.ScopeTypeEQ("server.update"),
+					idempotencyrecord.ScopeIDEQ(command.ServerID),
+					idempotencyrecord.IdempotencyKeyEQ(command.IdempotencyKey),
+				).
+				Only(ctx)
+			if err == nil {
+				return decodeServerUpdate(stored, command.RequestHash, &result)
+			}
+			if !ent.IsNotFound(err) {
+				return err
+			}
+			update := tx.Server.Update().
+				Where(
+					server.IDEQ(command.ServerID),
+					server.RevisionEQ(command.Revision),
+				).
+				AddRevision(1).
+				SetUpdatedAt(command.UpdatedAt.UTC())
+			if command.NameSet {
+				update.SetName(command.Name)
+			}
+			if command.DescriptionSet {
+				if command.Description == nil {
+					update.ClearDescription()
+				} else {
+					update.SetDescription(*command.Description)
+				}
+			}
+			affected, err := update.Save(ctx)
+			if err != nil {
+				return err
+			}
+			if affected != 1 {
+				return servermemberport.ErrRevisionConflict
+			}
+			updated, err := tx.Server.Query().
+				Where(server.IDEQ(command.ServerID)).
+				Only(ctx)
+			if err != nil {
+				return err
+			}
+			result = mapServer(updated)
+			response, err := persistedjson.EncodeScoped("server.update", result)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.IdempotencyRecord.Create().
+				SetPartitionKey(command.ServerID).
+				SetScopeType("server.update").
+				SetScopeID(command.ServerID).
+				SetIdempotencyKey(command.IdempotencyKey).
+				SetRequestHash(command.RequestHash[:]).
+				SetResponseStatus(200).
+				SetResponseBodyJSON(response).
+				SetExpiresAt(command.UpdatedAt.UTC().Add(24 * time.Hour)).
+				SetCreatedAt(command.UpdatedAt.UTC()).
+				Save(ctx); err != nil {
+				return err
+			}
+			return nil
+		},
+	)
+	if !errors.Is(returnErr, servermemberport.ErrRevisionConflict) {
+		return result, returnErr
+	}
+	// 同一幂等请求可能与另一个事务同时通过首次查询。CAS 失败后只从已提交
+	// 数据重新判定；命中同一请求应返回稳定结果，而不是误报 revision 冲突。
+	stored, err := repository.handle.Client().IdempotencyRecord.Query().
+		Where(
+			idempotencyrecord.PartitionKeyEQ(command.ServerID),
+			idempotencyrecord.ScopeTypeEQ("server.update"),
+			idempotencyrecord.ScopeIDEQ(command.ServerID),
+			idempotencyrecord.IdempotencyKeyEQ(command.IdempotencyKey),
+		).
+		Only(ctx)
+	if ent.IsNotFound(err) {
+		return servermemberport.Server{}, returnErr
+	}
+	if err != nil {
+		return servermemberport.Server{}, err
+	}
+	if err := decodeServerUpdate(stored, command.RequestHash, &result); err != nil {
+		return servermemberport.Server{}, err
+	}
+	return result, nil
+}
+
+func decodeServerUpdate(
+	stored *ent.IdempotencyRecord,
+	requestHash [32]byte,
+	result *servermemberport.Server,
+) error {
+	if subtle.ConstantTimeCompare(stored.RequestHash, requestHash[:]) != 1 {
+		return servermemberport.ErrIdempotencyConflict
+	}
+	_, err := persistedjson.DecodeScoped(
+		stored.ResponseBodyJSON,
+		"server.update",
+		result,
+	)
+	return err
+}
+
 // ListServers 列出当前账号 active projection 指向的 Server。
 func (repository *EntRepository) ListServers(
 	ctx context.Context,

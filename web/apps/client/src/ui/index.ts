@@ -121,6 +121,10 @@ export {
   MembersScreen,
   type MembersScreenProps,
 } from "./screens/members-screen";
+export {
+  ServerSettingsScreen,
+  type ServerSettingsScreenProps,
+} from "./screens/server-settings-screen";
 export {StyleLabScreen} from "./screens/style-lab-screen";
 export { velaFontAssets, useVelaFonts } from "./font-assets";
 export { useAppActive } from "./use-app-active";

@@ -58,6 +58,7 @@ export type UpdateChannelInput =
   components["schemas"]["UpdateChannelRequest"];
 export type UpdateReminderInput =
   components["schemas"]["UpdateReminderRequest"];
+export type UpdateServerInput = components["schemas"]["UpdateServerRequest"];
 export type UpdateTaskInput = components["schemas"]["UpdateTaskRequest"];
 
 export type CreateServerResult =
@@ -202,6 +203,30 @@ export class PlatformApi {
       return {accepted: value, kind: "accepted"};
     }
     throw protocolError("Server 创建响应结构不合法");
+  }
+
+  public async updateServer(
+    serverId: string,
+    input: UpdateServerInput,
+    revision: number,
+    idempotencyKey: string,
+  ): Promise<Server> {
+    assertRevision(revision, "Server");
+    const value = await this.authorizedJson<unknown>(
+      `/servers/${encodeURIComponent(serverId)}`,
+      {
+        body: JSON.stringify(input),
+        headers: {
+          ...mutationHeaders(idempotencyKey),
+          "X-Resource-Revision": String(revision),
+        },
+        method: "PATCH",
+      },
+    );
+    if (!isServer(value)) {
+      throw protocolError("Server 更新响应结构不合法");
+    }
+    return value;
   }
 
   public async listChannels(serverId: string): Promise<Channel[]> {

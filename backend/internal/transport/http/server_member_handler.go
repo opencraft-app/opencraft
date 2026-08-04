@@ -19,6 +19,50 @@ type serverCreator interface {
 		context.Context,
 		appservermember.CreateCommand,
 	) (appservermember.CreateResult, error)
+	Update(
+		context.Context,
+		appservermember.UpdateCommand,
+	) (servermemberport.Server, error)
+}
+
+// UpdateServer 修改平台内 Server 的展示名称和描述。
+func (handler *ServerMemberHandler) UpdateServer(
+	ctx context.Context,
+	request openapi.UpdateServerRequestObject,
+) (openapi.UpdateServerResponseObject, error) {
+	accountID, err := currentHumanAccountID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if request.Body == nil {
+		return nil, apperror.New("invalid_request", "请求体不能为空", nil)
+	}
+	revision, err := workRevision(request.Params.XResourceRevision)
+	if err != nil {
+		return nil, err
+	}
+	value, err := handler.creator.Update(ctx, appservermember.UpdateCommand{
+		AccountID:      accountID,
+		ServerID:       request.ServerId.String(),
+		Revision:       revision,
+		IdempotencyKey: string(request.Params.IdempotencyKey),
+		Name:           request.Body.Name,
+		DescriptionSet: request.Body.Description != nil,
+		Description:    request.Body.Description,
+	})
+	if err != nil {
+		return nil, err
+	}
+	body, err := serverDTO(value)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.UpdateServer200JSONResponse{
+		Body: body,
+		Headers: openapi.UpdateServer200ResponseHeaders{
+			XResourceRevision: body.Revision,
+		},
+	}, nil
 }
 
 type serverQueries interface {

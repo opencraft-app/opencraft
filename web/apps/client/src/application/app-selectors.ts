@@ -54,6 +54,7 @@ export type ManagementStateSection =
   | "agents"
   | "computers"
   | "members"
+  | "settings"
   | "tasks";
 
 const emptyAgents: AppStoreState["agents"] = [];
@@ -77,7 +78,7 @@ export function selectManagementState(
   const usesAgents =
     section === "agents" || section === "computers" || section === "tasks";
   const usesComputers = section === "agents" || section === "computers";
-  const usesOrganization = section === "members";
+  const usesOrganization = section === "members" || section === "settings";
   return {
     account: state.account,
     agents: usesAgents ? state.agents : emptyAgents,

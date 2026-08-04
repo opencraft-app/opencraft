@@ -685,6 +685,7 @@ export function AgentsScreen(props: AgentsScreenProps) {
     <PlatformFrame
       account={currentAccount}
       activeSection="agents"
+      canManageServer={canManage}
       currentServerId={currentServerId}
       imStatus={imStatus}
       navigation={stackedCollection ? null : desktopNavigation}

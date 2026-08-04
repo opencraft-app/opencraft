@@ -63,6 +63,7 @@ import {
 
 export interface TasksScreenProps {
   agents?: Agent[];
+  canManage?: boolean;
   currentAccount?: PlatformFrameProps["account"];
   currentServerId: string | null;
   error: string | null;
@@ -100,6 +101,7 @@ export interface TasksScreenProps {
 export function TasksScreen(props: TasksScreenProps) {
   const {
     agents = [],
+    canManage = false,
     currentAccount,
     currentServerId,
     error,
@@ -591,6 +593,7 @@ export function TasksScreen(props: TasksScreenProps) {
     <PlatformFrame
       account={currentAccount}
       activeSection="tasks"
+      canManageServer={canManage}
       currentServerId={currentServerId}
       imStatus={imStatus}
       navigation={stackedCollection ? null : sidebar}

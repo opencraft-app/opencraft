@@ -25,6 +25,7 @@ const sectionTitle: Record<ManagementSection, string> = {
   agents: "Agent",
   computers: "Computer",
   members: "成员",
+  settings: "设置",
   tasks: "任务",
 };
 

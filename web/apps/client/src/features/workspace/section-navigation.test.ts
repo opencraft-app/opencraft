@@ -40,6 +40,9 @@ describe("workspaceSectionHref", () => {
     expect(workspaceSectionHref("server 1", "members")).toBe(
       "/s/server%201/members",
     );
+    expect(workspaceSectionHref("server 1", "settings")).toBe(
+      "/s/server%201/settings",
+    );
     expect(computerHref("server 1", "computer/1")).toBe(
       "/s/server%201/computers/computer%2F1",
     );

@@ -19,8 +19,18 @@ const (
 )
 
 type fakeServerCreator struct {
-	command appservermember.CreateCommand
-	result  appservermember.CreateResult
+	command       appservermember.CreateCommand
+	result        appservermember.CreateResult
+	updateCommand appservermember.UpdateCommand
+	updateResult  servermemberport.Server
+}
+
+func (creator *fakeServerCreator) Update(
+	_ context.Context,
+	command appservermember.UpdateCommand,
+) (servermemberport.Server, error) {
+	creator.updateCommand = command
+	return creator.updateResult, nil
 }
 
 func (creator *fakeServerCreator) Create(
@@ -221,5 +231,42 @@ func TestServerMemberHandlerReturnsAcceptedPendingOperation(t *testing.T) {
 		len(accepted.Operations) != 1 ||
 		accepted.Operations[0].Id.String() != handlerOperationID {
 		t.Fatalf("CreateServer() = %#v", response)
+	}
+}
+
+func TestServerMemberHandlerMapsUpdateServer(t *testing.T) {
+	description := "新的描述"
+	creator := &fakeServerCreator{updateResult: servermemberport.Server{
+		ID: handlerServerID, Slug: "agent-lab", Name: "新的名称",
+		Description: &description, OwnerMemberID: handlerMemberID,
+		IMState: "ready", Revision: 3,
+	}}
+	handler, err := NewServerMemberHandler(creator, &fakeServerQueries{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "新的名称"
+	response, err := handler.UpdateServer(
+		currentHumanContext(t),
+		openapi.UpdateServerRequestObject{
+			ServerId: uuid.MustParse(handlerServerID),
+			Params: openapi.UpdateServerParams{
+				XResourceRevision: 2,
+				IdempotencyKey:    "server-update-0001",
+			},
+			Body: &openapi.UpdateServerJSONRequestBody{
+				Name: &name, Description: &description,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, ok := response.(openapi.UpdateServer200JSONResponse)
+	if !ok || updated.Body.Name != name ||
+		updated.Headers.XResourceRevision != 3 ||
+		creator.updateCommand.Revision != 2 ||
+		creator.updateCommand.AccountID != handlerAccountID {
+		t.Fatalf("UpdateServer() = %#v, command = %#v", response, creator.updateCommand)
 	}
 }

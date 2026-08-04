@@ -13,6 +13,7 @@ var (
 	ErrServerSlugConflict  = errors.New("Server slug 已被使用")
 	ErrIdempotencyConflict = errors.New("幂等键与原请求不一致")
 	ErrServerNotFound      = errors.New("Server 不存在")
+	ErrRevisionConflict    = errors.New("Server revision 冲突")
 	ErrMemberNotFound      = errors.New("成员不存在")
 	ErrPermissionDenied    = errors.New("没有读取该 Channel 成员的权限")
 )
@@ -52,6 +53,20 @@ type CreateResult struct {
 	Created     bool
 	ServerID    string
 	OperationID string
+}
+
+// UpdateCommand 保存一次带乐观并发和幂等保护的 Server 元数据修改。
+type UpdateCommand struct {
+	AccountID      string
+	ServerID       string
+	Revision       int64
+	IdempotencyKey string
+	RequestHash    [32]byte
+	NameSet        bool
+	Name           string
+	DescriptionSet bool
+	Description    *string
+	UpdatedAt      time.Time
 }
 
 // Server 是应用层可见的 Server 事实。
@@ -106,6 +121,7 @@ type MemberPage struct {
 // Repository 保存 Server 创建事务并提供授权后的查询。
 type Repository interface {
 	Create(context.Context, CreateCommand) (CreateResult, error)
+	Update(context.Context, UpdateCommand) (Server, error)
 	ListServers(context.Context, string, ListOptions) (ServerPage, error)
 	GetServer(context.Context, string, string) (Server, error)
 	ListMembers(context.Context, string, string, ListOptions) (MemberPage, error)

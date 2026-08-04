@@ -133,6 +133,36 @@ func TestPlatformAPIExposesAuthenticatedServerCreateAndQueries(t *testing.T) {
 		page.Items[0].Id != accepted.ResourceId {
 		t.Fatalf("page = %#v", page)
 	}
+	updateServer := platformRevisionJSON(
+		t,
+		handler,
+		http.MethodPatch,
+		"/v1/servers/"+accepted.ResourceId.String(),
+		map[string]any{
+			"name":        "Vela 研究实验室",
+			"description": "协作与运行时研究",
+		},
+		*auth.AccessToken,
+		"server-update-0001",
+		uint64(page.Items[0].Revision),
+	)
+	if updateServer.Code != http.StatusOK {
+		t.Fatalf(
+			"update server = %d %s",
+			updateServer.Code,
+			updateServer.Body,
+		)
+	}
+	var updatedServer openapi.Server
+	if err := json.Unmarshal(updateServer.Body.Bytes(), &updatedServer); err != nil {
+		t.Fatal(err)
+	}
+	if updatedServer.Name != "Vela 研究实验室" ||
+		updatedServer.Description == nil ||
+		*updatedServer.Description != "协作与运行时研究" ||
+		uint64(updatedServer.Revision) != uint64(page.Items[0].Revision)+1 {
+		t.Fatalf("updated server = %#v", updatedServer)
+	}
 	createInvite := performJSON(
 		t,
 		handler,
@@ -781,4 +811,29 @@ func platformJSON(
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 	return recorder
+}
+
+func platformRevisionJSON(
+	t *testing.T,
+	handler http.Handler,
+	method string,
+	path string,
+	body any,
+	bearer string,
+	idempotencyKey string,
+	revision uint64,
+) *httptest.ResponseRecorder {
+	t.Helper()
+	data, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(method, path, bytes.NewReader(data))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+bearer)
+	request.Header.Set("Idempotency-Key", idempotencyKey)
+	request.Header.Set("X-Resource-Revision", strconv.FormatUint(revision, 10))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
 }

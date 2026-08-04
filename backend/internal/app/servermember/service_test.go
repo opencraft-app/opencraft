@@ -129,9 +129,49 @@ const testServiceTopicID = testServiceGroupID + "@TOPIC#_T_46HDVNIIYDGRIRBGXZTJ7
 var testServiceNow = time.Date(2026, 7, 30, 14, 0, 0, 0, time.UTC)
 
 type fakeCreateRepository struct {
-	command servermemberport.CreateCommand
-	result  servermemberport.CreateResult
-	err     error
+	command       servermemberport.CreateCommand
+	result        servermemberport.CreateResult
+	err           error
+	updateCommand servermemberport.UpdateCommand
+	updateResult  servermemberport.Server
+	updateErr     error
+}
+
+func (repository *fakeCreateRepository) Update(
+	_ context.Context,
+	command servermemberport.UpdateCommand,
+) (servermemberport.Server, error) {
+	repository.updateCommand = command
+	return repository.updateResult, repository.updateErr
+}
+
+func TestServiceUpdateNormalizesMetadataAndCarriesConcurrencyFacts(t *testing.T) {
+	description := "  新的描述  "
+	repository := &fakeCreateRepository{updateResult: servermemberport.Server{
+		ID: testServiceIDs[0], Name: "新的名称", Revision: 3,
+	}}
+	service := newTestService(t, repository, &fakeCreationObserver{})
+
+	name := "  新的名称  "
+	result, err := service.Update(context.Background(), UpdateCommand{
+		AccountID:      testServiceAccountID,
+		ServerID:       testServiceIDs[0],
+		Revision:       2,
+		IdempotencyKey: "server-update-0001",
+		Name:           &name,
+		DescriptionSet: true,
+		Description:    &description,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := repository.updateCommand
+	if result.Revision != 3 || command.Name != "新的名称" ||
+		command.Description == nil || *command.Description != "新的描述" ||
+		command.Revision != 2 || command.RequestHash == [32]byte{} ||
+		!command.UpdatedAt.Equal(testServiceNow) {
+		t.Fatalf("Update() = (%#v, %#v)", result, command)
+	}
 }
 
 func (repository *fakeCreateRepository) Create(

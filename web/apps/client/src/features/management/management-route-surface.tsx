@@ -8,6 +8,7 @@ import {
   AgentsScreen,
   ComputersScreen,
   MembersScreen,
+  ServerSettingsScreen,
   TasksScreen,
   type TerminalSurfaceController,
   type WorkspaceSection,
@@ -92,6 +93,25 @@ export function ManagementRouteSurface({
   const selectServer = (serverId: string) =>
     navigation.selectServer(serverId, section);
 
+  if (section === "settings") {
+    if (!state.account) return null;
+    return (
+      <ServerSettingsScreen
+        canManage={canManage}
+        currentAccount={state.account}
+        error={state.error}
+        imStatus={state.imState.status}
+        onLogout={() => store.getState().logout()}
+        onNavigateSection={navigateSection}
+        onSave={input => store.getState().updateServer(input)}
+        onSelectServer={selectServer}
+        pendingAction={state.pendingAction}
+        server={server}
+        servers={state.servers}
+      />
+    );
+  }
+
   if (section === "agents") {
     return (
       <AgentsScreen
@@ -175,6 +195,7 @@ export function ManagementRouteSurface({
     return (
       <TasksScreen
         agents={state.agents}
+        canManage={canManage}
         currentAccount={state.account}
         currentServerId={state.currentServerId}
         error={state.error}

@@ -510,6 +510,7 @@ export function ComputersScreen(props: ComputersScreenProps) {
     <PlatformFrame
       account={currentAccount}
       activeSection="computers"
+      canManageServer={canManage}
       currentServerId={currentServerId}
       imStatus={imStatus}
       navigation={null}

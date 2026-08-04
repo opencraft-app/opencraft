@@ -570,6 +570,10 @@ func newAuthAndMeAPIHandler(
 				Path:   "/v1/servers/{serverId}",
 			},
 			httptransport.ImplementedRoute{
+				Method: http.MethodPatch,
+				Path:   "/v1/servers/{serverId}",
+			},
+			httptransport.ImplementedRoute{
 				Method: http.MethodGet,
 				Path:   "/v1/servers/{serverId}/members",
 			},

@@ -45,7 +45,7 @@ var operationKinds = map[string]struct{}{
 }
 
 var idempotencyScopes = map[string]struct{}{
-	"server.create": {}, "invite.accept": {}, "join_link.accept": {},
+	"server.create": {}, "server.update": {}, "invite.accept": {}, "join_link.accept": {},
 	"channel.create": {}, "channel.update": {},
 	"direct-conversation.create": {}, "direct-conversation.retry": {},
 	"channel.member.add": {}, "channel.member.ensure": {}, "channel.member.remove": {},
