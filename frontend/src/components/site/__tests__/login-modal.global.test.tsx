@@ -75,6 +75,15 @@ describe("LoginModal (国际站 isGlobal=true)", () => {
     expect(screen.queryByRole("button", { name: /Sign in with WeChat/ })).not.toBeInTheDocument();
   });
 
+  it("国际站服务协议跳转腾讯云国际站英文文档", () => {
+    renderLoginModal();
+
+    expect(screen.getByRole("link", { name: "Terms of Service" })).toHaveAttribute(
+      "href",
+      "https://www.tencentcloud.com/document/product/301/12905?lang=en&pg=",
+    );
+  });
+
   it("勾选协议后点击 Google 跳转后端下发的 start URL", () => {
     const redirectSpy = vi.spyOn(oauthModule, "redirectToOAuthStart").mockImplementation(() => undefined);
 
