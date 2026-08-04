@@ -71,10 +71,11 @@ func TestServiceReusesStagedSecretAndCompletesFirstInstall(t *testing.T) {
 		t.Fatalf("installed program info=%v err=%v", info, err)
 	}
 	var config struct {
-		ComputerID string `json:"computerId"`
+		ComputerID        string `json:"computerId"`
+		AllowInsecureHTTP bool   `json:"allowInsecureHttp"`
 	}
 	if err := rootstate.New(options.StateDirectory).Read("config.json", &config); err != nil ||
-		config.ComputerID != testComputerID {
+		config.ComputerID != testComputerID || !config.AllowInsecureHTTP {
 		t.Fatalf("config=%#v err=%v", config, err)
 	}
 	for _, transient := range []string{installTokenName, installSecretName} {

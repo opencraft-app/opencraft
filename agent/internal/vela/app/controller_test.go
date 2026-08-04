@@ -42,6 +42,31 @@ func TestWriteRuntimeCatalogStatusIsStableAndPathFree(t *testing.T) {
 	}
 }
 
+func TestLoadManagedComputerConfigPreservesInsecureHTTPOptIn(t *testing.T) {
+	t.Parallel()
+
+	root := shortAppRoot(t)
+	want := managedComputerConfig{
+		SchemaVersion:     1,
+		PlatformURL:       "http://192.0.2.10",
+		AllowInsecureHTTP: true,
+		ServerID:          computerControllerServerID,
+		ComputerID:        computerControllerID,
+		Name:              "测试 Computer",
+		Region:            "ap-beijing",
+	}
+	if err := rootstate.New(root).Write("config.json", want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadManagedComputerConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.AllowInsecureHTTP {
+		t.Fatalf("allowInsecureHttp = false, want true")
+	}
+}
+
 func TestDefaultControllerRunsComputerSessionAndAssignmentLoop(
 	t *testing.T,
 ) {

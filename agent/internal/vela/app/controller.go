@@ -30,12 +30,13 @@ var (
 )
 
 type managedComputerConfig struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	PlatformURL   string `json:"platformUrl"`
-	ServerID      string `json:"serverId"`
-	ComputerID    string `json:"computerId"`
-	Name          string `json:"name"`
-	Region        string `json:"region"`
+	SchemaVersion     int    `json:"schemaVersion"`
+	PlatformURL       string `json:"platformUrl"`
+	AllowInsecureHTTP bool   `json:"allowInsecureHttp,omitempty"`
+	ServerID          string `json:"serverId"`
+	ComputerID        string `json:"computerId"`
+	Name              string `json:"name"`
+	Region            string `json:"region"`
 }
 
 type defaultComputerController struct {
@@ -115,12 +116,13 @@ func (c *defaultComputerController) Setup(
 			return err
 		}
 		config = managedComputerConfig{
-			SchemaVersion: 1,
-			PlatformURL:   options.PlatformURL,
-			ServerID:      options.ServerID,
-			ComputerID:    computer.ID,
-			Name:          options.Name,
-			Region:        computer.Region,
+			SchemaVersion:     1,
+			PlatformURL:       options.PlatformURL,
+			AllowInsecureHTTP: c.config.AllowInsecureHTTP,
+			ServerID:          options.ServerID,
+			ComputerID:        computer.ID,
+			Name:              options.Name,
+			Region:            computer.Region,
 		}
 		if err := store.Write("config.json", config); err != nil {
 			return err
@@ -421,7 +423,7 @@ func (c *defaultComputerController) Run(
 		Now:                   c.config.Now,
 		MaxSessionTTL:         24 * time.Hour,
 		AllowInsecureLoopback: c.config.AllowInsecureLoopback,
-		AllowInsecureHTTP:     c.config.AllowInsecureHTTP,
+		AllowInsecureHTTP:     config.AllowInsecureHTTP || c.config.AllowInsecureHTTP,
 	})
 	if err != nil {
 		return err

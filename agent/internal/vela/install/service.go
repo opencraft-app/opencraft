@@ -362,15 +362,17 @@ func writeManagedState(store *rootstate.Store, options Options, journal installJ
 		return ErrInstallConflict
 	}
 	if err := store.Write(configName, struct {
-		SchemaVersion int    `json:"schemaVersion"`
-		PlatformURL   string `json:"platformUrl"`
-		ServerID      string `json:"serverId"`
-		ComputerID    string `json:"computerId"`
-		Name          string `json:"name"`
-		Region        string `json:"region"`
+		SchemaVersion     int    `json:"schemaVersion"`
+		PlatformURL       string `json:"platformUrl"`
+		AllowInsecureHTTP bool   `json:"allowInsecureHttp,omitempty"`
+		ServerID          string `json:"serverId"`
+		ComputerID        string `json:"computerId"`
+		Name              string `json:"name"`
+		Region            string `json:"region"`
 	}{
 		SchemaVersion: 1, PlatformURL: options.PlatformURL,
-		ServerID: journal.ServerID, ComputerID: journal.ComputerID,
+		AllowInsecureHTTP: options.AllowInsecurePlatformHTTP,
+		ServerID:          journal.ServerID, ComputerID: journal.ComputerID,
 		Name: "Computer " + journal.ComputerID[:8], Region: journal.Region,
 	}); err != nil {
 		return err
