@@ -57,7 +57,10 @@ heartbeat 继续只携带本地已经应用的 assignment fence。Runner 的 hea
 时不发送 heartbeat，也不使用 session fence 冒充 applied fence。
 
 每一次心跳发送（首次、assignment 变化或周期发送）都由同一个 goroutine 重试至成功或 context 取消，
-期间只合并新的唤醒，不并发发送。任何一次成功后才从成功时刻重新计算下一次 60 秒周期。
+期间只合并新的唤醒，不并发发送。goroutine 记录 `lastSuccessfullySentFence`：assignment 唤醒发送前
+重读当前状态，若该 fence 已成功发送则跳过；周期触发即使 fence 相同仍发送续租。失败重试保持同一
+heartbeat ID；若重试期间状态进入新 fence，则改为为最新 fence 生成新 heartbeat，旧唤醒随后因 fence
+已成功发送而被跳过。任何一次成功后才从成功时刻重新计算下一次 60 秒周期。
 
 ### 页面有限刷新
 
@@ -90,6 +93,7 @@ LaunchAgent 的 `bootstrap` 错误只有在 running attestation 通过时才可�
 - LaunchAgent 单元测试证明成功 bootstrap 后没有 `kickstart -k`。
 - Computer session 测试证明签发成功会更新机器 lease，但不会写入 applied assignment 或 Agent 状态。
 - Runner 测试使用很长的周期，成功应用首份 assignment 后立即心跳，且 assignment-before-wait 不丢失。
+- assignment 早于初始检查或在发送期间更新时，最新 fence 最终发送且同一 fence 不因旧唤醒重复发送。
 - 首次和周期心跳失败跨越一个周期仍保持单路串行，成功后才开始下一个 60 秒周期。
 - 慢 Runtime probe 测试证明 daemon 状态与心跳先于 probe 完成；取消和空结果都会解除 factory 等待。
 - 前端测试证明从未观测的 Computer 自动刷新、在线后停止、历史已连接但 unknown 不轮询、卸载后停止。
