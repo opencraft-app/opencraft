@@ -21,18 +21,24 @@ import (
 )
 
 var (
-	ErrServiceInvalid   = errors.New("Computer 首次安装配置无效")
-	ErrInstallConflict  = errors.New("Computer 首次安装状态冲突")
-	ErrAlreadyInstalled = errors.New("Vela Computer is already installed for this macOS user.")
+	ErrServiceInvalid             = errors.New("Computer 首次安装配置无效")
+	ErrInstallConflict            = errors.New("Computer 首次安装状态冲突")
+	ErrAlreadyInstalled           = errors.New("Vela Computer is already installed and active for this macOS user.")
+	ErrReplacementReleaseMismatch = errors.New("Update Vela Computer before replacing this installation.")
+	ErrReplacementProviderGone    = errors.New("The previous Computer provider identity no longer exists. Nothing was changed.")
 )
 
 const (
-	installJournalName = "install.journal.json"
-	installTokenName   = "install.token"
-	installSecretName  = "install.secret"
-	credentialName     = "computer.credential"
-	configName         = "config.json"
-	launchAgentLabel   = "com.agentnetwork.vela.computer"
+	installJournalName     = "install.journal.json"
+	installTokenName       = "install.token"
+	installSecretName      = "install.secret"
+	replacementJournalName = "replacement.journal.json"
+	replacementTokenName   = "replacement.enrollment"
+	replacementSecretName  = "replacement.secret"
+	replacementGrantName   = "replacement.grant"
+	credentialName         = "computer.credential"
+	configName             = "config.json"
+	launchAgentLabel       = "com.agentnetwork.vela.computer"
 )
 
 type Options struct {
@@ -51,6 +57,7 @@ type Options struct {
 
 type InstallClient interface {
 	Claim(context.Context, ClaimRequest) (ClaimResult, error)
+	Preflight(context.Context, PreflightRequest) (PreflightResult, error)
 	Provider(context.Context, string) (ProviderResult, error)
 }
 
@@ -142,7 +149,7 @@ func (service *Service) Install(ctx context.Context, options Options) error {
 			return err
 		}
 	} else if journal.Stage == "complete" {
-		return ErrAlreadyInstalled
+		return service.replaceComplete(ctx, options, release, store, journal)
 	} else if !journalMatches(journal, options, release) {
 		return ErrInstallConflict
 	}
@@ -255,6 +262,217 @@ func (service *Service) Install(ctx context.Context, options Options) error {
 	}
 	_, err = io.WriteString(service.config.Stdout, "Computer installed and started.\n")
 	return err
+}
+
+func (service *Service) replaceComplete(
+	ctx context.Context,
+	options Options,
+	release VerifiedRelease,
+	store *rootstate.Store,
+	journal installJournal,
+) error {
+	if !journalMatches(journal, options, release) ||
+		!installedProgramMatches(options.InstallationRoot, release) {
+		return ErrReplacementReleaseMismatch
+	}
+	token, err := readPrivateString(options.TokenFile, 2048)
+	if err != nil || !validEnrollmentToken(token) {
+		return ErrServiceInvalid
+	}
+	newServerID, newComputerID, okToken := enrollmentRoute(token)
+	if !okToken {
+		return ErrInstallConflict
+	}
+	client, err := service.config.ClientFactory(ClientConfig{
+		BaseURL: options.PlatformURL, AllowInsecureHTTP: options.AllowInsecurePlatformHTTP,
+	})
+	if err != nil {
+		return err
+	}
+	replacement, exists, err := loadReplacementJournal(store)
+	if err != nil {
+		return err
+	}
+	var identity tat.Identity
+	var secretPart, grant string
+	if exists {
+		if !replacementMatches(replacement, options, release, token, newServerID, newComputerID) {
+			return ErrInstallConflict
+		}
+		identity = tat.Identity{Region: replacement.TATRegion, InstanceID: replacement.TATInstanceID}
+		secretPart, err = readPrivateString(filepath.Join(options.StateDirectory, replacementSecretName), 128)
+		if err == nil {
+			grant, err = readPrivateString(filepath.Join(options.StateDirectory, replacementGrantName), 64*1024)
+		}
+		if err != nil {
+			return err
+		}
+	} else {
+		credential, err := readPrivateString(filepath.Join(options.StateDirectory, credentialName), 16*1024)
+		if err != nil {
+			return err
+		}
+		oldServerID, _, ok := credentialRoute(credential)
+		if !ok || oldServerID != newServerID {
+			return ErrInstallConflict
+		}
+		identity, err = service.config.TAT.Inspect(ctx, filepath.Join(options.StateDirectory, "tat"))
+		if err != nil {
+			return err
+		}
+		preflight, err := client.Preflight(ctx, PreflightRequest{
+			Credential: credential, EnrollmentToken: token,
+			TATRegion: identity.Region, TATInstanceID: identity.InstanceID,
+		})
+		if err != nil {
+			return err
+		}
+		switch preflight.Status {
+		case PreflightActive:
+			return ErrAlreadyInstalled
+		case PreflightProviderIdentityGone:
+			return ErrReplacementProviderGone
+		case PreflightRemoved:
+			grant = preflight.ReplacementGrant
+		default:
+			return ErrInstallConflict
+		}
+		secret := make([]byte, 32)
+		if _, err := io.ReadFull(service.config.Random, secret); err != nil {
+			return err
+		}
+		secretPart = base64.RawURLEncoding.EncodeToString(secret)
+		clear(secret)
+		replacement = newReplacementJournal(options, release, token, newServerID, newComputerID, identity)
+		if err := store.WriteFile(replacementTokenName, []byte(token), 0o600); err != nil {
+			return err
+		}
+		if err := store.WriteFile(replacementSecretName, []byte(secretPart), 0o600); err != nil {
+			return err
+		}
+		if err := store.WriteFile(replacementGrantName, []byte(grant), 0o600); err != nil {
+			return err
+		}
+		if err := store.Write(replacementJournalName, replacement); err != nil {
+			return err
+		}
+	}
+	claim, err := client.Claim(ctx, ClaimRequest{
+		Token: token, SecretPart: secretPart, OSType: "macos", Architecture: "arm64",
+		InstallerVersion: options.ReleaseVersion, ReplacementGrant: grant,
+	})
+	if err != nil {
+		return err
+	}
+	if claim.ServerID != newServerID || claim.ComputerID != newComputerID {
+		return ErrInstallConflict
+	}
+	if err := store.WriteFile(credentialName, []byte(claim.Credential), 0o600); err != nil {
+		return err
+	}
+	journal.ServerID = claim.ServerID
+	journal.ComputerID = claim.ComputerID
+	journal.CredentialID = claim.CredentialID
+	journal.CredentialVersion = claim.Version
+	journal.CredentialExpiresAt = claim.ExpiresAt.UTC()
+	journal.Region = identity.Region
+	if err := writeManagedState(store, options, journal); err != nil {
+		return err
+	}
+	if err := store.Write(installJournalName, journal); err != nil {
+		return err
+	}
+	if err := service.config.Launcher.Start(ctx, LaunchSpec{
+		Label:            launchAgentLabel,
+		ProgramPath:      filepath.Join(options.InstallationRoot, "bin", ProgramName),
+		InstallationRoot: options.InstallationRoot, StateDirectory: options.StateDirectory,
+	}); err != nil {
+		return err
+	}
+	if err := removeReplacementSecrets(store); err != nil {
+		return err
+	}
+	_, err = io.WriteString(service.config.Stdout, "Computer replaced and started.\n")
+	return err
+}
+
+type replacementJournal struct {
+	Schema        int    `json:"schema"`
+	Stage         string `json:"stage"`
+	PlatformURL   string `json:"platformUrl"`
+	Version       string `json:"version"`
+	Target        string `json:"target"`
+	ProgramSHA256 string `json:"programSha256"`
+	TokenSHA256   string `json:"tokenSha256"`
+	ServerID      string `json:"serverId"`
+	ComputerID    string `json:"computerId"`
+	TATRegion     string `json:"tatRegion"`
+	TATInstanceID string `json:"tatInstanceId"`
+}
+
+func newReplacementJournal(options Options, release VerifiedRelease, token, serverID, computerID string, identity tat.Identity) replacementJournal {
+	tokenDigest := sha256.Sum256([]byte(token))
+	return replacementJournal{
+		Schema: 1, Stage: "grant_issued", PlatformURL: options.PlatformURL,
+		Version: options.ReleaseVersion, Target: options.Target,
+		ProgramSHA256: hex.EncodeToString(release.ProgramSHA256[:]),
+		TokenSHA256:   hex.EncodeToString(tokenDigest[:]), ServerID: serverID, ComputerID: computerID,
+		TATRegion: identity.Region, TATInstanceID: identity.InstanceID,
+	}
+}
+
+func loadReplacementJournal(store *rootstate.Store) (replacementJournal, bool, error) {
+	var value replacementJournal
+	err := store.Read(replacementJournalName, &value)
+	if errors.Is(err, os.ErrNotExist) {
+		return replacementJournal{}, false, nil
+	}
+	if err != nil || value.Schema != 1 || value.Stage != "grant_issued" {
+		return replacementJournal{}, false, ErrInstallConflict
+	}
+	return value, true, nil
+}
+
+func replacementMatches(value replacementJournal, options Options, release VerifiedRelease, token, serverID, computerID string) bool {
+	tokenDigest := sha256.Sum256([]byte(token))
+	return value.PlatformURL == options.PlatformURL && value.Version == options.ReleaseVersion &&
+		value.Target == options.Target && value.ProgramSHA256 == hex.EncodeToString(release.ProgramSHA256[:]) &&
+		value.TokenSHA256 == hex.EncodeToString(tokenDigest[:]) && value.ServerID == serverID &&
+		value.ComputerID == computerID && value.TATRegion != "" && strings.HasPrefix(value.TATInstanceID, "rins-")
+}
+
+func removeReplacementSecrets(store *rootstate.Store) error {
+	for _, name := range []string{replacementTokenName, replacementSecretName, replacementGrantName, replacementJournalName} {
+		if err := store.Remove(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func installedProgramMatches(root string, release VerifiedRelease) bool {
+	content, err := os.ReadFile(filepath.Join(root, "bin", ProgramName))
+	if err != nil || int64(len(content)) != release.ProgramSize {
+		return false
+	}
+	digest := sha256.Sum256(content)
+	return subtle.ConstantTimeCompare(digest[:], release.ProgramSHA256[:]) == 1
+}
+
+func credentialRoute(value string) (string, string, bool) {
+	parts := strings.Split(value, ".")
+	if len(parts) != 4 || !strings.HasPrefix(parts[0], "crc_") {
+		return "", "", false
+	}
+	return strings.TrimPrefix(parts[0], "crc_"), parts[1], true
+}
+
+func enrollmentRoute(value string) (string, string, bool) {
+	parts := strings.Split(value, ".")
+	if len(parts) < 5 || parts[0] != "cen1" || !uuidV7(parts[1]) || !uuidV7(parts[2]) {
+		return "", "", false
+	}
+	return parts[1], parts[2], true
 }
 
 func removeInstallSecrets(stateDirectory string) error {

@@ -104,6 +104,72 @@ func TestClientClaimsCredentialAndReplaysProviderBootstrap(t *testing.T) {
 	}
 }
 
+func TestClientPreflightsRemovedComputerAndClaimsWithReplacementGrant(t *testing.T) {
+	t.Parallel()
+
+	oldCredential := "crc_" + testServerID + "." + testComputerID + ".1." +
+		base64.RawURLEncoding.EncodeToString([]byte("01234567890123456789012345678901"))
+	newComputerID := "019fd111-1111-7111-8111-111111111111"
+	token := "cen1." + testServerID + "." + newComputerID + ".2.signature"
+	grant := "rpg1.payload.signature-with-enough-bytes"
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/computer/preflight":
+			if request.Header.Get("Authorization") != "ComputerCredential "+oldCredential {
+				t.Fatalf("preflight authorization = %q", request.Header.Get("Authorization"))
+			}
+			var body map[string]map[string]string
+			if err := common.DecodeJson(request.Body, &body); err != nil ||
+				body["replacement"]["enrollmentToken"] != token ||
+				body["replacement"]["tatRegion"] != "ap-guangzhou" ||
+				body["replacement"]["tatInstanceId"] != "rins-existing" {
+				t.Fatalf("preflight body=%#v err=%v", body, err)
+			}
+			writer.Header().Set("Content-Type", "application/json")
+			writer.WriteHeader(http.StatusGone)
+			writeJSON(t, writer, map[string]any{
+				"error": map[string]any{
+					"code": "computer_removed", "message": "removed",
+					"requestId": testCredentialID, "replacementGrant": grant,
+				},
+			})
+		case "/v1/computer/enrollments:claim":
+			var body map[string]any
+			if err := common.DecodeJson(request.Body, &body); err != nil || body["replacementGrant"] != grant {
+				t.Fatalf("claim body=%#v err=%v", body, err)
+			}
+			writer.Header().Set("Content-Type", "application/json")
+			writer.WriteHeader(http.StatusCreated)
+			writeJSON(t, writer, map[string]any{
+				"serverId": testServerID, "computerId": newComputerID,
+				"credentialId": testCredentialID, "credentialVersion": 1,
+				"expiresAt": time.Now().UTC().Add(time.Hour),
+			})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	client, err := NewClient(ClientConfig{BaseURL: server.URL, HTTP: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preflight, err := client.Preflight(context.Background(), PreflightRequest{
+		Credential: oldCredential, EnrollmentToken: token,
+		TATRegion: "ap-guangzhou", TATInstanceID: "rins-existing",
+	})
+	if err != nil || preflight.Status != PreflightRemoved || preflight.ReplacementGrant != grant {
+		t.Fatalf("preflight=%#v err=%v", preflight, err)
+	}
+	secret := base64.RawURLEncoding.EncodeToString([]byte("abcdefghijklmnopqrstuvwxyzABCDEF"))
+	if _, err := client.Claim(context.Background(), ClaimRequest{
+		Token: token, SecretPart: secret, OSType: "macos", Architecture: "arm64",
+		InstallerVersion: "0.2.0", ReplacementGrant: grant,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func writeJSON(t *testing.T, writer http.ResponseWriter, value any) {
 	t.Helper()
 	content, err := common.Marshal(value)

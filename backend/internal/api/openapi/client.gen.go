@@ -149,6 +149,11 @@ type ClientInterface interface {
 
 	SendComputerHeartbeat(ctx context.Context, body SendComputerHeartbeatJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PreflightComputerWithBody request with any body
+	PreflightComputerWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PreflightComputer(ctx context.Context, body PreflightComputerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateComputerSession request
 	CreateComputerSession(ctx context.Context, params *CreateComputerSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -720,6 +725,30 @@ func (c *Client) SendComputerHeartbeatWithBody(ctx context.Context, contentType 
 
 func (c *Client) SendComputerHeartbeat(ctx context.Context, body SendComputerHeartbeatJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSendComputerHeartbeatRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PreflightComputerWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPreflightComputerRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PreflightComputer(ctx context.Context, body PreflightComputerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPreflightComputerRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2752,6 +2781,46 @@ func NewSendComputerHeartbeatRequestWithBody(server string, contentType string, 
 	}
 
 	operationPath := fmt.Sprintf("/computer/heartbeat")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPreflightComputerRequest calls the generic PreflightComputer builder with application/json body
+func NewPreflightComputerRequest(server string, body PreflightComputerJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPreflightComputerRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPreflightComputerRequestWithBody generates requests for PreflightComputer with any type of body
+func NewPreflightComputerRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/computer/preflight")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -7263,6 +7332,11 @@ type ClientWithResponsesInterface interface {
 
 	SendComputerHeartbeatWithResponse(ctx context.Context, body SendComputerHeartbeatJSONRequestBody, reqEditors ...RequestEditorFn) (*SendComputerHeartbeatResponse, error)
 
+	// PreflightComputerWithBodyWithResponse request with any body
+	PreflightComputerWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PreflightComputerResponse, error)
+
+	PreflightComputerWithResponse(ctx context.Context, body PreflightComputerJSONRequestBody, reqEditors ...RequestEditorFn) (*PreflightComputerResponse, error)
+
 	// CreateComputerSessionWithResponse request
 	CreateComputerSessionWithResponse(ctx context.Context, params *CreateComputerSessionParams, reqEditors ...RequestEditorFn) (*CreateComputerSessionResponse, error)
 
@@ -7881,6 +7955,29 @@ func (r SendComputerHeartbeatResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r SendComputerHeartbeatResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PreflightComputerResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON410      *ComputerPreflightRemoved
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r PreflightComputerResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PreflightComputerResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -9967,6 +10064,23 @@ func (c *ClientWithResponses) SendComputerHeartbeatWithResponse(ctx context.Cont
 	return ParseSendComputerHeartbeatResponse(rsp)
 }
 
+// PreflightComputerWithBodyWithResponse request with arbitrary body returning *PreflightComputerResponse
+func (c *ClientWithResponses) PreflightComputerWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PreflightComputerResponse, error) {
+	rsp, err := c.PreflightComputerWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePreflightComputerResponse(rsp)
+}
+
+func (c *ClientWithResponses) PreflightComputerWithResponse(ctx context.Context, body PreflightComputerJSONRequestBody, reqEditors ...RequestEditorFn) (*PreflightComputerResponse, error) {
+	rsp, err := c.PreflightComputer(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePreflightComputerResponse(rsp)
+}
+
 // CreateComputerSessionWithResponse request returning *CreateComputerSessionResponse
 func (c *ClientWithResponses) CreateComputerSessionWithResponse(ctx context.Context, params *CreateComputerSessionParams, reqEditors ...RequestEditorFn) (*CreateComputerSessionResponse, error) {
 	rsp, err := c.CreateComputerSession(ctx, params, reqEditors...)
@@ -11366,6 +11480,39 @@ func ParseSendComputerHeartbeatResponse(rsp *http.Response) (*SendComputerHeartb
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePreflightComputerResponse parses an HTTP response from a PreflightComputerWithResponse call
+func ParsePreflightComputerResponse(rsp *http.Response) (*PreflightComputerResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PreflightComputerResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 410:
+		var dest ComputerPreflightRemoved
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON410 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

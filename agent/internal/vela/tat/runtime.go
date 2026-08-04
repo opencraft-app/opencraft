@@ -32,8 +32,14 @@ type Registration struct {
 	Tags              []Tag
 }
 
+type Identity struct {
+	Region     string
+	InstanceID string
+}
+
 type Runtime interface {
 	Register(context.Context, Registration) error
+	Inspect(context.Context, string) (Identity, error)
 	Start(context.Context, string) (Handle, error)
 }
 
@@ -53,7 +59,27 @@ type nativeBridge interface {
 		registerCodeValue string,
 		tagsJSON string,
 	) error
+	inspect(stateRoot string) (Identity, error)
 	start(stateRoot string) (nativeHandle, error)
+}
+
+func (r *runtime) Inspect(ctx context.Context, stateRoot string) (Identity, error) {
+	if !validStateRoot(stateRoot) {
+		return Identity{}, ErrInvalidConfig
+	}
+	if err := ctx.Err(); err != nil {
+		return Identity{}, err
+	}
+	identity, err := r.bridge.inspect(filepath.Clean(stateRoot))
+	if err != nil {
+		return Identity{}, err
+	}
+	if strings.TrimSpace(identity.Region) != identity.Region || identity.Region == "" ||
+		strings.TrimSpace(identity.InstanceID) != identity.InstanceID ||
+		!strings.HasPrefix(identity.InstanceID, "rins-") {
+		return Identity{}, ErrInvalidConfig
+	}
+	return identity, nil
 }
 
 type nativeHandle interface {

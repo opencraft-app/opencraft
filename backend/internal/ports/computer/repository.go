@@ -8,22 +8,27 @@ import (
 )
 
 var (
-	ErrServerNotFound             = errors.New("Server 不存在")
-	ErrComputerNotFound           = errors.New("Computer 不存在")
-	ErrComputerNameConflict       = errors.New("Computer 名称冲突")
-	ErrInstanceConflict           = errors.New("TAT 实例已绑定")
-	ErrIdempotencyConflict        = errors.New("幂等请求冲突")
-	ErrRegistrationActive         = errors.New("Computer 注册流程进行中")
-	ErrAdminRequired              = errors.New("需要 Server 管理权限")
-	ErrCredentialExists           = errors.New("Computer Runtime Credential 已存在")
-	ErrCredentialNotCurrent       = errors.New("Computer Runtime Credential 已失效")
-	ErrEnrollmentRevisionConflict = errors.New("Computer enrollment revision 冲突")
-	ErrComputerAlreadyClaimed     = errors.New("Computer 已完成 claim")
-	ErrEnrollmentInvalid          = errors.New("Computer enrollment token 无效")
-	ErrEnrollmentExpired          = errors.New("Computer enrollment token 已过期")
-	ErrEnrollmentClaimConflict    = errors.New("Computer enrollment digest 冲突")
-	ErrSetupCodeInvalid           = errors.New("Computer setup code 无效")
-	ErrComputerHasBoundAgents     = errors.New("Computer 仍有绑定 Agent")
+	ErrServerNotFound               = errors.New("Server 不存在")
+	ErrComputerNotFound             = errors.New("Computer 不存在")
+	ErrComputerNameConflict         = errors.New("Computer 名称冲突")
+	ErrInstanceConflict             = errors.New("TAT 实例已绑定")
+	ErrIdempotencyConflict          = errors.New("幂等请求冲突")
+	ErrRegistrationActive           = errors.New("Computer 注册流程进行中")
+	ErrAdminRequired                = errors.New("需要 Server 管理权限")
+	ErrCredentialExists             = errors.New("Computer Runtime Credential 已存在")
+	ErrCredentialNotCurrent         = errors.New("Computer Runtime Credential 已失效")
+	ErrEnrollmentRevisionConflict   = errors.New("Computer enrollment revision 冲突")
+	ErrComputerAlreadyClaimed       = errors.New("Computer 已完成 claim")
+	ErrEnrollmentInvalid            = errors.New("Computer enrollment token 无效")
+	ErrEnrollmentExpired            = errors.New("Computer enrollment token 已过期")
+	ErrEnrollmentClaimConflict      = errors.New("Computer enrollment digest 冲突")
+	ErrSetupCodeInvalid             = errors.New("Computer setup code 无效")
+	ErrComputerHasBoundAgents       = errors.New("Computer 仍有绑定 Agent")
+	ErrTATBindingInconsistent       = errors.New("Computer TAT binding 状态不一致")
+	ErrCredentialInspectionNotFound = errors.New("Computer credential inspection 不存在")
+	ErrReplacementIdentityMismatch  = errors.New("Computer replacement identity 不匹配")
+	ErrProviderIdentityGone         = errors.New("Computer provider identity 已销毁")
+	ErrReplacementReleaseMismatch   = errors.New("Computer replacement release 不匹配")
 )
 
 // Computer 是平台保存的 TAT 执行资源映射，不包含腾讯云凭据。
@@ -93,6 +98,25 @@ type ClaimEnrollmentCommand struct {
 	CredentialDigest    [32]byte
 	CredentialExpiresAt time.Time
 	ClaimedAt           time.Time
+	Replacement         *ReplacementClaim
+}
+
+type ReplacementClaim struct {
+	OldServerID          string
+	OldComputerID        string
+	OldCredentialVersion uint64
+	OldComputerRevision  int64
+	BindingHash          string
+	TATRegion            string
+	TATInstanceID        string
+	NewServerID          string
+	NewComputerID        string
+	NewGeneration        uint64
+	NewTokenHash         [32]byte
+	ReleaseVersion       string
+	Target               string
+	ProgramSHA256        [32]byte
+	GrantExpired         bool
 }
 
 // EnrollmentClaim 是客户端组合 crc_ credential 所需的非 Secret 路由。
@@ -103,6 +127,48 @@ type EnrollmentClaim struct {
 	CredentialVersion uint64
 	ExpiresAt         time.Time
 	Created           bool
+}
+
+// InspectCredentialCommand 是 preflight 的精确、只读 credential 路由。
+type InspectCredentialCommand struct {
+	ServerID   string
+	ComputerID string
+	Version    uint64
+}
+
+// CredentialInspection 返回分类所需的非明文事实；它不恢复 credential currentness。
+type CredentialInspection struct {
+	ServerID         string
+	ComputerID       string
+	Version          uint64
+	SecretDigest     [32]byte
+	CredentialState  string
+	ExpiresAt        time.Time
+	GraceExpiresAt   *time.Time
+	RevokedAt        *time.Time
+	ComputerState    string
+	ComputerRevision int64
+}
+
+type AuthorizeReplacementCommand struct {
+	OldServerID          string
+	OldComputerID        string
+	OldCredentialVersion uint64
+	NewServerID          string
+	NewComputerID        string
+	NewGeneration        uint64
+	NewTokenHash         [32]byte
+	TATRegion            string
+	TATInstanceID        string
+	ReleaseVersion       string
+	Target               string
+	ProgramSHA256        [32]byte
+	RequestedAt          time.Time
+}
+
+type ReplacementAuthorization struct {
+	OldComputerRevision int64
+	BindingHash         string
 }
 
 // StoreSetupCodeCommand 只保存不可逆摘要和稳定路由，不保存短码明文。
@@ -159,6 +225,8 @@ type EnrollmentRepository interface {
 	StoreSetupCode(context.Context, StoreSetupCodeCommand) error
 	ResolveSetupCode(context.Context, ResolveSetupCodeCommand) (SetupCodeRoute, error)
 	ValidateSetupCode(context.Context, ValidateSetupCodeCommand) (SetupCodeRedemption, error)
+	InspectCredential(context.Context, InspectCredentialCommand) (CredentialInspection, error)
+	AuthorizeReplacement(context.Context, AuthorizeReplacementCommand) (ReplacementAuthorization, error)
 	ClaimEnrollment(context.Context, ClaimEnrollmentCommand) (EnrollmentClaim, error)
 }
 

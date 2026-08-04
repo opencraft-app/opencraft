@@ -15,6 +15,7 @@ import (
 	"chatserver/internal/database/migration"
 	"chatserver/internal/ent/accountservermembership"
 	computerentity "chatserver/internal/ent/computer"
+	"chatserver/internal/ent/tatinstancebinding"
 	computerport "chatserver/internal/ports/computer"
 )
 
@@ -256,6 +257,222 @@ func TestEntRepositoryRefusesToReleaseComputerWithBoundAgent(t *testing.T) {
 	entity, err := handle.Client().Computer.Get(ctx, repositoryComputerID)
 	if err != nil || entity.LifecycleState != "active" || entity.Revision != 1 {
 		t.Fatalf("Computer after rejected release = (%#v, %v)", entity, err)
+	}
+}
+
+func TestEntRepositoryReleaseRetiresCurrentTATBinding(t *testing.T) {
+	repository, handle := openComputerRepository(t)
+	seedComputerMembership(t, handle)
+	ctx := context.Background()
+	instanceID := "rins-release-managed"
+	if _, err := repository.Create(ctx, computerport.CreateCommand{
+		AccountID: repositoryAccountID, ServerID: repositoryServerID,
+		IdempotencyKey: "computer-create-release-binding",
+		RequestHash:    sha256.Sum256([]byte("release-binding")),
+		CreatedAt:      repositoryNow,
+		Computer: computerport.Draft{
+			ID: repositoryComputerID, Name: "待解除纳管 Mac",
+			TATRegion: "ap-beijing", TATInstanceID: &instanceID,
+			TATInstanceKind: "managed", OSType: "macos",
+			LifecycleState: "active",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	bindingHash := fmt.Sprintf(
+		"%x",
+		sha256.Sum256([]byte("ap-beijing\x00"+instanceID)),
+	)
+	if _, err := handle.Client().TATInstanceBinding.Create().
+		SetID("0198f4c2-7a39-7af3-a01e-0fcb31e9d84e").
+		SetBindingHash(bindingHash).
+		SetTatRegion("ap-beijing").
+		SetTatInstanceID(instanceID).
+		SetServerID(repositoryServerID).
+		SetComputerID(repositoryComputerID).
+		SetState("active").
+		SetCreatedAt(repositoryNow).
+		SetUpdatedAt(repositoryNow).
+		Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	command := computerport.ReleaseCommand{
+		AccountID: repositoryAccountID, ServerID: repositoryServerID,
+		ComputerID: repositoryComputerID, IdempotencyKey: "release-binding",
+		ReleasedAt: repositoryNow.Add(time.Minute),
+	}
+	if err := repository.Release(ctx, command); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.Release(ctx, command); err != nil {
+		t.Fatalf("Release(replay) error = %v", err)
+	}
+
+	computer, err := handle.Client().Computer.Get(ctx, repositoryComputerID)
+	if err != nil || computer.LifecycleState != "removed" || computer.TatInstanceID != nil {
+		t.Fatalf("released Computer = (%#v, %v)", computer, err)
+	}
+	binding, err := handle.Client().TATInstanceBinding.Query().
+		Where(tatinstancebinding.BindingHashEQ(bindingHash)).
+		Only(ctx)
+	if err != nil || binding.State != "retired" ||
+		binding.ServerID != repositoryServerID || binding.ComputerID != repositoryComputerID {
+		t.Fatalf("retired binding = (%#v, %v)", binding, err)
+	}
+}
+
+func TestEntRepositoryInspectsRemovedCredentialWithoutRestoringCurrentAuth(t *testing.T) {
+	repository, handle := openComputerRepository(t)
+	seedComputerMembership(t, handle)
+	ctx := context.Background()
+	secretDigest := sha256.Sum256([]byte("removed-computer-secret"))
+	if _, err := repository.Create(ctx, computerport.CreateCommand{
+		AccountID: repositoryAccountID, ServerID: repositoryServerID,
+		IdempotencyKey: "computer-create-inspection",
+		RequestHash:    sha256.Sum256([]byte("inspection")),
+		CreatedAt:      repositoryNow,
+		Computer: computerport.Draft{
+			ID: repositoryComputerID, Name: "Removed Mac",
+			TATRegion: "ap-beijing", TATInstanceKind: "managed",
+			OSType: "macos", LifecycleState: "active",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.Client().ComputerRuntimeCredential.Create().
+		SetID("0198f4c2-7a37-7af3-a01e-0fcb31e9d84e").
+		SetServerID(repositoryServerID).
+		SetComputerID(repositoryComputerID).
+		SetVersion(3).
+		SetSecretHash(secretDigest[:]).
+		SetState("revoked").
+		SetExpiresAt(repositoryNow.Add(time.Hour)).
+		SetRevokedAt(repositoryNow.Add(time.Minute)).
+		SetCreatedAt(repositoryNow).
+		Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.Client().Computer.UpdateOneID(repositoryComputerID).
+		SetLifecycleState("removed").
+		SetTatAgentState("offline").
+		SetRevision(2).
+		Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	inspection, err := repository.InspectCredential(ctx, computerport.InspectCredentialCommand{
+		ServerID: repositoryServerID, ComputerID: repositoryComputerID, Version: 3,
+	})
+	if err != nil || inspection.SecretDigest != secretDigest ||
+		inspection.CredentialState != "revoked" || inspection.ComputerState != "removed" ||
+		inspection.ComputerRevision != 2 {
+		t.Fatalf("InspectCredential() = (%#v, %v)", inspection, err)
+	}
+}
+
+func TestEntRepositoryAuthorizesOnlyRetiredIdentityOwnedByRemovedComputer(t *testing.T) {
+	repository, handle := openComputerRepository(t)
+	seedComputerMembership(t, handle)
+	ctx := context.Background()
+	const newComputerID = "0198f4c2-7a38-7af3-a01e-0fcb31e9d84e"
+	const instanceID = "rins-retired-mac"
+	if _, err := repository.Create(ctx, computerport.CreateCommand{
+		AccountID: repositoryAccountID, ServerID: repositoryServerID,
+		IdempotencyKey: "create-old-replacement",
+		RequestHash:    sha256.Sum256([]byte("old-replacement")), CreatedAt: repositoryNow,
+		Computer: computerport.Draft{
+			ID: repositoryComputerID, Name: "Old Mac", TATRegion: "ap-beijing",
+			TATInstanceKind: "managed", OSType: "macos", LifecycleState: "active",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.Client().Computer.UpdateOneID(repositoryComputerID).
+		SetLifecycleState("removed").SetTatAgentState("offline").SetRevision(7).
+		Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	oldCredentialDigest := sha256.Sum256([]byte("old-secret"))
+	if _, err := handle.Client().ComputerRuntimeCredential.Create().
+		SetID("0198f4c2-7a3a-7af3-a01e-0fcb31e9d84e").
+		SetServerID(repositoryServerID).SetComputerID(repositoryComputerID).
+		SetVersion(3).SetSecretHash(oldCredentialDigest[:]).
+		SetState("revoked").SetExpiresAt(repositoryNow.Add(time.Hour)).
+		SetRevokedAt(repositoryNow).SetCreatedAt(repositoryNow).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	hash := computerTATBindingHash("ap-beijing", instanceID)
+	if _, err := handle.Client().TATInstanceBinding.Create().
+		SetID("0198f4c2-7a39-7af3-a01e-0fcb31e9d84e").
+		SetBindingHash(hash).SetTatRegion("ap-beijing").SetTatInstanceID(instanceID).
+		SetServerID(repositoryServerID).SetComputerID(repositoryComputerID).
+		SetState("retired").SetCreatedAt(repositoryNow).SetUpdatedAt(repositoryNow).
+		Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Create(ctx, computerport.CreateCommand{
+		AccountID: repositoryAccountID, ServerID: repositoryServerID,
+		IdempotencyKey: "create-new-replacement",
+		RequestHash:    sha256.Sum256([]byte("new-replacement")), CreatedAt: repositoryNow,
+		Computer: computerport.Draft{
+			ID: newComputerID, Name: "New Mac", TATRegion: "ap-beijing",
+			TATInstanceKind: "managed", OSType: "macos", LifecycleState: "provisioning",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tokenHash := sha256.Sum256([]byte("new-enrollment-token"))
+	release := repositoryEnrollmentRelease()
+	if _, err := repository.BeginEnrollment(ctx, computerport.BeginEnrollmentCommand{
+		AccountID: repositoryAccountID, ServerID: repositoryServerID, ComputerID: newComputerID,
+		ExpectedRevision: 1, ExpectedGeneration: 0, Generation: 1, TokenHash: tokenHash,
+		ExpiresAt: repositoryNow.Add(time.Hour), Release: release, CreatedAt: repositoryNow,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	authorized, err := repository.AuthorizeReplacement(ctx, computerport.AuthorizeReplacementCommand{
+		OldServerID: repositoryServerID, OldComputerID: repositoryComputerID,
+		OldCredentialVersion: 3, NewServerID: repositoryServerID, NewComputerID: newComputerID,
+		NewGeneration: 1, NewTokenHash: tokenHash, TATRegion: "ap-beijing",
+		TATInstanceID: instanceID, ReleaseVersion: release.Version,
+		Target: release.Target, ProgramSHA256: release.Program.SHA256,
+		RequestedAt: repositoryNow.Add(time.Minute),
+	})
+	if err != nil || authorized.OldComputerRevision != 7 || authorized.BindingHash != hash {
+		t.Fatalf("AuthorizeReplacement() = (%#v, %v)", authorized, err)
+	}
+	credentialDigest := sha256.Sum256([]byte("new-computer-secret"))
+	claimed, err := repository.ClaimEnrollment(ctx, computerport.ClaimEnrollmentCommand{
+		ServerID: repositoryServerID, ComputerID: newComputerID,
+		Generation: 1, TokenHash: tokenHash, OSType: "macos", Architecture: "arm64",
+		InstallerVersion: release.Version,
+		CredentialID:     "0198f4c2-7a3b-7af3-a01e-0fcb31e9d84e",
+		CredentialDigest: credentialDigest, CredentialExpiresAt: repositoryNow.Add(365 * 24 * time.Hour),
+		ClaimedAt: repositoryNow.Add(2 * time.Minute),
+		Replacement: &computerport.ReplacementClaim{
+			OldServerID: repositoryServerID, OldComputerID: repositoryComputerID,
+			OldCredentialVersion: 3, OldComputerRevision: 7,
+			BindingHash: hash, TATRegion: "ap-beijing", TATInstanceID: instanceID,
+			NewServerID: repositoryServerID, NewComputerID: newComputerID,
+			NewGeneration: 1, NewTokenHash: tokenHash,
+			ReleaseVersion: release.Version, Target: release.Target,
+			ProgramSHA256: release.Program.SHA256,
+		},
+	})
+	if err != nil || !claimed.Created {
+		t.Fatalf("ClaimEnrollment(replacement) = (%#v, %v)", claimed, err)
+	}
+	newMachine, err := handle.Client().Computer.Get(ctx, newComputerID)
+	if err != nil || newMachine.LifecycleState != "active" ||
+		newMachine.TatInstanceID == nil || *newMachine.TatInstanceID != instanceID {
+		t.Fatalf("replacement Computer = (%#v, %v)", newMachine, err)
+	}
+	activeBinding, err := handle.Client().TATInstanceBinding.Query().
+		Where(tatinstancebinding.BindingHashEQ(hash)).Only(ctx)
+	if err != nil || activeBinding.State != "active" || activeBinding.ComputerID != newComputerID {
+		t.Fatalf("reclaimed binding = (%#v, %v)", activeBinding, err)
 	}
 }
 

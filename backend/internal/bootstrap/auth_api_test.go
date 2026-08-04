@@ -18,6 +18,19 @@ import (
 	"chatserver/internal/database/migration"
 )
 
+func TestComputerReplacementGrantKeyIsDomainSeparated(t *testing.T) {
+	accessKey := bytes.Repeat([]byte{0x42}, 32)
+	first := computerReplacementGrantKey(accessKey)
+	second := computerReplacementGrantKey(accessKey)
+	if len(first) != 32 || !bytes.Equal(first, second) || bytes.Equal(first, accessKey) {
+		t.Fatalf("replacement key derivation = %x / %x", first, second)
+	}
+	first[0] ^= 0xff
+	if bytes.Equal(first, computerReplacementGrantKey(accessKey)) {
+		t.Fatal("replacement key derivation returned aliased storage")
+	}
+}
+
 func TestAuthAPIRegistrationLoginRefreshAndLogout(t *testing.T) {
 	handler := newAuthAPIForTest(t)
 

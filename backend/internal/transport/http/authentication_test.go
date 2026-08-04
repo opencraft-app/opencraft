@@ -258,6 +258,36 @@ func TestEnrollmentAuthStoresOnlyValidatedTokenWithoutCreatingPrincipal(t *testi
 	}
 }
 
+func TestComputerPreflightStoresCredentialWithoutCurrentPrincipalAuthentication(t *testing.T) {
+	authenticator := &schemeAuthenticator{}
+	hook := newTestAuthenticationHook(t, authenticator)
+	const credential = "crc_" + hookTestServerID + "." + hookTestComputerID +
+		".4.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	handler := WithAuthState(http.HandlerFunc(func(
+		_ http.ResponseWriter,
+		request *http.Request,
+	) {
+		if err := hook.Authenticate(
+			request.Context(), authenticationInput(request, "ComputerCredentialAuth"),
+		); err != nil {
+			t.Fatalf("Authenticate() error = %v", err)
+		}
+		got, ok := CurrentComputerPreflightCredential(request.Context())
+		if !ok || got != credential {
+			t.Fatalf("CurrentComputerPreflightCredential() = (%q, %v)", got, ok)
+		}
+		if _, ok := CurrentPrincipal(request.Context()); ok {
+			t.Fatal("preflight credential must not become a current Computer principal")
+		}
+	}))
+	request := httptest.NewRequest(http.MethodPost, "/v1/computer/preflight", nil)
+	request.Header.Set("Authorization", "ComputerCredential "+credential)
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+	if len(authenticator.candidates) != 0 {
+		t.Fatalf("preflight called current principal authenticator: %d", len(authenticator.candidates))
+	}
+}
+
 func TestAgentCredentialRouteHintContainsOnlyParsedServerID(t *testing.T) {
 	const raw = "arc_" + hookTestServerID + "." + hookTestAgentID +
 		".7.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"

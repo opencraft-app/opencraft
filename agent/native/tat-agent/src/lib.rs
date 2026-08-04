@@ -120,6 +120,38 @@ pub unsafe extern "C" fn vela_tat_start(
 }
 
 #[unsafe(no_mangle)]
+/// Reads only the public region and instance ID from an existing TAT state.
+///
+/// # Safety
+/// `state_root` must be a valid NUL-terminated string. Both output pointers
+/// must reference writable buffers of their declared capacities.
+pub unsafe extern "C" fn vela_tat_inspect_identity(
+    state_root: *const c_char,
+    region: *mut c_char,
+    region_capacity: usize,
+    instance_id: *mut c_char,
+    instance_id_capacity: usize,
+) -> i32 {
+    clear_last_error();
+    let result = (|| {
+        let state_root = unsafe { required_string(state_root, "state_root") }?;
+        if region.is_null()
+            || region_capacity == 0
+            || instance_id.is_null()
+            || instance_id_capacity == 0
+        {
+            return Err(anyhow!("identity output buffers are required"));
+        }
+        let (region_value, instance_value) =
+            common::config::inspect_identity_at(std::path::Path::new(&state_root))?;
+        unsafe { write_c_string(region, region_capacity, &region_value) }?;
+        unsafe { write_c_string(instance_id, instance_id_capacity, &instance_value) }?;
+        Ok(())
+    })();
+    result_code(result)
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn vela_tat_close(handle: *mut VelaTatHandle) -> i32 {
     clear_last_error();
     if handle.is_null() {
@@ -193,6 +225,16 @@ unsafe fn required_string(value: *const c_char, name: &str) -> Result<String> {
         return Err(anyhow!("{name} is required"));
     }
     Ok(value.to_owned())
+}
+
+unsafe fn write_c_string(destination: *mut c_char, capacity: usize, value: &str) -> Result<()> {
+    let bytes = value.as_bytes();
+    if bytes.len() + 1 > capacity {
+        return Err(anyhow!("identity output buffer is too small"));
+    }
+    unsafe { ptr::copy_nonoverlapping(bytes.as_ptr(), destination.cast::<u8>(), bytes.len()) };
+    unsafe { *destination.add(bytes.len()) = 0 };
+    Ok(())
 }
 
 fn result_code(result: Result<()>) -> i32 {

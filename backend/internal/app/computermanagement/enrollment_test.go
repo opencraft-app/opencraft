@@ -3,6 +3,8 @@ package computermanagement
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"testing"
@@ -13,20 +15,25 @@ import (
 
 const enrollmentCredentialID = "0198f4c2-7a37-7af3-a01e-0fcb31e9d84e"
 const setupCodeID = "0198f4c2-7a37-7af3-a01e-0fcb31e9d84f"
+const replacementComputerID = "0198f4c2-7a38-7af3-a01e-0fcb31e9d84e"
 
 type enrollmentRepository struct {
-	computer        computerport.Computer
-	begin           computerport.BeginEnrollmentCommand
-	claim           computerport.ClaimEnrollmentCommand
-	result          computerport.EnrollmentClaim
-	artifactCommand computerport.ResolveArtifactCommand
-	artifact        computerport.ArtifactAccess
-	setupCode       computerport.StoreSetupCodeCommand
-	resolveCode     computerport.ResolveSetupCodeCommand
-	validateCode    computerport.ValidateSetupCodeCommand
-	setupCodeRoute  computerport.SetupCodeRoute
-	redemption      computerport.SetupCodeRedemption
-	err             error
+	computer                 computerport.Computer
+	begin                    computerport.BeginEnrollmentCommand
+	claim                    computerport.ClaimEnrollmentCommand
+	result                   computerport.EnrollmentClaim
+	artifactCommand          computerport.ResolveArtifactCommand
+	artifact                 computerport.ArtifactAccess
+	setupCode                computerport.StoreSetupCodeCommand
+	resolveCode              computerport.ResolveSetupCodeCommand
+	validateCode             computerport.ValidateSetupCodeCommand
+	setupCodeRoute           computerport.SetupCodeRoute
+	redemption               computerport.SetupCodeRedemption
+	inspection               computerport.CredentialInspection
+	inspectCommand           computerport.InspectCredentialCommand
+	replacementAuthorization computerport.ReplacementAuthorization
+	replacementCommand       computerport.AuthorizeReplacementCommand
+	err                      error
 }
 
 func (repository *enrollmentRepository) GetForAdmin(
@@ -82,6 +89,22 @@ func (repository *enrollmentRepository) ValidateSetupCode(
 ) (computerport.SetupCodeRedemption, error) {
 	repository.validateCode = command
 	return repository.redemption, repository.err
+}
+
+func (repository *enrollmentRepository) InspectCredential(
+	_ context.Context,
+	command computerport.InspectCredentialCommand,
+) (computerport.CredentialInspection, error) {
+	repository.inspectCommand = command
+	return repository.inspection, repository.err
+}
+
+func (repository *enrollmentRepository) AuthorizeReplacement(
+	_ context.Context,
+	command computerport.AuthorizeReplacementCommand,
+) (computerport.ReplacementAuthorization, error) {
+	repository.replacementCommand = command
+	return repository.replacementAuthorization, repository.err
 }
 
 func (repository *enrollmentRepository) ResolveEnrollmentArtifact(
@@ -469,6 +492,116 @@ func TestEnrollmentServiceClaimsIdempotentlyWithoutOwningSecret(t *testing.T) {
 	}
 	if repository.claim.CredentialExpiresAt != now.Add(365*24*time.Hour) {
 		t.Fatalf("credential expires = %v", repository.claim.CredentialExpiresAt)
+	}
+}
+
+func TestEnrollmentServicePreflightRecognizesRemovedComputerWithMatchingSecret(t *testing.T) {
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	secret := []byte(strings.Repeat("r", 32))
+	digest := sha256.Sum256([]byte(base64.RawURLEncoding.EncodeToString(secret)))
+	repository := &enrollmentRepository{inspection: computerport.CredentialInspection{
+		ServerID: testServerID, ComputerID: testComputerID, Version: 3,
+		SecretDigest: digest, CredentialState: "revoked",
+		ExpiresAt: now.Add(time.Hour), ComputerState: "removed", ComputerRevision: 7,
+	}}
+	service, err := NewEnrollmentService(
+		repository,
+		&fixedIDs{},
+		fixedClock{now: now},
+		EnrollmentConfig{
+			Release: enrollmentRelease(), TokenTTL: time.Minute,
+			CredentialTTL: time.Hour, PlatformBaseURL: "https://platform.example.cn",
+			Random: strings.NewReader(strings.Repeat("z", 32)),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := "crc_" + testServerID + "." + testComputerID + ".3." +
+		base64.RawURLEncoding.EncodeToString(secret)
+	result, err := service.Preflight(context.Background(), PreflightCommand{Credential: raw})
+	if err != nil || result.Status != "removed" || result.ReplacementGrant != "" {
+		t.Fatalf("Preflight() = (%#v, %v)", result, err)
+	}
+	if repository.inspectCommand.ServerID != testServerID ||
+		repository.inspectCommand.ComputerID != testComputerID ||
+		repository.inspectCommand.Version != 3 {
+		t.Fatalf("inspection command = %#v", repository.inspectCommand)
+	}
+}
+
+func TestEnrollmentServicePreflightSignsReplacementGrantForRetiredIdentity(t *testing.T) {
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	oldSecret := []byte(strings.Repeat("o", 32))
+	oldPart := base64.RawURLEncoding.EncodeToString(oldSecret)
+	newSecret := []byte(strings.Repeat("n", 32))
+	newToken, err := newEnrollmentToken(testServerID, replacementComputerID, 4, newSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindingHash := sha256.Sum256([]byte("ap-beijing\x00rins-old-mac"))
+	repository := &enrollmentRepository{
+		inspection: computerport.CredentialInspection{
+			ServerID: testServerID, ComputerID: testComputerID, Version: 3,
+			SecretDigest: sha256.Sum256([]byte(oldPart)), CredentialState: "revoked",
+			ComputerState: "removed", ComputerRevision: 7,
+		},
+		replacementAuthorization: computerport.ReplacementAuthorization{
+			OldComputerRevision: 7,
+			BindingHash:         hex.EncodeToString(bindingHash[:]),
+		},
+		result: computerport.EnrollmentClaim{
+			ServerID: testServerID, ComputerID: replacementComputerID,
+			CredentialID: enrollmentCredentialID, CredentialVersion: 1,
+			ExpiresAt: now.Add(time.Hour), Created: true,
+		},
+	}
+	service, err := NewEnrollmentService(
+		repository,
+		&fixedIDs{values: []string{enrollmentCredentialID}},
+		fixedClock{now: now},
+		EnrollmentConfig{
+			Release: enrollmentRelease(), TokenTTL: time.Minute,
+			CredentialTTL: time.Hour, PlatformBaseURL: "https://platform.example.cn",
+			Random:         strings.NewReader(strings.Repeat("z", 32)),
+			ReplacementKey: []byte(strings.Repeat("k", 32)), ReplacementTTL: 5 * time.Minute,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldCredential := "crc_" + testServerID + "." + testComputerID + ".3." + oldPart
+	result, err := service.Preflight(context.Background(), PreflightCommand{
+		Credential: oldCredential,
+		Replacement: &ReplacementRequest{
+			EnrollmentToken: newToken, TATRegion: "ap-beijing", TATInstanceID: "rins-old-mac",
+		},
+	})
+	if err != nil || result.Status != "removed" || !strings.HasPrefix(result.ReplacementGrant, "rpg1.") {
+		t.Fatalf("Preflight(replacement) = (%#v, %v)", result, err)
+	}
+	if strings.Contains(result.ReplacementGrant, newToken) ||
+		repository.replacementCommand.OldComputerID != testComputerID ||
+		repository.replacementCommand.NewComputerID != replacementComputerID ||
+		repository.replacementCommand.NewGeneration != 4 ||
+		repository.replacementCommand.TATInstanceID != "rins-old-mac" ||
+		repository.replacementCommand.ProgramSHA256 != enrollmentRelease().Program.SHA256 {
+		t.Fatalf("replacement command/grant = (%#v, %q)", repository.replacementCommand, result.ReplacementGrant)
+	}
+	credentialDigest := sha256.Sum256([]byte("new-client-secret"))
+	if _, err := service.Claim(context.Background(), ClaimCommand{
+		Token: newToken, OSType: "macos", Architecture: "arm64",
+		InstallerVersion: "0.1.0", CredentialDigest: credentialDigest,
+		ReplacementGrant: result.ReplacementGrant,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.claim.Replacement == nil ||
+		repository.claim.Replacement.OldComputerID != testComputerID ||
+		repository.claim.Replacement.NewComputerID != replacementComputerID ||
+		repository.claim.Replacement.BindingHash != hex.EncodeToString(bindingHash[:]) ||
+		repository.claim.Replacement.ProgramSHA256 != enrollmentRelease().Program.SHA256 {
+		t.Fatalf("replacement claim = %#v", repository.claim)
 	}
 }
 

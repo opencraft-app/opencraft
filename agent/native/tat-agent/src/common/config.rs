@@ -133,6 +133,34 @@ pub async fn get_register_info() -> Option<RegisterInfo> {
     config.read().await.register.clone()
 }
 
+pub fn inspect_identity_at(state_root: &Path) -> Result<(String, String)> {
+    if !state_root.is_absolute() {
+        return Err(anyhow!("TAT state root must be absolute"));
+    }
+    let metadata = std::fs::symlink_metadata(state_root.join(CONFIG_DAT))
+        .context("inspect TAT config metadata")?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(anyhow!("TAT config must be a regular file"));
+    }
+    let content = std::fs::read_to_string(state_root.join(CONFIG_DAT))
+        .context("read TAT config for identity inspection")?;
+    if content.len() > 1024 * 1024 {
+        return Err(anyhow!("TAT config is too large"));
+    }
+    let config: Config = serde_json::from_str(&content).context("decode TAT config")?;
+    let register = config
+        .register
+        .ok_or_else(|| anyhow!("TAT identity is not registered"))?;
+    if register.region.trim() != register.region
+        || register.region.is_empty()
+        || register.instance_id.trim() != register.instance_id
+        || !register.instance_id.starts_with("rins-")
+    {
+        return Err(anyhow!("TAT public identity is invalid"));
+    }
+    Ok((register.region, register.instance_id))
+}
+
 pub async fn save_register_info(info: RegisterInfo) -> Result<()> {
     let config = load_config().await?;
     let mut value = config.write().await;
@@ -174,4 +202,31 @@ async fn save_config(config: &Config) -> Result<()> {
         let _ = std::fs::remove_file(&temp_path);
     }
     result
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn inspection_returns_only_region_and_instance_id() {
+        let directory = std::env::temp_dir().join(format!(
+            "vela-tat-inspect-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir(&directory).expect("create tempdir");
+        std::fs::write(
+            directory.join(CONFIG_DAT),
+            r#"{"register":{"region":"ap-guangzhou","instance_id":"rins-test","private_key":"never-return","machine_id":"never-return"}}"#,
+        )
+        .expect("write config");
+        let identity = inspect_identity_at(&directory).expect("inspect identity");
+        assert_eq!(identity.0, "ap-guangzhou");
+        assert_eq!(identity.1, "rins-test");
+        std::fs::remove_dir_all(directory).expect("remove tempdir");
+    }
 }

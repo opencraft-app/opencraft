@@ -480,6 +480,10 @@ func newHumanRoutes(
 			computerEnrollmentWrapper.ClaimComputerEnrollment,
 		)
 		mux.HandleFunc(
+			"POST /v1/computer/preflight",
+			computerEnrollmentWrapper.PreflightComputer,
+		)
+		mux.HandleFunc(
 			"POST /v1/computer/setup-codes:redeem",
 			computerEnrollmentWrapper.RedeemComputerSetupCode,
 		)

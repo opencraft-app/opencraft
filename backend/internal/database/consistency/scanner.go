@@ -363,7 +363,7 @@ func (scanner *Scanner) scanServerRegistries(ctx context.Context, serverID, afte
 	if err := rows.Close(); err != nil {
 		return nil, err
 	}
-	rows, err = scanner.db.QueryContext(ctx, `SELECT id,tat_region,tat_instance_id FROM computers WHERE server_id=? AND tat_instance_id IS NOT NULL AND id>? ORDER BY id LIMIT ?`, serverID, afterID, limit)
+	rows, err = scanner.db.QueryContext(ctx, `SELECT id,tat_region,tat_instance_id FROM computers WHERE server_id=? AND lifecycle_state='active' AND tat_instance_id IS NOT NULL AND id>? ORDER BY id LIMIT ?`, serverID, afterID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +373,7 @@ func (scanner *Scanner) scanServerRegistries(ctx context.Context, serverID, afte
 			_ = rows.Close()
 			return nil, err
 		}
-		issue, err := scanner.checkRegistryTarget(ctx, "tat_instance_binding", computerID, `SELECT COUNT(*) FROM tat_instance_bindings WHERE binding_hash=? AND server_id=? AND computer_id=?`, tatBindingHash(region, instanceID), serverID, computerID)
+		issue, err := scanner.checkRegistryTarget(ctx, "tat_instance_binding", computerID, `SELECT COUNT(*) FROM tat_instance_bindings WHERE binding_hash=? AND server_id=? AND computer_id=? AND state='active'`, tatBindingHash(region, instanceID), serverID, computerID)
 		if err != nil {
 			_ = rows.Close()
 			return nil, err

@@ -24,12 +24,13 @@ func TestGeneratedSpecHasFrozenShape(t *testing.T) {
 	}
 
 	paths := spec.Paths.Map()
-	if got, want := len(paths), 72; got != want {
+	if got, want := len(paths), 73; got != want {
 		t.Fatalf("path count = %d, want %d", got, want)
 	}
 	for _, path := range []string{
 		"/callbacks/tencent-im/state",
 		"/computer/setup-codes:redeem",
+		"/computer/preflight",
 		"/servers/{serverId}/inbox",
 		"/servers/{serverId}/activity",
 		"/servers/{serverId}/channels/{channelId}/threads",
@@ -122,7 +123,7 @@ func TestGeneratedStrictInterfaceCoversEveryOperation(t *testing.T) {
 		methods = iface.Methods.NumFields()
 		return false
 	})
-	if got, want := methods, 96; got != want {
+	if got, want := methods, 97; got != want {
 		t.Fatalf("strict method count = %d, want %d", got, want)
 	}
 }

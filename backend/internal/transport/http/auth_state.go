@@ -10,10 +10,11 @@ import (
 )
 
 var (
-	errAuthStateMissing    = errors.New("请求缺少 AuthState")
-	errPrincipalMissing    = errors.New("认证结果缺少 Principal")
-	errPrincipalAlreadySet = errors.New("AuthState 已写入 Principal")
-	errEnrollmentTokenSet  = errors.New("AuthState 已写入 Enrollment token")
+	errAuthStateMissing               = errors.New("请求缺少 AuthState")
+	errPrincipalMissing               = errors.New("认证结果缺少 Principal")
+	errPrincipalAlreadySet            = errors.New("AuthState 已写入 Principal")
+	errEnrollmentTokenSet             = errors.New("AuthState 已写入 Enrollment token")
+	errComputerPreflightCredentialSet = errors.New("AuthState 已写入 Computer preflight credential")
 )
 
 type authStateContextKey struct{}
@@ -22,11 +23,23 @@ type authStateContextKey struct{}
 //
 // 值只能由认证 hook 写入一次；该对象不得跨请求复用。
 type AuthState struct {
-	mu                      sync.RWMutex
-	principal               authnport.CurrentPrincipal
-	assigned                bool
-	enrollmentToken         string
-	enrollmentTokenAssigned bool
+	mu                                  sync.RWMutex
+	principal                           authnport.CurrentPrincipal
+	assigned                            bool
+	enrollmentToken                     string
+	enrollmentTokenAssigned             bool
+	computerPreflightCredential         string
+	computerPreflightCredentialAssigned bool
+}
+
+// CurrentComputerPreflightCredential 返回只供只读 preflight 应用服务验证的原始 credential。
+// 它没有经过 currentness 门禁，也不构成平台 Principal。
+func CurrentComputerPreflightCredential(ctx context.Context) (string, bool) {
+	state, ok := authStateFromContext(ctx)
+	if !ok {
+		return "", false
+	}
+	return state.currentComputerPreflightCredential()
 }
 
 // CurrentEnrollmentToken 返回只在当前请求内保存的短期安装令牌。
@@ -168,4 +181,31 @@ func (s *AuthState) currentEnrollmentToken() (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.enrollmentToken, s.enrollmentTokenAssigned && s.enrollmentToken != ""
+}
+
+func (s *AuthState) setComputerPreflightCredential(credential string) error {
+	if s == nil {
+		return errAuthStateMissing
+	}
+	if credential == "" {
+		return errPrincipalMissing
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.computerPreflightCredentialAssigned {
+		return errComputerPreflightCredentialSet
+	}
+	s.computerPreflightCredential = credential
+	s.computerPreflightCredentialAssigned = true
+	return nil
+}
+
+func (s *AuthState) currentComputerPreflightCredential() (string, bool) {
+	if s == nil {
+		return "", false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.computerPreflightCredential,
+		s.computerPreflightCredentialAssigned && s.computerPreflightCredential != ""
 }

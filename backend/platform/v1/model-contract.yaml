@@ -320,7 +320,7 @@ tables:
     references:
       - {field: server_id, table: servers, crossShard: true}
       - {field: computer_id, table: computers, crossShard: true}
-    lifecycle: {field: state, values: [active, released]}
+    lifecycle: {field: state, values: [reserved, active, retired, purged]}
     deletePolicy: tombstone
     retention: permanent
     rebuildable: true

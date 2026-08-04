@@ -615,6 +615,10 @@ func (r *fakeTATRuntime) Register(
 	return nil
 }
 
+func (r *fakeTATRuntime) Inspect(context.Context, string) (tat.Identity, error) {
+	return tat.Identity{Region: "ap-beijing", InstanceID: "rins-test"}, nil
+}
+
 func (r *fakeTATRuntime) Start(
 	_ context.Context,
 	stateRoot string,

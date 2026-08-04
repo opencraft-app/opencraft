@@ -3,6 +3,7 @@ package bootstrap
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"net/http"
 	"time"
@@ -262,6 +263,8 @@ func NewPlatformAPIHandler(config PlatformAPIConfig) (http.Handler, error) {
 				TokenTTL:          enrollmentConfig.TokenTTL,
 				CredentialTTL:     enrollmentConfig.CredentialTTL,
 				Random:            rand.Reader,
+				ReplacementKey:    computerReplacementGrantKey(config.Human.Auth.AccessTokenKey),
+				ReplacementTTL:    5 * time.Minute,
 			},
 		)
 		if err != nil {
@@ -386,6 +389,13 @@ func NewPlatformAPIHandler(config PlatformAPIConfig) (http.Handler, error) {
 		operationService,
 		workService,
 	)
+}
+
+func computerReplacementGrantKey(accessTokenKey []byte) []byte {
+	digest := sha256.New()
+	_, _ = digest.Write([]byte("velachat-computer-replacement-grant-v1\x00"))
+	_, _ = digest.Write(accessTokenKey)
+	return digest.Sum(nil)
 }
 
 func managedTATRegion(value string) string {
@@ -668,6 +678,10 @@ func newAuthAndMeAPIHandler(
 			httptransport.ImplementedRoute{
 				Method: http.MethodPost,
 				Path:   "/v1/computer/enrollments:claim",
+			},
+			httptransport.ImplementedRoute{
+				Method: http.MethodPost,
+				Path:   "/v1/computer/preflight",
 			},
 			httptransport.ImplementedRoute{
 				Method: http.MethodPost,

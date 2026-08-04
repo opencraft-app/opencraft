@@ -199,7 +199,7 @@ server_slug_registry
 id
 slug shardkey
 server_id
-state = reserved | active | retired
+state = reserved | active | retired | purged
 ```
 
 保证。slug 必须是 ASCII 且创建后不可修改。按 slug 访问先点查 registry，再按
@@ -221,7 +221,8 @@ state = reserved | active | retired
 ```
 
 `binding_hash=SHA-256(tatRegion + 0x00 + tatInstanceId)` 的小写十六进制。注册表负责
-全局唯一，Computer 表内唯一索引只负责 Server 内约束。
+全局唯一，Computer 表内唯一索引只负责 Server 内约束。解除纳管和重新认领均以
+`binding_hash + server_id` 两分片短事务完成；`retired/purged` 墓碑永久保留。
 
 ### 5.5 Agent IM 回调路由
 
@@ -312,7 +313,7 @@ UNIQUE KEY(partition_key,...idempotency fields...)
 
 1. Account 登录身份生命周期：`account_login_identities + accounts`；
 2. Server slug 生命周期：`server_slug_registry + Server Group-Shard`；
-3. Computer TAT 绑定生命周期：`tat_instance_bindings + Computer Group-Shard`。
+3. Computer TAT 绑定、解除纳管与重新认领：`tat_instance_bindings + Computer Group-Shard`；
 4. Agent IM 路由生命周期：`agent_im_routes + Agent Group-Shard`。
 
 这些事务必须短、小、无外部网络调用。腾讯云 IM/TAT 调用只能在事务提交后执行。

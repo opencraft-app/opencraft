@@ -71,6 +71,27 @@ func (cgoBridge) start(stateRoot string) (nativeHandle, error) {
 	return &cgoHandle{value: handle}, nil
 }
 
+func (cgoBridge) inspect(stateRoot string) (Identity, error) {
+	root := C.CString(stateRoot)
+	defer C.free(unsafe.Pointer(root))
+	region := make([]byte, 256)
+	instanceID := make([]byte, 1024)
+	code := C.vela_tat_inspect_identity(
+		root,
+		(*C.char)(unsafe.Pointer(&region[0])), C.size_t(len(region)),
+		(*C.char)(unsafe.Pointer(&instanceID[0])), C.size_t(len(instanceID)),
+	)
+	if code != 0 {
+		return Identity{}, nativeError("inspect identity", int(code))
+	}
+	goruntime.KeepAlive(region)
+	goruntime.KeepAlive(instanceID)
+	return Identity{
+		Region:     C.GoString((*C.char)(unsafe.Pointer(&region[0]))),
+		InstanceID: C.GoString((*C.char)(unsafe.Pointer(&instanceID[0]))),
+	}, nil
+}
+
 type cgoHandle struct {
 	value *C.VelaTatHandle
 }

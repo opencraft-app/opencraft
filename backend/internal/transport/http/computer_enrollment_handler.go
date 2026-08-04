@@ -10,6 +10,8 @@ import (
 	"chatserver/internal/api/openapi"
 	appcomputer "chatserver/internal/app/computermanagement"
 	"chatserver/internal/apperror"
+
+	"github.com/google/uuid"
 )
 
 type computerEnrollmentService interface {
@@ -17,6 +19,7 @@ type computerEnrollmentService interface {
 	CreateSetupCommand(context.Context, string, string, string, int64) (appcomputer.SetupCommand, error)
 	RedeemSetupCode(context.Context, string) (appcomputer.SetupCodeScript, error)
 	Claim(context.Context, appcomputer.ClaimCommand) (appcomputer.ClaimResult, error)
+	Preflight(context.Context, appcomputer.PreflightCommand) (appcomputer.PreflightResult, error)
 }
 
 func (handler *ComputerEnrollmentHandler) RedeemComputerSetupCode(
@@ -157,6 +160,7 @@ func (handler *ComputerEnrollmentHandler) ClaimComputerEnrollment(
 		Token: token, OSType: string(request.Body.OsType),
 		Architecture:     string(request.Body.Architecture),
 		InstallerVersion: request.Body.InstallerVersion, CredentialDigest: digest,
+		ReplacementGrant: stringValue(request.Body.ReplacementGrant),
 	})
 	if err != nil {
 		return nil, err
@@ -183,6 +187,75 @@ func (handler *ComputerEnrollmentHandler) ClaimComputerEnrollment(
 			CacheControl: "no-store", Pragma: "no-cache",
 		},
 	}, nil
+}
+
+func (handler *ComputerEnrollmentHandler) PreflightComputer(
+	ctx context.Context,
+	request openapi.PreflightComputerRequestObject,
+) (openapi.PreflightComputerResponseObject, error) {
+	credential, ok := CurrentComputerPreflightCredential(ctx)
+	if !ok {
+		return nil, apperror.New("computer_credential_invalid", "Computer credential 无效", nil)
+	}
+	command := appcomputer.PreflightCommand{Credential: credential}
+	if request.Body != nil && request.Body.Replacement != nil {
+		replacement := request.Body.Replacement
+		if replacement.EnrollmentToken == nil || strings.TrimSpace(*replacement.EnrollmentToken) == "" ||
+			strings.TrimSpace(replacement.TatRegion) == "" ||
+			strings.TrimSpace(replacement.TatInstanceId) == "" {
+			return nil, apperror.New("invalid_request", "Computer preflight replacement 无效", nil)
+		}
+		command.Replacement = &appcomputer.ReplacementRequest{
+			EnrollmentToken: *replacement.EnrollmentToken,
+			TATRegion:       replacement.TatRegion, TATInstanceID: replacement.TatInstanceId,
+		}
+	}
+	result, err := handler.enrollment.Preflight(
+		ctx,
+		command,
+	)
+	if err != nil {
+		return nil, err
+	}
+	headers204 := openapi.PreflightComputer204ResponseHeaders{
+		CacheControl: "no-store", Pragma: "no-cache",
+	}
+	if result.Status == "active" {
+		return openapi.PreflightComputer204Response{Headers: headers204}, nil
+	}
+	if result.Status != "removed" && result.Status != "provider_identity_gone" {
+		return nil, invalidDomainData("Computer preflight 数据无效", nil)
+	}
+	requestID, err := uuid.Parse(RequestID(ctx))
+	if err != nil || requestID == uuid.Nil {
+		return nil, invalidDomainData("Computer preflight request ID 无效", err)
+	}
+	code := openapi.ComputerRemoved
+	message := "Computer 已解除纳管"
+	if result.Status == "provider_identity_gone" {
+		code = openapi.ComputerProviderIdentityGone
+		message = "Computer provider identity 已销毁"
+	}
+	body := openapi.ComputerPreflightRemoved{}
+	body.Error.Code = code
+	body.Error.Message = message
+	body.Error.RequestId = requestID
+	if result.ReplacementGrant != "" {
+		body.Error.ReplacementGrant = &result.ReplacementGrant
+	}
+	return openapi.PreflightComputer410JSONResponse{
+		Body: body,
+		Headers: openapi.PreflightComputer410ResponseHeaders{
+			CacheControl: "no-store", Pragma: "no-cache",
+		},
+	}, nil
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func (handler *ComputerEnrollmentHandler) GetComputerArtifact(

@@ -971,6 +971,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/computer/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 只读检查本机 Computer 身份和自动重新纳管资格
+         * @description 使用当前用户本地保存的长期 Computer credential。空请求只判断当前 Computer
+         *     是否 active 或已 removed；携带 replacement 时同时验证新 enrollment 和本机
+         *     TAT identity，成功时为已 removed Computer 签发短期 replacement grant。
+         *     本操作不签发 Session、不更新 last-seen，也不修改任何业务状态。
+         */
+        post: operations["preflightComputer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/computer/setup-codes:redeem": {
         parameters: {
             query?: never;
@@ -1945,6 +1968,7 @@ export interface components {
             architecture: "arm64";
             credentialDigest: string;
             installerVersion: string;
+            replacementGrant?: string;
         };
         ComputerEnrollmentClaim: {
             serverId: components["schemas"]["Id"];
@@ -1953,6 +1977,22 @@ export interface components {
             /** Format: int64 */
             credentialVersion: number;
             expiresAt: components["schemas"]["Timestamp"];
+        };
+        ComputerPreflightRequest: {
+            replacement?: {
+                enrollmentToken: string;
+                tatRegion: string;
+                tatInstanceId: string;
+            };
+        };
+        ComputerPreflightRemoved: {
+            error: {
+                /** @enum {string} */
+                code: "computer_removed" | "computer_provider_identity_gone";
+                message: string;
+                requestId: components["schemas"]["Id"];
+                readonly replacementGrant?: string;
+            };
         };
         CreateComputerRequest: {
             name: string;
@@ -4019,6 +4059,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ComputerEnrollmentClaim"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    preflightComputer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ComputerPreflightRequest"];
+            };
+        };
+        responses: {
+            /** @description Computer active 且 credential current */
+            204: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    Pragma?: "no-cache";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Computer 已 removed，或原 provider identity 已明确销毁 */
+            410: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    Pragma?: "no-cache";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputerPreflightRemoved"];
                 };
             };
             default: components["responses"]["Error"];

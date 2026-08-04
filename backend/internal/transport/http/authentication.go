@@ -3,6 +3,7 @@ package httptransport
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 
 	appauthn "chatserver/internal/app/authn"
@@ -63,6 +64,24 @@ func (h *AuthenticationHook) Authenticate(
 			return apperror.New("enrollment_invalid", "Computer 接入凭证无效", nil)
 		}
 		if err := state.setEnrollmentToken(token); err != nil {
+			return apperror.New("internal_error", "认证状态写入失败", err)
+		}
+		return nil
+	}
+	if input.SecuritySchemeName == computerCredentialScheme &&
+		request.Method == http.MethodPost && request.URL.Path == "/v1/computer/preflight" {
+		credential, ok := parseAuthorization(
+			request.Header.Get("Authorization"), "ComputerCredential",
+		)
+		if !ok || len(credential) > 512 {
+			return apperror.New("computer_credential_invalid", "Computer credential 无效", nil)
+		}
+		if _, err := authnport.NewComputerCredentialCandidate(
+			credential, computerCredentialRoutePrefix(credential),
+		); err != nil {
+			return apperror.New("computer_credential_invalid", "Computer credential 无效", err)
+		}
+		if err := state.setComputerPreflightCredential(credential); err != nil {
 			return apperror.New("internal_error", "认证状态写入失败", err)
 		}
 		return nil

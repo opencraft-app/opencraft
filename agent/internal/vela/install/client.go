@@ -21,8 +21,17 @@ import (
 )
 
 var (
-	ErrClientInvalid = errors.New("Computer enrollment client 配置无效")
-	ErrClaimRejected = errors.New("Computer enrollment claim 被拒绝")
+	ErrClientInvalid     = errors.New("Computer enrollment client 配置无效")
+	ErrClaimRejected     = errors.New("Computer enrollment claim 被拒绝")
+	ErrPreflightRejected = errors.New("Computer preflight 被拒绝")
+)
+
+type PreflightStatus string
+
+const (
+	PreflightActive               PreflightStatus = "active"
+	PreflightRemoved              PreflightStatus = "removed"
+	PreflightProviderIdentityGone PreflightStatus = "provider_identity_gone"
 )
 
 type HTTPDoer interface {
@@ -41,6 +50,19 @@ type ClaimRequest struct {
 	OSType           string
 	Architecture     string
 	InstallerVersion string
+	ReplacementGrant string
+}
+
+type PreflightRequest struct {
+	Credential      string
+	EnrollmentToken string
+	TATRegion       string
+	TATInstanceID   string
+}
+
+type PreflightResult struct {
+	Status           PreflightStatus
+	ReplacementGrant string
 }
 
 type ClaimResult struct {
@@ -104,10 +126,12 @@ func (client *Client) Claim(ctx context.Context, request ClaimRequest) (ClaimRes
 		Architecture     string `json:"architecture"`
 		CredentialDigest string `json:"credentialDigest"`
 		InstallerVersion string `json:"installerVersion"`
+		ReplacementGrant string `json:"replacementGrant,omitempty"`
 	}{
 		OSType: request.OSType, Architecture: request.Architecture,
 		CredentialDigest: hex.EncodeToString(digest[:]),
 		InstallerVersion: request.InstallerVersion,
+		ReplacementGrant: request.ReplacementGrant,
 	})
 	if err != nil {
 		return ClaimResult{}, ErrClientInvalid
@@ -154,6 +178,72 @@ func (client *Client) Claim(ctx context.Context, request ClaimRequest) (ClaimRes
 		CredentialID: value.CredentialID, Version: version,
 		ExpiresAt: value.ExpiresAt.UTC(), Credential: credential,
 	}, nil
+}
+
+func (client *Client) Preflight(ctx context.Context, request PreflightRequest) (PreflightResult, error) {
+	if client == nil || client.http == nil || ctx == nil || !validCredential(request.Credential) ||
+		!validEnrollmentToken(request.EnrollmentToken) || strings.TrimSpace(request.TATRegion) == "" ||
+		!strings.HasPrefix(request.TATInstanceID, "rins-") {
+		return PreflightResult{}, ErrClientInvalid
+	}
+	body, err := common.Marshal(struct {
+		Replacement struct {
+			EnrollmentToken string `json:"enrollmentToken"`
+			TATRegion       string `json:"tatRegion"`
+			TATInstanceID   string `json:"tatInstanceId"`
+		} `json:"replacement"`
+	}{Replacement: struct {
+		EnrollmentToken string `json:"enrollmentToken"`
+		TATRegion       string `json:"tatRegion"`
+		TATInstanceID   string `json:"tatInstanceId"`
+	}{request.EnrollmentToken, request.TATRegion, request.TATInstanceID}})
+	if err != nil {
+		return PreflightResult{}, ErrClientInvalid
+	}
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		client.baseURL+"/computer/preflight", bytes.NewReader(body))
+	if err != nil {
+		return PreflightResult{}, ErrClientInvalid
+	}
+	httpRequest.Header.Set("Authorization", "ComputerCredential "+request.Credential)
+	httpRequest.Header.Set("Content-Type", "application/json")
+	httpRequest.Header.Set("Accept", "application/json")
+	response, err := client.http.Do(httpRequest)
+	if err != nil {
+		return PreflightResult{}, fmt.Errorf("%w: 网络请求失败", ErrPreflightRejected)
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusNoContent {
+		return PreflightResult{Status: PreflightActive}, nil
+	}
+	if response.StatusCode != http.StatusGone {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		return PreflightResult{}, fmt.Errorf("%w: HTTP %d", ErrPreflightRejected, response.StatusCode)
+	}
+	var value struct {
+		Error struct {
+			Code             string `json:"code"`
+			ReplacementGrant string `json:"replacementGrant"`
+		} `json:"error"`
+	}
+	if err := decodeLimited(response.Body, &value); err != nil {
+		return PreflightResult{}, fmt.Errorf("%w: 响应结构无效", ErrPreflightRejected)
+	}
+	switch value.Error.Code {
+	case "computer_removed":
+		if len(value.Error.ReplacementGrant) < 32 || len(value.Error.ReplacementGrant) > 4096 ||
+			strings.TrimSpace(value.Error.ReplacementGrant) != value.Error.ReplacementGrant {
+			return PreflightResult{}, fmt.Errorf("%w: replacement grant 无效", ErrPreflightRejected)
+		}
+		return PreflightResult{Status: PreflightRemoved, ReplacementGrant: value.Error.ReplacementGrant}, nil
+	case "computer_provider_identity_gone":
+		if value.Error.ReplacementGrant != "" {
+			return PreflightResult{}, fmt.Errorf("%w: provider gone 响应无效", ErrPreflightRejected)
+		}
+		return PreflightResult{Status: PreflightProviderIdentityGone}, nil
+	default:
+		return PreflightResult{}, fmt.Errorf("%w: 响应 code 无效", ErrPreflightRejected)
+	}
 }
 
 func (client *Client) Provider(ctx context.Context, credential string) (ProviderResult, error) {

@@ -54,7 +54,7 @@ func TestServerScanFindsOrphanWithoutCrossPartitionInput(t *testing.T) {
 		`CREATE TABLE server_invites(id TEXT,server_id TEXT,created_by_member_id TEXT,landing_channel_id TEXT)`,
 		`CREATE TABLE server_slug_registry(id TEXT,slug TEXT,server_id TEXT)`,
 		`CREATE TABLE agent_im_routes(id TEXT,im_user_id TEXT,server_id TEXT,agent_id TEXT)`,
-		`CREATE TABLE tat_instance_bindings(id TEXT,binding_hash TEXT,server_id TEXT,computer_id TEXT)`,
+		`CREATE TABLE tat_instance_bindings(id TEXT,binding_hash TEXT,server_id TEXT,computer_id TEXT,state TEXT)`,
 		`CREATE TABLE computer_setup_codes(id TEXT,code_hash TEXT,server_id TEXT,computer_id TEXT)`,
 		`CREATE TABLE agents(id TEXT,server_id TEXT,computer_id TEXT,im_user_id TEXT,created_by_member_id TEXT,credential_version INTEGER,current_launch_id TEXT,current_launch_assignment_epoch TEXT,current_launch_generation INTEGER,current_launch_credential_version INTEGER,current_launch_attempt INTEGER,deleted_at TEXT)`,
 		`CREATE TABLE agent_runtime_credentials(id TEXT,server_id TEXT,agent_id TEXT,version INTEGER,state TEXT)`,
@@ -228,7 +228,7 @@ func openScannerFixture(t *testing.T) *sql.DB {
 		`CREATE TABLE agent_runtime_credentials(id TEXT,server_id TEXT,agent_id TEXT,version INTEGER,state TEXT)`,
 		`CREATE TABLE agent_im_routes(id TEXT,im_user_id TEXT,server_id TEXT,agent_id TEXT)`,
 		`CREATE TABLE computers(id TEXT,server_id TEXT,lifecycle_state TEXT,tat_region TEXT,tat_instance_id TEXT)`,
-		`CREATE TABLE tat_instance_bindings(id TEXT,binding_hash TEXT,server_id TEXT,computer_id TEXT)`,
+		`CREATE TABLE tat_instance_bindings(id TEXT,binding_hash TEXT,server_id TEXT,computer_id TEXT,state TEXT)`,
 		`CREATE TABLE computer_setup_codes(id TEXT,code_hash TEXT,server_id TEXT,computer_id TEXT)`,
 		`CREATE TABLE channels(id TEXT,server_id TEXT)`, `CREATE TABLE channel_members(id TEXT,server_id TEXT,channel_id TEXT,member_id TEXT)`,
 		`CREATE TABLE direct_conversations(id TEXT,server_id TEXT,member_a_id TEXT,member_b_id TEXT)`,
@@ -254,6 +254,45 @@ func openScannerFixture(t *testing.T) *sql.DB {
 		t.Fatal(err)
 	}
 	return db
+}
+
+func TestServerScanRequiresActiveBindingForCurrentComputerButAllowsRetiredTombstone(t *testing.T) {
+	db := openScannerFixture(t)
+	defer db.Close()
+	activeHash := tatBindingHash("ap-guangzhou", "rins-active")
+	removedHash := tatBindingHash("ap-guangzhou", "rins-retired")
+	_, err := db.Exec(`
+		INSERT INTO computers(id,server_id,lifecycle_state,tat_region,tat_instance_id)
+		VALUES('computer-active','server-a','active','ap-guangzhou','rins-active');
+		INSERT INTO computers(id,server_id,lifecycle_state,tat_region,tat_instance_id)
+		VALUES('computer-removed','server-a','removed','ap-guangzhou',NULL);
+		INSERT INTO tat_instance_bindings(id,binding_hash,server_id,computer_id,state)
+		VALUES('binding-active',?,'server-a','computer-active','retired');
+		INSERT INTO tat_instance_bindings(id,binding_hash,server_id,computer_id,state)
+		VALUES('binding-retired',?,'server-a','computer-removed','retired')`, activeHash, removedHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner, _ := New(db)
+	report, err := scanner.Scan(context.Background(), Options{Scope: ScopeServer, PartitionKey: "server-a", Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsIssue(report.Issues, "authority_registry", "computer-active") {
+		t.Fatalf("retired binding incorrectly satisfies active Computer: %#v", report.Issues)
+	}
+	if containsIssue(report.Issues, "authority_registry", "computer-removed") {
+		t.Fatalf("removed Computer retired tombstone was treated as current binding: %#v", report.Issues)
+	}
+}
+
+func containsIssue(issues []Issue, check, resourceID string) bool {
+	for _, issue := range issues {
+		if issue.Check == check && issue.ResourceID == resourceID {
+			return true
+		}
+	}
+	return false
 }
 
 func TestScanRejectsWrongScopeCursorBinding(t *testing.T) {

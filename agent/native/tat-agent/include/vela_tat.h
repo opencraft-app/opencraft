@@ -20,6 +20,13 @@ int vela_tat_start(
     const char *state_root,
     VelaTatHandle **out_handle);
 
+int vela_tat_inspect_identity(
+    const char *state_root,
+    char *region,
+    size_t region_capacity,
+    char *instance_id,
+    size_t instance_id_capacity);
+
 int vela_tat_close(VelaTatHandle *handle);
 
 size_t vela_tat_last_error(

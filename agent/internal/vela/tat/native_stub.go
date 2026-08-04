@@ -21,3 +21,7 @@ func (unavailableBridge) register(
 func (unavailableBridge) start(_ string) (nativeHandle, error) {
 	return nil, ErrNativeUnavailable
 }
+
+func (unavailableBridge) inspect(_ string) (Identity, error) {
+	return Identity{}, ErrNativeUnavailable
+}

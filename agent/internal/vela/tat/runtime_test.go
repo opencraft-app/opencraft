@@ -99,12 +99,31 @@ func TestRuntimeStartAndCloseExactlyOnce(t *testing.T) {
 	}
 }
 
+func TestRuntimeInspectsOnlyPublicProviderIdentity(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	bridge := &fakeBridge{identity: Identity{
+		Region: "ap-guangzhou", InstanceID: "rins-public-identity",
+	}}
+	identity, err := newRuntime(bridge).Inspect(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.Region != "ap-guangzhou" || identity.InstanceID != "rins-public-identity" ||
+		bridge.inspectStateRoot != root {
+		t.Fatalf("identity=%#v stateRoot=%q", identity, bridge.inspectStateRoot)
+	}
+}
+
 type fakeBridge struct {
 	registerCalls     int
 	registerStateRoot string
 	registerTags      string
 	startCalls        int
 	startHandle       nativeHandle
+	inspectStateRoot  string
+	identity          Identity
 }
 
 func (b *fakeBridge) register(
@@ -123,6 +142,11 @@ func (b *fakeBridge) register(
 func (b *fakeBridge) start(_ string) (nativeHandle, error) {
 	b.startCalls++
 	return b.startHandle, nil
+}
+
+func (b *fakeBridge) inspect(stateRoot string) (Identity, error) {
+	b.inspectStateRoot = stateRoot
+	return b.identity, nil
 }
 
 type fakeNativeHandle struct {

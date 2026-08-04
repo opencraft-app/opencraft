@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"math"
 	"path"
@@ -19,6 +20,7 @@ import (
 	"chatserver/internal/ent/computerruntimecredential"
 	"chatserver/internal/ent/computersetupcode"
 	"chatserver/internal/ent/idempotencyrecord"
+	"chatserver/internal/ent/tatinstancebinding"
 	"chatserver/internal/ent/tencentoperation"
 	"chatserver/internal/persistedjson"
 	computerport "chatserver/internal/ports/computer"
@@ -215,6 +217,29 @@ func (repository *EntRepository) Release(
 			return computerport.ErrComputerHasBoundAgents
 		}
 		releasedAt := command.ReleasedAt.UTC()
+		if entity.TatInstanceID != nil {
+			hash := computerTATBindingHash(entity.TatRegion, *entity.TatInstanceID)
+			binding, err := tx.TATInstanceBinding.Query().
+				Where(tatinstancebinding.BindingHashEQ(hash)).
+				Only(ctx)
+			if ent.IsNotFound(err) {
+				return computerport.ErrTATBindingInconsistent
+			}
+			if err != nil {
+				return err
+			}
+			if binding.State != "active" || binding.ServerID != entity.ServerID ||
+				binding.ComputerID != entity.ID || binding.TatRegion != entity.TatRegion ||
+				binding.TatInstanceID != *entity.TatInstanceID {
+				return computerport.ErrTATBindingInconsistent
+			}
+			if _, err := tx.TATInstanceBinding.UpdateOne(binding).
+				SetState("retired").
+				SetUpdatedAt(releasedAt).
+				Save(ctx); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.ComputerRuntimeCredential.Update().
 			Where(
 				computerruntimecredential.ServerIDEQ(command.ServerID),
@@ -237,6 +262,7 @@ func (repository *EntRepository) Release(
 		_, err = tx.Computer.UpdateOne(entity).
 			SetLifecycleState("removed").
 			SetTatAgentState("offline").
+			ClearTatInstanceID().
 			ClearRegistrationExpiresAt().
 			ClearEnrollmentTokenHash().
 			ClearEnrollmentExpiresAt().
@@ -245,6 +271,11 @@ func (repository *EntRepository) Release(
 			Save(ctx)
 		return err
 	})
+}
+
+func computerTATBindingHash(region string, instanceID string) string {
+	digest := sha256.Sum256([]byte(region + "\x00" + instanceID))
+	return hex.EncodeToString(digest[:])
 }
 
 // Get 返回 membership 授权后的单个未移除 Computer。
@@ -535,6 +566,15 @@ func (repository *EntRepository) ClaimEnrollment(
 		if err := validateEnrollmentClaim(machine, command); err != nil {
 			return err
 		}
+		var replacementBinding *ent.TATInstanceBinding
+		if command.Replacement != nil {
+			replacementBinding, err = validateReplacementClaim(
+				ctx, tx, machine, command, *command.Replacement,
+			)
+			if err != nil {
+				return err
+			}
+		}
 		if machine.EnrollmentClaimedAt != nil {
 			result, err = replayEnrollmentClaim(ctx, tx, machine, command)
 			return err
@@ -559,7 +599,7 @@ func (repository *EntRepository) ClaimEnrollment(
 		} else if !ent.IsNotFound(err) {
 			return err
 		}
-		updated, err := tx.Computer.Update().
+		update := tx.Computer.Update().
 			Where(
 				computerentity.IDEQ(command.ComputerID),
 				computerentity.ServerIDEQ(command.ServerID),
@@ -569,13 +609,28 @@ func (repository *EntRepository) ClaimEnrollment(
 			SetEnrollmentClaimedAt(command.ClaimedAt.UTC()).
 			SetEnrollmentCredentialVersion(version).
 			SetRevision(machine.Revision + 1).
-			SetUpdatedAt(command.ClaimedAt.UTC()).
-			Save(ctx)
+			SetUpdatedAt(command.ClaimedAt.UTC())
+		if command.Replacement != nil {
+			update.SetTatInstanceID(command.Replacement.TATInstanceID).
+				SetLifecycleState("active").
+				SetTatAgentState("unknown")
+		}
+		updated, err := update.Save(ctx)
 		if err != nil {
 			return err
 		}
 		if updated != 1 {
 			return errEnrollmentClaimRace
+		}
+		if replacementBinding != nil {
+			if _, err := tx.TATInstanceBinding.UpdateOne(replacementBinding).
+				SetServerID(command.ServerID).
+				SetComputerID(command.ComputerID).
+				SetState("active").
+				SetUpdatedAt(command.ClaimedAt.UTC()).
+				Save(ctx); err != nil {
+				return err
+			}
 		}
 		credential, err := tx.ComputerRuntimeCredential.Create().
 			SetID(command.CredentialID).
@@ -601,6 +656,152 @@ func (repository *EntRepository) ClaimEnrollment(
 		return repository.recoverEnrollmentClaim(ctx, command)
 	}
 	return result, returnErr
+}
+
+// InspectCredential 精确读取 removed/current 分类所需事实，不改变普通鉴权门禁。
+func (repository *EntRepository) InspectCredential(
+	ctx context.Context,
+	command computerport.InspectCredentialCommand,
+) (computerport.CredentialInspection, error) {
+	if command.ServerID == "" || command.ComputerID == "" ||
+		command.Version == 0 || command.Version > math.MaxInt64 {
+		return computerport.CredentialInspection{}, computerport.ErrCredentialInspectionNotFound
+	}
+	credential, err := repository.handle.Client().ComputerRuntimeCredential.Query().
+		Where(
+			computerruntimecredential.ServerIDEQ(command.ServerID),
+			computerruntimecredential.ComputerIDEQ(command.ComputerID),
+			computerruntimecredential.VersionEQ(int64(command.Version)),
+		).
+		Only(ctx)
+	if ent.IsNotFound(err) {
+		return computerport.CredentialInspection{}, computerport.ErrCredentialInspectionNotFound
+	}
+	if err != nil {
+		return computerport.CredentialInspection{}, err
+	}
+	machine, err := repository.handle.Client().Computer.Query().
+		Where(
+			computerentity.ServerIDEQ(command.ServerID),
+			computerentity.IDEQ(command.ComputerID),
+		).
+		Only(ctx)
+	if ent.IsNotFound(err) {
+		return computerport.CredentialInspection{}, computerport.ErrCredentialInspectionNotFound
+	}
+	if err != nil {
+		return computerport.CredentialInspection{}, err
+	}
+	if len(credential.SecretHash) != sha256.Size {
+		return computerport.CredentialInspection{}, errors.New("Computer credential 摘要长度无效")
+	}
+	var digest [32]byte
+	copy(digest[:], credential.SecretHash)
+	return computerport.CredentialInspection{
+		ServerID: command.ServerID, ComputerID: command.ComputerID,
+		Version: command.Version, SecretDigest: digest,
+		CredentialState: credential.State, ExpiresAt: credential.ExpiresAt.UTC(),
+		GraceExpiresAt: credential.GraceExpiresAt, RevokedAt: credential.RevokedAt,
+		ComputerState: machine.LifecycleState, ComputerRevision: machine.Revision,
+	}, nil
+}
+
+// AuthorizeReplacement 只读取 removed 墓碑、retired registry 和新 enrollment。
+// 真正 owner 切换仍由 claim 事务重验并提交。
+func (repository *EntRepository) AuthorizeReplacement(
+	ctx context.Context,
+	command computerport.AuthorizeReplacementCommand,
+) (computerport.ReplacementAuthorization, error) {
+	if command.OldServerID == "" || command.OldComputerID == "" ||
+		command.OldCredentialVersion == 0 || command.OldCredentialVersion > math.MaxInt64 ||
+		command.NewServerID != command.OldServerID || command.NewComputerID == "" ||
+		command.NewGeneration == 0 || command.NewGeneration > math.MaxInt64 ||
+		command.NewTokenHash == [32]byte{} || command.TATRegion == "" ||
+		!strings.HasPrefix(command.TATInstanceID, "rins-") || command.ReleaseVersion == "" ||
+		command.Target == "" || command.ProgramSHA256 == [32]byte{} || command.RequestedAt.IsZero() {
+		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementIdentityMismatch
+	}
+	oldMachine, err := repository.handle.Client().Computer.Query().
+		Where(
+			computerentity.ServerIDEQ(command.OldServerID),
+			computerentity.IDEQ(command.OldComputerID),
+			computerentity.LifecycleStateEQ("removed"),
+			computerentity.TatInstanceIDIsNil(),
+		).
+		Only(ctx)
+	if ent.IsNotFound(err) {
+		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementIdentityMismatch
+	}
+	if err != nil {
+		return computerport.ReplacementAuthorization{}, err
+	}
+	credentialExists, err := repository.handle.Client().ComputerRuntimeCredential.Query().
+		Where(
+			computerruntimecredential.ServerIDEQ(command.OldServerID),
+			computerruntimecredential.ComputerIDEQ(command.OldComputerID),
+			computerruntimecredential.VersionEQ(int64(command.OldCredentialVersion)),
+		).
+		Exist(ctx)
+	if err != nil {
+		return computerport.ReplacementAuthorization{}, err
+	}
+	if !credentialExists {
+		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementIdentityMismatch
+	}
+	hash := computerTATBindingHash(command.TATRegion, command.TATInstanceID)
+	binding, err := repository.handle.Client().TATInstanceBinding.Query().
+		Where(tatinstancebinding.BindingHashEQ(hash)).
+		Only(ctx)
+	if ent.IsNotFound(err) {
+		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementIdentityMismatch
+	}
+	if err != nil {
+		return computerport.ReplacementAuthorization{}, err
+	}
+	if binding.ServerID != command.OldServerID || binding.ComputerID != command.OldComputerID ||
+		binding.TatRegion != command.TATRegion || binding.TatInstanceID != command.TATInstanceID {
+		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementIdentityMismatch
+	}
+	if binding.State == "purged" {
+		return computerport.ReplacementAuthorization{}, computerport.ErrProviderIdentityGone
+	}
+	if binding.State != "retired" {
+		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementIdentityMismatch
+	}
+	newMachine, err := repository.handle.Client().Computer.Query().
+		Where(
+			computerentity.ServerIDEQ(command.NewServerID),
+			computerentity.IDEQ(command.NewComputerID),
+			computerentity.LifecycleStateEQ("provisioning"),
+			computerentity.TatInstanceKindEQ("managed"),
+			computerentity.TatInstanceIDIsNil(),
+			computerentity.EnrollmentGenerationEQ(int64(command.NewGeneration)),
+			computerentity.EnrollmentClaimedAtIsNil(),
+		).
+		Only(ctx)
+	if ent.IsNotFound(err) {
+		return computerport.ReplacementAuthorization{}, computerport.ErrEnrollmentInvalid
+	}
+	if err != nil {
+		return computerport.ReplacementAuthorization{}, err
+	}
+	if newMachine.EnrollmentTokenHash == nil || len(*newMachine.EnrollmentTokenHash) != sha256.Size ||
+		subtle.ConstantTimeCompare(*newMachine.EnrollmentTokenHash, command.NewTokenHash[:]) != 1 ||
+		newMachine.EnrollmentExpiresAt == nil ||
+		!newMachine.EnrollmentExpiresAt.After(command.RequestedAt.UTC()) {
+		return computerport.ReplacementAuthorization{}, computerport.ErrEnrollmentInvalid
+	}
+	if newMachine.EnrollmentReleaseVersion == nil ||
+		*newMachine.EnrollmentReleaseVersion != command.ReleaseVersion ||
+		newMachine.EnrollmentTarget == nil || *newMachine.EnrollmentTarget != command.Target ||
+		newMachine.EnrollmentProgramSha256 == nil ||
+		len(*newMachine.EnrollmentProgramSha256) != sha256.Size ||
+		subtle.ConstantTimeCompare(*newMachine.EnrollmentProgramSha256, command.ProgramSHA256[:]) != 1 {
+		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementReleaseMismatch
+	}
+	return computerport.ReplacementAuthorization{
+		OldComputerRevision: oldMachine.Revision, BindingHash: hash,
+	}, nil
 }
 
 // ResolveEnrollmentArtifact 只按 token 自带 server 分片和 generation 读取固化对象。
@@ -753,7 +954,8 @@ func validateEnrollmentClaim(
 	machine *ent.Computer,
 	command computerport.ClaimEnrollmentCommand,
 ) error {
-	if machine.TatAgentState == "online" || machine.EnrollmentTokenHash == nil ||
+	if (machine.TatAgentState == "online" && command.Replacement == nil) ||
+		machine.EnrollmentTokenHash == nil ||
 		len(*machine.EnrollmentTokenHash) != sha256.Size ||
 		subtle.ConstantTimeCompare(*machine.EnrollmentTokenHash, command.TokenHash[:]) != 1 ||
 		machine.OsType != command.OSType || machine.EnrollmentArchitecture == nil ||
@@ -763,6 +965,84 @@ func validateEnrollmentClaim(
 		return computerport.ErrEnrollmentInvalid
 	}
 	return nil
+}
+
+func validateReplacementClaim(
+	ctx context.Context,
+	tx *ent.Tx,
+	machine *ent.Computer,
+	command computerport.ClaimEnrollmentCommand,
+	replacement computerport.ReplacementClaim,
+) (*ent.TATInstanceBinding, error) {
+	if replacement.OldServerID != command.ServerID || replacement.NewServerID != command.ServerID ||
+		replacement.NewComputerID != command.ComputerID || replacement.NewGeneration != command.Generation ||
+		replacement.NewTokenHash != command.TokenHash || replacement.OldComputerID == "" ||
+		replacement.OldCredentialVersion == 0 || replacement.OldComputerRevision < 1 ||
+		len(replacement.BindingHash) != 64 || replacement.TATRegion == "" ||
+		!strings.HasPrefix(replacement.TATInstanceID, "rins-") ||
+		replacement.ReleaseVersion != command.InstallerVersion || replacement.Target == "" ||
+		replacement.ProgramSHA256 == [32]byte{} ||
+		computerTATBindingHash(replacement.TATRegion, replacement.TATInstanceID) != replacement.BindingHash ||
+		machine.TatRegion != replacement.TATRegion || machine.EnrollmentTarget == nil ||
+		*machine.EnrollmentTarget != replacement.Target || machine.EnrollmentProgramSha256 == nil ||
+		len(*machine.EnrollmentProgramSha256) != sha256.Size ||
+		subtle.ConstantTimeCompare(*machine.EnrollmentProgramSha256, replacement.ProgramSHA256[:]) != 1 {
+		return nil, computerport.ErrReplacementIdentityMismatch
+	}
+	_, err := tx.Computer.Query().
+		Where(
+			computerentity.ServerIDEQ(replacement.OldServerID),
+			computerentity.IDEQ(replacement.OldComputerID),
+			computerentity.LifecycleStateEQ("removed"),
+			computerentity.TatInstanceIDIsNil(),
+			computerentity.RevisionEQ(replacement.OldComputerRevision),
+		).
+		Only(ctx)
+	if ent.IsNotFound(err) {
+		return nil, computerport.ErrReplacementIdentityMismatch
+	}
+	if err != nil {
+		return nil, err
+	}
+	credentialExists, err := tx.ComputerRuntimeCredential.Query().
+		Where(
+			computerruntimecredential.ServerIDEQ(replacement.OldServerID),
+			computerruntimecredential.ComputerIDEQ(replacement.OldComputerID),
+			computerruntimecredential.VersionEQ(int64(replacement.OldCredentialVersion)),
+		).
+		Exist(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !credentialExists {
+		return nil, computerport.ErrReplacementIdentityMismatch
+	}
+	binding, err := tx.TATInstanceBinding.Query().
+		Where(tatinstancebinding.BindingHashEQ(replacement.BindingHash)).
+		Only(ctx)
+	if ent.IsNotFound(err) {
+		return nil, computerport.ErrReplacementIdentityMismatch
+	}
+	if err != nil {
+		return nil, err
+	}
+	if machine.EnrollmentClaimedAt != nil {
+		if binding.State != "active" || binding.ServerID != command.ServerID ||
+			binding.ComputerID != command.ComputerID || machine.LifecycleState != "active" ||
+			machine.TatInstanceID == nil || *machine.TatInstanceID != replacement.TATInstanceID {
+			return nil, computerport.ErrReplacementIdentityMismatch
+		}
+		return nil, nil
+	}
+	if replacement.GrantExpired {
+		return nil, computerport.ErrEnrollmentExpired
+	}
+	if binding.State != "retired" || binding.ServerID != replacement.OldServerID ||
+		binding.ComputerID != replacement.OldComputerID || binding.TatRegion != replacement.TATRegion ||
+		binding.TatInstanceID != replacement.TATInstanceID {
+		return nil, computerport.ErrReplacementIdentityMismatch
+	}
+	return binding, nil
 }
 
 func replayEnrollmentClaim(
@@ -821,7 +1101,8 @@ func validClaimEnrollmentCommand(command computerport.ClaimEnrollmentCommand) bo
 		command.TokenHash != [32]byte{} && command.CredentialDigest != [32]byte{} &&
 		command.OSType != "" && command.Architecture != "" &&
 		command.InstallerVersion != "" && command.CredentialID != "" &&
-		command.CredentialExpiresAt.After(command.ClaimedAt)
+		command.CredentialExpiresAt.After(command.ClaimedAt) &&
+		(command.Replacement == nil || command.Replacement.NewTokenHash == command.TokenHash)
 }
 
 func validEnrollmentRelease(release computerport.ReleaseBinding) bool {

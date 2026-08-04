@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -50,6 +51,8 @@ type fakeComputerEnrollmentService struct {
 	computerID       string
 	expectedRevision int64
 	claim            appcomputer.ClaimCommand
+	preflight        appcomputer.PreflightCommand
+	preflightResult  appcomputer.PreflightResult
 	redeemedCode     string
 	script           appcomputer.SetupCodeScript
 	setup            appcomputer.SetupCommand
@@ -85,6 +88,14 @@ func (service *fakeComputerEnrollmentService) Claim(
 ) (appcomputer.ClaimResult, error) {
 	service.claim = command
 	return service.claimResult, nil
+}
+
+func (service *fakeComputerEnrollmentService) Preflight(
+	_ context.Context,
+	command appcomputer.PreflightCommand,
+) (appcomputer.PreflightResult, error) {
+	service.preflight = command
+	return service.preflightResult, nil
 }
 
 func (service *fakeComputerEnrollmentService) RedeemSetupCode(
@@ -464,6 +475,46 @@ func TestComputerEnrollmentHandlerMapsSetupClaimAndArtifactWithoutCaching(t *tes
 		redirect.Headers.CacheControl != "no-store" || redirect.Headers.Pragma != "no-cache" ||
 		artifact.token != token {
 		t.Fatalf("GetComputerArtifact() = (%#v, %v) service=%#v", artifactResponse, err, artifact)
+	}
+}
+
+func TestComputerEnrollmentHandlerReturnsRemovedPreflightWithoutCurrentPrincipal(t *testing.T) {
+	enrollment := &fakeComputerEnrollmentService{preflightResult: appcomputer.PreflightResult{
+		Status: "removed", ReplacementGrant: "rpg1.signed.replacement",
+	}}
+	handler, err := NewComputerEnrollmentHandler(
+		enrollment,
+		&fakeComputerArtifactService{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const credential = "crc_" + handlerServerID + "." + handlerComputerID +
+		".3.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	state := &AuthState{}
+	if err := state.setComputerPreflightCredential(credential); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.WithValue(context.Background(), authStateContextKey{}, state)
+	ctx = context.WithValue(ctx, requestIDContextKey{}, handlerComputerID)
+	var body openapi.ComputerPreflightRequest
+	if err := json.Unmarshal([]byte(`{"replacement":{"enrollmentToken":"cen1.new","tatRegion":"ap-beijing","tatInstanceId":"rins-old"}}`), &body); err != nil {
+		t.Fatal(err)
+	}
+	response, err := handler.PreflightComputer(
+		ctx,
+		openapi.PreflightComputerRequestObject{Body: &body},
+	)
+	removed, ok := response.(openapi.PreflightComputer410JSONResponse)
+	if err != nil || !ok || removed.Body.Error.Code != openapi.ComputerRemoved ||
+		removed.Body.Error.RequestId.String() != handlerComputerID ||
+		removed.Body.Error.ReplacementGrant == nil ||
+		*removed.Body.Error.ReplacementGrant != "rpg1.signed.replacement" ||
+		removed.Headers.CacheControl != "no-store" || removed.Headers.Pragma != "no-cache" ||
+		enrollment.preflight.Credential != credential || enrollment.preflight.Replacement == nil ||
+		enrollment.preflight.Replacement.EnrollmentToken != "cen1.new" ||
+		enrollment.preflight.Replacement.TATInstanceID != "rins-old" {
+		t.Fatalf("PreflightComputer() = (%#v, %v), command=%#v", response, err, enrollment.preflight)
 	}
 }
 

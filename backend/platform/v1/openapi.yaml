@@ -78,7 +78,7 @@ x-auth-domain-registry:
      listRuntimeReminders, createRuntimeReminder, updateRuntimeReminder,
      cancelRuntimeReminder, snoozeRuntimeReminder, listRuntimeReminderLog,
      listRuntimeReminderOccurrences, acknowledgeRuntimeReminderOccurrence]
-  computer-credential: [createComputerSession]
+  computer-credential: [createComputerSession, preflightComputer]
   computer-bearer:
     [rotateComputerCredential, getComputerAssignments, createComputerAgentLaunch,
      refreshComputerAgentSession, putComputerAgentObservation, sendComputerHeartbeat]
@@ -112,6 +112,11 @@ x-error-code-registry:
   runtime_credential_revoked: {status: 401}
   computer_credential_invalid: {status: 401}
   computer_credential_revoked: {status: 401}
+  computer_credential_not_current: {status: 409}
+  computer_removed: {status: 410}
+  computer_provider_identity_gone: {status: 410}
+  computer_replacement_identity_mismatch: {status: 409}
+  replacement_release_mismatch: {status: 409}
   computer_credential_exists: {status: 409}
   enrollment_invalid: {status: 401}
   setup_expired: {status: 401}
@@ -1407,6 +1412,43 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ComputerEnrollmentClaim'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/preflight:
+    post:
+      tags: [Computers]
+      operationId: preflightComputer
+      summary: 只读检查本机 Computer 身份和自动重新纳管资格
+      description: |
+        使用当前用户本地保存的长期 Computer credential。空请求只判断当前 Computer
+        是否 active 或已 removed；携带 replacement 时同时验证新 enrollment 和本机
+        TAT identity，成功时为已 removed Computer 签发短期 replacement grant。
+        本操作不签发 Session、不更新 last-seen，也不修改任何业务状态。
+      security:
+        - ComputerCredentialAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerPreflightRequest'}
+      responses:
+        '204':
+          description: Computer active 且 credential current
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+        '410':
+          description: Computer 已 removed，或原 provider identity 已明确销毁
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerPreflightRemoved'}
         default: {$ref: '#/components/responses/Error'}
 
   /computer/setup-codes:redeem:
@@ -2951,6 +2993,12 @@ components:
           writeOnly: true
           x-sensitive: true
         installerVersion: {type: string, minLength: 1, maxLength: 64}
+        replacementGrant:
+          type: string
+          minLength: 32
+          maxLength: 4096
+          writeOnly: true
+          x-sensitive: true
     ComputerEnrollmentClaim:
       type: object
       additionalProperties: false
@@ -2961,6 +3009,44 @@ components:
         credentialId: {$ref: '#/components/schemas/Id'}
         credentialVersion: {type: integer, format: int64, minimum: 1}
         expiresAt: {$ref: '#/components/schemas/Timestamp'}
+    ComputerPreflightRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        replacement:
+          type: object
+          additionalProperties: false
+          required: [enrollmentToken, tatRegion, tatInstanceId]
+          properties:
+            enrollmentToken:
+              type: string
+              minLength: 1
+              maxLength: 2048
+              writeOnly: true
+              x-sensitive: true
+            tatRegion: {type: string, minLength: 1, maxLength: 64}
+            tatInstanceId: {type: string, pattern: '^rins-[A-Za-z0-9_-]+$', maxLength: 128}
+    ComputerPreflightRemoved:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, requestId]
+          properties:
+            code:
+              type: string
+              enum: [computer_removed, computer_provider_identity_gone]
+            message: {type: string}
+            requestId: {$ref: '#/components/schemas/Id'}
+            replacementGrant:
+              type: string
+              minLength: 32
+              maxLength: 4096
+              readOnly: true
+              x-sensitive: true
     CreateComputerRequest:
       type: object
       additionalProperties: false

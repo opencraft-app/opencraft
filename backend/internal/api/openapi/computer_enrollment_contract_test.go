@@ -21,6 +21,9 @@ func TestGeneratedComputerEnrollmentContract(t *testing.T) {
 		"/computer/enrollments:claim": {
 			method: "POST", operationID: "ClaimComputerEnrollment",
 		},
+		"/computer/preflight": {
+			method: "POST", operationID: "PreflightComputer",
+		},
 		"/computer/setup-codes:redeem": {
 			method: "POST", operationID: "RedeemComputerSetupCode",
 		},
@@ -48,13 +51,32 @@ func TestGeneratedComputerEnrollmentContract(t *testing.T) {
 		"ComputerSetupCommand",
 		"ComputerEnrollmentClaimRequest",
 		"ComputerEnrollmentClaim",
+		"ComputerPreflightRequest",
+		"ComputerPreflightRemoved",
 	} {
 		if reference := spec.Components.Schemas[name]; reference == nil || reference.Value == nil {
 			t.Errorf("embedded OpenAPI is missing schema %q", name)
 		}
 	}
+	preflight := spec.Paths.Map()["/computer/preflight"]
+	if preflight != nil && preflight.Post != nil {
+		var computerCredential bool
+		for _, requirement := range *preflight.Post.Security {
+			if _, ok := requirement["ComputerCredentialAuth"]; ok {
+				computerCredential = true
+			}
+		}
+		if !computerCredential {
+			t.Error("Computer preflight does not require ComputerCredentialAuth")
+		}
+	}
 	if spec.Components.SecuritySchemes["EnrollmentAuth"] == nil {
 		t.Fatal("EnrollmentAuth security scheme is missing")
+	}
+	claimRequest := spec.Components.Schemas["ComputerEnrollmentClaimRequest"]
+	if claimRequest == nil || claimRequest.Value == nil ||
+		claimRequest.Value.Properties["replacementGrant"] == nil {
+		t.Fatal("ComputerEnrollmentClaimRequest replacementGrant is missing")
 	}
 	for _, path := range []string{
 		"/computer/enrollments:claim",

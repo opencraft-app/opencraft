@@ -1097,6 +1097,7 @@ func serveHumanPlatform(
 	// Keep their exact routes on the Platform handler so the broader authenticated
 	// Computer control prefix cannot shadow them.
 	rootHandler.Handle("/v1/computer/enrollments:claim", platformHandler)
+	rootHandler.Handle("/v1/computer/preflight", platformHandler)
 	rootHandler.Handle("/v1/computer/setup-codes:redeem", platformHandler)
 	rootHandler.Handle("/v1/computer/", computerHandler)
 	rootHandler.Handle("/v1", platformHandler)
