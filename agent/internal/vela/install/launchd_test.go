@@ -19,6 +19,7 @@ func TestLaunchAgentAcceptsBootstrapErrorWhenServiceIsLoaded(t *testing.T) {
 	home := t.TempDir()
 	root := filepath.Join(t.TempDir(), "computer")
 	var calls [][]string
+	printCalls := 0
 	launcher := &userLaunchAgent{
 		home: home,
 		uid:  os.Geteuid(),
@@ -32,6 +33,10 @@ func TestLaunchAgentAcceptsBootstrapErrorWhenServiceIsLoaded(t *testing.T) {
 				return []byte("Bootstrap failed: 5: Input/output error"),
 					errors.New("exit status 5")
 			case "print":
+				printCalls++
+				if printCalls == 1 {
+					return nil, errors.New("service not found")
+				}
 				return []byte("state = running"), nil
 			default:
 				t.Fatalf("unexpected launchctl arguments: %v", arguments)
@@ -50,9 +55,11 @@ func TestLaunchAgentAcceptsBootstrapErrorWhenServiceIsLoaded(t *testing.T) {
 	service := domain + "/" + launchAgentLabel
 	want := [][]string{
 		{"bootout", service},
+		{"print", service},
 		{"bootstrap", domain, filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")},
 		{"print", service},
 		{"kickstart", "-k", service},
+		{"print", service},
 	}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("launchctl calls = %v, want %v", calls, want)
@@ -63,6 +70,7 @@ func TestLaunchAgentAcceptsKickstartErrorWhenServiceRemainsLoaded(t *testing.T) 
 	home := t.TempDir()
 	root := filepath.Join(t.TempDir(), "computer")
 	var calls [][]string
+	printCalls := 0
 	launcher := &userLaunchAgent{
 		home: home,
 		uid:  os.Geteuid(),
@@ -76,6 +84,10 @@ func TestLaunchAgentAcceptsKickstartErrorWhenServiceRemainsLoaded(t *testing.T) 
 				return []byte("Kickstart failed: 5: Input/output error"),
 					errors.New("exit status 5")
 			case "print":
+				printCalls++
+				if printCalls == 1 {
+					return nil, errors.New("service not found")
+				}
 				return []byte("state = running"), nil
 			default:
 				t.Fatalf("unexpected launchctl arguments: %v", arguments)
@@ -94,7 +106,60 @@ func TestLaunchAgentAcceptsKickstartErrorWhenServiceRemainsLoaded(t *testing.T) 
 	service := domain + "/" + launchAgentLabel
 	want := [][]string{
 		{"bootout", service},
+		{"print", service},
 		{"bootstrap", domain, filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")},
+		{"kickstart", "-k", service},
+		{"print", service},
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("launchctl calls = %v, want %v", calls, want)
+	}
+}
+
+func TestLaunchAgentWaitsForBootoutBeforeAttestingReplacement(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(t.TempDir(), "computer")
+	var calls [][]string
+	printCalls := 0
+	launcher := &userLaunchAgent{
+		home: home,
+		uid:  os.Geteuid(),
+		gid:  os.Getegid(),
+		run: func(_ context.Context, arguments ...string) ([]byte, error) {
+			calls = append(calls, append([]string(nil), arguments...))
+			switch arguments[0] {
+			case "bootout", "kickstart":
+				return nil, nil
+			case "bootstrap":
+				return []byte("Bootstrap failed: 5: Input/output error"),
+					errors.New("exit status 5")
+			case "print":
+				printCalls++
+				if printCalls == 2 {
+					return nil, errors.New("service not found")
+				}
+				return []byte("state = running"), nil
+			default:
+				t.Fatalf("unexpected launchctl arguments: %v", arguments)
+				return nil, errors.New("unexpected launchctl arguments")
+			}
+		},
+	}
+	spec := LaunchSpec{
+		Label: launchAgentLabel, ProgramPath: filepath.Join(root, "bin", ProgramName),
+		InstallationRoot: root, StateDirectory: filepath.Join(root, "state"),
+	}
+	if err := launcher.Start(context.Background(), spec); err != nil {
+		t.Fatal(err)
+	}
+	domain := "gui/" + strconv.Itoa(os.Geteuid())
+	service := domain + "/" + launchAgentLabel
+	want := [][]string{
+		{"bootout", service},
+		{"print", service},
+		{"print", service},
+		{"bootstrap", domain, filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")},
+		{"print", service},
 		{"kickstart", "-k", service},
 		{"print", service},
 	}

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 )
 
 type userLaunchAgent struct {
@@ -80,17 +81,60 @@ func (launcher *userLaunchAgent) Start(ctx context.Context, spec LaunchSpec) err
 		run = systemLaunchctl
 	}
 	_, _ = run(ctx, "bootout", service)
+	if err := waitForLaunchAgentState(ctx, run, service, false); err != nil {
+		return errors.New("无法停止旧 Vela Computer LaunchAgent")
+	}
 	if output, err := run(ctx, "bootstrap", domain, path); err != nil {
-		if _, inspectErr := run(ctx, "print", service); inspectErr != nil {
+		if inspectErr := waitForLaunchAgentState(ctx, run, service, true); inspectErr != nil {
 			return errors.New("无法注册 Vela Computer LaunchAgent: " + string(bytes.TrimSpace(output)))
 		}
 	}
 	if output, err := run(ctx, "kickstart", "-k", service); err != nil {
-		if _, inspectErr := run(ctx, "print", service); inspectErr != nil {
+		if inspectErr := waitForLaunchAgentState(ctx, run, service, true); inspectErr != nil {
 			return errors.New("无法启动 Vela Computer LaunchAgent: " + string(bytes.TrimSpace(output)))
 		}
+		return nil
+	}
+	if err := waitForLaunchAgentState(ctx, run, service, true); err != nil {
+		return errors.New("无法确认 Vela Computer LaunchAgent 已启动")
 	}
 	return nil
+}
+
+func waitForLaunchAgentState(
+	ctx context.Context,
+	run launchctlCommand,
+	service string,
+	wantLoaded bool,
+) error {
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	for {
+		_, err := run(ctx, "print", service)
+		if (err == nil) == wantLoaded {
+			return nil
+		}
+		retry := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			if !retry.Stop() {
+				select {
+				case <-retry.C:
+				default:
+				}
+			}
+			return ctx.Err()
+		case <-deadline.C:
+			if !retry.Stop() {
+				select {
+				case <-retry.C:
+				default:
+				}
+			}
+			return errors.New("launchd transition timeout")
+		case <-retry.C:
+		}
+	}
 }
 
 func renderLaunchAgent(spec LaunchSpec) ([]byte, error) {

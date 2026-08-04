@@ -561,6 +561,7 @@ mod test {
 
     #[tokio::test]
     async fn test_task_info() {
+        crate::common::config::initialize_test_state_root();
         #[cfg(unix)]
         let command_type = "SHELL";
         #[cfg(windows)]
