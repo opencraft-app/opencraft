@@ -25,7 +25,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: static
-          image: lightclaw-bj8.tencentcloudcr.com/lightclaw/vela-platform-web@sha256:397c91bf493f30f0eeee5637d54a68abf32251a61c6f18eb86bc6c1f11fd363b
+          image: lightclaw-bj8.tencentcloudcr.com/lightclaw/vela-platform-web@sha256:198fe136ec774ad17c55576080480badd64ddc8e4f70ab7746ddc0ae4066e4ba
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
