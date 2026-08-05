@@ -160,6 +160,10 @@ func TestServiceUpgradesVerifiedReleaseWhileReplacingRemovedComputer(t *testing.
 	if launcher.starts != 2 || native.inspections != 1 {
 		t.Fatalf("launcher starts=%d TAT inspections=%d", launcher.starts, native.inspections)
 	}
+	wantProgramSHA := fmt.Sprintf("%x", sha256.Sum256(newContent))
+	if len(launcher.specs) != 2 || launcher.specs[1].ProgramSHA256 != wantProgramSHA {
+		t.Fatalf("replacement launch specs = %#v", launcher.specs)
+	}
 	var journal installJournal
 	if err := rootstate.New(options.StateDirectory).Read(installJournalName, &journal); err != nil {
 		t.Fatal(err)
@@ -418,10 +422,12 @@ func fallbackString(value, fallback string) string {
 type recordingLauncher struct {
 	starts   int
 	failures int
+	specs    []LaunchSpec
 }
 
-func (launcher *recordingLauncher) Start(context.Context, LaunchSpec) error {
+func (launcher *recordingLauncher) Start(_ context.Context, spec LaunchSpec) error {
 	launcher.starts++
+	launcher.specs = append(launcher.specs, spec)
 	if launcher.failures > 0 {
 		launcher.failures--
 		return errors.New("temporary launch failure")

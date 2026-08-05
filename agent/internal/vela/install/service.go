@@ -67,6 +67,7 @@ type VerifyFunc func(VerifyConfig) (VerifiedRelease, error)
 type LaunchSpec struct {
 	Label            string
 	ProgramPath      string
+	ProgramSHA256    string
 	InstallationRoot string
 	StateDirectory   string
 }
@@ -266,6 +267,7 @@ func (service *Service) Install(ctx context.Context, options Options) error {
 		}
 		if err := service.config.Launcher.Start(ctx, LaunchSpec{
 			Label: launchAgentLabel, ProgramPath: programPath,
+			ProgramSHA256:    hex.EncodeToString(release.ProgramSHA256[:]),
 			InstallationRoot: options.InstallationRoot,
 			StateDirectory:   options.StateDirectory,
 		}); err != nil {
@@ -276,7 +278,7 @@ func (service *Service) Install(ctx context.Context, options Options) error {
 			return err
 		}
 	}
-	_, err = io.WriteString(service.config.Stdout, "Computer installed and started.\n")
+	_, err = io.WriteString(service.config.Stdout, "Computer installed and registered with macOS.\n")
 	return err
 }
 
@@ -412,6 +414,7 @@ func (service *Service) replaceComplete(
 	if err := service.config.Launcher.Start(ctx, LaunchSpec{
 		Label:            launchAgentLabel,
 		ProgramPath:      filepath.Join(options.InstallationRoot, "bin", ProgramName),
+		ProgramSHA256:    hex.EncodeToString(release.ProgramSHA256[:]),
 		InstallationRoot: options.InstallationRoot, StateDirectory: options.StateDirectory,
 	}); err != nil {
 		return err
@@ -419,7 +422,7 @@ func (service *Service) replaceComplete(
 	if err := removeReplacementSecrets(store); err != nil {
 		return err
 	}
-	_, err = io.WriteString(service.config.Stdout, "Computer replaced and started.\n")
+	_, err = io.WriteString(service.config.Stdout, "Computer replaced and registered with macOS.\n")
 	return err
 }
 

@@ -3,269 +3,53 @@
 package install
 
 import (
-	"bytes"
 	"context"
-	"encoding/xml"
 	"errors"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
-	"syscall"
-	"time"
+
+	launchdservice "velachat/agent/internal/launchd"
 )
 
-type userLaunchAgent struct {
-	home string
-	uid  int
-	gid  int
-	run  launchctlCommand
+type launchdManager interface {
+	EnsureLoaded(context.Context, launchdservice.Definition) error
 }
 
-type launchctlCommand func(context.Context, ...string) ([]byte, error)
-
-func systemLaunchctl(ctx context.Context, arguments ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, "/bin/launchctl", arguments...).CombinedOutput()
-}
+type computerLaunchAgent struct{ manager launchdManager }
 
 func NewUserLaunchAgent() (Launcher, error) {
-	home, err := os.UserHomeDir()
-	if err != nil || !filepath.IsAbs(home) || os.Geteuid() <= 0 {
+	manager, err := launchdservice.NewUserManager()
+	if err != nil {
 		return nil, ErrServiceInvalid
 	}
-	return &userLaunchAgent{
-		home: filepath.Clean(home), uid: os.Geteuid(), gid: os.Getegid(),
-		run: systemLaunchctl,
-	}, nil
+	return &computerLaunchAgent{manager: manager}, nil
 }
 
-func (launcher *userLaunchAgent) Start(ctx context.Context, spec LaunchSpec) error {
-	if launcher == nil || ctx == nil || spec.Label != launchAgentLabel ||
+func (launcher *computerLaunchAgent) Start(ctx context.Context, spec LaunchSpec) error {
+	if launcher == nil || launcher.manager == nil || ctx == nil ||
+		spec.Label != launchAgentLabel ||
 		filepath.Clean(spec.ProgramPath) != filepath.Join(spec.InstallationRoot, "bin", ProgramName) ||
 		filepath.Clean(spec.StateDirectory) != filepath.Join(spec.InstallationRoot, "state") {
 		return ErrServiceInvalid
 	}
-	directory := filepath.Join(launcher.home, "Library", "LaunchAgents")
-	if err := ensureLaunchAgentDirectory(directory, launcher.uid); err != nil {
+	logs := filepath.Join(spec.StateDirectory, "logs")
+	if err := ensurePrivateDirectory(logs); err != nil {
 		return err
 	}
-	if err := ensurePrivateDirectory(filepath.Join(spec.StateDirectory, "logs")); err != nil {
-		return err
-	}
-	content, err := renderLaunchAgent(spec)
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(directory, spec.Label+".plist")
-	temporary, err := os.CreateTemp(directory, ".vela-launchagent-*.tmp")
-	if err != nil {
-		return err
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if temporary.Chmod(0o600) != nil ||
-		temporary.Chown(launcher.uid, launcher.gid) != nil {
-		_ = temporary.Close()
-		return ErrServiceInvalid
-	}
-	if _, err := temporary.Write(content); err != nil || temporary.Sync() != nil || temporary.Close() != nil {
-		return ErrServiceInvalid
-	}
-	if err := os.Rename(temporaryPath, path); err != nil || syncDirectory(directory) != nil {
-		return ErrServiceInvalid
-	}
-	domain := "gui/" + strconv.Itoa(launcher.uid)
-	service := domain + "/" + spec.Label
-	run := launcher.run
-	if run == nil {
-		run = systemLaunchctl
-	}
-	_, _ = run(ctx, "bootout", service)
-	if err := waitForLaunchAgentState(ctx, run, service, false); err != nil {
-		return errors.New("无法停止旧 Vela Computer LaunchAgent")
-	}
-	if output, err := run(ctx, "bootstrap", domain, path); err != nil {
-		if inspectErr := waitForLaunchAgentRunning(
-			ctx, run, service, path, spec.ProgramPath,
-		); inspectErr != nil {
-			return errors.New("无法注册 Vela Computer LaunchAgent: " + string(bytes.TrimSpace(output)))
-		}
+	err := launcher.manager.EnsureLoaded(ctx, launchdservice.Definition{
+		Label: spec.Label, Program: spec.ProgramPath, ProgramSHA256: spec.ProgramSHA256,
+		Arguments:   []string{"daemon", "run", "--state-dir", spec.StateDirectory},
+		StdoutPath:  filepath.Join(logs, "computer.stdout.log"),
+		StderrPath:  filepath.Join(logs, "computer.stderr.log"),
+		Environment: map[string]string{"PATH": "/usr/local/bin:/usr/bin:/bin"},
+		KeepAlive:   true, RunAtLoad: true,
+		ProcessType: launchdservice.ProcessTypeBackground, Umask: 0o077,
+	})
+	if err == nil {
 		return nil
 	}
-	if err := waitForLaunchAgentRunning(
-		ctx, run, service, path, spec.ProgramPath,
-	); err != nil {
-		return errors.New("无法确认 Vela Computer LaunchAgent 已启动")
+	var operationError *launchdservice.OperationError
+	if errors.As(err, &operationError) && operationError.Stage == launchdservice.StageBootstrap {
+		return errors.New("Unable to register Vela Computer with macOS.")
 	}
-	return nil
-}
-
-func waitForLaunchAgentRunning(
-	ctx context.Context,
-	run launchctlCommand,
-	service string,
-	plistPath string,
-	programPath string,
-) error {
-	deadline := time.NewTimer(3 * time.Second)
-	defer deadline.Stop()
-	stablePID := 0
-	for {
-		output, err := run(ctx, "print", service)
-		if err == nil {
-			observation, parseErr := parseLaunchAgentObservation(output)
-			if parseErr == nil && (observation.plistPath != filepath.Clean(plistPath) ||
-				observation.programPath != filepath.Clean(programPath)) {
-				return errors.New("LaunchAgent identity mismatch")
-			}
-			if parseErr == nil && observation.running && observation.pid > 0 {
-				if observation.pid == stablePID {
-					return nil
-				}
-				stablePID = observation.pid
-			} else {
-				stablePID = 0
-			}
-		} else {
-			stablePID = 0
-		}
-		retry := time.NewTimer(50 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			if !retry.Stop() {
-				<-retry.C
-			}
-			return ctx.Err()
-		case <-deadline.C:
-			if !retry.Stop() {
-				<-retry.C
-			}
-			return errors.New("launchd running attestation timeout")
-		case <-retry.C:
-		}
-	}
-}
-
-type launchAgentObservation struct {
-	plistPath   string
-	programPath string
-	pid         int
-	running     bool
-}
-
-func parseLaunchAgentObservation(output []byte) (launchAgentObservation, error) {
-	var observation launchAgentObservation
-	for _, line := range strings.Split(string(output), "\n") {
-		parts := strings.SplitN(strings.TrimSpace(line), " = ", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key, value := parts[0], strings.TrimSpace(parts[1])
-		switch key {
-		case "path":
-			observation.plistPath = filepath.Clean(value)
-		case "program":
-			observation.programPath = filepath.Clean(value)
-		case "state":
-			observation.running = value == "running"
-		case "pid":
-			pid, err := strconv.Atoi(value)
-			if err == nil {
-				observation.pid = pid
-			}
-		}
-	}
-	if !filepath.IsAbs(observation.plistPath) ||
-		!filepath.IsAbs(observation.programPath) {
-		return launchAgentObservation{}, errors.New("LaunchAgent observation invalid")
-	}
-	return observation, nil
-}
-
-func waitForLaunchAgentState(
-	ctx context.Context,
-	run launchctlCommand,
-	service string,
-	wantLoaded bool,
-) error {
-	deadline := time.NewTimer(3 * time.Second)
-	defer deadline.Stop()
-	for {
-		_, err := run(ctx, "print", service)
-		if (err == nil) == wantLoaded {
-			return nil
-		}
-		retry := time.NewTimer(50 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			if !retry.Stop() {
-				select {
-				case <-retry.C:
-				default:
-				}
-			}
-			return ctx.Err()
-		case <-deadline.C:
-			if !retry.Stop() {
-				select {
-				case <-retry.C:
-				default:
-				}
-			}
-			return errors.New("launchd transition timeout")
-		case <-retry.C:
-		}
-	}
-}
-
-func renderLaunchAgent(spec LaunchSpec) ([]byte, error) {
-	arguments := []string{
-		spec.ProgramPath, "daemon", "run", "--state-dir", spec.StateDirectory,
-	}
-	var output bytes.Buffer
-	output.WriteString(`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict><key>Label</key><string>`)
-	if err := xml.EscapeText(&output, []byte(spec.Label)); err != nil {
-		return nil, err
-	}
-	output.WriteString("</string><key>ProgramArguments</key><array>")
-	for _, argument := range arguments {
-		output.WriteString("<string>")
-		if err := xml.EscapeText(&output, []byte(argument)); err != nil {
-			return nil, err
-		}
-		output.WriteString("</string>")
-	}
-	output.WriteString("</array><key>StandardOutPath</key><string>")
-	if err := xml.EscapeText(&output, []byte(filepath.Join(spec.StateDirectory, "logs", "computer.stdout.log"))); err != nil {
-		return nil, err
-	}
-	output.WriteString("</string><key>StandardErrorPath</key><string>")
-	if err := xml.EscapeText(&output, []byte(filepath.Join(spec.StateDirectory, "logs", "computer.stderr.log"))); err != nil {
-		return nil, err
-	}
-	output.WriteString(`</string><key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
-<key>ProcessType</key><string>Background</string><key>Umask</key><integer>63</integer>
-<key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/local/bin:/usr/bin:/bin</string></dict>
-</dict></plist>
-`)
-	return output.Bytes(), nil
-}
-
-func ensureLaunchAgentDirectory(directory string, uid int) error {
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return err
-	}
-	info, err := os.Lstat(directory)
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 ||
-		(info.Mode().Perm() != 0o700 && info.Mode().Perm() != 0o755) {
-		return ErrServiceInvalid
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || int(stat.Uid) != uid {
-		return ErrServiceInvalid
-	}
-	return nil
+	return errors.New("Unable to verify that Vela Computer was registered with macOS.")
 }
