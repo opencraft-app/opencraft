@@ -14,11 +14,29 @@ const ACTIVE_SHARED_FILES = [
   "credits.md",
   "plans.md",
   "use-cases/personal-ai-assistant.md",
+  "who-is-lightvela-for.md",
+] as const;
+
+const ENGLISH_ONLY_SHARED_FILES = [
   "use-cases/chinese-messaging-channels.md",
   "use-cases/daily-summary.md",
   "use-cases/hermes-agent-24-7.md",
   "use-cases/memory-and-knowledge.md",
-  "who-is-lightvela-for.md",
+] as const;
+
+const HERMES_DEEP_DIVE_FILES = [
+  "hermes-agent/01-hermes-vs-openclaw.md",
+  "hermes-agent/02-why-hermes-remembers-you.md",
+  "hermes-agent/03-user-md-vs-memory-md.md",
+  "hermes-agent/04-hermes-memory-curation.md",
+  "hermes-agent/05-memory-vs-skill.md",
+  "hermes-agent/06-model-vs-agent-layer.md",
+  "hermes-agent/07-message-gateway.md",
+  "hermes-agent/08-automation-scheduling.md",
+  "hermes-agent/09-model-switching-memory.md",
+  "hermes-agent/10-persona-user-memory.md",
+  "hermes-agent/11-workspace-context-storage.md",
+  "hermes-agent/12-skills-self-improvement.md",
 ] as const;
 
 const STASHED_SHARED_FILES = [
@@ -55,6 +73,8 @@ const stashRoot = join(
 const toRouteSlug = (file: string) => {
   if (file === "07-faq.md") return ["faq"];
   const segments = file.replace(/\.md$/, "").split("/");
+  const fileName = segments.at(-1)?.replace(/^\d+-/, "");
+  if (fileName) segments[segments.length - 1] = fileName;
   return segments.at(-1) === "index" ? segments.slice(0, -1) : segments;
 };
 
@@ -70,6 +90,24 @@ describe("international docs publication inventory", () => {
       expect(existsSync(join(docsContentRoot, "global", file)), `missing global/${file}`).toBe(true);
       expect(existsSync(join(docsContentRoot, "en", file)), `missing en/${file}`).toBe(true);
       expect(hasRoute("zh-sg", file), `missing zh-sg route for ${file}`).toBe(true);
+      expect(hasRoute("en-us", file), `missing en-us route for ${file}`).toBe(true);
+    }
+  });
+
+  it("publishes the Hermes Agent Deep Dive series in both languages", () => {
+    for (const file of HERMES_DEEP_DIVE_FILES) {
+      expect(existsSync(join(docsContentRoot, "global", file)), `missing global/${file}`).toBe(true);
+      expect(existsSync(join(docsContentRoot, "en", file)), `missing en/${file}`).toBe(true);
+      expect(hasRoute("zh-sg", file), `missing zh-sg route for ${file}`).toBe(true);
+      expect(hasRoute("en-us", file), `missing en-us route for ${file}`).toBe(true);
+    }
+  });
+
+  it("keeps English-only use cases out of Chinese international routes", () => {
+    for (const file of ENGLISH_ONLY_SHARED_FILES) {
+      expect(existsSync(join(docsContentRoot, "global", file)), `missing global/${file}`).toBe(true);
+      expect(existsSync(join(docsContentRoot, "en", file)), `missing en/${file}`).toBe(true);
+      expect(hasRoute("zh-sg", file), `published zh-sg route for ${file}`).toBe(false);
       expect(hasRoute("en-us", file), `missing en-us route for ${file}`).toBe(true);
     }
   });

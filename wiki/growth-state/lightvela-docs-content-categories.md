@@ -32,18 +32,18 @@
 
 # Hermes Agent 科普
 
-- 【新增待写】Hermes Agent 与 OpenClaw 有什么不同？
-- 【新增待写】Hermes Agent 为什么能“记住你”？拆解长期记忆系统的工作原理
-- 【新增待写】为什么 Hermes Agent 要把记忆分成两类？USER.md 与 MEMORY.md 的职责
-- 【新增待写】记忆不是越多越好：Hermes Agent 如何筛选、整理和更新长期记忆
-- 【新增待写】Memory 不是 Skill：Hermes Agent 的事实记忆与程序性记忆有何不同？
-- 【新增待写】Hermes Agent 的“大脑”可以替换吗？模型层与 Agent 层如何分工
-- 【新增待写】一个 Agent 如何同时出现在多个聊天软件里？拆解消息网关机制
-- 【新增待写】Hermes Agent 如何按时主动找你？拆解自动化调度与定时任务机制
-- 【新增待写】切换模型会让 Agent“失忆”吗？模型、人格与记忆的解耦设计
-- 【新增待写】Hermes Agent 的性格从哪里来？Persona、用户偏好与长期记忆如何共同作用
-- 【新增待写】Hermes Agent 把文件放在哪里？工作目录、上下文文件与存储机制
-- 【新增待写】Agent 为什么会越用越顺手？技能沉淀、自我改进与复用机制
+- 【已有内容】Hermes Agent 与 OpenClaw 有什么不同？
+- 【已有内容】Hermes Agent 为什么能“记住你”？拆解长期记忆系统的工作原理
+- 【已有内容】为什么 Hermes Agent 要把记忆分成两类？USER.md 与 MEMORY.md 的职责
+- 【已有内容】记忆不是越多越好：Hermes Agent 如何筛选、整理和更新长期记忆
+- 【已有内容】Memory 不是 Skill：Hermes Agent 的事实记忆与程序性记忆有何不同？
+- 【已有内容】Hermes Agent 的“大脑”可以替换吗？模型层与 Agent 层如何分工
+- 【已有内容】一个 Agent 如何同时出现在多个聊天软件里？拆解消息网关机制
+- 【已有内容】Hermes Agent 如何按时主动找你？拆解自动化调度与定时任务机制
+- 【已有内容】切换模型会让 Agent“失忆”吗？模型、人格与记忆的解耦设计
+- 【已有内容】Hermes Agent 的性格从哪里来？Persona、用户偏好与长期记忆如何共同作用
+- 【已有内容】Hermes Agent 把文件放在哪里？工作目录、上下文文件与存储机制
+- 【已有内容】Agent 为什么会越用越顺手？技能沉淀、自我改进与复用机制
 
 # 使用场景
 
