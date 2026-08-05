@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { ColumnDef } from "@tanstack/react-table";
 import {
   MoreHorizontal,
@@ -62,83 +61,19 @@ import {
   useSandboxPools,
   useUpdateSandboxPool,
   type SandboxPool,
-  type SandboxPoolInput,
   type SandboxPoolInstance,
 } from "@/lib/queries/use-sandbox-pools";
-
-const poolFormSchema = z.object({
-  name: z.string().min(1, "Pool 名称不能为空").max(64, "最多 64 个字符"),
-  description: z.string().optional(),
-  base_image: z.string().min(1, "Base image 不能为空"),
-  desired_capacity: z.number().int().min(0, "不能为负数"),
-  instance_type: z.string().optional(),
-  status: z.enum(["active", "paused"]),
-  pause_reason: z.string().optional(),
-  vpc_id: z.string().min(1, "VPC ID 不能为空"),
-  subnet_id: z.string().min(1, "Subnet ID 不能为空"),
-  zone: z.string().min(1, "Zone 不能为空"),
-  security_groups_text: z.string().optional(),
-  mark_clean_as_dry: z.boolean(),
-});
-
-type PoolFormValues = z.infer<typeof poolFormSchema>;
-
-function defaultPoolFormValues(): PoolFormValues {
-  return {
-    name: "",
-    description: "",
-    base_image: "",
-    desired_capacity: 24,
-    instance_type: "",
-    status: "active",
-    pause_reason: "",
-    vpc_id: "",
-    subnet_id: "",
-    zone: "",
-    security_groups_text: "",
-    mark_clean_as_dry: false,
-  };
-}
-
-function poolToFormValues(pool: SandboxPool): PoolFormValues {
-  return {
-    name: pool.name,
-    description: pool.description ?? "",
-    base_image: pool.base_image,
-    desired_capacity: pool.desired_capacity,
-    instance_type: pool.instance_type ?? "",
-    status: pool.status,
-    pause_reason: pool.pause_reason ?? "",
-    vpc_id: pool.vpc_id,
-    subnet_id: pool.subnet_id,
-    zone: pool.zone,
-    security_groups_text: (pool.security_groups ?? []).join(", "),
-    mark_clean_as_dry: false,
-  };
-}
-
-function parseSecurityGroups(value: string | undefined): string[] {
-  return (value ?? "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function poolPayload(values: PoolFormValues): SandboxPoolInput {
-  return {
-    name: values.name.trim(),
-    description: values.description?.trim() || "",
-    base_image: values.base_image.trim(),
-    desired_capacity: values.desired_capacity,
-    instance_type: values.instance_type?.trim() || "",
-    status: values.status,
-    pause_reason: values.pause_reason?.trim() || "",
-    vpc_id: values.vpc_id.trim(),
-    subnet_id: values.subnet_id.trim(),
-    zone: values.zone.trim(),
-    security_groups: parseSecurityGroups(values.security_groups_text),
-  };
-}
+import { useSandboxSKUs } from "@/lib/queries/use-sandbox-skus";
+import {
+  canSelectPoolSKU,
+  defaultPoolFormValues,
+  deriveTemplateClassID,
+  poolCreatePayload,
+  poolFormSchema,
+  poolToFormValues,
+  poolUpdatePayload,
+  type PoolFormValues,
+} from "@/lib/queries/sandbox-pool-form";
 
 function poolStatusBadge(status: SandboxPool["status"]) {
   if (status === "active") {
@@ -299,6 +234,8 @@ export default function SandboxPoolsPage() {
 
   const { data: poolsData, isLoading, refetch } = useSandboxPools();
   const pools = ensureItems(poolsData);
+  const { data: skusData, isLoading: skusLoading } = useSandboxSKUs();
+  const skus = ensureItems(skusData);
   const createPool = useCreateSandboxPool();
   const updatePool = useUpdateSandboxPool();
   const instanceQueries = useSandboxPoolInstanceSummaries(pools.map((pool) => pool.id));
@@ -307,6 +244,11 @@ export default function SandboxPoolsPage() {
     resolver: zodResolver(poolFormSchema),
     defaultValues: defaultPoolFormValues(),
   });
+  const selectedSKUID = useWatch({ control: form.control, name: "sku_id" });
+  const selectedTemplateClassID = deriveTemplateClassID(skus, selectedSKUID)
+    || editingPool?.template_class_id
+    || "";
+  const skuSelectable = canSelectPoolSKU(editingPool);
 
   const instanceSummaryByPoolId = useMemo(() => {
     return pools.reduce<Record<string, Record<string, number>>>((acc, pool, index) => {
@@ -337,12 +279,12 @@ export default function SandboxPoolsPage() {
       if (editingPool) {
         await updatePool.mutateAsync({
           id: editingPool.id,
-          ...poolPayload(values),
+          ...poolUpdatePayload(values),
           mark_clean_as_dry: values.mark_clean_as_dry,
         });
         toast.success("Pool 已更新");
       } else {
-        await createPool.mutateAsync(poolPayload(values));
+        await createPool.mutateAsync(poolCreatePayload(values));
         toast.success("Pool 已创建");
       }
       setDialogOpen(false);
@@ -565,21 +507,57 @@ export default function SandboxPoolsPage() {
                 />
                 <FormField
                   control={form.control}
-                  name="desired_capacity"
+                  name="sku_id"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Desired Capacity</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          value={field.value}
-                          onChange={(event) => field.onChange(Number(event.target.value))}
-                        />
-                      </FormControl>
+                      <FormLabel>SKU</FormLabel>
+                      {skuSelectable ? (
+                        <Select onValueChange={field.onChange} value={field.value} disabled={skusLoading}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={skusLoading ? "正在加载 SKU" : "选择逻辑 SKU"} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {skus.map((sku) => (
+                              <SelectItem key={sku.id} value={sku.id}>
+                                {sku.name || sku.id} ({sku.id})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <FormControl><Input value={field.value} readOnly className="font-mono" /></FormControl>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+                <FormItem>
+                  <FormLabel>Template Class</FormLabel>
+                  <FormControl>
+                    <Input value={selectedTemplateClassID} readOnly placeholder="选择 SKU 后自动带出" className="font-mono" />
+                  </FormControl>
+                </FormItem>
+                {editingPool ? (
+                  <FormField
+                    control={form.control}
+                    name="desired_capacity"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Desired Capacity</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            value={field.value}
+                            onChange={(event) => field.onChange(Number(event.target.value))}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : null}
                 <FormField
                   control={form.control}
                   name="instance_type"
@@ -591,27 +569,29 @@ export default function SandboxPoolsPage() {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="status"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>状态</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="active">active</SelectItem>
-                          <SelectItem value="paused">paused</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {editingPool ? (
+                  <FormField
+                    control={form.control}
+                    name="status"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>状态</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="active">active</SelectItem>
+                            <SelectItem value="paused">paused</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : null}
                 <FormField
                   control={form.control}
                   name="zone"
@@ -671,17 +651,19 @@ export default function SandboxPoolsPage() {
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="pause_reason"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Pause Reason</FormLabel>
-                    <FormControl><Textarea {...field} rows={2} placeholder="状态为 paused 时可填写" /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {editingPool ? (
+                <FormField
+                  control={form.control}
+                  name="pause_reason"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Pause Reason</FormLabel>
+                      <FormControl><Textarea {...field} rows={2} placeholder="状态为 paused 时可填写" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : null}
 
               {editingPool ? (
                 <FormField
