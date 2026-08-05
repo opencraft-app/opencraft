@@ -21,7 +21,7 @@ launchd 可以延迟调度 KeepAlive 进程，因此第二个事实不应决定�
 
 ## 非目标
 
-- 不改变 LaunchAgent 的 KeepAlive、RunAtLoad、日志或运行参数。
+- 不改变 LaunchAgent 的 KeepAlive、RunAtLoad、日志或业务运行参数；唯一新增项是通用包注入的只读 definition fingerprint 环境元数据，daemon 不用它驱动业务行为。
 - 不改变 Computer 在线状态、心跳、TAT 或腾讯 IM 逻辑。
 - 不让安装器等待平台页面显示在线。
 - 不新增 `kickstart`，也不读取 daemon state 文件作为安装成功依据。
@@ -50,9 +50,11 @@ Definition 的通用契约为：
 - program、stdout 和 stderr 必须是 clean 的绝对路径，不允许 NUL；
 - arguments 只表示 program 后的参数，渲染和观察时由通用包把 program 作为 argv[0]；每项不得含 NUL；
 - environment key 必须是合法变量名，value 不得含 NUL；所有字符串由 XML encoder 转义；
-- program generation 是调用方提供的非空稳定内容标识；Vela install 必须使用已验签程序的 SHA-256，而不是路径或版本文案；
+- program SHA-256 是调用方提供的 64 位小写十六进制内容标识；Vela install 必须使用已验签并已落盘程序的 SHA-256，而不是路径或版本文案；
 - ProcessType 只接受 launchd 明确支持的枚举，umask 必须处于 Unix 权限位范围，KeepAlive 与 RunAtLoad 是显式布尔值；
 - 所有 Definition 校验必须发生在创建锁文件、写 plist 或执行 launchctl 之前，非法输入零副作用失败。
+
+通用包取得 `(uid,label)` 资源锁后、执行任何 plist 或 launchctl 副作用前，必须打开 Definition.Program 的当前普通文件并计算实际 SHA-256；只有与声明值完全一致才可继续。Vela 的安装锁和原子程序替换保证安装调用方不会在此期间主动换回另一代程序；同一 macOS uid 下的恶意进程仍不属于隔离边界。声明 SHA 与磁盘程序不一致时返回 Definition 领域错误且保持 launchd 零副作用。
 
 通用包只返回稳定的领域错误和必要的失败阶段，不产生任何 Vela 文案。`internal/vela/install` 适配器负责把领域错误映射为面向用户的 Computer 安装错误。
 
@@ -64,7 +66,7 @@ Definition 的通用契约为：
 
 `EnsureLoaded` 是幂等收敛操作，不承诺事务回滚。若写入期望 plist 后在 bootout、bootstrap 或观察阶段失败，期望 plist 会保留，旧 job 可能已退出，新 job 状态由返回的领域错误阶段说明；调用方可以安全重试同一 Definition。通用包不会恢复旧 plist，因为旧 plist 可能引用已经被调用方替换的二进制或状态，伪回滚反而不安全。
 
-通用包对包含 program generation 在内的完整 Definition 计算 canonical SHA-256 fingerprint，并通过一个包保留、调用方不得覆盖的环境字段写入 plist。该字段必须能从 `launchctl print` 的 environment 观察。二进制内容、arguments、日志路径、environment、KeepAlive、RunAtLoad、ProcessType 或 umask任一变化都会产生不同 fingerprint。
+通用包对包含 program SHA-256 在内的完整 Definition 计算 canonical SHA-256 fingerprint，并通过一个包保留、调用方不得覆盖的环境字段写入 plist。Definition.Environment 若设置该保留 key，必须在零副作用校验阶段拒绝，避免覆盖或 fingerprint 自引用。该字段必须能从 `launchctl print` 的 environment 观察。二进制内容、arguments、日志路径、environment、KeepAlive、RunAtLoad、ProcessType 或 umask任一变化都会产生不同 fingerprint。
 
 持有完整资源锁后先执行无副作用 fast path：渲染 Definition 的 canonical plist，安全读取磁盘 plist并要求字节一致，同时观察 launchd loaded identity 的 path、program、arguments 和 fingerprint 完全一致；全部满足则立即成功，不写文件、不 bootout、不 bootstrap。只有磁盘定义或 loaded generation 不一致时才进入收敛替换流程。因此同一 Definition 的重复调用不会重启健康 daemon，而同 program path 覆盖新二进制时因 program generation 改变必然重载。
 
@@ -105,7 +107,7 @@ Definition 的通用契约为：
 ## 错误处理
 
 - `launchctl print` 不存在：继续短轮询，超时后失败。
-- plist、program 或完整 arguments 不匹配：立即失败，防止接受被替换、旧参数或串线的服务。
+- plist、program、完整 arguments 或 definition fingerprint 不匹配：立即失败，防止接受被替换、旧代、旧参数或串线的服务。
 - `bootstrap` 失败但正确服务已加载：成功。
 - `bootstrap` 失败且服务未加载：返回包含 launchctl 原始摘要的注册错误。
 - `bootstrap` 成功但服务未加载：返回“Unable to verify that Vela Computer was registered with macOS.”。
@@ -115,15 +117,15 @@ Definition 的通用契约为：
 
 采用测试驱动修改：
 
-1. 先增加失败测试：`bootstrap` 成功，`launchctl print` 返回正确 path/program/arguments，但没有 running state 和 PID；预期安装成功。当前实现会超时失败。
+1. 先增加失败测试：`bootstrap` 成功，`launchctl print` 返回正确 path/program/arguments/fingerprint，但没有 running state 和 PID；预期安装成功。当前实现会超时失败。
 2. 增加首次安装测试：旧服务不存在时 `bootout` 的 not-found 结果必须幂等继续，并加载新服务。
 3. 覆盖 `bootstrap` I/O error 和非 I/O error 后观察到完整正确身份时均成功。
-4. 覆盖 `bootstrap` 任意错误后未加载、错误 plist、错误 program、错误 arguments 或相对路径时失败。
+4. 覆盖 `bootstrap` 任意错误后未加载、错误 plist、错误 program、错误 arguments、缺失/错误 fingerprint 或相对路径时失败。
 5. 保留 bootout 完成后才验收替换服务的顺序测试。
 6. 更新调用序列断言，不再要求连续两次相同 PID。
 7. 更新首装、替换成功文案测试，确保不再承诺 running。
 8. 保留或补齐安全前置测试：同 `(uid,label)` 的不同 Manager/调用方必须跨进程锁语义串行化；锁文件安全打开、验证并持久保留，多个 Manager 连续交接不得产生 inode split；等待进程内锁或 advisory lock 时取消必须零 plist/launchctl 副作用；错误 owner、group/world writable 或 symlink 的 LaunchAgents 目录必须拒绝；plist 必须以 `0600` 普通文件完成原子替换，launchd 观察必须对应替换后的完整身份。
-9. 通用 `internal/launchd` 包覆盖 Definition 非法输入零副作用、XML 转义、fingerprint、plist 渲染、命令顺序、loaded 身份、bootstrap 错误降级、失败阶段和失败后同 Definition 重试；同 Definition 二次调用必须走 fast path且不写 plist、不 bootout、不 bootstrap；相同 program path 但不同 program generation 必须重载；新 plist 写入后、bootout 前失败且只有非 path 字段变化，重试也不得误走 fast path。Vela install 适配器只覆盖 Definition 映射、已验签程序 SHA generation、领域错误文案映射与不携带凭据。
+9. 通用 `internal/launchd` 包覆盖 Definition 非法输入零副作用、声明 SHA 与磁盘程序不匹配零副作用、调用方覆盖保留 environment key 拒绝、XML 转义、fingerprint、plist 渲染、命令顺序、loaded 身份、bootstrap 错误降级、失败阶段和失败后同 Definition 重试；同 Definition 二次调用必须走 fast path且不写 plist、不 bootout、不 bootstrap；相同 program path 但不同 program SHA 必须重载；新 plist 写入后、bootout 前失败且只有非 path 字段变化，重试也不得误走 fast path。Vela install 适配器只覆盖 Definition 映射、已验签程序 SHA、领域错误文案映射与不携带凭据。
 10. 增加 Darwin 构建/测试和非 Darwin 编译门禁。
 11. 运行 launchd/install 包测试、Agent 全量测试和 vet。
 
