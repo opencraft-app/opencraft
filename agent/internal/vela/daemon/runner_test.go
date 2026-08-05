@@ -618,6 +618,110 @@ func TestHeartbeatRetrySwitchesToTheLatestAssignmentFence(t *testing.T) {
 	}
 }
 
+func TestHeartbeatIntervalJitterUsesUniformTenPercentBand(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		sample float64
+		want   time.Duration
+	}{
+		{name: "lower bound", sample: 0, want: 54 * time.Second},
+		{name: "midpoint", sample: 0.5, want: 60 * time.Second},
+		{name: "upper bound", sample: 1, want: 66 * time.Second},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := jitterHeartbeatInterval(time.Minute, test.sample); got != test.want {
+				t.Fatalf("jittered interval = %s, want %s", got, test.want)
+			}
+		})
+	}
+}
+
+func TestRunnerUsesInjectedHeartbeatJitterForEachNormalInterval(t *testing.T) {
+	registry, err := NewRegistry(RegistryConfig{
+		Factory: &fakeFactory{}, MaxConcurrent: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	intervals := []time.Duration{54 * time.Second, 66 * time.Second}
+	calls := 0
+	runner, err := NewRunner(RunnerConfig{
+		StateRoot: shortDaemonRoot(t), Version: "test-version",
+		ComputerID: testComputerID, Source: &fakeAssignmentSource{},
+		Registry: registry, HeartbeatSink: &fakeHeartbeatSink{},
+		HeartbeatInterval: time.Minute,
+		HeartbeatJitter: func(base time.Duration) time.Duration {
+			if base != time.Minute {
+				t.Fatalf("base interval = %s", base)
+			}
+			value := intervals[calls]
+			calls++
+			return value
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := runner.nextHeartbeatInterval(); got != intervals[0] {
+		t.Fatalf("first interval = %s", got)
+	}
+	if got := runner.nextHeartbeatInterval(); got != intervals[1] {
+		t.Fatalf("second interval = %s", got)
+	}
+	if calls != 2 {
+		t.Fatalf("jitter calls = %d", calls)
+	}
+}
+
+func TestHeartbeatRetryDoesNotUseIntervalJitter(t *testing.T) {
+	registry, err := NewRegistry(RegistryConfig{
+		Factory: &fakeFactory{}, MaxConcurrent: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &scriptedHeartbeatSink{}
+	jitterCalls := 0
+	runner, err := NewRunner(RunnerConfig{
+		StateRoot: shortDaemonRoot(t), Version: "test-version",
+		ComputerID: testComputerID, Source: &fakeAssignmentSource{},
+		Registry: registry, HeartbeatSink: sink,
+		HeartbeatInterval: time.Minute,
+		HeartbeatJitter: func(base time.Duration) time.Duration {
+			jitterCalls++
+			return base
+		},
+		RetryDelay: func(int) time.Duration { return 0 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.setStatus(Status{
+		Online: true, Version: "test-version",
+		Assignment:     AssignmentStatus{Epoch: testEpoch, Revision: 3},
+		ReconcileState: "healthy",
+	})
+	sink.send = func(attempt int, _ Heartbeat) error {
+		if attempt == 1 {
+			return errors.New("transient heartbeat failure")
+		}
+		return nil
+	}
+	sent, _ := runner.sendLatestHeartbeat(
+		context.Background(), false, heartbeatFence{},
+	)
+	if !sent {
+		t.Fatal("heartbeat was not eventually sent")
+	}
+	if jitterCalls != 0 {
+		t.Fatalf("retry used heartbeat jitter %d times", jitterCalls)
+	}
+}
+
 type fakeAssignmentSource struct {
 	mu       sync.Mutex
 	results  []PollResult

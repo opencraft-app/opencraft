@@ -3417,6 +3417,53 @@ describe("app store", () => {
     );
   });
 
+  it("refreshes the Computer projection after an offline terminal rejection", async () => {
+    const deps = dependencies();
+    const store = createAppStore(deps);
+    await initializeServerContext(store);
+    await store.getState().refreshComputers();
+    const offlineComputer = {
+      ...computer,
+      connectionState: "offline" as const,
+      lastObservedAt: "2026-08-05T03:19:57.000Z",
+    };
+    deps.platform.listComputers = jest.fn(async () => [offlineComputer]);
+    deps.platform.createTerminalSession = jest.fn(async () => {
+      throw new PlatformError("CONFLICT", "Computer 当前离线", {
+        platformCode: "computer_offline",
+      });
+    });
+
+    const session = await store
+      .getState()
+      .createComputerTerminalSession(computer.id);
+
+    expect(session).toBeNull();
+    expect(deps.platform.listComputers).toHaveBeenCalledTimes(1);
+    expect(store.getState().computers).toEqual([offlineComputer]);
+    expect(store.getState().error).toBe("Computer 当前离线");
+    expect(store.getState().pendingAction).toBeNull();
+  });
+
+  it("does not refresh Computers for an unrelated terminal failure", async () => {
+    const deps = dependencies();
+    const store = createAppStore(deps);
+    await initializeServerContext(store);
+    await store.getState().refreshComputers();
+    deps.platform.listComputers = jest.fn(async () => [computer]);
+    deps.platform.createTerminalSession = jest.fn(async () => {
+      throw new PlatformError("NETWORK", "终端服务暂时不可用");
+    });
+
+    const session = await store
+      .getState()
+      .createComputerTerminalSession(computer.id);
+
+    expect(session).toBeNull();
+    expect(deps.platform.listComputers).not.toHaveBeenCalled();
+    expect(store.getState().error).toBe("终端服务暂时不可用");
+  });
+
   it("removes an accepted Agent deletion from active state without touching Computer", async () => {
     const deps = dependencies();
     const store = createAppStore(deps);

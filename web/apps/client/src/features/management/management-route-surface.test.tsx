@@ -1,5 +1,6 @@
 import type {Account, Computer, Server} from "@vela/client-core";
 import {act, render, waitFor} from "@testing-library/react-native";
+import {AppState, type AppStateStatus} from "react-native";
 import {createStore} from "zustand/vanilla";
 
 import type {AppStoreState} from "../../application/app-store";
@@ -167,6 +168,149 @@ describe("ManagementRouteSurface", () => {
     jest.useRealTimers();
   });
 
+  it("refreshes observed Computers every thirty seconds while active", async () => {
+    jest.useFakeTimers();
+    const refreshComputers = jest.fn(async () => undefined);
+    const store = createStore<AppStoreState>(() =>
+      ({
+        account,
+        agents: [],
+        cancelOperationPolling: jest.fn(),
+        channels: [],
+        computers: [
+          {
+            ...waitingComputer,
+            connectionState: "online",
+            lastObservedAt: "2026-08-05T03:19:57.000Z",
+          },
+        ],
+        currentServerId: server.id,
+        error: null,
+        imState: {status: "ready"},
+        loadingAgents: false,
+        loadingComputers: false,
+        members: [],
+        operationsById: {},
+        pendingAction: null,
+        refreshAgents: jest.fn(async () => undefined),
+        refreshComputers,
+        refreshOrganization: jest.fn(async () => undefined),
+        servers: [server],
+      }) as unknown as AppStoreState,
+    );
+
+    const screen = await render(
+      <AppRuntimeProvider store={store}>
+        <ManagementRouteSurface
+          navigation={{
+            navigateSection: jest.fn(),
+            selectServer: jest.fn(),
+          }}
+          section="computers"
+          server={server}
+        />
+      </AppRuntimeProvider>,
+    );
+    await act(async () => undefined);
+    expect(refreshComputers).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(29_999);
+      await Promise.resolve();
+    });
+    expect(refreshComputers).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(1);
+      await Promise.resolve();
+    });
+    expect(refreshComputers).toHaveBeenLastCalledWith({force: true});
+    expect(refreshComputers).toHaveBeenCalledTimes(2);
+
+    await screen.unmount();
+    await act(async () => {
+      jest.advanceTimersByTime(30_000);
+      await Promise.resolve();
+    });
+    expect(refreshComputers).toHaveBeenCalledTimes(2);
+    jest.useRealTimers();
+  });
+
+  it("pauses Computer freshness refresh in background and refreshes on active", async () => {
+    jest.useFakeTimers();
+    let appStateListener: ((state: AppStateStatus) => void) | undefined;
+    const appStateSubscription = {remove: jest.fn()};
+    const appStateSpy = jest
+      .spyOn(AppState, "addEventListener")
+      .mockImplementation((_type, listener) => {
+        appStateListener = listener;
+        return appStateSubscription;
+      });
+    const refreshComputers = jest.fn(async () => undefined);
+    const store = createStore<AppStoreState>(() =>
+      ({
+        account,
+        agents: [],
+        cancelOperationPolling: jest.fn(),
+        channels: [],
+        computers: [
+          {
+            ...waitingComputer,
+            connectionState: "online",
+            lastObservedAt: "2026-08-05T03:19:57.000Z",
+          },
+        ],
+        currentServerId: server.id,
+        error: null,
+        imState: {status: "ready"},
+        loadingAgents: false,
+        loadingComputers: false,
+        members: [],
+        operationsById: {},
+        pendingAction: null,
+        refreshAgents: jest.fn(async () => undefined),
+        refreshComputers,
+        refreshOrganization: jest.fn(async () => undefined),
+        servers: [server],
+      }) as unknown as AppStoreState,
+    );
+
+    const screen = await render(
+      <AppRuntimeProvider store={store}>
+        <ManagementRouteSurface
+          navigation={{
+            navigateSection: jest.fn(),
+            selectServer: jest.fn(),
+          }}
+          section="computers"
+          server={server}
+        />
+      </AppRuntimeProvider>,
+    );
+    await act(async () => undefined);
+    expect(refreshComputers).toHaveBeenCalledTimes(1);
+    expect(appStateListener).toBeDefined();
+
+    await act(async () => {
+      appStateListener?.("background");
+      jest.advanceTimersByTime(30_000);
+      await Promise.resolve();
+    });
+    expect(refreshComputers).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      appStateListener?.("active");
+      await Promise.resolve();
+    });
+    expect(refreshComputers).toHaveBeenLastCalledWith({force: true});
+    expect(refreshComputers).toHaveBeenCalledTimes(2);
+
+    await screen.unmount();
+    expect(appStateSubscription.remove).toHaveBeenCalledTimes(1);
+    appStateSpy.mockRestore();
+    jest.useRealTimers();
+  });
+
   it("stops first-connection polling after two minutes of wall time", async () => {
     jest.useFakeTimers();
     let finishSlowRefresh: (() => void) | undefined;
@@ -224,6 +368,8 @@ describe("ManagementRouteSurface", () => {
       jest.advanceTimersByTime(120_000);
       await Promise.resolve();
     });
+    const callsAfterExpiry = refreshComputers.mock.calls.length;
+    expect(callsAfterExpiry).toBeGreaterThanOrEqual(3);
     await act(async () => {
       finishSlowRefresh?.();
       await Promise.resolve();
@@ -232,7 +378,7 @@ describe("ManagementRouteSurface", () => {
       jest.advanceTimersByTime(2_000);
       await Promise.resolve();
     });
-    expect(refreshComputers).toHaveBeenCalledTimes(2);
+    expect(refreshComputers).toHaveBeenCalledTimes(callsAfterExpiry);
 
     await screen.unmount();
     jest.useRealTimers();

@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"sync"
@@ -86,6 +87,7 @@ type RunnerConfig struct {
 	Component         Component
 	HeartbeatSink     HeartbeatSink
 	HeartbeatInterval time.Duration
+	HeartbeatJitter   func(time.Duration) time.Duration
 	Now               func() time.Time
 	RetryDelay        func(int) time.Duration
 }
@@ -143,6 +145,9 @@ func NewRunner(config RunnerConfig) (*Runner, error) {
 	}
 	if config.HeartbeatSink != nil && config.HeartbeatInterval <= 0 {
 		config.HeartbeatInterval = 60 * time.Second
+	}
+	if config.HeartbeatSink != nil && config.HeartbeatJitter == nil {
+		config.HeartbeatJitter = defaultHeartbeatJitter
 	}
 	return &Runner{
 		config:        config,
@@ -348,7 +353,7 @@ func validateSnapshotAgainstCursor(
 }
 
 func (r *Runner) runHeartbeats(ctx context.Context) {
-	timer := time.NewTimer(r.config.HeartbeatInterval)
+	timer := time.NewTimer(r.nextHeartbeatInterval())
 	defer timer.Stop()
 	var lastSuccessfullySent heartbeatFence
 	for {
@@ -370,11 +375,43 @@ func (r *Runner) runHeartbeats(ctx context.Context) {
 		}
 		if sent {
 			lastSuccessfullySent = fence
-			resetHeartbeatTimer(timer, r.config.HeartbeatInterval)
+			resetHeartbeatTimer(timer, r.nextHeartbeatInterval())
 		} else if force {
-			resetHeartbeatTimer(timer, r.config.HeartbeatInterval)
+			resetHeartbeatTimer(timer, r.nextHeartbeatInterval())
 		}
 	}
+}
+
+func (r *Runner) nextHeartbeatInterval() time.Duration {
+	interval := r.config.HeartbeatInterval
+	if r.config.HeartbeatJitter == nil {
+		return interval
+	}
+	jittered := r.config.HeartbeatJitter(interval)
+	if jittered <= 0 {
+		return interval
+	}
+	return jittered
+}
+
+func defaultHeartbeatJitter(interval time.Duration) time.Duration {
+	return jitterHeartbeatInterval(interval, rand.Float64())
+}
+
+func jitterHeartbeatInterval(
+	interval time.Duration,
+	sample float64,
+) time.Duration {
+	if interval <= 0 {
+		return interval
+	}
+	if sample < 0 {
+		sample = 0
+	} else if sample > 1 {
+		sample = 1
+	}
+	spread := interval / 10
+	return interval - spread + time.Duration(float64(2*spread)*sample)
 }
 
 type heartbeatFence struct {

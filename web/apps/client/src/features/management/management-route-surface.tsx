@@ -12,6 +12,7 @@ import {
   TasksScreen,
   type TerminalSurfaceController,
   type WorkspaceSection,
+  useAppActive,
 } from "@/ui";
 
 export type ManagementSection = Exclude<WorkspaceSection, "chat">;
@@ -44,6 +45,11 @@ export function ManagementRouteSurface({
   const state = useAppState(
     useShallow(value => selectManagementState(value, section)),
   );
+  const appActive = useAppActive(() => {
+    if (section === "computers") {
+      void store.getState().refreshComputers({force: true});
+    }
+  });
   const neverObservedComputerKey =
     section === "computers"
       ? state.computers
@@ -102,6 +108,23 @@ export function ManagementRouteSurface({
     }, 2_000);
     return () => clearInterval(interval);
   }, [neverObservedComputerKey, section, server.id, store]);
+
+  useEffect(() => {
+    if (section !== "computers") return;
+    let refreshing = false;
+    const refresh = () => {
+      if (!appActive.current || refreshing) return;
+      refreshing = true;
+      void store
+        .getState()
+        .refreshComputers({force: true})
+        .finally(() => {
+          refreshing = false;
+        });
+    };
+    const interval = setInterval(refresh, 30_000);
+    return () => clearInterval(interval);
+  }, [appActive, section, server.id, store]);
 
   useEffect(() => {
     if (section !== "agents" && section !== "members") return;

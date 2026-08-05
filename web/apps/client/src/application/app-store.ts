@@ -1617,8 +1617,17 @@ export function createAppStore(
         }
         return session;
       } catch (error) {
-        if (get().currentServerId === serverId) {
-          set({ error: errorMessage(error), pendingAction: null });
+        const message = errorMessage(error);
+        const computerWasOffline =
+          error instanceof PlatformError &&
+          error.platformCode === "computer_offline";
+        if (get().currentServerId !== serverId) return null;
+        set({ error: message, pendingAction: null });
+        if (computerWasOffline) {
+          await get().refreshComputers({force: true});
+          if (get().currentServerId === serverId) {
+            set({ error: message, pendingAction: null });
+          }
         }
         return null;
       }
