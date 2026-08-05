@@ -38,11 +38,28 @@ launchd 生命周期不再实现在 `internal/vela/install`。新增独立的 ma
 - path、program、arguments 的严格身份匹配；
 - LaunchAgents 目录 ownership、mode、symlink 和普通文件安全检查。
 
-通用包不得引用 Vela Computer、安装事务、平台 URL、Computer credential、TAT 或 IM。它提供面向结果的 `Replace(ctx, Definition)` 能力：调用成功只表示 launchd 已加载完整身份正确的定义。
+通用包不得引用 Vela Computer、安装事务、平台 URL、Computer credential、TAT 或 IM。它提供面向收敛的 `EnsureLoaded(ctx, Definition)` 能力：调用成功只表示 launchd 已加载与 Definition 完整一致的服务；重复调用产生相同结果。
+
+`EnsureLoaded` 按真实资源键 `(uid, label)` 自己串行化。除进程内互斥外，还在受保护的 LaunchAgents 目录创建每 label 一个 `0600` 普通锁文件并持有跨进程 advisory lock，覆盖 plist 写入、bootout、bootstrap 和最终观察全过程。Vela 的 `install.lock` 只保护安装事务自身，不能替代通用 launchd 资源锁。
+
+Definition 的通用契约为：
+
+- label 仅允许非空 ASCII 字母、数字、点、连字符和下划线，不允许 `/`、`..`、控制字符或 domain 分隔符；
+- program、stdout 和 stderr 必须是 clean 的绝对路径，不允许 NUL；
+- arguments 只表示 program 后的参数，渲染和观察时由通用包把 program 作为 argv[0]；每项不得含 NUL；
+- environment key 必须是合法变量名，value 不得含 NUL；所有字符串由 XML encoder 转义；
+- ProcessType 只接受 launchd 明确支持的枚举，umask 必须处于 Unix 权限位范围，KeepAlive 与 RunAtLoad 是显式布尔值；
+- 所有 Definition 校验必须发生在创建锁文件、写 plist 或执行 launchctl 之前，非法输入零副作用失败。
+
+通用包只返回稳定的领域错误和必要的失败阶段，不产生任何 Vela 文案。`internal/vela/install` 适配器负责把领域错误映射为面向用户的 Computer 安装错误。
 
 `internal/vela/install` 仅保留一个薄适配器，实现现有 `Launcher` 端口：把 `LaunchSpec` 转换为通用 Definition，并设置 Computer 固定参数、日志路径及 PATH。安装服务继续只依赖 `Launcher` 接口，因此安装事务测试不需要理解 launchctl。
 
-首版只抽取当前实际需要的 replace/load 能力，不提前增加 stop、restart、list、system daemon 或 root domain API。未来若出现其他 macOS 常驻能力，可直接复用通用包并独立扩展。
+首版只抽取当前实际需要的 ensure-loaded 能力，不提前增加 stop、restart、list、system daemon 或 root domain API。未来若出现其他 macOS 常驻能力，可直接复用通用包并独立扩展。
+
+生产实现只在 Darwin 编译。launchctl command runner、home/uid/gid resolver 和轮询 deadline/interval 通过包内构造依赖替换；测试使用临时目录和假的 runner，不触碰真实用户 LaunchAgents。非 Darwin 的 Vela 构建继续使用现有平台边界，不得因为新增包产生 build failure。
+
+`EnsureLoaded` 是幂等收敛操作，不承诺事务回滚。若写入期望 plist 后在 bootout、bootstrap 或观察阶段失败，期望 plist 会保留，旧 job 可能已退出，新 job 状态由返回的领域错误阶段说明；调用方可以安全重试同一 Definition。通用包不会恢复旧 plist，因为旧 plist 可能引用已经被调用方替换的二进制或状态，伪回滚反而不安全。
 
 ### LaunchAgent 身份观察
 
@@ -56,7 +73,7 @@ launchd 生命周期不再实现在 `internal/vela/install`。新增独立的 ma
 
 `state` 和 `pid` 可以保留为诊断信息，但不再是安装成功条件。launchd 已加载正确 KeepAlive 服务后，即使 daemon 尚处于调度、启动或重启窗口，安装事务也应成功结束。
 
-身份观察依赖既有安装安全不变量：整个安装或替换过程持有该 state directory 的独占 `install.lock`；`~/Library/LaunchAgents` 必须是当前 uid 所有的真实目录（非 symlink），权限只能是 `0700` 或 `0755`，不得 group/world writable；plist 临时文件通过不可抢占的独占创建语义生成，确认是当前 uid 的 `0600` 普通文件后写入、fsync，再原子改名并同步父目录，目标不会作为 symlink 跟随。Vela 不把同一 macOS 用户下的恶意本地进程视为隔离边界，但会用 launchd 返回的 path、program 和完整 arguments 防止错误服务或旧参数被误认成本次安装。
+身份观察依赖既有安全不变量：通用包持有 `(uid,label)` 资源锁；`~/Library/LaunchAgents` 必须是当前 uid 所有的真实目录（非 symlink），权限只能是 `0700` 或 `0755`，不得 group/world writable；plist 临时文件通过不可抢占的独占创建语义生成，确认是当前 uid 的 `0600` 普通文件后写入、fsync，再原子改名并同步父目录，目标不会作为 symlink 跟随。Vela 不把同一 macOS 用户下的恶意本地进程视为隔离边界，但会用 launchd 返回的 path、program 和完整 arguments 防止错误服务或旧参数被误认成本次安装。
 
 ### 启动流程
 
@@ -95,9 +112,10 @@ launchd 生命周期不再实现在 `internal/vela/install`。新增独立的 ma
 5. 保留 bootout 完成后才验收替换服务的顺序测试。
 6. 更新调用序列断言，不再要求连续两次相同 PID。
 7. 更新首装、替换成功文案测试，确保不再承诺 running。
-8. 保留或补齐安全前置测试：安装锁竞争必须串行化；错误 owner、group/world writable 或 symlink 的 LaunchAgents 目录必须拒绝；plist 必须以 `0600` 普通文件完成原子替换，launchd 观察必须对应替换后的完整身份。
-9. 通用 `internal/launchd` 包覆盖 plist 渲染、命令顺序、loaded 身份、bootstrap 错误降级和安全目录；Vela install 适配器只覆盖 Definition 映射与不携带凭据。
-10. 运行 launchd/install 包测试、Agent 全量测试和 vet。
+8. 保留或补齐安全前置测试：同 `(uid,label)` 的不同 Manager/调用方必须跨进程锁语义串行化；错误 owner、group/world writable 或 symlink 的 LaunchAgents 目录必须拒绝；plist 必须以 `0600` 普通文件完成原子替换，launchd 观察必须对应替换后的完整身份。
+9. 通用 `internal/launchd` 包覆盖 Definition 非法输入零副作用、XML 转义、plist 渲染、命令顺序、loaded 身份、bootstrap 错误降级、失败阶段和失败后同 Definition 重试；Vela install 适配器只覆盖 Definition 映射、领域错误文案映射与不携带凭据。
+10. 增加 Darwin 构建/测试和非 Darwin 编译门禁。
+11. 运行 launchd/install 包测试、Agent 全量测试和 vet。
 
 ## 发布与验收
 
