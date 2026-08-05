@@ -195,17 +195,32 @@ if [ ! -d "$release_parent" ]; then
 fi
 mv "$release_directory" "$release_output"
 
-echo "[6/7] 创建 catalog 并切换 Canary……"
+echo "[6/7] 创建 create-only catalog 并切换 Canary……"
 catalog_json="$temporary_root/catalog-configmap.json"
 kubectl create configmap "$target_configmap" \
   --kubeconfig "$kubeconfig" -n "$namespace" \
   --from-file="release.catalog.json=$release_output/release.catalog.json" \
   --dry-run=client -o json |
-  jq '.immutable = true | .metadata.labels = {
-    "app.kubernetes.io/name":"chatserver",
-    "app.kubernetes.io/component":"computer-release"
-  }' >"$catalog_json"
+  jq '.immutable = true |
+    .metadata.annotations = {
+      "agentnetwork.io/catalog-write-policy":"create-only-v1"
+    } |
+    .metadata.labels = {
+      "app.kubernetes.io/name":"chatserver",
+      "app.kubernetes.io/component":"computer-release"
+    }' >"$catalog_json"
 kubectl --kubeconfig "$kubeconfig" create -f "$catalog_json" >/dev/null
+created_catalog_json="$temporary_root/created-catalog.json"
+kubectl --kubeconfig "$kubeconfig" -n "$namespace" get configmap "$target_configmap" -o json >"$created_catalog_json"
+created_write_policy=$(jq -r '.metadata.annotations["agentnetwork.io/catalog-write-policy"] // empty' "$created_catalog_json")
+[ "$created_write_policy" = create-only-v1 ] || fail "catalog 缺少 create-only 写入策略"
+expected_catalog_digest=$(jq -cS . "$release_output/release.catalog.json" | shasum -a 256 | awk '{print $1}')
+created_catalog_digest=$(jq -r '.data["release.catalog.json"] // empty' "$created_catalog_json" | jq -cS . | shasum -a 256 | awk '{print $1}')
+[ "$created_catalog_digest" = "$expected_catalog_digest" ] || fail "已创建 catalog 内容与验签 release 不一致"
+catalog_api_immutable=$(jq -r '.immutable // false' "$created_catalog_json")
+if [ "$catalog_api_immutable" != true ]; then
+  echo "提示：集群不支持 ConfigMap immutable；由唯一版本名、create-only 和内容回读共同保证发布不可覆盖。"
+fi
 kubectl --kubeconfig "$kubeconfig" -n "$namespace" patch deployment "$deployment" \
   --type=strategic \
   -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"agentnetwork.io/computer-release\":\"$version\"}},\"spec\":{\"volumes\":[{\"name\":\"computer-release\",\"configMap\":{\"name\":\"$target_configmap\",\"defaultMode\":292}}]}}}}" \
