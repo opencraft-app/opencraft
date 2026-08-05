@@ -63,8 +63,10 @@ import type { WorkerActionStatusResult } from "@/repositories/types";
 import {
   createMonoDebugExecAdapter,
 } from "@/pages/marketing/agent-tat-adapter";
+import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
 import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
 import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
+import { createQqbotGroupPolicyCommandLifecycle } from "@/pages/marketing/agent-qqbot-group-policy";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
 import {
@@ -3023,6 +3025,17 @@ export const AgentSettingsPage = ({
     commandLifecycle: automationModelCommandLifecycle,
     confirmationDialog: automationModelSwitchDialog,
   } = useAutomationAwareModelSwitch();
+  const qqbotGroupPolicyCommandLifecycle = useMemo(
+    () => createQqbotGroupPolicyCommandLifecycle(),
+    [],
+  );
+  const sdkCommandLifecycle = useMemo(
+    () => composeDebugExecCommandLifecycles(
+      automationModelCommandLifecycle,
+      qqbotGroupPolicyCommandLifecycle,
+    ),
+    [automationModelCommandLifecycle, qqbotGroupPolicyCommandLifecycle],
+  );
   // 账号 id：来自 /auth/profile 下发的 session.user.id，用于 LightVelaPanel.userId 等场景
   const { session } = useSession();
   const accountId = session.user?.id ?? "";
@@ -3431,9 +3444,9 @@ export const AgentSettingsPage = ({
           const token = readStoredAuthToken();
           return token ? `Bearer ${token}` : undefined;
         },
-        commandLifecycle: automationModelCommandLifecycle,
+        commandLifecycle: sdkCommandLifecycle,
       }),
-    [automationModelCommandLifecycle],
+    [sdkCommandLifecycle],
   );
 
   /**
