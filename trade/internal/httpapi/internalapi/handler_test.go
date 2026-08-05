@@ -98,8 +98,19 @@ func (f *fakeBundleStore) GetBundleDefinitionByID(ctx context.Context, bundleID 
 func (f *fakeBundleStore) ListBundleDefsBySubProductCode(_ context.Context, _, _ string) ([]*store.BundleDefinition, error) {
 	return nil, errors.New("ListBundleDefsBySubProductCode not used in internalapi handler test")
 }
-func (f *fakeBundleStore) GetBundleDefinitionsByIDs(_ context.Context, _ []string) (map[string]*store.BundleDefinition, error) {
-	return nil, errors.New("GetBundleDefinitionsByIDs not used in internalapi handler test")
+func (f *fakeBundleStore) GetBundleDefinitionsByIDs(ctx context.Context, bundleIDs []string) (map[string]*store.BundleDefinition, error) {
+	out := make(map[string]*store.BundleDefinition, len(bundleIDs))
+	for _, id := range bundleIDs {
+		def, err := f.GetBundleDefinitionByID(ctx, id)
+		if err != nil {
+			if errors.Is(err, store.ErrBundleDefinitionNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		out[id] = def
+	}
+	return out, nil
 }
 
 type fakeJifei struct {
@@ -117,10 +128,19 @@ func (f *fakeJifei) GetPrice(ctx context.Context, req *jifeiclient.GetPriceReque
 	if f.getPriceFn != nil {
 		return f.getPriceFn(ctx, req)
 	}
+	data := make([]jifeiclient.GetPriceData, 0, len(req.ResInfo))
+	for range req.ResInfo {
+		data = append(data, jifeiclient.GetPriceData{
+			Price: "39.00", TotalCost: "39.00", RealTotalCost: "35.10", Currency: "CNY",
+		})
+	}
+	if len(data) == 0 {
+		data = append(data, jifeiclient.GetPriceData{
+			Price: "39.00", TotalCost: "39.00", RealTotalCost: "35.10", Currency: "CNY",
+		})
+	}
 	return &jifeiclient.GetPriceResponse{
-		Data: []jifeiclient.GetPriceData{
-			{Price: "39.00", TotalCost: "39.00", RealTotalCost: "35.10", Currency: "CNY"},
-		},
+		Data: data,
 	}, nil
 }
 func (f *fakeJifei) GenerateDeals(ctx context.Context, req *jifeiclient.GenerateDealsRequest) (*jifeiclient.GenerateDealsResponse, error) {
@@ -402,6 +422,98 @@ func TestInquiryBatch_HappyPath(t *testing.T) {
 	prices, _ := resp["prices"].([]any)
 	if len(prices) != 2 {
 		t.Errorf("expected 2 prices, got %d", len(prices))
+	}
+}
+
+func TestInquiryBatch_UsesSingleJifeiGetPriceAndKeepsOrder(t *testing.T) {
+	env := newTestEnv(t)
+	env.bundle.getBundleDefinitionByIDFn = func(ctx context.Context, bundleID string) (*store.BundleDefinition, error) {
+		categories := map[string]int64{
+			"bundle_voyage": 300059,
+			"bundle_launch": 100059,
+			"bundle_cruise": 200059,
+		}
+		pids := map[string]int64{
+			"bundle_voyage": 3003,
+			"bundle_launch": 1001,
+			"bundle_cruise": 2002,
+		}
+		category, ok := categories[bundleID]
+		if !ok {
+			return nil, store.ErrBundleDefinitionNotFound
+		}
+		return &store.BundleDefinition{
+			BundleID:       bundleID,
+			ProductCode:    "p_lighthouse",
+			SubProductCode: "sp_test",
+			Pid:            pids[bundleID],
+			CategoryIDs:    []store.CategoryIDEntry{{Scene: "purchase", Category: category}},
+			SVList:         map[string]int64{"sv_cpu": 2},
+		}, nil
+	}
+
+	var getPriceCalls atomic.Int32
+	env.jifei.getPriceFn = func(ctx context.Context, req *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+		getPriceCalls.Add(1)
+		if len(req.ResInfo) != 3 {
+			t.Fatalf("GetPrice ResInfo len = %d, want 3", len(req.ResInfo))
+		}
+		gotCategories := []int64{
+			req.ResInfo[0].GoodsCategoryID,
+			req.ResInfo[1].GoodsCategoryID,
+			req.ResInfo[2].GoodsCategoryID,
+		}
+		wantCategories := []int64{300059, 100059, 200059}
+		for i := range wantCategories {
+			if gotCategories[i] != wantCategories[i] {
+				t.Fatalf("ResInfo[%d].GoodsCategoryID = %d, want %d; full=%v",
+					i, gotCategories[i], wantCategories[i], gotCategories)
+			}
+		}
+		return &jifeiclient.GetPriceResponse{Data: []jifeiclient.GetPriceData{
+			{Price: "65.00", TotalCost: "65.00", RealTotalCost: "65.00", Currency: "USD", Pid: 3003},
+			{Price: "12.00", TotalCost: "12.00", RealTotalCost: "12.00", Currency: "USD", Pid: 1001},
+			{Price: "23.00", TotalCost: "23.00", RealTotalCost: "23.00", Currency: "USD", Pid: 2002},
+		}}, nil
+	}
+
+	body := map[string]any{
+		"externalUserId": "user-1",
+		"uin":            "1000",
+		"appId":          "10001",
+		"bundleIds":      []string{"bundle_voyage", "bundle_launch", "bundle_cruise"},
+		"period":         1,
+		"timeUnit":       "m",
+		"goodsNum":       1,
+		"payMode":        1,
+	}
+	rec := env.doJSON(http.MethodPost, "/internal/trade/inquiry/batch", body, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if calls := getPriceCalls.Load(); calls != 1 {
+		t.Fatalf("GetPrice calls = %d, want 1", calls)
+	}
+	resp := decodeBody(t, rec)
+	prices, _ := resp["prices"].([]any)
+	if len(prices) != 3 {
+		t.Fatalf("expected 3 prices, got %d", len(prices))
+	}
+	want := []struct {
+		bundleID string
+		price    string
+		pid      float64
+	}{
+		{"bundle_voyage", "65.00", 3003},
+		{"bundle_launch", "12.00", 1001},
+		{"bundle_cruise", "23.00", 2002},
+	}
+	for i, w := range want {
+		item, _ := prices[i].(map[string]any)
+		if item["bundle_id"] != w.bundleID || item["price"] != w.price || item["pid"] != w.pid {
+			t.Fatalf("prices[%d] = %#v, want bundle_id=%q price=%q pid=%v",
+				i, item, w.bundleID, w.price, w.pid)
+		}
 	}
 }
 

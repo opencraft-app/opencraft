@@ -54,6 +54,11 @@ replacements:
           name: trade
         fieldPaths:
           - spec.template.spec.containers.0.image
+      - select:
+          kind: Job
+          name: trade-migrate
+        fieldPaths:
+          - spec.template.spec.containers.0.image
   # ===========================================================================
   # jifei CGW 出向真值（v1.7.10 D9，测试 / 现网按环境特化）
   #
