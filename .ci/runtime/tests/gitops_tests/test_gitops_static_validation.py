@@ -135,6 +135,22 @@ class GitOpsStaticValidationTests(unittest.TestCase):
             self.assertTrue(any("must use { .sourcePath }" in error for error in errors))
             self.assertTrue(any("must not use reserved git generator field" in error for error in errors))
 
+    def test_appset_requires_every_playground_catalog_family(self) -> None:
+        required_paths = (
+            "argocd/catalogs/playground/beijing-playground/*/*.yaml",
+            "argocd/catalogs/playground/seoul-playground/*/*.yaml",
+            "argocd/catalogs/playground/tokyo-playground/*/*.yaml",
+        )
+        for required_path in required_paths:
+            with self.subTest(required_path=required_path), self.repo() as tmp:
+                repo = self.write_valid_repo(tmp)
+                appset = repo / "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml"
+                appset.write_text(appset.read_text().replace(f"          - path: {required_path}\n", ""))
+
+                errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.manifest")
+
+                self.assertTrue(any(required_path in error for error in errors), msg=errors)
+
     def test_catalog_path_field_fails(self) -> None:
         with self.repo() as tmp:
             repo = self.write_valid_repo(tmp)
@@ -482,6 +498,8 @@ class GitOpsStaticValidationTests(unittest.TestCase):
                     files:
                       - path: argocd/catalogs/sandbox/*/*.yaml
                       - path: argocd/catalogs/playground/beijing-playground/*/*.yaml
+                      - path: argocd/catalogs/playground/seoul-playground/*/*.yaml
+                      - path: argocd/catalogs/playground/tokyo-playground/*/*.yaml
               template:
                 spec:
                   source:
