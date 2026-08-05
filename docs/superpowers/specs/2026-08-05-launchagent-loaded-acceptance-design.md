@@ -40,7 +40,9 @@ launchd 生命周期不再实现在 `internal/vela/install`。新增独立的 ma
 
 通用包不得引用 Vela Computer、安装事务、平台 URL、Computer credential、TAT 或 IM。它提供面向收敛的 `EnsureLoaded(ctx, Definition)` 能力：调用成功只表示 launchd 已加载与 Definition 完整一致的服务；重复调用产生相同结果。
 
-`EnsureLoaded` 按真实资源键 `(uid, label)` 自己串行化。除进程内互斥外，还在受保护的 LaunchAgents 目录创建每 label 一个 `0600` 普通锁文件并持有跨进程 advisory lock，覆盖 plist 写入、bootout、bootstrap 和最终观察全过程。Vela 的 `install.lock` 只保护安装事务自身，不能替代通用 launchd 资源锁。
+`EnsureLoaded` 按真实资源键 `(uid, label)` 自己串行化。除进程内互斥外，还在受保护的 LaunchAgents 目录创建每 label 一个持久 `0600` 普通锁文件并持有跨进程 advisory lock，覆盖 fast path、plist 写入、bootout、bootstrap 和最终观察全过程。锁文件使用 no-follow/等价安全打开并经 fstat 验证为当前 uid 所有、`0600`、普通文件；解锁后永久保留而不 unlink，防止不同调用方锁住不同 inode。Vela 的 `install.lock` 只保护安装事务自身，不能替代通用 launchd 资源锁。
+
+进程内锁和 advisory lock 都必须可取消获取：等待者根据 `ctx` 使用非阻塞尝试与短轮询，deadline/cancel 后返回稳定的 canceled/timeout 领域错误，且在取得完整资源锁前不得写 plist 或执行 launchctl。
 
 Definition 的通用契约为：
 
@@ -61,6 +63,8 @@ Definition 的通用契约为：
 
 `EnsureLoaded` 是幂等收敛操作，不承诺事务回滚。若写入期望 plist 后在 bootout、bootstrap 或观察阶段失败，期望 plist 会保留，旧 job 可能已退出，新 job 状态由返回的领域错误阶段说明；调用方可以安全重试同一 Definition。通用包不会恢复旧 plist，因为旧 plist 可能引用已经被调用方替换的二进制或状态，伪回滚反而不安全。
 
+持有完整资源锁后先执行无副作用 fast path：渲染 Definition 的 canonical plist，安全读取磁盘 plist 并要求字节一致，同时观察 launchd loaded identity 的 path、program、arguments 完全一致；全部满足则立即成功，不写文件、不 bootout、不 bootstrap。只有磁盘定义或 loaded identity 不一致时才进入收敛替换流程。因此同一 Definition 的重复调用不会重启健康 daemon。
+
 ### LaunchAgent 身份观察
 
 继续使用 `launchctl print gui/<uid>/<label>`，只接受同时满足以下条件的观察：
@@ -79,12 +83,14 @@ Definition 的通用契约为：
 
 流程保持为：
 
-1. 原子写入 plist；
-2. `bootout` 旧服务；首次安装返回 service-not-found 是正常幂等结果；
-3. 以结果为准等待旧服务从 launchd domain 消失；即使 `bootout` 返回其他错误，只要服务确已消失即可继续，若仍存在则失败；
-4. `bootstrap` 新 plist；
-5. 轮询 `launchctl print`，直到观察到完整正确身份：path、program 和 arguments；
-6. 返回安装成功。
+1. 校验 Definition 并取得可取消的 `(uid,label)` 资源锁；
+2. 若磁盘 canonical plist 与 launchd loaded identity 均已匹配，直接成功；
+3. 否则原子写入 plist；
+4. `bootout` 旧服务；首次安装返回 service-not-found 是正常幂等结果；
+5. 以结果为准等待旧服务从 launchd domain 消失；即使 `bootout` 返回其他错误，只要服务确已消失即可继续，若仍存在则失败；
+6. `bootstrap` 新 plist；
+7. 轮询 `launchctl print`，直到观察到完整正确身份：path、program 和 arguments；
+8. 返回安装成功。
 
 `bootstrap` 命令的退出状态不是最终事实：无论它返回 I/O error 或其他错误，只要随后能观察到完整身份正确的已加载服务，均视为成功。如果在当前三秒边界内始终没有正确身份观察，则返回原有注册/确认错误。这样不会对 launchctl 的具体错误文本建立脆弱白名单。
 
@@ -112,8 +118,8 @@ Definition 的通用契约为：
 5. 保留 bootout 完成后才验收替换服务的顺序测试。
 6. 更新调用序列断言，不再要求连续两次相同 PID。
 7. 更新首装、替换成功文案测试，确保不再承诺 running。
-8. 保留或补齐安全前置测试：同 `(uid,label)` 的不同 Manager/调用方必须跨进程锁语义串行化；错误 owner、group/world writable 或 symlink 的 LaunchAgents 目录必须拒绝；plist 必须以 `0600` 普通文件完成原子替换，launchd 观察必须对应替换后的完整身份。
-9. 通用 `internal/launchd` 包覆盖 Definition 非法输入零副作用、XML 转义、plist 渲染、命令顺序、loaded 身份、bootstrap 错误降级、失败阶段和失败后同 Definition 重试；Vela install 适配器只覆盖 Definition 映射、领域错误文案映射与不携带凭据。
+8. 保留或补齐安全前置测试：同 `(uid,label)` 的不同 Manager/调用方必须跨进程锁语义串行化；锁文件安全打开、验证并持久保留，多个 Manager 连续交接不得产生 inode split；等待进程内锁或 advisory lock 时取消必须零 plist/launchctl 副作用；错误 owner、group/world writable 或 symlink 的 LaunchAgents 目录必须拒绝；plist 必须以 `0600` 普通文件完成原子替换，launchd 观察必须对应替换后的完整身份。
+9. 通用 `internal/launchd` 包覆盖 Definition 非法输入零副作用、XML 转义、plist 渲染、命令顺序、loaded 身份、bootstrap 错误降级、失败阶段和失败后同 Definition 重试；同 Definition 二次调用必须走 fast path且不写 plist、不 bootout、不 bootstrap；Vela install 适配器只覆盖 Definition 映射、领域错误文案映射与不携带凭据。
 10. 增加 Darwin 构建/测试和非 Darwin 编译门禁。
 11. 运行 launchd/install 包测试、Agent 全量测试和 vet。
 
