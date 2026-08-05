@@ -10,6 +10,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { LegalFooter } from "@/components/site/legal-footer";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
+import {
+  CN_COMMUNITY_QR_IMAGE,
+  DISCORD_INVITE_URL,
+  DISCORD_QR_IMAGE,
+} from "@/constants/community";
 import { useT, t as rawT } from "@/i18n/t";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { isGlobal } from "@/lib/region";
@@ -283,6 +288,24 @@ function StorySection() {
    高亮宣言 Section — 参考 character.ai about 大字居中风格
    ═══════════════════════════════════════════════════════════════ */
 
+/** 「找到我们」入口样式：国际站渲染为 <a>（可点击直达 Discord），国内站仍是按钮。 */
+const FIND_US_TRIGGER_STYLE = {
+  padding: "10px 24px",
+  borderRadius: "8px",
+  border: "1px solid rgba(0,0,0,0.1)",
+  background: "#ffffff",
+  color: "#1a1a1a",
+  fontSize: "13px",
+  fontWeight: 400,
+  letterSpacing: "0.04em",
+  cursor: "pointer",
+  transition: "box-shadow 0.3s ease",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "6px",
+} as const;
+
 function HighlightSection() {
   const t = useT();
   const [showQR, setShowQR] = useState(false);
@@ -501,41 +524,66 @@ function HighlightSection() {
                 width: "192px",
               }}
             >
-              <img
-                src={isGlobal ? "/assets/landing/about/International-Discord.png" : "/assets/landing/about/community-qr.png"}
-                alt={t("加入交流群")}
-                style={{ width: "160px", height: "160px", borderRadius: "6px" }}
-              />
-              <span style={{ fontSize: "11px", color: "#888", letterSpacing: "0.04em" }}>
-                {isGlobal ? t("扫码加入Discord交流群") : t("扫码加入交流群")}
-              </span>
+              {isGlobal ? (
+                <a
+                  href={DISCORD_INVITE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: "8px",
+                    textDecoration: "none",
+                  }}
+                >
+                  <img
+                    src={DISCORD_QR_IMAGE}
+                    alt={t("加入交流群")}
+                    style={{ width: "160px", height: "160px", borderRadius: "6px" }}
+                  />
+                  <span style={{ fontSize: "11px", color: "#888", letterSpacing: "0.04em" }}>
+                    {t("扫码加入Discord交流群")}
+                  </span>
+                </a>
+              ) : (
+                <>
+                  <img
+                    src={CN_COMMUNITY_QR_IMAGE}
+                    alt={t("加入交流群")}
+                    style={{ width: "160px", height: "160px", borderRadius: "6px" }}
+                  />
+                  <span style={{ fontSize: "11px", color: "#888", letterSpacing: "0.04em" }}>
+                    {t("扫码加入交流群")}
+                  </span>
+                </>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
 
-        <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
-          style={{
-            padding: "10px 24px",
-            borderRadius: "8px",
-            border: "1px solid rgba(0,0,0,0.1)",
-            background: "#ffffff",
-            color: "#1a1a1a",
-            fontSize: "13px",
-            fontWeight: 400,
-            letterSpacing: "0.04em",
-            cursor: "pointer",
-            transition: "box-shadow 0.3s ease",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "6px",
-          }}
-        >
-          <span style={{ fontSize: "14px" }}>✦</span>
-          {t("找到我们")}
-        </motion.button>
+        {isGlobal ? (
+          <motion.a
+            href={DISCORD_INVITE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            style={{ ...FIND_US_TRIGGER_STYLE, textDecoration: "none" }}
+          >
+            <span style={{ fontSize: "14px" }}>✦</span>
+            {t("找到我们")}
+          </motion.a>
+        ) : (
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            style={FIND_US_TRIGGER_STYLE}
+          >
+            <span style={{ fontSize: "14px" }}>✦</span>
+            {t("找到我们")}
+          </motion.button>
+        )}
       </motion.div>
     </section>
   );

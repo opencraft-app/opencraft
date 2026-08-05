@@ -289,7 +289,7 @@ export function SiteJsonLd() {
       url,
       logo,
       sameAs: [
-        'https://discord.com/invite/NDqtU3JQTc',
+        'https://discord.gg/Myh58xEMe2',
         'https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b',
         'https://x.com/agentlightvela',
         'https://www.youtube.com/@TencentLightVela',

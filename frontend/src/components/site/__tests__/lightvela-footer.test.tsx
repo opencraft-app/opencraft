@@ -74,7 +74,7 @@ describe("LightVelaFooter", () => {
     expect(communitySection).not.toBeNull();
     expect(within(communitySection as HTMLElement).getByRole("link", { name: "Discord" })).toHaveAttribute(
       "href",
-      "https://discord.com/invite/NDqtU3JQTc",
+      "https://discord.gg/Myh58xEMe2",
     );
     expect(within(communitySection as HTMLElement).getByRole("link", { name: "WhatsApp" })).toHaveAttribute(
       "href",
