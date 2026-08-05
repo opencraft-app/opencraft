@@ -10,6 +10,7 @@ type Plan struct {
 	Storage    StoragePlan
 	Monitoring MonitoringPlan
 	Compute    ComputePlan
+	adoption   adoptionMetadata
 }
 
 type NetworkingPlan struct {
@@ -74,10 +75,17 @@ type ComputePlan struct {
 }
 
 func ForEnvironment(env string) *Plan {
-	if env != "beijing-sandbox" {
+	switch env {
+	case "beijing-sandbox":
+		return beijingPlan()
+	case "tokyo-sandbox":
+		return tokyoPlan()
+	default:
 		return &Plan{}
 	}
+}
 
+func beijingPlan() *Plan {
 	return &Plan{
 		Networking: NetworkingPlan{
 			VpcID:          "vpc-21gzr2dc",

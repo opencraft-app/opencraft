@@ -15,7 +15,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-from contracts.bundles import ImageTarget, is_playground_env, load_bundle, load_manifest, require_build_metadata
+from contracts.bundles import (
+    ImageTarget,
+    is_playground_env,
+    load_bundle,
+    load_manifest,
+    playground_region,
+    require_build_metadata,
+)
 from contracts.image_existence import ImageCheckResult, verify_images
 
 
@@ -204,7 +211,15 @@ def all_target_images_exist(targets: list[ImageTarget], tag: str) -> tuple[bool,
 
 def resolve_docker_build_args(service: str, env: str) -> dict[str, str]:
     if service == "frontend" and is_playground_env(env):
-        return {"VITE_AUTH_API_BASE_URL": playground_frontend_auth_api_base_url(env)}
+        build_args = {"VITE_AUTH_API_BASE_URL": playground_frontend_auth_api_base_url(env)}
+        if playground_region(env) == "jp":
+            build_args.update(
+                {
+                    "NEXT_PUBLIC_REGION": "global",
+                    "VITE_REGION": "global",
+                }
+            )
+        return build_args
     return {}
 
 

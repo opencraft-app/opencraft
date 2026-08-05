@@ -78,6 +78,7 @@ bundles:
         shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/sandbox-api
         sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/sandbox-api
         sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/sandbox-api
+        sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/sandbox-api
     - name: migrate
       image_key: SANDBOX_MIGRATE_IMAGE
       dockerfile: sandbox/Dockerfile.migrate
@@ -88,6 +89,7 @@ bundles:
         shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/sandbox-migrate
         sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/sandbox-migrate
         sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/sandbox-migrate
+        sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/sandbox-migrate
     - name: worker
       image_key: SANDBOX_WORKER_IMAGE
       dockerfile: sandbox/Dockerfile.worker
@@ -98,6 +100,7 @@ bundles:
         shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/sandbox-worker
         sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/sandbox-worker
         sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/sandbox-worker
+        sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/sandbox-worker
     - name: ingressproxy-router
       image_key: SANDBOX_INGRESSPROXY_ROUTER_IMAGE
       dockerfile: sandbox/Dockerfile.ingressproxy-router
@@ -108,6 +111,7 @@ bundles:
         shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-router
         sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-router
         sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-router
+        sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-router
     - name: ingressproxy-shard
       image_key: SANDBOX_INGRESSPROXY_SHARD_IMAGE
       dockerfile: sandbox/Dockerfile.ingressproxy-shard
@@ -118,3 +122,4 @@ bundles:
         shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-shard
         sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-shard
         sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-shard
+        sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-shard

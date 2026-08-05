@@ -47,3 +47,4 @@ bundles:
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/workers
       sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/workers
       sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/workers
+      sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/workers

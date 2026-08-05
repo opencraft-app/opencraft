@@ -1,6 +1,7 @@
 import textwrap
 import unittest
 import os
+import shutil
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -14,6 +15,7 @@ if str(RUNTIME_DIR) not in sys.path:
 
 from tests.helpers import git
 
+import gitops.playground_environment as playground_environment
 from gitops.playground_environment import (
     CatalogApp,
     DEFAULT_FROM_ENV,
@@ -27,13 +29,16 @@ from gitops.playground_environment import (
     check_playground_contract_main,
     create_playground_main,
     fetch_origin_refs,
+    generated_playground_files,
     PlaygroundRuntimeSecretValues,
     PLAYGROUND_RUNTIME_SECRET_FILE,
+    PLAYGROUND_RUNTIME_KSOPS_GENERATOR,
     PLAYGROUND_RUNTIME_SECRET_NAME,
     PLAYGROUND_PULL_SECRET_NAMES,
     playground_database_grants,
     load_yaml_mapping,
     render_clone_text,
+    rendered_clone_plan_files,
     resolve_playground_runtime_recipients,
     run_command,
     run_playground_db_jobs,
@@ -541,6 +546,210 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
             ],
         )
 
+    def test_japan_profile_uses_tokyo_managed_data_plane(self) -> None:
+        profile_factory = getattr(playground_environment, "playground_environment_profile", None)
+        self.assertIsNotNone(profile_factory)
+        profile = profile_factory("sandbox-jp-1")
+
+        self.assertEqual(profile.region_code, "jp")
+        self.assertEqual(profile.catalog_root, "argocd/catalogs/playground/tokyo-playground")
+        self.assertEqual(profile.cluster_name, "tokyo-playground")
+        self.assertEqual(profile.project, "tokyo-playground")
+        self.assertEqual(profile.registry, "lightclaw-jp1.tencentcloudcr.com")
+        self.assertEqual(profile.cloud_region, "ap-tokyo")
+        self.assertEqual(profile.zones, ("ap-tokyo-1", "ap-tokyo-2"))
+        self.assertEqual(profile.node_pool, "general-jp1")
+        self.assertEqual(profile.pull_secret_name, "tcr.ipstcr-lightclaw-secret")
+        self.assertEqual(profile.site_mode, "international")
+        self.assertEqual(profile.data_plane_mode, "managed")
+        self.assertEqual(profile.mysql_host, "10.79.192.15")
+        self.assertEqual(profile.redis_addr, "10.79.192.2:6379")
+        self.assertEqual(profile.sandbox_redis_addr, "10.79.192.16:6379")
+        self.assertEqual(profile.vpc_id, "vpc-pqciv8j8")
+        self.assertEqual(profile.support_subnet_id, "subnet-29qhnd3b")
+        self.assertEqual(profile.support_subnet_cidr, "10.79.192.0/18")
+        self.assertEqual(
+            profile.sandbox_pool_subnets,
+            (
+                "subnet-3s91xc7b",
+                "subnet-j9m9bci1",
+                "subnet-pervz3t7",
+                "subnet-0uxbz2n7",
+                "subnet-p9y732st",
+                "subnet-3krxc31p",
+            ),
+        )
+
+        inventory_path = RUNTIME_DIR.parents[1] / "infra_pulumi/envs/tencentcloud/tokyo-sandbox/inventory.yaml"
+        inventory = load_yaml_mapping(inventory_path.read_text(), "tokyo inventory")
+        stacks = inventory["stacks"]
+        self.assertEqual(stacks["cynosdb"]["existing_endpoint"], f"{profile.mysql_host}:3306")
+        self.assertEqual(stacks["redis"]["ctl_mq"]["existing_endpoint"], profile.redis_addr)
+        self.assertEqual(stacks["redis"]["sandbox_route"]["existing_endpoint"], profile.sandbox_redis_addr)
+
+    def test_japan_plan_renders_managed_data_plane_with_namespace_foundation(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo, include_international_services=True)
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-jp-1")
+
+            rendered = render_clone_text(
+                textwrap.dedent(
+                    """
+                    AI_GATEWAY_MYSQL_HOST=10.31.192.4
+                    AI_GATEWAY_REDIS_ADDR=10.31.192.2:6379
+                    SANDBOX_MYSQL_HOST=10.31.192.4
+                    SANDBOX_REDIS_ADDR=10.31.192.10:6379
+                    """
+                ).lstrip(),
+                plan,
+            )
+
+        self.assertEqual(plan.playground_root, "argocd/catalogs/playground/tokyo-playground")
+        self.assertEqual(plan.cluster_name, "tokyo-playground")
+        self.assertEqual(plan.project, "tokyo-playground")
+        generated_targets = [item.target.name for item in generated_playground_files(plan)]
+        self.assertIn("env-bootstrap.yaml", generated_targets)
+        self.assertIn("namespace.yaml", generated_targets)
+        self.assertIn("serviceaccount.yaml", generated_targets)
+        self.assertNotIn("mysql.yaml", generated_targets)
+        self.assertNotIn("redis.yaml", generated_targets)
+        self.assertNotIn(PLAYGROUND_RUNTIME_KSOPS_GENERATOR, generated_targets)
+        self.assertIn("AI_GATEWAY_MYSQL_HOST=10.79.192.15", rendered)
+        self.assertIn("AI_GATEWAY_REDIS_ADDR=10.79.192.2:6379", rendered)
+        self.assertIn("SANDBOX_MYSQL_HOST=10.79.192.15", rendered)
+        self.assertIn("SANDBOX_REDIS_ADDR=10.79.192.16:6379", rendered)
+        self.assertNotIn("10.31.192", rendered)
+
+    def test_japan_managed_plan_does_not_require_donor_secret_directory(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo, include_international_services=True)
+            shutil.rmtree(repo / "argocd/secrets/sandbox-bj-3")
+
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-jp-1")
+
+        self.assertFalse(any("/argocd/secrets/" in item.target.as_posix() for item in plan.files))
+
+    def test_japan_managed_plan_validation_does_not_require_secret_targets(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo, include_international_services=True)
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-jp-1")
+
+            errors = validate_clone_plan(plan)
+
+        self.assertNotIn("no secret files would be copied", errors)
+
+    def test_japan_create_cli_uses_profile_cluster_and_project_defaults(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo, include_international_services=True)
+            output = StringIO()
+
+            with redirect_stdout(output):
+                result = create_playground_main(
+                    [
+                        "--repo-root",
+                        str(repo),
+                        "--from-env",
+                        "sandbox-bj-3",
+                        "--to-env",
+                        "sandbox-jp-1",
+                    ]
+                )
+
+        self.assertEqual(result, 0)
+        rendered_output = output.getvalue()
+        self.assertIn("目标 cluster/project：tokyo-playground/tokyo-playground", rendered_output)
+        self.assertIn("使用托管 MySQL/Redis", rendered_output)
+        self.assertNotIn("最小 playground-runtime-secrets", rendered_output)
+
+    def test_japan_render_closure_has_no_beijing_runtime_references(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo, include_international_services=True)
+            soul = repo / "argocd/services/ctl/sandbox-bj-3/souls/SOUL-pro.md"
+            soul.parent.mkdir(parents=True)
+            soul.write_text("runtime soul asset\n")
+            (repo / "argocd/services/trade/sandbox-bj-3/NOTES.md").write_text("operator notes\n")
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-jp-1")
+
+            rendered_files = rendered_clone_plan_files(plan)
+
+        rendered_targets = [item.target.as_posix() for item in rendered_files]
+        rendered_text = "\n".join(item.data.decode(errors="ignore") for item in rendered_files)
+        self.assertTrue(
+            any("argocd/catalogs/playground/tokyo-playground/sandbox-jp-1" in path for path in rendered_targets)
+        )
+        self.assertTrue(any("env-bootstrap" in path for path in rendered_targets))
+        self.assertFalse(any(PLAYGROUND_RUNTIME_SECRET_FILE in path for path in rendered_targets))
+        self.assertFalse(any("/argocd/secrets/sandbox-jp-1/" in path for path in rendered_targets))
+        self.assertTrue(any(path.endswith("souls/SOUL-pro.md") for path in rendered_targets))
+        self.assertFalse(any(path.endswith("README.md") for path in rendered_targets))
+        self.assertFalse(any(path.endswith("NOTES.md") for path in rendered_targets))
+        self.assertFalse(any("tcr-bj8" in path for path in rendered_targets))
+        for expected in (
+            "LIGHTVELA_SITE_KIND=intl",
+            "TRADE_SITE_KIND=intl",
+            "SANDBOX_NODE_POOL=general-jp1",
+            "TENCENT_REGION=ap-tokyo",
+            "SANDBOX_VPC_ID=vpc-pqciv8j8",
+            "SANDBOX_SUPPORT_SUBNET_ID=subnet-29qhnd3b",
+            "SANDBOX_POOL_C5_SUBNET_ID=subnet-3krxc31p",
+            "AI_GATEWAY_INTERNAL_SUBNET_ID=subnet-29qhnd3b",
+            "AUTH_TRUSTED_PROXY_CIDRS=10.79.192.0/18",
+            "CTL_CLS_TOPIC_ID=",
+            'region = "ap-tokyo"',
+            "NEXTGEN_DASHBOARD_IMAGE=lightclaw-jp1.tencentcloudcr.com/lightclaw/nextgen-dashboard:fixture",
+            "tcr.ipstcr-lightclaw-secret",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, rendered_text)
+        for residue in (
+            "beijing-playground",
+            "lightclaw-bj8",
+            "tcr.bj8",
+            "ap-beijing",
+            "general-bj82",
+            "vpc-b94qlrqe",
+            "subnet-h5l8sqt1",
+            "bba8885b-b3df-4958-b63f-60bf275a0e4b",
+        ):
+            with self.subTest(residue=residue):
+                self.assertNotIn(residue, rendered_text)
+
+    def test_japan_ctl_render_updates_hosts_without_copying_beijing_passwords(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo, include_international_services=True)
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-jp-1")
+
+            rendered = render_clone_text(
+                textwrap.dedent(
+                    """
+                    data:
+                      server_conf_rewrite.toml: |
+                        [db]
+                        host = "10.31.192.4"
+                        password = "copied-db-password"
+
+                        [redis]
+                        host = "10.31.192.2"
+                        pass = "copied-redis-password"
+                    """
+                ),
+                plan,
+            )
+
+        self.assertIn('host = "10.79.192.15"', rendered)
+        self.assertIn('host = "10.79.192.2"', rendered)
+        self.assertIn('password = ""', rendered)
+        self.assertIn('pass = ""', rendered)
+        self.assertNotIn("copied-db-password", rendered)
+        self.assertNotIn("copied-redis-password", rendered)
+        self.assertNotIn("10.31.192", rendered)
+
     def test_bootstrap_manifest_uses_secret_refs_without_plain_secret_values(self) -> None:
         with TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -640,6 +849,32 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn(PLAYGROUND_RUNTIME_SECRET_FILE, stdout.getvalue())
 
+    def test_contract_checker_accepts_japan_managed_runtime_foundation(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo, include_international_services=True)
+            write_clone_plan_for_test(build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-jp-1"))
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                exit_code = check_playground_contract_main(
+                    [
+                        "--repo-root",
+                        str(repo),
+                        "--env",
+                        "sandbox-jp-1",
+                        "--playground-root",
+                        "argocd/catalogs/playground/tokyo-playground",
+                        "--cluster-name",
+                        "tokyo-playground",
+                        "--project",
+                        "tokyo-playground",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("managed MySQL/Redis contract passed", stdout.getvalue())
+
     def test_contract_checker_rejects_broad_runtime_secret_refs(self) -> None:
         with TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -683,8 +918,8 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
         self.assertEqual(run.call_count, len(plan.db_jobs))
         self.assertTrue(all(call.kwargs["env"]["CTL_TEST_MYSQL_PASSWORD"] == "root-password" for call in run.call_args_list))
 
-def create_playground_fixture(repo: Path) -> None:
-    services = (
+def create_playground_fixture(repo: Path, *, include_international_services: bool = False) -> None:
+    services = [
         "admin-gateway",
         "ai-gateway",
         "ctl",
@@ -697,7 +932,9 @@ def create_playground_fixture(repo: Path) -> None:
         "service-gateway",
         "session",
         "subscription",
-    )
+    ]
+    if include_international_services:
+        services.append("trade")
     catalog_dir = repo / "argocd/catalogs/playground/beijing-playground/sandbox-bj-3"
     catalog_dir.mkdir(parents=True)
     for service in services:
@@ -738,14 +975,57 @@ def create_playground_fixture(repo: Path) -> None:
     (repo / "argocd/services/sandbox/sandbox-bj-3/sandbox-platform.env").write_text(
         textwrap.dedent(
             """
+            SANDBOX_NODE_POOL=general-bj82
+            SANDBOX_SUPPORT_SUBNET_ID=subnet-h5l8sqt1
             SANDBOX_INGRESSPROXY_PUBLIC_HOST=*.sandbox-bj83.lightclaw.tech
             SANDBOX_INGRESSPROXY_HEALTHCHECK_HOST=sandbox-bj83.lightclaw.tech
             SANDBOX_INGRESSPROXY_TLS_SECRET_NAME=sandbox-bj83-lightclaw-tech-wildcard-tls
             SANDBOX_MYSQL_HOST=10.31.192.4
             SANDBOX_REDIS_ADDR=10.31.192.10:6379
+            TENCENT_REGION=ap-beijing
+            SANDBOX_VPC_ID=vpc-b94qlrqe
+            SANDBOX_POOL_BJ8_SUBNET_ID=subnet-h5l8sqt1
+            SANDBOX_POOL_BJ8_ZONE=ap-beijing-8
+            SANDBOX_POOL_C0_SUBNET_ID=subnet-iou9vm2h
+            SANDBOX_POOL_C0_ZONE=ap-beijing-4
+            SANDBOX_POOL_C1_SUBNET_ID=subnet-lrwd1f69
+            SANDBOX_POOL_C1_ZONE=ap-beijing-5
+            SANDBOX_POOL_C2_SUBNET_ID=subnet-bda61tav
+            SANDBOX_POOL_C2_ZONE=ap-beijing-6
+            SANDBOX_POOL_C3_SUBNET_ID=subnet-cgg7bxqt
+            SANDBOX_POOL_C3_ZONE=ap-beijing-7
+            SANDBOX_POOL_C4_SUBNET_ID=subnet-fnev6a9j
+            SANDBOX_POOL_C4_ZONE=ap-beijing-8
+            SANDBOX_POOL_C5_SUBNET_ID=subnet-3dwjy8fl
+            SANDBOX_POOL_C5_ZONE=ap-beijing-6
             """
         ).lstrip()
     )
+    (repo / "argocd/services/ctl/sandbox-bj-3/ctl-platform.env").write_text(
+        "CTL_NODE_POOL=general-bj82\nLIGHTVELA_SITE_KIND=cn\n"
+    )
+    if include_international_services:
+        (repo / "argocd/services/ai-gateway/sandbox-bj-3/ai-gateway-platform.env").write_text(
+            "AI_GATEWAY_INTERNAL_SUBNET_ID=subnet-h5l8sqt1\n"
+        )
+        (repo / "argocd/services/lightclaw-auth/sandbox-bj-3/auth-platform.env").write_text(
+            "AUTH_INTERNAL_SUBNET_ID=subnet-h5l8sqt1\nAUTH_TRUSTED_PROXY_CIDRS=10.31.192.0/18\n"
+        )
+        (repo / "argocd/services/nextgen-dashboard/sandbox-bj-3/nextgen-dashboard-platform.env").write_text(
+            "NEXTGEN_DASHBOARD_IMAGE=ccr.ccs.tencentyun.com/clawhub/nextgen-dashboard:fixture\n"
+        )
+        (repo / "argocd/services/ctl/sandbox-bj-3/ctl-platform.env").write_text(
+            "CTL_NODE_POOL=general-bj82\n"
+            "CTL_INTERNAL_SUBNET_ID=subnet-h5l8sqt1\n"
+            "CTL_CLS_TOPIC_ID=bba8885b-b3df-4958-b63f-60bf275a0e4b\n"
+            "LIGHTVELA_SITE_KIND=cn\n"
+        )
+        (repo / "argocd/services/ctl/sandbox-bj-3/patch-ctl-conf-rewrite.yaml").write_text(
+            "data:\n  server_conf_rewrite.toml: |\n    [misc]\n    region = \"ap-beijing\"\n"
+        )
+        (repo / "argocd/services/trade/sandbox-bj-3/trade-platform.env").write_text(
+            "TRADE_SITE_KIND=cn\nLIGHTVELA_TRADE_REGION=\n"
+        )
     (repo / "argocd/services/sandbox/sandbox-bj-3/patch-playground-db-redis.yaml").write_text(
         textwrap.dedent(
             """
