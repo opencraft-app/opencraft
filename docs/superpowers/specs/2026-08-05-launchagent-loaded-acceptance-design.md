@@ -40,7 +40,7 @@ launchd 可以延迟调度 KeepAlive 进程，因此第二个事实不应决定�
 
 `state` 和 `pid` 可以保留为诊断信息，但不再是安装成功条件。launchd 已加载正确 KeepAlive 服务后，即使 daemon 尚处于调度、启动或重启窗口，安装事务也应成功结束。
 
-身份观察依赖既有安装安全不变量：整个安装或替换过程持有该 state directory 的独占 `install.lock`；`~/Library/LaunchAgents` 必须属于当前 uid；plist 通过当前 uid 创建的 `0600` 普通临时文件同步并原子改名，目标不会作为 symlink 跟随。Vela 不把同一 macOS 用户下的恶意本地进程视为隔离边界，但会用 launchd 返回的 path、program 和完整 arguments 防止错误服务或旧参数被误认成本次安装。
+身份观察依赖既有安装安全不变量：整个安装或替换过程持有该 state directory 的独占 `install.lock`；`~/Library/LaunchAgents` 必须是当前 uid 所有的真实目录（非 symlink），权限只能是 `0700` 或 `0755`，不得 group/world writable；plist 临时文件通过不可抢占的独占创建语义生成，确认是当前 uid 的 `0600` 普通文件后写入、fsync，再原子改名并同步父目录，目标不会作为 symlink 跟随。Vela 不把同一 macOS 用户下的恶意本地进程视为隔离边界，但会用 launchd 返回的 path、program 和完整 arguments 防止错误服务或旧参数被误认成本次安装。
 
 ### 启动流程
 
@@ -50,10 +50,10 @@ launchd 可以延迟调度 KeepAlive 进程，因此第二个事实不应决定�
 2. `bootout` 旧服务；首次安装返回 service-not-found 是正常幂等结果；
 3. 以结果为准等待旧服务从 launchd domain 消失；即使 `bootout` 返回其他错误，只要服务确已消失即可继续，若仍存在则失败；
 4. `bootstrap` 新 plist；
-5. 轮询 `launchctl print`，直到观察到正确 plist 与 program；
+5. 轮询 `launchctl print`，直到观察到完整正确身份：path、program 和 arguments；
 6. 返回安装成功。
 
-如果 `bootstrap` 返回 macOS 偶发的 I/O error，但随后能观察到身份正确的已加载服务，仍视为成功。如果在当前三秒边界内始终没有正确身份观察，则返回原有注册/确认错误。
+`bootstrap` 命令的退出状态不是最终事实：无论它返回 I/O error 或其他错误，只要随后能观察到完整身份正确的已加载服务，均视为成功。如果在当前三秒边界内始终没有正确身份观察，则返回原有注册/确认错误。这样不会对 launchctl 的具体错误文本建立脆弱白名单。
 
 ### 在线语义
 
@@ -74,17 +74,18 @@ launchd 可以延迟调度 KeepAlive 进程，因此第二个事实不应决定�
 
 1. 先增加失败测试：`bootstrap` 成功，`launchctl print` 返回正确 path/program/arguments，但没有 running state 和 PID；预期安装成功。当前实现会超时失败。
 2. 增加首次安装测试：旧服务不存在时 `bootout` 的 not-found 结果必须幂等继续，并加载新服务。
-3. 覆盖 `bootstrap` I/O error 后观察到完整正确身份时成功。
+3. 覆盖 `bootstrap` I/O error 和非 I/O error 后观察到完整正确身份时均成功。
 4. 覆盖 `bootstrap` 任意错误后未加载、错误 plist、错误 program、错误 arguments 或相对路径时失败。
 5. 保留 bootout 完成后才验收替换服务的顺序测试。
 6. 更新调用序列断言，不再要求连续两次相同 PID。
 7. 更新首装、替换成功文案测试，确保不再承诺 running。
-8. 运行 install 包测试、Agent 全量测试和 vet。
+8. 保留或补齐安全前置测试：安装锁竞争必须串行化；错误 owner、group/world writable 或 symlink 的 LaunchAgents 目录必须拒绝；plist 必须以 `0600` 普通文件完成原子替换，launchd 观察必须对应替换后的完整身份。
+9. 运行 install 包测试、Agent 全量测试和 vet。
 
 ## 发布与验收
 
 - 发布为不可变 Computer v0.1.40。
 - 使用新 16 位安装码执行替换安装。
 - 命令应快速返回 `Computer replaced and registered with macOS.`，不再出现同步运行误判。
-- `launchctl print` 必须显示正确 plist/program；daemon 随后通过心跳使页面显示在线。
+- `launchctl print` 必须显示正确 path、program 和完整 arguments；daemon 随后通过心跳使页面显示在线。
 - 验证 Computer catalog、程序摘要、后台 3/3 Ready 和零重启。
