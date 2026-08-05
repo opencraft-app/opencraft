@@ -313,6 +313,19 @@ func (service *Service) replaceComplete(
 	if err != nil {
 		return err
 	}
+	if exists {
+		committed, reconcileErr := service.reconcileCommittedReplacement(ctx, options, store, journal, replacement)
+		if reconcileErr != nil {
+			return reconcileErr
+		}
+		if committed {
+			if replacementMatches(replacement, options, release, token, newServerID, newComputerID) {
+				_, writeErr := io.WriteString(service.config.Stdout, "Computer replaced and registered with macOS.\n")
+				return writeErr
+			}
+			exists = false
+		}
+	}
 	var identity tat.Identity
 	var secretPart, grant string
 	if exists {
@@ -478,6 +491,64 @@ func removeReplacementSecrets(store *rootstate.Store) error {
 		}
 	}
 	return nil
+}
+
+func (service *Service) reconcileCommittedReplacement(
+	ctx context.Context,
+	options Options,
+	store *rootstate.Store,
+	journal installJournal,
+	replacement replacementJournal,
+) (bool, error) {
+	if journal.Stage != "complete" || replacement.PlatformURL != journal.PlatformURL ||
+		replacement.Version != journal.Version || replacement.Target != journal.Target ||
+		replacement.ProgramSHA256 != journal.ProgramSHA256 || replacement.ServerID != journal.ServerID ||
+		replacement.ComputerID != journal.ComputerID || replacement.TATRegion != journal.Region ||
+		!strings.HasPrefix(replacement.TATInstanceID, "rins-") ||
+		!installedProgramMatchesJournal(options.InstallationRoot, journal) {
+		return false, nil
+	}
+	credential, err := readPrivateString(filepath.Join(options.StateDirectory, credentialName), 16*1024)
+	if err != nil {
+		return false, nil
+	}
+	serverID, computerID, ok := credentialRoute(credential)
+	if !ok || serverID != journal.ServerID || computerID != journal.ComputerID {
+		return false, nil
+	}
+	var config struct {
+		PlatformURL       string `json:"platformUrl"`
+		AllowInsecureHTTP bool   `json:"allowInsecureHttp"`
+		ServerID          string `json:"serverId"`
+		ComputerID        string `json:"computerId"`
+		Region            string `json:"region"`
+	}
+	if err := store.Read(configName, &config); err != nil ||
+		config.PlatformURL != journal.PlatformURL ||
+		config.AllowInsecureHTTP != journal.AllowInsecureHTTP ||
+		config.ServerID != journal.ServerID || config.ComputerID != journal.ComputerID ||
+		config.Region != journal.Region {
+		return false, nil
+	}
+	var credentialMeta struct {
+		CredentialID string `json:"credentialId"`
+		Version      uint64 `json:"version"`
+	}
+	if err := store.Read("computer.credential.meta.json", &credentialMeta); err != nil ||
+		credentialMeta.CredentialID != journal.CredentialID ||
+		credentialMeta.Version != journal.CredentialVersion {
+		return false, nil
+	}
+	if err := service.config.Launcher.Start(ctx, LaunchSpec{
+		Label:            launchAgentLabel,
+		ProgramPath:      filepath.Join(options.InstallationRoot, "bin", ProgramName),
+		ProgramSHA256:    journal.ProgramSHA256,
+		InstallationRoot: options.InstallationRoot,
+		StateDirectory:   options.StateDirectory,
+	}); err != nil {
+		return true, err
+	}
+	return true, removeReplacementSecrets(store)
 }
 
 func installedProgramMatchesJournal(root string, journal installJournal) bool {

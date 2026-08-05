@@ -329,6 +329,16 @@ func TestServiceAutomaticallyReclaimsRetiredTATIdentityForRemovedComputer(t *tes
 	if err := service.Install(context.Background(), options); err == nil {
 		t.Fatal("replacement claim failure was not returned")
 	}
+	conflictingToken := "cen1." + testServerID + ".019fd222-2222-7222-8222-222222222222.3.signature"
+	if err := os.WriteFile(tokenFile, []byte(conflictingToken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Install(context.Background(), options); !errors.Is(err, ErrInstallConflict) {
+		t.Fatalf("conflicting enrollment error = %v, want %v", err, ErrInstallConflict)
+	}
+	if err := os.WriteFile(tokenFile, []byte(newToken), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := service.Install(context.Background(), options); err != nil {
 		t.Fatal(err)
 	}
@@ -345,6 +355,128 @@ func TestServiceAutomaticallyReclaimsRetiredTATIdentityForRemovedComputer(t *tes
 	if err := rootstate.New(options.StateDirectory).Read(configName, &config); err != nil || config.ComputerID != newComputerID {
 		t.Fatalf("config=%#v err=%v", config, err)
 	}
+}
+
+func TestServiceFinishesCommittedReplacementWithoutClaimingAgain(t *testing.T) {
+	t.Parallel()
+
+	service, options, client, launcher := prepareCommittedReplacementResidue(t)
+	claimsBeforeRetry := len(client.claimSecrets)
+	client.failReplacementClaim = true
+
+	if err := service.Install(context.Background(), options); err != nil {
+		t.Fatalf("committed replacement retry failed: %v", err)
+	}
+	if len(client.claimSecrets) != claimsBeforeRetry {
+		t.Fatalf("claim calls = %d, want %d", len(client.claimSecrets), claimsBeforeRetry)
+	}
+	if launcher.starts != 3 {
+		t.Fatalf("launcher starts = %d, want 3", launcher.starts)
+	}
+	for _, name := range []string{
+		replacementTokenName, replacementSecretName, replacementGrantName, replacementJournalName,
+	} {
+		if _, err := os.Lstat(filepath.Join(options.StateDirectory, name)); !os.IsNotExist(err) {
+			t.Fatalf("replacement state still exists: %s err=%v", name, err)
+		}
+	}
+}
+
+func TestServiceReconcilesCommittedReplacementBeforeNewEnrollment(t *testing.T) {
+	t.Parallel()
+
+	service, options, client, launcher := prepareCommittedReplacementResidue(t)
+	thirdComputerID := "019fd222-2222-7222-8222-222222222222"
+	thirdToken := "cen1." + testServerID + "." + thirdComputerID + ".3.signature"
+	if err := os.WriteFile(options.TokenFile, []byte(thirdToken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	newContent := []byte("new-installer-release")
+	if err := os.WriteFile(options.ProgramFile, newContent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	options.ReleaseVersion = "0.3.0"
+	client.claimComputerID = thirdComputerID
+
+	if err := service.Install(context.Background(), options); err != nil {
+		t.Fatalf("new enrollment after committed replacement failed: %v", err)
+	}
+	if len(client.claimSecrets) != 3 {
+		t.Fatalf("claim calls = %d, want 3", len(client.claimSecrets))
+	}
+	if launcher.starts != 4 {
+		t.Fatalf("launcher starts = %d, want 4", launcher.starts)
+	}
+	var journal installJournal
+	if err := rootstate.New(options.StateDirectory).Read(installJournalName, &journal); err != nil {
+		t.Fatal(err)
+	}
+	if journal.ComputerID != thirdComputerID {
+		t.Fatalf("installed computer = %q, want %q", journal.ComputerID, thirdComputerID)
+	}
+}
+
+func prepareCommittedReplacementResidue(
+	t *testing.T,
+) (*Service, Options, *recordingInstallClient, *recordingLauncher) {
+	t.Helper()
+
+	root := t.TempDir()
+	content := []byte("canonical-program")
+	program := filepath.Join(root, ProgramName)
+	if err := os.WriteFile(program, content, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tokenFile := filepath.Join(root, "token")
+	firstToken := "cen1." + testServerID + "." + testComputerID + ".1.signature"
+	if err := os.WriteFile(tokenFile, []byte(firstToken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := &recordingInstallClient{}
+	launcher := &recordingLauncher{}
+	service, err := NewService(ServiceConfig{
+		Stdout: &bytes.Buffer{}, Random: bytes.NewReader(bytes.Repeat([]byte{0x55}, 256)),
+		ClientFactory: func(ClientConfig) (InstallClient, error) { return client, nil },
+		Verify: func(config VerifyConfig) (VerifiedRelease, error) {
+			verifiedContent, readErr := os.ReadFile(config.ProgramPath)
+			if readErr != nil {
+				return VerifiedRelease{}, readErr
+			}
+			digest := sha256.Sum256(verifiedContent)
+			return VerifiedRelease{
+				Version: config.Version, Target: config.Target,
+				ProgramSize: int64(len(verifiedContent)), ProgramSHA256: digest,
+			}, nil
+		},
+		TAT: &recordingTAT{}, Launcher: launcher,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := Options{
+		PlatformURL: "http://192.0.2.10", AllowInsecurePlatformHTTP: true,
+		TokenFile: tokenFile, ManifestFile: filepath.Join(root, "manifest"),
+		SignatureFile: filepath.Join(root, "signature"), SigningPublicKey: "key",
+		ReleaseVersion: "0.2.0", Target: "darwin-arm64", ProgramFile: program,
+		InstallationRoot: filepath.Join(root, ".vela"), StateDirectory: filepath.Join(root, ".vela", "state"),
+	}
+	if err := service.Install(context.Background(), options); err != nil {
+		t.Fatal(err)
+	}
+	secondComputerID := "019fd111-1111-7111-8111-111111111111"
+	secondToken := "cen1." + testServerID + "." + secondComputerID + ".2.signature"
+	if err := os.WriteFile(tokenFile, []byte(secondToken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client.preflight = PreflightResult{
+		Status: PreflightRemoved, ReplacementGrant: "rpg1.payload.signature-with-enough-bytes",
+	}
+	client.claimComputerID = secondComputerID
+	launcher.failures = 1
+	if err := service.Install(context.Background(), options); err == nil {
+		t.Fatal("replacement launch failure was not returned")
+	}
+	return service, options, client, launcher
 }
 
 type recordingInstallClient struct {
