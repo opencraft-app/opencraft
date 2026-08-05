@@ -48,6 +48,7 @@ type ChatPort = Pick<
   | "loadMessagesByReferences"
   | "markRead"
   | "normalizeMessages"
+  | "reconcileMessage"
   | "retryMessage"
   | "searchMessages"
   | "sendAttachment"
@@ -197,6 +198,12 @@ export class TencentMessagingPort implements MessagingPort {
 
   public retryMessage(clientRequestId: string): Promise<Message> {
     return this.chat.retryMessage(clientRequestId);
+  }
+
+  public reconcileMessage(
+    input: Parameters<MessagingPort["reconcileMessage"]>[0],
+  ) {
+    return this.chat.reconcileMessage(input);
   }
 
   public async searchMessages(

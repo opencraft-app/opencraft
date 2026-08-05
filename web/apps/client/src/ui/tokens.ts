@@ -516,6 +516,12 @@ export const velaTheme = {
       switcherRowMinHeight: 52,
     },
     conversationWorkspace: {
+      composerAttachmentMaxWidth: 260,
+      composerAttachmentMinWidth: 190,
+      composerDesktopMaxWidth: 860,
+      composerMentionListOffset: 58,
+      composerSuggestionMinHeight: 46,
+      composerToolbarMinHeight: 52,
       channelManagementActionMinWidth: 64,
       channelMemberRowMinHeight: 60,
       compactActionGap: 3,

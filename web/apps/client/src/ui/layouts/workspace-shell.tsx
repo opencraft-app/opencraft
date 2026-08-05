@@ -3,7 +3,9 @@ import type {
   AcceptedResource,
   ActiveConversation,
   Agent,
+  AttachmentSource,
   Channel,
+  ComposerDraft,
   ConversationSummary,
   CreateChannelInput,
   DirectConversation,
@@ -14,7 +16,14 @@ import type {
   Server,
   UpdateChannelInput,
 } from "@vela/client-core";
-import { channelAddress } from "@vela/client-core";
+import {
+  channelAddress,
+  composerDocumentMentions,
+  composerDocumentPreview,
+  composerDocumentText,
+  createComposerDocument,
+  createComposerTextDocument,
+} from "@vela/client-core";
 import {
   createContext,
   useEffect,
@@ -55,7 +64,10 @@ import X from "lucide-react-native/icons/x";
 import Ellipsis from "lucide-react-native/icons/ellipsis";
 import type { LucideIcon } from "lucide-react-native";
 
-import { MessageComposer } from "../components/message-composer";
+import {
+  MessageComposer,
+  type MentionableMember,
+} from "../components/message-composer";
 import { BrandMark } from "../components/brand-mark";
 import { MessageList } from "../components/message-list";
 import {
@@ -131,7 +143,7 @@ export interface WorkspaceShellProps {
   canManageChannels?: boolean;
   channelMembers?: Member[];
   channels: Channel[];
-  conversationDrafts?: Record<string, string>;
+  conversationDrafts?: Record<string, ComposerDraft>;
   conversationSummaries?: ConversationSummary[];
   channelHref?(channel: Channel): string;
   currentChannelId: string | null;
@@ -148,10 +160,11 @@ export interface WorkspaceShellProps {
   loadingOlder?: boolean;
   members?: Member[];
   messages: Message[];
+  mentionMembers?: MentionableMember[];
   messageFocusRequest?: { messageId: string; revision: number } | null;
   onAddChannelMember?(memberId: string): void | Promise<void>;
-  onAttachFile?(): void | Promise<void>;
-  onAttachImage?(): void | Promise<void>;
+  onAttachFile?(): AttachmentSource | null | Promise<AttachmentSource | null>;
+  onAttachImage?(): AttachmentSource | null | Promise<AttachmentSource | null>;
   onAttachLocalPath?(input: {
     kind: "file" | "image";
     path: string;
@@ -167,7 +180,7 @@ export interface WorkspaceShellProps {
   onLocateSearchResult?(messageId: string): void | Promise<void>;
   onContinueOperation?(operationId: string): void | Promise<void>;
   onLoadMoreThreadReplies?(): void | Promise<void>;
-  onDraftChange?(text: string): void;
+  onDraftChange?(draft: ComposerDraft): void;
   onLogout?(): void | Promise<void>;
   onNavigateSection?(section: WorkspaceSection): void;
   onLoadOlder?(): void | Promise<void>;
@@ -183,10 +196,7 @@ export interface WorkspaceShellProps {
   onSelectChannel(channelId: string): void | Promise<void>;
   onSelectDirect?(peerUserId: string): void | Promise<void>;
   onSelectServer(serverId: string): void | Promise<void>;
-  onSend(input: {
-    mentionedUserIds: string[];
-    text: string;
-  }): void | Promise<void>;
+  onSend(draft: ComposerDraft): void | Promise<void>;
   onSendThreadReply?(input: {
     mentionedUserIds: string[];
     text: string;
@@ -302,7 +312,20 @@ function conversationDraftKey(
   if (!conversation) return null;
   return conversation.kind === "channel"
     ? `channel:${conversation.channelId}`
-    : `direct:${conversation.peerUserId}`;
+    : `direct:${conversation.peerMemberId}`;
+}
+
+function emptyComposerDraft(): ComposerDraft {
+  return {attachments: [], document: createComposerDocument()};
+}
+
+function composerDraftPreview(draft: ComposerDraft | undefined): string {
+  if (!draft) return "";
+  const text = composerDocumentPreview(draft.document);
+  if (text) return text;
+  return draft.attachments.length > 0
+    ? `[${draft.attachments.length} 个附件]`
+    : "";
 }
 
 type ConversationFormMode =
@@ -359,8 +382,8 @@ function conversationPageModel(
       : undefined;
   const activeDraftKey = conversationDraftKey(activeConversation);
   const draft = activeDraftKey
-    ? (props.conversationDrafts?.[activeDraftKey] ?? "")
-    : "";
+    ? (props.conversationDrafts?.[activeDraftKey] ?? emptyComposerDraft())
+    : emptyComposerDraft();
   const threadActive = Boolean(
     activeConversation?.kind === "channel" &&
       props.activeThread &&
@@ -387,14 +410,10 @@ function conversationPageModel(
       currentChannel.systemKey !== "all" &&
       (currentChannel.visibility === "public" || props.canManageChannels),
   );
-  const mentionIds = props.agents
-    .filter(
-      (agent) =>
-        Boolean(agent.imUserId) &&
-        (draft.includes(`@${agent.handle}`) ||
-          draft.includes(`@${agent.displayName}`)),
-    )
-    .flatMap((agent) => (agent.imUserId ? [agent.imUserId] : []));
+  const draftText = composerDocumentText(draft.document);
+  const mentionIds = composerDocumentMentions(draft.document).map(
+    (mention) => mention.imUserId,
+  );
   const existingDirectPeers = new Set(
     (props.directConversations ?? []).map((item) => item.peerUserId),
   );
@@ -743,17 +762,24 @@ function conversationPageModel(
     composer: {
       actions: composerActions,
       disabled: composerDisabled,
-      onChange: (value) => props.onDraftChange?.(value),
+      onChange: (value) =>
+        props.onDraftChange?.({
+          ...draft,
+          document: createComposerTextDocument(value),
+        }),
       onSend: async () => {
-        const text = draft.trim();
+        const text = draftText.trim();
         if (!text || composerDisabled) return;
-        const send = threadActive ? props.onSendThreadReply : props.onSend;
-        await send?.({ mentionedUserIds: mentionIds, text });
+        if (threadActive) {
+          await props.onSendThreadReply?.({mentionedUserIds: mentionIds, text});
+        } else {
+          await props.onSend(draft);
+        }
       },
       placeholder: activeConversation
         ? `给 ${title} 发消息`
         : "请先选择 Channel 或私信",
-      value: draft,
+      value: draftText,
     },
     conversations: [
       ...props.channels.map((channel) => ({
@@ -951,9 +977,10 @@ function GraphicalWorkspaceShell({
   members = [],
   messageFocusRequest = null,
   messages,
+  mentionMembers = [],
   onAddChannelMember = () => undefined,
-  onAttachFile = () => undefined,
-  onAttachImage = () => undefined,
+  onAttachFile = () => null,
+  onAttachImage = () => null,
   onClearMessageSearch = () => undefined,
   onClearQuote = () => undefined,
   onCloseThread = () => undefined,
@@ -1030,8 +1057,8 @@ function GraphicalWorkspaceShell({
       : null);
   const activeDraftKey = conversationDraftKey(activeConversation);
   const activeDraft = activeDraftKey
-    ? (conversationDrafts[activeDraftKey] ?? "")
-    : "";
+    ? (conversationDrafts[activeDraftKey] ?? emptyComposerDraft())
+    : emptyComposerDraft();
   function changeMessageSearchOpen(open: boolean): void {
     setMessageSearchOpen(open);
     if (!open) onClearMessageSearch();
@@ -1228,6 +1255,9 @@ function GraphicalWorkspaceShell({
             imStatusMessage={imStatusMessage}
             loadingOlder={loadingOlder}
             messages={messages}
+            mentionMembers={
+              activeConversation?.kind === "direct" ? [] : mentionMembers
+            }
             messageFocusRequest={messageFocusRequest}
             onAttachFile={onAttachFile}
             onAttachImage={onAttachImage}
@@ -1371,6 +1401,9 @@ function GraphicalWorkspaceShell({
         imStatusMessage={imStatusMessage}
         loadingOlder={loadingOlder}
         messages={messages}
+        mentionMembers={
+          activeConversation?.kind === "direct" ? [] : mentionMembers
+        }
         messageFocusRequest={messageFocusRequest}
         onAttachFile={onAttachFile}
         onAttachImage={onAttachImage}
@@ -1785,7 +1818,7 @@ function ConversationSidebar({
   canManageChannels: boolean;
   channelHref?: WorkspaceShellProps["channelHref"];
   channels: Channel[];
-  conversationDrafts: Record<string, string>;
+  conversationDrafts: Record<string, ComposerDraft>;
   conversationSummaries: ConversationSummary[];
   currentChannelId: string | null;
   currentServer: Server | undefined;
@@ -1816,7 +1849,7 @@ function ConversationSidebar({
           channel.description ?? "",
           channelConversationSummary(channel, conversationSummaries)
             ?.lastMessagePreview ?? "",
-          conversationDrafts[`channel:${channel.id}`] ?? "",
+          composerDraftPreview(conversationDrafts[`channel:${channel.id}`]),
         ].some((value) => value.toLocaleLowerCase().includes(normalizedFilter)),
       )
     : channels;
@@ -1828,7 +1861,9 @@ function ConversationSidebar({
             memberByImUserId(members, conversation.peerUserId),
           ) ?? "",
           conversation.lastMessagePreview,
-          conversationDrafts[`direct:${conversation.peerUserId}`] ?? "",
+          composerDraftPreview(
+            conversationDrafts[`direct:${conversation.peerMemberId}`],
+          ),
         ].some((value) => value.toLocaleLowerCase().includes(normalizedFilter)),
       )
     : directConversations;
@@ -2058,7 +2093,7 @@ function DirectConversationList({
 }: {
   activeConversation: ActiveConversation | null;
   conversations: DirectConversation[];
-  conversationDrafts: Record<string, string>;
+  conversationDrafts: Record<string, ComposerDraft>;
   directHref?: WorkspaceShellProps["directHref"];
   emptyLabel: string;
   members: Member[];
@@ -2080,8 +2115,9 @@ function DirectConversationList({
         const lastMessageTime = conversation.lastMessageAt
           ? formatConversationTimestamp(conversation.lastMessageAt)
           : "";
-        const draftPreview =
-          conversationDrafts[`direct:${conversation.peerUserId}`]?.trim() ?? "";
+        const draftPreview = composerDraftPreview(
+          conversationDrafts[`direct:${conversation.peerMemberId}`],
+        );
         const directMember = memberByImUserId(members, conversation.peerUserId);
         const identityLabel = memberIdentityLabel(directMember);
         const identitySummary = directIdentitySummary(directMember);
@@ -2228,7 +2264,7 @@ function ChannelList({
   WorkspaceShellProps,
   "channelHref" | "channels" | "currentChannelId" | "onSelectChannel"
 > & {
-  conversationDrafts: Record<string, string>;
+  conversationDrafts: Record<string, ComposerDraft>;
   conversationSummaries: ConversationSummary[];
   emptyLabel?: string;
 }) {
@@ -2244,8 +2280,9 @@ function ChannelList({
       {channels.map((channel) => {
         const selected = channel.id === currentChannelId;
         const href = channelHref?.(channel);
-        const draftPreview =
-          conversationDrafts[`channel:${channel.id}`]?.trim() ?? "";
+        const draftPreview = composerDraftPreview(
+          conversationDrafts[`channel:${channel.id}`],
+        );
         const summary = channelConversationSummary(
           channel,
           conversationSummaries,
@@ -2443,6 +2480,7 @@ function MessageStage({
   joiningChannel,
   locatingSearchResultId,
   messages,
+  mentionMembers = [],
   messageFocusRequest,
   onAttachFile,
   onAttachImage,
@@ -2482,7 +2520,7 @@ function MessageStage({
   compact?: boolean;
   directConversation?: DirectConversation;
   directMember?: Member;
-  draft: string;
+  draft: ComposerDraft;
   error?: string | null;
   historyCompleted: boolean;
   initializingMessages: boolean;
@@ -2492,6 +2530,7 @@ function MessageStage({
   joiningChannel: boolean;
   locatingSearchResultId: string | null;
   messages: Message[];
+  mentionMembers?: MentionableMember[];
   messageFocusRequest: { messageId: string; revision: number } | null;
   onAttachFile: NonNullable<WorkspaceShellProps["onAttachFile"]>;
   onAttachImage: NonNullable<WorkspaceShellProps["onAttachImage"]>;
@@ -2770,7 +2809,7 @@ function MessageStage({
           />
 
           <MessageComposer
-              agents={agents}
+              members={mentionMembers}
               channelName={channel?.name ?? "channel"}
               conversationLabel={conversationLabel}
               disabled={
@@ -3612,7 +3651,7 @@ function CompactConversationPicker({
   account?: Account | null;
   activeConversation: ActiveConversation | null;
   canManageChannels: boolean;
-  conversationDrafts: Record<string, string>;
+  conversationDrafts: Record<string, ComposerDraft>;
   conversationSummaries: ConversationSummary[];
   currentChannel: Channel | undefined;
   directCandidates: Member[];
@@ -3637,7 +3676,7 @@ function CompactConversationPicker({
           channel.description ?? "",
           channelConversationSummary(channel, conversationSummaries)
             ?.lastMessagePreview ?? "",
-          conversationDrafts[`channel:${channel.id}`] ?? "",
+          composerDraftPreview(conversationDrafts[`channel:${channel.id}`]),
         ].some((value) => value.toLocaleLowerCase().includes(normalizedFilter)),
       )
     : channels;
@@ -3649,7 +3688,9 @@ function CompactConversationPicker({
             memberByImUserId(members, conversation.peerUserId),
           ) ?? "",
           conversation.lastMessagePreview,
-          conversationDrafts[`direct:${conversation.peerUserId}`] ?? "",
+          composerDraftPreview(
+            conversationDrafts[`direct:${conversation.peerMemberId}`],
+          ),
         ].some((value) => value.toLocaleLowerCase().includes(normalizedFilter)),
       )
     : directConversations;
@@ -3805,8 +3846,9 @@ function CompactConversationPicker({
           {visibleChannels.map((channel) => {
             const selected = channel.id === currentChannelId;
             const href = channelHref?.(channel);
-            const draftPreview =
-              conversationDrafts[`channel:${channel.id}`]?.trim() ?? "";
+            const draftPreview = composerDraftPreview(
+              conversationDrafts[`channel:${channel.id}`],
+            );
             const summary = channelConversationSummary(
               channel,
               conversationSummaries,
@@ -3916,9 +3958,9 @@ function CompactConversationPicker({
               activeConversation?.kind === "direct" &&
               activeConversation.peerUserId === conversation.peerUserId;
             const href = directHref?.(conversation.peerUserId);
-            const draftPreview =
-              conversationDrafts[`direct:${conversation.peerUserId}`]?.trim() ??
-              "";
+            const draftPreview = composerDraftPreview(
+              conversationDrafts[`direct:${conversation.peerMemberId}`],
+            );
             const directMember = memberByImUserId(
               members,
               conversation.peerUserId,

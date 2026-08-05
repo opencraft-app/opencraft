@@ -2,7 +2,7 @@ export { LoadingScreen } from "./components/loading-screen";
 export { RouteStatusScreen } from "./components/route-status-screen";
 export {
   MessageComposer,
-  type MentionableAgent,
+  type MentionableMember,
   type MessageComposerProps,
 } from "./components/message-composer";
 export {

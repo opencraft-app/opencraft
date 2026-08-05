@@ -1,4 +1,10 @@
-import type { Agent, Message, MessageThread } from "@vela/client-core";
+import {
+  composerDocumentMentions,
+  composerDocumentText,
+  type Agent,
+  type Message,
+  type MessageThread,
+} from "@vela/client-core";
 import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
@@ -104,11 +110,24 @@ export function ThreadPanel({
         </View>
       ) : null}
       <MessageComposer
-        agents={agents}
         channelName="Thread"
         disabled={sending}
+        members={agents.map((agent) => ({
+          displayName: agent.displayName,
+          handle: agent.handle,
+          id: agent.id,
+          imUserId: agent.imUserId,
+          kind: "agent" as const,
+        }))}
         onFocus={() => setOpenActionMessageId(null)}
-        onSend={onSend}
+        onSend={(draft) =>
+          onSend({
+            mentionedUserIds: composerDocumentMentions(draft.document).map(
+              (mention) => mention.imUserId,
+            ),
+            text: composerDocumentText(draft.document).trim(),
+          })
+        }
         showAttachments={false}
       />
     </View>

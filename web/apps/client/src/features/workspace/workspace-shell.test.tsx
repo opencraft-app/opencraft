@@ -1,3 +1,4 @@
+import {createComposerTextDocument} from "@vela/client-core";
 import type {
   Account,
   ActiveConversation,
@@ -13,6 +14,62 @@ import type {
 import {act, fireEvent, render, within} from "@testing-library/react-native";
 import { cloneElement, type ReactElement } from "react";
 import {Text} from "react-native";
+
+jest.mock("../../ui/components/composer-editor", () => {
+  const React = require("react") as typeof import("react");
+  const {TextInput} = require("react-native") as typeof import("react-native");
+  const core = require("@vela/client-core") as typeof import("@vela/client-core");
+  return {
+    ComposerEditor: React.forwardRef(function MockComposerEditor(
+      props: {
+        disabled?: boolean;
+        document: import("@vela/client-core").ComposerDocument;
+        onSnapshotChange(value: unknown): void;
+        onSubmit(value: unknown): void;
+        placeholder: string;
+      },
+      ref: React.ForwardedRef<{
+        focus(): void;
+        replaceDocument(value: import("@vela/client-core").ComposerDocument): void;
+        requestSubmit(): void;
+      }>,
+    ) {
+      const [document, setDocument] = React.useState(props.document);
+      const latest = React.useRef(document);
+      latest.current = document;
+      React.useEffect(() => setDocument(props.document), [props.document]);
+      React.useImperativeHandle(ref, () => ({
+        focus() {},
+        replaceDocument(value) {
+          latest.current = value;
+          setDocument(value);
+        },
+        requestSubmit() {
+          props.onSubmit({
+            document: latest.current,
+            selection: null,
+            text: core.composerDocumentText(latest.current),
+          });
+        },
+      }));
+      return (
+        <TextInput
+          accessibilityLabel="消息内容"
+          editable={!props.disabled}
+          onBlur={() => undefined}
+          onChangeText={(text) => {
+            const next = core.createComposerTextDocument(text);
+            latest.current = next;
+            setDocument(next);
+            props.onSnapshotChange({document: next, selection: null, text});
+          }}
+          placeholder={props.placeholder}
+          value={core.composerDocumentText(document)}
+        />
+      );
+    }),
+  };
+});
 import {
   NavigationLinkProvider,
   PresentationProvider,
@@ -244,7 +301,12 @@ describe("WorkspaceShell", () => {
           activeConversation={{channelId: channel.id, kind: "channel"}}
           agents={[agent]}
           channels={[channel]}
-          conversationDrafts={{[`channel:${channel.id}`]: "@research 请继续"}}
+          conversationDrafts={{
+            [`channel:${channel.id}`]: {
+              attachments: [],
+              document: createComposerTextDocument("@research 请继续"),
+            },
+          }}
           currentChannelId={channel.id}
           currentServerId={server.id}
           imStatus="ready"
@@ -268,8 +330,8 @@ describe("WorkspaceShell", () => {
     await model.composer.onSend();
     expect(onSelectChannel).toHaveBeenCalledWith(channel.id);
     expect(onSend).toHaveBeenCalledWith({
-      mentionedUserIds: [agent.imUserId],
-      text: "@research 请继续",
+      attachments: [],
+      document: createComposerTextDocument("@research 请继续"),
     });
   });
 
@@ -1230,7 +1292,7 @@ describe("WorkspaceShell", () => {
     expect(screen.getByText("研究助手")).toBeVisible();
     expect(screen.getByText("Agent 私信 · @research")).toBeVisible();
     expect(screen.queryByText("@ agent-im-1")).toBeNull();
-    expect(screen.getByPlaceholderText("给 研究助手 发消息")).toBeVisible();
+    expect(screen.getByPlaceholderText("发送消息给 研究助手")).toBeVisible();
   });
 
   it("starts a DM only from ready Server members and excludes the current Human", async () => {
@@ -2048,8 +2110,14 @@ describe("WorkspaceShell", () => {
         agents={[agent]}
         channels={[channel]}
         conversationDrafts={{
-          "channel:channel-1": "Channel 待发送内容",
-          "direct:agent-im-1": "私信待发送内容",
+          "channel:channel-1": {
+            attachments: [],
+            document: createComposerTextDocument("Channel 待发送内容"),
+          },
+          "direct:member-agent": {
+            attachments: [],
+            document: createComposerTextDocument("私信待发送内容"),
+          },
         }}
         currentChannelId={channel.id}
         currentServerId={server.id}
@@ -2074,7 +2142,10 @@ describe("WorkspaceShell", () => {
 
     await fireEvent.changeText(screen.getByLabelText("消息内容"), "继续补充");
     await fireEvent(screen.getByLabelText("消息内容"), "blur");
-    expect(onDraftChange).toHaveBeenCalledWith("继续补充");
+    expect(onDraftChange).toHaveBeenCalledWith({
+      attachments: [],
+      document: createComposerTextDocument("继续补充"),
+    });
   });
 
   it("uses Tencent group summaries for Channel recovery while keeping drafts first", async () => {
@@ -2084,7 +2155,12 @@ describe("WorkspaceShell", () => {
       <WorkspaceShell
         agents={[agent]}
         channels={[channel, unreadChannel]}
-        conversationDrafts={{"channel:channel-1": "尚未发送的草稿"}}
+        conversationDrafts={{
+          "channel:channel-1": {
+            attachments: [],
+            document: createComposerTextDocument("尚未发送的草稿"),
+          },
+        }}
         conversationSummaries={[
           {
             conversationId: "GROUPtopic-1",
@@ -2289,7 +2365,7 @@ describe("WorkspaceShell", () => {
     );
     expect(screen.getByTestId("message-actions-reply-message-1")).toBeVisible();
     await fireEvent(
-      screen.getByPlaceholderText("给 #Thread 发消息"),
+      screen.getByPlaceholderText("发送消息到 #Thread，输入 @ 提及成员"),
       "focus",
     );
     expect(
@@ -2885,7 +2961,7 @@ describe("WorkspaceShell", () => {
       screen.getByText("发送第一条消息，或 @Agent 分配一项工作。"),
     ).toBeVisible();
     expect(
-      screen.getByPlaceholderText("发送消息到 #全员，输入 @ 提及 Agent"),
+      screen.getByPlaceholderText("发送消息到 #全员，输入 @ 提及成员"),
     ).toBeVisible();
     expect(screen.getByLabelText("搜索当前 Channel")).toBeEnabled();
     expect(

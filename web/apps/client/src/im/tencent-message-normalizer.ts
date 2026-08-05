@@ -10,6 +10,7 @@ import type {
   MessageQuote,
   MessageReaction,
   MessageReference,
+  MessageSubmissionReference,
   MessageThreadLink,
   TaskMessageContent,
   VideoMessageContent,
@@ -62,6 +63,7 @@ interface MessageMetadata {
   schema?: string;
   task?: Record<string, unknown>;
   thread?: MessageThreadLink;
+  submission?: MessageSubmissionReference;
 }
 
 export function normalizeTencentMessage(
@@ -96,6 +98,7 @@ export function normalizeTencentMessage(
       nonEmptyString(message.nameCard) ??
       nonEmptyString(message.nick) ??
       message.from,
+    ...(metadata.submission ? {submission: metadata.submission} : {}),
     text: contentPreview(content),
     ...(metadata.thread ? {thread: metadata.thread} : {}),
   };
@@ -339,6 +342,7 @@ function parseMetadata(value: string | undefined): MessageMetadata {
   if (!parsed) return {};
   const quote = parseQuote(parsed.quote);
   const thread = parseThread(parsed.thread);
+  const submission = parseSubmission(parsed.submission);
   return {
     ...(nonEmptyString(parsed.clientRequestId)
       ? {clientRequestId: nonEmptyString(parsed.clientRequestId)}
@@ -347,6 +351,38 @@ function parseMetadata(value: string | undefined): MessageMetadata {
     ...(nonEmptyString(parsed.schema) ? {schema: nonEmptyString(parsed.schema)} : {}),
     ...(isRecord(parsed.task) ? {task: parsed.task} : {}),
     ...(thread ? {thread} : {}),
+    ...(submission ? {submission} : {}),
+  };
+}
+
+function parseSubmission(value: unknown): MessageSubmissionReference | undefined {
+  if (!isRecord(value)) return undefined;
+  const id = nonEmptyString(value.id);
+  const count = value.count;
+  const index = value.index;
+  const final = value.final;
+  const role = value.role;
+  if (
+    !id ||
+    !Number.isInteger(count) ||
+    (count as number) < 1 ||
+    (count as number) > 10 ||
+    !Number.isInteger(index) ||
+    (index as number) < 0 ||
+    (index as number) >= (count as number) ||
+    typeof final !== "boolean" ||
+    final !== ((index as number) === (count as number) - 1) ||
+    (role !== "attachment" && role !== "commit") ||
+    (role === "commit" && final !== true)
+  ) {
+    return undefined;
+  }
+  return {
+    count: count as number,
+    final,
+    id,
+    index: index as number,
+    role,
   };
 }
 

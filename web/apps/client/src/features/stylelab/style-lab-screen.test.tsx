@@ -1,5 +1,59 @@
 import {fireEvent, render} from "@testing-library/react-native";
 
+jest.mock("../../ui/components/composer-editor", () => {
+  const React = require("react") as typeof import("react");
+  const {TextInput} = require("react-native") as typeof import("react-native");
+  const core = require("@vela/client-core") as typeof import("@vela/client-core");
+  return {
+    ComposerEditor: React.forwardRef(function MockComposerEditor(
+      props: {
+        disabled?: boolean;
+        document: import("@vela/client-core").ComposerDocument;
+        onSnapshotChange(value: unknown): void;
+        onSubmit(value: unknown): void;
+        placeholder: string;
+      },
+      ref: React.ForwardedRef<{
+        focus(): void;
+        replaceDocument(value: import("@vela/client-core").ComposerDocument): void;
+        requestSubmit(): void;
+      }>,
+    ) {
+      const [document, setDocument] = React.useState(props.document);
+      const latest = React.useRef(document);
+      latest.current = document;
+      React.useImperativeHandle(ref, () => ({
+        focus() {},
+        replaceDocument(value) {
+          latest.current = value;
+          setDocument(value);
+        },
+        requestSubmit() {
+          props.onSubmit({
+            document: latest.current,
+            selection: null,
+            text: core.composerDocumentText(latest.current),
+          });
+        },
+      }));
+      return (
+        <TextInput
+          accessibilityLabel="消息内容"
+          editable={!props.disabled}
+          onChangeText={(text) => {
+            const next = core.createComposerTextDocument(text);
+            latest.current = next;
+            setDocument(next);
+            props.onSnapshotChange({document: next, selection: null, text});
+          }}
+          placeholder={props.placeholder}
+          value={core.composerDocumentText(document)}
+        />
+      );
+    }),
+  };
+});
+
 import {StyleLabScreen} from "@/ui";
 
 describe("StyleLabScreen", () => {

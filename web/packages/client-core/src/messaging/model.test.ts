@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {mergeMessages, type Message} from "./model.js";
+import {
+  groupSubmissionMessages,
+  mergeMessages,
+  type Message,
+} from "./model.js";
 
 function message(overrides: Partial<Message>): Message {
   return {
@@ -70,4 +74,77 @@ test("a reaction update replaces the original message without losing its positio
   });
 
   assert.deepEqual(mergeMessages([original], [reacted]), [reacted]);
+});
+
+test("submission groups aggregate non-adjacent parts by sender and index", () => {
+  const first = message({
+    id: "attachment-1",
+    submission: {
+      count: 2,
+      final: false,
+      id: "submission-1",
+      index: 0,
+      role: "attachment",
+    },
+  });
+  const interleaved = message({
+    id: "other-message",
+    senderId: "human-2",
+  });
+  const commit = message({
+    createdAt: "2026-07-30T17:02:00.000Z",
+    id: "commit-1",
+    submission: {
+      count: 2,
+      final: true,
+      id: "submission-1",
+      index: 1,
+      role: "commit",
+    },
+  });
+
+  const groups = groupSubmissionMessages([commit, interleaved, first]);
+
+  assert.equal(groups.length, 2);
+  assert.deepEqual(groups[0], {
+    complete: true,
+    id: "GROUPtopic-1\u0000human-1\u0000submission-1",
+    messages: [first, commit],
+    submissionId: "submission-1",
+  });
+  assert.deepEqual(groups[1], {
+    complete: true,
+    id: "other-message",
+    messages: [interleaved],
+  });
+});
+
+test("submission groups expose missing parts without hiding conflicting duplicates", () => {
+  const partial = message({
+    id: "attachment-1",
+    submission: {
+      count: 3,
+      final: false,
+      id: "submission-partial",
+      index: 0,
+      role: "attachment",
+    },
+  });
+  const duplicate = message({
+    id: "attachment-duplicate",
+    submission: partial.submission,
+  });
+
+  assert.deepEqual(groupSubmissionMessages([partial]), [
+    {
+      complete: false,
+      id: "GROUPtopic-1\u0000human-1\u0000submission-partial",
+      messages: [partial],
+      submissionId: "submission-partial",
+    },
+  ]);
+  assert.deepEqual(groupSubmissionMessages([partial, duplicate]), [
+    {complete: true, id: "attachment-1", messages: [partial]},
+    {complete: true, id: "attachment-duplicate", messages: [duplicate]},
+  ]);
 });

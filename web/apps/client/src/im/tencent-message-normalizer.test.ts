@@ -179,6 +179,49 @@ describe("normalizeTencentMessage", () => {
     });
   });
 
+  it("decodes a valid composer submission reference and ignores invalid ones", () => {
+    const valid = normalizeTencentMessage(
+      rawMessage({
+        cloudCustomData: JSON.stringify({
+          clientRequestId: "request-1",
+          schema: "vela.composer-submission/v1",
+          submission: {
+            count: 2,
+            final: true,
+            id: "submission-1",
+            index: 1,
+            role: "commit",
+          },
+        }),
+      }),
+      types,
+    );
+    const invalid = normalizeTencentMessage(
+      rawMessage({
+        cloudCustomData: JSON.stringify({
+          schema: "vela.composer-submission/v1",
+          submission: {
+            count: 2,
+            final: false,
+            id: "submission-1",
+            index: 1,
+            role: "commit",
+          },
+        }),
+      }),
+      types,
+    );
+
+    expect(valid.submission).toEqual({
+      count: 2,
+      final: true,
+      id: "submission-1",
+      index: 1,
+      role: "commit",
+    });
+    expect(invalid.submission).toBeUndefined();
+  });
+
   it("degrades malformed custom data and unknown message types safely", () => {
     const malformed = normalizeTencentMessage(
       rawMessage({

@@ -4,12 +4,14 @@ import type {
   MessagePage,
   MessageReference,
   MessageSearchPage,
+  ReconcileMessageInput,
+  ReconcileMessageResult,
   SearchMessagesInput,
   SendAttachmentInput,
   SendTaskInput,
   SendTextInput,
 } from "@vela/client-core";
-import {mergeMessages} from "@vela/client-core";
+import {mergeMessages, MessagingSendError} from "@vela/client-core";
 import {
   defaultTencentMessageTypes,
   normalizeTencentMessage,
@@ -104,9 +106,9 @@ export class ChannelChatService {
   }
 
   public async sendText(input: SendTextInput): Promise<Message> {
-    const mentionedUserIds = input.mentions.map(
-      (mention) => mention.imUserId,
-    );
+    const mentionedUserIds = isDirectConversation(input.channel)
+      ? []
+      : input.mentions.map((mention) => mention.imUserId);
     const options = {
       cloudCustomData: messageMetadata(input),
       conversationType: this.conversationType(input.channel),
@@ -127,7 +129,7 @@ export class ChannelChatService {
         ? this.sdk.createTextAtMessage(options)
         : this.sdk.createTextMessage(options);
     this.drafts.set(input.clientRequestId, draft);
-    const result = await this.sdk.sendMessage(draft);
+    const result = await this.sendDraft(draft);
     const data = resultData(result);
     const confirmed = isSdkMessage(data.message) ? data.message : draft;
     this.drafts.delete(input.clientRequestId);
@@ -172,7 +174,7 @@ export class ChannelChatService {
       draft = this.sdk.createFileMessage(options);
     }
     this.drafts.set(input.clientRequestId, draft);
-    const result = await this.sdk.sendMessage(draft);
+    const result = await this.sendDraft(draft);
     const data = resultData(result);
     const confirmed = isSdkMessage(data.message) ? data.message : draft;
     this.drafts.delete(input.clientRequestId);
@@ -191,6 +193,44 @@ export class ChannelChatService {
     const confirmed = isSdkMessage(data.message) ? data.message : draft;
     this.drafts.delete(clientRequestId);
     return this.normalizeSentMessage(confirmed, clientRequestId);
+  }
+
+  public async reconcileMessage(
+    input: ReconcileMessageInput,
+  ): Promise<ReconcileMessageResult> {
+    const cached = this.findByClientRequestId(
+      input.channel.conversationId,
+      input.clientRequestId,
+    );
+    if (cached) {
+      return {message: this.normalizeMessage(cached), state: "sent"};
+    }
+
+    const result = await this.sdk.getMessageList({
+      conversationID: this.conversationId(input.channel),
+    });
+    const data = resultData(result);
+    const history = Array.isArray(data.messageList)
+      ? data.messageList.filter(isSdkMessage)
+      : [];
+    this.normalizeMessages(history);
+    const confirmed = this.findByClientRequestId(
+      input.channel.conversationId,
+      input.clientRequestId,
+    );
+    if (confirmed) {
+      return {message: this.normalizeMessage(confirmed), state: "sent"};
+    }
+
+    const draft = this.drafts.get(input.clientRequestId);
+    if (draft?.status === "fail") {
+      return {
+        error: "腾讯云 IM 已确认消息发送失败",
+        retryable: Boolean(this.sdk.resendMessage),
+        state: "failed",
+      };
+    }
+    return {state: "pending"};
   }
 
   public async revokeMessage(messageId: string): Promise<Message> {
@@ -517,6 +557,35 @@ export class ChannelChatService {
         : {}),
     };
   }
+
+  private async sendDraft(draft: SdkMessage): Promise<unknown> {
+    try {
+      return await this.sdk.sendMessage(draft);
+    } catch (error) {
+      const definitive = draft.status === "fail";
+      throw new MessagingSendError(
+        error instanceof Error ? error.message : "腾讯云 IM 消息发送失败",
+        {
+          cause: error,
+          outcome: definitive ? "definitive" : "uncertain",
+          retryable: definitive && Boolean(this.sdk.resendMessage),
+        },
+      );
+    }
+  }
+
+  private findByClientRequestId(
+    conversationId: string,
+    clientRequestId: string,
+  ): SdkMessage | undefined {
+    return [...this.rawMessages.values()].find(
+      (message) =>
+        message.conversationID === conversationId &&
+        normalizeTencentMessage(message, this.messageTypes).clientRequestId ===
+          clientRequestId &&
+        message.status === "success",
+    );
+  }
 }
 
 function messageMetadata(
@@ -531,6 +600,14 @@ function messageMetadata(
         rootMessageRef: input.thread.rootMessageRef,
         threadId: input.thread.threadId,
       },
+    });
+  }
+  if (input.submission) {
+    return JSON.stringify({
+      clientRequestId: input.clientRequestId,
+      ...(input.quote ? {quote: input.quote} : {}),
+      schema: "vela.composer-submission/v1",
+      submission: input.submission,
     });
   }
   return JSON.stringify({

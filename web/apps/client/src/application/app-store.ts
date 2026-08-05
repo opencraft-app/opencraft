@@ -1,9 +1,14 @@
 import {
   agentMentionEligibility,
   channelAddress,
+  composerDocumentHasContent,
+  composerDocumentMentions,
+  composerDocumentText,
+  createComposerDocument,
   directAddress,
   mergeMessages,
   isOperationTerminal,
+  planComposerSubmission,
   pollOperation,
   PlatformError,
   type AttachmentSource,
@@ -13,6 +18,8 @@ import {
   type Agent,
   type Channel,
   type Computer,
+  type ComposerDraft,
+  type ComposerSubmission,
   type ConversationAddress,
   type CreateAgentInput,
   type CreateChannelInput,
@@ -57,6 +64,7 @@ import {
 import { createStore, type StoreApi } from "zustand/vanilla";
 
 import { productErrorMessage } from "./product-language";
+import {SubmissionCoordinator} from "./submission-coordinator";
 
 type AuthStatus =
   | "checking"
@@ -291,6 +299,7 @@ export type AppMessagingPort = Pick<
   | "loadMessageContext"
   | "loadMessagesByReferences"
   | "markRead"
+  | "reconcileMessage"
   | "retryMessage"
   | "revokeMessage"
   | "searchMessages"
@@ -379,7 +388,7 @@ export interface AppStoreState {
   channelMembers: Member[];
   channels: Channel[];
   computers: Computer[];
-  conversationDrafts: Record<string, string>;
+  conversationDrafts: Record<string, ComposerDraft>;
   conversationSummaries: ConversationSummary[];
   currentChannelId: string | null;
   currentServerId: string | null;
@@ -421,6 +430,7 @@ export interface AppStoreState {
   serverContextGeneration: number;
   serverContextStatus: LoadStatus;
   servers: Server[];
+  submissions: Record<string, ComposerSubmission>;
   serversStatus: LoadStatus;
   targetServerId: string | null;
   tasks: Task[];
@@ -498,6 +508,7 @@ export interface AppStoreState {
     mentionedUserIds: string[];
     text: string;
   }): Promise<void>;
+  sendComposerDraft(draft: ComposerDraft): Promise<void>;
   sendThreadReply(input: {
     mentionedUserIds: string[];
     text: string;
@@ -509,7 +520,7 @@ export interface AppStoreState {
   updateServer(input: UpdateServerInput): Promise<boolean>;
   updateMember(memberId: string, input: UpdateMemberInput): Promise<void>;
   updateReminder(reminderId: string, input: UpdateReminderInput): Promise<void>;
-  updateConversationDraft(text: string): void;
+  updateConversationDraft(draft: ComposerDraft): void;
 }
 
 export function createAppStore(
@@ -581,6 +592,7 @@ export function createAppStore(
     return promise;
   }
 
+  let submissionCoordinator: SubmissionCoordinator;
   const store = createStore<AppStoreState>((set, get) => ({
     account: null,
     activeConversation: null,
@@ -632,6 +644,7 @@ export function createAppStore(
     serverContextGeneration: 0,
     serverContextStatus: "idle",
     servers: [],
+    submissions: {},
     serversStatus: "idle",
     targetServerId: null,
     tasks: [],
@@ -659,15 +672,18 @@ export function createAppStore(
       });
     },
 
-    updateConversationDraft(text) {
+    updateConversationDraft(draft) {
       const key = conversationDraftKey(get().activeConversation);
       if (!key) return;
       set((current) => {
         const conversationDrafts = { ...current.conversationDrafts };
-        if (text.length === 0) {
+        if (
+          !composerDocumentHasContent(draft.document) &&
+          draft.attachments.length === 0
+        ) {
           delete conversationDrafts[key];
         } else {
-          conversationDrafts[key] = text;
+          conversationDrafts[key] = cloneComposerDraft(draft);
         }
         return { conversationDrafts };
       });
@@ -2367,6 +2383,109 @@ export function createAppStore(
       }
     },
 
+    async sendComposerDraft(draft) {
+      const state = get();
+      const draftKey = conversationDraftKey(state.activeConversation);
+      if (
+        !composerDocumentHasContent(draft.document) &&
+        draft.attachments.length === 0
+      ) {
+        return;
+      }
+      if (state.imState.status !== "ready") {
+        if (draftKey) {
+          set((current) => ({
+            conversationDrafts: {
+              ...current.conversationDrafts,
+              [draftKey]: cloneComposerDraft(draft),
+            },
+            error: "聊天连接尚未就绪",
+          }));
+        }
+        return;
+      }
+
+      let address = activeConversationAddress(state);
+      if (!address && state.activeConversation?.kind === "direct") {
+        try {
+          address = await ensureDirectConversationReady(
+            state.activeConversation,
+            uuidV7(),
+          );
+        } catch (error) {
+          set((current) => ({
+            ...(draftKey
+              ? {
+                  conversationDrafts: {
+                    ...current.conversationDrafts,
+                    [draftKey]: cloneComposerDraft(draft),
+                  },
+                }
+              : {}),
+            error: errorMessage(error),
+          }));
+          return;
+        }
+      }
+      if (!address) {
+        if (draftKey) {
+          set((current) => ({
+            conversationDrafts: {
+              ...current.conversationDrafts,
+              [draftKey]: cloneComposerDraft(draft),
+            },
+            error: "当前会话尚未同步到消息服务",
+          }));
+        }
+        return;
+      }
+
+      const conversationKey =
+        draftKey ?? `conversation:${address.conversationId}`;
+      const partCount =
+        draft.attachments.length +
+        (composerDocumentHasContent(draft.document) ? 1 : 0);
+      const submission = planComposerSubmission({
+        channel: address,
+        clientRequestIds: Array.from({length: partCount}, () => uuidV7()),
+        conversationKey,
+        draft,
+        submissionId: uuidV7(),
+      });
+      const optimistic = submission.parts.map((part) =>
+        part.role === "attachment"
+          ? optimisticAttachmentMessage({
+              account: state.account,
+              clientRequestId: part.clientRequestId,
+              conversationId: address.conversationId,
+              kind: part.attachment.kind,
+              ...(part.quote ? {quote: part.quote} : {}),
+              source: part.attachment.source,
+              submission: part.submission,
+            })
+          : optimisticTextMessage({
+              account: state.account,
+              clientRequestId: part.clientRequestId,
+              conversationId: address.conversationId,
+              mentions: part.mentions.map((mention) => mention.imUserId),
+              ...(part.quote ? {quote: part.quote} : {}),
+              submission: part.submission,
+              text: part.text,
+            }),
+      );
+      set((current) => {
+        const conversationDrafts = {...current.conversationDrafts};
+        if (draftKey) delete conversationDrafts[draftKey];
+        return {
+          conversationDrafts,
+          error: null,
+          messages: mergeMessages(current.messages, optimistic),
+          selectedQuote: null,
+        };
+      });
+      submissionCoordinator.enqueue(submission);
+    },
+
     async sendMessage(input) {
       const state = get();
       if (state.imState.status !== "ready") {
@@ -2434,9 +2553,13 @@ export function createAppStore(
           : mentionableAgents(state)
               .filter((agent) => mentionIds.has(agent.imUserId))
               .map((agent) => ({
-                agentId: agent.id,
                 displayName: agent.displayName,
                 imUserId: agent.imUserId,
+                memberId:
+                  state.members.find(
+                    (member) => member.imUserId === agent.imUserId,
+                  )?.id ?? agent.id,
+                memberKind: "agent" as const,
               }));
       const localId = `local:${clientRequestId}`;
       const draftKey = conversationDraftKey(state.activeConversation);
@@ -2550,9 +2673,13 @@ export function createAppStore(
       const mentions = mentionableAgents(state)
         .filter((item) => mentionIds.has(item.imUserId))
         .map((item) => ({
-          agentId: item.id,
           displayName: item.displayName,
           imUserId: item.imUserId,
+          memberId:
+            state.members.find(
+              (member) => member.imUserId === item.imUserId,
+            )?.id ?? item.id,
+          memberKind: "agent" as const,
         }));
       const clientRequestId = requestId();
       const optimistic = {
@@ -2746,6 +2873,20 @@ export function createAppStore(
     async retryMessage(messageId) {
       const state = get();
       const failed = state.messages.find((message) => message.id === messageId);
+      const submissionId = failed?.submission?.id;
+      if (submissionId && state.submissions[submissionId]) {
+        if (
+          failed.delivery.state !== "failed" ||
+          !failed.delivery.retryable ||
+          !submissionCoordinator.canRetry(submissionId)
+        ) {
+          set({ error: "这组消息当前不能重试" });
+          return;
+        }
+        set({ error: null });
+        await submissionCoordinator.retry(submissionId);
+        return;
+      }
       if (
         !failed?.clientRequestId ||
         failed.delivery.state !== "failed" ||
@@ -4117,6 +4258,62 @@ export function createAppStore(
     );
   }
 
+  submissionCoordinator = new SubmissionCoordinator({
+    messaging: dependencies.messaging,
+    onChange(submission) {
+      store.setState((current) => {
+        const submissions = {...current.submissions};
+        if (
+          submission.phase === "committed" ||
+          submission.phase === "cancelled"
+        ) {
+          delete submissions[submission.id];
+        } else {
+          submissions[submission.id] = submission;
+        }
+        return {
+          submissions,
+          messages: current.messages.map((message) => {
+            const part = submission.parts.find(
+              (item) => item.clientRequestId === message.clientRequestId,
+            );
+            if (!part) return message;
+            if (part.status === "sent") {
+              return {...message, delivery: {state: "sent" as const}};
+            }
+            if (part.status === "failed") {
+              return {
+                ...message,
+                delivery: {
+                  error: part.error ?? "发送失败",
+                  retryable: part.retryable === true,
+                  state: "failed" as const,
+                },
+              };
+            }
+            if (part.status === "cancelled") {
+              return {
+                ...message,
+                delivery: {
+                  error: "发送已取消",
+                  retryable: false,
+                  state: "failed" as const,
+                },
+              };
+            }
+            return {
+              ...message,
+              delivery:
+                part.role === "attachment" && part.status === "sending"
+                  ? {progress: 0, state: "uploading" as const}
+                  : {state: "sending" as const},
+            };
+          }),
+        };
+      });
+    },
+  });
+
   return store;
 }
 
@@ -4152,6 +4349,28 @@ export function mentionableAgents(
   }
   return state.agents.filter(
     (agent) => agentMentionEligibility(agent, state.channelMembers).allowed,
+  );
+}
+
+export function mentionableMembers(
+  state: Pick<
+    AppStoreState,
+    "activeConversation" | "channelMembers" | "channels" | "members"
+  >,
+): Array<Member & {imUserId: string}> {
+  const active = state.activeConversation;
+  if (active?.kind !== "channel") return [];
+  const channel = state.channels.find((item) => item.id === active.channelId);
+  if (!channel) return [];
+  const candidates = channel.systemKey === "all"
+    ? state.members
+    : state.channelMembers;
+  return candidates.filter(
+    (member): member is Member & {imUserId: string} =>
+      member.status === "active" &&
+      member.imState === "ready" &&
+      typeof member.imUserId === "string" &&
+      member.imUserId.trim().length > 0,
   );
 }
 
@@ -4417,6 +4636,7 @@ function optimisticAttachmentMessage(input: {
   kind: "file" | "image";
   quote?: MessageQuote;
   source: AttachmentSource;
+  submission?: Message["submission"];
 }): Message {
   const senderId =
     input.account?.imUserId ?? input.account?.id ?? "current-user";
@@ -4434,6 +4654,7 @@ function optimisticAttachmentMessage(input: {
     read: { state: "unknown" as const },
     senderId,
     senderName: input.account?.displayName ?? senderId,
+    ...(input.submission ? {submission: input.submission} : {}),
   };
   if (input.kind === "image") {
     return {
@@ -4467,6 +4688,7 @@ function optimisticTextMessage(input: {
   conversationId: string;
   mentions: string[];
   quote?: MessageQuote;
+  submission?: Message["submission"];
   text: string;
 }): Message {
   const senderId =
@@ -4487,8 +4709,43 @@ function optimisticTextMessage(input: {
     read: { state: "unknown" },
     senderId,
     senderName: input.account?.displayName ?? senderId,
+    ...(input.submission ? {submission: input.submission} : {}),
     text: input.text,
   };
+}
+
+function cloneComposerDraft(draft: ComposerDraft): ComposerDraft {
+  return {
+    attachments: draft.attachments.map((attachment) => ({...attachment})),
+    document: createComposerDocument(draft.document.nodes),
+    ...(draft.quote ? {quote: {...draft.quote}} : {}),
+  };
+}
+
+function uuidV7(now = Date.now()): string {
+  const random = new Uint8Array(10);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    crypto.getRandomValues(random);
+  } else {
+    for (let index = 0; index < random.length; index += 1) {
+      random[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  const timestamp = BigInt(now) & 0xffffffffffffn;
+  const bytes = new Uint8Array(16);
+  for (let index = 5; index >= 0; index -= 1) {
+    bytes[index] = Number(timestamp >> BigInt((5 - index) * 8) & 0xffn);
+  }
+  bytes[6] = 0x70 | ((random[0] ?? 0) & 0x0f);
+  bytes[7] = random[1] ?? 0;
+  bytes[8] = 0x80 | ((random[2] ?? 0) & 0x3f);
+  bytes.set(random.slice(3), 9);
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0"))
+    .join("")
+    .replace(
+      /^(........)(....)(....)(....)(............)$/u,
+      "$1-$2-$3-$4-$5",
+    );
 }
 
 function toggleMessageReaction(

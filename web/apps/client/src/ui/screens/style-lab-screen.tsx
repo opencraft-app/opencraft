@@ -596,6 +596,21 @@ export function StyleLabScreen({
                   : undefined
               }
               members={reviewMembers}
+              mentionMembers={activeChannelMembers.flatMap((member) =>
+                member.status === "active" &&
+                member.imState === "ready" &&
+                member.imUserId
+                  ? [
+                      {
+                        displayName: member.displayName,
+                        handle: member.handle,
+                        id: member.id,
+                        imUserId: member.imUserId,
+                        kind: member.kind,
+                      },
+                    ]
+                  : [],
+              )}
               messageFocusRequest={messageFocusRequest}
               messages={
                 activeConversation.kind === "direct"

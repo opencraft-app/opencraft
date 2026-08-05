@@ -1,4 +1,4 @@
 export {
   MessageComposer,
-  type MentionableAgent,
+  type MentionableMember,
 } from "@/ui";

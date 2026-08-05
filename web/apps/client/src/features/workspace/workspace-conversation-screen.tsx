@@ -3,7 +3,10 @@ import { useEffect } from "react";
 import {useShallow} from "zustand/react/shallow";
 import { LoadingScreen, RouteStatusScreen } from "@/ui";
 
-import { mentionableAgents } from "../../application/app-store";
+import {
+  mentionableAgents,
+  mentionableMembers,
+} from "../../application/app-store";
 import {selectConversationScreenState} from "../../application/app-selectors";
 import {
   pickFileAttachment,
@@ -287,29 +290,14 @@ export function WorkspaceConversationScreen({
         loadingOlder={state.loadingOlderMessages}
         locatingSearchResultId={state.locatingSearchResultId}
         members={state.members}
+        mentionMembers={mentionableMembers(state)}
         messageFocusRequest={state.messageFocusRequest}
         messages={state.messages}
         onAddChannelMember={(memberId) =>
           store.getState().addChannelMember(memberId)
         }
-        onAttachFile={async () => {
-          const source = await pickFileAttachment();
-          if (source) {
-            await store.getState().sendAttachment({
-              kind: "file",
-              source,
-            });
-          }
-        }}
-        onAttachImage={async () => {
-          const source = await pickImageAttachment();
-          if (source) {
-            await store.getState().sendAttachment({
-              kind: "image",
-              source,
-            });
-          }
-        }}
+        onAttachFile={() => pickFileAttachment()}
+        onAttachImage={() => pickImageAttachment()}
         onClearQuote={() => store.getState().clearQuote()}
         onCloseThread={() => store.getState().closeThread()}
         onCreateTaskFromMessage={(messageId) =>
@@ -371,7 +359,9 @@ export function WorkspaceConversationScreen({
           store.getState().retryThreadReplyIndex(messageId)
         }
         onClearMessageSearch={() => store.getState().clearMessageSearch()}
-        onDraftChange={(text) => store.getState().updateConversationDraft(text)}
+        onDraftChange={(draft) =>
+          store.getState().updateConversationDraft(draft)
+        }
         onSearchMessages={(query) => store.getState().searchMessages(query)}
         onSelectChannel={async (channelId) => {
           await store.getState().selectChannel(channelId);
@@ -419,7 +409,7 @@ export function WorkspaceConversationScreen({
         }}
         onSend={async (input) => {
           const before = store.getState().activeConversation;
-          await store.getState().sendMessage(input);
+          await store.getState().sendComposerDraft(input);
           const after = store.getState().activeConversation;
           if (
             before?.kind === "direct" &&

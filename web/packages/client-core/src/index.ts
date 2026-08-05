@@ -1,5 +1,6 @@
 export * from "./domain/resources.js";
 export * from "./messaging/conversation.js";
+export * from "./messaging/composer.js";
 export * from "./messaging/direct-conversation.js";
 export * from "./messaging/model.js";
 export * from "./messaging/port.js";

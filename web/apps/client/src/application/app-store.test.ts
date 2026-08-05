@@ -20,7 +20,12 @@ import type {
   Task,
   TerminalSession,
 } from "@vela/client-core";
-import { PlatformError } from "@vela/client-core";
+import {
+  createComposerDocument,
+  createComposerTextDocument,
+  MessagingSendError,
+  PlatformError,
+} from "@vela/client-core";
 import {
   createAppStore,
   mentionableAgents,
@@ -299,6 +304,7 @@ function dependencies(): AppStoreDependencies & {
       loadMessageContext: jest.fn(async () => []),
       loadMessagesByReferences: jest.fn(async () => []),
       markRead: jest.fn(async () => undefined),
+      reconcileMessage: jest.fn(async () => ({state: "pending" as const})),
       retryMessage: jest.fn(async () =>
         message("retried-1", "2026-07-30T04:00:00.000Z"),
       ),
@@ -1656,9 +1662,10 @@ describe("app store", () => {
       clientRequestId: "request-1",
       mentions: [
         {
-          agentId: agent.id,
           displayName: agent.displayName,
           imUserId: agent.imUserId,
+          memberId: agentMember.id,
+          memberKind: "agent",
         },
       ],
       text: "@研究助手 你好",
@@ -1848,9 +1855,10 @@ describe("app store", () => {
       clientRequestId: "request-1",
       mentions: [
         {
-          agentId: agent.id,
           displayName: agent.displayName,
           imUserId: agent.imUserId,
+          memberId: agentMember.id,
+          memberKind: "agent",
         },
       ],
       text: "@研究助手 请总结。",
@@ -2201,16 +2209,28 @@ describe("app store", () => {
     const store = createAppStore(deps);
     await initializeChannel(store);
 
-    store.getState().updateConversationDraft("Channel 待发送内容");
+    store.getState().updateConversationDraft({
+      attachments: [],
+      document: createComposerTextDocument("Channel 待发送内容"),
+    });
     await store
       .getState()
       .selectDirectConversation(directConversation.peerUserId);
-    store.getState().updateConversationDraft("私信待发送内容");
+    store.getState().updateConversationDraft({
+      attachments: [],
+      document: createComposerTextDocument("私信待发送内容"),
+    });
     await store.getState().selectChannel(channel.id);
 
     expect(store.getState().conversationDrafts).toEqual({
-      "channel:channel-1": "Channel 待发送内容",
-      "direct:member-agent-1": "私信待发送内容",
+      "channel:channel-1": {
+        attachments: [],
+        document: createComposerTextDocument("Channel 待发送内容"),
+      },
+      "direct:member-agent-1": {
+        attachments: [],
+        document: createComposerTextDocument("私信待发送内容"),
+      },
     });
 
     await store.getState().sendMessage({
@@ -2219,11 +2239,147 @@ describe("app store", () => {
     });
 
     expect(store.getState().conversationDrafts).toEqual({
-      "direct:member-agent-1": "私信待发送内容",
+      "direct:member-agent-1": {
+        attachments: [],
+        document: createComposerTextDocument("私信待发送内容"),
+      },
     });
 
     await store.getState().logout();
     expect(store.getState().conversationDrafts).toEqual({});
+  });
+
+  it("queues one Composer action as attachments followed by a mention commit", async () => {
+    const deps = dependencies();
+    const store = createAppStore(deps);
+    await initializeChannel(store);
+
+    await store.getState().sendComposerDraft({
+      attachments: [
+        {
+          id: "attachment-1",
+          kind: "file",
+          name: "spec.pdf",
+          size: 1_024,
+          source: {
+            kind: "uri",
+            name: "spec.pdf",
+            size: 1_024,
+            uri: "file:///spec.pdf",
+          },
+        },
+      ],
+      document: createComposerDocument([
+        {text: "请 ", type: "text"},
+        {
+          displayName: agent.displayName,
+          handle: agent.handle,
+          imUserId: agent.imUserId,
+          memberId: agentMember.id,
+          memberKind: "agent",
+          type: "mention",
+        },
+        {text: " 核对", type: "text"},
+      ]),
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(deps.messaging.sendAttachment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "file",
+        submission: expect.objectContaining({
+          count: 2,
+          index: 0,
+          role: "attachment",
+        }),
+      }),
+    );
+    expect(deps.messaging.sendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mentions: [
+          {
+            displayName: agent.displayName,
+            imUserId: agent.imUserId,
+            memberId: agentMember.id,
+            memberKind: "agent",
+          },
+        ],
+        submission: expect.objectContaining({
+          count: 2,
+          final: true,
+          index: 1,
+          role: "commit",
+        }),
+        text: `请 @${agent.displayName} 核对`,
+      }),
+    );
+    expect(
+      jest.mocked(deps.messaging.sendAttachment).mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      jest.mocked(deps.messaging.sendText).mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(store.getState().submissions).toEqual({});
+  });
+
+  it("retries a failed Composer part through its submission before sending the commit", async () => {
+    const deps = dependencies();
+    deps.messaging.sendAttachment = jest.fn(async () => {
+      throw new MessagingSendError("附件上传失败", {
+        outcome: "definitive",
+        retryable: true,
+      });
+    });
+    const store = createAppStore(deps);
+    await initializeChannel(store);
+
+    await store.getState().sendComposerDraft({
+      attachments: [
+        {
+          id: "attachment-retry-1",
+          kind: "file",
+          name: "spec.pdf",
+          size: 1_024,
+          source: {
+            kind: "uri",
+            name: "spec.pdf",
+            size: 1_024,
+            uri: "file:///spec.pdf",
+          },
+        },
+      ],
+      document: createComposerTextDocument("附件成功后再发送正文"),
+    });
+
+    await eventually(() => {
+      expect(Object.values(store.getState().submissions)[0]?.phase).toBe(
+        "blocked",
+      );
+    });
+    expect(deps.messaging.sendText).not.toHaveBeenCalled();
+    const failed = store
+      .getState()
+      .messages.find((item) => item.delivery.state === "failed");
+    expect(failed?.submission).toBeDefined();
+
+    await store.getState().retryMessage(failed?.id ?? "missing");
+
+    expect(deps.messaging.retryMessage).toHaveBeenCalledWith(
+      failed?.clientRequestId,
+    );
+    await eventually(() => {
+      expect(store.getState().submissions).toEqual({});
+      expect(deps.messaging.sendText).toHaveBeenCalledTimes(1);
+    });
+    expect(
+      store
+        .getState()
+        .messages.filter(
+          (item) => item.submission?.id === failed?.submission?.id,
+        ),
+    ).toEqual([
+      expect.objectContaining({delivery: {state: "sent"}}),
+      expect.objectContaining({delivery: {state: "sent"}}),
+    ]);
   });
 
   it("keeps message-search failure scoped and clears it with the search session", async () => {

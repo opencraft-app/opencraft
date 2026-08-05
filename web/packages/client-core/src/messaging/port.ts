@@ -4,6 +4,7 @@ import type {
   Message,
   MessageQuote,
   MessageReference,
+  MessageSubmissionReference,
 } from "./model.js";
 
 export type Unsubscribe = () => void;
@@ -15,9 +16,10 @@ export interface MessagePage {
 }
 
 export interface MessageMention {
-  agentId: string;
   displayName: string;
   imUserId: string;
+  memberId: string;
+  memberKind: "human" | "agent";
 }
 
 export interface SendTextInput {
@@ -26,6 +28,7 @@ export interface SendTextInput {
   mentions: MessageMention[];
   quote?: MessageQuote;
   text: string;
+  submission?: MessageSubmissionReference;
   thread?: {
     rootMessageRef: MessageReference;
     threadId: string;
@@ -55,7 +58,37 @@ export interface SendAttachmentInput {
   onProgress?: (progress: number) => void;
   quote?: MessageQuote;
   source: AttachmentSource;
+  submission?: MessageSubmissionReference;
 }
+
+export class MessagingSendError extends Error {
+  public readonly outcome: "definitive" | "uncertain";
+  public readonly retryable: boolean;
+
+  public constructor(
+    message: string,
+    options: {
+      cause?: unknown;
+      outcome: "definitive" | "uncertain";
+      retryable: boolean;
+    },
+  ) {
+    super(message, options.cause === undefined ? undefined : {cause: options.cause});
+    this.name = "MessagingSendError";
+    this.outcome = options.outcome;
+    this.retryable = options.retryable;
+  }
+}
+
+export interface ReconcileMessageInput {
+  channel: ConversationAddress;
+  clientRequestId: string;
+}
+
+export type ReconcileMessageResult =
+  | {message: Message; state: "sent"}
+  | {error: string; retryable: boolean; state: "failed"}
+  | {state: "pending"};
 
 export interface TaskMessageProjection {
   assigneeId?: string;
@@ -138,6 +171,7 @@ export interface MessagingPort {
     references: MessageReference[],
   ): Promise<Message[]>;
   markRead(channel: ConversationAddress): Promise<void>;
+  reconcileMessage(input: ReconcileMessageInput): Promise<ReconcileMessageResult>;
   setScope(scope: MessagingScope): Promise<void>;
   retryMessage(clientRequestId: string): Promise<Message>;
   revokeMessage(messageId: string): Promise<Message>;

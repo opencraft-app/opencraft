@@ -112,9 +112,10 @@ describe("ChannelChatService", () => {
       clientRequestId: "request-1",
       mentions: [
         {
-          agentId: "agent-1",
           displayName: "研究助手",
           imUserId: "agent_im_1",
+          memberId: "member-agent-1",
+          memberKind: "agent",
         },
       ],
       text: "@研究助手 请总结。",
@@ -137,6 +138,156 @@ describe("ChannelChatService", () => {
       delivery: { state: "sent" },
       id: "remote-message-1",
       mentions: ["agent_im_1"],
+    });
+  });
+
+  it("writes composer submission and quote metadata into one versioned envelope", async () => {
+    const createTextMessage = jest.fn((_options: {cloudCustomData: string}) =>
+      textMessage({ID: "local-message-1", flow: "out", status: "unSend"}),
+    );
+    const sdk: ChatSdk = {
+      createTextAtMessage: jest.fn(),
+      createTextMessage,
+      getMessageList: jest.fn(),
+      sendMessage: jest.fn(async (draft) => ({data: {message: draft}})),
+    };
+    const service = new ChannelChatService({conversationGroup: "GROUP", sdk});
+
+    await service.sendText({
+      channel: {
+        channelId: "channel-1",
+        conversationId: "GROUPtopic-1",
+        imGroupId: "community-1",
+        imTopicId: "topic-1",
+        targetId: "topic-1",
+      },
+      clientRequestId: "request-1",
+      mentions: [],
+      quote: {
+        messageId: "root-1",
+        preview: "先核对接口",
+        senderId: "human-2",
+        senderName: "小林",
+      },
+      submission: {
+        count: 2,
+        final: true,
+        id: "submission-1",
+        index: 1,
+        role: "commit",
+      },
+      text: "已处理",
+    });
+
+    const options = createTextMessage.mock.calls[0]?.[0] as {
+      cloudCustomData: string;
+    };
+    expect(JSON.parse(options.cloudCustomData)).toEqual({
+      clientRequestId: "request-1",
+      quote: {
+        messageId: "root-1",
+        preview: "先核对接口",
+        senderId: "human-2",
+        senderName: "小林",
+      },
+      schema: "vela.composer-submission/v1",
+      submission: {
+        count: 2,
+        final: true,
+        id: "submission-1",
+        index: 1,
+        role: "commit",
+      },
+    });
+  });
+
+  it("does not emit atUserList for a direct conversation", async () => {
+    const createTextMessage = jest.fn(() =>
+      textMessage({ID: "local-message-1", flow: "out", status: "unSend"}),
+    );
+    const sdk: ChatSdk = {
+      createTextAtMessage: jest.fn(),
+      createTextMessage,
+      getMessageList: jest.fn(),
+      sendMessage: jest.fn(async (draft) => ({data: {message: draft}})),
+    };
+    const service = new ChannelChatService({conversationGroup: "GROUP", sdk});
+
+    await service.sendText({
+      channel: {
+        conversationId: "GROUPdirect-1",
+        directConversationId: "direct-1",
+        imGroupId: "direct-1",
+        targetId: "direct-1",
+      },
+      clientRequestId: "request-1",
+      mentions: [
+        {
+          displayName: "研究助手",
+          imUserId: "agent_im_1",
+          memberId: "member-agent-1",
+          memberKind: "agent",
+        },
+      ],
+      text: "@研究助手 请处理",
+    });
+
+    expect(sdk.createTextAtMessage).not.toHaveBeenCalled();
+    expect(createTextMessage).toHaveBeenCalledWith(
+      expect.objectContaining({payload: {text: "@研究助手 请处理"}}),
+    );
+  });
+
+  it("classifies uncertain sends and reconciles them by client request id", async () => {
+    const draft = textMessage({
+      cloudCustomData: JSON.stringify({clientRequestId: "request-1"}),
+      flow: "out",
+      ID: "local-message-1",
+      status: "unSend",
+    });
+    const sdk: ChatSdk = {
+      createTextAtMessage: jest.fn(),
+      createTextMessage: jest.fn(() => draft),
+      getMessageList: jest.fn(async () => ({
+        data: {isCompleted: true, messageList: []},
+      })),
+      sendMessage: jest.fn(async () => {
+        throw new Error("network timeout");
+      }),
+    };
+    const service = new ChannelChatService({conversationGroup: "GROUP", sdk});
+    const channel = {
+      channelId: "channel-1",
+      conversationId: "GROUPtopic-1",
+      imGroupId: "community-1",
+      imTopicId: "topic-1",
+      targetId: "topic-1",
+    };
+
+    await expect(
+      service.sendText({
+        channel,
+        clientRequestId: "request-1",
+        mentions: [],
+        text: "hello",
+      }),
+    ).rejects.toMatchObject({outcome: "uncertain", retryable: false});
+    await expect(
+      service.reconcileMessage({channel, clientRequestId: "request-1"}),
+    ).resolves.toEqual({state: "pending"});
+
+    const confirmed = textMessage({
+      cloudCustomData: JSON.stringify({clientRequestId: "request-1"}),
+      flow: "out",
+      ID: "remote-message-1",
+      status: "success",
+    });
+    service.normalizeMessages([confirmed]);
+    await expect(
+      service.reconcileMessage({channel, clientRequestId: "request-1"}),
+    ).resolves.toEqual({
+      message: expect.objectContaining({id: "remote-message-1"}),
+      state: "sent",
     });
   });
 
