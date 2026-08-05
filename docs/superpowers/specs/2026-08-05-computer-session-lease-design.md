@@ -21,12 +21,17 @@ Computer 创建短期 Session 时，`UseCurrentCredential` 已验证长期凭据
 
 ## 实现
 
-`RefreshSessionLease` 在一个数据库事务内：
+`RefreshSessionLease` 在一个数据库事务内，固定按 Credential、Computer 的顺序锁定
+两条精确记录：
 
-1. 读取并确认指定 Server、Computer、版本的 Credential 仍处于 active/grace 有效期；
-2. 确认 Computer 仍为 active；
-3. 更新 `computers.host_last_seen_at`；
+1. 锁定并确认指定 Server、Computer、版本的 Credential 仍处于 active/grace 有效期；
+2. 锁定并确认 Computer 仍为 active；
+3. 仅当新时间更晚时更新 `computers.host_last_seen_at`；相同或更早时间视为幂等成功；
 4. 只有目标不存在或已失效时返回 `ErrCredentialNotCurrent`。
+
+TDSQL/MySQL 使用行锁，SQLite 依靠现有单写事务串行化。Credential 轮换、撤销和 Computer
+移除继续遵循 Credential 后 Computer 的控制面锁序。租约是否成功由锁内读取的领域状态
+决定，不由任何 UPDATE 的 changed-row count 决定。
 
 `UseCurrentCredential` 继续负责更新 `last_used_at` 并返回一致的 Assignment Fence。公开接口、
 数据表和 Agent 协议均不变化。
@@ -40,6 +45,8 @@ Computer 创建短期 Session 时，`UseCurrentCredential` 已验证长期凭据
 ## 验收
 
 - 相同时间连续完成 Credential 使用和 Session 租约刷新仍成功；
+- 相同租约时间重复刷新成功，较旧请求不得让租约倒退；
 - Credential 失效、过期或 Computer removed 时拒绝刷新；
+- Credential revoke/rotate 或 Computer remove 与刷新并发时，结果按锁顺序线性化；
 - 成功创建 Session 后写入 `host_last_seen_at`，管理端投影为 online；
 - SQLite 测试、TDSQL/MySQL 行为测试、全量测试与静态检查通过。

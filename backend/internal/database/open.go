@@ -28,10 +28,11 @@ import (
 
 // Handle 持有一个 SQLite 写连接、Ent Client 和进程级 writer lock。
 type Handle struct {
-	db     *sql.DB
-	client *ent.Client
-	lock   *writerLock
-	writer bool
+	db               *sql.DB
+	client           *ent.Client
+	lock             *writerLock
+	writer           bool
+	supportsRowLocks bool
 
 	closeOnce sync.Once
 	closeErr  error
@@ -171,9 +172,10 @@ func openTDSQL(ctx context.Context, cfg config.Database, writer bool) (*Handle, 
 	}
 	driver := entsql.OpenDB(dialect.MySQL, db)
 	return &Handle{
-		db:     db,
-		client: ent.NewClient(ent.Driver(driver)),
-		writer: writer,
+		db:               db,
+		client:           ent.NewClient(ent.Driver(driver)),
+		writer:           writer,
+		supportsRowLocks: true,
 	}, nil
 }
 
@@ -217,6 +219,12 @@ func (h *Handle) Client() *ent.Client {
 		return nil
 	}
 	return h.client
+}
+
+// SupportsRowLocks reports whether SELECT ... FOR UPDATE is available.
+// SQLite writers are already serialized by the Handle's single connection.
+func (h *Handle) SupportsRowLocks() bool {
+	return h != nil && h.supportsRowLocks
 }
 
 // Close 关闭 Ent/SQL 连接并释放 writer lock；重复调用是幂等的。

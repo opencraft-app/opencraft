@@ -90,6 +90,70 @@ func TestEntRepositoryUsesCredentialThenRefreshesSessionLease(t *testing.T) {
 	}
 }
 
+func TestEntRepositorySessionLeaseDoesNotRewriteCredentialUsage(t *testing.T) {
+	repository, handle := openControlRepository(t)
+	seedControlComputer(t, handle, "active")
+	seedControlCredential(t, handle, "active", controlRepoNow.Add(time.Hour))
+	route := computerauthport.Route{
+		ServerID: controlRepoServerID, ComputerID: controlRepoComputerID, Version: 1,
+	}
+	if _, err := repository.UseCurrentCredential(
+		context.Background(), route, controlRepoNow,
+	); err != nil {
+		t.Fatal(err)
+	}
+	leaseAt := controlRepoNow.Add(time.Minute)
+	if err := repository.RefreshSessionLease(
+		context.Background(), route, leaseAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	credential, err := handle.Client().ComputerRuntimeCredential.Get(
+		context.Background(), controlRepoCredentialID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential.LastUsedAt == nil || !credential.LastUsedAt.Equal(controlRepoNow) {
+		t.Fatalf("credential usage changed during lease refresh: %v", credential.LastUsedAt)
+	}
+	machine, err := handle.Client().Computer.Get(
+		context.Background(), controlRepoComputerID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if machine.HostLastSeenAt == nil || !machine.HostLastSeenAt.Equal(leaseAt) {
+		t.Fatalf("Computer host lease = %v, want %s", machine.HostLastSeenAt, leaseAt)
+	}
+}
+
+func TestEntRepositorySessionLeaseNeverMovesBackward(t *testing.T) {
+	repository, handle := openControlRepository(t)
+	seedControlComputer(t, handle, "active")
+	seedControlCredential(t, handle, "active", controlRepoNow.Add(time.Hour))
+	route := computerauthport.Route{
+		ServerID: controlRepoServerID, ComputerID: controlRepoComputerID, Version: 1,
+	}
+	later := controlRepoNow.Add(2 * time.Minute)
+	for _, seenAt := range []time.Time{later, controlRepoNow.Add(time.Minute)} {
+		if err := repository.RefreshSessionLease(
+			context.Background(), route, seenAt,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	machine, err := handle.Client().Computer.Get(
+		context.Background(), controlRepoComputerID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if machine.HostLastSeenAt == nil || !machine.HostLastSeenAt.Equal(later) {
+		t.Fatalf("Computer host lease moved backward: %v", machine.HostLastSeenAt)
+	}
+}
+
 func TestEntRepositoryRejectsExpiredCredentialWithoutUpdatingUsage(t *testing.T) {
 	repository, handle := openControlRepository(t)
 	seedControlComputer(t, handle, "active")

@@ -117,7 +117,7 @@ func (repository *EntRepository) RefreshSessionLease(
 	}
 	seenAt = seenAt.UTC()
 	return repository.handle.WithTx(ctx, func(ctx context.Context, tx *ent.Tx) error {
-		credentials, err := tx.ComputerRuntimeCredential.Update().
+		credentialQuery := tx.ComputerRuntimeCredential.Query().
 			Where(
 				computerruntimecredential.ServerIDEQ(route.ServerID),
 				computerruntimecredential.ComputerIDEQ(route.ComputerID),
@@ -133,28 +133,40 @@ func (repository *EntRepository) RefreshSessionLease(
 						computerruntimecredential.GraceExpiresAtGT(seenAt),
 					),
 				),
-			).
-			SetLastUsedAt(seenAt).
-			Save(ctx)
+			)
+		if repository.handle.SupportsRowLocks() {
+			credentialQuery.ForUpdate()
+		}
+		_, err := credentialQuery.Only(ctx)
+		if ent.IsNotFound(err) {
+			return computercontrolport.ErrCredentialNotCurrent
+		}
 		if err != nil {
 			return err
 		}
-		if credentials != 1 {
-			return computercontrolport.ErrCredentialNotCurrent
-		}
-		computers, err := tx.Computer.Update().
+
+		computerQuery := tx.Computer.Query().
 			Where(
 				computer.ServerIDEQ(route.ServerID),
 				computer.IDEQ(route.ComputerID),
 				computer.LifecycleStateEQ("active"),
-			).
-			SetHostLastSeenAt(seenAt).
-			Save(ctx)
+			)
+		if repository.handle.SupportsRowLocks() {
+			computerQuery.ForUpdate()
+		}
+		machine, err := computerQuery.Only(ctx)
+		if ent.IsNotFound(err) {
+			return computercontrolport.ErrCredentialNotCurrent
+		}
 		if err != nil {
 			return err
 		}
-		if computers != 1 {
-			return computercontrolport.ErrCredentialNotCurrent
+		if machine.HostLastSeenAt == nil || seenAt.After(machine.HostLastSeenAt.UTC()) {
+			if _, err := tx.Computer.UpdateOne(machine).
+				SetHostLastSeenAt(seenAt).
+				Save(ctx); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
