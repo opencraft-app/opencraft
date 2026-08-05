@@ -28,6 +28,22 @@ launchd 可以延迟调度 KeepAlive 进程，因此第二个事实不应决定�
 
 ## 设计
 
+### 独立 launchd 能力
+
+launchd 生命周期不再实现在 `internal/vela/install`。新增独立的 macOS 用户服务包 `internal/launchd`，其领域只包含：
+
+- 用户 LaunchAgent 的通用定义：label、program、arguments、stdout/stderr、environment、KeepAlive、RunAtLoad、ProcessType 和 umask；
+- plist 的安全生成与原子落盘；
+- 当前用户 launchd domain 的 bootout、bootstrap 和最终加载身份观察；
+- path、program、arguments 的严格身份匹配；
+- LaunchAgents 目录 ownership、mode、symlink 和普通文件安全检查。
+
+通用包不得引用 Vela Computer、安装事务、平台 URL、Computer credential、TAT 或 IM。它提供面向结果的 `Replace(ctx, Definition)` 能力：调用成功只表示 launchd 已加载完整身份正确的定义。
+
+`internal/vela/install` 仅保留一个薄适配器，实现现有 `Launcher` 端口：把 `LaunchSpec` 转换为通用 Definition，并设置 Computer 固定参数、日志路径及 PATH。安装服务继续只依赖 `Launcher` 接口，因此安装事务测试不需要理解 launchctl。
+
+首版只抽取当前实际需要的 replace/load 能力，不提前增加 stop、restart、list、system daemon 或 root domain API。未来若出现其他 macOS 常驻能力，可直接复用通用包并独立扩展。
+
 ### LaunchAgent 身份观察
 
 继续使用 `launchctl print gui/<uid>/<label>`，只接受同时满足以下条件的观察：
@@ -80,7 +96,8 @@ launchd 可以延迟调度 KeepAlive 进程，因此第二个事实不应决定�
 6. 更新调用序列断言，不再要求连续两次相同 PID。
 7. 更新首装、替换成功文案测试，确保不再承诺 running。
 8. 保留或补齐安全前置测试：安装锁竞争必须串行化；错误 owner、group/world writable 或 symlink 的 LaunchAgents 目录必须拒绝；plist 必须以 `0600` 普通文件完成原子替换，launchd 观察必须对应替换后的完整身份。
-9. 运行 install 包测试、Agent 全量测试和 vet。
+9. 通用 `internal/launchd` 包覆盖 plist 渲染、命令顺序、loaded 身份、bootstrap 错误降级和安全目录；Vela install 适配器只覆盖 Definition 映射与不携带凭据。
+10. 运行 launchd/install 包测试、Agent 全量测试和 vet。
 
 ## 发布与验收
 
