@@ -6,6 +6,7 @@ import {
   CN_TERMS_OF_SERVICE_URL,
   getGlobalTermsOfServiceUrl,
 } from "@/constants/legal";
+import { DISCORD_INVITE_URL } from "@/constants/community";
 import { useT } from "@/i18n/t";
 import { isGlobal, localizedPath } from "@/lib/region";
 import type { PublicSiteLocaleCode } from "@/lib/public-site-routing";
@@ -76,7 +77,7 @@ const getFooterSections = (t: (zh: string) => string, globalTermsOfServiceUrl: s
     links: [
       {
         label: "Discord",
-        href: "https://discord.com/invite/NDqtU3JQTc",
+        href: DISCORD_INVITE_URL,
         external: true,
       },
       {

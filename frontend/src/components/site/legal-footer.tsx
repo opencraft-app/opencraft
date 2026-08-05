@@ -10,6 +10,11 @@ import {
   shouldShowICP,
 } from "@/constants/legal";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
+import {
+  CN_COMMUNITY_QR_IMAGE,
+  DISCORD_INVITE_URL,
+  DISCORD_QR_IMAGE,
+} from "@/constants/community";
 import { useT } from "@/i18n/t";
 import { isCN, isGlobal } from "@/lib/region";
 
@@ -106,15 +111,26 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               </>
             ) : null}
           </span>
-          {/* 加入交流群 — hover 展示二维码 */}
+          {/* 加入交流群 — hover 展示二维码；国际站文案与二维码均可点击直达 Discord */}
           <span
             className="relative"
             onMouseEnter={() => setShowQR(true)}
             onMouseLeave={() => setShowQR(false)}
           >
-            <span className="cursor-pointer transition-colors hover:text-black">
-              {t("加入交流群")}
-            </span>
+            {isGlobal ? (
+              <a
+                href={DISCORD_INVITE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="cursor-pointer transition-colors hover:text-black"
+              >
+                {t("加入交流群")}
+              </a>
+            ) : (
+              <span className="cursor-pointer transition-colors hover:text-black">
+                {t("加入交流群")}
+              </span>
+            )}
             <AnimatePresence>
               {showQR && (
                 <motion.div
@@ -125,15 +141,36 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
                   className="absolute bottom-full left-1/2 z-20 mb-3 -translate-x-1/2 flex flex-col items-center gap-2 rounded-xl bg-white p-4 shadow-lg"
                   style={{ width: "200px" }}
                 >
-                  <img
-                    src={isGlobal ? "/assets/landing/about/International-Discord.png" : "/assets/landing/about/community-qr.png"}
-                    alt="加入交流群"
-                    className="rounded-lg"
-                    style={{ width: "168px", height: "168px" }}
-                  />
-                  <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">
-                    {isGlobal ? t("扫码加入Discord交流群") : t("扫码加入交流群")}
-                  </span>
+                  {isGlobal ? (
+                    <a
+                      href={DISCORD_INVITE_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex flex-col items-center gap-2"
+                    >
+                      <img
+                        src={DISCORD_QR_IMAGE}
+                        alt={t("加入交流群")}
+                        className="rounded-lg"
+                        style={{ width: "168px", height: "168px" }}
+                      />
+                      <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">
+                        {t("扫码加入Discord交流群")}
+                      </span>
+                    </a>
+                  ) : (
+                    <>
+                      <img
+                        src={CN_COMMUNITY_QR_IMAGE}
+                        alt={t("加入交流群")}
+                        className="rounded-lg"
+                        style={{ width: "168px", height: "168px" }}
+                      />
+                      <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">
+                        {t("扫码加入交流群")}
+                      </span>
+                    </>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
