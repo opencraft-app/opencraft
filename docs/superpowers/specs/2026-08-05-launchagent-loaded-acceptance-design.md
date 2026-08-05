@@ -50,6 +50,7 @@ Definition 的通用契约为：
 - program、stdout 和 stderr 必须是 clean 的绝对路径，不允许 NUL；
 - arguments 只表示 program 后的参数，渲染和观察时由通用包把 program 作为 argv[0]；每项不得含 NUL；
 - environment key 必须是合法变量名，value 不得含 NUL；所有字符串由 XML encoder 转义；
+- program generation 是调用方提供的非空稳定内容标识；Vela install 必须使用已验签程序的 SHA-256，而不是路径或版本文案；
 - ProcessType 只接受 launchd 明确支持的枚举，umask 必须处于 Unix 权限位范围，KeepAlive 与 RunAtLoad 是显式布尔值；
 - 所有 Definition 校验必须发生在创建锁文件、写 plist 或执行 launchctl 之前，非法输入零副作用失败。
 
@@ -63,7 +64,9 @@ Definition 的通用契约为：
 
 `EnsureLoaded` 是幂等收敛操作，不承诺事务回滚。若写入期望 plist 后在 bootout、bootstrap 或观察阶段失败，期望 plist 会保留，旧 job 可能已退出，新 job 状态由返回的领域错误阶段说明；调用方可以安全重试同一 Definition。通用包不会恢复旧 plist，因为旧 plist 可能引用已经被调用方替换的二进制或状态，伪回滚反而不安全。
 
-持有完整资源锁后先执行无副作用 fast path：渲染 Definition 的 canonical plist，安全读取磁盘 plist 并要求字节一致，同时观察 launchd loaded identity 的 path、program、arguments 完全一致；全部满足则立即成功，不写文件、不 bootout、不 bootstrap。只有磁盘定义或 loaded identity 不一致时才进入收敛替换流程。因此同一 Definition 的重复调用不会重启健康 daemon。
+通用包对包含 program generation 在内的完整 Definition 计算 canonical SHA-256 fingerprint，并通过一个包保留、调用方不得覆盖的环境字段写入 plist。该字段必须能从 `launchctl print` 的 environment 观察。二进制内容、arguments、日志路径、environment、KeepAlive、RunAtLoad、ProcessType 或 umask任一变化都会产生不同 fingerprint。
+
+持有完整资源锁后先执行无副作用 fast path：渲染 Definition 的 canonical plist，安全读取磁盘 plist并要求字节一致，同时观察 launchd loaded identity 的 path、program、arguments 和 fingerprint 完全一致；全部满足则立即成功，不写文件、不 bootout、不 bootstrap。只有磁盘定义或 loaded generation 不一致时才进入收敛替换流程。因此同一 Definition 的重复调用不会重启健康 daemon，而同 program path 覆盖新二进制时因 program generation 改变必然重载。
 
 ### LaunchAgent 身份观察
 
@@ -72,6 +75,7 @@ Definition 的通用契约为：
 - `path` 是本次写入的 canonical plist 路径；
 - `program` 是本次安装的 canonical `vela-computer` 路径；
 - `arguments` 与本次写入的 canonical 参数完全一致：`<program> daemon run --state-dir <state-dir>`；
+- 保留环境字段中的 definition fingerprint 与本次 Definition 完全一致；
 - 两个路径都是绝对路径；
 - `launchctl print` 成功，表示服务已被当前用户的 launchd domain 加载。
 
@@ -84,12 +88,12 @@ Definition 的通用契约为：
 流程保持为：
 
 1. 校验 Definition 并取得可取消的 `(uid,label)` 资源锁；
-2. 若磁盘 canonical plist 与 launchd loaded identity 均已匹配，直接成功；
+2. 若磁盘 canonical plist 与 launchd loaded identity/generation 均已匹配，直接成功；
 3. 否则原子写入 plist；
 4. `bootout` 旧服务；首次安装返回 service-not-found 是正常幂等结果；
 5. 以结果为准等待旧服务从 launchd domain 消失；即使 `bootout` 返回其他错误，只要服务确已消失即可继续，若仍存在则失败；
 6. `bootstrap` 新 plist；
-7. 轮询 `launchctl print`，直到观察到完整正确身份：path、program 和 arguments；
+7. 轮询 `launchctl print`，直到观察到完整正确身份：path、program、arguments 和 definition fingerprint；
 8. 返回安装成功。
 
 `bootstrap` 命令的退出状态不是最终事实：无论它返回 I/O error 或其他错误，只要随后能观察到完整身份正确的已加载服务，均视为成功。如果在当前三秒边界内始终没有正确身份观察，则返回原有注册/确认错误。这样不会对 launchctl 的具体错误文本建立脆弱白名单。
@@ -119,7 +123,7 @@ Definition 的通用契约为：
 6. 更新调用序列断言，不再要求连续两次相同 PID。
 7. 更新首装、替换成功文案测试，确保不再承诺 running。
 8. 保留或补齐安全前置测试：同 `(uid,label)` 的不同 Manager/调用方必须跨进程锁语义串行化；锁文件安全打开、验证并持久保留，多个 Manager 连续交接不得产生 inode split；等待进程内锁或 advisory lock 时取消必须零 plist/launchctl 副作用；错误 owner、group/world writable 或 symlink 的 LaunchAgents 目录必须拒绝；plist 必须以 `0600` 普通文件完成原子替换，launchd 观察必须对应替换后的完整身份。
-9. 通用 `internal/launchd` 包覆盖 Definition 非法输入零副作用、XML 转义、plist 渲染、命令顺序、loaded 身份、bootstrap 错误降级、失败阶段和失败后同 Definition 重试；同 Definition 二次调用必须走 fast path且不写 plist、不 bootout、不 bootstrap；Vela install 适配器只覆盖 Definition 映射、领域错误文案映射与不携带凭据。
+9. 通用 `internal/launchd` 包覆盖 Definition 非法输入零副作用、XML 转义、fingerprint、plist 渲染、命令顺序、loaded 身份、bootstrap 错误降级、失败阶段和失败后同 Definition 重试；同 Definition 二次调用必须走 fast path且不写 plist、不 bootout、不 bootstrap；相同 program path 但不同 program generation 必须重载；新 plist 写入后、bootout 前失败且只有非 path 字段变化，重试也不得误走 fast path。Vela install 适配器只覆盖 Definition 映射、已验签程序 SHA generation、领域错误文案映射与不携带凭据。
 10. 增加 Darwin 构建/测试和非 Darwin 编译门禁。
 11. 运行 launchd/install 包测试、Agent 全量测试和 vet。
 
@@ -128,5 +132,5 @@ Definition 的通用契约为：
 - 发布为不可变 Computer v0.1.40。
 - 使用新 16 位安装码执行替换安装。
 - 命令应快速返回 `Computer replaced and registered with macOS.`，不再出现同步运行误判。
-- `launchctl print` 必须显示正确 path、program 和完整 arguments；daemon 随后通过心跳使页面显示在线。
+- `launchctl print` 必须显示正确 path、program、完整 arguments 和本次 definition fingerprint；daemon 随后通过心跳使页面显示在线。
 - 验证 Computer catalog、程序摘要、后台 3/3 Ready 和零重启。
