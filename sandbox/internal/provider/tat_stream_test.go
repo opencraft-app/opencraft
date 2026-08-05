@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -74,8 +75,7 @@ func TestTencentTerminalCommandStreamUsesPtyExecCmdStreamAndOrdersChunks(t *test
 	defer server.Close()
 
 	p := &TencentCloudProvider{
-		cfg:          TencentConfig{Region: "ap-test"},
-		tatAuthDelay: time.Millisecond,
+		cfg: TencentConfig{Region: "ap-test"},
 		startTerminalSessionFunc: func(context.Context, string, string) (TerminalSession, error) {
 			return TerminalSession{
 				SessionID:  "session-1",
@@ -121,6 +121,167 @@ func TestTencentTerminalCommandStreamUsesPtyExecCmdStreamAndOrdersChunks(t *test
 	}
 }
 
+func TestTencentTerminalCommandStreamStartsPtyWithoutFixedAuthDelay(t *testing.T) {
+	t.Parallel()
+
+	authToStart := make(chan time.Duration, 1)
+	server := newTATStreamServer(t, func(conn *websocket.Conn) {
+		_ = readJSONFrame(t, conn)
+		authReceivedAt := time.Now()
+		start := readJSONFrame(t, conn)
+		authToStart <- time.Since(authReceivedAt)
+
+		channelID, _ := start.Data["ChannelId"].(string)
+		writeJSONFrame(t, conn, map[string]any{"Type": "PtyReady"})
+		exec := readBSONFrame(t, conn)
+		writeBSONChunk(t, conn, channelID, exec.Data.CustomData, 0, nil, true, 0)
+		_ = readJSONFrame(t, conn)
+	})
+	defer server.Close()
+
+	p := &TencentCloudProvider{
+		cfg: TencentConfig{Region: "ap-test"},
+		startTerminalSessionFunc: func(context.Context, string, string) (TerminalSession, error) {
+			return TerminalSession{
+				SessionID:  "session-1",
+				OwnerUin:   "10001",
+				AppID:      1250000000,
+				InstanceID: "ins-test-1",
+				Region:     "ap-test",
+			}, nil
+		},
+		tatForwardURLFunc: func(string) string { return websocketURL(server.URL) },
+	}
+
+	_, err := p.StreamTerminalCommand(context.Background(), TerminalCommandStreamRequest{
+		Region:           "ap-test",
+		InstanceID:       "ins-test-1",
+		Command:          "true",
+		Username:         terminalCommandUsername,
+		WorkingDirectory: terminalCommandWorkingDirectory,
+		TimeoutSeconds:   30,
+	}, func(TerminalCommandStreamEvent) error { return nil })
+	if err != nil {
+		t.Fatalf("stream terminal command: %v", err)
+	}
+	if delay := <-authToStart; delay >= 250*time.Millisecond {
+		t.Fatalf("expected PtyStart without fixed auth delay, got %s", delay)
+	}
+}
+
+func TestTencentTerminalCommandStreamRetriesHandshakeBeforeSendingCommand(t *testing.T) {
+	t.Parallel()
+
+	var connections atomic.Int32
+	server := newTATStreamServer(t, func(conn *websocket.Conn) {
+		attempt := connections.Add(1)
+		_ = readJSONFrame(t, conn)
+		start := readJSONFrame(t, conn)
+		if attempt == 1 {
+			writeJSONFrame(t, conn, map[string]any{
+				"Type": "PtyError",
+				"Data": map[string]any{"Message": "session authentication is not ready"},
+			})
+			return
+		}
+
+		channelID, _ := start.Data["ChannelId"].(string)
+		writeJSONFrame(t, conn, map[string]any{"Type": "PtyReady"})
+		exec := readBSONFrame(t, conn)
+		writeBSONChunk(t, conn, channelID, exec.Data.CustomData, 0, nil, true, 0)
+		_ = readJSONFrame(t, conn)
+	})
+	defer server.Close()
+
+	var sessions atomic.Int32
+	p := &TencentCloudProvider{
+		cfg: TencentConfig{Region: "ap-test"},
+		startTerminalSessionFunc: func(context.Context, string, string) (TerminalSession, error) {
+			sessions.Add(1)
+			return TerminalSession{
+				SessionID:  "session-1",
+				OwnerUin:   "10001",
+				AppID:      1250000000,
+				InstanceID: "ins-test-1",
+				Region:     "ap-test",
+			}, nil
+		},
+		tatForwardURLFunc: func(string) string { return websocketURL(server.URL) },
+	}
+
+	result, err := p.StreamTerminalCommand(context.Background(), TerminalCommandStreamRequest{
+		Region:           "ap-test",
+		InstanceID:       "ins-test-1",
+		Command:          "true",
+		Username:         terminalCommandUsername,
+		WorkingDirectory: terminalCommandWorkingDirectory,
+		TimeoutSeconds:   30,
+	}, func(TerminalCommandStreamEvent) error { return nil })
+	if err != nil {
+		t.Fatalf("stream terminal command: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", result.ExitCode)
+	}
+	if got := connections.Load(); got != 2 {
+		t.Fatalf("expected 2 websocket attempts, got %d", got)
+	}
+	if got := sessions.Load(); got != 2 {
+		t.Fatalf("expected 2 terminal sessions, got %d", got)
+	}
+}
+
+func TestTencentTerminalCommandStreamDoesNotRetryAfterSendingCommand(t *testing.T) {
+	t.Parallel()
+
+	var connections atomic.Int32
+	server := newTATStreamServer(t, func(conn *websocket.Conn) {
+		connections.Add(1)
+		_ = readJSONFrame(t, conn)
+		start := readJSONFrame(t, conn)
+		channelID, _ := start.Data["ChannelId"].(string)
+		writeJSONFrame(t, conn, map[string]any{"Type": "PtyReady"})
+		exec := readBSONFrame(t, conn)
+		writeBSONError(t, conn, channelID, exec.Data.CustomData, "command failed")
+		_ = readJSONFrame(t, conn)
+	})
+	defer server.Close()
+
+	var sessions atomic.Int32
+	p := &TencentCloudProvider{
+		cfg: TencentConfig{Region: "ap-test"},
+		startTerminalSessionFunc: func(context.Context, string, string) (TerminalSession, error) {
+			sessions.Add(1)
+			return TerminalSession{
+				SessionID:  "session-1",
+				OwnerUin:   "10001",
+				AppID:      1250000000,
+				InstanceID: "ins-test-1",
+				Region:     "ap-test",
+			}, nil
+		},
+		tatForwardURLFunc: func(string) string { return websocketURL(server.URL) },
+	}
+
+	_, err := p.StreamTerminalCommand(context.Background(), TerminalCommandStreamRequest{
+		Region:           "ap-test",
+		InstanceID:       "ins-test-1",
+		Command:          "touch /tmp/side-effect",
+		Username:         terminalCommandUsername,
+		WorkingDirectory: terminalCommandWorkingDirectory,
+		TimeoutSeconds:   30,
+	}, func(TerminalCommandStreamEvent) error { return nil })
+	if err == nil {
+		t.Fatal("expected command stream error")
+	}
+	if got := connections.Load(); got != 1 {
+		t.Fatalf("expected 1 websocket attempt after command send, got %d", got)
+	}
+	if got := sessions.Load(); got != 1 {
+		t.Fatalf("expected 1 terminal session after command send, got %d", got)
+	}
+}
+
 func TestTencentTerminalCommandStreamTimeoutStopsSession(t *testing.T) {
 	t.Parallel()
 
@@ -138,8 +299,7 @@ func TestTencentTerminalCommandStreamTimeoutStopsSession(t *testing.T) {
 	defer server.Close()
 
 	p := &TencentCloudProvider{
-		cfg:          TencentConfig{Region: "ap-test"},
-		tatAuthDelay: time.Millisecond,
+		cfg: TencentConfig{Region: "ap-test"},
 		startTerminalSessionFunc: func(context.Context, string, string) (TerminalSession, error) {
 			return TerminalSession{
 				SessionID:  "session-1",
@@ -191,8 +351,7 @@ func TestTencentTerminalCommandStreamCancellationStopsAndCloses(t *testing.T) {
 	defer server.Close()
 
 	p := &TencentCloudProvider{
-		cfg:          TencentConfig{Region: "ap-test"},
-		tatAuthDelay: time.Millisecond,
+		cfg: TencentConfig{Region: "ap-test"},
 		startTerminalSessionFunc: func(context.Context, string, string) (TerminalSession, error) {
 			return TerminalSession{
 				SessionID:  "session-1",
@@ -349,6 +508,27 @@ func writeBSONChunk(t *testing.T, conn *websocket.Conn, channelID, customData st
 	}
 	if err := conn.WriteMessage(websocket.BinaryMessage, payload); err != nil {
 		t.Fatalf("write bson chunk: %v", err)
+	}
+}
+
+func writeBSONError(t *testing.T, conn *websocket.Conn, channelID, customData, message string) {
+	t.Helper()
+	payload, err := bson.Marshal(map[string]any{
+		"Type": "PtyExecCmdStream",
+		"Data": map[string]any{
+			"SessionId":  "session-1",
+			"ChannelId":  channelID,
+			"CustomData": customData,
+			"Data": map[string]any{
+				"Error": message,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("encode bson error: %v", err)
+	}
+	if err := conn.WriteMessage(websocket.BinaryMessage, payload); err != nil {
+		t.Fatalf("write bson error: %v", err)
 	}
 }
 

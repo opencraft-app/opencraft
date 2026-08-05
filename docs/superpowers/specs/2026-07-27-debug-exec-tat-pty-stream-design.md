@@ -45,7 +45,11 @@ Cloud session bootstrap and connects to the TAT forward WebSocket:
 8. `PtyStop` and close the WebSocket
 
 Each HTTP request owns one TAT session. Sessions are not shared between
-commands.
+commands. Sandbox sends `PtyStart` immediately after `SessionAuth`; there is no
+fixed authentication sleep on the successful path. If the handshake fails
+before `PtyReady`, Sandbox closes that WebSocket and retries with a fresh TAT
+session after 200 ms and then 400 ms, for at most three attempts. Once
+`PtyExecCmdStream` has been sent, the command is never retried automatically.
 
 The exec-stream endpoint is internal and never returns `ownerUin`, `loginUin`,
 `appId`, `sessionId`, or `wsUrl`. Those values remain inside sandbox process
