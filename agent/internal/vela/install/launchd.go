@@ -28,7 +28,8 @@ func (launcher *computerLaunchAgent) Start(ctx context.Context, spec LaunchSpec)
 	if launcher == nil || launcher.manager == nil || ctx == nil ||
 		spec.Label != launchAgentLabel ||
 		filepath.Clean(spec.ProgramPath) != filepath.Join(spec.InstallationRoot, "bin", ProgramName) ||
-		filepath.Clean(spec.StateDirectory) != filepath.Join(spec.InstallationRoot, "state") {
+		filepath.Clean(spec.StateDirectory) != filepath.Join(spec.InstallationRoot, "state") ||
+		len(spec.RuntimeConfigDigest) != 64 {
 		return ErrServiceInvalid
 	}
 	logs := filepath.Join(spec.StateDirectory, "logs")
@@ -37,11 +38,12 @@ func (launcher *computerLaunchAgent) Start(ctx context.Context, spec LaunchSpec)
 	}
 	err := launcher.manager.EnsureLoaded(ctx, launchdservice.Definition{
 		Label: spec.Label, Program: spec.ProgramPath, ProgramSHA256: spec.ProgramSHA256,
-		Arguments:   []string{"daemon", "run", "--state-dir", spec.StateDirectory},
-		StdoutPath:  filepath.Join(logs, "computer.stdout.log"),
-		StderrPath:  filepath.Join(logs, "computer.stderr.log"),
-		Environment: map[string]string{"PATH": "/usr/local/bin:/usr/bin:/bin"},
-		KeepAlive:   true, RunAtLoad: true,
+		RuntimeConfigDigest: spec.RuntimeConfigDigest,
+		Arguments:           []string{"daemon", "run", "--state-dir", spec.StateDirectory},
+		StdoutPath:          filepath.Join(logs, "computer.stdout.log"),
+		StderrPath:          filepath.Join(logs, "computer.stderr.log"),
+		Environment:         map[string]string{"PATH": "/usr/local/bin:/usr/bin:/bin"},
+		KeepAlive:           true, RunAtLoad: true,
 		ProcessType: launchdservice.ProcessTypeBackground, Umask: 0o077,
 	})
 	if err == nil {

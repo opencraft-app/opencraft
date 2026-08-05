@@ -18,7 +18,7 @@ func TestComputerLaunchAgentMapsOnlyRuntimeDefinition(t *testing.T) {
 	spec := LaunchSpec{
 		Label: launchAgentLabel, ProgramPath: filepath.Join(root, "bin", ProgramName),
 		ProgramSHA256: strings.Repeat("a", 64), InstallationRoot: root,
-		StateDirectory: filepath.Join(root, "state"),
+		RuntimeConfigDigest: strings.Repeat("b", 64), StateDirectory: filepath.Join(root, "state"),
 	}
 	if err := launcher.Start(context.Background(), spec); err != nil {
 		t.Fatal(err)
@@ -33,6 +33,9 @@ func TestComputerLaunchAgentMapsOnlyRuntimeDefinition(t *testing.T) {
 		manager.definition.ProcessType != launchdservice.ProcessTypeBackground ||
 		manager.definition.Umask != 0o077 {
 		t.Fatalf("definition = %#v", manager.definition)
+	}
+	if manager.definition.RuntimeConfigDigest != spec.RuntimeConfigDigest {
+		t.Fatalf("definition does not carry runtime config digest")
 	}
 	for key, value := range manager.definition.Environment {
 		if strings.Contains(strings.ToLower(key+value), "credential") ||
@@ -51,7 +54,7 @@ func TestComputerLaunchAgentUsesRegistrationLanguageForGenericFailure(t *testing
 	err := launcher.Start(context.Background(), LaunchSpec{
 		Label: launchAgentLabel, ProgramPath: filepath.Join(root, "bin", ProgramName),
 		ProgramSHA256: strings.Repeat("a", 64), InstallationRoot: root,
-		StateDirectory: filepath.Join(root, "state"),
+		RuntimeConfigDigest: strings.Repeat("b", 64), StateDirectory: filepath.Join(root, "state"),
 	})
 	if err == nil || err.Error() != "Unable to verify that Vela Computer was registered with macOS." {
 		t.Fatalf("error = %v", err)

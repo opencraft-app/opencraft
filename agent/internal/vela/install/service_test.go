@@ -345,6 +345,14 @@ func TestServiceAutomaticallyReclaimsRetiredTATIdentityForRemovedComputer(t *tes
 	if native.registrations != 1 || native.inspections != 1 || launcher.starts != 2 {
 		t.Fatalf("registrations=%d inspections=%d starts=%d", native.registrations, native.inspections, launcher.starts)
 	}
+	firstDigest := launcher.specs[0].RuntimeConfigDigest
+	replacementDigest := launcher.specs[1].RuntimeConfigDigest
+	if firstDigest == "" || replacementDigest == "" {
+		t.Fatal("replacement launch specs do not carry runtime config digests")
+	}
+	if firstDigest == replacementDigest {
+		t.Fatalf("replacement reused runtime config digest %q", firstDigest)
+	}
 	if len(client.claimGrants) != 3 || client.claimGrants[1] != "rpg1.payload.signature-with-enough-bytes" ||
 		client.claimGrants[2] != client.claimGrants[1] || client.claimSecrets[2] != client.claimSecrets[1] {
 		t.Fatalf("claim grants=%#v secrets=%#v", client.claimGrants, client.claimSecrets)

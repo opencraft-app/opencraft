@@ -227,6 +227,52 @@ func TestEnsureLoadedReloadsChangedProgramAtSamePath(t *testing.T) {
 	}
 }
 
+func TestEnsureLoadedReloadsChangedRuntimeConfigDigest(t *testing.T) {
+	home := t.TempDir()
+	oldDefinition := testDefinition(t, home, []byte("program-v1"))
+	newDefinition := oldDefinition
+	newDefinition.RuntimeConfigDigest = strings.Repeat("b", 64)
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", oldDefinition.Label+".plist")
+	oldContent, err := renderDefinition(oldDefinition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(plistPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plistPath, oldContent, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var calls []string
+	printCalls := 0
+	manager := testManager(home, func(_ context.Context, arguments ...string) ([]byte, error) {
+		calls = append(calls, arguments[0])
+		switch arguments[0] {
+		case "print":
+			printCalls++
+			switch printCalls {
+			case 1:
+				return loadedPrint(t, plistPath, oldDefinition), nil
+			case 2:
+				return nil, errors.New("service not found")
+			default:
+				return loadedPrint(t, plistPath, newDefinition), nil
+			}
+		case "bootout", "bootstrap":
+			return nil, nil
+		default:
+			return nil, errors.New("unexpected command")
+		}
+	})
+
+	if err := manager.EnsureLoaded(context.Background(), newDefinition); err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(calls, "bootout") || !containsString(calls, "bootstrap") {
+		t.Fatalf("runtime config change did not reload launchd: calls=%v", calls)
+	}
+}
+
 func TestEnsureLoadedDoesNotFastPathStaleLoadedGeneration(t *testing.T) {
 	home := t.TempDir()
 	oldDefinition := testDefinition(t, home, []byte("program-v1"))
@@ -370,12 +416,13 @@ func testDefinition(t *testing.T, home string, program []byte) Definition {
 	state := filepath.Join(home, "computer", "state")
 	return Definition{
 		Label: "com.example.computer", Program: programPath,
-		ProgramSHA256: hex.EncodeToString(digest[:]),
-		Arguments:     []string{"daemon", "run", "--state-dir", state},
-		StdoutPath:    filepath.Join(state, "logs", "stdout.log"),
-		StderrPath:    filepath.Join(state, "logs", "stderr.log"),
-		Environment:   map[string]string{"PATH": "/usr/bin:/bin"},
-		KeepAlive:     true, RunAtLoad: true, ProcessType: ProcessTypeBackground, Umask: 0o077,
+		ProgramSHA256:       hex.EncodeToString(digest[:]),
+		RuntimeConfigDigest: strings.Repeat("a", 64),
+		Arguments:           []string{"daemon", "run", "--state-dir", state},
+		StdoutPath:          filepath.Join(state, "logs", "stdout.log"),
+		StderrPath:          filepath.Join(state, "logs", "stderr.log"),
+		Environment:         map[string]string{"PATH": "/usr/bin:/bin"},
+		KeepAlive:           true, RunAtLoad: true, ProcessType: ProcessTypeBackground, Umask: 0o077,
 	}
 }
 

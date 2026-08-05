@@ -34,17 +34,18 @@ const (
 )
 
 type Definition struct {
-	Label         string
-	Program       string
-	ProgramSHA256 string
-	Arguments     []string
-	StdoutPath    string
-	StderrPath    string
-	Environment   map[string]string
-	KeepAlive     bool
-	RunAtLoad     bool
-	ProcessType   ProcessType
-	Umask         uint32
+	Label               string
+	Program             string
+	ProgramSHA256       string
+	RuntimeConfigDigest string
+	Arguments           []string
+	StdoutPath          string
+	StderrPath          string
+	Environment         map[string]string
+	KeepAlive           bool
+	RunAtLoad           bool
+	ProcessType         ProcessType
+	Umask               uint32
 }
 
 func validateDefinition(definition Definition) error {
@@ -52,11 +53,16 @@ func validateDefinition(definition Definition) error {
 		!validAbsolutePath(definition.Program) ||
 		!validAbsolutePath(definition.StdoutPath) ||
 		!validAbsolutePath(definition.StderrPath) ||
-		len(definition.ProgramSHA256) != sha256.Size*2 || definition.Umask > 0o777 {
+		len(definition.ProgramSHA256) != sha256.Size*2 ||
+		len(definition.RuntimeConfigDigest) != sha256.Size*2 || definition.Umask > 0o777 {
 		return ErrInvalidDefinition
 	}
 	if decoded, err := hex.DecodeString(definition.ProgramSHA256); err != nil ||
 		len(decoded) != sha256.Size || definition.ProgramSHA256 != strings.ToLower(definition.ProgramSHA256) {
+		return ErrInvalidDefinition
+	}
+	if decoded, err := hex.DecodeString(definition.RuntimeConfigDigest); err != nil ||
+		len(decoded) != sha256.Size || definition.RuntimeConfigDigest != strings.ToLower(definition.RuntimeConfigDigest) {
 		return ErrInvalidDefinition
 	}
 	switch definition.ProcessType {
@@ -93,6 +99,8 @@ func definitionFingerprint(definition Definition) (string, error) {
 	writeFingerprintString(&canonical, definition.Program)
 	writeFingerprintString(&canonical, "program_sha256")
 	writeFingerprintString(&canonical, definition.ProgramSHA256)
+	writeFingerprintString(&canonical, "runtime_config_digest")
+	writeFingerprintString(&canonical, definition.RuntimeConfigDigest)
 	writeFingerprintString(&canonical, "arguments")
 	_ = binary.Write(&canonical, binary.BigEndian, uint64(len(definition.Arguments)))
 	for _, argument := range definition.Arguments {

@@ -6,11 +6,13 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,11 +67,12 @@ type ClientFactory func(ClientConfig) (InstallClient, error)
 type VerifyFunc func(VerifyConfig) (VerifiedRelease, error)
 
 type LaunchSpec struct {
-	Label            string
-	ProgramPath      string
-	ProgramSHA256    string
-	InstallationRoot string
-	StateDirectory   string
+	Label               string
+	ProgramPath         string
+	ProgramSHA256       string
+	RuntimeConfigDigest string
+	InstallationRoot    string
+	StateDirectory      string
 }
 
 type Launcher interface {
@@ -265,11 +268,17 @@ func (service *Service) Install(ctx context.Context, options Options) error {
 		if err := writeManagedState(store, options, journal); err != nil {
 			return err
 		}
+		runtimeDigest, err := runtimeConfigDigest(options, journal)
+		if err != nil {
+			return err
+		}
 		if err := service.config.Launcher.Start(ctx, LaunchSpec{
-			Label: launchAgentLabel, ProgramPath: programPath,
-			ProgramSHA256:    hex.EncodeToString(release.ProgramSHA256[:]),
-			InstallationRoot: options.InstallationRoot,
-			StateDirectory:   options.StateDirectory,
+			Label:               launchAgentLabel,
+			ProgramPath:         programPath,
+			ProgramSHA256:       hex.EncodeToString(release.ProgramSHA256[:]),
+			RuntimeConfigDigest: runtimeDigest,
+			InstallationRoot:    options.InstallationRoot,
+			StateDirectory:      options.StateDirectory,
 		}); err != nil {
 			return err
 		}
@@ -424,11 +433,17 @@ func (service *Service) replaceComplete(
 	if err := writeManagedState(store, options, journal); err != nil {
 		return err
 	}
+	runtimeDigest, err := runtimeConfigDigest(options, journal)
+	if err != nil {
+		return err
+	}
 	if err := service.config.Launcher.Start(ctx, LaunchSpec{
-		Label:            launchAgentLabel,
-		ProgramPath:      filepath.Join(options.InstallationRoot, "bin", ProgramName),
-		ProgramSHA256:    hex.EncodeToString(release.ProgramSHA256[:]),
-		InstallationRoot: options.InstallationRoot, StateDirectory: options.StateDirectory,
+		Label:               launchAgentLabel,
+		ProgramPath:         filepath.Join(options.InstallationRoot, "bin", ProgramName),
+		ProgramSHA256:       hex.EncodeToString(release.ProgramSHA256[:]),
+		RuntimeConfigDigest: runtimeDigest,
+		InstallationRoot:    options.InstallationRoot,
+		StateDirectory:      options.StateDirectory,
 	}); err != nil {
 		return err
 	}
@@ -539,16 +554,50 @@ func (service *Service) reconcileCommittedReplacement(
 		credentialMeta.Version != journal.CredentialVersion {
 		return false, nil
 	}
+	runtimeDigest, err := runtimeConfigDigest(options, journal)
+	if err != nil {
+		return true, err
+	}
 	if err := service.config.Launcher.Start(ctx, LaunchSpec{
-		Label:            launchAgentLabel,
-		ProgramPath:      filepath.Join(options.InstallationRoot, "bin", ProgramName),
-		ProgramSHA256:    journal.ProgramSHA256,
-		InstallationRoot: options.InstallationRoot,
-		StateDirectory:   options.StateDirectory,
+		Label:               launchAgentLabel,
+		ProgramPath:         filepath.Join(options.InstallationRoot, "bin", ProgramName),
+		ProgramSHA256:       journal.ProgramSHA256,
+		RuntimeConfigDigest: runtimeDigest,
+		InstallationRoot:    options.InstallationRoot,
+		StateDirectory:      options.StateDirectory,
 	}); err != nil {
 		return true, err
 	}
 	return true, removeReplacementSecrets(store)
+}
+
+func runtimeConfigDigest(options Options, journal installJournal) (string, error) {
+	platformURL, ok := normalizeInstallBaseURL(
+		options.PlatformURL,
+		options.AllowInsecurePlatformHTTP,
+	)
+	if !ok || !uuidV7(journal.ServerID) || !uuidV7(journal.ComputerID) ||
+		!uuidV7(journal.CredentialID) || journal.CredentialVersion == 0 ||
+		!filepath.IsAbs(options.StateDirectory) ||
+		filepath.Clean(options.StateDirectory) != options.StateDirectory {
+		return "", ErrInstallConflict
+	}
+	digest := sha256.New()
+	for _, value := range []string{
+		"vela-computer-runtime-config/v1",
+		platformURL,
+		journal.ServerID,
+		journal.ComputerID,
+		journal.CredentialID,
+		strconv.FormatUint(journal.CredentialVersion, 10),
+		options.StateDirectory,
+	} {
+		var length [8]byte
+		binary.BigEndian.PutUint64(length[:], uint64(len(value)))
+		_, _ = digest.Write(length[:])
+		_, _ = digest.Write([]byte(value))
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
 }
 
 func installedProgramMatchesJournal(root string, journal installJournal) bool {
