@@ -38,6 +38,18 @@ type AllocationResolution struct {
 	Divergence       string
 }
 
+type CreateBoundPoolInput struct {
+	Name           string
+	Description    string
+	BaseImage      string
+	InstanceType   string
+	SKUID          string
+	VpcID          string
+	SubnetID       string
+	Zone           string
+	SecurityGroups []string
+}
+
 func emitCapacityBundleConflict(ctx context.Context, explanation string, attrs ...attribute.KeyValue) {
 	observability.EmitEvent(ctx, "sandbox.capacity_bundle.reservation_conflict", explanation, attrs...)
 }
@@ -101,6 +113,99 @@ func (s *Service) CreatePool(ctx context.Context, name, desc, baseImage string, 
 		return core.Pool{}, err
 	}
 	return s.store.CreatePool(ctx, pool)
+}
+
+// CreateBoundPool creates an operator-managed pool in a safe state with its
+// logical SKU binding present in the initial row.
+func (s *Service) CreateBoundPool(ctx context.Context, input CreateBoundPoolInput) (core.Pool, error) {
+	sku, err := s.resolveActivePoolSKU(ctx, input.SKUID)
+	if err != nil {
+		return core.Pool{}, err
+	}
+	name := strings.TrimSpace(input.Name)
+	if name == "" {
+		name = "default"
+	}
+	pool := core.Pool{
+		ID:              s.nextID("pool"),
+		Name:            name,
+		Description:     strings.TrimSpace(input.Description),
+		BaseImage:       strings.TrimSpace(input.BaseImage),
+		DesiredCap:      0,
+		InstanceType:    strings.TrimSpace(input.InstanceType),
+		Status:          core.PoolStatusPaused,
+		PauseReason:     "awaiting operator activation",
+		VpcID:           strings.TrimSpace(input.VpcID),
+		SubnetID:        strings.TrimSpace(input.SubnetID),
+		Zone:            strings.TrimSpace(input.Zone),
+		SecurityGroups:  input.SecurityGroups,
+		TemplateClassID: sku.TemplateClassID,
+		SKUID:           sku.ID,
+		CreatedAt:       time.Now().UTC(),
+	}
+	pool, err = normalizePool(pool)
+	if err != nil {
+		return core.Pool{}, err
+	}
+	return s.store.CreatePool(ctx, pool)
+}
+
+// BindPoolSKU applies the one-time logical binding allowed for a legacy pool.
+// Existing bindings are immutable, while repeating the same binding is idempotent.
+func (s *Service) BindPoolSKU(ctx context.Context, pool core.Pool, skuID string) (core.Pool, error) {
+	skuID = strings.TrimSpace(skuID)
+	if skuID == "" {
+		return core.Pool{}, fmt.Errorf("%w: sku_id is required", core.ErrInvalidPoolSKUBinding)
+	}
+	existingSKU := strings.TrimSpace(pool.SKUID)
+	existingClass := strings.TrimSpace(pool.TemplateClassID)
+	if existingSKU != "" || existingClass != "" {
+		if existingSKU == skuID && existingClass != "" {
+			return pool, nil
+		}
+		return core.Pool{}, fmt.Errorf("%w: existing sku_id cannot be cleared or changed", core.ErrInvalidPoolSKUBinding)
+	}
+	sku, err := s.resolveActivePoolSKU(ctx, skuID)
+	if err != nil {
+		return core.Pool{}, err
+	}
+	pool.SKUID = sku.ID
+	pool.TemplateClassID = sku.TemplateClassID
+	return pool, nil
+}
+
+func (s *Service) resolveActivePoolSKU(ctx context.Context, skuID string) (core.SKU, error) {
+	skuID = strings.TrimSpace(skuID)
+	if skuID == "" {
+		return core.SKU{}, fmt.Errorf("%w: sku_id is required", core.ErrInvalidPoolSKUBinding)
+	}
+	sku, err := s.store.GetSKU(ctx, skuID)
+	if err != nil {
+		if errors.Is(err, core.ErrSKUNotFound) {
+			return core.SKU{}, fmt.Errorf("%w: sku_id not found", core.ErrInvalidPoolSKUBinding)
+		}
+		return core.SKU{}, err
+	}
+	if _, err := s.store.GetTemplateClass(ctx, sku.TemplateClassID); err != nil {
+		return core.SKU{}, fmt.Errorf("%w: template class is unavailable", core.ErrInvalidPoolSKUBinding)
+	}
+	bindings, err := s.store.ListTemplateSkuBindings(ctx, sku.TemplateClassID)
+	if err != nil {
+		return core.SKU{}, err
+	}
+	for _, binding := range bindings {
+		if binding.SKUID != sku.ID {
+			continue
+		}
+		if binding.AdmissionState != "active" {
+			return core.SKU{}, fmt.Errorf("%w: sku binding is not active", core.ErrInvalidPoolSKUBinding)
+		}
+		if !binding.RolloutEligibility {
+			return core.SKU{}, fmt.Errorf("%w: sku binding is not rollout eligible", core.ErrInvalidPoolSKUBinding)
+		}
+		return sku, nil
+	}
+	return core.SKU{}, fmt.Errorf("%w: sku binding is not active", core.ErrInvalidPoolSKUBinding)
 }
 
 func (s *Service) ListPools(ctx context.Context) ([]core.Pool, error) {
