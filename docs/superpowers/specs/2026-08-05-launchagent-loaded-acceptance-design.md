@@ -34,18 +34,21 @@ launchd 可以延迟调度 KeepAlive 进程，因此第二个事实不应决定�
 
 - `path` 是本次写入的 canonical plist 路径；
 - `program` 是本次安装的 canonical `vela-computer` 路径；
+- `arguments` 与本次写入的 canonical 参数完全一致：`<program> daemon run --state-dir <state-dir>`；
 - 两个路径都是绝对路径；
 - `launchctl print` 成功，表示服务已被当前用户的 launchd domain 加载。
 
 `state` 和 `pid` 可以保留为诊断信息，但不再是安装成功条件。launchd 已加载正确 KeepAlive 服务后，即使 daemon 尚处于调度、启动或重启窗口，安装事务也应成功结束。
+
+身份观察依赖既有安装安全不变量：整个安装或替换过程持有该 state directory 的独占 `install.lock`；`~/Library/LaunchAgents` 必须属于当前 uid；plist 通过当前 uid 创建的 `0600` 普通临时文件同步并原子改名，目标不会作为 symlink 跟随。Vela 不把同一 macOS 用户下的恶意本地进程视为隔离边界，但会用 launchd 返回的 path、program 和完整 arguments 防止错误服务或旧参数被误认成本次安装。
 
 ### 启动流程
 
 流程保持为：
 
 1. 原子写入 plist；
-2. `bootout` 旧服务；
-3. 等待旧服务从 launchd domain 消失；
+2. `bootout` 旧服务；首次安装返回 service-not-found 是正常幂等结果；
+3. 以结果为准等待旧服务从 launchd domain 消失；即使 `bootout` 返回其他错误，只要服务确已消失即可继续，若仍存在则失败；
 4. `bootstrap` 新 plist；
 5. 轮询 `launchctl print`，直到观察到正确 plist 与 program；
 6. 返回安装成功。
@@ -59,25 +62,29 @@ launchd 可以延迟调度 KeepAlive 进程，因此第二个事实不应决定�
 ## 错误处理
 
 - `launchctl print` 不存在：继续短轮询，超时后失败。
-- plist 或 program 不匹配：立即失败，防止接受被替换或串线的服务。
+- plist、program 或完整 arguments 不匹配：立即失败，防止接受被替换、旧参数或串线的服务。
 - `bootstrap` 失败但正确服务已加载：成功。
 - `bootstrap` 失败且服务未加载：返回包含 launchctl 原始摘要的注册错误。
-- `bootstrap` 成功但服务未加载：返回“无法确认 LaunchAgent 已加载”。
+- `bootstrap` 成功但服务未加载：返回“Unable to verify that Vela Computer was registered with macOS.”。
+- 成功文案使用 `Computer installed and registered with macOS.` 或 `Computer replaced and registered with macOS.`，不再承诺 daemon 已经 running。
 
 ## 测试
 
 采用测试驱动修改：
 
-1. 先增加失败测试：`bootstrap` 成功，`launchctl print` 返回正确 path/program，但没有 running state 和 PID；预期安装成功。当前实现会超时失败。
-2. 保留错误 program 拒绝测试。
-3. 保留 bootout 完成后才验收替换服务的顺序测试。
-4. 更新调用序列断言，不再要求连续两次相同 PID。
-5. 运行 install 包测试、Agent 全量测试和 vet。
+1. 先增加失败测试：`bootstrap` 成功，`launchctl print` 返回正确 path/program/arguments，但没有 running state 和 PID；预期安装成功。当前实现会超时失败。
+2. 增加首次安装测试：旧服务不存在时 `bootout` 的 not-found 结果必须幂等继续，并加载新服务。
+3. 覆盖 `bootstrap` I/O error 后观察到完整正确身份时成功。
+4. 覆盖 `bootstrap` 任意错误后未加载、错误 plist、错误 program、错误 arguments 或相对路径时失败。
+5. 保留 bootout 完成后才验收替换服务的顺序测试。
+6. 更新调用序列断言，不再要求连续两次相同 PID。
+7. 更新首装、替换成功文案测试，确保不再承诺 running。
+8. 运行 install 包测试、Agent 全量测试和 vet。
 
 ## 发布与验收
 
 - 发布为不可变 Computer v0.1.40。
 - 使用新 16 位安装码执行替换安装。
-- 命令应快速返回 `Computer replaced and started.`，不再出现同步运行误判。
+- 命令应快速返回 `Computer replaced and registered with macOS.`，不再出现同步运行误判。
 - `launchctl print` 必须显示正确 plist/program；daemon 随后通过心跳使页面显示在线。
 - 验证 Computer catalog、程序摘要、后台 3/3 Ready 和零重启。
