@@ -1694,7 +1694,7 @@ const styles = StyleSheet.create((theme) => ({
   selectionButton: {
     alignItems: "center",
     backgroundColor: theme.semantic.color.actionSecondarySurface,
-    borderColor: theme.semantic.color.actionSecondaryBorder,
+    borderColor: theme.semantic.color.borderControl,
     borderRadius: theme.semantic.radius.control,
     borderWidth: theme.semantic.stroke.hairline,
     justifyContent: "center",

@@ -351,7 +351,6 @@ export const velaTheme = {
       actionPrimarySurface: palette.blue500,
       actionPrimaryText: palette.white,
       actionQuietSurface: palette.neutral100,
-      actionSecondaryBorder: withAlpha(palette.neutral950, 0.14),
       actionSecondaryHoverSurface: withAlpha(palette.neutral950, 0.05),
       actionSecondaryPressedSurface: palette.neutral200,
       actionSecondarySurface: palette.white,

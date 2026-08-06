@@ -166,7 +166,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   actionSecondary: {
     backgroundColor: theme.semantic.color.actionSecondarySurface,
-    borderColor: theme.semantic.color.actionSecondaryBorder,
+    borderColor: theme.semantic.color.borderControl,
     ...theme.semantic.motion.transition.control,
   },
   actionSecondaryHover: {
