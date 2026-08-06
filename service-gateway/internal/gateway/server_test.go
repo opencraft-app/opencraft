@@ -324,6 +324,64 @@ func TestRoutePathAllowlistRequiresRules(t *testing.T) {
 	}
 }
 
+func TestWebsiteInstanceRouteRewritesAndPreservesCredential(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		if r.URL.Path != "/v1/websites/ws-1/releases" {
+			t.Fatalf("upstream path = %q, want /v1/websites/ws-1/releases", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Vela-Instance-Key opaque-token" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		for _, header := range []string{"X-Lightclaw-User-ID", "X-Lightclaw-User-Email", "X-Lightclaw-Plan-Tier", "X-User-Id", "X-Uin"} {
+			if got := r.Header.Get(header); got != "" {
+				t.Fatalf("%s leaked to upstream: %q", header, got)
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{AuthServiceURL: "http://auth.example.test", Routes: []Route{{
+		Name:          "ctl-instance-websites",
+		Prefix:        "/v1/instance/websites",
+		RewritePrefix: "/v1/websites",
+		Methods:       []string{http.MethodGet, http.MethodPost, http.MethodDelete, http.MethodOptions},
+		Upstream:      upstream.URL,
+		Access:        AccessPublic,
+		PathPolicy:    PathPolicyAllowlist,
+		PathAllow: []PublicRule{
+			{Method: http.MethodPost, Path: "/v1/instance/websites/{site_id}/releases"},
+		},
+	}}})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/instance/websites/ws-1/releases", nil)
+	req.Header.Set("Authorization", "Vela-Instance-Key opaque-token")
+	req.Header.Set("X-Lightclaw-User-ID", "spoofed")
+	req.Header.Set("X-Lightclaw-User-Email", "spoofed@example.com")
+	req.Header.Set("X-Lightclaw-Plan-Tier", "spoofed")
+	req.Header.Set("X-User-Id", "spoofed")
+	req.Header.Set("X-Uin", "spoofed")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent || upstreamCalls != 1 {
+		t.Fatalf("status = %d upstream calls = %d, want 204/1; body=%s", rec.Code, upstreamCalls, rec.Body.String())
+	}
+
+	blockedReq := httptest.NewRequest(http.MethodPost, "/v1/instance/websites/ws-1/publish-admin", nil)
+	blockedReq.Header.Set("Authorization", "Vela-Instance-Key opaque-token")
+	blockedRec := httptest.NewRecorder()
+	handler.ServeHTTP(blockedRec, blockedReq)
+	if blockedRec.Code != http.StatusNotFound || upstreamCalls != 1 {
+		t.Fatalf("blocked status = %d upstream calls = %d, want 404/1", blockedRec.Code, upstreamCalls)
+	}
+}
+
 func TestContentAuditCallbackRouteBypassesAuth(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -455,6 +455,9 @@ func (l *logic) CreateSite(userID, bundleID, name, idempotencyKey string) (*Crea
 	if err != nil {
 		return nil, err
 	}
+	if bundleID == "" {
+		bundleID = p.BundleID
+	}
 	if p.BundleID != bundleID {
 		return nil, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "bundle_id does not match current pass")
 	}

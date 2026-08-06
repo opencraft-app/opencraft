@@ -40,60 +40,46 @@ description: 使用 Vela 托管的静态建站能力，为用户创建、发布�
 
 ## 认证与 API 地址
 
-所有请求需要携带用户的 Bearer Token。**按下面顺序取第一个非空值**：
+每个实例拥有一个永久凭据（`VELA_WEBSITE_KEY`），由平台通过 TAT 注入到
+systemd 环境变量中。凭据格式为 `vwk_<key_id>_<secret>`，仅限本实例使用，
+只能调用建站相关接口，不暴露任何账号级权限。
 
-1. 环境变量 `VELA_AUTH_TOKEN`
-2. 文件 `~/.vela/auth-token`（取第一行，去掉首尾空白）
-3. 都不可用 → 停下来提示用户需要先登录 Vela，**不要继续调用 API**
+**取值方式**（按顺序取第一个非空值）：
 
-API 地址同样**按顺序取第一个非空值**：
+1. 环境变量 `VELA_WEBSITE_KEY`
+2. 都不可用 → 停下来提示用户需要先通过 Vela 平台初始化实例，**不要继续调用 API**
 
-1. 环境变量 `VELA_API_BASE`
-2. 文件 `~/.vela/api-base`（取第一行，去掉首尾空白）
-3. 按站点归属取生产默认值：国内 `https://api.lightvela.com`、国际 `https://api.lightvela.ai`
+API 地址同样从环境变量 `VELA_API_BASE` 获取（TAT 注入时同时配好）。
+如果该变量不存在，按站点归属取生产默认值：
+国内 `https://api.lightvela.com`、国际 `https://api.lightvela.ai`。
 
 读取示例（token 与地址都不要 echo 出来）：
 
 ```bash
-API_BASE="${VELA_API_BASE:-$(head -n1 ~/.vela/api-base 2>/dev/null | tr -d '[:space:]')}"
-API_BASE="${API_BASE:-https://api.lightvela.com}"
-TOKEN="${VELA_AUTH_TOKEN:-$(head -n1 ~/.vela/auth-token 2>/dev/null | tr -d '[:space:]')}"
+API_BASE="${VELA_API_BASE:-https://api.lightvela.com}"
+KEY="${VELA_WEBSITE_KEY:?VELA_WEBSITE_KEY not set, instance not initialized}"
 ```
 
-**为什么第 3 步是生产地址**：这个 Skill 跑在真实用户的机器上，缺省必须落到生产，
-否则会把真实用户的建站请求打到测试集群。反过来说，**测试/预发机器必须显式配置
-第 1 或第 2 项**，否则会打到生产。两者都没配时不要猜，按上面的顺序老实取默认值。
-
-**token 与地址必须同源**：`~/.vela/auth-token` 里的 token 属于哪个环境、哪个账号，
-`~/.vela/api-base` 就必须指向同一个环境。拿测试 token 打生产（或反过来）只会 401。
-
-请求头：`Authorization: Bearer <token>` + `Content-Type: application/json`
-
-请求头：`Authorization: Bearer <token>` + `Content-Type: application/json`
+请求头：`Authorization: Vela-Instance-Key <key>` + `Content-Type: application/json`
 
 ## 内部 API 参考（不向用户展示）
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
-| GET | /v1/passes | 获取用户当前套餐信息 |
-| GET | /v1/websites/capability | 查询建站权益和用量 |
-| POST | /v1/websites | 创建站点 |
-| GET | /v1/websites | 列出已有站点 |
-| GET | /v1/websites/{siteId} | 查询站点详情 |
-| POST | /v1/websites/{siteId}/releases | 创建发布 |
-| GET | /v1/websites/{siteId}/releases | 列出发布历史 |
-| GET | /v1/websites/{siteId}/operations/{opId} | 查询操作状态 |
-| DELETE | /v1/websites/{siteId} | 删除站点 |
+| GET | /v1/instance/websites/capability | 查询建站权益和用量 |
+| POST | /v1/instance/websites | 创建站点 |
+| GET | /v1/instance/websites | 列出已有站点 |
+| GET | /v1/instance/websites/{siteId} | 查询站点详情 |
+| POST | /v1/instance/websites/{siteId}/releases | 创建发布 |
+| GET | /v1/instance/websites/{siteId}/releases | 列出发布历史 |
+| GET | /v1/instance/websites/{siteId}/operations/{opId} | 查询操作状态 |
+| DELETE | /v1/instance/websites/{siteId} | 删除站点 |
 
 ## 完整流程
 
 ### 第一步：查询权益（内部）
 
 调用能力查询接口，获取用户当前可用的建站配额。如果配额已满，用用户友好的方式告知，不要展示原始 JSON。
-
-### 第二步：获取套餐信息（内部）
-
-获取用户当前 Pass 信息，提取 pass_id 和 bundle_id 用于后续创建。
 
 ### 第三步：需求澄清（与用户交互）
 

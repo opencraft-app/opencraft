@@ -1,8 +1,13 @@
 package website
 
 import (
+	"errors"
 	"strings"
 	"testing"
+
+	"ctl/pkg/errcode"
+	modelwebsite "ctl/pkg/model/website"
+	"ctl/pkg/resource"
 )
 
 // validSHA256 is the SHA-256 hash of empty string, 64 hex chars
@@ -122,5 +127,33 @@ func TestSiteCOSSecretsIgnoresPartialWebsiteCredentials(t *testing.T) {
 	id, key := siteCOSSecrets()
 	if id != "AKIDPLATFORM" || key != "platform-key" {
 		t.Fatalf("siteCOSSecrets() = %q/%q, want AKIDPLATFORM/platform-key", id, key)
+	}
+}
+
+func TestCreateSiteDerivesActivePassBundleWhenOmitted(t *testing.T) {
+	newWebsiteOperationTestDB(t)
+	seedPassAndBundle(t, "user-1", "bundle-1", testQuotaJSON)
+
+	result, err := NewLogic().CreateSite("user-1", "", "site", "")
+	if err != nil {
+		t.Fatalf("CreateSite: %v", err)
+	}
+	var site modelwebsite.SiteEntity
+	if err := resource.GormDB.Table(modelwebsite.SitesTable).
+		Where("site_id = ?", result.SiteID).First(&site).Error; err != nil {
+		t.Fatalf("load created site: %v", err)
+	}
+	if site.BundleID != "bundle-1" {
+		t.Fatalf("created site bundle_id = %q, want bundle-1", site.BundleID)
+	}
+}
+
+func TestCreateSiteRejectsExplicitWrongBundle(t *testing.T) {
+	newWebsiteOperationTestDB(t)
+	seedPassAndBundle(t, "user-1", "bundle-1", testQuotaJSON)
+
+	_, err := NewLogic().CreateSite("user-1", "bundle-other", "site", "")
+	if !errors.Is(err, errcode.ErrWebsiteInvalidParam) {
+		t.Fatalf("CreateSite error = %v, want ErrWebsiteInvalidParam", err)
 	}
 }

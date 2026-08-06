@@ -397,15 +397,6 @@ func (h *websiteHandler) handleCreateSite(w http.ResponseWriter, r *http.Request
 		writeHTTPError(w, r, invalidWebsiteParam("name too long (max 100 chars), got %d", len(req.Name)))
 		return
 	}
-	// bundle_id 必填。缺失时 CreateSite 会拿空串去比当前 Pass 的 bundle_id，
-	// 报出「bundle_id does not match current pass」——调用方（建站 Skill）看到这句
-	// 会以为自己传错了套餐，而真实原因是根本没传。
-	if req.BundleID == "" {
-		writeHTTPError(w, r, invalidWebsiteParam(
-			"bundle_id is required and must match the bundle_id of the current active pass"))
-		return
-	}
-
 	result, err := h.logic.CreateSite(userID, req.BundleID, req.Name, req.IdempotencyKey)
 	if err != nil {
 		writeHTTPError(w, r, err)

@@ -9,7 +9,18 @@ import (
 	"testing"
 
 	"ctl/pkg/errcode"
+	websitelogic "ctl/pkg/logic/website"
 )
+
+type fakeWebsiteCreateLogic struct {
+	websitelogic.Logic
+	bundleID string
+}
+
+func (f *fakeWebsiteCreateLogic) CreateSite(_, bundleID, _, _ string) (*websitelogic.CreateSiteResult, error) {
+	f.bundleID = bundleID
+	return &websitelogic.CreateSiteResult{SiteID: "ws-1", OperationID: "wo-1"}, nil
+}
 
 // 参数校验的原因必须真正出现在响应体里。
 // errcode.Wrap 的原因串会被 writeHTTPError 丢弃，只剩通用的
@@ -43,5 +54,22 @@ func TestInvalidWebsiteParamUnwrapsToWebsiteInvalidParam(t *testing.T) {
 	err := invalidWebsiteParam("name is required")
 	if !errors.Is(err, errcode.ErrWebsiteInvalidParam) {
 		t.Fatalf("must unwrap to ErrWebsiteInvalidParam, got %v", err)
+	}
+}
+
+func TestWebsiteCreateAllowsBundleToBeOmitted(t *testing.T) {
+	logic := &fakeWebsiteCreateLogic{}
+	h := &websiteHandler{logic: logic}
+	req := httptest.NewRequest(http.MethodPost, "/v1/websites", strings.NewReader(`{"name":"site"}`))
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+
+	h.handleCreateSite(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
+	}
+	if logic.bundleID != "" {
+		t.Fatalf("bundle_id passed to logic = %q, want empty for server-side derivation", logic.bundleID)
 	}
 }
