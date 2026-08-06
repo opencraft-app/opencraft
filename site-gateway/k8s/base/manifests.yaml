@@ -93,9 +93,8 @@ metadata:
   name: site-gateway
   namespace: ctl
 spec:
-  # 必须是 NodePort：腾讯云 CLB 的 ingress controller 把节点端口注册到 CLB 上，
-  # 后端是 ClusterIP 时 CLB 无路可走，公网访问会直接 504。
-  type: NodePort
+  # 保持 ClusterIP：Ingress 开了 direct-access，CLB 直接把 Pod IP 注册为后端，
+  # 不经过节点端口转发。
   selector:
     app: site-gateway
   ports:
@@ -111,6 +110,14 @@ metadata:
   namespace: ctl
   annotations:
     kubernetes.io/ingress.class: qcloud
+    # direct-access 让 CLB 直接把 Pod IP 注册为后端。不开这个的话 CLB 只接受
+    # NodePort/LoadBalancer 类型的 Service，而节点端口转发在本集群上不通（504）。
+    ingress.cloud.tencent.com/direct-access: "true"
+    ingress.cloud.tencent.com/pass-to-target: "true"
+    # 关掉修改保护，否则后续调整后端会被 CLB 侧拒绝。
+    ingress.cloud.tencent.com/modification-protection: "false"
+    # 不开 CLB 健康检查：它会以泛域名为 Host 打在 / 上，而站点网关对未绑定的
+    # 站点一律返回 404，会被判为不健康而摘掉全部后端。
 spec:
   # 集群用的是腾讯云 CLB ingress controller，不是 nginx。
   ingressClassName: qcloud
