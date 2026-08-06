@@ -120,10 +120,12 @@ export const densityMode =
  */
 export const densityScale = {
   pointer: {
+    avatarCompactSize: 28,
     avatarRowSize: 28,
     collectionActionHeight: 36,
     compactComposerMinHeight: 52,
     composerMinHeight: 56,
+    composerSuggestionMinHeight: 32,
     composerSurfaceMinHeight: 52,
     composerToolbarMinHeight: 40,
     controlHeight: 30,
@@ -137,17 +139,26 @@ export const densityScale = {
     listRowMinHeight: 32,
     managementHeaderHeight: 48,
     memberRowMinHeight: 40,
+    messageIndent: 26,
+    messageRowGap: 6,
     railWidth: 60,
     rowMinHeight: 44,
+    spaceLg: 12,
+    spaceMd: 10,
+    spaceXl: 18,
+    spaceXxl: 24,
     switcherOptionMinHeight: 32,
     switcherRowMinHeight: 36,
     switcherTriggerMinHeight: 48,
+    taskCardMinHeight: 48,
   },
   touch: {
+    avatarCompactSize: 32,
     avatarRowSize: 36,
     collectionActionHeight: 52,
     compactComposerMinHeight: 64,
     composerMinHeight: 72,
+    composerSuggestionMinHeight: 46,
     composerSurfaceMinHeight: 66,
     composerToolbarMinHeight: 52,
     controlHeight: 44,
@@ -161,16 +172,79 @@ export const densityScale = {
     listRowMinHeight: 48,
     managementHeaderHeight: 64,
     memberRowMinHeight: 60,
+    messageIndent: 30,
+    messageRowGap: 10,
     railWidth: 72,
     rowMinHeight: 64,
+    spaceLg: 16,
+    spaceMd: 12,
+    spaceXl: 24,
+    spaceXxl: 32,
     switcherOptionMinHeight: 56,
     switcherRowMinHeight: 52,
     switcherTriggerMinHeight: 64,
+    taskCardMinHeight: 58,
   },
 } as const;
 
 export const density: (typeof densityScale)[DensityMode] =
   densityScale[densityMode];
+
+/**
+ * Type forks with density too: macOS sets interface body text around 13px
+ * where iOS uses 15-17px, so tightening the chrome without tightening the type
+ * would leave the two out of proportion.
+ */
+export const textScale = {
+  pointer: {
+    avatarLabel: { fontSize: 12, lineHeight: 16 },
+    body: { fontSize: 13, lineHeight: 19 },
+    bodyCompact: { fontSize: 12, lineHeight: 17 },
+    bodySmall: { fontSize: 11, lineHeight: 16 },
+    button: { fontSize: 12, lineHeight: 16 },
+    compactTitle: { fontSize: 16, lineHeight: 21 },
+    composerInput: { fontSize: 13, lineHeight: 18 },
+    composerInputCompact: { fontSize: 13, lineHeight: 18 },
+    controlGlyph: { fontSize: 15, lineHeight: 19 },
+    caption: { fontSize: 10, lineHeight: 14 },
+    detailTitle: { fontSize: 22, lineHeight: 28 },
+    dialogTitle: { fontSize: 16, lineHeight: 21 },
+    lead: { fontSize: 14, lineHeight: 20 },
+    message: { fontSize: 13, lineHeight: 19 },
+    messageMeta: { fontSize: 11, lineHeight: 15 },
+    navigationGlyph: { fontSize: 14, lineHeight: 14 },
+    pageTitle: { fontSize: 18, lineHeight: 23 },
+    pickerTitle: { fontSize: 19, lineHeight: 24 },
+    sectionTitle: { fontSize: 14, lineHeight: 19 },
+    serverInitial: { fontSize: 13, lineHeight: 26 },
+    workspaceTitle: { fontSize: 14, lineHeight: 19 },
+  },
+  touch: {
+    avatarLabel: { fontSize: 15, lineHeight: 20 },
+    body: { fontSize: 14, lineHeight: 21 },
+    bodyCompact: { fontSize: 13, lineHeight: 19 },
+    bodySmall: { fontSize: 12, lineHeight: 18 },
+    button: { fontSize: 13, lineHeight: 18 },
+    compactTitle: { fontSize: 19, lineHeight: 24 },
+    composerInput: { fontSize: 14, lineHeight: 20 },
+    composerInputCompact: { fontSize: 16, lineHeight: 22 },
+    controlGlyph: { fontSize: 18, lineHeight: 22 },
+    caption: { fontSize: 11, lineHeight: 16 },
+    detailTitle: { fontSize: 28, lineHeight: 34 },
+    dialogTitle: { fontSize: 20, lineHeight: 26 },
+    lead: { fontSize: 16, lineHeight: 24 },
+    message: { fontSize: 15, lineHeight: 22 },
+    messageMeta: { fontSize: 12, lineHeight: 16 },
+    navigationGlyph: { fontSize: 16, lineHeight: 16 },
+    pageTitle: { fontSize: 22, lineHeight: 28 },
+    pickerTitle: { fontSize: 24, lineHeight: 30 },
+    sectionTitle: { fontSize: 17, lineHeight: 22 },
+    serverInitial: { fontSize: 15, lineHeight: 32 },
+    workspaceTitle: { fontSize: 16, lineHeight: 22 },
+  },
+} as const;
+
+export const text: (typeof textScale)[DensityMode] = textScale[densityMode];
 
 // The Web workspace frame can restore navigation before content-heavy
 // management screens switch from their compact, stacked layouts.
@@ -367,48 +441,40 @@ export const velaTheme = {
       },
       avatarLabel: {
         fontFamily: interfaceFontFamily,
-        fontSize: 15,
+        ...text.avatarLabel,
         fontWeight: "700",
-        lineHeight: 20,
       },
       body: {
         fontFamily: interfaceFontFamily,
-        fontSize: 14,
-        lineHeight: 21,
+        ...text.body,
       },
       bodyCompact: {
         fontFamily: interfaceFontFamily,
-        fontSize: 13,
-        lineHeight: 19,
+        ...text.bodyCompact,
       },
       bodyCompactEmphasis: {
         fontFamily: interfaceFontFamily,
-        fontSize: 13,
+        ...text.bodyCompact,
         fontWeight: "600",
-        lineHeight: 19,
       },
       bodyEmphasis: {
         fontFamily: interfaceFontFamily,
-        fontSize: 14,
+        ...text.body,
         fontWeight: "600",
-        lineHeight: 21,
       },
       button: {
         fontFamily: interfaceFontFamily,
-        fontSize: 13,
+        ...text.button,
         fontWeight: "600",
-        lineHeight: 18,
       },
       bodySmall: {
         fontFamily: interfaceFontFamily,
-        fontSize: 12,
-        lineHeight: 18,
+        ...text.bodySmall,
       },
       bodySmallEmphasis: {
         fontFamily: interfaceFontFamily,
-        fontSize: 12,
+        ...text.bodySmall,
         fontWeight: "600",
-        lineHeight: 18,
       },
       brandGlyph: {
         fontFamily: interfaceFontFamily,
@@ -432,48 +498,40 @@ export const velaTheme = {
       },
       caption: {
         fontFamily: interfaceFontFamily,
-        fontSize: 11,
-        lineHeight: 16,
+        ...text.caption,
       },
       captionEmphasis: {
         fontFamily: interfaceFontFamily,
-        fontSize: 11,
+        ...text.caption,
         fontWeight: "600",
-        lineHeight: 16,
       },
       composerInput: {
         fontFamily: interfaceFontFamily,
-        fontSize: 14,
-        lineHeight: 20,
+        ...text.composerInput,
       },
       composerInputCompact: {
         fontFamily: interfaceFontFamily,
-        fontSize: 16,
-        lineHeight: 22,
+        ...text.composerInputCompact,
       },
       compactTitle: {
         fontFamily: interfaceFontFamily,
-        fontSize: 19,
+        ...text.compactTitle,
         fontWeight: "600",
-        lineHeight: 24,
       },
       controlGlyph: {
         fontFamily: interfaceFontFamily,
-        fontSize: 18,
+        ...text.controlGlyph,
         fontWeight: "600",
-        lineHeight: 22,
       },
       detailTitle: {
         fontFamily: interfaceFontFamily,
-        fontSize: 28,
+        ...text.detailTitle,
         fontWeight: "600",
-        lineHeight: 34,
       },
       dialogTitle: {
         fontFamily: interfaceFontFamily,
-        fontSize: 20,
+        ...text.dialogTitle,
         fontWeight: "600",
-        lineHeight: 26,
       },
       emptyMetric: {
         fontFamily: interfaceFontFamily,
@@ -489,21 +547,18 @@ export const velaTheme = {
       },
       eyebrow: {
         fontFamily: interfaceFontFamily,
-        fontSize: 11,
+        ...text.caption,
         fontWeight: "600",
         letterSpacing: 0.8,
-        lineHeight: 16,
       },
       label: {
         fontFamily: interfaceFontFamily,
-        fontSize: 12,
+        ...text.bodySmall,
         fontWeight: "600",
-        lineHeight: 18,
       },
       lead: {
         fontFamily: interfaceFontFamily,
-        fontSize: 16,
-        lineHeight: 24,
+        ...text.lead,
       },
       micro: {
         fontFamily: interfaceFontFamily,
@@ -518,29 +573,24 @@ export const velaTheme = {
       },
       messageBody: {
         fontFamily: interfaceFontFamily,
-        fontSize: 15,
-        lineHeight: 22,
+        ...text.message,
       },
       messageMeta: {
         fontFamily: interfaceFontFamily,
-        fontSize: 12,
-        lineHeight: 16,
+        ...text.messageMeta,
       },
       messageSender: {
         fontFamily: interfaceFontFamily,
-        fontSize: 15,
+        ...text.message,
         fontWeight: "600",
-        lineHeight: 22,
       },
       meta: {
         fontFamily: interfaceFontFamily,
-        fontSize: 11,
-        lineHeight: 16,
+        ...text.caption,
       },
       navigationGlyph: {
         fontFamily: interfaceFontFamily,
-        fontSize: 16,
-        lineHeight: 16,
+        ...text.navigationGlyph,
       },
       navigationLabel: {
         fontFamily: interfaceFontFamily,
@@ -562,9 +612,8 @@ export const velaTheme = {
       },
       pickerTitle: {
         fontFamily: interfaceFontFamily,
-        fontSize: 24,
+        ...text.pickerTitle,
         fontWeight: "600",
-        lineHeight: 30,
       },
       railLabel: {
         fontFamily: interfaceFontFamily,
@@ -574,20 +623,17 @@ export const velaTheme = {
       },
       pageTitle: {
         fontFamily: interfaceFontFamily,
-        fontSize: 22,
+        ...text.pageTitle,
         fontWeight: "600",
-        lineHeight: 28,
       },
       sectionTitle: {
         fontFamily: interfaceFontFamily,
-        fontSize: 17,
+        ...text.sectionTitle,
         fontWeight: "600",
-        lineHeight: 22,
       },
       serverInitial: {
         fontFamily: interfaceFontFamily,
-        fontSize: 15,
-        lineHeight: 32,
+        ...text.serverInitial,
       },
       stepBadge: {
         fontFamily: interfaceFontFamily,
@@ -597,15 +643,13 @@ export const velaTheme = {
       },
       tooltip: {
         fontFamily: interfaceFontFamily,
-        fontSize: 12,
+        ...text.messageMeta,
         fontWeight: "600",
-        lineHeight: 16,
       },
       workspaceTitle: {
         fontFamily: interfaceFontFamily,
-        fontSize: 16,
+        ...text.workspaceTitle,
         fontWeight: "600",
-        lineHeight: 22,
       },
     },
   },
@@ -637,7 +681,7 @@ export const velaTheme = {
       composerAttachmentMinWidth: 190,
       composerDesktopMaxWidth: 860,
       composerMentionListOffset: 58,
-      composerSuggestionMinHeight: 46,
+      composerSuggestionMinHeight: density.composerSuggestionMinHeight,
       composerToolbarMinHeight: density.composerToolbarMinHeight,
       channelManagementActionMinWidth: 64,
       channelMemberRowMinHeight: density.memberRowMinHeight,
@@ -646,8 +690,8 @@ export const velaTheme = {
       composerSurfaceMinHeight: density.composerSurfaceMinHeight,
       directRowMinHeight: density.directRowMinHeight,
       messageActionHorizontalPadding: 6,
-      messageIndent: 30,
-      messageRowGap: 10,
+      messageIndent: density.messageIndent,
+      messageRowGap: density.messageRowGap,
       toastTopInset: 72,
     },
     control: {
@@ -681,7 +725,7 @@ export const velaTheme = {
     },
     identity: {
       avatarAccountSize: 52,
-      avatarCompactSize: 32,
+      avatarCompactSize: density.avatarCompactSize,
       avatarNavigationSize: 40,
       avatarProminentSize: 38,
       avatarRowSize: density.avatarRowSize,
@@ -746,7 +790,7 @@ export const velaTheme = {
       imageMaxHeight: 320,
       pointerActionSize: 28,
       taskCardMaxWidth: 540,
-      taskCardMinHeight: 58,
+      taskCardMinHeight: density.taskCardMinHeight,
       taskCardMinWidth: 240,
       touchActionSize: 32,
     },
@@ -808,14 +852,16 @@ export const velaTheme = {
       fontSize: 13,
     },
   },
+  // The three smallest steps sit inside controls, where a pointer needs the
+  // same breathing room a finger does; only the container-level gutters fork.
   spacing: {
     xxs: 2,
     xs: 4,
     sm: 8,
-    md: 12,
-    lg: 16,
-    xl: 24,
-    xxl: 32,
+    md: density.spaceMd,
+    lg: density.spaceLg,
+    xl: density.spaceXl,
+    xxl: density.spaceXxl,
   },
 } as const;
 

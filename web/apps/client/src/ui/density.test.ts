@@ -3,6 +3,8 @@ import {
   densityMode,
   densityScale,
   resolveDensityMode,
+  text,
+  textScale,
   velaTheme,
 } from "./tokens";
 
@@ -85,6 +87,55 @@ describe("density scale", () => {
     });
 
     expect(overTightened).toEqual([]);
+  });
+});
+
+describe("type scale", () => {
+  it("keeps both tiers describing the same groups", () => {
+    expect(Object.keys(textScale.pointer).sort()).toEqual(
+      Object.keys(textScale.touch).sort(),
+    );
+  });
+
+  it("sets every pointer group in smaller type than its touch counterpart", () => {
+    const notTightened = Object.keys(textScale.touch).filter((group) => {
+      const key = group as keyof typeof textScale.touch;
+      return textScale.pointer[key].fontSize >= textScale.touch[key].fontSize;
+    });
+
+    expect(notTightened).toEqual([]);
+  });
+
+  it("never tightens interface type below a legible floor", () => {
+    // 10px is the smallest size this interface uses for real prose; anything
+    // under it belongs to badges and glyphs, which do not live in this scale.
+    const illegible = Object.entries(textScale.pointer)
+      .filter(([, metrics]) => metrics.fontSize < 10)
+      .map(([group]) => group);
+
+    expect(illegible).toEqual([]);
+  });
+
+  it("keeps line height between the glyph height and double it", () => {
+    const tiers = [textScale.pointer, textScale.touch];
+    const broken = tiers.flatMap((tier) =>
+      Object.entries(tier)
+        .filter(([, { fontSize, lineHeight }]) => {
+          const ratio = lineHeight / fontSize;
+          return ratio < 1 || ratio > 2.2;
+        })
+        .map(([group]) => group),
+    );
+
+    expect(broken).toEqual([]);
+  });
+
+  it("feeds the typography roles that carry conversation copy", () => {
+    const { typography } = velaTheme.semantic;
+
+    expect(typography.messageBody.fontSize).toBe(text.message.fontSize);
+    expect(typography.body.fontSize).toBe(text.body.fontSize);
+    expect(typography.pageTitle.lineHeight).toBe(text.pageTitle.lineHeight);
   });
 });
 
