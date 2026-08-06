@@ -22,24 +22,19 @@ import { useI18n } from 'fumadocs-ui/contexts/i18n';
 import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
-import { createLightVelaSearchTokenizer } from './search-tokenizer';
+import { createDocsSearchTokenizer } from './search-tokenizer';
 import { DEFAULT_PUBLIC_DOCS_LOCALE } from './public-locale';
+import {
+  resolveDocsSearchEndpoint,
+  resolveDocsSearchLocale,
+  type DocsSearchLocale,
+} from './search-routing';
 
-const DOCS_SEARCH_LOCALES = new Set(['en-us', 'zh-cn', 'zh-sg']);
-
-function docsSearchLocaleFromPath(pathname: string | null, contextLocale: unknown): string {
-  const firstSegment = pathname?.split('/').filter(Boolean)[0];
-  if (firstSegment && DOCS_SEARCH_LOCALES.has(firstSegment)) return firstSegment;
-  if (typeof contextLocale === 'string' && DOCS_SEARCH_LOCALES.has(contextLocale)) return contextLocale;
-  return DEFAULT_PUBLIC_DOCS_LOCALE;
-}
-
-function initLightVelaOrama() {
+function initLightVelaOrama(locale: DocsSearchLocale) {
+  const tokenizer = createDocsSearchTokenizer(locale);
   return create({
     schema: { _: 'string' },
-    components: {
-      tokenizer: createLightVelaSearchTokenizer(),
-    },
+    ...(tokenizer ? { components: { tokenizer } } : {}),
   });
 }
 
@@ -56,12 +51,11 @@ export function LightVelaSearchDialog({
 }: DefaultSearchDialogProps) {
   const { locale } = useI18n();
   const pathname = usePathname();
-  const searchLocale = docsSearchLocaleFromPath(pathname, locale);
+  const searchLocale = resolveDocsSearchLocale(pathname, locale, DEFAULT_PUBLIC_DOCS_LOCALE);
   const [tag, setTag] = useState(defaultTag);
   const client = oramaStaticClient({
-    from: api,
-    initOrama: initLightVelaOrama,
-    locale: searchLocale,
+    from: resolveDocsSearchEndpoint(api ?? '/api/search', searchLocale),
+    initOrama: () => initLightVelaOrama(searchLocale),
     tag,
   });
   const { search, setSearch, query } = useDocsSearch({
