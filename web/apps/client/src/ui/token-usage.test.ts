@@ -116,7 +116,7 @@ describe("Vela token usage", () => {
     for (const pane of panes) {
       expect(pane).toContain("semantic.color.sidebarSurface");
     }
-    expect(styleOf(shell, "serverRail")).toContain(
+    expect(styleOf(read("layouts", "app-frame.tsx"), "serverRail")).toContain(
       "semantic.color.navigationSurface",
     );
     expect(management).not.toContain("semantic.color.navigationSurface");
@@ -480,12 +480,12 @@ describe("Vela token usage", () => {
 
   it("keeps repeated identity, dense-control and content geometry in component recipes", () => {
     const requiredRecipes: Array<[string, string, string[]]> = [
-      ["layouts/workspace-shell.tsx", "accountRailButton", ["identity.avatarAccountSize"]],
+      ["layouts/app-frame.tsx", "accountRailButton", ["identity.avatarAccountSize"]],
       ["layouts/workspace-shell.tsx", "directAvatar", ["identity.avatarRowSize"]],
       ["layouts/workspace-shell.tsx", "channelMemberAvatar", ["identity.avatarRowSize"]],
-      ["layouts/workspace-shell.tsx", "humanAvatar", ["identity.avatarProminentSize"]],
-      ["layouts/workspace-shell.tsx", "humanAvatarStatus", ["identity.presenceDotSize"]],
-      ["layouts/workspace-shell.tsx", "serverMark", ["identity.avatarNavigationSize"]],
+      ["layouts/app-frame.tsx", "humanAvatar", ["identity.avatarProminentSize"]],
+      ["layouts/app-frame.tsx", "humanAvatarStatus", ["identity.presenceDotSize"]],
+      ["layouts/app-frame.tsx", "serverMark", ["identity.avatarNavigationSize"]],
       ["components/message-list.tsx", "avatar", ["identity.avatarCompactSize"]],
       ["components/message-list.tsx", "avatarCompact", ["identity.avatarRowSize"]],
       ["components/user-picker.tsx", "searchClear", ["iconControl.compactSize"]],
@@ -536,12 +536,12 @@ describe("Vela token usage", () => {
       ["components/message-list.tsx", "moreActionButtonPointer", ["messageTimeline.pointerActionSize"]],
       ["components/message-list.tsx", "moreActionButtonCompact", ["messageTimeline.touchActionSize"]],
       ["components/message-list.tsx", "taskCard", ["messageTimeline.taskCardMaxWidth", "messageTimeline.taskCardMinHeight", "messageTimeline.taskCardMinWidth"]],
-      ["layouts/workspace-shell.tsx", "accountPopover", ["overlay.accountMenuWidth"]],
+      ["layouts/app-frame.tsx", "accountPopover", ["overlay.accountMenuWidth"]],
       ["layouts/workspace-shell.tsx", "channelManagementPanel", ["overlay.contextPanelMinWidth", "overlay.contextPanelWidth"]],
       ["layouts/workspace-shell.tsx", "channelMemberConfirmDialog", ["overlay.confirmDialogMaxWidth"]],
       ["layouts/workspace-shell.tsx", "searchPanel", ["overlay.searchPanelMaxHeight"]],
-      ["layouts/workspace-shell.tsx", "serverMarksScroller", ["overlay.serverListMaxHeight"]],
-      ["layouts/workspace-shell.tsx", "accountStatusDot", ["identity.statusDotSize"]],
+      ["layouts/app-frame.tsx", "serverMarksScroller", ["overlay.serverListMaxHeight"]],
+      ["layouts/app-frame.tsx", "accountStatusDot", ["identity.statusDotSize"]],
       ["layouts/workspace-shell.tsx", "directButton", ["conversationWorkspace.directRowMinHeight"]],
       ["layouts/workspace-shell.tsx", "directButtonSelected", ["conversationWorkspace.directRowMinHeight"]],
       ["layouts/workspace-shell.tsx", "unreadBadge", ["status.badgeMinSize"]],
@@ -558,12 +558,12 @@ describe("Vela token usage", () => {
       ["layouts/workspace-shell.tsx", "chatErrorToastIcon", ["iconControl.compactSize"]],
       ["layouts/workspace-shell.tsx", "messageHeaderIcon", ["iconControl.denseSize"]],
       ["layouts/workspace-shell.tsx", "onlineAgentsDot", ["identity.statusDotSize"]],
-      ["layouts/workspace-shell.tsx", "railNavigationItem", ["identity.avatarAccountSize"]],
-      ["layouts/workspace-shell.tsx", "railTooltip", ["iconControl.compactSize"]],
+      ["layouts/app-frame.tsx", "railNavigationItem", ["identity.avatarAccountSize"]],
+      ["layouts/app-frame.tsx", "railTooltip", ["iconControl.compactSize"]],
       ["layouts/workspace-shell.tsx", "searchResult", ["managementWorkspace.rowMinHeight"]],
       ["layouts/workspace-shell.tsx", "sidebarHeaderIcon", ["identity.avatarNavigationSize"]],
       ["layouts/workspace-shell.tsx", "sidebarSearchClear", ["iconControl.microSize"]],
-      ["layouts/workspace-shell.tsx", "accountLogoutButton", ["control.height"]],
+      ["layouts/app-frame.tsx", "accountLogoutButton", ["control.height"]],
       ["layouts/workspace-shell.tsx", "channelMemberRow", ["conversationWorkspace.channelMemberRowMinHeight"]],
       ["layouts/workspace-shell.tsx", "channelVisibilityButton", ["control.height"]],
       ["layouts/workspace-shell.tsx", "compactChannelButton", ["compactWorkspace.listRowMinHeight"]],

@@ -56,11 +56,8 @@ import {
   OperationStatusList,
   type OperationStatusItem,
 } from "../components/operation-status-list";
-import {
-  PlatformFrame,
-  type PlatformFrameProps,
-  type WorkspaceSection,
-} from "../layouts/workspace-shell";
+import { PlatformFrame, type PlatformFrameProps } from "../layouts/app-frame";
+import type { WorkspaceSection } from "../layouts/workspace-section";
 import {memberIdentityLabel, visibleMemberHandle} from "../member-identity";
 
 export interface MembersScreenProps {

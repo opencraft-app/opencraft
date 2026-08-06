@@ -51,11 +51,8 @@ import {
   type ManagementPageModel,
   type PresentationAction,
 } from "../presentation";
-import {
-  PlatformFrame,
-  type PlatformFrameProps,
-  type WorkspaceSection,
-} from "../layouts/workspace-shell";
+import { PlatformFrame, type PlatformFrameProps } from "../layouts/app-frame";
+import type { WorkspaceSection } from "../layouts/workspace-section";
 import {
   OperationStatusList,
   type OperationStatusItem,

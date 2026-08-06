@@ -18,11 +18,8 @@ import {
   ManagementTextInput,
   ResourceMetadataList,
 } from "../components/management-workspace";
-import {
-  PlatformFrame,
-  type PlatformFrameProps,
-  type WorkspaceSection,
-} from "../layouts/workspace-shell";
+import { PlatformFrame, type PlatformFrameProps } from "../layouts/app-frame";
+import type { WorkspaceSection } from "../layouts/workspace-section";
 
 export interface ServerSettingsScreenProps {
   canManage: boolean;

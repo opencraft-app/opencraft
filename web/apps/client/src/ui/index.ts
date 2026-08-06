@@ -98,13 +98,15 @@ export {
 } from "./components/management-workspace";
 export {
   PlatformFrame,
+  type PlatformFrameProps,
+} from "./layouts/app-frame";
+export {
   NavigationLinkProvider,
   type NavigationLinkComponent,
   type NavigationLinkProps,
-  WorkspaceShell,
-  type PlatformFrameProps,
-  type WorkspaceSection,
-} from "./layouts/workspace-shell";
+} from "./layouts/navigation-link";
+export type { WorkspaceSection } from "./layouts/workspace-section";
+export { WorkspaceShell } from "./layouts/workspace-shell";
 export {
   TasksScreen,
   type TasksScreenProps,
