@@ -384,7 +384,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         runtime_text = (REPO_ROOT / ".ci/runtime/build_and_promote_to_gitops.sh").read_text()
         pin_text = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
         self.assertIn("playground/sandbox-jp-*", template_text)
-        self.assertIn("TCR_JP1_PASSWORD", template_text)
+        jp_registry_credential = "${{ settings.TCR_JP1_REGISTRY_CREDENTIAL.password }}"
+        self.assertEqual(template_text.count(jp_registry_credential), 2)
+        self.assertNotIn("${{ settings.TCR_JP1_PASSWORD }}", template_text)
         self.assertIn("sandbox-jp-*|tokyo-sandbox", init_text)
         self.assertIn("/etc/lightclaw-ci/tcr_jp1_password", init_text)
         self.assertIn('password_var="${TCR_JP1_PASSWORD:-}"', init_text)

@@ -155,7 +155,7 @@ stages:
               TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
               TCR_BEIJING_LLMGATEWAY_PASSWORD: ${{ settings.TCR_BEIJING_LLMGATEWAY_PASSWORD }}
               TCR_KR1_PASSWORD: ${{ settings.TCR_KR1_PASSWORD }}
-              TCR_JP1_PASSWORD: ${{ settings.TCR_JP1_PASSWORD }}
+              TCR_JP1_PASSWORD: ${{ settings.TCR_JP1_REGISTRY_CREDENTIAL.password }}
               TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
               TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
               CSIGHUB_USERNAME: ${{ settings.CSIGHUB_USERNAME }}
@@ -229,7 +229,7 @@ stages:
               TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
               TCR_BEIJING_LLMGATEWAY_PASSWORD: ${{ settings.TCR_BEIJING_LLMGATEWAY_PASSWORD }}
               TCR_KR1_PASSWORD: ${{ settings.TCR_KR1_PASSWORD }}
-              TCR_JP1_PASSWORD: ${{ settings.TCR_JP1_PASSWORD }}
+              TCR_JP1_PASSWORD: ${{ settings.TCR_JP1_REGISTRY_CREDENTIAL.password }}
               TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
               TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
               CSIGHUB_USERNAME: ${{ settings.CSIGHUB_USERNAME }}
