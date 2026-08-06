@@ -13,7 +13,6 @@ const (
 	SitesTable      = "website_sites"
 	ReleasesTable   = "website_releases"
 	OperationsTable = "website_operations"
-	UsageDailyTable = "website_usage_daily"
 )
 
 // ---- Site 状态 ----
@@ -22,17 +21,22 @@ const (
 	SiteStatusCreating  = "creating"
 	SiteStatusActive    = "active"
 	SiteStatusSuspended = "suspended"
+	SiteStatusDeleting  = "deleting"
 	SiteStatusDeleted   = "deleted"
 )
 
 // ---- Release 状态 ----
 
 const (
-	ReleaseStatusPending    = "pending"
-	ReleaseStatusUploading  = "uploading"
-	ReleaseStatusDeploying  = "deploying"
-	ReleaseStatusActive     = "active"
-	ReleaseStatusFailed     = "failed"
+	ReleaseStatusPending   = "pending"
+	ReleaseStatusUploading = "uploading"
+	ReleaseStatusDeploying = "deploying"
+	ReleaseStatusActive    = "active"
+	ReleaseStatusFailed    = "failed"
+	// ReleaseStatusSuperseded 表示该版本曾成功上线，但已被更新的版本取代。
+	// 每个站点在任一时刻只应有一个 active 版本，否则「当前版本」失去唯一性，
+	// 续费恢复和发布历史展示都会取到错误的版本。
+	ReleaseStatusSuperseded = "superseded"
 	ReleaseStatusRolledBack = "rolled_back"
 )
 
@@ -43,6 +47,9 @@ const (
 	OpStatusRunning = "running"
 	OpStatusSuccess = "success"
 	OpStatusFailed  = "failed"
+	// OpStatusDead 是可重试操作耗尽重试次数后的终态死信。
+	// 与 failed 的区别：failed 仍可能被重新调度，dead 表示已停止重试、需人工介入。
+	OpStatusDead = "dead"
 )
 
 // ---- Operation 类型 ----
@@ -51,6 +58,10 @@ const (
 	OpTypeCreate = "create"
 	OpTypeDeploy = "deploy"
 	OpTypeDelete = "delete"
+	// OpTypeSuspend 套餐到期下线：删除线上发布文件，保留制品以便续费恢复。
+	OpTypeSuspend = "suspend"
+	// OpTypeResume 套餐续费恢复：从保留的制品重新发布。
+	OpTypeResume = "resume"
 )
 
 // ---- 列名 ----
@@ -69,14 +80,17 @@ type SiteEntity struct {
 	model.BaseEntity
 	model.BaseUserEntity
 
-	SiteID    string `gorm:"column:site_id;uniqueIndex:uk_site_id"`
-	PassID    string `gorm:"column:pass_id"`
-	BundleID  string `gorm:"column:bundle_id"`
-	Name      string `gorm:"column:name"`
-	Status    string `gorm:"column:status;index:idx_status"`
-	CloudPath string `gorm:"column:cloud_path"`
-	TCBEnvID  string `gorm:"column:tcb_env_id"`
-	PublicURL string `gorm:"column:public_url"`
+	SiteID   string `gorm:"column:site_id;uniqueIndex:uk_site_id"`
+	PassID   string `gorm:"column:pass_id"`
+	BundleID string `gorm:"column:bundle_id"`
+	Name     string `gorm:"column:name"`
+	// IdempotencyKey 是创建接口的真实幂等键，(user_id, idempotency_key) 唯一。
+	// 指针类型：不传幂等键时写入 NULL，不参与 DB 层去重。
+	IdempotencyKey *string `gorm:"column:idempotency_key"`
+	Status         string  `gorm:"column:status;index:idx_status"`
+	CloudPath      string  `gorm:"column:cloud_path"`
+	TCBEnvID       string  `gorm:"column:tcb_env_id"`
+	PublicURL      string  `gorm:"column:public_url"`
 	// OperationGeneration fences late workers so an older deploy cannot restore a deleted site.
 	OperationGeneration int64      `gorm:"column:operation_generation"`
 	DeletedTime         *time.Time `gorm:"column:deleted_time"`
@@ -120,6 +134,7 @@ type OperationEntity struct {
 	ErrorMessage   string     `gorm:"column:error_message"`
 	LeaseToken     string     `gorm:"column:lease_token"`
 	LeaseExpiresAt *time.Time `gorm:"column:lease_expires_at"`
+	NextRetryAt    *time.Time `gorm:"column:next_retry_at"`
 	Attempt        int        `gorm:"column:attempt"`
 	SiteGeneration int64      `gorm:"column:site_generation"`
 	TCBEnvID       string     `gorm:"-"`
@@ -129,29 +144,10 @@ func (OperationEntity) TableName() string {
 	return OperationsTable
 }
 
-// ---- Usage Daily Entity ----
-
-type UsageDailyEntity struct {
-	Id           int64     `gorm:"column:id;primaryKey;autoIncrement"`
-	SiteID       string    `gorm:"column:site_id;uniqueIndex:uk_site_date,priority:1"`
-	UserID       string    `gorm:"column:user_id;index:idx_user_date"`
-	UsageDate    time.Time `gorm:"column:usage_date;uniqueIndex:uk_site_date,priority:2"`
-	TrafficBytes int64     `gorm:"column:traffic_bytes"`
-	RequestCount int64     `gorm:"column:request_count"`
-	CreatedTime  time.Time `gorm:"column:created_time;autoCreateTime"`
-	UpdatedTime  time.Time `gorm:"column:updated_time;autoUpdateTime"`
-}
-
-func (UsageDailyEntity) TableName() string {
-	return UsageDailyTable
-}
-
 // ---- 配额 resource_name 常量 ----
 
 const (
-	ResourceNameWebsiteSite    = "WEBSITE_STATIC_SITE"
-	ResourceNameWebsiteTraffic = "WEBSITE_TRAFFIC"
-	ResourceNameWebsiteStorage = "WEBSITE_STORAGE"
+	ResourceNameWebsiteSite = "WEBSITE_STATIC_SITE"
 )
 
 // ---- 套餐配额 JSON 结构 ----

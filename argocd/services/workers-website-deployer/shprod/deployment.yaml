@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: website-deployer
+  namespace: ctl
+  labels:
+    app: website-deployer
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: website-deployer
+  template:
+    metadata:
+      labels:
+        app: website-deployer
+    spec:
+      serviceAccountName: website-deployer
+      terminationGracePeriodSeconds: 30
+      nodeSelector:
+        pool: REPLACE_WORKERS_NODE_POOL
+      containers:
+      - name: website-deployer
+        image: REPLACE_WORKERS_IMAGE
+        imagePullPolicy: IfNotPresent
+        command:
+        - /usr/local/bin/website-deployer
+        env:
+        # 集群内 DNS。worker 与 ctl 同集群同 namespace，代码默认值也是这个地址。
+        - name: CTL_BASE_URL
+          value: "http://ctl-api.ctl.svc.cluster.local"
+        # 单副本 + 低并发。峰值内存约为 MAX_CONCURRENCY × WEBSITE_MAX_ARTIFACT_BYTES(64MB)，
+        # 2 × 64MB = 128MB，距 512Mi limit 有 4 倍余量。调大并发必须同步调大内存 limit。
+        - name: MAX_CONCURRENCY
+          value: "2"
+        - name: POLL_INTERVAL_SECONDS
+          value: "10"
+        # fail-closed：Redis 同时承担跨 Pod 的 COS 上传令牌桶，不允许降级。
+        - name: WEBSITE_REQUIRE_REDIS_LIMITER
+          value: "true"
+        - name: WEBSITE_COS_UPLOADS_PER_MINUTE
+          value: "8000"
+        - name: REDIS_ADDR
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: REDIS_ADDR
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: REDIS_PASSWORD
+        # 必须与 ctl 侧 ctl-runtime-secrets 中的同名 key 取值完全一致，否则 worker 全部 claim 401。
+        - name: WEBSITE_INTERNAL_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: WEBSITE_INTERNAL_API_TOKEN
+        - name: TENCENT_SECRET_ID
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: TENCENT_SECRET_ID
+        - name: TENCENT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: TENCENT_SECRET_KEY
+        # 为空则 worker 直接禁用建站（fail-closed）。值等 TCB 企业版采购结果。
+        - name: TCB_ENV_ALLOWLIST
+          valueFrom:
+            secretKeyRef:
+              name: website-deployer-secrets
+              key: TCB_ENV_ALLOWLIST
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi

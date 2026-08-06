@@ -43,6 +43,13 @@ items:
   - CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
   - CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
   - CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST
+  # CloudBase 静态建站的环境策略同样是可 review 的运营配置，不是凭据。
+  # 用 optional_plaintext_keys 而不是 plaintext_keys：TCB 企业版采购完成前
+  # SSM payload 里还没有这两个 key，写成 required 会让 ctl-runtime-secrets
+  # 的导出直接报 "unknown plaintext_keys" 并阻塞现有 ctl 凭据刷新。
+  optional_plaintext_keys:
+  - TCB_ENV_ALLOWLIST
+  - TCB_ENV_CAPACITY_MAP
   labels:
     app.kubernetes.io/name: ctl
     app.kubernetes.io/managed-by: argocd

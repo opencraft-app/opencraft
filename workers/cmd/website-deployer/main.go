@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -36,21 +38,38 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 验证 Redis 连接
+	// 验证 Redis 连接。
+	//
+	// Redis 承担两个职责：BLPOP 即时通知（可降级为轮询）和跨 Pod 的 COS 上传令牌桶
+	// （无法降级——没有它多副本会把厂商配额打满）。因此默认 fail-closed，
+	// 只有显式设置 WEBSITE_REQUIRE_REDIS_LIMITER=false 才允许无限流启动。
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		log.Printf("WARNING: Redis ping failed (%v), falling back to polling only", err)
-		rdb = nil
-		if os.Getenv("WEBSITE_REQUIRE_REDIS_LIMITER") == "true" {
-			log.Fatal("website-deployer requires Redis for the global COS upload limiter")
+		if !allowRunWithoutRedisLimiter() {
+			log.Fatalf("website-deployer requires Redis for the global COS upload limiter, ping failed: %v", err)
 		}
+		log.Printf("WARNING: Redis ping failed (%v); running WITHOUT the global COS upload limiter "+
+			"because WEBSITE_REQUIRE_REDIS_LIMITER=false", err)
+		rdb = nil
 	} else {
 		log.Printf("website-deployer connected to Redis at %s", redisAddr)
 		deployer.SetRateLimitRedisClient(rdb)
 	}
-	deployer.SetInternalToken(os.Getenv("WEBSITE_INTERNAL_API_TOKEN"))
 
-	// 并发控制
-	concurrency := 10
+	internalToken := os.Getenv("WEBSITE_INTERNAL_API_TOKEN")
+	if internalToken == "" {
+		// ctl 的内部接口在token 为空时一律返回 401，此时 worker 无法完成任何操作。
+		// 提前失败比反复claim 401 更容易定位配置缺失。
+		log.Fatal("website-deployer requires WEBSITE_INTERNAL_API_TOKEN")
+	}
+	deployer.SetInternalToken(internalToken)
+
+	// 并发控制。
+	//
+	// 每个在处理中的部署任务都要把制品 zip 整体载入内存（zip 需要随机读取条目），
+	// 所以峰值内存约为 concurrency × WEBSITE_MAX_ARTIFACT_BYTES（默认 64MB）。
+	// 默认取 4 是为了配合 512Mi 的容器内存 limit；
+	// 调大并发时必须同步调大内存 limit，否则会OOMKilled。
+	concurrency := 4
 	if v := os.Getenv("MAX_CONCURRENCY"); v != "" {
 		if n, err := parseInt(v); err == nil && n > 0 {
 			concurrency = n
@@ -135,10 +154,16 @@ func executeOperation(d *website.Deployer, op website.Operation) {
 		return
 	}
 	log.Printf("executing operation %s (type=%s, site=%s)", claimed.OperationID, claimed.OperationType, claimed.SiteID)
-	if err := d.Execute(*claimed); err != nil {
-		log.Printf("execute operation %s failed: %v", claimed.OperationID, err)
-	} else {
+	err = d.Execute(*claimed)
+	switch {
+	case err == nil:
 		log.Printf("operation %s completed", claimed.OperationID)
+	case errors.Is(err, website.ErrOperationFailedAndReported):
+		// 操作失败但已成功登记，由 ctl 决定是否重试。
+		log.Printf("operation %s failed (reported to ctl): %v", claimed.OperationID, err)
+	default:
+		// 连失败都没能上报：操作会留在 running 直到租约过期后被重新领取。
+		log.Printf("operation %s left in-flight, failure report did not land: %v", claimed.OperationID, err)
 	}
 }
 
@@ -146,4 +171,10 @@ func parseInt(s string) (int, error) {
 	var n int
 	_, err := fmt.Sscanf(s, "%d", &n)
 	return n, err
+}
+
+// allowRunWithoutRedisLimiter只有显式声明 false 时才放行无限流运行。
+// 默认（未设置）视为「必须有限流」，避免新环境漏配就把 COS 配额打满。
+func allowRunWithoutRedisLimiter() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("WEBSITE_REQUIRE_REDIS_LIMITER")), "false")
 }

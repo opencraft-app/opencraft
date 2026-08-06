@@ -56,6 +56,15 @@ function formatDate(iso: string): string {
   }
 }
 
+/**
+ * 本页只读，删除入口在 `/agents` 的「我的网站」面板。但站点可能在别处被删掉，
+ * 此时后端会先把状态置为 deleting、由 website-deployer 异步清理。为了不让用户
+ * 停在永远不变的 deleting 上，这里在存在 deleting 站点时定时重拉，
+ * 60s 内不收敛就停止，避免无限轮询。
+ */
+const DELETING_REFRESH_INTERVAL_MS = 3000;
+const DELETING_REFRESH_TIMEOUT_MS = 60000;
+
 const AUTH_TOKEN_STORAGE_KEY = "lightclaw-auth-token-v1";
 
 function readStoredAuthToken(): string | null {
@@ -138,6 +147,26 @@ export const WebsitePage = () => {
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  const hasDeletingSite = sites.some((site) => site.Status === "deleting");
+
+  useEffect(() => {
+    if (!hasDeletingSite) return;
+    let cancelled = false;
+    const deadline = Date.now() + DELETING_REFRESH_TIMEOUT_MS;
+    const timer = setInterval(() => {
+      if (cancelled) return;
+      if (Date.now() >= deadline) {
+        clearInterval(timer);
+        return;
+      }
+      void fetchData();
+    }, DELETING_REFRESH_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [fetchData, hasDeletingSite]);
 
   const remaining = capability ? capability.max_sites - capability.used_sites : 0;
 
@@ -265,6 +294,11 @@ export const WebsitePage = () => {
                               ) : site.Status === "creating" ? (
                                 <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs" style={{ background: "rgba(255,161,0,0.1)", color: "#C67B1E" }}>
                                   {t("创建中")}
+                                </span>
+                              ) : site.Status === "deleting" ? (
+                                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs" style={{ background: "rgba(255,161,0,0.1)", color: "#C67B1E" }}>
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                  {t("正在删除")}
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs" style={{ background: "rgba(0,0,0,0.06)", color: "#999" }}>

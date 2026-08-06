@@ -50,6 +50,18 @@ func getMainAccountSecrets() (string, string) {
 	return os.Getenv("TENCENT_SECRET_ID"), os.Getenv("TENCENT_SECRET_KEY")
 }
 
+// tcbLogger 返回一个总是可安全调用的 logger。
+//
+// resource.ZapLogger 是全局变量，在单元测试和进程早期初始化阶段为 nil，
+// 直接调用其方法会 panic。环境发现是建站主链路的第一步，
+// 不能因为日志器还没就绪就把整个请求打挂。
+func tcbLogger() *zap.Logger {
+	if resource.ZapLogger != nil {
+		return resource.ZapLogger
+	}
+	return zap.NewNop()
+}
+
 // getTCBEnvMaxSites 返回每个 TCB 环境的最大站点数
 // 优先读 TCB_ENV_MAX_SITES 环境变量，默认 500
 func getTCBEnvMaxSites() int {
@@ -73,7 +85,7 @@ func getTCBEnvCapacityMap() map[string]int {
 	}
 	var m map[string]int
 	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		resource.ZapLogger.Warn("parse TCB_ENV_CAPACITY_MAP failed", zap.Error(err))
+		tcbLogger().Warn("parse TCB_ENV_CAPACITY_MAP failed", zap.Error(err))
 		return nil
 	}
 	return m
@@ -94,6 +106,33 @@ func getDisabledTCBEnvs() map[string]bool {
 		}
 	}
 	return result
+}
+
+// parseTCBEnvAllowlist parses the explicitly approved CloudBase environment IDs.
+// Production intentionally fails closed when it is empty: COS discovery is an
+// account-wide API and must never make unrelated static-hosting buckets eligible.
+func parseTCBEnvAllowlist(raw string) map[string]bool {
+	allowed := make(map[string]bool)
+	for _, id := range strings.Split(raw, ",") {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			allowed[id] = true
+		}
+	}
+	return allowed
+}
+
+func filterTCBEnvsByAllowlist(envs []TCBEnvConfig, allowed map[string]bool) []TCBEnvConfig {
+	if len(allowed) == 0 {
+		return nil
+	}
+	filtered := make([]TCBEnvConfig, 0, len(envs))
+	for _, env := range envs {
+		if allowed[env.EnvID] {
+			filtered = append(filtered, env)
+		}
+	}
+	return filtered
 }
 
 // parseTCBBucketName 从 TCB 静态托管桶名解析 env_id 和 app_id
@@ -146,18 +185,26 @@ func discoverTCBEnvs() ([]TCBEnvConfig, error) {
 		return nil, fmt.Errorf("list COS buckets: %w", err)
 	}
 
-	var envs []TCBEnvConfig
+	var discovered []TCBEnvConfig
 	for _, b := range result.Buckets {
 		envID, appID, ok := parseTCBBucketName(b.Name)
 		if !ok {
 			continue
 		}
-		envs = append(envs, TCBEnvConfig{
+		discovered = append(discovered, TCBEnvConfig{
 			EnvID:     envID,
 			AppID:     appID,
 			COSBucket: b.Name,
 			COSRegion: b.Region,
 		})
+	}
+	allowed := parseTCBEnvAllowlist(os.Getenv("TCB_ENV_ALLOWLIST"))
+	envs := filterTCBEnvsByAllowlist(discovered, allowed)
+	if len(allowed) == 0 {
+		tcbLogger().Error("TCB_ENV_ALLOWLIST is empty; static-site allocation is disabled")
+	} else {
+		tcbLogger().Info("filtered discovered TCB environments by allowlist",
+			zap.Int("discovered", len(discovered)), zap.Int("approved", len(envs)))
 	}
 	return envs, nil
 }
@@ -186,7 +233,7 @@ func getTCBEnvs() ([]TCBEnvConfig, error) {
 	envs, err := discoverTCBEnvs()
 	if err != nil {
 		if len(tcbEnvs) > 0 {
-			resource.ZapLogger.Warn("TCB env discovery failed, using stale cache", zap.Error(err))
+			tcbLogger().Warn("TCB env discovery failed, using stale cache", zap.Error(err))
 			out := make([]TCBEnvConfig, len(tcbEnvs))
 			copy(out, tcbEnvs)
 			return out, nil
@@ -196,7 +243,7 @@ func getTCBEnvs() ([]TCBEnvConfig, error) {
 
 	tcbEnvs = envs
 	tcbEnvsTime = time.Now()
-	resource.ZapLogger.Info("discovered TCB environments", zap.Int("count", len(envs)))
+	tcbLogger().Info("discovered TCB environments", zap.Int("count", len(envs)))
 	return envs, nil
 }
 
@@ -214,7 +261,7 @@ func countSitesPerEnv() map[string]int64 {
 		Where("deleted_time IS NULL").
 		Group("tcb_env_id").
 		Scan(&rows).Error; err != nil {
-		resource.ZapLogger.Warn("count sites per TCB env failed", zap.Error(err))
+		tcbLogger().Warn("count sites per TCB env failed", zap.Error(err))
 		return nil
 	}
 	result := make(map[string]int64, len(rows))
@@ -246,7 +293,7 @@ func selectTCBEnv() (*TCBEnvConfig, error) {
 
 		// 跳过被手动禁用的环境
 		if disabled[envID] {
-			resource.ZapLogger.Info("skipping disabled TCB env", zap.String("env_id", envID))
+			tcbLogger().Info("skipping disabled TCB env", zap.String("env_id", envID))
 			continue
 		}
 
@@ -265,14 +312,14 @@ func selectTCBEnv() (*TCBEnvConfig, error) {
 		if envMax > 0 {
 			usage := float64(count) / float64(envMax)
 			if usage >= 1.0 {
-				resource.ZapLogger.Warn("TCB env at full capacity, skipping",
+				tcbLogger().Warn("TCB env at full capacity, skipping",
 					zap.String("env_id", envID),
 					zap.Int64("sites", count),
 					zap.Int("max", envMax))
 				continue
 			}
 			if usage >= 0.8 {
-				resource.ZapLogger.Warn("TCB env near capacity",
+				tcbLogger().Warn("TCB env near capacity",
 					zap.String("env_id", envID),
 					zap.Int64("sites", count),
 					zap.Int("max", envMax),
@@ -284,7 +331,7 @@ func selectTCBEnv() (*TCBEnvConfig, error) {
 	}
 
 	if len(available) == 0 {
-		resource.ZapLogger.Error("all TCB environments at capacity or disabled",
+		tcbLogger().Error("all TCB environments at capacity or disabled",
 			zap.Int("total_discovered", len(envs)),
 			zap.Int("disabled_count", len(disabled)))
 		return nil, errcode.ErrWebsiteNoAvailableEnv
@@ -292,7 +339,7 @@ func selectTCBEnv() (*TCBEnvConfig, error) {
 
 	idx := rand.Intn(len(available))
 	selected := &available[idx]
-	resource.ZapLogger.Info("selected TCB env",
+	tcbLogger().Info("selected TCB env",
 		zap.String("env_id", selected.EnvID),
 		zap.String("bucket", selected.COSBucket),
 		zap.Int64("current_sites", siteCounts[selected.EnvID]))
@@ -312,4 +359,3 @@ func getTCBEnvByID(envID string) *TCBEnvConfig {
 	}
 	return nil
 }
-

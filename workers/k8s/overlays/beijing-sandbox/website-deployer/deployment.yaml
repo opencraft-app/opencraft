@@ -52,8 +52,10 @@ spec:
               key: REDIS_ADDR
         - name: POLL_INTERVAL_SECONDS
           value: "10"
+        # 峰值内存约为 MAX_CONCURRENCY × WEBSITE_MAX_ARTIFACT_BYTES(64MB)。
+        # 原值 10 配 512Mi limit 是 640MB > 512Mi，属未触发的 OOMKilled。
         - name: MAX_CONCURRENCY
-          value: "10"
+          value: "2"
         - name: WEBSITE_REQUIRE_REDIS_LIMITER
           value: "true"
         - name: WEBSITE_COS_UPLOADS_PER_MINUTE

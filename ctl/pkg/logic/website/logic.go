@@ -6,12 +6,14 @@ import (
 	crand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/tencentyun/cos-go-sdk-v5"
 
@@ -97,6 +99,30 @@ type logic struct {
 	logger       *zap.Logger
 }
 
+const (
+	retryBaseDelay = 30 * time.Second
+	retryMaxDelay  = 15 * time.Minute
+	// maxOperationAttempts 限制可重试操作（delete/suspend/resume）的尝试次数。
+	// 达到上限后转dead 死信终态并停止重试，避免环境长期不可达时无限循环。
+	maxOperationAttempts = 10
+	// maxErrorMessageLen 与 website_operations.error_message 的列宽(2048)对齐留余量。
+	// 不截断会在 MySQL strict mode 下触发 1406，导致失败回调本身失败、操作卡在 running。
+	maxErrorMessageLen = 1024
+)
+
+// truncateErrorMessage 保证错误信息可安全落库。
+func truncateErrorMessage(msg string) string {
+	if len(msg) <= maxErrorMessageLen {
+		return msg
+	}
+	// 按 rune 边界截断，避免把多字节字符切坏导致写入非法 utf8mb4。
+	truncated := msg[:maxErrorMessageLen]
+	for len(truncated) > 0 && !utf8.ValidString(truncated) {
+		truncated = truncated[:len(truncated)-1]
+	}
+	return truncated + "...(truncated)"
+}
+
 func NewLogic() Logic {
 	return &logic{
 		siteDao:      website.NewSiteDao(),
@@ -119,7 +145,52 @@ func isCurrentOperationGeneration(operationGeneration, siteGeneration int64) boo
 	return operationGeneration == siteGeneration
 }
 
+// shouldRetryFailedOperation 判断失败操作是否应被重新调度。
+//
+// 可重试的都是「系统触发、用户无法自助重试」的清理/状态收敛类操作：
+//   - delete：站点目录必须删净才能释放席位，失败不能就此放弃
+//   - suspend：套餐到期必须真正下线，失败会造成已过期站点仍然对外可访问
+//   - resume：套餐续费必须恢复站点，失败会造成用户已付费但站点仍不可访问
+//
+// create/deploy 不重试：它们由用户发起，失败后由用户自己重新操作，
+// 且 deploy 的制品上传窗口有时效，盲目重试没有意义。
+func shouldRetryFailedOperation(operationType string) bool {
+	switch operationType {
+	case website.OpTypeDelete, website.OpTypeSuspend, website.OpTypeResume:
+		return true
+	default:
+		return false
+	}
+}
+
+func nextRetryAt(now time.Time, attempt int) time.Time {
+	if attempt < 1 {
+		attempt = 1
+	}
+	delay := retryBaseDelay
+	for i := 1; i < attempt && delay < retryMaxDelay; i++ {
+		delay *= 2
+	}
+	if delay > retryMaxDelay {
+		delay = retryMaxDelay
+	}
+	return now.UTC().Add(delay)
+}
+
 // ---- 辅助函数 ----
+
+// isDuplicateKeyError 判断是否为唯一索引冲突。
+// GORM 只在开启 TranslateError 时返回 ErrDuplicatedKey，因此同时兜底匹配 MySQL 原始错误。
+func isDuplicateKeyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "Duplicate entry") || strings.Contains(msg, "Error 1062")
+}
 
 func (l *logic) getActivePass(userID string) (*pass.Entity, error) {
 	passes, err := l.passDao.ListByUserID(userID)
@@ -173,8 +244,30 @@ func (l *logic) notifyDeployer(operationID string) {
 	}
 }
 
+// findSiteQuotaRow 查找该用户的建站配额行，故意不按 resource_key 过滤。
+//
+// resource_key 存的是初始化时的 bundle_id，用户换套餐后它与当前 bundle_id 不一致。
+// 若查询带上当前 bundle_id，换过套餐的用户永远查不到既有行，
+// 于是每换一次套餐就多插一行配额，同一用户出现多行建站配额后
+// 席位统计和归还都会失真（一次删站可能归还多个席位）。
+func (l *logic) findSiteQuotaRow(userID string) (*quota.Entity, error) {
+	var entity quota.Entity
+	err := resource.GormDB.Table(quota.TableName).
+		Where(quota.ColumnUserID+" = ? AND "+quota.ColumnResourceName+" = ?",
+			userID, website.ResourceNameWebsiteSite).
+		Order("id" + " ASC").
+		First(&entity).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &entity, nil
+}
+
 func (l *logic) ensureQuotaInitialized(userID, bundleID string, q *website.BundleStaticSiteQuota) error {
-	existing, err := l.quotaDao.SelectQuota(userID, website.ResourceNameWebsiteSite, bundleID)
+	existing, err := l.findSiteQuotaRow(userID)
 	if err != nil {
 		return fmt.Errorf("select site quota: %w", err)
 	}
@@ -304,7 +397,9 @@ func (l *logic) CreateSite(userID, bundleID, name, idempotencyKey string) (*Crea
 		l.logger.Warn("ensure quota init failed", zap.Error(err))
 	}
 
-	// 幂等：如果 idempotencyKey 非空，查是否已存在同名的未删除站点
+	// 幂等：同一用户 + 同一幂等键只允许一个存活站点。
+	// 这里的预检查用于快速返回；真正的并发保护由
+	// website_sites 的 uk_user_idempotency 唯一索引兜底（见下方Create 冲突处理）。
 	if idempotencyKey != "" {
 		existing, err := l.siteDao.GetByIdempotencyKey(userID, idempotencyKey)
 		if err != nil {
@@ -335,17 +430,8 @@ func (l *logic) CreateSite(userID, bundleID, name, idempotencyKey string) (*Crea
 	}
 
 	err = resource.GormDB.Transaction(func(tx *gorm.DB) error {
-		// 原子扣席位
-		result := tx.Table(quota.TableName).
-			Where(quota.ColumnUserID+" = ? AND "+quota.ColumnResourceName+" = ? AND "+
-				quota.ColumnResourceKey+" = ? AND "+quota.ColumnResourceQuotaAvailable+" >= ?",
-				userID, website.ResourceNameWebsiteSite, bundleID, int64(1)).
-			Update(quota.ColumnResourceQuotaAvailable, gorm.Expr(quota.ColumnResourceQuotaAvailable+" - ?", int64(1)))
-		if result.Error != nil {
-			return fmt.Errorf("alloc site quota: %w", result.Error)
-		}
-		if result.RowsAffected == 0 {
-			return errcode.ErrWebsiteQuotaExceeded
+		if err := l.allocSiteQuotaTx(tx, userID); err != nil {
+			return err
 		}
 
 		site := &website.SiteEntity{
@@ -356,6 +442,10 @@ func (l *logic) CreateSite(userID, bundleID, name, idempotencyKey string) (*Crea
 			Status:              website.SiteStatusCreating,
 			TCBEnvID:            tcbEnv.EnvID,
 			OperationGeneration: 1,
+		}
+		if idempotencyKey != "" {
+			key := idempotencyKey
+			site.IdempotencyKey = &key
 		}
 		site.UserID = userID
 		if err := tx.Table(website.SitesTable).Create(site).Error; err != nil {
@@ -377,6 +467,16 @@ func (l *logic) CreateSite(userID, bundleID, name, idempotencyKey string) (*Crea
 		return nil
 	})
 	if err != nil {
+		// 并发重试撞上 uk_user_idempotency 唯一索引：说明另一个请求已经建好了站点，
+		// 按幂等语义返回既有站点，而不是把冲突当失败抛给调用方。
+		if idempotencyKey != "" && isDuplicateKeyError(err) {
+			existing, lookupErr := l.siteDao.GetByIdempotencyKey(userID, idempotencyKey)
+			if lookupErr == nil && existing != nil {
+				l.logger.Info("website site create deduplicated by idempotency key",
+					zap.String("site_id", existing.SiteID), zap.String("user_id", userID))
+				return &CreateSiteResult{SiteID: existing.SiteID}, nil
+			}
+		}
 		return nil, err
 	}
 
@@ -661,12 +761,13 @@ func (l *logic) ClaimOperation(operationID, workerID string, leaseTTL time.Durat
 	now := time.Now().UTC()
 	expiresAt := now.Add(leaseTTL)
 	result := resource.GormDB.Table(website.OperationsTable).
-		Where("operation_id = ? AND (status = ? OR (status = ? AND lease_expires_at IS NOT NULL AND lease_expires_at < ?))",
-			operationID, website.OpStatusCreated, website.OpStatusRunning, now).
+		Where("operation_id = ? AND ((status = ? AND (next_retry_at IS NULL OR next_retry_at <= ?)) OR (status = ? AND lease_expires_at IS NOT NULL AND lease_expires_at < ?))",
+			operationID, website.OpStatusCreated, now, website.OpStatusRunning, now).
 		Updates(map[string]interface{}{
 			"status":           website.OpStatusRunning,
 			"lease_token":      token,
 			"lease_expires_at": expiresAt,
+			"next_retry_at":    nil,
 			"attempt":          gorm.Expr("attempt + 1"),
 			"error_message":    "",
 		})
@@ -738,6 +839,14 @@ func (l *logic) CompleteOperation(operationID, leaseToken, cloudPath, publicURL 
 			}
 
 		case website.OpTypeDeploy:
+			// 先让该站点此前的 active 版本退位，保证「当前版本」唯一。
+			// 否则续费恢复、发布历史展示都会面对多个自称当前的版本。
+			if err := tx.Table(website.ReleasesTable).
+				Where("site_id = ? AND status = ? AND release_id <> ?",
+					op.SiteID, website.ReleaseStatusActive, op.ReleaseID).
+				Update("status", website.ReleaseStatusSuperseded).Error; err != nil {
+				return err
+			}
 			if err := tx.Table(website.ReleasesTable).Where("release_id = ?", op.ReleaseID).
 				Update("status", website.ReleaseStatusActive).Error; err != nil {
 				return err
@@ -751,6 +860,45 @@ func (l *logic) CompleteOperation(operationID, leaseToken, cloudPath, publicURL 
 					Updates(map[string]interface{}{"cloud_path": cloudPath, "public_url": publicURL}).Error; err != nil {
 					return err
 				}
+			}
+
+		case website.OpTypeDelete:
+			now := time.Now().UTC()
+			if err := tx.Table(website.SitesTable).Where("site_id = ?", op.SiteID).
+				Updates(map[string]interface{}{
+					"status":       website.SiteStatusDeleted,
+					"deleted_time": &now,
+					"cloud_path":   "",
+					"public_url":   "",
+				}).Error; err != nil {
+				return err
+			}
+			if err := l.releaseSiteQuotaTx(tx, op.UserID); err != nil {
+				return err
+			}
+
+		case website.OpTypeSuspend:
+			// 站点在发起 suspend 时已置为 suspended，这里只需确认终态。
+			// 保留 public_url：URL 是稳定的 current/ 形式，续费恢复后地址不变。
+			if err := tx.Table(website.SitesTable).
+				Where("site_id = ? AND status = ?", op.SiteID, website.SiteStatusSuspended).
+				Update("cloud_path", "").Error; err != nil {
+				return err
+			}
+
+		case website.OpTypeResume:
+			// 只有确实完成了文件恢复才转active，避免「显示可用但内容未上线」。
+			updates := map[string]interface{}{"status": website.SiteStatusActive}
+			if cloudPath != "" {
+				updates["cloud_path"] = cloudPath
+			}
+			if publicURL != "" {
+				updates["public_url"] = publicURL
+			}
+			if err := tx.Table(website.SitesTable).
+				Where("site_id = ? AND status = ?", op.SiteID, website.SiteStatusSuspended).
+				Updates(updates).Error; err != nil {
+				return err
 			}
 		}
 
@@ -795,9 +943,30 @@ func (l *logic) FailOperation(operationID, leaseToken, errorMessage string) erro
 		if !isCurrentOperationGeneration(op.SiteGeneration, site.OperationGeneration) {
 			return l.markSupersededOperationTx(tx, &op)
 		}
+		safeMessage := truncateErrorMessage(errorMessage)
+		updates := map[string]interface{}{
+			"status":           website.OpStatusFailed,
+			"error_message":    safeMessage,
+			"lease_expires_at": nil,
+		}
+		// 可重试操作：未达上限则回到 created 等待重新调度；
+		// 达到上限转dead 死信终态，停止重试并等待人工介入。
+		if shouldRetryFailedOperation(op.OperationType) {
+			if op.Attempt >= maxOperationAttempts {
+				updates["status"] = website.OpStatusDead
+				updates["error_message"] = truncateErrorMessage(fmt.Sprintf(
+					"giving up after %d attempts: %s", op.Attempt, errorMessage))
+				updates["next_retry_at"] = nil
+				updates["lease_token"] = ""
+			} else {
+				updates["status"] = website.OpStatusCreated
+				updates["next_retry_at"] = nextRetryAt(time.Now(), op.Attempt)
+				updates["lease_token"] = ""
+			}
+		}
 		if result := tx.Table(website.OperationsTable).
 			Where("operation_id = ? AND status = ? AND lease_token = ?", operationID, website.OpStatusRunning, leaseToken).
-			Updates(map[string]interface{}{"status": website.OpStatusFailed, "error_message": errorMessage, "lease_expires_at": nil}); result.Error != nil {
+			Updates(updates); result.Error != nil {
 			return result.Error
 		} else if result.RowsAffected != 1 {
 			return errcode.ErrWebsiteOperationNotClaimed
@@ -805,16 +974,17 @@ func (l *logic) FailOperation(operationID, leaseToken, errorMessage string) erro
 
 		switch op.OperationType {
 		case website.OpTypeCreate:
-			if _, err := tx.Table(quota.TableName).
-				Where(quota.ColumnUserID+" = ? AND "+quota.ColumnResourceName+" = ? AND "+quota.ColumnResourceKey+" = ?", op.UserID, website.ResourceNameWebsiteSite, site.BundleID).
-				Update(quota.ColumnResourceQuotaAvailable, gorm.Expr("LEAST("+quota.ColumnResourceQuotaAvailable+" + 1, "+quota.ColumnResourceQuotaTotal+")")).Rows(); err != nil {
+			if err := l.releaseSiteQuotaTx(tx, op.UserID); err != nil {
 				return err
 			}
 			return tx.Table(website.SitesTable).Where("site_id = ?", op.SiteID).
 				Updates(map[string]interface{}{"status": website.SiteStatusDeleted, "deleted_time": time.Now().UTC()}).Error
 		case website.OpTypeDeploy:
 			return tx.Table(website.ReleasesTable).Where("release_id = ?", op.ReleaseID).
-				Updates(map[string]interface{}{"status": website.ReleaseStatusFailed, "error_message": errorMessage}).Error
+				Updates(map[string]interface{}{"status": website.ReleaseStatusFailed, "error_message": safeMessage}).Error
+		case website.OpTypeDelete, website.OpTypeSuspend, website.OpTypeResume:
+			// 站点状态保持不变，等待重试或人工介入。
+			return nil
 		}
 		return nil
 	})
@@ -826,6 +996,102 @@ func (l *logic) FailOperation(operationID, leaseToken, errorMessage string) erro
 		zap.String("operation_id", operationID),
 		zap.String("error", errorMessage),
 	)
+	return nil
+}
+
+// allocSiteQuotaTx 占用一个站点席位。
+//
+// 定位配额行只用 (user_id, resource_name)，与 releaseSiteQuotaTx 保持一致，
+// 故意不带 resource_key：resource_key 存的是配额行初始化时的 bundle_id，
+// 用户换套餐后它与当前 bundle_id 不一致。扣减前虽然有 ensureQuotaInitialized
+// 负责把 resource_key 改写成当前 bundle_id，但它失败时只告警不中断流程，
+// 一旦改写没生效，按 resource_key 匹配就会 0 行命中，
+// 用户看到的是「套餐建站数量已满」，真实原因却是配额行没对齐。
+//
+// 扣减本身仍是单条原子 UPDATE（带 available >= 1 条件），不存在先读后写的超扣竞态；
+// 先定位主键只是为了保证严格只影响一行，并区分「配额行缺失」与「配额真的用尽」。
+func (l *logic) allocSiteQuotaTx(tx *gorm.DB, userID string) error {
+	var quotaID int64
+	if err := tx.Table(quota.TableName).
+		Select("id").
+		Where(quota.ColumnUserID+" = ? AND "+quota.ColumnResourceName+" = ?",
+			userID, website.ResourceNameWebsiteSite).
+		Order("id" + " ASC").
+		Limit(1).
+		Scan(&quotaID).Error; err != nil {
+		return fmt.Errorf("locate site quota row: %w", err)
+	}
+	if quotaID == 0 {
+		// 配额行缺失说明 ensureQuotaInitialized 没能建行（它的错误只告警不中断），
+		// 这是服务端数据不一致，不是用户配额用尽，不能返回 ErrWebsiteQuotaExceeded 误导排查。
+		l.logger.Error("website site quota row missing, cannot allocate seat",
+			zap.String("user_id", userID),
+			zap.String("resource_name", website.ResourceNameWebsiteSite),
+		)
+		return errcode.Wrap(errcode.ErrInternalServer, "site quota row missing for user %s", userID)
+	}
+
+	result := tx.Table(quota.TableName).
+		Where("id"+" = ? AND "+quota.ColumnResourceQuotaAvailable+" >= ?", quotaID, int64(1)).
+		Update(quota.ColumnResourceQuotaAvailable, gorm.Expr(quota.ColumnResourceQuotaAvailable+" - ?", int64(1)))
+	if result.Error != nil {
+		return fmt.Errorf("alloc site quota: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		// available 已经是 0：席位确实用尽，这是给用户看的业务错误。
+		return errcode.ErrWebsiteQuotaExceeded
+	}
+	return nil
+}
+
+// releaseSiteQuotaTx 归还一个站点席位。
+//
+// 定位配额行只用 (user_id, resource_name)，故意不带 resource_key：
+// resource_key 存的是 bundle_id，用户换套餐时 ensureQuotaInitialized 会把它改写成
+// 新 bundle_id，而站点行上记的仍是建站时的旧 bundle_id。若按站点的 bundle_id过滤，
+// 换过套餐的用户删站时会匹配 0 行、席位被永久吃掉。
+// 每个用户对该资源只有一行配额，所以按 (user_id, resource_name) 定位是精确的。
+//
+// 配额行不存在时（例如 Pass 已销毁、配额行已被清理）只告警不报错：
+// 否则 delete 操作会因为「没有配额可还」而永久失败重试，站点反而删不掉。
+func (l *logic) releaseSiteQuotaTx(tx *gorm.DB, userID string) error {
+	// 先定位唯一一行再更新，而不是直接按条件批量 UPDATE。
+	// 历史数据里同一用户可能存在多行建站配额（旧版ensureQuotaInitialized 每换一次
+	// 套餐就会插一行），批量更新会一次归还多个席位造成超卖。
+	var quotaID int64
+	if err := tx.Table(quota.TableName).
+		Select("id").
+		Where(quota.ColumnUserID+" = ? AND "+quota.ColumnResourceName+" = ?",
+			userID, website.ResourceNameWebsiteSite).
+		Order("id" + " ASC").
+		Limit(1).
+		Scan(&quotaID).Error; err != nil {
+		return fmt.Errorf("locate site quota row: %w", err)
+	}
+	if quotaID == 0 {
+		// 配额行不存在（例如 Pass 已销毁、配额行已被清理）时只告警不报错：
+		// 否则 delete 操作会因为「没有配额可还」而永久失败重试，站点反而删不掉。
+		l.logger.Warn("website site quota not released: no quota row for user",
+			zap.String("user_id", userID),
+			zap.String("resource_name", website.ResourceNameWebsiteSite),
+		)
+		return nil
+	}
+
+	result := tx.Table(quota.TableName).
+		Where("id"+" = ? AND "+
+			quota.ColumnResourceQuotaAvailable+" < "+quota.ColumnResourceQuotaTotal, quotaID).
+		Update(quota.ColumnResourceQuotaAvailable, gorm.Expr(quota.ColumnResourceQuotaAvailable+" + ?", int64(1)))
+	if result.Error != nil {
+		return fmt.Errorf("free site quota: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		// available 已等于 total，说明没有占用中的席位可归还，属于重复归还的幂等场景。
+		l.logger.Warn("website site quota already at full availability",
+			zap.String("user_id", userID),
+			zap.Int64("quota_id", quotaID),
+		)
+	}
 	return nil
 }
 
@@ -846,7 +1112,7 @@ func (l *logic) DeleteSite(userID, siteID string) (*DeleteSiteResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if site == nil || site.Status == website.SiteStatusDeleted {
+	if site == nil || site.Status == website.SiteStatusDeleted || site.Status == website.SiteStatusDeleting {
 		return nil, errcode.ErrWebsiteNotFound
 	}
 
@@ -861,28 +1127,16 @@ func (l *logic) DeleteSite(userID, siteID string) (*DeleteSiteResult, error) {
 			Where("site_id = ? AND user_id = ?", siteID, userID).First(&lockedSite).Error; err != nil {
 			return err
 		}
-		if lockedSite.Status == website.SiteStatusDeleted {
+		if lockedSite.Status == website.SiteStatusDeleted || lockedSite.Status == website.SiteStatusDeleting {
 			return errcode.ErrWebsiteNotFound
 		}
-		// 释放席位
-		result := tx.Table(quota.TableName).
-			Where(quota.ColumnUserID+" = ? AND "+quota.ColumnResourceName+" = ? AND "+
-				quota.ColumnResourceKey+" = ? AND ("+quota.ColumnResourceQuotaAvailable+" + ?) <= "+quota.ColumnResourceQuotaTotal,
-				userID, website.ResourceNameWebsiteSite, lockedSite.BundleID, int64(1)).
-			Update(quota.ColumnResourceQuotaAvailable, gorm.Expr(quota.ColumnResourceQuotaAvailable+" + ?", int64(1)))
-		if result.Error != nil {
-			return fmt.Errorf("free site quota: %w", result.Error)
-		}
-
-		now := time.Now()
 		if err := tx.Table(website.SitesTable).
 			Where("site_id = ?", siteID).
 			Updates(map[string]interface{}{
-				"status":               website.SiteStatusDeleted,
-				"deleted_time":         &now,
+				"status":               website.SiteStatusDeleting,
 				"operation_generation": lockedSite.OperationGeneration + 1,
 			}).Error; err != nil {
-			return fmt.Errorf("soft delete site: %w", err)
+			return fmt.Errorf("mark site deleting: %w", err)
 		}
 
 		op := &website.OperationEntity{
@@ -903,7 +1157,7 @@ func (l *logic) DeleteSite(userID, siteID string) (*DeleteSiteResult, error) {
 		return nil, err
 	}
 
-	l.logger.Info("website site deleted",
+	l.logger.Info("website site deletion requested",
 		zap.String("site_id", siteID),
 		zap.String("user_id", userID),
 		zap.String("operation_id", operationID),
@@ -917,35 +1171,157 @@ func (l *logic) DeleteSite(userID, siteID string) (*DeleteSiteResult, error) {
 }
 
 // ---- Pass生命周期联动 ----
+//
+// 套餐到期/续费必须真正改变站点在CloudBase 上的可访问性，不能只改 DB 状态：
+// v2 已移除平台反向代理，用户拿到的是 CloudBase 原生 URL，平台不在访问路径上，
+// 所以「下线」只能通过删除线上发布文件实现。
+//
+//   suspend：删除 sites/{siteID}/ 下的发布文件，保留 _artifacts/ 下的制品
+//   resume ：从保留的制品重新发布，站点 URL 保持不变
+//
+// 制品的最终清理由 Pass 销毁链路（DeleteAllSitesOnPassDestroyed → delete 操作）
+// 统一完成，这里不需要额外的定时清理。
 
-// OnPassIsolated Pass到期/隔离时，挂起用户所有active站点
+// OnPassIsolated Pass到期/隔离时，下线用户所有 active 站点。
+//
+// 站点状态在事务内立即置为 suspended，用户和前端马上能看到准确状态；
+// CloudBase 上的文件删除由 worker 异步完成，失败会持久重试。
 func (l *logic) OnPassIsolated(userID string) error {
-	affected, err := l.siteDao.SuspendActiveByUserID(userID)
+	sites, err := l.siteDao.ListActiveByUserID(userID)
 	if err != nil {
-		return fmt.Errorf("suspend sites on pass isolated: %w", err)
+		return fmt.Errorf("list active sites on pass isolated: %w", err)
 	}
-	if affected > 0 {
+	var firstErr error
+	suspended := 0
+	for _, site := range sites {
+		operationID, err := l.transitionSiteForPassLifecycle(
+			userID, site.SiteID, website.OpTypeSuspend,
+			website.SiteStatusActive, website.SiteStatusSuspended, "")
+		if err != nil {
+			l.logger.Warn("suspend site on pass isolated failed",
+				zap.String("user_id", userID), zap.String("site_id", site.SiteID), zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		suspended++
+		l.notifyDeployer(operationID)
+	}
+	if suspended > 0 {
 		l.logger.Info("sites suspended on pass isolated",
-			zap.String("user_id", userID),
-			zap.Int64("affected", affected),
-		)
+			zap.String("user_id", userID), zap.Int("count", suspended))
 	}
-	return nil
+	return firstErr
 }
 
-// OnPassRenewed Pass续费成功后，恢复suspended站点为active
+// OnPassRenewed Pass 续费成功后，从保留的制品恢复用户所有 suspended 站点。
+//
+// 站点保持 suspended 直到 worker 真正把文件重新发布完成，
+// 避免出现「状态显示可用但内容还没上线」的空窗。
 func (l *logic) OnPassRenewed(userID string) error {
-	affected, err := l.siteDao.ReactivateSuspendedByUserID(userID)
+	sites, err := l.siteDao.ListSuspendedByUserID(userID)
 	if err != nil {
-		return fmt.Errorf("reactivate sites on pass renewed: %w", err)
+		return fmt.Errorf("list suspended sites on pass renewed: %w", err)
 	}
-	if affected > 0 {
-		l.logger.Info("sites reactivated on pass renewed",
-			zap.String("user_id", userID),
-			zap.Int64("affected", affected),
-		)
+	var firstErr error
+	resumed := 0
+	for _, site := range sites {
+		release, err := l.releaseDao.GetActiveBySiteID(site.SiteID)
+		if err != nil {
+			l.logger.Warn("lookup active release on pass renewed failed",
+				zap.String("site_id", site.SiteID), zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if release == nil {
+			// 站点从未成功发布过内容，没有制品可恢复，直接恢复可用状态。
+			if err := l.siteDao.UpdateStatus(site.SiteID, website.SiteStatusActive); err != nil {
+				l.logger.Warn("reactivate never-deployed site failed",
+					zap.String("site_id", site.SiteID), zap.Error(err))
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			resumed++
+			continue
+		}
+
+		operationID, err := l.transitionSiteForPassLifecycle(
+			userID, site.SiteID, website.OpTypeResume,
+			website.SiteStatusSuspended, website.SiteStatusSuspended, release.ReleaseID)
+		if err != nil {
+			l.logger.Warn("resume site on pass renewed failed",
+				zap.String("user_id", userID), zap.String("site_id", site.SiteID), zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		resumed++
+		l.notifyDeployer(operationID)
 	}
-	return nil
+	if resumed > 0 {
+		l.logger.Info("sites resumed on pass renewed",
+			zap.String("user_id", userID), zap.Int("count", resumed))
+	}
+	return firstErr
+}
+
+// transitionSiteForPassLifecycle 在一个事务内推进站点状态并登记异步操作。
+//
+// 推进 operation_generation 是为了让任何在途的旧操作在回调时被判定为 superseded，
+// 避免「到期下线」和「续费恢复」互相踩，或旧的 deploy 把已下线的站点又传回去。
+func (l *logic) transitionSiteForPassLifecycle(
+	userID, siteID, opType, expectedStatus, nextStatus, releaseID string,
+) (string, error) {
+	operationID, err := l.generateID("website_operation", "wo")
+	if err != nil {
+		return "", err
+	}
+
+	err = resource.GormDB.Transaction(func(tx *gorm.DB) error {
+		var lockedSite website.SiteEntity
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table(website.SitesTable).
+			Where("site_id = ? AND user_id = ?", siteID, userID).First(&lockedSite).Error; err != nil {
+			return err
+		}
+		if lockedSite.Status != expectedStatus {
+			// 站点状态已被其他流程改变（例如用户已自行删除），跳过本次联动。
+			return errcode.ErrWebsiteNotActive
+		}
+
+		nextGeneration := lockedSite.OperationGeneration + 1
+		siteUpdates := map[string]interface{}{"operation_generation": nextGeneration}
+		if nextStatus != expectedStatus {
+			siteUpdates["status"] = nextStatus
+		}
+		if err := tx.Table(website.SitesTable).
+			Where("site_id = ?", siteID).Updates(siteUpdates).Error; err != nil {
+			return fmt.Errorf("advance site for %s: %w", opType, err)
+		}
+
+		op := &website.OperationEntity{
+			OperationID:    operationID,
+			SiteID:         siteID,
+			ReleaseID:      releaseID,
+			OperationType:  opType,
+			Status:         website.OpStatusCreated,
+			SiteGeneration: nextGeneration,
+		}
+		op.UserID = userID
+		if err := tx.Table(website.OperationsTable).Create(op).Error; err != nil {
+			return fmt.Errorf("create %s operation: %w", opType, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return operationID, nil
 }
 
 // 保留 sha256 引用以防未来需要

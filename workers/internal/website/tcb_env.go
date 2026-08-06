@@ -63,6 +63,32 @@ func getMainAccountSecrets() (string, string) {
 	return os.Getenv("TENCENT_SECRET_ID"), os.Getenv("TENCENT_SECRET_KEY")
 }
 
+// parseTCBEnvAllowlist keeps the worker aligned with ctl. The worker only
+// touches explicitly approved hosting buckets, including when retrying cleanup.
+func parseTCBEnvAllowlist(raw string) map[string]bool {
+	allowed := make(map[string]bool)
+	for _, id := range strings.Split(raw, ",") {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			allowed[id] = true
+		}
+	}
+	return allowed
+}
+
+func filterTCBEnvsByAllowlist(envs []TCBEnvConfig, allowed map[string]bool) []TCBEnvConfig {
+	if len(allowed) == 0 {
+		return nil
+	}
+	filtered := make([]TCBEnvConfig, 0, len(envs))
+	for _, env := range envs {
+		if allowed[env.EnvID] {
+			filtered = append(filtered, env)
+		}
+	}
+	return filtered
+}
+
 // discoverTCBEnvs 调 COS Service API 列出所有桶，过滤出 TCB 静态托管桶
 func discoverTCBEnvs() ([]TCBEnvConfig, error) {
 	secretID, secretKey := getMainAccountSecrets()
@@ -82,18 +108,25 @@ func discoverTCBEnvs() ([]TCBEnvConfig, error) {
 		return nil, fmt.Errorf("list COS buckets: %w", err)
 	}
 
-	var envs []TCBEnvConfig
+	var discovered []TCBEnvConfig
 	for _, b := range result.Buckets {
 		envID, appID, ok := parseTCBBucketName(b.Name)
 		if !ok {
 			continue
 		}
-		envs = append(envs, TCBEnvConfig{
+		discovered = append(discovered, TCBEnvConfig{
 			EnvID:     envID,
 			AppID:     appID,
 			COSBucket: b.Name,
 			COSRegion: b.Region,
 		})
+	}
+	allowed := parseTCBEnvAllowlist(os.Getenv("TCB_ENV_ALLOWLIST"))
+	envs := filterTCBEnvsByAllowlist(discovered, allowed)
+	if len(allowed) == 0 {
+		log.Printf("TCB_ENV_ALLOWLIST is empty; website deployer is disabled")
+	} else {
+		log.Printf("filtered discovered TCB environments: discovered=%d approved=%d", len(discovered), len(envs))
 	}
 	return envs, nil
 }

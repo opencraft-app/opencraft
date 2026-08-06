@@ -12,6 +12,8 @@ Thumbs.db
 .agents/*
 !.agents/skills/
 !.agents/skills/**
+# 本地专用运维 SOP（含内网机器/集群拓扑，不入库）
+.agents/skills/deploy-beijing-sandbox/
 .claude/
 .gemini/
 .omx/
@@ -95,6 +97,8 @@ gateway-dashboard/k8s/overlays/*/generated/
 ctl/k8s/overlays/*/generated/
 frontend/k8s/overlays/*/generated/
 workers/k8s/overlays/*/generated/
+# workers overlay 里每个 worker 自己一层目录（如 shprod/website-deployer/generated/）
+workers/k8s/overlays/*/*/generated/*.env
 deploy/envs/*/platform.env
 deploy/envs/*/*.kustomize.secret.env
 deploy/envs/localstack/overrides/*.env

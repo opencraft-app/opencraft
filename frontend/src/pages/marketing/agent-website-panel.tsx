@@ -1,5 +1,5 @@
-import { ExternalLink, Globe, Loader2, Plus, Trash2, Zap } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { ExternalLink, Globe, Loader2, Trash2, Zap } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { readStoredAuthToken } from "@/repositories/http-repositories";
@@ -32,11 +32,43 @@ interface WebsiteSite {
   DeletedTime: string | null;
 }
 
+/**
+ * 删除操作实体。ctl 直接返回 GORM 实体，字段名是 Go 风格大驼峰，
+ * 与 WebsiteSite 一致，不要改成 snake_case。
+ */
+interface WebsiteOperation {
+  OperationID: string;
+  Status: string;
+  ErrorMessage: string;
+}
+
+interface DeleteSiteResult {
+  operation_id: string;
+}
+
 interface ApiResponse<T> {
   code: string;
   message: string;
   data: T;
   request_id?: string;
+}
+
+/**
+ * 删除是异步的：DELETE 只登记 operation，真正清理 COS 由 website-deployer 执行。
+ * 前端轮询 operation 状态收敛 UI，2s 起步指数退避到 5s，60s 未收敛就停止轮询
+ * （实测通常几秒完成），避免无限轮询。
+ */
+const DELETE_POLL_INITIAL_INTERVAL_MS = 2000;
+const DELETE_POLL_MAX_INTERVAL_MS = 5000;
+const DELETE_POLL_TIMEOUT_MS = 60000;
+
+/** 轮询终态：success 从列表移除，failed 给出友好提示，timeout 提示稍后刷新。 */
+type DeleteOutcome = { kind: "success" } | { kind: "failed" } | { kind: "timeout" };
+
+/** 行内提示：failed 用告警红，timeout 只是「还在跑」，用中性提示色 */
+interface DeleteNotice {
+  message: string;
+  tone: "error" | "info";
 }
 
 function formatBytes(bytes: number): string {
@@ -83,6 +115,35 @@ export const AgentWebsitePanel = () => {
   const [deleteTarget, setDeleteTarget] = useState<WebsiteSite | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  /** 已发起删除、正在轮询收敛的站点，用于在服务端状态回传前就锁住该行 */
+  const [pendingDeleteIDs, setPendingDeleteIDs] = useState<string[]>([]);
+  /** 删除未成功时的行内提示（siteID -> 用户可读文案 + 语气） */
+  const [deleteNotices, setDeleteNotices] = useState<Record<string, DeleteNotice>>({});
+
+  const unmountedRef = useRef(false);
+  const pollTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+
+  useEffect(() => {
+    const timers = pollTimersRef.current;
+    return () => {
+      unmountedRef.current = true;
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
+    };
+  }, []);
+
+  /** 可被卸载中断的 sleep：定时器句柄登记到 ref，卸载时统一清理，避免卸载后 setState */
+  const sleep = useCallback(
+    (ms: number) =>
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          pollTimersRef.current.delete(timer);
+          resolve();
+        }, ms);
+        pollTimersRef.current.add(timer);
+      }),
+    [],
+  );
 
   const fetchData = useCallback(async () => {
     const apiBase = resolveConfiguredAuthApiBaseUrl();
@@ -122,8 +183,81 @@ export const AgentWebsitePanel = () => {
     }
   }, []);
 
+  /**
+   * 轮询单个删除 operation 直到终态或超时。
+   * created / running 表示 worker 还在跑（失败重试也会回到 created），继续等；
+   * 单次查询报错只当作抖动，交给整体超时兜底，不提前判定失败。
+   */
+  const pollDeleteOperation = useCallback(
+    async (siteID: string, operationID: string): Promise<DeleteOutcome> => {
+      const apiBase = resolveConfiguredAuthApiBaseUrl();
+      if (!apiBase) return { kind: "timeout" };
+
+      const deadline = Date.now() + DELETE_POLL_TIMEOUT_MS;
+      let interval = DELETE_POLL_INITIAL_INTERVAL_MS;
+
+      while (Date.now() < deadline) {
+        await sleep(interval);
+        if (unmountedRef.current) return { kind: "timeout" };
+        interval = Math.min(Math.round(interval * 1.5), DELETE_POLL_MAX_INTERVAL_MS);
+
+        try {
+          const res = await fetch(`${apiBase}/v1/websites/${siteID}/operations/${operationID}`, {
+            credentials: "include",
+            headers: buildAuthHeaders(),
+          });
+          if (!res.ok) continue;
+          const json: ApiResponse<WebsiteOperation> = await res.json();
+          if (json.code !== "OK") continue;
+          const status = json.data?.Status;
+          if (status === "success") return { kind: "success" };
+          if (status === "failed" || status === "dead") return { kind: "failed" };
+        } catch {
+          // 网络抖动：保持轮询，由 deadline 收口
+        }
+      }
+      return { kind: "timeout" };
+    },
+    [sleep],
+  );
+
+  /** 删除后的收敛流程：成功即从列表消失并刷新配额，失败/超时恢复可操作并给出提示 */
+  const awaitDeleteResult = useCallback(
+    async (siteID: string, operationID: string) => {
+      const outcome: DeleteOutcome = operationID
+        ? await pollDeleteOperation(siteID, operationID)
+        : { kind: "timeout" };
+      if (unmountedRef.current) return;
+
+      setPendingDeleteIDs((prev) => prev.filter((id) => id !== siteID));
+
+      if (outcome.kind === "success") {
+        setSites((prev) => prev.filter((item) => item.SiteID !== siteID));
+        setDeleteNotices((prev) => {
+          const next = { ...prev };
+          delete next[siteID];
+          return next;
+        });
+        // 重新拉一次让 used_sites 席位同步回落
+        await fetchData();
+        return;
+      }
+
+      setDeleteNotices((prev) => ({
+        ...prev,
+        [siteID]:
+          outcome.kind === "failed"
+            ? { message: t("删除失败，请稍后重试。"), tone: "error" }
+            : { message: t("删除仍在进行中，请稍后刷新查看"), tone: "info" },
+      }));
+      await fetchData();
+    },
+    [fetchData, pollDeleteOperation, t],
+  );
+
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    const siteID = deleteTarget.SiteID;
     setDeleting(true);
     setDeleteError(null);
     try {
@@ -133,24 +267,33 @@ export const AgentWebsitePanel = () => {
         return;
       }
       const headers = buildAuthHeaders();
-      const res = await fetch(`${apiBase}/v1/websites/${deleteTarget.SiteID}`, {
+      const res = await fetch(`${apiBase}/v1/websites/${siteID}`, {
         method: "DELETE",
         credentials: "include",
         headers,
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setDeleteError(body.message || `删除失败 (${res.status})`);
+        setDeleteError(t("删除失败，请稍后重试。"));
         return;
       }
+      const body: ApiResponse<DeleteSiteResult> = await res.json();
+      const operationID = body.data?.operation_id ?? "";
+
       setDeleteTarget(null);
-      await fetchData();
+      setDeleteNotices((prev) => {
+        const next = { ...prev };
+        delete next[siteID];
+        return next;
+      });
+      // 先本地锁住该行进入「正在删除」，再异步等待 worker 真正清理完成
+      setPendingDeleteIDs((prev) => (prev.includes(siteID) ? prev : [...prev, siteID]));
+      void awaitDeleteResult(siteID, operationID);
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "网络错误");
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, fetchData]);
+  }, [awaitDeleteResult, deleteTarget, t]);
 
   useEffect(() => {
     void fetchData();
@@ -236,12 +379,19 @@ export const AgentWebsitePanel = () => {
           <div className="divide-y" style={{ borderColor: "rgba(0,0,0,0.05)" }}>
             {sites.map((site) => {
               const siteURL = site.PublicURL;
+              const isDeleting = site.Status === "deleting" || pendingDeleteIDs.includes(site.SiteID);
+              const notice = deleteNotices[site.SiteID];
               return (
                 <div key={site.SiteID} className="flex items-center justify-between px-5 py-4">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate text-sm font-medium text-black/90">{site.Name}</span>
-                      {site.Status === "active" ? (
+                      {isDeleting ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-xs text-orange-600">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          {t("正在删除")}
+                        </span>
+                      ) : site.Status === "active" ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-xs text-green-600">
                           <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
                           {t("已上线")}
@@ -259,9 +409,16 @@ export const AgentWebsitePanel = () => {
                     <p className="mt-1 text-xs text-black/40">
                       {t("创建于")} {formatDate(site.CreatedTime)} · {t("站点ID")}: {site.SiteID}
                     </p>
+                    {notice && (
+                      <p
+                        className={`mt-1 text-xs ${notice.tone === "error" ? "text-red-500" : "text-orange-600"}`}
+                      >
+                        {notice.message}
+                      </p>
+                    )}
                   </div>
                   <div className="ml-4 flex items-center gap-2">
-                    {site.Status === "active" && siteURL && (
+                    {!isDeleting && site.Status === "active" && siteURL && (
                       <a
                         href={siteURL}
                         target="_blank"
@@ -272,16 +429,18 @@ export const AgentWebsitePanel = () => {
                         {t("访问")}
                       </a>
                     )}
-                    <button
-                      onClick={() => {
-                        setDeleteError(null);
-                        setDeleteTarget(site);
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-50"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      {t("删除")}
-                    </button>
+                    {!isDeleting && (
+                      <button
+                        onClick={() => {
+                          setDeleteError(null);
+                          setDeleteTarget(site);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {t("删除")}
+                      </button>
+                    )}
                   </div>
                 </div>
               );

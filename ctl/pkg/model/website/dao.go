@@ -25,9 +25,8 @@ type SiteDao interface {
 	UpdateCloudPathAndURL(siteID, cloudPath, publicURL string) error
 	SoftDelete(siteID string) error
 	CountActiveByUserID(userID string) (int64, error)
+	ListActiveByUserID(userID string) ([]*SiteEntity, error)
 	ListSuspendedByUserID(userID string) ([]*SiteEntity, error)
-	SuspendActiveByUserID(userID string) (int64, error)
-	ReactivateSuspendedByUserID(userID string) (int64, error)
 	GetByIdempotencyKey(userID, idempotencyKey string) (*SiteEntity, error)
 }
 
@@ -146,44 +145,42 @@ func (d *siteDao) CountActiveByUserID(userID string) (int64, error) {
 	var count int64
 	err := resource.GormDB.Table(d.TableName).
 		Where("user_id = ? AND status IN ? AND deleted_time IS NULL",
-			userID, []string{SiteStatusCreating, SiteStatusActive, SiteStatusSuspended}).
+			userID, []string{SiteStatusCreating, SiteStatusActive, SiteStatusSuspended, SiteStatusDeleting}).
 		Count(&count).Error
 	return count, err
+}
+
+// ListActiveByUserID 列出用户所有 active 站点，供套餐到期下线使用。
+func (d *siteDao) ListActiveByUserID(userID string) ([]*SiteEntity, error) {
+	var entities []*SiteEntity
+	err := resource.GormDB.Table(d.TableName).
+		Where("user_id = ? AND status = ? AND deleted_time IS NULL", userID, SiteStatusActive).
+		Find(&entities).Error
+	return entities, err
 }
 
 func (d *siteDao) ListSuspendedByUserID(userID string) ([]*SiteEntity, error) {
 	var entities []*SiteEntity
 	err := resource.GormDB.Table(d.TableName).
-		Where("user_id = ? AND status = ?", userID, SiteStatusSuspended).
+		Where("user_id = ? AND status = ? AND deleted_time IS NULL", userID, SiteStatusSuspended).
 		Find(&entities).Error
 	return entities, err
 }
 
-// SuspendActiveByUserID Pass到期时挂起用户所有active站点
-func (d *siteDao) SuspendActiveByUserID(userID string) (int64, error) {
-	result := resource.GormDB.Table(d.TableName).
-		Where("user_id = ? AND status = ?", userID, SiteStatusActive).
-		Update("status", SiteStatusSuspended)
-	return result.RowsAffected, result.Error
-}
-
-// ReactivateSuspendedByUserID Pass续费后恢复suspended站点为active
-func (d *siteDao) ReactivateSuspendedByUserID(userID string) (int64, error) {
-	result := resource.GormDB.Table(d.TableName).
-		Where("user_id = ? AND status = ?", userID, SiteStatusSuspended).
-		Update("status", SiteStatusActive)
-	return result.RowsAffected, result.Error
-}
-
-// GetByIdempotencyKey 幂等查询（通过site_id格式约定实现，一期用name+user_id去重）
+// GetByIdempotencyKey 按真实幂等键查询已存在的站点。
+//
+// 幂等键落在独立列上并由 (user_id, idempotency_key) 唯一索引保护，
+// 因此这里是精确匹配，不再借用 name 字段。
+// 排除 deleting/deleted：正在删除或已删除的站点不应被当作幂等命中返回，
+// 否则调用方会拿到一个即将消失的站点。
 func (d *siteDao) GetByIdempotencyKey(userID, idempotencyKey string) (*SiteEntity, error) {
 	if idempotencyKey == "" {
 		return nil, nil
 	}
 	var entity SiteEntity
 	err := resource.GormDB.Table(d.TableName).
-		Where("user_id = ? AND name = ? AND status != ?",
-			userID, idempotencyKey, SiteStatusDeleted).
+		Where("user_id = ? AND idempotency_key = ? AND status NOT IN ? AND deleted_time IS NULL",
+			userID, idempotencyKey, []string{SiteStatusDeleting, SiteStatusDeleted}).
 		First(&entity).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -391,64 +388,13 @@ func (d *operationDao) ListBySiteID(siteID string, page, pageSize int) ([]*Opera
 
 func (d *operationDao) ListByStatus(status string, limit int) ([]*OperationEntity, error) {
 	var entities []*OperationEntity
-	err := resource.GormDB.Table(d.TableName).
-		Where("status = ?", status).
+	query := resource.GormDB.Table(d.TableName).Where("status = ?", status)
+	if status == OpStatusCreated {
+		query = query.Where("(next_retry_at IS NULL OR next_retry_at <= ?)", time.Now().UTC())
+	}
+	err := query.
 		Order("created_time ASC, id ASC").
 		Limit(limit).
 		Find(&entities).Error
 	return entities, err
-}
-
-// ---- Usage Daily DAO ----
-
-type UsageDailyDao interface {
-	UpsertDaily(siteID, userID string, usageDate time.Time, trafficBytes int64, requestCount int64) error
-	GetBySiteAndDate(siteID string, usageDate time.Time) (*UsageDailyEntity, error)
-	SumTrafficByUserAndDateRange(userID string, start, end time.Time) (int64, error)
-}
-
-type usageDailyDao struct {
-	*model.BaseDao
-}
-
-func NewUsageDailyDao() UsageDailyDao {
-	return &usageDailyDao{BaseDao: model.NewBaseDao(UsageDailyTable)}
-}
-
-func (d *usageDailyDao) UpsertDaily(siteID, userID string, usageDate time.Time, trafficBytes int64, requestCount int64) error {
-	dateOnly := time.Date(usageDate.Year(), usageDate.Month(), usageDate.Day(), 0, 0, 0, 0, usageDate.Location())
-	// Use raw SQL for proper ON DUPLICATE KEY UPDATE with increment
-	sql := `INSERT INTO ` + d.TableName + ` (site_id, user_id, usage_date, traffic_bytes, request_count, created_time, updated_time)
-		VALUES (?, ?, ?, ?, ?, NOW(), NOW())
-		ON DUPLICATE KEY UPDATE
-			traffic_bytes = traffic_bytes + VALUES(traffic_bytes),
-			request_count = request_count + VALUES(request_count),
-			updated_time = NOW()`
-	return resource.GormDB.Exec(sql, siteID, userID, dateOnly, trafficBytes, requestCount).Error
-}
-
-func (d *usageDailyDao) GetBySiteAndDate(siteID string, usageDate time.Time) (*UsageDailyEntity, error) {
-	dateOnly := time.Date(usageDate.Year(), usageDate.Month(), usageDate.Day(), 0, 0, 0, 0, usageDate.Location())
-	var entity UsageDailyEntity
-	err := resource.GormDB.Table(d.TableName).
-		Where("site_id = ? AND usage_date = ?", siteID, dateOnly).
-		First(&entity).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &entity, nil
-}
-
-func (d *usageDailyDao) SumTrafficByUserAndDateRange(userID string, start, end time.Time) (int64, error) {
-	var total struct {
-		Total int64
-	}
-	err := resource.GormDB.Table(d.TableName).
-		Select("COALESCE(SUM(traffic_bytes), 0) as total").
-		Where("user_id = ? AND usage_date >= ? AND usage_date < ?", userID, start, end).
-		Scan(&total).Error
-	return total.Total, err
 }

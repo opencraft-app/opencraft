@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"os"
 	"strconv"
@@ -10,6 +11,14 @@ import (
 	"ctl/pkg/errcode"
 	websitelogic "ctl/pkg/logic/website"
 )
+
+func hasValidWebsiteInternalToken(provided string) bool {
+	expected := os.Getenv("WEBSITE_INTERNAL_API_TOKEN")
+	if expected == "" || len(provided) != len(expected) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1
+}
 
 // websiteHandler 静态建站 handler
 type websiteHandler struct {
@@ -92,12 +101,11 @@ func (h *websiteHandler) handleWebsitesByID(w http.ResponseWriter, r *http.Reque
 
 // handleInternalOperations 处理 /internal/ctl/websites/operations[/{opId}/claim|complete|fail]
 func (h *websiteHandler) handleInternalOperations(w http.ResponseWriter, r *http.Request) {
-	// Shared-secret authentication for internal API
-	if expected := os.Getenv("WEBSITE_INTERNAL_API_TOKEN"); expected != "" {
-		if r.Header.Get("X-Internal-Token") != expected {
-			writeHTTPError(w, r, errcode.ErrUnauthorized)
-			return
-		}
+	// Internal operation mutation is fail-closed. A misconfigured worker must
+	// not gain access simply because its shared token was omitted.
+	if !hasValidWebsiteInternalToken(r.Header.Get("X-Internal-Token")) {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
 	}
 	// GET /internal/ctl/websites/operations?status=created — worker 轮询待执行操作
 	if r.Method == http.MethodGet && (r.URL.Path == "/internal/ctl/websites/operations" || r.URL.Path == "/internal/ctl/websites/operations/") {
