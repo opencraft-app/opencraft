@@ -22,7 +22,7 @@ const overlayShadow = {
   radius: 16,
 } as const;
 
-const palette = {
+export const palette = {
   blue500: "#006FEE",
   blue600: "#005BC4",
   blue700: "#004493",
