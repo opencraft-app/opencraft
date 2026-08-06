@@ -31,6 +31,7 @@ import {
   SelectionButton,
   SelectionGroup,
 } from "./management-workspace";
+import {velaTheme} from "../tokens";
 
 describe("management workspace primitives", () => {
   it("provides the complete semantic primitive set", () => {
@@ -317,7 +318,7 @@ describe("management workspace primitives", () => {
     expect(screen.getByTestId("row")).toHaveStyle({
       borderRadius: 8,
       gap: 8,
-      minHeight: 64,
+      minHeight: velaTheme.recipes.managementWorkspace.rowMinHeight,
     });
     expect(screen.getByTestId("section")).toHaveStyle({
       borderRadius: 0,
@@ -329,7 +330,7 @@ describe("management workspace primitives", () => {
     expect(screen.getByTestId("action")).toHaveStyle({
       alignSelf: "flex-start",
       borderRadius: 10,
-      minHeight: 44,
+      minHeight: velaTheme.recipes.managementWorkspace.actionHeight,
     });
     expect(screen.getByTestId("disabled-action")).toHaveStyle({
       opacity: 0.5,
@@ -347,12 +348,12 @@ describe("management workspace primitives", () => {
     expect(screen.getByTestId("header-action")).toHaveStyle({
       backgroundColor: "#EAF4FF",
       borderColor: "#EAF4FF",
-      minHeight: 40,
+      minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.getByTestId("icon-action")).toHaveStyle({
       borderRadius: 10,
-      height: 40,
-      width: 40,
+      height: velaTheme.recipes.managementWorkspace.headerActionHeight,
+      width: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.getByTestId("resource-action-row")).toHaveStyle({
       borderTopWidth: 1,
@@ -499,7 +500,7 @@ describe("management workspace primitives", () => {
 
     expect(screen.getByTestId("resource-switcher-trigger")).toHaveStyle({
       borderRadius: 10,
-      minHeight: 64,
+      minHeight: velaTheme.recipes.managementWorkspace.switcherTriggerMinHeight,
     });
     await fireEvent(screen.getByTestId("resource-switcher-trigger"), "hoverIn");
     expect(screen.getByTestId("resource-switcher-trigger")).toHaveStyle({
@@ -680,14 +681,14 @@ describe("management workspace primitives", () => {
     );
 
     expect(screen.getByTestId("collection-header")).toHaveStyle({
-      minHeight: 64,
+      minHeight: velaTheme.recipes.managementWorkspace.headerHeight,
     });
     expect(screen.getByTestId("collection-header-mark")).toHaveStyle({
       height: 48,
       width: 48,
     });
     expect(screen.getByTestId("collection-footer-action")).toHaveStyle({
-      minHeight: 52,
+      minHeight: velaTheme.recipes.managementWorkspace.collectionActionHeight,
     });
     await fireEvent.press(screen.getByRole("button", {name: "纳管 Computer"}));
     expect(onPress).toHaveBeenCalledTimes(1);

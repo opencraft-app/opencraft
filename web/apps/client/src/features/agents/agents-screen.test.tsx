@@ -16,6 +16,7 @@ import {
   type HumanClientPresenter,
   type ManagementPageModel,
 } from "@/ui";
+import {velaTheme} from "@/ui";
 
 const server: Server = {
   id: "server-1",
@@ -257,7 +258,7 @@ describe("AgentsScreen", () => {
     });
     expect(
       screen.getByRole("button", {name: "打开 Agent research"}),
-    ).toHaveStyle({minHeight: 64});
+    ).toHaveStyle({minHeight: velaTheme.recipes.managementWorkspace.rowMinHeight});
     expect(screen.getByTestId("agent-detail")).toHaveStyle({
       alignSelf: "center",
       borderRadius: 0,
@@ -310,11 +311,11 @@ describe("AgentsScreen", () => {
       screen.getByRole("button", {name: "重启 Agent research"}),
     ).toHaveStyle({
       backgroundColor: "#EAF4FF",
-      minHeight: 44,
+      minHeight: velaTheme.recipes.managementWorkspace.actionHeight,
     });
     expect(screen.getByRole("button", {name: "保存 Agent"})).toHaveStyle({
       alignSelf: "flex-start",
-      minHeight: 44,
+      minHeight: velaTheme.recipes.managementWorkspace.actionHeight,
     });
   });
 
@@ -560,7 +561,7 @@ describe("AgentsScreen", () => {
     expect(screen.getByRole("button", {name: "新建 Agent"})).toHaveStyle({
       backgroundColor: "#EAF4FF",
       borderColor: "#EAF4FF",
-      minHeight: 40,
+      minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.queryByText("↻")).toBeNull();
   });
@@ -630,7 +631,7 @@ describe("AgentsScreen", () => {
 
     expect(
       screen.getByRole("button", {name: "打开 Agent delivery"}),
-    ).toHaveStyle({minHeight: 56, width: "100%"});
+    ).toHaveStyle({minHeight: velaTheme.recipes.managementWorkspace.switcherOptionMinHeight, width: "100%"});
   });
 
   it("keeps the horizontal Agent collection at the tablet breakpoint", async () => {
@@ -660,7 +661,7 @@ describe("AgentsScreen", () => {
     expect(screen.getByTestId("agent-sidebar")).toHaveStyle({height: 96});
     expect(
       screen.getByRole("button", {name: "打开 Agent delivery"}),
-    ).toHaveStyle({height: 64, width: 220});
+    ).toHaveStyle({height: velaTheme.recipes.managementWorkspace.rowMinHeight, width: 220});
   });
 
   it("only exposes lifecycle actions that are valid for the current runtime state", async () => {

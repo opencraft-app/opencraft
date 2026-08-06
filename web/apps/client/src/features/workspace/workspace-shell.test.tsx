@@ -78,6 +78,7 @@ import {
   type NavigationLinkProps,
 } from "@/ui";
 import { WorkspaceShell } from "./workspace-shell";
+import {velaTheme} from "@/ui";
 
 const server: Server = {
   id: "server-1",
@@ -674,7 +675,7 @@ describe("WorkspaceShell", () => {
     expect(screen.getByTestId("href:/s/atlas/c/channel-1")).toHaveStyle({
       backgroundColor: "#EAF4FF",
       flexDirection: "row",
-      minHeight: 56,
+      minHeight: velaTheme.recipes.desktopWorkspace.conversationRowMinHeight,
     });
     expect(
       screen.getByTestId("href:/dm/agent-im-1").props.accessibilityRole,
@@ -2352,8 +2353,8 @@ describe("WorkspaceShell", () => {
 
     expect(screen.getByTestId("thread-panel")).toBeVisible();
     expect(screen.getByRole("button", { name: "关闭 Thread" })).toHaveStyle({
-      height: 44,
-      width: 44,
+      height: velaTheme.recipes.control.squareSize,
+      width: velaTheme.recipes.control.squareSize,
     });
     expect(screen.getByText("话题")).toBeVisible();
     expect(screen.getByText("这是根消息")).toBeVisible();
@@ -2409,7 +2410,7 @@ describe("WorkspaceShell", () => {
       backgroundColor: "#F4F4F5",
       borderRadius: 0,
       borderRightWidth: 1,
-      width: 72,
+      width: velaTheme.recipes.desktopWorkspace.railWidth,
     });
     expect(screen.getByTestId("agent-network-mark")).toHaveStyle({
       height: 48,
@@ -2420,8 +2421,8 @@ describe("WorkspaceShell", () => {
       paddingTop: 12,
     });
     expect(screen.getByRole("button", { name: "打开聊天" })).toHaveStyle({
-      height: 44,
-      width: 44,
+      height: velaTheme.recipes.desktopWorkspace.navigationControlSize,
+      width: velaTheme.recipes.desktopWorkspace.navigationControlSize,
     });
     expect(screen.queryByTestId("server-marks")).toBeNull();
     expect(screen.getByTestId("conversation-sidebar")).toHaveStyle({
@@ -2440,7 +2441,7 @@ describe("WorkspaceShell", () => {
     });
     expect(screen.getByTestId("channel-row-channel-1")).toHaveStyle({
       flexDirection: "row",
-      minHeight: 56,
+      minHeight: velaTheme.recipes.desktopWorkspace.conversationRowMinHeight,
     });
     expect(screen.getByTestId("channel-scroller")).toHaveStyle({
       flexGrow: 0,

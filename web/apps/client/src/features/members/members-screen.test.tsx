@@ -20,6 +20,7 @@ import {
   type HumanClientPresenter,
   type ManagementPageModel,
 } from "@/ui";
+import {velaTheme} from "@/ui";
 
 const account: Account = {
   displayName: "Skip",
@@ -224,7 +225,7 @@ describe("MembersScreen", () => {
     });
     expect(
       screen.getByRole("button", {name: "打开成员 小王 @xiaowang"}),
-    ).toHaveStyle({minHeight: 64});
+    ).toHaveStyle({minHeight: velaTheme.recipes.managementWorkspace.rowMinHeight});
     expect(screen.getByTestId("member-detail")).toHaveStyle({
       alignSelf: "center",
       borderRadius: 0,
@@ -383,7 +384,7 @@ describe("MembersScreen", () => {
     });
     expect(
       screen.getByRole("button", {name: "打开成员 小王 @xiaowang"}),
-    ).toHaveStyle({height: 64, width: 220});
+    ).toHaveStyle({height: velaTheme.recipes.managementWorkspace.rowMinHeight, width: 220});
     expect(screen.queryByText("TEAM / 02")).toBeNull();
     expect(screen.getByText("所有者")).toBeVisible();
     expect(screen.getByText("自然人")).toBeVisible();
@@ -397,7 +398,7 @@ describe("MembersScreen", () => {
     expect(screen.getByRole("button", {name: "创建邀请"})).toHaveStyle({
       backgroundColor: "#EAF4FF",
       borderColor: "#EAF4FF",
-      minHeight: 40,
+      minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.queryByTestId("member-accept-invite")).toBeNull();
     expect(
@@ -585,7 +586,7 @@ describe("MembersScreen", () => {
 
     expect(
       screen.getByRole("button", {name: "打开成员 小王 @xiaowang"}),
-    ).toHaveStyle({minHeight: 56, width: "100%"});
+    ).toHaveStyle({minHeight: velaTheme.recipes.managementWorkspace.switcherOptionMinHeight, width: "100%"});
   });
 
   it("keeps the horizontal member collection at the tablet breakpoint", async () => {
@@ -615,7 +616,7 @@ describe("MembersScreen", () => {
     expect(screen.getByTestId("member-sidebar")).toHaveStyle({height: 96});
     expect(
       screen.getByRole("button", {name: "打开成员 小王 @xiaowang"}),
-    ).toHaveStyle({height: 64, width: 220});
+    ).toHaveStyle({height: velaTheme.recipes.managementWorkspace.rowMinHeight, width: 220});
   });
 
   it("keeps asynchronous member removal status visible after the row disappears", async () => {

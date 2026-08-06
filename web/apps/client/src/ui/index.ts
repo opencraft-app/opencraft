@@ -155,3 +155,4 @@ export {
   makeServerSlug,
   type FirstWorkspaceInput,
 } from "./screens/first-workspace-screen";
+export { velaTheme, type VelaTheme } from "./tokens";

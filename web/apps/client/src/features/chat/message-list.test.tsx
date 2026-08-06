@@ -3,6 +3,7 @@ import { fireEvent, render } from "@testing-library/react-native";
 import {Linking, Platform, StyleSheet as RNStyleSheet} from "react-native";
 
 import { MessageList } from "@/ui";
+import {velaTheme} from "@/ui";
 
 const originalPlatformOS = Platform.OS;
 
@@ -537,10 +538,10 @@ describe("MessageList", () => {
     });
     expect(
       screen.getByRole("button", {name: "添加 Reaction 👍"}),
-    ).toHaveStyle({minHeight: 44, minWidth: 44});
+    ).toHaveStyle({minHeight: velaTheme.recipes.control.height, minWidth: velaTheme.recipes.control.squareSize});
     expect(
       screen.getByRole("button", {name: "引用消息 整洁消息"}),
-    ).toHaveStyle({minHeight: 44, minWidth: 44});
+    ).toHaveStyle({minHeight: velaTheme.recipes.control.height, minWidth: velaTheme.recipes.control.squareSize});
     expect(screen.getByText("引用")).toHaveStyle({fontSize: 12});
   });
 
@@ -696,8 +697,8 @@ describe("MessageList", () => {
     });
     expect(screen.getByTestId("message-avatar-compact-message")).toHaveStyle({
       borderRadius: 9999,
-      height: 36,
-      width: 36,
+      height: velaTheme.recipes.identity.avatarRowSize,
+      width: velaTheme.recipes.identity.avatarRowSize,
     });
   });
 
@@ -771,8 +772,8 @@ describe("MessageList", () => {
       ]) {
         expect(screen.getByRole("button", {name})).toHaveStyle({
           gap: 3,
-          minHeight: 44,
-          minWidth: 44,
+          minHeight: velaTheme.recipes.control.height,
+          minWidth: velaTheme.recipes.control.squareSize,
           paddingHorizontal: 4,
         });
       }

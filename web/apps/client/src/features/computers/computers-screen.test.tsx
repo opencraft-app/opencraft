@@ -20,6 +20,7 @@ import {
   type HumanClientPresenter,
   type ManagementPageModel,
 } from "@/ui";
+import {velaTheme} from "@/ui";
 
 const server: Server = {
   id: "server-1",
@@ -658,7 +659,7 @@ describe("ComputersScreen", () => {
       screen.getByRole("button", {
         name: "切换 Computer，当前 研发机",
       }),
-    ).toHaveStyle({minHeight: 64, width: "100%"});
+    ).toHaveStyle({minHeight: velaTheme.recipes.managementWorkspace.switcherTriggerMinHeight, width: "100%"});
     expect(
       screen.queryByRole("button", {name: "打开 Computer 测试机"}),
     ).toBeNull();
@@ -798,13 +799,13 @@ describe("ComputersScreen", () => {
     ).toHaveStyle({
       backgroundColor: "#EAF4FF",
       borderColor: "#EAF4FF",
-      minHeight: 40,
+      minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(
       screen.getByRole("button", {name: "生成研发机的一键安装命令"}),
     ).toHaveStyle({
       backgroundColor: "#FFFFFF",
-      minHeight: 44,
+      minHeight: velaTheme.recipes.managementWorkspace.actionHeight,
     });
     expect(screen.getByTestId("computer-release-section")).toHaveStyle({
       borderRadius: 0,

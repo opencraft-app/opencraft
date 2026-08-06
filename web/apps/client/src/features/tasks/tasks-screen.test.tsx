@@ -18,6 +18,7 @@ import {
   type HumanClientPresenter,
   type ManagementPageModel,
 } from "@/ui";
+import {velaTheme} from "@/ui";
 
 const server: Server = {
   id: "server-1",
@@ -259,7 +260,7 @@ describe("TasksScreen", () => {
     });
     expect(
       screen.getByRole("button", {name: "打开任务 12"}),
-    ).toHaveStyle({minHeight: 64});
+    ).toHaveStyle({minHeight: velaTheme.recipes.managementWorkspace.rowMinHeight});
     expect(screen.getByTestId("task-detail")).toHaveStyle({
       alignSelf: "center",
       borderRadius: 0,
@@ -296,7 +297,7 @@ describe("TasksScreen", () => {
     });
     expect(
       screen.getByRole("button", {name: "打开任务 12"}),
-    ).toHaveStyle({height: 64, width: 220});
+    ).toHaveStyle({height: velaTheme.recipes.managementWorkspace.rowMinHeight, width: 220});
     expect(screen.getByTestId("server-rail")).toBeVisible();
     expect(screen.queryByTestId("mobile-bottom-nav")).toBeNull();
     expect(screen.getByText("待处理 1")).toBeVisible();
@@ -469,7 +470,7 @@ describe("TasksScreen", () => {
     expect(screen.getByRole("button", {name: "新建任务"})).toHaveStyle({
       backgroundColor: "#EAF4FF",
       borderColor: "#EAF4FF",
-      minHeight: 40,
+      minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.queryByText("↻")).toBeNull();
   });
@@ -495,8 +496,8 @@ describe("TasksScreen", () => {
 
     expect(screen.getByTestId("mobile-bottom-nav")).toBeVisible();
     expect(screen.getByRole("button", {name: "刷新任务"})).toHaveStyle({
-      height: 44,
-      width: 44,
+      height: velaTheme.recipes.control.squareSize,
+      width: velaTheme.recipes.control.squareSize,
     });
     expect(screen.getByTestId("task-stage-header-copy")).toHaveStyle({
       flex: 1,
