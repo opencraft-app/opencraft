@@ -181,7 +181,7 @@ describe("management workspace primitives", () => {
     });
     await fireEvent(screen.getByTestId("idle-choice"), "hoverIn");
     expect(screen.getByTestId("idle-choice")).toHaveStyle({
-      backgroundColor: "#F4F4F5",
+      backgroundColor: velaTheme.semantic.color.interactiveHoverSurface,
     });
     expect(screen.getByTestId("disabled-choice")).toHaveStyle({opacity: 0.5});
   });
@@ -343,7 +343,7 @@ describe("management workspace primitives", () => {
     await fireEvent(screen.getByTestId("action"), "hoverOut");
     await fireEvent(screen.getByTestId("secondary-action"), "hoverIn");
     expect(screen.getByTestId("secondary-action")).toHaveStyle({
-      backgroundColor: "#F4F4F5",
+      backgroundColor: velaTheme.semantic.color.actionSecondaryHoverSurface,
     });
     expect(screen.getByTestId("header-action")).toHaveStyle({
       backgroundColor: "#EAF4FF",
@@ -504,7 +504,7 @@ describe("management workspace primitives", () => {
     });
     await fireEvent(screen.getByTestId("resource-switcher-trigger"), "hoverIn");
     expect(screen.getByTestId("resource-switcher-trigger")).toHaveStyle({
-      backgroundColor: "#F4F4F5",
+      backgroundColor: velaTheme.semantic.color.interactiveHoverSurface,
     });
     await fireEvent(screen.getByTestId("resource-switcher-trigger"), "hoverOut");
     expect(screen.queryByText("备用资源")).toBeNull();
@@ -624,7 +624,7 @@ describe("management workspace primitives", () => {
       width: 160,
     });
     expect(screen.getByTestId("management-input")).toHaveStyle({
-      backgroundColor: "#F4F4F5",
+      backgroundColor: velaTheme.semantic.color.fieldSurface,
       borderColor: "rgba(243, 18, 96, 0.58)",
       borderRadius: 10,
       minHeight: 96,

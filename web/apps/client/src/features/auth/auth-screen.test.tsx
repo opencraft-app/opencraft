@@ -1,5 +1,7 @@
 import { fireEvent, render } from "@testing-library/react-native";
 
+import { velaTheme } from "@/ui";
+
 import { AuthScreen } from "./auth-screen";
 
 describe("AuthScreen", () => {
@@ -15,7 +17,7 @@ describe("AuthScreen", () => {
       borderRadius: 16,
     });
     expect(screen.getByTestId("auth-email-input")).toHaveStyle({
-      backgroundColor: "#F4F4F5",
+      backgroundColor: velaTheme.semantic.color.fieldSurface,
       borderRadius: 10,
     });
     expect(JSON.stringify(screen.toJSON())).not.toMatch(/腾讯云|TAT|Region/u);
