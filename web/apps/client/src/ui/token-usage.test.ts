@@ -16,6 +16,35 @@ describe("Vela token usage", () => {
     expect(installerSource).toContain(":focus-visible");
   });
 
+  it("does not let hand-rolled buttons regrow beside the shared one", () => {
+    // The chat shell and the management screens each invented their own
+    // vocabulary for the same handful of jobs, which is most of why the two
+    // areas stopped looking like one product. `ActionButton` is the single
+    // button; this ceiling makes adding a sixteenth local one a decision
+    // rather than an accident, and it only moves down.
+    const source = readFileSync(
+      join(process.cwd(), "src", "ui", "layouts", "workspace-shell.tsx"),
+      "utf8",
+    );
+    const pressableStyles = new Set<string>();
+    for (const pressable of source.matchAll(/<Pressable\b[\s\S]{0,700}?\/?>/gu)) {
+      for (const reference of pressable[0].matchAll(
+        /styles\.([a-zA-Z][a-zA-Z0-9]*)/gu,
+      )) {
+        pressableStyles.add(reference[1]!);
+      }
+    }
+    const boxed = [...pressableStyles].filter((name) => {
+      const block = new RegExp(
+        `^ {2}${name}: \\{\\n([\\s\\S]*?)^ {2}\\},$`,
+        "mu",
+      ).exec(source);
+      return block ? /paddingHorizontal|minHeight|height:/u.test(block[1]!) : false;
+    });
+
+    expect(boxed.length).toBeLessThanOrEqual(15);
+  });
+
   it("carries the transition on both halves of every interaction pair", () => {
     // Variant styles replace the base rather than layering over it, so a
     // transition declared only on the base is dropped the moment the element
@@ -35,6 +64,7 @@ describe("Vela token usage", () => {
       ["components", "message-composer.tsx"],
       ["components", "message-list.tsx"],
       ["layouts", "workspace-shell.tsx"],
+      ["primitives", "action-button.tsx"],
       ["screens", "first-workspace-screen.tsx"],
     ];
     const missing: string[] = [];
@@ -47,14 +77,28 @@ describe("Vela token usage", () => {
       )) {
         blocks.set(match[1]!, match[2]!);
       }
-      for (const [name, body] of blocks) {
-        const isPair =
-          suffixes.some((suffix) => blocks.has(name + suffix)) ||
-          suffixes.some(
-            (suffix) =>
-              name.endsWith(suffix) && blocks.has(name.slice(0, -suffix.length)),
-          );
-        if (isPair && !body.includes("semantic.motion.transition")) {
+      // A variant is not always `base + suffix`: the primary button's states
+      // are `actionPrimaryHover`, so an importance word can sit between the
+      // two. Matching on bare prefixes instead would drag in neighbours that
+      // merely share an opening word, like `image` and `imagePreviewTrigger`.
+      const paired = new Set<string>();
+      for (const name of blocks.keys()) {
+        const suffix = suffixes.find((candidate) => name.endsWith(candidate));
+        if (!suffix) continue;
+        // The variant always needs the transition, even where its base is
+        // named something this rule cannot derive.
+        paired.add(name);
+        const stem = name.slice(0, -suffix.length);
+        const base = blocks.has(stem)
+          ? stem
+          : [...stem.matchAll(/[A-Z][a-z0-9]*/gu)]
+              .map((word) => stem.slice(0, word.index))
+              .findLast((candidate) => blocks.has(candidate));
+        if (base !== undefined) paired.add(base);
+      }
+
+      for (const name of paired) {
+        if (!blocks.get(name)!.includes("semantic.motion.transition")) {
           missing.push(`${parts[1]}:${name}`);
         }
       }

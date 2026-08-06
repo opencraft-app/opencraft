@@ -357,10 +357,12 @@ function VisibilityButton({
 const styles = StyleSheet.create((theme) => ({
   buttonDisabled: {
     opacity: theme.semantic.interaction.disabledOpacity,
+    ...theme.semantic.motion.transition.control,
   },
   buttonPressed: {
     opacity: theme.semantic.opacity.decorativeStrong,
     transform: [{ scale: theme.semantic.interaction.pressedScaleSubtle }],
+    ...theme.semantic.motion.transition.control,
   },
   copy: {
     color: theme.semantic.color.textMuted,

@@ -5487,6 +5487,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   railItemPressed: {
     opacity: theme.semantic.opacity.inactive,
+    ...theme.semantic.motion.transition.control,
   },
   railNavigation: {
     alignItems: "center",
