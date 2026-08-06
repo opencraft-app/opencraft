@@ -23,8 +23,9 @@ import "context"
 //	remitpayPayerName  string   否   channel=remitPay 时必传
 //
 // **Lightclaw 本期场景约束（Q-PAY-1 ~ Q-PAY-5 拍板 2026-05-11）**：
-//   - 仅传 OwnerUin / Uin / DealNames 三个必填字段（Q-PAY-4：不传 platform，jifei 默认 pc）
-//   - 不传 VoucherIds / WxOpenID / WxAppID / ContractOrder / Channel / RemitpayPayerName
+//   - 国内站仅传 OwnerUin / Uin / DealNames 三个必填字段（Q-PAY-4：不传 platform，jifei 默认 pc）
+//   - 国际站获取支付链接时传 contractOrder=1 / payScene=credit_card，沿用 Midas 签约并支付路径
+//   - 不传 VoucherIds / WxOpenID / WxAppID / Channel / RemitpayPayerName
 //     （与 Q48 协议表面最小化原则一致 — Lightclaw 控制台没有这些 UI 入口）
 //
 // **PascalCase 命名一致性**：与 GenerateDeals / GenerateDealsAndPay 保持 PascalCase
@@ -37,6 +38,9 @@ type GetMidasEarmarkingRequest struct {
 	Platform string `json:"platform,omitempty"` // "pc" / "mobile"，默认 pc
 	WxOpenID string `json:"wxOpenId,omitempty"` // 微信场景必填
 	WxAppID  string `json:"wxAppId,omitempty"`  // 微信场景必填
+
+	ContractOrder int    `json:"contractOrder,omitempty"` // 1=支付中签约 / 0=非签约
+	PayScene      string `json:"payScene,omitempty"`      // 国际站信用卡签约支付：credit_card
 }
 
 // GetMidasEarmarkingResponse 是 CGW returnValue 反序列化目标。

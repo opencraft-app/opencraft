@@ -693,6 +693,60 @@ func TestGeneratePayURL_PayURLNotCached_CallsJifeiAndWritesBack(t *testing.T) {
 	}
 }
 
+func TestGeneratePayURL_IntlUsesContractCreditCardMidasParams(t *testing.T) {
+	d := newStdDeps()
+	d.service = New(Deps{
+		CTLClient:   d.ctl,
+		BundleStore: d.bundle,
+		JifeiClient: d.jifei,
+		OrderWriter: d.writer,
+		OrderStore:  d.store,
+		SiteKind:    "intl",
+	})
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: dealName, Uin: "1000123456", PayURL: ""}, nil
+	}
+	d.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+		if req.ContractOrder != 1 {
+			t.Errorf("ContractOrder = %d, want 1", req.ContractOrder)
+		}
+		if req.PayScene != "credit_card" {
+			t.Errorf("PayScene = %q, want credit_card", req.PayScene)
+		}
+		return &jifeiclient.GetMidasEarmarkingResponse{
+			URL:        "https://buy.cloud.tencent.com/midas/contract?dealName=deal-1",
+			NeedCharge: 1,
+		}, nil
+	}
+
+	if _, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil); err != nil {
+		t.Fatalf("GeneratePayURL: %v", err)
+	}
+}
+
+func TestGeneratePayURL_CnDoesNotUseContractCreditCardMidasParams(t *testing.T) {
+	d := newStdDeps()
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: dealName, Uin: "1000123456", PayURL: ""}, nil
+	}
+	d.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+		if req.ContractOrder != 0 {
+			t.Errorf("ContractOrder = %d, want 0", req.ContractOrder)
+		}
+		if req.PayScene != "" {
+			t.Errorf("PayScene = %q, want empty", req.PayScene)
+		}
+		return &jifeiclient.GetMidasEarmarkingResponse{
+			URL:        "https://buy.cloud.tencent.com/midas/cn?dealName=deal-1",
+			NeedCharge: 1,
+		}, nil
+	}
+
+	if _, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil); err != nil {
+		t.Fatalf("GeneratePayURL: %v", err)
+	}
+}
+
 func TestGeneratePayURL_JifeiBusinessError_PassedThrough(t *testing.T) {
 	// Q-PAY-5：jifei 业务错（returnCode != 0）统一透传，不在 service 层做错误码语义分类。
 	d := newStdDeps()

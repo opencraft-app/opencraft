@@ -1260,14 +1260,19 @@ func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *Gen
 		return nil, fmt.Errorf("placeorder: trade_order.uin missing for dealName=%s (data inconsistency)",
 			dealName)
 	}
-	resp, err := s.deps.JifeiClient.GetMidasEarmarking(ctx, &jifeiclient.GetMidasEarmarkingRequest{
+	midasReq := &jifeiclient.GetMidasEarmarkingRequest{
 		OwnerUin:  order.Uin,
 		Uin:       order.Uin,
 		DealNames: []string{dealName},
 		Platform:  optsPlatform(opts),
 		WxOpenID:  optsWxOpenID(opts),
 		WxAppID:   optsWxAppID(opts),
-	})
+	}
+	if s.deps.SiteKind == "intl" {
+		midasReq.ContractOrder = 1
+		midasReq.PayScene = "credit_card"
+	}
+	resp, err := s.deps.JifeiClient.GetMidasEarmarking(ctx, midasReq)
 	if err != nil {
 		// Q-PAY-5：透传给上层（含 *CGWError / ErrCGWHTTPNon200 等），由 handler 映射 5xx
 		return nil, fmt.Errorf("placeorder: jifei GetMidasEarmarking dealName=%s: %w", dealName, err)

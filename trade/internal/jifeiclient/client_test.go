@@ -992,6 +992,73 @@ func TestGetMidasEarmarking_Success(t *testing.T) {
 	}
 }
 
+func TestGetMidasEarmarking_ContractPayFieldsUseCGWLowerCamelCase(t *testing.T) {
+	var body string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		_, _ = w.Write(envelopeForSuccess(t, GetMidasEarmarkingResponse{
+			URL:        "https://buy.cloud.tencent.com/midas/contract",
+			NeedCharge: 1,
+		}))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "trade-uin", Options{
+		EventIDProvider: fixedEventIDProvider,
+		NowProvider:     fixedNowProvider,
+	})
+	_, err := cli.GetMidasEarmarking(context.Background(), &GetMidasEarmarkingRequest{
+		OwnerUin:      "100012345678",
+		Uin:           "100012345678",
+		DealNames:     []string{"20260509000000001-001"},
+		ContractOrder: 1,
+		PayScene:      "credit_card",
+	})
+	if err != nil {
+		t.Fatalf("GetMidasEarmarking: %v", err)
+	}
+	if !jsonBodyHasField(t, body, "contractOrder") {
+		t.Fatalf("request body missing contractOrder: %s", body)
+	}
+	if !jsonBodyHasField(t, body, "payScene") {
+		t.Fatalf("request body missing payScene: %s", body)
+	}
+	if jsonBodyHasField(t, body, "ContractOrder") || jsonBodyHasField(t, body, "PayScene") {
+		t.Fatalf("CGW fields must use lowerCamelCase, got body: %s", body)
+	}
+}
+
+func jsonBodyHasField(t *testing.T, body, field string) bool {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal([]byte(body), &v); err != nil {
+		t.Fatalf("unmarshal json body: %v", err)
+	}
+	return jsonValueHasField(v, field)
+}
+
+func jsonValueHasField(v any, field string) bool {
+	switch typed := v.(type) {
+	case map[string]any:
+		for k, child := range typed {
+			if k == field {
+				return true
+			}
+			if jsonValueHasField(child, field) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if jsonValueHasField(child, field) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // TestGetMidasEarmarking_RealProductionPayload 用一份 2026-05-23 北京 trade 联调环境
 // (`/data/lightvela-bj-trade-cls-config`) 实测捕获的真实回包做 fixture，验证 jifei 协议外
 // 字段（tokenId / outTradeNo / dealNames / bigDealIds / dealDeliverResults）能正确解析。
