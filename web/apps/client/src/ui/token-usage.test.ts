@@ -16,6 +16,35 @@ describe("Vela token usage", () => {
     expect(installerSource).toContain(":focus-visible");
   });
 
+  it("dresses the two list panes as one pane", () => {
+    // The chat sidebar and the management collection pane are the same
+    // 312pt shelf in the same slot, but they wore different surface roles,
+    // so one sat a step deeper than the other and the two areas stopped
+    // looking like one product. navigationSurface belongs to the narrow
+    // icon rail alone.
+    const read = (...parts: string[]) =>
+      readFileSync(join(process.cwd(), "src", "ui", ...parts), "utf8");
+    const styleOf = (source: string, name: string) =>
+      new RegExp(`^ {2}${name}: \\{\\n([\\s\\S]*?)^ {2}\\},$`, "mu").exec(
+        source,
+      )?.[1] ?? "";
+
+    const shell = read("layouts", "workspace-shell.tsx");
+    const management = read("components", "management-workspace.tsx");
+    const panes = [
+      styleOf(shell, "conversationSidebar"),
+      styleOf(management, "collectionPane"),
+    ];
+
+    for (const pane of panes) {
+      expect(pane).toContain("semantic.color.sidebarSurface");
+    }
+    expect(styleOf(shell, "serverRail")).toContain(
+      "semantic.color.navigationSurface",
+    );
+    expect(management).not.toContain("semantic.color.navigationSurface");
+  });
+
   it("does not let hand-rolled buttons regrow beside the shared one", () => {
     // The chat shell and the management screens each invented their own
     // vocabulary for the same handful of jobs, which is most of why the two

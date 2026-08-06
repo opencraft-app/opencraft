@@ -1110,7 +1110,7 @@ export function InlineEmptyState({
 const styles = StyleSheet.create((theme) => ({
   collectionPane: {
     alignSelf: "stretch",
-    backgroundColor: theme.semantic.color.navigationSurface,
+    backgroundColor: theme.semantic.color.sidebarSurface,
     borderColor: theme.semantic.color.separator,
     borderRadius: theme.semantic.radius.pane,
     borderRightWidth: theme.semantic.stroke.hairline,

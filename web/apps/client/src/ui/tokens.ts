@@ -260,6 +260,13 @@ export const density: (typeof densityScale)[DensityMode] =
   densityScale[densityMode];
 
 /**
+ * The list shelf between the icon rail and the content, whether it holds
+ * conversations or agents. Both areas had settled on 312 independently; naming
+ * it keeps them from drifting apart again.
+ */
+const listPaneWidth = 312;
+
+/**
  * Type forks with density too: macOS sets interface body text around 13px
  * where iOS uses 15-17px, so tightening the chrome without tightening the type
  * would leave the two out of proportion.
@@ -822,7 +829,7 @@ export const velaTheme = {
       navigationGap: 8,
       navigationTopInset: 12,
       railWidth: density.railWidth,
-      sidebarWidth: 312,
+      sidebarWidth: listPaneWidth,
     },
     iconControl: {
       compactSize: 32,
@@ -860,7 +867,7 @@ export const velaTheme = {
       collectionCompactHeight: 96,
       collectionCompactRowWidth: 220,
       collectionAvatarSize: 40,
-      collectionWidth: 312,
+      collectionWidth: listPaneWidth,
       compactPadding: 16,
       compactResourceIconSize: 48,
       contentMaxWidth: 960,
