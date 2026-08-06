@@ -2435,8 +2435,8 @@ describe("WorkspaceShell", () => {
     expect(
       screen.getByRole("button", { name: "打开 Channel general" }),
     ).toHaveStyle({
-      backgroundColor: "#EAF4FF",
-      borderRadius: 0,
+      backgroundColor: velaTheme.semantic.color.selectionSurface,
+      borderRadius: velaTheme.semantic.radius.compactControl,
       borderWidth: 0,
     });
     expect(screen.getByTestId("channel-row-channel-1")).toHaveStyle({

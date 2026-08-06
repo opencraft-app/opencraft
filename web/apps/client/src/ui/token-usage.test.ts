@@ -45,6 +45,36 @@ describe("Vela token usage", () => {
     expect(management).not.toContain("semantic.color.navigationSurface");
   });
 
+  it("cuts every shelf row to the same selection shape", () => {
+    // Channels were square and full-bleed, direct messages were square with a
+    // rule under each one, and the management collection was an inset rounded
+    // pill. Three treatments of one row, in one shelf.
+    const read = (...parts: string[]) =>
+      readFileSync(join(process.cwd(), "src", "ui", ...parts), "utf8");
+    const styleOf = (source: string, name: string) =>
+      new RegExp(`^ {2}${name}: \\{\\n([\\s\\S]*?)^ {2}\\},$`, "mu").exec(
+        source,
+      )?.[1] ?? "";
+
+    const shell = read("layouts", "workspace-shell.tsx");
+    const management = read("components", "management-workspace.tsx");
+    const rows = [
+      styleOf(shell, "channelButton"),
+      styleOf(shell, "channelButtonSelected"),
+      styleOf(shell, "directButton"),
+      styleOf(shell, "directButtonSelected"),
+      styleOf(management, "collectionRow"),
+    ];
+
+    for (const row of rows) {
+      expect(row).toContain("semantic.radius.compactControl");
+      expect(row).not.toMatch(/border(?:Bottom|Top)Width/u);
+    }
+    for (const list of [styleOf(shell, "channelList"), styleOf(shell, "directList")]) {
+      expect(list).toContain("paddingHorizontal: theme.spacing.sm");
+    }
+  });
+
   it("does not let hand-rolled buttons regrow beside the shared one", () => {
     // The chat shell and the management screens each invented their own
     // vocabulary for the same handful of jobs, which is most of why the two

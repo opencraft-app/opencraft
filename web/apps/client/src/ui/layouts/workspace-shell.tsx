@@ -4435,8 +4435,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   directButton: {
     alignItems: "center",
-    borderBottomColor: theme.semantic.color.separator,
-    borderBottomWidth: theme.semantic.stroke.hairline,
+    borderRadius: theme.semantic.radius.compactControl,
     flexDirection: "row",
     gap: theme.spacing.sm,
     minHeight: theme.recipes.conversationWorkspace.directRowMinHeight,
@@ -4452,9 +4451,7 @@ const styles = StyleSheet.create((theme) => ({
   directButtonSelected: {
     alignItems: "center",
     backgroundColor: theme.semantic.color.selectionSurface,
-    borderBottomColor: theme.semantic.color.separator,
-    borderBottomWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.pane,
+    borderRadius: theme.semantic.radius.compactControl,
     flexDirection: "row",
     gap: theme.spacing.sm,
     minHeight: theme.recipes.conversationWorkspace.directRowMinHeight,
@@ -4501,6 +4498,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   directList: {
     paddingBottom: theme.spacing.md,
+    paddingHorizontal: theme.spacing.sm,
   },
   directEmpty: {
     paddingHorizontal: theme.spacing.sm,
@@ -4836,7 +4834,7 @@ const styles = StyleSheet.create((theme) => ({
   channelButton: {
     alignItems: "center",
     borderWidth: 0,
-    borderRadius: theme.semantic.radius.pane,
+    borderRadius: theme.semantic.radius.compactControl,
     flexDirection: "row",
     minHeight: theme.recipes.desktopWorkspace.conversationRowMinHeight,
     paddingHorizontal: theme.spacing.md,
@@ -4857,7 +4855,7 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     backgroundColor: theme.semantic.color.selectionSurface,
     borderWidth: 0,
-    borderRadius: theme.semantic.radius.pane,
+    borderRadius: theme.semantic.radius.compactControl,
     flexDirection: "row",
     minHeight: theme.recipes.desktopWorkspace.conversationRowMinHeight,
     paddingHorizontal: theme.spacing.md,
@@ -4871,7 +4869,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   channelList: {
     gap: 0,
-    paddingHorizontal: 0,
+    paddingHorizontal: theme.spacing.sm,
     paddingBottom: 0,
     paddingTop: 0,
   },
