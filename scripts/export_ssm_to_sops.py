@@ -247,6 +247,14 @@ def manifest_key_list(item: dict[str, Any], field: str) -> list[str]:
     return keys
 
 
+def validate_required_keys(item: dict[str, Any], string_data: dict[str, str]) -> None:
+    required_keys = manifest_key_list(item, "required_keys")
+    missing = sorted(set(required_keys) - set(string_data))
+    if missing:
+        item_id = item.get("id") or item.get("secret_name") or "manifest item"
+        raise ValueError(f"{item_id}: missing required keys: {', '.join(missing)}")
+
+
 def encryption_regex_for_item(
     item: dict[str, Any],
     string_data: dict[str, str],
@@ -361,6 +369,7 @@ def main() -> int:
 
             raw_secret = fetch_secret(region, item["secret_name"], version_id)
             string_data = normalize_string_data(raw_secret, string_key=item.get("string_key"))
+            validate_required_keys(item, string_data)
             doc = build_k8s_resource_doc(item, string_data)
             plaintext = dump_yaml(doc)
             output_path = resolve_output_path(manifest_path, output_dir, item["output_path"])

@@ -11,6 +11,19 @@ SPEC.loader.exec_module(MODULE)
 
 
 class EncryptionRegexForItemTest(unittest.TestCase):
+    def test_required_keys_accept_complete_payload(self):
+        MODULE.validate_required_keys(
+            {"id": "example", "required_keys": ["TOKEN", "PASSWORD"]},
+            {"TOKEN": "token", "PASSWORD": "password", "OPTIONAL": "value"},
+        )
+
+    def test_required_keys_reject_missing_payload_keys(self):
+        with self.assertRaisesRegex(ValueError, "example: missing required keys: PASSWORD"):
+            MODULE.validate_required_keys(
+                {"id": "example", "required_keys": ["TOKEN", "PASSWORD"]},
+                {"TOKEN": "token"},
+            )
+
     def test_plaintext_keys_are_excluded_from_key_level_encryption(self):
         string_data = {
             "CTL_LLMGATEWAY_ADMIN_TOKEN": "secret",
