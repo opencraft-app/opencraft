@@ -180,6 +180,35 @@ def fetch_secret(region: str, secret_name: str, version_id: str) -> str:
     raise ValueError(f"{secret_name}: empty secret value")
 
 
+def resolve_version_id(region: str, secret_name: str, configured_version_id: str) -> str:
+    if configured_version_id != "latest":
+        return configured_version_id
+
+    response = run_tccli(
+        "ssm",
+        "ListSecretVersionIds",
+        region=region,
+        payload={"SecretName": secret_name},
+    )
+    payload = response.get("Response") or response
+    versions = [
+        version
+        for version in payload.get("Versions") or []
+        if isinstance(version, dict) and version.get("VersionId")
+    ]
+    if not versions:
+        raise ValueError(f"{secret_name}: no secret versions found")
+
+    def sort_key(version: dict[str, Any]) -> tuple[int, str]:
+        try:
+            create_time = int(version.get("CreateTime") or 0)
+        except (TypeError, ValueError):
+            create_time = 0
+        return create_time, str(version["VersionId"])
+
+    return str(max(versions, key=sort_key)["VersionId"])
+
+
 def normalize_string_data(raw: str, *, string_key: str | None) -> dict[str, str]:
     try:
         decoded = json.loads(raw)
@@ -363,10 +392,11 @@ def main() -> int:
             get_resource_name(item)
 
             region = item.get("region") or defaults.get("region")
-            version_id = item.get("version_id") or defaults.get("version_id") or "SSM_Current"
+            configured_version_id = item.get("version_id") or defaults.get("version_id") or "SSM_Current"
             if not region:
                 raise ValueError(f"manifest item {item_id} missing region/defaults.region")
 
+            version_id = resolve_version_id(region, item["secret_name"], configured_version_id)
             raw_secret = fetch_secret(region, item["secret_name"], version_id)
             string_data = normalize_string_data(raw_secret, string_key=item.get("string_key"))
             validate_required_keys(item, string_data)

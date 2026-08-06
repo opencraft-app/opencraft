@@ -699,6 +699,11 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
             "SANDBOX_POOL_C5_SUBNET_ID=subnet-3krxc31p",
             "AI_GATEWAY_INTERNAL_SUBNET_ID=subnet-29qhnd3b",
             "AUTH_TRUSTED_PROXY_CIDRS=10.79.192.0/18",
+            "AUTH_QQ_APP_ID=",
+            "AUTH_WECHAT_APP_ID=",
+            "AUTH_WECHAT_OFFICIAL_ACCOUNT_APP_ID=",
+            "AUTH_GITHUB_CLIENT_ID=",
+            "SHADOW_REGION: ap-tokyo",
             "CTL_CLS_TOPIC_ID=",
             'region = "ap-tokyo"',
             "NEXTGEN_DASHBOARD_IMAGE=lightclaw-jp1.tencentcloudcr.com/lightclaw/nextgen-dashboard:fixture",
@@ -715,6 +720,10 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
             "vpc-b94qlrqe",
             "subnet-h5l8sqt1",
             "bba8885b-b3df-4958-b63f-60bf275a0e4b",
+            "copied-qq-app-id",
+            "copied-wechat-app-id",
+            "copied-official-account-app-id",
+            "copied-github-client-id",
         ):
             with self.subTest(residue=residue):
                 self.assertNotIn(residue, rendered_text)
@@ -1009,7 +1018,15 @@ def create_playground_fixture(repo: Path, *, include_international_services: boo
             "AI_GATEWAY_INTERNAL_SUBNET_ID=subnet-h5l8sqt1\n"
         )
         (repo / "argocd/services/lightclaw-auth/sandbox-bj-3/auth-platform.env").write_text(
-            "AUTH_INTERNAL_SUBNET_ID=subnet-h5l8sqt1\nAUTH_TRUSTED_PROXY_CIDRS=10.31.192.0/18\n"
+            "AUTH_INTERNAL_SUBNET_ID=subnet-h5l8sqt1\n"
+            "AUTH_TRUSTED_PROXY_CIDRS=10.31.192.0/18\n"
+            "AUTH_QQ_APP_ID=copied-qq-app-id\n"
+            "AUTH_WECHAT_APP_ID=copied-wechat-app-id\n"
+            "AUTH_WECHAT_OFFICIAL_ACCOUNT_APP_ID=copied-official-account-app-id\n"
+            "AUTH_GITHUB_CLIENT_ID=copied-github-client-id\n"
+        )
+        (repo / "argocd/services/lightclaw-auth/sandbox-bj-3/patch-shadowbinding.yaml").write_text(
+            "data:\n  SHADOW_REGION: ap-beijing\n"
         )
         (repo / "argocd/services/nextgen-dashboard/sandbox-bj-3/nextgen-dashboard-platform.env").write_text(
             "NEXTGEN_DASHBOARD_IMAGE=ccr.ccs.tencentyun.com/clawhub/nextgen-dashboard:fixture\n"

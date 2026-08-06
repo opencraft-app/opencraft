@@ -1,6 +1,6 @@
 defaults:
   region: ap-tokyo
-  version_id: SSM_Current
+  version_id: latest
   age_recipients:
     - age1q4s9kt3h5n0fgmez4kyp7tsahgjhuxpyeteye8lp46kqkyvardusctl258
 

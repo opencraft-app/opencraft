@@ -4,7 +4,7 @@
 # stay out of application SSM payloads and Kubernetes workloads.
 defaults:
   region: ap-tokyo
-  version_id: SSM_Current
+  version_id: latest
   age_recipients:
     - age1q4s9kt3h5n0fgmez4kyp7tsahgjhuxpyeteye8lp46kqkyvardusctl258
 
@@ -222,13 +222,8 @@ items:
   - id: service-gateway-runtime-secrets
     secret_name: mono-sandbox-jp-1-service-gateway-runtime-secrets
     required_keys:
-      - AI_GATEWAY_ADMIN_TOKEN
       - SERVICE_GATEWAY_ADMIN_BASIC_AUTH_PASSWORD
       - SERVICE_GATEWAY_ADMIN_BASIC_AUTH_USER
-      - SERVICE_GATEWAY_AUTH_INTERNAL_TOKEN
-      - TENCENTCLOUD_SECRET_ID
-      - TENCENTCLOUD_SECRET_KEY
-      - TEMPORAL_BEARER_TOKEN
     namespace: lightvela-playground-sandbox-jp-1
     kubernetes_resource_name: service-gateway-runtime-secrets
     kubernetes_resource_kind: Secret

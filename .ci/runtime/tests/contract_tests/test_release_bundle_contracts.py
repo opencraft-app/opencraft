@@ -330,6 +330,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         manifest = yaml.safe_load(manifest_path.read_text())
 
         self.assertEqual(manifest["defaults"]["region"], "ap-tokyo")
+        self.assertEqual(manifest["defaults"]["version_id"], "latest")
         self.assertEqual(len(manifest["items"]), 1)
         item = manifest["items"][0]
         self.assertEqual(item["secret_name"], "mono-sandbox-jp-1-lightclaw-auth-secrets")
@@ -365,6 +366,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         manifest = yaml.safe_load(manifest_path.read_text())
 
         self.assertEqual(manifest["defaults"]["region"], "ap-tokyo")
+        self.assertEqual(manifest["defaults"]["version_id"], "latest")
         items = manifest["items"]
         self.assertEqual(len(items), 16)
         self.assertEqual(len({item["id"] for item in items}), 16)
@@ -398,6 +400,16 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(
             {Path(item["output_path"]).name for item in items},
             expected_outputs,
+        )
+        service_gateway = next(
+            item for item in items if item["id"] == "service-gateway-runtime-secrets"
+        )
+        self.assertEqual(
+            service_gateway["required_keys"],
+            [
+                "SERVICE_GATEWAY_ADMIN_BASIC_AUTH_PASSWORD",
+                "SERVICE_GATEWAY_ADMIN_BASIC_AUTH_USER",
+            ],
         )
 
     def test_sandbox2_catalogs_are_promotable_or_explicitly_exempt(self) -> None:
