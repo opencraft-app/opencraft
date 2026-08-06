@@ -227,10 +227,12 @@ type ListPassesByResourceIDsRequest struct {
 //   - BundleID：必填，付费 bundle 的标识
 //   - Period / TimeUnit：用户选择的购买时长（如 1 个月、3 个月）；trade 持有此参数
 //     用于回调时透传到 ctl.CompletePass 计算 expired_time
+//   - AutoRenewFlag：可选，国际站支持；取值 notify_and_manual_renew / auto_renew / no_notify_and_manual_renew
 type CreatePassOrderRequest struct {
-	BundleID string `json:"bundle_id"`
-	Period   int    `json:"period"`
-	TimeUnit string `json:"time_unit"` // "m"（月）/ "d"（天）
+	BundleID      string `json:"bundle_id"`
+	Period        int    `json:"period"`
+	TimeUnit      string `json:"time_unit"` // "m"（月）/ "d"（天）
+	AutoRenewFlag string `json:"auto_renew_flag,omitempty"`
 }
 
 // CreatePassOrderResult 创建付费 pass 订单响应（v1.7.31 接口拆分：仅返 deal_names）

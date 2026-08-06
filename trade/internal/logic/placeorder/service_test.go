@@ -387,6 +387,71 @@ func TestPlaceOrder_HappyPath(t *testing.T) {
 	}
 }
 
+func TestPlaceOrder_IntlAutoRenewFlagAddsGoodsDetail(t *testing.T) {
+	d := newStdDeps()
+	d.service = New(Deps{
+		CTLClient:   d.ctl,
+		BundleStore: d.bundle,
+		JifeiClient: d.jifei,
+		OrderWriter: d.writer,
+		OrderStore:  d.store,
+		SiteKind:    "intl",
+	})
+	req := stdPlaceOrderReq()
+	req.AutoRenewFlag = AutoRenewFlagAutoRenew
+
+	if _, err := d.service.PlaceOrder(context.Background(), req); err != nil {
+		t.Fatalf("PlaceOrder: %v", err)
+	}
+	if d.jifei.lastGenerateDealsReq == nil || len(d.jifei.lastGenerateDealsReq.Goods) != 1 {
+		t.Fatalf("expected one generateDeals goods item, got %+v", d.jifei.lastGenerateDealsReq)
+	}
+	detail := d.jifei.lastGenerateDealsReq.Goods[0].GoodsDetail
+	if detail["autoRenewFlag"] != 1 {
+		t.Fatalf("jifei goodsDetail.autoRenewFlag = %v, want 1", detail["autoRenewFlag"])
+	}
+	if d.writer.lastCreateOrderInput.GoodsDetail["autoRenewFlag"] != 1 {
+		t.Fatalf("persisted goodsDetail.autoRenewFlag = %v, want 1",
+			d.writer.lastCreateOrderInput.GoodsDetail["autoRenewFlag"])
+	}
+}
+
+func TestPlaceOrder_CnRejectsAutoRenewFlag(t *testing.T) {
+	d := newStdDeps()
+	req := stdPlaceOrderReq()
+	req.AutoRenewFlag = AutoRenewFlagAutoRenew
+
+	_, err := d.service.PlaceOrder(context.Background(), req)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+	if d.jifei.generateDealsCalls.Load() != 0 {
+		t.Fatalf("jifei should not be called, got %d", d.jifei.generateDealsCalls.Load())
+	}
+}
+
+func TestPlaceOrder_IntlRejectsUnknownAutoRenewFlag(t *testing.T) {
+	d := newStdDeps()
+	d.service = New(Deps{
+		CTLClient:   d.ctl,
+		BundleStore: d.bundle,
+		JifeiClient: d.jifei,
+		OrderWriter: d.writer,
+		OrderStore:  d.store,
+		SiteKind:    "intl",
+	})
+	req := stdPlaceOrderReq()
+	req.AutoRenewFlag = "renew_forever"
+
+	_, err := d.service.PlaceOrder(context.Background(), req)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+	if d.jifei.generateDealsCalls.Load() != 0 {
+		t.Fatalf("jifei should not be called, got %d", d.jifei.generateDealsCalls.Load())
+	}
+}
+
 func TestPlaceOrder_InvalidInput(t *testing.T) {
 	cases := []struct {
 		name string
@@ -704,7 +769,12 @@ func TestGeneratePayURL_IntlUsesContractCreditCardMidasParams(t *testing.T) {
 		SiteKind:    "intl",
 	})
 	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
-		return &store.TradeOrder{DealName: dealName, Uin: "1000123456", PayURL: ""}, nil
+		return &store.TradeOrder{
+			DealName:    dealName,
+			Uin:         "1000123456",
+			PayURL:      "",
+			GoodsDetail: map[string]interface{}{"autoRenewFlag": 1},
+		}, nil
 	}
 	d.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
 		if req.ContractOrder != 1 {
@@ -715,6 +785,37 @@ func TestGeneratePayURL_IntlUsesContractCreditCardMidasParams(t *testing.T) {
 		}
 		return &jifeiclient.GetMidasEarmarkingResponse{
 			URL:        "https://buy.cloud.tencent.com/midas/contract?dealName=deal-1",
+			NeedCharge: 1,
+		}, nil
+	}
+
+	if _, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil); err != nil {
+		t.Fatalf("GeneratePayURL: %v", err)
+	}
+}
+
+func TestGeneratePayURL_IntlManualRenewUsesCreditCardWithoutContract(t *testing.T) {
+	d := newStdDeps()
+	d.service = New(Deps{
+		CTLClient:   d.ctl,
+		BundleStore: d.bundle,
+		JifeiClient: d.jifei,
+		OrderWriter: d.writer,
+		OrderStore:  d.store,
+		SiteKind:    "intl",
+	})
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: dealName, Uin: "1000123456", PayURL: ""}, nil
+	}
+	d.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+		if req.ContractOrder != 0 {
+			t.Errorf("ContractOrder = %d, want 0", req.ContractOrder)
+		}
+		if req.PayScene != "credit_card" {
+			t.Errorf("PayScene = %q, want credit_card", req.PayScene)
+		}
+		return &jifeiclient.GetMidasEarmarkingResponse{
+			URL:        "https://buy.cloud.tencent.com/midas/manual?dealName=deal-1",
 			NeedCharge: 1,
 		}, nil
 	}

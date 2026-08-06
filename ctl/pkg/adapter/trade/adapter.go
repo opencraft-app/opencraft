@@ -60,6 +60,7 @@ type PlaceOrderRequest struct {
 	TimeUnit       string `json:"timeUnit"`
 	GoodsNum       int    `json:"goodsNum"`
 	PayMode        int    `json:"payMode"`
+	AutoRenewFlag  string `json:"auto_renew_flag,omitempty"`
 	// 注：Q41 修订 2026-05-11 删除 RegionID 字段。trade 内部固定 1（广州），ctl 不再透传。
 }
 

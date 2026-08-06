@@ -43,7 +43,14 @@ func TestPlaceOrder_Success(t *testing.T) {
 		gotPath = r.URL.Path
 		gotAuth = r.Header.Get("Authorization")
 		gotCT = r.Header.Get("Content-Type")
-		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		if !strings.Contains(string(body), `"auto_renew_flag":"auto_renew"`) {
+			t.Fatalf("request body missing auto_renew_flag=auto_renew: %s", string(body))
+		}
+		if err := json.Unmarshal(body, &gotReq); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -64,6 +71,7 @@ func TestPlaceOrder_Success(t *testing.T) {
 		TimeUnit:       "m",
 		GoodsNum:       1,
 		PayMode:        1,
+		AutoRenewFlag:  "auto_renew",
 	})
 	if err != nil {
 		t.Fatalf("PlaceOrder: %v", err)
@@ -84,6 +92,9 @@ func TestPlaceOrder_Success(t *testing.T) {
 	if gotReq.ExternalUserID != "usr_test" || gotReq.BundleID != "bundle_basic_monthly" ||
 		gotReq.Period != 1 || gotReq.TimeUnit != "m" {
 		t.Fatalf("unexpected request body: %+v", gotReq)
+	}
+	if gotReq.AutoRenewFlag != "auto_renew" {
+		t.Fatalf("expected auto_renew_flag to be forwarded, got %+v", gotReq)
 	}
 	if result == nil || result.DealName != "DEAL-2026-001" || result.BigOrderID != "BIG-2026-001" {
 		t.Fatalf("unexpected result: %+v", result)

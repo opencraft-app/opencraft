@@ -24,7 +24,7 @@ import "context"
 //
 // **Lightclaw 本期场景约束（Q-PAY-1 ~ Q-PAY-5 拍板 2026-05-11）**：
 //   - 国内站仅传 OwnerUin / Uin / DealNames 三个必填字段（Q-PAY-4：不传 platform，jifei 默认 pc）
-//   - 国际站获取支付链接时传 contractOrder=1 / payScene=credit_card，沿用 Midas 签约并支付路径
+//   - 国际站获取支付链接时固定传 payScene=credit_card；用户选择自动续费时额外传 contractOrder=1
 //   - 不传 VoucherIds / WxOpenID / WxAppID / Channel / RemitpayPayerName
 //     （与 Q48 协议表面最小化原则一致 — Lightclaw 控制台没有这些 UI 入口）
 //

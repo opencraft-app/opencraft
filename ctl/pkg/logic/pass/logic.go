@@ -1871,6 +1871,7 @@ func (l *logic) prepareCreatePassOrder(
 		TimeUnit:       req.TimeUnit,
 		GoodsNum:       lighthousePassGoodsNum,
 		PayMode:        lighthousePassPayMode,
+		AutoRenewFlag:  req.AutoRenewFlag,
 		// Q41 修订 2026-05-11：RegionID 不再透传，trade 内部固定 1（广州）
 		// Q30 拍板：Uin / AppID 不在 ctl 端反查，由 trade 内部 ShadowClient 反查
 	}, logger, nil

@@ -108,6 +108,7 @@ type PlaceOrderRequest struct {
 	TimeUnit       string
 	GoodsNum       int
 	PayMode        int
+	AutoRenewFlag  string
 	// 注：Q41 修订 2026-05-11 删除 RegionID 字段。trade 内部固定 1（广州）/ 100001（广州一区），
 	// 不再由 ctl / 前端透传。如未来 bundle 按 region 差价，再放回入参 + 改用 trade_bundle_definition.region 元数据。
 }
@@ -141,6 +142,12 @@ type PlaceOrderResult struct {
 }
 
 const moveInGoodsCategoryID int64 = 176262
+
+const (
+	AutoRenewFlagNotifyAndManual   = "notify_and_manual_renew"
+	AutoRenewFlagAutoRenew         = "auto_renew"
+	AutoRenewFlagNoNotifyAndManual = "no_notify_and_manual_renew"
+)
 
 // Deps 是 Service 的依赖注入。
 //
@@ -1268,9 +1275,11 @@ func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *Gen
 		WxOpenID:  optsWxOpenID(opts),
 		WxAppID:   optsWxAppID(opts),
 	}
-	if s.deps.SiteKind == "intl" {
-		midasReq.ContractOrder = 1
+	if isIntlSite(s.deps.SiteKind) {
 		midasReq.PayScene = "credit_card"
+		if orderHasAutoRenewFlag(order.GoodsDetail) {
+			midasReq.ContractOrder = 1
+		}
 	}
 	resp, err := s.deps.JifeiClient.GetMidasEarmarking(ctx, midasReq)
 	if err != nil {
@@ -1392,6 +1401,13 @@ func (s *Service) validatePlaceOrderRequest(req *PlaceOrderRequest) error {
 	if req.PayMode != 0 && req.PayMode != 1 && req.PayMode != 2 {
 		return fmt.Errorf("%w: pay_mode must be 0/1/2, got %d", ErrInvalidInput, req.PayMode)
 	}
+	_, autoRenewFlagSet, err := jifeiAutoRenewFlagValue(req.AutoRenewFlag)
+	if err != nil {
+		return err
+	}
+	if autoRenewFlagSet && !isIntlSite(s.deps.SiteKind) {
+		return fmt.Errorf("%w: auto_renew_flag is only supported for intl site", ErrInvalidInput)
+	}
 	return nil
 }
 
@@ -1448,6 +1464,9 @@ func buildGoodsDetail(def *store.BundleDefinition, req PlaceOrderRequest) map[st
 	// ctl/pass 已经能拿到 user_id；保持续费 goodsDetail 干净。
 	if req.ExternalUserID != "" {
 		out["externalUserId"] = req.ExternalUserID
+	}
+	if v, ok, _ := jifeiAutoRenewFlagValue(req.AutoRenewFlag); ok {
+		out["autoRenewFlag"] = v
 	}
 	// 2026-05-13 起契约变更：运营录入 key 必须已带 sv_ 前缀，trade 不再自动补前缀。
 	for k, v := range def.SVList {
@@ -1601,6 +1620,49 @@ func optsWxAppID(opts *GeneratePayURLOptions) string {
 		return ""
 	}
 	return opts.WxAppID
+}
+
+func isIntlSite(siteKind string) bool {
+	return strings.EqualFold(strings.TrimSpace(siteKind), "intl")
+}
+
+func jifeiAutoRenewFlagValue(flag string) (int, bool, error) {
+	switch strings.ToLower(strings.TrimSpace(flag)) {
+	case "":
+		return 0, false, nil
+	case AutoRenewFlagNotifyAndManual:
+		return 0, true, nil
+	case AutoRenewFlagAutoRenew:
+		return 1, true, nil
+	case AutoRenewFlagNoNotifyAndManual:
+		return 2, true, nil
+	default:
+		return 0, false, fmt.Errorf("%w: auto_renew_flag must be %q, %q or %q",
+			ErrInvalidInput,
+			AutoRenewFlagNotifyAndManual,
+			AutoRenewFlagAutoRenew,
+			AutoRenewFlagNoNotifyAndManual)
+	}
+}
+
+func orderHasAutoRenewFlag(goodsDetail map[string]interface{}) bool {
+	switch v := goodsDetail["autoRenewFlag"].(type) {
+	case bool:
+		return v
+	case int:
+		return v == 1
+	case int64:
+		return v == 1
+	case float64:
+		return v == 1
+	case string:
+		if mapped, ok, err := jifeiAutoRenewFlagValue(v); err == nil && ok {
+			return mapped == 1
+		}
+		return v == "1" || strings.EqualFold(v, "true")
+	default:
+		return false
+	}
 }
 
 // placeOrderDianshi 是点石活动下单分支（设计稿 §5.4 / v0.5 修订）。

@@ -434,6 +434,7 @@ type placeOrderRequest struct {
 	TimeUnit       string `json:"timeUnit"`
 	GoodsNum       int    `json:"goodsNum"`
 	PayMode        int    `json:"payMode"`
+	AutoRenewFlag  string `json:"auto_renew_flag,omitempty"`
 	// 注：Q41 修订 2026-05-11 删除 RegionID 字段。trade 内部固定 1（广州），ctl / 前端不再透传。
 }
 
@@ -475,6 +476,7 @@ func placeOrderHandler(svc *placeorder.Service) gin.HandlerFunc {
 			TimeUnit:       req.TimeUnit,
 			GoodsNum:       req.GoodsNum,
 			PayMode:        req.PayMode,
+			AutoRenewFlag:  req.AutoRenewFlag,
 			// Q41 修订：RegionID 不再透传，trade 内部固定 1（广州）
 		})
 		if err != nil {
@@ -557,6 +559,7 @@ func placeOrderAndPayHandler(svc *placeorder.Service) gin.HandlerFunc {
 			TimeUnit:       req.TimeUnit,
 			GoodsNum:       req.GoodsNum,
 			PayMode:        req.PayMode,
+			AutoRenewFlag:  req.AutoRenewFlag,
 			// Q41 修订：RegionID 不再透传，trade 内部固定 1（广州）
 		})
 		if err != nil {
