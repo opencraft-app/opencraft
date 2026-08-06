@@ -15,6 +15,7 @@ import (
 	"git.woa.com/wisp/mono/site-gateway/internal/httpapi"
 	"git.woa.com/wisp/mono/site-gateway/internal/origin"
 	"git.woa.com/wisp/mono/site-gateway/internal/sitemeta"
+	"git.woa.com/wisp/mono/site-gateway/internal/usage"
 )
 
 func main() {
@@ -34,6 +35,13 @@ func main() {
 		log.Fatalf("build cos fetcher: %v", err)
 	}
 
+	meter := usage.NewMeter(cfg.UsageMaxSites)
+	reporter := usage.NewReporter(usage.ReporterOptions{
+		Meter:    meter,
+		Sink:     usage.NewHTTPSink(cfg.CTLBaseURL, cfg.CTLInternalToken, &http.Client{Timeout: cfg.CTLTimeout}),
+		Interval: cfg.UsageReportInterval,
+	})
+
 	siteHandler := httpapi.NewSiteHandler(httpapi.Options{
 		Resolver: hostroute.New(cfg.RootDomains),
 		Sites: sitemeta.NewClient(sitemeta.Options{
@@ -42,8 +50,10 @@ func main() {
 			HTTPClient:    &http.Client{Timeout: cfg.CTLTimeout},
 			PositiveTTL:   cfg.SitePositiveTTL,
 			NegativeTTL:   cfg.SiteNegativeTTL,
+			MaxEntries:    cfg.SiteCacheMaxEntries,
 		}),
 		Origin: fetcher,
+		Usage:  meter,
 	})
 
 	siteServer := &http.Server{
@@ -70,6 +80,14 @@ func main() {
 		}
 	}()
 
+	reporterCtx, stopReporter := context.WithCancel(context.Background())
+	reporterDone := make(chan struct{})
+	go func() {
+		defer close(reporterDone)
+		log.Printf("site-gateway reporting site usage every %s", cfg.UsageReportInterval)
+		reporter.Run(reporterCtx)
+	}()
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
@@ -82,4 +100,8 @@ func main() {
 	if err := adminServer.Shutdown(ctx); err != nil {
 		log.Printf("shutdown admin: %v", err)
 	}
+	// 先停站点服务再停上报：这个顺序保证最后一次 Flush 看到的是已经不再增长的计数，
+	// 不会漏掉关服过程中仍在处理的那几个请求。
+	stopReporter()
+	<-reporterDone
 }

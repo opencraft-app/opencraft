@@ -10,6 +10,7 @@ import (
 	"ctl/pkg/resource"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ---- Site DAO ----
@@ -25,8 +26,11 @@ type SiteDao interface {
 	SoftDelete(siteID string) error
 	CountActiveByUserID(userID string) (int64, error)
 	ListActiveByUserID(userID string) ([]*SiteEntity, error)
+	ListServingByUserID(userID string) ([]*SiteEntity, error)
 	ListSuspendedByUserID(userID string) ([]*SiteEntity, error)
 	GetByIdempotencyKey(userID, idempotencyKey string) (*SiteEntity, error)
+	UpdateStorageBytes(siteID string, storageBytes int64) error
+	SumStorageBytesByUserID(userID string) (int64, error)
 }
 
 type siteDao struct {
@@ -150,6 +154,22 @@ func (d *siteDao) ListActiveByUserID(userID string) ([]*SiteEntity, error) {
 	return entities, err
 }
 
+// ListServingByUserID 列出「套餐一旦失效就必须停止对外服务」的站点。
+//
+// 除了 active，creating 也必须包含进来。缺了 creating 会留下一个真实的正确性缺口：
+// 套餐到期的瞬间若某站点还停在 creating，隔离会跳过它，随后那次 create 操作成功
+// 回调又会把它置为 active——结果是套餐已经过期、站点却正常对外服务。
+// 把 creating 一并转成 suspended 之后，站点状态迁移会推进 operation_generation，
+// 在途的那次 create 回调会被 generation 围栏判为 superseded，无法再把站点拉回 active。
+func (d *siteDao) ListServingByUserID(userID string) ([]*SiteEntity, error) {
+	var entities []*SiteEntity
+	err := resource.GormDB.Table(d.TableName).
+		Where("user_id = ? AND status IN ? AND deleted_time IS NULL",
+			userID, []string{SiteStatusCreating, SiteStatusActive}).
+		Find(&entities).Error
+	return entities, err
+}
+
 func (d *siteDao) ListSuspendedByUserID(userID string) ([]*SiteEntity, error) {
 	var entities []*SiteEntity
 	err := resource.GormDB.Table(d.TableName).
@@ -180,6 +200,97 @@ func (d *siteDao) GetByIdempotencyKey(userID, idempotencyKey string) (*SiteEntit
 		return nil, err
 	}
 	return &entity, nil
+}
+
+// UpdateStorageBytes 回填站点当前占用的 COS 字节数。
+//
+// 只更新未软删的行：删除操作完成后 deployer 会再上报一次 0，但那次上报和
+// CompleteOperation 的软删是两个独立请求，谁先到达不确定。加上这个条件后，
+// 迟到的上报不会把一行已删站点的用量改回非零值。
+func (d *siteDao) UpdateStorageBytes(siteID string, storageBytes int64) error {
+	if storageBytes < 0 {
+		storageBytes = 0
+	}
+	return resource.GormDB.Table(d.TableName).
+		Where("site_id = ? AND deleted_time IS NULL", siteID).
+		Update("storage_bytes", storageBytes).Error
+}
+
+// SumStorageBytesByUserID 汇总用户所有仍然存在的站点的存储用量。
+//
+// 与流量口径不同：已删除的站点其 COS 对象是真的被清掉了，不该继续占用存储额度；
+// 而流量是按月的消耗量，删站不能让当月额度凭空恢复，否则反复建删就能刷流量。
+func (d *siteDao) SumStorageBytesByUserID(userID string) (int64, error) {
+	var total int64
+	err := resource.GormDB.Table(d.TableName).
+		Where("user_id = ? AND deleted_time IS NULL", userID).
+		Select("COALESCE(SUM(storage_bytes), 0)").
+		Scan(&total).Error
+	return total, err
+}
+
+// ---- 日用量 DAO ----
+
+// UsageDao 维护 website_usage_daily。
+//
+// 只有两个动作：站点网关按分钟上报的增量累加，以及按用户查当月合计。
+type UsageDao interface {
+	AddDailyTraffic(siteID, userID, usageDate string, trafficBytes, requestCount int64) error
+	SumTrafficBytesInRange(userID, fromDate, toDate string) (int64, error)
+}
+
+type usageDao struct{}
+
+func NewUsageDao() UsageDao {
+	return &usageDao{}
+}
+
+// UsageDateLayout 是 usage_date 的规范化写法。
+//
+// 读写两侧都用这个日期字符串而不是 time.Time：MySQL 的列类型是 DATE，
+// 而 SQLite（单测）里同一个 time.Time 会被存成带时分秒的字符串，
+// 那样同一天会因为时间部分不同而落到不同的行，唯一键 (site_id, usage_date) 失效。
+const UsageDateLayout = "2006-01-02"
+
+// AddDailyTraffic 把一个上报窗口的增量累加到 (site_id, usage_date) 那一行。
+//
+// 累加而不是覆盖：站点网关是多副本的，每个副本各自聚合各自上报，同一天同一站点
+// 会被多次写入。代价是这个动作天然不幂等，上报重试会重复计数——见调用方对误差
+// 来源的说明。
+func (d *usageDao) AddDailyTraffic(siteID, userID, usageDate string, trafficBytes, requestCount int64) error {
+	if siteID == "" || usageDate == "" {
+		return errors.New("site_id and usage_date are required")
+	}
+	return resource.GormDB.Table(UsageDailyTable).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "site_id"}, {Name: "usage_date"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"traffic_bytes": gorm.Expr(UsageDailyTable+".traffic_bytes + ?", trafficBytes),
+				"request_count": gorm.Expr(UsageDailyTable+".request_count + ?", requestCount),
+			}),
+		}).
+		Create(map[string]interface{}{
+			"site_id":       siteID,
+			"user_id":       userID,
+			"usage_date":    usageDate,
+			"traffic_bytes": trafficBytes,
+			"request_count": requestCount,
+			"created_time":  time.Now().UTC(),
+			"updated_time":  time.Now().UTC(),
+		}).Error
+}
+
+// SumTrafficBytesInRange 汇总用户在 [fromDate, toDate] 区间内的流量。
+//
+// 按 user_id 而不是 join 站点表：站点删除后历史流量记录保留，月额度是按用户算的，
+// 删站不该让当月已用额度凭空恢复。
+func (d *usageDao) SumTrafficBytesInRange(userID, fromDate, toDate string) (int64, error) {
+	var total int64
+	err := resource.GormDB.Table(UsageDailyTable).
+		Where("user_id = ? AND usage_date >= ? AND usage_date <= ?", userID, fromDate, toDate).
+		Select("COALESCE(SUM(traffic_bytes), 0)").
+		Scan(&total).Error
+	return total, err
 }
 
 // ---- Release DAO ----

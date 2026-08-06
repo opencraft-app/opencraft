@@ -13,6 +13,12 @@ const (
 	SitesTable      = "website_sites"
 	ReleasesTable   = "website_releases"
 	OperationsTable = "website_operations"
+	// UsageDailyTable 按 (site_id, usage_date) 记录站点的出向流量与请求数。
+	//
+	// 唯一写入方是 ctl 的内部上报接口，数据来自站点网关的按分钟批量增量。
+	// 这不是计费凭据：网关在内存里聚合、崩溃会丢掉最后一个窗口，见
+	// site-gateway/internal/usage。
+	UsageDailyTable = "website_usage_daily"
 )
 
 // ---- Site 状态 ----
@@ -97,12 +103,43 @@ type SiteEntity struct {
 	CloudPath      string  `gorm:"column:cloud_path"`
 	PublicURL      string  `gorm:"column:public_url"`
 	// OperationGeneration fences late workers so an older deploy cannot restore a deleted site.
-	OperationGeneration int64      `gorm:"column:operation_generation"`
-	DeletedTime         *time.Time `gorm:"column:deleted_time"`
+	OperationGeneration int64 `gorm:"column:operation_generation"`
+	// StorageBytes 是站点当前占用的 COS 字节数（sites/ 与 _artifacts/ 之和）。
+	//
+	// 由 website-deployer 在发布成功和删除之后回填，不是实时值。文件永久保留，
+	// 所以用量只在这两个时刻变化，事件驱动足够准确，不需要定时全桶扫描。
+	StorageBytes int64      `gorm:"column:storage_bytes"`
+	DeletedTime  *time.Time `gorm:"column:deleted_time"`
 }
 
 func (SiteEntity) TableName() string {
 	return SitesTable
+}
+
+// ---- 日用量 Entity ----
+
+// UsageDailyEntity 是站点某一天的出向流量与请求数累计值。
+//
+// usage_date 的「天」按 UTC+8 划分，与 bundle 的每日配额刷新任务
+// （ctl/pkg/logic/bundle/cron.go）保持同一个时区口径，否则用户看到的
+// 「本月用量」会在月初和月末各错开 8 小时。
+type UsageDailyEntity struct {
+	model.BaseEntity
+	model.BaseUserEntity
+
+	SiteID string `gorm:"column:site_id"`
+	// UsageDate 只用到日期部分，列类型是 DATE。
+	//
+	// 写入侧走 DAO 的日期字符串（UsageDateLayout）而不是这个字段：MySQL 会把
+	// 'YYYY-MM-DD' 规范化进 DATE 列，而直接塞 time.Time 在 SQLite 上会带上时分秒，
+	// 让唯一键 (site_id, usage_date) 对同一天失效。
+	UsageDate    time.Time `gorm:"column:usage_date"`
+	TrafficBytes int64     `gorm:"column:traffic_bytes"`
+	RequestCount int64     `gorm:"column:request_count"`
+}
+
+func (UsageDailyEntity) TableName() string {
+	return UsageDailyTable
 }
 
 // ---- Release Entity ----

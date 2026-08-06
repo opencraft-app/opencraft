@@ -41,6 +41,7 @@ func newPassWebsiteTestDB(t *testing.T) *gorm.DB {
             cloud_path TEXT NOT NULL DEFAULT '',
             public_url TEXT NOT NULL DEFAULT '',
             operation_generation INTEGER NOT NULL DEFAULT 1,
+            storage_bytes INTEGER NOT NULL DEFAULT 0,
             deleted_time DATETIME,
             created_time DATETIME,
             updated_time DATETIME

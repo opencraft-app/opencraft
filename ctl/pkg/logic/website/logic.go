@@ -38,8 +38,13 @@ type Capability struct {
 	MonthlyTrafficBytes int64 `json:"monthly_traffic_bytes"`
 	UsedTrafficBytes    int64 `json:"used_traffic_bytes"`
 	StorageBytes        int64 `json:"storage_bytes"`
-	MaxArtifactSize     int64 `json:"max_artifact_size"`
-	MaxFiles            int   `json:"max_files"`
+	// UsedStorageBytes 是用户所有存活站点的 COS 占用之和。
+	//
+	// 数据来自 deployer 在发布/删除后回填的 website_sites.storage_bytes，
+	// 因此它是「最近一次发布之后」的值，不是实时查桶的结果。
+	UsedStorageBytes int64 `json:"used_storage_bytes"`
+	MaxArtifactSize  int64 `json:"max_artifact_size"`
+	MaxFiles         int   `json:"max_files"`
 }
 
 type CreateSiteResult struct {
@@ -67,10 +72,18 @@ type DeleteSiteResult struct {
 
 // SiteStatusView 是站点网关判定「是否对外服务」所需的最小视图。
 //
-// 站点网关是公网直连组件，这里只暴露它真正需要的两个字段。
+// 站点网关是公网直连组件，这里只暴露它真正需要的字段：状态门禁两个，
+// 超额门禁两个。刻意不返回 user_id / pass_id / bundle_id——多一个字段就多一份暴露面。
+//
+// 额度和已用量跟着状态一起返回，而不是让网关再查一次：网关已经为这个接口做了
+// 30 秒 TTL 缓存，把两个数字塞进同一次回源是零额外成本；新增一次回源则会让
+// 站点的全部流量再多打一遍 ctl。
 type SiteStatusView struct {
 	SiteID string `json:"site_id"`
 	Status string `json:"status"`
+	// MonthlyTrafficBytes 为 0 表示不限额（额度未配置或查不到），网关按不拦截处理。
+	MonthlyTrafficBytes int64 `json:"monthly_traffic_bytes"`
+	UsedTrafficBytes    int64 `json:"used_traffic_bytes"`
 }
 
 // ---- Logic 接口 ----
@@ -85,6 +98,10 @@ type Logic interface {
 	GetOperation(userID, operationID string) (*website.OperationEntity, error)
 	GetOperationInternal(operationID string) (*website.OperationEntity, error)
 	GetSiteInternal(siteID string) (*SiteStatusView, error)
+	// RecordTrafficUsage 接收站点网关按分钟批量上报的流量增量。
+	RecordTrafficUsage(reports []TrafficUsageReport) (int, error)
+	// UpdateSiteStorage 接收 deployer 在发布/删除后回填的站点存储用量。
+	UpdateSiteStorage(siteID string, storageBytes int64) error
 	ListPendingOperations(status string, limit int) ([]*website.OperationEntity, error)
 	ClaimOperation(operationID, workerID string, leaseTTL time.Duration) (*website.OperationEntity, bool, error)
 	CompleteOperation(operationID, leaseToken, cloudPath, publicURL string) error
@@ -103,6 +120,7 @@ type logic struct {
 	siteDao      website.SiteDao
 	releaseDao   website.ReleaseDao
 	operationDao website.OperationDao
+	usageDao     website.UsageDao
 	passDao      pass.Dao
 	bundleDao    bundle.Dao
 	quotaDao     quota.Dao
@@ -139,6 +157,7 @@ func NewLogic() Logic {
 		siteDao:      website.NewSiteDao(),
 		releaseDao:   website.NewReleaseDao(),
 		operationDao: website.NewOperationDao(),
+		usageDao:     website.NewUsageDao(),
 		passDao:      pass.NewDao(),
 		bundleDao:    bundle.NewDao(),
 		quotaDao:     quota.NewDao(),
@@ -409,12 +428,21 @@ func (l *logic) GetCapability(userID string) (*Capability, error) {
 		return nil, fmt.Errorf("count sites: %w", err)
 	}
 
+	usedStorage, err := l.siteDao.SumStorageBytesByUserID(userID)
+	if err != nil {
+		// 与流量一致地降级：用量只用于展示，不该让整个 capability 查询失败。
+		l.logger.Warn("sum website storage usage failed",
+			zap.String("user_id", userID), zap.Error(err))
+		usedStorage = 0
+	}
+
 	return &Capability{
 		MaxSites:            q.MaxSites,
 		UsedSites:           int(usedSites),
 		MonthlyTrafficBytes: q.MonthlyTrafficBytes,
-		UsedTrafficBytes:    0, // 一期不做流量监控
+		UsedTrafficBytes:    l.usedTrafficBytesThisMonth(userID),
 		StorageBytes:        q.StorageBytes,
+		UsedStorageBytes:    usedStorage,
 		MaxArtifactSize:     q.MaxArtifactSize,
 		MaxFiles:            q.MaxFiles,
 	}, nil
@@ -726,7 +754,7 @@ func (l *logic) GetOperation(userID, operationID string) (*website.OperationEnti
 
 // GetSiteInternal 返回站点网关判定「是否对外服务」所需的最小信息。
 //
-// 刻意只返回 site_id 和 status，不返回实体本身：站点网关是公网直连组件，
+// 刻意只返回门禁需要的四个字段，不返回实体本身：站点网关是公网直连组件，
 // 泄露 user_id、pass_id 这类字段没有必要，多一个字段就多一份暴露面。
 func (l *logic) GetSiteInternal(siteID string) (*SiteStatusView, error) {
 	site, err := l.siteDao.GetBySiteID(siteID)
@@ -737,7 +765,36 @@ func (l *logic) GetSiteInternal(siteID string) (*SiteStatusView, error) {
 	if site == nil || site.DeletedTime != nil {
 		return nil, errcode.ErrWebsiteNotFound
 	}
-	return &SiteStatusView{SiteID: site.SiteID, Status: site.Status}, nil
+	view := &SiteStatusView{SiteID: site.SiteID, Status: site.Status}
+	view.MonthlyTrafficBytes, view.UsedTrafficBytes = l.trafficBudgetForSite(site)
+	return view, nil
+}
+
+// trafficBudgetForSite 返回该站点所属用户的月流量额度与当月已用量。
+//
+// 全程 fail-open：额度查不到就返回 0（网关据此不拦截）。这是刻意的方向选择——
+// 因为一次 DB 抖动或套餐数据缺失就把用户的站点整体 403，比让流量多跑一会儿糟糕得多。
+// 超额拦截是滥用防护，不是必须严丝合缝的计费门禁。
+func (l *logic) trafficBudgetForSite(site *website.SiteEntity) (limit int64, used int64) {
+	if site.UserID == "" {
+		return 0, 0
+	}
+	p, err := l.getActivePass(site.UserID)
+	if err != nil {
+		// 没有生效套餐的用户，其站点已经由 pass 生命周期钩子转成 suspended，
+		// 网关会先在状态门禁那一步拦下，这里不需要再补一层。
+		return 0, 0
+	}
+	q, err := l.getBundleQuota(p.BundleID)
+	if err != nil {
+		l.logger.Warn("website traffic budget: bundle quota unavailable",
+			zap.String("site_id", site.SiteID), zap.String("bundle_id", p.BundleID), zap.Error(err))
+		return 0, 0
+	}
+	if q.MonthlyTrafficBytes <= 0 {
+		return 0, 0
+	}
+	return q.MonthlyTrafficBytes, l.usedTrafficBytesThisMonth(site.UserID)
 }
 
 // ---- GetOperationInternal (for deployer internal use, no user isolation) ----
@@ -1286,20 +1343,26 @@ func (l *logic) DeleteSite(userID, siteID string) (*DeleteSiteResult, error) {
 //
 // 只有用户主动点删除才真删 COS（sites/ 与 _artifacts/ 一起清），见 DeleteSite。
 
-// OnPassIsolated Pass 到期/隔离时把用户所有 active 站点转为 suspended。
+// OnPassIsolated Pass 到期/隔离时把用户所有仍在服务的站点转为 suspended。
 //
 // 纯 DB 事务：不登记任何异步操作，也不触碰 COS。站点在事务提交那一刻就对外 403，
 // 不存在「DB 已隔离但文件还在服务」的空窗，因此这一步可以被调用方当成阻塞步骤。
+//
+// 范围包含 creating 而不只是 active，补的是一个真实的正确性缺口：只列 active 时，
+// 到期瞬间还停在 creating 的站点会被跳过，随后那次 create 的成功回调把它置为 active，
+// 结果是套餐已过期、站点却在对外服务。状态迁移会推进 operation_generation，
+// 在途的 create 回调因此被 generation 围栏判为 superseded，无法把站点拉回 active。
 func (l *logic) OnPassIsolated(userID string) error {
-	sites, err := l.siteDao.ListActiveByUserID(userID)
+	sites, err := l.siteDao.ListServingByUserID(userID)
 	if err != nil {
-		return fmt.Errorf("list active sites on pass isolated: %w", err)
+		return fmt.Errorf("list serving sites on pass isolated: %w", err)
 	}
 	var firstErr error
 	suspended := 0
 	for _, site := range sites {
 		if err := l.transitionSiteStatusForPassLifecycle(
-			userID, site.SiteID, website.SiteStatusActive, website.SiteStatusSuspended); err != nil {
+			userID, site.SiteID, website.SiteStatusSuspended,
+			website.SiteStatusCreating, website.SiteStatusActive); err != nil {
 			l.logger.Warn("suspend site on pass isolated failed",
 				zap.String("user_id", userID), zap.String("site_id", site.SiteID), zap.Error(err))
 			if firstErr == nil {
@@ -1329,7 +1392,7 @@ func (l *logic) OnPassRenewed(userID string) error {
 	resumed := 0
 	for _, site := range sites {
 		if err := l.transitionSiteStatusForPassLifecycle(
-			userID, site.SiteID, website.SiteStatusSuspended, website.SiteStatusActive); err != nil {
+			userID, site.SiteID, website.SiteStatusActive, website.SiteStatusSuspended); err != nil {
 			l.logger.Warn("resume site on pass renewed failed",
 				zap.String("user_id", userID), zap.String("site_id", site.SiteID), zap.Error(err))
 			if firstErr == nil {
@@ -1356,15 +1419,17 @@ func (l *logic) OnPassRenewed(userID string) error {
 // 代价是用户重新购买套餐后续费联动会把这些站点转回 active——在「文件永久保留」的
 // 模型下这正是期望行为：数据一直在，付费恢复即可继续对外服务。
 func (l *logic) OnPassDestroyed(userID string) error {
-	sites, err := l.siteDao.ListActiveByUserID(userID)
+	// 与到期隔离同一个范围：creating 也必须停服，理由见 OnPassIsolated。
+	sites, err := l.siteDao.ListServingByUserID(userID)
 	if err != nil {
-		return fmt.Errorf("list active sites on pass destroyed: %w", err)
+		return fmt.Errorf("list serving sites on pass destroyed: %w", err)
 	}
 	var firstErr error
 	suspended := 0
 	for _, site := range sites {
 		if err := l.transitionSiteStatusForPassLifecycle(
-			userID, site.SiteID, website.SiteStatusActive, website.SiteStatusSuspended); err != nil {
+			userID, site.SiteID, website.SiteStatusSuspended,
+			website.SiteStatusCreating, website.SiteStatusActive); err != nil {
 			l.logger.Warn("suspend site on pass destroyed failed",
 				zap.String("user_id", userID), zap.String("site_id", site.SiteID), zap.Error(err))
 			if firstErr == nil {
@@ -1383,17 +1448,29 @@ func (l *logic) OnPassDestroyed(userID string) error {
 
 // transitionSiteStatusForPassLifecycle 在一个事务内做一次带前置状态校验的站点状态迁移。
 //
-// 仍然推进 operation_generation：套餐状态变化的瞬间可能有一次 deploy 正在途中，
-// 它的成功回调会把站点无条件置为 active。不推进围栏的话，「到期隔离」会被一个
-// 迟到的 worker 直接掀翻，站点在套餐已过期的情况下重新对外服务。
-func (l *logic) transitionSiteStatusForPassLifecycle(userID, siteID, expectedStatus, nextStatus string) error {
+// 前置状态是一个集合而不是单个值：到期隔离和销毁都要同时接受 active 和 creating
+// （见 OnPassIsolated），而续费恢复只接受 suspended。用集合表达而不是给隔离单独写
+// 一个函数，是为了让「校验前置状态 + 推进围栏」这段逻辑只存在一份。
+//
+// 仍然推进 operation_generation：套餐状态变化的瞬间可能有一次 create 或 deploy
+// 正在途中，它的成功回调会把站点无条件置为 active。不推进围栏的话，「到期隔离」
+// 会被一个迟到的 worker 直接掀翻，站点在套餐已过期的情况下重新对外服务。
+func (l *logic) transitionSiteStatusForPassLifecycle(
+	userID, siteID, nextStatus string, expectedStatuses ...string) error {
 	return resource.GormDB.Transaction(func(tx *gorm.DB) error {
 		var lockedSite website.SiteEntity
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table(website.SitesTable).
 			Where("site_id = ? AND user_id = ?", siteID, userID).First(&lockedSite).Error; err != nil {
 			return err
 		}
-		if lockedSite.Status != expectedStatus {
+		matched := false
+		for _, expected := range expectedStatuses {
+			if lockedSite.Status == expected {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			// 站点状态已被其他流程改变（例如用户已自行删除），跳过本次联动。
 			return errcode.ErrWebsiteNotActive
 		}
@@ -1403,7 +1480,7 @@ func (l *logic) transitionSiteStatusForPassLifecycle(userID, siteID, expectedSta
 				"status":               nextStatus,
 				"operation_generation": lockedSite.OperationGeneration + 1,
 			}).Error; err != nil {
-			return fmt.Errorf("transition site %s -> %s: %w", expectedStatus, nextStatus, err)
+			return fmt.Errorf("transition site %v -> %s: %w", expectedStatuses, nextStatus, err)
 		}
 		return nil
 	})

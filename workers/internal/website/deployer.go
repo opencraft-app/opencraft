@@ -489,11 +489,19 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 		return d.failOperation(op, fmt.Sprintf("publish to current: %v", err))
 	}
 
-	// 5. 清理暂存目录。制品 zip 保留用于版本追溯，只在用户主动删除站点时清除。
+	// 5. 清理暂存目录。
 	if err := d.deleteCosPrefix(siteCos, stagingPrefix, op); err != nil {
 		//暂存目录只占存储、不影响对外服务，清理失败不应让整次发布失败。
 		log.Printf("warning: cleanup staging prefix %s failed: %v", stagingPrefix, err)
 	}
+
+	// 6. 清理超出保留数的历史制品（默认只留本次这一份）。
+	if err := d.pruneSiteArtifacts(siteCos, op.SiteID, op.ReleaseID); err != nil {
+		log.Printf("warning: prune stale artifacts for %s failed: %v", op.SiteID, err)
+	}
+
+	// 7. 重算存储用量。放在清理之后，否则上报的数字里会包含刚被删掉的暂存目录和历史制品。
+	d.refreshSiteStorage(siteCos, op.SiteID)
 
 	return d.completeOperation(op, sitePublishedPrefix(op.SiteID), d.getSitePublicURL(op))
 }
@@ -577,25 +585,15 @@ func (d *Deployer) syncToCurrent(siteCos *cosClient, op Operation, stagingPrefix
 
 // listCosKeys 列出指定前缀下的所有对象键。
 func (d *Deployer) listCosKeys(client *cosClient, prefix string) ([]string, error) {
-	var keys []string
-	var marker string
-	for {
-		opt := &cos.BucketGetOptions{Prefix: prefix, MaxKeys: 1000}
-		if marker != "" {
-			opt.Marker = marker
-		}
-		result, _, err := client.client.Bucket.Get(context.Background(), opt)
-		if err != nil {
-			return nil, fmt.Errorf("list objects (%s): %v", prefix, err)
-		}
-		for _, item := range result.Contents {
-			keys = append(keys, item.Key)
-		}
-		if !result.IsTruncated {
-			return keys, nil
-		}
-		marker = result.NextMarker
+	objects, err := d.listCosObjects(client, prefix)
+	if err != nil {
+		return nil, err
 	}
+	keys := make([]string, 0, len(objects))
+	for _, object := range objects {
+		keys = append(keys, object.Key)
+	}
+	return keys, nil
 }
 
 // executeSuspend 套餐到期下线站点 —— 已无需任何 COS 操作，直接收敛为成功。
@@ -634,6 +632,11 @@ func (d *Deployer) executeDelete(op Operation) error {
 	if err := d.deleteCosPrefix(siteCos, artPrefix, op); err != nil {
 		return d.failOperation(op, fmt.Sprintf("delete artifacts under %s: %v", artPrefix, err))
 	}
+
+	// 两个前缀都已清空，重算一次会得到 0。走同一条重算路径而不是直接上报 0：
+	// 万一删除并不彻底（分页中途出错但被判为成功），上报的仍是桶里的真实残留量，
+	// 而不是一个我们希望它是的数字。
+	d.refreshSiteStorage(siteCos, op.SiteID)
 
 	return d.completeOperation(op, "", "")
 }

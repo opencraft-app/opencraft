@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,6 +30,16 @@ type Config struct {
 
 	SitePositiveTTL time.Duration
 	SiteNegativeTTL time.Duration
+	// SiteCacheMaxEntries 是站点元信息缓存的条目上界。
+	SiteCacheMaxEntries int
+
+	// UsageReportInterval 是流量上报的窗口长度。
+	//
+	// 做成配置项是为了让测试环境能把它调短、快速验证链路，正式环境保持一分钟。
+	// 它同时决定了超额拦截的收敛延迟下限：拦住之前最多还能跑一个窗口的流量。
+	UsageReportInterval time.Duration
+	// UsageMaxSites 是内存里同时保留的站点计数条目上界。
+	UsageMaxSites int
 }
 
 func FromEnv() (Config, error) {
@@ -54,6 +65,15 @@ func FromEnv() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.SiteNegativeTTL, err = getDuration("SITE_GATEWAY_SITE_MISS_CACHE_TTL", 5*time.Second); err != nil {
+		return Config{}, err
+	}
+	if cfg.SiteCacheMaxEntries, err = getPositiveInt("SITE_GATEWAY_SITE_CACHE_MAX_ENTRIES", 20000); err != nil {
+		return Config{}, err
+	}
+	if cfg.UsageReportInterval, err = getDuration("SITE_GATEWAY_USAGE_REPORT_INTERVAL", time.Minute); err != nil {
+		return Config{}, err
+	}
+	if cfg.UsageMaxSites, err = getPositiveInt("SITE_GATEWAY_USAGE_MAX_SITES", 20000); err != nil {
 		return Config{}, err
 	}
 	// 根域是配置项而非常量：测试和正式用不同的域，正式根域后续还会更换。
@@ -108,6 +128,25 @@ func splitList(raw string) []string {
 		}
 	}
 	return items
+}
+
+// getPositiveInt 读取一个必须为正的整数配置。
+//
+// 非法值直接报错而不是回落到默认值：这些都是内存上界和上报节奏，配错一个字符
+// 就静默换掉运行时行为，比启动失败难查得多。
+func getPositiveInt(key string, fallback int) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", key, err)
+	}
+	if value <= 0 {
+		return 0, fmt.Errorf("%s must be positive", key)
+	}
+	return value, nil
 }
 
 func getDuration(key string, fallback time.Duration) (time.Duration, error) {

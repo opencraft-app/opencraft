@@ -13,19 +13,23 @@ import (
 	"git.woa.com/wisp/mono/site-gateway/internal/objectkey"
 	"git.woa.com/wisp/mono/site-gateway/internal/origin"
 	"git.woa.com/wisp/mono/site-gateway/internal/sitemeta"
+	"git.woa.com/wisp/mono/site-gateway/internal/usage"
 )
 
 type Options struct {
 	Resolver *hostroute.Resolver
 	Sites    sitemeta.Lookup
 	Origin   origin.Fetcher
-	Logger   *log.Logger
+	// Usage 为 nil 表示不计量，请求路径不需要额外判空。
+	Usage  *usage.Meter
+	Logger *log.Logger
 }
 
 type SiteHandler struct {
 	resolver *hostroute.Resolver
 	sites    sitemeta.Lookup
 	origin   origin.Fetcher
+	usage    *usage.Meter
 	logger   *log.Logger
 }
 
@@ -38,6 +42,7 @@ func NewSiteHandler(opts Options) *SiteHandler {
 		resolver: opts.Resolver,
 		sites:    opts.Sites,
 		origin:   opts.Origin,
+		usage:    opts.Usage,
 		logger:   logger,
 	}
 }
@@ -63,6 +68,14 @@ func (h *SiteHandler) serveStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 计量从这里才开始，刻意放在站点解析和门禁之后：
+	//   - 未命中根域、站点不存在、已下线、已超额的请求都在上面就返回了，
+	//     因此随机子域名扫描不会在计数器里创建条目（内存有界的关键前提）；
+	//   - 那些响应也不该算进用户的流量——它们一个字节的 COS 回源都没产生。
+	counted := &countingWriter{ResponseWriter: w}
+	w = counted
+	defer func() { h.usage.Record(siteID, counted.written) }()
+
 	candidates, ok := objectkey.Candidates(siteID, r.URL.Path)
 	if !ok {
 		writeErrorPage(w, http.StatusBadRequest, "非法请求路径")
@@ -84,6 +97,22 @@ func (h *SiteHandler) serveStatic(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeSiteNotFound(w, r, siteID)
+}
+
+// countingWriter 统计实际写给客户端的字节数。
+//
+// 为什么不用 Content-Length：HEAD 和 304 都不发 body，中途断开的传输也只发出了
+// 一部分，而这三种情况在真实浏览里都不少见。按响应头的声明值计数会系统性高估。
+// 包一层 Writer 是唯一能同时覆盖这三种情况的做法——它统计的就是真的写出去的量。
+type countingWriter struct {
+	http.ResponseWriter
+	written int64
+}
+
+func (w *countingWriter) Write(p []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(p)
+	w.written += int64(n)
+	return n, err
 }
 
 // resolveSite 完成 Host 推导和站点状态门禁。
@@ -113,6 +142,15 @@ func (h *SiteHandler) resolveSite(w http.ResponseWriter, r *http.Request) (strin
 
 	switch site.Status {
 	case sitemeta.StatusActive:
+		// 超额拦在这一层，和 suspended/blocked 用的是同一处门禁。
+		//
+		// 放在网关而不是别处有两个好处：拦得彻底（用户拿不到任何绕过的路径），
+		// 以及超额之后不再产生新的 COS 回源流量——真正花钱的那部分被止住了。
+		// 已发布的内容一个字节都不删，下个月自然恢复。
+		if site.TrafficExhausted() {
+			writeErrorPage(w, http.StatusForbidden, msgTrafficExhausted)
+			return "", false
+		}
 		return siteID, true
 	case sitemeta.StatusSuspended:
 		writeErrorPage(w, http.StatusForbidden, msgSiteSuspended)
@@ -129,7 +167,10 @@ const (
 	msgSiteNotFound  = "站点不存在"
 	msgSiteSuspended = "站点已下线"
 	msgSiteBlocked   = "站点因违反服务条款已被停用"
-	msgUpstream      = "站点暂时无法访问"
+	// msgTrafficExhausted 与下线页同一套版式：对访问者来说两者是同一类事情
+	// （站点暂时不可访问），没有必要为此多一套样式。
+	msgTrafficExhausted = "本月流量已用尽"
+	msgUpstream         = "站点暂时无法访问"
 )
 
 // writeSiteNotFound 优先使用站点自带的 404.html，回落到网关内置错误页。

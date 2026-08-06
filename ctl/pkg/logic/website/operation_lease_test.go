@@ -175,6 +175,7 @@ func newWebsiteOperationTestDB(t *testing.T) {
             tcb_env_id TEXT NOT NULL DEFAULT '',
             public_url TEXT NOT NULL DEFAULT '',
             operation_generation INTEGER NOT NULL DEFAULT 1,
+            storage_bytes INTEGER NOT NULL DEFAULT 0,
             deleted_time DATETIME,
             created_time DATETIME,
             updated_time DATETIME
@@ -219,6 +220,19 @@ func newWebsiteOperationTestDB(t *testing.T) {
 			resource_quota_total INTEGER NOT NULL,
 			created_time DATETIME,
 			updated_time DATETIME
+		)`,
+		// 唯一键必须建出来：流量累加靠 ON CONFLICT (site_id, usage_date) 实现，
+		// 缺了约束的话每个上报窗口都会插一行新记录，当月合计会翻好几倍。
+		`CREATE TABLE website_usage_daily (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			site_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			usage_date TEXT NOT NULL,
+			traffic_bytes INTEGER NOT NULL DEFAULT 0,
+			request_count INTEGER NOT NULL DEFAULT 0,
+			created_time DATETIME,
+			updated_time DATETIME,
+			UNIQUE (site_id, usage_date)
 		)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {

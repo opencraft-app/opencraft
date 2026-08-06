@@ -222,6 +222,7 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	mux.HandleFunc("/internal/ctl/websites/operations", wh.handleInternalOperations)
 	mux.HandleFunc("/internal/ctl/websites/operations/", wh.handleInternalOperations)
 	mux.HandleFunc("/internal/ctl/websites/sites/", wh.handleInternalSite)
+	mux.HandleFunc("/internal/ctl/websites/usage", wh.handleInternalUsage)
 
 	return requestMetadataMiddleware(metricsMiddleware(notFoundMiddleware(mux)))
 }

@@ -123,28 +123,38 @@ func (h *websiteHandler) handleWebsitesByID(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-// handleInternalSite 处理 GET /internal/ctl/websites/sites/{siteId}
+// handleInternalSite 处理 /internal/ctl/websites/sites/{siteId}[/storage]
 //
-// 站点网关每次请求都要判断站点是否存在、是否已下线，走这个接口 + 网关侧短 TTL 缓存。
+//	GET  {siteId}          站点网关的状态 + 额度门禁查询（网关侧有短 TTL 缓存）
+//	POST {siteId}/storage  deployer 在发布/删除后回填站点存储用量
 func (h *websiteHandler) handleInternalSite(w http.ResponseWriter, r *http.Request) {
 	if !hasValidWebsiteInternalToken(r.Header.Get("X-Internal-Token")) {
 		writeHTTPError(w, r, errcode.ErrUnauthorized)
 		return
 	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/internal/ctl/websites/sites/")
+	parts := strings.SplitN(path, "/", 2)
+	siteID := parts[0]
+	if siteID == "" {
+		writeHTTPError(w, r, errcode.ErrWebsiteNotFound)
+		return
+	}
+
+	if len(parts) == 2 && parts[1] != "" {
+		if parts[1] != "storage" {
+			writeHTTPError(w, r, errcode.ErrWebsiteNotFound)
+			return
+		}
+		h.handleInternalSiteStorage(w, r, siteID)
+		return
+	}
+
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
 		return
 	}
-
-	siteID := strings.TrimPrefix(r.URL.Path, "/internal/ctl/websites/sites/")
-	// 只接受单段 siteID：带子路径说明调用方拼错了 URL，静默截断会让它
-	// 拿到一个并非自己想查的站点。
-	if siteID == "" || strings.Contains(siteID, "/") {
-		writeHTTPError(w, r, errcode.ErrWebsiteNotFound)
-		return
-	}
-
 	site, err := h.logic.GetSiteInternal(siteID)
 	if err != nil {
 		writeHTTPError(w, r, err)
@@ -152,6 +162,82 @@ func (h *websiteHandler) handleInternalSite(w http.ResponseWriter, r *http.Reque
 	}
 	writeSuccess(w, r, http.StatusOK, site)
 }
+
+// handleInternalSiteStorage 处理 POST /internal/ctl/websites/sites/{siteId}/storage
+//
+// 上报的是绝对值而不是增量：deployer 每次都重新列一遍该站点的全部对象，
+// 所以覆盖式写入天然幂等，重试不会让用量翻倍——这一点和流量上报正好相反。
+func (h *websiteHandler) handleInternalSiteStorage(w http.ResponseWriter, r *http.Request, siteID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	var req struct {
+		StorageBytes int64 `json:"storage_bytes"`
+	}
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "%s", err.Error()))
+		return
+	}
+	if err := h.logic.UpdateSiteStorage(siteID, req.StorageBytes); err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, map[string]interface{}{
+		"site_id":       siteID,
+		"storage_bytes": req.StorageBytes,
+	})
+}
+
+// handleInternalUsage 处理 POST /internal/ctl/websites/usage
+//
+// 站点网关每分钟调一次，一个请求带上该窗口内所有有流量的站点。
+// 刻意做成批量而非逐请求上报：站点流量的量级远大于业务接口，逐请求上报会让
+// ctl 承受站点的全部 QPS，而这个数字本来只需要分钟级精度。
+func (h *websiteHandler) handleInternalUsage(w http.ResponseWriter, r *http.Request) {
+	if !hasValidWebsiteInternalToken(r.Header.Get("X-Internal-Token")) {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		// WindowID 只用于日志关联，服务端不拿它去重（累加语义无法幂等，
+		// 取舍说明见 websitelogic.RecordTrafficUsage）。
+		WindowID string                            `json:"window_id"`
+		Reports  []websitelogic.TrafficUsageReport `json:"reports"`
+	}
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "%s", err.Error()))
+		return
+	}
+	if len(req.Reports) > maxUsageReportsPerRequest {
+		writeHTTPError(w, r, invalidWebsiteParam(
+			"reports exceeds %d entries", maxUsageReportsPerRequest))
+		return
+	}
+
+	accepted, err := h.logic.RecordTrafficUsage(req.Reports)
+	if err != nil {
+		// 部分失败也回非 2xx：网关据此把整批增量并回内存，下一个窗口重试。
+		// 已入账的那部分会因此被重复计一次，这是明确接受的误差（不是计费凭据）。
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, map[string]interface{}{
+		"accepted": accepted,
+		"received": len(req.Reports),
+	})
+}
+
+// maxUsageReportsPerRequest 限制单次上报的站点数，避免一个畸形请求让 ctl
+// 在一个事务外做无上限的逐站点查询。网关侧的内存上界比这个值小一个量级。
+const maxUsageReportsPerRequest = 5000
 
 // handleInternalOperations 处理 /internal/ctl/websites/operations[/{opId}/claim|complete|fail]
 func (h *websiteHandler) handleInternalOperations(w http.ResponseWriter, r *http.Request) {

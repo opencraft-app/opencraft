@@ -104,3 +104,47 @@ func TestFromEnvSiteCacheTTLDefaultsAndOverrides(t *testing.T) {
 		t.Fatalf("覆盖未生效: %v/%v", cfg.SitePositiveTTL, cfg.SiteNegativeTTL)
 	}
 }
+
+// 上报间隔和内存上界的默认值必须是可预期的：默认一分钟上报，
+// 它同时决定了超额拦截的收敛延迟下限。
+func TestFromEnvUsageDefaultsAndOverrides(t *testing.T) {
+	setRequired(t)
+	t.Setenv("TENCENT_SECRET_ID", "AKIDPLATFORM")
+	t.Setenv("TENCENT_SECRET_KEY", "platform-key")
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if cfg.UsageReportInterval != time.Minute {
+		t.Fatalf("上报间隔默认值 = %v, want 1m", cfg.UsageReportInterval)
+	}
+	if cfg.UsageMaxSites != 20000 || cfg.SiteCacheMaxEntries != 20000 {
+		t.Fatalf("内存上界默认值 = %d/%d, want 20000/20000", cfg.UsageMaxSites, cfg.SiteCacheMaxEntries)
+	}
+
+	t.Setenv("SITE_GATEWAY_USAGE_REPORT_INTERVAL", "10s")
+	t.Setenv("SITE_GATEWAY_USAGE_MAX_SITES", "500")
+	t.Setenv("SITE_GATEWAY_SITE_CACHE_MAX_ENTRIES", "600")
+	cfg, err = FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if cfg.UsageReportInterval != 10*time.Second || cfg.UsageMaxSites != 500 || cfg.SiteCacheMaxEntries != 600 {
+		t.Fatalf("覆盖未生效: %v/%d/%d", cfg.UsageReportInterval, cfg.UsageMaxSites, cfg.SiteCacheMaxEntries)
+	}
+}
+
+// 内存上界配成非法值必须启动失败：静默回落到默认值比启动失败难查得多。
+func TestFromEnvRejectsInvalidUsageBounds(t *testing.T) {
+	for _, raw := range []string{"0", "-1", "many"} {
+		setRequired(t)
+		t.Setenv("TENCENT_SECRET_ID", "AKIDPLATFORM")
+		t.Setenv("TENCENT_SECRET_KEY", "platform-key")
+		t.Setenv("SITE_GATEWAY_USAGE_MAX_SITES", raw)
+
+		if _, err := FromEnv(); err == nil {
+			t.Fatalf("SITE_GATEWAY_USAGE_MAX_SITES=%q 应当报错", raw)
+		}
+	}
+}

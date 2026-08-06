@@ -1,13 +1,5 @@
-CREATE TABLE IF NOT EXISTS `website_usage_daily` (
-    `id`            BIGINT       NOT NULL AUTO_INCREMENT,
-    `site_id`       VARCHAR(64)  NOT NULL,
-    `user_id`       VARCHAR(64)  NOT NULL,
-    `usage_date`    DATE         NOT NULL,
-    `traffic_bytes` BIGINT       NOT NULL DEFAULT 0,
-    `request_count` BIGINT       NOT NULL DEFAULT 0,
-    `created_time`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_time`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_site_date` (`site_id`, `usage_date`),
-    KEY `idx_user_date` (`user_id`, `usage_date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- 对应的 up 已退化为空操作（见同名 .up.sql），回滚同样无事可做。
+--
+-- 这里刻意不再保留原先那段 CREATE TABLE：up 不删表了，down 去建表会让
+-- 「回滚一次再前滚一次」凭空多出一张不由 000032 定义的表。
+SELECT 1;
