@@ -666,7 +666,7 @@ export function ComputersScreen(props: ComputersScreenProps) {
                           <ActionButton
                             accessibilityLabel={`打开${selected.name}终端`}
                             disabled={terminal !== null}
-                            importance="quiet"
+                            importance="secondary"
                             label="打开终端"
                             onPress={() => {
                               setRegistration(null);

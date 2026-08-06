@@ -12,12 +12,13 @@ import {StyleSheet, useUnistyles} from "react-native-unistyles";
  * the axis that actually varies; everything else is shared.
  */
 export type ActionContext = "compact" | "default" | "header";
-export type ActionImportance =
-  | "danger"
-  | "primary"
-  | "quiet"
-  | "secondary"
-  | "tonal";
+/**
+ * No `quiet` tier: it drew a transparent surface behind a label, so a button
+ * arrived as bare text and only confessed to being pressable on hover. An
+ * icon-only affordance that wants to recede is `IconActionButton`; anything
+ * carrying a label reads as a button.
+ */
+export type ActionImportance = "danger" | "primary" | "secondary" | "tonal";
 
 /**
  * Hugging its content is the button's business; which edge it hugs is the
@@ -75,17 +76,14 @@ export function ActionButton({
         align === "stretch" && styles.actionAlignStretch,
         context === "header" && styles.actionHeader,
         importance === "secondary" && styles.actionSecondary,
-        importance === "quiet" && styles.actionQuiet,
         importance === "danger" && styles.actionDanger,
         importance === "tonal" && styles.actionTonal,
         hovered && !disabled && importance === "primary" && styles.actionPrimaryHover,
         hovered && !disabled && importance === "secondary" && styles.actionSecondaryHover,
-        hovered && !disabled && importance === "quiet" && styles.actionQuietHover,
         hovered && !disabled && importance === "danger" && styles.actionDangerHover,
         hovered && !disabled && importance === "tonal" && styles.actionTonalHover,
         pressed && importance === "primary" && styles.actionPrimaryPressed,
         pressed && importance === "secondary" && styles.actionSecondaryPressed,
-        pressed && importance === "quiet" && styles.actionQuietPressed,
         pressed && importance === "danger" && styles.actionDangerPressed,
         pressed && importance === "tonal" && styles.actionTonalPressed,
         disabled && styles.disabled,
@@ -149,19 +147,6 @@ const styles = StyleSheet.create((theme) => ({
   actionPrimaryPressed: {
     backgroundColor: theme.semantic.color.actionPrimaryPressedSurface,
     borderColor: theme.semantic.color.actionPrimaryPressedSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  actionQuiet: {
-    backgroundColor: theme.semantic.color.surfaceTransparent,
-    borderColor: theme.semantic.color.borderTransparent,
-    ...theme.semantic.motion.transition.control,
-  },
-  actionQuietHover: {
-    backgroundColor: theme.semantic.color.interactiveHoverSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  actionQuietPressed: {
-    backgroundColor: theme.semantic.color.interactivePressedSurface,
     ...theme.semantic.motion.transition.control,
   },
   actionSecondary: {

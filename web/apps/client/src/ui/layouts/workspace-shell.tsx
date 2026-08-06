@@ -2679,7 +2679,7 @@ function MessageStage({
                 context="header"
                 disabled={!channel}
                 icon={UsersRound}
-                importance="quiet"
+                importance="secondary"
                 label={`${channelMemberCount} 位成员`}
                 onPress={onOpenChannelMembers}
               />
