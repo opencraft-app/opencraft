@@ -42,44 +42,24 @@ func NewSiteHandler(opts Options) *SiteHandler {
 	}
 }
 
+// ServeHTTP 把站点路径空间整体交给静态回源。
+//
+// 网关不再保留任何命名空间：站点是纯静态托管，没有需要与页面同源的服务端接口，
+// 保留前缀只会白白占用用户的路径。所有路径一视同仁地走候选 key 回源，命不中就 404。
 func (h *SiteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.serveStatic(w, r)
+}
+
+func (h *SiteHandler) serveStatic(w http.ResponseWriter, r *http.Request) {
+	// 站点是只读的：网关自身不具备写 COS 的能力，写方法在入口就拒掉。
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		writeErrorPage(w, http.StatusMethodNotAllowed, "方法不被支持")
 		return
 	}
 
-	siteID, host, ok := h.resolver.Resolve(r.Host)
+	siteID, ok := h.resolveSite(w, r)
 	if !ok {
-		// 自定义域名绑定尚未实现，未命中根域的 Host 一律拒绝，
-		// 绝不回落到任何默认站点——回落会让错配的域名把流量导到别人的站点。
-		h.logger.Printf("unresolved host: %q", host)
-		writeErrorPage(w, http.StatusNotFound, "站点不存在")
-		return
-	}
-
-	site, err := h.sites.BySiteID(r.Context(), siteID)
-	if errors.Is(err, sitemeta.ErrNotFound) {
-		writeErrorPage(w, http.StatusNotFound, "站点不存在")
-		return
-	}
-	if err != nil {
-		h.logger.Printf("lookup site %q failed: %v", siteID, err)
-		writeErrorPage(w, http.StatusBadGateway, "站点暂时无法访问")
-		return
-	}
-
-	switch site.Status {
-	case sitemeta.StatusActive:
-	case sitemeta.StatusSuspended:
-		writeErrorPage(w, http.StatusForbidden, "站点已下线")
-		return
-	case sitemeta.StatusBlocked:
-		writeErrorPage(w, http.StatusForbidden, "站点因违反服务条款已被停用")
-		return
-	default:
-		// creating / deleting / deleted 以及未知状态都当作不可访问。
-		writeErrorPage(w, http.StatusNotFound, "站点不存在")
 		return
 	}
 
@@ -96,7 +76,7 @@ func (h *SiteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if err != nil {
 			h.logger.Printf("fetch %q failed: %v", key, err)
-			writeErrorPage(w, http.StatusBadGateway, "站点暂时无法访问")
+			writeErrorPage(w, http.StatusBadGateway, msgUpstream)
 			return
 		}
 		h.writeObject(w, r, key, obj)
@@ -105,6 +85,52 @@ func (h *SiteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	h.writeSiteNotFound(w, r, siteID)
 }
+
+// resolveSite 完成 Host 推导和站点状态门禁。
+//
+// siteID 只能由 Host 推导，不接受任何请求参数：这是多租户隔离的唯一入口，
+// 一旦允许请求影响 siteID，站点之间的边界就没了。
+func (h *SiteHandler) resolveSite(w http.ResponseWriter, r *http.Request) (string, bool) {
+	siteID, host, ok := h.resolver.Resolve(r.Host)
+	if !ok {
+		// 自定义域名绑定尚未实现，未命中根域的 Host 一律拒绝，
+		// 绝不回落到任何默认站点——回落会让错配的域名把流量导到别人的站点。
+		h.logger.Printf("unresolved host: %q", host)
+		writeErrorPage(w, http.StatusNotFound, msgSiteNotFound)
+		return "", false
+	}
+
+	site, err := h.sites.BySiteID(r.Context(), siteID)
+	if errors.Is(err, sitemeta.ErrNotFound) {
+		writeErrorPage(w, http.StatusNotFound, msgSiteNotFound)
+		return "", false
+	}
+	if err != nil {
+		h.logger.Printf("lookup site %q failed: %v", siteID, err)
+		writeErrorPage(w, http.StatusBadGateway, msgUpstream)
+		return "", false
+	}
+
+	switch site.Status {
+	case sitemeta.StatusActive:
+		return siteID, true
+	case sitemeta.StatusSuspended:
+		writeErrorPage(w, http.StatusForbidden, msgSiteSuspended)
+	case sitemeta.StatusBlocked:
+		writeErrorPage(w, http.StatusForbidden, msgSiteBlocked)
+	default:
+		// creating / deleting / deleted 以及未知状态都当作不可访问。
+		writeErrorPage(w, http.StatusNotFound, msgSiteNotFound)
+	}
+	return "", false
+}
+
+const (
+	msgSiteNotFound  = "站点不存在"
+	msgSiteSuspended = "站点已下线"
+	msgSiteBlocked   = "站点因违反服务条款已被停用"
+	msgUpstream      = "站点暂时无法访问"
+)
 
 // writeSiteNotFound 优先使用站点自带的 404.html，回落到网关内置错误页。
 func (h *SiteHandler) writeSiteNotFound(w http.ResponseWriter, r *http.Request, siteID string) {

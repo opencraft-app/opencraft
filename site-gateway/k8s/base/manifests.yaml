@@ -121,12 +121,27 @@ metadata:
 spec:
   # 集群用的是腾讯云 CLB ingress controller，不是 nginx。
   ingressClassName: qcloud
-  # 暂不配置 TLS。
+  # 证书必须是专门签给站点泛域名的那一张：泛域名只覆盖一级标签，
+  # *.lightclaw.tech 覆盖不了 *.sites.lightclaw.tech。腾讯云免费 DV 证书不支持
+  # 通配符（只能签单域名），付费通配符证书需要账号余额充足才能下单，所以
+  # beijing-sandbox 用的是 ACME（Let's Encrypt）+ DNSPod DNS-01 签发的
+  # *.sites.lightclaw.tech 通配符证书，再导入腾讯云 SSL 供 CLB 引用。
   #
-  # 泛域名证书只覆盖一级标签，*.lightclaw.tech 覆盖不了 *.sites.lightclaw.tech，
-  # 而账号里现存的同名证书是自签的（issuer 等于 subject），配上去浏览器照样告警。
-  # 免费证书通道当前排队（CA 机构访问繁忙），正式根域确定后再连同证书一次性配齐。
-  # 这也符合 playground 环境「实例 wildcard 入口默认 HTTP-only」的既有约定。
+  # ⚠️ 到期风险：Let's Encrypt 证书有效期只有 90 天。当前这张的到期时间是
+  # 2026-11-04（UTC），到期前必须重新签发并更新腾讯云 SSL 里的证书，否则站点
+  # 公网 HTTPS 会整体失效。续期后 secret 里的 qcloud_cert_id 也要跟着换成新的
+  # 证书 ID（或用同一 ID 做证书更新），仅重签不更新引用是不生效的。
+  #
+  # secretName 指向的必须是带 qcloud_cert_id 的 Opaque secret（见
+  # argocd/services/staticpages/*/tls-secrets.yaml），值是腾讯云 SSL 的证书 ID。
+  # CLB ingress controller 不认 kubernetes.io/tls 类型的 secret：直接塞
+  # tls.crt / tls.key 会报 E4011 invalid tls secret content，并且连带 E4204
+  # 让整条 ingress 同步失败（实测于 beijing-sandbox）。也就是说证书必须先进
+  # 腾讯云 SSL 拿到证书 ID，光把证书内容放进集群没有用。
+  tls:
+    - hosts:
+        - "REPLACE_SITE_GATEWAY_WILDCARD_HOST"
+      secretName: REPLACE_SITE_GATEWAY_TLS_SECRET_NAME
   rules:
     - host: "REPLACE_SITE_GATEWAY_WILDCARD_HOST"
       http:

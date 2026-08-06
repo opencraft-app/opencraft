@@ -76,12 +76,27 @@ func TestCandidatesRejectsControlCharacters(t *testing.T) {
 	}
 }
 
+// 站点是纯静态托管，所有候选 key 必须落在 current/ 之下。
+// 任何指向 current/ 之外的 key 都说明有人又给网关加了非静态的对象空间。
+func TestCandidatesStayUnderPublishedPrefix(t *testing.T) {
+	prefix := PublishedPrefix(siteID)
+
+	for _, p := range []string{"/", "/index.html", "/about", "/assets/app.js", "/__vela/data/notes"} {
+		got, ok := Candidates(siteID, p)
+		if !ok {
+			continue
+		}
+		for _, key := range got {
+			if !strings.HasPrefix(key, prefix) {
+				t.Fatalf("Candidates(%q) 产生了 current/ 之外的 key %q", p, key)
+			}
+		}
+	}
+}
+
 func TestPrefixesMatchDeployerLayout(t *testing.T) {
 	if got := PublishedPrefix(siteID); got != "sites/"+siteID+"/current/" {
 		t.Fatalf("PublishedPrefix = %q，与 deployer 的目录布局不一致", got)
-	}
-	if got := DataPrefix(siteID); got != "sites/"+siteID+"/data/" {
-		t.Fatalf("DataPrefix = %q", got)
 	}
 	if got := NotFoundKey(siteID); got != "sites/"+siteID+"/current/404.html" {
 		t.Fatalf("NotFoundKey = %q", got)

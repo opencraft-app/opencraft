@@ -245,6 +245,57 @@ func TestPostIsRejected(t *testing.T) {
 	}
 }
 
+// 数据面下线后 /__vela/ 不再是保留前缀，必须完整走静态回源：
+// 既不能残留一个特判分支，也不能让它变成一个能写东西的入口。
+func TestFormerReservedPrefixIsPlainStatic(t *testing.T) {
+	site := "ws-abc"
+	obj := &fakeOrigin{objects: map[string]string{
+		"sites/ws-abc/current/index.html": "<h1>hello</h1>",
+	}}
+	handler := newHandler(activeSite(site), obj)
+	host := site + "." + rootDomain
+
+	rec := do(handler, http.MethodGet, host, "/__vela/data/notes")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("GET /__vela/data/notes = %d，期望 404", rec.Code)
+	}
+	// 回源尝试的必须是站点自己的 current/ 前缀，而不是任何 data/ 空间。
+	if len(obj.requests) == 0 {
+		t.Fatal("应当按静态路径回源，实际一次都没请求")
+	}
+	for _, key := range obj.requests {
+		if !strings.HasPrefix(key, "sites/ws-abc/current/") {
+			t.Fatalf("回源了非静态 key %q", key)
+		}
+	}
+
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
+		rec := do(handler, method, host, "/__vela/data/notes")
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("%s /__vela/data/notes = %d，期望 405", method, rec.Code)
+		}
+	}
+}
+
+// 静态路径的方法限制对任意路径一致生效，且必须给出 Allow 头。
+func TestWriteMethodsAreRejectedEverywhere(t *testing.T) {
+	site := "ws-abc"
+	handler := newHandler(activeSite(site), &fakeOrigin{})
+	host := site + "." + rootDomain
+
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		for _, p := range []string{"/", "/index.html", "/api/notes"} {
+			rec := do(handler, method, host, p)
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("%s %s = %d，期望 405", method, p, rec.Code)
+			}
+			if got := rec.Header().Get("Allow"); got != "GET, HEAD" {
+				t.Fatalf("%s %s 的 Allow = %q", method, p, got)
+			}
+		}
+	}
+}
+
 func TestConditionalRequestReturnsNotModified(t *testing.T) {
 	site := "ws-abc"
 	key := "sites/ws-abc/current/index.html"

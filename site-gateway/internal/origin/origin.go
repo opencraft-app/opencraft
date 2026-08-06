@@ -21,6 +21,9 @@ type Object struct {
 }
 
 // Fetcher 抽象对象读取，便于在不依赖真实 COS 的情况下测试网关逻辑。
+//
+// 这里只有读：站点是纯静态托管，网关不写 COS。写能力不在接口上出现，
+// 也就不可能被后续改动顺手用起来。
 type Fetcher interface {
 	Get(ctx context.Context, key string) (*Object, error)
 }

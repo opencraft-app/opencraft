@@ -14,11 +14,6 @@ func PublishedPrefix(siteID string) string {
 	return "sites/" + siteID + "/current/"
 }
 
-// DataPrefix 是站点数据面文档的前缀。
-func DataPrefix(siteID string) string {
-	return "sites/" + siteID + "/data/"
-}
-
 // NotFoundKey 是站点自带的 404 页面。站点没有提供时由网关返回内置错误页。
 func NotFoundKey(siteID string) string {
 	return PublishedPrefix(siteID) + "404.html"
