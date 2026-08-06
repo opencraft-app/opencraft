@@ -1193,10 +1193,12 @@ const styles = StyleSheet.create((theme) => ({
   },
   collectionIdentityMarkAgent: {
     backgroundColor: theme.semantic.color.avatarAgentSurface,
+    borderRadius: theme.semantic.radius.circle,
   },
   collectionIdentityMarkHuman: {
     backgroundColor: theme.semantic.color.avatarHumanVioletSurface,
     borderColor: theme.semantic.color.avatarHumanVioletBorder,
+    borderRadius: theme.semantic.radius.circle,
   },
   collectionIdentityMonogram: {
     color: theme.semantic.color.iconAccent,

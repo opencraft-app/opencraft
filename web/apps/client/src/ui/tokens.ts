@@ -862,7 +862,7 @@ export const velaTheme = {
       collectionActionHeight: density.collectionActionHeight,
       collectionCompactHeight: 96,
       collectionCompactRowWidth: 220,
-      collectionAvatarSize: 40,
+      collectionAvatarSize: density.avatarRowSize,
       collectionWidth: listPaneWidth,
       compactPadding: 16,
       compactResourceIconSize: 48,

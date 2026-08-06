@@ -75,6 +75,31 @@ describe("Vela token usage", () => {
     }
   });
 
+  it("lets an identity mark's shape say what it stands for", () => {
+    // The shape used to say which screen you were on: chat drew people as
+    // circles and channels as tiles, management drew people, agents and
+    // machines all as the same tile. Round means someone, square means
+    // something.
+    const management = readFileSync(
+      join(process.cwd(), "src", "ui", "components", "management-workspace.tsx"),
+      "utf8",
+    );
+    const styleOf = (name: string) =>
+      new RegExp(`^ {2}${name}: \\{\\n([\\s\\S]*?)^ {2}\\},$`, "mu").exec(
+        management,
+      )?.[1] ?? "";
+
+    for (const someone of [
+      "collectionIdentityMarkAgent",
+      "collectionIdentityMarkHuman",
+    ]) {
+      expect(styleOf(someone)).toContain("semantic.radius.circle");
+    }
+    expect(styleOf("collectionIdentityMark")).not.toContain(
+      "semantic.radius.circle",
+    );
+  });
+
   it("does not let hand-rolled buttons regrow beside the shared one", () => {
     // The chat shell and the management screens each invented their own
     // vocabulary for the same handful of jobs, which is most of why the two

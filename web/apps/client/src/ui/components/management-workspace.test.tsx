@@ -83,9 +83,12 @@ describe("management workspace primitives", () => {
 
     expect(screen.getByTestId("agent-collection-mark")).toHaveStyle({
       backgroundColor: "#17C964",
-      borderRadius: 10,
-      height: 40,
-      width: 40,
+      borderRadius: velaTheme.semantic.radius.circle,
+      height: velaTheme.recipes.identity.avatarRowSize,
+      width: velaTheme.recipes.identity.avatarRowSize,
+    });
+    expect(screen.getByTestId("computer-collection-mark")).toHaveStyle({
+      borderRadius: velaTheme.semantic.radius.control,
     });
     expect(screen.getByTestId("agent-collection-mark-presence")).toHaveStyle({
       backgroundColor: "#17C964",
