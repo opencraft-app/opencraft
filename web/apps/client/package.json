@@ -10,6 +10,7 @@
     "security:scan": "bun tools/scan-secrets.ts",
     "start": "expo start --dev-client",
     "test": "jest --runInBand",
+    "test:density": "VELA_DENSITY_MODE=pointer jest --runInBand",
     "test:watch": "jest --watch",
     "typecheck": "tsc --noEmit",
     "verify:web-fallback": "bun tools/verify-web-spa.ts",

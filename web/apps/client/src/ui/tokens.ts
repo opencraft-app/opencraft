@@ -82,6 +82,96 @@ export const breakpoints = {
   wide: 1_180,
 } as const;
 
+export type DensityMode = "pointer" | "touch";
+
+/**
+ * Density tracks the input device, not the viewport. A 1366pt iPad is wide but
+ * still needs 44pt targets; a 900pt window on a Mac is narrow but still driven
+ * by a mouse. Resolving on width alone gets both cases wrong.
+ *
+ * Read once at load: pointer hardware does not change mid-session, and the web
+ * build is a single-page app, so there is no server render to disagree with.
+ */
+export function resolveDensityMode(
+  platform: typeof Platform.OS,
+  matchMedia: ((query: string) => { matches: boolean }) | undefined,
+): DensityMode {
+  if (platform !== "web") return "touch";
+  return matchMedia?.("(pointer: fine)").matches ? "pointer" : "touch";
+}
+
+/**
+ * Test-only override. The suite has to be able to render both tiers, and the
+ * mode is resolved once at import, so there is no hook to flip afterwards.
+ */
+function densityOverride(): DensityMode | undefined {
+  const mode =
+    typeof process === "undefined" ? undefined : process.env?.VELA_DENSITY_MODE;
+  return mode === "pointer" || mode === "touch" ? mode : undefined;
+}
+
+export const densityMode =
+  densityOverride() ??
+  resolveDensityMode(Platform.OS, globalThis.matchMedia?.bind(globalThis));
+
+/**
+ * The pointer column follows macOS metrics (28-32pt buttons, 44pt two-line
+ * rows, 52pt toolbars); the touch column keeps the 44pt minimum target.
+ */
+export const densityScale = {
+  pointer: {
+    avatarRowSize: 28,
+    collectionActionHeight: 36,
+    compactComposerMinHeight: 52,
+    composerMinHeight: 56,
+    composerSurfaceMinHeight: 52,
+    composerToolbarMinHeight: 40,
+    controlHeight: 30,
+    conversationRowMinHeight: 44,
+    directRowMinHeight: 44,
+    fieldHeight: 32,
+    headerActionHeight: 28,
+    headerHeight: 52,
+    iconControlDenseSize: 28,
+    iconControlSmallSize: 30,
+    listRowMinHeight: 32,
+    managementHeaderHeight: 48,
+    memberRowMinHeight: 40,
+    railWidth: 60,
+    rowMinHeight: 44,
+    switcherOptionMinHeight: 32,
+    switcherRowMinHeight: 36,
+    switcherTriggerMinHeight: 48,
+  },
+  touch: {
+    avatarRowSize: 36,
+    collectionActionHeight: 52,
+    compactComposerMinHeight: 64,
+    composerMinHeight: 72,
+    composerSurfaceMinHeight: 66,
+    composerToolbarMinHeight: 52,
+    controlHeight: 44,
+    conversationRowMinHeight: 56,
+    directRowMinHeight: 64,
+    fieldHeight: 48,
+    headerActionHeight: 44,
+    headerHeight: 80,
+    iconControlDenseSize: 36,
+    iconControlSmallSize: 38,
+    listRowMinHeight: 48,
+    managementHeaderHeight: 64,
+    memberRowMinHeight: 60,
+    railWidth: 72,
+    rowMinHeight: 64,
+    switcherOptionMinHeight: 56,
+    switcherRowMinHeight: 52,
+    switcherTriggerMinHeight: 64,
+  },
+} as const;
+
+export const density: (typeof densityScale)[DensityMode] =
+  densityScale[densityMode];
+
 // The Web workspace frame can restore navigation before content-heavy
 // management screens switch from their compact, stacked layouts.
 export const workspaceShellWideBreakpoint = 960;
@@ -537,10 +627,10 @@ export const velaTheme = {
     },
     compactWorkspace: {
       bottomNavigationHeight: 68,
-      composerMinHeight: 64,
-      listRowMinHeight: 48,
+      composerMinHeight: density.compactComposerMinHeight,
+      listRowMinHeight: density.listRowMinHeight,
       navigationItemMinWidth: 0,
-      switcherRowMinHeight: 52,
+      switcherRowMinHeight: density.switcherRowMinHeight,
     },
     conversationWorkspace: {
       composerAttachmentMaxWidth: 260,
@@ -548,21 +638,21 @@ export const velaTheme = {
       composerDesktopMaxWidth: 860,
       composerMentionListOffset: 58,
       composerSuggestionMinHeight: 46,
-      composerToolbarMinHeight: 52,
+      composerToolbarMinHeight: density.composerToolbarMinHeight,
       channelManagementActionMinWidth: 64,
-      channelMemberRowMinHeight: 60,
+      channelMemberRowMinHeight: density.memberRowMinHeight,
       compactActionGap: 3,
       composerInputMaxHeight: 112,
-      composerSurfaceMinHeight: 66,
-      directRowMinHeight: 64,
+      composerSurfaceMinHeight: density.composerSurfaceMinHeight,
+      directRowMinHeight: density.directRowMinHeight,
       messageActionHorizontalPadding: 6,
       messageIndent: 30,
       messageRowGap: 10,
       toastTopInset: 72,
     },
     control: {
-      height: 44,
-      squareSize: 44,
+      height: density.controlHeight,
+      squareSize: density.controlHeight,
     },
     contentMeasure: {
       codeBlockMaxHeight: 180,
@@ -573,28 +663,28 @@ export const velaTheme = {
     },
     desktopWorkspace: {
       composerHorizontalPadding: 16,
-      composerMinHeight: 72,
+      composerMinHeight: density.composerMinHeight,
       composerVerticalPadding: 12,
-      conversationRowMinHeight: 56,
-      headerHeight: 80,
-      navigationControlSize: 44,
+      conversationRowMinHeight: density.conversationRowMinHeight,
+      headerHeight: density.headerHeight,
+      navigationControlSize: density.controlHeight,
       navigationGap: 8,
       navigationTopInset: 12,
-      railWidth: 72,
+      railWidth: density.railWidth,
       sidebarWidth: 312,
     },
     iconControl: {
       compactSize: 32,
-      denseSize: 36,
+      denseSize: density.iconControlDenseSize,
       microSize: 28,
-      smallSize: 38,
+      smallSize: density.iconControlSmallSize,
     },
     identity: {
       avatarAccountSize: 52,
       avatarCompactSize: 32,
       avatarNavigationSize: 40,
       avatarProminentSize: 38,
-      avatarRowSize: 36,
+      avatarRowSize: density.avatarRowSize,
       brandHighlightOffsetX: -12,
       brandHighlightOffsetY: -14,
       brandHighlightSize: 38,
@@ -614,8 +704,8 @@ export const velaTheme = {
       workspaceMinHeight: 360,
     },
     managementWorkspace: {
-      actionHeight: 44,
-      collectionActionHeight: 52,
+      actionHeight: density.controlHeight,
+      collectionActionHeight: density.collectionActionHeight,
       collectionCompactHeight: 96,
       collectionCompactRowWidth: 220,
       collectionAvatarSize: 40,
@@ -627,21 +717,21 @@ export const velaTheme = {
       detailGap: 24,
       emptyStateMaxWidth: 560,
       fieldCompactWidth: 160,
-      fieldHeight: 48,
+      fieldHeight: density.fieldHeight,
       formFieldMinWidth: 240,
       formMaxWidth: 900,
-      headerActionHeight: 40,
-      headerHeight: 64,
+      headerActionHeight: density.headerActionHeight,
+      headerHeight: density.managementHeaderHeight,
       mediumPadding: 24,
       resourceActionCopyMinWidth: 180,
       resourceActionMinHeight: 72,
       resourceIconSize: 56,
-      rowMinHeight: 64,
+      rowMinHeight: density.rowMinHeight,
       sectionGap: 16,
       sectionPadding: 20,
       switcherMenuMaxHeight: 232,
-      switcherOptionMinHeight: 56,
-      switcherTriggerMinHeight: 64,
+      switcherOptionMinHeight: density.switcherOptionMinHeight,
+      switcherTriggerMinHeight: density.switcherTriggerMinHeight,
       textareaMinHeight: 96,
     },
     resourceIdentity: {
