@@ -30,6 +30,16 @@ function ascending(values: number[]): boolean {
   return values.every((value, index) => index === 0 || values[index - 1]! < value);
 }
 
+/** Reduces a colour to its `r,g,b` channels so a hue and its alpha variants match. */
+function channelsOf(color: string): string | null {
+  const hex = /^#([0-9A-Fa-f]{6})$/u.exec(color);
+  if (hex) {
+    const value = Number.parseInt(hex[1]!, 16);
+    return [(value >> 16) & 255, (value >> 8) & 255, value & 255].join(",");
+  }
+  const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,[^)]*)?\)$/u.exec(color);
+  return rgb ? [rgb[1], rgb[2], rgb[3]].join(",") : null;
+}
 
 describe("Vela theme contract", () => {
   it("does not expose the retired flat token namespaces", () => {
@@ -47,16 +57,24 @@ describe("Vela theme contract", () => {
     expect(invalid).toEqual([]);
   });
 
-  it("does not grow the set of semantic colors that bypass the palette", () => {
-    // The primitive tier should be the single place colours are declared.
-    // 31 semantic roles still inline their own literal; that number is a
-    // ratchet and is driven to zero when the palette is rebuilt.
+  it("sources every semantic color from the palette", () => {
+    // A role may either name a palette entry outright or derive a translucent
+    // variant of one. Anything else is a literal that a recolour would miss.
     const paletteValues = new Set<string>(Object.values(palette));
-    const bypassing = Object.entries(velaTheme.semantic.color)
-      .filter(([, value]) => !paletteValues.has(value))
+    const paletteChannels = new Set(
+      Object.values(palette)
+        .map(channelsOf)
+        .filter((channels): channels is string => channels !== null),
+    );
+    const unsourced = Object.entries(velaTheme.semantic.color)
+      .filter(([, value]) => {
+        if (paletteValues.has(value)) return false;
+        const channels = channelsOf(value);
+        return channels === null || !paletteChannels.has(channels);
+      })
       .map(([role]) => role);
 
-    expect(bypassing.length).toBeLessThanOrEqual(31);
+    expect(unsourced).toEqual([]);
   });
 
   it("keeps the spacing scale positive and strictly increasing", () => {
