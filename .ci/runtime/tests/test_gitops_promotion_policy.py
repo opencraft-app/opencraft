@@ -46,6 +46,24 @@ class PromotionPolicyTests(unittest.TestCase):
         self.assertTrue(policy.auto_merge)
         self.assertTrue(policy.auto_sync)
 
+    def test_tokyo_playground_branch_merges_without_sync_during_onboarding(self) -> None:
+        policy = promotion_policy.policy_for_branch("promote-sandbox-jp-1-service-gateway-abc123")
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.env, "sandbox-jp-1")
+        self.assertEqual(policy.branch_prefix, "promote-sandbox-jp-1-")
+        self.assertEqual(policy.display_name, "东京 Playground sandbox-jp-1")
+        self.assertEqual(policy.kustomize_mode.value, "changed_only")
+        self.assertEqual(policy.verify_mode.value, "merge_only")
+        self.assertEqual(
+            policy.verify_args,
+            ["--merge-only", "--merge-wait-seconds", "3600", "--merge-poll-seconds", "15"],
+        )
+        self.assertTrue(policy.auto_merge)
+        self.assertFalse(policy.auto_sync)
+        self.assertTrue(policy.cleanup_source_branch)
+        self.assertEqual(policy.required_argo_sync, "manual")
+
     def test_shprod_policy_is_merge_only_changed_only_and_keeps_branch(self) -> None:
         policy = promotion_policy.policy_for_branch("promote-shprod-lightclaw-auth-abc123")
 

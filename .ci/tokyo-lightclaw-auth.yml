@@ -1,0 +1,39 @@
+version: v2.0
+name: 构建 lightclaw-auth 东京
+
+on:
+  push:
+    branches:
+      - master
+      - playground/sandbox-jp-*
+    paths:
+      - user/auth/**
+      - argocd/services/lightclaw-auth/**
+      - argocd/apps/*/lightclaw-auth.yaml
+      - argocd/catalogs/playground/beijing-playground/*/lightclaw-auth.yaml
+      - argocd/secrets/*/lightclaw-auth-secrets.sops.yaml
+      - argocd/secrets/*/lightclaw-auth-content-audit-secrets.sops.yaml
+      - argocd/secrets/*/lightvela-e2e-auth-secrets.sops.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-service-release-tokyo-lightclaw-auth
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
+extends:
+  template: service-release.yml
+  parameters:
+    SERVICE: user-auth
+    BUNDLE: lightclaw-auth
+    DISPLAY_NAME: lightclaw-auth 东京
+    DEFAULT_TARGET_ENV: sandbox-jp-1
+    MASTER_BUILD_ENVS: sandbox-jp-1
+    MASTER_AUTO_PIN_ENVS: sandbox-jp-1
+    ENABLE_MASTER_PROD_PROMOTE: false
+    PLAYGROUND_BUILD_ENVS: auto
+    PLAYGROUND_AUTO_PIN_ENVS: auto
