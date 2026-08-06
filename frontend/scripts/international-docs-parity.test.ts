@@ -65,9 +65,9 @@ const STASHED_SHARED_FILES = [
 ] as const;
 
 const docsContentRoot = join(process.cwd(), "src", "content", "docs");
+const repoRoot = process.env.GUARD_REPO_ROOT ?? join(process.cwd(), "..");
 const stashRoot = join(
-  process.cwd(),
-  "..",
+  repoRoot,
   "docs",
   "international-doc-stash",
   "2026-07-23",
