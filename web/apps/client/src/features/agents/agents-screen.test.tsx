@@ -262,7 +262,7 @@ describe("AgentsScreen", () => {
     expect(screen.getByTestId("agent-detail")).toHaveStyle({
       alignSelf: "center",
       borderRadius: 0,
-      maxWidth: 960,
+      maxWidth: velaTheme.recipes.managementWorkspace.contentMaxWidth,
       width: "100%",
     });
   });
@@ -480,7 +480,7 @@ describe("AgentsScreen", () => {
     expect(screen.getByText("显示名称")).toBeVisible();
     expect(screen.getByText("Handle")).toBeVisible();
     expect(screen.getByTestId("agent-create-form")).toHaveStyle({
-      maxWidth: 900,
+      maxWidth: velaTheme.recipes.managementWorkspace.formMaxWidth,
       width: "100%",
     });
     expect(screen.queryByTestId("management-empty-state")).toBeNull();

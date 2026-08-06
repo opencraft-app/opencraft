@@ -229,7 +229,7 @@ describe("MembersScreen", () => {
     expect(screen.getByTestId("member-detail")).toHaveStyle({
       alignSelf: "center",
       borderRadius: 0,
-      maxWidth: 960,
+      maxWidth: velaTheme.recipes.managementWorkspace.contentMaxWidth,
       width: "100%",
     });
     expect(screen.getByTestId("member-hero-avatar")).toHaveStyle({
@@ -437,7 +437,7 @@ describe("MembersScreen", () => {
     expect(screen.getByText("最大使用次数")).toBeVisible();
     expect(screen.getByTestId("member-invite-form")).toHaveStyle({
       alignSelf: "center",
-      maxWidth: 900,
+      maxWidth: velaTheme.recipes.managementWorkspace.formMaxWidth,
       width: "100%",
     });
     expect(

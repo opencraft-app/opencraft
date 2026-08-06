@@ -195,7 +195,7 @@ describe("ComputersScreen", () => {
     );
     expect(screen.getByTestId("computer-detail")).toHaveStyle({
       gap: 24,
-      maxWidth: 960,
+      maxWidth: velaTheme.recipes.managementWorkspace.contentMaxWidth,
     });
     expect(screen.getByTestId("computer-detail-scroll-content")).toHaveStyle({
       paddingHorizontal: 24,
@@ -756,7 +756,7 @@ describe("ComputersScreen", () => {
     expect(screen.getByTestId("computer-detail")).toHaveStyle({
       alignSelf: "center",
       gap: 24,
-      maxWidth: 960,
+      maxWidth: velaTheme.recipes.managementWorkspace.contentMaxWidth,
       width: "100%",
     });
     expect(screen.getByTestId("computer-hero-icon")).toHaveStyle({
@@ -952,7 +952,7 @@ describe("ComputersScreen", () => {
     expect(screen.getByText("Computer 名称")).toBeVisible();
     expect(screen.getByTestId("computer-create-form")).toHaveStyle({
       alignSelf: "center",
-      maxWidth: 900,
+      maxWidth: velaTheme.recipes.managementWorkspace.formMaxWidth,
       width: "100%",
     });
     expect(

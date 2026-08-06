@@ -216,6 +216,27 @@ describe("Vela theme contract", () => {
     expect(leaves.length).toBeLessThanOrEqual(142);
   });
 
+  it("measures a column of content the same wherever it appears", () => {
+    // Chat capped a message column at 760 while management kept its own
+    // ceilings at 960 and 900, so a single-line name field stretched to 960px.
+    // Two vocabularies for one job; both sides now read the same measure.
+    const {contentMeasure, managementWorkspace} = velaTheme.recipes;
+
+    expect(managementWorkspace.contentMaxWidth).toBe(
+      contentMeasure.messageMaxWidth,
+    );
+    expect(managementWorkspace.formMaxWidth).toBe(
+      contentMeasure.messageMaxWidth,
+    );
+    expect(managementWorkspace.emptyStateMaxWidth).toBe(
+      contentMeasure.noticeMaxWidth,
+    );
+    // A form cannot outgrow the column that holds it.
+    expect(managementWorkspace.formMaxWidth).toBeLessThanOrEqual(
+      managementWorkspace.contentMaxWidth,
+    );
+  });
+
   describe("depth", () => {
     const { color } = velaTheme.semantic;
 

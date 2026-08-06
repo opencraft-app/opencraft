@@ -264,7 +264,7 @@ describe("TasksScreen", () => {
     expect(screen.getByTestId("task-detail")).toHaveStyle({
       alignSelf: "center",
       borderRadius: 0,
-      maxWidth: 960,
+      maxWidth: velaTheme.recipes.managementWorkspace.contentMaxWidth,
       width: "100%",
     });
   });
@@ -310,7 +310,7 @@ describe("TasksScreen", () => {
     expect(screen.getByText("任务描述")).toBeVisible();
     expect(screen.getByTestId("task-create-form")).toHaveStyle({
       alignSelf: "center",
-      maxWidth: 900,
+      maxWidth: velaTheme.recipes.managementWorkspace.formMaxWidth,
       width: "100%",
     });
     await fireEvent.changeText(

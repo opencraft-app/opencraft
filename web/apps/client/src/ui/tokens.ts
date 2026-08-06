@@ -263,6 +263,19 @@ export const density: (typeof densityScale)[DensityMode] =
 const listPaneWidth = 312;
 
 /**
+ * The widest a column of content ever gets, whether it holds a conversation or
+ * a detail form. Chat had settled on 760 and management on 960 separately,
+ * which is why a single-line name field could stretch to 960px.
+ */
+const columnMaxWidth = 760;
+
+/**
+ * Short standalone copy — a banner, an empty state — reads narrower than a
+ * full column. Chat and management had both landed on 560 under two names.
+ */
+const noticeMaxWidth = 560;
+
+/**
  * Type forks with density too: macOS sets interface body text around 13px
  * where iOS uses 15-17px, so tightening the chrome without tightening the type
  * would leave the two out of proportion.
@@ -811,8 +824,8 @@ export const velaTheme = {
     contentMeasure: {
       codeBlockMaxHeight: 180,
       compactMaxWidth: 440,
-      messageMaxWidth: 760,
-      noticeMaxWidth: 560,
+      messageMaxWidth: columnMaxWidth,
+      noticeMaxWidth,
       readingMaxWidth: 520,
     },
     desktopWorkspace: {
@@ -866,14 +879,14 @@ export const velaTheme = {
       collectionWidth: listPaneWidth,
       compactPadding: 16,
       compactResourceIconSize: 48,
-      contentMaxWidth: 960,
+      contentMaxWidth: columnMaxWidth,
       desktopPadding: 32,
       detailGap: 24,
-      emptyStateMaxWidth: 560,
+      emptyStateMaxWidth: noticeMaxWidth,
       fieldCompactWidth: 160,
       fieldHeight: density.fieldHeight,
       formFieldMinWidth: 240,
-      formMaxWidth: 900,
+      formMaxWidth: columnMaxWidth,
       headerActionHeight: density.headerActionHeight,
       headerHeight: density.managementHeaderHeight,
       mediumPadding: 24,

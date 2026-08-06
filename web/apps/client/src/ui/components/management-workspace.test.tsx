@@ -144,7 +144,7 @@ describe("management workspace primitives", () => {
     });
     expect(screen.getByTestId("detail-canvas")).toHaveStyle({
       gap: 24,
-      maxWidth: 960,
+      maxWidth: velaTheme.recipes.managementWorkspace.contentMaxWidth,
       paddingVertical: 24,
     });
   });
@@ -563,7 +563,7 @@ describe("management workspace primitives", () => {
 
     expect(screen.getByTestId("management-form")).toHaveStyle({
       borderRadius: 16,
-      maxWidth: 900,
+      maxWidth: velaTheme.recipes.managementWorkspace.formMaxWidth,
       padding: velaTheme.spacing.xl,
     });
     expect(screen.getByTestId("management-form-actions")).toHaveStyle({
