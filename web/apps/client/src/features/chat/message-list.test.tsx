@@ -387,9 +387,13 @@ describe("MessageList", () => {
       />,
     );
 
-    expect(screen.getByText("FILE")).toHaveStyle({fontSize: 11});
+    expect(screen.getByText("FILE")).toHaveStyle({
+      fontSize: velaTheme.semantic.typography.eyebrow.fontSize,
+    });
     expect(screen.getByText("spec.pdf")).toBeVisible();
-    expect(screen.getByText("1.0 MB")).toHaveStyle({fontSize: 11});
+    expect(screen.getByText("1.0 MB")).toHaveStyle({
+      fontSize: velaTheme.semantic.typography.meta.fontSize,
+    });
     await fireEvent.press(
       screen.getByRole("link", {name: "打开文件 spec.pdf"}),
     );
@@ -476,23 +480,27 @@ describe("MessageList", () => {
 
     expect(screen.getByTestId("message-avatar-visual-message")).toHaveStyle({
       borderRadius: 9999,
-      height: 32,
-      width: 32,
+      height: velaTheme.recipes.identity.avatarCompactSize,
+      width: velaTheme.recipes.identity.avatarCompactSize,
     });
     expect(screen.queryByText("引用")).toBeNull();
     expect(
       screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
     ).toHaveStyle({height: 28, opacity: 0, width: 28});
     expect(screen.getByText("整洁消息")).toHaveStyle({
-      fontSize: 15,
-      lineHeight: 22,
+      fontSize: velaTheme.semantic.typography.messageBody.fontSize,
+      lineHeight: velaTheme.semantic.typography.messageBody.lineHeight,
     });
-    expect(screen.getByText("小林")).toHaveStyle({fontSize: 15});
+    expect(screen.getByText("小林")).toHaveStyle({
+      fontSize: velaTheme.semantic.typography.messageSender.fontSize,
+    });
     expect(
       screen.getByTestId("message-timestamp-visual-message"),
-    ).toHaveStyle({fontSize: 12});
+    ).toHaveStyle({
+      fontSize: velaTheme.semantic.typography.messageMeta.fontSize,
+    });
     expect(screen.getByTestId("message-visual-message")).toHaveStyle({
-      gap: 10,
+      gap: velaTheme.recipes.conversationWorkspace.messageRowGap,
       paddingVertical: 8,
     });
     expect(
@@ -542,7 +550,9 @@ describe("MessageList", () => {
     expect(
       screen.getByRole("button", {name: "引用消息 整洁消息"}),
     ).toHaveStyle({minHeight: velaTheme.recipes.control.height, minWidth: velaTheme.recipes.control.squareSize});
-    expect(screen.getByText("引用")).toHaveStyle({fontSize: 12});
+    expect(screen.getByText("引用")).toHaveStyle({
+      fontSize: velaTheme.semantic.typography.label.fontSize,
+    });
   });
 
   it("makes message ownership and read state explicit in a direct conversation", async () => {
@@ -691,7 +701,7 @@ describe("MessageList", () => {
       RNStyleSheet.flatten(
         screen.getByTestId("message-viewport").props.contentContainerStyle,
       ),
-    ).toEqual(expect.objectContaining({paddingHorizontal: 16}));
+    ).toEqual(expect.objectContaining({paddingHorizontal: velaTheme.spacing.lg}));
     expect(screen.getByTestId("message-compact-message")).toHaveStyle({
       gap: 8,
     });

@@ -300,8 +300,8 @@ describe("AgentsScreen", () => {
       width: 48,
     });
     expect(screen.getByTestId("agent-detail-title")).toHaveStyle({
-      fontSize: 22,
-      lineHeight: 28,
+      fontSize: velaTheme.semantic.typography.pageTitle.fontSize,
+      lineHeight: velaTheme.semantic.typography.pageTitle.lineHeight,
     });
     expect(screen.queryByTestId("agent-fact-strip")).toBeNull();
     expect(screen.getByTestId("agent-settings-section")).toHaveStyle({
@@ -349,8 +349,8 @@ describe("AgentsScreen", () => {
       flexDirection: "row",
     });
     expect(screen.getByTestId("agent-detail-title")).toHaveStyle({
-      fontSize: 22,
-      lineHeight: 28,
+      fontSize: velaTheme.semantic.typography.pageTitle.fontSize,
+      lineHeight: velaTheme.semantic.typography.pageTitle.lineHeight,
     });
   });
 

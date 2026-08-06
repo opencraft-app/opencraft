@@ -394,8 +394,8 @@ describe("management workspace primitives", () => {
       width: 48,
     });
     expect(screen.getByTestId("computer-identity-title")).toHaveStyle({
-      fontSize: 22,
-      lineHeight: 28,
+      fontSize: velaTheme.semantic.typography.pageTitle.fontSize,
+      lineHeight: velaTheme.semantic.typography.pageTitle.lineHeight,
     });
     expect(screen.getByTestId("computer-identity-metadata")).toHaveTextContent(
       "macOS · 最近连接 2 分钟前",
@@ -428,8 +428,8 @@ describe("management workspace primitives", () => {
     expect(screen.getByTestId("resource-facts-item-0")).toHaveStyle({
       minHeight: 64,
       minWidth: 140,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
+      paddingHorizontal: velaTheme.spacing.lg,
+      paddingVertical: velaTheme.spacing.md,
     });
     expect(screen.getByText("自然人")).toBeTruthy();
   });
@@ -451,8 +451,8 @@ describe("management workspace primitives", () => {
       paddingBottom: 20,
     });
     expect(screen.getByTestId("record-identity-title")).toHaveStyle({
-      fontSize: 28,
-      lineHeight: 34,
+      fontSize: velaTheme.semantic.typography.detailTitle.fontSize,
+      lineHeight: velaTheme.semantic.typography.detailTitle.lineHeight,
     });
     expect(screen.getByTestId("record-identity-status")).toHaveStyle({
       backgroundColor: "#EAF4FF",
@@ -560,7 +560,7 @@ describe("management workspace primitives", () => {
     expect(screen.getByTestId("management-form")).toHaveStyle({
       borderRadius: 16,
       maxWidth: 900,
-      padding: 24,
+      padding: velaTheme.spacing.xl,
     });
     expect(screen.getByTestId("management-form-actions")).toHaveStyle({
       flexDirection: "row",

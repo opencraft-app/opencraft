@@ -218,8 +218,8 @@ describe("ComputersScreen", () => {
       width: 48,
     });
     expect(screen.getByTestId("computer-detail-title")).toHaveStyle({
-      fontSize: 22,
-      lineHeight: 28,
+      fontSize: velaTheme.semantic.typography.pageTitle.fontSize,
+      lineHeight: velaTheme.semantic.typography.pageTitle.lineHeight,
     });
     expect(screen.getByTestId("computer-support-grid")).toHaveStyle({
       alignItems: "flex-start",
@@ -451,8 +451,8 @@ describe("ComputersScreen", () => {
       width: 48,
     });
     expect(screen.getByTestId("computer-detail-title")).toHaveStyle({
-      fontSize: 22,
-      lineHeight: 28,
+      fontSize: velaTheme.semantic.typography.pageTitle.fontSize,
+      lineHeight: velaTheme.semantic.typography.pageTitle.lineHeight,
     });
     expect(screen.getByTestId("computer-hero")).toHaveStyle({
       alignItems: "center",
@@ -766,8 +766,8 @@ describe("ComputersScreen", () => {
       width: 48,
     });
     expect(screen.getByTestId("computer-detail-title")).toHaveStyle({
-      fontSize: 22,
-      lineHeight: 28,
+      fontSize: velaTheme.semantic.typography.pageTitle.fontSize,
+      lineHeight: velaTheme.semantic.typography.pageTitle.lineHeight,
     });
     expect(screen.getByText(/2026年8月2日/)).toBeVisible();
     expect(screen.queryByText("2026-08-02T02:31:00.000Z")).toBeNull();
