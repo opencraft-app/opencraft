@@ -87,6 +87,24 @@ type RouteConfig struct {
 	Callers     []string        `yaml:"callers"`
 	Upstream    UpstreamConfig  `yaml:"upstream"`
 	Webhooks    []WebhookConfig `yaml:"webhooks"`
+
+	// UinRoutes 按请求体里的影子账号 uin 把请求改派到另一条 route。
+	//
+	// 用途：jifei 侧只能配置一个固定的回调地址，但测试期有多个开发者环境需要各自收到
+	// 自己订单的回调。计费把回调统一打到本 route，本表按 `interface.para.uin` 把请求
+	// 分发到对应开发者环境的 route；表里没有的 uin 走本 route 自身的 upstream 兜底。
+	//
+	// 前提：每个开发者环境必须持有**不同的**影子账号 uin。共用同一个测试账号时无法区分。
+	//
+	// 可用 CLOUDLADDERGATEWAY_ROUTE_<ID>_UIN_ROUTES 覆盖，格式 `uin=route_id` 逗号分隔，
+	// 这样新增开发者不需要重新构建镜像。
+	UinRoutes []UinRoute `yaml:"uin_routes"`
+}
+
+// UinRoute 是一条 uin → route 的改派规则。
+type UinRoute struct {
+	Uin     string `yaml:"uin"`
+	RouteID string `yaml:"route_id"`
 }
 
 type UpstreamConfig struct {
@@ -425,7 +443,35 @@ func applyRouteEnvOverrides(cfg *Config) {
 			}
 			cfg.Routes[i].Upstream.Headers["Host"] = value
 		}
+		if value := strings.TrimSpace(os.Getenv(envPrefix + "_UIN_ROUTES")); value != "" {
+			if parsed := parseUinRoutes(value); len(parsed) > 0 {
+				cfg.Routes[i].UinRoutes = parsed
+			}
+		}
 	}
+}
+
+// parseUinRoutes 解析 `uin=route_id` 逗号分隔的 uin 改派表。
+//
+// 这个 env 覆盖存在的意义是「新增一个开发者环境不需要重新构建镜像」——路由表是烤进镜像的，
+// 但 env 可以只改 gitops 的工作负载清单。格式不合法的条目直接跳过，不让一处笔误把整张表废掉
+// （回调链路宁可退化到兜底环境，也不要整体失效）。
+func parseUinRoutes(raw string) []UinRoute {
+	var routes []UinRoute
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		uin, routeID, ok := strings.Cut(item, "=")
+		uin = strings.TrimSpace(uin)
+		routeID = strings.TrimSpace(routeID)
+		if !ok || uin == "" || routeID == "" {
+			continue
+		}
+		routes = append(routes, UinRoute{Uin: uin, RouteID: routeID})
+	}
+	return routes
 }
 
 func envToken(value string) string {
