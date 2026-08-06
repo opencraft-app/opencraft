@@ -165,6 +165,20 @@ describe("density wiring", () => {
     expect(desktopWorkspace.railWidth).toBe(density.railWidth);
   });
 
+  it("hangs both pane headers off one band height", () => {
+    // The chat header stacks a channel name over a description and stood at
+    // 52/80; the management header carries a single title and stood at 48/64.
+    // Two heights meant the chrome line jumped as you moved between tabs.
+    // Converging upward keeps the two-line case uncramped and only gives the
+    // one-line case more air.
+    expect(velaTheme.recipes.desktopWorkspace.headerHeight).toBe(
+      density.headerHeight,
+    );
+    expect(velaTheme.recipes.managementWorkspace.headerHeight).toBe(
+      density.headerHeight,
+    );
+  });
+
   it("sizes every list shelf row off one role", () => {
     // Channels, direct messages and the management collection are the same
     // two-line row in the same 312pt shelf. They agreed at 44 on a pointer
