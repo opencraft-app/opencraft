@@ -1539,6 +1539,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('build_next_preview_variant intl global "$PREVIEW_INTL_AUTH_API_BASE_URL" "$FRONTEND_NEXT_GLOBAL_DIR"', workflow_text)
         self.assertIn('export VITE_AUTH_API_BASE_URL="$api_base"', workflow_text)
         self.assertIn('export NEXT_PUBLIC_AUTH_API_BASE_URL="$api_base"', workflow_text)
+        self.assertIn('export NEXT_WRITE_EDGEONE_BUILD_OUTPUT=0', workflow_text)
         self.assertIn('"$PNPM_BIN" run build:next', workflow_text)
         self.assertNotIn('"$PNPM_BIN" exec vite build', workflow_text)
 
