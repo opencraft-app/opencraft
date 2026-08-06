@@ -263,15 +263,18 @@ POST   /internal/sites/{siteID}/block       封禁站点
 
 因此代码里**不允许硬编码任何根域**：根域是配置项、支持配置多个（便于测试环境和正式环境用不同域，也便于将来加第二个根域而不改代码）。`PublicURL` 的生成也从配置读。
 
-**PoC 阶段用 `ws-{siteID}.lightclaw.tech`**，复用账号里已有的 `*.lightclaw.tech` 泛域名证书（DNSPod DV 通配符，有效期至 2026-12-19），不额外申请。
+**PoC 阶段用 `{siteID}.sites.lightclaw.tech`**，HTTP-only。选它是因为基础设施已经就位：`*.sites.lightclaw.tech` 的泛域名 DNS 解析已存在（指向 CLB `lb-kbl26vb5`），`ctl` namespace 下也已有 Ingress `lightclaw-sites-public`（腾讯云 `qcloud` class）。
 
-这里有个容易踩的点：**泛域名证书只覆盖一级标签。** `*.lightclaw.tech` 能覆盖 `preview.lightclaw.tech`，但覆盖不了 `x.preview.lightclaw.tech`——这也正是 staticpages 需要单独一张 `*.preview.lightclaw.tech` 的原因。所以站点子域名必须挂在根域下**一级**才能白嫖现有证书；一旦用 `*.sites.lightclaw.tech` 这种两级形式，就得重新申请。
+关于证书，有两个容易踩的点：
 
-泛域名 Ingress 兜住所有未被精确匹配的 `*.lightclaw.tech` 请求，这个风险可控：nginx ingress 中精确 host 优先级高于泛域名，`api.lightclaw.tech`、`argocd.lightclaw.tech` 等既有服务不受影响；siteID 形如 `ws-<16位hex>`，不会与人工命名的 host 冲突。
+1. **泛域名证书只覆盖一级标签。** `*.lightclaw.tech` 能覆盖 `preview.lightclaw.tech`，却覆盖不了 `x.preview.lightclaw.tech`——这正是 staticpages 需要单独一张 `*.preview.lightclaw.tech` 的原因。所以现有的 `*.lightclaw.tech` 证书对 `*.sites.lightclaw.tech` 无效。
+2. **换用一级子域也不划算。** 改成 `{siteID}.lightclaw.tech` 虽然能复用现有证书，但根域没有泛域名 DNS 记录，补一条会兜住 `lightclaw.tech` 下所有未注册的名字，风险大于收益。
 
-需要一并确认的：
+集群里现存的 `sites-lightclaw-tls` 是自签证书（issuer 等于 subject），浏览器仍会告警，不能用。免费证书通道当前排队（`FailedOperation.NetworkError 当前CA机构访问繁忙`），付费下单无法通过 `ssl CreateCertificate` API 完成（TrustAsia 12 / DNSPod 49 / Rapid 103 / Wotrus 27 四个合法 ProductId 均返回 `FailedOperation.InvalidParam`），需走控制台。
 
-- 新根域的泛域名证书从哪来。账号现有的泛域名证书（`*.lightvela.ai`、`*.lightvela.com`、`*.lightclaw.tech` 等）都是 DNSPod DV 通配符，新根域按同样方式申请即可；注意免费证书通道会出现「CA 机构访问繁忙」排队，付费下单目前无法通过 `ssl CreateCertificate` API 完成（四个合法 ProductId 均返回 `FailedOperation.InvalidParam`），需走控制台。
+因此 PoC 走 HTTP-only，与 playground 环境「实例 wildcard 入口默认 HTTP-only」的既有约定一致。影响仅限于站点内用不了需要 secure context 的浏览器 API（地理位置、摄像头、Service Worker），这类能力不在第一版范围内。
+
+新根域到位后，按现有泛域名证书（`*.lightvela.ai`、`*.lightvela.com` 等 DNSPod DV 通配符）的同样方式申请一张，连同 TLS 一次性配齐。
 - 国内站是否需要备案——不过按第 8 节的分工，国内站走的是接入方自己的自定义域名，备案是接入方的事，我们的根域只服务国际站。这实际上把一期被否决时的备案阻塞给绕开了，需要跟接入方确认这个理解是否一致。
 
 ## 13. Skill 改动

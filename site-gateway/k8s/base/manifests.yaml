@@ -103,24 +103,22 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: site-gateway
+  # 沿用已有的 Ingress 名字，避免同一个 host 上出现两条规则、也避免多开一个 CLB。
+  name: lightclaw-sites-public
   namespace: ctl
   annotations:
-    kubernetes.io/ingress.class: nginx
+    kubernetes.io/ingress.class: qcloud
 spec:
-  # 泛域名证书只覆盖一级标签：*.lightclaw.tech 能覆盖 ws-xxx.lightclaw.tech，
-  # 但覆盖不了 ws-xxx.sites.lightclaw.tech。站点子域名因此挂在根域下一级，
-  # 直接复用已有证书，不必为过渡期的 PoC 域再申请一张。
-  tls:
-    - hosts:
-        - REPLACE_SITE_GATEWAY_WILDCARD_HOST
-      secretName: REPLACE_SITE_GATEWAY_TLS_SECRET_NAME
+  # 集群用的是腾讯云 CLB ingress controller，不是 nginx。
+  ingressClassName: qcloud
+  # 暂不配置 TLS。
+  #
+  # 泛域名证书只覆盖一级标签，*.lightclaw.tech 覆盖不了 *.sites.lightclaw.tech，
+  # 而账号里现存的同名证书是自签的（issuer 等于 subject），配上去浏览器照样告警。
+  # 免费证书通道当前排队（CA 机构访问繁忙），正式根域确定后再连同证书一次性配齐。
+  # 这也符合 playground 环境「实例 wildcard 入口默认 HTTP-only」的既有约定。
   rules:
-    # 泛域名入口，每个站点一个子域名。
-    #
-    # nginx ingress 中精确 host 的优先级高于泛域名，因此这条规则不会抢走
-    # api.lightclaw.tech 这类已有服务的流量。
-    - host: REPLACE_SITE_GATEWAY_WILDCARD_HOST
+    - host: "REPLACE_SITE_GATEWAY_WILDCARD_HOST"
       http:
         paths:
           - path: /
@@ -129,4 +127,4 @@ spec:
               service:
                 name: site-gateway
                 port:
-                  name: http
+                  number: 80
