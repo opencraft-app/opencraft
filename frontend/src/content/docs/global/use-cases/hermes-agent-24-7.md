@@ -6,7 +6,7 @@
 Hermes Agent 是 LightVela 中的云端 AI Agent。
 配置好模型和对话通道后，它可以独立于你的本地设备保持可用，无论你从哪里给它发消息，都能使用相同的记忆和行为方式。
 
-![LightVela 控制台中在线的 Hermes Agent](../images/use-case-hermes-online.png)
+![LightVela 控制台中在线的 Hermes Agent](../images/use-case-hermes-online.webp)
 
 ## 适合谁
 

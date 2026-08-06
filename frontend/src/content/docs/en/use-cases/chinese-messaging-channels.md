@@ -4,7 +4,7 @@ An AI agent only becomes part of your routine when you can reach it where conver
 
 LightVela lets one cloud-hosted Hermes Agent serve through supported messaging channels. The same Agent keeps its configured model, skills, and memory while you choose the platform that fits the people and moments you want to support.
 
-![LightVela messaging platform connections](../images/use-case-messaging-platforms.png)
+![LightVela messaging platform connections](../images/use-case-messaging-platforms.webp)
 
 ## Who this is for
 

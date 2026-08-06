@@ -4,7 +4,7 @@ Useful knowledge has two very different shapes. Some information should remain s
 
 LightVela gives a Hermes Agent both long-term memory and cloud file storage. Memory helps it retain durable context across conversations; Cloud Storage gives you a place to keep working material and reference files. Used together, they make a personal AI agent easier to brief, revisit, and improve.
 
-![LightVela Agent Memory and personal knowledge](../images/use-case-agent-memory.png)
+![LightVela Agent Memory and personal knowledge](../images/use-case-agent-memory.webp)
 
 ## Who this is for
 

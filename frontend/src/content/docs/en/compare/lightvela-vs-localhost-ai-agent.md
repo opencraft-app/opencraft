@@ -1,6 +1,6 @@
 # LightVela vs Selfhost Agent: Which is best?
 
-![LightVela cloud setup compared with running Hermes locally](../images/lightvela-vs-self-hosted-hermes.png)
+![LightVela cloud setup compared with running Hermes locally](../images/lightvela-vs-self-hosted-hermes.webp)
 
 **LightVela is the better fit when you want an always-on Hermes Agent without maintaining the computer underneath it.** Running Hermes on your own computer is the better choice when you want hands-on control over the runtime, tools, updates, and local environment. The right answer depends on whether you want to operate the setup or simply use the agent.
 
