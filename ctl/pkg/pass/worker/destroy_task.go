@@ -139,12 +139,16 @@ func (t *destroyPassTask) execute(ctx pctx.Context) (string, error) {
 		// pass 不在表但 PassDeleted=false：异常状态（pass 被外部清理或 D-2.3 之前的脏数据）
 		logger.Warn("destroy pass: pass not found and PassDeleted=false, defensive markSuccess",
 			zap.Error(err))
+		// 这条防御性分支跳过了整个收尾流程，站点钩子必须在这里补上，
+		// 否则 pass 已经不存在、站点却仍以 active 对外服务，且再无收敛机会。
+		t.suspendSitesBestEffort(logger, "")
 		return t.markSuccess(ctx)
 	}
 
 	if passEntity.Status != modelpass.StatusTerminating {
 		logger.Warn("destroy pass: pass status unexpected, treat as terminal and markSuccess",
 			zap.String("status", passEntity.Status))
+		t.suspendSitesBestEffort(logger, passEntity.UserID)
 		return t.markSuccess(ctx)
 	}
 
@@ -197,14 +201,31 @@ func (t *destroyPassTask) finalizePostPassDeleted(ctx pctx.Context, logger *zap.
 	}
 	logger.Info("destroy pass parent task finalized successfully")
 
-	// best-effort 清理用户站点（失败不阻塞销毁流程）
-	if t.in.UserID != "" {
-		if err := websitelogic.DeleteAllSitesOnPassDestroyed(logger, t.in.UserID); err != nil {
-			logger.Warn("website delete all sites on pass destroyed failed", zap.Error(err))
-		}
-	}
+	t.suspendSitesBestEffort(logger, "")
 
 	return t.markSuccess(ctx)
+}
+
+// suspendSitesBestEffort 把用户所有仍在服务的站点转为 suspended（文件保留，公网 403）。
+//
+// 一期刻意保持 best-effort（与隔离侧的阻塞步骤不同）：销毁由计费驱动，阻塞它会让
+// 计费侧的状态收敛跟着卡住。代价是万一失败，站点状态没跟上、可能仍然对外服务；
+// 但已经不再是过去那种「漏删 COS 对象、持续产生存储成本」的后果——销毁本就不删文件了。
+//
+// 每个「跳过后续流程直接 markSuccess」的分支都必须调它一次：那些分支是防御性的
+// 提前收尾，一旦漏掉钩子，这个用户的站点就再没有任何机制会把状态推下去。
+func (t *destroyPassTask) suspendSitesBestEffort(logger *zap.Logger, userIDFromEntity string) {
+	userID := t.in.UserID
+	if userID == "" {
+		userID = userIDFromEntity
+	}
+	if userID == "" {
+		logger.Warn("website suspend sites on pass destroyed skipped: user_id empty")
+		return
+	}
+	if err := websitelogic.SuspendAllSitesOnPassDestroyed(logger, userID); err != nil {
+		logger.Warn("website suspend sites on pass destroyed failed", zap.Error(err))
+	}
 }
 
 // dispatchChildTasksAndDetachInstances 阶段 1~4：列实例 / 反查 child_registry / 派子 task / 解除用户关联。
@@ -432,11 +453,14 @@ func (t *destroyPassTask) idempotentCheck(ctx pctx.Context) (string, error) {
 		}
 		ctx.Logger().Info("destroy pass idempotent check: pass not found, assume already migrated to history",
 			zap.Error(err), zap.String("pass_id", t.in.PassID))
+		// 锁竞争路径直接 markSuccess，跳过 execute 的全部收尾，站点钩子要在这里补。
+		t.suspendSitesBestEffort(ctx.Logger(), "")
 		return t.markSuccess(ctx)
 	}
 	if passEntity.Status != modelpass.StatusTerminating {
 		ctx.Logger().Warn("destroy pass idempotent check: status unexpected, markSuccess defensive",
 			zap.String("status", passEntity.Status))
+		t.suspendSitesBestEffort(ctx.Logger(), passEntity.UserID)
 		return t.markSuccess(ctx)
 	}
 	return "", fmt.Errorf("LockTask failed, pass still in terminating; retry next round")

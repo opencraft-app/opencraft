@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/subtle"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -23,6 +24,29 @@ func hasValidWebsiteInternalToken(provided string) bool {
 // websiteHandler 静态建站 handler
 type websiteHandler struct {
 	logic websitelogic.Logic
+}
+
+// invalidWebsiteParamError 让参数校验的具体原因真正到达调用方。
+//
+// errcode.Wrap 只是把原因拼进 Go 错误串，而 writeHTTPError 回写的是错误码自带的
+// 通用 message（"invalid website parameters"），原因整段被丢掉。建站 Skill 直接调
+// 这些接口，缺哪个字段必须一眼可见，所以借用 writeHTTPError 已有的 details 通道
+// 把原因带回去。
+type invalidWebsiteParamError struct {
+	reason string
+}
+
+func (e *invalidWebsiteParamError) Error() string { return e.reason }
+
+// Unwrap 让 writeHTTPError 仍按 WEBSITE_INVALID_PARAM / 400 输出，错误码语义不变。
+func (e *invalidWebsiteParamError) Unwrap() error { return errcode.ErrWebsiteInvalidParam }
+
+func (e *invalidWebsiteParamError) ErrorDetail() any {
+	return map[string]string{"reason": e.reason}
+}
+
+func invalidWebsiteParam(format string, args ...any) error {
+	return &invalidWebsiteParamError{reason: fmt.Sprintf(format, args...)}
 }
 
 // handleWebsitesRoot 处理 /v1/websites
@@ -223,6 +247,19 @@ func (h *websiteHandler) handleInternalOperations(w http.ResponseWriter, r *http
 		}
 		writeSuccess(w, r, http.StatusOK, map[string]string{"status": "failed"})
 
+	// POST /internal/ctl/websites/operations/{opId}/revive — 运维把 dead 操作重新投入执行。
+	//
+	// 与 claim/complete/fail 同为「对某个操作施加一个动作」，所以沿用同样的
+	// {opId}/{action} 形状和同一把 X-Internal-Token。故意不开放成用户接口：
+	// 复活的前提是运维已经确认根因修好，用户自助重放只会把同一个失败再跑一遍。
+	case action == "revive" && r.Method == http.MethodPost:
+		op, err := h.logic.ReviveOperation(opID)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, map[string]interface{}{"status": "revived", "operation": op})
+
 	default:
 		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
 	}
@@ -267,11 +304,19 @@ func (h *websiteHandler) handleCreateSite(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if req.Name == "" {
-		writeHTTPError(w, r, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "name is required"))
+		writeHTTPError(w, r, invalidWebsiteParam("name is required"))
 		return
 	}
 	if len(req.Name) > 100 {
-		writeHTTPError(w, r, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "name too long (max 100 chars)"))
+		writeHTTPError(w, r, invalidWebsiteParam("name too long (max 100 chars), got %d", len(req.Name)))
+		return
+	}
+	// bundle_id 必填。缺失时 CreateSite 会拿空串去比当前 Pass 的 bundle_id，
+	// 报出「bundle_id does not match current pass」——调用方（建站 Skill）看到这句
+	// 会以为自己传错了套餐，而真实原因是根本没传。
+	if req.BundleID == "" {
+		writeHTTPError(w, r, invalidWebsiteParam(
+			"bundle_id is required and must match the bundle_id of the current active pass"))
 		return
 	}
 

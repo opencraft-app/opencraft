@@ -7,41 +7,41 @@ import (
 	"ctl/pkg/resource"
 )
 
-// 套餐到期必须真正下线站点：v2 移除了平台反向代理，用户拿到的是 CloudBase 原生地址，
-// 平台不在访问路径上，只改 DB 状态站点依然全网可访问。
-// 因此 OnPassIsolated 必须登记 suspend 操作交给 worker 删除线上文件。
-func TestOnPassIsolatedSchedulesSuspendWork(t *testing.T) {
+// 到期隔离只做一次状态迁移：站点转 suspended，一个 COS 对象都不动。
+//
+// 自研反代每次请求都查站点状态，suspended 直接 403 且不回源，所以下线不需要删文件。
+// 这里断言「没有登记任何操作」正是在守住这一点：只要还登记 suspend 操作，
+// worker 就会去删 sites/{siteID}/，用户数据就没了。
+func TestOnPassIsolatedOnlyFlipsStatusWithoutCosWork(t *testing.T) {
 	newWebsiteOperationTestDB(t)
-	seedSite(t, "ws-suspend", "user-1", website.SiteStatusActive, 1)
+	seedSiteWithLocation(t, "ws-suspend", "user-1", website.SiteStatusActive, 1,
+		"sites/ws-suspend/current/", "http://ws-suspend.sites.example/")
 
 	l := NewLogic().(*logic)
 	if err := l.OnPassIsolated("user-1"); err != nil {
 		t.Fatalf("OnPassIsolated: %v", err)
 	}
 
-	// 站点状态立即收敛，用户和前端马上看到准确状态。
-	if got := siteStatus(t, "ws-suspend"); got != website.SiteStatusSuspended {
-		t.Fatalf("site status = %q, want %q", got, website.SiteStatusSuspended)
+	site := loadSite(t, "ws-suspend")
+	if site.Status != website.SiteStatusSuspended {
+		t.Fatalf("site status = %q, want %q", site.Status, website.SiteStatusSuspended)
 	}
-
-	op := latestOperation(t, "ws-suspend")
-	if op.OperationType != website.OpTypeSuspend {
-		t.Fatalf("operation type = %q, want %q", op.OperationType, website.OpTypeSuspend)
+	// generation 必须推进，否则一次在途的 deploy 回调会把刚隔离的站点重新置为 active。
+	if site.OperationGeneration != 2 {
+		t.Fatalf("operation_generation = %d, want 2", site.OperationGeneration)
 	}
-	if op.Status != website.OpStatusCreated {
-		t.Fatalf("operation status = %q, want %q", op.Status, website.OpStatusCreated)
+	// 文件永久保留，指向文件的两个字段也必须原样保留，续费后地址和内容都不变。
+	if site.CloudPath != "sites/ws-suspend/current/" || site.PublicURL != "http://ws-suspend.sites.example/" {
+		t.Fatalf("cloud_path/public_url must survive isolation, got %q / %q", site.CloudPath, site.PublicURL)
 	}
-	// generation 必须推进，否则在途的旧 deploy 回调仍会被当作有效，
-	// 把刚下线的站点内容又写回去。
-	if op.SiteGeneration != 2 {
-		t.Fatalf("site_generation = %d, want 2", op.SiteGeneration)
-	}
+	assertNoOperations(t, "ws-suspend")
 }
 
-// 续费恢复必须带上要恢复的版本，并且在文件真正上线前不能把站点显示为可用。
-func TestOnPassRenewedSchedulesResumeWithActiveRelease(t *testing.T) {
+// 续费只把状态改回 active：文件从没被删过，不需要从制品重新发布。
+func TestOnPassRenewedOnlyFlipsStatusWithoutCosWork(t *testing.T) {
 	newWebsiteOperationTestDB(t)
-	seedSite(t, "ws-resume", "user-1", website.SiteStatusSuspended, 5)
+	seedSiteWithLocation(t, "ws-resume", "user-1", website.SiteStatusSuspended, 5,
+		"sites/ws-resume/current/", "http://ws-resume.sites.example/")
 	seedRelease(t, "wr-old", "ws-resume", "user-1", 1, website.ReleaseStatusSuperseded)
 	seedRelease(t, "wr-current", "ws-resume", "user-1", 2, website.ReleaseStatusActive)
 
@@ -50,28 +50,22 @@ func TestOnPassRenewedSchedulesResumeWithActiveRelease(t *testing.T) {
 		t.Fatalf("OnPassRenewed: %v", err)
 	}
 
-	// 恢复期间保持 suspended，避免出现「状态可用但内容还没上线」的空窗。
-	if got := siteStatus(t, "ws-resume"); got != website.SiteStatusSuspended {
-		t.Fatalf("site status = %q, want it to stay %q until files are back",
-			got, website.SiteStatusSuspended)
+	site := loadSite(t, "ws-resume")
+	// 立刻转 active：网关下一次请求就会回源到原来的 current/，不存在恢复空窗。
+	if site.Status != website.SiteStatusActive {
+		t.Fatalf("site status = %q, want %q", site.Status, website.SiteStatusActive)
 	}
-
-	op := latestOperation(t, "ws-resume")
-	if op.OperationType != website.OpTypeResume {
-		t.Fatalf("operation type = %q, want %q", op.OperationType, website.OpTypeResume)
+	if site.OperationGeneration != 6 {
+		t.Fatalf("operation_generation = %d, want 6", site.OperationGeneration)
 	}
-	// 必须恢复最新的版本，不能是任何历史版本。
-	if op.ReleaseID != "wr-current" {
-		t.Fatalf("resume release = %q, want wr-current", op.ReleaseID)
+	if site.CloudPath != "sites/ws-resume/current/" {
+		t.Fatalf("cloud_path = %q, want it untouched", site.CloudPath)
 	}
-	if op.SiteGeneration != 6 {
-		t.Fatalf("site_generation = %d, want 6", op.SiteGeneration)
-	}
+	assertNoOperations(t, "ws-resume")
 }
 
-// 从未成功发布过内容的站点没有制品可恢复，直接恢复可用状态即可，
-// 不应登记一个注定失败的 resume 操作。
-func TestOnPassRenewedActivatesNeverDeployedSiteDirectly(t *testing.T) {
+// 从未发布过内容的站点没有制品，也不再需要任何特殊分支：同样只是一次状态迁移。
+func TestOnPassRenewedActivatesNeverDeployedSite(t *testing.T) {
 	newWebsiteOperationTestDB(t)
 	seedSite(t, "ws-empty", "user-1", website.SiteStatusSuspended, 1)
 
@@ -83,14 +77,33 @@ func TestOnPassRenewedActivatesNeverDeployedSiteDirectly(t *testing.T) {
 	if got := siteStatus(t, "ws-empty"); got != website.SiteStatusActive {
 		t.Fatalf("site status = %q, want %q", got, website.SiteStatusActive)
 	}
-	var count int64
-	if err := resource.GormDB.Table(website.OperationsTable).
-		Where("site_id = ?", "ws-empty").Count(&count).Error; err != nil {
-		t.Fatal(err)
+	assertNoOperations(t, "ws-empty")
+}
+
+// 套餐销毁同样只改状态：不登记 delete 操作、不删 COS、不软删站点行。
+//
+// 站点行是桶里那些永久保留的对象唯一的归属依据，删了就只剩前缀可以猜。
+func TestOnPassDestroyedOnlyFlipsStatusAndKeepsRow(t *testing.T) {
+	newWebsiteOperationTestDB(t)
+	seedSiteWithLocation(t, "ws-destroy", "user-1", website.SiteStatusActive, 3,
+		"sites/ws-destroy/current/", "http://ws-destroy.sites.example/")
+
+	l := NewLogic().(*logic)
+	if err := l.OnPassDestroyed("user-1"); err != nil {
+		t.Fatalf("OnPassDestroyed: %v", err)
 	}
-	if count != 0 {
-		t.Fatalf("expected no operation for a never-deployed site, got %d", count)
+
+	site := loadSite(t, "ws-destroy")
+	if site.Status != website.SiteStatusSuspended {
+		t.Fatalf("site status = %q, want %q", site.Status, website.SiteStatusSuspended)
 	}
+	if site.DeletedTime != nil {
+		t.Fatalf("deleted_time = %v, want NULL (row must survive)", site.DeletedTime)
+	}
+	if site.CloudPath == "" {
+		t.Fatal("cloud_path must survive destroy, files are kept forever")
+	}
+	assertNoOperations(t, "ws-destroy")
 }
 
 // 已删除或正在删除的站点不参与套餐联动，避免把它们复活。
@@ -102,17 +115,49 @@ func TestPassLifecycleSkipsSitesInOtherStates(t *testing.T) {
 	if err := l.OnPassIsolated("user-1"); err != nil {
 		t.Fatalf("OnPassIsolated: %v", err)
 	}
+	if err := l.OnPassDestroyed("user-1"); err != nil {
+		t.Fatalf("OnPassDestroyed: %v", err)
+	}
 	if got := siteStatus(t, "ws-deleting"); got != website.SiteStatusDeleting {
 		t.Fatalf("site status = %q, want it untouched (%q)", got, website.SiteStatusDeleting)
 	}
 }
 
+// 真实删除能力必须留着：只有用户主动点删除才登记 delete 操作去清空 COS。
+func TestUserInitiatedDeleteStillSchedulesCosCleanup(t *testing.T) {
+	newWebsiteOperationTestDB(t)
+	seedSite(t, "ws-real-delete", "user-1", website.SiteStatusActive, 1)
+
+	l := NewLogic().(*logic)
+	if _, err := l.DeleteSite("user-1", "ws-real-delete"); err != nil {
+		t.Fatalf("DeleteSite: %v", err)
+	}
+
+	if got := siteStatus(t, "ws-real-delete"); got != website.SiteStatusDeleting {
+		t.Fatalf("site status = %q, want %q", got, website.SiteStatusDeleting)
+	}
+	op := latestOperation(t, "ws-real-delete")
+	if op.OperationType != website.OpTypeDelete {
+		t.Fatalf("operation type = %q, want %q", op.OperationType, website.OpTypeDelete)
+	}
+	if op.Status != website.OpStatusCreated {
+		t.Fatalf("operation status = %q, want %q", op.Status, website.OpStatusCreated)
+	}
+}
+
 func seedSite(t *testing.T, siteID, userID, status string, generation int64) {
+	t.Helper()
+	seedSiteWithLocation(t, siteID, userID, status, generation, "", "")
+}
+
+func seedSiteWithLocation(t *testing.T, siteID, userID, status string, generation int64, cloudPath, publicURL string) {
 	t.Helper()
 	site := &website.SiteEntity{
 		SiteID:              siteID,
 		Status:              status,
 		BundleID:            "bundle-1",
+		CloudPath:           cloudPath,
+		PublicURL:           publicURL,
 		OperationGeneration: generation,
 	}
 	site.UserID = userID
@@ -135,14 +180,33 @@ func seedRelease(t *testing.T, releaseID, siteID, userID string, version int, st
 	}
 }
 
-func siteStatus(t *testing.T, siteID string) string {
+func loadSite(t *testing.T, siteID string) website.SiteEntity {
 	t.Helper()
 	var site website.SiteEntity
 	if err := resource.GormDB.Table(website.SitesTable).
 		Where("site_id = ?", siteID).First(&site).Error; err != nil {
 		t.Fatal(err)
 	}
-	return site.Status
+	return site
+}
+
+func siteStatus(t *testing.T, siteID string) string {
+	t.Helper()
+	return loadSite(t, siteID).Status
+}
+
+// assertNoOperations 守住「套餐联动不产生任何异步操作」这条线。
+// 一旦有操作被登记，worker 就会去动 COS，用户数据就不再是永久保留的。
+func assertNoOperations(t *testing.T, siteID string) {
+	t.Helper()
+	var count int64
+	if err := resource.GormDB.Table(website.OperationsTable).
+		Where("site_id = ?", siteID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no operation for %s, got %d", siteID, count)
+	}
 }
 
 func latestOperation(t *testing.T, siteID string) website.OperationEntity {

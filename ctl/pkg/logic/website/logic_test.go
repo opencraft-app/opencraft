@@ -84,3 +84,43 @@ func TestGenerateUploadURLScopedToSiteArtifact(t *testing.T) {
 		t.Fatalf("预签名 URL 未指向本站点的制品路径: %s", got)
 	}
 }
+
+// 预签名 URL 直接交到用户手上，签名的 AK 权限越小越好：只要站点专用凭据配上了，
+// 就不能再用能操作全部业务桶的共享平台凭据签名。
+func TestSiteCOSSecretsPrefersWebsiteScopedCredentials(t *testing.T) {
+	t.Setenv("TENCENT_SECRET_ID", "AKIDPLATFORM")
+	t.Setenv("TENCENT_SECRET_KEY", "platform-key")
+	t.Setenv("WEBSITE_COS_SECRET_ID", "AKIDSITESCOPED")
+	t.Setenv("WEBSITE_COS_SECRET_KEY", "site-key")
+
+	id, key := siteCOSSecrets()
+	if id != "AKIDSITESCOPED" || key != "site-key" {
+		t.Fatalf("siteCOSSecrets() = %q/%q, want AKIDSITESCOPED/site-key", id, key)
+	}
+}
+
+// 站点专用凭据尚未下发的环境仍然要能签名，否则发布链路直接断掉。
+func TestSiteCOSSecretsFallsBackToPlatformCredentials(t *testing.T) {
+	t.Setenv("WEBSITE_COS_SECRET_ID", "")
+	t.Setenv("WEBSITE_COS_SECRET_KEY", "")
+	t.Setenv("TENCENT_SECRET_ID", "AKIDPLATFORM")
+	t.Setenv("TENCENT_SECRET_KEY", "platform-key")
+
+	id, key := siteCOSSecrets()
+	if id != "AKIDPLATFORM" || key != "platform-key" {
+		t.Fatalf("siteCOSSecrets() = %q/%q, want AKIDPLATFORM/platform-key", id, key)
+	}
+}
+
+// 只配了一半的专用凭据不能用半套签名，必须整体回落。
+func TestSiteCOSSecretsIgnoresPartialWebsiteCredentials(t *testing.T) {
+	t.Setenv("WEBSITE_COS_SECRET_ID", "AKIDSITESCOPED")
+	t.Setenv("WEBSITE_COS_SECRET_KEY", "")
+	t.Setenv("TENCENT_SECRET_ID", "AKIDPLATFORM")
+	t.Setenv("TENCENT_SECRET_KEY", "platform-key")
+
+	id, key := siteCOSSecrets()
+	if id != "AKIDPLATFORM" || key != "platform-key" {
+		t.Fatalf("siteCOSSecrets() = %q/%q, want AKIDPLATFORM/platform-key", id, key)
+	}
+}

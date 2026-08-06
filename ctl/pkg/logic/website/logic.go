@@ -89,10 +89,12 @@ type Logic interface {
 	ClaimOperation(operationID, workerID string, leaseTTL time.Duration) (*website.OperationEntity, bool, error)
 	CompleteOperation(operationID, leaseToken, cloudPath, publicURL string) error
 	FailOperation(operationID, leaseToken, errorMessage string) error
+	ReviveOperation(operationID string) (*website.OperationEntity, error)
 	DeleteSite(userID, siteID string) (*DeleteSiteResult, error)
-	// Pass 生命周期联动
+	// Pass 生命周期联动。三者都是纯 DB 状态迁移，不触碰 COS。
 	OnPassIsolated(userID string) error
 	OnPassRenewed(userID string) error
+	OnPassDestroyed(userID string) error
 }
 
 // ---- 实现 ----
@@ -158,8 +160,9 @@ func isCurrentOperationGeneration(operationGeneration, siteGeneration int64) boo
 //
 // 可重试的都是「系统触发、用户无法自助重试」的清理/状态收敛类操作：
 //   - delete：站点目录必须删净才能释放席位，失败不能就此放弃
-//   - suspend：套餐到期必须真正下线，失败会造成已过期站点仍然对外可访问
-//   - resume：套餐续费必须恢复站点，失败会造成用户已付费但站点仍不可访问
+//   - suspend / resume：套餐到期与续费已改成纯 DB 状态迁移，不再登记这两类操作；
+//     这里继续保留它们的可重试语义，只为让历史遗留的行仍能被正常收敛，
+//     而不是在 canReviveOperation 里被判成「不可重跑」后永久卡住。
 //
 // create/deploy 不重试：它们由用户发起，失败后由用户自己重新操作，
 // 且 deploy 的制品上传窗口有时效，盲目重试没有意义。
@@ -170,6 +173,38 @@ func shouldRetryFailedOperation(operationType string) bool {
 	default:
 		return false
 	}
+}
+
+// canReviveOperation 判定一个操作是否允许被重新投入执行。
+//
+// 只有 dead 可复活：
+//   - created/running 还在正常调度链路里，复活只会造成重复执行；
+//   - success 已经推进过站点状态，重放会把已完成的动作再做一遍
+//     （delete 的 success 会再归还一次配额席位，直接超卖）；
+//   - failed 是不可重试操作（create/deploy）的终态，应由用户重新发起，
+//     运维不该替他重放一个早已过期的制品上传窗口。
+//
+// generation 围栏必须原样成立才允许复活：操作的 site_generation 等于站点当前的
+// operation_generation，说明它仍是站点上最新的那一代操作，复活后的回调会被
+// CompleteOperation / FailOperation 正常接受。两者不等说明站点后来又发起过新操作，
+// 这个 dead 操作已成历史，复活它等于放一个陈旧 worker 回去改站点状态——
+// 正是一期专门修掉的「迟到的 worker 恢复已删除站点」问题，必须拒绝。
+func canReviveOperation(status, operationType string, operationGeneration, siteGeneration int64) error {
+	if status != website.OpStatusDead {
+		return errcode.Wrap(errcode.ErrWebsiteOperationNotRevivable,
+			"operation status is %q, only %q can be revived", status, website.OpStatusDead)
+	}
+	// 目前只有可重试操作会走到 dead（见 FailOperation）。这里做防御性校验，
+	// 避免将来扩展操作类型时把不该自动重跑的动作放进复活路径。
+	if !shouldRetryFailedOperation(operationType) {
+		return errcode.Wrap(errcode.ErrWebsiteOperationNotRevivable,
+			"operation type %q is not retryable", operationType)
+	}
+	if !isCurrentOperationGeneration(operationGeneration, siteGeneration) {
+		return errcode.Wrap(errcode.ErrWebsiteOperationNotRevivable,
+			"operation generation %d is stale, site is at generation %d", operationGeneration, siteGeneration)
+	}
+	return nil
 }
 
 func nextRetryAt(now time.Time, attempt int) time.Time {
@@ -852,6 +887,12 @@ func (l *logic) CompleteOperation(operationID, leaseToken, cloudPath, publicURL 
 			}
 
 		case website.OpTypeDelete:
+			// 只写 deleted_time 做软删，绝不硬删 website_sites 的行。
+			//
+			// 套餐到期和销毁都不再删 COS 对象，桶里会长期留着已经不对外服务的站点文件；
+			// website_sites 是把这些对象对应回「属于谁、哪个套餐、什么时候建的」的唯一依据。
+			// 行一删，那些对象就只能靠 sites/{siteID}/ 前缀猜归属，成本归集、违规溯源和
+			// 后续的清理策略全都失去落脚点。软删的代价只是一行常驻记录。
 			now := time.Now().UTC()
 			if err := tx.Table(website.SitesTable).Where("site_id = ?", op.SiteID).
 				Updates(map[string]interface{}{
@@ -867,26 +908,17 @@ func (l *logic) CompleteOperation(operationID, leaseToken, cloudPath, publicURL 
 			}
 
 		case website.OpTypeSuspend:
-			// 站点在发起 suspend 时已置为 suspended，这里只需确认终态。
-			// 保留 public_url：URL 是稳定的 current/ 形式，续费恢复后地址不变。
-			if err := tx.Table(website.SitesTable).
-				Where("site_id = ? AND status = ?", op.SiteID, website.SiteStatusSuspended).
-				Update("cloud_path", "").Error; err != nil {
-				return err
-			}
+			// 到期隔离已改成纯状态迁移，不再登记 suspend 操作，这个分支只服务历史行。
+			// 站点状态由 OnPassIsolated 的事务写定，这里除了确认操作终态无事可做——
+			// 尤其不能再清空 cloud_path：文件从此永久保留，current/ 一直有效。
 
 		case website.OpTypeResume:
-			// 只有确实完成了文件恢复才转active，避免「显示可用但内容未上线」。
-			updates := map[string]interface{}{"status": website.SiteStatusActive}
-			if cloudPath != "" {
-				updates["cloud_path"] = cloudPath
-			}
-			if publicURL != "" {
-				updates["public_url"] = publicURL
-			}
+			// 续费恢复同样已改成纯状态迁移，这个分支只服务历史行：把一个旧的
+			// resume 操作收敛掉，同时保证站点最终回到 active（否则历史行的站点
+			// 会永久停在 suspended，用户付了费却看不到站点）。
 			if err := tx.Table(website.SitesTable).
 				Where("site_id = ? AND status = ?", op.SiteID, website.SiteStatusSuspended).
-				Updates(updates).Error; err != nil {
+				Update("status", website.SiteStatusActive).Error; err != nil {
 				return err
 			}
 		}
@@ -986,6 +1018,83 @@ func (l *logic) FailOperation(operationID, leaseToken, errorMessage string) erro
 		zap.String("error", errorMessage),
 	)
 	return nil
+}
+
+// ---- ReviveOperation ----
+
+// ReviveOperation 把一个 dead 操作重新投入执行，仅供内部运维调用。
+//
+// dead 之前没有任何恢复入口：任何一次不可恢复的失败（例如环境配置缺失）会把
+// delete 操作耗尽重试次数打到 dead，站点从此永久停在 deleting，
+// 并永久占用用户一个配额席位。这个方法补上那条路径。
+//
+// 复活的是同一个操作而不是新建一个：站点状态、幂等键和 generation 围栏都不用动，
+// 语义上就是「根因修好了，同一代操作重跑一次」。
+func (l *logic) ReviveOperation(operationID string) (*website.OperationEntity, error) {
+	if operationID == "" {
+		return nil, errcode.ErrWebsiteInvalidParam
+	}
+	err := resource.GormDB.Transaction(func(tx *gorm.DB) error {
+		var op website.OperationEntity
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table(website.OperationsTable).
+			Where("operation_id = ?", operationID).First(&op).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errcode.ErrWebsiteOperationNotFound
+			}
+			return err
+		}
+		// 与 Complete/FailOperation 一致地锁住站点行，保证读到的
+		// operation_generation 不会在校验和写入之间被并发操作推进。
+		var site website.SiteEntity
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table(website.SitesTable).
+			Where("site_id = ?", op.SiteID).First(&site).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errcode.ErrWebsiteNotFound
+			}
+			return err
+		}
+		if err := canReviveOperation(op.Status, op.OperationType, op.SiteGeneration, site.OperationGeneration); err != nil {
+			return err
+		}
+
+		// 故意不推进 site.operation_generation。推进会让这个操作自己的
+		// site_generation 立刻变成陈旧值，复活后的第一次回调就被判为 superseded，
+		// 站点仍然卡住——围栏关系保持原样才是「重跑同一代」的正确语义。
+		result := tx.Table(website.OperationsTable).
+			Where("operation_id = ? AND status = ?", operationID, website.OpStatusDead).
+			Updates(map[string]interface{}{
+				"status":        website.OpStatusCreated,
+				"attempt":       0,
+				"error_message": "",
+				// 清空租约字段：dead 时 lease_token 已被清空，lease_expires_at 可能还留着
+				// 旧值，不清会让 isOperationClaimable 的过期租约分支误判。
+				"lease_token":      "",
+				"lease_expires_at": nil,
+				// next_retry_at 置空让 worker 立即可领：调用方是在修好根因之后才来复活的，
+				// 没有理由再等一轮指数退避。
+				"next_retry_at": nil,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			// 本事务持有行锁，命中 0 行只能是并发的另一次复活先提交了。
+			return errcode.Wrap(errcode.ErrWebsiteOperationNotRevivable, "operation was concurrently modified")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	l.notifyDeployer(operationID)
+	op, err := l.GetOperationInternal(operationID)
+	if err != nil {
+		return nil, err
+	}
+	// 用 Warn：复活必然意味着此前有过一次不可恢复的失败，值得在日志里留痕。
+	l.logger.Warn("website operation revived", zap.String("operation_id", operationID))
+	return op, nil
 }
 
 // allocSiteQuotaTx 占用一个站点席位。
@@ -1161,20 +1270,26 @@ func (l *logic) DeleteSite(userID, siteID string) (*DeleteSiteResult, error) {
 
 // ---- Pass生命周期联动 ----
 //
-// 套餐到期/续费必须真正改变站点在CloudBase 上的可访问性，不能只改 DB 状态：
-// v2 已移除平台反向代理，用户拿到的是 CloudBase 原生 URL，平台不在访问路径上，
-// 所以「下线」只能通过删除线上发布文件实现。
+// 套餐到期、续费和销毁都只改站点状态，一个 COS 对象都不动。
 //
-//   suspend：删除 sites/{siteID}/ 下的发布文件，保留 _artifacts/ 下的制品
-//   resume ：从保留的制品重新发布，站点 URL 保持不变
+// 一期在 CloudBase 上时，平台不在访问路径上（用户拿到的是 CloudBase 原生 URL），
+// 让站点下线的唯一手段是删掉 sites/{siteID}/current/。现在反代（site-gateway）
+// 是自研的：它每次请求都查站点状态，suspended/blocked 直接返 403 且不回源，
+// 因此「下线」是一次状态写入就能达成的效果，不再需要删文件。
 //
-// 制品的最终清理由 Pass 销毁链路（DeleteAllSitesOnPassDestroyed → delete 操作）
-// 统一完成，这里不需要额外的定时清理。
+// 产品据此定下的模型：到期与销毁都不真实删除用户数据，文件永久保留，只是不对外服务。
+// 于是：
+//
+//	到期隔离：active    → suspended，文件保留，公网 403
+//	套餐续费：suspended → active，   文件原样在位，立刻恢复 200
+//	套餐销毁：→ suspended，          文件保留，公网 403
+//
+// 只有用户主动点删除才真删 COS（sites/ 与 _artifacts/ 一起清），见 DeleteSite。
 
-// OnPassIsolated Pass到期/隔离时，下线用户所有 active 站点。
+// OnPassIsolated Pass 到期/隔离时把用户所有 active 站点转为 suspended。
 //
-// 站点状态在事务内立即置为 suspended，用户和前端马上能看到准确状态；
-// CloudBase 上的文件删除由 worker 异步完成，失败会持久重试。
+// 纯 DB 事务：不登记任何异步操作，也不触碰 COS。站点在事务提交那一刻就对外 403，
+// 不存在「DB 已隔离但文件还在服务」的空窗，因此这一步可以被调用方当成阻塞步骤。
 func (l *logic) OnPassIsolated(userID string) error {
 	sites, err := l.siteDao.ListActiveByUserID(userID)
 	if err != nil {
@@ -1183,10 +1298,8 @@ func (l *logic) OnPassIsolated(userID string) error {
 	var firstErr error
 	suspended := 0
 	for _, site := range sites {
-		operationID, err := l.transitionSiteForPassLifecycle(
-			userID, site.SiteID, website.OpTypeSuspend,
-			website.SiteStatusActive, website.SiteStatusSuspended, "")
-		if err != nil {
+		if err := l.transitionSiteStatusForPassLifecycle(
+			userID, site.SiteID, website.SiteStatusActive, website.SiteStatusSuspended); err != nil {
 			l.logger.Warn("suspend site on pass isolated failed",
 				zap.String("user_id", userID), zap.String("site_id", site.SiteID), zap.Error(err))
 			if firstErr == nil {
@@ -1195,7 +1308,6 @@ func (l *logic) OnPassIsolated(userID string) error {
 			continue
 		}
 		suspended++
-		l.notifyDeployer(operationID)
 	}
 	if suspended > 0 {
 		l.logger.Info("sites suspended on pass isolated",
@@ -1204,10 +1316,10 @@ func (l *logic) OnPassIsolated(userID string) error {
 	return firstErr
 }
 
-// OnPassRenewed Pass 续费成功后，从保留的制品恢复用户所有 suspended 站点。
+// OnPassRenewed Pass 续费成功后把用户所有 suspended 站点转回 active。
 //
-// 站点保持 suspended 直到 worker 真正把文件重新发布完成，
-// 避免出现「状态显示可用但内容还没上线」的空窗。
+// 不需要从制品恢复：隔离时文件一个都没删，转 active 后网关立刻回源到原来的
+// current/，用户看到的还是下线前那一版内容，地址也不变。
 func (l *logic) OnPassRenewed(userID string) error {
 	sites, err := l.siteDao.ListSuspendedByUserID(userID)
 	if err != nil {
@@ -1216,33 +1328,8 @@ func (l *logic) OnPassRenewed(userID string) error {
 	var firstErr error
 	resumed := 0
 	for _, site := range sites {
-		release, err := l.releaseDao.GetActiveBySiteID(site.SiteID)
-		if err != nil {
-			l.logger.Warn("lookup active release on pass renewed failed",
-				zap.String("site_id", site.SiteID), zap.Error(err))
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
-		if release == nil {
-			// 站点从未成功发布过内容，没有制品可恢复，直接恢复可用状态。
-			if err := l.siteDao.UpdateStatus(site.SiteID, website.SiteStatusActive); err != nil {
-				l.logger.Warn("reactivate never-deployed site failed",
-					zap.String("site_id", site.SiteID), zap.Error(err))
-				if firstErr == nil {
-					firstErr = err
-				}
-				continue
-			}
-			resumed++
-			continue
-		}
-
-		operationID, err := l.transitionSiteForPassLifecycle(
-			userID, site.SiteID, website.OpTypeResume,
-			website.SiteStatusSuspended, website.SiteStatusSuspended, release.ReleaseID)
-		if err != nil {
+		if err := l.transitionSiteStatusForPassLifecycle(
+			userID, site.SiteID, website.SiteStatusSuspended, website.SiteStatusActive); err != nil {
 			l.logger.Warn("resume site on pass renewed failed",
 				zap.String("user_id", userID), zap.String("site_id", site.SiteID), zap.Error(err))
 			if firstErr == nil {
@@ -1251,7 +1338,6 @@ func (l *logic) OnPassRenewed(userID string) error {
 			continue
 		}
 		resumed++
-		l.notifyDeployer(operationID)
 	}
 	if resumed > 0 {
 		l.logger.Info("sites resumed on pass renewed",
@@ -1260,19 +1346,48 @@ func (l *logic) OnPassRenewed(userID string) error {
 	return firstErr
 }
 
-// transitionSiteForPassLifecycle 在一个事务内推进站点状态并登记异步操作。
+// OnPassDestroyed Pass 销毁时把用户所有仍在服务的站点转为 suspended。
 //
-// 推进 operation_generation 是为了让任何在途的旧操作在回调时被判定为 superseded，
-// 避免「到期下线」和「续费恢复」互相踩，或旧的 deploy 把已下线的站点又传回去。
-func (l *logic) transitionSiteForPassLifecycle(
-	userID, siteID, opType, expectedStatus, nextStatus, releaseID string,
-) (string, error) {
-	operationID, err := l.generateID("website_operation", "wo")
+// 销毁同样不删文件（产品：文件永久保留），所以这里和到期隔离走同一个终点状态：
+// 网关看到 suspended 就 403。站点行也不硬删——只有用户主动点删除才会软删并真删 COS。
+//
+// 用 suspended 而不是新造一个「已销毁」状态：对网关而言两者的判定完全一致（403 且
+// 不回源），多一个状态就多一处需要三方（ctl / worker / 网关）同时认得的枚举值。
+// 代价是用户重新购买套餐后续费联动会把这些站点转回 active——在「文件永久保留」的
+// 模型下这正是期望行为：数据一直在，付费恢复即可继续对外服务。
+func (l *logic) OnPassDestroyed(userID string) error {
+	sites, err := l.siteDao.ListActiveByUserID(userID)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("list active sites on pass destroyed: %w", err)
 	}
+	var firstErr error
+	suspended := 0
+	for _, site := range sites {
+		if err := l.transitionSiteStatusForPassLifecycle(
+			userID, site.SiteID, website.SiteStatusActive, website.SiteStatusSuspended); err != nil {
+			l.logger.Warn("suspend site on pass destroyed failed",
+				zap.String("user_id", userID), zap.String("site_id", site.SiteID), zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		suspended++
+	}
+	if suspended > 0 {
+		l.logger.Info("sites suspended on pass destroyed",
+			zap.String("user_id", userID), zap.Int("count", suspended))
+	}
+	return firstErr
+}
 
-	err = resource.GormDB.Transaction(func(tx *gorm.DB) error {
+// transitionSiteStatusForPassLifecycle 在一个事务内做一次带前置状态校验的站点状态迁移。
+//
+// 仍然推进 operation_generation：套餐状态变化的瞬间可能有一次 deploy 正在途中，
+// 它的成功回调会把站点无条件置为 active。不推进围栏的话，「到期隔离」会被一个
+// 迟到的 worker 直接掀翻，站点在套餐已过期的情况下重新对外服务。
+func (l *logic) transitionSiteStatusForPassLifecycle(userID, siteID, expectedStatus, nextStatus string) error {
+	return resource.GormDB.Transaction(func(tx *gorm.DB) error {
 		var lockedSite website.SiteEntity
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table(website.SitesTable).
 			Where("site_id = ? AND user_id = ?", siteID, userID).First(&lockedSite).Error; err != nil {
@@ -1282,35 +1397,16 @@ func (l *logic) transitionSiteForPassLifecycle(
 			// 站点状态已被其他流程改变（例如用户已自行删除），跳过本次联动。
 			return errcode.ErrWebsiteNotActive
 		}
-
-		nextGeneration := lockedSite.OperationGeneration + 1
-		siteUpdates := map[string]interface{}{"operation_generation": nextGeneration}
-		if nextStatus != expectedStatus {
-			siteUpdates["status"] = nextStatus
-		}
 		if err := tx.Table(website.SitesTable).
-			Where("site_id = ?", siteID).Updates(siteUpdates).Error; err != nil {
-			return fmt.Errorf("advance site for %s: %w", opType, err)
-		}
-
-		op := &website.OperationEntity{
-			OperationID:    operationID,
-			SiteID:         siteID,
-			ReleaseID:      releaseID,
-			OperationType:  opType,
-			Status:         website.OpStatusCreated,
-			SiteGeneration: nextGeneration,
-		}
-		op.UserID = userID
-		if err := tx.Table(website.OperationsTable).Create(op).Error; err != nil {
-			return fmt.Errorf("create %s operation: %w", opType, err)
+			Where("site_id = ?", siteID).
+			Updates(map[string]interface{}{
+				"status":               nextStatus,
+				"operation_generation": lockedSite.OperationGeneration + 1,
+			}).Error; err != nil {
+			return fmt.Errorf("transition site %s -> %s: %w", expectedStatus, nextStatus, err)
 		}
 		return nil
 	})
-	if err != nil {
-		return "", err
-	}
-	return operationID, nil
 }
 
 // 保留 sha256 引用以防未来需要

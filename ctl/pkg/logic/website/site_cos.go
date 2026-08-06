@@ -19,7 +19,20 @@ func siteCOSBucket() (bucket string, region string) {
 		strings.TrimSpace(os.Getenv("WEBSITE_COS_REGION"))
 }
 
+// siteCOSSecrets 读取用户站点桶的访问凭据。
+//
+// 优先站点专用的 WEBSITE_COS_SECRET_ID/KEY，缺失时才回落到共享平台凭据。
+// 这个优先级在 ctl 尤其要紧：ctl 用这套凭据签发上传用的预签名 URL，而预签名 URL
+// 是直接交到用户手上的，签名所用的 AK 权限越小越好——共享平台凭据能操作的远不止
+// 这一个桶。回落只是过渡期的兜底（集群里 site-gateway 目前就只有这一套），
+// deployer 和 site-gateway 用的是同一个优先级，三处必须同时切换，否则会出现
+// 「换了 deployer 的凭据、预签名还在用大权限」这种半吊子状态。
 func siteCOSSecrets() (secretID string, secretKey string) {
+	secretID = strings.TrimSpace(os.Getenv("WEBSITE_COS_SECRET_ID"))
+	secretKey = strings.TrimSpace(os.Getenv("WEBSITE_COS_SECRET_KEY"))
+	if secretID != "" && secretKey != "" {
+		return secretID, secretKey
+	}
 	return strings.TrimSpace(os.Getenv("TENCENT_SECRET_ID")),
 		strings.TrimSpace(os.Getenv("TENCENT_SECRET_KEY"))
 }

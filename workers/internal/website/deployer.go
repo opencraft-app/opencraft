@@ -49,6 +49,13 @@ type Deployer struct {
 	// siteRootDomain 是站点子域名的根域，公开 URL 由它和 siteID 拼成。
 	// 走配置而非常量：测试与正式用不同的域，正式根域后续还会更换。
 	siteRootDomain string
+	// siteURLScheme 是公开 URL 的协议，只能是 http 或 https。
+	//
+	// 之所以可配置：泛域名证书只覆盖一级标签，`*.lightclaw.tech` 并不覆盖
+	// `*.sites.lightclaw.tech`，而现存的同名证书是自签的，所以 PoC 阶段站点入口
+	// 是 HTTP-only。此时若仍然发出 https 链接，用户点开必然失败。正式根域到位、
+	// 证书一并配齐后，这个变量设回 https（也是默认值）。
+	siteURLScheme string
 }
 
 func NewDeployer() (*Deployer, error) {
@@ -71,12 +78,49 @@ func NewDeployer() (*Deployer, error) {
 		return nil, fmt.Errorf("WEBSITE_SITE_ROOT_DOMAIN is required")
 	}
 
+	scheme, err := siteURLSchemeFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	d.siteURLScheme = scheme
+
 	siteCos, err := newSiteCosClient()
 	if err != nil {
 		return nil, err
 	}
 	d.siteCos = siteCos
 	return d, nil
+}
+
+// siteURLSchemeFromEnv 读取公开 URL 的协议。
+//
+// 默认 https —— 那才是正式形态；把默认值设成 http 只会让「入口还没有证书」这件事
+// 被悄悄掩盖过去。取值非法时直接报错而不是回落，理由同 WEBSITE_SITE_ROOT_DOMAIN：
+// 拼错一个字母就让全站用户拿到打不开的链接，启动失败比这个后果轻得多。
+func siteURLSchemeFromEnv() (string, error) {
+	scheme := strings.ToLower(strings.TrimSpace(getEnv("WEBSITE_SITE_URL_SCHEME", "https")))
+	if scheme != "http" && scheme != "https" {
+		return "", fmt.Errorf("WEBSITE_SITE_URL_SCHEME must be http or https, got %q", scheme)
+	}
+	return scheme, nil
+}
+
+// siteCOSSecrets 读取用户站点桶的访问凭据。
+//
+// 优先站点专用的 WEBSITE_COS_SECRET_ID/KEY，缺失时才回落到共享平台凭据。
+// 这个优先级要和 ctl、site-gateway 三处保持一致：ctl 用同一套凭据签发预签名
+// 上传 URL，而预签名 URL 会出现在用户侧，签名所用的 AK 权限越小越好。共享
+// 平台凭据是过渡期的兜底——现在集群里 site-gateway 就只有这一套——但只要专用
+// 凭据配上了，三个组件都必须同时切过去，否则会出现「换了 deployer 的凭据、
+// 网关还在用大权限」这种半吊子状态。
+func siteCOSSecrets() (secretID string, secretKey string) {
+	secretID = strings.TrimSpace(os.Getenv("WEBSITE_COS_SECRET_ID"))
+	secretKey = strings.TrimSpace(os.Getenv("WEBSITE_COS_SECRET_KEY"))
+	if secretID != "" && secretKey != "" {
+		return secretID, secretKey
+	}
+	return strings.TrimSpace(os.Getenv("TENCENT_SECRET_ID")),
+		strings.TrimSpace(os.Getenv("TENCENT_SECRET_KEY"))
 }
 
 // newSiteCosClient 构造用户站点桶的客户端。
@@ -89,10 +133,9 @@ func newSiteCosClient() (*cosClient, error) {
 	if bucket == "" || region == "" {
 		return nil, fmt.Errorf("WEBSITE_COS_BUCKET and WEBSITE_COS_REGION are required")
 	}
-	secretID := strings.TrimSpace(os.Getenv("TENCENT_SECRET_ID"))
-	secretKey := strings.TrimSpace(os.Getenv("TENCENT_SECRET_KEY"))
+	secretID, secretKey := siteCOSSecrets()
 	if secretID == "" || secretKey == "" {
-		return nil, fmt.Errorf("TENCENT_SECRET_ID and TENCENT_SECRET_KEY are required")
+		return nil, fmt.Errorf("WEBSITE_COS_SECRET_ID/KEY (or TENCENT_SECRET_ID/KEY) are required")
 	}
 
 	bucketURL, err := url.Parse(fmt.Sprintf("https://%s.cos.%s.myqcloud.com", bucket, region))
@@ -170,17 +213,17 @@ func (d *Deployer) ClaimOperation(opID string) (*Operation, bool, error) {
 // 不再暴露对象存储的真实地址——否则用户可以绕过网关，我们就失去了限流、
 // 到期下线和违规封禁的能力。
 func (d *Deployer) getSitePublicURL(op Operation) string {
-	if d.siteRootDomain == "" || op.SiteID == "" {
+	if d.siteRootDomain == "" || d.siteURLScheme == "" || op.SiteID == "" {
 		return ""
 	}
-	return fmt.Sprintf("https://%s.%s/", op.SiteID, d.siteRootDomain)
+	return fmt.Sprintf("%s://%s.%s/", d.siteURLScheme, op.SiteID, d.siteRootDomain)
 }
 
 // 站点在 CloudBase 静态托管桶里的目录布局：
 //
 //	sites/{siteID}/current/            对外服务的稳定目录，公开 URL 只指向这里
 //	sites/{siteID}/releases/{relID}/   单次发布的暂存目录，成功后同步到 current/
-//	_artifacts/{siteID}/{relID}.zip    上传的制品，保留用于套餐续费后恢复站点
+//	_artifacts/{siteID}/{relID}.zip    上传的制品，保留用于版本追溯
 //
 // 之所以引入 current/ 这一层：早期实现把公开 URL 直接指向
 // releases/{releaseID}/index.html，导致每次重新发布 URL 都变，
@@ -312,14 +355,16 @@ func (d *Deployer) executeDeploy(op Operation) error {
 	return d.publishRelease(op, true)
 }
 
-// executeResume 套餐续费后恢复站点：从保留的制品重新发布。
-// 制品必须已存在，不需要像deploy 那样等待上传。
+// executeResume 套餐续费恢复站点 —— 已无需任何 COS 操作，直接收敛为成功。
+//
+// 到期隔离不再删除线上文件（产品：文件永久保留，只是不对外服务），所以续费时
+// current/ 原样在位，ctl 把站点状态改回 active 后网关立刻回源，没有东西需要重新发布。
+//
+// 分支保留而不是删掉：resume 这个操作类型在 DB 和迁移里已经存在，历史行可能还在，
+// 删掉分支会让 worker 领到这类操作时报 unknown operation type 并把它打进重试直到 dead。
 func (d *Deployer) executeResume(op Operation) error {
-	if op.ReleaseID == "" {
-		// 站点从未成功发布过内容，没有可恢复的制品，直接收敛为成功。
-		return d.completeOperation(op, sitePublishedPrefix(op.SiteID), d.getSitePublicURL(op))
-	}
-	return d.publishRelease(op, false)
+	log.Printf("resume %s: no COS work needed, site files were never removed on suspend", op.SiteID)
+	return d.completeOperation(op, sitePublishedPrefix(op.SiteID), d.getSitePublicURL(op))
 }
 
 // publishRelease 是 deploy 与 resume 的共同实现。
@@ -444,8 +489,7 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 		return d.failOperation(op, fmt.Sprintf("publish to current: %v", err))
 	}
 
-	// 5. 清理暂存目录。制品 zip 必须保留：它是套餐续费后恢复站点的唯一数据源，
-	// 最终随 Pass 销毁时的 delete 操作一起清除。
+	// 5. 清理暂存目录。制品 zip 保留用于版本追溯，只在用户主动删除站点时清除。
 	if err := d.deleteCosPrefix(siteCos, stagingPrefix, op); err != nil {
 		//暂存目录只占存储、不影响对外服务，清理失败不应让整次发布失败。
 		log.Printf("warning: cleanup staging prefix %s failed: %v", stagingPrefix, err)
@@ -554,27 +598,25 @@ func (d *Deployer) listCosKeys(client *cosClient, prefix string) ([]string, erro
 	}
 }
 
-// executeSuspend 套餐到期下线站点。
+// executeSuspend 套餐到期下线站点 —— 已无需任何 COS 操作，直接收敛为成功。
 //
-// v2 移除了平台反向代理，用户拿到的是 CloudBase 原生 URL，平台不在访问路径上，
-// 所以「下线」只能通过真正删除线上文件实现，改 DB 状态是不够的。
-// 制品 zip 必须保留，它是续费后恢复站点的唯一数据源。
+// 一期在 CloudBase 上时平台不在访问路径上，下线只能靠真正删掉线上文件。现在反代
+// （site-gateway）是自研的：它每次请求都查站点状态，suspended 直接 403 且不回源，
+// 所以下线只是一次状态写入，文件必须原样保留（产品：文件永久保留，只是不对外服务）。
+//
+// 分支保留而不是删掉，理由同 executeResume：DB 里可能还有历史的 suspend 行。
 func (d *Deployer) executeSuspend(op Operation) error {
-	siteCos := d.siteCos
-	if siteCos == nil {
-		return d.failOperation(op, "site COS bucket is not configured")
-	}
-
-	prefix := fmt.Sprintf("sites/%s/", op.SiteID)
-	if err := d.deleteCosPrefix(siteCos, prefix, op); err != nil {
-		return d.failOperation(op, fmt.Sprintf("take site offline under %s: %v", prefix, err))
-	}
-	return d.completeOperation(op, "", "")
+	log.Printf("suspend %s: no COS work needed, site is taken offline by gateway status check", op.SiteID)
+	return d.completeOperation(op, sitePublishedPrefix(op.SiteID), d.getSitePublicURL(op))
 }
 
 // executeDelete removes both published files and uploaded artifacts. It only
 // completes after COS confirms cleanup, so ctl does not release the user's
 // site quota while a public object may still exist.
+//
+// 这是整条链路上唯一真删 COS 的地方，且只由用户主动点删除触发。套餐到期和销毁
+// 都已不再走这里（它们只改状态、文件永久保留），所以「删了就没了」的语义现在
+// 完全对应用户的一次显式操作。
 func (d *Deployer) executeDelete(op Operation) error {
 	siteCos := d.siteCos
 	if siteCos == nil {
