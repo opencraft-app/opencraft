@@ -93,6 +93,9 @@ metadata:
   name: site-gateway
   namespace: ctl
 spec:
+  # 必须是 NodePort：腾讯云 CLB 的 ingress controller 把节点端口注册到 CLB 上，
+  # 后端是 ClusterIP 时 CLB 无路可走，公网访问会直接 504。
+  type: NodePort
   selector:
     app: site-gateway
   ports:
