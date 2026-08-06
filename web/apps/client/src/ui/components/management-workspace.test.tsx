@@ -205,7 +205,7 @@ describe("management workspace primitives", () => {
     expect(screen.getByTestId("tasks-tab")).toHaveStyle({
       borderBottomWidth: 2,
       borderRadius: 0,
-      minHeight: 48,
+      minHeight: velaTheme.recipes.control.height,
     });
     fireEvent.press(screen.getByTestId("reminders-tab"));
     expect(onPress).toHaveBeenCalledTimes(1);

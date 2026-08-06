@@ -276,7 +276,7 @@ const styles = StyleSheet.create((theme) => ({
   modeButton: {
     alignItems: "center",
     justifyContent: "center",
-    minHeight: theme.semantic.interaction.minimumTargetSize,
+    minHeight: theme.recipes.authWorkspace.controlHeight,
   },
   modeButtonText: {
     color: theme.semantic.color.textPrimary,

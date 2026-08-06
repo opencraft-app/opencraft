@@ -152,20 +152,23 @@ describe("Vela token usage", () => {
     }
   });
 
-  it("sizes a choice off the density scale, not the reach floor", () => {
-    // minimumTargetSize is a floor ("a finger needs 48pt"), not a measurement
-    // ("this control is 48pt"). Sizing off it pinned the choice chips at 48
-    // on a desktop where their neighbouring buttons stand 30 tall.
-    const management = readFileSync(
-      join(process.cwd(), "src", "ui", "components", "management-workspace.tsx"),
-      "utf8",
-    );
-    const chip =
-      /^ {2}selectionButton: \{\n([\s\S]*?)^ {2}\},$/mu.exec(management)?.[1] ??
-      "";
+  it("sizes a control off the density scale, not the reach floor", () => {
+    // minimumTargetSize is a floor — "a finger needs 44pt" — not a measurement
+    // — "this control is 44pt". Twenty-one styles read it as the latter and so
+    // stood 48 tall at every density, on a desktop whose control scale says 30
+    // and whose fields say 32: the choice chips loomed over the Save button
+    // beside them, and the terminal's inputs over its own. Heights come from
+    // density now; the floor is what density.test.ts measures them against.
+    const uiRoot = join(process.cwd(), "src", "ui");
+    const misread = readdirSync(uiRoot, {recursive: true, encoding: "utf8"})
+      .filter((name) => /\.tsx?$/u.test(name) && !/\.test\.|tokens\.ts$/u.test(name))
+      .filter((name) =>
+        readFileSync(join(uiRoot, name), "utf8").includes(
+          "interaction.minimumTargetSize",
+        ),
+      );
 
-    expect(chip).toContain("minHeight: theme.recipes.control.height");
-    expect(chip).not.toContain("interaction.minimumTargetSize");
+    expect(misread).toEqual([]);
   });
 
   it("lets an identity mark's shape say what it stands for", () => {

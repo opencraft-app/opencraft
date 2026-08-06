@@ -173,7 +173,7 @@ const styles = StyleSheet.create((theme) => ({
     borderWidth: theme.semantic.stroke.hairline,
     borderRadius: theme.semantic.radius.control,
     justifyContent: "center",
-    minHeight: theme.semantic.interaction.minimumTargetSize,
+    minHeight: theme.recipes.control.height,
     paddingHorizontal: theme.spacing.md,
   },
   buttonText: {
@@ -190,7 +190,7 @@ const styles = StyleSheet.create((theme) => ({
     borderWidth: theme.semantic.stroke.hairline,
     borderRadius: theme.semantic.radius.control,
     justifyContent: "center",
-    minHeight: theme.semantic.interaction.minimumTargetSize,
+    minHeight: theme.recipes.control.height,
     minWidth: theme.recipes.terminalPanel.controlMinWidth,
   },
   controls: {
@@ -214,7 +214,7 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.semantic.radius.control,
     flex: 1,
     ...theme.terminal.textStyle,
-    minHeight: theme.semantic.interaction.minimumTargetSize,
+    minHeight: theme.recipes.control.fieldHeight,
     paddingHorizontal: theme.spacing.md,
   },
   output: {
@@ -250,7 +250,7 @@ const styles = StyleSheet.create((theme) => ({
     borderWidth: theme.semantic.stroke.hairline,
     borderRadius: theme.semantic.radius.control,
     justifyContent: "center",
-    minHeight: theme.semantic.interaction.minimumTargetSize,
+    minHeight: theme.recipes.control.height,
     paddingHorizontal: theme.spacing.lg,
   },
   sendButtonText: {

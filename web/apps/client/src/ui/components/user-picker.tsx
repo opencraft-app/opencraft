@@ -155,7 +155,7 @@ const styles = StyleSheet.create((theme) => ({
     borderWidth: theme.semantic.stroke.hairline,
     flexDirection: "row",
     gap: theme.spacing.sm,
-    height: theme.semantic.interaction.minimumTargetSize,
+    height: theme.recipes.control.fieldHeight,
     paddingHorizontal: theme.spacing.md,
   },
   searchClear: {

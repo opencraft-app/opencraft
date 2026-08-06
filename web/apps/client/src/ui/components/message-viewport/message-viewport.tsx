@@ -351,7 +351,7 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.semantic.radius.circle,
     borderWidth: theme.semantic.stroke.hairline,
     bottom: theme.spacing.lg,
-    height: theme.semantic.interaction.minimumTargetSize,
+    height: theme.recipes.iconControl.floatingSize,
     justifyContent: "center",
     position: "absolute",
     right: theme.spacing.lg,
@@ -360,7 +360,7 @@ const styles = StyleSheet.create((theme) => ({
     shadowOffset: { height: theme.shadows.overlay.offsetY, width: 0 },
     shadowOpacity: theme.shadows.overlay.opacity,
     shadowRadius: theme.shadows.overlay.radius,
-    width: theme.semantic.interaction.minimumTargetSize,
+    width: theme.recipes.iconControl.floatingSize,
     ...theme.semantic.motion.transition.control,
   },
   newMessagesPressed: {

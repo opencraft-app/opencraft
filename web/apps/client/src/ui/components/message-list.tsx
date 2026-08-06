@@ -1078,10 +1078,10 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     backgroundColor: theme.semantic.color.iconAccentSurface,
     borderRadius: theme.semantic.radius.circle,
-    height: theme.semantic.interaction.minimumTargetSize,
+    height: theme.recipes.iconControl.floatingSize,
     justifyContent: "center",
     marginBottom: theme.spacing.md,
-    width: theme.semantic.interaction.minimumTargetSize,
+    width: theme.recipes.iconControl.floatingSize,
   },
   historyLoadingTitle: {
     color: theme.semantic.color.textPrimary,

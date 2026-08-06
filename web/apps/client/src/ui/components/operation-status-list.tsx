@@ -117,7 +117,7 @@ const styles = StyleSheet.create((theme) => ({
     borderColor: theme.semantic.color.borderControl,
     borderWidth: theme.semantic.stroke.hairline,
     justifyContent: "center",
-    minHeight: theme.semantic.interaction.minimumTargetSize,
+    minHeight: theme.recipes.control.height,
     paddingHorizontal: theme.spacing.md,
   },
   buttonText: {

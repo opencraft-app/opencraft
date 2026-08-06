@@ -208,11 +208,18 @@ describe("Vela theme contract", () => {
     // because the lint rules used to forbid literals in components. Those rules
     // are relaxed now, so this ceiling replaces them: one-off geometry belongs
     // in its component, and anything added here has to displace something.
+    //
+    // The ceiling last moved for `control.fieldHeight` and
+    // `iconControl.floatingSize`, which between them let twenty-one styles stop
+    // sizing themselves off the touch floor. The first displaced
+    // `managementWorkspace.fieldHeight`, a second name for the same number; the
+    // second is the standing 48 of a circle that floats over the transcript,
+    // and pays for itself by being the only flat size left in that family.
     const namespaces = Object.keys(velaTheme.recipes);
     const leaves = numericLeaves(velaTheme.recipes);
 
     expect(namespaces.length).toBeLessThanOrEqual(16);
-    expect(leaves.length).toBeLessThanOrEqual(142);
+    expect(leaves.length).toBeLessThanOrEqual(143);
   });
 
   it("measures a column of content the same wherever it appears", () => {

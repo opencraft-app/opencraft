@@ -15,8 +15,13 @@ import {
  * ladder stays cheap while the guarantees stay intact.
  */
 
-/** The smallest comfortable touch target, in points. */
-const TOUCH_TARGET_MINIMUM = 44;
+/**
+ * The smallest comfortable touch target, in points. The theme names this floor
+ * too, and used to name it 48 while every touch control stood at 44 — a number
+ * nothing obeyed, because styles reached for it as a size instead of measuring
+ * against it. One source, checked here.
+ */
+const TOUCH_TARGET_MINIMUM = velaTheme.semantic.interaction.minimumTargetSize;
 
 /** Roles a finger actually lands on, as opposed to rows and containers. */
 const touchTargets = [

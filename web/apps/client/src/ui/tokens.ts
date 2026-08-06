@@ -470,7 +470,11 @@ export const velaTheme = {
       hitTargetInset: 6,
       hitTargetInsetCompact: 2,
       longPressDelay: 350,
-      minimumTargetSize: 48,
+      // A floor for the touch scale to clear, not a size to build with. Styles
+      // that reached for it stood 48 tall on a desktop where the control scale
+      // says 30; they take density.controlHeight or density.fieldHeight now,
+      // and this is what those are measured against.
+      minimumTargetSize: 44,
       pressedScale: 0.96,
       pressedScaleSubtle: 0.99,
     },
@@ -811,6 +815,7 @@ export const velaTheme = {
       toastTopInset: 72,
     },
     control: {
+      fieldHeight: density.fieldHeight,
       height: density.controlHeight,
       squareSize: density.controlHeight,
     },
@@ -836,6 +841,11 @@ export const velaTheme = {
     iconControl: {
       compactSize: 32,
       denseSize: density.iconControlDenseSize,
+      // A circle floating free over the transcript — jump-to-latest, the
+      // history spinner — has no neighbouring control to line up with and is
+      // the only thing under the pointer where it sits, so it holds one size
+      // across densities rather than following the control scale.
+      floatingSize: 48,
       microSize: 28,
       smallSize: density.iconControlSmallSize,
     },
@@ -877,7 +887,6 @@ export const velaTheme = {
       detailGap: 24,
       emptyStateMaxWidth: noticeMaxWidth,
       fieldCompactWidth: 160,
-      fieldHeight: density.fieldHeight,
       formFieldMinWidth: 240,
       formMaxWidth: columnMaxWidth,
       headerActionHeight: density.headerActionHeight,
