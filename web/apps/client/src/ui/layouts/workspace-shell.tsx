@@ -93,6 +93,18 @@ import {
   type PresentationAction,
 } from "../presentation";
 import {
+  channelConversationSummary,
+  channelDraftPreview,
+  channelRowPreview,
+  composerDraftPreview,
+  conversationDirectory,
+  directDraftPreview,
+  directIdentitySummary,
+  draftLabel,
+  directRowPreview,
+  unreadLabel,
+} from "./conversation-directory";
+import {
   HumanAccountIdentity,
   MobileBottomNavigation,
   PlatformFrame,
@@ -212,14 +224,6 @@ function emptyComposerDraft(): ComposerDraft {
   return {attachments: [], document: createComposerDocument()};
 }
 
-function composerDraftPreview(draft: ComposerDraft | undefined): string {
-  if (!draft) return "";
-  const text = composerDocumentPreview(draft.document);
-  if (text) return text;
-  return draft.attachments.length > 0
-    ? `[${draft.attachments.length} 个附件]`
-    : "";
-}
 
 type ConversationFormMode =
   | "attach-file"
@@ -1457,43 +1461,21 @@ function ConversationSidebar({
 }) {
   const [filter, setFilter] = useState("");
   const currentChannel = channels.find((item) => item.id === currentChannelId);
-  const normalizedFilter = filter.trim().toLocaleLowerCase();
-  const visibleChannels = normalizedFilter
-    ? channels.filter((channel) =>
-        [
-          channel.name,
-          channel.description ?? "",
-          channelConversationSummary(channel, conversationSummaries)
-            ?.lastMessagePreview ?? "",
-          composerDraftPreview(conversationDrafts[`channel:${channel.id}`]),
-        ].some((value) => value.toLocaleLowerCase().includes(normalizedFilter)),
-      )
-    : channels;
-  const visibleDirectConversations = normalizedFilter
-    ? directConversations.filter((conversation) =>
-        [
-          conversation.peerDisplayName,
-          memberIdentityLabel(
-            memberByImUserId(members, conversation.peerUserId),
-          ) ?? "",
-          conversation.lastMessagePreview,
-          composerDraftPreview(
-            conversationDrafts[`direct:${conversation.peerMemberId}`],
-          ),
-        ].some((value) => value.toLocaleLowerCase().includes(normalizedFilter)),
-      )
-    : directConversations;
-  const visibleMembers = normalizedFilter
-    ? directCandidates.filter((member) =>
-        [member.displayName, member.handle].some((value) =>
-          value.toLocaleLowerCase().includes(normalizedFilter),
-        ),
-      )
-    : directCandidates;
-  const hasSearchMatches =
-    visibleChannels.length > 0 ||
-    visibleDirectConversations.length > 0 ||
-    visibleMembers.length > 0;
+  const {
+    channels: visibleChannels,
+    directConversations: visibleDirectConversations,
+    matched: hasSearchMatches,
+    members: visibleMembers,
+    searching: normalizedFilter,
+  } = conversationDirectory({
+    channels,
+    conversationDrafts,
+    conversationSummaries,
+    directCandidates,
+    directConversations,
+    filter,
+    members,
+  });
   return (
     <View style={styles.conversationSidebar} testID="conversation-sidebar">
       <MaybeLink href={currentServerHref}>
@@ -1700,12 +1682,14 @@ function DirectConversationList({
         const lastMessageTime = conversation.lastMessageAt
           ? formatConversationTimestamp(conversation.lastMessageAt)
           : "";
-        const draftPreview = composerDraftPreview(
-          conversationDrafts[`direct:${conversation.peerMemberId}`],
+        const draftPreview = directDraftPreview(
+          conversation,
+          conversationDrafts,
         );
         const directMember = memberByImUserId(members, conversation.peerUserId);
         const identityLabel = memberIdentityLabel(directMember);
         const identitySummary = directIdentitySummary(directMember);
+        const unread = unreadLabel(conversation.unreadCount);
         return (
           <MaybeLink href={href} key={conversation.conversationId}>
             <Pressable
@@ -1751,17 +1735,11 @@ function DirectConversationList({
                       draftPreview ? styles.draftMeta : null,
                     ]}
                   >
-                    {draftPreview
-                      ? `[草稿] ${draftPreview}`
-                      : conversation.lastMessagePreview || "开始私信"}
+                    {directRowPreview(conversation, draftPreview)}
                   </Text>
-                  {conversation.unreadCount > 0 ? (
+                  {unread ? (
                     <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadBadgeText}>
-                        {conversation.unreadCount > 99
-                          ? "99+"
-                          : conversation.unreadCount}
-                      </Text>
+                      <Text style={styles.unreadBadgeText}>{unread}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -1876,6 +1854,7 @@ function ChannelList({
         const lastMessageTime = summary?.lastMessageAt
           ? formatConversationTimestamp(summary.lastMessageAt)
           : "";
+        const unread = unreadLabel(summary?.unreadCount);
         return (
           <MaybeLink href={href} key={channel.id}>
             <Pressable
@@ -1933,25 +1912,11 @@ function ChannelList({
                       draftPreview ? styles.draftMeta : null,
                     ]}
                   >
-                    {draftPreview
-                      ? `[草稿] ${draftPreview}`
-                      : !channel.joined
-                        ? channel.visibility === "public"
-                          ? "公开频道 · 可加入"
-                          : "私密频道 · 尚未加入"
-                        : summary?.lastMessagePreview ||
-                          channel.description ||
-                          (channel.systemKey === "all"
-                            ? "全体成员根群"
-                            : "Human 与 Agent 的日常协作")}
+                    {channelRowPreview(channel, summary, draftPreview)}
                   </Text>
-                  {!selected && (summary?.unreadCount ?? 0) > 0 ? (
+                  {!selected && unread ? (
                     <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadBadgeText}>
-                        {(summary?.unreadCount ?? 0) > 99
-                          ? "99+"
-                          : summary?.unreadCount}
-                      </Text>
+                      <Text style={styles.unreadBadgeText}>{unread}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -2618,15 +2583,6 @@ function isRecoverableImStatus(status: WorkspaceImStatus): boolean {
   );
 }
 
-function directIdentitySummary(member: Member | undefined): string | null {
-  if (!member) {
-    return null;
-  }
-
-  const actor = member.kind === "agent" ? "Agent" : "自然人";
-  const handle = memberIdentityLabel(member);
-  return handle ? `${actor} · ${handle}` : actor;
-}
 
 function directConversationDescription(member: Member | undefined): string {
   if (!member) {
@@ -3212,44 +3168,22 @@ function CompactConversationPicker({
   onSelectDirect(peerUserId: string): void | Promise<void>;
 }) {
   const [filter, setFilter] = useState("");
-  const normalizedFilter = filter.trim().toLocaleLowerCase();
-  const visibleChannels = normalizedFilter
-    ? channels.filter((channel) =>
-        [
-          channel.name,
-          channel.description ?? "",
-          channelConversationSummary(channel, conversationSummaries)
-            ?.lastMessagePreview ?? "",
-          composerDraftPreview(conversationDrafts[`channel:${channel.id}`]),
-        ].some((value) => value.toLocaleLowerCase().includes(normalizedFilter)),
-      )
-    : channels;
-  const visibleDirectConversations = normalizedFilter
-    ? directConversations.filter((conversation) =>
-        [
-          conversation.peerDisplayName,
-          memberIdentityLabel(
-            memberByImUserId(members, conversation.peerUserId),
-          ) ?? "",
-          conversation.lastMessagePreview,
-          composerDraftPreview(
-            conversationDrafts[`direct:${conversation.peerMemberId}`],
-          ),
-        ].some((value) => value.toLocaleLowerCase().includes(normalizedFilter)),
-      )
-    : directConversations;
-  const visibleMembers = normalizedFilter
-    ? directCandidates.filter((member) =>
-        [member.displayName, member.handle, member.kind].some((value) =>
-          value.toLocaleLowerCase().includes(normalizedFilter),
-        ),
-      )
-    : [];
-  const noMatches =
-    Boolean(normalizedFilter) &&
-    visibleChannels.length === 0 &&
-    visibleDirectConversations.length === 0 &&
-    visibleMembers.length === 0;
+  const {
+    channels: visibleChannels,
+    directConversations: visibleDirectConversations,
+    matched,
+    members: visibleMembers,
+    searching: normalizedFilter,
+  } = conversationDirectory({
+    channels,
+    conversationDrafts,
+    conversationSummaries,
+    directCandidates,
+    directConversations,
+    filter,
+    members,
+  });
+  const noMatches = !matched;
   return (
     <ScrollView
       contentContainerStyle={styles.compactPicker}
@@ -3382,6 +3316,7 @@ function CompactConversationPicker({
               channel,
               conversationSummaries,
             );
+            const unread = unreadLabel(summary?.unreadCount);
             return (
               <MaybeLink href={href} key={channel.id}>
                 <Pressable
@@ -3413,31 +3348,17 @@ function CompactConversationPicker({
                       </View>
                       <Text
                         numberOfLines={1}
-                        style={
-                          draftPreview ? styles.draftMeta : styles.channelMeta
-                        }
-                      >
-                        {draftPreview
-                          ? `[草稿] ${draftPreview}`
-                          : !channel.joined
-                            ? channel.visibility === "public"
-                              ? "公开频道 · 可加入"
-                              : "私密频道 · 尚未加入"
-                            : summary?.lastMessagePreview ||
-                              channel.description ||
-                              (channel.systemKey === "all"
-                                ? "全体成员根群"
-                                : "Human 与 Agent 的日常协作")}
-                      </Text>
-                    </View>
-                  </View>
-                  {!selected && (summary?.unreadCount ?? 0) > 0 ? (
-                    <Text style={styles.channelArrow}>
-                      {(summary?.unreadCount ?? 0) > 99
-                        ? "99+"
-                        : summary?.unreadCount}
+                      style={
+                        draftPreview ? styles.draftMeta : styles.channelMeta
+                      }
+                    >
+                      {channelRowPreview(channel, summary, draftPreview)}
                     </Text>
-                  ) : (
+                  </View>
+                </View>
+                {!selected && unread ? (
+                  <Text style={styles.channelArrow}>{unread}</Text>
+                ) : (
                     <View testID={`compact-channel-chevron-${channel.name}`}>
                       <ChevronRight
                         color={velaTheme.semantic.color.iconMuted}
@@ -3480,8 +3401,9 @@ function CompactConversationPicker({
               activeConversation?.kind === "direct" &&
               activeConversation.peerUserId === conversation.peerUserId;
             const href = directHref?.(conversation.peerUserId);
-            const draftPreview = composerDraftPreview(
-              conversationDrafts[`direct:${conversation.peerMemberId}`],
+            const draftPreview = directDraftPreview(
+              conversation,
+              conversationDrafts,
             );
             const directMember = memberByImUserId(
               members,
@@ -3489,6 +3411,7 @@ function CompactConversationPicker({
             );
             const identityLabel = memberIdentityLabel(directMember);
             const identitySummary = directIdentitySummary(directMember);
+            const unread = unreadLabel(conversation.unreadCount);
             return (
               <MaybeLink href={href} key={conversation.conversationId}>
                 <Pressable
@@ -3520,18 +3443,14 @@ function CompactConversationPicker({
                         </Text>
                       ) : null}
                     </View>
-                    {draftPreview ? (
+                    {draftLabel(draftPreview) ? (
                       <Text numberOfLines={1} style={styles.draftMeta}>
-                        [草稿] {draftPreview}
+                        {draftLabel(draftPreview)}
                       </Text>
                     ) : null}
                   </View>
-                  {conversation.unreadCount > 0 ? (
-                    <Text style={styles.channelArrow}>
-                      {conversation.unreadCount > 99
-                        ? "99+"
-                        : conversation.unreadCount}
-                    </Text>
+                  {unread ? (
+                    <Text style={styles.channelArrow}>{unread}</Text>
                   ) : (
                     <ChevronRight
                       color={velaTheme.semantic.color.iconMuted}
@@ -3578,17 +3497,6 @@ function CompactConversationPicker({
   );
 }
 
-function channelConversationSummary(
-  channel: Channel,
-  summaries: ConversationSummary[],
-): ConversationSummary | undefined {
-  const conversationId = channelAddress(channel)?.conversationId;
-  if (!conversationId) return undefined;
-  return summaries.find(
-    (summary) =>
-      summary.kind === "group" && summary.conversationId === conversationId,
-  );
-}
 
 function DirectConversationPicker({
   directHref,

@@ -196,6 +196,30 @@ describe("Vela token usage", () => {
     );
   });
 
+  it("lets the directory keep two shapes but only one set of answers", () => {
+    // The standing sidebar and the compact picker each derived their own
+    // filtered lists and spelled out their own row copy — the same cascade,
+    // written twice, thirty lines apart. Nothing compared them, so searching a
+    // member by kind worked under a finger and not on a pointer, and either
+    // wording could have been revised alone. The shapes are meant to differ.
+    // What they say is not.
+    const shell = readFileSync(
+      join(process.cwd(), "src", "ui", "layouts", "workspace-shell.tsx"),
+      "utf8",
+    );
+    const answers = [
+      "公开频道 · 可加入",
+      "私密频道 · 尚未加入",
+      "开始私信",
+      "[草稿]",
+      '"99+"',
+      // The one derivation: a directory narrows by lowercasing what it holds.
+      "toLocaleLowerCase",
+    ];
+
+    expect(answers.filter((answer) => shell.includes(answer))).toEqual([]);
+  });
+
   it("does not let hand-rolled buttons regrow beside the shared one", () => {
     // The chat shell and the management screens each invented their own
     // vocabulary for the same handful of jobs, which is most of why the two
