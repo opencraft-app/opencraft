@@ -320,7 +320,7 @@ export const AgentWebsitePanel = () => {
   return (
     <div className="space-y-6">
       <AgentSectionHeader
-        title={t("我的网站")}
+        title={t("我的作品")}
         subtitle={t("使用 AI Agent 对话即可创建和部署静态网站")}
       />
 
@@ -332,7 +332,7 @@ export const AgentWebsitePanel = () => {
         className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
       >
         <motion.div variants={fadeIn} className="rounded-xl border border-black/[0.06] bg-white p-5">
-          <p className="text-xs text-black/45">{t("站点数")}</p>
+          <p className="text-xs text-black/45">{t("作品数")}</p>
           <p className="mt-2 text-2xl font-semibold text-black/90">
             {capability?.used_sites ?? 0}<span className="text-sm text-black/40">/{capability?.max_sites ?? 0}</span>
           </p>
@@ -348,7 +348,7 @@ export const AgentWebsitePanel = () => {
         </motion.div>
       </motion.div>
 
-      {/* 网站列表 */}
+      {/* 作品列表 */}
       <motion.div
         variants={fadeIn}
         initial="hidden"
@@ -356,13 +356,13 @@ export const AgentWebsitePanel = () => {
         className="overflow-hidden rounded-xl border border-black/[0.06] bg-white"
       >
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
-          <h3 className="text-base font-semibold text-black/90">{t("网站列表")}</h3>
+          <h3 className="text-base font-semibold text-black/90">{t("作品列表")}</h3>
           <span className="text-sm text-black/40">{t("共")} {sites.length} {t("个")}</span>
         </div>
         {sites.length === 0 ? (
           <div className="py-12 text-center">
             <Globe className="mx-auto h-10 w-10 text-black/20" />
-            <p className="mt-4 text-sm text-black/45">{t("还没有创建任何网站")}</p>
+            <p className="mt-4 text-sm text-black/45">{t("还没有创建任何作品")}</p>
             <p className="mt-1 text-sm text-black/35" style={{ maxWidth: 400, margin: "0 auto" }}>
               {t("在 Agent 对话中发送")} <code className="rounded bg-black/5 px-1.5 py-0.5 text-xs">{t("帮我建个网站")}</code> {t("即可快速创建")}
             </p>
@@ -461,9 +461,9 @@ export const AgentWebsitePanel = () => {
             <Zap className="h-4 w-4 text-blue-500" />
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-medium text-black/80">{t("如何创建网站？")}</p>
+            <p className="text-sm font-medium text-black/80">{t("如何创建作品？")}</p>
             <p className="mt-1 text-xs leading-relaxed text-black/50">
-              {t("打开 Agent 对话页面，输入")}「{t("帮我建个网站")}」{t("，AI 会自动完成创建、上传和部署，几秒钟后你就能在这里看到你的网站。")}
+              {t("打开 Agent 对话页面，输入")}「{t("帮我建个网站")}」{t("，AI 会自动完成创建、上传和部署，几秒钟后你就能在这里看到你的作品。")}
             </p>
           </div>
         </div>
@@ -499,14 +499,14 @@ export const AgentWebsitePanel = () => {
                     <Trash2 className="h-[18px] w-[18px]" style={{ color: "#cf3d4c" }} />
                   </div>
                   <h3 className="m-0 text-[16px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
-                    {t("删除网站")}
+                    {t("删除作品")}
                   </h3>
                 </div>
                 <p className="text-sm leading-relaxed" style={{ margin: "12px 0 16px 0", color: "#666" }}>
-                  {t("删除后，网站将立即下线，COS 上的文件也会同步清理。此操作不可撤销。")}
+                  {t("删除后，作品将立即下线，COS 上的文件也会同步清理。此操作不可撤销。")}
                 </p>
                 <p className="text-sm font-medium" style={{ margin: "0 0 24px 0", color: "#333" }}>
-                  {t("网站名称")}：{deleteTarget.Name}
+                  {t("作品名称")}：{deleteTarget.Name}
                 </p>
                 {deleteError && (
                   <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">

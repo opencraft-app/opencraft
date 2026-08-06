@@ -57,7 +57,7 @@ function formatDate(iso: string): string {
 }
 
 /**
- * 本页只读，删除入口在 `/agents` 的「我的网站」面板。但站点可能在别处被删掉，
+ * 本页只读，删除入口在 `/agents` 的「我的作品」面板。但站点可能在别处被删掉，
  * 此时后端会先把状态置为 deleting、由 website-deployer 异步清理。为了不让用户
  * 停在永远不变的 deleting 上，这里在存在 deleting 站点时定时重拉，
  * 60s 内不收敛就停止，避免无限轮询。
@@ -182,7 +182,7 @@ export const WebsitePage = () => {
             className="mb-6 md:mb-8"
           >
             <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 600, color: "rgba(0,0,0,0.9)", lineHeight: 1.5 }}>
-              {t("我的网站")}
+              {t("我的作品")}
             </h2>
             <p className="mt-2 text-sm" style={{ color: "#999" }}>
               {t("使用 AI Agent 对话即可创建和部署静态网站")}
@@ -223,7 +223,7 @@ export const WebsitePage = () => {
 
                     <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
                       <div className="rounded-xl p-4" style={{ background: "rgba(0,0,0,0.02)" }}>
-                        <p className="text-xs" style={{ color: "#999" }}>{t("站点数")}</p>
+                        <p className="text-xs" style={{ color: "#999" }}>{t("作品数")}</p>
                         <p className="mt-1 text-xl font-bold" style={{ color: "#333" }}>
                           {capability.used_sites}<span className="text-sm font-normal" style={{ color: "#999" }}>/{capability.max_sites}</span>
                         </p>
@@ -252,7 +252,7 @@ export const WebsitePage = () => {
               >
                 <div className="px-5 py-4 md:px-8 md:py-5" style={{ borderBottom: "1px solid #E6E9EF" }}>
                   <div className="flex items-center justify-between">
-                    <h3 className="text-base font-semibold" style={{ color: "#333" }}>{t("网站列表")}</h3>
+                    <h3 className="text-base font-semibold" style={{ color: "#333" }}>{t("作品列表")}</h3>
                     {sites.length > 0 && (
                       <span className="text-xs" style={{ color: "#999" }}>{t("共") + ` ${sites.length} ` + t("个")}</span>
                     )}
@@ -264,9 +264,9 @@ export const WebsitePage = () => {
                     <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full" style={{ background: "rgba(0,122,255,0.06)" }}>
                       <Plus className="h-7 w-7" style={{ color: "#007AFF" }} />
                     </div>
-                    <p className="text-base font-medium" style={{ color: "#333", marginBottom: 8 }}>{t("还没有创建任何网站")}</p>
+                    <p className="text-base font-medium" style={{ color: "#333", marginBottom: 8 }}>{t("还没有创建任何作品")}</p>
                     <p className="text-sm leading-relaxed" style={{ color: "#999", maxWidth: 400, margin: "0 auto" }}>
-                      {t("在 Agent 对话中发送")} <code style={{ padding: "2px 6px", background: "rgba(0,0,0,0.04)", borderRadius: 4, fontSize: 12 }}>{t("帮我建个网站")}</code> {t("即可快速创建你的第一个网站")}
+                      {t("在 Agent 对话中发送")} <code style={{ padding: "2px 6px", background: "rgba(0,0,0,0.04)", borderRadius: 4, fontSize: 12 }}>{t("帮我建个网站")}</code> {t("即可快速创建你的第一个作品")}
                     </p>
                     <AppLink
                       to="/agents"
@@ -340,9 +340,9 @@ export const WebsitePage = () => {
                     <Zap className="h-4 w-4" style={{ color: "#007AFF" }} />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium" style={{ color: "#333", marginBottom: 4 }}>{t("如何创建网站？")}</p>
+                    <p className="text-sm font-medium" style={{ color: "#333", marginBottom: 4 }}>{t("如何创建作品？")}</p>
                     <p className="text-xs leading-relaxed" style={{ color: "#999" }}>
-                      {t("打开 Agent 对话页面，输入")}「{t("帮我建个网站")}」{t("，AI 会自动完成创建、上传和部署，几秒钟后你就能在这里看到你的网站。")}
+                      {t("打开 Agent 对话页面，输入")}「{t("帮我建个网站")}」{t("，AI 会自动完成创建、上传和部署，几秒钟后你就能在这里看到你的作品。")}
                     </p>
                   </div>
                 </div>

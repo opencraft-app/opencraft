@@ -105,5 +105,5 @@ export const getAgentSectionHref = (pathname: string, params: URLSearchParams): 
   return `${pathname}${search ? `?${search}` : ""}`;
 };
 
-/** 我的网站页路由（避免魔法字符串，统一引用） */
+/** 我的作品页路由（避免魔法字符串，统一引用） */
 export const WEBSITES_PATH = "/websites";

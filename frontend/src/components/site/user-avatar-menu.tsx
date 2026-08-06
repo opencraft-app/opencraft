@@ -181,7 +181,7 @@ export const UserAvatarMenu = () => {
                 className={menuItemClass}
               >
                 <Globe className={menuIconClass} />
-                {t("我的网站")}
+                {t("我的作品")}
               </Link>
               {workbenchRevealed ? (
                 <Link
