@@ -25,12 +25,17 @@ d3ee23a09  站点生命周期改为保留文件，新增死信操作恢复
 
 **北京测试环境线上镜像**
 
-| 服务 | namespace | tag |
-|---|---|---|
-| `site-gateway` | `ctl` | `cos-gateway-20260806-static-only` |
-| `ctl-api-cloudbase` | `ctl` | `cos-site-lifecycle-20260806-2012` |
-| `website-deployer` | `temporal-workers` | `cos-site-lifecycle-20260806-2012` |
-| 前端 | Cloudflare Pages | 部署 ID 见 CF 控制台，含「我的作品」改名 |
+| 服务 | namespace | tag | 说明 |
+|---|---|---|---|
+| `site-gateway` | `ctl` | `cos-site-usage-20260806-2110` | 含计量与超额拦截，**功能未端到端验证** |
+| `ctl-api-cloudbase` | `ctl` | `cos-site-usage-20260806-2110` | 同上 |
+| `website-deployer` | `temporal-workers` | `cos-site-usage-20260806-2110` | 同上 |
+| `ctl-service` | `ctl` | **master 镜像，未更新** | 由 ArgoCD 自愈托管；`creating` 隔离修复未上线 |
+| 前端 | Cloudflare Pages | 含「我的作品」改名 | 用量展示未做 |
+
+回滚 tag：`site-gateway` / `ctl` / `workers` 各自的 `cos-site-lifecycle-20260806-2012`（`site-gateway` 是 `cos-gateway-20260806-static-only`）。
+
+**北京测试库已手工改过两处**（上海生产未碰）：`website_sites.storage_bytes` 列已加、7 个 bundle 的 `monthly_traffic_bytes` 已抬到 1 TiB。这两项都是期望的最终状态，不需要回滚；`schema_migrations` 未动，仍是 27。
 
 **云资源**
 
@@ -97,19 +102,45 @@ _artifacts/{siteID}/{releaseID}.zip      上传的制品
 11. `frontend/src/pages/app/website-page.tsx` 是死代码（`/websites` 重定向到 `/agents/websites`），要么删要么明确定位。
 12. Skill 目录名 `cloudbase-site-builder` 已不准确，但**机器侧改名有风险**（要在 6 台上各建新目录再删旧目录，任一台删除失败就会两份 SKILL.md 并存、给 agent 灌矛盾指令）。免费的改名时机是接入正式分发通道那一刻，清单见方案第 13.1 节。
 
-## 六、进行中（未提交）
+## 六、第三轮：已提交但未验证（接手第一优先级）
 
-**第三轮：流量与存储计量 + 超额拦截 + 制品保留 + `creating` 缺口修复**
+提交 `2c8206c94`「站点流量与存储计量、超额拦截、制品只留最新」。门禁全绿（三模块 gofmt / vet / test，site-gateway 含 `-race`），镜像已推并滚到测试环境，**但功能正确性完全没有线上证据，只有单测**。
 
-代码在工作区，横跨 `site-gateway/`、`ctl/`、`workers/`，含三个迁移（`000040` 改空操作、`000048` 加 `storage_bytes`、`000049` 抬流量额度）和 8 个测试文件。**未部署、未端到端验收。**
+### 设计要点
 
-已定的设计：反代内存聚合、每 1 分钟批量上报给 ctl、不引入 Redis（多副本各自上报、ctl 累加）；字节数以实际写给客户端的响应体为准（HEAD/304 无 body）；拦在反代层返 403 且不回源；一期额度抬到实际不可达的值（有闸但不误伤）；制品**只留最新一份**（可配置，默认 1）——留 zip 原本唯一目的是「续费恢复」，该用途随生命周期改造消失。
+**流量**：反代在**站点解析成功之后**才计量（内存有界的关键——随机子域名扫描解析不出站点，不会创建条目），用 `countingWriter` 累计实际写出字节，所以 HEAD 与 304 自然计 0 字节 1 次请求，不依赖 `Content-Length`。每 1 分钟 `POST /internal/ctl/websites/usage`，一个请求带该窗口全部有流量的站点；上报确定失败时整批并回内存，下窗口重试。ctl 按 `(site_id, usage_date)` upsert 累加。**已软删站点仍然入账**，否则可以靠反复建删把当月用量清零。时区 UTC+8，与 bundle 每日配额刷新口径一致。
 
-精度必须承认：上报间隔 1 分钟 + 缓存 TTL 30 秒，超额到拦住约 90 秒延迟，多副本各自计数。**它是滥用防护的闸，不是计费凭据。**
+**刻意不做幂等**：累加语义下重放会多算，没做窗口去重——多副本各自上报，服务端要去重就得再建一张「哪个副本哪个窗口已入账」的表，给一个近似值配一套精确记账不值得。`window_id` 只进日志。
 
-接手第一步：跑三个模块门禁 → 推镜像（用 crane，见第七节）→ 部署验证 → 提交。
+**存储**：deployer 在发布成功和删除后重列 `sites/{siteID}/` 与 `_artifacts/{siteID}/` 求和，上报**绝对值**，覆盖写天然幂等。`used_storage_bytes` 只算未软删站点（与流量相反——存储是「当前占用」）。
 
-**未做的前端部分**：`used_traffic_bytes` / `used_storage_bytes` 两个数字的展示，以及上面第 10 条那两个小修。建议和后端一起验完再发一次版。
+**拦截**：在反代 `resolveSite`，与 `suspended`/`blocked` 同一处，403 且**不进 origin fetch**，超额后不再产生 COS 回源成本。生效延迟约 90 秒（上报 1 分钟 + 缓存 30 秒）。一期额度 1 TiB。
+
+**制品只留最新一份**：本次发布的制品无条件排除在删除候选外（`LastModified` 在时钟回拨下不可靠），其余按 `LastModified` 倒序保留 `keep-1` 个。`WEBSITE_ARTIFACT_KEEP_VERSIONS` 默认 1。存量历史制品在该站点**下一次发布时一并收敛**（函数每次对整个前缀重判、不区分新旧），所以不需要一次性清理脚本；代价是从未再发布的老站点会一直留着旧 zip。**已确认无任何代码依赖历史制品回滚**：`ReleaseStatusRolledBack` 只被定义、全仓库无赋值，制品唯一被读取处是下载「当前正在部署的那个 release」。
+
+**`creating` 缺口**：新增 `SiteDao.ListServingByUserID`（= `creating` + `active`），`OnPassIsolated` / `OnPassDestroyed` 改用它；在途 create 靠 generation 围栏变 superseded。**这段逻辑跑在 `ctl-service` 里，而它由 ArgoCD 自愈托管、未更新，所以修复尚未上线。**
+
+### 新字段
+
+`used_traffic_bytes`、`used_storage_bytes`，snake_case，出现在 `GET /v1/websites/capability`，与已有的额度字段 `monthly_traffic_bytes` / `storage_bytes` 并列。前者也出现在内部接口 `GET /internal/ctl/websites/sites/{siteId}`，供反代做超额判定。
+
+### 三个迁移
+
+`000040` 从 `DROP TABLE website_usage_daily` 改为 `SELECT 1;`（up/down 都是）。**保留文件不删**——版本号出现 39→41 空档会让 golang-migrate 在未执行过这批迁移的库上直接 `file does not exist` 整串中断。`000048` 给 `website_sites` 加 `storage_bytes`。`000049` 用 `JSON_SET` 只改 `static_site_quota.monthly_traffic_bytes` 这一个键抬到 1 TiB（不整体重写 JSON，因为 000036/000042 已按 bundle_type 定过站点数与存储额度）。
+
+上海生产可从 27 一路前滚无冲突。**北京测试库不能用 migrate 前滚**：bookkeeping 也停在 27，但 `website_usage_daily` 已因历史手工 DDL 存在（8 行数据），032 的 `CREATE TABLE` 会撞已存在的表。实测该表结构与 032 完全一致、含新 DAO 依赖的唯一键 `uk_site_date`。
+
+### 接手第一件事：把这些验掉
+
+以下**全部未验证**：
+
+1. 真实访问后 `used_traffic_bytes` 与实际传输字节是否吻合、误差多大
+2. `used_storage_bytes` 与 COS 实际对象大小之和是否吻合
+3. 把某套餐额度临时调小后 403 是否真生效、是否真的不回源
+4. 连发多次后 `_artifacts/` 是否真的只剩 1 份
+5. deployer → ctl 的 storage 上报在真实环境是否走通（token/URL 复用现有 `newInternalRequest`，未新增配置，但没实跑）
+
+验完再做前端：`used_traffic_bytes` / `used_storage_bytes` 两个数字的展示，连带第五节第 10 条那两个小修，一次性发版。
 
 ## 七、踩过的坑（省时间用）
 
@@ -139,5 +170,9 @@ DOCKER_CONFIG=/tmp/crane-docker-config crane append --base <当前线上tag> --n
 **COS 的 PUT Object 不支持 `If-Match`**（官方文档只有 `x-cos-forbid-overwrite`；SDK 里的 `If-Match` 全是 `x-cos-copy-source-If-Match`，那是 Copy 的源条件）。网上说支持的是把 HEAD Object 的读侧条件请求张冠李戴了。
 
 **测试账号：`~/.codex/skills/lightclaw-credentials/SKILL.md` 第九节里 User 5 的 token 是错的**（系统里查无此记录，当初抄错），正确的在 `docs/handover/2026-08-06-cos-site-gateway-test-guide.md`。test1/test2 因 LLM key 问题不能对话。
+
+**几个只有踩过才知道的小陷阱**：`usage_date` 读写两侧都必须用日期字符串（`website.UsageDateLayout`），用 `time.Time` 会让 SQLite 存成带时分秒的值、同一天落到不同行、唯一键失效；`ctl/pkg/pass/worker/website_hook_test.go` 和 `pkg/logic/website/operation_lease_test.go` **各自维护一份 `website_sites` 建表 DDL**，改 entity 加列时两处都要改；`ctl/main/api` 下的测试文件是 `package main` 不是 `package api`；`kubectl set image deploy/ctl-api-cloudbase` 要用 `*=`，容器名和 deployment 名不一致；本机 crane 推 TCR 会踩 `credsStore: desktop`，需 `export DOCKER_CONFIG=/tmp/cranecfg` 用独立配置目录；DB 只在集群网络内可达，从 DevCloud 直连 `10.15.224.4:3306` 会超时，要在集群里起一次性 `mysql:8` pod（DevCloud 上留了 `/root/ctlsql.sh`，stdin 喂 SQL）。
+
+**`ctl` 全量 `go test ./...` 在本机必然有失败**（缺 `server_conf.toml` 与 rootless Docker），与改动无关。判断是否引入回归要用 stash 在干净树上跑一遍对比，别凭直觉。
 
 **编排教训**：不要把七件事塞进一个 subagent 任务——外部看不到中间进度，而且中途修正需要打断，打断会让当前回合作废。今天两次打断分别浪费了 40 分钟的镜像推送和一轮代码编写。非紧急修正应攒到回合自然结束时再给。
