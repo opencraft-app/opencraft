@@ -3103,43 +3103,30 @@ function CompactHeader({
         </Text>
       </View>
       {navigationOpen || searchOpen ? null : (
-        <Pressable
+        <IconActionButton
           accessibilityLabel={
             activeDirectConversation ? "搜索当前私信" : "搜索当前 Channel"
           }
-          accessibilityRole="button"
-          accessibilityState={{ disabled: !canSearch, expanded: false }}
           disabled={!canSearch}
+          icon={Search}
+          iconTestID="compact-header-search-icon"
           onPress={onSearch}
-          style={styles.compactManageButton}
-        >
-          <View testID="compact-header-search-icon">
-            <Search
-              color={velaTheme.semantic.color.iconSecondary}
-              size={velaTheme.semantic.icon.size.medium}
-              strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-            />
-          </View>
-        </Pressable>
+        />
       )}
       {!activeDirectConversation &&
       channel &&
       !navigationOpen &&
       !searchOpen ? (
-        <Pressable
+        <ActionButton
           accessibilityLabel={`查看 Channel ${channel.name} 的 ${channelMemberCount} 位成员`}
-          accessibilityRole="button"
+          align="center"
+          context="header"
           disabled={!channel}
+          icon={UsersRound}
+          importance="secondary"
+          label={String(channelMemberCount)}
           onPress={onOpenChannelMembers}
-          style={styles.compactMembersButton}
-        >
-          <UsersRound
-            color={velaTheme.semantic.color.iconSecondary}
-            size={velaTheme.semantic.icon.size.medium}
-            strokeWidth={velaTheme.semantic.icon.stroke.regular}
-          />
-          <Text style={styles.compactMembersCount}>{channelMemberCount}</Text>
-        </Pressable>
+        />
       ) : null}
     </View>
   );
@@ -3415,7 +3402,7 @@ function ChannelManagementPanel({
                         styles.channelVisibilityButtonActive,
                     ]}
                   >
-                    <Text style={styles.channelManagementButtonText}>
+                    <Text style={styles.channelVisibilityButtonText}>
                       {value === "private" ? "私密" : "公开"}
                     </Text>
                   </Pressable>
@@ -3731,56 +3718,40 @@ function CompactConversationPicker({
       ) : null}
       {!noMatches && !normalizedFilter && canManageChannels ? (
         <View style={styles.compactChannelActions}>
-          <Pressable
-            accessibilityLabel="新建 Channel"
-            accessibilityRole="button"
-            onPress={onCreateChannel}
-            style={styles.channelManagementButton}
-          >
-            <View style={styles.compactActionContent}>
-              <View testID="compact-channel-create-icon">
-                <Plus
-                  color={velaTheme.semantic.color.iconAccent}
-                  size={velaTheme.semantic.icon.size.small}
-                  strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-                />
-              </View>
-              <Text style={styles.channelManagementButtonText}>新建</Text>
-            </View>
-          </Pressable>
+          <View style={styles.compactChannelActionSlot}>
+            <ActionButton
+              accessibilityLabel="新建 Channel"
+              align="stretch"
+              icon={Plus}
+              iconTestID="compact-channel-create-icon"
+              importance="secondary"
+              label="新建"
+              onPress={onCreateChannel}
+            />
+          </View>
           {currentChannel?.systemKey !== "all" && currentChannel ? (
-            <Pressable
-              accessibilityLabel={`编辑 Channel ${currentChannel.name}`}
-              accessibilityRole="button"
-              onPress={onEditChannel}
-              style={styles.channelManagementButton}
-            >
-              <View style={styles.compactActionContent}>
-                <Pencil
-                  color={velaTheme.semantic.color.iconSecondary}
-                  size={velaTheme.semantic.icon.size.small}
-                  strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-                />
-                <Text style={styles.channelManagementButtonText}>编辑</Text>
-              </View>
-            </Pressable>
+            <View style={styles.compactChannelActionSlot}>
+              <ActionButton
+                accessibilityLabel={`编辑 Channel ${currentChannel.name}`}
+                align="stretch"
+                icon={Pencil}
+                importance="secondary"
+                label="编辑"
+                onPress={onEditChannel}
+              />
+            </View>
           ) : null}
           {currentChannel && currentChannel.systemKey !== "all" ? (
-            <Pressable
-              accessibilityLabel={`管理 Channel ${currentChannel.name} 的成员`}
-              accessibilityRole="button"
-              onPress={onManageMembers}
-              style={styles.channelManagementButton}
-            >
-              <View style={styles.compactActionContent}>
-                <UsersRound
-                  color={velaTheme.semantic.color.iconSecondary}
-                  size={velaTheme.semantic.icon.size.small}
-                  strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-                />
-                <Text style={styles.channelManagementButtonText}>成员</Text>
-              </View>
-            </Pressable>
+            <View style={styles.compactChannelActionSlot}>
+              <ActionButton
+                accessibilityLabel={`管理 Channel ${currentChannel.name} 的成员`}
+                align="stretch"
+                icon={UsersRound}
+                importance="secondary"
+                label="成员"
+                onPress={onManageMembers}
+              />
+            </View>
           ) : null}
         </View>
       ) : null}
@@ -3877,21 +3848,13 @@ function CompactConversationPicker({
         </View>
       ) : null}
       {!noMatches && !normalizedFilter ? (
-        <Pressable
-          accessibilityLabel="新建私信"
-          accessibilityRole="button"
+        <ActionButton
+          align="stretch"
+          icon={Plus}
+          importance="secondary"
+          label="新建私信"
           onPress={onNewDirect}
-          style={styles.compactDirectNew}
-        >
-          <View style={styles.compactActionContent}>
-            <Plus
-              color={velaTheme.semantic.color.iconAccent}
-              size={velaTheme.semantic.icon.size.small}
-              strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-            />
-            <Text style={styles.channelManagementButtonText}>新建私信</Text>
-          </View>
-        </Pressable>
+        />
       ) : null}
       {!noMatches &&
       (!normalizedFilter || visibleDirectConversations.length > 0) ? (
@@ -3986,21 +3949,13 @@ function CompactConversationPicker({
         </>
       ) : null}
       {onLogout ? (
-        <Pressable
-          accessibilityLabel="退出当前账号"
-          accessibilityRole="button"
+        <ActionButton
+          align="stretch"
+          icon={LogOut}
+          importance="secondary"
+          label="退出当前账号"
           onPress={onLogout}
-          style={styles.compactLogout}
-        >
-          <View style={styles.compactActionContent}>
-            <LogOut
-              color={velaTheme.semantic.color.iconMuted}
-              size={velaTheme.semantic.icon.size.small}
-              strokeWidth={velaTheme.semantic.icon.stroke.regular}
-            />
-            <Text style={styles.channelManagementButtonText}>退出当前账号</Text>
-          </View>
-        </Pressable>
+        />
       ) : null}
     </ScrollView>
   );
@@ -4122,19 +4077,13 @@ function DirectPickerEmptyState({
       <Text style={styles.directPickerEmptyDescription}>
         已有私信可从会话列表继续。也可以前往成员页查看或邀请新成员。
       </Text>
-      <Pressable
+      <ActionButton
         accessibilityLabel="前往成员页"
-        accessibilityRole="button"
+        align="center"
+        importance="primary"
+        label="查看成员"
         onPress={onNavigateMembers}
-        style={styles.directPickerEmptyAction}
-      >
-        <Text style={styles.directPickerEmptyActionText}>查看成员</Text>
-        <ArrowRight
-          color={velaTheme.semantic.color.iconInverse}
-          size={velaTheme.semantic.icon.size.small}
-          strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-        />
-      </Pressable>
+      />
     </View>
   );
 }
@@ -4387,32 +4336,12 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.caption,
   },
-  compactDirectNew: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionQuietSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    justifyContent: "center",
-    minHeight: theme.semantic.interaction.minimumTargetSize,
-    paddingHorizontal: theme.spacing.sm,
-  },
   compactAccountSummary: {
     backgroundColor: theme.semantic.color.sectionSurface,
     borderColor: theme.semantic.color.borderSection,
     borderRadius: theme.semantic.radius.section,
     borderWidth: theme.semantic.stroke.hairline,
     padding: theme.spacing.md,
-  },
-  compactLogout: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionQuietSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    justifyContent: "center",
-    minHeight: theme.semantic.interaction.minimumTargetSize,
-    paddingHorizontal: theme.spacing.md,
   },
   compactSectionRow: {
     alignItems: "center",
@@ -4530,21 +4459,6 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.xl,
   },
-  directPickerEmptyAction: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionPrimarySurface,
-    borderRadius: theme.semantic.radius.control,
-    flexDirection: "row",
-    gap: theme.spacing.xs,
-    justifyContent: "center",
-    marginTop: theme.spacing.xs,
-    minHeight: theme.semantic.interaction.minimumTargetSize,
-    paddingHorizontal: theme.spacing.lg,
-  },
-  directPickerEmptyActionText: {
-    color: velaTheme.semantic.color.actionPrimaryText,
-    ...theme.semantic.typography.bodyCompactEmphasis,
-  },
   directPickerEmptyDescription: {
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.bodySmall,
@@ -4604,21 +4518,6 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     justifyContent: "center",
     padding: theme.spacing.xl,
-  },
-  channelManagementButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionQuietSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    flex: 1,
-    minHeight: theme.semantic.interaction.minimumTargetSize,
-    justifyContent: "center",
-    minWidth: theme.recipes.conversationWorkspace.channelManagementActionMinWidth,
-    paddingHorizontal: theme.spacing.xs,
-  },
-  channelManagementButtonText: {
-    ...theme.semantic.typography.captionEmphasis,
   },
   channelManagementPanel: {
     backgroundColor: theme.semantic.color.overlaySurface,
@@ -4939,6 +4838,9 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: theme.recipes.managementWorkspace.textareaMinHeight,
     textAlignVertical: "top",
   },
+  channelVisibilityButtonText: {
+    ...theme.semantic.typography.captionEmphasis,
+  },
   channelVisibilityButton: {
     alignItems: "center",
     backgroundColor: theme.semantic.color.actionQuietSurface,
@@ -4983,15 +4885,11 @@ const styles = StyleSheet.create((theme) => ({
     borderColor: velaTheme.semantic.color.borderSelected,
     ...theme.semantic.motion.transition.control,
   },
+  compactChannelActionSlot: {flex: 1},
   compactChannelActions: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: theme.spacing.sm,
-  },
-  compactActionContent: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing.xs,
   },
   compactChannelList: {
     gap: theme.spacing.sm,
@@ -5047,6 +4945,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   compactHeader: {
     alignItems: "center",
+    gap: theme.spacing.sm,
     backgroundColor: theme.semantic.color.paneSurface,
     borderBottomColor: theme.semantic.color.separator,
     borderBottomWidth: theme.semantic.stroke.hairline,
@@ -5060,33 +4959,6 @@ const styles = StyleSheet.create((theme) => ({
   },
   compactHeaderNavigationButton: {
     marginRight: theme.spacing.sm,
-  },
-  compactManageButton: {
-    alignItems: "center",
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    height: theme.semantic.interaction.minimumTargetSize,
-    justifyContent: "center",
-    marginLeft: theme.spacing.sm,
-    width: theme.semantic.interaction.minimumTargetSize,
-  },
-  compactMembersButton: {
-    alignItems: "center",
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    flexDirection: "row",
-    gap: theme.spacing.xs,
-    height: theme.semantic.interaction.minimumTargetSize,
-    justifyContent: "center",
-    marginLeft: theme.spacing.sm,
-    minWidth: theme.semantic.interaction.minimumTargetSize,
-    paddingHorizontal: theme.spacing.md,
-  },
-  compactMembersCount: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodySmallEmphasis,
   },
   compactPicker: {
     backgroundColor: theme.semantic.color.surfaceSubtle,

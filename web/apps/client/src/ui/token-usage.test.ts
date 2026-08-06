@@ -150,7 +150,15 @@ describe("Vela token usage", () => {
       return block ? /paddingHorizontal|minHeight|height:/u.test(block[1]!) : false;
     });
 
-    expect(boxed.length).toBeLessThanOrEqual(7);
+    // One is left: `sidebarHeader`, the Server switcher. It is pressable, but
+    // it is a composite row — mark, name, member count — not a button wearing
+    // a label, so folding it into the shared button would misdescribe it.
+    //
+    // Scope worth knowing: the pattern above stops at the first `>`, so a
+    // Pressable that declares an arrow handler before its `style` prop is
+    // invisible here. That leaves list rows, rail items and segmented
+    // controls out, which suits this assertion — none of them are buttons.
+    expect(boxed).toEqual(["sidebarHeader"]);
   });
 
   it("carries the transition on both halves of every interaction pair", () => {
@@ -277,10 +285,7 @@ describe("Vela token usage", () => {
       ["components/terminal-panel.tsx", "input", ["fieldSurface"]],
       ["components/message-list.tsx", "loadOlderButton", ["actionQuietSurface"]],
       ["components/message-composer.tsx", "sendButtonDisabled", ["actionDisabledSurface"]],
-      ["layouts/workspace-shell.tsx", "compactDirectNew", ["actionQuietSurface"]],
-      ["layouts/workspace-shell.tsx", "compactLogout", ["actionQuietSurface"]],
       ["layouts/workspace-shell.tsx", "channelInput", ["fieldSurface"]],
-      ["layouts/workspace-shell.tsx", "channelManagementButton", ["actionQuietSurface"]],
       ["layouts/workspace-shell.tsx", "channelVisibilityButton", ["actionQuietSurface"]],
       ["layouts/workspace-shell.tsx", "compactChannelButton", ["actionQuietSurface"]],
       ["layouts/workspace-shell.tsx", "compactServerButton", ["actionQuietSurface"]],
