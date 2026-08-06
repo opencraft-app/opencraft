@@ -87,7 +87,7 @@ def catalog_dir_rel(env: str) -> str:
 
 
 def is_playground_env(env: str) -> bool:
-    return re.fullmatch(r"sandbox-(bj|kr)-\d+", env) is not None
+    return re.fullmatch(r"sandbox-(bj|kr|jp)-\d+", env) is not None
 
 
 def load_catalogs(repo_root: Path, env: str) -> tuple[list[CatalogEntry], list[str]]:
