@@ -649,6 +649,41 @@ routes:
     # 即可整表覆盖；对应的 <route_id> route 也可以用 _BASE_URL 覆盖指向该开发者环境。
     uin_routes: []
 
+  # 开发者个人测试环境的回调落点池。
+  #
+  # 这里只占位，base_url 是黑洞（127.0.0.1:9），必须由工作负载上的
+  #   CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_DEV_<N>_BASE_URL
+  # 覆盖成该开发者环境的可达地址，再配合上面 jifei-callback 的 uin_routes 生效。
+  #
+  # 预留成池子是为了「新增开发者只改 gitops 的环境变量、不用重建镜像」——
+  # 加人时挑一个空位改两个 env（uin 映射 + base_url）即可。
+  - id: jifei-callback-dev-1
+    description: "开发者个人测试环境回调落点 1（base_url 必须由 env 覆盖）"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "http://127.0.0.1:9"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-dev-2
+    description: "开发者个人测试环境回调落点 2（base_url 必须由 env 覆盖）"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "http://127.0.0.1:9"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-dev-3
+    description: "开发者个人测试环境回调落点 3（base_url 必须由 env 覆盖）"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "http://127.0.0.1:9"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
   # ===========================================================================
   # jifei → clgateway → trade 入向回调地域路由（方案一：routeId 区分地域）
   #
