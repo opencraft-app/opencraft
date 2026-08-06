@@ -116,7 +116,6 @@ export function ManagementCollectionFooterAction({
     <Pressable
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityRole="button"
-      accessibilityState={{disabled}}
       disabled={disabled ? true : undefined}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
@@ -705,7 +704,8 @@ export function CollectionRow({
     <Pressable
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
-      accessibilityState={disabled ? {disabled: true, selected} : {selected}}
+      accessibilityState={{ selected }}
+      aria-pressed={selected}
       disabled={disabled ? true : undefined}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
@@ -807,7 +807,7 @@ export function ManagementResourceSwitcher({
       <Pressable
         accessibilityLabel={currentAccessibilityLabel}
         accessibilityRole="button"
-        accessibilityState={{expanded}}
+        aria-expanded={expanded}
         onHoverIn={() => setHovered(true)}
         onHoverOut={() => setHovered(false)}
         onPress={onToggle}
@@ -891,7 +891,7 @@ export function ManagementTab({
     <Pressable
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityRole="tab"
-      accessibilityState={{disabled, selected}}
+      aria-selected={selected}
       disabled={disabled}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
@@ -948,7 +948,8 @@ export function SelectionButton({
     <Pressable
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityRole="button"
-      accessibilityState={disabled ? {disabled: true, selected} : {selected}}
+      accessibilityState={{ selected }}
+      aria-pressed={selected}
       disabled={disabled ? true : undefined}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}

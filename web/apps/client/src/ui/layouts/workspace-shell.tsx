@@ -1540,6 +1540,7 @@ function ServerRail({
                   accessibilityLabel={`打开 Server ${server.name}`}
                   accessibilityRole={href ? "link" : "button"}
                   accessibilityState={{ selected }}
+                  aria-current={selected ? "page" : undefined}
                   onPress={href ? undefined : () => onSelectServer(server.id)}
                   style={({ pressed }) => [
                     styles.serverMark,
@@ -1583,7 +1584,7 @@ function ServerRail({
             <Pressable
               accessibilityLabel={`打开当前账号 ${account.displayName}`}
               accessibilityRole="button"
-              accessibilityState={{ expanded: accountOpen }}
+              aria-expanded={accountOpen}
               onPress={() => setAccountOpen((current) => !current)}
               style={({ pressed }) => [
                 styles.accountRailButton,
@@ -1671,6 +1672,7 @@ function RailSectionNavigationItem({
           accessibilityLabel={item.accessibilityLabel}
           accessibilityRole={href ? "link" : "button"}
           accessibilityState={{ selected }}
+          aria-current={selected ? "page" : undefined}
           onBlur={() => setFocused(false)}
           onFocus={() => setFocused(true)}
           onHoverIn={() => setHovered(true)}
@@ -2098,6 +2100,7 @@ function DirectConversationList({
               accessibilityLabel={`打开私信 ${conversation.peerDisplayName}${identityLabel ? ` ${identityLabel}` : ""}`}
               accessibilityRole={href ? "link" : "button"}
               accessibilityState={{ selected }}
+              aria-current={selected ? "page" : undefined}
               onPress={
                 href ? undefined : () => onSelect(conversation.peerUserId)
               }
@@ -2267,6 +2270,7 @@ function ChannelList({
               accessibilityLabel={`打开 Channel ${channel.name}`}
               accessibilityRole={href ? "link" : "button"}
               accessibilityState={{ selected }}
+              aria-current={selected ? "page" : undefined}
               onPress={href ? undefined : () => onSelectChannel(channel.id)}
               style={
                 selected ? styles.channelButtonSelected : styles.channelButton
@@ -2905,10 +2909,7 @@ function MessageSearchPanel({
               <Pressable
                 accessibilityLabel={`定位到消息 ${message.text}`}
                 accessibilityRole="button"
-                accessibilityState={{
-                  busy: locating,
-                  disabled: locatingResultId !== null,
-                }}
+                aria-busy={locating}
                 disabled={locatingResultId !== null}
                 key={message.id}
                 onPress={() => onLocate(message.id)}
@@ -3061,7 +3062,7 @@ function CompactHeader({
             navigationOpen ? "关闭会话选择" : "打开 Server 与 Channel"
           }
           accessibilityRole="button"
-          accessibilityState={{ expanded: navigationOpen }}
+          aria-expanded={navigationOpen}
           onPress={onOpenNavigation}
           style={({ pressed }) => [
             styles.compactPickerButton,
@@ -3394,6 +3395,7 @@ function ChannelManagementPanel({
                     }
                     accessibilityRole="button"
                     accessibilityState={{ selected: visibility === value }}
+                    aria-pressed={visibility === value}
                     key={value}
                     onPress={() => setVisibility(value)}
                     style={[
@@ -3660,6 +3662,7 @@ function CompactConversationPicker({
                 accessibilityLabel={`打开 Server ${server.name}`}
                 accessibilityRole={href ? "link" : "button"}
                 accessibilityState={{ selected }}
+                aria-current={selected ? "page" : undefined}
                 onPress={href ? undefined : () => onSelectServer(server.id)}
                 style={[
                   styles.compactServerButton,
@@ -3773,6 +3776,7 @@ function CompactConversationPicker({
                   accessibilityLabel={`打开 Channel ${channel.name}`}
                   accessibilityRole={href ? "link" : "button"}
                   accessibilityState={{ selected }}
+                  aria-current={selected ? "page" : undefined}
                   onPress={href ? undefined : () => onSelectChannel(channel.id)}
                   style={[
                     styles.compactChannelButton,
@@ -3879,6 +3883,7 @@ function CompactConversationPicker({
                   accessibilityLabel={`打开私信 ${conversation.peerDisplayName}${identityLabel ? ` ${identityLabel}` : ""}`}
                   accessibilityRole={href ? "link" : "button"}
                   accessibilityState={{ selected }}
+                  aria-current={selected ? "page" : undefined}
                   onPress={
                     href
                       ? undefined
@@ -4124,6 +4129,7 @@ function MobileBottomNavigation({
                 }
                 accessibilityRole={href ? "link" : "button"}
                 accessibilityState={{ selected }}
+                aria-current={selected ? "page" : undefined}
                 onPress={
                   href
                     ? undefined

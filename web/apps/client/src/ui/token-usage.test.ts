@@ -1,7 +1,32 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 describe("Vela token usage", () => {
+  it("says a control's state in the dialect the browser reads", () => {
+    // react-native-web 0.21 dropped accessibilityState: on the Web it reaches
+    // no attribute at all. Jest renders the native tree, so a suite full of
+    // accessibilityState assertions stayed green while, in the browser, every
+    // selected chip and expanded menu went unannounced — the state was carried
+    // by background colour alone. Native still reads accessibilityState, so a
+    // control that has one owes the browser an aria- attribute beside it.
+    const uiRoot = join(process.cwd(), "src", "ui");
+    const sources = readdirSync(uiRoot, {recursive: true, encoding: "utf8"})
+      .filter((name) => /\.tsx$/u.test(name) && !/\.test\./u.test(name))
+      .map((name) => [name, readFileSync(join(uiRoot, name), "utf8")] as const);
+
+    const unspoken: string[] = [];
+    for (const [name, source] of sources) {
+      const lines = source.split("\n");
+      lines.forEach((line, index) => {
+        if (!line.includes("accessibilityState=")) return;
+        if ((lines[index + 1] ?? "").includes("aria-")) return;
+        unspoken.push(`${name}:${index + 1}`);
+      });
+    }
+
+    expect(unspoken).toEqual([]);
+  });
+
   it("installs one branded keyboard focus ring for the Web surface", () => {
     const installerPath = join(process.cwd(), "src", "ui", "focus-ring.web.ts");
     const installerSource = existsSync(installerPath)

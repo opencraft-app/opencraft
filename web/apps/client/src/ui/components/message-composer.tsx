@@ -440,7 +440,7 @@ export function MessageComposer({
               <Pressable
                 accessibilityLabel="提及成员"
                 accessibilityRole="button"
-                accessibilityState={{expanded: suggestionsOpen}}
+                aria-expanded={suggestionsOpen}
                 disabled={disabled}
                 onPress={() => {
                   setManualMentionPicker((current) => !current);

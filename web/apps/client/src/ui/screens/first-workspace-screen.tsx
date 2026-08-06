@@ -346,6 +346,7 @@ function VisibilityButton({
       accessibilityLabel={`${label} Channel`}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
+      aria-pressed={active}
       onPress={onPress}
       style={[styles.visibilityButton, active && styles.visibilityButtonActive]}
     >

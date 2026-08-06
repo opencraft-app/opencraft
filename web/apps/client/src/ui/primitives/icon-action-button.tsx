@@ -41,7 +41,6 @@ export function IconActionButton({
     <Pressable
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
-      accessibilityState={{disabled}}
       disabled={disabled}
       hitSlop={theme.semantic.interaction.hitTargetInsetCompact}
       onHoverIn={() => setHovered(true)}

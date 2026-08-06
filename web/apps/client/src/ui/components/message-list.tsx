@@ -287,7 +287,7 @@ function MessageRow({
       accessibilityHint={compactLayout ? "也可以长按消息打开操作" : undefined}
       accessibilityLabel={`更多消息操作 ${message.text}`}
       accessibilityRole="button"
-      accessibilityState={{expanded: actionsOpen}}
+      aria-expanded={actionsOpen}
       onBlur={() => setActionFocused(false)}
       onFocus={() => setActionFocused(true)}
       onPress={() => onActionsOpenChange(!actionsOpen)}
@@ -311,7 +311,6 @@ function MessageRow({
   return (
     <Pressable
       accessible={false}
-      accessibilityState={{selected: focused}}
       delayLongPress={velaTheme.semantic.interaction.longPressDelay}
       onLongPress={
         !pointerActions && actionable
@@ -433,7 +432,8 @@ function MessageRow({
                   <Pressable
                     accessibilityLabel={`Reaction ${reaction.reactionId} ${reaction.count}`}
                     accessibilityRole="button"
-                    accessibilityState={{selected: reaction.reactedByMe}}
+                    accessibilityState={{ selected: reaction.reactedByMe }}
+                    aria-pressed={reaction.reactedByMe}
                     key={reaction.reactionId}
                     onPress={() =>
                       completeAction(() =>

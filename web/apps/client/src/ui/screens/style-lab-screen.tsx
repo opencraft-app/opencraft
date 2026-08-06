@@ -476,6 +476,7 @@ export function StyleLabScreen({
                 accessibilityLabel={option.accessibilityLabel}
                 accessibilityRole="button"
                 accessibilityState={{ selected: preview === option.id }}
+                aria-pressed={preview === option.id}
                 key={option.id}
                 onPress={() => setPreview(option.id)}
                 style={[
@@ -509,6 +510,7 @@ export function StyleLabScreen({
                   accessibilityLabel={preset.accessibilityLabel}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
+                  aria-pressed={selected}
                   key={preset.id}
                   onPress={() => setCanvasWidth(preset.width)}
                   style={[
@@ -541,6 +543,7 @@ export function StyleLabScreen({
               accessibilityLabel={option.accessibilityLabel}
               accessibilityRole="button"
               accessibilityState={{ selected: scenario === option.id }}
+              aria-pressed={scenario === option.id}
               key={option.id}
               onPress={() => selectScenario(option.id)}
               style={[

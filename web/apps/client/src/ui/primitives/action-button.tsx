@@ -64,7 +64,7 @@ export function ActionButton({
     <Pressable
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityRole="button"
-      accessibilityState={{busy, disabled}}
+      aria-busy={busy}
       disabled={disabled}
       hitSlop={context === "header" ? theme.semantic.interaction.hitTargetInsetCompact : undefined}
       onHoverIn={() => setHovered(true)}
