@@ -27,7 +27,7 @@ import {
   calculatePrependOffset,
   createTimelineState,
   reduceTimeline,
-} from "../../../features/chat/timeline/timeline-controller";
+} from "./timeline-controller";
 
 const INITIAL_RENDER_COUNT = 24;
 const MAX_RENDER_BATCH = 16;
