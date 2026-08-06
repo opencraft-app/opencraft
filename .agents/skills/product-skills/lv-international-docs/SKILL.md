@@ -25,6 +25,10 @@ description: 维护 LightVela 国际站文档（https://lightvela.ai/docs）的�
 - 只有旧图明显是 LightVela 站内 UI 且能在真实站点复现时才替换；第三方平台、手机 App、BotFather、Discord Developer Portal、WhatsApp、QQ/WeCom/Lark 管理后台等非 LightVela 站内截图不要替换。
 - 截图前必须等待 `loading...`、`Loading...`、`加载中...`、骨架屏或空白占位消失，并确认真实内容已经加载；不能把 loading 状态截图写入文档。
 - 需要点击 `Connect` / `+ 连接` 后出现二维码、Token、AppID/AppSecret、code 等敏感输入或展示时，必须截图对应弹窗并用灰色遮罩覆盖二维码中心或输入值区域后再覆盖旧图。
+- 国际站文档任务开始前，必须读取 `wiki/growth-state/lightvela-docs-content-categories.md` 并定位对应内容项。
+- 仅在国际站文档已完成、`global/` 与 `en/` 文件齐备且必要的 sidebar/route 校验通过后，将对应项标为 `【已有内容】`。
+- 草稿、聊天内文案、未完成工作和国内站文档不得改变内容项状态。
+- 若清单中没有对应项，先让用户确认应归属的现有一级分类；文档完成后再新增 `【已有内容】` 项。
 
 ## 先读代码事实
 
@@ -54,12 +58,17 @@ description: 维护 LightVela 国际站文档（https://lightvela.ai/docs）的�
    - 若 `en/<file>` 不存在，英文会 fallback 到 `global/<file>`；正式英文文档通常不应依赖 fallback。
    - 若国际站要与国内站不同，必须创建或补齐 `global/<file>` / `en/<file>`，不要修改根目录 `docs/<file>` 来间接影响国际站。
 
-4. 内容编辑顺序：
+4. 同步内容分类状态：
+   - 在写作前，从 `wiki/growth-state/lightvela-docs-content-categories.md` 找到对应内容项。
+   - 文档完成并通过本技能适用的验证后，将该项改为 `【已有内容】`。
+   - 未完成或仅返回聊天内容时，保留原状态。
+
+5. 内容编辑顺序：
    - 先改 `global/<file>` 中文国际站稿。
    - 再根据中文稿写 `en/<file>` 英文稿，不做逐字硬翻，要面向国际用户本地化表达。
    - 保持标题层级、步骤顺序、链接结构、注意事项语义一致。
 
-5. 图片检查：
+6. 图片检查：
    - 扫描目标 markdown 的 `![](...)` 和 `<img src="...">`。
    - 英文文档若引用中文 UI 图片，要检查 `frontend/src/content/docs/images/` 是否有 `-en` 版本。
    - 如果中文稿新增图片，英文稿通常需要英文截图，命名为同 basename + `-en`，例如 `telegram-step.webp` -> `telegram-step-en.webp`。
@@ -71,12 +80,12 @@ description: 维护 LightVela 国际站文档（https://lightvela.ai/docs）的�
    - 如果截图内容包含二维码、Token、AppID/AppSecret、验证码、随机填入的 code 或其他凭据形态内容，落盘前用灰色矩形遮住敏感中心区域。
    - 如果缺英文图，最终回复必须明确列出待补英文图片。
 
-6. 渠道列表检查：
+7. 渠道列表检查：
    - 扫描目标 markdown 中的渠道/社媒列表，尤其是 `Telegram / WhatsApp / ...`、`Telegram、WhatsApp、...`、`Telegram / WhatsApp / …`、`Telegram、WhatsApp、…` 这类写法。
    - 如果列表看起来在列举所有渠道但不完整，先从国际站代码或 `lightvela.ai` 真实页面确认完整渠道数和名称，再补齐。
    - 如果列表只是示例，也要按国际站排序保留必要示例，不能用国内站或旧文档顺序。
 
-7. 验证：
+8. 验证：
    - 小文档改动至少检查链接、图片路径、sidebar slug 是否存在。
    - 涉及 sidebar、route 或 metadata 时，建议运行前端类型检查或相关测试。
    - 若只改 markdown 且未运行测试，最终说明未运行。
@@ -108,6 +117,7 @@ frontend/src/content/docs/<file>.md          # 国内站文档
 - 是否创建或补齐了中英文独立文件。
 - 英文图片是否齐备；若缺，列出缺的图片名。
 - 是否触碰国内站文档；正常应为“未触碰”。
+- 是否同步了 `lightvela-docs-content-categories.md`，以及对应内容项的最终状态。
 - 是否运行了检查或测试；未运行时说明原因。
 
 ## Reference

@@ -10,8 +10,6 @@ const packageJson = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), '
   };
 };
 const nextConfigSource = readFileSync(resolve(repoRoot, 'next.config.mjs'), 'utf8');
-const clawPatchPath = 'patches/@tencent__agentchat-claw-components@0.3.1.patch';
-const clawPatchSource = readFileSync(resolve(repoRoot, clawPatchPath), 'utf8');
 
 describe('AgentChat CSS boundary', () => {
   it('keeps the bundler alias pointed at the installed no-reset Tea build', () => {
@@ -26,16 +24,7 @@ describe('AgentChat CSS boundary', () => {
     expect(existsSync(resolve(teaRoot, 'dist/tea-no-reset.css'))).toBe(true);
   });
 
-  it('patches AgentChat imports away from Tea global reset CSS', () => {
-    expect(packageJson.pnpm?.patchedDependencies?.['@tencent/agentchat-claw-components@0.3.1']).toBe(
-      clawPatchPath,
-    );
-
-    expect(clawPatchSource).toContain('diff --git a/dist/es/assistant/index.js');
-    expect(clawPatchSource).toContain('diff --git a/dist/es/clawbot/components/claw-messages-box.js');
-    expect(clawPatchSource).toContain("+import '@tencent/tea-component/dist/tea-no-reset.css';");
-    expect(clawPatchSource).not.toContain(
-      "+import '@tencent/tea-component/dist/tea-themeable.css';",
-    );
+  it('does not retain a patch configuration for the removed AgentChat 0.3.1 build', () => {
+    expect(packageJson.pnpm?.patchedDependencies?.['@tencent/agentchat-claw-components@0.3.1']).toBeUndefined();
   });
 });
