@@ -75,6 +75,7 @@ build_next_preview_variant() {
     export NEXT_PUBLIC_REGION="$region"
     export VITE_AUTH_API_BASE_URL="$api_base"
     export NEXT_PUBLIC_AUTH_API_BASE_URL="$api_base"
+    export NEXT_WRITE_EDGEONE_BUILD_OUTPUT=0
     "$PNPM_BIN" run build:next
   )
   cp -R out "$output_dir"
