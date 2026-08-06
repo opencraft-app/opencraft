@@ -114,7 +114,7 @@ describe("management workspace primitives", () => {
     );
 
     expect(screen.getByTestId("registration-notice")).toHaveStyle({
-      backgroundColor: "#EAF4FF",
+      backgroundColor: velaTheme.semantic.color.statusInfoSurface,
       borderBottomWidth: 1,
     });
     expect(screen.getByTestId("registration-code")).toHaveStyle({
@@ -455,7 +455,7 @@ describe("management workspace primitives", () => {
       lineHeight: velaTheme.semantic.typography.detailTitle.lineHeight,
     });
     expect(screen.getByTestId("record-identity-status")).toHaveStyle({
-      backgroundColor: "#EAF4FF",
+      backgroundColor: velaTheme.semantic.color.statusInfoSurface,
     });
   });
 

@@ -284,8 +284,8 @@ export const velaTheme = {
       actionPrimarySurface: palette.blue500,
       actionPrimaryText: palette.white,
       actionQuietSurface: palette.neutral100,
-      actionSecondaryBorder: palette.divider,
-      actionSecondaryHoverSurface: palette.neutral100,
+      actionSecondaryBorder: withAlpha(palette.neutral950, 0.14),
+      actionSecondaryHoverSurface: withAlpha(palette.neutral950, 0.05),
       actionSecondaryPressedSurface: palette.neutral200,
       actionSecondarySurface: palette.white,
       actionSecondaryText: palette.neutral950,
@@ -310,14 +310,18 @@ export const velaTheme = {
       avatarHumanVioletSurface: palette.indigo50,
       avatarHumanVioletText: palette.indigo500,
       borderAccent: palette.blue500,
-      borderControl: palette.divider,
+      // Line weight carries meaning: a control edge has to describe a shape you
+      // can click, a pane boundary divides architecture, and a row rule only
+      // separates peers. These were one shared value, which is why controls
+      // read as mushy while long lists read as busy.
+      borderControl: withAlpha(palette.neutral950, 0.14),
       borderDanger: withAlpha(palette.pink500, 0.18),
       borderDangerStrong: withAlpha(palette.pink500, 0.58),
       borderFocus: withAlpha(palette.blue500, 0.42),
       borderInteractive: withAlpha(palette.blue500, 0.18),
-      borderOverlay: palette.divider,
+      borderOverlay: withAlpha(palette.neutral950, 0.12),
       borderSelected: withAlpha(palette.blue500, 0.22),
-      borderSection: palette.divider,
+      borderSection: withAlpha(palette.neutral950, 0.12),
       borderTransparent: palette.transparent,
       brandAccent: palette.blue500,
       brandAccentStrong: palette.blue600,
@@ -338,7 +342,10 @@ export const velaTheme = {
       iconPrimary: palette.neutral950,
       iconSecondary: palette.neutral700,
       inverseSurface: palette.neutral950,
-      interactiveHoverSurface: palette.neutral100,
+      // Hover darkens whatever it lands on rather than painting a fixed grey.
+      // An opaque fill silently vanishes the moment its container is recoloured
+      // to the same tone, which is exactly what happened on the sidebar.
+      interactiveHoverSurface: withAlpha(palette.neutral950, 0.05),
       interactivePressedSurface: palette.neutral200,
       modalBackdrop: withAlpha(palette.neutral990, 0.34),
       // Recession ladder: the rail sits furthest back, the conversation
@@ -358,7 +365,7 @@ export const velaTheme = {
       selectionSurface: palette.blue50,
       selectionHoverSurface: palette.blue100,
       selectionPressedSurface: palette.blue200,
-      separator: palette.divider,
+      separator: withAlpha(palette.neutral950, 0.06),
       sidebarSurface: palette.neutral100,
       statusDanger: palette.pink500,
       statusDangerDivider: withAlpha(palette.pink500, 0.12),
@@ -369,7 +376,7 @@ export const velaTheme = {
       statusNeutralText: palette.neutral700,
       statusInfo: palette.blue500,
       statusInfoDivider: withAlpha(palette.blue500, 0.14),
-      statusInfoSurface: palette.blue50,
+      statusInfoSurface: withAlpha(palette.blue500, 0.1),
       statusInfoText: palette.blue600,
       statusPositive: palette.green500,
       statusPositiveDivider: withAlpha(palette.green500, 0.14),
@@ -380,7 +387,7 @@ export const velaTheme = {
       statusWarningSurface: palette.amber50,
       statusWarningText: palette.amber700,
       surfaceMuted: palette.neutral200,
-      surfaceSubtle: palette.neutral100,
+      surfaceSubtle: withAlpha(palette.neutral950, 0.05),
       surfaceTransparent: palette.transparent,
       textInverse: palette.white,
       textLink: palette.blue600,

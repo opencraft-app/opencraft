@@ -57,6 +57,16 @@ function alphaOf(color: string): number {
   return rgba ? Number(rgba[1]) : 1;
 }
 
+/** Composites a possibly translucent colour over an opaque one. */
+function over(foreground: string, background: string): string {
+  const alpha = alphaOf(foreground);
+  const blend = (front: string, back: string): number =>
+    Math.round(alpha * Number(front) + (1 - alpha) * Number(back));
+  const front = channelsOf(foreground)!.split(",");
+  const back = channelsOf(background)!.split(",");
+  return `rgb(${front.map((channel, index) => blend(channel, back[index]!)).join(", ")})`;
+}
+
 function contrastOf(foreground: string, background: string): number {
   const [darker, lighter] = [luminanceOf(foreground), luminanceOf(background)].sort(
     (left, right) => left - right,
@@ -236,6 +246,63 @@ describe("Vela theme contract", () => {
       );
 
       expect(failing).toEqual([]);
+    });
+
+    it("keeps soft fills visible on every surface they can land on", () => {
+      // An opaque soft fill disappears the moment its container is recoloured
+      // to the same tone, which is how hover, the channel glyph tile and the
+      // public badge all went invisible at once. Compositing catches that;
+      // comparing raw values does not.
+      const fills = {
+        hover: color.interactiveHoverSurface,
+        info: color.statusInfoSurface,
+        subtle: color.surfaceSubtle,
+      };
+      const surfaces = {
+        canvas: color.canvasSurface,
+        navigation: color.navigationSurface,
+        pane: color.paneSurface,
+        selection: color.selectionSurface,
+        sidebar: color.sidebarSurface,
+      };
+      const invisible = Object.entries(fills).flatMap(([fill, value]) =>
+        Object.entries(surfaces)
+          .filter(
+            ([, surface]) =>
+              Math.abs(luminanceOf(over(value, surface)) - luminanceOf(surface)) <
+              0.005,
+          )
+          .map(([surface]) => `${fill} on ${surface}`),
+      );
+
+      expect(invisible).toEqual([]);
+    });
+
+    it("weights lines by what they divide", () => {
+      // A row rule separates peers, a pane boundary divides architecture, and
+      // a control edge has to describe a clickable shape. Collapsing these to
+      // one value is what made controls mushy and long lists busy.
+      const ladder = [
+        color.separator,
+        color.borderSection,
+        color.borderControl,
+      ].map(alphaOf);
+
+      expect(ascending(ladder)).toBe(true);
+    });
+
+    it("keeps every structural line faint enough to stay hairline", () => {
+      const structural = {
+        control: color.borderControl,
+        overlay: color.borderOverlay,
+        section: color.borderSection,
+        separator: color.separator,
+      };
+      const shouting = Object.entries(structural).filter(
+        ([, line]) => alphaOf(line) > 0.2,
+      );
+
+      expect(shouting).toEqual([]);
     });
 
     it("spreads the shadow ladder monotonically from card to overlay", () => {
