@@ -4,7 +4,7 @@
 # stay out of application SSM payloads and Kubernetes workloads.
 defaults:
   region: ap-tokyo
-  version_id: latest
+  version_id: SSM_Current
   age_recipients:
     - age1q4s9kt3h5n0fgmez4kyp7tsahgjhuxpyeteye8lp46kqkyvardusctl258
 
