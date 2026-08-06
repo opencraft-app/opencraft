@@ -16,6 +16,30 @@ describe("Vela token usage", () => {
     expect(installerSource).toContain(":focus-visible");
   });
 
+  it("lays every detail section out the one way", () => {
+    // Computer alone split its detail into two columns, and it chose to do so
+    // by comparing the *viewport* against 1080 — while the panels actually
+    // live inside the content column. Once that column settled at 760 the
+    // minor panel got 299px and its copy wrapped inside 190px. The split is
+    // gone, so nothing should reach for its geometry again.
+    const read = (...parts: string[]) =>
+      readFileSync(join(process.cwd(), "src", "ui", ...parts), "utf8");
+
+    const management = read("components", "management-workspace.tsx");
+    const computers = read("screens", "computers-screen.tsx");
+
+    expect(management).not.toMatch(/detailSectionMajor|detailSectionMinor/);
+    expect(management).not.toContain("DetailSectionSpan");
+    // A detail column that decides its shape from the viewport is measuring
+    // the wrong box; the column it sits in is what constrains it.
+    expect(computers).not.toContain("computerSupportStackBreakpoint");
+
+    const supportGrid =
+      /^ {2}supportGrid: \{\n([\s\S]*?)^ {2}\},$/mu.exec(computers)?.[1] ?? "";
+    expect(supportGrid).not.toBe("");
+    expect(supportGrid).not.toContain("flexDirection");
+  });
+
   it("dresses the two list panes as one pane", () => {
     // The chat sidebar and the management collection pane are the same
     // 312pt shelf in the same slot, but they wore different surface roles,

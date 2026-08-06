@@ -119,7 +119,6 @@ export function ServerSettingsScreen({
         <ManagementDetailScroll>
           <DetailSection
             description="修改平台内显示的名称和简介。稳定地址不会变化。"
-            stacked
             title="基本信息"
           >
             <ManagementForm testID="server-settings-form">
@@ -171,7 +170,7 @@ export function ServerSettingsScreen({
               </ManagementFormActions>
             </ManagementForm>
           </DetailSection>
-          <DetailSection stacked title="稳定标识">
+          <DetailSection title="稳定标识">
             <ResourceMetadataList
               items={[
                 {label: "Slug", value: server.slug},

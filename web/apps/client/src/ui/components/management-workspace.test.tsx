@@ -271,7 +271,7 @@ describe("management workspace primitives", () => {
             <Text>任务一</Text>
           </CollectionRow>
         </ManagementCollectionPane>
-        <DetailSection grow span="major" testID="section">
+        <DetailSection testID="section">
           <StatusIndicator label="在线" tone="positive" />
           <ActionButton importance="primary" label="保存" onPress={() => undefined} testID="action" />
           <ActionButton
@@ -326,7 +326,6 @@ describe("management workspace primitives", () => {
     expect(screen.getByTestId("section")).toHaveStyle({
       borderRadius: 0,
       borderTopWidth: 1,
-      flexGrow: 3,
       paddingHorizontal: 0,
       paddingVertical: 20,
     });

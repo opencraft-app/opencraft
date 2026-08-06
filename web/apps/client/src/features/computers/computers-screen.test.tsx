@@ -221,15 +221,8 @@ describe("ComputersScreen", () => {
       fontSize: velaTheme.semantic.typography.pageTitle.fontSize,
       lineHeight: velaTheme.semantic.typography.pageTitle.lineHeight,
     });
-    expect(screen.getByTestId("computer-support-grid")).toHaveStyle({
-      alignItems: "flex-start",
+    expect(screen.getByTestId("computer-support-grid")).not.toHaveStyle({
       flexDirection: "row",
-    });
-    expect(screen.getByTestId("computer-binding-panel")).toHaveStyle({
-      flexGrow: 3,
-    });
-    expect(screen.getByTestId("computer-management-panel")).toHaveStyle({
-      flexGrow: 2,
     });
     expect(screen.getByTestId("computer-install-action-row")).toHaveStyle({
       borderTopWidth: 1,
@@ -237,32 +230,37 @@ describe("ComputersScreen", () => {
     });
   });
 
-  it("stacks Computer support panels before the medium workspace feels squeezed", async () => {
-    const screen = await render(
-      <ComputersScreen
-        agents={[agent]}
-        computers={[computer]}
-        currentServerId={server.id}
-        error={null}
-        loading={false}
-        onCreateComputer={jest.fn()}
-        onNavigateSection={jest.fn()}
-        onRefresh={jest.fn()}
-        onRequestRegistrationScript={jest.fn()}
-        onSelectServer={jest.fn()}
-        pendingAction={null}
-        servers={[server]}
-        viewportWidth={1_024}
-      />,
-    );
+  it("stacks Computer support panels at every width, not just narrow ones", async () => {
+    // These panels used to sit side by side above a 1080px *viewport*, but
+    // they live inside the 760px content column, so the wide case gave the
+    // management panel 299px and wrapped its copy inside 190px. The column,
+    // not the window, is what constrains them — and it is never wide enough
+    // for two, so there is no longer a width at which they split.
+    for (const viewportWidth of [1_024, 1_440]) {
+      const screen = await render(
+        <ComputersScreen
+          agents={[agent]}
+          computers={[computer]}
+          currentServerId={server.id}
+          error={null}
+          loading={false}
+          onCreateComputer={jest.fn()}
+          onNavigateSection={jest.fn()}
+          onRefresh={jest.fn()}
+          onRequestRegistrationScript={jest.fn()}
+          onSelectServer={jest.fn()}
+          pendingAction={null}
+          servers={[server]}
+          viewportWidth={viewportWidth}
+        />,
+      );
 
-    expect(screen.getByTestId("computer-support-grid")).toHaveStyle({
-      flexDirection: "column",
-    });
-    expect(screen.getByTestId("computer-management-panel")).toHaveStyle({
-      flexBasis: "auto",
-      flexGrow: 0,
-    });
+      expect(screen.getByTestId("computer-support-grid")).not.toHaveStyle({
+        flexDirection: "row",
+      });
+      expect(screen.getByTestId("computer-binding-panel")).toBeVisible();
+      expect(screen.getByTestId("computer-management-panel")).toBeVisible();
+    }
   });
 
   it("keeps the current Human identity reachable in the shared management frame", async () => {
@@ -717,8 +715,8 @@ describe("ComputersScreen", () => {
       height: 48,
       width: 48,
     });
-    expect(screen.getByTestId("computer-support-grid")).toHaveStyle({
-      flexDirection: "column",
+    expect(screen.getByTestId("computer-support-grid")).not.toHaveStyle({
+      flexDirection: "row",
     });
   });
 
@@ -870,7 +868,7 @@ describe("ComputersScreen", () => {
     });
     expect(screen.getByTestId("computer-identity-meta")).toBeVisible();
     expect(screen.queryByText("连接状态")).toBeNull();
-    expect(screen.getByTestId("computer-support-grid")).toHaveStyle({
+    expect(screen.getByTestId("computer-support-grid")).not.toHaveStyle({
       flexDirection: "row",
     });
     expect(screen.getByTestId("computer-binding-panel")).toHaveStyle({
@@ -910,19 +908,13 @@ describe("ComputersScreen", () => {
       flexWrap: "wrap",
       paddingBottom: 20,
     });
-    expect(screen.getByTestId("computer-support-grid")).toHaveStyle({
-      flexDirection: "column",
+    expect(screen.getByTestId("computer-support-grid")).not.toHaveStyle({
+      flexDirection: "row",
     });
     expect(screen.getByTestId("computer-binding-panel")).toHaveStyle({
-      flexBasis: "auto",
-      flexGrow: 0,
-      flexShrink: 0,
       borderTopWidth: 1,
     });
     expect(screen.getByTestId("computer-management-panel")).toHaveStyle({
-      flexBasis: "auto",
-      flexGrow: 0,
-      flexShrink: 0,
       borderTopWidth: 1,
     });
   });

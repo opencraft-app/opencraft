@@ -1,6 +1,5 @@
 import {
   breakpoints,
-  computerSupportStackBreakpoint,
   velaTheme,
 } from "./theme";
 import {
@@ -439,6 +438,5 @@ describe("Vela theme contract", () => {
     expect(values.every((value) => Number.isFinite(value) && value >= 0)).toBe(
       true,
     );
-    expect(computerSupportStackBreakpoint).toBeGreaterThan(breakpoints.medium);
   });
 });

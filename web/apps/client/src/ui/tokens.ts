@@ -335,10 +335,6 @@ export const text: (typeof textScale)[DensityMode] = textScale[densityMode];
 // management screens switch from their compact, stacked layouts.
 export const workspaceShellWideBreakpoint = 960;
 
-// Computer detail support panels need slightly more horizontal room than the
-// shared workspace shell before they can sit comfortably side by side.
-export const computerSupportStackBreakpoint = 1_080;
-
 export const velaTheme = {
   semantic: {
     color: {

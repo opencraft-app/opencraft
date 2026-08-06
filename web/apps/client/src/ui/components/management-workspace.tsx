@@ -32,7 +32,6 @@ export type {
 export {IconActionButton} from "../primitives/icon-action-button";
 export type {IconActionButtonProps} from "../primitives/icon-action-button";
 
-type DetailSectionSpan = "balanced" | "major" | "minor";
 type StatusTone = "danger" | "info" | "neutral" | "positive" | "warning";
 type ManagementDensity = "comfortable" | "compact" | "medium";
 type ManagementFieldLayout = "compact" | "flex" | "stacked";
@@ -730,32 +729,17 @@ export function CollectionRow({
 
 export interface DetailSectionProps extends SemanticContainerProps {
   description?: string;
-  grow?: boolean;
-  span?: DetailSectionSpan;
-  stacked?: boolean;
   title?: string;
 }
 
 export function DetailSection({
   children,
   description,
-  grow = false,
-  span = "balanced",
-  stacked = false,
   testID = "detail-section",
   title,
 }: DetailSectionProps) {
   return (
-    <View
-      style={[
-        styles.detailSection,
-        grow && styles.detailSectionGrow,
-        grow && span === "major" && styles.detailSectionMajor,
-        grow && span === "minor" && styles.detailSectionMinor,
-        stacked && styles.detailSectionStacked,
-      ]}
-      testID={testID}
-    >
+    <View style={styles.detailSection} testID={testID}>
       {title || description ? (
         <View style={styles.sectionHeading}>
           {title ? <Text style={styles.sectionTitle}>{title}</Text> : null}
@@ -1283,18 +1267,6 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.recipes.managementWorkspace.sectionGap,
     paddingHorizontal: 0,
     paddingVertical: theme.recipes.managementWorkspace.sectionPadding,
-  },
-  detailSectionGrow: {
-    flexBasis: 0,
-    flexGrow: 1,
-    minWidth: 0,
-  },
-  detailSectionMajor: {flexGrow: 3},
-  detailSectionMinor: {flexGrow: 2},
-  detailSectionStacked: {
-    flexBasis: "auto",
-    flexGrow: 0,
-    flexShrink: 0,
   },
   detailCanvas: {
     alignSelf: "center",

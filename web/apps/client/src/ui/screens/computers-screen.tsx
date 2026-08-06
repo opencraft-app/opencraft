@@ -45,7 +45,6 @@ import {formatReadableDateTime} from "../date-time";
 import { layoutMode } from "../layout-mode";
 import {
   breakpoints,
-  computerSupportStackBreakpoint,
   workspaceShellWideBreakpoint,
 } from "../theme";
 import {
@@ -131,7 +130,6 @@ export function ComputersScreen(props: ComputersScreenProps) {
   const mediumSurface =
     resolvedViewportWidth >= breakpoints.medium && resolvedViewportWidth < breakpoints.wide;
   const wideWorkspace = resolvedViewportWidth >= workspaceShellWideBreakpoint;
-  const stackSupportPanels = resolvedViewportWidth < computerSupportStackBreakpoint;
   const hasComputerDirectory =
     computers.length > 0 && (wideWorkspace || computers.length > 1);
   const [creating, setCreating] = useState(false);
@@ -615,17 +613,8 @@ export function ComputersScreen(props: ComputersScreenProps) {
                 title={selected.name}
                 titleTestID="computer-detail-title"
               />
-              <View
-                style={[
-                  styles.supportGrid,
-                  stackSupportPanels && styles.supportGridCompact,
-                ]}
-                testID="computer-support-grid"
-              >
+              <View style={styles.supportGrid} testID="computer-support-grid">
                 <DetailSection
-                  grow
-                  span="major"
-                  stacked={stackSupportPanels}
                   testID="computer-binding-panel"
                   title="绑定的 Agent"
                 >
@@ -646,9 +635,6 @@ export function ComputersScreen(props: ComputersScreenProps) {
                   )}
                 </DetailSection>
                 <DetailSection
-                  grow
-                  span="minor"
-                  stacked={stackSupportPanels}
                   testID="computer-management-panel"
                   title="管理"
                 >
@@ -949,12 +935,7 @@ const styles = StyleSheet.create((theme) => ({
     ...theme.semantic.typography.sectionTitle,
   },
   supportGrid: {
-    alignItems: "flex-start",
-    flexDirection: "row",
     gap: theme.spacing.lg,
-  },
-  supportGridCompact: {
-    flexDirection: "column",
   },
   releaseSection: {
     borderRadius: theme.semantic.radius.pane,
