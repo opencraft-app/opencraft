@@ -607,18 +607,22 @@ const styles = StyleSheet.create((theme) => ({
     height: theme.recipes.iconControl.denseSize,
     justifyContent: "center",
     width: theme.recipes.iconControl.denseSize,
+    ...theme.semantic.motion.transition.control,
   },
   iconButtonPressed: {
     backgroundColor: theme.semantic.color.actionSecondaryPressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   input: {
     maxHeight: theme.recipes.conversationWorkspace.composerInputMaxHeight,
   },
   mentionButton: {
     backgroundColor: theme.semantic.color.actionSecondarySurface,
+    ...theme.semantic.motion.transition.control,
   },
   mentionButtonSelected: {
     backgroundColor: theme.semantic.color.selectionSurface,
+    ...theme.semantic.motion.transition.control,
   },
   outer: {
     alignItems: "center",
@@ -658,12 +662,15 @@ const styles = StyleSheet.create((theme) => ({
     height: theme.recipes.iconControl.denseSize,
     justifyContent: "center",
     width: theme.recipes.iconControl.denseSize,
+    ...theme.semantic.motion.transition.control,
   },
   sendButtonDisabled: {
     backgroundColor: theme.semantic.color.actionDisabledSurface,
+    ...theme.semantic.motion.transition.control,
   },
   sendButtonPressed: {
     backgroundColor: theme.semantic.color.actionPrimaryPressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   suggestion: {
     alignItems: "center",
@@ -672,9 +679,11 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing.sm,
     minHeight: theme.recipes.conversationWorkspace.composerSuggestionMinHeight,
     paddingHorizontal: theme.spacing.sm,
+    ...theme.semantic.motion.transition.control,
   },
   suggestionActive: {
     backgroundColor: theme.semantic.color.selectionSurface,
+    ...theme.semantic.motion.transition.control,
   },
   suggestionAvatar: {
     alignItems: "center",

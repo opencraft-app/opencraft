@@ -16,6 +16,53 @@ describe("Vela token usage", () => {
     expect(installerSource).toContain(":focus-visible");
   });
 
+  it("carries the transition on both halves of every interaction pair", () => {
+    // Variant styles replace the base rather than layering over it, so a
+    // transition declared only on the base is dropped the moment the element
+    // becomes selected. That is exactly how the selected row stayed a hard cut
+    // while every other row animated.
+    const suffixes = [
+      "Selected",
+      "Active",
+      "Pressed",
+      "Hover",
+      "Hovered",
+      "Focused",
+      "Disabled",
+    ];
+    const files = [
+      ["components", "management-workspace.tsx"],
+      ["components", "message-composer.tsx"],
+      ["components", "message-list.tsx"],
+      ["layouts", "workspace-shell.tsx"],
+      ["screens", "first-workspace-screen.tsx"],
+    ];
+    const missing: string[] = [];
+
+    for (const parts of files) {
+      const source = readFileSync(join(process.cwd(), "src", "ui", ...parts), "utf8");
+      const blocks = new Map<string, string>();
+      for (const match of source.matchAll(
+        /^ {2}([a-zA-Z][a-zA-Z0-9]*): \{\n([\s\S]*?)^ {2}\},$/gmu,
+      )) {
+        blocks.set(match[1]!, match[2]!);
+      }
+      for (const [name, body] of blocks) {
+        const isPair =
+          suffixes.some((suffix) => blocks.has(name + suffix)) ||
+          suffixes.some(
+            (suffix) =>
+              name.endsWith(suffix) && blocks.has(name.slice(0, -suffix.length)),
+          );
+        if (isPair && !body.includes("semantic.motion.transition")) {
+          missing.push(`${parts[1]}:${name}`);
+        }
+      }
+    }
+
+    expect(missing).toEqual([]);
+  });
+
   it("keeps transient visual timing in semantic motion tokens", () => {
     const messageSource = readFileSync(
       join(process.cwd(), "src", "ui", "components", "message-list.tsx"),
@@ -26,9 +73,9 @@ describe("Vela token usage", () => {
       "utf8",
     );
 
-    expect(messageSource).toContain("semantic.motion.focusHighlightDuration");
+    expect(messageSource).toContain("semantic.motion.dismissal.focusHighlight");
     expect(messageSource).not.toContain("2_400");
-    expect(shellSource).toContain("semantic.motion.toastDuration");
+    expect(shellSource).toContain("semantic.motion.dismissal.toast");
     expect(shellSource).not.toContain("CHAT_ERROR_TOAST_DURATION_MS");
   });
 

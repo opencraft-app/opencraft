@@ -127,6 +127,63 @@ export const densityMode =
   resolveDensityMode(Platform.OS, globalThis.matchMedia?.bind(globalThis));
 
 /**
+ * Motion is resolved the same way and for the same reason: the preference is
+ * an OS-level setting that does not change mid-session, and a module constant
+ * has no hook to flip afterwards.
+ */
+export function resolveReducedMotion(
+  platform: typeof Platform.OS,
+  matchMedia: ((query: string) => { matches: boolean }) | undefined,
+): boolean {
+  if (platform !== "web") return false;
+  return matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
+function motionOverride(): boolean | undefined {
+  const mode =
+    typeof process === "undefined" ? undefined : process.env?.VELA_REDUCED_MOTION;
+  if (mode === "reduce") return true;
+  if (mode === "no-preference") return false;
+  return undefined;
+}
+
+export const reducedMotion =
+  motionOverride() ??
+  resolveReducedMotion(Platform.OS, globalThis.matchMedia?.bind(globalThis));
+
+/**
+ * Durations are named for what the change means, not how long it takes. Hover
+ * and press have to land inside the perceptual window that still reads as
+ * "the control responded to me"; anything slower feels laggy rather than
+ * animated. Reducing motion collapses the scale to zero rather than removing
+ * the transitions, so no consumer has to branch.
+ */
+export const durationScale = {
+  full: {
+    feedback: 110,
+    reveal: 240,
+    settle: 170,
+  },
+  reduced: {
+    feedback: 0,
+    reveal: 0,
+    settle: 0,
+  },
+} as const;
+
+export const duration: Record<keyof (typeof durationScale)["full"], number> =
+  durationScale[reducedMotion ? "reduced" : "full"];
+
+/**
+ * Two curves, both front-loaded. macOS motion starts fast and settles, which
+ * is what keeps a 240ms reveal from feeling slow.
+ */
+export const easing = {
+  entrance: "cubic-bezier(0, 0, 0, 1)",
+  standard: "cubic-bezier(0.2, 0, 0, 1)",
+} as const;
+
+/**
  * The pointer column follows macOS metrics (28-32pt buttons, 44pt two-line
  * rows, 52pt toolbars); the touch column keeps the 44pt minimum target.
  */
@@ -441,8 +498,31 @@ export const velaTheme = {
       inactive: 0.68,
     },
     motion: {
-      focusHighlightDuration: 2_400,
-      toastDuration: 8_000,
+      // How long a thing stays put before it goes away. Not a transition
+      // length, and previously indistinguishable from one.
+      dismissal: {
+        focusHighlight: 2_400,
+        toast: 8_000,
+      },
+      duration,
+      easing,
+      /**
+       * Spread onto the base style of anything whose appearance changes on
+       * hover, press, focus or selection. The variant style only swaps the
+       * value; the transition lives on the base so both directions animate.
+       */
+      transition: {
+        control: {
+          transitionDuration: `${duration.feedback}ms`,
+          transitionProperty: "background-color, border-color, color, opacity",
+          transitionTimingFunction: easing.standard,
+        },
+        surface: {
+          transitionDuration: `${duration.settle}ms`,
+          transitionProperty: "background-color, border-color, opacity",
+          transitionTimingFunction: easing.standard,
+        },
+      },
     },
     radius: {
       circle: 9_999,

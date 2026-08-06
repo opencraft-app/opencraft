@@ -952,17 +952,21 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     minWidth: 48,
     paddingHorizontal: theme.spacing.sm,
+    ...theme.semantic.motion.transition.control,
   },
   canvasButtonSelected: {
     backgroundColor: theme.semantic.color.selectionSurface,
     borderColor: theme.semantic.color.borderSelected,
+    ...theme.semantic.motion.transition.control,
   },
   canvasButtonText: {
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.navigationLabel,
+    ...theme.semantic.motion.transition.control,
   },
   canvasButtonTextSelected: {
     color: theme.semantic.color.brandAccentStrong,
+    ...theme.semantic.motion.transition.control,
   },
   canvasTabs: {
     flexGrow: 0,
@@ -1010,6 +1014,7 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     minHeight: 36,
     paddingHorizontal: theme.spacing.lg,
+    ...theme.semantic.motion.transition.control,
   },
   previewButtonCompact: {
     flex: 1,
@@ -1019,13 +1024,16 @@ const styles = StyleSheet.create((theme) => ({
   previewButtonSelected: {
     backgroundColor: theme.semantic.color.selectionSurface,
     borderColor: velaTheme.semantic.color.borderInteractive,
+    ...theme.semantic.motion.transition.control,
   },
   previewButtonText: {
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.bodySmallEmphasis,
+    ...theme.semantic.motion.transition.control,
   },
   previewButtonTextSelected: {
     color: theme.semantic.color.brandAccentStrong,
+    ...theme.semantic.motion.transition.control,
   },
   previewTabs: {
     flex: 1,
@@ -1053,16 +1061,20 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     minHeight: 30,
     paddingHorizontal: theme.spacing.md,
+    ...theme.semantic.motion.transition.control,
   },
   scenarioButtonSelected: {
     backgroundColor: theme.semantic.color.selectionSurface,
+    ...theme.semantic.motion.transition.control,
   },
   scenarioButtonText: {
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.captionEmphasis,
+    ...theme.semantic.motion.transition.control,
   },
   scenarioButtonTextSelected: {
     color: theme.semantic.color.brandAccentStrong,
+    ...theme.semantic.motion.transition.control,
   },
   scenarioTabs: {
     borderTopColor: theme.semantic.color.separator,

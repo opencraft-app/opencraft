@@ -3,7 +3,12 @@ import {
   computerSupportStackBreakpoint,
   velaTheme,
 } from "./theme";
-import { interfaceFontFamilies, palette } from "./tokens";
+import {
+  durationScale,
+  interfaceFontFamilies,
+  palette,
+  resolveReducedMotion,
+} from "./tokens";
 
 /**
  * These assertions describe the *shape and relationships* the theme has to
@@ -185,8 +190,8 @@ describe("Vela theme contract", () => {
       }
     }
 
-    for (const duration of Object.values(velaTheme.semantic.motion)) {
-      expect(duration).toBeGreaterThan(0);
+    for (const delay of Object.values(velaTheme.semantic.motion.dismissal)) {
+      expect(delay).toBeGreaterThan(0);
     }
   });
 
@@ -316,6 +321,69 @@ describe("Vela theme contract", () => {
 
     it("keeps even the heaviest shadow from reading as a scrim", () => {
       expect(alphaOf(velaTheme.shadows.overlay.color)).toBeLessThan(0.3);
+    });
+  });
+
+  describe("motion", () => {
+    const { motion } = velaTheme.semantic;
+
+    it("keeps feedback quicker than the changes it acknowledges", () => {
+      // Hover and press have to land inside the window that still reads as
+      // "the control responded"; a reveal can afford to take its time. This is
+      // a property of the designed scale, not the resolved one, which is
+      // legitimately flat when motion is reduced.
+      const { feedback, reveal, settle } = durationScale.full;
+
+      expect(ascending([feedback, settle, reveal])).toBe(true);
+    });
+
+    it("keeps every transition inside the window that still reads as instant", () => {
+      const sluggish = Object.entries(durationScale.full).filter(
+        ([, value]) => value > 300,
+      );
+
+      expect(sluggish).toEqual([]);
+    });
+
+    it("collapses the whole scale when motion is reduced", () => {
+      // Reducing motion has to zero every rung, not merely shorten the scale,
+      // or a consumer that reads one rung still animates.
+      expect(Object.values(durationScale.reduced)).toEqual(
+        Object.keys(durationScale.full).map(() => 0),
+      );
+      expect(Object.keys(durationScale.reduced)).toEqual(
+        Object.keys(durationScale.full),
+      );
+    });
+
+    it("resolves reduced motion from the preference, not the viewport", () => {
+      const asks = (query: string) => ({
+        matches: query === "(prefers-reduced-motion: reduce)",
+      });
+
+      expect(resolveReducedMotion("web", asks)).toBe(true);
+      expect(resolveReducedMotion("web", () => ({ matches: false }))).toBe(false);
+      expect(resolveReducedMotion("web", undefined)).toBe(false);
+      expect(resolveReducedMotion("ios", asks)).toBe(false);
+    });
+
+    it("gives every transition preset a duration, a property and a curve", () => {
+      for (const preset of Object.values(motion.transition)) {
+        expect(preset.transitionDuration).toMatch(/^\d+ms$/u);
+        expect(preset.transitionProperty.length).toBeGreaterThan(0);
+        expect(preset.transitionTimingFunction).toMatch(/^cubic-bezier\(/u);
+      }
+    });
+
+    it("never transitions layout properties", () => {
+      // Animating width or height forces layout on every frame. Only paint
+      // properties belong in a transition list.
+      const layout = /\b(?:width|height|top|left|right|bottom|margin|padding)\b/u;
+      const offenders = Object.entries(motion.transition).filter(([, preset]) =>
+        layout.test(preset.transitionProperty),
+      );
+
+      expect(offenders).toEqual([]);
     });
   });
 

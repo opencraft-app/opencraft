@@ -92,10 +92,10 @@ export function MessageList({
     setFocusedMessageId(focusRequest.messageId);
     const timeout = setTimeout(
       () => setFocusedMessageId(null),
-      theme.semantic.motion.focusHighlightDuration,
+      theme.semantic.motion.dismissal.focusHighlight,
     );
     return () => clearTimeout(timeout);
-  }, [focusRequest, theme.semantic.motion.focusHighlightDuration]);
+  }, [focusRequest, theme.semantic.motion.dismissal.focusHighlight]);
   useEffect(() => {
     if (previousConversationKey.current === conversationKey) return;
     previousConversationKey.current = conversationKey;
@@ -901,6 +901,7 @@ const styles = StyleSheet.create((theme) => ({
     maxWidth: theme.recipes.contentMeasure.compactMaxWidth,
     minWidth: theme.recipes.messageTimeline.attachmentMinWidth,
     overflow: "hidden",
+    ...theme.semantic.motion.transition.control,
   },
   attachmentAction: {
     color: theme.semantic.color.textLink,
@@ -929,6 +930,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   attachmentPressed: {
     opacity: theme.semantic.opacity.contentMuted,
+    ...theme.semantic.motion.transition.control,
   },
   attachmentSize: {
     color: theme.semantic.color.textMuted,
@@ -1109,9 +1111,11 @@ const styles = StyleSheet.create((theme) => ({
     right: theme.recipes.overlay.previewControlInset,
     top: theme.recipes.overlay.previewControlInset,
     width: theme.recipes.control.squareSize,
+    ...theme.semantic.motion.transition.control,
   },
   imagePreviewClosePressed: {
     opacity: theme.semantic.opacity.contentMuted,
+    ...theme.semantic.motion.transition.control,
   },
   imagePreviewImage: {
     flex: 1,
@@ -1126,9 +1130,11 @@ const styles = StyleSheet.create((theme) => ({
   },
   imagePreviewTrigger: {
     width: "100%",
+    ...theme.semantic.motion.transition.control,
   },
   imagePreviewTriggerPressed: {
     opacity: theme.semantic.opacity.contentEmphasized,
+    ...theme.semantic.motion.transition.control,
   },
   loadOlderButton: {
     alignItems: "center",
@@ -1141,9 +1147,11 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: theme.recipes.messageTimeline.touchActionSize,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
+    ...theme.semantic.motion.transition.control,
   },
   loadOlderButtonPressed: {
     backgroundColor: theme.semantic.color.selectionSurface,
+    ...theme.semantic.motion.transition.control,
   },
   loadOlderText: {
     color: theme.semantic.color.textPrimary,
@@ -1156,6 +1164,7 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.recipes.conversationWorkspace.messageRowGap,
     paddingVertical: theme.spacing.sm,
     width: "100%",
+    ...theme.semantic.motion.transition.control,
   },
   messageCompact: {
     gap: theme.spacing.sm,
@@ -1191,6 +1200,7 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     flexShrink: 0,
     justifyContent: "center",
+    ...theme.semantic.motion.transition.control,
   },
   moreActionButtonPointer: {
     borderRadius: theme.semantic.radius.compactControl,
@@ -1214,6 +1224,7 @@ const styles = StyleSheet.create((theme) => ({
   moreActionButtonPressed: {
     backgroundColor: theme.semantic.color.actionTonalSurface,
     opacity: theme.semantic.opacity.contentMuted,
+    ...theme.semantic.motion.transition.control,
   },
   messageGrouped: {
     paddingBottom: theme.spacing.xxs,
@@ -1222,6 +1233,7 @@ const styles = StyleSheet.create((theme) => ({
   messageFocused: {
     backgroundColor: theme.semantic.color.selectionSurface,
     borderRadius: theme.semantic.radius.control,
+    ...theme.semantic.motion.transition.control,
   },
   messages: {
     flexGrow: 1,
@@ -1268,10 +1280,12 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: theme.recipes.control.squareSize,
     paddingHorizontal: theme.spacing.sm,
     paddingVertical: theme.spacing.xxs,
+    ...theme.semantic.motion.transition.control,
   },
   reactionActive: {
     backgroundColor: theme.semantic.color.selectionSurface,
     borderColor: theme.semantic.color.borderSelected,
+    ...theme.semantic.motion.transition.control,
   },
   reactionText: {
     color: theme.semantic.color.textPrimary,

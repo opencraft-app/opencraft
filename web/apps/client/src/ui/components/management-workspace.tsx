@@ -1244,12 +1244,15 @@ const styles = StyleSheet.create((theme) => ({
   actionDanger: {
     backgroundColor: theme.semantic.color.actionDangerSurface,
     borderColor: theme.semantic.color.actionDangerBorder,
+    ...theme.semantic.motion.transition.control,
   },
   actionDangerHover: {
     backgroundColor: theme.semantic.color.actionDangerHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   actionDangerPressed: {
     backgroundColor: theme.semantic.color.actionDangerPressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   actionHeader: {
     minHeight: theme.recipes.managementWorkspace.headerActionHeight,
@@ -1258,12 +1261,15 @@ const styles = StyleSheet.create((theme) => ({
   actionQuiet: {
     backgroundColor: theme.semantic.color.surfaceTransparent,
     borderColor: theme.semantic.color.borderTransparent,
+    ...theme.semantic.motion.transition.control,
   },
   actionQuietHover: {
     backgroundColor: theme.semantic.color.interactiveHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   actionQuietPressed: {
     backgroundColor: theme.semantic.color.interactivePressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   actionPrimaryHover: {
     backgroundColor: theme.semantic.color.actionPrimaryHoverSurface,
@@ -1276,24 +1282,30 @@ const styles = StyleSheet.create((theme) => ({
   actionSecondary: {
     backgroundColor: theme.semantic.color.actionSecondarySurface,
     borderColor: theme.semantic.color.actionSecondaryBorder,
+    ...theme.semantic.motion.transition.control,
   },
   actionSecondaryHover: {
     backgroundColor: theme.semantic.color.actionSecondaryHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   actionSecondaryPressed: {
     backgroundColor: theme.semantic.color.actionSecondaryPressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   actionTonal: {
     backgroundColor: theme.semantic.color.actionTonalSurface,
     borderColor: theme.semantic.color.actionTonalSurface,
+    ...theme.semantic.motion.transition.control,
   },
   actionTonalHover: {
     backgroundColor: theme.semantic.color.actionTonalHoverSurface,
     borderColor: theme.semantic.color.actionTonalHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   actionTonalPressed: {
     backgroundColor: theme.semantic.color.actionTonalPressedSurface,
     borderColor: theme.semantic.color.actionTonalPressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   actionText: {
     color: theme.semantic.color.actionPrimaryText,
@@ -1328,12 +1340,15 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     minHeight: theme.recipes.managementWorkspace.collectionActionHeight,
     paddingHorizontal: theme.spacing.md,
+    ...theme.semantic.motion.transition.control,
   },
   collectionFooterActionHover: {
     backgroundColor: theme.semantic.color.interactiveHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   collectionFooterActionPressed: {
     backgroundColor: theme.semantic.color.interactivePressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   collectionFooterActionText: {
     color: theme.semantic.color.textPrimary,
@@ -1430,12 +1445,15 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: theme.recipes.managementWorkspace.rowMinHeight,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
+    ...theme.semantic.motion.transition.control,
   },
   collectionRowHover: {
     backgroundColor: theme.semantic.color.interactiveHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   collectionRowPressed: {
     backgroundColor: theme.semantic.color.interactivePressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   collectionRowHorizontal: {
     height: theme.recipes.managementWorkspace.rowMinHeight,
@@ -1665,6 +1683,7 @@ const styles = StyleSheet.create((theme) => ({
     height: theme.semantic.interaction.minimumTargetSize,
     justifyContent: "center",
     width: theme.semantic.interaction.minimumTargetSize,
+    ...theme.semantic.motion.transition.control,
   },
   iconActionHeader: {
     height: theme.recipes.managementWorkspace.headerActionHeight,
@@ -1677,30 +1696,38 @@ const styles = StyleSheet.create((theme) => ({
   iconActionQuiet: {
     backgroundColor: theme.semantic.color.surfaceTransparent,
     borderColor: theme.semantic.color.borderTransparent,
+    ...theme.semantic.motion.transition.control,
   },
   iconActionHover: {
     backgroundColor: theme.semantic.color.interactiveHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   iconActionPressed: {
     backgroundColor: theme.semantic.color.interactivePressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   iconActionQuietHover: {
     backgroundColor: theme.semantic.color.interactiveHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   iconActionQuietPressed: {
     backgroundColor: theme.semantic.color.interactivePressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   iconActionTonal: {
     backgroundColor: theme.semantic.color.actionTonalSurface,
     borderColor: theme.semantic.color.actionTonalSurface,
+    ...theme.semantic.motion.transition.control,
   },
   iconActionTonalHover: {
     backgroundColor: theme.semantic.color.actionTonalHoverSurface,
     borderColor: theme.semantic.color.actionTonalHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   iconActionTonalPressed: {
     backgroundColor: theme.semantic.color.actionTonalPressedSurface,
     borderColor: theme.semantic.color.actionTonalPressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   notice: {
     backgroundColor: theme.semantic.color.surfaceSubtle,
@@ -1905,6 +1932,7 @@ const styles = StyleSheet.create((theme) => ({
     borderBottomWidth: theme.semantic.stroke.hairline,
     padding: theme.spacing.sm,
     width: "100%",
+    ...theme.semantic.motion.transition.control,
   },
   resourceSwitcherChevronOpen: {
     transform: [{rotate: "180deg"}],
@@ -1918,6 +1946,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   resourceSwitcherHover: {
     backgroundColor: theme.semantic.color.interactiveHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   resourceSwitcherOption: {
     alignItems: "center",
@@ -1933,6 +1962,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   resourceSwitcherPressed: {
     backgroundColor: theme.semantic.color.interactivePressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   resourceSwitcherTrigger: {
     alignItems: "center",
@@ -1956,6 +1986,7 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: theme.semantic.interaction.minimumTargetSize,
     minWidth: theme.semantic.interaction.minimumTargetSize,
     paddingHorizontal: theme.spacing.md,
+    ...theme.semantic.motion.transition.control,
   },
   selectionButtonEqual: {
     flex: 1,
@@ -1963,19 +1994,24 @@ const styles = StyleSheet.create((theme) => ({
   },
   selectionButtonHover: {
     backgroundColor: theme.semantic.color.interactiveHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   selectionButtonPressed: {
     backgroundColor: theme.semantic.color.interactivePressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   selectionButtonSelected: {
     backgroundColor: theme.semantic.color.selectionSurface,
     borderColor: theme.semantic.color.borderSelected,
+    ...theme.semantic.motion.transition.control,
   },
   selectionButtonSelectedHover: {
     backgroundColor: theme.semantic.color.selectionHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   selectionButtonSelectedPressed: {
     backgroundColor: theme.semantic.color.selectionPressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   selectionButtonText: {
     color: theme.semantic.color.textPrimary,
@@ -1997,6 +2033,7 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     minHeight: theme.semantic.interaction.minimumTargetSize,
     paddingHorizontal: theme.spacing.md,
+    ...theme.semantic.motion.transition.control,
   },
   tabBar: {
     borderBottomColor: theme.semantic.color.separator,
@@ -2007,19 +2044,24 @@ const styles = StyleSheet.create((theme) => ({
   },
   tabHover: {
     backgroundColor: theme.semantic.color.interactiveHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   tabPressed: {
     backgroundColor: theme.semantic.color.interactivePressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   tabSelected: {
     borderBottomColor: theme.semantic.color.actionPrimarySurface,
+    ...theme.semantic.motion.transition.control,
   },
   tabText: {
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.label,
+    ...theme.semantic.motion.transition.control,
   },
   tabTextSelected: {
     color: theme.semantic.color.textPrimary,
+    ...theme.semantic.motion.transition.control,
   },
   sectionDescription: {
     color: theme.semantic.color.textMuted,

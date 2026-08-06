@@ -2416,7 +2416,7 @@ function ChatActionErrorToast({
     setVisible(true);
     const timer = setTimeout(
       () => setVisible(false),
-      velaTheme.semantic.motion.toastDuration,
+      velaTheme.semantic.motion.dismissal.toast,
     );
     return () => clearTimeout(timer);
   }, [message]);
@@ -4422,10 +4422,12 @@ const styles = StyleSheet.create((theme) => ({
     height: theme.recipes.identity.avatarAccountSize,
     justifyContent: "center",
     width: theme.recipes.identity.avatarAccountSize,
+    ...theme.semantic.motion.transition.control,
   },
   accountRailButtonActive: {
     backgroundColor: theme.semantic.color.selectionSurface,
     borderColor: velaTheme.semantic.color.borderInteractive,
+    ...theme.semantic.motion.transition.control,
   },
   accountStatusDot: {
     backgroundColor: velaTheme.semantic.color.statusWarning,
@@ -4504,6 +4506,12 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: theme.recipes.conversationWorkspace.directRowMinHeight,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
+    ...theme.semantic.motion.transition.control,
+    _web: {
+      _hover: {
+        backgroundColor: theme.semantic.color.interactiveHoverSurface,
+      },
+    },
   },
   directButtonSelected: {
     alignItems: "center",
@@ -4516,6 +4524,12 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: theme.recipes.conversationWorkspace.directRowMinHeight,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
+    ...theme.semantic.motion.transition.control,
+    _web: {
+      _hover: {
+        backgroundColor: theme.semantic.color.selectionHoverSurface,
+      },
+    },
   },
   directHeader: {
     alignItems: "center",
@@ -4900,6 +4914,12 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: theme.recipes.desktopWorkspace.conversationRowMinHeight,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
+    ...theme.semantic.motion.transition.control,
+    _web: {
+      _hover: {
+        backgroundColor: theme.semantic.color.interactiveHoverSurface,
+      },
+    },
   },
   channelButtonCopy: {
     flex: 1,
@@ -4915,6 +4935,12 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: theme.recipes.desktopWorkspace.conversationRowMinHeight,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
+    ...theme.semantic.motion.transition.control,
+    _web: {
+      _hover: {
+        backgroundColor: theme.semantic.color.selectionHoverSurface,
+      },
+    },
   },
   channelList: {
     gap: 0,
@@ -4935,9 +4961,11 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     marginRight: theme.spacing.md,
     width: theme.recipes.iconControl.denseSize,
+    ...theme.semantic.motion.transition.control,
   },
   channelIconSelected: {
     backgroundColor: theme.semantic.color.surfaceTransparent,
+    ...theme.semantic.motion.transition.control,
   },
   channelMeta: {
     color: theme.semantic.color.textMuted,
@@ -4965,6 +4993,7 @@ const styles = StyleSheet.create((theme) => ({
   channelName: {
     color: theme.semantic.color.textPrimary,
     ...theme.semantic.typography.bodyEmphasis,
+    ...theme.semantic.motion.transition.control,
   },
   channelNameInRow: {
     flexShrink: 1,
@@ -4979,6 +5008,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   channelNameSelected: {
     color: theme.semantic.color.textPrimary,
+    ...theme.semantic.motion.transition.control,
   },
   channelTextarea: {
     minHeight: theme.recipes.managementWorkspace.textareaMinHeight,
@@ -4993,10 +5023,12 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minHeight: theme.recipes.control.height,
     justifyContent: "center",
+    ...theme.semantic.motion.transition.control,
   },
   channelVisibilityButtonActive: {
     backgroundColor: theme.semantic.color.selectionSurface,
     borderWidth: theme.semantic.stroke.hairline,
+    ...theme.semantic.motion.transition.control,
   },
   channelVisibilityNotice: {
     color: theme.semantic.color.textMuted,
@@ -5019,10 +5051,12 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "space-between",
     minHeight: theme.recipes.compactWorkspace.listRowMinHeight,
     paddingHorizontal: theme.spacing.md,
+    ...theme.semantic.motion.transition.control,
   },
   compactChannelButtonSelected: {
     backgroundColor: theme.semantic.color.selectionSurface,
     borderColor: velaTheme.semantic.color.borderSelected,
+    ...theme.semantic.motion.transition.control,
   },
   compactChannelActions: {
     flexDirection: "row",
@@ -5158,10 +5192,12 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing.md,
     minHeight: theme.recipes.compactWorkspace.switcherRowMinHeight,
     paddingHorizontal: theme.spacing.sm,
+    ...theme.semantic.motion.transition.control,
   },
   compactServerButtonSelected: {
     backgroundColor: theme.semantic.color.selectionSurface,
     borderColor: velaTheme.semantic.color.borderSelected,
+    ...theme.semantic.motion.transition.control,
   },
   compactServerInitial: {
     backgroundColor: theme.semantic.color.avatarServerSurface,
@@ -5427,6 +5463,7 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     minWidth: theme.recipes.compactWorkspace.navigationItemMinWidth,
     width: "100%",
+    ...theme.semantic.motion.transition.control,
   },
   mobileNavigationItem: {
     alignItems: "stretch",
@@ -5437,6 +5474,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.semantic.color.selectionSurface,
     borderColor: theme.semantic.color.borderControl,
     borderWidth: theme.semantic.stroke.hairline,
+    ...theme.semantic.motion.transition.control,
   },
   mobileNavigationLabel: {
     ...theme.semantic.typography.navigationLabel,
@@ -5455,6 +5493,7 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.recipes.desktopWorkspace.navigationGap,
     paddingTop: theme.recipes.desktopWorkspace.navigationTopInset,
     width: "100%",
+    ...theme.semantic.motion.transition.control,
   },
   railNavigationButton: {
     alignItems: "center",
@@ -5472,10 +5511,12 @@ const styles = StyleSheet.create((theme) => ({
     height: theme.recipes.desktopWorkspace.navigationControlSize,
     justifyContent: "center",
     width: theme.recipes.desktopWorkspace.navigationControlSize,
+    ...theme.semantic.motion.transition.control,
   },
   railNavigationHovered: {
     backgroundColor: theme.semantic.color.surfaceMuted,
     borderColor: theme.semantic.color.borderControl,
+    ...theme.semantic.motion.transition.control,
   },
   railNavigationItem: {
     height: theme.recipes.identity.avatarAccountSize,
@@ -5644,6 +5685,7 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: theme.recipes.managementWorkspace.rowMinHeight,
     paddingHorizontal: theme.spacing.sm,
     paddingVertical: theme.spacing.xs,
+    ...theme.semantic.motion.transition.control,
   },
   searchResultAction: {
     alignItems: "center",
@@ -5663,6 +5705,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   searchResultDisabled: {
     opacity: theme.semantic.opacity.contentSubtle,
+    ...theme.semantic.motion.transition.control,
   },
   searchResultMeta: {
     alignItems: "center",
@@ -5676,6 +5719,7 @@ const styles = StyleSheet.create((theme) => ({
   searchResultPressed: {
     backgroundColor: theme.semantic.color.selectionSurface,
     borderColor: theme.semantic.color.borderSelected,
+    ...theme.semantic.motion.transition.control,
   },
   searchResultText: {
     color: theme.semantic.color.textPrimary,
@@ -5736,16 +5780,20 @@ const styles = StyleSheet.create((theme) => ({
     height: theme.recipes.identity.avatarNavigationSize,
     justifyContent: "center",
     width: theme.recipes.identity.avatarNavigationSize,
+    ...theme.semantic.motion.transition.control,
   },
   serverMarkSelected: {
     backgroundColor: theme.semantic.color.avatarServerSurface,
     borderColor: velaTheme.semantic.color.borderSelected,
+    ...theme.semantic.motion.transition.control,
   },
   serverMarkText: {
     ...theme.semantic.typography.messageBody,
+    ...theme.semantic.motion.transition.control,
   },
   serverMarkTextSelected: {
     color: theme.semantic.color.avatarServerText,
+    ...theme.semantic.motion.transition.control,
   },
   serverMarks: {
     alignItems: "center",

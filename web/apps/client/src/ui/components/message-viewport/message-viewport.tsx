@@ -361,10 +361,12 @@ const styles = StyleSheet.create((theme) => ({
     shadowOpacity: theme.shadows.overlay.opacity,
     shadowRadius: theme.shadows.overlay.radius,
     width: theme.semantic.interaction.minimumTargetSize,
+    ...theme.semantic.motion.transition.control,
   },
   newMessagesPressed: {
     backgroundColor: theme.semantic.color.actionTonalSurface,
     transform: [{ scale: theme.semantic.interaction.pressedScale }],
+    ...theme.semantic.motion.transition.control,
   },
   newMessagesBadge: {
     alignItems: "center",

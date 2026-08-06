@@ -487,10 +487,12 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minHeight: theme.recipes.control.height,
     justifyContent: "center",
+    ...theme.semantic.motion.transition.control,
   },
   visibilityButtonActive: {
     backgroundColor: theme.semantic.color.selectionSurface,
     borderColor: theme.semantic.color.borderSelected,
+    ...theme.semantic.motion.transition.control,
   },
   visibilityRow: {
     flexDirection: "row",
