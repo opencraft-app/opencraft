@@ -11,6 +11,7 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,7 +27,6 @@ import (
 type cosClient struct {
 	bucket string
 	region string
-	envID  string
 	client *cos.Client
 }
 
@@ -40,9 +40,18 @@ type Deployer struct {
 	uploadsPerMinute     int64
 	rateLimitRedis       *redis.Client
 	internalToken        string
+
+	// siteCos 是所有用户站点共用的 COS 桶。
+	//
+	// 一期用 CloudBase 托管时，每个 TCB 环境一个桶，需要环境发现、容量统计和
+	// 超限切换；现在改为自建单桶 + 前缀分租户，这些机制全部不再需要。
+	siteCos *cosClient
+	// siteRootDomain 是站点子域名的根域，公开 URL 由它和 siteID 拼成。
+	// 走配置而非常量：测试与正式用不同的域，正式根域后续还会更换。
+	siteRootDomain string
 }
 
-func NewDeployer() *Deployer {
+func NewDeployer() (*Deployer, error) {
 	d := &Deployer{
 		ctlBaseURL: getEnv("CTL_BASE_URL", "http://ctl-api.ctl.svc.cluster.local"),
 		httpClient: &http.Client{Timeout: 30 * time.Second},
@@ -56,11 +65,48 @@ func NewDeployer() *Deployer {
 		// 峰值约为 MAX_CONCURRENCY × maxArtifactBytes。
 		maxUncompressedBytes: getPositiveInt64Env("WEBSITE_MAX_UNCOMPRESSED_BYTES", 256*1024*1024),
 		uploadsPerMinute:     getPositiveInt64Env("WEBSITE_COS_UPLOADS_PER_MINUTE", 8000),
+		siteRootDomain:       strings.Trim(strings.TrimSpace(getEnv("WEBSITE_SITE_ROOT_DOMAIN", "")), "."),
+	}
+	if d.siteRootDomain == "" {
+		return nil, fmt.Errorf("WEBSITE_SITE_ROOT_DOMAIN is required")
 	}
 
-	// TCB 环境通过 COS Service API 动态发现，无需静态配置
-	// 首次调用 selectTCBEnv / getTCBEnvByID 时自动触发发现
-	return d
+	siteCos, err := newSiteCosClient()
+	if err != nil {
+		return nil, err
+	}
+	d.siteCos = siteCos
+	return d, nil
+}
+
+// newSiteCosClient 构造用户站点桶的客户端。
+//
+// 这个桶只放用户生成内容，不与任何自有业务共用：腾讯云对违规内容的处置粒度
+// 可以到桶，共用会让一个违规站点连累自有业务。
+func newSiteCosClient() (*cosClient, error) {
+	bucket := strings.TrimSpace(getEnv("WEBSITE_COS_BUCKET", ""))
+	region := strings.TrimSpace(getEnv("WEBSITE_COS_REGION", ""))
+	if bucket == "" || region == "" {
+		return nil, fmt.Errorf("WEBSITE_COS_BUCKET and WEBSITE_COS_REGION are required")
+	}
+	secretID := strings.TrimSpace(os.Getenv("TENCENT_SECRET_ID"))
+	secretKey := strings.TrimSpace(os.Getenv("TENCENT_SECRET_KEY"))
+	if secretID == "" || secretKey == "" {
+		return nil, fmt.Errorf("TENCENT_SECRET_ID and TENCENT_SECRET_KEY are required")
+	}
+
+	bucketURL, err := url.Parse(fmt.Sprintf("https://%s.cos.%s.myqcloud.com", bucket, region))
+	if err != nil {
+		return nil, fmt.Errorf("build bucket url: %w", err)
+	}
+	client := cos.NewClient(&cos.BaseURL{BucketURL: bucketURL}, &http.Client{
+		Timeout: 5 * time.Minute,
+		Transport: &cos.AuthorizationTransport{
+			SecretID:  secretID,
+			SecretKey: secretKey,
+		},
+	})
+	return &cosClient{bucket: bucket, region: region, client: client}, nil
 }
 
 func (d *Deployer) SetRateLimitRedisClient(client *redis.Client) {
@@ -118,23 +164,16 @@ func (d *Deployer) ClaimOperation(opID string) (*Operation, bool, error) {
 	return result.Data.Operation, result.Data.Claimed, nil
 }
 
-// getCosForEnv 根据 TCB 环境ID 动态发现并创建 COS 客户端
-func (d *Deployer) getCosForEnv(envID string) *cosClient {
-	env := getTCBEnvByID(envID)
-	if env == nil {
-		return nil
-	}
-	return newCosClientFromEnv(env)
-}
-
-// getSitePublicURL 返回 TCB 静态托管原生 URL，不经过 Vela 代理。
+// getSitePublicURL 返回站点的公开地址。
+//
+// 站点经由我们自己的网关（site-gateway）对外服务，地址是 siteID 的子域名，
+// 不再暴露对象存储的真实地址——否则用户可以绕过网关，我们就失去了限流、
+// 到期下线和违规封禁的能力。
 func (d *Deployer) getSitePublicURL(op Operation) string {
-	env := getTCBEnvByID(op.TCBEnvID)
-	if env == nil || env.EnvID == "" || env.AppID == "" {
+	if d.siteRootDomain == "" || op.SiteID == "" {
 		return ""
 	}
-	return fmt.Sprintf("https://%s-%s.tcloudbaseapp.com/%sindex.html",
-		env.EnvID, env.AppID, sitePublishedPrefix(op.SiteID))
+	return fmt.Sprintf("https://%s.%s/", op.SiteID, d.siteRootDomain)
 }
 
 // 站点在 CloudBase 静态托管桶里的目录布局：
@@ -288,9 +327,9 @@ func (d *Deployer) executeResume(op Operation) error {
 // 流程：下载制品 → 校验 → 上传到 releases/{releaseID}/ 暂存 → 同步到 current/。
 // 先写暂存目录再同步，是为了让上传中途失败不会破坏正在对外服务的 current/。
 func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
-	siteCos := d.getCosForEnv(op.TCBEnvID)
+	siteCos := d.siteCos
 	if siteCos == nil {
-		return d.failOperation(op, "CloudBase COS not configured for env: "+op.TCBEnvID)
+		return d.failOperation(op, "site COS bucket is not configured")
 	}
 
 	// 1. 下载制品。deploy 场景下 Agent 可能还在上传，需要给它一个窗口。
@@ -369,7 +408,7 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 
 			uploadCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
-			if err := d.waitForUploadSlot(uploadCtx, siteCos.envID); err != nil {
+			if err := d.waitForUploadSlot(uploadCtx); err != nil {
 				errMu.Lock()
 				uploadErrors = append(uploadErrors, fmt.Errorf("rate limit %s: %v", key, err))
 				errMu.Unlock()
@@ -441,7 +480,7 @@ func (d *Deployer) syncToCurrent(siteCos *cosClient, op Operation, stagingPrefix
 
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
-			if err := d.waitForUploadSlot(ctx, siteCos.envID); err != nil {
+			if err := d.waitForUploadSlot(ctx); err != nil {
 				errMu.Lock()
 				copyErrors = append(copyErrors, fmt.Errorf("rate limit %s: %v", name, err))
 				errMu.Unlock()
@@ -521,9 +560,9 @@ func (d *Deployer) listCosKeys(client *cosClient, prefix string) ([]string, erro
 // 所以「下线」只能通过真正删除线上文件实现，改 DB 状态是不够的。
 // 制品 zip 必须保留，它是续费后恢复站点的唯一数据源。
 func (d *Deployer) executeSuspend(op Operation) error {
-	siteCos := d.getCosForEnv(op.TCBEnvID)
+	siteCos := d.siteCos
 	if siteCos == nil {
-		return d.failOperation(op, "CloudBase COS not configured for env: "+op.TCBEnvID)
+		return d.failOperation(op, "site COS bucket is not configured")
 	}
 
 	prefix := fmt.Sprintf("sites/%s/", op.SiteID)
@@ -537,9 +576,9 @@ func (d *Deployer) executeSuspend(op Operation) error {
 // completes after COS confirms cleanup, so ctl does not release the user's
 // site quota while a public object may still exist.
 func (d *Deployer) executeDelete(op Operation) error {
-	siteCos := d.getCosForEnv(op.TCBEnvID)
+	siteCos := d.siteCos
 	if siteCos == nil {
-		return d.failOperation(op, "CloudBase COS not configured for env: "+op.TCBEnvID)
+		return d.failOperation(op, "site COS bucket is not configured")
 	}
 
 	// Published files first: a failed delete must leave the site in deleting
@@ -689,16 +728,15 @@ redis.call('PEXPIRE', key, 120000)
 return 1
 `)
 
-// waitForUploadSlot applies one shared token bucket per CloudBase environment.
-// It protects the vendor quota even when deployment work is spread across pods.
-func (d *Deployer) waitForUploadSlot(ctx context.Context, envID string) error {
+// waitForUploadSlot 对站点桶施加一个全局共享的令牌桶。
+//
+// 所有用户站点共用一个桶，所以限流也只需要一个键；它保护的是 COS 的请求配额，
+// 且必须跨 Pod 共享，否则多副本会各自按上限发压。
+func (d *Deployer) waitForUploadSlot(ctx context.Context) error {
 	if d.rateLimitRedis == nil || d.uploadsPerMinute <= 0 {
 		return nil
 	}
-	if envID == "" {
-		envID = "default"
-	}
-	key := "website:cos:upload-rate:" + envID
+	key := "website:cos:upload-rate:" + d.siteCos.bucket
 	refillPerMS := float64(d.uploadsPerMinute) / float64(time.Minute.Milliseconds())
 	for {
 		allowed, err := uploadTokenBucketScript.Run(ctx, d.rateLimitRedis, []string{key}, d.uploadsPerMinute, refillPerMS, time.Now().UnixMilli()).Int()

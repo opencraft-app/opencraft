@@ -9,7 +9,6 @@ type Operation struct {
 	UserID        string `json:"UserID"`
 	OperationType string `json:"OperationType"`
 	Status        string `json:"Status"`
-	TCBEnvID      string `json:"TCBEnvID"`
 	LeaseToken    string `json:"LeaseToken"`
 }
 

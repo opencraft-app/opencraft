@@ -17,7 +17,10 @@ import (
 )
 
 func main() {
-	deployer := website.NewDeployer()
+	deployer, err := website.NewDeployer()
+	if err != nil {
+		log.Fatalf("website-deployer configuration error: %v", err)
+	}
 
 	// Redis 初始化（主路径：BLPOP 即时通知）
 	redisAddr := os.Getenv("REDIS_ADDR")

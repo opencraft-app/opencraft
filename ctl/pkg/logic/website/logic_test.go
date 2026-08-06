@@ -1,6 +1,7 @@
 package website
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -59,8 +60,27 @@ func TestValidateFilePath(t *testing.T) {
 }
 
 func TestGenerateUploadURL_NoConfig(t *testing.T) {
-	url := generateUploadURL("", "ws-test", "wr-test")
+	t.Setenv("WEBSITE_COS_BUCKET", "")
+	t.Setenv("WEBSITE_COS_REGION", "")
+
+	url := generateUploadURL("ws-test", "wr-test")
 	if url != "" {
 		t.Errorf("expected empty URL when COS not configured, got %s", url)
+	}
+}
+
+// 预签名 URL 的 key 由服务端拼接，Agent 拿到它也只能写自己站点的制品路径。
+func TestGenerateUploadURLScopedToSiteArtifact(t *testing.T) {
+	t.Setenv("WEBSITE_COS_BUCKET", "test-vela-user-sites-1388575217")
+	t.Setenv("WEBSITE_COS_REGION", "ap-beijing")
+	t.Setenv("TENCENT_SECRET_ID", "AKIDTESTTESTTESTTESTTESTTESTTEST")
+	t.Setenv("TENCENT_SECRET_KEY", "testtesttesttesttesttesttesttest")
+
+	got := generateUploadURL("ws-test", "wr-test")
+	if got == "" {
+		t.Fatal("配置齐全时应返回预签名 URL")
+	}
+	if !strings.Contains(got, "_artifacts/ws-test/wr-test.zip") {
+		t.Fatalf("预签名 URL 未指向本站点的制品路径: %s", got)
 	}
 }

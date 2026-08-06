@@ -23,6 +23,12 @@ const (
 	SiteStatusSuspended = "suspended"
 	SiteStatusDeleting  = "deleting"
 	SiteStatusDeleted   = "deleted"
+	// SiteStatusBlocked 是违规内容的人工封禁终态。
+	//
+	// 与 suspended 的区别：suspended 是套餐到期，续费即恢复；blocked 是我们主动
+	// 停用，不随套餐状态变化。独立成一个状态是为了让网关能秒级拦截违规站点，
+	// 而不必等待删除产物——先于云厂商动手是避免处罚升级到桶级/账号级的关键。
+	SiteStatusBlocked = "blocked"
 )
 
 // ---- Release 状态 ----
@@ -89,7 +95,6 @@ type SiteEntity struct {
 	IdempotencyKey *string `gorm:"column:idempotency_key"`
 	Status         string  `gorm:"column:status;index:idx_status"`
 	CloudPath      string  `gorm:"column:cloud_path"`
-	TCBEnvID       string  `gorm:"column:tcb_env_id"`
 	PublicURL      string  `gorm:"column:public_url"`
 	// OperationGeneration fences late workers so an older deploy cannot restore a deleted site.
 	OperationGeneration int64      `gorm:"column:operation_generation"`
@@ -137,7 +142,6 @@ type OperationEntity struct {
 	NextRetryAt    *time.Time `gorm:"column:next_retry_at"`
 	Attempt        int        `gorm:"column:attempt"`
 	SiteGeneration int64      `gorm:"column:site_generation"`
-	TCBEnvID       string     `gorm:"-"`
 }
 
 func (OperationEntity) TableName() string {

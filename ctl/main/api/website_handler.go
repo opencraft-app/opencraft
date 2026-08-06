@@ -99,6 +99,36 @@ func (h *websiteHandler) handleWebsitesByID(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+// handleInternalSite 处理 GET /internal/ctl/websites/sites/{siteId}
+//
+// 站点网关每次请求都要判断站点是否存在、是否已下线，走这个接口 + 网关侧短 TTL 缓存。
+func (h *websiteHandler) handleInternalSite(w http.ResponseWriter, r *http.Request) {
+	if !hasValidWebsiteInternalToken(r.Header.Get("X-Internal-Token")) {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	siteID := strings.TrimPrefix(r.URL.Path, "/internal/ctl/websites/sites/")
+	// 只接受单段 siteID：带子路径说明调用方拼错了 URL，静默截断会让它
+	// 拿到一个并非自己想查的站点。
+	if siteID == "" || strings.Contains(siteID, "/") {
+		writeHTTPError(w, r, errcode.ErrWebsiteNotFound)
+		return
+	}
+
+	site, err := h.logic.GetSiteInternal(siteID)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, site)
+}
+
 // handleInternalOperations 处理 /internal/ctl/websites/operations[/{opId}/claim|complete|fail]
 func (h *websiteHandler) handleInternalOperations(w http.ResponseWriter, r *http.Request) {
 	// Internal operation mutation is fail-closed. A misconfigured worker must

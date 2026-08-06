@@ -19,7 +19,6 @@ type SiteDao interface {
 	CreateSite(entity *SiteEntity) error
 	GetBySiteID(siteID string) (*SiteEntity, error)
 	GetBySiteIDForUser(userID, siteID string) (*SiteEntity, error)
-	GetBySiteIDs(siteIDs []string) ([]*SiteEntity, error)
 	ListByUserID(userID string, page, pageSize int) ([]*SiteEntity, int64, error)
 	UpdateStatus(siteID, newStatus string) error
 	UpdateCloudPathAndURL(siteID, cloudPath, publicURL string) error
@@ -71,21 +70,6 @@ func (d *siteDao) GetBySiteIDForUser(userID, siteID string) (*SiteEntity, error)
 		return nil, fmt.Errorf("get site for user: %w", err)
 	}
 	return &entity, nil
-}
-
-// GetBySiteIDs batch query sites by IDs, used to eliminate N+1 in ListPendingOperations
-func (d *siteDao) GetBySiteIDs(siteIDs []string) ([]*SiteEntity, error) {
-	if len(siteIDs) == 0 {
-		return nil, nil
-	}
-	var entities []*SiteEntity
-	err := resource.GormDB.Table(d.TableName).
-		Where("site_id IN ?", siteIDs).
-		Find(&entities).Error
-	if err != nil {
-		return nil, fmt.Errorf("batch get sites: %w", err)
-	}
-	return entities, nil
 }
 
 func (d *siteDao) ListByUserID(userID string, page, pageSize int) ([]*SiteEntity, int64, error) {
@@ -141,11 +125,18 @@ func (d *siteDao) SoftDelete(siteID string) error {
 		}).Error
 }
 
+// CountActiveByUserID 统计占用配额席位的站点。
+//
+// blocked 也要计入：违规封禁不释放席位，否则用户封一个就能再建一个，
+// 封禁反而变成了绕过配额的手段，而且被封站点的产物仍然占着存储。
 func (d *siteDao) CountActiveByUserID(userID string) (int64, error) {
 	var count int64
 	err := resource.GormDB.Table(d.TableName).
 		Where("user_id = ? AND status IN ? AND deleted_time IS NULL",
-			userID, []string{SiteStatusCreating, SiteStatusActive, SiteStatusSuspended, SiteStatusDeleting}).
+			userID, []string{
+				SiteStatusCreating, SiteStatusActive, SiteStatusSuspended,
+				SiteStatusDeleting, SiteStatusBlocked,
+			}).
 		Count(&count).Error
 	return count, err
 }

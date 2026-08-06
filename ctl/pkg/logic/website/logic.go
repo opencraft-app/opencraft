@@ -65,6 +65,14 @@ type DeleteSiteResult struct {
 	OperationID string `json:"operation_id"`
 }
 
+// SiteStatusView 是站点网关判定「是否对外服务」所需的最小视图。
+//
+// 站点网关是公网直连组件，这里只暴露它真正需要的两个字段。
+type SiteStatusView struct {
+	SiteID string `json:"site_id"`
+	Status string `json:"status"`
+}
+
 // ---- Logic 接口 ----
 
 type Logic interface {
@@ -76,6 +84,7 @@ type Logic interface {
 	ListReleases(userID, siteID string, page, pageSize int) ([]*website.ReleaseEntity, int64, error)
 	GetOperation(userID, operationID string) (*website.OperationEntity, error)
 	GetOperationInternal(operationID string) (*website.OperationEntity, error)
+	GetSiteInternal(siteID string) (*SiteStatusView, error)
 	ListPendingOperations(status string, limit int) ([]*website.OperationEntity, error)
 	ClaimOperation(operationID, workerID string, leaseTTL time.Duration) (*website.OperationEntity, bool, error)
 	CompleteOperation(operationID, leaseToken, cloudPath, publicURL string) error
@@ -423,12 +432,6 @@ func (l *logic) CreateSite(userID, bundleID, name, idempotencyKey string) (*Crea
 		return nil, err
 	}
 
-	// 选择 TCB 环境
-	tcbEnv, err := selectTCBEnv()
-	if err != nil {
-		return nil, err
-	}
-
 	err = resource.GormDB.Transaction(func(tx *gorm.DB) error {
 		if err := l.allocSiteQuotaTx(tx, userID); err != nil {
 			return err
@@ -440,7 +443,6 @@ func (l *logic) CreateSite(userID, bundleID, name, idempotencyKey string) (*Crea
 			BundleID:            bundleID,
 			Name:                name,
 			Status:              website.SiteStatusCreating,
-			TCBEnvID:            tcbEnv.EnvID,
 			OperationGeneration: 1,
 		}
 		if idempotencyKey != "" {
@@ -615,10 +617,8 @@ func (l *logic) CreateRelease(userID, siteID string, req CreateReleaseRequest) (
 		return nil, err
 	}
 
-	// COS 预签名上传 URL
-	// 一期：制品上传到 COS，路径格式 website-artifacts/{siteID}/{releaseID}.zip
-	// 如果 COS 配置不可用，返回空（Agent 可通过其他方式上传）
-	uploadURL := generateUploadURL(site.TCBEnvID, siteID, releaseID)
+	// COS 预签名上传 URL。配置不可用时返回空，由调用方决定是否降级。
+	uploadURL := generateUploadURL(siteID, releaseID)
 
 	l.notifyDeployer(operationID)
 
@@ -631,19 +631,18 @@ func (l *logic) CreateRelease(userID, siteID string, req CreateReleaseRequest) (
 	}, nil
 }
 
-// generateUploadURL 生成 CloudBase COS 预签名 PUT 上传 URL，有效期 1 小时
-// 根据站点的 tcb_env_id 选择对应的 TCB 环境 COS 凭据
-func generateUploadURL(tcbEnvID, siteID, releaseID string) string {
-	env := getTCBEnvByID(tcbEnvID)
-	if env == nil {
-		return ""
-	}
-	secretID, secretKey := getMainAccountSecrets()
-	if env.COSBucket == "" || env.COSRegion == "" || secretID == "" || secretKey == "" {
+// generateUploadURL 生成站点桶的预签名 PUT 上传 URL，有效期 1 小时。
+//
+// 预签名 URL 的 key 由服务端拼接，Agent 只能往指定的制品路径写，
+// 无法借这个 URL 触达其他站点的前缀。
+func generateUploadURL(siteID, releaseID string) string {
+	bucket, region := siteCOSBucket()
+	secretID, secretKey := siteCOSSecrets()
+	if bucket == "" || region == "" || secretID == "" || secretKey == "" {
 		return ""
 	}
 
-	bucketURL, err := url.Parse(fmt.Sprintf("https://%s.cos.%s.myqcloud.com", env.COSBucket, env.COSRegion))
+	bucketURL, err := url.Parse(fmt.Sprintf("https://%s.cos.%s.myqcloud.com", bucket, region))
 	if err != nil {
 		return ""
 	}
@@ -688,6 +687,24 @@ func (l *logic) GetOperation(userID, operationID string) (*website.OperationEnti
 	return op, nil
 }
 
+// ---- GetSiteInternal (供站点网关按 siteID 查状态，无用户维度) ----
+
+// GetSiteInternal 返回站点网关判定「是否对外服务」所需的最小信息。
+//
+// 刻意只返回 site_id 和 status，不返回实体本身：站点网关是公网直连组件，
+// 泄露 user_id、pass_id 这类字段没有必要，多一个字段就多一份暴露面。
+func (l *logic) GetSiteInternal(siteID string) (*SiteStatusView, error) {
+	site, err := l.siteDao.GetBySiteID(siteID)
+	if err != nil {
+		return nil, err
+	}
+	// 已软删的站点对网关等同于不存在，避免删除后子域名仍能命中。
+	if site == nil || site.DeletedTime != nil {
+		return nil, errcode.ErrWebsiteNotFound
+	}
+	return &SiteStatusView{SiteID: site.SiteID, Status: site.Status}, nil
+}
+
 // ---- GetOperationInternal (for deployer internal use, no user isolation) ----
 
 func (l *logic) GetOperationInternal(operationID string) (*website.OperationEntity, error) {
@@ -702,7 +719,6 @@ func (l *logic) GetOperationInternal(operationID string) (*website.OperationEnti
 	if site == nil {
 		return nil, errcode.ErrWebsiteNotFound
 	}
-	op.TCBEnvID = site.TCBEnvID
 	return op, nil
 }
 
@@ -715,34 +731,7 @@ func (l *logic) ListPendingOperations(status string, limit int) ([]*website.Oper
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	ops, err := l.operationDao.ListByStatus(status, limit)
-	if err != nil {
-		return nil, err
-	}
-	if len(ops) == 0 {
-		return ops, nil
-	}
-	// Batch query: collect site IDs, query all at once
-	siteIDs := make([]string, 0, len(ops))
-	seen := make(map[string]bool)
-	for _, op := range ops {
-		if !seen[op.SiteID] {
-			seen[op.SiteID] = true
-			siteIDs = append(siteIDs, op.SiteID)
-		}
-	}
-	sites, err := l.siteDao.GetBySiteIDs(siteIDs)
-	if err != nil {
-		return nil, fmt.Errorf("batch get sites for operations: %w", err)
-	}
-	siteMap := make(map[string]string, len(sites))
-	for _, s := range sites {
-		siteMap[s.SiteID] = s.TCBEnvID
-	}
-	for _, op := range ops {
-		op.TCBEnvID = siteMap[op.SiteID]
-	}
-	return ops, nil
+	return l.operationDao.ListByStatus(status, limit)
 }
 
 // ClaimOperation atomically assigns a created (or expired) operation to one worker.

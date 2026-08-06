@@ -113,7 +113,6 @@ func seedSite(t *testing.T, siteID, userID, status string, generation int64) {
 		SiteID:              siteID,
 		Status:              status,
 		BundleID:            "bundle-1",
-		TCBEnvID:            "env-1",
 		OperationGeneration: generation,
 	}
 	site.UserID = userID

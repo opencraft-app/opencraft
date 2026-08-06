@@ -11,6 +11,7 @@ use (
 	./payment
 	./service-gateway
 	./shared/cloudladdertransport
+	./site-gateway
 	./subscription
 	./third_party/staticpages
 	./trade

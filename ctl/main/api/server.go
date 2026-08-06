@@ -26,11 +26,11 @@ import (
 	orderlogic "ctl/pkg/logic/order"
 	passlogic "ctl/pkg/logic/pass"
 	snapshotlogic "ctl/pkg/logic/snapshot"
+	websitelogic "ctl/pkg/logic/website"
 	"ctl/pkg/metric"
 	"ctl/pkg/resource"
 	"ctl/pkg/tracing"
 	"ctl/pkg/transport"
-	websitelogic "ctl/pkg/logic/website"
 
 	adapterfactory "ctl/pkg/adapter/factory"
 
@@ -221,6 +221,7 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	mux.HandleFunc("/v1/websites/", wh.handleWebsitesByID)
 	mux.HandleFunc("/internal/ctl/websites/operations", wh.handleInternalOperations)
 	mux.HandleFunc("/internal/ctl/websites/operations/", wh.handleInternalOperations)
+	mux.HandleFunc("/internal/ctl/websites/sites/", wh.handleInternalSite)
 
 	return requestMetadataMiddleware(metricsMiddleware(notFoundMiddleware(mux)))
 }

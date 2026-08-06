@@ -1,0 +1,132 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: site-gateway-config
+  namespace: ctl
+data:
+  SITE_GATEWAY_ADDR: ":8080"
+  SITE_GATEWAY_ADMIN_ADDR: ":8081"
+  # 根域走配置而非常量：测试与正式用不同的域，正式根域后续还会更换。
+  SITE_GATEWAY_ROOT_DOMAINS: "REPLACE_SITE_GATEWAY_ROOT_DOMAINS"
+  # 用户站点专用桶，不与任何自有业务共用——腾讯云对违规内容的处置粒度可以到桶。
+  SITE_GATEWAY_COS_BUCKET: "REPLACE_SITE_GATEWAY_COS_BUCKET"
+  SITE_GATEWAY_COS_REGION: "REPLACE_SITE_GATEWAY_COS_REGION"
+  SITE_GATEWAY_CTL_BASE_URL: "REPLACE_SITE_GATEWAY_CTL_BASE_URL"
+  SITE_GATEWAY_SITE_CACHE_TTL: "30s"
+  SITE_GATEWAY_SITE_MISS_CACHE_TTL: "5s"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: site-gateway
+  namespace: ctl
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: site-gateway
+  template:
+    metadata:
+      labels:
+        app: site-gateway
+      annotations:
+        site-gateway.lightclaw.dev/redeploy-at: REPLACE_SITE_GATEWAY_DEPLOYED_AT
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: site-gateway
+      containers:
+        - name: site-gateway
+          image: REPLACE_SITE_GATEWAY_IMAGE
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: site-gateway-config
+          env:
+            - name: TENCENT_SECRET_ID
+              valueFrom:
+                secretKeyRef:
+                  name: site-gateway-secrets
+                  key: TENCENT_SECRET_ID
+            - name: TENCENT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: site-gateway-secrets
+                  key: TENCENT_SECRET_KEY
+            - name: WEBSITE_INTERNAL_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: site-gateway-secrets
+                  key: WEBSITE_INTERNAL_API_TOKEN
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: admin
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: admin
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 1000m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: site-gateway
+  namespace: ctl
+spec:
+  selector:
+    app: site-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: site-gateway
+  namespace: ctl
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  # 泛域名证书只覆盖一级标签：*.lightclaw.tech 能覆盖 ws-xxx.lightclaw.tech，
+  # 但覆盖不了 ws-xxx.sites.lightclaw.tech。站点子域名因此挂在根域下一级，
+  # 直接复用已有证书，不必为过渡期的 PoC 域再申请一张。
+  tls:
+    - hosts:
+        - REPLACE_SITE_GATEWAY_WILDCARD_HOST
+      secretName: REPLACE_SITE_GATEWAY_TLS_SECRET_NAME
+  rules:
+    # 泛域名入口，每个站点一个子域名。
+    #
+    # nginx ingress 中精确 host 的优先级高于泛域名，因此这条规则不会抢走
+    # api.lightclaw.tech 这类已有服务的流量。
+    - host: REPLACE_SITE_GATEWAY_WILDCARD_HOST
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: site-gateway
+                port:
+                  name: http
