@@ -127,6 +127,22 @@ describe("Vela token usage", () => {
     }
   });
 
+  it("sizes a choice off the density scale, not the reach floor", () => {
+    // minimumTargetSize is a floor ("a finger needs 48pt"), not a measurement
+    // ("this control is 48pt"). Sizing off it pinned the choice chips at 48
+    // on a desktop where their neighbouring buttons stand 30 tall.
+    const management = readFileSync(
+      join(process.cwd(), "src", "ui", "components", "management-workspace.tsx"),
+      "utf8",
+    );
+    const chip =
+      /^ {2}selectionButton: \{\n([\s\S]*?)^ {2}\},$/mu.exec(management)?.[1] ??
+      "";
+
+    expect(chip).toContain("minHeight: theme.recipes.control.height");
+    expect(chip).not.toContain("interaction.minimumTargetSize");
+  });
+
   it("lets an identity mark's shape say what it stands for", () => {
     // The shape used to say which screen you were on: chat drew people as
     // circles and channels as tiles, management drew people, agents and

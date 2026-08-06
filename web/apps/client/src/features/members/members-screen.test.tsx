@@ -432,7 +432,7 @@ describe("MembersScreen", () => {
     expect(screen.getByText("管理员")).toBeVisible();
     expect(
       screen.getByRole("button", {name: "邀请普通成员"}),
-    ).toHaveStyle({minHeight: 48});
+    ).toHaveStyle({minHeight: velaTheme.recipes.control.height});
     expect(screen.getByText("有效期")).toBeVisible();
     expect(screen.getByText("最大使用次数")).toBeVisible();
     expect(screen.getByTestId("member-invite-form")).toHaveStyle({

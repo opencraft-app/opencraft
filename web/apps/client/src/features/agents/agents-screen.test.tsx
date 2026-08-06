@@ -391,10 +391,16 @@ describe("AgentsScreen", () => {
     expect(screen.getAllByText("新建 Agent")).toHaveLength(1);
     expect(
       screen.getByRole("button", {name: "选择 codex"}),
-    ).toHaveStyle({minHeight: 48, minWidth: 48});
+    ).toHaveStyle({
+      minHeight: velaTheme.recipes.control.height,
+      minWidth: velaTheme.recipes.control.height,
+    });
     expect(
       screen.getByRole("button", {name: "绑定 Computer 研发机"}),
-    ).toHaveStyle({minHeight: 48, minWidth: 48});
+    ).toHaveStyle({
+      minHeight: velaTheme.recipes.control.height,
+      minWidth: velaTheme.recipes.control.height,
+    });
     await fireEvent.changeText(
       screen.getByLabelText("Agent 显示名"),
       "交付助手",

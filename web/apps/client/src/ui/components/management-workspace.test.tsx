@@ -180,7 +180,7 @@ describe("management workspace primitives", () => {
       backgroundColor: "#EAF4FF",
       borderColor: "rgba(0, 111, 238, 0.22)",
       borderRadius: 10,
-      minHeight: 48,
+      minHeight: velaTheme.recipes.control.height,
     });
     await fireEvent(screen.getByTestId("idle-choice"), "hoverIn");
     expect(screen.getByTestId("idle-choice")).toHaveStyle({
