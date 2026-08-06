@@ -77,6 +77,7 @@ import {
 import { ThreadPanel } from "../components/thread-panel";
 import { UserPicker } from "../components/user-picker";
 import { InlineEmptyState } from "../components/management-workspace";
+import { ActionButton } from "../primitives/action-button";
 import { formatConversationTimestamp } from "../date-time";
 import {
   memberByImUserId,
@@ -2744,14 +2745,13 @@ function MessageStage({
           <Text style={styles.reconnectNoticeText}>
             {imStatusMessage ?? "消息连接已中断，请重新连接"}
           </Text>
-          <Pressable
+          <ActionButton
             accessibilityLabel="重新连接聊天"
-            accessibilityRole="button"
+            align="center"
+            importance="secondary"
+            label="重新连接"
             onPress={onReconnect}
-            style={styles.reconnectButton}
-          >
-            <Text style={styles.reconnectButtonText}>重新连接</Text>
-          </Pressable>
+          />
         </View>
       ) : null}
       {needsMembership ? (
@@ -5306,16 +5306,6 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     ...theme.semantic.typography.bodyCompactEmphasis,
   },
-  reconnectButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionSecondarySurface,
-    borderColor: theme.semantic.color.actionSecondaryBorder,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    justifyContent: "center",
-    minHeight: theme.semantic.interaction.minimumTargetSize,
-    paddingHorizontal: theme.spacing.md,
-  },
   reconnectNotice: {
     alignItems: "center",
     backgroundColor: theme.semantic.color.statusInfoSurface,
@@ -5331,10 +5321,6 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.semantic.color.statusInfoText,
     flex: 1,
     ...theme.semantic.typography.bodyCompactEmphasis,
-  },
-  reconnectButtonText: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.bodySmallEmphasis,
   },
   messageEyebrow: {
     color: theme.semantic.color.textMuted,

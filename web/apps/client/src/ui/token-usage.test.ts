@@ -42,7 +42,7 @@ describe("Vela token usage", () => {
       return block ? /paddingHorizontal|minHeight|height:/u.test(block[1]!) : false;
     });
 
-    expect(boxed.length).toBeLessThanOrEqual(15);
+    expect(boxed.length).toBeLessThanOrEqual(14);
   });
 
   it("carries the transition on both halves of every interaction pair", () => {

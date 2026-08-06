@@ -19,8 +19,16 @@ export type ActionImportance =
   | "secondary"
   | "tonal";
 
+/**
+ * Hugging its content is the button's business; which edge it hugs is the
+ * parent's. React Native has no `fit-content`, so the button has to set
+ * `alignSelf` itself — which reads as "left" in a column and "top" in a row.
+ */
+export type ActionAlign = "center" | "start" | "stretch";
+
 export interface ActionButtonProps {
   accessibilityLabel?: string;
+  align?: ActionAlign;
   busy?: boolean;
   context?: ActionContext;
   disabled?: boolean;
@@ -34,6 +42,7 @@ export interface ActionButtonProps {
 
 export function ActionButton({
   accessibilityLabel,
+  align = "start",
   busy = false,
   context = "default",
   disabled = false,
@@ -62,6 +71,8 @@ export function ActionButton({
       onPress={onPress}
       style={({pressed}) => [
         styles.action,
+        align === "center" && styles.actionAlignCenter,
+        align === "stretch" && styles.actionAlignStretch,
         context === "header" && styles.actionHeader,
         importance === "secondary" && styles.actionSecondary,
         importance === "quiet" && styles.actionQuiet,
@@ -111,6 +122,8 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing.lg,
     ...theme.semantic.motion.transition.control,
   },
+  actionAlignCenter: {alignSelf: "center"},
+  actionAlignStretch: {alignSelf: "stretch"},
   actionDanger: {
     backgroundColor: theme.semantic.color.actionDangerSurface,
     borderColor: theme.semantic.color.actionDangerBorder,
