@@ -42,7 +42,7 @@ describe("Vela token usage", () => {
       return block ? /paddingHorizontal|minHeight|height:/u.test(block[1]!) : false;
     });
 
-    expect(boxed.length).toBeLessThanOrEqual(14);
+    expect(boxed.length).toBeLessThanOrEqual(11);
   });
 
   it("carries the transition on both halves of every interaction pair", () => {
@@ -375,7 +375,6 @@ describe("Vela token usage", () => {
       ["layouts/workspace-shell.tsx", "chatErrorToastIcon", ["iconControl.compactSize"]],
       ["layouts/workspace-shell.tsx", "messageHeaderIcon", ["iconControl.denseSize"]],
       ["layouts/workspace-shell.tsx", "onlineAgentsDot", ["identity.statusDotSize"]],
-      ["layouts/workspace-shell.tsx", "headerMembersButton", ["iconControl.smallSize"]],
       ["layouts/workspace-shell.tsx", "railNavigationItem", ["identity.avatarAccountSize"]],
       ["layouts/workspace-shell.tsx", "railTooltip", ["iconControl.compactSize"]],
       ["layouts/workspace-shell.tsx", "searchResult", ["managementWorkspace.rowMinHeight"]],
@@ -390,7 +389,6 @@ describe("Vela token usage", () => {
       ["layouts/workspace-shell.tsx", "chatErrorToast", ["status.toastMinHeight"]],
       ["layouts/workspace-shell.tsx", "reconnectNotice", ["status.bannerMinHeight"]],
       ["layouts/workspace-shell.tsx", "onlineAgentsBadge", ["status.summaryMinHeight"]],
-      ["layouts/workspace-shell.tsx", "searchMore", ["iconControl.denseSize"]],
       ["screens/auth-screen.tsx", "formPanel", ["contentMeasure.readingMaxWidth"]],
       ["screens/auth-screen.tsx", "input", ["authWorkspace.controlHeight"]],
       ["screens/auth-screen.tsx", "primaryButton", ["authWorkspace.primaryActionHeight"]],

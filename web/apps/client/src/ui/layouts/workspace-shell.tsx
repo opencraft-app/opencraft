@@ -2703,22 +2703,16 @@ function MessageStage({
               />
             </Pressable>
             {!direct ? (
-              <Pressable
+              <ActionButton
                 accessibilityLabel={`查看 Channel ${channel?.name ?? ""} 的 ${channelMemberCount} 位成员`}
-                accessibilityRole="button"
+                align="center"
+                context="header"
                 disabled={!channel}
+                icon={UsersRound}
+                importance="quiet"
+                label={`${channelMemberCount} 位成员`}
                 onPress={onOpenChannelMembers}
-                style={styles.headerMembersButton}
-              >
-                <UsersRound
-                  color={velaTheme.semantic.color.iconSecondary}
-                  size={velaTheme.semantic.icon.size.medium}
-                  strokeWidth={velaTheme.semantic.icon.stroke.regular}
-                />
-                <Text style={styles.headerMembersText}>
-                  {channelMemberCount} 位成员
-                </Text>
-              </Pressable>
+              />
             ) : null}
             {imStatus === "ready" ? null : (
               <ConnectionBadge status={imStatus} />
@@ -2887,17 +2881,15 @@ function MessageSearchPanel({
           style={styles.searchInput}
           value={draft}
         />
-        <Pressable
+        <ActionButton
           accessibilityLabel="执行消息搜索"
-          accessibilityRole="button"
+          align="center"
+          busy={loading}
           disabled={loading || draft.trim().length === 0}
+          importance="tonal"
+          label={loading ? "搜索中…" : "搜索"}
           onPress={onSearch}
-          style={styles.searchSubmit}
-        >
-          <Text style={styles.searchSubmitText}>
-            {loading ? "搜索中…" : "搜索"}
-          </Text>
-        </Pressable>
+        />
         <Pressable
           accessibilityLabel="关闭消息搜索"
           accessibilityRole="button"
@@ -2993,17 +2985,14 @@ function MessageSearchPanel({
             );
           })}
           {!completed ? (
-            <Pressable
+            <ActionButton
               accessibilityLabel="加载更多搜索结果"
-              accessibilityRole="button"
+              busy={loading}
               disabled={loading}
+              importance="secondary"
+              label={loading ? "加载中…" : "加载更多"}
               onPress={onLoadMore}
-              style={styles.searchMore}
-            >
-              <Text style={styles.searchSubmitText}>
-                {loading ? "加载中…" : "加载更多"}
-              </Text>
-            </Pressable>
+            />
           ) : null}
         </ScrollView>
       )}
@@ -5417,21 +5406,6 @@ const styles = StyleSheet.create((theme) => ({
     height: theme.recipes.iconControl.smallSize,
     width: theme.recipes.iconControl.smallSize,
   },
-  headerMembersButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.surfaceTransparent,
-    borderWidth: 0,
-    borderRadius: theme.semantic.radius.compactControl,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    height: theme.recipes.iconControl.smallSize,
-    justifyContent: "center",
-    paddingHorizontal: theme.spacing.md,
-  },
-  headerMembersText: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodySmallEmphasis,
-  },
   mobileBottomNavigation: {
     alignItems: "stretch",
     backgroundColor: theme.semantic.color.paneSurface,
@@ -5615,16 +5589,6 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     paddingHorizontal: theme.spacing.sm,
   },
-  searchMore: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    minHeight: theme.recipes.iconControl.denseSize,
-    justifyContent: "center",
-    paddingHorizontal: theme.spacing.md,
-  },
   searchPanel: {
     backgroundColor: theme.semantic.color.overlaySurface,
     borderColor: theme.semantic.color.borderOverlay,
@@ -5739,20 +5703,6 @@ const styles = StyleSheet.create((theme) => ({
   searchLocateErrorText: {
     color: theme.semantic.color.statusWarningText,
     ...theme.semantic.typography.bodySmallEmphasis,
-  },
-  searchSubmit: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionTonalSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    height: theme.semantic.interaction.minimumTargetSize,
-    justifyContent: "center",
-    paddingHorizontal: theme.spacing.md,
-  },
-  searchSubmitText: {
-    color: theme.semantic.color.actionTonalText,
-    ...theme.semantic.typography.captionEmphasis,
   },
   sectionLabel: {
     color: theme.semantic.color.textMuted,
