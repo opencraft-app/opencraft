@@ -115,11 +115,11 @@ python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --wi
 CI 入口：
 
 - `master` 上 `images/**` 变更会触发 `.ci/hermes-image.yml`；如果只改 `.ci/**`，需要手动触发，或同时更新 `images/hermes-image-trigger`
-- CI 使用 `python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --target-regions ap-beijing,ap-shanghai,ap-singapore --with-verify`
+- CI 使用 `python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --target-regions ap-beijing,ap-shanghai,ap-singapore,ap-tokyo --with-verify`
 - CI 会在验证日志中打印 Hermes 命令路径、`hermes --version` 输出、解析版本和 `acli` identity runtime 字段
 - CI 会验证 `agentuser` 下 WhatsApp bridge 的 Node 依赖可被 `require.resolve` 找到
 - CI 会验证 `agentuser` 的 Hermes venv 可以 import `lark_oapi` 和 `qrcode`
-- Hermes CI 镜像会并发同步到北京、上海和新加坡
+- Hermes CI 镜像会同步到北京、上海、新加坡和东京
 - Hermes CI 在人工确认后会从仓库内修补脚本临时创建 TAT Command 修复存量 VM，不要求手工传 `HERMES_TAT_COMMAND_ID`
 - TAT Command 创建脚本会动态解析最新非南京 Hermes backend blueprint，并把 ID 注入到下发脚本环境，目标 VM 不需要携带仓库文件
 - `images/hermes-image-trigger` 是专用触发文件；当只改 `.ci/**` 但需要触发 `.ci/hermes-image.yml` 时，更新这个文件并随 MR 合入
