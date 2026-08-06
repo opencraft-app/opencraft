@@ -1205,6 +1205,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         bundle = require_build_metadata(load_bundle(manifest, "frontend", PLAYGROUND_ENV))
 
         self.assertEqual(bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/frontend")
+        self.assertEqual(bundle.build_context, ".")
+        self.assertIn("velalink", bundle.allowed_paths)
         self.assertIn(f"argocd/services/frontend/{PLAYGROUND_ENV}/**", bundle.publish_paths)
 
         korea_bundle = require_build_metadata(load_bundle(manifest, "frontend", KOREA_PLAYGROUND_ENV))

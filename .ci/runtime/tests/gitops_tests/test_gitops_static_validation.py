@@ -49,6 +49,18 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
             self.assertEqual(errors, [])
 
+    def test_valid_tokyo_playground_catalog_passes_without_release_bundle_closure(self) -> None:
+        with self.repo() as tmp:
+            repo = self.write_valid_repo(tmp, env="sandbox-jp-1")
+
+            errors = validate(
+                repo,
+                "sandbox-jp-1",
+                repo / ".ci/runtime/release-bundles.manifest",
+            )
+
+            self.assertEqual(errors, [])
+
     def test_explicit_catalog_publish_exemption_passes(self) -> None:
         with self.repo() as tmp:
             repo = self.write_valid_repo(tmp, env="beijing-sandbox-2")
@@ -399,11 +411,14 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
     def write_valid_repo(self, raw_repo: str | Path, env: str = "beijing-sandbox") -> Path:
         repo = Path(raw_repo)
-        catalog_root = (
-            f"argocd/catalogs/playground/beijing-playground/{env}"
-            if env.startswith("sandbox-bj-")
-            else f"argocd/catalogs/sandbox/{env}"
-        )
+        if env.startswith("sandbox-bj-"):
+            catalog_root = f"argocd/catalogs/playground/beijing-playground/{env}"
+        elif env.startswith("sandbox-kr-"):
+            catalog_root = f"argocd/catalogs/playground/seoul-playground/{env}"
+        elif env.startswith("sandbox-jp-"):
+            catalog_root = f"argocd/catalogs/playground/tokyo-playground/{env}"
+        else:
+            catalog_root = f"argocd/catalogs/sandbox/{env}"
         (repo / ".ci/runtime").mkdir(parents=True)
         (repo / "argocd/apps/beijing-sandbox").mkdir(parents=True)
         (repo / catalog_root).mkdir(parents=True)

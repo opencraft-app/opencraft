@@ -123,3 +123,27 @@
 - `pnpm --dir frontend exec vitest run src/components/site/__tests__/login-modal.test.tsx src/components/site/__tests__/login-modal.global.test.tsx src/components/auth/__tests__/phone-login-form.test.tsx src/pages/marketing/__tests__/agent-create-error.test.ts`
 - `pnpm --dir frontend i18n:check`
 - `pnpm --dir frontend check`
+# 2026-08-06 Frontend release Docker monorepo context fix
+
+**Status:** 实现与验证完成，等待用户确认提交。
+
+**Goal:** 修复 frontend 正式镜像构建无法解析仓库内 `file:../velalink` 依赖的问题，同时保持 Docker build context 最小化。
+
+**Scope:** 仅调整 frontend release bundle、Dockerfile、Dockerfile 专属 ignore 和构建契约测试；不修改 frontend 或 velalink 运行时代码。
+
+## Tasks
+
+- [x] 将 frontend release bundle 的 build context 切换为仓库根，并把 `velalink` 纳入变更触发范围。
+- [x] 更新 Dockerfile 的根目录相对 COPY 路径，显式复制 `/velalink`。
+- [x] 用 Dockerfile 专属 ignore 仅放行 `frontend/` 与 `velalink/`。
+- [x] 运行契约测试、diff 检查和真实 Tokyo `linux/amd64` 构建推送验证。
+
+## Verification
+
+- `python3 .ci/runtime/tests/contract_tests/test_build_release_image.py`
+- `python3 .ci/runtime/tests/contract_tests/test_release_bundle_contracts.py ReleaseBundleContractTests.test_frontend_playground_release_uses_beijing_registry`
+- 国内构建机真实执行 `build_release_image.py --service frontend --env sandbox-jp-1 --platform linux/amd64 --push --reuse-existing`
+- JP TCR manifest：`frontend-6cf545e930d2`，`linux/amd64`
+- `git diff --check`
+
+---
