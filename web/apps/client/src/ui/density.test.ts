@@ -160,8 +160,26 @@ describe("density wiring", () => {
     expect(control.height).toBe(density.controlHeight);
     expect(desktopWorkspace.headerHeight).toBe(density.headerHeight);
     expect(desktopWorkspace.conversationRowMinHeight).toBe(
-      density.conversationRowMinHeight,
+      density.shelfRowMinHeight,
     );
     expect(desktopWorkspace.railWidth).toBe(density.railWidth);
+  });
+
+  it("sizes every list shelf row off one role", () => {
+    // Channels, direct messages and the management collection are the same
+    // two-line row in the same 312pt shelf. They agreed at 44 on a pointer
+    // and had drifted to 56, 64 and 64 on touch.
+    const { conversationWorkspace, desktopWorkspace, managementWorkspace } =
+      velaTheme.recipes;
+
+    expect([
+      conversationWorkspace.directRowMinHeight,
+      desktopWorkspace.conversationRowMinHeight,
+      managementWorkspace.rowMinHeight,
+    ]).toEqual([
+      density.shelfRowMinHeight,
+      density.shelfRowMinHeight,
+      density.shelfRowMinHeight,
+    ]);
   });
 });
