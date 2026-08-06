@@ -13,11 +13,15 @@ const ACTIVE_SHARED_FILES = [
   "create-first-hermes.md",
   "credits.md",
   "plans.md",
+  "use-cases/chinese-messaging-channels.md",
+  "use-cases/daily-summary.md",
+  "use-cases/hermes-agent-24-7.md",
+  "use-cases/memory-and-knowledge.md",
   "use-cases/personal-ai-assistant.md",
   "who-is-lightvela-for.md",
 ] as const;
 
-const ENGLISH_ONLY_SHARED_FILES = [
+const LOCALE_SENSITIVE_USE_CASE_FILES = [
   "use-cases/chinese-messaging-channels.md",
   "use-cases/daily-summary.md",
   "use-cases/hermes-agent-24-7.md",
@@ -103,12 +107,14 @@ describe("international docs publication inventory", () => {
     }
   });
 
-  it("keeps English-only use cases out of Chinese international routes", () => {
-    for (const file of ENGLISH_ONLY_SHARED_FILES) {
-      expect(existsSync(join(docsContentRoot, "global", file)), `missing global/${file}`).toBe(true);
-      expect(existsSync(join(docsContentRoot, "en", file)), `missing en/${file}`).toBe(true);
-      expect(hasRoute("zh-sg", file), `published zh-sg route for ${file}`).toBe(false);
-      expect(hasRoute("en-us", file), `missing en-us route for ${file}`).toBe(true);
+  it("keeps translated use-case internal links locale-relative", () => {
+    for (const locale of ["global", "en"] as const) {
+      for (const file of LOCALE_SENSITIVE_USE_CASE_FILES) {
+        const path = join(docsContentRoot, locale, file);
+        expect(readFileSync(path, "utf8"), `${locale}/${file} contains a locale-less docs URL`).not.toMatch(
+          /https:\/\/lightvela\.ai\/docs\//,
+        );
+      }
     }
   });
 

@@ -19,7 +19,7 @@ LightVela 让一个云端 Hermes Agent 可以通过受支持的消息通道为�
 ## 前置条件
 
 - 一个已经运行中的 LightVela Hermes Agent 账号。
-  如果你还没有创建 Agent，可以先查看[快速开始](https://lightvela.ai/docs/quickstart)。
+  如果你还没有创建 Agent，可以先查看[快速开始](../02-quickstart.md)。
 
 - 已经配置好的模型或可用的体验积分，以便通道连接后 Hermes 能够回复消息。
 
@@ -50,10 +50,10 @@ LightVela 也会为其他受支持的通道提供配置页面。
 打开控制台中的通道区域，选择平台，然后按照对应的授权或凭据流程操作。
 请使用对应平台的指南，不要从无关的平台复制凭据：
 
-- [Telegram](https://lightvela.ai/docs/configuration/channel-telegram)
-- [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp)
-- [Discord](https://lightvela.ai/docs/configuration/channel-discord)
-- [WeChat](https://lightvela.ai/docs/configuration/channel-wechat)
+- [Telegram](../configuration/channel-telegram.md)
+- [WhatsApp](../configuration/channel-whatsapp.md)
+- [Discord](../configuration/channel-discord.md)
+- [WeChat](../configuration/channel-wechat.md)
 
 请像保护密码一样保护机器人 Token、应用 ID 和密钥。
 不要把它们粘贴到群聊、公开文档或发给其他人的消息中。
@@ -70,14 +70,14 @@ LightVela 也会为其他受支持的通道提供配置页面。
 ```
 
 这可以验证完整链路：平台能够投递消息，Hermes 有可用模型，并且回复能够返回到同一个地方。
-如果没有正常工作，请先检查连接状态，再确认[配置模型](https://lightvela.ai/docs/configuration/model)中当前启用的模型。
+如果没有正常工作，请先检查连接状态，再确认[配置模型](../configuration/model.md)中当前启用的模型。
 
 ### 4. 决定哪些内容应在不同通道之间共享
 
 当多个通道连接到同一个 Hermes Agent 时，它们只是通往同一个助手的不同入口。
 这意味着 Agent 可以在受支持的通道之间共享相同的记忆、工作偏好和已安装技能。
 
-使用[记忆管理](https://lightvela.ai/docs/configuration/memory)查看你希望 Hermes 长期保留的上下文。
+使用[记忆管理](../configuration/memory.md)查看你希望 Hermes 长期保留的上下文。
 如果某个通道面向不同受众，或需要完全不同的角色定位，可以考虑把它作为独立使用场景，而不是把无关的预期混入同一段对话历史。
 
 ![不同通道之间共享同一个 Hermes Agent 的上下文](../images/use-case-messaging-memory.png)
@@ -98,7 +98,7 @@ Telegram、WhatsApp、Discord 和 WeChat 都有对应的详细配置指南。
 ### 为什么通道显示已连接，但 Hermes 没有回复？
 
 先发送一条简单的测试消息，然后检查是否有启用的模型或可用的体验积分。
-如果问题仍然存在，请重新连接通道，并使用[诊断](https://lightvela.ai/docs/configuration/diagnostics)查看维护选项和最近的日志。
+如果问题仍然存在，请重新连接通道，并使用[诊断](../configuration/diagnostics.md)查看维护选项和最近的日志。
 
 ### 我可以让多个 Hermes Agent 共用同一个机器人凭据吗？
 
@@ -107,8 +107,8 @@ Telegram、WhatsApp、Discord 和 WeChat 都有对应的详细配置指南。
 
 ## 下一步
 
-- [配置模型](https://lightvela.ai/docs/configuration/model)：确认 Hermes 已经准备好可用模型。
+- [配置模型](../configuration/model.md)：确认 Hermes 已经准备好可用模型。
 
-- [记忆管理](https://lightvela.ai/docs/configuration/memory)：管理已连接通道之间共享的上下文。
+- [记忆管理](../configuration/memory.md)：管理已连接通道之间共享的上下文。
 
-- [自动任务](https://lightvela.ai/docs/configuration/automation)：在合适的情况下，把定时更新发送到已连接的通道。
+- [自动任务](../configuration/automation.md)：在合适的情况下，把定时更新发送到已连接的通道。

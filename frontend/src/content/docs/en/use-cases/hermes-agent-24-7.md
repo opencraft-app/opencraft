@@ -14,7 +14,7 @@ Being online is not the same as being unattended. You should still choose truste
 
 ## Prerequisites
 
-- A running Hermes Agent in your LightVela console. The [Quickstart](https://lightvela.ai/docs/quickstart) covers account setup and first creation.
+- A running Hermes Agent in your LightVela console. The [Quickstart](../02-quickstart.md) covers account setup and first creation.
 
 - A working model configuration or available trial credits. Hermes needs a model before it can generate replies.
 
@@ -28,7 +28,7 @@ Being online is not the same as being unattended. You should still choose truste
 
 Choose one channel as your default way to contact Hermes. For personal use, the best choice is usually the app you already check several times a day. Connect it, send a short test message, and make sure Hermes replies before adding more setup.
 
-Detailed instructions are available for [Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), [Discord](https://lightvela.ai/docs/configuration/channel-discord), and [WeChat](https://lightvela.ai/docs/configuration/channel-wechat).
+Detailed instructions are available for [Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), and [WeChat](../configuration/channel-wechat.md).
 
 ![A running Hermes Agent with connected channels](../images/use-case-hermes-online-channel.png)
 
@@ -36,11 +36,11 @@ Detailed instructions are available for [Telegram](https://lightvela.ai/docs/con
 
 The important pieces are the active model, connected channels, installed skills, and memory. You do not need to change them often, but it helps to know where they live when a reply does not arrive or a task needs new capabilities.
 
-Use [Configure Models](https://lightvela.ai/docs/configuration/model) to verify the active model, and keep a note of the provider or trial-credit situation. If you install skills, add only the ones needed for a real workflow and review them in [Configure Skills](https://lightvela.ai/docs/configuration/skill).
+Use [Configure Models](../configuration/model.md) to verify the active model, and keep a note of the provider or trial-credit situation. If you install skills, add only the ones needed for a real workflow and review them in [Configure Skills](../configuration/skill.md).
 
 ### 3. Use memory to keep the assistant continuous
 
-An always-on assistant becomes more useful when it does not start from scratch. Tell Hermes the preferences and work context that you want to carry into future conversations, then review them from time to time in [Memory Management](https://lightvela.ai/docs/configuration/memory).
+An always-on assistant becomes more useful when it does not start from scratch. Tell Hermes the preferences and work context that you want to carry into future conversations, then review them from time to time in [Memory Management](../configuration/memory.md).
 
 For example:
 
@@ -60,7 +60,7 @@ Every weekday at 8:30 AM, prepare a short briefing with today’s
 calendar priorities, open follow-ups, and the first action to take.
 ```
 
-Create the schedule in [Automations](https://lightvela.ai/docs/configuration/automation), select a notification channel if appropriate, and check the first few runs. If the result is too broad, make the instruction more specific rather than adding another automation immediately.
+Create the schedule in [Automations](../configuration/automation.md), select a notification channel if appropriate, and check the first few runs. If the result is too broad, make the instruction more specific rather than adding another automation immediately.
 
 ![Recent automation runs from a Hermes Agent](../images/use-case-hermes-online-automation.png)
 
@@ -72,7 +72,7 @@ No. Hermes runs in LightVela’s cloud environment, so you can close your local 
 
 ### Why is Hermes online but not replying?
 
-First verify the channel connection and the active model or trial-credit status. If you recently changed configuration, allow the update to finish, then send a simple test message again. The [Diagnostics](https://lightvela.ai/docs/configuration/diagnostics) page can help with maintenance and recent logs.
+First verify the channel connection and the active model or trial-credit status. If you recently changed configuration, allow the update to finish, then send a simple test message again. The [Diagnostics](../configuration/diagnostics.md) page can help with maintenance and recent logs.
 
 ### Can I connect more than one channel?
 
@@ -84,8 +84,8 @@ Use only well-scoped instructions and trusted skills. Begin with read-only or lo
 
 ## Next steps
 
-- [Automations](https://lightvela.ai/docs/configuration/automation) — schedule the work that should happen without a manual prompt.
+- [Automations](../configuration/automation.md) — schedule the work that should happen without a manual prompt.
 
-- [Memory Management](https://lightvela.ai/docs/configuration/memory) — keep useful preferences available across conversations.
+- [Memory Management](../configuration/memory.md) — keep useful preferences available across conversations.
 
-- [Diagnostics](https://lightvela.ai/docs/configuration/diagnostics) — investigate a channel or model issue when Hermes is not responding.
+- [Diagnostics](../configuration/diagnostics.md) — investigate a channel or model issue when Hermes is not responding.

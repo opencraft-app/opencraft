@@ -22,7 +22,7 @@ LightVela 为 Hermes Agent 同时提供长期记忆和云存储。
 
 - 一个已经运行中的 Hermes Agent，以及通过控制台或已连接通道与它对话的方式。
 
-- 对信息可以存放在哪里有基本了解：[记忆管理](https://lightvela.ai/docs/configuration/memory)用于长期上下文，[云存储](https://lightvela.ai/docs/configuration/files)用于文件和文件夹。
+- 对信息可以存放在哪里有基本了解：[记忆管理](../configuration/memory.md)用于长期上下文，[云存储](../configuration/files.md)用于文件和文件夹。
 
 - 一组你确实会重复使用的材料，而不是把拥有的每个文件都未经筛选地堆积起来。
 
@@ -77,11 +77,11 @@ LightVela 为 Hermes Agent 同时提供长期记忆和云存储。
 
 ### 4. 把复查过的知识变成实际对话
 
-使用[对话](https://lightvela.ai/docs/configuration/agent-chat)页面或已连接通道，把文档和记忆转化为具体的下一步行动。
+使用[对话](../configuration/agent-chat.md)页面或已连接通道，把文档和记忆转化为具体的下一步行动。
 你可以要求 Hermes 进行比较、制作大纲、列出开放问题，或为某次具体会议生成回顾。
 眼前的结果越明确，就越容易验证 Hermes 是否使用了正确的上下文。
 
-如果你的复查有固定节奏，可以使用一个[自动任务](https://lightvela.ai/docs/configuration/automation)提醒你重新查看文件夹，或准备定期回顾。
+如果你的复查有固定节奏，可以使用一个[自动任务](../configuration/automation.md)提醒你重新查看文件夹，或准备定期回顾。
 建议先从简单的提醒或总结开始，不要直接授予一个范围很大的开放式任务。
 
 ![使用整理后的项目知识进行 Hermes Agent 对话](../images/use-case-memory-knowledge-automation.png)
@@ -111,8 +111,8 @@ LightVela 为 Hermes Agent 同时提供长期记忆和云存储。
 
 ## 下一步
 
-- [记忆管理](https://lightvela.ai/docs/configuration/memory)：查看长期上下文和容量。
+- [记忆管理](../configuration/memory.md)：查看长期上下文和容量。
 
-- [云存储](https://lightvela.ai/docs/configuration/files)：整理持续工作所依赖的文件。
+- [云存储](../configuration/files.md)：整理持续工作所依赖的文件。
 
-- [对话](https://lightvela.ai/docs/configuration/agent-chat)：在聚焦的对话中使用记忆和项目材料。
+- [对话](../configuration/agent-chat.md)：在聚焦的对话中使用记忆和项目材料。

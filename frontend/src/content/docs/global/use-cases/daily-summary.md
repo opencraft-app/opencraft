@@ -21,7 +21,7 @@ LightVela 提供云端 Agent、用于发送结果的通道、可选的信息获�
 - 一个已经运行中的 Hermes Agent，以及一个你希望接收总结的已连接通道。
 
 - 已经配置好的模型或可用的体验积分。
-  如果 Hermes 没有回复，请查看[配置模型](https://lightvela.ai/docs/configuration/model)。
+  如果 Hermes 没有回复，请查看[配置模型](../configuration/model.md)。
 
 - 明确的上下文来源。
   这可以是你粘贴到对话中的材料、你在云存储中管理的文件，或可信且相关的技能能够访问的信息。
@@ -49,10 +49,10 @@ LightVela 提供云端 Agent、用于发送结果的通道、可选的信息获�
 
 Hermes 只能总结它收到的内容，或者通过你配置的能力访问到的信息。
 手动流程中，可以把相关更新粘贴或转发到对话里。
-如果是基于文件的工作，可以把材料整理在[云存储](https://lightvela.ai/docs/configuration/files)中，并告诉 Hermes 当前复盘需要参考哪个文档或文件夹。
+如果是基于文件的工作，可以把材料整理在[云存储](../configuration/files.md)中，并告诉 Hermes 当前复盘需要参考哪个文档或文件夹。
 
 如果需要外部数据源，请从可信来源选择合适的技能，并在使用前确认它的行为。
-[配置技能](https://lightvela.ai/docs/configuration/skill)会介绍技能如何扩展 Hermes 的普通对话能力。
+[配置技能](../configuration/skill.md)会介绍技能如何扩展 Hermes 的普通对话能力。
 
 ![每日总结使用的云存储来源](../images/use-case-daily-summary-storage.png)
 
@@ -75,7 +75,7 @@ Hermes 只能总结它收到的内容，或者通过你配置的能力访问到�
 最后加一个我需要在明天之前回答的问题。
 ```
 
-[对话](https://lightvela.ai/docs/configuration/agent-chat)页面适合用来迭代指令，确认效果后再把它变成重复任务。
+[对话](../configuration/agent-chat.md)页面适合用来迭代指令，确认效果后再把它变成重复任务。
 
 ### 4. 按照已经验证过的版本创建自动任务
 
@@ -88,7 +88,7 @@ Hermes 只能总结它收到的内容，或者通过你配置的能力访问到�
 以简洁的项目符号发送给我。
 ```
 
-在[自动任务](https://lightvela.ai/docs/configuration/automation)中完成设置。
+在[自动任务](../configuration/automation.md)中完成设置。
 检查前几次执行结果，如果总结范围太大、太长或缺少正确上下文，再调整指令内容。
 
 ![定时发送每日总结的自动任务](../images/use-case-daily-summary-automation.png)
@@ -114,12 +114,12 @@ Hermes 只能总结它收到的内容，或者通过你配置的能力访问到�
 ### 如果总结没有发送过来怎么办？
 
 检查自动任务状态和通知通道，然后确认 Hermes 在普通对话中仍然能够回复。
-如果需要，可以先查看[诊断](https://lightvela.ai/docs/configuration/diagnostics)，再创建新的任务。
+如果需要，可以先查看[诊断](../configuration/diagnostics.md)，再创建新的任务。
 
 ## 下一步
 
-- [云存储](https://lightvela.ai/docs/configuration/files)：整理支持重复复盘的文件。
+- [云存储](../configuration/files.md)：整理支持重复复盘的文件。
 
-- [配置技能](https://lightvela.ai/docs/configuration/skill)：当总结需要特定信息来源时，添加可信的能力。
+- [配置技能](../configuration/skill.md)：当总结需要特定信息来源时，添加可信的能力。
 
-- [自动任务](https://lightvela.ai/docs/configuration/automation)：按计划发送已经测试过的总结。
+- [自动任务](../configuration/automation.md)：按计划发送已经测试过的总结。

@@ -19,7 +19,7 @@ Hermes Agent 是 LightVela 中的云端 AI Agent。
 ## 前置条件
 
 - 一个在 LightVela 控制台中运行的 Hermes Agent。
-  [快速开始](https://lightvela.ai/docs/quickstart)介绍了账号设置和首次创建流程。
+  [快速开始](../02-quickstart.md)介绍了账号设置和首次创建流程。
 
 - 已经配置好的模型或可用的体验积分。
   Hermes 需要模型才能生成回复。
@@ -36,7 +36,7 @@ Hermes Agent 是 LightVela 中的云端 AI Agent。
 对于个人使用，通常应选择你每天已经会查看多次的应用。
 先完成连接，发送一条简短的测试消息，并确认 Hermes 能够回复，再进行更多配置。
 
-你可以查看 [Telegram](https://lightvela.ai/docs/configuration/channel-telegram)、[WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp)、[Discord](https://lightvela.ai/docs/configuration/channel-discord) 和 [WeChat](https://lightvela.ai/docs/configuration/channel-wechat) 的详细说明。
+你可以查看 [Telegram](../configuration/channel-telegram.md)、[WhatsApp](../configuration/channel-whatsapp.md)、[Discord](../configuration/channel-discord.md) 和 [WeChat](../configuration/channel-wechat.md) 的详细说明。
 
 ![运行中的 Hermes Agent 与已连接通道](../images/use-case-hermes-online-channel.png)
 
@@ -45,13 +45,13 @@ Hermes Agent 是 LightVela 中的云端 AI Agent。
 重要组成部分包括当前启用的模型、已连接的通道、已安装的技能和记忆。
 你不需要频繁修改它们，但当 Hermes 没有回复，或某项任务需要新的能力时，知道这些配置在哪里会很有帮助。
 
-使用[配置模型](https://lightvela.ai/docs/configuration/model)确认当前启用的模型，并记录模型提供方或体验积分状态。
-如果安装技能，只添加真实工作流程需要的技能，并在[配置技能](https://lightvela.ai/docs/configuration/skill)中复查它们。
+使用[配置模型](../configuration/model.md)确认当前启用的模型，并记录模型提供方或体验积分状态。
+如果安装技能，只添加真实工作流程需要的技能，并在[配置技能](../configuration/skill.md)中复查它们。
 
 ### 3. 使用记忆保持助手的连续性
 
 当助手不会每次都从头开始时，常驻在线的体验会更有用。
-告诉 Hermes 你希望带入未来对话的偏好和工作上下文，并定期在[记忆管理](https://lightvela.ai/docs/configuration/memory)中复查。
+告诉 Hermes 你希望带入未来对话的偏好和工作上下文，并定期在[记忆管理](../configuration/memory.md)中复查。
 
 例如，你可以告诉 Hermes：
 
@@ -70,7 +70,7 @@ Hermes Agent 是 LightVela 中的云端 AI Agent。
 每个工作日上午 8:30，准备一份简短简报，包括今天的日程重点、未完成的跟进事项和第一个行动。
 ```
 
-在[自动任务](https://lightvela.ai/docs/configuration/automation)中创建时间安排，如果合适，可以选择一个通知通道。
+在[自动任务](../configuration/automation.md)中创建时间安排，如果合适，可以选择一个通知通道。
 检查前几次执行结果，如果范围太大，应让指令更具体，而不是立即添加另一个自动任务。
 
 ![Hermes Agent 最近的自动任务执行记录](../images/use-case-hermes-online-automation.png)
@@ -86,7 +86,7 @@ Hermes 运行在 LightVela 的云端环境中，Agent 和通道配置完成后�
 
 先确认通道连接状态，以及当前启用的模型或体验积分状态。
 如果你刚刚修改过配置，请等待更新完成，然后再次发送一条简单的测试消息。
-[诊断](https://lightvela.ai/docs/configuration/diagnostics)页面可以帮助你查看维护信息和最近的日志。
+[诊断](../configuration/diagnostics.md)页面可以帮助你查看维护信息和最近的日志。
 
 ### 我可以连接多个通道吗？
 
@@ -101,8 +101,8 @@ Hermes 运行在 LightVela 的云端环境中，Agent 和通道配置完成后�
 
 ## 下一步
 
-- [自动任务](https://lightvela.ai/docs/configuration/automation)：安排无需手动提示就应执行的工作。
+- [自动任务](../configuration/automation.md)：安排无需手动提示就应执行的工作。
 
-- [记忆管理](https://lightvela.ai/docs/configuration/memory)：让有用的偏好在不同对话之间持续可用。
+- [记忆管理](../configuration/memory.md)：让有用的偏好在不同对话之间持续可用。
 
-- [诊断](https://lightvela.ai/docs/configuration/diagnostics)：当 Hermes 没有回复时，排查通道或模型问题。
+- [诊断](../configuration/diagnostics.md)：当 Hermes 没有回复时，排查通道或模型问题。
