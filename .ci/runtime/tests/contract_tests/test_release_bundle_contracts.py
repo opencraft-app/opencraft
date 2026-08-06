@@ -1396,6 +1396,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("HERMES_REUSE_IMAGE_NAME", workflow_text)
         self.assertIn("HERMES_SKIP_IMAGE_BUILD", workflow_text)
         self.assertIn("--image-name \"$HERMES_IMAGE_NAME\"", workflow_text)
+        self.assertIn(
+            "--target-regions ap-beijing,ap-shanghai,ap-singapore,ap-tokyo",
+            workflow_text,
+        )
+        self.assertIn("HERMES_IMAGE_ID_AP_TOKYO", workflow_text + refresh_env_script_text)
         self.assertIn("resolve_hermes_image_id.py --region \"$region\" --image-name \"$HERMES_IMAGE_NAME\"", workflow_and_runtime_text)
         self.assertIn("split_hermes_pool_vms_by_region.py", workflow_and_runtime_text)
         self.assertIn("HERMES_REFRESH_ENV_SPEC", workflow_text)
