@@ -41,6 +41,29 @@ function channelsOf(color: string): string | null {
   return rgb ? [rgb[1], rgb[2], rgb[3]].join(",") : null;
 }
 
+/** WCAG relative luminance, so "is this surface further back?" is answerable. */
+function luminanceOf(color: string): number {
+  const channels = channelsOf(color);
+  if (channels === null) throw new Error(`cannot read luminance of ${color}`);
+  const [red, green, blue] = channels.split(",").map((channel) => {
+    const ratio = Number(channel) / 255;
+    return ratio <= 0.03928 ? ratio / 12.92 : ((ratio + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function alphaOf(color: string): number {
+  const rgba = /^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([\d.]+)\s*\)$/u.exec(color);
+  return rgba ? Number(rgba[1]) : 1;
+}
+
+function contrastOf(foreground: string, background: string): number {
+  const [darker, lighter] = [luminanceOf(foreground), luminanceOf(background)].sort(
+    (left, right) => left - right,
+  ) as [number, number];
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 describe("Vela theme contract", () => {
   it("does not expose the retired flat token namespaces", () => {
     expect(velaTheme).not.toHaveProperty("colors");
@@ -176,6 +199,57 @@ describe("Vela theme contract", () => {
 
     expect(namespaces.length).toBeLessThanOrEqual(16);
     expect(leaves.length).toBeLessThanOrEqual(142);
+  });
+
+  describe("depth", () => {
+    const { color } = velaTheme.semantic;
+
+    it("seats the chrome behind the content it frames", () => {
+      // Rail furthest back, sidebar in front of it, content lit on top. Without
+      // this the shell collapses into one undifferentiated white sheet, which
+      // is the exact failure this ladder exists to prevent.
+      const ladder = [
+        color.navigationSurface,
+        color.sidebarSurface,
+        color.canvasSurface,
+      ].map(luminanceOf);
+
+      expect(ascending(ladder)).toBe(true);
+    });
+
+    it("raises fields off the sidebar that holds them", () => {
+      expect(luminanceOf(color.fieldSurface)).toBeGreaterThan(
+        luminanceOf(color.sidebarSurface),
+      );
+    });
+
+    it("keeps body text legible on every recessed surface", () => {
+      const surfaces = {
+        canvas: color.canvasSurface,
+        field: color.fieldSurface,
+        navigation: color.navigationSurface,
+        pane: color.paneSurface,
+        sidebar: color.sidebarSurface,
+      };
+      const failing = Object.entries(surfaces).filter(
+        ([, surface]) => contrastOf(color.textPrimary, surface) < 4.5,
+      );
+
+      expect(failing).toEqual([]);
+    });
+
+    it("spreads the shadow ladder monotonically from card to overlay", () => {
+      const { card, floatingControl, overlay } = velaTheme.shadows;
+      const rungs = [card, floatingControl, overlay];
+
+      expect(ascending(rungs.map((rung) => rung.radius))).toBe(true);
+      expect(ascending(rungs.map((rung) => rung.offsetY))).toBe(true);
+      expect(ascending(rungs.map((rung) => alphaOf(rung.color)))).toBe(true);
+    });
+
+    it("keeps even the heaviest shadow from reading as a scrim", () => {
+      expect(alphaOf(velaTheme.shadows.overlay.color)).toBeLessThan(0.3);
+    });
   });
 
   it("keeps the terminal surface legible and self-consistent", () => {

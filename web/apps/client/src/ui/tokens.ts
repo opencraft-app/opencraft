@@ -40,6 +40,7 @@ const baseColors = {
   indigo500: "#6664C9",
   ink900: "#0A0E18",
   neutral100: "#F4F4F5",
+  neutral150: "#E9E9EC",
   neutral200: "#E4E4E7",
   neutral300: "#D4D4D8",
   neutral400: "#A1A1AA",
@@ -62,17 +63,28 @@ export const palette = {
   transparent: "transparent",
 } as const;
 
-const surfaceShadow = {
+/**
+ * Three rungs, not two: panes carry a hairline and almost no shadow, floating
+ * chrome lifts just enough to read as detached, and only modal layers cast a
+ * shadow you actually notice.
+ */
+const cardShadow = {
   color: withAlpha(palette.black, 0.04),
+  offsetY: 1,
+  opacity: 1,
+  radius: 3,
+} as const;
+const floatingShadow = {
+  color: withAlpha(palette.black, 0.1),
   offsetY: 2,
   opacity: 1,
-  radius: 4,
+  radius: 8,
 } as const;
 const overlayShadow = {
-  color: palette.divider,
-  offsetY: 4,
+  color: withAlpha(palette.black, 0.18),
+  offsetY: 8,
   opacity: 1,
-  radius: 16,
+  radius: 24,
 } as const;
 
 export const breakpoints = {
@@ -315,7 +327,10 @@ export const velaTheme = {
       codeText: palette.white,
       decorativeAccentSurface: palette.blue500,
       fieldPlaceholder: palette.neutral400,
-      fieldSurface: palette.neutral100,
+      // Fields read as raised, not inset: on the recessed sidebar a white fill
+      // separates the search box from its container, and on white content the
+      // hairline border carries the edge.
+      fieldSurface: palette.white,
       iconAccent: palette.blue600,
       iconAccentSurface: palette.blue50,
       iconInverse: palette.white,
@@ -326,7 +341,11 @@ export const velaTheme = {
       interactiveHoverSurface: palette.neutral100,
       interactivePressedSurface: palette.neutral200,
       modalBackdrop: withAlpha(palette.neutral990, 0.34),
-      navigationSurface: palette.neutral100,
+      // Recession ladder: the rail sits furthest back, the conversation
+      // sidebar one step in front of it, and content reads as the lit surface
+      // on top. Naming these apart matters because `paneSurface` is also worn
+      // by raised panels, which must not follow the sidebar down.
+      navigationSurface: palette.neutral150,
       notificationBadgeSurface: palette.blue500,
       notificationBadgeText: palette.white,
       overlayBackdrop: withAlpha(palette.ink900, 0.92),
@@ -340,6 +359,7 @@ export const velaTheme = {
       selectionHoverSurface: palette.blue100,
       selectionPressedSurface: palette.blue200,
       separator: palette.divider,
+      sidebarSurface: palette.neutral100,
       statusDanger: palette.pink500,
       statusDangerDivider: withAlpha(palette.pink500, 0.12),
       statusDangerSurface: palette.pink50,
@@ -830,8 +850,8 @@ export const velaTheme = {
     },
   },
   shadows: {
-    card: surfaceShadow,
-    floatingControl: surfaceShadow,
+    card: cardShadow,
+    floatingControl: floatingShadow,
     overlay: overlayShadow,
   },
   terminal: {

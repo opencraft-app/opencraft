@@ -5212,7 +5212,7 @@ const styles = StyleSheet.create((theme) => ({
     ...theme.semantic.typography.micro,
   },
   conversationSidebar: {
-    backgroundColor: theme.semantic.color.paneSurface,
+    backgroundColor: theme.semantic.color.sidebarSurface,
     borderRadius: theme.semantic.radius.pane,
     borderRightColor: theme.semantic.color.separator,
     borderRightWidth: theme.semantic.stroke.hairline,
@@ -5795,7 +5795,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   sidebarHeader: {
     alignItems: "center",
-    backgroundColor: theme.semantic.color.paneSurface,
+    backgroundColor: theme.semantic.color.sidebarSurface,
     borderBottomColor: theme.semantic.color.separator,
     borderBottomWidth: theme.semantic.stroke.hairline,
     flexDirection: "row",

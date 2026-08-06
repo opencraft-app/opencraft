@@ -2407,7 +2407,7 @@ describe("WorkspaceShell", () => {
       padding: 0,
     });
     expect(screen.getByTestId("server-rail")).toHaveStyle({
-      backgroundColor: "#F4F4F5",
+      backgroundColor: velaTheme.semantic.color.navigationSurface,
       borderRadius: 0,
       borderRightWidth: 1,
       width: velaTheme.recipes.desktopWorkspace.railWidth,
@@ -2426,7 +2426,7 @@ describe("WorkspaceShell", () => {
     });
     expect(screen.queryByTestId("server-marks")).toBeNull();
     expect(screen.getByTestId("conversation-sidebar")).toHaveStyle({
-      backgroundColor: "#FFFFFF",
+      backgroundColor: velaTheme.semantic.color.sidebarSurface,
       borderRadius: 0,
       borderRightWidth: 1,
       width: 312,
