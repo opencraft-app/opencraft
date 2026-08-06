@@ -351,7 +351,8 @@ describe("management workspace primitives", () => {
       minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.getByTestId("icon-action")).toHaveStyle({
-      borderRadius: 10,
+      backgroundColor: velaTheme.semantic.color.surfaceTransparent,
+      borderRadius: velaTheme.semantic.radius.compactControl,
       height: velaTheme.recipes.managementWorkspace.headerActionHeight,
       width: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });

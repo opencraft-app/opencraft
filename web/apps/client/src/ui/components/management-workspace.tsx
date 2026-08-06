@@ -29,9 +29,10 @@ export type {
   ActionContext,
   ActionImportance,
 } from "../primitives/action-button";
+export {IconActionButton} from "../primitives/icon-action-button";
+export type {IconActionButtonProps} from "../primitives/icon-action-button";
 
 type DetailSectionSpan = "balanced" | "major" | "minor";
-type IconActionImportance = "quiet" | "secondary" | "tonal";
 type StatusTone = "danger" | "info" | "neutral" | "positive" | "warning";
 type ManagementDensity = "comfortable" | "compact" | "medium";
 type ManagementFieldLayout = "compact" | "flex" | "stacked";
@@ -766,61 +767,6 @@ export function DetailSection({
   );
 }
 
-export interface IconActionButtonProps {
-  accessibilityLabel: string;
-  context?: ActionContext;
-  disabled?: boolean;
-  icon: LucideIcon;
-  importance?: IconActionImportance;
-  onPress(): void;
-  testID?: string;
-}
-
-export function IconActionButton({
-  accessibilityLabel,
-  context = "default",
-  disabled = false,
-  icon: Icon,
-  importance = "secondary",
-  onPress,
-  testID,
-}: IconActionButtonProps) {
-  const {theme} = useUnistyles();
-  const [hovered, setHovered] = useState(false);
-  const iconColor = importance === "tonal"
-    ? theme.semantic.color.iconAccent
-    : theme.semantic.color.iconSecondary;
-  return (
-    <Pressable
-      accessibilityLabel={accessibilityLabel}
-      accessibilityRole="button"
-      accessibilityState={{disabled}}
-      disabled={disabled}
-      hitSlop={context === "header" ? theme.semantic.interaction.hitTargetInsetCompact : undefined}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
-      onPress={onPress}
-      style={({pressed}) => [
-        styles.iconAction,
-        context === "compact" && styles.iconActionCompact,
-        context === "header" && styles.iconActionHeader,
-        importance === "quiet" && styles.iconActionQuiet,
-        importance === "tonal" && styles.iconActionTonal,
-        hovered && !disabled && importance === "secondary" && styles.iconActionHover,
-        hovered && !disabled && importance === "quiet" && styles.iconActionQuietHover,
-        hovered && !disabled && importance === "tonal" && styles.iconActionTonalHover,
-        pressed && importance === "secondary" && styles.iconActionPressed,
-        pressed && importance === "quiet" && styles.iconActionQuietPressed,
-        pressed && importance === "tonal" && styles.iconActionTonalPressed,
-        disabled && styles.disabled,
-      ]}
-      testID={testID}
-    >
-      <Icon color={iconColor} size={theme.semantic.icon.size.medium} strokeWidth={theme.semantic.icon.stroke.emphasis} />
-    </Pressable>
-  );
-}
-
 export interface ResourceActionRowProps
   extends Omit<SemanticContainerProps, "children"> {
   action: ReactNode;
@@ -1523,61 +1469,6 @@ const styles = StyleSheet.create((theme) => ({
   headerTitle: {
     color: theme.semantic.color.textPrimary,
     ...theme.semantic.typography.pageTitle,
-  },
-  iconAction: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionSecondarySurface,
-    borderColor: theme.semantic.color.actionSecondaryBorder,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    height: theme.semantic.interaction.minimumTargetSize,
-    justifyContent: "center",
-    width: theme.semantic.interaction.minimumTargetSize,
-    ...theme.semantic.motion.transition.control,
-  },
-  iconActionHeader: {
-    height: theme.recipes.managementWorkspace.headerActionHeight,
-    width: theme.recipes.managementWorkspace.headerActionHeight,
-  },
-  iconActionCompact: {
-    height: theme.recipes.control.height,
-    width: theme.recipes.control.squareSize,
-  },
-  iconActionQuiet: {
-    backgroundColor: theme.semantic.color.surfaceTransparent,
-    borderColor: theme.semantic.color.borderTransparent,
-    ...theme.semantic.motion.transition.control,
-  },
-  iconActionHover: {
-    backgroundColor: theme.semantic.color.interactiveHoverSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  iconActionPressed: {
-    backgroundColor: theme.semantic.color.interactivePressedSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  iconActionQuietHover: {
-    backgroundColor: theme.semantic.color.interactiveHoverSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  iconActionQuietPressed: {
-    backgroundColor: theme.semantic.color.interactivePressedSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  iconActionTonal: {
-    backgroundColor: theme.semantic.color.actionTonalSurface,
-    borderColor: theme.semantic.color.actionTonalSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  iconActionTonalHover: {
-    backgroundColor: theme.semantic.color.actionTonalHoverSurface,
-    borderColor: theme.semantic.color.actionTonalHoverSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  iconActionTonalPressed: {
-    backgroundColor: theme.semantic.color.actionTonalPressedSurface,
-    borderColor: theme.semantic.color.actionTonalPressedSurface,
-    ...theme.semantic.motion.transition.control,
   },
   notice: {
     backgroundColor: theme.semantic.color.surfaceSubtle,

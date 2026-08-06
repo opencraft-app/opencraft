@@ -983,12 +983,12 @@ describe("WorkspaceShell", () => {
     );
 
     expect(screen.getByTestId("channel-create-action")).toHaveStyle({
-      height: 28,
-      width: 28,
+      height: velaTheme.recipes.control.squareSize,
+      width: velaTheme.recipes.control.squareSize,
     });
     expect(screen.getByTestId("channel-edit-action")).toHaveStyle({
-      height: 28,
-      width: 28,
+      height: velaTheme.recipes.control.squareSize,
+      width: velaTheme.recipes.control.squareSize,
     });
     expect(screen.queryByText("＋ 新建")).toBeNull();
     expect(screen.queryByText("✎ 编辑")).toBeNull();

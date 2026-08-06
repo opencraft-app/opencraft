@@ -42,7 +42,7 @@ describe("Vela token usage", () => {
       return block ? /paddingHorizontal|minHeight|height:/u.test(block[1]!) : false;
     });
 
-    expect(boxed.length).toBeLessThanOrEqual(11);
+    expect(boxed.length).toBeLessThanOrEqual(7);
   });
 
   it("carries the transition on both halves of every interaction pair", () => {
@@ -304,7 +304,6 @@ describe("Vela token usage", () => {
       ["components/message-list.tsx", "avatar", ["identity.avatarCompactSize"]],
       ["components/message-list.tsx", "avatarCompact", ["identity.avatarRowSize"]],
       ["components/user-picker.tsx", "searchClear", ["iconControl.compactSize"]],
-      ["layouts/workspace-shell.tsx", "sidebarActionButton", ["iconControl.microSize"]],
       ["layouts/workspace-shell.tsx", "headerActionButton", ["iconControl.smallSize"]],
       ["components/message-list.tsx", "messageText", ["contentMeasure.messageMaxWidth"]],
       ["components/message-list.tsx", "quote", ["contentMeasure.readingMaxWidth"]],
@@ -364,7 +363,6 @@ describe("Vela token usage", () => {
       ["layouts/workspace-shell.tsx", "channelMemberAdd", ["iconControl.denseSize"]],
       ["layouts/workspace-shell.tsx", "channelMemberConfirmMark", ["emptyState.iconSize"]],
       ["layouts/workspace-shell.tsx", "channelMemberRemove", ["iconControl.denseSize"]],
-      ["layouts/workspace-shell.tsx", "channelPanelClose", ["iconControl.smallSize"]],
       ["layouts/workspace-shell.tsx", "channelIcon", ["iconControl.denseSize"]],
       ["layouts/workspace-shell.tsx", "channelKindBadge", ["status.badgeMinSize"]],
       ["layouts/workspace-shell.tsx", "channelTextarea", ["managementWorkspace.textareaMinHeight"]],
@@ -380,7 +378,6 @@ describe("Vela token usage", () => {
       ["layouts/workspace-shell.tsx", "searchResult", ["managementWorkspace.rowMinHeight"]],
       ["layouts/workspace-shell.tsx", "sidebarHeaderIcon", ["identity.avatarNavigationSize"]],
       ["layouts/workspace-shell.tsx", "sidebarSearchClear", ["iconControl.microSize"]],
-      ["layouts/workspace-shell.tsx", "sidebarAddButton", ["iconControl.microSize"]],
       ["layouts/workspace-shell.tsx", "accountLogoutButton", ["control.height"]],
       ["layouts/workspace-shell.tsx", "channelMemberRow", ["conversationWorkspace.channelMemberRowMinHeight"]],
       ["layouts/workspace-shell.tsx", "channelVisibilityButton", ["control.height"]],

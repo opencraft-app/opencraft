@@ -78,6 +78,7 @@ import { ThreadPanel } from "../components/thread-panel";
 import { UserPicker } from "../components/user-picker";
 import { InlineEmptyState } from "../components/management-workspace";
 import { ActionButton } from "../primitives/action-button";
+import { IconActionButton } from "../primitives/icon-action-button";
 import { formatConversationTimestamp } from "../date-time";
 import {
   memberByImUserId,
@@ -1952,50 +1953,26 @@ function ConversationSidebar({
               <Text style={styles.sidebarCount}>{visibleChannels.length}</Text>
               {!normalizedFilter && canManageChannels ? (
                 <>
-                  <Pressable
+                  <IconActionButton
                     accessibilityLabel="新建 Channel"
-                    accessibilityRole="button"
-                    hitSlop={velaTheme.semantic.interaction.hitTargetInset}
+                    icon={Plus}
                     onPress={onCreateChannel}
-                    style={styles.sidebarActionButton}
                     testID="channel-create-action"
-                  >
-                    <Plus
-                      color={velaTheme.semantic.color.iconMuted}
-                      size={velaTheme.semantic.icon.size.small}
-                      strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-                    />
-                  </Pressable>
+                  />
                   {currentChannel?.systemKey !== "all" && currentChannel ? (
-                    <Pressable
+                    <IconActionButton
                       accessibilityLabel={`编辑 Channel ${currentChannel.name}`}
-                      accessibilityRole="button"
-                      hitSlop={velaTheme.semantic.interaction.hitTargetInset}
+                      icon={Pencil}
                       onPress={onEditChannel}
-                      style={styles.sidebarActionButton}
                       testID="channel-edit-action"
-                    >
-                      <Pencil
-                        color={velaTheme.semantic.color.iconMuted}
-                        size={velaTheme.semantic.icon.size.compact}
-                        strokeWidth={velaTheme.semantic.icon.stroke.regular}
-                      />
-                    </Pressable>
+                    />
                   ) : null}
                   {currentChannel && currentChannel.systemKey !== "all" ? (
-                    <Pressable
+                    <IconActionButton
                       accessibilityLabel={`管理 Channel ${currentChannel.name} 的成员`}
-                      accessibilityRole="button"
-                      hitSlop={velaTheme.semantic.interaction.hitTargetInset}
+                      icon={UsersRound}
                       onPress={onManageMembers}
-                      style={styles.sidebarActionButton}
-                    >
-                      <UsersRound
-                        color={velaTheme.semantic.color.iconMuted}
-                        size={velaTheme.semantic.icon.size.small}
-                        strokeWidth={velaTheme.semantic.icon.stroke.regular}
-                      />
-                    </Pressable>
+                    />
                   ) : null}
                 </>
               ) : null}
@@ -2016,18 +1993,11 @@ function ConversationSidebar({
         <View style={styles.sidebarSectionHeader}>
           <Text style={styles.sectionLabel}>私信</Text>
           {!normalizedFilter ? (
-            <Pressable
+            <IconActionButton
               accessibilityLabel="新建私信"
-              accessibilityRole="button"
+              icon={Plus}
               onPress={onNewDirect}
-              style={styles.sidebarAddButton}
-            >
-              <Plus
-                color={velaTheme.semantic.color.iconMuted}
-                size={velaTheme.semantic.icon.size.small}
-                strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-              />
-            </Pressable>
+            />
           ) : null}
         </View>
       ) : null}
@@ -2890,20 +2860,12 @@ function MessageSearchPanel({
           label={loading ? "搜索中…" : "搜索"}
           onPress={onSearch}
         />
-        <Pressable
+        <IconActionButton
           accessibilityLabel="关闭消息搜索"
-          accessibilityRole="button"
+          icon={X}
+          iconTestID="message-search-close-icon"
           onPress={onClose}
-          style={styles.searchClose}
-        >
-          <View testID="message-search-close-icon">
-            <X
-              color={velaTheme.semantic.color.iconSecondary}
-              size={velaTheme.semantic.icon.size.medium}
-              strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-            />
-          </View>
-        </Pressable>
+        />
       </View>
       {error ? (
         <View accessibilityRole="alert" style={styles.searchPanelError}>
@@ -3347,20 +3309,12 @@ function ChannelManagementPanel({
             </Text>
           ) : null}
         </View>
-        <Pressable
+        <IconActionButton
           accessibilityLabel="关闭 Channel 管理"
-          accessibilityRole="button"
+          icon={X}
+          iconTestID="channel-management-close-icon"
           onPress={onClose}
-          style={styles.channelPanelClose}
-        >
-          <View testID="channel-management-close-icon">
-            <X
-              color={velaTheme.semantic.color.iconSecondary}
-              size={velaTheme.semantic.icon.size.medium}
-              strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-            />
-          </View>
-        </Pressable>
+        />
       </View>
       {mode === "members" ? (
         <ScrollView contentContainerStyle={styles.channelMemberList}>
@@ -4085,18 +4039,11 @@ function DirectConversationPicker({
     >
       <View style={styles.directPickerHeader}>
         <Text style={styles.compactPickerTitle}>新建私信</Text>
-        <Pressable
+        <IconActionButton
           accessibilityLabel="关闭新建私信"
-          accessibilityRole="button"
+          icon={X}
           onPress={onClose}
-          style={styles.searchClose}
-        >
-          <X
-            color={velaTheme.semantic.color.iconSecondary}
-            size={velaTheme.semantic.icon.size.medium}
-            strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-          />
-        </Pressable>
+        />
       </View>
       {members.length > 0 ? (
         <ScrollView
@@ -4850,15 +4797,6 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: theme.recipes.conversationWorkspace.channelMemberRowMinHeight,
     paddingHorizontal: theme.spacing.md,
   },
-  channelPanelClose: {
-    alignItems: "center",
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    height: theme.recipes.iconControl.smallSize,
-    justifyContent: "center",
-    width: theme.recipes.iconControl.smallSize,
-  },
   channelPanelHeader: {
     alignItems: "center",
     borderBottomColor: theme.semantic.color.separator,
@@ -5559,15 +5497,6 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.sm,
   },
-  searchClose: {
-    alignItems: "center",
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    height: theme.semantic.interaction.minimumTargetSize,
-    justifyContent: "center",
-    width: theme.semantic.interaction.minimumTargetSize,
-  },
   searchControls: {
     alignItems: "center",
     flexDirection: "row",
@@ -5771,13 +5700,6 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     gap: theme.spacing.xxs,
   },
-  sidebarActionButton: {
-    alignItems: "center",
-    borderRadius: theme.semantic.radius.compactControl,
-    height: theme.recipes.iconControl.microSize,
-    justifyContent: "center",
-    width: theme.recipes.iconControl.microSize,
-  },
   sidebarHeader: {
     alignItems: "center",
     backgroundColor: theme.semantic.color.sidebarSurface,
@@ -5840,13 +5762,6 @@ const styles = StyleSheet.create((theme) => ({
     marginHorizontal: theme.spacing.md,
     marginVertical: theme.spacing.md,
     paddingHorizontal: theme.spacing.md,
-  },
-  sidebarAddButton: {
-    alignItems: "center",
-    borderRadius: theme.semantic.radius.control,
-    height: theme.recipes.iconControl.microSize,
-    justifyContent: "center",
-    width: theme.recipes.iconControl.microSize,
   },
   sidebarSectionHeader: {
     alignItems: "center",
