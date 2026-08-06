@@ -6,7 +6,7 @@ Hermes 可以把重复性的复盘变成每日 AI 助手流程。
 LightVela 提供云端 Agent、用于发送结果的通道、可选的信息获取技能，以及负责执行时间安排的自动任务。
 什么才算是“今天有用的总结”，由你来决定。
 
-![Hermes Agent 发送的每日信息总结](../images/use-case-daily-summaries.png)
+![Hermes Agent 发送的每日信息总结](../images/use-case-daily-summaries.webp)
 
 ## 适合谁
 

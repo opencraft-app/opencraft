@@ -6,7 +6,7 @@
 LightVela 让一个云端 Hermes Agent 可以通过受支持的消息通道为你提供服务。
 无论你选择哪个平台，这个 Agent 都会保留已经配置的模型、技能和记忆，适配你想要支持的人群和使用场景。
 
-![LightVela 中的消息平台连接](../images/use-case-messaging-platforms.png)
+![LightVela 中的消息平台连接](../images/use-case-messaging-platforms.webp)
 
 ## 适合谁
 
