@@ -330,7 +330,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         manifest = yaml.safe_load(manifest_path.read_text())
 
         self.assertEqual(manifest["defaults"]["region"], "ap-tokyo")
-        self.assertEqual(manifest["defaults"]["version_id"], "latest")
+        self.assertEqual(manifest["defaults"]["version_id"], "SSM_Current")
         self.assertEqual(len(manifest["items"]), 1)
         item = manifest["items"][0]
         self.assertEqual(item["secret_name"], "mono-sandbox-jp-1-lightclaw-auth-secrets")
@@ -366,7 +366,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         manifest = yaml.safe_load(manifest_path.read_text())
 
         self.assertEqual(manifest["defaults"]["region"], "ap-tokyo")
-        self.assertEqual(manifest["defaults"]["version_id"], "latest")
+        self.assertEqual(manifest["defaults"]["version_id"], "SSM_Current")
         items = manifest["items"]
         self.assertEqual(len(items), 16)
         self.assertEqual(len({item["id"] for item in items}), 16)
