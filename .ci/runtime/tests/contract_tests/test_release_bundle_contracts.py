@@ -330,6 +330,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         manifest = yaml.safe_load(manifest_path.read_text())
 
         self.assertEqual(manifest["defaults"]["region"], "ap-tokyo")
+        self.assertEqual(manifest["defaults"]["version_id"], "latest")
         self.assertEqual(len(manifest["items"]), 1)
         item = manifest["items"][0]
         self.assertEqual(item["secret_name"], "mono-sandbox-jp-1-lightclaw-auth-secrets")
@@ -337,14 +338,79 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(
             item["required_keys"],
             [
+                "LIGHTCLAW_ADMIN_TOKEN",
+                "LIGHTCLAW_AUTH_DB_PASSWORD",
+                "LIGHTCLAW_COS_BUCKET_URL",
+                "LIGHTCLAW_COS_SECRET_ID",
+                "LIGHTCLAW_COS_SECRET_KEY",
+                "LIGHTCLAW_GITHUB_CLIENT_SECRET",
+                "LIGHTCLAW_QQ_APP_KEY",
+                "LIGHTCLAW_WECHAT_APP_SECRET",
+                "LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_APP_SECRET",
+                "LIGHTCLAW_SES_SECRET_ID",
+                "LIGHTCLAW_SES_SECRET_KEY",
                 "TENCENT_REALNAME_SECRET_ID",
                 "TENCENT_REALNAME_SECRET_KEY",
                 "TENCENT_REALNAME_ENDPOINT",
                 "REALNAME_ENCRYPTION_KEY",
+                "TENCENT_REALNAME_FACEID_RULE_ID",
+                "TENCENT_REALNAME_ACCOUNT_ID",
+                "TENCENT_REALNAME_FACEID_REDIRECT_URL",
             ],
         )
         self.assertNotIn("values", item)
         self.assertNotIn("stringData", item)
+
+    def test_japan_runtime_ssm_manifest_is_independent_and_complete(self) -> None:
+        manifest_path = REPO_ROOT / "scripts/ssm_manifest.runtime.sandbox-jp-1.yaml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+
+        self.assertEqual(manifest["defaults"]["region"], "ap-tokyo")
+        self.assertEqual(manifest["defaults"]["version_id"], "latest")
+        items = manifest["items"]
+        self.assertEqual(len(items), 16)
+        self.assertEqual(len({item["id"] for item in items}), 16)
+        for item in items:
+            with self.subTest(item=item["id"]):
+                self.assertTrue(item["secret_name"].startswith("mono-sandbox-jp-1-"))
+                self.assertEqual(item["namespace"], "lightvela-playground-sandbox-jp-1")
+                self.assertTrue(item["output_path"].startswith("argocd/secrets/sandbox-jp-1/"))
+                self.assertTrue(item["required_keys"])
+                self.assertNotIn("values", item)
+                self.assertNotIn("stringData", item)
+
+        expected_outputs = {
+            "admin-gateway-runtime-secrets.sops.yaml",
+            "ai-gateway-runtime-secrets.sops.yaml",
+            "cloudladder-callback-secrets.sops.yaml",
+            "credit-runtime-secrets.sops.yaml",
+            "ctl-conf-common.sops.yaml",
+            "ctl-conf-rewrite.sops.yaml",
+            "ctl-runtime-secrets.sops.yaml",
+            "gateway-dashboard-runtime-secrets.sops.yaml",
+            "nextgen-dashboard-runtime-secrets.sops.yaml",
+            "payment-runtime-secrets.sops.yaml",
+            "sandbox-runtime-secrets.sops.yaml",
+            "service-gateway-runtime-secrets.sops.yaml",
+            "session-runtime-secrets.sops.yaml",
+            "shadow-runtime-secrets.sops.yaml",
+            "subscription-runtime-secrets.sops.yaml",
+            "trade-runtime-secrets.sops.yaml",
+        }
+        self.assertEqual(
+            {Path(item["output_path"]).name for item in items},
+            expected_outputs,
+        )
+        service_gateway = next(
+            item for item in items if item["id"] == "service-gateway-runtime-secrets"
+        )
+        self.assertEqual(
+            service_gateway["required_keys"],
+            [
+                "SERVICE_GATEWAY_ADMIN_BASIC_AUTH_PASSWORD",
+                "SERVICE_GATEWAY_ADMIN_BASIC_AUTH_USER",
+            ],
+        )
 
     def test_sandbox2_catalogs_are_promotable_or_explicitly_exempt(self) -> None:
         manifest = load_manifest()

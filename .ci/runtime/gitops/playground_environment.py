@@ -723,6 +723,16 @@ def apply_managed_profile_overrides(text: str, profile: PlaygroundEnvironmentPro
         "SANDBOX_POOL_BJ8_ZONE": profile.zones[0] if profile.zones else "",
         "AUTH_TRUSTED_PROXY_CIDRS": profile.support_subnet_cidr or "",
     }
+    if profile.region_code == "jp":
+        values.update(
+            {
+                "AUTH_QQ_APP_ID": "",
+                "AUTH_WECHAT_APP_ID": "",
+                "AUTH_WECHAT_OFFICIAL_ACCOUNT_APP_ID": "",
+                "AUTH_GITHUB_CLIENT_ID": "",
+                "SHADOW_REGION": profile.cloud_region,
+            }
+        )
     for index, (subnet_id, zone) in enumerate(
         zip(profile.sandbox_pool_subnets, profile.sandbox_pool_zones, strict=True)
     ):
