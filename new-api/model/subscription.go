@@ -1381,6 +1381,7 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 		return nil, errors.New("amount must be > 0")
 	}
 	now := GetDBTimestamp()
+	pacingEffectiveAt := subscriptionQuotaPacingEffectiveAt()
 
 	returnValue := &SubscriptionPreConsumeResult{}
 
@@ -1433,12 +1434,17 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 				fullCandidate = &sub
 				break
 			}
-			remain := sub.AmountTotal - usedBefore
+			quotaCap := sub.AmountTotal
+			pacing := calculateSubscriptionQuotaPacingCap(&sub, plan, now, pacingEffectiveAt)
+			if pacing.Applied {
+				quotaCap = pacing.Cap
+			}
+			remain := quotaCap - usedBefore
 			if remain >= amount {
 				fullCandidate = &sub
 				break
 			}
-			if allowTailGrace && remain > 0 && graceCandidate == nil {
+			if allowTailGrace && quotaCap == sub.AmountTotal && remain > 0 && graceCandidate == nil {
 				graceCandidate = &sub
 				graceAmount = remain
 			}

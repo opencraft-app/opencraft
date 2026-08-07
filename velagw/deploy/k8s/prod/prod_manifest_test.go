@@ -244,6 +244,18 @@ func TestLLMFleetRGDUsesKRO08CompatibleSchemaAndSecretRefs(t *testing.T) {
 	}
 }
 
+func TestNewAPIQuotaPacingConfigurationReachesEveryRuntimePath(t *testing.T) {
+	const envName = "SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT"
+	rgd := string(readFile(t, "llmfleet-rgd.yaml"))
+	if count := strings.Count(rgd, "name: "+envName); count != 3 {
+		t.Fatalf("LLMFleet RGD pacing env occurrences = %d, want admin, versioned traffic and legacy traffic", count)
+	}
+	controller := string(readFile(t, "velagwset-controller.yaml.template"))
+	if !strings.Contains(controller, "name: "+envName+"\n              value: \"0\"") {
+		t.Fatalf("VelaGWSet controller manifest must default %s to disabled", envName)
+	}
+}
+
 func TestLLMFleetRGDReclaimsSetRuntimeThroughBoundedCleanupJob(t *testing.T) {
 	content := string(readFile(t, "llmfleet-rgd.yaml"))
 	for _, want := range []string{

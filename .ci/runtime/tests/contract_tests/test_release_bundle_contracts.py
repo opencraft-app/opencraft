@@ -1080,6 +1080,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "VELAGW_TRAFFIC_PROTOCOL",
             "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS",
             "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC",
+            "VELAGW_SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT",
         }
         expected_region_values = {
             "shprod": {
@@ -1087,12 +1088,14 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 "VELAGW_CLOUD_REGION": "ap-shanghai",
                 "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS": "4",
                 "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC": "true",
+                "VELAGW_SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT": "0",
             },
             "sgprod": {
                 "VELAGW_CLUSTER_NAME": "johorbahru-llmgateway-prod",
                 "VELAGW_CLOUD_REGION": "ap-johorbahru",
                 "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS": "2",
                 "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC": "false",
+                "VELAGW_SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT": "0",
             },
         }
         for env, expected in expected_region_values.items():
