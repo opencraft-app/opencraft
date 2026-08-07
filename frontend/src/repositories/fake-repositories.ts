@@ -32,6 +32,8 @@ import type {
 } from "@/repositories/types";
 
 const NETWORK_DELAY_MS = 320;
+const DEBUG_EXEC_OPENCLAW_CONFIG_COMMAND = "openclaw_config";
+const DEBUG_EXEC_STDOUT_STREAM = "stdout";
 const FAKE_AUTH_STORAGE_KEY = "lightclaw-fake-auth-v1";
 const LOCAL_PREVIEW_AUTH_ENABLED =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_LOCAL_PREVIEW_AUTH === "1")
@@ -1448,7 +1450,7 @@ const createBotRepository = (): BotRepository => {
 
     async execDebugCommand(_botId, command) {
       await wait(NETWORK_DELAY_MS);
-      if (command === "openclaw_config") {
+      if (command === DEBUG_EXEC_OPENCLAW_CONFIG_COMMAND) {
         return {
           status: "Succeeded",
           exitCode: 0,
@@ -1456,6 +1458,15 @@ const createBotRepository = (): BotRepository => {
         };
       }
       return { status: "Succeeded", exitCode: 0, output: "" };
+    },
+
+    async execDebugCommandStream(_botId, command, onChunk) {
+      await wait(NETWORK_DELAY_MS);
+      const result = command === DEBUG_EXEC_OPENCLAW_CONFIG_COMMAND
+        ? { status: "Succeeded", exitCode: 0, output: JSON.stringify({ models: {}, channels: {}, gateway: {} }) }
+        : { status: "Succeeded", exitCode: 0, output: "" };
+      if (result.output) onChunk({ stream: DEBUG_EXEC_STDOUT_STREAM, chunk: result.output });
+      return result;
     },
 
     async startRescueExport(botId) {

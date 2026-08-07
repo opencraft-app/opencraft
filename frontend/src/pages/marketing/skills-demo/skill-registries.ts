@@ -38,6 +38,20 @@ export type SearchRegistry = Exclude<Registry, "hermes">;
 
 const SKILL_SEARCH_TIMEOUT_MS = 30_000;
 const SKILL_COMMAND_TIMEOUT_MS = 120_000;
+const SKILL_BATCH_COMMAND_TIMEOUT_MS = 650_000;
+const DEBUG_EXEC_STDERR_STREAM = "stderr";
+const ACLI_BATCH_EVENT = {
+  progress: "progress",
+  summary: "summary",
+} as const;
+const ACLI_BATCH_SUCCESS_STATUSES = new Set(["installed", "succeeded", "success"]);
+
+export type SkillsExecDebugCommandStream = (
+  botId: string,
+  command: string,
+  onChunk: (event: { stream: string; chunk: string }) => void,
+  options?: { timeoutMs?: number },
+) => Promise<{ status: string; exitCode: number; output: string }>;
 
 /** 面板内部统一的技能模型（合并两个 registry 的字段） */
 export interface Skill {
@@ -77,7 +91,7 @@ export interface InstalledSkill extends Skill {
   uninstallable?: boolean;
   /** 来源查询不完整，当前记录不能安全决定卸载命令。 */
   sourceUncertain?: boolean;
-  /** 合并展示时保留各 registry 的真实卸载标识，避免只卸载其中一个来源。 */
+  /** 合并展示时保留可用的 registry 卸载候选，任一候选成功即可删除同一运行时技能。 */
   uninstallTargets?: Array<Pick<Skill, "registry" | "rawId">>;
 }
 
@@ -126,6 +140,9 @@ export function buildClawhubSearchCommand(keyword: string, sortBy = "installs"):
 export function buildClawhubInstallCommand(slug: string): string {
   return `acli clawhub install ${shellQuote(slug)}`;
 }
+export function buildClawhubBatchInstallCommand(slugs: string[]): string {
+  return `acli clawhub batch-install --wait=true ${shellQuote(slugs.join(" "))}`;
+}
 export function buildClawhubUninstallCommand(slug: string): string {
   return `acli clawhub uninstall ${shellQuote(slug)}`;
 }
@@ -152,6 +169,10 @@ export function buildSkillsshInstallCommand(id: string): string {
   // skills.sh install reads registry/download configuration from agentuser's login profile.
   return buildLoginShellCommand(`acli skills-sh install ${safeSkillsshId(id)}`);
 }
+export function buildSkillsshBatchInstallCommand(ids: string[]): string {
+  const safeIds = ids.map(safeSkillsshId);
+  return buildLoginShellCommand(`acli skills-sh batch-install --wait=true ${shellQuote(safeIds.join(" "))}`);
+}
 export function buildSkillsshUninstallCommand(id: string): string {
   // skills.sh uninstall 未在联调表中确认；按 install 的对称形态下发，
   // 若 acli 尚未支持该子命令，调用方会拿到非 0 退出码并在 UI 提示错误。
@@ -163,6 +184,10 @@ export function buildSkillsshListCommand(): string {
 
 export function buildSkillhubInstallCommand(slug: string): string {
   return `acli skills install ${shellQuote(slug)}`;
+}
+
+export function buildSkillhubBatchInstallCommand(slugs: string[]): string {
+  return `acli skills batch-install --wait=true ${shellQuote(slugs.join(" "))}`;
 }
 
 export function buildSkillhubUninstallCommand(slug: string): string {
@@ -524,6 +549,13 @@ export function parseUninstallOk(raw: string): boolean {
   return false;
 }
 
+function isUninstallTargetMissing(raw: string): boolean {
+  const envelope = extractJsonObject(raw);
+  if (!isRecord(envelope) || !isRecord(envelope.error)) return false;
+  const code = envelope.error.code;
+  return typeof code === "string" && code.trim().toUpperCase().endsWith("_NOT_INSTALLED");
+}
+
 // ─── 合并 / 排序 / 来源归属 ───────────────────────────────────────────────────
 
 export function mergeSkills(clawhub: Skill[], skillssh: Skill[], skillhub: Skill[] = []): Skill[] {
@@ -587,13 +619,16 @@ export function mergeInstalledWithHermes(
 
   for (const hermesSkill of hermesInstalled) {
     const normalizedSlug = hermesSkill.slug.trim().toLowerCase();
-    const matches = merged.filter((skill) => (
+    const matchingIndexes = merged.flatMap((skill, index) => (
       skill.registry !== "hermes"
       && (
         skill.slug.trim().toLowerCase() === normalizedSlug
         || skill.nativeAliases?.some((alias) => alias.toLowerCase() === normalizedSlug)
       )
+        ? [index]
+        : []
     ));
+    const matches = matchingIndexes.map((index) => merged[index]).filter((skill) => skill !== undefined);
     if (matches.length === 1 && matches[0]) {
       if (!matches[0].registries.includes("hermes")) matches[0].registries.push("hermes");
       matches[0].category = matches[0].category ?? hermesSkill.category;
@@ -602,9 +637,39 @@ export function mergeInstalledWithHermes(
       continue;
     }
     if (matches.length > 1) {
-      // Hermes reports the runtime directory, not a third marketplace install.
-      // When more than one marketplace record shares the slug, keep those records
-      // separate and avoid rendering an unattributable Hermes duplicate.
+      const marketplaceRegistries = matches.map((skill) => skill.registry);
+      const hasOneMatchPerRegistry = new Set(marketplaceRegistries).size === matches.length;
+      if (hasOneMatchPerRegistry && matches[0] && matchingIndexes[0] !== undefined) {
+        const primary = matches[0];
+        const registries = Array.from(new Set<Registry>([
+          ...matches.flatMap((skill) => skill.registries),
+          "hermes",
+        ]));
+        const uninstallTargets = Array.from(new Map(
+          matches.flatMap((skill) => (
+            skill.uninstallTargets?.length
+              ? skill.uninstallTargets
+              : [{ registry: skill.registry, rawId: skill.rawId }]
+          )).map((target) => [skillIdentity(target), target]),
+        ).values());
+        const nativeAliases = Array.from(new Set(
+          matches.flatMap((skill) => [skill.rawId, skill.slug, ...(skill.nativeAliases ?? [])]),
+        ));
+        const combined: InstalledSkill = {
+          ...primary,
+          category: primary.category ?? matches.find((skill) => skill.category)?.category ?? hermesSkill.category,
+          version: primary.version ?? matches.find((skill) => skill.version)?.version ?? hermesSkill.version,
+          status: primary.status ?? matches.find((skill) => skill.status)?.status ?? hermesSkill.status,
+          nativeAliases,
+          registries,
+          sourceLabel: registries.map((registry) => REGISTRY_LABEL[registry]).join(" / "),
+          uninstallTargets,
+        };
+        const insertionIndex = matchingIndexes[0];
+        [...matchingIndexes].reverse().forEach((index) => merged.splice(index, 1));
+        merged.splice(insertionIndex, 0, combined);
+      }
+      // Multiple records from the same registry remain ambiguous and stay separate.
       continue;
     }
     merged.push({
@@ -669,6 +734,11 @@ export interface SkillsDataLayer {
   search(keyword: string, options?: SkillSearchOptions): Promise<SkillSearchResult>;
   listInstalled(): Promise<InstalledListResult>;
   install(skill: Skill): Promise<InstallResult>;
+  installBatch?(
+    skills: Skill[],
+    onProgress?: (progress: BatchInstallProgress) => void,
+    options?: { shouldCancel?: () => boolean },
+  ): Promise<BatchInstallResult>;
   /** 卸载已安装技能。ClawHub 走 acli clawhub uninstall；skills.sh 走对称子命令（未确认时调用会失败）。 */
   uninstall(skill: Skill): Promise<InstallResult>;
   /** 默认页（无搜索）的推荐位。mock 返回 fixtures；live 暂返回空，后续可接 trending。 */
@@ -731,6 +801,221 @@ export async function installSkillsSequentially(
     }
   }
   return { succeeded, failed, skipped };
+}
+
+export async function installSkillsInBatch(
+  dataLayer: Pick<SkillsDataLayer, "install" | "installBatch">,
+  skills: Skill[],
+  onProgress?: (progress: BatchInstallProgress) => void,
+  options?: { shouldCancel?: () => boolean },
+): Promise<BatchInstallResult> {
+  if (dataLayer.installBatch) {
+    return dataLayer.installBatch(skills, onProgress, options);
+  }
+  return installSkillsSequentially(dataLayer, skills, onProgress, options);
+}
+
+type AcliBatchResultItem = {
+  id?: string;
+  name?: string;
+  slug?: string;
+  status?: string;
+  error_code?: string;
+  message?: string;
+};
+
+type AcliBatchOutput = AcliBatchResultItem & {
+  event?: typeof ACLI_BATCH_EVENT[keyof typeof ACLI_BATCH_EVENT];
+  data?: { results?: AcliBatchResultItem[] };
+  results?: AcliBatchResultItem[];
+};
+
+function parseAcliBatchOutputLine(line: string): AcliBatchOutput | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as AcliBatchOutput;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isAcliBatchUnsupported(output: string): boolean {
+  return /(?:unknown|unrecognized|invalid)\s+(?:command|subcommand).*batch-install|batch-install.*(?:not found|unavailable)/i.test(output);
+}
+
+function buildRegistryBatchInstallCommand(registry: Registry, skills: Skill[]): string | null {
+  const ids = skills.map((skill) => skill.rawId);
+  if (registry === "clawhub") return buildClawhubBatchInstallCommand(ids);
+  if (registry === "skills-sh") return buildSkillsshBatchInstallCommand(ids);
+  if (registry === "skillhub") return buildSkillhubBatchInstallCommand(ids);
+  return null;
+}
+
+function findBatchResultSkill(
+  skills: Skill[],
+  completed: Set<string>,
+  item: AcliBatchResultItem,
+): Skill | undefined {
+  const identifier = (item.slug ?? item.name ?? item.id ?? "").trim().toLowerCase();
+  if (identifier) {
+    const exact = skills.find((skill) => (
+      !completed.has(skillIdentity(skill))
+      && [skill.rawId, skill.slug].some((value) => value.trim().toLowerCase() === identifier)
+    ));
+    if (exact) return exact;
+  }
+  return skills.find((skill) => !completed.has(skillIdentity(skill)));
+}
+
+async function installSkillsWithNativeBatch(
+  botId: string,
+  execDebugCommandStream: SkillsExecDebugCommandStream,
+  install: (skill: Skill) => Promise<InstallResult>,
+  skills: Skill[],
+  onProgress?: (progress: BatchInstallProgress) => void,
+  options?: { shouldCancel?: () => boolean },
+): Promise<BatchInstallResult> {
+  const result: BatchInstallResult = { succeeded: [], failed: [], skipped: [] };
+  const runs: Array<{ registry: Registry; skills: Skill[]; startIndex: number }> = [];
+  for (const [offset, skill] of skills.entries()) {
+    const previous = runs[runs.length - 1];
+    if (previous?.registry === skill.registry) previous.skills.push(skill);
+    else runs.push({ registry: skill.registry, skills: [skill], startIndex: offset + 1 });
+  }
+
+  const markRemainingSkipped = (startIndex: number) => {
+    skills.slice(startIndex - 1).forEach((skill, offset) => {
+      result.skipped.push(skill);
+      onProgress?.({ index: startIndex + offset, total: skills.length, skill, status: "skipped" });
+    });
+  };
+
+  for (const run of runs) {
+    if (options?.shouldCancel?.()) {
+      markRemainingSkipped(run.startIndex);
+      break;
+    }
+    const command = buildRegistryBatchInstallCommand(run.registry, run.skills);
+    if (!command) {
+      const sequential = await installSkillsSequentially(
+        { install },
+        run.skills,
+        (progress) => onProgress?.({ ...progress, index: run.startIndex + progress.index - 1, total: skills.length }),
+        options,
+      );
+      result.succeeded.push(...sequential.succeeded);
+      result.failed.push(...sequential.failed);
+      result.skipped.push(...sequential.skipped);
+      continue;
+    }
+
+    const completed = new Set<string>();
+    const started = new Set<string>();
+    let buffer = "";
+    const markInstalling = (skill: Skill) => {
+      const identity = skillIdentity(skill);
+      if (started.has(identity)) return;
+      started.add(identity);
+      const index = run.startIndex + run.skills.indexOf(skill);
+      onProgress?.({ index, total: skills.length, skill, status: "installing" });
+    };
+    const consumeResultItem = (item: AcliBatchResultItem) => {
+      const skill = findBatchResultSkill(run.skills, completed, item);
+      if (!skill) return;
+      const identity = skillIdentity(skill);
+      markInstalling(skill);
+      completed.add(identity);
+      const index = run.startIndex + run.skills.indexOf(skill);
+      const status = item.status?.trim().toLowerCase();
+      if (status && ACLI_BATCH_SUCCESS_STATUSES.has(status)) {
+        result.succeeded.push(skill);
+        onProgress?.({ index, total: skills.length, skill, status: "succeeded" });
+      } else {
+        const message = item.message?.trim() || item.error_code?.trim() || undefined;
+        result.failed.push({ skill, message });
+        onProgress?.({ index, total: skills.length, skill, status: "failed", message });
+      }
+      const next = run.skills.find((candidate) => !completed.has(skillIdentity(candidate)));
+      if (next) markInstalling(next);
+    };
+    const consumeParsed = (parsed: AcliBatchOutput) => {
+      if (parsed.event === ACLI_BATCH_EVENT.progress) consumeResultItem(parsed);
+      const summaryResults = parsed.event === ACLI_BATCH_EVENT.summary ? parsed.results : parsed.data?.results;
+      summaryResults?.forEach(consumeResultItem);
+    };
+    const consumeText = (chunk: string, flush = false) => {
+      buffer += chunk;
+      const lines = buffer.split(/\r?\n/);
+      const trailing = lines.pop() ?? "";
+      buffer = flush ? "" : trailing;
+      if (flush && trailing) lines.push(trailing);
+      lines.forEach((line) => {
+        const parsed = parseAcliBatchOutputLine(line);
+        if (parsed) consumeParsed(parsed);
+      });
+    };
+
+    markInstalling(run.skills[0]);
+    let commandResult: Awaited<ReturnType<SkillsExecDebugCommandStream>>;
+    try {
+      commandResult = await execDebugCommandStream(
+        botId,
+        command,
+        ({ stream, chunk }) => {
+          if (stream !== DEBUG_EXEC_STDERR_STREAM) consumeText(chunk);
+        },
+        { timeoutMs: SKILL_BATCH_COMMAND_TIMEOUT_MS },
+      );
+      consumeText("", true);
+      if (completed.size === 0 && commandResult.output) consumeText(`${commandResult.output}\n`, true);
+    } catch (error) {
+      const message = error instanceof Error && error.message.startsWith("debug_exec_timeout:")
+        ? "技能批量安装超时，请重试"
+        : error instanceof Error ? error.message : String(error);
+      run.skills.filter((skill) => !completed.has(skillIdentity(skill))).forEach((skill) => {
+        markInstalling(skill);
+        result.failed.push({ skill, message });
+        onProgress?.({
+          index: run.startIndex + run.skills.indexOf(skill),
+          total: skills.length,
+          skill,
+          status: "failed",
+          message,
+        });
+      });
+      continue;
+    }
+
+    const errorOutput = commandResult.output.trim();
+    if (commandResult.exitCode !== 0 && completed.size === 0 && isAcliBatchUnsupported(errorOutput)) {
+      const sequential = await installSkillsSequentially(
+        { install },
+        run.skills,
+        (progress) => onProgress?.({ ...progress, index: run.startIndex + progress.index - 1, total: skills.length }),
+        options,
+      );
+      result.succeeded.push(...sequential.succeeded);
+      result.failed.push(...sequential.failed);
+      result.skipped.push(...sequential.skipped);
+      continue;
+    }
+
+    run.skills.filter((skill) => !completed.has(skillIdentity(skill))).forEach((skill) => {
+      markInstalling(skill);
+      const message = errorOutput || "未收到技能安装结果";
+      result.failed.push({ skill, message });
+      onProgress?.({
+        index: run.startIndex + run.skills.indexOf(skill),
+        total: skills.length,
+        skill,
+        status: "failed",
+        message,
+      });
+    });
+  }
+  return result;
 }
 
 // ─── Mock fixtures（来自联调样例 JSON） ───────────────────────────────────────
@@ -927,6 +1212,7 @@ export function createMockDataLayer(): SkillsDataLayer {
 export function createLiveDataLayer(
   botId: string,
   execDebugCommand: ExpertsExecDebugCommand,
+  execDebugCommandStream?: SkillsExecDebugCommandStream,
 ): SkillsDataLayer {
   const run = async (command: string, timeoutMs = SKILL_COMMAND_TIMEOUT_MS): Promise<string> => {
     let result;
@@ -972,7 +1258,7 @@ export function createLiveDataLayer(
     };
   };
 
-  return {
+  const dataLayer: SkillsDataLayer = {
     async search(keyword: string, options?: SkillSearchOptions) {
       const kw = keyword.trim();
       if (!kw || options?.signal?.aborted) {
@@ -1021,9 +1307,15 @@ export function createLiveDataLayer(
             : target.registry === "skills-sh"
               ? buildSkillsshUninstallCommand(target.rawId)
               : buildClawhubUninstallCommand(target.rawId);
-          const output = await run(command);
-          if (target.registry !== "hermes" && !parseUninstallOk(output)) {
+          try {
+            const output = await run(command);
+            if (target.registry === "hermes" || parseUninstallOk(output)) break;
+            if (isUninstallTargetMissing(output)) continue;
             return { ok: false, message: output.trim() || undefined };
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (isUninstallTargetMissing(message)) continue;
+            return { ok: false, message };
           }
         }
         const verification = await listInstalled();
@@ -1046,6 +1338,17 @@ export function createLiveDataLayer(
       return { clawhub: [], skillssh: [], skillhub: [] };
     },
   };
+  if (execDebugCommandStream) {
+    dataLayer.installBatch = (skills, onProgress, options) => installSkillsWithNativeBatch(
+      botId,
+      execDebugCommandStream,
+      (skill) => dataLayer.install(skill),
+      skills,
+      onProgress,
+      options,
+    );
+  }
+  return dataLayer;
 }
 
 // ─── 国内站数据层（SkillHub HTTP + acli skills） ───────────────────────────────
@@ -1077,6 +1380,7 @@ export function createDomesticDataLayer(
   botId: string,
   execDebugCommand: ExpertsExecDebugCommand,
   language: SkillhubLanguage = "zh",
+  execDebugCommandStream?: SkillsExecDebugCommandStream,
 ): SkillsDataLayer {
   const run = async (command: string, timeoutMs = SKILL_COMMAND_TIMEOUT_MS): Promise<string> => {
     let result;
@@ -1116,7 +1420,7 @@ export function createDomesticDataLayer(
     };
   };
 
-  return {
+  const dataLayer: SkillsDataLayer = {
     async search(keyword: string, options?: SkillSearchOptions) {
       try {
         // 热门时让 SkillHub 先按 downloads 排名，避免高下载 ClawHub 镜像被 score 结果挤掉。
@@ -1186,6 +1490,17 @@ export function createDomesticDataLayer(
       }
     },
   };
+  if (execDebugCommandStream) {
+    dataLayer.installBatch = (skills, onProgress, options) => installSkillsWithNativeBatch(
+      botId,
+      execDebugCommandStream,
+      (skill) => dataLayer.install(skill),
+      skills,
+      onProgress,
+      options,
+    );
+  }
+  return dataLayer;
 }
 
 export function createSkillsDataLayer(
@@ -1193,10 +1508,11 @@ export function createSkillsDataLayer(
   execDebugCommand: ExpertsExecDebugCommand,
   mode: "global" | "domestic" = "global",
   language: SkillhubLanguage = "zh",
+  execDebugCommandStream?: SkillsExecDebugCommandStream,
 ): SkillsDataLayer {
-  if (mode === "domestic") return createDomesticDataLayer(botId, execDebugCommand, language);
+  if (mode === "domestic") return createDomesticDataLayer(botId, execDebugCommand, language, execDebugCommandStream);
   return SKILLS_DEMO_LIVE
-    ? createLiveDataLayer(botId, execDebugCommand)
+    ? createLiveDataLayer(botId, execDebugCommand, execDebugCommandStream)
     : createMockDataLayer();
 }
 
