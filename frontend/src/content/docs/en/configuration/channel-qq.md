@@ -147,7 +147,7 @@ After integration, the QQ bot supports more than basic text. The full list:
 
 - **Message types**: Text, images, files, voice, and more — see "Supported message types" above
 
-- **Group chat support**: Group mentions are enabled by default after binding. The current `open` policy lets members of QQ groups containing the bot mention it to chat; use the Hermes allowlist policy if you need to restrict this to selected groups
+- **Group chat support**: Group mentions are enabled by default after binding. The console applies the `open` policy, allowing members of QQ groups containing the bot to mention it to chat. To restrict access to selected groups, switch the Hermes instance configuration to `allowlist` and maintain the allowlist there; the channel card does not expose this switch yet
 
 - **Credential management**: The AppSecret is only visible in plaintext at creation time; if lost or leaked, it must be reset
 
