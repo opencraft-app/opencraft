@@ -7,6 +7,7 @@ resources:
 - ingress-testing.yaml
 - statefulsetplus.yaml
 - statefulsetplus-testing.yaml
+# Keep this overlay in cloudladdergateway CI path to refresh GitOps secret closure.
 generators:
 - ksops-secret-generator.yaml
 - ksops-callback-secret-generator.yaml
