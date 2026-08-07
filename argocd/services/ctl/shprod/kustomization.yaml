@@ -33,6 +33,11 @@ patches:
         value:
           name: CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
           value: "*"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_CLOUDAPI_ALLOWED_REGIONS
+          value: ap-shanghai
   - target:
       kind: Deployment
       name: ctl-service

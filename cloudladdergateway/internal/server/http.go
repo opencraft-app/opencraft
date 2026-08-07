@@ -67,7 +67,7 @@ func invokeExternalHTTP(engine *proxy.Engine, authenticator *auth.Authenticator,
 			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})
 			return
 		}
-		routeID, body, err := resolveExternalAuthCodeRoute(externalRoute, body)
+		routeID, body, err := resolveExternalRoute(externalRoute, c.Request.Header, body)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -95,15 +95,18 @@ func invokeResolvedHTTPWithBody(c *gin.Context, engine *proxy.Engine, authentica
 		return
 	}
 	req := proxy.Request{
-		RequestID:  firstHeader(c.Request.Header, "X-Request-ID", "X-CloudLadder-Request-ID"),
-		Caller:     firstHeader(c.Request.Header, "X-CloudLadder-Caller", "X-Caller", "X-Service-Name"),
-		RouteID:    routeID,
-		Method:     c.Request.Method,
-		Path:       proxyPath,
-		Query:      c.Request.URL.RawQuery,
-		Headers:    c.Request.Header.Clone(),
-		Body:       body,
-		Attributes: attributesFromHeaders(c.Request.Header),
+		RequestID:     firstHeader(c.Request.Header, "X-Request-ID", "X-CloudLadder-Request-ID"),
+		Caller:        firstHeader(c.Request.Header, "X-CloudLadder-Caller", "X-Caller", "X-Service-Name"),
+		RouteID:       routeID,
+		Method:        c.Request.Method,
+		Path:          proxyPath,
+		Query:         c.Request.URL.RawQuery,
+		OriginalHost:  c.Request.Host,
+		OriginalPath:  c.Request.URL.EscapedPath(),
+		OriginalQuery: c.Request.URL.RawQuery,
+		Headers:       c.Request.Header.Clone(),
+		Body:          body,
+		Attributes:    attributesFromHeaders(c.Request.Header),
 	}
 	resp, err := engine.Invoke(c.Request.Context(), req)
 	if err != nil {
@@ -125,6 +128,15 @@ func invokeResolvedHTTPWithBody(c *gin.Context, engine *proxy.Engine, authentica
 	c.Writer.Header().Set("X-CloudLadder-Upstream-URL", resp.UpstreamURL)
 	c.Writer.WriteHeader(resp.StatusCode)
 	_, _ = c.Writer.Write(resp.Body)
+}
+
+func resolveExternalRoute(externalRoute config.ExternalRoute, headers http.Header, body []byte) (string, []byte, error) {
+	for _, candidate := range externalRoute.HeaderRoutes {
+		if strings.TrimSpace(headers.Get(candidate.Name)) == strings.TrimSpace(candidate.Value) {
+			return candidate.RouteID, body, nil
+		}
+	}
+	return resolveExternalAuthCodeRoute(externalRoute, body)
 }
 
 func resolveExternalAuthCodeRoute(externalRoute config.ExternalRoute, body []byte) (string, []byte, error) {

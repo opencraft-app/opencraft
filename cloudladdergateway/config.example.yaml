@@ -305,6 +305,8 @@ auth:
     - jifei-test
     - tencentcloud-account-callback-bjsbx
     - tencentcloud-account-callback-shprod
+    - lightvela-cloudapi-bj
+    - lightvela-cloudapi-sh
   callers:
     - id: shadow
       secret_env: CLOUDLADDER_SHADOW_HMAC_SECRET
@@ -351,6 +353,17 @@ external_routes:
     user_id_prefix_routes:
       - prefix: "bjsbx_"
         route_id: tencentcloud-account-callback-bjsbx
+  - path: /cloudapi
+    methods: ["POST"]
+    route_id: lightvela-cloudapi-sh
+    upstream_path: /cloudapi
+    header_routes:
+      - name: X-TC-Region
+        value: ap-beijing
+        route_id: lightvela-cloudapi-bj
+      - name: X-TC-Region
+        value: ap-shanghai
+        route_id: lightvela-cloudapi-sh
 
 routes:
   - id: sandbox-cn
@@ -663,6 +676,24 @@ routes:
   - id: jifei-callback-sh
     description: "国内站上海地域 jifei 回调入口，路由到上海正式集群"
     callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://api.lightvela.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: lightvela-cloudapi-bj
+    description: "LightVela 通用云 API 入向入口，北京地域按 X-TC-Region=ap-beijing 路由"
+    callers: ["tencentcloud"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: lightvela-cloudapi-sh
+    description: "LightVela 通用云 API 入向入口，上海地域按 X-TC-Region=ap-shanghai 路由"
+    callers: ["tencentcloud"]
     condition: 'request.method == "POST"'
     upstream:
       base_url: "https://api.lightvela.com"

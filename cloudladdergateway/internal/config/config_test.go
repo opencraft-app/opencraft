@@ -197,18 +197,37 @@ func TestExampleConfigLoads(t *testing.T) {
 			t.Fatalf("example config missing route %q", routeID)
 		}
 	}
-	if len(cfg.External) != 1 || cfg.External[0].Path != "/internal/tencentcloud/account" {
+	tencentCallback := findExternalRouteForTest(cfg.External, "/internal/tencentcloud/account")
+	if tencentCallback == nil {
 		t.Fatalf("example config missing TencentCloud callback external route: %+v", cfg.External)
 	}
-	if got := cfg.External[0].AuthCodeRoutes; len(got) != 2 || got[0].Prefix != "bjsbx." || got[1].Prefix != "shprod." {
+	if got := tencentCallback.AuthCodeRoutes; len(got) != 2 || got[0].Prefix != "bjsbx." || got[1].Prefix != "shprod." {
 		t.Fatalf("example config missing auth-code callback routes: %+v", got)
 	}
-	if got := cfg.External[0].UserIDRoutes; len(got) != 1 || got[0].UserID != "u4912323654" || got[0].RouteID != "tencentcloud-account-callback-bjsbx" {
+	if got := tencentCallback.UserIDRoutes; len(got) != 1 || got[0].UserID != "u4912323654" || got[0].RouteID != "tencentcloud-account-callback-bjsbx" {
 		t.Fatalf("example config missing legacy user-id callback route: %+v", got)
 	}
-	if got := cfg.External[0].UserIDPrefixRoutes; len(got) != 1 || got[0].Prefix != "bjsbx_" || got[0].RouteID != "tencentcloud-account-callback-bjsbx" {
+	if got := tencentCallback.UserIDPrefixRoutes; len(got) != 1 || got[0].Prefix != "bjsbx_" || got[0].RouteID != "tencentcloud-account-callback-bjsbx" {
 		t.Fatalf("example config missing user-id prefix callback route: %+v", got)
 	}
+	cloudapi := findExternalRouteForTest(cfg.External, "/cloudapi")
+	if cloudapi == nil || cloudapi.RouteID != "lightvela-cloudapi-sh" || cloudapi.UpstreamPath != "/cloudapi" {
+		t.Fatalf("example config missing LightVela cloud api external route: %+v", cfg.External)
+	}
+	if got := cloudapi.HeaderRoutes; len(got) != 2 ||
+		got[0].Name != "X-TC-Region" || got[0].Value != "ap-beijing" || got[0].RouteID != "lightvela-cloudapi-bj" ||
+		got[1].Name != "X-TC-Region" || got[1].Value != "ap-shanghai" || got[1].RouteID != "lightvela-cloudapi-sh" {
+		t.Fatalf("example config missing cloud api region header routes: %+v", got)
+	}
+}
+
+func findExternalRouteForTest(routes []ExternalRoute, path string) *ExternalRoute {
+	for i := range routes {
+		if routes[i].Path == path {
+			return &routes[i]
+		}
+	}
+	return nil
 }
 
 func TestExampleConfigIncludesRegionalJifeiCallbacks(t *testing.T) {
