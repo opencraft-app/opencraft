@@ -87,6 +87,24 @@ type RouteConfig struct {
 	Callers     []string        `yaml:"callers"`
 	Upstream    UpstreamConfig  `yaml:"upstream"`
 	Webhooks    []WebhookConfig `yaml:"webhooks"`
+
+	// UinRoutes 按请求体里的影子账号 uin 把请求改派到另一条 route。
+	//
+	// 用途：jifei 侧只能配置一个固定的回调地址，但测试期有多个开发者环境需要各自收到
+	// 自己订单的回调。计费把回调统一打到本 route，本表按 `interface.para.uin` 把请求
+	// 分发到对应开发者环境的 route；表里没有的 uin 走本 route 自身的 upstream 兜底。
+	//
+	// 前提：每个开发者环境必须持有**不同的**影子账号 uin。共用同一个测试账号时无法区分。
+	//
+	// 可用 CLOUDLADDERGATEWAY_ROUTE_<ID>_UIN_ROUTES 覆盖，格式 `uin=route_id` 逗号分隔，
+	// 这样新增开发者不需要重新构建镜像。
+	UinRoutes []UinRoute `yaml:"uin_routes"`
+}
+
+// UinRoute 是一条 uin → route 的改派规则。
+type UinRoute struct {
+	Uin     string `yaml:"uin"`
+	RouteID string `yaml:"route_id"`
 }
 
 type UpstreamConfig struct {
@@ -124,9 +142,16 @@ type ExternalRoute struct {
 	Methods            []string                    `yaml:"methods"`
 	RouteID            string                      `yaml:"route_id"`
 	UpstreamPath       string                      `yaml:"upstream_path"`
+	HeaderRoutes       []ExternalHeaderRoute       `yaml:"header_routes"`
 	AuthCodeRoutes     []ExternalAuthCodeRoute     `yaml:"auth_code_routes"`
 	UserIDRoutes       []ExternalUserIDRoute       `yaml:"user_id_routes"`
 	UserIDPrefixRoutes []ExternalUserIDPrefixRoute `yaml:"user_id_prefix_routes"`
+}
+
+type ExternalHeaderRoute struct {
+	Name    string `yaml:"name"`
+	Value   string `yaml:"value"`
+	RouteID string `yaml:"route_id"`
 }
 
 type ExternalAuthCodeRoute struct {
@@ -328,6 +353,28 @@ func (c Config) Validate() error {
 		if strings.TrimSpace(route.UpstreamPath) != "" && !strings.HasPrefix(route.UpstreamPath, "/") {
 			return fmt.Errorf("external_routes[%d].upstream_path must start with /", i)
 		}
+		headerRouteKeys := make(map[string]struct{}, len(route.HeaderRoutes))
+		for j, headerRoute := range route.HeaderRoutes {
+			name := strings.TrimSpace(headerRoute.Name)
+			value := strings.TrimSpace(headerRoute.Value)
+			if name == "" {
+				return fmt.Errorf("external_routes[%d].header_routes[%d].name is required", i, j)
+			}
+			if value == "" {
+				return fmt.Errorf("external_routes[%d].header_routes[%d].value is required", i, j)
+			}
+			key := strings.ToLower(name) + "\x00" + value
+			if _, exists := headerRouteKeys[key]; exists {
+				return fmt.Errorf("external_routes[%d].header_routes[%d] %q=%q is duplicated", i, j, name, value)
+			}
+			headerRouteKeys[key] = struct{}{}
+			if strings.TrimSpace(headerRoute.RouteID) == "" {
+				return fmt.Errorf("external_routes[%d].header_routes[%d].route_id is required", i, j)
+			}
+			if _, ok := seen[headerRoute.RouteID]; !ok {
+				return fmt.Errorf("external_routes[%d].header_routes[%d] references unknown route %q", i, j, headerRoute.RouteID)
+			}
+		}
 		prefixes := make(map[string]struct{}, len(route.AuthCodeRoutes))
 		for j, authCodeRoute := range route.AuthCodeRoutes {
 			prefix := strings.TrimSpace(authCodeRoute.Prefix)
@@ -425,7 +472,35 @@ func applyRouteEnvOverrides(cfg *Config) {
 			}
 			cfg.Routes[i].Upstream.Headers["Host"] = value
 		}
+		if value := strings.TrimSpace(os.Getenv(envPrefix + "_UIN_ROUTES")); value != "" {
+			if parsed := parseUinRoutes(value); len(parsed) > 0 {
+				cfg.Routes[i].UinRoutes = parsed
+			}
+		}
 	}
+}
+
+// parseUinRoutes 解析 `uin=route_id` 逗号分隔的 uin 改派表。
+//
+// 这个 env 覆盖存在的意义是「新增一个开发者环境不需要重新构建镜像」——路由表是烤进镜像的，
+// 但 env 可以只改 gitops 的工作负载清单。格式不合法的条目直接跳过，不让一处笔误把整张表废掉
+// （回调链路宁可退化到兜底环境，也不要整体失效）。
+func parseUinRoutes(raw string) []UinRoute {
+	var routes []UinRoute
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		uin, routeID, ok := strings.Cut(item, "=")
+		uin = strings.TrimSpace(uin)
+		routeID = strings.TrimSpace(routeID)
+		if !ok || uin == "" || routeID == "" {
+			continue
+		}
+		routes = append(routes, UinRoute{Uin: uin, RouteID: routeID})
+	}
+	return routes
 }
 
 func envToken(value string) string {

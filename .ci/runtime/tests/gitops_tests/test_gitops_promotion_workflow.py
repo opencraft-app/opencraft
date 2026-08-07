@@ -72,6 +72,21 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertEqual(policy.kustomize_args, ["--changed-only"])
         self.assertTrue(policy.auto_merge)
 
+    def test_tokyo_playground_promote_branches_merge_without_sync_during_onboarding(self) -> None:
+        workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
+        policy = policy_for_branch("promote-sandbox-jp-1-service-gateway-tag")
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.env, "sandbox-jp-1")
+        self.assertEqual(policy.display_name, "东京 Playground sandbox-jp-1")
+        self.assertEqual(policy.kustomize_args, ["--changed-only"])
+        self.assertEqual(policy.verify_mode.value, "merge_only")
+        self.assertTrue(policy.auto_merge)
+        self.assertFalse(policy.auto_sync)
+        self.assertTrue(policy.cleanup_source_branch)
+        self.assertEqual(policy.required_argo_sync, "manual")
+        self.assertIn("promote-sandbox-jp-*", workflow)
+
     def test_devcloud_dep_promote_branches_auto_merge_like_beijing(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
         pin_script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
@@ -125,6 +140,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("promote-beijing-sandbox-2-*", workflow)
         self.assertIn("promote-sandbox-bj-*", workflow)
         self.assertIn("promote-sandbox-kr-*", workflow)
+        self.assertIn("promote-sandbox-jp-*", workflow)
         self.assertIn("promote-devcloud-dep-*", workflow)
         self.assertIn("promote-shanghai-workers-*", workflow)
         self.assertIn("promote-beijing-llmgateway-*", workflow)

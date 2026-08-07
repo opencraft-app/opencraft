@@ -232,6 +232,7 @@ func (e *Engine) Invoke(ctx context.Context, req Request) (Response, error) {
 		return Response{}, err
 	}
 	copyHeaders(httpReq.Header, req.Headers)
+	setOriginalRequestHeaders(httpReq.Header, req)
 	if route.Mode == config.RouteModeSignedHTTPTunnel {
 		if err := prepareSignedTunnelRequest(httpReq, req, route); err != nil {
 			e.recordAudit(ctx, req, route.ID, targetURL, 0, start, err, 0, 0)
@@ -621,6 +622,19 @@ func copyHeaders(dst http.Header, src http.Header) {
 			dst.Add(name, value)
 		}
 	}
+}
+
+func setOriginalRequestHeaders(headers http.Header, req Request) {
+	if strings.TrimSpace(req.OriginalHost) != "" {
+		deleteHeader(headers, "X-CloudLadder-Original-Host")
+		headers.Set("X-CloudLadder-Original-Host", strings.TrimSpace(req.OriginalHost))
+	}
+	if strings.TrimSpace(req.OriginalPath) != "" {
+		deleteHeader(headers, "X-CloudLadder-Original-Path")
+		headers.Set("X-CloudLadder-Original-Path", strings.TrimSpace(req.OriginalPath))
+	}
+	deleteHeader(headers, "X-CloudLadder-Original-Query")
+	headers.Set("X-CloudLadder-Original-Query", req.OriginalQuery)
 }
 
 var signedTunnelControlHeaders = []string{

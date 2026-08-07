@@ -21,6 +21,92 @@ const (
 
 var apiTestSecurityGroups = []string{"sg-test"}
 
+func seedAPITestPoolSKU(t *testing.T, svc *service.Service) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "hermes",
+		Name:           "Hermes",
+		ResolutionMode: core.ResolutionModeSandboxPrimary,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	if _, err := svc.UpsertSKU(ctx, core.SKU{
+		ID:              "sku-hermes-2c4g",
+		Name:            "Hermes 2C4G",
+		TemplateClassID: "hermes",
+		BaseImage:       "img-hermes",
+		DesiredImageID:  "img-hermes",
+		InstanceType:    "SA5.MEDIUM4",
+	}); err != nil {
+		t.Fatalf("upsert sku: %v", err)
+	}
+	if _, err := svc.UpsertTemplateSkuBinding(ctx, core.TemplateSkuBinding{
+		TemplateClassID:    "hermes",
+		SKUID:              "sku-hermes-2c4g",
+		AdmissionState:     "active",
+		RolloutEligibility: true,
+	}); err != nil {
+		t.Fatalf("upsert template sku binding: %v", err)
+	}
+}
+
+func TestPostPoolsUsesBoundSafeCreateContract(t *testing.T) {
+	svc := service.NewService(store.NewMemoryStore())
+	seedAPITestPoolSKU(t, svc)
+	body := bytes.NewBufferString(`{
+		"name":"pool-sg-sa2",
+		"base_image":"img-hermes",
+		"desired_capacity":30,
+		"instance_type":"SA2.MEDIUM4",
+		"status":"active",
+		"sku_id":"sku-hermes-2c4g",
+		"vpc_id":"vpc-test",
+		"subnet_id":"subnet-test",
+		"zone":"ap-singapore-4",
+		"security_groups":["sg-test"]
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/pools", body)
+	rec := httptest.NewRecorder()
+	New(svc, nil).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var pool core.Pool
+	if err := json.Unmarshal(rec.Body.Bytes(), &pool); err != nil {
+		t.Fatalf("decode pool: %v", err)
+	}
+	if pool.SKUID != "sku-hermes-2c4g" || pool.TemplateClassID != "hermes" {
+		t.Fatalf("expected sku/class binding, got sku=%q class=%q", pool.SKUID, pool.TemplateClassID)
+	}
+	if pool.DesiredCap != 0 || pool.Status != core.PoolStatusPaused {
+		t.Fatalf("expected safe defaults, got desired=%d status=%q", pool.DesiredCap, pool.Status)
+	}
+}
+
+func TestPatchPoolsRejectsChangingBoundSKU(t *testing.T) {
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	seedAPITestPoolSKU(t, svc)
+	pool, err := svc.CreatePool(ctx, "legacy", "", "img-hermes", 0, apiTestVpcID, apiTestSubnetID, apiTestZone, apiTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create legacy pool: %v", err)
+	}
+	pool.SKUID = "sku-hermes-2c4g"
+	pool.TemplateClassID = "hermes"
+	if _, err := svc.UpdatePool(ctx, pool); err != nil {
+		t.Fatalf("bind pool fixture: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/pools/"+pool.ID, bytes.NewBufferString(`{"sku_id":"other-sku"}`))
+	rec := httptest.NewRecorder()
+	New(svc, nil).Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestPatchPoolUpdatesStatusAndInstanceType(t *testing.T) {
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())

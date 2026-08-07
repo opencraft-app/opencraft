@@ -51,6 +51,40 @@ class BuildReleaseImageTests(unittest.TestCase):
             playground_frontend_auth_api_base_url("sandbox-kr-1"),
             "https://api-sandbox-kr-1.lightclaw.tech",
         )
+        self.assertEqual(
+            playground_frontend_auth_api_base_url("sandbox-jp-1"),
+            "https://api-sandbox-jp-1.lightclaw.tech",
+        )
+
+    def test_frontend_japan_playground_build_bakes_env_scoped_auth_api_base(self) -> None:
+        self.assertEqual(
+            resolve_docker_build_args("frontend", "sandbox-jp-1"),
+            {
+                "NEXT_PUBLIC_REGION": "global",
+                "VITE_AUTH_API_BASE_URL": "https://api-sandbox-jp-1.lightclaw.tech",
+                "VITE_REGION": "global",
+            },
+        )
+
+    def test_frontend_dockerfile_accepts_region_build_arguments(self) -> None:
+        dockerfile = (REPO_ROOT / "frontend/deploy/Dockerfile").read_text()
+
+        for name in ("VITE_REGION", "NEXT_PUBLIC_REGION"):
+            with self.subTest(name=name):
+                self.assertIn(f"ARG {name}=cn", dockerfile)
+                self.assertIn(f'ENV {name}="${{{name}}}"', dockerfile)
+
+    def test_frontend_dockerfile_includes_monorepo_file_dependency(self) -> None:
+        dockerfile = (REPO_ROOT / "frontend/deploy/Dockerfile").read_text()
+        dockerignore = (REPO_ROOT / "frontend/deploy/Dockerfile.dockerignore").read_text()
+
+        self.assertIn("COPY frontend/package.json frontend/pnpm-lock.yaml frontend/.npmrc ./", dockerfile)
+        self.assertIn("COPY velalink /velalink", dockerfile)
+        self.assertIn("COPY frontend/deploy/nginx.conf /etc/nginx/conf.d/default.conf", dockerfile)
+        self.assertEqual(
+            dockerignore.splitlines(),
+            ["**", "!frontend/", "!frontend/**", "!velalink/", "!velalink/**"],
+        )
 
     def test_frontend_non_playground_build_has_no_extra_build_args(self) -> None:
         self.assertEqual(resolve_docker_build_args("frontend", "shprod"), {})
@@ -63,7 +97,7 @@ class BuildReleaseImageTests(unittest.TestCase):
             name="frontend",
             image_key=None,
             dockerfile="frontend/deploy/Dockerfile",
-            build_context="frontend",
+            build_context=".",
             image_repo="registry.example.com/lightclaw/frontend",
         )
 
@@ -76,7 +110,7 @@ class BuildReleaseImageTests(unittest.TestCase):
 
         self.assertIn("--build-arg", command)
         self.assertIn("VITE_AUTH_API_BASE_URL=https://api-sandbox-bj-7.lightclaw.tech", command)
-        self.assertEqual(command[-1], "frontend")
+        self.assertEqual(command[-1], ".")
 
     def test_image_for_target_matches_docker_build_image_ref(self) -> None:
         target = ImageTarget(

@@ -49,5 +49,6 @@ bundles:
     build_context: vibebase
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/vibebase
+      sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/vibebase
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/vibebase
       sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/vibebase

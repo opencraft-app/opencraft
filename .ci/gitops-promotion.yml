@@ -8,6 +8,7 @@ on:
       - promote-beijing-sandbox-2-*
       - promote-sandbox-bj-*
       - promote-sandbox-kr-*
+      - promote-sandbox-jp-*
       - promote-devcloud-dep-*
       - promote-shanghai-workers-*
       - promote-beijing-llmgateway-*

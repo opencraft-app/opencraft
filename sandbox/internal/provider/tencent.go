@@ -109,7 +109,6 @@ type TencentCloudProvider struct {
 
 	startTerminalSessionFunc func(context.Context, string, string) (TerminalSession, error)
 	tatForwardURLFunc        func(string) string
-	tatAuthDelay             time.Duration
 }
 
 const (

@@ -1,7 +1,8 @@
 import { MemoryRouter } from "react-router-dom";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LandingPage } from "@/pages/marketing/landing-page";
+import { LandingPage, LandingPageView } from "@/pages/marketing/landing-page";
+import i18n from "@/i18n";
 import { isGlobal } from "@/lib/region";
 
 const sessionState = vi.hoisted(() => ({
@@ -83,10 +84,11 @@ vi.mock("@/pages/marketing/scenario-tasks/OverviewAutomationTasksSection", () =>
   ),
 }));
 
-afterEach(() => {
+afterEach(async () => {
   sessionState.authReady = true;
   sessionState.isAuthenticated = false;
   sessionState.session = { stage: "anonymous", user: null };
+  await i18n.changeLanguage("zh-CN");
   cleanup();
 });
 
@@ -101,6 +103,23 @@ describe("LandingPage", () => {
     expect(screen.getByTestId("overview-automations")).toHaveTextContent(
       isGlobal ? "Water & medication reminders" : "喝水与吃药提醒",
     );
+  });
+
+  it("renders overview automation cards in Traditional Chinese for zh-Hant", async () => {
+    await i18n.changeLanguage("zh-Hant");
+
+    render(
+      <LandingPageView
+        navigateTo={vi.fn()}
+        publicLocale="zh-Hant"
+        publicLocalized
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("overview-automations")).toHaveTextContent("喝水與吃藥提醒");
+    });
+    expect(screen.getByTestId("overview-automations")).not.toHaveTextContent("喝水与吃药提醒");
   });
 
   it("renders the signed-in header state after the global session hydrates", () => {

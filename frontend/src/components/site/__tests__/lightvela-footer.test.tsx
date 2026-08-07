@@ -63,7 +63,7 @@ describe("LightVelaFooter", () => {
     );
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "服务条款" })).toHaveAttribute(
       "href",
-      "https://cloud.tencent.com/document/product/301/48034",
+      "https://www.tencentcloud.com/document/product/301/12905?lang=en&pg=",
     );
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "开源声明" })).toHaveAttribute(
       "href",
@@ -74,7 +74,7 @@ describe("LightVelaFooter", () => {
     expect(communitySection).not.toBeNull();
     expect(within(communitySection as HTMLElement).getByRole("link", { name: "Discord" })).toHaveAttribute(
       "href",
-      "https://discord.com/invite/NDqtU3JQTc",
+      "https://discord.gg/Myh58xEMe2",
     );
     expect(within(communitySection as HTMLElement).getByRole("link", { name: "WhatsApp" })).toHaveAttribute(
       "href",
@@ -109,6 +109,10 @@ describe("LightVelaFooter", () => {
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "隐私政策" })).toHaveAttribute(
       "href",
       "/zh-hant/privacy-policy",
+    );
+    expect(within(legalSection as HTMLElement).getByRole("link", { name: "服务条款" })).toHaveAttribute(
+      "href",
+      "https://www.tencentcloud.com/document/product/301/12905?lang=zh&pg=",
     );
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "开源声明" })).toHaveAttribute(
       "href",

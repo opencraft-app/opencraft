@@ -4,7 +4,7 @@ An AI agent only becomes part of your routine when you can reach it where conver
 
 LightVela lets one cloud-hosted Hermes Agent serve through supported messaging channels. The same Agent keeps its configured model, skills, and memory while you choose the platform that fits the people and moments you want to support.
 
-![LightVela messaging platform connections](../images/use-case-messaging-platforms.png)
+![LightVela messaging platform connections](../images/use-case-messaging-platforms.webp)
 
 ## Who this is for
 
@@ -14,7 +14,7 @@ Start with one channel. Add another only when it serves a distinct context, audi
 
 ## Prerequisites
 
-- A LightVela account with a Hermes Agent that is running. Use the [Quickstart](https://lightvela.ai/docs/quickstart) if you need to create one.
+- A LightVela account with a Hermes Agent that is running. Use the [Quickstart](../02-quickstart.md) if you need to create one.
 
 - A working model configuration or trial credits, so Hermes can reply after the channel is connected.
 
@@ -41,10 +41,10 @@ LightVela also provides setup pages for other supported channels. The Channel pa
 
 Open the Channel area in the console, select the platform, and follow its authorization or credential flow. Use the corresponding guide rather than copying credentials from an unrelated platform:
 
-- [Telegram](https://lightvela.ai/docs/configuration/channel-telegram)
-- [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp)
-- [Discord](https://lightvela.ai/docs/configuration/channel-discord)
-- [WeChat](https://lightvela.ai/docs/configuration/channel-wechat)
+- [Telegram](../configuration/channel-telegram.md)
+- [WhatsApp](../configuration/channel-whatsapp.md)
+- [Discord](../configuration/channel-discord.md)
+- [WeChat](../configuration/channel-wechat.md)
 
 Treat bot tokens, application IDs, and secrets like passwords. Do not paste them into a group chat, public document, or message to another person. If a credential is exposed, rotate it in the platform that issued it before reconnecting Hermes.
 
@@ -58,13 +58,13 @@ After the console shows the channel as connected, find the bot or conversation i
 Hi Hermes. Please reply with the channel you received this from.
 ```
 
-This checks the full path: the platform can deliver a message, Hermes has a working model, and the reply can return to the same place. If it does not work, check the connected status first, then confirm the active model in [Configure Models](https://lightvela.ai/docs/configuration/model).
+This checks the full path: the platform can deliver a message, Hermes has a working model, and the reply can return to the same place. If it does not work, check the connected status first, then confirm the active model in [Configure Models](../configuration/model.md).
 
 ### 4. Decide what should remain shared across channels
 
 When more than one channel connects to the same Hermes Agent, they are different doors into the same assistant. That means the Agent can keep the same memory, working preferences, and installed skills across supported channels.
 
-Use [Memory Management](https://lightvela.ai/docs/configuration/memory) to review the long-term context you want Hermes to retain. If one channel is for a different audience or needs a very different role, consider keeping the use case separate instead of mixing unrelated expectations into one conversation history.
+Use [Memory Management](../configuration/memory.md) to review the long-term context you want Hermes to retain. If one channel is for a different audience or needs a very different role, consider keeping the use case separate instead of mixing unrelated expectations into one conversation history.
 
 ![The same Hermes Agent context shared across channels](../images/use-case-messaging-memory.png)
 
@@ -80,7 +80,7 @@ Choose the one you already use most often. A personal assistant is more likely t
 
 ### Why does the channel show as connected but Hermes does not reply?
 
-Send a simple test message, then check that an active model or trial credits are available. If the issue persists, reconnect the channel and use [Diagnostics](https://lightvela.ai/docs/configuration/diagnostics) to review maintenance options and recent logs.
+Send a simple test message, then check that an active model or trial credits are available. If the issue persists, reconnect the channel and use [Diagnostics](../configuration/diagnostics.md) to review maintenance options and recent logs.
 
 ### Can I share one bot credential across multiple Hermes Agents?
 
@@ -88,8 +88,8 @@ Avoid doing so unless the platform and your intended workflow clearly support it
 
 ## Next steps
 
-- [Configure Models](https://lightvela.ai/docs/configuration/model) — confirm Hermes has a model ready to answer.
+- [Configure Models](../configuration/model.md) — confirm Hermes has a model ready to answer.
 
-- [Memory Management](https://lightvela.ai/docs/configuration/memory) — manage the context shared by your connected channels.
+- [Memory Management](../configuration/memory.md) — manage the context shared by your connected channels.
 
-- [Automations](https://lightvela.ai/docs/configuration/automation) — deliver scheduled updates to a connected channel when appropriate.
+- [Automations](../configuration/automation.md) — deliver scheduled updates to a connected channel when appropriate.

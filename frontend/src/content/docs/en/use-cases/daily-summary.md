@@ -4,7 +4,7 @@ The useful part of a daily summary is not that it is long. It is that it gives y
 
 Hermes can turn a repeatable review into a daily AI assistant routine. LightVela provides the cloud-hosted Agent, a channel for delivery, optional skills for the information you need, and automations for the schedule. You decide what counts as “today’s useful summary.”
 
-![A daily summary delivered by Hermes Agent](../images/use-case-daily-summaries.png)
+![A daily summary delivered by Hermes Agent](../images/use-case-daily-summaries.webp)
 
 ## Who this is for
 
@@ -16,7 +16,7 @@ The best first summary has a narrow purpose. “Summarize everything” is usual
 
 - A running Hermes Agent and a connected channel where you want to receive the summary.
 
-- A working model configuration or trial credits. See [Configure Models](https://lightvela.ai/docs/configuration/model) if Hermes cannot respond.
+- A working model configuration or trial credits. See [Configure Models](../configuration/model.md) if Hermes cannot respond.
 
 - A clear source of context. This might be material you paste into a conversation, files you manage in Cloud Storage, or information a trusted, relevant skill can access.
 
@@ -40,9 +40,9 @@ This turns a general request into a repeatable format that you can compare day a
 
 ### 2. Make the source material deliberate
 
-Hermes can only summarize information it can receive or access through the capabilities you configure. For a manual workflow, paste or forward the relevant updates into your conversation. For file-based work, keep the materials organized in [Cloud Storage](https://lightvela.ai/docs/configuration/files) and tell Hermes which document or folder matters for the current review.
+Hermes can only summarize information it can receive or access through the capabilities you configure. For a manual workflow, paste or forward the relevant updates into your conversation. For file-based work, keep the materials organized in [Cloud Storage](../configuration/files.md) and tell Hermes which document or folder matters for the current review.
 
-If you need an outside data source, choose a suitable skill from a trusted source and confirm its behavior before using it. [Configure Skills](https://lightvela.ai/docs/configuration/skill) explains how skills extend Hermes beyond ordinary chat.
+If you need an outside data source, choose a suitable skill from a trusted source and confirm its behavior before using it. [Configure Skills](../configuration/skill.md) explains how skills extend Hermes beyond ordinary chat.
 
 ![Cloud Storage sources for a daily summary](../images/use-case-daily-summary-storage.png)
 
@@ -64,7 +64,7 @@ Do not repeat completed work unless it affects a next action.
 End with one question I should answer before tomorrow.
 ```
 
-The [Chat](https://lightvela.ai/docs/configuration/agent-chat) page is a good place to iterate on the instruction before turning it into a recurring task.
+The [Chat](../configuration/agent-chat.md) page is a good place to iterate on the instruction before turning it into a recurring task.
 
 ### 4. Schedule the version that already works
 
@@ -76,7 +76,7 @@ updates I shared today. Include changes, blockers, and the three most
 important next actions. Send it as concise bullet points.
 ```
 
-Set this up in [Automations](https://lightvela.ai/docs/configuration/automation). Review the first few runs and adjust the wording if the summary is too broad, too long, or missing the right context.
+Set this up in [Automations](../configuration/automation.md). Review the first few runs and adjust the wording if the summary is too broad, too long, or missing the right context.
 
 ![A scheduled daily summary automation](../images/use-case-daily-summary-automation.png)
 
@@ -96,12 +96,12 @@ No. Test the prompt manually first. Once you can recognize a good result, schedu
 
 ### What if the summary did not arrive?
 
-Check the automation status and notification channel, then confirm that Hermes can still reply in a normal conversation. If needed, review [Diagnostics](https://lightvela.ai/docs/configuration/diagnostics) before creating another task.
+Check the automation status and notification channel, then confirm that Hermes can still reply in a normal conversation. If needed, review [Diagnostics](../configuration/diagnostics.md) before creating another task.
 
 ## Next steps
 
-- [Cloud Storage](https://lightvela.ai/docs/configuration/files) — organize the files that support a repeatable review.
+- [Cloud Storage](../configuration/files.md) — organize the files that support a repeatable review.
 
-- [Configure Skills](https://lightvela.ai/docs/configuration/skill) — add a trusted capability when your summary needs a specific information source.
+- [Configure Skills](../configuration/skill.md) — add a trusted capability when your summary needs a specific information source.
 
-- [Automations](https://lightvela.ai/docs/configuration/automation) — deliver your tested summary on a schedule.
+- [Automations](../configuration/automation.md) — deliver your tested summary on a schedule.

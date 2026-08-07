@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -47,37 +48,31 @@ func (a *API) handlePools(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, pools)
 	case http.MethodPost:
 		var req struct {
-			Name           string          `json:"name"`
-			Description    string          `json:"description"`
-			BaseImage      string          `json:"base_image"`
-			DesiredCapcity int             `json:"desired_capacity"`
-			InstanceType   string          `json:"instance_type"`
-			Status         core.PoolStatus `json:"status"`
-			PauseReason    string          `json:"pause_reason"`
-			VpcID          string          `json:"vpc_id"`
-			SubnetID       string          `json:"subnet_id"`
-			Zone           string          `json:"zone"`
-			SecurityGroups []string        `json:"security_groups"`
+			Name           string   `json:"name"`
+			Description    string   `json:"description"`
+			BaseImage      string   `json:"base_image"`
+			InstanceType   string   `json:"instance_type"`
+			VpcID          string   `json:"vpc_id"`
+			SubnetID       string   `json:"subnet_id"`
+			Zone           string   `json:"zone"`
+			SecurityGroups []string `json:"security_groups"`
+			SKUID          string   `json:"sku_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
 			return
 		}
-		pool, err := a.svc.CreatePool(r.Context(), req.Name, req.Description, req.BaseImage, req.DesiredCapcity, req.VpcID, req.SubnetID, req.Zone, req.SecurityGroups)
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-		if req.InstanceType != "" {
-			pool.InstanceType = req.InstanceType
-		}
-		if req.Status != "" {
-			pool.Status = req.Status
-		}
-		if req.PauseReason != "" {
-			pool.PauseReason = req.PauseReason
-		}
-		pool, err = a.svc.UpdatePool(r.Context(), pool)
+		pool, err := a.svc.CreateBoundPool(r.Context(), service.CreateBoundPoolInput{
+			Name:           req.Name,
+			Description:    req.Description,
+			BaseImage:      req.BaseImage,
+			InstanceType:   req.InstanceType,
+			SKUID:          req.SKUID,
+			VpcID:          req.VpcID,
+			SubnetID:       req.SubnetID,
+			Zone:           req.Zone,
+			SecurityGroups: req.SecurityGroups,
+		})
 		if err != nil {
 			writeError(w, err)
 			return
@@ -114,6 +109,7 @@ func (a *API) handlePoolSubroutes(w http.ResponseWriter, r *http.Request) {
 			SubnetID       *string          `json:"subnet_id"`
 			Zone           *string          `json:"zone"`
 			SecurityGroups *[]string        `json:"security_groups"`
+			SKUID          *string          `json:"sku_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
@@ -158,6 +154,13 @@ func (a *API) handlePoolSubroutes(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.SecurityGroups != nil {
 			pool.SecurityGroups = *req.SecurityGroups
+		}
+		if req.SKUID != nil {
+			pool, err = a.svc.BindPoolSKU(r.Context(), pool, *req.SKUID)
+			if err != nil {
+				writeError(w, err)
+				return
+			}
 		}
 		pool, err = a.svc.UpdatePool(r.Context(), pool)
 		if err != nil {
@@ -285,6 +288,10 @@ func (a *API) handleInstanceSubroutes(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeError(w http.ResponseWriter, err error) {
+	if errors.Is(err, core.ErrInvalidPoolSKUBinding) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	switch err {
 	case core.ErrPoolNotFound, core.ErrInstanceNotFound, core.ErrTemplateClassNotFound, core.ErrPoolAutoscalePolicyNotFound, core.ErrCapacityBundleNotFound:
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})

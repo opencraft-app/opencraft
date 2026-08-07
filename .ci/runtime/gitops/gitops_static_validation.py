@@ -41,6 +41,12 @@ REQUIRED_CATALOG_FIELDS = {
     "namespace",
     "sourcePath",
 }
+REQUIRED_APPSET_CATALOG_GLOBS = {
+    "argocd/catalogs/sandbox/*/*.yaml",
+    "argocd/catalogs/playground/beijing-playground/*/*.yaml",
+    "argocd/catalogs/playground/seoul-playground/*/*.yaml",
+    "argocd/catalogs/playground/tokyo-playground/*/*.yaml",
+}
 
 
 @dataclass(frozen=True)
@@ -81,7 +87,7 @@ def catalog_dir_rel(env: str) -> str:
 
 
 def is_playground_env(env: str) -> bool:
-    return re.fullmatch(r"sandbox-(bj|kr)-\d+", env) is not None
+    return re.fullmatch(r"sandbox-(bj|kr|jp)-\d+", env) is not None
 
 
 def load_catalogs(repo_root: Path, env: str) -> tuple[list[CatalogEntry], list[str]]:
@@ -158,10 +164,9 @@ def validate_appset(repo_root: Path) -> list[str]:
         for item in (generator.get("git", {}).get("files", []) or [])
         if isinstance(item, dict)
     }
-    if "argocd/catalogs/sandbox/*/*.yaml" not in file_paths:
-        errors.append(f"{APPSET_REL}: git generator must read argocd/catalogs/sandbox/*/*.yaml")
-    if "argocd/catalogs/playground/beijing-playground/*/*.yaml" not in file_paths:
-        errors.append(f"{APPSET_REL}: git generator must read argocd/catalogs/playground/beijing-playground/*/*.yaml")
+    for required_path in sorted(REQUIRED_APPSET_CATALOG_GLOBS):
+        if required_path not in file_paths:
+            errors.append(f"{APPSET_REL}: git generator must read {required_path}")
     return errors
 
 

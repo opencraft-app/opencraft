@@ -7,7 +7,9 @@
       <p className="mt-4 mb-0 text-base font-semibold text-violet-700">WhatsApp Community</p>
     </div>
     <div className="rounded-2xl bg-white p-5 text-center shadow-lg shadow-slate-200/70">
-      <img src="/assets/landing/about/discord-qr.png" alt="Discord QR code" className="mx-auto w-full max-w-52" />
+      <a href="https://discord.gg/Myh58xEMe2" target="_blank" rel="noopener noreferrer">
+        <img src="/assets/landing/about/disc_LV.png" alt="Discord QR code" className="mx-auto w-full max-w-52" />
+      </a>
       <p className="mt-4 mb-0 text-base font-semibold text-violet-700">Discord Community</p>
     </div>
     <div className="rounded-2xl bg-white p-5 text-center shadow-lg shadow-slate-200/70">

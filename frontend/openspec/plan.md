@@ -1,3 +1,43 @@
+# 2026-08-06 前端预览图片体积优化
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit / push / MR。
+
+**Goal:** 将分支预览压缩包从约 60 MiB 降到 45-50 MiB，避免接近 StaticPages 上传链路的疑似 64 MiB 边界。
+
+**Scope:** 仅优化文档中超过 512 KiB 的 PNG/JPEG 源图及其 Markdown 引用，并增加资源体积回归测试；不调整页面布局、搜索、视频或生产发布逻辑。
+
+## Tasks
+
+- [x] 增加文档大图格式与体积回归测试，并确认现有资源会触发失败。
+- [x] 将超预算文档图片转换为 WebP，更新中英文 Markdown 引用和公开资源副本。
+- [x] 运行定向测试、类型检查和 global 预览构建，核验压缩包体积为 43.50 MiB。
+
+---
+
+# 2026-08-04 QQ Bot 群聊策略自动开启
+
+**Status:** 实现与验证完成，待用户验收；确认前不 commit / push / MR。
+
+**Goal:** 在 LightVela 通道配置 SDK 的 QQ 卡片中，用户通过扫码或 AppID / Secret 绑定 QQ Bot 时，自动在同一次 debug/exec 命令里先执行 `hermes config set platforms.qqbot.extra.group_policy open`，再执行 SDK 原始 QQ 绑定命令，避免额外触发第二次 gateway restart。
+
+**Scope:** 仅修改前端 SDK debug/exec 适配链路、QQ group policy helper、相关单测和 QQ 通道文档；不修改 SDK 包版本、不修改后端接口、不提交远端代码。
+
+## Tasks
+
+- [x] 新增 QQ group policy 命令识别与包装 helper，覆盖 AppID / Secret 与扫码两条 QQ 绑定命令。
+- [x] 扩展 debug/exec lifecycle 支持 `transformCommand`，并提供 lifecycle 组合 helper，保证模型切换自动任务同步不被覆盖。
+- [x] 在 `/agents` 设置页接入 QQ lifecycle，使 SDK QQ 配置卡片下发命令前完成 group_policy 注入。
+- [x] 更新 QQ 通道中英文文档，说明绑定后默认开启群聊 @ 对话及 `open` 权限边界。
+- [x] 运行相关 Vitest、类型检查和 diff 检查，停在用户验收确认点。
+
+## Verification
+
+- `pnpm exec vitest run src/pages/marketing/__tests__/agent-qqbot-group-policy.test.ts src/pages/marketing/__tests__/agent-debug-exec-lifecycle.test.ts src/pages/marketing/__tests__/agent-tat-adapter.test.ts src/pages/marketing/__tests__/agent-settings-sdk-boundary.test.ts`
+- `pnpm check`
+- `git diff --check`
+
+---
+
 # 2026-07-31 Hermes 版本升级公告
 
 **Status:** 前端实现完成，待用户验收后再提交 / MR；关联 Vitest 受当前 jsdom 依赖链阻塞。
@@ -99,3 +139,27 @@
 - `pnpm --dir frontend exec vitest run src/components/site/__tests__/login-modal.test.tsx src/components/site/__tests__/login-modal.global.test.tsx src/components/auth/__tests__/phone-login-form.test.tsx src/pages/marketing/__tests__/agent-create-error.test.ts`
 - `pnpm --dir frontend i18n:check`
 - `pnpm --dir frontend check`
+# 2026-08-06 Frontend release Docker monorepo context fix
+
+**Status:** 实现与验证完成，等待用户确认提交。
+
+**Goal:** 修复 frontend 正式镜像构建无法解析仓库内 `file:../velalink` 依赖的问题，同时保持 Docker build context 最小化。
+
+**Scope:** 仅调整 frontend release bundle、Dockerfile、Dockerfile 专属 ignore 和构建契约测试；不修改 frontend 或 velalink 运行时代码。
+
+## Tasks
+
+- [x] 将 frontend release bundle 的 build context 切换为仓库根，并把 `velalink` 纳入变更触发范围。
+- [x] 更新 Dockerfile 的根目录相对 COPY 路径，显式复制 `/velalink`。
+- [x] 用 Dockerfile 专属 ignore 仅放行 `frontend/` 与 `velalink/`。
+- [x] 运行契约测试、diff 检查和真实 Tokyo `linux/amd64` 构建推送验证。
+
+## Verification
+
+- `python3 .ci/runtime/tests/contract_tests/test_build_release_image.py`
+- `python3 .ci/runtime/tests/contract_tests/test_release_bundle_contracts.py ReleaseBundleContractTests.test_frontend_playground_release_uses_beijing_registry`
+- 国内构建机真实执行 `build_release_image.py --service frontend --env sandbox-jp-1 --platform linux/amd64 --push --reuse-existing`
+- JP TCR manifest：`frontend-6cf545e930d2`，`linux/amd64`
+- `git diff --check`
+
+---

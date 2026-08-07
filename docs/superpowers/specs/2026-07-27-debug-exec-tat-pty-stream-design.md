@@ -37,14 +37,19 @@ Cloud session bootstrap and connects to the TAT forward WebSocket:
 2. Sandbox calls Tencent Cloud `StartSession`
 3. Sandbox opens the fixed regional TAT forward WebSocket
 4. WebSocket `SessionAuth`
-5. `PtyStart` with `Username=agentuser` and
-   `WorkingDirectory=/home/agentuser`
-6. BSON `PtyExecCmdStream` with a per-command `CustomData` correlation key
+5. `PtyStart` opens a no-shell command channel with a generated `ChannelId`,
+   `UserName=agentuser`, and `NoShell=true`
+6. BSON `PtyExecCmdStream` carries the same `ChannelId` plus a per-command
+   `CustomData` correlation key
 7. Receive BSON command chunks and relay ordered NDJSON events to CTL
 8. `PtyStop` and close the WebSocket
 
 Each HTTP request owns one TAT session. Sessions are not shared between
-commands.
+commands. Sandbox sends `PtyStart` immediately after `SessionAuth`; there is no
+fixed authentication sleep on the successful path. If the handshake fails
+before `PtyReady`, Sandbox closes that WebSocket and retries with a fresh TAT
+session after 200 ms and then 400 ms, for at most three attempts. Once
+`PtyExecCmdStream` has been sent, the command is never retried automatically.
 
 The exec-stream endpoint is internal and never returns `ownerUin`, `loginUin`,
 `appId`, `sessionId`, or `wsUrl`. Those values remain inside sandbox process
@@ -110,7 +115,8 @@ keepalive lines are part of this protocol.
 - Exit code zero maps to `SUCCESS`; any other exit code maps to `FAILED`.
 - Protocol errors, command timeout, context cancellation, and missing chunks
   fail the command.
-- Client cancellation closes the WebSocket and best-effort sends `PtyStop`.
+- Client cancellation closes the WebSocket and best-effort sends `PtyStop`
+  with the same `ChannelId`.
 - The WebSocket is always closed with `defer`, including partial handshake and
   protocol failures.
 - `PtyStart.MaxIdleTime` and the command timeout are bounded by the HTTP request

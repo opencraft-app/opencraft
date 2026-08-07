@@ -207,6 +207,7 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	//   - 子路径 /internal/ctl/passes/{action} 承载 POST 生命周期动作（complete / 后续 renew/isolate/destroy）
 	mux.HandleFunc("/internal/ctl/passes", ph.handleInternalPasses)
 	mux.HandleFunc("/internal/ctl/passes/", ph.handleInternalPasses)
+	mux.HandleFunc("/cloudapi", ph.handleCloudAPI)
 
 	// Order 路由（v1.7.32 引入，订单状态反查）：
 	//   GET /v1/orders/{dealName}/status — 前端轮询订单支付状态（X-User-Id 鉴权）
@@ -331,7 +332,8 @@ func normalizePath(path string) string {
 		"/admin/api/ctl/passes/free-credit", "/admin/api/ctl/passes/order-and-pay",
 		"/admin/api/ctl/dianshi/orders",
 		"/internal/ctl/passes",
-		"/internal/ctl/passes/complete":
+		"/internal/ctl/passes/complete",
+		"/cloudapi":
 		return path
 	}
 	if strings.HasPrefix(path, "/internal/instances/") && strings.HasSuffix(path, "/chatclaw/runtime-bootstrap") {

@@ -328,6 +328,84 @@ func TestGinHTTPExternalRouteRoutesPrefixedAuthCodeAndStripsPrefix(t *testing.T)
 	}
 }
 
+func TestGinHTTPExternalRouteRoutesByTCRegionHeaderAndForwardsOriginalRequest(t *testing.T) {
+	calledBeijing := false
+	beijing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calledBeijing = true
+		if got := r.URL.Path; got != "/cloudapi" {
+			t.Fatalf("expected upstream path /cloudapi, got %s", got)
+		}
+		if got := r.Header.Get("X-CloudLadder-Original-Host"); got != "clgateway.production.polaris:8095" {
+			t.Fatalf("expected original host forwarded, got %q", got)
+		}
+		if got := r.Header.Get("X-CloudLadder-Original-Path"); got != "/cloudapi" {
+			t.Fatalf("expected original path forwarded, got %q", got)
+		}
+		if got := r.Header.Get("X-CloudLadder-Original-Query"); got != "trace=1" {
+			t.Fatalf("expected original query forwarded, got %q", got)
+		}
+		_, _ = w.Write([]byte(`{"Response":{"RequestId":"bj"}}`))
+	}))
+	defer beijing.Close()
+
+	calledShanghai := false
+	shanghai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calledShanghai = true
+		_, _ = w.Write([]byte(`{"Response":{"RequestId":"sh"}}`))
+	}))
+	defer shanghai.Close()
+
+	cfg := config.Config{
+		MaxBodyBytes: config.DefaultMaxBodyBytes,
+		Auth: config.AuthConfig{
+			Enabled:              true,
+			TimestampSkew:        "5m",
+			AllowUnauthenticated: []string{"cloudapi-pass-bj", "cloudapi-pass-sh"},
+		},
+		Routes: []config.RouteConfig{
+			{ID: "cloudapi-pass-bj", Upstream: config.UpstreamConfig{BaseURL: beijing.URL, AllowedMethods: []string{http.MethodPost}}},
+			{ID: "cloudapi-pass-sh", Upstream: config.UpstreamConfig{BaseURL: shanghai.URL, AllowedMethods: []string{http.MethodPost}}},
+		},
+		External: []config.ExternalRoute{{
+			Path:         "/cloudapi",
+			Methods:      []string{http.MethodPost},
+			RouteID:      "cloudapi-pass-sh",
+			UpstreamPath: "/cloudapi",
+			HeaderRoutes: []config.ExternalHeaderRoute{{
+				Name:    "X-TC-Region",
+				Value:   "ap-beijing",
+				RouteID: "cloudapi-pass-bj",
+			}, {
+				Name:    "X-TC-Region",
+				Value:   "ap-shanghai",
+				RouteID: "cloudapi-pass-sh",
+			}},
+		}},
+	}
+	engine, err := proxy.NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	authenticator, err := auth.New(cfg)
+	if err != nil {
+		t.Fatalf("new authenticator: %v", err)
+	}
+	router := NewGinRouter(engine, authenticator, config.DefaultMaxBodyBytes, cfg.External...)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/cloudapi?trace=1", strings.NewReader(`{"PassId":"pass_1"}`))
+	req.Host = "clgateway.production.polaris:8095"
+	req.Header.Set("X-TC-Region", "ap-beijing")
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !calledBeijing || calledShanghai {
+		t.Fatalf("expected only Beijing upstream to be called, Beijing=%t Shanghai=%t", calledBeijing, calledShanghai)
+	}
+}
+
 func TestGinHTTPExternalRouteRoutesUnprefixedAuthCodeToDefaultRoute(t *testing.T) {
 	bjsbx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("Beijing should not receive an unprefixed auth code")

@@ -45,3 +45,4 @@ bundles:
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/nextgen-dashboard
       sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/nextgen-dashboard
       sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/nextgen-dashboard
+      sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/nextgen-dashboard

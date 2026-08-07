@@ -91,7 +91,7 @@ def load_catalog_targets(repo_root: Path, env: str, service_names: set[str] | No
 
 
 def is_playground_env(env: str) -> bool:
-    return re.fullmatch(r"sandbox-(bj|kr)-\d+", env) is not None
+    return re.fullmatch(r"sandbox-(bj|kr|jp)-\d+", env) is not None
 
 
 def catalog_dir_for_env(env: str) -> str:

@@ -1,0 +1,36 @@
+version: v2.0
+name: 构建 frontend 东京
+
+on:
+  push:
+    branches:
+      - master
+      - playground/sandbox-jp-*
+    paths:
+      - frontend/**
+      - argocd/services/frontend/**
+      - argocd/apps/*/frontend.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-service-release-tokyo-frontend
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
+extends:
+  template: service-release.yml
+  parameters:
+    SERVICE: frontend
+    BUNDLE: frontend
+    DISPLAY_NAME: frontend 东京
+    DEFAULT_TARGET_ENV: sandbox-jp-1
+    MASTER_BUILD_ENVS: sandbox-jp-1
+    MASTER_AUTO_PIN_ENVS: sandbox-jp-1
+    ENABLE_MASTER_PROD_PROMOTE: false
+    PLAYGROUND_BUILD_ENVS: auto
+    PLAYGROUND_AUTO_PIN_ENVS: auto
+    RUNNER_POOL_NAME: cn-pool

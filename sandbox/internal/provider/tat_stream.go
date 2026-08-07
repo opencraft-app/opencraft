@@ -24,7 +24,8 @@ const (
 	maxTerminalReorderBytes         = 1 << 20
 	tatStreamHandshakeTimeout       = 10 * time.Second
 	tatStreamCleanupTimeout         = time.Second
-	tatStreamAuthDelay              = time.Second
+	tatHandshakeMaxAttempts         = 3
+	tatHandshakeBackoffMin          = 200 * time.Millisecond
 )
 
 var tencentRegionPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)
@@ -36,6 +37,7 @@ type tatStreamFrame struct {
 
 type tatStreamEnvelope struct {
 	SessionID  string         `json:"SessionId,omitempty" bson:"SessionId,omitempty"`
+	ChannelID  string         `json:"ChannelId,omitempty" bson:"ChannelId,omitempty"`
 	CustomData string         `json:"CustomData,omitempty" bson:"CustomData,omitempty"`
 	Message    string         `json:"Message,omitempty" bson:"Message,omitempty"`
 	ErrMsg     string         `json:"ErrMsg,omitempty" bson:"ErrMsg,omitempty"`
@@ -59,6 +61,27 @@ type tatStreamSocket struct {
 	cleanupOnce sync.Once
 }
 
+type tatTerminalHandshake struct {
+	socket    *tatStreamSocket
+	sessionID string
+	channelID string
+	watchDone chan struct{}
+	closeOnce sync.Once
+}
+
+type tatTerminalHandshakeError struct {
+	message string
+	err     error
+}
+
+func (e *tatTerminalHandshakeError) Error() string {
+	return fmt.Sprintf("%s: %v", e.message, e.err)
+}
+
+func (e *tatTerminalHandshakeError) Unwrap() error {
+	return e.err
+}
+
 func (s *tatStreamSocket) writeJSON(frame any) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
@@ -75,16 +98,26 @@ func (s *tatStreamSocket) writeBSON(frame any) error {
 	return s.conn.WriteMessage(websocket.BinaryMessage, payload)
 }
 
-func (s *tatStreamSocket) cleanup(sessionID string) {
+func (s *tatStreamSocket) cleanup(sessionID, channelID string) {
 	s.cleanupOnce.Do(func() {
 		s.writeMu.Lock()
 		_ = s.conn.SetWriteDeadline(time.Now().Add(tatStreamCleanupTimeout))
 		_ = s.conn.WriteJSON(map[string]any{
 			"Type": "PtyStop",
-			"Data": map[string]any{"SessionId": sessionID},
+			"Data": map[string]any{
+				"SessionId": sessionID,
+				"ChannelId": channelID,
+			},
 		})
 		s.writeMu.Unlock()
 		_ = s.conn.Close()
+	})
+}
+
+func (h *tatTerminalHandshake) close() {
+	h.closeOnce.Do(func() {
+		close(h.watchDone)
+		h.socket.cleanup(h.sessionID, h.channelID)
 	})
 }
 
@@ -115,90 +148,29 @@ func (p *TencentCloudProvider) StreamTerminalCommand(ctx context.Context, req Te
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 
-	startSession := p.startTerminalSessionFunc
-	if startSession == nil {
-		startSession = p.StartTerminalSession
-	}
-	session, err := startSession(runCtx, region, instanceID)
-	if err != nil {
-		return TerminalCommandResult{}, classifyStreamError(ctx, runCtx, "start session failed", err)
-	}
-	if strings.TrimSpace(session.SessionID) == "" ||
-		strings.TrimSpace(session.OwnerUin) == "" ||
-		session.AppID == 0 {
-		return TerminalCommandResult{}, protocolStreamError("start session returned incomplete authentication data")
-	}
-
-	forwardURL := fmt.Sprintf("wss://%s.forward.tat-tc.tencent.cn/ws", region)
-	if p.tatForwardURLFunc != nil {
-		forwardURL = p.tatForwardURLFunc(region)
-	}
-	dialer := websocket.Dialer{
-		HandshakeTimeout: tatStreamHandshakeTimeout,
-		ReadBufferSize:   4096,
-		WriteBufferSize:  4096,
-	}
-	conn, resp, err := dialer.DialContext(runCtx, forwardURL, http.Header{})
-	if resp != nil && resp.Body != nil {
-		_ = resp.Body.Close()
-	}
-	if err != nil {
-		return TerminalCommandResult{}, classifyStreamError(ctx, runCtx, "websocket connection failed", err)
-	}
-	conn.SetReadLimit(maxTerminalReorderBytes + 64*1024)
-	socket := &tatStreamSocket{conn: conn}
-	defer socket.cleanup(session.SessionID)
-
-	watchDone := make(chan struct{})
-	defer close(watchDone)
-	go func() {
-		select {
-		case <-runCtx.Done():
-			socket.cleanup(session.SessionID)
-		case <-watchDone:
+	var (
+		handshake    *tatTerminalHandshake
+		handshakeErr *tatTerminalHandshakeError
+	)
+	for attempt := 1; attempt <= tatHandshakeMaxAttempts; attempt++ {
+		handshake, handshakeErr = p.openTerminalCommandHandshake(runCtx, region, instanceID, timeoutSeconds)
+		if handshakeErr == nil {
+			break
 		}
-	}()
-
-	if err := socket.writeJSON(map[string]any{
-		"Type": "SessionAuth",
-		"Data": map[string]any{
-			"Uin":        session.OwnerUin,
-			"AppId":      session.AppID,
-			"InstanceId": instanceID,
-			"SessionId":  session.SessionID,
-		},
-	}); err != nil {
-		return TerminalCommandResult{}, classifyStreamError(ctx, runCtx, "session authentication failed", err)
-	}
-	authDelay := p.tatAuthDelay
-	if authDelay <= 0 {
-		authDelay = tatStreamAuthDelay
-	}
-	authTimer := time.NewTimer(authDelay)
-	select {
-	case <-runCtx.Done():
-		if !authTimer.Stop() {
-			<-authTimer.C
+		if runCtx.Err() != nil || attempt == tatHandshakeMaxAttempts {
+			break
 		}
-		return TerminalCommandResult{}, classifyStreamError(ctx, runCtx, "session authentication failed", runCtx.Err())
-	case <-authTimer.C:
+		if err := waitForTerminalHandshakeRetry(runCtx, attempt); err != nil {
+			break
+		}
 	}
-	if err := socket.writeJSON(map[string]any{
-		"Type": "PtyStart",
-		"Data": map[string]any{
-			"SessionId":        session.SessionID,
-			"Cols":             defaultTerminalCols,
-			"Rows":             defaultTerminalRows,
-			"MaxIdleTime":      timeoutSeconds,
-			"Username":         terminalCommandUsername,
-			"WorkingDirectory": terminalCommandWorkingDirectory,
-		},
-	}); err != nil {
-		return TerminalCommandResult{}, classifyStreamError(ctx, runCtx, "pty start failed", err)
+	if handshakeErr != nil {
+		return TerminalCommandResult{}, classifyStreamError(ctx, runCtx, handshakeErr.message, handshakeErr.err)
 	}
-	if err := waitForPtyReady(runCtx, conn); err != nil {
-		return TerminalCommandResult{}, classifyStreamError(ctx, runCtx, "pty did not become ready", err)
-	}
+	defer handshake.close()
+	socket := handshake.socket
+	conn := socket.conn
+	channelID := handshake.channelID
 
 	customData := uuid.NewString()
 	executionID := "pty:" + strings.ReplaceAll(customData, "-", "")[:12]
@@ -212,7 +184,8 @@ func (p *TencentCloudProvider) StreamTerminalCommand(ctx context.Context, req Te
 	if err := socket.writeBSON(tatStreamFrame{
 		Type: "PtyExecCmdStream",
 		Data: tatStreamEnvelope{
-			SessionID:  session.SessionID,
+			SessionID:  handshake.sessionID,
+			ChannelID:  channelID,
 			CustomData: customData,
 			Data: tatStreamChunk{
 				Cmd:     req.Command,
@@ -223,11 +196,113 @@ func (p *TencentCloudProvider) StreamTerminalCommand(ctx context.Context, req Te
 		return TerminalCommandResult{}, classifyStreamError(ctx, runCtx, "command request failed", err)
 	}
 
-	result, err := readTerminalCommandChunks(runCtx, conn, customData, executionID, emit)
+	result, err := readTerminalCommandChunks(runCtx, conn, channelID, customData, executionID, emit)
 	if err != nil {
 		return TerminalCommandResult{}, classifyStreamError(ctx, runCtx, "command stream failed", err)
 	}
 	return result, nil
+}
+
+func (p *TencentCloudProvider) openTerminalCommandHandshake(ctx context.Context, region, instanceID string, timeoutSeconds int) (*tatTerminalHandshake, *tatTerminalHandshakeError) {
+	startSession := p.startTerminalSessionFunc
+	if startSession == nil {
+		startSession = p.StartTerminalSession
+	}
+	session, err := startSession(ctx, region, instanceID)
+	if err != nil {
+		return nil, &tatTerminalHandshakeError{message: "start session failed", err: err}
+	}
+	if strings.TrimSpace(session.SessionID) == "" ||
+		strings.TrimSpace(session.OwnerUin) == "" ||
+		session.AppID == 0 {
+		return nil, &tatTerminalHandshakeError{
+			message: "start session returned incomplete authentication data",
+			err:     errors.New("incomplete authentication data"),
+		}
+	}
+
+	forwardURL := fmt.Sprintf("wss://%s.forward.tat-tc.tencent.cn/ws", region)
+	if p.tatForwardURLFunc != nil {
+		forwardURL = p.tatForwardURLFunc(region)
+	}
+	dialer := websocket.Dialer{
+		HandshakeTimeout: tatStreamHandshakeTimeout,
+		ReadBufferSize:   4096,
+		WriteBufferSize:  4096,
+	}
+	conn, resp, err := dialer.DialContext(ctx, forwardURL, http.Header{})
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		return nil, &tatTerminalHandshakeError{message: "websocket connection failed", err: err}
+	}
+	conn.SetReadLimit(maxTerminalReorderBytes + 64*1024)
+
+	handshake := &tatTerminalHandshake{
+		socket:    &tatStreamSocket{conn: conn},
+		sessionID: session.SessionID,
+		channelID: "exec-" + uuid.NewString(),
+		watchDone: make(chan struct{}),
+	}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			handshake.close()
+		}
+	}()
+	go func() {
+		select {
+		case <-ctx.Done():
+			handshake.socket.cleanup(handshake.sessionID, handshake.channelID)
+		case <-handshake.watchDone:
+		}
+	}()
+
+	if err := handshake.socket.writeJSON(map[string]any{
+		"Type": "SessionAuth",
+		"Data": map[string]any{
+			"Uin":        session.OwnerUin,
+			"AppId":      session.AppID,
+			"InstanceId": instanceID,
+			"SessionId":  session.SessionID,
+		},
+	}); err != nil {
+		return nil, &tatTerminalHandshakeError{message: "session authentication failed", err: err}
+	}
+	if err := handshake.socket.writeJSON(map[string]any{
+		"Type": "PtyStart",
+		"Data": map[string]any{
+			"SessionId":   session.SessionID,
+			"ChannelId":   handshake.channelID,
+			"UserName":    terminalCommandUsername,
+			"NoShell":     true,
+			"MaxIdleTime": timeoutSeconds,
+		},
+	}); err != nil {
+		return nil, &tatTerminalHandshakeError{message: "pty start failed", err: err}
+	}
+	if err := waitForPtyReady(ctx, conn); err != nil {
+		return nil, &tatTerminalHandshakeError{message: "pty did not become ready", err: err}
+	}
+
+	succeeded = true
+	return handshake, nil
+}
+
+func waitForTerminalHandshakeRetry(ctx context.Context, failedAttempt int) error {
+	delay := tatHandshakeBackoffMin
+	for attempt := 1; attempt < failedAttempt; attempt++ {
+		delay *= 2
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func waitForPtyReady(ctx context.Context, conn *websocket.Conn) error {
@@ -250,7 +325,7 @@ func waitForPtyReady(ctx context.Context, conn *websocket.Conn) error {
 	}
 }
 
-func readTerminalCommandChunks(ctx context.Context, conn *websocket.Conn, customData, executionID string, emit func(TerminalCommandStreamEvent) error) (TerminalCommandResult, error) {
+func readTerminalCommandChunks(ctx context.Context, conn *websocket.Conn, channelID, customData, executionID string, emit func(TerminalCommandStreamEvent) error) (TerminalCommandResult, error) {
 	pending := make(map[int]tatStreamChunk)
 	bufferedBytes := 0
 	nextIndex := 0
@@ -272,6 +347,9 @@ func readTerminalCommandChunks(ctx context.Context, conn *websocket.Conn, custom
 		}
 		if frame.Type != "PtyExecCmdStream" {
 			return TerminalCommandResult{}, fmt.Errorf("unexpected command stream frame: %s", frame.Type)
+		}
+		if frame.Data.ChannelID != channelID {
+			return TerminalCommandResult{}, errors.New("command stream channel mismatch")
 		}
 		if frame.Data.CustomData != customData {
 			return TerminalCommandResult{}, errors.New("command stream correlation mismatch")

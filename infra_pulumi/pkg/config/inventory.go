@@ -47,6 +47,7 @@ type Inventory struct {
 
 		Cynosdb struct {
 			AvailabilityZone   string `yaml:"availability_zone"`
+			ExistingEndpoint   string `yaml:"existing_endpoint"`
 			DBVersion          string `yaml:"db_version"`
 			SubnetID           string `yaml:"subnet_id"`
 			ClusterCIDR        string `yaml:"cluster_cidr"`
@@ -167,6 +168,7 @@ type SecurityGroupInventory struct {
 
 type RedisInventory struct {
 	AvailabilityZone string   `yaml:"availability_zone"`
+	ExistingEndpoint string   `yaml:"existing_endpoint"`
 	MemSize          int      `yaml:"mem_size"`
 	TypeID           int      `yaml:"type_id"`
 	SubnetID         string   `yaml:"subnet_id"`
