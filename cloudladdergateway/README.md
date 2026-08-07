@@ -246,26 +246,36 @@ client.WithHttpTransport(transport)
 http://21.215.157.57:8080/internal/tencentcloud/account
 ```
 
-这不是 HTTP 302 场景。腾讯会用 `POST` 发送 JSON body，gateway 必须在服务端做 reverse proxy，保留 body、状态码和响应体。配置方式：
+这不是 HTTP 302 场景。腾讯会用 `POST` 发送 JSON body，gateway 必须在服务端做 reverse proxy，保留 body、状态码和响应体。
 
-当前腾讯侧 SaaS callback 配置服务于北京主沙箱绑定链路；即使 clgateway 运行在预发布/TKEx 环境，也必须回调 `https://lightclaw.tech/auth/internal/tencentcloud/account`，不要路由到 `sandbox-bj-7` 这类隔离 playground 环境。
+多个 LightVela 环境共用这个入口时，auth 服务必须给 Shadow 用户名和 auth code 加环境前缀。gateway 按前缀选择回调目标，并在转发 `checkSaaSAuthCode` 前移除 auth code 前缀：
+
+| 环境 | Shadow 用户名前缀 | auth code 前缀 | 回调目标 |
+| --- | --- | --- | --- |
+| 北京主沙箱 | `bjsbx_` | `bjsbx.` | `https://lightclaw.tech` |
+| 韩国沙箱 | `krsbx_` | `krsbx.` | `https://api-sandbox-kr-1.lightclaw.tech` |
+| 上海生产 | 无（兼容存量） | `shprod.` | `https://api.lightvela.com` |
+
+未匹配前缀的请求继续进入上海生产默认 route，以兼容存量 Shadow 账号。
 
 ```yaml
 external_routes:
   - path: /internal/tencentcloud/account
     methods: ["POST"]
-    route_id: tencentcloud-account-callback-beijing-sandbox
+    route_id: tencentcloud-account-callback-shprod
     upstream_path: /auth/internal/tencentcloud/account
-
-routes:
-  - id: tencentcloud-account-callback-beijing-sandbox
-    condition: 'request.method == "POST"'
-    upstream:
-      base_url: "https://lightclaw.tech"
-      timeout: 10s
-      allowed_methods: ["POST"]
-      headers_from_env:
-        X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
+    auth_code_routes:
+      - prefix: "bjsbx."
+        route_id: tencentcloud-account-callback-bjsbx
+      - prefix: "krsbx."
+        route_id: tencentcloud-account-callback-krsbx
+      - prefix: "shprod."
+        route_id: tencentcloud-account-callback-shprod
+    user_id_prefix_routes:
+      - prefix: "bjsbx_"
+        route_id: tencentcloud-account-callback-bjsbx
+      - prefix: "krsbx_"
+        route_id: tencentcloud-account-callback-krsbx
 ```
 
 `external_routes` 只注册 exact path，不允许调用方传任意 URL。这个 route 可加入 `auth.allow_unauthenticated`，因为腾讯侧无法生成 CloudLadder HMAC；真实安全边界由固定 upstream 和注入的 `X-Shadow-Callback-Token` 共同保证。`CLOUDLADDER_TENCENT_CALLBACK_TOKEN` 必须和 auth 服务的 `SHADOW_TENCENT_CALLBACK_TOKEN` 保持一致。
