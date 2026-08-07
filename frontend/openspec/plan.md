@@ -1,3 +1,51 @@
+# 2026-08-07 国际站 Skills 来源说明对齐国内站
+
+**Status:** 实现与验证完成，等待用户手动验收；不自动 commit / push / MR。
+
+**Goal:** 将国际站搜索来源说明从搜索栏移到搜索结果底部，复用国内站“查看更多居中、来源说明靠右”的蓝色布局，并恢复搜索框宽度及来源筛选器右对齐。
+
+**Scope:** 仅调整国际站 Skills 搜索区域布局和对应组件测试；保留 Skills.sh、ClawHub 链接、搜索过滤与展开逻辑，不改变国内站行为。
+
+## Tasks
+
+- [x] **Developer / Test:** 修改 `src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`，断言国际站搜索栏不再包含来源说明、结果底栏展示蓝色 Skills.sh 与 ClawHub 链接，并确认测试按预期失败。
+- [x] **Developer / UI:** 修改 `src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`，复用国内站三列结果底栏，删除搜索栏旧说明；验收时搜索框占满剩余宽度、来源筛选器靠右。
+- [x] **Reviewer / Verification:** 运行 Skills 定向测试、`pnpm i18n:check`、`pnpm check` 和 `git diff --check`，确认国内站布局断言保持通过且无新增依赖或生成资源。
+
+---
+
+# 2026-08-07 国际站合并技能卸载降级
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit / push / MR。
+
+**Goal:** 删除同时标记为 ClawHub 与 skills.sh 的单个运行时技能时，不重复执行两个卸载命令导致 `SKILLS_SH_NOT_INSTALLED`。
+
+**Scope:** 合并行的来源标识作为候选卸载命令；任一候选成功后停止，明确未安装时尝试下一候选，其他错误继续正常失败。
+
+## Tasks
+
+- [x] 增加“首个来源成功即停止”和“首个来源未安装则降级”的失败回归测试。
+- [x] 调整国际站卸载候选执行与错误处理逻辑。
+- [x] 运行 Skills 定向测试、i18n、类型检查和 diff 检查。
+
+---
+
+# 2026-08-07 国际站已安装技能跨来源去重
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit / push / MR。
+
+**Goal:** 国际站同一 Hermes 运行时技能同时出现在 ClawHub 与 skills.sh 已安装清单时，仅展示一行，并同时展示两个来源标签。
+
+**Scope:** 仅调整国际站已安装技能归并逻辑与回归测试；保留各 registry 的真实卸载目标，不按短 slug 盲目合并无 Hermes 证据的记录。
+
+## Tasks
+
+- [x] 增加跨来源重复安装记录的回归测试，并确认当前实现失败。
+- [x] 以 Hermes 运行时记录为归并证据，合并 ClawHub 与 skills.sh 展示记录并保留双来源卸载目标。
+- [x] 运行定向测试、类型检查和 diff 检查。
+
+---
+
 # 2026-08-06 前端预览图片体积优化
 
 **Status:** 实现与验证完成，等待用户验收；不自动 commit / push / MR。

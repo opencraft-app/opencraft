@@ -2471,30 +2471,6 @@ export function SkillsDemoPanel({
                   </Select>
                 </div>
               ) : null}
-              {!isDomestic ? (
-                <p className="shrink-0 text-right text-[10px] font-medium text-black/45 sm:text-xs">
-                  <>
-                    {t("技能来源于")} {" "}
-                    <a
-                      href="https://skills.sh"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-sm text-black/65 underline decoration-black/20 underline-offset-2 hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    >
-                      Skills.sh
-                    </a>{" "}
-                    {t("与")}{" "}
-                    <a
-                      href="https://clawhub.ai/"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-sm text-black/65 underline decoration-black/20 underline-offset-2 hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    >
-                      ClawHub
-                    </a>
-                  </>
-                </p>
-              ) : null}
             </div>
 
             {hasSearch ? (
@@ -2644,7 +2620,7 @@ export function SkillsDemoPanel({
                     ))}
                   </ul>
                 )}
-                {!searching && visibleResults.length > 0 && (isDomestic || visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT) ? (
+                {!searching && visibleResults.length > 0 ? (
                   <div className="mt-3 grid min-h-8 grid-cols-[1fr_auto_1fr] items-center">
                     {visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT ? (
                       <button
@@ -2671,7 +2647,32 @@ export function SkillsDemoPanel({
                         源自 SkillHub
                         <span aria-hidden="true">↗</span>
                       </a>
-                    ) : null}
+                    ) : (
+                      <p className="col-start-3 inline-flex h-8 items-center justify-self-end gap-[3px] text-[13px] font-normal text-[#2563EB] underline-offset-2 transition-colors hover:text-[#1D4ED8]">
+                        <span>{isChinese ? "源自" : t("技能来源于")}</span>
+                        {" "}
+                        <a
+                          href="https://skills.sh"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                        >
+                          Skills.sh
+                        </a>
+                        {" "}
+                        <span>{isChinese ? "和" : t("与")}</span>
+                        {" "}
+                        <a
+                          href="https://clawhub.ai/"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                        >
+                          ClawHub
+                        </a>
+                        <span aria-hidden="true">↗</span>
+                      </p>
+                    )}
                   </div>
                 ) : null}
               </section>

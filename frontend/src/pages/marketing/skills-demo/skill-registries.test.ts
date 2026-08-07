@@ -6,6 +6,7 @@ import {
   buildHermesSkillsListCommand,
   buildClawhubBatchInstallCommand,
   buildClawhubListCommand,
+  buildClawhubUninstallCommand,
   buildSkillhubBatchInstallCommand,
   buildSkillhubInstallCommand,
   buildSkillhubListCommand,
@@ -75,7 +76,7 @@ describe("skills.sh command builders", () => {
     expect(mergeInstalledSources([], [first, second])).toHaveLength(2);
   });
 
-  it("keeps matching short slugs from different registries separate", () => {
+  it("merges matching marketplace records only when Hermes confirms one runtime skill", () => {
     const clawhubSkill: InstalledSkill = {
       registry: "clawhub",
       rawId: "okx-sentiment-tracker",
@@ -94,16 +95,22 @@ describe("skills.sh command builders", () => {
     };
     const hermesSkills = parseHermesInstalledSkills("okx-sentiment-tracker");
 
-    const installed = mergeInstalledWithHermes(
-      mergeInstalledSources([clawhubSkill], [skillsshSkill]),
-      hermesSkills,
-    );
+    const marketplaceInstalled = mergeInstalledSources([clawhubSkill], [skillsshSkill]);
+    expect(marketplaceInstalled).toHaveLength(2);
 
-    expect(installed).toHaveLength(2);
-    expect(installed).toEqual(expect.arrayContaining([
-      expect.objectContaining({ registry: "clawhub", rawId: "okx-sentiment-tracker" }),
-      expect.objectContaining({ registry: "skills-sh", rawId: "okx/agent-skills/okx-sentiment-tracker" }),
-    ]));
+    const installed = mergeInstalledWithHermes(marketplaceInstalled, hermesSkills);
+
+    expect(installed).toHaveLength(1);
+    expect(installed[0]).toEqual(expect.objectContaining({
+      registry: "clawhub",
+      rawId: "okx-sentiment-tracker",
+      registries: ["clawhub", "skills-sh", "hermes"],
+      sourceLabel: "ClawHub / skills.sh / Hermes",
+      uninstallTargets: [
+        { registry: "clawhub", rawId: "okx-sentiment-tracker" },
+        { registry: "skills-sh", rawId: "okx/agent-skills/okx-sentiment-tracker" },
+      ],
+    }));
   });
 
   it("uninstalls only the selected registry record and verifies that it disappeared", async () => {
@@ -133,6 +140,94 @@ describe("skills.sh command builders", () => {
     await expect(createLiveDataLayer("bot-1", execDebugCommand).uninstall(installedSkill)).resolves.toEqual({ ok: true });
     expect(commands).toEqual([
       buildSkillsshUninstallCommand("team/repo/shared-skill"),
+      buildClawhubListCommand(),
+      buildSkillsshListCommand(),
+      buildHermesSkillsListCommand(),
+    ]);
+  });
+
+  it("stops after the first uninstall candidate removes a merged runtime skill", async () => {
+    const commands: string[] = [];
+    const execDebugCommand = async (_botId: string, command: string) => {
+      commands.push(command);
+      const output = command === buildClawhubUninstallCommand("documentation-writer")
+        ? JSON.stringify({ success: true, data: { status: "uninstalled" } })
+        : command === buildSkillsshUninstallCommand("github/awesome-copilot/documentation-writer")
+          ? JSON.stringify({
+              success: false,
+              error: { code: "SKILLS_SH_NOT_INSTALLED", message: "未找到已安装的技能" },
+            })
+          : command === buildHermesSkillsListCommand()
+            ? ""
+            : JSON.stringify({ success: true, data: { skills: [] } });
+      return {
+        status: command.includes("skills-sh uninstall") ? "FAILED" : "SUCCESS",
+        exitCode: command.includes("skills-sh uninstall") ? 1 : 0,
+        output,
+      };
+    };
+    const installedSkill: InstalledSkill = {
+      registry: "clawhub",
+      rawId: "documentation-writer",
+      slug: "documentation-writer",
+      name: "Documentation Writer",
+      registries: ["clawhub", "skills-sh", "hermes"],
+      sourceLabel: "ClawHub / skills.sh / Hermes",
+      uninstallTargets: [
+        { registry: "clawhub", rawId: "documentation-writer" },
+        { registry: "skills-sh", rawId: "github/awesome-copilot/documentation-writer" },
+      ],
+    };
+
+    await expect(createLiveDataLayer("bot-1", execDebugCommand).uninstall(installedSkill)).resolves.toEqual({ ok: true });
+    expect(commands).toEqual([
+      buildClawhubUninstallCommand("documentation-writer"),
+      buildClawhubListCommand(),
+      buildSkillsshListCommand(),
+      buildHermesSkillsListCommand(),
+    ]);
+  });
+
+  it("tries the next uninstall candidate when the first source reports not installed", async () => {
+    const commands: string[] = [];
+    const execDebugCommand = async (_botId: string, command: string) => {
+      commands.push(command);
+      const isMissingSkillssh = command === buildSkillsshUninstallCommand(
+        "github/awesome-copilot/documentation-writer",
+      );
+      const output = isMissingSkillssh
+        ? JSON.stringify({
+            success: false,
+            error: { code: "SKILLS_SH_NOT_INSTALLED", message: "未找到已安装的技能" },
+          })
+        : command === buildClawhubUninstallCommand("documentation-writer")
+          ? JSON.stringify({ success: true, data: { status: "uninstalled" } })
+          : command === buildHermesSkillsListCommand()
+            ? ""
+            : JSON.stringify({ success: true, data: { skills: [] } });
+      return {
+        status: isMissingSkillssh ? "FAILED" : "SUCCESS",
+        exitCode: isMissingSkillssh ? 1 : 0,
+        output,
+      };
+    };
+    const installedSkill: InstalledSkill = {
+      registry: "skills-sh",
+      rawId: "github/awesome-copilot/documentation-writer",
+      slug: "documentation-writer",
+      name: "Documentation Writer",
+      registries: ["skills-sh", "clawhub", "hermes"],
+      sourceLabel: "skills.sh / ClawHub / Hermes",
+      uninstallTargets: [
+        { registry: "skills-sh", rawId: "github/awesome-copilot/documentation-writer" },
+        { registry: "clawhub", rawId: "documentation-writer" },
+      ],
+    };
+
+    await expect(createLiveDataLayer("bot-1", execDebugCommand).uninstall(installedSkill)).resolves.toEqual({ ok: true });
+    expect(commands).toEqual([
+      buildSkillsshUninstallCommand("github/awesome-copilot/documentation-writer"),
+      buildClawhubUninstallCommand("documentation-writer"),
       buildClawhubListCommand(),
       buildSkillsshListCommand(),
       buildHermesSkillsListCommand(),
@@ -323,19 +418,19 @@ describe("Hermes native installed skills", () => {
     ]);
   });
 
-  it("keeps same-slug marketplace records separate without duplicating an ambiguous Hermes record", () => {
+  it("keeps same-slug records from one marketplace separate when Hermes cannot identify the owner", () => {
     const registrySkills: InstalledSkill[] = [{
-      registry: "clawhub",
-      rawId: "shared-skill",
+      registry: "skills-sh",
+      rawId: "team-a/repository/shared-skill",
       slug: "shared-skill",
-      name: "ClawHub Shared Skill",
-      registries: ["clawhub"],
-      sourceLabel: "ClawHub",
+      name: "Team A Shared Skill",
+      registries: ["skills-sh"],
+      sourceLabel: "skills.sh",
     }, {
       registry: "skills-sh",
-      rawId: "team/repository/shared-skill",
+      rawId: "team-b/repository/shared-skill",
       slug: "shared-skill",
-      name: "skills.sh Shared Skill",
+      name: "Team B Shared Skill",
       registries: ["skills-sh"],
       sourceLabel: "skills.sh",
     }];
@@ -343,13 +438,13 @@ describe("Hermes native installed skills", () => {
 
     expect(mergeInstalledWithHermes(registrySkills, hermesSkills)).toEqual([
       expect.objectContaining({
-        registry: "clawhub",
-        rawId: "shared-skill",
-        registries: ["clawhub"],
+        registry: "skills-sh",
+        rawId: "team-a/repository/shared-skill",
+        registries: ["skills-sh"],
       }),
       expect.objectContaining({
         registry: "skills-sh",
-        rawId: "team/repository/shared-skill",
+        rawId: "team-b/repository/shared-skill",
         registries: ["skills-sh"],
       }),
     ]);

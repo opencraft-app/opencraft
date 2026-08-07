@@ -91,7 +91,7 @@ export interface InstalledSkill extends Skill {
   uninstallable?: boolean;
   /** 来源查询不完整，当前记录不能安全决定卸载命令。 */
   sourceUncertain?: boolean;
-  /** 合并展示时保留各 registry 的真实卸载标识，避免只卸载其中一个来源。 */
+  /** 合并展示时保留可用的 registry 卸载候选，任一候选成功即可删除同一运行时技能。 */
   uninstallTargets?: Array<Pick<Skill, "registry" | "rawId">>;
 }
 
@@ -549,6 +549,13 @@ export function parseUninstallOk(raw: string): boolean {
   return false;
 }
 
+function isUninstallTargetMissing(raw: string): boolean {
+  const envelope = extractJsonObject(raw);
+  if (!isRecord(envelope) || !isRecord(envelope.error)) return false;
+  const code = envelope.error.code;
+  return typeof code === "string" && code.trim().toUpperCase().endsWith("_NOT_INSTALLED");
+}
+
 // ─── 合并 / 排序 / 来源归属 ───────────────────────────────────────────────────
 
 export function mergeSkills(clawhub: Skill[], skillssh: Skill[], skillhub: Skill[] = []): Skill[] {
@@ -612,13 +619,16 @@ export function mergeInstalledWithHermes(
 
   for (const hermesSkill of hermesInstalled) {
     const normalizedSlug = hermesSkill.slug.trim().toLowerCase();
-    const matches = merged.filter((skill) => (
+    const matchingIndexes = merged.flatMap((skill, index) => (
       skill.registry !== "hermes"
       && (
         skill.slug.trim().toLowerCase() === normalizedSlug
         || skill.nativeAliases?.some((alias) => alias.toLowerCase() === normalizedSlug)
       )
+        ? [index]
+        : []
     ));
+    const matches = matchingIndexes.map((index) => merged[index]).filter((skill) => skill !== undefined);
     if (matches.length === 1 && matches[0]) {
       if (!matches[0].registries.includes("hermes")) matches[0].registries.push("hermes");
       matches[0].category = matches[0].category ?? hermesSkill.category;
@@ -627,9 +637,39 @@ export function mergeInstalledWithHermes(
       continue;
     }
     if (matches.length > 1) {
-      // Hermes reports the runtime directory, not a third marketplace install.
-      // When more than one marketplace record shares the slug, keep those records
-      // separate and avoid rendering an unattributable Hermes duplicate.
+      const marketplaceRegistries = matches.map((skill) => skill.registry);
+      const hasOneMatchPerRegistry = new Set(marketplaceRegistries).size === matches.length;
+      if (hasOneMatchPerRegistry && matches[0] && matchingIndexes[0] !== undefined) {
+        const primary = matches[0];
+        const registries = Array.from(new Set<Registry>([
+          ...matches.flatMap((skill) => skill.registries),
+          "hermes",
+        ]));
+        const uninstallTargets = Array.from(new Map(
+          matches.flatMap((skill) => (
+            skill.uninstallTargets?.length
+              ? skill.uninstallTargets
+              : [{ registry: skill.registry, rawId: skill.rawId }]
+          )).map((target) => [skillIdentity(target), target]),
+        ).values());
+        const nativeAliases = Array.from(new Set(
+          matches.flatMap((skill) => [skill.rawId, skill.slug, ...(skill.nativeAliases ?? [])]),
+        ));
+        const combined: InstalledSkill = {
+          ...primary,
+          category: primary.category ?? matches.find((skill) => skill.category)?.category ?? hermesSkill.category,
+          version: primary.version ?? matches.find((skill) => skill.version)?.version ?? hermesSkill.version,
+          status: primary.status ?? matches.find((skill) => skill.status)?.status ?? hermesSkill.status,
+          nativeAliases,
+          registries,
+          sourceLabel: registries.map((registry) => REGISTRY_LABEL[registry]).join(" / "),
+          uninstallTargets,
+        };
+        const insertionIndex = matchingIndexes[0];
+        [...matchingIndexes].reverse().forEach((index) => merged.splice(index, 1));
+        merged.splice(insertionIndex, 0, combined);
+      }
+      // Multiple records from the same registry remain ambiguous and stay separate.
       continue;
     }
     merged.push({
@@ -1267,9 +1307,15 @@ export function createLiveDataLayer(
             : target.registry === "skills-sh"
               ? buildSkillsshUninstallCommand(target.rawId)
               : buildClawhubUninstallCommand(target.rawId);
-          const output = await run(command);
-          if (target.registry !== "hermes" && !parseUninstallOk(output)) {
+          try {
+            const output = await run(command);
+            if (target.registry === "hermes" || parseUninstallOk(output)) break;
+            if (isUninstallTargetMissing(output)) continue;
             return { ok: false, message: output.trim() || undefined };
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (isUninstallTargetMissing(message)) continue;
+            return { ok: false, message };
           }
         }
         const verification = await listInstalled();
