@@ -1,0 +1,130 @@
+# devtunnel 反向回调隧道 —— tkexgz 测试实例（branch-only，未接入自动发布）。
+#
+# 作用：承接云梯改派来的 jifei 回调，按 Host 分流到各开发者 DevCloud 上出站长轮询的
+# agent。详见 cloudladdergateway/internal/devtunnel 包注释。
+#
+# 复用 cloudladdergateway 镜像（devtunnel 二进制已打进同一镜像），仅用 command 覆盖入口，
+# 因此镜像 tag 跟随 cloudladdergateway 的 CI pin，无需单独构建流水线。
+#
+# 部署前置（都属于 gitops 侧改动，未在本分支落地）：
+#   1) 在 cloudladdergateway-callback-secrets 里加一个 DEVTUNNEL_TOKEN（32+ 字节随机串）。
+#   2) 在 lightvela-proxy-testing 工作负载上加 env：
+#        CLOUDLADDERGATEWAY_ROUTE_DEVTUNNEL_BASE_URL=http://devtunnel-testing:8080
+#        CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_DEV_1_BASE_URL=http://devtunnel-testing:8080
+#        CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_DEV_1_HOST_HEADER=dev1.tunnel.internal
+#      （把 dev-1 的落点从 DevCloud 直连 IP 改成 devtunnel + 唯一 Host）
+apiVersion: platform.stke/v1alpha1
+kind: StatefulSetPlus
+metadata:
+  annotations:
+    deployImageSource: hub
+    enablesystemd: disable
+    platform.tkex/scaleDown-PendingPod-first: 'true'
+    stkeUpateVersionTag: v3
+    tkex-samename-count: '2'
+  labels:
+    clusterId: cls-5vzjheeo
+    env: production
+    k8s-app: devtunnel-testing
+    moduleFourId: '867795'
+    projectName: prjqt8dd
+    qcloud-app: devtunnel-testing
+    region: ap-guangzhou
+    workload-kind: statefulsetplus
+  name: devtunnel-testing
+  namespace: ns-prjqt8dd-867795-production
+spec:
+  batchDeployConfig: {}
+  podManagementPolicy: Parallel
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      clusterId: cls-5vzjheeo
+      env: production
+      k8s-app: devtunnel-testing
+      moduleFourId: '867795'
+      projectName: prjqt8dd
+      qcloud-app: devtunnel-testing
+      region: ap-guangzhou
+      workload-kind: statefulsetplus
+  serviceName: devtunnel-testing
+  template:
+    metadata:
+      annotations:
+        eks.tke.cloud.tencent.com/spec-auto-upgrade: 'true'
+      labels:
+        clusterId: cls-5vzjheeo
+        env: production
+        k8s-app: devtunnel-testing
+        moduleFourId: '867795'
+        projectName: prjqt8dd
+        qcloud-app: devtunnel-testing
+        region: ap-guangzhou
+        workload-kind: statefulsetplus
+    spec:
+      affinity: {}
+      containers:
+      - command:
+        - /usr/local/bin/devtunnel
+        env:
+        - name: DEVTUNNEL_LISTEN
+          value: ':8080'
+        - name: DEVTUNNEL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: DEVTUNNEL_TOKEN
+              name: cloudladdergateway-callback-secrets
+        image: csighub.tencentyun.com/skipzhang/cloudladdergateway:604530a7c2ad
+        imagePullPolicy: Always
+        name: devtunnel
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: '500m'
+            memory: 512Mi
+          requests:
+            cpu: '250m'
+            memory: 256Mi
+      dnsConfig:
+        options:
+        - name: ndots
+          value: '2'
+      imagePullSecrets:
+      - name: csighub-skipzhang
+      - name: csighub-xinqishang
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+  updateStrategy:
+    rollingUpdate:
+      partition: 0
+    type: RollingUpdate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    description: "devtunnel 反向隧道控制面 + 回调 ingest（集群内，供云梯访问）"
+  name: devtunnel-testing
+  namespace: ns-prjqt8dd-867795-production
+spec:
+  ports:
+    - name: tcp-8080
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    k8s-app: devtunnel-testing
+    qcloud-app: devtunnel-testing
+    region: ap-guangzhou
+    workload-kind: statefulsetplus
+  sessionAffinity: None
+  type: ClusterIP
