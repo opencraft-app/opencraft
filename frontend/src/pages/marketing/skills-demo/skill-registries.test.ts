@@ -627,6 +627,32 @@ describe("Hermes native installed skills", () => {
 });
 
 describe("batch skill installation", () => {
+  it("keeps summary results aligned after an earlier progress event", async () => {
+    const skills: Skill[] = [
+      { registry: "clawhub", rawId: "first", slug: "first", name: "First" },
+      { registry: "clawhub", rawId: "second", slug: "second", name: "Second" },
+    ];
+    const execDebugCommand = async () => ({ status: "SUCCESS", exitCode: 0, output: "" });
+    const execDebugCommandStream = async (
+      _botId: string,
+      _command: string,
+      onChunk: (event: { stream: string; chunk: string }) => void,
+    ) => {
+      onChunk({ stream: "stdout", chunk: '{"event":"progress","slug":"first","status":"installed"}\n' });
+      onChunk({
+        stream: "stdout",
+        chunk: '{"event":"summary","results":[{"slug":"first","status":"installed"},{"slug":"second","status":"failed","message":"download failed"}]}\n',
+      });
+      return { status: "SUCCESS", exitCode: 0, output: "" };
+    };
+    const dataLayer = createLiveDataLayer("bot-1", execDebugCommand, execDebugCommandStream);
+
+    const result = await installSkillsInBatch(dataLayer, skills);
+
+    expect(result.succeeded).toEqual([skills[0]]);
+    expect(result.failed).toEqual([{ skill: skills[1], message: "download failed" }]);
+  });
+
   it("builds the three native ACLI batch commands from the backend contract", () => {
     expect(buildClawhubBatchInstallCommand(["world-model", "hello-world-skill"]))
       .toBe("acli clawhub batch-install --wait=true 'world-model hello-world-skill'");
