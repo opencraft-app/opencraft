@@ -3,7 +3,9 @@ package controller
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,8 +27,9 @@ import (
 )
 
 const (
-	RuntimeCleanupFinalizer = "gateway.lightvela.com/runtime-cleanup"
-	runtimeStatusRetryDelay = 5 * time.Second
+	RuntimeCleanupFinalizer                       = "gateway.lightvela.com/runtime-cleanup"
+	runtimeStatusRetryDelay                       = 5 * time.Second
+	subscriptionQuotaPacingEffectiveAtEnvironment = "SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT"
 )
 
 type VelaGWSetReconciler struct {
@@ -504,6 +507,7 @@ func deployment(set *velagwv1alpha1.VelaGWSet, name, image string, replicas int3
 			{Name: "GLOBAL_WEB_RATE_LIMIT_ENABLE", Value: "false"},
 			{Name: "CRITICAL_RATE_LIMIT_ENABLE", Value: "false"},
 			{Name: "SEARCH_RATE_LIMIT_ENABLE", Value: "false"},
+			{Name: subscriptionQuotaPacingEffectiveAtEnvironment, Value: subscriptionQuotaPacingEffectiveAt()},
 			{Name: "BATCH_UPDATE_ENABLED", Value: batchUpdates},
 			{Name: "NODE_TYPE", Value: nodeType},
 			{Name: "NODE_NAME", Value: name},
@@ -532,6 +536,15 @@ func deployment(set *velagwv1alpha1.VelaGWSet, name, image string, replicas int3
 			Template:                corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: podLabels}, Spec: podSpec},
 		},
 	}
+}
+
+func subscriptionQuotaPacingEffectiveAt() string {
+	raw := strings.TrimSpace(os.Getenv(subscriptionQuotaPacingEffectiveAtEnvironment))
+	effectiveAt, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || effectiveAt <= 0 {
+		return "0"
+	}
+	return strconv.FormatInt(effectiveAt, 10)
 }
 
 func optionalRuntimeSecretEnv(secretName, envName, key string) corev1.EnvVar {

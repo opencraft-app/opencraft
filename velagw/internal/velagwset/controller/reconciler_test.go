@@ -802,6 +802,21 @@ func TestNewAPIRolesEnableBatchUpdatesOnlyOnAdminMaster(t *testing.T) {
 	}
 }
 
+func TestNewAPIDeploymentsPropagateSubscriptionQuotaPacingEffectiveAt(t *testing.T) {
+	t.Setenv("SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT", "1800000000")
+
+	set := newManagedSet()
+	admin := desiredAdminDeployment(set)
+	traffic := desiredTrafficDeployment(set, set.Spec.TrafficRuntimes[0])
+
+	for _, deployment := range []*appsv1.Deployment{admin, traffic} {
+		got := envValue(deployment.Spec.Template.Spec.Containers[0].Env, "SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT")
+		if got != "1800000000" {
+			t.Fatalf("deployment %s pacing effective-at = %q, want 1800000000", deployment.Name, got)
+		}
+	}
+}
+
 func TestDesiredDeploymentPinsKubernetesAPIDefaults(t *testing.T) {
 	t.Parallel()
 
