@@ -24,8 +24,17 @@ class NewAPIBuildWorkflowTests(unittest.TestCase):
         self.assertIn("new-api/**", triggers["push"]["paths"])
         self.assertIn("build_release_image.py", workflow_text)
         self.assertIn("--push", workflow_text)
-        self.assertIn("beijing-llmgateway shprod sgprod", workflow_text)
-        self.assertIn("TCR_SGPROD_PASSWORD", workflow_text)
+        jobs = workflow["stages"][0]["jobs"]
+        self.assertEqual(set(jobs), {"build-cn", "build-sg"})
+        self.assertEqual(jobs["build-cn"]["runs-on"]["pool-name"], "cn-pool")
+        self.assertEqual(jobs["build-sg"]["runs-on"]["pool-name"], "env")
+        self.assertEqual(
+            set(jobs["build-cn"]["env"]),
+            {"TCR_BEIJING_LLMGATEWAY_PASSWORD", "TCR_SHPROD_PASSWORD"},
+        )
+        self.assertEqual(set(jobs["build-sg"]["env"]), {"TCR_SGPROD_PASSWORD"})
+        self.assertIn("for ENV_NAME in beijing-llmgateway shprod; do", workflow_text)
+        self.assertIn('--env "sgprod"', workflow_text)
         self.assertNotIn("build_and_promote_to_gitops", workflow_text)
         self.assertNotIn("pin_image_to_gitops", workflow_text)
         self.assertNotIn("gitops", workflow_text.lower())
