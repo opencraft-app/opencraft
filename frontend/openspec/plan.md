@@ -1,3 +1,19 @@
+# 2026-08-07 批量安装汇总结果对齐修复
+
+**Status:** 实现与验证完成；等待用户确认后再 commit / push / MR。
+
+**Goal:** ACLI 同时返回逐项 `progress` 和完整 `summary.results` 时，避免重复汇总结果错配到下一个未完成技能，确保部分失败状态准确展示。
+
+**Scope:** 仅修正 Skills 批量安装结果匹配逻辑并补回归测试；不改变 ACLI 命令、SSE 协议、取消粒度或页面交互。
+
+## Tasks
+
+- [x] 增加“progress 后返回完整 summary.results”的失败回归测试并确认 RED。
+- [x] 修正已完成结果的去重与无标识结果的顺序降级逻辑。
+- [x] 运行 Skills 定向测试、类型检查、i18n 检查和 diff 检查。
+
+---
+
 # 2026-08-07 国际站 Skills 来源说明对齐国内站
 
 **Status:** 实现与验证完成，等待用户手动验收；不自动 commit / push / MR。

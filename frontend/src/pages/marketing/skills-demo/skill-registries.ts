@@ -860,11 +860,12 @@ function findBatchResultSkill(
 ): Skill | undefined {
   const identifier = (item.slug ?? item.name ?? item.id ?? "").trim().toLowerCase();
   if (identifier) {
-    const exact = skills.find((skill) => (
-      !completed.has(skillIdentity(skill))
-      && [skill.rawId, skill.slug].some((value) => value.trim().toLowerCase() === identifier)
+    const exactMatches = skills.filter((skill) => (
+      [skill.rawId, skill.slug].some((value) => value.trim().toLowerCase() === identifier)
     ));
-    if (exact) return exact;
+    const incompleteExact = exactMatches.find((skill) => !completed.has(skillIdentity(skill)));
+    if (incompleteExact) return incompleteExact;
+    if (exactMatches.length > 0) return undefined;
   }
   return skills.find((skill) => !completed.has(skillIdentity(skill)));
 }
