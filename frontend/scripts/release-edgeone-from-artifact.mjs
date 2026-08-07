@@ -85,10 +85,21 @@ export function executeEdgeOneArtifactRelease({
     throw new Error("frontend artifact verification did not return an extracted dist directory");
   }
 
-  deployScript(combo.deployCommand, {
+  const deployEnv = {
     ...comboEnv,
     EDGEONE_PAGES_DIR: verified.extractDir,
+  };
+  deployScript(combo.deployCommand, {
+    ...deployEnv,
+    EDGEONE_PAGES_ENV: "preview",
+    EDGEONE_PAGES_VERIFY_DEPLOYMENT: "1",
   });
+  const productionEnv = {
+    ...deployEnv,
+    EDGEONE_PAGES_ENV: "production",
+  };
+  delete productionEnv.EDGEONE_PAGES_VERIFY_DEPLOYMENT;
+  deployScript(combo.deployCommand, productionEnv);
   log(`${colorText("frontend EO artifact release done:", "green", env)} ${highlightComboId(combo.id, env)}`);
 }
 

@@ -31,49 +31,22 @@ const ignoredRouteDirs = new Set(['.edgeone', '_next']);
 const textReferenceExtensions = new Set(['.html', '.txt', '.js', '.css', '.json']);
 const htmlCacheHeaders = { 'cache-control': 'no-cache' };
 const nextStaticCacheHeaders = { 'cache-control': 'public, max-age=31536000, immutable' };
+const maxEdgeOneConfigBytes = 16 * 1024;
+const maxFlightRouteSourceBytes = 480;
 
 function routePathForDirectory(dir) {
   const relative = dir.slice(outRoot.length).replaceAll('\\', '/');
   return relative || '/';
 }
 
-function routeDestForDirectory(dir, fileName) {
-  const routePath = routePathForDirectory(dir);
-  return routePath === '/' ? `/${fileName}` : `${routePath}/${fileName}`;
-}
-
-function collectDirectoryIndexRoutes() {
-  const routes = [];
-
-  function visit(dir) {
-    const entries = readdirSync(dir, { withFileTypes: true });
-    if (entries.some((entry) => entry.isFile() && entry.name === 'index.html')) {
-      const routePath = routePathForDirectory(dir);
-      const source = routePath === '/' ? '^/$' : `^${routePath}/?$`;
-      routes.push({ src: source, dest: routeDestForDirectory(dir, 'index.html'), headers: htmlCacheHeaders });
-    }
-
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      if (ignoredRouteDirs.has(entry.name)) continue;
-      visit(join(dir, entry.name));
-    }
-  }
-
-  visit(outRoot);
-
-  return routes;
-}
-
-function collectNextFlightRoutes() {
-  const routes = [];
+function collectNextFlightRoutePaths() {
+  const routePaths = [];
 
   function visit(dir) {
     const entries = readdirSync(dir, { withFileTypes: true });
     if (entries.some((entry) => entry.isFile() && entry.name === 'index.txt')) {
       const routePath = routePathForDirectory(dir);
-      const source = routePath === '/' ? '^/\\.txt$' : `^${routePath}\\.txt$`;
-      routes.push({ src: source, dest: routeDestForDirectory(dir, 'index.txt'), headers: htmlCacheHeaders });
+      if (routePath !== '/') routePaths.push(routePath.slice(1));
     }
 
     for (const entry of entries) {
@@ -84,6 +57,38 @@ function collectNextFlightRoutes() {
   }
 
   visit(outRoot);
+  return routePaths.sort();
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function nextFlightSource(routePaths) {
+  return `^/(${routePaths.join('|')})\\.txt$`;
+}
+
+function collectNextFlightRoutes() {
+  const routes = [];
+  let current = [];
+
+  function flush() {
+    if (current.length === 0) return;
+    routes.push({ src: nextFlightSource(current), dest: '/$1/index.txt', headers: htmlCacheHeaders });
+    current = [];
+  }
+
+  for (const routePath of collectNextFlightRoutePaths().map(escapeRegex)) {
+    const candidate = nextFlightSource([...current, routePath]);
+    if (current.length > 0 && Buffer.byteLength(candidate) > maxFlightRouteSourceBytes) {
+      flush();
+    }
+    current.push(routePath);
+    if (Buffer.byteLength(nextFlightSource(current)) > maxFlightRouteSourceBytes) {
+      throw new Error(`EdgeOne Flight route exceeds ${maxFlightRouteSourceBytes} bytes: ${routePath}`);
+    }
+  }
+  flush();
 
   return routes;
 }
@@ -108,15 +113,21 @@ function writeEdgeOneBuildOutput() {
   const routes = [
     { src: '^/__releases/([^/]+)/_next/static/(.*)$', headers: nextStaticCacheHeaders, continue: true },
     { src: '^/(.*)\\.html$', headers: htmlCacheHeaders, continue: true },
-    { src: '^/(.*)\\.txt$', headers: htmlCacheHeaders, continue: true },
-    ...collectDirectoryIndexRoutes(),
+    { src: '^/$', dest: '/index.html', headers: htmlCacheHeaders },
+    { src: '^/\\.txt$', dest: '/index.txt', headers: htmlCacheHeaders },
     ...collectNextFlightRoutes(),
+    { src: '^/(.*)\\.txt$', headers: htmlCacheHeaders, continue: true },
     { handle: 'filesystem' },
-    { src: '^/([^.]+[^/.])$', dest: '/$1/index.html' },
+    { src: '^/([^.]+[^/.])/?$', dest: '/$1/index.html', headers: htmlCacheHeaders },
   ];
+  const config = { version: 3, routes };
+  const configBytes = Buffer.byteLength(JSON.stringify(config));
+  if (configBytes > maxEdgeOneConfigBytes) {
+    throw new Error(`EdgeOne Build Output config exceeds ${maxEdgeOneConfigBytes} bytes: ${configBytes}`);
+  }
 
   mkdirSync(functionRoot, { recursive: true });
-  writeFileSync(join(functionRoot, 'config.json'), `${JSON.stringify({ version: 3, routes }, null, 2)}\n`);
+  writeFileSync(join(functionRoot, 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
   writeFileSync(join(functionRoot, 'handler.js'), [
     "export default function handler() {",
     "  return new Response('not found', { status: 404 });",
