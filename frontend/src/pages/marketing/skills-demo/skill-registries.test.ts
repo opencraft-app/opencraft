@@ -4,17 +4,21 @@ import { buildHermesSkillDeleteCommand } from "@/lib/hermes-skills-client";
 
 import {
   buildHermesSkillsListCommand,
+  buildClawhubBatchInstallCommand,
   buildClawhubListCommand,
+  buildSkillhubBatchInstallCommand,
   buildSkillhubInstallCommand,
   buildSkillhubListCommand,
   buildSkillhubUninstallCommand,
   createDomesticDataLayer,
   createLiveDataLayer,
+  buildSkillsshBatchInstallCommand,
   buildSkillsshInstallCommand,
   buildSkillsshListCommand,
   buildSkillsshSearchCommand,
   buildSkillsshUninstallCommand,
   getPopularityTier,
+  installSkillsInBatch,
   installSkillsSequentially,
   mergeInstalledWithHermes,
   mergeInstalledSources,
@@ -528,6 +532,167 @@ describe("Hermes native installed skills", () => {
 });
 
 describe("batch skill installation", () => {
+  it("builds the three native ACLI batch commands from the backend contract", () => {
+    expect(buildClawhubBatchInstallCommand(["world-model", "hello-world-skill"]))
+      .toBe("acli clawhub batch-install --wait=true 'world-model hello-world-skill'");
+    expect(buildSkillsshBatchInstallCommand([
+      "kostja94/marketing-skills/masonry",
+      "sickn33/antigravity-awesome-skills/agent-squad",
+    ])).toBe(
+      "bash -lc 'cd \"$HOME\" && acli skills-sh batch-install --wait=true '\\''kostja94/marketing-skills/masonry sickn33/antigravity-awesome-skills/agent-squad'\\'''",
+    );
+    expect(buildSkillhubBatchInstallCommand(["react", "react-email-skills", "react-performance"]))
+      .toBe("acli skills batch-install --wait=true 'react react-email-skills react-performance'");
+  });
+
+  it("streams skills.sh progress in order and preserves backend partial-failure details", async () => {
+    const skills: Skill[] = [
+      {
+        registry: "skills-sh",
+        rawId: "kostja94/marketing-skills/masonry",
+        slug: "masonry",
+        name: "Masonry",
+      },
+      {
+        registry: "skills-sh",
+        rawId: "sickn33/antigravity-awesome-skills/agent-squad",
+        slug: "agent-squad",
+        name: "Agent Squad",
+      },
+    ];
+    const commands: string[] = [];
+    const execDebugCommand = async () => ({ status: "SUCCESS", exitCode: 0, output: "" });
+    const execDebugCommandStream = async (
+      _botId: string,
+      command: string,
+      onChunk: (event: { stream: string; chunk: string }) => void,
+    ) => {
+      commands.push(command);
+      onChunk({
+        stream: "stdout",
+        chunk: '{"event":"progress","index":1,"total":2,"slug":"kostja94/marketing-skills/masonry","status":"failed","error_code":"SKILLS_SH_SKILL_NOT_IN_REPO",',
+      });
+      onChunk({
+        stream: "stdout",
+        chunk: '"message":"技能已删除或改名"}\n{"event":"progress","index":2,"total":2,"slug":"sickn33/antigravity-awesome-skills/agent-squad","status":"installed","id":"sickn33/antigravity-awesome-skills/agent-squad"}\n',
+      });
+      onChunk({
+        stream: "stdout",
+        chunk: '{"event":"summary","total":2,"succeeded":1,"failed":1,"gateway_restarted":false}\n',
+      });
+      return { status: "SUCCESS", exitCode: 0, output: "" };
+    };
+    const progress: string[] = [];
+    const dataLayer = createLiveDataLayer("bot-1", execDebugCommand, execDebugCommandStream);
+
+    const result = await installSkillsInBatch(dataLayer, skills, ({ index, skill, status, message }) => {
+      progress.push(`${index}:${skill.rawId}:${status}:${message ?? ""}`);
+    });
+
+    expect(commands).toEqual([buildSkillsshBatchInstallCommand(skills.map((skill) => skill.rawId))]);
+    expect(progress).toEqual([
+      "1:kostja94/marketing-skills/masonry:installing:",
+      "1:kostja94/marketing-skills/masonry:failed:技能已删除或改名",
+      "2:sickn33/antigravity-awesome-skills/agent-squad:installing:",
+      "2:sickn33/antigravity-awesome-skills/agent-squad:succeeded:",
+    ]);
+    expect(result.succeeded).toEqual([skills[1]]);
+    expect(result.failed).toEqual([{ skill: skills[0], message: "技能已删除或改名" }]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("uses SkillHub native batch output when the stream is only available in the final response", async () => {
+    const skills: Skill[] = [
+      { registry: "skillhub", rawId: "react", slug: "react", name: "React" },
+      { registry: "skillhub", rawId: "react-performance", slug: "react-performance", name: "React Performance" },
+    ];
+    const commands: string[] = [];
+    const execDebugCommand = async () => ({ status: "SUCCESS", exitCode: 0, output: "" });
+    const execDebugCommandStream = async (_botId: string, command: string) => {
+      commands.push(command);
+      return {
+        status: "SUCCESS",
+        exitCode: 0,
+        output: [
+          '{"event":"progress","index":1,"total":2,"name":"react","status":"installed","id":"react"}',
+          '{"event":"progress","index":2,"total":2,"name":"react-performance","status":"installed","id":"react-performance"}',
+          '{"event":"summary","total":2,"succeeded":2,"failed":0,"gateway_restarted":false}',
+        ].join("\n"),
+      };
+    };
+    const dataLayer = createDomesticDataLayer("bot-1", execDebugCommand, "zh", execDebugCommandStream);
+
+    const result = await installSkillsInBatch(dataLayer, skills);
+
+    expect(commands).toEqual([buildSkillhubBatchInstallCommand(skills.map((skill) => skill.rawId))]);
+    expect(result.succeeded).toEqual(skills);
+    expect(result.failed).toEqual([]);
+  });
+
+  it("falls back to sequential installs when an older ACLI lacks batch-install", async () => {
+    const skills: Skill[] = [
+      { registry: "clawhub", rawId: "world-model", slug: "world-model", name: "World Model" },
+      { registry: "clawhub", rawId: "hello-world-skill", slug: "hello-world-skill", name: "Hello World" },
+    ];
+    const commands: string[] = [];
+    const execDebugCommand = async (_botId: string, command: string) => {
+      commands.push(command);
+      return {
+        status: "SUCCESS",
+        exitCode: 0,
+        output: JSON.stringify({ success: true, data: { status: "installed" } }),
+      };
+    };
+    const execDebugCommandStream = async (_botId: string, command: string) => {
+      commands.push(command);
+      return { status: "FAILED", exitCode: 1, output: 'unknown command "batch-install"' };
+    };
+    const dataLayer = createLiveDataLayer("bot-1", execDebugCommand, execDebugCommandStream);
+
+    const result = await installSkillsInBatch(dataLayer, skills);
+
+    expect(commands).toEqual([
+      buildClawhubBatchInstallCommand(skills.map((skill) => skill.rawId)),
+      "acli clawhub install 'world-model'",
+      "acli clawhub install 'hello-world-skill'",
+    ]);
+    expect(result.succeeded).toEqual(skills);
+    expect(result.failed).toEqual([]);
+  });
+
+  it("cancels remaining registry runs after the active native batch command completes", async () => {
+    const skills: Skill[] = [
+      { registry: "clawhub", rawId: "world-model", slug: "world-model", name: "World Model" },
+      { registry: "skillhub", rawId: "react", slug: "react", name: "React" },
+    ];
+    const commands: string[] = [];
+    let cancelled = false;
+    const execDebugCommand = async () => ({ status: "SUCCESS", exitCode: 0, output: "" });
+    const execDebugCommandStream = async (
+      _botId: string,
+      command: string,
+      onChunk: (event: { stream: string; chunk: string }) => void,
+    ) => {
+      commands.push(command);
+      onChunk({
+        stream: "stdout",
+        chunk: '{"event":"progress","index":1,"total":1,"slug":"world-model","status":"installed"}\n',
+      });
+      cancelled = true;
+      return { status: "SUCCESS", exitCode: 0, output: "" };
+    };
+    const dataLayer = createLiveDataLayer("bot-1", execDebugCommand, execDebugCommandStream);
+
+    const result = await installSkillsInBatch(dataLayer, skills, undefined, {
+      shouldCancel: () => cancelled,
+    });
+
+    expect(commands).toEqual([buildClawhubBatchInstallCommand(["world-model"])]);
+    expect(result.succeeded).toEqual([skills[0]]);
+    expect(result.failed).toEqual([]);
+    expect(result.skipped).toEqual([skills[1]]);
+  });
+
   it("installs selected skills sequentially and reports partial failures", async () => {
     const skills: Skill[] = [
       { registry: "clawhub", rawId: "first", slug: "first", name: "First" },

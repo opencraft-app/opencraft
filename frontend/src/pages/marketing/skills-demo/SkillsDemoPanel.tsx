@@ -60,7 +60,7 @@ import type { ExpertsExecDebugCommand } from "../agent-experts-panel";
 import {
   createSkillsDataLayer,
   getPopularityTier,
-  installSkillsSequentially,
+  installSkillsInBatch,
   mergeSkills,
   REGISTRY_LABEL,
   SKILLS_DEMO_LIVE,
@@ -71,6 +71,7 @@ import {
   type Registry,
   type SearchRegistry,
   type Skill,
+  type SkillsExecDebugCommandStream,
 } from "./skill-registries";
 import {
   CURATED_SKILL_CATEGORIES,
@@ -1743,6 +1744,7 @@ function CreateSkillPanel({
 export function SkillsDemoPanel({
   botId,
   execDebugCommand,
+  execDebugCommandStream,
   mode = "global",
   learnSkillTrigger,
   learnSkillPanel,
@@ -1753,6 +1755,7 @@ export function SkillsDemoPanel({
 }: {
   botId: string;
   execDebugCommand: ExpertsExecDebugCommand;
+  execDebugCommandStream?: SkillsExecDebugCommandStream;
   mode?: SkillsDemoMode;
   learnSkillTrigger?: ReactNode;
   learnSkillPanel?: ReactNode;
@@ -1799,8 +1802,8 @@ export function SkillsDemoPanel({
     },
   };
   const dataLayer = useMemo(
-    () => createSkillsDataLayer(botId, execDebugCommand, mode, isChinese ? "zh" : "en"),
-    [botId, execDebugCommand, isChinese, mode],
+    () => createSkillsDataLayer(botId, execDebugCommand, mode, isChinese ? "zh" : "en", execDebugCommandStream),
+    [botId, execDebugCommand, execDebugCommandStream, isChinese, mode],
   );
 
   const [keyword, setKeyword] = useState("");
@@ -2190,7 +2193,7 @@ export function SkillsDemoPanel({
       return next;
     });
     try {
-      const result = await installSkillsSequentially(dataLayer, selectedSkills, ({ index, total, skill, status, message }) => {
+      const result = await installSkillsInBatch(dataLayer, selectedSkills, ({ index, total, skill, status, message }) => {
         const id = skillIdentity(skill);
         if (status === "installing") {
           setBatchInstallProgress({ index, total, currentName: skill.name });

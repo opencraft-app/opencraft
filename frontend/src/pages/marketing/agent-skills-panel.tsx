@@ -1249,6 +1249,7 @@ export function HermesAgentSkillsPanel({
   execDebugCommand,
   initialSectionSlug,
 }: HermesAgentSkillsPanelProps) {
+  const repositories = useRepositories();
   const t = useT();
   const { i18n } = useTranslation();
   const globalExpertLanguage = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
@@ -1285,6 +1286,7 @@ export function HermesAgentSkillsPanel({
           key={`${botId}-${skillsPanelRevision}`}
           botId={botId}
           execDebugCommand={execDebugCommand}
+          execDebugCommandStream={repositories.bots.execDebugCommandStream}
           mode={(isGlobal ? "global" : "domestic") satisfies SkillsDemoMode}
           initialTab={initialGlobalSkillsTab}
           expertsPanel={(
