@@ -22,13 +22,14 @@ stages:
   - name: 构建并推送镜像
     jobs:
       build:
-        name: 构建并推送北京、上海 TCR
+        name: 构建并推送北京、上海、新山 TCR
         runs-on:
           self-hosted: true
           pool-name: cn-pool
         env:
           TCR_BEIJING_LLMGATEWAY_PASSWORD: ${{ settings.TCR_BEIJING_LLMGATEWAY_PASSWORD }}
           TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+          TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
         steps:
           - checkout: self
             name: 拉取代码
@@ -53,7 +54,7 @@ stages:
               SHORT_SHA="${SHORT_SHA:0:12}"
               TAG="new-api-${SHORT_SHA}"
 
-              for ENV_NAME in beijing-llmgateway shprod; do
+              for ENV_NAME in beijing-llmgateway shprod sgprod; do
                 ci_set_registry_credentials "$ENV_NAME"
                 python3 .ci/runtime/commands/build_release_image.py \
                   --service new-api \

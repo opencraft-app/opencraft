@@ -24,7 +24,8 @@ class NewAPIBuildWorkflowTests(unittest.TestCase):
         self.assertIn("new-api/**", triggers["push"]["paths"])
         self.assertIn("build_release_image.py", workflow_text)
         self.assertIn("--push", workflow_text)
-        self.assertIn("beijing-llmgateway shprod", workflow_text)
+        self.assertIn("beijing-llmgateway shprod sgprod", workflow_text)
+        self.assertIn("TCR_SGPROD_PASSWORD", workflow_text)
         self.assertNotIn("build_and_promote_to_gitops", workflow_text)
         self.assertNotIn("pin_image_to_gitops", workflow_text)
         self.assertNotIn("gitops", workflow_text.lower())
@@ -36,6 +37,7 @@ class NewAPIBuildWorkflowTests(unittest.TestCase):
         for env_name, expected_repo in (
             ("beijing-llmgateway", "lightclaw-bj82.tencentcloudcr.com/llmgateway/new-api"),
             ("shprod", "lightclaw-shprod.tencentcloudcr.com/llmgateway/new-api"),
+            ("sgprod", "lightclaw-sgprod.tencentcloudcr.com/lightclaw/new-api"),
         ):
             bundle = load_bundle(manifest, "new-api", env_name)
             self.assertEqual(bundle.publish_paths, [])
