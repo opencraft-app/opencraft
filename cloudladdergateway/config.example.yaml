@@ -278,7 +278,7 @@ backends:
       timeout: 10s
       allowed_methods: ["POST"]
       headers_from_env:
-        X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
+        X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN
 
   - alias: lightclaw-auth-shprod
     env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_SHPROD

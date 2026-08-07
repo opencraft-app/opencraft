@@ -200,6 +200,19 @@ func TestExampleConfigLoads(t *testing.T) {
 			t.Fatalf("example config missing route %q", routeID)
 		}
 	}
+	for backendAlias, wantTokenEnv := range map[string]string{
+		"lightclaw-auth-bjsbx":  "CLOUDLADDER_TENCENT_CALLBACK_TOKEN",
+		"lightclaw-auth-krsbx":  "CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN",
+		"lightclaw-auth-shprod": "CLOUDLADDER_TENCENT_CALLBACK_TOKEN",
+	} {
+		backend := findBackendForTest(cfg.Backends, backendAlias)
+		if backend == nil {
+			t.Fatalf("example config missing backend %q", backendAlias)
+		}
+		if got := backend.Upstream.HeadersFromEnv["X-Shadow-Callback-Token"]; got != wantTokenEnv {
+			t.Fatalf("backend %q callback token env = %q, want %q", backendAlias, got, wantTokenEnv)
+		}
+	}
 	tencentCallback := findExternalRouteForTest(cfg.External, "/internal/tencentcloud/account")
 	if tencentCallback == nil {
 		t.Fatalf("example config missing TencentCloud callback external route: %+v", cfg.External)
@@ -227,6 +240,15 @@ func TestExampleConfigLoads(t *testing.T) {
 		got[1].Name != "X-TC-Region" || got[1].Value != "ap-shanghai" || got[1].RouteID != "lightvela-cloudapi-sh" {
 		t.Fatalf("example config missing cloud api region header routes: %+v", got)
 	}
+}
+
+func findBackendForTest(backends []BackendConfig, alias string) *BackendConfig {
+	for i := range backends {
+		if backends[i].Alias == alias {
+			return &backends[i]
+		}
+	}
+	return nil
 }
 
 func findExternalRouteForTest(routes []ExternalRoute, path string) *ExternalRoute {

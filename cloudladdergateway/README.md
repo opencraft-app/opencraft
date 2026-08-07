@@ -278,7 +278,7 @@ external_routes:
         route_id: tencentcloud-account-callback-krsbx
 ```
 
-`external_routes` 只注册 exact path，不允许调用方传任意 URL。这个 route 可加入 `auth.allow_unauthenticated`，因为腾讯侧无法生成 CloudLadder HMAC；真实安全边界由固定 upstream 和注入的 `X-Shadow-Callback-Token` 共同保证。`CLOUDLADDER_TENCENT_CALLBACK_TOKEN` 必须和 auth 服务的 `SHADOW_TENCENT_CALLBACK_TOKEN` 保持一致。
+`external_routes` 只注册 exact path，不允许调用方传任意 URL。这个 route 可加入 `auth.allow_unauthenticated`，因为腾讯侧无法生成 CloudLadder HMAC；真实安全边界由固定 upstream 和注入的 `X-Shadow-Callback-Token` 共同保证。北京/上海使用 `CLOUDLADDER_TENCENT_CALLBACK_TOKEN`，韩国使用独立的 `CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN`；目标 auth 服务中的 `SHADOW_TENCENT_CALLBACK_TOKEN` 必须与对应 route 的 token 一致。
 
 ## 上游连接池
 
