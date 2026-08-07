@@ -67,6 +67,13 @@ spec:
             secretKeyRef:
               key: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
               name: cloudladdergateway-callback-secrets
+        - name: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_KRSBX_BASE_URL
+          value: https://api-sandbox-kr-1.lightclaw.tech
+        - name: CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: cloudladdergateway-krsbx-callback-secrets
+              key: CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BASE_URL
           value: https://lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BJ_BASE_URL

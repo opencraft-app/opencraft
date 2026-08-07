@@ -13,6 +13,7 @@ resources:
 generators:
 - ksops-secret-generator.yaml
 - ksops-callback-secret-generator.yaml
+- ksops-krsbx-callback-secret-generator.yaml
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
