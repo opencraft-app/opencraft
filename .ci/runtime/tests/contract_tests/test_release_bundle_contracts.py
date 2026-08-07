@@ -1896,8 +1896,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(intl_bundle.image_repo, "csighub.tencentyun.com/skipzhang/cloudladdergateway")
         self.assertIn("argocd/services/cloudladdergateway/tkexgz/**", domestic_bundle.publish_paths)
         self.assertIn("argocd/services/cloudladdergateway/tkexsg/**", intl_bundle.publish_paths)
+        self.assertIn("argocd/secrets/tkexsg/cloudladdergateway-polaris-*.sops.yaml", intl_bundle.publish_paths)
         self.assertIn("shared/cloudladdertransport/**", watched_paths)
         self.assertIn("argocd/services/cloudladdergateway/**", watched_paths)
+        self.assertIn("argocd/secrets/*/cloudladdergateway-polaris-*.sops.yaml", watched_paths)
 
     def test_lightclaw_auth_workflow_watches_release_contract_inputs(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/lightclaw-auth.yml").read_text())
