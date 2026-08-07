@@ -271,6 +271,15 @@ backends:
       headers_from_env:
         X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
 
+  - alias: lightclaw-auth-krsbx
+    env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_KRSBX
+    upstream:
+      base_url: "https://api-sandbox-kr-1.lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers_from_env:
+        X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN
+
   - alias: lightclaw-auth-shprod
     env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_SHPROD
     upstream:
@@ -304,6 +313,7 @@ auth:
     - billing-trade-intl-prod
     - jifei-test
     - tencentcloud-account-callback-bjsbx
+    - tencentcloud-account-callback-krsbx
     - tencentcloud-account-callback-shprod
     - lightvela-cloudapi-bj
     - lightvela-cloudapi-sh
@@ -345,6 +355,8 @@ external_routes:
     auth_code_routes:
       - prefix: "bjsbx."
         route_id: tencentcloud-account-callback-bjsbx
+      - prefix: "krsbx."
+        route_id: tencentcloud-account-callback-krsbx
       - prefix: "shprod."
         route_id: tencentcloud-account-callback-shprod
     user_id_routes:
@@ -353,6 +365,8 @@ external_routes:
     user_id_prefix_routes:
       - prefix: "bjsbx_"
         route_id: tencentcloud-account-callback-bjsbx
+      - prefix: "krsbx_"
+        route_id: tencentcloud-account-callback-krsbx
   - path: /cloudapi
     methods: ["POST"]
     route_id: lightvela-cloudapi-sh
@@ -957,6 +971,12 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: lightclaw-auth-bjsbx
+
+  - id: tencentcloud-account-callback-krsbx
+    description: "TencentCloud SaaS account callback route for Korea sandbox."
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: lightclaw-auth-krsbx
 
   - id: tencentcloud-account-callback-shprod
     description: "TencentCloud SaaS account callback route for Shanghai production."
