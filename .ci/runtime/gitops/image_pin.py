@@ -20,20 +20,38 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def resolve_platform_env(repo_root: Path, service: str, env: str) -> Path:
+# 同一个 env 目录下可以有多份 platform env：一份主的 `<svc>-platform.env`，
+# 外加按工作负载切分的 `<svc>-platform-<variant>.env`（cloudladdergateway 的
+# testing / staging 实例就是这么区分的，它们和 prod 共用一个 namespace）。
+#
+# 历史上这里只 glob `*-platform.env`，结构上匹配不到带 variant 后缀的文件，
+# 导致那些工作负载的镜像 pin 永远不会被自动更新（clgateway testing 从 2026-06
+# 起就冻结在一个连 master 都没有的镜像上）。
+PLATFORM_ENV_PATTERN = re.compile(r"^(?P<prefix>.+?)-platform(?:-[A-Za-z0-9]+)?\.env$")
+
+
+def resolve_platform_envs(repo_root: Path, service: str, env: str) -> list[Path]:
     service_dir = repo_root / "argocd" / "services" / service / env
-    candidates = sorted(service_dir.glob("*-platform.env"))
-    if len(candidates) != 1:
-        raise FileNotFoundError(
-            f"expected exactly one *-platform.env under {service_dir}, found {len(candidates)}"
-        )
-    return candidates[0]
+    candidates = sorted(
+        path for path in service_dir.glob("*-platform*.env") if PLATFORM_ENV_PATTERN.match(path.name)
+    )
+    if not candidates:
+        raise FileNotFoundError(f"expected at least one *-platform*.env under {service_dir}")
+    return candidates
 
 
 def key_prefix_from_path(path: Path) -> str:
+    match = PLATFORM_ENV_PATTERN.match(path.name)
+    if match:
+        # variant 后缀不进 key：`<svc>-platform-testing.env` 里的键仍然是 `<SVC>_IMAGE`。
+        return match.group("prefix").upper().replace("-", "_")
     stem = path.name[:-4] if path.name.endswith(".env") else path.name
     prefix = stem[:-9] if stem.endswith("-platform") else stem
     return prefix.upper().replace("-", "_")
+
+
+def has_env_key(content: str, key: str) -> bool:
+    return re.search(rf"^{re.escape(key)}=", content, re.MULTILINE) is not None
 
 
 def upsert_env_line(content: str, key: str, value: str) -> str:
@@ -68,16 +86,26 @@ def main() -> int:
     args = parse_args()
     repo_root = Path(args.repo_root).resolve()
     try:
-        platform_env = resolve_platform_env(repo_root, args.service, args.env)
-        images = parse_image_payload(args.image, platform_env)
+        platform_envs = resolve_platform_envs(repo_root, args.service, args.env)
+        payloads = [(path, parse_image_payload(args.image, path)) for path in platform_envs]
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
-    content = platform_env.read_text()
-    for image_key, image in images.items():
-        content = upsert_env_line(content, image_key, image)
-        content = upsert_env_line(content, deployed_at_key_for_image_key(image_key), args.deployed_at)
-    platform_env.write_text(content)
-    print(platform_env)
+    multiple = len(platform_envs) > 1
+    for platform_env, images in payloads:
+        content = platform_env.read_text()
+        updated = content
+        for image_key, image in images.items():
+            # 只有一份 platform env 时保持原有 upsert 语义（允许首次新增键）。
+            # 有多份时只更新该文件里已经存在的键，避免把某个工作负载的键写进别的文件。
+            if multiple and not has_env_key(content, image_key):
+                continue
+            updated = upsert_env_line(updated, image_key, image)
+            updated = upsert_env_line(
+                updated, deployed_at_key_for_image_key(image_key), args.deployed_at
+            )
+        if updated != content:
+            platform_env.write_text(updated)
+        print(platform_env)
     return 0

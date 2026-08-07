@@ -1,0 +1,42 @@
+# 按影子账号 uin 分流回调的最小验证配置。
+#
+# 拓扑：计费把回调统一打到 jifei-callback，网关按 interface.para.uin 分派：
+#   登记过的 uin → 对应开发者环境的 route
+#   其它 uin     → jifei-callback 自身兜底上游（预发布环境）
+#
+# uin 映射故意留空，由 CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_UIN_ROUTES 注入，
+# 用来验证「新增一个开发者只改环境变量、不用重建镜像」这条运维路径。
+#
+# 这份文件只用于本地 / DevCloud 验证，不参与镜像构建。
+
+addr: ":8095"
+max_body_bytes: 1048576
+
+transport:
+  dial_timeout: 3s
+  request_timeout: 15s
+
+discovery:
+  polaris:
+    enabled: false
+
+auth:
+  # 与现网 config.example.yaml 当前形态一致（联调期关闭，边界靠 IP 白名单 + VPC 隔离）。
+  enabled: false
+
+routes:
+  - id: jifei-callback
+    description: "计费回调统一入口；按影子账号 uin 分派到各开发者环境，未登记 uin 走兜底"
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "http://fake-jifei:19020"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-dev-xiami
+    description: "虾米的 DevCloud 个人测试环境 trade"
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "http://trade:8080"
+      timeout: 10s
+      allowed_methods: ["POST"]

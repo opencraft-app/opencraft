@@ -16,6 +16,20 @@ import (
 )
 
 func NewGinRouter(engine *proxy.Engine, authenticator *auth.Authenticator, maxBodyBytes int64, externalRoutes ...config.ExternalRoute) *gin.Engine {
+	return NewGinRouterWithUinRoutes(engine, authenticator, maxBodyBytes, nil, externalRoutes...)
+}
+
+// NewGinRouterWithUinRoutes 额外接收「按 uin 改派」的路由表。
+//
+// uinRoutes 的 key 是入口 route id，value 是该 route 上配置的 uin 改派规则。
+// 传 nil 等价于不启用改派，与 NewGinRouter 行为一致。
+func NewGinRouterWithUinRoutes(
+	engine *proxy.Engine,
+	authenticator *auth.Authenticator,
+	maxBodyBytes int64,
+	uinRoutes map[string][]config.UinRoute,
+	externalRoutes ...config.ExternalRoute,
+) *gin.Engine {
 	router := gin.New()
 	router.UseEscapedPath = true
 	router.UnescapePathValues = false
@@ -27,8 +41,8 @@ func NewGinRouter(engine *proxy.Engine, authenticator *auth.Authenticator, maxBo
 	router.GET("/readyz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
-	router.Any("/v1/proxy/:route_id/*path", invokeHTTP(engine, authenticator, maxBodyBytes))
-	router.Any("/v1/webhook/:route_id/*path", invokeHTTP(engine, authenticator, maxBodyBytes))
+	router.Any("/v1/proxy/:route_id/*path", invokeHTTP(engine, authenticator, maxBodyBytes, uinRoutes))
+	router.Any("/v1/webhook/:route_id/*path", invokeHTTP(engine, authenticator, maxBodyBytes, uinRoutes))
 	for _, externalRoute := range externalRoutes {
 		registerExternalRoute(router, externalRoute, invokeExternalHTTP(engine, authenticator, maxBodyBytes, externalRoute))
 	}
@@ -45,15 +59,75 @@ func registerExternalRoute(router *gin.Engine, externalRoute config.ExternalRout
 	}
 }
 
-func invokeHTTP(engine *proxy.Engine, authenticator *auth.Authenticator, maxBodyBytes int64) gin.HandlerFunc {
+func invokeHTTP(
+	engine *proxy.Engine,
+	authenticator *auth.Authenticator,
+	maxBodyBytes int64,
+	uinRoutes map[string][]config.UinRoute,
+) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		routeID := c.Param("route_id")
 		if !engine.HasRoute(routeID) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
 		}
-		invokeResolvedHTTP(c, engine, authenticator, maxBodyBytes, routeID, c.Param("path"))
+		proxyPath := c.Param("path")
+
+		// 入口 route 没配 uin 改派时保持原路径，不读 body、不做任何额外解析。
+		rules := uinRoutes[routeID]
+		if len(rules) == 0 {
+			invokeResolvedHTTP(c, engine, authenticator, maxBodyBytes, routeID, proxyPath)
+			return
+		}
+
+		body, err := readHTTPBody(c.Request, maxBodyBytes)
+		if err != nil {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})
+			return
+		}
+		if target, ok := resolveUinRoute(rules, body); ok {
+			// 改派目标不存在时不要静默回落到兜底环境 —— 那会让这条回调发货到别人的环境，
+			// 是 2026-08-05 跨环境脏数据事故的成因。宁可 404 让计费重试并暴露配置错误。
+			if !engine.HasRoute(target) {
+				c.JSON(http.StatusNotFound, gin.H{
+					"error": fmt.Sprintf("uin route target %q is not configured", target),
+				})
+				return
+			}
+			routeID = target
+		}
+		invokeResolvedHTTPWithBody(c, engine, authenticator, routeID, proxyPath, body)
 	}
+}
+
+// resolveUinRoute 从 CGW envelope 的 interface.para.uin 取影子账号 uin 并查改派表。
+//
+// 解析不出 uin（body 不是 JSON、结构不符、uin 为空）时返回 false，由调用方走入口 route
+// 自身的 upstream 兜底 —— 这类请求本来就不属于任何开发者环境。
+//
+// uin 在协议里是带引号的字符串（PDF §公共参数），但实测 jifei 偶有发数字的情况，
+// 这里两种都接。
+func resolveUinRoute(rules []config.UinRoute, body []byte) (string, bool) {
+	var payload struct {
+		Interface struct {
+			Para struct {
+				Uin json.Number `json:"uin"`
+			} `json:"para"`
+		} `json:"interface"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", false
+	}
+	uin := strings.TrimSpace(payload.Interface.Para.Uin.String())
+	if uin == "" {
+		return "", false
+	}
+	for _, rule := range rules {
+		if uin == strings.TrimSpace(rule.Uin) {
+			return rule.RouteID, true
+		}
+	}
+	return "", false
 }
 
 func invokeExternalHTTP(engine *proxy.Engine, authenticator *auth.Authenticator, maxBodyBytes int64, externalRoute config.ExternalRoute) gin.HandlerFunc {
