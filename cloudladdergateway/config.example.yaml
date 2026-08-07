@@ -778,6 +778,12 @@ routes:
   #
   # 预留成池子是为了「新增开发者只改 gitops 的环境变量、不用重建镜像」——
   # 加人时挑一个空位改 uin 映射 + base_url(+host_header) 即可。
+  #
+  # headers_from_env 注入 Authorization 是形态 2 的必需项：devtunnel 的 ingest 端点
+  # 和控制面一样要鉴权，而 route 的 env 覆盖只有 _BASE_URL / _HOST_HEADER / _UIN_ROUTES，
+  # 没法从 gitops 注入 header，所以只能烤在这里。devtunnel 侧比较 token 时 "Bearer "
+  # 前缀可选，因此这里注入裸 token 即可，与 agent 共用同一个 DEVTUNNEL_TOKEN。
+  # DEVTUNNEL_TOKEN 未注入时这里是空 header，配合黑洞 base_url 等于该落点不存在。
   - id: jifei-callback-dev-1
     description: "开发者个人测试环境回调落点 1（base_url 必须由 env 覆盖）"
     callers: ["jifei"]
@@ -786,6 +792,8 @@ routes:
       base_url: "http://127.0.0.1:9"
       timeout: 10s
       allowed_methods: ["POST"]
+      headers_from_env:
+        Authorization: DEVTUNNEL_TOKEN
 
   - id: jifei-callback-dev-2
     description: "开发者个人测试环境回调落点 2（base_url 必须由 env 覆盖）"
@@ -795,6 +803,8 @@ routes:
       base_url: "http://127.0.0.1:9"
       timeout: 10s
       allowed_methods: ["POST"]
+      headers_from_env:
+        Authorization: DEVTUNNEL_TOKEN
 
   - id: jifei-callback-dev-3
     description: "开发者个人测试环境回调落点 3（base_url 必须由 env 覆盖）"
@@ -804,6 +814,8 @@ routes:
       base_url: "http://127.0.0.1:9"
       timeout: 10s
       allowed_methods: ["POST"]
+      headers_from_env:
+        Authorization: DEVTUNNEL_TOKEN
 
   # devtunnel 反向隧道的控制面入口。
   #
@@ -817,7 +829,9 @@ routes:
   # 覆盖。默认（未覆盖）时本 route 打到黑洞，等于禁用，生产不受影响。
   - id: devtunnel
     description: "devtunnel 反向隧道控制面（agent 出站 poll/reply 用；base_url 必须由 env 覆盖）"
-    condition: 'request.method == "GET" || request.method == "POST"'
+    # 条件用 Starlark 求值，布尔或是 `or` 而不是 `||`（写成 `||` 会在匹配时报语法错，
+    # 表现为这条 route 永远匹配不上）。
+    condition: 'request.method == "GET" or request.method == "POST"'
     upstream:
       base_url: "http://127.0.0.1:9"
       timeout: 30s

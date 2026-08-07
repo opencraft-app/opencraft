@@ -89,6 +89,33 @@ func TestJifeiCallbackDevRouteHostOverride(t *testing.T) {
 	}
 }
 
+// TestJifeiCallbackDevRoutesInjectDevtunnelAuth 锁定「云梯 → devtunnel ingest」这一跳的鉴权。
+//
+// devtunnel 的 ingest 端点和控制面一样要求 token，但云梯把回调转出去时不会凭空带上
+// Authorization —— route 的 env 覆盖只支持 _BASE_URL / _HOST_HEADER / _UIN_ROUTES，
+// 没有注入 header 的口子。所以必须在 route 上用 headers_from_env 注入，否则真实链路
+// 会稳定 401。本地 e2e 是 curl 手工带的 header，正好掩盖了这一跳，这条测试补上。
+//
+// 注意 devtunnel 侧鉴权对 "Bearer " 前缀是可选的（TrimPrefix 后比较），因此这里直接
+// 注入裸 token，agent 侧继续发 "Bearer <token>"，两边共用同一个 secret key。
+func TestJifeiCallbackDevRoutesInjectDevtunnelAuth(t *testing.T) {
+	t.Setenv("CLOUDLADDER_PAYMENT_HMAC_SECRET", "test-secret")
+	cfg, err := Load("../../config.example.yaml")
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	for _, id := range []string{"jifei-callback-dev-1", "jifei-callback-dev-2", "jifei-callback-dev-3"} {
+		route, ok := findRoute(cfg, id)
+		if !ok {
+			t.Fatalf("%s not found", id)
+		}
+		if got := route.Upstream.HeadersFromEnv["Authorization"]; got != "DEVTUNNEL_TOKEN" {
+			t.Errorf("%s headers_from_env.Authorization = %q, 期望 DEVTUNNEL_TOKEN"+
+				"（否则云梯打到 devtunnel ingest 会 401）", id, got)
+		}
+	}
+}
+
 func findRoute(cfg Config, id string) (RouteConfig, bool) {
 	for _, r := range cfg.Routes {
 		if r.ID == id {
