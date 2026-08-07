@@ -35,6 +35,8 @@ func (l *cloudapiPassLogic) DescribePassByCloudAccount(uin, appID int64, passID 
 }
 
 func TestCloudAPIDescribePassUsesTencentCloudSignatureAndOriginalProxyPath(t *testing.T) {
+	resetCloudAPIConfigForTest()
+	t.Cleanup(resetCloudAPIConfigForTest)
 	t.Setenv("CTL_CLOUDAPI_SECRET_ID", "AKIDEXAMPLE")
 	t.Setenv("CTL_CLOUDAPI_SECRET_KEY", "SECRETKEYEXAMPLE")
 	t.Setenv("CTL_CLOUDAPI_ALLOWED_REGIONS", "ap-shanghai")
@@ -95,6 +97,8 @@ func TestCloudAPIDescribePassUsesTencentCloudSignatureAndOriginalProxyPath(t *te
 }
 
 func TestCloudAPIDescribePassRejectsUnsupportedRegionBeforeQuery(t *testing.T) {
+	resetCloudAPIConfigForTest()
+	t.Cleanup(resetCloudAPIConfigForTest)
 	t.Setenv("CTL_CLOUDAPI_SECRET_ID", "AKIDEXAMPLE")
 	t.Setenv("CTL_CLOUDAPI_SECRET_KEY", "SECRETKEYEXAMPLE")
 	t.Setenv("CTL_CLOUDAPI_ALLOWED_REGIONS", "ap-shanghai")

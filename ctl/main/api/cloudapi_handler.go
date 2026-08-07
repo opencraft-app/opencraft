@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"ctl/pkg/errcode"
@@ -29,6 +30,11 @@ const (
 )
 
 var cloudAPINow = time.Now
+
+var (
+	cloudAPIConfigOnce   sync.Once
+	cachedCloudAPIConfig cloudAPIConfig
+)
 
 type cloudAPIConfig struct {
 	SecretID       string
@@ -75,7 +81,7 @@ func (h *passHandler) handleCloudAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg := loadCloudAPIConfigFromEnv()
+	cfg := getCloudAPIConfig()
 	if err := verifyCloudAPISignature(r, body, cfg); err != nil {
 		writeCloudAPIError(w, r, cloudAPIErrorCode(err), err.Error())
 		return
@@ -115,6 +121,13 @@ func (h *passHandler) handleCloudAPI(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func getCloudAPIConfig() cloudAPIConfig {
+	cloudAPIConfigOnce.Do(func() {
+		cachedCloudAPIConfig = loadCloudAPIConfigFromEnv()
+	})
+	return cachedCloudAPIConfig
+}
+
 func loadCloudAPIConfigFromEnv() cloudAPIConfig {
 	service := strings.TrimSpace(os.Getenv("CTL_CLOUDAPI_SERVICE"))
 	if service == "" {
@@ -146,6 +159,11 @@ func loadCloudAPIConfigFromEnv() cloudAPIConfig {
 		AllowedRegions: parseCloudAPIAllowedRegions(os.Getenv("CTL_CLOUDAPI_ALLOWED_REGIONS")),
 		MaxSkew:        maxSkew,
 	}
+}
+
+func resetCloudAPIConfigForTest() {
+	cloudAPIConfigOnce = sync.Once{}
+	cachedCloudAPIConfig = cloudAPIConfig{}
 }
 
 func parseCloudAPIAllowedRegions(raw string) map[string]struct{} {
