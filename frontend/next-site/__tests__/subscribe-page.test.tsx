@@ -84,7 +84,7 @@ const getCreditTab = (credit: string) => {
 };
 
 describe("SubscribePage", () => {
-  it("defaults launch and cruise cards to their AI credit tiers", async () => {
+  it("shows low credit tiers first and selects them by default", async () => {
     (globalThis as { React?: typeof React }).React = React;
     const { SubscribePage } = await import("@next-site/subscribe-page");
 
@@ -94,16 +94,16 @@ describe("SubscribePage", () => {
 
     await waitFor(() => {
       expect(getCreditTabs().map(getCreditValue)).toEqual([
-        "4500",
         "100",
-        "10000",
+        "4500",
         "200",
+        "10000",
       ]);
     });
-    expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "true");
-    expect(getCreditTab("10000")).toHaveAttribute("aria-selected", "true");
-    expect(getCreditTab("100")).toHaveAttribute("aria-selected", "false");
-    expect(getCreditTab("200")).toHaveAttribute("aria-selected", "false");
+    expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "false");
+    expect(getCreditTab("10000")).toHaveAttribute("aria-selected", "false");
+    expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
+    expect(getCreditTab("200")).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByText("14天免费体验")).not.toBeInTheDocument();
   });
 });

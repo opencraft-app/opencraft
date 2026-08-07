@@ -1042,13 +1042,22 @@ const tierOfPlan = (plan: PlanInfo): PlanTierKey | null => {
   return null;
 };
 
-/** 一个 tier 分组：同 tier 的多个档位（variants，按积分升序）+ 是否敬请期待。 */
+/** 一个 tier 分组：同 tier 的多个档位（variants，按积分升序展示）+ 是否敬请期待。 */
 interface PlanTierGroup {
   /** tier key（launch/cruise/voyage）或未命中 tier 时的 plan.id（各自单卡） */
   key: string;
-  /** 同 tier 的档位列表，按 credit 降序（AI 增强版在左、标准版在右） */
+  /** 同 tier 的档位列表，按 credit 升序（标准版在左、AI 增强版在右） */
   variants: PlanInfo[];
 }
+
+const getDefaultVariantIndex = (variants: PlanInfo[]): number => {
+  if (variants.length <= 1) return 0;
+  return variants.reduce((lowestIndex, variant, index) => {
+    const lowestCredit = variants[lowestIndex]?.raw.credit ?? Number.POSITIVE_INFINITY;
+    const credit = variant.raw.credit ?? Number.POSITIVE_INFINITY;
+    return credit < lowestCredit ? index : lowestIndex;
+  }, 0);
+};
 
 /**
  * 实名校验错误码兜底文案 — 计费侧错误码统一走 lib/billing-error 的 resolveBillingErrorMessage
@@ -1123,9 +1132,10 @@ const PlanCard = ({
 }) => {
   const t = useT();
   /* 卡内积分档位切换：同 tier 的 AI 增强版 / 标准版收敛为 variants，切换即换整份 PlanInfo，
-     价格 / 积分 / 折扣 / 下单套餐随之联动。默认选中第一个（高积分 AI 增强版）。 */
-  const [activeVariantIdx, setActiveVariantIdx] = useState(0);
-  const safeIdx = activeVariantIdx < variants.length ? activeVariantIdx : 0;
+     价格 / 积分 / 折扣 / 下单套餐随之联动。默认选中低积分标准版（启航 100 / 巡游 200）。 */
+  const defaultVariantIdx = getDefaultVariantIndex(variants);
+  const [activeVariantIdx, setActiveVariantIdx] = useState(() => defaultVariantIdx);
+  const safeIdx = activeVariantIdx < variants.length ? activeVariantIdx : defaultVariantIdx;
   const plan = variants[safeIdx]!;
   const subscribing = subscribingPlanId === plan.id;
   /* 新用户启航版「免费订阅」按钮 hover 时，上方展示免费试用到期不自动扣款的提示（plan.freeTrialHint） */
@@ -2235,7 +2245,7 @@ export const SubscribePage = ({
 
   /**
    * 需求3：按 tier（启航 / 巡游 / 远航）把 planList 分组，取代原「标准版 / AI 增强版」全局 tab。
-   *   - 同 tier 的 AI 增强版 / 标准版收敛为一张卡的多个 variants（按积分降序），卡内切换（见 PlanCard）
+   *   - 同 tier 的标准版 / AI 增强版收敛为一张卡的多个 variants（按积分升序），卡内切换（见 PlanCard）
    *   - tier 顺序固定：启航 → 巡游 → 远航
    *   - 远航（voyage）保持「敬请期待」：只取首个 variant 并强制 comingSoon、不放积分切换（PRD 决策）
    *   - 未命中 tier 的套餐（如免费试用卡）各自单卡展示，追加在后，保持 planList 原顺序
@@ -2256,8 +2266,8 @@ export const SubscribePage = ({
     for (const tk of PLAN_TIER_ORDER) {
       const variants = tierMap.get(tk);
       if (!variants || variants.length === 0) continue;
-      /* 按积分降序：AI 增强版（积分多）在左并作为默认选中，标准版（积分少）在右 */
-      const sorted = [...variants].sort((a, b) => (b.raw.credit ?? 0) - (a.raw.credit ?? 0));
+      /* 按积分升序：标准版（积分少）在左，AI 增强版（积分多）在右 */
+      const sorted = [...variants].sort((a, b) => (a.raw.credit ?? 0) - (b.raw.credit ?? 0));
       if (tk === "voyage") {
         /* 远航（需求1）：屏蔽后端可能已配置的价格 / 促销 / 下单入口，统一「敬请期待」，单卡无积分切换。
            清空 price / promoTag 并复位 priceUnavailable / pricingLoading，确保价格区落到「敬请期待」分支；
