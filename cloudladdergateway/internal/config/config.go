@@ -142,9 +142,16 @@ type ExternalRoute struct {
 	Methods            []string                    `yaml:"methods"`
 	RouteID            string                      `yaml:"route_id"`
 	UpstreamPath       string                      `yaml:"upstream_path"`
+	HeaderRoutes       []ExternalHeaderRoute       `yaml:"header_routes"`
 	AuthCodeRoutes     []ExternalAuthCodeRoute     `yaml:"auth_code_routes"`
 	UserIDRoutes       []ExternalUserIDRoute       `yaml:"user_id_routes"`
 	UserIDPrefixRoutes []ExternalUserIDPrefixRoute `yaml:"user_id_prefix_routes"`
+}
+
+type ExternalHeaderRoute struct {
+	Name    string `yaml:"name"`
+	Value   string `yaml:"value"`
+	RouteID string `yaml:"route_id"`
 }
 
 type ExternalAuthCodeRoute struct {
@@ -345,6 +352,28 @@ func (c Config) Validate() error {
 		}
 		if strings.TrimSpace(route.UpstreamPath) != "" && !strings.HasPrefix(route.UpstreamPath, "/") {
 			return fmt.Errorf("external_routes[%d].upstream_path must start with /", i)
+		}
+		headerRouteKeys := make(map[string]struct{}, len(route.HeaderRoutes))
+		for j, headerRoute := range route.HeaderRoutes {
+			name := strings.TrimSpace(headerRoute.Name)
+			value := strings.TrimSpace(headerRoute.Value)
+			if name == "" {
+				return fmt.Errorf("external_routes[%d].header_routes[%d].name is required", i, j)
+			}
+			if value == "" {
+				return fmt.Errorf("external_routes[%d].header_routes[%d].value is required", i, j)
+			}
+			key := strings.ToLower(name) + "\x00" + value
+			if _, exists := headerRouteKeys[key]; exists {
+				return fmt.Errorf("external_routes[%d].header_routes[%d] %q=%q is duplicated", i, j, name, value)
+			}
+			headerRouteKeys[key] = struct{}{}
+			if strings.TrimSpace(headerRoute.RouteID) == "" {
+				return fmt.Errorf("external_routes[%d].header_routes[%d].route_id is required", i, j)
+			}
+			if _, ok := seen[headerRoute.RouteID]; !ok {
+				return fmt.Errorf("external_routes[%d].header_routes[%d] references unknown route %q", i, j, headerRoute.RouteID)
+			}
 		}
 		prefixes := make(map[string]struct{}, len(route.AuthCodeRoutes))
 		for j, authCodeRoute := range route.AuthCodeRoutes {
