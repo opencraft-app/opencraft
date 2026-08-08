@@ -47,6 +47,7 @@ cp sandbox/secret-templates/local.env.example \
   - `base_image` 建议使用真实镜像 ID（如 `img-xxxx`），创建/重装均按池的 `base_image`。
 - `GET /pools`：列出池。
 - `PATCH /pools/{poolID}`：更新池配置（运营侧）。
+  - `system_disk_size` 单位为 GB，只影响之后创建的实例；现有实例需要受控销毁重建，标记为 `DRY` 只会触发重装，不能扩容系统盘。
   - 这些接口保留为服务内部能力说明，不再作为测试环境 pool 镜像 rollout 入口。
   - 当前测试环境切镜像统一走 [../docs/agent-guides/sandbox-image-rollout-guide.md](../docs/agent-guides/sandbox-image-rollout-guide.md) 里的旁路 pod 脚本。
   - rollout 语义仍然是：只更新目标 pool 的 `base_image`，并只把 `CLEAN` 实例标成 `DRY`；`ALLOCATED` 不受影响。
@@ -58,6 +59,14 @@ cp sandbox/secret-templates/local.env.example \
 - `PATCH /instances/{id}/state`：Worker 推进状态（`DRY→RESETTING→CLEAN` 或 `CREATING→CLEAN`）。
 
 所有接口返回 JSON，失败返回 `{"error": "..."}`
+
+### SKU 与系统盘规格
+
+- `SKU.system_disk_size` 是动态 pool 的系统盘规格真源，未填写时归一为 50GB。
+- `000008` migration 会将已有 `openclaw-4c8g80g` SKU 回填为 80GB。
+- 从 capacity bundle 派生的 pool，以及通过绑定 SKU 创建的运营 pool，都会继承该值。
+- `Pool.system_disk_size` 只影响后续创建的实例，不会在线扩容已有云盘。
+- 修正规格时先更新 SKU，防止后续动态 pool 再次使用旧值；再 PATCH 已存在的 pool，并单独受控退役旧规格实例。
 
 ## 运行与开发
 ```bash
@@ -101,7 +110,7 @@ make migrate-version DB_DSN="mysql://user:pass@tcp(127.0.0.1:3306)/cvm_pool?mult
 make migrate-down DB_DSN="mysql://user:pass@tcp(127.0.0.1:3306)/cvm_pool?multiStatements=true"
 ```
 
-迁移文件位于 `sandbox/migrations/`，当前初始 schema 在 `000001_init_schema.*.sql`。
+迁移文件位于 `sandbox/migrations/`，当前初始 schema 在 `000001_init_schema.*.sql`，增量迁移按编号顺序执行。
 
 K8s 发布路径与本地不同：
 

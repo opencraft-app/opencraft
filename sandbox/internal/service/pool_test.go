@@ -1179,6 +1179,9 @@ func TestEnsurePoolForCapacityBundleCreatesDerivedPoolAndBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert sku: %v", err)
 	}
+	if sku.SystemDiskSize != 50 {
+		t.Fatalf("expected omitted system disk size to default to 50, got %d", sku.SystemDiskSize)
+	}
 	binding := core.TemplateSkuBinding{
 		TemplateClassID:    "openclaw-default",
 		SKUID:              "sku-default",
@@ -1237,6 +1240,38 @@ func TestEnsurePoolForCapacityBundleCreatesDerivedPoolAndBinding(t *testing.T) {
 	}
 	if bundle.LineageTags["pool_id"] != pool.ID {
 		t.Fatalf("expected bundle reserved to pool %s, got %+v", pool.ID, bundle.LineageTags)
+	}
+}
+
+func TestUpsertSKUPreservesExistingSystemDiskSizeWhenOmitted(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(store.NewMemoryStore())
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "openclaw-4c8g80g",
+		ResolutionMode: core.ResolutionModeSandboxPrimary,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	sku, err := svc.UpsertSKU(ctx, core.SKU{
+		ID:              "sku-hermes-4c8g",
+		TemplateClassID: "openclaw-4c8g80g",
+		BaseImage:       "img-old",
+		DesiredImageID:  "img-old",
+		InstanceType:    "SA5.LARGE8",
+		SystemDiskSize:  80,
+	})
+	if err != nil {
+		t.Fatalf("create sku: %v", err)
+	}
+
+	sku.DesiredImageID = "img-new"
+	sku.SystemDiskSize = 0
+	updated, err := svc.UpsertSKU(ctx, sku)
+	if err != nil {
+		t.Fatalf("update sku: %v", err)
+	}
+	if updated.SystemDiskSize != 80 {
+		t.Fatalf("expected omitted system disk size to preserve 80, got %d", updated.SystemDiskSize)
 	}
 }
 
