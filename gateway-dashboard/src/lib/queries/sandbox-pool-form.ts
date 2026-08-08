@@ -9,6 +9,7 @@ export const poolFormSchema = z.object({
   base_image: z.string().min(1, "Base image 不能为空"),
   desired_capacity: z.number().int().min(0, "不能为负数"),
   instance_type: z.string().min(1, "Instance Type 不能为空"),
+  system_disk_size: z.number().int().min(1, "系统盘必须大于 0 GB"),
   sku_id: z.string().min(1, "请选择 SKU"),
   status: z.enum(["active", "paused"]),
   pause_reason: z.string().optional(),
@@ -21,7 +22,7 @@ export const poolFormSchema = z.object({
 
 export type PoolFormValues = z.infer<typeof poolFormSchema>;
 
-export interface PoolFormPayload {
+export interface PoolCreatePayload {
   name: string;
   description: string;
   base_image: string;
@@ -36,6 +37,10 @@ export interface PoolFormPayload {
   security_groups: string[];
 }
 
+export interface PoolUpdatePayload extends PoolCreatePayload {
+  system_disk_size: number;
+}
+
 export function defaultPoolFormValues(): PoolFormValues {
   return {
     name: "",
@@ -43,6 +48,7 @@ export function defaultPoolFormValues(): PoolFormValues {
     base_image: "",
     desired_capacity: 0,
     instance_type: "",
+    system_disk_size: 50,
     sku_id: "",
     status: "paused",
     pause_reason: "awaiting operator activation",
@@ -61,6 +67,7 @@ export function poolToFormValues(pool: SandboxPool): PoolFormValues {
     base_image: pool.base_image,
     desired_capacity: pool.desired_capacity,
     instance_type: pool.instance_type ?? "",
+    system_disk_size: pool.system_disk_size || 50,
     sku_id: pool.sku_id ?? "",
     status: pool.status,
     pause_reason: pool.pause_reason ?? "",
@@ -79,7 +86,7 @@ function parseSecurityGroups(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-function poolPayload(values: PoolFormValues): PoolFormPayload {
+function poolPayload(values: PoolFormValues): PoolCreatePayload {
   return {
     name: values.name.trim(),
     description: values.description?.trim() || "",
@@ -96,7 +103,7 @@ function poolPayload(values: PoolFormValues): PoolFormPayload {
   };
 }
 
-export function poolCreatePayload(values: PoolFormValues): PoolFormPayload {
+export function poolCreatePayload(values: PoolFormValues): PoolCreatePayload {
   return {
     ...poolPayload(values),
     desired_capacity: 0,
@@ -105,12 +112,19 @@ export function poolCreatePayload(values: PoolFormValues): PoolFormPayload {
   };
 }
 
-export function poolUpdatePayload(values: PoolFormValues): PoolFormPayload {
-  return poolPayload(values);
+export function poolUpdatePayload(values: PoolFormValues): PoolUpdatePayload {
+  return {
+    ...poolPayload(values),
+    system_disk_size: values.system_disk_size,
+  };
 }
 
 export function deriveTemplateClassID(skus: SandboxSKU[], skuID: string): string {
   return skus.find((sku) => sku.id === skuID)?.template_class_id ?? "";
+}
+
+export function deriveSystemDiskSize(skus: SandboxSKU[], skuID: string): number {
+  return skus.find((sku) => sku.id === skuID)?.system_disk_size || 50;
 }
 
 export function canSelectPoolSKU(pool: SandboxPool | null): boolean {

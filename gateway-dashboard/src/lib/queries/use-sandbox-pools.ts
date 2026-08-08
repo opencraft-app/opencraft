@@ -38,6 +38,7 @@ export interface SandboxPoolInput {
 
 export interface SandboxPoolUpdateInput extends Omit<SandboxPoolInput, "sku_id"> {
   sku_id?: string;
+  system_disk_size: number;
   mark_clean_as_dry?: boolean;
 }
 

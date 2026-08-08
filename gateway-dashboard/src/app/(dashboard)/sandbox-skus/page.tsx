@@ -2,9 +2,20 @@
 
 import { useMemo, useState } from "react";
 import { ColumnDef } from "@tanstack/react-table";
-import { Boxes, GitBranch, RefreshCw, TriangleAlert } from "lucide-react";
+import { Boxes, GitBranch, Pencil, RefreshCw, TriangleAlert } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
@@ -22,6 +33,7 @@ import {
   useSandboxTemplateClassPoolBindings,
   useSandboxTemplateClassResolve,
   useSandboxTemplateClassSKUBindings,
+  useUpdateSandboxSKUSystemDiskSize,
   type SandboxBindingAdmissionState,
   type SandboxPoolBindingRole,
   type SandboxResolvedPool,
@@ -78,6 +90,8 @@ function mono(value?: string | number | null) {
 
 export default function SandboxSKUsPage() {
   const [selectedTemplateClassID, setSelectedTemplateClassID] = useState("");
+  const [editingSKU, setEditingSKU] = useState<SandboxSKU | null>(null);
+  const [systemDiskSize, setSystemDiskSize] = useState(50);
   const templateClassesQuery = useSandboxTemplateClasses();
   const skusQuery = useSandboxSKUs();
   const templateClasses = templateClassesQuery.data ?? EMPTY_TEMPLATE_CLASSES;
@@ -87,6 +101,7 @@ export default function SandboxSKUsPage() {
   const skuBindingsQuery = useSandboxTemplateClassSKUBindings(activeTemplateClassID);
   const poolBindingsQuery = useSandboxTemplateClassPoolBindings(activeTemplateClassID);
   const resolveQuery = useSandboxTemplateClassResolve(activeTemplateClassID);
+  const updateSystemDiskSize = useUpdateSandboxSKUSystemDiskSize();
   const skuBindings = skuBindingsQuery.data ?? EMPTY_SKU_BINDINGS;
   const poolBindings = poolBindingsQuery.data ?? EMPTY_POOL_BINDINGS;
   const resolvedPools = resolveQuery.data?.pools ?? EMPTY_POOLS;
@@ -111,6 +126,20 @@ export default function SandboxSKUsPage() {
     void skuBindingsQuery.refetch();
     void poolBindingsQuery.refetch();
     void resolveQuery.refetch();
+  }
+
+  async function saveSystemDiskSize() {
+    if (!editingSKU || !Number.isInteger(systemDiskSize) || systemDiskSize <= 0) {
+      toast.error("系统盘必须是大于 0 的整数");
+      return;
+    }
+    try {
+      await updateSystemDiskSize.mutateAsync({ id: editingSKU.id, systemDiskSize });
+      toast.success("SKU 系统盘规格已更新");
+      setEditingSKU(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "更新 SKU 系统盘失败");
+    }
   }
 
   const templateClassColumns = useMemo<ColumnDef<SandboxTemplateClass>[]>(
@@ -172,6 +201,11 @@ export default function SandboxSKUsPage() {
         cell: ({ row }) => mono(row.original.instance_type),
       },
       {
+        accessorKey: "system_disk_size",
+        header: "系统盘",
+        cell: ({ row }) => mono(`${row.original.system_disk_size || 50} GB`),
+      },
+      {
         accessorKey: "desired_image_id",
         header: "Desired Image",
         cell: ({ row }) => mono(row.original.desired_image_id),
@@ -195,6 +229,24 @@ export default function SandboxSKUsPage() {
         accessorKey: "last_rollout_error",
         header: "最后错误",
         cell: ({ row }) => row.original.last_rollout_error || "-",
+      },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`编辑 ${row.original.id} 系统盘`}
+            title="编辑系统盘"
+            onClick={() => {
+              setEditingSKU(row.original);
+              setSystemDiskSize(row.original.system_disk_size || 50);
+            }}
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+        ),
       },
     ],
     [],
@@ -296,7 +348,7 @@ export default function SandboxSKUsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Sandbox SKUs"
-        description="查看 Template Class、SKU、绑定关系和实际 resolve 结果。写操作会在后续阶段加入风险 diff 确认。"
+        description="查看 Template Class、SKU、绑定关系和实际 resolve 结果；系统盘规格可独立维护。"
       >
         <Button variant="outline" onClick={refetchAll}>
           <RefreshCw className="mr-2 h-4 w-4" />
@@ -369,7 +421,7 @@ export default function SandboxSKUsPage() {
         <Card>
           <CardHeader>
             <CardTitle>SKUs for {activeTemplateClassID || "-"}</CardTitle>
-            <CardDescription>SKU rollout 状态和镜像收敛进度。</CardDescription>
+            <CardDescription>SKU 规格、rollout 状态和镜像收敛进度。</CardDescription>
           </CardHeader>
           <CardContent>
             <DataTable columns={skuColumns} data={selectedSKUs} total={selectedSKUs.length} isLoading={skusQuery.isLoading} />
@@ -411,6 +463,43 @@ export default function SandboxSKUsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog
+        open={editingSKU !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingSKU(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>编辑 SKU 系统盘</DialogTitle>
+            <DialogDescription>{editingSKU?.id ?? ""}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="sku-system-disk-size">System Disk (GB)</Label>
+            <Input
+              id="sku-system-disk-size"
+              type="number"
+              min={1}
+              value={systemDiskSize}
+              onChange={(event) => setSystemDiskSize(Number(event.target.value))}
+            />
+            <p className="text-sm leading-6 text-muted-foreground">
+              新派生的 Pool 会继承该值；现有 Pool 和实例不会被自动修改。
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => void saveSystemDiskSize()}
+              disabled={updateSystemDiskSize.isPending}
+            >
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
