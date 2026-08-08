@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,10 +70,33 @@ func TestSandboxMigrationsPresent(t *testing.T) {
 		"000004_sku_control_plane.down.sql",
 		"000005_vpc_shard_foundation.up.sql",
 		"000005_vpc_shard_foundation.down.sql",
+		"000006_add_pause_states.up.sql",
+		"000006_add_pause_states.down.sql",
+		"000007_add_pool_system_disk_size.up.sql",
+		"000007_add_pool_system_disk_size.down.sql",
+		"000008_add_sku_system_disk_size.up.sql",
+		"000008_add_sku_system_disk_size.down.sql",
 	} {
 		path := filepath.Join("..", "..", "migrations", name)
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected migration %s to exist: %v", path, err)
+		}
+	}
+}
+
+func TestSKUSystemDiskMigrationBackfills4C8GTemplateClass(t *testing.T) {
+	path := filepath.Join("..", "..", "migrations", "000008_add_sku_system_disk_size.up.sql")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read migration %s: %v", path, err)
+	}
+	migration := string(content)
+	for _, expected := range []string{
+		"SET system_disk_size = 80",
+		"WHERE template_class_id = 'openclaw-4c8g80g'",
+	} {
+		if !strings.Contains(migration, expected) {
+			t.Fatalf("expected migration to contain %q", expected)
 		}
 	}
 }
@@ -139,20 +163,21 @@ func TestMySQLStoreSKURoundTrip(t *testing.T) {
 		DesiredImageID:  "img-new",
 		StableImageID:   "img-old",
 		InstanceType:    "SA9.MEDIUM2",
+		SystemDiskSize:  80,
 		RolloutState:    core.SKURolloutStateRolling,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
 
 	mock.ExpectExec("INSERT INTO skus").
-		WithArgs(sku.ID, sku.Name, sku.Description, sku.TemplateClassID, sku.BaseImage, sku.DesiredImageID, sku.StableImageID, sku.InstanceType, sku.NetworkTemplateID, sku.SecurityGroupRuleTemplateID, sku.AutoscalePolicyID, sku.DefaultDesiredCapacity, sku.RolloutState, sku.RolloutCursorPoolID, sku.Generation, sku.ConvergedPoolCount, sku.TotalPoolCount, sku.PoolsPendingRollout, sku.LastRolloutStartedAt, sku.LastRolloutError, sku.CreatedAt, sku.UpdatedAt).
+		WithArgs(sku.ID, sku.Name, sku.Description, sku.TemplateClassID, sku.BaseImage, sku.DesiredImageID, sku.StableImageID, sku.InstanceType, sku.SystemDiskSize, sku.NetworkTemplateID, sku.SecurityGroupRuleTemplateID, sku.AutoscalePolicyID, sku.DefaultDesiredCapacity, sku.RolloutState, sku.RolloutCursorPoolID, sku.Generation, sku.ConvergedPoolCount, sku.TotalPoolCount, sku.PoolsPendingRollout, sku.LastRolloutStartedAt, sku.LastRolloutError, sku.CreatedAt, sku.UpdatedAt).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	if _, err := store.UpsertSKU(context.Background(), sku); err != nil {
 		t.Fatalf("upsert sku: %v", err)
 	}
 
-	rows := sqlmock.NewRows([]string{"id", "name", "description", "template_class_id", "base_image", "desired_image_id", "stable_image_id", "instance_type", "network_template_id", "security_group_rule_template_id", "autoscale_policy_id", "default_desired_capacity", "rollout_state", "rollout_cursor_pool_id", "generation", "converged_pool_count", "total_pool_count", "pools_pending_rollout", "last_rollout_started_at", "last_rollout_error", "created_at", "updated_at"}).
-		AddRow(sku.ID, sku.Name, nil, sku.TemplateClassID, sku.BaseImage, sku.DesiredImageID, sku.StableImageID, sku.InstanceType, sku.NetworkTemplateID, sku.SecurityGroupRuleTemplateID, sku.AutoscalePolicyID, sku.DefaultDesiredCapacity, sku.RolloutState, sku.RolloutCursorPoolID, sku.Generation, sku.ConvergedPoolCount, sku.TotalPoolCount, sku.PoolsPendingRollout, nil, nil, sku.CreatedAt, sku.UpdatedAt)
+	rows := sqlmock.NewRows([]string{"id", "name", "description", "template_class_id", "base_image", "desired_image_id", "stable_image_id", "instance_type", "system_disk_size", "network_template_id", "security_group_rule_template_id", "autoscale_policy_id", "default_desired_capacity", "rollout_state", "rollout_cursor_pool_id", "generation", "converged_pool_count", "total_pool_count", "pools_pending_rollout", "last_rollout_started_at", "last_rollout_error", "created_at", "updated_at"}).
+		AddRow(sku.ID, sku.Name, nil, sku.TemplateClassID, sku.BaseImage, sku.DesiredImageID, sku.StableImageID, sku.InstanceType, sku.SystemDiskSize, sku.NetworkTemplateID, sku.SecurityGroupRuleTemplateID, sku.AutoscalePolicyID, sku.DefaultDesiredCapacity, sku.RolloutState, sku.RolloutCursorPoolID, sku.Generation, sku.ConvergedPoolCount, sku.TotalPoolCount, sku.PoolsPendingRollout, nil, nil, sku.CreatedAt, sku.UpdatedAt)
 	mock.ExpectQuery("SELECT id, name, description, template_class_id, base_image, desired_image_id, stable_image_id").
 		WithArgs(sku.ID).
 		WillReturnRows(rows)
@@ -160,7 +185,7 @@ func TestMySQLStoreSKURoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get sku: %v", err)
 	}
-	if got.ID != sku.ID || got.DesiredImageID != sku.DesiredImageID {
+	if got.ID != sku.ID || got.DesiredImageID != sku.DesiredImageID || got.SystemDiskSize != sku.SystemDiskSize {
 		t.Fatalf("unexpected sku roundtrip: %+v", got)
 	}
 	if got.Description != "" || got.LastRolloutError != "" {

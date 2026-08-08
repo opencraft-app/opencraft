@@ -980,6 +980,41 @@ func TestPatchPoolInternalRouteBindsLegacyPoolOnce(t *testing.T) {
 	}
 }
 
+func TestPatchPoolInternalRouteUpdatesSystemDiskSize(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	pool, err := svc.CreatePool(ctx, "pool-sh-4c8g", "", "img-preview", 1, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	router := newHandlerTestRouter(&handler{svc: svc})
+
+	req := httptest.NewRequest(http.MethodPatch, "/internal/pools/"+pool.ID, bytes.NewBufferString(`{"system_disk_size":80}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected system disk update 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var updated core.Pool
+	if err := json.Unmarshal(rr.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode updated pool: %v", err)
+	}
+	if updated.SystemDiskSize != 80 {
+		t.Fatalf("expected system disk size 80, got %d", updated.SystemDiskSize)
+	}
+	stored, err := svc.GetPool(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("get updated pool: %v", err)
+	}
+	if stored.SystemDiskSize != 80 {
+		t.Fatalf("expected stored system disk size 80, got %d", stored.SystemDiskSize)
+	}
+}
+
 func TestInternalTemplateClassRoutesLockServedContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1045,6 +1080,7 @@ func TestInternalSKURoutesLockServedContract(t *testing.T) {
 		"base_image":"img-hermes-stable",
 		"desired_image_id":"img-hermes-desired",
 		"instance_type":"SA5.MEDIUM4",
+		"system_disk_size":80,
 		"default_desired_capacity":2
 	}`))
 	createReq.Header.Set("Content-Type", "application/json")
@@ -1060,6 +1096,9 @@ func TestInternalSKURoutesLockServedContract(t *testing.T) {
 	if created.ID != "sku-hermes-2c4g" || created.TemplateClassID != "hermes" || created.RolloutState != core.SKURolloutStateStable {
 		t.Fatalf("unexpected sku: %+v", created)
 	}
+	if created.SystemDiskSize != 80 {
+		t.Fatalf("expected system disk size 80, got %d", created.SystemDiskSize)
+	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/internal/skus", nil)
 	listRR := httptest.NewRecorder()
@@ -1071,8 +1110,57 @@ func TestInternalSKURoutesLockServedContract(t *testing.T) {
 	if err := json.Unmarshal(listRR.Body.Bytes(), &listed); err != nil {
 		t.Fatalf("decode skus: %v", err)
 	}
-	if len(listed) != 1 || listed[0].ID != "sku-hermes-2c4g" {
+	if len(listed) != 1 || listed[0].ID != "sku-hermes-2c4g" || listed[0].SystemDiskSize != 80 {
 		t.Fatalf("expected listed sku-hermes-2c4g, got %+v", listed)
+	}
+}
+
+func TestPatchSKUInternalRouteUpdatesSystemDiskSize(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "openclaw-4c8g80g",
+		Name:           "OpenClaw 4C8G80G",
+		ResolutionMode: core.ResolutionModeSandboxPrimary,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	if _, err := svc.UpsertSKU(ctx, core.SKU{
+		ID:              "sku-hermes-4c8g",
+		Name:            "Hermes 4C8G",
+		TemplateClassID: "openclaw-4c8g80g",
+		BaseImage:       "img-hermes",
+		DesiredImageID:  "img-hermes",
+		InstanceType:    "SA5.LARGE8",
+		SystemDiskSize:  50,
+	}); err != nil {
+		t.Fatalf("upsert sku: %v", err)
+	}
+	router := newHandlerTestRouter(&handler{svc: svc})
+
+	req := httptest.NewRequest(http.MethodPatch, "/internal/skus/sku-hermes-4c8g", bytes.NewBufferString(`{"system_disk_size":80}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected system disk update 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var updated core.SKU
+	if err := json.Unmarshal(rr.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode updated sku: %v", err)
+	}
+	if updated.SystemDiskSize != 80 {
+		t.Fatalf("expected system disk size 80, got %d", updated.SystemDiskSize)
+	}
+	stored, err := svc.GetSKU(ctx, updated.ID)
+	if err != nil {
+		t.Fatalf("get updated sku: %v", err)
+	}
+	if stored.SystemDiskSize != 80 || stored.DesiredImageID != "img-hermes" {
+		t.Fatalf("expected only system disk size to change, got %+v", stored)
 	}
 }
 

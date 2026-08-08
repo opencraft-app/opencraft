@@ -67,6 +67,7 @@ import { useSandboxSKUs } from "@/lib/queries/use-sandbox-skus";
 import {
   canSelectPoolSKU,
   defaultPoolFormValues,
+  deriveSystemDiskSize,
   deriveTemplateClassID,
   poolCreatePayload,
   poolFormSchema,
@@ -248,6 +249,7 @@ export default function SandboxPoolsPage() {
   const selectedTemplateClassID = deriveTemplateClassID(skus, selectedSKUID)
     || editingPool?.template_class_id
     || "";
+  const inheritedSystemDiskSize = deriveSystemDiskSize(skus, selectedSKUID);
   const skuSelectable = canSelectPoolSKU(editingPool);
 
   const instanceSummaryByPoolId = useMemo(() => {
@@ -303,6 +305,7 @@ export default function SandboxPoolsPage() {
         base_image: pool.base_image,
         desired_capacity: pool.desired_capacity,
         instance_type: pool.instance_type ?? "",
+        system_disk_size: pool.system_disk_size || 50,
         status,
         pause_reason:
           status === "paused"
@@ -367,6 +370,18 @@ export default function SandboxPoolsPage() {
         header: "Base Image",
         cell: ({ row }) => (
           <div className="max-w-[180px] truncate font-mono text-xs">{row.original.base_image}</div>
+        ),
+      },
+      {
+        id: "instance_spec",
+        header: "实例规格",
+        cell: ({ row }) => (
+          <div className="space-y-1 font-mono text-xs">
+            <div>{row.original.instance_type || "-"}</div>
+            <div className="text-muted-foreground">
+              系统盘 {row.original.system_disk_size > 0 ? `${row.original.system_disk_size} GB` : "云厂商默认"}
+            </div>
+          </div>
         ),
       },
       {
@@ -569,6 +584,33 @@ export default function SandboxPoolsPage() {
                     </FormItem>
                   )}
                 />
+                {editingPool ? (
+                  <FormField
+                    control={form.control}
+                    name="system_disk_size"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>System Disk (GB)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={field.value}
+                            onChange={(event) => field.onChange(Number(event.target.value))}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : (
+                  <FormItem>
+                    <FormLabel>System Disk (GB)</FormLabel>
+                    <FormControl>
+                      <Input value={inheritedSystemDiskSize} readOnly />
+                    </FormControl>
+                  </FormItem>
+                )}
                 {editingPool ? (
                   <FormField
                     control={form.control}

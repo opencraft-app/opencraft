@@ -1645,6 +1645,7 @@ func TestEnsurePoolsFromWarmCapacityBundlesCreatesDerivedPool(t *testing.T) {
 		BaseImage:                   "img-old",
 		DesiredImageID:              "img-new",
 		InstanceType:                "SA9.MEDIUM2",
+		SystemDiskSize:              80,
 		NetworkTemplateID:           "network-template-a",
 		SecurityGroupRuleTemplateID: "sg-template-a",
 		DefaultDesiredCapacity:      3,
@@ -1698,6 +1699,9 @@ func TestEnsurePoolsFromWarmCapacityBundlesCreatesDerivedPool(t *testing.T) {
 	}
 	if pools[0].DesiredCap != 3 {
 		t.Fatalf("expected desired capacity 3, got %d", pools[0].DesiredCap)
+	}
+	if pools[0].SystemDiskSize != 80 {
+		t.Fatalf("expected system disk size 80, got %d", pools[0].SystemDiskSize)
 	}
 	bindings, err := svc.ListTemplatePoolBindings(ctx, "openclaw-default")
 	if err != nil {

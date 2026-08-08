@@ -17,6 +17,7 @@ type patchPoolRequest struct {
 	MarkCleanAsDry bool             `json:"mark_clean_as_dry"`
 	DesiredCapcity *int             `json:"desired_capacity"`
 	InstanceType   *string          `json:"instance_type"`
+	SystemDiskSize *int             `json:"system_disk_size"`
 	Status         *core.PoolStatus `json:"status"`
 	PauseReason    *string          `json:"pause_reason"`
 	VpcID          *string          `json:"vpc_id"`
@@ -128,6 +129,9 @@ func (h *handler) patchPool(c *gin.Context) {
 	}
 	if req.InstanceType != nil {
 		pool.InstanceType = *req.InstanceType
+	}
+	if req.SystemDiskSize != nil {
+		pool.SystemDiskSize = *req.SystemDiskSize
 	}
 	if req.Status != nil {
 		pool.Status = *req.Status

@@ -10,6 +10,7 @@ export interface SandboxResolvedPool {
   base_image: string;
   desired_capacity: number;
   instance_type: string;
+  system_disk_size?: number;
   status: "active" | "paused" | string;
   vpc_id: string;
   subnet_id: string;
@@ -48,6 +49,7 @@ export interface SandboxSKU {
   desired_image_id: string;
   stable_image_id?: string;
   instance_type: string;
+  system_disk_size?: number;
   network_template_id?: string;
   security_group_rule_template_id?: string;
   autoscale_policy_id?: string;

@@ -32,6 +32,7 @@ type upsertSKURequest struct {
 	DesiredImageID              string               `json:"desired_image_id"`
 	StableImageID               string               `json:"stable_image_id"`
 	InstanceType                string               `json:"instance_type"`
+	SystemDiskSize              int                  `json:"system_disk_size"`
 	NetworkTemplateID           string               `json:"network_template_id"`
 	SecurityGroupRuleTemplateID string               `json:"security_group_rule_template_id"`
 	AutoscalePolicyID           string               `json:"autoscale_policy_id"`
@@ -43,6 +44,10 @@ type upsertSKURequest struct {
 	TotalPoolCount              int                  `json:"total_pool_count"`
 	PoolsPendingRollout         int                  `json:"pools_pending_rollout"`
 	LastRolloutError            string               `json:"last_rollout_error"`
+}
+
+type patchSKURequest struct {
+	SystemDiskSize *int `json:"system_disk_size"`
 }
 
 type upsertTemplateSkuBindingRequest struct {
@@ -105,6 +110,7 @@ func registerTemplateClassRoutes(r gin.IRouter, h *handler) {
 	r.PUT("/template-classes/:templateClassID/skus", h.replaceTemplateClassSKUs)
 	r.GET("/skus", h.listSKUs)
 	r.POST("/skus", h.upsertSKU)
+	r.PATCH("/skus/:skuID", h.patchSKU)
 	r.GET("/capacity-bundles", h.listCapacityBundles)
 	r.POST("/capacity-bundles", h.upsertCapacityBundle)
 }
@@ -167,6 +173,7 @@ func (h *handler) upsertSKU(c *gin.Context) {
 		DesiredImageID:              strings.TrimSpace(req.DesiredImageID),
 		StableImageID:               strings.TrimSpace(req.StableImageID),
 		InstanceType:                strings.TrimSpace(req.InstanceType),
+		SystemDiskSize:              req.SystemDiskSize,
 		NetworkTemplateID:           strings.TrimSpace(req.NetworkTemplateID),
 		SecurityGroupRuleTemplateID: strings.TrimSpace(req.SecurityGroupRuleTemplateID),
 		AutoscalePolicyID:           strings.TrimSpace(req.AutoscalePolicyID),
@@ -184,6 +191,25 @@ func (h *handler) upsertSKU(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, sku)
+}
+
+func (h *handler) patchSKU(c *gin.Context) {
+	skuID := strings.TrimSpace(c.Param("skuID"))
+	var req patchSKURequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.SystemDiskSize == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "system_disk_size is required"})
+		return
+	}
+	sku, err := h.svc.UpdateSKUSystemDiskSize(c.Request.Context(), skuID, *req.SystemDiskSize)
+	if err != nil {
+		if err == core.ErrSKUNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "sku not found"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, sku)
 }
 
 func (h *handler) getTemplateClass(c *gin.Context) {
