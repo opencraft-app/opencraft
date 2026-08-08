@@ -22,6 +22,7 @@ import { trackDatongClick } from "@/observability/datong-tracker";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { useZhHantDeep } from "@/lib/zh-hant";
 import {
+  AGENT_SECTION_PATH_BY_ID,
   AGENTS_HOME_PATH,
   SUBSCRIBE_PATH,
   getAgentCreatingPath,
@@ -33,8 +34,9 @@ import FeatureSection, { CardsSection } from "@/imports/Frame2147230025/sections
 import ProcessSection from "@/imports/Frame2147230025/sections/ProcessSection";
 import CtaSection from "@/imports/Frame2147230025/sections/CtaSection";
 import { OverviewAutomationTasksSection } from "./scenario-tasks/OverviewAutomationTasksSection";
-import { ScenarioTaskLauncher } from "./scenario-tasks/ScenarioTaskLauncher";
 import { getOverviewScenarioTaskPacks } from "./scenario-tasks/scenario-packs";
+
+const NO_INSTALLED_SCENARIOS: ReadonlySet<string> = new Set();
 
 type LandingNavigateOptions = {
   replace?: boolean;
@@ -135,6 +137,9 @@ export const LandingPageView = ({
     ? ({ "aria-label": ariaLabel, children, className, href, onClick }) =>
         renderLink({ ariaLabel, children, className, href, onClick })
     : undefined;
+  const handleOverviewAutomationClick = useCallback(() => {
+    navigateTo(AGENT_SECTION_PATH_BY_ID.automations);
+  }, [navigateTo]);
 
   return (
     <div className="w-full bg-white overflow-x-hidden">
@@ -158,16 +163,12 @@ export const LandingPageView = ({
       <BrandIconsSection />
       <FeatureSection />
       <CardsSection />
-      <ScenarioTaskLauncher packs={overviewScenarioTaskPacks}>
-          {({ installedScenarioIds, myTasksHref, openScenarioInstaller }) => (
-            <OverviewAutomationTasksSection
-              packs={overviewScenarioTaskPacks}
-              installedScenarioIds={installedScenarioIds}
-              myTasksHref={myTasksHref}
-              onEnable={openScenarioInstaller}
-            />
-          )}
-      </ScenarioTaskLauncher>
+      <OverviewAutomationTasksSection
+        packs={overviewScenarioTaskPacks}
+        installedScenarioIds={NO_INSTALLED_SCENARIOS}
+        myTasksHref={AGENT_SECTION_PATH_BY_ID.automations}
+        onEnable={handleOverviewAutomationClick}
+      />
       <ProcessSection />
       <CtaSection onCreateClick={() => handleCreateClick('footer')} ctaLabel={ctaLabel} />
       {isGlobal ? <LightVelaFooter renderLink={renderFooterLink} /> : <LegalFooter icpPlacement="right" />}

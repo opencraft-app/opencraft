@@ -63,24 +63,18 @@ vi.mock("@/imports/Frame2147230025/sections/CtaSection", () => ({
 vi.mock("@/components/site/product-chrome", () => ({
   ProductFooter: () => <div>footer</div>,
 }));
-vi.mock("@/pages/marketing/scenario-tasks/ScenarioTaskLauncher", () => ({
-  ScenarioTaskLauncher: ({
-    children,
-  }: {
-    children: (state: {
-      installedScenarioIds: ReadonlySet<string>;
-      myTasksHref: string;
-      openScenarioInstaller: () => void;
-    }) => React.ReactNode;
-  }) => children({
-    installedScenarioIds: new Set(),
-    myTasksHref: "/agents/automations",
-    openScenarioInstaller: () => undefined,
-  }),
-}));
 vi.mock("@/pages/marketing/scenario-tasks/OverviewAutomationTasksSection", () => ({
-  OverviewAutomationTasksSection: ({ packs }: { packs: Array<{ name: string }> }) => (
-    <div data-testid="overview-automations">{packs.map((pack) => pack.name).join("|")}</div>
+  OverviewAutomationTasksSection: ({
+    onEnable,
+    packs,
+  }: {
+    onEnable: (pack: { name: string }) => void;
+    packs: Array<{ name: string }>;
+  }) => (
+    <div data-testid="overview-automations">
+      {packs.map((pack) => pack.name).join("|")}
+      <button type="button" onClick={() => onEnable(packs[0])}>open automation</button>
+    </div>
   ),
 }));
 
@@ -103,6 +97,16 @@ describe("LandingPage", () => {
     expect(screen.getByTestId("overview-automations")).toHaveTextContent(
       isGlobal ? "Water & medication reminders" : "喝水与吃药提醒",
     );
+  });
+
+  it("navigates automation actions to the Agent page instead of operating an Agent on the landing page", () => {
+    const navigateTo = vi.fn();
+
+    render(<LandingPageView navigateTo={navigateTo} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "open automation" }));
+
+    expect(navigateTo).toHaveBeenCalledWith("/agents/automations");
   });
 
   it("renders overview automation cards in Traditional Chinese for zh-Hant", async () => {
