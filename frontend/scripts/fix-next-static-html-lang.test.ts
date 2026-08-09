@@ -25,11 +25,12 @@ describe("fix-next-static-html-lang", () => {
         { src: "^/__releases/([^/]+)/_next/static/(.*)$", headers: { "cache-control": "public, max-age=31536000, immutable" }, continue: true },
         { src: "^/(.*)\\.html$", headers: { "cache-control": "no-cache" }, continue: true },
         { src: "^/(.*)\\.txt$", headers: { "cache-control": "no-cache" }, continue: true },
-        { src: "^/$", dest: "/index.html", headers: { "cache-control": "no-cache" } },
         { src: "^/\\.txt$", dest: "/index.txt", headers: { "cache-control": "no-cache" } },
         { handle: "filesystem" },
         { src: "^/([^.]+[^/.])/?$", dest: "/$1/index.html", headers: { "cache-control": "no-cache" } },
       ]));
+      expect(config.routes).not.toContainEqual(expect.objectContaining({ src: "^/$" }));
+      expect(config.routes).not.toContainEqual(expect.objectContaining({ dest: "/index.html" }));
 
       const flightRoutes = config.routes.filter((route) => route.dest === "/$1/index.txt");
       for (const path of ["/about.txt", "/docs/overview.txt", "/agents/diagnostics.txt"]) {
@@ -45,7 +46,7 @@ describe("fix-next-static-html-lang", () => {
       expect(Math.max(...flightRoutes.map((route) => config.routes.indexOf(route)))).toBeLessThan(textHeaderIndex);
       expect(textHeaderIndex).toBeLessThan(filesystemIndex);
       expect(filesystemIndex).toBeLessThan(htmlFallbackIndex);
-      expect(config.routes).toHaveLength(8);
+      expect(config.routes).toHaveLength(7);
       expect(Buffer.byteLength(JSON.stringify(config))).toBeLessThan(16 * 1024);
       expect(Math.max(...config.routes.filter((route) => route.src).map((route) => Buffer.byteLength(route.src)))).toBeLessThanOrEqual(480);
       expect(existsSync(join(out, ".edgeone", "assets", "docs", "overview", "index.txt"))).toBe(true);

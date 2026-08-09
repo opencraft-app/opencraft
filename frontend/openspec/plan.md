@@ -14,6 +14,30 @@
 
 ---
 
+# 2026-08-09 EdgeOne Pages 裸根路径 404 修复
+
+**Status:** 实现与 Preview 验证完成，用户已确认提交、推送并创建 MR。
+
+**Goal:** 让 EdgeOne Pages 的裸根路径 `/` 直接由 Build Output 的 filesystem 路由提供静态首页，避免显式重写 `/index.html` 触发 Pages 路由缓存分裂和概率性平台 404。
+
+**Scope:** 仅调整 EdgeOne Build Output 路由生成及其回归测试；不修改页面运行时代码、外层加速域名配置或生产发布配置。
+
+## Tasks
+
+- [x] 先补充失败测试，禁止生成 `^/$ -> /index.html` 显式根路由。
+- [x] 删除显式根路由，保留 filesystem 与普通目录 HTML fallback 的顺序。
+- [x] 运行定向测试、frontend 检查并验证生成配置。
+- [x] 发布 Preview，连续验证不带查询参数的裸 `/`。
+- [x] 用户确认后提交、推送并创建 MR。
+
+## Verification
+
+- `pnpm exec vitest run scripts/fix-next-static-html-lang.test.ts`
+- `pnpm check`
+- `git diff --check`
+
+---
+
 # 2026-08-07 国际站 Skills 来源说明对齐国内站
 
 **Status:** 实现与验证完成，等待用户手动验收；不自动 commit / push / MR。
