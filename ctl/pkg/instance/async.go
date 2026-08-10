@@ -2039,7 +2039,7 @@ func (l *logic) ensureLegacyPassEntitlement(ctx pctx.Context, userID string) err
 const hermesRuntimeUser = "agentuser"
 const hermesDefaultProviderName = "custom"
 
-// configureOnboard 通过 envd process 在沙箱中完成 Hermes 的默认模型初始化。
+// configureOnboard 通过 TAT PTY 在沙箱中完成 Hermes 的默认模型初始化。
 //
 // 当前路径遵循 Hermes 镜像演进语义：
 // 1. 镜像内置 acli 时优先使用 acli
@@ -2073,10 +2073,15 @@ func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey stri
 	providerID := hermesDefaultProviderName
 	l.logHermesModelSetInput(sandboxID, providerID, modelID, baseURL, compat, apiKey)
 
-	installResult, err := l.execSandboxProcessCommand(ctx, sandboxID, "hermes_ensure_model_cli", &psandbox.ProcessStartRequest{
-		Cmd:  "/bin/bash",
-		Args: []string{"-l", "-c", renderHermesEnsureModelCLICommand()},
-	}, 60)
+	installResult, err := l.execSandboxPtyCommandStream(
+		ctx,
+		sandboxID,
+		"hermes_ensure_model_cli",
+		renderHermesEnsureModelCLICommand(),
+		hermesRuntimeUser,
+		60,
+		nil,
+	)
 	l.logHermesCommandResult("hermes_ensure_model_cli", sandboxID, installResult, err)
 	if err != nil {
 		return fmt.Errorf("exec ensure hermes model cli command: %w", err)
@@ -2085,18 +2090,22 @@ func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey stri
 		return fmt.Errorf("ensure hermes model cli command failed: %s", sandboxCommandFailureDetail(installResult))
 	}
 
-	modelSetCommand := shellUserCommand(hermesRuntimeUser, renderHermesModelSetCommand(
+	modelSetCommand := renderHermesModelSetCommand(
 		modelID,
 		providerID,
 		baseURL,
 		apiKey,
 		compat,
-	))
-	modelSetResult, err := l.execSandboxProcessCommand(ctx, sandboxID, "hermes_model_set", &psandbox.ProcessStartRequest{
-		Cmd:  "/bin/bash",
-		Args: []string{"-l", "-c", modelSetCommand},
-		Env:  shellUserEnv(hermesRuntimeUser),
-	}, 60)
+	)
+	modelSetResult, err := l.execSandboxPtyCommandStream(
+		ctx,
+		sandboxID,
+		"hermes_model_set",
+		modelSetCommand,
+		hermesRuntimeUser,
+		60,
+		nil,
+	)
 	l.logHermesCommandResult("hermes_model_set", sandboxID, modelSetResult, err)
 	if err != nil {
 		return fmt.Errorf("exec hermes model set command: %w", err)
