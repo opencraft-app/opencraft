@@ -146,19 +146,13 @@ describe("Vela token usage", () => {
       )?.[1] ?? "";
 
     const shell = read("layouts", "workspace-shell.tsx");
-    const management = read("components", "management-workspace.tsx");
-    const rows = [
-      styleOf(shell, "channelButton"),
-      styleOf(shell, "channelButtonSelected"),
-      styleOf(shell, "directButton"),
-      styleOf(shell, "directButtonSelected"),
-      styleOf(management, "collectionRow"),
-    ];
+    const sourceList = read("primitives", "system-source-list-row.tsx");
+    const row = styleOf(sourceList, "row");
+    const selectedRow = styleOf(sourceList, "rowSelected");
 
-    for (const row of rows) {
-      expect(row).toContain("semantic.radius.compactControl");
-      expect(row).not.toMatch(/border(?:Bottom|Top)Width/u);
-    }
+    expect(row).toContain("semantic.radius.compactControl");
+    expect(row).not.toMatch(/border(?:Bottom|Top)Width/u);
+    expect(selectedRow).not.toMatch(/border(?:Bottom|Top)Width/u);
     for (const list of [styleOf(shell, "channelList"), styleOf(shell, "directList")]) {
       expect(list).toContain("paddingHorizontal: theme.spacing.sm");
     }
@@ -279,11 +273,11 @@ describe("Vela token usage", () => {
   it("lets the channel panel share the management form controls", () => {
     // Channel create/edit invented its own fields, pill visibility toggles and
     // submit Pressable while agents/members already spoke ManagementField,
-    // SelectionButton and ActionButton. Same form job, one vocabulary.
+    // SystemSegmentedControl and ActionButton. Same form job, one vocabulary.
     const shell = readUiSource("layouts/workspace-shell.tsx");
     expect(shell).toContain("<ManagementField");
     expect(shell).toContain("<ManagementTextInput");
-    expect(shell).toContain("<SelectionButton");
+    expect(shell).toContain("<SystemSegmentedControl");
     expect(shell).not.toContain("channelInput:");
     expect(shell).not.toContain("channelVisibilityButton:");
     expect(shell).not.toContain("channelPanelSubmit:");
@@ -516,7 +510,6 @@ describe("Vela token usage", () => {
       ["components/terminal-panel.tsx", "input", ["fieldSurface"]],
       ["components/message-list.tsx", "loadOlderButton", ["actionQuietSurface"]],
       ["components/message-composer.tsx", "sendButtonDisabled", ["actionDisabledSurface"]],
-      ["layouts/workspace-shell.tsx", "compactChannelButton", ["actionQuietSurface"]],
       ["layouts/workspace-shell.tsx", "compactServerButton", ["actionQuietSurface"]],
       ["layouts/workspace-shell.tsx", "searchInput", ["fieldSurface"]],
     ];
@@ -636,7 +629,7 @@ describe("Vela token usage", () => {
       ["layouts/workspace-shell.tsx", "headerActionButton", ["iconControl.smallSize"]],
       ["components/message-list.tsx", "messageText", ["contentMeasure.messageMaxWidth"]],
       ["components/message-list.tsx", "quote", ["contentMeasure.readingMaxWidth"]],
-      ["layouts/workspace-shell.tsx", "chatErrorToast", ["contentMeasure.noticeMaxWidth"]],
+      ["primitives/system-feedback.tsx", "toast", ["contentMeasure.noticeMaxWidth"]],
     ];
     const offenders = requiredRecipes.flatMap(([relativePath, styleName, recipes]) => {
       const source = readUiSource(relativePath);
@@ -655,11 +648,10 @@ describe("Vela token usage", () => {
     const requiredRecipes: Array<[string, string, string[]]> = [
       ["components/management-workspace.tsx", "collectionPaneHorizontal", ["managementWorkspace.collectionCompactHeight"]],
       ["components/management-workspace.tsx", "collectionRowHorizontal", ["managementWorkspace.collectionCompactRowWidth", "control.rowHeight"]],
-      ["components/management-workspace.tsx", "empty", ["emptyState.stageMinHeight"]],
-      ["components/management-workspace.tsx", "emptyCopy", ["contentMeasure.compactMaxWidth"]],
-      ["components/management-workspace.tsx", "emptyIcon", ["emptyState.iconSize"]],
-      ["components/management-workspace.tsx", "feedback", ["status.inlineMinHeight"]],
-      ["components/management-workspace.tsx", "feedbackDot", ["identity.statusDotSize"]],
+      ["primitives/system-empty-state.tsx", "onboarding", ["emptyState.stageMinHeight"]],
+      ["primitives/system-empty-state.tsx", "copy", ["managementWorkspace.emptyStateMaxWidth"]],
+      ["primitives/system-empty-state.tsx", "icon", ["iconControl.compactSize"]],
+      ["primitives/system-feedback.tsx", "inline", ["status.inlineMinHeight"]],
       ["components/management-workspace.tsx", "resourceActionCopy", ["managementWorkspace.resourceActionCopyMinWidth"]],
       ["components/management-workspace.tsx", "resourceActionRow", ["managementWorkspace.resourceActionMinHeight"]],
       ["components/management-workspace.tsx", "recordIdentityHeader", ["resourceIdentity.headerPaddingBottom"]],
@@ -682,8 +674,6 @@ describe("Vela token usage", () => {
       ["layouts/workspace-shell.tsx", "searchPanel", ["overlay.searchPanelMaxHeight"]],
       ["layouts/app-frame.tsx", "serverMarksScroller", ["overlay.serverListMaxHeight"]],
       ["layouts/app-frame.tsx", "accountStatusDot", ["identity.statusDotSize"]],
-      ["layouts/workspace-shell.tsx", "directButton", ["control.rowHeight"]],
-      ["layouts/workspace-shell.tsx", "directButtonSelected", ["control.rowHeight"]],
       ["layouts/workspace-shell.tsx", "unreadBadge", ["status.badgeMinSize"]],
       ["layouts/workspace-shell.tsx", "channelMemberAdd", ["iconControl.denseSize"]],
       ["layouts/workspace-shell.tsx", "channelMemberConfirmMark", ["emptyState.iconSize"]],
@@ -692,19 +682,15 @@ describe("Vela token usage", () => {
       ["layouts/workspace-shell.tsx", "channelKindBadge", ["status.badgeMinSize"]],
       ["layouts/workspace-shell.tsx", "compactServerInitial", ["identity.avatarCompactSize"]],
       ["layouts/workspace-shell.tsx", "connectionDot", ["identity.connectionDotSize"]],
-      ["layouts/workspace-shell.tsx", "chatErrorToastClose", ["iconControl.compactSize"]],
-      ["layouts/workspace-shell.tsx", "chatErrorToastIcon", ["iconControl.compactSize"]],
       ["layouts/workspace-shell.tsx", "messageHeaderIcon", ["iconControl.denseSize"]],
       ["layouts/workspace-shell.tsx", "onlineAgentsDot", ["identity.statusDotSize"]],
       ["layouts/app-frame.tsx", "railNavigationItem", ["desktopWorkspace.navigationControlSize"]],
       ["layouts/app-frame.tsx", "railTooltip", ["iconControl.compactSize"]],
       ["layouts/workspace-shell.tsx", "searchResult", ["control.rowHeight"]],
       ["layouts/workspace-shell.tsx", "sidebarHeaderIcon", ["identity.avatarNavigationSize"]],
-      ["layouts/app-frame.tsx", "accountLogoutButton", ["control.height"]],
       ["layouts/workspace-shell.tsx", "channelMemberRow", ["conversationWorkspace.channelMemberRowMinHeight"]],
-      ["layouts/workspace-shell.tsx", "compactChannelButton", ["compactWorkspace.listRowMinHeight"]],
       ["layouts/workspace-shell.tsx", "compactServerButton", ["compactWorkspace.switcherRowMinHeight"]],
-      ["layouts/workspace-shell.tsx", "chatErrorToast", ["status.toastMinHeight"]],
+      ["primitives/system-feedback.tsx", "toast", ["status.toastMinHeight"]],
       ["layouts/workspace-shell.tsx", "reconnectNotice", ["status.bannerMinHeight"]],
       ["layouts/workspace-shell.tsx", "onlineAgentsBadge", ["status.summaryMinHeight"]],
       ["screens/auth-screen.tsx", "formPanel", ["contentMeasure.readingMaxWidth"]],

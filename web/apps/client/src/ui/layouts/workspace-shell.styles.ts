@@ -517,35 +517,6 @@ export const styles = StyleSheet.create((theme) => ({
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.bodyCompact,
   },
-  chatErrorToast: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.overlaySurface,
-    borderColor: velaTheme.semantic.color.borderDanger,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    maxWidth: theme.recipes.contentMeasure.noticeMaxWidth,
-    minHeight: theme.recipes.status.toastMinHeight,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
-    width: "100%",
-  },
-  chatErrorToastClose: {
-    alignItems: "center",
-    borderRadius: theme.semantic.radius.circle,
-    height: theme.recipes.iconControl.compactSize,
-    justifyContent: "center",
-    width: theme.recipes.iconControl.compactSize,
-  },
-  chatErrorToastIcon: {
-    alignItems: "center",
-    backgroundColor: velaTheme.semantic.color.statusDangerSurface,
-    borderRadius: theme.semantic.radius.circle,
-    height: theme.recipes.iconControl.compactSize,
-    justifyContent: "center",
-    width: theme.recipes.iconControl.compactSize,
-  },
   chatErrorToastLayer: {
     alignItems: "center",
     left: 0,
@@ -557,11 +528,6 @@ export const styles = StyleSheet.create((theme) => ({
   },
   chatErrorToastLayerCompact: {
     top: theme.spacing.md,
-  },
-  chatErrorToastText: {
-    color: theme.semantic.color.textPrimary,
-    flex: 1,
-    ...theme.semantic.typography.bodyCompactEmphasis,
   },
   reconnectNotice: {
     alignItems: "center",

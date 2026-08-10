@@ -1817,7 +1817,7 @@ describe("WorkspaceShell", () => {
 
     const toast = screen.getByTestId("chat-error-toast");
     expect(toast).toBeVisible();
-    expect(toast.props.accessibilityRole).toBe("alert");
+    expect(toast.props.accessibilityLiveRegion).toBe("polite");
     expect(
       within(toast).getByText("没有访问该 Work 资源的权限"),
     ).toBeVisible();
@@ -3189,7 +3189,8 @@ describe("WorkspaceShell", () => {
 
     expect(screen.getByText("这是一个公开频道")).toBeVisible();
     expect(screen.getByTestId("channel-join-empty-state")).toHaveStyle({
-      borderRadius: 0,
+      alignItems: "flex-start",
+      backgroundColor: velaTheme.semantic.color.surfaceTransparent,
     });
     expect(screen.queryByLabelText("消息内容")).toBeNull();
     await fireEvent.press(

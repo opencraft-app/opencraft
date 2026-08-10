@@ -41,7 +41,6 @@ import {
   CollectionRowCopy,
   DetailSection,
   IconActionButton,
-  InlineFeedback,
   ManagementDetailCanvas,
   ManagementDetailScroll,
   ManagementField,
@@ -57,6 +56,7 @@ import {
   ResourceIdentityHeader,
   ResourceMetadataList,
 } from "../components/management-workspace";
+import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 import {
   OperationStatusList,
@@ -535,7 +535,9 @@ export function MembersScreen(props: MembersScreenProps) {
           title={pageModel.header.title}
           titleTestID="member-stage-title"
         />
-        {pageModel.error ? <InlineFeedback message={pageModel.error} /> : null}
+        {pageModel.error ? (
+          <SystemFeedback kind="inline" message={pageModel.error} tone="danger" />
+        ) : null}
         {members.length > 1 && !creatingInvite && !acceptingInvite
           ? phone
             ? mobileNavigation

@@ -1,5 +1,5 @@
 import type {LucideIcon} from "lucide-react-native";
-import {InlineEmptyState} from "./management-workspace";
+import {SystemEmptyState} from "../primitives/system-empty-state";
 
 export interface ManagementEmptyStateProps {
   actionAccessibilityLabel?: string;
@@ -19,12 +19,20 @@ export function ManagementEmptyState({
   title,
 }: ManagementEmptyStateProps) {
   return (
-    <InlineEmptyState
-      actionAccessibilityLabel={actionAccessibilityLabel}
-      actionLabel={actionLabel}
+    <SystemEmptyState
       description={description}
       icon={Icon}
-      onAction={onAction}
+      kind="onboarding"
+      primaryAction={
+        actionLabel && onAction
+          ? {
+              accessibilityLabel: actionAccessibilityLabel,
+              label: actionLabel,
+              onPress: onAction,
+              variant: "default",
+            }
+          : undefined
+      }
       testID="management-empty-state"
       title={title}
     />

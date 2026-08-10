@@ -58,6 +58,7 @@ export function SystemSelect<T extends string>({
                     accessibilityLabel={option.accessibilityLabel ?? option.label}
                     accessibilityRole={"option" as never}
                     accessibilityState={{disabled: Boolean(option.disabled), selected}}
+                    aria-selected={selected}
                     disabled={option.disabled}
                     key={option.value}
                     onPress={() => {

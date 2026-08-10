@@ -24,7 +24,6 @@ import {
   CollectionRowCopy,
   DetailSection,
   IconActionButton,
-  InlineFeedback,
   ManagementDetailCanvas,
   ManagementDetailScroll,
   ManagementStageFill,
@@ -41,6 +40,7 @@ import {
   ManagementTextInput,
   ResourceActionRow,
 } from "../components/management-workspace";
+import {SystemFeedback} from "../primitives/system-feedback";
 import {formatReadableDateTime} from "../date-time";
 import {
   buildManagementShellModel,
@@ -486,7 +486,8 @@ export function ComputersScreen(props: ComputersScreenProps) {
           titleTestID="computer-stage-title"
         />
         {pageModel.error ? (
-          <InlineFeedback
+          <SystemFeedback
+            kind="inline"
             message={pageModel.error}
             testID="computer-feedback"
             tone={pageModel.error.includes("已完成连接") ? "positive" : "danger"}

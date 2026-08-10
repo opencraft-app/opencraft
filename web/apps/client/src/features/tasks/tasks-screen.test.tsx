@@ -427,8 +427,8 @@ describe("TasksScreen", () => {
     ).toBeNull();
     expect(screen.queryByRole("button", {name: "新建任务"})).toBeNull();
     expect(screen.getByTestId("management-empty-state")).toHaveStyle({
-      alignItems: "center",
-      flexGrow: 1,
+      alignItems: "flex-start",
+      minHeight: velaTheme.recipes.emptyState.stageMinHeight,
     });
     await fireEvent.press(
       screen.getByRole("button", {name: "从空状态新建任务"}),

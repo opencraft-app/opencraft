@@ -88,6 +88,7 @@ export function SystemSourceListRow(props: SystemSourceListRowProps) {
         accessible
         accessibilityLabel={accessibilityLabel}
         accessibilityState={{disabled, selected}}
+        aria-selected={selected}
         style={rowStyle}
         testID={testID}
       >
@@ -101,6 +102,7 @@ export function SystemSourceListRow(props: SystemSourceListRowProps) {
       accessibilityLabel={accessibilityLabel}
       accessibilityRole={props.kind === "link" ? "link" : "button"}
       accessibilityState={{disabled, selected}}
+      aria-selected={selected}
       aria-current={props.kind === "link" && selected ? "page" : undefined}
       disabled={disabled}
       onPress={props.kind === "button" ? props.onPress : undefined}

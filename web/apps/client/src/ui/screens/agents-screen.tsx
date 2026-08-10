@@ -40,9 +40,9 @@ import {
   ManagementStage,
   ManagementTextInput,
   ResourceActionRow,
-  InlineFeedback,
   ManagementCollectionFooterAction,
 } from "../components/management-workspace";
+import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 import {SystemSelectField} from "../primitives/system-select-field";
 import {
@@ -723,7 +723,9 @@ export function AgentsScreen(props: AgentsScreenProps) {
         title={pageModel.header.title}
         titleTestID="agent-stage-title"
       />
-      {pageModel.error ? <InlineFeedback message={pageModel.error} /> : null}
+      {pageModel.error ? (
+        <SystemFeedback kind="inline" message={pageModel.error} tone="danger" />
+      ) : null}
       {agents.length > 1 && !creating
         ? phone
           ? mobileNavigation

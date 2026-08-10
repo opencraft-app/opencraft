@@ -43,7 +43,6 @@ import {
 } from "./workspace-shell-model";
 import ArrowRight from "lucide-react-native/icons/arrow-right";
 import AtSign from "lucide-react-native/icons/at-sign";
-import CircleAlert from "lucide-react-native/icons/circle-alert";
 import ChevronRight from "lucide-react-native/icons/chevron-right";
 import Hash from "lucide-react-native/icons/hash";
 import LogOut from "lucide-react-native/icons/log-out";
@@ -85,6 +84,7 @@ import { ActionButton } from "../primitives/action-button";
 import { IconActionButton } from "../primitives/icon-action-button";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 import {SystemSourceListRow} from "../primitives/system-source-list-row";
+import {SystemFeedback} from "../primitives/system-feedback";
 import {
   memberIdentityLabel,
   memberKindLabel,
@@ -1379,34 +1379,17 @@ function ChatActionErrorToast({
         compact && styles.chatErrorToastLayerCompact,
       ]}
     >
-      <View
-        accessibilityRole="alert"
-        style={styles.chatErrorToast}
+      <SystemFeedback
+        action={{
+          accessibilityLabel: "关闭错误提示",
+          label: "关闭",
+          onPress: () => setVisible(false),
+        }}
+        kind="toast"
+        message={message}
         testID="chat-error-toast"
-      >
-        <View style={styles.chatErrorToastIcon}>
-          <CircleAlert
-            color={velaTheme.semantic.color.statusDanger}
-            size={velaTheme.semantic.icon.size.medium}
-            strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-          />
-        </View>
-        <Text numberOfLines={3} style={styles.chatErrorToastText}>
-          {message}
-        </Text>
-        <Pressable
-          accessibilityLabel="关闭错误提示"
-          accessibilityRole="button"
-          onPress={() => setVisible(false)}
-          style={styles.chatErrorToastClose}
-        >
-          <X
-            color={velaTheme.semantic.color.iconMuted}
-            size={velaTheme.semantic.icon.size.small}
-            strokeWidth={velaTheme.semantic.icon.stroke.regular}
-          />
-        </Pressable>
-      </View>
+        tone="danger"
+      />
     </View>
   );
 }

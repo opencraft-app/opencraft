@@ -18,6 +18,7 @@ import {ActionButton} from "../primitives/action-button";
 import {IconActionButton} from "../primitives/icon-action-button";
 import {SystemSelect} from "../primitives/system-select";
 import type {SystemSelectOption} from "../primitives/system-select";
+import {SystemEmptyState} from "../primitives/system-empty-state";
 import {SystemSourceListRow} from "../primitives/system-source-list-row";
 
 export {ActionButton} from "../primitives/action-button";
@@ -896,39 +897,6 @@ export function ManagementResourceSelect({
   );
 }
 
-export interface InlineFeedbackProps {
-  message: string;
-  testID?: string;
-  tone?: "danger" | "positive";
-}
-
-export function InlineFeedback({
-  message,
-  testID = "inline-feedback",
-  tone = "danger",
-}: InlineFeedbackProps) {
-  return (
-    <View
-      accessibilityLiveRegion="polite"
-      accessibilityRole={tone === "danger" ? "alert" : undefined}
-      style={[
-        styles.feedback,
-        tone === "positive" && styles.feedbackPositive,
-      ]}
-      testID={testID}
-    >
-      <View style={[
-        styles.feedbackDot,
-        tone === "positive" && styles.feedbackDotPositive,
-      ]} />
-      <Text style={[
-        styles.feedbackText,
-        tone === "positive" && styles.feedbackTextPositive,
-      ]}>{message}</Text>
-    </View>
-  );
-}
-
 export interface StatusIndicatorProps {
   label: string;
   testID?: string;
@@ -989,30 +957,25 @@ export function InlineEmptyState({
   testID = "inline-empty-state",
   title,
 }: InlineEmptyStateProps) {
-  const {theme} = useUnistyles();
   return (
-    <View style={styles.empty} testID={testID}>
-      {Icon ? (
-        <View style={styles.emptyIcon} testID={`${testID}-icon`}>
-          <Icon color={theme.semantic.color.iconAccent} size={theme.semantic.icon.size.feature} strokeWidth={theme.semantic.icon.stroke.regular} />
-        </View>
-      ) : null}
-      <View style={styles.emptyCopy}>
-        <Text style={styles.emptyTitle}>{title}</Text>
-        <Text style={styles.emptyDescription}>{description}</Text>
-      </View>
-      {actionLabel && onAction ? (
-        <View style={styles.emptyAction} testID={`${testID}-action`}>
-          <ActionButton
-            accessibilityLabel={actionAccessibilityLabel}
-            busy={actionBusy}
-            disabled={actionDisabled}
-            importance="primary"
-            label={actionLabel}
-            onPress={onAction}
-          />
-        </View>
-      ) : null}
-    </View>
+    <SystemEmptyState
+      description={description}
+      icon={Icon}
+      kind="canvas"
+      primaryAction={
+        actionLabel && onAction
+          ? {
+              accessibilityLabel: actionAccessibilityLabel,
+              busy: actionBusy,
+              disabled: actionDisabled,
+              label: actionLabel,
+              onPress: onAction,
+              variant: "default",
+            }
+          : undefined
+      }
+      testID={testID}
+      title={title}
+    />
   );
 }

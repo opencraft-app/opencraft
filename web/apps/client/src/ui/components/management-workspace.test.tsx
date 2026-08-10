@@ -216,7 +216,7 @@ describe("management workspace primitives", () => {
     expect(screen.getByText("已连接")).toBeTruthy();
   });
 
-  it("keeps empty states terse without an icon card and centers the recovery action", async () => {
+  it("keeps empty states terse, left aligned and free of nested cards", async () => {
     const screen = await render(
       <InlineEmptyState
         actionLabel="新建 Agent"
@@ -229,11 +229,11 @@ describe("management workspace primitives", () => {
     );
 
     expect(screen.getByTestId("agent-empty-icon")).toHaveStyle({
-      backgroundColor: "transparent",
-      borderRadius: 0,
+      height: velaTheme.recipes.iconControl.compactSize,
+      width: velaTheme.recipes.iconControl.compactSize,
     });
     expect(screen.getByTestId("agent-empty-action")).toHaveStyle({
-      alignItems: "center",
+      flexDirection: "row",
     });
   });
 

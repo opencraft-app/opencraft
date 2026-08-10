@@ -29,7 +29,6 @@ import {
   DetailHeading,
   DetailSection,
   IconActionButton,
-  InlineFeedback,
   ManagementCollectionFooterAction,
   ManagementResourceDirectory,
   ManagementDateTimeInput,
@@ -43,6 +42,7 @@ import {
   ManagementStage,
   ManagementTextInput,
 } from "../components/management-workspace";
+import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemTabs} from "../primitives/system-tabs";
 import {SystemSelectField} from "../primitives/system-select-field";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
@@ -600,7 +600,9 @@ export function TasksScreen(props: TasksScreenProps) {
         title={pageModel.header.title}
         titleTestID="task-stage-title"
       />
-      {pageModel.error ? <InlineFeedback message={pageModel.error} /> : null}
+      {pageModel.error ? (
+        <SystemFeedback kind="inline" message={pageModel.error} tone="danger" />
+      ) : null}
       {stackedCollection && !activeCreation ? (
         <View
           style={styles.compactListBlock}

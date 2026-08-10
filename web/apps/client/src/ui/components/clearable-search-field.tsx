@@ -1,9 +1,10 @@
-import { Pressable, Text, TextInput, View, type ViewStyle } from "react-native";
+import { Pressable, TextInput, View, type ViewStyle } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import Search from "lucide-react-native/icons/search";
 import X from "lucide-react-native/icons/x";
 
 import { velaTheme } from "../tokens";
+import {SystemEmptyState} from "../primitives/system-empty-state";
 
 /**
  * The one clearable search field.
@@ -81,20 +82,20 @@ export function ClearableSearchField({
 
 export interface SearchEmptyCardProps {
   description: string;
-  style?: ViewStyle;
   title: string;
 }
 
 export function SearchEmptyCard({
   description,
-  style,
   title,
 }: SearchEmptyCardProps) {
   return (
-    <View style={[styles.empty, style]}>
-      <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptyDescription}>{description}</Text>
-    </View>
+    <SystemEmptyState
+      description={description}
+      icon={Search}
+      kind="list"
+      title={title}
+    />
   );
 }
 
@@ -104,25 +105,6 @@ const styles = StyleSheet.create((theme) => ({
     height: theme.recipes.iconControl.compactSize,
     justifyContent: "center",
     width: theme.recipes.iconControl.compactSize,
-  },
-  empty: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.sectionSurface,
-    borderColor: theme.semantic.color.borderSection,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    gap: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.xl,
-  },
-  emptyDescription: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodySmall,
-    textAlign: "center",
-  },
-  emptyTitle: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.bodyEmphasis,
   },
   field: {
     alignItems: "center",

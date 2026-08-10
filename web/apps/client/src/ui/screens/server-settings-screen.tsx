@@ -9,7 +9,6 @@ import {useWindowDimensions} from "react-native";
 import {
   ActionButton,
   DetailSection,
-  InlineFeedback,
   ManagementDetailScroll,
   ManagementField,
   ManagementFormActions,
@@ -18,6 +17,7 @@ import {
   ManagementTextInput,
   ResourceMetadataList,
 } from "../components/management-workspace";
+import {SystemFeedback} from "../primitives/system-feedback";
 import type { PlatformFrameProps } from "../layouts/app-frame";
 import { ManagementScreenFrame } from "../layouts/management-screen-frame";
 import type { WorkspaceSection } from "../layouts/workspace-section";
@@ -177,10 +177,21 @@ export function ServerSettingsScreen({
   const stage = (
     <ManagementStage testID="server-settings-stage">
       <ManagementHeader title={pageModel.header.title} />
-      {error ? <InlineFeedback message={error} /> : null}
-      {saved && !error ? <InlineFeedback message="Server 设置已保存" /> : null}
+      {error ? (
+        <SystemFeedback kind="inline" message={error} tone="danger" />
+      ) : null}
+      {saved && !error ? (
+        <SystemFeedback
+          kind="inline"
+          message="Server 设置已保存"
+          tone="positive"
+        />
+      ) : null}
       {!canManage ? (
-        <InlineFeedback message="只有 Server Owner 或管理员可以修改这些设置" />
+        <SystemFeedback
+          kind="inline"
+          message="只有 Server Owner 或管理员可以修改这些设置"
+        />
       ) : null}
       <ManagementDetailScroll
         density={density}

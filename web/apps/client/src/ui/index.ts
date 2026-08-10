@@ -81,6 +81,16 @@ export {
   type SystemPopoverProps,
 } from "./primitives/system-popover";
 export {
+  SystemEmptyState,
+  type SystemEmptyStateAction,
+  type SystemEmptyStateProps,
+} from "./primitives/system-empty-state";
+export {
+  SystemFeedback,
+  type SystemFeedbackAction,
+  type SystemFeedbackProps,
+} from "./primitives/system-feedback";
+export {
   SystemMaterialSurface,
   type SystemMaterialRole,
   type SystemMaterialSurfaceProps,
@@ -99,7 +109,6 @@ export {
   DetailHeading,
   DetailSection,
   IconActionButton,
-  InlineFeedback,
   InlineEmptyState,
   ManagementCollectionFooterAction,
   ManagementCollectionHeader,
@@ -132,7 +141,6 @@ export {
   type DetailHeadingProps,
   type DetailSectionProps,
   type IconActionButtonProps,
-  type InlineFeedbackProps,
   type InlineEmptyStateProps,
   type ManagementHeaderProps,
   type NoticeBannerProps,
