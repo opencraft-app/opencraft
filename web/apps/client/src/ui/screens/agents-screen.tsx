@@ -408,7 +408,7 @@ export function AgentsScreen(props: AgentsScreenProps) {
                         ? !createIdentityReady
                         : !createEnvironmentReady),
                     id: "continue-create-agent",
-                    kind: "primary" as const,
+                    kind: "advance" as const,
                     label: "继续",
                     run: () =>
                       setCreateStep((createStep + 1) as AgentCreateStep),
@@ -419,7 +419,7 @@ export function AgentsScreen(props: AgentsScreenProps) {
                       !createIdentityReady ||
                       !createEnvironmentReady,
                     id: "submit-create-agent",
-                    kind: "primary" as const,
+                    kind: "submit" as const,
                     label: createDeployAndStart ? "创建并启动" : "创建 Agent",
                     run: () =>
                       submitNewAgent(
@@ -859,8 +859,13 @@ function AgentCreateForm({
   step: AgentCreateStep;
 }) {
   const {theme} = useUnistyles();
-  const primaryAction = form.actions.find(action => action.kind === "primary")!;
-  const navigationAction = form.actions.find(action => action.kind !== "primary")!;
+  const flowAction = form.actions.find(
+    action => action.kind === "advance" || action.kind === "submit",
+  )!;
+  const flowIntent = flowAction.kind === "submit" ? "submit" : "advance";
+  const navigationAction = form.actions.find(
+    action => action.kind !== "advance" && action.kind !== "submit",
+  )!;
   const field = (id: string) => form.fields.find(item => item.id === id);
   const normalizedHandle = handle.trim();
   const handleValid = agentHandlePattern.test(normalizedHandle);
@@ -981,10 +986,10 @@ function AgentCreateForm({
                 onPress: navigationAction.run,
               }}
               flowAction={{
-                disabled: primaryAction.disabled,
-                intent: "advance",
-                label: primaryAction.label,
-                onPress: primaryAction.run,
+                disabled: flowAction.disabled,
+                intent: flowIntent,
+                label: flowAction.label,
+                onPress: flowAction.run,
               }}
             />
           </View>
@@ -1041,10 +1046,10 @@ function AgentCreateForm({
                 onPress: navigationAction.run,
               }}
               flowAction={{
-                disabled: primaryAction.disabled,
-                intent: "advance",
-                label: primaryAction.label,
-                onPress: primaryAction.run,
+                disabled: flowAction.disabled,
+                intent: flowIntent,
+                label: flowAction.label,
+                onPress: flowAction.run,
               }}
             />
           </View>
@@ -1075,10 +1080,10 @@ function AgentCreateForm({
                 onPress: navigationAction.run,
               }}
               flowAction={{
-                disabled: primaryAction.disabled,
-                intent: "submit",
-                label: primaryAction.label,
-                onPress: primaryAction.run,
+                disabled: flowAction.disabled,
+                intent: flowIntent,
+                label: flowAction.label,
+                onPress: flowAction.run,
               }}
             />
           </View>

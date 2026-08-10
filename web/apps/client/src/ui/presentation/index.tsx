@@ -14,7 +14,7 @@ export type PresentationKind = "graphical" | "terminal";
 export interface PresentationAction {
   disabled?: boolean;
   id: string;
-  kind?: "danger" | "primary" | "secondary";
+  kind?: "advance" | "danger" | "primary" | "secondary" | "submit";
   label: string;
   run(): unknown | Promise<unknown>;
   shortcut?: string;
