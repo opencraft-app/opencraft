@@ -44,6 +44,7 @@ var (
 
 type Options struct {
 	Now                       func() time.Time
+	SiteKind                  string
 	SMSCooldown               time.Duration
 	SMSCodeTTL                time.Duration
 	SessionTTL                time.Duration
@@ -358,6 +359,7 @@ type Service struct {
 	verification                 VerificationPolicy
 	phoneAuth                    PhoneAuthConfig
 	store                        Store
+	siteKind                     string
 	realnameVerifier             RealnameVerifier
 	realnameFaceIDVerifier       RealnameFaceIDVerifier
 	realnameCipher               RealnameCipher
@@ -421,6 +423,10 @@ func NewWithStore(store Store, opts Options) *Service {
 	if codeGenerator == nil {
 		codeGenerator = newNumericVerificationCode
 	}
+	siteKind, err := shadowbinding.ParseSiteKind(opts.SiteKind)
+	if err != nil {
+		siteKind = shadowbinding.SiteKindCN
+	}
 
 	return &Service{
 		now:                          now,
@@ -431,6 +437,7 @@ func NewWithStore(store Store, opts Options) *Service {
 		verification:                 verificationPolicy,
 		phoneAuth:                    opts.PhoneAuth,
 		store:                        store,
+		siteKind:                     siteKind,
 		realnameVerifier:             opts.RealnameVerifier,
 		realnameFaceIDVerifier:       opts.RealnameFaceIDVerifier,
 		realnameCipher:               opts.RealnameCipher,
@@ -979,10 +986,42 @@ func (s *Service) signInOrBindOAuth(ctx context.Context, currentToken string, in
 		input.Name = oauthFallbackName(input.Provider)
 	}
 
+	var session *AuthSession
+	var err error
 	if strings.TrimSpace(currentToken) != "" {
-		return s.store.BindOAuthSession(ctx, currentToken, input, s.now(), s.sessionTTL)
+		session, err = s.store.BindOAuthSession(ctx, currentToken, input, s.now(), s.sessionTTL)
+	} else {
+		session, err = s.store.CreateOAuthSession(ctx, input, s.now(), s.sessionTTL)
 	}
-	return s.store.CreateOAuthSession(ctx, input, s.now(), s.sessionTTL)
+	if err != nil {
+		return nil, err
+	}
+	s.ensureIntlShadowBinding(ctx, session, input)
+	return session, nil
+}
+
+func (s *Service) ensureIntlShadowBinding(ctx context.Context, session *AuthSession, input OAuthSignInInput) {
+	if s == nil || session == nil || s.siteKind != shadowbinding.SiteKindIntl || s.shadowBinding == nil || !s.shadowBinding.Enabled() {
+		return
+	}
+	email := normalizeEmail(input.Email)
+	if !input.EmailVerified || email == "" {
+		slog.WarnContext(ctx, "international shadow provisioning skipped without verified oauth email",
+			"user_id", session.User.ID,
+			"provider", input.Provider,
+		)
+		return
+	}
+	if _, err := s.shadowBinding.BindShadowAccount(ctx, shadowbinding.BindInput{
+		UserID: session.User.ID,
+		Email:  email,
+	}); err != nil {
+		slog.WarnContext(ctx, "international shadow provisioning failed",
+			"user_id", session.User.ID,
+			"provider", input.Provider,
+			"err", err,
+		)
+	}
 }
 
 func (s *Service) ForgotPassword(_ context.Context, email string) error {

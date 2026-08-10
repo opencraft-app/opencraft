@@ -22,6 +22,25 @@ type recordingClient struct {
 	basicAuthErr   error
 }
 
+type recordingBillingClient struct {
+	calls   int
+	lastUin int64
+	result  BillingAccountResult
+	results []BillingAccountResult
+	err     error
+}
+
+func (c *recordingBillingClient) EnsureBillingAccount(_ context.Context, uin int64) (BillingAccountResult, error) {
+	c.calls++
+	c.lastUin = uin
+	if len(c.results) > 0 {
+		result := c.results[0]
+		c.results = c.results[1:]
+		return result, c.err
+	}
+	return c.result, c.err
+}
+
 func (c *recordingClient) SendSMSVerifyCode(context.Context, CloudSendSMSInput) error {
 	c.smsCalls++
 	if c.err != nil {
@@ -117,6 +136,118 @@ func TestBindShadowAccountRecordsFailureAndAllowsRetry(t *testing.T) {
 	}
 	if active.Status != StatusActive || active.Uin != 300000000054 {
 		t.Fatalf("unexpected retried active binding: %+v", active)
+	}
+}
+
+func TestBindShadowAccountOpensBillingBeforeActivatingIntlBinding(t *testing.T) {
+	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002, AppID: 1374210036}}
+	billing := &recordingBillingClient{result: BillingAccountResult{IsOpen: true, RequestID: "billing-request-1"}}
+	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
+
+	binding, err := svc.BindShadowAccount(context.Background(), BindInput{
+		UserID: "usr_intl",
+		Email:  "verified@example.com",
+	})
+	if err != nil {
+		t.Fatalf("bind international shadow account: %v", err)
+	}
+	if binding.Status != StatusActive || billing.calls != 1 || billing.lastUin != 450860000002 {
+		t.Fatalf("expected billing-open active binding, binding=%+v billing=%+v", binding, billing)
+	}
+	if client.lastRegister.Email != "verified@example.com" {
+		t.Fatalf("expected verified email forwarded to international registration, got %+v", client.lastRegister)
+	}
+}
+
+func TestBindShadowAccountWaitsForAsyncBillingActivation(t *testing.T) {
+	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002, AppID: 1374210036}}
+	billing := &recordingBillingClient{results: []BillingAccountResult{{IsOpen: false}, {IsOpen: true}}}
+	svc := New(NewMemoryStore(), client, Options{
+		Enabled:             true,
+		SiteKind:            SiteKindIntl,
+		BillingAccount:      billing,
+		BillingOpenTimeout:  time.Second,
+		BillingPollInterval: time.Millisecond,
+	})
+
+	binding, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
+	if err != nil {
+		t.Fatalf("wait for billing activation: %v", err)
+	}
+	if binding.Status != StatusActive || billing.calls != 2 {
+		t.Fatalf("expected active binding after billing propagation, binding=%+v calls=%d", binding, billing.calls)
+	}
+}
+
+func TestBindShadowAccountRetriesBillingWithoutRegisteringAgain(t *testing.T) {
+	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002, AppID: 1374210036}}
+	billing := &recordingBillingClient{err: errors.New("billing unavailable")}
+	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
+
+	failed, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
+	if err == nil {
+		t.Fatal("expected billing failure")
+	}
+	if failed.Status != StatusFailed || failed.Uin != 450860000002 || failed.LastErrorCode != "billing_account_open_failed" {
+		t.Fatalf("expected registered UIN retained for billing retry, got %+v", failed)
+	}
+
+	billing.err = nil
+	billing.result = BillingAccountResult{IsOpen: true, RequestID: "billing-request-2"}
+	active, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
+	if err != nil {
+		t.Fatalf("retry billing account: %v", err)
+	}
+	if active.Status != StatusActive || client.calls != 1 || billing.calls != 2 {
+		t.Fatalf("expected retry to skip registration, binding=%+v register_calls=%d billing_calls=%d", active, client.calls, billing.calls)
+	}
+}
+
+func TestBindShadowAccountResumesRegisteredPendingBinding(t *testing.T) {
+	store := NewMemoryStore()
+	now := time.Date(2026, 8, 10, 1, 2, 3, 0, time.UTC)
+	if _, err := store.SavePendingBinding(context.Background(), "usr_intl", "krsbx_u8674708900", now); err != nil {
+		t.Fatalf("save pending binding: %v", err)
+	}
+	if _, err := store.MarkBindingRegistered(context.Background(), "usr_intl", 450860000002, 450860000002, 1374210036, now); err != nil {
+		t.Fatalf("mark registered binding: %v", err)
+	}
+	client := &recordingClient{}
+	billing := &recordingBillingClient{result: BillingAccountResult{IsOpen: true}}
+	svc := New(store, client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
+
+	binding, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
+	if err != nil {
+		t.Fatalf("resume registered pending binding: %v", err)
+	}
+	if binding.Status != StatusActive || client.calls != 0 || billing.calls != 1 {
+		t.Fatalf("expected pending binding to resume at billing stage, binding=%+v register_calls=%d billing_calls=%d", binding, client.calls, billing.calls)
+	}
+}
+
+func TestBindShadowAccountDoesNotReactivateDisabledIntlBinding(t *testing.T) {
+	store := NewMemoryStore()
+	now := time.Date(2026, 8, 10, 1, 2, 3, 0, time.UTC)
+	if _, err := store.SavePendingBinding(context.Background(), "usr_intl", "krsbx_u8674708900", now); err != nil {
+		t.Fatalf("save pending binding: %v", err)
+	}
+	if _, err := store.MarkBindingRegistered(context.Background(), "usr_intl", 450860000002, 450860000002, 1374210036, now); err != nil {
+		t.Fatalf("mark registered binding: %v", err)
+	}
+	store.mu.Lock()
+	disabled := store.bindings["usr_intl"]
+	disabled.Status = StatusDisabled
+	store.bindings["usr_intl"] = disabled
+	store.mu.Unlock()
+	billing := &recordingBillingClient{result: BillingAccountResult{IsOpen: true}}
+	svc := New(store, &recordingClient{}, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
+
+	binding, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
+	if err != nil {
+		t.Fatalf("read disabled binding: %v", err)
+	}
+	if binding.Status != StatusDisabled || billing.calls != 0 {
+		t.Fatalf("disabled binding must remain disabled, binding=%+v billing_calls=%d", binding, billing.calls)
 	}
 }
 
