@@ -297,6 +297,10 @@ describe("TasksScreen", () => {
       height: "100%",
       width: 312,
     });
+    expect(screen.getByTestId("task-collection-toolbar")).toHaveStyle({
+      borderBottomWidth: velaTheme.semantic.stroke.hairline,
+      paddingHorizontal: velaTheme.spacing.md,
+    });
     expect(screen.queryByTestId("task-collection-shelf")).toBeNull();
     expect(
       screen.getByRole("button", {name: "打开任务 12"}),

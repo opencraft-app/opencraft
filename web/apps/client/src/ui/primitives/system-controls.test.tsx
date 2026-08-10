@@ -145,9 +145,16 @@ describe("Tahoe system controls", () => {
     );
 
     expect(screen.getByRole("tablist")).toHaveAccessibleName("任务视图");
+    expect(screen.getByTestId("task-tabs")).toHaveStyle({
+      borderWidth: 0,
+      height: velaTheme.recipes.control.height,
+    });
     expect(screen.getByRole("tab", {name: "任务"}).props.accessibilityState).toEqual({
       disabled: false,
       selected: true,
+    });
+    expect(screen.getByRole("tab", {name: "任务"})).toHaveStyle({
+      shadowColor: velaTheme.shadows.card.color,
     });
     expect(screen.getByRole("tab", {name: "任务"}).props["aria-controls"]).toBe("tasks-panel");
     await fireEvent(screen.getByRole("tab", {name: "任务"}), "keyDown", {

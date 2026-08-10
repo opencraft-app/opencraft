@@ -730,7 +730,7 @@ function TaskCollectionToolbar({
   refreshTestID: string;
 }) {
   return (
-    <>
+    <View style={styles.collectionToolbar} testID="task-collection-toolbar">
       <SystemTabs
         accessibilityLabel="任务视图"
         onChange={onSelectMode}
@@ -753,7 +753,7 @@ function TaskCollectionToolbar({
           testID={refreshTestID}
         />
       </View>
-    </>
+    </View>
   );
 }
 
@@ -1193,6 +1193,15 @@ function TaskDetail({
 }
 
 const styles = StyleSheet.create((theme) => ({
+  collectionToolbar: {
+    backgroundColor: theme.semantic.color.surfaceTransparent,
+    borderBottomColor: theme.semantic.color.separator,
+    borderBottomWidth: theme.semantic.stroke.hairline,
+    gap: theme.spacing.xs,
+    paddingBottom: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
+  },
   collectionPanel: {
     flex: 1,
     minHeight: 0,
@@ -1216,15 +1225,13 @@ const styles = StyleSheet.create((theme) => ({
   },
   inboxBand: {
     alignItems: "center",
-    borderBottomColor: theme.semantic.color.separator,
-    borderBottomWidth: theme.semantic.stroke.hairline,
     flexDirection: "row",
-    height: theme.recipes.control.height,
+    height: theme.recipes.managementWorkspace.headerActionHeight,
     justifyContent: "space-between",
-    paddingHorizontal: theme.spacing.md,
   },
   inboxLabel: {
-    ...theme.semantic.typography.meta,
+    color: theme.semantic.color.textMuted,
+    ...theme.semantic.typography.label,
   },
   taskCopy: {
     flex: 1,

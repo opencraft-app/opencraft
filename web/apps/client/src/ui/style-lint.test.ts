@@ -148,7 +148,7 @@ describe("Vela style lint", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("allows shadows only on overlays, floating controls and account cards", () => {
+  it("allows shadows only on overlays, floating controls and selected system chrome", () => {
     const shadowStyles = runtimeUiFiles(join(process.cwd(), "src", "ui"))
       .filter((path) => !path.endsWith("tokens.ts"))
       .flatMap((path) => {
@@ -171,6 +171,7 @@ describe("Vela style lint", () => {
       "components/message-list.tsx:actionRowOpen",
       "components/message-viewport/message-viewport.tsx:newMessages",
       "layouts/app-frame.tsx:railTooltip",
+      "primitives/system-tabs.tsx:tabSelected",
     ]);
   });
 
