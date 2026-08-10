@@ -226,6 +226,12 @@ backends:
       timeout: 10s
       allowed_methods: ["POST"]
 
+  - alias: tcapi-billing-intl-test
+    upstream:
+      base_url: "https://billing.test.tencentcloudapi.com"
+      timeout: 15s
+      allowed_methods: ["POST"]
+
   - alias: tcapi-account-cn-test
     upstream:
       base_url: "https://account.test.tencentcloudapi.com"
@@ -323,6 +329,7 @@ auth:
       routes:
         - tcapi-account-cn-dev
         - tcapi-billing-cn-dev
+        - tcapi-billing-intl-test
         - tcapi-account-cn-test
         - tcapi-cam-cn-test
         - tcapi-sts-cn-test
@@ -861,6 +868,14 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: tcapi-billing-cn-dev
+
+  - id: tcapi-billing-intl-test
+    description: "Signed tunnel for TencentCloud international billing account API test endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-intl-test
 
   - id: tcapi-account-cn-test
     description: "Signed tunnel for TencentCloud account API test endpoint from shadow script defaults."
