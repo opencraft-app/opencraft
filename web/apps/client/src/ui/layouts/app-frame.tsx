@@ -147,8 +147,6 @@ export function ServerRail({
 > & { canManageServer: boolean }) {
   const {theme} = useUnistyles();
   const [accountOpen, setAccountOpen] = useState(false);
-  const accountStatus = account ? accountImPresentation(account, imStatus) : null;
-
   return (
     <View style={styles.serverRail} testID="server-rail">
       <View accessibilityLabel="Vela" style={styles.railBrand}>
@@ -212,19 +210,21 @@ export function ServerRail({
         {account ? (
           <SystemActionMenu
             accessibilityLabel="当前账号"
-            items={[
-              {disabled: true, groupId: "identity", id: "name", label: account.displayName},
-              {disabled: true, groupId: "identity", id: "email", label: account.email},
-              ...(accountStatus
-                ? [{disabled: true, groupId: "identity", id: "status", label: accountStatus.label}]
-                : []),
-              ...(account.imUserId
-                ? [{disabled: true, groupId: "identity", id: "im-user-id", label: account.imUserId}]
-                : []),
-              ...(onLogout
-                ? [{groupId: "actions", id: "logout", intent: "destructive" as const, label: "退出当前账号"}]
-                : []),
-            ]}
+            header={<HumanAccountIdentity account={account} imStatus={imStatus} />}
+            items={onLogout
+              ? [{
+                  icon: (
+                    <LogOut
+                      color={theme.semantic.color.statusDangerText}
+                      size={theme.semantic.icon.size.small}
+                      strokeWidth={theme.semantic.icon.stroke.regular}
+                    />
+                  ),
+                  id: "logout",
+                  intent: "destructive" as const,
+                  label: "退出当前账号",
+                }]
+              : []}
             onAction={id => {
               if (id === "logout") void onLogout?.();
             }}

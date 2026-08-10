@@ -21,6 +21,7 @@ export type {
 
 export function SystemActionMenu({
   accessibilityLabel,
+  header,
   items,
   onAction,
   onOpenChange,
@@ -76,7 +77,7 @@ export function SystemActionMenu({
         onOpenChange={next => {
           if (!next && open && !closingReason.current) close("outside", false);
         }}
-        placement="bottom start"
+        placement="right bottom"
         shouldFlip
         style={{
           backdropFilter: theme.semantic.material.blur,
@@ -85,11 +86,13 @@ export function SystemActionMenu({
           borderRadius: theme.semantic.radius.overlay,
           boxShadow: `0 ${theme.shadows.overlay.offsetY}px ${theme.shadows.overlay.radius}px ${theme.shadows.overlay.color}`,
           boxSizing: "border-box",
-          maxHeight: "min(640px, calc(100vh - 16px))",
+          height: "max-content",
+          maxHeight: "calc(100vh - 16px)",
           maxWidth: "min(360px, calc(100vw - 16px))",
           minWidth: theme.recipes.overlay.accountMenuWidth,
           outline: "none",
-          overflow: "auto",
+          overflowX: "hidden",
+          overflowY: "auto",
           padding: theme.spacing.xs,
           WebkitBackdropFilter: theme.semantic.material.blur,
           zIndex: theme.semantic.layer.modal,
@@ -97,11 +100,28 @@ export function SystemActionMenu({
         triggerRef={triggerRef as RefObject<Element>}
       >
         <div onKeyDownCapture={handleKeyDown}>
+          {header ? (
+            <div
+              style={{padding: `${theme.spacing.sm}px ${theme.spacing.md}px`}}
+            >
+              {header}
+            </div>
+          ) : null}
+          {header && items.length > 0 ? (
+            <div
+              aria-hidden
+              style={{
+                background: theme.semantic.color.separator,
+                height: theme.semantic.stroke.hairline,
+                margin: `${theme.spacing.xs}px ${theme.spacing.sm}px`,
+              }}
+            />
+          ) : null}
           <Menu
             aria-label={accessibilityLabel}
             autoFocus="first"
             id={overlayId}
-            style={{outline: "none"}}
+            style={{display: "flex", flexDirection: "column", outline: "none"}}
           >
             {items.map((item, index) => {
               const groupBreak = index > 0 && item.groupId !== items[index - 1]?.groupId;
@@ -129,8 +149,9 @@ export function SystemActionMenu({
                       : theme.semantic.color.textPrimary,
                     cursor: isDisabled ? "not-allowed" : "default",
                     display: "flex",
+                    flex: "none",
                     gap: theme.spacing.sm,
-                    minHeight: theme.recipes.control.rowHeight,
+                    minHeight: theme.recipes.overlay.menuRowHeight,
                     opacity: isDisabled ? theme.semantic.interaction.disabledOpacity : 1,
                     outline: isFocusVisible
                       ? `${theme.semantic.stroke.statusRing}px solid ${theme.semantic.color.borderFocus}`
@@ -142,13 +163,13 @@ export function SystemActionMenu({
                   textValue={item.label}
                 >
                   <span aria-hidden style={{display: "flex", width: theme.semantic.icon.size.small}}>
-                    {item.selectionKind && item.checked ? (
+                    {item.icon ?? (item.selectionKind && item.checked ? (
                       <Check
                         color={theme.semantic.color.iconAccent}
                         size={theme.semantic.icon.size.small}
                         strokeWidth={theme.semantic.icon.stroke.emphasis}
                       />
-                    ) : null}
+                    ) : null)}
                   </span>
                   <span style={{flex: 1, minWidth: 0}}>{item.label}</span>
                   {item.shortcutLabel ? (

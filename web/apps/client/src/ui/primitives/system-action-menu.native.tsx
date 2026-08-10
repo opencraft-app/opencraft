@@ -15,6 +15,7 @@ export type {
 
 export function SystemActionMenu({
   accessibilityLabel,
+  header,
   items,
   onAction,
   onOpenChange,
@@ -55,6 +56,8 @@ export function SystemActionMenu({
               nativeID={overlayId}
               onStartShouldSetResponder={() => true}
             >
+              {header ? <View style={styles.header}>{header}</View> : null}
+              {header && items.length > 0 ? <View style={styles.separator} /> : null}
               {items.map((item, index) => (
                 <View key={item.id}>
                   {index > 0 && item.groupId !== items[index - 1]?.groupId ? (
@@ -74,13 +77,13 @@ export function SystemActionMenu({
                     ]}
                   >
                     <View style={styles.check}>
-                      {item.selectionKind && item.checked ? (
+                      {item.icon ?? (item.selectionKind && item.checked ? (
                         <Check
                           color={theme.semantic.color.iconAccent}
                           size={theme.semantic.icon.size.small}
                           strokeWidth={theme.semantic.icon.stroke.emphasis}
                         />
-                      ) : null}
+                      ) : null)}
                     </View>
                     <Text style={[
                       styles.label,
@@ -119,11 +122,15 @@ const styles = StyleSheet.create(theme => ({
     borderRadius: theme.semantic.radius.compactControl,
     flexDirection: "row",
     gap: theme.spacing.sm,
-    minHeight: theme.recipes.control.rowHeight,
+    minHeight: theme.recipes.overlay.menuRowHeight,
     paddingHorizontal: theme.spacing.md,
   },
   itemDisabled: {opacity: theme.semantic.interaction.disabledOpacity},
   itemPressed: {backgroundColor: theme.semantic.color.interactivePressedSurface},
+  header: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+  },
   label: {
     color: theme.semantic.color.textPrimary,
     flex: 1,

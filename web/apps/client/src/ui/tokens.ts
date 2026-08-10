@@ -1035,6 +1035,10 @@ export const velaLight = {
       // Sit just past the rail edge so the menu clears the chrome.
       accountPopoverLeftInset: density.railWidth + 6,
       accountMenuWidth: 280,
+      // macOS menus are denser than selectable content shelves. Keeping this
+      // separate prevents a touch-oriented 64pt shelf row from stretching a
+      // pointer menu into a full-height card.
+      menuRowHeight: pointerDensity ? 28 : 44,
       confirmDialogMaxWidth: 420,
       contextPanelMinWidth: 320,
       contextPanelWidth: 392,

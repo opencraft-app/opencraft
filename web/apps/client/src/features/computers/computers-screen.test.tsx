@@ -290,7 +290,11 @@ describe("ComputersScreen", () => {
     await fireEvent.press(
       screen.getByRole("button", {name: "打开当前账号 Skip"}),
     );
+    expect(screen.getByText("Skip")).toBeVisible();
     expect(screen.getByText("skip@example.test")).toBeVisible();
+    expect(screen.getByText("IM 已连接")).toBeVisible();
+    expect(screen.queryByText(account.imUserId as string)).toBeNull();
+    expect(screen.queryByRole("menuitem", {name: "Skip"})).toBeNull();
     await fireEvent.press(
       screen.getByRole("menuitem", {name: "退出当前账号"}),
     );
