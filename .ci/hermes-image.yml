@@ -40,7 +40,7 @@ stages:
               echo "ci.sha=${CI_SHA_FOR_LOG}"
               echo "runtime=hermes"
               echo "base_image_id=img-id352nof"
-              echo "target_regions=ap-beijing,ap-shanghai,ap-singapore"
+              echo "target_regions=ap-beijing,ap-shanghai,ap-singapore,ap-tokyo"
           - name: 构建 Hermes CVM 镜像
             shell: bash
             run: |
@@ -97,7 +97,7 @@ stages:
                 echo "Reusing existing Hermes CVM image by exact name: ${HERMES_IMAGE_NAME}"
                 {
                   echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
-                  for region in ap-beijing ap-shanghai ap-singapore; do
+                  for region in ap-beijing ap-shanghai ap-singapore ap-tokyo; do
                     image_id="$(python3 .ci/runtime/commands/resolve_hermes_image_id.py --region "$region" --image-name "$HERMES_IMAGE_NAME")"
                     suffix="$(printf '%s' "$region" | tr '[:lower:]-' '[:upper:]_')"
                     echo "HERMES_IMAGE_ID_${suffix}=${image_id}"
@@ -112,7 +112,7 @@ stages:
               python3 images/build-image.py \
                 --runtime hermes \
                 --base-image-id img-id352nof \
-                --target-regions ap-beijing,ap-shanghai,ap-singapore \
+                --target-regions ap-beijing,ap-shanghai,ap-singapore,ap-tokyo \
                 --image-name "$HERMES_IMAGE_NAME" \
                 --with-verify | tee "$HERMES_BUILD_LOG"
 

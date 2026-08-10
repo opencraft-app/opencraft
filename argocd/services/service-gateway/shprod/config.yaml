@@ -48,6 +48,11 @@ routes:
     methods: [POST, OPTIONS]
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: public
+  - name: ctl-cloudapi
+    prefix: /cloudapi
+    methods: [POST, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: public
   - name: ctl
     prefix: /v1/instances
     methods: [GET, POST, DELETE, OPTIONS]

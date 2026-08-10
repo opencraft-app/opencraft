@@ -16,9 +16,108 @@
 - `pnpm i18n:check`
 - `pnpm i18n:zh-hant:check`
 - `pnpm build`
+
+# 2026-08-07 批量安装汇总结果对齐修复
+
+**Status:** 实现与验证完成；等待用户确认后再 commit / push / MR。
+
+**Goal:** ACLI 同时返回逐项 `progress` 和完整 `summary.results` 时，避免重复汇总结果错配到下一个未完成技能，确保部分失败状态准确展示。
+
+**Scope:** 仅修正 Skills 批量安装结果匹配逻辑并补回归测试；不改变 ACLI 命令、SSE 协议、取消粒度或页面交互。
+
+## Tasks
+
+- [x] 增加“progress 后返回完整 summary.results”的失败回归测试并确认 RED。
+- [x] 修正已完成结果的去重与无标识结果的顺序降级逻辑。
+- [x] 运行 Skills 定向测试、类型检查、i18n 检查和 diff 检查。
+
+---
+
+# 2026-08-09 EdgeOne Pages 裸根路径 404 修复
+
+**Status:** 实现与 Preview 验证完成，用户已确认提交、推送并创建 MR。
+
+**Goal:** 让 EdgeOne Pages 的裸根路径 `/` 直接由 Build Output 的 filesystem 路由提供静态首页，避免显式重写 `/index.html` 触发 Pages 路由缓存分裂和概率性平台 404。
+
+**Scope:** 仅调整 EdgeOne Build Output 路由生成及其回归测试；不修改页面运行时代码、外层加速域名配置或生产发布配置。
+
+## Tasks
+
+- [x] 先补充失败测试，禁止生成 `^/$ -> /index.html` 显式根路由。
+- [x] 删除显式根路由，保留 filesystem 与普通目录 HTML fallback 的顺序。
+- [x] 运行定向测试、frontend 检查并验证生成配置。
+- [x] 发布 Preview，连续验证不带查询参数的裸 `/`。
+- [x] 用户确认后提交、推送并创建 MR。
+
+## Verification
+
+- `pnpm exec vitest run scripts/fix-next-static-html-lang.test.ts`
+- `pnpm check`
 - `git diff --check`
 
 ---
+
+# 2026-08-07 国际站 Skills 来源说明对齐国内站
+
+**Status:** 实现与验证完成，等待用户手动验收；不自动 commit / push / MR。
+
+**Goal:** 将国际站搜索来源说明从搜索栏移到搜索结果底部，复用国内站“查看更多居中、来源说明靠右”的蓝色布局，并恢复搜索框宽度及来源筛选器右对齐。
+
+**Scope:** 仅调整国际站 Skills 搜索区域布局和对应组件测试；保留 Skills.sh、ClawHub 链接、搜索过滤与展开逻辑，不改变国内站行为。
+
+## Tasks
+
+- [x] **Developer / Test:** 修改 `src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`，断言国际站搜索栏不再包含来源说明、结果底栏展示蓝色 Skills.sh 与 ClawHub 链接，并确认测试按预期失败。
+- [x] **Developer / UI:** 修改 `src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`，复用国内站三列结果底栏，删除搜索栏旧说明；验收时搜索框占满剩余宽度、来源筛选器靠右。
+- [x] **Reviewer / Verification:** 运行 Skills 定向测试、`pnpm i18n:check`、`pnpm check` 和 `git diff --check`，确认国内站布局断言保持通过且无新增依赖或生成资源。
+
+---
+
+# 2026-08-07 国际站合并技能卸载降级
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit / push / MR。
+
+**Goal:** 删除同时标记为 ClawHub 与 skills.sh 的单个运行时技能时，不重复执行两个卸载命令导致 `SKILLS_SH_NOT_INSTALLED`。
+
+**Scope:** 合并行的来源标识作为候选卸载命令；任一候选成功后停止，明确未安装时尝试下一候选，其他错误继续正常失败。
+
+## Tasks
+
+- [x] 增加“首个来源成功即停止”和“首个来源未安装则降级”的失败回归测试。
+- [x] 调整国际站卸载候选执行与错误处理逻辑。
+- [x] 运行 Skills 定向测试、i18n、类型检查和 diff 检查。
+
+---
+
+# 2026-08-07 国际站已安装技能跨来源去重
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit / push / MR。
+
+**Goal:** 国际站同一 Hermes 运行时技能同时出现在 ClawHub 与 skills.sh 已安装清单时，仅展示一行，并同时展示两个来源标签。
+
+**Scope:** 仅调整国际站已安装技能归并逻辑与回归测试；保留各 registry 的真实卸载目标，不按短 slug 盲目合并无 Hermes 证据的记录。
+
+## Tasks
+
+- [x] 增加跨来源重复安装记录的回归测试，并确认当前实现失败。
+- [x] 以 Hermes 运行时记录为归并证据，合并 ClawHub 与 skills.sh 展示记录并保留双来源卸载目标。
+- [x] 运行定向测试、类型检查和 diff 检查。
+
+---
+
+# 2026-08-06 前端预览图片体积优化
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit / push / MR。
+
+**Goal:** 将分支预览压缩包从约 60 MiB 降到 45-50 MiB，避免接近 StaticPages 上传链路的疑似 64 MiB 边界。
+
+**Scope:** 仅优化文档中超过 512 KiB 的 PNG/JPEG 源图及其 Markdown 引用，并增加资源体积回归测试；不调整页面布局、搜索、视频或生产发布逻辑。
+
+## Tasks
+
+- [x] 增加文档大图格式与体积回归测试，并确认现有资源会触发失败。
+- [x] 将超预算文档图片转换为 WebP，更新中英文 Markdown 引用和公开资源副本。
+- [x] 运行定向测试、类型检查和 global 预览构建，核验压缩包体积为 43.50 MiB。
 
 # 2026-08-04 QQ Bot 群聊策略自动开启
 
@@ -145,3 +244,27 @@
 - `pnpm --dir frontend exec vitest run src/components/site/__tests__/login-modal.test.tsx src/components/site/__tests__/login-modal.global.test.tsx src/components/auth/__tests__/phone-login-form.test.tsx src/pages/marketing/__tests__/agent-create-error.test.ts`
 - `pnpm --dir frontend i18n:check`
 - `pnpm --dir frontend check`
+# 2026-08-06 Frontend release Docker monorepo context fix
+
+**Status:** 实现与验证完成，等待用户确认提交。
+
+**Goal:** 修复 frontend 正式镜像构建无法解析仓库内 `file:../velalink` 依赖的问题，同时保持 Docker build context 最小化。
+
+**Scope:** 仅调整 frontend release bundle、Dockerfile、Dockerfile 专属 ignore 和构建契约测试；不修改 frontend 或 velalink 运行时代码。
+
+## Tasks
+
+- [x] 将 frontend release bundle 的 build context 切换为仓库根，并把 `velalink` 纳入变更触发范围。
+- [x] 更新 Dockerfile 的根目录相对 COPY 路径，显式复制 `/velalink`。
+- [x] 用 Dockerfile 专属 ignore 仅放行 `frontend/` 与 `velalink/`。
+- [x] 运行契约测试、diff 检查和真实 Tokyo `linux/amd64` 构建推送验证。
+
+## Verification
+
+- `python3 .ci/runtime/tests/contract_tests/test_build_release_image.py`
+- `python3 .ci/runtime/tests/contract_tests/test_release_bundle_contracts.py ReleaseBundleContractTests.test_frontend_playground_release_uses_beijing_registry`
+- 国内构建机真实执行 `build_release_image.py --service frontend --env sandbox-jp-1 --platform linux/amd64 --push --reuse-existing`
+- JP TCR manifest：`frontend-6cf545e930d2`，`linux/amd64`
+- `git diff --check`
+
+---

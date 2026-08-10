@@ -4,7 +4,7 @@ The useful part of a daily summary is not that it is long. It is that it gives y
 
 Hermes can turn a repeatable review into a daily AI assistant routine. LightVela provides the cloud-hosted Agent, a channel for delivery, optional skills for the information you need, and automations for the schedule. You decide what counts as “today’s useful summary.”
 
-![A daily summary delivered by Hermes Agent](../images/use-case-daily-summaries.png)
+![A daily summary delivered by Hermes Agent](../images/use-case-daily-summaries.webp)
 
 ## Who this is for
 

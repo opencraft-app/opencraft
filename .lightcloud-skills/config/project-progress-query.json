@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "project_name": "LightVela（云端全托管）",
+  "repository": {
+    "project_id": "wisp/mono2",
+    "branch": "master"
+  },
+  "files": {
+    "daily_report_dir": "wiki/sources/progress",
+    "daily_report_patterns": ["????-??-??.md"],
+    "progress_root": "wiki/sources",
+    "progress_filename": "README.md",
+    "changelog_filename": "README.md"
+  },
+  "brief_output": {
+    "gongfeng_project_id": "TencentLightCloud/center-reports",
+    "branch": "master",
+    "file_path": "project-briefs/lightvela.yaml"
+  },
+  "module_hints": {
+    "产品": "progress",
+    "运营": "progress",
+    "商业化": "progress",
+    "基础设施": "progress",
+    "场景化": "progress",
+    "风险": "progress",
+    "待办": "progress"
+  }
+}

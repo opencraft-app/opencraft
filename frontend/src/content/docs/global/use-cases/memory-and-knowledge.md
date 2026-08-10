@@ -8,7 +8,7 @@ LightVela 为 Hermes Agent 同时提供长期记忆和云存储。
 记忆帮助它在不同对话之间保留持久上下文，云存储则为你提供管理工作材料和参考文件的位置。
 两者结合使用，可以让个人 AI Agent 更容易被交代任务、重新查看和持续改进。
 
-![LightVela Agent 的记忆和个人知识](../images/use-case-agent-memory.png)
+![LightVela Agent 的记忆和个人知识](../images/use-case-agent-memory.webp)
 
 ## 适合谁
 

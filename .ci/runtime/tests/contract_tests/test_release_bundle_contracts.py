@@ -59,6 +59,36 @@ AUTO_RELEASE_WORKFLOWS = {
     "user-auth": (".ci/lightclaw-auth.yml", "beijing-sandbox,shprod,sgprod", "lightclaw-auth"),
 }
 
+TOKYO_RELEASE_WORKFLOWS = {
+    "admin-gateway": (".ci/tokyo-admin-gateway.yml", ".ci/admin-gateway.yml", "admin-gateway", "env"),
+    "ai-gateway": (".ci/tokyo-ai-gateway.yml", ".ci/ai-gateway.yml", "ai-gateway", "env"),
+    "ctl": (".ci/tokyo-ctl.yml", ".ci/ctl.yml", "ctl", "env"),
+    "frontend": (".ci/tokyo-frontend.yml", ".ci/frontend.yml", "frontend", "cn-pool"),
+    "gateway-dashboard": (
+        ".ci/tokyo-gateway-dashboard.yml",
+        ".ci/gateway-dashboard.yml",
+        "gateway-dashboard",
+        "env",
+    ),
+    "user-auth": (".ci/tokyo-lightclaw-auth.yml", ".ci/lightclaw-auth.yml", "lightclaw-auth", "env"),
+    "nextgen-dashboard": (
+        ".ci/tokyo-nextgen-dashboard.yml",
+        ".ci/nextgen-dashboard.yml",
+        "nextgen-dashboard",
+        "env",
+    ),
+    "payment": (".ci/tokyo-payment.yml", ".ci/payment.yml", "payment", "env"),
+    "sandbox": (".ci/tokyo-sandbox.yml", ".ci/sandbox.yml", "sandbox", "env"),
+    "service-gateway": (
+        ".ci/tokyo-service-gateway.yml",
+        ".ci/service-gateway.yml",
+        "service-gateway",
+        "env",
+    ),
+    "subscription": (".ci/tokyo-subscription.yml", ".ci/subscription.yml", "subscription", "env"),
+    "trade": (".ci/tokyo-trade.yml", ".ci/trade.yml", "trade", "env"),
+}
+
 BUSINESS_WORKFLOWS = {
     ".ci/admin-gateway.yml",
     ".ci/ai-gateway.yml",
@@ -77,7 +107,7 @@ BUSINESS_WORKFLOWS = {
     ".ci/subscription.yml",
     ".ci/trade.yml",
     ".ci/velagw.yml",
-}
+} | {workflow_path for workflow_path, *_ in TOKYO_RELEASE_WORKFLOWS.values()}
 
 PROD_DB_MIGRATION_WORKFLOWS = {
     ".ci/ai-gateway.yml",
@@ -358,27 +388,66 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(actual_buildable, PLAYGROUND_BUILDABLE_BUNDLES)
 
-    def test_japan_support_does_not_activate_ci_workflows(self) -> None:
-        workflow_paths = sorted((REPO_ROOT / ".ci").glob("*.yml"))
-        workflow_paths.append(REPO_ROOT / ".ci/templates/service-release.yml")
+    def test_japan_master_release_uses_independent_service_workflows(self) -> None:
+        manifest = load_manifest()
 
-        for path in workflow_paths:
-            text = path.read_text()
-            with self.subTest(path=path.relative_to(REPO_ROOT)):
-                self.assertNotIn("playground/sandbox-jp-*", text)
-                self.assertIsNone(
-                    re.search(
-                        r"(?:MASTER|PLAYGROUND)_(?:BUILD|AUTO_PIN)_ENVS:\s*[^\n]*sandbox-jp",
-                        text,
-                    )
+        for bundle_name, (workflow_path, source_workflow_path, pin_targets, runner_pool) in (
+            TOKYO_RELEASE_WORKFLOWS.items()
+        ):
+            with self.subTest(bundle=bundle_name):
+                require_build_metadata(load_bundle(manifest, bundle_name, JAPAN_PLAYGROUND_ENV))
+                workflow_entry = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
+                source_workflow = yaml.safe_load((REPO_ROOT / source_workflow_path).read_text())
+                effective_workflow = self.load_effective_workflow(workflow_path)
+                push = self.push_config(workflow_entry)
+
+                self.assertEqual(push.get("branches"), ["master", "playground/sandbox-jp-*"])
+                self.assertEqual(push.get("paths"), self.push_paths(source_workflow))
+                self.assertEqual(push.get("paths-ignore"), self.push_paths_ignore(source_workflow))
+                self.assertEqual(
+                    (workflow_entry.get("concurrency") or {}).get("group"),
+                    f"mono2-service-release-tokyo-{Path(workflow_path).stem.removeprefix('tokyo-')}",
                 )
+                self.assert_release_entry_targets(
+                    workflow_entry,
+                    expected_service=bundle_name,
+                    expected_pin_targets=pin_targets,
+                    expected_master_build_envs=JAPAN_PLAYGROUND_ENV,
+                    expected_master_auto_pin_envs=JAPAN_PLAYGROUND_ENV,
+                    expected_playground_build_envs="auto",
+                    expected_playground_auto_pin_envs="auto",
+                )
+                parameters = (workflow_entry.get("extends") or {}).get("parameters") or {}
+                self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), JAPAN_PLAYGROUND_ENV)
+                self.assertEqual(parameters.get("RUNNER_POOL_NAME", "env"), runner_pool)
+                self.assertIs(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), False)
+                self.assert_registry_credentials_cover_build_envs(effective_workflow, JAPAN_PLAYGROUND_ENV)
+
+        source_workflow_paths = {item[1] for item in TOKYO_RELEASE_WORKFLOWS.values()}
+        tokyo_workflow_paths = {item[0] for item in TOKYO_RELEASE_WORKFLOWS.values()}
+        self.assertTrue(source_workflow_paths.isdisjoint(tokyo_workflow_paths))
+
+        template_text = (REPO_ROOT / ".ci/templates/service-release.yml").read_text()
+        init_text = (REPO_ROOT / ".ci/init.sh").read_text()
+        runtime_text = (REPO_ROOT / ".ci/runtime/build_and_promote_to_gitops.sh").read_text()
+        pin_text = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
+        self.assertIn("playground/sandbox-jp-*", template_text)
+        jp_registry_credential = "${{ settings.TCR_JP1_REGISTRY_CREDENTIAL.password }}"
+        self.assertEqual(template_text.count(jp_registry_credential), 2)
+        self.assertNotIn("${{ settings.TCR_JP1_PASSWORD }}", template_text)
+        self.assertIn("sandbox-jp-*|tokyo-sandbox", init_text)
+        self.assertIn("/etc/lightclaw-ci/tcr_jp1_password", init_text)
+        self.assertIn('password_var="${TCR_JP1_PASSWORD:-}"', init_text)
+        self.assertNotIn('TCR_JP1_PASSWORD:-${TCR_BEIJING_PASSWORD', init_text)
+        self.assertIn('sandbox-jp-* ]]', runtime_text)
+        self.assertIn("sandbox-jp-*) printf '东京 Playground %s'", pin_text)
 
     def test_japan_auth_ssm_manifest_declares_required_keys_without_values(self) -> None:
         manifest_path = REPO_ROOT / "scripts/ssm_manifest.lightclaw-auth.sandbox-jp-1.yaml"
         manifest = yaml.safe_load(manifest_path.read_text())
 
         self.assertEqual(manifest["defaults"]["region"], "ap-tokyo")
-        self.assertEqual(manifest["defaults"]["version_id"], "latest")
+        self.assertEqual(manifest["defaults"]["version_id"], "SSM_Current")
         self.assertEqual(len(manifest["items"]), 1)
         item = manifest["items"][0]
         self.assertEqual(item["secret_name"], "mono-sandbox-jp-1-lightclaw-auth-secrets")
@@ -414,7 +483,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         manifest = yaml.safe_load(manifest_path.read_text())
 
         self.assertEqual(manifest["defaults"]["region"], "ap-tokyo")
-        self.assertEqual(manifest["defaults"]["version_id"], "latest")
+        self.assertEqual(manifest["defaults"]["version_id"], "SSM_Current")
         items = manifest["items"]
         self.assertEqual(len(items), 16)
         self.assertEqual(len({item["id"] for item in items}), 16)
@@ -1059,6 +1128,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "VELAGW_TRAFFIC_PROTOCOL",
             "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS",
             "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC",
+            "VELAGW_SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT",
         }
         expected_region_values = {
             "shprod": {
@@ -1066,12 +1136,14 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 "VELAGW_CLOUD_REGION": "ap-shanghai",
                 "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS": "4",
                 "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC": "true",
+                "VELAGW_SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT": "0",
             },
             "sgprod": {
                 "VELAGW_CLUSTER_NAME": "johorbahru-llmgateway-prod",
                 "VELAGW_CLOUD_REGION": "ap-johorbahru",
                 "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS": "2",
                 "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC": "false",
+                "VELAGW_SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT": "0",
             },
         }
         for env, expected in expected_region_values.items():
@@ -1253,6 +1325,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         bundle = require_build_metadata(load_bundle(manifest, "frontend", PLAYGROUND_ENV))
 
         self.assertEqual(bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/frontend")
+        self.assertEqual(bundle.build_context, ".")
+        self.assertIn("velalink", bundle.allowed_paths)
         self.assertIn(f"argocd/services/frontend/{PLAYGROUND_ENV}/**", bundle.publish_paths)
 
         korea_bundle = require_build_metadata(load_bundle(manifest, "frontend", KOREA_PLAYGROUND_ENV))
@@ -1442,6 +1516,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("HERMES_REUSE_IMAGE_NAME", workflow_text)
         self.assertIn("HERMES_SKIP_IMAGE_BUILD", workflow_text)
         self.assertIn("--image-name \"$HERMES_IMAGE_NAME\"", workflow_text)
+        self.assertIn(
+            "--target-regions ap-beijing,ap-shanghai,ap-singapore,ap-tokyo",
+            workflow_text,
+        )
+        self.assertIn("HERMES_IMAGE_ID_AP_TOKYO", workflow_text + refresh_env_script_text)
         self.assertIn("resolve_hermes_image_id.py --region \"$region\" --image-name \"$HERMES_IMAGE_NAME\"", workflow_and_runtime_text)
         self.assertIn("split_hermes_pool_vms_by_region.py", workflow_and_runtime_text)
         self.assertIn("HERMES_REFRESH_ENV_SPEC", workflow_text)
@@ -1868,8 +1947,13 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(intl_bundle.image_repo, "csighub.tencentyun.com/skipzhang/cloudladdergateway")
         self.assertIn("argocd/services/cloudladdergateway/tkexgz/**", domestic_bundle.publish_paths)
         self.assertIn("argocd/services/cloudladdergateway/tkexsg/**", intl_bundle.publish_paths)
+        self.assertIn("argocd/secrets/tkexgz/cloudladdergateway-krsbx-callback-secrets.sops.yaml", domestic_bundle.publish_paths)
+        self.assertIn("argocd/secrets/tkexsg/cloudladdergateway-krsbx-callback-secrets.sops.yaml", intl_bundle.publish_paths)
+        self.assertIn("argocd/secrets/tkexsg/cloudladdergateway-polaris-*.sops.yaml", intl_bundle.publish_paths)
         self.assertIn("shared/cloudladdertransport/**", watched_paths)
         self.assertIn("argocd/services/cloudladdergateway/**", watched_paths)
+        self.assertIn("argocd/secrets/*/cloudladdergateway-krsbx-callback-secrets.sops.yaml", watched_paths)
+        self.assertIn("argocd/secrets/*/cloudladdergateway-polaris-*.sops.yaml", watched_paths)
 
     def test_lightclaw_auth_workflow_watches_release_contract_inputs(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/lightclaw-auth.yml").read_text())
@@ -2214,6 +2298,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "beijing-sandbox-2": "TCR_BEIJING_PASSWORD",
             "beijing-llmgateway": "TCR_BEIJING_LLMGATEWAY_PASSWORD",
             "sandbox-kr-1": "TCR_KR1_PASSWORD",
+            "sandbox-jp-1": "TCR_JP1_PASSWORD",
             "shprod": "TCR_SHPROD_PASSWORD",
             "shanghai-workers": "TCR_SHPROD_PASSWORD",
             "sgprod": "TCR_SGPROD_PASSWORD",

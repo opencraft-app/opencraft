@@ -16,7 +16,12 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
-from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest
+from contracts.bundles import (
+    DEFAULT_MANIFEST_PATH,
+    load_bundle,
+    load_manifest,
+    playground_catalog_root,
+)
 from harness_ci.secrets import build_secret_manifest, redact, resolve_contract_secret_values, secret_env_ref
 
 
@@ -172,10 +177,7 @@ def resolve_runtime_env(
 def load_playground_catalog_value(repo_root: Path, env: str, service: str, key: str) -> str:
     path = (
         repo_root
-        / "argocd"
-        / "catalogs"
-        / "playground"
-        / "beijing-playground"
+        / playground_catalog_root(env)
         / env
         / f"{service}.yaml"
     )
@@ -217,7 +219,7 @@ def resolve_verifier_namespace(repo_root: Path, env: str, service: str, verifier
 
 
 def default_ctl_database(env: str) -> str:
-    if re.fullmatch(r"sandbox-(bj|kr)-\d+", env):
+    if re.fullmatch(r"sandbox-(bj|kr|jp)-\d+", env):
         return f"ctl_{env.replace('-', '_')}"
     return "ctl"
 

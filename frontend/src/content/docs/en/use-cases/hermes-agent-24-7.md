@@ -4,7 +4,7 @@ An assistant is most helpful when it is available when the question arrives—no
 
 A Hermes Agent is a cloud-hosted AI agent in LightVela. Once its model and conversation channel are configured, it can remain available independently of your local device, with the same memory and behavior wherever you message it.
 
-![A Hermes Agent online in the LightVela console](../images/use-case-hermes-online.png)
+![A Hermes Agent online in the LightVela console](../images/use-case-hermes-online.webp)
 
 ## Who this is for
 

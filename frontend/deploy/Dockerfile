@@ -2,15 +2,16 @@ FROM node:22-alpine AS build
 
 WORKDIR /frontend
 
-COPY package.json pnpm-lock.yaml .npmrc ./
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/.npmrc ./
+COPY velalink /velalink
 
-COPY tsconfig.json tsconfig.app.json next-env.d.ts next.config.mjs postcss.config.mjs source.config.ts mdx-components.tsx ./
-COPY public ./public
-COPY scripts ./scripts
-COPY src ./src
-COPY next-site ./next-site
-COPY vendor ./vendor
-COPY assets ./assets
+COPY frontend/tsconfig.json frontend/tsconfig.app.json frontend/next-env.d.ts frontend/next.config.mjs frontend/postcss.config.mjs frontend/source.config.ts frontend/mdx-components.tsx ./
+COPY frontend/public ./public
+COPY frontend/scripts ./scripts
+COPY frontend/src ./src
+COPY frontend/next-site ./next-site
+COPY frontend/vendor ./vendor
+COPY frontend/assets ./assets
 
 ARG VITE_AUTH_API_BASE_URL
 ENV VITE_AUTH_API_BASE_URL="${VITE_AUTH_API_BASE_URL}"
@@ -51,7 +52,7 @@ RUN corepack enable && corepack prepare pnpm@10.23.0 --activate && cd /frontend 
 
 FROM nginx:1.27-alpine
 
-COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/deploy/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /frontend/out /usr/share/nginx/html
 
 EXPOSE 8080

@@ -176,6 +176,7 @@ type SKU struct {
 	DesiredImageID              string          `json:"desired_image_id"`
 	StableImageID               string          `json:"stable_image_id,omitempty"`
 	InstanceType                string          `json:"instance_type"`
+	SystemDiskSize              int             `json:"system_disk_size,omitempty"`
 	NetworkTemplateID           string          `json:"network_template_id,omitempty"`
 	SecurityGroupRuleTemplateID string          `json:"security_group_rule_template_id,omitempty"`
 	AutoscalePolicyID           string          `json:"autoscale_policy_id,omitempty"`

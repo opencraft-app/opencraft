@@ -764,6 +764,7 @@ ci_load_registry_password() {
   local beijing_llmgateway_file="${TCR_BEIJING_LLMGATEWAY_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_llmgateway_password}"
   local beijing2_file="${TCR_BEIJING_SANDBOX2_PASSWORD_FILE:-${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}}"
   local kr1_file="${TCR_KR1_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_kr1_password}"
+  local jp1_file="${TCR_JP1_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_jp1_password}"
   local shprod_file="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
   local sgprod_file="${TCR_SGPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_sgprod_password}"
   local csighub_file="${CSIGHUB_PASSWORD_FILE:-/etc/lightclaw-ci/csighub_password}"
@@ -786,6 +787,10 @@ ci_load_registry_password() {
     sandbox-kr-*|seoul-sandbox)
       password_var="${TCR_KR1_PASSWORD:-${TCR_BEIJING_PASSWORD:-}}"
       password_file="$kr1_file"
+      ;;
+    sandbox-jp-*|tokyo-sandbox)
+      password_var="${TCR_JP1_PASSWORD:-}"
+      password_file="$jp1_file"
       ;;
     shprod|shanghai-workers)
       password_var="${TCR_SHPROD_PASSWORD:-}"
@@ -839,6 +844,7 @@ ci_set_registry_credentials() {
   local beijing_llmgateway_file="${TCR_BEIJING_LLMGATEWAY_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_llmgateway_password}"
   local beijing2_file="${TCR_BEIJING_SANDBOX2_PASSWORD_FILE:-${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}}"
   local kr1_file="${TCR_KR1_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_kr1_password}"
+  local jp1_file="${TCR_JP1_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_jp1_password}"
   local shprod_file="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
   local sgprod_file="${TCR_SGPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_sgprod_password}"
   local csighub_file="${CSIGHUB_PASSWORD_FILE:-/etc/lightclaw-ci/csighub_password}"
@@ -883,6 +889,13 @@ ci_set_registry_credentials() {
           source="env:TCR_KR1_PASSWORD"
         else
           source="env:TCR_BEIJING_PASSWORD"
+        fi
+        ;;
+      sandbox-jp-*|tokyo-sandbox)
+        if [[ -r "$jp1_file" ]]; then
+          source="file:$jp1_file"
+        else
+          source="env:TCR_JP1_PASSWORD"
         fi
         ;;
       shprod|shanghai-workers)

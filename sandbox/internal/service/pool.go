@@ -54,7 +54,10 @@ func emitCapacityBundleConflict(ctx context.Context, explanation string, attrs .
 	observability.EmitEvent(ctx, "sandbox.capacity_bundle.reservation_conflict", explanation, attrs...)
 }
 
-const defaultInstanceType = "SA9.MEDIUM2"
+const (
+	defaultInstanceType   = "SA9.MEDIUM2"
+	defaultSystemDiskSize = 50
+)
 
 const (
 	hermesTemplateClassID       = "hermes"
@@ -141,6 +144,7 @@ func (s *Service) CreateBoundPool(ctx context.Context, input CreateBoundPoolInpu
 		SecurityGroups:  input.SecurityGroups,
 		TemplateClassID: sku.TemplateClassID,
 		SKUID:           sku.ID,
+		SystemDiskSize:  sku.SystemDiskSize,
 		CreatedAt:       time.Now().UTC(),
 	}
 	pool, err = normalizePool(pool)
@@ -307,6 +311,9 @@ func normalizePool(pool core.Pool) (core.Pool, error) {
 	if pool.CapacityState == "" {
 		pool.CapacityState = core.PoolCapacityStateActive
 	}
+	if pool.SystemDiskSize < 0 {
+		return core.Pool{}, fmt.Errorf("invalid pool system_disk_size %d", pool.SystemDiskSize)
+	}
 	switch pool.Status {
 	case core.PoolStatusActive, core.PoolStatusPaused:
 	default:
@@ -368,6 +375,12 @@ func normalizeSKU(sku core.SKU) (core.SKU, error) {
 	}
 	if strings.TrimSpace(sku.InstanceType) == "" {
 		sku.InstanceType = defaultInstanceType
+	}
+	if sku.SystemDiskSize < 0 {
+		return core.SKU{}, fmt.Errorf("invalid sku system_disk_size %d", sku.SystemDiskSize)
+	}
+	if sku.SystemDiskSize == 0 {
+		sku.SystemDiskSize = defaultSystemDiskSize
 	}
 	if sku.RolloutState == "" {
 		sku.RolloutState = core.SKURolloutStateStable
@@ -836,6 +849,14 @@ func (s *Service) UpsertSKU(ctx context.Context, sku core.SKU) (core.SKU, error)
 		sku.CreatedAt = now
 	}
 	sku.UpdatedAt = now
+	if sku.SystemDiskSize == 0 && strings.TrimSpace(sku.ID) != "" {
+		existing, err := s.store.GetSKU(ctx, sku.ID)
+		if err == nil {
+			sku.SystemDiskSize = existing.SystemDiskSize
+		} else if !errors.Is(err, core.ErrSKUNotFound) {
+			return core.SKU{}, err
+		}
+	}
 	var err error
 	sku, err = normalizeSKU(sku)
 	if err != nil {
@@ -853,6 +874,22 @@ func (s *Service) GetSKU(ctx context.Context, id string) (core.SKU, error) {
 
 func (s *Service) ListSKUs(ctx context.Context) ([]core.SKU, error) {
 	return s.store.ListSKUs(ctx)
+}
+
+func (s *Service) UpdateSKUSystemDiskSize(ctx context.Context, skuID string, systemDiskSize int) (core.SKU, error) {
+	skuID = strings.TrimSpace(skuID)
+	if skuID == "" {
+		return core.SKU{}, fmt.Errorf("missing sku id")
+	}
+	if systemDiskSize <= 0 {
+		return core.SKU{}, fmt.Errorf("invalid sku system_disk_size %d", systemDiskSize)
+	}
+	sku, err := s.store.GetSKU(ctx, skuID)
+	if err != nil {
+		return core.SKU{}, err
+	}
+	sku.SystemDiskSize = systemDiskSize
+	return s.UpsertSKU(ctx, sku)
 }
 
 func (s *Service) ListPoolsForSKU(ctx context.Context, skuID string) ([]core.Pool, error) {
@@ -1699,6 +1736,7 @@ func (s *Service) EnsurePoolForCapacityBundle(ctx context.Context, binding core.
 		SecurityGroups:      append([]string(nil), bundle.SecurityGroupIDs...),
 		TemplateClassID:     binding.TemplateClassID,
 		SKUID:               sku.ID,
+		SystemDiskSize:      sku.SystemDiskSize,
 		CapacityState:       core.PoolCapacityStateActive,
 		CapacityBundleID:    bundle.ID,
 		LastAutoscaleAction: "sku_capacity_growth",

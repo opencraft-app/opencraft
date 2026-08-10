@@ -1,0 +1,39 @@
+version: v2.0
+name: 构建 trade 东京
+
+on:
+  push:
+    branches:
+      - master
+      - playground/sandbox-jp-*
+    paths:
+      - trade/**
+      - argocd/services/trade/**
+      - argocd/apps/shprod/trade.yaml
+      - argocd/projects/shprod-trade.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox/trade.yaml
+      - argocd/catalogs/playground/beijing-playground/*/trade.yaml
+      - argocd/secrets/*/trade-runtime-secrets.sops.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-service-release-tokyo-trade
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
+extends:
+  template: service-release.yml
+  parameters:
+    SERVICE: trade
+    BUNDLE: trade
+    DISPLAY_NAME: trade 东京
+    DEFAULT_TARGET_ENV: sandbox-jp-1
+    MASTER_BUILD_ENVS: sandbox-jp-1
+    MASTER_AUTO_PIN_ENVS: sandbox-jp-1
+    ENABLE_MASTER_PROD_PROMOTE: false
+    PLAYGROUND_BUILD_ENVS: auto
+    PLAYGROUND_AUTO_PIN_ENVS: auto
