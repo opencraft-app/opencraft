@@ -310,11 +310,11 @@ describe("AgentsScreen", () => {
       screen.getByRole("button", {name: "重启 Agent research"}),
     ).toHaveStyle({
       backgroundColor: "#EAF4FF",
-      minHeight: velaTheme.recipes.managementWorkspace.actionHeight,
+      height: velaTheme.recipes.control.height,
     });
     expect(screen.getByRole("button", {name: "保存 Agent"})).toHaveStyle({
       alignSelf: "flex-start",
-      minHeight: velaTheme.recipes.managementWorkspace.actionHeight,
+      height: velaTheme.recipes.control.height,
     });
   });
 
@@ -415,22 +415,22 @@ describe("AgentsScreen", () => {
 
     expect(screen.getByText("跑在哪台 Computer")).toBeVisible();
     expect(
-      screen.getByRole("button", {name: "选择 codex"}),
+      screen.getByRole("radio", {name: "选择 codex"}),
     ).toHaveStyle({
       minHeight: velaTheme.recipes.control.height,
       minWidth: velaTheme.recipes.control.height,
     });
     expect(
-      screen.getByRole("button", {name: "绑定 Computer 研发机"}),
+      screen.getByRole("combobox", {name: "Computer"}),
     ).toHaveStyle({
-      minHeight: velaTheme.recipes.control.height,
-      minWidth: velaTheme.recipes.control.height,
+      height: velaTheme.recipes.control.fieldHeight,
     });
     await fireEvent.press(
-      screen.getByRole("button", {name: "选择 hermes-gateway"}),
+      screen.getByRole("radio", {name: "选择 hermes-gateway"}),
     );
+    await fireEvent.press(screen.getByRole("combobox", {name: "Computer"}));
     await fireEvent.press(
-      screen.getByRole("button", {name: "绑定 Computer 研发机"}),
+      screen.getByRole("option", {name: "绑定 Computer 研发机"}),
     );
     await fireEvent.press(screen.getByRole("button", {name: "继续"}));
 
@@ -590,9 +590,9 @@ describe("AgentsScreen", () => {
     expect(screen.getByTestId("agent-create-icon")).toBeVisible();
     expect(screen.getByTestId("agent-refresh-icon")).toBeVisible();
     expect(screen.getByRole("button", {name: "新建 Agent"})).toHaveStyle({
-      backgroundColor: velaTheme.semantic.color.actionTonalSurface,
-      borderColor: velaTheme.semantic.color.actionTonalSurface,
-      minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
+      backgroundColor: velaTheme.semantic.color.surfaceTransparent,
+      borderColor: velaTheme.semantic.color.borderTransparent,
+      height: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.queryByText("↻")).toBeNull();
   });

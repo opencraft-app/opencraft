@@ -80,11 +80,10 @@ import {
   InlineEmptyState,
   ManagementField,
   ManagementTextInput,
-  SelectionButton,
-  SelectionGroup,
 } from "../components/management-workspace";
 import { ActionButton } from "../primitives/action-button";
 import { IconActionButton } from "../primitives/icon-action-button";
+import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 import {
   memberIdentityLabel,
   memberKindLabel,
@@ -2382,22 +2381,24 @@ function ChannelManagementPanel({
               }
               label="可见性"
             >
-              <SelectionGroup>
-                {(["public", "private"] as const).map((value) => (
-                  <SelectionButton
-                    accessibilityLabel={
-                      value === "private"
-                        ? "设为私密 Channel"
-                        : "设为公开 Channel"
-                    }
-                    key={value}
-                    label={value === "private" ? "私密" : "公开"}
-                    layout="equal"
-                    onPress={() => setVisibility(value)}
-                    selected={visibility === value}
-                  />
-                ))}
-              </SelectionGroup>
+              <SystemSegmentedControl<"public" | "private">
+                accessibilityLabel="Channel 可见性"
+                disabled={disabled}
+                onChange={setVisibility}
+                options={[
+                  {
+                    accessibilityLabel: "设为公开 Channel",
+                    label: "公开",
+                    value: "public",
+                  },
+                  {
+                    accessibilityLabel: "设为私密 Channel",
+                    label: "私密",
+                    value: "private",
+                  },
+                ]}
+                value={visibility}
+              />
             </ManagementField>
           ) : (
             <Text style={styles.channelVisibilityNotice}>

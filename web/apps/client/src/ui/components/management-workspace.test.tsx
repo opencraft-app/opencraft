@@ -17,12 +17,9 @@ import {
   ManagementCollectionPane,
   ManagementDetailCanvas,
   ManagementDetailScroll,
-  ManagementChoiceField,
   ManagementFormFooter,
   ManagementStageFill,
   ManagementHeader,
-  ManagementTab,
-  ManagementTabBar,
   NoticeBanner,
   RecordIdentityHeader,
   ResourceFactStrip,
@@ -31,8 +28,6 @@ import {
   ManagementStage,
   ResourceActionRow,
   StatusIndicator,
-  SelectionButton,
-  SelectionGroup,
 } from "./management-workspace";
 import {velaTheme} from "../tokens";
 
@@ -52,8 +47,6 @@ describe("management workspace primitives", () => {
       ManagementDetailScroll,
       ManagementStageFill,
       ManagementHeader,
-      ManagementTab,
-      ManagementTabBar,
       NoticeBanner,
       RecordIdentityHeader,
       ResourceFactStrip,
@@ -63,9 +56,13 @@ describe("management workspace primitives", () => {
       ManagementStage,
       ResourceActionRow,
       StatusIndicator,
-      SelectionButton,
-      SelectionGroup,
     ]).not.toContain(undefined);
+    const publicSurface = managementWorkspace as Record<string, unknown>;
+    expect(publicSurface.SelectionButton).toBeUndefined();
+    expect(publicSurface.SelectionGroup).toBeUndefined();
+    expect(publicSurface.ManagementTab).toBeUndefined();
+    expect(publicSurface.ManagementTabBar).toBeUndefined();
+    expect(publicSurface.ManagementChoiceField).toBeUndefined();
   });
 
   it("gives collection identities one shared mark and presence language", async () => {
@@ -153,78 +150,17 @@ describe("management workspace primitives", () => {
     });
   });
 
-  it("keeps segmented choices semantic across hover, selection and disabled states", async () => {
-    const onPress = jest.fn();
-    const screen = await render(
-      <SelectionGroup>
-        <SelectionButton
-          accessibilityLabel="选择自动回复"
-          label="自动回复"
-          onPress={onPress}
-          selected
-          testID="selected-choice"
-        />
-        <SelectionButton
-          accessibilityLabel="选择仅提及"
-          label="仅提及"
-          onPress={onPress}
-          testID="idle-choice"
-        />
-        <SelectionButton
-          accessibilityLabel="不可选择"
-          disabled
-          label="不可选择"
-          onPress={onPress}
-          testID="disabled-choice"
-        />
-      </SelectionGroup>,
-    );
-
-    expect(screen.getByTestId("selected-choice")).toHaveStyle({
-      backgroundColor: velaTheme.semantic.color.selectionSurface,
-      borderColor: velaTheme.semantic.color.borderSelected,
-      borderRadius: velaTheme.semantic.radius.control,
-      minHeight: velaTheme.recipes.control.height,
-    });
-    await fireEvent(screen.getByTestId("idle-choice"), "hoverIn");
-    expect(screen.getByTestId("idle-choice")).toHaveStyle({
-      backgroundColor: velaTheme.semantic.color.interactiveHoverSurface,
-    });
-    expect(screen.getByTestId("disabled-choice")).toHaveStyle({opacity: 0.5});
-  });
-
-  it("provides one labeled choice field and one ordered form footer", async () => {
+  it("provides one ordered form footer", async () => {
     const onBack = jest.fn();
-    const onSelect = jest.fn();
     const onSubmit = jest.fn();
     const screen = await render(
-      <>
-        <ManagementChoiceField
-          label="Runtime"
-          onSelect={onSelect}
-          options={[
-            {accessibilityLabel: "选择 Codex", label: "Codex", value: "codex"},
-            {accessibilityLabel: "选择 Hermes", label: "Hermes", value: "hermes"},
-          ]}
-          selected="codex"
-          testID="runtime-field"
-        />
-        <ManagementFormFooter
-          backAction={{label: "上一步", onPress: onBack}}
-          primaryAction={{busy: true, disabled: true, label: "继续", onPress: onSubmit}}
-          testID="wizard-footer"
-        />
-      </>,
+      <ManagementFormFooter
+        backAction={{label: "上一步", onPress: onBack}}
+        primaryAction={{busy: true, disabled: true, label: "继续", onPress: onSubmit}}
+        testID="wizard-footer"
+      />,
     );
 
-    expect(screen.getByTestId("runtime-field")).toBeVisible();
-    expect(screen.getByRole("radiogroup")).toHaveAccessibleName("Runtime");
-    expect(screen.getByRole("radio", {name: "选择 Codex"}).props.accessibilityState).toEqual({
-      checked: true,
-      disabled: false,
-    });
-    await fireEvent.press(screen.getByLabelText("选择 Hermes"));
-    expect(onSelect).toHaveBeenCalledWith("hermes");
     await fireEvent.press(screen.getByText("上一步"));
     expect(onBack).toHaveBeenCalledTimes(1);
     expect(screen.getByText("继续").parent?.props.accessibilityState).toEqual({
@@ -248,28 +184,6 @@ describe("management workspace primitives", () => {
       minHeight: velaTheme.recipes.control.fieldHeight,
       paddingVertical: 0,
     });
-  });
-
-  it("provides compact text tabs for page modes", async () => {
-    const onPress = jest.fn();
-    const screen = await render(
-      <ManagementTabBar testID="mode-tabs">
-        <ManagementTab label="任务" onPress={onPress} selected testID="tasks-tab" />
-        <ManagementTab label="提醒" onPress={onPress} testID="reminders-tab" />
-      </ManagementTabBar>,
-    );
-
-    expect(screen.getByTestId("mode-tabs")).toHaveStyle({
-      borderBottomWidth: 1,
-      flexDirection: "row",
-    });
-    expect(screen.getByTestId("tasks-tab")).toHaveStyle({
-      borderBottomWidth: 2,
-      borderRadius: 0,
-      minHeight: velaTheme.recipes.control.height,
-    });
-    fireEvent.press(screen.getByTestId("reminders-tab"));
-    expect(onPress).toHaveBeenCalledTimes(1);
   });
 
   it("uses a plain detail heading and vertical resource metadata", async () => {

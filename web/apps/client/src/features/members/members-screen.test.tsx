@@ -396,9 +396,9 @@ describe("MembersScreen", () => {
     expect(screen.getByTestId("member-create-icon")).toBeVisible();
     expect(screen.getByTestId("member-refresh-icon")).toBeVisible();
     expect(screen.getByRole("button", {name: "创建邀请"})).toHaveStyle({
-      backgroundColor: velaTheme.semantic.color.actionTonalSurface,
-      borderColor: velaTheme.semantic.color.actionTonalSurface,
-      minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
+      backgroundColor: velaTheme.semantic.color.surfaceTransparent,
+      borderColor: velaTheme.semantic.color.borderTransparent,
+      height: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.queryByTestId("member-accept-invite")).toBeNull();
     expect(
@@ -435,7 +435,7 @@ describe("MembersScreen", () => {
     expect(screen.getByText("普通成员")).toBeVisible();
     expect(screen.getByText("管理员")).toBeVisible();
     expect(
-      screen.getByRole("button", {name: "邀请普通成员"}),
+      screen.getByRole("radio", {name: "邀请普通成员"}),
     ).toHaveStyle({minHeight: velaTheme.recipes.control.height});
     expect(screen.getByText("有效期")).toBeVisible();
     expect(screen.getByText("最大使用次数")).toBeVisible();

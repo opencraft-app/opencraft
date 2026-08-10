@@ -25,7 +25,7 @@ describe("management workspace adoption", () => {
     expect(workspace).not.toContain("StyleSheet.create");
   });
 
-  it("keeps form and selection primitives in the focused form module", () => {
+  it("keeps form primitives in the focused form module", () => {
     const core = readFileSync(
       join(__dirname, "management-workspace-core.tsx"),
       "utf8",
@@ -41,12 +41,12 @@ describe("management workspace adoption", () => {
       "ManagementField",
       "ManagementTextInput",
       "ManagementDateTimeInput",
-      "SelectionGroup",
-      "SelectionButton",
     ]) {
       expect(form).toContain(`export function ${component}`);
       expect(core).not.toContain(`export function ${component}`);
     }
+    expect(form).not.toMatch(/Selection(?:Group|Button)|ManagementChoiceField/u);
+    expect(core).not.toMatch(/ManagementTab(?:Bar)?/u);
   });
 
   it.each(managementScreens)("keeps %s on the shared workspace shell", (file) => {
@@ -241,23 +241,25 @@ describe("management workspace adoption", () => {
   });
 
   it.each(["agents-screen.tsx", "members-screen.tsx", "tasks-screen.tsx"])(
-    "keeps %s domain choices in the shared SelectionButton",
+    "keeps %s domain choices in system selection controls",
     (file) => {
       const source = readFileSync(join(__dirname, "..", "screens", file), "utf8");
 
-      expect(source).toMatch(/<(?:ManagementChoiceField|SelectionButton)/u);
+      expect(source).toMatch(/<(?:SystemSegmentedControl|SystemSelectField)/u);
+      expect(source).not.toContain("<ManagementChoiceField");
+      expect(source).not.toMatch(/<Selection(?:Button|Group)/u);
       expect(source).not.toMatch(/\n  (?:agentChoice|choice|choiceSelected|modeTab|modeTabSelected): \{/u);
     },
   );
 
-  it("uses a native text tab bar for Task and Reminder modes", () => {
+  it("uses system tabs for Task and Reminder modes", () => {
     const source = readFileSync(
       join(__dirname, "..", "screens", "tasks-screen.tsx"),
       "utf8",
     );
 
-    expect(source).toContain("<ManagementTabBar");
-    expect(source).toContain("<ManagementTab");
+    expect(source).toContain("<SystemTabs");
+    expect(source).not.toContain("<ManagementTab");
   });
 
   it.each(["agents-screen.tsx", "members-screen.tsx", "tasks-screen.tsx"])(

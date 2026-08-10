@@ -42,7 +42,6 @@ import {
   DetailSection,
   IconActionButton,
   InlineFeedback,
-  ManagementChoiceField,
   ManagementDetailCanvas,
   ManagementDetailScroll,
   ManagementField,
@@ -58,6 +57,7 @@ import {
   ResourceIdentityHeader,
   ResourceMetadataList,
 } from "../components/management-workspace";
+import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 import {
   OperationStatusList,
   type OperationStatusItem,
@@ -797,18 +797,20 @@ function InviteForm({
   const submit = form.actions.find(action => action.id === "submit-create-invite")!;
   return (
     <ManagementForm testID="member-invite-form">
-      <ManagementChoiceField
-        disabled={role.disabled}
-        label={role.label}
-        onSelect={role.onChange}
-        options={(role.options ?? []).map(option => ({
-          ...option,
-          accessibilityLabel: option.value === "admin"
-            ? "邀请管理员"
-            : "邀请普通成员",
-        }))}
-        selected={role.value}
-      />
+      <ManagementField label={role.label}>
+        <SystemSegmentedControl
+          accessibilityLabel={role.label}
+          disabled={role.disabled}
+          onChange={role.onChange}
+          options={(role.options ?? []).map(option => ({
+            ...option,
+            accessibilityLabel: option.value === "admin"
+              ? "邀请管理员"
+              : "邀请普通成员",
+          }))}
+          value={role.value}
+        />
+      </ManagementField>
       <View style={styles.formGrid}>
         <InviteExpirationField field={expiresAt} session={session} />
         <ManagementField

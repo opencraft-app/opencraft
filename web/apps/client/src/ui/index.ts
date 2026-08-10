@@ -55,6 +55,24 @@ export {
   type SystemSegmentedOption,
 } from "./primitives/system-segmented-control";
 export {
+  SystemTabs,
+  type SystemTabOption,
+  type SystemTabsProps,
+} from "./primitives/system-tabs";
+export {
+  SystemSelect,
+  type ControlledOverlayProps,
+  type FocusableHandle,
+  type OverlayCloseReason,
+  type OverlayTriggerProps,
+  type SystemSelectOption,
+  type SystemSelectProps,
+} from "./primitives/system-select";
+export {
+  SystemSelectField,
+  type SystemSelectFieldProps,
+} from "./primitives/system-select-field";
+export {
   SystemMaterialSurface,
   type SystemMaterialRole,
   type SystemMaterialSurfaceProps,
@@ -78,7 +96,6 @@ export {
   ManagementCollectionFooterAction,
   ManagementCollectionHeader,
   ManagementCollectionPane,
-  ManagementChoiceField,
   ManagementDateTimeInput,
   ManagementDetailCanvas,
   ManagementDetailScroll,
@@ -90,8 +107,6 @@ export {
   ManagementHeader,
   ManagementHeaderActions,
   ManagementResourceDirectory,
-  ManagementTab,
-  ManagementTabBar,
   NoticeBanner,
   RecordIdentityHeader,
   ResourceFactStrip,
@@ -101,8 +116,6 @@ export {
   ManagementStage,
   ManagementTextInput,
   ResourceActionRow,
-  SelectionButton,
-  SelectionGroup,
   StatusIndicator,
   type ActionButtonProps,
   type CodeBlockProps,
@@ -114,8 +127,6 @@ export {
   type InlineFeedbackProps,
   type InlineEmptyStateProps,
   type ManagementHeaderProps,
-  type ManagementTabBarProps,
-  type ManagementTabProps,
   type NoticeBannerProps,
   type RecordIdentityHeaderProps,
   type ResourceFact,
@@ -126,8 +137,6 @@ export {
   type ResourceMetadataListProps,
   type ManagementCollectionFooterActionProps,
   type ManagementCollectionHeaderProps,
-  type ManagementChoiceFieldOption,
-  type ManagementChoiceFieldProps,
   type ManagementDateTimeInputProps,
   type ManagementDetailScrollProps,
   type ManagementFieldProps,
@@ -137,8 +146,6 @@ export {
   type ManagementResourceSwitcherProps,
   type ManagementTextInputProps,
   type ResourceActionRowProps,
-  type SelectionButtonProps,
-  type SelectionGroupProps,
   type StatusIndicatorProps,
 } from "./components/management-workspace";
 export {

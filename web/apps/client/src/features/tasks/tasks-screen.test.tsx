@@ -368,6 +368,34 @@ describe("TasksScreen", () => {
     expect(onUpdateTask).toHaveBeenCalledWith(task.id, {status: "done"});
   });
 
+  it("uses a resource select instead of a button strip for dynamic Agent assignment", async () => {
+    const onUpdateTask = jest.fn(async () => undefined);
+    const screen = await render(
+      <TasksScreen
+        agents={[agent]}
+        currentServerId={server.id}
+        error={null}
+        inbox={[inbox]}
+        loading={false}
+        onCreateTask={jest.fn()}
+        onNavigateSection={jest.fn()}
+        onRefresh={jest.fn()}
+        onSelectServer={jest.fn()}
+        onUpdateTask={onUpdateTask}
+        pendingAction={null}
+        servers={[server]}
+        tasks={[task]}
+        viewportWidth={1_280}
+      />,
+    );
+
+    const assignment = screen.getByRole("combobox", {name: "指派执行 Agent"});
+    await fireEvent.press(assignment);
+    expect(screen.getByRole("listbox", {name: "指派执行 Agent"})).toBeVisible();
+    await fireEvent.press(screen.getByRole("option", {name: "指派给 研究助手"}));
+    expect(onUpdateTask).toHaveBeenCalledWith(task.id, {ownerMemberId: agent.id});
+  });
+
   it("turns the empty state into the primary path for creating work", async () => {
     const screen = await render(
       <TasksScreen
@@ -441,11 +469,17 @@ describe("TasksScreen", () => {
 
     expect(screen.getByTestId("task-sidebar")).toHaveStyle({width: 312});
     expect(screen.queryByTestId("task-empty-toolbar")).toBeNull();
+    expect(screen.getByRole("tablist", {name: "任务视图"})).toBeVisible();
+    expect(screen.getByRole("tab", {name: "任务"}).props["aria-controls"]).toBe(
+      "tasks-panel",
+    );
+    expect(screen.getByRole("tabpanel").props.nativeID).toBe("tasks-panel");
 
-    await fireEvent.press(screen.getByRole("tab", {name: "打开提醒"}));
+    await fireEvent.press(screen.getByRole("tab", {name: "提醒"}));
 
     expect(screen.getByTestId("task-sidebar")).toHaveStyle({width: 312});
     expect(screen.queryByTestId("task-empty-toolbar")).toBeNull();
+    expect(screen.getByRole("tabpanel").props.nativeID).toBe("reminders-panel");
     expect(screen.getByText("还没有提醒")).toBeVisible();
   });
 
@@ -471,9 +505,9 @@ describe("TasksScreen", () => {
     expect(screen.getByTestId("task-create-icon")).toBeVisible();
     expect(screen.getByTestId("task-refresh-icon")).toBeVisible();
     expect(screen.getByRole("button", {name: "新建任务"})).toHaveStyle({
-      backgroundColor: velaTheme.semantic.color.actionTonalSurface,
-      borderColor: velaTheme.semantic.color.actionTonalSurface,
-      minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
+      backgroundColor: velaTheme.semantic.color.surfaceTransparent,
+      borderColor: velaTheme.semantic.color.borderTransparent,
+      height: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.queryByText("↻")).toBeNull();
   });
@@ -539,7 +573,7 @@ describe("TasksScreen", () => {
       />,
     );
 
-    await fireEvent.press(screen.getByRole("tab", {name: "打开提醒"}));
+    await fireEvent.press(screen.getByRole("tab", {name: "提醒"}));
     expect(screen.getAllByText(reminder.text).length).toBeGreaterThan(0);
   });
 
@@ -572,7 +606,7 @@ describe("TasksScreen", () => {
       />,
     );
 
-    await fireEvent.press(screen.getByRole("tab", {name: "打开提醒"}));
+    await fireEvent.press(screen.getByRole("tab", {name: "提醒"}));
     expect(screen.getAllByText(reminder.text).length).toBeGreaterThan(0);
 
     await fireEvent.press(screen.getByRole("button", {name: "新建提醒"}));
@@ -590,12 +624,12 @@ describe("TasksScreen", () => {
       "时区 Asia/Shanghai",
     );
     await fireEvent.press(
-      screen.getByRole("button", {name: "选择周期提醒"}),
+      screen.getByRole("radio", {name: "选择周期提醒"}),
     );
     expect(screen.getByLabelText("提醒周期规则")).toBeVisible();
     expect(screen.queryByLabelText("提醒执行时间")).toBeNull();
     await fireEvent.press(
-      screen.getByRole("button", {name: "选择一次提醒"}),
+      screen.getByRole("radio", {name: "选择一次提醒"}),
     );
     await fireEvent.changeText(
       screen.getByLabelText("提醒内容"),
@@ -612,8 +646,9 @@ describe("TasksScreen", () => {
     expect(screen.getByLabelText("提醒执行时间").props.accessibilityHint).toBe(
       "时区 America/New_York",
     );
+    await fireEvent.press(screen.getByRole("combobox", {name: "执行 Agent"}));
     await fireEvent.press(
-      screen.getByRole("button", {name: "选择提醒 Agent 研究助手"}),
+      screen.getByRole("option", {name: "选择提醒 Agent 研究助手"}),
     );
     await fireEvent.press(screen.getByRole("button", {name: "创建提醒"}));
     expect(onCreateReminder).toHaveBeenCalledWith(expect.objectContaining({

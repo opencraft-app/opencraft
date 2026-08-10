@@ -189,7 +189,7 @@ describe("management ownership behavior locks", () => {
     }
   });
 
-  it("keeps form choice and footer composition in management-workspace", () => {
+  it("keeps form selection and footer composition in system controls", () => {
     for (const name of collectionScreens) {
       const source = readFileSync(join(screensRoot, name), "utf8");
       expect(source).toContain("ManagementFormFooter");
@@ -203,7 +203,8 @@ describe("management ownership behavior locks", () => {
       "tasks-screen.tsx",
     ]) {
       const source = readFileSync(join(screensRoot, name), "utf8");
-      expect(source).toContain("ManagementChoiceField");
+      expect(source).toMatch(/SystemSegmentedControl|SystemSelectField/u);
+      expect(source).not.toContain("ManagementChoiceField");
       expect(source).not.toMatch(/function\s+ChoiceRow\s*\(/);
     }
   });

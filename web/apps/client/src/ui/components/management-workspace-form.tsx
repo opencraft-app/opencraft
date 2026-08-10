@@ -1,7 +1,5 @@
 import type {ReactNode} from "react";
-import {useState} from "react";
 import {
-  Pressable,
   Text,
   TextInput,
   type TextInputProps,
@@ -16,7 +14,6 @@ import {
 import {styles} from "./management-workspace.styles";
 
 import {ActionButton} from "../primitives/action-button";
-import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 
 interface SemanticContainerProps {
   children: ReactNode;
@@ -24,7 +21,6 @@ interface SemanticContainerProps {
 }
 
 export type ManagementFieldLayout = "compact" | "flex" | "stacked";
-type SelectionLayout = "equal" | "hug";
 
 export function ManagementForm({
   children,
@@ -133,69 +129,6 @@ export function ManagementDateTimeInput({
   );
 }
 
-export interface SelectionGroupProps extends SemanticContainerProps {
-  inset?: boolean;
-}
-
-export function SelectionGroup({
-  children,
-  inset = false,
-  testID = "selection-group",
-}: SelectionGroupProps) {
-  return (
-    <View style={[styles.selectionGroup, inset && styles.selectionGroupInset]} testID={testID}>
-      {children}
-    </View>
-  );
-}
-
-export interface SelectionButtonProps {
-  accessibilityLabel?: string;
-  disabled?: boolean;
-  label: string;
-  layout?: SelectionLayout;
-  onPress(): void;
-  selected?: boolean;
-  testID?: string;
-}
-
-export function SelectionButton({
-  accessibilityLabel,
-  disabled = false,
-  label,
-  layout = "hug",
-  onPress,
-  selected = false,
-  testID,
-}: SelectionButtonProps) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <Pressable
-      accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityRole="button"
-      accessibilityState={{selected}}
-      aria-pressed={selected}
-      disabled={disabled ? true : undefined}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
-      onPress={onPress}
-      style={({pressed}) => [
-        styles.selectionButton,
-        layout === "equal" && styles.selectionButtonEqual,
-        selected && styles.selectionButtonSelected,
-        hovered && !disabled && !selected && styles.selectionButtonHover,
-        hovered && !disabled && selected && styles.selectionButtonSelectedHover,
-        pressed && !selected && styles.selectionButtonPressed,
-        pressed && selected && styles.selectionButtonSelectedPressed,
-        disabled && styles.disabled,
-      ]}
-      testID={testID}
-    >
-      <Text style={styles.selectionButtonText}>{label}</Text>
-    </Pressable>
-  );
-}
-
 export interface ManagementFormFooterAction {
   accessibilityLabel?: string;
   busy?: boolean;
@@ -244,46 +177,5 @@ export function ManagementFormFooter({
         testID={primaryAction.testID}
       />
     </ManagementFormActions>
-  );
-}
-
-export interface ManagementChoiceFieldOption {
-  accessibilityLabel?: string;
-  disabled?: boolean;
-  label: string;
-  value: string;
-}
-
-export interface ManagementChoiceFieldProps {
-  disabled?: boolean;
-  label: string;
-  layout?: ManagementFieldLayout;
-  onSelect(value: string): void;
-  options: ManagementChoiceFieldOption[];
-  selected?: string;
-  testID?: string;
-}
-
-/** Labeled, accessible segmented choices shared by every management form. */
-export function ManagementChoiceField({
-  disabled = false,
-  label,
-  layout,
-  onSelect,
-  options,
-  selected,
-  testID = "management-choice-field",
-}: ManagementChoiceFieldProps) {
-  return (
-    <ManagementField label={label} layout={layout} testID={testID}>
-      <SystemSegmentedControl
-        accessibilityLabel={label}
-        disabled={disabled}
-        onChange={onSelect}
-        options={options}
-        testID={`${testID}-segmented`}
-        value={selected ?? ""}
-      />
-    </ManagementField>
   );
 }

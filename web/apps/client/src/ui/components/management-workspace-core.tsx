@@ -916,58 +916,6 @@ export function ManagementResourceSwitcher({
   );
 }
 
-export interface ManagementTabBarProps extends SemanticContainerProps {}
-
-export function ManagementTabBar({
-  children,
-  testID = "management-tab-bar",
-}: ManagementTabBarProps) {
-  return <View style={styles.tabBar} testID={testID}>{children}</View>;
-}
-
-export interface ManagementTabProps {
-  accessibilityLabel?: string;
-  disabled?: boolean;
-  label: string;
-  onPress(): void;
-  selected?: boolean;
-  testID?: string;
-}
-
-export function ManagementTab({
-  accessibilityLabel,
-  disabled = false,
-  label,
-  onPress,
-  selected = false,
-  testID,
-}: ManagementTabProps) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <Pressable
-      accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityRole="tab"
-      aria-selected={selected}
-      disabled={disabled}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
-      onPress={onPress}
-      style={({pressed}) => [
-        styles.tab,
-        selected && styles.tabSelected,
-        hovered && !disabled && styles.tabHover,
-        pressed && styles.tabPressed,
-        disabled && styles.disabled,
-      ]}
-      testID={testID}
-    >
-      <Text style={[styles.tabText, selected && styles.tabTextSelected]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 export interface InlineFeedbackProps {
   message: string;
   testID?: string;

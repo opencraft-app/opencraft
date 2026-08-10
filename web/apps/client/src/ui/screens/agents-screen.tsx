@@ -28,7 +28,6 @@ import {
   DetailSection,
   ManagementDetailCanvas,
       ManagementDetailScroll,
-      ManagementChoiceField,
       ManagementField,
       ManagementForm,
       ManagementFormActions,
@@ -44,6 +43,8 @@ import {
   InlineFeedback,
   ManagementCollectionFooterAction,
 } from "../components/management-workspace";
+import {SystemSegmentedControl} from "../primitives/system-segmented-control";
+import {SystemSelectField} from "../primitives/system-select-field";
 import {
   buildManagementShellModel,
   ManagementPresentation,
@@ -974,12 +975,14 @@ function AgentCreateForm({
               />
             </ManagementField>
           </View>
-          <ManagementChoiceField
-            label="回复策略"
-            onSelect={field("agent-reply-policy")!.onChange}
-            options={replyPolicies}
-            selected={replyPolicy}
-          />
+          <ManagementField label="回复策略">
+            <SystemSegmentedControl
+              accessibilityLabel="回复策略"
+              onChange={field("agent-reply-policy")!.onChange}
+              options={replyPolicies}
+              value={replyPolicy}
+            />
+          </ManagementField>
           <View style={styles.wizardFooter}>
             <ManagementFormFooter
               cancelAction={{
@@ -999,27 +1002,33 @@ function AgentCreateForm({
 
       {step === 2 ? (
         <>
-          <ManagementChoiceField
-            label="Runtime"
-            onSelect={field("agent-runtime")!.onChange}
-            options={runtimeKinds.map((value) => ({
-              accessibilityLabel: `选择 ${value}`,
-              label: value,
-              value,
-            }))}
-            selected={runtime}
-          />
-          {computers.length > 0 ? (
-            <ManagementChoiceField
-              label="Computer"
-              onSelect={field("agent-computer")!.onChange}
-              options={computers.map((computer) => ({
-                accessibilityLabel: `绑定 Computer ${computer.name}`,
-                label: computer.name,
-                value: computer.id,
+          <ManagementField label="Runtime">
+            <SystemSegmentedControl
+              accessibilityLabel="Runtime"
+              onChange={field("agent-runtime")!.onChange}
+              options={runtimeKinds.map((value) => ({
+                accessibilityLabel: `选择 ${value}`,
+                label: value,
+                value,
               }))}
-              selected={computerId}
+              value={runtime}
             />
+          </ManagementField>
+          {computers.length > 0 ? (
+            <ManagementField label="Computer">
+              <SystemSelectField
+                accessibilityLabel="Computer"
+                onChange={field("agent-computer")!.onChange}
+                options={computers.map((computer) => ({
+                  accessibilityLabel: `绑定 Computer ${computer.name}`,
+                  label: computer.name,
+                  value: computer.id,
+                }))}
+                overlayId="agent-create-computer-listbox"
+                placeholder="选择 Computer"
+                value={computerId || null}
+              />
+            </ManagementField>
           ) : (
             <View style={styles.wizardNotice}>
               <Text style={styles.wizardCheckTitle}>还没有可用 Computer</Text>
@@ -1250,39 +1259,50 @@ function AgentDetail({
             value={displayName}
           />
         </ManagementField>
-        <ManagementChoiceField
-          label="Runtime"
-          onSelect={(value) =>
-            onChangeRuntime(value as Agent["runtime"]["kind"])
-          }
-          options={runtimeKinds.map((value) => ({
-            accessibilityLabel: `编辑 Runtime ${value}`,
-            label: value,
-            value,
-          }))}
-          selected={runtime}
-        />
-        <ManagementChoiceField
-          label="回复策略"
-          onSelect={(value) =>
-            onChangeReplyPolicy(value as Agent["replyPolicy"])
-          }
-          options={replyPolicies.map((option) => ({
-            ...option,
-            accessibilityLabel: `编辑${option.accessibilityLabel}`,
-          }))}
-          selected={replyPolicy}
-        />
-        <ManagementChoiceField
-          label="Computer"
-          onSelect={(value) => onChangeComputerId(value)}
-          options={computers.map((item) => ({
-            accessibilityLabel: `编辑绑定 Computer ${item.name}`,
-            label: item.name,
-            value: item.id,
-          }))}
-          selected={computerId}
-        />
+        <ManagementField label="Runtime">
+          <SystemSegmentedControl
+            accessibilityLabel="Runtime"
+            disabled={disabled}
+            onChange={(value) =>
+              onChangeRuntime(value as Agent["runtime"]["kind"])
+            }
+            options={runtimeKinds.map((value) => ({
+              accessibilityLabel: `编辑 Runtime ${value}`,
+              label: value,
+              value,
+            }))}
+            value={runtime}
+          />
+        </ManagementField>
+        <ManagementField label="回复策略">
+          <SystemSegmentedControl
+            accessibilityLabel="回复策略"
+            disabled={disabled}
+            onChange={(value) =>
+              onChangeReplyPolicy(value as Agent["replyPolicy"])
+            }
+            options={replyPolicies.map((option) => ({
+              ...option,
+              accessibilityLabel: `编辑${option.accessibilityLabel}`,
+            }))}
+            value={replyPolicy}
+          />
+        </ManagementField>
+        <ManagementField label="Computer">
+          <SystemSelectField
+            accessibilityLabel="Computer"
+            disabled={disabled}
+            onChange={onChangeComputerId}
+            options={computers.map((item) => ({
+              accessibilityLabel: `编辑绑定 Computer ${item.name}`,
+              label: item.name,
+              value: item.id,
+            }))}
+            overlayId={`agent-${agent.id}-computer-listbox`}
+            placeholder="选择 Computer"
+            value={computerId || null}
+          />
+        </ManagementField>
         <ActionButton
           disabled={disabled || displayName.trim().length === 0 || !computerId}
           importance="primary"

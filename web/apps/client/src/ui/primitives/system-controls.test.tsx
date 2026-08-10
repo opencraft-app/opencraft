@@ -8,6 +8,7 @@ import {ActionButton} from "./action-button";
 
 const buttonModulePath = join(__dirname, "system-button.tsx");
 const segmentedModulePath = join(__dirname, "system-segmented-control.tsx");
+const tabsModulePath = join(__dirname, "system-tabs.tsx");
 
 describe("Tahoe system controls", () => {
   it("exports the system controls from the public UI boundary", () => {
@@ -16,12 +17,14 @@ describe("Tahoe system controls", () => {
       ui.SystemButton,
       ui.SystemIconButton,
       ui.SystemSegmentedControl,
+      ui.SystemTabs,
     ]).not.toContain(undefined);
   });
 
   it("provides shared button and segmented-control modules", () => {
     expect(existsSync(buttonModulePath)).toBe(true);
     expect(existsSync(segmentedModulePath)).toBe(true);
+    expect(existsSync(tabsModulePath)).toBe(true);
   });
 
   it("gives labelled and icon actions distinct semantic variants", async () => {
@@ -151,5 +154,35 @@ describe("Tahoe system controls", () => {
     expect(screen.getByTestId("legacy-default")).toHaveStyle({
       height: velaTheme.recipes.control.height,
     });
+  });
+
+  it("renders toolbar tabs with roving keyboard selection", async () => {
+    if (!existsSync(tabsModulePath)) return;
+    const {SystemTabs} = require("./system-tabs") as typeof import("./system-tabs");
+    const onChange = jest.fn();
+    const screen = await render(
+      <SystemTabs
+        accessibilityLabel="任务视图"
+        onChange={onChange}
+        options={[
+          {label: "任务", panelId: "tasks-panel", value: "tasks"},
+          {label: "提醒", panelId: "reminders-panel", value: "reminders"},
+        ]}
+        testID="task-tabs"
+        value="tasks"
+      />,
+    );
+
+    expect(screen.getByRole("tablist")).toHaveAccessibleName("任务视图");
+    expect(screen.getByRole("tab", {name: "任务"}).props.accessibilityState).toEqual({
+      disabled: false,
+      selected: true,
+    });
+    expect(screen.getByRole("tab", {name: "任务"}).props["aria-controls"]).toBe("tasks-panel");
+    await fireEvent(screen.getByRole("tab", {name: "任务"}), "keyDown", {
+      nativeEvent: {key: "ArrowRight"},
+      preventDefault: jest.fn(),
+    });
+    expect(onChange).toHaveBeenCalledWith("reminders");
   });
 });

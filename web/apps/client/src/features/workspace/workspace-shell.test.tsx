@@ -3075,8 +3075,9 @@ describe("WorkspaceShell", () => {
       screen.getByLabelText("Channel 名称"),
       "delivery",
     );
+    expect(screen.getByRole("radiogroup", {name: "Channel 可见性"})).toBeVisible();
     await fireEvent.press(
-      screen.getByRole("button", { name: "设为私密 Channel" }),
+      screen.getByRole("radio", { name: "设为私密 Channel" }),
     );
     await fireEvent.press(screen.getByRole("button", { name: "创建 Channel" }));
     expect(onCreateChannel).toHaveBeenCalledWith({

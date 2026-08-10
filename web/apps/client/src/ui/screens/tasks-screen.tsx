@@ -9,7 +9,7 @@ import type {
   UpdateReminderInput,
   UpdateTaskInput,
 } from "@vela/client-core";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   ScrollView,
   Text,
@@ -30,7 +30,6 @@ import {
   DetailSection,
   IconActionButton,
   InlineFeedback,
-  ManagementChoiceField,
   ManagementCollectionFooterAction,
   ManagementResourceDirectory,
   ManagementDateTimeInput,
@@ -41,13 +40,12 @@ import {
   ManagementFormFooter,
   ManagementHeader,
   ManagementHeaderActions,
-  ManagementTab,
-  ManagementTabBar,
   ManagementStage,
   ManagementTextInput,
-  SelectionButton,
-  SelectionGroup,
 } from "../components/management-workspace";
+import {SystemTabs} from "../primitives/system-tabs";
+import {SystemSelectField} from "../primitives/system-select-field";
+import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 import {deviceTimezone, normalizeLocalDateTime} from "../date-time";
 import {reminderEmptyCopy, taskEmptyCopy} from "../management-empty-copy";
 import { managementSurfaceLayout } from "../management-surface-layout";
@@ -257,16 +255,20 @@ export function TasksScreen(props: TasksScreenProps) {
       refreshTestID="task-refresh-icon"
     />
   );
-  const collectionList = reminderMode ? (
-    <ReminderList
-      items={reminderItems}
-      onSelect={setSelectedReminderId}
-    />
-  ) : (
-    <TaskList
-      items={taskItems}
-      onSelect={setSelectedTaskId}
-    />
+  const collectionList = (
+    <TaskCollectionPanel reminderMode={reminderMode}>
+      {reminderMode ? (
+        <ReminderList
+          items={reminderItems}
+          onSelect={setSelectedReminderId}
+        />
+      ) : (
+        <TaskList
+          items={taskItems}
+          onSelect={setSelectedTaskId}
+        />
+      )}
+    </TaskCollectionPanel>
   );
   const sidebar = (
     <ManagementResourceDirectory
@@ -612,19 +614,21 @@ export function TasksScreen(props: TasksScreenProps) {
             refreshDisabled={!refresh}
             refreshTestID="task-compact-refresh-icon"
           />
-          {reminderMode ? (
-            <ReminderList
-              horizontal
-              items={reminderItems}
-              onSelect={setSelectedReminderId}
-            />
-          ) : (
-            <TaskList
-              horizontal
-              items={taskItems}
-              onSelect={setSelectedTaskId}
-            />
-          )}
+          <TaskCollectionPanel reminderMode={reminderMode}>
+            {reminderMode ? (
+              <ReminderList
+                horizontal
+                items={reminderItems}
+                onSelect={setSelectedReminderId}
+              />
+            ) : (
+              <TaskList
+                horizontal
+                items={taskItems}
+                onSelect={setSelectedTaskId}
+              />
+            )}
+          </TaskCollectionPanel>
         </View>
       ) : null}
       <ManagementDetailScroll
@@ -726,20 +730,16 @@ function TaskCollectionToolbar({
 }) {
   return (
     <>
-      <ManagementTabBar>
-        <ManagementTab
-          accessibilityLabel="打开任务队列"
-          label="任务"
-          onPress={() => onSelectMode("tasks")}
-          selected={!reminderMode}
-        />
-        <ManagementTab
-          accessibilityLabel="打开提醒"
-          label="提醒"
-          onPress={() => onSelectMode("reminders")}
-          selected={reminderMode}
-        />
-      </ManagementTabBar>
+      <SystemTabs
+        accessibilityLabel="任务视图"
+        onChange={onSelectMode}
+        options={[
+          {label: "任务", panelId: "tasks-panel", value: "tasks"},
+          {label: "提醒", panelId: "reminders-panel", value: "reminders"},
+        ]}
+        testID="task-mode-tabs"
+        value={reminderMode ? "reminders" : "tasks"}
+      />
       <View style={styles.inboxBand}>
         <Text style={styles.inboxLabel}>
           {reminderMode ? "提醒" : "待处理"} {inboxCount}
@@ -754,6 +754,27 @@ function TaskCollectionToolbar({
         />
       </View>
     </>
+  );
+}
+
+function TaskCollectionPanel({
+  children,
+  reminderMode,
+}: {
+  children: ReactNode;
+  reminderMode: boolean;
+}) {
+  const label = reminderMode ? "提醒列表" : "任务列表";
+  return (
+    <View
+      accessible
+      accessibilityLabel={label}
+      accessibilityRole={"tabpanel" as never}
+      nativeID={reminderMode ? "reminders-panel" : "tasks-panel"}
+      style={styles.collectionPanel}
+    >
+      {children}
+    </View>
   );
 }
 
@@ -854,28 +875,33 @@ function ReminderCreateForm({form}: {form: PresentationForm}) {
   return (
     <ManagementForm>
       <Text style={styles.formTitle}>{form.title}</Text>
-      <ManagementChoiceField
-        disabled={kind.disabled}
-        label={kind.label}
-        onSelect={kind.onChange}
-        options={(kind.options ?? []).map(option => ({
-          ...option,
-          accessibilityLabel: option.value === "once"
-            ? "选择一次提醒"
-            : "选择周期提醒",
-        }))}
-        selected={kind.value}
-      />
-      <ManagementChoiceField
-        disabled={agent.disabled}
-        label={agent.label}
-        onSelect={agent.onChange}
-        options={(agent.options ?? []).map(option => ({
-          ...option,
-          accessibilityLabel: `选择提醒 Agent ${option.label}`,
-        }))}
-        selected={agent.value}
-      />
+      <ManagementField label={kind.label}>
+        <SystemSegmentedControl
+          accessibilityLabel={kind.label}
+          disabled={kind.disabled}
+          onChange={kind.onChange}
+          options={(kind.options ?? []).map(option => ({
+            ...option,
+            accessibilityLabel: option.value === "once"
+              ? "选择一次提醒"
+              : "选择周期提醒",
+          }))}
+          value={kind.value}
+        />
+      </ManagementField>
+      <ManagementField label={agent.label}>
+        <SystemSelectField
+          accessibilityLabel={agent.label}
+          disabled={agent.disabled}
+          onChange={agent.onChange}
+          options={(agent.options ?? []).map(option => ({
+            ...option,
+            accessibilityLabel: `选择提醒 Agent ${option.label}`,
+          }))}
+          overlayId="reminder-create-agent-listbox"
+          value={agent.value || null}
+        />
+      </ManagementField>
       <ManagementField error={text.error} hint={text.hint} label={text.label}>
         <ManagementTextInput
           accessibilityLabel={text.accessibilityLabel ?? text.label}
@@ -1049,18 +1075,21 @@ function TaskCreateForm({form}: {form: PresentationForm}) {
           value={title.value}
         />
       </ManagementField>
-      <ManagementChoiceField
-        disabled={agent.disabled}
-        label={agent.label}
-        onSelect={agent.onChange}
-        options={(agent.options ?? []).map(option => ({
-          ...option,
-          accessibilityLabel: option.value
-            ? `选择任务 Agent ${option.label}`
-            : "创建未指派任务",
-        }))}
-        selected={agent.value}
-      />
+      <ManagementField label={agent.label}>
+        <SystemSelectField
+          accessibilityLabel={agent.label}
+          disabled={agent.disabled}
+          onChange={agent.onChange}
+          options={(agent.options ?? []).map(option => ({
+            ...option,
+            accessibilityLabel: option.value
+              ? `选择任务 Agent ${option.label}`
+              : "创建未指派任务",
+          }))}
+          overlayId="task-create-agent-listbox"
+          value={agent.value || null}
+        />
+      </ManagementField>
       <ManagementField
         error={description.error}
         hint={description.hint}
@@ -1123,18 +1152,19 @@ function TaskDetail({
       </Text>
       {task.status === "todo" && agents.length > 0 ? (
         <ManagementField label="指派执行">
-          <SelectionGroup>
-            {agents.map((agent) => (
-              <SelectionButton
-                accessibilityLabel={`指派给 ${agent.displayName}`}
-                disabled={disabled || task.ownerMemberId === agent.id}
-                key={agent.id}
-                label={`${agent.displayName} · @${agent.handle}`}
-                onPress={() => onUpdate({ownerMemberId: agent.id})}
-                selected={task.ownerMemberId === agent.id}
-              />
-            ))}
-          </SelectionGroup>
+          <SystemSelectField
+            accessibilityLabel="指派执行 Agent"
+            disabled={disabled}
+            onChange={ownerMemberId => onUpdate({ownerMemberId})}
+            options={agents.map(agent => ({
+              accessibilityLabel: `指派给 ${agent.displayName}`,
+              label: `${agent.displayName} · @${agent.handle}`,
+              value: agent.id,
+            }))}
+            overlayId={`task-${task.id}-agent-listbox`}
+            placeholder="选择执行 Agent"
+            value={task.ownerMemberId ?? null}
+          />
         </ManagementField>
       ) : null}
       <View style={styles.detailActions}>
@@ -1163,6 +1193,10 @@ function TaskDetail({
 }
 
 const styles = StyleSheet.create((theme) => ({
+  collectionPanel: {
+    flex: 1,
+    minHeight: 0,
+  },
   compactListBlock: {
     borderBottomColor: theme.semantic.color.separator,
     borderBottomWidth: theme.semantic.stroke.hairline,
