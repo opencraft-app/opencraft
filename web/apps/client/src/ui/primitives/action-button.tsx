@@ -1,30 +1,14 @@
 import type {LucideIcon} from "lucide-react-native";
-import {useState} from "react";
-import {Pressable, Text, View} from "react-native";
-import {StyleSheet, useUnistyles} from "react-native-unistyles";
 
-/**
- * The one button in the app.
- *
- * The chat shell and the management screens each grew their own vocabulary for
- * the same handful of jobs, so a "secondary action" was drawn one way in a
- * conversation header and another way on an agent detail page. Importance is
- * the axis that actually varies; everything else is shared.
- */
+import {
+  SystemButton,
+  type SystemButtonVariant,
+} from "./system-button";
+
+/** @deprecated Prefer SystemButton with an explicit semantic variant. */
 export type ActionContext = "compact" | "default" | "header";
-/**
- * No `quiet` tier: it drew a transparent surface behind a label, so a button
- * arrived as bare text and only confessed to being pressable on hover. An
- * icon-only affordance that wants to recede is `IconActionButton`; anything
- * carrying a label reads as a button.
- */
+/** @deprecated Prefer SystemButtonVariant. */
 export type ActionImportance = "danger" | "primary" | "secondary" | "tonal";
-
-/**
- * Hugging its content is the button's business; which edge it hugs is the
- * parent's. React Native has no `fit-content`, so the button has to set
- * `alignSelf` itself — which reads as "left" in a column and "top" in a row.
- */
 export type ActionAlign = "center" | "start" | "stretch";
 
 export interface ActionButtonProps {
@@ -41,148 +25,46 @@ export interface ActionButtonProps {
   testID?: string;
 }
 
+function systemVariant(
+  importance: ActionImportance,
+  context: ActionContext,
+): SystemButtonVariant {
+  if (context === "header" && importance !== "danger") return "toolbar";
+  if (importance === "primary") return "default";
+  if (importance === "secondary") return "secondary";
+  if (importance === "tonal") return "accentedSecondary";
+  return "destructive";
+}
+
+/**
+ * Compatibility bridge for existing screens. New code must use SystemButton so
+ * toolbar/default/destructive semantics are explicit at the call site.
+ */
 export function ActionButton({
   accessibilityLabel,
-  align = "start",
-  busy = false,
+  align,
+  busy,
   context = "default",
-  disabled = false,
-  icon: Icon,
+  disabled,
+  icon,
   iconTestID,
   importance,
   label,
   onPress,
   testID,
 }: ActionButtonProps) {
-  const {theme} = useUnistyles();
-  const [hovered, setHovered] = useState(false);
-  const iconColor = importance === "primary" ? theme.semantic.color.iconInverse
-    : importance === "danger" ? theme.semantic.color.statusDanger
-      : importance === "tonal" ? theme.semantic.color.iconAccent
-      : theme.semantic.color.iconPrimary;
   return (
-    <Pressable
-      accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityRole="button"
-      aria-busy={busy}
+    <SystemButton
+      accessibilityLabel={accessibilityLabel}
+      align={align}
+      busy={busy}
       disabled={disabled}
-      hitSlop={context === "header" ? theme.semantic.interaction.hitTargetInsetCompact : undefined}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
+      icon={icon}
+      iconTestID={iconTestID}
+      label={label}
       onPress={onPress}
-      style={({pressed}) => [
-        styles.action,
-        align === "center" && styles.actionAlignCenter,
-        align === "stretch" && styles.actionAlignStretch,
-        context === "header" && styles.actionHeader,
-        importance === "secondary" && styles.actionSecondary,
-        importance === "danger" && styles.actionDanger,
-        importance === "tonal" && styles.actionTonal,
-        hovered && !disabled && importance === "primary" && styles.actionPrimaryHover,
-        hovered && !disabled && importance === "secondary" && styles.actionSecondaryHover,
-        hovered && !disabled && importance === "danger" && styles.actionDangerHover,
-        hovered && !disabled && importance === "tonal" && styles.actionTonalHover,
-        pressed && importance === "primary" && styles.actionPrimaryPressed,
-        pressed && importance === "secondary" && styles.actionSecondaryPressed,
-        pressed && importance === "danger" && styles.actionDangerPressed,
-        pressed && importance === "tonal" && styles.actionTonalPressed,
-        disabled && styles.disabled,
-      ]}
       testID={testID}
-    >
-      {Icon ? (
-        <View testID={iconTestID}>
-          <Icon color={iconColor} size={theme.semantic.icon.size.small} strokeWidth={theme.semantic.icon.stroke.emphasis} />
-        </View>
-      ) : null}
-      <Text style={[
-        styles.actionText,
-        importance !== "primary" && styles.actionTextDark,
-        importance === "danger" && styles.actionTextDanger,
-        importance === "tonal" && styles.actionTextTonal,
-      ]}>{label}</Text>
-    </Pressable>
+      variant={systemVariant(importance, context)}
+    />
   );
 }
-
-const styles = StyleSheet.create((theme) => ({
-  action: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    backgroundColor: theme.semantic.color.actionPrimarySurface,
-    borderColor: theme.semantic.color.actionPrimarySurface,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    justifyContent: "center",
-    minHeight: theme.recipes.managementWorkspace.actionHeight,
-    paddingHorizontal: theme.spacing.lg,
-    ...theme.semantic.motion.transition.control,
-  },
-  actionAlignCenter: {alignSelf: "center"},
-  actionAlignStretch: {alignSelf: "stretch"},
-  actionDanger: {
-    backgroundColor: theme.semantic.color.actionDangerSurface,
-    borderColor: theme.semantic.color.actionDangerBorder,
-    ...theme.semantic.motion.transition.control,
-  },
-  actionDangerHover: {
-    backgroundColor: theme.semantic.color.actionDangerHoverSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  actionDangerPressed: {
-    backgroundColor: theme.semantic.color.actionDangerPressedSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  actionHeader: {
-    minHeight: theme.recipes.managementWorkspace.headerActionHeight,
-    paddingHorizontal: theme.spacing.md,
-  },
-  actionPrimaryHover: {
-    backgroundColor: theme.semantic.color.actionPrimaryHoverSurface,
-    borderColor: theme.semantic.color.actionPrimaryHoverSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  actionPrimaryPressed: {
-    backgroundColor: theme.semantic.color.actionPrimaryPressedSurface,
-    borderColor: theme.semantic.color.actionPrimaryPressedSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  actionSecondary: {
-    backgroundColor: theme.semantic.color.actionSecondarySurface,
-    borderColor: theme.semantic.color.borderControl,
-    ...theme.semantic.motion.transition.control,
-  },
-  actionSecondaryHover: {
-    backgroundColor: theme.semantic.color.actionSecondaryHoverSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  actionSecondaryPressed: {
-    backgroundColor: theme.semantic.color.actionSecondaryPressedSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  actionText: {
-    color: theme.semantic.color.actionPrimaryText,
-    ...theme.semantic.typography.button,
-  },
-  actionTextDanger: {color: theme.semantic.color.actionDangerText},
-  actionTextDark: {color: theme.semantic.color.actionSecondaryText},
-  actionTextTonal: {color: theme.semantic.color.actionTonalText},
-  actionTonal: {
-    backgroundColor: theme.semantic.color.actionTonalSurface,
-    borderColor: theme.semantic.color.actionTonalSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  actionTonalHover: {
-    backgroundColor: theme.semantic.color.actionTonalHoverSurface,
-    borderColor: theme.semantic.color.actionTonalHoverSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  actionTonalPressed: {
-    backgroundColor: theme.semantic.color.actionTonalPressedSurface,
-    borderColor: theme.semantic.color.actionTonalPressedSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  disabled: {opacity: theme.semantic.interaction.disabledOpacity},
-}));

@@ -12,6 +12,7 @@ import ArrowLeft from "lucide-react-native/icons/arrow-left";
 import LogOut from "lucide-react-native/icons/log-out";
 
 import { BrandMark } from "../components/brand-mark";
+import {SystemMaterialSurface} from "../primitives/system-material-surface";
 import { velaTheme } from "../tokens";
 import { workspaceLayoutMode } from "../workspace-layout-mode";
 import { MaybeLink } from "./navigation-link";
@@ -93,20 +94,26 @@ export function PlatformFrame({
 
   return (
     <View style={styles.shell} testID="workspace-shell">
-      <ServerRail
-        account={account}
-        activeSection={activeSection}
-        canManageServer={canManageServer}
-        currentServerId={currentServerId}
-        imStatus={imStatus}
-        onNavigateSection={onNavigateSection}
-        onLogout={onLogout}
-        onSelectServer={onSelectServer}
-        sectionHref={sectionHref}
-        serverHref={serverHref}
-        servers={servers}
-      />
-      {navigation}
+      <SystemMaterialSurface
+        materialRole="navigationChrome"
+        style={styles.navigationChrome}
+        testID="navigation-chrome"
+      >
+        <ServerRail
+          account={account}
+          activeSection={activeSection}
+          canManageServer={canManageServer}
+          currentServerId={currentServerId}
+          imStatus={imStatus}
+          onNavigateSection={onNavigateSection}
+          onLogout={onLogout}
+          onSelectServer={onSelectServer}
+          sectionHref={sectionHref}
+          serverHref={serverHref}
+          servers={servers}
+        />
+        {navigation}
+      </SystemMaterialSurface>
       {children}
     </View>
   );
@@ -673,6 +680,12 @@ const styles = StyleSheet.create((theme) => ({
   mobileNavigationLabel: {
     ...theme.semantic.typography.navigationLabel,
   },
+  navigationChrome: {
+    flexDirection: "row",
+    flexShrink: 0,
+    height: "100%",
+    zIndex: theme.semantic.layer.navigation,
+  },
   railBrand: {
     alignItems: "center",
     height: theme.recipes.desktopWorkspace.headerHeight,
@@ -807,9 +820,7 @@ const styles = StyleSheet.create((theme) => ({
     width: theme.recipes.desktopWorkspace.railWidth,
     zIndex: theme.semantic.layer.popover,
     _web: {
-      backdropFilter: theme.semantic.material.blur,
       backgroundColor: theme.semantic.material.navigationFill,
-      WebkitBackdropFilter: theme.semantic.material.blur,
     },
   },
   shell: {

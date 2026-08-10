@@ -11,9 +11,7 @@ export const styles = StyleSheet.create((theme) => ({
     height: "100%",
     width: theme.recipes.managementWorkspace.collectionWidth,
     _web: {
-      backdropFilter: theme.semantic.material.blur,
       backgroundColor: theme.semantic.material.sidebarFill,
-      WebkitBackdropFilter: theme.semantic.material.blur,
     },
   },
   collectionPaneHorizontal: {
@@ -810,13 +808,15 @@ export const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.semantic.radius.control,
     borderWidth: theme.semantic.stroke.hairline,
     color: theme.semantic.color.textPrimary,
+    height: theme.recipes.control.fieldHeight,
     minHeight: theme.recipes.control.fieldHeight,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+    paddingVertical: 0,
     ...theme.semantic.typography.body,
     width: "100%",
     ...theme.semantic.motion.transition.control,
     _web: {
+      boxSizing: "border-box",
       _hover: {
         borderColor: theme.semantic.color.borderFieldHover,
       },
@@ -836,7 +836,9 @@ export const styles = StyleSheet.create((theme) => ({
     },
   },
   textInputMultiline: {
+    height: "auto",
     minHeight: theme.recipes.managementWorkspace.textareaMinHeight,
+    paddingVertical: theme.spacing.sm,
     textAlignVertical: "top",
   },
 }));

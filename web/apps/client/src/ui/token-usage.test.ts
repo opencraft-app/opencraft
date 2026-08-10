@@ -65,32 +65,23 @@ describe("Vela token usage", () => {
     expect(installerSource).toContain(":focus-visible");
   });
 
-  it("gives a labelled button a surface to stand on", () => {
-    // A `quiet` tier drew nothing behind the label, so two peer actions in the
-    // same list — "生成安装命令" and "打开终端" — arrived as a button and a run
-    // of text. Receding is an icon-only job; `IconActionButton` does it. Every
-    // importance a label can wear now paints either a fill or a border.
-    const source = readFileSync(
+  it("keeps legacy actions behind the semantic system-button boundary", () => {
+    const legacy = readFileSync(
       join(process.cwd(), "src", "ui", "primitives", "action-button.tsx"),
       "utf8",
     );
+    const system = readFileSync(
+      join(process.cwd(), "src", "ui", "primitives", "system-button.tsx"),
+      "utf8",
+    );
 
-    expect(source).not.toMatch(/"quiet"|actionQuiet\b/u);
-
-    const tiers = /export type ActionImportance =([^;]*);/u.exec(source)?.[1] ?? "";
-    expect(tiers).not.toBe("");
-    for (const tier of tiers.match(/"(\w+)"/gu) ?? []) {
-      const name = tier.replace(/"/gu, "");
-      if (name === "primary") continue; // carries the base fill
-      const block =
-        new RegExp(
-          `^ {2}action${name[0]!.toUpperCase()}${name.slice(1)}: \\{\\n([\\s\\S]*?)^ {2}\\},$`,
-          "mu",
-        ).exec(source)?.[1] ?? "";
-      expect(block).not.toBe("");
-      expect(block).toMatch(/backgroundColor|borderColor/u);
-      expect(block).not.toContain("surfaceTransparent");
-    }
+    expect(legacy).toContain("<SystemButton");
+    expect(legacy).not.toContain("StyleSheet.create");
+    expect(legacy).toContain('if (context === "header"');
+    expect(system).toContain('variant === "toolbar"');
+    expect(system).toContain("styles.accentedSecondary");
+    expect(system).toContain("styles.destructive");
+    expect(system).not.toMatch(/"quiet"|actionQuiet\b/u);
   });
 
   it("lays every detail section out the one way", () => {

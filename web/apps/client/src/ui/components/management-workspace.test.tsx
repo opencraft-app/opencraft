@@ -218,8 +218,10 @@ describe("management workspace primitives", () => {
     );
 
     expect(screen.getByTestId("runtime-field")).toBeVisible();
-    expect(screen.getByLabelText("选择 Codex").props.accessibilityState).toEqual({
-      selected: true,
+    expect(screen.getByRole("radiogroup")).toHaveAccessibleName("Runtime");
+    expect(screen.getByRole("radio", {name: "选择 Codex"}).props.accessibilityState).toEqual({
+      checked: true,
+      disabled: false,
     });
     await fireEvent.press(screen.getByLabelText("选择 Hermes"));
     expect(onSelect).toHaveBeenCalledWith("hermes");
@@ -228,6 +230,23 @@ describe("management workspace primitives", () => {
     expect(screen.getByText("继续").parent?.props.accessibilityState).toEqual({
       busy: true,
       disabled: true,
+    });
+  });
+
+  it("keeps a single-line field inside the exact density box", async () => {
+    const screen = await render(
+      <managementWorkspace.ManagementTextInput
+        accessibilityLabel="名称"
+        onChangeText={() => undefined}
+        testID="single-line-field"
+        value="Vela"
+      />,
+    );
+
+    expect(screen.getByTestId("single-line-field")).toHaveStyle({
+      height: velaTheme.recipes.control.fieldHeight,
+      minHeight: velaTheme.recipes.control.fieldHeight,
+      paddingVertical: 0,
     });
   });
 
@@ -378,7 +397,7 @@ describe("management workspace primitives", () => {
     expect(screen.getByTestId("action")).toHaveStyle({
       alignSelf: "flex-start",
       borderRadius: velaTheme.semantic.radius.control,
-      minHeight: velaTheme.recipes.managementWorkspace.actionHeight,
+      height: velaTheme.recipes.control.height,
     });
     expect(screen.getByTestId("disabled-action")).toHaveStyle({
       opacity: 0.5,
@@ -394,9 +413,9 @@ describe("management workspace primitives", () => {
       backgroundColor: velaTheme.semantic.color.actionSecondaryHoverSurface,
     });
     expect(screen.getByTestId("header-action")).toHaveStyle({
-      backgroundColor: velaTheme.semantic.color.actionTonalSurface,
-      borderColor: velaTheme.semantic.color.actionTonalSurface,
-      minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
+      backgroundColor: velaTheme.semantic.color.surfaceTransparent,
+      borderColor: velaTheme.semantic.color.borderTransparent,
+      height: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.getByTestId("icon-action")).toHaveStyle({
       backgroundColor: velaTheme.semantic.color.surfaceTransparent,

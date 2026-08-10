@@ -589,9 +589,7 @@ export const styles = StyleSheet.create((theme) => ({
     overflow: "hidden",
     width: theme.recipes.desktopWorkspace.sidebarWidth,
     _web: {
-      backdropFilter: theme.semantic.material.blur,
       backgroundColor: theme.semantic.material.sidebarFill,
-      WebkitBackdropFilter: theme.semantic.material.blur,
     },
   },
   empty: {

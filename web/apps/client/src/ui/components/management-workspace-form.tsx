@@ -16,6 +16,7 @@ import {
 import {styles} from "./management-workspace.styles";
 
 import {ActionButton} from "../primitives/action-button";
+import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 
 interface SemanticContainerProps {
   children: ReactNode;
@@ -275,18 +276,14 @@ export function ManagementChoiceField({
 }: ManagementChoiceFieldProps) {
   return (
     <ManagementField label={label} layout={layout} testID={testID}>
-      <SelectionGroup>
-        {options.map(option => (
-          <SelectionButton
-            accessibilityLabel={option.accessibilityLabel}
-            disabled={disabled || option.disabled}
-            key={option.value || "none"}
-            label={option.label}
-            onPress={() => onSelect(option.value)}
-            selected={option.value === selected}
-          />
-        ))}
-      </SelectionGroup>
+      <SystemSegmentedControl
+        accessibilityLabel={label}
+        disabled={disabled}
+        onChange={onSelect}
+        options={options}
+        testID={`${testID}-segmented`}
+        value={selected ?? ""}
+      />
     </ManagementField>
   );
 }
