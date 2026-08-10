@@ -76,6 +76,7 @@ describe("AgentsScreen", () => {
       <PresentationProvider presenter={presenter}>
         <AgentsScreen
           agents={[]}
+          canManage
           computers={[computer]}
           currentServerId={server.id}
           error={null}
@@ -234,6 +235,7 @@ describe("AgentsScreen", () => {
     const screen = await render(
       <AgentsScreen
         agents={[agent]}
+        canManage
         computers={[computer]}
         currentServerId={server.id}
         error={null}
@@ -322,6 +324,7 @@ describe("AgentsScreen", () => {
     const screen = await render(
       <AgentsScreen
         agents={[agent]}
+        canManage
         computers={[computer]}
         currentServerId={server.id}
         error={null}
@@ -369,6 +372,7 @@ describe("AgentsScreen", () => {
     const screen = await render(
       <AgentsScreen
         agents={[agent]}
+        canManage
         computers={[computer]}
         currentServerId={server.id}
         error={null}
@@ -478,6 +482,7 @@ describe("AgentsScreen", () => {
     const screen = await render(
       <AgentsScreen
         agents={[]}
+        canManage
         computers={[computer]}
         currentServerId={server.id}
         error={null}
@@ -516,11 +521,39 @@ describe("AgentsScreen", () => {
     expect(screen.queryByTestId("management-empty-state")).toBeNull();
   });
 
+  it("does not offer Agent creation to an ordinary Server member", async () => {
+    const screen = await render(
+      <AgentsScreen
+        agents={[]}
+        canManage={false}
+        computers={[computer]}
+        currentServerId={server.id}
+        error={null}
+        loading={false}
+        onCreateAgent={jest.fn()}
+        onNavigateSection={jest.fn()}
+        onRefresh={jest.fn()}
+        onRunAgentAction={jest.fn()}
+        onSelectServer={jest.fn()}
+        onUpdateAgent={jest.fn()}
+        pendingAction={null}
+        servers={[server]}
+        viewportWidth={1_280}
+      />,
+    );
+
+    expect(screen.queryByRole("button", {name: "从空状态新建 Agent"})).toBeNull();
+    expect(
+      screen.getByText("还没有可用 Agent，请联系 Server Owner 或 Admin 创建。"),
+    ).toBeVisible();
+  });
+
   it("explains the Agent handle contract and rejects spaces before continuing", async () => {
     const onCreateAgent = jest.fn();
     const screen = await render(
       <AgentsScreen
         agents={[]}
+        canManage
         computers={[computer]}
         currentServerId={server.id}
         error={null}
@@ -571,6 +604,7 @@ describe("AgentsScreen", () => {
     const screen = await render(
       <AgentsScreen
         agents={[agent]}
+        canManage
         computers={[computer]}
         currentServerId={server.id}
         error={null}

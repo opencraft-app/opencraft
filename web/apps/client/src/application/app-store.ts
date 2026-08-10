@@ -2116,10 +2116,11 @@ export function createAppStore(
             allowedConversations: [],
             generation: selection,
           });
-          const [initialChannels, agents, members, directResources] =
+          const [initialChannels, agents, computers, members, directResources] =
             await Promise.all([
               dependencies.platform.listChannels(serverId),
               dependencies.platform.listAgents(serverId),
+              dependencies.platform.listComputers(serverId),
               dependencies.platform.listMembers(serverId),
               dependencies.platform.listDirectConversations(serverId),
             ]);
@@ -2155,6 +2156,7 @@ export function createAppStore(
           set({
             agents,
             channels,
+            computers,
             currentServerId: serverId,
             directConversations,
             directConversationSync: "complete",
@@ -2162,6 +2164,7 @@ export function createAppStore(
             serverContextStatus: "ready",
           });
           markResourceFresh(refreshKey(serverId, "agents"));
+          markResourceFresh(refreshKey(serverId, "computers"));
           markResourceFresh(refreshKey(serverId, "members"));
           if (get().imState.status === "ready") {
             void syncConversationSummaries(imConnection);

@@ -44,6 +44,10 @@ export function serverRootHref(serverReference: string): string {
   return `/s/${encodeURIComponent(serverReference)}`;
 }
 
+export function serverSetupHref(serverReference: string): string {
+  return `/s/${encodeURIComponent(serverReference)}/setup`;
+}
+
 export function computerHref(
   serverReference: string,
   computerId: string,
@@ -286,9 +290,14 @@ function isKnownInternalPath(pathname: string): boolean {
   if (segments.length === 2) return true;
   if (
     segments.length === 3 &&
-    ["tasks", "agents", "computers", "members", "settings"].includes(
-      segments[2] ?? "",
-    )
+    [
+      "tasks",
+      "agents",
+      "computers",
+      "members",
+      "settings",
+      "setup",
+    ].includes(segments[2] ?? "")
   ) {
     return true;
   }

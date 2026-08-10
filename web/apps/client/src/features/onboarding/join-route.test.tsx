@@ -89,6 +89,7 @@ describe("JoinRoute", () => {
     const store = createStore<AppStoreState>(() =>
       ({
         acceptJoinLink,
+        agents: [{observedState: "running"}],
         authStatus: "signed_in",
         error: null,
         pendingAction: null,
@@ -107,6 +108,88 @@ describe("JoinRoute", () => {
       expect(mockReplace).toHaveBeenCalledWith("/s/atlas/c/channel-all");
     });
     expect(new SessionJoinIntentStore(sessionStorage).load()).toBeNull();
+  });
+
+  it("sends an administrator without an Agent through Server setup", async () => {
+    const acceptJoinLink = jest.fn(async () => ({
+      landingChannelId: "channel-all",
+      memberId: "member-1",
+      operations: [],
+      serverId: "server-1",
+      serverSlug: "atlas",
+    }));
+    const store = createStore<AppStoreState>(() =>
+      ({
+        acceptJoinLink,
+        account: {id: "account-1", imUserId: "human-1"},
+        agents: [],
+        authStatus: "signed_in",
+        computers: [],
+        error: null,
+        members: [
+          {
+            accountId: "account-1",
+            id: "member-1",
+            imUserId: "human-1",
+            kind: "human",
+            role: "admin",
+            status: "active",
+          },
+        ],
+        pendingAction: null,
+      }) as unknown as AppStoreState,
+    );
+
+    await render(
+      <AppRuntimeProvider store={store}>
+        <JoinRoute />
+      </AppRuntimeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/s/atlas/setup");
+    });
+  });
+
+  it("lets an ordinary member enter chat when only an administrator can create the missing Agent", async () => {
+    const acceptJoinLink = jest.fn(async () => ({
+      landingChannelId: "channel-all",
+      memberId: "member-1",
+      operations: [],
+      serverId: "server-1",
+      serverSlug: "atlas",
+    }));
+    const store = createStore<AppStoreState>(() =>
+      ({
+        acceptJoinLink,
+        account: {id: "account-1", imUserId: "human-1"},
+        agents: [],
+        authStatus: "signed_in",
+        computers: [],
+        error: null,
+        members: [
+          {
+            accountId: "account-1",
+            id: "member-1",
+            imUserId: "human-1",
+            kind: "human",
+            role: "member",
+            status: "active",
+          },
+        ],
+        pendingAction: null,
+      }) as unknown as AppStoreState,
+    );
+
+    await render(
+      <AppRuntimeProvider store={store}>
+        <JoinRoute />
+      </AppRuntimeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/s/atlas/c/channel-all");
+    });
   });
 
   it("clears a terminal invalid invite instead of offering a futile retry", async () => {

@@ -1,10 +1,15 @@
 import {Redirect, useRouter, type Href} from "expo-router";
+import {
+  memberCanManageServer,
+  selectCurrentHumanMember,
+} from "@vela/client-core";
 import {useEffect, useMemo, useState} from "react";
 
 import {LoadingScreen, RouteStatusScreen} from "@/ui";
 import {currentBrowserHref} from "../features/navigation/browser-navigation";
 import {
   authRouteHref,
+  serverSetupHref,
   workspaceSectionHref,
 } from "../features/workspace/section-navigation";
 import {useAppRuntime, useAppState} from "../runtime/app-runtime";
@@ -67,13 +72,23 @@ export default function JoinRoute() {
         return;
       }
       intentStore.clear();
+      const state = store.getState();
+      const currentMember = selectCurrentHumanMember(state.members, {
+        accountId: state.account?.id,
+        imUserId: state.account?.imUserId,
+      });
+      const needsAdministratorSetup =
+        memberCanManageServer(currentMember) &&
+        !state.agents.some((agent) => agent.observedState === "running");
       router.replace(
         currentBrowserHref(
-          workspaceSectionHref(
-            joined.serverSlug,
-            "chat",
-            joined.landingChannelId,
-          ),
+          needsAdministratorSetup
+            ? serverSetupHref(joined.serverSlug)
+            : workspaceSectionHref(
+                joined.serverSlug,
+                "chat",
+                joined.landingChannelId,
+              ),
         ) as Href,
       );
     });

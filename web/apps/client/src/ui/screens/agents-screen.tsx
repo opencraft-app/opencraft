@@ -239,12 +239,14 @@ export function AgentsScreen(props: AgentsScreenProps) {
     <ManagementResourceDirectory
       eyebrow={`${agents.length} 个 Agent`}
       footer={agents.length > 0 && !stackedCollection ? (
-        <ManagementCollectionFooterAction
-          accessibilityLabel="从侧栏新建 Agent"
-          icon={Plus}
-          label="新建 Agent"
-          onPress={() => setCreating(true)}
-        />
+        canManage ? (
+          <ManagementCollectionFooterAction
+            accessibilityLabel="从侧栏新建 Agent"
+            icon={Plus}
+            label="新建 Agent"
+            onPress={() => setCreating(true)}
+          />
+        ) : null
       ) : null}
       horizontal={stackedCollection}
       icon={Bot}
@@ -311,10 +313,11 @@ export function AgentsScreen(props: AgentsScreenProps) {
   ) : null;
 
   const assignableComputers = computers.filter(
-    (item) => item.lifecycleState === "active",
+    (item) =>
+      item.lifecycleState === "active" && item.connectionState === "online",
   );
   const createAction: PresentationAction = {
-    disabled: pendingAction !== null,
+    disabled: !canManage || pendingAction !== null,
     id: "create-agent",
     kind: "primary",
     label: agents.length === 0 ? "创建第一个 Agent" : "新建 Agent",
@@ -712,7 +715,7 @@ export function AgentsScreen(props: AgentsScreenProps) {
             createAccessibilityLabel="新建 Agent"
             createIconTestID="agent-create-icon"
             createLabel="新建"
-            createVisible={agents.length > 0 && !creating}
+            createVisible={canManage && agents.length > 0 && !creating}
             onCreate={() => setCreating(true)}
             onRefresh={onRefresh}
             refreshAccessibilityLabel="刷新 Agent"
@@ -787,11 +790,17 @@ export function AgentsScreen(props: AgentsScreenProps) {
           />
         ) : (
           <ManagementEmptyState
-            actionAccessibilityLabel="从空状态新建 Agent"
-            actionLabel={pageModel.empty?.action?.label}
-            description={pageModel.empty?.description ?? agentEmptyCopy.description}
+            actionAccessibilityLabel={
+              canManage ? "从空状态新建 Agent" : undefined
+            }
+            actionLabel={canManage ? pageModel.empty?.action?.label : undefined}
+            description={
+              canManage
+                ? pageModel.empty?.description ?? agentEmptyCopy.description
+                : "还没有可用 Agent，请联系 Server Owner 或 Admin 创建。"
+            }
             icon={Bot}
-            onAction={() => setCreating(true)}
+            onAction={canManage ? () => setCreating(true) : undefined}
             title={pageModel.empty?.title ?? agentEmptyCopy.title}
           />
         )}

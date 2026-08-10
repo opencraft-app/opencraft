@@ -12,6 +12,7 @@ import {
   routeParam,
   safeReturnTo,
   serverRootHref,
+  serverSetupHref,
   withCanonicalRouteSearch,
   workspaceActiveSectionFromPathname,
   workspaceSectionHref,
@@ -56,6 +57,7 @@ describe("workspaceSectionHref", () => {
       "/s/atlas",
     );
     expect(serverRootHref("server 1")).toBe("/s/server%201");
+    expect(serverSetupHref("server 1")).toBe("/s/server%201/setup");
   });
 });
 
@@ -182,6 +184,10 @@ describe("firstRoutableChannelId", () => {
 });
 
 describe("browser route safety", () => {
+  it("allows the Server setup route as an authentication return target", () => {
+    expect(safeReturnTo("/s/atlas/setup")).toBe("/s/atlas/setup");
+  });
+
   it("preserves only the local backend override", () => {
     expect(
       canonicalRouteSearch(

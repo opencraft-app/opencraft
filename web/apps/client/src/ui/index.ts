@@ -250,6 +250,11 @@ export {
   type FirstWorkspaceInput,
 } from "./screens/first-workspace-screen";
 export {
+  ServerSetupScreen,
+  type ServerSetupReadiness,
+  type ServerSetupScreenProps,
+} from "./screens/server-setup-screen";
+export {
   densityMode,
   pointerDensity,
   velaTheme,

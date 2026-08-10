@@ -3205,6 +3205,8 @@ describe("app store", () => {
 
   it("deduplicates concurrent refreshes of the same Server resource", async () => {
     const deps = dependencies();
+    const store = createAppStore(deps);
+    await initializeServerContext(store);
     let resolveComputers!: (value: typeof computer[]) => void;
     deps.platform.listComputers = jest.fn(
       () =>
@@ -3212,11 +3214,8 @@ describe("app store", () => {
           resolveComputers = resolve;
         }),
     );
-    const store = createAppStore(deps);
-    await initializeServerContext(store);
-
-    const first = store.getState().refreshComputers();
-    const second = store.getState().refreshComputers();
+    const first = store.getState().refreshComputers({force: true});
+    const second = store.getState().refreshComputers({force: true});
     expect(deps.platform.listComputers).toHaveBeenCalledTimes(1);
 
     resolveComputers([computer]);
@@ -3251,6 +3250,7 @@ describe("app store", () => {
     });
     expect(store.getState().currentServerId).toBe(server.id);
     expect(store.getState().currentChannelId).toBe(allMembersChannel.id);
+    expect(store.getState().computers).toEqual([computer]);
     expect(store.getState().joinLinkErrorKind).toBeNull();
   });
 
