@@ -21,6 +21,10 @@ export const DOCS_ROUTE_SLUGS = {
       "plans"
     ],
     [
+      "announcements",
+      "public-beta"
+    ],
+    [
       "credits"
     ],
     [
@@ -316,6 +320,10 @@ export const DOCS_ROUTE_SLUGS = {
       "plans"
     ],
     [
+      "announcements",
+      "public-beta"
+    ],
+    [
       "credits"
     ],
     [
@@ -532,6 +540,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "plans"
+    ],
+    [
+      "announcements",
+      "public-beta"
     ],
     [
       "credits"
