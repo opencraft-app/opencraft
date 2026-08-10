@@ -440,7 +440,10 @@ export function ConversationMessageRow({
         {message.rawType !== "VELA_MESSAGE_UNAVAILABLE" ? (
           <>
             {status.kind !== "hidden" && !actionsOpen ? (
-              <View style={styles.deliveryStandalone}>
+              <View
+                style={styles.deliveryStandalone}
+                testID={`message-status-container-${message.id}`}
+              >
                 <MessageStatus
                   message={message}
                   onRetry={onRetry}
@@ -1022,7 +1025,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   deliveryStandalone: {
     alignItems: "center",
-    alignSelf: "flex-end",
+    alignSelf: "flex-start",
     flexDirection: "row",
     minHeight: theme.recipes.messageTimeline.deliveryMinHeight,
   },

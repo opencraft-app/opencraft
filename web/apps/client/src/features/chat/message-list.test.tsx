@@ -695,6 +695,9 @@ describe("MessageList", () => {
     expect(screen.getAllByText("已读")).toHaveLength(1);
     expect(screen.queryByTestId("message-status-direct-group-first")).toBeNull();
     expect(screen.getByTestId("message-status-direct-group-tail")).toBeVisible();
+    expect(
+      screen.getByTestId("message-status-container-direct-group-tail"),
+    ).toHaveStyle({alignSelf: "flex-start"});
   });
 
   it("closes the message action menu after quoting", async () => {
