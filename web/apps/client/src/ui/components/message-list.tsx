@@ -1,5 +1,5 @@
 import type { Message } from "@vela/client-core";
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useMemo, useRef, useState} from "react";
 import {
   ActivityIndicator,
   Image,
@@ -19,11 +19,28 @@ import SmilePlus from "lucide-react-native/icons/smile-plus";
 import Undo2 from "lucide-react-native/icons/undo-2";
 import X from "lucide-react-native/icons/x";
 
+import {MessageIdentityMark} from "./message-identity-mark";
+import {
+  messageStatusPresentation,
+  messagesShareGroup,
+  participantDirectory,
+  resolveMessageActor,
+  type ConversationCapabilities,
+  type ConversationSurfaceMode,
+  type MessageActorIdentity,
+  type MessageParticipant,
+  type MessageStatusPresentation,
+} from "./message-presentation";
 import {MessageViewport} from "./message-viewport/message-viewport";
 import {breakpoints, pointerDensity, velaTheme} from "../theme";
 
+const emptyParticipants: MessageParticipant[] = [];
+const emptyPendingIndexMessageIds: readonly string[] = [];
+
 export interface MessageListProps {
+  capabilities?: ConversationCapabilities;
   conversationKey: string;
+  currentUserId?: string;
   emptyDescription?: string;
   focusRequest?: {messageId: string; revision: number} | null;
   historyCompleted: boolean;
@@ -36,17 +53,23 @@ export interface MessageListProps {
   onOpenActionMessageIdChange?(messageId: string | null): void;
   onQuote(messageId: string): void | Promise<void>;
   onRevoke?(messageId: string): void | Promise<void>;
-  onRetry(messageId: string): void | Promise<void>;
+  onRetry?(messageId: string): void | Promise<void>;
+  onRetryIndex?(messageId: string): void | Promise<void>;
   onToggleReaction?(
     messageId: string,
     reactionId: string,
   ): void | Promise<void>;
   openActionMessageId?: string | null;
+  participants?: MessageParticipant[];
+  pendingIndexMessageIds?: readonly string[];
+  surfaceMode?: ConversationSurfaceMode;
   viewportWidth?: number;
 }
 
 export function MessageList({
+  capabilities = {deliveryReceipt: "none", tasks: false, threads: false},
   conversationKey,
+  currentUserId,
   emptyDescription = "发送第一条消息，或 @Agent 分配一项工作。",
   focusRequest = null,
   historyCompleted,
@@ -60,17 +83,28 @@ export function MessageList({
   onQuote,
   onRevoke,
   onRetry,
+  onRetryIndex,
   onToggleReaction = () => undefined,
   openActionMessageId: controlledOpenActionMessageId,
+  participants = emptyParticipants,
+  pendingIndexMessageIds = emptyPendingIndexMessageIds,
+  surfaceMode,
   viewportWidth,
 }: MessageListProps) {
   const {theme} = useUnistyles();
   const window = useWindowDimensions();
   const layoutWidth = viewportWidth ?? window.width;
-  // Viewport chooses packing; density chooses hit targets and reveal model.
-  const compactLayout = layoutWidth < breakpoints.medium;
+  const resolvedSurfaceMode =
+    surfaceMode ?? (layoutWidth < breakpoints.medium ? "compact" : "desktop");
+  // The parent chooses the surface; density still owns hit targets and reveal.
+  const compactLayout = resolvedSurfaceMode !== "desktop";
   const narrowActions = layoutWidth <= breakpoints.narrow;
   const pointerActions = pointerDensity;
+  const actors = useMemo(() => participantDirectory(participants), [participants]);
+  const pendingIndexIds = useMemo(
+    () => new Set(pendingIndexMessageIds),
+    [pendingIndexMessageIds],
+  );
   const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
   const [localOpenActionMessageId, setLocalOpenActionMessageId] = useState<
     string | null
@@ -113,6 +147,7 @@ export function MessageList({
       conversationKey={conversationKey}
       contentContainerStyle={[
         styles.messages,
+        resolvedSurfaceMode === "desktop" && styles.messagesDesktop,
         compactLayout && styles.messagesCompact,
       ]}
       data={messages}
@@ -171,28 +206,32 @@ export function MessageList({
         const dateKey = message.createdAt.slice(0, 10);
         const previousDateKey = previous?.createdAt.slice(0, 10);
         const showDate = dateKey !== previousDateKey;
-        const grouped =
-          !showDate &&
-          previous?.senderId === message.senderId &&
-          millisecondsBetween(previous.createdAt, message.createdAt) <=
-            5 * 60 * 1_000;
-        const alignOutgoing =
-          conversationKey.startsWith("direct:") &&
-          message.direction === "outgoing";
+        const grouped = !showDate && messagesShareGroup(previous, message);
+        const groupTail = !messagesShareGroup(message, messages[index + 1]);
+        const actor = resolveMessageActor(message, currentUserId, actors);
+        const status = messageStatusPresentation({
+          canRetryDelivery: Boolean(onRetry),
+          canRetryIndex: Boolean(onRetryIndex),
+          indexPending: pendingIndexIds.has(message.id),
+          isGroupTail: groupTail,
+          message,
+          receiptPolicy: capabilities.deliveryReceipt,
+        });
         return (
           <View>
             {showDate ? (
               <DateSeparator dateKey={dateKey} />
             ) : null}
-            <MessageRow
+            <ConversationMessageRow
+              actionsEnabled
               actionsOpen={openActionMessageId === message.id}
-              alignOutgoing={alignOutgoing}
+              actor={actor}
               compactLayout={compactLayout}
               focused={focusedMessageId === message.id}
               grouped={grouped}
               message={message}
               onCreateTask={
-                onCreateTask
+                capabilities.tasks && onCreateTask
                   ? () => onCreateTask(message.id)
                   : undefined
               }
@@ -200,7 +239,7 @@ export function MessageList({
                 changeOpenActionMessage(open ? message.id : null)
               }
               onOpenThread={
-                onOpenThread
+                capabilities.threads && onOpenThread
                   ? () => onOpenThread(message.id)
                   : undefined
               }
@@ -210,12 +249,16 @@ export function MessageList({
                   ? () => onRevoke(message.id)
                   : undefined
               }
-              onRetry={() => onRetry(message.id)}
+              onRetry={onRetry ? () => onRetry(message.id) : undefined}
+              onRetryIndex={
+                onRetryIndex ? () => onRetryIndex(message.id) : undefined
+              }
               onToggleReaction={(reactionId) =>
                 onToggleReaction(message.id, reactionId)
               }
               narrowActions={narrowActions}
               pointerActions={pointerActions}
+              status={status}
             />
           </View>
         );
@@ -235,9 +278,10 @@ function DateSeparator({ dateKey }: { dateKey: string }) {
   );
 }
 
-function MessageRow({
+export function ConversationMessageRow({
+  actionsEnabled,
   actionsOpen,
-  alignOutgoing,
+  actor,
   compactLayout,
   focused,
   grouped,
@@ -248,12 +292,15 @@ function MessageRow({
   onQuote,
   onRevoke,
   onRetry,
+  onRetryIndex,
   onToggleReaction,
   narrowActions,
   pointerActions,
+  status,
 }: {
+  actionsEnabled: boolean;
   actionsOpen: boolean;
-  alignOutgoing: boolean;
+  actor: MessageActorIdentity;
   compactLayout: boolean;
   focused: boolean;
   grouped: boolean;
@@ -263,15 +310,18 @@ function MessageRow({
   onOpenThread?: (() => void | Promise<void>) | undefined;
   onQuote(): void | Promise<void>;
   onRevoke?: (() => void | Promise<void>) | undefined;
-  onRetry(): void | Promise<void>;
+  onRetry?: (() => void | Promise<void>) | undefined;
+  onRetryIndex?: (() => void | Promise<void>) | undefined;
   onToggleReaction(reactionId: string): void | Promise<void>;
   narrowActions: boolean;
   pointerActions: boolean;
+  status: MessageStatusPresentation;
 }) {
   const {theme} = useUnistyles();
   const [actionFocused, setActionFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const actionable =
+    actionsEnabled &&
     message.rawType !== "VELA_MESSAGE_UNAVAILABLE" &&
     message.rawType !== "TIMRevokedElem" &&
     message.delivery.state === "sent";
@@ -325,7 +375,6 @@ function MessageRow({
       style={[
         styles.message,
         compactLayout && styles.messageCompact,
-        alignOutgoing && styles.messageOutgoing,
         grouped && styles.messageGrouped,
         focused && styles.messageFocused,
       ]}
@@ -339,43 +388,33 @@ function MessageRow({
           ]}
         />
       ) : (
-        <View
-          style={[
-            styles.avatar,
-            compactLayout && styles.avatarCompact,
-            tone === 0 && styles.avatarViolet,
-            tone === 1 && styles.avatarGreen,
-            tone === 2 && styles.avatarOrange,
-          ]}
-          testID={`message-avatar-${message.id}`}
-        >
-          <Text
-            style={[
-              styles.avatarText,
-              tone === 0 && styles.avatarTextViolet,
-              tone === 1 && styles.avatarTextGreen,
-              tone === 2 && styles.avatarTextOrange,
-            ]}
-          >
-            {message.senderName.slice(0, 1)}
-          </Text>
-        </View>
+        <MessageIdentityMark
+          actor={actor}
+          compact={compactLayout}
+          messageId={message.id}
+          tone={tone}
+        />
       )}
       <View
-        style={[
-          styles.messageBody,
-          alignOutgoing && styles.messageBodyOutgoing,
-        ]}
+        style={styles.messageBody}
         testID={`message-body-${message.id}`}
       >
         {!grouped ? (
-          <View
-            style={[
-              styles.metaRow,
-              alignOutgoing && styles.metaRowOutgoing,
-            ]}
-          >
-            <Text style={styles.sender}>{message.senderName}</Text>
+          <View style={styles.metaRow}>
+            <Text
+              style={styles.sender}
+              testID={`message-sender-${message.id}`}
+            >
+              {actor.label}
+            </Text>
+            {actor.kind === "agent" ? (
+              <Text
+                style={styles.actorBadge}
+                testID={`message-actor-badge-${message.id}`}
+              >
+                Agent
+              </Text>
+            ) : null}
             <Text
               style={styles.timestamp}
               testID={`message-timestamp-${message.id}`}
@@ -388,10 +427,7 @@ function MessageRow({
           </View>
         ) : null}
         <View
-          style={[
-            styles.messageContentRow,
-            alignOutgoing && styles.messageContentRowOutgoing,
-          ]}
+          style={styles.messageContentRow}
           testID={`message-content-row-${message.id}`}
         >
           <View style={styles.messageContentGrow}>
@@ -403,19 +439,17 @@ function MessageRow({
         </View>
         {message.rawType !== "VELA_MESSAGE_UNAVAILABLE" ? (
           <>
-            {message.direction === "outgoing" &&
-            message.delivery.state === "sent" &&
-            !actionsOpen ? (
-              <View
-                style={[
-                  styles.deliveryStandalone,
-                  !alignOutgoing && styles.deliveryStandaloneChannel,
-                ]}
-              >
-                <DeliveryState message={message} onRetry={onRetry} />
+            {status.kind !== "hidden" && !actionsOpen ? (
+              <View style={styles.deliveryStandalone}>
+                <MessageStatus
+                  message={message}
+                  onRetry={onRetry}
+                  onRetryIndex={onRetryIndex}
+                  status={status}
+                />
               </View>
             ) : null}
-            {message.delivery.state !== "sent" || actionsOpen ? (
+            {actionsOpen ? (
               <View
                 style={[
                   styles.actionRow,
@@ -430,7 +464,12 @@ function MessageRow({
                   actionsOpen ? `message-actions-${message.id}` : undefined
                 }
               >
-                <DeliveryState message={message} onRetry={onRetry} />
+                <MessageStatus
+                  message={message}
+                  onRetry={onRetry}
+                  onRetryIndex={onRetryIndex}
+                  status={status}
+                />
                 {actionsOpen ? (
               <>
                 {message.reactions.map((reaction) => (
@@ -747,31 +786,23 @@ function AttachmentMeta({
   );
 }
 
-function DeliveryState({
+function MessageStatus({
   message,
   onRetry,
+  onRetryIndex,
+  status,
 }: {
   message: Message;
-  onRetry(): void | Promise<void>;
+  onRetry?: (() => void | Promise<void>) | undefined;
+  onRetryIndex?: (() => void | Promise<void>) | undefined;
+  status: MessageStatusPresentation;
 }) {
-  const delivery = message.delivery;
-  if (delivery.state === "uploading") {
+  if (status.kind === "hidden") return null;
+  if (status.kind === "failed") {
     return (
-      <Text style={styles.delivery}>
-        上传 {Math.round(delivery.progress * 100)}%
-      </Text>
-    );
-  }
-  if (delivery.state === "sending") {
-    return <Text style={styles.delivery}>发送中</Text>;
-  }
-  if (delivery.state === "failed") {
-    return (
-      <View style={styles.failure}>
-        <Text style={styles.failureText}>
-          发送失败 · {delivery.error}
-        </Text>
-        {delivery.retryable ? (
+      <View style={styles.failure} testID={`message-status-${message.id}`}>
+        <Text style={styles.failureText}>{status.label}</Text>
+        {status.retry === "delivery" && onRetry ? (
           <Pressable
             accessibilityLabel={`重试消息 ${message.text}`}
             accessibilityRole="button"
@@ -784,22 +815,31 @@ function DeliveryState({
       </View>
     );
   }
-  if (message.direction === "outgoing") {
+  if (status.kind === "indexPending") {
     return (
-      <Text style={styles.delivery}>
-        {message.read.state === "read"
-          ? "已读"
-          : message.read.state === "unread"
-            ? "未读"
-            : "已发送"}
-      </Text>
+      <View style={styles.failure} testID={`message-status-${message.id}`}>
+        <Text style={styles.delivery}>{status.label}</Text>
+        {status.retry === "index" && onRetryIndex ? (
+          <Pressable
+            accessibilityLabel={`重新收录消息 ${message.text}`}
+            accessibilityRole="button"
+            onPress={onRetryIndex}
+            style={styles.retryButton}
+          >
+            <Text style={styles.retryText}>重新收录</Text>
+          </Pressable>
+        ) : null}
+      </View>
     );
   }
-  return null;
-}
-
-function millisecondsBetween(left: string, right: string): number {
-  return Math.abs(Date.parse(right) - Date.parse(left));
+  return (
+    <Text
+      style={styles.delivery}
+      testID={`message-status-${message.id}`}
+    >
+      {status.label}
+    </Text>
+  );
 }
 
 function formatTime(value: string): string {
@@ -850,6 +890,14 @@ function avatarTone(value: string): 0 | 1 | 2 {
 }
 
 const styles = StyleSheet.create((theme) => ({
+  actorBadge: {
+    backgroundColor: theme.semantic.color.statusPositiveSurface,
+    borderRadius: theme.semantic.radius.circle,
+    color: theme.semantic.color.statusPositiveText,
+    overflow: "hidden",
+    paddingHorizontal: theme.spacing.xs,
+    ...theme.semantic.typography.micro,
+  },
   actionButton: {
     alignItems: "center",
     borderRadius: theme.semantic.radius.control,
@@ -942,50 +990,11 @@ const styles = StyleSheet.create((theme) => ({
     ...theme.semantic.typography.meta,
     marginTop: theme.spacing.xxs,
   },
-  avatar: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.surfaceSubtle,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.circle,
-    height: theme.recipes.identity.avatarCompactSize,
-    justifyContent: "center",
-    width: theme.recipes.identity.avatarCompactSize,
-  },
-  avatarCompact: {
-    borderRadius: theme.semantic.radius.circle,
-    height: theme.recipes.identity.avatarRowSize,
-    width: theme.recipes.identity.avatarRowSize,
-  },
-  avatarGreen: {
-    backgroundColor: theme.semantic.color.avatarHumanGreenSurface,
-    borderColor: theme.semantic.color.avatarHumanGreenBorder,
-  },
-  avatarOrange: {
-    backgroundColor: theme.semantic.color.avatarHumanOrangeSurface,
-    borderColor: theme.semantic.color.avatarHumanOrangeBorder,
-  },
-  avatarViolet: {
-    backgroundColor: theme.semantic.color.avatarHumanVioletSurface,
-    borderColor: theme.semantic.color.avatarHumanVioletBorder,
-  },
   avatarSpacer: {
     width: theme.recipes.identity.avatarCompactSize,
   },
   avatarSpacerCompact: {
     width: theme.recipes.identity.avatarRowSize,
-  },
-  avatarText: {
-    ...theme.semantic.typography.sectionTitle,
-  },
-  avatarTextGreen: {
-    color: theme.semantic.color.avatarHumanGreenText,
-  },
-  avatarTextOrange: {
-    color: theme.semantic.color.avatarHumanOrangeText,
-  },
-  avatarTextViolet: {
-    color: theme.semantic.color.avatarHumanVioletText,
   },
   content: {
     alignItems: "flex-start",
@@ -1016,9 +1025,6 @@ const styles = StyleSheet.create((theme) => ({
     alignSelf: "flex-end",
     flexDirection: "row",
     minHeight: theme.recipes.messageTimeline.deliveryMinHeight,
-  },
-  deliveryStandaloneChannel: {
-    alignSelf: "flex-start",
   },
   empty: {
     color: theme.semantic.color.textMuted,
@@ -1175,16 +1181,11 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing.sm,
     paddingVertical: theme.spacing.md,
   },
-  messageOutgoing: {
-    flexDirection: "row-reverse",
-  },
   messageBody: {
+    alignItems: "flex-start",
     flex: 1,
     gap: theme.spacing.xs,
     minWidth: 0,
-  },
-  messageBodyOutgoing: {
-    alignItems: "flex-end",
   },
   messageContentGrow: {
     flexShrink: 1,
@@ -1196,10 +1197,6 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     gap: theme.spacing.sm,
     maxWidth: "100%",
-  },
-  messageContentRowOutgoing: {
-    alignSelf: "flex-end",
-    flexDirection: "row-reverse",
   },
   moreActionButton: {
     alignItems: "center",
@@ -1247,6 +1244,11 @@ const styles = StyleSheet.create((theme) => ({
   messagesCompact: {
     paddingHorizontal: theme.spacing.lg,
   },
+  messagesDesktop: {
+    alignSelf: "center",
+    maxWidth: theme.recipes.conversationWorkspace.composerDesktopMaxWidth,
+    width: "100%",
+  },
   messageText: {
     color: theme.semantic.color.textPrimary,
     ...theme.semantic.typography.messageBody,
@@ -1256,9 +1258,6 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     flexDirection: "row",
     gap: theme.spacing.sm,
-  },
-  metaRowOutgoing: {
-    flexDirection: "row-reverse",
   },
   quote: {
     backgroundColor: theme.semantic.color.surfaceSubtle,

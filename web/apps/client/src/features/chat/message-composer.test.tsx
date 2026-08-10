@@ -5,6 +5,7 @@ import {
   type ComposerDraft,
 } from "@vela/client-core";
 import {fireEvent, render} from "@testing-library/react-native";
+import {velaTheme} from "@/ui";
 
 jest.mock("../../ui/components/composer-editor", () => {
   const React = require("react") as typeof import("react");
@@ -77,6 +78,44 @@ jest.mock("../../ui/components/composer-editor", () => {
 import {MessageComposer} from "./message-composer";
 
 describe("MessageComposer", () => {
+  it("bounds the desktop surface on the shared conversation axis", async () => {
+    const screen = await render(
+      <MessageComposer
+        channelName="general"
+        members={[]}
+        onSend={jest.fn()}
+        surfaceMode="desktop"
+      />,
+    );
+
+    expect(screen.getByTestId("message-composer")).toHaveStyle({
+      alignItems: "center",
+    });
+    expect(screen.getByTestId("message-composer-surface")).toHaveStyle({
+      maxWidth: velaTheme.recipes.conversationWorkspace.composerDesktopMaxWidth,
+      width: "100%",
+    });
+  });
+
+  it.each(["compact", "native"] as const)(
+    "keeps the %s composer surface full width",
+    async (surfaceMode) => {
+      const screen = await render(
+        <MessageComposer
+          channelName="general"
+          members={[]}
+          onSend={jest.fn()}
+          surfaceMode={surfaceMode}
+        />,
+      );
+
+      expect(screen.getByTestId("message-composer-surface")).toHaveStyle({
+        maxWidth: "100%",
+        width: "100%",
+      });
+    },
+  );
+
   it("stages attachments and submits one structured product action", async () => {
     const onSend = jest.fn();
     const screen = await render(

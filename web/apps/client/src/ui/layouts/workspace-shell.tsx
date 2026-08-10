@@ -27,6 +27,7 @@ import {
 } from "react";
 import {
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -59,6 +60,11 @@ import {
   type MentionableMember,
 } from "../components/message-composer";
 import { MessageList } from "../components/message-list";
+import type {
+  ConversationCapabilities,
+  ConversationSurfaceMode,
+  MessageParticipant,
+} from "../components/message-presentation";
 import {
   OperationStatusList,
   type OperationStatusItem,
@@ -113,6 +119,41 @@ import {
   workspaceSectionBody,
 } from "./workspace-chrome";
 import type { WorkspaceImStatus, WorkspaceSection } from "./workspace-section";
+
+const channelMessageCapabilities: ConversationCapabilities = {
+  deliveryReceipt: "none",
+  tasks: true,
+  threads: true,
+};
+
+const directMessageCapabilities: ConversationCapabilities = {
+  deliveryReceipt: "direct",
+  tasks: false,
+  threads: false,
+};
+
+function channelMessageParticipants(
+  agents: readonly Agent[],
+  members: readonly MentionableMember[],
+): MessageParticipant[] {
+  const participants = new Map<string, MessageParticipant>();
+  for (const member of members) {
+    participants.set(member.imUserId, {
+      displayName: member.displayName,
+      imUserId: member.imUserId,
+      kind: member.kind,
+    });
+  }
+  for (const agent of agents) {
+    if (!agent.imUserId) continue;
+    participants.set(agent.imUserId, {
+      displayName: agent.displayName,
+      imUserId: agent.imUserId,
+      kind: "agent",
+    });
+  }
+  return [...participants.values()];
+}
 
 export interface WorkspaceShellProps {
   account?: Account | null;
@@ -519,15 +560,19 @@ function GraphicalWorkspaceShell({
             agents={agents}
             compact
             completed={threadCompleted}
+            currentUserId={currentImUserId}
             loading={threadLoading}
             messages={threadMessages}
             onClose={onCloseThread}
             onLoadMore={onLoadMoreThreadReplies}
+            onRetry={onRetryMessage}
             onRetryIndex={onRetryThreadReplyIndex}
             onSend={onSendThreadReply}
             pendingIndexMessageIds={pendingThreadIndexMessageIds}
+            participants={channelMessageParticipants(agents, mentionMembers)}
             rootMessage={threadRootMessage}
             sending={sendingThreadReply}
+            surfaceMode={Platform.OS === "web" ? "compact" : "native"}
             thread={activeThread}
           />
         ) : (
@@ -535,6 +580,7 @@ function GraphicalWorkspaceShell({
             agents={activeConversation?.kind === "direct" ? [] : agents}
             channel={currentChannel}
             compact
+            currentUserId={currentImUserId}
             directConversation={activeDirectConversation}
             directMember={activeDirectMember}
             draft={activeDraft}
@@ -673,6 +719,7 @@ function GraphicalWorkspaceShell({
       <MessageStage
         agents={activeConversation?.kind === "direct" ? [] : agents}
         channel={currentChannel}
+        currentUserId={currentImUserId}
         directConversation={activeDirectConversation}
         directMember={activeDirectMember}
         draft={activeDraft}
@@ -737,15 +784,19 @@ function GraphicalWorkspaceShell({
         <ThreadPanel
           agents={agents}
           completed={threadCompleted}
+          currentUserId={currentImUserId}
           loading={threadLoading}
           messages={threadMessages}
           onClose={onCloseThread}
           onLoadMore={onLoadMoreThreadReplies}
+          onRetry={onRetryMessage}
           onRetryIndex={onRetryThreadReplyIndex}
           onSend={onSendThreadReply}
           pendingIndexMessageIds={pendingThreadIndexMessageIds}
+          participants={channelMessageParticipants(agents, mentionMembers)}
           rootMessage={threadRootMessage}
           sending={sendingThreadReply}
+          surfaceMode={Platform.OS === "web" ? "compact" : "native"}
           thread={activeThread}
         />
       ) : null}
@@ -1375,6 +1426,7 @@ function MessageStage({
   channel,
   channelMemberCount,
   compact = false,
+  currentUserId,
   directConversation,
   directMember,
   draft,
@@ -1425,6 +1477,7 @@ function MessageStage({
   channel: Channel | undefined;
   channelMemberCount: number;
   compact?: boolean;
+  currentUserId?: string;
   directConversation?: DirectConversation;
   directMember?: Member;
   draft: ComposerDraft;
@@ -1476,6 +1529,20 @@ function MessageStage({
   viewportWidth?: number;
 }) {
   const direct = directConversation !== undefined;
+  const capabilities = direct
+    ? directMessageCapabilities
+    : channelMessageCapabilities;
+  const participants: MessageParticipant[] = directMember?.imUserId
+    ? [
+        {
+          displayName: directMember.displayName,
+          imUserId: directMember.imUserId,
+          kind: directMember.kind,
+        },
+      ]
+    : channelMessageParticipants(agents, mentionMembers);
+  const surfaceMode: ConversationSurfaceMode =
+    Platform.OS === "web" ? (compact ? "compact" : "desktop") : "native";
   const needsMembership =
     !direct &&
     channel !== undefined &&
@@ -1685,7 +1752,9 @@ function MessageStage({
       ) : (
         <>
           <MessageList
+            capabilities={capabilities}
             conversationKey={conversationKey}
+            currentUserId={currentUserId}
             historyCompleted={historyCompleted}
             initializing={initializingMessages}
             focusRequest={messageFocusRequest}
@@ -1705,6 +1774,8 @@ function MessageStage({
             onRetry={onRetryMessage}
             onToggleReaction={onToggleReaction}
             openActionMessageId={openActionMessageId}
+            participants={participants}
+            surfaceMode={surfaceMode}
             viewportWidth={viewportWidth}
           />
 
@@ -1733,6 +1804,7 @@ function MessageStage({
               onFocus={() => setOpenActionMessageId(null)}
               onSend={onSend}
               quote={selectedQuote}
+              surfaceMode={surfaceMode}
               viewportWidth={viewportWidth}
           />
         </>

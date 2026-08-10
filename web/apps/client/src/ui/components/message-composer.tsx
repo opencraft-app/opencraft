@@ -12,6 +12,7 @@ import {
 } from "@vela/client-core";
 import {useEffect, useMemo, useRef, useState} from "react";
 import {
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -29,6 +30,7 @@ import User from "lucide-react-native/icons/user";
 import X from "lucide-react-native/icons/x";
 
 import {breakpoints} from "../theme";
+import type {ConversationSurfaceMode} from "./message-presentation";
 import {
   ComposerEditor,
   type ComposerEditorHandle,
@@ -62,6 +64,7 @@ export interface MessageComposerProps {
   onSend(draft: ComposerDraft): void | Promise<void>;
   quote?: MessageQuote | null;
   showAttachments?: boolean;
+  surfaceMode?: ConversationSurfaceMode;
   viewportWidth?: number;
 }
 
@@ -79,12 +82,20 @@ export function MessageComposer({
   onSend,
   quote = null,
   showAttachments = true,
+  surfaceMode,
   viewportWidth,
 }: MessageComposerProps) {
   const {theme} = useUnistyles();
   const window = useWindowDimensions();
   const layoutWidth = viewportWidth ?? window.width;
-  const compact = layoutWidth < breakpoints.medium;
+  const resolvedSurfaceMode =
+    surfaceMode ??
+    (Platform.OS === "web"
+      ? layoutWidth < breakpoints.medium
+        ? "compact"
+        : "desktop"
+      : "native");
+  const compact = resolvedSurfaceMode !== "desktop";
   const narrow = layoutWidth <= breakpoints.narrow;
   const editorRef = useRef<ComposerEditorHandle>(null);
   const submitPending = useRef(false);
@@ -273,10 +284,21 @@ export function MessageComposer({
   return (
     <View
       accessibilityHint={destinationHint}
-      style={[styles.outer, compact && styles.outerCompact]}
+      style={[
+        styles.outer,
+        resolvedSurfaceMode === "desktop" && styles.outerDesktop,
+        compact && styles.outerCompact,
+      ]}
       testID="message-composer"
     >
-      <View style={[styles.composer, compact && styles.composerCompact]}>
+      <View
+        style={[
+          styles.composer,
+          resolvedSurfaceMode === "desktop" && styles.composerDesktop,
+          compact && styles.composerCompact,
+        ]}
+        testID="message-composer-surface"
+      >
         {quote ? (
           <View style={styles.quotePreview}>
             <View style={styles.quoteCopy}>
@@ -623,7 +645,8 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.semantic.color.selectionSurface,
     ...theme.semantic.motion.transition.control,
   },
-  // Docked to the conversation stage — Messages/Mail hairline, not a floating card.
+  // The outer frame owns placement; desktop gets a bounded editor surface while
+  // compact and native surfaces remain docked and full width.
   outer: {
     alignItems: "stretch",
     marginBottom: 0,
@@ -633,6 +656,11 @@ const styles = StyleSheet.create((theme) => ({
   outerCompact: {
     marginBottom: 0,
     paddingHorizontal: 0,
+  },
+  outerDesktop: {
+    alignItems: "center",
+    paddingHorizontal: theme.recipes.desktopWorkspace.composerHorizontalPadding,
+    paddingVertical: theme.recipes.desktopWorkspace.composerVerticalPadding,
   },
   quoteCopy: {
     flex: 1,
@@ -740,6 +768,13 @@ const styles = StyleSheet.create((theme) => ({
   },
   composerCompact: {
     maxWidth: "100%",
+  },
+  composerDesktop: {
+    borderBottomWidth: theme.semantic.stroke.hairline,
+    borderLeftWidth: theme.semantic.stroke.hairline,
+    borderRadius: theme.semantic.radius.section,
+    borderRightWidth: theme.semantic.stroke.hairline,
+    maxWidth: theme.recipes.conversationWorkspace.composerDesktopMaxWidth,
   },
   toolbar: {
     alignItems: "center",

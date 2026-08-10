@@ -493,7 +493,6 @@ describe("Vela token usage", () => {
       ["components/message-composer.tsx", "attachmentPickerButton", ["actionSecondarySurface"]],
       ["components/message-viewport/message-viewport.tsx", "newMessagesBadge", ["notificationBadgeSurface"]],
       ["components/message-viewport/message-viewport.tsx", "newMessagesBadgeText", ["notificationBadgeText"]],
-      ["components/thread-panel.tsx", "indexWarning", ["statusWarningSurface", "statusWarningDivider"]],
       ["layouts/workspace-shell.tsx", "reconnectNotice", ["statusInfoSurface", "statusInfoDivider"]],
       ["layouts/workspace-shell.tsx", "unreadBadge", ["statusInfoSurface"]],
       ["layouts/workspace-shell.tsx", "compactServerInitial", ["avatarServerSurface"]],
@@ -516,7 +515,6 @@ describe("Vela token usage", () => {
   it("separates quiet actions, fields and disabled feedback from muted content", () => {
     const requiredRoles: Array<[string, string, string[]]> = [
       ["components/operation-status-list.tsx", "button", ["actionQuietSurface"]],
-      ["components/thread-panel.tsx", "indexRetry", ["actionQuietSurface"]],
       ["components/terminal-panel.tsx", "button", ["actionQuietSurface"]],
       ["components/terminal-panel.tsx", "controlButton", ["actionQuietSurface"]],
       ["components/terminal-panel.tsx", "input", ["fieldSurface"]],
@@ -636,8 +634,8 @@ describe("Vela token usage", () => {
       ["layouts/app-frame.tsx", "humanAvatar", ["identity.avatarProminentSize"]],
       ["layouts/app-frame.tsx", "humanAvatarStatus", ["identity.presenceDotSize"]],
       ["layouts/app-frame.tsx", "serverMark", ["identity.avatarNavigationSize"]],
-      ["components/message-list.tsx", "avatar", ["identity.avatarCompactSize"]],
-      ["components/message-list.tsx", "avatarCompact", ["identity.avatarRowSize"]],
+      ["components/message-identity-mark.tsx", "mark", ["identity.avatarCompactSize"]],
+      ["components/message-identity-mark.tsx", "markCompact", ["identity.avatarRowSize"]],
       ["components/clearable-search-field.tsx", "clear", ["iconControl.compactSize"]],
       ["layouts/workspace-shell.tsx", "headerActionButton", ["iconControl.smallSize"]],
       ["components/message-list.tsx", "messageText", ["contentMeasure.messageMaxWidth"]],

@@ -266,6 +266,7 @@ describe("MessageList", () => {
     });
     const screen = await render(
       <MessageList
+        capabilities={{deliveryReceipt: "none", tasks: true, threads: true}}
         conversationKey="channel:channel-1"
         historyCompleted
         messages={[image]}
@@ -526,6 +527,17 @@ describe("MessageList", () => {
       paddingVertical: 8,
     });
     expect(
+      RNStyleSheet.flatten(
+        screen.getByTestId("message-viewport").props.contentContainerStyle,
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        alignSelf: "center",
+        maxWidth: velaTheme.recipes.conversationWorkspace.composerDesktopMaxWidth,
+        width: "100%",
+      }),
+    );
+    expect(
       screen.getByTestId("message-content-row-visual-message"),
     ).toHaveStyle({
       alignItems: "flex-start",
@@ -593,10 +605,12 @@ describe("MessageList", () => {
     });
   });
 
-  it("makes message ownership and read state explicit in a direct conversation", async () => {
+  it("uses the shared left-aligned row while making self and Agent identity explicit", async () => {
     const screen = await render(
       <MessageList
+        capabilities={{deliveryReceipt: "direct", tasks: false, threads: false}}
         conversationKey="direct:agent-im-1"
+        currentUserId="human-1"
         historyCompleted
         messages={[
           message({
@@ -604,7 +618,7 @@ describe("MessageList", () => {
             id: "direct-outgoing",
             read: {state: "read"},
             senderId: "human-1",
-            senderName: "我",
+            senderName: "你好",
             text: "我发出的消息",
           }),
           message({
@@ -619,20 +633,68 @@ describe("MessageList", () => {
         onLoadOlder={jest.fn()}
         onQuote={jest.fn()}
         onRetry={jest.fn()}
+        participants={[
+          {displayName: "你好", imUserId: "human-1", kind: "human"},
+          {displayName: "研究助手", imUserId: "agent-1", kind: "agent"},
+        ]}
+        surfaceMode="desktop"
         viewportWidth={1_440}
       />,
     );
 
     expect(screen.getByTestId("message-direct-outgoing")).toHaveStyle({
-      flexDirection: "row-reverse",
+      flexDirection: "row",
     });
     expect(screen.getByTestId("message-body-direct-outgoing")).toHaveStyle({
-      alignItems: "flex-end",
+      alignItems: "flex-start",
     });
     expect(screen.getByTestId("message-direct-incoming")).toHaveStyle({
       flexDirection: "row",
     });
+    expect(screen.getByTestId("message-avatar-direct-outgoing")).toHaveTextContent("我");
+    expect(screen.getByTestId("message-sender-direct-outgoing")).toHaveTextContent("我");
+    expect(screen.getByLabelText("Agent 研究助手")).toBeVisible();
+    expect(screen.getByTestId("message-actor-badge-direct-incoming")).toHaveTextContent("Agent");
     expect(screen.getByText("已读")).toBeVisible();
+  });
+
+  it("shows a direct receipt only on the tail of a grouped run", async () => {
+    const screen = await render(
+      <MessageList
+        capabilities={{deliveryReceipt: "direct", tasks: false, threads: false}}
+        conversationKey="direct:agent-im-1"
+        currentUserId="human-1"
+        historyCompleted
+        messages={[
+          message({
+            direction: "outgoing",
+            id: "direct-group-first",
+            read: {state: "read"},
+            senderId: "human-1",
+            senderName: "你好",
+            text: "第一条",
+          }),
+          message({
+            createdAt: "2026-07-31T10:02:00.000Z",
+            direction: "outgoing",
+            id: "direct-group-tail",
+            read: {state: "read"},
+            senderId: "human-1",
+            senderName: "你好",
+            text: "第二条",
+          }),
+        ]}
+        onLoadOlder={jest.fn()}
+        onQuote={jest.fn()}
+        onRetry={jest.fn()}
+        participants={[{displayName: "你好", imUserId: "human-1", kind: "human"}]}
+        surfaceMode="desktop"
+      />,
+    );
+
+    expect(screen.getAllByText("已读")).toHaveLength(1);
+    expect(screen.queryByTestId("message-status-direct-group-first")).toBeNull();
+    expect(screen.getByTestId("message-status-direct-group-tail")).toBeVisible();
   });
 
   it("closes the message action menu after quoting", async () => {
@@ -802,6 +864,7 @@ describe("MessageList", () => {
       });
       const screen = await render(
         <MessageList
+          capabilities={{deliveryReceipt: "none", tasks: true, threads: true}}
           conversationKey="channel:channel-1"
           historyCompleted
           messages={[message({id: "narrow-actions", text: "窄屏消息"})]}
@@ -931,9 +994,10 @@ describe("MessageList", () => {
     expect(screen.getByTestId("message-actions-native-message")).toBeVisible();
   });
 
-  it("keeps the send result visible for an outgoing channel message", async () => {
+  it("keeps successful channel delivery quiet", async () => {
     const screen = await render(
       <MessageList
+        capabilities={{deliveryReceipt: "none", tasks: true, threads: true}}
         conversationKey="channel:channel-1"
         historyCompleted
         messages={[
@@ -950,7 +1014,8 @@ describe("MessageList", () => {
       />,
     );
 
-    expect(screen.getByText("已发送")).toBeVisible();
+    expect(screen.queryByText("已发送")).toBeNull();
+    expect(screen.queryByText("未读")).toBeNull();
   });
 
   it("renders an unavailable Thread reference without interactive message actions", async () => {

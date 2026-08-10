@@ -73,12 +73,13 @@ jest.mock("../../ui/components/composer-editor", () => {
 import {
   NavigationLinkProvider,
   PresentationProvider,
+  pointerDensity,
   type ConversationPageModel,
   type HumanClientPresenter,
   type NavigationLinkProps,
+  velaTheme,
 } from "@/ui";
 import { WorkspaceShell } from "./workspace-shell";
-import {velaTheme} from "@/ui";
 
 const server: Server = {
   id: "server-1",
@@ -741,6 +742,9 @@ describe("WorkspaceShell", () => {
     expect(screen.getAllByText("general").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("已完成。")).toBeVisible();
     expect(screen.getByText("研究助手")).toBeVisible();
+    expect(screen.getByTestId("message-actor-badge-message-1")).toHaveTextContent(
+      "Agent",
+    );
   });
 
   it("keeps ordinary public channels visibly distinct from private channels and the all-members root", async () => {
@@ -827,7 +831,13 @@ describe("WorkspaceShell", () => {
       />,
     );
 
-    await fireEvent(screen.getByTestId("message-message-1"), "longPress");
+    if (pointerDensity) {
+      await fireEvent.press(
+        screen.getByRole("button", {name: "更多消息操作 已完成。"}),
+      );
+    } else {
+      await fireEvent(screen.getByTestId("message-message-1"), "longPress");
+    }
     expect(screen.getByTestId("message-actions-message-1")).toBeVisible();
 
     await fireEvent(screen.getByLabelText("消息内容"), "focus");
@@ -1143,6 +1153,17 @@ describe("WorkspaceShell", () => {
       ...message,
       conversationId: directConversation.conversationId,
     };
+    const ownDirectMessage: Message = {
+      ...directMessage,
+      createdAt: "2026-07-31T10:02:00.000Z",
+      direction: "outgoing",
+      id: "direct-own-message",
+      read: {state: "read"},
+      senderId: "human-1",
+      senderName: account.displayName,
+      text: "我会继续处理。",
+      content: {kind: "text", text: "我会继续处理。"},
+    };
     const screen = await render(
       <WorkspaceShell
         activeConversation={directActive}
@@ -1154,7 +1175,7 @@ describe("WorkspaceShell", () => {
         directConversations={[directConversation]}
         imStatus="ready"
         members={[ownerMember, agentMember]}
-        messages={[directMessage]}
+        messages={[directMessage, ownDirectMessage]}
         onSelectChannel={jest.fn()}
         onSelectDirect={onSelectDirect}
         onSelectServer={jest.fn()}
@@ -1172,6 +1193,12 @@ describe("WorkspaceShell", () => {
     expect(screen.getByText("Agent · @research")).toBeVisible();
     expect(screen.queryByText("@ 研究助手")).toBeNull();
     expect(screen.getByPlaceholderText("发送消息给 研究助手")).toBeVisible();
+    expect(screen.getByLabelText("Agent 研究助手")).toBeVisible();
+    expect(screen.getByTestId("message-direct-own-message")).toHaveStyle({
+      flexDirection: "row",
+    });
+    expect(screen.getByTestId("message-sender-direct-own-message")).toHaveTextContent("我");
+    expect(screen.getByText("已读")).toBeVisible();
     expect(
       screen.queryByRole("button", {
         name: "在 Thread 回复 已完成。",
@@ -1969,9 +1996,15 @@ describe("WorkspaceShell", () => {
     );
 
     expect(screen.getByText("小林 · 先核对接口。")).toBeVisible();
-    expect(screen.getByText("已读")).toBeVisible();
-    await fireEvent(screen.getByTestId("message-message-1"), "longPress");
-    expect(screen.getByText("已读")).toBeVisible();
+    expect(screen.queryByText("已读")).toBeNull();
+    if (pointerDensity) {
+      await fireEvent.press(
+        screen.getByRole("button", {name: "更多消息操作 按这个方案继续"}),
+      );
+    } else {
+      await fireEvent(screen.getByTestId("message-message-1"), "longPress");
+    }
+    expect(screen.queryByText("已读")).toBeNull();
     await fireEvent.press(
       screen.getByRole("button", {
         name: "引用消息 按这个方案继续",
@@ -2290,10 +2323,12 @@ describe("WorkspaceShell", () => {
 
   it("renders a Vela right-side Thread panel and keeps it independently closable", async () => {
     const onCloseThread = jest.fn();
+    const onRetryMessage = jest.fn();
     const onRetryThreadReplyIndex = jest.fn();
     const onSendThreadReply = jest.fn();
     const root = {
       ...message,
+      content: {kind: "text" as const, text: "这是根消息"},
       id: "root-message-1",
       reference: {
         kind: "group" as const,
@@ -2320,7 +2355,10 @@ describe("WorkspaceShell", () => {
     const reply = {
       ...message,
       content: { kind: "text" as const, text: "Thread 回复" },
+      direction: "outgoing" as const,
       id: "reply-message-1",
+      senderId: "human-1",
+      senderName: account.displayName,
       text: "Thread 回复",
       thread: {
         role: "reply" as const,
@@ -2328,16 +2366,27 @@ describe("WorkspaceShell", () => {
         threadId: thread.id,
       },
     };
+    const failedReply: Message = {
+      ...reply,
+      content: {kind: "text", text: "Thread 失败"},
+      createdAt: "2026-07-31T10:02:00.000Z",
+      delivery: {error: "连接中断", retryable: true, state: "failed"},
+      direction: "outgoing",
+      id: "reply-message-failed",
+      text: "Thread 失败",
+    };
     const screen = await render(
       <WorkspaceShell
         activeThread={thread}
         agents={[agent]}
         channels={[channel]}
         currentChannelId={channel.id}
+        currentImUserId="human-1"
         currentServerId={server.id}
         imStatus="ready"
         messages={[root]}
         onCloseThread={onCloseThread}
+        onRetryMessage={onRetryMessage}
         onRetryThreadReplyIndex={onRetryThreadReplyIndex}
         onSelectChannel={jest.fn()}
         onSelectServer={jest.fn()}
@@ -2345,7 +2394,7 @@ describe("WorkspaceShell", () => {
         onSendThreadReply={onSendThreadReply}
         pendingThreadIndexMessageIds={["reply-message-1"]}
         servers={[server]}
-        threadMessages={[reply]}
+        threadMessages={[reply, failedReply]}
         threadRootMessage={root}
         viewportWidth={1_280}
       />,
@@ -2357,13 +2406,25 @@ describe("WorkspaceShell", () => {
       width: velaTheme.recipes.control.squareSize,
     });
     expect(screen.getByText("话题")).toBeVisible();
-    expect(screen.getByText("这是根消息")).toBeVisible();
+    expect(
+      within(screen.getByTestId("thread-panel")).getByTestId("message-root-message-1"),
+    ).toBeVisible();
+    expect(
+      within(screen.getByTestId("thread-panel")).getByText("这是根消息"),
+    ).toBeVisible();
     expect(screen.getByText("Thread 回复")).toBeVisible();
-    expect(screen.getByText("已发送，等待收录")).toBeVisible();
-    await fireEvent(
-      screen.getByTestId("message-reply-message-1"),
-      "longPress",
-    );
+    expect(screen.getByTestId("message-status-reply-message-1")).toHaveTextContent(/^等待收录/);
+    expect(screen.getByText("发送失败 · 连接中断")).toBeVisible();
+    if (pointerDensity) {
+      await fireEvent.press(
+        screen.getByRole("button", {name: "更多消息操作 Thread 回复"}),
+      );
+    } else {
+      await fireEvent(
+        screen.getByTestId("message-reply-message-1"),
+        "longPress",
+      );
+    }
     expect(screen.getByTestId("message-actions-reply-message-1")).toBeVisible();
     await fireEvent(
       screen.getByPlaceholderText("发送消息到 #Thread，输入 @ 提及成员"),
@@ -2373,9 +2434,13 @@ describe("WorkspaceShell", () => {
       screen.queryByTestId("message-actions-reply-message-1"),
     ).toBeNull();
     await fireEvent.press(
-      screen.getByRole("button", { name: "重新收录 Thread 回复" }),
+      screen.getByRole("button", { name: "重新收录消息 Thread 回复" }),
     );
     expect(onRetryThreadReplyIndex).toHaveBeenCalledWith("reply-message-1");
+    await fireEvent.press(
+      screen.getByRole("button", {name: "重试消息 Thread 失败"}),
+    );
+    expect(onRetryMessage).toHaveBeenCalledWith("reply-message-failed");
     await fireEvent.press(screen.getByRole("button", { name: "关闭 Thread" }));
     expect(onCloseThread).toHaveBeenCalledTimes(1);
   });

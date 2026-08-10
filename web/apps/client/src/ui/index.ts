@@ -9,6 +9,18 @@ export {
   MessageList,
   type MessageListProps,
 } from "./components/message-list";
+export type {
+  ConversationCapabilities,
+  ConversationSurfaceMode,
+  MessageActorIdentity,
+  MessageParticipant,
+  MessageStatusPresentation,
+} from "./components/message-presentation";
+export {
+  messageStatusPresentation,
+  participantDirectory,
+  resolveMessageActor,
+} from "./components/message-presentation";
 export {
   ThreadPanel,
   type ThreadPanelProps,
