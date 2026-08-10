@@ -1,3 +1,70 @@
+# Agents 左侧导航顺序调整 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** 实现与验证完成，用户已确认提交、推送与创建 MR。
+
+**Goal:** 将 `/agents` 左侧导航中的“自动任务”移动到“人设”上方，并保持其余导航行为不变。
+
+**Architecture:** 沿用 `AgentSettingsPage` 内现有 `settingsSections` 数组作为唯一顺序来源，只交换两个相邻配置项。用独立静态回归测试锁定两项顺序，避免为了单一展示顺序抽离新公共接口。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4。
+
+## Global Constraints
+
+- 仅修改导航顺序及其回归测试，不修改路由、图标、文案、权限或页面内容。
+- 桌面和移动端继续共用同一导航配置。
+- 不新增依赖或配置抽象。
+
+## Tasks
+
+- [x] **Task 1 — Developer / Reviewer：交换导航项并验证**
+  - **Files:**
+    - Create: `frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`
+    - Modify: `frontend/src/pages/marketing/agent-settings-page.tsx:4909-4915`
+  - **Interfaces:** 不新增导出；测试只读取页面源码中的 `settingsSections` 配置片段。
+  - **Step 1 — 写失败测试：** 新测试读取 `agent-settings-page.tsx`，截取 `const settingsSections` 到 `const isRestartDisabled` 之间的文本，并断言 `id: "automations"` 的索引小于 `id: "buddy"`：
+
+    ```ts
+    import { readFileSync } from "node:fs";
+    import { join } from "node:path";
+    import { describe, expect, it } from "vitest";
+
+    describe("Agent settings navigation order", () => {
+      it("places automations before persona", () => {
+        const page = readFileSync(
+          join(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"),
+          "utf8",
+        );
+        const settingsSectionsStart = page.indexOf("const settingsSections");
+        const settingsSectionsEnd = page.indexOf("const isRestartDisabled");
+
+        expect(settingsSectionsStart).toBeGreaterThanOrEqual(0);
+        expect(settingsSectionsEnd).toBeGreaterThan(settingsSectionsStart);
+
+        const settingsSections = page.slice(settingsSectionsStart, settingsSectionsEnd);
+        const automationsIndex = settingsSections.indexOf('id: "automations"');
+        const personaIndex = settingsSections.indexOf('id: "buddy"');
+
+        expect(automationsIndex).toBeGreaterThanOrEqual(0);
+        expect(personaIndex).toBeGreaterThanOrEqual(0);
+        expect(automationsIndex).toBeLessThan(personaIndex);
+      });
+    });
+    ```
+  - **Step 2 — 确认 RED：** 在 `frontend/` 运行 `pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`；预期当前顺序下断言失败。
+  - **Step 3 — 最小实现：** 在 `settingsSections` 中把完整的 `automations` 配置项移动到完整的 `buddy` 配置项之前，不改动两项内容：
+
+    ```tsx
+    { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
+    { id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy },
+    ```
+  - **Step 4 — 确认 GREEN：** 重新运行同一定向 Vitest，预期 1 个测试通过。
+  - **Step 5 — 完整验证：** 在 `frontend/` 运行 `pnpm check`，再在仓库根运行 `git diff --check`；检查 diff 仅包含计划、测试和两项顺序调整。
+  - **Step 6 — 验收门禁：** 展示改动与验证结果，等待用户确认后才允许提交实现、推送或创建 MR。
+
+---
+
 # 2026-08-07 批量安装汇总结果对齐修复
 
 **Status:** 实现与验证完成；等待用户确认后再 commit / push / MR。

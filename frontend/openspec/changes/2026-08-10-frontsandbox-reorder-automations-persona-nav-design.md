@@ -1,6 +1,6 @@
 # Agents 左侧导航顺序调整设计
 
-**状态：** 待用户复核后实施
+**状态：** 已实现并通过本地验证
 
 **分支：** `frontsandbox/reorder-automations-persona-nav`
 
