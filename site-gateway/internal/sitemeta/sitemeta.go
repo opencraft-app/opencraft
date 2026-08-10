@@ -31,8 +31,9 @@ const (
 var ErrNotFound = errors.New("site not found")
 
 type Site struct {
-	SiteID string `json:"site_id"`
-	Status string `json:"status"`
+	SiteID    string `json:"site_id"`
+	Status    string `json:"status"`
+	CloudPath string `json:"cloud_path"`
 	// MonthlyTrafficBytes 是该站点所属套餐的月流量额度，0 表示不限额。
 	//
 	// 额度和已用量跟着状态一起回来，而不是另开一次查询：这个接口已经有 30 秒

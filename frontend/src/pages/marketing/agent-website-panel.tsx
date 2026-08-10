@@ -13,6 +13,7 @@ interface WebsiteCapability {
   monthly_traffic_bytes: number;
   used_traffic_bytes: number;
   storage_bytes: number;
+  used_storage_bytes: number;
   max_artifact_size: number;
   max_files: number;
 }
@@ -32,14 +33,21 @@ interface WebsiteSite {
   DeletedTime: string | null;
 }
 
-/**
- * 删除操作实体。ctl 直接返回 GORM 实体，字段名是 Go 风格大驼峰，
- * 与 WebsiteSite 一致，不要改成 snake_case。
- */
 interface WebsiteOperation {
-  OperationID: string;
-  Status: string;
-  ErrorMessage: string;
+  operation_id?: string;
+  status?: string;
+  error_message?: string;
+  OperationID?: string;
+  Status?: string;
+  ErrorMessage?: string;
+}
+
+export function readWebsiteOperation(operation?: WebsiteOperation | null) {
+  return {
+    operationID: operation?.operation_id ?? operation?.OperationID ?? "",
+    status: (operation?.status ?? operation?.Status ?? "").trim().toLowerCase(),
+    errorMessage: operation?.error_message ?? operation?.ErrorMessage ?? "",
+  };
 }
 
 interface DeleteSiteResult {
@@ -209,7 +217,7 @@ export const AgentWebsitePanel = () => {
           if (!res.ok) continue;
           const json: ApiResponse<WebsiteOperation> = await res.json();
           if (json.code !== "OK") continue;
-          const status = json.data?.Status;
+          const { status } = readWebsiteOperation(json.data);
           if (status === "success") return { kind: "success" };
           if (status === "failed" || status === "dead") return { kind: "failed" };
         } catch {
@@ -340,11 +348,15 @@ export const AgentWebsitePanel = () => {
         </motion.div>
         <motion.div variants={fadeIn} className="rounded-xl border border-black/[0.06] bg-white p-5">
           <p className="text-xs text-black/45">{t("月流量")}</p>
-          <p className="mt-2 text-2xl font-semibold text-black/90">{formatBytes(capability?.monthly_traffic_bytes ?? 0)}</p>
+          <p className="mt-2 text-2xl font-semibold text-black/90">
+            {`${formatBytes(capability?.used_traffic_bytes ?? 0)} / ${formatBytes(capability?.monthly_traffic_bytes ?? 0)}`}
+          </p>
         </motion.div>
         <motion.div variants={fadeIn} className="rounded-xl border border-black/[0.06] bg-white p-5">
           <p className="text-xs text-black/45">{t("存储空间")}</p>
-          <p className="mt-2 text-2xl font-semibold text-black/90">{formatBytes(capability?.storage_bytes ?? 0)}</p>
+          <p className="mt-2 text-2xl font-semibold text-black/90">
+            {`${formatBytes(capability?.used_storage_bytes ?? 0)} / ${formatBytes(capability?.storage_bytes ?? 0)}`}
+          </p>
         </motion.div>
       </motion.div>
 

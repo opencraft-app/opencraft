@@ -74,6 +74,50 @@ func TestSupersededOperationCannotOverwriteCurrentSite(t *testing.T) {
 	}
 }
 
+func TestGetOperationInternalCarriesReleaseUploadContract(t *testing.T) {
+	newWebsiteOperationTestDB(t)
+	l := NewLogic().(*logic)
+	activeCloudPath := "sites/ws-contract/releases/wr-1111111111111111/"
+	seedSiteWithLocation(t, "ws-contract", "user-1", websiteModel.SiteStatusActive, 1,
+		activeCloudPath, "https://ws-contract.example.test/")
+	release := &websiteModel.ReleaseEntity{
+		ReleaseID:    "wr-contract",
+		SiteID:       "ws-contract",
+		Version:      1,
+		Status:       websiteModel.ReleaseStatusPending,
+		ArtifactHash: validSHA256,
+		ArtifactSize: 123,
+		FileCount:    1,
+	}
+	release.UserID = "user-1"
+	if err := resource.GormDB.Table(websiteModel.ReleasesTable).Create(release).Error; err != nil {
+		t.Fatal(err)
+	}
+	op := &websiteModel.OperationEntity{
+		OperationID:    "wo-contract",
+		SiteID:         "ws-contract",
+		ReleaseID:      "wr-contract",
+		OperationType:  websiteModel.OpTypeDeploy,
+		Status:         websiteModel.OpStatusCreated,
+		SiteGeneration: 1,
+	}
+	op.UserID = "user-1"
+	if err := l.operationDao.CreateOperation(op); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := l.GetOperationInternal(op.OperationID)
+	if err != nil {
+		t.Fatalf("GetOperationInternal: %v", err)
+	}
+	if got.ArtifactSize != 123 || got.ArtifactHash != validSHA256 {
+		t.Fatalf("upload contract = %d/%q", got.ArtifactSize, got.ArtifactHash)
+	}
+	if got.ActiveCloudPath != activeCloudPath {
+		t.Fatalf("active cloud path = %q, want %q", got.ActiveCloudPath, activeCloudPath)
+	}
+}
+
 func TestDeleteReleasesQuotaOnlyAfterCleanupCompletes(t *testing.T) {
 	newWebsiteOperationTestDB(t)
 	l := NewLogic().(*logic)
@@ -83,7 +127,7 @@ func TestDeleteReleasesQuotaOnlyAfterCleanupCompletes(t *testing.T) {
 		BundleID:            "bundle-1",
 		Status:              websiteModel.SiteStatusDeleting,
 		CloudPath:           "sites/ws-delete/releases/wr-1/",
-		PublicURL:           "https://example.tcloudbaseapp.com/sites/ws-delete/releases/wr-1/index.html",
+		PublicURL:           "https://ws-delete.sites.example.test/",
 		OperationGeneration: 2,
 	}
 	site.UserID = "user-1"
@@ -170,10 +214,9 @@ func newWebsiteOperationTestDB(t *testing.T) {
             bundle_id TEXT NOT NULL DEFAULT '',
             name TEXT NOT NULL DEFAULT '',
             idempotency_key TEXT,
-            status TEXT NOT NULL,
-            cloud_path TEXT NOT NULL DEFAULT '',
-            tcb_env_id TEXT NOT NULL DEFAULT '',
-            public_url TEXT NOT NULL DEFAULT '',
+	            status TEXT NOT NULL,
+	            cloud_path TEXT NOT NULL DEFAULT '',
+	            public_url TEXT NOT NULL DEFAULT '',
             operation_generation INTEGER NOT NULL DEFAULT 1,
             storage_bytes INTEGER NOT NULL DEFAULT 0,
             deleted_time DATETIME,

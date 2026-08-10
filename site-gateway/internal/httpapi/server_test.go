@@ -99,6 +99,42 @@ func TestServesIndexForRootPath(t *testing.T) {
 	}
 }
 
+func TestServesOnlyFromActiveImmutableRelease(t *testing.T) {
+	site := "ws-abc"
+	prefix := "sites/ws-abc/releases/wr-0123456789abcdef/"
+	sites := activeSite(site)
+	sites.sites[site].CloudPath = prefix
+	obj := &fakeOrigin{objects: map[string]string{
+		"sites/ws-abc/current/index.html": "stale",
+		prefix + "index.html":             "active",
+	}}
+
+	rec := do(newHandler(sites, obj), http.MethodGet, site+"."+rootDomain, "/")
+	if rec.Code != http.StatusOK || rec.Body.String() != "active" {
+		t.Fatalf("response = %d/%q", rec.Code, rec.Body.String())
+	}
+	if len(obj.requests) != 1 || obj.requests[0] != prefix+"index.html" {
+		t.Fatalf("origin requests = %v", obj.requests)
+	}
+}
+
+func TestRejectsCloudPathOwnedByAnotherSite(t *testing.T) {
+	site := "ws-abc"
+	sites := activeSite(site)
+	sites.sites[site].CloudPath = "sites/ws-victim/releases/wr-0123456789abcdef/"
+	obj := &fakeOrigin{objects: map[string]string{
+		"sites/ws-victim/releases/wr-0123456789abcdef/index.html": "victim",
+	}}
+
+	rec := do(newHandler(sites, obj), http.MethodGet, site+"."+rootDomain, "/")
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", rec.Code)
+	}
+	if len(obj.requests) != 0 {
+		t.Fatalf("invalid cloud_path reached origin: %v", obj.requests)
+	}
+}
+
 func TestServesDirectoryIndex(t *testing.T) {
 	site := "ws-abc"
 	obj := &fakeOrigin{objects: map[string]string{

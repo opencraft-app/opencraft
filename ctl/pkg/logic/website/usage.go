@@ -1,13 +1,18 @@
 package website
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"ctl/pkg/errcode"
+	quotaModel "ctl/pkg/model/userresourcequota"
 	"ctl/pkg/model/website"
+	"ctl/pkg/resource"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // usageLocation 是用量统计「天」和「月」的时区口径：UTC+8。
@@ -115,8 +120,61 @@ func (l *logic) UpdateSiteStorage(siteID string, storageBytes int64) error {
 	if site == nil {
 		return errcode.ErrWebsiteNotFound
 	}
-	if err := l.siteDao.UpdateStorageBytes(siteID, storageBytes); err != nil {
-		return fmt.Errorf("update storage bytes: %w", err)
+	if site.DeletedTime != nil {
+		return nil
+	}
+	p, err := l.getActivePass(site.UserID)
+	if err != nil {
+		return err
+	}
+	q, err := l.getBundleQuota(p.BundleID)
+	if err != nil {
+		return err
+	}
+	if q.StorageBytes <= 0 {
+		return errcode.ErrWebsiteNoQuota
+	}
+	if err := l.ensureQuotaInitialized(site.UserID, p.BundleID, q); err != nil {
+		return fmt.Errorf("ensure website quota before storage update: %w", err)
+	}
+
+	err = resource.GormDB.Transaction(func(tx *gorm.DB) error {
+		var quotaRow quotaModel.Entity
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table(quotaModel.TableName).
+			Where(quotaModel.ColumnUserID+" = ? AND "+quotaModel.ColumnResourceName+" = ?",
+				site.UserID, website.ResourceNameWebsiteSite).
+			Order("id ASC").First(&quotaRow).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errcode.ErrWebsiteNoQuota
+			}
+			return fmt.Errorf("lock website quota: %w", err)
+		}
+
+		var lockedSite website.SiteEntity
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table(website.SitesTable).
+			Where("site_id = ?", siteID).First(&lockedSite).Error; err != nil {
+			return fmt.Errorf("lock site: %w", err)
+		}
+		if lockedSite.DeletedTime != nil {
+			return nil
+		}
+		var otherStorage int64
+		if err := tx.Table(website.SitesTable).
+			Where("user_id = ? AND site_id <> ? AND deleted_time IS NULL", site.UserID, siteID).
+			Select("COALESCE(SUM(storage_bytes), 0)").Scan(&otherStorage).Error; err != nil {
+			return fmt.Errorf("sum other website storage: %w", err)
+		}
+		if otherStorage > q.StorageBytes || storageBytes > q.StorageBytes-otherStorage {
+			return errcode.ErrWebsiteQuotaExceeded
+		}
+		if err := tx.Table(website.SitesTable).Where("site_id = ? AND deleted_time IS NULL", siteID).
+			Update("storage_bytes", storageBytes).Error; err != nil {
+			return fmt.Errorf("update storage bytes: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	l.logger.Info("website site storage usage updated",
 		zap.String("site_id", siteID), zap.Int64("storage_bytes", storageBytes))

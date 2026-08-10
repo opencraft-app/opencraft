@@ -11,12 +11,12 @@ items:
   kubernetes_resource_kind: Secret
   output_path: argocd/secrets/shprod/website-deployer-secrets.sops.yaml
   secret_type: Opaque
-  # TCB_ENV_ALLOWLIST 是运营策略不是凭据，明文入库便于评审。
-  # 用 optional_plaintext_keys 而不是 plaintext_keys：TCB 企业版采购完成前
-  # SSM payload 里还没有这个 key，写成 required 会让导出直接报
-  # "unknown plaintext_keys" 并阻塞整个 secret 的刷新。
-  optional_plaintext_keys:
-  - TCB_ENV_ALLOWLIST
+  required_keys:
+  - WEBSITE_INTERNAL_API_TOKEN
+  - WEBSITE_COS_SECRET_ID
+  - WEBSITE_COS_SECRET_KEY
+  - REDIS_ADDR
+  - REDIS_PASSWORD
   labels:
     app.kubernetes.io/name: website-deployer
     app.kubernetes.io/managed-by: argocd

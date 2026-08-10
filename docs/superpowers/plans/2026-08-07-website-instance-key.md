@@ -46,7 +46,7 @@ Expected: FAIL because package `websiteauth` does not exist.
 
 - [ ] **Step 3: Implement the minimal store**
 
-Use Redis keys `website:instance-key:<key_id>` and `website:instance-keys:<instance_id>`. Use a transaction pipeline to write the binding and instance index. Parse and compare hashes with `crypto/subtle.ConstantTimeCompare`.
+Use Redis keys `website:{website-instance-keys}:credential:<key_id>` and `website:{website-instance-keys}:instance:<instance_id>`. The shared hash tag keeps the transaction in one Redis Cluster slot. Use a transaction pipeline to write the binding and instance index. Parse and compare hashes with `crypto/subtle.ConstantTimeCompare`.
 
 - [ ] **Step 4: Run the focused test and verify GREEN**
 

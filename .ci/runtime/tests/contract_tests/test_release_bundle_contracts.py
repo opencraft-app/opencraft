@@ -3,6 +3,7 @@ import re
 import subprocess
 import sys
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import yaml
@@ -239,6 +240,53 @@ class ReleaseBundleContractTests(unittest.TestCase):
                     f"user-auth/{env} publish projection misses KSOPS secrets: "
                     f"{sorted(referenced_secrets - set(bundle.publish_paths))}",
                 )
+
+    def test_ctl_prod_projection_covers_ksops_secret_files(self) -> None:
+        manifest = load_manifest()
+        workflow = (REPO_ROOT / ".ci" / "ctl.yml").read_text()
+
+        workflow_config = yaml.safe_load(workflow) or {}
+        workflow_parameters = (workflow_config.get("extends") or {}).get("parameters") or {}
+        self.assertIs(workflow_parameters.get("ENABLE_MASTER_PROD_DB_MIGRATION"), True)
+        self.assertIs(workflow_parameters.get("ENABLE_MASTER_SHPROD_DB_MIGRATION"), False)
+        self.assertIs(workflow_parameters.get("ENABLE_MASTER_SGPROD_DB_MIGRATION"), True)
+
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                bundle = require_build_metadata(load_bundle(manifest, "ctl", env))
+                service_root = REPO_ROOT / "argocd" / "services" / "ctl" / env
+                referenced_secrets = {
+                    (generator.parent / secret_path).resolve().relative_to(REPO_ROOT).as_posix()
+                    for generator in service_root.glob("ksops*-generator.yaml")
+                    for secret_path in (yaml.safe_load(generator.read_text()) or {}).get("files", [])
+                }
+
+                self.assertFalse(
+                    referenced_secrets - set(bundle.publish_paths),
+                    f"ctl/{env} publish projection misses KSOPS secrets: "
+                    f"{sorted(referenced_secrets - set(bundle.publish_paths))}",
+                )
+
+        self.assertIn("argocd/secrets/*/ctl-agentchat-secrets.sops.yaml", workflow)
+        self.assertIn("argocd/secrets/*/ctl-website-runtime-secrets.sops.yaml", workflow)
+
+    def test_sgprod_website_cos_lifecycle_only_expires_temporary_artifacts(self) -> None:
+        lifecycle_path = (
+            REPO_ROOT
+            / "argocd"
+            / "services"
+            / "workers-website-deployer"
+            / "sgprod"
+            / "website-cos-lifecycle.xml"
+        )
+        self.assertTrue(lifecycle_path.is_file(), f"missing desired COS lifecycle: {lifecycle_path}")
+
+        rule = ET.parse(lifecycle_path).getroot().find("Rule")
+        self.assertIsNotNone(rule)
+        self.assertEqual(rule.findtext("Status"), "Enabled")
+        self.assertEqual(rule.findtext("Filter/Prefix"), "_artifacts/")
+        self.assertEqual(rule.findtext("Expiration/Days"), "2")
+        self.assertEqual(rule.findtext("AbortIncompleteMultipartUpload/DaysAfterInitiation"), "1")
 
     def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
         for env in ("beijing-sandbox", "shprod"):

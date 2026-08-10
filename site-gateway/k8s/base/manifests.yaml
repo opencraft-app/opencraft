@@ -47,16 +47,16 @@ spec:
             - configMapRef:
                 name: site-gateway-config
           env:
-            - name: TENCENT_SECRET_ID
+            - name: WEBSITE_COS_SECRET_ID
               valueFrom:
                 secretKeyRef:
                   name: site-gateway-secrets
-                  key: TENCENT_SECRET_ID
-            - name: TENCENT_SECRET_KEY
+                  key: WEBSITE_COS_SECRET_ID
+            - name: WEBSITE_COS_SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: site-gateway-secrets
-                  key: TENCENT_SECRET_KEY
+                  key: WEBSITE_COS_SECRET_KEY
             - name: WEBSITE_INTERNAL_API_TOKEN
               valueFrom:
                 secretKeyRef:

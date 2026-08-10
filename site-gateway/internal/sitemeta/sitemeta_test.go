@@ -35,6 +35,23 @@ func TestBySiteIDReturnsSite(t *testing.T) {
 	}
 }
 
+func TestBySiteIDParsesCloudPath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"code":"OK","message":"success","data":{` +
+			`"site_id":"ws-abc","status":"active",` +
+			`"cloud_path":"sites/ws-abc/releases/wr-0123456789abcdef/"}}`))
+	}))
+	defer server.Close()
+
+	site, err := NewClient(Options{BaseURL: server.URL}).BySiteID(context.Background(), "ws-abc")
+	if err != nil {
+		t.Fatalf("BySiteID: %v", err)
+	}
+	if site.CloudPath != "sites/ws-abc/releases/wr-0123456789abcdef/" {
+		t.Fatalf("cloud_path = %q", site.CloudPath)
+	}
+}
+
 func TestBySiteIDNotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)

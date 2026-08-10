@@ -57,22 +57,27 @@ spec:
             secretKeyRef:
               name: website-deployer-secrets
               key: WEBSITE_INTERNAL_API_TOKEN
-        - name: TENCENT_SECRET_ID
+        # 二期固定使用独立 COS 单桶。
+        - name: WEBSITE_COS_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: workers-platform-values
+              key: WEBSITE_COS_BUCKET
+        - name: WEBSITE_COS_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: workers-platform-values
+              key: WEBSITE_COS_REGION
+        - name: WEBSITE_COS_SECRET_ID
           valueFrom:
             secretKeyRef:
               name: website-deployer-secrets
-              key: TENCENT_SECRET_ID
-        - name: TENCENT_SECRET_KEY
+              key: WEBSITE_COS_SECRET_ID
+        - name: WEBSITE_COS_SECRET_KEY
           valueFrom:
             secretKeyRef:
               name: website-deployer-secrets
-              key: TENCENT_SECRET_KEY
-        # 为空则 worker 直接禁用建站（fail-closed）。值等 TCB 企业版采购结果。
-        - name: TCB_ENV_ALLOWLIST
-          valueFrom:
-            secretKeyRef:
-              name: website-deployer-secrets
-              key: TCB_ENV_ALLOWLIST
+              key: WEBSITE_COS_SECRET_KEY
         resources:
           requests:
             cpu: 100m

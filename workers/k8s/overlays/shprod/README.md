@@ -76,7 +76,8 @@ website-deployer starting: concurrency=2, redis=true, fallback_poll=10s
 |---|---|
 | `requires WEBSITE_INTERNAL_API_TOKEN` | `website-deployer-secrets` 缺 key 或仍是占位符被清空 |
 | `requires Redis for the global COS upload limiter` | `REDIS_ADDR` / `REDIS_PASSWORD` 未替换真值 |
-| `TCB_ENV_ALLOWLIST is empty; website deployer is disabled` | allowlist 未配（等 TCB 采购） |
+| `WEBSITE_COS_BUCKET and WEBSITE_COS_REGION are required` | 独立用户站点 COS 桶配置缺失 |
+| `WEBSITE_COS_SECRET_ID/KEY ... are required` | COS 桶级最小权限凭据缺失 |
 
 ## 资源配置依据
 

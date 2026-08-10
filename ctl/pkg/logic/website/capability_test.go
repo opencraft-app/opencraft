@@ -121,6 +121,21 @@ func TestGetSiteInternalCarriesTrafficBudget(t *testing.T) {
 	}
 }
 
+func TestGetSiteInternalCarriesActiveCloudPath(t *testing.T) {
+	newWebsiteOperationTestDB(t)
+	seedPassAndBundle(t, "user-1", "bundle-1", testQuotaJSON)
+	seedSiteWithLocation(t, "ws-a", "user-1", website.SiteStatusActive, 1,
+		"sites/ws-a/releases/wr-0123456789abcdef/", "https://ws-a.example.test/")
+
+	view, err := NewLogic().GetSiteInternal("ws-a")
+	if err != nil {
+		t.Fatalf("GetSiteInternal: %v", err)
+	}
+	if view.CloudPath != "sites/ws-a/releases/wr-0123456789abcdef/" {
+		t.Fatalf("cloud_path = %q", view.CloudPath)
+	}
+}
+
 // 当月已用量是按用户跨站点汇总的：一个站点刷爆额度会把同一用户的其他站点一起闸掉。
 // 这是月额度按用户计量的直接后果，必须是可观测的行为而不是意外。
 func TestGetSiteInternalUsesUserWideUsage(t *testing.T) {

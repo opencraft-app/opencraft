@@ -14,6 +14,7 @@ interface WebsiteCapability {
   monthly_traffic_bytes: number;
   used_traffic_bytes: number;
   storage_bytes: number;
+  used_storage_bytes: number;
   max_artifact_size: number;
   max_files: number;
 }
@@ -233,11 +234,15 @@ export const WebsitePage = () => {
                       </div>
                       <div className="rounded-xl p-4" style={{ background: "rgba(0,0,0,0.02)" }}>
                         <p className="text-xs" style={{ color: "#999" }}>{t("月流量")}</p>
-                        <p className="mt-1 text-xl font-bold" style={{ color: "#333" }}>{formatBytes(capability.monthly_traffic_bytes)}</p>
+                        <p className="mt-1 text-xl font-bold" style={{ color: "#333" }}>
+                          {`${formatBytes(capability.used_traffic_bytes)} / ${formatBytes(capability.monthly_traffic_bytes)}`}
+                        </p>
                       </div>
                       <div className="rounded-xl p-4" style={{ background: "rgba(0,0,0,0.02)" }}>
                         <p className="text-xs" style={{ color: "#999" }}>{t("存储空间")}</p>
-                        <p className="mt-1 text-xl font-bold" style={{ color: "#333" }}>{formatBytes(capability.storage_bytes)}</p>
+                        <p className="mt-1 text-xl font-bold" style={{ color: "#333" }}>
+                          {`${formatBytes(capability.used_storage_bytes)} / ${formatBytes(capability.storage_bytes)}`}
+                        </p>
                       </div>
                     </div>
                   </div>

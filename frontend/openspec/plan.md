@@ -1,3 +1,25 @@
+# 2026-08-07 建站用量展示修复
+
+**Status:** 已部署到 `lightclaw.pages.dev`，待用户验收。
+
+**Goal:** 建站权益中的月流量和存储空间均展示“已用 / 总量”，消费后端已有的 `used_traffic_bytes` 与 `used_storage_bytes`。
+
+**Scope:** 仅修改两个建站前端入口及其组件测试；不修改后端接口、网关、套餐额度或实例 token。
+
+## Tasks
+
+- [x] **Developer:** 更新 `agent-website-panel.tsx`、`website-page.tsx` 和对应组件测试；两个入口均展示格式化后的“已用 / 总量”，通过相关 Vitest、i18n、构建和线上 smoke 后部署测试环境。
+
+## Verification
+
+- `pnpm exec vitest run src/pages/__tests__/website-usage-display.test.tsx`
+- `pnpm i18n:check`
+- `pnpm i18n:zh-hant:check`
+- `pnpm build`
+- `git diff --check`
+
+---
+
 # 2026-08-04 QQ Bot 群聊策略自动开启
 
 **Status:** 实现与验证完成，待用户验收；确认前不 commit / push / MR。

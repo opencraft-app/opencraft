@@ -2,6 +2,7 @@ package website
 
 import (
 	"errors"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -67,10 +68,20 @@ func TestValidateFilePath(t *testing.T) {
 func TestGenerateUploadURL_NoConfig(t *testing.T) {
 	t.Setenv("WEBSITE_COS_BUCKET", "")
 	t.Setenv("WEBSITE_COS_REGION", "")
+	t.Setenv("WEBSITE_COS_SECRET_ID", "")
+	t.Setenv("WEBSITE_COS_SECRET_KEY", "")
+	t.Setenv("TENCENT_SECRET_ID", "")
+	t.Setenv("TENCENT_SECRET_KEY", "")
 
-	url := generateUploadURL("ws-test", "wr-test")
-	if url != "" {
-		t.Errorf("expected empty URL when COS not configured, got %s", url)
+	uploadURL, headers, err := generateUploadURL("ws-test", "wr-test", 123, validSHA256)
+	if !errors.Is(err, errcode.ErrWebsiteUploadUnavailable) {
+		t.Fatalf("generateUploadURL error = %v, want ErrWebsiteUploadUnavailable", err)
+	}
+	if uploadURL != "" {
+		t.Errorf("expected empty URL when COS not configured, got %s", uploadURL)
+	}
+	if len(headers) != 0 {
+		t.Fatalf("expected no required headers without a signed URL, got %#v", headers)
 	}
 }
 
@@ -81,12 +92,29 @@ func TestGenerateUploadURLScopedToSiteArtifact(t *testing.T) {
 	t.Setenv("TENCENT_SECRET_ID", "AKIDTESTTESTTESTTESTTESTTESTTEST")
 	t.Setenv("TENCENT_SECRET_KEY", "testtesttesttesttesttesttesttest")
 
-	got := generateUploadURL("ws-test", "wr-test")
+	got, headers, err := generateUploadURL("ws-test", "wr-test", 123, "sha256:"+strings.ToUpper(validSHA256))
+	if err != nil {
+		t.Fatalf("generateUploadURL: %v", err)
+	}
 	if got == "" {
 		t.Fatal("配置齐全时应返回预签名 URL")
 	}
 	if !strings.Contains(got, "_artifacts/ws-test/wr-test.zip") {
 		t.Fatalf("预签名 URL 未指向本站点的制品路径: %s", got)
+	}
+	if headers["Content-Length"] != "123" {
+		t.Fatalf("Content-Length = %q, want 123", headers["Content-Length"])
+	}
+	if headers["x-cos-meta-artifact-sha256"] != validSHA256 {
+		t.Fatalf("x-cos-meta-artifact-sha256 = %q, want normalized SHA-256", headers["x-cos-meta-artifact-sha256"])
+	}
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("parse signed URL: %v", err)
+	}
+	signedHeaders := parsed.Query().Get("q-header-list")
+	if !strings.Contains(signedHeaders, "content-length") || !strings.Contains(signedHeaders, "x-cos-meta-artifact-sha256") {
+		t.Fatalf("q-header-list = %q, want signed length and SHA-256 metadata", signedHeaders)
 	}
 }
 

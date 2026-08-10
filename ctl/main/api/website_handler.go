@@ -26,6 +26,12 @@ type websiteHandler struct {
 	logic websitelogic.Logic
 }
 
+type websiteOperationResponse struct {
+	OperationID  string `json:"operation_id"`
+	Status       string `json:"status"`
+	ErrorMessage string `json:"error_message"`
+}
+
 // invalidWebsiteParamError 让参数校验的具体原因真正到达调用方。
 //
 // errcode.Wrap 只是把原因拼进 Go 错误串，而 writeHTTPError 回写的是错误码自带的
@@ -567,5 +573,9 @@ func (h *websiteHandler) handleGetOperation(w http.ResponseWriter, r *http.Reque
 		writeHTTPError(w, r, err)
 		return
 	}
-	writeSuccess(w, r, http.StatusOK, op)
+	writeSuccess(w, r, http.StatusOK, websiteOperationResponse{
+		OperationID:  op.OperationID,
+		Status:       op.Status,
+		ErrorMessage: op.ErrorMessage,
+	})
 }

@@ -21,6 +21,7 @@ const websiteInstanceAuthScheme = "Vela-Instance-Key"
 type websiteInstanceBinding struct {
 	InstanceID string
 	UserID     string
+	Status     string
 }
 
 type websiteInstanceReader interface {
@@ -43,7 +44,7 @@ func (gormWebsiteInstanceReader) GetWebsiteInstanceBinding(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	return &websiteInstanceBinding{InstanceID: entity.InstanceId, UserID: entity.UserId}, nil
+	return &websiteInstanceBinding{InstanceID: entity.InstanceId, UserID: entity.UserId, Status: entity.Status}, nil
 }
 
 type websiteCredentialHandler struct {
@@ -89,6 +90,7 @@ func (h *websiteCredentialHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *websiteCredentialHandler) issue(w http.ResponseWriter, r *http.Request, instanceID string) {
+	w.Header().Set("Cache-Control", "no-store")
 	if h.store == nil || h.instances == nil {
 		writeHTTPError(w, r, errors.New("website credential dependencies are not configured"))
 		return
@@ -102,10 +104,14 @@ func (h *websiteCredentialHandler) issue(w http.ResponseWriter, r *http.Request,
 		writeHTTPError(w, r, errcode.ErrInstanceNotFound)
 		return
 	}
+	if !isWebsiteCredentialInstanceStatusAllowed(instance.Status) {
+		writeHTTPError(w, r, errcode.ErrInstanceStatusInvalid)
+		return
+	}
 
 	token, binding, err := h.store.Issue(r.Context(), instance.UserID, instance.InstanceID)
 	if err != nil {
-		writeHTTPError(w, r, err)
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrWebsiteCredentialStoreUnavailable, "%v", err))
 		return
 	}
 	writeSuccess(w, r, http.StatusCreated, websiteCredentialResponse{
@@ -131,11 +137,24 @@ func (h *websiteCredentialHandler) revoke(w http.ResponseWriter, r *http.Request
 		writeHTTPError(w, r, errcode.ErrInstanceNotFound)
 		return
 	}
-	if err := h.store.Revoke(r.Context(), keyID); err != nil {
-		writeHTTPError(w, r, err)
+	if err := h.store.Revoke(r.Context(), instanceID, keyID); err != nil {
+		if errors.Is(err, websiteauth.ErrInvalidCredential) {
+			writeHTTPError(w, r, errcode.ErrNotFound)
+			return
+		}
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrWebsiteCredentialStoreUnavailable, "%v", err))
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func isWebsiteCredentialInstanceStatusAllowed(status string) bool {
+	switch status {
+	case modelinstance.InstanceStatusRunning, modelinstance.InstanceStatusPaused, modelinstance.InstanceStatusResuming:
+		return true
+	default:
+		return false
+	}
 }
 
 func hasValidWebsiteCredentialInternalBearer(r *http.Request) bool {
@@ -166,12 +185,21 @@ func websiteInstanceAuthMiddleware(store websiteauth.Store, instances websiteIns
 			return
 		}
 		binding, err := store.Validate(r.Context(), fields[1])
-		if err != nil || binding == nil {
+		if err != nil {
+			if errors.Is(err, websiteauth.ErrInvalidCredential) {
+				writeHTTPError(w, r, errcode.ErrUnauthorized)
+				return
+			}
+			writeHTTPError(w, r, errcode.ErrWebsiteCredentialStoreUnavailable)
+			return
+		}
+		if binding == nil {
 			writeHTTPError(w, r, errcode.ErrUnauthorized)
 			return
 		}
 		instance, err := instances.GetWebsiteInstanceBinding(r.Context(), binding.InstanceID)
-		if err != nil || instance == nil || instance.InstanceID != binding.InstanceID || instance.UserID != binding.UserID {
+		if err != nil || instance == nil || instance.InstanceID != binding.InstanceID || instance.UserID != binding.UserID ||
+			!isWebsiteCredentialInstanceStatusAllowed(instance.Status) {
 			writeHTTPError(w, r, errcode.ErrUnauthorized)
 			return
 		}

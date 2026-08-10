@@ -63,7 +63,7 @@ func (h *SiteHandler) serveStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	siteID, ok := h.resolveSite(w, r)
+	siteID, publishedPrefix, ok := h.resolveSite(w, r)
 	if !ok {
 		return
 	}
@@ -76,7 +76,7 @@ func (h *SiteHandler) serveStatic(w http.ResponseWriter, r *http.Request) {
 	w = counted
 	defer func() { h.usage.Record(siteID, counted.written) }()
 
-	candidates, ok := objectkey.Candidates(siteID, r.URL.Path)
+	candidates, ok := objectkey.CandidatesForPrefix(publishedPrefix, r.URL.Path)
 	if !ok {
 		writeErrorPage(w, http.StatusBadRequest, "非法请求路径")
 		return
@@ -96,7 +96,7 @@ func (h *SiteHandler) serveStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.writeSiteNotFound(w, r, siteID)
+	h.writeSiteNotFound(w, r, publishedPrefix)
 }
 
 // countingWriter 统计实际写给客户端的字节数。
@@ -119,25 +119,25 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 //
 // siteID 只能由 Host 推导，不接受任何请求参数：这是多租户隔离的唯一入口，
 // 一旦允许请求影响 siteID，站点之间的边界就没了。
-func (h *SiteHandler) resolveSite(w http.ResponseWriter, r *http.Request) (string, bool) {
+func (h *SiteHandler) resolveSite(w http.ResponseWriter, r *http.Request) (string, string, bool) {
 	siteID, host, ok := h.resolver.Resolve(r.Host)
 	if !ok {
 		// 自定义域名绑定尚未实现，未命中根域的 Host 一律拒绝，
 		// 绝不回落到任何默认站点——回落会让错配的域名把流量导到别人的站点。
 		h.logger.Printf("unresolved host: %q", host)
 		writeErrorPage(w, http.StatusNotFound, msgSiteNotFound)
-		return "", false
+		return "", "", false
 	}
 
 	site, err := h.sites.BySiteID(r.Context(), siteID)
 	if errors.Is(err, sitemeta.ErrNotFound) {
 		writeErrorPage(w, http.StatusNotFound, msgSiteNotFound)
-		return "", false
+		return "", "", false
 	}
 	if err != nil {
 		h.logger.Printf("lookup site %q failed: %v", siteID, err)
 		writeErrorPage(w, http.StatusBadGateway, msgUpstream)
-		return "", false
+		return "", "", false
 	}
 
 	switch site.Status {
@@ -149,9 +149,15 @@ func (h *SiteHandler) resolveSite(w http.ResponseWriter, r *http.Request) (strin
 		// 已发布的内容一个字节都不删，下个月自然恢复。
 		if site.TrafficExhausted() {
 			writeErrorPage(w, http.StatusForbidden, msgTrafficExhausted)
-			return "", false
+			return "", "", false
 		}
-		return siteID, true
+		publishedPrefix, ok := objectkey.ValidatePublishedPrefix(siteID, site.CloudPath)
+		if !ok {
+			h.logger.Printf("invalid cloud_path for site %q", siteID)
+			writeErrorPage(w, http.StatusBadGateway, msgUpstream)
+			return "", "", false
+		}
+		return siteID, publishedPrefix, true
 	case sitemeta.StatusSuspended:
 		writeErrorPage(w, http.StatusForbidden, msgSiteSuspended)
 	case sitemeta.StatusBlocked:
@@ -160,7 +166,7 @@ func (h *SiteHandler) resolveSite(w http.ResponseWriter, r *http.Request) (strin
 		// creating / deleting / deleted 以及未知状态都当作不可访问。
 		writeErrorPage(w, http.StatusNotFound, msgSiteNotFound)
 	}
-	return "", false
+	return "", "", false
 }
 
 const (
@@ -174,8 +180,8 @@ const (
 )
 
 // writeSiteNotFound 优先使用站点自带的 404.html，回落到网关内置错误页。
-func (h *SiteHandler) writeSiteNotFound(w http.ResponseWriter, r *http.Request, siteID string) {
-	obj, err := h.origin.Get(r.Context(), objectkey.NotFoundKey(siteID))
+func (h *SiteHandler) writeSiteNotFound(w http.ResponseWriter, r *http.Request, publishedPrefix string) {
+	obj, err := h.origin.Get(r.Context(), objectkey.NotFoundKeyForPrefix(publishedPrefix))
 	if err != nil {
 		writeErrorPage(w, http.StatusNotFound, "页面不存在")
 		return
@@ -225,8 +231,8 @@ func (h *SiteHandler) writeObject(w http.ResponseWriter, r *http.Request, key st
 
 // cacheControlFor 决定缓存策略。
 //
-// 重新发布是原地覆盖 current/ 目录，文件名不变，所以 HTML 必须每次回源校验，
-// 否则用户发布后看到的仍是旧页面。其他静态资源给一个短缓存，兼顾带宽和新鲜度。
+// 重新发布会原子切换到新的不可变 release 前缀，但固定站点 URL 下的 HTML 内容会变化，
+// 所以 HTML 必须每次回源校验。其他静态资源给一个短缓存，兼顾带宽和新鲜度。
 func cacheControlFor(key string, upstream string) string {
 	if upstream != "" {
 		return upstream

@@ -1,9 +1,9 @@
 # 实例身份与建站凭据方案交接文档
 
 - 日期：2026-08-07
-- 状态：**已实现（Tasks 1-5 完成，Task 6 SKILL 待落盘）**
+- 状态：**已实现并完成北京测试环境 6 台实例下发与端到端验收**
 - 关联：`docs/handover/2026-08-06-cos-site-gateway-handover.md`（静态建站二期）
-- 建站 Skill：`.agents/skills/cloudbase-site-builder/SKILL.md`
+- 建站 Skill：`.agents/skills/website-builder/SKILL.md`
 
 ## 零、实现摘要（2026-08-07 更新）
 
@@ -13,14 +13,14 @@
 
 | 组件 | 文件 | 说明 |
 |---|---|---|
-| Redis 凭据存储 | `ctl/pkg/websiteauth/store.go` | `vwk_<key_id>_<secret>` 格式，SHA-256(salt‖secret)，无 TTL，无明文 |
+| Redis 凭据存储 | `ctl/pkg/websiteauth/store.go` | `vwk_<key_id>_<secret>` 格式，SHA-256(salt‖secret)，无 TTL，无明文；两类 key 共用 Cluster hash tag |
 | CTL 签发/校验 | `ctl/main/api/website_credential_handler.go` | POST issue / DELETE revoke + `Vela-Instance-Key` 中间件 |
 | CreateSite bundle 推导 | `ctl/pkg/logic/website/logic.go` | `bundle_id` 省略时从 active pass 自动推导 |
 | Service Gateway 路由 | `argocd/services/service-gateway/*/config.yaml` | `ctl-instance-websites` 公开路由 + 8 条精确 allowlist |
-| TAT 下发脚本 | `images/helpers/install-hermes-website-credential.sh` | 写 `/etc/vela/website-credential.env`，注入 systemd drop-in |
+| TAT 下发脚本 | `images/helpers/install-hermes-website-credential.sh` | 写 `/etc/vela/website-credential.env`，注入 systemd drop-in，并补齐 user bus 环境 |
 | TAT 命令创建 | `.ci/runtime/commands/create_hermes_website_credential_command.sh` | 参数化命令，`{{tat-hidden:website_key}}` |
 | TAT 命令调用 | `.ci/runtime/commands/invoke_hermes_website_credential_command.sh` | JSONL 输入，每实例独立 InvokeCommand |
-| 行为测试 | `images/tests/test-hermes-website-credential-scripts.sh` | 31 项断言全通过 |
+| 行为测试 | `images/tests/test-hermes-website-credential-scripts.sh` | 34 项断言全通过 |
 
 ### 鉴权链路（最终）
 
@@ -32,9 +32,17 @@ Skill: Authorization: Vela-Instance-Key vwk_xxx_yyy
   → ctl /v1/websites handlers (unchanged)
 ```
 
-### 待落盘
+### 北京测试环境实测（2026-08-07）
 
-- `.agents/skills/cloudbase-site-builder/SKILL.md`：改好了但 `.agents/` 在沙箱只读，待用户 `cp docs/handover/SKILL-pending-update.md .agents/skills/cloudbase-site-builder/SKILL.md`
+- 从 `lightclaw_auth.users`、`ctl.instances`、`cvm.sandboxes`、`cvm.instances` 关联得到 6 个 `tcb-test1` 至 `tcb-test6` 账号各自唯一的运行中 Vela CVM；6 台均为 `RUNNING`，TAT Agent 均为 `Online`。
+- 首次实测发现 Redis Cluster 拒绝跨 slot 的 `TxPipelined`：凭据明细和实例索引原本没有共同 hash tag，签发返回 `EXECABORT`。两类 key 已统一使用 `{website-instance-keys}`，保留事务原子性；修复镜像 `website-key-slot-202608071520` 已部署到北京测试环境。
+- 首轮 TAT 暴露两个实例侧问题：base64url `key_id` 可包含下划线，不能按第一个下划线切分；TAT root 会话调用 `systemctl --user` 时必须补 `XDG_RUNTIME_DIR` 和 `DBUS_SESSION_BUS_ADDRESS`。修复后脚本测试为 34/34。
+- 修复后的参数化 TAT Command 为 `cmd-dnlmheme`，6 次独立 Invoke 全部 `SUCCESS / exit 0`；每台凭据文件均为 `root:agentuser 0440`，`hermes-gateway.service` 均为 `active`。
+- 6 台机器均使用自身环境文件调用实例建站 capability 成功。另用一个空闲测试账号完成最小站点的创建、发布、公网 200 内容校验、删除和公网 404 校验；删除后站点数与存储均回到 0。
+- 失败的旧 TAT Command、临时数据库查询 Pod、临时明文 key 文件、构建目录和镜像 tar 均已删除；未向日志、仓库或交接文档写入明文 key。
+
+### 剩余文档项
+
 - `images/README.md`：待补充新脚本文档
 
 ## 一、要解决什么
@@ -236,7 +244,7 @@ agent 用手上已有的 LLM key 调一个 broker 接口换 token。
 
 agent 必须走 `api.lightvela.com`（直连 CLB，L7 Ingress 见 `argocd/services/service-gateway/shprod/api-lightvela-com-ingress.yaml:17-40`），不能走 `lightvela.com`（过 EdgeOne，真实源 IP 被吃掉，理由见 3.4）。
 
-这条约束**目前代码里没有强制**。`~/.vela/api-base` 填什么应该由 ctl 按环境定死，不要让前端或 Skill 拼——`.agents/skills/cloudbase-site-builder/SKILL.md:68` 已经警告过"拿测试 token 打生产只会 401"，但那只是文档约定。
+这条约束**目前代码里没有强制**。`~/.vela/api-base` 填什么应该由 ctl 按环境定死，不要让前端或 Skill 拼；`.agents/skills/website-builder/SKILL.md` 只消费平台预置的 `VELA_API_BASE`，但这仍然只是文档约定。
 
 ### 5.5 Hermes egress 拉黑 metadata
 

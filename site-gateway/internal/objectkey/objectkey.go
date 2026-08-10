@@ -2,6 +2,7 @@
 package objectkey
 
 import (
+	"encoding/hex"
 	"path"
 	"strings"
 )
@@ -19,6 +20,37 @@ func NotFoundKey(siteID string) string {
 	return PublishedPrefix(siteID) + "404.html"
 }
 
+// ValidatePublishedPrefix binds a CTL-provided object prefix to the site that
+// came from the request Host. Empty cloud_path is accepted only as a rollout
+// compatibility fallback for CTL versions that predate immutable releases.
+func ValidatePublishedPrefix(siteID, cloudPath string) (string, bool) {
+	legacy := PublishedPrefix(siteID)
+	if cloudPath == "" || cloudPath == legacy {
+		return legacy, true
+	}
+	if strings.ContainsAny(cloudPath, "\x00\r\n") || !strings.HasSuffix(cloudPath, "/") {
+		return "", false
+	}
+	base := "sites/" + siteID + "/releases/"
+	if !strings.HasPrefix(cloudPath, base) {
+		return "", false
+	}
+	releaseID := strings.TrimSuffix(strings.TrimPrefix(cloudPath, base), "/")
+	if strings.Contains(releaseID, "/") || !strings.HasPrefix(releaseID, "wr-") {
+		return "", false
+	}
+	randomPart := strings.TrimPrefix(releaseID, "wr-")
+	decoded, err := hex.DecodeString(randomPart)
+	if err != nil || len(decoded) != 8 || hex.EncodeToString(decoded) != randomPart {
+		return "", false
+	}
+	return cloudPath, true
+}
+
+func NotFoundKeyForPrefix(prefix string) string {
+	return prefix + "404.html"
+}
+
 // Candidates 返回按优先级排列的候选 key，调用方依次尝试直到命中。
 //
 // 返回 false 表示路径非法（含控制字符），应当直接拒绝而不是继续尝试。
@@ -30,6 +62,16 @@ func NotFoundKey(siteID string) string {
 // 不做 SPA 的 index.html 全局兜底：建站 Skill 已禁止 History 模式路由，
 // 全局兜底只会把真正的 404 伪装成 200，掩盖发布产物缺文件的问题。
 func Candidates(siteID string, requestPath string) ([]string, bool) {
+	return CandidatesForPrefix(PublishedPrefix(siteID), requestPath)
+}
+
+// CandidatesForPrefix maps a request into a prefix that has already passed
+// ValidatePublishedPrefix. It still rejects malformed prefixes defensively so a
+// future caller cannot accidentally bypass the ownership validation contract.
+func CandidatesForPrefix(prefix string, requestPath string) ([]string, bool) {
+	if prefix == "" || !strings.HasSuffix(prefix, "/") || strings.ContainsAny(prefix, "\x00\r\n") {
+		return nil, false
+	}
 	if strings.ContainsAny(requestPath, "\x00\r\n") {
 		return nil, false
 	}
@@ -39,7 +81,6 @@ func Candidates(siteID string, requestPath string) ([]string, bool) {
 	// 因此清理后的路径不可能逃出站点前缀。
 	cleaned := path.Clean("/" + requestPath)
 
-	prefix := PublishedPrefix(siteID)
 	if cleaned == "/" {
 		return []string{prefix + "index.html"}, true
 	}

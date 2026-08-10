@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -339,7 +340,8 @@ func TestWebsiteInstanceRouteRewritesAndPreservesCredential(t *testing.T) {
 				t.Fatalf("%s leaked to upstream: %q", header, got)
 			}
 		}
-		w.WriteHeader(http.StatusNoContent)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"code":"OK","data":{"upload_url":"https://upload.example.test/signed","upload_headers":{"Content-Length":"123","x-cos-meta-artifact-sha256":"abc"}}}`)
 	}))
 	defer upstream.Close()
 
@@ -369,8 +371,11 @@ func TestWebsiteInstanceRouteRewritesAndPreservesCredential(t *testing.T) {
 
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNoContent || upstreamCalls != 1 {
-		t.Fatalf("status = %d upstream calls = %d, want 204/1; body=%s", rec.Code, upstreamCalls, rec.Body.String())
+	if rec.Code != http.StatusOK || upstreamCalls != 1 {
+		t.Fatalf("status = %d upstream calls = %d, want 200/1; body=%s", rec.Code, upstreamCalls, rec.Body.String())
+	}
+	if got := rec.Body.String(); !strings.Contains(got, `"upload_headers":{"Content-Length":"123","x-cos-meta-artifact-sha256":"abc"}`) {
+		t.Fatalf("signed upload headers were not preserved: %s", got)
 	}
 
 	blockedReq := httptest.NewRequest(http.MethodPost, "/v1/instance/websites/ws-1/publish-admin", nil)

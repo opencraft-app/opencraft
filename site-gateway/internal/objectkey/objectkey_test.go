@@ -102,3 +102,41 @@ func TestPrefixesMatchDeployerLayout(t *testing.T) {
 		t.Fatalf("NotFoundKey = %q", got)
 	}
 }
+
+func TestValidatePublishedPrefix(t *testing.T) {
+	tests := []struct {
+		name      string
+		cloudPath string
+		want      string
+		ok        bool
+	}{
+		{"legacy blank", "", "sites/" + siteID + "/current/", true},
+		{"legacy current", "sites/" + siteID + "/current/", "sites/" + siteID + "/current/", true},
+		{"immutable release", "sites/" + siteID + "/releases/wr-0123456789abcdef/", "sites/" + siteID + "/releases/wr-0123456789abcdef/", true},
+		{"other site", "sites/ws-other/releases/wr-0123456789abcdef/", "", false},
+		{"traversal", "sites/" + siteID + "/releases/../current/", "", false},
+		{"missing slash", "sites/" + siteID + "/releases/wr-0123456789abcdef", "", false},
+		{"unexpected namespace", "_artifacts/" + siteID + "/wr-0123456789abcdef.zip", "", false},
+		{"unsafe release", "sites/" + siteID + "/releases/wr-../../secret/", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := ValidatePublishedPrefix(siteID, tt.cloudPath)
+			if got != tt.want || ok != tt.ok {
+				t.Fatalf("ValidatePublishedPrefix(%q) = (%q, %v), want (%q, %v)", tt.cloudPath, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestCandidatesForImmutablePrefix(t *testing.T) {
+	prefix := "sites/" + siteID + "/releases/wr-0123456789abcdef/"
+	got, ok := CandidatesForPrefix(prefix, "/assets/app.js")
+	if !ok {
+		t.Fatal("immutable prefix candidates rejected")
+	}
+	want := []string{prefix + "assets/app.js"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("CandidatesForPrefix = %v, want %v", got, want)
+	}
+}

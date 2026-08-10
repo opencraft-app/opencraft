@@ -15,7 +15,7 @@
 链路：
 
 ```
-Hermes 里的 Skill (cloudbase-site-builder)
+Hermes 里的 Skill (`website-builder`)
    ↓ HTTPS /v1/websites/*
 service-gateway → ctl（建站编排 + 配额 + 状态机）
    ↓ Redis 队列通知 + DB 持久重试
@@ -167,7 +167,7 @@ Agent 按常规传 UUID → 永不命中 → 网络超时重试会重复建站�
 - `WEBSITE_REQUIRE_REDIS_LIMITER` 语义与 fail-closed 行为
 - `pass_hook.go` 的过时注释更新（说明席位归还时机、制品清理归属、配额行为何故意保留）
 
-### 2.12 Skill 准备（`.agents/skills/cloudbase-site-builder/SKILL.md`）
+### 2.12 Skill 准备（`.agents/skills/website-builder/SKILL.md`）
 
 - `VELA_API_BASE` 默认值从测试域名 `lightclaw.tech` 改为按站点归属取生产地址
   （国内 `https://api.lightvela.com`，国际 `https://api.lightvela.ai`），测试靠环境变量覆盖

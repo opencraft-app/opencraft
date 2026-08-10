@@ -27,7 +27,7 @@ func IsolateSitesOnPassExpired(logger *zap.Logger, userID string) error {
 
 // ReactivateSitesOnPassRenewed Pass 续费时把用户所有 suspended 站点转回 active。
 //
-// 不从制品恢复：隔离时一个文件都没删，转 active 后网关立刻回源到原来的 current/。
+// 不从制品恢复：隔离时一个文件都没删，转 active 后网关立刻回源到原来的 cloud_path。
 func ReactivateSitesOnPassRenewed(logger *zap.Logger, userID string) error {
 	if logger != nil {
 		logger.Info("website: reactivating sites on pass renewed", zap.String("user_id", userID))

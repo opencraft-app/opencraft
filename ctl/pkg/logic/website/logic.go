@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -59,11 +60,12 @@ type CreateReleaseRequest struct {
 }
 
 type CreateReleaseResult struct {
-	ReleaseID    string `json:"release_id"`
-	OperationID  string `json:"operation_id"`
-	Version      int    `json:"version"`
-	UploadURL    string `json:"upload_url"`
-	UploadMethod string `json:"upload_method"`
+	ReleaseID     string            `json:"release_id"`
+	OperationID   string            `json:"operation_id"`
+	Version       int               `json:"version"`
+	UploadURL     string            `json:"upload_url"`
+	UploadMethod  string            `json:"upload_method"`
+	UploadHeaders map[string]string `json:"upload_headers"`
 }
 
 type DeleteSiteResult struct {
@@ -79,8 +81,9 @@ type DeleteSiteResult struct {
 // 30 秒 TTL 缓存，把两个数字塞进同一次回源是零额外成本；新增一次回源则会让
 // 站点的全部流量再多打一遍 ctl。
 type SiteStatusView struct {
-	SiteID string `json:"site_id"`
-	Status string `json:"status"`
+	SiteID    string `json:"site_id"`
+	Status    string `json:"status"`
+	CloudPath string `json:"cloud_path"`
 	// MonthlyTrafficBytes 为 0 表示不限额（额度未配置或查不到），网关按不拦截处理。
 	MonthlyTrafficBytes int64 `json:"monthly_traffic_bytes"`
 	UsedTrafficBytes    int64 `json:"used_traffic_bytes"`
@@ -605,14 +608,23 @@ func (l *logic) CreateRelease(userID, siteID string, req CreateReleaseRequest) (
 	}
 
 	// 安全校验
-	if req.ArtifactHash != "" && !validateArtifactHash(req.ArtifactHash) {
+	if !validateArtifactHash(req.ArtifactHash) {
 		return nil, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "invalid artifact_hash format")
+	}
+	if req.ArtifactSize <= 0 {
+		return nil, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "artifact_size must be positive")
+	}
+	if req.FileCount <= 0 {
+		return nil, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "file_count must be positive")
 	}
 	if q.MaxArtifactSize > 0 && req.ArtifactSize > q.MaxArtifactSize {
 		return nil, errcode.ErrWebsiteArtifactTooLarge
 	}
 	if q.MaxFiles > 0 && req.FileCount > q.MaxFiles {
 		return nil, errcode.ErrWebsiteFileCountExceeded
+	}
+	if q.StorageBytes <= 0 {
+		return nil, errcode.ErrWebsiteNoQuota
 	}
 
 	releaseID, err := l.generateID("website_release", "wr")
@@ -624,9 +636,31 @@ func (l *logic) CreateRelease(userID, siteID string, req CreateReleaseRequest) (
 		return nil, err
 	}
 
+	// Signing does not perform a COS request. Do it before the transaction so a
+	// missing or invalid runtime configuration cannot leave an unusable pending
+	// release and operation behind.
+	uploadURL, uploadHeaders, err := generateUploadURL(siteID, releaseID, req.ArtifactSize, req.ArtifactHash)
+	if err != nil {
+		return nil, err
+	}
+
 	// The site row serializes version allocation and advances the fencing generation.
 	var version int
 	err = resource.GormDB.Transaction(func(tx *gorm.DB) error {
+		// The user's single website quota row is also the storage-reservation lock.
+		// Locking only one site would allow simultaneous releases on two sites to
+		// both observe the same remaining user-wide storage budget.
+		var quotaRow quota.Entity
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table(quota.TableName).
+			Where(quota.ColumnUserID+" = ? AND "+quota.ColumnResourceName+" = ?",
+				userID, website.ResourceNameWebsiteSite).
+			Order("id ASC").First(&quotaRow).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errcode.ErrWebsiteNoQuota
+			}
+			return fmt.Errorf("lock website quota: %w", err)
+		}
+
 		var lockedSite website.SiteEntity
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Table(website.SitesTable).
@@ -637,6 +671,39 @@ func (l *logic) CreateRelease(userID, siteID string, req CreateReleaseRequest) (
 		if lockedSite.Status != website.SiteStatusCreating && lockedSite.Status != website.SiteStatusActive {
 			return errcode.ErrWebsiteNotActive
 		}
+
+		inFlightStatuses := []string{
+			website.ReleaseStatusPending,
+			website.ReleaseStatusUploading,
+			website.ReleaseStatusDeploying,
+		}
+		var inFlightForSite int64
+		if err := tx.Table(website.ReleasesTable).
+			Where("site_id = ? AND status IN ?", siteID, inFlightStatuses).
+			Count(&inFlightForSite).Error; err != nil {
+			return fmt.Errorf("count in-flight releases: %w", err)
+		}
+		if inFlightForSite > 0 {
+			return errcode.ErrWebsiteReleaseInProgress
+		}
+
+		var usedStorage int64
+		if err := tx.Table(website.SitesTable).
+			Where("user_id = ? AND deleted_time IS NULL", userID).
+			Select("COALESCE(SUM(storage_bytes), 0)").Scan(&usedStorage).Error; err != nil {
+			return fmt.Errorf("sum website storage: %w", err)
+		}
+		var reservedStorage int64
+		if err := tx.Table(website.ReleasesTable).
+			Where("user_id = ? AND status IN ?", userID, inFlightStatuses).
+			Select("COALESCE(SUM(artifact_size), 0)").Scan(&reservedStorage).Error; err != nil {
+			return fmt.Errorf("sum website upload reservations: %w", err)
+		}
+		if usedStorage > q.StorageBytes || reservedStorage > q.StorageBytes-usedStorage ||
+			req.ArtifactSize > q.StorageBytes-usedStorage-reservedStorage {
+			return errcode.ErrWebsiteQuotaExceeded
+		}
+
 		site = &lockedSite
 		site.OperationGeneration++
 		if err := tx.Table(website.SitesTable).Where("site_id = ?", siteID).
@@ -683,17 +750,15 @@ func (l *logic) CreateRelease(userID, siteID string, req CreateReleaseRequest) (
 		return nil, err
 	}
 
-	// COS 预签名上传 URL。配置不可用时返回空，由调用方决定是否降级。
-	uploadURL := generateUploadURL(siteID, releaseID)
-
 	l.notifyDeployer(operationID)
 
 	return &CreateReleaseResult{
-		ReleaseID:    releaseID,
-		OperationID:  operationID,
-		Version:      version,
-		UploadURL:    uploadURL,
-		UploadMethod: "PUT",
+		ReleaseID:     releaseID,
+		OperationID:   operationID,
+		Version:       version,
+		UploadURL:     uploadURL,
+		UploadMethod:  "PUT",
+		UploadHeaders: uploadHeaders,
 	}, nil
 }
 
@@ -701,26 +766,35 @@ func (l *logic) CreateRelease(userID, siteID string, req CreateReleaseRequest) (
 //
 // 预签名 URL 的 key 由服务端拼接，Agent 只能往指定的制品路径写，
 // 无法借这个 URL 触达其他站点的前缀。
-func generateUploadURL(siteID, releaseID string) string {
+func generateUploadURL(siteID, releaseID string, artifactSize int64, artifactHash string) (string, map[string]string, error) {
 	bucket, region := siteCOSBucket()
 	secretID, secretKey := siteCOSSecrets()
 	if bucket == "" || region == "" || secretID == "" || secretKey == "" {
-		return ""
+		return "", nil, errcode.ErrWebsiteUploadUnavailable
 	}
 
 	bucketURL, err := url.Parse(fmt.Sprintf("https://%s.cos.%s.myqcloud.com", bucket, region))
 	if err != nil {
-		return ""
+		return "", nil, errcode.Wrap(errcode.ErrWebsiteUploadUnavailable, "invalid COS endpoint: %v", err)
 	}
 	client := cos.NewClient(&cos.BaseURL{BucketURL: bucketURL}, &http.Client{})
 
 	// 制品 zip 放在 _artifacts/ prefix 下，与站点文件 sites/ 分开
 	key := fmt.Sprintf("_artifacts/%s/%s.zip", siteID, releaseID)
-	presignedURL, err := client.Object.GetPresignedURL(context.Background(), http.MethodPut, key, secretID, secretKey, time.Hour, nil)
+	normalizedHash := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(artifactHash), "sha256:"))
+	requiredHeaders := http.Header{}
+	requiredHeaders.Set("Content-Length", strconv.FormatInt(artifactSize, 10))
+	requiredHeaders.Set("x-cos-meta-artifact-sha256", normalizedHash)
+	options := &cos.PresignedURLOptions{Header: &requiredHeaders}
+	presignedURL, err := client.Object.GetPresignedURL(
+		context.Background(), http.MethodPut, key, secretID, secretKey, time.Hour, options)
 	if err != nil {
-		return ""
+		return "", nil, errcode.Wrap(errcode.ErrWebsiteUploadUnavailable, "sign COS upload URL: %v", err)
 	}
-	return presignedURL.String()
+	return presignedURL.String(), map[string]string{
+		"Content-Length":             requiredHeaders.Get("Content-Length"),
+		"x-cos-meta-artifact-sha256": requiredHeaders.Get("x-cos-meta-artifact-sha256"),
+	}, nil
 }
 
 // ---- ListReleases ----
@@ -768,7 +842,7 @@ func (l *logic) GetSiteInternal(siteID string) (*SiteStatusView, error) {
 	if site == nil || site.DeletedTime != nil {
 		return nil, errcode.ErrWebsiteNotFound
 	}
-	view := &SiteStatusView{SiteID: site.SiteID, Status: site.Status}
+	view := &SiteStatusView{SiteID: site.SiteID, Status: site.Status, CloudPath: site.CloudPath}
 	view.MonthlyTrafficBytes, view.UsedTrafficBytes = l.trafficBudgetForSite(site)
 	return view, nil
 }
@@ -813,6 +887,18 @@ func (l *logic) GetOperationInternal(operationID string) (*website.OperationEnti
 	}
 	if site == nil {
 		return nil, errcode.ErrWebsiteNotFound
+	}
+	op.ActiveCloudPath = site.CloudPath
+	if op.ReleaseID != "" {
+		release, err := l.releaseDao.GetByReleaseID(op.ReleaseID)
+		if err != nil {
+			return nil, err
+		}
+		if release == nil || release.SiteID != op.SiteID || release.UserID != op.UserID {
+			return nil, errcode.ErrWebsiteReleaseNotFound
+		}
+		op.ArtifactHash = release.ArtifactHash
+		op.ArtifactSize = release.ArtifactSize
 	}
 	return op, nil
 }
@@ -970,7 +1056,7 @@ func (l *logic) CompleteOperation(operationID, leaseToken, cloudPath, publicURL 
 		case website.OpTypeSuspend:
 			// 到期隔离已改成纯状态迁移，不再登记 suspend 操作，这个分支只服务历史行。
 			// 站点状态由 OnPassIsolated 的事务写定，这里除了确认操作终态无事可做——
-			// 尤其不能再清空 cloud_path：文件从此永久保留，current/ 一直有效。
+			// 尤其不能再清空 cloud_path：文件从此永久保留，已激活 release 一直有效。
 
 		case website.OpTypeResume:
 			// 续费恢复同样已改成纯状态迁移，这个分支只服务历史行：把一个旧的
@@ -1332,9 +1418,7 @@ func (l *logic) DeleteSite(userID, siteID string) (*DeleteSiteResult, error) {
 //
 // 套餐到期、续费和销毁都只改站点状态，一个 COS 对象都不动。
 //
-// 一期在 CloudBase 上时，平台不在访问路径上（用户拿到的是 CloudBase 原生 URL），
-// 让站点下线的唯一手段是删掉 sites/{siteID}/current/。现在反代（site-gateway）
-// 是自研的：它每次请求都查站点状态，suspended/blocked 直接返 403 且不回源，
+// site-gateway 每次请求都查站点状态，suspended/blocked 直接返 403 且不回源，
 // 因此「下线」是一次状态写入就能达成的效果，不再需要删文件。
 //
 // 产品据此定下的模型：到期与销毁都不真实删除用户数据，文件永久保留，只是不对外服务。
@@ -1385,7 +1469,7 @@ func (l *logic) OnPassIsolated(userID string) error {
 // OnPassRenewed Pass 续费成功后把用户所有 suspended 站点转回 active。
 //
 // 不需要从制品恢复：隔离时文件一个都没删，转 active 后网关立刻回源到原来的
-// current/，用户看到的还是下线前那一版内容，地址也不变。
+// 已激活的 cloud_path，用户看到的还是下线前那一版内容，地址也不变。
 func (l *logic) OnPassRenewed(userID string) error {
 	sites, err := l.siteDao.ListSuspendedByUserID(userID)
 	if err != nil {

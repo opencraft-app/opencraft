@@ -270,6 +270,8 @@ func TestMonthRangeIncludesBothBoundaryDays(t *testing.T) {
 
 func TestUpdateSiteStorageAndUserSum(t *testing.T) {
 	newWebsiteOperationTestDB(t)
+	seedPassAndBundle(t, "user-1", "bundle-1", testQuotaJSON)
+	seedPassAndBundle(t, "user-2", "bundle-2", testQuotaJSON)
 	seedSite(t, "ws-a", "user-1", website.SiteStatusActive, 1)
 	seedSite(t, "ws-b", "user-1", website.SiteStatusActive, 1)
 	seedSite(t, "ws-other", "user-2", website.SiteStatusActive, 1)
@@ -312,6 +314,7 @@ func TestUpdateSiteStorageAndUserSum(t *testing.T) {
 // 存储口径与流量相反：已删除的站点其 COS 对象真的被清掉了，不该继续占额度。
 func TestStorageSumExcludesDeletedSites(t *testing.T) {
 	newWebsiteOperationTestDB(t)
+	seedPassAndBundle(t, "user-1", "bundle-1", testQuotaJSON)
 	seedSite(t, "ws-live", "user-1", website.SiteStatusActive, 1)
 	seedSite(t, "ws-dead", "user-1", website.SiteStatusDeleted, 1)
 

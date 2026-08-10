@@ -19,8 +19,8 @@ import (
 
 const (
 	tokenPrefix         = "vwk"
-	credentialKeyPrefix = "website:instance-key:"
-	instanceIndexPrefix = "website:instance-keys:"
+	credentialKeyPrefix = "website:{website-instance-keys}:credential:"
+	instanceIndexPrefix = "website:{website-instance-keys}:instance:"
 	keyIDBytes          = 16
 	secretBytes         = 32
 	saltBytes           = 32
@@ -38,7 +38,7 @@ type Binding struct {
 type Store interface {
 	Issue(ctx context.Context, userID, instanceID string) (plainToken string, binding Binding, err error)
 	Validate(ctx context.Context, plainToken string) (*Binding, error)
-	Revoke(ctx context.Context, keyID string) error
+	Revoke(ctx context.Context, instanceID, keyID string) error
 	RevokeInstance(ctx context.Context, instanceID string) error
 }
 
@@ -142,8 +142,9 @@ func (s *store) Validate(ctx context.Context, plainToken string) (*Binding, erro
 	}, nil
 }
 
-func (s *store) Revoke(ctx context.Context, keyID string) error {
-	if keyID == "" {
+func (s *store) Revoke(ctx context.Context, instanceID, keyID string) error {
+	expectedInstanceID := strings.TrimSpace(instanceID)
+	if expectedInstanceID == "" || keyID == "" {
 		return nil
 	}
 	if s.client == nil {
@@ -151,15 +152,22 @@ func (s *store) Revoke(ctx context.Context, keyID string) error {
 	}
 
 	key := credentialKeyPrefix + keyID
-	instanceID, err := s.client.HGet(ctx, key, "instance_id").Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
+	storedInstanceID, err := s.client.HGet(ctx, key, "instance_id").Result()
+	if errors.Is(err, redis.Nil) {
+		return ErrInvalidCredential
+	}
+	if err != nil {
 		return fmt.Errorf("websiteauth load credential for revoke: %w", err)
+	}
+	if storedInstanceID == "" {
+		return ErrInvalidCredential
+	}
+	if storedInstanceID != expectedInstanceID {
+		return ErrInvalidCredential
 	}
 	_, err = s.client.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 		pipe.Del(ctx, key)
-		if instanceID != "" {
-			pipe.SRem(ctx, instanceIndexPrefix+instanceID, keyID)
-		}
+		pipe.SRem(ctx, instanceIndexPrefix+expectedInstanceID, keyID)
 		return nil
 	})
 	if err != nil {

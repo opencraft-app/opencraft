@@ -99,6 +99,7 @@ fi
 
 require_cmd base64
 require_cmd date
+require_cmd python3
 require_cmd tccli
 
 # Validate the install script syntax
@@ -135,8 +136,8 @@ response="$(
     --Timeout "$COMMAND_TIMEOUT"
 )"
 
-command_id="$(printf '%s' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("CommandId", ""))')"
-[[ -n "$command_id" ]] || fail "CreateCommand response missing CommandId: $response"
+command_id="$(printf '%s' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("Response", {}).get("CommandId", ""))')"
+[[ -n "$command_id" ]] || fail "CreateCommand response missing Response.CommandId"
 
 printf 'HERMES_TAT_COMMAND_ID=%s\n' "$command_id"
 if [[ -n "$OUTPUT_ENV_FILE" ]]; then

@@ -42,9 +42,11 @@ Argo 直接从这个目录（在 `gitops` 分支上）渲染并下发。
 | key | 说明 |
 |---|---|
 | `WEBSITE_INTERNAL_API_TOKEN` | **必须与 ctl 侧 `ctl-runtime-secrets` 的同名 key 同值**，否则全部 claim 401 |
-| `TENCENT_SECRET_ID` / `TENCENT_SECRET_KEY` | TCB 环境发现 + COS 上传。注意与 shanghai-workers 的 `TENCENTCLOUD_SECRET_ID/KEY` **不是同一个名字** |
+| `WEBSITE_COS_SECRET_ID` / `WEBSITE_COS_SECRET_KEY` | 用户站点独立 COS 桶的最小权限凭据；CTL、worker、site-gateway 必须使用同一套 |
 | `REDIS_ADDR` / `REDIS_PASSWORD` | VPC 内网地址不进 Git 明文，所以放 secret。取值必须来自 ctl 现有配置，不要凭猜 |
-| `TCB_ENV_ALLOWLIST` | TCB 环境 id 列表。为空则 worker 自禁用（fail-closed） |
+
+桶名和地域不是凭据，放在 `workers-platform.env` 的 `WEBSITE_COS_BUCKET` /
+`WEBSITE_COS_REGION`。当前实现固定使用一个独立 COS 桶。
 
 长期权威真源是腾讯云 SSM，Git 里的 `*.sops.yaml` 只是 deployable snapshot。
 导出 manifest：`scripts/ssm_manifest.workers-website-deployer.shprod.yaml`。
@@ -56,7 +58,7 @@ python3 scripts/export_ssm_to_sops.py \
 python3 scripts/scan_secrets.py argocd/secrets/shprod/website-deployer-secrets.sops.yaml
 ```
 
-> ⚠️ 当前仓库里的 `website-deployer-secrets.sops.yaml` 全部是
+> 当前仓库里的 `website-deployer-secrets.sops.yaml` 全部是
 > `REPLACE_ME_VIA_PROTECTED_PIPELINE` 占位符。**在完成上面的 SSM 导出之前不要执行
 > Argo sync**，否则 worker 会带着占位符启动并对 ctl 全量 401。
 > 详见 `docs/runbooks/website-deployer-shprod-rollout.md`。

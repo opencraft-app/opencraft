@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +24,53 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/tencentyun/cos-go-sdk-v5"
 )
+
+func normalizeArtifactDigest(value string) string {
+	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(value), "sha256:"))
+}
+
+// verifyArtifactUpload treats every client-controlled declaration as untrusted.
+// The upload is accepted only when the signed response length, COS metadata,
+// database declaration, actual byte count, and computed digest all agree.
+func verifyArtifactUpload(body io.Reader, contentLength int64, metadataHash string,
+	declaredSize int64, declaredHash string, maxBytes int64) ([]byte, error) {
+	if declaredSize <= 0 || maxBytes <= 0 {
+		return nil, fmt.Errorf("invalid artifact size contract")
+	}
+	if contentLength != declaredSize {
+		return nil, fmt.Errorf("artifact content length %d does not match declared %d", contentLength, declaredSize)
+	}
+	if declaredSize > maxBytes {
+		return nil, fmt.Errorf("artifact exceeds %d byte limit", maxBytes)
+	}
+	normalizedDeclared := normalizeArtifactDigest(declaredHash)
+	normalizedMetadata := normalizeArtifactDigest(metadataHash)
+	decoded, err := hex.DecodeString(normalizedDeclared)
+	if err != nil || len(decoded) != sha256.Size || hex.EncodeToString(decoded) != normalizedDeclared {
+		return nil, fmt.Errorf("invalid declared artifact SHA-256")
+	}
+	if normalizedMetadata == "" || normalizedMetadata != normalizedDeclared {
+		return nil, fmt.Errorf("artifact metadata SHA-256 does not match declaration")
+	}
+
+	hasher := sha256.New()
+	limited := io.LimitReader(body, maxBytes+1)
+	data, err := io.ReadAll(io.TeeReader(limited, hasher))
+	if err != nil {
+		return nil, fmt.Errorf("read artifact: %w", err)
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("artifact exceeds %d byte limit", maxBytes)
+	}
+	if int64(len(data)) != declaredSize {
+		return nil, fmt.Errorf("artifact body size %d does not match declared %d", len(data), declaredSize)
+	}
+	actualHash := hex.EncodeToString(hasher.Sum(nil))
+	if actualHash != normalizedDeclared {
+		return nil, fmt.Errorf("artifact SHA-256 mismatch")
+	}
+	return data, nil
+}
 
 // cosClient 包装 COS 客户端 + 元信息
 type cosClient struct {
@@ -43,8 +92,7 @@ type Deployer struct {
 
 	// siteCos 是所有用户站点共用的 COS 桶。
 	//
-	// 一期用 CloudBase 托管时，每个 TCB 环境一个桶，需要环境发现、容量统计和
-	// 超限切换；现在改为自建单桶 + 前缀分租户，这些机制全部不再需要。
+	// 站点按 sites/{siteID}/ 和 _artifacts/{siteID}/ 前缀隔离。
 	siteCos *cosClient
 	// siteRootDomain 是站点子域名的根域，公开 URL 由它和 siteID 拼成。
 	// 走配置而非常量：测试与正式用不同的域，正式根域后续还会更换。
@@ -219,15 +267,8 @@ func (d *Deployer) getSitePublicURL(op Operation) string {
 	return fmt.Sprintf("%s://%s.%s/", d.siteURLScheme, op.SiteID, d.siteRootDomain)
 }
 
-// 站点在 CloudBase 静态托管桶里的目录布局：
-//
-//	sites/{siteID}/current/            对外服务的稳定目录，公开 URL 只指向这里
-//	sites/{siteID}/releases/{relID}/   单次发布的暂存目录，成功后同步到 current/
-//	_artifacts/{siteID}/{relID}.zip    上传的制品，保留用于版本追溯
-//
-// 之所以引入 current/ 这一层：早期实现把公开 URL 直接指向
-// releases/{releaseID}/index.html，导致每次重新发布 URL 都变，
-// 用户此前分享出去的链接会指向旧版本，且旧目录永不清理、存储单调增长。
+// sitePublishedPrefix is retained only for test-environment sites created by
+// the pre-immutable layout. New deployments activate siteReleasePrefix.
 func sitePublishedPrefix(siteID string) string {
 	return fmt.Sprintf("sites/%s/current/", siteID)
 }
@@ -350,7 +391,7 @@ func (d *Deployer) executeCreate(op Operation) error {
 	return d.completeOperation(op, sitePublishedPrefix(op.SiteID), d.getSitePublicURL(op))
 }
 
-// executeDeploy 部署站点：等待用户上传制品 → 发布到 current/。
+// executeDeploy 部署站点：等待用户上传制品并发布到不可变 release 前缀。
 func (d *Deployer) executeDeploy(op Operation) error {
 	return d.publishRelease(op, true)
 }
@@ -358,7 +399,7 @@ func (d *Deployer) executeDeploy(op Operation) error {
 // executeResume 套餐续费恢复站点 —— 已无需任何 COS 操作，直接收敛为成功。
 //
 // 到期隔离不再删除线上文件（产品：文件永久保留，只是不对外服务），所以续费时
-// current/ 原样在位，ctl 把站点状态改回 active 后网关立刻回源，没有东西需要重新发布。
+// 已激活的 cloud_path 原样在位，ctl 把站点状态改回 active 后网关立刻回源。
 //
 // 分支保留而不是删掉：resume 这个操作类型在 DB 和迁移里已经存在，历史行可能还在，
 // 删掉分支会让 worker 领到这类操作时报 unknown operation type 并把它打进重试直到 dead。
@@ -367,10 +408,8 @@ func (d *Deployer) executeResume(op Operation) error {
 	return d.completeOperation(op, sitePublishedPrefix(op.SiteID), d.getSitePublicURL(op))
 }
 
-// publishRelease 是 deploy 与 resume 的共同实现。
-//
-// 流程：下载制品 → 校验 → 上传到 releases/{releaseID}/ 暂存 → 同步到 current/。
-// 先写暂存目录再同步，是为了让上传中途失败不会破坏正在对外服务的 current/。
+// publishRelease downloads and verifies one artifact, writes a complete immutable
+// release prefix, then asks ctl to switch website_sites.cloud_path atomically.
 func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 	siteCos := d.siteCos
 	if siteCos == nil {
@@ -379,6 +418,21 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 
 	// 1. 下载制品。deploy 场景下 Agent 可能还在上传，需要给它一个窗口。
 	artifactKey := siteArtifactKey(op.SiteID, op.ReleaseID)
+	stagingPrefix := siteReleasePrefix(op.SiteID, op.ReleaseID)
+	cleanupArtifact := true
+	keepReleasePrefix := false
+	defer func() {
+		if !keepReleasePrefix {
+			if err := d.deleteCosPrefix(siteCos, stagingPrefix, op); err != nil {
+				log.Printf("warning: cleanup failed release prefix %s: %v", stagingPrefix, err)
+			}
+		}
+		if cleanupArtifact {
+			if _, err := siteCos.client.Object.Delete(context.Background(), artifactKey); err != nil {
+				log.Printf("warning: cleanup failed artifact %s: %v", artifactKey, err)
+			}
+		}
+	}()
 	maxRetries := 1
 	if waitForArtifact {
 		maxRetries = int(getPositiveInt64Env("WEBSITE_ARTIFACT_WAIT_ATTEMPTS", 6))
@@ -402,16 +456,14 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 		return d.failOperation(op, fmt.Sprintf("download artifact after %d attempts: %v", maxRetries, dlErr))
 	}
 	defer resp.Body.Close()
-	zipData, err := io.ReadAll(io.LimitReader(resp.Body, d.maxArtifactBytes+1))
+	zipData, err := verifyArtifactUpload(resp.Body, resp.ContentLength,
+		resp.Header.Get("x-cos-meta-artifact-sha256"),
+		op.ArtifactSize, op.ArtifactHash, d.maxArtifactBytes)
 	if err != nil {
-		return d.failOperation(op, fmt.Sprintf("read artifact: %v", err))
-	}
-	if int64(len(zipData)) > d.maxArtifactBytes {
-		return d.failOperation(op, fmt.Sprintf("artifact exceeds %d byte limit", d.maxArtifactBytes))
+		return d.failOperation(op, fmt.Sprintf("verify artifact: %v", err))
 	}
 
 	// 2. 解压并校验（防zip-slip / 文件数 / 解压炸弹，并要求根目录有 index.html）
-	stagingPrefix := siteReleasePrefix(op.SiteID, op.ReleaseID)
 	zipReader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
 	if err != nil {
 		return d.failOperation(op, fmt.Sprintf("unzip artifact: %v", err))
@@ -427,8 +479,6 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 	var wg sync.WaitGroup
 	var uploadErrors []error
 	var errMu sync.Mutex
-	relativeNames := make([]string, 0, len(zipReader.File))
-
 	for _, file := range zipReader.File {
 		if file.FileInfo().IsDir() || strings.HasSuffix(file.Name, "/") {
 			continue
@@ -436,7 +486,6 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 
 		// 安全：清理路径，防止路径穿越
 		cleanName := strings.TrimPrefix(filepath.Clean("/"+file.Name), "/")
-		relativeNames = append(relativeNames, cleanName)
 		cosKey := stagingPrefix + cleanName
 
 		reader, size, err := openZipEntryForUpload(file)
@@ -483,124 +532,49 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 		return d.failOperation(op, fmt.Sprintf("upload failed, %d errors, first: %v", len(uploadErrors), uploadErrors[0]))
 	}
 
-	// 4.暂存目录已完整，切换对外服务的 current/。
-	// 失败时故意保留暂存目录，便于人工从完整副本恢复。
-	if err := d.syncToCurrent(siteCos, op, stagingPrefix, relativeNames); err != nil {
-		return d.failOperation(op, fmt.Sprintf("publish to current: %v", err))
+	// 4. The verified zip is temporary. Immutable release objects are the durable
+	// source of truth, so remove the artifact before measuring retained storage.
+	// Requiring deletion here prevents a lifecycle cleanup from silently changing
+	// a storage value that CTL already accepted.
+	if _, err := siteCos.client.Object.Delete(context.Background(), artifactKey); err != nil {
+		return d.failOperation(op, fmt.Sprintf("delete temporary artifact: %v", err))
+	}
+	cleanupArtifact = false
+
+	// 5. Retain exactly the candidate and CTL's actual previous active release.
+	// This is safe before activation because the previous active prefix is never a
+	// deletion candidate; if cleanup fails, the candidate is removed and the old
+	// site remains public.
+	if err := d.pruneSiteReleases(siteCos, op.SiteID, op.ReleaseID, op.ActiveCloudPath); err != nil {
+		return d.failOperation(op, fmt.Sprintf("prune stale releases before activation: %v", err))
 	}
 
-	// 5. 清理暂存目录。
-	if err := d.deleteCosPrefix(siteCos, stagingPrefix, op); err != nil {
-		//暂存目录只占存储、不影响对外服务，清理失败不应让整次发布失败。
-		log.Printf("warning: cleanup staging prefix %s failed: %v", stagingPrefix, err)
+	// 6. The candidate is complete. CTL must accept its actual retained storage
+	// before activation; this closes the compressed-archive expansion gap left by
+	// CreateRelease's declared artifact reservation.
+	actualStorage, err := d.siteStorageBytes(siteCos, op.SiteID)
+	if err != nil {
+		return d.failOperation(op, fmt.Sprintf("compute storage before activation: %v", err))
+	}
+	if err := d.reportSiteStorage(op.SiteID, actualStorage); err != nil {
+		return d.failOperation(op, fmt.Sprintf("validate storage before activation: %v", err))
 	}
 
-	// 6. 清理超出保留数的历史制品（默认只留本次这一份）。
-	if err := d.pruneSiteArtifacts(siteCos, op.SiteID, op.ReleaseID); err != nil {
-		log.Printf("warning: prune stale artifacts for %s failed: %v", op.SiteID, err)
+	// 7. CTL switches cloud_path and release status in one DB transaction. Until
+	// this succeeds the gateway keeps serving the previous complete prefix.
+	if err := d.completeOperation(op, stagingPrefix, d.getSitePublicURL(op)); err != nil {
+		return err
 	}
+	keepReleasePrefix = true
 
-	// 7. 重算存储用量。放在清理之后，否则上报的数字里会包含刚被删掉的暂存目录和历史制品。
 	d.refreshSiteStorage(siteCos, op.SiteID)
-
-	return d.completeOperation(op, sitePublishedPrefix(op.SiteID), d.getSitePublicURL(op))
-}
-
-// syncToCurrent 把暂存目录的内容搬到对外服务的 current/ 目录，并清掉上一版的残留文件。
-//
-// 用同桶 CopyObject 而不是重新上传：zip entry 的 reader 只能读一次，
-// 且同桶复制是服务端元数据操作，比二次上传更快更省。
-func (d *Deployer) syncToCurrent(siteCos *cosClient, op Operation, stagingPrefix string, relativeNames []string) error {
-	publishedPrefix := sitePublishedPrefix(op.SiteID)
-	// COS 复制源必须是「桶域名 + / + key」的形式，不带 scheme。
-	sourceHost := fmt.Sprintf("%s.cos.%s.myqcloud.com", siteCos.bucket, siteCos.region)
-
-	desired := make(map[string]struct{}, len(relativeNames))
-	var copyErrors []error
-	var errMu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 5)
-
-	for _, name := range relativeNames {
-		desired[publishedPrefix+name] = struct{}{}
-
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(name string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-			defer cancel()
-			if err := d.waitForUploadSlot(ctx); err != nil {
-				errMu.Lock()
-				copyErrors = append(copyErrors, fmt.Errorf("rate limit %s: %v", name, err))
-				errMu.Unlock()
-				return
-			}
-			source := sourceHost + "/" + stagingPrefix + name
-			copyOpt := &cos.ObjectCopyOptions{
-				ObjectCopyHeaderOptions: &cos.ObjectCopyHeaderOptions{
-					ContentType: contentTypeForKey(name),
-					// 覆盖式复制时必须声明 REPLACED，否则 Content-Type 会沿用源对象。
-					XCosMetadataDirective: "Replaced",
-				},
-			}
-			if _, _, err := siteCos.client.Object.Copy(ctx, publishedPrefix+name, source, copyOpt); err != nil {
-				errMu.Lock()
-				copyErrors = append(copyErrors, fmt.Errorf("copy %s: %v", name, err))
-				errMu.Unlock()
-			}
-		}(name)
-	}
-	wg.Wait()
-
-	if len(copyErrors) > 0 {
-		return fmt.Errorf("%d copy errors, first: %v", len(copyErrors), copyErrors[0])
-	}
-
-	// 清掉上一版留下、本版不再包含的文件，避免旧资源继续对外可访问。
-	stale, err := d.listCosKeys(siteCos, publishedPrefix)
-	if err != nil {
-		return fmt.Errorf("list published objects: %w", err)
-	}
-	var toDelete []cos.Object
-	for _, key := range stale {
-		if _, keep := desired[key]; !keep {
-			toDelete = append(toDelete, cos.Object{Key: key})
-		}
-	}
-	for start := 0; start < len(toDelete); start += 1000 {
-		end := start + 1000
-		if end > len(toDelete) {
-			end = len(toDelete)
-		}
-		if _, _, err := siteCos.client.Object.DeleteMulti(context.Background(),
-			&cos.ObjectDeleteMultiOptions{Objects: toDelete[start:end]}); err != nil {
-			return fmt.Errorf("delete stale published objects: %w", err)
-		}
-	}
 	return nil
-}
-
-// listCosKeys 列出指定前缀下的所有对象键。
-func (d *Deployer) listCosKeys(client *cosClient, prefix string) ([]string, error) {
-	objects, err := d.listCosObjects(client, prefix)
-	if err != nil {
-		return nil, err
-	}
-	keys := make([]string, 0, len(objects))
-	for _, object := range objects {
-		keys = append(keys, object.Key)
-	}
-	return keys, nil
 }
 
 // executeSuspend 套餐到期下线站点 —— 已无需任何 COS 操作，直接收敛为成功。
 //
-// 一期在 CloudBase 上时平台不在访问路径上，下线只能靠真正删掉线上文件。现在反代
-// （site-gateway）是自研的：它每次请求都查站点状态，suspended 直接 403 且不回源，
-// 所以下线只是一次状态写入，文件必须原样保留（产品：文件永久保留，只是不对外服务）。
+// site-gateway 每次请求都检查站点状态，suspended 直接 403 且不回源，
+// 所以下线只需更新状态，文件必须原样保留（产品：文件永久保留，只是不对外服务）。
 //
 // 分支保留而不是删掉，理由同 executeResume：DB 里可能还有历史的 suspend 行。
 func (d *Deployer) executeSuspend(op Operation) error {
@@ -816,7 +790,7 @@ func openZipEntryForUpload(file *zip.File) (io.ReadCloser, int64, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	return rc, size, nil
+	return &cos.LimitedReadCloser{LimitedReader: io.LimitedReader{R: rc, N: size}}, size, nil
 }
 
 func validateZipEntries(files []*zip.File, maxFiles int, maxUncompressedBytes int64) error {

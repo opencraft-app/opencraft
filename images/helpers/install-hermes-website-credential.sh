@@ -20,9 +20,10 @@ CREDENTIAL_FILE="${DESTDIR}/etc/vela/website-credential.env"
 CREDENTIAL_DIR=""
 RUNTIME_USER="${RUNTIME_USER:-agentuser}"
 
-# Command prefix for running systemctl --user as the runtime user.
-# In tests this can be overridden to just "systemctl --user".
-SYSTEMCTL_USER_CMD="${SYSTEMCTL_USER_CMD:-runuser -u ${RUNTIME_USER} -- systemctl --user}"
+# Optional command override for running systemctl --user as the runtime user.
+# The default is assembled by run_systemctl_user so it can include the user's
+# runtime directory and D-Bus address in non-login TAT sessions.
+SYSTEMCTL_USER_CMD="${SYSTEMCTL_USER_CMD:-}"
 
 # Optional explicit unit override
 HERMES_GATEWAY_UNIT="${HERMES_GATEWAY_UNIT:-}"
@@ -41,35 +42,43 @@ fail() {
 
 validate_token() {
   local token="$1"
-  # Format: vwk_<key_id>_<secret>
-  # key_id and secret are base64url (no padding): [A-Za-z0-9_-]
-  [[ "$token" =~ ^vwk_[A-Za-z0-9_-]+_[A-Za-z0-9_-]+$ ]] || return 1
-  # Extract parts: strip vwk_ prefix, split on first _
-  local rest="${token#vwk_}"
-  local key_id="${rest%%_*}"
-  local secret="${rest#*_}"
-  # key_id = base64url(16 bytes) ≈ 22 chars, secret = base64url(32 bytes) ≈ 43 chars
-  # Be lenient: require reasonable minimums
-  [[ ${#key_id} -ge 16 ]] || return 1
-  [[ ${#secret} -ge 32 ]] || return 1
-  return 0
+  # key_id and secret are base64url, where '_' is legal data. Match their
+  # fixed encoded lengths instead of splitting on the first underscore.
+  [[ "$token" =~ ^vwk_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{43}$ ]]
+}
+
+run_systemctl_user() {
+  if [[ -n "$SYSTEMCTL_USER_CMD" ]]; then
+    $SYSTEMCTL_USER_CMD "$@"
+    return
+  fi
+
+  local runtime_uid
+  runtime_uid="$(id -u "$RUNTIME_USER")" || fail "cannot resolve uid for $RUNTIME_USER"
+  runuser -u "$RUNTIME_USER" -- env \
+    "XDG_RUNTIME_DIR=/run/user/${runtime_uid}" \
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${runtime_uid}/bus" \
+    systemctl --user "$@"
 }
 
 write_credential_file() {
   local token="$1"
   local api_base="$2"
   CREDENTIAL_DIR="$(dirname "$CREDENTIAL_FILE")"
-  mkdir -p "$CREDENTIAL_DIR"
+  mkdir -p "$CREDENTIAL_DIR" || return 1
   local tmp_file
-  tmp_file="$(mktemp "${CREDENTIAL_DIR}/.website-credential.XXXXXX")"
-  printf 'VELA_WEBSITE_KEY=%s\n' "$token" >"$tmp_file"
-  printf 'VELA_API_BASE=%s\n' "$api_base" >>"$tmp_file"
-  chmod 0440 "$tmp_file"
-  chown root:"$RUNTIME_USER" "$tmp_file" 2>/dev/null || {
-    # In test environments where chown may fail, continue but warn
-    log "WARN: chown failed, file permissions still set"
-  }
-  mv -f "$tmp_file" "$CREDENTIAL_FILE"
+  tmp_file="$(mktemp "${CREDENTIAL_DIR}/.website-credential.XXXXXX")" || return 1
+  if ! printf 'VELA_WEBSITE_KEY=%s\n' "$token" >"$tmp_file" ||
+    ! printf 'VELA_API_BASE=%s\n' "$api_base" >>"$tmp_file" ||
+    ! chmod 0440 "$tmp_file" ||
+    ! chown root:"$RUNTIME_USER" "$tmp_file" 2>/dev/null; then
+    rm -f "$tmp_file"
+    return 1
+  fi
+  if ! mv -f "$tmp_file" "$CREDENTIAL_FILE"; then
+    rm -f "$tmp_file"
+    return 1
+  fi
 }
 
 get_user_home() {
@@ -97,7 +106,7 @@ discover_gateway_unit() {
   # Also check loaded units via systemctl
   if [[ ${#found[@]} -eq 0 ]]; then
     local listed
-    listed="$($SYSTEMCTL_USER_CMD list-units --type=service --no-legend 2>/dev/null \
+    listed="$(run_systemctl_user list-units --type=service --no-legend 2>/dev/null \
       | grep -oE '(hermes-gateway|openclaw-gateway)[^ ]*\.service' || true)"
     while IFS= read -r line; do
       [[ -n "$line" ]] && found+=("$line")
@@ -136,16 +145,17 @@ add_dropin() {
   [[ -n "$user_home" ]] || fail "cannot resolve home directory for $RUNTIME_USER"
 
   local dropin_dir="${user_home}/.config/systemd/user/${unit}.d"
-  mkdir -p "$dropin_dir"
+  mkdir -p "$dropin_dir" || return 1
   local dropin_file="${dropin_dir}/vela-website-credential.conf"
-  printf '[Service]\nEnvironmentFile=%s\n' "$CREDENTIAL_FILE" >"$dropin_file"
-  chown -R "$RUNTIME_USER":"$RUNTIME_USER" "$dropin_dir" 2>/dev/null || true
+  printf '[Service]\nEnvironmentFile=%s\n' "$CREDENTIAL_FILE" >"$dropin_file" || return 1
+  chown -R "$RUNTIME_USER":"$RUNTIME_USER" "$dropin_dir" 2>/dev/null || return 1
 }
 
 restart_service() {
   local unit="$1"
-  $SYSTEMCTL_USER_CMD daemon-reload
-  $SYSTEMCTL_USER_CMD restart "$unit"
+  run_systemctl_user daemon-reload || return 1
+  run_systemctl_user restart "$unit" || return 1
+  run_systemctl_user is-active --quiet "$unit" || return 1
 }
 
 verify_credential() {
@@ -163,8 +173,6 @@ main() {
 
   validate_token "$token" || fail "invalid token format (expected vwk_<key_id>_<secret>)"
 
-  write_credential_file "$token" "$api_base"
-
   local unit="$HERMES_GATEWAY_UNIT"
   if [[ -z "$unit" ]]; then
     local discover_rc=0
@@ -175,19 +183,65 @@ main() {
         unit="$discover_out"
         ;;
       2)
-        log "WARN: multiple gateway units found, set HERMES_GATEWAY_UNIT to pick one"
+        fail "multiple gateway units found; set HERMES_GATEWAY_UNIT to pick one"
         ;;
       *)
-        log "WARN: no gateway unit found; credential file written but service not restarted"
+        fail "no gateway unit found"
         ;;
     esac
   fi
 
-  if [[ -n "$unit" ]]; then
-    add_dropin "$unit"
-    restart_service "$unit"
-    log "service restarted: $unit"
+  local user_home
+  user_home="$(get_user_home "$RUNTIME_USER")"
+  [[ -n "$user_home" ]] || fail "cannot resolve home directory for $RUNTIME_USER"
+
+  local dropin_dir="${user_home}/.config/systemd/user/${unit}.d"
+  local dropin_file="${dropin_dir}/vela-website-credential.conf"
+  local backup_dir
+  backup_dir="$(mktemp -d "${TMPDIR:-/tmp}/website-credential-backup.XXXXXX")"
+  local had_credential=false
+  local had_dropin=false
+  if [[ -f "$CREDENTIAL_FILE" ]]; then
+    cp -p "$CREDENTIAL_FILE" "${backup_dir}/credential.env"
+    had_credential=true
   fi
+  if [[ -f "$dropin_file" ]]; then
+    cp -p "$dropin_file" "${backup_dir}/dropin.conf"
+    had_dropin=true
+  fi
+
+  local apply_ok=true
+  write_credential_file "$token" "$api_base" || apply_ok=false
+  if [[ "$apply_ok" == "true" ]]; then
+    add_dropin "$unit" || apply_ok=false
+  fi
+  if [[ "$apply_ok" == "true" ]]; then
+    restart_service "$unit" || apply_ok=false
+  fi
+
+  if [[ "$apply_ok" != "true" ]]; then
+    if [[ "$had_credential" == "true" ]]; then
+      local restore_tmp
+      restore_tmp="$(mktemp "${CREDENTIAL_DIR}/.website-credential.rollback.XXXXXX")"
+      cp -p "${backup_dir}/credential.env" "$restore_tmp"
+      mv -f "$restore_tmp" "$CREDENTIAL_FILE"
+    else
+      rm -f "$CREDENTIAL_FILE"
+    fi
+    if [[ "$had_dropin" == "true" ]]; then
+      mkdir -p "$dropin_dir"
+      cp -p "${backup_dir}/dropin.conf" "$dropin_file"
+    else
+      rm -f "$dropin_file"
+    fi
+    run_systemctl_user daemon-reload >/dev/null 2>&1 || true
+    run_systemctl_user restart "$unit" >/dev/null 2>&1 || true
+    rm -rf "$backup_dir"
+    fail "credential installation failed; previous configuration restored"
+  fi
+
+  rm -rf "$backup_dir"
+  log "service restarted and active: $unit"
 
   verify_credential || fail "credential verification failed"
 

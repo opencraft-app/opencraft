@@ -11,6 +11,29 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+func redisClusterHashTag(key string) string {
+	start := strings.IndexByte(key, '{')
+	if start < 0 {
+		return key
+	}
+	end := strings.IndexByte(key[start+1:], '}')
+	if end <= 0 {
+		return key
+	}
+	return key[start+1 : start+1+end]
+}
+
+func TestCredentialKeysShareRedisClusterSlot(t *testing.T) {
+	credentialKey := credentialKeyPrefix + "key-id"
+	instanceIndexKey := instanceIndexPrefix + "instance-id"
+	if got, want := redisClusterHashTag(credentialKey), redisClusterHashTag(instanceIndexKey); got != want {
+		t.Fatalf("credential hash tag = %q, instance index hash tag = %q; transaction would cross Redis Cluster slots", got, want)
+	}
+	if got := redisClusterHashTag(credentialKey); got != "website-instance-keys" {
+		t.Fatalf("credential hash tag = %q, want website-instance-keys", got)
+	}
+}
+
 func newTestStore(t *testing.T) (Store, *redis.Client, *miniredis.Miniredis) {
 	t.Helper()
 
@@ -116,7 +139,7 @@ func TestStoreRevoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	if err := store.Revoke(ctx, binding.KeyID); err != nil {
+	if err := store.Revoke(ctx, "ins-1", binding.KeyID); err != nil {
 		t.Fatalf("Revoke: %v", err)
 	}
 	if _, err := store.Validate(ctx, token); !errors.Is(err, ErrInvalidCredential) {
@@ -124,6 +147,42 @@ func TestStoreRevoke(t *testing.T) {
 	}
 	if count, err := client.SCard(ctx, instanceIndexPrefix+"ins-1").Result(); err != nil || count != 0 {
 		t.Fatalf("instance index count = %d, err = %v, want 0", count, err)
+	}
+}
+
+func TestStoreRevokeRejectsKeyFromAnotherInstance(t *testing.T) {
+	store, _, _ := newTestStore(t)
+	ctx := context.Background()
+
+	token, binding, err := store.Issue(ctx, "user-1", "ins-1")
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	if err := store.Revoke(ctx, "ins-2", binding.KeyID); !errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("Revoke with wrong instance error = %v, want ErrInvalidCredential", err)
+	}
+	if _, err := store.Validate(ctx, token); err != nil {
+		t.Fatalf("credential must remain valid after rejected cross-instance revoke: %v", err)
+	}
+}
+
+func TestStoreRevokePreservesRedisInfrastructureError(t *testing.T) {
+	store, _, mr := newTestStore(t)
+	ctx := context.Background()
+
+	_, binding, err := store.Issue(ctx, "user-1", "ins-1")
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	mr.Close()
+
+	err = store.Revoke(ctx, "ins-1", binding.KeyID)
+	if err == nil {
+		t.Fatal("Revoke succeeded after Redis shutdown")
+	}
+	if errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("Revoke error = %v, infrastructure failures must not look like invalid credentials", err)
 	}
 }
 

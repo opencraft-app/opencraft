@@ -70,10 +70,10 @@ const (
 	OpTypeCreate = "create"
 	OpTypeDeploy = "deploy"
 	OpTypeDelete = "delete"
-	// OpTypeSuspend 套餐到期下线：删除线上发布文件，保留制品以便续费恢复。
-	OpTypeSuspend = "suspend"
-	// OpTypeResume 套餐续费恢复：从保留的制品重新发布。
-	OpTypeResume = "resume"
+		// OpTypeSuspend 仅兼容历史操作；当前套餐到期由 CTL 直接切换站点状态。
+		OpTypeSuspend = "suspend"
+		// OpTypeResume 仅兼容历史操作；当前续费不需要 COS 恢复动作。
+		OpTypeResume = "resume"
 )
 
 // ---- 列名 ----
@@ -104,7 +104,8 @@ type SiteEntity struct {
 	PublicURL      string  `gorm:"column:public_url"`
 	// OperationGeneration fences late workers so an older deploy cannot restore a deleted site.
 	OperationGeneration int64 `gorm:"column:operation_generation"`
-	// StorageBytes 是站点当前占用的 COS 字节数（sites/ 与 _artifacts/ 之和）。
+	// StorageBytes 是站点当前保留的 COS 字节数。正常成功态只有 sites/ 下的
+	// 不可变 release；_artifacts/ 仅是发布中的临时制品。
 	//
 	// 由 website-deployer 在发布成功和删除之后回填，不是实时值。文件永久保留，
 	// 所以用量只在这两个时刻变化，事件驱动足够准确，不需要定时全桶扫描。
@@ -179,6 +180,14 @@ type OperationEntity struct {
 	NextRetryAt    *time.Time `gorm:"column:next_retry_at"`
 	Attempt        int        `gorm:"column:attempt"`
 	SiteGeneration int64      `gorm:"column:site_generation"`
+	// ArtifactHash and ArtifactSize are populated only for internal deployer
+	// responses. They are release-table data, never operation-table columns.
+	ArtifactHash string `gorm:"-"`
+	ArtifactSize int64  `gorm:"-"`
+	// ActiveCloudPath is populated only for the internal deployer response. It lets
+	// the worker retain the actual previous active release without guessing from
+	// COS object timestamps.
+	ActiveCloudPath string `gorm:"-"`
 }
 
 func (OperationEntity) TableName() string {

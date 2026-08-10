@@ -48,7 +48,7 @@ func TestReleaseSiteQuotaTouchesExactlyOneRow(t *testing.T) {
 }
 
 // 配额行不存在时（Pass 已销毁）不能报错，否则 delete 操作会永久失败重试，
-// 站点反而删不掉、公开文件一直留在 CloudBase 上。
+// 站点反而删不掉、公开文件一直留在对象存储中。
 func TestReleaseSiteQuotaToleratesMissingRow(t *testing.T) {
 	newWebsiteOperationTestDB(t)
 
