@@ -239,6 +239,16 @@ export type BundleState = "ONLINE" | "OFFLINE";
 export type BundleSalesState = "AVAILABLE" | "SOLD_OUT";
 export type BundleTimeUnit = "d" | "m" | "y";
 
+/**
+ * 自动续费标记（国际站支持）— 对应后端 CreatePassOrderRequest.auto_renew_flag
+ *
+ * 取值（与 ctl/pkg/transport/pass.go 对齐）：
+ *   - auto_renew：自动续费
+ *   - notify_and_manual_renew：通知 + 手动续费
+ *   - no_notify_and_manual_renew：不通知 + 手动续费
+ */
+export type AutoRenewFlag = "auto_renew" | "notify_and_manual_renew" | "no_notify_and_manual_renew";
+
 export interface BundleDescriptionEntry {
   Key: string;
   Value: string;
