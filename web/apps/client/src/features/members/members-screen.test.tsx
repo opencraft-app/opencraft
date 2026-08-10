@@ -420,7 +420,7 @@ describe("MembersScreen", () => {
       screen.getByRole("button", {name: "移除成员 小王"}),
     );
     await fireEvent.press(
-      screen.getByRole("button", {name: "确认移除 小王"}),
+      screen.getByRole("button", {name: "确认移除"}),
     );
     expect(onRemoveMember).toHaveBeenCalledWith(member.id);
 

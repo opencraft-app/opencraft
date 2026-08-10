@@ -114,7 +114,6 @@ const styles = StyleSheet.create(theme => ({
     backgroundColor: theme.semantic.color.statusInfoSurface,
     borderBottomColor: theme.semantic.color.statusInfoDivider,
     borderBottomWidth: theme.semantic.stroke.hairline,
-    borderRadius: 0,
     minHeight: theme.recipes.status.inlineMinHeight,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,

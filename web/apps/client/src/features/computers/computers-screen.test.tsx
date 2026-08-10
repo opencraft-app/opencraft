@@ -292,7 +292,7 @@ describe("ComputersScreen", () => {
     );
     expect(screen.getByText("skip@example.test")).toBeVisible();
     await fireEvent.press(
-      screen.getByRole("button", {name: "退出当前账号"}),
+      screen.getByRole("menuitem", {name: "退出当前账号"}),
     );
     expect(onLogout).toHaveBeenCalledTimes(1);
   });
@@ -834,7 +834,6 @@ describe("ComputersScreen", () => {
 
     expect(screen.getByTestId("computer-feedback")).toHaveStyle({
       backgroundColor: "#E9F9EF",
-      borderRadius: 0,
       minHeight: 36,
     });
   });
@@ -987,7 +986,7 @@ describe("ComputersScreen", () => {
     expect(onRemoveComputer).not.toHaveBeenCalled();
 
     await fireEvent.press(
-      screen.getByRole("button", {name: "确认解除纳管研发机"}),
+      screen.getByRole("button", {name: "确认解除纳管"}),
     );
     expect(onRemoveComputer).toHaveBeenCalledWith(computer.id);
   });

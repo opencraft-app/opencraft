@@ -58,6 +58,7 @@ import {
 } from "../components/management-workspace";
 import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
+import {SystemDialog} from "../primitives/system-dialog";
 import {
   OperationStatusList,
   type OperationStatusItem,
@@ -631,29 +632,12 @@ export function MembersScreen(props: MembersScreenProps) {
                           })
                         }
                       />
-                      {confirmRemoveId === selected.id ? (
-                        <View style={styles.confirmBox}>
-                          <Text style={styles.warning}>
-                            确认将 {selected.displayName} 移出 Server？
-                          </Text>
-                          <ActionButton
-                            accessibilityLabel={`确认移除 ${selected.displayName}`}
-                            importance="danger"
-                            label="确认移除"
-                            onPress={async () => {
-                              await onRemoveMember(selected.id);
-                              setConfirmRemoveId(null);
-                            }}
-                          />
-                        </View>
-                      ) : (
-                        <ActionButton
-                          accessibilityLabel={`移除成员 ${selected.displayName}`}
-                          importance="danger"
-                          label="移除成员"
-                          onPress={() => setConfirmRemoveId(selected.id)}
-                        />
-                      )}
+                      <ActionButton
+                        accessibilityLabel={`移除成员 ${selected.displayName}`}
+                        importance="danger"
+                        label="移除成员"
+                        onPress={() => setConfirmRemoveId(selected.id)}
+                      />
                     </View>
                   ) : null}
                 </>
@@ -746,7 +730,8 @@ export function MembersScreen(props: MembersScreenProps) {
   return (
     <ManagementPresentation model={semanticModel}>
       {(pageModel) => (
-        <ManagementScreenFrame
+        <>
+          <ManagementScreenFrame
           account={currentAccount}
           activeSection="members"
           canManageServer={canManage}
@@ -763,7 +748,31 @@ export function MembersScreen(props: MembersScreenProps) {
           viewportWidth={viewportWidth}
         >
           {renderStage(pageModel)}
-        </ManagementScreenFrame>
+          </ManagementScreenFrame>
+          {selected && confirmRemoveId === selected.id ? (
+            <SystemDialog
+              actions={[
+                {id: "cancel", intent: "secondary", kind: "cancel", label: "取消"},
+                {
+                  disabled: pendingAction !== null,
+                  id: "confirm",
+                  intent: "destructive",
+                  kind: "action",
+                  label: "确认移除",
+                },
+              ]}
+              busy={pendingAction !== null}
+              description="移出后，该成员将无法访问当前 Server；历史消息会保留。"
+              dialogId="remove-member-dialog"
+              onAction={id => {
+                if (id === "confirm") void onRemoveMember(selected.id);
+              }}
+              onOpenChange={() => setConfirmRemoveId(null)}
+              open
+              title={`将 ${selected.displayName} 移出 Server？`}
+            />
+          ) : null}
+        </>
       )}
     </ManagementPresentation>
   );
@@ -890,17 +899,6 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: theme.spacing.sm,
-  },
-  confirmBox: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.statusDangerSurface,
-    borderColor: theme.semantic.color.borderDanger,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: theme.spacing.sm,
-    padding: theme.spacing.sm,
   },
   formGrid: {
     flexDirection: "row",

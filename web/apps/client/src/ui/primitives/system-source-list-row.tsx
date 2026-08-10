@@ -2,7 +2,7 @@ import type {ReactNode} from "react";
 import {Pressable, Text, View} from "react-native";
 import {StyleSheet} from "react-native-unistyles";
 
-import {MaybeLink} from "../layouts/navigation-link";
+import {MaybeLink} from "./navigation-link";
 
 interface SystemSourceListRowBaseProps {
   accessibilityLabel: string;

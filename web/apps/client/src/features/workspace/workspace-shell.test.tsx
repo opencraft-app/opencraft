@@ -1733,7 +1733,7 @@ describe("WorkspaceShell", () => {
     expect(wide.getByLabelText("当前账号")).toBeVisible();
     expect(wide.getByText("skip@example.test")).toBeVisible();
     expect(wide.getByText("IM 已连接")).toBeVisible();
-    await fireEvent.press(wide.getByRole("button", { name: "退出当前账号" }));
+    await fireEvent.press(wide.getByRole("menuitem", { name: "退出当前账号" }));
     expect(onLogoutWide).toHaveBeenCalledTimes(1);
   });
 
@@ -2770,7 +2770,7 @@ describe("WorkspaceShell", () => {
       ),
     ).toBeVisible();
     await fireEvent.press(
-      desktop.getByRole("button", {name: "取消移出 研究助手"}),
+      desktop.getByRole("button", {name: "取消"}),
     );
     expect(desktop.queryByText("移出 研究助手（@research）？")).toBeNull();
     await fireEvent.press(
@@ -2779,7 +2779,7 @@ describe("WorkspaceShell", () => {
       }),
     );
     await fireEvent.press(
-      desktop.getByRole("button", {name: "确认移出 研究助手 @research"}),
+      desktop.getByRole("button", {name: "确认移出"}),
     );
     expect(onRemoveChannelMember).toHaveBeenCalledWith(agentMember.id);
     await fireEvent.press(
@@ -2876,7 +2876,7 @@ describe("WorkspaceShell", () => {
       ),
     ).toBeVisible();
     await fireEvent.press(
-      screen.getByRole("button", {name: "确认退出 general"}),
+      screen.getByRole("button", {name: "确认退出"}),
     );
     expect(onRemoveChannelMember).toHaveBeenCalledWith(productMember.id);
   });

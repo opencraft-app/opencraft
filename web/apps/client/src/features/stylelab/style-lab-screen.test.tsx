@@ -187,7 +187,7 @@ describe("StyleLabScreen", () => {
     ).toBeVisible();
 
     await fireEvent.press(
-      screen.getByRole("button", {name: "设为私密 Channel"}),
+      screen.getByRole("radio", {name: "设为私密 Channel"}),
     );
 
     expect(
@@ -248,11 +248,11 @@ describe("StyleLabScreen", () => {
       "Runtime Agent",
     );
     expect(
-      screen.getByRole("button", {name: "编辑 Runtime hermes-gateway"}),
-    ).toHaveProp("accessibilityState", {selected: true});
+      screen.getByRole("radio", {name: "编辑 Runtime hermes-gateway"}),
+    ).toHaveProp("accessibilityState", {checked: true, disabled: false});
     expect(
-      screen.getByRole("button", {name: "编辑绑定 Computer 设计工作站"}),
-    ).toHaveProp("accessibilityState", {selected: true});
+      screen.getByRole("combobox", {name: "Computer"}),
+    ).toHaveProp("accessibilityState", {disabled: false, expanded: false});
     expect(
       screen.getByRole("button", {
         name: "轮换 Agent runtime 的运行凭证",
@@ -386,7 +386,7 @@ describe("StyleLabScreen", () => {
       screen.getByRole("button", {name: "切换到未加入状态"}),
     );
     expect(screen.getByTestId("channel-join-empty-state")).toHaveStyle({
-      borderRadius: 0,
+      alignItems: "flex-start",
     });
   });
 

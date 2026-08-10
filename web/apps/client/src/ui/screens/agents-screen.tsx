@@ -30,7 +30,6 @@ import {
       ManagementDetailScroll,
       ManagementField,
       ManagementForm,
-      ManagementFormActions,
       ManagementFormFooter,
   ManagementHeader,
   ManagementHeaderActions,
@@ -43,6 +42,7 @@ import {
   ManagementCollectionFooterAction,
 } from "../components/management-workspace";
 import {SystemFeedback} from "../primitives/system-feedback";
+import {SystemDialog} from "../primitives/system-dialog";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 import {SystemSelectField} from "../primitives/system-select-field";
 import {
@@ -1303,22 +1303,7 @@ function AgentDetail({
       {canManage ? (
         <DetailSection testID="agent-security-section" title="安全与身份">
           <ResourceActionRow
-            action={confirmingRotation ? (
-              <ManagementFormActions>
-                <ActionButton
-                  importance="secondary"
-                  label="取消"
-                  onPress={onCancelRotation}
-                />
-                <ActionButton
-                  accessibilityLabel="确认轮换运行凭证"
-                  disabled={disabled}
-                  importance="primary"
-                  label="确认轮换"
-                  onPress={onConfirmRotation}
-                />
-              </ManagementFormActions>
-            ) : (
+            action={(
               <ActionButton
                 accessibilityLabel={`轮换 Agent ${agent.handle} 的运行凭证`}
                 disabled={disabled || !canRotate || !onRotateCredential}
@@ -1327,32 +1312,15 @@ function AgentDetail({
                 onPress={onStartRotation}
               />
             )}
-            description={confirmingRotation
-              ? "安装成功前旧凭证仍有效；成功后新凭证原子激活，并撤销旧凭证。"
-              : !canRotate
-                ? `当前版本 ${agent.credentialVersion}。请先停止 Agent，并确认它已绑定在线 Computer。`
-                : `当前版本 ${agent.credentialVersion}。轮换后需要显式启动 Agent。`}
+            description={!canRotate
+              ? `当前版本 ${agent.credentialVersion}。请先停止 Agent，并确认它已绑定在线 Computer。`
+              : `当前版本 ${agent.credentialVersion}。轮换后需要显式启动 Agent。`}
             testID="agent-credential-section"
-            title={confirmingRotation ? "安装成功前旧凭证仍有效" : "运行凭证"}
+            title="运行凭证"
           />
           {onDeleteAgent ? (
             <ResourceActionRow
-              action={confirmingDeletion ? (
-                <ManagementFormActions>
-                  <ActionButton
-                    importance="secondary"
-                    label="取消"
-                    onPress={onCancelDeletion}
-                  />
-                  <ActionButton
-                    accessibilityLabel={`确认删除 Agent ${agent.handle}`}
-                    disabled={disabled}
-                    importance="danger"
-                    label="确认删除"
-                    onPress={onConfirmDeletion}
-                  />
-                </ManagementFormActions>
-              ) : (
+              action={(
                 <ActionButton
                   accessibilityLabel={`删除 Agent ${agent.handle}`}
                   disabled={disabled}
@@ -1361,14 +1329,58 @@ function AgentDetail({
                   onPress={onStartDeletion}
                 />
               )}
-              description={confirmingDeletion
-                ? "Computer 和 TAT 不会停止，其他 Agent 不受影响。Agent 的工作区和历史消息会保留。"
-                : "删除 Agent 身份、运行凭证和腾讯 IM 登录；保留工作区与历史消息。"}
+              description="删除 Agent 身份、运行凭证和腾讯 IM 登录；保留工作区与历史消息。"
               testID="agent-delete-section"
-              title={confirmingDeletion ? "确认删除 Agent" : "危险操作"}
+              title="危险操作"
             />
           ) : null}
         </DetailSection>
+      ) : null}
+      {confirmingRotation ? (
+        <SystemDialog
+          actions={[
+            {id: "cancel", intent: "secondary", kind: "cancel", label: "取消"},
+            {
+              disabled,
+              id: "confirm",
+              intent: "default",
+              kind: "action",
+              label: "确认轮换",
+            },
+          ]}
+          busy={disabled}
+          description="安装成功后新凭证会原子激活，并撤销旧凭证；随后需要显式启动 Agent。"
+          dialogId={`rotate-agent-${agent.id}-dialog`}
+          onAction={id => {
+            if (id === "confirm") void onConfirmRotation();
+          }}
+          onOpenChange={onCancelRotation}
+          open
+          title="安装成功前旧凭证仍有效"
+        />
+      ) : null}
+      {confirmingDeletion ? (
+        <SystemDialog
+          actions={[
+            {id: "cancel", intent: "secondary", kind: "cancel", label: "取消"},
+            {
+              disabled,
+              id: "confirm",
+              intent: "destructive",
+              kind: "action",
+              label: "确认删除",
+            },
+          ]}
+          busy={disabled}
+          description="Computer 和 TAT 不会停止，其他 Agent 不受影响。Agent 的工作区和历史消息会保留。"
+          dialogId={`delete-agent-${agent.id}-dialog`}
+          onAction={id => {
+            if (id === "confirm") void onConfirmDeletion();
+          }}
+          onOpenChange={onCancelDeletion}
+          open
+          title={`删除 ${agent.displayName}？`}
+        />
       ) : null}
     </ManagementDetailCanvas>
   );

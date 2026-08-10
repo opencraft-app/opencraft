@@ -82,7 +82,7 @@ export function SystemPopover({
           overflow: "auto",
           padding: theme.spacing.xs,
           WebkitBackdropFilter: theme.semantic.material.blur,
-          zIndex: 1000,
+          zIndex: theme.semantic.layer.modal,
         }}
         triggerRef={triggerRef as RefObject<Element>}
       >

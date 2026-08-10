@@ -1,9 +1,8 @@
-import type {CSSProperties, KeyboardEvent, RefObject} from "react";
+import type {KeyboardEvent, RefObject} from "react";
 import {useEffect, useRef} from "react";
 import Check from "lucide-react-native/icons/check";
 import {ListBox, ListBoxItem} from "react-aria-components/ListBox";
 import {Popover} from "react-aria-components/Popover";
-import type {TextStyle} from "react-native";
 import {useUnistyles} from "react-native-unistyles";
 
 import type {
@@ -90,7 +89,7 @@ export function SystemSelect<T extends string>({
           overflow: "auto",
           padding: theme.spacing.xs,
           WebkitBackdropFilter: theme.semantic.material.blur,
-          zIndex: 1000,
+          zIndex: theme.semantic.layer.modal,
         }}
         triggerRef={triggerRef as RefObject<Element>}
       >
@@ -119,7 +118,7 @@ export function SystemSelect<T extends string>({
                 isDisabled={option.disabled}
                 key={option.value}
                 style={({isDisabled, isFocusVisible, isHovered, isPressed, isSelected}) => ({
-                  ...cssTypography(theme.semantic.typography.body),
+                  ...(theme.semantic.typography.body as React.CSSProperties),
                   alignItems: "center",
                   background: isSelected
                     ? theme.semantic.color.actionTonalSurface
@@ -174,13 +173,4 @@ function cssBoxShadow(shadow: {
   radius: number;
 }): string {
   return `0 ${shadow.offsetY}px ${shadow.radius}px ${shadow.color}`;
-}
-
-function cssTypography(typography: TextStyle): CSSProperties {
-  return {
-    ...(typography as CSSProperties),
-    lineHeight: typeof typography.lineHeight === "number"
-      ? `${typography.lineHeight}px`
-      : typography.lineHeight,
-  };
 }

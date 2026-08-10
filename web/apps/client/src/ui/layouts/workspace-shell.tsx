@@ -26,7 +26,6 @@ import {
   type ReactElement,
 } from "react";
 import {
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -85,6 +84,7 @@ import { IconActionButton } from "../primitives/icon-action-button";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 import {SystemSourceListRow} from "../primitives/system-source-list-row";
 import {SystemFeedback} from "../primitives/system-feedback";
+import {SystemDialog} from "../primitives/system-dialog";
 import {
   memberIdentityLabel,
   memberKindLabel,
@@ -2172,12 +2172,6 @@ function ChannelManagementPanel({
       ? `${pendingRemoval.displayName}（@${pendingRemovalHandle}）`
       : pendingRemoval.displayName
     : "";
-  const pendingRemovalAccessibleIdentity = pendingRemoval
-    ? pendingRemovalHandle
-      ? `${pendingRemoval.displayName} @${pendingRemovalHandle}`
-      : pendingRemoval.displayName
-    : "";
-
   function renderMember(member: Member, joined: boolean): ReactElement {
     const visibleHandle = visibleMemberHandle(member);
     const memberKind = memberKindLabel[member.kind];
@@ -2407,91 +2401,40 @@ function ChannelManagementPanel({
         </View>
       )}
       {pendingRemoval ? (
-        <Modal
-          animationType="fade"
-          onRequestClose={() => setPendingRemoval(null)}
-          transparent
-          visible
-        >
-          <View style={styles.channelMemberConfirmBackdrop}>
-            <View
-              accessibilityViewIsModal
-              style={styles.channelMemberConfirmDialog}
-              testID="channel-member-removal-confirmation"
-            >
-              <View style={styles.channelMemberConfirmMark}>
-                {pendingRemoval.imUserId === currentImUserId ? (
-                  <LogOut
-                    color={velaTheme.semantic.color.statusDanger}
-                    size={velaTheme.semantic.icon.size.feature}
-                    strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-                  />
-                ) : (
-                  <UsersRound
-                    color={velaTheme.semantic.color.statusDanger}
-                    size={velaTheme.semantic.icon.size.feature}
-                    strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-                  />
-                )}
-              </View>
-              <Text style={styles.channelMemberConfirmTitle}>
-                {pendingRemoval.imUserId === currentImUserId
-                  ? `退出 #${channel?.name ?? ""}？`
-                  : `移出 ${pendingRemovalIdentity}？`}
-              </Text>
-              <Text style={styles.channelMemberConfirmDescription}>
-                {pendingRemoval.imUserId === currentImUserId
-                  ? `退出后，你将无法继续收发 #${channel?.name ?? ""} 的消息。之后可由管理员重新添加。`
-                  : `移出后，${pendingRemovalIdentity}将无法继续收发 #${channel?.name ?? ""} 的消息。之后仍可重新添加。`}
-              </Text>
-              <View style={styles.channelMemberConfirmActions}>
-                <Pressable
-                  accessibilityLabel={
-                    pendingRemoval.imUserId === currentImUserId
-                      ? `取消退出 ${channel?.name ?? ""}`
-                      : `取消移出 ${pendingRemoval.displayName}`
-                  }
-                  accessibilityRole="button"
-                  disabled={disabled}
-                  onPress={() => setPendingRemoval(null)}
-                  style={styles.channelMemberConfirmCancel}
-                >
-                  <Text
-                    numberOfLines={1}
-                    style={styles.channelMemberConfirmCancelText}
-                  >
-                    {pendingRemoval.imUserId === currentImUserId
-                      ? "继续留在 Channel"
-                      : "取消"}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  accessibilityLabel={
-                    pendingRemoval.imUserId === currentImUserId
-                      ? `确认退出 ${channel?.name ?? ""}`
-                      : `确认移出 ${pendingRemovalAccessibleIdentity}`
-                  }
-                  accessibilityRole="button"
-                  disabled={disabled}
-                  onPress={async () => {
-                    await onRemoveMember(pendingRemoval.id);
-                    setPendingRemoval(null);
-                  }}
-                  style={styles.channelMemberConfirmSubmit}
-                >
-                  <Text
-                    numberOfLines={1}
-                    style={styles.channelMemberConfirmSubmitText}
-                  >
-                    {pendingRemoval.imUserId === currentImUserId
-                      ? "确认退出"
-                      : "确认移出"}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </Modal>
+        <SystemDialog
+          actions={[
+            {
+              id: "cancel",
+              intent: "secondary",
+              kind: "cancel",
+              label: pendingRemoval.imUserId === currentImUserId
+                ? "继续留在 Channel"
+                : "取消",
+            },
+            {
+              disabled,
+              id: "confirm",
+              intent: "destructive",
+              kind: "action",
+              label: pendingRemoval.imUserId === currentImUserId
+                ? "确认退出"
+                : "确认移出",
+            },
+          ]}
+          busy={disabled}
+          description={pendingRemoval.imUserId === currentImUserId
+            ? `退出后，你将无法继续收发 #${channel?.name ?? ""} 的消息。之后可由管理员重新添加。`
+            : `移出后，${pendingRemovalIdentity}将无法继续收发 #${channel?.name ?? ""} 的消息。之后仍可重新添加。`}
+          dialogId="channel-member-removal-confirmation"
+          onAction={id => {
+            if (id === "confirm") void onRemoveMember(pendingRemoval.id);
+          }}
+          onOpenChange={() => setPendingRemoval(null)}
+          open
+          title={pendingRemoval.imUserId === currentImUserId
+            ? `退出 #${channel?.name ?? ""}？`
+            : `移出 ${pendingRemovalIdentity}？`}
+        />
       ) : null}
     </View>
   );

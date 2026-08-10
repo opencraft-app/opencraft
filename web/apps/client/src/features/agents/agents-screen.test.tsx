@@ -929,7 +929,7 @@ describe("AgentsScreen", () => {
     expect(screen.getByText("安装成功前旧凭证仍有效")).toBeVisible();
     expect(onRotateCredential).not.toHaveBeenCalled();
     await fireEvent.press(
-      screen.getByRole("button", {name: "确认轮换运行凭证"}),
+      screen.getByRole("button", {name: "确认轮换"}),
     );
     expect(onRotateCredential).toHaveBeenCalledWith(agent.id);
   });
@@ -969,7 +969,7 @@ describe("AgentsScreen", () => {
     ).toBeVisible();
 
     await fireEvent.press(
-      screen.getByRole("button", {name: "确认删除 Agent research"}),
+      screen.getByRole("button", {name: "确认删除"}),
     );
     expect(onDeleteAgent).toHaveBeenCalledWith(agent.id);
   });

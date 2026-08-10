@@ -112,8 +112,6 @@ describe("Vela style lint", () => {
         "layouts/workspace-shell.tsx",
         [
           "channelMemberAdd",
-          "channelMemberConfirmCancel",
-          "channelMemberConfirmSubmit",
           "channelMemberRemove",
           "reconnectButton",
           "searchMore",
@@ -172,9 +170,7 @@ describe("Vela style lint", () => {
       "components/composer-surface/composer-material-surface.web.tsx:surface",
       "components/message-list.tsx:actionRowOpen",
       "components/message-viewport/message-viewport.tsx:newMessages",
-      "layouts/app-frame.tsx:accountPopover",
       "layouts/app-frame.tsx:railTooltip",
-      "layouts/workspace-shell.styles.ts:channelMemberConfirmDialog",
     ]);
   });
 

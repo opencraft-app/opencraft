@@ -86,6 +86,17 @@ export {
   type SystemEmptyStateProps,
 } from "./primitives/system-empty-state";
 export {
+  SystemDialog,
+  type DialogCloseReason,
+  type SystemDialogAction,
+  type SystemDialogProps,
+} from "./primitives/system-dialog";
+export {
+  SystemActionMenu,
+  type SystemActionMenuItem,
+  type SystemActionMenuProps,
+} from "./primitives/system-action-menu";
+export {
   SystemFeedback,
   type SystemFeedbackAction,
   type SystemFeedbackProps,

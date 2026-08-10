@@ -1,6 +1,5 @@
-import type {CSSProperties, FocusEvent, Ref} from "react";
+import type {FocusEvent, Ref} from "react";
 import {useState} from "react";
-import type {TextStyle} from "react-native";
 import {useUnistyles} from "react-native-unistyles";
 
 import {SystemSelect} from "./system-select.web";
@@ -52,7 +51,7 @@ export function SystemSelectField<T extends string>({
           ref={ref as Ref<HTMLButtonElement>}
           role="combobox"
           style={{
-            ...cssTypography(theme.semantic.typography.body),
+            ...(theme.semantic.typography.body as React.CSSProperties),
             alignItems: "center",
             appearance: "none",
             background: theme.semantic.color.fieldSurface,
@@ -97,7 +96,7 @@ export function SystemSelectField<T extends string>({
               borderRight: `${theme.semantic.stroke.hairline}px solid currentColor`,
               flex: "0 0 auto",
               height: 7,
-              marginBottom: 4,
+              marginBottom: theme.spacing.xs,
               transform: accessibilityExpanded ? "rotate(225deg)" : "rotate(45deg)",
               width: 7,
               ...theme.semantic.motion.transition.control,
@@ -108,13 +107,4 @@ export function SystemSelectField<T extends string>({
       value={value}
     />
   );
-}
-
-function cssTypography(typography: TextStyle): CSSProperties {
-  return {
-    ...(typography as CSSProperties),
-    lineHeight: typeof typography.lineHeight === "number"
-      ? `${typography.lineHeight}px`
-      : typography.lineHeight,
-  };
 }

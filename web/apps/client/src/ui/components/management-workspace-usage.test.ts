@@ -90,7 +90,7 @@ describe("management workspace adoption", () => {
     );
 
     expect(moduleSource).toContain('export * from "./management-workspace-core"');
-    expect(emptySource).toContain("<InlineEmptyState");
+    expect(emptySource).toContain("<SystemEmptyState");
   });
 
   it.each(managementScreens)(

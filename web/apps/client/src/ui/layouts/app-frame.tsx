@@ -12,9 +12,8 @@ import ArrowLeft from "lucide-react-native/icons/arrow-left";
 import LogOut from "lucide-react-native/icons/log-out";
 
 import { BrandMark } from "../components/brand-mark";
-import {SystemButton} from "../primitives/system-button";
+import {SystemActionMenu} from "../primitives/system-action-menu";
 import {SystemMaterialSurface} from "../primitives/system-material-surface";
-import {SystemPopover} from "../primitives/system-popover";
 import { velaTheme } from "../tokens";
 import { workspaceLayoutMode } from "../workspace-layout-mode";
 import { MaybeLink } from "./navigation-link";
@@ -148,6 +147,7 @@ export function ServerRail({
   | "servers"
 > & { canManageServer: boolean }) {
   const [accountOpen, setAccountOpen] = useState(false);
+  const accountStatus = account ? accountImPresentation(account, imStatus) : null;
 
   return (
     <View style={styles.serverRail} testID="server-rail">
@@ -210,11 +210,27 @@ export function ServerRail({
       <View style={styles.railSpacer} />
       <View style={styles.railFooter}>
         {account ? (
-          <SystemPopover
+          <SystemActionMenu
             accessibilityLabel="当前账号"
+            items={[
+              {disabled: true, groupId: "identity", id: "name", label: account.displayName},
+              {disabled: true, groupId: "identity", id: "email", label: account.email},
+              ...(accountStatus
+                ? [{disabled: true, groupId: "identity", id: "status", label: accountStatus.label}]
+                : []),
+              ...(account.imUserId
+                ? [{disabled: true, groupId: "identity", id: "im-user-id", label: account.imUserId}]
+                : []),
+              ...(onLogout
+                ? [{groupId: "actions", id: "logout", intent: "destructive" as const, label: "退出当前账号"}]
+                : []),
+            ]}
+            onAction={id => {
+              if (id === "logout") void onLogout?.();
+            }}
             onOpenChange={setAccountOpen}
             open={accountOpen}
-            overlayId="account-popover"
+            overlayId="account-action-menu"
             renderTrigger={({
               accessibilityControls,
               accessibilityExpanded,
@@ -226,6 +242,7 @@ export function ServerRail({
                 accessibilityRole="button"
                 aria-controls={accessibilityControls}
                 aria-expanded={accessibilityExpanded}
+                aria-haspopup="menu"
                 onPress={onPress}
                 ref={ref as never}
                 style={({ pressed }) => [
@@ -238,32 +255,7 @@ export function ServerRail({
                 <HumanAvatar account={account} imStatus={imStatus} />
               </Pressable>
             )}
-          >
-            <View style={styles.accountPopover} testID="account-popover">
-              <HumanAccountIdentity account={account} imStatus={imStatus} />
-              {account.imUserId ? (
-                <View style={styles.accountIdPanel}>
-                  <Text style={styles.accountIdLabel}>IM USER ID</Text>
-                  <Text numberOfLines={1} style={styles.accountIdValue}>
-                    {account.imUserId}
-                  </Text>
-                </View>
-              ) : null}
-              {onLogout ? (
-                <SystemButton
-                  accessibilityLabel="退出当前账号"
-                  align="stretch"
-                  icon={LogOut}
-                  label="退出当前账号"
-                  onPress={() => {
-                    setAccountOpen(false);
-                    void onLogout();
-                  }}
-                  variant="destructive"
-                />
-              ) : null}
-            </View>
-          </SystemPopover>
+          />
         ) : onLogout ? (
           <Pressable
             accessibilityLabel="退出当前账号"
@@ -526,21 +518,6 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.bodySmall,
   },
-  accountIdLabel: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.microTracked,
-  },
-  accountIdPanel: {
-    backgroundColor: theme.semantic.color.surfaceSubtle,
-    borderRadius: theme.semantic.radius.control,
-    gap: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.sm,
-  },
-  accountIdValue: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.navigationLabel,
-  },
   accountIdentity: {
     alignItems: "center",
     flexDirection: "row",
@@ -551,11 +528,6 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     gap: theme.spacing.xxs,
     minWidth: 0,
-  },
-  accountPopover: {
-    gap: theme.spacing.md,
-    padding: theme.spacing.md,
-    width: theme.recipes.overlay.accountMenuWidth,
   },
   accountRailButton: {
     alignItems: "center",

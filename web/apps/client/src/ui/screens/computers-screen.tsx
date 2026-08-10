@@ -41,6 +41,7 @@ import {
   ResourceActionRow,
 } from "../components/management-workspace";
 import {SystemFeedback} from "../primitives/system-feedback";
+import {SystemDialog} from "../primitives/system-dialog";
 import {formatReadableDateTime} from "../date-time";
 import {
   buildManagementShellModel,
@@ -625,52 +626,22 @@ export function ComputersScreen(props: ComputersScreenProps) {
                   style={styles.releaseSection}
                   testID="computer-release-section"
                 >
-                  {releaseConfirming ? (
-                    <ResourceActionRow
-                      action={(
-                        <View style={styles.detailActions}>
-                        <ActionButton
-                          accessibilityLabel="取消解除纳管"
-                          importance="secondary"
-                          label="取消"
-                          onPress={() => setReleaseConfirming(false)}
-                        />
-                        <ActionButton
-                          accessibilityLabel={`确认解除纳管${selected.name}`}
-                          disabled={pendingAction !== null}
-                          importance="danger"
-                          label="确认解除纳管"
-                          onPress={async () => {
-                            const removed = await onRemoveComputer(selected.id);
-                            if (removed) setReleaseConfirming(false);
-                          }}
-                        />
-                        </View>
-                      )}
-                      description="不会删除真实机器上的文件或程序。再次纳管会创建新的 Computer。"
-                      testID="computer-release-action-row"
-                      title="确认解除纳管"
-                    />
-                  ) : (
-                    <ResourceActionRow
-                      action={(
-                        <ActionButton
-                          accessibilityLabel={`解除纳管${selected.name}`}
-                          disabled={
-                            boundAgents.length > 0 || pendingAction !== null
-                          }
-                          importance="danger"
-                          label="解除纳管"
-                          onPress={() => setReleaseConfirming(true)}
-                        />
-                      )}
-                      description={boundAgents.length > 0
-                        ? `请先迁移或解绑 ${boundAgents.length} 个 Agent`
-                        : "从当前 Server 移除记录，不操作真实机器。"}
-                      testID="computer-release-action-row"
-                      title="危险操作"
-                    />
-                  )}
+                  <ResourceActionRow
+                    action={(
+                      <ActionButton
+                        accessibilityLabel={`解除纳管${selected.name}`}
+                        disabled={boundAgents.length > 0 || pendingAction !== null}
+                        importance="danger"
+                        label="解除纳管"
+                        onPress={() => setReleaseConfirming(true)}
+                      />
+                    )}
+                    description={boundAgents.length > 0
+                      ? `请先迁移或解绑 ${boundAgents.length} 个 Agent`
+                      : "从当前 Server 移除记录，不操作真实机器。"}
+                    testID="computer-release-action-row"
+                    title="危险操作"
+                  />
                 </View>
               ) : null}
             </ManagementDetailCanvas>
@@ -707,7 +678,8 @@ export function ComputersScreen(props: ComputersScreenProps) {
   return (
     <ManagementPresentation model={semanticModel}>
       {(pageModel) => (
-        <ManagementScreenFrame
+        <>
+          <ManagementScreenFrame
           account={currentAccount}
           activeSection="computers"
           canManageServer={canManage}
@@ -724,7 +696,31 @@ export function ComputersScreen(props: ComputersScreenProps) {
           viewportWidth={viewportWidth}
         >
           {renderStage(pageModel)}
-        </ManagementScreenFrame>
+          </ManagementScreenFrame>
+          {selected && releaseConfirming ? (
+            <SystemDialog
+              actions={[
+                {id: "cancel", intent: "secondary", kind: "cancel", label: "取消"},
+                {
+                  disabled: pendingAction !== null,
+                  id: "confirm",
+                  intent: "destructive",
+                  kind: "action",
+                  label: "确认解除纳管",
+                },
+              ]}
+              busy={pendingAction !== null}
+              description="不会删除真实机器上的文件或程序。再次纳管会创建新的 Computer。"
+              dialogId="release-computer-dialog"
+              onAction={id => {
+                if (id === "confirm") void onRemoveComputer?.(selected.id);
+              }}
+              onOpenChange={() => setReleaseConfirming(false)}
+              open
+              title={`解除纳管 ${selected.name}？`}
+            />
+          ) : null}
+        </>
       )}
     </ManagementPresentation>
   );
@@ -808,11 +804,6 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     justifyContent: "space-between",
     paddingTop: theme.spacing.sm,
-  },
-  detailActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: theme.spacing.sm,
   },
   emptyText: {
     color: theme.semantic.color.textMuted,
