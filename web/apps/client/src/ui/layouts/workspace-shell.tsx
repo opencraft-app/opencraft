@@ -1780,32 +1780,31 @@ function MessageStage({
           />
 
           <MessageComposer
-              members={mentionMembers}
-              channelName={channel?.name ?? "channel"}
-              conversationLabel={conversationLabel}
-              disabled={
-                !hasConversation ||
-                imStatus !== "ready" ||
-                initializingMessages ||
-                sending
-              }
-              draft={draft}
-              key={
-                directConversation
-                  ? `direct:${directConversation.peerUserId}`
-                  : channel
-                    ? `channel:${channel.id}`
-                    : "conversation:none"
-              }
-              onAttachFile={onAttachFile}
-              onAttachImage={onAttachImage}
-              onClearQuote={onClearQuote}
-              onDraftChange={onDraftChange}
-              onFocus={() => setOpenActionMessageId(null)}
-              onSend={onSend}
-              quote={selectedQuote}
-              surfaceMode={surfaceMode}
-              viewportWidth={viewportWidth}
+            members={mentionMembers}
+            channelName={channel?.name ?? "channel"}
+            conversationLabel={conversationLabel}
+            disabled={
+              !hasConversation ||
+              imStatus !== "ready" ||
+              initializingMessages ||
+              sending
+            }
+            draft={draft}
+            key={
+              directConversation
+                ? `direct:${directConversation.peerUserId}`
+                : channel
+                  ? `channel:${channel.id}`
+                  : "conversation:none"
+            }
+            onAttachFile={onAttachFile}
+            onAttachImage={onAttachImage}
+            onClearQuote={onClearQuote}
+            onDraftChange={onDraftChange}
+            onFocus={() => setOpenActionMessageId(null)}
+            onSend={onSend}
+            quote={selectedQuote}
+            surfaceMode={surfaceMode}
           />
         </>
       )}

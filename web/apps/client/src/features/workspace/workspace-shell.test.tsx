@@ -1192,7 +1192,7 @@ describe("WorkspaceShell", () => {
     expect(screen.getAllByText("研究助手").length).toBeGreaterThan(0);
     expect(screen.getByText("Agent · @research")).toBeVisible();
     expect(screen.queryByText("@ 研究助手")).toBeNull();
-    expect(screen.getByPlaceholderText("发送消息给 研究助手")).toBeVisible();
+    expect(screen.getByPlaceholderText("发消息")).toBeVisible();
     expect(screen.getByLabelText("Agent 研究助手")).toBeVisible();
     expect(screen.getByTestId("message-direct-own-message")).toHaveStyle({
       flexDirection: "row",
@@ -1320,7 +1320,7 @@ describe("WorkspaceShell", () => {
     expect(screen.getByText("研究助手")).toBeVisible();
     expect(screen.getByText("Agent 私信 · @research")).toBeVisible();
     expect(screen.queryByText("@ agent-im-1")).toBeNull();
-    expect(screen.getByPlaceholderText("发送消息给 研究助手")).toBeVisible();
+    expect(screen.getByPlaceholderText("发消息")).toBeVisible();
   });
 
   it("starts a DM only from ready Server members and excludes the current Human", async () => {
@@ -2427,7 +2427,7 @@ describe("WorkspaceShell", () => {
     }
     expect(screen.getByTestId("message-actions-reply-message-1")).toBeVisible();
     await fireEvent(
-      screen.getByPlaceholderText("发送消息到 #Thread，输入 @ 提及成员"),
+      within(screen.getByTestId("thread-panel")).getByPlaceholderText("发消息"),
       "focus",
     );
     expect(
@@ -3028,7 +3028,7 @@ describe("WorkspaceShell", () => {
       screen.getByText("发送第一条消息，或 @Agent 分配一项工作。"),
     ).toBeVisible();
     expect(
-      screen.getByPlaceholderText("发送消息到 #全员，输入 @ 提及成员"),
+      screen.getByPlaceholderText("发消息"),
     ).toBeVisible();
     expect(screen.getByLabelText("搜索当前 Channel")).toBeEnabled();
     expect(

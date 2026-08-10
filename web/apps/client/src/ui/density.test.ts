@@ -175,9 +175,6 @@ describe("density wiring", () => {
     expect(velaTheme.recipes.conversationWorkspace.toastTopInset).toBe(
       density.headerHeight + density.spaceMd,
     );
-    expect(
-      velaTheme.recipes.conversationWorkspace.composerMentionListOffset,
-    ).toBe(density.composerSurfaceMinHeight);
     expect(velaTheme.recipes.identity.avatarAccountSize).toBe(
       density.controlHeight,
     );
@@ -241,6 +238,41 @@ describe("density wiring", () => {
         "viewportChromeOffset",
       ),
     ).toBe(false);
+  });
+
+  it("derives integrated composer geometry from mode and density", () => {
+    const metrics =
+      velaTheme.recipes.conversationWorkspace.composerSurfaceMetrics;
+    expect(
+      velaTheme.recipes.conversationWorkspace.composerPrimaryActionSize,
+    ).toBe(pointerDensity ? 32 : 44);
+    const expected = pointerDensity
+      ? {
+          compact: {surfaceMaxHeight: 180, surfaceMinHeight: 84},
+          desktop: {surfaceMaxHeight: 220, surfaceMinHeight: 112},
+          native: {surfaceMaxHeight: 180, surfaceMinHeight: 88},
+        }
+      : {
+          compact: {surfaceMaxHeight: 208, surfaceMinHeight: 104},
+          desktop: {surfaceMaxHeight: 240, surfaceMinHeight: 124},
+          native: {surfaceMaxHeight: 208, surfaceMinHeight: 104},
+        };
+
+    for (const mode of ["desktop", "compact", "native"] as const) {
+      expect(metrics[mode]).toMatchObject(expected[mode]);
+      expect(metrics[mode].editorMinHeight).toBe(
+        metrics[mode].surfaceMinHeight -
+          density.composerToolbarMinHeight -
+          metrics[mode].footerInset -
+          velaTheme.semantic.stroke.hairline * 2,
+      );
+      expect(metrics[mode].editorMaxHeight).toBe(
+        metrics[mode].surfaceMaxHeight -
+          density.composerToolbarMinHeight -
+          metrics[mode].footerInset -
+          velaTheme.semantic.stroke.hairline * 2,
+      );
+    }
   });
 
   it("hangs both pane headers off one band height", () => {

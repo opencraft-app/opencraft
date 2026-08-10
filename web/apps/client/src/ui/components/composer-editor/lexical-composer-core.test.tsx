@@ -150,4 +150,29 @@ describe("LexicalComposerCore", () => {
       }),
     );
   });
+
+  it("reports focus from the real editable surface", async () => {
+    const onFocus = jest.fn();
+    await act(async () => {
+      root.render(
+        <LexicalComposerCore
+          appearance={appearance}
+          document={createComposerTextDocument("")}
+          onFocus={onFocus}
+          onSnapshotChange={jest.fn()}
+          onSubmit={jest.fn()}
+          onSuggestionCommand={jest.fn()}
+          placeholder="发消息"
+          suggestionsOpen={false}
+        />,
+      );
+    });
+
+    const editable = container.querySelector<HTMLElement>(
+      ".vela-composer-editor-input",
+    );
+    await act(async () => editable?.focus());
+
+    expect(onFocus).toHaveBeenCalledTimes(1);
+  });
 });

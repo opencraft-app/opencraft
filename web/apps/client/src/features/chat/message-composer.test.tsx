@@ -16,6 +16,7 @@ jest.mock("../../ui/components/composer-editor", () => {
       props: {
         disabled?: boolean;
         document: import("@vela/client-core").ComposerDocument;
+        onFocus?(): void;
         onSnapshotChange(value: unknown): void;
         onSubmit(value: unknown): void;
         placeholder: string;
@@ -66,6 +67,7 @@ jest.mock("../../ui/components/composer-editor", () => {
           accessibilityLabel="消息内容"
           editable={!props.disabled}
           multiline
+          onFocus={props.onFocus}
           onChangeText={(text) => publish(core.createComposerTextDocument(text))}
           placeholder={props.placeholder}
           value={core.composerDocumentText(document)}
@@ -78,7 +80,7 @@ jest.mock("../../ui/components/composer-editor", () => {
 import {MessageComposer} from "./message-composer";
 
 describe("MessageComposer", () => {
-  it("bounds the desktop surface on the shared conversation axis", async () => {
+  it("renders the desktop composer as one integrated surface on the shared axis", async () => {
     const screen = await render(
       <MessageComposer
         channelName="general"
@@ -88,12 +90,24 @@ describe("MessageComposer", () => {
       />,
     );
 
-    expect(screen.getByTestId("message-composer")).toHaveStyle({
-      alignItems: "center",
-    });
-    expect(screen.getByTestId("message-composer-surface")).toHaveStyle({
+    expect(screen.getByTestId("composer-stage")).toHaveStyle({
       maxWidth: velaTheme.recipes.conversationWorkspace.composerDesktopMaxWidth,
       width: "100%",
+    });
+    expect(screen.getByTestId("message-composer-surface")).toHaveStyle({
+      borderRadius:
+        velaTheme.recipes.conversationWorkspace.composerSurfaceMetrics.desktop
+          .radius,
+      minHeight:
+        velaTheme.recipes.conversationWorkspace.composerSurfaceMetrics.desktop
+          .surfaceMinHeight,
+      width: "100%",
+    });
+    expect(screen.getByTestId("composer-footer")).toBeVisible();
+    expect(screen.getByRole("button", {name: "发送消息"})).toHaveStyle({
+      height:
+        velaTheme.recipes.conversationWorkspace.composerPrimaryActionSize,
+      width: velaTheme.recipes.conversationWorkspace.composerPrimaryActionSize,
     });
   });
 
@@ -109,7 +123,7 @@ describe("MessageComposer", () => {
         />,
       );
 
-      expect(screen.getByTestId("message-composer-surface")).toHaveStyle({
+      expect(screen.getByTestId("composer-stage")).toHaveStyle({
         maxWidth: "100%",
         width: "100%",
       });
@@ -130,7 +144,7 @@ describe("MessageComposer", () => {
           uri: "file:///spec.pdf",
         }))}
         onSend={onSend}
-        viewportWidth={1_440}
+        surfaceMode="desktop"
       />,
     );
 
@@ -162,6 +176,7 @@ describe("MessageComposer", () => {
         onClearQuote={jest.fn()}
         onSend={onSend}
         quote={quote}
+        surfaceMode="desktop"
       />,
     );
     await fireEvent.changeText(screen.getByLabelText("消息内容"), "收到");
@@ -183,9 +198,14 @@ describe("MessageComposer", () => {
           {displayName: "研究助手", handle: "research", id: "member-2", imUserId: "agent-1", kind: "agent"},
         ]}
         onSend={onSend}
+        surfaceMode="desktop"
       />,
     );
     await fireEvent.press(screen.getByRole("button", {name: "提及成员"}));
+    expect(screen.getByTestId("mention-suggestions")).toHaveStyle({
+      bottom: "100%",
+      marginBottom: velaTheme.spacing.sm,
+    });
     expect(screen.getByText("成员")).toBeVisible();
     expect(screen.getByText("Agent")).toBeVisible();
     await fireEvent.press(screen.getByRole("button", {name: "@研究助手"}));
@@ -200,7 +220,12 @@ describe("MessageComposer", () => {
 
   it("hides mention controls for direct conversations with no candidates", async () => {
     const screen = await render(
-      <MessageComposer channelName="私信" members={[]} onSend={jest.fn()} />,
+      <MessageComposer
+        channelName="私信"
+        members={[]}
+        onSend={jest.fn()}
+        surfaceMode="desktop"
+      />,
     );
     expect(screen.queryByRole("button", {name: "提及成员"})).toBeNull();
   });
@@ -226,11 +251,49 @@ describe("MessageComposer", () => {
         draft={draft}
         members={[]}
         onSend={jest.fn()}
+        surfaceMode="desktop"
       />,
     );
     expect(screen.getByLabelText("消息内容")).toHaveProp(
       "value",
       "继续 @研究助手",
     );
+  });
+
+  it.each([
+    ["desktop", "发送消息到 #general，输入 @ 提及成员"],
+    ["compact", "发消息"],
+    ["native", "发消息"],
+  ] as const)("uses the %s composer copy", async (surfaceMode, placeholder) => {
+    const screen = await render(
+      <MessageComposer
+        channelName="general"
+        members={[]}
+        onSend={jest.fn()}
+        surfaceMode={surfaceMode}
+      />,
+    );
+
+    expect(screen.getByLabelText("消息内容")).toHaveProp(
+      "placeholder",
+      placeholder,
+    );
+  });
+
+  it("notifies the host when the real editor receives focus", async () => {
+    const onFocus = jest.fn();
+    const screen = await render(
+      <MessageComposer
+        channelName="general"
+        members={[]}
+        onFocus={onFocus}
+        onSend={jest.fn()}
+        surfaceMode="desktop"
+      />,
+    );
+
+    await fireEvent(screen.getByLabelText("消息内容"), "focus");
+
+    expect(onFocus).toHaveBeenCalledTimes(1);
   });
 });

@@ -68,7 +68,7 @@ describe("StyleLabScreen", () => {
     expect(screen.getAllByText("general").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("首次协作闭环验收")).toBeVisible();
     expect(screen.getAllByText("Atlas Agent").length).toBeGreaterThan(0);
-    expect(screen.getByPlaceholderText(/发送消息到 #general/)).toBeVisible();
+    expect(screen.getByPlaceholderText("发消息")).toBeVisible();
   });
 
   it("previews a DM without changing the Server-level Agent count", async () => {
@@ -79,7 +79,7 @@ describe("StyleLabScreen", () => {
     );
 
     expect(screen.getByText("8 位成员 · 2 个 Agent")).toBeVisible();
-    expect(screen.getByPlaceholderText("发送消息给 Atlas Agent")).toBeVisible();
+    expect(screen.getByPlaceholderText("发消息")).toBeVisible();
     expect(
       screen.queryByRole("button", {name: "提及 Agent"}),
     ).toBeNull();

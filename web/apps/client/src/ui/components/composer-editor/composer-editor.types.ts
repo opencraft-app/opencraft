@@ -49,6 +49,7 @@ export interface ComposerEditorProps {
   appearance: ComposerEditorAppearance;
   disabled?: boolean;
   document: ComposerDocument;
+  onFocus?(): void;
   onSnapshotChange(snapshot: ComposerEditorSnapshot): void;
   onSubmit(snapshot: ComposerEditorSnapshot): void;
   onSuggestionCommand(command: ComposerSuggestionCommand): void;

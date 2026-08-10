@@ -68,6 +68,7 @@ export const LexicalComposerCore = forwardRef<
     appearance,
     disabled = false,
     document: externalDocument,
+    onFocus,
     onSnapshotChange,
     onSubmit,
     onSuggestionCommand,
@@ -116,6 +117,7 @@ export const LexicalComposerCore = forwardRef<
               aria-label="消息内容"
               aria-multiline="true"
               className="vela-composer-editor-input"
+              onFocus={onFocus}
               spellCheck
               style={editorStyle(appearance)}
             />

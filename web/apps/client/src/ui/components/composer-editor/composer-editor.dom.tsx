@@ -21,6 +21,7 @@ export default function ComposerEditorDom({
   appearanceJson,
   disabled,
   initialDocumentJson,
+  onFocus,
   onSnapshotJson,
   onSubmitJson,
   onSuggestionCommand,
@@ -31,6 +32,7 @@ export default function ComposerEditorDom({
   appearanceJson: string;
   disabled: boolean;
   initialDocumentJson: string;
+  onFocus?(): Promise<void>;
   onSnapshotJson(value: string): Promise<void>;
   onSubmitJson(value: string): Promise<void>;
   onSuggestionCommand(value: ComposerSuggestionCommand): Promise<void>;
@@ -74,6 +76,9 @@ export default function ComposerEditorDom({
         appearance={JSON.parse(appearanceJson) as ComposerEditorAppearance}
         disabled={disabled}
         document={initialDocument.current}
+        onFocus={() => {
+          void onFocus?.();
+        }}
         onSnapshotChange={(snapshot: ComposerEditorSnapshot) => {
           void onSnapshotJson(JSON.stringify(snapshot));
         }}

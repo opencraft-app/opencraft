@@ -11,14 +11,7 @@ import {
   type MessageQuote,
 } from "@vela/client-core";
 import {useEffect, useMemo, useRef, useState} from "react";
-import {
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import {Pressable, ScrollView, Text, View} from "react-native";
 import {StyleSheet, useUnistyles} from "react-native-unistyles";
 import AtSign from "lucide-react-native/icons/at-sign";
 import Bot from "lucide-react-native/icons/bot";
@@ -29,7 +22,6 @@ import Send from "lucide-react-native/icons/send";
 import User from "lucide-react-native/icons/user";
 import X from "lucide-react-native/icons/x";
 
-import {breakpoints} from "../theme";
 import type {ConversationSurfaceMode} from "./message-presentation";
 import {
   ComposerEditor,
@@ -37,6 +29,12 @@ import {
   type ComposerEditorSnapshot,
   type ComposerSuggestionCommand,
 } from "./composer-editor";
+import {
+  ComposerFooter,
+  ComposerMaterialSurface,
+  ComposerStage,
+  ComposerSurfaceLayout,
+} from "./composer-surface";
 
 const MAX_ATTACHMENTS = 9;
 const MAX_IMAGE_BYTES = 28 * 1_024 * 1_024;
@@ -64,8 +62,7 @@ export interface MessageComposerProps {
   onSend(draft: ComposerDraft): void | Promise<void>;
   quote?: MessageQuote | null;
   showAttachments?: boolean;
-  surfaceMode?: ConversationSurfaceMode;
-  viewportWidth?: number;
+  surfaceMode: ConversationSurfaceMode;
 }
 
 export function MessageComposer({
@@ -83,20 +80,9 @@ export function MessageComposer({
   quote = null,
   showAttachments = true,
   surfaceMode,
-  viewportWidth,
 }: MessageComposerProps) {
   const {theme} = useUnistyles();
-  const window = useWindowDimensions();
-  const layoutWidth = viewportWidth ?? window.width;
-  const resolvedSurfaceMode =
-    surfaceMode ??
-    (Platform.OS === "web"
-      ? layoutWidth < breakpoints.medium
-        ? "compact"
-        : "desktop"
-      : "native");
-  const compact = resolvedSurfaceMode !== "desktop";
-  const narrow = layoutWidth <= breakpoints.narrow;
+  const compact = surfaceMode !== "desktop";
   const editorRef = useRef<ComposerEditorHandle>(null);
   const submitPending = useRef(false);
   const [localDraft, setLocalDraft] = useState<ComposerDraft>(() =>
@@ -253,7 +239,7 @@ export function MessageComposer({
   const destinationHint = conversationLabel
     ? `发送给 ${conversationLabel}`
     : `发送到 #${channelName}`;
-  const placeholder = narrow
+  const placeholder = compact
     ? "发消息"
     : conversationLabel
       ? `发送消息给 ${conversationLabel}`
@@ -265,15 +251,18 @@ export function MessageComposer({
   const composerTypography = compact
     ? theme.semantic.typography.composerInputCompact
     : theme.semantic.typography.composerInput;
+  const surfaceMetrics =
+    theme.recipes.conversationWorkspace.composerSurfaceMetrics[surfaceMode];
   const appearance = {
-    backgroundColor: theme.semantic.color.paneSurface,
+    backgroundColor: theme.semantic.color.borderTransparent,
     chipBackgroundColor: theme.semantic.color.selectionSurface,
     chipTextColor: theme.semantic.color.textLink,
-    maxHeight: theme.recipes.conversationWorkspace.composerInputMaxHeight,
-    minHeight: theme.recipes.compactWorkspace.listRowMinHeight,
+    maxHeight: surfaceMetrics.editorMaxHeight,
+    minHeight: surfaceMetrics.editorMinHeight,
     paddingBottom: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.md,
-    paddingTop: theme.spacing.sm,
+    paddingHorizontal:
+      theme.recipes.desktopWorkspace.composerHorizontalPadding,
+    paddingTop: theme.recipes.desktopWorkspace.composerVerticalPadding,
     placeholderColor: theme.semantic.color.fieldPlaceholder,
     textLeading: composerTypography.lineHeight,
     textColor: theme.semantic.color.textPrimary,
@@ -281,229 +270,236 @@ export function MessageComposer({
     typeface: composerTypography.fontFamily,
   };
 
+  const quoteSlot = quote ? (
+    <View style={styles.quotePreview}>
+      <View style={styles.quoteCopy}>
+        <Text style={styles.quoteSender}>引用 {quote.senderName}</Text>
+        <Text numberOfLines={2} style={styles.quoteText}>{quote.preview}</Text>
+      </View>
+      <Pressable
+        accessibilityLabel="取消引用"
+        accessibilityRole="button"
+        onPress={onClearQuote}
+        style={styles.iconButton}
+      >
+        <X
+          color={theme.semantic.color.iconMuted}
+          size={theme.semantic.icon.size.medium}
+        />
+      </Pressable>
+    </View>
+  ) : undefined;
+  const attachmentSlot = localDraft.attachments.length ? (
+    <ScrollView
+      contentContainerStyle={styles.attachmentList}
+      horizontal
+      keyboardShouldPersistTaps="handled"
+      showsHorizontalScrollIndicator={false}
+    >
+      {localDraft.attachments.map((attachment) => (
+        <View key={attachment.id} style={styles.attachmentCard}>
+          {attachment.kind === "image" ? (
+            <ImageIcon
+              color={theme.semantic.color.iconAccent}
+              size={theme.semantic.icon.size.medium}
+            />
+          ) : (
+            <FileText
+              color={theme.semantic.color.iconAccent}
+              size={theme.semantic.icon.size.medium}
+            />
+          )}
+          <View style={styles.attachmentCopy}>
+            <Text numberOfLines={1} style={styles.attachmentName}>
+              {attachment.name}
+            </Text>
+            <Text style={styles.attachmentMeta}>{formatBytes(attachment.size)}</Text>
+          </View>
+          <Pressable
+            accessibilityLabel={`移除附件 ${attachment.name}`}
+            accessibilityRole="button"
+            onPress={() => removeAttachment(attachment.id)}
+            style={styles.attachmentRemove}
+          >
+            <X
+              color={theme.semantic.color.iconMuted}
+              size={theme.semantic.icon.size.compact}
+            />
+          </Pressable>
+        </View>
+      ))}
+    </ScrollView>
+  ) : undefined;
+  const editorSlot = (
+    <View style={styles.input}>
+      <ComposerEditor
+        ref={editorRef}
+        appearance={appearance}
+        disabled={disabled}
+        document={localDraft.document}
+        onFocus={onFocus}
+        onSnapshotChange={handleSnapshot}
+        onSubmit={submit}
+        onSuggestionCommand={handleSuggestionCommand}
+        placeholder={placeholder}
+        suggestionsOpen={suggestionsOpen}
+      />
+    </View>
+  );
+  const suggestionOverlay = suggestionsOpen ? (
+    <View style={styles.suggestions} testID="mention-suggestions">
+      <ScrollView keyboardShouldPersistTaps="handled" style={styles.suggestionScroll}>
+        {suggestions.map((member, index) => (
+          <Pressable
+            accessibilityLabel={`@${member.displayName}`}
+            accessibilityRole="button"
+            key={member.id}
+            onPress={() => selectMember(member)}
+            style={[
+              styles.suggestion,
+              index === activeSuggestion && styles.suggestionActive,
+            ]}
+          >
+            <View style={styles.suggestionAvatar}>
+              {member.kind === "agent" ? (
+                <Bot
+                  color={theme.semantic.color.iconAccent}
+                  size={theme.semantic.icon.size.small}
+                />
+              ) : (
+                <User
+                  color={theme.semantic.color.iconMuted}
+                  size={theme.semantic.icon.size.small}
+                />
+              )}
+            </View>
+            <View style={styles.suggestionCopy}>
+              <Text style={styles.suggestionName}>{member.displayName}</Text>
+              <Text style={styles.suggestionHandle}>@{member.handle}</Text>
+            </View>
+            <Text style={styles.suggestionKind}>
+              {member.kind === "agent" ? "Agent" : "成员"}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </View>
+  ) : undefined;
+  const leadingActions = (
+    <>
+      {showAttachments ? (
+        <>
+          <Pressable
+            accessibilityLabel="添加文件"
+            accessibilityRole="button"
+            disabled={disabled}
+            onPress={() => addAttachment("file", onAttachFile)}
+            style={({pressed}) => [
+              styles.iconButton,
+              pressed && styles.iconButtonPressed,
+            ]}
+          >
+            <Paperclip
+              color={theme.semantic.color.iconMuted}
+              size={theme.semantic.icon.size.large}
+            />
+          </Pressable>
+          <Pressable
+            accessibilityLabel="添加图片"
+            accessibilityRole="button"
+            disabled={disabled}
+            onPress={() => addAttachment("image", onAttachImage)}
+            style={({pressed}) => [
+              styles.iconButton,
+              pressed && styles.iconButtonPressed,
+            ]}
+          >
+            <ImageIcon
+              color={theme.semantic.color.iconMuted}
+              size={theme.semantic.icon.size.large}
+            />
+          </Pressable>
+        </>
+      ) : null}
+      {members.length > 0 ? (
+        <Pressable
+          accessibilityLabel="提及成员"
+          accessibilityRole="button"
+          aria-expanded={suggestionsOpen}
+          disabled={disabled}
+          onPress={() => {
+            setManualMentionPicker((current) => !current);
+            editorRef.current?.focus();
+          }}
+          style={({pressed}) => [
+            styles.iconButton,
+            suggestionsOpen && styles.mentionButtonSelected,
+            pressed && styles.iconButtonPressed,
+          ]}
+        >
+          <AtSign
+            color={theme.semantic.color.iconMuted}
+            size={theme.semantic.icon.size.large}
+          />
+        </Pressable>
+      ) : null}
+    </>
+  );
+  const primaryAction = (
+    <Pressable
+      accessibilityLabel="发送消息"
+      accessibilityRole="button"
+      disabled={!canSend}
+      onPress={() => editorRef.current?.requestSubmit()}
+      style={({pressed}) => [
+        styles.sendButton,
+        pressed && styles.sendButtonPressed,
+        !canSend && styles.sendButtonDisabled,
+      ]}
+    >
+      <Send
+        color={
+          canSend
+            ? theme.semantic.color.iconInverse
+            : theme.semantic.color.actionDisabledText
+        }
+        size={theme.semantic.icon.size.medium}
+        strokeWidth={theme.semantic.icon.stroke.strong}
+      />
+    </Pressable>
+  );
+
   return (
     <View
       accessibilityHint={destinationHint}
       style={[
         styles.outer,
-        resolvedSurfaceMode === "desktop" && styles.outerDesktop,
-        compact && styles.outerCompact,
+        surfaceMode === "desktop" ? styles.outerDesktop : styles.outerCompact,
       ]}
       testID="message-composer"
     >
-      <View
-        style={[
-          styles.composer,
-          resolvedSurfaceMode === "desktop" && styles.composerDesktop,
-          compact && styles.composerCompact,
-        ]}
-        testID="message-composer-surface"
-      >
-        {quote ? (
-          <View style={styles.quotePreview}>
-            <View style={styles.quoteCopy}>
-              <Text style={styles.quoteSender}>引用 {quote.senderName}</Text>
-              <Text numberOfLines={2} style={styles.quoteText}>{quote.preview}</Text>
-            </View>
-            <Pressable
-              accessibilityLabel="取消引用"
-              accessibilityRole="button"
-              onPress={onClearQuote}
-              style={styles.iconButton}
-            >
-              <X
-                color={theme.semantic.color.iconMuted}
-                size={theme.semantic.icon.size.medium}
+      <ComposerStage overlay={suggestionOverlay} surfaceMode={surfaceMode}>
+        <ComposerMaterialSurface
+          disabled={disabled}
+          onPressBackground={() => editorRef.current?.focus()}
+          surfaceMode={surfaceMode}
+          testID="message-composer-surface"
+        >
+          <ComposerSurfaceLayout
+            attachments={attachmentSlot}
+            editor={editorSlot}
+            error={localError ? <Text style={styles.errorText}>{localError}</Text> : undefined}
+            footer={
+              <ComposerFooter
+                leadingActions={leadingActions}
+                primaryAction={primaryAction}
+                surfaceMode={surfaceMode}
               />
-            </Pressable>
-          </View>
-        ) : null}
-
-        {localDraft.attachments.length > 0 ? (
-          <ScrollView
-            contentContainerStyle={styles.attachmentList}
-            horizontal
-            keyboardShouldPersistTaps="handled"
-            showsHorizontalScrollIndicator={false}
-          >
-            {localDraft.attachments.map((attachment) => (
-              <View key={attachment.id} style={styles.attachmentCard}>
-                {attachment.kind === "image" ? (
-                  <ImageIcon
-                    color={theme.semantic.color.iconAccent}
-                    size={theme.semantic.icon.size.medium}
-                  />
-                ) : (
-                  <FileText
-                    color={theme.semantic.color.iconAccent}
-                    size={theme.semantic.icon.size.medium}
-                  />
-                )}
-                <View style={styles.attachmentCopy}>
-                  <Text numberOfLines={1} style={styles.attachmentName}>
-                    {attachment.name}
-                  </Text>
-                  <Text style={styles.attachmentMeta}>
-                    {formatBytes(attachment.size)}
-                  </Text>
-                </View>
-                <Pressable
-                  accessibilityLabel={`移除附件 ${attachment.name}`}
-                  accessibilityRole="button"
-                  onPress={() => removeAttachment(attachment.id)}
-                  style={styles.attachmentRemove}
-                >
-                  <X
-                    color={theme.semantic.color.iconMuted}
-                    size={theme.semantic.icon.size.compact}
-                  />
-                </Pressable>
-              </View>
-            ))}
-          </ScrollView>
-        ) : null}
-
-        <View onTouchStart={onFocus} style={styles.input}>
-          <ComposerEditor
-            ref={editorRef}
-            appearance={appearance}
-            disabled={disabled}
-            document={localDraft.document}
-            onSnapshotChange={handleSnapshot}
-            onSubmit={submit}
-            onSuggestionCommand={handleSuggestionCommand}
-            placeholder={placeholder}
-            suggestionsOpen={suggestionsOpen}
+            }
+            quote={quoteSlot}
           />
-        </View>
-
-        {suggestionsOpen ? (
-          <View style={styles.suggestions} testID="mention-suggestions">
-            <ScrollView keyboardShouldPersistTaps="handled" style={styles.suggestionScroll}>
-              {suggestions.map((member, index) => (
-                <Pressable
-                  accessibilityLabel={`@${member.displayName}`}
-                  accessibilityRole="button"
-                  key={member.id}
-                  onPress={() => selectMember(member)}
-                  style={[
-                    styles.suggestion,
-                    index === activeSuggestion && styles.suggestionActive,
-                  ]}
-                >
-                  <View style={styles.suggestionAvatar}>
-                    {member.kind === "agent" ? (
-                      <Bot
-                        color={theme.semantic.color.iconAccent}
-                        size={theme.semantic.icon.size.small}
-                      />
-                    ) : (
-                      <User
-                        color={theme.semantic.color.iconMuted}
-                        size={theme.semantic.icon.size.small}
-                      />
-                    )}
-                  </View>
-                  <View style={styles.suggestionCopy}>
-                    <Text style={styles.suggestionName}>{member.displayName}</Text>
-                    <Text style={styles.suggestionHandle}>@{member.handle}</Text>
-                  </View>
-                  <Text style={styles.suggestionKind}>
-                    {member.kind === "agent" ? "Agent" : "成员"}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-        ) : null}
-
-        {localError ? <Text style={styles.errorText}>{localError}</Text> : null}
-
-        <View style={styles.toolbar}>
-          <View style={styles.toolbarGroup}>
-            {showAttachments ? (
-              <>
-                <Pressable
-                  accessibilityLabel="添加文件"
-                  accessibilityRole="button"
-                  disabled={disabled}
-                  onPress={() => addAttachment("file", onAttachFile)}
-                  style={({pressed}) => [
-                    styles.iconButton,
-                    styles.attachmentPickerButton,
-                    pressed && styles.iconButtonPressed,
-                  ]}
-                >
-                  <Paperclip
-                    color={theme.semantic.color.iconMuted}
-                    size={theme.semantic.icon.size.large}
-                  />
-                </Pressable>
-                <Pressable
-                  accessibilityLabel="添加图片"
-                  accessibilityRole="button"
-                  disabled={disabled}
-                  onPress={() => addAttachment("image", onAttachImage)}
-                  style={({pressed}) => [
-                    styles.iconButton,
-                    styles.attachmentPickerButton,
-                    pressed && styles.iconButtonPressed,
-                  ]}
-                >
-                  <ImageIcon
-                    color={theme.semantic.color.iconMuted}
-                    size={theme.semantic.icon.size.large}
-                  />
-                </Pressable>
-              </>
-            ) : null}
-            {members.length > 0 ? (
-              <Pressable
-                accessibilityLabel="提及成员"
-                accessibilityRole="button"
-                aria-expanded={suggestionsOpen}
-                disabled={disabled}
-                onPress={() => {
-                  setManualMentionPicker((current) => !current);
-                  editorRef.current?.focus();
-                }}
-                style={({pressed}) => [
-                  styles.iconButton,
-                  styles.mentionButton,
-                  suggestionsOpen && styles.mentionButtonSelected,
-                  pressed && styles.iconButtonPressed,
-                ]}
-              >
-                <AtSign
-                  color={theme.semantic.color.iconMuted}
-                  size={theme.semantic.icon.size.large}
-                />
-              </Pressable>
-            ) : null}
-          </View>
-          <Pressable
-            accessibilityLabel="发送消息"
-            accessibilityRole="button"
-            disabled={!canSend}
-            onPress={() => editorRef.current?.requestSubmit()}
-            style={({pressed}) => [
-              styles.sendButton,
-              pressed && styles.sendButtonPressed,
-              !canSend && styles.sendButtonDisabled,
-            ]}
-          >
-            <Send
-              color={
-                canSend
-                  ? theme.semantic.color.iconInverse
-                  : theme.semantic.color.actionDisabledText
-              }
-              size={theme.semantic.icon.size.medium}
-              strokeWidth={theme.semantic.icon.stroke.strong}
-            />
-          </Pressable>
-        </View>
-      </View>
+        </ComposerMaterialSurface>
+      </ComposerStage>
     </View>
   );
 }
@@ -614,9 +610,6 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     width: theme.recipes.iconControl.microSize,
   },
-  attachmentPickerButton: {
-    backgroundColor: theme.semantic.color.actionSecondarySurface,
-  },
   errorText: {
     color: theme.semantic.color.actionDangerBorder,
     paddingHorizontal: theme.spacing.sm,
@@ -635,11 +628,7 @@ const styles = StyleSheet.create((theme) => ({
     ...theme.semantic.motion.transition.control,
   },
   input: {
-    maxHeight: theme.recipes.conversationWorkspace.composerInputMaxHeight,
-  },
-  mentionButton: {
-    backgroundColor: theme.semantic.color.actionSecondarySurface,
-    ...theme.semantic.motion.transition.control,
+    width: "100%",
   },
   mentionButtonSelected: {
     backgroundColor: theme.semantic.color.selectionSurface,
@@ -687,9 +676,9 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     backgroundColor: theme.semantic.color.actionPrimarySurface,
     borderRadius: theme.semantic.radius.circle,
-    height: theme.recipes.iconControl.denseSize,
+    height: theme.recipes.conversationWorkspace.composerPrimaryActionSize,
     justifyContent: "center",
-    width: theme.recipes.iconControl.denseSize,
+    width: theme.recipes.conversationWorkspace.composerPrimaryActionSize,
     ...theme.semantic.motion.transition.control,
   },
   sendButtonDisabled: {
@@ -745,50 +734,13 @@ const styles = StyleSheet.create((theme) => ({
     borderColor: theme.semantic.color.borderSection,
     borderRadius: theme.semantic.radius.section,
     borderWidth: theme.semantic.stroke.hairline,
-    bottom: theme.recipes.conversationWorkspace.composerMentionListOffset,
+    bottom: "100%",
     left: theme.spacing.sm,
     maxWidth: theme.recipes.overlay.confirmDialogMaxWidth,
+    marginBottom: theme.spacing.sm,
     padding: theme.spacing.xs,
     position: "absolute",
     right: theme.spacing.sm,
     zIndex: theme.semantic.layer.popover,
-  },
-  composer: {
-    backgroundColor: theme.semantic.color.paneSurface,
-    borderBottomWidth: 0,
-    borderColor: theme.semantic.color.separator,
-    borderLeftWidth: 0,
-    borderRadius: theme.semantic.radius.pane,
-    borderRightWidth: 0,
-    borderTopWidth: theme.semantic.stroke.hairline,
-    maxWidth: "100%",
-    minHeight: theme.recipes.conversationWorkspace.composerSurfaceMinHeight,
-    position: "relative",
-    width: "100%",
-  },
-  composerCompact: {
-    maxWidth: "100%",
-  },
-  composerDesktop: {
-    borderBottomWidth: theme.semantic.stroke.hairline,
-    borderLeftWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.section,
-    borderRightWidth: theme.semantic.stroke.hairline,
-    maxWidth: theme.recipes.conversationWorkspace.composerDesktopMaxWidth,
-  },
-  toolbar: {
-    alignItems: "center",
-    borderTopColor: theme.semantic.color.separator,
-    borderTopWidth: theme.semantic.stroke.hairline,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: theme.recipes.conversationWorkspace.composerToolbarMinHeight,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
-  },
-  toolbarGroup: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing.xs,
   },
 }));

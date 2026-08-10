@@ -19,6 +19,13 @@ function readUiSource(relativePath: string): string {
 }
 
 describe("Vela token usage", () => {
+  it("keeps the composer chrome continuous", () => {
+    const source = readUiSource("components/message-composer.tsx");
+
+    expect(source).not.toContain("borderTopWidth");
+    expect(source).not.toContain("composerMentionListOffset");
+  });
+
   it("says a control's state in the dialect the browser reads", () => {
     // react-native-web 0.21 dropped accessibilityState: on the Web it reaches
     // no attribute at all. Jest renders the native tree, so a suite full of
@@ -489,8 +496,6 @@ describe("Vela token usage", () => {
       ["components/route-status-screen.tsx", "action", ["actionPrimarySurface"]],
       ["components/route-status-screen.tsx", "actionText", ["actionPrimaryText"]],
       ["components/message-composer.tsx", "sendButton", ["actionPrimarySurface"]],
-      ["components/message-composer.tsx", "mentionButton", ["actionSecondarySurface"]],
-      ["components/message-composer.tsx", "attachmentPickerButton", ["actionSecondarySurface"]],
       ["components/message-viewport/message-viewport.tsx", "newMessagesBadge", ["notificationBadgeSurface"]],
       ["components/message-viewport/message-viewport.tsx", "newMessagesBadgeText", ["notificationBadgeText"]],
       ["layouts/workspace-shell.tsx", "reconnectNotice", ["statusInfoSurface", "statusInfoDivider"]],
@@ -719,8 +724,6 @@ describe("Vela token usage", () => {
       ["screens/first-workspace-screen.tsx", "primaryButton", ["authWorkspace.primaryActionHeight"]],
       ["screens/first-workspace-screen.tsx", "shell", ["authWorkspace.compactPanelMaxWidth"]],
       ["components/thread-panel.tsx", "panel", ["overlay.threadPanelMinWidth", "overlay.threadPanelWidth"]],
-      ["components/message-composer.tsx", "composer", ["conversationWorkspace.composerSurfaceMinHeight"]],
-      ["components/message-composer.tsx", "input", ["conversationWorkspace.composerInputMaxHeight"]],
       ["components/terminal-panel.tsx", "controlButton", ["terminalPanel.controlMinWidth"]],
       ["components/terminal-panel.tsx", "output", ["terminalPanel.outputMinHeight"]],
       ["components/terminal-panel.tsx", "outputBody", ["terminalPanel.outputMinHeight"]],

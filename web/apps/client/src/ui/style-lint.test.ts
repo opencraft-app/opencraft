@@ -121,7 +121,7 @@ describe("Vela style lint", () => {
         ],
       ],
       ["components/clearable-search-field.tsx", ["clear", "field"]],
-      ["components/message-composer.tsx", ["mentionButton", "sendButton"]],
+      ["components/message-composer.tsx", ["sendButton"]],
       ["components/message-list.tsx", ["loadOlderButton", "retryButton"]],
       ["components/route-status-screen.tsx", ["action"]],
       ["components/terminal-panel.tsx", ["button", "sendButton"]],
@@ -168,6 +168,8 @@ describe("Vela style lint", () => {
       .sort();
 
     expect(shadowStyles).toEqual([
+      "components/composer-surface/composer-material-surface.native.tsx:surface",
+      "components/composer-surface/composer-material-surface.web.tsx:surface",
       "components/message-list.tsx:actionRowOpen",
       "components/message-viewport/message-viewport.tsx:newMessages",
       "layouts/app-frame.tsx:accountPopover",

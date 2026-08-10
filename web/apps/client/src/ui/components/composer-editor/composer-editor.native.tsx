@@ -35,6 +35,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       appearance,
       disabled = false,
       document,
+      onFocus,
       onSnapshotChange,
       onSubmit,
       onSuggestionCommand,
@@ -48,9 +49,11 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     const lastEmitted = useRef(initialDocumentJson.current);
     const lastApplied = useRef(initialDocumentJson.current);
     const onSnapshotRef = useRef(onSnapshotChange);
+    const onFocusRef = useRef(onFocus);
     const onSubmitRef = useRef(onSubmit);
     const onSuggestionRef = useRef(onSuggestionCommand);
     onSnapshotRef.current = onSnapshotChange;
+    onFocusRef.current = onFocus;
     onSubmitRef.current = onSubmit;
     onSuggestionRef.current = onSuggestionCommand;
 
@@ -82,6 +85,9 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       lastEmitted.current = JSON.stringify(snapshot.document);
       onSnapshotRef.current(snapshot);
     }, []);
+    const receiveFocus = useCallback(async () => {
+      onFocusRef.current?.();
+    }, []);
     const receiveSubmit = useCallback(async (value: string) => {
       const snapshot = JSON.parse(value) as ComposerEditorSnapshot;
       lastEmitted.current = JSON.stringify(snapshot.document);
@@ -106,6 +112,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           appearanceJson={JSON.stringify(appearance)}
           disabled={disabled}
           initialDocumentJson={initialDocumentJson.current}
+          onFocus={receiveFocus}
           onSnapshotJson={receiveSnapshot}
           onSubmitJson={receiveSubmit}
           onSuggestionCommand={receiveSuggestion}

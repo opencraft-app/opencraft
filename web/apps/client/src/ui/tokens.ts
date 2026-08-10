@@ -358,6 +358,57 @@ export const textScale = {
 
 export const text: (typeof textScale)[DensityMode] = textScale[densityMode];
 
+const strokeScale = {
+  accent: 3,
+  hairline: 1,
+  statusRing: 2,
+} as const;
+
+function composerSurfaceMetric(
+  surfaceMinHeight: number,
+  surfaceMaxHeight: number,
+  footerInset: number,
+  radius: number,
+) {
+  return {
+    editorMaxHeight:
+      surfaceMaxHeight -
+      density.composerToolbarMinHeight -
+      footerInset -
+      strokeScale.hairline * 2,
+    editorMinHeight:
+      surfaceMinHeight -
+      density.composerToolbarMinHeight -
+      footerInset -
+      strokeScale.hairline * 2,
+    footerInset,
+    radius,
+    surfaceMaxHeight,
+    surfaceMinHeight,
+  } as const;
+}
+
+const composerSurfaceMetrics = {
+  compact: composerSurfaceMetric(
+    pointerDensity ? 84 : 104,
+    pointerDensity ? 180 : 208,
+    4,
+    18,
+  ),
+  desktop: composerSurfaceMetric(
+    pointerDensity ? 112 : 124,
+    pointerDensity ? 220 : 240,
+    8,
+    24,
+  ),
+  native: composerSurfaceMetric(
+    pointerDensity ? 88 : 104,
+    pointerDensity ? 180 : 208,
+    4,
+    18,
+  ),
+} as const;
+
 // The Web workspace frame can restore navigation before content-heavy
 // management screens switch from their compact, stacked layouts.
 export const workspaceShellWideBreakpoint = 960;
@@ -602,11 +653,7 @@ export const velaTheme = {
       pill: 9_999,
       section: 12,
     },
-    stroke: {
-      accent: 3,
-      hairline: 1,
-      statusRing: 2,
-    },
+    stroke: strokeScale,
     typography: {
       authHeroTitle: {
         fontFamily: interfaceFontFamily,
@@ -854,17 +901,15 @@ export const velaTheme = {
     conversationWorkspace: {
       composerAttachmentMaxWidth: 260,
       composerAttachmentMinWidth: 190,
+      composerAttachmentInset: 8,
       composerDesktopMaxWidth: 860,
-      // Clearance above the resting composer chrome so @-suggestions sit on
-      // top of the field, not over the typed line.
-      composerMentionListOffset: density.composerSurfaceMinHeight,
+      composerPrimaryActionSize: pointerDensity ? 32 : 44,
       composerSuggestionMinHeight: density.composerSuggestionMinHeight,
       composerToolbarMinHeight: density.composerToolbarMinHeight,
       channelManagementActionMinWidth: 64,
       channelMemberRowMinHeight: density.memberRowMinHeight,
       compactActionGap: 3,
-      composerInputMaxHeight: 112,
-      composerSurfaceMinHeight: density.composerSurfaceMinHeight,
+      composerSurfaceMetrics,
       messageActionHorizontalPadding: 6,
       messageIndent: density.messageIndent,
       messageRowGap: density.messageRowGap,

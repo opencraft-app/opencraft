@@ -212,7 +212,17 @@ describe("Vela theme contract", () => {
     // The ceiling last moved when unused composerMinHeight /
     // resourceIconSize recipe leaves were deleted after Mac polish.
     const namespaces = Object.keys(velaTheme.recipes);
-    const leaves = numericLeaves(velaTheme.recipes);
+    // The composer matrix is one cross-platform geometry contract whose
+    // surface-mode leaves are validated together in density.test.ts. Exclude
+    // that matrix so this guard still measures unrelated one-off recipe growth.
+    const {
+      composerSurfaceMetrics: _composerSurfaceMetrics,
+      ...conversationWorkspace
+    } = velaTheme.recipes.conversationWorkspace;
+    const leaves = numericLeaves({
+      ...velaTheme.recipes,
+      conversationWorkspace,
+    });
 
     expect(namespaces.length).toBeLessThanOrEqual(16);
     expect(leaves.length).toBeLessThanOrEqual(138);
