@@ -1,6 +1,23 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+function readUiSource(relativePath: string): string {
+  const root = join(process.cwd(), "src", "ui");
+  const source = readFileSync(join(root, relativePath), "utf8");
+  if (relativePath === "layouts/workspace-shell.tsx") {
+    return `${source}\n${readFileSync(join(root, "layouts", "workspace-shell.styles.ts"), "utf8")}`;
+  }
+  if (relativePath === "components/management-workspace.tsx") {
+    return [
+      source,
+      readFileSync(join(root, "components", "management-workspace-core.tsx"), "utf8"),
+      readFileSync(join(root, "components", "management-workspace-form.tsx"), "utf8"),
+      readFileSync(join(root, "components", "management-workspace.styles.ts"), "utf8"),
+    ].join("\n");
+  }
+  return source;
+}
+
 describe("Vela token usage", () => {
   it("says a control's state in the dialect the browser reads", () => {
     // react-native-web 0.21 dropped accessibilityState: on the Web it reaches
@@ -75,8 +92,7 @@ describe("Vela token usage", () => {
     // live inside the content column. Once that column settled at 760 the
     // minor panel got 299px and its copy wrapped inside 190px. The split is
     // gone, so nothing should reach for its geometry again.
-    const read = (...parts: string[]) =>
-      readFileSync(join(process.cwd(), "src", "ui", ...parts), "utf8");
+    const read = (...parts: string[]) => readUiSource(parts.join("/"));
 
     const management = read("components", "management-workspace.tsx");
     const computers = read("screens", "computers-screen.tsx");
@@ -99,8 +115,7 @@ describe("Vela token usage", () => {
     // so one sat a step deeper than the other and the two areas stopped
     // looking like one product. navigationSurface belongs to the narrow
     // icon rail alone.
-    const read = (...parts: string[]) =>
-      readFileSync(join(process.cwd(), "src", "ui", ...parts), "utf8");
+    const read = (...parts: string[]) => readUiSource(parts.join("/"));
     const styleOf = (source: string, name: string) =>
       new RegExp(`^ {2}${name}: \\{\\n([\\s\\S]*?)^ {2}\\},$`, "mu").exec(
         source,
@@ -126,8 +141,7 @@ describe("Vela token usage", () => {
     // Channels were square and full-bleed, direct messages were square with a
     // rule under each one, and the management collection was an inset rounded
     // pill. Three treatments of one row, in one shelf.
-    const read = (...parts: string[]) =>
-      readFileSync(join(process.cwd(), "src", "ui", ...parts), "utf8");
+    const read = (...parts: string[]) => readUiSource(parts.join("/"));
     const styleOf = (source: string, name: string) =>
       new RegExp(`^ {2}${name}: \\{\\n([\\s\\S]*?)^ {2}\\},$`, "mu").exec(
         source,
@@ -176,10 +190,7 @@ describe("Vela token usage", () => {
     // circles and channels as tiles, management drew people, agents and
     // machines all as the same tile. Round means someone, square means
     // something.
-    const management = readFileSync(
-      join(process.cwd(), "src", "ui", "components", "management-workspace.tsx"),
-      "utf8",
-    );
+    const management = readUiSource("components/management-workspace.tsx");
     const styleOf = (name: string) =>
       new RegExp(`^ {2}${name}: \\{\\n([\\s\\S]*?)^ {2}\\},$`, "mu").exec(
         management,
@@ -202,11 +213,11 @@ describe("Vela token usage", () => {
     // written twice, thirty lines apart. Nothing compared them, so searching a
     // member by kind worked under a finger and not on a pointer, and either
     // wording could have been revised alone. The shapes are meant to differ.
-    // What they say is not.
-    const shell = readFileSync(
-      join(process.cwd(), "src", "ui", "layouts", "workspace-shell.tsx"),
-      "utf8",
-    );
+    // What they say is not. After the copy landed in one place, each shape
+    // still reassembled selected/href/preview/unread/identity for itself —
+    // so a peer could be painted as a human on the desktop and an Agent under
+    // a finger. The row answers live with the directory now too.
+    const shell = readUiSource("layouts/workspace-shell.tsx");
     const answers = [
       "公开频道 · 可加入",
       "私密频道 · 尚未加入",
@@ -215,9 +226,149 @@ describe("Vela token usage", () => {
       '"99+"',
       // The one derivation: a directory narrows by lowercasing what it holds.
       "toLocaleLowerCase",
+      // Row assembly that used to live in both shapes. Consuming the shared
+      // helpers (e.g. directIdentitySummary) is fine; re-deriving them is not.
+      "channelConversationSummary(",
+      "directDraftPreview(",
+      "unreadLabel(",
+      "`打开 Channel ${",
+      "`打开私信 ${",
+      'kind === "agent" ? "Agent"',
     ];
 
     expect(answers.filter((answer) => shell.includes(answer))).toEqual([]);
+  });
+
+  it("names a member's kind in one place", () => {
+    // Chat wrote `kind === "agent" ? "Agent" : "自然人"` beside every row;
+    // members kept a private map; the directory summary wrote it again. A
+    // search hit could even reverse the kind/handle order against the summary
+    // for the same peer. The word lives in memberKindLabel now.
+    const shell = readUiSource("layouts/workspace-shell.tsx");
+    const members = readFileSync(
+      join(process.cwd(), "src", "ui", "screens", "members-screen.tsx"),
+      "utf8",
+    );
+    const directory = readFileSync(
+      join(process.cwd(), "src", "ui", "layouts", "conversation-directory.ts"),
+      "utf8",
+    );
+
+    expect(shell).not.toContain('kind === "agent" ? "Agent"');
+    expect(members).not.toContain("const memberKindLabel");
+    expect(directory).not.toContain('kind === "agent" ? "Agent"');
+    expect(shell).toContain("memberKindLabel");
+    expect(members).toContain("memberKindLabel");
+    expect(directory).toContain("memberKindLabel");
+  });
+
+  it("paints every collection peer with the one identity mark", () => {
+    // Chat invented directAvatar and channelMemberAvatar; members invented its
+    // own avatar styles; agents and computers already used CollectionIdentityMark.
+    // Three answers for the same 28pt job, and chat did not even distinguish
+    // Agent from human in a DM row. One mark, everywhere a collection names a peer.
+    const shell = readUiSource("layouts/workspace-shell.tsx");
+    const members = readFileSync(
+      join(process.cwd(), "src", "ui", "screens", "members-screen.tsx"),
+      "utf8",
+    );
+    expect(shell).toContain("<CollectionIdentityMark");
+    expect(members).toContain("<CollectionIdentityMark");
+    expect(shell).not.toMatch(/\n  (?:directAvatar|channelMemberAvatar)(?:Text|Agent)?: \{/u);
+    expect(members).not.toMatch(/\n  (?:avatar|avatarAgent|avatarText): \{/u);
+  });
+
+  it("lets the channel panel share the management form controls", () => {
+    // Channel create/edit invented its own fields, pill visibility toggles and
+    // submit Pressable while agents/members already spoke ManagementField,
+    // SelectionButton and ActionButton. Same form job, one vocabulary.
+    const shell = readUiSource("layouts/workspace-shell.tsx");
+    expect(shell).toContain("<ManagementField");
+    expect(shell).toContain("<ManagementTextInput");
+    expect(shell).toContain("<SelectionButton");
+    expect(shell).not.toContain("channelInput:");
+    expect(shell).not.toContain("channelVisibilityButton:");
+    expect(shell).not.toContain("channelPanelSubmit:");
+  });
+
+  it("lets directory search sit recessed and form fields stay raised", () => {
+    // White boxes on a grey sidebar were the cheap look. Search wells use the
+    // recessed fill; form inputs keep the raised white surface and grow a
+    // focus glow instead of a second outline.
+    const search = readFileSync(
+      join(process.cwd(), "src", "ui", "components", "clearable-search-field.tsx"),
+      "utf8",
+    );
+    const forms = readUiSource("components/management-workspace.tsx");
+    const fieldBlock =
+      search.match(/\n  field: \{([\s\S]*?)\n  \},/)?.[1] ?? "";
+    const textInputBlock =
+      forms.match(/\n  textInput: \{([\s\S]*?)\n  \},/)?.[1] ?? "";
+
+    expect(fieldBlock).toContain("fieldSurfaceRecessed");
+    expect(fieldBlock).not.toContain("fieldSurface,");
+    expect(fieldBlock).toContain('"_focus-within"');
+    expect(fieldBlock).toContain("fieldFocusGlow");
+    expect(textInputBlock).toContain("fieldSurface");
+    expect(textInputBlock).toContain("fieldFocusGlow");
+    expect(textInputBlock).toContain("borderFieldHover");
+  });
+
+  it("lets every searchable surface share one clearable field", () => {
+    // UserPicker invented the clearable search chrome; the standing sidebar and
+    // the compact directory each copied the icon, field and clear with three
+    // heights and two clear sizes between them. The field is one control.
+    const shell = readUiSource("layouts/workspace-shell.tsx");
+    const picker = readFileSync(
+      join(process.cwd(), "src", "ui", "components", "user-picker.tsx"),
+      "utf8",
+    );
+    // Message search in the conversation pane is a different job and keeps its
+    // own panel. This guard only watches the directory / member filter chrome.
+    const chrome = [
+      "sidebarSearchWrap",
+      "sidebarSearchInput",
+      "sidebarSearchClear",
+      "compactDirectorySearch",
+      "compactDirectorySearchInput",
+      "compactDirectorySearchClear",
+      "compactDirectorySearchEmpty",
+    ];
+
+    expect(chrome.filter((each) => shell.includes(each))).toEqual([]);
+    expect(picker).not.toContain('from "lucide-react-native/icons/search"');
+    expect(shell).toContain("ClearableSearchField");
+    expect(picker).toContain("ClearableSearchField");
+  });
+
+  it("asks who and where once, not once per presentation", () => {
+    // The page model and the graphical shell each opened by working out the
+    // same nine things — who you are, which channel and server you are in,
+    // which DM you have open, whether you may join. Five hundred lines apart,
+    // with nothing comparing them, they had already drifted twice over: only
+    // the model would recognise you by account before IM issued you a user id,
+    // and only the model kept you out of your own DM candidates. They agreed
+    // in production by the accident of one caller's prop. Both now read the
+    // one answer, so a third presentation cannot quietly grow a fourth.
+    const shell = readUiSource("layouts/workspace-shell.tsx");
+    const derivations = [
+      // Which member the viewer is — matching a member against the viewer's
+      // own identity. Grouping members by kind is a different question and
+      // stays where it is asked.
+      "accountId === account",
+      "imUserId === (currentImUserId",
+      "imUserId === (props.currentImUserId",
+      // Which server, channel or DM is open.
+      "servers.find(",
+      "channels.find(",
+      // What the join affordance may offer, and whether it is already running.
+      'systemKey !== "all"',
+      ":member:",
+      // Who a new DM may be started with.
+      'imState === "ready"',
+    ];
+
+    expect(derivations.filter((each) => shell.includes(each))).toEqual([]);
   });
 
   it("does not let hand-rolled buttons regrow beside the shared one", () => {
@@ -226,10 +377,7 @@ describe("Vela token usage", () => {
     // areas stopped looking like one product. `ActionButton` is the single
     // button; this ceiling makes adding a sixteenth local one a decision
     // rather than an accident, and it only moves down.
-    const source = readFileSync(
-      join(process.cwd(), "src", "ui", "layouts", "workspace-shell.tsx"),
-      "utf8",
-    );
+    const source = readUiSource("layouts/workspace-shell.tsx");
     const pressableStyles = new Set<string>();
     for (const pressable of source.matchAll(/<Pressable\b[\s\S]{0,700}?\/?>/gu)) {
       for (const reference of pressable[0].matchAll(
@@ -282,7 +430,7 @@ describe("Vela token usage", () => {
     const missing: string[] = [];
 
     for (const parts of files) {
-      const source = readFileSync(join(process.cwd(), "src", "ui", ...parts), "utf8");
+      const source = readUiSource(parts.join("/"));
       const blocks = new Map<string, string>();
       for (const match of source.matchAll(
         /^ {2}([a-zA-Z][a-zA-Z0-9]*): \{\n([\s\S]*?)^ {2}\},$/gmu,
@@ -324,10 +472,7 @@ describe("Vela token usage", () => {
       join(process.cwd(), "src", "ui", "components", "message-list.tsx"),
       "utf8",
     );
-    const shellSource = readFileSync(
-      join(process.cwd(), "src", "ui", "layouts", "workspace-shell.tsx"),
-      "utf8",
-    );
+    const shellSource = readUiSource("layouts/workspace-shell.tsx");
 
     expect(messageSource).toContain("semantic.motion.dismissal.focusHighlight");
     expect(messageSource).not.toContain("2_400");
@@ -351,16 +496,12 @@ describe("Vela token usage", () => {
       ["components/thread-panel.tsx", "indexWarning", ["statusWarningSurface", "statusWarningDivider"]],
       ["layouts/workspace-shell.tsx", "reconnectNotice", ["statusInfoSurface", "statusInfoDivider"]],
       ["layouts/workspace-shell.tsx", "unreadBadge", ["statusInfoSurface"]],
-      ["layouts/workspace-shell.tsx", "messageHeaderIcon", ["iconAccentSurface"]],
       ["layouts/workspace-shell.tsx", "compactServerInitial", ["avatarServerSurface"]],
       ["layouts/workspace-shell.tsx", "channelMemberConfirmSubmit", ["actionDangerEmphasisSurface"]],
       ["layouts/workspace-shell.tsx", "channelMemberRemove", ["actionDangerTonalSurface"]],
     ];
     const offenders = requiredRoles.flatMap(([relativePath, styleName, roles]) => {
-      const source = readFileSync(
-        join(process.cwd(), "src", "ui", relativePath),
-        "utf8",
-      );
+      const source = readUiSource(relativePath);
       const block = source.match(
         new RegExp(`\\n  ${styleName}: \\{([\\s\\S]*?)\\n  \\},`),
       )?.[1] ?? "";
@@ -381,17 +522,12 @@ describe("Vela token usage", () => {
       ["components/terminal-panel.tsx", "input", ["fieldSurface"]],
       ["components/message-list.tsx", "loadOlderButton", ["actionQuietSurface"]],
       ["components/message-composer.tsx", "sendButtonDisabled", ["actionDisabledSurface"]],
-      ["layouts/workspace-shell.tsx", "channelInput", ["fieldSurface"]],
-      ["layouts/workspace-shell.tsx", "channelVisibilityButton", ["actionQuietSurface"]],
       ["layouts/workspace-shell.tsx", "compactChannelButton", ["actionQuietSurface"]],
       ["layouts/workspace-shell.tsx", "compactServerButton", ["actionQuietSurface"]],
       ["layouts/workspace-shell.tsx", "searchInput", ["fieldSurface"]],
     ];
     const offenders = requiredRoles.flatMap(([relativePath, styleName, roles]) => {
-      const source = readFileSync(
-        join(process.cwd(), "src", "ui", relativePath),
-        "utf8",
-      );
+      const source = readUiSource(relativePath);
       const block = source.match(
         new RegExp(`\\n  ${styleName}: \\{([\\s\\S]*?)\\n  \\},`),
       )?.[1] ?? "";
@@ -416,10 +552,7 @@ describe("Vela token usage", () => {
       ["components/message-list.tsx", "taskCard", ["surfaceSubtle"]],
     ];
     const offenders = requiredRoles.flatMap(([relativePath, styleName, roles]) => {
-      const source = readFileSync(
-        join(process.cwd(), "src", "ui", relativePath),
-        "utf8",
-      );
+      const source = readUiSource(relativePath);
       const block = source.match(
         new RegExp(`\\n  ${styleName}: \\{([\\s\\S]*?)\\n  \\},`),
       )?.[1] ?? "";
@@ -448,10 +581,7 @@ describe("Vela token usage", () => {
     ];
     const offenders = requiredRoles.flatMap(
       ([relativePath, styleName, required, forbidden]) => {
-        const source = readFileSync(
-          join(process.cwd(), "src", "ui", relativePath),
-          "utf8",
-        );
+        const source = readUiSource(relativePath);
         const block = source.match(
           new RegExp(`\\n  ${styleName}: \\{([\\s\\S]*?)\\n  \\},`),
         )?.[1] ?? "";
@@ -471,10 +601,7 @@ describe("Vela token usage", () => {
       ["components/message-viewport/message-viewport.tsx", "newMessagesBadge", ["status.notificationBadgeOffset"]],
     ];
     const offenders = requiredRecipes.flatMap(([relativePath, styleName, recipes]) => {
-      const source = readFileSync(
-        join(process.cwd(), "src", "ui", relativePath),
-        "utf8",
-      );
+      const source = readUiSource(relativePath);
       const block = source.match(
         new RegExp(`\\n  ${styleName}: \\{([\\s\\S]*?)\\n  \\},`),
       )?.[1] ?? "";
@@ -494,9 +621,10 @@ describe("Vela token usage", () => {
     const warningBlock = source.match(/\n  warning: \{([\s\S]*?)\n  \},/u)?.[1] ?? "";
 
     expect(source).not.toContain('padding: "0 16px"');
-    expect(source).not.toContain('height: "calc(100dvh - 184px)"');
-    expect(source).not.toContain('margin: "clamp(16px, 2vw, 24px)"');
-    expect(source).toContain("recipes.terminalPanel.viewportChromeOffset");
+    expect(source).not.toContain("100dvh");
+    expect(source).not.toContain("viewportChromeOffset");
+    expect(source).toContain("flex: 1");
+    expect(source).toContain("minHeight: 0");
     expect(warningBlock).toContain("semantic.color.statusWarningSurface");
     expect(warningBlock).toContain("semantic.color.statusWarningText");
     expect(warningBlock).not.toContain("semantic.color.statusDanger");
@@ -504,25 +632,20 @@ describe("Vela token usage", () => {
 
   it("keeps repeated identity, dense-control and content geometry in component recipes", () => {
     const requiredRecipes: Array<[string, string, string[]]> = [
-      ["layouts/app-frame.tsx", "accountRailButton", ["identity.avatarAccountSize"]],
-      ["layouts/workspace-shell.tsx", "directAvatar", ["identity.avatarRowSize"]],
-      ["layouts/workspace-shell.tsx", "channelMemberAvatar", ["identity.avatarRowSize"]],
+      ["layouts/app-frame.tsx", "accountRailButton", ["desktopWorkspace.navigationControlSize"]],
       ["layouts/app-frame.tsx", "humanAvatar", ["identity.avatarProminentSize"]],
       ["layouts/app-frame.tsx", "humanAvatarStatus", ["identity.presenceDotSize"]],
       ["layouts/app-frame.tsx", "serverMark", ["identity.avatarNavigationSize"]],
       ["components/message-list.tsx", "avatar", ["identity.avatarCompactSize"]],
       ["components/message-list.tsx", "avatarCompact", ["identity.avatarRowSize"]],
-      ["components/user-picker.tsx", "searchClear", ["iconControl.compactSize"]],
+      ["components/clearable-search-field.tsx", "clear", ["iconControl.compactSize"]],
       ["layouts/workspace-shell.tsx", "headerActionButton", ["iconControl.smallSize"]],
       ["components/message-list.tsx", "messageText", ["contentMeasure.messageMaxWidth"]],
       ["components/message-list.tsx", "quote", ["contentMeasure.readingMaxWidth"]],
       ["layouts/workspace-shell.tsx", "chatErrorToast", ["contentMeasure.noticeMaxWidth"]],
     ];
     const offenders = requiredRecipes.flatMap(([relativePath, styleName, recipes]) => {
-      const source = readFileSync(
-        join(process.cwd(), "src", "ui", relativePath),
-        "utf8",
-      );
+      const source = readUiSource(relativePath);
       const block = source.match(
         new RegExp(`\\n  ${styleName}: \\{([\\s\\S]*?)\\n  \\},`),
       )?.[1] ?? "";
@@ -537,7 +660,7 @@ describe("Vela token usage", () => {
   it("keeps empty, overlay, status and timeline geometry in semantic recipes", () => {
     const requiredRecipes: Array<[string, string, string[]]> = [
       ["components/management-workspace.tsx", "collectionPaneHorizontal", ["managementWorkspace.collectionCompactHeight"]],
-      ["components/management-workspace.tsx", "collectionRowHorizontal", ["managementWorkspace.collectionCompactRowWidth", "managementWorkspace.rowMinHeight"]],
+      ["components/management-workspace.tsx", "collectionRowHorizontal", ["managementWorkspace.collectionCompactRowWidth", "control.rowHeight"]],
       ["components/management-workspace.tsx", "empty", ["emptyState.stageMinHeight"]],
       ["components/management-workspace.tsx", "emptyCopy", ["contentMeasure.compactMaxWidth"]],
       ["components/management-workspace.tsx", "emptyIcon", ["emptyState.iconSize"]],
@@ -557,8 +680,7 @@ describe("Vela token usage", () => {
       ["components/message-list.tsx", "emptyOrbitRing", ["emptyState.orbitRingSize"]],
       ["components/message-list.tsx", "historyLoading", ["emptyState.loadingMinHeight"]],
       ["components/message-list.tsx", "image", ["messageTimeline.imageMaxHeight"]],
-      ["components/message-list.tsx", "moreActionButtonPointer", ["messageTimeline.pointerActionSize"]],
-      ["components/message-list.tsx", "moreActionButtonCompact", ["messageTimeline.touchActionSize"]],
+      ["components/message-list.tsx", "moreActionButton", ["messageTimeline.actionSize"]],
       ["components/message-list.tsx", "taskCard", ["messageTimeline.taskCardMaxWidth", "messageTimeline.taskCardMinHeight", "messageTimeline.taskCardMinWidth"]],
       ["layouts/app-frame.tsx", "accountPopover", ["overlay.accountMenuWidth"]],
       ["layouts/workspace-shell.tsx", "channelManagementPanel", ["overlay.contextPanelMinWidth", "overlay.contextPanelWidth"]],
@@ -566,30 +688,26 @@ describe("Vela token usage", () => {
       ["layouts/workspace-shell.tsx", "searchPanel", ["overlay.searchPanelMaxHeight"]],
       ["layouts/app-frame.tsx", "serverMarksScroller", ["overlay.serverListMaxHeight"]],
       ["layouts/app-frame.tsx", "accountStatusDot", ["identity.statusDotSize"]],
-      ["layouts/workspace-shell.tsx", "directButton", ["conversationWorkspace.directRowMinHeight"]],
-      ["layouts/workspace-shell.tsx", "directButtonSelected", ["conversationWorkspace.directRowMinHeight"]],
+      ["layouts/workspace-shell.tsx", "directButton", ["control.rowHeight"]],
+      ["layouts/workspace-shell.tsx", "directButtonSelected", ["control.rowHeight"]],
       ["layouts/workspace-shell.tsx", "unreadBadge", ["status.badgeMinSize"]],
       ["layouts/workspace-shell.tsx", "channelMemberAdd", ["iconControl.denseSize"]],
       ["layouts/workspace-shell.tsx", "channelMemberConfirmMark", ["emptyState.iconSize"]],
       ["layouts/workspace-shell.tsx", "channelMemberRemove", ["iconControl.denseSize"]],
       ["layouts/workspace-shell.tsx", "channelIcon", ["iconControl.denseSize"]],
       ["layouts/workspace-shell.tsx", "channelKindBadge", ["status.badgeMinSize"]],
-      ["layouts/workspace-shell.tsx", "channelTextarea", ["managementWorkspace.textareaMinHeight"]],
-      ["layouts/workspace-shell.tsx", "compactDirectorySearchClear", ["iconControl.compactSize"]],
       ["layouts/workspace-shell.tsx", "compactServerInitial", ["identity.avatarCompactSize"]],
       ["layouts/workspace-shell.tsx", "connectionDot", ["identity.connectionDotSize"]],
       ["layouts/workspace-shell.tsx", "chatErrorToastClose", ["iconControl.compactSize"]],
       ["layouts/workspace-shell.tsx", "chatErrorToastIcon", ["iconControl.compactSize"]],
       ["layouts/workspace-shell.tsx", "messageHeaderIcon", ["iconControl.denseSize"]],
       ["layouts/workspace-shell.tsx", "onlineAgentsDot", ["identity.statusDotSize"]],
-      ["layouts/app-frame.tsx", "railNavigationItem", ["identity.avatarAccountSize"]],
+      ["layouts/app-frame.tsx", "railNavigationItem", ["desktopWorkspace.navigationControlSize"]],
       ["layouts/app-frame.tsx", "railTooltip", ["iconControl.compactSize"]],
-      ["layouts/workspace-shell.tsx", "searchResult", ["managementWorkspace.rowMinHeight"]],
+      ["layouts/workspace-shell.tsx", "searchResult", ["control.rowHeight"]],
       ["layouts/workspace-shell.tsx", "sidebarHeaderIcon", ["identity.avatarNavigationSize"]],
-      ["layouts/workspace-shell.tsx", "sidebarSearchClear", ["iconControl.microSize"]],
       ["layouts/app-frame.tsx", "accountLogoutButton", ["control.height"]],
       ["layouts/workspace-shell.tsx", "channelMemberRow", ["conversationWorkspace.channelMemberRowMinHeight"]],
-      ["layouts/workspace-shell.tsx", "channelVisibilityButton", ["control.height"]],
       ["layouts/workspace-shell.tsx", "compactChannelButton", ["compactWorkspace.listRowMinHeight"]],
       ["layouts/workspace-shell.tsx", "compactServerButton", ["compactWorkspace.switcherRowMinHeight"]],
       ["layouts/workspace-shell.tsx", "chatErrorToast", ["status.toastMinHeight"]],
@@ -608,24 +726,20 @@ describe("Vela token usage", () => {
       ["components/terminal-panel.tsx", "controlButton", ["terminalPanel.controlMinWidth"]],
       ["components/terminal-panel.tsx", "output", ["terminalPanel.outputMinHeight"]],
       ["components/terminal-panel.tsx", "outputBody", ["terminalPanel.outputMinHeight"]],
-      ["components/terminal-panel.web.tsx", "panel", ["terminalPanel.panelMinHeight"]],
       ["components/operation-status-list.tsx", "list", ["contentMeasure.messageMaxWidth"]],
       ["components/route-status-screen.tsx", "surface", ["contentMeasure.readingMaxWidth"]],
-      ["components/message-list.tsx", "loadOlderButton", ["messageTimeline.touchActionSize"]],
-      ["components/user-picker.tsx", "sectionEmpty", ["managementWorkspace.rowMinHeight"]],
+      ["components/message-list.tsx", "loadOlderButton", ["messageTimeline.actionSize"]],
+      ["components/user-picker.tsx", "sectionEmpty", ["control.rowHeight"]],
       ["components/message-viewport/message-viewport.tsx", "newMessagesBadge", ["status.notificationBadgeSize"]],
       ["components/brand-mark.tsx", "highlight", ["identity.brandHighlightSize"]],
       ["components/brand-mark.tsx", "mark", ["identity.brandMarkSize"]],
-      ["components/brand-mark.tsx", "markCompact", ["emptyState.iconSize"]],
+      ["components/brand-mark.tsx", "markCompact", ["identity.brandMarkCompactSize"]],
       ["components/management-workspace.tsx", "codeBlock", ["contentMeasure.codeBlockMaxHeight"]],
-      ["components/management-workspace.tsx", "collectionIdentityMark", ["managementWorkspace.collectionAvatarSize"]],
+      ["components/management-workspace.tsx", "collectionIdentityMark", ["identity.avatarRowSize"]],
       ["components/management-workspace.tsx", "collectionIdentityPresence", ["identity.presenceDotSize"]],
     ];
     const offenders = requiredRecipes.flatMap(([relativePath, styleName, recipes]) => {
-      const source = readFileSync(
-        join(process.cwd(), "src", "ui", relativePath),
-        "utf8",
-      );
+      const source = readUiSource(relativePath);
       const block = source.match(
         new RegExp(`\\n  ${styleName}: \\{([\\s\\S]*?)\\n  \\},`),
       )?.[1] ?? "";

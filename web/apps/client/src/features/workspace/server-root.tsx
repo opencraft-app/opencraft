@@ -9,6 +9,10 @@ import {
   workspaceSectionHref,
 } from "./section-navigation";
 
+/**
+ * Server index content under the shared WorkspaceChrome. Status / redirect
+ * fill the stage slot; the rail and bottom bar stay mounted from the layout.
+ */
 export function ServerRoot({
   channels,
   onRetry,

@@ -214,8 +214,8 @@ describe("ComputersScreen", () => {
       paddingBottom: 20,
     });
     expect(screen.getByTestId("computer-hero-icon")).toHaveStyle({
-      height: 48,
-      width: 48,
+      height: velaTheme.recipes.resourceIdentity.markSize,
+      width: velaTheme.recipes.resourceIdentity.markSize,
     });
     expect(screen.getByTestId("computer-detail-title")).toHaveStyle({
       fontSize: velaTheme.semantic.typography.pageTitle.fontSize,
@@ -226,7 +226,7 @@ describe("ComputersScreen", () => {
     });
     expect(screen.getByTestId("computer-install-action-row")).toHaveStyle({
       borderTopWidth: 1,
-      minHeight: 72,
+      minHeight: velaTheme.recipes.managementWorkspace.resourceActionMinHeight,
     });
   });
 
@@ -445,8 +445,8 @@ describe("ComputersScreen", () => {
       paddingHorizontal: 16,
     });
     expect(screen.getByTestId("computer-hero-icon")).toHaveStyle({
-      height: 48,
-      width: 48,
+      height: velaTheme.recipes.resourceIdentity.markSize,
+      width: velaTheme.recipes.resourceIdentity.markSize,
     });
     expect(screen.getByTestId("computer-detail-title")).toHaveStyle({
       fontSize: velaTheme.semantic.typography.pageTitle.fontSize,
@@ -699,7 +699,7 @@ describe("ComputersScreen", () => {
     );
 
     expect(screen.queryByTestId("computer-mobile-switcher")).toBeNull();
-    expect(screen.getByTestId("computer-sidebar")).toHaveStyle({height: 96});
+    expect(screen.getByTestId("computer-sidebar")).toHaveStyle({height: velaTheme.recipes.managementWorkspace.collectionCompactHeight});
     expect(
       screen.getByRole("button", {name: "打开 Computer 测试机"}),
     ).toBeVisible();
@@ -712,8 +712,8 @@ describe("ComputersScreen", () => {
       paddingBottom: 20,
     });
     expect(screen.getByTestId("computer-hero-icon")).toHaveStyle({
-      height: 48,
-      width: 48,
+      height: velaTheme.recipes.resourceIdentity.markSize,
+      width: velaTheme.recipes.resourceIdentity.markSize,
     });
     expect(screen.getByTestId("computer-support-grid")).not.toHaveStyle({
       flexDirection: "row",
@@ -758,10 +758,10 @@ describe("ComputersScreen", () => {
       width: "100%",
     });
     expect(screen.getByTestId("computer-hero-icon")).toHaveStyle({
-      backgroundColor: "#EAF4FF",
-      borderRadius: 10,
-      height: 48,
-      width: 48,
+      backgroundColor: "transparent",
+      borderRadius: velaTheme.semantic.radius.control,
+      height: velaTheme.recipes.resourceIdentity.markSize,
+      width: velaTheme.recipes.resourceIdentity.markSize,
     });
     expect(screen.getByTestId("computer-detail-title")).toHaveStyle({
       fontSize: velaTheme.semantic.typography.pageTitle.fontSize,
@@ -795,8 +795,8 @@ describe("ComputersScreen", () => {
     expect(
       screen.getByRole("button", {name: "纳管 Computer"}),
     ).toHaveStyle({
-      backgroundColor: "#EAF4FF",
-      borderColor: "#EAF4FF",
+      backgroundColor: velaTheme.semantic.color.actionTonalSurface,
+      borderColor: velaTheme.semantic.color.actionTonalSurface,
       minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(
@@ -857,7 +857,7 @@ describe("ComputersScreen", () => {
     );
 
     expect(screen.getByTestId("computer-stage")).toHaveStyle({
-      backgroundColor: "#FFFFFF",
+      backgroundColor: velaTheme.semantic.color.groupedSurface,
     });
     expect(screen.queryByTestId("computer-overview-card")).toBeNull();
     expect(screen.getByTestId("computer-hero")).toHaveStyle({
@@ -871,10 +871,10 @@ describe("ComputersScreen", () => {
     expect(screen.getByTestId("computer-support-grid")).not.toHaveStyle({
       flexDirection: "row",
     });
-    expect(screen.getByTestId("computer-binding-panel")).toHaveStyle({
-      borderRadius: 0,
-      borderTopWidth: 1,
-      paddingHorizontal: 0,
+    expect(screen.getByTestId("computer-binding-panel-body")).toHaveStyle({
+      backgroundColor: velaTheme.semantic.color.sectionSurface,
+      borderRadius: velaTheme.semantic.radius.control,
+      borderWidth: 1,
     });
     expect(screen.getByTestId("computer-management-panel")).toBeVisible();
     expect(screen.getByText("安装与重新连接")).toBeVisible();
@@ -911,11 +911,13 @@ describe("ComputersScreen", () => {
     expect(screen.getByTestId("computer-support-grid")).not.toHaveStyle({
       flexDirection: "row",
     });
-    expect(screen.getByTestId("computer-binding-panel")).toHaveStyle({
-      borderTopWidth: 1,
+    expect(screen.getByTestId("computer-binding-panel-body")).toHaveStyle({
+      borderRadius: velaTheme.semantic.radius.control,
+      borderWidth: 1,
     });
-    expect(screen.getByTestId("computer-management-panel")).toHaveStyle({
-      borderTopWidth: 1,
+    expect(screen.getByTestId("computer-management-panel-body")).toHaveStyle({
+      borderRadius: velaTheme.semantic.radius.control,
+      borderWidth: 1,
     });
   });
 
@@ -1067,7 +1069,7 @@ describe("ComputersScreen", () => {
     expect(screen.getByText("研发机 / 终端")).toBeVisible();
     expect(screen.getByTestId("computer-terminal-panel")).toHaveStyle({
       backgroundColor: "#FFFFFF",
-      borderRadius: 16,
+      borderRadius: velaTheme.semantic.radius.section,
       flex: 1,
       minHeight: 0,
     });
@@ -1075,7 +1077,7 @@ describe("ComputersScreen", () => {
       flex: 1,
       minHeight: 260,
     });
-    expect(JSON.stringify(screen.toJSON())).not.toMatch(/TAT|PTY|Region/u);
+    expect(JSON.stringify(screen.toJSON())).not.toMatch(/\b(?:TAT|PTY)\b|(?<![A-Za-z])Region(?![A-Za-z])/u);
     await fireEvent.changeText(screen.getByLabelText("终端命令"), "pwd");
     await fireEvent.press(screen.getByRole("button", {name: "发送终端命令"}));
     expect(submitLine).toHaveBeenCalledWith("pwd");

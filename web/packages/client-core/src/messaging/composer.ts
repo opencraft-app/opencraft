@@ -171,7 +171,9 @@ export function readComposerMentionTrigger(
   text: string,
   selection: ComposerEditorCursor | null,
 ): ComposerMentionTrigger | null {
-  if (!selection || selection.start !== selection.end) return null;
+  if (!selection) return null;
+  // IME composition often leaves a range selection over the composing glyphs.
+  // Mentions still resolve from the caret end so `@` keeps working mid-pinyin.
   const cursor = Math.max(0, Math.min(text.length, selection.end));
   const prefix = text.slice(0, cursor);
   const match = /(?:^|\s)@([^\s@]*)$/u.exec(prefix);

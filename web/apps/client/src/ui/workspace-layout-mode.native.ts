@@ -3,8 +3,8 @@ import { workspaceShellWideBreakpoint } from "./tokens";
 
 export type { LayoutMode };
 
-// Tablet widths can keep persistent workspace navigation while management
-// content independently remains stacked until its 1180px density threshold.
+// Tablet widths can keep persistent workspace navigation; management
+// collection stacking shares this chrome threshold via managementSurfaceLayout.
 export const workspaceLayoutMode = createLayoutMode(
   workspaceShellWideBreakpoint,
 );

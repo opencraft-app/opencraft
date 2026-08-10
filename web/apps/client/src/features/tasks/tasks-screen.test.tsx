@@ -260,7 +260,7 @@ describe("TasksScreen", () => {
     });
     expect(
       screen.getByRole("button", {name: "打开任务 12"}),
-    ).toHaveStyle({minHeight: velaTheme.recipes.managementWorkspace.rowMinHeight});
+    ).toHaveStyle({minHeight: velaTheme.recipes.control.rowHeight});
     expect(screen.getByTestId("task-detail")).toHaveStyle({
       alignSelf: "center",
       borderRadius: 0,
@@ -291,13 +291,16 @@ describe("TasksScreen", () => {
       />,
     );
 
-    expect(screen.queryByTestId("task-sidebar")).toBeNull();
-    expect(screen.getByTestId("task-collection-shelf")).toHaveStyle({
-      maxHeight: 196,
+    // 980 keeps the vertical task sidebar once chrome leaves compact — shelf
+    // stacking is only for sub-960 widths.
+    expect(screen.getByTestId("task-sidebar")).toHaveStyle({
+      height: "100%",
+      width: 312,
     });
+    expect(screen.queryByTestId("task-collection-shelf")).toBeNull();
     expect(
       screen.getByRole("button", {name: "打开任务 12"}),
-    ).toHaveStyle({height: velaTheme.recipes.managementWorkspace.rowMinHeight, width: 220});
+    ).toHaveStyle({minHeight: velaTheme.recipes.control.rowHeight});
     expect(screen.getByTestId("server-rail")).toBeVisible();
     expect(screen.queryByTestId("mobile-bottom-nav")).toBeNull();
     expect(screen.getByText("待处理 1")).toBeVisible();
@@ -468,8 +471,8 @@ describe("TasksScreen", () => {
     expect(screen.getByTestId("task-create-icon")).toBeVisible();
     expect(screen.getByTestId("task-refresh-icon")).toBeVisible();
     expect(screen.getByRole("button", {name: "新建任务"})).toHaveStyle({
-      backgroundColor: "#EAF4FF",
-      borderColor: "#EAF4FF",
+      backgroundColor: velaTheme.semantic.color.actionTonalSurface,
+      borderColor: velaTheme.semantic.color.actionTonalSurface,
       minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.queryByText("↻")).toBeNull();

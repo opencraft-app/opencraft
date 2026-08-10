@@ -70,3 +70,11 @@ export function visibleSectionNavigation(canManageServer: boolean) {
     ? sectionNavigation
     : sectionNavigation.filter((item) => item.id !== "settings");
 }
+
+export function workspaceSectionLabel(section: WorkspaceSection): string {
+  const item = sectionNavigation.find((entry) => entry.id === section);
+  if (!item) {
+    throw new Error(`Unknown workspace section: ${section}`);
+  }
+  return item.label;
+}

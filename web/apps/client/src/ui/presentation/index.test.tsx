@@ -34,24 +34,24 @@ const managementModel = (): ManagementPageModel => ({
 });
 
 describe("presentation model factories", () => {
-  it("does not build semantic models for the default graphical presenter", async () => {
+  it("builds one shared model for graphical renderers", async () => {
     const buildConversation = jest.fn(conversationModel);
     const buildManagement = jest.fn(managementModel);
     const screen = await render(
       <>
         <ConversationPresentation model={buildConversation}>
-          <Text>图形聊天</Text>
+          {(model) => <Text>{model.header.title} · 图形聊天</Text>}
         </ConversationPresentation>
         <ManagementPresentation model={buildManagement}>
-          <Text>图形管理</Text>
+          {(model) => <Text>{model.header.title} · 图形管理</Text>}
         </ManagementPresentation>
       </>,
     );
 
-    expect(screen.getByText("图形聊天")).toBeVisible();
-    expect(screen.getByText("图形管理")).toBeVisible();
-    expect(buildConversation).not.toHaveBeenCalled();
-    expect(buildManagement).not.toHaveBeenCalled();
+    expect(screen.getByText("语义聊天 · 图形聊天")).toBeVisible();
+    expect(screen.getByText("语义管理 · 图形管理")).toBeVisible();
+    expect(buildConversation).toHaveBeenCalledTimes(1);
+    expect(buildManagement).toHaveBeenCalledTimes(1);
   });
 
   it("builds semantic models for the terminal presenter", async () => {

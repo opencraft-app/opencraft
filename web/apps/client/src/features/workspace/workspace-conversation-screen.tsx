@@ -1,7 +1,16 @@
+import {
+  memberCanManageServer,
+  selectCurrentHumanMember,
+  type ActiveConversation,
+} from "@vela/client-core";
 import { Redirect, useRouter, type Href } from "expo-router";
 import { useEffect } from "react";
 import {useShallow} from "zustand/react/shallow";
-import { LoadingScreen, RouteStatusScreen } from "@/ui";
+import {
+  LoadingScreen,
+  RouteStatusScreen,
+  useWorkspaceChromeHost,
+} from "@/ui";
 
 import {
   mentionableAgents,
@@ -21,6 +30,7 @@ import {
   type ConversationRouteTarget,
   workspaceSectionHref,
 } from "./section-navigation";
+import { useOptionalServerWorkspace } from "./server-route-context";
 import { WorkspaceShell } from "./workspace-shell";
 import { useAppRuntime, useAppState } from "../../runtime/app-runtime";
 import { browserHostname } from "../../runtime/browser-location";
@@ -67,6 +77,8 @@ export function WorkspaceConversationScreen({
   const activeServerSlug =
     serverSlug ??
     state.servers.find((server) => server.id === state.currentServerId)?.slug;
+  const chromeHosted = useWorkspaceChromeHost();
+  const navigation = useOptionalServerWorkspace()?.navigation;
 
   useEffect(() => {
     if (state.authStatus !== "signed_in") return;
@@ -147,8 +159,12 @@ export function WorkspaceConversationScreen({
     }
   }, [state.operationsById, store, targetChannelId, targetServerId]);
 
-  if (state.authStatus === "checking") return <LoadingScreen />;
-  if (state.authStatus === "signed_out") {
+  // Server layout boundary already gates auth before WorkspaceChrome mounts.
+  // Keep these branches for standalone/test renders outside that host.
+  if (!chromeHosted && state.authStatus === "checking") {
+    return <LoadingScreen />;
+  }
+  if (!chromeHosted && state.authStatus === "signed_out") {
     const returnTo = currentBrowserHref(
       target.kind === "direct"
         ? directConversationHref(target.directConversationId, serverSlug ?? "")
@@ -210,15 +226,32 @@ export function WorkspaceConversationScreen({
       />
     );
   }
-  if (!activeConversationMatches(state.activeConversation, target)) {
+  const conversationReady = activeConversationMatches(
+    state.activeConversation,
+    target,
+  );
+  // Outside the shared chrome, keep the full-screen wait. Under the server
+  // layout, fall through into WorkspaceShell so the sidebar stays put while
+  // the stage shows the normal message-history initializer.
+  if (!conversationReady && !chromeHosted) {
     return <LoadingScreen />;
   }
-  const currentMember = state.members.find(
-    (member) =>
-      member.kind === "human" && member.accountId === state.account?.id,
-  );
-  const canManageChannels =
-    currentMember?.role === "owner" || currentMember?.role === "admin";
+  const pendingActiveConversation = conversationReady
+    ? null
+    : activeConversationForTarget(
+        target,
+        targetDirectConversation,
+        targetDirectMember,
+        targetPeerUserId,
+      );
+  const displayActiveConversation = conversationReady
+    ? state.activeConversation
+    : pendingActiveConversation;
+  const currentMember = selectCurrentHumanMember(state.members, {
+    accountId: state.account?.id,
+    imUserId: state.account?.imUserId,
+  });
+  const canManageChannels = memberCanManageServer(currentMember);
   const currentChannel =
     target.kind === "channel"
       ? state.channels.find((channel) => channel.id === target.channelId)
@@ -244,7 +277,7 @@ export function WorkspaceConversationScreen({
       />
       <WorkspaceShell
         account={state.account}
-        activeConversation={state.activeConversation}
+        activeConversation={displayActiveConversation}
         activeSection="chat"
         activeThread={state.activeThread}
         agents={mentionableAgents(state)}
@@ -284,7 +317,7 @@ export function WorkspaceConversationScreen({
         directConversationSync={state.directConversationSync}
         error={state.error}
         historyCompleted={state.historyCompleted}
-        initializingMessages={state.loadingChannel}
+        initializingMessages={state.loadingChannel || !conversationReady}
         imStatus={state.imState.status}
         imStatusMessage={state.imState.message}
         loadingOlder={state.loadingOlderMessages}
@@ -292,7 +325,7 @@ export function WorkspaceConversationScreen({
         members={state.members}
         mentionMembers={mentionableMembers(state)}
         messageFocusRequest={state.messageFocusRequest}
-        messages={state.messages}
+        messages={conversationReady ? state.messages : []}
         onAddChannelMember={(memberId) =>
           store.getState().addChannelMember(memberId)
         }
@@ -314,11 +347,13 @@ export function WorkspaceConversationScreen({
                 .servers.find((server) => server.id === nextServerId)?.slug ??
               serverSlug ??
               nextServerId;
-            router.push(
-              currentBrowserHref(
-                workspaceSectionHref(nextServerSlug, "chat", nextChannelId),
-              ) as Href,
+            const href = workspaceSectionHref(
+              nextServerSlug,
+              "chat",
+              nextChannelId,
             );
+            if (navigation) navigation.push(href);
+            else router.push(currentBrowserHref(href) as Href);
           }
           return result;
         }}
@@ -333,6 +368,10 @@ export function WorkspaceConversationScreen({
         onLoadOlder={() => store.getState().loadOlderMessages()}
         onLogout={() => store.getState().logout()}
         onNavigateSection={(section) => {
+          if (navigation) {
+            navigation.navigateSection(section);
+            return;
+          }
           const serverReference =
             serverSlug ?? store.getState().currentServerId;
           if (!serverReference) return;
@@ -365,37 +404,36 @@ export function WorkspaceConversationScreen({
         onSearchMessages={(query) => store.getState().searchMessages(query)}
         onSelectChannel={async (channelId) => {
           await store.getState().selectChannel(channelId);
-          const serverReference =
-            serverSlug ?? store.getState().currentServerId;
-          if (serverReference) {
-            router.push(
-              currentBrowserHref(
-                workspaceSectionHref(serverReference, "chat", channelId),
-              ) as Href,
-            );
-          }
+          const href = activeServerSlug
+            ? workspaceSectionHref(activeServerSlug, "chat", channelId)
+            : null;
+          if (!href) return;
+          if (navigation) navigation.push(href);
+          else router.push(currentBrowserHref(href) as Href);
         }}
         onSelectDirect={async (peerUserId) => {
           await store.getState().selectDirectConversation(peerUserId);
           const active = store.getState().activeConversation;
           if (active?.kind === "direct" && active.peerUserId === peerUserId) {
             if (!activeServerSlug) return;
-            router.push(
-              currentBrowserHref(
-                active.directConversationId
-                  ? directConversationHref(
-                      active.directConversationId,
-                      activeServerSlug,
-                    )
-                  : newDirectConversationHref(
-                      active.peerMemberId,
-                      activeServerSlug,
-                    ),
-              ) as Href,
-            );
+            const href = active.directConversationId
+              ? directConversationHref(
+                  active.directConversationId,
+                  activeServerSlug,
+                )
+              : newDirectConversationHref(
+                  active.peerMemberId,
+                  activeServerSlug,
+                );
+            if (navigation) navigation.push(href);
+            else router.push(currentBrowserHref(href) as Href);
           }
         }}
         onSelectServer={async (serverId) => {
+          if (navigation) {
+            navigation.selectServer(serverId, "chat");
+            return;
+          }
           const nextServer = store
             .getState()
             .servers.find((server) => server.id === serverId);
@@ -420,14 +458,12 @@ export function WorkspaceConversationScreen({
               target.kind === "direct" &&
                 target.directConversationId !== after.directConversationId)
           ) {
-            router.replace(
-              currentBrowserHref(
-                directConversationHref(
-                  after.directConversationId,
-                  activeServerSlug,
-                ),
-              ) as Href,
+            const href = directConversationHref(
+              after.directConversationId,
+              activeServerSlug,
             );
+            if (navigation) navigation.replace(href);
+            else router.replace(currentBrowserHref(href) as Href);
           }
         }}
         onSendThreadReply={(input) => store.getState().sendThreadReply(input)}
@@ -460,15 +496,18 @@ export function WorkspaceConversationScreen({
         sendingThreadReply={state.sendingThreadReply}
         serverAgents={state.agents}
         sectionHref={(section) =>
-          activeServerSlug
+          navigation?.sectionHref(section) ??
+          (activeServerSlug
             ? workspaceSectionHref(
                 activeServerSlug,
                 section,
                 state.currentChannelId,
               )
-            : "/home"
+            : "/home")
         }
-        serverHref={(server) => serverRootHref(server.slug)}
+        serverHref={(server) =>
+          navigation?.serverHref(server) ?? serverRootHref(server.slug)
+        }
         servers={state.servers}
         threadCompleted={state.threadCompleted}
         threadLoading={state.threadLoading}
@@ -477,4 +516,39 @@ export function WorkspaceConversationScreen({
       />
     </>
   );
+}
+
+function activeConversationForTarget(
+  target: ConversationRouteTarget,
+  directConversation:
+    | {
+        directConversationId: string;
+        peerMemberId: string;
+        peerUserId: string;
+      }
+    | undefined,
+  directMember: {id: string; imUserId?: string | null} | undefined,
+  peerUserId: string | null | undefined,
+): ActiveConversation | null {
+  if (target.kind === "channel") {
+    return {channelId: target.channelId, kind: "channel"};
+  }
+  if (target.kind === "direct") {
+    const memberId = directConversation?.peerMemberId ?? directMember?.id;
+    const userId = directConversation?.peerUserId ?? peerUserId ?? undefined;
+    if (!memberId || !userId) return null;
+    return {
+      directConversationId: target.directConversationId,
+      kind: "direct",
+      peerMemberId: memberId,
+      peerUserId: userId,
+    };
+  }
+  const userId = directMember?.imUserId ?? peerUserId ?? undefined;
+  if (!userId) return null;
+  return {
+    kind: "direct",
+    peerMemberId: target.peerMemberId,
+    peerUserId: userId,
+  };
 }

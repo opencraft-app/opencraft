@@ -9,10 +9,50 @@ const managementScreens = [
 ];
 
 describe("management workspace adoption", () => {
+  it("keeps large style registries outside component aggregators", () => {
+    const management = readFileSync(
+      join(__dirname, "management-workspace.tsx"),
+      "utf8",
+    );
+    const workspace = readFileSync(
+      join(__dirname, "..", "layouts", "workspace-shell.tsx"),
+      "utf8",
+    );
+    expect(management).toContain('from "./management-workspace-core"');
+    expect(management).toContain('from "./management-workspace-form"');
+    expect(management).not.toContain("StyleSheet.create");
+    expect(workspace).toContain('from "./workspace-shell.styles"');
+    expect(workspace).not.toContain("StyleSheet.create");
+  });
+
+  it("keeps form and selection primitives in the focused form module", () => {
+    const core = readFileSync(
+      join(__dirname, "management-workspace-core.tsx"),
+      "utf8",
+    );
+    const form = readFileSync(
+      join(__dirname, "management-workspace-form.tsx"),
+      "utf8",
+    );
+
+    for (const component of [
+      "ManagementForm",
+      "ManagementFormActions",
+      "ManagementField",
+      "ManagementTextInput",
+      "ManagementDateTimeInput",
+      "SelectionGroup",
+      "SelectionButton",
+    ]) {
+      expect(form).toContain(`export function ${component}`);
+      expect(core).not.toContain(`export function ${component}`);
+    }
+  });
+
   it.each(managementScreens)("keeps %s on the shared workspace shell", (file) => {
     const source = readFileSync(join(__dirname, "..", "screens", file), "utf8");
 
-    expect(source).toContain("<ManagementCollectionPane");
+    expect(source).toContain("<ManagementResourceDirectory");
     expect(source).toContain("<ManagementStage");
     expect(source).toContain("<ManagementHeader");
     expect(source).toContain("<CollectionRow");
@@ -30,7 +70,7 @@ describe("management workspace adoption", () => {
       "utf8",
     );
 
-    expect(moduleSource).toContain("export function StatusIndicator");
+    expect(moduleSource).toContain('export * from "./management-workspace-core"');
     expect(emptySource).toContain("<InlineEmptyState");
   });
 
@@ -81,7 +121,7 @@ describe("management workspace adoption", () => {
     },
   );
 
-  it.each(["agents-screen.tsx", "computers-screen.tsx"])(
+  it.each(["agents-screen.tsx", "computers-screen.tsx", "members-screen.tsx"])(
     "keeps %s collection identity marks in the shared primitive",
     (file) => {
       const source = readFileSync(join(__dirname, "..", "screens", file), "utf8");
@@ -151,7 +191,7 @@ describe("management workspace adoption", () => {
       const source = readFileSync(join(__dirname, "..", "screens", file), "utf8");
 
       expect(source).toContain("<ManagementForm");
-      expect(source).toContain("<ManagementFormActions");
+      expect(source).toContain("<ManagementFormFooter");
       expect(source).toContain("<ManagementField");
       expect(source).toContain("<ManagementTextInput");
       expect(source).not.toMatch(/\n  form: \{/u);
@@ -160,15 +200,22 @@ describe("management workspace adoption", () => {
     },
   );
 
-  it.each(["agents-screen.tsx", "members-screen.tsx", "tasks-screen.tsx"])(
-    "keeps the collection header shared for %s",
-    (file) => {
-      const source = readFileSync(join(__dirname, "..", "screens", file), "utf8");
+  it.each([
+    "agents-screen.tsx",
+    "computers-screen.tsx",
+    "members-screen.tsx",
+    "tasks-screen.tsx",
+  ])("keeps the collection header shared for %s", (file) => {
+    const source = readFileSync(join(__dirname, "..", "screens", file), "utf8");
 
-      expect(source).toContain("<ManagementCollectionHeader");
-      expect(source).not.toMatch(/\n  (?:resourceHeader|sidebarHeader|headerMark): \{/u);
-    },
-  );
+    // Header chrome lives inside ManagementResourceDirectory (title + eyebrow).
+    expect(source).toContain("<ManagementResourceDirectory");
+    expect(source).toMatch(/\btitle=/);
+    expect(source).toMatch(/\beyebrow=\{/);
+    expect(source).not.toMatch(
+      /\n  (?:resourceHeader|sidebarHeader|headerMark): \{/u,
+    );
+  });
 
   it.each(managementScreens)(
     "keeps %s detail gutters and canvas rhythm in shared primitives",
@@ -181,12 +228,24 @@ describe("management workspace adoption", () => {
     },
   );
 
+  it("hosts the Computer terminal in a stage fill, not inside the detail scroller", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "screens", "computers-screen.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain("<ManagementStageFill");
+    expect(source).toMatch(
+      /terminal && selected \?[\s\S]*?<ManagementStageFill[\s\S]*?<TerminalPanel/u,
+    );
+  });
+
   it.each(["agents-screen.tsx", "members-screen.tsx", "tasks-screen.tsx"])(
     "keeps %s domain choices in the shared SelectionButton",
     (file) => {
       const source = readFileSync(join(__dirname, "..", "screens", file), "utf8");
 
-      expect(source).toContain("<SelectionButton");
+      expect(source).toMatch(/<(?:ManagementChoiceField|SelectionButton)/u);
       expect(source).not.toMatch(/\n  (?:agentChoice|choice|choiceSelected|modeTab|modeTabSelected): \{/u);
     },
   );

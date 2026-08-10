@@ -2984,6 +2984,88 @@ describe("app store", () => {
     );
   });
 
+  it("waits for Agent readiness and a deployed credential before auto-starting", async () => {
+    const deps = dependencies();
+    const created = {
+      ...agent,
+      credentialVersion: 0,
+      desiredState: "stopped" as const,
+      displayName: "交付助手",
+      handle: "delivery",
+      id: "agent-2",
+      imState: "provisioning" as const,
+      observedState: "unknown" as const,
+    };
+    const ready = {
+      ...created,
+      imState: "ready" as const,
+    };
+    const deployed = {
+      ...ready,
+      credentialVersion: 1,
+      observedState: "stopped" as const,
+    };
+    const running = {
+      ...deployed,
+      desiredState: "running" as const,
+      observedState: "starting" as const,
+    };
+    deps.provisioningPollIntervalMs = 0;
+    deps.provisioningPollLimit = 6;
+    deps.sleep = jest.fn(async () => undefined);
+    deps.platform.listAgents = jest
+      .fn()
+      .mockResolvedValueOnce([agent])
+      .mockResolvedValueOnce([agent, created])
+      .mockResolvedValueOnce([agent, created])
+      .mockResolvedValueOnce([agent, ready])
+      .mockResolvedValueOnce([agent, ready])
+      .mockResolvedValueOnce([agent, deployed])
+      .mockResolvedValueOnce([agent, running]);
+    deps.platform.createAgent = jest.fn(async () => ({
+      operations: [],
+      resourceId: created.id,
+    }));
+    deps.platform.agentAction = jest.fn(async (_serverId, _agentId, action) => ({
+      createdAt: "2026-08-10T08:00:00.000Z",
+      id: `operation-${action}`,
+      kind: `agent.${action}`,
+      service: "platform" as const,
+      state: "succeeded" as const,
+    }));
+    const store = createAppStore(deps);
+    await initializeServerContext(store);
+
+    const accepted = await store.getState().createAgent(
+      {
+        computerId: computer.id,
+        displayName: created.displayName,
+        handle: created.handle,
+        replyPolicy: "mention_and_dm",
+        runtime: {kind: "codex"},
+      },
+      {deployAndStart: true},
+    );
+
+    expect(accepted?.resourceId).toBe(created.id);
+    expect(deps.platform.agentAction).toHaveBeenNthCalledWith(
+      1,
+      server.id,
+      created.id,
+      "deploy",
+      "request-1:agent:deploy",
+    );
+    expect(deps.platform.agentAction).toHaveBeenNthCalledWith(
+      2,
+      server.id,
+      created.id,
+      "start",
+      "request-1:agent:start",
+    );
+    expect(store.getState().agents).toEqual([agent, running]);
+    expect(store.getState().pendingAction).toBeNull();
+  });
+
   it("converges the Computer revision without storing registration scripts", async () => {
     const deps = dependencies();
     deps.platform.createComputerRegistrationScript = jest

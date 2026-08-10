@@ -1,26 +1,4 @@
-import {useLocalSearchParams} from "expo-router";
-
-import {computerHref} from "../../../../../features/workspace/section-navigation";
-import {ServerRouteBoundary} from "../../../../../features/workspace/server-route-boundary";
-import {ComputersContent} from "../computers";
-
+/** Selection lives in the computers layout; this route only matches the detail URL. */
 export default function ComputerDetailRoute() {
-  const {computerId, serverId} = useLocalSearchParams<{
-    computerId: string;
-    serverId: string;
-  }>();
-
-  return (
-    <ServerRouteBoundary
-      canonicalHref={(slug) => computerHref(slug, computerId)}
-      serverReference={serverId}
-    >
-      {(server) => (
-        <ComputersContent
-          selectedComputerId={computerId}
-          server={server}
-        />
-      )}
-    </ServerRouteBoundary>
-  );
+  return null;
 }

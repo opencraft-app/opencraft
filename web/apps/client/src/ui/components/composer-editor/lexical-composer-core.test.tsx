@@ -9,6 +9,22 @@ import {
   type ComposerEditorHandle,
 } from "./lexical-composer-core";
 
+const appearance = {
+  backgroundColor: "transparent",
+  chipBackgroundColor: "#eef3ff",
+  chipTextColor: "#3153a4",
+  textLeading: 22,
+  textSize: 15,
+  typeface: "sans-serif",
+  maxHeight: 200,
+  minHeight: 48,
+  paddingBottom: 10,
+  paddingHorizontal: 12,
+  paddingTop: 10,
+  placeholderColor: "#777",
+  textColor: "#111",
+} as const;
+
 describe("LexicalComposerCore", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -24,6 +40,59 @@ describe("LexicalComposerCore", () => {
     container.remove();
   });
 
+  it("does not replace the document while an IME composition is active", async () => {
+    const ref = createRef<ComposerEditorHandle>();
+    const onSnapshotChange = jest.fn();
+    await act(async () => {
+      root.render(
+        <LexicalComposerCore
+          ref={ref}
+          appearance={appearance}
+          document={createComposerTextDocument("n")}
+          onSnapshotChange={onSnapshotChange}
+          onSubmit={jest.fn()}
+          onSuggestionCommand={jest.fn()}
+          placeholder="发消息"
+          suggestionsOpen={false}
+        />,
+      );
+    });
+
+    const editable = container.querySelector<HTMLElement>(
+      ".vela-composer-editor-input",
+    );
+    expect(editable).not.toBeNull();
+
+    await act(async () => {
+      editable!.dispatchEvent(
+        new CompositionEvent("compositionstart", {bubbles: true, data: ""}),
+      );
+    });
+
+    await act(async () => {
+      root.render(
+        <LexicalComposerCore
+          ref={ref}
+          appearance={appearance}
+          document={createComposerTextDocument("")}
+          onSnapshotChange={onSnapshotChange}
+          onSubmit={jest.fn()}
+          onSuggestionCommand={jest.fn()}
+          placeholder="发消息"
+          suggestionsOpen={false}
+        />,
+      );
+    });
+
+    expect(editable!.textContent).toContain("n");
+
+    await act(async () => {
+      editable!.dispatchEvent(
+        new CompositionEvent("compositionend", {bubbles: true, data: "n"}),
+      );
+    });
+  });
+
   it("inserts an immutable member mention and submits the structured document", async () => {
     const ref = createRef<ComposerEditorHandle>();
     const onSnapshotChange = jest.fn();
@@ -32,21 +101,7 @@ describe("LexicalComposerCore", () => {
       root.render(
         <LexicalComposerCore
           ref={ref}
-          appearance={{
-            backgroundColor: "transparent",
-            chipBackgroundColor: "#eef3ff",
-            chipTextColor: "#3153a4",
-            textLeading: 22,
-            textSize: 15,
-            typeface: "sans-serif",
-            maxHeight: 200,
-            minHeight: 48,
-            paddingBottom: 10,
-            paddingHorizontal: 12,
-            paddingTop: 10,
-            placeholderColor: "#777",
-            textColor: "#111",
-          }}
+          appearance={appearance}
           document={createComposerTextDocument("请 @rese")}
           onSnapshotChange={onSnapshotChange}
           onSubmit={onSubmit}

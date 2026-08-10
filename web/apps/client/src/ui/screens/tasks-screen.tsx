@@ -30,16 +30,17 @@ import {
   DetailSection,
   IconActionButton,
   InlineFeedback,
+  ManagementChoiceField,
   ManagementCollectionFooterAction,
-  ManagementCollectionHeader,
-  ManagementCollectionPane,
+  ManagementResourceDirectory,
   ManagementDateTimeInput,
   ManagementDetailCanvas,
   ManagementDetailScroll,
   ManagementField,
   ManagementForm,
-  ManagementFormActions,
+  ManagementFormFooter,
   ManagementHeader,
+  ManagementHeaderActions,
   ManagementTab,
   ManagementTabBar,
   ManagementStage,
@@ -47,15 +48,28 @@ import {
   SelectionButton,
   SelectionGroup,
 } from "../components/management-workspace";
-import {breakpoints} from "../theme";
 import {deviceTimezone, normalizeLocalDateTime} from "../date-time";
-import { layoutMode } from "../layout-mode";
+import {reminderEmptyCopy, taskEmptyCopy} from "../management-empty-copy";
+import { managementSurfaceLayout } from "../management-surface-layout";
 import {
+  buildManagementShellModel,
   ManagementPresentation,
   type ManagementPageModel,
   type PresentationAction,
+  type PresentationForm,
 } from "../presentation";
-import { PlatformFrame, type PlatformFrameProps } from "../layouts/app-frame";
+import {
+  reminderListItemViewModel,
+  reminderStatusLabel,
+  reminderStatusTone,
+  taskListItemViewModel,
+  taskStatusLabel,
+  taskStatusTone,
+  type ReminderListItemViewModel,
+  type TaskListItemViewModel,
+} from "../presentation/resources/task";
+import type { PlatformFrameProps } from "../layouts/app-frame";
+import { ManagementScreenFrame } from "../layouts/management-screen-frame";
 import type { WorkspaceSection } from "../layouts/workspace-section";
 
 export interface TasksScreenProps {
@@ -64,6 +78,11 @@ export interface TasksScreenProps {
   currentAccount?: PlatformFrameProps["account"];
   currentServerId: string | null;
   error: string | null;
+  /**
+   * When false, render section body only. Parent WorkspaceChrome owns the
+   * shared rail / bottom bar so navigation membership stays stable.
+   */
+  framed?: boolean;
   inbox: InboxItem[];
   imStatus?: PlatformFrameProps["imStatus"];
   loading: boolean;
@@ -102,6 +121,7 @@ export function TasksScreen(props: TasksScreenProps) {
     currentAccount,
     currentServerId,
     error,
+    framed = true,
     inbox,
     imStatus,
     loading,
@@ -126,11 +146,8 @@ export function TasksScreen(props: TasksScreenProps) {
   } = props;
   const window = useWindowDimensions();
   const resolvedViewportWidth = viewportWidth ?? window.width;
-  const frameMode = layoutMode(resolvedViewportWidth);
-  const compact = frameMode === "compact";
-  const medium = frameMode === "medium";
-  const phone = resolvedViewportWidth < breakpoints.medium;
-  const stackedCollection = compact || medium;
+  const surface = managementSurfaceLayout(resolvedViewportWidth);
+  const {density, stackedCollection} = surface;
   const [creating, setCreating] = useState(false);
   const [creatingReminder, setCreatingReminder] = useState(false);
   const [reminderAgentId, setReminderAgentId] = useState(agents[0]?.id ?? "");
@@ -166,6 +183,18 @@ export function TasksScreen(props: TasksScreenProps) {
     [reminders, selectedReminderId],
   );
   const reminderMode = mode === "reminders";
+  const taskItems = tasks.map(task => ({
+    resource: task,
+    view: taskListItemViewModel(task, task.id === selectedTask?.id),
+  }));
+  const reminderItems = reminders.map(reminder => ({
+    resource: reminder,
+    view: reminderListItemViewModel(
+      reminder,
+      agents.find(agent => agent.id === reminder.agentId),
+      reminder.id === selectedReminder?.id,
+    ),
+  }));
   const activeLoading = reminderMode ? loadingReminders : loading;
   const refresh = reminderMode ? onRefreshReminders : onRefresh;
   const activeCreation = reminderMode ? creatingReminder : creating;
@@ -218,56 +247,31 @@ export function TasksScreen(props: TasksScreenProps) {
     cancelReminderCreation();
   };
 
+  const collectionToolbar = (
+    <TaskCollectionToolbar
+      inboxCount={reminderMode ? reminders.length : inbox.length}
+      onRefresh={() => refresh?.()}
+      onSelectMode={setMode}
+      reminderMode={reminderMode}
+      refreshDisabled={activeLoading || !refresh}
+      refreshTestID="task-refresh-icon"
+    />
+  );
+  const collectionList = reminderMode ? (
+    <ReminderList
+      items={reminderItems}
+      onSelect={setSelectedReminderId}
+    />
+  ) : (
+    <TaskList
+      items={taskItems}
+      onSelect={setSelectedTaskId}
+    />
+  );
   const sidebar = (
-    <ManagementCollectionPane testID="task-sidebar">
-      <ManagementCollectionHeader
-        eyebrow={`${tasks.length} 个任务 · ${reminders.length} 个提醒`}
-        icon={ListChecks}
-        title="任务"
-      />
-      <ManagementTabBar>
-        <ManagementTab
-          accessibilityLabel="打开任务队列"
-          label="任务"
-          onPress={() => setMode("tasks")}
-          selected={!reminderMode}
-        />
-        <ManagementTab
-          accessibilityLabel="打开提醒"
-          label="提醒"
-          onPress={() => setMode("reminders")}
-          selected={reminderMode}
-        />
-      </ManagementTabBar>
-      <View style={styles.inboxBand}>
-        <Text style={styles.inboxLabel}>
-          {reminderMode ? "提醒" : "待处理"}{" "}
-          {reminderMode ? reminders.length : inbox.length}
-        </Text>
-        <IconActionButton
-          accessibilityLabel={reminderMode ? "刷新提醒" : "刷新任务"}
-          context="compact"
-          disabled={activeLoading || !refresh}
-          icon={RefreshCw}
-          onPress={() => refresh?.()}
-          testID="task-refresh-icon"
-        />
-      </View>
-      {reminderMode ? (
-        <ReminderList
-          agents={agents}
-          onSelect={setSelectedReminderId}
-          reminders={reminders}
-          selectedReminderId={selectedReminder?.id ?? null}
-        />
-      ) : (
-        <TaskList
-          onSelect={setSelectedTaskId}
-          selectedTaskId={selectedTask?.id ?? null}
-          tasks={tasks}
-        />
-      )}
-      {(reminderMode ? reminders.length : tasks.length) > 0 ? (
+    <ManagementResourceDirectory
+      eyebrow={`${tasks.length} 个任务 · ${reminders.length} 个提醒`}
+      footer={(reminderMode ? reminders.length : tasks.length) > 0 ? (
         <ManagementCollectionFooterAction
           accessibilityLabel={reminderMode ? "从侧栏新建提醒" : "从侧栏新建任务"}
           icon={Plus}
@@ -277,10 +281,16 @@ export function TasksScreen(props: TasksScreenProps) {
             : setCreating(true)}
         />
       ) : null}
-    </ManagementCollectionPane>
+      icon={ListChecks}
+      scroll={false}
+      testID="task-sidebar"
+      title="任务"
+      toolbar={collectionToolbar}
+    >
+      {collectionList}
+    </ManagementResourceDirectory>
   );
 
-  const selectedServer = servers.find(item => item.id === currentServerId);
   const refreshAction: PresentationAction = {
     disabled: activeLoading || !refresh,
     id: reminderMode ? "refresh-reminders" : "refresh-tasks",
@@ -310,25 +320,13 @@ export function TasksScreen(props: TasksScreenProps) {
   const semanticModel = (): ManagementPageModel => ({
     collection: {
       items: reminderMode
-        ? reminders.map(reminder => {
-            const agent = agents.find(item => item.id === reminder.agentId);
-            return {
-              id: reminder.id,
-              meta: agent?.displayName ?? "未知 Agent",
-              onSelect: () => setSelectedReminderId(reminder.id),
-              selected: reminder.id === selectedReminder?.id,
-              status: reminderStatusLabel[reminder.status],
-              title: reminder.text,
-            };
-          })
-        : tasks.map(item => ({
-            id: item.id,
-            meta: `#${item.number}`,
-            onSelect: () => setSelectedTaskId(item.id),
-            selected: item.id === selectedTask?.id,
-            status: taskStatusLabel[item.status],
-            subtitle: item.description,
-            title: item.title,
+        ? reminderItems.map(({resource, view}) => ({
+            ...view,
+            onSelect: () => setSelectedReminderId(resource.id),
+          }))
+        : taskItems.map(({resource, view}) => ({
+            ...view,
+            onSelect: () => setSelectedTaskId(resource.id),
           })),
       label: reminderMode ? "提醒" : "任务",
     },
@@ -369,8 +367,8 @@ export function TasksScreen(props: TasksScreenProps) {
         : {
             empty: {
               ...(createAction ? {action: createAction} : {}),
-              description: "为 Agent 安排一次或周期工作。",
-              title: "还没有提醒",
+              description: reminderEmptyCopy.description,
+              title: reminderEmptyCopy.title,
             },
           }
       : selectedTask
@@ -406,8 +404,8 @@ export function TasksScreen(props: TasksScreenProps) {
         : {
             empty: {
               action: createAction,
-              description: "创建第一项工作，或从 Agent 对话生成 Task。",
-              title: "还没有任务",
+              description: taskEmptyCopy.description,
+              title: taskEmptyCopy.title,
             },
           }),
     error: error ?? undefined,
@@ -430,6 +428,7 @@ export function TasksScreen(props: TasksScreenProps) {
             ],
             fields: [
               {
+                accessibilityLabel: "任务标题",
                 disabled: pendingAction !== null,
                 id: "task-title",
                 label: "任务标题",
@@ -438,6 +437,7 @@ export function TasksScreen(props: TasksScreenProps) {
                 value: title,
               },
               {
+                accessibilityLabel: "执行 Agent",
                 disabled: pendingAction !== null,
                 id: "task-agent",
                 label: "执行 Agent",
@@ -452,6 +452,7 @@ export function TasksScreen(props: TasksScreenProps) {
                 value: ownerMemberId,
               },
               {
+                accessibilityLabel: "任务描述",
                 disabled: pendingAction !== null,
                 id: "task-description",
                 label: "任务描述",
@@ -510,6 +511,7 @@ export function TasksScreen(props: TasksScreenProps) {
                 value: reminderAgentId,
               },
               {
+                accessibilityLabel: "提醒内容",
                 disabled: pendingAction !== null,
                 id: "reminder-text",
                 label: "提醒内容",
@@ -519,6 +521,9 @@ export function TasksScreen(props: TasksScreenProps) {
                 value: reminderText,
               },
               {
+                accessibilityLabel: reminderScheduleKind === "once"
+                  ? "提醒执行时间"
+                  : "提醒周期规则",
                 disabled: pendingAction !== null,
                 id: "reminder-schedule",
                 label: reminderScheduleKind === "once" ? "执行时间" : "周期规则",
@@ -529,6 +534,7 @@ export function TasksScreen(props: TasksScreenProps) {
                 value: reminderSchedule,
               },
               {
+                accessibilityLabel: "提醒时区",
                 disabled: pendingAction !== null,
                 id: "reminder-timezone",
                 label: "时区",
@@ -560,215 +566,205 @@ export function TasksScreen(props: TasksScreenProps) {
         selected: reminderMode,
       },
     ],
-    shell: {
+    shell: buildManagementShellModel({
       accountLabel: currentAccount?.displayName ?? currentAccount?.email,
       activeSection: "tasks",
-      navigation: [
-        ["chat", "聊天"],
-        ["tasks", "任务"],
-        ["agents", "Agent"],
-        ["computers", "Computer"],
-        ["members", "成员"],
-      ].map(([section, label]) => ({
-        id: `navigate-${section}`,
-        label: label!,
-        run: () => onNavigateSection(section as WorkspaceSection),
-      })),
+      canManageServer: canManage,
+      currentServerId,
       ...(onLogout ? {onLogout} : {}),
-      serverName: selectedServer?.name,
-      serverOptions: servers.map(server => ({
-        id: server.id,
-        label: server.name,
-        onSelect: () => onSelectServer(server.id),
-        selected: server.id === currentServerId,
-      })),
-    },
+      onNavigateSection,
+      onSelectServer,
+      servers,
+    }),
   });
 
-  return (
-    <ManagementPresentation model={semanticModel}>
-    <PlatformFrame
-      account={currentAccount}
-      activeSection="tasks"
-      canManageServer={canManage}
-      currentServerId={currentServerId}
-      imStatus={imStatus}
-      navigation={stackedCollection ? null : sidebar}
-      onLogout={onLogout}
-      onNavigateSection={onNavigateSection}
-      onSelectServer={onSelectServer}
-      sectionHref={sectionHref}
-      serverHref={serverHref}
-      servers={servers}
-      viewportWidth={viewportWidth}
-    >
-      <ManagementStage testID="task-stage">
-        <ManagementHeader
-          actions={(reminderMode ? reminders.length : tasks.length) > 0 &&
-          !(reminderMode ? creatingReminder : creating) ? (
-            <ActionButton
-              accessibilityLabel={reminderMode ? "新建提醒" : "新建任务"}
-              context="header"
-              icon={Plus}
-              iconTestID="task-create-icon"
-              importance="tonal"
-              label="新建"
-              onPress={() => reminderMode
-                ? setCreatingReminder(true)
-                : setCreating(true)}
-            />
-          ) : undefined}
-          copyTestID="task-stage-header-copy"
-          title={reminderMode ? "提醒" : "任务"}
-          titleTestID="task-stage-title"
-        />
-        {error ? <InlineFeedback message={error} /> : null}
-        {stackedCollection && !activeCreation ? (
-          <View
-            style={styles.compactListBlock}
-            testID="task-collection-shelf"
-          >
-            <View>
-              <ManagementTabBar>
-              <ManagementTab
-                accessibilityLabel="打开任务队列"
-                label="任务"
-                onPress={() => setMode("tasks")}
-                selected={!reminderMode}
-              />
-              <ManagementTab
-                accessibilityLabel="打开提醒"
-                label="提醒"
-                onPress={() => setMode("reminders")}
-                selected={reminderMode}
-              />
-              </ManagementTabBar>
-            </View>
-            <View style={styles.inboxBand}>
-              <Text style={styles.inboxLabel}>
-                {reminderMode ? "提醒" : "待处理"}{" "}
-                {reminderMode ? reminders.length : inbox.length}
-              </Text>
-              <IconActionButton
-                accessibilityLabel={reminderMode ? "刷新提醒" : "刷新任务"}
-                context="compact"
-                disabled={!refresh}
-                icon={RefreshCw}
-                onPress={() => refresh?.()}
-                testID="task-compact-refresh-icon"
-              />
-            </View>
-            {reminderMode ? (
-              <ReminderList
-                agents={agents}
-                horizontal
-                onSelect={setSelectedReminderId}
-                reminders={reminders}
-                selectedReminderId={selectedReminder?.id ?? null}
-              />
-            ) : (
-              <TaskList
-                horizontal
-                onSelect={setSelectedTaskId}
-                selectedTaskId={selectedTask?.id ?? null}
-                tasks={tasks}
-              />
-            )}
-          </View>
-        ) : null}
-        <ManagementDetailScroll
-          density={phone ? "compact" : medium ? "medium" : "comfortable"}
-          testID="task-detail-scroll"
+  const navigation = stackedCollection ? null : sidebar;
+  const renderStage = (pageModel: ManagementPageModel) => (
+    <ManagementStage testID="task-stage">
+      <ManagementHeader
+        actions={(
+          <ManagementHeaderActions
+            createAccessibilityLabel={reminderMode ? "新建提醒" : "新建任务"}
+            createIconTestID="task-create-icon"
+            createLabel="新建"
+            createVisible={(reminderMode ? reminders.length : tasks.length) > 0 &&
+              !(reminderMode ? creatingReminder : creating)}
+            onCreate={() => reminderMode
+              ? setCreatingReminder(true)
+              : setCreating(true)}
+          />
+        )}
+        copyTestID="task-stage-header-copy"
+        title={pageModel.header.title}
+        titleTestID="task-stage-title"
+      />
+      {pageModel.error ? <InlineFeedback message={pageModel.error} /> : null}
+      {stackedCollection && !activeCreation ? (
+        <View
+          style={styles.compactListBlock}
+          testID="task-collection-shelf"
         >
-          {!reminderMode && creating ? (
-            <TaskCreateForm
-              agents={agents}
-              description={description}
-              disabled={pendingAction !== null}
-              onCancel={() => setCreating(false)}
-              onChangeDescription={setDescription}
-              onChangeOwnerMemberId={setOwnerMemberId}
-              onChangeTitle={setTitle}
-              onSubmit={async () => {
-                await submitTask();
-              }}
-              ownerMemberId={ownerMemberId}
-              title={title}
+          <TaskCollectionToolbar
+            inboxCount={reminderMode ? reminders.length : inbox.length}
+            onRefresh={() => refresh?.()}
+            onSelectMode={setMode}
+            reminderMode={reminderMode}
+            refreshDisabled={!refresh}
+            refreshTestID="task-compact-refresh-icon"
+          />
+          {reminderMode ? (
+            <ReminderList
+              horizontal
+              items={reminderItems}
+              onSelect={setSelectedReminderId}
             />
-          ) : reminderMode && creatingReminder && onCreateReminder ? (
-            <ReminderCreateForm
-              agentId={reminderAgentId}
-              agents={agents}
-              disabled={pendingAction !== null}
-              onCancel={cancelReminderCreation}
-              onChangeAgentId={setReminderAgentId}
-              onChangeSchedule={setReminderSchedule}
-              onChangeScheduleKind={setReminderScheduleKind}
-              onChangeText={setReminderText}
-              onChangeTimezone={setReminderTimezone}
-              onSubmit={submitReminder}
-              schedule={reminderSchedule}
-              scheduleKind={reminderScheduleKind}
-              text={reminderText}
-              timezone={reminderTimezone}
+          ) : (
+            <TaskList
+              horizontal
+              items={taskItems}
+              onSelect={setSelectedTaskId}
             />
-          ) : reminderMode ? (
-            selectedReminder ? (
-              <ReminderDetail
-                agent={agents.find((item) => item.id === selectedReminder.agentId)}
-                disabled={pendingAction !== null}
-                key={selectedReminder.id}
-                onCancel={() => onCancelReminder?.(selectedReminder.id)}
-                onUpdate={(input) =>
-                  onUpdateReminder?.(selectedReminder.id, input)}
-                reminder={selectedReminder}
-              />
-            ) : (
-              <ManagementEmptyState
-                actionAccessibilityLabel="从空状态新建提醒"
-                actionLabel={onCreateReminder ? "创建第一个提醒" : undefined}
-                description="为 Agent 安排一次或周期工作。"
-                icon={Bell}
-                onAction={onCreateReminder ? () => setCreatingReminder(true) : undefined}
-                title="还没有提醒"
-              />
-            )
-          ) : selectedTask ? (
-            <TaskDetail
-              agents={agents}
+          )}
+        </View>
+      ) : null}
+      <ManagementDetailScroll
+        density={density}
+        testID="task-detail-scroll"
+      >
+        {!reminderMode && creating ? (
+          <TaskCreateForm
+            form={pageModel.form!}
+          />
+        ) : reminderMode && creatingReminder && onCreateReminder ? (
+          <ReminderCreateForm
+            form={pageModel.form!}
+          />
+        ) : reminderMode ? (
+          selectedReminder ? (
+            <ReminderDetail
+              agent={agents.find((item) => item.id === selectedReminder.agentId)}
               disabled={pendingAction !== null}
+              key={selectedReminder.id}
+              onCancel={() => onCancelReminder?.(selectedReminder.id)}
               onUpdate={(input) =>
-                onUpdateTask(selectedTask.id, input)
-              }
-              task={selectedTask}
+                onUpdateReminder?.(selectedReminder.id, input)}
+              reminder={selectedReminder}
             />
           ) : (
             <ManagementEmptyState
-              actionAccessibilityLabel="从空状态新建任务"
-              actionLabel="创建第一个任务"
-              description="创建第一项工作，或从 Agent 对话生成 Task。"
-              icon={ListChecks}
-              onAction={() => setCreating(true)}
-              title="还没有任务"
+              actionAccessibilityLabel="从空状态新建提醒"
+              actionLabel={onCreateReminder ? "创建第一个提醒" : undefined}
+              description={pageModel.empty?.description ?? reminderEmptyCopy.description}
+              icon={Bell}
+              onAction={onCreateReminder ? () => setCreatingReminder(true) : undefined}
+              title={pageModel.empty?.title ?? reminderEmptyCopy.title}
             />
-          )}
-        </ManagementDetailScroll>
-      </ManagementStage>
-    </PlatformFrame>
+          )
+        ) : selectedTask ? (
+          <TaskDetail
+            agents={agents}
+            disabled={pendingAction !== null}
+            onUpdate={(input) =>
+              onUpdateTask(selectedTask.id, input)
+            }
+            task={selectedTask}
+          />
+        ) : (
+          <ManagementEmptyState
+            actionAccessibilityLabel="从空状态新建任务"
+            actionLabel="创建第一个任务"
+            description={pageModel.empty?.description ?? taskEmptyCopy.description}
+            icon={ListChecks}
+            onAction={() => setCreating(true)}
+            title={pageModel.empty?.title ?? taskEmptyCopy.title}
+          />
+        )}
+      </ManagementDetailScroll>
+    </ManagementStage>
+  );
+
+  return (
+    <ManagementPresentation model={semanticModel}>
+      {(pageModel) => (
+        <ManagementScreenFrame
+          account={currentAccount}
+          activeSection="tasks"
+          canManageServer={canManage}
+          currentServerId={currentServerId}
+          framed={framed}
+          imStatus={imStatus}
+          navigation={navigation}
+          onLogout={onLogout}
+          onNavigateSection={onNavigateSection}
+          onSelectServer={onSelectServer}
+          sectionHref={sectionHref}
+          serverHref={serverHref}
+          servers={servers}
+          viewportWidth={viewportWidth}
+        >
+          {renderStage(pageModel)}
+        </ManagementScreenFrame>
+      )}
     </ManagementPresentation>
+  );
+}
+
+function TaskCollectionToolbar({
+  inboxCount,
+  onRefresh,
+  onSelectMode,
+  reminderMode,
+  refreshDisabled,
+  refreshTestID,
+}: {
+  inboxCount: number;
+  onRefresh(): void;
+  onSelectMode(mode: "reminders" | "tasks"): void;
+  reminderMode: boolean;
+  refreshDisabled: boolean;
+  refreshTestID: string;
+}) {
+  return (
+    <>
+      <ManagementTabBar>
+        <ManagementTab
+          accessibilityLabel="打开任务队列"
+          label="任务"
+          onPress={() => onSelectMode("tasks")}
+          selected={!reminderMode}
+        />
+        <ManagementTab
+          accessibilityLabel="打开提醒"
+          label="提醒"
+          onPress={() => onSelectMode("reminders")}
+          selected={reminderMode}
+        />
+      </ManagementTabBar>
+      <View style={styles.inboxBand}>
+        <Text style={styles.inboxLabel}>
+          {reminderMode ? "提醒" : "待处理"} {inboxCount}
+        </Text>
+        <IconActionButton
+          accessibilityLabel={reminderMode ? "刷新提醒" : "刷新任务"}
+          context="compact"
+          disabled={refreshDisabled}
+          icon={RefreshCw}
+          onPress={onRefresh}
+          testID={refreshTestID}
+        />
+      </View>
+    </>
   );
 }
 
 function TaskList({
   horizontal = false,
+  items,
   onSelect,
-  selectedTaskId,
-  tasks,
 }: {
   horizontal?: boolean;
+  items: Array<{resource: Task; view: TaskListItemViewModel}>;
   onSelect(taskId: string): void;
-  selectedTaskId: string | null;
-  tasks: Task[];
 }) {
   return (
     <ScrollView
@@ -779,23 +775,22 @@ function TaskList({
       horizontal={horizontal}
       showsHorizontalScrollIndicator={false}
     >
-      {tasks.map((task) => {
-        const selected = task.id === selectedTaskId;
+      {items.map(({resource, view}) => {
         return (
           <CollectionRow
-            accessibilityLabel={`打开任务 ${task.number}`}
-            key={task.id}
-            onPress={() => onSelect(task.id)}
+            accessibilityLabel={view.accessibilityLabel}
+            key={view.id}
+            onPress={() => onSelect(resource.id)}
             orientation={horizontal ? "horizontal" : "vertical"}
-            selected={selected}
+            selected={view.selected}
           >
-            <Text style={styles.taskReference}>#{task.number}</Text>
+            <Text style={styles.taskReference}>{view.meta}</Text>
             <View style={styles.taskCopy}>
               <Text numberOfLines={2} style={styles.taskTitle}>
-                {task.title}
+                {view.title}
               </Text>
               <Text style={styles.taskStatus}>
-                {taskStatusLabel[task.status]}
+                {view.status}
               </Text>
             </View>
           </CollectionRow>
@@ -806,17 +801,13 @@ function TaskList({
 }
 
 function ReminderList({
-  agents,
   horizontal = false,
+  items,
   onSelect,
-  reminders,
-  selectedReminderId,
 }: {
-  agents: Agent[];
   horizontal?: boolean;
+  items: Array<{resource: Reminder; view: ReminderListItemViewModel}>;
   onSelect(reminderId: string): void;
-  reminders: Reminder[];
-  selectedReminderId: string | null;
 }) {
   return (
     <ScrollView
@@ -827,24 +818,22 @@ function ReminderList({
       horizontal={horizontal}
       showsHorizontalScrollIndicator={false}
     >
-      {reminders.map((reminder) => {
-        const selected = reminder.id === selectedReminderId;
-        const agent = agents.find((item) => item.id === reminder.agentId);
+      {items.map(({resource, view}) => {
         return (
           <CollectionRow
-            accessibilityLabel={`打开提醒 ${reminder.text}`}
-            key={reminder.id}
-            onPress={() => onSelect(reminder.id)}
+            accessibilityLabel={view.accessibilityLabel}
+            key={view.id}
+            onPress={() => onSelect(resource.id)}
             orientation={horizontal ? "horizontal" : "vertical"}
-            selected={selected}
+            selected={view.selected}
           >
             <Text style={styles.taskReference}>提醒</Text>
             <View style={styles.taskCopy}>
               <Text numberOfLines={2} style={styles.taskTitle}>
-                {reminder.text}
+                {view.title}
               </Text>
               <Text style={styles.taskStatus}>
-                {reminderStatusLabel[reminder.status]} · {agent?.displayName ?? "未知 Agent"}
+                {view.subtitle}
               </Text>
             </View>
           </CollectionRow>
@@ -854,126 +843,98 @@ function ReminderList({
   );
 }
 
-function ReminderCreateForm({
-  agentId,
-  agents,
-  disabled,
-  onCancel,
-  onChangeAgentId,
-  onChangeSchedule,
-  onChangeScheduleKind,
-  onChangeText,
-  onChangeTimezone,
-  onSubmit,
-  schedule,
-  scheduleKind,
-  text,
-  timezone,
-}: {
-  agentId: string;
-  agents: Agent[];
-  disabled: boolean;
-  onCancel(): void;
-  onChangeAgentId(value: string): void;
-  onChangeSchedule(value: string): void;
-  onChangeScheduleKind(value: Reminder["scheduleKind"]): void;
-  onChangeText(value: string): void;
-  onChangeTimezone(value: string): void;
-  onSubmit(): void | Promise<void>;
-  schedule: string;
-  scheduleKind: Reminder["scheduleKind"];
-  text: string;
-  timezone: string;
-}) {
+function ReminderCreateForm({form}: {form: PresentationForm}) {
+  const kind = form.fields.find(field => field.id === "reminder-kind")!;
+  const agent = form.fields.find(field => field.id === "reminder-agent")!;
+  const text = form.fields.find(field => field.id === "reminder-text")!;
+  const schedule = form.fields.find(field => field.id === "reminder-schedule")!;
+  const timezone = form.fields.find(field => field.id === "reminder-timezone")!;
+  const cancel = form.actions.find(action => action.id === "cancel-create-reminder")!;
+  const submit = form.actions.find(action => action.id === "submit-create-reminder")!;
   return (
     <ManagementForm>
-      <Text style={styles.formTitle}>新建提醒</Text>
-      <ManagementField label="提醒类型">
-        <SelectionGroup inset>
-          {(["once", "cron"] as const).map((kind) => (
-            <SelectionButton
-              accessibilityLabel={kind === "once" ? "选择一次提醒" : "选择周期提醒"}
-              key={kind}
-              label={kind === "once" ? "一次" : "周期"}
-              layout="equal"
-              onPress={() => onChangeScheduleKind(kind)}
-              selected={scheduleKind === kind}
-            />
-          ))}
-        </SelectionGroup>
-      </ManagementField>
-      <ManagementField label="执行 Agent">
-        <SelectionGroup>
-          {agents.map((agent) => (
-            <SelectionButton
-              accessibilityLabel={`选择提醒 Agent ${agent.displayName}`}
-              key={agent.id}
-              label={agent.displayName}
-              onPress={() => onChangeAgentId(agent.id)}
-              selected={agent.id === agentId}
-            />
-          ))}
-        </SelectionGroup>
-      </ManagementField>
-      <ManagementField label="提醒内容">
+      <Text style={styles.formTitle}>{form.title}</Text>
+      <ManagementChoiceField
+        disabled={kind.disabled}
+        label={kind.label}
+        onSelect={kind.onChange}
+        options={(kind.options ?? []).map(option => ({
+          ...option,
+          accessibilityLabel: option.value === "once"
+            ? "选择一次提醒"
+            : "选择周期提醒",
+        }))}
+        selected={kind.value}
+      />
+      <ManagementChoiceField
+        disabled={agent.disabled}
+        label={agent.label}
+        onSelect={agent.onChange}
+        options={(agent.options ?? []).map(option => ({
+          ...option,
+          accessibilityLabel: `选择提醒 Agent ${option.label}`,
+        }))}
+        selected={agent.value}
+      />
+      <ManagementField error={text.error} hint={text.hint} label={text.label}>
         <ManagementTextInput
-          accessibilityLabel="提醒内容"
-          editable={!disabled}
+          accessibilityLabel={text.accessibilityLabel ?? text.label}
+          editable={!text.disabled}
           multiline
-          onChangeText={onChangeText}
-          placeholder="Agent 到时要完成什么？"
-          value={text}
+          onChangeText={text.onChange}
+          placeholder={text.placeholder}
+          value={text.value}
         />
       </ManagementField>
       <ManagementField
-        hint={scheduleKind === "once"
+        error={schedule.error}
+        hint={kind.value === "once"
           ? "按下方时区执行。"
           : "使用五段周期规则，示例表示每周一至周五 09:00。"}
-        label={scheduleKind === "once" ? "执行时间" : "周期规则"}
+        label={schedule.label}
       >
-        {scheduleKind === "once" ? (
+        {kind.value === "once" ? (
           <ManagementDateTimeInput
-            accessibilityLabel="提醒执行时间"
-            disabled={disabled}
-            onChangeText={onChangeSchedule}
-            placeholder="选择执行日期和时间"
-            value={schedule}
+            accessibilityLabel={schedule.accessibilityLabel ?? schedule.label}
+            disabled={schedule.disabled}
+            invalid={Boolean(schedule.error)}
+            onChangeText={schedule.onChange}
+            placeholder={schedule.placeholder}
+            value={schedule.value}
           />
         ) : (
           <ManagementTextInput
-            accessibilityLabel="提醒周期规则"
+            accessibilityLabel={schedule.accessibilityLabel ?? schedule.label}
             autoCapitalize="none"
-            editable={!disabled}
-            onChangeText={onChangeSchedule}
-            placeholder="例如：0 9 * * 1-5"
-            value={schedule}
+            editable={!schedule.disabled}
+            invalid={Boolean(schedule.error)}
+            onChangeText={schedule.onChange}
+            placeholder={schedule.placeholder}
+            value={schedule.value}
           />
         )}
       </ManagementField>
-      <ManagementField label="时区">
+      <ManagementField error={timezone.error} hint={timezone.hint} label={timezone.label}>
         <ManagementTextInput
-          accessibilityLabel="提醒时区"
+          accessibilityLabel={timezone.accessibilityLabel ?? timezone.label}
           autoCapitalize="none"
-          editable={!disabled}
-          onChangeText={onChangeTimezone}
-          value={timezone}
+          editable={!timezone.disabled}
+          onChangeText={timezone.onChange}
+          value={timezone.value}
         />
       </ManagementField>
-      <ManagementFormActions>
-        <ActionButton
-          accessibilityLabel="取消新建提醒"
-          importance="secondary"
-          label="取消"
-          onPress={onCancel}
-        />
-        <ActionButton
-          accessibilityLabel="创建提醒"
-          disabled={disabled || !agentId || !schedule.trim() || !text.trim()}
-          importance="primary"
-          label="创建提醒"
-          onPress={onSubmit}
-        />
-      </ManagementFormActions>
+      <ManagementFormFooter
+        cancelAction={{
+          accessibilityLabel: "取消新建提醒",
+          ...cancel,
+          onPress: cancel.run,
+        }}
+        primaryAction={{
+          accessibilityLabel: "创建提醒",
+          ...submit,
+          onPress: submit.run,
+        }}
+      />
     </ManagementForm>
   );
 }
@@ -1069,84 +1030,62 @@ function ReminderDetail({
   );
 }
 
-function TaskCreateForm({
-  agents,
-  description,
-  disabled,
-  onCancel,
-  onChangeDescription,
-  onChangeOwnerMemberId,
-  onChangeTitle,
-  onSubmit,
-  ownerMemberId,
-  title,
-}: {
-  agents: Agent[];
-  description: string;
-  disabled: boolean;
-  onCancel(): void;
-  onChangeDescription(value: string): void;
-  onChangeOwnerMemberId(value: string): void;
-  onChangeTitle(value: string): void;
-  onSubmit(): void | Promise<void>;
-  ownerMemberId: string;
-  title: string;
-}) {
+function TaskCreateForm({form}: {form: PresentationForm}) {
+  const title = form.fields.find(field => field.id === "task-title")!;
+  const agent = form.fields.find(field => field.id === "task-agent")!;
+  const description = form.fields.find(field => field.id === "task-description")!;
+  const cancel = form.actions.find(action => action.id === "cancel-create-task")!;
+  const submit = form.actions.find(action => action.id === "submit-create-task")!;
   return (
     <ManagementForm testID="task-create-form">
-      <Text style={styles.formTitle}>新建任务</Text>
-      <ManagementField label="任务标题">
+      <Text style={styles.formTitle}>{form.title}</Text>
+      <ManagementField error={title.error} hint={title.hint} label={title.label}>
         <ManagementTextInput
-          accessibilityLabel="任务标题"
-          editable={!disabled}
-          onChangeText={onChangeTitle}
-          placeholder="要完成什么？"
-          value={title}
+          accessibilityLabel={title.accessibilityLabel ?? title.label}
+          editable={!title.disabled}
+          onChangeText={title.onChange}
+          placeholder={title.placeholder}
+          value={title.value}
         />
       </ManagementField>
+      <ManagementChoiceField
+        disabled={agent.disabled}
+        label={agent.label}
+        onSelect={agent.onChange}
+        options={(agent.options ?? []).map(option => ({
+          ...option,
+          accessibilityLabel: option.value
+            ? `选择任务 Agent ${option.label}`
+            : "创建未指派任务",
+        }))}
+        selected={agent.value}
+      />
       <ManagementField
-        hint={agents.length > 0 ? undefined : "暂无 Agent，可先创建未指派任务。"}
-        label="执行 Agent"
+        error={description.error}
+        hint={description.hint}
+        label={description.label}
       >
-        {agents.length > 0 ? (
-          <SelectionGroup>
-            {agents.map((agent) => (
-              <SelectionButton
-                accessibilityLabel={`选择任务 Agent ${agent.displayName}`}
-                key={agent.id}
-                label={agent.displayName}
-                onPress={() => onChangeOwnerMemberId(agent.id)}
-                selected={ownerMemberId === agent.id}
-              />
-            ))}
-          </SelectionGroup>
-        ) : null}
-      </ManagementField>
-      <ManagementField label="任务描述">
         <ManagementTextInput
-          accessibilityLabel="任务描述"
-          editable={!disabled}
+          accessibilityLabel={description.accessibilityLabel ?? description.label}
+          editable={!description.disabled}
           multiline
-          onChangeText={onChangeDescription}
-          placeholder="补充背景、验收标准或链接（可选）"
-          value={description}
+          onChangeText={description.onChange}
+          placeholder={description.placeholder}
+          value={description.value}
         />
       </ManagementField>
-      <ManagementFormActions>
-        <ActionButton
-          accessibilityLabel="取消新建任务"
-          importance="secondary"
-          label="取消"
-          onPress={onCancel}
-        />
-        <ActionButton
-          accessibilityLabel="创建任务"
-          disabled={disabled || title.trim().length === 0}
-          importance="primary"
-          label="创建任务"
-          onPress={onSubmit}
-        />
-      </ManagementFormActions>
+      <ManagementFormFooter
+        cancelAction={{
+          accessibilityLabel: "取消新建任务",
+          ...cancel,
+          onPress: cancel.run,
+        }}
+        primaryAction={{
+          accessibilityLabel: "创建任务",
+          ...submit,
+          onPress: submit.run,
+        }}
+      />
     </ManagementForm>
   );
 }
@@ -1221,36 +1160,6 @@ function TaskDetail({
     </ManagementDetailCanvas>
   );
 }
-
-const taskStatusLabel: Record<Task["status"], string> = {
-  closed: "已关闭",
-  done: "已完成",
-  in_progress: "进行中",
-  in_review: "待验收",
-  todo: "待处理",
-};
-
-const taskStatusTone = {
-  closed: "neutral",
-  done: "positive",
-  in_progress: "info",
-  in_review: "warning",
-  todo: "neutral",
-} as const;
-
-const reminderStatusLabel: Record<Reminder["status"], string> = {
-  active: "生效中",
-  canceled: "已取消",
-  completed: "已完成",
-  paused: "已暂停",
-};
-
-const reminderStatusTone = {
-  active: "positive",
-  canceled: "danger",
-  completed: "positive",
-  paused: "warning",
-} as const;
 
 const styles = StyleSheet.create((theme) => ({
   compactListBlock: {

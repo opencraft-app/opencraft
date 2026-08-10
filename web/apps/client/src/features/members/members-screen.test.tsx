@@ -225,7 +225,7 @@ describe("MembersScreen", () => {
     });
     expect(
       screen.getByRole("button", {name: "打开成员 小王 @xiaowang"}),
-    ).toHaveStyle({minHeight: velaTheme.recipes.managementWorkspace.rowMinHeight});
+    ).toHaveStyle({minHeight: velaTheme.recipes.control.rowHeight});
     expect(screen.getByTestId("member-detail")).toHaveStyle({
       alignSelf: "center",
       borderRadius: 0,
@@ -234,9 +234,9 @@ describe("MembersScreen", () => {
     });
     expect(screen.getByTestId("member-hero-avatar")).toHaveStyle({
       backgroundColor: "#EEF0FF",
-      borderRadius: 10,
-      height: 48,
-      width: 48,
+      borderRadius: velaTheme.semantic.radius.control,
+      height: velaTheme.recipes.resourceIdentity.markSize,
+      width: velaTheme.recipes.resourceIdentity.markSize,
     });
     expect(screen.queryByTestId("member-fact-list")).toBeNull();
     expect(screen.getByTestId("member-metadata-list")).toHaveStyle({
@@ -377,14 +377,14 @@ describe("MembersScreen", () => {
       />,
     );
 
+    // 980 shares the chrome-wide collection column with Computer / Agent.
     expect(screen.getByTestId("member-sidebar")).toHaveStyle({
-      borderRightWidth: 0,
-      height: 96,
-      width: "100%",
+      height: "100%",
+      width: 312,
     });
     expect(
       screen.getByRole("button", {name: "打开成员 小王 @xiaowang"}),
-    ).toHaveStyle({height: velaTheme.recipes.managementWorkspace.rowMinHeight, width: 220});
+    ).toHaveStyle({minHeight: velaTheme.recipes.control.rowHeight});
     expect(screen.queryByText("TEAM / 02")).toBeNull();
     expect(screen.getByText("所有者")).toBeVisible();
     expect(screen.getByText("自然人")).toBeVisible();
@@ -396,8 +396,8 @@ describe("MembersScreen", () => {
     expect(screen.getByTestId("member-create-icon")).toBeVisible();
     expect(screen.getByTestId("member-refresh-icon")).toBeVisible();
     expect(screen.getByRole("button", {name: "创建邀请"})).toHaveStyle({
-      backgroundColor: "#EAF4FF",
-      borderColor: "#EAF4FF",
+      backgroundColor: velaTheme.semantic.color.actionTonalSurface,
+      borderColor: velaTheme.semantic.color.actionTonalSurface,
       minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.queryByTestId("member-accept-invite")).toBeNull();
@@ -481,10 +481,11 @@ describe("MembersScreen", () => {
     expect(onAcceptInvite).toHaveBeenCalledWith("rfi_example");
     expect(screen.getByTestId("member-accept-invite")).toHaveStyle({
       alignSelf: "stretch",
-      borderRadius: 0,
-      borderTopWidth: 1,
-      paddingHorizontal: 0,
-      paddingVertical: 20,
+      gap: velaTheme.spacing.sm,
+    });
+    expect(screen.getByTestId("member-accept-invite-body")).toHaveStyle({
+      borderRadius: velaTheme.semantic.radius.control,
+      borderWidth: 1,
     });
     await fireEvent.press(
       screen.getByRole("button", {name: "取消接受邀请"}),
@@ -613,10 +614,10 @@ describe("MembersScreen", () => {
     );
 
     expect(screen.queryByTestId("member-mobile-switcher")).toBeNull();
-    expect(screen.getByTestId("member-sidebar")).toHaveStyle({height: 96});
+    expect(screen.getByTestId("member-sidebar")).toHaveStyle({height: velaTheme.recipes.managementWorkspace.collectionCompactHeight});
     expect(
       screen.getByRole("button", {name: "打开成员 小王 @xiaowang"}),
-    ).toHaveStyle({height: velaTheme.recipes.managementWorkspace.rowMinHeight, width: 220});
+    ).toHaveStyle({height: velaTheme.recipes.control.rowHeight, width: 220});
   });
 
   it("keeps asynchronous member removal status visible after the row disappears", async () => {

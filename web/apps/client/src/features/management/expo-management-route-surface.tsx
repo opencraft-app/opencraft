@@ -1,15 +1,10 @@
 import {TerminalController, type Server} from "@vela/client-core";
-import {useRouter, type Href} from "expo-router";
-import {useShallow} from "zustand/react/shallow";
+import {workspaceSectionLabel} from "@/ui";
 
-import {selectManagementNavigationState} from "../../application/app-selectors";
 import {RouteTitle} from "../navigation/route-title";
-import {useAppRuntime, useAppState} from "../../runtime/app-runtime";
+import {useAppRuntime} from "../../runtime/app-runtime";
 import {createExpoTerminalOpener} from "../../terminal/expo-terminal";
-import {
-  computerHref,
-  workspaceSectionHref,
-} from "../workspace/section-navigation";
+import {useServerWorkspace} from "../workspace/server-route-context";
 import {
   ManagementRouteSurface,
   type ManagementSection,
@@ -18,30 +13,25 @@ import {
 export interface ExpoManagementRouteSurfaceProps {
   section: ManagementSection;
   selectedComputerId?: string | null;
-  server: Server;
+  server?: Server;
 }
-
-const sectionTitle: Record<ManagementSection, string> = {
-  agents: "Agent",
-  computers: "Computer",
-  members: "成员",
-  settings: "设置",
-  tasks: "任务",
-};
 
 export function ExpoManagementRouteSurface({
   section,
   selectedComputerId,
-  server,
+  server: serverProp,
 }: ExpoManagementRouteSurfaceProps) {
-  const router = useRouter();
   const {store} = useAppRuntime();
-  const state = useAppState(useShallow(selectManagementNavigationState));
+  const {navigation, server: contextServer} = useServerWorkspace();
+  const server = serverProp ?? contextServer;
 
   return (
     <>
-      <RouteTitle title={`${sectionTitle[section]} · ${server.name} · VELA`} />
+      <RouteTitle
+        title={`${workspaceSectionLabel(section)} · ${server.name} · VELA`}
+      />
       <ManagementRouteSurface
+        chrome={false}
         {...(section === "computers"
           ? {
               createTerminalController: (computerId: string) =>
@@ -63,29 +53,11 @@ export function ExpoManagementRouteSurface({
           : {})}
         navigation={{
           navigateSection: nextSection =>
-            router.push(
-              workspaceSectionHref(
-                server.slug,
-                nextSection,
-                state.currentChannelId,
-              ) as Href,
-            ),
-          selectComputer: computerId =>
-            router.push(computerHref(server.slug, computerId) as Href),
-          selectServer: (serverId, nextSection) => {
-            const nextServer = state.servers.find(
-              candidate => candidate.id === serverId,
-            );
-            if (nextServer) {
-              router.replace(
-                workspaceSectionHref(nextServer.slug, nextSection) as Href,
-              );
-            }
-          },
-          showComputerList: () =>
-            router.replace(
-              workspaceSectionHref(server.slug, "computers") as Href,
-            ),
+            navigation.navigateSection(nextSection),
+          selectComputer: computerId => navigation.selectComputer(computerId),
+          selectServer: (serverId, nextSection) =>
+            navigation.selectServer(serverId, nextSection),
+          showComputerList: () => navigation.showComputerList(),
         }}
         section={section}
         {...(selectedComputerId !== undefined

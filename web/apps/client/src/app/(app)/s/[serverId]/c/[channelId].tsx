@@ -1,32 +1,21 @@
 import {useLocalSearchParams} from "expo-router";
 
-import {ServerRouteBoundary} from "../../../../../features/workspace/server-route-boundary";
-import {workspaceSectionHref} from "../../../../../features/workspace/section-navigation";
+import {useServerRoute} from "../../../../../features/workspace/server-route-context";
+import {routeParam} from "../../../../../features/workspace/section-navigation";
 import {WorkspaceConversationScreen} from "../../../../../features/workspace/workspace-conversation-screen";
 
 export default function ChannelRoute() {
-  const {channelId, serverId} = useLocalSearchParams<{
-    channelId: string;
-    serverId: string;
-  }>();
+  const params = useLocalSearchParams<{channelId?: string | string[]}>();
+  const server = useServerRoute();
 
   return (
-    <ServerRouteBoundary
-      canonicalHref={(serverSlug) =>
-        workspaceSectionHref(serverSlug, "chat", channelId)
-      }
-      serverReference={serverId}
-    >
-      {(server) => (
-        <WorkspaceConversationScreen
-          serverSlug={server.slug}
-          target={{
-            channelId: channelId ?? "",
-            kind: "channel",
-            serverId: server.id,
-          }}
-        />
-      )}
-    </ServerRouteBoundary>
+    <WorkspaceConversationScreen
+      serverSlug={server.slug}
+      target={{
+        channelId: routeParam(params.channelId),
+        kind: "channel",
+        serverId: server.id,
+      }}
+    />
   );
 }

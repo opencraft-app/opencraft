@@ -514,7 +514,7 @@ export class ChannelChatService {
     return channel.conversationId;
   }
 
-  private conversationType(channel: ConversationAddress): string {
+  private conversationType(_channel: ConversationAddress): string {
     return this.conversationGroup;
   }
 

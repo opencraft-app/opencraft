@@ -1,6 +1,7 @@
 import {act, render} from "@testing-library/react-native";
 import {FlatList, Platform, Text} from "react-native";
 
+import {velaTheme} from "../../tokens";
 import {MessageViewport} from "./message-viewport";
 
 const originalPlatformOS = Platform.OS;
@@ -160,8 +161,8 @@ describe("MessageViewport", () => {
     ).toHaveStyle({
       backgroundColor: "#FFFFFF",
       borderRadius: 9999,
-      height: 48,
-      width: 48,
+      height: velaTheme.recipes.iconControl.floatingSize,
+      width: velaTheme.recipes.iconControl.floatingSize,
     });
     expect(screen.getByTestId("new-messages-badge")).toHaveStyle({
       backgroundColor: "#006FEE",

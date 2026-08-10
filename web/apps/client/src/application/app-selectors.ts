@@ -1,3 +1,5 @@
+import {selectCurrentHumanMember} from "@vela/client-core";
+
 import type {AppStoreState} from "./app-store";
 
 /**
@@ -87,9 +89,10 @@ export function selectManagementState(
         ? state.channels
         : emptyChannels,
     computers: usesComputers ? state.computers : emptyComputers,
-    currentMember: state.members.find(
-      member => member.accountId === state.account?.id,
-    ),
+    currentMember: selectCurrentHumanMember(state.members, {
+      accountId: state.account?.id,
+      imUserId: state.account?.imUserId,
+    }),
     currentServerId: state.currentServerId,
     error: state.error,
     imState: state.imState,

@@ -8,7 +8,7 @@ export function BrandMark({ compact = false }: { compact?: boolean }) {
       style={[styles.mark, compact && styles.markCompact]}
       testID="agent-network-mark"
     >
-      <View style={styles.highlight} />
+      {compact ? null : <View style={styles.highlight} />}
       <Text style={[styles.wordmark, compact && styles.wordmarkCompact]}>
         AN
       </Text>
@@ -29,16 +29,16 @@ const styles = StyleSheet.create((theme) => ({
   mark: {
     alignItems: "center",
     backgroundColor: theme.semantic.color.brandAccent,
-    borderRadius: theme.semantic.radius.circle,
+    borderRadius: theme.semantic.radius.control,
     height: theme.recipes.identity.brandMarkSize,
     justifyContent: "center",
     overflow: "hidden",
     width: theme.recipes.identity.brandMarkSize,
   },
   markCompact: {
-    borderRadius: theme.semantic.radius.circle,
-    height: theme.recipes.emptyState.iconSize,
-    width: theme.recipes.emptyState.iconSize,
+    borderRadius: theme.semantic.radius.control,
+    height: theme.recipes.identity.brandMarkCompactSize,
+    width: theme.recipes.identity.brandMarkCompactSize,
   },
   wordmark: {
     color: theme.semantic.color.textInverse,

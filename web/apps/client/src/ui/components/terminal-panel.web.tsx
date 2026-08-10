@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { computeTerminalOutputPatch } from "../../terminal/terminal-output-sync";
 import { velaTheme } from "../tokens";
+import {terminalStatusLabel} from "../presentation/resources/terminal";
 
 export interface TerminalSurfaceController {
   close(): void;
@@ -173,13 +174,6 @@ export function TerminalPanel({
   );
 }
 
-const terminalStatusLabel: Record<TerminalControllerState["status"], string> = {
-  closed: "终端已关闭",
-  connecting: "正在连接终端…",
-  error: "终端连接异常",
-  ready: "终端已连接",
-};
-
 const styles = {
   button: {
     background: velaTheme.semantic.color.sectionSurface,
@@ -209,11 +203,10 @@ const styles = {
     borderRadius: velaTheme.semantic.radius.section,
     boxSizing: "border-box",
     display: "flex",
+    flex: 1,
     flexDirection: "column",
     gap: velaTheme.spacing.md,
-    height: `calc(100dvh - ${velaTheme.recipes.terminalPanel.viewportChromeOffset}px)`,
-    margin: `clamp(${velaTheme.spacing.lg}px, 2vw, ${velaTheme.spacing.xl}px)`,
-    minHeight: velaTheme.recipes.terminalPanel.panelMinHeight,
+    minHeight: 0,
     overflow: "hidden",
     padding: velaTheme.spacing.lg,
   },

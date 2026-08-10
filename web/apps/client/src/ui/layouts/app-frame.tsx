@@ -571,10 +571,13 @@ const styles = StyleSheet.create((theme) => ({
     borderColor: theme.semantic.color.borderTransparent,
     borderRadius: theme.semantic.radius.section,
     borderWidth: theme.semantic.stroke.hairline,
-    height: theme.recipes.identity.avatarAccountSize,
+    height: theme.recipes.desktopWorkspace.navigationControlSize,
     justifyContent: "center",
-    width: theme.recipes.identity.avatarAccountSize,
+    width: theme.recipes.desktopWorkspace.navigationControlSize,
     ...theme.semantic.motion.transition.control,
+    _web: {
+      AppRegion: "no-drag",
+    },
   },
   accountRailButtonActive: {
     backgroundColor: theme.semantic.color.selectionSurface,
@@ -675,6 +678,12 @@ const styles = StyleSheet.create((theme) => ({
     height: theme.recipes.desktopWorkspace.headerHeight,
     justifyContent: "center",
     width: "100%",
+    _web: {
+      // Window Controls Overlay / Electron traffic-light inset; 0 in ordinary browsers.
+      paddingLeft: "env(titlebar-area-x, 0px)",
+      // Future desktop shell: allow dragging the window from the brand band.
+      AppRegion: "drag",
+    },
   },
   railFooter: {
     alignItems: "center",
@@ -714,16 +723,19 @@ const styles = StyleSheet.create((theme) => ({
     height: theme.recipes.desktopWorkspace.navigationControlSize,
     justifyContent: "center",
     width: theme.recipes.desktopWorkspace.navigationControlSize,
+    _web: {
+      AppRegion: "no-drag",
+    },
   },
   railNavigationHovered: {
-    backgroundColor: theme.semantic.color.surfaceMuted,
-    borderColor: theme.semantic.color.borderControl,
+    backgroundColor: theme.semantic.color.interactiveHoverSurface,
     ...theme.semantic.motion.transition.control,
   },
   railNavigationItem: {
-    height: theme.recipes.identity.avatarAccountSize,
+    // Match the icon button — tooltip insets are relative to this box.
+    height: theme.recipes.desktopWorkspace.navigationControlSize,
     position: "relative",
-    width: theme.recipes.identity.avatarAccountSize,
+    width: theme.recipes.desktopWorkspace.navigationControlSize,
     zIndex: theme.semantic.layer.navigation,
   },
   railSpacer: {
@@ -794,9 +806,14 @@ const styles = StyleSheet.create((theme) => ({
     position: "relative",
     width: theme.recipes.desktopWorkspace.railWidth,
     zIndex: theme.semantic.layer.popover,
+    _web: {
+      backdropFilter: theme.semantic.material.blur,
+      backgroundColor: theme.semantic.material.navigationFill,
+      WebkitBackdropFilter: theme.semantic.material.blur,
+    },
   },
   shell: {
-    backgroundColor: theme.semantic.color.canvasSurface,
+    backgroundColor: theme.semantic.color.shellBackdrop,
     borderRadius: theme.semantic.radius.pane,
     borderWidth: 0,
     flex: 1,
@@ -805,5 +822,8 @@ const styles = StyleSheet.create((theme) => ({
     margin: 0,
     overflow: "hidden",
     padding: 0,
+    _web: {
+      backgroundImage: `linear-gradient(165deg, ${theme.semantic.color.shellBackdropHighlight} 0%, ${theme.semantic.color.shellBackdrop} 46%, ${theme.semantic.color.groupedSurface} 100%)`,
+    },
   },
 }));

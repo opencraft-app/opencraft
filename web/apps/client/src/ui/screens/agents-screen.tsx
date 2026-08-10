@@ -9,56 +9,66 @@ import type {
 } from "@vela/client-core";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ScrollView,
+  Pressable,
   Text,
   useWindowDimensions,
   View,
 } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import {StyleSheet, useUnistyles} from "react-native-unistyles";
 import Bot from "lucide-react-native/icons/bot";
+import Check from "lucide-react-native/icons/check";
 import Plus from "lucide-react-native/icons/plus";
-import RefreshCw from "lucide-react-native/icons/refresh-cw";
 
 import {ManagementEmptyState} from "../components/management-empty-state";
 import {
   ActionButton,
   CollectionIdentityMark,
   CollectionRow,
+  CollectionRowCopy,
   DetailSection,
-  IconActionButton,
-  ManagementCollectionPane,
   ManagementDetailCanvas,
-  ManagementDetailScroll,
-  ManagementField,
-  ManagementForm,
-  ManagementFormActions,
+      ManagementDetailScroll,
+      ManagementChoiceField,
+      ManagementField,
+      ManagementForm,
+      ManagementFormActions,
+      ManagementFormFooter,
   ManagementHeader,
+  ManagementHeaderActions,
   ResourceIdentityHeader,
+  ManagementResourceDirectory,
   ManagementResourceSwitcher,
   ManagementStage,
   ManagementTextInput,
   ResourceActionRow,
-  SelectionButton,
-  SelectionGroup,
   InlineFeedback,
   ManagementCollectionFooterAction,
-  ManagementCollectionHeader,
 } from "../components/management-workspace";
-import { layoutMode } from "../layout-mode";
-import {breakpoints} from "../theme";
 import {
+  buildManagementShellModel,
   ManagementPresentation,
   type ManagementPageModel,
   type PresentationAction,
+  type PresentationForm,
 } from "../presentation";
-import { PlatformFrame, type PlatformFrameProps } from "../layouts/app-frame";
+import {
+  agentActionLabel,
+  agentListItemViewModel,
+  agentReplyPolicyLabel,
+  agentRuntimeStateLabel,
+} from "../presentation/resources/agent";
+import type { PlatformFrameProps } from "../layouts/app-frame";
+import { ManagementScreenFrame } from "../layouts/management-screen-frame";
 import type { WorkspaceSection } from "../layouts/workspace-section";
+import {agentEmptyCopy} from "../management-empty-copy";
+import { managementSurfaceLayout } from "../management-surface-layout";
 import {
   OperationStatusList,
   type OperationStatusItem,
 } from "../components/operation-status-list";
 
 const agentHandlePattern = /^[a-z0-9][a-z0-9_-]{1,31}$/u;
+type AgentCreateStep = 1 | 2 | 3;
 
 export interface AgentsScreenProps {
   agents: Agent[];
@@ -67,10 +77,16 @@ export interface AgentsScreenProps {
   currentAccount?: PlatformFrameProps["account"];
   currentServerId: string | null;
   error: string | null;
+  /**
+   * When false, render section body only. Parent WorkspaceChrome owns the
+   * shared rail / bottom bar so navigation membership stays stable.
+   */
+  framed?: boolean;
   imStatus?: PlatformFrameProps["imStatus"];
   loading: boolean;
   onCreateAgent(
     input: CreateAgentInput,
+    options: {deployAndStart: boolean},
   ): AcceptedResource | null | Promise<AcceptedResource | null>;
   onDeleteAgent?(
     agentId: string,
@@ -107,6 +123,7 @@ export function AgentsScreen(props: AgentsScreenProps) {
     currentAccount,
     currentServerId,
     error,
+    framed = true,
     imStatus,
     loading,
     onCreateAgent,
@@ -128,11 +145,8 @@ export function AgentsScreen(props: AgentsScreenProps) {
   } = props;
   const window = useWindowDimensions();
   const resolvedViewportWidth = viewportWidth ?? window.width;
-  const frameMode = layoutMode(resolvedViewportWidth);
-  const compact = frameMode === "compact";
-  const medium = frameMode === "medium";
-  const phone = resolvedViewportWidth < breakpoints.medium;
-  const stackedCollection = compact || medium;
+  const surface = managementSurfaceLayout(resolvedViewportWidth);
+  const {density, phone, stackedCollection} = surface;
   const showStackedCollection = stackedCollection && agents.length > 1;
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -145,6 +159,8 @@ export function AgentsScreen(props: AgentsScreenProps) {
     useState<Agent["replyPolicy"]>("mention_and_dm");
   const [createRuntime, setCreateRuntime] =
     useState<Agent["runtime"]["kind"]>("codex");
+  const [createStep, setCreateStep] = useState<AgentCreateStep>(1);
+  const [createDeployAndStart, setCreateDeployAndStart] = useState(true);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(
     agents[0]?.id ?? null,
@@ -183,74 +199,45 @@ export function AgentsScreen(props: AgentsScreenProps) {
     selected?.replyPolicy,
     selected?.runtime.kind,
   ]);
-  const submitNewAgent = async (input: CreateAgentInput) => {
-    await onCreateAgent(input);
-    setCreating(false);
+  const resetCreateForm = () => {
     setCreateComputerId(undefined);
     setCreateDisplayName("");
     setCreateHandle("");
     setCreateReplyPolicy("mention_and_dm");
     setCreateRuntime("codex");
+    setCreateStep(1);
+    setCreateDeployAndStart(true);
+  };
+  const createHandleValid = agentHandlePattern.test(createHandle.trim());
+  const createIdentityReady =
+    createDisplayName.trim().length > 0 && createHandleValid;
+  const createEnvironmentReady = Boolean(createComputerId);
+  const submitNewAgent = async (
+    input: CreateAgentInput,
+    options: {deployAndStart: boolean},
+  ) => {
+    const accepted = await onCreateAgent(input, options);
+    if (!accepted) return;
+    setSelectedAgentId(accepted.resourceId);
+    setCreating(false);
+    resetCreateForm();
   };
   const cancelNewAgent = () => {
     setCreating(false);
-    setCreateComputerId(undefined);
-    setCreateDisplayName("");
-    setCreateHandle("");
-    setCreateReplyPolicy("mention_and_dm");
-    setCreateRuntime("codex");
+    resetCreateForm();
   };
+  const agentItems = agents.map(agent => ({
+    resource: agent,
+    view: agentListItemViewModel(agent, agent.id === selected?.id),
+  }));
+  const selectedAgentItem = selected
+    ? agentItems.find(item => item.resource.id === selected.id)
+    : undefined;
 
   const desktopNavigation = (
-    <ManagementCollectionPane
-      orientation={stackedCollection ? "horizontal" : "vertical"}
-      testID="agent-sidebar"
-    >
-      {!stackedCollection ? (
-        <ManagementCollectionHeader
-          eyebrow={`${agents.length} 个 Agent`}
-          icon={Bot}
-          title="Agent"
-        />
-      ) : null}
-      <ScrollView
-        contentContainerStyle={[
-          styles.list,
-          stackedCollection && styles.listStacked,
-        ]}
-        horizontal={stackedCollection}
-        showsHorizontalScrollIndicator={false}
-        style={styles.listScroller}
-      >
-        {agents.map((agent) => {
-          const active = agent.id === selected?.id;
-          return (
-            <CollectionRow
-              accessibilityLabel={`打开 Agent ${agent.handle}`}
-              key={agent.id}
-              onPress={() => setSelectedAgentId(agent.id)}
-              orientation={stackedCollection ? "horizontal" : "vertical"}
-              selected={active}
-            >
-              <CollectionIdentityMark
-                identityKind="agent"
-                monogram={agent.displayName.slice(0, 1)}
-                presence={{
-                  label: agentRuntimeStateLabel(agent),
-                  tone: agentRuntimeStateTone(agent),
-                }}
-              />
-              <View style={styles.rowCopy}>
-                <Text style={styles.rowTitle}>{agent.displayName}</Text>
-                <Text style={styles.mono}>
-                  @{agent.handle} · {agentRuntimeStateLabel(agent)}
-                </Text>
-              </View>
-            </CollectionRow>
-          );
-        })}
-      </ScrollView>
-      {agents.length > 0 && !stackedCollection ? (
+    <ManagementResourceDirectory
+      eyebrow={`${agents.length} 个 Agent`}
+      footer={agents.length > 0 && !stackedCollection ? (
         <ManagementCollectionFooterAction
           accessibilityLabel="从侧栏新建 Agent"
           icon={Plus}
@@ -258,7 +245,36 @@ export function AgentsScreen(props: AgentsScreenProps) {
           onPress={() => setCreating(true)}
         />
       ) : null}
-    </ManagementCollectionPane>
+      horizontal={stackedCollection}
+      icon={Bot}
+      testID="agent-sidebar"
+      title="Agent"
+    >
+      {agentItems.map(({resource: agent, view}) => {
+        return (
+          <CollectionRow
+            accessibilityLabel={view.accessibilityLabel}
+            key={view.id}
+            onPress={() => setSelectedAgentId(agent.id)}
+            orientation={stackedCollection ? "horizontal" : "vertical"}
+            selected={view.selected}
+          >
+            <CollectionIdentityMark
+              identityKind="agent"
+              monogram={view.monogram}
+              presence={{
+                label: view.status,
+                tone: view.tone,
+              }}
+            />
+            <CollectionRowCopy
+              meta={view.meta}
+              title={view.title}
+            />
+          </CollectionRow>
+        );
+      })}
+    </ManagementResourceDirectory>
   );
   const mobileNavigation = selected ? (
     <ManagementResourceSwitcher
@@ -267,46 +283,40 @@ export function AgentsScreen(props: AgentsScreenProps) {
         <>
         <CollectionIdentityMark
           identityKind="agent"
-          monogram={selected.displayName.slice(0, 1)}
+          monogram={selectedAgentItem!.view.monogram}
           presence={{
-            label: agentRuntimeStateLabel(selected),
-            tone: agentRuntimeStateTone(selected),
+            label: selectedAgentItem!.view.status,
+            tone: selectedAgentItem!.view.tone,
           }}
         />
-        <View style={styles.rowCopy}>
-          <Text numberOfLines={1} style={styles.rowTitle}>
-            {selected.displayName}
-          </Text>
-          <Text numberOfLines={1} style={styles.mono}>
-            @{selected.handle} · {agentRuntimeStateLabel(selected)}
-          </Text>
-        </View>
+        <CollectionRowCopy
+          meta={selectedAgentItem!.view.meta}
+          numberOfLines={1}
+          title={selectedAgentItem!.view.title}
+        />
         </>
       )}
       expanded={switcherOpen}
       onToggle={() => setSwitcherOpen((current) => !current)}
-      options={agents
-        .filter((agent) => agent.id !== selected.id)
-        .map((agent) => ({
-          accessibilityLabel: `打开 Agent ${agent.handle}`,
+      options={agentItems
+        .filter((item) => item.resource.id !== selected.id)
+        .map(({resource: agent, view}) => ({
+          accessibilityLabel: view.accessibilityLabel,
           content: (
             <>
                 <CollectionIdentityMark
                   identityKind="agent"
-                  monogram={agent.displayName.slice(0, 1)}
+                  monogram={view.monogram}
                   presence={{
-                    label: agentRuntimeStateLabel(agent),
-                    tone: agentRuntimeStateTone(agent),
+                    label: view.status,
+                    tone: view.tone,
                   }}
                 />
-                <View style={styles.rowCopy}>
-                  <Text numberOfLines={1} style={styles.rowTitle}>
-                    {agent.displayName}
-                  </Text>
-                  <Text numberOfLines={1} style={styles.mono}>
-                    @{agent.handle} · {agentRuntimeStateLabel(agent)}
-                  </Text>
-                </View>
+                <CollectionRowCopy
+                  meta={view.meta}
+                  numberOfLines={1}
+                  title={view.title}
+                />
             </>
           ),
           id: agent.id,
@@ -319,12 +329,11 @@ export function AgentsScreen(props: AgentsScreenProps) {
     />
   ) : null;
 
-  const selectedServer = servers.find(item => item.id === currentServerId);
   const assignableComputers = computers.filter(
     (item) => item.lifecycleState === "active",
   );
   const createAction: PresentationAction = {
-    disabled: pendingAction !== null || assignableComputers.length === 0,
+    disabled: pendingAction !== null,
     id: "create-agent",
     kind: "primary",
     label: agents.length === 0 ? "创建第一个 Agent" : "新建 Agent",
@@ -374,14 +383,14 @@ export function AgentsScreen(props: AgentsScreenProps) {
   };
   const semanticModel = (): ManagementPageModel => ({
     collection: {
-      items: agents.map(item => ({
-        id: item.id,
-        meta: `@${item.handle}`,
-        onSelect: () => setSelectedAgentId(item.id),
-        selected: item.id === selected?.id,
-        status: agentRuntimeStateLabel(item),
-        subtitle: item.runtime.kind,
-        title: item.displayName,
+      items: agentItems.map(({resource, view}) => ({
+        id: view.id,
+        meta: view.meta,
+        onSelect: () => setSelectedAgentId(resource.id),
+        selected: view.selected,
+        status: view.status,
+        subtitle: view.subtitle,
+        title: view.title,
       })),
       label: "Agent",
     },
@@ -401,76 +410,125 @@ export function AgentsScreen(props: AgentsScreenProps) {
             actions: [
               {
                 id: "cancel-create-agent",
-                label: "取消",
-                run: cancelNewAgent,
+                label: createStep === 1 ? "取消" : "上一步",
+                run: () => {
+                  if (createStep === 1) cancelNewAgent();
+                  else setCreateStep((createStep - 1) as AgentCreateStep);
+                },
               },
-              {
-                disabled:
-                  pendingAction !== null ||
-                  createDisplayName.trim().length === 0 ||
-                  !agentHandlePattern.test(createHandle.trim()) ||
-                  !createComputerId,
-                id: "submit-create-agent",
-                kind: "primary" as const,
-                label: "创建 Agent",
-                run: () => submitNewAgent({
-                  computerId: createComputerId!,
-                  displayName: createDisplayName.trim(),
-                  handle: createHandle.trim(),
-                  replyPolicy: createReplyPolicy,
-                  runtime: {kind: createRuntime},
-                }),
-              },
+              createStep < 3
+                ? {
+                    disabled:
+                      pendingAction !== null ||
+                      (createStep === 1
+                        ? !createIdentityReady
+                        : !createEnvironmentReady),
+                    id: "continue-create-agent",
+                    kind: "primary" as const,
+                    label: "继续",
+                    run: () =>
+                      setCreateStep((createStep + 1) as AgentCreateStep),
+                  }
+                : {
+                    disabled:
+                      pendingAction !== null ||
+                      !createIdentityReady ||
+                      !createEnvironmentReady,
+                    id: "submit-create-agent",
+                    kind: "primary" as const,
+                    label: createDeployAndStart ? "创建并启动" : "创建 Agent",
+                    run: () =>
+                      submitNewAgent(
+                        {
+                          computerId: createComputerId!,
+                          displayName: createDisplayName.trim(),
+                          handle: createHandle.trim(),
+                          replyPolicy: createReplyPolicy,
+                          runtime: {kind: createRuntime},
+                        },
+                        {deployAndStart: createDeployAndStart},
+                      ),
+                  },
             ],
-            fields: [
-              {
-                disabled: pendingAction !== null,
-                id: "agent-display-name",
-                label: "显示名称",
-                onChange: setCreateDisplayName,
-                placeholder: "例如：交付助手",
-                value: createDisplayName,
-              },
-              {
-                disabled: pendingAction !== null,
-                id: "agent-handle",
-                label: "Handle",
-                onChange: setCreateHandle,
-                placeholder: "delivery",
-                value: createHandle,
-              },
-              {
-                disabled: pendingAction !== null,
-                id: "agent-runtime",
-                label: "Runtime",
-                onChange: value => setCreateRuntime(value as Agent["runtime"]["kind"]),
-                options: runtimeKinds.map(value => ({label: value, value})),
-                value: createRuntime,
-              },
-              {
-                disabled: pendingAction !== null,
-                id: "agent-reply-policy",
-                label: "回复策略",
-                onChange: value => setCreateReplyPolicy(value as Agent["replyPolicy"]),
-                options: replyPolicies.map(option => ({
-                  label: option.label,
-                  value: option.value,
-                })),
-                value: createReplyPolicy,
-              },
-              {
-                disabled: pendingAction !== null,
-                id: "agent-computer",
-                label: "Computer",
-                onChange: value => setCreateComputerId(value || undefined),
-                options: assignableComputers.map(item => ({
-                  label: item.name,
-                  value: item.id,
-                })),
-                value: createComputerId ?? "",
-              },
-            ],
-            title: "新建 Agent",
+            fields:
+              createStep === 1
+                ? [
+                    {
+                      disabled: pendingAction !== null,
+                      id: "agent-display-name",
+                      label: "显示名称",
+                      onChange: setCreateDisplayName,
+                      placeholder: "例如：交付助手",
+                      value: createDisplayName,
+                    },
+                    {
+                      disabled: pendingAction !== null,
+                      id: "agent-handle",
+                      label: "Handle",
+                      onChange: setCreateHandle,
+                      placeholder: "delivery",
+                      value: createHandle,
+                    },
+                    {
+                      disabled: pendingAction !== null,
+                      id: "agent-reply-policy",
+                      label: "回复策略",
+                      onChange: value =>
+                        setCreateReplyPolicy(value as Agent["replyPolicy"]),
+                      options: replyPolicies.map(option => ({
+                        label: option.label,
+                        value: option.value,
+                      })),
+                      value: createReplyPolicy,
+                    },
+                  ]
+                : createStep === 2
+                  ? [
+                      {
+                        disabled: pendingAction !== null,
+                        id: "agent-runtime",
+                        label: "Runtime",
+                        onChange: value =>
+                          setCreateRuntime(value as Agent["runtime"]["kind"]),
+                        options: runtimeKinds.map(value => ({
+                          label: value,
+                          value,
+                        })),
+                        value: createRuntime,
+                      },
+                      {
+                        disabled: pendingAction !== null,
+                        id: "agent-computer",
+                        label: "Computer",
+                        onChange: value =>
+                          setCreateComputerId(value || undefined),
+                        options: assignableComputers.map(item => ({
+                          label: item.name,
+                          value: item.id,
+                        })),
+                        value: createComputerId ?? "",
+                      },
+                    ]
+                  : [
+                      {
+                        disabled: pendingAction !== null,
+                        id: "agent-deploy-and-start",
+                        label: "部署并启动",
+                        onChange: value =>
+                          setCreateDeployAndStart(value === "true"),
+                        options: [
+                          {label: "是", value: "true"},
+                          {label: "否", value: "false"},
+                        ],
+                        value: createDeployAndStart ? "true" : "false",
+                      },
+                    ],
+            title:
+              createStep === 1
+                ? "它叫什么"
+                : createStep === 2
+                  ? "跑在哪台 Computer"
+                  : "创建后自动完成",
           },
         }
       : selected
@@ -518,8 +576,8 @@ export function AgentsScreen(props: AgentsScreenProps) {
         : {
             empty: {
               action: createAction,
-              description: "创建 Agent，并把它部署到已纳管的 Computer。",
-              title: "还没有 Agent",
+              description: agentEmptyCopy.description,
+              title: agentEmptyCopy.title,
             },
           }),
     ...(editing && selected
@@ -652,152 +710,134 @@ export function AgentsScreen(props: AgentsScreenProps) {
       title: creating ? "新建 Agent" : "Agent",
     },
     id: "agents",
-    shell: {
+    shell: buildManagementShellModel({
       accountLabel: currentAccount?.displayName ?? currentAccount?.email,
       activeSection: "agents",
-      navigation: ([
-        ["chat", "聊天"],
-        ["tasks", "任务"],
-        ["agents", "Agent"],
-        ["computers", "Computer"],
-        ["members", "成员"],
-      ] as const).map(([section, label]) => ({
-        id: `navigate-${section}`,
-        label,
-        run: () => onNavigateSection(section),
-      })),
+      canManageServer: canManage,
+      currentServerId,
       ...(onLogout ? {onLogout} : {}),
-      serverName: selectedServer?.name,
-      serverOptions: servers.map(server => ({
-        id: server.id,
-        label: server.name,
-        onSelect: () => onSelectServer(server.id),
-        selected: server.id === currentServerId,
-      })),
-    },
+      onNavigateSection,
+      onSelectServer,
+      servers,
+    }),
   });
+
+  const navigation = stackedCollection ? null : desktopNavigation;
+  const renderStage = (pageModel: ManagementPageModel) => (
+    <ManagementStage>
+      <ManagementHeader
+        actions={(
+          <ManagementHeaderActions
+            createAccessibilityLabel="新建 Agent"
+            createIconTestID="agent-create-icon"
+            createLabel="新建"
+            createVisible={agents.length > 0 && !creating}
+            onCreate={() => setCreating(true)}
+            onRefresh={onRefresh}
+            refreshAccessibilityLabel="刷新 Agent"
+            refreshDisabled={loading}
+            refreshTestID="agent-refresh-icon"
+          />
+        )}
+        title={pageModel.header.title}
+        titleTestID="agent-stage-title"
+      />
+      {pageModel.error ? <InlineFeedback message={pageModel.error} /> : null}
+      {agents.length > 1 && !creating
+        ? phone
+          ? mobileNavigation
+          : showStackedCollection
+            ? desktopNavigation
+            : null
+        : null}
+      <ManagementDetailScroll
+        density={density}
+        testID="agent-detail-scroll"
+      >
+        {creating ? (
+          <AgentCreateForm
+            computerId={createComputerId}
+            computers={assignableComputers}
+            deployAndStart={createDeployAndStart}
+            disabled={pendingAction !== null}
+            displayName={createDisplayName}
+            form={pageModel.form!}
+            handle={createHandle}
+            onNavigateComputers={() => onNavigateSection("computers")}
+            replyPolicy={createReplyPolicy}
+            runtime={createRuntime}
+            step={createStep}
+          />
+        ) : selected ? (
+          <AgentDetail
+            agent={selected}
+            canManage={canManage}
+            computerId={editComputerId}
+            computers={assignableComputers}
+            confirmingDeletion={confirmingDeletion}
+            confirmingRotation={confirmingRotation}
+            disabled={pendingAction !== null}
+            displayName={editDisplayName}
+            key={selected.id}
+            onCancelDeletion={() => setConfirmingDeletion(false)}
+            onCancelRotation={() => setConfirmingRotation(false)}
+            onChangeComputerId={setEditComputerId}
+            onChangeDisplayName={setEditDisplayName}
+            onChangeReplyPolicy={setEditReplyPolicy}
+            onChangeRuntime={setEditRuntime}
+            onConfirmDeletion={deleteAgent}
+            onConfirmRotation={rotateCredential}
+            onContinueOperation={onContinueOperation}
+            onDeleteAgent={onDeleteAgent}
+            onRotateCredential={onRotateCredential}
+            onStartDeletion={() => setConfirmingDeletion(true)}
+            onStartRotation={() => setConfirmingRotation(true)}
+            onRun={(action) =>
+              onRunAgentAction(selected.id, action)
+            }
+            onSave={(input) => onUpdateAgent(selected.id, input)}
+            operations={operations.filter(
+              (item) => !item.resourceId || item.resourceId === selected.id,
+            )}
+            replyPolicy={editReplyPolicy}
+            runtime={editRuntime}
+          />
+        ) : (
+          <ManagementEmptyState
+            actionAccessibilityLabel="从空状态新建 Agent"
+            actionLabel={pageModel.empty?.action?.label}
+            description={pageModel.empty?.description ?? agentEmptyCopy.description}
+            icon={Bot}
+            onAction={() => setCreating(true)}
+            title={pageModel.empty?.title ?? agentEmptyCopy.title}
+          />
+        )}
+      </ManagementDetailScroll>
+    </ManagementStage>
+  );
 
   return (
     <ManagementPresentation model={semanticModel}>
-    <PlatformFrame
-      account={currentAccount}
-      activeSection="agents"
-      canManageServer={canManage}
-      currentServerId={currentServerId}
-      imStatus={imStatus}
-      navigation={stackedCollection ? null : desktopNavigation}
-      onLogout={onLogout}
-      onNavigateSection={onNavigateSection}
-      onSelectServer={onSelectServer}
-      sectionHref={sectionHref}
-      serverHref={serverHref}
-      servers={servers}
-      viewportWidth={viewportWidth}
-    >
-      <ManagementStage>
-        <ManagementHeader
-          actions={(
-            <View style={styles.headerActions}>
-            <IconActionButton
-              accessibilityLabel="刷新 Agent"
-              context="header"
-              disabled={loading}
-              icon={RefreshCw}
-              onPress={onRefresh}
-              testID="agent-refresh-icon"
-            />
-            {agents.length > 0 && !creating ? (
-              <ActionButton
-                accessibilityLabel="新建 Agent"
-                context="header"
-                icon={Plus}
-                iconTestID="agent-create-icon"
-                importance="tonal"
-                label="新建"
-                onPress={() => setCreating(true)}
-              />
-            ) : null}
-            </View>
-          )}
-          title={creating ? "新建 Agent" : "Agent"}
-          titleTestID="agent-stage-title"
-        />
-        {error ? <InlineFeedback message={error} /> : null}
-        {agents.length > 1 && !creating
-          ? phone
-            ? mobileNavigation
-            : showStackedCollection
-              ? desktopNavigation
-              : null
-          : null}
-        <ManagementDetailScroll
-          density={phone ? "compact" : medium ? "medium" : "comfortable"}
-          testID="agent-detail-scroll"
+      {(pageModel) => (
+        <ManagementScreenFrame
+          account={currentAccount}
+          activeSection="agents"
+          canManageServer={canManage}
+          currentServerId={currentServerId}
+          framed={framed}
+          imStatus={imStatus}
+          navigation={navigation}
+          onLogout={onLogout}
+          onNavigateSection={onNavigateSection}
+          onSelectServer={onSelectServer}
+          sectionHref={sectionHref}
+          serverHref={serverHref}
+          servers={servers}
+          viewportWidth={viewportWidth}
         >
-          {creating ? (
-            <AgentCreateForm
-              computerId={createComputerId}
-              computers={assignableComputers}
-              disabled={pendingAction !== null}
-              displayName={createDisplayName}
-              handle={createHandle}
-              onCancel={cancelNewAgent}
-              onChangeComputerId={setCreateComputerId}
-              onChangeDisplayName={setCreateDisplayName}
-              onChangeHandle={setCreateHandle}
-              onChangeReplyPolicy={setCreateReplyPolicy}
-              onChangeRuntime={setCreateRuntime}
-              onSubmit={submitNewAgent}
-              replyPolicy={createReplyPolicy}
-              runtime={createRuntime}
-            />
-          ) : selected ? (
-            <AgentDetail
-              agent={selected}
-              canManage={canManage}
-              computerId={editComputerId}
-              computers={assignableComputers}
-              confirmingDeletion={confirmingDeletion}
-              confirmingRotation={confirmingRotation}
-              disabled={pendingAction !== null}
-              displayName={editDisplayName}
-              key={selected.id}
-              onCancelDeletion={() => setConfirmingDeletion(false)}
-              onCancelRotation={() => setConfirmingRotation(false)}
-              onChangeComputerId={setEditComputerId}
-              onChangeDisplayName={setEditDisplayName}
-              onChangeReplyPolicy={setEditReplyPolicy}
-              onChangeRuntime={setEditRuntime}
-              onConfirmDeletion={deleteAgent}
-              onConfirmRotation={rotateCredential}
-              onContinueOperation={onContinueOperation}
-              onDeleteAgent={onDeleteAgent}
-              onRotateCredential={onRotateCredential}
-              onStartDeletion={() => setConfirmingDeletion(true)}
-              onStartRotation={() => setConfirmingRotation(true)}
-              onRun={(action) =>
-                onRunAgentAction(selected.id, action)
-              }
-              onSave={(input) => onUpdateAgent(selected.id, input)}
-              operations={operations.filter(
-                (item) => !item.resourceId || item.resourceId === selected.id,
-              )}
-              replyPolicy={editReplyPolicy}
-              runtime={editRuntime}
-            />
-          ) : (
-            <ManagementEmptyState
-              actionAccessibilityLabel="从空状态新建 Agent"
-              actionLabel="创建第一个 Agent"
-              description="创建 Agent，并把它部署到已纳管的 Computer。"
-              icon={Bot}
-              onAction={() => setCreating(true)}
-              title="还没有 Agent"
-            />
-          )}
-        </ManagementDetailScroll>
-      </ManagementStage>
-    </PlatformFrame>
+          {renderStage(pageModel)}
+        </ManagementScreenFrame>
+      )}
     </ManagementPresentation>
   );
 }
@@ -805,118 +845,265 @@ export function AgentsScreen(props: AgentsScreenProps) {
 function AgentCreateForm({
   computerId,
   computers,
+  deployAndStart,
   disabled,
   displayName,
+  form,
   handle,
-  onCancel,
-  onChangeComputerId,
-  onChangeDisplayName,
-  onChangeHandle,
-  onChangeReplyPolicy,
-  onChangeRuntime,
-  onSubmit,
+  onNavigateComputers,
   replyPolicy,
   runtime,
+  step,
 }: {
   computerId: string | undefined;
   computers: Computer[];
+  deployAndStart: boolean;
   disabled: boolean;
   displayName: string;
+  form: PresentationForm;
   handle: string;
-  onCancel(): void;
-  onChangeComputerId(value: string | undefined): void;
-  onChangeDisplayName(value: string): void;
-  onChangeHandle(value: string): void;
-  onChangeReplyPolicy(value: Agent["replyPolicy"]): void;
-  onChangeRuntime(value: Agent["runtime"]["kind"]): void;
-  onSubmit(input: CreateAgentInput): void | Promise<void>;
+  onNavigateComputers(): void;
   replyPolicy: Agent["replyPolicy"];
   runtime: Agent["runtime"]["kind"];
+  step: AgentCreateStep;
 }) {
+  const {theme} = useUnistyles();
+  const primaryAction = form.actions.find(action => action.kind === "primary")!;
+  const navigationAction = form.actions.find(action => action.kind !== "primary")!;
+  const field = (id: string) => form.fields.find(item => item.id === id);
   const normalizedHandle = handle.trim();
   const handleValid = agentHandlePattern.test(normalizedHandle);
+  const selectedComputerName =
+    computers.find((item) => item.id === computerId)?.name ?? "未选择";
+  const stepCopy = {
+    1: {
+      description: "显示名用于聊天里被 @；Handle 是稳定短名",
+      title: "它叫什么",
+    },
+    2: {
+      description: "Agent 需要一台已纳管的 Computer 来安装运行时",
+      title: "跑在哪台 Computer",
+    },
+    3: {
+      description: "默认部署并启动，创建完就能用",
+      title: "创建后自动完成",
+    },
+  } as const;
+
   return (
     <ManagementForm testID="agent-create-form">
-      <View style={styles.formGrid}>
-        <ManagementField label="显示名称" layout="flex">
-          <ManagementTextInput
-            accessibilityLabel="Agent 显示名"
-            editable={!disabled}
-            onChangeText={onChangeDisplayName}
-            placeholder="例如：交付助手"
-            value={displayName}
-          />
-        </ManagementField>
-        <ManagementField
-          error={handle.length > 0 && !handleValid
-            ? "Handle 需为 2–32 位小写字母、数字、下划线或连字符。"
-            : null}
-          hint="Handle 需为 2–32 位小写字母、数字、下划线或连字符。"
-          label="Handle"
-          layout="flex"
-        >
-          <ManagementTextInput
-            accessibilityLabel="Agent handle"
-            autoCapitalize="none"
-            editable={!disabled}
-            invalid={handle.length > 0 && !handleValid}
-            onChangeText={onChangeHandle}
-            placeholder="delivery"
-            value={handle}
-          />
-        </ManagementField>
+      <View style={styles.wizardSteps} testID="agent-create-steps">
+        {(["身份", "运行环境", "启动"] as const).map((label, index) => {
+          const value = (index + 1) as 1 | 2 | 3;
+          const complete = step > value;
+          const active = step === value;
+          return (
+            <View key={label} style={styles.wizardStepItem}>
+              {index > 0 ? <View style={styles.wizardStepRule} /> : null}
+              <View
+                style={[
+                  styles.wizardStepBadge,
+                  (active || complete) && styles.wizardStepBadgeActive,
+                ]}
+              >
+                {complete ? (
+                  <Check
+                    color={theme.semantic.color.iconInverse}
+                    size={theme.semantic.icon.size.compact}
+                    strokeWidth={theme.semantic.icon.stroke.emphasis}
+                  />
+                ) : (
+                  <Text
+                    style={[
+                      styles.wizardStepBadgeText,
+                      active && styles.wizardStepBadgeTextActive,
+                    ]}
+                  >
+                    {value}
+                  </Text>
+                )}
+              </View>
+              <Text
+                style={[
+                  styles.wizardStepLabel,
+                  active && styles.wizardStepLabelActive,
+                ]}
+              >
+                {label}
+              </Text>
+            </View>
+          );
+        })}
       </View>
-      <ChoiceRow
-        label="Runtime"
-        onSelect={(value) =>
-          onChangeRuntime(value as Agent["runtime"]["kind"])
-        }
-        options={runtimeKinds.map((value) => ({
-          accessibilityLabel: `选择 ${value}`,
-          label: value,
-          value,
-        }))}
-        selected={runtime}
-      />
-      <ChoiceRow
-        label="回复策略"
-        onSelect={(value) =>
-          onChangeReplyPolicy(value as Agent["replyPolicy"])
-        }
-        options={replyPolicies}
-        selected={replyPolicy}
-      />
-      <ChoiceRow
-        label="Computer"
-        onSelect={(value) => onChangeComputerId(value || undefined)}
-        options={computers.map((computer) => ({
-          accessibilityLabel: `绑定 Computer ${computer.name}`,
-          label: computer.name,
-          value: computer.id,
-        }))}
-        selected={computerId}
-      />
-      <FormActions
-        cancelLabel="取消新建 Agent"
-        disabled={
-          disabled ||
-          displayName.trim().length === 0 ||
-          !handleValid ||
-          !computerId
-        }
-        onCancel={onCancel}
-        onSubmit={() => {
-          if (!computerId) return;
-          return onSubmit({
-            computerId,
-            displayName: displayName.trim(),
-            handle: normalizedHandle,
-            replyPolicy,
-            runtime: {kind: runtime},
-          });
-        }}
-        submitLabel="创建 Agent"
-      />
+
+      <View style={styles.wizardIntro}>
+        <Text style={styles.wizardTitle}>{stepCopy[step].title}</Text>
+        <Text style={styles.wizardDescription}>
+          {stepCopy[step].description}
+        </Text>
+      </View>
+
+      {step === 1 ? (
+        <>
+          <View style={styles.formGrid}>
+            <ManagementField label="显示名称" layout="flex">
+              <ManagementTextInput
+                accessibilityLabel="Agent 显示名"
+                editable={!field("agent-display-name")?.disabled}
+                onChangeText={field("agent-display-name")!.onChange}
+                placeholder="例如：交付助手"
+                value={field("agent-display-name")!.value}
+              />
+            </ManagementField>
+            <ManagementField
+              error={handle.length > 0 && !handleValid
+                ? "Handle 需为 2–32 位小写字母、数字、下划线或连字符。"
+                : null}
+              hint="Handle 需为 2–32 位小写字母、数字、下划线或连字符。"
+              label="Handle"
+              layout="flex"
+            >
+              <ManagementTextInput
+                accessibilityLabel="Agent handle"
+                autoCapitalize="none"
+                editable={!field("agent-handle")?.disabled}
+                invalid={handle.length > 0 && !handleValid}
+                onChangeText={field("agent-handle")!.onChange}
+                placeholder="delivery"
+                value={field("agent-handle")!.value}
+              />
+            </ManagementField>
+          </View>
+          <ManagementChoiceField
+            label="回复策略"
+            onSelect={field("agent-reply-policy")!.onChange}
+            options={replyPolicies}
+            selected={replyPolicy}
+          />
+          <View style={styles.wizardFooter}>
+            <ManagementFormFooter
+              cancelAction={{
+                accessibilityLabel: "取消新建 Agent",
+                label: navigationAction.label,
+                onPress: navigationAction.run,
+              }}
+              primaryAction={{
+                disabled: primaryAction.disabled,
+                label: primaryAction.label,
+                onPress: primaryAction.run,
+              }}
+            />
+          </View>
+        </>
+      ) : null}
+
+      {step === 2 ? (
+        <>
+          <ManagementChoiceField
+            label="Runtime"
+            onSelect={field("agent-runtime")!.onChange}
+            options={runtimeKinds.map((value) => ({
+              accessibilityLabel: `选择 ${value}`,
+              label: value,
+              value,
+            }))}
+            selected={runtime}
+          />
+          {computers.length > 0 ? (
+            <ManagementChoiceField
+              label="Computer"
+              onSelect={field("agent-computer")!.onChange}
+              options={computers.map((computer) => ({
+                accessibilityLabel: `绑定 Computer ${computer.name}`,
+                label: computer.name,
+                value: computer.id,
+              }))}
+              selected={computerId}
+            />
+          ) : (
+            <View style={styles.wizardNotice}>
+              <Text style={styles.wizardCheckTitle}>还没有可用 Computer</Text>
+              <Text style={styles.wizardDescription}>
+                先纳管一台 Computer，再回来创建 Agent。
+              </Text>
+              <ActionButton
+                accessibilityLabel="先去纳管一台 Computer"
+                importance="tonal"
+                label="先去纳管一台 Computer"
+                onPress={onNavigateComputers}
+              />
+            </View>
+          )}
+          <View style={styles.wizardFooter}>
+            <ManagementFormFooter
+              backAction={{
+                label: navigationAction.label,
+                onPress: navigationAction.run,
+              }}
+              primaryAction={{
+                disabled: primaryAction.disabled,
+                label: primaryAction.label,
+                onPress: primaryAction.run,
+              }}
+            />
+          </View>
+        </>
+      ) : null}
+
+      {step === 3 ? (
+        <>
+          <Text style={styles.wizardSummary} testID="agent-create-summary">
+            {displayName.trim()} · @{normalizedHandle} · {runtime} ·{" "}
+            {selectedComputerName}
+          </Text>
+          <Pressable
+            accessibilityLabel="部署并启动"
+            accessibilityRole="checkbox"
+            accessibilityState={{checked: deployAndStart}}
+            aria-checked={deployAndStart}
+            disabled={disabled}
+            onPress={() =>
+              field("agent-deploy-and-start")?.onChange(String(!deployAndStart))}
+            style={styles.wizardOptionRow}
+            testID="agent-create-deploy-start"
+          >
+            <View style={styles.wizardCheckCopy}>
+              <Text style={styles.wizardCheckTitle}>部署并启动</Text>
+              <Text style={styles.wizardDescription}>
+                {deployAndStart
+                  ? "装到所选 Computer 并上线，创建后即可在 Channel 里 @"
+                  : "只保存档案，稍后再手动部署"}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.wizardSwitch,
+                deployAndStart && styles.wizardSwitchOn,
+              ]}
+            >
+              <View
+                style={[
+                  styles.wizardSwitchThumb,
+                  deployAndStart && styles.wizardSwitchThumbOn,
+                ]}
+              />
+            </View>
+          </Pressable>
+          <View style={styles.wizardFooter}>
+            <ManagementFormFooter
+              backAction={{
+                label: navigationAction.label,
+                onPress: navigationAction.run,
+              }}
+              primaryAction={{
+                disabled: primaryAction.disabled,
+                label: primaryAction.label,
+                onPress: primaryAction.run,
+              }}
+            />
+          </View>
+        </>
+      ) : null}
     </ManagementForm>
   );
 }
@@ -1063,7 +1250,7 @@ function AgentDetail({
             value={displayName}
           />
         </ManagementField>
-        <ChoiceRow
+        <ManagementChoiceField
           label="Runtime"
           onSelect={(value) =>
             onChangeRuntime(value as Agent["runtime"]["kind"])
@@ -1075,7 +1262,7 @@ function AgentDetail({
           }))}
           selected={runtime}
         />
-        <ChoiceRow
+        <ManagementChoiceField
           label="回复策略"
           onSelect={(value) =>
             onChangeReplyPolicy(value as Agent["replyPolicy"])
@@ -1086,7 +1273,7 @@ function AgentDetail({
           }))}
           selected={replyPolicy}
         />
-        <ChoiceRow
+        <ManagementChoiceField
           label="Computer"
           onSelect={(value) => onChangeComputerId(value)}
           options={computers.map((item) => ({
@@ -1185,74 +1372,6 @@ function AgentDetail({
   );
 }
 
-function ChoiceRow({
-  label,
-  onSelect,
-  options,
-  selected,
-}: {
-  label: string;
-  onSelect(value: string): void;
-  options: Array<{
-    accessibilityLabel: string;
-    label: string;
-    value: string;
-  }>;
-  selected: string | undefined;
-}) {
-  return (
-    <View style={styles.choiceBlock}>
-      <Text style={styles.eyebrow}>{label}</Text>
-      <SelectionGroup>
-        {options.map((option) => {
-          const active = option.value === selected;
-          return (
-            <SelectionButton
-              accessibilityLabel={option.accessibilityLabel}
-              key={option.value || "none"}
-              label={option.label}
-              onPress={() => onSelect(option.value)}
-              selected={active}
-            />
-          );
-        })}
-      </SelectionGroup>
-    </View>
-  );
-}
-
-function FormActions({
-  cancelLabel,
-  disabled,
-  onCancel,
-  onSubmit,
-  submitLabel,
-}: {
-  cancelLabel: string;
-  disabled: boolean;
-  onCancel(): void;
-  onSubmit(): void | Promise<void>;
-  submitLabel: string;
-}) {
-  return (
-    <ManagementFormActions>
-      <ActionButton
-        accessibilityLabel={cancelLabel}
-        importance="secondary"
-        label="取消"
-        onPress={onCancel}
-      />
-      <ActionButton
-        accessibilityLabel={submitLabel}
-        disabled={disabled}
-        importance="primary"
-        label={submitLabel}
-        onPress={onSubmit}
-      />
-    </ManagementFormActions>
-  );
-}
-
 const runtimeKinds = [
   "codex",
   "hermes-acp",
@@ -1277,76 +1396,10 @@ const replyPolicies = [
   },
 ];
 
-const agentActionLabel = {
-  deploy: "部署",
-  restart: "重启",
-  start: "启动",
-  stop: "停止",
-} as const;
-
-const agentObservedStateLabel: Record<Agent["observedState"], string> = {
-  deploying: "部署中",
-  error: "异常",
-  running: "运行中",
-  starting: "启动中",
-  stopped: "已停止",
-  stopping: "停止中",
-  unknown: "状态未知",
-};
-
-function agentRuntimeStateLabel(agent: Agent): string {
-  if (agent.observedState !== "unknown") {
-    return agentObservedStateLabel[agent.observedState];
-  }
-  return "待部署";
-}
-
-function agentRuntimeStateTone(
-  agent: Agent,
-): "danger" | "info" | "neutral" | "positive" | "warning" {
-  switch (agent.observedState) {
-    case "running":
-      return "positive";
-    case "error":
-      return "danger";
-    case "deploying":
-    case "starting":
-      return "info";
-    case "stopping":
-      return "warning";
-    case "stopped":
-    case "unknown":
-      return "neutral";
-  }
-}
-
-const agentReplyPolicyLabel: Record<Agent["replyPolicy"], string> = {
-  all_channel_messages: "全部频道消息",
-  dm_only: "仅私信",
-  mention_and_dm: "提及与私信",
-};
-
-const agentImStateLabel: Record<Agent["imState"], string> = {
-  error: "连接异常",
-  provisioning: "连接中",
-  ready: "已连接",
-};
-
 const styles = StyleSheet.create((theme) => ({
-  choiceBlock: {
-    gap: theme.spacing.xs,
-  },
-  eyebrow: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.eyebrow,
-  },
   formGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: theme.spacing.sm,
-  },
-  headerActions: {
-    flexDirection: "row",
     gap: theme.spacing.sm,
   },
   lifecycle: {
@@ -1358,24 +1411,116 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.bodyCompact,
   },
-  list: {
-    gap: theme.spacing.xs,
-    padding: theme.spacing.sm,
-  },
-  listStacked: {
-    alignItems: "center",
-  },
-  listScroller: {
+  wizardCheckCopy: {
     flex: 1,
+    gap: theme.spacing.xxs,
+    minWidth: 0,
   },
-  mono: {
+  wizardCheckTitle: {
+    color: theme.semantic.color.textPrimary,
+    ...theme.semantic.typography.bodyEmphasis,
+  },
+  wizardDescription: {
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.meta,
   },
-  rowCopy: {
-    flex: 1,
+  wizardFooter: {
+    borderTopColor: theme.semantic.color.separator,
+    borderTopWidth: theme.semantic.stroke.hairline,
+    marginTop: theme.spacing.xs,
+    paddingTop: theme.spacing.md,
   },
-  rowTitle: {
-    ...theme.semantic.typography.sectionTitle,
+  wizardIntro: {
+    gap: theme.spacing.xxs,
+  },
+  wizardNotice: {
+    backgroundColor: theme.semantic.color.surfaceSubtle,
+    borderRadius: theme.semantic.radius.control,
+    gap: theme.spacing.sm,
+    padding: theme.spacing.md,
+  },
+  wizardOptionRow: {
+    alignItems: "center",
+    backgroundColor: theme.semantic.color.surfaceSubtle,
+    borderRadius: theme.semantic.radius.control,
+    flexDirection: "row",
+    gap: theme.spacing.md,
+    minHeight: theme.recipes.control.rowHeight,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+  },
+  wizardStepBadge: {
+    alignItems: "center",
+    backgroundColor: theme.semantic.color.surfaceSubtle,
+    borderRadius: theme.semantic.radius.circle,
+    height: theme.recipes.iconControl.microSize,
+    justifyContent: "center",
+    width: theme.recipes.iconControl.microSize,
+  },
+  wizardStepBadgeActive: {
+    backgroundColor: theme.semantic.color.actionPrimarySurface,
+  },
+  wizardStepBadgeText: {
+    color: theme.semantic.color.textMuted,
+    ...theme.semantic.typography.micro,
+  },
+  wizardStepBadgeTextActive: {
+    color: theme.semantic.color.actionPrimaryText,
+  },
+  wizardStepItem: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: theme.spacing.xs,
+  },
+  wizardStepLabel: {
+    color: theme.semantic.color.textMuted,
+    ...theme.semantic.typography.meta,
+  },
+  wizardStepLabelActive: {
+    color: theme.semantic.color.textPrimary,
+    ...theme.semantic.typography.bodyCompactEmphasis,
+  },
+  wizardStepRule: {
+    backgroundColor: theme.semantic.color.separator,
+    height: theme.semantic.stroke.hairline,
+    marginRight: theme.spacing.xs,
+    width: theme.spacing.lg,
+  },
+  wizardSteps: {
+    alignItems: "center",
+    borderBottomColor: theme.semantic.color.separator,
+    borderBottomWidth: theme.semantic.stroke.hairline,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing.sm,
+    paddingBottom: theme.spacing.md,
+  },
+  wizardSummary: {
+    color: theme.semantic.color.textMuted,
+    ...theme.semantic.typography.meta,
+  },
+  wizardSwitch: {
+    backgroundColor: theme.semantic.color.borderControl,
+    borderRadius: theme.semantic.radius.pill,
+    height: theme.recipes.iconControl.microSize,
+    justifyContent: "center",
+    paddingHorizontal: theme.spacing.xxs,
+    width: theme.recipes.iconControl.floatingSize,
+  },
+  wizardSwitchOn: {
+    backgroundColor: theme.semantic.color.statusPositive,
+  },
+  wizardSwitchThumb: {
+    backgroundColor: theme.semantic.color.paneSurface,
+    borderRadius: theme.semantic.radius.circle,
+    height: theme.semantic.icon.size.feature,
+    width: theme.semantic.icon.size.feature,
+  },
+  wizardSwitchThumbOn: {
+    alignSelf: "flex-end",
+  },
+  wizardTitle: {
+    color: theme.semantic.color.textPrimary,
+    ...theme.semantic.typography.workspaceTitle,
   },
 }));

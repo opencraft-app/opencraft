@@ -143,16 +143,14 @@ describe("AgentsScreen", () => {
     expect((latestModel as unknown as ManagementPageModel).form).toMatchObject({
       actions: [
         {id: "cancel-create-agent"},
-        {id: "submit-create-agent"},
+        {id: "continue-create-agent"},
       ],
       fields: [
         {id: "agent-display-name"},
         {id: "agent-handle"},
-        {id: "agent-runtime"},
         {id: "agent-reply-policy"},
-        {id: "agent-computer"},
       ],
-      title: "新建 Agent",
+      title: "它叫什么",
     });
     expect("content" in ((latestModel as unknown as ManagementPageModel).form ?? {})).toBe(false);
   });
@@ -258,7 +256,7 @@ describe("AgentsScreen", () => {
     });
     expect(
       screen.getByRole("button", {name: "打开 Agent research"}),
-    ).toHaveStyle({minHeight: velaTheme.recipes.managementWorkspace.rowMinHeight});
+    ).toHaveStyle({minHeight: velaTheme.recipes.control.rowHeight});
     expect(screen.getByTestId("agent-detail")).toHaveStyle({
       alignSelf: "center",
       borderRadius: 0,
@@ -295,17 +293,18 @@ describe("AgentsScreen", () => {
 
     expect(screen.getByTestId("agent-hero-avatar")).toHaveStyle({
       backgroundColor: "#17C964",
-      borderRadius: 10,
-      height: 48,
-      width: 48,
+      borderRadius: velaTheme.semantic.radius.control,
+      height: velaTheme.recipes.resourceIdentity.markSize,
+      width: velaTheme.recipes.resourceIdentity.markSize,
     });
     expect(screen.getByTestId("agent-detail-title")).toHaveStyle({
       fontSize: velaTheme.semantic.typography.pageTitle.fontSize,
       lineHeight: velaTheme.semantic.typography.pageTitle.lineHeight,
     });
     expect(screen.queryByTestId("agent-fact-strip")).toBeNull();
-    expect(screen.getByTestId("agent-settings-section")).toHaveStyle({
-      borderTopWidth: 1,
+    expect(screen.getByTestId("agent-settings-section-body")).toHaveStyle({
+      borderRadius: velaTheme.semantic.radius.control,
+      borderWidth: 1,
     });
     expect(
       screen.getByRole("button", {name: "重启 Agent research"}),
@@ -354,9 +353,18 @@ describe("AgentsScreen", () => {
     });
   });
 
-  it("creates, edits and starts an Agent with real protocol fields", async () => {
-    const onCreateAgent = jest.fn(async () => null);
-    const onRunAgentAction = jest.fn(async () => null);
+  it("creates an Agent through the wizard and deploys+starts by default", async () => {
+    const onCreateAgent = jest.fn(async () => ({
+      operations: [],
+      resourceId: "agent-new",
+    }));
+    const onRunAgentAction = jest.fn(async () => ({
+      createdAt: "2026-08-10T08:00:00.000Z",
+      id: "op-1",
+      kind: "agent.deploy",
+      service: "platform" as const,
+      state: "succeeded" as const,
+    }));
     const onUpdateAgent = jest.fn(async () => undefined);
     const screen = await render(
       <AgentsScreen
@@ -377,7 +385,12 @@ describe("AgentsScreen", () => {
       />,
     );
 
-    expect(screen.queryByTestId("agent-sidebar")).toBeNull();
+    // 980 is past the chrome compact cutover: collection stays vertical beside
+    // the stage (same threshold Computer already used).
+    expect(screen.getByTestId("agent-sidebar")).toHaveStyle({
+      height: "100%",
+      width: 312,
+    });
     expect(screen.getByTestId("agent-stage-title")).toHaveTextContent("Agent");
     expect(screen.getByTestId("agent-detail")).toBeVisible();
     expect(screen.queryByText("RUNTIMES / 01")).toBeNull();
@@ -388,7 +401,19 @@ describe("AgentsScreen", () => {
     await fireEvent.press(
       screen.getByRole("button", {name: "新建 Agent"}),
     );
-    expect(screen.getAllByText("新建 Agent")).toHaveLength(1);
+    expect(screen.getByTestId("agent-stage-title")).toHaveTextContent("新建 Agent");
+    expect(screen.getByText("它叫什么")).toBeVisible();
+    await fireEvent.changeText(
+      screen.getByLabelText("Agent 显示名"),
+      "交付助手",
+    );
+    await fireEvent.changeText(
+      screen.getByLabelText("Agent handle"),
+      "delivery",
+    );
+    await fireEvent.press(screen.getByRole("button", {name: "继续"}));
+
+    expect(screen.getByText("跑在哪台 Computer")).toBeVisible();
     expect(
       screen.getByRole("button", {name: "选择 codex"}),
     ).toHaveStyle({
@@ -401,36 +426,31 @@ describe("AgentsScreen", () => {
       minHeight: velaTheme.recipes.control.height,
       minWidth: velaTheme.recipes.control.height,
     });
-    await fireEvent.changeText(
-      screen.getByLabelText("Agent 显示名"),
-      "交付助手",
-    );
-    await fireEvent.changeText(
-      screen.getByLabelText("Agent handle"),
-      "delivery",
-    );
-		expect(
-			screen.getByRole("button", {name: "创建 Agent"}),
-		).toBeDisabled();
     await fireEvent.press(
       screen.getByRole("button", {name: "选择 hermes-gateway"}),
     );
     await fireEvent.press(
       screen.getByRole("button", {name: "绑定 Computer 研发机"}),
     );
-		expect(
-			screen.getByRole("button", {name: "创建 Agent"}),
-		).toBeEnabled();
+    await fireEvent.press(screen.getByRole("button", {name: "继续"}));
+
+    expect(screen.getByText("创建后自动完成")).toBeVisible();
+    expect(
+      screen.getByRole("checkbox", {name: "部署并启动"}),
+    ).toBeChecked();
     await fireEvent.press(
-      screen.getByRole("button", {name: "创建 Agent"}),
+      screen.getByRole("button", {name: "创建并启动"}),
     );
-    expect(onCreateAgent).toHaveBeenCalledWith({
-      computerId: computer.id,
-      displayName: "交付助手",
-      handle: "delivery",
-      replyPolicy: "mention_and_dm",
-      runtime: {kind: "hermes-gateway"},
-    });
+    expect(onCreateAgent).toHaveBeenCalledWith(
+      {
+        computerId: computer.id,
+        displayName: "交付助手",
+        handle: "delivery",
+        replyPolicy: "mention_and_dm",
+        runtime: {kind: "hermes-gateway"},
+      },
+      {deployAndStart: true},
+    );
     expect(onRunAgentAction).not.toHaveBeenCalled();
 
     await fireEvent.changeText(
@@ -479,9 +499,13 @@ describe("AgentsScreen", () => {
       screen.queryByRole("button", {name: "从侧栏新建 Agent"}),
     ).toBeNull();
     expect(screen.queryByRole("button", {name: "新建 Agent"})).toBeNull();
+    expect(
+      screen.getByText("创建后部署并启动，即可在 Channel 里 @ 它"),
+    ).toBeVisible();
     await fireEvent.press(
       screen.getByRole("button", {name: "从空状态新建 Agent"}),
     );
+    expect(screen.getByText("它叫什么")).toBeVisible();
     expect(screen.getByLabelText("Agent 显示名")).toBeVisible();
     expect(screen.getByText("显示名称")).toBeVisible();
     expect(screen.getByText("Handle")).toBeVisible();
@@ -492,7 +516,7 @@ describe("AgentsScreen", () => {
     expect(screen.queryByTestId("management-empty-state")).toBeNull();
   });
 
-  it("explains the Agent handle contract and rejects spaces before submit", async () => {
+  it("explains the Agent handle contract and rejects spaces before continuing", async () => {
     const onCreateAgent = jest.fn();
     const screen = await render(
       <AgentsScreen
@@ -531,14 +555,15 @@ describe("AgentsScreen", () => {
       ),
     ).toBeVisible();
     expect(
-      screen.getByRole("button", {name: "创建 Agent"}),
+      screen.getByRole("button", {name: "继续"}),
     ).toBeDisabled();
     expect(
-      screen.getByRole("button", {name: "创建 Agent"}),
+      screen.getByRole("button", {name: "继续"}),
     ).toHaveStyle({opacity: 0.5});
     await fireEvent.press(
-      screen.getByRole("button", {name: "创建 Agent"}),
+      screen.getByRole("button", {name: "继续"}),
     );
+    expect(screen.getByText("它叫什么")).toBeVisible();
     expect(onCreateAgent).not.toHaveBeenCalled();
   });
 
@@ -565,8 +590,8 @@ describe("AgentsScreen", () => {
     expect(screen.getByTestId("agent-create-icon")).toBeVisible();
     expect(screen.getByTestId("agent-refresh-icon")).toBeVisible();
     expect(screen.getByRole("button", {name: "新建 Agent"})).toHaveStyle({
-      backgroundColor: "#EAF4FF",
-      borderColor: "#EAF4FF",
+      backgroundColor: velaTheme.semantic.color.actionTonalSurface,
+      borderColor: velaTheme.semantic.color.actionTonalSurface,
       minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.queryByText("↻")).toBeNull();
@@ -664,10 +689,10 @@ describe("AgentsScreen", () => {
     );
 
     expect(screen.queryByTestId("agent-mobile-switcher")).toBeNull();
-    expect(screen.getByTestId("agent-sidebar")).toHaveStyle({height: 96});
+    expect(screen.getByTestId("agent-sidebar")).toHaveStyle({height: velaTheme.recipes.managementWorkspace.collectionCompactHeight});
     expect(
       screen.getByRole("button", {name: "打开 Agent delivery"}),
-    ).toHaveStyle({height: velaTheme.recipes.managementWorkspace.rowMinHeight, width: 220});
+    ).toHaveStyle({height: velaTheme.recipes.control.rowHeight, width: 220});
   });
 
   it("only exposes lifecycle actions that are valid for the current runtime state", async () => {
@@ -845,18 +870,17 @@ describe("AgentsScreen", () => {
       />,
     );
 
-    expect(screen.getByTestId("agent-security-section")).toHaveStyle({
-      borderRadius: 0,
-      borderTopWidth: 1,
-      paddingHorizontal: 0,
+    expect(screen.getByTestId("agent-security-section-body")).toHaveStyle({
+      borderRadius: velaTheme.semantic.radius.control,
+      borderWidth: 1,
     });
     expect(screen.getByTestId("agent-credential-section")).toHaveStyle({
       borderTopWidth: 1,
-      minHeight: 72,
+      minHeight: velaTheme.recipes.managementWorkspace.resourceActionMinHeight,
     });
     expect(screen.getByTestId("agent-delete-section")).toHaveStyle({
       borderTopWidth: 1,
-      minHeight: 72,
+      minHeight: velaTheme.recipes.managementWorkspace.resourceActionMinHeight,
     });
   });
 

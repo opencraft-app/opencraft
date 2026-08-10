@@ -1,4 +1,4 @@
-import type {Server} from "@vela/client-core";
+import {memberCanManageServer, type Server} from "@vela/client-core";
 import {useEffect} from "react";
 import {useShallow} from "zustand/react/shallow";
 
@@ -10,6 +10,7 @@ import {
   MembersScreen,
   ServerSettingsScreen,
   TasksScreen,
+  WorkspaceChrome,
   type TerminalSurfaceController,
   type WorkspaceSection,
   useAppActive,
@@ -25,6 +26,11 @@ export interface ManagementNavigationPort {
 }
 
 export interface ManagementRouteSurfaceProps {
+  /**
+   * When false, the parent (server layout) already owns WorkspaceChrome.
+   * Default true so isolated tests still mount a frame around section bodies.
+   */
+  chrome?: boolean;
   createTerminalController?(computerId: string): TerminalSurfaceController;
   navigation: ManagementNavigationPort;
   section: ManagementSection;
@@ -34,6 +40,7 @@ export interface ManagementRouteSurfaceProps {
 }
 
 export function ManagementRouteSurface({
+  chrome = true,
   createTerminalController,
   navigation,
   section,
@@ -142,34 +149,28 @@ export function ManagementRouteSurface({
     }
   }, [section, state.channels, state.operationsById, store]);
 
-  const canManage =
-    state.currentMember?.role === "owner" || state.currentMember?.role === "admin";
+  const canManage = memberCanManageServer(state.currentMember);
   const navigateSection = (next: WorkspaceSection) =>
     navigation.navigateSection(next);
   const selectServer = (serverId: string) =>
     navigation.selectServer(serverId, section);
 
+  let sectionBody = null;
   if (section === "settings") {
     if (!state.account) return null;
-    return (
+    sectionBody = (
       <ServerSettingsScreen
         canManage={canManage}
         currentAccount={state.account}
         error={state.error}
-        imStatus={state.imState.status}
-        onLogout={() => store.getState().logout()}
-        onNavigateSection={navigateSection}
+        framed={false}
         onSave={input => store.getState().updateServer(input)}
-        onSelectServer={selectServer}
         pendingAction={state.pendingAction}
         server={server}
-        servers={state.servers}
       />
     );
-  }
-
-  if (section === "agents") {
-    return (
+  } else if (section === "agents") {
+    sectionBody = (
       <AgentsScreen
         agents={state.agents}
         canManage={canManage}
@@ -177,9 +178,12 @@ export function ManagementRouteSurface({
         currentAccount={state.account}
         currentServerId={state.currentServerId}
         error={state.error}
+        framed={false}
         imStatus={state.imState.status}
         loading={state.loadingAgents || state.loadingComputers}
-        onCreateAgent={input => store.getState().createAgent(input)}
+        onCreateAgent={(input, options) =>
+          store.getState().createAgent(input, options)
+        }
         onDeleteAgent={agentId => store.getState().deleteAgent(agentId)}
         onContinueOperation={operationId =>
           store.getState().continueOperationPolling(operationId)
@@ -207,10 +211,8 @@ export function ManagementRouteSurface({
         servers={state.servers}
       />
     );
-  }
-
-  if (section === "computers") {
-    return (
+  } else if (section === "computers") {
+    sectionBody = (
       <ComputersScreen
         agents={state.agents}
         canManage={canManage}
@@ -218,6 +220,7 @@ export function ManagementRouteSurface({
         currentAccount={state.account}
         currentServerId={state.currentServerId}
         error={state.error}
+        framed={false}
         imStatus={state.imState.status}
         loading={state.loadingComputers}
         onCreateComputer={input => store.getState().createComputer(input)}
@@ -245,16 +248,15 @@ export function ManagementRouteSurface({
           : {})}
       />
     );
-  }
-
-  if (section === "tasks") {
-    return (
+  } else if (section === "tasks") {
+    sectionBody = (
       <TasksScreen
         agents={state.agents}
         canManage={canManage}
         currentAccount={state.account}
         currentServerId={state.currentServerId}
         error={state.error}
+        framed={false}
         imStatus={state.imState.status}
         inbox={state.inbox}
         loading={state.loadingWork}
@@ -283,42 +285,63 @@ export function ManagementRouteSurface({
         tasks={state.tasks}
       />
     );
+  } else {
+    const channelIds = new Set(state.channels.map(channel => channel.id));
+    const memberOperations = Object.values(state.operationsById).filter(
+      item =>
+        item.operation.kind.startsWith("im.membership.") &&
+        !channelIds.has(item.resourceId ?? ""),
+    );
+    if (!state.account) return null;
+    sectionBody = (
+      <MembersScreen
+        accountId={state.account.id}
+        currentAccount={state.account}
+        currentServerId={state.currentServerId}
+        error={state.error}
+        framed={false}
+        imStatus={state.imState.status}
+        invites={state.invites}
+        loading={state.loadingOrganization}
+        members={state.members}
+        onAcceptInvite={token => store.getState().acceptInvite(token)}
+        onContinueOperation={operationId =>
+          store.getState().continueOperationPolling(operationId)
+        }
+        onCreateInvite={input => store.getState().createInvite(input)}
+        onLogout={() => store.getState().logout()}
+        onNavigateSection={navigateSection}
+        onRefresh={() => store.getState().refreshOrganization({force: true})}
+        onRemoveMember={memberId => store.getState().removeMember(memberId)}
+        onRevokeInvite={inviteId => store.getState().revokeInvite(inviteId)}
+        onSelectServer={selectServer}
+        onUpdateMember={(memberId, input) =>
+          store.getState().updateMember(memberId, input)
+        }
+        operations={memberOperations}
+        pendingAction={state.pendingAction}
+        servers={state.servers}
+      />
+    );
   }
 
-  const channelIds = new Set(state.channels.map(channel => channel.id));
-  const memberOperations = Object.values(state.operationsById).filter(
-    item =>
-      item.operation.kind.startsWith("im.membership.") &&
-      !channelIds.has(item.resourceId ?? ""),
-  );
-  if (!state.account) return null;
+  if (!chrome) {
+    return sectionBody;
+  }
+
   return (
-    <MembersScreen
-      accountId={state.account.id}
-      currentAccount={state.account}
+    <WorkspaceChrome
+      account={state.account}
+      activeSection={section}
+      canManageServer={canManage}
       currentServerId={state.currentServerId}
-      error={state.error}
       imStatus={state.imState.status}
-      invites={state.invites}
-      loading={state.loadingOrganization}
-      members={state.members}
-      onAcceptInvite={token => store.getState().acceptInvite(token)}
-      onContinueOperation={operationId =>
-        store.getState().continueOperationPolling(operationId)
-      }
-      onCreateInvite={input => store.getState().createInvite(input)}
       onLogout={() => store.getState().logout()}
       onNavigateSection={navigateSection}
-      onRefresh={() => store.getState().refreshOrganization({force: true})}
-      onRemoveMember={memberId => store.getState().removeMember(memberId)}
-      onRevokeInvite={inviteId => store.getState().revokeInvite(inviteId)}
       onSelectServer={selectServer}
-      onUpdateMember={(memberId, input) =>
-        store.getState().updateMember(memberId, input)
-      }
-      operations={memberOperations}
-      pendingAction={state.pendingAction}
       servers={state.servers}
-    />
+    >
+      {sectionBody}
+    </WorkspaceChrome>
   );
 }

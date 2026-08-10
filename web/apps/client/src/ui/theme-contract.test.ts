@@ -209,17 +209,13 @@ describe("Vela theme contract", () => {
     // are relaxed now, so this ceiling replaces them: one-off geometry belongs
     // in its component, and anything added here has to displace something.
     //
-    // The ceiling last moved for `control.fieldHeight` and
-    // `iconControl.floatingSize`, which between them let twenty-one styles stop
-    // sizing themselves off the touch floor. The first displaced
-    // `managementWorkspace.fieldHeight`, a second name for the same number; the
-    // second is the standing 48 of a circle that floats over the transcript,
-    // and pays for itself by being the only flat size left in that family.
+    // The ceiling last moved when unused composerMinHeight /
+    // resourceIconSize recipe leaves were deleted after Mac polish.
     const namespaces = Object.keys(velaTheme.recipes);
     const leaves = numericLeaves(velaTheme.recipes);
 
     expect(namespaces.length).toBeLessThanOrEqual(16);
-    expect(leaves.length).toBeLessThanOrEqual(143);
+    expect(leaves.length).toBeLessThanOrEqual(138);
   });
 
   it("measures a column of content the same wherever it appears", () => {
@@ -259,9 +255,30 @@ describe("Vela theme contract", () => {
       expect(ascending(ladder)).toBe(true);
     });
 
-    it("raises fields off the sidebar that holds them", () => {
+    it("keeps the shell wash behind frosted chrome and groups behind inset panels", () => {
+      expect(luminanceOf(color.shellBackdrop)).toBeLessThan(
+        luminanceOf(color.groupedSurface),
+      );
+      expect(luminanceOf(color.groupedSurface)).toBeLessThan(
+        luminanceOf(color.sectionSurface),
+      );
+    });
+
+    it("raises form fields off the sidebar that holds them", () => {
       expect(luminanceOf(color.fieldSurface)).toBeGreaterThan(
         luminanceOf(color.sidebarSurface),
+      );
+    });
+
+    it("recesses directory search into the sidebar rather than lifting it", () => {
+      // White Bootstrap boxes on a grey sidebar were the cheap look. A search
+      // well should sit slightly into its pane, while form fields on a lit
+      // canvas stay raised.
+      expect(luminanceOf(color.fieldSurfaceRecessed)).toBeLessThan(
+        luminanceOf(color.sidebarSurface),
+      );
+      expect(luminanceOf(color.fieldSurfaceRecessed)).toBeLessThan(
+        luminanceOf(color.fieldSurface),
       );
     });
 

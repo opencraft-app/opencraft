@@ -25,6 +25,12 @@ export {
   type TerminalSurfaceController,
 } from "./components/terminal-panel";
 export {
+  ClearableSearchField,
+  SearchEmptyCard,
+  type ClearableSearchFieldProps,
+  type SearchEmptyCardProps,
+} from "./components/clearable-search-field";
+export {
   UserPicker,
   type UserPickerProps,
   type UserPickerSection,
@@ -34,6 +40,7 @@ export {
   CodeBlock,
   CollectionIdentityMark,
   CollectionRow,
+  CollectionRowCopy,
   DetailHeading,
   DetailSection,
   IconActionButton,
@@ -42,13 +49,18 @@ export {
   ManagementCollectionFooterAction,
   ManagementCollectionHeader,
   ManagementCollectionPane,
+  ManagementChoiceField,
   ManagementDateTimeInput,
   ManagementDetailCanvas,
   ManagementDetailScroll,
+  ManagementStageFill,
   ManagementField,
   ManagementForm,
   ManagementFormActions,
+  ManagementFormFooter,
   ManagementHeader,
+  ManagementHeaderActions,
+  ManagementResourceDirectory,
   ManagementTab,
   ManagementTabBar,
   NoticeBanner,
@@ -85,9 +97,13 @@ export {
   type ResourceMetadataListProps,
   type ManagementCollectionFooterActionProps,
   type ManagementCollectionHeaderProps,
+  type ManagementChoiceFieldOption,
+  type ManagementChoiceFieldProps,
   type ManagementDateTimeInputProps,
   type ManagementDetailScrollProps,
   type ManagementFieldProps,
+  type ManagementFormFooterAction,
+  type ManagementFormFooterProps,
   type ManagementResourceSwitcherOption,
   type ManagementResourceSwitcherProps,
   type ManagementTextInputProps,
@@ -101,11 +117,27 @@ export {
   type PlatformFrameProps,
 } from "./layouts/app-frame";
 export {
+  ManagementScreenFrame,
+  type ManagementScreenFrameProps,
+} from "./layouts/management-screen-frame";
+export {
+  WorkspaceChrome,
+  type WorkspaceChromeProps,
+  useRegisterCompactNavigation,
+  useWorkspaceChromeHost,
+  workspaceSectionBody,
+} from "./layouts/workspace-chrome";
+export {
   NavigationLinkProvider,
   type NavigationLinkComponent,
   type NavigationLinkProps,
 } from "./layouts/navigation-link";
-export type { WorkspaceSection } from "./layouts/workspace-section";
+export {
+  sectionNavigation,
+  visibleSectionNavigation,
+  workspaceSectionLabel,
+  type WorkspaceSection,
+} from "./layouts/workspace-section";
 export { WorkspaceShell } from "./layouts/workspace-shell";
 export {
   TasksScreen,
@@ -133,6 +165,8 @@ export { useAppActive } from "./use-app-active";
 export { AuthScreen } from "./screens/auth-screen";
 export {
   graphicalPresenter,
+  buildManagementShellModel,
+  buildSectionPresentationNavigation,
   ConversationPresentation,
   ManagementPresentation,
   PresentationProvider,
@@ -157,4 +191,9 @@ export {
   makeServerSlug,
   type FirstWorkspaceInput,
 } from "./screens/first-workspace-screen";
-export { velaTheme, type VelaTheme } from "./tokens";
+export {
+  densityMode,
+  pointerDensity,
+  velaTheme,
+  type VelaTheme,
+} from "./tokens";

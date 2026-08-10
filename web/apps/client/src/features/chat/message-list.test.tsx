@@ -3,7 +3,7 @@ import { fireEvent, render } from "@testing-library/react-native";
 import {Linking, Platform, StyleSheet as RNStyleSheet} from "react-native";
 
 import { MessageList } from "@/ui";
-import {velaTheme} from "@/ui";
+import {pointerDensity, velaTheme} from "@/ui";
 
 const originalPlatformOS = Platform.OS;
 
@@ -51,6 +51,30 @@ function pressHandler(instance: {
     current = current.return as typeof current;
   }
   throw new Error("找不到按钮 onPress");
+}
+
+async function openMessageActions(
+  screen: {
+    getByRole: (
+      role: string,
+      options: {name: string},
+    ) => unknown;
+    getByTestId: (id: string) => unknown;
+  },
+  messageId: string,
+  messageText: string,
+) {
+  const row = screen.getByTestId(`message-${messageId}`);
+  if (pointerDensity) {
+    await fireEvent(row as never, "pointerEnter");
+    await fireEvent.press(
+      screen.getByRole("button", {
+        name: `更多消息操作 ${messageText}`,
+      }) as never,
+    );
+    return;
+  }
+  await fireEvent(row as never, "longPress");
 }
 
 describe("MessageList", () => {
@@ -259,28 +283,28 @@ describe("MessageList", () => {
     expect(screen.queryByText("IMAGE")).toBeNull();
     expect(screen.queryByText("446.1 KB")).toBeNull();
     expect(screen.queryByText("引用")).toBeNull();
-    await fireEvent(screen.getByTestId("message-image-1"), "longPress");
+    await openMessageActions(screen, "image-1", "[图片]");
     await fireEvent.press(
       screen.getByRole("button", {
         name: "引用消息 [图片]",
       }),
     );
     expect(onQuote).toHaveBeenCalledWith("image-1");
-    await fireEvent(screen.getByTestId("message-image-1"), "longPress");
+    await openMessageActions(screen, "image-1", "[图片]");
     await fireEvent.press(
       screen.getByRole("button", {
         name: "Reaction 👍 2",
       }),
     );
     expect(onToggleReaction).toHaveBeenCalledWith("image-1", "👍");
-    await fireEvent(screen.getByTestId("message-image-1"), "longPress");
+    await openMessageActions(screen, "image-1", "[图片]");
     await fireEvent.press(
       screen.getByRole("button", {
         name: "将消息转为 Task [图片]",
       }),
     );
     expect(onCreateTask).toHaveBeenCalledWith("image-1");
-    await fireEvent(screen.getByTestId("message-image-1"), "longPress");
+    await openMessageActions(screen, "image-1", "[图片]");
     await fireEvent.press(
       screen.getByRole("button", {
         name: "在 Thread 回复 [图片]",
@@ -308,7 +332,7 @@ describe("MessageList", () => {
       />,
     );
 
-    await fireEvent(screen.getByTestId("message-outgoing-message-1"), "longPress");
+    await openMessageActions(screen, "outgoing-message-1", "请撤回这条");
     await fireEvent.press(
       screen.getByRole("button", {name: "撤回消息 请撤回这条"}),
     );
@@ -461,7 +485,7 @@ describe("MessageList", () => {
     expect(screen.getByText("unsafe.html")).toBeVisible();
   });
 
-  it("reveals the desktop message action from its stable slot on row hover or focus", async () => {
+  it("binds wide-web message actions to density, not viewport width", async () => {
     Object.defineProperty(Platform, "OS", {
       configurable: true,
       value: "web",
@@ -477,6 +501,7 @@ describe("MessageList", () => {
         viewportWidth={1_440}
       />,
     );
+    const actionSize = velaTheme.recipes.messageTimeline.actionSize;
 
     expect(screen.getByTestId("message-avatar-visual-message")).toHaveStyle({
       borderRadius: 9999,
@@ -484,9 +509,6 @@ describe("MessageList", () => {
       width: velaTheme.recipes.identity.avatarCompactSize,
     });
     expect(screen.queryByText("引用")).toBeNull();
-    expect(
-      screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
-    ).toHaveStyle({height: 28, opacity: 0, width: 28});
     expect(screen.getByText("整洁消息")).toHaveStyle({
       fontSize: velaTheme.semantic.typography.messageBody.fontSize,
       lineHeight: velaTheme.semantic.typography.messageBody.lineHeight,
@@ -509,36 +531,52 @@ describe("MessageList", () => {
       alignItems: "flex-start",
       flexDirection: "row",
     });
-    expect(
-      screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
-    ).not.toHaveStyle({position: "absolute", right: 0});
-    await fireEvent(
-      screen.getByTestId("message-visual-message"),
-      "pointerEnter",
-    );
-    expect(
-      screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
-    ).toHaveStyle({opacity: 1});
-    await fireEvent(
-      screen.getByTestId("message-visual-message"),
-      "pointerLeave",
-    );
-    expect(
-      screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
-    ).toHaveStyle({opacity: 0});
-    await fireEvent(
-      screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
-      "focus",
-    );
-    expect(
-      screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
-    ).toHaveStyle({opacity: 1});
-    await fireEvent.press(
-      screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
-    );
-    expect(
-      screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
-    ).toHaveStyle({opacity: 1});
+
+    if (pointerDensity) {
+      expect(
+        screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
+      ).toHaveStyle({height: actionSize, opacity: 0, width: actionSize});
+      expect(
+        screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
+      ).not.toHaveStyle({position: "absolute", right: 0});
+      await fireEvent(
+        screen.getByTestId("message-visual-message"),
+        "pointerEnter",
+      );
+      expect(
+        screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
+      ).toHaveStyle({opacity: 1});
+      await fireEvent(
+        screen.getByTestId("message-visual-message"),
+        "pointerLeave",
+      );
+      expect(
+        screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
+      ).toHaveStyle({opacity: 0});
+      await fireEvent(
+        screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
+        "focus",
+      );
+      expect(
+        screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
+      ).toHaveStyle({opacity: 1});
+      await fireEvent.press(
+        screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
+      );
+      expect(
+        screen.getByRole("button", {name: "更多消息操作 整洁消息"}),
+      ).toHaveStyle({opacity: 1});
+    } else {
+      // Touch density: wide layout has no permanent ellipsis; long-press opens.
+      expect(
+        screen.queryByRole("button", {name: "更多消息操作 整洁消息"}),
+      ).toBeNull();
+      await fireEvent(
+        screen.getByTestId("message-visual-message"),
+        "longPress",
+      );
+    }
+
     expect(screen.getByTestId("message-actions-visual-message")).toHaveStyle({
       alignSelf: "flex-start",
       borderWidth: 1,
@@ -610,10 +648,7 @@ describe("MessageList", () => {
       />,
     );
 
-    await fireEvent(
-      screen.getByTestId("message-quote-message"),
-      "longPress",
-    );
+    await openMessageActions(screen, "quote-message", "需要引用");
     await fireEvent.press(
       screen.getByRole("button", {
         name: "引用消息 需要引用",
@@ -645,10 +680,10 @@ describe("MessageList", () => {
       />,
     );
 
-    await fireEvent(screen.getByTestId("message-message-a"), "longPress");
+    await openMessageActions(screen, "message-a", "第一条消息");
     expect(screen.getByTestId("message-actions-message-a")).toBeVisible();
 
-    await fireEvent(screen.getByTestId("message-message-b"), "longPress");
+    await openMessageActions(screen, "message-b", "第二条消息");
     expect(screen.queryByTestId("message-actions-message-a")).toBeNull();
     expect(screen.getByTestId("message-actions-message-b")).toBeVisible();
 
@@ -665,7 +700,7 @@ describe("MessageList", () => {
     expect(screen.queryByTestId("message-actions-message-b")).toBeNull();
   });
 
-  it("keeps compact message actions discoverable while preserving long press", async () => {
+  it("keeps compact packing on the viewport axis and reveal model on density", async () => {
     Object.defineProperty(Platform, "OS", {
       configurable: true,
       value: "web",
@@ -681,22 +716,38 @@ describe("MessageList", () => {
         viewportWidth={390}
       />,
     );
+    const actionSize = velaTheme.recipes.messageTimeline.actionSize;
 
     const compactAction = screen.getByRole("button", {
       name: "更多消息操作 触屏消息",
     });
-    expect(compactAction).toBeVisible();
-    expect(compactAction).toHaveStyle({height: 32, opacity: 1, width: 32});
-    expect(screen.queryByTestId("message-actions-compact-message")).toBeNull();
-    await fireEvent.press(compactAction);
-    expect(screen.getByTestId("message-actions-compact-message")).toBeVisible();
-    await fireEvent.press(compactAction);
-    expect(screen.queryByTestId("message-actions-compact-message")).toBeNull();
-    await fireEvent(
-      screen.getByTestId("message-compact-message"),
-      "longPress",
+    expect(compactAction).toHaveStyle(
+      pointerDensity
+        ? {height: actionSize, opacity: 0, width: actionSize}
+        : {height: actionSize, opacity: 1, width: actionSize},
     );
+    if (!pointerDensity) {
+      expect(compactAction).toBeVisible();
+    }
+    expect(screen.queryByTestId("message-actions-compact-message")).toBeNull();
+    if (pointerDensity) {
+      await fireEvent(
+        screen.getByTestId("message-compact-message"),
+        "pointerEnter",
+      );
+      expect(compactAction).toHaveStyle({opacity: 1});
+    }
+    await fireEvent.press(compactAction);
     expect(screen.getByTestId("message-actions-compact-message")).toBeVisible();
+    await fireEvent.press(compactAction);
+    expect(screen.queryByTestId("message-actions-compact-message")).toBeNull();
+    if (!pointerDensity) {
+      await fireEvent(
+        screen.getByTestId("message-compact-message"),
+        "longPress",
+      );
+      expect(screen.getByTestId("message-actions-compact-message")).toBeVisible();
+    }
     expect(
       RNStyleSheet.flatten(
         screen.getByTestId("message-viewport").props.contentContainerStyle,
@@ -764,10 +815,16 @@ describe("MessageList", () => {
         />,
       );
 
-      await fireEvent(
-        screen.getByTestId("message-narrow-actions"),
-        "longPress",
-      );
+      if (pointerDensity) {
+        await fireEvent.press(
+          screen.getByRole("button", {name: "更多消息操作 窄屏消息"}),
+        );
+      } else {
+        await fireEvent(
+          screen.getByTestId("message-narrow-actions"),
+          "longPress",
+        );
+      }
 
       expect(screen.getByTestId("message-actions-narrow-actions")).toHaveStyle({
         flexWrap: "nowrap",
@@ -823,10 +880,18 @@ describe("MessageList", () => {
       />,
     );
 
-    await fireEvent(
-      screen.getByTestId("message-narrow-reactions"),
-      "longPress",
-    );
+    if (pointerDensity) {
+      await fireEvent.press(
+        screen.getByRole("button", {
+          name: "更多消息操作 有多个表情的窄屏消息",
+        }),
+      );
+    } else {
+      await fireEvent(
+        screen.getByTestId("message-narrow-reactions"),
+        "longPress",
+      );
+    }
 
     expect(screen.getByTestId("message-actions-narrow-reactions")).toHaveStyle({
       flexWrap: "wrap",
@@ -836,6 +901,10 @@ describe("MessageList", () => {
   });
 
   it("opens native message actions by long press without a permanent ellipsis", async () => {
+    // Density is fixed at import. The pointer suite cannot simulate native
+    // touch chrome by flipping Platform.OS — real iOS always resolves touch.
+    if (pointerDensity) return;
+
     Object.defineProperty(Platform, "OS", {
       configurable: true,
       value: "ios",

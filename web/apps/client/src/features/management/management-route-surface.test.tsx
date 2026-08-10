@@ -100,6 +100,60 @@ describe("ManagementRouteSurface", () => {
     });
   });
 
+  it("renders section body without a second chrome when the layout owns it", async () => {
+    const store = createStore<AppStoreState>(() =>
+      ({
+        account,
+        agents: [],
+        cancelOperationPolling: jest.fn(),
+        channels: [],
+        computers: [],
+        currentServerId: server.id,
+        error: null,
+        imState: {status: "ready"},
+        loadingAgents: false,
+        loadingComputers: false,
+        members: [
+          {
+            accountId: account.id,
+            displayName: account.displayName,
+            id: "member-1",
+            imState: "ready",
+            imUserId: account.imUserId,
+            kind: "human",
+            revision: 1,
+            role: "owner",
+            serverId: server.id,
+          },
+        ],
+        operationsById: {},
+        pendingAction: null,
+        refreshAgents: jest.fn(async () => undefined),
+        refreshComputers: jest.fn(async () => undefined),
+        refreshOrganization: jest.fn(async () => undefined),
+        servers: [server],
+      }) as unknown as AppStoreState,
+    );
+
+    const screen = await render(
+      <AppRuntimeProvider store={store}>
+        <ManagementRouteSurface
+          chrome={false}
+          navigation={{
+            navigateSection: jest.fn(),
+            selectServer: jest.fn(),
+          }}
+          section="agents"
+          server={server}
+        />
+      </AppRuntimeProvider>,
+    );
+
+    expect(screen.getByTestId("agent-stage-title")).toHaveTextContent("Agent");
+    expect(screen.queryByTestId("mobile-bottom-nav")).toBeNull();
+    expect(screen.queryByTestId("workspace-shell")).toBeNull();
+  });
+
   it("polls only while a Computer has never been observed", async () => {
     jest.useFakeTimers();
     const refreshComputers = jest.fn(async () => undefined);

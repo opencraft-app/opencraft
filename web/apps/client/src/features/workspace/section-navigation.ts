@@ -3,7 +3,7 @@ import type {
   Channel,
   Server,
 } from "@vela/client-core";
-import {channelAddress} from "@vela/client-core";
+import {channelAddress, isEveryoneChannel} from "@vela/client-core";
 import type { WorkspaceSection } from "@/ui";
 
 export type ConversationRouteTarget =
@@ -56,7 +56,7 @@ export function firstRoutableChannelId(
 ): string | null {
   const root = channels.find(
     (channel) =>
-      channel.systemKey === "all" && channelAddress(channel) !== null,
+      isEveryoneChannel(channel) && channelAddress(channel) !== null,
   );
   if (root) return root.id;
   return channels.find((channel) => channelAddress(channel) !== null)?.id ?? null;
@@ -151,8 +151,33 @@ export function safeReturnTo(
   ) {
     return "/";
   }
-  const search = canonicalRouteSearch(url.search, browserHostname);
-  return `${url.pathname}${search}`;
+  const search = new URLSearchParams();
+  // /dm/new is useless without the peer; keep that route-owned query after
+  // login the same way withCanonicalRouteSearch already does for in-app hrefs.
+  const peerMemberId = url.searchParams.get("peerMemberId")?.trim();
+  if (
+    isNewDirectConversationPath(url.pathname) &&
+    peerMemberId &&
+    !hasControlCharacter(peerMemberId) &&
+    !peerMemberId.includes("\\")
+  ) {
+    search.set("peerMemberId", peerMemberId);
+  }
+  const backend = new URLSearchParams(
+    canonicalRouteSearch(url.search, browserHostname),
+  ).get("backend");
+  if (backend) search.set("backend", backend);
+  const encoded = search.toString();
+  return `${url.pathname}${encoded ? `?${encoded}` : ""}`;
+}
+
+/** Expo may hand route params as `string | string[]`; take the first value. */
+export function routeParam(
+  value: string | string[] | undefined,
+  fallback = "",
+): string {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw ?? fallback;
 }
 
 export function authRouteHref(
@@ -195,6 +220,59 @@ export function workspaceSectionHref(
   return `/s/${server}/${section}`;
 }
 
+/** Active workspace section for the shared server chrome / bottom bar. */
+export function workspaceActiveSectionFromPathname(
+  pathname: string,
+): WorkspaceSection {
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments[0] !== "s" || !segments[1]) return "chat";
+  const head = segments[2];
+  if (!head || head === "c" || head === "dm") return "chat";
+  if (head === "computers") return "computers";
+  if (
+    head === "tasks" ||
+    head === "agents" ||
+    head === "members" ||
+    head === "settings"
+  ) {
+    return head;
+  }
+  return "chat";
+}
+
+/**
+ * Rewrite `/s/{legacyServerId}/…` to `/s/{canonicalSlug}/…` while keeping the
+ * rest of the path (and optional search) intact.
+ */
+export function canonicalizeServerPathname(
+  pathname: string,
+  serverReference: string,
+  canonicalSlug: string,
+  search = "",
+): string {
+  const parts = pathname.split("/");
+  if (parts[1] === "s" && parts[2]) {
+    let current = parts[2];
+    let reference = serverReference;
+    try {
+      current = decodeURIComponent(current);
+    } catch {
+      // keep encoded form for comparison
+    }
+    try {
+      reference = decodeURIComponent(reference);
+    } catch {
+      // keep encoded form for comparison
+    }
+    if (current === reference || current === serverReference) {
+      parts[2] = encodeURIComponent(canonicalSlug);
+    }
+  }
+  const path = parts.join("/") || "/";
+  if (!search) return path;
+  return `${path}${search.startsWith("?") ? search : `?${search}`}`;
+}
+
 function isKnownInternalPath(pathname: string): boolean {
   if (pathname === "/" || pathname === "/home" || pathname === "/join") {
     return true;
@@ -232,6 +310,16 @@ function isKnownInternalPath(pathname: string): boolean {
     segments.length === 4 &&
     segments[2] === "c" &&
     Boolean(segments[3])
+  );
+}
+
+function isNewDirectConversationPath(pathname: string): boolean {
+  const segments = pathname.split("/").filter(Boolean);
+  return (
+    segments.length === 4 &&
+    segments[0] === "s" &&
+    segments[2] === "dm" &&
+    segments[3] === "new"
   );
 }
 

@@ -26,9 +26,14 @@ import { AgentsScreen } from "./agents-screen";
 import { ComputersScreen } from "./computers-screen";
 import { MembersScreen } from "./members-screen";
 import { TasksScreen } from "./tasks-screen";
+import { WorkspaceChrome } from "../layouts/workspace-chrome";
 import { WorkspaceShell } from "../layouts/workspace-shell";
+import {
+  sectionNavigation,
+  type WorkspaceSection,
+} from "../layouts/workspace-section";
 import type { TerminalSurfaceController } from "../components/terminal-panel";
-import { layoutMode } from "../layout-mode";
+import { workspaceLayoutMode } from "../workspace-layout-mode";
 import { velaTheme } from "../tokens";
 
 const server: Server = {
@@ -403,7 +408,7 @@ export function StyleLabScreen({
     viewportWidth ?? null,
   );
   const previewWidth = canvasWidth ?? window.width;
-  const compact = layoutMode(hostWidth) === "compact";
+  const compact = workspaceLayoutMode(hostWidth) === "compact";
   const canvasHeight = Math.max(640, window.height - (compact ? 194 : 114));
   const [preview, setPreview] = useState<Preview>("chat");
   const [scenario, setScenario] = useState<ReviewScenario>("normal");
@@ -574,228 +579,249 @@ export function StyleLabScreen({
           style={[styles.canvas, { height: canvasHeight, width: previewWidth }]}
           testID="style-lab-canvas"
         >
-          {preview === "chat" ? (
-            <WorkspaceShell
-              account={account}
-              activeConversation={activeConversation}
-              agents={activeConversation.kind === "channel" ? reviewAgents : []}
-              canManageChannels
-              channelMembers={activeChannelMembers}
-              channels={reviewChannels}
-              conversationSummaries={conversationSummaries}
-              currentChannelId={
-                activeConversation.kind === "channel"
-                  ? activeConversation.channelId
-                  : null
-              }
-              currentImUserId="stylelab-human-linmo"
-              currentServerId={server.id}
-              directConversations={directConversations}
-              directConversationSync="complete"
-              imStatus={reviewImStatus}
-              imStatusMessage={
-                scenario === "disconnected"
-                  ? "消息连接已中断，请重新连接"
-                  : undefined
-              }
-              members={reviewMembers}
-              mentionMembers={activeChannelMembers.flatMap((member) =>
-                member.status === "active" &&
-                member.imState === "ready" &&
-                member.imUserId
-                  ? [
-                      {
-                        displayName: member.displayName,
-                        handle: member.handle,
-                        id: member.id,
-                        imUserId: member.imUserId,
-                        kind: member.kind,
-                      },
-                    ]
-                  : [],
-              )}
-              messageFocusRequest={messageFocusRequest}
-              messages={
-                activeConversation.kind === "direct"
-                  ? directMessages
-                  : reviewMessages
-              }
-              onCreateTaskFromMessage={() => undefined}
-              onNavigateSection={navigate}
-              onLogout={() => undefined}
-              onLocateSearchResult={(messageId) =>
-                setMessageFocusRequest((current) => ({
-                  messageId,
-                  revision: (current?.revision ?? 0) + 1,
-                }))
-              }
-              onOpenThread={() => undefined}
-              onQuoteMessage={() => undefined}
-              onReconnect={() => undefined}
-              onRetryMessage={() => undefined}
-              onSearchMessages={() => undefined}
-              onSelectChannel={(channelId) =>
-                setActiveConversation({ channelId, kind: "channel" })
-              }
-              onSelectDirect={(peerUserId) => {
-                const conversation = directConversations.find(
-                  (item) => item.peerUserId === peerUserId,
-                );
-                const member = members.find(
-                  (item) => item.imUserId === peerUserId,
-                );
-                if (!member) return;
-                setActiveConversation({
-                  ...(conversation
-                    ? {directConversationId: conversation.directConversationId}
-                    : {}),
-                  kind: "direct",
-                  peerMemberId: member.id,
-                  peerUserId,
-                });
-              }}
-              onSelectServer={() => undefined}
-              onSend={() => undefined}
-              onToggleReaction={() => undefined}
-              searchQuery="Agent"
-              searchResults={[messages[1]!, messages[4]!]}
-              serverAgents={reviewAgents}
-              servers={[server]}
-              viewportWidth={previewWidth}
-            />
-          ) : null}
-          {preview === "tasks" ? (
-            <TasksScreen
-              agents={reviewAgents}
-              currentAccount={account}
-              currentServerId={server.id}
-              error={
-                scenario === "disconnected"
-                  ? "消息连接已中断，请重新连接"
-                  : null
-              }
-              inbox={reviewInbox}
-              loading={false}
-              imStatus={reviewImStatus}
-              onCreateTask={() => undefined}
-              onNavigateSection={navigate}
-              onLogout={() => undefined}
-              onRefresh={() => undefined}
-              onSelectServer={() => undefined}
-              onUpdateTask={() => undefined}
-              pendingAction={null}
-              servers={[server]}
-              tasks={reviewTasks}
-              viewportWidth={previewWidth}
-            />
-          ) : null}
-          {preview === "agents" ? (
-            <AgentsScreen
-              agents={reviewAgents}
-              canManage
-              computers={reviewComputers}
-              currentAccount={account}
-              currentServerId={server.id}
-              error={
-                scenario === "disconnected"
-                  ? "消息连接已中断，请重新连接"
-                  : null
-              }
-              loading={false}
-              imStatus={reviewImStatus}
-              onCreateAgent={() => null}
-              onNavigateSection={navigate}
-              onLogout={() => undefined}
-              onRefresh={() => undefined}
-              onRotateCredential={() => null}
-              onRunAgentAction={() => null}
-              onSelectServer={() => undefined}
-              onUpdateAgent={() => undefined}
-              pendingAction={null}
-              servers={[server]}
-              viewportWidth={previewWidth}
-            />
-          ) : null}
-          {preview === "computers" ? (
-            <ComputersScreen
-              agents={reviewAgents}
-              canManage
-              computers={reviewComputers}
-              currentAccount={account}
-              currentServerId={server.id}
-              error={
-                scenario === "disconnected"
-                  ? "消息连接已中断，请重新连接"
-                  : null
-              }
-              loading={false}
-              imStatus={reviewImStatus}
-              onCreateComputer={() => null}
-              onCreateTerminalController={() =>
-                createStyleLabTerminalController()
-              }
-              onNavigateSection={navigate}
-              onLogout={() => undefined}
-              onRefresh={() => undefined}
-              onRequestRegistrationScript={() => null}
-              onSelectServer={() => undefined}
-              pendingAction={null}
-              servers={[server]}
-              viewportWidth={previewWidth}
-            />
-          ) : null}
-          {preview === "members" ? (
-            <MembersScreen
-              accountId="stylelab-account-you"
-              currentAccount={account}
-              currentServerId={server.id}
-              error={
-                scenario === "disconnected"
-                  ? "消息连接已中断，请重新连接"
-                  : null
-              }
-              invites={[]}
-              loading={false}
-              imStatus={reviewImStatus}
-              members={reviewMembers}
-              onAcceptInvite={() => null}
-              onCreateInvite={() => null}
-              onNavigateSection={navigate}
-              onLogout={() => undefined}
-              onRefresh={() => undefined}
-              onRemoveMember={() => undefined}
-              onRevokeInvite={() => undefined}
-              onSelectServer={() => undefined}
-              onUpdateMember={() => undefined}
-              pendingAction={null}
-              servers={[server]}
-              viewportWidth={previewWidth}
-            />
-          ) : null}
+          <WorkspaceChrome
+            account={account}
+            activeSection={preview}
+            canManageServer
+            currentServerId={server.id}
+            imStatus={reviewImStatus}
+            onLogout={() => undefined}
+            onNavigateSection={navigate}
+            onSelectServer={() => undefined}
+            servers={[server]}
+            viewportWidth={previewWidth}
+          >
+            {preview === "chat" ? (
+              <WorkspaceShell
+                account={account}
+                activeConversation={activeConversation}
+                agents={activeConversation.kind === "channel" ? reviewAgents : []}
+                canManageChannels
+                channelMembers={activeChannelMembers}
+                channels={reviewChannels}
+                conversationSummaries={conversationSummaries}
+                currentChannelId={
+                  activeConversation.kind === "channel"
+                    ? activeConversation.channelId
+                    : null
+                }
+                currentImUserId="stylelab-human-linmo"
+                currentServerId={server.id}
+                directConversations={directConversations}
+                directConversationSync="complete"
+                framed={false}
+                imStatus={reviewImStatus}
+                imStatusMessage={
+                  scenario === "disconnected"
+                    ? "消息连接已中断，请重新连接"
+                    : undefined
+                }
+                members={reviewMembers}
+                mentionMembers={activeChannelMembers.flatMap((member) =>
+                  member.status === "active" &&
+                  member.imState === "ready" &&
+                  member.imUserId
+                    ? [
+                        {
+                          displayName: member.displayName,
+                          handle: member.handle,
+                          id: member.id,
+                          imUserId: member.imUserId,
+                          kind: member.kind,
+                        },
+                      ]
+                    : [],
+                )}
+                messageFocusRequest={messageFocusRequest}
+                messages={
+                  activeConversation.kind === "direct"
+                    ? directMessages
+                    : reviewMessages
+                }
+                onCreateTaskFromMessage={() => undefined}
+                onNavigateSection={navigate}
+                onLogout={() => undefined}
+                onLocateSearchResult={(messageId) =>
+                  setMessageFocusRequest((current) => ({
+                    messageId,
+                    revision: (current?.revision ?? 0) + 1,
+                  }))
+                }
+                onOpenThread={() => undefined}
+                onQuoteMessage={() => undefined}
+                onReconnect={() => undefined}
+                onRetryMessage={() => undefined}
+                onSearchMessages={() => undefined}
+                onSelectChannel={(channelId) =>
+                  setActiveConversation({ channelId, kind: "channel" })
+                }
+                onSelectDirect={(peerUserId) => {
+                  const conversation = directConversations.find(
+                    (item) => item.peerUserId === peerUserId,
+                  );
+                  const member = members.find(
+                    (item) => item.imUserId === peerUserId,
+                  );
+                  if (!member) return;
+                  setActiveConversation({
+                    ...(conversation
+                      ? {directConversationId: conversation.directConversationId}
+                      : {}),
+                    kind: "direct",
+                    peerMemberId: member.id,
+                    peerUserId,
+                  });
+                }}
+                onSelectServer={() => undefined}
+                onSend={() => undefined}
+                onToggleReaction={() => undefined}
+                searchQuery="Agent"
+                searchResults={[messages[1]!, messages[4]!]}
+                serverAgents={reviewAgents}
+                servers={[server]}
+                viewportWidth={previewWidth}
+              />
+            ) : null}
+            {preview === "tasks" ? (
+              <TasksScreen
+                agents={reviewAgents}
+                canManage
+                currentAccount={account}
+                currentServerId={server.id}
+                error={
+                  scenario === "disconnected"
+                    ? "消息连接已中断，请重新连接"
+                    : null
+                }
+                framed={false}
+                inbox={reviewInbox}
+                loading={false}
+                imStatus={reviewImStatus}
+                onCreateTask={() => undefined}
+                onNavigateSection={navigate}
+                onLogout={() => undefined}
+                onRefresh={() => undefined}
+                onSelectServer={() => undefined}
+                onUpdateTask={() => undefined}
+                pendingAction={null}
+                servers={[server]}
+                tasks={reviewTasks}
+                viewportWidth={previewWidth}
+              />
+            ) : null}
+            {preview === "agents" ? (
+              <AgentsScreen
+                agents={reviewAgents}
+                canManage
+                computers={reviewComputers}
+                currentAccount={account}
+                currentServerId={server.id}
+                error={
+                  scenario === "disconnected"
+                    ? "消息连接已中断，请重新连接"
+                    : null
+                }
+                framed={false}
+                loading={false}
+                imStatus={reviewImStatus}
+                onCreateAgent={() => null}
+                onNavigateSection={navigate}
+                onLogout={() => undefined}
+                onRefresh={() => undefined}
+                onRotateCredential={() => null}
+                onRunAgentAction={() => null}
+                onSelectServer={() => undefined}
+                onUpdateAgent={() => undefined}
+                pendingAction={null}
+                servers={[server]}
+                viewportWidth={previewWidth}
+              />
+            ) : null}
+            {preview === "computers" ? (
+              <ComputersScreen
+                agents={reviewAgents}
+                canManage
+                computers={reviewComputers}
+                currentAccount={account}
+                currentServerId={server.id}
+                error={
+                  scenario === "disconnected"
+                    ? "消息连接已中断，请重新连接"
+                    : null
+                }
+                framed={false}
+                loading={false}
+                imStatus={reviewImStatus}
+                onCreateComputer={() => null}
+                onCreateTerminalController={() =>
+                  createStyleLabTerminalController()
+                }
+                onNavigateSection={navigate}
+                onLogout={() => undefined}
+                onRefresh={() => undefined}
+                onRequestRegistrationScript={() => null}
+                onSelectServer={() => undefined}
+                pendingAction={null}
+                servers={[server]}
+                viewportWidth={previewWidth}
+              />
+            ) : null}
+            {preview === "members" ? (
+              <MembersScreen
+                accountId="stylelab-account-you"
+                currentAccount={account}
+                currentServerId={server.id}
+                error={
+                  scenario === "disconnected"
+                    ? "消息连接已中断，请重新连接"
+                    : null
+                }
+                framed={false}
+                invites={[]}
+                loading={false}
+                imStatus={reviewImStatus}
+                members={reviewMembers}
+                onAcceptInvite={() => null}
+                onCreateInvite={() => null}
+                onNavigateSection={navigate}
+                onLogout={() => undefined}
+                onRefresh={() => undefined}
+                onRemoveMember={() => undefined}
+                onRevokeInvite={() => undefined}
+                onSelectServer={() => undefined}
+                onUpdateMember={() => undefined}
+                pendingAction={null}
+                servers={[server]}
+                viewportWidth={previewWidth}
+              />
+            ) : null}
+          </WorkspaceChrome>
         </View>
       </ScrollView>
     </View>
   );
 }
 
-type Preview = "agents" | "chat" | "computers" | "members" | "tasks";
+type Preview = Exclude<WorkspaceSection, "settings">;
 type ReviewScenario = "disconnected" | "empty" | "normal" | "unjoined";
 
-const previewOptions: Array<{
-  accessibilityLabel: string;
-  id: Preview;
-  label: string;
-}> = [
-  { accessibilityLabel: "预览聊天界面", id: "chat", label: "聊天" },
-  { accessibilityLabel: "预览任务界面", id: "tasks", label: "任务" },
-  { accessibilityLabel: "预览 Agent 界面", id: "agents", label: "Agent" },
-  {
-    accessibilityLabel: "预览 Computer 界面",
-    id: "computers",
-    label: "Computer",
-  },
-  { accessibilityLabel: "预览成员界面", id: "members", label: "成员" },
-];
+const previewAccessibilityLabel: Record<Preview, string> = {
+  agents: "预览 Agent 界面",
+  chat: "预览聊天界面",
+  computers: "预览 Computer 界面",
+  members: "预览成员界面",
+  tasks: "预览任务界面",
+};
+
+const previewOptions = sectionNavigation
+  .filter((item): item is (typeof sectionNavigation)[number] & {id: Preview} =>
+    item.id !== "settings",
+  )
+  .map((item) => ({
+    accessibilityLabel: previewAccessibilityLabel[item.id],
+    id: item.id,
+    label: item.label,
+  }));
 
 const scenarioOptions: Array<{
   accessibilityLabel: string;

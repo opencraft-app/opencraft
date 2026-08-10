@@ -107,6 +107,15 @@ test("mention trigger reads the active at-query at a collapsed cursor", () => {
   );
 });
 
+test("mention trigger still reads an at-query while IME composition spans the query", () => {
+  // Chinese IMEs commonly leave a non-collapsed selection over the composing
+  // characters. Mentions must key off the caret end, not require collapse.
+  assert.deepEqual(
+    readComposerMentionTrigger("请 @ni", {start: 3, end: 5}),
+    {end: 5, query: "ni", start: 2},
+  );
+});
+
 test("mention replacement preserves surrounding text and inserts one trailing space", () => {
   const result = replaceComposerDocumentRangeWithMention({
     document: createComposerTextDocument("请 @rese处理"),

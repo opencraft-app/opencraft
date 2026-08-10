@@ -2,7 +2,8 @@ import { Platform } from "react-native";
 
 export const interfaceFontFamilies = {
   native: "System",
-  web: '"PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
+  // SF / system UI first for chrome metrics; PingFang still covers CJK glyphs.
+  web: '-apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", system-ui, "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
 } as const;
 const interfaceFontFamily = Platform.select({
   default: interfaceFontFamilies.native,
@@ -39,6 +40,8 @@ const baseColors = {
   indigo50: "#EEF0FF",
   indigo500: "#6664C9",
   ink900: "#0A0E18",
+  // System grouped-background wash (Settings / management stage).
+  neutral50: "#F2F2F7",
   neutral100: "#F4F4F5",
   neutral150: "#E9E9EC",
   neutral200: "#E4E4E7",
@@ -190,24 +193,32 @@ export const easing = {
 export const densityScale = {
   pointer: {
     avatarCompactSize: 28,
+    avatarNavigationSize: 32,
     avatarRowSize: 28,
+    bannerMinHeight: 40,
     collectionActionHeight: 36,
-    compactComposerMinHeight: 52,
-    composerMinHeight: 56,
+    collectionCompactHeight: 72,
+    collectionHeaderMarkSize: 36,
     composerSuggestionMinHeight: 32,
     composerSurfaceMinHeight: 52,
     composerToolbarMinHeight: 40,
     controlHeight: 30,
+    factMinHeight: 48,
     fieldHeight: 32,
     headerActionHeight: 28,
     headerHeight: 52,
+    iconControlCompactSize: 28,
     iconControlDenseSize: 28,
+    iconControlFloatingSize: 36,
     iconControlSmallSize: 30,
     listRowMinHeight: 32,
     memberRowMinHeight: 40,
+    messageActionSize: 28,
     messageIndent: 26,
     messageRowGap: 6,
+    railBrandMarkSize: 36,
     railWidth: 60,
+    resourceActionMinHeight: 52,
     shelfRowMinHeight: 44,
     spaceLg: 12,
     spaceMd: 10,
@@ -215,29 +226,38 @@ export const densityScale = {
     spaceXxl: 24,
     switcherOptionMinHeight: 32,
     switcherRowMinHeight: 36,
-    switcherTriggerMinHeight: 48,
+    switcherTriggerMinHeight: 36,
     taskCardMinHeight: 48,
+    toastMinHeight: 36,
   },
   touch: {
     avatarCompactSize: 32,
+    avatarNavigationSize: 44,
     avatarRowSize: 36,
+    bannerMinHeight: 52,
     collectionActionHeight: 52,
-    compactComposerMinHeight: 64,
-    composerMinHeight: 72,
+    collectionCompactHeight: 96,
+    collectionHeaderMarkSize: 48,
     composerSuggestionMinHeight: 46,
     composerSurfaceMinHeight: 66,
     composerToolbarMinHeight: 52,
     controlHeight: 44,
+    factMinHeight: 64,
     fieldHeight: 48,
     headerActionHeight: 44,
     headerHeight: 80,
+    iconControlCompactSize: 32,
     iconControlDenseSize: 36,
+    iconControlFloatingSize: 48,
     iconControlSmallSize: 38,
     listRowMinHeight: 48,
     memberRowMinHeight: 60,
+    messageActionSize: 32,
     messageIndent: 30,
     messageRowGap: 10,
+    railBrandMarkSize: 48,
     railWidth: 72,
+    resourceActionMinHeight: 72,
     shelfRowMinHeight: 64,
     spaceLg: 16,
     spaceMd: 12,
@@ -245,10 +265,18 @@ export const densityScale = {
     spaceXxl: 32,
     switcherOptionMinHeight: 56,
     switcherRowMinHeight: 52,
-    switcherTriggerMinHeight: 64,
+    switcherTriggerMinHeight: 56,
     taskCardMinHeight: 58,
+    toastMinHeight: 48,
   },
 } as const;
+
+/**
+ * Interaction chrome follows the input device, not the viewport. A narrow Mac
+ * window still has a mouse; a wide tablet still has a finger. Layout compactness
+ * is a separate axis (`breakpoints` / width).
+ */
+export const pointerDensity = densityMode === "pointer";
 
 export const density: (typeof densityScale)[DensityMode] =
   densityScale[densityMode];
@@ -272,6 +300,7 @@ const columnMaxWidth = 760;
  * full column. Chat and management had both landed on 560 under two names.
  */
 const noticeMaxWidth = 560;
+
 
 /**
  * Type forks with density too: macOS sets interface body text around 13px
@@ -383,10 +412,12 @@ export const velaTheme = {
       borderControl: withAlpha(palette.neutral950, 0.14),
       borderDanger: withAlpha(palette.pink500, 0.18),
       borderDangerStrong: withAlpha(palette.pink500, 0.58),
+      // Hover deepens a resting control edge without jumping to the focus accent.
+      borderFieldHover: withAlpha(palette.neutral950, 0.22),
       borderFocus: withAlpha(palette.blue500, 0.42),
       borderInteractive: withAlpha(palette.blue500, 0.18),
       borderOverlay: withAlpha(palette.neutral950, 0.12),
-      borderSelected: withAlpha(palette.blue500, 0.22),
+      borderSelected: withAlpha(palette.neutral950, 0.14),
       borderSection: withAlpha(palette.neutral950, 0.12),
       borderTransparent: palette.transparent,
       brandAccent: palette.blue500,
@@ -396,11 +427,16 @@ export const velaTheme = {
       codeSurface: palette.neutral950,
       codeText: palette.white,
       decorativeAccentSurface: palette.blue500,
+      // Quiet Mac-style field focus — a thin halo, not a Material glow ring.
+      fieldFocusGlow: withAlpha(palette.blue500, 0.12),
       fieldPlaceholder: palette.neutral400,
-      // Fields read as raised, not inset: on the recessed sidebar a white fill
-      // separates the search box from its container, and on white content the
-      // hairline border carries the edge.
+      // Hybrid field material: forms on a lit canvas stay raised (white +
+      // hairline); directory and member search sit recessed in the sidebar so
+      // they read as Mac filter wells rather than Bootstrap boxes.
       fieldSurface: palette.white,
+      // 0.08 keeps the well readable on sidebarSurface without tipping into a
+      // muddy slab; 0.06 was too close to the pane and still read as "cheap flat".
+      fieldSurfaceRecessed: withAlpha(palette.neutral950, 0.08),
       iconAccent: palette.blue600,
       iconAccentSurface: palette.blue50,
       iconInverse: palette.white,
@@ -414,6 +450,8 @@ export const velaTheme = {
       interactiveHoverSurface: withAlpha(palette.neutral950, 0.05),
       interactivePressedSurface: palette.neutral200,
       modalBackdrop: withAlpha(palette.neutral990, 0.34),
+      // Settings-style page wash behind inset groups (management stage).
+      groupedSurface: palette.neutral50,
       // Recession ladder: the rail sits furthest back, the conversation
       // sidebar one step in front of it, and content reads as the lit surface
       // on top. Naming these apart matters because `paneSurface` is also worn
@@ -425,12 +463,17 @@ export const velaTheme = {
       overlayControlBorder: withAlpha(palette.white, 0.34),
       overlaySurface: palette.white,
       paneSurface: palette.white,
+      // Base wash behind frosted rail/sidebar (web vibrancy).
+      shellBackdrop: palette.neutral200,
+      shellBackdropHighlight: palette.neutral100,
       progressActiveSurface: palette.blue500,
       progressActiveText: palette.white,
       sectionSurface: palette.white,
-      selectionSurface: palette.blue50,
-      selectionHoverSurface: palette.blue100,
-      selectionPressedSurface: palette.blue200,
+      // List/rail selection stays cool-neutral (NSTableView), not chat-blue.
+      // Opaque so hover/subtle fills remain visible when composited on top.
+      selectionSurface: palette.neutral200,
+      selectionHoverSurface: palette.neutral300,
+      selectionPressedSurface: palette.neutral300,
       separator: withAlpha(palette.neutral950, 0.06),
       sidebarSurface: palette.neutral100,
       statusDanger: palette.pink500,
@@ -463,10 +506,20 @@ export const velaTheme = {
     elevation: {
       overlay: 1,
     },
+    /**
+     * Frosted chrome fills for web. Opaque `navigationSurface` / `sidebarSurface`
+     * stay the native and contrast-test sources; `_web` styles composite these
+     * translucent fills over `shellBackdrop` with backdrop-filter.
+     */
+    material: {
+      blur: "saturate(180%) blur(20px)",
+      navigationFill: withAlpha(palette.white, 0.58),
+      sidebarFill: withAlpha(palette.white, 0.66),
+    },
     interaction: {
       disabledOpacity: 0.5,
-      focusRingOffset: 2,
-      focusRingWidth: 2,
+      focusRingOffset: 1,
+      focusRingWidth: 1,
       hitTargetInset: 6,
       hitTargetInsetCompact: 2,
       longPressDelay: 350,
@@ -479,18 +532,19 @@ export const velaTheme = {
       pressedScaleSubtle: 0.99,
     },
     icon: {
+      // Sized to SF Symbol toolbar classes (≈15/17/20), not Lucide defaults.
       size: {
-        compact: 14,
-        feature: 22,
-        hero: 30,
+        compact: 13,
+        feature: 20,
+        hero: 28,
         large: 20,
-        medium: 18,
-        small: 16,
+        medium: 17,
+        small: 15,
       },
       stroke: {
-        emphasis: 2,
-        regular: 1.8,
-        strong: 2.2,
+        emphasis: 1.75,
+        regular: 1.5,
+        strong: 2,
       },
     },
     layer: {
@@ -527,7 +581,8 @@ export const velaTheme = {
       transition: {
         control: {
           transitionDuration: `${duration.feedback}ms`,
-          transitionProperty: "background-color, border-color, color, opacity",
+          transitionProperty:
+            "background-color, border-color, box-shadow, color, opacity",
           transitionTimingFunction: easing.standard,
         },
         surface: {
@@ -539,12 +594,13 @@ export const velaTheme = {
     },
     radius: {
       circle: 9_999,
-      compactControl: 8,
-      control: 10,
-      overlay: 20,
+      // AppKit-adjacent control corners — 10/16 read as web product kits.
+      compactControl: 6,
+      control: 7,
+      overlay: 14,
       pane: 0,
       pill: 9_999,
-      section: 16,
+      section: 12,
     },
     stroke: {
       accent: 3,
@@ -669,7 +725,7 @@ export const velaTheme = {
         fontFamily: interfaceFontFamily,
         ...text.caption,
         fontWeight: "600",
-        letterSpacing: 0.8,
+        letterSpacing: 0,
       },
       label: {
         fontFamily: interfaceFontFamily,
@@ -727,7 +783,7 @@ export const velaTheme = {
         fontFamily: interfaceFontFamily,
         fontSize: 10,
         fontWeight: "600",
-        letterSpacing: 1.2,
+        letterSpacing: 0.2,
         lineHeight: 14,
       },
       pickerTitle: {
@@ -777,11 +833,11 @@ export const velaTheme = {
     authWorkspace: {
       cardPadding: 40,
       compactPanelMaxWidth: 640,
-      controlHeight: 48,
+      controlHeight: density.fieldHeight,
       desktopPadding: 48,
       desktopShellMaxWidth: 1_260,
       heroGap: 64,
-      primaryActionHeight: 52,
+      primaryActionHeight: density.collectionActionHeight,
       sequenceLineHeight: 2,
       sequenceLineMaxWidth: 48,
       setupShellMaxWidth: 1_160,
@@ -791,7 +847,6 @@ export const velaTheme = {
     },
     compactWorkspace: {
       bottomNavigationHeight: 68,
-      composerMinHeight: density.compactComposerMinHeight,
       listRowMinHeight: density.listRowMinHeight,
       navigationItemMinWidth: 0,
       switcherRowMinHeight: density.switcherRowMinHeight,
@@ -800,7 +855,9 @@ export const velaTheme = {
       composerAttachmentMaxWidth: 260,
       composerAttachmentMinWidth: 190,
       composerDesktopMaxWidth: 860,
-      composerMentionListOffset: 58,
+      // Clearance above the resting composer chrome so @-suggestions sit on
+      // top of the field, not over the typed line.
+      composerMentionListOffset: density.composerSurfaceMinHeight,
       composerSuggestionMinHeight: density.composerSuggestionMinHeight,
       composerToolbarMinHeight: density.composerToolbarMinHeight,
       channelManagementActionMinWidth: 64,
@@ -808,15 +865,21 @@ export const velaTheme = {
       compactActionGap: 3,
       composerInputMaxHeight: 112,
       composerSurfaceMinHeight: density.composerSurfaceMinHeight,
-      directRowMinHeight: density.shelfRowMinHeight,
       messageActionHorizontalPadding: 6,
       messageIndent: density.messageIndent,
       messageRowGap: density.messageRowGap,
-      toastTopInset: 72,
+      // Toast is absolutely placed inside messageStage (header + body).
+      toastTopInset: density.headerHeight + density.spaceMd,
     },
     control: {
       fieldHeight: density.fieldHeight,
       height: density.controlHeight,
+      // A selectable record in a scrolling shelf: a channel, a direct message,
+      // an agent, a computer. The chat sidebar and the management panes each
+      // had their own name for this height and a third name sat beside them,
+      // all three resolving to the same number and none of them holding the
+      // others to it.
+      rowHeight: density.shelfRowMinHeight,
       squareSize: density.controlHeight,
     },
     contentMeasure: {
@@ -828,9 +891,7 @@ export const velaTheme = {
     },
     desktopWorkspace: {
       composerHorizontalPadding: 16,
-      composerMinHeight: density.composerMinHeight,
       composerVerticalPadding: 12,
-      conversationRowMinHeight: density.shelfRowMinHeight,
       headerHeight: density.headerHeight,
       navigationControlSize: density.controlHeight,
       navigationGap: 8,
@@ -839,36 +900,41 @@ export const velaTheme = {
       sidebarWidth: listPaneWidth,
     },
     iconControl: {
-      compactSize: 32,
+      // Must stay ≤ controlHeight so rail tooltips can vertically center.
+      compactSize: density.iconControlCompactSize,
       denseSize: density.iconControlDenseSize,
-      // A circle floating free over the transcript — jump-to-latest, the
-      // history spinner — has no neighbouring control to line up with and is
-      // the only thing under the pointer where it sits, so it holds one size
-      // across densities rather than following the control scale.
-      floatingSize: 48,
+      // Jump-to-latest / history spinner — free of neighbouring controls, but
+      // still an input-device target, so it tracks density rather than a flat 48.
+      floatingSize: density.iconControlFloatingSize,
       microSize: 28,
       smallSize: density.iconControlSmallSize,
     },
     identity: {
-      avatarAccountSize: 52,
+      // Rail account control — same box as section nav icons.
+      avatarAccountSize: density.controlHeight,
       avatarCompactSize: density.avatarCompactSize,
-      avatarNavigationSize: 40,
-      avatarProminentSize: 38,
+      avatarNavigationSize: density.avatarNavigationSize,
+      // Face inside rail account chrome and the account popover. Tracks the
+      // row avatar tier so a 30pt pointer button is not stuffed with a 38pt face.
+      avatarProminentSize: density.avatarRowSize,
       avatarRowSize: density.avatarRowSize,
       brandHighlightOffsetX: -12,
       brandHighlightOffsetY: -14,
       brandHighlightSize: 38,
-      brandMarkSize: 46,
+      // Rail chrome mark — must clear the header band and sit near nav icons,
+      // not borrow the empty-state 48pt hero size.
+      brandMarkCompactSize: density.railBrandMarkSize,
+      brandMarkSize: density.railBrandMarkSize,
       connectionDotSize: 9,
       presenceDotSize: 10,
       statusDotSize: 7,
     },
     emptyState: {
-      iconSize: 48,
+      iconSize: density.collectionHeaderMarkSize,
       loadingMinHeight: 260,
       orbitCoreSize: 10,
-      orbitRingSize: 38,
-      orbitSize: 56,
+      orbitRingSize: density.avatarNavigationSize,
+      orbitSize: density.railBrandMarkSize,
       stageMinHeight: 280,
       timelineMinHeight: 300,
       workspaceMinHeight: 360,
@@ -876,12 +942,11 @@ export const velaTheme = {
     managementWorkspace: {
       actionHeight: density.controlHeight,
       collectionActionHeight: density.collectionActionHeight,
-      collectionCompactHeight: 96,
+      collectionCompactHeight: density.collectionCompactHeight,
       collectionCompactRowWidth: 220,
-      collectionAvatarSize: density.avatarRowSize,
       collectionWidth: listPaneWidth,
       compactPadding: 16,
-      compactResourceIconSize: 48,
+      compactResourceIconSize: density.collectionHeaderMarkSize,
       contentMaxWidth: columnMaxWidth,
       desktopPadding: 32,
       detailGap: 24,
@@ -893,9 +958,7 @@ export const velaTheme = {
       headerHeight: density.headerHeight,
       mediumPadding: 24,
       resourceActionCopyMinWidth: 180,
-      resourceActionMinHeight: 72,
-      resourceIconSize: 56,
-      rowMinHeight: density.shelfRowMinHeight,
+      resourceActionMinHeight: density.resourceActionMinHeight,
       sectionGap: 16,
       sectionPadding: 20,
       switcherMenuMaxHeight: 232,
@@ -904,31 +967,40 @@ export const velaTheme = {
       textareaMinHeight: 96,
     },
     resourceIdentity: {
-      factMinHeight: 64,
+      factMinHeight: density.factMinHeight,
       factMinWidth: 140,
       headerPaddingBottom: 20,
-      markSize: 48,
+      markSize: density.collectionHeaderMarkSize,
     },
     messageTimeline: {
+      // Hit size follows density. Reveal vs long-press is `pointerDensity`.
+      actionSize: density.messageActionSize,
       attachmentMinWidth: 210,
       deliveryMinHeight: 18,
       imageMaxHeight: 320,
-      pointerActionSize: 28,
       taskCardMaxWidth: 540,
       taskCardMinHeight: density.taskCardMinHeight,
       taskCardMinWidth: 240,
-      touchActionSize: 32,
     },
     overlay: {
       accountPopoverBottomInset: 4,
-      accountPopoverLeftInset: 66,
+      // Sit just past the rail edge so the menu clears the chrome.
+      accountPopoverLeftInset: density.railWidth + 6,
       accountMenuWidth: 280,
       confirmDialogMaxWidth: 420,
       contextPanelMinWidth: 320,
       contextPanelWidth: 392,
       previewControlInset: 20,
-      railTooltipLeftInset: 58,
-      railTooltipTopInset: 8,
+      // Anchored to the nav control box (same size as the icon button). A
+      // leftover 52×52 item + 58/8 insets from the touch-era rail left the
+      // pointer tooltip floating between icons and deep into the stage.
+      railTooltipLeftInset: density.controlHeight + density.spaceMd,
+      railTooltipTopInset: Math.max(
+        0,
+        Math.round(
+          (density.controlHeight - density.iconControlCompactSize) / 2,
+        ),
+      ),
       searchPanelMaxHeight: 310,
       serverListMaxHeight: 160,
       threadPanelMinWidth: 340,
@@ -936,13 +1008,13 @@ export const velaTheme = {
     },
     status: {
       badgeMinSize: 18,
-      bannerMinHeight: 52,
+      bannerMinHeight: density.bannerMinHeight,
       chipMinHeight: 28,
       inlineMinHeight: 36,
       notificationBadgeOffset: -6,
       notificationBadgeSize: 22,
       summaryMinHeight: 30,
-      toastMinHeight: 48,
+      toastMinHeight: density.toastMinHeight,
     },
     taskWorkspace: {
       compactListMaxHeight: 196,
@@ -950,8 +1022,6 @@ export const velaTheme = {
     terminalPanel: {
       controlMinWidth: 52,
       outputMinHeight: 260,
-      panelMinHeight: 480,
-      viewportChromeOffset: 184,
     },
   },
   shadows: {

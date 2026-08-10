@@ -2,8 +2,6 @@ import {
   agentMentionEligibility,
   channelAddress,
   composerDocumentHasContent,
-  composerDocumentMentions,
-  composerDocumentText,
   createComposerDocument,
   directAddress,
   mergeMessages,
@@ -60,6 +58,7 @@ import {
   type UpdateReminderInput,
   type UpdateServerInput,
   type UpdateTaskInput,
+  isEveryoneChannel,
 } from "@vela/client-core";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
@@ -379,6 +378,10 @@ export interface RefreshOptions {
   force?: boolean;
 }
 
+export interface CreateAgentOptions {
+  deployAndStart?: boolean;
+}
+
 export interface AppStoreState {
   account: Account | null;
   activeConversation: ActiveConversation | null;
@@ -440,7 +443,10 @@ export interface AppStoreState {
   threadLoading: boolean;
   threadMessages: Message[];
   threadRootMessage: Message | null;
-  createAgent(input: CreateAgentInput): Promise<AcceptedResource | null>;
+  createAgent(
+    input: CreateAgentInput,
+    options?: CreateAgentOptions,
+  ): Promise<AcceptedResource | null>;
   deleteAgent(agentId: string): Promise<AcceptedResource | null>;
   acceptJoinLink(token: string): Promise<JoinResult | null>;
   acceptInvite(token: string): Promise<AcceptedResource | null>;
@@ -759,7 +765,7 @@ export function createAppStore(
       await changeCurrentChannelMember(memberId, "add");
     },
 
-    async createAgent(input) {
+    async createAgent(input, options) {
       const action = "agent:create";
       const state = get();
       if (state.pendingAction) return null;
@@ -769,20 +775,73 @@ export function createAppStore(
         return null;
       }
       set({ error: null, pendingAction: action });
+      let accepted: AcceptedResource;
       try {
-        const accepted = await dependencies.platform.createAgent(
+        accepted = await dependencies.platform.createAgent(
           serverId,
           input,
           `${requestId()}:agent:create`,
         );
         trackOperations(accepted.operations, accepted.resourceId);
         const agents = await dependencies.platform.listAgents(serverId);
-        set({ agents, pendingAction: null });
-        return accepted;
+        if (get().currentServerId !== serverId) return accepted;
+        set({agents});
       } catch (error) {
-        set({ error: errorMessage(error), pendingAction: null });
+        if (get().currentServerId === serverId) {
+          set({error: errorMessage(error), pendingAction: null});
+        }
         return null;
       }
+      if (!options?.deployAndStart) {
+        set({pendingAction: null});
+        return accepted;
+      }
+      try {
+        const ready = await waitForAgent(
+          serverId,
+          accepted.resourceId,
+          (agent) => agent.imState === "ready",
+          "Agent 身份仍在创建中，请稍后再部署",
+        );
+        if (!ready) return accepted;
+        set({pendingAction: `agent:${accepted.resourceId}:deploy`});
+        const deployedOperation = await dependencies.platform.agentAction(
+          serverId,
+          accepted.resourceId,
+          "deploy",
+          `${requestId()}:agent:deploy`,
+        );
+        if (get().currentServerId !== serverId) return accepted;
+        trackOperations([deployedOperation], accepted.resourceId);
+        const deployed = await waitForAgent(
+          serverId,
+          accepted.resourceId,
+          (agent) =>
+            agent.imState === "ready" &&
+            agent.credentialVersion > 0 &&
+            agent.observedState === "stopped",
+          "Agent 部署仍在处理中，请稍后手动启动",
+        );
+        if (!deployed) return accepted;
+        set({pendingAction: `agent:${accepted.resourceId}:start`});
+        const startedOperation = await dependencies.platform.agentAction(
+          serverId,
+          accepted.resourceId,
+          "start",
+          `${requestId()}:agent:start`,
+        );
+        if (get().currentServerId !== serverId) return accepted;
+        trackOperations([startedOperation], accepted.resourceId);
+        const agents = await dependencies.platform.listAgents(serverId);
+        if (get().currentServerId === serverId) {
+          set({agents, pendingAction: null});
+        }
+      } catch (error) {
+        if (get().currentServerId === serverId) {
+          set({error: errorMessage(error), pendingAction: null});
+        }
+      }
+      return accepted;
     },
 
     async deleteAgent(agentId) {
@@ -3142,7 +3201,7 @@ export function createAppStore(
         set({ error: "Channel 不存在或尚未加载" });
         return;
       }
-      if (channel.systemKey === "all") {
+      if (isEveryoneChannel(channel)) {
         set({ error: "全员根群不能编辑" });
         return;
       }
@@ -3840,6 +3899,30 @@ export function createAppStore(
     throw new Error("Channel 创建仍在处理中，请稍后重试");
   }
 
+  async function waitForAgent(
+    serverId: string,
+    agentId: string,
+    ready: (agent: Agent) => boolean,
+    timeoutMessage: string,
+  ): Promise<Agent | null> {
+    for (let attempt = 0; attempt < pollLimit; attempt += 1) {
+      if (store.getState().currentServerId !== serverId) return null;
+      const agents = await dependencies.platform.listAgents(serverId);
+      if (store.getState().currentServerId !== serverId) return null;
+      store.setState({agents});
+      const agent = agents.find((item) => item.id === agentId);
+      if (agent?.imState === "error") {
+        throw new Error("Agent 身份创建失败，请检查错误后重试");
+      }
+      if (agent?.observedState === "error") {
+        throw new Error("Agent 部署失败，请检查运行状态后重试");
+      }
+      if (agent && ready(agent)) return agent;
+      if (attempt < pollLimit - 1) await sleep(pollInterval);
+    }
+    throw new Error(timeoutMessage);
+  }
+
   async function loadThreadReplyPage(
     thread: MessageThread,
     cursor: string | undefined,
@@ -4113,7 +4196,7 @@ export function createAppStore(
       try {
         const result = await pollOperation({
           initial: tracked.operation,
-          load: (signal) =>
+          load: (_signal) =>
             dependencies.platform.getOperation(serverId, operationId),
           ...(dependencies.operationPollNow
             ? { now: dependencies.operationPollNow }
@@ -4344,7 +4427,7 @@ export function mentionableAgents(
   if (!channel) {
     return [];
   }
-  if (channel.systemKey === "all") {
+  if (isEveryoneChannel(channel)) {
     return state.agents.filter(
       (agent) =>
         agent.imState === "ready" &&
@@ -4371,7 +4454,7 @@ export function mentionableMembers(
   if (active?.kind !== "channel") return [];
   const channel = state.channels.find((item) => item.id === active.channelId);
   if (!channel) return [];
-  const candidates = channel.systemKey === "all"
+  const candidates = isEveryoneChannel(channel)
     ? state.members
     : state.channelMembers;
   return candidates.filter(

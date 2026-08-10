@@ -17,21 +17,13 @@ import type {
   UpdateChannelInput,
 } from "@vela/client-core";
 import {
-  channelAddress,
-  composerDocumentMentions,
-  composerDocumentPreview,
-  composerDocumentText,
-  createComposerDocument,
-  createComposerTextDocument,
+  isEveryoneChannel,
+  memberCanManageServer,
 } from "@vela/client-core";
 import {
-  createContext,
   useEffect,
-  useContext,
   useState,
-  type ComponentType,
   type ReactElement,
-  type ReactNode,
 } from "react";
 import {
   Modal,
@@ -42,47 +34,54 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
-import ArrowLeft from "lucide-react-native/icons/arrow-left";
+import {styles} from "./workspace-shell.styles";
+import {
+  conversationPageModel,
+  type ConversationFormMode,
+  type ConversationSemanticState,
+} from "./workspace-shell-model";
 import ArrowRight from "lucide-react-native/icons/arrow-right";
 import AtSign from "lucide-react-native/icons/at-sign";
-import Bot from "lucide-react-native/icons/bot";
 import CircleAlert from "lucide-react-native/icons/circle-alert";
 import ChevronRight from "lucide-react-native/icons/chevron-right";
 import Hash from "lucide-react-native/icons/hash";
-import ListChecks from "lucide-react-native/icons/list-checks";
 import LogOut from "lucide-react-native/icons/log-out";
 import Menu from "lucide-react-native/icons/menu";
-import MessageCircle from "lucide-react-native/icons/message-circle";
-import Monitor from "lucide-react-native/icons/monitor";
 import Pencil from "lucide-react-native/icons/pencil";
 import Plus from "lucide-react-native/icons/plus";
 import Search from "lucide-react-native/icons/search";
-import Settings from "lucide-react-native/icons/settings";
 import UsersRound from "lucide-react-native/icons/users-round";
 import X from "lucide-react-native/icons/x";
 import Ellipsis from "lucide-react-native/icons/ellipsis";
-import type { LucideIcon } from "lucide-react-native";
 
 import {
   MessageComposer,
   type MentionableMember,
 } from "../components/message-composer";
-import { BrandMark } from "../components/brand-mark";
 import { MessageList } from "../components/message-list";
 import {
   OperationStatusList,
   type OperationStatusItem,
 } from "../components/operation-status-list";
 import { ThreadPanel } from "../components/thread-panel";
+import {
+  ClearableSearchField,
+  SearchEmptyCard,
+} from "../components/clearable-search-field";
 import { UserPicker } from "../components/user-picker";
-import { InlineEmptyState } from "../components/management-workspace";
+import {
+  CollectionIdentityMark,
+  InlineEmptyState,
+  ManagementField,
+  ManagementTextInput,
+  SelectionButton,
+  SelectionGroup,
+} from "../components/management-workspace";
 import { ActionButton } from "../primitives/action-button";
 import { IconActionButton } from "../primitives/icon-action-button";
-import { formatConversationTimestamp } from "../date-time";
 import {
-  memberByImUserId,
   memberIdentityLabel,
+  memberKindLabel,
   visibleMemberHandle,
 } from "../member-identity";
 import { workspaceLayoutMode } from "../workspace-layout-mode";
@@ -90,32 +89,41 @@ import { velaTheme } from "../tokens";
 import {
   ConversationPresentation,
   type ConversationPageModel,
-  type PresentationAction,
 } from "../presentation";
 import {
-  channelConversationSummary,
-  channelDraftPreview,
-  channelRowPreview,
-  composerDraftPreview,
+  channelDirectoryRow,
   conversationDirectory,
-  directDraftPreview,
+  directDirectoryRow,
   directIdentitySummary,
   draftLabel,
-  directRowPreview,
-  unreadLabel,
 } from "./conversation-directory";
+import {
+  conversationScope,
+  type ConversationScope,
+} from "./conversation-scope";
 import {
   HumanAccountIdentity,
   MobileBottomNavigation,
   PlatformFrame,
 } from "./app-frame";
 import { MaybeLink } from "./navigation-link";
+import {
+  useRegisterCompactNavigation,
+  useWorkspaceChromeHost,
+  workspaceSectionBody,
+} from "./workspace-chrome";
 import type { WorkspaceImStatus, WorkspaceSection } from "./workspace-section";
 
 export interface WorkspaceShellProps {
   account?: Account | null;
   activeConversation?: ActiveConversation | null;
   activeSection?: WorkspaceSection;
+  /**
+   * When false, render chat body only. Parent WorkspaceChrome owns the shared
+   * rail / bottom bar; compact chat registers its picker-aware bar there.
+   * Defaults to false under WorkspaceChrome, true when standing alone.
+   */
+  framed?: boolean;
   activeThread?: MessageThread | null;
   agents: Agent[];
   canManageChannels?: boolean;
@@ -210,612 +218,6 @@ export interface WorkspaceShellProps {
   threadRootMessage?: Message | null;
   viewportWidth?: number;
 }
-
-function conversationDraftKey(
-  conversation: ActiveConversation | null,
-): string | null {
-  if (!conversation) return null;
-  return conversation.kind === "channel"
-    ? `channel:${conversation.channelId}`
-    : `direct:${conversation.peerMemberId}`;
-}
-
-function emptyComposerDraft(): ComposerDraft {
-  return {attachments: [], document: createComposerDocument()};
-}
-
-
-type ConversationFormMode =
-  | "attach-file"
-  | "attach-image"
-  | "create-channel"
-  | "edit-channel"
-  | "manage-channel-members"
-  | "new-direct"
-  | "search"
-  | null;
-
-interface ConversationSemanticState {
-  closeForm(): void;
-  formMode: ConversationFormMode;
-  formValue: string;
-  formValues: Record<string, string>;
-  openForm(
-    mode: Exclude<ConversationFormMode, null>,
-    value?: string,
-    values?: Record<string, string>,
-  ): void;
-  setFormField(id: string, value: string): void;
-  setFormValue(value: string): void;
-}
-
-function conversationPageModel(
-  props: WorkspaceShellProps,
-  semantic: ConversationSemanticState,
-): ConversationPageModel {
-  const account = props.account ?? null;
-  const activeConversation =
-    props.activeConversation ??
-    (props.currentChannelId
-      ? ({ channelId: props.currentChannelId, kind: "channel" } as const)
-      : null);
-  const currentServer = props.servers.find(
-    (server) => server.id === props.currentServerId,
-  );
-  const currentChannel = props.channels.find(
-    (channel) => channel.id === props.currentChannelId,
-  );
-  const activeDirect =
-    activeConversation?.kind === "direct"
-      ? props.directConversations?.find(
-          (item) => item.peerUserId === activeConversation.peerUserId,
-        )
-      : undefined;
-  const activeDirectMember =
-    activeConversation?.kind === "direct"
-      ? props.members?.find(
-          (member) => member.imUserId === activeConversation.peerUserId,
-        )
-      : undefined;
-  const activeDraftKey = conversationDraftKey(activeConversation);
-  const draft = activeDraftKey
-    ? (props.conversationDrafts?.[activeDraftKey] ?? emptyComposerDraft())
-    : emptyComposerDraft();
-  const threadActive = Boolean(
-    activeConversation?.kind === "channel" &&
-      props.activeThread &&
-      props.threadRootMessage,
-  );
-  const searchActive = Boolean(
-    props.searchQuery || props.searchingMessages || props.searchError,
-  );
-  const displayedMessages = threadActive
-    ? [props.threadRootMessage!, ...(props.threadMessages ?? [])]
-    : searchActive
-      ? (props.searchResults ?? [])
-      : props.messages;
-  const currentMember = props.members?.find(
-    (member) =>
-      member.kind === "human" &&
-      (member.accountId === account?.id ||
-        member.imUserId === (props.currentImUserId ?? account?.imUserId)),
-  );
-  const canJoin = Boolean(
-    currentChannel &&
-      currentMember &&
-      !currentChannel.joined &&
-      currentChannel.systemKey !== "all" &&
-      (currentChannel.visibility === "public" || props.canManageChannels),
-  );
-  const draftText = composerDocumentText(draft.document);
-  const mentionIds = composerDocumentMentions(draft.document).map(
-    (mention) => mention.imUserId,
-  );
-  const existingDirectPeers = new Set(
-    (props.directConversations ?? []).map((item) => item.peerUserId),
-  );
-  const directCandidates = (props.members ?? []).filter(
-    (member) =>
-      Boolean(member.imUserId) &&
-      member.imState === "ready" &&
-      member.imUserId !== (props.currentImUserId ?? account?.imUserId) &&
-      !existingDirectPeers.has(member.imUserId!),
-  );
-  const navigationItems: Array<[WorkspaceSection, string]> = [
-    ["chat", "聊天"],
-    ["tasks", "任务"],
-    ["agents", "Agent"],
-    ["computers", "Computer"],
-    ["members", "成员"],
-  ];
-  const navigation: PresentationAction[] = navigationItems.map(
-    ([id, label]) => ({
-      id: `navigate-${id}`,
-      label,
-      run: () => props.onNavigateSection?.(id as WorkspaceSection),
-    }),
-  );
-  const commands: PresentationAction[] = [];
-  if (threadActive) {
-    commands.push({
-      id: "close-thread",
-      label: "返回频道",
-      run: () => props.onCloseThread?.(),
-      shortcut: "Esc",
-    });
-  }
-  if (
-    !threadActive &&
-    displayedMessages.length > 0 &&
-    !props.historyCompleted
-  ) {
-    commands.push({
-      disabled: props.loadingOlder,
-      id: "load-older",
-      label: props.loadingOlder ? "加载中" : "更早消息",
-      run: () => props.onLoadOlder?.(),
-      shortcut: "L",
-    });
-  }
-  if (activeConversation && props.onSearchMessages) {
-    commands.push({
-      disabled: props.searchingMessages,
-      id: "search",
-      label: props.searchingMessages ? "搜索中" : "搜索当前会话",
-      run: () => semantic.openForm("search", props.searchQuery ?? ""),
-      shortcut: "/",
-    });
-  }
-  if (searchActive) {
-    commands.push({
-      id: "clear-search",
-      label: "返回会话",
-      run: () => props.onClearMessageSearch?.(),
-      shortcut: "Esc",
-    });
-  }
-  if (props.canManageChannels && props.onCreateChannel) {
-    commands.push({
-      id: "create-channel",
-      kind: "primary",
-      label: "新建 Channel",
-      run: async () => {
-        await props.onOpenChannelManagement?.();
-        semantic.openForm("create-channel", "", {
-          name: "",
-          visibility: "public",
-        });
-      },
-      shortcut: "N",
-    });
-  }
-  if (
-    props.canManageChannels &&
-    currentChannel &&
-    currentChannel.systemKey !== "all"
-  ) {
-    commands.push({
-      id: "edit-channel",
-      label: "编辑 Channel",
-      run: async () => {
-        await props.onOpenChannelManagement?.();
-        semantic.openForm("edit-channel", "", {
-          name: currentChannel.name,
-          visibility: currentChannel.visibility,
-        });
-      },
-      shortcut: "E",
-    });
-    commands.push({
-      id: "manage-channel-members",
-      label: "管理 Channel 成员",
-      run: async () => {
-        await props.onOpenChannelManagement?.();
-        semantic.openForm("manage-channel-members");
-      },
-      shortcut: "M",
-    });
-  }
-  if (props.onSelectDirect && (props.members?.length ?? 0) > 0) {
-    commands.push({
-      id: "new-direct",
-      label: "新建私信",
-      run: () => semantic.openForm("new-direct"),
-      shortcut: "D",
-    });
-  }
-  if (canJoin && currentMember) {
-    commands.push({
-      id: "join-channel",
-      kind: "primary",
-      label: "加入频道",
-      run: () => props.onAddChannelMember?.(currentMember.id),
-      shortcut: "J",
-    });
-  }
-  if (props.imStatus !== "ready" && props.onReconnect) {
-    commands.push({
-      id: "reconnect",
-      kind: "primary",
-      label: "重新连接",
-      run: props.onReconnect,
-      shortcut: "R",
-    });
-  }
-
-  const title = searchActive
-    ? `搜索 · ${props.searchQuery || "当前会话"}`
-    : threadActive
-      ? `话题 · ${props.threadRootMessage?.senderName ?? "消息"}`
-      : activeConversation?.kind === "direct"
-        ? `@ ${activeDirect?.peerDisplayName ?? activeDirectMember?.displayName ?? activeConversation.peerUserId}`
-        : currentChannel
-          ? `# ${currentChannel.name}`
-          : "选择会话";
-  const onlineAgents = (props.serverAgents ?? props.agents).filter(
-    (agent) =>
-      agent.availability === "online" || agent.observedState === "running",
-  ).length;
-  const composerDisabled = Boolean(
-    props.sending ||
-      props.sendingThreadReply ||
-      props.imStatus !== "ready" ||
-      !activeConversation ||
-      (activeConversation.kind === "channel" && !currentChannel?.joined),
-  );
-  const composerActions: PresentationAction[] = [];
-  if (props.onAttachLocalPath && !threadActive) {
-    composerActions.push({
-      disabled: composerDisabled,
-      id: "attach-image",
-      label: "添加图片",
-      run: () => semantic.openForm("attach-image"),
-      shortcut: "I",
-    });
-    composerActions.push({
-      disabled: composerDisabled,
-      id: "attach-file",
-      label: "添加文件",
-      run: () => semantic.openForm("attach-file"),
-      shortcut: "F",
-    });
-  }
-
-  const form =
-    semantic.formMode === "search"
-      ? {
-          actions: [
-            {
-              id: "cancel",
-              label: "取消",
-              run: semantic.closeForm,
-            },
-            {
-              disabled: semantic.formValue.trim().length === 0,
-              id: "submit",
-              kind: "primary" as const,
-              label: "搜索",
-              run: async () => {
-                await props.onSearchMessages?.(semantic.formValue.trim());
-                semantic.closeForm();
-              },
-            },
-          ],
-          fields: [
-            {
-              id: "query",
-              label: "关键词",
-              onChange: semantic.setFormValue,
-              placeholder: "搜索当前会话",
-              value: semantic.formValue,
-            },
-          ],
-          title: "搜索消息",
-        }
-      : semantic.formMode === "attach-file" ||
-          semantic.formMode === "attach-image"
-        ? {
-            actions: [
-              {
-                id: "cancel",
-                label: "取消",
-                run: semantic.closeForm,
-              },
-              {
-                disabled: !semantic.formValue.trim().startsWith("/"),
-                id: "submit",
-                kind: "primary" as const,
-                label: "发送",
-                run: async () => {
-                  const kind =
-                    semantic.formMode === "attach-image" ? "image" : "file";
-                  await props.onAttachLocalPath?.({
-                    kind,
-                    path: semantic.formValue.trim(),
-                  });
-                  semantic.closeForm();
-                },
-              },
-            ],
-            fields: [
-              {
-                id: "path",
-                label: "本地绝对路径",
-                onChange: semantic.setFormValue,
-                placeholder: "/Users/name/path/to/file",
-                value: semantic.formValue,
-              },
-            ],
-            title:
-              semantic.formMode === "attach-image" ? "添加图片" : "添加文件",
-          }
-        : semantic.formMode === "create-channel" ||
-            semantic.formMode === "edit-channel"
-          ? {
-              actions: [
-                {
-                  id: "cancel",
-                  label: "取消",
-                  run: semantic.closeForm,
-                },
-                {
-                  disabled: !(semantic.formValues.name ?? "").trim(),
-                  id: "submit",
-                  kind: "primary" as const,
-                  label:
-                    semantic.formMode === "create-channel" ? "创建" : "保存",
-                  run: async () => {
-                    const input = {
-                      name: (semantic.formValues.name ?? "").trim(),
-                      visibility:
-                        semantic.formValues.visibility === "private"
-                          ? ("private" as const)
-                          : ("public" as const),
-                    };
-                    if (semantic.formMode === "create-channel") {
-                      await props.onCreateChannel?.(input);
-                    } else if (currentChannel) {
-                      await props.onUpdateChannel?.(currentChannel.id, input);
-                    }
-                    semantic.closeForm();
-                  },
-                },
-              ],
-              fields: [
-                {
-                  id: "channel-name",
-                  label: "Channel 名称",
-                  onChange: (value: string) =>
-                    semantic.setFormField("name", value),
-                  placeholder: "例如：研发",
-                  value: semantic.formValues.name ?? "",
-                },
-                {
-                  id: "visibility",
-                  label: "可见范围",
-                  onChange: (value: string) =>
-                    semantic.setFormField("visibility", value),
-                  options: [
-                    { label: "公开", value: "public" },
-                    { label: "私密", value: "private" },
-                  ],
-                  value: semantic.formValues.visibility ?? "public",
-                },
-              ],
-              title:
-                semantic.formMode === "create-channel"
-                  ? "新建 Channel"
-                  : `编辑 #${currentChannel?.name ?? "Channel"}`,
-            }
-          : semantic.formMode === "manage-channel-members" && currentChannel
-            ? {
-                actions: [
-                  {
-                    id: "close",
-                    label: "完成",
-                    run: semantic.closeForm,
-                  },
-                  ...(props.members ?? []).map((member) => {
-                    const joined = (props.channelMembers ?? []).some(
-                      (item) => item.id === member.id,
-                    );
-                    return {
-                      id: `${joined ? "remove" : "add"}-${member.id}`,
-                      label: `${joined ? "移除" : "添加"} ${member.displayName}`,
-                      run: () =>
-                        joined
-                          ? props.onRemoveChannelMember?.(member.id)
-                          : props.onAddChannelMember?.(member.id),
-                    };
-                  }),
-                ],
-                fields: [],
-                title: `管理 #${currentChannel.name} 成员`,
-              }
-            : semantic.formMode === "new-direct"
-              ? {
-                  actions: [
-                    {
-                      id: "cancel",
-                      label: "取消",
-                      run: semantic.closeForm,
-                    },
-                    ...directCandidates.map((member) => ({
-                      id: `direct-${member.id}`,
-                      label: `${member.displayName} · @${member.handle}`,
-                      run: async () => {
-                        await props.onSelectDirect?.(member.imUserId!);
-                        semantic.closeForm();
-                      },
-                    })),
-                  ],
-                  fields: [],
-                  title: "新建私信",
-                }
-              : undefined;
-
-  return {
-    commands,
-    composer: {
-      actions: composerActions,
-      disabled: composerDisabled,
-      onChange: (value) =>
-        props.onDraftChange?.({
-          ...draft,
-          document: createComposerTextDocument(value),
-        }),
-      onSend: async () => {
-        const text = draftText.trim();
-        if (!text || composerDisabled) return;
-        if (threadActive) {
-          await props.onSendThreadReply?.({mentionedUserIds: mentionIds, text});
-        } else {
-          await props.onSend(draft);
-        }
-      },
-      placeholder: activeConversation
-        ? `给 ${title} 发消息`
-        : "请先选择 Channel 或私信",
-      value: draftText,
-    },
-    conversations: [
-      ...props.channels.map((channel) => ({
-        id: channel.id,
-        kind: "channel" as const,
-        onSelect: () => props.onSelectChannel(channel.id),
-        selected:
-          activeConversation?.kind === "channel" &&
-          activeConversation.channelId === channel.id,
-        status: channel.joined ? "已加入" : "可加入",
-        subtitle:
-          channel.systemKey === "all"
-            ? "全体成员根群"
-            : channel.visibility === "public"
-              ? "公开频道"
-              : "私有频道",
-        title: `# ${channel.name}`,
-      })),
-      ...(props.directConversations ?? []).map((conversation) => ({
-        id: `direct-${conversation.peerUserId}`,
-        kind: "direct" as const,
-        onSelect: () => props.onSelectDirect?.(conversation.peerUserId),
-        selected:
-          activeConversation?.kind === "direct" &&
-          activeConversation.peerUserId === conversation.peerUserId,
-        subtitle: conversation.lastMessagePreview || "私信",
-        title: `@ ${conversation.peerDisplayName}`,
-        unreadCount: conversation.unreadCount,
-      })),
-    ],
-    empty: searchActive
-      ? {
-          description: props.searchError ?? "换一个关键词再试。",
-          title: props.searchingMessages ? "正在搜索" : "没有找到消息",
-        }
-      : activeConversation
-        ? {
-            description: "从这里和 Human、Agent 开始协作。",
-            title: "还没有消息",
-          }
-        : { description: "从左侧选择 Channel 或私信。", title: "选择一个会话" },
-    ...(props.error ? { error: props.error } : {}),
-    ...(form ? { form } : {}),
-    header: {
-      eyebrow: `${currentServer?.name ?? "SERVER"} / CHAT`,
-      summary: `${onlineAgents} 个 Agent 在线 · ${props.imStatus === "ready" ? "消息已连接" : "消息未连接"}`,
-      title,
-    },
-    messages: displayedMessages.map((message) => {
-      const actions: PresentationAction[] = [];
-      if (searchActive) {
-        actions.push({
-          disabled: props.locatingSearchResultId === message.id,
-          id: "locate",
-          label:
-            props.locatingSearchResultId === message.id
-              ? "定位中"
-              : "在会话中查看",
-          run: () => props.onLocateSearchResult?.(message.id),
-        });
-      }
-      if (message.delivery.state === "failed" && message.delivery.retryable) {
-        actions.push({
-          id: "retry",
-          label: "重试",
-          run: () => props.onRetryMessage?.(message.id),
-        });
-      }
-      if (!searchActive && message.delivery.state === "sent") {
-        if (
-          message.direction === "outgoing" &&
-          !message.id.startsWith("local:") &&
-          message.rawType !== "TIMRevokedElem" &&
-          props.onRevokeMessage
-        ) {
-          actions.push({
-            id: "revoke",
-            kind: "danger",
-            label: "撤回",
-            run: () => props.onRevokeMessage?.(message.id),
-          });
-        }
-        actions.push({
-          id: "quote",
-          label: "引用",
-          run: () => props.onQuoteMessage?.(message.id),
-        });
-        if (!threadActive && activeConversation?.kind === "channel") {
-          actions.push({
-            id: "thread",
-            label: "话题",
-            run: () => props.onOpenThread?.(message.id),
-          });
-          actions.push({
-            id: "task",
-            label: "生成任务",
-            run: () => props.onCreateTaskFromMessage?.(message.id),
-          });
-        }
-        actions.push({
-          id: "reaction-like",
-          label: "赞",
-          run: () => props.onToggleReaction?.(message.id, "👍"),
-        });
-      }
-      const delivery =
-        message.delivery.state === "failed"
-          ? "发送失败"
-          : message.delivery.state === "sending"
-            ? "发送中"
-            : message.delivery.state === "uploading"
-              ? `上传 ${message.delivery.progress}%`
-              : "已发送";
-      return {
-        actions,
-        id: message.id,
-        meta: [formatConversationTimestamp(message.createdAt), delivery]
-          .filter(Boolean)
-          .join(" · "),
-        sender: message.senderName,
-        text: message.text || "[不支持的消息类型]",
-      };
-    }),
-    shell: {
-      accountLabel: account?.displayName,
-      activeSection: "chat",
-      navigation,
-      onLogout: props.onLogout,
-      serverName: currentServer?.name,
-      serverOptions: props.servers.map((server) => ({
-        id: server.id,
-        label: server.name,
-        onSelect: () => props.onSelectServer(server.id),
-        selected: server.id === props.currentServerId,
-      })),
-    },
-  };
-}
-
 export function WorkspaceShell(props: WorkspaceShellProps) {
   const [formMode, setFormMode] = useState<ConversationFormMode>(null);
   const [formValue, setFormValue] = useState("");
@@ -839,20 +241,28 @@ export function WorkspaceShell(props: WorkspaceShellProps) {
     },
     setFormValue,
   };
+  const scope = conversationScope(props);
   return (
-    <ConversationPresentation model={() => conversationPageModel(props, semantic)}>
-      <GraphicalWorkspaceShell {...props} />
+    <ConversationPresentation
+      model={() => conversationPageModel(props, semantic, scope)}
+    >
+      {(pageModel) => (
+        <GraphicalWorkspaceShell
+          {...props}
+          pageModel={pageModel}
+          scope={scope}
+        />
+      )}
     </ConversationPresentation>
   );
 }
 
 function GraphicalWorkspaceShell({
   account = null,
-  activeConversation: activeConversationProp,
-  activeSection = "chat",
   activeThread = null,
   agents,
   canManageChannels = false,
+  framed,
   channelMembers = [],
   channels,
   conversationDrafts = {},
@@ -864,7 +274,6 @@ function GraphicalWorkspaceShell({
   directConversations = [],
   directHref,
   directConversationSync = "idle",
-  error,
   historyCompleted = true,
   initializingMessages = false,
   imStatus,
@@ -927,10 +336,17 @@ function GraphicalWorkspaceShell({
   threadLoading = false,
   threadMessages = [],
   threadRootMessage = null,
+  pageModel,
+  scope,
   viewportWidth,
-}: WorkspaceShellProps) {
+}: WorkspaceShellProps & {
+  pageModel: ConversationPageModel;
+  scope: ConversationScope;
+}) {
   const window = useWindowDimensions();
   const mode = workspaceLayoutMode(viewportWidth ?? window.width);
+  const activeSection = pageModel.shell.activeSection;
+  const error = pageModel.error ?? null;
   const [conversationPickerOpen, setConversationPickerOpen] = useState(false);
   const [channelManagementMode, setChannelManagementMode] = useState<
     "create" | "edit" | "members" | null
@@ -940,113 +356,55 @@ function GraphicalWorkspaceShell({
   useEffect(() => {
     if (messageFocusRequest) setMessageSearchOpen(false);
   }, [messageFocusRequest]);
-  const currentServer = servers.find((item) => item.id === currentServerId);
-  const currentChannel = channels.find((item) => item.id === currentChannelId);
-  const currentMember = members.find(
-    (member) =>
-      member.kind === "human" &&
-      member.imUserId === (currentImUserId ?? account?.imUserId),
-  );
-  const activeConversation =
-    activeConversationProp ??
-    (currentChannelId
-      ? ({ channelId: currentChannelId, kind: "channel" } as const)
-      : null);
-  const activeDraftKey = conversationDraftKey(activeConversation);
-  const activeDraft = activeDraftKey
-    ? (conversationDrafts[activeDraftKey] ?? emptyComposerDraft())
-    : emptyComposerDraft();
+  const {
+    activeConversation,
+    activeDirectConversation,
+    activeDirectMember,
+    activeDraft,
+    canJoinCurrentChannel,
+    currentChannel,
+    currentMember,
+    currentServer,
+    directCandidates,
+    joiningCurrentChannel,
+  } = scope;
   function changeMessageSearchOpen(open: boolean): void {
     setMessageSearchOpen(open);
     if (!open) onClearMessageSearch();
   }
-  const activeDirectConversation =
-    activeConversation?.kind === "direct"
-      ? (directConversations.find(
-          (item) => item.peerUserId === activeConversation.peerUserId,
-        ) ?? {
-          conversationId: "",
-          directConversationId:
-            activeConversation.directConversationId ??
-            `draft:${activeConversation.peerMemberId}`,
-          imGroupId: "",
-          imState: "provisioning" as const,
-          lastMessagePreview: "",
-          peerDisplayName:
-            members.find(
-              (member) => member.imUserId === activeConversation.peerUserId,
-            )?.displayName ?? activeConversation.peerUserId,
-          peerUserId: activeConversation.peerUserId,
-          peerMemberId: activeConversation.peerMemberId,
-          unreadCount: 0,
-        })
+  const joinCurrentChannel =
+    canJoinCurrentChannel && currentMember
+      ? () => onAddChannelMember(currentMember.id)
       : undefined;
-  const activeDirectMember = activeDirectConversation
-    ? memberByImUserId(members, activeDirectConversation.peerUserId)
-    : undefined;
-  const directCandidates = members.filter(
-    (member) =>
-      member.imState === "ready" &&
-      Boolean(member.imUserId) &&
-      member.imUserId !== currentImUserId &&
-      !directConversations.some(
-        (conversation) => conversation.peerUserId === member.imUserId,
-      ),
-  );
-  const canJoinCurrentChannel =
-    currentChannel !== undefined &&
-    !currentChannel.joined &&
-    currentChannel.systemKey !== "all" &&
-    (currentChannel.visibility === "public" || canManageChannels) &&
-    currentMember !== undefined;
-  const joiningCurrentChannel = Boolean(
-    currentChannel &&
-      currentMember &&
-      pendingAction ===
-        `channel:${currentChannel.id}:member:${currentMember.id}:add`,
-  );
-  const joinCurrentChannel = canJoinCurrentChannel
-    ? () => onAddChannelMember(currentMember.id)
-    : undefined;
-
-  if (mode === "compact") {
-    return (
-      <PlatformFrame
-        account={account}
+  const canManageServer = memberCanManageServer(currentMember);
+  const chromeHosted = useWorkspaceChromeHost();
+  const ownsFrame = framed ?? !chromeHosted;
+  const renderCompactNavigation = () =>
+    messageSearchOpen ? null : (
+      <MobileBottomNavigation
         activeSection={activeSection}
-        canManageServer={
-          currentMember?.role === "owner" || currentMember?.role === "admin"
-        }
-        currentServerId={currentServerId}
-        imStatus={imStatus}
-        navigation={null}
-        onLogout={onLogout}
+        canManageServer={canManageServer}
+        navigationOpen={conversationPickerOpen}
         onNavigateSection={onNavigateSection}
-        onSelectServer={onSelectServer}
-        renderCompactNavigation={() =>
-          messageSearchOpen ? null : (
-            <MobileBottomNavigation
-              activeSection={activeSection}
-              canManageServer={
-                currentMember?.role === "owner" ||
-                currentMember?.role === "admin"
-              }
-              navigationOpen={conversationPickerOpen}
-              onNavigateSection={onNavigateSection}
-              onToggle={() =>
-                channelManagementMode
-                  ? setChannelManagementMode(null)
-                  : setConversationPickerOpen((current) => !current)
-              }
-              sectionHref={sectionHref}
-            />
-          )
+        onToggle={() =>
+          channelManagementMode
+            ? setChannelManagementMode(null)
+            : setConversationPickerOpen((current) => !current)
         }
         sectionHref={sectionHref}
-        serverHref={serverHref}
-        servers={servers}
-        viewportWidth={viewportWidth}
-      >
+      />
+    );
+  useRegisterCompactNavigation(
+    ownsFrame
+      ? undefined
+      : mode === "compact"
+        ? renderCompactNavigation
+        : null,
+  );
+
+  if (mode === "compact") {
+    const compactBody = (
+      <>
         {channelManagementMode || directPickerOpen ? null : (
           <CompactHeader
             activeDirectConversation={activeDirectConversation}
@@ -1236,27 +594,32 @@ function GraphicalWorkspaceShell({
             viewportWidth={viewportWidth}
           />
         )}
+      </>
+    );
+    if (!ownsFrame) return compactBody;
+    return (
+      <PlatformFrame
+        account={account}
+        activeSection={activeSection}
+        canManageServer={canManageServer}
+        currentServerId={currentServerId}
+        imStatus={imStatus}
+        navigation={null}
+        onLogout={onLogout}
+        onNavigateSection={onNavigateSection}
+        onSelectServer={onSelectServer}
+        renderCompactNavigation={renderCompactNavigation}
+        sectionHref={sectionHref}
+        serverHref={serverHref}
+        servers={servers}
+        viewportWidth={viewportWidth}
+      >
+        {compactBody}
       </PlatformFrame>
     );
   }
 
-  return (
-    <PlatformFrame
-      account={account}
-      activeSection={activeSection}
-      canManageServer={
-        currentMember?.role === "owner" || currentMember?.role === "admin"
-      }
-      currentServerId={currentServerId}
-      imStatus={imStatus}
-      onLogout={onLogout}
-      onNavigateSection={onNavigateSection}
-      onSelectServer={onSelectServer}
-      sectionHref={sectionHref}
-      serverHref={serverHref}
-      servers={servers}
-      viewportWidth={viewportWidth}
-      navigation={
+  const conversationSidebar = (
         <ConversationSidebar
           activeConversation={activeConversation}
           agents={serverAgents}
@@ -1265,6 +628,7 @@ function GraphicalWorkspaceShell({
           channelHref={channelHref}
           conversationDrafts={conversationDrafts}
           conversationSummaries={conversationSummaries}
+          currentChannel={currentChannel}
           currentChannelId={currentChannelId}
           currentServer={currentServer}
           currentServerHref={
@@ -1272,7 +636,6 @@ function GraphicalWorkspaceShell({
           }
           directConversations={directConversations}
           directHref={directHref}
-          directConversationSync={directConversationSync}
           directPickerOpen={directPickerOpen}
           directCandidates={directCandidates}
           members={members}
@@ -1304,8 +667,9 @@ function GraphicalWorkspaceShell({
             return undefined;
           }}
         />
-      }
-    >
+  );
+  const desktopStage = (
+      <>
       <MessageStage
         agents={activeConversation?.kind === "direct" ? [] : agents}
         channel={currentChannel}
@@ -1402,6 +766,28 @@ function GraphicalWorkspaceShell({
           onUpdate={onUpdateChannel}
         />
       ) : null}
+      </>
+  );
+  if (!ownsFrame) {
+    return workspaceSectionBody(conversationSidebar, desktopStage);
+  }
+  return (
+    <PlatformFrame
+      account={account}
+      activeSection={activeSection}
+      canManageServer={canManageServer}
+      currentServerId={currentServerId}
+      imStatus={imStatus}
+      onLogout={onLogout}
+      onNavigateSection={onNavigateSection}
+      onSelectServer={onSelectServer}
+      sectionHref={sectionHref}
+      serverHref={serverHref}
+      servers={servers}
+      viewportWidth={viewportWidth}
+      navigation={conversationSidebar}
+    >
+      {desktopStage}
     </PlatformFrame>
   );
 }
@@ -1414,13 +800,13 @@ function ConversationSidebar({
   channels,
   conversationDrafts,
   conversationSummaries,
+  currentChannel,
   currentChannelId,
   currentServer,
   currentServerHref,
   directCandidates,
   directConversations,
   directHref,
-  directConversationSync,
   directPickerOpen,
   members,
   memberCount,
@@ -1440,13 +826,13 @@ function ConversationSidebar({
   channels: Channel[];
   conversationDrafts: Record<string, ComposerDraft>;
   conversationSummaries: ConversationSummary[];
+  currentChannel: Channel | undefined;
   currentChannelId: string | null;
   currentServer: Server | undefined;
   currentServerHref?: string;
   directCandidates: Member[];
   directConversations: DirectConversation[];
   directHref?: WorkspaceShellProps["directHref"];
-  directConversationSync: "complete" | "idle" | "pending";
   directPickerOpen: boolean;
   members: Member[];
   memberCount: number;
@@ -1460,7 +846,6 @@ function ConversationSidebar({
   onSelectServer(): void | Promise<void>;
 }) {
   const [filter, setFilter] = useState("");
-  const currentChannel = channels.find((item) => item.id === currentChannelId);
   const {
     channels: visibleChannels,
     directConversations: visibleDirectConversations,
@@ -1509,36 +894,14 @@ function ConversationSidebar({
         </Pressable>
       </MaybeLink>
       {!directPickerOpen ? (
-        <View style={styles.sidebarSearchWrap}>
-          <Search
-            color={velaTheme.semantic.color.iconMuted}
-            size={velaTheme.semantic.icon.size.compact}
-            strokeWidth={velaTheme.semantic.icon.stroke.regular}
-          />
-          <TextInput
-            accessibilityLabel="搜索频道、私信与成员"
-            onChangeText={setFilter}
-            placeholder="搜索频道、私信与成员"
-            placeholderTextColor={velaTheme.semantic.color.fieldPlaceholder}
-            style={styles.sidebarSearchInput}
-            value={filter}
-          />
-          {normalizedFilter ? (
-            <Pressable
-              accessibilityLabel="清除会话搜索"
-              accessibilityRole="button"
-              hitSlop={velaTheme.semantic.interaction.hitTargetInset}
-              onPress={() => setFilter("")}
-              style={styles.sidebarSearchClear}
-            >
-              <X
-                color={velaTheme.semantic.color.iconMuted}
-                size={velaTheme.semantic.icon.size.compact}
-                strokeWidth={velaTheme.semantic.icon.stroke.regular}
-              />
-            </Pressable>
-          ) : null}
-        </View>
+        <ClearableSearchField
+          accessibilityLabel="搜索频道、私信与成员"
+          clearAccessibilityLabel="清除会话搜索"
+          onChangeText={setFilter}
+          placeholder="搜索频道、私信与成员"
+          style={styles.sidebarSearch}
+          value={filter}
+        />
       ) : null}
       {!directPickerOpen &&
       (!normalizedFilter || visibleChannels.length > 0) ? (
@@ -1555,20 +918,20 @@ function ConversationSidebar({
                     onPress={onCreateChannel}
                     testID="channel-create-action"
                   />
-                  {currentChannel?.systemKey !== "all" && currentChannel ? (
-                    <IconActionButton
-                      accessibilityLabel={`编辑 Channel ${currentChannel.name}`}
-                      icon={Pencil}
-                      onPress={onEditChannel}
-                      testID="channel-edit-action"
-                    />
-                  ) : null}
-                  {currentChannel && currentChannel.systemKey !== "all" ? (
-                    <IconActionButton
-                      accessibilityLabel={`管理 Channel ${currentChannel.name} 的成员`}
-                      icon={UsersRound}
-                      onPress={onManageMembers}
-                    />
+                  {currentChannel && !isEveryoneChannel(currentChannel) ? (
+                    <>
+                      <IconActionButton
+                        accessibilityLabel={`编辑 Channel ${currentChannel.name}`}
+                        icon={Pencil}
+                        onPress={onEditChannel}
+                        testID="channel-edit-action"
+                      />
+                      <IconActionButton
+                        accessibilityLabel={`管理 Channel ${currentChannel.name} 的成员`}
+                        icon={UsersRound}
+                        onPress={onManageMembers}
+                      />
+                    </>
                   ) : null}
                 </>
               ) : null}
@@ -1637,10 +1000,10 @@ function ConversationSidebar({
           ) : null}
           {normalizedFilter && !hasSearchMatches ? (
             <View style={styles.sidebarSearchEmpty}>
-              <Text style={styles.compactDirectorySearchEmptyTitle}>
-                没有匹配的会话。
-              </Text>
-              <Text style={styles.channelMeta}>换个关键词试试。</Text>
+              <SearchEmptyCard
+                description="换个关键词试试。"
+                title="没有匹配的会话。"
+              />
             </View>
           ) : null}
         </>
@@ -1675,40 +1038,34 @@ function DirectConversationList({
         <Text style={[styles.empty, styles.directEmpty]}>{emptyLabel}</Text>
       ) : null}
       {conversations.map((conversation) => {
-        const selected =
-          activeConversation?.kind === "direct" &&
-          activeConversation.peerUserId === conversation.peerUserId;
-        const href = directHref?.(conversation.peerUserId);
-        const lastMessageTime = conversation.lastMessageAt
-          ? formatConversationTimestamp(conversation.lastMessageAt)
-          : "";
-        const draftPreview = directDraftPreview(
-          conversation,
+        const row = directDirectoryRow(conversation, {
+          activeConversation,
           conversationDrafts,
-        );
-        const directMember = memberByImUserId(members, conversation.peerUserId);
-        const identityLabel = memberIdentityLabel(directMember);
-        const identitySummary = directIdentitySummary(directMember);
-        const unread = unreadLabel(conversation.unreadCount);
+          directHref,
+          members,
+        });
         return (
-          <MaybeLink href={href} key={conversation.conversationId}>
+          <MaybeLink href={row.href} key={conversation.conversationId}>
             <Pressable
-              accessibilityLabel={`打开私信 ${conversation.peerDisplayName}${identityLabel ? ` ${identityLabel}` : ""}`}
-              accessibilityRole={href ? "link" : "button"}
-              accessibilityState={{ selected }}
-              aria-current={selected ? "page" : undefined}
+              accessibilityLabel={row.accessibilityLabel}
+              accessibilityRole={row.href ? "link" : "button"}
+              accessibilityState={{ selected: row.selected }}
+              aria-current={row.selected ? "page" : undefined}
               onPress={
-                href ? undefined : () => onSelect(conversation.peerUserId)
+                row.href
+                  ? undefined
+                  : () => onSelect(conversation.peerUserId)
               }
               style={
-                selected ? styles.directButtonSelected : styles.directButton
+                row.selected
+                  ? styles.directButtonSelected
+                  : styles.directButton
               }
             >
-              <View style={styles.directAvatar}>
-                <Text style={styles.directAvatarText}>
-                  {conversation.peerDisplayName.slice(0, 1)}
-                </Text>
-              </View>
+              <CollectionIdentityMark
+                identityKind={row.identityKind}
+                monogram={row.monogram}
+              />
               <View style={styles.channelButtonCopy}>
                 <View style={styles.directHeader}>
                   <Text
@@ -1717,13 +1074,15 @@ function DirectConversationList({
                   >
                     {conversation.peerDisplayName}
                   </Text>
-                  {identitySummary ? (
+                  {row.identitySummary ? (
                     <Text numberOfLines={1} style={styles.directHandle}>
-                      {identitySummary}
+                      {row.identitySummary}
                     </Text>
                   ) : null}
-                  {lastMessageTime ? (
-                    <Text style={styles.directTime}>{lastMessageTime}</Text>
+                  {row.lastMessageTime ? (
+                    <Text style={styles.directTime}>
+                      {row.lastMessageTime}
+                    </Text>
                   ) : null}
                 </View>
                 <View style={styles.directFooter}>
@@ -1732,14 +1091,14 @@ function DirectConversationList({
                     style={[
                       styles.channelMeta,
                       styles.directPreview,
-                      draftPreview ? styles.draftMeta : null,
+                      row.draftPreview ? styles.draftMeta : null,
                     ]}
                   >
-                    {directRowPreview(conversation, draftPreview)}
+                    {row.preview}
                   </Text>
-                  {unread ? (
+                  {row.unread ? (
                     <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadBadgeText}>{unread}</Text>
+                      <Text style={styles.unreadBadgeText}>{row.unread}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -1788,6 +1147,7 @@ function DirectMemberRow({
   onSelect(peerUserId: string): void | Promise<void>;
 }) {
   const href = member.imUserId ? directHref?.(member.imUserId) : undefined;
+  const identitySummary = directIdentitySummary(member);
   const identityLabel = memberIdentityLabel(member);
   return (
     <MaybeLink href={href}>
@@ -1799,17 +1159,13 @@ function DirectMemberRow({
         }
         style={styles.directButton}
       >
-        <View style={styles.directAvatar}>
-          <Text style={styles.directAvatarText}>
-            {member.displayName.slice(0, 1)}
-          </Text>
-        </View>
+        <CollectionIdentityMark
+          identityKind={member.kind}
+          monogram={member.displayName.slice(0, 1)}
+        />
         <View style={styles.channelButtonCopy}>
           <Text style={styles.channelName}>{member.displayName}</Text>
-          <Text style={styles.channelMeta}>
-            {identityLabel ? `${identityLabel} · ` : ""}
-            {member.kind === "agent" ? "Agent" : "自然人"}
-          </Text>
+          <Text style={styles.channelMeta}>{identitySummary}</Text>
         </View>
       </Pressable>
     </MaybeLink>
@@ -1842,41 +1198,38 @@ function ChannelList({
         <Text style={styles.empty}>{emptyLabel}</Text>
       ) : null}
       {channels.map((channel) => {
-        const selected = channel.id === currentChannelId;
-        const href = channelHref?.(channel);
-        const draftPreview = composerDraftPreview(
-          conversationDrafts[`channel:${channel.id}`],
-        );
-        const summary = channelConversationSummary(
-          channel,
+        const row = channelDirectoryRow(channel, {
+          channelHref,
+          conversationDrafts,
           conversationSummaries,
-        );
-        const lastMessageTime = summary?.lastMessageAt
-          ? formatConversationTimestamp(summary.lastMessageAt)
-          : "";
-        const unread = unreadLabel(summary?.unreadCount);
+          currentChannelId,
+        });
         return (
-          <MaybeLink href={href} key={channel.id}>
+          <MaybeLink href={row.href} key={channel.id}>
             <Pressable
-              accessibilityLabel={`打开 Channel ${channel.name}`}
-              accessibilityRole={href ? "link" : "button"}
-              accessibilityState={{ selected }}
-              aria-current={selected ? "page" : undefined}
-              onPress={href ? undefined : () => onSelectChannel(channel.id)}
+              accessibilityLabel={row.accessibilityLabel}
+              accessibilityRole={row.href ? "link" : "button"}
+              accessibilityState={{ selected: row.selected }}
+              aria-current={row.selected ? "page" : undefined}
+              onPress={
+                row.href ? undefined : () => onSelectChannel(channel.id)
+              }
               style={
-                selected ? styles.channelButtonSelected : styles.channelButton
+                row.selected
+                  ? styles.channelButtonSelected
+                  : styles.channelButton
               }
               testID={`channel-row-${channel.id}`}
             >
               <View
                 style={[
                   styles.channelIcon,
-                  selected && styles.channelIconSelected,
+                  row.selected && styles.channelIconSelected,
                 ]}
               >
                 <Hash
                   color={
-                    selected
+                    row.selected
                       ? velaTheme.semantic.color.iconAccent
                       : velaTheme.semantic.color.iconMuted
                   }
@@ -1892,15 +1245,17 @@ function ChannelList({
                       style={[
                         styles.channelName,
                         styles.channelNameInRow,
-                        selected && styles.channelNameSelected,
+                        row.selected && styles.channelNameSelected,
                       ]}
                     >
                       {channel.name}
                     </Text>
                     <ChannelKindBadge channel={channel} />
                   </View>
-                  {lastMessageTime ? (
-                    <Text style={styles.directTime}>{lastMessageTime}</Text>
+                  {row.lastMessageTime ? (
+                    <Text style={styles.directTime}>
+                      {row.lastMessageTime}
+                    </Text>
                   ) : null}
                 </View>
                 <View style={styles.directFooter}>
@@ -1909,14 +1264,14 @@ function ChannelList({
                     style={[
                       styles.channelMeta,
                       styles.directPreview,
-                      draftPreview ? styles.draftMeta : null,
+                      row.draftPreview ? styles.draftMeta : null,
                     ]}
                   >
-                    {channelRowPreview(channel, summary, draftPreview)}
+                    {row.preview}
                   </Text>
-                  {!selected && unread ? (
+                  {!row.selected && row.unread ? (
                     <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadBadgeText}>{unread}</Text>
+                      <Text style={styles.unreadBadgeText}>{row.unread}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -1931,7 +1286,7 @@ function ChannelList({
 
 function ChannelKindBadge({ channel }: { channel: Channel }) {
   const label =
-    channel.systemKey === "all"
+    isEveryoneChannel(channel)
       ? "系统"
       : channel.visibility === "private"
         ? "私密"
@@ -1942,7 +1297,7 @@ function ChannelKindBadge({ channel }: { channel: Channel }) {
       style={[
         styles.channelKindBadge,
         channel.visibility === "private" && styles.channelKindBadgePrivate,
-        channel.systemKey === "all" && styles.channelKindBadgeSystem,
+        isEveryoneChannel(channel) && styles.channelKindBadgeSystem,
       ]}
     >
       <Text style={styles.channelKindBadgeText}>{label}</Text>
@@ -1951,7 +1306,7 @@ function ChannelKindBadge({ channel }: { channel: Channel }) {
 }
 
 function channelKindLongLabel(channel: Channel): string {
-  if (channel.systemKey === "all") return "所有成员自动加入";
+  if (isEveryoneChannel(channel)) return "所有成员自动加入";
   return channel.visibility === "private" ? "私密频道" : "公开频道";
 }
 
@@ -2125,7 +1480,7 @@ function MessageStage({
     !direct &&
     channel !== undefined &&
     !channel.joined &&
-    channel.systemKey !== "all";
+    !isEveryoneChannel(channel);
   const hasConversation = direct || channel !== undefined;
   const conversationTitle = direct
     ? directConversation.peerDisplayName
@@ -2191,15 +1546,15 @@ function MessageStage({
             <View style={styles.messageHeaderIcon}>
               {direct ? (
                 <AtSign
-                  color={velaTheme.semantic.color.iconAccent}
+                  color={velaTheme.semantic.color.iconSecondary}
                   size={velaTheme.semantic.icon.size.medium}
-                  strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
+                  strokeWidth={velaTheme.semantic.icon.stroke.regular}
                 />
               ) : (
                 <Hash
-                  color={velaTheme.semantic.color.iconAccent}
+                  color={velaTheme.semantic.color.iconSecondary}
                   size={velaTheme.semantic.icon.size.medium}
-                  strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
+                  strokeWidth={velaTheme.semantic.icon.stroke.regular}
                 />
               )}
             </View>
@@ -2431,6 +1786,7 @@ function MessageSearchPanel({
           returnKeyType="search"
           style={styles.searchInput}
           value={draft}
+          {...({dataSet: {velaField: "form"}} as object)}
         />
         <ActionButton
           accessibilityLabel="执行消息搜索"
@@ -2589,7 +1945,7 @@ function directConversationDescription(member: Member | undefined): string {
     return "与你的私密协作会话";
   }
 
-  const actor = member.kind === "agent" ? "Agent" : "自然人";
+  const actor = memberKindLabel[member.kind];
   const handle = memberIdentityLabel(member);
   return handle ? `${actor} 私信 · ${handle}` : `${actor} 私信`;
 }
@@ -2767,11 +2123,11 @@ function ChannelManagementPanel({
 
   function renderMember(member: Member, joined: boolean): ReactElement {
     const visibleHandle = visibleMemberHandle(member);
-    const memberKind = member.kind === "agent" ? "Agent" : "自然人";
+    const memberKind = memberKindLabel[member.kind];
     const isCurrentMember =
       joined && Boolean(currentImUserId) && member.imUserId === currentImUserId;
     const canChangeMembership =
-      channel?.systemKey !== "all" &&
+      !isEveryoneChannel(channel) &&
       (joined ? isCurrentMember || canManageMembers : canManageMembers);
     const actionLabel = joined ? (isCurrentMember ? "退出" : "移出") : "添加";
     const actionIdentity =
@@ -2780,24 +2136,10 @@ function ChannelManagementPanel({
         : member.displayName;
     return (
       <View key={member.id} style={styles.channelMemberRow}>
-        <View
-          style={[
-            styles.channelMemberAvatar,
-            member.kind === "agent" && styles.channelMemberAvatarAgent,
-          ]}
-        >
-          {member.kind === "agent" ? (
-            <Bot
-              color={velaTheme.semantic.color.iconAccent}
-              size={velaTheme.semantic.icon.size.small}
-              strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-            />
-          ) : (
-            <Text style={styles.channelMemberAvatarText}>
-              {member.displayName.slice(0, 1).toUpperCase()}
-            </Text>
-          )}
-        </View>
+        <CollectionIdentityMark
+          identityKind={member.kind}
+          monogram={member.displayName.slice(0, 1)}
+        />
         <View style={styles.channelMemberIdentity}>
           <Text numberOfLines={1} style={styles.channelMemberName}>
             {member.displayName}
@@ -2874,7 +2216,7 @@ function ChannelManagementPanel({
       </View>
       {mode === "members" ? (
         <ScrollView contentContainerStyle={styles.channelMemberList}>
-          {channel?.systemKey === "all" ? null : (
+          {isEveryoneChannel(channel) ? null : (
             <View style={styles.channelMembershipContext}>
               <Text style={styles.channelMembershipContextText}>
                 {channel?.visibility === "public"
@@ -2903,7 +2245,7 @@ function ChannelManagementPanel({
                 items: channelMembers,
                 title: "当前成员",
               },
-              ...(canManageMembers && channel?.systemKey !== "all"
+              ...(canManageMembers && !isEveryoneChannel(channel)
                 ? [
                     {
                       emptyText: "Server 中的 Agent 都已加入这个 Channel。",
@@ -2923,23 +2265,20 @@ function ChannelManagementPanel({
           />
         </ScrollView>
       ) : (
-        <View style={styles.channelForm}>
-          <View style={styles.channelField}>
-            <Text style={styles.channelFieldLabel}>Channel 名称</Text>
-            <TextInput
+        <View style={styles.channelForm} testID="channel-form">
+          <ManagementField label="Channel 名称">
+            <ManagementTextInput
               accessibilityLabel={
                 mode === "create" ? "Channel 名称" : "编辑 Channel 名称"
               }
               editable={!disabled}
               onChangeText={setName}
               placeholder="例如：delivery"
-              style={styles.channelInput}
               value={name}
             />
-          </View>
-          <View style={styles.channelField}>
-            <Text style={styles.channelFieldLabel}>Channel 描述</Text>
-            <TextInput
+          </ManagementField>
+          <ManagementField label="Channel 描述">
+            <ManagementTextInput
               accessibilityLabel={
                 mode === "create" ? "Channel 描述" : "编辑 Channel 描述"
               }
@@ -2947,55 +2286,49 @@ function ChannelManagementPanel({
               multiline
               onChangeText={setDescription}
               placeholder="这个 Channel 用来做什么？"
-              style={[styles.channelInput, styles.channelTextarea]}
               value={description}
             />
-          </View>
+          </ManagementField>
           {mode === "create" ? (
-            <View style={styles.channelVisibilityField}>
-              <View style={styles.channelVisibilityRow}>
+            <ManagementField
+              hint={
+                visibility === "public"
+                  ? "Server 成员可以发现并自助加入。"
+                  : "仅被添加的 Server 成员可以进入。"
+              }
+              label="可见性"
+            >
+              <SelectionGroup>
                 {(["public", "private"] as const).map((value) => (
-                  <Pressable
+                  <SelectionButton
                     accessibilityLabel={
                       value === "private"
                         ? "设为私密 Channel"
                         : "设为公开 Channel"
                     }
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: visibility === value }}
-                    aria-pressed={visibility === value}
                     key={value}
+                    label={value === "private" ? "私密" : "公开"}
+                    layout="equal"
                     onPress={() => setVisibility(value)}
-                    style={[
-                      styles.channelVisibilityButton,
-                      visibility === value &&
-                        styles.channelVisibilityButtonActive,
-                    ]}
-                  >
-                    <Text style={styles.channelVisibilityButtonText}>
-                      {value === "private" ? "私密" : "公开"}
-                    </Text>
-                  </Pressable>
+                    selected={visibility === value}
+                  />
                 ))}
-              </View>
-              <Text style={styles.channelVisibilityNotice}>
-                {visibility === "public"
-                  ? "Server 成员可以发现并自助加入。"
-                  : "仅被添加的 Server 成员可以进入。"}
-              </Text>
-            </View>
+              </SelectionGroup>
+            </ManagementField>
           ) : (
             <Text style={styles.channelVisibilityNotice}>
               可见性在创建后不可修改：
               {channel?.visibility === "private" ? "私密" : "公开"}
             </Text>
           )}
-          <Pressable
+          <ActionButton
             accessibilityLabel={
               mode === "create" ? "创建 Channel" : "保存 Channel"
             }
-            accessibilityRole="button"
+            align="stretch"
             disabled={disabled || name.trim().length === 0}
+            importance="primary"
+            label={mode === "create" ? "创建 Channel" : "保存 Channel"}
             onPress={async () => {
               if (mode === "create") {
                 await onCreate({
@@ -3011,12 +2344,7 @@ function ChannelManagementPanel({
               }
               onClose();
             }}
-            style={styles.channelPanelSubmit}
-          >
-            <Text style={styles.channelPanelSubmitText}>
-              {mode === "create" ? "创建 Channel" : "保存 Channel"}
-            </Text>
-          </Pressable>
+          />
         </View>
       )}
       {pendingRemoval ? (
@@ -3224,43 +2552,18 @@ function CompactConversationPicker({
           );
         })}
       </View>
-      <View style={styles.compactDirectorySearch}>
-        <Search
-          color={velaTheme.semantic.color.iconMuted}
-          size={velaTheme.semantic.icon.size.small}
-          strokeWidth={velaTheme.semantic.icon.stroke.regular}
-        />
-        <TextInput
-          accessibilityLabel="搜索频道、私信与成员"
-          onChangeText={setFilter}
-          placeholder="搜索频道、私信与成员"
-          placeholderTextColor={velaTheme.semantic.color.fieldPlaceholder}
-          style={styles.compactDirectorySearchInput}
-          value={filter}
-        />
-        {normalizedFilter ? (
-          <Pressable
-            accessibilityLabel="清除会话搜索"
-            accessibilityRole="button"
-            hitSlop={velaTheme.semantic.interaction.hitTargetInset}
-            onPress={() => setFilter("")}
-            style={styles.compactDirectorySearchClear}
-          >
-            <X
-              color={velaTheme.semantic.color.iconMuted}
-              size={velaTheme.semantic.icon.size.small}
-              strokeWidth={velaTheme.semantic.icon.stroke.regular}
-            />
-          </Pressable>
-        ) : null}
-      </View>
+      <ClearableSearchField
+        accessibilityLabel="搜索频道、私信与成员"
+        clearAccessibilityLabel="清除会话搜索"
+        onChangeText={setFilter}
+        placeholder="搜索频道、私信与成员"
+        value={filter}
+      />
       {noMatches ? (
-        <View style={styles.compactDirectorySearchEmpty}>
-          <Text style={styles.compactDirectorySearchEmptyTitle}>
-            没有匹配的会话。
-          </Text>
-          <Text style={styles.channelMeta}>换个关键词试试。</Text>
-        </View>
+        <SearchEmptyCard
+          description="换个关键词试试。"
+          title="没有匹配的会话。"
+        />
       ) : null}
       {!noMatches && (!normalizedFilter || visibleChannels.length > 0) ? (
         <Text style={styles.sectionLabel}>频道</Text>
@@ -3278,56 +2581,54 @@ function CompactConversationPicker({
               onPress={onCreateChannel}
             />
           </View>
-          {currentChannel?.systemKey !== "all" && currentChannel ? (
-            <View style={styles.compactChannelActionSlot}>
-              <ActionButton
-                accessibilityLabel={`编辑 Channel ${currentChannel.name}`}
-                align="stretch"
-                icon={Pencil}
-                importance="secondary"
-                label="编辑"
-                onPress={onEditChannel}
-              />
-            </View>
-          ) : null}
-          {currentChannel && currentChannel.systemKey !== "all" ? (
-            <View style={styles.compactChannelActionSlot}>
-              <ActionButton
-                accessibilityLabel={`管理 Channel ${currentChannel.name} 的成员`}
-                align="stretch"
-                icon={UsersRound}
-                importance="secondary"
-                label="成员"
-                onPress={onManageMembers}
-              />
-            </View>
+          {currentChannel && !isEveryoneChannel(currentChannel) ? (
+            <>
+              <View style={styles.compactChannelActionSlot}>
+                <ActionButton
+                  accessibilityLabel={`编辑 Channel ${currentChannel.name}`}
+                  align="stretch"
+                  icon={Pencil}
+                  importance="secondary"
+                  label="编辑"
+                  onPress={onEditChannel}
+                />
+              </View>
+              <View style={styles.compactChannelActionSlot}>
+                <ActionButton
+                  accessibilityLabel={`管理 Channel ${currentChannel.name} 的成员`}
+                  align="stretch"
+                  icon={UsersRound}
+                  importance="secondary"
+                  label="成员"
+                  onPress={onManageMembers}
+                />
+              </View>
+            </>
           ) : null}
         </View>
       ) : null}
       {!noMatches && (!normalizedFilter || visibleChannels.length > 0) ? (
         <View style={styles.compactChannelList}>
           {visibleChannels.map((channel) => {
-            const selected = channel.id === currentChannelId;
-            const href = channelHref?.(channel);
-            const draftPreview = composerDraftPreview(
-              conversationDrafts[`channel:${channel.id}`],
-            );
-            const summary = channelConversationSummary(
-              channel,
+            const row = channelDirectoryRow(channel, {
+              channelHref,
+              conversationDrafts,
               conversationSummaries,
-            );
-            const unread = unreadLabel(summary?.unreadCount);
+              currentChannelId,
+            });
             return (
-              <MaybeLink href={href} key={channel.id}>
+              <MaybeLink href={row.href} key={channel.id}>
                 <Pressable
-                  accessibilityLabel={`打开 Channel ${channel.name}`}
-                  accessibilityRole={href ? "link" : "button"}
-                  accessibilityState={{ selected }}
-                  aria-current={selected ? "page" : undefined}
-                  onPress={href ? undefined : () => onSelectChannel(channel.id)}
+                  accessibilityLabel={row.accessibilityLabel}
+                  accessibilityRole={row.href ? "link" : "button"}
+                  accessibilityState={{ selected: row.selected }}
+                  aria-current={row.selected ? "page" : undefined}
+                  onPress={
+                    row.href ? undefined : () => onSelectChannel(channel.id)
+                  }
                   style={[
                     styles.compactChannelButton,
-                    selected && styles.compactChannelButtonSelected,
+                    row.selected && styles.compactChannelButtonSelected,
                   ]}
                 >
                   <View style={styles.compactChannelIdentity}>
@@ -3348,17 +2649,19 @@ function CompactConversationPicker({
                       </View>
                       <Text
                         numberOfLines={1}
-                      style={
-                        draftPreview ? styles.draftMeta : styles.channelMeta
-                      }
-                    >
-                      {channelRowPreview(channel, summary, draftPreview)}
-                    </Text>
+                        style={
+                          row.draftPreview
+                            ? styles.draftMeta
+                            : styles.channelMeta
+                        }
+                      >
+                        {row.preview}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-                {!selected && unread ? (
-                  <Text style={styles.channelArrow}>{unread}</Text>
-                ) : (
+                  {!row.selected && row.unread ? (
+                    <Text style={styles.channelArrow}>{row.unread}</Text>
+                  ) : (
                     <View testID={`compact-channel-chevron-${channel.name}`}>
                       <ChevronRight
                         color={velaTheme.semantic.color.iconMuted}
@@ -3397,38 +2700,33 @@ function CompactConversationPicker({
       (!normalizedFilter || visibleDirectConversations.length > 0) ? (
         <View style={styles.compactChannelList}>
           {visibleDirectConversations.map((conversation) => {
-            const selected =
-              activeConversation?.kind === "direct" &&
-              activeConversation.peerUserId === conversation.peerUserId;
-            const href = directHref?.(conversation.peerUserId);
-            const draftPreview = directDraftPreview(
-              conversation,
+            const row = directDirectoryRow(conversation, {
+              activeConversation,
               conversationDrafts,
-            );
-            const directMember = memberByImUserId(
+              directHref,
               members,
-              conversation.peerUserId,
-            );
-            const identityLabel = memberIdentityLabel(directMember);
-            const identitySummary = directIdentitySummary(directMember);
-            const unread = unreadLabel(conversation.unreadCount);
+            });
             return (
-              <MaybeLink href={href} key={conversation.conversationId}>
+              <MaybeLink href={row.href} key={conversation.conversationId}>
                 <Pressable
-                  accessibilityLabel={`打开私信 ${conversation.peerDisplayName}${identityLabel ? ` ${identityLabel}` : ""}`}
-                  accessibilityRole={href ? "link" : "button"}
-                  accessibilityState={{ selected }}
-                  aria-current={selected ? "page" : undefined}
+                  accessibilityLabel={row.accessibilityLabel}
+                  accessibilityRole={row.href ? "link" : "button"}
+                  accessibilityState={{ selected: row.selected }}
+                  aria-current={row.selected ? "page" : undefined}
                   onPress={
-                    href
+                    row.href
                       ? undefined
                       : () => onSelectDirect(conversation.peerUserId)
                   }
                   style={[
                     styles.compactChannelButton,
-                    selected && styles.compactChannelButtonSelected,
+                    row.selected && styles.compactChannelButtonSelected,
                   ]}
                 >
+                  <CollectionIdentityMark
+                    identityKind={row.identityKind}
+                    monogram={row.monogram}
+                  />
                   <View style={styles.channelButtonCopy}>
                     <View style={styles.directHeader}>
                       <Text
@@ -3437,20 +2735,20 @@ function CompactConversationPicker({
                       >
                         {conversation.peerDisplayName}
                       </Text>
-                      {identitySummary ? (
+                      {row.identitySummary ? (
                         <Text numberOfLines={1} style={styles.directHandle}>
-                          {identitySummary}
+                          {row.identitySummary}
                         </Text>
                       ) : null}
                     </View>
-                    {draftLabel(draftPreview) ? (
+                    {draftLabel(row.draftPreview) ? (
                       <Text numberOfLines={1} style={styles.draftMeta}>
-                        {draftLabel(draftPreview)}
+                        {draftLabel(row.draftPreview)}
                       </Text>
                     ) : null}
                   </View>
-                  {unread ? (
-                    <Text style={styles.channelArrow}>{unread}</Text>
+                  {row.unread ? (
+                    <Text style={styles.channelArrow}>{row.unread}</Text>
                   ) : (
                     <ChevronRight
                       color={velaTheme.semantic.color.iconMuted}
@@ -3612,1111 +2910,3 @@ function DirectPickerEmptyState({
     </View>
   );
 }
-
-const styles = StyleSheet.create((theme) => ({
-  compactAccountSummary: {
-    backgroundColor: theme.semantic.color.sectionSurface,
-    borderColor: theme.semantic.color.borderSection,
-    borderRadius: theme.semantic.radius.section,
-    borderWidth: theme.semantic.stroke.hairline,
-    padding: theme.spacing.md,
-  },
-  compactSectionRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  directAvatar: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.avatarPeerSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.circle,
-    height: theme.recipes.identity.avatarRowSize,
-    justifyContent: "center",
-    width: theme.recipes.identity.avatarRowSize,
-  },
-  directAvatarText: {
-    color: theme.semantic.color.avatarPeerText,
-    ...theme.semantic.typography.bodyCompact,
-  },
-  directButton: {
-    alignItems: "center",
-    borderRadius: theme.semantic.radius.compactControl,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    minHeight: theme.recipes.conversationWorkspace.directRowMinHeight,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    ...theme.semantic.motion.transition.control,
-    _web: {
-      _hover: {
-        backgroundColor: theme.semantic.color.interactiveHoverSurface,
-      },
-    },
-  },
-  directButtonSelected: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.selectionSurface,
-    borderRadius: theme.semantic.radius.compactControl,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    minHeight: theme.recipes.conversationWorkspace.directRowMinHeight,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    ...theme.semantic.motion.transition.control,
-    _web: {
-      _hover: {
-        backgroundColor: theme.semantic.color.selectionHoverSurface,
-      },
-    },
-  },
-  directHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing.xs,
-  },
-  directFooter: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing.xs,
-  },
-  directDisplayName: {
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  directHandle: {
-    color: theme.semantic.color.textMuted,
-    flexShrink: 0,
-    ...theme.semantic.typography.navigationLabel,
-  },
-  directPreview: {
-    flex: 1,
-    minWidth: 0,
-  },
-  draftMeta: {
-    color: theme.semantic.color.statusInfoText,
-    ...theme.semantic.typography.captionEmphasis,
-  },
-  directTime: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.micro,
-    marginLeft: "auto",
-  },
-  directList: {
-    paddingBottom: theme.spacing.md,
-    paddingHorizontal: theme.spacing.sm,
-  },
-  directEmpty: {
-    paddingHorizontal: theme.spacing.sm,
-  },
-  directScroller: {
-    flex: 1,
-  },
-  directPickerHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  directPickerEmbedded: {
-    flex: 1,
-    padding: theme.spacing.md,
-  },
-  directPickerScrollerContent: {
-    paddingBottom: theme.spacing.lg,
-  },
-  directPickerSearchEmpty: {
-    alignItems: "center",
-    gap: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.xl,
-  },
-  directPickerEmpty: {
-    alignItems: "center",
-    gap: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.xl,
-  },
-  directPickerEmptyDescription: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodySmall,
-    textAlign: "center",
-  },
-  directPickerEmptyIcon: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.iconAccentSurface,
-    borderRadius: theme.semantic.radius.circle,
-    height: theme.recipes.control.height,
-    justifyContent: "center",
-    width: theme.recipes.control.squareSize,
-  },
-  directPickerEmptyTitle: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.bodyEmphasis,
-  },
-  unreadBadge: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.statusInfoSurface,
-    borderColor: theme.semantic.color.statusInfoDivider,
-    borderWidth: theme.semantic.stroke.hairline,
-    justifyContent: "center",
-    borderRadius: theme.semantic.radius.compactControl,
-    minHeight: theme.recipes.status.badgeMinSize,
-    minWidth: theme.recipes.status.badgeMinSize,
-    paddingHorizontal: theme.spacing.xs,
-  },
-  unreadBadgeText: {
-    color: theme.semantic.color.statusInfoText,
-    ...theme.semantic.typography.navigationLabel,
-  },
-  channelForm: {
-    gap: theme.spacing.md,
-    padding: theme.spacing.lg,
-  },
-  channelField: {
-    gap: theme.spacing.sm,
-  },
-  channelFieldLabel: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodySmallEmphasis,
-  },
-  channelInput: {
-    backgroundColor: theme.semantic.color.fieldSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    ...theme.semantic.typography.body,
-    minHeight: theme.recipes.control.fieldHeight,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-  },
-  channelJoinStage: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.surfaceSubtle,
-    flex: 1,
-    justifyContent: "center",
-    padding: theme.spacing.xl,
-  },
-  channelManagementPanel: {
-    backgroundColor: theme.semantic.color.overlaySurface,
-    borderLeftColor: theme.semantic.color.separator,
-    borderLeftWidth: theme.semantic.stroke.hairline,
-    maxWidth: "100%",
-    minWidth: theme.recipes.overlay.contextPanelMinWidth,
-    width: theme.recipes.overlay.contextPanelWidth,
-  },
-  channelManagementPanelCompact: {
-    borderLeftWidth: 0,
-    flex: 1,
-    minWidth: 0,
-    width: "100%",
-  },
-  channelMemberAdd: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionTonalSurface,
-    borderRadius: theme.semantic.radius.control,
-    justifyContent: "center",
-    minHeight: theme.recipes.iconControl.denseSize,
-    paddingHorizontal: theme.spacing.md,
-  },
-  channelMemberAddText: {
-    color: theme.semantic.color.actionTonalText,
-    ...theme.semantic.typography.bodySmallEmphasis,
-  },
-  channelMemberAvatar: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.surfaceMuted,
-    borderRadius: theme.semantic.radius.circle,
-    height: theme.recipes.identity.avatarRowSize,
-    justifyContent: "center",
-    width: theme.recipes.identity.avatarRowSize,
-  },
-  channelMemberAvatarAgent: {
-    backgroundColor: theme.semantic.color.avatarAgentSurface,
-  },
-  channelMemberAvatarText: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.bodyCompactEmphasis,
-  },
-  channelMemberConfirmActions: {
-    alignSelf: "stretch",
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    marginTop: theme.spacing.sm,
-  },
-  channelMemberConfirmBackdrop: {
-    alignItems: "center",
-    backgroundColor: velaTheme.semantic.color.modalBackdrop,
-    flex: 1,
-    justifyContent: "center",
-    padding: theme.spacing.lg,
-  },
-  channelMemberConfirmCancel: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.surfaceMuted,
-    borderRadius: theme.semantic.radius.control,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: theme.recipes.control.height,
-    paddingHorizontal: theme.spacing.md,
-  },
-  channelMemberConfirmCancelText: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.bodyCompactEmphasis,
-  },
-  channelMemberConfirmDescription: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodyCompact,
-    textAlign: "center",
-  },
-  channelMemberConfirmDialog: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.overlaySurface,
-    borderColor: theme.semantic.color.borderOverlay,
-    borderRadius: theme.semantic.radius.overlay,
-    borderWidth: theme.semantic.stroke.hairline,
-    gap: theme.spacing.sm,
-    maxWidth: theme.recipes.overlay.confirmDialogMaxWidth,
-    padding: theme.spacing.xl,
-    elevation: theme.semantic.elevation.overlay,
-    shadowColor: theme.shadows.overlay.color,
-    shadowOffset: { height: theme.shadows.overlay.offsetY, width: 0 },
-    shadowOpacity: theme.shadows.overlay.opacity,
-    shadowRadius: theme.shadows.overlay.radius,
-    width: "100%",
-  },
-  channelMemberConfirmMark: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.statusDangerSurface,
-    borderRadius: theme.semantic.radius.circle,
-    height: theme.recipes.emptyState.iconSize,
-    justifyContent: "center",
-    marginBottom: theme.spacing.xs,
-    width: theme.recipes.emptyState.iconSize,
-  },
-  channelMemberConfirmSubmit: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionDangerEmphasisSurface,
-    borderRadius: theme.semantic.radius.control,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: theme.recipes.control.height,
-    paddingHorizontal: theme.spacing.md,
-  },
-  channelMemberConfirmSubmitText: {
-    color: theme.semantic.color.actionDangerEmphasisText,
-    ...theme.semantic.typography.bodyCompactEmphasis,
-  },
-  channelMemberConfirmTitle: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.dialogTitle,
-    textAlign: "center",
-  },
-  channelMemberIdentity: {
-    flex: 1,
-    minWidth: 0,
-  },
-  channelMemberKind: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.navigationLabel,
-  },
-  channelMemberList: {
-    gap: theme.spacing.sm,
-    padding: theme.spacing.lg,
-  },
-  channelMembershipContext: {
-    backgroundColor: theme.semantic.color.statusInfoSurface,
-    borderColor: velaTheme.semantic.color.statusInfoDivider,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-  },
-  channelMembershipContextText: {
-    color: theme.semantic.color.statusInfoText,
-    ...theme.semantic.typography.bodySmall,
-  },
-  channelMemberMeta: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.navigationLabel,
-  },
-  channelMemberMetaRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing.xs,
-    minWidth: 0,
-  },
-  channelMemberName: {
-    ...theme.semantic.typography.bodyEmphasis,
-  },
-  channelMemberJoined: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodySmallEmphasis,
-  },
-  channelMemberRemove: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionDangerTonalSurface,
-    borderRadius: theme.semantic.radius.control,
-    justifyContent: "center",
-    minHeight: theme.recipes.iconControl.denseSize,
-    paddingHorizontal: theme.spacing.md,
-  },
-  channelMemberRemoveText: {
-    color: theme.semantic.color.actionDangerText,
-    ...theme.semantic.typography.bodySmallEmphasis,
-  },
-  channelMemberRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    minHeight: theme.recipes.conversationWorkspace.channelMemberRowMinHeight,
-    paddingHorizontal: theme.spacing.md,
-  },
-  channelPanelHeader: {
-    alignItems: "center",
-    borderBottomColor: theme.semantic.color.separator,
-    borderBottomWidth: theme.semantic.stroke.hairline,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    minHeight: theme.recipes.desktopWorkspace.headerHeight,
-    paddingHorizontal: theme.spacing.md,
-  },
-  channelPanelHeaderCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  channelPanelSummary: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.caption,
-    marginTop: theme.spacing.xxs,
-  },
-  channelPanelSubmit: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionTonalSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    minHeight: theme.recipes.control.height,
-    justifyContent: "center",
-  },
-  channelPanelSubmitText: {
-    ...theme.semantic.typography.bodyCompactEmphasis,
-  },
-  channelPanelTitle: {
-    ...theme.semantic.typography.sectionTitle,
-  },
-  channelArrow: {
-    ...theme.semantic.typography.messageBody,
-  },
-  channelButton: {
-    alignItems: "center",
-    borderWidth: 0,
-    borderRadius: theme.semantic.radius.compactControl,
-    flexDirection: "row",
-    minHeight: theme.recipes.desktopWorkspace.conversationRowMinHeight,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    ...theme.semantic.motion.transition.control,
-    _web: {
-      _hover: {
-        backgroundColor: theme.semantic.color.interactiveHoverSurface,
-      },
-    },
-  },
-  channelButtonCopy: {
-    flex: 1,
-    gap: theme.spacing.xxs,
-    minWidth: 0,
-  },
-  channelButtonSelected: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.selectionSurface,
-    borderWidth: 0,
-    borderRadius: theme.semantic.radius.compactControl,
-    flexDirection: "row",
-    minHeight: theme.recipes.desktopWorkspace.conversationRowMinHeight,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    ...theme.semantic.motion.transition.control,
-    _web: {
-      _hover: {
-        backgroundColor: theme.semantic.color.selectionHoverSurface,
-      },
-    },
-  },
-  channelList: {
-    gap: 0,
-    paddingHorizontal: theme.spacing.sm,
-    paddingBottom: 0,
-    paddingTop: 0,
-  },
-  channelScroller: {
-    flexGrow: 0,
-    flexShrink: 0,
-    maxHeight: "44%",
-  },
-  channelIcon: {
-    alignItems: "center",
-    backgroundColor: velaTheme.semantic.color.surfaceSubtle,
-    borderRadius: theme.semantic.radius.compactControl,
-    height: theme.recipes.iconControl.denseSize,
-    justifyContent: "center",
-    marginRight: theme.spacing.md,
-    width: theme.recipes.iconControl.denseSize,
-    ...theme.semantic.motion.transition.control,
-  },
-  channelIconSelected: {
-    backgroundColor: theme.semantic.color.surfaceTransparent,
-    ...theme.semantic.motion.transition.control,
-  },
-  channelMeta: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.caption,
-  },
-  channelKindBadge: {
-    alignItems: "center",
-    alignSelf: "center",
-    backgroundColor: theme.semantic.color.statusInfoSurface,
-    borderRadius: theme.semantic.radius.pill,
-    justifyContent: "center",
-    minHeight: theme.recipes.status.badgeMinSize,
-    paddingHorizontal: theme.spacing.sm,
-  },
-  channelKindBadgePrivate: {
-    backgroundColor: theme.semantic.color.surfaceMuted,
-  },
-  channelKindBadgeSystem: {
-    backgroundColor: velaTheme.semantic.color.statusInfoSurface,
-  },
-  channelKindBadgeText: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.micro,
-  },
-  channelName: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.bodyEmphasis,
-    ...theme.semantic.motion.transition.control,
-  },
-  channelNameInRow: {
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  channelNameRow: {
-    alignItems: "center",
-    flex: 1,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    minWidth: 0,
-  },
-  channelNameSelected: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.motion.transition.control,
-  },
-  channelTextarea: {
-    minHeight: theme.recipes.managementWorkspace.textareaMinHeight,
-    textAlignVertical: "top",
-  },
-  channelVisibilityButtonText: {
-    ...theme.semantic.typography.captionEmphasis,
-  },
-  channelVisibilityButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionQuietSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.pill,
-    flex: 1,
-    minHeight: theme.recipes.control.height,
-    justifyContent: "center",
-    ...theme.semantic.motion.transition.control,
-  },
-  channelVisibilityButtonActive: {
-    backgroundColor: theme.semantic.color.selectionSurface,
-    borderWidth: theme.semantic.stroke.hairline,
-    ...theme.semantic.motion.transition.control,
-  },
-  channelVisibilityNotice: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodySmall,
-  },
-  channelVisibilityField: {
-    gap: theme.spacing.xs,
-  },
-  channelVisibilityRow: {
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-  },
-  compactChannelButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionQuietSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: theme.recipes.compactWorkspace.listRowMinHeight,
-    paddingHorizontal: theme.spacing.md,
-    ...theme.semantic.motion.transition.control,
-  },
-  compactChannelButtonSelected: {
-    backgroundColor: theme.semantic.color.selectionSurface,
-    borderColor: velaTheme.semantic.color.borderSelected,
-    ...theme.semantic.motion.transition.control,
-  },
-  compactChannelActionSlot: {flex: 1},
-  compactChannelActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: theme.spacing.sm,
-  },
-  compactChannelList: {
-    gap: theme.spacing.sm,
-  },
-  compactChannelIdentity: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    minWidth: 0,
-  },
-  compactDirectorySearch: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.fieldSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    height: theme.recipes.control.fieldHeight,
-    paddingHorizontal: theme.spacing.md,
-  },
-  compactDirectorySearchClear: {
-    alignItems: "center",
-    height: theme.recipes.iconControl.compactSize,
-    justifyContent: "center",
-    width: theme.recipes.iconControl.compactSize,
-  },
-  compactDirectorySearchEmpty: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.sectionSurface,
-    borderColor: theme.semantic.color.borderSection,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    gap: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.xl,
-  },
-  compactDirectorySearchEmptyTitle: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.bodyEmphasis,
-  },
-  compactDirectorySearchInput: {
-    color: theme.semantic.color.textPrimary,
-    flex: 1,
-    ...theme.semantic.typography.bodyCompact,
-    minWidth: 0,
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-  },
-  compactEyebrow: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.overline,
-  },
-  compactHeader: {
-    alignItems: "center",
-    gap: theme.spacing.sm,
-    backgroundColor: theme.semantic.color.paneSurface,
-    borderBottomColor: theme.semantic.color.separator,
-    borderBottomWidth: theme.semantic.stroke.hairline,
-    flexDirection: "row",
-    height: theme.recipes.desktopWorkspace.headerHeight,
-    paddingHorizontal: theme.spacing.md,
-  },
-  compactHeaderCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  compactHeaderNavigationButton: {
-    marginRight: theme.spacing.sm,
-  },
-  compactPicker: {
-    backgroundColor: theme.semantic.color.surfaceSubtle,
-    flexGrow: 1,
-    gap: theme.spacing.md,
-    padding: theme.spacing.lg,
-  },
-  compactPickerButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionTonalSurface,
-    borderColor: theme.semantic.color.borderInteractive,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    height: theme.recipes.control.squareSize,
-    justifyContent: "center",
-    width: theme.recipes.control.squareSize,
-  },
-  compactPickerTitle: {
-    ...theme.semantic.typography.pickerTitle,
-  },
-  compactServerButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionQuietSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    flexDirection: "row",
-    gap: theme.spacing.md,
-    minHeight: theme.recipes.compactWorkspace.switcherRowMinHeight,
-    paddingHorizontal: theme.spacing.sm,
-    ...theme.semantic.motion.transition.control,
-  },
-  compactServerButtonSelected: {
-    backgroundColor: theme.semantic.color.selectionSurface,
-    borderColor: velaTheme.semantic.color.borderSelected,
-    ...theme.semantic.motion.transition.control,
-  },
-  compactServerInitial: {
-    backgroundColor: theme.semantic.color.avatarServerSurface,
-    borderRadius: theme.semantic.radius.control,
-    color: theme.semantic.color.avatarServerText,
-    ...theme.semantic.typography.serverInitial,
-    height: theme.recipes.identity.avatarCompactSize,
-    textAlign: "center",
-    width: theme.recipes.identity.avatarCompactSize,
-  },
-  compactServerList: {
-    gap: theme.spacing.sm,
-  },
-  compactServerName: {
-    ...theme.semantic.typography.messageSender,
-  },
-  compactTitle: {
-    ...theme.semantic.typography.compactTitle,
-  },
-  connectionBadge: {
-    alignItems: "center",
-    borderWidth: 0,
-    borderRadius: theme.semantic.radius.pane,
-    backgroundColor: theme.semantic.color.surfaceTransparent,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.xs,
-    paddingVertical: theme.spacing.sm,
-  },
-  connectionDot: {
-    borderColor: theme.semantic.color.borderControl,
-    borderRadius: theme.semantic.radius.circle,
-    borderWidth: theme.semantic.stroke.hairline,
-    height: theme.recipes.identity.connectionDotSize,
-    width: theme.recipes.identity.connectionDotSize,
-  },
-  connectionDotReady: {
-    backgroundColor: theme.semantic.color.statusPositive,
-  },
-  connectionDotWaiting: {
-    backgroundColor: theme.semantic.color.statusWarning,
-  },
-  connectionText: {
-    ...theme.semantic.typography.micro,
-  },
-  conversationSidebar: {
-    backgroundColor: theme.semantic.color.sidebarSurface,
-    borderRadius: theme.semantic.radius.pane,
-    borderRightColor: theme.semantic.color.separator,
-    borderRightWidth: theme.semantic.stroke.hairline,
-    minWidth: theme.recipes.desktopWorkspace.sidebarWidth,
-    overflow: "hidden",
-    width: theme.recipes.desktopWorkspace.sidebarWidth,
-  },
-  empty: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodyCompact,
-  },
-  chatErrorToast: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.overlaySurface,
-    borderColor: velaTheme.semantic.color.borderDanger,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    maxWidth: theme.recipes.contentMeasure.noticeMaxWidth,
-    minHeight: theme.recipes.status.toastMinHeight,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
-    width: "100%",
-  },
-  chatErrorToastClose: {
-    alignItems: "center",
-    borderRadius: theme.semantic.radius.circle,
-    height: theme.recipes.iconControl.compactSize,
-    justifyContent: "center",
-    width: theme.recipes.iconControl.compactSize,
-  },
-  chatErrorToastIcon: {
-    alignItems: "center",
-    backgroundColor: velaTheme.semantic.color.statusDangerSurface,
-    borderRadius: theme.semantic.radius.circle,
-    height: theme.recipes.iconControl.compactSize,
-    justifyContent: "center",
-    width: theme.recipes.iconControl.compactSize,
-  },
-  chatErrorToastLayer: {
-    alignItems: "center",
-    left: 0,
-    paddingHorizontal: theme.spacing.md,
-    position: "absolute",
-    right: 0,
-    top: theme.recipes.conversationWorkspace.toastTopInset,
-    zIndex: theme.semantic.layer.modal,
-  },
-  chatErrorToastLayerCompact: {
-    top: theme.spacing.md,
-  },
-  chatErrorToastText: {
-    color: theme.semantic.color.textPrimary,
-    flex: 1,
-    ...theme.semantic.typography.bodyCompactEmphasis,
-  },
-  reconnectNotice: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.statusInfoSurface,
-    borderBottomColor: theme.semantic.color.statusInfoDivider,
-    borderBottomWidth: theme.semantic.stroke.hairline,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    minHeight: theme.recipes.status.bannerMinHeight,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.xs,
-  },
-  reconnectNoticeText: {
-    color: theme.semantic.color.statusInfoText,
-    flex: 1,
-    ...theme.semantic.typography.bodyCompactEmphasis,
-  },
-  messageEyebrow: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.overline,
-  },
-  messageHeader: {
-    alignItems: "center",
-    borderBottomColor: theme.semantic.color.separator,
-    borderBottomWidth: theme.semantic.stroke.hairline,
-    backgroundColor: theme.semantic.color.surfaceTransparent,
-    flexDirection: "row",
-    height: theme.recipes.desktopWorkspace.headerHeight,
-    justifyContent: "space-between",
-    paddingHorizontal: theme.spacing.xl,
-  },
-  messageHeaderActions: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-  },
-  messageHeaderCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  messageHeaderIcon: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.iconAccentSurface,
-    borderRadius: theme.semantic.radius.compactControl,
-    height: theme.recipes.iconControl.denseSize,
-    justifyContent: "center",
-    width: theme.recipes.iconControl.denseSize,
-  },
-  messageHeaderIdentity: {
-    alignItems: "center",
-    flex: 1,
-    flexDirection: "row",
-    gap: theme.spacing.md,
-    minWidth: 0,
-  },
-  messageSubtitle: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.caption,
-    marginTop: theme.spacing.xxs,
-  },
-  messageStage: {
-    backgroundColor: theme.semantic.color.canvasSurface,
-    borderRadius: theme.semantic.radius.pane,
-    flex: 1,
-    minWidth: 0,
-    overflow: "hidden",
-  },
-  onlineAgentsBadge: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.surfaceTransparent,
-    borderRadius: theme.semantic.radius.pane,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    minHeight: theme.recipes.status.summaryMinHeight,
-    paddingHorizontal: theme.spacing.xs,
-  },
-  onlineAgentsBadgeEmpty: {
-    backgroundColor: theme.semantic.color.surfaceTransparent,
-  },
-  onlineAgentsDot: {
-    backgroundColor: theme.semantic.color.statusPositive,
-    borderRadius: theme.semantic.radius.circle,
-    height: theme.recipes.identity.statusDotSize,
-    width: theme.recipes.identity.statusDotSize,
-  },
-  onlineAgentsDotEmpty: {
-    backgroundColor: theme.semantic.color.statusNeutral,
-  },
-  onlineAgentsText: {
-    color: velaTheme.semantic.color.statusPositiveText,
-    ...theme.semantic.typography.navigationLabel,
-  },
-  onlineAgentsTextEmpty: {
-    color: theme.semantic.color.textMuted,
-  },
-  operationStatus: {
-    borderBottomColor: theme.semantic.color.separator,
-    borderBottomWidth: theme.semantic.stroke.hairline,
-    padding: theme.spacing.sm,
-  },
-  messageTitle: {
-    ...theme.semantic.typography.sectionTitle,
-  },
-  headerActionButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.surfaceTransparent,
-    borderWidth: 0,
-    justifyContent: "center",
-    borderRadius: theme.semantic.radius.compactControl,
-    height: theme.recipes.iconControl.smallSize,
-    width: theme.recipes.iconControl.smallSize,
-  },
-  railItemPressed: {
-    opacity: theme.semantic.opacity.inactive,
-    ...theme.semantic.motion.transition.control,
-  },
-  searchControls: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-  },
-  searchEmpty: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodySmall,
-    paddingVertical: theme.spacing.md,
-  },
-  searchInput: {
-    backgroundColor: theme.semantic.color.fieldSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    flex: 1,
-    ...theme.semantic.typography.bodyCompact,
-    height: theme.recipes.control.fieldHeight,
-    minWidth: 0,
-    paddingHorizontal: theme.spacing.sm,
-  },
-  searchPanel: {
-    backgroundColor: theme.semantic.color.overlaySurface,
-    borderColor: theme.semantic.color.borderOverlay,
-    borderRadius: theme.semantic.radius.section,
-    borderWidth: theme.semantic.stroke.hairline,
-    gap: theme.spacing.sm,
-    margin: theme.spacing.sm,
-    maxHeight: theme.recipes.overlay.searchPanelMaxHeight,
-    padding: theme.spacing.md,
-  },
-  searchPanelCompact: {
-    flex: 1,
-    maxHeight: "100%",
-    minHeight: 0,
-  },
-  searchPanelError: {
-    backgroundColor: theme.semantic.color.statusDangerSurface,
-    borderColor: velaTheme.semantic.color.borderDanger,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    gap: theme.spacing.xs,
-    padding: theme.spacing.md,
-  },
-  searchPanelErrorHint: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.caption,
-  },
-  searchPanelErrorText: {
-    color: theme.semantic.color.statusDangerText,
-    ...theme.semantic.typography.bodySmall,
-  },
-  searchPanelErrorTitle: {
-    color: theme.semantic.color.statusDangerText,
-    ...theme.semantic.typography.bodyCompactEmphasis,
-  },
-  searchResult: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.surfaceSubtle,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    flexDirection: "row",
-    gap: theme.spacing.xs,
-    justifyContent: "space-between",
-    minHeight: theme.recipes.managementWorkspace.rowMinHeight,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
-    ...theme.semantic.motion.transition.control,
-  },
-  searchResultAction: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing.xs,
-    marginLeft: theme.spacing.sm,
-    minHeight: theme.recipes.control.height,
-  },
-  searchResultActionText: {
-    color: theme.semantic.color.textLink,
-    ...theme.semantic.typography.captionEmphasis,
-  },
-  searchResultBody: {
-    flex: 1,
-    gap: theme.spacing.xs,
-    minWidth: 0,
-  },
-  searchResultDisabled: {
-    opacity: theme.semantic.opacity.contentSubtle,
-    ...theme.semantic.motion.transition.control,
-  },
-  searchResultMeta: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-  },
-  searchResultSender: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.captionEmphasis,
-  },
-  searchResultPressed: {
-    backgroundColor: theme.semantic.color.selectionSurface,
-    borderColor: theme.semantic.color.borderSelected,
-    ...theme.semantic.motion.transition.control,
-  },
-  searchResultText: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.bodyCompact,
-  },
-  searchResultTime: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.micro,
-  },
-  searchResults: {
-    gap: theme.spacing.xs,
-    paddingBottom: theme.spacing.xs,
-  },
-  searchResultsViewport: {
-    flex: 1,
-    minHeight: 0,
-  },
-  searchLocateError: {
-    backgroundColor: velaTheme.semantic.color.statusWarningSurface,
-    borderColor: velaTheme.semantic.color.statusWarningDivider,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    gap: theme.spacing.xxs,
-    padding: theme.spacing.sm,
-  },
-  searchLocateErrorHint: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.caption,
-  },
-  searchLocateErrorText: {
-    color: theme.semantic.color.statusWarningText,
-    ...theme.semantic.typography.bodySmallEmphasis,
-  },
-  sectionLabel: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.overline,
-  },
-  sidebarCount: {
-    ...theme.semantic.typography.navigationLabel,
-  },
-  sidebarSectionActions: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing.xxs,
-  },
-  sidebarHeader: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.sidebarSurface,
-    borderBottomColor: theme.semantic.color.separator,
-    borderBottomWidth: theme.semantic.stroke.hairline,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    height: theme.recipes.desktopWorkspace.headerHeight,
-    paddingHorizontal: theme.spacing.md,
-  },
-  sidebarHeaderCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  sidebarHeaderIcon: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.avatarServerSurface,
-    borderColor: theme.semantic.color.borderTransparent,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    height: theme.recipes.identity.avatarNavigationSize,
-    justifyContent: "center",
-    width: theme.recipes.identity.avatarNavigationSize,
-  },
-  sidebarHeaderIconText: {
-    color: theme.semantic.color.textInverse,
-    ...theme.semantic.typography.bodySmall,
-  },
-  sidebarSearchClear: {
-    alignItems: "center",
-    borderRadius: theme.semantic.radius.section,
-    height: theme.recipes.iconControl.microSize,
-    justifyContent: "center",
-    width: theme.recipes.iconControl.microSize,
-  },
-  sidebarSearchEmpty: {
-    alignItems: "center",
-    flex: 1,
-    gap: theme.spacing.xs,
-    justifyContent: "center",
-    padding: theme.spacing.xl,
-  },
-  sidebarSearchInput: {
-    color: theme.semantic.color.textPrimary,
-    flex: 1,
-    ...theme.semantic.typography.bodyCompact,
-    minWidth: 0,
-    paddingHorizontal: theme.spacing.xxs,
-    paddingVertical: 0,
-  },
-  sidebarSearchWrap: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.fieldSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    height: theme.recipes.control.height,
-    marginHorizontal: theme.spacing.md,
-    marginVertical: theme.spacing.md,
-    paddingHorizontal: theme.spacing.md,
-  },
-  sidebarSectionHeader: {
-    alignItems: "center",
-    borderBottomColor: theme.semantic.color.separator,
-    borderBottomWidth: theme.semantic.stroke.hairline,
-    flexDirection: "row",
-    height: theme.recipes.control.height,
-    justifyContent: "space-between",
-    paddingHorizontal: theme.spacing.md,
-  },
-  sidebarSubtitle: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.caption,
-  },
-  sidebarTitle: {
-    ...theme.semantic.typography.workspaceTitle,
-  },
-}));

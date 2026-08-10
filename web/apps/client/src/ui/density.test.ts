@@ -2,6 +2,7 @@ import {
   density,
   densityMode,
   densityScale,
+  pointerDensity,
   resolveDensityMode,
   text,
   textScale,
@@ -160,14 +161,86 @@ describe("density wiring", () => {
   });
 
   it("feeds the recipes that drive the shell frame", () => {
-    const { control, desktopWorkspace } = velaTheme.recipes;
+    const { control, desktopWorkspace, overlay } = velaTheme.recipes;
 
     expect(control.height).toBe(density.controlHeight);
     expect(desktopWorkspace.headerHeight).toBe(density.headerHeight);
-    expect(desktopWorkspace.conversationRowMinHeight).toBe(
-      density.shelfRowMinHeight,
-    );
+    expect(control.rowHeight).toBe(density.shelfRowMinHeight);
     expect(desktopWorkspace.railWidth).toBe(density.railWidth);
+    // Tooltip sits just past the control, not on a stale 52×52 hit box.
+    expect(overlay.railTooltipLeftInset).toBe(
+      density.controlHeight + density.spaceMd,
+    );
+    expect(overlay.accountPopoverLeftInset).toBe(density.railWidth + 6);
+    expect(velaTheme.recipes.conversationWorkspace.toastTopInset).toBe(
+      density.headerHeight + density.spaceMd,
+    );
+    expect(
+      velaTheme.recipes.conversationWorkspace.composerMentionListOffset,
+    ).toBe(density.composerSurfaceMinHeight);
+    expect(velaTheme.recipes.identity.avatarAccountSize).toBe(
+      density.controlHeight,
+    );
+    expect(velaTheme.recipes.identity.avatarProminentSize).toBe(
+      density.avatarRowSize,
+    );
+    expect(velaTheme.recipes.identity.avatarNavigationSize).toBe(
+      density.avatarNavigationSize,
+    );
+    expect(velaTheme.recipes.identity.brandMarkCompactSize).toBe(
+      density.railBrandMarkSize,
+    );
+    expect(velaTheme.recipes.managementWorkspace.compactResourceIconSize).toBe(
+      density.collectionHeaderMarkSize,
+    );
+    expect(velaTheme.recipes.resourceIdentity.markSize).toBe(
+      density.collectionHeaderMarkSize,
+    );
+    expect(velaTheme.recipes.managementWorkspace.resourceActionMinHeight).toBe(
+      density.resourceActionMinHeight,
+    );
+    expect(velaTheme.recipes.managementWorkspace.collectionCompactHeight).toBe(
+      density.collectionCompactHeight,
+    );
+    expect(velaTheme.recipes.resourceIdentity.factMinHeight).toBe(
+      density.factMinHeight,
+    );
+    expect(velaTheme.recipes.iconControl.floatingSize).toBe(
+      density.iconControlFloatingSize,
+    );
+    expect(velaTheme.recipes.messageTimeline.actionSize).toBe(
+      density.messageActionSize,
+    );
+    expect(velaTheme.recipes.status.bannerMinHeight).toBe(density.bannerMinHeight);
+    expect(velaTheme.recipes.status.toastMinHeight).toBe(density.toastMinHeight);
+    // Compact icon buttons (tooltips, clear) must fit inside the control box.
+    expect(velaTheme.recipes.iconControl.compactSize).toBeLessThanOrEqual(
+      density.controlHeight,
+    );
+    expect(velaTheme.recipes.iconControl.compactSize).toBe(
+      density.iconControlCompactSize,
+    );
+    // Marks in the header band must clear the band with air.
+    expect(density.collectionHeaderMarkSize).toBeLessThan(density.headerHeight);
+    expect(density.railBrandMarkSize).toBeLessThan(density.headerHeight);
+    // Interaction chrome is a density flag — never derived from viewport width.
+    expect(pointerDensity).toBe(densityMode === "pointer");
+    // Frosted chrome is a material recipe, not a one-off in layout files.
+    expect(velaTheme.semantic.material.blur).toContain("blur(");
+    expect(velaTheme.semantic.material.navigationFill).toMatch(/^rgba\(/u);
+    expect(velaTheme.semantic.color.groupedSurface).toBeTruthy();
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        velaTheme.recipes.messageTimeline,
+        "pointerActionSize",
+      ),
+    ).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        velaTheme.recipes.terminalPanel,
+        "viewportChromeOffset",
+      ),
+    ).toBe(false);
   });
 
   it("hangs both pane headers off one band height", () => {
@@ -187,18 +260,20 @@ describe("density wiring", () => {
   it("sizes every list shelf row off one role", () => {
     // Channels, direct messages and the management collection are the same
     // two-line row in the same 312pt shelf. They agreed at 44 on a pointer
-    // and had drifted to 56, 64 and 64 on touch.
-    const { conversationWorkspace, desktopWorkspace, managementWorkspace } =
-      velaTheme.recipes;
+    // and had drifted to 56, 64 and 64 on touch. Holding three names to one
+    // number only postponed the next drift, so there is now one name.
+    expect(velaTheme.recipes.control.rowHeight).toBe(density.shelfRowMinHeight);
 
-    expect([
-      conversationWorkspace.directRowMinHeight,
-      desktopWorkspace.conversationRowMinHeight,
-      managementWorkspace.rowMinHeight,
-    ]).toEqual([
-      density.shelfRowMinHeight,
-      density.shelfRowMinHeight,
-      density.shelfRowMinHeight,
-    ]);
+    const recipes = velaTheme.recipes as Record<string, Record<string, unknown>>;
+    const retired: Array<[string, string]> = [
+      ["conversationWorkspace", "directRowMinHeight"],
+      ["desktopWorkspace", "conversationRowMinHeight"],
+      ["managementWorkspace", "rowMinHeight"],
+      ["managementWorkspace", "collectionAvatarSize"],
+    ];
+
+    expect(
+      retired.filter(([group, name]) => recipes[group]?.[name] !== undefined),
+    ).toEqual([]);
   });
 });

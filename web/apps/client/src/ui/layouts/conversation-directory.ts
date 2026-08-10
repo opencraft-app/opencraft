@@ -1,13 +1,23 @@
 import type {
+  ActiveConversation,
   Channel,
   ComposerDraft,
   ConversationSummary,
   DirectConversation,
   Member,
 } from "@vela/client-core";
-import { channelAddress, composerDocumentPreview } from "@vela/client-core";
+import {
+  channelAddress,
+  composerDocumentPreview,
+  isEveryoneChannel,
+} from "@vela/client-core";
 
-import { memberByImUserId, memberIdentityLabel } from "../member-identity";
+import { formatConversationTimestamp } from "../date-time";
+import {
+  memberByImUserId,
+  memberIdentityLabel,
+  memberKindLabel,
+} from "../member-identity";
 
 /**
  * What the conversation directory shows, and what each row says.
@@ -59,7 +69,7 @@ export function directIdentitySummary(
   member: Member | undefined,
 ): string | null {
   if (!member) return null;
-  const actor = member.kind === "agent" ? "Agent" : "自然人";
+  const actor = memberKindLabel[member.kind];
   const handle = memberIdentityLabel(member);
   return handle ? `${actor} · ${handle}` : actor;
 }
@@ -95,7 +105,7 @@ export function channelRowPreview(
   return (
     summary?.lastMessagePreview ||
     channel.description ||
-    (channel.systemKey === "all" ? "全体成员根群" : "Human 与 Agent 的日常协作")
+    (isEveryoneChannel(channel) ? "全体成员根群" : "Human 与 Agent 的日常协作")
   );
 }
 
@@ -107,6 +117,108 @@ export function directRowPreview(
   return (
     draftLabel(draftPreview) || conversation.lastMessagePreview || "开始私信"
   );
+}
+
+/**
+ * Everything a channel row needs to paint, computed once.
+ *
+ * The standing sidebar and the compact picker still choose their own chrome —
+ * icon well vs chevron, timestamp vs none — but they must not each reassemble
+ * selected/href/preview/unread/label from the same props. That assembly is
+ * this function.
+ */
+export interface ChannelDirectoryRow {
+  accessibilityLabel: string;
+  draftPreview: string;
+  href: string | undefined;
+  lastMessageTime: string;
+  preview: string;
+  selected: boolean;
+  unread: string | null;
+}
+
+export function channelDirectoryRow(
+  channel: Channel,
+  options: {
+    channelHref?: (channel: Channel) => string | undefined;
+    conversationDrafts: Record<string, ComposerDraft>;
+    conversationSummaries: ConversationSummary[];
+    currentChannelId: string | null;
+  },
+): ChannelDirectoryRow {
+  const draftPreview = channelDraftPreview(channel, options.conversationDrafts);
+  const summary = channelConversationSummary(
+    channel,
+    options.conversationSummaries,
+  );
+  return {
+    accessibilityLabel: `打开 Channel ${channel.name}`,
+    draftPreview,
+    href: options.channelHref?.(channel),
+    lastMessageTime: summary?.lastMessageAt
+      ? formatConversationTimestamp(summary.lastMessageAt)
+      : "",
+    preview: channelRowPreview(channel, summary, draftPreview),
+    selected: channel.id === options.currentChannelId,
+    unread: unreadLabel(summary?.unreadCount),
+  };
+}
+
+/**
+ * Everything a direct-message row needs to paint, computed once.
+ *
+ * Includes the identity answers a mark needs (kind + monogram) so the two
+ * shapes cannot disagree about whether the peer is an Agent.
+ */
+export interface DirectDirectoryRow {
+  accessibilityLabel: string;
+  draftPreview: string;
+  href: string | undefined;
+  identityKind: "agent" | "human";
+  identityLabel: string | null;
+  identitySummary: string | null;
+  lastMessageTime: string;
+  monogram: string;
+  preview: string;
+  selected: boolean;
+  unread: string | null;
+}
+
+export function directDirectoryRow(
+  conversation: DirectConversation,
+  options: {
+    activeConversation: ActiveConversation | null;
+    conversationDrafts: Record<string, ComposerDraft>;
+    directHref?: (peerUserId: string) => string | undefined;
+    members: Member[];
+  },
+): DirectDirectoryRow {
+  const draftPreview = directDraftPreview(
+    conversation,
+    options.conversationDrafts,
+  );
+  const member = memberByImUserId(options.members, conversation.peerUserId);
+  const identityLabel = memberIdentityLabel(member);
+  const identityKind = member?.kind === "agent" ? "agent" : "human";
+  return {
+    accessibilityLabel: `打开私信 ${conversation.peerDisplayName}${identityLabel ? ` ${identityLabel}` : ""}`,
+    draftPreview,
+    href: options.directHref?.(conversation.peerUserId),
+    identityKind,
+    identityLabel,
+    identitySummary: directIdentitySummary(member),
+    lastMessageTime: conversation.lastMessageAt
+      ? formatConversationTimestamp(conversation.lastMessageAt)
+      : "",
+    monogram: (
+      member?.displayName ?? conversation.peerDisplayName
+    ).slice(0, 1),
+    preview: directRowPreview(conversation, draftPreview),
+    selected:
+      options.activeConversation?.kind === "direct" &&
+      options.activeConversation.peerUserId === conversation.peerUserId,
+    unread: unreadLabel(conversation.unreadCount),
+  };
 }
 
 export interface ConversationDirectoryInput {

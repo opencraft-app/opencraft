@@ -6,8 +6,10 @@ import type {
 } from "@vela/client-core";
 
 import {
+  channelDirectoryRow,
   channelRowPreview,
   conversationDirectory,
+  directDirectoryRow,
   directRowPreview,
   unreadLabel,
 } from "./conversation-directory";
@@ -137,5 +139,68 @@ describe("conversation directory", () => {
     expect(unreadLabel(7)).toBe("7");
     expect(unreadLabel(99)).toBe("99");
     expect(unreadLabel(100)).toBe("99+");
+  });
+
+  it("assembles a channel row once for both shapes", () => {
+    const row = channelDirectoryRow(channel, {
+      channelHref: (item) => `/c/${item.id}`,
+      conversationDrafts: {},
+      conversationSummaries: [
+        {
+          conversationId: "GROUPtopic-1",
+          lastMessageAt: "2026-08-02T02:31:00.000Z",
+          lastMessagePreview: "最新一条",
+          unreadCount: 4,
+        } as ConversationSummary,
+      ],
+      currentChannelId: "channel-1",
+    });
+
+    expect(row).toMatchObject({
+      accessibilityLabel: "打开 Channel general",
+      href: "/c/channel-1",
+      preview: "最新一条",
+      selected: true,
+      unread: "4",
+    });
+    expect(row.lastMessageTime.length).toBeGreaterThan(0);
+  });
+
+  it("names a direct peer's kind so both shapes paint the same mark", () => {
+    // The desktop row used to draw every peer as a neutral monogram; the
+    // compact row had no mark at all. Neither asked the member list whether
+    // the peer was an Agent. The row answer now carries the kind.
+    const agent = {
+      ...member,
+      displayName: "Atlas",
+      handle: "atlas",
+      kind: "agent",
+    } as unknown as Member;
+
+    expect(
+      directDirectoryRow(
+        {
+          ...directConversation,
+          peerDisplayName: "Atlas",
+          peerUserId: "user-2",
+          unreadCount: 12,
+        },
+        {
+          activeConversation: {
+            kind: "direct",
+            peerMemberId: "member-2",
+            peerUserId: "user-2",
+          },
+          conversationDrafts: {},
+          members: [agent],
+        },
+      ),
+    ).toMatchObject({
+      accessibilityLabel: "打开私信 Atlas @atlas",
+      identityKind: "agent",
+      monogram: "A",
+      selected: true,
+      unread: "12",
+    });
   });
 });

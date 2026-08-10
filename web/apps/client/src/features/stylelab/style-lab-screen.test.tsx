@@ -1,5 +1,7 @@
 import {fireEvent, render} from "@testing-library/react-native";
 
+import {StyleLabScreen, velaTheme} from "@/ui";
+
 jest.mock("../../ui/components/composer-editor", () => {
   const React = require("react") as typeof import("react");
   const {TextInput} = require("react-native") as typeof import("react-native");
@@ -53,8 +55,6 @@ jest.mock("../../ui/components/composer-editor", () => {
     }),
   };
 });
-
-import {StyleLabScreen} from "@/ui";
 
 describe("StyleLabScreen", () => {
   it("renders the approved desktop workspace fixture with production components", async () => {
@@ -260,6 +260,54 @@ describe("StyleLabScreen", () => {
     ).toBeEnabled();
   });
 
+  it("keeps the compact bottom navigation stable across preview tabs", async () => {
+    // One WorkspaceChrome owns the bar. Section previews render framed={false}
+    // so switching tabs must not remount nav or drop Settings.
+    const screen = await render(<StyleLabScreen viewportWidth={390} />);
+
+    await fireEvent.press(
+      screen.getByRole("button", {name: "切换到 390px 手机画布"}),
+    );
+
+    const labels = () =>
+      screen
+        .getAllByTestId(/mobile-nav-item-/u)
+        .map((node) => node.props.testID);
+
+    expect(screen.getAllByTestId("mobile-bottom-nav")).toHaveLength(1);
+    expect(labels()).toEqual([
+      "mobile-nav-item-chat",
+      "mobile-nav-item-tasks",
+      "mobile-nav-item-agents",
+      "mobile-nav-item-computers",
+      "mobile-nav-item-members",
+      "mobile-nav-item-settings",
+    ]);
+
+    await fireEvent.press(screen.getByRole("button", {name: "预览任务界面"}));
+    expect(screen.getAllByTestId("mobile-bottom-nav")).toHaveLength(1);
+    expect(labels()).toEqual([
+      "mobile-nav-item-chat",
+      "mobile-nav-item-tasks",
+      "mobile-nav-item-agents",
+      "mobile-nav-item-computers",
+      "mobile-nav-item-members",
+      "mobile-nav-item-settings",
+    ]);
+    expect(screen.getByRole("button", {name: "打开 Server 设置"})).toBeVisible();
+
+    await fireEvent.press(screen.getByRole("button", {name: "预览 Agent 界面"}));
+    expect(screen.getAllByTestId("mobile-bottom-nav")).toHaveLength(1);
+    expect(labels()).toEqual([
+      "mobile-nav-item-chat",
+      "mobile-nav-item-tasks",
+      "mobile-nav-item-agents",
+      "mobile-nav-item-computers",
+      "mobile-nav-item-members",
+      "mobile-nav-item-settings",
+    ]);
+  });
+
   it("keeps every preview tab visible in a dedicated compact toolbar row", async () => {
     const screen = await render(<StyleLabScreen viewportWidth={390} />);
 
@@ -307,8 +355,8 @@ describe("StyleLabScreen", () => {
     expect(
       screen.getByRole("button", {name: "切换到 1440px 桌面画布"}),
     ).toHaveStyle({
-      backgroundColor: "#EAF4FF",
-      borderColor: "rgba(0, 111, 238, 0.22)",
+      backgroundColor: velaTheme.semantic.color.selectionSurface,
+      borderColor: velaTheme.semantic.color.borderSelected,
     });
   });
 

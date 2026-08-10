@@ -17,6 +17,9 @@ import {
   ManagementCollectionPane,
   ManagementDetailCanvas,
   ManagementDetailScroll,
+  ManagementChoiceField,
+  ManagementFormFooter,
+  ManagementStageFill,
   ManagementHeader,
   ManagementTab,
   ManagementTabBar,
@@ -47,6 +50,7 @@ describe("management workspace primitives", () => {
       ManagementCollectionPane,
       ManagementDetailCanvas,
       ManagementDetailScroll,
+      ManagementStageFill,
       ManagementHeader,
       ManagementTab,
       ManagementTabBar,
@@ -96,7 +100,7 @@ describe("management workspace primitives", () => {
       width: 10,
     });
     expect(screen.getByTestId("computer-collection-mark")).toHaveStyle({
-      backgroundColor: "#EAF4FF",
+      backgroundColor: "transparent",
     });
     expect(screen.getByTestId("computer-collection-mark-presence")).toHaveStyle({
       backgroundColor: "#D4D4D8",
@@ -122,7 +126,7 @@ describe("management workspace primitives", () => {
     });
     expect(screen.getByTestId("registration-code")).toHaveStyle({
       backgroundColor: "#18181B",
-      borderRadius: 10,
+      borderRadius: velaTheme.semantic.radius.control,
       maxHeight: 180,
     });
     expect(screen.getByText("curl example.test/install")).toHaveStyle({
@@ -177,9 +181,9 @@ describe("management workspace primitives", () => {
     );
 
     expect(screen.getByTestId("selected-choice")).toHaveStyle({
-      backgroundColor: "#EAF4FF",
-      borderColor: "rgba(0, 111, 238, 0.22)",
-      borderRadius: 10,
+      backgroundColor: velaTheme.semantic.color.selectionSurface,
+      borderColor: velaTheme.semantic.color.borderSelected,
+      borderRadius: velaTheme.semantic.radius.control,
       minHeight: velaTheme.recipes.control.height,
     });
     await fireEvent(screen.getByTestId("idle-choice"), "hoverIn");
@@ -187,6 +191,44 @@ describe("management workspace primitives", () => {
       backgroundColor: velaTheme.semantic.color.interactiveHoverSurface,
     });
     expect(screen.getByTestId("disabled-choice")).toHaveStyle({opacity: 0.5});
+  });
+
+  it("provides one labeled choice field and one ordered form footer", async () => {
+    const onBack = jest.fn();
+    const onSelect = jest.fn();
+    const onSubmit = jest.fn();
+    const screen = await render(
+      <>
+        <ManagementChoiceField
+          label="Runtime"
+          onSelect={onSelect}
+          options={[
+            {accessibilityLabel: "选择 Codex", label: "Codex", value: "codex"},
+            {accessibilityLabel: "选择 Hermes", label: "Hermes", value: "hermes"},
+          ]}
+          selected="codex"
+          testID="runtime-field"
+        />
+        <ManagementFormFooter
+          backAction={{label: "上一步", onPress: onBack}}
+          primaryAction={{busy: true, disabled: true, label: "继续", onPress: onSubmit}}
+          testID="wizard-footer"
+        />
+      </>,
+    );
+
+    expect(screen.getByTestId("runtime-field")).toBeVisible();
+    expect(screen.getByLabelText("选择 Codex").props.accessibilityState).toEqual({
+      selected: true,
+    });
+    await fireEvent.press(screen.getByLabelText("选择 Hermes"));
+    expect(onSelect).toHaveBeenCalledWith("hermes");
+    await fireEvent.press(screen.getByText("上一步"));
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("继续").parent?.props.accessibilityState).toEqual({
+      busy: true,
+      disabled: true,
+    });
   });
 
   it("provides compact text tabs for page modes", async () => {
@@ -319,19 +361,23 @@ describe("management workspace primitives", () => {
       width: 312,
     });
     expect(screen.getByTestId("row")).toHaveStyle({
-      borderRadius: 8,
+      borderRadius: velaTheme.semantic.radius.compactControl,
       gap: 8,
-      minHeight: velaTheme.recipes.managementWorkspace.rowMinHeight,
+      minHeight: velaTheme.recipes.control.rowHeight,
     });
     expect(screen.getByTestId("section")).toHaveStyle({
-      borderRadius: 0,
-      borderTopWidth: 1,
-      paddingHorizontal: 0,
-      paddingVertical: 20,
+      gap: velaTheme.spacing.sm,
+    });
+    expect(screen.getByTestId("section-body")).toHaveStyle({
+      backgroundColor: velaTheme.semantic.color.sectionSurface,
+      borderRadius: velaTheme.semantic.radius.control,
+      borderWidth: 1,
+      paddingHorizontal: velaTheme.spacing.lg,
+      paddingVertical: velaTheme.recipes.managementWorkspace.sectionPadding,
     });
     expect(screen.getByTestId("action")).toHaveStyle({
       alignSelf: "flex-start",
-      borderRadius: 10,
+      borderRadius: velaTheme.semantic.radius.control,
       minHeight: velaTheme.recipes.managementWorkspace.actionHeight,
     });
     expect(screen.getByTestId("disabled-action")).toHaveStyle({
@@ -348,8 +394,8 @@ describe("management workspace primitives", () => {
       backgroundColor: velaTheme.semantic.color.actionSecondaryHoverSurface,
     });
     expect(screen.getByTestId("header-action")).toHaveStyle({
-      backgroundColor: "#EAF4FF",
-      borderColor: "#EAF4FF",
+      backgroundColor: velaTheme.semantic.color.actionTonalSurface,
+      borderColor: velaTheme.semantic.color.actionTonalSurface,
       minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.getByTestId("icon-action")).toHaveStyle({
@@ -360,7 +406,7 @@ describe("management workspace primitives", () => {
     });
     expect(screen.getByTestId("resource-action-row")).toHaveStyle({
       borderTopWidth: 1,
-      minHeight: 72,
+      minHeight: velaTheme.recipes.managementWorkspace.resourceActionMinHeight,
     });
   });
 
@@ -392,9 +438,9 @@ describe("management workspace primitives", () => {
       paddingBottom: 20,
     });
     expect(screen.getByTestId("computer-identity-mark")).toHaveStyle({
-      borderRadius: 10,
-      height: 48,
-      width: 48,
+      borderRadius: velaTheme.semantic.radius.control,
+      height: velaTheme.recipes.resourceIdentity.markSize,
+      width: velaTheme.recipes.resourceIdentity.markSize,
     });
     expect(screen.getByTestId("computer-identity-title")).toHaveStyle({
       fontSize: velaTheme.semantic.typography.pageTitle.fontSize,
@@ -429,7 +475,7 @@ describe("management workspace primitives", () => {
       flexWrap: "wrap",
     });
     expect(screen.getByTestId("resource-facts-item-0")).toHaveStyle({
-      minHeight: 64,
+      minHeight: velaTheme.recipes.resourceIdentity.factMinHeight,
       minWidth: 140,
       paddingHorizontal: velaTheme.spacing.lg,
       paddingVertical: velaTheme.spacing.md,
@@ -502,7 +548,7 @@ describe("management workspace primitives", () => {
     );
 
     expect(screen.getByTestId("resource-switcher-trigger")).toHaveStyle({
-      borderRadius: 10,
+      borderRadius: velaTheme.semantic.radius.control,
       minHeight: velaTheme.recipes.managementWorkspace.switcherTriggerMinHeight,
     });
     await fireEvent(screen.getByTestId("resource-switcher-trigger"), "hoverIn");
@@ -561,9 +607,9 @@ describe("management workspace primitives", () => {
     );
 
     expect(screen.getByTestId("management-form")).toHaveStyle({
-      borderRadius: 16,
+      borderRadius: velaTheme.semantic.radius.control,
       maxWidth: velaTheme.recipes.managementWorkspace.formMaxWidth,
-      padding: velaTheme.spacing.xl,
+      padding: velaTheme.spacing.lg,
     });
     expect(screen.getByTestId("management-form-actions")).toHaveStyle({
       flexDirection: "row",
@@ -629,7 +675,7 @@ describe("management workspace primitives", () => {
     expect(screen.getByTestId("management-input")).toHaveStyle({
       backgroundColor: velaTheme.semantic.color.fieldSurface,
       borderColor: "rgba(243, 18, 96, 0.58)",
-      borderRadius: 10,
+      borderRadius: velaTheme.semantic.radius.control,
       minHeight: 96,
       width: "100%",
     });
@@ -684,11 +730,12 @@ describe("management workspace primitives", () => {
     );
 
     expect(screen.getByTestId("collection-header")).toHaveStyle({
+      backgroundColor: velaTheme.semantic.color.surfaceTransparent,
       minHeight: velaTheme.recipes.managementWorkspace.headerHeight,
     });
     expect(screen.getByTestId("collection-header-mark")).toHaveStyle({
-      height: 48,
-      width: 48,
+      height: velaTheme.semantic.icon.size.large,
+      width: velaTheme.semantic.icon.size.large,
     });
     expect(screen.getByTestId("collection-footer-action")).toHaveStyle({
       minHeight: velaTheme.recipes.managementWorkspace.collectionActionHeight,

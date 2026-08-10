@@ -176,6 +176,8 @@ function ComposerEditorBridge({
   const [editor] = useLexicalComposerContext();
   const externalKey = documentKey(externalDocument);
   const latestDocumentKey = useRef(externalKey);
+  const composingRef = useRef(false);
+  const pendingExternalRef = useRef<ComposerDocument | null>(null);
   const onSnapshotChangeRef = useRef(onSnapshotChange);
   const onSubmitRef = useRef(onSubmit);
   const onSuggestionCommandRef = useRef(onSuggestionCommand);
@@ -185,17 +187,60 @@ function ComposerEditorBridge({
   onSuggestionCommandRef.current = onSuggestionCommand;
   suggestionsOpenRef.current = suggestionsOpen;
 
-  useEffect(() => editor.setEditable(!disabled), [disabled, editor]);
-  useEffect(() => {
-    if (externalKey === latestDocumentKey.current) return;
+  const applyExternalDocument = (
+    document: ComposerDocument,
+  ): void => {
+    const key = documentKey(document);
+    if (key === latestDocumentKey.current) {
+      pendingExternalRef.current = null;
+      return;
+    }
     editor.update(
       () => {
-        replaceRootDocument(externalDocument);
+        replaceRootDocument(document);
         $getRoot().selectEnd();
       },
       {discrete: true},
     );
-    latestDocumentKey.current = externalKey;
+    latestDocumentKey.current = key;
+    pendingExternalRef.current = null;
+  };
+
+  const queueOrApplyExternalDocument = (
+    document: ComposerDocument,
+  ): void => {
+    if (composingRef.current || editor.isComposing()) {
+      pendingExternalRef.current = document;
+      return;
+    }
+    applyExternalDocument(document);
+  };
+
+  useEffect(() => editor.setEditable(!disabled), [disabled, editor]);
+  useEffect(() => {
+    const onStart = () => {
+      composingRef.current = true;
+    };
+    const onEnd = () => {
+      composingRef.current = false;
+      // Conversation switches remount the composer via React `key`, so a
+      // pending external draft here is almost always an echo of the same
+      // conversation. Prefer the just-committed IME text; onChange will
+      // republish it. Applying pending here clobbers pinyin/`@` queries.
+      const current = readEditorSnapshot(editor);
+      latestDocumentKey.current = documentKey(current.document);
+      pendingExternalRef.current = null;
+    };
+    return editor.registerRootListener((root, previousRoot) => {
+      previousRoot?.removeEventListener("compositionstart", onStart);
+      previousRoot?.removeEventListener("compositionend", onEnd);
+      root?.addEventListener("compositionstart", onStart);
+      root?.addEventListener("compositionend", onEnd);
+    });
+  }, [editor]);
+  useEffect(() => {
+    if (externalKey === latestDocumentKey.current) return;
+    queueOrApplyExternalDocument(externalDocument);
   }, [editor, externalDocument, externalKey]);
 
   useEffect(
@@ -273,16 +318,10 @@ function ComposerEditorBridge({
         editor.getRootElement()?.focus({preventScroll: true});
       },
       replaceDocument(document) {
-        editor.update(
-          () => {
-            replaceRootDocument(document);
-            $getRoot().selectEnd();
-          },
-          {discrete: true},
-        );
-        latestDocumentKey.current = documentKey(document);
+        queueOrApplyExternalDocument(document);
       },
       replaceMention(insertion) {
+        if (composingRef.current || editor.isComposing()) return;
         const snapshot = readEditorSnapshot(editor);
         const result = replaceComposerDocumentRangeWithMention({
           document: snapshot.document,

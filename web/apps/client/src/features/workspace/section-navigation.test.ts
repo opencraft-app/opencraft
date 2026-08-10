@@ -2,15 +2,18 @@ import {
   activeConversationMatches,
   authRouteHref,
   canonicalRouteSearch,
+  canonicalizeServerPathname,
   computerHref,
   defaultSignedInHref,
   directConversationHref,
   firstRoutableChannelId,
   newDirectConversationHref,
   resolveServerRouteReference,
+  routeParam,
   safeReturnTo,
   serverRootHref,
   withCanonicalRouteSearch,
+  workspaceActiveSectionFromPathname,
   workspaceSectionHref,
 } from "./section-navigation";
 
@@ -54,7 +57,62 @@ describe("workspaceSectionHref", () => {
     );
     expect(serverRootHref("server 1")).toBe("/s/server%201");
   });
+});
 
+describe("workspaceActiveSectionFromPathname", () => {
+  it("maps chat and management paths to the shared chrome section", () => {
+    expect(workspaceActiveSectionFromPathname("/s/atlas")).toBe("chat");
+    expect(workspaceActiveSectionFromPathname("/s/atlas/c/channel-1")).toBe(
+      "chat",
+    );
+    expect(workspaceActiveSectionFromPathname("/s/atlas/dm/dc-1")).toBe(
+      "chat",
+    );
+    expect(workspaceActiveSectionFromPathname("/s/atlas/dm/new")).toBe(
+      "chat",
+    );
+    expect(workspaceActiveSectionFromPathname("/s/atlas/tasks")).toBe(
+      "tasks",
+    );
+    expect(workspaceActiveSectionFromPathname("/s/atlas/agents")).toBe(
+      "agents",
+    );
+    expect(workspaceActiveSectionFromPathname("/s/atlas/computers")).toBe(
+      "computers",
+    );
+    expect(
+      workspaceActiveSectionFromPathname("/s/atlas/computers/computer-1"),
+    ).toBe("computers");
+    expect(workspaceActiveSectionFromPathname("/s/atlas/members")).toBe(
+      "members",
+    );
+    expect(workspaceActiveSectionFromPathname("/s/atlas/settings")).toBe(
+      "settings",
+    );
+  });
+});
+
+describe("canonicalizeServerPathname", () => {
+  it("rewrites a legacy Server id while keeping the rest of the route", () => {
+    expect(
+      canonicalizeServerPathname(
+        `/s/${atlas.id}/computers/computer-1`,
+        atlas.id,
+        "atlas",
+      ),
+    ).toBe("/s/atlas/computers/computer-1");
+    expect(
+      canonicalizeServerPathname(
+        `/s/${atlas.id}/dm/new`,
+        atlas.id,
+        "atlas",
+        "?peerMemberId=member-2",
+      ),
+    ).toBe("/s/atlas/dm/new?peerMemberId=member-2");
+  });
+});
+
+describe("resolveServerRouteReference", () => {
   it("resolves visible Server refs while canonicalizing legacy IDs", () => {
     expect(resolveServerRouteReference([atlas], "atlas")).toEqual({
       canonicalSlug: "atlas",
@@ -85,7 +143,9 @@ describe("workspaceSectionHref", () => {
       resolveServerRouteReference([atlas, collision], atlas.id),
     ).toEqual({status: "unavailable"});
   });
+});
 
+describe("firstRoutableChannelId", () => {
   it("chooses the ready all-members system Topic before an ordinary Channel", () => {
     const systemChannel = {
       id: "channel-all",
@@ -174,6 +234,38 @@ describe("browser route safety", () => {
     ).toBe(
       "/s/atlas?backend=http%3A%2F%2F127.0.0.1%3A18081",
     );
+  });
+
+  it("keeps peerMemberId on new-DM return paths through auth", () => {
+    expect(
+      safeReturnTo(
+        "/s/atlas/dm/new?peerMemberId=member-agent-1&token=secret",
+        "app.example.com",
+      ),
+    ).toBe("/s/atlas/dm/new?peerMemberId=member-agent-1");
+    expect(
+      safeReturnTo(
+        "/s/atlas/dm/new?peerMemberId=member%2Fagent+1&backend=http%3A%2F%2F127.0.0.1%3A18081",
+        "localhost",
+      ),
+    ).toBe(
+      "/s/atlas/dm/new?peerMemberId=member%2Fagent+1&backend=http%3A%2F%2F127.0.0.1%3A18081",
+    );
+    expect(
+      authRouteHref(
+        "login",
+        "/s/atlas/dm/new?peerMemberId=member-agent-1",
+        "app.example.com",
+      ),
+    ).toBe(
+      "/login?returnTo=%2Fs%2Fatlas%2Fdm%2Fnew%3FpeerMemberId%3Dmember-agent-1",
+    );
+  });
+
+  it("coalesces Expo string | string[] route params", () => {
+    expect(routeParam("channel-1")).toBe("channel-1");
+    expect(routeParam(["channel-1", "channel-2"])).toBe("channel-1");
+    expect(routeParam(undefined, "")).toBe("");
   });
 
   it.each([

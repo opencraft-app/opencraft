@@ -5,9 +5,12 @@ import type {Agent, Channel, Member, Server} from "../platform/api.js";
 import {PlatformError} from "../platform/errors.js";
 import {
   agentMentionEligibility,
+  isEveryoneChannel,
   resolveAgent,
   resolveChannel,
   resolveServer,
+  memberCanManageServer,
+  selectCurrentHumanMember,
 } from "./resources.js";
 
 const servers: Server[] = [
@@ -107,4 +110,46 @@ test("real mentions require a ready Agent who is an active Channel member", () =
       reason: "Agent IM 身份尚未就绪",
     },
   );
+});
+
+test("isEveryoneChannel names the server-wide root channel", () => {
+  assert.equal(isEveryoneChannel({systemKey: "all"}), true);
+  assert.equal(isEveryoneChannel({systemKey: null}), false);
+  assert.equal(isEveryoneChannel(undefined), false);
+  assert.equal(isEveryoneChannel(null), false);
+});
+
+test("selectCurrentHumanMember requires a Human and accepts account or IM identity", () => {
+  const human: Member = {
+    accountId: "account-1",
+    displayName: "Skip",
+    handle: "skip",
+    id: "member-human-1",
+    imState: "ready",
+    imUserId: "human-im-1",
+    kind: "human",
+    revision: 1,
+    role: "owner",
+    serverId: "server-1",
+    status: "active",
+  };
+  assert.equal(
+    selectCurrentHumanMember([member, human], {accountId: "account-1"})?.id,
+    human.id,
+  );
+  assert.equal(
+    selectCurrentHumanMember([human], {imUserId: "human-im-1"})?.id,
+    human.id,
+  );
+  assert.equal(
+    selectCurrentHumanMember([member], {accountId: "account-1"}),
+    undefined,
+  );
+});
+
+test("memberCanManageServer is true only for owner and admin", () => {
+  assert.equal(memberCanManageServer({role: "owner"}), true);
+  assert.equal(memberCanManageServer({role: "admin"}), true);
+  assert.equal(memberCanManageServer({role: "member"}), false);
+  assert.equal(memberCanManageServer(undefined), false);
 });

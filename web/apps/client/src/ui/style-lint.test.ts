@@ -115,14 +115,12 @@ describe("Vela style lint", () => {
           "channelMemberConfirmCancel",
           "channelMemberConfirmSubmit",
           "channelMemberRemove",
-          "channelPanelSubmit",
-          "directPickerEmptyAction",
           "reconnectButton",
           "searchMore",
           "searchSubmit",
-          "sidebarSearchWrap",
         ],
       ],
+      ["components/clearable-search-field.tsx", ["clear", "field"]],
       ["components/message-composer.tsx", ["mentionButton", "sendButton"]],
       ["components/message-list.tsx", ["loadOlderButton", "retryButton"]],
       ["components/route-status-screen.tsx", ["action"]],
@@ -174,7 +172,7 @@ describe("Vela style lint", () => {
       "components/message-viewport/message-viewport.tsx:newMessages",
       "layouts/app-frame.tsx:accountPopover",
       "layouts/app-frame.tsx:railTooltip",
-      "layouts/workspace-shell.tsx:channelMemberConfirmDialog",
+      "layouts/workspace-shell.styles.ts:channelMemberConfirmDialog",
     ]);
   });
 

@@ -1,7 +1,12 @@
 import type {Account, Server} from "@vela/client-core";
 import {fireEvent, render, waitFor} from "@testing-library/react-native";
+import {Text} from "react-native";
 
-import {ServerSettingsScreen} from "@/ui";
+import {
+  PresentationProvider,
+  ServerSettingsScreen,
+  type HumanClientPresenter,
+} from "@/ui";
 
 const account: Account = {
   displayName: "Alice",
@@ -78,5 +83,58 @@ describe("ServerSettingsScreen", () => {
 
     expect(screen.getByText("只有 Server Owner 或管理员可以修改这些设置")).toBeTruthy();
     expect(screen.getByTestId("server-settings-name").props.editable).toBe(false);
+  });
+
+  it("publishes settings through the shared management presentation model", async () => {
+    const presenter: HumanClientPresenter = {
+      kind: "terminal",
+      renderConversationPage(_model, fallback) {
+        return fallback;
+      },
+      renderManagementPage(model) {
+        return <Text>{`${model.id}:${model.header.title}:${model.form?.fields.length}`}</Text>;
+      },
+      renderWorkspaceSetup(_model, fallback) {
+        return fallback;
+      },
+    };
+    const screen = await render(
+      <PresentationProvider presenter={presenter}>
+        <ServerSettingsScreen
+          canManage
+          currentAccount={account}
+          error={null}
+          onNavigateSection={jest.fn()}
+          onSave={jest.fn(async () => true)}
+          onSelectServer={jest.fn()}
+          pendingAction={null}
+          server={server}
+          servers={[server]}
+        />
+      </PresentationProvider>,
+    );
+
+    expect(screen.getByText("settings:Server 设置:2")).toBeVisible();
+  });
+
+  it("uses the shared compact density on phone widths", async () => {
+    const screen = await render(
+      <ServerSettingsScreen
+        canManage
+        currentAccount={account}
+        error={null}
+        onNavigateSection={jest.fn()}
+        onSave={jest.fn(async () => true)}
+        onSelectServer={jest.fn()}
+        pendingAction={null}
+        server={server}
+        servers={[server]}
+        viewportWidth={600}
+      />,
+    );
+
+    expect(screen.getByTestId("server-settings-detail-scroll-content")).toHaveStyle({
+      paddingHorizontal: 16,
+    });
   });
 });

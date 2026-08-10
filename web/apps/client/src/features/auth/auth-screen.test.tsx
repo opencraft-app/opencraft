@@ -14,11 +14,11 @@ describe("AuthScreen", () => {
     expect(screen.queryByTestId("auth-account-icon")).toBeNull();
     expect(screen.getByTestId("auth-form-panel")).toHaveStyle({
       backgroundColor: "#FFFFFF",
-      borderRadius: 16,
+      borderRadius: velaTheme.semantic.radius.section,
     });
     expect(screen.getByTestId("auth-email-input")).toHaveStyle({
       backgroundColor: velaTheme.semantic.color.fieldSurface,
-      borderRadius: 10,
+      borderRadius: velaTheme.semantic.radius.control,
     });
     expect(JSON.stringify(screen.toJSON())).not.toMatch(/腾讯云|TAT|Region/u);
   });

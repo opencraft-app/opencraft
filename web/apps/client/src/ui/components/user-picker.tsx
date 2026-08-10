@@ -1,10 +1,11 @@
 import { useState, type ReactElement, type ReactNode } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import Search from "lucide-react-native/icons/search";
-import X from "lucide-react-native/icons/x";
 
-import { velaTheme } from "../tokens";
+import {
+  ClearableSearchField,
+  SearchEmptyCard,
+} from "./clearable-search-field";
 
 export interface UserPickerSection<T> {
   emptyText?: string;
@@ -58,42 +59,19 @@ export function UserPicker<T>({
 
   return (
     <View style={styles.root}>
-      <View style={styles.search}>
-        <Search
-          color={velaTheme.semantic.color.iconMuted}
-          size={velaTheme.semantic.icon.size.small}
-          strokeWidth={velaTheme.semantic.icon.stroke.regular}
-        />
-        <TextInput
-          accessibilityLabel={accessibilityLabel}
-          onChangeText={setQuery}
-          placeholder={placeholder}
-          placeholderTextColor={velaTheme.semantic.color.fieldPlaceholder}
-          style={styles.searchInput}
-          value={query}
-        />
-        {searching ? (
-          <Pressable
-            accessibilityLabel={clearAccessibilityLabel}
-            accessibilityRole="button"
-            hitSlop={velaTheme.semantic.interaction.hitTargetInset}
-            onPress={() => setQuery("")}
-            style={styles.searchClear}
-          >
-            <X
-              color={velaTheme.semantic.color.iconMuted}
-              size={velaTheme.semantic.icon.size.small}
-              strokeWidth={velaTheme.semantic.icon.stroke.regular}
-            />
-          </Pressable>
-        ) : null}
-      </View>
+      <ClearableSearchField
+        accessibilityLabel={accessibilityLabel}
+        clearAccessibilityLabel={clearAccessibilityLabel}
+        onChangeText={setQuery}
+        placeholder={placeholder}
+        value={query}
+      />
       {noMatches
         ? (emptyContent ?? (
-            <View style={styles.searchEmpty}>
-              <Text style={styles.searchEmptyTitle}>{emptyTitle}</Text>
-              <Text style={styles.emptyText}>{emptyDescription}</Text>
-            </View>
+            <SearchEmptyCard
+              description={emptyDescription}
+              title={emptyTitle}
+            />
           ))
         : null}
       {!noMatches
@@ -147,45 +125,6 @@ const styles = StyleSheet.create((theme) => ({
   root: {
     gap: theme.spacing.sm,
   },
-  search: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.fieldSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    height: theme.recipes.control.fieldHeight,
-    paddingHorizontal: theme.spacing.md,
-  },
-  searchClear: {
-    alignItems: "center",
-    height: theme.recipes.iconControl.compactSize,
-    justifyContent: "center",
-    width: theme.recipes.iconControl.compactSize,
-  },
-  searchEmpty: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.sectionSurface,
-    borderColor: theme.semantic.color.borderSection,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    gap: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.xl,
-  },
-  searchEmptyTitle: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.bodyEmphasis,
-  },
-  searchInput: {
-    color: theme.semantic.color.textPrimary,
-    flex: 1,
-    ...theme.semantic.typography.bodyCompact,
-    minWidth: 0,
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-  },
   section: {
     backgroundColor: theme.semantic.color.surfaceSubtle,
     borderRadius: theme.semantic.radius.control,
@@ -200,7 +139,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.semantic.color.surfaceSubtle,
     borderRadius: theme.semantic.radius.control,
     justifyContent: "center",
-    minHeight: theme.recipes.managementWorkspace.rowMinHeight,
+    minHeight: theme.recipes.control.rowHeight,
     paddingHorizontal: theme.spacing.lg,
   },
   sectionHeader: {

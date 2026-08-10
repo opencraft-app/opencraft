@@ -7,15 +7,12 @@ import type {
 } from "@vela/client-core";
 import { useMemo, useState } from "react";
 import {
-  ScrollView,
   Text,
   useWindowDimensions,
   View,
 } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import Monitor from "lucide-react-native/icons/monitor";
-import Plus from "lucide-react-native/icons/plus";
-import RefreshCw from "lucide-react-native/icons/refresh-cw";
 import X from "lucide-react-native/icons/x";
 
 import {ManagementEmptyState} from "../components/management-empty-state";
@@ -24,35 +21,46 @@ import {
   CodeBlock,
   CollectionIdentityMark,
   CollectionRow,
+  CollectionRowCopy,
   DetailSection,
   IconActionButton,
   InlineFeedback,
-  ManagementCollectionPane,
   ManagementDetailCanvas,
   ManagementDetailScroll,
+  ManagementStageFill,
   ManagementField,
   ManagementForm,
-  ManagementFormActions,
+  ManagementFormFooter,
   ManagementHeader,
+  ManagementHeaderActions,
   NoticeBanner,
   ResourceIdentityHeader,
+  ManagementResourceDirectory,
   ManagementResourceSwitcher,
   ManagementStage,
   ManagementTextInput,
   ResourceActionRow,
 } from "../components/management-workspace";
 import {formatReadableDateTime} from "../date-time";
-import { layoutMode } from "../layout-mode";
 import {
-  breakpoints,
-  workspaceShellWideBreakpoint,
-} from "../theme";
-import {
+  buildManagementShellModel,
   ManagementPresentation,
   type ManagementPageModel,
   type PresentationAction,
+  type PresentationForm,
 } from "../presentation";
-import { PlatformFrame, type PlatformFrameProps } from "../layouts/app-frame";
+import type { PlatformFrameProps } from "../layouts/app-frame";
+import { ManagementScreenFrame } from "../layouts/management-screen-frame";
+import {
+  computerEmptyCopy,
+  computerNotFoundCopy,
+} from "../management-empty-copy";
+import { managementSurfaceLayout } from "../management-surface-layout";
+import {
+  computerConnectionLabel,
+  computerConnectionTone,
+  computerListItemViewModel,
+} from "../presentation/resources/computer";
 import type { WorkspaceSection } from "../layouts/workspace-section";
 import {
   TerminalPanel,
@@ -66,6 +74,11 @@ export interface ComputersScreenProps {
   currentAccount?: PlatformFrameProps["account"];
   currentServerId: string | null;
   error: string | null;
+  /**
+   * When false, render section body only. Parent WorkspaceChrome owns the
+   * shared rail / bottom bar so navigation membership stays stable.
+   */
+  framed?: boolean;
   imStatus?: PlatformFrameProps["imStatus"];
   loading: boolean;
   onCreateComputer(
@@ -100,6 +113,7 @@ export function ComputersScreen(props: ComputersScreenProps) {
     currentAccount,
     currentServerId,
     error,
+    framed = true,
     imStatus,
     loading,
     onCreateComputer,
@@ -121,14 +135,9 @@ export function ComputersScreen(props: ComputersScreenProps) {
   } = props;
   const window = useWindowDimensions();
   const resolvedViewportWidth = viewportWidth ?? window.width;
-  const frameMode = layoutMode(resolvedViewportWidth);
-  const compactFrame = frameMode === "compact";
-  const phone = resolvedViewportWidth < breakpoints.medium;
-  const mediumSurface =
-    resolvedViewportWidth >= breakpoints.medium && resolvedViewportWidth < breakpoints.wide;
-  const wideWorkspace = resolvedViewportWidth >= workspaceShellWideBreakpoint;
-  const hasComputerDirectory =
-    computers.length > 0 && (wideWorkspace || computers.length > 1);
+  const surface = managementSurfaceLayout(resolvedViewportWidth);
+  const {density, phone, stackedCollection} = surface;
+  const showStackedCollection = stackedCollection && computers.length > 1;
   const [creating, setCreating] = useState(false);
   const [createName, setCreateName] = useState("");
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -175,54 +184,52 @@ export function ComputersScreen(props: ComputersScreenProps) {
     setCreateName("");
   };
 
+  const selectListedComputer = (computerId: string) => {
+    terminal?.close();
+    setTerminal(null);
+    setRegistration(null);
+    setReleaseConfirming(false);
+    selectComputer(computerId);
+  };
+  const computerItems = computers.map(computer => ({
+    resource: computer,
+    view: computerListItemViewModel(computer, computer.id === selected?.id),
+  }));
+  const selectedComputerItem = selected
+    ? computerItems.find(item => item.resource.id === selected.id)
+    : undefined;
   const desktopNavigation = (
-    <ManagementCollectionPane
-      orientation={wideWorkspace ? "vertical" : "horizontal"}
+    <ManagementResourceDirectory
+      eyebrow={`${computers.length} 台 Computer`}
+      horizontal={stackedCollection}
+      icon={Monitor}
       testID="computer-sidebar"
+      title="Computer"
     >
-      <ScrollView
-        contentContainerStyle={[
-          styles.list,
-          !wideWorkspace && styles.listStacked,
-        ]}
-        horizontal={!wideWorkspace}
-        showsHorizontalScrollIndicator={false}
-        style={styles.listScroller}
-      >
-        {computers.map((computer) => {
-          const active = computer.id === selected?.id;
-          return (
-            <CollectionRow
-              accessibilityLabel={`打开 Computer ${computer.name}`}
-              key={computer.id}
-              onPress={() => {
-                terminal?.close();
-                setTerminal(null);
-                setRegistration(null);
-                setReleaseConfirming(false);
-                selectComputer(computer.id);
+      {computerItems.map(({resource: computer, view}) => {
+        return (
+          <CollectionRow
+            accessibilityLabel={view.accessibilityLabel}
+            key={view.id}
+            onPress={() => selectListedComputer(computer.id)}
+            orientation={stackedCollection ? "horizontal" : "vertical"}
+            selected={view.selected}
+          >
+            <CollectionIdentityMark
+              icon={Monitor}
+              presence={{
+                label: view.status,
+                tone: view.tone,
               }}
-              orientation={wideWorkspace ? "vertical" : "horizontal"}
-              selected={active}
-            >
-              <CollectionIdentityMark
-                icon={Monitor}
-                presence={{
-                  label: computerConnectionLabel[computer.connectionState],
-                  tone: computerConnectionTone(computer.connectionState),
-                }}
-              />
-              <View style={styles.rowCopy}>
-                <Text style={styles.rowTitle}>{computer.name}</Text>
-                <Text style={styles.mono}>
-                  {computer.osType} · {computerConnectionLabel[computer.connectionState]}
-                </Text>
-              </View>
-            </CollectionRow>
-          );
-        })}
-      </ScrollView>
-    </ManagementCollectionPane>
+            />
+            <CollectionRowCopy
+              meta={view.meta}
+              title={view.title}
+            />
+          </CollectionRow>
+        );
+      })}
+    </ManagementResourceDirectory>
   );
   const mobileNavigation = selected ? (
     <ManagementResourceSwitcher
@@ -232,61 +239,52 @@ export function ComputersScreen(props: ComputersScreenProps) {
         <CollectionIdentityMark
           icon={Monitor}
           presence={{
-            label: computerConnectionLabel[selected.connectionState],
-            tone: computerConnectionTone(selected.connectionState),
+            label: selectedComputerItem!.view.status,
+            tone: selectedComputerItem!.view.tone,
           }}
         />
-        <View style={styles.rowCopy}>
-          <Text numberOfLines={1} style={styles.rowTitle}>
-            {selected.name}
-          </Text>
-          <Text numberOfLines={1} style={styles.mono}>
-            {selected.osType} · {computerConnectionLabel[selected.connectionState]}
-          </Text>
-        </View>
+        <CollectionRowCopy
+          meta={selectedComputerItem!.view.meta}
+          numberOfLines={1}
+          title={selected.name}
+        />
         </>
       )}
       expanded={switcherOpen}
       onToggle={() => setSwitcherOpen((current) => !current)}
-      options={computers
-        .filter((computer) => computer.id !== selected.id)
-        .map((computer) => ({
-          accessibilityLabel: `打开 Computer ${computer.name}`,
+      options={computerItems
+        .filter((item) => item.resource.id !== selected.id)
+        .map(({resource: computer, view}) => ({
+          accessibilityLabel: view.accessibilityLabel,
           content: (
             <>
                 <CollectionIdentityMark
                   icon={Monitor}
                   presence={{
-                    label: computerConnectionLabel[computer.connectionState],
-                    tone: computerConnectionTone(computer.connectionState),
+                    label: view.status,
+                    tone: view.tone,
                   }}
                 />
-                <View style={styles.rowCopy}>
-                  <Text numberOfLines={1} style={styles.rowTitle}>
-                    {computer.name}
-                  </Text>
-                  <Text numberOfLines={1} style={styles.mono}>
-                    {computer.osType} · {computerConnectionLabel[computer.connectionState]}
-                  </Text>
-                </View>
+                <CollectionRowCopy
+                  meta={view.meta}
+                  numberOfLines={1}
+                  title={computer.name}
+                />
             </>
           ),
           id: computer.id,
           onSelect: () => {
-            terminal?.close();
-            setTerminal(null);
-            setRegistration(null);
-            setReleaseConfirming(false);
-            selectComputer(computer.id);
+            selectListedComputer(computer.id);
             setSwitcherOpen(false);
           },
         }))}
       testID="computer-mobile-switcher"
     />
   ) : null;
-  const navigation = phone ? mobileNavigation : desktopNavigation;
+  const hideCollection = creating || terminal !== null;
+  const frameNavigation =
+    stackedCollection || hideCollection ? null : desktopNavigation;
 
-  const selectedServer = servers.find(item => item.id === currentServerId);
   const createAction: PresentationAction = {
     disabled: pendingAction !== null,
     id: "create-computer",
@@ -350,14 +348,14 @@ export function ComputersScreen(props: ComputersScreenProps) {
   ] : [];
   const semanticModel = (): ManagementPageModel => ({
     collection: {
-      items: computers.map(item => ({
-        id: item.id,
-        meta: item.osType,
-        onSelect: () => selectComputer(item.id),
-        selected: item.id === selected?.id,
-        status: computerConnectionLabel[item.connectionState],
-        subtitle: item.lifecycleState,
-        title: item.name,
+      items: computerItems.map(({resource, view}) => ({
+        id: view.id,
+        meta: view.meta,
+        onSelect: () => selectComputer(resource.id),
+        selected: view.selected,
+        status: view.status,
+        subtitle: view.subtitle,
+        title: view.title,
       })),
       label: "Computer",
     },
@@ -459,13 +457,13 @@ export function ComputersScreen(props: ComputersScreenProps) {
             : {
                 empty: hasRouteSelectedComputer
                   ? {
-                      description: "这条链接可能已经失效，或者你没有访问权限。",
-                      title: "找不到这台 Computer",
+                      description: computerNotFoundCopy.description,
+                      title: computerNotFoundCopy.title,
                     }
                   : {
                       action: createAction,
-                      description: "纳管一台可出网机器，再把 Agent 绑定到它。",
-                      title: "还没有 Computer",
+                      description: computerEmptyCopy.description,
+                      title: computerEmptyCopy.title,
                     },
               }),
     error: error ?? undefined,
@@ -475,115 +473,72 @@ export function ComputersScreen(props: ComputersScreenProps) {
       title: creating ? "纳管 Computer" : "Computer",
     },
     id: "computers",
-    shell: {
+    shell: buildManagementShellModel({
       accountLabel: currentAccount?.displayName ?? currentAccount?.email,
       activeSection: "computers",
-      navigation: ([
-        ["chat", "聊天"],
-        ["tasks", "任务"],
-        ["agents", "Agent"],
-        ["computers", "Computer"],
-        ["members", "成员"],
-      ] as const).map(([section, label]) => ({
-        id: `navigate-${section}`,
-        label,
-        run: () => onNavigateSection(section),
-      })),
+      canManageServer: canManage,
+      currentServerId,
       ...(onLogout ? {onLogout} : {}),
-      serverName: selectedServer?.name,
-      serverOptions: servers.map(server => ({
-        id: server.id,
-        label: server.name,
-        onSelect: () => onSelectServer(server.id),
-        selected: server.id === currentServerId,
-      })),
-    },
+      onNavigateSection,
+      onSelectServer,
+      servers,
+    }),
   });
 
-  return (
-    <ManagementPresentation model={semanticModel}>
-    <PlatformFrame
-      account={currentAccount}
-      activeSection="computers"
-      canManageServer={canManage}
-      currentServerId={currentServerId}
-      imStatus={imStatus}
-      navigation={null}
-      onLogout={onLogout}
-      onNavigateSection={onNavigateSection}
-      onSelectServer={onSelectServer}
-      sectionHref={sectionHref}
-      serverHref={serverHref}
-      servers={servers}
-      viewportWidth={viewportWidth}
-    >
+  const renderStage = (pageModel: ManagementPageModel) => (
       <ManagementStage testID="computer-stage">
         <ManagementHeader
           actions={(
-            <View style={styles.headerActions}>
-            <IconActionButton
-              accessibilityLabel="刷新 Computer"
-              disabled={loading}
-              context="header"
-              icon={RefreshCw}
-              onPress={onRefresh}
-              testID="computer-refresh-icon"
+            <ManagementHeaderActions
+              createAccessibilityLabel="纳管 Computer"
+              createIconTestID="computer-create-icon"
+              createLabel="纳管"
+              createVisible={computers.length > 0 && !creating}
+              onCreate={() => setCreating(true)}
+              onRefresh={onRefresh}
+              refreshAccessibilityLabel="刷新 Computer"
+              refreshDisabled={loading}
+              refreshTestID="computer-refresh-icon"
             />
-            {computers.length > 0 && !creating ? (
-              <ActionButton
-                accessibilityLabel="纳管 Computer"
-                context="header"
-                icon={Plus}
-                iconTestID="computer-create-icon"
-                importance="tonal"
-                label="纳管"
-                onPress={() => setCreating(true)}
-              />
-            ) : null}
-            </View>
           )}
-          title={creating ? "纳管 Computer" : "Computer"}
+          title={pageModel.header.title}
           titleTestID="computer-stage-title"
         />
-        {error ? (
+        {pageModel.error ? (
           <InlineFeedback
-            message={error}
+            message={pageModel.error}
             testID="computer-feedback"
-            tone={error.includes("已完成连接") ? "positive" : "danger"}
+            tone={pageModel.error.includes("已完成连接") ? "positive" : "danger"}
           />
         ) : null}
-        <View
-          style={[
-            styles.workspaceBody,
-            wideWorkspace && styles.workspaceBodyWide,
-          ]}
-          testID="computer-workspace"
+        {!hideCollection && computers.length > 1
+          ? phone
+            ? mobileNavigation
+            : showStackedCollection
+              ? desktopNavigation
+              : null
+          : null}
+        {terminal && selected ? (
+          <ManagementStageFill density={density} testID="computer-terminal-host">
+            <TerminalPanel
+              controller={terminal}
+              name={selected.name}
+              onClose={() => setTerminal(null)}
+            />
+          </ManagementStageFill>
+        ) : (
+        <ManagementDetailScroll
+          density={density}
+          testID="computer-detail-scroll"
         >
-          {hasComputerDirectory && !creating && !terminal
-            ? navigation
-            : null}
-          <ManagementDetailScroll
-            density={phone ? "compact" : mediumSurface ? "medium" : "comfortable"}
-            testID="computer-detail-scroll"
-          >
           {creating ? (
             <ComputerCreateForm
-              disabled={pendingAction !== null}
-              name={createName}
-              onCancel={cancelNewComputer}
-              onChangeName={setCreateName}
-              onSubmit={submitNewComputer}
+              form={pageModel.form!}
             />
           ) : registration ? (
             <RegistrationPanel
               onClose={() => setRegistration(null)}
               registration={registration}
-            />
-          ) : terminal && selected ? (
-            <TerminalPanel
-              controller={terminal}
-              name={selected.name}
-              onClose={() => setTerminal(null)}
             />
           ) : selected ? (
             <ManagementDetailCanvas testID="computer-detail">
@@ -598,13 +553,9 @@ export function ComputersScreen(props: ComputersScreenProps) {
                 ]}
                 metadataTestID="computer-identity-meta"
                 primaryTestID="computer-hero-identity"
-                status={{
-                  label: computerConnectionLabel[selected.connectionState],
-                  tone: selected.connectionState === "online"
-                    ? "positive"
-                    : selected.connectionState === "error"
-                      ? "danger"
-                      : "neutral",
+                  status={{
+                    label: computerConnectionLabel[selected.connectionState],
+                    tone: computerConnectionTone(selected.connectionState),
                 }}
                 testID="computer-hero"
                 title={selected.name}
@@ -743,9 +694,9 @@ export function ComputersScreen(props: ComputersScreenProps) {
             </ManagementDetailCanvas>
           ) : hasRouteSelectedComputer ? (
             <View style={styles.notFound} testID="computer-not-found">
-              <Text style={styles.formTitle}>找不到这台 Computer</Text>
-              <Text style={styles.panelDescription}>
-                这条链接可能已经失效，或者你没有访问权限。
+                  <Text style={styles.formTitle}>{computerNotFoundCopy.title}</Text>
+                  <Text style={styles.panelDescription}>
+                    {computerNotFoundCopy.description}
               </Text>
               {computers[0] ? (
                 <ActionButton
@@ -760,64 +711,74 @@ export function ComputersScreen(props: ComputersScreenProps) {
             <ManagementEmptyState
               actionAccessibilityLabel="从空状态纳管 Computer"
               actionLabel="纳管第一台 Computer"
-              description="纳管一台可出网机器，再把 Agent 绑定到它。"
+              description={computerEmptyCopy.description}
               icon={Monitor}
               onAction={() => setCreating(true)}
-              title="还没有 Computer"
+              title={computerEmptyCopy.title}
             />
           )}
-          </ManagementDetailScroll>
-        </View>
+        </ManagementDetailScroll>
+        )}
       </ManagementStage>
-    </PlatformFrame>
+  );
+
+  return (
+    <ManagementPresentation model={semanticModel}>
+      {(pageModel) => (
+        <ManagementScreenFrame
+          account={currentAccount}
+          activeSection="computers"
+          canManageServer={canManage}
+          currentServerId={currentServerId}
+          framed={framed}
+          imStatus={imStatus}
+          navigation={frameNavigation}
+          onLogout={onLogout}
+          onNavigateSection={onNavigateSection}
+          onSelectServer={onSelectServer}
+          sectionHref={sectionHref}
+          serverHref={serverHref}
+          servers={servers}
+          viewportWidth={viewportWidth}
+        >
+          {renderStage(pageModel)}
+        </ManagementScreenFrame>
+      )}
     </ManagementPresentation>
   );
 }
 
 function ComputerCreateForm({
-  disabled,
-  name,
-  onCancel,
-  onChangeName,
-  onSubmit,
+  form,
 }: {
-  disabled: boolean;
-  name: string;
-  onCancel(): void;
-  onChangeName(value: string): void;
-  onSubmit(input: CreateComputerInput): void | Promise<void>;
+  form: PresentationForm;
 }) {
-  const submitDisabled = disabled || name.trim().length === 0;
+  const name = form.fields.find(field => field.id === "computer-name")!;
+  const cancel = form.actions.find(action => action.id === "cancel-create-computer")!;
+  const submit = form.actions.find(action => action.id === "submit-create-computer")!;
   return (
     <ManagementForm testID="computer-create-form">
-      <ManagementField label="Computer 名称">
+      <ManagementField error={name.error} hint={name.hint} label={name.label}>
         <ManagementTextInput
-          accessibilityLabel="Computer 名称"
-          editable={!disabled}
-          onChangeText={onChangeName}
-          placeholder="例如：研发机"
-          value={name}
+          accessibilityLabel={name.accessibilityLabel ?? name.label}
+          editable={!name.disabled}
+          onChangeText={name.onChange}
+          placeholder={name.placeholder}
+          value={name.value}
         />
       </ManagementField>
-      <ManagementFormActions>
-        <ActionButton
-          accessibilityLabel="取消纳管 Computer"
-          importance="secondary"
-          label="取消"
-          onPress={onCancel}
-        />
-        <ActionButton
-          accessibilityLabel="创建 Computer"
-          disabled={submitDisabled}
-          importance="primary"
-          label="创建 Computer"
-          onPress={() =>
-            onSubmit({
-              name: name.trim(),
-            })
-          }
-        />
-      </ManagementFormActions>
+      <ManagementFormFooter
+        cancelAction={{
+          accessibilityLabel: "取消纳管 Computer",
+          ...cancel,
+          onPress: cancel.run,
+        }}
+        primaryAction={{
+          accessibilityLabel: "创建 Computer",
+          ...submit,
+          onPress: submit.run,
+        }}
+      />
     </ManagementForm>
   );
 }
@@ -854,24 +815,6 @@ function RegistrationPanel({
   );
 }
 
-const computerConnectionLabel: Record<
-  Computer["connectionState"],
-  string
-> = {
-  error: "连接失败",
-  offline: "离线",
-  online: "在线",
-  unknown: "等待连接",
-};
-
-function computerConnectionTone(
-  state: Computer["connectionState"],
-): "danger" | "neutral" | "positive" {
-  if (state === "online") return "positive";
-  if (state === "error") return "danger";
-  return "neutral";
-}
-
 const styles = StyleSheet.create((theme) => ({
   bindingName: {
     ...theme.semantic.typography.bodyEmphasis,
@@ -896,20 +839,10 @@ const styles = StyleSheet.create((theme) => ({
   formTitle: {
     ...theme.semantic.typography.sectionTitle,
   },
-  headerActions: {
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-  },
-  list: {
-    gap: theme.spacing.xs,
-    padding: theme.spacing.sm,
-  },
-  listStacked: {
-    alignItems: "center",
-  },
-  listScroller: {
-    flex: 1,
-  },
+
+
+
+
   mono: {
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.meta,
@@ -925,12 +858,8 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.bodyCompact,
   },
-  rowCopy: {
-    flex: 1,
-  },
-  rowTitle: {
-    ...theme.semantic.typography.sectionTitle,
-  },
+
+
   supportGrid: {
     gap: theme.spacing.lg,
   },
@@ -940,12 +869,5 @@ const styles = StyleSheet.create((theme) => ({
     borderTopWidth: theme.semantic.stroke.hairline,
     gap: theme.spacing.md,
     paddingTop: theme.spacing.xl,
-  },
-  workspaceBody: {
-    flex: 1,
-    minHeight: 0,
-  },
-  workspaceBodyWide: {
-    flexDirection: "row",
   },
 }));

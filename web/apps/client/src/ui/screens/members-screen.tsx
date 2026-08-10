@@ -1,70 +1,86 @@
-import type {
-  AcceptedResource,
-  CreateInviteInput,
-  Invite,
-  InviteSecret,
-  Member,
-  Server,
-  UpdateMemberInput,
+import {
+  memberCanManageServer,
+  selectCurrentHumanMember,
+  type AcceptedResource,
+  type CreateInviteInput,
+  type Invite,
+  type InviteSecret,
+  type Member,
+  type Server,
+  type UpdateMemberInput,
 } from "@vela/client-core";
 import { useMemo, useState } from "react";
 import {
-  ScrollView,
   Text,
   useWindowDimensions,
   View,
 } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import Plus from "lucide-react-native/icons/plus";
-import RefreshCw from "lucide-react-native/icons/refresh-cw";
 import UsersRound from "lucide-react-native/icons/users-round";
 import X from "lucide-react-native/icons/x";
 
 import {deviceTimezone, normalizeLocalDateTime} from "../date-time";
-import { layoutMode } from "../layout-mode";
+import {ManagementEmptyState} from "../components/management-empty-state";
+import {memberEmptyCopy} from "../management-empty-copy";
 import {
+  buildManagementShellModel,
   ManagementPresentation,
   type ManagementPageModel,
   type PresentationAction,
+  type PresentationForm,
 } from "../presentation";
 import {
   ActionButton,
+  CollectionIdentityMark,
   CollectionRow,
+  CollectionRowCopy,
   DetailSection,
   IconActionButton,
   InlineFeedback,
-  ManagementCollectionHeader,
-  ManagementCollectionPane,
+  ManagementChoiceField,
   ManagementDateTimeInput,
   ManagementDetailCanvas,
   ManagementDetailScroll,
   ManagementField,
   ManagementForm,
-  ManagementFormActions,
+  ManagementFormFooter,
   ManagementHeader,
+  ManagementHeaderActions,
+  ManagementResourceDirectory,
   ManagementResourceSwitcher,
   ManagementStage,
   ManagementTextInput,
   ResourceActionRow,
   ResourceIdentityHeader,
   ResourceMetadataList,
-  SelectionButton,
-  SelectionGroup,
 } from "../components/management-workspace";
-import {breakpoints} from "../theme";
 import {
   OperationStatusList,
   type OperationStatusItem,
 } from "../components/operation-status-list";
-import { PlatformFrame, type PlatformFrameProps } from "../layouts/app-frame";
+import { ManagementScreenFrame } from "../layouts/management-screen-frame";
+import type { PlatformFrameProps } from "../layouts/app-frame";
 import type { WorkspaceSection } from "../layouts/workspace-section";
-import {memberIdentityLabel, visibleMemberHandle} from "../member-identity";
+import { managementSurfaceLayout } from "../management-surface-layout";
+import {memberListItemViewModel} from "../presentation/resources/member";
+import {
+  memberImStateLabel,
+  memberKindLabel,
+  memberRoleLabel,
+  memberStatusLabel,
+  visibleMemberHandle,
+} from "../member-identity";
 
 export interface MembersScreenProps {
   accountId: string;
   currentAccount?: PlatformFrameProps["account"];
   currentServerId: string | null;
   error: string | null;
+  /**
+   * When false, render section body only. Parent WorkspaceChrome owns the
+   * shared rail / bottom bar so navigation membership stays stable.
+   */
+  framed?: boolean;
   invites: Invite[];
   imStatus?: PlatformFrameProps["imStatus"];
   loading: boolean;
@@ -100,6 +116,7 @@ export function MembersScreen(props: MembersScreenProps) {
     currentAccount,
     currentServerId,
     error,
+    framed = true,
     invites,
     imStatus,
     loading,
@@ -123,11 +140,8 @@ export function MembersScreen(props: MembersScreenProps) {
   } = props;
   const window = useWindowDimensions();
   const resolvedViewportWidth = viewportWidth ?? window.width;
-  const frameMode = layoutMode(resolvedViewportWidth);
-  const compact = frameMode === "compact";
-  const medium = frameMode === "medium";
-  const phone = resolvedViewportWidth < breakpoints.medium;
-  const stackedCollection = compact || medium;
+  const surface = managementSurfaceLayout(resolvedViewportWidth);
+  const {density, phone, stackedCollection} = surface;
   const showStackedCollection = stackedCollection && members.length > 1;
   const [acceptToken, setAcceptToken] = useState("");
   const [acceptingInvite, setAcceptingInvite] = useState(false);
@@ -153,13 +167,12 @@ export function MembersScreen(props: MembersScreenProps) {
   const selectedVisibleHandle = selected
     ? visibleMemberHandle(selected)
     : null;
-  const currentMember = members.find(
-    (member) =>
-      member.kind === "human" && member.accountId === accountId,
-  );
-  const canManage =
-    currentMember?.role === "owner" ||
-    currentMember?.role === "admin";
+  const memberItems = members.map(member => ({
+    resource: member,
+    view: memberListItemViewModel(member, member.id === selected?.id),
+  }));
+  const currentMember = selectCurrentHumanMember(members, {accountId});
+  const canManage = memberCanManageServer(currentMember);
   const submitInvite = async (input: CreateInviteInput) => {
     const secret = await onCreateInvite(input);
     if (secret) setInviteSecret(secret);
@@ -188,115 +201,69 @@ export function MembersScreen(props: MembersScreenProps) {
     !inviteMaxUsesError;
 
   const desktopNavigation = (
-    <ManagementCollectionPane
-      orientation={stackedCollection ? "horizontal" : "vertical"}
+    <ManagementResourceDirectory
+      eyebrow={`${members.length} 位成员`}
+      horizontal={stackedCollection}
+      icon={UsersRound}
       testID="member-sidebar"
+      title="成员"
     >
-      {!stackedCollection ? (
-        <ManagementCollectionHeader
-          eyebrow={`${members.length} 位成员`}
-          icon={UsersRound}
-          title="成员"
-        />
-      ) : null}
-      <ScrollView
-        contentContainerStyle={[
-          styles.list,
-          stackedCollection && styles.listStacked,
-        ]}
-        horizontal={stackedCollection}
-        showsHorizontalScrollIndicator={false}
-        style={styles.listScroller}
-      >
-        {members.map((member) => {
-          const active = member.id === selected?.id;
-          const identityLabel = memberIdentityLabel(member);
-          return (
-            <CollectionRow
-              accessibilityLabel={`打开成员 ${member.displayName}${identityLabel ? ` ${identityLabel}` : ""}`}
-              key={member.id}
-              onPress={() => setSelectedMemberId(member.id)}
-              orientation={stackedCollection ? "horizontal" : "vertical"}
-              selected={active}
-            >
-              <View
-                style={[
-                  styles.avatar,
-                  member.kind === "agent" && styles.avatarAgent,
-                ]}
-              >
-                <Text style={styles.avatarText}>
-                  {member.displayName.slice(0, 1)}
-                </Text>
-              </View>
-              <View style={styles.rowCopy}>
-                <Text style={styles.rowTitle}>{member.displayName}</Text>
-                <Text style={styles.mono}>
-                  {identityLabel ? `${identityLabel} · ` : ""}
-                  {memberKindLabel[member.kind]} · {memberRoleLabel[member.role]}
-                </Text>
-              </View>
-            </CollectionRow>
-          );
-        })}
-      </ScrollView>
-    </ManagementCollectionPane>
+      {memberItems.map(({resource: member, view}) => {
+        return (
+          <CollectionRow
+            accessibilityLabel={view.accessibilityLabel}
+            key={view.id}
+            onPress={() => setSelectedMemberId(member.id)}
+            orientation={stackedCollection ? "horizontal" : "vertical"}
+            selected={view.selected}
+          >
+            <CollectionIdentityMark
+              identityKind={member.kind}
+              monogram={member.displayName.slice(0, 1)}
+            />
+            <CollectionRowCopy
+              meta={view.meta}
+              title={view.title}
+            />
+          </CollectionRow>
+        );
+      })}
+    </ManagementResourceDirectory>
   );
   const mobileNavigation = selected ? (
     <ManagementResourceSwitcher
       currentAccessibilityLabel={`切换成员，当前 ${selected.displayName}${selectedVisibleHandle ? ` @${selectedVisibleHandle}` : ""}`}
       currentContent={(
         <>
-        <View
-          style={[
-            styles.avatar,
-            selected.kind === "agent" && styles.avatarAgent,
-          ]}
-        >
-          <Text style={styles.avatarText}>
-            {selected.displayName.slice(0, 1)}
-          </Text>
-        </View>
-        <View style={styles.rowCopy}>
-          <Text numberOfLines={1} style={styles.rowTitle}>
-            {selected.displayName}
-          </Text>
-          <Text numberOfLines={1} style={styles.mono}>
-            {selectedVisibleHandle ? `@${selectedVisibleHandle} · ` : ""}
-            {memberKindLabel[selected.kind]} · {memberRoleLabel[selected.role]}
-          </Text>
-        </View>
+        <CollectionIdentityMark
+          identityKind={selected.kind}
+          monogram={selected.displayName.slice(0, 1)}
+        />
+        <CollectionRowCopy
+          meta={`${selectedVisibleHandle ? `@${selectedVisibleHandle} · ` : ""}${memberKindLabel[selected.kind]} · ${memberRoleLabel[selected.role]}`}
+          numberOfLines={1}
+          title={selected.displayName}
+        />
         </>
       )}
       expanded={switcherOpen}
       onToggle={() => setSwitcherOpen((current) => !current)}
-      options={members
-        .filter((member) => member.id !== selected.id)
-        .map((member) => {
-          const identityLabel = memberIdentityLabel(member);
+      options={memberItems
+        .filter(({resource}) => resource.id !== selected.id)
+        .map(({resource: member, view}) => {
           return {
-            accessibilityLabel: `打开成员 ${member.displayName}${identityLabel ? ` ${identityLabel}` : ""}`,
+            accessibilityLabel: view.accessibilityLabel,
             content: (
               <>
-                <View
-                  style={[
-                    styles.avatar,
-                    member.kind === "agent" && styles.avatarAgent,
-                  ]}
-                >
-                  <Text style={styles.avatarText}>
-                    {member.displayName.slice(0, 1)}
-                  </Text>
-                </View>
-                <View style={styles.rowCopy}>
-                  <Text numberOfLines={1} style={styles.rowTitle}>
-                    {member.displayName}
-                  </Text>
-                  <Text numberOfLines={1} style={styles.mono}>
-                    {identityLabel ? `${identityLabel} · ` : ""}
-                    {memberKindLabel[member.kind]} · {memberRoleLabel[member.role]}
-                  </Text>
-                </View>
+                <CollectionIdentityMark
+                  identityKind={member.kind}
+                  monogram={member.displayName.slice(0, 1)}
+                />
+                <CollectionRowCopy
+                  meta={view.meta}
+                  numberOfLines={1}
+                  title={view.title}
+                />
               </>
             ),
             id: member.id,
@@ -310,7 +277,6 @@ export function MembersScreen(props: MembersScreenProps) {
     />
   ) : null;
 
-  const selectedServer = servers.find(item => item.id === currentServerId);
   const createInviteAction: PresentationAction = {
     disabled: !canManage || pendingAction !== null,
     id: "create-invite",
@@ -365,14 +331,9 @@ export function MembersScreen(props: MembersScreenProps) {
     : [];
   const semanticModel = (): ManagementPageModel => ({
     collection: {
-      items: members.map(item => ({
-        id: item.id,
-        meta: memberIdentityLabel(item) ?? undefined,
-        onSelect: () => setSelectedMemberId(item.id),
-        selected: item.id === selected?.id,
-        status: memberStatusLabel[item.status],
-        subtitle: `${memberKindLabel[item.kind]} · ${memberRoleLabel[item.role]}`,
-        title: item.displayName,
+      items: memberItems.map(({resource, view}) => ({
+        ...view,
+        onSelect: () => setSelectedMemberId(resource.id),
       })),
       label: "成员",
     },
@@ -429,6 +390,7 @@ export function MembersScreen(props: MembersScreenProps) {
               },
               {
                 disabled: pendingAction !== null,
+                error: inviteExpiresAtError,
                 id: "invite-expires-at",
                 label: "有效期",
                 onChange: setInviteExpiresAt,
@@ -437,6 +399,7 @@ export function MembersScreen(props: MembersScreenProps) {
               },
               {
                 disabled: pendingAction !== null,
+                error: inviteMaxUsesError,
                 id: "invite-max-uses",
                 label: "最大使用次数",
                 onChange: setInviteMaxUses,
@@ -515,9 +478,17 @@ export function MembersScreen(props: MembersScreenProps) {
               }
             : {
                 empty: {
-                  action: acceptInviteAction,
-                  description: "通过邀请把 Human 或 Agent 加入当前 Server。",
-                  title: "还没有成员",
+                  action: canManage
+                    ? {
+                        disabled: pendingAction !== null,
+                        id: "create-invite",
+                        kind: "primary" as const,
+                        label: "创建邀请",
+                        run: () => setCreatingInvite(true),
+                      }
+                    : acceptInviteAction,
+                  description: memberEmptyCopy.description,
+                  title: memberEmptyCopy.title,
                 },
               }),
     error: error ?? undefined,
@@ -531,81 +502,39 @@ export function MembersScreen(props: MembersScreenProps) {
           : "成员",
     },
     id: "members",
-    shell: {
+    shell: buildManagementShellModel({
       accountLabel: currentAccount?.displayName ?? currentAccount?.email,
       activeSection: "members",
-      navigation: ([
-        ["chat", "聊天"],
-        ["tasks", "任务"],
-        ["agents", "Agent"],
-        ["computers", "Computer"],
-        ["members", "成员"],
-      ] as const).map(([section, label]) => ({
-        id: `navigate-${section}`,
-        label,
-        run: () => onNavigateSection(section),
-      })),
+      canManageServer: canManage,
+      currentServerId,
       ...(onLogout ? {onLogout} : {}),
-      serverName: selectedServer?.name,
-      serverOptions: servers.map(server => ({
-        id: server.id,
-        label: server.name,
-        onSelect: () => onSelectServer(server.id),
-        selected: server.id === currentServerId,
-      })),
-    },
+      onNavigateSection,
+      onSelectServer,
+      servers,
+    }),
   });
 
-  return (
-    <ManagementPresentation model={semanticModel}>
-    <PlatformFrame
-      account={currentAccount}
-      activeSection="members"
-      canManageServer={canManage}
-      currentServerId={currentServerId}
-      imStatus={imStatus}
-      navigation={stackedCollection ? null : desktopNavigation}
-      onLogout={onLogout}
-      onNavigateSection={onNavigateSection}
-      onSelectServer={onSelectServer}
-      sectionHref={sectionHref}
-      serverHref={serverHref}
-      servers={servers}
-      viewportWidth={viewportWidth}
-    >
+  const navigation = stackedCollection ? null : desktopNavigation;
+  const renderStage = (pageModel: ManagementPageModel) => (
       <ManagementStage>
         <ManagementHeader
           actions={(
-            <View style={styles.headerActions}>
-            <IconActionButton
-              accessibilityLabel="刷新成员"
-              context="header"
-              disabled={loading}
-              icon={RefreshCw}
-              onPress={onRefresh}
-              testID="member-refresh-icon"
+            <ManagementHeaderActions
+              createAccessibilityLabel="创建邀请"
+              createIconTestID="member-create-icon"
+              createLabel="邀请"
+              createVisible={canManage && !creatingInvite}
+              onCreate={() => setCreatingInvite(true)}
+              onRefresh={onRefresh}
+              refreshAccessibilityLabel="刷新成员"
+              refreshDisabled={loading}
+              refreshTestID="member-refresh-icon"
             />
-            {canManage && !creatingInvite ? (
-              <ActionButton
-                accessibilityLabel="创建邀请"
-                context="header"
-                icon={Plus}
-                iconTestID="member-create-icon"
-                importance="tonal"
-                label="邀请"
-                onPress={() => setCreatingInvite(true)}
-              />
-            ) : null}
-            </View>
           )}
-          title={creatingInvite
-            ? "创建邀请"
-            : acceptingInvite
-              ? "接受邀请"
-              : "成员"}
+          title={pageModel.header.title}
           titleTestID="member-stage-title"
         />
-        {error ? <InlineFeedback message={error} /> : null}
+        {pageModel.error ? <InlineFeedback message={pageModel.error} /> : null}
         {members.length > 1 && !creatingInvite && !acceptingInvite
           ? phone
             ? mobileNavigation
@@ -614,7 +543,7 @@ export function MembersScreen(props: MembersScreenProps) {
               : null
           : null}
         <ManagementDetailScroll
-          density={phone ? "compact" : medium ? "medium" : "comfortable"}
+          density={density}
           testID="member-detail-scroll"
         >
           {operations.length > 0 ? (
@@ -627,15 +556,7 @@ export function MembersScreen(props: MembersScreenProps) {
           ) : null}
           {creatingInvite ? (
             <InviteForm
-              disabled={pendingAction !== null}
-              expiresAt={inviteExpiresAt}
-              maxUses={inviteMaxUses}
-              onCancel={cancelInvite}
-              onChangeExpiresAt={setInviteExpiresAt}
-              onChangeMaxUses={setInviteMaxUses}
-              onChangeRole={setInviteRole}
-              onSubmit={submitInvite}
-              role={inviteRole}
+              form={pageModel.form!}
             />
           ) : null}
           {inviteSecret ? (
@@ -645,6 +566,21 @@ export function MembersScreen(props: MembersScreenProps) {
             />
           ) : null}
           {!creatingInvite && !acceptingInvite ? (
+            members.length === 0 ? (
+              <ManagementEmptyState
+                actionAccessibilityLabel={
+                  canManage ? "从空状态创建邀请" : "从空状态接受邀请"
+                }
+                actionLabel={canManage ? "创建邀请" : "使用邀请 token"}
+                description={pageModel.empty?.description ?? memberEmptyCopy.description}
+                icon={UsersRound}
+                onAction={() => {
+                  if (canManage) setCreatingInvite(true);
+                  else setAcceptingInvite(true);
+                }}
+                title={pageModel.empty?.title ?? memberEmptyCopy.title}
+              />
+            ) : (
             <ManagementDetailCanvas testID="member-detail">
               {selected ? (
                 <>
@@ -755,6 +691,7 @@ export function MembersScreen(props: MembersScreenProps) {
                 title="加入其他 Server"
               />
             </ManagementDetailCanvas>
+            )
           ) : null}
           {acceptingInvite ? (
             <ManagementDetailCanvas>
@@ -800,110 +737,98 @@ export function MembersScreen(props: MembersScreenProps) {
           ) : null}
         </ManagementDetailScroll>
       </ManagementStage>
-    </PlatformFrame>
+  );
+
+  return (
+    <ManagementPresentation model={semanticModel}>
+      {(pageModel) => (
+        <ManagementScreenFrame
+          account={currentAccount}
+          activeSection="members"
+          canManageServer={canManage}
+          currentServerId={currentServerId}
+          framed={framed}
+          imStatus={imStatus}
+          navigation={navigation}
+          onLogout={onLogout}
+          onNavigateSection={onNavigateSection}
+          onSelectServer={onSelectServer}
+          sectionHref={sectionHref}
+          serverHref={serverHref}
+          servers={servers}
+          viewportWidth={viewportWidth}
+        >
+          {renderStage(pageModel)}
+        </ManagementScreenFrame>
+      )}
     </ManagementPresentation>
   );
 }
 
-function InviteForm({
-  disabled,
-  expiresAt,
-  maxUses,
-  onCancel,
-  onChangeExpiresAt,
-  onChangeMaxUses,
-  onChangeRole,
-  onSubmit,
-  role,
-}: {
-  disabled: boolean;
-  expiresAt: string;
-  maxUses: string;
-  onCancel(): void;
-  onChangeExpiresAt(value: string): void;
-  onChangeMaxUses(value: string): void;
-  onChangeRole(value: Invite["role"]): void;
-  onSubmit(input: CreateInviteInput): void | Promise<void>;
-  role: Invite["role"];
-}) {
-  const normalizedExpiresAt = normalizeLocalDateTime(
-    expiresAt,
-    deviceTimezone(),
-  );
-  const expiresAtError = expiresAt.trim()
-    ? validateInviteExpiration(normalizedExpiresAt)
-    : null;
-  const maxUsesError = validateInviteMaxUses(maxUses);
-  const formValid =
-    expiresAt.trim().length > 0 &&
-    !expiresAtError &&
-    !maxUsesError;
+function InviteForm({form}: {form: PresentationForm}) {
+  const role = form.fields.find(field => field.id === "invite-role")!;
+  const expiresAt = form.fields.find(field => field.id === "invite-expires-at")!;
+  const maxUses = form.fields.find(field => field.id === "invite-max-uses")!;
+  const cancel = form.actions.find(action => action.id === "cancel-create-invite")!;
+  const submit = form.actions.find(action => action.id === "submit-create-invite")!;
   return (
     <ManagementForm testID="member-invite-form">
-      <SelectionGroup>
-        {(["member", "admin"] as const).map((value) => (
-          <SelectionButton
-            accessibilityLabel={
-              value === "admin" ? "邀请管理员" : "邀请普通成员"
-            }
-            key={value}
-            label={value === "admin" ? "管理员" : "普通成员"}
-            layout="equal"
-            onPress={() => onChangeRole(value)}
-            selected={role === value}
-          />
-        ))}
-      </SelectionGroup>
+      <ManagementChoiceField
+        disabled={role.disabled}
+        label={role.label}
+        onSelect={role.onChange}
+        options={(role.options ?? []).map(option => ({
+          ...option,
+          accessibilityLabel: option.value === "admin"
+            ? "邀请管理员"
+            : "邀请普通成员",
+        }))}
+        selected={role.value}
+      />
       <View style={styles.formGrid}>
         <ManagementField
-          error={expiresAtError}
-          label="有效期"
+          error={expiresAt.error}
+          hint={expiresAt.hint}
+          label={expiresAt.label}
           layout="flex"
         >
           <ManagementDateTimeInput
-            accessibilityLabel="邀请有效期"
-            disabled={disabled}
-            invalid={Boolean(expiresAtError)}
-            onChangeText={onChangeExpiresAt}
-            placeholder="例如：2026-08-03 18:00"
-            value={expiresAt}
+            accessibilityLabel={expiresAt.accessibilityLabel ?? "邀请有效期"}
+            disabled={expiresAt.disabled}
+            invalid={Boolean(expiresAt.error)}
+            onChangeText={expiresAt.onChange}
+            placeholder={expiresAt.placeholder}
+            value={expiresAt.value}
           />
         </ManagementField>
         <ManagementField
-          error={maxUsesError}
-          label="最大使用次数"
+          error={maxUses.error}
+          hint={maxUses.hint}
+          label={maxUses.label}
           layout="compact"
         >
           <ManagementTextInput
-            accessibilityLabel="邀请最大使用次数"
-            invalid={Boolean(maxUsesError)}
+            accessibilityLabel={maxUses.accessibilityLabel ?? "邀请最大使用次数"}
+            editable={!maxUses.disabled}
+            invalid={Boolean(maxUses.error)}
             keyboardType="number-pad"
-            onChangeText={onChangeMaxUses}
-            value={maxUses}
+            onChangeText={maxUses.onChange}
+            value={maxUses.value}
           />
         </ManagementField>
       </View>
-      <ManagementFormActions>
-        <ActionButton
-          accessibilityLabel="取消创建邀请"
-          importance="secondary"
-          label="取消"
-          onPress={onCancel}
-        />
-        <ActionButton
-          accessibilityLabel="生成邀请链接"
-          disabled={disabled || !formValid}
-          importance="primary"
-          label="生成邀请链接"
-          onPress={() =>
-            onSubmit({
-              expiresAt: normalizedExpiresAt,
-              maxUses: Number.parseInt(maxUses, 10),
-              role,
-            })
-          }
-        />
-      </ManagementFormActions>
+      <ManagementFormFooter
+        cancelAction={{
+          accessibilityLabel: "取消创建邀请",
+          ...cancel,
+          onPress: cancel.run,
+        }}
+        primaryAction={{
+          accessibilityLabel: "生成邀请链接",
+          ...submit,
+          onPress: submit.run,
+        }}
+      />
     </ManagementForm>
   );
 }
@@ -930,28 +855,6 @@ function validateInviteMaxUses(value: string): string | null {
   return null;
 }
 
-const memberKindLabel: Record<Member["kind"], string> = {
-  agent: "Agent",
-  human: "自然人",
-};
-
-const memberRoleLabel: Record<Member["role"], string> = {
-  admin: "管理员",
-  member: "成员",
-  owner: "所有者",
-};
-
-const memberImStateLabel: Record<Member["imState"], string> = {
-  error: "连接异常",
-  provisioning: "连接中",
-  ready: "已连接",
-};
-
-const memberStatusLabel: Record<Member["status"], string> = {
-  active: "正常",
-  removing: "移除中",
-  removed: "已移除",
-};
 
 function InviteSecretPanel({
   onClose,
@@ -990,23 +893,6 @@ const styles = StyleSheet.create((theme) => ({
     flexWrap: "wrap",
     gap: theme.spacing.sm,
   },
-  avatar: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.avatarHumanVioletSurface,
-    borderColor: theme.semantic.color.avatarHumanVioletBorder,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    height: theme.recipes.managementWorkspace.collectionAvatarSize,
-    justifyContent: "center",
-    width: theme.recipes.managementWorkspace.collectionAvatarSize,
-  },
-  avatarAgent: {
-    backgroundColor: theme.semantic.color.avatarAgentSurface,
-  },
-  avatarText: {
-    color: theme.semantic.color.avatarHumanVioletText,
-    ...theme.semantic.typography.body,
-  },
   confirmBox: {
     alignItems: "center",
     backgroundColor: theme.semantic.color.statusDangerSurface,
@@ -1023,10 +909,6 @@ const styles = StyleSheet.create((theme) => ({
     flexWrap: "wrap",
     gap: theme.spacing.sm,
   },
-  headerActions: {
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-  },
   inviteRow: {
     alignItems: "center",
     borderTopColor: theme.semantic.color.separator,
@@ -1035,16 +917,6 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing.md,
     justifyContent: "space-between",
     paddingVertical: theme.spacing.sm,
-  },
-  list: {
-    gap: theme.spacing.xs,
-    padding: theme.spacing.sm,
-  },
-  listStacked: {
-    alignItems: "center",
-  },
-  listScroller: {
-    flex: 1,
   },
   memberActions: {
     borderTopColor: theme.semantic.color.separator,

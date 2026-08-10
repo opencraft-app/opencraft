@@ -4,6 +4,11 @@ import {
   type ReactNode,
 } from "react";
 
+export {
+  buildManagementShellModel,
+  buildSectionPresentationNavigation,
+} from "./management-shell";
+
 export type PresentationKind = "graphical" | "terminal";
 
 export interface PresentationAction {
@@ -16,9 +21,13 @@ export interface PresentationAction {
 }
 
 export interface PresentationField {
+  accessibilityLabel?: string;
   disabled?: boolean;
+  error?: string | null;
+  hint?: string;
   id: string;
   label: string;
+  maxLength?: number;
   multiline?: boolean;
   onChange(value: string): void;
   options?: Array<{
@@ -55,7 +64,13 @@ export interface ManagementDetail {
 
 export interface ManagementShellModel {
   accountLabel?: string;
-  activeSection: "agents" | "chat" | "computers" | "members" | "tasks";
+  activeSection:
+    | "agents"
+    | "chat"
+    | "computers"
+    | "members"
+    | "settings"
+    | "tasks";
   navigation: PresentationAction[];
   onLogout?: () => void | Promise<void>;
   serverName?: string;
@@ -68,7 +83,7 @@ export interface ManagementShellModel {
 }
 
 export interface ManagementPageModel {
-  collection: {
+  collection?: {
     items: ManagementCollectionItem[];
     label: string;
   };
@@ -202,14 +217,17 @@ export function ConversationPresentation({
   children,
   model,
 }: {
-  children: ReactNode;
+  children: ReactNode | ((model: ConversationPageModel) => ReactNode);
   model: ConversationPageModel | (() => ConversationPageModel);
 }) {
   const presenter = useContext(PresentationContext);
-  if (presenter.kind === "graphical") return children;
+  const resolvedModel = typeof model === "function" ? model() : model;
+  const graphicalFallback = typeof children === "function"
+    ? children(resolvedModel)
+    : children;
   return presenter.renderConversationPage(
-    typeof model === "function" ? model() : model,
-    children,
+    resolvedModel,
+    graphicalFallback,
   );
 }
 
@@ -217,14 +235,17 @@ export function ManagementPresentation({
   children,
   model,
 }: {
-  children: ReactNode;
+  children: ReactNode | ((model: ManagementPageModel) => ReactNode);
   model: ManagementPageModel | (() => ManagementPageModel);
 }) {
   const presenter = useContext(PresentationContext);
-  if (presenter.kind === "graphical") return children;
+  const resolvedModel = typeof model === "function" ? model() : model;
+  const graphicalFallback = typeof children === "function"
+    ? children(resolvedModel)
+    : children;
   return presenter.renderManagementPage(
-    typeof model === "function" ? model() : model,
-    children,
+    resolvedModel,
+    graphicalFallback,
   );
 }
 

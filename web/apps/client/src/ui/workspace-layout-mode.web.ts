@@ -4,8 +4,8 @@ import { workspaceShellWideBreakpoint } from "./tokens";
 export type { LayoutMode };
 
 // At 960px the 72px rail and 312px conversation sidebar still leave a useful
-// 576px message canvas. The content inside management screens remains compact
-// until its independent 1180px breakpoint.
+// 576px message canvas. Management collection stacking shares this threshold
+// via managementSurfaceLayout.
 export const workspaceLayoutMode = createLayoutMode(
   workspaceShellWideBreakpoint,
 );

@@ -5,7 +5,6 @@ import {
   Image,
   Linking,
   Modal,
-  Platform,
   Pressable,
   Text,
   useWindowDimensions,
@@ -21,7 +20,7 @@ import Undo2 from "lucide-react-native/icons/undo-2";
 import X from "lucide-react-native/icons/x";
 
 import {MessageViewport} from "./message-viewport/message-viewport";
-import {breakpoints, velaTheme} from "../theme";
+import {breakpoints, pointerDensity, velaTheme} from "../theme";
 
 export interface MessageListProps {
   conversationKey: string;
@@ -68,10 +67,10 @@ export function MessageList({
   const {theme} = useUnistyles();
   const window = useWindowDimensions();
   const layoutWidth = viewportWidth ?? window.width;
+  // Viewport chooses packing; density chooses hit targets and reveal model.
   const compactLayout = layoutWidth < breakpoints.medium;
   const narrowActions = layoutWidth <= breakpoints.narrow;
-  const pointerActions =
-    Platform.OS === "web" && layoutWidth >= breakpoints.medium;
+  const pointerActions = pointerDensity;
   const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
   const [localOpenActionMessageId, setLocalOpenActionMessageId] = useState<
     string | null
@@ -284,7 +283,11 @@ function MessageRow({
   };
   const moreActionButton = actionable && (pointerActions || compactLayout) ? (
     <Pressable
-      accessibilityHint={compactLayout ? "也可以长按消息打开操作" : undefined}
+      accessibilityHint={
+        compactLayout && !pointerActions
+          ? "也可以长按消息打开操作"
+          : undefined
+      }
       accessibilityLabel={`更多消息操作 ${message.text}`}
       accessibilityRole="button"
       aria-expanded={actionsOpen}
@@ -379,7 +382,9 @@ function MessageRow({
             >
               {formatTime(message.createdAt)}
             </Text>
-            {compactLayout ? moreActionButton : null}
+            {moreActionButton && compactLayout && !grouped
+              ? moreActionButton
+              : null}
           </View>
         ) : null}
         <View
@@ -392,7 +397,7 @@ function MessageRow({
           <View style={styles.messageContentGrow}>
             <MessageContent compactLayout={compactLayout} message={message} />
           </View>
-          {pointerActions || (compactLayout && grouped)
+          {moreActionButton && (!compactLayout || grouped)
             ? moreActionButton
             : null}
         </View>
@@ -1144,7 +1149,7 @@ const styles = StyleSheet.create((theme) => ({
     borderWidth: theme.semantic.stroke.hairline,
     borderRadius: theme.semantic.radius.control,
     marginBottom: theme.spacing.sm,
-    minHeight: theme.recipes.messageTimeline.touchActionSize,
+    minHeight: theme.recipes.messageTimeline.actionSize,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
     ...theme.semantic.motion.transition.control,
@@ -1199,20 +1204,19 @@ const styles = StyleSheet.create((theme) => ({
   moreActionButton: {
     alignItems: "center",
     flexShrink: 0,
+    height: theme.recipes.messageTimeline.actionSize,
     justifyContent: "center",
+    width: theme.recipes.messageTimeline.actionSize,
     ...theme.semantic.motion.transition.control,
   },
+  // Reveal model only — size comes from densified `actionSize` above.
   moreActionButtonPointer: {
     borderRadius: theme.semantic.radius.compactControl,
-    height: theme.recipes.messageTimeline.pointerActionSize,
     opacity: 0,
-    width: theme.recipes.messageTimeline.pointerActionSize,
   },
   moreActionButtonCompact: {
     borderRadius: theme.semantic.radius.circle,
-    height: theme.recipes.messageTimeline.touchActionSize,
     opacity: 1,
-    width: theme.recipes.messageTimeline.touchActionSize,
   },
   moreActionButtonVisible: {
     opacity: 1,
