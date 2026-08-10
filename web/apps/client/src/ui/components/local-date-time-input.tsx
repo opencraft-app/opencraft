@@ -1,17 +1,14 @@
 import {
   TextInput,
-  type StyleProp,
-  type TextStyle,
 } from "react-native";
 
-export interface LocalDateTimeInputProps {
-  accessibilityLabel: string;
-  disabled?: boolean;
-  onChangeText(value: string): void;
-  placeholder?: string;
-  style?: StyleProp<TextStyle>;
-  value: string;
-}
+import type {LocalDateTimeInputProps} from "./local-date-time-input.types";
+
+export type {
+  LocalDateTimeInputConfig,
+  LocalDateTimeInputProps,
+  LocalDateTimePreset,
+} from "./local-date-time-input.types";
 
 export function LocalDateTimeInput({
   accessibilityLabel,
@@ -19,11 +16,13 @@ export function LocalDateTimeInput({
   onChangeText,
   placeholder,
   style,
+  timezone,
   value,
 }: LocalDateTimeInputProps) {
   return (
     <TextInput
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint={timezone ? `时区 ${timezone}` : undefined}
       autoCapitalize="none"
       editable={!disabled}
       onChangeText={onChangeText}

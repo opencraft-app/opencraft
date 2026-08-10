@@ -20,6 +20,11 @@ import UsersRound from "lucide-react-native/icons/users-round";
 import X from "lucide-react-native/icons/x";
 
 import {deviceTimezone, normalizeLocalDateTime} from "../date-time";
+import {InviteExpirationField} from "../components/invite-expiration-field";
+import {
+  createInviteExpirationSession,
+  type InviteExpirationSession,
+} from "../components/invite-expiration";
 import {ManagementEmptyState} from "../components/management-empty-state";
 import {memberEmptyCopy} from "../management-empty-copy";
 import {
@@ -38,7 +43,6 @@ import {
   IconActionButton,
   InlineFeedback,
   ManagementChoiceField,
-  ManagementDateTimeInput,
   ManagementDetailCanvas,
   ManagementDetailScroll,
   ManagementField,
@@ -149,6 +153,8 @@ export function MembersScreen(props: MembersScreenProps) {
     useState<string | null>(null);
   const [creatingInvite, setCreatingInvite] = useState(false);
   const [inviteExpiresAt, setInviteExpiresAt] = useState("");
+  const [inviteExpirationSession, setInviteExpirationSession] =
+    useState<InviteExpirationSession | null>(null);
   const [inviteMaxUses, setInviteMaxUses] = useState("1");
   const [inviteRole, setInviteRole] = useState<Invite["role"]>("member");
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -157,6 +163,15 @@ export function MembersScreen(props: MembersScreenProps) {
   const [selectedMemberId, setSelectedMemberId] = useState<
     string | null
   >(members[0]?.id ?? null);
+  const beginInviteCreation = () => {
+    const session = createInviteExpirationSession(
+      new Date(Date.now()),
+      deviceTimezone(),
+    );
+    setInviteExpirationSession(session);
+    setInviteExpiresAt(session.value);
+    setCreatingInvite(true);
+  };
   const selected = useMemo(
     () =>
       members.find((item) => item.id === selectedMemberId) ??
@@ -178,12 +193,14 @@ export function MembersScreen(props: MembersScreenProps) {
     if (secret) setInviteSecret(secret);
     setCreatingInvite(false);
     setInviteExpiresAt("");
+    setInviteExpirationSession(null);
     setInviteMaxUses("1");
     setInviteRole("member");
   };
   const cancelInvite = () => {
     setCreatingInvite(false);
     setInviteExpiresAt("");
+    setInviteExpirationSession(null);
     setInviteMaxUses("1");
     setInviteRole("member");
   };
@@ -282,7 +299,7 @@ export function MembersScreen(props: MembersScreenProps) {
     id: "create-invite",
     kind: "primary",
     label: "创建邀请",
-    run: () => setCreatingInvite(true),
+    run: beginInviteCreation,
     shortcut: "N",
   };
   const acceptInviteAction: PresentationAction = {
@@ -484,7 +501,7 @@ export function MembersScreen(props: MembersScreenProps) {
                         id: "create-invite",
                         kind: "primary" as const,
                         label: "创建邀请",
-                        run: () => setCreatingInvite(true),
+                        run: beginInviteCreation,
                       }
                     : acceptInviteAction,
                   description: memberEmptyCopy.description,
@@ -524,7 +541,7 @@ export function MembersScreen(props: MembersScreenProps) {
               createIconTestID="member-create-icon"
               createLabel="邀请"
               createVisible={canManage && !creatingInvite}
-              onCreate={() => setCreatingInvite(true)}
+              onCreate={beginInviteCreation}
               onRefresh={onRefresh}
               refreshAccessibilityLabel="刷新成员"
               refreshDisabled={loading}
@@ -557,6 +574,7 @@ export function MembersScreen(props: MembersScreenProps) {
           {creatingInvite ? (
             <InviteForm
               form={pageModel.form!}
+              session={inviteExpirationSession!}
             />
           ) : null}
           {inviteSecret ? (
@@ -575,7 +593,7 @@ export function MembersScreen(props: MembersScreenProps) {
                 description={pageModel.empty?.description ?? memberEmptyCopy.description}
                 icon={UsersRound}
                 onAction={() => {
-                  if (canManage) setCreatingInvite(true);
+                  if (canManage) beginInviteCreation();
                   else setAcceptingInvite(true);
                 }}
                 title={pageModel.empty?.title ?? memberEmptyCopy.title}
@@ -765,7 +783,13 @@ export function MembersScreen(props: MembersScreenProps) {
   );
 }
 
-function InviteForm({form}: {form: PresentationForm}) {
+function InviteForm({
+  form,
+  session,
+}: {
+  form: PresentationForm;
+  session: InviteExpirationSession;
+}) {
   const role = form.fields.find(field => field.id === "invite-role")!;
   const expiresAt = form.fields.find(field => field.id === "invite-expires-at")!;
   const maxUses = form.fields.find(field => field.id === "invite-max-uses")!;
@@ -786,21 +810,7 @@ function InviteForm({form}: {form: PresentationForm}) {
         selected={role.value}
       />
       <View style={styles.formGrid}>
-        <ManagementField
-          error={expiresAt.error}
-          hint={expiresAt.hint}
-          label={expiresAt.label}
-          layout="flex"
-        >
-          <ManagementDateTimeInput
-            accessibilityLabel={expiresAt.accessibilityLabel ?? "邀请有效期"}
-            disabled={expiresAt.disabled}
-            invalid={Boolean(expiresAt.error)}
-            onChangeText={expiresAt.onChange}
-            placeholder={expiresAt.placeholder}
-            value={expiresAt.value}
-          />
-        </ManagementField>
+        <InviteExpirationField field={expiresAt} session={session} />
         <ManagementField
           error={maxUses.error}
           hint={maxUses.hint}

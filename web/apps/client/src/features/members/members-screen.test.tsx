@@ -424,9 +424,13 @@ describe("MembersScreen", () => {
     );
     expect(onRemoveMember).toHaveBeenCalledWith(member.id);
 
+    const dateNow = jest.spyOn(Date, "now").mockReturnValue(
+      Date.parse("2026-08-10T04:02:30.000Z"),
+    );
     await fireEvent.press(
       screen.getByRole("button", {name: "创建邀请"}),
     );
+    dateNow.mockRestore();
     expect(screen.getAllByText("创建邀请")).toHaveLength(1);
     expect(screen.getByText("普通成员")).toBeVisible();
     expect(screen.getByText("管理员")).toBeVisible();
@@ -435,6 +439,9 @@ describe("MembersScreen", () => {
     ).toHaveStyle({minHeight: velaTheme.recipes.control.height});
     expect(screen.getByText("有效期")).toBeVisible();
     expect(screen.getByText("最大使用次数")).toBeVisible();
+    expect(screen.getByLabelText("邀请有效期").props.value).toBe(
+      "2026-08-17T12:00",
+    );
     expect(screen.getByTestId("member-invite-form")).toHaveStyle({
       alignSelf: "center",
       maxWidth: velaTheme.recipes.managementWorkspace.formMaxWidth,

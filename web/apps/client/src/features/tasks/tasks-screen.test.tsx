@@ -586,6 +586,9 @@ describe("TasksScreen", () => {
     expect(screen.getByLabelText("提醒执行时间")).toBeVisible();
     expect(screen.queryByLabelText("提醒周期规则")).toBeNull();
     expect(screen.queryByLabelText("提醒时间或 Cron")).toBeNull();
+    expect(screen.getByLabelText("提醒执行时间").props.accessibilityHint).toBe(
+      "时区 Asia/Shanghai",
+    );
     await fireEvent.press(
       screen.getByRole("button", {name: "选择周期提醒"}),
     );
@@ -602,15 +605,23 @@ describe("TasksScreen", () => {
       screen.getByLabelText("提醒执行时间"),
       "2026-08-03T09:00",
     );
+    await fireEvent.changeText(
+      screen.getByLabelText("提醒时区"),
+      "America/New_York",
+    );
+    expect(screen.getByLabelText("提醒执行时间").props.accessibilityHint).toBe(
+      "时区 America/New_York",
+    );
     await fireEvent.press(
       screen.getByRole("button", {name: "选择提醒 Agent 研究助手"}),
     );
     await fireEvent.press(screen.getByRole("button", {name: "创建提醒"}));
     expect(onCreateReminder).toHaveBeenCalledWith(expect.objectContaining({
       agentId: agent.id,
-      schedule: "2026-08-03T09:00:00+08:00",
+      schedule: "2026-08-03T09:00:00-04:00",
       scheduleKind: "once",
       text: "检查线上状态",
+      timezone: "America/New_York",
     }));
 
     await fireEvent.press(screen.getByRole("button", {name: "暂停提醒"}));

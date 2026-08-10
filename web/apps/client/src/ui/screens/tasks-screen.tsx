@@ -900,6 +900,7 @@ function ReminderCreateForm({form}: {form: PresentationForm}) {
             invalid={Boolean(schedule.error)}
             onChangeText={schedule.onChange}
             placeholder={schedule.placeholder}
+            timezone={timezone.value.trim() || "Asia/Shanghai"}
             value={schedule.value}
           />
         ) : (
