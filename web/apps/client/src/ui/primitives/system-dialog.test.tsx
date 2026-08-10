@@ -89,4 +89,60 @@ describe("SystemDialog", () => {
     fireEvent.keyDown(dialog, {key: "Escape"});
     expect(onOpenChange).toHaveBeenCalledWith(false, "escape");
   });
+
+  it("projects typography line heights to CSS pixels", () => {
+    const {SystemDialog} = require(
+      "./system-dialog.web"
+    ) as typeof import("./system-dialog.web");
+    render(
+      <SystemDialog
+        actions={[
+          {id: "cancel", intent: "secondary", kind: "cancel", label: "取消"},
+          {id: "delete", intent: "destructive", kind: "action", label: "确认删除"},
+        ]}
+        description="工作区和历史消息会保留。"
+        dialogId="delete-agent-dialog"
+        onAction={jest.fn()}
+        onOpenChange={jest.fn()}
+        open
+        title="删除 Agent？"
+      />,
+    );
+
+    expect(screen.getByRole("heading", {name: "删除 Agent？"}).style.lineHeight)
+      .toBe("26px");
+    expect(screen.getByText("工作区和历史消息会保留。").style.lineHeight)
+      .toBe("19px");
+    expect(screen.getByRole("button", {name: "确认删除"}).style.lineHeight)
+      .toBe("18px");
+  });
+
+  it("keeps the dialog shell and action bar fixed while content scrolls", () => {
+    const {SystemDialog} = require(
+      "./system-dialog.web"
+    ) as typeof import("./system-dialog.web");
+    render(
+      <SystemDialog
+        actions={[
+          {id: "cancel", intent: "secondary", kind: "cancel", label: "取消"},
+          {id: "delete", intent: "destructive", kind: "action", label: "确认删除"},
+        ]}
+        description="此操作不可撤销。"
+        dialogId="fixed-dialog"
+        onAction={jest.fn()}
+        onOpenChange={jest.fn()}
+        open
+        title="删除 Agent？"
+      >
+        <div>需要滚动的正文</div>
+      </SystemDialog>,
+    );
+
+    const dialog = screen.getByRole("dialog", {name: "删除 Agent？"});
+    const content = screen.getByTestId("system-dialog-content");
+    const actions = screen.getByTestId("system-dialog-actions");
+    expect(dialog.style.overflow).toBe("hidden");
+    expect(content.style.overflowY).toBe("auto");
+    expect(actions.style.flexShrink).toBe("0");
+  });
 });

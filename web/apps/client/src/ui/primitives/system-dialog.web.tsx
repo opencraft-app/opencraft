@@ -9,6 +9,7 @@ import type {
   SystemDialogAction,
   SystemDialogProps,
 } from "./system-dialog.types";
+import {webTypography} from "./web-typography";
 
 export type {
   DialogCloseReason,
@@ -113,14 +114,14 @@ export function SystemDialog({
       <div onKeyDownCapture={handleKeyDown} style={{display: "contents"}}>
         <Modal
           data-vela-material="dialog"
-        style={{
-          boxSizing: "border-box",
-          maxHeight: "calc(100vh - 32px)",
-          maxWidth: theme.recipes.overlay.confirmDialogMaxWidth,
-          outline: "none",
-          width: "100%",
-        }}
-      >
+          style={{
+            boxSizing: "border-box",
+            maxHeight: "calc(100vh - 32px)",
+            maxWidth: theme.recipes.overlay.confirmDialogMaxWidth,
+            outline: "none",
+            width: "100%",
+          }}
+        >
         <Dialog
           aria-describedby={descriptionId}
           aria-labelledby={titleId}
@@ -138,25 +139,53 @@ export function SystemDialog({
             gap: theme.spacing.lg,
             maxHeight: "calc(100vh - 32px)",
             outline: "none",
-            overflow: "auto",
-            padding: theme.spacing.xl,
+            overflow: "hidden",
+            padding: 0,
             WebkitBackdropFilter: theme.semantic.material.blur,
           }}
         >
-          <div style={{display: "flex", flexDirection: "column", gap: theme.spacing.xs}}>
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            flexShrink: 0,
+            gap: theme.spacing.xs,
+            padding: `${theme.spacing.xl}px ${theme.spacing.xl}px 0`,
+          }}>
             <h2 id={titleId} style={{
-              ...(theme.semantic.typography.dialogTitle as React.CSSProperties),
+              ...webTypography(theme.semantic.typography.dialogTitle),
               color: theme.semantic.color.textPrimary,
               margin: 0,
             }}>{title}</h2>
             <p id={descriptionId} style={{
-              ...(theme.semantic.typography.bodyCompact as React.CSSProperties),
+              ...webTypography(theme.semantic.typography.bodyCompact),
               color: theme.semantic.color.textMuted,
               margin: 0,
             }}>{description}</p>
           </div>
-          {children}
-          <div style={{display: "flex", flexWrap: "wrap", gap: theme.spacing.sm, justifyContent: "flex-end"}}>
+          {children ? (
+            <div
+              data-testid="system-dialog-content"
+              style={{
+                minHeight: 0,
+                overflowX: "hidden",
+                overflowY: "auto",
+                padding: `0 ${theme.spacing.xl}px`,
+              }}
+            >
+              {children}
+            </div>
+          ) : null}
+          <div
+            data-testid="system-dialog-actions"
+            style={{
+              display: "flex",
+              flexShrink: 0,
+              flexWrap: "wrap",
+              gap: theme.spacing.sm,
+              justifyContent: "flex-end",
+              padding: `0 ${theme.spacing.xl}px ${theme.spacing.xl}px`,
+            }}
+          >
             {actions.map(action => {
               const unavailable = Boolean(
                 action.disabled || locked || (busy && action.kind === "action"),
@@ -171,7 +200,7 @@ export function SystemDialog({
                   key={action.id}
                   onClick={() => activate(action)}
                   style={{
-                    ...(theme.semantic.typography.button as React.CSSProperties),
+                    ...webTypography(theme.semantic.typography.button),
                     background: destructive
                       ? theme.semantic.color.actionDangerEmphasisSurface
                       : emphasized
@@ -203,7 +232,7 @@ export function SystemDialog({
               );
             })}
           </div>
-          </Dialog>
+        </Dialog>
         </Modal>
       </div>
     </ModalOverlay>

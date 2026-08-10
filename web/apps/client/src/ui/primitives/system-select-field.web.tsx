@@ -4,6 +4,7 @@ import {useUnistyles} from "react-native-unistyles";
 
 import {SystemSelect} from "./system-select.web";
 import type {SystemSelectFieldProps} from "./system-select-field.types";
+import {webTypography} from "./web-typography";
 
 export type {SystemSelectFieldProps} from "./system-select-field.types";
 
@@ -51,7 +52,7 @@ export function SystemSelectField<T extends string>({
           ref={ref as Ref<HTMLButtonElement>}
           role="combobox"
           style={{
-            ...(theme.semantic.typography.body as React.CSSProperties),
+            ...webTypography(theme.semantic.typography.body),
             alignItems: "center",
             appearance: "none",
             background: theme.semantic.color.fieldSurface,

@@ -10,6 +10,7 @@ import type {
   OverlayCloseReason,
   SystemSelectProps,
 } from "./system-select.types";
+import {webTypography} from "./web-typography";
 
 export type {
   ControlledOverlayProps,
@@ -119,7 +120,7 @@ export function SystemSelect<T extends string>({
                 isDisabled={option.disabled}
                 key={option.value}
                 style={({isDisabled, isFocusVisible, isHovered, isPressed, isSelected}) => ({
-                  ...(theme.semantic.typography.body as React.CSSProperties),
+                  ...webTypography(theme.semantic.typography.body),
                   alignItems: "center",
                   background: isSelected
                     ? theme.semantic.color.actionTonalSurface

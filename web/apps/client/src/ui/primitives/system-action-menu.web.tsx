@@ -13,6 +13,7 @@ import type {
   SystemActionMenuItem,
   SystemActionMenuProps,
 } from "./system-action-menu.types";
+import {webTypography} from "./web-typography";
 
 export type {
   SystemActionMenuItem,
@@ -115,7 +116,7 @@ export function SystemActionMenu({
                   key={item.id}
                   onAction={() => activate(item)}
                   style={({isDisabled, isFocusVisible, isHovered, isPressed}) => ({
-                    ...(theme.semantic.typography.bodyCompact as React.CSSProperties),
+                    ...webTypography(theme.semantic.typography.bodyCompact),
                     alignItems: "center",
                     background: isPressed
                       ? theme.semantic.color.interactivePressedSurface
