@@ -2,13 +2,13 @@ import { useState } from "react";
 import {
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
-import {StyleSheet, useUnistyles} from "react-native-unistyles";
+import {StyleSheet} from "react-native-unistyles";
 import { BrandMark } from "../components/brand-mark";
 import { WorkspaceSetupPresentation } from "../presentation";
 import {SystemButton} from "../primitives/system-button";
+import {SystemField, SystemTextInput} from "../primitives/system-field";
 import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 
@@ -201,22 +201,26 @@ export function FirstWorkspaceScreen({
           <View style={styles.formPanel}>
             {!existingServerName ? (
               <>
-                <LabeledInput
-                  accessibilityLabel="Server 名称"
-                  autoComplete="organization"
-                  label="Server 名称"
-                  onChangeText={changeServerName}
-                  placeholder="例如：Agent Network"
-                  value={serverName}
-                />
-                <LabeledInput
-                  accessibilityLabel="Server 标识"
-                  autoCapitalize="none"
-                  label="Server 标识"
-                  onChangeText={changeServerSlug}
-                  placeholder="agent-network"
-                  value={serverSlug}
-                />
+                <SystemField label="Server 名称" labelTone="primary">
+                  <SystemTextInput
+                    accessibilityLabel="Server 名称"
+                    autoComplete="organization"
+                    onChangeText={changeServerName}
+                    placeholder="例如：Agent Network"
+                    size="large"
+                    value={serverName}
+                  />
+                </SystemField>
+                <SystemField label="Server 标识" labelTone="primary">
+                  <SystemTextInput
+                    accessibilityLabel="Server 标识"
+                    autoCapitalize="none"
+                    onChangeText={changeServerSlug}
+                    placeholder="agent-network"
+                    size="large"
+                    value={serverSlug}
+                  />
+                </SystemField>
               </>
             ) : (
               <View style={styles.existingServer}>
@@ -225,29 +229,31 @@ export function FirstWorkspaceScreen({
               </View>
             )}
 
-            <LabeledInput
-              accessibilityLabel="首个 Channel"
-              autoCapitalize="none"
-              label="首个 Channel"
-              onChangeText={setChannelName}
-              placeholder="general"
-              value={channelName}
-            />
+            <SystemField label="首个 Channel" labelTone="primary">
+              <SystemTextInput
+                accessibilityLabel="首个 Channel"
+                autoCapitalize="none"
+                onChangeText={setChannelName}
+                placeholder="general"
+                size="large"
+                value={channelName}
+              />
+            </SystemField>
 
-            <View style={styles.field}>
-              <Text style={styles.label}>可见范围</Text>
+            <SystemField
+              hint={visibility === "public"
+                ? "所有 Server 成员都能发现，并可自行加入。"
+                : "创建后再按需添加成员。"}
+              label="可见范围"
+              labelTone="primary"
+            >
               <SystemSegmentedControl<"private" | "public">
                 accessibilityLabel="Channel 可见范围"
                 onChange={setVisibility}
                 options={visibilityOptions}
                 value={visibility}
               />
-              <Text style={styles.hint}>
-                {visibility === "public"
-                  ? "所有 Server 成员都能发现，并可自行加入。"
-                  : "创建后再按需添加成员。"}
-              </Text>
-            </View>
+            </SystemField>
 
             {visibleError ? (
               <SystemFeedback kind="inline" message={visibleError} tone="danger" />
@@ -297,24 +303,6 @@ export function makeServerSlug(name: string): string {
   return `server-${suffix}`;
 }
 
-function LabeledInput(
-  props: React.ComponentProps<typeof TextInput> & { label: string },
-) {
-  const {theme} = useUnistyles();
-  const { label, ...inputProps } = props;
-  return (
-    <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
-      <TextInput
-        {...inputProps}
-        editable={inputProps.editable}
-        placeholderTextColor={theme.semantic.color.fieldPlaceholder}
-        style={styles.input}
-      />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create((theme) => ({
   copy: {
     color: theme.semantic.color.textMuted,
@@ -335,9 +323,6 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing.xs,
     padding: theme.spacing.lg,
   },
-  field: {
-    gap: theme.spacing.sm,
-  },
   formPanel: {
     borderTopColor: theme.semantic.color.separator,
     borderTopWidth: theme.semantic.stroke.hairline,
@@ -345,25 +330,6 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     paddingTop: theme.spacing.xl,
     width: "100%",
-  },
-  hint: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodySmall,
-  },
-  input: {
-    backgroundColor: theme.semantic.color.fieldSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.messageBody,
-    minHeight: theme.recipes.authWorkspace.controlHeight,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.md,
-  },
-  label: {
-    ...theme.semantic.typography.eyebrow,
-    textTransform: "uppercase",
   },
   page: {
     backgroundColor: theme.semantic.color.surfaceSubtle,

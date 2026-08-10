@@ -440,7 +440,7 @@ describe("AgentsScreen", () => {
 
     expect(screen.getByText("创建后自动完成")).toBeVisible();
     expect(
-      screen.getByRole("checkbox", {name: "部署并启动"}),
+      screen.getByRole("switch", {name: "部署并启动"}),
     ).toBeChecked();
     await fireEvent.press(
       screen.getByRole("button", {name: "创建并启动"}),

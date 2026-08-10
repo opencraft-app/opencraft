@@ -2,13 +2,13 @@ import { useState } from "react";
 import {
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
-import {StyleSheet, useUnistyles} from "react-native-unistyles";
+import {StyleSheet} from "react-native-unistyles";
 
 import { BrandMark } from "../components/brand-mark";
 import {SystemButton} from "../primitives/system-button";
+import {SystemField, SystemTextInput} from "../primitives/system-field";
 import {SystemFeedback} from "../primitives/system-feedback";
 
 interface LoginInput {
@@ -88,36 +88,54 @@ export function AuthScreen({
           </View>
 
           {mode === "register" ? (
-            <LabeledInput
-              autoComplete="name"
+            <SystemField
               error={displayNameError}
               label="显示名称"
-              onChangeText={setDisplayName}
-              placeholder="你的名字"
-              value={displayName}
-            />
+              labelTone="primary"
+            >
+              <SystemTextInput
+                autoComplete="name"
+                invalid={Boolean(displayNameError)}
+                onChangeText={setDisplayName}
+                placeholder="你的名字"
+                size="large"
+                value={displayName}
+              />
+            </SystemField>
           ) : null}
-          <LabeledInput
-            autoCapitalize="none"
-            autoComplete="email"
+          <SystemField
             error={emailError}
-            keyboardType="email-address"
             label="邮箱"
-            onChangeText={setEmail}
-            placeholder="name@example.com"
-            testID="auth-email-input"
-            value={email}
-          />
-          <LabeledInput
-            autoCapitalize="none"
-            autoComplete="current-password"
+            labelTone="primary"
+          >
+            <SystemTextInput
+              autoCapitalize="none"
+              autoComplete="email"
+              invalid={Boolean(emailError)}
+              keyboardType="email-address"
+              onChangeText={setEmail}
+              placeholder="name@example.com"
+              size="large"
+              testID="auth-email-input"
+              value={email}
+            />
+          </SystemField>
+          <SystemField
             error={passwordError}
             label="密码"
-            onChangeText={setPassword}
-            placeholder="至少 8 位密码"
-            secureTextEntry
-            value={password}
-          />
+            labelTone="primary"
+          >
+            <SystemTextInput
+              autoCapitalize="none"
+              autoComplete="current-password"
+              invalid={Boolean(passwordError)}
+              onChangeText={setPassword}
+              placeholder="至少 8 位密码"
+              secureTextEntry
+              size="large"
+              value={password}
+            />
+          </SystemField>
 
           {error ? (
             <SystemFeedback kind="inline" message={error} tone="danger" />
@@ -148,31 +166,6 @@ export function AuthScreen({
   );
 }
 
-function LabeledInput(
-  props: React.ComponentProps<typeof TextInput> & {
-    error?: string | null;
-    label: string;
-  },
-) {
-  const {theme} = useUnistyles();
-  const { error, label, style, ...inputProps } = props;
-  return (
-    <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
-      <TextInput
-        {...inputProps}
-        placeholderTextColor={theme.semantic.color.fieldPlaceholder}
-        style={[styles.input, error && styles.inputInvalid, style]}
-      />
-      {error ? (
-        <Text accessibilityRole="alert" style={styles.fieldError}>
-          {error}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
 function validateDisplayName(value: string): string | null {
   const length = Array.from(value.trim()).length;
   if (length === 0) return "请输入显示名称。";
@@ -196,13 +189,6 @@ function validatePassword(value: string): string | null {
 }
 
 const styles = StyleSheet.create((theme) => ({
-  field: {
-    gap: theme.spacing.sm,
-  },
-  fieldError: {
-    color: theme.semantic.color.statusDangerText,
-    ...theme.semantic.typography.bodySmall,
-  },
   formHeading: {
     alignItems: "flex-start",
     gap: theme.spacing.md,
@@ -222,24 +208,6 @@ const styles = StyleSheet.create((theme) => ({
     maxWidth: theme.recipes.contentMeasure.readingMaxWidth,
     padding: theme.recipes.authWorkspace.cardPadding,
     width: "100%",
-  },
-  input: {
-    backgroundColor: theme.semantic.color.fieldSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.lead,
-    minHeight: theme.recipes.authWorkspace.controlHeight,
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
-  },
-  inputInvalid: {
-    borderColor: theme.semantic.color.borderDangerStrong,
-  },
-  label: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.bodyCompactEmphasis,
   },
   scroll: {
     backgroundColor: theme.semantic.color.surfaceSubtle,

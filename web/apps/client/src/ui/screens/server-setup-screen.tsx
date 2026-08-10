@@ -9,11 +9,9 @@ import {useEffect, useState} from "react";
 import {ScrollView, Text, View} from "react-native";
 import {StyleSheet} from "react-native-unistyles";
 
-import {
-  CodeBlock,
-  ManagementTextInput,
-} from "../components/management-workspace";
+import {CodeBlock} from "../components/management-workspace";
 import {SystemButton} from "../primitives/system-button";
+import {SystemField, SystemTextInput} from "../primitives/system-field";
 import {SystemFeedback} from "../primitives/system-feedback";
 
 const agentHandlePattern = /^[a-z0-9][a-z0-9_-]{1,31}$/u;
@@ -156,15 +154,15 @@ export function ServerSetupScreen({
                 description="创建 Computer 后会生成一次性安装命令。在要运行 Codex Runtime 的机器上执行它。"
                 title="连接第一台 Computer"
               />
-              <Field label="Computer 名称">
-                <ManagementTextInput
+              <SystemField label="Computer 名称" labelTone="primary">
+                <SystemTextInput
                   accessibilityLabel="Computer 名称"
                   editable={!busy}
                   onChangeText={setComputerName}
                   placeholder="例如：本地开发机"
                   value={computerName}
                 />
-              </Field>
+              </SystemField>
               <SystemButton
                 busy={busy}
                 disabled={!computerName.trim()}
@@ -210,17 +208,17 @@ export function ServerSetupScreen({
                 description="Agent 会部署到刚连接的 Computer，并在创建后自动启动。"
                 title="创建第一个 Agent"
               />
-              <Field label="Agent 名称">
-                <ManagementTextInput
+              <SystemField label="Agent 名称" labelTone="primary">
+                <SystemTextInput
                   accessibilityLabel="Agent 名称"
                   editable={!busy}
                   onChangeText={setAgentName}
                   placeholder="例如：研究助手"
                   value={agentName}
                 />
-              </Field>
-              <Field label="Agent Handle">
-                <ManagementTextInput
+              </SystemField>
+              <SystemField label="Agent Handle" labelTone="primary">
+                <SystemTextInput
                   accessibilityLabel="Agent Handle"
                   autoCapitalize="none"
                   editable={!busy}
@@ -229,7 +227,7 @@ export function ServerSetupScreen({
                   placeholder="research"
                   value={agentHandle}
                 />
-              </Field>
+              </SystemField>
               <SystemButton
                 busy={busy}
                 disabled={!agentName.trim() || !agentHandlePattern.test(agentHandle.trim())}
@@ -319,15 +317,6 @@ function StepCopy({description, title}: {description: string; title: string}) {
   );
 }
 
-function Field({children, label}: {children: React.ReactNode; label: string}) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      {children}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create((theme) => ({
   card: {
     backgroundColor: theme.semantic.color.sectionSurface,
@@ -342,8 +331,6 @@ const styles = StyleSheet.create((theme) => ({
   content: {gap: theme.spacing.xl, maxWidth: 720, width: "100%"},
   description: {color: theme.semantic.color.textMuted, ...theme.semantic.typography.body},
   eyebrow: {color: theme.semantic.color.textLink, ...theme.semantic.typography.eyebrow},
-  field: {gap: theme.spacing.xs},
-  fieldLabel: {color: theme.semantic.color.textPrimary, ...theme.semantic.typography.bodySmallEmphasis},
   header: {gap: theme.spacing.sm},
   hint: {color: theme.semantic.color.textMuted, ...theme.semantic.typography.meta},
   progress: {flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.lg},

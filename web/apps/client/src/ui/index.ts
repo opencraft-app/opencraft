@@ -50,6 +50,19 @@ export {
   type SystemIconButtonProps,
 } from "./primitives/system-button";
 export {
+  SystemField,
+  SystemTextInput,
+  type SystemFieldLayout,
+  type SystemFieldProps,
+  type SystemTextInputProps,
+} from "./primitives/system-field";
+export {
+  SystemSwitch,
+  SystemToggleRow,
+  type SystemSwitchProps,
+  type SystemToggleRowProps,
+} from "./primitives/system-switch";
+export {
   SystemSegmentedControl,
   type SystemSegmentedControlProps,
   type SystemSegmentedOption,
@@ -133,10 +146,10 @@ export {
   ManagementHeader,
   ManagementHeaderActions,
   ManagementPreferenceBody,
+  ManagementPreferenceFooter,
   ManagementPreferenceMetadataRow,
   ManagementPreferenceRow,
   ManagementPreferenceSection,
-  ManagementPreferenceSeparator,
   ManagementResourceDirectory,
   NoticeBanner,
   RecordIdentityHeader,
@@ -170,6 +183,7 @@ export {
   type ManagementFieldProps,
   type ManagementFormFooterAction,
   type ManagementFormFooterProps,
+  type ManagementPreferenceFooterAction,
   type ManagementResourceSelectProps,
   type ManagementTextInputProps,
   type ResourceActionRowProps,

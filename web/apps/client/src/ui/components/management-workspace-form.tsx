@@ -1,11 +1,5 @@
 import type {ReactNode} from "react";
-import {
-  Text,
-  TextInput,
-  type TextInputProps,
-  View,
-} from "react-native";
-import {useUnistyles} from "react-native-unistyles";
+import {View} from "react-native";
 
 import {
   LocalDateTimeInput,
@@ -14,13 +8,20 @@ import {
 import {styles} from "./management-workspace.styles";
 
 import {SystemButton} from "../primitives/system-button";
+import {
+  SystemField,
+  type SystemFieldLayout,
+  type SystemFieldProps,
+  SystemTextInput,
+  type SystemTextInputProps,
+} from "../primitives/system-field";
 
 interface SemanticContainerProps {
   children: ReactNode;
   testID?: string;
 }
 
-export type ManagementFieldLayout = "compact" | "flex" | "stacked";
+export type ManagementFieldLayout = SystemFieldLayout;
 
 export function ManagementForm({
   children,
@@ -36,73 +37,16 @@ export function ManagementFormActions({
   return <View style={styles.formActions} testID={testID}>{children}</View>;
 }
 
-export interface ManagementFieldProps extends SemanticContainerProps {
-  error?: string | null;
-  hint?: string;
-  label: string;
-  layout?: ManagementFieldLayout;
+export type ManagementFieldProps = SystemFieldProps;
+
+export function ManagementField(props: ManagementFieldProps) {
+  return <SystemField {...props} testID={props.testID ?? "management-field"} />;
 }
 
-export function ManagementField({
-  children,
-  error,
-  hint,
-  label,
-  layout = "stacked",
-  testID = "management-field",
-}: ManagementFieldProps) {
-  return (
-    <View
-      style={[
-        styles.field,
-        layout === "flex" && styles.fieldFlex,
-        layout === "compact" && styles.fieldCompact,
-      ]}
-      testID={testID}
-    >
-      <Text style={styles.fieldLabel}>{label}</Text>
-      {children}
-      {error ? (
-        <Text accessibilityRole="alert" style={styles.fieldError}>
-          {error}
-        </Text>
-      ) : hint ? (
-        <Text style={styles.fieldHint}>{hint}</Text>
-      ) : null}
-    </View>
-  );
-}
+export type ManagementTextInputProps = SystemTextInputProps;
 
-export interface ManagementTextInputProps
-  extends Omit<TextInputProps, "style"> {
-  invalid?: boolean;
-}
-
-export function ManagementTextInput({
-  editable = true,
-  invalid = false,
-  multiline = false,
-  placeholderTextColor,
-  ...props
-}: ManagementTextInputProps) {
-  const {theme} = useUnistyles();
-  return (
-    <TextInput
-      {...props}
-      editable={editable}
-      multiline={multiline}
-      placeholderTextColor={
-        placeholderTextColor ?? theme.semantic.color.fieldPlaceholder
-      }
-      style={[
-        styles.textInput,
-        multiline && styles.textInputMultiline,
-        invalid && styles.textInputInvalid,
-        !editable && styles.disabled,
-      ]}
-      {...({dataSet: {velaField: "form"}} as object)}
-    />
-  );
+export function ManagementTextInput(props: ManagementTextInputProps) {
+  return <SystemTextInput {...props} />;
 }
 
 export interface ManagementDateTimeInputProps

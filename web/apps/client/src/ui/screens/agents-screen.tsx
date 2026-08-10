@@ -9,7 +9,6 @@ import type {
 } from "@vela/client-core";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Pressable,
   Text,
   useWindowDimensions,
   View,
@@ -43,6 +42,7 @@ import {
 import {SystemButton} from "../primitives/system-button";
 import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemDialog} from "../primitives/system-dialog";
+import {SystemToggleRow} from "../primitives/system-switch";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 import {SystemSelectField} from "../primitives/system-select-field";
 import {
@@ -1056,39 +1056,17 @@ function AgentCreateForm({
             {displayName.trim()} · @{normalizedHandle} · {runtime} ·{" "}
             {selectedComputerName}
           </Text>
-          <Pressable
-            accessibilityLabel="部署并启动"
-            accessibilityRole="checkbox"
-            accessibilityState={{checked: deployAndStart}}
-            aria-checked={deployAndStart}
+          <SystemToggleRow
+            checked={deployAndStart}
+            description={deployAndStart
+              ? "装到所选 Computer 并上线，创建后即可在 Channel 里 @"
+              : "只保存档案，稍后再手动部署"}
             disabled={disabled}
-            onPress={() =>
-              field("agent-deploy-and-start")?.onChange(String(!deployAndStart))}
-            style={styles.wizardOptionRow}
+            label="部署并启动"
+            onChange={(checked) =>
+              field("agent-deploy-and-start")?.onChange(String(checked))}
             testID="agent-create-deploy-start"
-          >
-            <View style={styles.wizardCheckCopy}>
-              <Text style={styles.wizardCheckTitle}>部署并启动</Text>
-              <Text style={styles.wizardDescription}>
-                {deployAndStart
-                  ? "装到所选 Computer 并上线，创建后即可在 Channel 里 @"
-                  : "只保存档案，稍后再手动部署"}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.wizardSwitch,
-                deployAndStart && styles.wizardSwitchOn,
-              ]}
-            >
-              <View
-                style={[
-                  styles.wizardSwitchThumb,
-                  deployAndStart && styles.wizardSwitchThumbOn,
-                ]}
-              />
-            </View>
-          </Pressable>
+          />
           <View style={styles.wizardFooter}>
             <ManagementFormFooter
               backAction={{
@@ -1434,11 +1412,6 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.bodyCompact,
   },
-  wizardCheckCopy: {
-    flex: 1,
-    gap: theme.spacing.xxs,
-    minWidth: 0,
-  },
   wizardCheckTitle: {
     color: theme.semantic.color.textPrimary,
     ...theme.semantic.typography.bodyEmphasis,
@@ -1461,16 +1434,6 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.semantic.radius.control,
     gap: theme.spacing.sm,
     padding: theme.spacing.md,
-  },
-  wizardOptionRow: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.surfaceSubtle,
-    borderRadius: theme.semantic.radius.control,
-    flexDirection: "row",
-    gap: theme.spacing.md,
-    minHeight: theme.recipes.control.rowHeight,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
   },
   wizardStepBadge: {
     alignItems: "center",
@@ -1521,26 +1484,6 @@ const styles = StyleSheet.create((theme) => ({
   wizardSummary: {
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.meta,
-  },
-  wizardSwitch: {
-    backgroundColor: theme.semantic.color.borderControl,
-    borderRadius: theme.semantic.radius.pill,
-    height: theme.recipes.iconControl.microSize,
-    justifyContent: "center",
-    paddingHorizontal: theme.spacing.xxs,
-    width: theme.recipes.iconControl.floatingSize,
-  },
-  wizardSwitchOn: {
-    backgroundColor: theme.semantic.color.statusPositive,
-  },
-  wizardSwitchThumb: {
-    backgroundColor: theme.semantic.color.paneSurface,
-    borderRadius: theme.semantic.radius.circle,
-    height: theme.semantic.icon.size.feature,
-    width: theme.semantic.icon.size.feature,
-  },
-  wizardSwitchThumbOn: {
-    alignSelf: "flex-end",
   },
   wizardTitle: {
     color: theme.semantic.color.textPrimary,

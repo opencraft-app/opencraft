@@ -4,21 +4,19 @@ import type {
   UpdateServerInput,
 } from "@vela/client-core";
 import {useEffect, useState} from "react";
-import {Text, useWindowDimensions, View} from "react-native";
-import {StyleSheet} from "react-native-unistyles";
+import {useWindowDimensions} from "react-native";
 
 import {
   ManagementDetailScroll,
   ManagementHeader,
   ManagementPreferenceBody,
+  ManagementPreferenceFooter,
   ManagementPreferenceMetadataRow,
   ManagementPreferenceRow,
   ManagementPreferenceSection,
-  ManagementPreferenceSeparator,
   ManagementStage,
   ManagementTextInput,
 } from "../components/management-workspace";
-import {SystemButton} from "../primitives/system-button";
 import {SystemFeedback} from "../primitives/system-feedback";
 import type { PlatformFrameProps } from "../layouts/app-frame";
 import { ManagementScreenFrame } from "../layouts/management-screen-frame";
@@ -214,7 +212,6 @@ export function ServerSettingsScreen({
                 value={nameField!.value}
               />
             </ManagementPreferenceRow>
-            <ManagementPreferenceSeparator />
             <ManagementPreferenceRow
               description="帮助成员理解这个 Server 的用途。"
               error={descriptionField!.error}
@@ -232,31 +229,27 @@ export function ServerSettingsScreen({
                 value={descriptionField!.value}
               />
             </ManagementPreferenceRow>
-            <ManagementPreferenceSeparator />
-            <View style={styles.footer}>
-              <Text style={[styles.footerStatus, saved && styles.footerStatusSaved]}>
-                {saved
-                  ? "已保存"
-                  : dirty
-                    ? "有未保存的更改"
-                    : "更改会应用到所有成员"}
-              </Text>
-              <SystemButton
-                busy={saving}
-                disabled={saveAction.disabled}
-                variant="default"
-                label={saveAction.label}
-                onPress={saveAction.run}
-                testID={saveAction.id}
-              />
-            </View>
+            <ManagementPreferenceFooter
+              action={{
+                busy: saving,
+                disabled: saveAction.disabled,
+                label: saveAction.label,
+                onPress: saveAction.run,
+                testID: saveAction.id,
+              }}
+              status={saved
+                ? "已保存"
+                : dirty
+                  ? "有未保存的更改"
+                  : "更改会应用到所有成员"}
+              statusTone={saved ? "positive" : "neutral"}
+            />
           </ManagementPreferenceSection>
           <ManagementPreferenceSection
             description="用于链接和系统引用，创建后不可修改。"
             title="标识"
           >
             <ManagementPreferenceMetadataRow label="Slug" value={server.slug} />
-            <ManagementPreferenceSeparator />
             <ManagementPreferenceMetadataRow label="Server ID" value={server.id} />
           </ManagementPreferenceSection>
         </ManagementPreferenceBody>
@@ -289,22 +282,3 @@ export function ServerSettingsScreen({
     </ManagementPresentation>
   );
 }
-
-const styles = StyleSheet.create((theme) => ({
-  footer: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing.md,
-    justifyContent: "space-between",
-    minHeight: theme.recipes.managementWorkspace.resourceActionMinHeight,
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.sm,
-  },
-  footerStatus: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.meta,
-  },
-  footerStatusSaved: {
-    color: theme.semantic.color.statusPositiveText,
-  },
-}));

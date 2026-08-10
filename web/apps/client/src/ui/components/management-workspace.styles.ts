@@ -228,31 +228,6 @@ export const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.recipes.managementWorkspace.mediumPadding,
   },
   disabled: {opacity: theme.semantic.interaction.disabledOpacity},
-  field: {
-    flexGrow: 0,
-    gap: theme.spacing.xs,
-    minWidth: 0,
-    width: "100%",
-  },
-  fieldCompact: {
-    width: theme.recipes.managementWorkspace.fieldCompactWidth,
-  },
-  fieldError: {
-    color: theme.semantic.color.statusDangerText,
-    ...theme.semantic.typography.meta,
-  },
-  fieldFlex: {
-    flex: 1,
-    minWidth: theme.recipes.managementWorkspace.formFieldMinWidth,
-  },
-  fieldHint: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.meta,
-  },
-  fieldLabel: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.label,
-  },
   form: {
     alignSelf: "center",
     backgroundColor: theme.semantic.color.sectionSurface,
@@ -667,11 +642,5 @@ export const styles = StyleSheet.create((theme) => ({
         boxShadow: `0 0 0 3px ${theme.semantic.color.borderDanger}`,
       },
     },
-  },
-  textInputMultiline: {
-    height: "auto",
-    minHeight: theme.recipes.managementWorkspace.textareaMinHeight,
-    paddingVertical: theme.spacing.sm,
-    textAlignVertical: "top",
   },
 }));

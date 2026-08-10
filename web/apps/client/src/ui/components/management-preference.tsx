@@ -1,6 +1,8 @@
-import type {ReactNode} from "react";
+import {Children, Fragment, type ReactNode} from "react";
 import {Text, View} from "react-native";
 import {StyleSheet} from "react-native-unistyles";
+
+import {SystemButton} from "../primitives/system-button";
 
 export function ManagementPreferenceBody({
   children,
@@ -23,13 +25,21 @@ export function ManagementPreferenceSection({
   testID?: string;
   title: string;
 }) {
+  const items = Children.toArray(children);
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeading}>
         <Text style={styles.sectionTitle}>{title}</Text>
         <Text style={styles.sectionDescription}>{description}</Text>
       </View>
-      <View style={styles.group} testID={testID}>{children}</View>
+      <View style={styles.group} testID={testID}>
+        {items.map((item, index) => (
+          <Fragment key={index}>
+            {index > 0 ? <PreferenceSeparator /> : null}
+            {item}
+          </Fragment>
+        ))}
+      </View>
     </View>
   );
 }
@@ -82,8 +92,49 @@ export function ManagementPreferenceMetadataRow({
   );
 }
 
-export function ManagementPreferenceSeparator() {
-  return <View style={styles.separator} />;
+export interface ManagementPreferenceFooterAction {
+  busy?: boolean;
+  disabled?: boolean;
+  label: string;
+  onPress(): unknown | Promise<unknown>;
+  testID?: string;
+}
+
+export function ManagementPreferenceFooter({
+  action,
+  status,
+  statusTone = "neutral",
+  testID = "management-preference-footer",
+}: {
+  action: ManagementPreferenceFooterAction;
+  status: string;
+  statusTone?: "neutral" | "positive";
+  testID?: string;
+}) {
+  return (
+    <View style={styles.footer} testID={testID}>
+      <Text
+        style={[
+          styles.footerStatus,
+          statusTone === "positive" && styles.footerStatusPositive,
+        ]}
+      >
+        {status}
+      </Text>
+      <SystemButton
+        busy={action.busy}
+        disabled={action.disabled}
+        label={action.label}
+        onPress={() => void action.onPress()}
+        testID={action.testID}
+        variant="default"
+      />
+    </View>
+  );
+}
+
+function PreferenceSeparator() {
+  return <View style={styles.separator} testID="management-preference-separator" />;
 }
 
 const styles = StyleSheet.create((theme) => ({
@@ -107,6 +158,22 @@ const styles = StyleSheet.create((theme) => ({
   fieldHint: {
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.meta,
+  },
+  footer: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: theme.spacing.md,
+    justifyContent: "space-between",
+    minHeight: theme.recipes.managementWorkspace.resourceActionMinHeight,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+  },
+  footerStatus: {
+    color: theme.semantic.color.textMuted,
+    ...theme.semantic.typography.meta,
+  },
+  footerStatusPositive: {
+    color: theme.semantic.color.statusPositiveText,
   },
   group: {
     backgroundColor: theme.semantic.color.sectionSurface,
