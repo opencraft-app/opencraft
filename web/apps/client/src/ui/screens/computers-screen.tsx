@@ -584,6 +584,7 @@ export function ComputersScreen(props: ComputersScreenProps) {
                       />
                     )}
                     description="生成一次性安装脚本，连接这台机器。"
+                    showSeparator={false}
                     testID="computer-install-action-row"
                     title="安装与重新连接"
                   />
@@ -619,30 +620,35 @@ export function ComputersScreen(props: ComputersScreenProps) {
                     </Text>
                   ) : null}
                 </DetailSection>
-              </View>
-              {canManage && onRemoveComputer ? (
-                <View
-                  style={styles.releaseSection}
-                  testID="computer-release-section"
-                >
-                  <ResourceActionRow
-                    action={(
-                      <SystemButton
-                        accessibilityLabel={`解除纳管${selected.name}`}
-                        disabled={boundAgents.length > 0 || pendingAction !== null}
-                        variant="destructive"
-                        label="解除纳管"
-                        onPress={() => setReleaseConfirming(true)}
-                      />
-                    )}
-                    description={boundAgents.length > 0
-                      ? `请先迁移或解绑 ${boundAgents.length} 个 Agent`
-                      : "从当前 Server 移除记录，不操作真实机器。"}
-                    testID="computer-release-action-row"
+                {canManage && onRemoveComputer ? (
+                  <DetailSection
+                    testID="computer-release-section"
                     title="危险操作"
-                  />
-                </View>
-              ) : null}
+                  >
+                    <ResourceActionRow
+                      action={(
+                        <SystemButton
+                          accessibilityLabel={`解除纳管${selected.name}`}
+                          disabled={
+                            boundAgents.length > 0 || pendingAction !== null
+                          }
+                          label="解除纳管"
+                          onPress={() => setReleaseConfirming(true)}
+                          variant="destructive"
+                        />
+                      )}
+                      description={
+                        boundAgents.length > 0
+                          ? `请先迁移或解绑 ${boundAgents.length} 个 Agent`
+                          : "从当前 Server 移除记录，不操作真实机器。"
+                      }
+                      showSeparator={false}
+                      testID="computer-release-action-row"
+                      title="解除纳管"
+                    />
+                  </DetailSection>
+                ) : null}
+              </View>
             </ManagementDetailCanvas>
           ) : hasRouteSelectedComputer ? (
             <View style={styles.notFound} testID="computer-not-found">
@@ -834,12 +840,5 @@ const styles = StyleSheet.create((theme) => ({
 
   supportGrid: {
     gap: theme.spacing.lg,
-  },
-  releaseSection: {
-    borderRadius: theme.semantic.radius.pane,
-    borderTopColor: theme.semantic.color.separator,
-    borderTopWidth: theme.semantic.stroke.hairline,
-    gap: theme.spacing.md,
-    paddingTop: theme.spacing.xl,
   },
 }));

@@ -795,17 +795,25 @@ export interface ResourceActionRowProps
   extends Omit<SemanticContainerProps, "children"> {
   action: ReactNode;
   description: string;
+  showSeparator?: boolean;
   title: string;
 }
 
 export function ResourceActionRow({
   action,
   description,
+  showSeparator = true,
   testID = "resource-action-row",
   title,
 }: ResourceActionRowProps) {
   return (
-    <View style={styles.resourceActionRow} testID={testID}>
+    <View
+      style={[
+        styles.resourceActionRow,
+        !showSeparator && styles.resourceActionRowWithoutSeparator,
+      ]}
+      testID={testID}
+    >
       <View style={styles.resourceActionCopy}>
         <Text style={styles.resourceActionTitle}>{title}</Text>
         <Text style={styles.resourceActionDescription}>{description}</Text>

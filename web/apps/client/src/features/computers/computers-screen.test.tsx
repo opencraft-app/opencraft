@@ -225,7 +225,7 @@ describe("ComputersScreen", () => {
       flexDirection: "row",
     });
     expect(screen.getByTestId("computer-install-action-row")).toHaveStyle({
-      borderTopWidth: 1,
+      borderTopWidth: 0,
       minHeight: velaTheme.recipes.managementWorkspace.resourceActionMinHeight,
     });
   });
@@ -807,9 +807,16 @@ describe("ComputersScreen", () => {
       backgroundColor: "#FFFFFF",
       height: velaTheme.recipes.control.height,
     });
-    expect(screen.getByTestId("computer-release-section")).toHaveStyle({
-      borderRadius: 0,
-      borderTopWidth: 1,
+    expect(screen.getByTestId("computer-install-action-row")).toHaveStyle({
+      borderTopWidth: 0,
+    });
+    expect(screen.getByTestId("computer-release-section-body")).toHaveStyle({
+      backgroundColor: velaTheme.semantic.color.sectionSurface,
+      borderRadius: velaTheme.semantic.radius.control,
+      borderWidth: 1,
+    });
+    expect(screen.getByTestId("computer-release-action-row")).toHaveStyle({
+      borderTopWidth: 0,
     });
   });
 

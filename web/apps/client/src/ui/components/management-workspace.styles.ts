@@ -527,6 +527,9 @@ export const styles = StyleSheet.create((theme) => ({
     minHeight: theme.recipes.managementWorkspace.resourceActionMinHeight,
     paddingVertical: theme.spacing.md,
   },
+  resourceActionRowWithoutSeparator: {
+    borderTopWidth: 0,
+  },
   resourceActionTitle: {
     color: theme.semantic.color.textPrimary,
     ...theme.semantic.typography.bodyEmphasis,
