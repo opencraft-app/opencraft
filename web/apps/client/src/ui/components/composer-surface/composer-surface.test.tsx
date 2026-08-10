@@ -70,6 +70,18 @@ describe("integrated composer surface", () => {
     expect(source).toContain('boxSizing: "border-box"');
   });
 
+  it("uses a dedicated translucent Web material while Native stays opaque", () => {
+    const source = readFileSync(
+      join(__dirname, "composer-material-surface.web.tsx"),
+      "utf8",
+    );
+
+    expect(velaTheme.semantic.material.composerFill).toMatch(/^rgba\(/u);
+    expect(source).toContain("theme.semantic.material.composerFill");
+    expect(source).toContain("backdropFilter: theme.semantic.material.blur");
+    expect(source).toContain("WebkitBackdropFilter: theme.semantic.material.blur");
+  });
+
   it("forwards only non-interactive Web background presses", () => {
     expect(
       shouldForwardComposerSurfacePress({

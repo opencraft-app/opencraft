@@ -1543,6 +1543,11 @@ function MessageStage({
     : channelMessageParticipants(agents, mentionMembers);
   const surfaceMode: ConversationSurfaceMode =
     Platform.OS === "web" ? (compact ? "compact" : "desktop") : "native";
+  const [composerOverlayHeight, setComposerOverlayHeight] = useState(
+    velaTheme.recipes.conversationWorkspace.composerSurfaceMetrics.desktop
+      .surfaceMinHeight +
+      velaTheme.recipes.desktopWorkspace.composerVerticalPadding,
+  );
   const needsMembership =
     !direct &&
     channel !== undefined &&
@@ -1752,6 +1757,11 @@ function MessageStage({
       ) : (
         <>
           <MessageList
+            bottomInset={
+              surfaceMode === "desktop"
+                ? composerOverlayHeight + velaTheme.spacing.sm
+                : undefined
+            }
             capabilities={capabilities}
             conversationKey={conversationKey}
             currentUserId={currentUserId}
@@ -1802,6 +1812,9 @@ function MessageStage({
             onClearQuote={onClearQuote}
             onDraftChange={onDraftChange}
             onFocus={() => setOpenActionMessageId(null)}
+            onHeightChange={
+              surfaceMode === "desktop" ? setComposerOverlayHeight : undefined
+            }
             onSend={onSend}
             quote={selectedQuote}
             surfaceMode={surfaceMode}

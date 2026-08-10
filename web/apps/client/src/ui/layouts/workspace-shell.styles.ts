@@ -709,6 +709,7 @@ export const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
     overflow: "hidden",
+    position: "relative",
   },
   onlineAgentsBadge: {
     alignItems: "center",

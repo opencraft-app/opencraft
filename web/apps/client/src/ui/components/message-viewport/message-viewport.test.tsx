@@ -1,5 +1,5 @@
 import {act, render} from "@testing-library/react-native";
-import {FlatList, Platform, Text} from "react-native";
+import {FlatList, Platform, StyleSheet as RNStyleSheet, Text} from "react-native";
 
 import {velaTheme} from "../../tokens";
 import {MessageViewport} from "./message-viewport";
@@ -13,6 +13,24 @@ describe("MessageViewport", () => {
       callback(0);
       return 1;
     });
+  });
+
+  it("reserves the floating composer inset inside the scroll content", async () => {
+    const screen = await render(
+      <MessageViewport
+        bottomInset={132}
+        conversationKey="channel:general"
+        data={["m1"]}
+        keyExtractor={(item) => item}
+        renderItem={({item}) => <Text>{item}</Text>}
+      />,
+    );
+
+    expect(
+      RNStyleSheet.flatten(
+        screen.getByTestId("message-viewport").props.contentContainerStyle,
+      ),
+    ).toMatchObject({paddingBottom: 132});
   });
 
   afterEach(() => {
@@ -136,6 +154,7 @@ describe("MessageViewport", () => {
   it("renders unseen messages as a compact HeroUI floating control", async () => {
     const renderViewport = (data: string[]) => (
       <MessageViewport
+        bottomInset={132}
         conversationKey="channel:general"
         data={data}
         keyExtractor={(item) => item}
@@ -169,6 +188,9 @@ describe("MessageViewport", () => {
       borderRadius: 9999,
     });
     expect(screen.getByText("1")).toHaveStyle({color: "#FFFFFF"});
+    expect(screen.getByTestId("new-messages-button")).toHaveStyle({
+      bottom: 132 + velaTheme.spacing.lg,
+    });
   });
 
   it("scrolls a requested search result into the middle of the viewport", async () => {

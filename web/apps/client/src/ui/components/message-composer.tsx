@@ -11,7 +11,13 @@ import {
   type MessageQuote,
 } from "@vela/client-core";
 import {useEffect, useMemo, useRef, useState} from "react";
-import {Pressable, ScrollView, Text, View} from "react-native";
+import {
+  type LayoutChangeEvent,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import {StyleSheet, useUnistyles} from "react-native-unistyles";
 import AtSign from "lucide-react-native/icons/at-sign";
 import Bot from "lucide-react-native/icons/bot";
@@ -59,6 +65,7 @@ export interface MessageComposerProps {
   onClearQuote?(): void | Promise<void>;
   onDraftChange?(draft: ComposerDraft): void;
   onFocus?(): void;
+  onHeightChange?(height: number): void;
   onSend(draft: ComposerDraft): void | Promise<void>;
   quote?: MessageQuote | null;
   showAttachments?: boolean;
@@ -76,6 +83,7 @@ export function MessageComposer({
   onClearQuote = () => undefined,
   onDraftChange = () => undefined,
   onFocus = () => undefined,
+  onHeightChange,
   onSend,
   quote = null,
   showAttachments = true,
@@ -468,10 +476,16 @@ export function MessageComposer({
       />
     </Pressable>
   );
+  const handleLayout = (event: LayoutChangeEvent) => {
+    if (surfaceMode === "desktop") {
+      onHeightChange?.(event.nativeEvent.layout.height);
+    }
+  };
 
   return (
     <View
       accessibilityHint={destinationHint}
+      onLayout={handleLayout}
       style={[
         styles.outer,
         surfaceMode === "desktop" ? styles.outerDesktop : styles.outerCompact,
@@ -648,8 +662,14 @@ const styles = StyleSheet.create((theme) => ({
   },
   outerDesktop: {
     alignItems: "center",
+    bottom: 0,
+    left: 0,
+    paddingBottom: theme.recipes.desktopWorkspace.composerVerticalPadding,
     paddingHorizontal: theme.recipes.desktopWorkspace.composerHorizontalPadding,
-    paddingVertical: theme.recipes.desktopWorkspace.composerVerticalPadding,
+    paddingTop: 0,
+    position: "absolute",
+    right: 0,
+    zIndex: theme.semantic.layer.docked,
   },
   quoteCopy: {
     flex: 1,

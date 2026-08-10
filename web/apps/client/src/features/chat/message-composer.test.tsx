@@ -94,6 +94,13 @@ describe("MessageComposer", () => {
       maxWidth: velaTheme.recipes.conversationWorkspace.composerDesktopMaxWidth,
       width: "100%",
     });
+    expect(screen.getByTestId("message-composer")).toHaveStyle({
+      bottom: 0,
+      left: 0,
+      paddingTop: 0,
+      position: "absolute",
+      right: 0,
+    });
     expect(screen.getByTestId("message-composer-surface")).toHaveStyle({
       borderRadius:
         velaTheme.recipes.conversationWorkspace.composerSurfaceMetrics.desktop
@@ -109,6 +116,25 @@ describe("MessageComposer", () => {
         velaTheme.recipes.conversationWorkspace.composerPrimaryActionSize,
       width: velaTheme.recipes.conversationWorkspace.composerPrimaryActionSize,
     });
+  });
+
+  it("reports the desktop overlay height to the message viewport", async () => {
+    const onHeightChange = jest.fn();
+    const screen = await render(
+      <MessageComposer
+        channelName="general"
+        members={[]}
+        onHeightChange={onHeightChange}
+        onSend={jest.fn()}
+        surfaceMode="desktop"
+      />,
+    );
+
+    fireEvent(screen.getByTestId("message-composer"), "layout", {
+      nativeEvent: {layout: {height: 124, width: 960, x: 0, y: 0}},
+    });
+
+    expect(onHeightChange).toHaveBeenCalledWith(124);
   });
 
   it.each(["compact", "native"] as const)(

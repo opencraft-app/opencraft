@@ -41,6 +41,7 @@ interface PendingPrependAnchor {
 }
 
 export interface MessageViewportProps<Item> {
+  bottomInset?: number;
   conversationKey: string;
   contentContainerStyle?: StyleProp<ViewStyle>;
   data: Item[];
@@ -55,6 +56,7 @@ export interface MessageViewportProps<Item> {
 }
 
 export function MessageViewport<Item>({
+  bottomInset = 0,
   conversationKey,
   contentContainerStyle,
   data,
@@ -282,7 +284,10 @@ export function MessageViewport<Item>({
   return (
     <View style={[styles.container, style]}>
       <FlatList
-        contentContainerStyle={contentContainerStyle}
+        contentContainerStyle={[
+          contentContainerStyle,
+          bottomInset > 0 ? {paddingBottom: bottomInset} : undefined,
+        ]}
         data={data}
         initialNumToRender={INITIAL_RENDER_COUNT}
         keyExtractor={keyExtractor}
@@ -311,6 +316,9 @@ export function MessageViewport<Item>({
           onPress={() => dispatch({ type: "jump_to_latest" })}
           style={({ pressed }) => [
             styles.newMessages,
+            bottomInset > 0
+              ? {bottom: bottomInset + velaTheme.spacing.lg}
+              : undefined,
             pressed && styles.newMessagesPressed,
           ]}
           testID="new-messages-button"

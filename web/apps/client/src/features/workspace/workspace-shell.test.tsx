@@ -2521,6 +2521,7 @@ describe("WorkspaceShell", () => {
     expect(screen.getByTestId("message-stage")).toHaveStyle({
       backgroundColor: "#FFFFFF",
       borderRadius: 0,
+      position: "relative",
     });
     expect(screen.getByRole("button", { name: "打开聊天" })).toBeVisible();
   });

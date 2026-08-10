@@ -564,6 +564,7 @@ export const velaTheme = {
      */
     material: {
       blur: "saturate(180%) blur(20px)",
+      composerFill: withAlpha(palette.white, 0.82),
       navigationFill: withAlpha(palette.white, 0.58),
       sidebarFill: withAlpha(palette.white, 0.66),
     },

@@ -38,6 +38,7 @@ const emptyParticipants: MessageParticipant[] = [];
 const emptyPendingIndexMessageIds: readonly string[] = [];
 
 export interface MessageListProps {
+  bottomInset?: number;
   capabilities?: ConversationCapabilities;
   conversationKey: string;
   currentUserId?: string;
@@ -67,6 +68,7 @@ export interface MessageListProps {
 }
 
 export function MessageList({
+  bottomInset,
   capabilities = {deliveryReceipt: "none", tasks: false, threads: false},
   conversationKey,
   currentUserId,
@@ -144,6 +146,7 @@ export function MessageList({
 
   return (
     <MessageViewport
+      bottomInset={bottomInset}
       conversationKey={conversationKey}
       contentContainerStyle={[
         styles.messages,

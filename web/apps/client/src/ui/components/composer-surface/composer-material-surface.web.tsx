@@ -94,8 +94,9 @@ const styles = StyleSheet.create((theme) => ({
     borderColor: theme.semantic.color.borderFieldHover,
   },
   surface: {
-    backgroundColor: theme.semantic.color.paneSurface,
-    borderColor: theme.semantic.color.borderControl,
+    backdropFilter: theme.semantic.material.blur,
+    backgroundColor: theme.semantic.material.composerFill,
+    borderColor: theme.semantic.color.borderOverlay,
     borderWidth: theme.semantic.stroke.hairline,
     boxSizing: "border-box",
     overflow: "hidden",
@@ -105,6 +106,7 @@ const styles = StyleSheet.create((theme) => ({
     shadowOpacity: theme.shadows.floatingControl.opacity,
     shadowRadius: theme.shadows.floatingControl.radius,
     width: "100%",
+    WebkitBackdropFilter: theme.semantic.material.blur,
     ...theme.semantic.motion.transition.surface,
   },
 }));
