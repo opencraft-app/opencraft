@@ -63,6 +63,27 @@ routes:
 	}
 }
 
+func TestExampleConfigRoutesIntlBillingAccountAPIToTestHost(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	for _, route := range cfg.Routes {
+		if route.ID != "tcapi-billing-intl-test" {
+			continue
+		}
+		upstream, err := cfg.ResolveUpstream(route.ID, route.Upstream)
+		if err != nil {
+			t.Fatalf("resolve international billing upstream: %v", err)
+		}
+		if got := upstream.BaseURL; got != "https://billing.test.tencentcloudapi.com" {
+			t.Fatalf("international billing base_url = %q", got)
+		}
+		return
+	}
+	t.Fatal("tcapi-billing-intl-test route is missing")
+}
+
 func TestLoadAppliesRouteHostHeaderOverride(t *testing.T) {
 	t.Setenv("CLOUDLADDERGATEWAY_ROUTE_JIFEI_TEST_HOST_HEADER", "test.trade-intl.billing.tencentyun.com")
 	path := filepath.Join(t.TempDir(), "config.yaml")
