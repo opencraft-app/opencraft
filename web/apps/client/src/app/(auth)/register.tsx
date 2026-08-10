@@ -4,11 +4,13 @@ import {
   useRouter,
   type Href,
 } from "expo-router";
+import type {Server} from "@vela/client-core";
 import { LoadingScreen } from "@/ui";
 import { AuthScreen } from "../../features/auth/auth-screen";
 import {RouteTitle} from "../../features/navigation/route-title";
 import {
   authRouteHref,
+  resolveServerRouteReference,
   safeReturnTo,
 } from "../../features/workspace/section-navigation";
 import {
@@ -23,14 +25,25 @@ export default function RegisterRoute() {
   const { store } = useAppRuntime();
   const authStatus = useAppState((state) => state.authStatus);
   const error = useAppState((state) => state.error);
+  const servers = useAppState((state) => state.servers);
+  const serversStatus = useAppState((state) => state.serversStatus);
   const requestedReturnTo = Array.isArray(params.returnTo)
     ? params.returnTo[0]
     : params.returnTo;
   const returnTo = safeReturnTo(requestedReturnTo, browserHostname());
 
-  if (authStatus === "checking") return <LoadingScreen />;
+  if (
+    authStatus === "checking" ||
+    (authStatus === "signed_in" &&
+      (serversStatus === "idle" || serversStatus === "loading"))
+  ) {
+    return <LoadingScreen />;
+  }
   if (authStatus === "signed_in") {
-    return <Redirect href={returnTo as Href} />;
+    const destination = serversStatus === "ready"
+      ? postRegistrationHref(returnTo, servers)
+      : "/home";
+    return <Redirect href={destination as Href} />;
   }
 
   return (
@@ -53,4 +66,20 @@ export default function RegisterRoute() {
       />
     </>
   );
+}
+
+function postRegistrationHref(returnTo: string, servers: Server[]): string {
+  if (returnTo === "/") return "/home";
+  const match = /^\/s\/([^/?#]+)/u.exec(returnTo);
+  if (!match?.[1]) return returnTo;
+
+  let reference = match[1];
+  try {
+    reference = decodeURIComponent(reference);
+  } catch {
+    return "/home";
+  }
+  return resolveServerRouteReference(servers, reference).status === "ready"
+    ? returnTo
+    : "/home";
 }
