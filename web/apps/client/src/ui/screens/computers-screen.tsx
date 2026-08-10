@@ -668,9 +668,8 @@ export function ComputersScreen(props: ComputersScreenProps) {
           ) : (
             <ManagementEmptyState
               actionAccessibilityLabel="从空状态纳管 Computer"
-              actionLabel="纳管第一台 Computer"
+              actionLabel="纳管 Computer"
               description={computerEmptyCopy.description}
-              icon={Monitor}
               onAction={() => setCreating(true)}
               title={computerEmptyCopy.title}
             />

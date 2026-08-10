@@ -793,13 +793,12 @@ export function AgentsScreen(props: AgentsScreenProps) {
             actionAccessibilityLabel={
               canManage ? "从空状态新建 Agent" : undefined
             }
-            actionLabel={canManage ? pageModel.empty?.action?.label : undefined}
+            actionLabel={canManage ? "新建 Agent" : undefined}
             description={
               canManage
                 ? pageModel.empty?.description ?? agentEmptyCopy.description
                 : "还没有可用 Agent，请联系 Server Owner 或 Admin 创建。"
             }
-            icon={Bot}
             onAction={canManage ? () => setCreating(true) : undefined}
             title={pageModel.empty?.title ?? agentEmptyCopy.title}
           />

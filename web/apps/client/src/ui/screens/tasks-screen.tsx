@@ -658,9 +658,8 @@ export function TasksScreen(props: TasksScreenProps) {
           ) : (
             <ManagementEmptyState
               actionAccessibilityLabel="从空状态新建提醒"
-              actionLabel={onCreateReminder ? "创建第一个提醒" : undefined}
+              actionLabel={onCreateReminder ? "新建提醒" : undefined}
               description={pageModel.empty?.description ?? reminderEmptyCopy.description}
-              icon={Bell}
               onAction={onCreateReminder ? () => setCreatingReminder(true) : undefined}
               title={pageModel.empty?.title ?? reminderEmptyCopy.title}
             />
@@ -677,9 +676,8 @@ export function TasksScreen(props: TasksScreenProps) {
         ) : (
           <ManagementEmptyState
             actionAccessibilityLabel="从空状态新建任务"
-            actionLabel="创建第一个任务"
+            actionLabel="新建任务"
             description={pageModel.empty?.description ?? taskEmptyCopy.description}
-            icon={ListChecks}
             onAction={() => setCreating(true)}
             title={pageModel.empty?.title ?? taskEmptyCopy.title}
           />

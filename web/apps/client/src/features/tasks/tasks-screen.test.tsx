@@ -400,7 +400,7 @@ describe("TasksScreen", () => {
     expect(onUpdateTask).toHaveBeenCalledWith(task.id, {ownerMemberId: agent.id});
   });
 
-  it("turns the empty state into the primary path for creating work", async () => {
+  it("offers task creation from a compact preference row", async () => {
     const screen = await render(
       <TasksScreen
         currentServerId={server.id}
@@ -431,9 +431,16 @@ describe("TasksScreen", () => {
     ).toBeNull();
     expect(screen.queryByRole("button", {name: "新建任务"})).toBeNull();
     expect(screen.getByTestId("management-empty-state")).toHaveStyle({
-      alignItems: "flex-start",
-      minHeight: velaTheme.recipes.emptyState.stageMinHeight,
+      maxWidth: velaTheme.recipes.managementWorkspace.preferenceContentMaxWidth,
     });
+    expect(screen.getByTestId("management-empty-state-row")).toHaveStyle({
+      backgroundColor: velaTheme.semantic.color.sectionSurface,
+      borderColor: velaTheme.semantic.color.separator,
+    });
+    expect(screen.getByTestId("management-empty-state-action")).toHaveStyle({
+      backgroundColor: velaTheme.semantic.color.actionSecondarySurface,
+    });
+    expect(screen.getByText("新建任务")).toBeVisible();
     await fireEvent.press(
       screen.getByRole("button", {name: "从空状态新建任务"}),
     );

@@ -577,7 +577,6 @@ export function MembersScreen(props: MembersScreenProps) {
                 }
                 actionLabel={canManage ? "创建邀请" : "使用邀请 token"}
                 description={pageModel.empty?.description ?? memberEmptyCopy.description}
-                icon={UsersRound}
                 onAction={() => {
                   if (canManage) beginInviteCreation();
                   else setAcceptingInvite(true);
