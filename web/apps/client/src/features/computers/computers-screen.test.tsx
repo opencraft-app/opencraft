@@ -488,8 +488,9 @@ describe("ComputersScreen", () => {
       width: 312,
     });
     expect(
-      screen.getByRole("button", {name: "打开 Computer 研发机"}),
-    ).toHaveProp("accessibilityState", {selected: true});
+      screen.getByRole("button", {name: "打开 Computer 研发机"}).props
+        .accessibilityState.selected,
+    ).toBe(true);
     expect(screen.getByTestId("computer-detail")).toBeVisible();
   });
 
@@ -539,8 +540,9 @@ describe("ComputersScreen", () => {
       "研发机",
     );
     expect(
-      screen.getByRole("button", {name: "打开 Computer 研发机"}),
-    ).toHaveProp("accessibilityState", {selected: true});
+      screen.getByRole("button", {name: "打开 Computer 研发机"}).props
+        .accessibilityState.selected,
+    ).toBe(true);
   });
 
   it("projects a route-selected Computer and reports directory navigation", async () => {
@@ -659,7 +661,7 @@ describe("ComputersScreen", () => {
       }),
     ).toHaveStyle({minHeight: velaTheme.recipes.managementWorkspace.switcherTriggerMinHeight, width: "100%"});
     expect(
-      screen.queryByRole("button", {name: "打开 Computer 测试机"}),
+      screen.queryByRole("option", {name: "打开 Computer 测试机"}),
     ).toBeNull();
 
     await fireEvent.press(
@@ -668,7 +670,7 @@ describe("ComputersScreen", () => {
       }),
     );
     await fireEvent.press(
-      screen.getByRole("button", {name: "打开 Computer 测试机"}),
+      screen.getByRole("option", {name: "打开 Computer 测试机"}),
     );
 
     expect(screen.getByTestId("computer-detail-title")).toHaveTextContent(
@@ -795,15 +797,15 @@ describe("ComputersScreen", () => {
     expect(
       screen.getByRole("button", {name: "纳管 Computer"}),
     ).toHaveStyle({
-      backgroundColor: velaTheme.semantic.color.actionTonalSurface,
-      borderColor: velaTheme.semantic.color.actionTonalSurface,
-      minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
+      backgroundColor: velaTheme.semantic.color.surfaceTransparent,
+      borderColor: velaTheme.semantic.color.borderTransparent,
+      height: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(
       screen.getByRole("button", {name: "生成研发机的一键安装命令"}),
     ).toHaveStyle({
       backgroundColor: "#FFFFFF",
-      minHeight: velaTheme.recipes.managementWorkspace.actionHeight,
+      height: velaTheme.recipes.control.height,
     });
     expect(screen.getByTestId("computer-release-section")).toHaveStyle({
       borderRadius: 0,

@@ -1730,6 +1730,7 @@ describe("WorkspaceShell", () => {
     await fireEvent.press(
       wide.getByRole("button", {name: "打开当前账号 Skip"}),
     );
+    expect(wide.getByLabelText("当前账号")).toBeVisible();
     expect(wide.getByText("skip@example.test")).toBeVisible();
     expect(wide.getByText("IM 已连接")).toBeVisible();
     await fireEvent.press(wide.getByRole("button", { name: "退出当前账号" }));

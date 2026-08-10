@@ -16,6 +16,8 @@ import {styles} from "./management-workspace.styles";
 
 import {ActionButton} from "../primitives/action-button";
 import {IconActionButton} from "../primitives/icon-action-button";
+import {SystemSelect} from "../primitives/system-select";
+import type {SystemSelectOption} from "../primitives/system-select";
 import {SystemSourceListRow} from "../primitives/system-source-list-row";
 
 export {ActionButton} from "../primitives/action-button";
@@ -824,83 +826,72 @@ export function ResourceActionRow({
   );
 }
 
-export interface ManagementResourceSwitcherOption {
+export interface ManagementResourceSelectProps {
   accessibilityLabel: string;
-  content: ReactNode;
-  id: string;
-  onSelect(): void;
-}
-
-export interface ManagementResourceSwitcherProps {
-  currentAccessibilityLabel: string;
   currentContent: ReactNode;
-  expanded: boolean;
-  onToggle(): void;
-  options: ManagementResourceSwitcherOption[];
+  onChange(value: string): void;
+  onOpenChange(open: boolean): void;
+  open: boolean;
+  options: readonly SystemSelectOption<string>[];
   testID?: string;
+  value: string;
 }
 
-export function ManagementResourceSwitcher({
-  currentAccessibilityLabel,
+export function ManagementResourceSelect({
+  accessibilityLabel,
   currentContent,
-  expanded,
-  onToggle,
+  onChange,
+  onOpenChange,
+  open,
   options,
   testID = "management-resource-switcher",
-}: ManagementResourceSwitcherProps) {
+  value,
+}: ManagementResourceSelectProps) {
   const {theme} = useUnistyles();
   const [hovered, setHovered] = useState(false);
-  const [hoveredOptionId, setHoveredOptionId] = useState<string | null>(null);
   return (
     <View style={styles.resourceSwitcher} testID={testID}>
-      <Pressable
-        accessibilityLabel={currentAccessibilityLabel}
-        accessibilityRole="button"
-        aria-expanded={expanded}
-        onHoverIn={() => setHovered(true)}
-        onHoverOut={() => setHovered(false)}
-        onPress={onToggle}
-        style={({pressed}) => [
-          styles.resourceSwitcherTrigger,
-          hovered && styles.resourceSwitcherHover,
-          pressed && styles.resourceSwitcherPressed,
-        ]}
-        testID={`${testID}-trigger`}
-      >
-        {currentContent}
-        <View style={expanded && styles.resourceSwitcherChevronOpen}>
-          <ChevronDown
-            color={theme.semantic.color.iconMuted}
-            size={theme.semantic.icon.size.medium}
-            strokeWidth={theme.semantic.icon.stroke.emphasis}
-          />
-        </View>
-      </Pressable>
-      {expanded ? (
-        <ScrollView
-          contentContainerStyle={styles.resourceSwitcherMenuContent}
-          style={styles.resourceSwitcherMenu}
-          testID={`${testID}-menu`}
-        >
-          {options.map((option) => (
+      <SystemSelect
+        accessibilityLabel={accessibilityLabel}
+        onChange={onChange}
+        onOpenChange={onOpenChange}
+        open={open}
+        options={options}
+        overlayId={`${testID}-listbox`}
+        renderTrigger={({
+          accessibilityControls,
+          accessibilityExpanded,
+          onPress,
+          ref,
+        }) => (
             <Pressable
-              accessibilityLabel={option.accessibilityLabel}
+              accessibilityLabel={accessibilityLabel}
               accessibilityRole="button"
-              key={option.id}
-              onHoverIn={() => setHoveredOptionId(option.id)}
-              onHoverOut={() => setHoveredOptionId(null)}
-              onPress={option.onSelect}
+              aria-controls={accessibilityControls}
+              aria-expanded={accessibilityExpanded}
+              onHoverIn={() => setHovered(true)}
+              onHoverOut={() => setHovered(false)}
+              onPress={onPress}
+              ref={ref as never}
               style={({pressed}) => [
-                styles.resourceSwitcherOption,
-                hoveredOptionId === option.id && styles.resourceSwitcherHover,
+                styles.resourceSwitcherTrigger,
+                hovered && styles.resourceSwitcherHover,
                 pressed && styles.resourceSwitcherPressed,
               ]}
+              testID={`${testID}-trigger`}
             >
-              {option.content}
+              {currentContent}
+              <View style={open && styles.resourceSwitcherChevronOpen}>
+                <ChevronDown
+                  color={theme.semantic.color.iconMuted}
+                  size={theme.semantic.icon.size.medium}
+                  strokeWidth={theme.semantic.icon.stroke.emphasis}
+                />
+              </View>
             </Pressable>
-          ))}
-        </ScrollView>
-      ) : null}
+        )}
+        value={value}
+      />
     </View>
   );
 }

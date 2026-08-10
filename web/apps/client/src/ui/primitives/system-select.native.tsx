@@ -38,7 +38,7 @@ export function SystemSelect<T extends string>({
         visible={open}
       >
         <Pressable
-          accessibilityLabel="关闭选择器"
+          accessible={false}
           onPress={() => onOpenChange(false, "outside")}
           style={styles.backdrop}
         >
@@ -115,6 +115,7 @@ const styles = StyleSheet.create(theme => ({
     flexDirection: "row",
     minHeight: theme.recipes.control.rowHeight,
     paddingHorizontal: theme.spacing.md,
+    width: "100%",
   },
   optionDisabled: {
     opacity: theme.semantic.interaction.disabledOpacity,

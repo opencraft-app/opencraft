@@ -50,7 +50,7 @@ import {
   ManagementHeader,
   ManagementHeaderActions,
   ManagementResourceDirectory,
-  ManagementResourceSwitcher,
+  ManagementResourceSelect,
   ManagementStage,
   ManagementTextInput,
   ResourceActionRow,
@@ -248,8 +248,8 @@ export function MembersScreen(props: MembersScreenProps) {
     </ManagementResourceDirectory>
   );
   const mobileNavigation = selected ? (
-    <ManagementResourceSwitcher
-      currentAccessibilityLabel={`切换成员，当前 ${selected.displayName}${selectedVisibleHandle ? ` @${selectedVisibleHandle}` : ""}`}
+    <ManagementResourceSelect
+      accessibilityLabel={`切换成员，当前 ${selected.displayName}${selectedVisibleHandle ? ` @${selectedVisibleHandle}` : ""}`}
       currentContent={(
         <>
         <CollectionIdentityMark
@@ -263,34 +263,18 @@ export function MembersScreen(props: MembersScreenProps) {
         />
         </>
       )}
-      expanded={switcherOpen}
-      onToggle={() => setSwitcherOpen((current) => !current)}
-      options={memberItems
-        .filter(({resource}) => resource.id !== selected.id)
-        .map(({resource: member, view}) => {
+      onChange={setSelectedMemberId}
+      onOpenChange={setSwitcherOpen}
+      open={switcherOpen}
+      options={memberItems.map(({resource: member, view}) => {
           return {
             accessibilityLabel: view.accessibilityLabel,
-            content: (
-              <>
-                <CollectionIdentityMark
-                  identityKind={member.kind}
-                  monogram={member.displayName.slice(0, 1)}
-                />
-                <CollectionRowCopy
-                  meta={view.meta}
-                  numberOfLines={1}
-                  title={view.title}
-                />
-              </>
-            ),
-            id: member.id,
-            onSelect: () => {
-              setSelectedMemberId(member.id);
-              setSwitcherOpen(false);
-            },
+            label: view.title,
+            value: member.id,
           };
         })}
       testID="member-mobile-switcher"
+      value={selected.id}
     />
   ) : null;
 

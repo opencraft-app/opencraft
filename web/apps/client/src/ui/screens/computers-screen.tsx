@@ -36,7 +36,7 @@ import {
   NoticeBanner,
   ResourceIdentityHeader,
   ManagementResourceDirectory,
-  ManagementResourceSwitcher,
+  ManagementResourceSelect,
   ManagementStage,
   ManagementTextInput,
   ResourceActionRow,
@@ -232,8 +232,8 @@ export function ComputersScreen(props: ComputersScreenProps) {
     </ManagementResourceDirectory>
   );
   const mobileNavigation = selected ? (
-    <ManagementResourceSwitcher
-      currentAccessibilityLabel={`切换 Computer，当前 ${selected.name}`}
+    <ManagementResourceSelect
+      accessibilityLabel={`切换 Computer，当前 ${selected.name}`}
       currentContent={(
         <>
         <CollectionIdentityMark
@@ -250,35 +250,16 @@ export function ComputersScreen(props: ComputersScreenProps) {
         />
         </>
       )}
-      expanded={switcherOpen}
-      onToggle={() => setSwitcherOpen((current) => !current)}
-      options={computerItems
-        .filter((item) => item.resource.id !== selected.id)
-        .map(({resource: computer, view}) => ({
+      onChange={selectListedComputer}
+      onOpenChange={setSwitcherOpen}
+      open={switcherOpen}
+      options={computerItems.map(({resource: computer, view}) => ({
           accessibilityLabel: view.accessibilityLabel,
-          content: (
-            <>
-                <CollectionIdentityMark
-                  icon={Monitor}
-                  presence={{
-                    label: view.status,
-                    tone: view.tone,
-                  }}
-                />
-                <CollectionRowCopy
-                  meta={view.meta}
-                  numberOfLines={1}
-                  title={computer.name}
-                />
-            </>
-          ),
-          id: computer.id,
-          onSelect: () => {
-            selectListedComputer(computer.id);
-            setSwitcherOpen(false);
-          },
+          label: computer.name,
+          value: computer.id,
         }))}
       testID="computer-mobile-switcher"
+      value={selected.id}
     />
   ) : null;
   const hideCollection = creating || terminal !== null;

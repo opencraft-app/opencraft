@@ -606,28 +606,9 @@ export const styles = StyleSheet.create((theme) => ({
   resourceSwitcherChevronOpen: {
     transform: [{rotate: "180deg"}],
   },
-  resourceSwitcherMenu: {
-    maxHeight: theme.recipes.managementWorkspace.switcherMenuMaxHeight,
-  },
-  resourceSwitcherMenuContent: {
-    gap: theme.spacing.xs,
-    paddingTop: theme.spacing.xs,
-  },
   resourceSwitcherHover: {
     backgroundColor: theme.semantic.color.interactiveHoverSurface,
     ...theme.semantic.motion.transition.control,
-  },
-  resourceSwitcherOption: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionSecondarySurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    minHeight: theme.recipes.managementWorkspace.switcherOptionMinHeight,
-    paddingHorizontal: theme.spacing.md,
-    width: "100%",
   },
   resourceSwitcherPressed: {
     backgroundColor: theme.semantic.color.interactivePressedSurface,

@@ -12,7 +12,9 @@ import ArrowLeft from "lucide-react-native/icons/arrow-left";
 import LogOut from "lucide-react-native/icons/log-out";
 
 import { BrandMark } from "../components/brand-mark";
+import {SystemButton} from "../primitives/system-button";
 import {SystemMaterialSurface} from "../primitives/system-material-surface";
+import {SystemPopover} from "../primitives/system-popover";
 import { velaTheme } from "../tokens";
 import { workspaceLayoutMode } from "../workspace-layout-mode";
 import { MaybeLink } from "./navigation-link";
@@ -208,53 +210,60 @@ export function ServerRail({
       <View style={styles.railSpacer} />
       <View style={styles.railFooter}>
         {account ? (
-          <>
-            <Pressable
-              accessibilityLabel={`打开当前账号 ${account.displayName}`}
-              accessibilityRole="button"
-              aria-expanded={accountOpen}
-              onPress={() => setAccountOpen((current) => !current)}
-              style={({ pressed }) => [
-                styles.accountRailButton,
-                accountOpen && styles.accountRailButtonActive,
-                pressed && styles.railItemPressed,
-              ]}
-              testID="rail-account"
-            >
-              <HumanAvatar account={account} imStatus={imStatus} />
-            </Pressable>
-            {accountOpen ? (
-              <View style={styles.accountPopover} testID="account-popover">
-                <HumanAccountIdentity account={account} imStatus={imStatus} />
-                {account.imUserId ? (
-                  <View style={styles.accountIdPanel}>
-                    <Text style={styles.accountIdLabel}>IM USER ID</Text>
-                    <Text numberOfLines={1} style={styles.accountIdValue}>
-                      {account.imUserId}
-                    </Text>
-                  </View>
-                ) : null}
-                {onLogout ? (
-                  <Pressable
-                    accessibilityLabel="退出当前账号"
-                    accessibilityRole="button"
-                    onPress={onLogout}
-                    style={({ pressed }) => [
-                      styles.accountLogoutButton,
-                      pressed && styles.railItemPressed,
-                    ]}
-                  >
-                    <LogOut
-                      color={velaTheme.semantic.color.iconMuted}
-                      size={velaTheme.semantic.icon.size.small}
-                      strokeWidth={velaTheme.semantic.icon.stroke.regular}
-                    />
-                    <Text style={styles.accountLogoutText}>退出当前账号</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            ) : null}
-          </>
+          <SystemPopover
+            accessibilityLabel="当前账号"
+            onOpenChange={setAccountOpen}
+            open={accountOpen}
+            overlayId="account-popover"
+            renderTrigger={({
+              accessibilityControls,
+              accessibilityExpanded,
+              onPress,
+              ref,
+            }) => (
+              <Pressable
+                accessibilityLabel={`打开当前账号 ${account.displayName}`}
+                accessibilityRole="button"
+                aria-controls={accessibilityControls}
+                aria-expanded={accessibilityExpanded}
+                onPress={onPress}
+                ref={ref as never}
+                style={({ pressed }) => [
+                  styles.accountRailButton,
+                  accountOpen && styles.accountRailButtonActive,
+                  pressed && styles.railItemPressed,
+                ]}
+                testID="rail-account"
+              >
+                <HumanAvatar account={account} imStatus={imStatus} />
+              </Pressable>
+            )}
+          >
+            <View style={styles.accountPopover} testID="account-popover">
+              <HumanAccountIdentity account={account} imStatus={imStatus} />
+              {account.imUserId ? (
+                <View style={styles.accountIdPanel}>
+                  <Text style={styles.accountIdLabel}>IM USER ID</Text>
+                  <Text numberOfLines={1} style={styles.accountIdValue}>
+                    {account.imUserId}
+                  </Text>
+                </View>
+              ) : null}
+              {onLogout ? (
+                <SystemButton
+                  accessibilityLabel="退出当前账号"
+                  align="stretch"
+                  icon={LogOut}
+                  label="退出当前账号"
+                  onPress={() => {
+                    setAccountOpen(false);
+                    void onLogout();
+                  }}
+                  variant="destructive"
+                />
+              ) : null}
+            </View>
+          </SystemPopover>
         ) : onLogout ? (
           <Pressable
             accessibilityLabel="退出当前账号"
@@ -543,35 +552,10 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing.xxs,
     minWidth: 0,
   },
-  accountLogoutButton: {
-    alignItems: "center",
-    borderRadius: theme.semantic.radius.control,
-    flexDirection: "row",
-    gap: theme.spacing.xs,
-    justifyContent: "center",
-    minHeight: theme.recipes.control.height,
-  },
-  accountLogoutText: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodySmallEmphasis,
-  },
   accountPopover: {
-    backgroundColor: theme.semantic.color.overlaySurface,
-    borderColor: theme.semantic.color.borderOverlay,
-    borderRadius: theme.semantic.radius.section,
-    borderWidth: theme.semantic.stroke.hairline,
-    bottom: theme.recipes.overlay.accountPopoverBottomInset,
-    elevation: theme.semantic.elevation.overlay,
     gap: theme.spacing.md,
-    left: theme.recipes.overlay.accountPopoverLeftInset,
     padding: theme.spacing.md,
-    position: "absolute",
-    shadowColor: theme.shadows.overlay.color,
-    shadowOffset: { height: theme.shadows.overlay.offsetY, width: 0 },
-    shadowOpacity: theme.shadows.overlay.opacity,
-    shadowRadius: theme.shadows.overlay.radius,
     width: theme.recipes.overlay.accountMenuWidth,
-    zIndex: theme.semantic.layer.overlay,
   },
   accountRailButton: {
     alignItems: "center",

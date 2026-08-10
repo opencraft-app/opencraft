@@ -52,7 +52,7 @@ describe("management workspace primitives", () => {
       ResourceFactStrip,
       ResourceIdentityHeader,
       ResourceMetadataList,
-      managementWorkspace.ManagementResourceSwitcher,
+      managementWorkspace.ManagementResourceSelect,
       ManagementStage,
       ResourceActionRow,
       StatusIndicator,
@@ -441,42 +441,44 @@ describe("management workspace primitives", () => {
     });
   });
 
-  it("provides one responsive resource switcher for management screens", async () => {
-    type ResourceSwitcherProps = {
-      currentAccessibilityLabel: string;
+  it("provides one responsive resource select for management screens", async () => {
+    type ResourceSelectProps = {
+      accessibilityLabel: string;
       currentContent: ReactNode;
-      expanded: boolean;
-      onToggle(): void;
+      onChange(value: string): void;
+      onOpenChange(open: boolean): void;
+      open: boolean;
       options: Array<{
         accessibilityLabel: string;
-        content: ReactNode;
-        id: string;
-        onSelect(): void;
+        label: string;
+        value: string;
       }>;
       testID?: string;
+      value: string;
     };
-    const ManagementResourceSwitcher = (
+    const ManagementResourceSelect = (
       managementWorkspace as unknown as {
-        ManagementResourceSwitcher?: ComponentType<ResourceSwitcherProps>;
+        ManagementResourceSelect?: ComponentType<ResourceSelectProps>;
       }
-    ).ManagementResourceSwitcher;
-    expect(ManagementResourceSwitcher).toBeDefined();
-    if (!ManagementResourceSwitcher) return;
-    const onToggle = jest.fn();
-    const onSelect = jest.fn();
+    ).ManagementResourceSelect;
+    expect(ManagementResourceSelect).toBeDefined();
+    if (!ManagementResourceSelect) return;
+    const onChange = jest.fn();
+    const onOpenChange = jest.fn();
     const screen = await render(
-      <ManagementResourceSwitcher
-        currentAccessibilityLabel="切换当前资源"
+      <ManagementResourceSelect
+        accessibilityLabel="切换当前资源"
         currentContent={<Text>当前资源</Text>}
-        expanded={false}
-        onToggle={onToggle}
+        onChange={onChange}
+        onOpenChange={onOpenChange}
+        open={false}
         options={[{
           accessibilityLabel: "打开备用资源",
-          content: <Text>备用资源</Text>,
-          id: "backup",
-          onSelect,
+          label: "备用资源",
+          value: "backup",
         }]}
         testID="resource-switcher"
+        value="current"
       />,
     );
 
@@ -491,28 +493,26 @@ describe("management workspace primitives", () => {
     await fireEvent(screen.getByTestId("resource-switcher-trigger"), "hoverOut");
     expect(screen.queryByText("备用资源")).toBeNull();
     await fireEvent.press(screen.getByRole("button", {name: "切换当前资源"}));
-    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).toHaveBeenCalledWith(true);
 
     await screen.rerender(
-      <ManagementResourceSwitcher
-        currentAccessibilityLabel="切换当前资源"
+      <ManagementResourceSelect
+        accessibilityLabel="切换当前资源"
         currentContent={<Text>当前资源</Text>}
-        expanded
-        onToggle={onToggle}
+        onChange={onChange}
+        onOpenChange={onOpenChange}
+        open
         options={[{
           accessibilityLabel: "打开备用资源",
-          content: <Text>备用资源</Text>,
-          id: "backup",
-          onSelect,
+          label: "备用资源",
+          value: "backup",
         }]}
         testID="resource-switcher"
+        value="current"
       />,
     );
-    expect(screen.getByTestId("resource-switcher-menu")).toHaveStyle({
-      maxHeight: 232,
-    });
-    await fireEvent.press(screen.getByRole("button", {name: "打开备用资源"}));
-    expect(onSelect).toHaveBeenCalledTimes(1);
+    await fireEvent.press(screen.getByLabelText("打开备用资源"));
+    expect(onChange).toHaveBeenCalledWith("backup");
   });
 
   it("provides one restrained form surface and action row", async () => {

@@ -130,11 +130,12 @@ describe("management workspace adoption", () => {
   );
 
   it.each(["agents-screen.tsx", "computers-screen.tsx", "members-screen.tsx"])(
-    "keeps the mobile resource picker in ManagementResourceSwitcher for %s",
+    "keeps the mobile resource picker in ManagementResourceSelect for %s",
     (file) => {
       const source = readFileSync(join(__dirname, "..", "screens", file), "utf8");
 
-      expect(source).toContain("<ManagementResourceSwitcher");
+      expect(source).toContain("<ManagementResourceSelect");
+      expect(source).not.toContain("ManagementResourceSwitcher");
       expect(source).not.toMatch(/\n  mobileSwitcher(?:Button|Menu|Option)?(?:Pressed|Content)?: \{/u);
       expect(source).not.toMatch(/\n  switcherChevronOpen: \{/u);
     },

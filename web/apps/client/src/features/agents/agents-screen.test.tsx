@@ -653,7 +653,7 @@ describe("AgentsScreen", () => {
       screen.getByRole("button", {name: "切换 Agent，当前 research"}),
     ).toHaveProp("accessibilityState", {expanded: false});
     expect(
-      screen.queryByRole("button", {name: "打开 Agent delivery"}),
+      screen.queryByRole("option", {name: "打开 Agent delivery"}),
     ).toBeNull();
 
     await fireEvent.press(
@@ -661,8 +661,8 @@ describe("AgentsScreen", () => {
     );
 
     expect(
-      screen.getByRole("button", {name: "打开 Agent delivery"}),
-    ).toHaveStyle({minHeight: velaTheme.recipes.managementWorkspace.switcherOptionMinHeight, width: "100%"});
+      screen.getByRole("option", {name: "打开 Agent delivery"}),
+    ).toHaveStyle({minHeight: velaTheme.recipes.control.rowHeight, width: "100%"});
   });
 
   it("keeps the horizontal Agent collection at the tablet breakpoint", async () => {

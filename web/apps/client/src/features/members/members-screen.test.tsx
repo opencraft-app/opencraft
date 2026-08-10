@@ -293,7 +293,7 @@ describe("MembersScreen", () => {
       screen.getByRole("button", {name: "切换成员，当前 12"}),
     );
     await fireEvent.press(
-      screen.getByRole("button", {name: "打开成员 444 @44"}),
+      screen.getByRole("option", {name: "打开成员 444 @44"}),
     );
 
     expect(screen.getByTestId("member-hero-metadata")).toHaveTextContent(
@@ -585,7 +585,7 @@ describe("MembersScreen", () => {
       screen.getByRole("button", {name: "切换成员，当前 Skip @skip"}),
     ).toHaveProp("accessibilityState", {expanded: false});
     expect(
-      screen.queryByRole("button", {name: "打开成员 小王 @xiaowang"}),
+      screen.queryByRole("option", {name: "打开成员 小王 @xiaowang"}),
     ).toBeNull();
 
     await fireEvent.press(
@@ -593,8 +593,8 @@ describe("MembersScreen", () => {
     );
 
     expect(
-      screen.getByRole("button", {name: "打开成员 小王 @xiaowang"}),
-    ).toHaveStyle({minHeight: velaTheme.recipes.managementWorkspace.switcherOptionMinHeight, width: "100%"});
+      screen.getByRole("option", {name: "打开成员 小王 @xiaowang"}),
+    ).toHaveStyle({minHeight: velaTheme.recipes.control.rowHeight, width: "100%"});
   });
 
   it("keeps the horizontal member collection at the tablet breakpoint", async () => {

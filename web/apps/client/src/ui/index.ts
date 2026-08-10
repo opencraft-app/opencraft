@@ -77,6 +77,10 @@ export {
   type SystemSourceListRowProps,
 } from "./primitives/system-source-list-row";
 export {
+  SystemPopover,
+  type SystemPopoverProps,
+} from "./primitives/system-popover";
+export {
   SystemMaterialSurface,
   type SystemMaterialRole,
   type SystemMaterialSurfaceProps,
@@ -116,7 +120,7 @@ export {
   ResourceFactStrip,
   ResourceIdentityHeader,
   ResourceMetadataList,
-  ManagementResourceSwitcher,
+  ManagementResourceSelect,
   ManagementStage,
   ManagementTextInput,
   ResourceActionRow,
@@ -146,8 +150,7 @@ export {
   type ManagementFieldProps,
   type ManagementFormFooterAction,
   type ManagementFormFooterProps,
-  type ManagementResourceSwitcherOption,
-  type ManagementResourceSwitcherProps,
+  type ManagementResourceSelectProps,
   type ManagementTextInputProps,
   type ResourceActionRowProps,
   type StatusIndicatorProps,

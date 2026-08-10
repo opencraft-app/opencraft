@@ -36,7 +36,7 @@ import {
   ManagementHeaderActions,
   ResourceIdentityHeader,
   ManagementResourceDirectory,
-  ManagementResourceSwitcher,
+  ManagementResourceSelect,
   ManagementStage,
   ManagementTextInput,
   ResourceActionRow,
@@ -278,8 +278,8 @@ export function AgentsScreen(props: AgentsScreenProps) {
     </ManagementResourceDirectory>
   );
   const mobileNavigation = selected ? (
-    <ManagementResourceSwitcher
-      currentAccessibilityLabel={`切换 Agent，当前 ${selected.handle}`}
+    <ManagementResourceSelect
+      accessibilityLabel={`切换 Agent，当前 ${selected.handle}`}
       currentContent={(
         <>
         <CollectionIdentityMark
@@ -297,36 +297,16 @@ export function AgentsScreen(props: AgentsScreenProps) {
         />
         </>
       )}
-      expanded={switcherOpen}
-      onToggle={() => setSwitcherOpen((current) => !current)}
-      options={agentItems
-        .filter((item) => item.resource.id !== selected.id)
-        .map(({resource: agent, view}) => ({
+      onChange={setSelectedAgentId}
+      onOpenChange={setSwitcherOpen}
+      open={switcherOpen}
+      options={agentItems.map(({resource: agent, view}) => ({
           accessibilityLabel: view.accessibilityLabel,
-          content: (
-            <>
-                <CollectionIdentityMark
-                  identityKind="agent"
-                  monogram={view.monogram}
-                  presence={{
-                    label: view.status,
-                    tone: view.tone,
-                  }}
-                />
-                <CollectionRowCopy
-                  meta={view.meta}
-                  numberOfLines={1}
-                  title={view.title}
-                />
-            </>
-          ),
-          id: agent.id,
-          onSelect: () => {
-            setSelectedAgentId(agent.id);
-            setSwitcherOpen(false);
-          },
+          label: view.title,
+          value: agent.id,
         }))}
       testID="agent-mobile-switcher"
+      value={selected.id}
     />
   ) : null;
 
