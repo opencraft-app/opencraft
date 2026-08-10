@@ -16,6 +16,7 @@ import {styles} from "./management-workspace.styles";
 
 import {ActionButton} from "../primitives/action-button";
 import {IconActionButton} from "../primitives/icon-action-button";
+import {SystemSourceListRow} from "../primitives/system-source-list-row";
 
 export {ActionButton} from "../primitives/action-button";
 export type {
@@ -755,31 +756,19 @@ export function CollectionRow({
   selected = false,
   testID,
 }: CollectionRowProps) {
-  const [hovered, setHovered] = useState(false);
   return (
-    <Pressable
-      accessibilityLabel={accessibilityLabel}
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      aria-pressed={selected}
-      disabled={disabled ? true : undefined}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
+    <SystemSourceListRow
+      accessibilityLabel={accessibilityLabel ?? "打开资源"}
+      disabled={disabled}
+      kind="button"
       onPress={onPress}
-      style={({pressed}) => [
-        styles.collectionRow,
-        orientation === "horizontal" && styles.collectionRowHorizontal,
-        selected && styles.collectionRowSelected,
-        hovered && !disabled && !selected && styles.collectionRowHover,
-        hovered && !disabled && selected && styles.collectionRowSelectedHover,
-        pressed && styles.collectionRowPressed,
-        pressed && selected && styles.collectionRowSelectedPressed,
-        disabled && styles.disabled,
-      ]}
+      orientation={orientation}
+      rowId={testID ?? accessibilityLabel ?? "resource-row"}
+      selected={selected}
       testID={testID}
     >
       {children}
-    </Pressable>
+    </SystemSourceListRow>
   );
 }
 

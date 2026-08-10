@@ -15,37 +15,6 @@ export const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     justifyContent: "space-between",
   },
-  directButton: {
-    alignItems: "center",
-    borderRadius: theme.semantic.radius.compactControl,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    minHeight: theme.recipes.control.rowHeight,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    ...theme.semantic.motion.transition.control,
-    _web: {
-      _hover: {
-        backgroundColor: theme.semantic.color.interactiveHoverSurface,
-      },
-    },
-  },
-  directButtonSelected: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.selectionSurface,
-    borderRadius: theme.semantic.radius.compactControl,
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    minHeight: theme.recipes.control.rowHeight,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    ...theme.semantic.motion.transition.control,
-    _web: {
-      _hover: {
-        backgroundColor: theme.semantic.color.selectionHoverSurface,
-      },
-    },
-  },
   directHeader: {
     alignItems: "center",
     flexDirection: "row",
@@ -339,41 +308,10 @@ export const styles = StyleSheet.create((theme) => ({
   channelArrow: {
     ...theme.semantic.typography.messageBody,
   },
-  channelButton: {
-    alignItems: "center",
-    borderWidth: 0,
-    borderRadius: theme.semantic.radius.compactControl,
-    flexDirection: "row",
-    minHeight: theme.recipes.control.rowHeight,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    ...theme.semantic.motion.transition.control,
-    _web: {
-      _hover: {
-        backgroundColor: theme.semantic.color.interactiveHoverSurface,
-      },
-    },
-  },
   channelButtonCopy: {
     flex: 1,
     gap: theme.spacing.xxs,
     minWidth: 0,
-  },
-  channelButtonSelected: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.selectionSurface,
-    borderWidth: 0,
-    borderRadius: theme.semantic.radius.compactControl,
-    flexDirection: "row",
-    minHeight: theme.recipes.control.rowHeight,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    ...theme.semantic.motion.transition.control,
-    _web: {
-      _hover: {
-        backgroundColor: theme.semantic.color.selectionHoverSurface,
-      },
-    },
   },
   channelList: {
     gap: 0,
@@ -446,23 +384,6 @@ export const styles = StyleSheet.create((theme) => ({
   channelVisibilityNotice: {
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.bodySmall,
-  },
-  compactChannelButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionQuietSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: theme.recipes.compactWorkspace.listRowMinHeight,
-    paddingHorizontal: theme.spacing.md,
-    ...theme.semantic.motion.transition.control,
-  },
-  compactChannelButtonSelected: {
-    backgroundColor: theme.semantic.color.selectionSurface,
-    borderColor: velaTheme.semantic.color.borderSelected,
-    ...theme.semantic.motion.transition.control,
   },
   compactChannelActionSlot: {flex: 1},
   compactChannelActions: {

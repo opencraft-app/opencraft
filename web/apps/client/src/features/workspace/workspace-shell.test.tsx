@@ -669,10 +669,8 @@ describe("WorkspaceShell", () => {
       screen.getByTestId("href:/s/atlas/c/channel-1").props.accessibilityRole,
     ).toBe("link");
     expect(
-      Array.isArray(
-        screen.getByTestId("href:/s/atlas/c/channel-1").props.style,
-      ),
-    ).toBe(false);
+      screen.getByTestId("href:/s/atlas/c/channel-1").props.accessibilityState,
+    ).toEqual({disabled: false, selected: true});
     expect(screen.getByTestId("href:/s/atlas/c/channel-1")).toHaveStyle({
       backgroundColor: velaTheme.semantic.color.selectionSurface,
       flexDirection: "row",

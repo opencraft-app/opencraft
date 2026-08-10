@@ -84,6 +84,7 @@ import {
 import { ActionButton } from "../primitives/action-button";
 import { IconActionButton } from "../primitives/icon-action-button";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
+import {SystemSourceListRow} from "../primitives/system-source-list-row";
 import {
   memberIdentityLabel,
   memberKindLabel,
@@ -1094,67 +1095,61 @@ function DirectConversationList({
           directHref,
           members,
         });
+        const action = row.href
+          ? {href: row.href, kind: "link" as const}
+          : {
+              kind: "button" as const,
+              onPress: () => onSelect(conversation.peerUserId),
+            };
         return (
-          <MaybeLink href={row.href} key={conversation.conversationId}>
-            <Pressable
-              accessibilityLabel={row.accessibilityLabel}
-              accessibilityRole={row.href ? "link" : "button"}
-              accessibilityState={{ selected: row.selected }}
-              aria-current={row.selected ? "page" : undefined}
-              onPress={
-                row.href
-                  ? undefined
-                  : () => onSelect(conversation.peerUserId)
-              }
-              style={
-                row.selected
-                  ? styles.directButtonSelected
-                  : styles.directButton
-              }
-            >
-              <CollectionIdentityMark
-                identityKind={row.identityKind}
-                monogram={row.monogram}
-              />
-              <View style={styles.channelButtonCopy}>
-                <View style={styles.directHeader}>
-                  <Text
-                    numberOfLines={1}
-                    style={[styles.channelName, styles.directDisplayName]}
-                  >
-                    {conversation.peerDisplayName}
+          <SystemSourceListRow
+            {...action}
+            accessibilityLabel={row.accessibilityLabel}
+            key={conversation.conversationId}
+            rowId={`direct-${conversation.conversationId}`}
+            selected={row.selected}
+            testID={`direct-row-${conversation.conversationId}`}
+          >
+            <CollectionIdentityMark
+              identityKind={row.identityKind}
+              monogram={row.monogram}
+            />
+            <View style={styles.channelButtonCopy}>
+              <View style={styles.directHeader}>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.channelName, styles.directDisplayName]}
+                >
+                  {conversation.peerDisplayName}
+                </Text>
+                {row.identitySummary ? (
+                  <Text numberOfLines={1} style={styles.directHandle}>
+                    {row.identitySummary}
                   </Text>
-                  {row.identitySummary ? (
-                    <Text numberOfLines={1} style={styles.directHandle}>
-                      {row.identitySummary}
-                    </Text>
-                  ) : null}
-                  {row.lastMessageTime ? (
-                    <Text style={styles.directTime}>
-                      {row.lastMessageTime}
-                    </Text>
-                  ) : null}
-                </View>
-                <View style={styles.directFooter}>
-                  <Text
-                    numberOfLines={1}
-                    style={[
-                      styles.channelMeta,
-                      styles.directPreview,
-                      row.draftPreview ? styles.draftMeta : null,
-                    ]}
-                  >
-                    {row.preview}
-                  </Text>
-                  {row.unread ? (
-                    <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadBadgeText}>{row.unread}</Text>
-                    </View>
-                  ) : null}
-                </View>
+                ) : null}
+                {row.lastMessageTime ? (
+                  <Text style={styles.directTime}>{row.lastMessageTime}</Text>
+                ) : null}
               </View>
-            </Pressable>
-          </MaybeLink>
+              <View style={styles.directFooter}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.channelMeta,
+                    styles.directPreview,
+                    row.draftPreview ? styles.draftMeta : null,
+                  ]}
+                >
+                  {row.preview}
+                </Text>
+                {row.unread ? (
+                  <View style={styles.unreadBadge}>
+                    <Text style={styles.unreadBadgeText}>{row.unread}</Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          </SystemSourceListRow>
         );
       })}
     </ScrollView>
@@ -1199,26 +1194,27 @@ function DirectMemberRow({
   const href = member.imUserId ? directHref?.(member.imUserId) : undefined;
   const identitySummary = directIdentitySummary(member);
   const identityLabel = memberIdentityLabel(member);
+  const action = href
+    ? {href, kind: "link" as const}
+    : {
+        kind: "button" as const,
+        onPress: () => member.imUserId && onSelect(member.imUserId),
+      };
   return (
-    <MaybeLink href={href}>
-      <Pressable
-        accessibilityLabel={`私信 ${member.displayName}${identityLabel ? ` ${identityLabel}` : ""}`}
-        accessibilityRole={href ? "link" : "button"}
-        onPress={
-          href ? undefined : () => member.imUserId && onSelect(member.imUserId)
-        }
-        style={styles.directButton}
-      >
-        <CollectionIdentityMark
-          identityKind={member.kind}
-          monogram={member.displayName.slice(0, 1)}
-        />
-        <View style={styles.channelButtonCopy}>
-          <Text style={styles.channelName}>{member.displayName}</Text>
-          <Text style={styles.channelMeta}>{identitySummary}</Text>
-        </View>
-      </Pressable>
-    </MaybeLink>
+    <SystemSourceListRow
+      {...action}
+      accessibilityLabel={`私信 ${member.displayName}${identityLabel ? ` ${identityLabel}` : ""}`}
+      rowId={`direct-member-${member.id}`}
+    >
+      <CollectionIdentityMark
+        identityKind={member.kind}
+        monogram={member.displayName.slice(0, 1)}
+      />
+      <View style={styles.channelButtonCopy}>
+        <Text style={styles.channelName}>{member.displayName}</Text>
+        <Text style={styles.channelMeta}>{identitySummary}</Text>
+      </View>
+    </SystemSourceListRow>
   );
 }
 
@@ -1254,80 +1250,75 @@ function ChannelList({
           conversationSummaries,
           currentChannelId,
         });
+        const action = row.href
+          ? {href: row.href, kind: "link" as const}
+          : {
+              kind: "button" as const,
+              onPress: () => onSelectChannel(channel.id),
+            };
         return (
-          <MaybeLink href={row.href} key={channel.id}>
-            <Pressable
-              accessibilityLabel={row.accessibilityLabel}
-              accessibilityRole={row.href ? "link" : "button"}
-              accessibilityState={{ selected: row.selected }}
-              aria-current={row.selected ? "page" : undefined}
-              onPress={
-                row.href ? undefined : () => onSelectChannel(channel.id)
-              }
-              style={
-                row.selected
-                  ? styles.channelButtonSelected
-                  : styles.channelButton
-              }
-              testID={`channel-row-${channel.id}`}
+          <SystemSourceListRow
+            {...action}
+            accessibilityLabel={row.accessibilityLabel}
+            key={channel.id}
+            rowId={`channel-${channel.id}`}
+            selected={row.selected}
+            testID={`channel-row-${channel.id}`}
+          >
+            <View
+              style={[
+                styles.channelIcon,
+                row.selected && styles.channelIconSelected,
+              ]}
             >
-              <View
-                style={[
-                  styles.channelIcon,
-                  row.selected && styles.channelIconSelected,
-                ]}
-              >
-                <Hash
-                  color={
-                    row.selected
-                      ? velaTheme.semantic.color.iconAccent
-                      : velaTheme.semantic.color.iconMuted
-                  }
-                  size={velaTheme.semantic.icon.size.compact}
-                  strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
-                />
-              </View>
-              <View style={styles.channelButtonCopy}>
-                <View style={styles.directHeader}>
-                  <View style={styles.channelNameRow}>
-                    <Text
-                      numberOfLines={1}
-                      style={[
-                        styles.channelName,
-                        styles.channelNameInRow,
-                        row.selected && styles.channelNameSelected,
-                      ]}
-                    >
-                      {channel.name}
-                    </Text>
-                    <ChannelKindBadge channel={channel} />
-                  </View>
-                  {row.lastMessageTime ? (
-                    <Text style={styles.directTime}>
-                      {row.lastMessageTime}
-                    </Text>
-                  ) : null}
-                </View>
-                <View style={styles.directFooter}>
+              <Hash
+                color={
+                  row.selected
+                    ? velaTheme.semantic.color.iconAccent
+                    : velaTheme.semantic.color.iconMuted
+                }
+                size={velaTheme.semantic.icon.size.compact}
+                strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
+              />
+            </View>
+            <View style={styles.channelButtonCopy}>
+              <View style={styles.directHeader}>
+                <View style={styles.channelNameRow}>
                   <Text
                     numberOfLines={1}
                     style={[
-                      styles.channelMeta,
-                      styles.directPreview,
-                      row.draftPreview ? styles.draftMeta : null,
+                      styles.channelName,
+                      styles.channelNameInRow,
+                      row.selected && styles.channelNameSelected,
                     ]}
                   >
-                    {row.preview}
+                    {channel.name}
                   </Text>
-                  {!row.selected && row.unread ? (
-                    <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadBadgeText}>{row.unread}</Text>
-                    </View>
-                  ) : null}
+                  <ChannelKindBadge channel={channel} />
                 </View>
+                {row.lastMessageTime ? (
+                  <Text style={styles.directTime}>{row.lastMessageTime}</Text>
+                ) : null}
               </View>
-            </Pressable>
-          </MaybeLink>
+              <View style={styles.directFooter}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.channelMeta,
+                    styles.directPreview,
+                    row.draftPreview ? styles.draftMeta : null,
+                  ]}
+                >
+                  {row.preview}
+                </Text>
+                {!row.selected && row.unread ? (
+                  <View style={styles.unreadBadge}>
+                    <Text style={styles.unreadBadgeText}>{row.unread}</Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          </SystemSourceListRow>
         );
       })}
     </ScrollView>
@@ -2701,62 +2692,64 @@ function CompactConversationPicker({
               conversationSummaries,
               currentChannelId,
             });
+            const action = row.href
+              ? {href: row.href, kind: "link" as const}
+              : {
+                  kind: "button" as const,
+                  onPress: () => onSelectChannel(channel.id),
+                };
             return (
-              <MaybeLink href={row.href} key={channel.id}>
-                <Pressable
-                  accessibilityLabel={row.accessibilityLabel}
-                  accessibilityRole={row.href ? "link" : "button"}
-                  accessibilityState={{ selected: row.selected }}
-                  aria-current={row.selected ? "page" : undefined}
-                  onPress={
-                    row.href ? undefined : () => onSelectChannel(channel.id)
-                  }
-                  style={[
-                    styles.compactChannelButton,
-                    row.selected && styles.compactChannelButtonSelected,
-                  ]}
-                >
-                  <View style={styles.compactChannelIdentity}>
-                    <Hash
-                      color={velaTheme.semantic.color.iconMuted}
-                      size={velaTheme.semantic.icon.size.small}
-                      strokeWidth={velaTheme.semantic.icon.stroke.regular}
-                    />
-                    <View style={styles.channelButtonCopy}>
-                      <View style={styles.channelNameRow}>
-                        <Text
-                          numberOfLines={1}
-                          style={[styles.channelName, styles.channelNameInRow]}
-                        >
-                          {channel.name}
-                        </Text>
-                        <ChannelKindBadge channel={channel} />
-                      </View>
+              <SystemSourceListRow
+                {...action}
+                accessibilityLabel={row.accessibilityLabel}
+                key={channel.id}
+                rowId={`compact-channel-${channel.id}`}
+                selected={row.selected}
+              >
+                <View style={styles.compactChannelIdentity}>
+                  <Hash
+                    color={
+                      row.selected
+                        ? velaTheme.semantic.color.iconAccent
+                        : velaTheme.semantic.color.iconMuted
+                    }
+                    size={velaTheme.semantic.icon.size.small}
+                    strokeWidth={velaTheme.semantic.icon.stroke.regular}
+                  />
+                  <View style={styles.channelButtonCopy}>
+                    <View style={styles.channelNameRow}>
                       <Text
                         numberOfLines={1}
-                        style={
-                          row.draftPreview
-                            ? styles.draftMeta
-                            : styles.channelMeta
-                        }
+                        style={[styles.channelName, styles.channelNameInRow]}
                       >
-                        {row.preview}
+                        {channel.name}
                       </Text>
+                      <ChannelKindBadge channel={channel} />
                     </View>
+                    <Text
+                      numberOfLines={1}
+                      style={
+                        row.draftPreview
+                          ? styles.draftMeta
+                          : styles.channelMeta
+                      }
+                    >
+                      {row.preview}
+                    </Text>
                   </View>
-                  {!row.selected && row.unread ? (
-                    <Text style={styles.channelArrow}>{row.unread}</Text>
-                  ) : (
-                    <View testID={`compact-channel-chevron-${channel.name}`}>
-                      <ChevronRight
-                        color={velaTheme.semantic.color.iconMuted}
-                        size={velaTheme.semantic.icon.size.medium}
-                        strokeWidth={velaTheme.semantic.icon.stroke.regular}
-                      />
-                    </View>
-                  )}
-                </Pressable>
-              </MaybeLink>
+                </View>
+                {!row.selected && row.unread ? (
+                  <Text style={styles.channelArrow}>{row.unread}</Text>
+                ) : (
+                  <View testID={`compact-channel-chevron-${channel.name}`}>
+                    <ChevronRight
+                      color={velaTheme.semantic.color.iconMuted}
+                      size={velaTheme.semantic.icon.size.medium}
+                      strokeWidth={velaTheme.semantic.icon.stroke.regular}
+                    />
+                  </View>
+                )}
+              </SystemSourceListRow>
             );
           })}
         </View>
@@ -2791,58 +2784,54 @@ function CompactConversationPicker({
               directHref,
               members,
             });
+            const action = row.href
+              ? {href: row.href, kind: "link" as const}
+              : {
+                  kind: "button" as const,
+                  onPress: () => onSelectDirect(conversation.peerUserId),
+                };
             return (
-              <MaybeLink href={row.href} key={conversation.conversationId}>
-                <Pressable
-                  accessibilityLabel={row.accessibilityLabel}
-                  accessibilityRole={row.href ? "link" : "button"}
-                  accessibilityState={{ selected: row.selected }}
-                  aria-current={row.selected ? "page" : undefined}
-                  onPress={
-                    row.href
-                      ? undefined
-                      : () => onSelectDirect(conversation.peerUserId)
-                  }
-                  style={[
-                    styles.compactChannelButton,
-                    row.selected && styles.compactChannelButtonSelected,
-                  ]}
-                >
-                  <CollectionIdentityMark
-                    identityKind={row.identityKind}
-                    monogram={row.monogram}
-                  />
-                  <View style={styles.channelButtonCopy}>
-                    <View style={styles.directHeader}>
-                      <Text
-                        numberOfLines={1}
-                        style={[styles.channelName, styles.directDisplayName]}
-                      >
-                        {conversation.peerDisplayName}
-                      </Text>
-                      {row.identitySummary ? (
-                        <Text numberOfLines={1} style={styles.directHandle}>
-                          {row.identitySummary}
-                        </Text>
-                      ) : null}
-                    </View>
-                    {draftLabel(row.draftPreview) ? (
-                      <Text numberOfLines={1} style={styles.draftMeta}>
-                        {draftLabel(row.draftPreview)}
+              <SystemSourceListRow
+                {...action}
+                accessibilityLabel={row.accessibilityLabel}
+                key={conversation.conversationId}
+                rowId={`compact-direct-${conversation.conversationId}`}
+                selected={row.selected}
+              >
+                <CollectionIdentityMark
+                  identityKind={row.identityKind}
+                  monogram={row.monogram}
+                />
+                <View style={styles.channelButtonCopy}>
+                  <View style={styles.directHeader}>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.channelName, styles.directDisplayName]}
+                    >
+                      {conversation.peerDisplayName}
+                    </Text>
+                    {row.identitySummary ? (
+                      <Text numberOfLines={1} style={styles.directHandle}>
+                        {row.identitySummary}
                       </Text>
                     ) : null}
                   </View>
-                  {row.unread ? (
-                    <Text style={styles.channelArrow}>{row.unread}</Text>
-                  ) : (
-                    <ChevronRight
-                      color={velaTheme.semantic.color.iconMuted}
-                      size={velaTheme.semantic.icon.size.medium}
-                      strokeWidth={velaTheme.semantic.icon.stroke.regular}
-                    />
-                  )}
-                </Pressable>
-              </MaybeLink>
+                  {draftLabel(row.draftPreview) ? (
+                    <Text numberOfLines={1} style={styles.draftMeta}>
+                      {draftLabel(row.draftPreview)}
+                    </Text>
+                  ) : null}
+                </View>
+                {row.unread ? (
+                  <Text style={styles.channelArrow}>{row.unread}</Text>
+                ) : (
+                  <ChevronRight
+                    color={velaTheme.semantic.color.iconMuted}
+                    size={velaTheme.semantic.icon.size.medium}
+                    strokeWidth={velaTheme.semantic.icon.stroke.regular}
+                  />
+                )}
+              </SystemSourceListRow>
             );
           })}
         </View>

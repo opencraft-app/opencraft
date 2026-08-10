@@ -25,6 +25,25 @@ describe("management workspace adoption", () => {
     expect(workspace).not.toContain("StyleSheet.create");
   });
 
+  it("keeps management and conversation directories on one source-list row", () => {
+    const core = readFileSync(
+      join(__dirname, "management-workspace-core.tsx"),
+      "utf8",
+    );
+    const workspace = readFileSync(
+      join(__dirname, "..", "layouts", "workspace-shell.tsx"),
+      "utf8",
+    );
+
+    expect(core).toContain("<SystemSourceListRow");
+    expect(
+      workspace.match(/<SystemSourceListRow\b/gu)?.length,
+    ).toBeGreaterThanOrEqual(4);
+    expect(workspace).not.toMatch(
+      /styles\.(?:channelButton|channelButtonSelected|directButton|directButtonSelected)\b/u,
+    );
+  });
+
   it("keeps form primitives in the focused form module", () => {
     const core = readFileSync(
       join(__dirname, "management-workspace-core.tsx"),
