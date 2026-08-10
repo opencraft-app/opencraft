@@ -17,6 +17,7 @@ export interface LocalDateTimeInputConfig {
 export interface LocalDateTimeInputProps extends LocalDateTimeInputConfig {
   accessibilityLabel: string;
   disabled?: boolean;
+  invalid?: boolean;
   onChangeText(value: string): void;
   placeholder?: string;
   style?: StyleProp<TextStyle>;

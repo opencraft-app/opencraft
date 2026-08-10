@@ -8,6 +8,10 @@ jest.mock("lucide-react-native/icons/calendar-days", () => () => null);
 jest.mock("lucide-react-native/icons/chevron-left", () => () => null);
 jest.mock("lucide-react-native/icons/chevron-right", () => () => null);
 jest.mock("lucide-react-native/icons/clock-3", () => () => null);
+jest.mock("react-native/Libraries/Utilities/useWindowDimensions", () => ({
+  __esModule: true,
+  default: () => ({fontScale: 1, height: 800, scale: 1, width: 1280}),
+}));
 
 describe("LocalDateTimeInput web", () => {
   it("renders a Vela trigger instead of the browser datetime-local control", async () => {
@@ -24,6 +28,54 @@ describe("LocalDateTimeInput web", () => {
     expect(trigger.tagName).toBe("BUTTON");
     expect(trigger.getAttribute("type")).toBe("button");
     expect(screen.getByText("2026/08/03 16:00")).not.toBeNull();
+  });
+
+  it("keeps the trigger at the semantic field height", () => {
+    render(
+      <LocalDateTimeInput
+        accessibilityLabel="邀请有效期"
+        onChangeText={jest.fn()}
+        value="2026-08-03T16:00"
+      />,
+    );
+
+    const trigger = screen.getByLabelText("邀请有效期");
+    expect(trigger.style.height).not.toBe("");
+    expect(trigger.style.minHeight).toBe(trigger.style.height);
+    expect(trigger.style.maxHeight).toBe(trigger.style.height);
+  });
+
+  it("keeps React Aria desktop popover positioning", () => {
+    render(
+      <LocalDateTimeInput
+        accessibilityLabel="邀请有效期"
+        onChangeText={jest.fn()}
+        value="2026-08-03T16:00"
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("邀请有效期"));
+
+    const popover = screen.getByRole("dialog").parentElement;
+    expect(popover?.classList.contains("react-aria-Popover")).toBe(true);
+    expect(popover?.style.position).toBe("absolute");
+  });
+
+  it("converts native typography metrics before rendering picker controls", () => {
+    render(
+      <LocalDateTimeInput
+        accessibilityLabel="邀请有效期"
+        onChangeText={jest.fn()}
+        presets={[{id: "24-hours", label: "24 小时", value: "2026-08-04T16:00"}]}
+        value="2026-08-03T16:00"
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("邀请有效期"));
+
+    const preset = screen.getByRole("button", {name: "24 小时"});
+    expect(preset.style.height).not.toBe("");
+    expect(preset.style.lineHeight.endsWith("px")).toBe(true);
   });
 
   it("preserves the management field error border at rest", () => {

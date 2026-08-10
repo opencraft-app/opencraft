@@ -27,6 +27,7 @@ import ChevronRight from "lucide-react-native/icons/chevron-right";
 import Clock3 from "lucide-react-native/icons/clock-3";
 import {
   StyleSheet as NativeStyleSheet,
+  type TextStyle,
   useWindowDimensions,
 } from "react-native";
 import {useUnistyles} from "react-native-unistyles";
@@ -54,6 +55,7 @@ export type {
 export function LocalDateTimeInput({
   accessibilityLabel,
   disabled = false,
+  invalid = false,
   maxValue,
   minValue,
   minuteStep,
@@ -84,7 +86,9 @@ export function LocalDateTimeInput({
   const triggerStyle = NativeStyleSheet.flatten(style) as CSSProperties | undefined;
   const restingBorderColor = typeof triggerStyle?.borderColor === "string"
     ? triggerStyle.borderColor
-    : color.borderControl;
+    : invalid
+      ? color.borderDangerStrong
+      : color.borderControl;
 
   const safeDraft = () => {
     const fallback = parseLocalDateTimeValue(
@@ -119,9 +123,11 @@ export function LocalDateTimeInput({
           ref={triggerRef}
           style={({isFocusVisible, isHovered, isPressed}) => ({
             ...triggerStyle,
+            ...cssTypography(theme.semantic.typography.body),
             alignItems: "center",
             appearance: "none",
             background: color.fieldSurface,
+            boxSizing: "border-box",
             borderColor: isFocusVisible
               ? color.borderFocus
               : isHovered
@@ -136,9 +142,14 @@ export function LocalDateTimeInput({
             color: parsedValue ? color.textPrimary : color.fieldPlaceholder,
             cursor: disabled ? "not-allowed" : "pointer",
             display: "flex",
+            flex: "0 0 auto",
+            height: theme.recipes.control.fieldHeight,
             justifyContent: "space-between",
+            maxHeight: theme.recipes.control.fieldHeight,
+            minHeight: theme.recipes.control.fieldHeight,
             opacity: disabled ? theme.semantic.interaction.disabledOpacity : 1,
             outline: "none",
+            padding: `0 ${theme.spacing.md}px`,
             textAlign: "left",
             transform: isPressed ? "scale(0.995)" : "none",
             width: "100%",
@@ -148,7 +159,7 @@ export function LocalDateTimeInput({
         >
           <span>{parsedValue ? formatDateTimeDisplay(parsedValue) : value || placeholder}</span>
           <span style={styles.triggerMeta}>
-            <span style={{...theme.semantic.typography.caption, color: color.textMuted}}>{timezone}</span>
+            <span style={{...cssTypography(theme.semantic.typography.caption), color: color.textMuted}}>{timezone}</span>
             <CalendarDays
               color={color.iconMuted}
               size={theme.semantic.icon.size.small}
@@ -166,20 +177,23 @@ export function LocalDateTimeInput({
             borderRadius: theme.semantic.radius.overlay,
             borderStyle: "solid",
             borderWidth: theme.semantic.stroke.hairline,
-            bottom: phone ? theme.spacing.lg : undefined,
             boxShadow: cssBoxShadow(theme.shadows.overlay),
             boxSizing: "border-box",
-            left: phone ? theme.spacing.lg : undefined,
             opacity: isEntering || isExiting ? 0 : 1,
             outline: "none",
+            overflowY: "auto",
             padding: theme.spacing.xl,
-            position: phone ? "fixed" : undefined,
-            right: phone ? theme.spacing.lg : undefined,
-            top: phone ? "auto" : undefined,
             transform: isEntering || isExiting ? "translateY(4px)" : "translateY(0)",
             ...theme.semantic.motion.transition.surface,
             width: phone ? "auto" : 360,
             zIndex: theme.semantic.layer.popover,
+            ...(phone ? {
+              bottom: theme.spacing.lg,
+              left: theme.spacing.lg,
+              position: "fixed" as const,
+              right: theme.spacing.lg,
+              top: "auto",
+            } : {}),
           })}
         >
           <Dialog aria-label={`${accessibilityLabel}选择器`} style={styles.dialog}>
@@ -228,7 +242,7 @@ export function LocalDateTimeInput({
                         strokeWidth={theme.semantic.icon.stroke.regular}
                       />
                     </AriaButton>
-                    <Heading style={{...theme.semantic.typography.bodyCompactEmphasis, color: color.textPrimary, margin: 0}} />
+                    <Heading style={{...cssTypography(theme.semantic.typography.bodyCompactEmphasis), color: color.textPrimary, margin: 0}} />
                     <AriaButton
                       aria-label="下个月"
                       slot="next"
@@ -261,7 +275,7 @@ export function LocalDateTimeInput({
                               ? color.fieldPlaceholder
                               : color.textPrimary,
                           cursor: isDisabled ? "not-allowed" : "pointer",
-                          ...(isSelected || isToday
+                          ...cssTypography(isSelected || isToday
                             ? theme.semantic.typography.bodySmallEmphasis
                             : theme.semantic.typography.bodySmall),
                           height: theme.recipes.control.height,
@@ -325,7 +339,7 @@ function PickerButton({
             : isHovered
               ? color.interactiveHoverSurface
               : color.actionQuietSurface,
-        ...theme.semantic.typography.bodySmallEmphasis,
+        ...cssTypography(theme.semantic.typography.bodySmallEmphasis),
         borderColor: isFocusVisible || selected
           ? color.borderFocus
           : color.borderTransparent,
@@ -378,7 +392,7 @@ function TimeControls({
     borderWidth: theme.semantic.stroke.hairline,
     color: color.textPrimary,
     cursor: "pointer",
-    ...theme.semantic.typography.bodySmall,
+    ...cssTypography(theme.semantic.typography.bodySmall),
     height: theme.recipes.control.height,
     minWidth: 70,
     outline: "none",
@@ -515,12 +529,12 @@ function dateTimeStyles(theme: VelaTheme) {
       paddingTop: theme.spacing.lg,
     } satisfies CSSProperties,
     footerButton: {
-      ...theme.semantic.typography.bodySmallEmphasis,
+      ...cssTypography(theme.semantic.typography.bodySmallEmphasis),
       borderStyle: "solid",
       borderWidth: theme.semantic.stroke.hairline,
       borderRadius: theme.semantic.radius.control,
       cursor: "pointer",
-      minHeight: theme.recipes.control.height,
+      height: theme.recipes.control.height,
       padding: `${theme.spacing.xs}px ${theme.spacing.lg}px`,
     } satisfies CSSProperties,
     iconButton: {
@@ -546,7 +560,7 @@ function dateTimeStyles(theme: VelaTheme) {
       borderStyle: "solid",
       borderWidth: theme.semantic.stroke.hairline,
       cursor: "pointer",
-      minHeight: theme.recipes.control.height,
+      height: theme.recipes.control.height,
       padding: `${theme.spacing.xs}px ${theme.spacing.xs}px`,
     } satisfies CSSProperties,
     presetGrid: {
@@ -561,7 +575,7 @@ function dateTimeStyles(theme: VelaTheme) {
       gap: theme.spacing.xs,
     } satisfies CSSProperties,
     timeLabel: {
-      ...theme.semantic.typography.bodySmallEmphasis,
+      ...cssTypography(theme.semantic.typography.bodySmallEmphasis),
       alignItems: "center",
       display: "flex",
       gap: theme.spacing.xs,
@@ -586,4 +600,14 @@ function dateTimeStyles(theme: VelaTheme) {
 
 function cssBoxShadow(shadow: VelaTheme["shadows"]["overlay"]): string {
   return `0 ${shadow.offsetY}px ${shadow.radius}px ${shadow.color}`;
+}
+
+function cssTypography(typography: TextStyle): CSSProperties {
+  const cssLineHeight: keyof CSSProperties = "lineHeight";
+  return {
+    ...(typography as CSSProperties),
+    [cssLineHeight]: typeof typography.lineHeight === "number"
+      ? `${typography.lineHeight}px`
+      : typography.lineHeight,
+  };
 }

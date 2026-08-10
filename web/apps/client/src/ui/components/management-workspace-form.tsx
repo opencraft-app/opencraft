@@ -122,6 +122,7 @@ export function ManagementDateTimeInput({
     <LocalDateTimeInput
       {...props}
       disabled={disabled}
+      invalid={invalid}
       style={[
         styles.textInput,
         invalid && styles.textInputInvalid,
