@@ -21,7 +21,6 @@ export type {
 
 export function SystemActionMenu({
   accessibilityLabel,
-  header,
   items,
   onAction,
   onOpenChange,
@@ -77,7 +76,7 @@ export function SystemActionMenu({
         onOpenChange={next => {
           if (!next && open && !closingReason.current) close("outside", false);
         }}
-        placement="right bottom"
+        placement="bottom start"
         shouldFlip
         style={{
           backdropFilter: theme.semantic.material.blur,
@@ -100,23 +99,6 @@ export function SystemActionMenu({
         triggerRef={triggerRef as RefObject<Element>}
       >
         <div onKeyDownCapture={handleKeyDown}>
-          {header ? (
-            <div
-              style={{padding: `${theme.spacing.sm}px ${theme.spacing.md}px`}}
-            >
-              {header}
-            </div>
-          ) : null}
-          {header && items.length > 0 ? (
-            <div
-              aria-hidden
-              style={{
-                background: theme.semantic.color.separator,
-                height: theme.semantic.stroke.hairline,
-                margin: `${theme.spacing.xs}px ${theme.spacing.sm}px`,
-              }}
-            />
-          ) : null}
           <Menu
             aria-label={accessibilityLabel}
             autoFocus="first"
@@ -163,13 +145,13 @@ export function SystemActionMenu({
                   textValue={item.label}
                 >
                   <span aria-hidden style={{display: "flex", width: theme.semantic.icon.size.small}}>
-                    {item.icon ?? (item.selectionKind && item.checked ? (
+                    {item.selectionKind && item.checked ? (
                       <Check
                         color={theme.semantic.color.iconAccent}
                         size={theme.semantic.icon.size.small}
                         strokeWidth={theme.semantic.icon.stroke.emphasis}
                       />
-                    ) : null)}
+                    ) : null}
                   </span>
                   <span style={{flex: 1, minWidth: 0}}>{item.label}</span>
                   {item.shortcutLabel ? (

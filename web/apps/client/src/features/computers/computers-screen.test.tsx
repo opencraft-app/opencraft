@@ -295,8 +295,16 @@ describe("ComputersScreen", () => {
     expect(screen.getByText("IM 已连接")).toBeVisible();
     expect(screen.queryByText(account.imUserId as string)).toBeNull();
     expect(screen.queryByRole("menuitem", {name: "Skip"})).toBeNull();
+    expect(screen.getByTestId("account-popover-content")).toHaveStyle({
+      flexGrow: 0,
+    });
+    expect(screen.getByRole("button", {name: "退出当前账号"})).toHaveStyle({
+      flexGrow: 0,
+      minHeight: velaTheme.recipes.overlay.menuRowHeight,
+    });
+    expect(screen.queryByRole("menuitem", {name: "退出当前账号"})).toBeNull();
     await fireEvent.press(
-      screen.getByRole("menuitem", {name: "退出当前账号"}),
+      screen.getByRole("button", {name: "退出当前账号"}),
     );
     expect(onLogout).toHaveBeenCalledTimes(1);
   });

@@ -34,6 +34,7 @@ describe("SystemPopover", () => {
           }}
           open={open}
           overlayId="account-popover"
+          placement="right bottom"
           renderTrigger={({accessibilityControls, accessibilityExpanded, onPress, ref}) => (
             <button
               aria-controls={accessibilityControls}
@@ -46,6 +47,7 @@ describe("SystemPopover", () => {
               打开账号
             </button>
           )}
+          width={280}
         >
           <button type="button">退出账号</button>
         </SystemPopover>
@@ -59,6 +61,7 @@ describe("SystemPopover", () => {
     const popover = screen.getByRole("dialog", {name: "当前账号"});
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(popover).not.toBeNull();
+    expect(popover.getAttribute("style")).toContain("width: 280px");
     fireEvent.keyDown(screen.getByRole("button", {name: "退出账号"}), {
       key: "Escape",
     });

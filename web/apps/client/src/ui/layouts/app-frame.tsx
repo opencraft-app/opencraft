@@ -12,8 +12,8 @@ import ArrowLeft from "lucide-react-native/icons/arrow-left";
 import LogOut from "lucide-react-native/icons/log-out";
 
 import { BrandMark } from "../components/brand-mark";
-import {SystemActionMenu} from "../primitives/system-action-menu";
 import {SystemMaterialSurface} from "../primitives/system-material-surface";
+import {SystemPopover} from "../primitives/system-popover";
 import { workspaceLayoutMode } from "../workspace-layout-mode";
 import { MaybeLink } from "./navigation-link";
 import {
@@ -208,29 +208,12 @@ export function ServerRail({
       <View style={styles.railSpacer} />
       <View style={styles.railFooter}>
         {account ? (
-          <SystemActionMenu
+          <SystemPopover
             accessibilityLabel="当前账号"
-            header={<HumanAccountIdentity account={account} imStatus={imStatus} />}
-            items={onLogout
-              ? [{
-                  icon: (
-                    <LogOut
-                      color={theme.semantic.color.statusDangerText}
-                      size={theme.semantic.icon.size.small}
-                      strokeWidth={theme.semantic.icon.stroke.regular}
-                    />
-                  ),
-                  id: "logout",
-                  intent: "destructive" as const,
-                  label: "退出当前账号",
-                }]
-              : []}
-            onAction={id => {
-              if (id === "logout") void onLogout?.();
-            }}
             onOpenChange={setAccountOpen}
             open={accountOpen}
-            overlayId="account-action-menu"
+            overlayId="account-popover"
+            placement="right bottom"
             renderTrigger={({
               accessibilityControls,
               accessibilityExpanded,
@@ -242,7 +225,7 @@ export function ServerRail({
                 accessibilityRole="button"
                 aria-controls={accessibilityControls}
                 aria-expanded={accessibilityExpanded}
-                aria-haspopup="menu"
+                aria-haspopup="dialog"
                 onPress={onPress}
                 ref={ref as never}
                 style={({ pressed }) => [
@@ -255,7 +238,41 @@ export function ServerRail({
                 <HumanAvatar account={account} imStatus={imStatus} />
               </Pressable>
             )}
-          />
+            width={theme.recipes.overlay.accountMenuWidth}
+          >
+            <View style={styles.accountPopoverContent} testID="account-popover-content">
+              <View style={styles.accountPopoverIdentity}>
+                <HumanAccountIdentity account={account} imStatus={imStatus} />
+              </View>
+              {onLogout ? (
+                <>
+                  <View style={styles.accountPopoverSeparator} />
+                  <Pressable
+                    accessibilityLabel="退出当前账号"
+                    accessibilityRole="button"
+                    onPress={() => {
+                      setAccountOpen(false);
+                      void onLogout();
+                    }}
+                    style={({hovered, pressed}) => [
+                      styles.accountPopoverAction,
+                      hovered && styles.accountPopoverActionHovered,
+                      pressed && styles.accountPopoverActionPressed,
+                    ]}
+                  >
+                    <LogOut
+                      color={theme.semantic.color.statusDangerText}
+                      size={theme.semantic.icon.size.small}
+                      strokeWidth={theme.semantic.icon.stroke.regular}
+                    />
+                    <Text style={styles.accountPopoverActionLabel}>
+                      退出当前账号
+                    </Text>
+                  </Pressable>
+                </>
+              ) : null}
+            </View>
+          </SystemPopover>
         ) : onLogout ? (
           <Pressable
             accessibilityLabel="退出当前账号"
@@ -512,6 +529,40 @@ export function MobileBottomNavigation({
 }
 
 const styles = StyleSheet.create((theme) => ({
+  accountPopoverAction: {
+    alignItems: "center",
+    borderRadius: theme.semantic.radius.compactControl,
+    flexDirection: "row",
+    flexGrow: 0,
+    gap: theme.spacing.sm,
+    minHeight: theme.recipes.overlay.menuRowHeight,
+    paddingHorizontal: theme.spacing.md,
+    ...theme.semantic.motion.transition.control,
+  },
+  accountPopoverActionHovered: {
+    backgroundColor: theme.semantic.color.interactiveHoverSurface,
+  },
+  accountPopoverActionLabel: {
+    color: theme.semantic.color.statusDangerText,
+    ...theme.semantic.typography.bodyCompact,
+  },
+  accountPopoverActionPressed: {
+    backgroundColor: theme.semantic.color.interactivePressedSurface,
+  },
+  accountPopoverContent: {
+    flexGrow: 0,
+    width: "100%",
+  },
+  accountPopoverIdentity: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+  },
+  accountPopoverSeparator: {
+    backgroundColor: theme.semantic.color.separator,
+    height: theme.semantic.stroke.hairline,
+    marginHorizontal: theme.spacing.sm,
+    marginVertical: theme.spacing.xs,
+  },
   accountDisplayName: {
     color: theme.semantic.color.textPrimary,
     ...theme.semantic.typography.bodyEmphasis,

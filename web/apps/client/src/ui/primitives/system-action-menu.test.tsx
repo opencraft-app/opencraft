@@ -36,7 +36,6 @@ describe("SystemActionMenu", () => {
       return (
         <SystemActionMenu
           accessibilityLabel="账号操作"
-          header={<div data-testid="account-menu-header">Jindong Zhang<br />jindong@example.com</div>}
           items={[
             {id: "logout", intent: "destructive", label: "退出当前账号"},
           ]}
@@ -68,7 +67,6 @@ describe("SystemActionMenu", () => {
     fireEvent.click(trigger);
 
     expect(screen.getByRole("menu", {name: "账号操作"})).not.toBeNull();
-    expect(screen.getByTestId("account-menu-header")).not.toBeNull();
     expect(screen.queryByRole("menuitem", {name: "Jindong Zhang"})).toBeNull();
     expect(screen.getByRole("menu", {name: "账号操作"}).getAttribute("style"))
       .toContain("display: flex; flex-direction: column");

@@ -13,6 +13,7 @@ export function SystemPopover({
   open,
   overlayId,
   renderTrigger,
+  width,
 }: SystemPopoverProps) {
   return (
     <>
@@ -33,7 +34,10 @@ export function SystemPopover({
           onPress={() => onOpenChange(false, "outside")}
           style={styles.backdrop}
         >
-          <SystemMaterialSurface materialRole="popover" style={styles.surface}>
+          <SystemMaterialSurface
+            materialRole="popover"
+            style={[styles.surface, width ? {width} : null]}
+          >
             <View
               accessibilityLabel={accessibilityLabel}
               accessibilityRole={"dialog" as never}

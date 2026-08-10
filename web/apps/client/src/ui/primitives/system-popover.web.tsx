@@ -18,7 +18,9 @@ export function SystemPopover({
   onOpenChange,
   open,
   overlayId,
+  placement = "bottom start",
   renderTrigger,
+  width,
 }: SystemPopoverProps) {
   const {theme} = useUnistyles();
   const triggerRef = useRef<HTMLElement>(null);
@@ -73,7 +75,7 @@ export function SystemPopover({
         onOpenChange={next => {
           if (!next && open && !closingReason.current) close("outside", false);
         }}
-        placement="bottom start"
+        placement={placement}
         shouldFlip
         style={{
           backdropFilter: theme.semantic.material.blur,
@@ -84,11 +86,12 @@ export function SystemPopover({
           boxSizing: "border-box",
           maxHeight: "min(640px, calc(100vh - 16px))",
           maxWidth: "min(480px, calc(100vw - 16px))",
-          minWidth: 240,
+          minWidth: width ?? 240,
           outline: "none",
           overflow: "auto",
           padding: theme.spacing.xs,
           WebkitBackdropFilter: theme.semantic.material.blur,
+          width,
           zIndex: theme.semantic.layer.modal,
         }}
         triggerRef={triggerRef as RefObject<Element>}
