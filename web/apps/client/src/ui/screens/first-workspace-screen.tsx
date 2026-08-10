@@ -264,7 +264,7 @@ export function FirstWorkspaceScreen({
               busy={loading}
               label={loading ? stageLabel : actionLabel}
               onPress={submit}
-              variant="default"
+              variant="standard"
             />
 
             <SystemButton

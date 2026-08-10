@@ -10,7 +10,7 @@ export type DialogCloseReason =
 export interface SystemDialogAction {
   disabled?: boolean;
   id: string;
-  intent: "default" | "destructive" | "secondary";
+  intent: "destructive" | "standard";
   kind: "action" | "cancel";
   label: string;
 }

@@ -573,7 +573,7 @@ export function ComputersScreen(props: ComputersScreenProps) {
                       <SystemButton
                         accessibilityLabel={`生成${selected.name}的一键安装命令`}
                         disabled={pendingAction !== null}
-                        variant="secondary"
+                        variant="standard"
                         label="生成安装命令"
                         onPress={async () => {
                           const value = await onRequestRegistrationScript(
@@ -597,7 +597,7 @@ export function ComputersScreen(props: ComputersScreenProps) {
                           <SystemButton
                             accessibilityLabel={`打开${selected.name}终端`}
                             disabled={terminal !== null}
-                            variant="secondary"
+                            variant="standard"
                             label="打开终端"
                             onPress={() => {
                               setRegistration(null);
@@ -659,7 +659,7 @@ export function ComputersScreen(props: ComputersScreenProps) {
               {computers[0] ? (
                 <SystemButton
                   accessibilityLabel="打开第一台 Computer"
-                  variant="secondary"
+                  variant="standard"
                   label="查看可用 Computer"
                   onPress={() => selectComputer(computers[0]!.id)}
                 />
@@ -704,7 +704,7 @@ export function ComputersScreen(props: ComputersScreenProps) {
           {selected && releaseConfirming ? (
             <SystemDialog
               actions={[
-                {id: "cancel", intent: "secondary", kind: "cancel", label: "取消"},
+                {id: "cancel", intent: "standard", kind: "cancel", label: "取消"},
                 {
                   disabled: pendingAction !== null,
                   id: "confirm",

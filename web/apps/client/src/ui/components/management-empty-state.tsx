@@ -32,7 +32,7 @@ export function ManagementEmptyState({
               label={actionLabel}
               onPress={onAction}
               testID="management-empty-state-action"
-              variant="secondary"
+              variant="standard"
             />
           </View>
         ) : null}

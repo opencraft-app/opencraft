@@ -17,7 +17,6 @@ describe("SystemEmptyState", () => {
         primaryAction={{
           label: "清除筛选",
           onPress: onClear,
-          variant: "secondary",
         }}
         title="没有匹配结果"
       />,
@@ -31,7 +30,12 @@ describe("SystemEmptyState", () => {
       height: velaTheme.recipes.iconControl.compactSize,
       width: velaTheme.recipes.iconControl.compactSize,
     });
-    await fireEvent.press(screen.getByRole("button", {name: "清除筛选"}));
+    const action = screen.getByRole("button", {name: "清除筛选"});
+    expect(action).toHaveStyle({
+      backgroundColor: velaTheme.semantic.color.actionSecondarySurface,
+      borderColor: velaTheme.semantic.color.borderControl,
+    });
+    await fireEvent.press(action);
     expect(onClear).toHaveBeenCalledTimes(1);
   });
 

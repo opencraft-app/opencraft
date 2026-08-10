@@ -31,7 +31,7 @@ describe("SystemDialog", () => {
           <button onClick={() => setOpen(true)} type="button">移除成员</button>
           <SystemDialog
             actions={[
-              {id: "cancel", intent: "secondary", kind: "cancel", label: "取消"},
+              {id: "cancel", intent: "standard", kind: "cancel", label: "取消"},
               {id: "remove", intent: "destructive", kind: "action", label: "确认移除"},
             ]}
             description="移出后，该成员将无法继续收发消息。"
@@ -72,7 +72,7 @@ describe("SystemDialog", () => {
     render(
       <SystemDialog
         actions={[
-          {id: "cancel", intent: "secondary", kind: "cancel", label: "取消"},
+          {id: "cancel", intent: "standard", kind: "cancel", label: "取消"},
           {id: "delete", intent: "destructive", kind: "action", label: "删除"},
         ]}
         description="此操作不可撤销。"
@@ -97,7 +97,7 @@ describe("SystemDialog", () => {
     render(
       <SystemDialog
         actions={[
-          {id: "cancel", intent: "secondary", kind: "cancel", label: "取消"},
+          {id: "cancel", intent: "standard", kind: "cancel", label: "取消"},
           {id: "delete", intent: "destructive", kind: "action", label: "确认删除"},
         ]}
         description="工作区和历史消息会保留。"
@@ -124,7 +124,7 @@ describe("SystemDialog", () => {
     render(
       <SystemDialog
         actions={[
-          {id: "cancel", intent: "secondary", kind: "cancel", label: "取消"},
+          {id: "cancel", intent: "standard", kind: "cancel", label: "取消"},
           {id: "delete", intent: "destructive", kind: "action", label: "确认删除"},
         ]}
         description="此操作不可撤销。"
@@ -144,5 +144,29 @@ describe("SystemDialog", () => {
     expect(dialog.style.overflow).toBe("hidden");
     expect(content.style.overflowY).toBe("auto");
     expect(actions.style.flexShrink).toBe("0");
+  });
+
+  it("renders a routine confirmation with the same neutral action model", () => {
+    const {SystemDialog} = require(
+      "./system-dialog.web"
+    ) as typeof import("./system-dialog.web");
+    render(
+      <SystemDialog
+        actions={[
+          {id: "cancel", intent: "standard", kind: "cancel", label: "取消"},
+          {id: "accept", intent: "standard", kind: "action", label: "接受邀请"},
+        ]}
+        description="加入这个 Server。"
+        dialogId="accept-invite-dialog"
+        onAction={jest.fn()}
+        onOpenChange={jest.fn()}
+        open
+        title="接受邀请？"
+      />,
+    );
+
+    const action = screen.getByRole("button", {name: "接受邀请"});
+    expect(action.style.background).toBe("rgb(255, 255, 255)");
+    expect(action.style.color).toBe("rgb(24, 24, 27)");
   });
 });

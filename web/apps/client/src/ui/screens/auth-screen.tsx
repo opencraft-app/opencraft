@@ -146,7 +146,7 @@ export function AuthScreen({
             busy={loading}
             label={mode === "login" ? "登录" : "注册并继续"}
             onPress={submit}
-            variant="default"
+            variant="standard"
           />
 
           <SystemButton

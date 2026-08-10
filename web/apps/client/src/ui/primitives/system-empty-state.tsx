@@ -10,7 +10,6 @@ export interface SystemEmptyStateAction {
   disabled?: boolean;
   label: string;
   onPress(): void;
-  variant: "default" | "secondary";
 }
 
 export interface SystemEmptyStateProps {
@@ -75,7 +74,7 @@ export function SystemEmptyState({
               disabled={primaryAction.disabled}
               label={primaryAction.label}
               onPress={primaryAction.onPress}
-              variant={primaryAction.variant}
+              variant="standard"
             />
           ) : null}
           {secondaryAction ? (
@@ -85,7 +84,7 @@ export function SystemEmptyState({
               disabled={secondaryAction.disabled}
               label={secondaryAction.label}
               onPress={secondaryAction.onPress}
-              variant={secondaryAction.variant}
+              variant="standard"
             />
           ) : null}
         </View>

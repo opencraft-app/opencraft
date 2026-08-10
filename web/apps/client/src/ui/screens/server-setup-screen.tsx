@@ -168,7 +168,7 @@ export function ServerSetupScreen({
                 disabled={!computerName.trim()}
                 label="生成连接命令"
                 onPress={() => void createComputerAndRegistration()}
-                variant="default"
+                variant="standard"
               />
             </>
           ) : null}
@@ -184,7 +184,7 @@ export function ServerSetupScreen({
                   busy={busy}
                   label="生成安装命令"
                   onPress={() => void requestRegistration(readiness.computerId)}
-                  variant="default"
+                  variant="standard"
                 />
               ) : null}
               <SystemFeedback
@@ -233,7 +233,7 @@ export function ServerSetupScreen({
                 disabled={!agentName.trim() || !agentHandlePattern.test(agentHandle.trim())}
                 label="创建并启动 Agent"
                 onPress={() => void createAgent(readiness.computerId)}
-                variant="default"
+                variant="standard"
               />
             </>
           ) : null}
@@ -247,7 +247,7 @@ export function ServerSetupScreen({
               <SystemButton
                 label="打开 Agent"
                 onPress={onOpenAgents}
-                variant="default"
+                variant="standard"
               />
             </>
           ) : null}
@@ -261,7 +261,7 @@ export function ServerSetupScreen({
               <SystemButton
                 label="进入 Server"
                 onPress={onContinue}
-                variant="default"
+                variant="standard"
               />
             </>
           ) : null}
@@ -275,7 +275,7 @@ export function ServerSetupScreen({
               <SystemButton
                 label="开始对话"
                 onPress={onContinue}
-                variant="default"
+                variant="standard"
               />
             </>
           ) : null}

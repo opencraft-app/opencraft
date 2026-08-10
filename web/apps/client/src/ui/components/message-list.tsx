@@ -33,6 +33,7 @@ import {
 } from "./message-presentation";
 import {MessageViewport} from "./message-viewport/message-viewport";
 import {breakpoints, pointerDensity, velaTheme} from "../theme";
+import {SystemButton} from "../primitives/system-button";
 
 const emptyParticipants: MessageParticipant[] = [];
 const emptyPendingIndexMessageIds: readonly string[] = [];
@@ -185,20 +186,13 @@ export function MessageList({
       }
       header={(loadOlder) =>
         !historyCompleted ? (
-          <Pressable
+          <SystemButton
             accessibilityLabel="加载更早消息"
-            accessibilityRole="button"
             disabled={loadingOlder}
+            label={loadingOlder ? "正在加载…" : "↑ 加载更早消息"}
             onPress={loadOlder}
-            style={({ pressed }) => [
-              styles.loadOlderButton,
-              pressed && styles.loadOlderButtonPressed,
-            ]}
-          >
-            <Text style={styles.loadOlderText}>
-              {loadingOlder ? "正在加载…" : "↑ 加载更早消息"}
-            </Text>
-          </Pressable>
+            variant="standard"
+          />
         ) : null
       }
       keyExtractor={(message) => message.id}
@@ -809,14 +803,12 @@ function MessageStatus({
       <View style={styles.failure} testID={`message-status-${message.id}`}>
         <Text style={styles.failureText}>{status.label}</Text>
         {status.retry === "delivery" && onRetry ? (
-          <Pressable
+          <SystemButton
             accessibilityLabel={`重试消息 ${message.text}`}
-            accessibilityRole="button"
+            label="重试"
             onPress={onRetry}
-            style={styles.retryButton}
-          >
-            <Text style={styles.retryText}>重试</Text>
-          </Pressable>
+            variant="standard"
+          />
         ) : null}
       </View>
     );
@@ -826,14 +818,12 @@ function MessageStatus({
       <View style={styles.failure} testID={`message-status-${message.id}`}>
         <Text style={styles.delivery}>{status.label}</Text>
         {status.retry === "index" && onRetryIndex ? (
-          <Pressable
+          <SystemButton
             accessibilityLabel={`重新收录消息 ${message.text}`}
-            accessibilityRole="button"
+            label="重新收录"
             onPress={onRetryIndex}
-            style={styles.retryButton}
-          >
-            <Text style={styles.retryText}>重新收录</Text>
-          </Pressable>
+            variant="standard"
+          />
         ) : null}
       </View>
     );
@@ -1153,27 +1143,6 @@ const styles = StyleSheet.create((theme) => ({
     opacity: theme.semantic.opacity.contentEmphasized,
     ...theme.semantic.motion.transition.control,
   },
-  loadOlderButton: {
-    alignItems: "center",
-    alignSelf: "center",
-    backgroundColor: theme.semantic.color.actionQuietSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    marginBottom: theme.spacing.sm,
-    minHeight: theme.recipes.messageTimeline.actionSize,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    ...theme.semantic.motion.transition.control,
-  },
-  loadOlderButtonPressed: {
-    backgroundColor: theme.semantic.color.selectionSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  loadOlderText: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.meta,
-  },
   message: {
     alignSelf: "stretch",
     borderWidth: 0,
@@ -1299,21 +1268,6 @@ const styles = StyleSheet.create((theme) => ({
   reactionText: {
     color: theme.semantic.color.textPrimary,
     ...theme.semantic.typography.meta,
-  },
-  retryButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionTonalSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    justifyContent: "center",
-    minHeight: theme.recipes.control.height,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xxs,
-  },
-  retryText: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.label,
   },
   scroller: {
     flex: 1,

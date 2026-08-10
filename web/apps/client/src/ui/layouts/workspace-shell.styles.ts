@@ -137,18 +137,6 @@ export const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     width: "100%",
   },
-  channelMemberAdd: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionTonalSurface,
-    borderRadius: theme.semantic.radius.control,
-    justifyContent: "center",
-    minHeight: theme.recipes.iconControl.denseSize,
-    paddingHorizontal: theme.spacing.md,
-  },
-  channelMemberAddText: {
-    color: theme.semantic.color.actionTonalText,
-    ...theme.semantic.typography.bodySmallEmphasis,
-  },
   channelMemberIdentity: {
     flex: 1,
     minWidth: 0,
@@ -188,18 +176,6 @@ export const styles = StyleSheet.create((theme) => ({
   },
   channelMemberJoined: {
     color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodySmallEmphasis,
-  },
-  channelMemberRemove: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionDangerTonalSurface,
-    borderRadius: theme.semantic.radius.control,
-    justifyContent: "center",
-    minHeight: theme.recipes.iconControl.denseSize,
-    paddingHorizontal: theme.spacing.md,
-  },
-  channelMemberRemoveText: {
-    color: theme.semantic.color.actionDangerText,
     ...theme.semantic.typography.bodySmallEmphasis,
   },
   channelMemberRow: {

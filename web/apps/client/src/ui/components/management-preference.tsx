@@ -127,7 +127,7 @@ export function ManagementPreferenceFooter({
         label={action.label}
         onPress={() => void action.onPress()}
         testID={action.testID}
-        variant="default"
+        variant="standard"
       />
     </View>
   );

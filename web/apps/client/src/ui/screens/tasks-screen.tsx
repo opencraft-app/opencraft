@@ -1025,7 +1025,7 @@ function ReminderDetail({
         <SystemButton
           accessibilityLabel="保存提醒"
           disabled={disabled || !schedule.trim() || !text.trim()}
-          variant="default"
+          variant="standard"
           label="保存"
           onPress={() => onUpdate({
             schedule: schedule.trim(),
@@ -1037,7 +1037,7 @@ function ReminderDetail({
           <SystemButton
             accessibilityLabel={reminder.status === "active" ? "暂停提醒" : "恢复提醒"}
             disabled={disabled}
-            variant="secondary"
+            variant="standard"
             label={reminder.status === "active" ? "暂停" : "恢复"}
             onPress={() => onUpdate({
               status: reminder.status === "active" ? "paused" : "active",
@@ -1173,14 +1173,14 @@ function TaskDetail({
             <SystemButton
               accessibilityLabel="退回修改"
               disabled={disabled}
-              variant="secondary"
+              variant="standard"
               label="退回修改"
               onPress={() => onUpdate({status: "in_progress"})}
             />
             <SystemButton
               accessibilityLabel="验收通过"
               disabled={disabled}
-              variant="default"
+              variant="standard"
               label="验收通过"
               onPress={() => onUpdate({status: "done"})}
             />

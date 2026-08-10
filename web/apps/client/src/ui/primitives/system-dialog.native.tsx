@@ -84,7 +84,6 @@ export function SystemDialog({
                     onPress={() => activate(action)}
                     style={({pressed}) => [
                       styles.action,
-                      action.intent === "default" && styles.actionDefault,
                       action.intent === "destructive" && styles.actionDestructive,
                       pressed && styles.actionPressed,
                       unavailable && styles.actionUnavailable,
@@ -92,7 +91,6 @@ export function SystemDialog({
                   >
                     <Text style={[
                       styles.actionLabel,
-                      action.intent === "default" && styles.actionLabelInverse,
                       action.intent === "destructive" && styles.actionLabelInverse,
                     ]}>{action.label}</Text>
                   </Pressable>
@@ -117,10 +115,6 @@ const styles = StyleSheet.create(theme => ({
     height: theme.recipes.control.height,
     justifyContent: "center",
     paddingHorizontal: theme.spacing.md,
-  },
-  actionDefault: {
-    backgroundColor: theme.semantic.color.actionPrimarySurface,
-    borderColor: theme.semantic.color.actionPrimarySurface,
   },
   actionDestructive: {
     backgroundColor: theme.semantic.color.actionDangerEmphasisSurface,

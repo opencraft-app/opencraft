@@ -62,7 +62,7 @@ export function SystemFeedback({
             accessibilityLabel={detailOpen ? "收起技术详情" : "查看技术详情"}
             label={detailOpen ? "收起详情" : "技术详情"}
             onPress={() => setDetailOpen(current => !current)}
-            variant="secondary"
+            variant="standard"
           />
         ) : null}
         {action ? (
@@ -70,7 +70,7 @@ export function SystemFeedback({
             accessibilityLabel={action.accessibilityLabel}
             label={action.label}
             onPress={action.onPress}
-            variant="secondary"
+            variant="standard"
           />
         ) : null}
       </View>

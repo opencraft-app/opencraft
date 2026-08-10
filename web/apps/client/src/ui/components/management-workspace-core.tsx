@@ -966,7 +966,6 @@ export function InlineEmptyState({
               disabled: actionDisabled,
               label: actionLabel,
               onPress: onAction,
-              variant: "default",
             }
           : undefined
       }

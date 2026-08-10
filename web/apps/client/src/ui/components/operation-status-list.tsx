@@ -1,8 +1,9 @@
 import type { Operation } from "@vela/client-core";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
 import { productErrorMessage } from "../../application/product-language";
+import {SystemButton} from "../primitives/system-button";
 
 export type OperationPollingViewState =
   | "idle"
@@ -60,16 +61,12 @@ export function OperationStatusList({
               ) : null}
             </View>
             {!terminal && item.pollingState !== "polling" ? (
-              <Pressable
+              <SystemButton
                 accessibilityLabel={`继续查询操作 ${operation.id}`}
-                accessibilityRole="button"
+                label={item.pollingState === "idle" ? "查询状态" : "继续查询"}
                 onPress={() => onContinue(operation.id)}
-                style={styles.button}
-              >
-                <Text style={styles.buttonText}>
-                  {item.pollingState === "idle" ? "查询状态" : "继续查询"}
-                </Text>
-              </Pressable>
+                variant="standard"
+              />
             ) : null}
           </View>
         );
@@ -111,18 +108,6 @@ function productOperationMessage(message: string | null): string | null {
 }
 
 const styles = StyleSheet.create((theme) => ({
-  button: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionQuietSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    justifyContent: "center",
-    minHeight: theme.recipes.control.height,
-    paddingHorizontal: theme.spacing.md,
-  },
-  buttonText: {
-    ...theme.semantic.typography.bodySmallEmphasis,
-  },
   copy: {
     flex: 1,
     gap: theme.spacing.xs,

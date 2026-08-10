@@ -49,10 +49,9 @@
 
 ### 2.2 控件按语义区分
 
-“重要程度”不是唯一的控件轴。系统需要明确区分：
+“重要程度”不是业务页面可自由选择的控件轴。系统需要明确区分：
 
-- Push / default button：表单提交和主要确认。
-- Secondary button：稳定的次级动作。
+- Standard button：所有普通文字动作，包括创建、保存、继续、接受、重试和非危险确认；使用中性表面。
 - Toolbar button：工具栏中的文字或图标操作，默认无边框或使用共享控制组。
 - Destructive button：危险动作；Dialog 中只有确认危险动作进入强调色。
 - Icon button：无文字的局部操作。
@@ -103,9 +102,7 @@ interface SystemMaterialSurfaceProps {
 
 ```ts
 type SystemButtonVariant =
-  | "default"
-  | "secondary"
-  | "accentedSecondary"
+  | "standard"
   | "toolbar"
   | "destructive";
 
@@ -117,7 +114,7 @@ interface SystemButtonProps {
   label: string;
   nativeID?: string;
   onPress(): void;
-  variant: SystemButtonVariant;
+  variant?: SystemButtonVariant;
   submit?: boolean;
 }
 
@@ -131,7 +128,7 @@ interface SystemIconButtonProps {
 }
 ```
 
-现有 `ActionButton` 保持兼容入口，但在兼容阶段只做位置中立映射：`primary → default`、`secondary → secondary`、`tonal → accentedSecondary`、`danger → destructive`。四个 runtime tonal 调用先逐个分类；只有位于 header/toolbar 的调用在页面迁移时显式改成 `variant="toolbar"`。`IconActionButton` 映射为 `SystemIconButton variant="toolbar"`。Toolbar 文字操作允许安静表面，不再强迫所有带文字操作绘制白色矩形。
+普通文字按钮默认渲染为 `standard`。业务页面不得请求 filled accent 或 tonal accent；创建、保存、继续、接受、重试和普通确认均使用同一个中性模型。`destructive` 只表达危险后果，`toolbar` 只表达所处 chrome。强调蓝仅保留给选择态、进度、开关和 Composer 发送状态，不属于通用文字按钮 API。
 
 Web 上 `submit=false` 默认渲染 `type="button"`，只有显式 `submit` 才是 `type="submit"`。`busy` 同时设置 `aria-busy`、禁止重复触发并保留原 label 尺寸；`disabled` 和 `busy` 均不能只靠 opacity 表达。Icon-only 永远要求 accessibility label。危险强调可用于不可逆页面动作，但默认使用安静 danger 外观；只有明确确认阶段才使用填充 danger。
 
@@ -273,7 +270,7 @@ type DialogCloseReason = "escape" | "cancel" | "backdrop" | "action" | "nativeBa
 interface SystemDialogAction {
   disabled?: boolean;
   id: string;
-  intent: "default" | "secondary" | "destructive";
+  intent: "standard" | "destructive";
   kind: "cancel" | "action";
   label: string;
 }
@@ -296,11 +293,11 @@ interface SystemDialogProps {
 
 Dialog 统一使用 `react-aria-components` 的 ModalOverlay / Modal / Dialog 作为 Web 行为底座，承担 backdrop、材料、标题、描述、操作和焦点生命周期：
 
-- 打开时按以下顺序聚焦：显式 `initialFocusId` 对应的已挂载控件；首个非危险表单控件；`kind="cancel"` 的取消/关闭动作；首个非危险动作；Dialog panel。危险动作永远不会仅因它是 default 而获得初始焦点。触发 cancel action 固定发出 `reason="cancel"`，其余 action 发出 `reason="action"`。
+- 打开时按以下顺序聚焦：显式 `initialFocusId` 对应的已挂载控件；首个非危险表单控件；`kind="cancel"` 的取消/关闭动作；首个非危险动作；Dialog panel。危险动作永远不会获得隐式初始焦点。触发 cancel action 固定发出 `reason="cancel"`，其余 action 发出 `reason="action"`。
 - Tab 焦点留在 Dialog 内。
 - Escape / onRequestClose 行为一致。
 - 关闭后焦点归还原 trigger。
-- 普通取消使用 secondary；危险确认使用 destructive。
+- 普通取消和普通确认都使用 standard；危险确认使用 destructive。
 - 图片全屏预览继续是专用 viewer，不套普通设置 Dialog 外观。
 
 Dialog panel 默认使用 `role="dialog"`；只有 `urgency="urgent"` 的系统级即时中断使用 `alertdialog`，普通删除确认仍是 dialog。title/description id 建立 accessible name/description；Modal 打开时背景 inert、锁定 document 滚动。默认允许 Escape 和取消按钮关闭，不允许 backdrop 点击关闭；非阻塞 preview 可显式 `dismissOnBackdrop`。`busy` 只禁用重复 action，仍允许 Escape/取消；只有显式 `atomicLock` 的原子提交可短暂锁定退出，最多 10 秒，超时必须转为可关闭失败态并显示重试/取消。嵌套 overlay 必须挂在 Dialog overlay provider 内，Escape 先关闭最上层 overlay。Android back 映射 `nativeBack`；iOS swipe dismissal 首轮关闭。opener 被删除时按 owning toolbar/dialog → body 顺序降级恢复焦点。
@@ -358,7 +355,6 @@ interface EmptyStateAction {
   accessibilityLabel?: string;
   label: string;
   onPress(): void;
-  variant: "default" | "secondary";
 }
 interface SystemEmptyStateProps {
   description: string;
@@ -558,7 +554,7 @@ Compact 替换矩阵：desktop Sidebar → Compact picker；Toolbar 文字动作
 迁移分四个可回滚阶段：
 
 1. 新增 System primitives、主题和行为测试，旧组件零视觉变化。
-2. 旧 Action/Icon/Selection wrappers 映射新实现；用 legacy parity 测试锁住 label、disabled、busy、onPress、accessibility state、computed variant snapshot 和 Native export。四个 tonal 调用先分类并保存迁移前/后视觉截图，wrapper 只映射到位置中立 accentedSecondary。若出现回归，可单独回退 wrapper 映射，不回退 token/新控件。
+2. 旧 Action/Icon/Selection wrappers 映射新实现；用 legacy parity 测试锁住 label、disabled、busy、onPress、accessibility state、computed variant snapshot 和 Native export。所有普通文字动作统一映射为 standard，旧 primary/secondary/tonal 视觉入口不进入新 API。若出现回归，可单独回退 wrapper 映射，不回退 token/新控件。
 3. 按 Shell → management → overlay/feedback 迁移调用点；开发构建对旧 import 输出一次 deprecation warning，测试环境静默。
 4. `rg` 证明 runtime 旧调用为 0、全量 Web/Native 检查通过、dep 两轮验收无回退后，删除 wrapper 和 warning。删除前至少保留一个发布提交作为 rollback boundary。
 

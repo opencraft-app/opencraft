@@ -4,10 +4,8 @@ import {ActivityIndicator, Pressable, Text, View} from "react-native";
 import {StyleSheet, useUnistyles} from "react-native-unistyles";
 
 export type SystemButtonVariant =
-  | "accentedSecondary"
-  | "default"
   | "destructive"
-  | "secondary"
+  | "standard"
   | "toolbar";
 
 export interface SystemButtonProps {
@@ -20,7 +18,7 @@ export interface SystemButtonProps {
   label: string;
   onPress(): void;
   testID?: string;
-  variant: SystemButtonVariant;
+  variant?: SystemButtonVariant;
 }
 
 export interface SystemIconButtonProps {
@@ -31,7 +29,7 @@ export interface SystemIconButtonProps {
   iconTestID?: string;
   onPress(): void;
   testID?: string;
-  variant?: "destructive" | "secondary" | "toolbar";
+  variant?: "destructive" | "standard" | "toolbar";
 }
 
 export function SystemButton({
@@ -44,18 +42,16 @@ export function SystemButton({
   label,
   onPress,
   testID,
-  variant,
+  variant = "standard",
 }: SystemButtonProps) {
   const {theme} = useUnistyles();
   const [hovered, setHovered] = useState(false);
   const unavailable = disabled || busy;
-  const iconColor = variant === "default"
-    ? theme.semantic.color.iconInverse
-    : variant === "destructive"
-      ? theme.semantic.color.statusDanger
-      : variant === "accentedSecondary" || variant === "toolbar"
-        ? theme.semantic.color.iconAccent
-        : theme.semantic.color.iconPrimary;
+  const iconColor = variant === "destructive"
+    ? theme.semantic.color.statusDanger
+    : variant === "toolbar"
+      ? theme.semantic.color.iconSecondary
+      : theme.semantic.color.iconPrimary;
 
   return (
     <Pressable
@@ -71,15 +67,10 @@ export function SystemButton({
         styles.button,
         align === "center" && styles.alignCenter,
         align === "stretch" && styles.alignStretch,
-        variant === "secondary" && styles.secondary,
-        variant === "accentedSecondary" && styles.accentedSecondary,
         variant === "toolbar" && styles.toolbar,
         variant === "destructive" && styles.destructive,
         hovered && !unavailable && styles.hovered,
-        hovered && !unavailable && variant === "default" && styles.defaultHovered,
-        hovered && !unavailable && variant === "accentedSecondary" && styles.accentedHovered,
         pressed && !unavailable && styles.pressed,
-        pressed && !unavailable && variant === "default" && styles.defaultPressed,
         unavailable && styles.unavailable,
       ]}
       testID={testID}
@@ -98,9 +89,6 @@ export function SystemButton({
       <Text
         style={[
           styles.label,
-          variant !== "default" && styles.labelDark,
-          variant === "accentedSecondary" && styles.labelAccent,
-          variant === "toolbar" && styles.labelAccent,
           variant === "destructive" && styles.labelDanger,
         ]}
       >
@@ -141,7 +129,7 @@ export function SystemIconButton({
       onPress={onPress}
       style={({pressed}) => [
         styles.iconButton,
-        variant === "secondary" && styles.iconSecondary,
+        variant === "standard" && styles.iconStandard,
         variant === "destructive" && styles.iconDestructive,
         hovered && !unavailable && styles.hovered,
         pressed && !unavailable && styles.pressed,
@@ -165,21 +153,13 @@ export function SystemIconButton({
 }
 
 const styles = StyleSheet.create((theme) => ({
-  accentedHovered: {
-    backgroundColor: theme.semantic.color.actionTonalHoverSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  accentedSecondary: {
-    backgroundColor: theme.semantic.color.actionTonalSurface,
-    borderColor: theme.semantic.color.borderTransparent,
-  },
   alignCenter: {alignSelf: "center"},
   alignStretch: {alignSelf: "stretch"},
   button: {
     alignItems: "center",
     alignSelf: "flex-start",
-    backgroundColor: theme.semantic.color.actionPrimarySurface,
-    borderColor: theme.semantic.color.actionPrimarySurface,
+    backgroundColor: theme.semantic.color.actionSecondarySurface,
+    borderColor: theme.semantic.color.borderControl,
     borderRadius: theme.semantic.radius.control,
     borderWidth: theme.semantic.stroke.hairline,
     flexDirection: "row",
@@ -187,16 +167,6 @@ const styles = StyleSheet.create((theme) => ({
     height: theme.recipes.control.height,
     justifyContent: "center",
     paddingHorizontal: theme.spacing.lg,
-    ...theme.semantic.motion.transition.control,
-  },
-  defaultHovered: {
-    backgroundColor: theme.semantic.color.actionPrimaryHoverSurface,
-    borderColor: theme.semantic.color.actionPrimaryHoverSurface,
-    ...theme.semantic.motion.transition.control,
-  },
-  defaultPressed: {
-    backgroundColor: theme.semantic.color.actionPrimaryPressedSurface,
-    borderColor: theme.semantic.color.actionPrimaryPressedSurface,
     ...theme.semantic.motion.transition.control,
   },
   destructive: {
@@ -220,23 +190,17 @@ const styles = StyleSheet.create((theme) => ({
   iconDestructive: {
     backgroundColor: theme.semantic.color.actionDangerSurface,
   },
-  iconSecondary: {
+  iconStandard: {
     backgroundColor: theme.semantic.color.actionSecondarySurface,
     borderColor: theme.semantic.color.borderControl,
   },
   label: {
-    color: theme.semantic.color.actionPrimaryText,
+    color: theme.semantic.color.actionSecondaryText,
     ...theme.semantic.typography.button,
   },
-  labelAccent: {color: theme.semantic.color.actionTonalText},
   labelDanger: {color: theme.semantic.color.actionDangerText},
-  labelDark: {color: theme.semantic.color.actionSecondaryText},
   pressed: {
     backgroundColor: theme.semantic.color.interactivePressedSurface,
-  },
-  secondary: {
-    backgroundColor: theme.semantic.color.actionSecondarySurface,
-    borderColor: theme.semantic.color.borderControl,
   },
   toolbar: {
     backgroundColor: theme.semantic.color.surfaceTransparent,

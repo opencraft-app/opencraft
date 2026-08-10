@@ -5,7 +5,6 @@ import type {
 import { useEffect, useRef, useState } from "react";
 import {
   AppState,
-  Pressable,
   ScrollView,
   Text,
   TextInput,
@@ -13,6 +12,7 @@ import {
 } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import {terminalStatusLabel} from "../presentation/resources/terminal";
+import {SystemButton} from "../primitives/system-button";
 
 export interface TerminalSurfaceController {
   close(): void;
@@ -70,17 +70,15 @@ export function TerminalPanel({
           <Text style={styles.title}>{name} / 终端</Text>
           <Text style={styles.status}>{terminalStatusLabel[state.status]}</Text>
         </View>
-        <Pressable
+        <SystemButton
           accessibilityLabel="关闭终端"
-          accessibilityRole="button"
+          label="关闭"
           onPress={() => {
             controller.close();
             onClose();
           }}
-          style={styles.button}
-        >
-          <Text style={styles.buttonText}>关闭</Text>
-        </Pressable>
+          variant="standard"
+        />
       </View>
       {state.error ? (
         <Text accessibilityRole="alert" style={styles.error}>
@@ -101,16 +99,14 @@ export function TerminalPanel({
       </ScrollView>
       <View style={styles.controls}>
         {controlKeys.map((item) => (
-          <Pressable
+          <SystemButton
             accessibilityLabel={item.accessibilityLabel}
-            accessibilityRole="button"
             disabled={!ready}
             key={item.key}
+            label={item.label}
             onPress={() => controller.sendControl(item.key)}
-            style={styles.controlButton}
-          >
-            <Text style={styles.buttonText}>{item.label}</Text>
-          </Pressable>
+            variant="standard"
+          />
         ))}
       </View>
       <View style={styles.commandRow}>
@@ -129,18 +125,16 @@ export function TerminalPanel({
           style={styles.input}
           value={command}
         />
-        <Pressable
+        <SystemButton
           accessibilityLabel="发送终端命令"
-          accessibilityRole="button"
           disabled={!ready || !command}
+          label="发送"
           onPress={() => {
             controller.submitLine(command);
             setCommand("");
           }}
-          style={styles.sendButton}
-        >
-          <Text style={[styles.buttonText, styles.sendButtonText]}>发送</Text>
-        </Pressable>
+          variant="standard"
+        />
       </View>
     </View>
   );
@@ -160,32 +154,9 @@ const controlKeys: Array<{
 ];
 
 const styles = StyleSheet.create((theme) => ({
-  button: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionQuietSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    justifyContent: "center",
-    minHeight: theme.recipes.control.height,
-    paddingHorizontal: theme.spacing.md,
-  },
-  buttonText: {
-    ...theme.semantic.typography.bodySmallEmphasis,
-  },
   commandRow: {
     flexDirection: "row",
     gap: theme.spacing.sm,
-  },
-  controlButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionQuietSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    justifyContent: "center",
-    minHeight: theme.recipes.control.height,
-    minWidth: theme.recipes.terminalPanel.controlMinWidth,
   },
   controls: {
     flexDirection: "row",
@@ -236,19 +207,6 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing.md,
     minHeight: 0,
     padding: theme.spacing.lg,
-  },
-  sendButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionTonalSurface,
-    borderColor: theme.semantic.color.borderInteractive,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    justifyContent: "center",
-    minHeight: theme.recipes.control.height,
-    paddingHorizontal: theme.spacing.lg,
-  },
-  sendButtonText: {
-    color: theme.semantic.color.actionTonalText,
   },
   status: {
     color: theme.semantic.color.textMuted,

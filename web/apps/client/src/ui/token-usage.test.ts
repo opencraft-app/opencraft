@@ -65,7 +65,7 @@ describe("Vela token usage", () => {
     expect(installerSource).toContain(":focus-visible");
   });
 
-  it("keeps all actions on the semantic system-button boundary", () => {
+  it("keeps ordinary textual actions on one neutral system-button boundary", () => {
     const legacyPath = join(
       process.cwd(),
       "src",
@@ -80,9 +80,53 @@ describe("Vela token usage", () => {
 
     expect(existsSync(legacyPath)).toBe(false);
     expect(system).toContain('variant === "toolbar"');
-    expect(system).toContain("styles.accentedSecondary");
+    expect(system).toContain('"standard"');
     expect(system).toContain("styles.destructive");
-    expect(system).not.toMatch(/"quiet"|actionQuiet\b/u);
+    expect(system).not.toMatch(
+      /"(?:default|secondary|accentedSecondary)"|actionPrimary(?:Surface|Text)|actionTonalSurface/u,
+    );
+
+    const uiRoot = join(process.cwd(), "src", "ui");
+    const sources = readdirSync(uiRoot, {recursive: true, encoding: "utf8"})
+      .filter((name) => /\.tsx$/u.test(name) && !/\.test\./u.test(name))
+      .map((name) => [name, readFileSync(join(uiRoot, name), "utf8")] as const);
+    const legacyLabelledActions = sources.flatMap(([name, source]) =>
+      Array.from(source.matchAll(/<SystemButton\b([\s\S]*?)\/>/gu)).flatMap(
+        (match) => /\b(?:default|secondary|accentedSecondary)\b/u.test(match[1] ?? "")
+          ? [name]
+          : [],
+      ),
+    );
+    expect(legacyLabelledActions).toEqual([]);
+
+    for (const adapter of ["system-dialog.web.tsx", "system-dialog.native.tsx"]) {
+      const dialog = readFileSync(join(uiRoot, "primitives", adapter), "utf8");
+      expect(dialog).not.toMatch(/actionPrimary(?:Surface|Text)/u);
+    }
+
+    const routeStatus = readFileSync(
+      join(uiRoot, "components", "route-status-screen.tsx"),
+      "utf8",
+    );
+    expect(routeStatus).toContain("<SystemButton");
+    expect(routeStatus).not.toContain("<Pressable");
+
+    const emptyState = readFileSync(
+      join(uiRoot, "primitives", "system-empty-state.tsx"),
+      "utf8",
+    );
+    expect(emptyState).not.toMatch(/variant:\s*"/u);
+
+    const operationStatus = readUiSource("components/operation-status-list.tsx");
+    const terminal = readUiSource("components/terminal-panel.tsx");
+    const messages = readUiSource("components/message-list.tsx");
+    const workspace = readUiSource("layouts/workspace-shell.tsx");
+    expect(operationStatus).toContain("<SystemButton");
+    expect(operationStatus).not.toContain("<Pressable");
+    expect(terminal.match(/<SystemButton\b/gu)?.length).toBeGreaterThanOrEqual(3);
+    expect(terminal).not.toContain("<Pressable");
+    expect(messages).not.toMatch(/styles\.(?:loadOlderButton|retryButton)\b/u);
+    expect(workspace).not.toMatch(/styles\.channelMember(?:Add|Remove)\b/u);
   });
 
   it("lays every detail section out the one way", () => {
@@ -475,8 +519,6 @@ describe("Vela token usage", () => {
 
   it("keeps controls and feedback on semantic roles instead of brand or layout aliases", () => {
     const requiredRoles: Array<[string, string, string[]]> = [
-      ["components/route-status-screen.tsx", "action", ["actionPrimarySurface"]],
-      ["components/route-status-screen.tsx", "actionText", ["actionPrimaryText"]],
       ["components/message-composer.tsx", "sendButton", ["actionPrimarySurface"]],
       ["components/message-viewport/message-viewport.tsx", "newMessagesBadge", ["notificationBadgeSurface"]],
       ["components/message-viewport/message-viewport.tsx", "newMessagesBadgeText", ["notificationBadgeText"]],
@@ -484,7 +526,6 @@ describe("Vela token usage", () => {
       ["layouts/workspace-shell.tsx", "unreadBadge", ["statusInfoSurface"]],
       ["layouts/workspace-shell.tsx", "compactServerInitial", ["avatarServerSurface"]],
       ["primitives/system-dialog.native.tsx", "actionDestructive", ["actionDangerEmphasisSurface"]],
-      ["layouts/workspace-shell.tsx", "channelMemberRemove", ["actionDangerTonalSurface"]],
     ];
     const offenders = requiredRoles.flatMap(([relativePath, styleName, roles]) => {
       const source = readUiSource(relativePath);
@@ -501,11 +542,7 @@ describe("Vela token usage", () => {
 
   it("separates quiet actions, fields and disabled feedback from muted content", () => {
     const requiredRoles: Array<[string, string, string[]]> = [
-      ["components/operation-status-list.tsx", "button", ["actionQuietSurface"]],
-      ["components/terminal-panel.tsx", "button", ["actionQuietSurface"]],
-      ["components/terminal-panel.tsx", "controlButton", ["actionQuietSurface"]],
       ["components/terminal-panel.tsx", "input", ["fieldSurface"]],
-      ["components/message-list.tsx", "loadOlderButton", ["actionQuietSurface"]],
       ["components/message-composer.tsx", "sendButtonDisabled", ["actionDisabledSurface"]],
       ["layouts/workspace-shell.tsx", "compactServerButton", ["actionQuietSurface"]],
       ["layouts/workspace-shell.tsx", "searchInput", ["fieldSurface"]],
@@ -558,7 +595,6 @@ describe("Vela token usage", () => {
 
   it("keeps static information, badges and commands off selection semantics", () => {
     const requiredRoles: Array<[string, string, string[], string[]]> = [
-      ["components/terminal-panel.tsx", "sendButton", ["actionTonalSurface"], ["selectionSurface"]],
       ["layouts/workspace-shell.tsx", "compactPickerButton", ["actionTonalSurface"], ["selectionSurface"]],
       ["layouts/workspace-shell.tsx", "channelMembershipContext", ["statusInfoSurface", "statusInfoDivider"], ["selectionSurface"]],
       ["layouts/workspace-shell.tsx", "channelKindBadge", ["statusInfoSurface"], ["selectionSurface"]],
@@ -672,8 +708,6 @@ describe("Vela token usage", () => {
       ["layouts/app-frame.tsx", "serverMarksScroller", ["overlay.serverListMaxHeight"]],
       ["layouts/app-frame.tsx", "accountStatusDot", ["identity.statusDotSize"]],
       ["layouts/workspace-shell.tsx", "unreadBadge", ["status.badgeMinSize"]],
-      ["layouts/workspace-shell.tsx", "channelMemberAdd", ["iconControl.denseSize"]],
-      ["layouts/workspace-shell.tsx", "channelMemberRemove", ["iconControl.denseSize"]],
       ["layouts/workspace-shell.tsx", "channelIcon", ["iconControl.denseSize"]],
       ["layouts/workspace-shell.tsx", "channelKindBadge", ["status.badgeMinSize"]],
       ["layouts/workspace-shell.tsx", "compactServerInitial", ["identity.avatarCompactSize"]],
@@ -694,12 +728,10 @@ describe("Vela token usage", () => {
       ["screens/first-workspace-screen.tsx", "copy", ["contentMeasure.readingMaxWidth"]],
       ["screens/first-workspace-screen.tsx", "shell", ["authWorkspace.compactPanelMaxWidth"]],
       ["components/thread-panel.tsx", "panel", ["overlay.threadPanelMinWidth", "overlay.threadPanelWidth"]],
-      ["components/terminal-panel.tsx", "controlButton", ["terminalPanel.controlMinWidth"]],
       ["components/terminal-panel.tsx", "output", ["terminalPanel.outputMinHeight"]],
       ["components/terminal-panel.tsx", "outputBody", ["terminalPanel.outputMinHeight"]],
       ["components/operation-status-list.tsx", "list", ["contentMeasure.messageMaxWidth"]],
       ["components/route-status-screen.tsx", "surface", ["contentMeasure.readingMaxWidth"]],
-      ["components/message-list.tsx", "loadOlderButton", ["messageTimeline.actionSize"]],
       ["components/user-picker.tsx", "sectionEmpty", ["control.rowHeight"]],
       ["components/message-viewport/message-viewport.tsx", "newMessagesBadge", ["status.notificationBadgeSize"]],
       ["components/brand-mark.tsx", "highlight", ["identity.brandHighlightSize"]],

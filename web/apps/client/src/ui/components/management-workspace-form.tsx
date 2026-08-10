@@ -84,10 +84,7 @@ export interface ManagementFormFooterAction {
 
 export interface ManagementFormFooterFlowAction
   extends ManagementFormFooterAction {
-  /**
-   * Flow intent, not a visual variant. Intermediate navigation stays quiet;
-   * only the irreversible/final form submission receives accent emphasis.
-   */
+  /** Flow intent is retained for orchestration; visual emphasis stays neutral. */
   intent: "advance" | "submit";
 }
 
@@ -105,12 +102,12 @@ export function ManagementFormFooter({
   flowAction,
   testID = "management-form-footer",
 }: ManagementFormFooterProps) {
-  const renderSecondaryAction = (action: ManagementFormFooterAction) => (
+  const renderStandardAction = (action: ManagementFormFooterAction) => (
     <SystemButton
       accessibilityLabel={action.accessibilityLabel}
       busy={action.busy}
       disabled={action.disabled}
-      variant="secondary"
+      variant="standard"
       label={action.label}
       onPress={() => void action.onPress()}
       testID={action.testID}
@@ -118,13 +115,13 @@ export function ManagementFormFooter({
   );
   return (
     <ManagementFormActions testID={testID}>
-      {cancelAction ? renderSecondaryAction(cancelAction) : null}
-      {backAction ? renderSecondaryAction(backAction) : null}
+      {cancelAction ? renderStandardAction(cancelAction) : null}
+      {backAction ? renderStandardAction(backAction) : null}
       <SystemButton
         accessibilityLabel={flowAction.accessibilityLabel}
         busy={flowAction.busy}
         disabled={flowAction.disabled}
-        variant={flowAction.intent === "submit" ? "default" : "secondary"}
+        variant="standard"
         label={flowAction.label}
         onPress={() => void flowAction.onPress()}
         testID={flowAction.testID}

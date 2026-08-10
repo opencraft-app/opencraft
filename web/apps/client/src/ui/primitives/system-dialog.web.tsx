@@ -190,7 +190,6 @@ export function SystemDialog({
               const unavailable = Boolean(
                 action.disabled || locked || (busy && action.kind === "action"),
               );
-              const emphasized = action.intent === "default" || action.intent === "destructive";
               const destructive = action.intent === "destructive";
               return (
                 <button
@@ -203,22 +202,16 @@ export function SystemDialog({
                     ...webTypography(theme.semantic.typography.button),
                     background: destructive
                       ? theme.semantic.color.actionDangerEmphasisSurface
-                      : emphasized
-                        ? theme.semantic.color.actionPrimarySurface
-                        : theme.semantic.color.actionSecondarySurface,
+                      : theme.semantic.color.actionSecondarySurface,
                     border: `${theme.semantic.stroke.hairline}px solid ${
                       destructive
                         ? theme.semantic.color.actionDangerEmphasisSurface
-                        : emphasized
-                          ? theme.semantic.color.actionPrimarySurface
-                          : theme.semantic.color.borderControl
+                        : theme.semantic.color.borderControl
                     }`,
                     borderRadius: theme.semantic.radius.control,
                     color: destructive
                       ? theme.semantic.color.actionDangerEmphasisText
-                      : emphasized
-                        ? theme.semantic.color.actionPrimaryText
-                        : theme.semantic.color.actionSecondaryText,
+                      : theme.semantic.color.actionSecondaryText,
                     cursor: unavailable ? "not-allowed" : "default",
                     height: theme.recipes.control.height,
                     minWidth: 76,

@@ -311,7 +311,7 @@ describe("AgentsScreen", () => {
     expect(
       screen.getByRole("button", {name: "重启 Agent research"}),
     ).toHaveStyle({
-      backgroundColor: "#EAF4FF",
+      backgroundColor: velaTheme.semantic.color.actionSecondarySurface,
       height: velaTheme.recipes.control.height,
     });
     expect(screen.getByRole("button", {name: "保存 Agent"})).toHaveStyle({

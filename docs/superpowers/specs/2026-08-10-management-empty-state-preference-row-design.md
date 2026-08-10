@@ -17,7 +17,7 @@ Use the selected **Preference row** model for Tasks, Reminders, Agents, Computer
 - Decorative icon tiles and hero spacing are removed.
 - The existing toolbar and sidebar geometry remain unchanged.
 
-This is a desktop management state, not onboarding. Onboarding screens keep their stronger primary action where completing setup is the purpose of the whole screen.
+This is a desktop management state, not onboarding. Onboarding screens may use stronger structure and guidance, but ordinary rectangular text actions stay on the same neutral control model.
 
 ## 3. Component Ownership
 
@@ -31,17 +31,14 @@ No page may reproduce the row border, padding, title/description layout, or trai
 
 No new button implementation is introduced.
 
-- `SystemButton variant="default"`: final create/submit/confirm actions inside forms and dialogs.
-- `SystemButton variant="secondary"`: contextual actions at the trailing edge of a preference row, including first Task, Reminder, Agent, Computer, or Member creation.
+- `SystemButton variant="standard"`: every ordinary text action, including create, submit, confirm, accept, retry, and preference-row actions.
 - `SystemButton variant="toolbar"` and `SystemIconButton`: add, refresh, and other toolbar operations.
 - `SystemButton variant="destructive"`: destructive operations only.
 
 Wizard and form pages do not choose those variants directly through a generic
 "primary" footer slot. `ManagementFormFooter` owns a semantic flow action:
-`intent="advance"` maps Continue/Next to the quiet secondary control, while
-`intent="submit"` alone maps the final create/save operation to the accented
-default control. This prevents navigation steps from becoming blue merely
-because they are the main action in the current step.
+`intent="advance"` and `intent="submit"` preserve flow orchestration, but both
+map to the neutral standard control. The flow position cannot choose a color.
 
 Therefore an empty management collection never produces a filled primary button in the detail canvas.
 
@@ -65,7 +62,7 @@ The component uses semantic surface, separator, radius, spacing, typography, and
 Automated coverage must prove:
 
 - `ManagementEmptyState` uses the shared preference-row structure.
-- Its action renders as `secondary`, never `default`.
+- Its action renders as `standard`; no empty-state API exposes a visual variant.
 - Tasks, Reminders, Agents, Computers, and Members continue to open their existing creation flows.
 - The component stacks correctly in compact density.
 - No management screen introduces its own empty-state layout.

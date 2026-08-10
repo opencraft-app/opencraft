@@ -1695,7 +1695,7 @@ function MessageStage({
           <SystemButton
             accessibilityLabel="重新连接聊天"
             align="center"
-            variant="secondary"
+            variant="standard"
             label="重新连接"
             onPress={onReconnect}
           />
@@ -1853,7 +1853,7 @@ function MessageSearchPanel({
           align="center"
           busy={loading}
           disabled={loading || draft.trim().length === 0}
-          variant="accentedSecondary"
+          variant="standard"
           label={loading ? "搜索中…" : "搜索"}
           onPress={onSearch}
         />
@@ -1945,7 +1945,7 @@ function MessageSearchPanel({
               accessibilityLabel="加载更多搜索结果"
               busy={loading}
               disabled={loading}
-              variant="secondary"
+              variant="standard"
               label={loading ? "加载中…" : "加载更多"}
               onPress={onLoadMore}
             />
@@ -2208,27 +2208,15 @@ function ChannelManagementPanel({
           </View>
         </View>
         {canChangeMembership ? (
-          <Pressable
+          <SystemButton
             accessibilityLabel={`${joined ? actionLabel : "添加"} Channel ${actionIdentity}`}
-            accessibilityRole="button"
             disabled={disabled}
+            label={actionLabel}
             onPress={() =>
               joined ? setPendingRemoval(member) : onAddMember(member.id)
             }
-            style={
-              joined ? styles.channelMemberRemove : styles.channelMemberAdd
-            }
-          >
-            <Text
-              style={
-                joined
-                  ? styles.channelMemberRemoveText
-                  : styles.channelMemberAddText
-              }
-            >
-              {actionLabel}
-            </Text>
-          </Pressable>
+            variant={joined ? "destructive" : "standard"}
+          />
         ) : joined ? (
           <Text style={styles.channelMemberJoined}>已加入</Text>
         ) : null}
@@ -2383,7 +2371,7 @@ function ChannelManagementPanel({
             }
             align="stretch"
             disabled={disabled || name.trim().length === 0}
-            variant="default"
+            variant="standard"
             label={mode === "create" ? "创建 Channel" : "保存 Channel"}
             onPress={async () => {
               if (mode === "create") {
@@ -2408,7 +2396,7 @@ function ChannelManagementPanel({
           actions={[
             {
               id: "cancel",
-              intent: "secondary",
+              intent: "standard",
               kind: "cancel",
               label: pendingRemoval.imUserId === currentImUserId
                 ? "继续留在 Channel"
@@ -2582,7 +2570,7 @@ function CompactConversationPicker({
               align="stretch"
               icon={Plus}
               iconTestID="compact-channel-create-icon"
-              variant="secondary"
+              variant="standard"
               label="新建"
               onPress={onCreateChannel}
             />
@@ -2594,7 +2582,7 @@ function CompactConversationPicker({
                   accessibilityLabel={`编辑 Channel ${currentChannel.name}`}
                   align="stretch"
                   icon={Pencil}
-                  variant="secondary"
+                  variant="standard"
                   label="编辑"
                   onPress={onEditChannel}
                 />
@@ -2604,7 +2592,7 @@ function CompactConversationPicker({
                   accessibilityLabel={`管理 Channel ${currentChannel.name} 的成员`}
                   align="stretch"
                   icon={UsersRound}
-                  variant="secondary"
+                  variant="standard"
                   label="成员"
                   onPress={onManageMembers}
                 />
@@ -2699,7 +2687,7 @@ function CompactConversationPicker({
         <SystemButton
           align="stretch"
           icon={Plus}
-          variant="secondary"
+          variant="standard"
           label="新建私信"
           onPress={onNewDirect}
         />
@@ -2790,7 +2778,7 @@ function CompactConversationPicker({
         <SystemButton
           align="stretch"
           icon={LogOut}
-          variant="secondary"
+          variant="standard"
           label="退出当前账号"
           onPress={onLogout}
         />
@@ -2909,7 +2897,7 @@ function DirectPickerEmptyState({
       <SystemButton
         accessibilityLabel="前往成员页"
         align="center"
-        variant="default"
+        variant="standard"
         label="查看成员"
         onPress={onNavigateMembers}
       />

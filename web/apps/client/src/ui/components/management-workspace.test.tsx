@@ -179,7 +179,7 @@ describe("management workspace primitives", () => {
     });
   });
 
-  it("reserves accent emphasis for the final form submission", async () => {
+  it("keeps final form submission on the same neutral action model", async () => {
     const screen = await render(
       <ManagementFormFooter
         flowAction={{
@@ -192,8 +192,8 @@ describe("management workspace primitives", () => {
     );
 
     expect(screen.getByTestId("wizard-submit")).toHaveStyle({
-      backgroundColor: velaTheme.semantic.color.actionPrimarySurface,
-      borderColor: velaTheme.semantic.color.actionPrimarySurface,
+      backgroundColor: velaTheme.semantic.color.actionSecondarySurface,
+      borderColor: velaTheme.semantic.color.borderControl,
     });
   });
 
@@ -276,16 +276,16 @@ describe("management workspace primitives", () => {
         </ManagementCollectionPane>
         <DetailSection testID="section">
           <StatusIndicator label="在线" tone="positive" />
-          <SystemButton variant="default" label="保存" onPress={() => undefined} testID="action" />
+          <SystemButton variant="standard" label="保存" onPress={() => undefined} testID="action" />
           <SystemButton
             disabled
-            variant="default"
+            variant="standard"
             label="不可用"
             onPress={() => undefined}
             testID="disabled-action"
           />
           <SystemButton
-            variant="secondary"
+            variant="standard"
             label="次级操作"
             onPress={() => undefined}
             testID="secondary-action"
@@ -303,7 +303,7 @@ describe("management workspace primitives", () => {
             testID="icon-action"
           />
           <ResourceActionRow
-            action={<SystemButton variant="secondary" label="执行" onPress={() => undefined} />}
+            action={<SystemButton variant="standard" label="执行" onPress={() => undefined} />}
             description="执行一项资源操作。"
             testID="resource-action-row"
             title="资源操作"
@@ -344,8 +344,8 @@ describe("management workspace primitives", () => {
     });
     await fireEvent(screen.getByTestId("action"), "hoverIn");
     expect(screen.getByTestId("action")).toHaveStyle({
-      backgroundColor: "#005BC4",
-      borderColor: "#005BC4",
+      backgroundColor: velaTheme.semantic.color.interactiveHoverSurface,
+      borderColor: velaTheme.semantic.color.borderControl,
     });
     await fireEvent(screen.getByTestId("action"), "hoverOut");
     await fireEvent(screen.getByTestId("secondary-action"), "hoverIn");

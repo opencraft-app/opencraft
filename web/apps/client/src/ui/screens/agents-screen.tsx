@@ -522,7 +522,6 @@ export function AgentsScreen(props: AgentsScreenProps) {
                 ...(["deploy", "start", "stop", "restart"] as const).map(action => ({
                   disabled: pendingAction !== null || !lifecycleEnabled?.[action],
                   id: `${action}-agent`,
-                  kind: action === "stop" ? "secondary" as const : "primary" as const,
                   label: agentActionLabel[action],
                   run: () => onRunAgentAction(selected.id, action),
                 })),
@@ -1033,7 +1032,7 @@ function AgentCreateForm({
               </Text>
               <SystemButton
                 accessibilityLabel="先去纳管一台 Computer"
-                variant="accentedSecondary"
+                variant="standard"
                 label="先去纳管一台 Computer"
                 onPress={onNavigateComputers}
               />
@@ -1206,11 +1205,7 @@ function AgentDetail({
               <SystemButton
                 accessibilityLabel={`${agentActionLabel[action]} Agent ${agent.handle}`}
                 disabled={actionDisabled}
-                variant={
-                  actionDisabled || action === "stop"
-                    ? "secondary"
-                    : "accentedSecondary"
-                }
+                variant="standard"
                 key={action}
                 label={agentActionLabel[action]}
                 onPress={() => onRun(action)}
@@ -1281,7 +1276,7 @@ function AgentDetail({
         </ManagementField>
         <SystemButton
           disabled={disabled || displayName.trim().length === 0 || !computerId}
-          variant="default"
+          variant="standard"
           label="保存 Agent"
           onPress={() => {
             if (!computerId) return;
@@ -1301,7 +1296,7 @@ function AgentDetail({
               <SystemButton
                 accessibilityLabel={`轮换 Agent ${agent.handle} 的运行凭证`}
                 disabled={disabled || !canRotate || !onRotateCredential}
-                variant="secondary"
+                variant="standard"
                 label="轮换凭证"
                 onPress={onStartRotation}
               />
@@ -1333,11 +1328,11 @@ function AgentDetail({
       {confirmingRotation ? (
         <SystemDialog
           actions={[
-            {id: "cancel", intent: "secondary", kind: "cancel", label: "取消"},
+            {id: "cancel", intent: "standard", kind: "cancel", label: "取消"},
             {
               disabled,
               id: "confirm",
-              intent: "default",
+              intent: "standard",
               kind: "action",
               label: "确认轮换",
             },
@@ -1356,7 +1351,7 @@ function AgentDetail({
       {confirmingDeletion ? (
         <SystemDialog
           actions={[
-            {id: "cancel", intent: "secondary", kind: "cancel", label: "取消"},
+            {id: "cancel", intent: "standard", kind: "cancel", label: "取消"},
             {
               disabled,
               id: "confirm",

@@ -620,7 +620,7 @@ export function MembersScreen(props: MembersScreenProps) {
                             : `将 ${selected.displayName} 设为管理员`
                         }
                         disabled={pendingAction !== null}
-                        variant="secondary"
+                        variant="standard"
                         label={selected.role === "admin"
                           ? "设为普通成员"
                           : "设为管理员"}
@@ -667,7 +667,7 @@ export function MembersScreen(props: MembersScreenProps) {
                 action={(
                   <SystemButton
                     accessibilityLabel="接受其他 Server 邀请"
-                    variant="secondary"
+                    variant="standard"
                     label="使用邀请 token"
                     onPress={() => setAcceptingInvite(true)}
                   />
@@ -701,7 +701,7 @@ export function MembersScreen(props: MembersScreenProps) {
                     disabled={
                       pendingAction !== null || acceptToken.trim().length === 0
                     }
-                    variant="default"
+                    variant="standard"
                     label="接受邀请"
                     onPress={async () => {
                       const accepted = await onAcceptInvite(acceptToken.trim());
@@ -714,7 +714,7 @@ export function MembersScreen(props: MembersScreenProps) {
                 </View>
                 <SystemButton
                   accessibilityLabel="取消接受邀请"
-                  variant="secondary"
+                  variant="standard"
                   label="取消"
                   onPress={() => setAcceptingInvite(false)}
                 />
@@ -750,7 +750,7 @@ export function MembersScreen(props: MembersScreenProps) {
           {selected && confirmRemoveId === selected.id ? (
             <SystemDialog
               actions={[
-                {id: "cancel", intent: "secondary", kind: "cancel", label: "取消"},
+                {id: "cancel", intent: "standard", kind: "cancel", label: "取消"},
                 {
                   disabled: pendingAction !== null,
                   id: "confirm",

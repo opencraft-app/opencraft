@@ -26,7 +26,7 @@ describe("Tahoe system controls", () => {
     expect(existsSync(tabsModulePath)).toBe(true);
   });
 
-  it("gives labelled and icon actions distinct semantic variants", async () => {
+  it("makes the ordinary labelled action neutral by construction", async () => {
     if (!existsSync(buttonModulePath)) return;
     const {
       SystemButton,
@@ -39,8 +39,8 @@ describe("Tahoe system controls", () => {
           busy
           label="保存"
           onPress={onPress}
-          testID="default-button"
-          variant="default"
+          testID="standard-button"
+          variant="standard"
         />
         <SystemButton
           label="新建"
@@ -58,12 +58,13 @@ describe("Tahoe system controls", () => {
       </>,
     );
 
-    expect(screen.getByTestId("default-button").props.accessibilityState).toEqual({
+    expect(screen.getByTestId("standard-button").props.accessibilityState).toEqual({
       busy: true,
       disabled: true,
     });
-    expect(screen.getByTestId("default-button")).toHaveStyle({
-      backgroundColor: velaTheme.semantic.color.actionPrimarySurface,
+    expect(screen.getByTestId("standard-button")).toHaveStyle({
+      backgroundColor: velaTheme.semantic.color.actionSecondarySurface,
+      borderColor: velaTheme.semantic.color.borderControl,
       height: velaTheme.recipes.control.height,
     });
     expect(screen.getByTestId("toolbar-button")).toHaveStyle({
@@ -75,7 +76,7 @@ describe("Tahoe system controls", () => {
       height: velaTheme.recipes.managementWorkspace.headerActionHeight,
       width: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
-    await fireEvent.press(screen.getByTestId("default-button"));
+    await fireEvent.press(screen.getByTestId("standard-button"));
     expect(onPress).not.toHaveBeenCalled();
   });
 
