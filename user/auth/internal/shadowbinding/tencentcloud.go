@@ -5,6 +5,7 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -25,6 +26,7 @@ type TencentCloudConfig struct {
 	STSEndpoint     string
 	RequestTimeout  time.Duration
 	Platform        string
+	SiteKind        string
 	CloudLadder     CloudLadderConfig
 }
 
@@ -36,6 +38,7 @@ type TencentCloudSDKClient struct {
 	accountProfile *profile.ClientProfile
 	cloudLadder    CloudLadderConfig
 	platform       string
+	siteKind       string
 }
 
 func NewTencentCloudSDKClient(cfg TencentCloudConfig) (*TencentCloudSDKClient, error) {
@@ -64,6 +67,10 @@ func NewTencentCloudSDKClient(cfg TencentCloudConfig) (*TencentCloudSDKClient, e
 	if platform == "" {
 		platform = "lightvela"
 	}
+	siteKind, err := ParseSiteKind(cfg.SiteKind)
+	if err != nil {
+		return nil, err
+	}
 	timeout := cfg.RequestTimeout
 	if timeout <= 0 {
 		timeout = 10 * time.Second
@@ -91,6 +98,7 @@ func NewTencentCloudSDKClient(cfg TencentCloudConfig) (*TencentCloudSDKClient, e
 		accountProfile: accountProfile,
 		cloudLadder:    cfg.CloudLadder,
 		platform:       platform,
+		siteKind:       siteKind,
 	}, nil
 }
 
@@ -122,29 +130,19 @@ func (c *TencentCloudSDKClient) RegisterShadowAccount(ctx context.Context, in Cl
 	if err != nil {
 		return CloudRegisterResult{}, err
 	}
-	req := tchttp.NewCommonRequest("account", "2018-12-25", "RegisterCloudForSaaS")
-	if err := req.SetActionParameters(map[string]any{
-		"ClientUA":        strings.TrimSpace(in.ClientUA),
-		"ClientIP":        strings.TrimSpace(in.ClientIP),
-		"CountryName":     "CN",
-		"CountryCode":     "86",
-		"RegisterType":    "phone",
-		"Lang":            "zh",
-		"Area":            1,
-		"Platform":        c.platform,
-		"AccessLevel":     2,
-		"PhoneNumber":     strings.TrimSpace(in.Phone),
-		"PhoneVerifyCode": strings.TrimSpace(in.VerifyCode),
-		"UserName":        strings.TrimSpace(in.UserName),
-		"Password":        password,
-	}); err != nil {
-		return CloudRegisterResult{}, fmt.Errorf("set RegisterCloudForSaaS parameters: %w", err)
+	action, params, err := registrationRequest(c.siteKind, c.platform, in, password)
+	if err != nil {
+		return CloudRegisterResult{}, err
+	}
+	req := tchttp.NewCommonRequest("account", "2018-12-25", action)
+	if err := req.SetActionParameters(params); err != nil {
+		return CloudRegisterResult{}, fmt.Errorf("set %s parameters: %w", action, err)
 	}
 	req.SetContext(ctx)
 
 	resp := tchttp.NewCommonResponse()
 	if err := c.accountClient.Send(req, resp); err != nil {
-		return CloudRegisterResult{}, fmt.Errorf("send RegisterCloudForSaaS: %w", err)
+		return CloudRegisterResult{}, fmt.Errorf("send %s: %w", action, err)
 	}
 	var payload struct {
 		Response struct {
@@ -152,16 +150,65 @@ func (c *TencentCloudSDKClient) RegisterShadowAccount(ctx context.Context, in Cl
 		} `json:"Response"`
 	}
 	if err := json.Unmarshal(resp.GetBody(), &payload); err != nil {
-		return CloudRegisterResult{}, fmt.Errorf("decode RegisterCloudForSaaS response: %w", err)
+		return CloudRegisterResult{}, fmt.Errorf("decode %s response: %w", action, err)
 	}
 	if payload.Response.Uin <= 0 {
-		return CloudRegisterResult{}, fmt.Errorf("RegisterCloudForSaaS returned empty uin")
+		return CloudRegisterResult{}, fmt.Errorf("%s returned empty uin", action)
 	}
 	appID, err := c.getAppIDByUin(ctx, payload.Response.Uin)
 	if err != nil {
 		return CloudRegisterResult{}, err
 	}
 	return CloudRegisterResult{Uin: payload.Response.Uin, OwnerUin: payload.Response.Uin, AppID: appID}, nil
+}
+
+func registrationRequest(siteKind string, platform string, in CloudRegisterInput, password string) (string, map[string]any, error) {
+	userName := strings.TrimSpace(in.UserName)
+	clientUA := strings.TrimSpace(in.ClientUA)
+	if clientUA == "" {
+		clientUA = "LightVelaAuth/1.0"
+	}
+	if siteKind == SiteKindIntl {
+		email := strings.TrimSpace(in.Email)
+		if email == "" {
+			return "", nil, errors.New("international shadow registration email is required")
+		}
+		return "RegisterCloudForSaaSIntl", map[string]any{
+			"ClientUA":        clientUA,
+			"CountryName":     "SG",
+			"CountryCode":     "65",
+			"Lang":            "en",
+			"Platform":        strings.TrimSpace(platform),
+			"TradeName":       "kghy_01",
+			"TradeOne":        "kghy_01",
+			"TradeTwo":        "kghy_0101",
+			"UserType":        1,
+			"FullName":        userName,
+			"CompanyName":     "LightVela",
+			"CountryFullName": "Singapore",
+			"Email":           email,
+			"RegisterType":    "mail",
+			"Area":            2,
+			"AccessLevel":     2,
+			"UserName":        userName,
+			"Password":        password,
+		}, nil
+	}
+	return "RegisterCloudForSaaS", map[string]any{
+		"ClientUA":        clientUA,
+		"ClientIP":        strings.TrimSpace(in.ClientIP),
+		"CountryName":     "CN",
+		"CountryCode":     "86",
+		"RegisterType":    "phone",
+		"Lang":            "zh",
+		"Area":            1,
+		"Platform":        strings.TrimSpace(platform),
+		"AccessLevel":     2,
+		"PhoneNumber":     strings.TrimSpace(in.Phone),
+		"PhoneVerifyCode": strings.TrimSpace(in.VerifyCode),
+		"UserName":        userName,
+		"Password":        password,
+	}, nil
 }
 
 func (c *TencentCloudSDKClient) SendSMSVerifyCode(ctx context.Context, in CloudSendSMSInput) error {

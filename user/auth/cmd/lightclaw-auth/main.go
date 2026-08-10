@@ -33,7 +33,12 @@ func main() {
 	contentAuditConfig := buildContentAuditConfig(logger)
 	contentAuditClient := buildContentAuditClient(logger, contentAuditConfig)
 	stores := newStores(contentAuditConfig.Enabled)
-	shadowBinding := buildShadowBindingService(stores.shadow, logger)
+	siteKind, err := shadowbinding.ParseSiteKind(envOrDefault("LIGHTVELA_SITE_KIND", shadowbinding.SiteKindCN))
+	if err != nil {
+		logger.Error("invalid site kind", "err", err)
+		os.Exit(1)
+	}
+	shadowBinding := buildShadowBindingService(stores.shadow, logger, siteKind)
 	phoneAuthEnabled := envOrDefault("LIGHTCLAW_PHONE_AUTH_ENABLED", "false") == "true"
 	phoneAuthSMSSender := buildPhoneAuthSMSSender(logger)
 	realnameClient := buildRealnameClient(logger)
@@ -49,6 +54,7 @@ func main() {
 	frontendBaseURL := envOrDefault("LIGHTCLAW_FRONTEND_BASE_URL", publicBaseURL)
 	authService := service.NewWithStore(stores.auth, service.Options{
 		SessionTTL: sessionTTL,
+		SiteKind:   siteKind,
 		PhoneAuth: service.PhoneAuthConfig{
 			Enabled:   phoneAuthEnabled,
 			SMSSender: phoneAuthSMSSender,
@@ -259,7 +265,7 @@ func parseSameSite(value string) http.SameSite {
 	}
 }
 
-func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger) *shadowbinding.Service {
+func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger, siteKind string) *shadowbinding.Service {
 	if envOrDefault("SHADOW_BINDING_ENABLED", "false") != "true" {
 		return nil
 	}
@@ -276,6 +282,7 @@ func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger) *
 		CAMEndpoint:     envOrDefault("SHADOW_CAM_ENDPOINT", "cam.tencentcloudapi.com"),
 		STSEndpoint:     envOrDefault("SHADOW_STS_ENDPOINT", "sts.tencentcloudapi.com"),
 		Platform:        envOrDefault("SHADOW_PLATFORM", "lightvela"),
+		SiteKind:        siteKind,
 		RequestTimeout:  parseDurationEnv("SHADOW_REQUEST_TIMEOUT", 10*time.Second),
 		CloudLadder: shadowbinding.CloudLadderConfig{
 			Enabled:        envOrDefault("SHADOW_CLOUDLADDER_ENABLED", "false") == "true",
@@ -293,11 +300,37 @@ func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger) *
 	} else {
 		client = tencentClient
 	}
+	var billingAccount shadowbinding.BillingAccountClient
+	if siteKind == shadowbinding.SiteKindIntl {
+		billingClient, billingErr := shadowbinding.NewTencentCloudBillingClient(shadowbinding.TencentCloudBillingConfig{
+			SecretID:       envOrDefault("SHADOW_BILLING_SECRET_ID", ""),
+			SecretKey:      envOrDefault("SHADOW_BILLING_SECRET_KEY", ""),
+			Region:         envOrDefault("SHADOW_BILLING_REGION", "ap-guangzhou"),
+			Endpoint:       envOrDefault("SHADOW_BILLING_ENDPOINT", "billing.tencentcloudapi.com"),
+			RequestTimeout: parseDurationEnv("SHADOW_BILLING_REQUEST_TIMEOUT", 10*time.Second),
+			CloudLadder: shadowbinding.CloudLadderConfig{
+				Enabled:        envOrDefault("SHADOW_CLOUDLADDER_ENABLED", "false") == "true",
+				GatewayBaseURL: envOrDefault("SHADOW_CLOUDLADDER_GATEWAY_BASE_URL", ""),
+				RouteID:        envOrDefault("SHADOW_BILLING_CLOUDLADDER_ROUTE_ID", "tcapi-billing-intl-test"),
+				Caller:         envOrDefault("SHADOW_CLOUDLADDER_CALLER", "shadow"),
+				Secret:         envOrDefault("SHADOW_CLOUDLADDER_HMAC_SECRET", envOrDefault("CLOUDLADDER_SHADOW_HMAC_SECRET", "")),
+			},
+		})
+		if billingErr != nil {
+			logger.Warn("international shadow billing client unavailable", "err", billingErr)
+		} else {
+			billingAccount = billingClient
+		}
+	}
 	return shadowbinding.New(store, client, shadowbinding.Options{
-		Enabled:        true,
-		AuthCodeTTL:    parseDurationEnv("SHADOW_AUTH_CODE_TTL", 10*time.Minute),
-		AuthCodePrefix: envOrDefault("SHADOW_AUTH_CODE_PREFIX", ""),
-		UserNamePrefix: envOrDefault("SHADOW_USER_NAME_PREFIX", ""),
+		Enabled:             true,
+		AuthCodeTTL:         parseDurationEnv("SHADOW_AUTH_CODE_TTL", 10*time.Minute),
+		AuthCodePrefix:      envOrDefault("SHADOW_AUTH_CODE_PREFIX", ""),
+		UserNamePrefix:      envOrDefault("SHADOW_USER_NAME_PREFIX", ""),
+		SiteKind:            siteKind,
+		BillingAccount:      billingAccount,
+		BillingOpenTimeout:  parseDurationEnv("SHADOW_BILLING_OPEN_TIMEOUT", 15*time.Second),
+		BillingPollInterval: parseDurationEnv("SHADOW_BILLING_POLL_INTERVAL", time.Second),
 	})
 }
 
