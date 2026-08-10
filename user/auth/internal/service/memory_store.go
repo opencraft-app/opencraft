@@ -541,6 +541,10 @@ func (s *MemoryStore) CreateOAuthSession(_ context.Context, input OAuthSignInInp
 		}
 	}
 
+	if err := enforceOAuthNewUserRegistrationEmailPolicy(input); err != nil {
+		return nil, err
+	}
+
 	user := s.newUserWithInviteRequirementLocked(input.Name, input.Email, "", false, now)
 	s.oauthUsers[key] = user.ID
 	return s.createSessionLocked(user, now, sessionTTL, AuthMethodOAuth)
