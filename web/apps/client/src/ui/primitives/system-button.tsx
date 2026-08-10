@@ -167,6 +167,7 @@ export function SystemIconButton({
 const styles = StyleSheet.create((theme) => ({
   accentedHovered: {
     backgroundColor: theme.semantic.color.actionTonalHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   accentedSecondary: {
     backgroundColor: theme.semantic.color.actionTonalSurface,
@@ -191,10 +192,12 @@ const styles = StyleSheet.create((theme) => ({
   defaultHovered: {
     backgroundColor: theme.semantic.color.actionPrimaryHoverSurface,
     borderColor: theme.semantic.color.actionPrimaryHoverSurface,
+    ...theme.semantic.motion.transition.control,
   },
   defaultPressed: {
     backgroundColor: theme.semantic.color.actionPrimaryPressedSurface,
     borderColor: theme.semantic.color.actionPrimaryPressedSurface,
+    ...theme.semantic.motion.transition.control,
   },
   destructive: {
     backgroundColor: theme.semantic.color.actionDangerSurface,

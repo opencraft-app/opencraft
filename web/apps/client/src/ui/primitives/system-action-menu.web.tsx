@@ -70,6 +70,7 @@ export function SystemActionMenu({
     <>
       {trigger}
       <Popover
+        data-vela-material="menu"
         isOpen={open}
         offset={8}
         onOpenChange={next => {

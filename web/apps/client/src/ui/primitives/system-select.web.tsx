@@ -68,6 +68,7 @@ export function SystemSelect<T extends string>({
     <>
       {trigger}
       <Popover
+        data-vela-material="popover"
         isOpen={open}
         offset={8}
         onOpenChange={next => {

@@ -14,21 +14,11 @@ import {useUnistyles} from "react-native-unistyles";
 
 import {styles} from "./management-workspace.styles";
 
-import {ActionButton} from "../primitives/action-button";
-import {IconActionButton} from "../primitives/icon-action-button";
+import {SystemButton, SystemIconButton} from "../primitives/system-button";
 import {SystemSelect} from "../primitives/system-select";
 import type {SystemSelectOption} from "../primitives/system-select";
 import {SystemEmptyState} from "../primitives/system-empty-state";
 import {SystemSourceListRow} from "../primitives/system-source-list-row";
-
-export {ActionButton} from "../primitives/action-button";
-export type {
-  ActionButtonProps,
-  ActionContext,
-  ActionImportance,
-} from "../primitives/action-button";
-export {IconActionButton} from "../primitives/icon-action-button";
-export type {IconActionButtonProps} from "../primitives/icon-action-button";
 
 type StatusTone = "danger" | "info" | "neutral" | "positive" | "warning";
 type ManagementDensity = "comfortable" | "compact" | "medium";
@@ -252,9 +242,8 @@ export function ManagementHeaderActions({
   return (
     <View style={styles.headerActionsCluster}>
       {onRefresh && refreshAccessibilityLabel ? (
-        <IconActionButton
+        <SystemIconButton
           accessibilityLabel={refreshAccessibilityLabel}
-          context="header"
           disabled={refreshDisabled}
           icon={RefreshCw}
           onPress={onRefresh}
@@ -262,12 +251,11 @@ export function ManagementHeaderActions({
         />
       ) : null}
       {createVisible && onCreate && createLabel && createAccessibilityLabel ? (
-        <ActionButton
+        <SystemButton
           accessibilityLabel={createAccessibilityLabel}
-          context="header"
           icon={Plus}
           iconTestID={createIconTestID}
-          importance="tonal"
+          variant="toolbar"
           label={createLabel}
           onPress={onCreate}
         />

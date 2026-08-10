@@ -18,10 +18,8 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import {StyleSheet, useUnistyles} from "react-native-unistyles";
 import ArrowDown from "lucide-react-native/icons/arrow-down";
-
-import { velaTheme } from "../../tokens";
 
 import {
   calculatePrependOffset,
@@ -69,6 +67,7 @@ export function MessageViewport<Item>({
   renderItem,
   style,
 }: MessageViewportProps<Item>) {
+  const {theme} = useUnistyles();
   const listRef = useRef<FlatList<Item> | null>(null);
   const dataRef = useRef(data);
   const focusRequestRef = useRef(focusRequest);
@@ -317,16 +316,16 @@ export function MessageViewport<Item>({
           style={({ pressed }) => [
             styles.newMessages,
             bottomInset > 0
-              ? {bottom: bottomInset + velaTheme.spacing.lg}
+              ? {bottom: bottomInset + theme.spacing.lg}
               : undefined,
             pressed && styles.newMessagesPressed,
           ]}
           testID="new-messages-button"
         >
           <ArrowDown
-            color={velaTheme.semantic.color.iconAccent}
-            size={velaTheme.semantic.icon.size.large}
-            strokeWidth={velaTheme.semantic.icon.stroke.strong}
+            color={theme.semantic.color.iconAccent}
+            size={theme.semantic.icon.size.large}
+            strokeWidth={theme.semantic.icon.stroke.strong}
           />
           <View
             pointerEvents="none"

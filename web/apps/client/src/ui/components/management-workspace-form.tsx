@@ -13,7 +13,7 @@ import {
 } from "./local-date-time-input";
 import {styles} from "./management-workspace.styles";
 
-import {ActionButton} from "../primitives/action-button";
+import {SystemButton} from "../primitives/system-button";
 
 interface SemanticContainerProps {
   children: ReactNode;
@@ -153,11 +153,11 @@ export function ManagementFormFooter({
   testID = "management-form-footer",
 }: ManagementFormFooterProps) {
   const renderSecondaryAction = (action: ManagementFormFooterAction) => (
-    <ActionButton
+    <SystemButton
       accessibilityLabel={action.accessibilityLabel}
       busy={action.busy}
       disabled={action.disabled}
-      importance="secondary"
+      variant="secondary"
       label={action.label}
       onPress={() => void action.onPress()}
       testID={action.testID}
@@ -167,11 +167,11 @@ export function ManagementFormFooter({
     <ManagementFormActions testID={testID}>
       {cancelAction ? renderSecondaryAction(cancelAction) : null}
       {backAction ? renderSecondaryAction(backAction) : null}
-      <ActionButton
+      <SystemButton
         accessibilityLabel={primaryAction.accessibilityLabel}
         busy={primaryAction.busy}
         disabled={primaryAction.disabled}
-        importance="primary"
+        variant="default"
         label={primaryAction.label}
         onPress={() => void primaryAction.onPress()}
         testID={primaryAction.testID}

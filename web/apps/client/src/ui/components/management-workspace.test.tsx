@@ -6,13 +6,11 @@ import type {ComponentType, ReactNode} from "react";
 import * as managementWorkspace from "./management-workspace";
 
 import {
-  ActionButton,
   CollectionIdentityMark,
   CollectionRow,
   CodeBlock,
   DetailHeading,
   DetailSection,
-  IconActionButton,
   InlineEmptyState,
   ManagementCollectionPane,
   ManagementDetailCanvas,
@@ -30,17 +28,18 @@ import {
   StatusIndicator,
 } from "./management-workspace";
 import {velaTheme} from "../tokens";
+import {SystemButton, SystemIconButton} from "../primitives/system-button";
 
 describe("management workspace primitives", () => {
   it("provides the complete semantic primitive set", () => {
     expect([
-      ActionButton,
+      SystemButton,
       CollectionIdentityMark,
       CollectionRow,
       CodeBlock,
       DetailHeading,
       DetailSection,
-      IconActionButton,
+      SystemIconButton,
       InlineEmptyState,
       ManagementCollectionPane,
       ManagementDetailCanvas,
@@ -248,36 +247,34 @@ describe("management workspace primitives", () => {
         </ManagementCollectionPane>
         <DetailSection testID="section">
           <StatusIndicator label="在线" tone="positive" />
-          <ActionButton importance="primary" label="保存" onPress={() => undefined} testID="action" />
-          <ActionButton
+          <SystemButton variant="default" label="保存" onPress={() => undefined} testID="action" />
+          <SystemButton
             disabled
-            importance="primary"
+            variant="default"
             label="不可用"
             onPress={() => undefined}
             testID="disabled-action"
           />
-          <ActionButton
-            importance="secondary"
+          <SystemButton
+            variant="secondary"
             label="次级操作"
             onPress={() => undefined}
             testID="secondary-action"
           />
-          <ActionButton
-            context="header"
-            importance="tonal"
+          <SystemButton
+            variant="toolbar"
             label="新建"
             onPress={() => undefined}
             testID="header-action"
           />
-          <IconActionButton
+          <SystemIconButton
             accessibilityLabel="刷新"
-            context="header"
             icon={RefreshCw}
             onPress={() => undefined}
             testID="icon-action"
           />
           <ResourceActionRow
-            action={<ActionButton importance="secondary" label="执行" onPress={() => undefined} />}
+            action={<SystemButton variant="secondary" label="执行" onPress={() => undefined} />}
             description="执行一项资源操作。"
             testID="resource-action-row"
             title="资源操作"

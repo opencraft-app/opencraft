@@ -13,6 +13,7 @@ export function SystemMaterialSurface({
 }: SystemMaterialSurfaceProps) {
   return (
     <View
+      {...({dataSet: {velaMaterial: materialRole}} as object)}
       style={[
         styles.base,
         materialRole === "navigationChrome" && styles.navigationChrome,

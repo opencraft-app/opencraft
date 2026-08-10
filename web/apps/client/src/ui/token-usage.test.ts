@@ -65,19 +65,20 @@ describe("Vela token usage", () => {
     expect(installerSource).toContain(":focus-visible");
   });
 
-  it("keeps legacy actions behind the semantic system-button boundary", () => {
-    const legacy = readFileSync(
-      join(process.cwd(), "src", "ui", "primitives", "action-button.tsx"),
-      "utf8",
+  it("keeps all actions on the semantic system-button boundary", () => {
+    const legacyPath = join(
+      process.cwd(),
+      "src",
+      "ui",
+      "primitives",
+      "action-button.tsx",
     );
     const system = readFileSync(
       join(process.cwd(), "src", "ui", "primitives", "system-button.tsx"),
       "utf8",
     );
 
-    expect(legacy).toContain("<SystemButton");
-    expect(legacy).not.toContain("StyleSheet.create");
-    expect(legacy).toContain('if (context === "header"');
+    expect(existsSync(legacyPath)).toBe(false);
     expect(system).toContain('variant === "toolbar"');
     expect(system).toContain("styles.accentedSecondary");
     expect(system).toContain("styles.destructive");
@@ -273,7 +274,7 @@ describe("Vela token usage", () => {
   it("lets the channel panel share the management form controls", () => {
     // Channel create/edit invented its own fields, pill visibility toggles and
     // submit Pressable while agents/members already spoke ManagementField,
-    // SystemSegmentedControl and ActionButton. Same form job, one vocabulary.
+    // SystemSegmentedControl and SystemButton. Same form job, one vocabulary.
     const shell = readUiSource("layouts/workspace-shell.tsx");
     expect(shell).toContain("<ManagementField");
     expect(shell).toContain("<ManagementTextInput");
@@ -366,7 +367,7 @@ describe("Vela token usage", () => {
   it("does not let hand-rolled buttons regrow beside the shared one", () => {
     // The chat shell and the management screens each invented their own
     // vocabulary for the same handful of jobs, which is most of why the two
-    // areas stopped looking like one product. `ActionButton` is the single
+    // areas stopped looking like one product. `SystemButton` is the single
     // button; this ceiling makes adding a sixteenth local one a decision
     // rather than an accident, and it only moves down.
     const source = readUiSource("layouts/workspace-shell.tsx");
@@ -416,7 +417,7 @@ describe("Vela token usage", () => {
       ["components", "message-composer.tsx"],
       ["components", "message-list.tsx"],
       ["layouts", "workspace-shell.tsx"],
-      ["primitives", "action-button.tsx"],
+      ["primitives", "system-button.tsx"],
       ["screens", "first-workspace-screen.tsx"],
     ];
     const missing: string[] = [];
@@ -474,10 +475,6 @@ describe("Vela token usage", () => {
 
   it("keeps controls and feedback on semantic roles instead of brand or layout aliases", () => {
     const requiredRoles: Array<[string, string, string[]]> = [
-      ["screens/auth-screen.tsx", "primaryButton", ["actionPrimarySurface"]],
-      ["screens/auth-screen.tsx", "primaryButtonText", ["actionPrimaryText"]],
-      ["screens/first-workspace-screen.tsx", "primaryButton", ["actionPrimarySurface"]],
-      ["screens/first-workspace-screen.tsx", "primaryButtonText", ["actionPrimaryText"]],
       ["components/route-status-screen.tsx", "action", ["actionPrimarySurface"]],
       ["components/route-status-screen.tsx", "actionText", ["actionPrimaryText"]],
       ["components/message-composer.tsx", "sendButton", ["actionPrimarySurface"]],
@@ -694,10 +691,8 @@ describe("Vela token usage", () => {
       ["layouts/workspace-shell.tsx", "onlineAgentsBadge", ["status.summaryMinHeight"]],
       ["screens/auth-screen.tsx", "formPanel", ["contentMeasure.readingMaxWidth"]],
       ["screens/auth-screen.tsx", "input", ["authWorkspace.controlHeight"]],
-      ["screens/auth-screen.tsx", "primaryButton", ["authWorkspace.primaryActionHeight"]],
       ["screens/first-workspace-screen.tsx", "copy", ["contentMeasure.readingMaxWidth"]],
       ["screens/first-workspace-screen.tsx", "input", ["authWorkspace.controlHeight"]],
-      ["screens/first-workspace-screen.tsx", "primaryButton", ["authWorkspace.primaryActionHeight"]],
       ["screens/first-workspace-screen.tsx", "shell", ["authWorkspace.compactPanelMaxWidth"]],
       ["components/thread-panel.tsx", "panel", ["overlay.threadPanelMinWidth", "overlay.threadPanelWidth"]],
       ["components/terminal-panel.tsx", "controlButton", ["terminalPanel.controlMinWidth"]],

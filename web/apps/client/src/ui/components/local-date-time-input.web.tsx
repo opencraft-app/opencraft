@@ -1,5 +1,5 @@
-import type {CSSProperties} from "react";
-import {useMemo, useRef, useState} from "react";
+import type {CSSProperties, Ref} from "react";
+import {useId, useMemo, useRef, useState} from "react";
 import {
   Calendar,
   CalendarCell,
@@ -10,13 +10,9 @@ import {
 } from "react-aria-components/Button";
 import {
   Dialog,
-  DialogTrigger,
 } from "react-aria-components/Dialog";
 import {Heading} from "react-aria-components/Heading";
 import {I18nProvider} from "react-aria-components/I18nProvider";
-import {
-  Popover,
-} from "react-aria-components/Popover";
 import {
   CalendarDate,
   CalendarDateTime,
@@ -45,6 +41,7 @@ import {
 
 import {deviceTimezone} from "../date-time";
 import {breakpoints, type VelaTheme} from "../tokens";
+import {SystemPopover} from "../primitives/system-popover.web";
 
 export type {
   LocalDateTimeInputConfig,
@@ -69,7 +66,7 @@ export function LocalDateTimeInput({
   const {theme} = useUnistyles();
   const window = useWindowDimensions();
   const styles = dateTimeStyles(theme);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const overlayId = useId();
   const calendarRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<CalendarDateTime | null>(null);
@@ -116,12 +113,21 @@ export function LocalDateTimeInput({
 
   return (
     <I18nProvider locale="zh-CN">
-      <DialogTrigger isOpen={open} onOpenChange={handleOpenChange}>
-        <AriaButton
-          aria-label={accessibilityLabel}
-          isDisabled={disabled}
-          ref={triggerRef}
-          style={({isFocusVisible, isHovered, isPressed}) => ({
+      <SystemPopover
+        accessibilityLabel={`${accessibilityLabel}选择器`}
+        onOpenChange={handleOpenChange}
+        open={open}
+        overlayId={overlayId}
+        renderTrigger={trigger => (
+          <AriaButton
+            aria-controls={trigger.accessibilityControls}
+            aria-expanded={trigger.accessibilityExpanded}
+            aria-haspopup="dialog"
+            aria-label={accessibilityLabel}
+            isDisabled={disabled}
+            onPress={trigger.onPress}
+            ref={trigger.ref as Ref<HTMLButtonElement>}
+            style={({isFocusVisible, isHovered, isPressed}) => ({
             ...triggerStyle,
             ...cssTypography(theme.semantic.typography.body),
             alignItems: "center",
@@ -154,51 +160,32 @@ export function LocalDateTimeInput({
             transform: isPressed ? "scale(0.995)" : "none",
             width: "100%",
             ...motion,
-          })}
-          type="button"
-        >
-          <span>{parsedValue ? formatDateTimeDisplay(parsedValue) : value || placeholder}</span>
-          <span style={styles.triggerMeta}>
-            <span style={{...cssTypography(theme.semantic.typography.caption), color: color.textMuted}}>{timezone}</span>
-            <CalendarDays
-              color={color.iconMuted}
-              size={theme.semantic.icon.size.small}
-              strokeWidth={theme.semantic.icon.stroke.regular}
-            />
-          </span>
-        </AriaButton>
-        <Popover
-          offset={8}
-          placement={phone ? "top" : "bottom start"}
-          shouldFlip
-          style={({isEntering, isExiting}) => ({
-            background: color.overlaySurface,
-            borderColor: color.borderOverlay,
-            borderRadius: theme.semantic.radius.overlay,
-            borderStyle: "solid",
-            borderWidth: theme.semantic.stroke.hairline,
-            boxShadow: cssBoxShadow(theme.shadows.overlay),
+            })}
+            type="button"
+          >
+            <span>{parsedValue ? formatDateTimeDisplay(parsedValue) : value || placeholder}</span>
+            <span style={styles.triggerMeta}>
+              <span style={{...cssTypography(theme.semantic.typography.caption), color: color.textMuted}}>{timezone}</span>
+              <CalendarDays
+                color={color.iconMuted}
+                size={theme.semantic.icon.size.small}
+                strokeWidth={theme.semantic.icon.stroke.regular}
+              />
+            </span>
+          </AriaButton>
+        )}
+      >
+        <Dialog
+          aria-label={`${accessibilityLabel}选择器`}
+          style={{
+            ...styles.dialog,
             boxSizing: "border-box",
-            opacity: isEntering || isExiting ? 0 : 1,
-            outline: "none",
-            overflowY: "auto",
             padding: theme.spacing.xl,
-            transform: isEntering || isExiting ? "translateY(4px)" : "translateY(0)",
-            ...theme.semantic.motion.transition.surface,
-            width: phone ? "auto" : 360,
-            zIndex: theme.semantic.layer.popover,
-            ...(phone ? {
-              bottom: theme.spacing.lg,
-              left: theme.spacing.lg,
-              position: "fixed" as const,
-              right: theme.spacing.lg,
-              top: "auto",
-            } : {}),
-          })}
+            width: phone ? "min(352px, calc(100vw - 24px))" : 352,
+          }}
         >
-          <Dialog aria-label={`${accessibilityLabel}选择器`} style={styles.dialog}>
-            {draft ? (
-              <>
+          {draft ? (
+            <>
                 {presets.length ? (
                   <div style={styles.presetGrid}>
                     {presets.map(preset => (
@@ -304,11 +291,10 @@ export function LocalDateTimeInput({
                     确认
                   </AriaButton>
                 </div>
-              </>
-            ) : null}
-          </Dialog>
-        </Popover>
-      </DialogTrigger>
+            </>
+          ) : null}
+        </Dialog>
+      </SystemPopover>
     </I18nProvider>
   );
 }
@@ -596,10 +582,6 @@ function dateTimeStyles(theme: VelaTheme) {
       marginLeft: theme.spacing.lg,
     } satisfies CSSProperties,
   };
-}
-
-function cssBoxShadow(shadow: VelaTheme["shadows"]["overlay"]): string {
-  return `0 ${shadow.offsetY}px ${shadow.radius}px ${shadow.color}`;
 }
 
 function cssTypography(typography: TextStyle): CSSProperties {

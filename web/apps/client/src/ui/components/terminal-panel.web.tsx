@@ -3,9 +3,10 @@ import type {
   TerminalControlKey,
 } from "@vela/client-core";
 import { useEffect, useRef, useState } from "react";
+import {useUnistyles} from "react-native-unistyles";
 
 import { computeTerminalOutputPatch } from "../../terminal/terminal-output-sync";
-import { velaTheme } from "../tokens";
+import {velaTheme, type VelaTheme} from "../tokens";
 import {terminalStatusLabel} from "../presentation/resources/terminal";
 
 export interface TerminalSurfaceController {
@@ -30,6 +31,8 @@ export function TerminalPanel({
   name,
   onClose,
 }: TerminalPanelProps) {
+  const {theme} = useUnistyles();
+  const styles = terminalPanelStyles(theme);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const onCloseRef = useRef(onClose);
   const [state, setState] = useState(controller.snapshot());
@@ -174,23 +177,24 @@ export function TerminalPanel({
   );
 }
 
-const styles = {
+function terminalPanelStyles(theme: VelaTheme) {
+  return {
   button: {
-    background: velaTheme.semantic.color.sectionSurface,
-    border: `${velaTheme.semantic.stroke.hairline}px solid ${velaTheme.semantic.color.borderControl}`,
-    borderRadius: velaTheme.semantic.radius.control,
-    color: velaTheme.semantic.color.textPrimary,
+    background: theme.semantic.color.sectionSurface,
+    border: `${theme.semantic.stroke.hairline}px solid ${theme.semantic.color.borderControl}`,
+    borderRadius: theme.semantic.radius.control,
+    color: theme.semantic.color.textPrimary,
     cursor: "pointer",
-    font: `${velaTheme.semantic.typography.button.fontWeight} ${velaTheme.semantic.typography.button.fontSize}px/${velaTheme.semantic.typography.button.lineHeight}px ${velaTheme.semantic.typography.button.fontFamily}`,
-    minHeight: velaTheme.recipes.control.height,
-    padding: `0 ${velaTheme.spacing.lg}px`,
+    font: `${theme.semantic.typography.button.fontWeight} ${theme.semantic.typography.button.fontSize}px/${theme.semantic.typography.button.lineHeight}px ${theme.semantic.typography.button.fontFamily}`,
+    minHeight: theme.recipes.control.height,
+    padding: `0 ${theme.spacing.lg}px`,
   },
   error: {
-    background: velaTheme.semantic.color.statusDangerSurface,
-    borderRadius: velaTheme.semantic.radius.control,
-    color: velaTheme.semantic.color.statusDangerText,
-    font: `${velaTheme.semantic.typography.bodyCompactEmphasis.fontWeight} ${velaTheme.semantic.typography.bodyCompactEmphasis.fontSize}px/${velaTheme.semantic.typography.bodyCompactEmphasis.lineHeight}px ${velaTheme.semantic.typography.bodyCompactEmphasis.fontFamily}`,
-    padding: velaTheme.spacing.md,
+    background: theme.semantic.color.statusDangerSurface,
+    borderRadius: theme.semantic.radius.control,
+    color: theme.semantic.color.statusDangerText,
+    font: `${theme.semantic.typography.bodyCompactEmphasis.fontWeight} ${theme.semantic.typography.bodyCompactEmphasis.fontSize}px/${theme.semantic.typography.bodyCompactEmphasis.lineHeight}px ${theme.semantic.typography.bodyCompactEmphasis.fontFamily}`,
+    padding: theme.spacing.md,
   },
   header: {
     alignItems: "center",
@@ -198,40 +202,41 @@ const styles = {
     justifyContent: "space-between",
   },
   panel: {
-    background: velaTheme.semantic.color.sectionSurface,
-    border: `${velaTheme.semantic.stroke.hairline}px solid ${velaTheme.semantic.color.borderControl}`,
-    borderRadius: velaTheme.semantic.radius.section,
+    background: theme.semantic.color.sectionSurface,
+    border: `${theme.semantic.stroke.hairline}px solid ${theme.semantic.color.borderControl}`,
+    borderRadius: theme.semantic.radius.section,
     boxSizing: "border-box",
     display: "flex",
     flex: 1,
     flexDirection: "column",
-    gap: velaTheme.spacing.md,
+    gap: theme.spacing.md,
     minHeight: 0,
     overflow: "hidden",
-    padding: velaTheme.spacing.lg,
+    padding: theme.spacing.lg,
   },
   status: {
-    color: velaTheme.semantic.color.textMuted,
+    color: theme.semantic.color.textMuted,
     font: velaTheme.terminal.cssFont,
-    marginTop: velaTheme.spacing.xs,
+    marginTop: theme.spacing.xs,
   },
   terminal: {
     background: velaTheme.terminal.surface,
-    borderRadius: velaTheme.semantic.radius.control,
+    borderRadius: theme.semantic.radius.control,
     flex: 1,
     minHeight: 0,
     overflow: "hidden",
-    padding: velaTheme.spacing.md,
+    padding: theme.spacing.md,
   },
   title: {
-    color: velaTheme.semantic.color.textPrimary,
-    font: `${velaTheme.semantic.typography.controlGlyph.fontWeight} ${velaTheme.semantic.typography.controlGlyph.fontSize}px/${velaTheme.semantic.typography.controlGlyph.lineHeight}px ${velaTheme.semantic.typography.controlGlyph.fontFamily}`,
+    color: theme.semantic.color.textPrimary,
+    font: `${theme.semantic.typography.controlGlyph.fontWeight} ${theme.semantic.typography.controlGlyph.fontSize}px/${theme.semantic.typography.controlGlyph.lineHeight}px ${theme.semantic.typography.controlGlyph.fontFamily}`,
   },
   warning: {
-    background: velaTheme.semantic.color.statusWarningSurface,
-    borderRadius: velaTheme.semantic.radius.control,
-    color: velaTheme.semantic.color.statusWarningText,
-    font: `${velaTheme.semantic.typography.bodySmallEmphasis.fontWeight} ${velaTheme.semantic.typography.bodySmallEmphasis.fontSize}px/${velaTheme.semantic.typography.bodySmallEmphasis.lineHeight}px ${velaTheme.semantic.typography.bodySmallEmphasis.fontFamily}`,
-    padding: velaTheme.spacing.md,
+    background: theme.semantic.color.statusWarningSurface,
+    borderRadius: theme.semantic.radius.control,
+    color: theme.semantic.color.statusWarningText,
+    font: `${theme.semantic.typography.bodySmallEmphasis.fontWeight} ${theme.semantic.typography.bodySmallEmphasis.fontSize}px/${theme.semantic.typography.bodySmallEmphasis.lineHeight}px ${theme.semantic.typography.bodySmallEmphasis.fontFamily}`,
+    padding: theme.spacing.md,
   },
-} as const;
+  } as const;
+}

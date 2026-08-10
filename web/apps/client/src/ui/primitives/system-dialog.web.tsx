@@ -112,6 +112,7 @@ export function SystemDialog({
     >
       <div onKeyDownCapture={handleKeyDown} style={{display: "contents"}}>
         <Modal
+          data-vela-material="dialog"
         style={{
           boxSizing: "border-box",
           maxHeight: "calc(100vh - 32px)",

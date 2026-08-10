@@ -21,7 +21,6 @@ import Plus from "lucide-react-native/icons/plus";
 
 import {ManagementEmptyState} from "../components/management-empty-state";
 import {
-  ActionButton,
   CollectionIdentityMark,
   CollectionRow,
   CollectionRowCopy,
@@ -41,6 +40,7 @@ import {
   ResourceActionRow,
   ManagementCollectionFooterAction,
 } from "../components/management-workspace";
+import {SystemButton} from "../primitives/system-button";
 import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemDialog} from "../primitives/system-dialog";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
@@ -1017,9 +1017,9 @@ function AgentCreateForm({
               <Text style={styles.wizardDescription}>
                 先纳管一台 Computer，再回来创建 Agent。
               </Text>
-              <ActionButton
+              <SystemButton
                 accessibilityLabel="先去纳管一台 Computer"
-                importance="tonal"
+                variant="accentedSecondary"
                 label="先去纳管一台 Computer"
                 onPress={onNavigateComputers}
               />
@@ -1209,13 +1209,13 @@ function AgentDetail({
             const actionDisabled =
               disabled || !lifecycleActionEnabled[action];
             return (
-              <ActionButton
+              <SystemButton
                 accessibilityLabel={`${agentActionLabel[action]} Agent ${agent.handle}`}
                 disabled={actionDisabled}
-                importance={
+                variant={
                   actionDisabled || action === "stop"
                     ? "secondary"
-                    : "tonal"
+                    : "accentedSecondary"
                 }
                 key={action}
                 label={agentActionLabel[action]}
@@ -1285,9 +1285,9 @@ function AgentDetail({
             value={computerId || null}
           />
         </ManagementField>
-        <ActionButton
+        <SystemButton
           disabled={disabled || displayName.trim().length === 0 || !computerId}
-          importance="primary"
+          variant="default"
           label="保存 Agent"
           onPress={() => {
             if (!computerId) return;
@@ -1304,10 +1304,10 @@ function AgentDetail({
         <DetailSection testID="agent-security-section" title="安全与身份">
           <ResourceActionRow
             action={(
-              <ActionButton
+              <SystemButton
                 accessibilityLabel={`轮换 Agent ${agent.handle} 的运行凭证`}
                 disabled={disabled || !canRotate || !onRotateCredential}
-                importance="secondary"
+                variant="secondary"
                 label="轮换凭证"
                 onPress={onStartRotation}
               />
@@ -1321,10 +1321,10 @@ function AgentDetail({
           {onDeleteAgent ? (
             <ResourceActionRow
               action={(
-                <ActionButton
+                <SystemButton
                   accessibilityLabel={`删除 Agent ${agent.handle}`}
                   disabled={disabled}
-                  importance="danger"
+                  variant="destructive"
                   label="删除 Agent"
                   onPress={onStartDeletion}
                 />

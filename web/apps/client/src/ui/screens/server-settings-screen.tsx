@@ -7,7 +7,6 @@ import {useEffect, useState} from "react";
 import {useWindowDimensions} from "react-native";
 
 import {
-  ActionButton,
   DetailSection,
   ManagementDetailScroll,
   ManagementField,
@@ -17,6 +16,7 @@ import {
   ManagementTextInput,
   ResourceMetadataList,
 } from "../components/management-workspace";
+import {SystemButton} from "../primitives/system-button";
 import {SystemFeedback} from "../primitives/system-feedback";
 import type { PlatformFrameProps } from "../layouts/app-frame";
 import { ManagementScreenFrame } from "../layouts/management-screen-frame";
@@ -230,10 +230,10 @@ export function ServerSettingsScreen({
             />
           </ManagementField>
           <ManagementFormActions>
-            <ActionButton
+            <SystemButton
               busy={saving}
               disabled={saveAction.disabled}
-              importance="primary"
+              variant="default"
               label={saveAction.label}
               onPress={saveAction.run}
               testID={saveAction.id}

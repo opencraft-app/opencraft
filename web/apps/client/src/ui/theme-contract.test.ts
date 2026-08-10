@@ -1,5 +1,7 @@
 import {
   breakpoints,
+  velaDark,
+  velaLight,
   velaTheme,
 } from "./theme";
 import {
@@ -79,6 +81,47 @@ function contrastOf(foreground: string, background: string): number {
 }
 
 describe("Vela theme contract", () => {
+  it("keeps light and dark themes structurally identical", () => {
+    expect(Object.keys(velaLight.semantic.color).sort()).toEqual(
+      Object.keys(velaDark.semantic.color).sort(),
+    );
+    expect(Object.keys(velaLight.semantic.material).sort()).toEqual(
+      Object.keys(velaDark.semantic.material).sort(),
+    );
+    expect(Object.keys(velaLight.semantic.typography).sort()).toEqual(
+      Object.keys(velaDark.semantic.typography).sort(),
+    );
+  });
+
+  it.each([
+    ["light", velaLight],
+    ["dark", velaDark],
+  ] as const)("keeps the core %s theme contrast pairs legible", (_name, theme) => {
+    const {color} = theme.semantic;
+    const onContent = (surface: string): string =>
+      alphaOf(surface) < 1 ? over(surface, color.canvasSurface) : surface;
+    const pairs = {
+      "action primary": [color.actionPrimaryText, onContent(color.actionPrimarySurface)],
+      "field text": [color.textPrimary, onContent(color.fieldSurface)],
+      "muted content": [color.textMuted, onContent(color.canvasSurface)],
+      "navigation text": [color.textPrimary, onContent(color.navigationSurface)],
+      "overlay text": [color.textPrimary, onContent(color.overlaySurface)],
+      "primary content": [color.textPrimary, onContent(color.canvasSurface)],
+      "selection text": [color.textPrimary, onContent(color.selectionSurface)],
+      "status danger": [color.statusDangerText, onContent(color.statusDangerSurface)],
+      "status info": [color.statusInfoText, onContent(color.statusInfoSurface)],
+      "status positive": [color.statusPositiveText, onContent(color.statusPositiveSurface)],
+      "status warning": [color.statusWarningText, onContent(color.statusWarningSurface)],
+    } as const;
+    const failing = Object.entries(pairs)
+      .filter(([, [foreground, background]]) =>
+        contrastOf(foreground, background) < 4.5,
+      )
+      .map(([name]) => name);
+
+    expect(failing).toEqual([]);
+  });
+
   it("does not expose the retired flat token namespaces", () => {
     expect(velaTheme).not.toHaveProperty("colors");
     expect(velaTheme).not.toHaveProperty("fonts");

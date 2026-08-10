@@ -34,6 +34,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import {useUnistyles} from "react-native-unistyles";
 import {styles} from "./workspace-shell.styles";
 import {
   conversationPageModel,
@@ -79,8 +80,7 @@ import {
   ManagementField,
   ManagementTextInput,
 } from "../components/management-workspace";
-import { ActionButton } from "../primitives/action-button";
-import { IconActionButton } from "../primitives/icon-action-button";
+import {SystemButton, SystemIconButton} from "../primitives/system-button";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 import {SystemSourceListRow} from "../primitives/system-source-list-row";
 import {SystemFeedback} from "../primitives/system-feedback";
@@ -896,6 +896,7 @@ function ConversationSidebar({
   onSelectDirect(peerUserId: string): void | Promise<void>;
   onSelectServer(): void | Promise<void>;
 }) {
+  const {theme} = useUnistyles();
   const [filter, setFilter] = useState("");
   const {
     channels: visibleChannels,
@@ -938,9 +939,9 @@ function ConversationSidebar({
             </Text>
           </View>
           <Ellipsis
-            color={velaTheme.semantic.color.iconMuted}
-            size={velaTheme.semantic.icon.size.small}
-            strokeWidth={velaTheme.semantic.icon.stroke.regular}
+            color={theme.semantic.color.iconMuted}
+            size={theme.semantic.icon.size.small}
+            strokeWidth={theme.semantic.icon.stroke.regular}
           />
         </Pressable>
       </MaybeLink>
@@ -963,7 +964,7 @@ function ConversationSidebar({
               <Text style={styles.sidebarCount}>{visibleChannels.length}</Text>
               {!normalizedFilter && canManageChannels ? (
                 <>
-                  <IconActionButton
+                  <SystemIconButton
                     accessibilityLabel="新建 Channel"
                     icon={Plus}
                     onPress={onCreateChannel}
@@ -971,13 +972,13 @@ function ConversationSidebar({
                   />
                   {currentChannel && !isEveryoneChannel(currentChannel) ? (
                     <>
-                      <IconActionButton
+                      <SystemIconButton
                         accessibilityLabel={`编辑 Channel ${currentChannel.name}`}
                         icon={Pencil}
                         onPress={onEditChannel}
                         testID="channel-edit-action"
                       />
-                      <IconActionButton
+                      <SystemIconButton
                         accessibilityLabel={`管理 Channel ${currentChannel.name} 的成员`}
                         icon={UsersRound}
                         onPress={onManageMembers}
@@ -1003,7 +1004,7 @@ function ConversationSidebar({
         <View style={styles.sidebarSectionHeader}>
           <Text style={styles.sectionLabel}>私信</Text>
           {!normalizedFilter ? (
-            <IconActionButton
+            <SystemIconButton
               accessibilityLabel="新建私信"
               icon={Plus}
               onPress={onNewDirect}
@@ -1234,6 +1235,7 @@ function ChannelList({
   conversationSummaries: ConversationSummary[];
   emptyLabel?: string;
 }) {
+  const {theme} = useUnistyles();
   return (
     <ScrollView
       contentContainerStyle={styles.channelList}
@@ -1274,11 +1276,11 @@ function ChannelList({
               <Hash
                 color={
                   row.selected
-                    ? velaTheme.semantic.color.iconAccent
-                    : velaTheme.semantic.color.iconMuted
+                    ? theme.semantic.color.iconAccent
+                    : theme.semantic.color.iconMuted
                 }
-                size={velaTheme.semantic.icon.size.compact}
-                strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
+                size={theme.semantic.icon.size.compact}
+                strokeWidth={theme.semantic.icon.stroke.emphasis}
               />
             </View>
             <View style={styles.channelButtonCopy}>
@@ -1501,6 +1503,7 @@ function MessageStage({
   sending: boolean;
   viewportWidth?: number;
 }) {
+  const {theme} = useUnistyles();
   const direct = directConversation !== undefined;
   const capabilities = direct
     ? directMessageCapabilities
@@ -1591,15 +1594,15 @@ function MessageStage({
             <View style={styles.messageHeaderIcon}>
               {direct ? (
                 <AtSign
-                  color={velaTheme.semantic.color.iconSecondary}
-                  size={velaTheme.semantic.icon.size.medium}
-                  strokeWidth={velaTheme.semantic.icon.stroke.regular}
+                  color={theme.semantic.color.iconSecondary}
+                  size={theme.semantic.icon.size.medium}
+                  strokeWidth={theme.semantic.icon.stroke.regular}
                 />
               ) : (
                 <Hash
-                  color={velaTheme.semantic.color.iconSecondary}
-                  size={velaTheme.semantic.icon.size.medium}
-                  strokeWidth={velaTheme.semantic.icon.stroke.regular}
+                  color={theme.semantic.color.iconSecondary}
+                  size={theme.semantic.icon.size.medium}
+                  strokeWidth={theme.semantic.icon.stroke.regular}
                 />
               )}
             </View>
@@ -1648,19 +1651,18 @@ function MessageStage({
               style={styles.headerActionButton}
             >
               <Search
-                color={velaTheme.semantic.color.iconSecondary}
-                size={velaTheme.semantic.icon.size.medium}
-                strokeWidth={velaTheme.semantic.icon.stroke.regular}
+                color={theme.semantic.color.iconSecondary}
+                size={theme.semantic.icon.size.medium}
+                strokeWidth={theme.semantic.icon.stroke.regular}
               />
             </Pressable>
             {!direct ? (
-              <ActionButton
+              <SystemButton
                 accessibilityLabel={`查看 Channel ${channel?.name ?? ""} 的 ${channelMemberCount} 位成员`}
                 align="center"
-                context="header"
                 disabled={!channel}
                 icon={UsersRound}
-                importance="secondary"
+                variant="toolbar"
                 label={`${channelMemberCount} 位成员`}
                 onPress={onOpenChannelMembers}
               />
@@ -1690,10 +1692,10 @@ function MessageStage({
           <Text style={styles.reconnectNoticeText}>
             {imStatusMessage ?? "消息连接已中断，请重新连接"}
           </Text>
-          <ActionButton
+          <SystemButton
             accessibilityLabel="重新连接聊天"
             align="center"
-            importance="secondary"
+            variant="secondary"
             label="重新连接"
             onPress={onReconnect}
           />
@@ -1829,6 +1831,7 @@ function MessageSearchPanel({
   query: string;
   results: Message[];
 }) {
+  const {theme} = useUnistyles();
   return (
     <View
       style={[styles.searchPanel, compact && styles.searchPanelCompact]}
@@ -1845,16 +1848,16 @@ function MessageSearchPanel({
           value={draft}
           {...({dataSet: {velaField: "form"}} as object)}
         />
-        <ActionButton
+        <SystemButton
           accessibilityLabel="执行消息搜索"
           align="center"
           busy={loading}
           disabled={loading || draft.trim().length === 0}
-          importance="tonal"
+          variant="accentedSecondary"
           label={loading ? "搜索中…" : "搜索"}
           onPress={onSearch}
         />
-        <IconActionButton
+        <SystemIconButton
           accessibilityLabel="关闭消息搜索"
           icon={X}
           iconTestID="message-search-close-icon"
@@ -1928,9 +1931,9 @@ function MessageSearchPanel({
                   </Text>
                   {locating ? null : (
                     <ArrowRight
-                      color={velaTheme.semantic.color.iconAccent}
-                      size={velaTheme.semantic.icon.size.compact}
-                      strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
+                      color={theme.semantic.color.iconAccent}
+                      size={theme.semantic.icon.size.compact}
+                      strokeWidth={theme.semantic.icon.stroke.emphasis}
                     />
                   )}
                 </View>
@@ -1938,11 +1941,11 @@ function MessageSearchPanel({
             );
           })}
           {!completed ? (
-            <ActionButton
+            <SystemButton
               accessibilityLabel="加载更多搜索结果"
               busy={loading}
               disabled={loading}
-              importance="secondary"
+              variant="secondary"
               label={loading ? "加载中…" : "加载更多"}
               onPress={onLoadMore}
             />
@@ -2034,6 +2037,7 @@ function CompactHeader({
   searchOpen: boolean;
   server: Server | undefined;
 }) {
+  const {theme} = useUnistyles();
   const connectionLabel = connectionStatusLabel(imStatus);
   return (
     <View style={styles.compactHeader}>
@@ -2054,15 +2058,15 @@ function CompactHeader({
           <View testID="compact-header-menu-icon">
             {navigationOpen ? (
               <X
-                color={velaTheme.semantic.color.iconAccent}
-                size={velaTheme.semantic.icon.size.large}
-                strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
+                color={theme.semantic.color.iconAccent}
+                size={theme.semantic.icon.size.large}
+                strokeWidth={theme.semantic.icon.stroke.emphasis}
               />
             ) : (
               <Menu
-                color={velaTheme.semantic.color.iconAccent}
-                size={velaTheme.semantic.icon.size.large}
-                strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
+                color={theme.semantic.color.iconAccent}
+                size={theme.semantic.icon.size.large}
+                strokeWidth={theme.semantic.icon.stroke.emphasis}
               />
             )}
           </View>
@@ -2085,7 +2089,7 @@ function CompactHeader({
         </Text>
       </View>
       {navigationOpen || searchOpen ? null : (
-        <IconActionButton
+        <SystemIconButton
           accessibilityLabel={
             activeDirectConversation ? "搜索当前私信" : "搜索当前 Channel"
           }
@@ -2099,13 +2103,12 @@ function CompactHeader({
       channel &&
       !navigationOpen &&
       !searchOpen ? (
-        <ActionButton
+        <SystemButton
           accessibilityLabel={`查看 Channel ${channel.name} 的 ${channelMemberCount} 位成员`}
           align="center"
-          context="header"
           disabled={!channel}
           icon={UsersRound}
-          importance="secondary"
+          variant="toolbar"
           label={String(channelMemberCount)}
           onPress={onOpenChannelMembers}
         />
@@ -2258,7 +2261,7 @@ function ChannelManagementPanel({
             </Text>
           ) : null}
         </View>
-        <IconActionButton
+        <SystemIconButton
           accessibilityLabel="关闭 Channel 管理"
           icon={X}
           iconTestID="channel-management-close-icon"
@@ -2374,13 +2377,13 @@ function ChannelManagementPanel({
               {channel?.visibility === "private" ? "私密" : "公开"}
             </Text>
           )}
-          <ActionButton
+          <SystemButton
             accessibilityLabel={
               mode === "create" ? "创建 Channel" : "保存 Channel"
             }
             align="stretch"
             disabled={disabled || name.trim().length === 0}
-            importance="primary"
+            variant="default"
             label={mode === "create" ? "创建 Channel" : "保存 Channel"}
             onPress={async () => {
               if (mode === "create") {
@@ -2497,6 +2500,7 @@ function CompactConversationPicker({
   onNewDirect(): void;
   onSelectDirect(peerUserId: string): void | Promise<void>;
 }) {
+  const {theme} = useUnistyles();
   const [filter, setFilter] = useState("");
   const {
     channels: visibleChannels,
@@ -2573,12 +2577,12 @@ function CompactConversationPicker({
       {!noMatches && !normalizedFilter && canManageChannels ? (
         <View style={styles.compactChannelActions}>
           <View style={styles.compactChannelActionSlot}>
-            <ActionButton
+            <SystemButton
               accessibilityLabel="新建 Channel"
               align="stretch"
               icon={Plus}
               iconTestID="compact-channel-create-icon"
-              importance="secondary"
+              variant="secondary"
               label="新建"
               onPress={onCreateChannel}
             />
@@ -2586,21 +2590,21 @@ function CompactConversationPicker({
           {currentChannel && !isEveryoneChannel(currentChannel) ? (
             <>
               <View style={styles.compactChannelActionSlot}>
-                <ActionButton
+                <SystemButton
                   accessibilityLabel={`编辑 Channel ${currentChannel.name}`}
                   align="stretch"
                   icon={Pencil}
-                  importance="secondary"
+                  variant="secondary"
                   label="编辑"
                   onPress={onEditChannel}
                 />
               </View>
               <View style={styles.compactChannelActionSlot}>
-                <ActionButton
+                <SystemButton
                   accessibilityLabel={`管理 Channel ${currentChannel.name} 的成员`}
                   align="stretch"
                   icon={UsersRound}
-                  importance="secondary"
+                  variant="secondary"
                   label="成员"
                   onPress={onManageMembers}
                 />
@@ -2636,11 +2640,11 @@ function CompactConversationPicker({
                   <Hash
                     color={
                       row.selected
-                        ? velaTheme.semantic.color.iconAccent
-                        : velaTheme.semantic.color.iconMuted
+                        ? theme.semantic.color.iconAccent
+                        : theme.semantic.color.iconMuted
                     }
-                    size={velaTheme.semantic.icon.size.small}
-                    strokeWidth={velaTheme.semantic.icon.stroke.regular}
+                    size={theme.semantic.icon.size.small}
+                    strokeWidth={theme.semantic.icon.stroke.regular}
                   />
                   <View style={styles.channelButtonCopy}>
                     <View style={styles.channelNameRow}>
@@ -2669,9 +2673,9 @@ function CompactConversationPicker({
                 ) : (
                   <View testID={`compact-channel-chevron-${channel.name}`}>
                     <ChevronRight
-                      color={velaTheme.semantic.color.iconMuted}
-                      size={velaTheme.semantic.icon.size.medium}
-                      strokeWidth={velaTheme.semantic.icon.stroke.regular}
+                      color={theme.semantic.color.iconMuted}
+                      size={theme.semantic.icon.size.medium}
+                      strokeWidth={theme.semantic.icon.stroke.regular}
                     />
                   </View>
                 )}
@@ -2692,10 +2696,10 @@ function CompactConversationPicker({
         </View>
       ) : null}
       {!noMatches && !normalizedFilter ? (
-        <ActionButton
+        <SystemButton
           align="stretch"
           icon={Plus}
-          importance="secondary"
+          variant="secondary"
           label="新建私信"
           onPress={onNewDirect}
         />
@@ -2752,9 +2756,9 @@ function CompactConversationPicker({
                   <Text style={styles.channelArrow}>{row.unread}</Text>
                 ) : (
                   <ChevronRight
-                    color={velaTheme.semantic.color.iconMuted}
-                    size={velaTheme.semantic.icon.size.medium}
-                    strokeWidth={velaTheme.semantic.icon.stroke.regular}
+                    color={theme.semantic.color.iconMuted}
+                    size={theme.semantic.icon.size.medium}
+                    strokeWidth={theme.semantic.icon.stroke.regular}
                   />
                 )}
               </SystemSourceListRow>
@@ -2783,10 +2787,10 @@ function CompactConversationPicker({
         </>
       ) : null}
       {onLogout ? (
-        <ActionButton
+        <SystemButton
           align="stretch"
           icon={LogOut}
-          importance="secondary"
+          variant="secondary"
           label="退出当前账号"
           onPress={onLogout}
         />
@@ -2817,7 +2821,7 @@ function DirectConversationPicker({
     >
       <View style={styles.directPickerHeader}>
         <Text style={styles.compactPickerTitle}>新建私信</Text>
-        <IconActionButton
+        <SystemIconButton
           accessibilityLabel="关闭新建私信"
           icon={X}
           onPress={onClose}
@@ -2865,13 +2869,14 @@ function DirectConversationPicker({
 }
 
 function DirectPickerSearchEmptyState() {
+  const {theme} = useUnistyles();
   return (
     <View style={styles.directPickerSearchEmpty}>
       <View style={styles.directPickerEmptyIcon}>
         <Search
-          color={velaTheme.semantic.color.iconAccent}
-          size={velaTheme.semantic.icon.size.large}
-          strokeWidth={velaTheme.semantic.icon.stroke.regular}
+          color={theme.semantic.color.iconAccent}
+          size={theme.semantic.icon.size.large}
+          strokeWidth={theme.semantic.icon.stroke.regular}
         />
       </View>
       <Text style={styles.directPickerEmptyTitle}>没有找到匹配的私信对象</Text>
@@ -2887,23 +2892,24 @@ function DirectPickerEmptyState({
 }: {
   onNavigateMembers(): void;
 }) {
+  const {theme} = useUnistyles();
   return (
     <View style={styles.directPickerEmpty}>
       <View style={styles.directPickerEmptyIcon}>
         <UsersRound
-          color={velaTheme.semantic.color.iconAccent}
-          size={velaTheme.semantic.icon.size.large}
-          strokeWidth={velaTheme.semantic.icon.stroke.regular}
+          color={theme.semantic.color.iconAccent}
+          size={theme.semantic.icon.size.large}
+          strokeWidth={theme.semantic.icon.stroke.regular}
         />
       </View>
       <Text style={styles.directPickerEmptyTitle}>暂无新的私信对象</Text>
       <Text style={styles.directPickerEmptyDescription}>
         已有私信可从会话列表继续。也可以前往成员页查看或邀请新成员。
       </Text>
-      <ActionButton
+      <SystemButton
         accessibilityLabel="前往成员页"
         align="center"
-        importance="primary"
+        variant="default"
         label="查看成员"
         onPress={onNavigateMembers}
       />

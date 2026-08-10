@@ -417,7 +417,7 @@ describe("AgentsScreen", () => {
     expect(
       screen.getByRole("radio", {name: "选择 codex"}),
     ).toHaveStyle({
-      minHeight: velaTheme.recipes.control.height,
+      minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
       minWidth: velaTheme.recipes.control.height,
     });
     expect(

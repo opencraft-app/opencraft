@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 
 import {act, fireEvent, render, screen, waitFor} from "@testing-library/react";
+import {readFileSync} from "node:fs";
 
 import {LocalDateTimeInput} from "./local-date-time-input.web";
 
@@ -14,6 +15,16 @@ jest.mock("react-native/Libraries/Utilities/useWindowDimensions", () => ({
 }));
 
 describe("LocalDateTimeInput web", () => {
+  it("routes the calendar overlay through the shared SystemPopover", () => {
+    const source = readFileSync(
+      require.resolve("./local-date-time-input.web"),
+      "utf8",
+    );
+
+    expect(source).toContain("<SystemPopover");
+    expect(source).not.toContain("<Popover");
+  });
+
   it("renders a Vela trigger instead of the browser datetime-local control", async () => {
     const onChangeText = jest.fn();
     render(
@@ -56,8 +67,10 @@ describe("LocalDateTimeInput web", () => {
 
     fireEvent.click(screen.getByLabelText("邀请有效期"));
 
-    const popover = screen.getByRole("dialog").parentElement;
-    expect(popover?.classList.contains("react-aria-Popover")).toBe(true);
+    const popover = screen.getByRole("dialog").closest<HTMLElement>(
+      ".react-aria-Popover",
+    );
+    expect(popover).not.toBeNull();
     expect(popover?.style.position).toBe("absolute");
   });
 

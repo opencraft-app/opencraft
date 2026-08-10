@@ -533,8 +533,8 @@ describe("TasksScreen", () => {
 
     expect(screen.getByTestId("mobile-bottom-nav")).toBeVisible();
     expect(screen.getByRole("button", {name: "刷新任务"})).toHaveStyle({
-      height: velaTheme.recipes.control.squareSize,
-      width: velaTheme.recipes.control.squareSize,
+      height: velaTheme.recipes.managementWorkspace.headerActionHeight,
+      width: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.getByTestId("task-stage-header-copy")).toHaveStyle({
       flex: 1,

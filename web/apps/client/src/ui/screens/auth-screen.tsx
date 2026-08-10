@@ -1,16 +1,15 @@
 import { useState } from "react";
 import {
-  ActivityIndicator,
-  Pressable,
   ScrollView,
   Text,
   TextInput,
   View,
 } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import {StyleSheet, useUnistyles} from "react-native-unistyles";
 
 import { BrandMark } from "../components/brand-mark";
-import { velaTheme } from "../tokens";
+import {SystemButton} from "../primitives/system-button";
+import {SystemFeedback} from "../primitives/system-feedback";
 
 interface LoginInput {
   email: string;
@@ -121,44 +120,28 @@ export function AuthScreen({
           />
 
           {error ? (
-            <Text accessibilityRole="alert" style={styles.error}>
-              {error}
-            </Text>
+            <SystemFeedback kind="inline" message={error} tone="danger" />
           ) : null}
 
-          <Pressable
-            accessibilityRole="button"
-            disabled={loading}
+          <SystemButton
+            align="stretch"
+            busy={loading}
+            label={mode === "login" ? "登录" : "注册并继续"}
             onPress={submit}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              pressed && styles.buttonPressed,
-              loading && styles.buttonDisabled,
-            ]}
-          >
-            {loading ? (
-              <ActivityIndicator color={velaTheme.semantic.color.iconInverse} />
-            ) : (
-              <Text style={styles.primaryButtonText}>
-                {mode === "login" ? "登录" : "注册并继续"}
-              </Text>
-            )}
-          </Pressable>
+            variant="default"
+          />
 
-          <Pressable
-            accessibilityRole="button"
+          <SystemButton
+            align="center"
+            label={mode === "login"
+              ? "还没有账号？立即注册"
+              : "已经有账号？返回登录"}
             onPress={() => {
               onDismissError?.();
               onModeChange?.(mode === "login" ? "register" : "login");
             }}
-            style={styles.modeButton}
-          >
-            <Text style={styles.modeButtonText}>
-              {mode === "login"
-                ? "还没有账号？立即注册"
-                : "已经有账号？返回登录"}
-            </Text>
-          </Pressable>
+            variant="toolbar"
+          />
         </View>
       </View>
     </ScrollView>
@@ -171,13 +154,14 @@ function LabeledInput(
     label: string;
   },
 ) {
+  const {theme} = useUnistyles();
   const { error, label, style, ...inputProps } = props;
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
         {...inputProps}
-        placeholderTextColor={velaTheme.semantic.color.fieldPlaceholder}
+        placeholderTextColor={theme.semantic.color.fieldPlaceholder}
         style={[styles.input, error && styles.inputInvalid, style]}
       />
       {error ? (
@@ -212,22 +196,6 @@ function validatePassword(value: string): string | null {
 }
 
 const styles = StyleSheet.create((theme) => ({
-  buttonDisabled: {
-    opacity: theme.semantic.interaction.disabledOpacity,
-  },
-  buttonPressed: {
-    opacity: theme.semantic.opacity.decorativeStrong,
-    transform: [{ scale: theme.semantic.interaction.pressedScaleSubtle }],
-  },
-  error: {
-    backgroundColor: theme.semantic.color.statusDangerSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    color: theme.semantic.color.statusDangerText,
-    borderRadius: theme.semantic.radius.control,
-    ...theme.semantic.typography.bodyCompactEmphasis,
-    padding: theme.spacing.md,
-  },
   field: {
     gap: theme.spacing.sm,
   },
@@ -272,29 +240,6 @@ const styles = StyleSheet.create((theme) => ({
   label: {
     color: theme.semantic.color.textPrimary,
     ...theme.semantic.typography.bodyCompactEmphasis,
-  },
-  modeButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: theme.recipes.authWorkspace.controlHeight,
-  },
-  modeButtonText: {
-    color: theme.semantic.color.textPrimary,
-    ...theme.semantic.typography.bodyCompactEmphasis,
-    textDecorationLine: "underline",
-  },
-  primaryButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionPrimarySurface,
-    borderColor: theme.semantic.color.actionPrimarySurface,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    justifyContent: "center",
-    minHeight: theme.recipes.authWorkspace.primaryActionHeight,
-  },
-  primaryButtonText: {
-    color: theme.semantic.color.actionPrimaryText,
-    ...theme.semantic.typography.messageBody,
   },
   scroll: {
     backgroundColor: theme.semantic.color.surfaceSubtle,

@@ -4,7 +4,6 @@ import {join} from "node:path";
 import RefreshCw from "lucide-react-native/icons/refresh-cw";
 
 import {velaTheme} from "../tokens";
-import {ActionButton} from "./action-button";
 
 const buttonModulePath = join(__dirname, "system-button.tsx");
 const segmentedModulePath = join(__dirname, "system-segmented-control.tsx");
@@ -126,34 +125,6 @@ describe("Tahoe system controls", () => {
       preventDefault: jest.fn(),
     });
     expect(onChange).toHaveBeenLastCalledWith("auto");
-  });
-
-  it("maps legacy actions onto location-aware system variants", async () => {
-    const screen = await render(
-      <>
-        <ActionButton
-          context="header"
-          importance="tonal"
-          label="新建"
-          onPress={() => undefined}
-          testID="legacy-toolbar"
-        />
-        <ActionButton
-          importance="primary"
-          label="保存"
-          onPress={() => undefined}
-          testID="legacy-default"
-        />
-      </>,
-    );
-
-    expect(screen.getByTestId("legacy-toolbar")).toHaveStyle({
-      backgroundColor: velaTheme.semantic.color.surfaceTransparent,
-      height: velaTheme.recipes.managementWorkspace.headerActionHeight,
-    });
-    expect(screen.getByTestId("legacy-default")).toHaveStyle({
-      height: velaTheme.recipes.control.height,
-    });
   });
 
   it("renders toolbar tabs with roving keyboard selection", async () => {

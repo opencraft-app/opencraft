@@ -23,6 +23,7 @@ export function SystemPopover({
   const {theme} = useUnistyles();
   const triggerRef = useRef<HTMLElement>(null);
   const closingReason = useRef<OverlayCloseReason | null>(null);
+  const previousOpen = useRef(open);
 
   useEffect(() => {
     if (!open) return;
@@ -34,6 +35,11 @@ export function SystemPopover({
   const focusTrigger = () => {
     requestAnimationFrame(() => triggerRef.current?.focus());
   };
+  useEffect(() => {
+    const wasOpen = previousOpen.current;
+    previousOpen.current = open;
+    if (wasOpen && !open && !closingReason.current) focusTrigger();
+  }, [open]);
   const close = (reason: OverlayCloseReason, restoreFocus: boolean) => {
     if (closingReason.current) return;
     closingReason.current = reason;
@@ -61,6 +67,7 @@ export function SystemPopover({
       {trigger}
       <Popover
         aria-label={accessibilityLabel}
+        data-vela-material="popover"
         isOpen={open}
         offset={8}
         onOpenChange={next => {

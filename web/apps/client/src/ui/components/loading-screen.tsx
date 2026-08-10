@@ -1,14 +1,14 @@
 import { ActivityIndicator, Text, View } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import {StyleSheet, useUnistyles} from "react-native-unistyles";
 import { BrandMark } from "./brand-mark";
-import { velaTheme } from "../tokens";
 
 export function LoadingScreen() {
+  const {theme} = useUnistyles();
   return (
     <View style={styles.loading}>
       <BrandMark />
       <ActivityIndicator
-        color={velaTheme.semantic.color.iconAccent}
+        color={theme.semantic.color.iconAccent}
         size="small"
       />
       <Text style={styles.label}>正在连接 VELA</Text>

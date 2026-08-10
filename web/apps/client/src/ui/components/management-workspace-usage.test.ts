@@ -76,7 +76,7 @@ describe("management workspace adoption", () => {
     expect(source).toContain("<ManagementHeader");
     expect(source).toContain("<CollectionRow");
     expect(source).toContain("<DetailSection");
-    expect(source).toContain("<ActionButton");
+    expect(source).toContain("<SystemButton");
   });
 
   it("centralizes empty and status treatments in the semantic component module", () => {
@@ -94,7 +94,7 @@ describe("management workspace adoption", () => {
   });
 
   it.each(managementScreens)(
-    "keeps ordinary %s actions on the shared ActionButton",
+    "keeps ordinary %s actions on the shared SystemButton",
     (file) => {
       const source = readFileSync(join(__dirname, "..", "screens", file), "utf8");
 
@@ -104,17 +104,17 @@ describe("management workspace adoption", () => {
   );
 
   it.each(managementScreens)(
-    "requires every %s action to declare its semantic importance",
+    "requires every %s action to declare its semantic variant",
     (file) => {
       const source = readFileSync(join(__dirname, "..", "screens", file), "utf8");
       const actions = Array.from(
-        source.matchAll(/<ActionButton\b([\s\S]*?)\/>/gu),
+        source.matchAll(/<SystemButton\b([\s\S]*?)\/>/gu),
       );
 
       expect(actions.length).toBeGreaterThan(0);
       expect(
         actions.flatMap((match, index) =>
-          /\bimportance=/u.test(match[1] ?? "") ? [] : [index],
+          /\bvariant=/u.test(match[1] ?? "") ? [] : [index],
         ),
       ).toEqual([]);
     },

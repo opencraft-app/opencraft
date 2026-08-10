@@ -1,9 +1,10 @@
 import { StyleSheet } from "react-native-unistyles";
 
-import { breakpoints, velaTheme } from "./tokens";
+import { breakpoints, velaDark, velaLight } from "./tokens";
 
 const appThemes = {
-  vela: velaTheme,
+  light: velaLight,
+  dark: velaDark,
 };
 
 type AppBreakpoints = typeof breakpoints;
@@ -17,8 +18,8 @@ declare module "react-native-unistyles" {
 
 StyleSheet.configure({
   breakpoints,
-  settings: {
-    initialTheme: "vela",
-  },
+  settings: process.env.NODE_ENV === "test"
+    ? {initialTheme: "light" as const}
+    : {adaptiveThemes: true as const},
   themes: appThemes,
 });

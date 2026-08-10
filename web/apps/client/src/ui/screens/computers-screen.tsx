@@ -17,13 +17,11 @@ import X from "lucide-react-native/icons/x";
 
 import {ManagementEmptyState} from "../components/management-empty-state";
 import {
-  ActionButton,
   CodeBlock,
   CollectionIdentityMark,
   CollectionRow,
   CollectionRowCopy,
   DetailSection,
-  IconActionButton,
   ManagementDetailCanvas,
   ManagementDetailScroll,
   ManagementStageFill,
@@ -40,6 +38,7 @@ import {
   ManagementTextInput,
   ResourceActionRow,
 } from "../components/management-workspace";
+import {SystemButton, SystemIconButton} from "../primitives/system-button";
 import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemDialog} from "../primitives/system-dialog";
 import {formatReadableDateTime} from "../date-time";
@@ -571,10 +570,10 @@ export function ComputersScreen(props: ComputersScreenProps) {
                 >
                   <ResourceActionRow
                     action={(
-                      <ActionButton
+                      <SystemButton
                         accessibilityLabel={`生成${selected.name}的一键安装命令`}
                         disabled={pendingAction !== null}
-                        importance="secondary"
+                        variant="secondary"
                         label="生成安装命令"
                         onPress={async () => {
                           const value = await onRequestRegistrationScript(
@@ -594,10 +593,10 @@ export function ComputersScreen(props: ComputersScreenProps) {
                     onCreateTerminalController ? (
                       <ResourceActionRow
                         action={(
-                          <ActionButton
+                          <SystemButton
                             accessibilityLabel={`打开${selected.name}终端`}
                             disabled={terminal !== null}
-                            importance="secondary"
+                            variant="secondary"
                             label="打开终端"
                             onPress={() => {
                               setRegistration(null);
@@ -628,10 +627,10 @@ export function ComputersScreen(props: ComputersScreenProps) {
                 >
                   <ResourceActionRow
                     action={(
-                      <ActionButton
+                      <SystemButton
                         accessibilityLabel={`解除纳管${selected.name}`}
                         disabled={boundAgents.length > 0 || pendingAction !== null}
-                        importance="danger"
+                        variant="destructive"
                         label="解除纳管"
                         onPress={() => setReleaseConfirming(true)}
                       />
@@ -652,9 +651,9 @@ export function ComputersScreen(props: ComputersScreenProps) {
                     {computerNotFoundCopy.description}
               </Text>
               {computers[0] ? (
-                <ActionButton
+                <SystemButton
                   accessibilityLabel="打开第一台 Computer"
-                  importance="secondary"
+                  variant="secondary"
                   label="查看可用 Computer"
                   onPress={() => selectComputer(computers[0]!.id)}
                 />
@@ -771,7 +770,7 @@ function RegistrationPanel({
   return (
     <NoticeBanner
       actions={(
-        <IconActionButton
+        <SystemIconButton
           accessibilityLabel="关闭一键安装命令"
           icon={X}
           onPress={onClose}

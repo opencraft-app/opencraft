@@ -35,12 +35,10 @@ import {
   type PresentationForm,
 } from "../presentation";
 import {
-  ActionButton,
   CollectionIdentityMark,
   CollectionRow,
   CollectionRowCopy,
   DetailSection,
-  IconActionButton,
   ManagementDetailCanvas,
   ManagementDetailScroll,
   ManagementField,
@@ -56,6 +54,7 @@ import {
   ResourceIdentityHeader,
   ResourceMetadataList,
 } from "../components/management-workspace";
+import {SystemButton, SystemIconButton} from "../primitives/system-button";
 import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 import {SystemDialog} from "../primitives/system-dialog";
@@ -615,14 +614,14 @@ export function MembersScreen(props: MembersScreenProps) {
                   selected.kind === "human" &&
                   selected.role !== "owner" ? (
                     <View style={styles.memberActions}>
-                      <ActionButton
+                      <SystemButton
                         accessibilityLabel={
                           selected.role === "admin"
                             ? `将 ${selected.displayName} 设为普通成员`
                             : `将 ${selected.displayName} 设为管理员`
                         }
                         disabled={pendingAction !== null}
-                        importance="secondary"
+                        variant="secondary"
                         label={selected.role === "admin"
                           ? "设为普通成员"
                           : "设为管理员"}
@@ -632,9 +631,9 @@ export function MembersScreen(props: MembersScreenProps) {
                           })
                         }
                       />
-                      <ActionButton
+                      <SystemButton
                         accessibilityLabel={`移除成员 ${selected.displayName}`}
-                        importance="danger"
+                        variant="destructive"
                         label="移除成员"
                         onPress={() => setConfirmRemoveId(selected.id)}
                       />
@@ -654,10 +653,10 @@ export function MembersScreen(props: MembersScreenProps) {
                           {invite.id} · {invite.expiresAt}
                         </Text>
                       </View>
-                      <ActionButton
+                      <SystemButton
                         accessibilityLabel={`撤销邀请 ${invite.id}`}
                         disabled={pendingAction !== null}
-                        importance="danger"
+                        variant="destructive"
                         label="撤销"
                         onPress={() => onRevokeInvite(invite.id)}
                       />
@@ -667,9 +666,9 @@ export function MembersScreen(props: MembersScreenProps) {
               ) : null}
               <ResourceActionRow
                 action={(
-                  <ActionButton
+                  <SystemButton
                     accessibilityLabel="接受其他 Server 邀请"
-                    importance="secondary"
+                    variant="secondary"
                     label="使用邀请 token"
                     onPress={() => setAcceptingInvite(true)}
                   />
@@ -698,12 +697,12 @@ export function MembersScreen(props: MembersScreenProps) {
                       value={acceptToken}
                     />
                   </ManagementField>
-                  <ActionButton
+                  <SystemButton
                     accessibilityLabel="接受邀请"
                     disabled={
                       pendingAction !== null || acceptToken.trim().length === 0
                     }
-                    importance="primary"
+                    variant="default"
                     label="接受邀请"
                     onPress={async () => {
                       const accepted = await onAcceptInvite(acceptToken.trim());
@@ -714,9 +713,9 @@ export function MembersScreen(props: MembersScreenProps) {
                     }}
                   />
                 </View>
-                <ActionButton
+                <SystemButton
                   accessibilityLabel="取消接受邀请"
-                  importance="secondary"
+                  variant="secondary"
                   label="取消"
                   onPress={() => setAcceptingInvite(false)}
                 />
@@ -879,7 +878,7 @@ function InviteSecretPanel({
             关闭后不再保留，请只发给目标成员。
           </Text>
         </View>
-        <IconActionButton
+        <SystemIconButton
           accessibilityLabel="关闭一次性邀请"
           icon={X}
           onPress={onClose}

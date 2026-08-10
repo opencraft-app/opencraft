@@ -37,6 +37,20 @@ describe("Tahoe material surfaces", () => {
     expect(screen.getByTestId("content-material")).toHaveStyle({
       backgroundColor: velaTheme.semantic.color.paneSurface,
     });
+    expect(screen.getByTestId("navigation-material").props.dataSet).toEqual({
+      velaMaterial: "navigationChrome",
+    });
+  });
+
+  it("provides system fallbacks for forced colors and reduced transparency", () => {
+    const focusInstaller = readFileSync(
+      join(__dirname, "..", "focus-ring.web.ts"),
+      "utf8",
+    );
+
+    expect(focusInstaller).toContain("forced-colors: active");
+    expect(focusInstaller).toContain("prefers-reduced-transparency: reduce");
+    expect(focusInstaller).toContain("[data-vela-material]");
   });
 
   it("gives PlatformFrame the only desktop navigation backdrop owner", () => {

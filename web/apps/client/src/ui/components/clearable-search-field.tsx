@@ -1,9 +1,8 @@
 import { Pressable, TextInput, View, type ViewStyle } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import {StyleSheet, useUnistyles} from "react-native-unistyles";
 import Search from "lucide-react-native/icons/search";
 import X from "lucide-react-native/icons/x";
 
-import { velaTheme } from "../tokens";
 import {SystemEmptyState} from "../primitives/system-empty-state";
 
 /**
@@ -38,6 +37,7 @@ export function ClearableSearchField({
   testID,
   value,
 }: ClearableSearchFieldProps) {
+  const {theme} = useUnistyles();
   const searching = Boolean(value.trim());
 
   return (
@@ -49,15 +49,15 @@ export function ClearableSearchField({
       {...({ dataSet: { velaField: "search" } } as object)}
     >
       <Search
-        color={velaTheme.semantic.color.iconMuted}
-        size={velaTheme.semantic.icon.size.small}
-        strokeWidth={velaTheme.semantic.icon.stroke.regular}
+        color={theme.semantic.color.iconMuted}
+        size={theme.semantic.icon.size.small}
+        strokeWidth={theme.semantic.icon.stroke.regular}
       />
       <TextInput
         accessibilityLabel={accessibilityLabel}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={velaTheme.semantic.color.fieldPlaceholder}
+        placeholderTextColor={theme.semantic.color.fieldPlaceholder}
         style={styles.input}
         value={value}
       />
@@ -65,14 +65,14 @@ export function ClearableSearchField({
         <Pressable
           accessibilityLabel={clearAccessibilityLabel}
           accessibilityRole="button"
-          hitSlop={velaTheme.semantic.interaction.hitTargetInset}
+          hitSlop={theme.semantic.interaction.hitTargetInset}
           onPress={() => onChangeText("")}
           style={styles.clear}
         >
           <X
-            color={velaTheme.semantic.color.iconMuted}
-            size={velaTheme.semantic.icon.size.small}
-            strokeWidth={velaTheme.semantic.icon.stroke.regular}
+            color={theme.semantic.color.iconMuted}
+            size={theme.semantic.icon.size.small}
+            strokeWidth={theme.semantic.icon.stroke.regular}
           />
         </Pressable>
       ) : null}

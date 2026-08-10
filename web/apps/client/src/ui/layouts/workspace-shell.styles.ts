@@ -1,6 +1,5 @@
 import {StyleSheet} from "react-native-unistyles";
 
-import {velaTheme} from "../tokens";
 
 export const styles = StyleSheet.create((theme) => ({
   compactAccountSummary: {
@@ -164,7 +163,7 @@ export const styles = StyleSheet.create((theme) => ({
   },
   channelMembershipContext: {
     backgroundColor: theme.semantic.color.statusInfoSurface,
-    borderColor: velaTheme.semantic.color.statusInfoDivider,
+    borderColor: theme.semantic.color.statusInfoDivider,
     borderRadius: theme.semantic.radius.control,
     borderWidth: theme.semantic.stroke.hairline,
     paddingHorizontal: theme.spacing.md,
@@ -252,7 +251,7 @@ export const styles = StyleSheet.create((theme) => ({
   },
   channelIcon: {
     alignItems: "center",
-    backgroundColor: velaTheme.semantic.color.surfaceSubtle,
+    backgroundColor: theme.semantic.color.surfaceSubtle,
     borderRadius: theme.semantic.radius.compactControl,
     height: theme.recipes.iconControl.denseSize,
     justifyContent: "center",
@@ -281,7 +280,7 @@ export const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.semantic.color.surfaceMuted,
   },
   channelKindBadgeSystem: {
-    backgroundColor: velaTheme.semantic.color.statusInfoSurface,
+    backgroundColor: theme.semantic.color.statusInfoSurface,
   },
   channelKindBadgeText: {
     color: theme.semantic.color.textMuted,
@@ -380,7 +379,7 @@ export const styles = StyleSheet.create((theme) => ({
   },
   compactServerButtonSelected: {
     backgroundColor: theme.semantic.color.selectionSurface,
-    borderColor: velaTheme.semantic.color.borderSelected,
+    borderColor: theme.semantic.color.borderSelected,
     ...theme.semantic.motion.transition.control,
   },
   compactServerInitial: {
@@ -544,7 +543,7 @@ export const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.semantic.color.statusNeutral,
   },
   onlineAgentsText: {
-    color: velaTheme.semantic.color.statusPositiveText,
+    color: theme.semantic.color.statusPositiveText,
     ...theme.semantic.typography.navigationLabel,
   },
   onlineAgentsTextEmpty: {
@@ -619,7 +618,7 @@ export const styles = StyleSheet.create((theme) => ({
   },
   searchPanelError: {
     backgroundColor: theme.semantic.color.statusDangerSurface,
-    borderColor: velaTheme.semantic.color.borderDanger,
+    borderColor: theme.semantic.color.borderDanger,
     borderRadius: theme.semantic.radius.control,
     borderWidth: theme.semantic.stroke.hairline,
     gap: theme.spacing.xs,
@@ -702,8 +701,8 @@ export const styles = StyleSheet.create((theme) => ({
     minHeight: 0,
   },
   searchLocateError: {
-    backgroundColor: velaTheme.semantic.color.statusWarningSurface,
-    borderColor: velaTheme.semantic.color.statusWarningDivider,
+    backgroundColor: theme.semantic.color.statusWarningSurface,
+    borderColor: theme.semantic.color.statusWarningDivider,
     borderRadius: theme.semantic.radius.control,
     borderWidth: theme.semantic.stroke.hairline,
     gap: theme.spacing.xxs,

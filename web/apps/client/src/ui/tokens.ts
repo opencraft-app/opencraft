@@ -55,7 +55,9 @@ const baseColors = {
   orange600: "#B16A4F",
   pink50: "#FFF1F5",
   pink100: "#FDD8E5",
+  pink300: "#FF7096",
   pink500: "#F31260",
+  pink700: "#A20C40",
   violet600: "#7828C8",
   white: "#FFFFFF",
 } as const;
@@ -413,7 +415,7 @@ const composerSurfaceMetrics = {
 // management screens switch from their compact, stacked layouts.
 export const workspaceShellWideBreakpoint = 960;
 
-export const velaTheme = {
+export const velaLight = {
   semantic: {
     color: {
       actionDangerBorder: palette.pink500,
@@ -530,7 +532,7 @@ export const velaTheme = {
       statusDanger: palette.pink500,
       statusDangerDivider: withAlpha(palette.pink500, 0.12),
       statusDangerSurface: palette.pink50,
-      statusDangerText: palette.pink500,
+      statusDangerText: palette.pink700,
       statusNeutral: palette.neutral300,
       statusNeutralSurface: palette.neutral100,
       statusNeutralText: palette.neutral700,
@@ -1106,4 +1108,115 @@ export const velaTheme = {
   },
 } as const;
 
-export type VelaTheme = typeof velaTheme;
+/**
+ * Dark colors are authored by semantic role rather than mechanically inverted.
+ * Geometry, typography and behavior stay shared so switching appearance never
+ * moves a control or changes its interaction contract.
+ */
+export const velaDark = {
+  ...velaLight,
+  semantic: {
+    ...velaLight.semantic,
+    color: {
+      ...velaLight.semantic.color,
+      actionDangerHoverSurface: withAlpha(palette.pink500, 0.14),
+      actionDangerPressedSurface: withAlpha(palette.pink500, 0.22),
+      actionDangerSurface: palette.transparent,
+      actionDangerText: palette.pink500,
+      actionDangerTonalSurface: withAlpha(palette.pink500, 0.12),
+      actionDisabledSurface: palette.neutral950,
+      actionDisabledText: palette.neutral500,
+      actionPrimaryHoverSurface: palette.blue600,
+      actionPrimaryPressedSurface: palette.blue700,
+      actionQuietSurface: withAlpha(palette.white, 0.08),
+      actionSecondaryHoverSurface: withAlpha(palette.white, 0.08),
+      actionSecondaryPressedSurface: palette.neutral700,
+      actionSecondarySurface: palette.neutral950,
+      actionSecondaryText: palette.neutral100,
+      actionTonalHoverSurface: withAlpha(palette.blue500, 0.22),
+      actionTonalPressedSurface: withAlpha(palette.blue500, 0.3),
+      actionTonalSurface: withAlpha(palette.blue500, 0.14),
+      actionTonalText: palette.blue200,
+      avatarAgentText: palette.neutral990,
+      avatarPeerSurface: withAlpha(palette.green500, 0.18),
+      avatarPeerText: palette.green500,
+      avatarHumanGreenBorder: withAlpha(palette.green500, 0.2),
+      avatarHumanGreenSurface: withAlpha(palette.green500, 0.16),
+      avatarHumanGreenText: palette.green500,
+      avatarHumanOrangeBorder: withAlpha(palette.amber500, 0.2),
+      avatarHumanOrangeSurface: withAlpha(palette.amber500, 0.16),
+      avatarHumanOrangeText: palette.amber500,
+      avatarHumanVioletBorder: withAlpha(palette.indigo500, 0.28),
+      avatarHumanVioletSurface: withAlpha(palette.indigo500, 0.2),
+      avatarHumanVioletText: palette.blue200,
+      borderControl: withAlpha(palette.white, 0.2),
+      borderDanger: withAlpha(palette.pink500, 0.32),
+      borderDangerStrong: withAlpha(palette.pink500, 0.7),
+      borderFieldHover: withAlpha(palette.white, 0.3),
+      borderFocus: withAlpha(palette.blue200, 0.7),
+      borderInteractive: withAlpha(palette.blue500, 0.4),
+      borderOverlay: withAlpha(palette.white, 0.16),
+      borderSelected: withAlpha(palette.white, 0.2),
+      borderSection: withAlpha(palette.white, 0.14),
+      canvasSurface: palette.neutral950,
+      codeSurface: palette.black,
+      decorativeAccentSurface: palette.blue500,
+      fieldFocusGlow: withAlpha(palette.blue500, 0.28),
+      fieldPlaceholder: palette.neutral500,
+      fieldSurface: palette.neutral950,
+      fieldSurfaceRecessed: withAlpha(palette.black, 0.24),
+      groupedSurface: palette.neutral990,
+      iconAccent: palette.blue200,
+      iconAccentSurface: withAlpha(palette.blue500, 0.16),
+      iconMuted: palette.neutral400,
+      iconPrimary: palette.neutral100,
+      iconSecondary: palette.neutral300,
+      interactiveHoverSurface: withAlpha(palette.white, 0.07),
+      interactivePressedSurface: withAlpha(palette.white, 0.12),
+      modalBackdrop: withAlpha(palette.black, 0.56),
+      navigationSurface: palette.black,
+      overlayBackdrop: withAlpha(palette.black, 0.94),
+      overlaySurface: palette.neutral950,
+      paneSurface: palette.neutral950,
+      sectionSurface: palette.neutral950,
+      selectionSurface: palette.neutral700,
+      selectionHoverSurface: withAlpha(palette.white, 0.18),
+      selectionPressedSurface: withAlpha(palette.white, 0.22),
+      separator: withAlpha(palette.white, 0.08),
+      shellBackdrop: palette.black,
+      shellBackdropHighlight: palette.neutral950,
+      sidebarSurface: palette.neutral990,
+      statusDangerDivider: withAlpha(palette.pink500, 0.26),
+      statusDangerSurface: withAlpha(palette.pink500, 0.12),
+      statusDangerText: palette.pink300,
+      statusInfoDivider: withAlpha(palette.blue500, 0.28),
+      statusInfoSurface: withAlpha(palette.blue500, 0.14),
+      statusInfoText: palette.blue200,
+      statusNeutral: palette.neutral500,
+      statusNeutralSurface: withAlpha(palette.white, 0.08),
+      statusNeutralText: palette.neutral300,
+      statusPositiveDivider: withAlpha(palette.green500, 0.28),
+      statusPositiveSurface: withAlpha(palette.green500, 0.12),
+      statusPositiveText: palette.green500,
+      statusWarningDivider: withAlpha(palette.amber500, 0.3),
+      statusWarningSurface: withAlpha(palette.amber500, 0.12),
+      statusWarningText: palette.amber500,
+      surfaceMuted: palette.neutral700,
+      surfaceSubtle: withAlpha(palette.white, 0.07),
+      textLink: palette.blue200,
+      textMuted: palette.neutral400,
+      textPrimary: palette.neutral100,
+    },
+    material: {
+      ...velaLight.semantic.material,
+      composerFill: withAlpha(palette.neutral990, 0.86),
+      navigationFill: withAlpha(palette.black, 0.74),
+      sidebarFill: withAlpha(palette.neutral990, 0.82),
+    },
+  },
+} as const;
+
+/** Backward-compatible light-theme name for static assets and test fixtures. */
+export const velaTheme = velaLight;
+
+export type VelaTheme = typeof velaLight | typeof velaDark;

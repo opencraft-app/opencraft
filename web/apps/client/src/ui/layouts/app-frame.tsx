@@ -7,14 +7,13 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import {StyleSheet, useUnistyles} from "react-native-unistyles";
 import ArrowLeft from "lucide-react-native/icons/arrow-left";
 import LogOut from "lucide-react-native/icons/log-out";
 
 import { BrandMark } from "../components/brand-mark";
 import {SystemActionMenu} from "../primitives/system-action-menu";
 import {SystemMaterialSurface} from "../primitives/system-material-surface";
-import { velaTheme } from "../tokens";
 import { workspaceLayoutMode } from "../workspace-layout-mode";
 import { MaybeLink } from "./navigation-link";
 import {
@@ -146,6 +145,7 @@ export function ServerRail({
   | "serverHref"
   | "servers"
 > & { canManageServer: boolean }) {
+  const {theme} = useUnistyles();
   const [accountOpen, setAccountOpen] = useState(false);
   const accountStatus = account ? accountImPresentation(account, imStatus) : null;
 
@@ -267,9 +267,9 @@ export function ServerRail({
             ]}
           >
             <LogOut
-              color={velaTheme.semantic.color.iconMuted}
-              size={velaTheme.semantic.icon.size.medium}
-              strokeWidth={velaTheme.semantic.icon.stroke.regular}
+              color={theme.semantic.color.iconMuted}
+              size={theme.semantic.icon.size.medium}
+              strokeWidth={theme.semantic.icon.stroke.regular}
             />
           </Pressable>
         ) : null}
@@ -289,6 +289,7 @@ function RailSectionNavigationItem({
   onPress: () => void;
   selected: boolean;
 }) {
+  const {theme} = useUnistyles();
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const labelVisible = focused || hovered;
@@ -319,14 +320,14 @@ function RailSectionNavigationItem({
             <NavigationIcon
               color={
                 selected
-                  ? velaTheme.semantic.color.iconAccent
-                  : velaTheme.semantic.color.iconMuted
+                  ? theme.semantic.color.iconAccent
+                  : theme.semantic.color.iconMuted
               }
-              size={velaTheme.semantic.icon.size.feature}
+              size={theme.semantic.icon.size.feature}
               strokeWidth={
                 selected
-                  ? velaTheme.semantic.icon.stroke.strong
-                  : velaTheme.semantic.icon.stroke.regular
+                  ? theme.semantic.icon.stroke.strong
+                  : theme.semantic.icon.stroke.regular
               }
             />
           </View>
@@ -438,6 +439,7 @@ export function MobileBottomNavigation({
   onToggle(): void;
   sectionHref?: PlatformFrameProps["sectionHref"];
 }) {
+  const {theme} = useUnistyles();
   return (
     <View style={styles.mobileBottomNavigation} testID="mobile-bottom-nav">
       {visibleSectionNavigation(canManageServer).map((item) => {
@@ -478,22 +480,22 @@ export function MobileBottomNavigation({
               >
                 {item.id === "chat" && navigationOpen ? (
                   <ArrowLeft
-                    color={velaTheme.semantic.color.iconAccent}
-                    size={velaTheme.semantic.icon.size.large}
-                    strokeWidth={velaTheme.semantic.icon.stroke.emphasis}
+                    color={theme.semantic.color.iconAccent}
+                    size={theme.semantic.icon.size.large}
+                    strokeWidth={theme.semantic.icon.stroke.emphasis}
                   />
                 ) : (
                   <NavigationIcon
                     color={
                       selected
-                        ? velaTheme.semantic.color.iconAccent
-                        : velaTheme.semantic.color.iconMuted
+                        ? theme.semantic.color.iconAccent
+                        : theme.semantic.color.iconMuted
                     }
-                    size={velaTheme.semantic.icon.size.large}
+                    size={theme.semantic.icon.size.large}
                     strokeWidth={
                       selected
-                        ? velaTheme.semantic.icon.stroke.emphasis
-                        : velaTheme.semantic.icon.stroke.regular
+                        ? theme.semantic.icon.stroke.emphasis
+                        : theme.semantic.icon.stroke.regular
                     }
                   />
                 )}
@@ -544,20 +546,20 @@ const styles = StyleSheet.create((theme) => ({
   },
   accountRailButtonActive: {
     backgroundColor: theme.semantic.color.selectionSurface,
-    borderColor: velaTheme.semantic.color.borderInteractive,
+    borderColor: theme.semantic.color.borderInteractive,
     ...theme.semantic.motion.transition.control,
   },
   accountStatusDot: {
-    backgroundColor: velaTheme.semantic.color.statusWarning,
+    backgroundColor: theme.semantic.color.statusWarning,
     borderRadius: theme.semantic.radius.circle,
     height: theme.recipes.identity.statusDotSize,
     width: theme.recipes.identity.statusDotSize,
   },
   accountStatusDotError: {
-    backgroundColor: velaTheme.semantic.color.statusDanger,
+    backgroundColor: theme.semantic.color.statusDanger,
   },
   accountStatusDotReady: {
-    backgroundColor: velaTheme.semantic.color.statusPositive,
+    backgroundColor: theme.semantic.color.statusPositive,
   },
   accountStatusRow: {
     alignItems: "center",
@@ -583,7 +585,7 @@ const styles = StyleSheet.create((theme) => ({
     width: theme.recipes.identity.avatarProminentSize,
   },
   humanAvatarStatus: {
-    backgroundColor: velaTheme.semantic.color.statusWarning,
+    backgroundColor: theme.semantic.color.statusWarning,
     borderColor: theme.semantic.color.paneSurface,
     borderRadius: theme.semantic.radius.circle,
     borderWidth: theme.semantic.stroke.statusRing,
@@ -594,10 +596,10 @@ const styles = StyleSheet.create((theme) => ({
     width: theme.recipes.identity.presenceDotSize,
   },
   humanAvatarStatusError: {
-    backgroundColor: velaTheme.semantic.color.statusDanger,
+    backgroundColor: theme.semantic.color.statusDanger,
   },
   humanAvatarStatusReady: {
-    backgroundColor: velaTheme.semantic.color.statusPositive,
+    backgroundColor: theme.semantic.color.statusPositive,
   },
   humanAvatarText: {
     color: theme.semantic.color.textInverse,
@@ -719,11 +721,11 @@ const styles = StyleSheet.create((theme) => ({
     left: theme.recipes.overlay.railTooltipLeftInset,
     paddingHorizontal: theme.spacing.md,
     position: "absolute",
-    shadowColor: velaTheme.shadows.overlay.color,
+    shadowColor: theme.shadows.overlay.color,
     elevation: theme.semantic.elevation.overlay,
-    shadowOffset: { height: velaTheme.shadows.overlay.offsetY, width: 0 },
-    shadowOpacity: velaTheme.shadows.overlay.opacity,
-    shadowRadius: velaTheme.shadows.overlay.radius,
+    shadowOffset: { height: theme.shadows.overlay.offsetY, width: 0 },
+    shadowOpacity: theme.shadows.overlay.opacity,
+    shadowRadius: theme.shadows.overlay.radius,
     top: theme.recipes.overlay.railTooltipTopInset,
     zIndex: theme.semantic.layer.tooltip,
   },
@@ -745,7 +747,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   serverMarkSelected: {
     backgroundColor: theme.semantic.color.avatarServerSurface,
-    borderColor: velaTheme.semantic.color.borderSelected,
+    borderColor: theme.semantic.color.borderSelected,
     ...theme.semantic.motion.transition.control,
   },
   serverMarkText: {

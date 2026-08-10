@@ -47,7 +47,7 @@ export function ComposerMaterialSurface({
   const metrics =
     theme.recipes.conversationWorkspace.composerSurfaceMetrics[surfaceMode];
   const webProps = {
-    dataSet: {velaComposerSurface: surfaceMode},
+    dataSet: {velaComposerSurface: surfaceMode, velaMaterial: "composer"},
     onBlurCapture: (event: {
       currentTarget: {contains(value: unknown): boolean};
       relatedTarget: unknown;

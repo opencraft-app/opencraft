@@ -24,11 +24,9 @@ import RefreshCw from "lucide-react-native/icons/refresh-cw";
 
 import {ManagementEmptyState} from "../components/management-empty-state";
 import {
-  ActionButton,
   CollectionRow,
   DetailHeading,
   DetailSection,
-  IconActionButton,
   ManagementCollectionFooterAction,
   ManagementResourceDirectory,
   ManagementDateTimeInput,
@@ -42,6 +40,7 @@ import {
   ManagementStage,
   ManagementTextInput,
 } from "../components/management-workspace";
+import {SystemButton, SystemIconButton} from "../primitives/system-button";
 import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemTabs} from "../primitives/system-tabs";
 import {SystemSelectField} from "../primitives/system-select-field";
@@ -746,9 +745,8 @@ function TaskCollectionToolbar({
         <Text style={styles.inboxLabel}>
           {reminderMode ? "提醒" : "待处理"} {inboxCount}
         </Text>
-        <IconActionButton
+        <SystemIconButton
           accessibilityLabel={reminderMode ? "刷新提醒" : "刷新任务"}
-          context="compact"
           disabled={refreshDisabled}
           icon={RefreshCw}
           onPress={onRefresh}
@@ -1025,10 +1023,10 @@ function ReminderDetail({
         />
       </ManagementField>
       <View style={styles.detailActions}>
-        <ActionButton
+        <SystemButton
           accessibilityLabel="保存提醒"
           disabled={disabled || !schedule.trim() || !text.trim()}
-          importance="primary"
+          variant="default"
           label="保存"
           onPress={() => onUpdate({
             schedule: schedule.trim(),
@@ -1037,20 +1035,20 @@ function ReminderDetail({
           })}
         />
         {canToggle ? (
-          <ActionButton
+          <SystemButton
             accessibilityLabel={reminder.status === "active" ? "暂停提醒" : "恢复提醒"}
             disabled={disabled}
-            importance="secondary"
+            variant="secondary"
             label={reminder.status === "active" ? "暂停" : "恢复"}
             onPress={() => onUpdate({
               status: reminder.status === "active" ? "paused" : "active",
             })}
           />
         ) : null}
-        <ActionButton
+        <SystemButton
           accessibilityLabel="取消提醒"
           disabled={disabled || reminder.status === "canceled"}
-          importance="danger"
+          variant="destructive"
           label="取消提醒"
           onPress={onCancel}
         />
@@ -1172,17 +1170,17 @@ function TaskDetail({
       <View style={styles.detailActions}>
         {task.status === "in_review" ? (
           <>
-            <ActionButton
+            <SystemButton
               accessibilityLabel="退回修改"
               disabled={disabled}
-              importance="secondary"
+              variant="secondary"
               label="退回修改"
               onPress={() => onUpdate({status: "in_progress"})}
             />
-            <ActionButton
+            <SystemButton
               accessibilityLabel="验收通过"
               disabled={disabled}
-              importance="primary"
+              variant="default"
               label="验收通过"
               onPress={() => onUpdate({status: "done"})}
             />

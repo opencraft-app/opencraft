@@ -436,7 +436,9 @@ describe("MembersScreen", () => {
     expect(screen.getByText("管理员")).toBeVisible();
     expect(
       screen.getByRole("radio", {name: "邀请普通成员"}),
-    ).toHaveStyle({minHeight: velaTheme.recipes.control.height});
+    ).toHaveStyle({
+      minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
+    });
     expect(screen.getByText("有效期")).toBeVisible();
     expect(screen.getByText("最大使用次数")).toBeVisible();
     expect(screen.getByLabelText("邀请有效期").props.value).toBe(

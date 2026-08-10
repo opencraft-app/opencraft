@@ -66,4 +66,42 @@ describe("SystemPopover", () => {
     expect(changes).toContainEqual([false, "escape"]);
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
+
+  it("restores focus when content closes the controlled overlay", async () => {
+    const {SystemPopover} = require(
+      "./system-popover.web"
+    ) as typeof import("./system-popover.web");
+
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <SystemPopover
+          accessibilityLabel="日期选择"
+          onOpenChange={setOpen}
+          open={open}
+          overlayId="date-popover"
+          renderTrigger={({accessibilityControls, accessibilityExpanded, onPress, ref}) => (
+            <button
+              aria-controls={accessibilityControls}
+              aria-expanded={accessibilityExpanded}
+              onClick={onPress}
+              ref={ref as React.Ref<HTMLButtonElement>}
+              type="button"
+            >
+              选择日期
+            </button>
+          )}
+        >
+          <button onClick={() => setOpen(false)} type="button">确认日期</button>
+        </SystemPopover>
+      );
+    }
+
+    render(<Harness />);
+    const trigger = screen.getByRole("button", {name: "选择日期"});
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", {name: "确认日期"}));
+
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
 });

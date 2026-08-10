@@ -991,12 +991,12 @@ describe("WorkspaceShell", () => {
     );
 
     expect(screen.getByTestId("channel-create-action")).toHaveStyle({
-      height: velaTheme.recipes.control.squareSize,
-      width: velaTheme.recipes.control.squareSize,
+      height: velaTheme.recipes.managementWorkspace.headerActionHeight,
+      width: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.getByTestId("channel-edit-action")).toHaveStyle({
-      height: velaTheme.recipes.control.squareSize,
-      width: velaTheme.recipes.control.squareSize,
+      height: velaTheme.recipes.managementWorkspace.headerActionHeight,
+      width: velaTheme.recipes.managementWorkspace.headerActionHeight,
     });
     expect(screen.queryByText("＋ 新建")).toBeNull();
     expect(screen.queryByText("✎ 编辑")).toBeNull();

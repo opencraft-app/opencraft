@@ -1,16 +1,16 @@
 import { useState } from "react";
 import {
-  ActivityIndicator,
-  Pressable,
   ScrollView,
   Text,
   TextInput,
   View,
 } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import {StyleSheet, useUnistyles} from "react-native-unistyles";
 import { BrandMark } from "../components/brand-mark";
 import { WorkspaceSetupPresentation } from "../presentation";
-import { velaTheme } from "../tokens";
+import {SystemButton} from "../primitives/system-button";
+import {SystemFeedback} from "../primitives/system-feedback";
+import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 
 export interface FirstWorkspaceInput {
   channelName: string;
@@ -28,6 +28,11 @@ interface FirstWorkspaceScreenProps {
   stage?: "channel" | "server" | null;
   viewportWidth?: number;
 }
+
+const visibilityOptions = [
+  {label: "公开", value: "public"},
+  {label: "私密", value: "private"},
+] as const;
 
 export function FirstWorkspaceScreen({
   error,
@@ -231,18 +236,12 @@ export function FirstWorkspaceScreen({
 
             <View style={styles.field}>
               <Text style={styles.label}>可见范围</Text>
-              <View style={styles.visibilityRow}>
-                <VisibilityButton
-                  active={visibility === "public"}
-                  label="公开"
-                  onPress={() => setVisibility("public")}
-                />
-                <VisibilityButton
-                  active={visibility === "private"}
-                  label="私密"
-                  onPress={() => setVisibility("private")}
-                />
-              </View>
+              <SystemSegmentedControl<"private" | "public">
+                accessibilityLabel="Channel 可见范围"
+                onChange={setVisibility}
+                options={visibilityOptions}
+                value={visibility}
+              />
               <Text style={styles.hint}>
                 {visibility === "public"
                   ? "所有 Server 成员都能发现，并可自行加入。"
@@ -251,41 +250,24 @@ export function FirstWorkspaceScreen({
             </View>
 
             {visibleError ? (
-              <Text accessibilityRole="alert" style={styles.error}>
-                {visibleError}
-              </Text>
+              <SystemFeedback kind="inline" message={visibleError} tone="danger" />
             ) : null}
 
-            <Pressable
-              accessibilityRole="button"
-              disabled={loading}
+            <SystemButton
+              align="stretch"
+              busy={loading}
+              label={loading ? stageLabel : actionLabel}
               onPress={submit}
-              style={({ pressed }) => [
-                styles.primaryButton,
-                pressed && styles.buttonPressed,
-                loading && styles.buttonDisabled,
-              ]}
-            >
-              {loading ? (
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator
-                    color={velaTheme.semantic.color.iconInverse}
-                  />
-                  <Text style={styles.primaryButtonText}>{stageLabel}</Text>
-                </View>
-              ) : (
-                <Text style={styles.primaryButtonText}>{actionLabel}</Text>
-              )}
-            </Pressable>
+              variant="default"
+            />
 
-            <Pressable
-              accessibilityRole="button"
+            <SystemButton
+              align="center"
               disabled={loading}
+              label="退出当前账号"
               onPress={onLogout}
-              style={styles.logoutButton}
-            >
-              <Text style={styles.logoutText}>退出当前账号</Text>
-            </Pressable>
+              variant="toolbar"
+            />
           </View>
         </View>
       </ScrollView>
@@ -318,6 +300,7 @@ export function makeServerSlug(name: string): string {
 function LabeledInput(
   props: React.ComponentProps<typeof TextInput> & { label: string },
 ) {
+  const {theme} = useUnistyles();
   const { label, ...inputProps } = props;
   return (
     <View style={styles.field}>
@@ -325,59 +308,18 @@ function LabeledInput(
       <TextInput
         {...inputProps}
         editable={inputProps.editable}
-        placeholderTextColor={velaTheme.semantic.color.fieldPlaceholder}
+        placeholderTextColor={theme.semantic.color.fieldPlaceholder}
         style={styles.input}
       />
     </View>
   );
 }
 
-function VisibilityButton({
-  active,
-  label,
-  onPress,
-}: {
-  active: boolean;
-  label: string;
-  onPress(): void;
-}) {
-  return (
-    <Pressable
-      accessibilityLabel={`${label} Channel`}
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      aria-pressed={active}
-      onPress={onPress}
-      style={[styles.visibilityButton, active && styles.visibilityButtonActive]}
-    >
-      <Text style={styles.visibilityText}>{label}</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create((theme) => ({
-  buttonDisabled: {
-    opacity: theme.semantic.interaction.disabledOpacity,
-    ...theme.semantic.motion.transition.control,
-  },
-  buttonPressed: {
-    opacity: theme.semantic.opacity.decorativeStrong,
-    transform: [{ scale: theme.semantic.interaction.pressedScaleSubtle }],
-    ...theme.semantic.motion.transition.control,
-  },
   copy: {
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.messageBody,
     maxWidth: theme.recipes.contentMeasure.readingMaxWidth,
-  },
-  error: {
-    backgroundColor: theme.semantic.color.statusDangerSurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    color: theme.semantic.color.statusDangerText,
-    borderRadius: theme.semantic.radius.control,
-    ...theme.semantic.typography.bodyCompactEmphasis,
-    padding: theme.spacing.md,
   },
   existingLabel: {
     ...theme.semantic.typography.overline,
@@ -423,40 +365,11 @@ const styles = StyleSheet.create((theme) => ({
     ...theme.semantic.typography.eyebrow,
     textTransform: "uppercase",
   },
-  loadingRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: theme.spacing.md,
-    justifyContent: "center",
-  },
-  logoutButton: {
-    alignSelf: "center",
-    padding: theme.spacing.sm,
-  },
-  logoutText: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodyCompactEmphasis,
-    textDecorationLine: "underline",
-  },
   page: {
     backgroundColor: theme.semantic.color.surfaceSubtle,
     flexGrow: 1,
     justifyContent: "center",
     padding: theme.spacing.xl,
-  },
-  primaryButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionPrimarySurface,
-    borderColor: theme.semantic.color.actionPrimarySurface,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
-    justifyContent: "center",
-    minHeight: theme.recipes.authWorkspace.primaryActionHeight,
-    paddingHorizontal: theme.spacing.lg,
-  },
-  primaryButtonText: {
-    color: theme.semantic.color.actionPrimaryText,
-    ...theme.semantic.typography.bodyEmphasis,
   },
   shell: {
     alignItems: "stretch",
@@ -480,28 +393,5 @@ const styles = StyleSheet.create((theme) => ({
   },
   title: {
     ...theme.semantic.typography.onboardingTitle,
-  },
-  visibilityButton: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.surfaceMuted,
-    borderColor: theme.semantic.color.borderControl,
-    borderWidth: theme.semantic.stroke.hairline,
-    borderRadius: theme.semantic.radius.control,
-    flex: 1,
-    minHeight: theme.recipes.control.height,
-    justifyContent: "center",
-    ...theme.semantic.motion.transition.control,
-  },
-  visibilityButtonActive: {
-    backgroundColor: theme.semantic.color.selectionSurface,
-    borderColor: theme.semantic.color.borderSelected,
-    ...theme.semantic.motion.transition.control,
-  },
-  visibilityRow: {
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-  },
-  visibilityText: {
-    ...theme.semantic.typography.bodyCompactEmphasis,
   },
 }));
