@@ -18,3 +18,9 @@ var (
 	ErrWebsiteCredentialStoreUnavailable = Register(New("WEBSITE_CREDENTIAL_STORE_UNAVAILABLE", 503, "website credential store unavailable"))
 	ErrWebsiteUploadUnavailable          = Register(New("WEBSITE_UPLOAD_UNAVAILABLE", 503, "website upload service unavailable"))
 )
+
+// Custom domain binding error codes
+var (
+	ErrWebsiteDomainAlreadyBound = Register(New("WEBSITE_DOMAIN_ALREADY_BOUND", 409, "domain is already bound to another site"))
+	ErrWebsiteDomainNotFound     = Register(New("WEBSITE_DOMAIN_NOT_FOUND", 404, "custom domain binding not found"))
+)

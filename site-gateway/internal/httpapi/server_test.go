@@ -367,3 +367,143 @@ func TestSiteLookupErrorReturnsBadGateway(t *testing.T) {
 		t.Fatalf("状态码 = %d，期望 502", rec.Code)
 	}
 }
+
+// ---- Custom Domain Fallback Tests ----
+
+// fakeDomainLookup 实现 sitemeta.DomainLookup 接口，供测试使用。
+type fakeDomainLookup struct {
+	domains map[string]string // domain → siteID
+}
+
+func (f *fakeDomainLookup) SiteIDByDomain(_ context.Context, domain string) (string, error) {
+	siteID, ok := f.domains[domain]
+	if !ok {
+		return "", sitemeta.ErrNotFound
+	}
+	return siteID, nil
+}
+
+func newHandlerWithCustomDomain(sites *fakeSites, obj *fakeOrigin, dl *fakeDomainLookup) *SiteHandler {
+	return NewSiteHandler(Options{
+		Resolver:     hostroute.New([]string{rootDomain}),
+		Sites:        sites,
+		DomainLookup: dl,
+		Origin:       obj,
+		Logger:       log.New(io.Discard, "", 0),
+	})
+}
+
+func TestCustomDomainResolvesToSite(t *testing.T) {
+	site := "ws-abc"
+	prefix := "sites/ws-abc/releases/wr-0123456789abcdef/"
+	sites := activeSite(site)
+	sites.sites[site].CloudPath = prefix
+	obj := &fakeOrigin{objects: map[string]string{
+		prefix + "index.html": "<h1>custom domain works</h1>",
+	}}
+	dl := &fakeDomainLookup{domains: map[string]string{
+		"blog.example.com": site,
+	}}
+
+	h := newHandlerWithCustomDomain(sites, obj, dl)
+	rec := do(h, http.MethodGet, "blog.example.com", "/")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("状态码 = %d, expected 200", rec.Code)
+	}
+	if body := rec.Body.String(); body != "<h1>custom domain works</h1>" {
+		t.Fatalf("响应体 = %q", body)
+	}
+}
+
+func TestCustomDomainNotFoundReturns404(t *testing.T) {
+	sites := activeSite("ws-abc")
+	obj := &fakeOrigin{}
+	dl := &fakeDomainLookup{domains: map[string]string{}}
+
+	h := newHandlerWithCustomDomain(sites, obj, dl)
+	rec := do(h, http.MethodGet, "unknown.example.com", "/")
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("状态码 = %d, expected 404", rec.Code)
+	}
+}
+
+func TestCustomDomainDoesNotFallBackToRandomSite(t *testing.T) {
+	// Even if the domain resolves to a siteID, the site must exist
+	// and be active — no fallback to any other site.
+	site := "ws-abc"
+	prefix := "sites/ws-abc/releases/wr-0123456789abcdef/"
+	sites := activeSite(site)
+	sites.sites[site].CloudPath = prefix
+	obj := &fakeOrigin{objects: map[string]string{
+		prefix + "index.html": "<h1>real site</h1>",
+	}}
+	dl := &fakeDomainLookup{domains: map[string]string{
+		"blog.example.com": "ws-different", // points to a different, non-existent site
+	}}
+
+	h := newHandlerWithCustomDomain(sites, obj, dl)
+	rec := do(h, http.MethodGet, "blog.example.com", "/")
+
+	// Should get 404, NOT the content of ws-abc
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("状态码 = %d, expected 404 for non-existent site", rec.Code)
+	}
+}
+
+func TestCustomDomainNilDomainLookupBehavesSame(t *testing.T) {
+	// When DomainLookup is nil, unresolved hosts return 404
+	// exactly as before the feature was added.
+	sites := activeSite("ws-abc")
+	obj := &fakeOrigin{}
+
+	h := newHandler(sites, obj) // no DomainLookup
+	rec := do(h, http.MethodGet, "blog.example.com", "/")
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("状态码 = %d, expected 404 without DomainLookup", rec.Code)
+	}
+}
+
+func TestCustomDomainSuspendedSiteReturns403(t *testing.T) {
+	site := "ws-abc"
+	sites := &fakeSites{sites: map[string]*sitemeta.Site{
+		site: {SiteID: site, Status: sitemeta.StatusSuspended},
+	}}
+	obj := &fakeOrigin{}
+	dl := &fakeDomainLookup{domains: map[string]string{
+		"blog.example.com": site,
+	}}
+
+	h := newHandlerWithCustomDomain(sites, obj, dl)
+	rec := do(h, http.MethodGet, "blog.example.com", "/")
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("状态码 = %d, expected 403 for suspended site", rec.Code)
+	}
+}
+
+func TestRandomSubdomainStillWorksWithDomainLookup(t *testing.T) {
+	// Ensure random subdomains still work when DomainLookup is set
+	site := "ws-abc"
+	prefix := "sites/ws-abc/releases/wr-0123456789abcdef/"
+	sites := activeSite(site)
+	sites.sites[site].CloudPath = prefix
+	obj := &fakeOrigin{objects: map[string]string{
+		prefix + "index.html": "<h1>random subdomain</h1>",
+	}}
+	dl := &fakeDomainLookup{domains: map[string]string{
+		"blog.example.com": "ws-other",
+	}}
+
+	h := newHandlerWithCustomDomain(sites, obj, dl)
+	rec := do(h, http.MethodGet, site+"."+rootDomain, "/")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("状态码 = %d, expected 200 for random subdomain", rec.Code)
+	}
+	if body := rec.Body.String(); body != "<h1>random subdomain</h1>" {
+		t.Fatalf("响应体 = %q", body)
+	}
+}

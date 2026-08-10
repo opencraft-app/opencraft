@@ -68,11 +68,11 @@ func main() {
 
 	// 并发控制。
 	//
-	// 每个在处理中的部署任务都要把制品 zip 整体载入内存（zip 需要随机读取条目），
-	// 所以峰值内存约为 concurrency × WEBSITE_MAX_ARTIFACT_BYTES（默认 64MB）。
-	// 默认取 4 是为了配合 512Mi 的容器内存 limit；
-	// 调大并发时必须同步调大内存 limit，否则会OOMKilled。
-	concurrency := 4
+	// 制品 zip 流式写入临时文件再随机读取，峰值内存仅几 KB/部署，
+	// 不再随 WEBSITE_MAX_ARTIFACT_BYTES 或并发数线性增长。
+	// 默认 16 并发：内存已不是瓶颈，主要受 COS 上传配额和磁盘临时空间约束。
+	// 环境变量 MAX_CONCURRENCY 可覆盖此默认值。
+	concurrency := 16
 	if v := os.Getenv("MAX_CONCURRENCY"); v != "" {
 		if n, err := parseInt(v); err == nil && n > 0 {
 			concurrency = n

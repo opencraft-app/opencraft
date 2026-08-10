@@ -253,3 +253,100 @@ func TestRejectsResponseWithoutSiteID(t *testing.T) {
 		t.Fatal("缺少 site_id 的响应应当报错")
 	}
 }
+
+// ---- Custom Domain Lookup Tests ----
+
+func TestSiteIDByDomainReturnsSiteID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/internal/ctl/websites/domains/blog.example.com" {
+			t.Errorf("请求路径 = %q", got)
+		}
+		if got := r.Header.Get("X-Internal-Token"); got != "secret" {
+			t.Errorf("X-Internal-Token = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":"OK","message":"success","data":{"domain":"blog.example.com","site_id":"ws-abc"}}`))
+	}))
+	defer server.Close()
+
+	c := NewClient(Options{BaseURL: server.URL, InternalToken: "secret"})
+	siteID, err := c.SiteIDByDomain(context.Background(), "blog.example.com")
+	if err != nil {
+		t.Fatalf("SiteIDByDomain: %v", err)
+	}
+	if siteID != "ws-abc" {
+		t.Fatalf("siteID = %q, expected ws-abc", siteID)
+	}
+}
+
+func TestSiteIDByDomainNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"code":"WEBSITE_DOMAIN_NOT_FOUND","message":"not found"}`))
+	}))
+	defer server.Close()
+
+	c := NewClient(Options{BaseURL: server.URL, InternalToken: "secret"})
+	_, err := c.SiteIDByDomain(context.Background(), "nonexistent.com")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestSiteIDByDomainCached(t *testing.T) {
+	var callCount int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&callCount, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":"OK","data":{"site_id":"ws-abc"}}`))
+	}))
+	defer server.Close()
+
+	c := NewClient(Options{
+		BaseURL:     server.URL,
+		InternalToken: "secret",
+		PositiveTTL: 30 * time.Second,
+	})
+
+	// First call hits the server
+	siteID, err := c.SiteIDByDomain(context.Background(), "blog.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if siteID != "ws-abc" {
+		t.Fatalf("siteID = %q", siteID)
+	}
+
+	// Second call should hit cache
+	siteID2, err := c.SiteIDByDomain(context.Background(), "blog.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if siteID2 != "ws-abc" {
+		t.Fatalf("siteID = %q", siteID2)
+	}
+
+	if got := atomic.LoadInt32(&callCount); got != 1 {
+		t.Fatalf("expected 1 server call, got %d", got)
+	}
+}
+
+func TestSiteIDByDomainNormalizesInput(t *testing.T) {
+	var receivedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":"OK","data":{"site_id":"ws-abc"}}`))
+	}))
+	defer server.Close()
+
+	c := NewClient(Options{BaseURL: server.URL, InternalToken: "secret"})
+
+	// Uppercase + trailing dot should be normalized
+	if _, err := c.SiteIDByDomain(context.Background(), "Blog.Example.COM."); err != nil {
+		t.Fatal(err)
+	}
+	if receivedPath != "/internal/ctl/websites/domains/blog.example.com" {
+		t.Fatalf("path = %q", receivedPath)
+	}
+}

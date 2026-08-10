@@ -106,4 +106,4 @@ export const getAgentSectionHref = (pathname: string, params: URLSearchParams): 
 };
 
 /** 我的作品页路由（避免魔法字符串，统一引用） */
-export const WEBSITES_PATH = "/websites";
+export const WEBSITES_PATH = "/agents/websites/";

@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -39,10 +41,16 @@ func TestOpenZipEntryExposesLengthToCOSSDK(t *testing.T) {
 func TestVerifyArtifactUploadAcceptsExactContract(t *testing.T) {
 	payload := "verified payload"
 	hash := digestForTest(payload)
-	got, err := verifyArtifactUpload(strings.NewReader(payload), int64(len(payload)), hash,
+	f, err := verifyArtifactUpload(strings.NewReader(payload), int64(len(payload)), hash,
 		int64(len(payload)), hash, 1024)
 	if err != nil {
 		t.Fatalf("verifyArtifactUpload: %v", err)
+	}
+	defer f.Close()
+	defer os.Remove(f.Name())
+	got, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatalf("read temp file: %v", err)
 	}
 	if string(got) != payload {
 		t.Fatalf("payload = %q", got)

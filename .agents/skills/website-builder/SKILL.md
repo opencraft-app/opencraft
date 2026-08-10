@@ -53,33 +53,97 @@ API 地址同样从平台预置的环境变量 `VELA_API_BASE` 获取。
 如果该变量不存在，按站点归属取生产默认值：
 国内 `https://api.lightvela.com`、国际 `https://api.lightvela.ai`。
 
+**注意：只有 API 地址有默认值，凭据没有默认值。**
+`VELA_WEBSITE_KEY` 不存在时必须立即停止，不允许继续调用 API。
+
 读取示例（token 与地址都不要 echo 出来）：
 
 ```bash
+# API 地址：有默认值（国内站），变量不存在时降级使用
 API_BASE="${VELA_API_BASE:-https://api.lightvela.com}"
+
+# 凭据：无默认值，变量不存在时直接报错退出（:? 语法）
 KEY="${VELA_WEBSITE_KEY:?VELA_WEBSITE_KEY not set, instance not initialized}"
 ```
 
-请求头：`Authorization: Vela-Instance-Key <key>` + `Content-Type: application/json`
+请求头：
+
+```
+Authorization: Vela-Instance-Key <key>
+Content-Type: application/json
+```
+
+## 响应格式（所有接口统一）
+
+所有成功响应的 HTTP 状态码为 200 或 201，响应体统一包裹为：
+
+```json
+{
+  "code": "OK",
+  "message": "success",
+  "data": { ... },
+  "request_id": "req-xxx"
+}
+```
+
+**始终从 `data` 字段提取业务数据。** 错误响应的 `code` 为错误码字符串（见「错误处理」一节），`data` 可能为 null。
 
 ## 内部 API 参考（不向用户展示）
 
+所有路径以 `/v1/websites` 为前缀，**不含** `/instance`。
+
 | 方法 | 路径 | 用途 |
 |------|------|------|
-| GET | /v1/instance/websites/capability | 查询建站权益和用量 |
-| POST | /v1/instance/websites | 创建站点 |
-| GET | /v1/instance/websites | 列出已有站点 |
-| GET | /v1/instance/websites/{siteId} | 查询站点详情 |
-| POST | /v1/instance/websites/{siteId}/releases | 创建发布 |
-| GET | /v1/instance/websites/{siteId}/releases | 列出发布历史 |
-| GET | /v1/instance/websites/{siteId}/operations/{opId} | 查询操作状态 |
-| DELETE | /v1/instance/websites/{siteId} | 删除站点 |
+| GET | /v1/websites/capability | 查询建站权益和用量 |
+| POST | /v1/websites | 创建站点 |
+| GET | /v1/websites | 列出已有站点 |
+| GET | /v1/websites/{siteId} | 查询站点详情 |
+| POST | /v1/websites/{siteId}/releases | 创建发布 |
+| GET | /v1/websites/{siteId}/releases | 列出发布历史 |
+| GET | /v1/websites/{siteId}/operations/{opId} | 查询操作状态 |
+| DELETE | /v1/websites/{siteId} | 删除站点 |
 
 ## 完整流程
 
 ### 第一步：查询权益（内部）
 
 调用能力查询接口，获取用户当前可用的建站配额。如果配额已满，用用户友好的方式告知，不要展示原始 JSON。
+
+**请求：**
+
+```
+GET {API_BASE}/v1/websites/capability
+```
+
+无请求体。
+
+**响应 `data` 字段：**
+
+```json
+{
+  "max_sites": 1,
+  "used_sites": 0,
+  "monthly_traffic_bytes": 10737418240,
+  "used_traffic_bytes": 0,
+  "storage_bytes": 10737418240,
+  "used_storage_bytes": 0,
+  "max_artifact_size": 52428800,
+  "max_files": 200
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| max_sites | int | 最大站点数 |
+| used_sites | int | 已用站点数 |
+| monthly_traffic_bytes | int64 | 月流量配额（字节），0 表示不限 |
+| used_traffic_bytes | int64 | 已用月流量（字节） |
+| storage_bytes | int64 | 存储配额（字节） |
+| used_storage_bytes | int64 | 已用存储（字节） |
+| max_artifact_size | int64 | 单个制品最大字节数 |
+| max_files | int | 单个制品最大文件数 |
+
+**始终以本接口返回的实际值为准，不要写死数字。**
 
 ### 第二步：需求澄清（与用户交互）
 
@@ -146,18 +210,139 @@ KEY="${VELA_WEBSITE_KEY:?VELA_WEBSITE_KEY not set, instance not initialized}"
 建议取值：本次建站任务的稳定标识（例如会话 ID + 站点名的哈希），不要每次随机生成。
 不传该字段则不做去重。
 
+**请求：**
+
+```
+POST {API_BASE}/v1/websites
+```
+
+请求体（JSON，字段名使用 snake_case）：
+
+```json
+{
+  "name": "我的个人主页",
+  "idempotency_key": "session-abc-我的个人主页"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| name | string | 是 | 站点名称，最长 100 字符 |
+| idempotency_key | string | 否 | 幂等键，同用户+同键只建一个站点 |
+
+**响应（HTTP 201）：**
+
+```json
+{
+  "code": "OK",
+  "message": "success",
+  "data": {
+    "site_id": "ws-a1b2c3d4e5f6",
+    "operation_id": "wo-x1y2z3w4"
+  },
+  "request_id": "req-xxx"
+}
+```
+
+`data.site_id` 是站点的唯一标识，后续发布、查询、删除都用它。
+`data.operation_id` 是站点创建操作 ID，记为 `create_operation_id`，**不要用它轮询部署状态**。
+
 ### 第五步：创建发布并上传（内部）
 
 将静态文件打包为 zip，计算 sha256 哈希值和文件大小，创建发布并从响应中获取
-`release_id`、`data.upload_url`、`data.upload_headers` 和发布操作 ID
+`data.release_id`、`data.upload_url`、`data.upload_headers`、`data.upload_method` 和发布操作 ID
 （`data.operation_id`，记为
-`deploy_operation_id`），然后 PUT 上传 zip 到该 URL。
+`deploy_operation_id`），然后按 `data.upload_method` 上传 zip 到 `data.upload_url`。
 
 `data.upload_url`、`VELA_WEBSITE_KEY` 和原始响应都属于敏感的内部操作数据，
 不得输出、打印或写入日志。只从响应解析所需字段，不保留完整响应。
 
 **后续只轮询 `deploy_operation_id`。** 创建站点和创建发布会各返回一个
 `operation_id`，混用会把旧创建操作的结果误判为部署结果。
+
+#### 5.1 打包并计算哈希
+
+```bash
+# 打包为 zip（确保 index.html 在根目录）
+cd /tmp/website-build && zip -r site.zip . -x '*.DS_Store'
+
+# 计算 sha256（64 位小写十六进制）
+ARTIFACT_HASH=$(sha256sum site.zip | cut -d' ' -f1)
+
+# 文件大小（字节数）
+ARTIFACT_SIZE=$(stat -c%s site.zip)   # Linux
+# ARTIFACT_SIZE=$(stat -f%z site.zip)  # macOS
+
+# 文件数
+FILE_COUNT=$(unzip -l site.zip | tail -1 | awk '{print $2}')
+```
+
+#### 5.2 创建发布
+
+**请求：**
+
+```
+POST {API_BASE}/v1/websites/{siteId}/releases
+```
+
+请求体（JSON，字段名使用 snake_case，**三个字段全部必填**）：
+
+```json
+{
+  "artifact_hash": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456",
+  "artifact_size": 45678,
+  "file_count": 3
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| artifact_hash | string | 是 | zip 文件的 sha256 哈希值，64 位小写十六进制 |
+| artifact_size | int64 | 是 | zip 文件大小（字节数） |
+| file_count | int | 是 | zip 内文件总数 |
+
+**响应（HTTP 201）：**
+
+```json
+{
+  "code": "OK",
+  "message": "success",
+  "data": {
+    "release_id": "wr-a1b2c3d4",
+    "operation_id": "wo-v9w8x7y6",
+    "version": 1,
+    "upload_url": "https://cos-bucket.cos.ap-shanghai.myqcloud.com/sites/ws-xxx/wr-xxx.zip?sign=xxx&expires=xxx",
+    "upload_method": "PUT",
+    "upload_headers": {
+      "Content-Length": "45678",
+      "x-cos-meta-artifact-sha256": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+    }
+  },
+  "request_id": "req-xxx"
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| release_id | string | 发布 ID |
+| operation_id | string | 发布操作 ID，记为 `deploy_operation_id`，用于轮询部署状态 |
+| version | int | 发布版本号，从 1 递增 |
+| upload_url | string | 文件上传地址，敏感数据，不得输出 |
+| upload_method | string | 上传 HTTP 方法（通常为 `PUT`） |
+| upload_headers | map<string,string> | 服务端签名的上传请求头，必须原样使用 |
+
+#### 5.3 上传 zip 文件
+
+使用 `data.upload_method`（通常为 `PUT`）向 `data.upload_url` 发送请求：
+
+```bash
+curl -X PUT \
+  -H "Content-Length: ${ARTIFACT_SIZE}" \
+  -H "x-cos-meta-artifact-sha256: ${ARTIFACT_HASH}" \
+  -H "Content-Type: application/zip" \
+  --data-binary @site.zip \
+  "${UPLOAD_URL}"
+```
 
 上传注意：
 - `data.upload_headers` 是服务端签名的上传契约，必须同时包含
@@ -168,97 +353,229 @@ KEY="${VELA_WEBSITE_KEY:?VELA_WEBSITE_KEY not set, instance not initialized}"
   `Content-Type: application/zip`；不要自行推导、改名、规范化或丢弃服务端返回的值
 - `data.upload_headers` 缺失、上述任一必需头缺失或出现未知头时，按协议异常立即停止发布；
   不要尝试上传，也不要重新创建站点或发布
-- 不需要 Authorization 头（预签名 URL 自带鉴权）
-- URL 有效期 1 小时
+
+**上传成功后 COS 返回 HTTP 200，响应体为空。** 非 200 状态码视为上传失败。
+
+#### 5.4 轮询部署状态
+
+使用第五步拿到的 `deploy_operation_id`（不是创建站点的 `create_operation_id`）轮询：
+
+**请求：**
+
+```
+GET {API_BASE}/v1/websites/{siteId}/operations/{deploy_operation_id}
+```
+
+无请求体。
+
+**响应 `data` 字段：**
+
+```json
+{
+  "operation_id": "wo-v9w8x7y6",
+  "status": "success",
+  "error_message": ""
+}
+```
+
+| status 值 | 含义 | 动作 |
+|-----------|------|------|
+| created | 操作已创建，等待执行 | 继续轮询 |
+| running | 正在执行 | 继续轮询 |
+| success | 执行成功 | 部署完成，告知用户站点地址 |
+| failed | 执行失败 | 停止，查看 error_message 并告知用户 |
+| dead | 超过最大重试次数，终止 | 停止，告知用户部署失败 |
+
+**轮询间隔：每 3 秒一次，最多轮询 60 次（约 3 分钟）。** 超时不算失败，
+告诉用户"部署仍在处理中，稍等片刻后访问站点地址即可"。
+
+#### 5.5 上传时机
+
 - **创建发布后要尽快上传**：部署任务会等待制品出现（默认约 60 秒）。
-  制品较大或网络较慢时优先生成单文件站点以缩短上传时间。
-  若因上传过慢导致部署失败，重新创建一次发布即可（不要重建站点）。
+  超过这个窗口未上传，部署会自动失败。拿到 `upload_url` 后立即 PUT。
+- 上传完成后不需要额外通知服务端，deployer 会自动检测文件并继续部署。
 
-### 第六步：等待部署完成（内部）
+### 第六步：验证站点可访问（内部）
 
-用 `site_id` 和 `deploy_operation_id` 查询操作状态，每 3 秒轮询一次，最多等待 2 分钟。
-
-**规范接口的状态字段是 `data.status`；为兼容仍返回旧格式的环境，
-读取表达式必须是 `.data.status // .data.Status`，并把状态值转为小写后再判断。**
-错误原因同样读取 `.data.error_message // .data.ErrorMessage`。不要因为字段取空就
-继续无限轮询，也不要把顶层的 `code: "OK"` 当成操作已经成功。
-
-| 状态 | 处理 |
-|---|---|
-| `created` | 操作已登记，继续轮询 |
-| `running` | 正在执行，继续轮询 |
-| `success` | 成功终态，停止轮询 |
-| `failed` | 失败终态，停止轮询并翻译错误原因 |
-| `dead` | 重试耗尽的失败终态，停止轮询并告知暂时无法完成 |
-
-- 状态字段为空或出现以上列表之外的值：按协议异常停止，不要猜测状态含义，不要自动新建站点或发布。
-- 轮询满 2 分钟仍是 `created` / `running`：这是**超时、结果未知**，不是失败终态。
-  告诉用户部署仍在处理中并停止本轮自动操作；不要新建站点，也不要创建新发布。
-- 查询 operation 接口返回 404：表示操作记录不存在或 ID 用错，停止并检查是否混用了
-  `create_operation_id`。这不是下面所说的“公开站点首次访问 404”，不能继续当作正常发布延迟。
-- 临时网络错误或 5xx 可以在总等待时限内继续轮询；401/403 要立即停止并按鉴权或权益错误处理。
-
-### 第七步：返回结果（面向用户）
-
-确认发布完成后，再查询一次站点详情，读取系统返回的站点访问地址并直接告诉用户。
-**不要自行拼接、改写或"修正"该地址**（包括不要把 `http` 改成 `https`）。
-
-地址是每个站点独占的子域名，形如：
+部署成功后，查询站点详情获取访问地址：
 
 ```
-https://ws-0b27ed9b1ba73580.sites.example.com/
+GET {API_BASE}/v1/websites/{siteId}
 ```
 
-`ws-` 开头的那串是系统生成的站点编号。根域由平台配置决定、可能变化，所以**只能用接口返回的值**。
+从响应 `data.PublicURL` 字段（PascalCase）取出站点地址。
+**创建站点的响应不包含此字段**——创建只返回 `site_id` 和 `operation_id`。
 
-生产域名和 TLS 由平台配置。如果接口返回的是 `http` 地址，仍按原地址交付，不要自行改成
-`https`；同时避免生成依赖安全上下文的浏览器能力，例如地理位置、摄像头和 Service Worker。
+**首次访问可能延迟 10 秒左右**（DNS / CDN 刷新）。如果首次访问返回 404，
+等待 10 秒后重试一次。不要把首次 404 当作部署失败。
 
-**发布成功后首次访问可能有约 6–10 秒延迟**，这段时间打开链接可能是 404。
-这是发布流程内的已知节奏（部署任务靠重试兜住），**不是失败**。
-因此：确认操作状态是 success 之后，等 10 秒左右再自检访问；如果公开地址返回 404，
-只重试访问该地址，最多等到发布成功后的 30 秒。
-**绝对不要因为公开地址首次 404 就重新建站或重新发布**。超过 30 秒仍然 404，
-才按站点访问异常处理；这与 operation 查询接口的 404 是两种不同错误。
+### 部署完成后向用户输出
 
-**站点地址是固定的**：重新部署不会改变访问地址，用户之前分享出去的链接始终指向最新内容。
-因此不需要在每次重新部署后再让用户换链接。
+只用一句自然语言告知用户站点地址，不要输出任何技术细节：
 
-**输出示例（参考风格）：**
+> ✅ 网站已上线！访问地址：http://ws-xxx.sites.lightclaw.tech/
 
-> ✅ 网站部署完成！
->
-> 🌐 访问地址：https://ws-0b27ed9b1ba73580.sites.example.com/
->
-> 你的网站已经上线，可以通过这个链接访问。刚发布的头几秒可能还没生效，稍等一下刷新即可。
-> 如果需要修改内容，告诉我重新部署即可，地址不会变。
+## 列出已有站点（内部）
 
-## 能力边界（**生成前必须对照，避免做出跑不通的应用**）
+**请求：**
 
-平台提供的是**纯静态托管**：上传什么文件，访问时就原样返回什么文件。
-没有数据库、没有服务端接口、没有任何可以保存数据的地方。这不是限额，是根本不具备。
+```
+GET {API_BASE}/v1/websites?page=1&page_size=20
+```
 
-### 不具备的能力
+**响应 `data` 字段：**
 
-- **保存任何数据。** 用户在页面上填写、提交、点击产生的内容，没有地方存。
-  刷新页面、换一个浏览器、换一台设备之后都不存在了。
-- **服务端逻辑。** 没有后端代码、没有定时任务、没有 webhook、没有邮件/短信通知。
-- **账号体系。** 没有注册、登录、鉴权、权限分级。
-- **搜索、筛选、统计。** 页面内容是写死在文件里的，只能靠前端在已有内容里做交互。
+```json
+{
+  "sites": [
+    {
+      "SiteID": "ws-a1b2c3d4",
+      "Name": "我的个人主页",
+      "Status": "active",
+      "PublicURL": "http://ws-xxx.sites.lightclaw.tech/",
+      "CloudPath": "sites/ws-xxx/",
+      "StorageBytes": 45678
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "page_size": 20
+}
+```
 
-### 适合做
+**注意：`sites` 数组中的站点对象字段名为 PascalCase**（Go 默认序列化），与请求体和显式结果结构体的 snake_case 不同。主要字段：`SiteID`、`Name`、`Status`、`PublicURL`、`CloudPath`、`StorageBytes`。
 
-个人主页 / 简历、产品与服务介绍页、落地页、作品集 / 图片展示、
-活动与会议介绍页、文档站、导航页、单页应用（纯前端交互，不落库）——
-即"内容在发布时就确定、访问者只读"的场景。
+## 查询站点详情（内部）
 
-### 需要保存数据的需求：明确告知不支持
+```
+GET {API_BASE}/v1/websites/{siteId}
+```
 
-**只要用户的需求里含有"把访问者产生的内容存下来"，当前就做不了。** 典型的有：
+**响应 `data` 字段**（PascalCase，同上）：
 
-- 留言板、评论区、聊天室
-- 表单收集：报名、问卷、预约、询价、意见反馈
-- 访问计数器、点赞数、投票、抽奖
+```json
+{
+  "SiteID": "ws-a1b2c3d4",
+  "Name": "我的个人主页",
+  "Status": "active",
+  "PublicURL": "http://ws-xxx.sites.lightclaw.tech/",
+  "CloudPath": "sites/ws-xxx/",
+  "StorageBytes": 45678
+}
+```
+
+站点 `Status` 可能的值：`active`（正常）、`suspended`（暂停，套餐过期）、`deleting`（删除中）。
+
+## 列出发布历史（内部）
+
+```
+GET {API_BASE}/v1/websites/{siteId}/releases?page=1&page_size=10
+```
+
+**响应 `data` 字段：**
+
+```json
+{
+  "releases": [
+    {
+      "ReleaseID": "wr-a1b2c3d4",
+      "SiteID": "ws-xxx",
+      "Version": 1,
+      "Status": "active",
+      "ArtifactHash": "a1b2...",
+      "ArtifactSize": 45678,
+      "FileCount": 3
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "page_size": 10
+}
+```
+
+**注意：`releases` 数组中的字段名同样是 PascalCase。**
+
+## 删除网站流程
+
+用户要求删除网站时，调用删除接口，然后确认删除成功。
+
+**请求：**
+
+```
+DELETE {API_BASE}/v1/websites/{siteId}
+```
+
+无请求体。
+
+**响应（HTTP 200）：**
+
+```json
+{
+  "code": "OK",
+  "message": "success",
+  "data": {
+    "operation_id": "wo-d1e2f3g4"
+  },
+  "request_id": "req-xxx"
+}
+```
+
+`data.operation_id` 是删除操作 ID。按上面的同一套状态契约轮询：
+`created` / `running` 继续，`success` 完成，`failed` / `dead` 停止并报告失败；
+超时只表示删除仍在处理中，不要再次调用删除接口，也不要声称已经删除。
+
+删除会清除站点的全部静态文件，不可恢复。页面内容重要时提醒用户先自行留一份。
+
+**输出示例：**
+
+> 🗑️ 网站已删除，相关资源已清理。
+
+## 错误处理（翻译为用户语言）
+
+错误响应的 HTTP 状态码为 4xx 或 5xx，响应体中的 `code` 字段为错误码字符串：
+
+```json
+{
+  "code": "WEBSITE_QUOTA_EXCEEDED",
+  "message": "quota exceeded",
+  "data": null,
+  "request_id": "req-xxx"
+}
+```
+
+| 内部错误码 | 对用户说的话 |
+|------------|-------------|
+| WEBSITE_QUOTA_EXCEEDED | 你当前的套餐建站数量已满，可以删除不用的旧网站，或升级套餐 |
+| WEBSITE_ARTIFACT_TOO_LARGE | 网站文件太大了，请精简图片或减少页面 |
+| WEBSITE_FILE_COUNT_EXCEEDED | 网站包含的文件太多了，建议把样式和脚本合并到首页里 |
+| WEBSITE_PASS_INACTIVE | 你的套餐已过期，续费后可以继续使用 |
+| WEBSITE_NO_QUOTA | 你当前的套餐不包含建站功能，升级套餐即可使用 |
+| WEBSITE_NOT_ACTIVE | 这个网站当前不可用，可能已暂停或正在删除 |
+| WEBSITE_NOT_FOUND | 没有找到这个网站，可能已经被删除了 |
+| WEBSITE_INVALID_PARAM | 网站配置有点问题，我调整一下重试 |
+
+**WEBSITE_INVALID_PARAM 特别说明**：服务端会在 `data` 中附上具体原因（`details.reason`），
+例如 `"name is required"`、`"artifact_hash is required"` 等。遇到此错误时检查请求体
+是否缺少必填字段或字段名拼写错误（字段名必须是 snake_case），修正后重试。
+
+### 重试上限（必须遵守）
+
+- **任何情况下都不要为了重试而新建站点。** 每建一个站点就占一个席位，
+  而入门套餐只有 1 个。重新发布用现有 site_id 即可，站点地址本来就固定不变。
+- **首次访问 404 不算失败**，先按上文等 10 秒再自检，不要触发重试。
+- 同一个站点**发布失败 2 次后停止重试**，转为告诉用户具体原因并给出可执行的建议
+  （例如精简内容、合并文件），不要继续自动重发。
+- 同一个原因连续出现 3 次，停止逐个打补丁，直接向用户说明根因。
+
+## 能力边界
+
+### 不能做的
+
+- 留言板 / 评论区 / 评论系统
+- 报名 / 报名表单 / 问卷 / 预约
+- 电商下单 / 购物车 / 库存
+- 用户注册 / 登录 / 个人中心
+- 访问计数器 / 投票 / 调查
 - 待办清单、记账本、任何需要"下次打开还在"的记录
 - 电商下单、库存、支付
 - 账号注册登录、用户中心、后台管理
@@ -291,42 +608,6 @@ https://ws-0b27ed9b1ba73580.sites.example.com/
 
 **不要替用户假装做到了。** 宁可少一个功能，也不要交付一个会丢数据的版本。
 
-## 错误处理（翻译为用户语言）
-
-| 内部错误码 | 对用户说的话 |
-|------------|-------------|
-| WEBSITE_QUOTA_EXCEEDED | 你当前的套餐建站数量已满，可以删除不用的旧网站，或升级套餐 |
-| WEBSITE_ARTIFACT_TOO_LARGE | 网站文件太大了，请精简图片或减少页面 |
-| WEBSITE_FILE_COUNT_EXCEEDED | 网站包含的文件太多了，建议把样式和脚本合并到首页里 |
-| WEBSITE_PASS_INACTIVE | 你的套餐已过期，续费后可以继续使用 |
-| WEBSITE_NO_QUOTA | 你当前的套餐不包含建站功能，升级套餐即可使用 |
-| WEBSITE_NOT_ACTIVE | 这个网站当前不可用，可能已暂停或正在删除 |
-| WEBSITE_NOT_FOUND | 没有找到这个网站，可能已经被删除了 |
-| WEBSITE_INVALID_PARAM | 网站配置有点问题，我调整一下重试 |
-
-### 重试上限（必须遵守）
-
-- **任何情况下都不要为了重试而新建站点。** 每建一个站点就占一个席位，
-  而入门套餐只有 1 个。重新发布用现有 site_id 即可，站点地址本来就固定不变。
-- **首次访问 404 不算失败**，先按上文等 10 秒再自检，不要触发重试。
-- 同一个站点**发布失败 2 次后停止重试**，转为告诉用户具体原因并给出可执行的建议
-  （例如精简内容、合并文件），不要继续自动重发。
-- 同一个原因连续出现 3 次，停止逐个打补丁，直接向用户说明根因。
-
-## 删除网站流程
-
-用户要求删除网站时，调用删除接口，然后确认删除成功。
-
-删除接口返回的 `data.operation_id` 是删除操作 ID。按上面的同一套状态契约轮询：
-`created` / `running` 继续，`success` 完成，`failed` / `dead` 停止并报告失败；
-超时只表示删除仍在处理中，不要再次调用删除接口，也不要声称已经删除。
-
-删除会清除站点的全部静态文件，不可恢复。页面内容重要时提醒用户先自行留一份。
-
-**输出示例：**
-
-> 🗑️ 网站已删除，相关资源已清理。
-
 ## 注意事项
 
 - 用户不需要也不应该接触任何云厂商密钥、环境标识或底层资源标识
@@ -339,3 +620,4 @@ https://ws-0b27ed9b1ba73580.sites.example.com/
 - 站点制品体积计入套餐的存储配额
 - 所有技术过程（API 调用、文件上传、状态轮询）对用户透明，AI 用"正在部署…"等自然语言描述进度即可
 - 部署过程中不要输出代码块、脚本内容或工具日志给用户
+- **字段名大小写**：请求体（JSON）使用 snake_case（如 `artifact_hash`、`artifact_size`、`file_count`、`idempotency_key`）；响应中显式结果结构体也使用 snake_case（如 `site_id`、`operation_id`、`upload_url`）；但站点和发布实体对象使用 PascalCase（如 `SiteID`、`Name`、`Status`、`PublicURL`、`ReleaseID`、`Version`）。调用时注意区分，不要混用。

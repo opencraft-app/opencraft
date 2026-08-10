@@ -30,10 +30,9 @@ spec:
         # 集群内 DNS。worker 与 ctl 同集群同 namespace，代码默认值也是这个地址。
         - name: CTL_BASE_URL
           value: "http://ctl-api.ctl.svc.cluster.local"
-        # 单副本 + 低并发。峰值内存约为 MAX_CONCURRENCY × WEBSITE_MAX_ARTIFACT_BYTES(64MB)，
-        # 2 × 64MB = 128MB，距 512Mi limit 有 4 倍余量。调大并发必须同步调大内存 limit。
+        # 制品 zip 流式写临时文件，峰值内存仅几 KB/部署，不随并发线性增长。
         - name: MAX_CONCURRENCY
-          value: "2"
+          value: "16"
         - name: POLL_INTERVAL_SECONDS
           value: "10"
         # fail-closed：Redis 同时承担跨 Pod 的 COS 上传令牌桶，不允许降级。

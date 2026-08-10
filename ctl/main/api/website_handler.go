@@ -579,3 +579,112 @@ func (h *websiteHandler) handleGetOperation(w http.ResponseWriter, r *http.Reque
 		ErrorMessage: op.ErrorMessage,
 	})
 }
+
+// ---- Custom Domain Binding ----
+
+// handleInternalDomain 处理 GET /internal/ctl/websites/domains/{domain}
+//
+// site-gateway 在 Host 未命中根域时调用此接口查询自定义域名→site_id。
+// 返回 site_id 或 404。site-gateway 拿到 site_id 后走与随机子域完全相同的
+// 站点状态/配额/封禁校验链路。
+func (h *websiteHandler) handleInternalDomain(w http.ResponseWriter, r *http.Request) {
+	if !hasValidWebsiteInternalToken(r.Header.Get("X-Internal-Token")) {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+
+	domain := strings.TrimPrefix(r.URL.Path, "/internal/ctl/websites/domains/")
+	if domain == "" {
+		writeHTTPError(w, r, errcode.ErrWebsiteDomainNotFound)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	siteID, err := h.logic.GetSiteIDByDomain(domain)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, map[string]string{
+		"domain":  domain,
+		"site_id": siteID,
+	})
+}
+
+// handleInternalDomainBind 处理 POST /internal/ctl/websites/domains/bind
+//
+// 其他模块在完成域名所有权验证、DNS、证书后调用此接口绑定域名。
+func (h *websiteHandler) handleInternalDomainBind(w http.ResponseWriter, r *http.Request) {
+	if !hasValidWebsiteInternalToken(r.Header.Get("X-Internal-Token")) {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Domain string `json:"domain"`
+		SiteID string `json:"site_id"`
+		UserID string `json:"user_id"`
+	}
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "%s", err.Error()))
+		return
+	}
+	if req.Domain == "" || req.SiteID == "" || req.UserID == "" {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "domain, site_id, user_id are required"))
+		return
+	}
+
+	if err := h.logic.BindCustomDomain(req.Domain, req.SiteID, req.UserID); err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, map[string]string{
+		"domain":  req.Domain,
+		"site_id": req.SiteID,
+	})
+}
+
+// handleInternalDomainUnbind 处理 POST /internal/ctl/websites/domains/unbind
+func (h *websiteHandler) handleInternalDomainUnbind(w http.ResponseWriter, r *http.Request) {
+	if !hasValidWebsiteInternalToken(r.Header.Get("X-Internal-Token")) {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Domain string `json:"domain"`
+	}
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "%s", err.Error()))
+		return
+	}
+	if req.Domain == "" {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "domain is required"))
+		return
+	}
+
+	if err := h.logic.UnbindCustomDomain(req.Domain); err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, map[string]string{
+		"domain": req.Domain,
+	})
+}

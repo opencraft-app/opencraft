@@ -42,18 +42,21 @@ func main() {
 		Interval: cfg.UsageReportInterval,
 	})
 
+	siteMetaClient := sitemeta.NewClient(sitemeta.Options{
+		BaseURL:       cfg.CTLBaseURL,
+		InternalToken: cfg.CTLInternalToken,
+		HTTPClient:    &http.Client{Timeout: cfg.CTLTimeout},
+		PositiveTTL:   cfg.SitePositiveTTL,
+		NegativeTTL:   cfg.SiteNegativeTTL,
+		MaxEntries:    cfg.SiteCacheMaxEntries,
+	})
+
 	siteHandler := httpapi.NewSiteHandler(httpapi.Options{
-		Resolver: hostroute.New(cfg.RootDomains),
-		Sites: sitemeta.NewClient(sitemeta.Options{
-			BaseURL:       cfg.CTLBaseURL,
-			InternalToken: cfg.CTLInternalToken,
-			HTTPClient:    &http.Client{Timeout: cfg.CTLTimeout},
-			PositiveTTL:   cfg.SitePositiveTTL,
-			NegativeTTL:   cfg.SiteNegativeTTL,
-			MaxEntries:    cfg.SiteCacheMaxEntries,
-		}),
-		Origin: fetcher,
-		Usage:  meter,
+		Resolver:     hostroute.New(cfg.RootDomains),
+		Sites:        siteMetaClient,
+		DomainLookup: siteMetaClient,
+		Origin:       fetcher,
+		Usage:        meter,
 	})
 
 	siteServer := &http.Server{

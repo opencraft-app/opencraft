@@ -115,20 +115,30 @@ type Logic interface {
 	OnPassIsolated(userID string) error
 	OnPassRenewed(userID string) error
 	OnPassDestroyed(userID string) error
+	// ---- Custom domain binding ----
+	// BindCustomDomain 将已验证所有权的自定义域名绑定到站点。
+	// 绑定前校验站点存在且属于该用户。域名的归一化在 DAO 层完成。
+	BindCustomDomain(domain, siteID, userID string) error
+	// UnbindCustomDomain 解绑自定义域名。域名归一化在 DAO 层完成。
+	UnbindCustomDomain(domain string) error
+	// GetSiteIDByDomain 供 site-gateway 查询自定义域名→site_id。
+	// 未绑定或绑定的站点已软删时返回 ErrWebsiteNotFound。
+	GetSiteIDByDomain(domain string) (string, error)
 }
 
 // ---- 实现 ----
 
 type logic struct {
-	siteDao      website.SiteDao
-	releaseDao   website.ReleaseDao
-	operationDao website.OperationDao
-	usageDao     website.UsageDao
-	passDao      pass.Dao
-	bundleDao    bundle.Dao
-	quotaDao     quota.Dao
-	idgenDao     idgen.Dao
-	logger       *zap.Logger
+	siteDao        website.SiteDao
+	releaseDao     website.ReleaseDao
+	operationDao   website.OperationDao
+	usageDao       website.UsageDao
+	customDomainDao website.CustomDomainDao
+	passDao        pass.Dao
+	bundleDao      bundle.Dao
+	quotaDao       quota.Dao
+	idgenDao       idgen.Dao
+	logger         *zap.Logger
 }
 
 const (
@@ -157,15 +167,16 @@ func truncateErrorMessage(msg string) string {
 
 func NewLogic() Logic {
 	return &logic{
-		siteDao:      website.NewSiteDao(),
-		releaseDao:   website.NewReleaseDao(),
-		operationDao: website.NewOperationDao(),
-		usageDao:     website.NewUsageDao(),
-		passDao:      pass.NewDao(),
-		bundleDao:    bundle.NewDao(),
-		quotaDao:     quota.NewDao(),
-		idgenDao:     idgen.NewDao(),
-		logger:       resource.ZapLogger,
+		siteDao:         website.NewSiteDao(),
+		releaseDao:      website.NewReleaseDao(),
+		operationDao:    website.NewOperationDao(),
+		usageDao:        website.NewUsageDao(),
+		customDomainDao: website.NewCustomDomainDao(),
+		passDao:         pass.NewDao(),
+		bundleDao:       bundle.NewDao(),
+		quotaDao:        quota.NewDao(),
+		idgenDao:        idgen.NewDao(),
+		logger:          resource.ZapLogger,
 	}
 }
 
@@ -1574,3 +1585,77 @@ func (l *logic) transitionSiteStatusForPassLifecycle(
 }
 
 // 保留 sha256 引用以防未来需要
+
+// ---- Custom Domain Binding ----
+
+// BindCustomDomain 将已验证所有权的域名绑定到指定站点。
+//
+// 调用方（其他模块）负责 DNS、证书申请和域名所有权验证，确认无误后调用本接口。
+// 绑定前校验站点存在且属于该用户——防止把域名绑到别人的站点上。
+//
+// 域名重复绑定时返回 ErrWebsiteDomainAlreadyBound，调用方可以据此提示用户。
+func (l *logic) BindCustomDomain(domain, siteID, userID string) error {
+	// 校验站点存在且属于该用户
+	site, err := l.siteDao.GetBySiteIDForUser(userID, siteID)
+	if err != nil {
+		return fmt.Errorf("bind custom domain: lookup site: %w", err)
+	}
+	if site == nil || site.DeletedTime != nil {
+		return errcode.ErrWebsiteNotFound
+	}
+
+	binding := &website.CustomDomainEntity{
+		Domain: domain,
+		SiteID: siteID,
+	}
+	binding.UserID = userID
+
+	if err := l.customDomainDao.CreateBinding(binding); err != nil {
+		// MySQL 1062 duplicate entry — 域名已被绑定（可能是同一个站点的重复请求，
+		// 也可能是被其他站点占用）。查一下当前绑定归属，区分两种情况。
+		if strings.Contains(err.Error(), "1062") ||
+			strings.Contains(err.Error(), "Duplicate entry") ||
+			strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			existing, lookupErr := l.customDomainDao.GetByDomain(domain)
+			if lookupErr == nil && existing != nil && existing.SiteID == siteID {
+				// 同一站点的重复绑定请求，幂等成功。
+				return nil
+			}
+			return errcode.ErrWebsiteDomainAlreadyBound
+		}
+		return fmt.Errorf("bind custom domain: %w", err)
+	}
+	return nil
+}
+
+// UnbindCustomDomain 解绑域名。域名不存在不算错误（幂等）。
+func (l *logic) UnbindCustomDomain(domain string) error {
+	if err := l.customDomainDao.DeleteByDomain(domain); err != nil {
+		return fmt.Errorf("unbind custom domain: %w", err)
+	}
+	return nil
+}
+
+// GetSiteIDByDomain 供 site-gateway 在 Host 未命中根域时查询自定义域名绑定。
+//
+// 未绑定或绑定的站点已软删时返回 ErrWebsiteNotFound——site-gateway 据此返回 404，
+// 不会回落到任何其他站点。
+func (l *logic) GetSiteIDByDomain(domain string) (string, error) {
+	binding, err := l.customDomainDao.GetByDomain(domain)
+	if err != nil {
+		return "", fmt.Errorf("get site by domain: %w", err)
+	}
+	if binding == nil {
+		return "", errcode.ErrWebsiteNotFound
+	}
+	// 校验站点仍然存在且未软删。绑定记录不会在站点删除时自动级联清理，
+	// 所以这里必须二次校验，否则已删站点仍可通过自定义域名命中缓存。
+	site, err := l.siteDao.GetBySiteID(binding.SiteID)
+	if err != nil {
+		return "", fmt.Errorf("get site by domain: lookup site: %w", err)
+	}
+	if site == nil || site.DeletedTime != nil {
+		return "", errcode.ErrWebsiteNotFound
+	}
+	return binding.SiteID, nil
+}

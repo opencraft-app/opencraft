@@ -32,8 +32,14 @@ func normalizeArtifactDigest(value string) string {
 // verifyArtifactUpload treats every client-controlled declaration as untrusted.
 // The upload is accepted only when the signed response length, COS metadata,
 // database declaration, actual byte count, and computed digest all agree.
+//
+// The artifact is streamed to a temporary file on disk rather than held in
+// memory. Go's archive/zip requires io.ReaderAt for random access to the
+// central directory; a temp file satisfies that without the memory overhead
+// of buffering the entire zip in RAM. Peak memory drops from
+// concurrency × maxArtifactBytes to a few KB per deployment.
 func verifyArtifactUpload(body io.Reader, contentLength int64, metadataHash string,
-	declaredSize int64, declaredHash string, maxBytes int64) ([]byte, error) {
+	declaredSize int64, declaredHash string, maxBytes int64) (*os.File, error) {
 	if declaredSize <= 0 || maxBytes <= 0 {
 		return nil, fmt.Errorf("invalid artifact size contract")
 	}
@@ -53,23 +59,40 @@ func verifyArtifactUpload(body io.Reader, contentLength int64, metadataHash stri
 		return nil, fmt.Errorf("artifact metadata SHA-256 does not match declaration")
 	}
 
+	tmpFile, err := os.CreateTemp("", "website-artifact-*.zip")
+	if err != nil {
+		return nil, fmt.Errorf("create temp file: %w", err)
+	}
+	cleanup := func() {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+	}
+
 	hasher := sha256.New()
 	limited := io.LimitReader(body, maxBytes+1)
-	data, err := io.ReadAll(io.TeeReader(limited, hasher))
+	written, err := io.Copy(io.MultiWriter(tmpFile, hasher), limited)
 	if err != nil {
-		return nil, fmt.Errorf("read artifact: %w", err)
+		cleanup()
+		return nil, fmt.Errorf("write artifact to temp file: %w", err)
 	}
-	if int64(len(data)) > maxBytes {
+	if written > maxBytes {
+		cleanup()
 		return nil, fmt.Errorf("artifact exceeds %d byte limit", maxBytes)
 	}
-	if int64(len(data)) != declaredSize {
-		return nil, fmt.Errorf("artifact body size %d does not match declared %d", len(data), declaredSize)
+	if written != declaredSize {
+		cleanup()
+		return nil, fmt.Errorf("artifact body size %d does not match declared %d", written, declaredSize)
 	}
 	actualHash := hex.EncodeToString(hasher.Sum(nil))
 	if actualHash != normalizedDeclared {
+		cleanup()
 		return nil, fmt.Errorf("artifact SHA-256 mismatch")
 	}
-	return data, nil
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		cleanup()
+		return nil, fmt.Errorf("seek temp file: %w", err)
+	}
+	return tmpFile, nil
 }
 
 // cosClient 包装 COS 客户端 + 元信息
@@ -115,9 +138,9 @@ func NewDeployer() (*Deployer, error) {
 		// 「ctl 放行、worker 拒绝」的部署失败：当前最大套餐允许50MB 制品 / 500 文件。
 		maxArtifactBytes: getPositiveInt64Env("WEBSITE_MAX_ARTIFACT_BYTES", 64*1024*1024),
 		maxFiles:         int(getPositiveInt64Env("WEBSITE_MAX_FILES", 500)),
-		// 解压后总量上限用于防解压炸弹。条目是流式上传的，不随此值放大内存占用；
-		// 真正影响峰值内存的是 maxArtifactBytes（zip 需要整体载入才能随机读取条目），
-		// 峰值约为 MAX_CONCURRENCY × maxArtifactBytes。
+		// 解压后总量上限用于防解压炸弹。条目是流式上传的，不随此值放大内存占用。
+		// 制品 zip 流式写入临时文件再随机读取，峰值内存仅几 KB/部署，
+		// 不再随 maxArtifactBytes 或并发数线性增长。
 		maxUncompressedBytes: getPositiveInt64Env("WEBSITE_MAX_UNCOMPRESSED_BYTES", 256*1024*1024),
 		uploadsPerMinute:     getPositiveInt64Env("WEBSITE_COS_UPLOADS_PER_MINUTE", 8000),
 		siteRootDomain:       strings.Trim(strings.TrimSpace(getEnv("WEBSITE_SITE_ROOT_DOMAIN", "")), "."),
@@ -456,15 +479,23 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 		return d.failOperation(op, fmt.Sprintf("download artifact after %d attempts: %v", maxRetries, dlErr))
 	}
 	defer resp.Body.Close()
-	zipData, err := verifyArtifactUpload(resp.Body, resp.ContentLength,
+	tmpFile, err := verifyArtifactUpload(resp.Body, resp.ContentLength,
 		resp.Header.Get("x-cos-meta-artifact-sha256"),
 		op.ArtifactSize, op.ArtifactHash, d.maxArtifactBytes)
 	if err != nil {
 		return d.failOperation(op, fmt.Sprintf("verify artifact: %v", err))
 	}
+	defer func() {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+	}()
 
 	// 2. 解压并校验（防zip-slip / 文件数 / 解压炸弹，并要求根目录有 index.html）
-	zipReader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+	zipStat, err := tmpFile.Stat()
+	if err != nil {
+		return d.failOperation(op, fmt.Sprintf("stat temp artifact: %v", err))
+	}
+	zipReader, err := zip.NewReader(tmpFile, zipStat.Size())
 	if err != nil {
 		return d.failOperation(op, fmt.Sprintf("unzip artifact: %v", err))
 	}

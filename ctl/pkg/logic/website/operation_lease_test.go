@@ -277,6 +277,14 @@ func newWebsiteOperationTestDB(t *testing.T) {
 			updated_time DATETIME,
 			UNIQUE (site_id, usage_date)
 		)`,
+		`CREATE TABLE website_custom_domains (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			domain TEXT NOT NULL UNIQUE,
+			site_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			created_time DATETIME,
+			updated_time DATETIME
+		)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatal(err)

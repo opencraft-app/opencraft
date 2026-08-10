@@ -63,6 +63,14 @@ type Lookup interface {
 	BySiteID(ctx context.Context, siteID string) (*Site, error)
 }
 
+// DomainLookup 在 Host 未命中根域时查询自定义域名→site_id。
+//
+// nil 表示自定义域名功能未启用——site-gateway 在 Options 里把它设为 nil，
+// 行为与功能上线前完全一致（未命中根域的 Host 一律 404）。
+type DomainLookup interface {
+	SiteIDByDomain(ctx context.Context, domain string) (string, error)
+}
+
 type Options struct {
 	BaseURL       string
 	InternalToken string
@@ -94,13 +102,16 @@ type Client struct {
 	negativeTTL time.Duration
 	maxEntries  int
 
-	mu        sync.Mutex
-	cache     map[string]cacheEntry
-	lastSweep time.Time
+	mu             sync.Mutex
+	cache          map[string]cacheEntry
+	lastSweep      time.Time
+	domainCache    map[string]cacheEntry
+	domainLastSweep time.Time
 }
 
 type cacheEntry struct {
 	site      *Site
+	siteID    string
 	notFound  bool
 	expiresAt time.Time
 }
@@ -122,14 +133,16 @@ func NewClient(opts Options) *Client {
 		opts.MaxEntries = defaultMaxEntries
 	}
 	return &Client{
-		baseURL:     strings.TrimRight(opts.BaseURL, "/"),
-		token:       opts.InternalToken,
-		httpClient:  client,
-		positiveTTL: opts.PositiveTTL,
-		negativeTTL: opts.NegativeTTL,
-		maxEntries:  opts.MaxEntries,
-		cache:       make(map[string]cacheEntry),
-		lastSweep:   time.Now(),
+		baseURL:       strings.TrimRight(opts.BaseURL, "/"),
+		token:         opts.InternalToken,
+		httpClient:    client,
+		positiveTTL:   opts.PositiveTTL,
+		negativeTTL:   opts.NegativeTTL,
+		maxEntries:    opts.MaxEntries,
+		cache:         make(map[string]cacheEntry),
+		lastSweep:     time.Now(),
+		domainCache:   make(map[string]cacheEntry),
+		domainLastSweep: time.Now(),
 	}
 }
 
@@ -253,4 +266,139 @@ func (c *Client) CacheSize() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return len(c.cache)
+}
+
+
+// SiteIDByDomain 查询自定义域名绑定的 site_id。
+//
+// 缓存策略与 BySiteID 一致：正结果缓存 positiveTTL，未找到缓存 negativeTTL。
+// 查询失败（ctl 抖动）不写缓存。缓存与 BySiteID 的缓存独立——键空间不同
+// （一个按 siteID，一个按 domain），不会互相驱逐。
+// normalizeDomain 去端口、小写、去尾点。与 hostroute.normalizeHost 同一规则，
+// 确保缓存键和 URL 路径都用归一化后的域名。
+func normalizeDomain(domain string) string {
+	domain = strings.TrimSpace(domain)
+	if domain == "" {
+		return ""
+	}
+	if !strings.HasPrefix(domain, "[") {
+		if idx := strings.LastIndex(domain, ":"); idx >= 0 {
+			domain = domain[:idx]
+		}
+	}
+	return strings.Trim(strings.ToLower(domain), ".")
+}
+
+func (c *Client) SiteIDByDomain(ctx context.Context, domain string) (string, error) {
+	domain = normalizeDomain(domain)
+	if domain == "" {
+		return "", ErrNotFound
+	}
+	if entry, ok := c.lookupDomainCache(domain); ok {
+		if entry.notFound {
+			return "", ErrNotFound
+		}
+		return entry.siteID, nil
+	}
+
+	siteID, err := c.fetchDomain(ctx, domain)
+	if errors.Is(err, ErrNotFound) {
+		c.storeDomainCache(domain, cacheEntry{notFound: true, expiresAt: time.Now().Add(c.negativeTTL)})
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	c.storeDomainCache(domain, cacheEntry{siteID: siteID, expiresAt: time.Now().Add(c.positiveTTL)})
+	return siteID, nil
+}
+
+// fetchDomain 调用 ctl 的内部接口查 domain→site_id。
+func (c *Client) fetchDomain(ctx context.Context, domain string) (string, error) {
+	endpoint := c.baseURL + "/internal/ctl/websites/domains/" + url.PathEscape(domain)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", fmt.Errorf("build domain request: %w", err)
+	}
+	if c.token != "" {
+		req.Header.Set("X-Internal-Token", c.token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("query domain: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusNotFound:
+		return "", ErrNotFound
+	default:
+		return "", fmt.Errorf("query domain: unexpected status %d", resp.StatusCode)
+	}
+
+	var envelope struct {
+		Data struct {
+			SiteID string `json:"site_id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return "", fmt.Errorf("decode domain response: %w", err)
+	}
+	if envelope.Data.SiteID == "" {
+		return "", fmt.Errorf("query domain: response missing site_id")
+	}
+	return envelope.Data.SiteID, nil
+}
+
+// domainCacheEntry 复用 cacheEntry 的结构，多一个 siteID 字段。
+// BySiteID 的 cacheEntry 里 site 是 *Site 指针，这里只需要 site_id 字符串。
+// 为了复用 notFound / expiresAt 字段而不拆两套结构，在 cacheEntry 上加 siteID。
+
+func (c *Client) lookupDomainCache(domain string) (cacheEntry, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.domainCache[domain]
+	if !ok || time.Now().After(entry.expiresAt) {
+		return cacheEntry{}, false
+	}
+	return entry, true
+}
+
+func (c *Client) storeDomainCache(domain string, entry cacheEntry) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
+	c.sweepDomainIfDue(now)
+	if _, exists := c.domainCache[domain]; !exists {
+		c.makeDomainRoom(now)
+	}
+	c.domainCache[domain] = entry
+}
+
+func (c *Client) sweepDomainIfDue(now time.Time) {
+	if now.Sub(c.domainLastSweep) < sweepInterval {
+		return
+	}
+	c.domainLastSweep = now
+	for domain, entry := range c.domainCache {
+		if now.After(entry.expiresAt) {
+			delete(c.domainCache, domain)
+		}
+	}
+}
+
+func (c *Client) makeDomainRoom(now time.Time) {
+	if len(c.domainCache) < c.maxEntries {
+		return
+	}
+	c.sweepDomainIfDue(now)
+	for domain := range c.domainCache {
+		if len(c.domainCache) < c.maxEntries {
+			return
+		}
+		delete(c.domainCache, domain)
+	}
 }

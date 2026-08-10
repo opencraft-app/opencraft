@@ -19,18 +19,22 @@ import (
 type Options struct {
 	Resolver *hostroute.Resolver
 	Sites    sitemeta.Lookup
-	Origin   origin.Fetcher
+	// DomainLookup 在 Host 未命中根域时查自定义域名→site_id。
+	// nil 表示自定义域名功能未启用，行为与上线前完全一致。
+	DomainLookup sitemeta.DomainLookup
+	Origin       origin.Fetcher
 	// Usage 为 nil 表示不计量，请求路径不需要额外判空。
 	Usage  *usage.Meter
 	Logger *log.Logger
 }
 
 type SiteHandler struct {
-	resolver *hostroute.Resolver
-	sites    sitemeta.Lookup
-	origin   origin.Fetcher
-	usage    *usage.Meter
-	logger   *log.Logger
+	resolver     *hostroute.Resolver
+	sites        sitemeta.Lookup
+	domainLookup sitemeta.DomainLookup
+	origin       origin.Fetcher
+	usage        *usage.Meter
+	logger       *log.Logger
 }
 
 func NewSiteHandler(opts Options) *SiteHandler {
@@ -39,11 +43,12 @@ func NewSiteHandler(opts Options) *SiteHandler {
 		logger = log.Default()
 	}
 	return &SiteHandler{
-		resolver: opts.Resolver,
-		sites:    opts.Sites,
-		origin:   opts.Origin,
-		usage:    opts.Usage,
-		logger:   logger,
+		resolver:     opts.Resolver,
+		sites:        opts.Sites,
+		domainLookup: opts.DomainLookup,
+		origin:       opts.Origin,
+		usage:        opts.Usage,
+		logger:       logger,
 	}
 }
 
@@ -121,9 +126,17 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 // 一旦允许请求影响 siteID，站点之间的边界就没了。
 func (h *SiteHandler) resolveSite(w http.ResponseWriter, r *http.Request) (string, string, bool) {
 	siteID, host, ok := h.resolver.Resolve(r.Host)
+	if !ok && h.domainLookup != nil {
+		// Host 未命中根域，查自定义域名绑定表。
+		// 查到 site_id 后走与随机子域完全相同的后续校验链路，
+		// 查不到仍然返回 404——绝不回落到任何默认站点。
+		resolvedID, err := h.domainLookup.SiteIDByDomain(r.Context(), host)
+		if err == nil && resolvedID != "" {
+			siteID = resolvedID
+			ok = true
+		}
+	}
 	if !ok {
-		// 自定义域名绑定尚未实现，未命中根域的 Host 一律拒绝，
-		// 绝不回落到任何默认站点——回落会让错配的域名把流量导到别人的站点。
 		h.logger.Printf("unresolved host: %q", host)
 		writeErrorPage(w, http.StatusNotFound, msgSiteNotFound)
 		return "", "", false
