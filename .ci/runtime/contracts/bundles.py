@@ -190,10 +190,16 @@ def _resolve_publish_paths(bundle: dict[str, Any], env: str) -> list[str]:
         path = str(raw).format(env=env)
         if is_playground_env(env) and source_env != env:
             path = _rewrite_playground_publish_path(path, source_env, env)
+        if is_playground_env(env) and _is_shared_playground_gitops_path(path):
+            continue
         if path not in seen:
             seen.add(path)
             resolved.append(path)
     return resolved
+
+
+def _is_shared_playground_gitops_path(path: str) -> bool:
+    return path.startswith("argocd/apps/") and path.endswith("/sandbox-family-appset.yaml")
 
 
 def _rewrite_playground_publish_path(path: str, source_env: str, env: str) -> str:
