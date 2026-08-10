@@ -121,6 +121,9 @@ export function ServerRouteBoundary({
       />
     );
   }
+  if (resolution.status === "unavailable" && servers.length === 0) {
+    return <Redirect href={currentBrowserHref("/home") as Href} />;
+  }
   if (resolution.status === "unavailable") {
     return (
       <RouteStatusScreen

@@ -106,6 +106,37 @@ describe("ServerRouteBoundary", () => {
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
+  it("recovers a new account with no Servers from a stale Server URL", async () => {
+    const store = createStore<AppStoreState>(() =>
+      ({
+        authStatus: "signed_in",
+        error: null,
+        currentServerId: null,
+        retryInitialization: jest.fn(),
+        retryServers: jest.fn(),
+        selectServer: jest.fn(),
+        serverContextStatus: "idle",
+        servers: [],
+        serversStatus: "ready",
+        targetServerId: null,
+      }) as unknown as AppStoreState,
+    );
+
+    const screen = await render(
+      <AppRuntimeProvider store={store}>
+        <ServerRouteBoundary
+          canonicalHref={(slug) => `/s/${slug}`}
+          serverReference="stale-before-registration"
+        >
+          {() => <Text>不应出现</Text>}
+        </ServerRouteBoundary>
+      </AppRuntimeProvider>,
+    );
+
+    expect(screen.getByText("/home")).toBeVisible();
+    expect(screen.queryByText("Server 不可用")).toBeNull();
+  });
+
   it("lets the user retry a failed Server context without changing the URL", async () => {
     const selectServer = jest.fn(async () => undefined);
     const store = createStore<AppStoreState>(() =>
