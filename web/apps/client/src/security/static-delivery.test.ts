@@ -16,6 +16,20 @@ describe("static web delivery", () => {
     },
   );
 
+  it("proxies the deployed platform API before the SPA fallback", () => {
+    const config = readFileSync(
+      resolve(__dirname, "../../../../deploy/static/nginx.conf"),
+      "utf8",
+    );
+    const apiLocation = config.indexOf("location /v1/");
+    const spaLocation = config.indexOf("location / {");
+
+    expect(apiLocation).toBeGreaterThan(-1);
+    expect(apiLocation).toBeLessThan(spaLocation);
+    expect(config).toContain("proxy_pass http://chatserver-canary;");
+    expect(config).toContain('proxy_set_header Origin "";');
+  });
+
   it("loads the Web terminal runtime only when a terminal is opened", () => {
     const source = readFileSync(
       resolve(
