@@ -6,3 +6,4 @@
  */
 export * from "./management-workspace-core";
 export * from "./management-workspace-form";
+export * from "./management-preference";

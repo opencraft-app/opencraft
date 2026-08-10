@@ -6,6 +6,7 @@ import {
   PresentationProvider,
   ServerSettingsScreen,
   type HumanClientPresenter,
+  velaTheme,
 } from "@/ui";
 
 const account: Account = {
@@ -47,6 +48,22 @@ describe("ServerSettingsScreen", () => {
 
     expect(screen.getByText("atlas")).toBeTruthy();
     expect(screen.queryByDisplayValue("atlas")).toBeNull();
+    expect(screen.getByTestId("server-settings-content")).toHaveStyle({
+      alignSelf: "center",
+      maxWidth: velaTheme.recipes.managementWorkspace.preferenceContentMaxWidth,
+      width: "100%",
+    });
+    expect(screen.getByTestId("server-settings-form")).toHaveStyle({
+      borderWidth: velaTheme.semantic.stroke.hairline,
+      overflow: "hidden",
+    });
+    expect(screen.getByTestId("server-settings-name-row")).toHaveStyle({
+      flexDirection: "row",
+      flexWrap: "wrap",
+    });
+    expect(screen.getByTestId("server-settings-description")).toHaveStyle({
+      minHeight: velaTheme.recipes.managementWorkspace.textareaMinHeight,
+    });
     await fireEvent.changeText(
       screen.getByTestId("server-settings-name"),
       "Vela 研究实验室",

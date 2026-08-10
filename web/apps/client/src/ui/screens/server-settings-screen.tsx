@@ -4,17 +4,19 @@ import type {
   UpdateServerInput,
 } from "@vela/client-core";
 import {useEffect, useState} from "react";
-import {useWindowDimensions} from "react-native";
+import {Text, useWindowDimensions, View} from "react-native";
+import {StyleSheet} from "react-native-unistyles";
 
 import {
-  DetailSection,
   ManagementDetailScroll,
-  ManagementField,
-  ManagementFormActions,
   ManagementHeader,
+  ManagementPreferenceBody,
+  ManagementPreferenceMetadataRow,
+  ManagementPreferenceRow,
+  ManagementPreferenceSection,
+  ManagementPreferenceSeparator,
   ManagementStage,
   ManagementTextInput,
-  ResourceMetadataList,
 } from "../components/management-workspace";
 import {SystemButton} from "../primitives/system-button";
 import {SystemFeedback} from "../primitives/system-feedback";
@@ -145,7 +147,7 @@ export function ServerSettingsScreen({
       Boolean(descriptionError),
     id: "server-settings-save",
     kind: "primary",
-    label: saving ? "保存中" : "保存更改",
+    label: saving ? "保存中" : "保存",
     run: submit,
   };
   const pageModel: ManagementPageModel = {
@@ -180,13 +182,6 @@ export function ServerSettingsScreen({
       {error ? (
         <SystemFeedback kind="inline" message={error} tone="danger" />
       ) : null}
-      {saved && !error ? (
-        <SystemFeedback
-          kind="inline"
-          message="Server 设置已保存"
-          tone="positive"
-        />
-      ) : null}
       {!canManage ? (
         <SystemFeedback
           kind="inline"
@@ -197,57 +192,74 @@ export function ServerSettingsScreen({
         density={density}
         testID="server-settings-detail-scroll"
       >
-        <DetailSection
-          description="修改平台内显示的名称和简介。稳定地址不会变化。"
-          testID="server-settings-form"
-          title="基本信息"
-        >
-          <ManagementField error={nameField!.error} label={nameField!.label}>
-            <ManagementTextInput
-              accessibilityLabel={nameField!.accessibilityLabel}
-              editable={!nameField!.disabled}
-              invalid={Boolean(nameField!.error)}
-              maxLength={nameField!.maxLength}
-              onChangeText={nameField!.onChange}
-              testID={nameField!.id}
-              value={nameField!.value}
-            />
-          </ManagementField>
-          <ManagementField
-            error={descriptionField!.error}
-            hint={descriptionField!.hint}
-            label={descriptionField!.label}
+        <ManagementPreferenceBody testID="server-settings-content">
+          <ManagementPreferenceSection
+            description="修改成员看到的 Server 名称和简介。"
+            testID="server-settings-form"
+            title="基本信息"
           >
-            <ManagementTextInput
-              accessibilityLabel={descriptionField!.accessibilityLabel}
-              editable={!descriptionField!.disabled}
-              invalid={Boolean(descriptionField!.error)}
-              maxLength={descriptionField!.maxLength}
-              multiline={descriptionField!.multiline}
-              onChangeText={descriptionField!.onChange}
-              testID={descriptionField!.id}
-              value={descriptionField!.value}
-            />
-          </ManagementField>
-          <ManagementFormActions>
-            <SystemButton
-              busy={saving}
-              disabled={saveAction.disabled}
-              variant="default"
-              label={saveAction.label}
-              onPress={saveAction.run}
-              testID={saveAction.id}
-            />
-          </ManagementFormActions>
-        </DetailSection>
-        <DetailSection title="稳定标识">
-          <ResourceMetadataList
-            items={[
-              {label: "Slug", value: server.slug},
-              {label: "Server ID", value: server.id},
-            ]}
-          />
-        </DetailSection>
+            <ManagementPreferenceRow
+              description="显示在侧栏、邀请和成员页面中。"
+              error={nameField!.error}
+              label={nameField!.label}
+              testID="server-settings-name-row"
+            >
+              <ManagementTextInput
+                accessibilityLabel={nameField!.accessibilityLabel}
+                editable={!nameField!.disabled}
+                invalid={Boolean(nameField!.error)}
+                maxLength={nameField!.maxLength}
+                onChangeText={nameField!.onChange}
+                testID={nameField!.id}
+                value={nameField!.value}
+              />
+            </ManagementPreferenceRow>
+            <ManagementPreferenceSeparator />
+            <ManagementPreferenceRow
+              description="帮助成员理解这个 Server 的用途。"
+              error={descriptionField!.error}
+              hint={descriptionField!.hint}
+              label={descriptionField!.label}
+            >
+              <ManagementTextInput
+                accessibilityLabel={descriptionField!.accessibilityLabel}
+                editable={!descriptionField!.disabled}
+                invalid={Boolean(descriptionField!.error)}
+                maxLength={descriptionField!.maxLength}
+                multiline={descriptionField!.multiline}
+                onChangeText={descriptionField!.onChange}
+                testID={descriptionField!.id}
+                value={descriptionField!.value}
+              />
+            </ManagementPreferenceRow>
+            <ManagementPreferenceSeparator />
+            <View style={styles.footer}>
+              <Text style={[styles.footerStatus, saved && styles.footerStatusSaved]}>
+                {saved
+                  ? "已保存"
+                  : dirty
+                    ? "有未保存的更改"
+                    : "更改会应用到所有成员"}
+              </Text>
+              <SystemButton
+                busy={saving}
+                disabled={saveAction.disabled}
+                variant="default"
+                label={saveAction.label}
+                onPress={saveAction.run}
+                testID={saveAction.id}
+              />
+            </View>
+          </ManagementPreferenceSection>
+          <ManagementPreferenceSection
+            description="用于链接和系统引用，创建后不可修改。"
+            title="标识"
+          >
+            <ManagementPreferenceMetadataRow label="Slug" value={server.slug} />
+            <ManagementPreferenceSeparator />
+            <ManagementPreferenceMetadataRow label="Server ID" value={server.id} />
+          </ManagementPreferenceSection>
+        </ManagementPreferenceBody>
       </ManagementDetailScroll>
     </ManagementStage>
   );
@@ -277,3 +289,22 @@ export function ServerSettingsScreen({
     </ManagementPresentation>
   );
 }
+
+const styles = StyleSheet.create((theme) => ({
+  footer: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: theme.spacing.md,
+    justifyContent: "space-between",
+    minHeight: theme.recipes.managementWorkspace.resourceActionMinHeight,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+  },
+  footerStatus: {
+    color: theme.semantic.color.textMuted,
+    ...theme.semantic.typography.meta,
+  },
+  footerStatusSaved: {
+    color: theme.semantic.color.statusPositiveText,
+  },
+}));
