@@ -943,7 +943,7 @@ func TestExecDebugCommandRejectsUnknownBackend(t *testing.T) {
 	}
 }
 
-func TestConfigureOnboardUsesProcessStream(t *testing.T) {
+func TestConfigureOnboardUsesTATPTY(t *testing.T) {
 	origAdapterConf := config.ServerConf.AdapterConfig
 	t.Cleanup(func() {
 		config.ServerConf.AdapterConfig = origAdapterConf
@@ -960,10 +960,10 @@ func TestConfigureOnboardUsesProcessStream(t *testing.T) {
 	}
 
 	adapter := &commandSandboxAdapterStub{
-		processEvents: []psandbox.ProcessStreamEvent{
-			{PID: 9001},
-			{Stdout: "ok\n"},
-			{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+		ptyEvents: []psandbox.PtyExecStreamEvent{
+			{Type: "started", ExecutionID: "pty:onboard"},
+			{Type: "output", ExecutionID: "pty:onboard", Chunk: "ok\n"},
+			{Type: "finished", ExecutionID: "pty:onboard", Status: "SUCCESS", ExitCode: 0},
 		},
 	}
 	logic := &logic{
@@ -979,50 +979,44 @@ func TestConfigureOnboardUsesProcessStream(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("configure onboard: %v", err)
 	}
-	if len(adapter.calls) != 0 {
-		t.Fatalf("expected onboard to avoid TAT ExecCommand, got %d calls", len(adapter.calls))
+	if len(adapter.calls) != 0 || len(adapter.processCalls) != 0 {
+		t.Fatalf("expected onboard to avoid legacy command paths, exec=%d process=%d", len(adapter.calls), len(adapter.processCalls))
 	}
-	if len(adapter.processCalls) != 2 {
-		t.Fatalf("expected two process calls, got %d", len(adapter.processCalls))
+	if len(adapter.ptyCalls) != 2 {
+		t.Fatalf("expected two TAT PTY calls, got %d", len(adapter.ptyCalls))
 	}
-	ensureReq := adapter.processCalls[0]
-	if ensureReq.Cmd != "/bin/bash" {
-		t.Fatalf("expected bash process, got %q", ensureReq.Cmd)
+	ensureReq := adapter.ptyCalls[0]
+	if ensureReq.Username != hermesRuntimeUser || ensureReq.WorkingDirectory != "/home/agentuser" {
+		t.Fatalf("expected agentuser TAT identity, got %+v", ensureReq)
 	}
-	if len(ensureReq.Args) != 3 || ensureReq.Args[0] != "-l" || ensureReq.Args[1] != "-c" {
-		t.Fatalf("expected bash -l -c args, got %#v", ensureReq.Args)
+	if !strings.Contains(ensureReq.Command, "command -v acli") || !strings.Contains(ensureReq.Command, "curl -fsSL -z /usr/local/bin/harness") {
+		t.Fatalf("expected model cli ensure command, got %q", ensureReq.Command)
 	}
-	if !strings.Contains(ensureReq.Args[2], "command -v acli") || !strings.Contains(ensureReq.Args[2], "curl -fsSL -z /usr/local/bin/harness") {
-		t.Fatalf("expected model cli ensure command, got %q", ensureReq.Args[2])
+	modelReq := adapter.ptyCalls[1]
+	if modelReq.Username != hermesRuntimeUser || modelReq.WorkingDirectory != "/home/agentuser" {
+		t.Fatalf("expected agentuser TAT identity, got %+v", modelReq)
 	}
-	modelReq := adapter.processCalls[1]
-	if modelReq.Cmd != "/bin/bash" {
-		t.Fatalf("expected bash process for model set, got %q", modelReq.Cmd)
+	if !strings.Contains(modelReq.Command, "acli provider save") || !strings.Contains(modelReq.Command, "harness model set") {
+		t.Fatalf("expected acli-first provider save command, got %q", modelReq.Command)
 	}
-	if !strings.Contains(modelReq.Args[2], "acli provider save") || !strings.Contains(modelReq.Args[2], "harness model set") {
-		t.Fatalf("expected acli-first provider save command, got %q", modelReq.Args[2])
+	if !strings.Contains(modelReq.Command, "ACLI_SECRET_API_KEY=") ||
+		!strings.Contains(modelReq.Command, "sk-test") ||
+		!strings.Contains(modelReq.Command, "--api-key \"$ACLI_SECRET_API_KEY\"") {
+		t.Fatalf("expected api key flag in command, got %q", modelReq.Command)
 	}
-	if !strings.Contains(modelReq.Args[2], "ACLI_SECRET_API_KEY=") ||
-		!strings.Contains(modelReq.Args[2], "sk-test") ||
-		!strings.Contains(modelReq.Args[2], "--api-key \"$ACLI_SECRET_API_KEY\"") {
-		t.Fatalf("expected api key flag in command, got %q", modelReq.Args[2])
-	}
-	if !strings.Contains(modelReq.Args[2], "--name") ||
-		!strings.Contains(modelReq.Args[2], "acli model switch --model") ||
-		!strings.Contains(modelReq.Args[2], "--model-name") ||
-		!strings.Contains(modelReq.Args[2], "auto") ||
-		!strings.Contains(modelReq.Args[2], "switch_model=") ||
-		!strings.Contains(modelReq.Args[2], "model_name") ||
-		!strings.Contains(modelReq.Args[2], "--model \"$switch_model\"") ||
-		strings.Contains(modelReq.Args[2], "--agent") ||
-		!strings.Contains(modelReq.Args[2], "--api") ||
-		!strings.Contains(modelReq.Args[2], "--model-id") ||
-		!strings.Contains(modelReq.Args[2], "--model-name") ||
-		!strings.Contains(modelReq.Args[2], "custom") {
-		t.Fatalf("expected fixed custom provider in command, got %q", modelReq.Args[2])
-	}
-	if modelReq.Env["HOME"] != "/home/agentuser" {
-		t.Fatalf("expected HOME env for agentuser, got %+v", modelReq.Env)
+	if !strings.Contains(modelReq.Command, "--name") ||
+		!strings.Contains(modelReq.Command, "acli model switch --model") ||
+		!strings.Contains(modelReq.Command, "--model-name") ||
+		!strings.Contains(modelReq.Command, "auto") ||
+		!strings.Contains(modelReq.Command, "switch_model=") ||
+		!strings.Contains(modelReq.Command, "model_name") ||
+		!strings.Contains(modelReq.Command, "--model \"$switch_model\"") ||
+		strings.Contains(modelReq.Command, "--agent") ||
+		!strings.Contains(modelReq.Command, "--api") ||
+		!strings.Contains(modelReq.Command, "--model-id") ||
+		!strings.Contains(modelReq.Command, "--model-name") ||
+		!strings.Contains(modelReq.Command, "custom") {
+		t.Fatalf("expected fixed custom provider in command, got %q", modelReq.Command)
 	}
 }
 

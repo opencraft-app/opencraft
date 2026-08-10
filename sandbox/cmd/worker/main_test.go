@@ -48,6 +48,8 @@ type stubProvider struct {
 	verifyErrs  []error
 	verifyErr   error
 	verifyCalls int
+	verifyIDs   []string
+	verifySince []time.Time
 }
 
 func (p *stubProvider) nextErr() error {
@@ -118,9 +120,15 @@ func (p *stubProvider) StartInstance(ctx context.Context, cloudID string) error 
 	return p.startErr
 }
 
-func (p *stubProvider) VerifyInstance(ctx context.Context, address string) error {
+func (p *stubProvider) VerifyInstance(ctx context.Context, cloudID string) error {
 	p.verifyCalls++
+	p.verifyIDs = append(p.verifyIDs, cloudID)
 	return p.nextVerifyErr()
+}
+
+func (p *stubProvider) VerifyInstanceDelivery(ctx context.Context, cloudID string, notBefore time.Time) error {
+	p.verifySince = append(p.verifySince, notBefore)
+	return p.VerifyInstance(ctx, cloudID)
 }
 
 func (p *stubProvider) CreateInstanceSnapshot(context.Context, provider.CreateInstanceSnapshotRequest) (string, error) {
@@ -373,7 +381,7 @@ func TestCheckWaterlineDoesNotScanAllocated(t *testing.T) {
 		t.Fatalf("allocate: %v", err)
 	}
 
-	checkWaterline(ctx, svc, &stubProvider{}, nil, pool, 0)
+	checkWaterline(ctx, svc, nil, pool)
 
 	if len(rec.lastStates) == 0 {
 		t.Fatalf("expected waterline to request tracked states")
@@ -2236,6 +2244,12 @@ func TestProcessPool_VerifyBeforeClean_Success(t *testing.T) {
 	}
 	if cp.verifyCalls != 1 {
 		t.Fatalf("expected 1 verify call, got %d", cp.verifyCalls)
+	}
+	if len(cp.verifyIDs) != 1 || cp.verifyIDs[0] != "cloud-1" {
+		t.Fatalf("expected reset delivery check by cloud id, got %+v", cp.verifyIDs)
+	}
+	if len(cp.verifySince) != 1 || cp.verifySince[0].IsZero() {
+		t.Fatalf("expected reset delivery generation boundary, got %+v", cp.verifySince)
 	}
 }
 

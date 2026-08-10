@@ -1,8 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("@/lib/region", () => ({
-  isGlobal: true,
-}));
+import { describe, expect, it } from "vitest";
 
 import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 

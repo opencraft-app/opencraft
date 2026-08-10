@@ -13,11 +13,11 @@ import (
 // API wires HTTP handlers onto the service layer.
 type API struct {
 	svc    *service.Service
-	verify service.AddressVerifier
+	verify service.InstanceVerifier
 }
 
 // New builds an API instance.
-func New(svc *service.Service, verify service.AddressVerifier) *API {
+func New(svc *service.Service, verify service.InstanceVerifier) *API {
 	return &API{svc: svc, verify: verify}
 }
 
