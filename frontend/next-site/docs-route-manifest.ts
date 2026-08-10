@@ -99,6 +99,42 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "use-cases",
+      "telegram-persona-agent"
+    ],
+    [
+      "use-cases",
+      "whatsapp-persona-agent"
+    ],
+    [
+      "use-cases",
+      "im-agent-persona-soul-md"
+    ],
+    [
+      "use-cases",
+      "im-agent-skill-scenarios"
+    ],
+    [
+      "use-cases",
+      "multi-channel-personality-memory"
+    ],
+    [
+      "use-cases",
+      "telegram-group-community-assistant"
+    ],
+    [
+      "use-cases",
+      "whatsapp-24-7-customer-service"
+    ],
+    [
+      "use-cases",
+      "lifelike-im-agent-rhythm-social-memory"
+    ],
+    [
+      "use-cases",
+      "telegram-whatsapp-safety-boundaries"
+    ],
+    [
+      "use-cases",
       "daily-summary"
     ],
     [
@@ -358,6 +394,42 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "use-cases",
+      "telegram-persona-agent"
+    ],
+    [
+      "use-cases",
+      "whatsapp-persona-agent"
+    ],
+    [
+      "use-cases",
+      "im-agent-persona-soul-md"
+    ],
+    [
+      "use-cases",
+      "im-agent-skill-scenarios"
+    ],
+    [
+      "use-cases",
+      "multi-channel-personality-memory"
+    ],
+    [
+      "use-cases",
+      "telegram-group-community-assistant"
+    ],
+    [
+      "use-cases",
+      "whatsapp-24-7-customer-service"
+    ],
+    [
+      "use-cases",
+      "lifelike-im-agent-rhythm-social-memory"
+    ],
+    [
+      "use-cases",
+      "telegram-whatsapp-safety-boundaries"
+    ],
+    [
+      "use-cases",
       "daily-summary"
     ],
     [
@@ -537,6 +609,42 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "use-cases",
       "chinese-messaging-channels"
+    ],
+    [
+      "use-cases",
+      "telegram-persona-agent"
+    ],
+    [
+      "use-cases",
+      "whatsapp-persona-agent"
+    ],
+    [
+      "use-cases",
+      "im-agent-persona-soul-md"
+    ],
+    [
+      "use-cases",
+      "im-agent-skill-scenarios"
+    ],
+    [
+      "use-cases",
+      "multi-channel-personality-memory"
+    ],
+    [
+      "use-cases",
+      "telegram-group-community-assistant"
+    ],
+    [
+      "use-cases",
+      "whatsapp-24-7-customer-service"
+    ],
+    [
+      "use-cases",
+      "lifelike-im-agent-rhythm-social-memory"
+    ],
+    [
+      "use-cases",
+      "telegram-whatsapp-safety-boundaries"
     ],
     [
       "use-cases",

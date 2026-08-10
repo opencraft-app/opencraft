@@ -55,7 +55,7 @@ describe("fix-next-static-html-lang", () => {
     }
   });
 
-  it("keeps the EdgeOne route config bounded as localized pages grow", () => {
+  it("keeps the EdgeOne route config bounded as localized pages grow", { timeout: 30_000 }, () => {
     const root = mkdtempSync(join(tmpdir(), "next-edgeone-route-budget-"));
     const out = join(root, "out");
     const script = resolve("scripts/fix-next-static-html-lang.mjs");

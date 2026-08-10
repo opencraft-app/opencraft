@@ -49,15 +49,15 @@
 
 - 【已有内容】如何使用 LightVela 构建个人 AI 助手
 - 【已有内容】如何将 AI Agent 接入即时通信平台
-- 【新增待写】如何在 Telegram 中配置一个具有独立人格的 Hermes Agent
-- 【新增待写】如何在 WhatsApp 中配置一个具有独立人格的 Hermes Agent
-- 【新增待写】如何通过 SOUL.md 设定 IM Agent 的角色、性格与说话方式
-- 【新增待写】如何通过 Skill 把 IM Agent 变成客服、社群助手或 AI 伴侣
-- 【新增待写】如何让一个 Agent 同时接入 Telegram 和 WhatsApp，并保持统一人格与长期记忆
-- 【新增待写】如何在 Telegram 群组中配置 AI 社群助手：入群欢迎、FAQ、摘要与提醒
-- 【新增待写】如何在 WhatsApp 中配置 24/7 AI 客服：人格、知识、技能与自动化
-- 【新增待写】如何设计更像真人的 IM Agent：对话节奏、群体规范与长期社交记忆
-- 【新增待写】如何为 Telegram 和 WhatsApp Agent 设计安全边界：授权、群聊规则与敏感操作
+- 【已有内容】如何在 Telegram 中配置一个具有独立人格的 Hermes Agent
+- 【已有内容】如何在 WhatsApp 中配置一个具有独立人格的 Hermes Agent
+- 【已有内容】如何通过 SOUL.md 设定 IM Agent 的角色、性格与说话方式
+- 【已有内容】如何通过 Skill 把 IM Agent 变成客服、社群助手或 AI 伴侣
+- 【已有内容】如何让一个 Agent 同时接入 Telegram 和 WhatsApp，并保持统一人格与长期记忆
+- 【已有内容】如何在 Telegram 群组中配置 AI 社群助手：入群欢迎、FAQ、摘要与提醒
+- 【已有内容】如何在 WhatsApp 中配置 24/7 AI 客服：人格、知识、技能与自动化
+- 【已有内容】如何设计更像真人的 IM Agent：对话节奏、群体规范与长期社交记忆
+- 【已有内容】如何为 Telegram 和 WhatsApp Agent 设计安全边界：授权、群聊规则与敏感操作
 - 【已有内容】如何使用 Hermes Agent 创建每日摘要
 - 【已有内容】如何让 Hermes Agent 保持 24 小时在线
 - 【已有内容】如何使用 Agent 管理长期记忆和个人知识
