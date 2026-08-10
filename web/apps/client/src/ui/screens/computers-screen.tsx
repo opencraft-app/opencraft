@@ -755,8 +755,9 @@ function ComputerCreateForm({
           ...cancel,
           onPress: cancel.run,
         }}
-        primaryAction={{
+        flowAction={{
           accessibilityLabel: "创建 Computer",
+          intent: "submit",
           ...submit,
           onPress: submit.run,
         }}

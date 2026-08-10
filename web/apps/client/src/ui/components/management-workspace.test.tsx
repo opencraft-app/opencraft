@@ -155,7 +155,14 @@ describe("management workspace primitives", () => {
     const screen = await render(
       <ManagementFormFooter
         backAction={{label: "上一步", onPress: onBack}}
-        primaryAction={{busy: true, disabled: true, label: "继续", onPress: onSubmit}}
+        flowAction={{
+          busy: true,
+          disabled: true,
+          intent: "advance",
+          label: "继续",
+          onPress: onSubmit,
+          testID: "wizard-advance",
+        }}
         testID="wizard-footer"
       />,
     );
@@ -165,6 +172,28 @@ describe("management workspace primitives", () => {
     expect(screen.getByText("继续").parent?.props.accessibilityState).toEqual({
       busy: true,
       disabled: true,
+    });
+    expect(screen.getByTestId("wizard-advance")).toHaveStyle({
+      backgroundColor: velaTheme.semantic.color.actionSecondarySurface,
+      borderColor: velaTheme.semantic.color.borderControl,
+    });
+  });
+
+  it("reserves accent emphasis for the final form submission", async () => {
+    const screen = await render(
+      <ManagementFormFooter
+        flowAction={{
+          intent: "submit",
+          label: "创建 Agent",
+          onPress: () => undefined,
+          testID: "wizard-submit",
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("wizard-submit")).toHaveStyle({
+      backgroundColor: velaTheme.semantic.color.actionPrimarySurface,
+      borderColor: velaTheme.semantic.color.actionPrimarySurface,
     });
   });
 

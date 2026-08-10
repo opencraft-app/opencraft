@@ -980,8 +980,9 @@ function AgentCreateForm({
                 label: navigationAction.label,
                 onPress: navigationAction.run,
               }}
-              primaryAction={{
+              flowAction={{
                 disabled: primaryAction.disabled,
+                intent: "advance",
                 label: primaryAction.label,
                 onPress: primaryAction.run,
               }}
@@ -1039,8 +1040,9 @@ function AgentCreateForm({
                 label: navigationAction.label,
                 onPress: navigationAction.run,
               }}
-              primaryAction={{
+              flowAction={{
                 disabled: primaryAction.disabled,
+                intent: "advance",
                 label: primaryAction.label,
                 onPress: primaryAction.run,
               }}
@@ -1072,8 +1074,9 @@ function AgentCreateForm({
                 label: navigationAction.label,
                 onPress: navigationAction.run,
               }}
-              primaryAction={{
+              flowAction={{
                 disabled: primaryAction.disabled,
+                intent: "submit",
                 label: primaryAction.label,
                 onPress: primaryAction.run,
               }}

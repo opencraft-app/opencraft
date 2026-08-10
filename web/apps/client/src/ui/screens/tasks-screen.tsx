@@ -954,8 +954,9 @@ function ReminderCreateForm({form}: {form: PresentationForm}) {
           ...cancel,
           onPress: cancel.run,
         }}
-        primaryAction={{
+        flowAction={{
           accessibilityLabel: "创建提醒",
+          intent: "submit",
           ...submit,
           onPress: submit.run,
         }}
@@ -1108,8 +1109,9 @@ function TaskCreateForm({form}: {form: PresentationForm}) {
           ...cancel,
           onPress: cancel.run,
         }}
-        primaryAction={{
+        flowAction={{
           accessibilityLabel: "创建任务",
+          intent: "submit",
           ...submit,
           onPress: submit.run,
         }}

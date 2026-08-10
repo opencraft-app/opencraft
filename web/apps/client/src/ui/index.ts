@@ -182,6 +182,7 @@ export {
   type ManagementDetailScrollProps,
   type ManagementFieldProps,
   type ManagementFormFooterAction,
+  type ManagementFormFooterFlowAction,
   type ManagementFormFooterProps,
   type ManagementPreferenceFooterAction,
   type ManagementResourceSelectProps,

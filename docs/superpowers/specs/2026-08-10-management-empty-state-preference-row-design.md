@@ -36,6 +36,13 @@ No new button implementation is introduced.
 - `SystemButton variant="toolbar"` and `SystemIconButton`: add, refresh, and other toolbar operations.
 - `SystemButton variant="destructive"`: destructive operations only.
 
+Wizard and form pages do not choose those variants directly through a generic
+"primary" footer slot. `ManagementFormFooter` owns a semantic flow action:
+`intent="advance"` maps Continue/Next to the quiet secondary control, while
+`intent="submit"` alone maps the final create/save operation to the accented
+default control. This prevents navigation steps from becoming blue merely
+because they are the main action in the current step.
+
 Therefore an empty management collection never produces a filled primary button in the detail canvas.
 
 ## 5. Layout and Responsive Behavior

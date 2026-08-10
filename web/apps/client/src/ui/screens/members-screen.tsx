@@ -828,8 +828,9 @@ function InviteForm({
           ...cancel,
           onPress: cancel.run,
         }}
-        primaryAction={{
+        flowAction={{
           accessibilityLabel: "生成邀请链接",
+          intent: "submit",
           ...submit,
           onPress: submit.run,
         }}
