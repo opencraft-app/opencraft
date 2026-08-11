@@ -16,9 +16,6 @@ bundles:
         database_env: TRADE_DB
         user_env: TRADE_DB_USER
         password_env: TRADE_DB_PASSWORD
-    release_dependencies:
-    - ctl
-    - shadow
     reason: Trade service formal release bundle for Argo-managed rollout and DB
       job contract; mirrors payment bundle for golang-migrate iofs migrations.
     allowed_paths:

@@ -254,6 +254,28 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         self.assertIn("检测到同批依赖服务变更", "\n".join(plan.manual_actions))
         self.assertIn("再重试当前服务发布", "\n".join(plan.manual_actions))
 
+    def test_trade_release_ignores_ctl_source_changes(self) -> None:
+        manifest = load_manifest()
+        self.assertEqual((manifest["bundles"]["trade"].get("release_dependencies") or []), [])
+
+        with self._repo_with_commit("ctl/pkg/logic/pass/logic.go") as (repo_root, source_sha):
+            plan = plan_release_gates(
+                repo_root=repo_root,
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
+                service="trade",
+                env="sandbox-kr-1",
+                source_sha=source_sha,
+                image="example.com/trade:test",
+                pin_targets="trade",
+                db_status="passed",
+            )
+
+        self.assertFalse(plan.release_dependency_changed)
+        self.assertEqual(plan.release_dependencies, [])
+        self.assertTrue(plan.auto_merge_allowed)
+        self.assertTrue(plan.auto_sync_allowed)
+        self.assertNotIn("检测到同批依赖服务变更", "\n".join(plan.manual_actions))
+
     def test_dependency_trigger_marker_does_not_block_service_gateway_auto_sync(self) -> None:
         with self._repo_with_commit("payment/.ci-trigger") as (repo_root, source_sha):
             plan = plan_release_gates(
