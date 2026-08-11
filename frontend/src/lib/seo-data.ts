@@ -40,7 +40,7 @@ export interface FullSeoMetaOptions {
   siteUrl?: string;
   /** 是否允许搜索引擎收录；默认 true。私域路径（/auth/*、/account/*）应传 false。 */
   indexable?: boolean;
-  /** 分享卡缩略图相对路径，默认 `/lightvela-logo.jpg`。 */
+  /** 分享卡缩略图相对路径，默认 `/lightvela-social-preview.png`。 */
   ogImagePath?: string;
 }
 
@@ -79,7 +79,7 @@ const NON_INDEXABLE_PREFIXES = [
   "/bots/",
 ];
 
-const DEFAULT_OG_IMAGE_PATH = "/lightvela-logo.jpg";
+const DEFAULT_OG_IMAGE_PATH = "/lightvela-social-preview.png";
 
 /* ──────────────────────────────────────────────────────────────
  * 区域差异（国内 cn / 国际 global）
