@@ -85,7 +85,7 @@ export function MaintenanceAnnouncementBanner() {
             id: GLOBAL_PUBLIC_BETA_BILLING_ANNOUNCEMENT_ID,
             expiresAt: GLOBAL_PUBLIC_BETA_BILLING_EXPIRES_AT,
             message: t(
-              "LightVela 计划将于 2026 年 8 月 18 日（新加坡时间）起转入公测并开启计费；正式转入公测并开启计费后，内测用户现有套餐的有效期将额外延长 1 个月。",
+              "LightVela 将于 2026 年 8 月 18 日（新加坡时间）公测并计费，内测用户套餐届时将延长 1 个月。",
             ),
             href: "/docs/announcements/public-beta",
             actionLabel: t("查看详情"),
