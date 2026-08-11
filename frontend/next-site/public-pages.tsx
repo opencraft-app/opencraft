@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { AboutPage } from '@/pages/marketing/about-page';
 import { ChangelogPage } from '@/pages/marketing/changelog-page';
 import { LandingPageView } from '@/pages/marketing/landing-page';
+import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
 
 import {
   DEFAULT_PUBLIC_ROUTE_LOCALE,
@@ -79,6 +80,7 @@ export function PublicHomePage({
 
   return (
     <PublicSiteLocaleBridge locale={locale}>
+      <MaintenanceAnnouncementBanner />
       <LandingPageView
         authControls={(
           <PublicHeaderAuthIsland
@@ -140,4 +142,3 @@ export function PublicChangelogPage({
     </PublicSiteLocaleBridge>
   );
 }
-
