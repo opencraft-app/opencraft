@@ -65,14 +65,24 @@ const readOverride = (): string | null => {
  * 初始语言优先级（仅国际站涉及多语言）：
  *   1. URL 路径前缀（/en-us/...、/zh-cn/...、/zh-sg/...；兼容旧 /en、/zh）
  *      —— 给搜索引擎跳转 / 直接外链使用
- *   2. localStorage 用户手动覆盖
- *   3. 区域默认（国际站默认英文，国内站默认中文）
+ *   2. 国际站裸 / 固定使用区域默认英文，避免陈旧 localStorage 把首页首屏改成中文
+ *   3. localStorage 用户手动覆盖
+ *   4. 区域默认（国际站默认英文，国内站默认中文）
  *
  * 在国内站，readLocaleFromPath() 始终返回 null，等价于回退到原有逻辑。
  */
+const pathnameForInitialLocale =
+  typeof window !== "undefined" ? window.location.pathname : null;
+
+const initialLocaleFromPath =
+  pathnameForInitialLocale ? readLocaleFromPath(pathnameForInitialLocale) : null;
+
+const shouldUseDefaultLocaleForBarePublicRoot =
+  pathnameForInitialLocale === "/" && DEFAULT_LOCALE === SUPPORTED_LOCALES.EN_US;
+
 const initialLocale =
-  (typeof window !== "undefined" ? readLocaleFromPath(window.location.pathname) : null) ??
-  readOverride() ??
+  initialLocaleFromPath ??
+  (shouldUseDefaultLocaleForBarePublicRoot ? DEFAULT_LOCALE : readOverride()) ??
   DEFAULT_LOCALE;
 
 void i18n.use(initReactI18next).init({
