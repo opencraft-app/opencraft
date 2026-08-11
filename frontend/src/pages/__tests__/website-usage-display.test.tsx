@@ -17,7 +17,21 @@ vi.mock("@/repositories/http-repositories", () => ({
 }));
 
 vi.mock("@/components/domain/agent-section-header", () => ({
-  AgentSectionHeader: ({ title }: { title: string }) => <h1>{title}</h1>,
+  AgentSectionHeader: ({
+    title,
+    description,
+    actions,
+  }: {
+    title: string;
+    description?: string;
+    actions?: React.ReactNode;
+  }) => (
+    <header>
+      <h1>{title}</h1>
+      {description ? <p>{description}</p> : null}
+      {actions}
+    </header>
+  ),
 }));
 
 vi.mock("@/components/site/product-chrome", () => ({
@@ -43,10 +57,34 @@ const capabilityResponse = {
   },
 };
 
-const sitesResponse = {
+const emptySitesResponse = {
   code: "OK",
   message: "success",
   data: { sites: [], total: 0 },
+};
+
+const activeSitesResponse = {
+  code: "OK",
+  message: "success",
+  data: {
+    total: 1,
+    sites: [
+      {
+        Id: 1,
+        CreatedTime: "2026-08-10T10:00:00Z",
+        UpdatedTime: "2026-08-10T10:00:00Z",
+        UserID: "user-1",
+        SiteID: "site-1",
+        PassID: "pass-1",
+        BundleID: "bundle-1",
+        Name: "销售线索看板",
+        Status: "active",
+        CloudPath: "users/user-1/sites/site-1",
+        PublicURL: "https://site-1.example.com",
+        DeletedTime: null,
+      },
+    ],
+  },
 };
 
 const jsonResponse = (body: unknown) =>
@@ -56,7 +94,10 @@ const jsonResponse = (body: unknown) =>
   });
 
 describe("建站权益用量展示", () => {
+  let sitesResponse: unknown = emptySitesResponse;
+
   beforeEach(() => {
+    sitesResponse = emptySitesResponse;
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       return Promise.resolve(jsonResponse(url.endsWith("/capability") ? capabilityResponse : sitesResponse));
@@ -68,13 +109,31 @@ describe("建站权益用量展示", () => {
     vi.unstubAllGlobals();
   });
 
-  it.each([
-    ["Agent 内嵌面板", AgentWebsitePanel],
-    ["独立作品页", WebsitePage],
-  ])("%s 显示流量和存储的已用量与总量", async (_name, Component) => {
-    render(<Component />);
+  it("独立作品页显示流量和存储的已用量与总量", async () => {
+    render(<WebsitePage />);
 
     expect(await screen.findByText("64.9 KB / 10.0 GB")).toBeInTheDocument();
     expect(screen.getByText("29.3 KB / 5.0 GB")).toBeInTheDocument();
+  });
+
+  it("Agent 内嵌面板展示我的工作台模板、配额和列表字段", async () => {
+    sitesResponse = activeSitesResponse;
+
+    render(<AgentWebsitePanel />);
+
+    expect(await screen.findByText("我的工作台")).toBeInTheDocument();
+    expect(screen.getByText("工作台数量")).toBeInTheDocument();
+    expect(screen.getByText("本月访问流量")).toBeInTheDocument();
+    expect(screen.getByText("64.9 KB / 10.0 GB")).toBeInTheDocument();
+    expect(screen.queryByText("存储空间")).not.toBeInTheDocument();
+    expect(screen.getByText("清爽工具台")).toBeInTheDocument();
+    expect(screen.getByText("数据看板台")).toBeInTheDocument();
+    expect(screen.getByText("运营活动台")).toBeInTheDocument();
+    expect(screen.getByText("个人展示台")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /创建我的工作台/ })).toHaveAttribute("href", "/agents/chat");
+    expect(screen.getByText("工作台访问地址")).toBeInTheDocument();
+    expect(screen.getByText("状态")).toBeInTheDocument();
+    expect(screen.getByText("操作")).toBeInTheDocument();
+    expect(screen.getByText("https://site-1.example.com")).toBeInTheDocument();
   });
 });

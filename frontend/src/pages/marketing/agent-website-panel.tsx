@@ -1,4 +1,15 @@
-import { ExternalLink, Globe, Loader2, Trash2, Zap } from "lucide-react";
+import {
+  ArrowRight,
+  BarChart3,
+  ExternalLink,
+  LayoutTemplate,
+  Loader2,
+  Megaphone,
+  Plus,
+  Trash2,
+  UserRound,
+  Wrench,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
@@ -62,7 +73,7 @@ interface ApiResponse<T> {
 }
 
 /**
- * 删除是异步的：DELETE 只登记 operation，真正清理 COS 由 website-deployer 执行。
+ * 删除是异步的：DELETE 只登记 operation，真正清理由 website-deployer 执行。
  * 前端轮询 operation 状态收敛 UI，2s 起步指数退避到 5s，60s 未收敛就停止轮询
  * （实测通常几秒完成），避免无限轮询。
  */
@@ -113,6 +124,101 @@ const staggerContainer = {
   hidden: { opacity: 0 },
   visible: { opacity: 1, transition: { staggerChildren: 0.08 } },
 };
+
+type WorkbenchTemplateVariant = "tool" | "dashboard" | "campaign" | "profile";
+
+function WorkbenchTemplatePreview({
+  variant,
+  label,
+}: {
+  variant: WorkbenchTemplateVariant;
+  label: string;
+}) {
+  if (variant === "dashboard") {
+    return (
+      <div
+        role="img"
+        aria-label={label}
+        className="relative h-28 overflow-hidden rounded-md border border-white/70 bg-[#101828] p-3"
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+          <span className="h-1.5 w-1.5 rounded-full bg-sky-300" />
+          <span className="h-1.5 w-1.5 rounded-full bg-white/35" />
+        </div>
+        <div className="mt-4 grid grid-cols-4 items-end gap-2">
+          <span className="h-10 rounded-sm bg-sky-300/90" />
+          <span className="h-16 rounded-sm bg-emerald-300/90" />
+          <span className="h-7 rounded-sm bg-amber-200/90" />
+          <span className="h-20 rounded-sm bg-violet-300/90" />
+        </div>
+        <div className="absolute bottom-3 left-3 right-3 h-2 rounded-full bg-white/12">
+          <span className="block h-2 w-2/3 rounded-full bg-white/45" />
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "campaign") {
+    return (
+      <div
+        role="img"
+        aria-label={label}
+        className="relative h-28 overflow-hidden rounded-md border border-white/70 bg-[#fff3d8] p-3"
+      >
+        <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-[#ff6b4a]/25" />
+        <div className="relative grid h-full grid-cols-[1fr_0.75fr] gap-2">
+          <div className="rounded-md bg-white/85 p-2 shadow-[0_8px_20px_rgba(160,90,40,0.12)]">
+            <span className="block h-3 w-2/3 rounded-full bg-[#ff6b4a]/70" />
+            <span className="mt-2 block h-8 rounded bg-[#ffd166]/70" />
+            <span className="mt-2 block h-2 w-1/2 rounded-full bg-black/12" />
+          </div>
+          <div className="flex flex-col justify-between rounded-md bg-[#263238] p-2">
+            <span className="h-5 rounded bg-white/85" />
+            <span className="h-10 rounded bg-[#69db7c]/75" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "profile") {
+    return (
+      <div
+        role="img"
+        aria-label={label}
+        className="relative h-28 overflow-hidden rounded-md border border-white/70 bg-[#e9f7f1] p-3"
+      >
+        <div className="absolute bottom-0 right-0 h-20 w-20 rounded-tl-[48px] bg-[#79c2a6]/35" />
+        <div className="relative h-full rounded-md bg-white/80 p-3 shadow-[0_8px_20px_rgba(40,110,90,0.12)]">
+          <span className="block h-8 w-8 rounded-full bg-[#3f8f72]/80" />
+          <span className="mt-3 block h-2 w-3/4 rounded-full bg-black/18" />
+          <span className="mt-2 block h-2 w-1/2 rounded-full bg-black/10" />
+          <span className="absolute bottom-3 left-3 h-5 w-16 rounded-full bg-[#2f6f58]/85" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role="img"
+      aria-label={label}
+      className="relative h-28 overflow-hidden rounded-md border border-white/70 bg-[#edf4ff] p-3"
+    >
+      <div className="absolute -bottom-10 -right-10 h-28 w-28 rounded-full bg-[#8dd7b8]/35" />
+      <div className="relative rounded-md bg-white/90 p-2 shadow-[0_8px_20px_rgba(30,80,150,0.12)]">
+        <div className="mb-2 flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#4dabf7]" />
+          <span className="h-1.5 w-8 rounded-full bg-black/12" />
+        </div>
+        <span className="block h-5 rounded bg-[#dbeafe]" />
+        <span className="mt-2 block h-5 rounded bg-[#dcfce7]" />
+        <span className="mt-2 block h-5 w-2/3 rounded bg-[#e0e7ff]" />
+      </div>
+    </div>
+  );
+}
 
 export const AgentWebsitePanel = () => {
   const t = useT();
@@ -307,7 +413,43 @@ export const AgentWebsitePanel = () => {
     void fetchData();
   }, [fetchData]);
 
-  const remaining = capability ? capability.max_sites - capability.used_sites : 0;
+  const usedSites = capability?.used_sites ?? 0;
+  const maxSites = capability?.max_sites ?? 0;
+  const usedTrafficBytes = capability?.used_traffic_bytes ?? 0;
+  const monthlyTrafficBytes = capability?.monthly_traffic_bytes ?? 0;
+  const siteQuotaRatio = maxSites > 0 ? usedSites / maxSites : 0;
+  const trafficQuotaRatio = monthlyTrafficBytes > 0 ? usedTrafficBytes / monthlyTrafficBytes : 0;
+  const showQuotaNotice = siteQuotaRatio >= 0.8 || trafficQuotaRatio >= 0.8;
+  const workbenchTemplates = [
+    {
+      title: t("清爽工具台"),
+      description: t("表单、查询、小型运营工具"),
+      scene: t("适合轻量内部工具"),
+      Icon: Wrench,
+      variant: "tool" as const,
+    },
+    {
+      title: t("数据看板台"),
+      description: t("指标、趋势、业务数据总览"),
+      scene: t("适合日报和数据汇总"),
+      Icon: BarChart3,
+      variant: "dashboard" as const,
+    },
+    {
+      title: t("运营活动台"),
+      description: t("活动页、报名页、兑换入口"),
+      scene: t("适合增长和活动运营"),
+      Icon: Megaphone,
+      variant: "campaign" as const,
+    },
+    {
+      title: t("个人展示台"),
+      description: t("作品集、主页、服务介绍"),
+      scene: t("适合对外展示"),
+      Icon: UserRound,
+      variant: "profile" as const,
+    },
+  ];
 
   if (loading) {
     return (
@@ -328,98 +470,151 @@ export const AgentWebsitePanel = () => {
   return (
     <div className="space-y-6">
       <AgentSectionHeader
-        title={t("我的作品")}
-        subtitle={t("使用 AI Agent 对话即可创建和部署静态网站")}
+        title={t("我的工作台")}
+        description={t("让 Agent 帮你构建、发布并持续管理可访问的 Web 工作台")}
+        actionsClassName="w-full sm:w-auto"
+        actions={
+          <div className="grid w-full grid-cols-2 gap-2 sm:w-[360px]">
+            <div className="rounded-md border border-black/[0.06] bg-white px-3 py-2.5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+              <p className="text-[11px] font-medium text-black/45">{t("工作台数量")}</p>
+              <p className="mt-1 text-lg font-semibold leading-none text-black/90">
+                {usedSites}<span className="text-xs font-medium text-black/40">/{maxSites}</span>
+              </p>
+            </div>
+            <div className="rounded-md border border-black/[0.06] bg-white px-3 py-2.5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+              <p className="text-[11px] font-medium text-black/45">{t("本月访问流量")}</p>
+              <p className="mt-1 truncate text-lg font-semibold leading-none text-black/90">
+                {`${formatBytes(usedTrafficBytes)} / ${formatBytes(monthlyTrafficBytes)}`}
+              </p>
+            </div>
+          </div>
+        }
       />
 
-      {/* 建站权益 */}
+      {showQuotaNotice ? (
+        <div className="rounded-md border border-orange-200/80 bg-orange-50 px-4 py-2.5 text-xs font-medium text-orange-700">
+          {t("配额接近上限，可删除不再使用的工作台或升级套餐。")}
+        </div>
+      ) : null}
+
+      {/* 启动模板 */}
       <motion.div
         variants={staggerContainer}
         initial="hidden"
         animate="visible"
-        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        className="rounded-md border border-black/[0.06] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
       >
-        <motion.div variants={fadeIn} className="rounded-xl border border-black/[0.06] bg-white p-5">
-          <p className="text-xs text-black/45">{t("作品数")}</p>
-          <p className="mt-2 text-2xl font-semibold text-black/90">
-            {capability?.used_sites ?? 0}<span className="text-sm text-black/40">/{capability?.max_sites ?? 0}</span>
-          </p>
-          {remaining === 0 && <p className="mt-1 text-xs text-orange-500">{t("已用完")}</p>}
-        </motion.div>
-        <motion.div variants={fadeIn} className="rounded-xl border border-black/[0.06] bg-white p-5">
-          <p className="text-xs text-black/45">{t("月流量")}</p>
-          <p className="mt-2 text-2xl font-semibold text-black/90">
-            {`${formatBytes(capability?.used_traffic_bytes ?? 0)} / ${formatBytes(capability?.monthly_traffic_bytes ?? 0)}`}
-          </p>
-        </motion.div>
-        <motion.div variants={fadeIn} className="rounded-xl border border-black/[0.06] bg-white p-5">
-          <p className="text-xs text-black/45">{t("存储空间")}</p>
-          <p className="mt-2 text-2xl font-semibold text-black/90">
-            {`${formatBytes(capability?.used_storage_bytes ?? 0)} / ${formatBytes(capability?.storage_bytes ?? 0)}`}
-          </p>
-        </motion.div>
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-black/[0.04]">
+            <LayoutTemplate className="h-4 w-4 text-black/65" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-black/90">{t("启动模板")}</h3>
+            <p className="mt-0.5 text-xs text-black/45">{t("选择一种工作台风格，进入对话后继续补充需求。")}</p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {workbenchTemplates.map((template) => {
+            const TemplateIcon = template.Icon;
+            return (
+              <motion.div key={template.title} variants={fadeIn}>
+                <AppLink
+                  to="/agents/chat"
+                  className="group block h-full rounded-md border border-black/[0.06] bg-black/[0.015] p-3 transition-colors hover:border-black/15 hover:bg-black/[0.025]"
+                >
+                  <WorkbenchTemplatePreview variant={template.variant} label={template.title} />
+                  <div className="mt-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <TemplateIcon className="h-3.5 w-3.5 text-black/55" />
+                        <p className="truncate text-sm font-semibold text-black/85">{template.title}</p>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-black/50">{template.description}</p>
+                      <p className="mt-2 text-[11px] font-medium text-black/35">{template.scene}</p>
+                    </div>
+                    <ArrowRight className="mt-0.5 h-4 w-4 flex-shrink-0 text-black/30 transition-transform group-hover:translate-x-0.5 group-hover:text-black/55" />
+                  </div>
+                </AppLink>
+              </motion.div>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 flex justify-start">
+          <AppLink
+            to="/agents/chat"
+            className="inline-flex h-9 items-center gap-2 rounded-md bg-[#007AFF] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#006ee6]"
+          >
+            <Plus className="h-4 w-4" />
+            {t("创建我的工作台")}
+          </AppLink>
+        </div>
       </motion.div>
 
-      {/* 作品列表 */}
+      {/* 工作台列表 */}
       <motion.div
         variants={fadeIn}
         initial="hidden"
         animate="visible"
-        className="overflow-hidden rounded-xl border border-black/[0.06] bg-white"
+        className="overflow-hidden rounded-md border border-black/[0.06] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
       >
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
-          <h3 className="text-base font-semibold text-black/90">{t("作品列表")}</h3>
+          <h3 className="text-base font-semibold text-black/90">{t("工作台列表")}</h3>
           <span className="text-sm text-black/40">{t("共")} {sites.length} {t("个")}</span>
         </div>
         {sites.length === 0 ? (
-          <div className="py-12 text-center">
-            <Globe className="mx-auto h-10 w-10 text-black/20" />
-            <p className="mt-4 text-sm text-black/45">{t("还没有创建任何作品")}</p>
-            <p className="mt-1 text-sm text-black/35" style={{ maxWidth: 400, margin: "0 auto" }}>
-              {t("在 Agent 对话中发送")} <code className="rounded bg-black/5 px-1.5 py-0.5 text-xs">{t("帮我建个网站")}</code> {t("即可快速创建")}
+          <div className="px-5 py-12 text-center">
+            <LayoutTemplate className="mx-auto h-10 w-10 text-black/20" />
+            <p className="mt-4 text-sm font-medium text-black/60">{t("还没有创建工作台")}</p>
+            <p className="mx-auto mt-1 max-w-[420px] text-sm text-black/38">
+              {t("可以从上方模板开始，也可以直接创建一个空白工作台交给 Agent 构建。")}
             </p>
-            <AppLink
-              to="/agents/chat"
-              className="mt-5 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"
-              style={{ background: "#007AFF" }}
-            >
-              <Zap className="h-4 w-4" />
-              {t("前往对话")}
-            </AppLink>
           </div>
         ) : (
           <div className="divide-y" style={{ borderColor: "rgba(0,0,0,0.05)" }}>
+            <div className="hidden grid-cols-[minmax(0,1fr)_112px_148px] gap-4 px-5 py-3 text-xs font-semibold text-black/45 md:grid">
+              <span>{t("工作台访问地址")}</span>
+              <span>{t("状态")}</span>
+              <span className="text-right">{t("操作")}</span>
+            </div>
             {sites.map((site) => {
               const siteURL = site.PublicURL;
-              const isDeleting = site.Status === "deleting" || pendingDeleteIDs.includes(site.SiteID);
+              const status = site.Status.trim().toLowerCase();
+              const isDeleting = status === "deleting" || pendingDeleteIDs.includes(site.SiteID);
+              const statusView = (() => {
+                if (isDeleting || status === "deleted" || status === "suspended" || status === "blocked") {
+                  return { label: t("已下线"), tone: "muted" as const };
+                }
+                if (status === "active") return { label: t("已上线"), tone: "success" as const };
+                if (status === "creating") return { label: t("构建中"), tone: "warning" as const };
+                if (status === "publishing" || status === "pending" || status === "running") {
+                  return { label: t("发布中"), tone: "info" as const };
+                }
+                if (status === "failed" || status === "dead" || status === "error") {
+                  return { label: t("更新失败"), tone: "danger" as const };
+                }
+                return { label: t("发布中"), tone: "info" as const };
+              })();
+              const statusClassName =
+                statusView.tone === "success"
+                  ? "bg-emerald-500/10 text-emerald-700"
+                  : statusView.tone === "warning"
+                    ? "bg-orange-500/10 text-orange-700"
+                    : statusView.tone === "danger"
+                      ? "bg-red-500/10 text-red-600"
+                      : statusView.tone === "info"
+                        ? "bg-blue-500/10 text-blue-600"
+                        : "bg-black/5 text-black/45";
               const notice = deleteNotices[site.SiteID];
               return (
-                <div key={site.SiteID} className="flex items-center justify-between px-5 py-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-black/90">{site.Name}</span>
-                      {isDeleting ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-xs text-orange-600">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          {t("正在删除")}
-                        </span>
-                      ) : site.Status === "active" ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-xs text-green-600">
-                          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                          {t("已上线")}
-                        </span>
-                      ) : site.Status === "creating" ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-xs text-orange-600">
-                          {t("创建中")}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-black/5 px-2 py-0.5 text-xs text-black/40">
-                          {site.Status}
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-1 text-xs text-black/40">
-                      {t("创建于")} {formatDate(site.CreatedTime)} · {t("站点ID")}: {site.SiteID}
+                <div key={site.SiteID} className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_112px_148px] md:items-center md:gap-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-black/90">
+                      {siteURL || t("访问地址生成中")}
+                    </p>
+                    <p className="mt-1 truncate text-xs text-black/40">
+                      {site.Name} · {t("创建于")} {formatDate(site.CreatedTime)}
                     </p>
                     {notice && (
                       <p
@@ -429,25 +624,40 @@ export const AgentWebsitePanel = () => {
                       </p>
                     )}
                   </div>
-                  <div className="ml-4 flex items-center gap-2">
-                    {!isDeleting && site.Status === "active" && siteURL && (
+                  <div>
+                    <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${statusClassName}`}>
+                      {statusView.label}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 md:justify-end">
+                    {status === "active" && siteURL ? (
                       <a
                         href={siteURL}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium text-blue-500 transition-colors hover:bg-black/5"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-black/10 px-3 text-xs font-medium text-blue-500 transition-colors hover:bg-black/5"
                       >
                         <ExternalLink className="h-3.5 w-3.5" />
                         {t("访问")}
                       </a>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-black/[0.06] px-3 text-xs font-medium text-black/25"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        {t("访问")}
+                      </button>
                     )}
                     {!isDeleting && (
                       <button
+                        type="button"
                         onClick={() => {
                           setDeleteError(null);
                           setDeleteTarget(site);
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-50"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-black/10 px-3 text-xs font-medium text-red-500 transition-colors hover:bg-red-50"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                         {t("删除")}
@@ -459,26 +669,6 @@ export const AgentWebsitePanel = () => {
             })}
           </div>
         )}
-      </motion.div>
-
-      {/* 引导卡片 */}
-      <motion.div
-        variants={fadeIn}
-        initial="hidden"
-        animate="visible"
-        className="rounded-xl border border-blue-500/10 bg-blue-500/5 p-5"
-      >
-        <div className="flex items-start gap-3">
-          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
-            <Zap className="h-4 w-4 text-blue-500" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-black/80">{t("如何创建作品？")}</p>
-            <p className="mt-1 text-xs leading-relaxed text-black/50">
-              {t("打开 Agent 对话页面，输入")}「{t("帮我建个网站")}」{t("，AI 会自动完成创建、上传和部署，几秒钟后你就能在这里看到你的作品。")}
-            </p>
-          </div>
-        </div>
       </motion.div>
 
       {/* 删除确认弹窗 */}
@@ -511,14 +701,14 @@ export const AgentWebsitePanel = () => {
                     <Trash2 className="h-[18px] w-[18px]" style={{ color: "#cf3d4c" }} />
                   </div>
                   <h3 className="m-0 text-[16px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
-                    {t("删除作品")}
+                    {t("删除工作台")}
                   </h3>
                 </div>
                 <p className="text-sm leading-relaxed" style={{ margin: "12px 0 16px 0", color: "#666" }}>
-                  {t("删除后，作品将立即下线，COS 上的文件也会同步清理。此操作不可撤销。")}
+                  {t("删除后，工作台将立即下线，相关文件也会同步清理。此操作不可撤销。")}
                 </p>
                 <p className="text-sm font-medium" style={{ margin: "0 0 24px 0", color: "#333" }}>
-                  {t("作品名称")}：{deleteTarget.Name}
+                  {t("工作台名称")}：{deleteTarget.Name}
                 </p>
                 {deleteError && (
                   <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
