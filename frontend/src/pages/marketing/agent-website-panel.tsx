@@ -420,6 +420,13 @@ export const AgentWebsitePanel = () => {
   const siteQuotaRatio = maxSites > 0 ? usedSites / maxSites : 0;
   const trafficQuotaRatio = monthlyTrafficBytes > 0 ? usedTrafficBytes / monthlyTrafficBytes : 0;
   const showQuotaNotice = siteQuotaRatio >= 0.8 || trafficQuotaRatio >= 0.8;
+  const hasLoadError = error !== null;
+  const listErrorTitle =
+    error === "unauthorized" ? t("请先登录后查看工作台列表") : t("暂时无法加载工作台列表");
+  const listErrorDescription =
+    error === "unauthorized"
+      ? t("登录后会自动展示已托管的工作台和访问地址。")
+      : t("托管服务接口暂时不可用，模板和创建入口仍可使用。");
   const workbenchTemplates = [
     {
       title: t("清爽工具台"),
@@ -459,14 +466,6 @@ export const AgentWebsitePanel = () => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="rounded-lg border border-black/[0.06] bg-white p-6 text-sm text-black/60">
-        <p>{error === "unauthorized" ? t("请先登录") : error}</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <AgentSectionHeader
@@ -478,13 +477,21 @@ export const AgentWebsitePanel = () => {
             <div className="rounded-md border border-black/[0.06] bg-white px-3 py-2.5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
               <p className="text-[11px] font-medium text-black/45">{t("工作台数量")}</p>
               <p className="mt-1 text-lg font-semibold leading-none text-black/90">
-                {usedSites}<span className="text-xs font-medium text-black/40">/{maxSites}</span>
+                {capability ? (
+                  <>
+                    {usedSites}<span className="text-xs font-medium text-black/40">/{maxSites}</span>
+                  </>
+                ) : (
+                  <span className="text-sm font-medium text-black/35">{t("暂不可用")}</span>
+                )}
               </p>
             </div>
             <div className="rounded-md border border-black/[0.06] bg-white px-3 py-2.5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
               <p className="text-[11px] font-medium text-black/45">{t("本月访问流量")}</p>
               <p className="mt-1 truncate text-lg font-semibold leading-none text-black/90">
-                {`${formatBytes(usedTrafficBytes)} / ${formatBytes(monthlyTrafficBytes)}`}
+                {capability
+                  ? `${formatBytes(usedTrafficBytes)} / ${formatBytes(monthlyTrafficBytes)}`
+                  : <span className="text-sm font-medium text-black/35">{t("暂不可用")}</span>}
               </p>
             </div>
           </div>
@@ -561,9 +568,19 @@ export const AgentWebsitePanel = () => {
       >
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
           <h3 className="text-base font-semibold text-black/90">{t("工作台列表")}</h3>
-          <span className="text-sm text-black/40">{t("共")} {sites.length} {t("个")}</span>
+          <span className="text-sm text-black/40">
+            {hasLoadError ? t("暂不可用") : <>{t("共")} {sites.length} {t("个")}</>}
+          </span>
         </div>
-        {sites.length === 0 ? (
+        {hasLoadError ? (
+          <div className="px-5 py-12 text-center">
+            <LayoutTemplate className="mx-auto h-10 w-10 text-black/20" />
+            <p className="mt-4 text-sm font-medium text-black/60">{listErrorTitle}</p>
+            <p className="mx-auto mt-1 max-w-[420px] text-sm text-black/38">
+              {listErrorDescription}
+            </p>
+          </div>
+        ) : sites.length === 0 ? (
           <div className="px-5 py-12 text-center">
             <LayoutTemplate className="mx-auto h-10 w-10 text-black/20" />
             <p className="mt-4 text-sm font-medium text-black/60">{t("还没有创建工作台")}</p>

@@ -136,4 +136,19 @@ describe("建站权益用量展示", () => {
     expect(screen.getByText("操作")).toBeInTheDocument();
     expect(screen.getByText("https://site-1.example.com")).toBeInTheDocument();
   });
+
+  it("Agent 内嵌面板接口失败时保留模板和创建入口", async () => {
+    vi.mocked(fetch).mockRejectedValue(new TypeError("Failed to fetch"));
+
+    render(<AgentWebsitePanel />);
+
+    expect(await screen.findByText("我的工作台")).toBeInTheDocument();
+    expect(screen.getByText("清爽工具台")).toBeInTheDocument();
+    expect(screen.getByText("数据看板台")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /创建我的工作台/ })).toHaveAttribute("href", "/agents/chat");
+    expect(screen.getAllByText("暂不可用").length).toBeGreaterThan(0);
+    expect(screen.getByText("暂时无法加载工作台列表")).toBeInTheDocument();
+    expect(screen.getByText("托管服务接口暂时不可用，模板和创建入口仍可使用。")).toBeInTheDocument();
+    expect(screen.queryByText("Failed to fetch")).not.toBeInTheDocument();
+  });
 });
