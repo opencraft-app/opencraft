@@ -401,6 +401,18 @@ export interface CreatePassOrderUrlInput {
    * 用 auth_code 反查 user_id；TTL 同二维码 TTL（≤10 分钟）。
    */
   auth_code?: string;
+  /**
+   * 国际站信用卡/签约支付：用户取消支付后的前端回跳地址（完整 HTTPS URL）。
+   * ctl 不解析，仅透传给 trade → jifei cancelUrl。
+   * 约束：稳定页面地址，不含 query/hash（避免 OAuth code/openid/一次性 ticket 带入回跳地址）。
+   */
+  cancel_url?: string;
+  /**
+   * 国际站信用卡/签约支付：用户完成支付后的前端回跳地址（完整 HTTPS URL）。
+   * ctl 不解析，仅透传给 trade → jifei returnUrl。
+   * 约束同 cancel_url：稳定页面地址，不含 query/hash。
+   */
+  return_url?: string;
 }
 
 /**

@@ -2808,10 +2808,16 @@ export const SubscribePage = ({
         time_unit: aiDuration.time_unit,
         auto_renew_flag: autoRenew ? "auto_renew" : "notify_and_manual_renew",
       });
-      /* 2. 拉信用卡支付页 URL（PC 端 Bearer 鉴权） */
+      /* 2. 拉信用卡支付页 URL（PC 端 Bearer 鉴权）。
+         国际站信用卡/签约支付必须传 cancel_url / return_url，否则计费订单中心可能返回
+         param cancelUrl invalid；用当前页面地址（去掉 query/hash）作回跳目标，
+         适配订阅页新购与账号页续费等不同入口。 */
+      const payRedirectBase = window.location.href.split("#")[0].split("?")[0];
       const orderUrl = await repositories.plans.getPassOrderUrl({
         deal_names: order.deal_names,
         platform: "pc",
+        cancel_url: payRedirectBase,
+        return_url: payRedirectBase,
       });
       /* 3. need_charge=0：零元订单已支付成功，关闭占位窗口，直接接棒 finalize */
       if (orderUrl.need_charge === 0) {
