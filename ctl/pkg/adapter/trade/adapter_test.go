@@ -361,6 +361,33 @@ func TestGeneratePayURL_Success(t *testing.T) {
 	}
 }
 
+func TestGeneratePayURL_WithRedirectURLsSendsBody(t *testing.T) {
+	var gotBody GeneratePayURLOptions
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(PayURLResult{PayURL: "https://x"})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "internal-token")
+	_, err := adp.GeneratePayURL(context.Background(), "DEAL-2026-001", &GeneratePayURLOptions{
+		CancelURL: "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel",
+		ReturnURL: "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return",
+	})
+	if err != nil {
+		t.Fatalf("GeneratePayURL: %v", err)
+	}
+	if gotBody.CancelURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel" {
+		t.Fatalf("cancel_url mismatch: %q", gotBody.CancelURL)
+	}
+	if gotBody.ReturnURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return" {
+		t.Fatalf("return_url mismatch: %q", gotBody.ReturnURL)
+	}
+}
+
 func TestGeneratePayURL_DealNameRequired(t *testing.T) {
 	adp := newTestAdapter(t, "http://example.invalid", "")
 	for _, dealName := range []string{"", "   "} {

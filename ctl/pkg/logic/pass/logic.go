@@ -1669,7 +1669,7 @@ func mapTradePlaceOrderError(err error) error {
 // 流程概览：
 //
 //  1. 入参校验（userID / deal_names 非空）
-//  2. 调 trade.GeneratePayURL（透传 platform / wx_open_id / wx_app_id）
+//  2. 调 trade.GeneratePayURL（透传 platform / wx_open_id / wx_app_id / cancel_url / return_url）
 //  3. 返回支付 URL + 协议外字段
 //
 // **不写本地 pass 表**。
@@ -1691,10 +1691,12 @@ func (l *logic) CreatePassOrderUrl(userID string, req *transport.CreatePassOrder
 	// 当前单元素，遍历 deal_names[0]
 	dealName := req.DealNames[0]
 	var opts *tradeadapter.GeneratePayURLOptions
-	if req.Platform != "" || req.WxOpenID != "" {
+	if req.Platform != "" || req.WxOpenID != "" || req.CancelURL != "" || req.ReturnURL != "" {
 		opts = &tradeadapter.GeneratePayURLOptions{
-			Platform: req.Platform,
-			WxOpenID: req.WxOpenID,
+			Platform:  req.Platform,
+			WxOpenID:  req.WxOpenID,
+			CancelURL: req.CancelURL,
+			ReturnURL: req.ReturnURL,
 		}
 		// wx_app_id：当 wx_open_id 非空（微信公众号 / 小程序场景）时透传给 trade
 		// → jifei.getMidasEarmarking.wxAppId。
@@ -1993,10 +1995,12 @@ func (l *logic) RenewPassOrderUrl(userID, passID string, req *transport.RenewPas
 	// 步骤 3：调 trade.GeneratePayURL（当前单元素，遍历 deal_names[0]）
 	dealName := req.DealNames[0]
 	var opts *tradeadapter.GeneratePayURLOptions
-	if req.Platform != "" || req.WxOpenID != "" {
+	if req.Platform != "" || req.WxOpenID != "" || req.CancelURL != "" || req.ReturnURL != "" {
 		opts = &tradeadapter.GeneratePayURLOptions{
-			Platform: req.Platform,
-			WxOpenID: req.WxOpenID,
+			Platform:  req.Platform,
+			WxOpenID:  req.WxOpenID,
+			CancelURL: req.CancelURL,
+			ReturnURL: req.ReturnURL,
 		}
 		// wx_app_id：当 wx_open_id 非空（微信公众号 / 小程序场景）时透传给 trade
 		// → jifei.getMidasEarmarking.wxAppId。

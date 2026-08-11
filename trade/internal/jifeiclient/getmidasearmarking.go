@@ -18,6 +18,8 @@ import "context"
 //	platform           string   否   "mobile" / "pc"，默认 pc（对应 midas pf 参数）
 //	wxOpenId           string   否   微信公众号/小程序场景必填
 //	wxAppId            string   否   微信侧 appid
+//	cancelUrl          string   否   用户取消支付后的前端回跳地址
+//	returnUrl          string   否   用户完成支付后的前端回跳地址
 //	contractOrder      int      否   1=支付中签约 / 0=非签约
 //	channel            string   否   "remitPay"=对公打款 / "wechatClawbot"=微信 Clawbot
 //	remitpayPayerName  string   否   channel=remitPay 时必传
@@ -35,9 +37,11 @@ type GetMidasEarmarkingRequest struct {
 	Uin       string   `json:"uin"`
 	DealNames []string `json:"dealNames"`
 	// v1.7.31 接口拆分新增：可选字段，空值时不序列化（omitempty），兼容现有行为。
-	Platform string `json:"platform,omitempty"` // "pc" / "mobile"，默认 pc
-	WxOpenID string `json:"wxOpenId,omitempty"` // 微信场景必填
-	WxAppID  string `json:"wxAppId,omitempty"`  // 微信场景必填
+	Platform  string `json:"platform,omitempty"`  // "pc" / "mobile"，默认 pc
+	WxOpenID  string `json:"wxOpenId,omitempty"`  // 微信场景必填
+	WxAppID   string `json:"wxAppId,omitempty"`   // 微信场景必填
+	CancelURL string `json:"cancelUrl,omitempty"` // 取消支付后的前端回跳地址
+	ReturnURL string `json:"returnUrl,omitempty"` // 完成支付后的前端回跳地址
 
 	ContractOrder int    `json:"contractOrder,omitempty"` // 1=支付中签约 / 0=非签约
 	PayScene      string `json:"payScene,omitempty"`      // 国际站信用卡签约支付：credit_card

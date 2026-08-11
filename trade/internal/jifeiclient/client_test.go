@@ -949,6 +949,8 @@ func TestGetMidasEarmarking_Success(t *testing.T) {
 		OwnerUin:  "100012345678",
 		Uin:       "100012345678",
 		DealNames: []string{"20260509000000001-001"},
+		CancelURL: "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel",
+		ReturnURL: "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return",
 	})
 	if err != nil {
 		t.Fatalf("GetMidasEarmarking: %v", err)
@@ -964,6 +966,12 @@ func TestGetMidasEarmarking_Success(t *testing.T) {
 	}
 	if len(seenPara.DealNames) != 1 || seenPara.DealNames[0] != "20260509000000001-001" {
 		t.Errorf("para DealNames: %v", seenPara.DealNames)
+	}
+	if seenPara.CancelURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel" {
+		t.Errorf("para CancelURL: %q", seenPara.CancelURL)
+	}
+	if seenPara.ReturnURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return" {
+		t.Errorf("para ReturnURL: %q", seenPara.ReturnURL)
 	}
 	if resp.URL != "https://buy.cloud.tencent.com/midas/cashier?token=xyz" {
 		t.Errorf("response URL: %q", resp.URL)

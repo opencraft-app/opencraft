@@ -810,17 +810,22 @@ func payURLHandler(svc *placeorder.Service) gin.HandlerFunc {
 		// v1.7.31 接口拆分：解析可选 body（body 为空 / nil 时兼容现有行为）
 		var opts *placeorder.GeneratePayURLOptions
 		var body struct {
-			Platform string `json:"platform"`
-			WxOpenID string `json:"wx_open_id"`
-			WxAppID  string `json:"wx_app_id"`
+			Platform  string `json:"platform"`
+			WxOpenID  string `json:"wx_open_id"`
+			WxAppID   string `json:"wx_app_id"`
+			CancelURL string `json:"cancel_url"`
+			ReturnURL string `json:"return_url"`
 		}
 		// 尝试解析 body；忽略 EOF / 空 body 错误（兼容无 body 调用）
 		if err := c.ShouldBindJSON(&body); err == nil {
-			if body.Platform != "" || body.WxOpenID != "" || body.WxAppID != "" {
+			if body.Platform != "" || body.WxOpenID != "" || body.WxAppID != "" ||
+				body.CancelURL != "" || body.ReturnURL != "" {
 				opts = &placeorder.GeneratePayURLOptions{
-					Platform: body.Platform,
-					WxOpenID: body.WxOpenID,
-					WxAppID:  body.WxAppID,
+					Platform:  body.Platform,
+					WxOpenID:  body.WxOpenID,
+					WxAppID:   body.WxAppID,
+					CancelURL: body.CancelURL,
+					ReturnURL: body.ReturnURL,
 				}
 			}
 		}

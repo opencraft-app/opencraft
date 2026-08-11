@@ -817,6 +817,12 @@ func TestPayURL_PayURLNotCached_CallsJifei(t *testing.T) {
 	tokenID := "E-260522160125881056"
 	outTradeNo := "20260522995022875780461"
 	env.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+		if req.CancelURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel" {
+			t.Errorf("CancelURL mismatch: %q", req.CancelURL)
+		}
+		if req.ReturnURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return" {
+			t.Errorf("ReturnURL mismatch: %q", req.ReturnURL)
+		}
 		return &jifeiclient.GetMidasEarmarkingResponse{
 			URL:        "https://buy.cloud.tencent.com/midas?token=real",
 			BillID:     "bill-1",
@@ -826,7 +832,10 @@ func TestPayURL_PayURLNotCached_CallsJifei(t *testing.T) {
 			OutTradeNo: &outTradeNo,
 		}, nil
 	}
-	rec := env.doJSON(http.MethodPost, "/internal/trade/orders/deal-1/pay-url", nil, true)
+	rec := env.doJSON(http.MethodPost, "/internal/trade/orders/deal-1/pay-url", map[string]any{
+		"cancel_url": "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel",
+		"return_url": "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return",
+	}, true)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}

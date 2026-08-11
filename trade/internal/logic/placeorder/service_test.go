@@ -711,6 +711,12 @@ func TestGeneratePayURL_PayURLNotCached_CallsJifeiAndWritesBack(t *testing.T) {
 		if len(req.DealNames) != 1 || req.DealNames[0] != "deal-1" {
 			t.Errorf("dealNames mismatch: %+v", req.DealNames)
 		}
+		if req.CancelURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel" {
+			t.Errorf("CancelURL mismatch: %q", req.CancelURL)
+		}
+		if req.ReturnURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return" {
+			t.Errorf("ReturnURL mismatch: %q", req.ReturnURL)
+		}
 		return &jifeiclient.GetMidasEarmarkingResponse{
 			BillID:     "bill-1",
 			URL:        "https://buy.cloud.tencent.com/midas/real?dealName=deal-1",
@@ -720,7 +726,10 @@ func TestGeneratePayURL_PayURLNotCached_CallsJifeiAndWritesBack(t *testing.T) {
 			OutTradeNo: ptrString("20260522995022875780461"),
 		}, nil
 	}
-	detail, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil)
+	detail, err := d.service.GeneratePayURL(context.Background(), "deal-1", &GeneratePayURLOptions{
+		CancelURL: "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel",
+		ReturnURL: "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return",
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

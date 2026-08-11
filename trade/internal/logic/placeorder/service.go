@@ -1228,9 +1228,11 @@ type PayURLDetail struct {
 // GeneratePayURLOptions 拉取支付 URL 时的可选参数（v1.7.31 接口拆分新增）。
 // 全部字段可选；空值时不透传（兼容现有行为）。
 type GeneratePayURLOptions struct {
-	Platform string `json:"platform,omitempty"`
-	WxOpenID string `json:"wx_open_id,omitempty"`
-	WxAppID  string `json:"wx_app_id,omitempty"`
+	Platform  string `json:"platform,omitempty"`
+	WxOpenID  string `json:"wx_open_id,omitempty"`
+	WxAppID   string `json:"wx_app_id,omitempty"`
+	CancelURL string `json:"cancel_url,omitempty"`
+	ReturnURL string `json:"return_url,omitempty"`
 }
 
 func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *GeneratePayURLOptions) (*PayURLDetail, error) {
@@ -1274,6 +1276,8 @@ func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *Gen
 		Platform:  optsPlatform(opts),
 		WxOpenID:  optsWxOpenID(opts),
 		WxAppID:   optsWxAppID(opts),
+		CancelURL: optsCancelURL(opts),
+		ReturnURL: optsReturnURL(opts),
 	}
 	if isIntlSite(s.deps.SiteKind) {
 		midasReq.PayScene = "credit_card"
@@ -1620,6 +1624,20 @@ func optsWxAppID(opts *GeneratePayURLOptions) string {
 		return ""
 	}
 	return opts.WxAppID
+}
+
+func optsCancelURL(opts *GeneratePayURLOptions) string {
+	if opts == nil {
+		return ""
+	}
+	return opts.CancelURL
+}
+
+func optsReturnURL(opts *GeneratePayURLOptions) string {
+	if opts == nil {
+		return ""
+	}
+	return opts.ReturnURL
 }
 
 func isIntlSite(siteKind string) bool {

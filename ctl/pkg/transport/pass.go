@@ -255,6 +255,8 @@ type CreatePassOrderResult struct {
 //   - DealNames：必填，来自 CreatePassOrder 返回的订单号列表
 //   - Platform：可选，默认 "pc"；可选值 "pc" / "mobile"（透传给 jifei getMidasEarmarking.platform）
 //   - WxOpenID：可选，微信公众号/小程序场景必填（透传给 jifei getMidasEarmarking.wxOpenId）
+//   - CancelURL / ReturnURL：可选，国际站信用卡/签约支付页取消/完成后的前端回跳地址；
+//     ctl 不解析，仅透传给 trade → jifei getMidasEarmarking.cancelUrl / returnUrl
 //   - AuthCode：v1.7.32 新增，可选；中转页（无 Bearer）必填，由 ctl 解析后反查
 //     user_id 进行鉴权；PC 端 Bearer 链路忽略此字段。详见设计稿
 //     .tmp/ctl-authcode-codebuddy-design.md A2 / A5 不变量
@@ -262,6 +264,8 @@ type CreatePassOrderUrlRequest struct {
 	DealNames []string `json:"deal_names"`
 	Platform  string   `json:"platform,omitempty"`
 	WxOpenID  string   `json:"wx_open_id,omitempty"`
+	CancelURL string   `json:"cancel_url,omitempty"`
+	ReturnURL string   `json:"return_url,omitempty"`
 	AuthCode  string   `json:"auth_code,omitempty"`
 }
 
@@ -345,6 +349,8 @@ type RenewPassOrderResult struct {
 //   - DealNames：必填，来自 RenewPassOrder 返回的订单号列表
 //   - Platform：可选，默认 "pc"；可选值 "pc" / "mobile"（透传给 jifei getMidasEarmarking.platform）
 //   - WxOpenID：可选，微信公众号/小程序场景必填（透传给 jifei getMidasEarmarking.wxOpenId）
+//   - CancelURL / ReturnURL：可选，国际站信用卡/签约支付页取消/完成后的前端回跳地址；
+//     ctl 不解析，仅透传给 trade → jifei getMidasEarmarking.cancelUrl / returnUrl
 //
 // 关键约束：
 //   - pass_id 走 path param，不在 body 中（与 IsolatePass 的 path param 设计一致）
@@ -357,6 +363,8 @@ type RenewPassOrderUrlRequest struct {
 	DealNames []string `json:"deal_names"`
 	Platform  string   `json:"platform,omitempty"`
 	WxOpenID  string   `json:"wx_open_id,omitempty"`
+	CancelURL string   `json:"cancel_url,omitempty"`
+	ReturnURL string   `json:"return_url,omitempty"`
 	AuthCode  string   `json:"auth_code,omitempty"`
 }
 
