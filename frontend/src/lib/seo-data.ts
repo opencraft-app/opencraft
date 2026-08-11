@@ -187,7 +187,7 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/account":
       "了解 LightVela 的账号体系、登录方式（QQ / 微信）、实名认证流程、账号信息页结构，以及退出登录与注销说明。",
     "/docs/plans":
-      "LightVela 启航 Launch、巡游 Cruise、远航 Voyage 三档套餐说明：各含独立云端环境、专属存储与每月模型积分。本页讲各档定位、规格、权益与计费，帮你按需选择。",
+      "LightVela 启航 Launch、巡游 Cruise 两档套餐说明：各含独立云端环境、专属存储与每月模型积分。本页讲各档定位、规格、权益与计费，帮你按需选择。",
     "/docs/credits":
       "LightVela 模型积分（Credits）是计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 token 消耗。本页说明积分定义、换算、发放、消耗方式及与套餐、模型的关系。",
     "/docs/create-first-hermes":
@@ -225,7 +225,9 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/quickstart":
       "A 5-minute walkthrough: sign in, activate the starter plan, create your Hermes instance, connect a channel (WeChat / Telegram / WhatsApp / Discord) and have your first AI conversation.",
     "/docs/plans":
-      "Compare LightVela's Launch, Cruise, and Voyage plans for isolated Hermes runtime resources, storage, and monthly model credits. International beta access is free but limited while available; check Subscribe for current tiers, quotas, and pricing.",
+      "Compare LightVela's Launch and Cruise plans for isolated Hermes runtime resources, storage, monthly credits, paid plan availability, and the new-user 14-day Launch trial.",
+    "/docs/announcements/public-beta":
+      "LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). Beta users get one additional month on their existing plan, and new users can try Launch free for 14 days after public beta and billing start.",
     "/docs/credits":
       "Learn how LightVela model credits measure Hermes usage across conversations, automations, skills, and supported messaging channels. Credits are included with plans; check Subscribe for current availability and the latest options.",
     "/docs/create-first-hermes":
@@ -415,6 +417,7 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/agent-chat": "Chat",
     "/docs/faq": "FAQ",
     "/docs/plans": "Plans",
+    "/docs/announcements/public-beta": "LightVela Paid Version Announcement",
     "/docs/credits": "Credits",
     "/docs/create-first-hermes": "How Do I Activate My First Hermes Instance?",
     "/docs/who-is-lightvela-for": "Who Is LightVela For?",

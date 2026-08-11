@@ -63,7 +63,7 @@ const CN_SIDEBAR: DocGroup[] = [
     title: "账号、套餐与开通",
     items: [
       { slug: "account", title: "账号与实名认证" },
-      { slug: "announcements/public-beta", title: "公测公告" },
+      { slug: "announcements/public-beta", title: "LightVela 付费版本公告" },
       { slug: "plans", title: "套餐说明" },
       { slug: "credits", title: "体验积分说明" },
       { slug: "create-first-hermes", title: "如何开通第一个 Hermes 智能体伙伴？" },
@@ -116,6 +116,11 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
     titleEn: "Plans & Activation",
     items: [
       { slug: "plans", title: "套餐说明", titleEn: "Plans" },
+      {
+        slug: "announcements/public-beta",
+        title: "LightVela 付费版本公告",
+        titleEn: "LightVela Paid Version Announcement",
+      },
       { slug: "credits", title: "体验积分说明", titleEn: "Credits" },
       {
         slug: "create-first-hermes",
@@ -316,6 +321,7 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "core-concepts": "04-core-concepts.md",
   "who-is-lightvela-for": "who-is-lightvela-for.md",
   plans: "plans.md",
+  "announcements/public-beta": "announcements/public-beta.md",
   credits: "credits.md",
   "create-first-hermes": "create-first-hermes.md",
   configuration: "05-configuration.md",
