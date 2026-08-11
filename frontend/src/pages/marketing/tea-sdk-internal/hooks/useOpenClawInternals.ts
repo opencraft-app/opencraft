@@ -1,12 +1,11 @@
 import { useMemo } from 'react';
 import {
   createLightClawScripts,
-  createCommandExecutor,
   type LightClawScriptsSDK,
-  type ICommandExecutor,
 } from "@tencent/tea-sdk-lightclaw/scripts";
 import { createLighthouseConfig } from '../config';
 import { useGatewayCommand } from './useGatewayCommand';
+import type { ICommandExecutor } from '../local-command-executor';
 import type { IProductConfig } from '../config/types';
 import type { IFeatureFlags, IInstanceInfo, IExecuteCommandOptions } from '../openclaw-panel/types';
 
@@ -31,9 +30,16 @@ export interface IOpenClawComponentBaseProps {
   featureFlags: IFeatureFlags;
   /**
    * 产品差异化配置（可选，默认使用 lighthouse 配置）
-   * 自定义 runCommand / getInvocationTask 也在此配置中注入
    */
   productConfig?: IProductConfig;
+  /**
+   * 命令执行器（由宿主注入）。
+   *
+   * mono2 走本地 `createLocalCommandExecutor`（直连 debug/exec），彻底脱离
+   * SDK 的 TAT 两步式执行逻辑。不传则内部 fallback 到一个安全的空 executor
+   * （仅用于无 bot 场景占位，实际不会被触发）。
+   */
+  commandExecutor?: ICommandExecutor;
 }
 
 // ============================================================
@@ -79,7 +85,7 @@ export interface IOpenClawInternalsResult {
  * 抽成可复用 hook 避免各组件重复实现。
  */
 export function useOpenClawInternals(props: IOpenClawComponentBaseProps): IOpenClawInternalsResult {
-  const { instance, featureFlags: _featureFlags } = props;
+  const { featureFlags: _featureFlags } = props;
 
   // 1. 解析 productConfig
   const productConfig = props.productConfig ?? createLighthouseConfig();
@@ -90,23 +96,22 @@ export function useOpenClawInternals(props: IOpenClawComponentBaseProps): IOpenC
   const internalScriptCommands = useMemo(() => createLightClawScripts(), []);
   const scriptCommands = props.scriptCommands ?? internalScriptCommands;
 
-  // 3. 创建 executor（自定义 runCommand / getInvocationTask / tatRunAs 从 productConfig 中获取）
-  const executor = useMemo(
+  // 3. 解析 executor
+  //
+  // 优先使用宿主注入的 commandExecutor（mono2 走本地 createLocalCommandExecutor，
+  // 直连 debug/exec）。未注入时 fallback 到一个安全的空 executor —— 仅用于无 bot
+  // 场景占位，实际操作路径不会触发（宿主保证有 bot 时才注入真实 executor）。
+  const executor = useMemo<ICommandExecutor>(
     () =>
-      createCommandExecutor({
-        instance,
-        runCommand: productConfig.runCommand,
-        getInvocationTask: productConfig.getInvocationTask,
-        runAs: productConfig.tatRunAs,
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      instance.InstanceId,
-      instance.RegionId,
-      productConfig.runCommand,
-      productConfig.getInvocationTask,
-      productConfig.tatRunAs,
-    ],
+      props.commandExecutor ?? {
+        run: async () => {
+          throw new Error("[useOpenClawInternals] commandExecutor 未注入");
+        },
+        runWithProgress: async () => {
+          throw new Error("[useOpenClawInternals] commandExecutor 未注入");
+        },
+      },
+    [props.commandExecutor],
   );
 
   // 4. 创建 useGatewayCommand

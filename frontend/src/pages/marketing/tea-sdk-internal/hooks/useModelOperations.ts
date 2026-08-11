@@ -168,6 +168,7 @@ export function useModelOperations(params: IUseModelOperationsParams): IUseModel
     scriptCommands: params.scriptCommands,
     featureFlags: params.featureFlags,
     productConfig: params.productConfig,
+    commandExecutor: params.commandExecutor,
     isDataReady: params.isDataReady,
     operationDisabledTip: params.operationDisabledTip,
   });
@@ -177,6 +178,7 @@ export function useModelOperations(params: IUseModelOperationsParams): IUseModel
     scriptCommands: params.scriptCommands,
     featureFlags: params.featureFlags,
     productConfig: params.productConfig,
+    commandExecutor: params.commandExecutor,
   });
 
   const [saving, setSaving] = useState(false);

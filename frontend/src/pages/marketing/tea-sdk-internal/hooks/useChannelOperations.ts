@@ -71,6 +71,7 @@ export function useChannelOperations(params: IUseChannelOperationsParams): IUseC
       scriptCommands: params.scriptCommands,
       featureFlags: params.featureFlags,
       productConfig: params.productConfig,
+      commandExecutor: params.commandExecutor,
       isDataReady: params.isDataReady,
       operationDisabledTip: params.operationDisabledTip,
     });
@@ -80,6 +81,7 @@ export function useChannelOperations(params: IUseChannelOperationsParams): IUseC
     scriptCommands: params.scriptCommands,
     featureFlags: params.featureFlags,
     productConfig: params.productConfig,
+    commandExecutor: params.commandExecutor,
   });
 
   const [configuring, setConfiguring] = useState(false);

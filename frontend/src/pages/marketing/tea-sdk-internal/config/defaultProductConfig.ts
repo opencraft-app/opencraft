@@ -1,22 +1,19 @@
 /**
- * Lighthouse 默认产品配置
+ * Lighthouse 默认产品配置（mono2 本地专用）
  *
- * 将 moltbot.ts 中硬编码的 lighthouse 产品数据包装为 IProductConfig，
- * 供现有 lighthouse 接入方一行配置即可使用。
+ * 说明：此文件由 `@tencent/tea-sdk-lightclaw` SDK 迁移进 mono2 后精简为「本地专用」。
+ * mono2 主入口（agent-settings-page.tsx）只使用 Hermes 形态（走 harness CLI 命令链路），
+ * 原 SDK 中的 OpenClaw 形态（走 COS 脚本命令链路）在 mono2 场景下走不到，已移除，
+ * 以避免引入用不到的 openclaw-only 依赖与死分支。
  */
 
 import { IS_I18N } from './constants';
 import type { IProductConfig, IProductFeatureFlags, IModelProvider } from './types';
 
-// ─── 复用 moltbot.ts 中的数据和函数（OpenClaw） ───
+// ─── 复用 moltbot.ts 中的数据和函数 ───
 import {
   MODEL_PROVIDER_LIST,
-  OPENCLAW_VERSIONS,
   getFilteredModelProviderList,
-  getChannelListNew as _getChannelListNew,
-  getChannelPluginName as _getChannelPluginName,
-  getNotSupportList as _getNotSupportList,
-  isOpenClaw as _isOpenClaw,
   isTencentProvider as _isTencentProvider,
   CUSTOM_JSON_PLACEHOLDER,
 } from '../utils/moltbot';
@@ -31,25 +28,14 @@ import {
 } from "../utils/hermesParsers";
 
 /**
- * Hermes 默认模型提供商列表 —— 从 OpenClaw 派生,过滤掉 OAuth-only 的 provider。
+ * Hermes 默认模型提供商列表 —— 从全量列表派生,过滤掉 OAuth-only 的 provider。
  *
  * 注意:LH 的"按地域 + 站点(国内/国际)再做一轮过滤"已下沉至 LH 自有 productConfig,
- * SDK 默认 Hermes 配置只提供基础全集,消费方可通过 productConfig.modelProviders /
+ * 默认 Hermes 配置只提供基础全集,消费方可通过 productConfig.modelProviders /
  * getFilteredModelProviders 覆盖。
  */
 const buildHermesModelProviders = (base: IModelProvider[] = MODEL_PROVIDER_LIST): IModelProvider[] =>
   base.filter((p) => !p.oauth?.exclusive).map(({ oauth: _oauth, ...rest }) => rest);
-
-/** OpenClaw 默认 features（全部开启） */
-const OPENCLAW_FEATURES: IProductFeatureFlags = {
-  oauth: true,
-  switchDefaultModel: true,
-  pluginManagement: true,
-  webUI: true,
-  clawChatLink: true,
-  channelGrouping: true,
-  restartAfterMutation: true,
-};
 
 /** Hermes features —— 精简功能集 */
 const HERMES_FEATURES: IProductFeatureFlags = {
@@ -66,9 +52,10 @@ const HERMES_FEATURES: IProductFeatureFlags = {
 /** `createLighthouseConfig` 可选参数 */
 export interface ICreateLighthouseConfigOptions {
   /**
-   * Agent 类型，默认 `'openclaw'`
-   * - `'openclaw'`：返回 OpenClaw 配置（走 COS 脚本命令链路）
-   * - `'hermes'`：返回 Hermes 配置（走 harness CLI 命令链路）
+   * Agent 类型（mono2 本地专用，仅支持 `'hermes'`）
+   *
+   * 保留该字段是为了与调用点（agent-settings-page.tsx 显式传 `agentType: 'hermes'`）
+   * 的调用形态兼容；mono2 场景下始终为 Hermes（走 harness CLI 命令链路）。
    */
   agentType?: IProductConfig['agentType'];
 
@@ -102,53 +89,33 @@ export interface ICreateLighthouseConfigOptions {
   /**
    * 模型提供商列表覆盖（可选）
    *
-   * 不传则使用 SDK 内置的兜底列表 `MODEL_PROVIDER_LIST`。
+   * 不传则使用内置的兜底列表 `MODEL_PROVIDER_LIST`。
    * 消费方应通过 `useModelProviders({ isI18n })` 从七彩石拉取后传入，
    * 拉取中/失败时该 hook 会自动回退到兜底列表，因此始终有可用值。
    *
-   * 传入后：
-   * - OpenClaw：直接作为 `modelProviders`
-   * - Hermes：自动过滤掉 OAuth-only 的 provider
+   * 传入后会自动过滤掉 OAuth-only 的 provider（Hermes 不支持 OAuth）。
    */
   modelProviders?: IModelProvider[];
 }
 
 /**
- * 创建 Lighthouse 默认产品配置
+ * 创建 Lighthouse 默认产品配置（Hermes 形态）
  *
- * @param options 可选参数（如 agentType、是否支持腾讯云 CAPI）
- * @returns 完整的 IProductConfig
+ * @param options 可选参数（如 supportsTencentCloudApi、isI18n）
+ * @returns 完整的 IProductConfig（agentType 恒为 `'hermes'`）
  *
  * @example
  * ```tsx
- * import { createLighthouseConfig } from '@tencent/tea-sdk-lightclaw';
- *
- * // tea-app-lighthouse OpenClaw（默认）
- * <OpenClawPanel productConfig={createLighthouseConfig()} />
- *
- * // tea-app-lighthouse Hermes
- * <OpenClawPanel productConfig={createLighthouseConfig({ agentType: 'hermes' })} />
- *
- * // mono 平台（非腾讯云账号体系）：屏蔽依赖腾讯云 CAPI 的 provider
- * <OpenClawPanel productConfig={createLighthouseConfig({ supportsTencentCloudApi: false })} />
- *
- * // Hermes + mono
- * <OpenClawPanel productConfig={createLighthouseConfig({
+ * // mono2 主入口
+ * <TeaSdkPanel productConfig={createLighthouseConfig({
  *   agentType: 'hermes',
  *   supportsTencentCloudApi: false,
- * })} />
- *
- * // Hermes + mono 国际站
- * <OpenClawPanel productConfig={createLighthouseConfig({
- *   agentType: 'hermes',
- *   supportsTencentCloudApi: false,
- *   isI18n: true,
+ *   isI18n: isGlobal,
  * })} />
  * ```
  */
 export function createLighthouseConfig(options: ICreateLighthouseConfigOptions = {}): IProductConfig {
   const {
-    agentType = 'openclaw',
     supportsTencentCloudApi: supportsTencentCloudApiOpt,
     isI18n: isI18nOpt,
     shouldUseOverseaAiAssets,
@@ -162,99 +129,62 @@ export function createLighthouseConfig(options: ICreateLighthouseConfigOptions =
   const resolveUseOverseaAiAssets = (regionId?: number, region?: string): boolean =>
     shouldUseOverseaAiAssets ? shouldUseOverseaAiAssets(regionId, region) : isI18n;
 
-  // ─── OpenClaw 默认配置 ───
-  const openclawConfig: IProductConfig = {
-    agentType: 'openclaw',
+  // ─── Hermes 配置 ───
+  // 模型/通道列表均派生自全量数据 + 沿用统一过滤策略;
+  // 消费方有更细的运营态规则(子集筛选、地域屏蔽等),应通过传入完整的 productConfig 覆盖。
+  const hermesModelProviders = buildHermesModelProviders(baseModelProviders);
+  return {
+    agentType: 'hermes',
 
-    // ─── 模型配置 ───
-    modelProviders: baseModelProviders,
-    getFilteredModelProviders: (region?: string, regionId?: number) =>
-      getFilteredModelProviderList(region, baseModelProviders, resolveUseOverseaAiAssets(regionId, region)),
+    // ─── 模型配置（已过滤 OAuth-only） ───
+    modelProviders: hermesModelProviders,
+    getFilteredModelProviders: (region?: string, regionId?: number) => {
+      // 复用 getFilteredModelProviderList 的过滤逻辑,但只保留 hermes 范围的 provider
+      const allowedValues = new Set(hermesModelProviders.map((p) => p.value));
+      return getFilteredModelProviderList(
+        region,
+        baseModelProviders,
+        resolveUseOverseaAiAssets(regionId, region),
+      ).filter((p) => allowedValues.has(p.value));
+    },
     isTencentProvider: supportsTencentCloudApi ? _isTencentProvider : () => false,
     customJsonPlaceholder: CUSTOM_JSON_PLACEHOLDER,
     supportsTencentCloudApi,
 
     // ─── 通道配置 ───
-    getChannelList: _getChannelListNew,
-    getChannelPluginName: _getChannelPluginName,
+    // Hermes 默认通道列表 = 国内站 5 个(微信/QQ/企微/元宝/飞书) + 国际站 7 个
+    // (微信/QQ/企微/飞书/Telegram/Discord/WhatsApp,过滤元宝),由 isI18n 自动切换。
+    // 业务方在顶层 productConfig 上设置 acliProduct: 'lightvela',会在调用时由
+    // useOpenClawConfig.computeChannelList 透传到 opts.acliProduct,从而屏蔽元宝。
+    // 数据源:`scripts/commands/hermes.HERMES_CHANNEL_LIST`(SDK 内置)。
+    // 消费方如有定制需求(如 LH 按地域过滤),可在 createLighthouseConfig 后覆盖此字段。
+    getChannelList: (opts) =>
+      getHermesChannelList({
+        isI18n: opts?.isI18n,
+        acliProduct: opts?.acliProduct,
+      }),
+    getChannelPluginName: () => undefined,
 
-    // ─── 镜像版本 ───
-    openclawVersions: OPENCLAW_VERSIONS as unknown as Array<{ id: string; features: string[] }>,
-    getNotSupportList: _getNotSupportList,
-    isOpenClawBlueprint: _isOpenClaw,
+    // ─── 镜像识别（Hermes 专属） ───
+    isOpenClawBlueprint: _isHermes,
+    // Hermes 不使用 openclawVersions / getNotSupportList —— 能力由 features 字段统一管理
+    openclawVersions: [],
+    getNotSupportList: () => [],
 
     // ─── 国际化 ───
     isI18n,
 
-    // ─── 功能开关（全开） ───
-    features: OPENCLAW_FEATURES,
+    // ─── 功能开关 ───
+    features: HERMES_FEATURES,
 
-    // OpenClaw 不需要注入 parsers / tatRunAs —— 内置默认行为已够用
+    // ─── CLI 输出解析器 ───
+    parsers: {
+      providerList: parseAcliProviderList,
+      channelList: parseHermesChannelList,
+      gatewayStatus: parseHermesGatewayStatus,
+    },
+
+    // ─── Skills 安装提示文案 ───
+    skillInstallConfirmText: undefined, // 组件层可读 agentType='hermes' 切换默认文案
   };
-
-  if (agentType === 'hermes') {
-    // ─── Hermes 配置 ───
-    // 模型/通道列表均派生自 OpenClaw 数据 + 沿用 OpenClaw 过滤策略;
-    // 消费方有更细的运营态规则(子集筛选、地域屏蔽等),应通过传入完整的 productConfig 覆盖。
-    const hermesModelProviders = buildHermesModelProviders(baseModelProviders);
-    return {
-      ...openclawConfig,
-      agentType: 'hermes',
-
-      // ─── 模型配置（已过滤 OAuth-only,JSON 占位符复用 OpenClaw） ───
-      modelProviders: hermesModelProviders,
-      getFilteredModelProviders: (region?: string, regionId?: number) => {
-        // 复用 OpenClaw getFilteredModelProviderList 的过滤逻辑,但只保留 hermes 范围的 provider
-        const allowedValues = new Set(hermesModelProviders.map((p) => p.value));
-        return getFilteredModelProviderList(
-          region,
-          baseModelProviders,
-          resolveUseOverseaAiAssets(regionId, region),
-        ).filter((p) => allowedValues.has(p.value));
-      },
-      isTencentProvider: supportsTencentCloudApi ? _isTencentProvider : () => false,
-      customJsonPlaceholder: CUSTOM_JSON_PLACEHOLDER,
-
-      // ─── 通道配置 ───
-      // Hermes 默认通道列表 = 国内站 5 个(微信/QQ/企微/元宝/飞书) + 国际站 7 个
-      // (微信/QQ/企微/飞书/Telegram/Discord/WhatsApp,过滤元宝),由 isI18n 自动切换。
-      // 业务方在顶层 productConfig 上设置 acliProduct: 'lightvela',会在调用时由
-      // useOpenClawConfig.computeChannelList 透传到 opts.acliProduct,从而屏蔽元宝。
-      // 数据源:`scripts/commands/hermes.HERMES_CHANNEL_LIST`(SDK 内置)。
-      // 消费方如有定制需求(如 LH 按地域过滤),可在 createLighthouseConfig 后覆盖此字段。
-      getChannelList: (opts) =>
-        getHermesChannelList({
-          isI18n: opts?.isI18n,
-          acliProduct: opts?.acliProduct,
-        }),
-      getChannelPluginName: () => undefined,
-
-      // ─── 镜像识别（Hermes 专属） ───
-      isOpenClawBlueprint: _isHermes,
-      // Hermes 不沿用 openclawVersions / getNotSupportList —— 能力由 features 字段统一管理
-      openclawVersions: [],
-      getNotSupportList: () => [],
-
-      // ─── 功能开关 ───
-      features: HERMES_FEATURES,
-
-      // ─── CLI 输出解析器 ───
-      parsers: {
-        providerList: parseAcliProviderList,
-        channelList: parseHermesChannelList,
-        gatewayStatus: parseHermesGatewayStatus,
-      },
-
-      // ─── TAT 执行账号 ───
-      // acli 镜像（lhbp-a4imop1a 起）默认账号为 ubuntu，不强制 runAs；
-      // 旧镜像（agentuser / lighthouse）的 blueprint→用户名映射是消费方运维历史决策,
-      // 应由消费方在调用处显式传入,SDK 不在全局 config 写死。
-      tatRunAs: undefined,
-
-      // ─── Skills 安装提示文案 ───
-      skillInstallConfirmText: undefined, // 组件层可读 agentType='hermes' 切换默认文案
-    };
-  }
-
-  return openclawConfig;
 }

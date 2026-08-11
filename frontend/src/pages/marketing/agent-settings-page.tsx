@@ -64,8 +64,9 @@ import {
 } from "@/lib/agent-routes";
 import type { WorkerActionStatusResult } from "@/repositories/types";
 import {
-  createMonoDebugExecAdapter,
-} from "@/pages/marketing/agent-tat-adapter";
+  createLocalCommandExecutor,
+  type ICommandExecutor,
+} from "@/pages/marketing/tea-sdk-internal/local-command-executor";
 import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
 import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
 import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
@@ -181,39 +182,29 @@ type TeaSdkFeatureFlags = {
 };
 
 /**
- * mono2 宿主注入给 Panel 的产品配置入参：
- * mono2 走 debug/exec（非 TAT），命令下发由 agent-tat-adapter 提供的
- * runCommand / getInvocationTask 注入。其余字段由本地 createLighthouseConfig 兜底。
- */
-type TeaSdkProductConfigArgs = {
-  runCommand: IProductConfig["runCommand"];
-  getInvocationTask: IProductConfig["getInvocationTask"];
-};
-
-/**
  * 通道/模型配置面板接入层。
  *
  * ChannelPanel / ModelPanel 已完全本地化（tea-sdk-internal），其 productConfig、
  * scriptCommands 均可由组件内部 createLighthouseConfig()/createLightClawScripts()
  * 兜底。宿主这里只需补两处组件默认值给不了的差异：
  *   1. isI18n：国际站 provider 过滤（国内/国际站模型列表不同）
- *   2. runCommand/getInvocationTask：mono2 的 debug/exec 命令下发通道
+ *   2. commandExecutor：mono2 的本地命令执行器（直连 debug/exec，脱离 SDK TAT）
  *
  * 用本地 useModelProviders 拉取模型列表、本地 createLighthouseConfig 生成
- * IProductConfig，再叠加宿主命令通道，得到类型正确的 productConfig 直接传入
- * lazy Panel（Suspense 兜加载态），无需再动态 import SDK 主入口。
+ * IProductConfig，再叠加宿主命令执行器，得到类型正确的 productConfig +
+ * commandExecutor 直接传入 lazy Panel（Suspense 兜加载态）。
  */
 function TeaSdkSettingsPanel({
   kind,
   instance,
   featureFlags,
-  productConfigArgs,
+  commandExecutor,
   useEnglish,
 }: {
   kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
   featureFlags: TeaSdkFeatureFlags;
-  productConfigArgs: TeaSdkProductConfigArgs;
+  commandExecutor?: ICommandExecutor;
   /** 是否取英文文案（语言维度），与 isI18n 是两个维度（国内站可切英文） */
   useEnglish: boolean;
 }) {
@@ -231,10 +222,8 @@ function TeaSdkSettingsPanel({
     return {
       ...config,
       acliProduct: "lightvela",
-      runCommand: productConfigArgs.runCommand,
-      getInvocationTask: productConfigArgs.getInvocationTask,
     };
-  }, [modelProviders, productConfigArgs]);
+  }, [modelProviders]);
 
   const Panel = kind === "channel" ? AgentChannelPanel : AgentModelPanel;
 
@@ -248,7 +237,12 @@ function TeaSdkSettingsPanel({
           </div>
         }
       >
-        <Panel instance={instance} featureFlags={featureFlags} productConfig={productConfig} />
+        <Panel
+          instance={instance}
+          featureFlags={featureFlags}
+          productConfig={productConfig}
+          commandExecutor={commandExecutor}
+        />
       </Suspense>
     </StableTeaSdkPanelHost>
   );
@@ -3219,7 +3213,7 @@ export const AgentSettingsPage = ({
         value,
         existingChars,
         getGatewayRestartCommand: async () => {
-          return getHermesScriptCommands().getGatewayRestartCommand();
+          return (await getHermesScriptCommands()).getGatewayRestartCommand();
         },
       });
       if (!isCurrentRequest()) return false;
@@ -3270,44 +3264,43 @@ export const AgentSettingsPage = ({
 
 
   /**
-   * tea-sdk-lightclaw 的 ModelCard / ChannelCard / SkillCard 内部通过
-   * 自定义 `runCommand` + `getInvocationTask` 把命令下发到 mono 后端。
+   * channel / model 配置面板（tea-sdk-internal 的 ChannelPanel / ModelPanel）
+   * 使用的命令执行器。
    *
-   * 和存量业务（channel 配置、onboard、debug 排错等）保持一致，走通用
-   * 入口 `POST /v1/instances/:botId/debug/exec`。国际站由后端直接使用腾讯云
-   * TAT PtyExecCmdStream，国内站保持原 envd 执行链路。
+   * 走本地 `createLocalCommandExecutor`，直连 `POST /v1/instances/:botId/debug/exec`
+   * （国际站由后端建立 TAT PtyExecCmdStream，国内站保持原 envd 执行链路），
+   * 与 chat / skill / diagnostics 面板同一条「直连」链路，彻底脱离 SDK 的
+   * TAT 两步式（RunCommand → 轮询 getInvocationTask）逻辑。
    *
-   * 业务约定：把 `activeBot.id` 作为 SDK `IInstanceInfo.InstanceId` 传入，
-   * SDK 内部 `InstanceIds: [instance.InstanceId]` 原样透传给适配器，
-   * 适配器从 `InstanceIds[0]` 拿到的就是 botId，无需额外映射或查询
-   * sandbox_id。
+   * `sdkCommandLifecycle` 挂载业务钩子（自动化模型切换同步、QQ 群策略注入）。
+   * 仅在 activeBot 存在时构造；无 bot 时传 undefined，面板内部 fallback 到空
+   * executor 占位（实际操作路径不会触发）。
    */
-  const commandAdapter = useMemo(
+  const teaSdkCommandExecutor = useMemo<ICommandExecutor | undefined>(
     () =>
-      createMonoDebugExecAdapter({
-        baseUrl: resolveConfiguredAuthApiBaseUrl() ?? "",
-        getAuthHeader: () => {
-          const token = readStoredAuthToken();
-          return token ? `Bearer ${token}` : undefined;
-        },
-        commandLifecycle: sdkCommandLifecycle,
-      }),
-    [sdkCommandLifecycle],
+      activeBotId
+        ? createLocalCommandExecutor({
+            repositories,
+            botId: activeBotId,
+            commandLifecycle: sdkCommandLifecycle,
+          })
+        : undefined,
+    [repositories, activeBotId, sdkCommandLifecycle],
   );
 
   /**
    * LightVelaPanel 用的 commandExecutor。
    *
-   * 与上方 `commandAdapter`（给 `@tencent/tea-sdk-lightclaw` SDK 走 TAT 协议
-   * 的适配器）不同，LightVelaPanel 接受的是 ClawPanel 公共层定义的更直接的
-   * `CommandExecutor` 契约（`(options) => Promise<{ taskStatus, exitCode, output, ... }>`）。
+   * 与上方 `teaSdkCommandExecutor`（给 tea-sdk-internal 面板用、形状为
+   * `ICommandExecutor` 的 run/runWithProgress）不同，LightVelaPanel 接受的是
+   * ClawPanel 公共层定义的更直接的 `CommandExecutor` 契约
+   * （`(options) => Promise<{ taskStatus, exitCode, output, ... }>`）。
    *
-   * 两者底层都走 mono debug/exec，但接口形状不同：
-   *   - commandAdapter：runCommand → getInvocationTask 两步式（兼容 SDK 的 TAT 模型）
-   *   - lightvelaCommandExecutor：单步同步返回（贴近 LightVelaPanel 期望）
+   * 两者底层都走 mono debug/exec 直连（均已脱离 SDK TAT），只是对上层暴露的
+   * 接口形状不同。
    *
    * 仅在 activeBot 存在时构造；切换到无 bot 状态会传 undefined，让 panel
-   * 内部 fallback 到默认 TAT 通道（实际 lightvela 场景不会走到）。
+   * 内部 fallback 到默认通道（实际 lightvela 场景不会走到）。
    */
   const lightvelaCommandExecutor = useMemo(
     () => activeBotId
@@ -3385,7 +3378,7 @@ export const AgentSettingsPage = ({
         );
       }
 
-      const hermesScriptCommands = getHermesScriptCommands();
+      const hermesScriptCommands = await getHermesScriptCommands();
       const providerSaveCmd = hermesScriptCommands.getProviderSaveCommand({
         name: result.config.providerName,
         baseUrl: result.config.baseUrl,
@@ -3510,7 +3503,8 @@ export const AgentSettingsPage = ({
     setRestartingBotIds((prev) => new Set(prev).add(targetBotId));
     setRestartErrors((prev) => clearErrorForBot(prev, targetBotId));
     try {
-      const result = await repositories.bots.execDebugCommand(targetBotId, getHermesScriptCommands().getGatewayRestartCommand());
+      const gatewayRestartCommand = (await getHermesScriptCommands()).getGatewayRestartCommand();
+      const result = await repositories.bots.execDebugCommand(targetBotId, gatewayRestartCommand);
       const errorMsg = buildRestartErrorMessage(result);
       if (errorMsg) {
         setRestartErrors((prev) => setErrorForBot(prev, targetBotId, errorMsg));
@@ -3729,10 +3723,6 @@ export const AgentSettingsPage = ({
   // 从七彩石拉取模型列表移到 TeaSdkSettingsPanel（需 runtime.useModelProviders）
   const { i18n } = useTranslation();
   const useEnglish = !!i18n.language?.startsWith("en");
-  const sdkProductConfigArgs = useMemo(() => ({
-    runCommand: commandAdapter.runCommand,
-    getInvocationTask: commandAdapter.getInvocationTask,
-  }), [commandAdapter]);
   const shouldExposeWorkspaceRecoveryPanel = shouldShowWorkspaceRecoveryPanel({
     isGlobalRegion: isGlobal,
     hiddenToolsRevealed: showHiddenAgentTools,
@@ -5042,7 +5032,7 @@ export const AgentSettingsPage = ({
                               kind="channel"
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
-                              productConfigArgs={sdkProductConfigArgs}
+                              commandExecutor={teaSdkCommandExecutor}
                               useEnglish={useEnglish}
                             />
                           )}
@@ -5051,7 +5041,7 @@ export const AgentSettingsPage = ({
                               kind="model"
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
-                              productConfigArgs={sdkProductConfigArgs}
+                              commandExecutor={teaSdkCommandExecutor}
                               useEnglish={useEnglish}
                             />
                           )}

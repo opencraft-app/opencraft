@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { t } from "@/i18n/t";
 import { GATEWAY_STATUS } from '../utils/moltbot';
-import type { LightClawScriptsSDK, ICommandExecutor } from "@tencent/tea-sdk-lightclaw/scripts";
+import type { LightClawScriptsSDK } from "@tencent/tea-sdk-lightclaw/scripts";
+import type { ICommandExecutor } from '../local-command-executor';
 import { getKnownSafeExecutorErrorOutput } from '../utils/modelOperationErrors';
 
 interface UseGatewayCommandOptions {

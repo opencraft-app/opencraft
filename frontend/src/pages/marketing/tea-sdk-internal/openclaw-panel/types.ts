@@ -1,4 +1,5 @@
-import type { LightClawScriptsSDK, ICommandExecutor } from "@tencent/tea-sdk-lightclaw/scripts";
+import type { LightClawScriptsSDK } from "@tencent/tea-sdk-lightclaw/scripts";
+import type { ICommandExecutor } from '../local-command-executor';
 import type { IProductConfig, IFirewallAdapter } from '../config/types';
 
 // Step status type (from OpenClawConfig)

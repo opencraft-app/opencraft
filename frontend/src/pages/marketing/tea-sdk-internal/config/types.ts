@@ -210,37 +210,6 @@ export interface IProductConfig {
    */
   ext?: Record<string, (...args: any[]) => string>;
 
-  // ─── 命令执行接口 ───
-
-  /**
-   * 自定义 RunCommand 实现（可选）
-   * 不传则使用内置 TAT API 封装（@tencent/iaas-workbench-api-client）
-   *
-   * 适用于非 lighthouse 产品线需要自定义命令下发通道的场景
-   */
-  runCommand?: (data: {
-    RegionId: number;
-    InstanceIds: string[];
-    SaveCommand: boolean;
-    CommandType: string;
-    Content: string;
-    Timeout: number;
-    /** 以指定用户名执行命令（Hermes 镜像传 'agentuser'） */
-    Username?: string;
-  }) => Promise<{ InvocationId?: string }>;
-
-  /**
-   * 自定义 getInvocationTask 实现（可选）
-   * 不传则使用内置轮询逻辑（DescribeInvocationTasks 轮询）
-   *
-   * 接口签名：(regionId, invocationId?, options?) => Promise<IInvocationTask>
-   */
-  getInvocationTask?: (
-    regionId: number,
-    invocationId?: string,
-    options?: { onProgress?: (output: string) => void; maxRetries?: number },
-  ) => Promise<{ TaskStatus?: string; TaskResult?: { Output?: string } }>;
-
   // ─── 国际化 ───
 
   /**
@@ -297,17 +266,6 @@ export interface IProductConfig {
    * OpenClaw 不需要注入，内置逻辑可直接消费 gateway 配置文件。
    */
   parsers?: IProductParsers;
-
-  // ─── TAT 执行上下文 ───
-
-  /**
-   * TAT RunCommand 执行用户名（可选）
-   * - 不传：以镜像默认用户（通常 root）执行
-   * - Hermes 镜像应传 'agentuser'
-   *
-   * 作用于所有通过 SDK executor 下发的命令。
-   */
-  tatRunAs?: string;
 
   // ─── 静态模板（不同镜像展示文案不同） ───
 
