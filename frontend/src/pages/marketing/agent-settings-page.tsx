@@ -33,7 +33,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ComponentType, type ReactNode } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
@@ -47,7 +47,10 @@ import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/co
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
-import type { IModelProvider } from "@tencent/tea-sdk-lightclaw";
+import type { IProductConfig } from "@/pages/marketing/tea-sdk-internal/config/types";
+import { createLighthouseConfig } from "@/pages/marketing/tea-sdk-internal/config";
+import { useModelProviders } from "@/pages/marketing/tea-sdk-internal/hooks/useModelProviders";
+import { getHermesScriptCommands } from "@/pages/marketing/tea-sdk-internal/scripts-runtime";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
@@ -146,6 +149,16 @@ const TerminalPanel = lazy(() =>
   import("@/pages/marketing/agent-terminal-panel").then((module) => ({ default: module.TerminalPanel })),
 );
 
+// ChannelPanel / ModelPanel 已本地化（tea-sdk-internal），用 lazy 做代码分割，
+// 与其他面板一致。内部依赖全部指向本地 config/hooks，仅 scripts 命令生成走
+// SDK `/scripts` 子入口（纯 TS、无浏览器副作用）。
+const AgentChannelPanel = lazy(() =>
+  import("@/pages/marketing/agent-channel-panel").then((module) => ({ default: module.ChannelPanel })),
+);
+const AgentModelPanel = lazy(() =>
+  import("@/pages/marketing/agent-model-panel").then((module) => ({ default: module.ModelPanel })),
+);
+
 type TeaSdkInstanceInfo = {
   InstanceId: string;
   RegionId: number;
@@ -167,137 +180,29 @@ type TeaSdkFeatureFlags = {
   qqbotplugin: boolean;
 };
 
-type TeaSdkProductConfig = {
-  acliProduct: "lightvela";
-  runCommand: unknown;
-  getInvocationTask: unknown;
-  [key: string]: unknown;
+/**
+ * mono2 宿主注入给 Panel 的产品配置入参：
+ * mono2 走 debug/exec（非 TAT），命令下发由 agent-tat-adapter 提供的
+ * runCommand / getInvocationTask 注入。其余字段由本地 createLighthouseConfig 兜底。
+ */
+type TeaSdkProductConfigArgs = {
+  runCommand: IProductConfig["runCommand"];
+  getInvocationTask: IProductConfig["getInvocationTask"];
 };
 
-type TeaSdkPanelProps = {
-  instance: TeaSdkInstanceInfo;
-  featureFlags: TeaSdkFeatureFlags;
-  productConfig: TeaSdkProductConfig;
-};
-
-type TeaSdkRuntime = {
-  ChannelPanel: ComponentType<TeaSdkPanelProps>;
-  ModelPanel: ComponentType<TeaSdkPanelProps>;
-  /** SDK 的 useModelProviders hook（动态 import 获取，避免静态 import 破坏 SSG） */
-  useModelProviders: (params?: {
-    isI18n?: boolean;
-    useEnglish?: boolean;
-    rainbowBaseUrl?: string;
-    app?: string;
-  }) => IModelProvider[] | undefined;
-  createProductConfig: (args: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-    modelProviders?: IModelProvider[];
-  }) => TeaSdkProductConfig;
-  getGatewayRestartCommand: () => string;
-  getProviderSaveCommand: (config: {
-    name: string;
-    baseUrl: string;
-    api: string;
-    apiKey: string;
-    models: Array<{ id: string; name: string }>;
-  }) => string;
-  getModelSwitchCommand: (modelFullId: string) => string;
-};
-
-let teaSdkRuntimePromise: Promise<TeaSdkRuntime> | null = null;
-let teaSdkRuntimeCache: TeaSdkRuntime | null = null;
-let teaSdkRuntimeError: Error | null = null;
-
-function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
-  if (teaSdkRuntimeCache) {
-    return Promise.resolve(teaSdkRuntimeCache);
-  }
-  if (!teaSdkRuntimePromise) {
-    teaSdkRuntimePromise = (async () => {
-      // Keep TEA SDK out of the module graph evaluated during Next static generation.
-      // The SDK reads browser globals at module scope, so it must be initialized
-      // only inside the hydrated agents page before its panels render.
-      await import("@/lib/i18n-env");
-      await import("@tencent/tea-sdk-lightclaw/styles");
-      const [sdk, scriptsModule] = await Promise.all([
-        import("@tencent/tea-sdk-lightclaw"),
-        import("@tencent/tea-sdk-lightclaw/scripts"),
-      ]);
-      const lightVelaHermesScripts = scriptsModule.createLightClawScripts();
-      const hermesScripts = lightVelaHermesScripts.hermes;
-      const hermesGatewayCommands = hermesScripts.gateway;
-      const hermesModelCommands = hermesScripts.model;
-      const useModelProviders: TeaSdkRuntime["useModelProviders"] =
-        typeof sdk.useModelProviders === "function"
-          ? sdk.useModelProviders
-          : () => undefined;
-
-      const runtime: TeaSdkRuntime = {
-        ChannelPanel: sdk.ChannelPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        ModelPanel: sdk.ModelPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        useModelProviders,
-        createProductConfig: ({ runCommand, getInvocationTask, modelProviders }) => {
-          const config = sdk.createLighthouseConfig({
-            agentType: "hermes",
-            supportsTencentCloudApi: false,
-            isI18n: isGlobal,
-            modelProviders,
-          });
-          // SDK 的 getFilteredModelProviderList 用 IS_I18N（来自 window.LOGIN_INFO.area）
-          // 做国内/国际站过滤，但 mono2 不设置 window.LOGIN_INFO，导致 IS_I18N 恒为 false，
-          // 国际站会错误隐藏 OpenAI/Anthropic 等海外 provider。这里用 mono2 的 isGlobal
-          // 覆盖过滤逻辑，绕过 SDK 的模块级常量。
-          const hiddenProviders = isGlobal
-            ? sdk.I18N_HIDDEN_PROVIDERS
-            : sdk.DOMESTIC_HIDDEN_PROVIDERS;
-          return {
-            ...config,
-            acliProduct: "lightvela",
-            runCommand,
-            getInvocationTask,
-            getFilteredModelProviders: (region?: string) => {
-              const filtered = config.modelProviders.filter(
-                (p) => !hiddenProviders.includes(p.value),
-              );
-              if (region === "ap-hongkong") {
-                return filtered.filter(
-                  (p) => !sdk.HK_REGION_HIDDEN_PROVIDERS.includes(p.value),
-                );
-              }
-              return filtered;
-            },
-          };
-        },
-        getGatewayRestartCommand: () => hermesGatewayCommands.getRestartCommand(),
-        getProviderSaveCommand: (config) => hermesModelCommands.getProviderSaveCommand(config),
-        getModelSwitchCommand: (modelFullId) => hermesModelCommands.getModelSwitchCommand(modelFullId),
-      };
-      teaSdkRuntimeCache = runtime;
-      teaSdkRuntimeError = null;
-      return runtime;
-    })().catch((error: unknown) => {
-      const normalizedError = error instanceof Error ? error : new Error(String(error));
-      teaSdkRuntimeError = normalizedError;
-      teaSdkRuntimePromise = null;
-      throw normalizedError;
-    });
-  }
-  return teaSdkRuntimePromise;
-}
-
-function TeaSdkRuntimeLoading() {
-  const t = useT();
-
-  return (
-    <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
-      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-      {t("正在加载配置面板…")}
-    </div>
-  );
-}
-
+/**
+ * 通道/模型配置面板接入层。
+ *
+ * ChannelPanel / ModelPanel 已完全本地化（tea-sdk-internal），其 productConfig、
+ * scriptCommands 均可由组件内部 createLighthouseConfig()/createLightClawScripts()
+ * 兜底。宿主这里只需补两处组件默认值给不了的差异：
+ *   1. isI18n：国际站 provider 过滤（国内/国际站模型列表不同）
+ *   2. runCommand/getInvocationTask：mono2 的 debug/exec 命令下发通道
+ *
+ * 用本地 useModelProviders 拉取模型列表、本地 createLighthouseConfig 生成
+ * IProductConfig，再叠加宿主命令通道，得到类型正确的 productConfig 直接传入
+ * lazy Panel（Suspense 兜加载态），无需再动态 import SDK 主入口。
+ */
 function TeaSdkSettingsPanel({
   kind,
   instance,
@@ -308,94 +213,43 @@ function TeaSdkSettingsPanel({
   kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
   featureFlags: TeaSdkFeatureFlags;
-  productConfigArgs: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-  };
-  /** 是否取英文文案（语言维度），传给 SDK useModelProviders */
+  productConfigArgs: TeaSdkProductConfigArgs;
+  /** 是否取英文文案（语言维度），与 isI18n 是两个维度（国内站可切英文） */
   useEnglish: boolean;
 }) {
   const t = useT();
-  const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
-  const [error, setError] = useState<string | null>(() => teaSdkRuntimeError?.message ?? null);
-
-  useEffect(() => {
-    if (teaSdkRuntimeCache) {
-      setRuntime(teaSdkRuntimeCache);
-      setError(null);
-      return;
-    }
-    let cancelled = false;
-    void loadTeaSdkRuntime()
-      .then((nextRuntime) => {
-        if (!cancelled) setRuntime(nextRuntime);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
+  const modelProviders = useModelProviders({ isI18n: isGlobal, useEnglish });
+  const productConfig = useMemo<IProductConfig>(() => {
+    // 本地 createLighthouseConfig 内部的 getFilteredModelProviders 已用 isI18n
+    // 正确过滤国内/国际站 provider，无需再套 SDK 那套 IS_I18N hidden-providers hack。
+    const config = createLighthouseConfig({
+      agentType: "hermes",
+      supportsTencentCloudApi: false,
+      isI18n: isGlobal,
+      modelProviders,
+    });
+    return {
+      ...config,
+      acliProduct: "lightvela",
+      runCommand: productConfigArgs.runCommand,
+      getInvocationTask: productConfigArgs.getInvocationTask,
     };
-  }, []);
+  }, [modelProviders, productConfigArgs]);
 
-  if (error) {
-    return (
-      <div className="rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-        {t("加载配置面板失败：{{message}}", { message: error })}
-      </div>
-    );
-  }
-
-  if (!runtime) {
-    return <TeaSdkRuntimeLoading />;
-  }
-
-  return (
-    <TeaSdkSettingsPanelReady
-      runtime={runtime}
-      kind={kind}
-      instance={instance}
-      featureFlags={featureFlags}
-      productConfigArgs={productConfigArgs}
-      useEnglish={useEnglish}
-    />
-  );
-}
-
-/** runtime 已就绪的内层组件，无条件调 hook（遵守 Rules of Hooks） */
-function TeaSdkSettingsPanelReady({
-  runtime,
-  kind,
-  instance,
-  featureFlags,
-  productConfigArgs,
-  useEnglish,
-}: {
-  runtime: TeaSdkRuntime;
-  kind: "channel" | "model";
-  instance: TeaSdkInstanceInfo;
-  featureFlags: TeaSdkFeatureFlags;
-  productConfigArgs: {
-    runCommand: TeaSdkProductConfig["runCommand"];
-    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
-  };
-  useEnglish: boolean;
-}) {
-  const modelProviders = runtime.useModelProviders({ isI18n: isGlobal, useEnglish });
-  const productConfig = useMemo(
-    () => runtime.createProductConfig({ ...productConfigArgs, modelProviders }),
-    [runtime, productConfigArgs, modelProviders],
-  );
-
-  const Panel = kind === "channel" ? runtime.ChannelPanel : runtime.ModelPanel;
+  const Panel = kind === "channel" ? AgentChannelPanel : AgentModelPanel;
 
   return (
     <StableTeaSdkPanelHost>
-      <Panel
-        instance={instance}
-        featureFlags={featureFlags}
-        productConfig={productConfig}
-      />
+      <Suspense
+        fallback={
+          <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            {t("正在加载配置面板…")}
+          </div>
+        }
+      >
+        <Panel instance={instance} featureFlags={featureFlags} productConfig={productConfig} />
+      </Suspense>
     </StableTeaSdkPanelHost>
   );
 }
@@ -3077,13 +2931,6 @@ export const AgentSettingsPage = ({
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
 
-  useEffect(() => {
-    if (!TEA_SDK_SECTIONS.has(activeSection)) return;
-    void loadTeaSdkRuntime().catch(() => {
-      // The visible settings panel reports the concrete loading error.
-    });
-  }, [activeSection]);
-
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
@@ -3372,8 +3219,7 @@ export const AgentSettingsPage = ({
         value,
         existingChars,
         getGatewayRestartCommand: async () => {
-          const teaSdkRuntime = await loadTeaSdkRuntime();
-          return teaSdkRuntime.getGatewayRestartCommand();
+          return getHermesScriptCommands().getGatewayRestartCommand();
         },
       });
       if (!isCurrentRequest()) return false;
@@ -3539,8 +3385,8 @@ export const AgentSettingsPage = ({
         );
       }
 
-      const teaSdkRuntime = await loadTeaSdkRuntime();
-      const providerSaveCmd = teaSdkRuntime.getProviderSaveCommand({
+      const hermesScriptCommands = getHermesScriptCommands();
+      const providerSaveCmd = hermesScriptCommands.getProviderSaveCommand({
         name: result.config.providerName,
         baseUrl: result.config.baseUrl,
         api: result.config.api,
@@ -3562,7 +3408,7 @@ export const AgentSettingsPage = ({
         );
       }
 
-      const switchModelCmd = teaSdkRuntime.getModelSwitchCommand(
+      const switchModelCmd = hermesScriptCommands.getModelSwitchCommand(
         hermesSwitchModelFullId(result.config.providerName, result.config.modelId),
       );
       const switchModelResult = await repositories.bots.execDebugCommand(targetBotId, switchModelCmd);
@@ -3664,8 +3510,7 @@ export const AgentSettingsPage = ({
     setRestartingBotIds((prev) => new Set(prev).add(targetBotId));
     setRestartErrors((prev) => clearErrorForBot(prev, targetBotId));
     try {
-      const teaSdkRuntime = await loadTeaSdkRuntime();
-      const result = await repositories.bots.execDebugCommand(targetBotId, teaSdkRuntime.getGatewayRestartCommand());
+      const result = await repositories.bots.execDebugCommand(targetBotId, getHermesScriptCommands().getGatewayRestartCommand());
       const errorMsg = buildRestartErrorMessage(result);
       if (errorMsg) {
         setRestartErrors((prev) => setErrorForBot(prev, targetBotId, errorMsg));
