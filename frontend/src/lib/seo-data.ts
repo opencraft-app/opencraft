@@ -270,8 +270,6 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "Talk to Hermes in the Chat page: long-term memory accumulation, MEMORY.md / USER.md split, and how Hermes evolves with every conversation.",
     "/docs/faq":
       "Common questions about using LightVela: sign-in, identity verification, plan credits, model and channel configuration, conversation and memory mechanics.",
-    "/docs/faq/using-lightvela-safely":
-      "Safety guidance for using LightVela: avoid sharing passwords, secrets, or sensitive personal / financial / medical / business data with the AI; redact when in doubt.",
   },
 };
 
@@ -421,7 +419,6 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/credits": "Credits",
     "/docs/create-first-hermes": "How Do I Activate My First Hermes Instance?",
     "/docs/who-is-lightvela-for": "Who Is LightVela For?",
-    "/docs/faq/using-lightvela-safely": "Using LightVela Safely",
   },
 };
 

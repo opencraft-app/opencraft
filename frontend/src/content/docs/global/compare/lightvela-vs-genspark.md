@@ -2,6 +2,8 @@
 
 ![LightVela 与 Genspark 在托管 AI Agent 方面的对比](../images/lightvela-vs-genspark.webp)
 
+## 摘要
+
 **如果你想托管一个长期在线、使用统一设置的个人 AI Agent，LightVela 会更直接。** 如果你想要一个能够研究、写作、设计、制作演示文稿、分析数据并产出完整交付物的一体化 AI 工作空间，Genspark 可能更适合。两者都在超越传统聊天机器人，但解决的是不同问题。
 
 ## 快速对比

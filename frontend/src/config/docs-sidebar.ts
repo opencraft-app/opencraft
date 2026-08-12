@@ -44,8 +44,7 @@ export interface DocGroup {
 
 /**
  * 国内站 sidebar：按用户任务组织（GEO 导航方案）。
- * 分组：产品入门 / 账号、套餐与开通 / 功能与配置 / 场景方案 / 对比与选型 /
- *       问题排查 / 安全、隐私与数据 / 进阶用法 / 联系与支持。
+ * 分组：产品入门 / 账号、套餐与开通 / 功能与配置 / 问题排查 / 联系与支持。
  * 通道具体项（微信 / 飞书 / QQ）挂在「配置通道」表头下作为二级项。
  * 注：部分新增页面为占位（仅标题骨架），正文内容后续逐步补齐。
  */
@@ -80,6 +79,31 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "configuration/channel-feishu", title: "飞书", indent: true },
       { slug: "configuration/channel-qq", title: "QQ", indent: true },
       { slug: "configuration/skill", title: "配置技能" },
+    ],
+  },
+  {
+    title: "对比与选型",
+    items: [
+      { slug: "compare/lightvela-vs-manus", title: "LightVela vs Manus" },
+      { slug: "compare/lightvela-vs-localhost-ai-agent", title: "LightVela vs 本地部署 Agent" },
+      { slug: "compare/lightvela-vs-ai-chatbot", title: "LightVela vs AI Chatbot" },
+    ],
+  },
+  {
+    title: "Hermes Agent 解读",
+    items: [
+      { slug: "hermes-agent/hermes-vs-openclaw", title: "Hermes Agent 与 OpenClaw 有什么不同？" },
+      { slug: "hermes-agent/why-hermes-remembers-you", title: "Hermes Agent 为什么能记住你？" },
+      { slug: "hermes-agent/user-md-vs-memory-md", title: "为什么 Hermes Agent 要把记忆分成两类？" },
+      { slug: "hermes-agent/hermes-memory-curation", title: "记忆不是越多越好" },
+      { slug: "hermes-agent/memory-vs-skill", title: "Memory 不是 Skill" },
+      { slug: "hermes-agent/model-vs-agent-layer", title: "模型层与 Agent 层如何分工" },
+      { slug: "hermes-agent/message-gateway", title: "一个 Agent 如何同时出现在多个聊天软件里？" },
+      { slug: "hermes-agent/automation-scheduling", title: "Hermes Agent 如何按时主动找你？" },
+      { slug: "hermes-agent/model-switching-memory", title: "切换模型会让 Agent 失忆吗？" },
+      { slug: "hermes-agent/persona-user-memory", title: "Hermes Agent 的性格从哪里来？" },
+      { slug: "hermes-agent/workspace-context-storage", title: "Hermes Agent 把文件放在哪里？" },
+      { slug: "hermes-agent/skills-self-improvement", title: "Agent 为什么会越用越顺手？" },
     ],
   },
   {
@@ -143,7 +167,6 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/channel-qq", title: "QQ", titleEn: "QQ", indent: true },
       { slug: "configuration/channel-wecom", title: "企业微信", titleEn: "WeCom", indent: true },
       { slug: "configuration/channel-feishu", title: "飞书", titleEn: "Lark", indent: true },
-      { slug: "configuration/channel-slack", title: "Slack", titleEn: "Slack", indent: true },
       { slug: "configuration/skill", title: "配置技能", titleEn: "Configure Skills" },
       { slug: "configuration/memory", title: "记忆管理", titleEn: "Memory Management" },
       { slug: "configuration/automation", title: "自动任务", titleEn: "Automations" },
@@ -263,17 +286,6 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
     ],
   },
   {
-    title: "安全、隐私与数据",
-    titleEn: "Security, Privacy & Data",
-    items: [
-      {
-        slug: "faq/using-lightvela-safely",
-        title: "安全使用 LightVela",
-        titleEn: "Using LightVela Safely",
-      },
-    ],
-  },
-  {
     title: "联系与支持",
     titleEn: "Support",
     items: [
@@ -306,13 +318,29 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "configuration/model": "configuration/model.md",
   "configuration/channel-wechat": "configuration/channel-wechat.md",
   "configuration/channel-feishu": "configuration/channel-feishu.md",
-  "configuration/channel-slack": "configuration/channel-slack.md",
   "configuration/channel-qq": "configuration/channel-qq.md",
   "configuration/skill": "configuration/skill.md",
   // 问题排查
   faq: "07-faq.md",
   // 联系与支持
   "contact-us": "contact-us.md",
+  // 对比与选型
+  "compare/lightvela-vs-manus": "compare/lightvela-vs-manus.md",
+  "compare/lightvela-vs-localhost-ai-agent": "compare/lightvela-vs-localhost-ai-agent.md",
+  "compare/lightvela-vs-ai-chatbot": "compare/lightvela-vs-ai-chatbot.md",
+  // Hermes Agent 解读
+  "hermes-agent/hermes-vs-openclaw": "hermes-agent/01-hermes-vs-openclaw.md",
+  "hermes-agent/why-hermes-remembers-you": "hermes-agent/02-why-hermes-remembers-you.md",
+  "hermes-agent/user-md-vs-memory-md": "hermes-agent/03-user-md-vs-memory-md.md",
+  "hermes-agent/hermes-memory-curation": "hermes-agent/04-hermes-memory-curation.md",
+  "hermes-agent/memory-vs-skill": "hermes-agent/05-memory-vs-skill.md",
+  "hermes-agent/model-vs-agent-layer": "hermes-agent/06-model-vs-agent-layer.md",
+  "hermes-agent/message-gateway": "hermes-agent/07-message-gateway.md",
+  "hermes-agent/automation-scheduling": "hermes-agent/08-automation-scheduling.md",
+  "hermes-agent/model-switching-memory": "hermes-agent/09-model-switching-memory.md",
+  "hermes-agent/persona-user-memory": "hermes-agent/10-persona-user-memory.md",
+  "hermes-agent/workspace-context-storage": "hermes-agent/11-workspace-context-storage.md",
+  "hermes-agent/skills-self-improvement": "hermes-agent/12-skills-self-improvement.md",
 };
 
 const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
@@ -366,7 +394,6 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "hermes-agent/persona-user-memory": "hermes-agent/10-persona-user-memory.md",
   "hermes-agent/workspace-context-storage": "hermes-agent/11-workspace-context-storage.md",
   "hermes-agent/skills-self-improvement": "hermes-agent/12-skills-self-improvement.md",
-  "faq/using-lightvela-safely": "faq/using-lightvela-safely.md",
   "compare/lightvela-vs-manus": "compare/lightvela-vs-manus.md",
   "compare/lightvela-vs-hostinger": "compare/lightvela-vs-hostinger.md",
   "compare/lightvela-vs-localhost-ai-agent": "compare/lightvela-vs-localhost-ai-agent.md",

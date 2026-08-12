@@ -8,6 +8,10 @@ The current Telegram and WhatsApp documentation treats 1-to-1 conversations as t
 
 ![Designing authorization, group rules, and sensitive-action boundaries for Telegram and WhatsApp Agents](../images/use-case-11-telegram-whatsapp-safety-boundaries.png)
 
+## Summary
+
+**An Agent's safety boundary is not determined by the model alone. It is built from four layers: channel credentials, conversation scope, memory policy, and rules for external actions.** A clear boundary lets you answer four questions definitively — who can reach this Agent, which messages get processed, what content must never be sent, and which actions require confirmation first. Key practices: credentials are sensitive and must never go into long-term context or be pasted into chat; the memory policy must avoid turning sensitive data into a permanent record; and anything that sends externally or is irreversible needs a confirmation step. Note that Telegram and WhatsApp currently support one-to-one conversations as the primary mode, so group-chat rules serve as design and pre-launch checks rather than configurable settings today. Work through the safety checklist before going live.
+
 ## Who this is for
 
 This guide is for individual users, support leads, and team administrators who connect an IM Agent to daily work.
@@ -56,8 +60,6 @@ Do not send passwords, API keys, access tokens, verification codes, payment info
 If a real business case must be discussed, remove names, phone numbers, addresses, order numbers, and other information that can identify a person or organization.
 
 Use stricter rules in multi-person and external collaboration channels because messages may be visible to more members, forwarded, or retained for longer.
-
-Apply the principles in [Using LightVela Safely](../faq/using-lightvela-safely.md) for the detailed content boundary.
 
 ### 4. Keep memory and files within the minimum necessary scope
 
@@ -158,8 +160,6 @@ Use fictional data to request templates, workflows, or security advice instead o
 - [Configure Channel - Telegram](../configuration/channel-telegram.md) - Review Telegram Bot setup and current message scope.
 
 - [Configure Channel - WhatsApp](../configuration/channel-whatsapp.md) - Review WhatsApp authorization and proactive-message limits.
-
-- [Using LightVela Safely](../faq/using-lightvela-safely.md) - Review sensitive-data and team-channel safety principles.
 
 - [How to Connect One Agent to Telegram and WhatsApp While Keeping One Personality and Long-Term Memory](./multi-channel-personality-memory.md) - Understand the boundaries of a shared Agent configuration.
 

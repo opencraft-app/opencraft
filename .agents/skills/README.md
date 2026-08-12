@@ -19,7 +19,7 @@
 | `product-skills/lv-seo-geo` | LightVela SEO/GEO 优化，检查关键词、sitemap、canonical/hreflang、内部链接、AI 搜索可抽取性 |
 | `product-skills/lv-vibe-coding` | LightVela 从需求澄清、Issue、开发、评审、MR 到发布回归的 Vibe Coding 协作流程 |
 | `product-skills/lightvela-changelog-update` | LightVela 产品动态与更新日志流程，包括需求阶段判断、动态草稿、素材准备、AutoSync 和 changelog 展示 |
-| `product-skills/lv-international-docs` | LightVela 国际站文档维护，编辑/翻译/审查 `lightvela.ai/docs`、`global/`、`en/`、文档图片与 sidebar/slug |
+| `product-skills/lv-docs` | LightVela 文档站文档维护（国内站 + 国际站双区域），编辑/新增/翻译/审查 `lightvela.com/docs`、`lightvela.ai/docs`、`global/`、`en/`、文档图片与 sidebar/slug/fumadocs 注册 |
 | `product-skills/lv-longform-content` | LightVela 长篇内容写作，生成教程系列、功能介绍系列、应用场景系列、英文博客/文章草稿 |
 | `product-skills/lv-sitepage-skills` | 维护国内站和国际站 Agent Skills 的 Discover 分类、Featured 精选、搜索、来源、My Skills、Create Skill 和分页规范 |
 
