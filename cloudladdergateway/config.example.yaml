@@ -232,6 +232,12 @@ backends:
       timeout: 15s
       allowed_methods: ["POST"]
 
+  - alias: tcapi-billing-trade-intl-test
+    upstream:
+      base_url: "https://billing.dev.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
   - alias: tcapi-account-cn-test
     upstream:
       base_url: "https://account.test.tencentcloudapi.com"
@@ -343,6 +349,16 @@ auth:
         - shadow-cam-prod
         - shadow-sts-prod
         - shadow-billing-api-test
+    - id: lightvela-trade
+      secret_env: CLOUDLADDER_TRADE_HMAC_SECRET
+      routes:
+        - jifei-test
+        - jifei-prod
+        - jifei-billing-apigw-test
+        - jifei-billing-apigw-prod
+        - dianshi-price
+        - dianshi-order
+        - tcapi-billing-trade-intl-test
 
 audit:
   service_name: cloudladdergateway
@@ -876,6 +892,14 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: tcapi-billing-intl-test
+
+  - id: tcapi-billing-trade-intl-test
+    description: "Signed tunnel for LightVela trade intl CreatePayUrl test endpoint."
+    mode: signed_http_tunnel
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-trade-intl-test
 
   - id: tcapi-account-cn-test
     description: "Signed tunnel for TencentCloud account API test endpoint from shadow script defaults."
