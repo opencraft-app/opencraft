@@ -5,6 +5,7 @@
  */
 
 import { motion } from "framer-motion";
+import { CalendarCheck } from "lucide-react";
 import { type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -404,15 +405,17 @@ function ChangelogContent() {
                 {/* 左列：月份 */}
                 <div className="pt-1">
                   <p
+                    className="inline-flex h-12 items-center gap-4"
                     style={{
+                      color: "#6E47FF",
                       fontSize: "16px",
                       fontWeight: 400,
-                      color: "rgba(0,0,0,0.5)",
-                      lineHeight: 2,
+                      lineHeight: 1.5,
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {group.month}
+                    <CalendarCheck className="size-5 shrink-0" aria-hidden="true" />
+                    <span>{group.month}</span>
                   </p>
                 </div>
 
