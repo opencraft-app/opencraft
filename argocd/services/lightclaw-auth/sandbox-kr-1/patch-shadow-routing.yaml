@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lightclaw-auth-config
+  namespace: user-auth
+data:
+  LIGHTVELA_SITE_KIND: intl
+  SHADOW_BINDING_ENABLED: "true"
+  SHADOW_AUTH_CODE_PREFIX: krsbx
+  SHADOW_USER_NAME_PREFIX: krsbx_
+  SHADOW_REGION: ap-singapore
+  SHADOW_ACCOUNT_ENDPOINT: account.test.tencentcloudapi.com
+  SHADOW_PLATFORM: intlSaaSLightvela
+  SHADOW_REQUEST_TIMEOUT: 15s
+  SHADOW_CLOUDLADDER_ENABLED: "true"
+  SHADOW_CLOUDLADDER_GATEWAY_BASE_URL: http://clgateway-testing-intl.Production.polaris:8095
+  SHADOW_CLOUDLADDER_ROUTE_ID: tcapi-account-cn-test
+  SHADOW_CLOUDLADDER_CAM_ROUTE_ID: tcapi-cam-cn-test
+  SHADOW_CLOUDLADDER_STS_ROUTE_ID: tcapi-sts-cn-test
+  SHADOW_BILLING_REGION: ap-guangzhou
+  SHADOW_BILLING_ENDPOINT: billing.test.tencentcloudapi.com
+  SHADOW_BILLING_REQUEST_TIMEOUT: 15s
+  SHADOW_BILLING_OPEN_TIMEOUT: 15s
+  SHADOW_BILLING_POLL_INTERVAL: 1s
+  SHADOW_BILLING_CLOUDLADDER_ROUTE_ID: tcapi-billing-intl-test
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lightclaw-auth
+  namespace: user-auth
+spec:
+  template:
+    spec:
+      containers:
+        - name: auth
+          env:
+            - name: SHADOW_TENCENT_CALLBACK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudladder-callback-secrets
+                  key: SHADOW_TENCENT_CALLBACK_TOKEN
