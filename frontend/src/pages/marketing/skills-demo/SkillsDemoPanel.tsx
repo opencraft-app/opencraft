@@ -59,6 +59,7 @@ import { cn } from "@/lib/utils";
 import type { ExpertsExecDebugCommand } from "../agent-experts-panel";
 import {
   createSkillsDataLayer,
+  getSkillSourceUrl,
   getPopularityTier,
   installSkillsInBatch,
   mergeSkills,
@@ -94,6 +95,7 @@ type InstalledSourceDescriptor = {
   key: Exclude<InstalledSourceFilter, "all">;
   label: string;
   registry?: Registry;
+  sourceUrl?: string;
 };
 
 type Translate = ReturnType<typeof useT>;
@@ -744,25 +746,30 @@ export type LearnSkillTriggerOptions = {
   hideName?: boolean;
 };
 
-function RegistryBadge({ registry }: { registry: Registry }) {
+function RegistryBadge({ registry, href }: { registry: Registry; href?: string }) {
   const isSkillsSh = registry === "skills-sh";
   const isSkillHub = registry === "skillhub";
   const isHermes = registry === "hermes";
+  const className = cn(
+    "inline-flex h-5 items-center rounded-[5px] px-1.5 text-[10px] font-semibold leading-none",
+    isSkillsSh
+      ? "bg-[#FFF6E6] text-[#B26A00]"
+      : isSkillHub
+        ? "bg-[#EAF6F1] text-[#287458]"
+        : isHermes
+          ? "bg-black/[0.06] text-black/60"
+          : "bg-[#EAF1FF] text-[#2F6BFF]",
+  );
+  if (!href) return <span className={className}>{REGISTRY_LABEL[registry]}</span>;
   return (
-    <span
-      className={cn(
-        "inline-flex h-5 items-center rounded-[5px] px-1.5 text-[10px] font-semibold leading-none",
-        isSkillsSh
-          ? "bg-[#FFF6E6] text-[#B26A00]"
-          : isSkillHub
-            ? "bg-[#EAF6F1] text-[#287458]"
-            : isHermes
-              ? "bg-black/[0.06] text-black/60"
-              : "bg-[#EAF1FF] text-[#2F6BFF]",
-      )}
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className={cn(className, "underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]")}
     >
       {REGISTRY_LABEL[registry]}
-    </span>
+    </a>
   );
 }
 
@@ -774,6 +781,7 @@ function getInstalledSources(skill: InstalledSkill): InstalledSourceDescriptor[]
       key: `registry:${registry}`,
       label: REGISTRY_LABEL[registry],
       registry,
+      sourceUrl: skill.sourceUrls?.[registry],
     }));
   }
   const nativeSource = skill.nativeSource?.trim().toLowerCase() || "other";
@@ -798,7 +806,7 @@ function getInstalledCategoryKey(category?: string): InstalledCategoryFilter {
 
 function InstalledSourceBadge({ source }: { source: InstalledSourceDescriptor }) {
   const t = useT();
-  if (source.registry) return <RegistryBadge registry={source.registry} />;
+  if (source.registry) return <RegistryBadge registry={source.registry} href={source.sourceUrl} />;
   return (
     <span className="inline-flex h-5 items-center rounded-[5px] bg-black/[0.06] px-1.5 text-[10px] font-semibold leading-none text-black/60">
       {translateInstalledSourceLabel(t, source.label)}
@@ -1005,6 +1013,7 @@ function SearchSkillRow({
   selected,
   disabled,
   rowStatus,
+  showSourceLink,
   onInstall,
   onToggleSelected,
 }: {
@@ -1014,6 +1023,7 @@ function SearchSkillRow({
   selected: boolean;
   disabled: boolean;
   rowStatus?: SearchInstallRowStatus;
+  showSourceLink: boolean;
   onInstall: (skill: Skill) => void;
   onToggleSelected: (skill: Skill) => void;
 }) {
@@ -1028,6 +1038,11 @@ function SearchSkillRow({
   }[rowStatus.status] : null;
   const statusInProgress = rowStatus?.status === "installing" || rowStatus?.status === "retrying";
   const statusRetryable = rowStatus?.status === "failed" || rowStatus?.status === "skipped";
+  const sourceUrl = showSourceLink
+    ? skill.registry === "clawhub"
+      ? "https://clawhub.ai/"
+      : getSkillSourceUrl(skill)
+    : undefined;
 
   return (
     <li className="flex min-w-0 items-start gap-3 border-b border-black/[0.07] bg-white px-4 py-3.5 transition-colors last:border-b-0 hover:bg-black/[0.02]">
@@ -1050,10 +1065,21 @@ function SearchSkillRow({
             {skill.rawId}
           </span>
         </div>
+        {sourceUrl ? (
+          <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-black/45">
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="truncate text-[#2563EB] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            >
+              {t("来源")}
+            </a>
+          </div>
+        ) : null}
         {skill.description ? (
           <p className="mt-1 line-clamp-1 text-pretty text-xs leading-5 text-black/45">{skill.description}</p>
         ) : null}
-        {skill.author ? <div className="mt-1 text-[11px] text-black/40">@{skill.author}</div> : null}
       </div>
       <div className="flex min-h-9 shrink-0 self-center items-center justify-center">
         {installed ? (
@@ -1123,6 +1149,7 @@ function CuratedSkillDetailsDialog({
   const t = useT();
   if (!entry) return null;
   const { overview } = entry;
+  const sourceUrl = getSkillSourceUrl(entry.skill);
 
   return (
     <div className="fixed inset-0 z-[100] flex overscroll-contain items-center justify-center p-3 sm:p-6">
@@ -1152,6 +1179,18 @@ function CuratedSkillDetailsDialog({
         <div className="pr-8">
           <h2 id="curated-skill-dialog-title" className="text-lg font-semibold text-black/90">{entry.skill.name}</h2>
           <p className="mt-1 break-all font-mono text-xs leading-5 text-black/45">{entry.skill.rawId}</p>
+          {sourceUrl ? (
+            <div className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-black/45">
+              <a
+                href={sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="truncate text-[#2563EB] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              >
+                {t("来源")}
+              </a>
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-5 space-y-6 border-t border-black/[0.07] pt-5">
@@ -2615,6 +2654,7 @@ export function SkillsDemoPanel({
                         selected={selectedSkillIds.has(skillIdentity(skill))}
                         disabled={operationBusy || searchQueryPending}
                         rowStatus={searchInstallRowStatuses.get(skillIdentity(skill))}
+                        showSourceLink={!isDomestic}
                         onToggleSelected={handleToggleSelected}
                       />
                     ))}
