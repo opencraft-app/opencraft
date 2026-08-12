@@ -1606,6 +1606,33 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "lightvela-trade",
         )
 
+        common = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd/services/trade/common/kustomization.yaml"
+            ).read_text()
+        )
+        redeploy_replacement = next(
+            replacement
+            for replacement in common["replacements"]
+            if replacement["source"].get("fieldPath") == "data.TRADE_DEPLOYED_AT"
+        )
+        self.assertEqual(
+            redeploy_replacement["targets"][0]["fieldPaths"],
+            ["spec.template.metadata.annotations.[trade.clawhub.dev/redeploy-at]"],
+        )
+
+        manifests = list(
+            yaml.safe_load_all((REPO_ROOT / "trade/k8s/base/manifests.yaml").read_text())
+        )
+        deployment = next(doc for doc in manifests if doc and doc.get("kind") == "Deployment")
+        self.assertEqual(
+            deployment["spec"]["template"]["metadata"]["annotations"][
+                "trade.clawhub.dev/redeploy-at"
+            ],
+            "REPLACE_TRADE_DEPLOYED_AT",
+        )
+
     def test_standard_service_extends_stays_on_v2_local_template_contract(self) -> None:
         for workflow_path in sorted(BUSINESS_WORKFLOWS - {".ci/frontend.yml"}):
             workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())

@@ -151,6 +151,8 @@ spec:
       app: trade
   template:
     metadata:
+      annotations:
+        trade.clawhub.dev/redeploy-at: REPLACE_TRADE_DEPLOYED_AT
       labels:
         app: trade
     spec:
