@@ -23,7 +23,7 @@ export default function HeroSection({ onCreateClick, ctaLabel }: HeroSectionProp
 
   return (
     <section
-      className="relative h-[100dvh] max-h-[1007px] min-h-[640px] w-full overflow-hidden bg-white"
+      className="relative h-dvh w-full overflow-hidden bg-white"
       style={{ background: heroBackground }}
     >
       <div
