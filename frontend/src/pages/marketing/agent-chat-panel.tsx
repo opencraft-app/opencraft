@@ -3,6 +3,7 @@ import { lazy, Suspense, type ComponentProps } from "react";
 import { useT } from "@/i18n/t";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 import { trackDatongEvent } from "@/observability/datong-tracker";
+import { WorkbenchPromptAutoSender } from "./workbench-prompt-auto-sender";
 
 // AgentChat carries side-effect CSS. Keep it out of the agents shell until the chat tab is actually rendered.
 const LightVelaPanel = lazy(() =>
@@ -96,6 +97,8 @@ export const AgentChatPanel = ({
               nativeWsGray: true,
             }}
           />
+          {/* 工作台模板 → 对话自动发送：读取 pending prompt 后填入输入框并发送。 */}
+          <WorkbenchPromptAutoSender />
         </Suspense>
       )}
     </div>

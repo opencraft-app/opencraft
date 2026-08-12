@@ -1827,13 +1827,13 @@ export const AccountPage = () => {
                             {realnameStatusLabel && (
                               <span
                                 className="text-sm"
-                                style={{ color: idCardSyncStatus === "failed" ? "var(--color-danger, #D92D20)" : "rgba(0,0,0,0.5)" }}
+                                style={{ color: idCardSyncStatus === "failed" ? "var(--color-danger, #cf3d4c)" : "rgba(0,0,0,0.5)" }}
                               >
                                 {realnameStatusLabel}
                               </span>
                             )}
                             {realnameSyncError && (
-                              <span className="max-w-[240px] text-right text-xs" style={{ color: "var(--color-danger, #D92D20)" }}>
+                              <span className="max-w-[240px] text-right text-xs" style={{ color: "var(--color-danger, #cf3d4c)" }}>
                                 {realnameSyncError}
                               </span>
                             )}

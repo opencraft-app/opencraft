@@ -17,6 +17,7 @@ import { readStoredAuthToken } from "@/repositories/http-repositories";
 import { useT } from "@/i18n/t";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { AppLink } from "@/lib/app-navigation";
+import { savePendingWorkbenchPrompt } from "./workbench-prompt-templates";
 
 interface WebsiteCapability {
   max_sites: number;
@@ -269,32 +270,62 @@ export const AgentWebsitePanel = () => {
 
     const headers = buildAuthHeaders();
 
-    try {
-      const [capRes, sitesRes] = await Promise.all([
-        fetch(`${apiBase}/v1/websites/capability`, { credentials: "include", headers }),
-        fetch(`${apiBase}/v1/websites`, { credentials: "include", headers }),
-      ]);
+    // capability 与 sites 互相独立：各自成功各自渲染，单个接口失败不拖垮另一个，
+    // 也不再因为一个 !ok 就整体丢弃（旧逻辑用 Promise.all + 联合判断会让 capability
+    // 明明 200 也因为 sites 失败而一起显示「暂不可用」）。
+    const [capResult, sitesResult] = await Promise.allSettled([
+      fetch(`${apiBase}/v1/websites/capability`, { credentials: "include", headers }),
+      fetch(`${apiBase}/v1/websites`, { credentials: "include", headers }),
+    ]);
 
-      if (!capRes.ok || !sitesRes.ok) {
-        if (capRes.status === 401 || sitesRes.status === 401) {
-          setError("unauthorized");
-        } else {
-          setError(`请求失败 (${capRes.status}/${sitesRes.status})`);
+    let unauthorized = false;
+    let sitesOk = false;
+
+    if (capResult.status === "fulfilled") {
+      const capRes = capResult.value;
+      if (capRes.status === 401) {
+        unauthorized = true;
+      } else if (capRes.ok) {
+        try {
+          const capJson: ApiResponse<WebsiteCapability> = await capRes.json();
+          if (capJson.code === "OK") {
+            setCapability(capJson.data);
+          }
+        } catch {
+          // 解析失败按未拿到处理，capability 保持 null → 顶部显示「暂不可用」
         }
-        setLoading(false);
-        return;
       }
-
-      const capJson: ApiResponse<WebsiteCapability> = await capRes.json();
-      const sitesJson: ApiResponse<{ sites: WebsiteSite[]; total: number }> = await sitesRes.json();
-
-      if (capJson.code === "OK") setCapability(capJson.data);
-      if (sitesJson.code === "OK") setSites(sitesJson.data.sites ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "网络错误");
-    } finally {
-      setLoading(false);
     }
+
+    if (sitesResult.status === "fulfilled") {
+      const sitesRes = sitesResult.value;
+      if (sitesRes.status === 401) {
+        unauthorized = true;
+      } else if (sitesRes.ok) {
+        try {
+          const sitesJson: ApiResponse<{ sites: WebsiteSite[]; total: number }> =
+            await sitesRes.json();
+          if (sitesJson.code === "OK") {
+            setSites(sitesJson.data.sites ?? []);
+            sitesOk = true;
+          }
+        } catch {
+          // 解析失败按未拿到处理
+        }
+      }
+    }
+
+    // 列表区错误态只依据 sites：401 优先提示登录；sites 没拿到才显示列表不可用。
+    // capability 单独失败只会让顶部配额显示「暂不可用」，不影响列表和模板区。
+    if (unauthorized) {
+      setError("unauthorized");
+    } else if (!sitesOk) {
+      setError("list_unavailable");
+    } else {
+      setError(null);
+    }
+
+    setLoading(false);
   }, []);
 
   /**
@@ -482,16 +513,21 @@ export const AgentWebsitePanel = () => {
                     {usedSites}<span className="text-xs font-medium text-black/40">/{maxSites}</span>
                   </>
                 ) : (
-                  <span className="text-sm font-medium text-black/35">{t("暂不可用")}</span>
+                  <span className="text-black/35">-<span className="text-xs font-medium text-black/40">/-</span></span>
                 )}
               </p>
             </div>
             <div className="rounded-md border border-black/[0.06] bg-white px-3 py-2.5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
               <p className="text-[11px] font-medium text-black/45">{t("本月访问流量")}</p>
               <p className="mt-1 truncate text-lg font-semibold leading-none text-black/90">
-                {capability
-                  ? `${formatBytes(usedTrafficBytes)} / ${formatBytes(monthlyTrafficBytes)}`
-                  : <span className="text-sm font-medium text-black/35">{t("暂不可用")}</span>}
+                {capability ? (
+                  <>
+                    {formatBytes(usedTrafficBytes)}
+                    <span className="text-xs font-medium text-black/40"> / {formatBytes(monthlyTrafficBytes)}</span>
+                  </>
+                ) : (
+                  <span className="text-black/35">-<span className="text-xs font-medium text-black/40"> / -</span></span>
+                )}
               </p>
             </div>
           </div>
@@ -528,6 +564,7 @@ export const AgentWebsitePanel = () => {
               <motion.div key={template.title} variants={fadeIn}>
                 <AppLink
                   to="/agents/chat"
+                  onClick={() => savePendingWorkbenchPrompt(template.variant)}
                   className="group block h-full rounded-md border border-black/[0.06] bg-black/[0.015] p-3 transition-colors hover:border-black/15 hover:bg-black/[0.025]"
                 >
                   <WorkbenchTemplatePreview variant={template.variant} label={template.title} />
@@ -551,6 +588,7 @@ export const AgentWebsitePanel = () => {
         <div className="mt-4 flex justify-start">
           <AppLink
             to="/agents/chat"
+            onClick={() => savePendingWorkbenchPrompt("blank")}
             className="inline-flex h-9 items-center gap-2 rounded-md bg-[#007AFF] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#006ee6]"
           >
             <Plus className="h-4 w-4" />
@@ -584,13 +622,13 @@ export const AgentWebsitePanel = () => {
           <div className="px-5 py-12 text-center">
             <LayoutTemplate className="mx-auto h-10 w-10 text-black/20" />
             <p className="mt-4 text-sm font-medium text-black/60">{t("还没有创建工作台")}</p>
-            <p className="mx-auto mt-1 max-w-[420px] text-sm text-black/38">
-              {t("可以从上方模板开始，也可以直接创建一个空白工作台交给 Agent 构建。")}
+            <p className="mx-auto mt-1 max-w-[280px] text-sm text-black/38 sm:max-w-none sm:whitespace-nowrap">
+              {t("从上方模板快速开始，或创建一个空白工作台，让 Agent 帮你搭建。")}
             </p>
           </div>
         ) : (
-          <div className="divide-y" style={{ borderColor: "rgba(0,0,0,0.05)" }}>
-            <div className="hidden grid-cols-[minmax(0,1fr)_112px_148px] gap-4 px-5 py-3 text-xs font-semibold text-black/45 md:grid">
+          <div className="divide-y divide-black/[0.06]">
+            <div className="hidden grid-cols-[minmax(0,1fr)_112px_120px] gap-4 px-5 py-3 text-xs font-semibold text-black/45 md:grid">
               <span>{t("工作台访问地址")}</span>
               <span>{t("状态")}</span>
               <span className="text-right">{t("操作")}</span>
@@ -619,13 +657,13 @@ export const AgentWebsitePanel = () => {
                   : statusView.tone === "warning"
                     ? "bg-orange-500/10 text-orange-700"
                     : statusView.tone === "danger"
-                      ? "bg-red-500/10 text-red-600"
+                      ? "bg-[color-mix(in_oklab,var(--danger)_10%,transparent)] text-[var(--danger)]"
                       : statusView.tone === "info"
                         ? "bg-blue-500/10 text-blue-600"
                         : "bg-black/5 text-black/45";
               const notice = deleteNotices[site.SiteID];
               return (
-                <div key={site.SiteID} className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_112px_148px] md:items-center md:gap-4">
+                <div key={site.SiteID} className="group grid gap-3 px-5 py-4 transition-colors hover:bg-black/[0.015] md:grid-cols-[minmax(0,1fr)_112px_120px] md:items-center md:gap-4">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-black/90">
                       {siteURL || t("访问地址生成中")}
@@ -635,7 +673,7 @@ export const AgentWebsitePanel = () => {
                     </p>
                     {notice && (
                       <p
-                        className={`mt-1 text-xs ${notice.tone === "error" ? "text-red-500" : "text-orange-600"}`}
+                        className={`mt-1 text-xs ${notice.tone === "error" ? "text-[var(--danger)]" : "text-orange-600"}`}
                       >
                         {notice.message}
                       </p>
@@ -646,26 +684,27 @@ export const AgentWebsitePanel = () => {
                       {statusView.label}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 md:justify-end">
+                  <div className="flex items-center gap-1 md:justify-end">
                     {status === "active" && siteURL ? (
                       <a
                         href={siteURL}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-black/10 px-3 text-xs font-medium text-blue-500 transition-colors hover:bg-black/5"
+                        title={t("访问")}
+                        className="group/btn relative inline-flex h-8 w-8 items-center justify-center rounded-md text-black/40 transition-colors hover:bg-black/[0.05] hover:text-[#007AFF]"
                       >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                        {t("访问")}
+                        <ExternalLink className="h-4 w-4" />
+                        <span className="pointer-events-none absolute -top-8 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition-opacity group-hover/btn:opacity-100">
+                          {t("访问")}
+                        </span>
                       </a>
                     ) : (
-                      <button
-                        type="button"
-                        disabled
-                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-black/[0.06] px-3 text-xs font-medium text-black/25"
+                      <span
+                        title={t("访问地址生成中")}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-black/20"
                       >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                        {t("访问")}
-                      </button>
+                        <ExternalLink className="h-4 w-4" />
+                      </span>
                     )}
                     {!isDeleting && (
                       <button
@@ -674,10 +713,13 @@ export const AgentWebsitePanel = () => {
                           setDeleteError(null);
                           setDeleteTarget(site);
                         }}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-black/10 px-3 text-xs font-medium text-red-500 transition-colors hover:bg-red-50"
+                        title={t("删除")}
+                        className="group/btn relative inline-flex h-8 w-8 items-center justify-center rounded-md text-black/40 transition-colors hover:bg-[color-mix(in_oklab,var(--danger)_8%,transparent)] hover:text-[var(--danger)]"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        {t("删除")}
+                        <Trash2 className="h-4 w-4" />
+                        <span className="pointer-events-none absolute -top-8 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition-opacity group-hover/btn:opacity-100">
+                          {t("删除")}
+                        </span>
                       </button>
                     )}
                   </div>
@@ -713,9 +755,9 @@ export const AgentWebsitePanel = () => {
                 <div className="flex items-center gap-3">
                   <div
                     className="flex h-9 w-9 items-center justify-center rounded-full"
-                    style={{ background: "rgba(207,61,76,0.08)" }}
+                    style={{ background: "color-mix(in oklab, var(--danger) 8%, transparent)" }}
                   >
-                    <Trash2 className="h-[18px] w-[18px]" style={{ color: "#cf3d4c" }} />
+                    <Trash2 className="h-[18px] w-[18px]" style={{ color: "var(--danger)" }} />
                   </div>
                   <h3 className="m-0 text-[16px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
                     {t("删除工作台")}
@@ -728,7 +770,7 @@ export const AgentWebsitePanel = () => {
                   {t("工作台名称")}：{deleteTarget.Name}
                 </p>
                 {deleteError && (
-                  <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+                  <p className="mb-4 rounded-lg bg-[color-mix(in_oklab,var(--danger)_8%,transparent)] px-3 py-2 text-xs text-[var(--danger)]">
                     {deleteError}
                   </p>
                 )}
@@ -745,7 +787,7 @@ export const AgentWebsitePanel = () => {
                     onClick={handleDelete}
                     disabled={deleting}
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-50"
-                    style={{ background: "#cf3d4c" }}
+                    style={{ background: "var(--danger)" }}
                   >
                     {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
                     {deleting ? t("删除中...") : t("确认删除")}

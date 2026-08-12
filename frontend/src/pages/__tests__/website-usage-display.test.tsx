@@ -124,7 +124,9 @@ describe("建站权益用量展示", () => {
     expect(await screen.findByText("我的工作台")).toBeInTheDocument();
     expect(screen.getByText("工作台数量")).toBeInTheDocument();
     expect(screen.getByText("本月访问流量")).toBeInTheDocument();
-    expect(screen.getByText("64.9 KB / 10.0 GB")).toBeInTheDocument();
+    expect(
+      screen.getByText((_, el) => el?.tagName === "P" && el.textContent === "64.9 KB / 10.0 GB"),
+    ).toBeInTheDocument();
     expect(screen.queryByText("存储空间")).not.toBeInTheDocument();
     expect(screen.getByText("清爽工具台")).toBeInTheDocument();
     expect(screen.getByText("数据看板台")).toBeInTheDocument();

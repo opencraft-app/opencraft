@@ -44,6 +44,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@rollup/rollup-darwin-arm64": "^4.60.0",
     "@tanstack/react-virtual": "^3.14.3",
+    "@tencent/agentchat-claw-panel": "1.2.6",
     "@tencent/agentchat-lightvela-panel": "1.2.6",
     "@tencent/i18n": "^2.0.30",
     "@tencent/tcb-jssdk": "2.0.27",
