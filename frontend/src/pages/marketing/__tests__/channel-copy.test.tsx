@@ -110,6 +110,30 @@ describe("marketing channel copy", () => {
     );
   });
 
+  it("shows only the Chinese automation updates in the domestic August changelog", () => {
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("2026 年 8 月")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "自动任务模板" })).toBeInTheDocument();
+    expect(screen.getByText("选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。")).toBeInTheDocument();
+    expect(screen.getByAltText("自动任务模板")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-zh.png"),
+    );
+    expect(screen.getByRole("heading", { name: "支持在 QQ 群聊中 @ 机器人" })).toBeInTheDocument();
+    expect(screen.getByText("将 Hermes Agent 添加到 QQ 群后，@ 机器人即可开始对话。")).toBeInTheDocument();
+    expect(screen.getByAltText("支持在 QQ 群聊中 @ 机器人")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-qq-group-mentions-global-zh.png"),
+    );
+    expect(screen.queryByRole("heading", { name: "技能页面支持批量安装与来源查看" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "支持繁体中文" })).not.toBeInTheDocument();
+  });
+
   it("shows WeCom as a supported homepage channel", () => {
     render(<WhereToUseSection />);
 
