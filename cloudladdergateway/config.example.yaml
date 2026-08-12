@@ -234,7 +234,7 @@ backends:
 
   - alias: tcapi-billing-trade-intl-test
     upstream:
-      base_url: "https://billing.dev.tencentcloudapi.com"
+      base_url: "https://billing.test.tencentcloudapi.com"
       timeout: 10s
       allowed_methods: ["POST"]
 

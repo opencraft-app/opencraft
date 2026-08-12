@@ -84,7 +84,7 @@ func TestExampleConfigRoutesIntlBillingAccountAPIToTestHost(t *testing.T) {
 	t.Fatal("tcapi-billing-intl-test route is missing")
 }
 
-func TestExampleConfigRoutesTradeIntlBillingCreatePayURLToDevHost(t *testing.T) {
+func TestExampleConfigRoutesTradeIntlBillingCreatePayURLToTestHost(t *testing.T) {
 	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
 	if err != nil {
 		t.Fatalf("load example config: %v", err)
@@ -103,7 +103,7 @@ func TestExampleConfigRoutesTradeIntlBillingCreatePayURLToDevHost(t *testing.T) 
 		if err != nil {
 			t.Fatalf("resolve trade international billing upstream: %v", err)
 		}
-		if got := upstream.BaseURL; got != "https://billing.dev.tencentcloudapi.com" {
+		if got := upstream.BaseURL; got != "https://billing.test.tencentcloudapi.com" {
 			t.Fatalf("trade international billing base_url = %q", got)
 		}
 		return
