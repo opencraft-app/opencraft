@@ -1,3 +1,19 @@
+# 2026-08-12 首页 Hero 浅色化
+
+**Status:** 前端实现与基础检查已完成，待用户视觉验收后再提交 / MR。
+
+**Goal:** 参考 `lightvela-next.zip` 的浅色首屏方向，重做首页 Hero 视觉层，去掉视频背景，提升整体轻盈感和顶部导航可读性。
+
+**Scope:** 仅调整首页 Hero 区视觉实现；保留现有首页业务链路、CTA 跳转、i18n 文案、Header 组件和后续内容区。
+
+## Tasks
+
+- [x] 移除首页 Hero 的视频背景和对应加载状态。
+- [x] 用浅色静态背景与现有装饰素材重组 Hero 首屏。
+- [x] 完成 TypeScript / i18n / diff 检查，并用本地预览截图验证桌面与移动端可读性。
+
+---
+
 # 更新日志左侧日期样式 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
