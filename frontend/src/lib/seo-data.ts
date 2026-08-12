@@ -40,7 +40,7 @@ export interface FullSeoMetaOptions {
   siteUrl?: string;
   /** 是否允许搜索引擎收录；默认 true。私域路径（/auth/*、/account/*）应传 false。 */
   indexable?: boolean;
-  /** 分享卡缩略图相对路径，默认 `/lightvela-logo.jpg`。 */
+  /** 分享卡缩略图相对路径，默认 `/lightvela-social-preview.png`。 */
   ogImagePath?: string;
 }
 
@@ -79,7 +79,7 @@ const NON_INDEXABLE_PREFIXES = [
   "/bots/",
 ];
 
-const DEFAULT_OG_IMAGE_PATH = "/lightvela-logo.jpg";
+const DEFAULT_OG_IMAGE_PATH = "/lightvela-social-preview.png";
 
 /* ──────────────────────────────────────────────────────────────
  * 区域差异（国内 cn / 国际 global）
@@ -186,8 +186,10 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "5 分钟从登录、实名认证、开通启航套餐、创建 Hermes 实例到接入微信通道，完成第一次 AI 对话的完整教程。",
     "/docs/account":
       "了解 LightVela 的账号体系、登录方式（QQ / 微信）、实名认证流程、账号信息页结构，以及退出登录与注销说明。",
-    "/docs/plans": "",
-    "/docs/credits": "",
+    "/docs/plans":
+      "LightVela 套餐管理文档：查看启航 Launch、巡游 Cruise、启航 Launch AI、巡游 Cruise AI 的权益与标准原价，了解续费流程、套餐生命周期和腾讯云智能客服退款规则。",
+    "/docs/credits":
+      "LightVela AI 积分（Credits）是计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 Token 消耗。本页说明积分定义、换算、发放、消耗方式及与套餐的关系。",
     "/docs/create-first-hermes":
       "开通第一个 Hermes 实例的完整流程：登录账号、完成实名认证、选择并开通套餐、平台自动创建实例，再配置模型与通道，让你的云端 AI Agent 7×24 小时在线运行。",
     "/docs/core-concepts":
@@ -223,7 +225,9 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/quickstart":
       "A 5-minute walkthrough: sign in, activate the starter plan, create your Hermes instance, connect a channel (WeChat / Telegram / WhatsApp / Discord) and have your first AI conversation.",
     "/docs/plans":
-      "Compare LightVela's Launch, Cruise, and Voyage plans for isolated Hermes runtime resources, storage, and monthly model credits. International beta access is free but limited while available; check Subscribe for current tiers, quotas, and pricing.",
+      "Compare LightVela's Launch and Cruise plans for isolated Hermes runtime resources, storage, monthly credits, paid plan availability, and the new-user 14-day Launch trial.",
+    "/docs/announcements/public-beta":
+      "LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). Beta users get one additional month on their existing plan, and new users can try Launch free for 14 days after public beta and billing start.",
     "/docs/credits":
       "Learn how LightVela model credits measure Hermes usage across conversations, automations, skills, and supported messaging channels. Credits are included with plans; check Subscribe for current availability and the latest options.",
     "/docs/create-first-hermes":
@@ -266,8 +270,6 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "Talk to Hermes in the Chat page: long-term memory accumulation, MEMORY.md / USER.md split, and how Hermes evolves with every conversation.",
     "/docs/faq":
       "Common questions about using LightVela: sign-in, identity verification, plan credits, model and channel configuration, conversation and memory mechanics.",
-    "/docs/faq/using-lightvela-safely":
-      "Safety guidance for using LightVela: avoid sharing passwords, secrets, or sensitive personal / financial / medical / business data with the AI; redact when in doubt.",
   },
 };
 
@@ -414,10 +416,10 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/agent-chat": "Chat",
     "/docs/faq": "FAQ",
     "/docs/plans": "Plans",
+    "/docs/announcements/public-beta": "LightVela Paid Version Announcement",
     "/docs/credits": "Credits",
     "/docs/create-first-hermes": "How Do I Activate My First Hermes Instance?",
     "/docs/who-is-lightvela-for": "Who Is LightVela For?",
-    "/docs/faq/using-lightvela-safely": "Using LightVela Safely",
   },
 };
 

@@ -13,11 +13,11 @@ import (
 // API wires HTTP handlers onto the service layer.
 type API struct {
 	svc    *service.Service
-	verify service.AddressVerifier
+	verify service.InstanceVerifier
 }
 
 // New builds an API instance.
-func New(svc *service.Service, verify service.AddressVerifier) *API {
+func New(svc *service.Service, verify service.InstanceVerifier) *API {
 	return &API{svc: svc, verify: verify}
 }
 
@@ -32,6 +32,7 @@ func (a *API) Routes() http.Handler {
 	mux.HandleFunc("/template-classes", a.handleTemplateClasses)
 	mux.HandleFunc("/template-classes/", a.handleTemplateClassSubroutes)
 	mux.HandleFunc("/skus", a.handleSKUs)
+	mux.HandleFunc("/skus/", a.handleSKUSubroutes)
 	mux.HandleFunc("/capacity-bundles", a.handleCapacityBundles)
 	mux.HandleFunc("/instances/", a.handleInstanceSubroutes)
 	return mux
@@ -103,6 +104,7 @@ func (a *API) handlePoolSubroutes(w http.ResponseWriter, r *http.Request) {
 			MarkCleanAsDry bool             `json:"mark_clean_as_dry"`
 			DesiredCapcity *int             `json:"desired_capacity"`
 			InstanceType   *string          `json:"instance_type"`
+			SystemDiskSize *int             `json:"system_disk_size"`
 			Status         *core.PoolStatus `json:"status"`
 			PauseReason    *string          `json:"pause_reason"`
 			VpcID          *string          `json:"vpc_id"`
@@ -136,6 +138,9 @@ func (a *API) handlePoolSubroutes(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.InstanceType != nil {
 			pool.InstanceType = *req.InstanceType
+		}
+		if req.SystemDiskSize != nil {
+			pool.SystemDiskSize = *req.SystemDiskSize
 		}
 		if req.Status != nil {
 			pool.Status = *req.Status

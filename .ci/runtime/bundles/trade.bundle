@@ -19,6 +19,8 @@ bundles:
     release_dependencies:
     - ctl
     - shadow
+    release_dependencies_by_env:
+      sandbox-kr-*: []
     reason: Trade service formal release bundle for Argo-managed rollout and DB
       job contract; mirrors payment bundle for golang-migrate iofs migrations.
     allowed_paths:

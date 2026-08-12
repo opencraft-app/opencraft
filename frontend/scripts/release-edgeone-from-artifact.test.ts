@@ -57,7 +57,7 @@ function makeCnManifest(overrides: Record<string, unknown> = {}) {
 }
 
 describe("EdgeOne release from frontend artifact", () => {
-  it("verifies a matching artifact and deploys the extracted dir", () => {
+  it("verifies a matching artifact, validates it in Preview, then deploys production", () => {
     const calls: string[] = [];
 
     executeEdgeOneArtifactRelease({
@@ -68,15 +68,38 @@ describe("EdgeOne release from frontend artifact", () => {
         return { manifest: makeCnManifest(), ref, extractDir: "/tmp/frontend-artifact-dist" };
       },
       deployScript: (scriptName: string, env: Record<string, string>) => {
-        calls.push(`${scriptName}:${env.EDGEONE_PAGES_DIR}:${env.EDGEONE_PAGES_PROJECT_NAME}`);
+        calls.push([
+          scriptName,
+          env.EDGEONE_PAGES_DIR,
+          env.EDGEONE_PAGES_PROJECT_NAME,
+          env.EDGEONE_PAGES_ENV,
+          env.EDGEONE_PAGES_VERIFY_DEPLOYMENT ?? "",
+        ].join(":"));
       },
     });
 
     expect(calls).toEqual([
       `verify:${cnRef}`,
-      "deploy:eo:/tmp/frontend-artifact-dist:lightvela",
+      "deploy:eo:/tmp/frontend-artifact-dist:lightvela:preview:1",
+      "deploy:eo:/tmp/frontend-artifact-dist:lightvela:production:",
     ]);
     expect(calls).not.toContain("release:matrix");
+  });
+
+  it("does not deploy production when the Preview smoke check fails", () => {
+    const deployEnvironments: string[] = [];
+
+    expect(() => executeEdgeOneArtifactRelease({
+      env: baseEnv,
+      log: () => {},
+      verifyArtifact: ({ ref }) => ({ manifest: makeCnManifest(), ref, extractDir: "/tmp/dist" }),
+      deployScript: (_scriptName: string, env: Record<string, string>) => {
+        deployEnvironments.push(env.EDGEONE_PAGES_ENV);
+        if (env.EDGEONE_PAGES_ENV === "preview") throw new Error("Preview smoke failed");
+      },
+    })).toThrow("Preview smoke failed");
+
+    expect(deployEnvironments).toEqual(["preview"]);
   });
 
   it("requires exactly one target combo", () => {
@@ -122,7 +145,7 @@ describe("EdgeOne release from frontend artifact", () => {
       deployScript: () => calls.push("deploy"),
     });
 
-    expect(calls).toEqual([`verify:${cnRef}`, "deploy"]);
+    expect(calls).toEqual([`verify:${cnRef}`, "deploy", "deploy"]);
   });
 
   it.each([

@@ -2,6 +2,8 @@
 
 ![LightVela cloud hosting compared with running Hermes on a Hostinger VPS](../images/lightvela-vs-hostinger.webp)
 
+## Summary
+
 **If you want to run Hermes Agent without turning VPS maintenance into a hobby, LightVela is the better fit.** If you want root access, your own server environment, and the freedom to shape every layer around Hermes, Hostinger’s VPS is the more flexible route. This is not simply a product-versus-product comparison: LightVela gives you a hosted Hermes Agent, while Hostinger gives you the VPS on which you can run one.
 
 ## At a glance

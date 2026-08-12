@@ -1,3 +1,325 @@
+# 2026-08-12 首页 Hero 浅色化
+
+**Status:** 前端实现与基础检查已完成，待用户视觉验收后再提交 / MR。
+
+**Goal:** 参考 `lightvela-next.zip` 的浅色首屏方向，重做首页 Hero 视觉层，去掉视频背景，提升整体轻盈感和顶部导航可读性。
+
+**Scope:** 仅调整首页 Hero 区视觉实现；保留现有首页业务链路、CTA 跳转、i18n 文案、Header 组件和后续内容区。
+
+## Tasks
+
+- [x] 移除首页 Hero 的视频背景和对应加载状态。
+- [x] 用浅色静态背景与现有装饰素材重组 Hero 首屏。
+- [x] 完成 TypeScript / i18n / diff 检查，并用本地预览截图验证桌面与移动端可读性。
+- [x] 移除 Hero 外层最大/最小高度限制，确保常见浏览器缩放 25%～125% 下 Hero 仍占满首屏。
+
+---
+
+# 更新日志左侧日期样式 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** 实现与验证完成，用户已确认 commit / push / MR。
+
+**Goal:** 参考 Viktor Changelog，将 `/changelog` 左侧月份改成带日历勾选图标的紫色日期标签，同时保持页面其他部分不变。
+
+**Architecture:** 继续使用 `ChangelogMonthGroup` 和现有双列网格，只在月份标签的 JSX 中复用 `lucide-react` 的 `CalendarCheck` 并替换局部样式。通过现有国内站 Changelog 渲染测试锁定图标、尺寸、间距和颜色，不新增组件、数据字段或依赖。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS v4、Lucide React、Vitest 4、Testing Library。
+
+## Global Constraints
+
+- 仅修改左侧月份标签及其回归测试，不修改日期数据、正文、配图、右侧时间线、页头、页脚或滚动行为。
+- 使用 `#6E47FF` 前景色，不增加背景、边框、圆角或额外水平内边距。
+- 标签固定 `48px` 高，图文间距 `16px`，图标 `20px`。
+- 不新增依赖、组件、翻译文案或 i18n 生成文件。
+
+---
+
+### Task 1: 更新月份标签并验证
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/changelog-page.tsx:8-12,404-421`
+- Test: `frontend/src/pages/marketing/__tests__/channel-copy.test.tsx:69-99`
+- Design: `frontend/openspec/changes/2026-08-12-frontsandbox-changelog-date-style-design.md`
+
+**Interfaces:**
+- Consumes: `ChangelogMonthGroup.month` 现有本地化月份字符串；`lucide-react` 的 `CalendarCheck`。
+- Produces: 不新增导出；所有月份分组共用同一日期标签 JSX。
+
+- [x] **Step 1 — 增加失败回归断言**
+
+  在现有 `announces reliable Skill invocation for automations in the July changelog` 用例中，把月份存在性断言扩展为：
+
+  ```tsx
+  const monthText = screen.getByText("2026 年 7 月");
+  const monthLabel = monthText.closest("p");
+
+  expect(monthLabel).not.toBeNull();
+  expect(monthLabel).toHaveClass(
+    "inline-flex",
+    "h-12",
+    "items-center",
+    "gap-4",
+  );
+  expect(monthLabel).not.toHaveClass("rounded-full", "px-6");
+  expect(monthLabel).toHaveStyle({ color: "#6E47FF" });
+  expect(monthLabel).not.toHaveStyle({
+    backgroundColor: "rgba(110, 71, 255, 0.16)",
+  });
+  expect(monthLabel?.querySelector(".lucide-calendar-check")).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
+  ```
+
+- [x] **Step 2 — 运行测试并确认 RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run src/pages/marketing/__tests__/channel-copy.test.tsx
+  ```
+
+  Expected: FAIL，现有月份 `<p>` 仍带有 `rounded-full px-6` 和淡紫色背景。
+
+- [x] **Step 3 — 实现最小日期标签样式**
+
+  在 `changelog-page.tsx` 导入图标：
+
+  ```tsx
+  import { CalendarCheck } from "lucide-react";
+  ```
+
+  将左列月份 JSX 替换为：
+
+  ```tsx
+  <div className="pt-1">
+    <p
+      className="inline-flex h-12 items-center gap-4"
+      style={{
+        color: "#6E47FF",
+        fontSize: "16px",
+        fontWeight: 400,
+        lineHeight: 1.5,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <CalendarCheck className="size-5 shrink-0" aria-hidden="true" />
+      <span>{group.month}</span>
+    </p>
+  </div>
+  ```
+
+- [x] **Step 4 — 运行定向测试并确认 GREEN**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run src/pages/marketing/__tests__/channel-copy.test.tsx src/pages/marketing/__tests__/global-changelog.test.tsx
+  ```
+
+  Expected: 两个测试文件全部通过，国内站和国际站现有 Changelog 内容断言保持不变。
+
+- [x] **Step 5 — 运行质量门禁**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm check
+  pnpm i18n:check
+  cd ..
+  git diff --check
+  ```
+
+  Expected: TypeScript、i18n 和 diff 检查均以退出码 `0` 完成；不产生 i18n 文件变更。
+
+- [x] **Step 6 — 浏览器验证**
+
+  启动本地前端并检查 `/changelog`：
+
+  ```bash
+  cd frontend
+  pnpm dev:cn
+  ```
+
+  Expected:
+
+  - 桌面端：月份标签位于左列，图标和文字垂直居中，不显示底框。
+  - 移动端：月份标签按内容宽度左对齐，标签自身不增加横向溢出。
+  - 右侧标题、描述、配图和点线时间轴与修改前一致。
+
+  Verification evidence:
+
+  - 用户标注的 `888 × 933` 视口：标签 `131.14 × 48px`，计算样式为透明背景、`0px` 边框、`0px` 圆角、`0px` 左右内边距。
+  - 移动端：日期标签位于单列内容区内；页面既有页头说明文本使用 `white-space: nowrap`，会产生原有横向溢出，本次遵循范围约束未修改。
+  - 浏览器控制台无 error。
+  - 完整 `pnpm test` 仍有 1 条既有失败：`scripts/docs-image-assets.test.ts` 检出 9 个超出 `512 KiB` 的文档 PNG（被中英文文档重复引用为 18 条）；本分支未修改这些图片、文档或测试。
+
+- [x] **Step 7 — 等待提交确认**
+
+  展示 diff、测试结果和浏览器验证截图；只有用户明确确认后才执行 `git commit`、`git push` 或创建 MR。
+
+---
+
+# 2026-08-11 国际站首页默认英文一致性修复
+
+**Status:** 实现中；确认前不 commit / push / MR。
+
+**Goal:** `lightvela.ai/` 裸首页在浏览器残留中文语言偏好时仍默认全页英文，只有访问中文 locale 路径或用户显式切换中文时展示中文。
+
+**Scope:** 仅收敛公开首页 locale 判定、公告条 locale 注入、首页导入区翻译调用和回归测试；不改视觉布局、路由 SEO 输出、后端接口或订阅/登录逻辑。
+
+## Tasks
+
+- [x] 修复国际站裸 `/` 的 i18n 初始语言，避免被 `localStorage.lw-locale=zh-CN` 覆盖。
+- [x] 修复首页公告条与 FeatureSection 对全局 i18n 单例的依赖，统一跟随公开路由 locale。
+- [x] 补充回归测试并运行定向测试、i18n 检查、类型检查和 diff 检查。
+
+---
+
+# 国际站 Skills 搜索结果来源链接 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
+
+**Goal:** 国际站所有 Skills 搜索结果都在技能标题和 slug 下方单独展示文字型 `Source` 链接；ClawHub 统一链接到 `https://clawhub.ai/`。
+
+**Architecture:** `SearchSkillRow` 继续使用 skills.sh 的技能详情链接，但对 ClawHub 直接使用固定官网地址。
+链接只由前端渲染，不查询 ClawHub 作者或技能详情，因此不会新增 ClawHub 请求或增加限流风险。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS、Vitest 4、React Testing Library。
+
+## Global Constraints
+
+- 仅影响国际站的 ClawHub 与 skills.sh 搜索结果。
+- 国内 SkillHub 搜索结果不展示新来源行。
+- 所有 ClawHub 搜索结果都显示来源链接，固定 URL 为 `https://clawhub.ai/`。
+- 标签通过现有 i18n `t("来源")` 渲染，样式与 skills.sh 的文字型来源链接一致。
+- 不新增依赖、动画或新的交互原语。
+
+## Tasks
+
+- [x] **Task 1: 固定 ClawHub 搜索结果来源链接。**
+  - 修改 `src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`，先断言 ClawHub 搜索结果的 `来源` 链接固定为 `https://clawhub.ai/`。
+  - 修改 `src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`，仅在 global mode 的 `SearchSkillRow` 中为 ClawHub 使用固定官网链接，skills.sh 与国内站逻辑保持不变。
+  - 运行 `pnpm exec vitest run src/pages/marketing/skills-demo/skill-registries.test.ts src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`。
+
+- [x] **Task 2: 运行质量门禁并记录验证。**
+  - 运行 `pnpm i18n:check`。
+  - 运行 `pnpm check`。
+  - 检查 `git diff --check` 与最终 diff，确认未修改国内站分支逻辑。
+
+---
+# Agents 左侧导航顺序调整 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** 实现与验证完成，用户已确认提交、推送与创建 MR。
+
+**Goal:** 将 `/agents` 左侧导航中的“自动任务”移动到“人设”上方，并保持其余导航行为不变。
+
+**Architecture:** 沿用 `AgentSettingsPage` 内现有 `settingsSections` 数组作为唯一顺序来源，只交换两个相邻配置项。用独立静态回归测试锁定两项顺序，避免为了单一展示顺序抽离新公共接口。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4。
+
+## Global Constraints
+
+- 仅修改导航顺序及其回归测试，不修改路由、图标、文案、权限或页面内容。
+- 桌面和移动端继续共用同一导航配置。
+- 不新增依赖或配置抽象。
+
+## Tasks
+
+- [x] **Task 1 — Developer / Reviewer：交换导航项并验证**
+  - **Files:**
+    - Create: `frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`
+    - Modify: `frontend/src/pages/marketing/agent-settings-page.tsx:4909-4915`
+  - **Interfaces:** 不新增导出；测试只读取页面源码中的 `settingsSections` 配置片段。
+  - **Step 1 — 写失败测试：** 新测试读取 `agent-settings-page.tsx`，截取 `const settingsSections` 到 `const isRestartDisabled` 之间的文本，并断言 `id: "automations"` 的索引小于 `id: "buddy"`：
+
+    ```ts
+    import { readFileSync } from "node:fs";
+    import { join } from "node:path";
+    import { describe, expect, it } from "vitest";
+
+    describe("Agent settings navigation order", () => {
+      it("places automations before persona", () => {
+        const page = readFileSync(
+          join(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"),
+          "utf8",
+        );
+        const settingsSectionsStart = page.indexOf("const settingsSections");
+        const settingsSectionsEnd = page.indexOf("const isRestartDisabled");
+
+        expect(settingsSectionsStart).toBeGreaterThanOrEqual(0);
+        expect(settingsSectionsEnd).toBeGreaterThan(settingsSectionsStart);
+
+        const settingsSections = page.slice(settingsSectionsStart, settingsSectionsEnd);
+        const automationsIndex = settingsSections.indexOf('id: "automations"');
+        const personaIndex = settingsSections.indexOf('id: "buddy"');
+
+        expect(automationsIndex).toBeGreaterThanOrEqual(0);
+        expect(personaIndex).toBeGreaterThanOrEqual(0);
+        expect(automationsIndex).toBeLessThan(personaIndex);
+      });
+    });
+    ```
+  - **Step 2 — 确认 RED：** 在 `frontend/` 运行 `pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`；预期当前顺序下断言失败。
+  - **Step 3 — 最小实现：** 在 `settingsSections` 中把完整的 `automations` 配置项移动到完整的 `buddy` 配置项之前，不改动两项内容：
+
+    ```tsx
+    { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
+    { id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy },
+    ```
+  - **Step 4 — 确认 GREEN：** 重新运行同一定向 Vitest，预期 1 个测试通过。
+  - **Step 5 — 完整验证：** 在 `frontend/` 运行 `pnpm check`，再在仓库根运行 `git diff --check`；检查 diff 仅包含计划、测试和两项顺序调整。
+  - **Step 6 — 验收门禁：** 展示改动与验证结果，等待用户确认后才允许提交实现、推送或创建 MR。
+
+---
+
+# 2026-08-07 批量安装汇总结果对齐修复
+
+**Status:** 实现与验证完成；等待用户确认后再 commit / push / MR。
+
+**Goal:** ACLI 同时返回逐项 `progress` 和完整 `summary.results` 时，避免重复汇总结果错配到下一个未完成技能，确保部分失败状态准确展示。
+
+**Scope:** 仅修正 Skills 批量安装结果匹配逻辑并补回归测试；不改变 ACLI 命令、SSE 协议、取消粒度或页面交互。
+
+## Tasks
+
+- [x] 增加“progress 后返回完整 summary.results”的失败回归测试并确认 RED。
+- [x] 修正已完成结果的去重与无标识结果的顺序降级逻辑。
+- [x] 运行 Skills 定向测试、类型检查、i18n 检查和 diff 检查。
+
+---
+
+# 2026-08-09 EdgeOne Pages 裸根路径 404 修复
+
+**Status:** 实现与 Preview 验证完成，用户已确认提交、推送并创建 MR。
+
+**Goal:** 让 EdgeOne Pages 的裸根路径 `/` 直接由 Build Output 的 filesystem 路由提供静态首页，避免显式重写 `/index.html` 触发 Pages 路由缓存分裂和概率性平台 404。
+
+**Scope:** 仅调整 EdgeOne Build Output 路由生成及其回归测试；不修改页面运行时代码、外层加速域名配置或生产发布配置。
+
+## Tasks
+
+- [x] 先补充失败测试，禁止生成 `^/$ -> /index.html` 显式根路由。
+- [x] 删除显式根路由，保留 filesystem 与普通目录 HTML fallback 的顺序。
+- [x] 运行定向测试、frontend 检查并验证生成配置。
+- [x] 发布 Preview，连续验证不带查询参数的裸 `/`。
+- [x] 用户确认后提交、推送并创建 MR。
+
+## Verification
+
+- `pnpm exec vitest run scripts/fix-next-static-html-lang.test.ts`
+- `pnpm check`
+- `git diff --check`
+
+---
+
 # 2026-08-07 国际站 Skills 来源说明对齐国内站
 
 **Status:** 实现与验证完成，等待用户手动验收；不自动 commit / push / MR。

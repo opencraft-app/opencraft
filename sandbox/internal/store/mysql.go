@@ -603,12 +603,12 @@ func (s *MySQLStore) UpsertSKU(ctx context.Context, sku core.SKU) (core.SKU, err
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO skus (
 			id, name, description, template_class_id, base_image, desired_image_id, stable_image_id,
-			instance_type, network_template_id, security_group_rule_template_id, autoscale_policy_id,
+			instance_type, system_disk_size, network_template_id, security_group_rule_template_id, autoscale_policy_id,
 			default_desired_capacity, rollout_state, rollout_cursor_pool_id, generation,
 			converged_pool_count, total_pool_count, pools_pending_rollout, last_rollout_started_at,
 			last_rollout_error, created_at, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			name = VALUES(name),
 			description = VALUES(description),
@@ -617,6 +617,7 @@ func (s *MySQLStore) UpsertSKU(ctx context.Context, sku core.SKU) (core.SKU, err
 			desired_image_id = VALUES(desired_image_id),
 			stable_image_id = VALUES(stable_image_id),
 			instance_type = VALUES(instance_type),
+			system_disk_size = VALUES(system_disk_size),
 			network_template_id = VALUES(network_template_id),
 			security_group_rule_template_id = VALUES(security_group_rule_template_id),
 			autoscale_policy_id = VALUES(autoscale_policy_id),
@@ -630,7 +631,7 @@ func (s *MySQLStore) UpsertSKU(ctx context.Context, sku core.SKU) (core.SKU, err
 			last_rollout_started_at = VALUES(last_rollout_started_at),
 			last_rollout_error = VALUES(last_rollout_error),
 			updated_at = VALUES(updated_at)
-	`, sku.ID, sku.Name, sku.Description, sku.TemplateClassID, sku.BaseImage, sku.DesiredImageID, sku.StableImageID, sku.InstanceType, sku.NetworkTemplateID, sku.SecurityGroupRuleTemplateID, sku.AutoscalePolicyID, sku.DefaultDesiredCapacity, sku.RolloutState, sku.RolloutCursorPoolID, sku.Generation, sku.ConvergedPoolCount, sku.TotalPoolCount, sku.PoolsPendingRollout, sku.LastRolloutStartedAt, sku.LastRolloutError, sku.CreatedAt, sku.UpdatedAt)
+	`, sku.ID, sku.Name, sku.Description, sku.TemplateClassID, sku.BaseImage, sku.DesiredImageID, sku.StableImageID, sku.InstanceType, sku.SystemDiskSize, sku.NetworkTemplateID, sku.SecurityGroupRuleTemplateID, sku.AutoscalePolicyID, sku.DefaultDesiredCapacity, sku.RolloutState, sku.RolloutCursorPoolID, sku.Generation, sku.ConvergedPoolCount, sku.TotalPoolCount, sku.PoolsPendingRollout, sku.LastRolloutStartedAt, sku.LastRolloutError, sku.CreatedAt, sku.UpdatedAt)
 	return sku, err
 }
 
@@ -640,13 +641,13 @@ func (s *MySQLStore) GetSKU(ctx context.Context, id string) (core.SKU, error) {
 	var description, lastRolloutError sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, name, description, template_class_id, base_image, desired_image_id, stable_image_id,
-			instance_type, network_template_id, security_group_rule_template_id, autoscale_policy_id,
+			instance_type, system_disk_size, network_template_id, security_group_rule_template_id, autoscale_policy_id,
 			default_desired_capacity, rollout_state, rollout_cursor_pool_id, generation,
 			converged_pool_count, total_pool_count, pools_pending_rollout, last_rollout_started_at,
 			last_rollout_error, created_at, updated_at
 		FROM skus
 		WHERE id = ?
-	`, id).Scan(&sku.ID, &sku.Name, &description, &sku.TemplateClassID, &sku.BaseImage, &sku.DesiredImageID, &sku.StableImageID, &sku.InstanceType, &sku.NetworkTemplateID, &sku.SecurityGroupRuleTemplateID, &sku.AutoscalePolicyID, &sku.DefaultDesiredCapacity, &sku.RolloutState, &sku.RolloutCursorPoolID, &sku.Generation, &sku.ConvergedPoolCount, &sku.TotalPoolCount, &sku.PoolsPendingRollout, &lastRolloutStartedAt, &lastRolloutError, &sku.CreatedAt, &sku.UpdatedAt)
+	`, id).Scan(&sku.ID, &sku.Name, &description, &sku.TemplateClassID, &sku.BaseImage, &sku.DesiredImageID, &sku.StableImageID, &sku.InstanceType, &sku.SystemDiskSize, &sku.NetworkTemplateID, &sku.SecurityGroupRuleTemplateID, &sku.AutoscalePolicyID, &sku.DefaultDesiredCapacity, &sku.RolloutState, &sku.RolloutCursorPoolID, &sku.Generation, &sku.ConvergedPoolCount, &sku.TotalPoolCount, &sku.PoolsPendingRollout, &lastRolloutStartedAt, &lastRolloutError, &sku.CreatedAt, &sku.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return core.SKU{}, core.ErrSKUNotFound
 	}
@@ -662,7 +663,7 @@ func (s *MySQLStore) GetSKU(ctx context.Context, id string) (core.SKU, error) {
 func (s *MySQLStore) ListSKUs(ctx context.Context) ([]core.SKU, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, description, template_class_id, base_image, desired_image_id, stable_image_id,
-			instance_type, network_template_id, security_group_rule_template_id, autoscale_policy_id,
+			instance_type, system_disk_size, network_template_id, security_group_rule_template_id, autoscale_policy_id,
 			default_desired_capacity, rollout_state, rollout_cursor_pool_id, generation,
 			converged_pool_count, total_pool_count, pools_pending_rollout, last_rollout_started_at,
 			last_rollout_error, created_at, updated_at
@@ -678,7 +679,7 @@ func (s *MySQLStore) ListSKUs(ctx context.Context) ([]core.SKU, error) {
 		var sku core.SKU
 		var lastRolloutStartedAt sql.NullTime
 		var description, lastRolloutError sql.NullString
-		if err := rows.Scan(&sku.ID, &sku.Name, &description, &sku.TemplateClassID, &sku.BaseImage, &sku.DesiredImageID, &sku.StableImageID, &sku.InstanceType, &sku.NetworkTemplateID, &sku.SecurityGroupRuleTemplateID, &sku.AutoscalePolicyID, &sku.DefaultDesiredCapacity, &sku.RolloutState, &sku.RolloutCursorPoolID, &sku.Generation, &sku.ConvergedPoolCount, &sku.TotalPoolCount, &sku.PoolsPendingRollout, &lastRolloutStartedAt, &lastRolloutError, &sku.CreatedAt, &sku.UpdatedAt); err != nil {
+		if err := rows.Scan(&sku.ID, &sku.Name, &description, &sku.TemplateClassID, &sku.BaseImage, &sku.DesiredImageID, &sku.StableImageID, &sku.InstanceType, &sku.SystemDiskSize, &sku.NetworkTemplateID, &sku.SecurityGroupRuleTemplateID, &sku.AutoscalePolicyID, &sku.DefaultDesiredCapacity, &sku.RolloutState, &sku.RolloutCursorPoolID, &sku.Generation, &sku.ConvergedPoolCount, &sku.TotalPoolCount, &sku.PoolsPendingRollout, &lastRolloutStartedAt, &lastRolloutError, &sku.CreatedAt, &sku.UpdatedAt); err != nil {
 			return nil, err
 		}
 		sku.Description = nullStringValue(description)

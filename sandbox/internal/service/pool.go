@@ -26,7 +26,7 @@ type Service struct {
 	shuffle   func(n int, swap func(i, j int))
 }
 
-type AddressVerifier func(ctx context.Context, address string) error
+type InstanceVerifier func(ctx context.Context, cloudID string) error
 
 type AllocationResolution struct {
 	Pool             core.Pool
@@ -54,7 +54,10 @@ func emitCapacityBundleConflict(ctx context.Context, explanation string, attrs .
 	observability.EmitEvent(ctx, "sandbox.capacity_bundle.reservation_conflict", explanation, attrs...)
 }
 
-const defaultInstanceType = "SA9.MEDIUM2"
+const (
+	defaultInstanceType   = "SA9.MEDIUM2"
+	defaultSystemDiskSize = 50
+)
 
 const (
 	hermesTemplateClassID       = "hermes"
@@ -141,6 +144,7 @@ func (s *Service) CreateBoundPool(ctx context.Context, input CreateBoundPoolInpu
 		SecurityGroups:  input.SecurityGroups,
 		TemplateClassID: sku.TemplateClassID,
 		SKUID:           sku.ID,
+		SystemDiskSize:  sku.SystemDiskSize,
 		CreatedAt:       time.Now().UTC(),
 	}
 	pool, err = normalizePool(pool)
@@ -307,6 +311,9 @@ func normalizePool(pool core.Pool) (core.Pool, error) {
 	if pool.CapacityState == "" {
 		pool.CapacityState = core.PoolCapacityStateActive
 	}
+	if pool.SystemDiskSize < 0 {
+		return core.Pool{}, fmt.Errorf("invalid pool system_disk_size %d", pool.SystemDiskSize)
+	}
 	switch pool.Status {
 	case core.PoolStatusActive, core.PoolStatusPaused:
 	default:
@@ -368,6 +375,12 @@ func normalizeSKU(sku core.SKU) (core.SKU, error) {
 	}
 	if strings.TrimSpace(sku.InstanceType) == "" {
 		sku.InstanceType = defaultInstanceType
+	}
+	if sku.SystemDiskSize < 0 {
+		return core.SKU{}, fmt.Errorf("invalid sku system_disk_size %d", sku.SystemDiskSize)
+	}
+	if sku.SystemDiskSize == 0 {
+		sku.SystemDiskSize = defaultSystemDiskSize
 	}
 	if sku.RolloutState == "" {
 		sku.RolloutState = core.SKURolloutStateStable
@@ -452,7 +465,7 @@ func normalizeCapacityBundle(bundle core.CapacityBundle) (core.CapacityBundle, e
 
 // RefillVerified records instances as CREATING then finalizes them into CLEAN only after verifier passes.
 // This is the only supported path for transitioning CREATING -> CLEAN for refilled instances.
-func (s *Service) RefillVerified(ctx context.Context, poolID string, count int, addresses []string, cloudIDs []string, verify AddressVerifier) ([]core.Instance, error) {
+func (s *Service) RefillVerified(ctx context.Context, poolID string, count int, addresses []string, cloudIDs []string, verify InstanceVerifier) ([]core.Instance, error) {
 	if verify == nil {
 		return nil, fmt.Errorf("missing verifier")
 	}
@@ -480,7 +493,7 @@ func (s *Service) RefillVerified(ctx context.Context, poolID string, count int, 
 			cloudID = cloudIDs[i]
 		}
 		target := core.StateClean
-		if err := verify(ctx, addr); err != nil {
+		if err := verify(ctx, cloudID); err != nil {
 			target = core.StateFailed
 		}
 		inst, ferr := s.FinalizeCreating(ctx, ph.ID, target, addr, cloudID)
@@ -773,6 +786,12 @@ func (s *Service) AdvanceState(ctx context.Context, instanceID string, target co
 	return s.store.UpdateInstanceState(ctx, instanceID, inst.State, target)
 }
 
+// RefreshInstanceStateTimestamp persists a lifecycle generation boundary while
+// keeping the instance in its current state.
+func (s *Service) RefreshInstanceStateTimestamp(ctx context.Context, instanceID string, expected core.InstanceState) (core.Instance, error) {
+	return s.store.UpdateInstanceState(ctx, instanceID, expected, expected)
+}
+
 // GetInstance fetches a single instance.
 func (s *Service) GetInstance(ctx context.Context, id string) (core.Instance, error) {
 	return s.store.GetInstance(ctx, id)
@@ -836,6 +855,14 @@ func (s *Service) UpsertSKU(ctx context.Context, sku core.SKU) (core.SKU, error)
 		sku.CreatedAt = now
 	}
 	sku.UpdatedAt = now
+	if sku.SystemDiskSize == 0 && strings.TrimSpace(sku.ID) != "" {
+		existing, err := s.store.GetSKU(ctx, sku.ID)
+		if err == nil {
+			sku.SystemDiskSize = existing.SystemDiskSize
+		} else if !errors.Is(err, core.ErrSKUNotFound) {
+			return core.SKU{}, err
+		}
+	}
 	var err error
 	sku, err = normalizeSKU(sku)
 	if err != nil {
@@ -853,6 +880,22 @@ func (s *Service) GetSKU(ctx context.Context, id string) (core.SKU, error) {
 
 func (s *Service) ListSKUs(ctx context.Context) ([]core.SKU, error) {
 	return s.store.ListSKUs(ctx)
+}
+
+func (s *Service) UpdateSKUSystemDiskSize(ctx context.Context, skuID string, systemDiskSize int) (core.SKU, error) {
+	skuID = strings.TrimSpace(skuID)
+	if skuID == "" {
+		return core.SKU{}, fmt.Errorf("missing sku id")
+	}
+	if systemDiskSize <= 0 {
+		return core.SKU{}, fmt.Errorf("invalid sku system_disk_size %d", systemDiskSize)
+	}
+	sku, err := s.store.GetSKU(ctx, skuID)
+	if err != nil {
+		return core.SKU{}, err
+	}
+	sku.SystemDiskSize = systemDiskSize
+	return s.UpsertSKU(ctx, sku)
 }
 
 func (s *Service) ListPoolsForSKU(ctx context.Context, skuID string) ([]core.Pool, error) {
@@ -1699,6 +1742,7 @@ func (s *Service) EnsurePoolForCapacityBundle(ctx context.Context, binding core.
 		SecurityGroups:      append([]string(nil), bundle.SecurityGroupIDs...),
 		TemplateClassID:     binding.TemplateClassID,
 		SKUID:               sku.ID,
+		SystemDiskSize:      sku.SystemDiskSize,
 		CapacityState:       core.PoolCapacityStateActive,
 		CapacityBundleID:    bundle.ID,
 		LastAutoscaleAction: "sku_capacity_growth",

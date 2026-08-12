@@ -45,7 +45,7 @@
 
 `MEMORY.md` 存的是**你和 Agent"一起干过什么"**：
 
-- 项目状态：agent-demo 前端跑在 5174 端口。
+- 项目状态：agent-demo 前端跑在 3000 端口。
 - 结论决策：上周把 hero 区改为动态渐变。
 - 具体事件：上周和 A 团队定了 Q4 会做 X。
 - 特定知识点：这个 API 的鉴权走内部 SDK 而非公开接口。
@@ -104,7 +104,7 @@
 
 假设你告诉 Agent：
 
-> "我叫 Jasmin，是一名前端工程师，喜欢结论先行的沟通风格。最近在做 agent-demo 项目（一个 AI Agent 应用）的国际站，用 Next.js。上周我们把 hero 区改成了动态渐变。"
+> "我叫 Jasmin，是一名前端工程师，喜欢结论先行的沟通风格。最近在做 agent-demo 项目（一个 AI Agent 应用）的官网落地页，用 Next.js。上周我们把 hero 区改成了动态渐变。"
 
 一个训练良好的 Hermes Agent 会做这样的拆分：
 
@@ -123,8 +123,8 @@
 **写入 `MEMORY.md`**：
 
 ```md
-- [2026-07-30] agent-demo 项目：国际站 hero 区改为动态渐变。
-- 相关项目：agent-demo / 国际站 (global region)
+- [2026-07-30] agent-demo 项目：官网落地页 hero 区改为动态渐变。
+- 相关项目：agent-demo / 官网落地页
 ```
 
 看到区别没？

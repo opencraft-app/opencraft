@@ -698,6 +698,58 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
   });
 });
 
+it("shows a fixed Source link for ClawHub search results and keeps skills.sh Source links", async () => {
+  const dataLayer = renderPanel("global");
+  vi.mocked(dataLayer.search).mockResolvedValue({
+    clawhub: [{
+      registry: "clawhub",
+      rawId: "first",
+      slug: "first",
+      name: "First",
+      author: "owner",
+    }],
+    skillssh: [{
+      registry: "skills-sh",
+      rawId: "team/repository/second",
+      slug: "second",
+      name: "Second",
+    }],
+    skillhub: [],
+    failedSources: [],
+  });
+
+  fireEvent.change(screen.getByRole("textbox", { name: "搜索技能" }), { target: { value: "first" } });
+
+  const clawhubRow = (await screen.findByText("First")).closest("li") as HTMLElement;
+  const skillsshRow = screen.getByText("Second").closest("li") as HTMLElement;
+  expect(within(clawhubRow).getByRole("link", { name: "来源" })).toHaveAttribute(
+    "href",
+    "https://clawhub.ai/",
+  );
+  expect(within(clawhubRow).queryByText("@owner")).not.toBeInTheDocument();
+  expect(within(skillsshRow).getByRole("link", { name: "来源" })).toHaveAttribute(
+    "href",
+    "https://skills.sh/team/repository/second",
+  );
+});
+
+it("shows the international source link in a curated skill details dialog", async () => {
+  renderPanel("global");
+
+  fireEvent.click(screen.getByRole("button", { name: "查看Stock Analysis详情" }));
+
+  const dialog = await screen.findByRole("dialog");
+  const sourceLink = within(dialog).getByRole("link", { name: "来源" });
+  expect(sourceLink).toHaveAttribute(
+    "href",
+    "https://skills.sh/gracefullight/stock-checker/stock-analysis",
+  );
+  expect(sourceLink).toHaveAttribute("target", "_blank");
+  expect(sourceLink).toHaveClass("text-[#2563EB]", "hover:underline");
+  expect(sourceLink.parentElement).toHaveClass("mt-1", "text-[11px]");
+  expect(sourceLink).not.toHaveClass("h-8", "border", "bg-[#F5F9FF]");
+});
+
 describe("SkillsDemoPanel installed identity boundaries", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -714,6 +766,10 @@ describe("SkillsDemoPanel installed identity boundaries", () => {
         rawId: "shared-skill",
         slug: "shared-skill",
         name: "Shared Skill",
+        sourceUrls: {
+          clawhub: "https://clawhub.ai/example-owner/skills/shared-skill",
+          "skills-sh": "https://skills.sh/team/repository/shared-skill",
+        },
         registries: ["clawhub", "skills-sh", "hermes"],
         sourceLabel: "ClawHub / skills.sh / Hermes",
         uninstallTargets: [
@@ -729,8 +785,14 @@ describe("SkillsDemoPanel installed identity boundaries", () => {
     const skillName = await screen.findByText("Shared Skill");
     const installedRow = skillName.closest("li");
     expect(installedRow).not.toBeNull();
-    expect(within(installedRow as HTMLElement).getByText("ClawHub")).toBeInTheDocument();
-    expect(within(installedRow as HTMLElement).getByText("skills.sh")).toBeInTheDocument();
+    expect(within(installedRow as HTMLElement).getByRole("link", { name: "ClawHub" })).toHaveAttribute(
+      "href",
+      "https://clawhub.ai/example-owner/skills/shared-skill",
+    );
+    expect(within(installedRow as HTMLElement).getByRole("link", { name: "skills.sh" })).toHaveAttribute(
+      "href",
+      "https://skills.sh/team/repository/shared-skill",
+    );
     expect(screen.getAllByText("Shared Skill")).toHaveLength(1);
   });
 

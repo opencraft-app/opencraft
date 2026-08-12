@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -40,7 +39,6 @@ var (
 	defaultCreateVerifyMaxWait = 20 * time.Second
 	defaultCreatingStaleAfter  = 15 * time.Minute
 	defaultResettingStaleAfter = 10 * time.Minute
-	defaultResetObserveTimeout = 20 * time.Second
 )
 
 var (
@@ -55,7 +53,6 @@ var (
 	// reinstallVerifyDelay prevents marking CLEAN immediately after a reinstall request returns.
 	// Tests may override this to avoid slow sleeps.
 	reinstallVerifyDelay   = 30 * time.Second
-	resetObserveTimeout    = defaultResetObserveTimeout
 	createVerifyRetries    = defaultCreateVerifyRetries
 	createVerifyBackoff    = defaultCreateVerifyBackoff
 	createVerifyMaxWait    = defaultCreateVerifyMaxWait
@@ -194,8 +191,8 @@ func main() {
 	refillCount := flag.Int("refill-count", 0, "instances per sweep; 0 use desired_capacity; <0 disable refill loop")
 	refillConcurrency := flag.Int("refill-concurrency", 5, "max concurrent creates per pool")
 	refillInterval := flag.Duration("refill-interval", defaultRefillInterval, "interval between refill sweeps; 0 to run once")
-	waterlineInterval := flag.Duration("waterline-interval", defaultWaterlineInterval, "interval for CLEAN waterline/health check; 0 to disable")
-	waterlineSample := flag.Int("waterline-sample", 3, "number of CLEAN instances to sample per pool for health check")
+	waterlineInterval := flag.Duration("waterline-interval", defaultWaterlineInterval, "interval for CLEAN inventory waterline check; 0 to disable")
+	waterlineSample := flag.Int("waterline-sample", 3, "deprecated compatibility flag; active instance health sampling is disabled")
 
 	resetPool := flag.String("reset-pool", "", "pool id to reset (optional, default all pools)")
 	resetInterval := flag.Duration("reset-interval", defaultResetInterval, "poll interval for reset loop; 0 to run once")
@@ -312,7 +309,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			runWaterlineLoop(shardCtx, svc, cp, workerMetrics, *waterlineInterval, *waterlineSample)
+			runWaterlineLoop(shardCtx, svc, workerMetrics, *waterlineInterval, *waterlineSample)
 		}()
 	} else {
 		emitWorkerEvent(baseCtx, "sandbox.worker.loop_disabled", "waterline loop 已被显式关闭，因为 interval 小于等于 0。", attribute.String("loop", "waterline"))
@@ -971,11 +968,11 @@ func createBatch(ctx context.Context, svc *service.Service, cp provider.CloudPro
 				}
 				return
 			}
-			if err := verifyCreatedInstance(ctx, cp, pool.ID, inst.ID, addr); err != nil {
+			if err := verifyCreatedInstance(ctx, cp, pool.ID, inst.ID, cid, inst.CreatedAt); err != nil {
 				if metrics != nil {
 					metrics.ObserveVerifyFailure(pool.ID, "create")
 				}
-				emitWorkerEvent(ctx, "sandbox.refill.instance_verify_failed", "worker 在补货后校验新实例可用性失败，该实例将被标记为 FAILED 并尝试回收云侧资源。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("address", addr), attribute.String("error", err.Error()))
+				emitWorkerEvent(ctx, "sandbox.refill.instance_verify_failed", "worker 在补货后校验新实例 TAT 交付就绪失败，该实例将被标记为 FAILED 并尝试回收云侧资源。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", cid), attribute.String("error", err.Error()))
 				if _, ferr := svc.FinalizeCreating(ctx, inst.ID, core.StateFailed, addr, cid); ferr != nil {
 					emitWorkerEvent(ctx, "sandbox.refill.instance_finalize_failed", "worker 在校验失败后尝试把占位实例标记为 FAILED，但状态落库失败。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("error", ferr.Error()))
 					_ = markFailedFallback(ctx, svc, inst.ID)
@@ -1011,17 +1008,17 @@ func createBatch(ctx context.Context, svc *service.Service, cp provider.CloudPro
 	return result, nil
 }
 
-func verifyCreatedInstance(ctx context.Context, cp provider.CloudProvider, poolID, instanceID, addr string) error {
+func verifyCreatedInstance(ctx context.Context, cp provider.CloudProvider, poolID, instanceID, cloudID string, notBefore time.Time) error {
 	if createVerifyRetries <= 1 {
-		return cp.VerifyInstance(ctx, addr)
+		return provider.VerifyInstanceDelivery(ctx, cp, cloudID, notBefore)
 	}
 
 	var lastErr error
 	for attempt := 1; attempt <= createVerifyRetries; attempt++ {
-		lastErr = cp.VerifyInstance(ctx, addr)
+		lastErr = provider.VerifyInstanceDelivery(ctx, cp, cloudID, notBefore)
 		if lastErr == nil {
 			if attempt > 1 {
-				emitWorkerEvent(ctx, "sandbox.refill.instance_verify_recovered", "worker 对新实例的健康校验在重试后恢复成功，本次补货可以继续推进。", attribute.String("pool_id", poolID), attribute.String("instance_id", instanceID), attribute.String("address", addr), attribute.Int("attempt", attempt), attribute.Int("max_attempts", createVerifyRetries))
+				emitWorkerEvent(ctx, "sandbox.refill.instance_verify_recovered", "worker 对新实例的 TAT 交付校验在重试后恢复成功，本次补货可以继续推进。", attribute.String("pool_id", poolID), attribute.String("instance_id", instanceID), attribute.String("cloud_id", cloudID), attribute.Int("attempt", attempt), attribute.Int("max_attempts", createVerifyRetries))
 			}
 			return nil
 		}
@@ -1030,7 +1027,7 @@ func verifyCreatedInstance(ctx context.Context, cp provider.CloudProvider, poolI
 		}
 
 		wait := nextCreateVerifyBackoff(attempt)
-		emitWorkerEvent(ctx, "sandbox.refill.instance_verify_retry", "worker 对新实例的健康校验失败，准备按退避策略重试。", attribute.String("pool_id", poolID), attribute.String("instance_id", instanceID), attribute.String("address", addr), attribute.Int("attempt", attempt), attribute.Int("max_attempts", createVerifyRetries), attribute.String("wait", wait.String()), attribute.String("error", lastErr.Error()))
+		emitWorkerEvent(ctx, "sandbox.refill.instance_verify_retry", "worker 对新实例的 TAT 交付校验失败，准备按退避策略重试。", attribute.String("pool_id", poolID), attribute.String("instance_id", instanceID), attribute.String("cloud_id", cloudID), attribute.Int("attempt", attempt), attribute.Int("max_attempts", createVerifyRetries), attribute.String("wait", wait.String()), attribute.String("error", lastErr.Error()))
 		if wait <= 0 {
 			continue
 		}
@@ -1164,16 +1161,13 @@ func schedulePoolResetWork(ctx context.Context, svc *service.Service, cp provide
 	for _, inst := range insts {
 		inst := inst
 		if !rs.TryGo(func() {
-			if _, err := svc.AdvanceState(ctx, inst.ID, core.StateResetting); err != nil {
+			resettingInst, err := svc.AdvanceState(ctx, inst.ID, core.StateResetting)
+			if err != nil {
 				emitWorkerEvent(ctx, "sandbox.reset.instance_mark_failed", "worker 尝试把 DRY 实例推进到 RESETTING 失败，本轮不会继续处理这个实例。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("error", err.Error()))
 				return
 			}
 			emitWorkerEvent(ctx, "sandbox.reset.instance_started", "worker 已选中一个 DRY 实例并开始重装流程。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID))
 
-			// Best-effort: stop envd from serving old /health during reset; do not fail the reset if this errors.
-			if err := provider.BestEffortHupEnvd(ctx, cp, inst.Address); err != nil {
-				emitWorkerEvent(ctx, "sandbox.reset.envd_hup_failed", "worker 在重装前尝试通知 envd 关闭旧健康探针失败，但这不会阻止后续重装。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("address", inst.Address), attribute.String("error", err.Error()))
-			}
 			if err := cp.ReinstallInstance(ctx, inst.CloudID, image); err != nil {
 				emitWorkerEvent(ctx, "sandbox.reset.instance_reinstall_failed", "worker 调用云侧重装实例失败，该实例会被标记为 FAILED。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID), attribute.String("image_id", image), attribute.String("error", err.Error()))
 				if _, ferr := svc.AdvanceState(ctx, inst.ID, core.StateFailed); ferr != nil {
@@ -1181,16 +1175,18 @@ func schedulePoolResetWork(ctx context.Context, svc *service.Service, cp provide
 				}
 				return
 			}
-			// Best-effort: observe that reset has started via DescribeInstance instead of probing /health down.
-			// This is only a gate to avoid "immediate CLEAN" in cases where VerifyInstance would succeed on the old system.
-			_ = observeResetStarted(ctx, cp, inst.CloudID, resetObserveTimeout)
+			resettingInst, err = svc.RefreshInstanceStateTimestamp(ctx, inst.ID, core.StateResetting)
+			if err != nil {
+				emitWorkerEvent(ctx, "sandbox.reset.instance_mark_failed", "云侧已接受重装请求，但 worker 持久化 TAT 交付代际起点失败，本轮不会把实例推进到 CLEAN。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID), attribute.String("error", err.Error()))
+				return
+			}
 			select {
 			case <-time.After(reinstallVerifyDelay):
 			case <-ctx.Done():
 				return
 			}
-			if err := cp.VerifyInstance(ctx, inst.Address); err != nil {
-				emitWorkerEvent(ctx, "sandbox.reset.instance_verify_failed", "实例重装后健康校验仍未通过，worker 会保留它在 RESETTING，等待后续 sweep 重试。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("address", inst.Address), attribute.String("error", err.Error()))
+			if err := provider.VerifyInstanceDelivery(ctx, cp, inst.CloudID, resettingInst.UpdatedAt); err != nil {
+				emitWorkerEvent(ctx, "sandbox.reset.instance_verify_failed", "实例重装后 TAT 交付校验仍未通过，worker 会保留它在 RESETTING，等待后续 sweep 重试。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID), attribute.String("error", err.Error()))
 				// Keep in RESETTING and retry in subsequent sweeps; stale scan will mark FAILED eventually.
 				return
 			}
@@ -1208,20 +1204,17 @@ func schedulePoolResetWork(ctx context.Context, svc *service.Service, cp provide
 	for _, inst := range resetting {
 		inst := inst
 		if !rs.TryGo(func() {
-			// Enforce a minimum "settling" window after entering RESETTING before we ever mark CLEAN.
-			// This avoids delivering an instance where VerifyInstance still hits the old system (and returns OK)
-			// while reinstall is still pending or hasn't taken effect yet.
+			// Keep a short settling window before checking the new TAT generation.
 			if reinstallVerifyDelay > 0 && time.Since(inst.UpdatedAt) < reinstallVerifyDelay {
 				return
 			}
-			if inst.Address == "" {
-				// Nothing we can probe; stale scan will clean this up.
-				emitWorkerEvent(ctx, "sandbox.reset.instance_probe_missing", "RESETTING 实例缺少地址，worker 本轮无法执行健康校验。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID))
+			if inst.CloudID == "" {
+				emitWorkerEvent(ctx, "sandbox.reset.instance_probe_missing", "RESETTING 实例缺少 cloud ID，worker 本轮无法执行 TAT 交付校验。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID))
 				return
 			}
-			if err := cp.VerifyInstance(ctx, inst.Address); err != nil {
-				// Transient verify failures (e.g. ingressproxy timeouts) should not destroy the instance.
-				emitWorkerEvent(ctx, "sandbox.reset.instance_verify_failed", "RESETTING 实例的健康校验仍未通过，worker 本轮继续等待。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("address", inst.Address), attribute.String("error", err.Error()))
+			if err := provider.VerifyInstanceDelivery(ctx, cp, inst.CloudID, inst.UpdatedAt); err != nil {
+				// Transient TAT failures should not destroy the instance.
+				emitWorkerEvent(ctx, "sandbox.reset.instance_verify_failed", "RESETTING 实例的 TAT 交付校验仍未通过，worker 本轮继续等待。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID), attribute.String("error", err.Error()))
 				return
 			}
 			if _, err := svc.AdvanceState(ctx, inst.ID, core.StateClean); err != nil {
@@ -1240,40 +1233,6 @@ func processPool(ctx context.Context, svc *service.Service, cp provider.CloudPro
 	rs := newResetScheduler(concurrency)
 	schedulePoolResetWork(ctx, svc, cp, pool, imageOverride, rs)
 	rs.Wait()
-}
-
-func observeResetStarted(ctx context.Context, cp provider.CloudProvider, cloudID string, timeout time.Duration) error {
-	if cloudID == "" {
-		return nil
-	}
-	if timeout <= 0 {
-		timeout = 10 * time.Second
-	}
-	start := time.Now()
-	deadline := start.Add(timeout)
-	interval := 2 * time.Second
-
-	// We consider any non-RUNNING state as "reset in progress" (best-effort).
-	for attempt := 1; ; attempt++ {
-		st, err := cp.DescribeInstance(ctx, cloudID)
-		if err == nil && st != "" && st != "RUNNING" {
-			emitWorkerEvent(ctx, "sandbox.reset.observe_started", "worker 已通过 DescribeInstance 观察到实例开始进入非 RUNNING 状态，说明重装流程已经真正启动。", attribute.String("cloud_id", cloudID), attribute.String("state", st), attribute.String("elapsed", time.Since(start).String()))
-			return nil
-		}
-		if time.Now().After(deadline) {
-			if err != nil {
-				emitWorkerEvent(ctx, "sandbox.reset.observe_timeout", "worker 在等待实例进入重装中的可观察状态时超时，并记录了最后一次云侧错误。", attribute.String("cloud_id", cloudID), attribute.String("elapsed", time.Since(start).String()), attribute.String("error", err.Error()))
-				return err
-			}
-			emitWorkerEvent(ctx, "sandbox.reset.observe_timeout", "worker 在等待实例进入重装中的可观察状态时超时，但最后一次 DescribeInstance 没有返回明确错误。", attribute.String("cloud_id", cloudID), attribute.String("elapsed", time.Since(start).String()), attribute.String("last_state", st))
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(interval):
-		}
-	}
 }
 
 func runCleanupLoop(ctx context.Context, svc *service.Service, cp provider.CloudProvider, poolFilter string, interval time.Duration) {
@@ -1385,11 +1344,11 @@ func cleanupDeleting(ctx context.Context, svc *service.Service, cp provider.Clou
 	}
 }
 
-func runWaterlineLoop(ctx context.Context, svc *service.Service, cp provider.CloudProvider, metrics *observability.WorkerMetrics, interval time.Duration, sample int) {
+func runWaterlineLoop(ctx context.Context, svc *service.Service, metrics *observability.WorkerMetrics, interval time.Duration, sample int) {
 	if sample < 0 {
 		sample = 0
 	}
-	emitWorkerEvent(ctx, "sandbox.worker.loop_started", "waterline loop 已启动，worker 会周期性检查 CLEAN 水位和抽样健康状态。", attribute.String("loop", "waterline"), attribute.String("interval", interval.String()), attribute.Int("sample", sample))
+	emitWorkerEvent(ctx, "sandbox.worker.loop_started", "waterline loop 已启动，worker 会周期性检查 CLEAN 库存水位；实例主动健康抽样已停用。", attribute.String("loop", "waterline"), attribute.String("interval", interval.String()), attribute.Int("deprecated_sample", sample))
 	runOnce := interval <= 0
 	for {
 		pools, err := svc.ListPools(ctx)
@@ -1397,7 +1356,7 @@ func runWaterlineLoop(ctx context.Context, svc *service.Service, cp provider.Clo
 			emitWorkerEvent(ctx, "sandbox.worker.loop_failed", "waterline loop 读取 pools 失败，本轮水位检查未完成。", attribute.String("loop", "waterline"), attribute.String("stage", "list_pools"), attribute.String("error", err.Error()))
 		} else {
 			for _, pool := range pools {
-				checkWaterline(ctx, svc, cp, metrics, pool, sample)
+				checkWaterline(ctx, svc, metrics, pool)
 			}
 		}
 		if runOnce {
@@ -1412,7 +1371,7 @@ func runWaterlineLoop(ctx context.Context, svc *service.Service, cp provider.Clo
 	}
 }
 
-func checkWaterline(ctx context.Context, svc *service.Service, cp provider.CloudProvider, metrics *observability.WorkerMetrics, pool core.Pool, sample int) {
+func checkWaterline(ctx context.Context, svc *service.Service, metrics *observability.WorkerMetrics, pool core.Pool) {
 	if pool.Status == core.PoolStatusPaused {
 		return
 	}
@@ -1428,12 +1387,8 @@ func checkWaterline(ctx context.Context, svc *service.Service, cp provider.Cloud
 		return
 	}
 	counts := make(map[core.InstanceState]int)
-	clean := make([]core.Instance, 0)
 	for _, inst := range insts {
 		counts[inst.State]++
-		if inst.State == core.StateClean {
-			clean = append(clean, inst)
-		}
 	}
 	if metrics != nil {
 		for _, state := range trackedStates {
@@ -1448,24 +1403,6 @@ func checkWaterline(ctx context.Context, svc *service.Service, cp provider.Cloud
 			} else {
 				emitWorkerEvent(ctx, "sandbox.waterline.warning", "当前 pool 的 CLEAN 水位低于目标值，worker 发出库存预警。", attribute.String("pool_id", pool.ID), attribute.Int("clean_inventory", counts[core.StateClean]), attribute.Int("shard_target_capacity", desired), attribute.Int("creating_count", counts[core.StateCreating]), attribute.Int("resetting_count", counts[core.StateResetting]+counts[core.StateReinstalling]), attribute.Int("deleting_count", counts[core.StateDeleting]), attribute.Int("dry_count", counts[core.StateDry]), attribute.Int("failed_count", counts[core.StateFailed]))
 			}
-		}
-	}
-	if sample == 0 || len(clean) == 0 {
-		return
-	}
-	if sample > len(clean) {
-		sample = len(clean)
-	}
-	rand.Shuffle(len(clean), func(i, j int) { clean[i], clean[j] = clean[j], clean[i] })
-	check := clean[:sample]
-	for _, inst := range check {
-		if err := cp.VerifyInstance(ctx, inst.Address); err != nil {
-			if metrics != nil {
-				metrics.ObserveVerifyFailure(pool.ID, "waterline")
-			}
-			// Waterline checks are best-effort. A single probe failure (especially via ingressproxy) is not enough
-			// to declare the instance broken; avoid destructive actions here to keep inventory stable.
-			emitWorkerEvent(ctx, "sandbox.waterline.verify_failed", "waterline 抽样健康检查失败，但 worker 不会立刻对这个实例做破坏性处理。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("address", inst.Address), attribute.String("error", err.Error()))
 		}
 	}
 }
