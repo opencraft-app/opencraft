@@ -216,3 +216,91 @@ func TestLoad_InquiryFallbackIdentityFromEnv(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_BillingCloudAPIIgnoresShadowCredentialFallback(t *testing.T) {
+	setRequiredLoadEnv(t)
+	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
+	t.Setenv("SHADOW_SECRET_ID", "shadow-opening-secret-id")
+	t.Setenv("SHADOW_SECRET_KEY", "shadow-opening-secret-key")
+	t.Setenv("SHADOW_BILLING_SECRET_ID", "shadow-billing-secret-id")
+	t.Setenv("SHADOW_BILLING_SECRET_KEY", "shadow-billing-secret-key")
+	t.Setenv("SHADOW_CLOUDLADDER_ENABLED", "true")
+	t.Setenv("SHADOW_CLOUDLADDER_GATEWAY_BASE_URL", "http://clgateway.test")
+	t.Setenv("SHADOW_CLOUDLADDER_HMAC_SECRET", "shadow-hmac")
+	t.Setenv("SHADOW_BILLING_CLOUDLADDER_ROUTE_ID", "tcapi-billing-intl-test")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.BillingCloudAPISecretID != "" {
+		t.Fatalf("BillingCloudAPISecretID = %q", cfg.BillingCloudAPISecretID)
+	}
+	if cfg.BillingCloudAPISecretKey != "" {
+		t.Fatalf("BillingCloudAPISecretKey = %q", cfg.BillingCloudAPISecretKey)
+	}
+	if cfg.BillingCloudAPICloudLadderEnabled {
+		t.Fatalf("BillingCloudAPICloudLadderEnabled = true, want false")
+	}
+	if cfg.BillingCloudAPICloudLadderGatewayURL != "" {
+		t.Fatalf("BillingCloudAPICloudLadderGatewayURL = %q", cfg.BillingCloudAPICloudLadderGatewayURL)
+	}
+	if cfg.BillingCloudAPICloudLadderRouteID != "tcapi-billing-trade-intl-test" {
+		t.Fatalf("BillingCloudAPICloudLadderRouteID default = %q", cfg.BillingCloudAPICloudLadderRouteID)
+	}
+	if cfg.BillingCloudAPICloudLadderCaller != "lightvela-trade" {
+		t.Fatalf("BillingCloudAPICloudLadderCaller default = %q", cfg.BillingCloudAPICloudLadderCaller)
+	}
+	if cfg.BillingCloudAPICloudLadderHMACSecret != "" {
+		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
+	}
+}
+
+func TestLoad_BillingCloudAPIUsesTradeBillingCredential(t *testing.T) {
+	setRequiredLoadEnv(t)
+	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
+	t.Setenv("SHADOW_SECRET_ID", "shadow-opening-secret-id")
+	t.Setenv("SHADOW_SECRET_KEY", "shadow-opening-secret-key")
+	t.Setenv("TRADE_BILLING_SECRET_ID", "trade-billing-secret-id")
+	t.Setenv("TRADE_BILLING_SECRET_KEY", "trade-billing-secret-key")
+	t.Setenv("TRADE_BILLING_ENDPOINT", "billing.dev.tencentcloudapi.com")
+	t.Setenv("TRADE_BILLING_REGION", "ap-singapore")
+	t.Setenv("TRADE_BILLING_REQUEST_TIMEOUT", "3s")
+	t.Setenv("TRADE_BILLING_CLOUDLADDER_ENABLED", "true")
+	t.Setenv("TRADE_BILLING_CLOUDLADDER_GATEWAY_BASE_URL", "http://trade-clgateway.test")
+	t.Setenv("TRADE_BILLING_CLOUDLADDER_ROUTE_ID", "tcapi-billing-intl-dev")
+	t.Setenv("TRADE_BILLING_CLOUDLADDER_CALLER", "lightvela-trade")
+	t.Setenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", "trade-hmac")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.BillingCloudAPISecretID != "trade-billing-secret-id" {
+		t.Fatalf("BillingCloudAPISecretID = %q", cfg.BillingCloudAPISecretID)
+	}
+	if cfg.BillingCloudAPISecretKey != "trade-billing-secret-key" {
+		t.Fatalf("BillingCloudAPISecretKey = %q", cfg.BillingCloudAPISecretKey)
+	}
+	if cfg.BillingCloudAPIEndpoint != "billing.dev.tencentcloudapi.com" {
+		t.Fatalf("BillingCloudAPIEndpoint = %q", cfg.BillingCloudAPIEndpoint)
+	}
+	if cfg.BillingCloudAPIRegion != "ap-singapore" {
+		t.Fatalf("BillingCloudAPIRegion = %q", cfg.BillingCloudAPIRegion)
+	}
+	if cfg.BillingCloudAPIRequestTimeout.String() != "3s" {
+		t.Fatalf("BillingCloudAPIRequestTimeout = %s", cfg.BillingCloudAPIRequestTimeout)
+	}
+	if cfg.BillingCloudAPICloudLadderGatewayURL != "http://trade-clgateway.test" {
+		t.Fatalf("BillingCloudAPICloudLadderGatewayURL = %q", cfg.BillingCloudAPICloudLadderGatewayURL)
+	}
+	if cfg.BillingCloudAPICloudLadderRouteID != "tcapi-billing-intl-dev" {
+		t.Fatalf("BillingCloudAPICloudLadderRouteID = %q", cfg.BillingCloudAPICloudLadderRouteID)
+	}
+	if cfg.BillingCloudAPICloudLadderCaller != "lightvela-trade" {
+		t.Fatalf("BillingCloudAPICloudLadderCaller = %q", cfg.BillingCloudAPICloudLadderCaller)
+	}
+	if cfg.BillingCloudAPICloudLadderHMACSecret != "trade-hmac" {
+		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
+	}
+}

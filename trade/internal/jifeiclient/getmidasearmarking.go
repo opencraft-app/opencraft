@@ -6,7 +6,7 @@ import "context"
 // 接口入参（para 内层）。
 //
 // **协议参考**：`/root/project/mono/.tmp/专款专用获取支付参数+-+qcloud.margin.getMidasEarmarking.pdf`
-// （5 页 / 2026-05-11 投放）；云 API 别名 CreatePayUrl；componentName = "MC"（PDF 第 4 页 curl）。
+// （5 页 / 2026-05-11 投放）；componentName = "MC"（PDF 第 4 页 curl）。
 //
 // **字段集（PDF 第 3 页）**：
 //
@@ -26,7 +26,7 @@ import "context"
 //
 // **Lightclaw 本期场景约束（Q-PAY-1 ~ Q-PAY-5 拍板 2026-05-11）**：
 //   - 国内站仅传 OwnerUin / Uin / DealNames 三个必填字段（Q-PAY-4：不传 platform，jifei 默认 pc）
-//   - 国际站获取支付链接时固定传 payScene=credit_card；用户选择自动续费时额外传 contractOrder=1
+//   - 国际站获取支付链接已切到计费 CloudAPI CreatePayUrl，本接口仅保留给国内站路径使用。
 //   - 不传 VoucherIds / WxOpenID / WxAppID / Channel / RemitpayPayerName
 //     （与 Q48 协议表面最小化原则一致 — Lightclaw 控制台没有这些 UI 入口）
 //

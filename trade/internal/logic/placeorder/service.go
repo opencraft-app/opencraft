@@ -38,6 +38,7 @@ import (
 	"strings"
 	"time"
 
+	"git.woa.com/wisp/mono/trade/internal/cloudbillingclient"
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/dianshiclient"
 	"git.woa.com/wisp/mono/trade/internal/jifei"
@@ -164,13 +165,16 @@ const (
 //     由 main.go 从 cfg.RegionOverride（LIGHTVELA_TRADE_REGION env）透传；非空且命中
 //     region.regionTable 时优先于 SiteKind 兜底。空字符串 → 按 SiteKind 走。
 type Deps struct {
-	CTLClient    ctlclient.Client
-	BundleStore  store.BundleDefinitionStore
-	JifeiClient  jifeiclient.Client
-	OrderWriter  store.OrderWriter
-	OrderStore   store.OrderStore    // GeneratePayURL 反查 trade_order.pay_url 用
-	ShadowClient shadowclient.Client // 可选，nil 表示由调用方传 Uin/AppID
-	SiteKind     string              // 可选，v1.7.x 国际站接入；"cn" / "intl"，缺省 cn 兜底
+	CTLClient   ctlclient.Client
+	BundleStore store.BundleDefinitionStore
+	JifeiClient jifeiclient.Client
+	// CloudBillingClient is used only by international pay-url generation. Domestic
+	// pay-url generation remains on jifei GetMidasEarmarking.
+	CloudBillingClient cloudbillingclient.Client
+	OrderWriter        store.OrderWriter
+	OrderStore         store.OrderStore    // GeneratePayURL 反查 trade_order.pay_url 用
+	ShadowClient       shadowclient.Client // 可选，nil 表示由调用方传 Uin/AppID
+	SiteKind           string              // 可选，v1.7.x 国际站接入；"cn" / "intl"，缺省 cn 兜底
 
 	// RegionOverride 是腾讯云 region 字面量 override（北京 2 预发布接入新增）。
 	// 合法性已由 config.Load 在启动期 fail-fast 校验；本处只负责透透到 region.Resolve。
@@ -1269,6 +1273,9 @@ func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *Gen
 		return nil, fmt.Errorf("placeorder: trade_order.uin missing for dealName=%s (data inconsistency)",
 			dealName)
 	}
+	if isIntlSite(s.deps.SiteKind) {
+		return s.generatePayURLByCloudAPI(ctx, dealName, order, opts)
+	}
 	midasReq := &jifeiclient.GetMidasEarmarkingRequest{
 		OwnerUin:  order.Uin,
 		Uin:       order.Uin,
@@ -1278,12 +1285,6 @@ func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *Gen
 		WxAppID:   optsWxAppID(opts),
 		CancelURL: optsCancelURL(opts),
 		ReturnURL: optsReturnURL(opts),
-	}
-	if isIntlSite(s.deps.SiteKind) {
-		midasReq.PayScene = "credit_card"
-		if orderHasAutoRenewFlag(order.GoodsDetail) {
-			midasReq.ContractOrder = 1
-		}
 	}
 	resp, err := s.deps.JifeiClient.GetMidasEarmarking(ctx, midasReq)
 	if err != nil {
@@ -1327,6 +1328,51 @@ func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *Gen
 		TokenID:    resp.TokenID,
 		OrderID:    resp.OutTradeNo,
 		NeedCharge: resp.NeedCharge,
+		Uin:        order.Uin,
+		AppID:      order.AppID,
+		MidasAppID: midasAppID,
+	}, nil
+}
+
+func (s *Service) generatePayURLByCloudAPI(
+	ctx context.Context,
+	dealName string,
+	order *store.TradeOrder,
+	opts *GeneratePayURLOptions,
+) (*PayURLDetail, error) {
+	if s.deps.CloudBillingClient == nil {
+		return nil, fmt.Errorf("placeorder: billing CreatePayUrl client is not configured for intl site")
+	}
+	req := &cloudbillingclient.CreatePayURLRequest{
+		OrderIDs:  []string{dealName},
+		Platform:  optsPlatform(opts),
+		CancelURL: optsCancelURL(opts),
+		ReturnURL: optsReturnURL(opts),
+		PayScene:  "credit_card",
+	}
+	if orderHasAutoRenewFlag(order.GoodsDetail) {
+		req.ContractOrder = 1
+	}
+	resp, err := s.deps.CloudBillingClient.CreatePayURL(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("placeorder: billing CreatePayUrl dealName=%s: %w", dealName, err)
+	}
+	if resp == nil {
+		return nil, fmt.Errorf("placeorder: billing CreatePayUrl returned nil response for dealName=%s", dealName)
+	}
+	if strings.TrimSpace(resp.URL) == "" {
+		return nil, fmt.Errorf("placeorder: billing CreatePayUrl returned empty url for dealName=%s", dealName)
+	}
+	if writeErr := s.deps.OrderWriter.UpdatePayURL(ctx, dealName, resp.URL); writeErr != nil {
+		fmt.Printf("WARN placeorder: cache pay_url failed dealName=%s url=%s err=%v\n",
+			dealName, resp.URL, writeErr)
+	}
+	tokenID, orderID, midasAppID := parsePayURLAuxFields(resp.URL)
+	return &PayURLDetail{
+		PayURL:     resp.URL,
+		TokenID:    tokenID,
+		OrderID:    orderID,
+		NeedCharge: 1,
 		Uin:        order.Uin,
 		AppID:      order.AppID,
 		MidasAppID: midasAppID,

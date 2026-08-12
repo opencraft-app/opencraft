@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"git.woa.com/wisp/mono/trade/internal/cloudbillingclient"
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
 	"git.woa.com/wisp/mono/trade/internal/region"
@@ -150,6 +151,21 @@ func (f *fakeJifei) OnlineRefund(ctx context.Context, req *jifeiclient.OnlineRef
 	return nil, errors.New("fakeJifei: OnlineRefund not implemented (placeorder service shouldn't call it)")
 }
 
+type fakeCloudBilling struct {
+	createPayURLFn      func(ctx context.Context, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error)
+	createPayURLCalls   atomic.Int32
+	lastCreatePayURLReq *cloudbillingclient.CreatePayURLRequest
+}
+
+func (f *fakeCloudBilling) CreatePayURL(ctx context.Context, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
+	f.createPayURLCalls.Add(1)
+	f.lastCreatePayURLReq = req
+	if f.createPayURLFn != nil {
+		return f.createPayURLFn(ctx, req)
+	}
+	return nil, errors.New("fakeCloudBilling: CreatePayURL not implemented")
+}
+
 type fakeOrderWriter struct {
 	createOrderFn        func(ctx context.Context, in store.CreateOrderInput) error
 	createOrderCalls     atomic.Int32
@@ -279,6 +295,7 @@ type stdDeps struct {
 	ctl     *fakeCTL
 	bundle  *fakeBundleStore
 	jifei   *fakeJifei
+	billing *fakeCloudBilling
 	writer  *fakeOrderWriter
 	store   *fakeOrderStore
 	service *Service
@@ -297,15 +314,17 @@ func newStdDeps() *stdDeps {
 				return stdJifeiDealsResp(), nil
 			},
 		},
-		writer: &fakeOrderWriter{},
-		store:  &fakeOrderStore{},
+		billing: &fakeCloudBilling{},
+		writer:  &fakeOrderWriter{},
+		store:   &fakeOrderStore{},
 	}
 	d.service = New(Deps{
-		CTLClient:   d.ctl,
-		BundleStore: d.bundle,
-		JifeiClient: d.jifei,
-		OrderWriter: d.writer,
-		OrderStore:  d.store,
+		CTLClient:          d.ctl,
+		BundleStore:        d.bundle,
+		JifeiClient:        d.jifei,
+		CloudBillingClient: d.billing,
+		OrderWriter:        d.writer,
+		OrderStore:         d.store,
 	})
 	return d
 }
@@ -767,70 +786,100 @@ func TestGeneratePayURL_PayURLNotCached_CallsJifeiAndWritesBack(t *testing.T) {
 	}
 }
 
-func TestGeneratePayURL_IntlUsesContractCreditCardMidasParams(t *testing.T) {
+func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *testing.T) {
 	d := newStdDeps()
 	d.service = New(Deps{
-		CTLClient:   d.ctl,
-		BundleStore: d.bundle,
-		JifeiClient: d.jifei,
-		OrderWriter: d.writer,
-		OrderStore:  d.store,
-		SiteKind:    "intl",
+		CTLClient:          d.ctl,
+		BundleStore:        d.bundle,
+		JifeiClient:        d.jifei,
+		CloudBillingClient: d.billing,
+		OrderWriter:        d.writer,
+		OrderStore:         d.store,
+		SiteKind:           "intl",
 	})
 	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
 		return &store.TradeOrder{
 			DealName:    dealName,
 			Uin:         "1000123456",
+			AppID:       "251202221",
 			PayURL:      "",
 			GoodsDetail: map[string]interface{}{"autoRenewFlag": 1},
 		}, nil
 	}
-	d.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+	d.billing.createPayURLFn = func(ctx context.Context, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
+		if len(req.OrderIDs) != 1 || req.OrderIDs[0] != "deal-1" {
+			t.Errorf("OrderIDs = %+v, want [deal-1]", req.OrderIDs)
+		}
 		if req.ContractOrder != 1 {
 			t.Errorf("ContractOrder = %d, want 1", req.ContractOrder)
 		}
 		if req.PayScene != "credit_card" {
 			t.Errorf("PayScene = %q, want credit_card", req.PayScene)
 		}
-		return &jifeiclient.GetMidasEarmarkingResponse{
-			URL:        "https://buy.cloud.tencent.com/midas/contract?dealName=deal-1",
-			NeedCharge: 1,
+		if req.CancelURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel" {
+			t.Errorf("CancelURL mismatch: %q", req.CancelURL)
+		}
+		if req.ReturnURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return" {
+			t.Errorf("ReturnURL mismatch: %q", req.ReturnURL)
+		}
+		return &cloudbillingclient.CreatePayURLResponse{
+			URL: "https://buy.cloud.tencent.com/midas/contract?dealName=deal-1",
 		}, nil
 	}
 
-	if _, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil); err != nil {
+	detail, err := d.service.GeneratePayURL(context.Background(), "deal-1", &GeneratePayURLOptions{
+		CancelURL: "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel",
+		ReturnURL: "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return",
+	})
+	if err != nil {
 		t.Fatalf("GeneratePayURL: %v", err)
+	}
+	if detail.PayURL != "https://buy.cloud.tencent.com/midas/contract?dealName=deal-1" {
+		t.Fatalf("PayURL = %q", detail.PayURL)
+	}
+	if detail.NeedCharge != 1 {
+		t.Errorf("NeedCharge = %d, want 1", detail.NeedCharge)
+	}
+	if d.billing.createPayURLCalls.Load() != 1 {
+		t.Errorf("CreatePayURL calls = %d, want 1", d.billing.createPayURLCalls.Load())
+	}
+	if d.jifei.getMidasEarmarkingCalls.Load() != 0 {
+		t.Errorf("GetMidasEarmarking calls = %d, want 0", d.jifei.getMidasEarmarkingCalls.Load())
 	}
 }
 
-func TestGeneratePayURL_IntlManualRenewUsesCreditCardWithoutContract(t *testing.T) {
+func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testing.T) {
 	d := newStdDeps()
 	d.service = New(Deps{
-		CTLClient:   d.ctl,
-		BundleStore: d.bundle,
-		JifeiClient: d.jifei,
-		OrderWriter: d.writer,
-		OrderStore:  d.store,
-		SiteKind:    "intl",
+		CTLClient:          d.ctl,
+		BundleStore:        d.bundle,
+		JifeiClient:        d.jifei,
+		CloudBillingClient: d.billing,
+		OrderWriter:        d.writer,
+		OrderStore:         d.store,
+		SiteKind:           "intl",
 	})
 	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
 		return &store.TradeOrder{DealName: dealName, Uin: "1000123456", PayURL: ""}, nil
 	}
-	d.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+	d.billing.createPayURLFn = func(ctx context.Context, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
 		if req.ContractOrder != 0 {
 			t.Errorf("ContractOrder = %d, want 0", req.ContractOrder)
 		}
 		if req.PayScene != "credit_card" {
 			t.Errorf("PayScene = %q, want credit_card", req.PayScene)
 		}
-		return &jifeiclient.GetMidasEarmarkingResponse{
-			URL:        "https://buy.cloud.tencent.com/midas/manual?dealName=deal-1",
-			NeedCharge: 1,
-		}, nil
+		return &cloudbillingclient.CreatePayURLResponse{URL: "https://buy.cloud.tencent.com/midas/manual?dealName=deal-1"}, nil
 	}
 
 	if _, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil); err != nil {
 		t.Fatalf("GeneratePayURL: %v", err)
+	}
+	if d.billing.createPayURLCalls.Load() != 1 {
+		t.Errorf("CreatePayURL calls = %d, want 1", d.billing.createPayURLCalls.Load())
+	}
+	if d.jifei.getMidasEarmarkingCalls.Load() != 0 {
+		t.Errorf("GetMidasEarmarking calls = %d, want 0", d.jifei.getMidasEarmarkingCalls.Load())
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"git.woa.com/wisp/mono/trade/internal/cloudbillingclient"
 	"git.woa.com/wisp/mono/trade/internal/config"
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/dianshiclient"
@@ -82,6 +83,31 @@ func main() {
 		},
 	)
 
+	var cloudBillingClient cloudbillingclient.Client
+	if cfg.SiteKind == "intl" {
+		billingClient, billingErr := cloudbillingclient.NewTencentCloudClient(cloudbillingclient.Config{
+			SecretID:       cfg.BillingCloudAPISecretID,
+			SecretKey:      cfg.BillingCloudAPISecretKey,
+			Region:         cfg.BillingCloudAPIRegion,
+			Endpoint:       cfg.BillingCloudAPIEndpoint,
+			RequestTimeout: cfg.BillingCloudAPIRequestTimeout,
+			CloudLadder: cloudbillingclient.CloudLadderConfig{
+				Enabled:        cfg.BillingCloudAPICloudLadderEnabled,
+				GatewayBaseURL: cfg.BillingCloudAPICloudLadderGatewayURL,
+				RouteID:        cfg.BillingCloudAPICloudLadderRouteID,
+				Caller:         cfg.BillingCloudAPICloudLadderCaller,
+				Secret:         cfg.BillingCloudAPICloudLadderHMACSecret,
+			},
+		})
+		if billingErr != nil {
+			log.Printf("[billing-cloudapi] unavailable: %v", billingErr)
+		} else {
+			cloudBillingClient = billingClient
+			log.Printf("[billing-cloudapi] activated: endpoint=%s routeID=%s",
+				cfg.BillingCloudAPIEndpoint, cfg.BillingCloudAPICloudLadderRouteID)
+		}
+	}
+
 	// 点石出向客户端 + 活动 Resolver（设计稿 .tmp/dianshi-activity-bundle-design.md §5.1 / §5.2）。
 	//
 	// 同进同退语义：仅在 cfg.DianshiPriceBaseURL + cfg.DianshiOrderBaseURL 同时非空时构造
@@ -121,12 +147,13 @@ func main() {
 		DianshiClient:    dianshiClient,
 	})
 	placeOrderSvc := placeorder.New(placeorder.Deps{
-		CTLClient:    ctlClient,
-		BundleStore:  mysqlStore,
-		JifeiClient:  jifeiClient,
-		OrderWriter:  mysqlStore,
-		OrderStore:   mysqlStore,
-		ShadowClient: shadowClient,
+		CTLClient:          ctlClient,
+		BundleStore:        mysqlStore,
+		JifeiClient:        jifeiClient,
+		CloudBillingClient: cloudBillingClient,
+		OrderWriter:        mysqlStore,
+		OrderStore:         mysqlStore,
+		ShadowClient:       shadowClient,
 		// v1.7.x 国际站接入 A6.1：出向 envelope.resInfo.region/zone + trade_order.region_id
 		// 同源同值，按 site 决定。
 		SiteKind: cfg.SiteKind,
