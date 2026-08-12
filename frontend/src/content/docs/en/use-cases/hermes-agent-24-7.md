@@ -6,6 +6,10 @@ A Hermes Agent is a cloud-hosted AI agent in LightVela. Once its model and conve
 
 ![A Hermes Agent online in the LightVela console](../images/use-case-hermes-online.webp)
 
+## Summary
+
+**A Hermes Agent stays available around the clock because it runs on a cloud instance rather than your local machine. Once a model and at least one channel are configured, it uses the same memory and behaviour no matter which entry point you message from.** Three things must be in place for genuine long-term availability: a configured model with usable account quota (exhausted trial credits cause silent non-replies), at least one channel showing as connected, and automations to cover scheduled work while you are away. Do not judge availability from the console status alone — send a real message through an actual channel. When something breaks, view and export recent logs in Diagnostics (selectable 1, 3, 6, 12, or 24-hour ranges) to locate the cause.
+
 ## Who this is for
 
 Use this pattern if you want an assistant that you can reach from your phone, a team channel, or the console without keeping a computer running. It is also a good fit for scheduled routines such as a daily briefing, a reminder, or a recurring status check.

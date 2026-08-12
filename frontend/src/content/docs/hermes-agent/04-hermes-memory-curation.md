@@ -249,12 +249,12 @@ hermes journey edit <node>    # 用 $EDITOR 打开编辑
 
 如果你把 Hermes 装在自己笔记本上，笔记本一合盖就"打盹"，后台自省循环停摆，`nudge_interval` 永远等不到下一次触发。换设备、系统重装还要手动搬 `~/.hermes/` 目录。
 
-这时候，云托管方案就变得非常有意义。[**LightVela**](https://lightvela.ai/) 是**云托管的 Hermes Agent 服务**：
+这时候，云托管方案就变得非常有意义。**LightVela** 是**云托管的 Hermes Agent 服务**：
 
 - 独立云端实例，24×7 在线，`MEMORY.md`/`USER.md`/SQLite 会话档案永久驻留；
 - 后台自省循环持续运行，Agent 真正做到"你不用它的时候也在成长"；
 - 数据仅存于你的专属服务器；
-- 手机、笔记本、Telegram、飞书……多渠道进来都是同一个"认识你的 Agent"。
+- 手机、笔记本、微信、飞书……多渠道进来都是同一个"认识你的 Agent"。
 
 Hermes 把"记忆不是越多越好"的哲学做到了极致；**LightVela 让这套哲学真的每一天都在你身边生效。** 这才是"越用越懂你"这句 slogan 兑现的方式。
 

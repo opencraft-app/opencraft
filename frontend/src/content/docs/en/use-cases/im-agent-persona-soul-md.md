@@ -8,6 +8,10 @@ LightVela generates and injects a Soul through the Personality feature, so you d
 
 ![Defining an IM Agent's role, personality, and voice with SOUL.md](../images/use-case-05-im-agent-persona-soul-md.png)
 
+## Summary
+
+**Whether an IM Agent feels like "the same person" depends on its persona, not on which channel it runs through. `SOUL.md` carries the role, tone, priorities, behaviour, and limits, and it is the core persona file in the Hermes runtime.** On LightVela you never touch the cloud filesystem directly — the Persona section on an Agent's settings page offers two entry points, drawing a persona at random or answering a short quiz. Review a persona card's role, tone, and behaviour notes, then choose Inject Persona to apply it. Write judgeable principles rather than specific facts: "lead with the conclusion", "state uncertainty explicitly", and "confirm before sending external messages" are persona rules, while project names and ports belong in long-term memory. After injecting, verify tone and limits with one real conversation.
+
 ## Who this is for
 
 This guide is for people who want to give an IM Agent a stable role, such as a personal assistant, research partner, study companion, or everyday customer-communication assistant.

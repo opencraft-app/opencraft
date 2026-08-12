@@ -6,6 +6,10 @@ However, the current LightVela international Telegram channel documentation says
 
 This page records the design approach, pre-launch checks, and current alternatives until group support has a clearly documented product path.
 
+## Summary
+
+**Start with the capability boundary: the Telegram channel page states plainly that group chats are not currently supported and only one-to-one conversations work, so the full flow of adding a bot to a Telegram group and auto-welcoming members cannot be completed on LightVela today.** Neither BotFather's privacy mode nor @-mentioning the bot in a group substitutes for channel-level group support in LightVela. The workable path right now: connect one-to-one conversations per the channel guide, mature all four content flows — welcome, FAQ, summaries, reminders — in direct messages, and complete the pre-launch checklist. That way, once group support ships, you only switch the trigger context; the content and persona need no rework. Treat this page as a design and preparation guide rather than an implementation walkthrough.
+
 ## Current capability boundary
 
 The channel notes on the current Telegram channel page explicitly state that group chats are not currently supported and only 1-to-1 conversations are supported.

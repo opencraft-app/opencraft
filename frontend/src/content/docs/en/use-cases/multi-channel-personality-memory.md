@@ -6,6 +6,10 @@ When both channels connect to the same Agent, they can share the Agent-level per
 
 ![One Agent connected to Telegram and WhatsApp with one personality and long-term memory](../images/use-case-07-multi-channel-personality-memory.png)
 
+## Summary
+
+**Telegram and WhatsApp can serve as two entry points to the same Hermes Agent. As long as both channels connect to the same Agent, they share Agent-level persona, Skills, automations, and long-term memory, with no configuration to duplicate per platform.** But "unified" has a defined scope: what is shared is Agent-level assets, while each channel keeps its own authorisation flow and message limits, so connecting them is two independent authorisation steps. The most direct way to verify sharing is to state something on one channel and ask about it on the other — a correct answer proves both entry points resolve to the same Agent. After connecting, also confirm replies land in the conversation you messaged from rather than another one.
+
 ## Who this is for
 
 This guide is for people who want to switch between messaging apps while keeping one AI assistant identity.

@@ -45,7 +45,7 @@ Think of `USER.md` as **the sticky note on the agent's monitor bezel** — not m
 
 `MEMORY.md` stores **what you and the agent have done together**:
 
-- Project state: the agent-demo frontend runs on port 5174.
+- Project state: the agent-demo frontend runs on a local dev port.
 - Decisions: last week the hero section was changed to an animated gradient.
 - Specific events: agreed with team A that X ships in Q4.
 - Specific knowledge: this API authenticates through an internal SDK rather than the public endpoint.

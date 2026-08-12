@@ -8,6 +8,10 @@ WhatsApp proactive messages are still affected by conversation windows, message 
 
 ![Configuring 24/7 AI customer service in WhatsApp](../images/use-case-09-whatsapp-24-7-customer-service.png)
 
+## Summary
+
+**WhatsApp can serve as a one-to-one entry point between customers and a Hermes Agent, useful for answering recurring questions, capturing customer needs, and drafting responses. But "24/7" here means it can respond whenever the service is running, the model is available, and the channel is connected — it is not an uninterrupted-service guarantee or a human-support SLA.** A second constraint matters just as much: proactive messaging on WhatsApp remains subject to conversation windows, template messages, and channel configuration, so automated reminders must be designed separately from customer-initiated conversations rather than assuming you can push at will. Build in four layers, in order: the persona sets voice and escalation conditions, knowledge captures FAQs, skills add reusable procedures, and automations handle scheduled summaries.
+
 ## Who this is for
 
 This guide is for people who want to deploy a personal support agent, product-information assistant, or after-sales triage assistant in WhatsApp.
@@ -170,4 +174,3 @@ By default, let the Skill create a draft or internal reminder, then have a human
 
 - [Automations](../configuration/automation.md) - Configure internal reminders and scheduled summaries.
 
-- [Using LightVela Safely](../faq/using-lightvela-safely.md) - Review sensitive-data and team-channel safety boundaries.

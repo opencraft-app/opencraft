@@ -6,6 +6,10 @@ Skill 负责扩展 Hermes Agent 的任务能力，而 SOUL.md 负责定义它稳
 
 ![通过 Skill 把 IM Agent 变成客服、社群助手或 AI 伴侣](../images/use-case-06-im-agent-skill-scenarios.png)
 
+## 摘要
+
+**要把同一个 IM Agent 用于客服、社群助手或 AI 伴侣，关键是理解 Skill 与人设的分工：Skill 扩展它「能做什么」，`SOUL.md` 定义它「是谁、以什么边界做事」。** 两者必须配合——只有 Skill 没有人设，回答会前后不一致；只有人设没有 Skill，它缺少可复用的方法。在 LightVela 上，技能来自 Skills.sh 与 ClawHub 公开市场，当前通过对话告诉 Hermes 要安装哪个技能即可完成安装或删除（管理台面板安装即将推出），安装后需在对话中验证是否可用。三种场景的差异主要在边界设计：客服要明确转人工条件，社群助手要明确何时该沉默，伴侣类要明确不越界的话题范围。上线前建议逐项走完安全检查清单。
+
 ## 适合谁
 
 这篇指南适合已经接入 Telegram、WhatsApp 或其他消息通道，并希望把 Agent 用在具体工作场景中的用户。

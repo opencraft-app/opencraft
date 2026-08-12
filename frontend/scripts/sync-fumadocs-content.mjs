@@ -95,6 +95,17 @@ const cnDocs = [
   { slug: 'hermes-agent/user-md-vs-memory-md', title: 'USER.md 与 MEMORY.md 为什么不能合并？', file: 'hermes-agent/03-user-md-vs-memory-md.md', group: 'Hermes Agent 解读', description: '从容量、加载策略、更新语义三条硬约束，解释 Hermes Agent 为什么把长期记忆拆成 USER.md 与 MEMORY.md 两份笔记，而不是合并成一份。', hideDescription: true },
   { slug: 'hermes-agent/hermes-memory-curation', title: 'Hermes Agent 的长期记忆治理：少而准的四条铁律', file: 'hermes-agent/04-hermes-memory-curation.md', group: 'Hermes Agent 解读', description: '解析 Hermes Agent 长期记忆治理的四条铁律：有界、冻结、透明、自我整合，以及它们如何保证记忆"少而准"而不是"多而乱"。', hideDescription: true },
   { slug: 'hermes-agent/memory-vs-skill', title: 'Memory vs Skill：陈述性记忆与程序性记忆', file: 'hermes-agent/05-memory-vs-skill.md', group: 'Hermes Agent 解读', description: '从认知心理学的陈述性记忆与程序性记忆出发，解释 Hermes Agent 为什么把长期记忆拆成 Memory 与 Skill 两条腿，以及两者的触发方式、表达形式、演化速度差异。', hideDescription: true },
+  { slug: 'hermes-agent/model-vs-agent-layer', title: 'Hermes Agent 的"大脑"可以替换吗？模型层与 Agent 层如何分工', file: 'hermes-agent/06-model-vs-agent-layer.md', group: 'Hermes Agent 解读', description: '拆解模型层与 Agent 层的分工：换模型只替换推理引擎，人格、记忆、技能、自动任务都存放在模型之外，因此不会被带走。', hideDescription: true },
+  { slug: 'hermes-agent/message-gateway', title: '一个 Agent 如何同时出现在多个聊天软件里？拆解消息网关机制', file: 'hermes-agent/07-message-gateway.md', group: 'Hermes Agent 解读', description: '拆解消息网关的标准化、路由与投递三件事，解释为什么多个通道可以共享同一个 Agent 的人格与记忆。', hideDescription: true },
+  { slug: 'hermes-agent/automation-scheduling', title: 'Hermes Agent 如何按时主动找你？拆解自动化调度与定时任务机制', file: 'hermes-agent/08-automation-scheduling.md', group: 'Hermes Agent 解读', description: '解释自动任务如何把"何时执行、执行什么、发到哪里"保存成可重复调度的配置，以及怎样写出无人在场也能稳定执行的任务说明。', hideDescription: true },
+  { slug: 'hermes-agent/model-switching-memory', title: '切换模型会让 Agent"失忆"吗？模型、人格与记忆的解耦设计', file: 'hermes-agent/09-model-switching-memory.md', group: 'Hermes Agent 解读', description: '区分"表达风格变化"与"记忆丢失"：切换模型不清除记忆与技能，并给出一步就能判断的验证方法。', hideDescription: true },
+  { slug: 'hermes-agent/persona-user-memory', title: 'Hermes Agent 的性格从哪里来？Persona、用户偏好与长期记忆如何共同作用', file: 'hermes-agent/10-persona-user-memory.md', group: 'Hermes Agent 解读', description: '解释 SOUL.md、USER.md 与 MEMORY.md 的三层分工，以及为什么变化频率不同的内容必须分开存放。', hideDescription: true },
+  { slug: 'hermes-agent/workspace-context-storage', title: 'Hermes Agent 把文件放在哪里？工作目录、上下文文件与存储机制', file: 'hermes-agent/11-workspace-context-storage.md', group: 'Hermes Agent 解读', description: '区分工作目录、上下文文件与云存储三类位置的职责与边界，并说明敏感信息不应写入长期上下文的原因。', hideDescription: true },
+  { slug: 'hermes-agent/skills-self-improvement', title: 'Agent 为什么会越用越顺手？技能沉淀、自我改进与复用机制', file: 'hermes-agent/12-skills-self-improvement.md', group: 'Hermes Agent 解读', description: '解释 Memory 与 Skill 两类积累的差异，以及一份合格 Skill 必须写清的四件事：何时使用、执行步骤、成功标准、不可越过的边界。', hideDescription: true },
+  // 对比与选型
+  { slug: 'compare/lightvela-vs-manus', title: 'LightVela vs Manus：哪个更适合托管你的 AI Agent？', file: 'compare/lightvela-vs-manus.md', group: '对比与选型', description: '' },
+  { slug: 'compare/lightvela-vs-localhost-ai-agent', title: 'LightVela vs 本地部署 Agent：哪个更好？', file: 'compare/lightvela-vs-localhost-ai-agent.md', group: '对比与选型', description: '' },
+  { slug: 'compare/lightvela-vs-ai-chatbot', title: 'LightVela vs AI Chatbot：哪个更适合搭建个人 AI 助手？', file: 'compare/lightvela-vs-ai-chatbot.md', group: '对比与选型', description: '' },
   // 问题排查
   { slug: 'faq', title: '常见问题 FAQ', file: '07-faq.md', group: '问题排查', description: '' },
   // 联系与支持
@@ -106,6 +117,7 @@ const CN_GROUP_ORDER = [
   '产品入门',
   '账号、套餐与开通',
   '功能与配置',
+  '对比与选型',
   'Hermes Agent 解读',
   '问题排查',
   '联系与支持',
@@ -120,7 +132,6 @@ const GLOBAL_GROUP_ORDER = [
   'Compare & Choose',
   'Hermes Agent Deep Dive',
   'Troubleshooting',
-  'Security, Privacy & Data',
   'Advanced',
   'Support',
 ];
@@ -489,16 +500,6 @@ const globalDocs = [
     file: 'compare/lightvela-vs-genspark.md',
     group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
     description: { 'en-US': '', 'zh-CN': '' },
-  },
-  {
-    slug: 'faq/using-lightvela-safely',
-    title: { 'en-US': 'Using LightVela Safely', 'zh-CN': '安全使用 LightVela' },
-    file: 'faq/using-lightvela-safely.md',
-    group: { 'en-US': 'Security, Privacy & Data', 'zh-CN': '安全、隐私与数据' },
-    description: {
-      'en-US': 'Guidance for using LightVela safely and responsibly.',
-      'zh-CN': '安全、负责任地使用 LightVela 的建议。',
-    },
   },
   {
     slug: 'hermes-agent/hermes-vs-openclaw',

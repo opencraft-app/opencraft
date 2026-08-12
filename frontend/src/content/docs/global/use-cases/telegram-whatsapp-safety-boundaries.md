@@ -8,6 +8,10 @@
 
 ![为 Telegram 和 WhatsApp Agent 设计授权、群聊规则与敏感操作安全边界](../images/use-case-11-telegram-whatsapp-safety-boundaries.png)
 
+## 摘要
+
+**Agent 的安全边界不只由模型决定，而由四层共同构成：通道凭证、会话范围、记忆策略、外部操作规则。** 一套清晰的边界应当让你明确回答四个问题——谁可以找到这个 Agent、哪些消息会被处理、哪些内容不能发送、什么操作必须先确认。落地要点：凭证属于敏感信息，不要写入长期上下文或粘贴到聊天；记忆策略要避免把敏感信息沉淀成永久记录；涉及外部发送或不可逆操作时必须设置确认环节。需要注意当前 Telegram 与 WhatsApp 都以 1 对 1 对话为主要支持方式，因此群聊规则目前作为设计与上线前的检查项，而非已可落地的配置。上线前建议逐项走完文中的安全清单。
+
 ## 适合谁
 
 这篇指南适合个人用户、客服负责人和需要把 IM Agent 接入日常工作的团队管理员。
@@ -56,8 +60,6 @@ Telegram 和 WhatsApp 当前都不支持群聊，仅支持 1 对 1 对话。
 如果必须讨论真实业务案例，先删除姓名、电话号码、地址、订单号和其他可以识别个人或组织的信息。
 
 多人空间和外部协作频道应使用更严格的规则，因为消息可能被更多成员看到、转发或长期保存。
-
-具体内容边界请结合[安全使用 LightVela](../faq/using-lightvela-safely.md)执行。
 
 ### 4. 设计记忆和文件的最小范围
 
@@ -158,8 +160,6 @@ Agent 可以先读取资料、整理风险和生成草稿，但在真正执行�
 - [配置通道 - Telegram](../configuration/channel-telegram.md) - 查看 Telegram Bot 接入和当前消息范围。
 
 - [配置通道 - WhatsApp](../configuration/channel-whatsapp.md) - 查看 WhatsApp 授权和主动消息限制。
-
-- [安全使用 LightVela](../faq/using-lightvela-safely.md) - 了解敏感数据和团队渠道的安全原则。
 
 - [如何让一个 Agent 同时接入 Telegram 和 WhatsApp，并保持统一人格与长期记忆](./multi-channel-personality-memory.md) - 了解统一 Agent 配置的边界。
 

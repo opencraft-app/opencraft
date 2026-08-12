@@ -295,6 +295,46 @@ export const DOCS_ROUTE_SLUGS = {
       "memory-vs-skill"
     ],
     [
+      "hermes-agent",
+      "model-vs-agent-layer"
+    ],
+    [
+      "hermes-agent",
+      "message-gateway"
+    ],
+    [
+      "hermes-agent",
+      "automation-scheduling"
+    ],
+    [
+      "hermes-agent",
+      "model-switching-memory"
+    ],
+    [
+      "hermes-agent",
+      "persona-user-memory"
+    ],
+    [
+      "hermes-agent",
+      "workspace-context-storage"
+    ],
+    [
+      "hermes-agent",
+      "skills-self-improvement"
+    ],
+    [
+      "compare",
+      "lightvela-vs-manus"
+    ],
+    [
+      "compare",
+      "lightvela-vs-localhost-ai-agent"
+    ],
+    [
+      "compare",
+      "lightvela-vs-ai-chatbot"
+    ],
+    [
       "faq"
     ],
     [

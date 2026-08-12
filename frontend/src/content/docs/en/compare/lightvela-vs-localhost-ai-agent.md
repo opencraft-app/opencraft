@@ -2,6 +2,8 @@
 
 ![LightVela cloud setup compared with running Hermes locally](../images/lightvela-vs-self-hosted-hermes.webp)
 
+## Summary
+
 **LightVela is the better fit when you want an always-on Hermes Agent without maintaining the computer underneath it.** Running Hermes on your own computer is the better choice when you want hands-on control over the runtime, tools, updates, and local environment. The right answer depends on whether you want to operate the setup or simply use the agent.
 
 Hermes can run locally on macOS, Windows, Linux, WSL2, and more. Its official installer sets up the runtime and then lets you choose a model provider, tools, and messaging gateway yourself. The [Hermes installation guide](https://hermes-agent.nousresearch.com/docs/getting-started/installation) makes that route quite approachable.
