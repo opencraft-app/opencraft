@@ -12,6 +12,40 @@
 - [x] 修复首页公告条与 FeatureSection 对全局 i18n 单例的依赖，统一跟随公开路由 locale。
 - [x] 补充回归测试并运行定向测试、i18n 检查、类型检查和 diff 检查。
 
+---
+
+# 国际站 Skills 搜索结果来源链接 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
+
+**Goal:** 国际站所有 Skills 搜索结果都在技能标题和 slug 下方单独展示文字型 `Source` 链接；ClawHub 统一链接到 `https://clawhub.ai/`。
+
+**Architecture:** `SearchSkillRow` 继续使用 skills.sh 的技能详情链接，但对 ClawHub 直接使用固定官网地址。
+链接只由前端渲染，不查询 ClawHub 作者或技能详情，因此不会新增 ClawHub 请求或增加限流风险。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS、Vitest 4、React Testing Library。
+
+## Global Constraints
+
+- 仅影响国际站的 ClawHub 与 skills.sh 搜索结果。
+- 国内 SkillHub 搜索结果不展示新来源行。
+- 所有 ClawHub 搜索结果都显示来源链接，固定 URL 为 `https://clawhub.ai/`。
+- 标签通过现有 i18n `t("来源")` 渲染，样式与 skills.sh 的文字型来源链接一致。
+- 不新增依赖、动画或新的交互原语。
+
+## Tasks
+
+- [x] **Task 1: 固定 ClawHub 搜索结果来源链接。**
+  - 修改 `src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`，先断言 ClawHub 搜索结果的 `来源` 链接固定为 `https://clawhub.ai/`。
+  - 修改 `src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`，仅在 global mode 的 `SearchSkillRow` 中为 ClawHub 使用固定官网链接，skills.sh 与国内站逻辑保持不变。
+  - 运行 `pnpm exec vitest run src/pages/marketing/skills-demo/skill-registries.test.ts src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`。
+
+- [x] **Task 2: 运行质量门禁并记录验证。**
+  - 运行 `pnpm i18n:check`。
+  - 运行 `pnpm check`。
+  - 检查 `git diff --check` 与最终 diff，确认未修改国内站分支逻辑。
+
+---
 # Agents 左侧导航顺序调整 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
