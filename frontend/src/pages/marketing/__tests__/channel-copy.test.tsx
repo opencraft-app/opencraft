@@ -73,7 +73,25 @@ describe("marketing channel copy", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("2026 年 7 月")).toBeInTheDocument();
+    const monthText = screen.getByText("2026 年 7 月");
+    const monthLabel = monthText.closest("p");
+
+    expect(monthLabel).not.toBeNull();
+    expect(monthLabel).toHaveClass(
+      "inline-flex",
+      "h-12",
+      "items-center",
+      "gap-4",
+    );
+    expect(monthLabel).not.toHaveClass("rounded-full", "px-6");
+    expect(monthLabel).toHaveStyle({ color: "#6E47FF" });
+    expect(monthLabel).not.toHaveStyle({
+      backgroundColor: "rgba(110, 71, 255, 0.16)",
+    });
+    expect(monthLabel?.querySelector(".lucide-calendar-check")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
     expect(screen.getByRole("heading", { name: "自动任务支持调用技能" })).toBeInTheDocument();
     const skillsPageImage = screen.getByAltText("技能页面全新升级");
     expect(skillsPageImage).toHaveAttribute(

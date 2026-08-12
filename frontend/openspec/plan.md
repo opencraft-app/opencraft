@@ -1,3 +1,153 @@
+# 更新日志左侧日期样式 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** 实现与验证完成，用户已确认 commit / push / MR。
+
+**Goal:** 参考 Viktor Changelog，将 `/changelog` 左侧月份改成带日历勾选图标的紫色日期标签，同时保持页面其他部分不变。
+
+**Architecture:** 继续使用 `ChangelogMonthGroup` 和现有双列网格，只在月份标签的 JSX 中复用 `lucide-react` 的 `CalendarCheck` 并替换局部样式。通过现有国内站 Changelog 渲染测试锁定图标、尺寸、间距和颜色，不新增组件、数据字段或依赖。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS v4、Lucide React、Vitest 4、Testing Library。
+
+## Global Constraints
+
+- 仅修改左侧月份标签及其回归测试，不修改日期数据、正文、配图、右侧时间线、页头、页脚或滚动行为。
+- 使用 `#6E47FF` 前景色，不增加背景、边框、圆角或额外水平内边距。
+- 标签固定 `48px` 高，图文间距 `16px`，图标 `20px`。
+- 不新增依赖、组件、翻译文案或 i18n 生成文件。
+
+---
+
+### Task 1: 更新月份标签并验证
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/changelog-page.tsx:8-12,404-421`
+- Test: `frontend/src/pages/marketing/__tests__/channel-copy.test.tsx:69-99`
+- Design: `frontend/openspec/changes/2026-08-12-frontsandbox-changelog-date-style-design.md`
+
+**Interfaces:**
+- Consumes: `ChangelogMonthGroup.month` 现有本地化月份字符串；`lucide-react` 的 `CalendarCheck`。
+- Produces: 不新增导出；所有月份分组共用同一日期标签 JSX。
+
+- [x] **Step 1 — 增加失败回归断言**
+
+  在现有 `announces reliable Skill invocation for automations in the July changelog` 用例中，把月份存在性断言扩展为：
+
+  ```tsx
+  const monthText = screen.getByText("2026 年 7 月");
+  const monthLabel = monthText.closest("p");
+
+  expect(monthLabel).not.toBeNull();
+  expect(monthLabel).toHaveClass(
+    "inline-flex",
+    "h-12",
+    "items-center",
+    "gap-4",
+  );
+  expect(monthLabel).not.toHaveClass("rounded-full", "px-6");
+  expect(monthLabel).toHaveStyle({ color: "#6E47FF" });
+  expect(monthLabel).not.toHaveStyle({
+    backgroundColor: "rgba(110, 71, 255, 0.16)",
+  });
+  expect(monthLabel?.querySelector(".lucide-calendar-check")).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
+  ```
+
+- [x] **Step 2 — 运行测试并确认 RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run src/pages/marketing/__tests__/channel-copy.test.tsx
+  ```
+
+  Expected: FAIL，现有月份 `<p>` 仍带有 `rounded-full px-6` 和淡紫色背景。
+
+- [x] **Step 3 — 实现最小日期标签样式**
+
+  在 `changelog-page.tsx` 导入图标：
+
+  ```tsx
+  import { CalendarCheck } from "lucide-react";
+  ```
+
+  将左列月份 JSX 替换为：
+
+  ```tsx
+  <div className="pt-1">
+    <p
+      className="inline-flex h-12 items-center gap-4"
+      style={{
+        color: "#6E47FF",
+        fontSize: "16px",
+        fontWeight: 400,
+        lineHeight: 1.5,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <CalendarCheck className="size-5 shrink-0" aria-hidden="true" />
+      <span>{group.month}</span>
+    </p>
+  </div>
+  ```
+
+- [x] **Step 4 — 运行定向测试并确认 GREEN**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run src/pages/marketing/__tests__/channel-copy.test.tsx src/pages/marketing/__tests__/global-changelog.test.tsx
+  ```
+
+  Expected: 两个测试文件全部通过，国内站和国际站现有 Changelog 内容断言保持不变。
+
+- [x] **Step 5 — 运行质量门禁**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm check
+  pnpm i18n:check
+  cd ..
+  git diff --check
+  ```
+
+  Expected: TypeScript、i18n 和 diff 检查均以退出码 `0` 完成；不产生 i18n 文件变更。
+
+- [x] **Step 6 — 浏览器验证**
+
+  启动本地前端并检查 `/changelog`：
+
+  ```bash
+  cd frontend
+  pnpm dev:cn
+  ```
+
+  Expected:
+
+  - 桌面端：月份标签位于左列，图标和文字垂直居中，不显示底框。
+  - 移动端：月份标签按内容宽度左对齐，标签自身不增加横向溢出。
+  - 右侧标题、描述、配图和点线时间轴与修改前一致。
+
+  Verification evidence:
+
+  - 用户标注的 `888 × 933` 视口：标签 `131.14 × 48px`，计算样式为透明背景、`0px` 边框、`0px` 圆角、`0px` 左右内边距。
+  - 移动端：日期标签位于单列内容区内；页面既有页头说明文本使用 `white-space: nowrap`，会产生原有横向溢出，本次遵循范围约束未修改。
+  - 浏览器控制台无 error。
+  - 完整 `pnpm test` 仍有 1 条既有失败：`scripts/docs-image-assets.test.ts` 检出 9 个超出 `512 KiB` 的文档 PNG（被中英文文档重复引用为 18 条）；本分支未修改这些图片、文档或测试。
+
+- [x] **Step 7 — 等待提交确认**
+
+  展示 diff、测试结果和浏览器验证截图；只有用户明确确认后才执行 `git commit`、`git push` 或创建 MR。
+
+---
+
 # 2026-08-11 国际站首页默认英文一致性修复
 
 **Status:** 实现中；确认前不 commit / push / MR。
