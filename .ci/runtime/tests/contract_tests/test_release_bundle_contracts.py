@@ -1578,6 +1578,34 @@ class ReleaseBundleContractTests(unittest.TestCase):
             expected_playground_auto_pin_envs="auto",
         )
 
+    def test_korea_trade_uses_international_billing_test_route(self) -> None:
+        env_path = (
+            REPO_ROOT
+            / "argocd/services/trade"
+            / KOREA_PLAYGROUND_ENV
+            / "trade-platform.env"
+        )
+        values = {
+            key: value
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+
+        self.assertEqual(
+            values["TRADE_BILLING_ENDPOINT"],
+            "billing.test.tencentcloudapi.com",
+        )
+        self.assertEqual(
+            values["TRADE_BILLING_CLOUDLADDER_ROUTE_ID"],
+            "tcapi-billing-trade-intl-test",
+        )
+        self.assertEqual(
+            values["TRADE_BILLING_CLOUDLADDER_CALLER"],
+            "lightvela-trade",
+        )
+
     def test_standard_service_extends_stays_on_v2_local_template_contract(self) -> None:
         for workflow_path in sorted(BUSINESS_WORKFLOWS - {".ci/frontend.yml"}):
             workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
