@@ -1605,6 +1605,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
             values["TRADE_BILLING_CLOUDLADDER_CALLER"],
             "lightvela-trade",
         )
+        self.assertEqual(
+            values["JIFEI_CGW_X_QCLOUD_USER_ID"],
+            "800000294207",
+        )
 
         common = yaml.safe_load(
             (

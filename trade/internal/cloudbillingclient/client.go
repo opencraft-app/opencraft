@@ -20,6 +20,7 @@ const (
 	defaultBillingRegion   = "ap-guangzhou"
 	defaultBillingEndpoint = "billing.tencentcloudapi.com"
 	defaultRequestTimeout  = 10 * time.Second
+	headerXQCloudUserID    = "X-Qcloud-User-Id"
 )
 
 // Client is the CloudAPI surface used by placeorder.
@@ -30,6 +31,7 @@ type Client interface {
 type Config struct {
 	SecretID       string
 	SecretKey      string
+	XQCloudUserID  string
 	Region         string
 	Endpoint       string
 	RequestTimeout time.Duration
@@ -45,7 +47,8 @@ type CloudLadderConfig struct {
 }
 
 type TencentCloudClient struct {
-	client *common.Client
+	client        *common.Client
+	xQCloudUserID string
 }
 
 func NewTencentCloudClient(cfg Config) (*TencentCloudClient, error) {
@@ -79,7 +82,10 @@ func NewTencentCloudClient(cfg Config) (*TencentCloudClient, error) {
 		return nil, err
 	}
 	client.WithHttpTransport(transport)
-	return &TencentCloudClient{client: client}, nil
+	return &TencentCloudClient{
+		client:        client,
+		xQCloudUserID: strings.TrimSpace(cfg.XQCloudUserID),
+	}, nil
 }
 
 func newCloudLadderTransport(cfg CloudLadderConfig, base http.RoundTripper) (http.RoundTripper, error) {
@@ -116,7 +122,7 @@ func (c *TencentCloudClient) CreatePayURL(ctx context.Context, in *CreatePayURLR
 	if c == nil || c.client == nil {
 		return nil, fmt.Errorf("billing tencentcloud client is not configured")
 	}
-	req, err := NewCreatePayURLCommonRequest(ctx, in)
+	req, err := newCreatePayURLCommonRequest(ctx, in, c.xQCloudUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -143,6 +149,14 @@ func (c *TencentCloudClient) CreatePayURL(ctx context.Context, in *CreatePayURLR
 }
 
 func NewCreatePayURLCommonRequest(ctx context.Context, in *CreatePayURLRequest) (*tchttp.CommonRequest, error) {
+	return newCreatePayURLCommonRequest(ctx, in, "")
+}
+
+func newCreatePayURLCommonRequest(
+	ctx context.Context,
+	in *CreatePayURLRequest,
+	xQCloudUserID string,
+) (*tchttp.CommonRequest, error) {
 	params, err := createPayURLParams(in)
 	if err != nil {
 		return nil, err
@@ -150,6 +164,9 @@ func NewCreatePayURLCommonRequest(ctx context.Context, in *CreatePayURLRequest) 
 	req := tchttp.NewCommonRequest("billing", "2018-07-09", "CreatePayUrl")
 	if err := req.SetActionParameters(params); err != nil {
 		return nil, fmt.Errorf("set CreatePayUrl parameters: %w", err)
+	}
+	if value := strings.TrimSpace(xQCloudUserID); value != "" {
+		req.SetHeader(map[string]string{headerXQCloudUserID: value})
 	}
 	req.SetContext(ctx)
 	return req, nil

@@ -82,6 +82,7 @@ type Config struct {
 	BillingCloudAPICloudLadderRouteID    string
 	BillingCloudAPICloudLadderCaller     string
 	BillingCloudAPICloudLadderHMACSecret string
+	BillingCloudAPIXQCloudUserID         string
 
 	// Q58 出口 framework 双层结构必填项；Q60 dispatcher 入参三段式校验前缀。
 	JifeiComponentName      string
@@ -182,6 +183,10 @@ func Load() (Config, error) {
 			"lightvela-trade",
 		),
 		BillingCloudAPICloudLadderHMACSecret: strings.TrimSpace(os.Getenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET")),
+		BillingCloudAPIXQCloudUserID: firstNonEmpty(
+			os.Getenv("TRADE_BILLING_X_QCLOUD_USER_ID"),
+			os.Getenv("JIFEI_CGW_X_QCLOUD_USER_ID"),
+		),
 
 		// Q58 / Q60 dispatcher + builder 默认值（联调期按 jifei align 后再 override）
 		JifeiComponentName:      envOrDefault("TRADE_JIFEI_COMPONENT_NAME", "trade"),

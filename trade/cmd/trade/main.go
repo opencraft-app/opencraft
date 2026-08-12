@@ -91,6 +91,7 @@ func main() {
 			Region:         cfg.BillingCloudAPIRegion,
 			Endpoint:       cfg.BillingCloudAPIEndpoint,
 			RequestTimeout: cfg.BillingCloudAPIRequestTimeout,
+			XQCloudUserID:  cfg.BillingCloudAPIXQCloudUserID,
 			CloudLadder: cloudbillingclient.CloudLadderConfig{
 				Enabled:        cfg.BillingCloudAPICloudLadderEnabled,
 				GatewayBaseURL: cfg.BillingCloudAPICloudLadderGatewayURL,

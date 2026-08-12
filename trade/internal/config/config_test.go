@@ -271,6 +271,8 @@ func TestLoad_BillingCloudAPIUsesTradeBillingCredential(t *testing.T) {
 	t.Setenv("TRADE_BILLING_CLOUDLADDER_ROUTE_ID", "tcapi-billing-intl-dev")
 	t.Setenv("TRADE_BILLING_CLOUDLADDER_CALLER", "lightvela-trade")
 	t.Setenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", "trade-hmac")
+	t.Setenv("TRADE_BILLING_X_QCLOUD_USER_ID", "")
+	t.Setenv("JIFEI_CGW_X_QCLOUD_USER_ID", "800000294207")
 
 	cfg, err := Load()
 	if err != nil {
@@ -302,5 +304,8 @@ func TestLoad_BillingCloudAPIUsesTradeBillingCredential(t *testing.T) {
 	}
 	if cfg.BillingCloudAPICloudLadderHMACSecret != "trade-hmac" {
 		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
+	}
+	if cfg.BillingCloudAPIXQCloudUserID != "800000294207" {
+		t.Fatalf("BillingCloudAPIXQCloudUserID = %q", cfg.BillingCloudAPIXQCloudUserID)
 	}
 }

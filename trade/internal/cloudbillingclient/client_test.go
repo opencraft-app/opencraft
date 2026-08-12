@@ -41,6 +41,36 @@ func TestNewCreatePayURLCommonRequestRejectsMissingOrderIDs(t *testing.T) {
 	}
 }
 
+func TestNewCreatePayURLCommonRequestAddsXQCloudUserIDHeader(t *testing.T) {
+	req, err := newCreatePayURLCommonRequest(
+		context.Background(),
+		&CreatePayURLRequest{OrderIDs: []string{"20260812207021864512621"}},
+		" 800000294207 ",
+	)
+	if err != nil {
+		t.Fatalf("newCreatePayURLCommonRequest: %v", err)
+	}
+
+	if got := req.GetHeader()[headerXQCloudUserID]; got != "800000294207" {
+		t.Fatalf("%s = %q, want %q", headerXQCloudUserID, got, "800000294207")
+	}
+}
+
+func TestNewCreatePayURLCommonRequestOmitsEmptyXQCloudUserIDHeader(t *testing.T) {
+	req, err := newCreatePayURLCommonRequest(
+		context.Background(),
+		&CreatePayURLRequest{OrderIDs: []string{"20260812207021864512621"}},
+		" ",
+	)
+	if err != nil {
+		t.Fatalf("newCreatePayURLCommonRequest: %v", err)
+	}
+
+	if got := req.GetHeader()[headerXQCloudUserID]; got != "" {
+		t.Fatalf("%s = %q, want empty", headerXQCloudUserID, got)
+	}
+}
+
 func TestNormalizePayURLPrefixesBillingRelativeURL(t *testing.T) {
 	got := normalizePayURL(" /v1/r/1450008583/qz_goods_info?token_id=E-1 ")
 	want := "https://buy.cloud.tencent.com/v1/r/1450008583/qz_goods_info?token_id=E-1"
