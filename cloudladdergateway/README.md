@@ -231,6 +231,7 @@ client.WithHttpTransport(transport)
 | --- | --- | --- |
 | `tcapi-account-cn-dev` | `account.dev.tencentcloudapi.com` | SaaS 注册开发联调文档 |
 | `tcapi-billing-cn-dev` | `billing.dev.tencentcloudapi.com` | `shadow` 默认 billing API endpoint |
+| `tcapi-billing-trade-intl-test` | `billing.dev.tencentcloudapi.com` | 国际站 trade 获取支付链接 `CreatePayUrl` 测试通道 |
 | `tcapi-account-cn-test` | `account.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
 | `tcapi-cam-cn-test` | `cam.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
 | `tcapi-sts-cn-test` | `sts.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |

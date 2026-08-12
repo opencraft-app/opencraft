@@ -84,6 +84,33 @@ func TestExampleConfigRoutesIntlBillingAccountAPIToTestHost(t *testing.T) {
 	t.Fatal("tcapi-billing-intl-test route is missing")
 }
 
+func TestExampleConfigRoutesTradeIntlBillingCreatePayURLToDevHost(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	for _, route := range cfg.Routes {
+		if route.ID != "tcapi-billing-trade-intl-test" {
+			continue
+		}
+		if route.Mode != RouteModeSignedHTTPTunnel {
+			t.Fatalf("route mode = %q", route.Mode)
+		}
+		if len(route.Callers) != 1 || route.Callers[0] != "lightvela-trade" {
+			t.Fatalf("route callers = %#v", route.Callers)
+		}
+		upstream, err := cfg.ResolveUpstream(route.ID, route.Upstream)
+		if err != nil {
+			t.Fatalf("resolve trade international billing upstream: %v", err)
+		}
+		if got := upstream.BaseURL; got != "https://billing.dev.tencentcloudapi.com" {
+			t.Fatalf("trade international billing base_url = %q", got)
+		}
+		return
+	}
+	t.Fatal("tcapi-billing-trade-intl-test route is missing")
+}
+
 func TestLoadAppliesRouteHostHeaderOverride(t *testing.T) {
 	t.Setenv("CLOUDLADDERGATEWAY_ROUTE_JIFEI_TEST_HOST_HEADER", "test.trade-intl.billing.tencentyun.com")
 	path := filepath.Join(t.TempDir(), "config.yaml")
@@ -164,6 +191,7 @@ func TestExampleConfigLoads(t *testing.T) {
 		"billing-trade-intl-prod":              false,
 		"tcapi-account-cn-dev":                 false,
 		"tcapi-billing-cn-dev":                 false,
+		"tcapi-billing-trade-intl-test":        false,
 		"tcapi-account-cn-test":                false,
 		"tcapi-cam-cn-test":                    false,
 		"tcapi-sts-cn-test":                    false,
