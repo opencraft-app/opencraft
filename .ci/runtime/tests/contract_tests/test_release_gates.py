@@ -135,7 +135,7 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         self.assertTrue(plan.auto_merge_allowed)
         self.assertTrue(plan.auto_sync_allowed)
 
-    def test_payment_non_migration_change_still_requires_idempotent_db_gate(self) -> None:
+    def test_payment_non_migration_change_skips_db_gate(self) -> None:
         with self._repo_with_commit("payment/internal/api.go") as (repo_root, source_sha):
             plan = plan_release_gates(
                 repo_root=repo_root,
@@ -148,10 +148,10 @@ class ReleaseGatePlannerTests(unittest.TestCase):
             )
 
         self.assertFalse(plan.migration_changed)
-        self.assertTrue(plan.requires_db_job)
-        self.assertTrue(plan.requires_db_readiness)
-        self.assertFalse(plan.auto_merge_allowed)
-        self.assertFalse(plan.auto_sync_allowed)
+        self.assertFalse(plan.requires_db_job)
+        self.assertFalse(plan.requires_db_readiness)
+        self.assertTrue(plan.auto_merge_allowed)
+        self.assertTrue(plan.auto_sync_allowed)
 
     def test_sandbox_baseline_unknown_blocks_auto_sync(self) -> None:
         with self._repo_with_commit("sandbox/README.md") as (repo_root, source_sha):
@@ -166,9 +166,9 @@ class ReleaseGatePlannerTests(unittest.TestCase):
             )
 
         self.assertFalse(plan.migration_changed)
-        self.assertTrue(plan.requires_db_readiness)
-        self.assertFalse(plan.auto_sync_allowed)
-        self.assertIn("sync-default-pools", "\n".join(plan.manual_actions))
+        self.assertFalse(plan.requires_db_readiness)
+        self.assertTrue(plan.auto_sync_allowed)
+        self.assertNotIn("sync-default-pools", "\n".join(plan.manual_actions))
 
     def test_ctl_supports_automatic_readiness_confirmation(self) -> None:
         with self._repo_with_commit("ctl/internal/api.go") as (repo_root, source_sha):
@@ -182,12 +182,11 @@ class ReleaseGatePlannerTests(unittest.TestCase):
                 pin_targets="ctl",
             )
 
-        self.assertTrue(plan.requires_db_job)
-        self.assertTrue(plan.requires_db_readiness)
+        self.assertFalse(plan.requires_db_job)
+        self.assertFalse(plan.requires_db_readiness)
         self.assertTrue(plan.readiness_supported)
-        self.assertFalse(plan.auto_merge_allowed)
-        self.assertFalse(plan.auto_sync_allowed)
-        self.assertIn("verify_db_contract.py", "\n".join(plan.manual_actions))
+        self.assertTrue(plan.auto_merge_allowed)
+        self.assertTrue(plan.auto_sync_allowed)
 
     def test_shprod_always_uses_manual_argo_sync(self) -> None:
         with self._repo_with_commit("frontend/src/App.tsx") as (repo_root, source_sha):

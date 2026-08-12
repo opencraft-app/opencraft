@@ -141,8 +141,9 @@ def plan_release_gates(
     has_verifier = bool(contract.get("verifier"))
     readiness_declared_unsupported = contract.get("readiness_supported") is False
     readiness_supported = bool(contract.get("readiness_supported", True)) and has_verifier
-    requires_db_job = db_mode == "migration" and bool(contract.get("migration_operation"))
-    requires_db_readiness = db_mode == "migration" and (has_verifier or readiness_declared_unsupported)
+    needs_db_gate = migration_changed or env in PROD_MANUAL_SYNC_ENVS
+    requires_db_job = migration_changed and bool(contract.get("migration_operation"))
+    requires_db_readiness = needs_db_gate and db_mode == "migration" and (has_verifier or readiness_declared_unsupported)
     db_job_service = str(contract.get("db_job_service") or service)
     db_job_operation = str(contract.get("migration_operation") or "")
     db_job_image_override = resolve_image_override(image, str(contract.get("migration_image_key") or ""))
