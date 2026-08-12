@@ -16,3 +16,4 @@ patches:
   - path: delete-shared-serviceaccount.yaml
   - path: patch-playground-db.yaml
   - path: patch-shadow-mock-binding.yaml
+  - path: patch-runtime-secrets-rollout.yaml
