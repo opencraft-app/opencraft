@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openclaw/openclaw/mono/shared/cloudladdertransport"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	tchttp "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/http"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
@@ -90,12 +89,12 @@ func newCloudLadderTransport(cfg CloudLadderConfig, base http.RoundTripper) (htt
 		}
 		return http.DefaultTransport, nil
 	}
-	return cloudladdertransport.New(cloudladdertransport.Options{
-		GatewayBaseURL: cfg.GatewayBaseURL,
-		RouteID:        cfg.RouteID,
-		Caller:         cfg.Caller,
-		Secret:         cfg.Secret,
-		Base:           base,
+	return newCloudLadderRoundTripper(cloudLadderTransportOptions{
+		gatewayBaseURL: cfg.GatewayBaseURL,
+		routeID:        cfg.RouteID,
+		caller:         cfg.Caller,
+		secret:         cfg.Secret,
+		base:           base,
 	})
 }
 
