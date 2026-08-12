@@ -152,6 +152,7 @@ openspec/spec.md
 .DS_Store
 frontend/.support-feedback/
 frontend/.next-global/
+frontend/.next-cn/
 frontend/.codebuddy/.cache
 frontend/.workflow/
 # Obsidian 编辑器本地配置：workspace.json 记录机器特定的窗口/标签页状态，

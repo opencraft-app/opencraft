@@ -170,10 +170,6 @@ export const DOCS_ROUTE_SLUGS = {
       "lightvela-vs-genspark"
     ],
     [
-      "faq",
-      "using-lightvela-safely"
-    ],
-    [
       "hermes-agent",
       "hermes-vs-openclaw"
     ],
@@ -300,6 +296,9 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "faq"
+    ],
+    [
+      "contact-us"
     ]
   ],
   "zh-sg": [
@@ -467,10 +466,6 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "compare",
       "lightvela-vs-genspark"
-    ],
-    [
-      "faq",
-      "using-lightvela-safely"
     ],
     [
       "hermes-agent",
@@ -689,10 +684,6 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "compare",
       "lightvela-vs-genspark"
-    ],
-    [
-      "faq",
-      "using-lightvela-safely"
     ],
     [
       "hermes-agent",
