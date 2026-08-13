@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -187,12 +187,33 @@ describe("AgentSettingsPage renewal reminder", () => {
 
     const reminder = screen.getByRole("button", { name: "套餐剩余 3 天到期，点击续费" });
     expect(reminder).toHaveTextContent("临近到期");
-    expect(reminder).toHaveAttribute("title", "剩余 3 天到期");
-    expect(reminder).toHaveClass("is-warning");
+    expect(reminder).not.toHaveAttribute("title");
+    expect(reminder).toHaveClass("is-warning", "cursor-pointer");
 
-    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(reminder);
+    const tooltip = screen.getByRole("tooltip");
+    expect(reminder).toHaveAttribute("aria-describedby", tooltip.id);
+    expect(tooltip).toHaveTextContent("剩余 3 天到期");
+    expect(tooltip).toHaveClass(
+      "rounded-[6px]",
+      "border",
+      "border-[var(--border-subtle)]",
+      "bg-white",
+      "px-3",
+      "py-1.5",
+      "text-[11px]",
+      "font-medium",
+      "pointer-events-auto",
+      "select-text",
+      "shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
+    );
 
-    expect(await screen.findByText("续费套餐")).toBeInTheDocument();
+    const renewAction = within(tooltip).getByRole("button", { name: "立即续费" });
+    expect(renewAction).toHaveAttribute("type", "button");
+    expect(renewAction).toHaveClass("cursor-pointer");
+
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(renewAction);
+
+    expect(await screen.findByRole("heading", { name: "续费套餐" })).toBeInTheDocument();
     expect(screen.getByText("生效中")).toBeInTheDocument();
   });
 
@@ -209,7 +230,7 @@ describe("AgentSettingsPage renewal reminder", () => {
     const reminder = screen.getByRole("button", { name: "套餐剩余 3 天到期，点击续费" });
     await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(reminder);
 
-    expect(await screen.findByText("续费套餐")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "续费套餐" })).toBeInTheDocument();
     expect(await screen.findByText("续费前需先")).toBeInTheDocument();
     expect(screen.getByText("，完成后再确认续费。")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "更新实名认证信息" })).toHaveLength(1);
@@ -222,7 +243,7 @@ describe("AgentSettingsPage renewal reminder", () => {
       screen.getByRole("button", { name: "更新实名认证信息" }),
     );
 
-    expect(screen.queryByText("续费套餐")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "续费套餐" })).not.toBeInTheDocument();
     expect(await screen.findByRole("dialog", { name: "实名认证" })).toBeInTheDocument();
   });
 });

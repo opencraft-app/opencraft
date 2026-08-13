@@ -1108,7 +1108,7 @@ export function RecentCronRunsPanel({
     <div>
       <section className="overflow-hidden rounded-md bg-white" style={PANEL_CARD_STYLE}>
         {runs.length === 0 ? (
-          <div className="m-4 flex items-center gap-2 rounded-lg bg-black/[0.02] px-3 py-2 text-xs text-black/45">
+          <div className="m-4 flex items-center gap-2 px-3 py-2 text-xs text-black/45">
             <Clock className="h-3.5 w-3.5" />
             {t("暂无执行记录")}
           </div>
