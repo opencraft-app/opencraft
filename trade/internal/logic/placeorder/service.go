@@ -53,6 +53,7 @@ const (
 	intlCreatePayURLPayOption   = "chargePay"
 	intlCreatePayURLApplication = "intlSaaSLightvela"
 	intlDescribeOrderPayMode    = "prePay"
+	billingAmountToCentsDivisor = int64(1_000_000)
 )
 
 // 业务错误哨兵（上层 errors.Is 判定）。
@@ -1452,11 +1453,18 @@ func chargeAmountFromOrderList(dealName string, resp *cloudbillingclient.Describ
 		amountField = "PriceDetail.realTotalCost"
 		amountText = strings.TrimSpace(matched.PriceDetailRealTotalCost)
 	}
-	amount, err := strconv.ParseInt(amountText, 10, 64)
-	if err != nil || amount <= 0 {
+	rawAmount, err := strconv.ParseInt(amountText, 10, 64)
+	if err != nil || rawAmount <= 0 {
 		return 0, fmt.Errorf("placeorder: billing DescribeOrderList returned invalid %s=%q for dealName=%s", amountField, amountText, dealName)
 	}
-	return amount, nil
+	// PriceDetail 金额字段的单位是主币种 * 1e8，CreatePayUrl ChargeAmount 要求分。
+	if rawAmount%billingAmountToCentsDivisor != 0 {
+		return 0, fmt.Errorf(
+			"placeorder: billing DescribeOrderList %s=%q cannot be represented as whole cents for dealName=%s",
+			amountField, amountText, dealName,
+		)
+	}
+	return rawAmount / billingAmountToCentsDivisor, nil
 }
 
 // parsePayURLAuxFields 从 trade_order.pay_url 缓存值反解析协议外字段，仅供

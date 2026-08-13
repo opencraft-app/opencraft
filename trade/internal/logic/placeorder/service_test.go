@@ -353,7 +353,7 @@ func newStdDeps() *stdDeps {
 		billing: &fakeCloudBilling{
 			describeOrderListFn: func(_ context.Context, _ cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error) {
 				return &cloudbillingclient.DescribeOrderListResponse{Orders: []cloudbillingclient.OrderInfo{{
-					OrderID: req.OrderIDs[0], PriceDetailRealTotalCost: "650",
+					OrderID: req.OrderIDs[0], PriceDetailRealTotalCost: "650000000",
 				}}}, nil
 			},
 		},
@@ -1009,7 +1009,7 @@ func TestGeneratePayURL_IntlRejectsDescribeOrderListWithoutMatchingOrder(t *test
 	}
 	d.billing.describeOrderListFn = func(context.Context, cloudbillingclient.TemporaryCredentials, *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error) {
 		return &cloudbillingclient.DescribeOrderListResponse{Orders: []cloudbillingclient.OrderInfo{{
-			OrderID: "another-deal", PriceDetailRealTotalCost: "650",
+			OrderID: "another-deal", PriceDetailRealTotalCost: "650000000",
 		}}}, nil
 	}
 
@@ -1032,10 +1032,10 @@ func TestChargeAmountFromOrderListUsesPriceDetailPriority(t *testing.T) {
 			name: "prefer high precision amount",
 			order: cloudbillingclient.OrderInfo{
 				OrderID:                               "deal-1",
-				PriceDetailHighPrecisionRealTotalCost: "650000001",
-				PriceDetailRealTotalCost:              "650000000",
+				PriceDetailHighPrecisionRealTotalCost: "650000000",
+				PriceDetailRealTotalCost:              "700000000",
 			},
-			want: 650000001,
+			want: 650,
 		},
 		{
 			name: "fall back to real total cost",
@@ -1043,7 +1043,7 @@ func TestChargeAmountFromOrderListUsesPriceDetailPriority(t *testing.T) {
 				OrderID:                  "deal-1",
 				PriceDetailRealTotalCost: "650000000",
 			},
-			want: 650000000,
+			want: 650,
 		},
 	}
 
@@ -1059,6 +1059,18 @@ func TestChargeAmountFromOrderListUsesPriceDetailPriority(t *testing.T) {
 				t.Fatalf("charge amount = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestChargeAmountFromOrderListRejectsSubCentAmount(t *testing.T) {
+	_, err := chargeAmountFromOrderList("deal-1", &cloudbillingclient.DescribeOrderListResponse{
+		Orders: []cloudbillingclient.OrderInfo{{
+			OrderID:                               "deal-1",
+			PriceDetailHighPrecisionRealTotalCost: "650000001",
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot be represented as whole cents") {
+		t.Fatalf("chargeAmountFromOrderList error = %v, want sub-cent precision error", err)
 	}
 }
 
