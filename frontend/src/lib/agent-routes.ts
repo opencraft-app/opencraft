@@ -10,7 +10,8 @@ export type AgentSettingsSectionId =
   | "chat"
   | "files"
   | "browser"
-  | "terminal";
+  | "terminal"
+  | "website";
 
 export type AgentWorkbenchSectionId = "workbench";
 
@@ -60,6 +61,7 @@ export const AGENT_SECTION_PATH_BY_ID: Record<AgentSectionId, string> = {
   browser: `${AGENTS_HOME_PATH}/browser`,
   chat: `${AGENTS_HOME_PATH}/chat`,
   terminal: `${AGENTS_HOME_PATH}/terminal`,
+  website: `${AGENTS_HOME_PATH}/websites`,
 };
 
 export const AGENT_SECTION_ID_BY_SLUG: Record<string, AgentSectionId> = {
@@ -79,6 +81,7 @@ export const AGENT_SECTION_ID_BY_SLUG: Record<string, AgentSectionId> = {
   browser: "browser",
   chat: "chat",
   terminal: "terminal",
+  websites: "website",
 };
 
 export const getAgentSectionFromSlug = (slug?: string): AgentSectionId | null => {
@@ -101,3 +104,6 @@ export const getAgentSectionHref = (pathname: string, params: URLSearchParams): 
   const search = next.toString();
   return `${pathname}${search ? `?${search}` : ""}`;
 };
+
+/** 我的作品页路由（避免魔法字符串，统一引用） */
+export const WEBSITES_PATH = "/agents/websites/";

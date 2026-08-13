@@ -12,7 +12,9 @@ on:
       - argocd/apps/*/ctl.yaml
       - argocd/secrets/*/ctl-conf-common.sops.yaml
       - argocd/secrets/*/ctl-conf-rewrite.sops.yaml
+      - argocd/secrets/*/ctl-agentchat-secrets.sops.yaml
       - argocd/secrets/*/ctl-runtime-secrets.sops.yaml
+      - argocd/secrets/*/ctl-website-runtime-secrets.sops.yaml
     paths-ignore:
       - OWNERS
       - "**/OWNERS"

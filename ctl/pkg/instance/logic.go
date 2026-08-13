@@ -29,6 +29,7 @@ import (
 	"ctl/pkg/mq"
 	"ctl/pkg/resource"
 	"ctl/pkg/transport"
+	"ctl/pkg/websiteauth"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -128,6 +129,7 @@ type logic struct {
 	weixinHub                    *weixinLoginHub
 	churnGuard                   *createChurnGuard
 	legacyPassEntitlementEnsurer func(stdctx.Context, string, time.Time) error
+	websiteCredentialStore       websiteauth.Store
 }
 
 func NewLogic() Logic {
@@ -159,6 +161,7 @@ func NewLogic() Logic {
 		executeTasksInline:     false,
 		weixinHub:              newWeixinLoginHub(),
 		churnGuard:             newCreateChurnGuard(instanceConf, logger),
+		websiteCredentialStore: websiteauth.New(resource.RedisMainClient),
 	}
 }
 

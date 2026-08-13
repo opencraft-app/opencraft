@@ -883,11 +883,13 @@ func (l *logic) RunDestroyInstanceTask(ctx pctx.Context, payload *DestroyInstanc
 	entity, err := l.instanceDao.GetByInstanceID(ctx, payload.InstanceID)
 	if err != nil {
 		if errors.Is(err, errcode.ErrInstanceNotFound) {
+			l.revokeInstanceWebsiteCredentialsAfterDestroy(ctx, payload.InstanceID)
 			return nil
 		}
 		return err
 	}
 	if entity.Status == modelinstance.InstanceStatusDeleted {
+		l.revokeInstanceWebsiteCredentialsAfterDestroy(ctx, payload.InstanceID)
 		return nil
 	}
 	if entity.Status != modelinstance.InstanceStatusDeleting {
@@ -907,7 +909,25 @@ func (l *logic) RunDestroyInstanceTask(ctx pctx.Context, payload *DestroyInstanc
 		}
 	}
 
-	return l.finalizeInstanceDeletion(ctx, entity, payload.ReleaseQuota)
+	if err := l.finalizeInstanceDeletion(ctx, entity, payload.ReleaseQuota); err != nil {
+		return err
+	}
+	l.revokeInstanceWebsiteCredentialsAfterDestroy(ctx, payload.InstanceID)
+	return nil
+}
+
+func (l *logic) revokeInstanceWebsiteCredentialsAfterDestroy(ctx pctx.Context, instanceID string) {
+	if l.websiteCredentialStore == nil {
+		return
+	}
+	if err := l.websiteCredentialStore.RevokeInstance(ctx, instanceID); err != nil {
+		if l.logger != nil {
+			l.logger.Warn("revoke website credentials after instance destruction failed",
+				zap.Error(err),
+				zap.String("instance_id", instanceID),
+			)
+		}
+	}
 }
 
 func (l *logic) FinalizeDestroyInstanceTaskFailure(ctx pctx.Context, payload *DestroyInstanceTaskPayload, taskErr error) {
@@ -1190,7 +1210,7 @@ var ErrSnapshotPermanentFailed = errors.New("snapshot permanent failed")
 //     完成快照和 sandbox 删除，snapshot 表保留原用户关联用于恢复
 //
 // 入参 taskID 用于 UpdatePayload 持久化进度位（写回 task.task_params 列）。
-func (l *logic) RunDestroyInstanceForPassTask(ctx pctx.Context, taskID string, payload *common.DestroyInstanceForPassTaskPayload) error {
+func (l *logic) RunDestroyInstanceForPassTask(ctx pctx.Context, taskID string, payload *common.DestroyInstanceForPassTaskPayload) (retErr error) {
 	if payload == nil || strings.TrimSpace(payload.InstanceID) == "" {
 		// 参数性致命错：payload 缺失 / InstanceID 为空 — 重试无法自愈，fail-fast 让父 task 重派。
 		return fmt.Errorf("%w: %v", ErrSnapshotPermanentFailed, errcode.ErrInstanceInvalidParam)
@@ -1203,6 +1223,11 @@ func (l *logic) RunDestroyInstanceForPassTask(ctx pctx.Context, taskID string, p
 		// 0 值通常是父 task payload 没透传 — fail-fast 让父 task 重派（防止 snapshot 表脏数据 + 60min 重试空转）。
 		return fmt.Errorf("%w: payload.TradeFlowID must be > 0, got %d", ErrSnapshotPermanentFailed, payload.TradeFlowID)
 	}
+	defer func() {
+		if retErr == nil {
+			l.revokeInstanceWebsiteCredentialsAfterDestroy(ctx, payload.InstanceID)
+		}
+	}()
 
 	logger := l.logger.With(
 		zap.String("instance_id", payload.InstanceID),

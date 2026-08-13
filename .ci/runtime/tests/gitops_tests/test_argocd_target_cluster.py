@@ -12,6 +12,7 @@ from gitops.argocd_target_cluster import (
     apply_cluster_scope_options,
     cluster_payload_from_kubeconfig,
     load_yaml_mapping,
+    resolve_project_manifest,
     validate_project_manifest,
 )
 
@@ -121,6 +122,18 @@ class ArgoTargetClusterTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "unsupported Argo project RBAC resource 'projects'"):
             validate_project_manifest(project, Path("argocd/projects/beijing-sandbox-2.yaml"))
+
+    def test_resolves_explicit_project_manifest_instead_of_cluster_default(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            project_path = repo_root / "argocd/projects/website.yaml"
+            project_path.parent.mkdir(parents=True)
+            project_path.write_text("apiVersion: argoproj.io/v1alpha1\nkind: AppProject\nmetadata:\n  name: website\n")
+            manifest = {"spec": {"projectPath": "argocd/projects/default.yaml"}}
+
+            resolved = resolve_project_manifest(repo_root, manifest, "argocd/projects/website.yaml")
+
+        self.assertEqual(resolved, project_path)
 
 
 if __name__ == "__main__":

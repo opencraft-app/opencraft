@@ -142,6 +142,40 @@ routes:
     methods: [POST, OPTIONS]
     upstream: http://trade.trade.svc.cluster.local
     access: public
+  - name: ctl-frontend
+    prefix: /v1/frontend
+    methods: [GET, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: public
+    response_header_timeout: 10s
+
+  - name: ctl-websites
+    prefix: /v1/websites
+    methods: [GET, POST, DELETE, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: authenticated
+    auth_strategy: session
+    response_header_timeout: 30s
+
+  - name: ctl-instance-websites
+    prefix: /v1/instance/websites
+    rewrite_prefix: /v1/websites
+    methods: [GET, POST, DELETE, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: public
+    path_policy: allowlist
+    path_allow:
+      - { method: GET, path: "/v1/instance/websites/capability" }
+      - { method: GET, path: "/v1/instance/websites" }
+      - { method: POST, path: "/v1/instance/websites" }
+      - { method: GET, path: "/v1/instance/websites/{site_id}" }
+      - { method: DELETE, path: "/v1/instance/websites/{site_id}" }
+      - { method: GET, path: "/v1/instance/websites/{site_id}/releases" }
+      - { method: POST, path: "/v1/instance/websites/{site_id}/releases" }
+      - { method: GET, path: "/v1/instance/websites/{site_id}/operations/{operation_id}" }
+    response_header_timeout: 30s
+
+
   - name: auth
     prefix: /auth
     methods: [GET, POST, PUT, DELETE, OPTIONS]
