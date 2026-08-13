@@ -52,6 +52,7 @@ import (
 const (
 	intlCreatePayURLPayOption   = "chargePay"
 	intlCreatePayURLApplication = "intlSaaSLightvela"
+	intlDescribeOrderPayMode    = "prePay"
 )
 
 // 业务错误哨兵（上层 errors.Is 判定）。
@@ -1371,23 +1372,38 @@ func (s *Service) generatePayURLByCloudAPI(
 			dealName, order.Uin, shadowCredentials.Uin,
 		)
 	}
+	billingCredentials := cloudbillingclient.TemporaryCredentials{
+		SecretID:  shadowCredentials.SecretID,
+		SecretKey: shadowCredentials.SecretKey,
+		Token:     shadowCredentials.Token,
+	}
+	orderList, err := s.deps.CloudBillingClient.DescribeOrderList(ctx, billingCredentials, &cloudbillingclient.DescribeOrderListRequest{
+		OrderIDs: []string{dealName},
+		Limit:    1,
+		Offset:   0,
+		PayMode:  intlDescribeOrderPayMode,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("placeorder: billing DescribeOrderList dealName=%s: %w", dealName, err)
+	}
+	chargeAmount, err := chargeAmountFromOrderList(dealName, orderList)
+	if err != nil {
+		return nil, err
+	}
 	req := &cloudbillingclient.CreatePayURLRequest{
-		OrderIDs:    []string{dealName},
-		Platform:    optsPlatform(opts),
-		CancelURL:   optsCancelURL(opts),
-		ReturnURL:   optsReturnURL(opts),
-		PayScene:    "credit_card",
-		PayOption:   intlCreatePayURLPayOption,
-		Application: intlCreatePayURLApplication,
+		OrderIDs:     []string{dealName},
+		ChargeAmount: chargeAmount,
+		Platform:     optsPlatform(opts),
+		CancelURL:    optsCancelURL(opts),
+		ReturnURL:    optsReturnURL(opts),
+		PayScene:     "credit_card",
+		PayOption:    intlCreatePayURLPayOption,
+		Application:  intlCreatePayURLApplication,
 	}
 	if orderHasAutoRenewFlag(order.GoodsDetail) {
 		req.ContractOrder = 1
 	}
-	resp, err := s.deps.CloudBillingClient.CreatePayURL(ctx, cloudbillingclient.TemporaryCredentials{
-		SecretID:  shadowCredentials.SecretID,
-		SecretKey: shadowCredentials.SecretKey,
-		Token:     shadowCredentials.Token,
-	}, req)
+	resp, err := s.deps.CloudBillingClient.CreatePayURL(ctx, billingCredentials, req)
 	if err != nil {
 		return nil, fmt.Errorf("placeorder: billing CreatePayUrl dealName=%s: %w", dealName, err)
 	}
@@ -1411,6 +1427,31 @@ func (s *Service) generatePayURLByCloudAPI(
 		AppID:      order.AppID,
 		MidasAppID: midasAppID,
 	}, nil
+}
+
+func chargeAmountFromOrderList(dealName string, resp *cloudbillingclient.DescribeOrderListResponse) (int64, error) {
+	if resp == nil {
+		return 0, fmt.Errorf("placeorder: billing DescribeOrderList returned nil response for dealName=%s", dealName)
+	}
+	var matched *cloudbillingclient.OrderInfo
+	for i := range resp.Orders {
+		if strings.TrimSpace(resp.Orders[i].OrderID) != dealName {
+			continue
+		}
+		if matched != nil {
+			return 0, fmt.Errorf("placeorder: billing DescribeOrderList returned duplicate order for dealName=%s", dealName)
+		}
+		matched = &resp.Orders[i]
+	}
+	if matched == nil {
+		return 0, fmt.Errorf("placeorder: billing DescribeOrderList did not return dealName=%s", dealName)
+	}
+	amountText := strings.TrimSpace(matched.RealTotalCost)
+	amount, err := strconv.ParseInt(amountText, 10, 64)
+	if err != nil || amount <= 0 {
+		return 0, fmt.Errorf("placeorder: billing DescribeOrderList returned invalid RealTotalCost=%q for dealName=%s", amountText, dealName)
+	}
+	return amount, nil
 }
 
 // parsePayURLAuxFields 从 trade_order.pay_url 缓存值反解析协议外字段，仅供

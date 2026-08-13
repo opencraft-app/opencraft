@@ -25,6 +25,7 @@ const (
 
 // Client is the CloudAPI surface used by placeorder.
 type Client interface {
+	DescribeOrderList(ctx context.Context, credentials TemporaryCredentials, req *DescribeOrderListRequest) (*DescribeOrderListResponse, error)
 	CreatePayURL(ctx context.Context, credentials TemporaryCredentials, req *CreatePayURLRequest) (*CreatePayURLResponse, error)
 }
 
@@ -108,6 +109,7 @@ func newCloudLadderTransport(cfg CloudLadderConfig, base http.RoundTripper) (htt
 
 type CreatePayURLRequest struct {
 	OrderIDs      []string
+	ChargeAmount  int64
 	Platform      string
 	ContractOrder int
 	CancelURL     string
@@ -204,6 +206,9 @@ func createPayURLParams(in *CreatePayURLRequest) (map[string]any, error) {
 		return nil, errors.New("CreatePayUrl OrderIds is required")
 	}
 	params := map[string]any{"OrderIds": orderIDs}
+	if in.ChargeAmount > 0 {
+		params["ChargeAmount"] = in.ChargeAmount
+	}
 	if v := strings.TrimSpace(in.Platform); v != "" {
 		params["Platform"] = v
 	}
@@ -220,6 +225,9 @@ func createPayURLParams(in *CreatePayURLRequest) (map[string]any, error) {
 		params["PayScene"] = v
 	}
 	if v := strings.TrimSpace(in.PayOption); v != "" {
+		if strings.EqualFold(v, "chargePay") && in.ChargeAmount <= 0 {
+			return nil, errors.New("CreatePayUrl ChargeAmount must be > 0 when PayOption is chargePay")
+		}
 		params["PayOption"] = v
 	}
 	if v := strings.TrimSpace(in.Application); v != "" {

@@ -152,10 +152,23 @@ func (f *fakeJifei) OnlineRefund(ctx context.Context, req *jifeiclient.OnlineRef
 }
 
 type fakeCloudBilling struct {
-	createPayURLFn      func(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error)
-	createPayURLCalls   atomic.Int32
-	lastCredentials     cloudbillingclient.TemporaryCredentials
-	lastCreatePayURLReq *cloudbillingclient.CreatePayURLRequest
+	describeOrderListFn      func(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error)
+	describeOrderListCalls   atomic.Int32
+	lastDescribeOrderListReq *cloudbillingclient.DescribeOrderListRequest
+	createPayURLFn           func(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error)
+	createPayURLCalls        atomic.Int32
+	lastCredentials          cloudbillingclient.TemporaryCredentials
+	lastCreatePayURLReq      *cloudbillingclient.CreatePayURLRequest
+}
+
+func (f *fakeCloudBilling) DescribeOrderList(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error) {
+	f.describeOrderListCalls.Add(1)
+	f.lastCredentials = credentials
+	f.lastDescribeOrderListReq = req
+	if f.describeOrderListFn != nil {
+		return f.describeOrderListFn(ctx, credentials, req)
+	}
+	return nil, errors.New("fakeCloudBilling: DescribeOrderList not implemented")
 }
 
 func (f *fakeCloudBilling) CreatePayURL(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
@@ -337,7 +350,13 @@ func newStdDeps() *stdDeps {
 				return stdJifeiDealsResp(), nil
 			},
 		},
-		billing:           &fakeCloudBilling{},
+		billing: &fakeCloudBilling{
+			describeOrderListFn: func(_ context.Context, _ cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error) {
+				return &cloudbillingclient.DescribeOrderListResponse{Orders: []cloudbillingclient.OrderInfo{{
+					OrderID: req.OrderIDs[0], RealTotalCost: "650",
+				}}}, nil
+			},
+		},
 		shadowCredentials: &fakeShadowCredentials{},
 		writer:            &fakeOrderWriter{},
 		store:             &fakeOrderStore{},
@@ -849,6 +868,9 @@ func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *test
 		if req.Application != "intlSaaSLightvela" {
 			t.Errorf("Application = %q, want intlSaaSLightvela", req.Application)
 		}
+		if req.ChargeAmount != 650 {
+			t.Errorf("ChargeAmount = %d, want 650", req.ChargeAmount)
+		}
 		if req.CancelURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel" {
 			t.Errorf("CancelURL mismatch: %q", req.CancelURL)
 		}
@@ -875,6 +897,12 @@ func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *test
 	}
 	if d.billing.createPayURLCalls.Load() != 1 {
 		t.Errorf("CreatePayURL calls = %d, want 1", d.billing.createPayURLCalls.Load())
+	}
+	if d.billing.describeOrderListCalls.Load() != 1 {
+		t.Errorf("DescribeOrderList calls = %d, want 1", d.billing.describeOrderListCalls.Load())
+	}
+	if got := d.billing.lastDescribeOrderListReq; got == nil || len(got.OrderIDs) != 1 || got.OrderIDs[0] != "deal-1" || got.PayMode != "prePay" {
+		t.Fatalf("DescribeOrderList request = %+v", got)
 	}
 	if d.shadowCredentials.calls.Load() != 1 {
 		t.Errorf("shadow credential calls = %d, want 1", d.shadowCredentials.calls.Load())
@@ -958,6 +986,36 @@ func TestGeneratePayURL_IntlRejectsShadowCredentialUINMismatch(t *testing.T) {
 	_, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil)
 	if err == nil || !strings.Contains(err.Error(), "uin mismatch") {
 		t.Fatalf("GeneratePayURL error = %v, want uin mismatch", err)
+	}
+	if d.billing.createPayURLCalls.Load() != 0 {
+		t.Fatalf("CreatePayURL calls = %d, want 0", d.billing.createPayURLCalls.Load())
+	}
+}
+
+func TestGeneratePayURL_IntlRejectsDescribeOrderListWithoutMatchingOrder(t *testing.T) {
+	d := newStdDeps()
+	d.service = New(Deps{
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
+	})
+	d.store.getOrderByDealNameFn = func(context.Context, string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: "deal-1", ExternalUserID: "usr_1", Uin: "1000123456"}, nil
+	}
+	d.billing.describeOrderListFn = func(context.Context, cloudbillingclient.TemporaryCredentials, *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error) {
+		return &cloudbillingclient.DescribeOrderListResponse{Orders: []cloudbillingclient.OrderInfo{{
+			OrderID: "another-deal", RealTotalCost: "650",
+		}}}, nil
+	}
+
+	_, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil)
+	if err == nil || !strings.Contains(err.Error(), "did not return dealName=deal-1") {
+		t.Fatalf("GeneratePayURL error = %v, want missing matching order", err)
 	}
 	if d.billing.createPayURLCalls.Load() != 0 {
 		t.Fatalf("CreatePayURL calls = %d, want 0", d.billing.createPayURLCalls.Load())

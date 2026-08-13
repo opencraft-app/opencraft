@@ -61,6 +61,7 @@ func TestCreatePayURLSignsWithTemporaryCredentials(t *testing.T) {
 func TestCreatePayURLParamsUsesBillingCloudAPIFieldNames(t *testing.T) {
 	req := &CreatePayURLRequest{
 		OrderIDs:      []string{" 20260811207021864194801 ", ""},
+		ChargeAmount:  650,
 		Platform:      "mobile",
 		ContractOrder: 1,
 		CancelURL:     "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe/?pay=cancel",
@@ -77,6 +78,7 @@ func TestCreatePayURLParamsUsesBillingCloudAPIFieldNames(t *testing.T) {
 
 	want := map[string]any{
 		"OrderIds":      []string{"20260811207021864194801"},
+		"ChargeAmount":  int64(650),
 		"Platform":      "mobile",
 		"ContractOrder": 1,
 		"CancelUrl":     "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe/?pay=cancel",
@@ -87,6 +89,76 @@ func TestCreatePayURLParamsUsesBillingCloudAPIFieldNames(t *testing.T) {
 	}
 	if !reflect.DeepEqual(params, want) {
 		t.Fatalf("params mismatch:\n got  %#v\n want %#v", params, want)
+	}
+}
+
+func TestDescribeOrderListParamsUsesBillingCloudAPIFieldNames(t *testing.T) {
+	params, err := describeOrderListParams(&DescribeOrderListRequest{
+		OrderIDs: []string{" 20260813002021864858631 ", ""},
+		Limit:    1,
+		Offset:   0,
+		PayMode:  "prePay",
+	})
+	if err != nil {
+		t.Fatalf("describeOrderListParams: %v", err)
+	}
+
+	want := map[string]any{
+		"OrderIds": []string{"20260813002021864858631"},
+		"Limit":    int64(1),
+		"Offset":   int64(0),
+		"PayMode":  "prePay",
+	}
+	if !reflect.DeepEqual(params, want) {
+		t.Fatalf("params mismatch:\n got  %#v\n want %#v", params, want)
+	}
+}
+
+func TestDescribeOrderListDecodesNestedOrderInfos(t *testing.T) {
+	client, err := NewTencentCloudClient(Config{
+		Endpoint:      "billing.test.tencentcloudapi.com",
+		XQCloudUserID: "800000294207",
+		HTTPTransport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if got := req.URL.Host; got != "billing.test.tencentcloudapi.com" {
+				t.Fatalf("host = %q", got)
+			}
+			if got := req.Header["X-TC-Action"]; len(got) != 1 || got[0] != "DescribeOrderList" {
+				t.Fatalf("X-TC-Action = %v", got)
+			}
+			if auth := req.Header.Get("Authorization"); !strings.Contains(auth, "Credential=tmp-secret-id/") {
+				t.Fatalf("Authorization = %q, want temporary secret id", auth)
+			}
+			if token := req.Header["X-TC-Token"]; len(token) != 1 || token[0] != "tmp-session-token" {
+				t.Fatalf("X-TC-Token = %v", token)
+			}
+			if got := req.Header.Get(headerXQCloudUserID); got != "800000294207" {
+				t.Fatalf("%s = %q", headerXQCloudUserID, got)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"Response":{"TotalCount":"1","Data":[{"BigOrderId":"20260813002021864858621","OrderInfos":[{"OrderId":"20260813002021864858631","RealTotalCost":"650"}]}],"RequestId":"req-order-1"}}`)),
+				Request:    req,
+			}, nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewTencentCloudClient: %v", err)
+	}
+
+	resp, err := client.DescribeOrderList(context.Background(), TemporaryCredentials{
+		SecretID: "tmp-secret-id", SecretKey: "tmp-secret-key", Token: "tmp-session-token",
+	}, &DescribeOrderListRequest{
+		OrderIDs: []string{"20260813002021864858631"}, Limit: 1, PayMode: "prePay",
+	})
+	if err != nil {
+		t.Fatalf("DescribeOrderList: %v", err)
+	}
+	if resp.RequestID != "req-order-1" || len(resp.Orders) != 1 {
+		t.Fatalf("response = %+v", resp)
+	}
+	if got := resp.Orders[0]; got.OrderID != "20260813002021864858631" || got.RealTotalCost != "650" {
+		t.Fatalf("order = %+v", got)
 	}
 }
 
