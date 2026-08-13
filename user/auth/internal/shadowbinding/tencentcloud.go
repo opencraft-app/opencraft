@@ -423,11 +423,29 @@ func (c *TencentCloudSDKClient) getSaaSTokenByAuthCode(ctx context.Context, auth
 }
 
 func (c *TencentCloudSDKClient) GetTemporaryCredentialsForSaaS(ctx context.Context, in CloudTemporaryCredentialsInput) (CloudTemporaryCredentials, error) {
+	startedAt := time.Now()
 	saasToken, err := c.getSaaSTokenByAuthCode(ctx, in.AuthCode, in.ClientIP, in.ClientUA)
 	if err != nil {
+		slog.WarnContext(ctx, "shadow temporary credentials failed at saas token",
+			"platform", c.platform,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+			"err", err,
+		)
 		return CloudTemporaryCredentials{}, err
 	}
-	return c.getSaaSAccessToken(ctx, saasToken, in.ClientIP, in.ClientUA)
+	credentials, err := c.getSaaSAccessToken(ctx, saasToken, in.ClientIP, in.ClientUA)
+	if err != nil {
+		slog.WarnContext(ctx, "shadow temporary credentials failed at sts credentials",
+			"platform", c.platform,
+			"uin", saasToken.Uin,
+			"owner_uin", saasToken.OwnerUin,
+			"saas_token_request_id", saasToken.RequestID,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+			"err", err,
+		)
+		return CloudTemporaryCredentials{}, err
+	}
+	return credentials, nil
 }
 
 func (c *TencentCloudSDKClient) getSaaSAccessToken(ctx context.Context, token CloudSaaSTokenResult, clientIP, clientUA string) (CloudTemporaryCredentials, error) {
