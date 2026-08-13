@@ -1,6 +1,6 @@
 # 自动任务最近执行空状态去灰底设计
 
-**状态：** 待用户复核后实施
+**状态：** 已实现并通过本地验证
 
 **分支：** `frontsandbox/automation-empty-state-transparent`
 

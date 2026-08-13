@@ -3123,6 +3123,7 @@ export const AgentSettingsPage = ({
     () => (paidBillingActive ? getPassExpiryReminder(activePass) : null),
     [activePass, paidBillingActive],
   );
+  const passExpiryTooltipId = useId();
   const handleRenewPassSuccess = useCallback(async () => {
     setRenewPassModalOpen(false);
     await refreshPasses();
@@ -4987,24 +4988,49 @@ export const AgentSettingsPage = ({
                               {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
                             </span>
                             {passExpiryReminder && activePass && (
-                              <button
-                                type="button"
-                                className={cn("lv-agent-renewal-badge", `is-${passExpiryReminder.level}`)}
-                                title={passExpiryReminder.tooltip}
-                                aria-label={t("套餐{{time}}，点击续费", { time: passExpiryReminder.tooltip })}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setRenewPassModalOpen(true);
-                                }}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter" || event.key === " ") {
+                              <span className="group relative inline-flex">
+                                <button
+                                  type="button"
+                                  className={cn("lv-agent-renewal-badge cursor-pointer", `is-${passExpiryReminder.level}`)}
+                                  aria-label={t("套餐{{time}}，点击续费", { time: passExpiryReminder.tooltip })}
+                                  aria-describedby={passExpiryTooltipId}
+                                  onClick={(event) => {
                                     event.stopPropagation();
-                                  }
-                                }}
-                              >
-                                <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                                {passExpiryReminder.label}
-                              </button>
+                                    setRenewPassModalOpen(true);
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.stopPropagation();
+                                    }
+                                  }}
+                                >
+                                  <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                                  {passExpiryReminder.label}
+                                </button>
+                                <span className="pointer-events-none absolute bottom-full left-1/2 z-20 -translate-x-1/2 pb-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                                  <span
+                                    id={passExpiryTooltipId}
+                                    role="tooltip"
+                                    className="pointer-events-auto relative whitespace-nowrap rounded-[6px] border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-black/80 shadow-[0_8px_24px_rgba(15,23,42,0.12)] select-text"
+                                  >
+                                    {passExpiryReminder.tooltip}
+                                    <button
+                                      type="button"
+                                      className="ml-2 cursor-pointer font-semibold text-[#A86108] underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A86108]/30"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        setRenewPassModalOpen(true);
+                                      }}
+                                    >
+                                      {t("立即续费")}
+                                    </button>
+                                    <span
+                                      aria-hidden="true"
+                                      className="absolute top-full left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[var(--border-subtle)] bg-white"
+                                    />
+                                  </span>
+                                </span>
+                              </span>
                             )}
                           </span>
                         </span>

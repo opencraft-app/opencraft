@@ -1,3 +1,226 @@
+# 即将到期 Tooltip 视觉修正 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** 增量实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
+
+**Goal:** 将 `/agents` 左侧“即将到期”标签的浏览器原生灰色提示框替换为符合 `DESIGN.md` 的自定义 hover/focus Tooltip。
+
+**Architecture:** 在续费提醒按钮外增加无布局副作用的 `group relative inline-flex` 包装层，Tooltip 作为同级绝对定位元素显示在按钮上方。该位置没有裁剪祖先，因此采用 `DESIGN.md` 推荐的内联方案，不引入 Portal 定位状态；按钮点击续费逻辑保持不变。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS v4、Vitest 4、Testing Library。
+
+## Global Constraints
+
+- 移除续费提醒按钮的原生 `title`，避免系统灰色提示框。
+- Tooltip 使用白底深色字、细边框、6px 圆角（Tailwind 默认 `rounded-md` 的视觉值）、`px-3 py-1.5`、`text-[11px] font-medium` 与 `0 8px 24px rgba(15,23,42,0.12)` 轻阴影。
+- Tooltip 位于触发器上方居中，带白底小三角，支持 hover、focus、鼠标进入与文本选择。
+- 不修改“即将到期”标签本身、剩余时间计算、点击续费逻辑、文案或 i18n 资源。
+- 国内站和国际站共用同一实现，不增加区域条件分支。
+
+---
+
+### Task 1: 用自定义 Tooltip 替换原生 title 并验证
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx:4989-5008`
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx:180-195`
+
+**Interfaces:**
+- Consumes: `passExpiryReminder.tooltip` 现有剩余时间文案与续费提醒按钮。
+- Produces: `role="tooltip"` 的可选择自定义浮层；不新增导出或公共接口。
+
+- [x] **Step 1 — 增加失败回归测试**
+
+  更新现有续费提醒用例，断言按钮不再包含 `title`，页面存在对应 `role="tooltip"`，并锁定白底、细边框、6px 圆角、11px 字号、轻阴影、可交互和可选择样式。
+
+- [x] **Step 2 — 运行测试并确认 RED**
+
+  Run: `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
+
+  Expected: FAIL，旧实现仍有原生 `title` 且没有自定义 Tooltip。
+
+- [x] **Step 3 — 实现最小 Tooltip 调整**
+
+  用 `group relative inline-flex` 包裹提醒按钮，删除 `title`，增加位于上方居中的自定义 Tooltip 与小三角；通过透明 `pb-2` hover 桥接按钮和气泡。
+
+- [x] **Step 4 — 运行定向测试并确认 GREEN**
+
+  Run: `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
+
+  Expected: 该测试文件全部通过。
+
+- [x] **Step 5 — 运行质量门禁并本地预览**
+
+  Run: `cd frontend && pnpm check && pnpm i18n:check && cd .. && git diff --check`
+
+  Expected: 全部以退出码 `0` 完成；在已登录本地预览中 hover/focus “即将到期”时显示新 Tooltip，点击仍打开续费弹窗。
+
+- [x] **Step 6 — 验收门禁**
+
+  展示改动与验证结果；仅在用户明确确认后提交、推送或创建 MR。
+
+---
+
+### Task 2: 在 Tooltip 内增加续费入口并验证
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx:5007-5024`
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx:187-220`
+
+**Interfaces:**
+- Consumes: `passExpiryReminder.tooltip` 与现有 `setRenewPassModalOpen(true)`。
+- Produces: Tooltip 内原生文字按钮“续费套餐”；不新增状态、组件、导出或公共接口。
+
+- [x] **Step 1 — 增加失败回归测试**
+
+  在现有 Tooltip 用例中查询 Tooltip 内的“续费套餐”按钮，断言其可聚焦，并点击后出现续费弹窗；原提醒标签打开续费弹窗的行为继续由实名认证用例覆盖。
+
+- [x] **Step 2 — 运行测试并确认 RED**
+
+  Run: `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
+
+  Expected: FAIL，Tooltip 内尚不存在“续费套餐”按钮。
+
+- [x] **Step 3 — 实现最小文字按钮**
+
+  在剩余时间文案后增加原生 `<button type="button">续费套餐</button>`，使用当前提醒橙色、hover 下划线和可见焦点样式；点击时阻止冒泡并复用 `setRenewPassModalOpen(true)`。
+
+- [x] **Step 4 — 运行定向测试并确认 GREEN**
+
+  Run: `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
+
+  Expected: 该测试文件全部通过。
+
+- [x] **Step 5 — 运行质量门禁并本地交互回验**
+
+  Run: `cd frontend && pnpm check && pnpm i18n:check && cd .. && git diff --check`
+
+  Expected: 全部以退出码 `0` 完成；本地 hover 后点击“续费套餐”能打开续费弹窗，Tooltip 在按钮 hover/focus 时保持可见。
+
+- [x] **Step 6 — 验收门禁**
+
+  展示本地效果与验证结果；仅在用户明确确认后提交、推送或创建 MR。
+
+- [x] **Step 7 — 补充可点击鼠标样式并回验**
+
+  为 Tooltip 内“续费套餐”文字按钮增加 `cursor-pointer`，扩展现有测试断言，并在本地预览确认计算样式为 `cursor: pointer`。
+
+- [x] **Step 8 — 补充提醒标签可点击鼠标样式并回验**
+
+  为外层“即将到期 / 临近到期”按钮增加 `cursor-pointer`，扩展现有测试断言，并在本地预览确认计算样式为 `cursor: pointer`；不改变 hover 颜色、焦点样式或点击逻辑。
+
+- [x] **Step 9 — 更新 Tooltip 续费入口文案**
+
+  将 Tooltip 内入口从“续费套餐”调整为“立即续费”，保留弹窗标题“续费套餐”和现有点击、焦点、cursor 行为；更新定向测试并回验。
+
+---
+
+# 自动任务最近执行空状态去灰底 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** 实现与验证完成，等待用户验收；不自动提交实现、推送或创建 MR。
+
+**Goal:** 去掉 `/agents/automations/` 最近执行空状态行的浅灰色背景与圆角，同时保留外层白色卡片和其余视觉属性。
+
+**Architecture:** 沿用 `RecentCronRunsPanel` 的现有结构，只删除空状态行上的两个 Tailwind class。扩展现有组件测试直接渲染空记录状态，锁定内层背景/圆角移除且外层卡片仍存在，不新增组件、导出或依赖。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS v4、Vitest 4、Testing Library。
+
+## Global Constraints
+
+- 仅调整空状态行，不修改有记录列表、加载态、错误态、页签、刷新交互或 Hermes Cron 逻辑。
+- 删除 `bg-black/[0.02]` 和 `rounded-lg`，保留空状态行的间距、图标、字号和颜色。
+- 保留外层白色卡片的边框、阴影和 `rounded-md`。
+- 国内站和国际站共用同一组件，不增加区域条件分支。
+- 不新增依赖、文案或 i18n 生成文件。
+
+---
+
+### Task 1: 移除最近执行空状态灰底并验证
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx:1109-1115`
+- Test: `frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts:45-105`
+- Design: `frontend/openspec/changes/2026-08-13-frontsandbox-automation-empty-state-transparent-design.md`
+
+**Interfaces:**
+- Consumes: `RecentCronRunsPanel` 现有 `runs` 与 `skillLoadState` props。
+- Produces: 不新增导出；国内站和国际站继续渲染同一空状态 JSX。
+
+- [x] **Step 1 — 增加失败回归测试**
+
+  在 `recent run limit hint` 测试组中增加空状态用例：
+
+  ```tsx
+  it("renders the empty recent-runs message without a nested gray container", () => {
+    const { container } = render(createElement(RecentCronRunsPanel, {
+      runs: [],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+    const message = screen.getByText("暂无执行记录");
+    const emptyState = message.closest("div");
+    const panel = container.querySelector("section");
+
+    expect(emptyState).not.toBeNull();
+    expect(emptyState).toHaveClass("m-4", "px-3", "py-2", "text-xs", "text-black/45");
+    expect(emptyState).not.toHaveClass("bg-black/[0.02]", "rounded-lg");
+    expect(panel).toHaveClass("rounded-md", "bg-white");
+    expect(panel).toHaveStyle({ background: "#ffffff" });
+  });
+  ```
+
+- [x] **Step 2 — 运行测试并确认 RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run src/pages/marketing/__tests__/agent-automations-panel.test.ts
+  ```
+
+  Expected: FAIL，空状态行仍包含 `bg-black/[0.02]` 和 `rounded-lg`。
+
+- [x] **Step 3 — 实现最小样式调整**
+
+  将空状态行改为：
+
+  ```tsx
+  <div className="m-4 flex items-center gap-2 px-3 py-2 text-xs text-black/45">
+  ```
+
+- [x] **Step 4 — 运行定向测试并确认 GREEN**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run src/pages/marketing/__tests__/agent-automations-panel.test.ts
+  ```
+
+  Expected: 该测试文件全部通过，现有最近执行详情测试保持不变。
+
+- [x] **Step 5 — 运行质量门禁**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm check
+  pnpm i18n:check
+  cd ..
+  git diff --check
+  ```
+
+  Expected: TypeScript、i18n 和 diff 检查均以退出码 `0` 完成；不产生生成资源变更。
+
+- [x] **Step 6 — 验收门禁**
+
+  展示 diff 与验证结果；只有用户明确确认后才执行实现提交、推送或创建 MR。
+
+---
+
 # 2026-08-12 首页 Hero 浅色化
 
 **Status:** 前端实现与基础检查已完成，待用户视觉验收后再提交 / MR。
