@@ -353,7 +353,7 @@ func newStdDeps() *stdDeps {
 		billing: &fakeCloudBilling{
 			describeOrderListFn: func(_ context.Context, _ cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error) {
 				return &cloudbillingclient.DescribeOrderListResponse{Orders: []cloudbillingclient.OrderInfo{{
-					OrderID: req.OrderIDs[0], RealTotalCost: "650",
+					OrderID: req.OrderIDs[0], PriceDetailRealTotalCost: "650",
 				}}}, nil
 			},
 		},
@@ -1009,7 +1009,7 @@ func TestGeneratePayURL_IntlRejectsDescribeOrderListWithoutMatchingOrder(t *test
 	}
 	d.billing.describeOrderListFn = func(context.Context, cloudbillingclient.TemporaryCredentials, *cloudbillingclient.DescribeOrderListRequest) (*cloudbillingclient.DescribeOrderListResponse, error) {
 		return &cloudbillingclient.DescribeOrderListResponse{Orders: []cloudbillingclient.OrderInfo{{
-			OrderID: "another-deal", RealTotalCost: "650",
+			OrderID: "another-deal", PriceDetailRealTotalCost: "650",
 		}}}, nil
 	}
 
@@ -1019,6 +1019,46 @@ func TestGeneratePayURL_IntlRejectsDescribeOrderListWithoutMatchingOrder(t *test
 	}
 	if d.billing.createPayURLCalls.Load() != 0 {
 		t.Fatalf("CreatePayURL calls = %d, want 0", d.billing.createPayURLCalls.Load())
+	}
+}
+
+func TestChargeAmountFromOrderListUsesPriceDetailPriority(t *testing.T) {
+	tests := []struct {
+		name  string
+		order cloudbillingclient.OrderInfo
+		want  int64
+	}{
+		{
+			name: "prefer high precision amount",
+			order: cloudbillingclient.OrderInfo{
+				OrderID:                               "deal-1",
+				PriceDetailHighPrecisionRealTotalCost: "650000001",
+				PriceDetailRealTotalCost:              "650000000",
+			},
+			want: 650000001,
+		},
+		{
+			name: "fall back to real total cost",
+			order: cloudbillingclient.OrderInfo{
+				OrderID:                  "deal-1",
+				PriceDetailRealTotalCost: "650000000",
+			},
+			want: 650000000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := chargeAmountFromOrderList("deal-1", &cloudbillingclient.DescribeOrderListResponse{
+				Orders: []cloudbillingclient.OrderInfo{tt.order},
+			})
+			if err != nil {
+				t.Fatalf("chargeAmountFromOrderList: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("charge amount = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 

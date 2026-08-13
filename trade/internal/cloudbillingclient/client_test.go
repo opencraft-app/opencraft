@@ -137,7 +137,7 @@ func TestDescribeOrderListDecodesNestedOrderInfos(t *testing.T) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(`{"Response":{"TotalCount":"1","Data":[{"BigOrderId":"20260813002021864858621","OrderInfos":[{"OrderId":"20260813002021864858631","RealTotalCost":"650"}]}],"RequestId":"req-order-1"}}`)),
+				Body:       io.NopCloser(strings.NewReader(`{"Response":{"TotalCount":"1","Data":[{"BigOrderId":"20260813002021864858621","OrderInfos":[{"OrderId":"20260813002021864858631","RealTotalCost":"","PriceDetail":"{\"realTotalCost\":650000000,\"highPrecisionPrice\":{\"realTotalCostHigh\":\"650000001\"}}"}]}],"RequestId":"req-order-1"}}`)),
 				Request:    req,
 			}, nil
 		}),
@@ -157,8 +157,41 @@ func TestDescribeOrderListDecodesNestedOrderInfos(t *testing.T) {
 	if resp.RequestID != "req-order-1" || len(resp.Orders) != 1 {
 		t.Fatalf("response = %+v", resp)
 	}
-	if got := resp.Orders[0]; got.OrderID != "20260813002021864858631" || got.RealTotalCost != "650" {
+	if got := resp.Orders[0]; got.OrderID != "20260813002021864858631" ||
+		got.PriceDetailHighPrecisionRealTotalCost != "650000001" {
 		t.Fatalf("order = %+v", got)
+	}
+}
+
+func TestDecodeOrderPriceDetailOnlyUsesFallbackWhenHighPrecisionIsEmpty(t *testing.T) {
+	tests := []struct {
+		name     string
+		raw      string
+		wantHigh string
+		wantReal string
+	}{
+		{
+			name:     "ignore malformed fallback when high precision exists",
+			raw:      `{"realTotalCost":{},"highPrecisionPrice":{"realTotalCostHigh":"650000001"}}`,
+			wantHigh: "650000001",
+		},
+		{
+			name:     "use numeric fallback when high precision is empty",
+			raw:      `{"realTotalCost":650000000,"highPrecisionPrice":{"realTotalCostHigh":""}}`,
+			wantReal: "650000000",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotHigh, gotReal, err := decodeOrderPriceDetail(tt.raw)
+			if err != nil {
+				t.Fatalf("decodeOrderPriceDetail: %v", err)
+			}
+			if gotHigh != tt.wantHigh || gotReal != tt.wantReal {
+				t.Fatalf("amounts = (%q, %q), want (%q, %q)", gotHigh, gotReal, tt.wantHigh, tt.wantReal)
+			}
+		})
 	}
 }
 

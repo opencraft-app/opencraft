@@ -1446,10 +1446,15 @@ func chargeAmountFromOrderList(dealName string, resp *cloudbillingclient.Describ
 	if matched == nil {
 		return 0, fmt.Errorf("placeorder: billing DescribeOrderList did not return dealName=%s", dealName)
 	}
-	amountText := strings.TrimSpace(matched.RealTotalCost)
+	amountField := "PriceDetail.highPrecisionPrice.realTotalCostHigh"
+	amountText := strings.TrimSpace(matched.PriceDetailHighPrecisionRealTotalCost)
+	if amountText == "" {
+		amountField = "PriceDetail.realTotalCost"
+		amountText = strings.TrimSpace(matched.PriceDetailRealTotalCost)
+	}
 	amount, err := strconv.ParseInt(amountText, 10, 64)
 	if err != nil || amount <= 0 {
-		return 0, fmt.Errorf("placeorder: billing DescribeOrderList returned invalid RealTotalCost=%q for dealName=%s", amountText, dealName)
+		return 0, fmt.Errorf("placeorder: billing DescribeOrderList returned invalid %s=%q for dealName=%s", amountField, amountText, dealName)
 	}
 	return amount, nil
 }

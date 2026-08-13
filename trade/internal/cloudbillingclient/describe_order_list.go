@@ -20,9 +20,10 @@ type DescribeOrderListRequest struct {
 }
 
 type OrderInfo struct {
-	BigOrderID    string
-	OrderID       string
-	RealTotalCost string
+	BigOrderID                            string
+	OrderID                               string
+	PriceDetailHighPrecisionRealTotalCost string
+	PriceDetailRealTotalCost              string
 }
 
 type DescribeOrderListResponse struct {
@@ -62,8 +63,8 @@ func (c *TencentCloudClient) DescribeOrderList(ctx context.Context, credentials 
 			Data []struct {
 				BigOrderID string `json:"BigOrderId"`
 				OrderInfos []struct {
-					OrderID       string `json:"OrderId"`
-					RealTotalCost string `json:"RealTotalCost"`
+					OrderID     string `json:"OrderId"`
+					PriceDetail string `json:"PriceDetail"`
 				} `json:"OrderInfos"`
 			} `json:"Data"`
 			RequestID string `json:"RequestId"`
@@ -75,14 +76,66 @@ func (c *TencentCloudClient) DescribeOrderList(ctx context.Context, credentials 
 	out := &DescribeOrderListResponse{RequestID: strings.TrimSpace(payload.Response.RequestID)}
 	for _, bigOrder := range payload.Response.Data {
 		for _, order := range bigOrder.OrderInfos {
+			highPrecisionRealTotalCost, realTotalCost, err := decodeOrderPriceDetail(order.PriceDetail)
+			if err != nil {
+				return nil, fmt.Errorf("decode DescribeOrderList PriceDetail orderId=%s: %w", order.OrderID, err)
+			}
 			out.Orders = append(out.Orders, OrderInfo{
-				BigOrderID:    strings.TrimSpace(bigOrder.BigOrderID),
-				OrderID:       strings.TrimSpace(order.OrderID),
-				RealTotalCost: strings.TrimSpace(order.RealTotalCost),
+				BigOrderID:                            strings.TrimSpace(bigOrder.BigOrderID),
+				OrderID:                               strings.TrimSpace(order.OrderID),
+				PriceDetailHighPrecisionRealTotalCost: highPrecisionRealTotalCost,
+				PriceDetailRealTotalCost:              realTotalCost,
 			})
 		}
 	}
 	return out, nil
+}
+
+func decodeOrderPriceDetail(raw string) (highPrecisionRealTotalCost string, realTotalCost string, err error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", "", nil
+	}
+	var detail struct {
+		RealTotalCost      json.RawMessage `json:"realTotalCost"`
+		HighPrecisionPrice struct {
+			RealTotalCostHigh json.RawMessage `json:"realTotalCostHigh"`
+		} `json:"highPrecisionPrice"`
+	}
+	if err := json.Unmarshal([]byte(raw), &detail); err != nil {
+		return "", "", err
+	}
+	highPrecisionRealTotalCost, err = billingAmountText(detail.HighPrecisionPrice.RealTotalCostHigh)
+	if err != nil {
+		return "", "", fmt.Errorf("highPrecisionPrice.realTotalCostHigh: %w", err)
+	}
+	if highPrecisionRealTotalCost != "" {
+		return highPrecisionRealTotalCost, "", nil
+	}
+	realTotalCost, err = billingAmountText(detail.RealTotalCost)
+	if err != nil {
+		return "", "", fmt.Errorf("realTotalCost: %w", err)
+	}
+	return highPrecisionRealTotalCost, realTotalCost, nil
+}
+
+func billingAmountText(raw json.RawMessage) (string, error) {
+	raw = json.RawMessage(strings.TrimSpace(string(raw)))
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", nil
+	}
+	if raw[0] == '"' {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(value), nil
+	}
+	var value json.Number
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(value.String()), nil
 }
 
 func newDescribeOrderListCommonRequest(ctx context.Context, in *DescribeOrderListRequest, xQCloudUserID string) (*tchttp.CommonRequest, error) {
