@@ -1,0 +1,4 @@
+interface:
+  display_name: "Video Script Generator"
+  short_description: "Research-led ideas and short product video scripts"
+  default_prompt: "Use $video-skill to research eight clickbait video ideas, then write one under-50-second LightVela product script."
