@@ -4,4 +4,5 @@ metadata:
   name: lightclaw-auth-config
   namespace: user-auth
 data:
+  LIGHTCLAW_GITHUB_REGISTRATION_ENABLED: "true"
   LIGHTCLAW_QQ_REGISTRATION_ENABLED: "true"

@@ -227,9 +227,18 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 			"err", err,
 		)
 		var serviceErr *service.Error
-		if errors.As(err, &serviceErr) && serviceErr.Code == "oauth_registration_disabled" {
-			ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_registration_disabled"))
-			return
+		if errors.As(err, &serviceErr) {
+			switch serviceErr.Code {
+			case "oauth_registration_disabled":
+				ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_registration_disabled"))
+				return
+			case "registration_email_suffix_blocked":
+				ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_email_suffix_blocked"))
+				return
+			case "oauth_registration_email_required":
+				ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_email_required"))
+				return
+			}
 		}
 		ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_sign_in_failed"))
 		return
