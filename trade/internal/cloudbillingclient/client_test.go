@@ -2,9 +2,61 @@ package cloudbillingclient
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 )
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestCreatePayURLSignsWithTemporaryCredentials(t *testing.T) {
+	var captured *http.Request
+	client, err := NewTencentCloudClient(Config{
+		Endpoint:      "billing.test.tencentcloudapi.com",
+		XQCloudUserID: "800000294207",
+		HTTPTransport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			captured = req.Clone(req.Context())
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"Response":{"Url":"/v1/r/1450008583/qz_goods_info?token_id=E-1","RequestId":"req-1"}}`)),
+				Request:    req,
+			}, nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewTencentCloudClient: %v", err)
+	}
+	resp, err := client.CreatePayURL(context.Background(), TemporaryCredentials{
+		SecretID:  "tmp-secret-id",
+		SecretKey: "tmp-secret-key",
+		Token:     "tmp-session-token",
+	}, &CreatePayURLRequest{OrderIDs: []string{"deal-1"}})
+	if err != nil {
+		t.Fatalf("CreatePayURL: %v", err)
+	}
+	if captured == nil {
+		t.Fatal("expected transport to capture request")
+	}
+	if auth := captured.Header.Get("Authorization"); !strings.Contains(auth, "Credential=tmp-secret-id/") {
+		t.Fatalf("Authorization = %q, want temporary secret id", auth)
+	}
+	if token := captured.Header["X-TC-Token"]; len(token) != 1 || token[0] != "tmp-session-token" {
+		t.Fatalf("X-TC-Token = %v", token)
+	}
+	if got := captured.Header.Get(headerXQCloudUserID); got != "800000294207" {
+		t.Fatalf("%s = %q", headerXQCloudUserID, got)
+	}
+	if resp.URL != "https://buy.cloud.tencent.com/v1/r/1450008583/qz_goods_info?token_id=E-1" {
+		t.Fatalf("URL = %q", resp.URL)
+	}
+}
 
 func TestCreatePayURLParamsUsesBillingCloudAPIFieldNames(t *testing.T) {
 	req := &CreatePayURLRequest{

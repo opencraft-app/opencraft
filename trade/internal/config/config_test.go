@@ -233,12 +233,6 @@ func TestLoad_BillingCloudAPIIgnoresShadowCredentialFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.BillingCloudAPISecretID != "" {
-		t.Fatalf("BillingCloudAPISecretID = %q", cfg.BillingCloudAPISecretID)
-	}
-	if cfg.BillingCloudAPISecretKey != "" {
-		t.Fatalf("BillingCloudAPISecretKey = %q", cfg.BillingCloudAPISecretKey)
-	}
 	if cfg.BillingCloudAPICloudLadderEnabled {
 		t.Fatalf("BillingCloudAPICloudLadderEnabled = true, want false")
 	}
@@ -256,7 +250,7 @@ func TestLoad_BillingCloudAPIIgnoresShadowCredentialFallback(t *testing.T) {
 	}
 }
 
-func TestLoad_BillingCloudAPIUsesTradeBillingCredential(t *testing.T) {
+func TestLoad_BillingCloudAPIUsesTradeRoutingConfig(t *testing.T) {
 	setRequiredLoadEnv(t)
 	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
 	t.Setenv("SHADOW_SECRET_ID", "shadow-opening-secret-id")
@@ -277,12 +271,6 @@ func TestLoad_BillingCloudAPIUsesTradeBillingCredential(t *testing.T) {
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.BillingCloudAPISecretID != "trade-billing-secret-id" {
-		t.Fatalf("BillingCloudAPISecretID = %q", cfg.BillingCloudAPISecretID)
-	}
-	if cfg.BillingCloudAPISecretKey != "trade-billing-secret-key" {
-		t.Fatalf("BillingCloudAPISecretKey = %q", cfg.BillingCloudAPISecretKey)
 	}
 	if cfg.BillingCloudAPIEndpoint != "billing.dev.tencentcloudapi.com" {
 		t.Fatalf("BillingCloudAPIEndpoint = %q", cfg.BillingCloudAPIEndpoint)

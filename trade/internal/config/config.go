@@ -70,10 +70,8 @@ type Config struct {
 	JifeiBillingAppID     string // jifei 计费网关分配的 appid
 	JifeiBillingAppSecret string // jifei 计费网关分配的 appSecret（HMAC-SHA256 签名密钥；通过 SSM + sops 注入）
 
-	// 国际站获取支付链接走计费 CloudAPI CreatePayUrl；账号与 CloudLadder 鉴权使用
-	// TRADE_BILLING_* 单独配置，不隐式复用 user/auth 的 SHADOW_*。
-	BillingCloudAPISecretID              string
-	BillingCloudAPISecretKey             string
+	// 国际站获取支付链接走计费 CloudAPI CreatePayUrl；请求密钥由 user/auth
+	// 按订单用户即时签发，这里只保留 Billing endpoint 与 CloudLadder 路由配置。
 	BillingCloudAPIRegion                string
 	BillingCloudAPIEndpoint              string
 	BillingCloudAPIRequestTimeout        time.Duration
@@ -161,8 +159,6 @@ func Load() (Config, error) {
 		JifeiBillingAppID:     strings.TrimSpace(os.Getenv("JIFEI_BILLING_APP_ID")),
 		JifeiBillingAppSecret: strings.TrimSpace(os.Getenv("JIFEI_BILLING_APP_SECRET")),
 
-		BillingCloudAPISecretID:  strings.TrimSpace(os.Getenv("TRADE_BILLING_SECRET_ID")),
-		BillingCloudAPISecretKey: strings.TrimSpace(os.Getenv("TRADE_BILLING_SECRET_KEY")),
 		BillingCloudAPIRegion: firstNonEmpty(
 			os.Getenv("TRADE_BILLING_REGION"),
 			"ap-guangzhou",

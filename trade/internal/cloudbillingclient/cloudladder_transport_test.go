@@ -43,6 +43,7 @@ func TestCloudLadderTransportRewritesRequestAndSignsHeaders(t *testing.T) {
 	req.Header.Set("Authorization", "TC3-HMAC-SHA256 signed")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-TC-Action", "CreatePayUrl")
+	req.Header["X-TC-Token"] = []string{"tmp-session-token"}
 
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
@@ -88,6 +89,9 @@ func TestCloudLadderTransportRewritesRequestAndSignsHeaders(t *testing.T) {
 	}
 	if got := base.req.Header.Get("X-TC-Action"); got != "CreatePayUrl" {
 		t.Fatalf("expected X-TC-Action preserved, got %q", got)
+	}
+	if got := base.req.Header["X-TC-Token"]; len(got) != 1 || got[0] != "tmp-session-token" {
+		t.Fatalf("expected X-TC-Token preserved, got %v", got)
 	}
 }
 

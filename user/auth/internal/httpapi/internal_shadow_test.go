@@ -35,6 +35,18 @@ func (httpTestShadowClient) SaveBasicAuthForSaaS(context.Context, shadowbinding.
 	return nil
 }
 
+func (httpTestShadowClient) GetTemporaryCredentialsForSaaS(context.Context, shadowbinding.CloudTemporaryCredentialsInput) (shadowbinding.CloudTemporaryCredentials, error) {
+	return shadowbinding.CloudTemporaryCredentials{
+		Uin:          300000000053,
+		OwnerUin:     300000000053,
+		Token:        "tmp-token",
+		TmpSecretID:  "tmp-id",
+		TmpSecretKey: "tmp-key",
+		ExpiredTime:  fixedHTTPTestNow().Add(time.Hour),
+		RequestID:    "sts-request-id",
+	}, nil
+}
+
 type httpRecordingShadowClient struct {
 	basicAuthCalls int
 	basicAuthErr   error
@@ -55,6 +67,37 @@ func (c *httpRecordingShadowClient) UpdatePhoneByAuthCode(context.Context, shado
 func (c *httpRecordingShadowClient) SaveBasicAuthForSaaS(context.Context, shadowbinding.CloudSaveBasicAuthInput) error {
 	c.basicAuthCalls++
 	return c.basicAuthErr
+}
+
+func TestInternalShadowCredentialsRequiresTokenAndReturnsTemporaryCredentials(t *testing.T) {
+	t.Parallel()
+
+	router, svc, _ := newShadowBindingHTTPTestRouter()
+	_, userID := completePhone3FAHTTPFlow(t, router, svc)
+	body := map[string]any{"external_user_id": userID, "client_ip": "10.0.0.1", "client_ua": "lightvela-trade"}
+
+	unauthorized := performJSONRequest(t, router, http.MethodPost, "/internal/shadow/credentials", body)
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("expected credentials endpoint to require token, got %d: %s", unauthorized.Code, unauthorized.Body.String())
+	}
+
+	req := newJSONRequest(t, http.MethodPost, "/internal/shadow/credentials", body)
+	req.Header.Set("Authorization", "Bearer shadow-internal-token")
+	response := performRequest(router, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected credentials endpoint 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if !stringsContainsAll(response.Body.String(),
+		`"code":"OK"`,
+		`"uin":300000000053`,
+		`"owner_uin":300000000053`,
+		`"tmp_secret_id":"tmp-id"`,
+		`"tmp_secret_key":"tmp-key"`,
+		`"token":"tmp-token"`,
+		`"expired_at":"2026-03-20T11:00:00Z"`,
+	) {
+		t.Fatalf("unexpected credentials response: %s", response.Body.String())
+	}
 }
 
 func TestInternalShadowBindingAndTencentCloudCallback(t *testing.T) {

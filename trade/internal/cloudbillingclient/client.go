@@ -25,17 +25,16 @@ const (
 
 // Client is the CloudAPI surface used by placeorder.
 type Client interface {
-	CreatePayURL(ctx context.Context, req *CreatePayURLRequest) (*CreatePayURLResponse, error)
+	CreatePayURL(ctx context.Context, credentials TemporaryCredentials, req *CreatePayURLRequest) (*CreatePayURLResponse, error)
 }
 
 type Config struct {
-	SecretID       string
-	SecretKey      string
 	XQCloudUserID  string
 	Region         string
 	Endpoint       string
 	RequestTimeout time.Duration
 	CloudLadder    CloudLadderConfig
+	HTTPTransport  http.RoundTripper
 }
 
 type CloudLadderConfig struct {
@@ -47,16 +46,20 @@ type CloudLadderConfig struct {
 }
 
 type TencentCloudClient struct {
-	client        *common.Client
+	region        string
+	endpoint      string
+	timeout       time.Duration
+	transport     http.RoundTripper
 	xQCloudUserID string
 }
 
+type TemporaryCredentials struct {
+	SecretID  string
+	SecretKey string
+	Token     string
+}
+
 func NewTencentCloudClient(cfg Config) (*TencentCloudClient, error) {
-	secretID := strings.TrimSpace(cfg.SecretID)
-	secretKey := strings.TrimSpace(cfg.SecretKey)
-	if secretID == "" || secretKey == "" {
-		return nil, fmt.Errorf("billing tencentcloud secret id/key are required")
-	}
 	region := strings.TrimSpace(cfg.Region)
 	if region == "" {
 		region = defaultBillingRegion
@@ -70,20 +73,19 @@ func NewTencentCloudClient(cfg Config) (*TencentCloudClient, error) {
 		timeout = defaultRequestTimeout
 	}
 
-	cpf := profile.NewClientProfile()
-	cpf.HttpProfile.Endpoint = endpoint
-	cpf.HttpProfile.ReqTimeout = int(timeout / time.Second)
-	if cpf.HttpProfile.ReqTimeout < 1 {
-		cpf.HttpProfile.ReqTimeout = 1
+	baseTransport := cfg.HTTPTransport
+	if baseTransport == nil {
+		baseTransport = http.DefaultTransport
 	}
-	client := common.NewCommonClient(common.NewCredential(secretID, secretKey), region, cpf)
-	transport, err := newCloudLadderTransport(cfg.CloudLadder, http.DefaultTransport)
+	transport, err := newCloudLadderTransport(cfg.CloudLadder, baseTransport)
 	if err != nil {
 		return nil, err
 	}
-	client.WithHttpTransport(transport)
 	return &TencentCloudClient{
-		client:        client,
+		region:        region,
+		endpoint:      endpoint,
+		timeout:       timeout,
+		transport:     transport,
 		xQCloudUserID: strings.TrimSpace(cfg.XQCloudUserID),
 	}, nil
 }
@@ -118,16 +120,30 @@ type CreatePayURLResponse struct {
 	RequestID string
 }
 
-func (c *TencentCloudClient) CreatePayURL(ctx context.Context, in *CreatePayURLRequest) (*CreatePayURLResponse, error) {
-	if c == nil || c.client == nil {
+func (c *TencentCloudClient) CreatePayURL(ctx context.Context, credentials TemporaryCredentials, in *CreatePayURLRequest) (*CreatePayURLResponse, error) {
+	if c == nil || c.transport == nil {
 		return nil, fmt.Errorf("billing tencentcloud client is not configured")
+	}
+	secretID := strings.TrimSpace(credentials.SecretID)
+	secretKey := strings.TrimSpace(credentials.SecretKey)
+	token := strings.TrimSpace(credentials.Token)
+	if secretID == "" || secretKey == "" || token == "" {
+		return nil, errors.New("billing temporary credentials are incomplete")
 	}
 	req, err := newCreatePayURLCommonRequest(ctx, in, c.xQCloudUserID)
 	if err != nil {
 		return nil, err
 	}
+	cpf := profile.NewClientProfile()
+	cpf.HttpProfile.Endpoint = c.endpoint
+	cpf.HttpProfile.ReqTimeout = int(c.timeout / time.Second)
+	if cpf.HttpProfile.ReqTimeout < 1 {
+		cpf.HttpProfile.ReqTimeout = 1
+	}
+	client := common.NewCommonClient(common.NewTokenCredential(secretID, secretKey, token), c.region, cpf)
+	client.WithHttpTransport(c.transport)
 	resp := tchttp.NewCommonResponse()
-	if err := c.client.Send(req, resp); err != nil {
+	if err := client.Send(req, resp); err != nil {
 		return nil, fmt.Errorf("send CreatePayUrl: %w", err)
 	}
 	var payload struct {

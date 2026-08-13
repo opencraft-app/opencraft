@@ -1544,6 +1544,17 @@ func (s *Service) InternalShadowBinding(ctx context.Context, userID string) (Sha
 	return s.activeShadowBindingByUserID(ctx, userID)
 }
 
+func (s *Service) InternalShadowCredentials(ctx context.Context, userID, clientIP, clientUA string) (shadowbinding.CloudTemporaryCredentials, error) {
+	if _, err := s.activeShadowBindingByUserID(ctx, userID); err != nil {
+		return shadowbinding.CloudTemporaryCredentials{}, err
+	}
+	credentials, err := s.shadowBinding.IssueTemporaryCredentials(ctx, userID, clientIP, clientUA)
+	if err != nil {
+		return shadowbinding.CloudTemporaryCredentials{}, err
+	}
+	return credentials, nil
+}
+
 func (s *Service) CheckSaaSAccountExist(ctx context.Context, userID string) (bool, error) {
 	trimmed := strings.TrimSpace(userID)
 	if trimmed == "" {

@@ -477,6 +477,50 @@ func (s *Service) IssueExternalAuthCode(ctx context.Context, userID string, purp
 	return code, nil
 }
 
+func (s *Service) IssueTemporaryCredentials(ctx context.Context, userID, clientIP, clientUA string) (CloudTemporaryCredentials, error) {
+	if s == nil || s.store == nil || !s.enabled || s.client == nil {
+		return CloudTemporaryCredentials{}, errors.New("shadow binding is not configured")
+	}
+	credentialsClient, ok := s.client.(TemporaryCredentialsClient)
+	if !ok {
+		return CloudTemporaryCredentials{}, errors.New("shadow temporary credential client is not configured")
+	}
+	binding, err := s.store.GetBindingByUserID(ctx, strings.TrimSpace(userID))
+	if err != nil {
+		return CloudTemporaryCredentials{}, err
+	}
+	if binding.Status != StatusActive {
+		return CloudTemporaryCredentials{}, errors.New("shadow binding is not active")
+	}
+	authCode, err := s.IssueExternalAuthCode(ctx, binding.UserID, AuthCodePurposeSaaSCallback)
+	if err != nil {
+		return CloudTemporaryCredentials{}, err
+	}
+	credentials, err := credentialsClient.GetTemporaryCredentialsForSaaS(ctx, CloudTemporaryCredentialsInput{
+		AuthCode: authCode.Code,
+		ClientIP: strings.TrimSpace(clientIP),
+		ClientUA: strings.TrimSpace(clientUA),
+	})
+	if err != nil {
+		return CloudTemporaryCredentials{}, err
+	}
+	if credentials.Uin != binding.Uin || credentials.OwnerUin != binding.OwnerUin {
+		return CloudTemporaryCredentials{}, fmt.Errorf(
+			"shadow temporary credential uin mismatch: binding_uin=%d binding_owner_uin=%d credential_uin=%d credential_owner_uin=%d",
+			binding.Uin, binding.OwnerUin, credentials.Uin, credentials.OwnerUin,
+		)
+	}
+	if strings.TrimSpace(credentials.TmpSecretID) == "" ||
+		strings.TrimSpace(credentials.TmpSecretKey) == "" ||
+		strings.TrimSpace(credentials.Token) == "" {
+		return CloudTemporaryCredentials{}, errors.New("shadow temporary credentials are incomplete")
+	}
+	if credentials.ExpiredTime.IsZero() || !credentials.ExpiredTime.After(s.now()) {
+		return CloudTemporaryCredentials{}, errors.New("shadow temporary credentials are expired")
+	}
+	return credentials, nil
+}
+
 // externalAuthCode decorates the opaque code only while it travels through
 // TencentCloud. The raw code remains the value persisted and consumed locally.
 func (s *Service) externalAuthCode(code string) string {

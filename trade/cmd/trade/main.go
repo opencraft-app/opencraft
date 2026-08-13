@@ -48,9 +48,12 @@ func main() {
 	//   - 询价 (inquiry.Service.Quote) / 下单 (placeorder.Service.PlaceOrder) 在调用方
 	//     未显式提供 uin/app_id 时，按 externalUserId 反查云账号身份
 	//   - cfg.AccountBindingInternalBaseURL 已在 config.Load() 强校验非空
-	shadowClient := shadowclient.New(cfg.AccountBindingInternalBaseURL, cfg.InternalServiceToken)
+	shadowResolverClient := shadowclient.New(cfg.AccountBindingInternalBaseURL, cfg.InternalServiceToken)
+	var shadowClient shadowclient.Client = shadowResolverClient
+	var shadowCredentialClient shadowclient.CredentialClient = shadowResolverClient
 	if cfg.ShadowMockEnabled {
 		shadowClient = newMockShadowClient(cfg.ShadowMockUin, cfg.ShadowMockAppID)
+		shadowCredentialClient = nil
 		log.Printf("[shadow] mock enabled")
 	}
 
@@ -86,8 +89,6 @@ func main() {
 	var cloudBillingClient cloudbillingclient.Client
 	if cfg.SiteKind == "intl" {
 		billingClient, billingErr := cloudbillingclient.NewTencentCloudClient(cloudbillingclient.Config{
-			SecretID:       cfg.BillingCloudAPISecretID,
-			SecretKey:      cfg.BillingCloudAPISecretKey,
 			Region:         cfg.BillingCloudAPIRegion,
 			Endpoint:       cfg.BillingCloudAPIEndpoint,
 			RequestTimeout: cfg.BillingCloudAPIRequestTimeout,
@@ -148,13 +149,14 @@ func main() {
 		DianshiClient:    dianshiClient,
 	})
 	placeOrderSvc := placeorder.New(placeorder.Deps{
-		CTLClient:          ctlClient,
-		BundleStore:        mysqlStore,
-		JifeiClient:        jifeiClient,
-		CloudBillingClient: cloudBillingClient,
-		OrderWriter:        mysqlStore,
-		OrderStore:         mysqlStore,
-		ShadowClient:       shadowClient,
+		CTLClient:              ctlClient,
+		BundleStore:            mysqlStore,
+		JifeiClient:            jifeiClient,
+		CloudBillingClient:     cloudBillingClient,
+		ShadowCredentialClient: shadowCredentialClient,
+		OrderWriter:            mysqlStore,
+		OrderStore:             mysqlStore,
+		ShadowClient:           shadowClient,
 		// v1.7.x 国际站接入 A6.1：出向 envelope.resInfo.region/zone + trade_order.region_id
 		// 同源同值，按 site 决定。
 		SiteKind: cfg.SiteKind,

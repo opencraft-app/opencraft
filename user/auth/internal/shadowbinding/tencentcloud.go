@@ -422,6 +422,14 @@ func (c *TencentCloudSDKClient) getSaaSTokenByAuthCode(ctx context.Context, auth
 	}, nil
 }
 
+func (c *TencentCloudSDKClient) GetTemporaryCredentialsForSaaS(ctx context.Context, in CloudTemporaryCredentialsInput) (CloudTemporaryCredentials, error) {
+	saasToken, err := c.getSaaSTokenByAuthCode(ctx, in.AuthCode, in.ClientIP, in.ClientUA)
+	if err != nil {
+		return CloudTemporaryCredentials{}, err
+	}
+	return c.getSaaSAccessToken(ctx, saasToken, in.ClientIP, in.ClientUA)
+}
+
 func (c *TencentCloudSDKClient) getSaaSAccessToken(ctx context.Context, token CloudSaaSTokenResult, clientIP, clientUA string) (CloudTemporaryCredentials, error) {
 	req := tchttp.NewCommonRequest("sts", "2018-08-13", "GetSaaSAccessToken")
 	if err := req.SetActionParameters(map[string]any{
@@ -454,6 +462,8 @@ func (c *TencentCloudSDKClient) getSaaSAccessToken(ctx context.Context, token Cl
 		return CloudTemporaryCredentials{}, fmt.Errorf("decode GetSaaSAccessToken response: %w", err)
 	}
 	return CloudTemporaryCredentials{
+		Uin:          token.Uin,
+		OwnerUin:     token.OwnerUin,
 		Token:        payload.Response.Credentials.Token,
 		TmpSecretID:  payload.Response.Credentials.TmpSecretID,
 		TmpSecretKey: payload.Response.Credentials.TmpSecretKey,

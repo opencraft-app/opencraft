@@ -9,17 +9,21 @@ import (
 )
 
 type recordingClient struct {
-	calls          int
-	smsCalls       int
-	updateCalls    int
-	basicAuthCalls int
-	lastRegister   CloudRegisterInput
-	lastUpdate     CloudUpdatePhoneInput
-	lastBasicAuth  CloudSaveBasicAuthInput
-	result         CloudRegisterResult
-	err            error
-	updateErr      error
-	basicAuthErr   error
+	calls                  int
+	smsCalls               int
+	updateCalls            int
+	basicAuthCalls         int
+	temporaryCalls         int
+	lastRegister           CloudRegisterInput
+	lastUpdate             CloudUpdatePhoneInput
+	lastBasicAuth          CloudSaveBasicAuthInput
+	lastTemporary          CloudTemporaryCredentialsInput
+	result                 CloudRegisterResult
+	temporaryResult        CloudTemporaryCredentials
+	err                    error
+	updateErr              error
+	basicAuthErr           error
+	temporaryCredentialErr error
 }
 
 type recordingBillingClient struct {
@@ -68,6 +72,122 @@ func (c *recordingClient) SaveBasicAuthForSaaS(_ context.Context, in CloudSaveBa
 	c.basicAuthCalls++
 	c.lastBasicAuth = in
 	return c.basicAuthErr
+}
+
+func (c *recordingClient) GetTemporaryCredentialsForSaaS(_ context.Context, in CloudTemporaryCredentialsInput) (CloudTemporaryCredentials, error) {
+	c.temporaryCalls++
+	c.lastTemporary = in
+	return c.temporaryResult, c.temporaryCredentialErr
+}
+
+func TestIssueTemporaryCredentialsUsesActiveBinding(t *testing.T) {
+	now := time.Date(2026, 8, 13, 3, 0, 0, 0, time.UTC)
+	client := &recordingClient{
+		result: CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000},
+		temporaryResult: CloudTemporaryCredentials{
+			Uin:          300000000053,
+			OwnerUin:     300000000053,
+			Token:        "tmp-token",
+			TmpSecretID:  "tmp-id",
+			TmpSecretKey: "tmp-key",
+			ExpiredTime:  now.Add(time.Hour),
+			RequestID:    "sts-request-id",
+		},
+	}
+	svc := New(NewMemoryStore(), client, Options{
+		Enabled:        true,
+		Now:            func() time.Time { return now },
+		AuthCodePrefix: "krsbx",
+	})
+	if _, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_1", Phone: "13800138000"}); err != nil {
+		t.Fatalf("bind shadow account: %v", err)
+	}
+
+	got, err := svc.IssueTemporaryCredentials(context.Background(), "usr_1", "10.0.0.1", "lightvela-trade")
+	if err != nil {
+		t.Fatalf("IssueTemporaryCredentials: %v", err)
+	}
+	if client.temporaryCalls != 1 {
+		t.Fatalf("temporary credential calls = %d, want 1", client.temporaryCalls)
+	}
+	if !strings.HasPrefix(client.lastTemporary.AuthCode, "krsbx.") {
+		t.Fatalf("auth code = %q, want krsbx prefix", client.lastTemporary.AuthCode)
+	}
+	if client.lastTemporary.ClientIP != "10.0.0.1" || client.lastTemporary.ClientUA != "lightvela-trade" {
+		t.Fatalf("unexpected client metadata: %+v", client.lastTemporary)
+	}
+	if got.TmpSecretID != "tmp-id" || got.TmpSecretKey != "tmp-key" || got.Token != "tmp-token" {
+		t.Fatalf("unexpected temporary credentials: %+v", got)
+	}
+}
+
+func TestIssueTemporaryCredentialsRejectsBindingUINMismatch(t *testing.T) {
+	client := &recordingClient{
+		result: CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000},
+		temporaryResult: CloudTemporaryCredentials{
+			Uin:          300000000054,
+			OwnerUin:     300000000054,
+			Token:        "tmp-token",
+			TmpSecretID:  "tmp-id",
+			TmpSecretKey: "tmp-key",
+		},
+	}
+	svc := New(NewMemoryStore(), client, Options{Enabled: true})
+	if _, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_1", Phone: "13800138000"}); err != nil {
+		t.Fatalf("bind shadow account: %v", err)
+	}
+
+	_, err := svc.IssueTemporaryCredentials(context.Background(), "usr_1", "", "lightvela-trade")
+	if err == nil || !strings.Contains(err.Error(), "uin mismatch") {
+		t.Fatalf("IssueTemporaryCredentials error = %v, want uin mismatch", err)
+	}
+	if strings.Contains(err.Error(), "tmp-token") || strings.Contains(err.Error(), "tmp-key") {
+		t.Fatalf("error leaked temporary credentials: %v", err)
+	}
+}
+
+func TestIssueTemporaryCredentialsRejectsIncompleteCredentials(t *testing.T) {
+	client := &recordingClient{
+		result: CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000},
+		temporaryResult: CloudTemporaryCredentials{
+			Uin:      300000000053,
+			OwnerUin: 300000000053,
+			Token:    "tmp-token",
+		},
+	}
+	svc := New(NewMemoryStore(), client, Options{Enabled: true})
+	if _, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_1", Phone: "13800138000"}); err != nil {
+		t.Fatalf("bind shadow account: %v", err)
+	}
+
+	_, err := svc.IssueTemporaryCredentials(context.Background(), "usr_1", "", "lightvela-trade")
+	if err == nil || !strings.Contains(err.Error(), "incomplete") {
+		t.Fatalf("IssueTemporaryCredentials error = %v, want incomplete credentials", err)
+	}
+}
+
+func TestIssueTemporaryCredentialsRejectsExpiredCredentials(t *testing.T) {
+	now := time.Date(2026, 8, 13, 3, 0, 0, 0, time.UTC)
+	client := &recordingClient{
+		result: CloudRegisterResult{Uin: 300000000053, OwnerUin: 300000000053, AppID: 1250000000},
+		temporaryResult: CloudTemporaryCredentials{
+			Uin:          300000000053,
+			OwnerUin:     300000000053,
+			Token:        "tmp-token",
+			TmpSecretID:  "tmp-id",
+			TmpSecretKey: "tmp-key",
+			ExpiredTime:  now.Add(-time.Minute),
+		},
+	}
+	svc := New(NewMemoryStore(), client, Options{Enabled: true, Now: func() time.Time { return now }})
+	if _, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_1", Phone: "13800138000"}); err != nil {
+		t.Fatalf("bind shadow account: %v", err)
+	}
+
+	_, err := svc.IssueTemporaryCredentials(context.Background(), "usr_1", "", "lightvela-trade")
+	if err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("IssueTemporaryCredentials error = %v, want expired credentials", err)
+	}
 }
 
 func TestBindShadowAccountCreatesActiveBindingAndIsIdempotent(t *testing.T) {

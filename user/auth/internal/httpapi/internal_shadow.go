@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -37,6 +38,21 @@ type internalShadowBinding struct {
 	CreatedAt      string `json:"created_at,omitempty"`
 }
 
+type internalShadowCredentialsRequest struct {
+	ExternalUserID string `json:"external_user_id"`
+	ClientIP       string `json:"client_ip,omitempty"`
+	ClientUA       string `json:"client_ua,omitempty"`
+}
+
+type internalShadowCredentials struct {
+	Uin          int64  `json:"uin"`
+	OwnerUin     int64  `json:"owner_uin"`
+	TmpSecretID  string `json:"tmp_secret_id"`
+	TmpSecretKey string `json:"tmp_secret_key"`
+	Token        string `json:"token"`
+	ExpiredAt    string `json:"expired_at"`
+}
+
 type tencentCloudCallbackEnvelope struct {
 	Version       string `json:"version"`
 	Caller        string `json:"caller"`
@@ -59,8 +75,52 @@ func registerInternalShadowRoutes(router gin.IRoutes, authService *service.Servi
 		shadowTencentCallbackToken: strings.TrimSpace(config.ShadowTencentCallbackToken),
 	}
 	router.GET("/internal/shadow/binding", internal.handleGetShadowBinding)
+	router.POST("/internal/shadow/credentials", internal.handleIssueShadowCredentials)
 	router.POST("/internal/tencentcloud/account", internal.handleTencentCloudCallback)
 	router.POST("/auth/internal/tencentcloud/account", internal.handleTencentCloudCallback)
+}
+
+func (a *internalAPI) handleIssueShadowCredentials(ctx *gin.Context) {
+	if !isAuthorizedInternalToken(ctx, a.shadowBindingInternalToken) {
+		ctx.JSON(http.StatusUnauthorized, internalEnvelope{Code: "unauthorized", Message: "unauthorized"})
+		return
+	}
+	var req internalShadowCredentialsRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, internalEnvelope{Code: "invalid_request", Message: "invalid request body"})
+		return
+	}
+	userID := strings.TrimSpace(req.ExternalUserID)
+	if userID == "" {
+		ctx.JSON(http.StatusBadRequest, internalEnvelope{Code: "invalid_request", Message: "external_user_id is required"})
+		return
+	}
+	clientIP := strings.TrimSpace(req.ClientIP)
+	if clientIP == "" {
+		clientIP = ctx.ClientIP()
+	}
+	clientUA := strings.TrimSpace(req.ClientUA)
+	if clientUA == "" {
+		clientUA = ctx.Request.UserAgent()
+	}
+	credentials, err := a.service.InternalShadowCredentials(ctx.Request.Context(), userID, clientIP, clientUA)
+	if err != nil {
+		body, status := toErrorBody(err)
+		ctx.JSON(status, internalEnvelope{Code: body.Code, Message: body.Message})
+		return
+	}
+	ctx.JSON(http.StatusOK, internalEnvelope{
+		Code:    "OK",
+		Message: "ok",
+		Data: internalShadowCredentials{
+			Uin:          credentials.Uin,
+			OwnerUin:     credentials.OwnerUin,
+			TmpSecretID:  credentials.TmpSecretID,
+			TmpSecretKey: credentials.TmpSecretKey,
+			Token:        credentials.Token,
+			ExpiredAt:    credentials.ExpiredTime.UTC().Format(time.RFC3339),
+		},
+	})
 }
 
 func (a *internalAPI) handleGetShadowBinding(ctx *gin.Context) {

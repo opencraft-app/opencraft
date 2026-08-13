@@ -139,11 +139,19 @@ type CloudSaaSTokenResult struct {
 }
 
 type CloudTemporaryCredentials struct {
+	Uin          int64
+	OwnerUin     int64
 	Token        string
 	TmpSecretID  string
 	TmpSecretKey string
 	ExpiredTime  time.Time
 	RequestID    string
+}
+
+type CloudTemporaryCredentialsInput struct {
+	AuthCode string
+	ClientIP string
+	ClientUA string
 }
 
 type CloudRegisterResult struct {
@@ -166,4 +174,8 @@ type TencentCloudClient interface {
 	RegisterShadowAccount(ctx context.Context, in CloudRegisterInput) (CloudRegisterResult, error)
 	UpdatePhoneByAuthCode(ctx context.Context, in CloudUpdatePhoneInput) error
 	SaveBasicAuthForSaaS(ctx context.Context, in CloudSaveBasicAuthInput) error
+}
+
+type TemporaryCredentialsClient interface {
+	GetTemporaryCredentialsForSaaS(ctx context.Context, in CloudTemporaryCredentialsInput) (CloudTemporaryCredentials, error)
 }

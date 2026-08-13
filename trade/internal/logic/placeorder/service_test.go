@@ -152,18 +152,40 @@ func (f *fakeJifei) OnlineRefund(ctx context.Context, req *jifeiclient.OnlineRef
 }
 
 type fakeCloudBilling struct {
-	createPayURLFn      func(ctx context.Context, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error)
+	createPayURLFn      func(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error)
 	createPayURLCalls   atomic.Int32
+	lastCredentials     cloudbillingclient.TemporaryCredentials
 	lastCreatePayURLReq *cloudbillingclient.CreatePayURLRequest
 }
 
-func (f *fakeCloudBilling) CreatePayURL(ctx context.Context, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
+func (f *fakeCloudBilling) CreatePayURL(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
 	f.createPayURLCalls.Add(1)
+	f.lastCredentials = credentials
 	f.lastCreatePayURLReq = req
 	if f.createPayURLFn != nil {
-		return f.createPayURLFn(ctx, req)
+		return f.createPayURLFn(ctx, credentials, req)
 	}
 	return nil, errors.New("fakeCloudBilling: CreatePayURL not implemented")
+}
+
+type fakeShadowCredentials struct {
+	getFn func(context.Context, string) (*shadowclient.TemporaryCredentials, error)
+	calls atomic.Int32
+}
+
+func (f *fakeShadowCredentials) GetTemporaryCredentialsByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.TemporaryCredentials, error) {
+	f.calls.Add(1)
+	if f.getFn != nil {
+		return f.getFn(ctx, externalUserID)
+	}
+	return &shadowclient.TemporaryCredentials{
+		Uin:       "1000123456",
+		OwnerUin:  "1000123456",
+		SecretID:  "tmp-id",
+		SecretKey: "tmp-key",
+		Token:     "tmp-token",
+		ExpiredAt: time.Now().Add(time.Hour),
+	}, nil
 }
 
 type fakeOrderWriter struct {
@@ -292,13 +314,14 @@ func stdJifeiDealsResp() *jifeiclient.GenerateDealsResponse {
 
 // stdDeps 装配一组默认 fakes，单测里按需替换字段。
 type stdDeps struct {
-	ctl     *fakeCTL
-	bundle  *fakeBundleStore
-	jifei   *fakeJifei
-	billing *fakeCloudBilling
-	writer  *fakeOrderWriter
-	store   *fakeOrderStore
-	service *Service
+	ctl               *fakeCTL
+	bundle            *fakeBundleStore
+	jifei             *fakeJifei
+	billing           *fakeCloudBilling
+	shadowCredentials *fakeShadowCredentials
+	writer            *fakeOrderWriter
+	store             *fakeOrderStore
+	service           *Service
 }
 
 func newStdDeps() *stdDeps {
@@ -314,17 +337,19 @@ func newStdDeps() *stdDeps {
 				return stdJifeiDealsResp(), nil
 			},
 		},
-		billing: &fakeCloudBilling{},
-		writer:  &fakeOrderWriter{},
-		store:   &fakeOrderStore{},
+		billing:           &fakeCloudBilling{},
+		shadowCredentials: &fakeShadowCredentials{},
+		writer:            &fakeOrderWriter{},
+		store:             &fakeOrderStore{},
 	}
 	d.service = New(Deps{
-		CTLClient:          d.ctl,
-		BundleStore:        d.bundle,
-		JifeiClient:        d.jifei,
-		CloudBillingClient: d.billing,
-		OrderWriter:        d.writer,
-		OrderStore:         d.store,
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
 	})
 	return d
 }
@@ -789,24 +814,26 @@ func TestGeneratePayURL_PayURLNotCached_CallsJifeiAndWritesBack(t *testing.T) {
 func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *testing.T) {
 	d := newStdDeps()
 	d.service = New(Deps{
-		CTLClient:          d.ctl,
-		BundleStore:        d.bundle,
-		JifeiClient:        d.jifei,
-		CloudBillingClient: d.billing,
-		OrderWriter:        d.writer,
-		OrderStore:         d.store,
-		SiteKind:           "intl",
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
 	})
 	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
 		return &store.TradeOrder{
-			DealName:    dealName,
-			Uin:         "1000123456",
-			AppID:       "251202221",
-			PayURL:      "",
-			GoodsDetail: map[string]interface{}{"autoRenewFlag": 1},
+			DealName:       dealName,
+			ExternalUserID: "usr_1",
+			Uin:            "1000123456",
+			AppID:          "251202221",
+			PayURL:         "",
+			GoodsDetail:    map[string]interface{}{"autoRenewFlag": 1},
 		}, nil
 	}
-	d.billing.createPayURLFn = func(ctx context.Context, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
+	d.billing.createPayURLFn = func(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
 		if len(req.OrderIDs) != 1 || req.OrderIDs[0] != "deal-1" {
 			t.Errorf("OrderIDs = %+v, want [deal-1]", req.OrderIDs)
 		}
@@ -843,6 +870,12 @@ func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *test
 	if d.billing.createPayURLCalls.Load() != 1 {
 		t.Errorf("CreatePayURL calls = %d, want 1", d.billing.createPayURLCalls.Load())
 	}
+	if d.shadowCredentials.calls.Load() != 1 {
+		t.Errorf("shadow credential calls = %d, want 1", d.shadowCredentials.calls.Load())
+	}
+	if d.billing.lastCredentials.SecretID != "tmp-id" || d.billing.lastCredentials.Token != "tmp-token" {
+		t.Fatalf("Billing credentials = %+v", d.billing.lastCredentials)
+	}
 	if d.jifei.getMidasEarmarkingCalls.Load() != 0 {
 		t.Errorf("GetMidasEarmarking calls = %d, want 0", d.jifei.getMidasEarmarkingCalls.Load())
 	}
@@ -851,18 +884,19 @@ func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *test
 func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testing.T) {
 	d := newStdDeps()
 	d.service = New(Deps{
-		CTLClient:          d.ctl,
-		BundleStore:        d.bundle,
-		JifeiClient:        d.jifei,
-		CloudBillingClient: d.billing,
-		OrderWriter:        d.writer,
-		OrderStore:         d.store,
-		SiteKind:           "intl",
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
 	})
 	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
-		return &store.TradeOrder{DealName: dealName, Uin: "1000123456", PayURL: ""}, nil
+		return &store.TradeOrder{DealName: dealName, ExternalUserID: "usr_1", Uin: "1000123456", PayURL: ""}, nil
 	}
-	d.billing.createPayURLFn = func(ctx context.Context, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
+	d.billing.createPayURLFn = func(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
 		if req.ContractOrder != 0 {
 			t.Errorf("ContractOrder = %d, want 0", req.ContractOrder)
 		}
@@ -880,6 +914,41 @@ func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testin
 	}
 	if d.jifei.getMidasEarmarkingCalls.Load() != 0 {
 		t.Errorf("GetMidasEarmarking calls = %d, want 0", d.jifei.getMidasEarmarkingCalls.Load())
+	}
+}
+
+func TestGeneratePayURL_IntlRejectsShadowCredentialUINMismatch(t *testing.T) {
+	d := newStdDeps()
+	d.service = New(Deps{
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
+	})
+	d.store.getOrderByDealNameFn = func(context.Context, string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: "deal-1", ExternalUserID: "usr_1", Uin: "1000123456"}, nil
+	}
+	d.shadowCredentials.getFn = func(context.Context, string) (*shadowclient.TemporaryCredentials, error) {
+		return &shadowclient.TemporaryCredentials{
+			Uin:       "1000123457",
+			OwnerUin:  "1000123457",
+			SecretID:  "tmp-id",
+			SecretKey: "tmp-key",
+			Token:     "tmp-token",
+			ExpiredAt: time.Now().Add(time.Hour),
+		}, nil
+	}
+
+	_, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil)
+	if err == nil || !strings.Contains(err.Error(), "uin mismatch") {
+		t.Fatalf("GeneratePayURL error = %v, want uin mismatch", err)
+	}
+	if d.billing.createPayURLCalls.Load() != 0 {
+		t.Fatalf("CreatePayURL calls = %d, want 0", d.billing.createPayURLCalls.Load())
 	}
 }
 
@@ -903,6 +972,9 @@ func TestGeneratePayURL_CnDoesNotUseContractCreditCardMidasParams(t *testing.T) 
 
 	if _, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil); err != nil {
 		t.Fatalf("GeneratePayURL: %v", err)
+	}
+	if d.shadowCredentials.calls.Load() != 0 {
+		t.Fatalf("shadow credential calls = %d, want 0 for domestic site", d.shadowCredentials.calls.Load())
 	}
 }
 

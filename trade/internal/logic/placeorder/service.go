@@ -171,10 +171,13 @@ type Deps struct {
 	// CloudBillingClient is used only by international pay-url generation. Domestic
 	// pay-url generation remains on jifei GetMidasEarmarking.
 	CloudBillingClient cloudbillingclient.Client
-	OrderWriter        store.OrderWriter
-	OrderStore         store.OrderStore    // GeneratePayURL 反查 trade_order.pay_url 用
-	ShadowClient       shadowclient.Client // 可选，nil 表示由调用方传 Uin/AppID
-	SiteKind           string              // 可选，v1.7.x 国际站接入；"cn" / "intl"，缺省 cn 兜底
+	// ShadowCredentialClient resolves short-lived credentials for international
+	// Billing CloudAPI calls. It is deliberately separate from binding lookup.
+	ShadowCredentialClient shadowclient.CredentialClient
+	OrderWriter            store.OrderWriter
+	OrderStore             store.OrderStore    // GeneratePayURL 反查 trade_order.pay_url 用
+	ShadowClient           shadowclient.Client // 可选，nil 表示由调用方传 Uin/AppID
+	SiteKind               string              // 可选，v1.7.x 国际站接入；"cn" / "intl"，缺省 cn 兜底
 
 	// RegionOverride 是腾讯云 region 字面量 override（北京 2 预发布接入新增）。
 	// 合法性已由 config.Load 在启动期 fail-fast 校验；本处只负责透透到 region.Resolve。
@@ -1343,6 +1346,26 @@ func (s *Service) generatePayURLByCloudAPI(
 	if s.deps.CloudBillingClient == nil {
 		return nil, fmt.Errorf("placeorder: billing CreatePayUrl client is not configured for intl site")
 	}
+	if s.deps.ShadowCredentialClient == nil {
+		return nil, fmt.Errorf("placeorder: shadow credential client is not configured for intl site")
+	}
+	externalUserID := strings.TrimSpace(order.ExternalUserID)
+	if externalUserID == "" {
+		return nil, fmt.Errorf("placeorder: trade_order.external_user_id missing for dealName=%s (data inconsistency)", dealName)
+	}
+	shadowCredentials, err := s.deps.ShadowCredentialClient.GetTemporaryCredentialsByExternalUserID(ctx, externalUserID)
+	if err != nil {
+		return nil, fmt.Errorf("placeorder: get shadow temporary credentials dealName=%s: %w", dealName, err)
+	}
+	if shadowCredentials == nil {
+		return nil, fmt.Errorf("placeorder: shadow temporary credentials are nil for dealName=%s", dealName)
+	}
+	if strings.TrimSpace(shadowCredentials.Uin) != strings.TrimSpace(order.Uin) {
+		return nil, fmt.Errorf(
+			"placeorder: shadow credential uin mismatch for dealName=%s order_uin=%s credential_uin=%s",
+			dealName, order.Uin, shadowCredentials.Uin,
+		)
+	}
 	req := &cloudbillingclient.CreatePayURLRequest{
 		OrderIDs:  []string{dealName},
 		Platform:  optsPlatform(opts),
@@ -1353,7 +1376,11 @@ func (s *Service) generatePayURLByCloudAPI(
 	if orderHasAutoRenewFlag(order.GoodsDetail) {
 		req.ContractOrder = 1
 	}
-	resp, err := s.deps.CloudBillingClient.CreatePayURL(ctx, req)
+	resp, err := s.deps.CloudBillingClient.CreatePayURL(ctx, cloudbillingclient.TemporaryCredentials{
+		SecretID:  shadowCredentials.SecretID,
+		SecretKey: shadowCredentials.SecretKey,
+		Token:     shadowCredentials.Token,
+	}, req)
 	if err != nil {
 		return nil, fmt.Errorf("placeorder: billing CreatePayUrl dealName=%s: %w", dealName, err)
 	}

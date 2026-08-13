@@ -22,6 +22,7 @@
 package shadowclient
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -34,6 +35,11 @@ import (
 	"time"
 )
 
+const (
+	defaultBindingRequestTimeout    = 4 * time.Second
+	defaultCredentialRequestTimeout = 20 * time.Second
+)
+
 // Client 是 account-binding 内部反向调用契约。
 //
 // 抽象成 interface 便于上层 service / handler 注入 mock 做单元测试，
@@ -44,6 +50,27 @@ type Client interface {
 	// 返回 externalUserId → (uin / owner_uin / app_id) 绑定。
 	// 没有绑定时返回 ErrBindingNotFound（不是 5xx）。
 	GetBindingByExternalUserID(ctx context.Context, externalUserID string) (*Binding, error)
+}
+
+// CredentialClient exchanges an external user binding for short-lived shadow
+// account credentials. Keep this separate from Client so binding-only callers
+// and their test fakes do not gain access to secrets.
+type CredentialClient interface {
+	GetTemporaryCredentialsByExternalUserID(ctx context.Context, externalUserID string) (*TemporaryCredentials, error)
+}
+
+type ResolverClient interface {
+	Client
+	CredentialClient
+}
+
+type TemporaryCredentials struct {
+	Uin       string
+	OwnerUin  string
+	SecretID  string
+	SecretKey string
+	Token     string
+	ExpiredAt time.Time
 }
 
 // Binding 镜像 internal shadowbinding 反查响应。
@@ -114,9 +141,10 @@ type rawBinding struct {
 
 // httpClient 是 Client 的标准 HTTP 实现。
 type httpClient struct {
-	baseURL    string
-	token      string
-	httpClient *http.Client
+	baseURL              string
+	token                string
+	httpClient           *http.Client
+	credentialHTTPClient *http.Client
 }
 
 // Options 可选配置。空值走默认。
@@ -125,6 +153,9 @@ type Options struct {
 	// 默认为 &http.Client{Timeout: 4s}（与 ctlclient 一致，落 shadow 反查在询价/下单
 	// 同步链路里，预算 4s 足够）。
 	HTTPClient *http.Client
+	// CredentialHTTPClient has a longer default timeout because one auth call
+	// performs the CAM and STS exchanges sequentially.
+	CredentialHTTPClient *http.Client
 }
 
 // New 构造 shadowclient.Client。
@@ -134,7 +165,7 @@ type Options struct {
 //   - internalServiceToken：内部服务间互信 token（与 ctlclient 同源）
 //
 // 空 baseURL 不在 New 期 panic（保持与 ctlclient 一致行为）；调用时由 do() 报错。
-func New(baseURL, internalServiceToken string, opts ...Options) Client {
+func New(baseURL, internalServiceToken string, opts ...Options) ResolverClient {
 	c := &httpClient{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		token:   strings.TrimSpace(internalServiceToken),
@@ -142,9 +173,93 @@ func New(baseURL, internalServiceToken string, opts ...Options) Client {
 	if len(opts) > 0 && opts[0].HTTPClient != nil {
 		c.httpClient = opts[0].HTTPClient
 	} else {
-		c.httpClient = &http.Client{Timeout: 4 * time.Second}
+		c.httpClient = &http.Client{Timeout: defaultBindingRequestTimeout}
+	}
+	if len(opts) > 0 && opts[0].CredentialHTTPClient != nil {
+		c.credentialHTTPClient = opts[0].CredentialHTTPClient
+	} else if len(opts) > 0 && opts[0].HTTPClient != nil {
+		c.credentialHTTPClient = opts[0].HTTPClient
+	} else {
+		c.credentialHTTPClient = &http.Client{Timeout: defaultCredentialRequestTimeout}
 	}
 	return c
+}
+
+func (c *httpClient) GetTemporaryCredentialsByExternalUserID(ctx context.Context, externalUserID string) (*TemporaryCredentials, error) {
+	externalUserID = strings.TrimSpace(externalUserID)
+	if externalUserID == "" {
+		return nil, fmt.Errorf("shadowclient: externalUserID is required")
+	}
+	if c.baseURL == "" {
+		return nil, fmt.Errorf("shadowclient: baseURL is empty")
+	}
+	payload, err := json.Marshal(map[string]string{
+		"external_user_id": externalUserID,
+		"client_ua":        "lightvela-trade",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: marshal credentials request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/internal/shadow/credentials", bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: build credentials request: %w", err)
+	}
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.credentialHTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: do credentials request: %w", err)
+	}
+	defer resp.Body.Close()
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: read credentials response: %w", err)
+	}
+	var env envelope
+	envParseErr := json.Unmarshal(rawBody, &env)
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("%w: status=%d code=%s message=%q request_id=%s",
+			ErrUnauthorized, resp.StatusCode, env.Code, env.Message, env.RequestID)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		if envParseErr != nil {
+			return nil, &Error{HTTPStatus: resp.StatusCode, Message: "invalid error response"}
+		}
+		return nil, &Error{HTTPStatus: resp.StatusCode, Code: env.Code, Message: env.Message, RequestID: env.RequestID}
+	}
+	if envParseErr != nil || len(env.Data) == 0 || string(env.Data) == "null" {
+		return nil, errors.New("shadowclient: invalid credentials response envelope")
+	}
+	var raw struct {
+		Uin          int64  `json:"uin"`
+		OwnerUin     int64  `json:"owner_uin"`
+		TmpSecretID  string `json:"tmp_secret_id"`
+		TmpSecretKey string `json:"tmp_secret_key"`
+		Token        string `json:"token"`
+		ExpiredAt    string `json:"expired_at"`
+	}
+	if err := json.Unmarshal(env.Data, &raw); err != nil {
+		return nil, errors.New("shadowclient: invalid temporary credentials payload")
+	}
+	expiredAt, err := time.Parse(time.RFC3339, strings.TrimSpace(raw.ExpiredAt))
+	if raw.Uin == 0 || raw.OwnerUin == 0 || strings.TrimSpace(raw.TmpSecretID) == "" ||
+		strings.TrimSpace(raw.TmpSecretKey) == "" || strings.TrimSpace(raw.Token) == "" || err != nil {
+		return nil, errors.New("shadowclient: temporary credentials are incomplete")
+	}
+	if !expiredAt.After(time.Now()) {
+		return nil, errors.New("shadowclient: temporary credentials are expired")
+	}
+	return &TemporaryCredentials{
+		Uin:       strconv.FormatInt(raw.Uin, 10),
+		OwnerUin:  strconv.FormatInt(raw.OwnerUin, 10),
+		SecretID:  raw.TmpSecretID,
+		SecretKey: raw.TmpSecretKey,
+		Token:     raw.Token,
+		ExpiredAt: expiredAt,
+	}, nil
 }
 
 func (c *httpClient) GetBindingByExternalUserID(ctx context.Context, externalUserID string) (*Binding, error) {
