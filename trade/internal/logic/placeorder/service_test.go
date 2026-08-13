@@ -865,6 +865,9 @@ func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *test
 		if req.PayOption != "chargePay" {
 			t.Errorf("PayOption = %q, want chargePay", req.PayOption)
 		}
+		if req.PayType != "normal" {
+			t.Errorf("PayType = %q, want normal", req.PayType)
+		}
 		if req.Application != "intlSaaSLightvela" {
 			t.Errorf("Application = %q, want intlSaaSLightvela", req.Application)
 		}
@@ -939,6 +942,9 @@ func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testin
 		}
 		if req.PayOption != "chargePay" {
 			t.Errorf("PayOption = %q, want chargePay", req.PayOption)
+		}
+		if req.PayType != "normal" {
+			t.Errorf("PayType = %q, want normal", req.PayType)
 		}
 		if req.Application != "intlSaaSLightvela" {
 			t.Errorf("Application = %q, want intlSaaSLightvela", req.Application)

@@ -68,6 +68,7 @@ func TestCreatePayURLParamsUsesBillingCloudAPIFieldNames(t *testing.T) {
 		ReturnURL:     "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe/?pay=return",
 		PayScene:      "credit_card",
 		PayOption:     "chargePay",
+		PayType:       "normal",
 		Application:   "intlSaaSLightvela",
 	}
 
@@ -85,6 +86,7 @@ func TestCreatePayURLParamsUsesBillingCloudAPIFieldNames(t *testing.T) {
 		"ReturnUrl":     "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe/?pay=return",
 		"PayScene":      "credit_card",
 		"PayOption":     "chargePay",
+		"PayType":       "normal",
 		"Application":   "intlSaaSLightvela",
 	}
 	if !reflect.DeepEqual(params, want) {

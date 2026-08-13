@@ -116,6 +116,7 @@ type CreatePayURLRequest struct {
 	ReturnURL     string
 	PayScene      string
 	PayOption     string
+	PayType       string
 	Application   string
 }
 
@@ -229,6 +230,9 @@ func createPayURLParams(in *CreatePayURLRequest) (map[string]any, error) {
 			return nil, errors.New("CreatePayUrl ChargeAmount must be > 0 when PayOption is chargePay")
 		}
 		params["PayOption"] = v
+	}
+	if v := strings.TrimSpace(in.PayType); v != "" {
+		params["PayType"] = v
 	}
 	if v := strings.TrimSpace(in.Application); v != "" {
 		params["Application"] = v

@@ -51,6 +51,7 @@ import (
 
 const (
 	intlCreatePayURLPayOption   = "chargePay"
+	intlCreatePayURLPayType     = "normal"
 	intlCreatePayURLApplication = "intlSaaSLightvela"
 	intlDescribeOrderPayMode    = "prePay"
 	billingAmountToCentsDivisor = int64(1_000_000)
@@ -1399,6 +1400,7 @@ func (s *Service) generatePayURLByCloudAPI(
 		ReturnURL:    optsReturnURL(opts),
 		PayScene:     "credit_card",
 		PayOption:    intlCreatePayURLPayOption,
+		PayType:      intlCreatePayURLPayType,
 		Application:  intlCreatePayURLApplication,
 	}
 	if orderHasAutoRenewFlag(order.GoodsDetail) {
