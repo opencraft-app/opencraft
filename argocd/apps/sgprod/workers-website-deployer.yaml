@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: workers-website-deployer-sgprod
+  namespace: argocd
+spec:
+  project: sgprod-workers-website-deployer
+  source:
+    repoURL: git@git.woa.com:wisp/mono2.git
+    targetRevision: gitops
+    path: argocd/services/workers-website-deployer/sgprod
+  destination:
+    namespace: ctl
+    name: sgprod

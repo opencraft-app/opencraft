@@ -6,3 +6,4 @@ files:
   - ../../../secrets/sgprod/ctl-conf-common.sops.yaml
   - ../../../secrets/sgprod/ctl-agentchat-secrets.sops.yaml
   - ../../../secrets/sgprod/ctl-runtime-secrets.sops.yaml
+  - ../../../secrets/sgprod/ctl-website-runtime-secrets.sops.yaml

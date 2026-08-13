@@ -9,6 +9,7 @@
 | `devops-pipeline` | 蓝盾流水线、CI/CD、构建查询、构建启动/取消、构建状态、流水线参数修改 |
 | `lightvela-web-validation` | LightVela 登录、订阅、续费、实名、受保护页面等 Web 能力的状态矩阵验证、桌面/移动端截图留证和 HTML 报告输出 |
 | `tencent-tat-instance-mining` | 通过腾讯云 TAT/自动化助手批量采集 Hermes CVM 实例数据，统计 Token、Session、通道配置，并可按账号表合并分析 |
+| `website-builder` | 用户一句话建站：通过 Vela API 创建站点、发布纯静态产物、返回子域名访问地址、删除站点（只做静态托管，不提供任何数据存储） |
 | `baseline-ui` | UI 组件、Tailwind 样式、排版层级、布局反模式、前端界面一致性检查 |
 | `better-icons` | 搜索、选择、替换图标，或需要从 Iconify 图标库获取 SVG |
 | `fixing-accessibility` | 表单、弹窗、交互控件、键盘导航、ARIA、色彩对比度、WCAG 可访问性修复 |

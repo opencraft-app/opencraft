@@ -11,8 +11,12 @@ images/
 ├── deploy-build.sh            # 上传 build.sh / manifest / envd 到远端并执行
 ├── build.sh                   # 远端实际构建脚本（Ubuntu 24.04 only）
 ├── helpers/
+│   ├── config-hermes-python-mirrors.sh
+│   ├── install-hermes-website-credential.sh
+│   └── resolve-hermes-backend-blueprint-id.py
 ├── tests/
 │   ├── test-envd-agent.sh
+│   ├── test-hermes-website-credential-scripts.sh
 │   ├── test-runtime.sh
 │   ├── test-weixin-login-protocol.sh
 │   └── test-onboard.sh
@@ -308,6 +312,51 @@ python3 images/build-image.py --base-image-id img-id352nof --with-verify --verif
 ```bash
 bash images/tests/test-envd-agent.sh ubuntu@<host>
 ```
+
+## Website Credential TAT Delivery
+
+每个 Hermes 实例通过腾讯云 TAT 接收一个永久的、per-instance 的建站凭据（`vwk_<key_id>_<secret>`）。
+凭据写入 `/etc/vela/website-credential.env` 并通过 systemd drop-in 注入 Hermes gateway 服务环境变量。
+
+### 脚本
+
+| 脚本 | 位置 | 用途 |
+|---|---|---|
+| `install-hermes-website-credential.sh` | `images/helpers/` | 目标机执行：校验 token、写凭据文件、加 drop-in、重启服务 |
+| `create_hermes_website_credential_command.sh` | `.ci/runtime/commands/` | 创建 TAT 参数化命令（`{{tat-hidden:website_key}}`） |
+| `invoke_hermes_website_credential_command.sh` | `.ci/runtime/commands/` | 按 JSONL 逐实例 InvokeCommand，每实例独立参数 |
+| `test-hermes-website-credential-scripts.sh` | `images/tests/` | 行为测试：31 项断言，全通过 |
+
+### 流程
+
+1. **创建命令**（每区域一次）：
+
+```bash
+HERMES_TAT_REGION=ap-shanghai   bash .ci/runtime/commands/create_hermes_website_credential_command.sh
+```
+
+输出 `HERMES_TAT_COMMAND_ID`，后续调用复用。
+
+2. **准备实例清单**（JSONL，每行一个实例）：
+
+```jsonl
+{"cloud_id":"ins-xxx","website_key":"vwk_xxx_yyy"}
+{"cloud_id":"ins-zzz","website_key":"vwk_aaa_bbb"}
+```
+
+3. **逐实例下发**：
+
+```bash
+HERMES_TAT_COMMAND_ID=cmd-xxx HERMES_TAT_API_BASE=https://api.lightvela.com HERMES_TAT_INPUT_FILE=instances.jsonl   bash .ci/runtime/commands/invoke_hermes_website_credential_command.sh
+```
+
+### 安全约束
+
+- TAT 命令使用 `{{tat-hidden:website_key}}` 隐藏参数，不出现在控制台/日志
+- 命令内容不含任何默认密钥
+- 每台实例的 key 不同，必须逐实例调用
+- 目标文件权限 `root:agentuser 0440`
+- 安装脚本不打印 token 值
 
 ## CTL Follow-up
 

@@ -1,0 +1,23 @@
+diff --git a/dist/es/assistant/index.js b/dist/es/assistant/index.js
+index fd416d2323030a045d67e7e7793227e19fd28503..9f00eeb01b51a942b69a4b33d7c02df4fa8ea5aa 100644
+--- a/dist/es/assistant/index.js
++++ b/dist/es/assistant/index.js
+@@ -1,5 +1,5 @@
+ import _slicedToArray from "@babel/runtime-corejs3/helpers/esm/slicedToArray";
+-import '@tencent/tea-component/dist/tea-themeable.css';
++import '@tencent/tea-component/dist/tea-no-reset.css';
+ import { useClawErrorCallback, useClawInit } from '@tencent/agentchat-claw-hooks';
+ import { App as ADApp, Flex, message } from 'antd';
+ import React from 'react';
+diff --git a/dist/es/clawbot/components/claw-messages-box.js b/dist/es/clawbot/components/claw-messages-box.js
+index 48b2e545145c8d15694aeb405597fa9e6e5e1e50..dec85ae59e3dcafe2f6ff6e5a01dee69f3c8d202 100644
+--- a/dist/es/clawbot/components/claw-messages-box.js
++++ b/dist/es/clawbot/components/claw-messages-box.js
+@@ -1,6 +1,6 @@
+ import _slicedToArray from "@babel/runtime-corejs3/helpers/esm/slicedToArray";
+ import _mapInstanceProperty from "@babel/runtime-corejs3/core-js/instance/map";
+-import '@tencent/tea-component/dist/tea-themeable.css';
++import '@tencent/tea-component/dist/tea-no-reset.css';
+ import '@tencent/tea-component/dist/themes/default-light.css';
+ import { IMErrorCode } from '@tencent/lightai-types';
+ import { useClawAckCallback, useClawMessageLoading, useClawMessages } from '@tencent/agentchat-claw-hooks';

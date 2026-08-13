@@ -26,10 +26,12 @@ import (
 	orderlogic "ctl/pkg/logic/order"
 	passlogic "ctl/pkg/logic/pass"
 	snapshotlogic "ctl/pkg/logic/snapshot"
+	websitelogic "ctl/pkg/logic/website"
 	"ctl/pkg/metric"
 	"ctl/pkg/resource"
 	"ctl/pkg/tracing"
 	"ctl/pkg/transport"
+	"ctl/pkg/websiteauth"
 
 	adapterfactory "ctl/pkg/adapter/factory"
 
@@ -154,6 +156,22 @@ func newAPIServer() (*apiServer, error) {
 }
 
 func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) http.Handler {
+	return newRouterWithWebsiteAuth(
+		handler,
+		bh,
+		ph,
+		websiteauth.New(resource.RedisMainClient),
+		gormWebsiteInstanceReader{},
+	)
+}
+
+func newRouterWithWebsiteAuth(
+	handler *instanceHandler,
+	bh *bundleHandler,
+	ph *passHandler,
+	credentialStore websiteauth.Store,
+	instanceReader websiteInstanceReader,
+) http.Handler {
 	// orderHandler 在函数内部实例化避免修改现有 newRouter 调用点的签名。
 	// 后续如需 mock orderHandler，可抽出为可选参数。
 	oh := &orderHandler{logic: orderlogic.NewLogic()}
@@ -162,9 +180,27 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		writeSuccess(w, r, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("/v1/frontend/runtime-config", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"features": map[string]bool{
+				"paidBillingEnabled":               true,
+				"realnamePhoneVerificationEnabled": true,
+			},
+		})
+	})
 	mux.HandleFunc("/internal/bots", handler.handleInternalBots)
 	mux.HandleFunc("/internal/bots/", handler.handleInternalBotSubresource)
 	mux.HandleFunc("/internal/instances/", handler.handleInternalInstanceSubresource)
+	mux.Handle("/internal/ctl/instances/", &websiteCredentialHandler{
+		store:     credentialStore,
+		instances: instanceReader,
+	})
 	mux.HandleFunc("/v1/integrations/agentchat/introspect", handler.handleAgentChatIntrospect)
 	mux.HandleFunc("/v1/instances", handler.handleInstances)
 	mux.HandleFunc("/v1/instances/", handler.handleInstance)
@@ -213,6 +249,21 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	//   GET /v1/orders/{dealName}/status — 前端轮询订单支付状态（X-User-Id 鉴权）
 	// 设计稿：.tmp/ctl-order-status-query-design.md §5.5 + Q-OS-1/Q-OS-3/Q-OS-7 拍板。
 	mux.HandleFunc("/v1/orders/", oh.handleUserOrders)
+
+	// Website 路由
+	websiteLogic := websitelogic.NewLogic()
+	wh := &websiteHandler{logic: websiteLogic}
+	mux.Handle("/v1/websites", websiteInstanceAuthMiddleware(
+		credentialStore, instanceReader, http.HandlerFunc(wh.handleWebsitesRoot)))
+	mux.Handle("/v1/websites/", websiteInstanceAuthMiddleware(
+		credentialStore, instanceReader, http.HandlerFunc(wh.handleWebsitesByID)))
+	mux.HandleFunc("/internal/ctl/websites/operations", wh.handleInternalOperations)
+	mux.HandleFunc("/internal/ctl/websites/operations/", wh.handleInternalOperations)
+	mux.HandleFunc("/internal/ctl/websites/sites/", wh.handleInternalSite)
+	mux.HandleFunc("/internal/ctl/websites/usage", wh.handleInternalUsage)
+	mux.HandleFunc("/internal/ctl/websites/domains/", wh.handleInternalDomain)
+	mux.HandleFunc("/internal/ctl/websites/domains/bind", wh.handleInternalDomainBind)
+	mux.HandleFunc("/internal/ctl/websites/domains/unbind", wh.handleInternalDomainUnbind)
 
 	return requestMetadataMiddleware(metricsMiddleware(notFoundMiddleware(mux)))
 }

@@ -25,6 +25,11 @@ patches:
           secretRef:
             name: ctl-agentchat-secrets
       - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: ctl-website-runtime-secrets
+      - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
           name: CTL_LLMGATEWAY_BASE_URL
@@ -53,6 +58,11 @@ patches:
           secretRef:
             name: ctl-agentchat-secrets
       - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: ctl-website-runtime-secrets
+      - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
           name: CTL_LLMGATEWAY_BASE_URL
@@ -80,6 +90,11 @@ patches:
         value:
           secretRef:
             name: ctl-agentchat-secrets
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: ctl-website-runtime-secrets
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:

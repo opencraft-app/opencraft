@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown } from "lucide-react";
+import { Bot, Globe, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect } from "react";
@@ -7,7 +7,8 @@ import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
-import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
+import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, WEBSITES_PATH, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
+import { isGlobal } from "@/lib/region";
 
 type RevealWorkbenchHost = Window & {
   show?: (...args: unknown[]) => unknown;
@@ -175,6 +176,16 @@ export const UserAvatarMenu = () => {
                 <User className={menuIconClass} />
                 {t("账号管理")}
               </Link>
+              {isGlobal ? (
+                <Link
+                  href={WEBSITES_PATH}
+                  onClick={() => setOpen(false)}
+                  className={menuItemClass}
+                >
+                  <Globe className={menuIconClass} />
+                  {t("我的作品")}
+                </Link>
+              ) : null}
               {workbenchRevealed ? (
                 <Link
                   href="/support"

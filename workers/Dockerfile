@@ -9,6 +9,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/rescue-exporter ./cmd/rescue-exporter
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/rescue-uploader ./cmd/rescue-uploader
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/website-deployer ./cmd/website-deployer
 
 FROM --platform=linux/amd64 alpine:3.20
 
@@ -17,6 +18,7 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /out/rescue-exporter /usr/local/bin/rescue-exporter
 COPY --from=builder /out/rescue-uploader /usr/local/bin/rescue-uploader
+COPY --from=builder /out/website-deployer /usr/local/bin/website-deployer
 
 ENV TZ=Asia/Shanghai
 ENV TEMPORAL_TLS=true
