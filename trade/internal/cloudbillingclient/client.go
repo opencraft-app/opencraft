@@ -113,6 +113,8 @@ type CreatePayURLRequest struct {
 	CancelURL     string
 	ReturnURL     string
 	PayScene      string
+	PayOption     string
+	Application   string
 }
 
 type CreatePayURLResponse struct {
@@ -216,6 +218,12 @@ func createPayURLParams(in *CreatePayURLRequest) (map[string]any, error) {
 	}
 	if v := strings.TrimSpace(in.PayScene); v != "" {
 		params["PayScene"] = v
+	}
+	if v := strings.TrimSpace(in.PayOption); v != "" {
+		params["PayOption"] = v
+	}
+	if v := strings.TrimSpace(in.Application); v != "" {
+		params["Application"] = v
 	}
 	return params, nil
 }

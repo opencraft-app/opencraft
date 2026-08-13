@@ -843,6 +843,12 @@ func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *test
 		if req.PayScene != "credit_card" {
 			t.Errorf("PayScene = %q, want credit_card", req.PayScene)
 		}
+		if req.PayOption != "chargePay" {
+			t.Errorf("PayOption = %q, want chargePay", req.PayOption)
+		}
+		if req.Application != "intlSaaSLightvela" {
+			t.Errorf("Application = %q, want intlSaaSLightvela", req.Application)
+		}
 		if req.CancelURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=cancel" {
 			t.Errorf("CancelURL mismatch: %q", req.CancelURL)
 		}
@@ -902,6 +908,12 @@ func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testin
 		}
 		if req.PayScene != "credit_card" {
 			t.Errorf("PayScene = %q, want credit_card", req.PayScene)
+		}
+		if req.PayOption != "chargePay" {
+			t.Errorf("PayOption = %q, want chargePay", req.PayOption)
+		}
+		if req.Application != "intlSaaSLightvela" {
+			t.Errorf("Application = %q, want intlSaaSLightvela", req.Application)
 		}
 		return &cloudbillingclient.CreatePayURLResponse{URL: "https://buy.cloud.tencent.com/midas/manual?dealName=deal-1"}, nil
 	}

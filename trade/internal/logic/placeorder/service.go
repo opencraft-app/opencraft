@@ -49,6 +49,11 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
 
+const (
+	intlCreatePayURLPayOption   = "chargePay"
+	intlCreatePayURLApplication = "intlSaaSLightvela"
+)
+
 // 业务错误哨兵（上层 errors.Is 判定）。
 var (
 	// ErrInvalidInput 入参校验失败
@@ -1367,11 +1372,13 @@ func (s *Service) generatePayURLByCloudAPI(
 		)
 	}
 	req := &cloudbillingclient.CreatePayURLRequest{
-		OrderIDs:  []string{dealName},
-		Platform:  optsPlatform(opts),
-		CancelURL: optsCancelURL(opts),
-		ReturnURL: optsReturnURL(opts),
-		PayScene:  "credit_card",
+		OrderIDs:    []string{dealName},
+		Platform:    optsPlatform(opts),
+		CancelURL:   optsCancelURL(opts),
+		ReturnURL:   optsReturnURL(opts),
+		PayScene:    "credit_card",
+		PayOption:   intlCreatePayURLPayOption,
+		Application: intlCreatePayURLApplication,
 	}
 	if orderHasAutoRenewFlag(order.GoodsDetail) {
 		req.ContractOrder = 1

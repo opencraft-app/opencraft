@@ -66,6 +66,8 @@ func TestCreatePayURLParamsUsesBillingCloudAPIFieldNames(t *testing.T) {
 		CancelURL:     "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe/?pay=cancel",
 		ReturnURL:     "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe/?pay=return",
 		PayScene:      "credit_card",
+		PayOption:     "chargePay",
+		Application:   "intlSaaSLightvela",
 	}
 
 	params, err := createPayURLParams(req)
@@ -80,6 +82,8 @@ func TestCreatePayURLParamsUsesBillingCloudAPIFieldNames(t *testing.T) {
 		"CancelUrl":     "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe/?pay=cancel",
 		"ReturnUrl":     "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe/?pay=return",
 		"PayScene":      "credit_card",
+		"PayOption":     "chargePay",
+		"Application":   "intlSaaSLightvela",
 	}
 	if !reflect.DeepEqual(params, want) {
 		t.Fatalf("params mismatch:\n got  %#v\n want %#v", params, want)
