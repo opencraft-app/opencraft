@@ -35,6 +35,11 @@ spec:
       containers:
         - name: auth
           env:
+            - name: SHADOW_BINDING_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: trade-runtime-secrets
+                  key: LIGHTCLAW_INTERNAL_SERVICE_TOKEN
             - name: SHADOW_TENCENT_CALLBACK_TOKEN
               valueFrom:
                 secretKeyRef:
