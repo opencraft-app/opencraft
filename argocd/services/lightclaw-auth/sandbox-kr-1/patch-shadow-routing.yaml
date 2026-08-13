@@ -15,7 +15,7 @@ data:
   SHADOW_PLATFORM: intlSaaSLightvela
   SHADOW_REQUEST_TIMEOUT: 15s
   SHADOW_CLOUDLADDER_ENABLED: "true"
-  SHADOW_CLOUDLADDER_GATEWAY_BASE_URL: http://clgateway-testing-intl.Production.polaris:8095
+  SHADOW_CLOUDLADDER_GATEWAY_BASE_URL: http://43.153.236.65
   SHADOW_CLOUDLADDER_ROUTE_ID: tcapi-account-cn-test
   SHADOW_CLOUDLADDER_CAM_ROUTE_ID: tcapi-cam-cn-test
   SHADOW_CLOUDLADDER_STS_ROUTE_ID: tcapi-sts-cn-test
