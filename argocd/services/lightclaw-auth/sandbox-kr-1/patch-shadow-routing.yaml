@@ -10,6 +10,8 @@ data:
   SHADOW_USER_NAME_PREFIX: krsbx_
   SHADOW_REGION: ap-singapore
   SHADOW_ACCOUNT_ENDPOINT: account.test.tencentcloudapi.com
+  SHADOW_CAM_ENDPOINT: cam.test.tencentcloudapi.com
+  SHADOW_STS_ENDPOINT: sts.test.tencentcloudapi.com
   SHADOW_PLATFORM: intlSaaSLightvela
   SHADOW_REQUEST_TIMEOUT: 15s
   SHADOW_CLOUDLADDER_ENABLED: "true"
