@@ -11,6 +11,78 @@ configMapGenerator:
       - trade-platform.env
 resources:
   - trade-migration-job.yaml
+replacements:
+  # 国际站 Billing CloudAPI 仅由当前环境 overlay 注入，避免污染共享 common。
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_BILLING_ENDPOINT
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_BILLING_ENDPOINT
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_BILLING_REGION
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_BILLING_REGION
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_BILLING_REQUEST_TIMEOUT
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_BILLING_REQUEST_TIMEOUT
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_BILLING_CLOUDLADDER_ENABLED
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_BILLING_CLOUDLADDER_ENABLED
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_BILLING_CLOUDLADDER_GATEWAY_BASE_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_BILLING_CLOUDLADDER_GATEWAY_BASE_URL
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_BILLING_CLOUDLADDER_ROUTE_ID
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_BILLING_CLOUDLADDER_ROUTE_ID
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_BILLING_CLOUDLADDER_CALLER
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_BILLING_CLOUDLADDER_CALLER
 patches:
   - path: delete-shared-namespace.yaml
   - path: delete-shared-serviceaccount.yaml
