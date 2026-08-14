@@ -29,12 +29,13 @@ type TemporaryCredentials struct {
 }
 
 type Config struct {
-	Endpoint       string
-	Region         string
-	Platform       string
-	Source         string
-	RequestTimeout time.Duration
-	HTTPTransport  http.RoundTripper
+	Endpoint          string
+	Region            string
+	Platform          string
+	Source            string
+	ChannelMerchantID string
+	RequestTimeout    time.Duration
+	HTTPTransport     http.RoundTripper
 }
 
 type Client interface {
@@ -97,12 +98,13 @@ func IsDefaultCardDeleteError(err error) bool {
 }
 
 type TencentCloudClient struct {
-	endpoint  string
-	region    string
-	platform  string
-	source    string
-	timeout   time.Duration
-	transport http.RoundTripper
+	endpoint          string
+	region            string
+	platform          string
+	source            string
+	channelMerchantID string
+	timeout           time.Duration
+	transport         http.RoundTripper
 }
 
 func NewTencentCloudClient(cfg Config) (*TencentCloudClient, error) {
@@ -131,12 +133,13 @@ func NewTencentCloudClient(cfg Config) (*TencentCloudClient, error) {
 		transport = http.DefaultTransport
 	}
 	return &TencentCloudClient{
-		endpoint:  endpoint,
-		region:    region,
-		platform:  platform,
-		source:    source,
-		timeout:   timeout,
-		transport: transport,
+		endpoint:          endpoint,
+		region:            region,
+		platform:          platform,
+		source:            source,
+		channelMerchantID: strings.TrimSpace(cfg.ChannelMerchantID),
+		timeout:           timeout,
+		transport:         transport,
 	}, nil
 }
 
@@ -195,12 +198,16 @@ func (c *TencentCloudClient) CreateSignOrder(ctx context.Context, credentials Te
 			RequestID    string `json:"RequestId"`
 		} `json:"Response"`
 	}
-	if err := c.send(ctx, credentials, "CreateSignOrder", map[string]any{
+	params := map[string]any{
 		"Source":       c.source,
 		"ReturnUrl":    strings.TrimSpace(input.ReturnURL),
 		"CancelUrl":    strings.TrimSpace(input.CancelURL),
 		"LanguageCode": languageCode,
-	}, &payload); err != nil {
+	}
+	if c.channelMerchantID != "" {
+		params["ChannelMerchantId"] = c.channelMerchantID
+	}
+	if err := c.send(ctx, credentials, "CreateSignOrder", params, &payload); err != nil {
 		return CreateSignOrderResult{}, err
 	}
 	redirectURL, err := paymentLink(payload.Response.SignOrder)
