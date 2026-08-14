@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/paymentmethod"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/shadowbinding"
 )
 
@@ -43,23 +44,26 @@ var (
 )
 
 type Options struct {
-	Now                       func() time.Time
-	SiteKind                  string
-	SMSCooldown               time.Duration
-	SMSCodeTTL                time.Duration
-	SessionTTL                time.Duration
-	VerificationCodeGenerator func(int) (string, error)
-	PhoneAuth                 PhoneAuthConfig
-	Verification              VerificationPolicy
-	SeedDemoUser              bool
-	RealnameVerifier          RealnameVerifier
-	RealnameFaceIDVerifier    RealnameFaceIDVerifier
-	RealnameCipher            RealnameCipher
-	RealnameFaceID            RealnameFaceIDConfig
-	ContentAudit              ContentAuditConfig
-	ContentAuditClient        ContentAuditClient
-	ShadowBinding             *shadowbinding.Service
-	PassBillingMigration      PassBillingMigrationNotifier
+	Now                          func() time.Time
+	SiteKind                     string
+	SMSCooldown                  time.Duration
+	SMSCodeTTL                   time.Duration
+	SessionTTL                   time.Duration
+	VerificationCodeGenerator    func(int) (string, error)
+	PhoneAuth                    PhoneAuthConfig
+	Verification                 VerificationPolicy
+	SeedDemoUser                 bool
+	RealnameVerifier             RealnameVerifier
+	RealnameFaceIDVerifier       RealnameFaceIDVerifier
+	RealnameCipher               RealnameCipher
+	RealnameFaceID               RealnameFaceIDConfig
+	ContentAudit                 ContentAuditConfig
+	ContentAuditClient           ContentAuditClient
+	ShadowBinding                *shadowbinding.Service
+	PaymentMethods               paymentmethod.Client
+	PaymentMethodSignOrderLimit  int
+	PaymentMethodSignOrderWindow time.Duration
+	PassBillingMigration         PassBillingMigrationNotifier
 	// ShadowBasicAuthSyncEnabled gates the external SaveBasicAuthForSaaS side
 	// effect and the user-facing sync status. Keep it off by default so the
 	// shadow binding code can land before product rollout.
@@ -367,6 +371,9 @@ type Service struct {
 	contentAudit                 ContentAuditConfig
 	contentAuditClient           ContentAuditClient
 	shadowBinding                *shadowbinding.Service
+	paymentMethods               paymentmethod.Client
+	paymentMethodSignOrderLimit  int
+	paymentMethodSignOrderWindow time.Duration
 	passBillingMigrationNotifier PassBillingMigrationNotifier
 	shadowBasicAuthSyncEnabled   bool
 	emailBind                    EmailBindConfig
@@ -445,6 +452,9 @@ func NewWithStore(store Store, opts Options) *Service {
 		contentAudit:                 opts.ContentAudit,
 		contentAuditClient:           opts.ContentAuditClient,
 		shadowBinding:                opts.ShadowBinding,
+		paymentMethods:               opts.PaymentMethods,
+		paymentMethodSignOrderLimit:  defaultInt(opts.PaymentMethodSignOrderLimit, 5),
+		paymentMethodSignOrderWindow: defaultDuration(opts.PaymentMethodSignOrderWindow, 10*time.Minute),
 		passBillingMigrationNotifier: opts.PassBillingMigration,
 		shadowBasicAuthSyncEnabled:   opts.ShadowBasicAuthSyncEnabled,
 		emailBind:                    opts.EmailBind,
@@ -1890,6 +1900,13 @@ func defaultDuration(value time.Duration, fallback time.Duration) time.Duration 
 		return value
 	}
 	return fallback
+}
+
+func defaultInt(value int, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 func isActiveAuditStatus(status string) bool {

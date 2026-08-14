@@ -116,6 +116,35 @@ routes:
   - OPTIONS
   upstream: http://trade.lightvela-playground-sandbox-kr-1.svc.cluster.local
   access: public
+- name: auth-payment-methods
+  prefix: /auth/payment-methods
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+  - OPTIONS
+  upstream: http://lightclaw-auth.lightvela-playground-sandbox-kr-1.svc.cluster.local
+  access: authenticated
+  auth_strategy: session
+  allowed_origins:
+  - https://sandbox-kr-1.lightclaw.tech
+  - https://intl-sandbox-kr-1.preview.lightclaw.tech
+  - https://lightvela-intl.pages.dev
+  - http://localhost:4173
+  - http://127.0.0.1:4173
+  - http://localhost:5173
+  - http://127.0.0.1:5173
+  path_policy: allowlist
+  path_allow:
+  - method: GET
+    path: /auth/payment-methods
+  - method: POST
+    path: /auth/payment-methods/sign-orders
+  - method: PUT
+    path: /auth/payment-methods/{contract_code}/default
+  - method: DELETE
+    path: /auth/payment-methods/{contract_code}
 - name: auth
   prefix: /auth
   methods:

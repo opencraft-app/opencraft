@@ -35,6 +35,7 @@ type Route struct {
 	Upstream               string       `yaml:"upstream"`
 	UpstreamBearerTokenEnv string       `yaml:"upstream_bearer_token_env"`
 	Access                 Access       `yaml:"access"`
+	AllowedOrigins         []string     `yaml:"allowed_origins"`
 	PathPolicy             PathPolicy   `yaml:"path_policy"`
 	PathAllow              []PublicRule `yaml:"path_allow"`
 	PublicAllow            []PublicRule `yaml:"public_allow"`

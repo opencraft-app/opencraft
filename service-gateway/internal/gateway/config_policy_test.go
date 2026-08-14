@@ -10,6 +10,69 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func TestKoreaPaymentMethodRoutesAreAuthenticatedAndAllowlisted(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd/services/service-gateway/sandbox-kr-1/config.yaml"))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	want := map[string]struct{}{
+		http.MethodGet + " /auth/payment-methods":                         {},
+		http.MethodPost + " /auth/payment-methods/sign-orders":            {},
+		http.MethodPut + " /auth/payment-methods/{contract_code}/default": {},
+		http.MethodDelete + " /auth/payment-methods/{contract_code}":      {},
+	}
+	wantOrigins := map[string]struct{}{
+		"https://sandbox-kr-1.lightclaw.tech":              {},
+		"https://intl-sandbox-kr-1.preview.lightclaw.tech": {},
+		"https://lightvela-intl.pages.dev":                 {},
+		"http://localhost:4173":                            {},
+		"http://127.0.0.1:4173":                            {},
+		"http://localhost:5173":                            {},
+		"http://127.0.0.1:5173":                            {},
+	}
+	for _, route := range cfg.Routes {
+		if route.Name != "auth-payment-methods" {
+			continue
+		}
+		if route.Prefix != "/auth/payment-methods" || route.Access != AccessAuthenticated {
+			t.Fatalf("payment method route must be authenticated and narrowly prefixed: %+v", route)
+		}
+		if route.RequireRealname {
+			t.Fatal("international payment method route must not require realname")
+		}
+		if route.PathPolicy != PathPolicyAllowlist {
+			t.Fatalf("path_policy = %q, want allowlist", route.PathPolicy)
+		}
+		if len(route.AllowedOrigins) != len(wantOrigins) {
+			t.Fatalf("payment method allowed_origins has %d entries, want %d: %+v", len(route.AllowedOrigins), len(wantOrigins), route.AllowedOrigins)
+		}
+		for _, origin := range route.AllowedOrigins {
+			if _, ok := wantOrigins[origin]; !ok {
+				t.Fatalf("payment method route has unexpected allowed origin %q", origin)
+			}
+		}
+		got := make(map[string]struct{}, len(route.PathAllow))
+		for _, rule := range route.PathAllow {
+			got[rule.Method+" "+rule.Path] = struct{}{}
+		}
+		if len(got) != len(want) {
+			t.Fatalf("payment method path allowlist has %d rules, want %d: %+v", len(got), len(want), got)
+		}
+		for key := range want {
+			if _, ok := got[key]; !ok {
+				t.Fatalf("payment method path allowlist missing %s", key)
+			}
+		}
+		return
+	}
+	t.Fatal("auth-payment-methods route not found")
+}
+
 func TestDeployConfigsScopePhoneAuthPublicRoutes(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
