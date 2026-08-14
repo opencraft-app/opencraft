@@ -3,6 +3,7 @@ package pass
 import (
 	"context"
 	"testing"
+	"time"
 
 	adapterfactory "ctl/pkg/adapter/factory"
 	tradeadapter "ctl/pkg/adapter/trade"
@@ -16,11 +17,15 @@ type orderURLTradeStub struct {
 	tradeadapter.Adapter
 	gotDealName string
 	gotOpts     *tradeadapter.GeneratePayURLOptions
+	gotTimeout  time.Duration
 }
 
-func (s *orderURLTradeStub) GeneratePayURL(_ context.Context, dealName string, opts *tradeadapter.GeneratePayURLOptions) (*tradeadapter.PayURLResult, error) {
+func (s *orderURLTradeStub) GeneratePayURL(ctx context.Context, dealName string, opts *tradeadapter.GeneratePayURLOptions) (*tradeadapter.PayURLResult, error) {
 	s.gotDealName = dealName
 	s.gotOpts = opts
+	if deadline, ok := ctx.Deadline(); ok {
+		s.gotTimeout = time.Until(deadline)
+	}
 	return &tradeadapter.PayURLResult{
 		PayURL:     "https://buy.cloud.tencent.com/midas?token=real",
 		NeedCharge: 1,
@@ -63,5 +68,8 @@ func TestCreatePassOrderUrlPassesRedirectURLsToTrade(t *testing.T) {
 	}
 	if tradeStub.gotOpts.ReturnURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/subscribe?pay=return" {
 		t.Fatalf("ReturnURL = %q", tradeStub.gotOpts.ReturnURL)
+	}
+	if tradeStub.gotTimeout < 49*time.Second || tradeStub.gotTimeout > payURLRequestTimeout {
+		t.Fatalf("GeneratePayURL timeout = %s, want approximately %s", tradeStub.gotTimeout, payURLRequestTimeout)
 	}
 }

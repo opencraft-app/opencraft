@@ -50,9 +50,10 @@ import (
 )
 
 const (
-	intlCreatePayURLPayOption   = "chargePay"
-	intlCreatePayURLApplication = "intlSaaSLightvela"
+	intlPayURLPayOption         = "chargePay"
+	intlPayURLApplication       = "intlSaaSLightvela"
 	intlDescribeOrderPayMode    = "prePay"
+	paymentContextLookupTimeout = 8 * time.Second
 	billingAmountToCentsDivisor = int64(1_000_000)
 )
 
@@ -181,10 +182,13 @@ type Deps struct {
 	// ShadowCredentialClient resolves short-lived credentials for international
 	// Billing CloudAPI calls. It is deliberately separate from binding lookup.
 	ShadowCredentialClient shadowclient.CredentialClient
-	OrderWriter            store.OrderWriter
-	OrderStore             store.OrderStore    // GeneratePayURL 反查 trade_order.pay_url 用
-	ShadowClient           shadowclient.Client // 可选，nil 表示由调用方传 Uin/AppID
-	SiteKind               string              // 可选，v1.7.x 国际站接入；"cn" / "intl"，缺省 cn 兜底
+	// PaymentContextClient resolves card binding state and short-lived
+	// credentials in one auth call for international create-order pay URLs.
+	PaymentContextClient shadowclient.PaymentContextClient
+	OrderWriter          store.OrderWriter
+	OrderStore           store.OrderStore    // GeneratePayURL 反查 trade_order.pay_url 用
+	ShadowClient         shadowclient.Client // 可选，nil 表示由调用方传 Uin/AppID
+	SiteKind             string              // 可选，v1.7.x 国际站接入；"cn" / "intl"，缺省 cn 兜底
 
 	// RegionOverride 是腾讯云 region 字面量 override（北京 2 预发布接入新增）。
 	// 合法性已由 config.Load 在启动期 fail-fast 校验；本处只负责透透到 region.Resolve。
@@ -1360,9 +1364,34 @@ func (s *Service) generatePayURLByCloudAPI(
 	if externalUserID == "" {
 		return nil, fmt.Errorf("placeorder: trade_order.external_user_id missing for dealName=%s (data inconsistency)", dealName)
 	}
-	shadowCredentials, err := s.deps.ShadowCredentialClient.GetTemporaryCredentialsByExternalUserID(ctx, externalUserID)
-	if err != nil {
-		return nil, fmt.Errorf("placeorder: get shadow temporary credentials dealName=%s: %w", dealName, err)
+	contractOrder := 0
+	var shadowCredentials *shadowclient.TemporaryCredentials
+	if order.OrderType == store.OrderTypeCreate {
+		if s.deps.PaymentContextClient != nil {
+			paymentContextCtx, paymentContextCancel := context.WithTimeout(ctx, paymentContextLookupTimeout)
+			paymentContext, contextErr := s.deps.PaymentContextClient.GetPaymentContextByExternalUserID(paymentContextCtx, externalUserID)
+			paymentContextCancel()
+			if contextErr == nil && paymentContext != nil {
+				shadowCredentials = &paymentContext.Credentials
+				if !paymentContext.HasPaymentMethod {
+					contractOrder = 1
+				}
+			} else if contextErr != nil {
+				log.Printf("[pay-url] payment context lookup failed, fallback to sign-and-pay dealName=%s err=%v", dealName, contextErr)
+			}
+		}
+		// If the card lookup endpoint is unavailable, preserve checkout by
+		// treating the user as unbound and using the credential-only endpoint.
+		if shadowCredentials == nil {
+			contractOrder = 1
+		}
+	}
+	if shadowCredentials == nil {
+		var err error
+		shadowCredentials, err = s.deps.ShadowCredentialClient.GetTemporaryCredentialsByExternalUserID(ctx, externalUserID)
+		if err != nil {
+			return nil, fmt.Errorf("placeorder: get shadow temporary credentials dealName=%s: %w", dealName, err)
+		}
 	}
 	if shadowCredentials == nil {
 		return nil, fmt.Errorf("placeorder: shadow temporary credentials are nil for dealName=%s", dealName)
@@ -1392,17 +1421,15 @@ func (s *Service) generatePayURLByCloudAPI(
 		return nil, err
 	}
 	req := &cloudbillingclient.CreatePayURLRequest{
-		OrderIDs:     []string{dealName},
-		ChargeAmount: chargeAmount,
-		Platform:     optsPlatform(opts),
-		CancelURL:    optsCancelURL(opts),
-		ReturnURL:    optsReturnURL(opts),
-		PayScene:     "credit_card",
-		PayOption:    intlCreatePayURLPayOption,
-		Application:  intlCreatePayURLApplication,
-	}
-	if orderHasAutoRenewFlag(order.GoodsDetail) {
-		req.ContractOrder = 1
+		OrderIDs:      []string{dealName},
+		ChargeAmount:  chargeAmount,
+		Platform:      optsPlatform(opts),
+		ContractOrder: contractOrder,
+		CancelURL:     optsCancelURL(opts),
+		ReturnURL:     optsReturnURL(opts),
+		PayScene:      "credit_card",
+		PayOption:     intlPayURLPayOption,
+		Application:   intlPayURLApplication,
 	}
 	resp, err := s.deps.CloudBillingClient.CreatePayURL(ctx, billingCredentials, req)
 	if err != nil {
@@ -1794,26 +1821,6 @@ func jifeiAutoRenewFlagValue(flag string) (int, bool, error) {
 			AutoRenewFlagNotifyAndManual,
 			AutoRenewFlagAutoRenew,
 			AutoRenewFlagNoNotifyAndManual)
-	}
-}
-
-func orderHasAutoRenewFlag(goodsDetail map[string]interface{}) bool {
-	switch v := goodsDetail["autoRenewFlag"].(type) {
-	case bool:
-		return v
-	case int:
-		return v == 1
-	case int64:
-		return v == 1
-	case float64:
-		return v == 1
-	case string:
-		if mapped, ok, err := jifeiAutoRenewFlagValue(v); err == nil && ok {
-			return mapped == 1
-		}
-		return v == "1" || strings.EqualFold(v, "true")
-	default:
-		return false
 	}
 }
 

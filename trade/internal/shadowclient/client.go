@@ -59,9 +59,16 @@ type CredentialClient interface {
 	GetTemporaryCredentialsByExternalUserID(ctx context.Context, externalUserID string) (*TemporaryCredentials, error)
 }
 
+// PaymentContextClient resolves both short-lived credentials and card binding
+// state in one auth call for international create-order payment URLs.
+type PaymentContextClient interface {
+	GetPaymentContextByExternalUserID(ctx context.Context, externalUserID string) (*PaymentContext, error)
+}
+
 type ResolverClient interface {
 	Client
 	CredentialClient
+	PaymentContextClient
 }
 
 type TemporaryCredentials struct {
@@ -71,6 +78,11 @@ type TemporaryCredentials struct {
 	SecretKey string
 	Token     string
 	ExpiredAt time.Time
+}
+
+type PaymentContext struct {
+	Credentials      TemporaryCredentials
+	HasPaymentMethod bool
 }
 
 // Binding 镜像 internal shadowbinding 反查响应。
@@ -259,6 +271,88 @@ func (c *httpClient) GetTemporaryCredentialsByExternalUserID(ctx context.Context
 		SecretKey: raw.TmpSecretKey,
 		Token:     raw.Token,
 		ExpiredAt: expiredAt,
+	}, nil
+}
+
+func (c *httpClient) GetPaymentContextByExternalUserID(ctx context.Context, externalUserID string) (*PaymentContext, error) {
+	externalUserID = strings.TrimSpace(externalUserID)
+	if externalUserID == "" {
+		return nil, fmt.Errorf("shadowclient: externalUserID is required")
+	}
+	if c.baseURL == "" {
+		return nil, fmt.Errorf("shadowclient: baseURL is empty")
+	}
+	payload, err := json.Marshal(map[string]string{
+		"external_user_id": externalUserID,
+		"client_ua":        "lightvela-trade",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: marshal payment context request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/internal/payment-methods/context", bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: build payment context request: %w", err)
+	}
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.credentialHTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: do payment context request: %w", err)
+	}
+	defer resp.Body.Close()
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: read payment context response: %w", err)
+	}
+	var env envelope
+	envParseErr := json.Unmarshal(rawBody, &env)
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("%w: status=%d code=%s message=%q request_id=%s",
+			ErrUnauthorized, resp.StatusCode, env.Code, env.Message, env.RequestID)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		if envParseErr != nil {
+			return nil, &Error{HTTPStatus: resp.StatusCode, Message: "invalid error response"}
+		}
+		return nil, &Error{HTTPStatus: resp.StatusCode, Code: env.Code, Message: env.Message, RequestID: env.RequestID}
+	}
+	if envParseErr != nil || len(env.Data) == 0 || string(env.Data) == "null" {
+		return nil, errors.New("shadowclient: invalid payment context response envelope")
+	}
+	var data struct {
+		HasPaymentMethod *bool  `json:"has_payment_method"`
+		Uin              int64  `json:"uin"`
+		OwnerUin         int64  `json:"owner_uin"`
+		TmpSecretID      string `json:"tmp_secret_id"`
+		TmpSecretKey     string `json:"tmp_secret_key"`
+		Token            string `json:"token"`
+		ExpiredAt        string `json:"expired_at"`
+	}
+	if err := json.Unmarshal(env.Data, &data); err != nil || data.HasPaymentMethod == nil {
+		return nil, errors.New("shadowclient: invalid payment context payload")
+	}
+	expiredAt, err := time.Parse(time.RFC3339, strings.TrimSpace(data.ExpiredAt))
+	if data.Uin == 0 || data.OwnerUin == 0 || strings.TrimSpace(data.TmpSecretID) == "" ||
+		strings.TrimSpace(data.TmpSecretKey) == "" || strings.TrimSpace(data.Token) == "" || err != nil {
+		return nil, errors.New("shadowclient: payment context credentials are incomplete")
+	}
+	if !expiredAt.After(time.Now()) {
+		return nil, errors.New("shadowclient: payment context credentials are expired")
+	}
+	return &PaymentContext{
+		Credentials: TemporaryCredentials{
+			Uin:       strconv.FormatInt(data.Uin, 10),
+			OwnerUin:  strconv.FormatInt(data.OwnerUin, 10),
+			SecretID:  data.TmpSecretID,
+			SecretKey: data.TmpSecretKey,
+			Token:     data.Token,
+			ExpiredAt: expiredAt,
+		},
+		HasPaymentMethod: *data.HasPaymentMethod,
 	}, nil
 }
 

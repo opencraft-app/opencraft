@@ -154,6 +154,7 @@ func main() {
 		JifeiClient:            jifeiClient,
 		CloudBillingClient:     cloudBillingClient,
 		ShadowCredentialClient: shadowCredentialClient,
+		PaymentContextClient:   shadowResolverClient,
 		OrderWriter:            mysqlStore,
 		OrderStore:             mysqlStore,
 		ShadowClient:           shadowClient,

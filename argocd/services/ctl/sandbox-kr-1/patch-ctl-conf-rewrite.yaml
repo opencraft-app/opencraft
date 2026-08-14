@@ -68,7 +68,9 @@ data:
     [adapter.trade]
     base_url = "http://trade.lightvela-playground-sandbox-kr-1.svc.cluster.local"
     # token 从 ctl-runtime-secrets 的 CTL_INTERNAL_TOKEN 注入，避免在 ConfigMap 写入明文。
-    timeout = 30
+    # Must exceed the 50s pay-url logic budget; http.Client uses the smaller
+    # of this value and the per-request context deadline.
+    timeout = 55
 
     [log.api]
     enable_color = false

@@ -186,6 +186,32 @@ type fakeShadowCredentials struct {
 	calls atomic.Int32
 }
 
+type fakePaymentContext struct {
+	hasPaymentMethod bool
+	err              error
+	calls            atomic.Int32
+	lastUserID       string
+}
+
+func (f *fakePaymentContext) GetPaymentContextByExternalUserID(_ context.Context, externalUserID string) (*shadowclient.PaymentContext, error) {
+	f.calls.Add(1)
+	f.lastUserID = externalUserID
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &shadowclient.PaymentContext{
+		HasPaymentMethod: f.hasPaymentMethod,
+		Credentials: shadowclient.TemporaryCredentials{
+			Uin:       "1000123456",
+			OwnerUin:  "1000123456",
+			SecretID:  "tmp-id",
+			SecretKey: "tmp-key",
+			Token:     "tmp-token",
+			ExpiredAt: time.Now().Add(time.Hour),
+		},
+	}, nil
+}
+
 func (f *fakeShadowCredentials) GetTemporaryCredentialsByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.TemporaryCredentials, error) {
 	f.calls.Add(1)
 	if f.getFn != nil {
@@ -332,6 +358,7 @@ type stdDeps struct {
 	jifei             *fakeJifei
 	billing           *fakeCloudBilling
 	shadowCredentials *fakeShadowCredentials
+	paymentContext    *fakePaymentContext
 	writer            *fakeOrderWriter
 	store             *fakeOrderStore
 	service           *Service
@@ -358,6 +385,7 @@ func newStdDeps() *stdDeps {
 			},
 		},
 		shadowCredentials: &fakeShadowCredentials{},
+		paymentContext:    &fakePaymentContext{},
 		writer:            &fakeOrderWriter{},
 		store:             &fakeOrderStore{},
 	}
@@ -367,6 +395,7 @@ func newStdDeps() *stdDeps {
 		JifeiClient:            d.jifei,
 		CloudBillingClient:     d.billing,
 		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
 		OrderWriter:            d.writer,
 		OrderStore:             d.store,
 	})
@@ -838,6 +867,7 @@ func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *test
 		JifeiClient:            d.jifei,
 		CloudBillingClient:     d.billing,
 		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
 		OrderWriter:            d.writer,
 		OrderStore:             d.store,
 		SiteKind:               "intl",
@@ -849,6 +879,7 @@ func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *test
 			Uin:            "1000123456",
 			AppID:          "251202221",
 			PayURL:         "",
+			OrderType:      store.OrderTypeCreate,
 			GoodsDetail:    map[string]interface{}{"autoRenewFlag": 1},
 		}, nil
 	}
@@ -907,14 +938,131 @@ func TestGeneratePayURL_IntlUsesCreatePayURLWithContractCreditCardParams(t *test
 	if got := d.billing.lastDescribeOrderListReq; got == nil || len(got.OrderIDs) != 1 || got.OrderIDs[0] != "deal-1" || got.PayMode != "prePay" {
 		t.Fatalf("DescribeOrderList request = %+v", got)
 	}
-	if d.shadowCredentials.calls.Load() != 1 {
-		t.Errorf("shadow credential calls = %d, want 1", d.shadowCredentials.calls.Load())
+	if d.shadowCredentials.calls.Load() != 0 {
+		t.Errorf("shadow credential calls = %d, want 0 when payment context succeeds", d.shadowCredentials.calls.Load())
 	}
 	if d.billing.lastCredentials.SecretID != "tmp-id" || d.billing.lastCredentials.Token != "tmp-token" {
 		t.Fatalf("Billing credentials = %+v", d.billing.lastCredentials)
 	}
 	if d.jifei.getMidasEarmarkingCalls.Load() != 0 {
 		t.Errorf("GetMidasEarmarking calls = %d, want 0", d.jifei.getMidasEarmarkingCalls.Load())
+	}
+	if d.paymentContext.calls.Load() != 1 || d.paymentContext.lastUserID != "usr_1" {
+		t.Errorf("payment context query = %d/%q, want 1/usr_1", d.paymentContext.calls.Load(), d.paymentContext.lastUserID)
+	}
+}
+
+func TestGeneratePayURL_IntlCreateWithSavedCardDoesNotCreateContractOrder(t *testing.T) {
+	d := newStdDeps()
+	d.paymentContext.hasPaymentMethod = true
+	d.service = New(Deps{
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
+	})
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{
+			DealName:       dealName,
+			ExternalUserID: "usr_1",
+			Uin:            "1000123456",
+			OrderType:      store.OrderTypeCreate,
+			GoodsDetail:    map[string]interface{}{"autoRenewFlag": 1},
+		}, nil
+	}
+	d.billing.createPayURLFn = func(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
+		if req.ContractOrder != 0 {
+			t.Errorf("ContractOrder = %d, want 0 for saved card", req.ContractOrder)
+		}
+		return &cloudbillingclient.CreatePayURLResponse{URL: "https://buy.cloud.tencent.com/midas/saved-card?dealName=deal-1"}, nil
+	}
+
+	if _, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil); err != nil {
+		t.Fatalf("GeneratePayURL: %v", err)
+	}
+	if d.paymentContext.calls.Load() != 1 {
+		t.Errorf("payment context queries = %d, want 1", d.paymentContext.calls.Load())
+	}
+}
+
+func TestGeneratePayURL_IntlManualCreateWithoutSavedCardCreatesContractOrder(t *testing.T) {
+	d := newStdDeps()
+	d.service = New(Deps{
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
+	})
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{
+			DealName:       dealName,
+			ExternalUserID: "usr_1",
+			Uin:            "1000123456",
+			OrderType:      store.OrderTypeCreate,
+			GoodsDetail:    map[string]interface{}{"autoRenewFlag": 0},
+		}, nil
+	}
+	d.billing.createPayURLFn = func(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
+		if req.ContractOrder != 1 {
+			t.Errorf("ContractOrder = %d, want 1 for missing saved card", req.ContractOrder)
+		}
+		return &cloudbillingclient.CreatePayURLResponse{URL: "https://buy.cloud.tencent.com/midas/sign?dealName=deal-1"}, nil
+	}
+
+	if _, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil); err != nil {
+		t.Fatalf("GeneratePayURL: %v", err)
+	}
+}
+
+func TestGeneratePayURL_IntlCreateTreatsPaymentContextFailureAsUnbound(t *testing.T) {
+	d := newStdDeps()
+	d.paymentContext.err = errors.New("auth unavailable")
+	d.service = New(Deps{
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
+	})
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{
+			DealName:       dealName,
+			ExternalUserID: "usr_1",
+			Uin:            "1000123456",
+			OrderType:      store.OrderTypeCreate,
+		}, nil
+	}
+
+	d.billing.createPayURLFn = func(_ context.Context, _ cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
+		if req.ContractOrder != 1 {
+			t.Errorf("ContractOrder = %d, want 1 after payment context failure", req.ContractOrder)
+		}
+		return &cloudbillingclient.CreatePayURLResponse{URL: "https://buy.cloud.tencent.com/midas/fallback?dealName=deal-1"}, nil
+	}
+
+	if _, err := d.service.GeneratePayURL(context.Background(), "deal-1", nil); err != nil {
+		t.Fatalf("GeneratePayURL: %v", err)
+	}
+	if d.shadowCredentials.calls.Load() != 1 {
+		t.Errorf("shadow credential queries = %d, want 1 fallback", d.shadowCredentials.calls.Load())
+	}
+	if d.billing.describeOrderListCalls.Load() != 1 || d.billing.createPayURLCalls.Load() != 1 {
+		t.Errorf("billing calls = describe:%d create:%d, want 1/1",
+			d.billing.describeOrderListCalls.Load(), d.billing.createPayURLCalls.Load())
 	}
 }
 
@@ -926,12 +1074,19 @@ func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testin
 		JifeiClient:            d.jifei,
 		CloudBillingClient:     d.billing,
 		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
 		OrderWriter:            d.writer,
 		OrderStore:             d.store,
 		SiteKind:               "intl",
 	})
 	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
-		return &store.TradeOrder{DealName: dealName, ExternalUserID: "usr_1", Uin: "1000123456", PayURL: ""}, nil
+		return &store.TradeOrder{
+			DealName:       dealName,
+			ExternalUserID: "usr_1",
+			Uin:            "1000123456",
+			PayURL:         "",
+			OrderType:      store.OrderTypeRenew,
+		}, nil
 	}
 	d.billing.createPayURLFn = func(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
 		if req.ContractOrder != 0 {
@@ -961,6 +1116,71 @@ func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testin
 	if d.jifei.getMidasEarmarkingCalls.Load() != 0 {
 		t.Errorf("GetMidasEarmarking calls = %d, want 0", d.jifei.getMidasEarmarkingCalls.Load())
 	}
+	if d.paymentContext.calls.Load() != 0 {
+		t.Errorf("payment context queries = %d, want 0 for renew", d.paymentContext.calls.Load())
+	}
+}
+
+func TestGeneratePayURL_IntlRenewNeverCreatesContractOrder(t *testing.T) {
+	d := newStdDeps()
+	d.service = New(Deps{
+		CTLClient:              d.ctl,
+		BundleStore:            d.bundle,
+		JifeiClient:            d.jifei,
+		CloudBillingClient:     d.billing,
+		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
+		OrderWriter:            d.writer,
+		OrderStore:             d.store,
+		SiteKind:               "intl",
+	})
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{
+			DealName:       dealName,
+			ExternalUserID: "usr_1",
+			Uin:            "1000123456",
+			OrderType:      store.OrderTypeRenew,
+			GoodsDetail:    map[string]interface{}{"autoRenewFlag": 1},
+		}, nil
+	}
+	d.billing.createPayURLFn = func(ctx context.Context, credentials cloudbillingclient.TemporaryCredentials, req *cloudbillingclient.CreatePayURLRequest) (*cloudbillingclient.CreatePayURLResponse, error) {
+		if req.ContractOrder != 0 {
+			t.Errorf("ContractOrder = %d, want 0 for renew order", req.ContractOrder)
+		}
+		if req.Platform != "pc" {
+			t.Errorf("Platform = %q, want pc", req.Platform)
+		}
+		if req.CancelURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/account" {
+			t.Errorf("CancelURL = %q", req.CancelURL)
+		}
+		if req.ReturnURL != "https://intl-sandbox-kr-1.preview.lightclaw.tech/account" {
+			t.Errorf("ReturnURL = %q", req.ReturnURL)
+		}
+		if req.PayScene != "credit_card" {
+			t.Errorf("PayScene = %q, want credit_card", req.PayScene)
+		}
+		if req.PayOption != "chargePay" {
+			t.Errorf("PayOption = %q, want chargePay", req.PayOption)
+		}
+		return &cloudbillingclient.CreatePayURLResponse{URL: "https://buy.cloud.tencent.com/midas/renew?dealName=deal-1"}, nil
+	}
+
+	if _, err := d.service.GeneratePayURL(context.Background(), "deal-1", &GeneratePayURLOptions{
+		Platform:  "pc",
+		CancelURL: "https://intl-sandbox-kr-1.preview.lightclaw.tech/account",
+		ReturnURL: "https://intl-sandbox-kr-1.preview.lightclaw.tech/account",
+	}); err != nil {
+		t.Fatalf("GeneratePayURL: %v", err)
+	}
+	if d.billing.createPayURLCalls.Load() != 1 {
+		t.Errorf("CreatePayURL calls = %d, want 1", d.billing.createPayURLCalls.Load())
+	}
+	if d.jifei.getMidasEarmarkingCalls.Load() != 0 {
+		t.Errorf("GetMidasEarmarking calls = %d, want 0", d.jifei.getMidasEarmarkingCalls.Load())
+	}
+	if d.paymentContext.calls.Load() != 0 {
+		t.Errorf("payment context queries = %d, want 0 for renew", d.paymentContext.calls.Load())
+	}
 }
 
 func TestGeneratePayURL_IntlRejectsShadowCredentialUINMismatch(t *testing.T) {
@@ -971,6 +1191,7 @@ func TestGeneratePayURL_IntlRejectsShadowCredentialUINMismatch(t *testing.T) {
 		JifeiClient:            d.jifei,
 		CloudBillingClient:     d.billing,
 		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
 		OrderWriter:            d.writer,
 		OrderStore:             d.store,
 		SiteKind:               "intl",
@@ -1006,6 +1227,7 @@ func TestGeneratePayURL_IntlRejectsDescribeOrderListWithoutMatchingOrder(t *test
 		JifeiClient:            d.jifei,
 		CloudBillingClient:     d.billing,
 		ShadowCredentialClient: d.shadowCredentials,
+		PaymentContextClient:   d.paymentContext,
 		OrderWriter:            d.writer,
 		OrderStore:             d.store,
 		SiteKind:               "intl",

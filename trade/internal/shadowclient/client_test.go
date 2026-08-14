@@ -308,6 +308,44 @@ func TestGetTemporaryCredentialsByExternalUserID_Success(t *testing.T) {
 	}
 }
 
+func TestGetPaymentContextByExternalUserID_Success(t *testing.T) {
+	var (
+		gotMethod string
+		gotPath   string
+		gotAuth   string
+		gotBody   map[string]string
+	)
+	srv := newTestServer(t, http.StatusOK,
+		`{"code":"OK","data":{"has_payment_method":true,"uin":300000000053,"owner_uin":300000000053,"tmp_secret_id":"tmp-id","tmp_secret_key":"tmp-key","token":"tmp-token","expired_at":"2099-08-13T04:00:00Z"}}`,
+		func(r *http.Request) {
+			gotMethod = r.Method
+			gotPath = r.URL.Path
+			gotAuth = r.Header.Get("Authorization")
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				t.Errorf("decode request body: %v", err)
+			}
+		})
+	defer srv.Close()
+
+	client := New(srv.URL, "token-xyz")
+	paymentContext, err := client.GetPaymentContextByExternalUserID(context.Background(), "usr_1")
+	if err != nil {
+		t.Fatalf("GetPaymentContextByExternalUserID: %v", err)
+	}
+	if !paymentContext.HasPaymentMethod || paymentContext.Credentials.SecretID != "tmp-id" || paymentContext.Credentials.Token != "tmp-token" {
+		t.Fatalf("unexpected payment context: %+v", paymentContext)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/internal/payment-methods/context" {
+		t.Fatalf("request = %s %s", gotMethod, gotPath)
+	}
+	if gotBody["external_user_id"] != "usr_1" || gotBody["client_ua"] != "lightvela-trade" {
+		t.Fatalf("request body = %+v", gotBody)
+	}
+	if gotAuth != "Bearer token-xyz" {
+		t.Fatalf("Authorization = %q", gotAuth)
+	}
+}
+
 func TestGetTemporaryCredentialsByExternalUserID_RejectsIncompleteResponseWithoutLeakingSecrets(t *testing.T) {
 	body := `{"code":"OK","data":{"uin":300000000053,"owner_uin":300000000053,"tmp_secret_id":"tmp-id","tmp_secret_key":"sensitive-key","token":""}}`
 	srv := newTestServer(t, http.StatusOK, body, nil)

@@ -38,7 +38,13 @@ func tradeSubscriptionIdempotencyKey(dealName string) string {
 	return "trade:" + strings.TrimSpace(dealName)
 }
 
-const freeCreditSubscriptionNamePrefix = "free-credit:"
+const (
+	freeCreditSubscriptionNamePrefix = "free-credit:"
+	// International payment URL generation can include auth credential
+	// exchange, card lookup, order lookup, and CreatePayUrl. Keep the budget
+	// below the common 60-second edge timeout while leaving room for fallback.
+	payURLRequestTimeout = 50 * time.Second
+)
 
 func packageSubscriptionName(userID, passID string) string {
 	return "package:" + strings.TrimSpace(userID) + ":" + strings.TrimSpace(passID)
@@ -1709,7 +1715,7 @@ func (l *logic) CreatePassOrderUrl(userID string, req *transport.CreatePassOrder
 		}
 	}
 
-	urlCtx, urlCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	urlCtx, urlCancel := context.WithTimeout(context.Background(), payURLRequestTimeout)
 	urlResp, urlErr := adapterfactory.DefaultAdapterFactory.TradeAdapter().GeneratePayURL(urlCtx, dealName, opts)
 	urlCancel()
 	if urlErr != nil {
@@ -2012,7 +2018,7 @@ func (l *logic) RenewPassOrderUrl(userID, passID string, req *transport.RenewPas
 			opts.WxAppID = "wxf95ea3ae45d5304f"
 		}
 	}
-	urlCtx, urlCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	urlCtx, urlCancel := context.WithTimeout(context.Background(), payURLRequestTimeout)
 	urlResp, urlErr := adapterfactory.DefaultAdapterFactory.TradeAdapter().GeneratePayURL(urlCtx, dealName, opts)
 	urlCancel()
 	if urlErr != nil {
