@@ -318,6 +318,26 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(rule.findtext("Expiration/Days"), "2")
         self.assertEqual(rule.findtext("AbortIncompleteMultipartUpload/DaysAfterInitiation"), "1")
 
+    def test_sgprod_site_gateway_tls_binding_is_platform_owned(self) -> None:
+        service_root = REPO_ROOT / "argocd" / "services" / "site-gateway" / "sgprod"
+        kustomization = yaml.safe_load((service_root / "kustomization.yaml").read_text()) or {}
+        resources = kustomization.get("resources") or []
+        platform_values = {
+            key: value
+            for line in (service_root / "site-gateway-platform.env").read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+
+        self.assertNotIn("tls-secrets.yaml", resources)
+        self.assertFalse((service_root / "tls-secrets.yaml").exists())
+        self.assertEqual(platform_values.get("SITE_GATEWAY_TLS_SECRET_NAME"), "site-gateway-wildcard-tls")
+
+        readme = (service_root / "README.md").read_text()
+        self.assertIn("TLS lifecycle is platform-owned", readme)
+        self.assertIn("does not create, update, or rotate that Secret", readme)
+
     def test_user_auth_realname_mode_matches_deploy_facing_config(self) -> None:
         for env in ("beijing-sandbox", "shprod"):
             with self.subTest(env=env):
