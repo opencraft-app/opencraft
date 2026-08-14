@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lightclaw-auth-config
+  namespace: user-auth
+data:
+  LIGHTCLAW_GITHUB_REGISTRATION_ENABLED: "true"

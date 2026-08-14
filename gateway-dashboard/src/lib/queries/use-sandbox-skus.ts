@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import { ensureItems } from "@/lib/page-null-guards";
 import {
@@ -44,6 +44,20 @@ export function useSandboxSKUs() {
     queryFn: async () => ensureItems(await apiClient<SandboxSKU[] | null>("sandbox/skus")),
     staleTime: 10_000,
     refetchInterval: 30_000,
+  });
+}
+
+export function useUpdateSandboxSKUSystemDiskSize() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, systemDiskSize }: { id: string; systemDiskSize: number }) =>
+      apiClient<SandboxSKU>(`sandbox/skus/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: { system_disk_size: systemDiskSize },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sandbox", "skus"] });
+    },
   });
 }
 

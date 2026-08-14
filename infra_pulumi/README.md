@@ -111,6 +111,7 @@ GOWORK=off go run ./cmd/infractl validate --stack beijing-sandbox
 
 - 非敏感环境事实放在 `envs/tencentcloud/<env>/inventory.yaml`
 - 敏感信息不放 inventory
+- 存量纳管环境可用 `stacks.cynosdb.existing_endpoint` 和 `stacks.redis.*.existing_endpoint` 记录只读核验到的服务端点；这些字段不替代 provider import ID，也不会单独触发资源变更
 - 部署层使用的运行时事实由 Pulumi outputs 回流到 `../deploy/envs/<env>/platform.env`
 - `platform.env` 现在属于敏感文件，包含 deploy 运行时密码，权限应保持 `0600`
 
@@ -260,5 +261,6 @@ GOWORK=off go run ./cmd/infractl validate --stack beijing-sandbox
 ## 当前状态
 
 - 北京环境已经纳管
+- 东京已建立 `tokyo-sandbox` inventory 和静态 import/adoption 元数据；当前没有 Pulumi stack 配置，不执行 `preview / import / up`
 - `shprod` 已经能正常 `preview` 且当前是 `60 unchanged`
 - 北京当前仍有一个已知变更：VPC 名称会从旧名字收敛到新的 `lightclaw-*` 规则

@@ -73,7 +73,25 @@ describe("marketing channel copy", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("2026 年 7 月")).toBeInTheDocument();
+    const monthText = screen.getByText("2026 年 7 月");
+    const monthLabel = monthText.closest("p");
+
+    expect(monthLabel).not.toBeNull();
+    expect(monthLabel).toHaveClass(
+      "inline-flex",
+      "h-12",
+      "items-center",
+      "gap-4",
+    );
+    expect(monthLabel).not.toHaveClass("rounded-full", "px-6");
+    expect(monthLabel).toHaveStyle({ color: "#6E47FF" });
+    expect(monthLabel).not.toHaveStyle({
+      backgroundColor: "rgba(110, 71, 255, 0.16)",
+    });
+    expect(monthLabel?.querySelector(".lucide-calendar-check")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
     expect(screen.getByRole("heading", { name: "自动任务支持调用技能" })).toBeInTheDocument();
     const skillsPageImage = screen.getByAltText("技能页面全新升级");
     expect(skillsPageImage).toHaveAttribute(
@@ -90,6 +108,30 @@ describe("marketing channel copy", () => {
       "src",
       expect.stringContaining("/assets/changelog/automation-skill-invocation.png"),
     );
+  });
+
+  it("shows only the Chinese automation updates in the domestic August changelog", () => {
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("2026 年 8 月")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "自动任务模板" })).toBeInTheDocument();
+    expect(screen.getByText("选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。")).toBeInTheDocument();
+    expect(screen.getByAltText("自动任务模板")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-zh.png"),
+    );
+    expect(screen.getByRole("heading", { name: "支持在 QQ 群聊中 @ 机器人" })).toBeInTheDocument();
+    expect(screen.getByText("将 Hermes Agent 添加到 QQ 群后，@ 机器人即可开始对话。")).toBeInTheDocument();
+    expect(screen.getByAltText("支持在 QQ 群聊中 @ 机器人")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-qq-group-mentions-global-zh.png"),
+    );
+    expect(screen.queryByRole("heading", { name: "技能页面支持批量安装与来源查看" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "支持繁体中文" })).not.toBeInTheDocument();
   });
 
   it("shows WeCom as a supported homepage channel", () => {

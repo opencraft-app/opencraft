@@ -1,0 +1,34 @@
+bundles:
+  site-gateway:
+    owner: site-gateway
+    source: site-gateway
+    db_contract: none
+    reason: Public COS-backed static website gateway for international production.
+    allowed_paths:
+    - site-gateway/Dockerfile
+    - site-gateway/k8s/base
+    - site-gateway/k8s/overlays/sgprod
+    - argocd/apps/sgprod/site-gateway.yaml
+    - argocd/projects/sgprod-site-gateway.yaml
+    - argocd/secrets/sgprod/site-gateway-secrets.sops.yaml
+    - argocd/services/site-gateway/sgprod
+    exit_condition: Can be removed only after site-gateway is folded into another owned runtime.
+    publish_paths:
+    - site-gateway/k8s/base/**
+    - site-gateway/k8s/overlays/{env}/**
+    - argocd/apps/{env}/site-gateway.yaml
+    - argocd/projects/{env}-site-gateway.yaml
+    - argocd/secrets/{env}/site-gateway-secrets.sops.yaml
+    - argocd/services/site-gateway/{env}/**
+    publish_paths_by_env:
+      sgprod:
+      - site-gateway/k8s/base/**
+      - site-gateway/k8s/overlays/sgprod/**
+      - argocd/apps/sgprod/site-gateway.yaml
+      - argocd/projects/sgprod-site-gateway.yaml
+      - argocd/secrets/sgprod/site-gateway-secrets.sops.yaml
+      - argocd/services/site-gateway/sgprod/**
+    dockerfile: site-gateway/Dockerfile
+    build_context: site-gateway
+    image_repo:
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/site-gateway

@@ -63,8 +63,10 @@ import type { WorkerActionStatusResult } from "@/repositories/types";
 import {
   createMonoDebugExecAdapter,
 } from "@/pages/marketing/agent-tat-adapter";
+import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
 import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
 import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
+import { createQqbotGroupPolicyCommandLifecycle } from "@/pages/marketing/agent-qqbot-group-policy";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
 import {
@@ -142,6 +144,9 @@ const TatHermesWebPanel = lazy(() =>
 );
 const TerminalPanel = lazy(() =>
   import("@/pages/marketing/agent-terminal-panel").then((module) => ({ default: module.TerminalPanel })),
+);
+const AgentWebsitePanel = lazy(() =>
+  import("@/pages/marketing/agent-website-panel").then((module) => ({ default: module.AgentWebsitePanel })),
 );
 
 type TeaSdkInstanceInfo = {
@@ -3023,6 +3028,17 @@ export const AgentSettingsPage = ({
     commandLifecycle: automationModelCommandLifecycle,
     confirmationDialog: automationModelSwitchDialog,
   } = useAutomationAwareModelSwitch();
+  const qqbotGroupPolicyCommandLifecycle = useMemo(
+    () => createQqbotGroupPolicyCommandLifecycle(),
+    [],
+  );
+  const sdkCommandLifecycle = useMemo(
+    () => composeDebugExecCommandLifecycles(
+      automationModelCommandLifecycle,
+      qqbotGroupPolicyCommandLifecycle,
+    ),
+    [automationModelCommandLifecycle, qqbotGroupPolicyCommandLifecycle],
+  );
   // 账号 id：来自 /auth/profile 下发的 session.user.id，用于 LightVelaPanel.userId 等场景
   const { session } = useSession();
   const accountId = session.user?.id ?? "";
@@ -3110,6 +3126,7 @@ export const AgentSettingsPage = ({
     () => (paidBillingActive ? getPassExpiryReminder(activePass) : null),
     [activePass, paidBillingActive],
   );
+  const passExpiryTooltipId = useId();
   const handleRenewPassSuccess = useCallback(async () => {
     setRenewPassModalOpen(false);
     await refreshPasses();
@@ -3431,9 +3448,9 @@ export const AgentSettingsPage = ({
           const token = readStoredAuthToken();
           return token ? `Bearer ${token}` : undefined;
         },
-        commandLifecycle: automationModelCommandLifecycle,
+        commandLifecycle: sdkCommandLifecycle,
       }),
-    [automationModelCommandLifecycle],
+    [sdkCommandLifecycle],
   );
 
   /**
@@ -4896,11 +4913,14 @@ export const AgentSettingsPage = ({
                 { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
                 { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
                 { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
-                { id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy },
                 { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
+                { id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy },
                 { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.memory },
                 { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.achievement },
                 { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
+                ...(isGlobal
+                  ? [{ id: "website" as const, label: t("我的作品"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
+                  : []),
                 ...(SHOW_AGENTCHAT_ENTRY
                   ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
                   : []),
@@ -4974,24 +4994,49 @@ export const AgentSettingsPage = ({
                               {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
                             </span>
                             {passExpiryReminder && activePass && (
-                              <button
-                                type="button"
-                                className={cn("lv-agent-renewal-badge", `is-${passExpiryReminder.level}`)}
-                                title={passExpiryReminder.tooltip}
-                                aria-label={t("套餐{{time}}，点击续费", { time: passExpiryReminder.tooltip })}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setRenewPassModalOpen(true);
-                                }}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter" || event.key === " ") {
+                              <span className="group relative inline-flex">
+                                <button
+                                  type="button"
+                                  className={cn("lv-agent-renewal-badge cursor-pointer", `is-${passExpiryReminder.level}`)}
+                                  aria-label={t("套餐{{time}}，点击续费", { time: passExpiryReminder.tooltip })}
+                                  aria-describedby={passExpiryTooltipId}
+                                  onClick={(event) => {
                                     event.stopPropagation();
-                                  }
-                                }}
-                              >
-                                <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                                {passExpiryReminder.label}
-                              </button>
+                                    setRenewPassModalOpen(true);
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.stopPropagation();
+                                    }
+                                  }}
+                                >
+                                  <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                                  {passExpiryReminder.label}
+                                </button>
+                                <span className="pointer-events-none absolute bottom-full left-1/2 z-20 -translate-x-1/2 pb-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                                  <span
+                                    id={passExpiryTooltipId}
+                                    role="tooltip"
+                                    className="pointer-events-auto relative whitespace-nowrap rounded-[6px] border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-black/80 shadow-[0_8px_24px_rgba(15,23,42,0.12)] select-text"
+                                  >
+                                    {passExpiryReminder.tooltip}
+                                    <button
+                                      type="button"
+                                      className="ml-2 cursor-pointer font-semibold text-[#A86108] underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A86108]/30"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        setRenewPassModalOpen(true);
+                                      }}
+                                    >
+                                      {t("立即续费")}
+                                    </button>
+                                    <span
+                                      aria-hidden="true"
+                                      className="absolute top-full left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[var(--border-subtle)] bg-white"
+                                    />
+                                  </span>
+                                </span>
+                              </span>
                             )}
                           </span>
                         </span>
@@ -5268,6 +5313,9 @@ export const AgentSettingsPage = ({
                           )}
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />
+                          )}
+                          {isGlobal && activeSection === "website" && (
+                            <AgentWebsitePanel />
                           )}
                           {activeSection === "browser" && (
                             <TatHermesWebPanel botId={activeBot.id} />

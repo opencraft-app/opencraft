@@ -4,7 +4,11 @@ Useful knowledge has two very different shapes. Some information should remain s
 
 LightVela gives a Hermes Agent both long-term memory and cloud file storage. Memory helps it retain durable context across conversations; Cloud Storage gives you a place to keep working material and reference files. Used together, they make a personal AI agent easier to brief, revisit, and improve.
 
-![LightVela Agent Memory and personal knowledge](../images/use-case-agent-memory.png)
+![LightVela Agent Memory and personal knowledge](../images/use-case-agent-memory.webp)
+
+## Summary
+
+**Personal knowledge comes in two shapes that must be managed separately: stable information about who you are and how you work belongs in long-term memory, while evolving documents, notes, and project material belong in cloud storage.** Managing both as one thing costs you stability and findability at the same time. On LightVela, memory preserves context across conversations — the console's memory page shows what has been retained across separate Memory and User Profile tabs and lets you adjust the capacity limit, while additions and removals happen mainly through conversation with Hermes. Cloud storage is the file workspace, supporting upload, create, organise, download, rename, and delete, with a 1 GB per-file limit. One rule to hold to: never write passwords, keys, or unnecessary sensitive data into long-term memory.
 
 ## Who this is for
 
@@ -16,7 +20,7 @@ The goal is not to create a perfect archive. It is to make the important context
 
 - A running Hermes Agent and a way to chat with it through the console or a connected channel.
 
-- A basic understanding of the two places information can live: [Memory Management](https://lightvela.ai/docs/configuration/memory) for long-term context, and [Cloud Storage](https://lightvela.ai/docs/configuration/files) for files and folders.
+- A basic understanding of the two places information can live: [Memory Management](../configuration/memory.md) for long-term context, and [Cloud Storage](../configuration/files.md) for files and folders.
 
 - A small set of materials you genuinely return to, rather than an unfiltered backlog of every file you own.
 
@@ -65,9 +69,9 @@ Memory works best when it stays current. Remove or correct context that would le
 
 ### 4. Turn reviewed knowledge into a working conversation
 
-Use the [Chat](https://lightvela.ai/docs/configuration/agent-chat) page or a connected channel to turn documents and memory into a concrete next step. Ask for a comparison, an outline, a set of open questions, or a recap for a specific meeting. The more specific the immediate outcome, the easier it is to verify that Hermes has the right context.
+Use the [Chat](../configuration/agent-chat.md) page or a connected channel to turn documents and memory into a concrete next step. Ask for a comparison, an outline, a set of open questions, or a recap for a specific meeting. The more specific the immediate outcome, the easier it is to verify that Hermes has the right context.
 
-If your review follows a recurring rhythm, an [Automation](https://lightvela.ai/docs/configuration/automation) can remind you to revisit a folder or prepare a regular recap. Begin with a simple reminder or summary rather than granting a broad, open-ended task.
+If your review follows a recurring rhythm, an [Automation](../configuration/automation.md) can remind you to revisit a folder or prepare a regular recap. Begin with a simple reminder or summary rather than granting a broad, open-ended task.
 
 ![A Hermes Agent conversation using organized project knowledge](../images/use-case-memory-knowledge-automation.png)
 
@@ -91,8 +95,8 @@ Start with preferences that change the quality of almost every conversation: you
 
 ## Next steps
 
-- [Memory Management](https://lightvela.ai/docs/configuration/memory) — review long-term context and capacity.
+- [Memory Management](../configuration/memory.md) — review long-term context and capacity.
 
-- [Cloud Storage](https://lightvela.ai/docs/configuration/files) — keep the documents behind your ongoing work organized.
+- [Cloud Storage](../configuration/files.md) — keep the documents behind your ongoing work organized.
 
-- [Chat](https://lightvela.ai/docs/configuration/agent-chat) — put memory and project material to work in a focused conversation.
+- [Chat](../configuration/agent-chat.md) — put memory and project material to work in a focused conversation.

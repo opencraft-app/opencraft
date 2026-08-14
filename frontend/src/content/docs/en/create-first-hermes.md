@@ -1,6 +1,6 @@
 # How Do I Activate My First Hermes Instance?
 
-A Hermes instance is the cloud runtime where your LightVela Agent lives. Activating your first instance follows five steps: **sign in with Google or GitHub → select an available plan → activate it through the current beta flow → let LightVela provision the instance → configure a model and channel**. Everything happens in the browser, with no server purchase or local deployment required. This page walks through the process in order.
+A Hermes instance is the cloud runtime where your LightVela Agent lives. Activating your first instance follows five steps: **sign in with Google or GitHub → select an available plan → activate it through the current activation flow → let LightVela provision the instance → configure a model and channel**. Everything happens in the browser, with no server purchase or local deployment required. This page walks through the process in order.
 
 ## What this page covers
 
@@ -28,13 +28,13 @@ Open LightVela and authorize access with Google or GitHub. Your LightVela accoun
 
 ### 2. Select an available plan on the Subscribe page
 
-Open the [Subscribe page](/subscribe) to see which plans and quotas are currently available. [Plans](./plans.md) describes the Launch, Cruise, and Voyage resource structure, but the Subscribe page is authoritative for what can be activated now.
+Open the [Subscribe page](/subscribe) to see which plans and quotas are currently available. [Plans](./plans.md) describes the Launch and Cruise resource structure, but the Subscribe page is authoritative for what can be activated now.
 
 There is no China real-name verification step on the international site. After signing in with Google or GitHub, you can select any currently available plan.
 
-### 3. Activate the plan through the current international beta flow
+### 3. Activate the plan through the current international activation flow
 
-The international service is currently in beta, with **free access available to a limited number of users for a limited time**. Follow the prompt on the plan card to activate it. Quotas, available tiers, and future pricing may change, so refer to the Subscribe page for current information.
+LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month, and new users can try Launch free for 14 days. Follow the prompt on the plan card to activate it, and refer to the Subscribe page for current information.
 
 ### 4. Let LightVela provision the instance automatically
 
@@ -60,13 +60,13 @@ Your first Hermes Agent is now ready to stay online in the cloud 24/7.
 
 LightVela starts provisioning the Hermes instance automatically after plan activation. When the instance is ready, configure a model and channel in the console and begin a conversation.
 
-### What happens when the free beta period ends?
+### What happens after billing starts?
 
-Availability, quotas, and future pricing may change as the beta evolves. Check the [Subscribe page](/subscribe) and in-product notices for the latest information before a change takes effect.
+After billing officially starts, beta users' existing plan validity will be extended by one additional month. New users can try Launch free for 14 days. Check the [Subscribe page](/subscribe) and [LightVela Paid Version Announcement](./announcements/public-beta.md) for the latest information.
 
 ### How many Hermes instances can one account activate?
 
-The number depends on the Agent allowance of the selected plan. Launch and Cruise each include one Agent. Voyage is designed for three but is still coming soon. See [Plans](./plans.md).
+The number depends on the Agent allowance of the selected plan. Launch and Cruise each include one Agent. See [Plans](./plans.md).
 
 ### Do I need to maintain a server after activation?
 

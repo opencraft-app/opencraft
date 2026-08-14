@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: site-gateway-sgprod
+  namespace: argocd
+spec:
+  project: sgprod-site-gateway
+  source:
+    repoURL: git@git.woa.com:wisp/mono2.git
+    targetRevision: gitops
+    path: argocd/services/site-gateway/sgprod
+  destination:
+    namespace: ctl
+    name: sgprod

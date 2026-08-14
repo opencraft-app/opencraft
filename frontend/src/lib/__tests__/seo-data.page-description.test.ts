@@ -88,7 +88,6 @@ describe("getSeoMeta — page-level description override", () => {
       "/docs/configuration/diagnostics",
       "/docs/configuration/multiple-models",
       "/docs/faq",
-      "/docs/faq/using-lightvela-safely",
       "/docs/plans",
       "/docs/credits",
       "/docs/create-first-hermes",

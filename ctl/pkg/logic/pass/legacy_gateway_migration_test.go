@@ -128,7 +128,7 @@ func TestEnsureLegacyPassEntitlementUsesOriginalOrderPeriod(t *testing.T) {
 	}
 }
 
-func TestEnsureLegacyPassEntitlementRejectsShorterReissue(t *testing.T) {
+func TestEnsureLegacyPassEntitlementDoesNotBlockShorterLegacyPeriod(t *testing.T) {
 	originalConfig := config.ServerConf
 	originalFactory := adapterfactory.DefaultAdapterFactory
 	originalDB := resource.GormDB
@@ -146,15 +146,26 @@ func TestEnsureLegacyPassEntitlementRejectsShorterReissue(t *testing.T) {
 	}}
 	adapterfactory.DefaultAdapterFactory = &allocationAdapterFactory{llm: llm, tradeAdapter: orders}
 
-	_, err := entitlementmigration.EnsureLegacyPassEntitlement(context.Background(), "usr-long", now)
-	if !errors.Is(err, entitlementmigration.ErrWouldShortenEntitlement) {
-		t.Fatalf("error = %v, want ErrWouldShortenEntitlement", err)
+	result, err := entitlementmigration.EnsureLegacyPassEntitlement(context.Background(), "usr-long", now)
+	if err != nil {
+		t.Fatalf("ensure legacy pass entitlement: %v", err)
 	}
-	if len(llm.applyReqs) != 0 {
-		t.Fatalf("apply calls = %d, want 0", len(llm.applyReqs))
+	if result == nil || !result.Migrated {
+		t.Fatalf("unexpected migration result: %+v", result)
 	}
-	if _, ok, routeErr := gatewayroute.Get("usr-long"); routeErr != nil || ok {
-		t.Fatalf("route must not be written: ok=%v err=%v", ok, routeErr)
+	if len(llm.applyReqs) != 1 {
+		t.Fatalf("apply calls = %d, want 1", len(llm.applyReqs))
+	}
+	apply := llm.applyReqs[0]
+	if apply.PeriodValue != 14 || apply.PeriodUnit != "d" {
+		t.Fatalf("applied period = %d%s, want 14d", apply.PeriodValue, apply.PeriodUnit)
+	}
+	route, ok, routeErr := gatewayroute.Get("usr-long")
+	if routeErr != nil {
+		t.Fatalf("get route: %v", routeErr)
+	}
+	if !ok || route != gatewayroute.GatewayLLMGateway {
+		t.Fatalf("route = %q ok=%v, want llmgateway", route, ok)
 	}
 }
 

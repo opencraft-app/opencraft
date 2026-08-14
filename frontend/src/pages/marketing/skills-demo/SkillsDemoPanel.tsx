@@ -59,8 +59,9 @@ import { cn } from "@/lib/utils";
 import type { ExpertsExecDebugCommand } from "../agent-experts-panel";
 import {
   createSkillsDataLayer,
+  getSkillSourceUrl,
   getPopularityTier,
-  installSkillsSequentially,
+  installSkillsInBatch,
   mergeSkills,
   REGISTRY_LABEL,
   SKILLS_DEMO_LIVE,
@@ -71,6 +72,7 @@ import {
   type Registry,
   type SearchRegistry,
   type Skill,
+  type SkillsExecDebugCommandStream,
 } from "./skill-registries";
 import {
   CURATED_SKILL_CATEGORIES,
@@ -93,6 +95,7 @@ type InstalledSourceDescriptor = {
   key: Exclude<InstalledSourceFilter, "all">;
   label: string;
   registry?: Registry;
+  sourceUrl?: string;
 };
 
 type Translate = ReturnType<typeof useT>;
@@ -743,25 +746,30 @@ export type LearnSkillTriggerOptions = {
   hideName?: boolean;
 };
 
-function RegistryBadge({ registry }: { registry: Registry }) {
+function RegistryBadge({ registry, href }: { registry: Registry; href?: string }) {
   const isSkillsSh = registry === "skills-sh";
   const isSkillHub = registry === "skillhub";
   const isHermes = registry === "hermes";
+  const className = cn(
+    "inline-flex h-5 items-center rounded-[5px] px-1.5 text-[10px] font-semibold leading-none",
+    isSkillsSh
+      ? "bg-[#FFF6E6] text-[#B26A00]"
+      : isSkillHub
+        ? "bg-[#EAF6F1] text-[#287458]"
+        : isHermes
+          ? "bg-black/[0.06] text-black/60"
+          : "bg-[#EAF1FF] text-[#2F6BFF]",
+  );
+  if (!href) return <span className={className}>{REGISTRY_LABEL[registry]}</span>;
   return (
-    <span
-      className={cn(
-        "inline-flex h-5 items-center rounded-[5px] px-1.5 text-[10px] font-semibold leading-none",
-        isSkillsSh
-          ? "bg-[#FFF6E6] text-[#B26A00]"
-          : isSkillHub
-            ? "bg-[#EAF6F1] text-[#287458]"
-            : isHermes
-              ? "bg-black/[0.06] text-black/60"
-              : "bg-[#EAF1FF] text-[#2F6BFF]",
-      )}
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className={cn(className, "underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]")}
     >
       {REGISTRY_LABEL[registry]}
-    </span>
+    </a>
   );
 }
 
@@ -773,6 +781,7 @@ function getInstalledSources(skill: InstalledSkill): InstalledSourceDescriptor[]
       key: `registry:${registry}`,
       label: REGISTRY_LABEL[registry],
       registry,
+      sourceUrl: skill.sourceUrls?.[registry],
     }));
   }
   const nativeSource = skill.nativeSource?.trim().toLowerCase() || "other";
@@ -797,7 +806,7 @@ function getInstalledCategoryKey(category?: string): InstalledCategoryFilter {
 
 function InstalledSourceBadge({ source }: { source: InstalledSourceDescriptor }) {
   const t = useT();
-  if (source.registry) return <RegistryBadge registry={source.registry} />;
+  if (source.registry) return <RegistryBadge registry={source.registry} href={source.sourceUrl} />;
   return (
     <span className="inline-flex h-5 items-center rounded-[5px] bg-black/[0.06] px-1.5 text-[10px] font-semibold leading-none text-black/60">
       {translateInstalledSourceLabel(t, source.label)}
@@ -1004,6 +1013,7 @@ function SearchSkillRow({
   selected,
   disabled,
   rowStatus,
+  showSourceLink,
   onInstall,
   onToggleSelected,
 }: {
@@ -1013,6 +1023,7 @@ function SearchSkillRow({
   selected: boolean;
   disabled: boolean;
   rowStatus?: SearchInstallRowStatus;
+  showSourceLink: boolean;
   onInstall: (skill: Skill) => void;
   onToggleSelected: (skill: Skill) => void;
 }) {
@@ -1027,6 +1038,11 @@ function SearchSkillRow({
   }[rowStatus.status] : null;
   const statusInProgress = rowStatus?.status === "installing" || rowStatus?.status === "retrying";
   const statusRetryable = rowStatus?.status === "failed" || rowStatus?.status === "skipped";
+  const sourceUrl = showSourceLink
+    ? skill.registry === "clawhub"
+      ? "https://clawhub.ai/"
+      : getSkillSourceUrl(skill)
+    : undefined;
 
   return (
     <li className="flex min-w-0 items-start gap-3 border-b border-black/[0.07] bg-white px-4 py-3.5 transition-colors last:border-b-0 hover:bg-black/[0.02]">
@@ -1049,10 +1065,21 @@ function SearchSkillRow({
             {skill.rawId}
           </span>
         </div>
+        {sourceUrl ? (
+          <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-black/45">
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="truncate text-[#2563EB] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            >
+              {t("来源")}
+            </a>
+          </div>
+        ) : null}
         {skill.description ? (
           <p className="mt-1 line-clamp-1 text-pretty text-xs leading-5 text-black/45">{skill.description}</p>
         ) : null}
-        {skill.author ? <div className="mt-1 text-[11px] text-black/40">@{skill.author}</div> : null}
       </div>
       <div className="flex min-h-9 shrink-0 self-center items-center justify-center">
         {installed ? (
@@ -1122,6 +1149,7 @@ function CuratedSkillDetailsDialog({
   const t = useT();
   if (!entry) return null;
   const { overview } = entry;
+  const sourceUrl = getSkillSourceUrl(entry.skill);
 
   return (
     <div className="fixed inset-0 z-[100] flex overscroll-contain items-center justify-center p-3 sm:p-6">
@@ -1151,6 +1179,18 @@ function CuratedSkillDetailsDialog({
         <div className="pr-8">
           <h2 id="curated-skill-dialog-title" className="text-lg font-semibold text-black/90">{entry.skill.name}</h2>
           <p className="mt-1 break-all font-mono text-xs leading-5 text-black/45">{entry.skill.rawId}</p>
+          {sourceUrl ? (
+            <div className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-black/45">
+              <a
+                href={sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="truncate text-[#2563EB] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              >
+                {t("来源")}
+              </a>
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-5 space-y-6 border-t border-black/[0.07] pt-5">
@@ -1743,6 +1783,7 @@ function CreateSkillPanel({
 export function SkillsDemoPanel({
   botId,
   execDebugCommand,
+  execDebugCommandStream,
   mode = "global",
   learnSkillTrigger,
   learnSkillPanel,
@@ -1753,6 +1794,7 @@ export function SkillsDemoPanel({
 }: {
   botId: string;
   execDebugCommand: ExpertsExecDebugCommand;
+  execDebugCommandStream?: SkillsExecDebugCommandStream;
   mode?: SkillsDemoMode;
   learnSkillTrigger?: ReactNode;
   learnSkillPanel?: ReactNode;
@@ -1799,8 +1841,8 @@ export function SkillsDemoPanel({
     },
   };
   const dataLayer = useMemo(
-    () => createSkillsDataLayer(botId, execDebugCommand, mode, isChinese ? "zh" : "en"),
-    [botId, execDebugCommand, isChinese, mode],
+    () => createSkillsDataLayer(botId, execDebugCommand, mode, isChinese ? "zh" : "en", execDebugCommandStream),
+    [botId, execDebugCommand, execDebugCommandStream, isChinese, mode],
   );
 
   const [keyword, setKeyword] = useState("");
@@ -2190,7 +2232,7 @@ export function SkillsDemoPanel({
       return next;
     });
     try {
-      const result = await installSkillsSequentially(dataLayer, selectedSkills, ({ index, total, skill, status, message }) => {
+      const result = await installSkillsInBatch(dataLayer, selectedSkills, ({ index, total, skill, status, message }) => {
         const id = skillIdentity(skill);
         if (status === "installing") {
           setBatchInstallProgress({ index, total, currentName: skill.name });
@@ -2468,30 +2510,6 @@ export function SkillsDemoPanel({
                   </Select>
                 </div>
               ) : null}
-              {!isDomestic ? (
-                <p className="shrink-0 text-right text-[10px] font-medium text-black/45 sm:text-xs">
-                  <>
-                    {t("技能来源于")} {" "}
-                    <a
-                      href="https://skills.sh"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-sm text-black/65 underline decoration-black/20 underline-offset-2 hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    >
-                      Skills.sh
-                    </a>{" "}
-                    {t("与")}{" "}
-                    <a
-                      href="https://clawhub.ai/"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-sm text-black/65 underline decoration-black/20 underline-offset-2 hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    >
-                      ClawHub
-                    </a>
-                  </>
-                </p>
-              ) : null}
             </div>
 
             {hasSearch ? (
@@ -2636,12 +2654,13 @@ export function SkillsDemoPanel({
                         selected={selectedSkillIds.has(skillIdentity(skill))}
                         disabled={operationBusy || searchQueryPending}
                         rowStatus={searchInstallRowStatuses.get(skillIdentity(skill))}
+                        showSourceLink={!isDomestic}
                         onToggleSelected={handleToggleSelected}
                       />
                     ))}
                   </ul>
                 )}
-                {!searching && visibleResults.length > 0 && (isDomestic || visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT) ? (
+                {!searching && visibleResults.length > 0 ? (
                   <div className="mt-3 grid min-h-8 grid-cols-[1fr_auto_1fr] items-center">
                     {visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT ? (
                       <button
@@ -2668,7 +2687,32 @@ export function SkillsDemoPanel({
                         源自 SkillHub
                         <span aria-hidden="true">↗</span>
                       </a>
-                    ) : null}
+                    ) : (
+                      <p className="col-start-3 inline-flex h-8 items-center justify-self-end gap-[3px] text-[13px] font-normal text-[#2563EB] underline-offset-2 transition-colors hover:text-[#1D4ED8]">
+                        <span>{isChinese ? "源自" : t("技能来源于")}</span>
+                        {" "}
+                        <a
+                          href="https://skills.sh"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                        >
+                          Skills.sh
+                        </a>
+                        {" "}
+                        <span>{isChinese ? "和" : t("与")}</span>
+                        {" "}
+                        <a
+                          href="https://clawhub.ai/"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                        >
+                          ClawHub
+                        </a>
+                        <span aria-hidden="true">↗</span>
+                      </p>
+                    )}
                   </div>
                 ) : null}
               </section>

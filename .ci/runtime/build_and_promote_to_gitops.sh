@@ -61,7 +61,7 @@ is_beijing_sandbox_env() {
 }
 
 is_playground_env() {
-  [[ "$1" == sandbox-bj-* || "$1" == sandbox-kr-* ]]
+  [[ "$1" == sandbox-bj-* || "$1" == sandbox-kr-* || "$1" == sandbox-jp-* ]]
 }
 
 has_prod_promote_env() {

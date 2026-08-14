@@ -686,11 +686,162 @@ func TestPatchPoolInternalRouteUpdatesInstanceTypeAndMarksCleanDry(t *testing.T)
 	}
 }
 
-func TestPostPoolInternalRouteCreatesPool(t *testing.T) {
+func seedPoolSKU(t *testing.T, svc *service.Service, bound bool) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "hermes",
+		Name:           "Hermes",
+		ResolutionMode: core.ResolutionModeSandboxPrimary,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	if _, err := svc.UpsertSKU(ctx, core.SKU{
+		ID:              "sku-hermes-2c4g",
+		Name:            "Hermes 2C4G",
+		TemplateClassID: "hermes",
+		BaseImage:       "img-hermes",
+		DesiredImageID:  "img-hermes",
+		InstanceType:    "SA5.MEDIUM4",
+	}); err != nil {
+		t.Fatalf("upsert sku: %v", err)
+	}
+	if !bound {
+		return
+	}
+	if _, err := svc.UpsertTemplateSkuBinding(ctx, core.TemplateSkuBinding{
+		TemplateClassID:    "hermes",
+		SKUID:              "sku-hermes-2c4g",
+		AdmissionState:     "active",
+		RolloutEligibility: true,
+	}); err != nil {
+		t.Fatalf("upsert template sku binding: %v", err)
+	}
+}
+
+func TestPostPoolInternalRouteRequiresSKU(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	router := newHandlerTestRouter(&handler{svc: svc})
+	req := httptest.NewRequest(http.MethodPost, "/internal/pools", bytes.NewBufferString(`{
+		"name":"pool-sh-preview",
+		"base_image":"img-preview",
+		"instance_type":"SA5.MEDIUM4",
+		"vpc_id":"vpc-preview",
+		"subnet_id":"subnet-preview",
+		"zone":"ap-shanghai-5",
+		"security_groups":["sg-a"]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected missing sku_id to return 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if pools, err := svc.ListPools(context.Background()); err != nil || len(pools) != 0 {
+		t.Fatalf("rejected create must not insert a pool, pools=%+v err=%v", pools, err)
+	}
+}
+
+func TestPostPoolInternalRouteRejectsUnknownSKUWithoutCreatingPool(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	router := newHandlerTestRouter(&handler{svc: svc})
+	req := httptest.NewRequest(http.MethodPost, "/internal/pools", bytes.NewBufferString(`{
+		"name":"pool-sh-preview",
+		"base_image":"img-preview",
+		"instance_type":"SA5.MEDIUM4",
+		"sku_id":"missing-sku",
+		"vpc_id":"vpc-preview",
+		"subnet_id":"subnet-preview",
+		"zone":"ap-shanghai-5",
+		"security_groups":["sg-a"]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "invalid pool sku binding: sku_id not found") {
+		t.Fatalf("expected unknown sku_id 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if pools, err := svc.ListPools(context.Background()); err != nil || len(pools) != 0 {
+		t.Fatalf("rejected create must not insert a pool, pools=%+v err=%v", pools, err)
+	}
+}
+
+func TestPostPoolInternalRouteRejectsSKUWithoutActiveBinding(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	seedPoolSKU(t, svc, false)
+	router := newHandlerTestRouter(&handler{svc: svc})
+	req := httptest.NewRequest(http.MethodPost, "/internal/pools", bytes.NewBufferString(`{
+		"name":"pool-sh-preview",
+		"base_image":"img-preview",
+		"instance_type":"SA5.MEDIUM4",
+		"sku_id":"sku-hermes-2c4g",
+		"vpc_id":"vpc-preview",
+		"subnet_id":"subnet-preview",
+		"zone":"ap-shanghai-5",
+		"security_groups":["sg-a"]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected unbound sku_id to return 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if pools, err := svc.ListPools(context.Background()); err != nil || len(pools) != 0 {
+		t.Fatalf("rejected create must not insert a pool, pools=%+v err=%v", pools, err)
+	}
+}
+
+func TestPostPoolInternalRouteRejectsRolloutIneligibleSKU(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
+	seedPoolSKU(t, svc, false)
+	if _, err := svc.UpsertTemplateSkuBinding(ctx, core.TemplateSkuBinding{
+		TemplateClassID:    "hermes",
+		SKUID:              "sku-hermes-2c4g",
+		AdmissionState:     "active",
+		RolloutEligibility: false,
+	}); err != nil {
+		t.Fatalf("upsert ineligible binding: %v", err)
+	}
+	router := newHandlerTestRouter(&handler{svc: svc})
+	req := httptest.NewRequest(http.MethodPost, "/internal/pools", bytes.NewBufferString(`{
+		"name":"pool-sh-preview",
+		"base_image":"img-preview",
+		"instance_type":"SA5.MEDIUM4",
+		"sku_id":"sku-hermes-2c4g",
+		"vpc_id":"vpc-preview",
+		"subnet_id":"subnet-preview",
+		"zone":"ap-shanghai-5",
+		"security_groups":["sg-a"]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "invalid pool sku binding: sku binding is not rollout eligible") {
+		t.Fatalf("expected rollout-ineligible sku 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestPostPoolInternalRouteCreatesPausedBoundPool(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	seedPoolSKU(t, svc, true)
 	router := newHandlerTestRouter(&handler{svc: svc})
 
 	req := httptest.NewRequest(http.MethodPost, "/internal/pools", bytes.NewBufferString(`{
@@ -699,6 +850,8 @@ func TestPostPoolInternalRouteCreatesPool(t *testing.T) {
 		"base_image":"img-preview",
 		"desired_capacity":3,
 		"instance_type":"SA5.MEDIUM4",
+		"status":"active",
+		"sku_id":"sku-hermes-2c4g",
 		"vpc_id":"vpc-preview",
 		"subnet_id":"subnet-preview",
 		"zone":"ap-shanghai-5",
@@ -724,14 +877,17 @@ func TestPostPoolInternalRouteCreatesPool(t *testing.T) {
 	if pool.BaseImage != "img-preview" {
 		t.Fatalf("expected base image img-preview, got %q", pool.BaseImage)
 	}
-	if pool.DesiredCap != 3 {
-		t.Fatalf("expected desired_capacity 3, got %d", pool.DesiredCap)
+	if pool.DesiredCap != 0 {
+		t.Fatalf("expected forced desired_capacity 0, got %d", pool.DesiredCap)
 	}
 	if pool.InstanceType != "SA5.MEDIUM4" {
 		t.Fatalf("expected instance_type preserved, got %q", pool.InstanceType)
 	}
-	if pool.Status != core.PoolStatusActive {
-		t.Fatalf("expected active status, got %q", pool.Status)
+	if pool.Status != core.PoolStatusPaused {
+		t.Fatalf("expected forced paused status, got %q", pool.Status)
+	}
+	if pool.SKUID != "sku-hermes-2c4g" || pool.TemplateClassID != "hermes" {
+		t.Fatalf("expected derived sku/class binding, got sku=%q class=%q", pool.SKUID, pool.TemplateClassID)
 	}
 	if pool.VpcID != "vpc-preview" || pool.SubnetID != "subnet-preview" || pool.Zone != "ap-shanghai-5" {
 		t.Fatalf("unexpected network config: vpc=%q subnet=%q zone=%q", pool.VpcID, pool.SubnetID, pool.Zone)
@@ -746,6 +902,116 @@ func TestPostPoolInternalRouteCreatesPool(t *testing.T) {
 	}
 	if stored.Name != "pool-sh-preview" {
 		t.Fatalf("expected stored pool name, got %q", stored.Name)
+	}
+}
+
+func TestPatchPoolInternalRouteBindsLegacyPoolOnce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	seedPoolSKU(t, svc, true)
+	pool, err := svc.CreatePool(ctx, "legacy", "", "img-preview", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create legacy pool: %v", err)
+	}
+	router := newHandlerTestRouter(&handler{svc: svc})
+
+	bindReq := httptest.NewRequest(http.MethodPatch, "/internal/pools/"+pool.ID, bytes.NewBufferString(`{"sku_id":"sku-hermes-2c4g"}`))
+	bindReq.Header.Set("Content-Type", "application/json")
+	bindRR := httptest.NewRecorder()
+	router.ServeHTTP(bindRR, bindReq)
+	if bindRR.Code != http.StatusOK {
+		t.Fatalf("expected first legacy binding 200, got %d body=%s", bindRR.Code, bindRR.Body.String())
+	}
+	var bound core.Pool
+	if err := json.Unmarshal(bindRR.Body.Bytes(), &bound); err != nil {
+		t.Fatalf("decode bound pool: %v", err)
+	}
+	if bound.SKUID != "sku-hermes-2c4g" || bound.TemplateClassID != "hermes" {
+		t.Fatalf("expected legacy pool to bind sku/class, got sku=%q class=%q", bound.SKUID, bound.TemplateClassID)
+	}
+
+	repeatReq := httptest.NewRequest(http.MethodPatch, "/internal/pools/"+pool.ID, bytes.NewBufferString(`{"sku_id":"sku-hermes-2c4g"}`))
+	repeatReq.Header.Set("Content-Type", "application/json")
+	repeatRR := httptest.NewRecorder()
+	router.ServeHTTP(repeatRR, repeatReq)
+	if repeatRR.Code != http.StatusOK {
+		t.Fatalf("expected same sku binding to be idempotent, got %d body=%s", repeatRR.Code, repeatRR.Body.String())
+	}
+
+	maintenanceReq := httptest.NewRequest(http.MethodPatch, "/internal/pools/"+pool.ID, bytes.NewBufferString(`{
+		"instance_type":"S5.MEDIUM4",
+		"base_image":"img-maintained",
+		"desired_capacity":2,
+		"status":"paused"
+	}`))
+	maintenanceReq.Header.Set("Content-Type", "application/json")
+	maintenanceRR := httptest.NewRecorder()
+	router.ServeHTTP(maintenanceRR, maintenanceReq)
+	if maintenanceRR.Code != http.StatusOK {
+		t.Fatalf("expected bound pool maintenance update 200, got %d body=%s", maintenanceRR.Code, maintenanceRR.Body.String())
+	}
+	var maintained core.Pool
+	if err := json.Unmarshal(maintenanceRR.Body.Bytes(), &maintained); err != nil {
+		t.Fatalf("decode maintained pool: %v", err)
+	}
+	if maintained.InstanceType != "S5.MEDIUM4" || maintained.BaseImage != "img-maintained" || maintained.DesiredCap != 2 {
+		t.Fatalf("expected maintenance fields updated, got %+v", maintained)
+	}
+	if maintained.SKUID != "sku-hermes-2c4g" || maintained.TemplateClassID != "hermes" {
+		t.Fatalf("maintenance update changed binding: %+v", maintained)
+	}
+
+	clearReq := httptest.NewRequest(http.MethodPatch, "/internal/pools/"+pool.ID, bytes.NewBufferString(`{"sku_id":""}`))
+	clearReq.Header.Set("Content-Type", "application/json")
+	clearRR := httptest.NewRecorder()
+	router.ServeHTTP(clearRR, clearReq)
+	if clearRR.Code != http.StatusBadRequest {
+		t.Fatalf("expected clearing sku binding to return 400, got %d body=%s", clearRR.Code, clearRR.Body.String())
+	}
+
+	changeReq := httptest.NewRequest(http.MethodPatch, "/internal/pools/"+pool.ID, bytes.NewBufferString(`{"sku_id":"other-sku"}`))
+	changeReq.Header.Set("Content-Type", "application/json")
+	changeRR := httptest.NewRecorder()
+	router.ServeHTTP(changeRR, changeReq)
+	if changeRR.Code != http.StatusBadRequest {
+		t.Fatalf("expected sku rebinding to return 400, got %d body=%s", changeRR.Code, changeRR.Body.String())
+	}
+}
+
+func TestPatchPoolInternalRouteUpdatesSystemDiskSize(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	pool, err := svc.CreatePool(ctx, "pool-sh-4c8g", "", "img-preview", 1, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	router := newHandlerTestRouter(&handler{svc: svc})
+
+	req := httptest.NewRequest(http.MethodPatch, "/internal/pools/"+pool.ID, bytes.NewBufferString(`{"system_disk_size":80}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected system disk update 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var updated core.Pool
+	if err := json.Unmarshal(rr.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode updated pool: %v", err)
+	}
+	if updated.SystemDiskSize != 80 {
+		t.Fatalf("expected system disk size 80, got %d", updated.SystemDiskSize)
+	}
+	stored, err := svc.GetPool(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("get updated pool: %v", err)
+	}
+	if stored.SystemDiskSize != 80 {
+		t.Fatalf("expected stored system disk size 80, got %d", stored.SystemDiskSize)
 	}
 }
 
@@ -814,6 +1080,7 @@ func TestInternalSKURoutesLockServedContract(t *testing.T) {
 		"base_image":"img-hermes-stable",
 		"desired_image_id":"img-hermes-desired",
 		"instance_type":"SA5.MEDIUM4",
+		"system_disk_size":80,
 		"default_desired_capacity":2
 	}`))
 	createReq.Header.Set("Content-Type", "application/json")
@@ -829,6 +1096,9 @@ func TestInternalSKURoutesLockServedContract(t *testing.T) {
 	if created.ID != "sku-hermes-2c4g" || created.TemplateClassID != "hermes" || created.RolloutState != core.SKURolloutStateStable {
 		t.Fatalf("unexpected sku: %+v", created)
 	}
+	if created.SystemDiskSize != 80 {
+		t.Fatalf("expected system disk size 80, got %d", created.SystemDiskSize)
+	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/internal/skus", nil)
 	listRR := httptest.NewRecorder()
@@ -840,8 +1110,57 @@ func TestInternalSKURoutesLockServedContract(t *testing.T) {
 	if err := json.Unmarshal(listRR.Body.Bytes(), &listed); err != nil {
 		t.Fatalf("decode skus: %v", err)
 	}
-	if len(listed) != 1 || listed[0].ID != "sku-hermes-2c4g" {
+	if len(listed) != 1 || listed[0].ID != "sku-hermes-2c4g" || listed[0].SystemDiskSize != 80 {
 		t.Fatalf("expected listed sku-hermes-2c4g, got %+v", listed)
+	}
+}
+
+func TestPatchSKUInternalRouteUpdatesSystemDiskSize(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "openclaw-4c8g80g",
+		Name:           "OpenClaw 4C8G80G",
+		ResolutionMode: core.ResolutionModeSandboxPrimary,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	if _, err := svc.UpsertSKU(ctx, core.SKU{
+		ID:              "sku-hermes-4c8g",
+		Name:            "Hermes 4C8G",
+		TemplateClassID: "openclaw-4c8g80g",
+		BaseImage:       "img-hermes",
+		DesiredImageID:  "img-hermes",
+		InstanceType:    "SA5.LARGE8",
+		SystemDiskSize:  50,
+	}); err != nil {
+		t.Fatalf("upsert sku: %v", err)
+	}
+	router := newHandlerTestRouter(&handler{svc: svc})
+
+	req := httptest.NewRequest(http.MethodPatch, "/internal/skus/sku-hermes-4c8g", bytes.NewBufferString(`{"system_disk_size":80}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected system disk update 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var updated core.SKU
+	if err := json.Unmarshal(rr.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode updated sku: %v", err)
+	}
+	if updated.SystemDiskSize != 80 {
+		t.Fatalf("expected system disk size 80, got %d", updated.SystemDiskSize)
+	}
+	stored, err := svc.GetSKU(ctx, updated.ID)
+	if err != nil {
+		t.Fatalf("get updated sku: %v", err)
+	}
+	if stored.SystemDiskSize != 80 || stored.DesiredImageID != "img-hermes" {
+		t.Fatalf("expected only system disk size to change, got %+v", stored)
 	}
 }
 

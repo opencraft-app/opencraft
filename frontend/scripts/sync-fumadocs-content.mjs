@@ -78,8 +78,8 @@ const cnDocs = [
   { slug: 'who-is-lightvela-for', title: 'LightVela 适合哪些人使用？', file: 'who-is-lightvela-for.md', group: '产品入门', description: 'LightVela 适合想拥有长期在线、越聊越懂你的专属 AI 伙伴，却不想碰服务器、容器和 API 鉴权的用户。本页梳理目标用户画像、典型使用场景与前置条件，帮你判断是否适合。' },
   // 账号、套餐与开通
   { slug: 'account', title: '账号与实名认证', file: '03-account.md', group: '账号、套餐与开通', description: '账号管理与实名认证流程。' },
-  { slug: 'announcements/public-beta', title: '公测公告', file: 'announcements/public-beta.md', group: '账号、套餐与开通', description: '' },
-  { slug: 'plans', title: '套餐说明', file: 'plans.md', group: '账号、套餐与开通', description: 'LightVela 提供启航 Launch、巡游 Cruise、远航 Voyage 三档套餐，各含独立云端环境、专属存储与每月模型积分。本页说明各档定位、规格、权益与计费，帮你按需选择。' },
+  { slug: 'announcements/public-beta', title: 'LightVela 付费版本公告', file: 'announcements/public-beta.md', group: '账号、套餐与开通', description: '' },
+  { slug: 'plans', title: '套餐说明', file: 'plans.md', group: '账号、套餐与开通', description: 'LightVela 提供启航 Launch、巡游 Cruise 两档套餐，各含独立云端环境、专属存储与每月模型积分。本页说明各档定位、规格、权益与计费，帮你按需选择。' },
   { slug: 'credits', title: '体验积分说明', file: 'credits.md', group: '账号、套餐与开通', description: '模型积分是 LightVela 计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 token 消耗。本页说明积分定义、发放、消耗方式及与套餐、模型的关系。' },
   { slug: 'create-first-hermes', title: '如何开通第一个 Hermes 智能体伙伴？', file: 'create-first-hermes.md', group: '账号、套餐与开通', description: '开通第一个 Hermes 智能体伙伴的完整流程：登录账号、完成实名认证、选择并开通套餐、平台自动创建，再配置模型与通道让 Agent 7×24 小时在线运行。' },
   // 功能与配置
@@ -95,8 +95,21 @@ const cnDocs = [
   { slug: 'hermes-agent/user-md-vs-memory-md', title: 'USER.md 与 MEMORY.md 为什么不能合并？', file: 'hermes-agent/03-user-md-vs-memory-md.md', group: 'Hermes Agent 解读', description: '从容量、加载策略、更新语义三条硬约束，解释 Hermes Agent 为什么把长期记忆拆成 USER.md 与 MEMORY.md 两份笔记，而不是合并成一份。', hideDescription: true },
   { slug: 'hermes-agent/hermes-memory-curation', title: 'Hermes Agent 的长期记忆治理：少而准的四条铁律', file: 'hermes-agent/04-hermes-memory-curation.md', group: 'Hermes Agent 解读', description: '解析 Hermes Agent 长期记忆治理的四条铁律：有界、冻结、透明、自我整合，以及它们如何保证记忆"少而准"而不是"多而乱"。', hideDescription: true },
   { slug: 'hermes-agent/memory-vs-skill', title: 'Memory vs Skill：陈述性记忆与程序性记忆', file: 'hermes-agent/05-memory-vs-skill.md', group: 'Hermes Agent 解读', description: '从认知心理学的陈述性记忆与程序性记忆出发，解释 Hermes Agent 为什么把长期记忆拆成 Memory 与 Skill 两条腿，以及两者的触发方式、表达形式、演化速度差异。', hideDescription: true },
+  { slug: 'hermes-agent/model-vs-agent-layer', title: 'Hermes Agent 的"大脑"可以替换吗？模型层与 Agent 层如何分工', file: 'hermes-agent/06-model-vs-agent-layer.md', group: 'Hermes Agent 解读', description: '拆解模型层与 Agent 层的分工：换模型只替换推理引擎，人格、记忆、技能、自动任务都存放在模型之外，因此不会被带走。', hideDescription: true },
+  { slug: 'hermes-agent/message-gateway', title: '一个 Agent 如何同时出现在多个聊天软件里？拆解消息网关机制', file: 'hermes-agent/07-message-gateway.md', group: 'Hermes Agent 解读', description: '拆解消息网关的标准化、路由与投递三件事，解释为什么多个通道可以共享同一个 Agent 的人格与记忆。', hideDescription: true },
+  { slug: 'hermes-agent/automation-scheduling', title: 'Hermes Agent 如何按时主动找你？拆解自动化调度与定时任务机制', file: 'hermes-agent/08-automation-scheduling.md', group: 'Hermes Agent 解读', description: '解释自动任务如何把"何时执行、执行什么、发到哪里"保存成可重复调度的配置，以及怎样写出无人在场也能稳定执行的任务说明。', hideDescription: true },
+  { slug: 'hermes-agent/model-switching-memory', title: '切换模型会让 Agent"失忆"吗？模型、人格与记忆的解耦设计', file: 'hermes-agent/09-model-switching-memory.md', group: 'Hermes Agent 解读', description: '区分"表达风格变化"与"记忆丢失"：切换模型不清除记忆与技能，并给出一步就能判断的验证方法。', hideDescription: true },
+  { slug: 'hermes-agent/persona-user-memory', title: 'Hermes Agent 的性格从哪里来？Persona、用户偏好与长期记忆如何共同作用', file: 'hermes-agent/10-persona-user-memory.md', group: 'Hermes Agent 解读', description: '解释 SOUL.md、USER.md 与 MEMORY.md 的三层分工，以及为什么变化频率不同的内容必须分开存放。', hideDescription: true },
+  { slug: 'hermes-agent/workspace-context-storage', title: 'Hermes Agent 把文件放在哪里？工作目录、上下文文件与存储机制', file: 'hermes-agent/11-workspace-context-storage.md', group: 'Hermes Agent 解读', description: '区分工作目录、上下文文件与云存储三类位置的职责与边界，并说明敏感信息不应写入长期上下文的原因。', hideDescription: true },
+  { slug: 'hermes-agent/skills-self-improvement', title: 'Agent 为什么会越用越顺手？技能沉淀、自我改进与复用机制', file: 'hermes-agent/12-skills-self-improvement.md', group: 'Hermes Agent 解读', description: '解释 Memory 与 Skill 两类积累的差异，以及一份合格 Skill 必须写清的四件事：何时使用、执行步骤、成功标准、不可越过的边界。', hideDescription: true },
+  // 对比与选型
+  { slug: 'compare/lightvela-vs-manus', title: 'LightVela vs Manus：哪个更适合托管你的 AI Agent？', file: 'compare/lightvela-vs-manus.md', group: '对比与选型', description: '' },
+  { slug: 'compare/lightvela-vs-localhost-ai-agent', title: 'LightVela vs 本地部署 Agent：哪个更好？', file: 'compare/lightvela-vs-localhost-ai-agent.md', group: '对比与选型', description: '' },
+  { slug: 'compare/lightvela-vs-ai-chatbot', title: 'LightVela vs AI Chatbot：哪个更适合搭建个人 AI 助手？', file: 'compare/lightvela-vs-ai-chatbot.md', group: '对比与选型', description: '' },
   // 问题排查
   { slug: 'faq', title: '常见问题 FAQ', file: '07-faq.md', group: '问题排查', description: '' },
+  // 联系与支持
+  { slug: 'contact-us', title: '联系我们', file: 'contact-us.md', group: '联系与支持', description: '加入 LightVela 内测交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。' },
 ];
 
 /** 国内站侧边栏分组顺序（GEO 导航方案的 9 大分组） */
@@ -104,6 +117,7 @@ const CN_GROUP_ORDER = [
   '产品入门',
   '账号、套餐与开通',
   '功能与配置',
+  '对比与选型',
   'Hermes Agent 解读',
   '问题排查',
   '联系与支持',
@@ -118,7 +132,6 @@ const GLOBAL_GROUP_ORDER = [
   'Compare & Choose',
   'Hermes Agent Deep Dive',
   'Troubleshooting',
-  'Security, Privacy & Data',
   'Advanced',
   'Support',
 ];
@@ -172,6 +185,16 @@ const globalDocs = [
     description: {
       'en-US': 'Compare LightVela plans, isolated cloud resources, monthly model credits, and the current international beta activation flow.',
       'zh-CN': '对比 LightVela 套餐、独立云端资源、每月模型积分与当前国际站内测开通流程。',
+    },
+  },
+  {
+    slug: 'announcements/public-beta',
+    title: { 'en-US': 'LightVela Paid Version Announcement', 'zh-CN': 'LightVela 付费版本公告' },
+    file: 'announcements/public-beta.md',
+    group: { 'en-US': 'Plans & Activation', 'zh-CN': '套餐与开通' },
+    description: {
+      'en-US': 'LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). Beta users get one additional month on their existing plan, and new users can try Launch free for 14 days after public beta and billing start.',
+      'zh-CN': 'LightVela 计划将于 2026 年 8 月 18 日（新加坡时间）起转入公测并开启计费；正式转入公测并开启计费后，内测用户现有套餐的有效期将额外延长 1 个月。',
     },
   },
   {
@@ -358,8 +381,69 @@ const globalDocs = [
     file: 'use-cases/chinese-messaging-channels.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
-    // 中文正文尚未落地（仅英文源被简→繁转成占位），中文站暂不展示。
-    hiddenForLocales: [LOCALES.ZH_SG, LOCALES.ZH_HANT],
+  },
+  {
+    slug: 'use-cases/telegram-persona-agent',
+    title: { 'en-US': 'How to Configure a Hermes Agent with a Distinct Personality in Telegram', 'zh-CN': '如何在 Telegram 中配置一个具有独立人格的 Hermes Agent？' },
+    file: 'use-cases/telegram-persona-agent.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'use-cases/whatsapp-persona-agent',
+    title: { 'en-US': 'How to Configure a Hermes Agent with a Distinct Personality in WhatsApp', 'zh-CN': '如何在 WhatsApp 中配置一个具有独立人格的 Hermes Agent？' },
+    file: 'use-cases/whatsapp-persona-agent.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'use-cases/im-agent-persona-soul-md',
+    title: { 'en-US': "How to Define an IM Agent's Role, Personality, and Voice with SOUL.md", 'zh-CN': '如何通过 SOUL.md 设定 IM Agent 的角色、性格与说话方式？' },
+    file: 'use-cases/im-agent-persona-soul-md.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'use-cases/im-agent-skill-scenarios',
+    title: { 'en-US': 'How to Turn an IM Agent into a Customer-Service, Community, or Companion Assistant with Skills', 'zh-CN': '如何通过 Skill 把 IM Agent 变成客服、社群助手或 AI 伴侣？' },
+    file: 'use-cases/im-agent-skill-scenarios.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'use-cases/multi-channel-personality-memory',
+    title: { 'en-US': 'How to Connect One Agent to Telegram and WhatsApp While Keeping One Personality and Long-Term Memory', 'zh-CN': '如何让一个 Agent 同时接入 Telegram 和 WhatsApp，并保持统一人格与长期记忆？' },
+    file: 'use-cases/multi-channel-personality-memory.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'use-cases/telegram-group-community-assistant',
+    title: { 'en-US': 'How to Configure a Telegram Group AI Community Assistant: Welcome Messages, FAQs, Summaries, and Reminders', 'zh-CN': '如何在 Telegram 群组中配置 AI 社群助手：入群欢迎、FAQ、摘要与提醒？' },
+    file: 'use-cases/telegram-group-community-assistant.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'use-cases/whatsapp-24-7-customer-service',
+    title: { 'en-US': 'How to Configure 24/7 AI Customer Service in WhatsApp: Personality, Knowledge, Skills, and Automations', 'zh-CN': '如何在 WhatsApp 中配置 24/7 AI 客服：人格、知识、技能与自动化？' },
+    file: 'use-cases/whatsapp-24-7-customer-service.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'use-cases/lifelike-im-agent-rhythm-social-memory',
+    title: { 'en-US': 'How to Design a More Natural IM Agent: Conversation Rhythm, Group Norms, and Long-Term Social Memory', 'zh-CN': '如何设计更像真人的 IM Agent：对话节奏、群体规范与长期社交记忆？' },
+    file: 'use-cases/lifelike-im-agent-rhythm-social-memory.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+  },
+  {
+    slug: 'use-cases/telegram-whatsapp-safety-boundaries',
+    title: { 'en-US': 'How to Design Safety Boundaries for Telegram and WhatsApp Agents: Authorization, Group Rules, and Sensitive Actions', 'zh-CN': '如何为 Telegram 和 WhatsApp Agent 设计安全边界：授权、群聊规则与敏感操作？' },
+    file: 'use-cases/telegram-whatsapp-safety-boundaries.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
   },
   {
     slug: 'use-cases/daily-summary',
@@ -367,7 +451,6 @@ const globalDocs = [
     file: 'use-cases/daily-summary.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
-    hiddenForLocales: [LOCALES.ZH_SG, LOCALES.ZH_HANT],
   },
   {
     slug: 'use-cases/hermes-agent-24-7',
@@ -375,7 +458,6 @@ const globalDocs = [
     file: 'use-cases/hermes-agent-24-7.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
-    hiddenForLocales: [LOCALES.ZH_SG, LOCALES.ZH_HANT],
   },
   {
     slug: 'use-cases/memory-and-knowledge',
@@ -383,7 +465,6 @@ const globalDocs = [
     file: 'use-cases/memory-and-knowledge.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
-    hiddenForLocales: [LOCALES.ZH_SG, LOCALES.ZH_HANT],
   },
   {
     slug: 'compare/lightvela-vs-localhost-ai-agent',
@@ -419,16 +500,6 @@ const globalDocs = [
     file: 'compare/lightvela-vs-genspark.md',
     group: { 'en-US': 'Compare & Choose', 'zh-CN': '对比与选型' },
     description: { 'en-US': '', 'zh-CN': '' },
-  },
-  {
-    slug: 'faq/using-lightvela-safely',
-    title: { 'en-US': 'Using LightVela Safely', 'zh-CN': '安全使用 LightVela' },
-    file: 'faq/using-lightvela-safely.md',
-    group: { 'en-US': 'Security, Privacy & Data', 'zh-CN': '安全、隐私与数据' },
-    description: {
-      'en-US': 'Guidance for using LightVela safely and responsibly.',
-      'zh-CN': '安全、负责任地使用 LightVela 的建议。',
-    },
   },
   {
     slug: 'hermes-agent/hermes-vs-openclaw',
@@ -497,6 +568,104 @@ const globalDocs = [
     description: {
       'en-US': 'Grounded in declarative vs procedural memory from cognitive science, explain why Hermes Agent splits long-term memory into Memory and Skill, and how they differ in trigger, form, and evolution speed.',
       'zh-CN': '从认知心理学的陈述性记忆与程序性记忆出发，解释 Hermes Agent 为什么把长期记忆拆成 Memory 与 Skill 两条腿，以及两者的触发方式、表达形式、演化速度差异。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/model-vs-agent-layer',
+    title: {
+      'en-US': 'Can You Replace Hermes Agent\'s Brain? Model Layer vs Agent Layer',
+      'zh-CN': 'Hermes Agent 的“大脑”可以替换吗？模型层与 Agent 层如何分工',
+    },
+    file: 'hermes-agent/06-model-vs-agent-layer.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Learn which responsibilities belong to the model and which stay with the Agent, including identity, memory, tools, channels, and scheduled work.',
+      'zh-CN': '理解模型与 Agent 的职责边界，以及身份、记忆、工具、通道和自动任务为什么不随模型切换而消失。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/message-gateway',
+    title: {
+      'en-US': 'How Can One Agent Appear Across Multiple Messaging Apps?',
+      'zh-CN': '一个 Agent 如何同时出现在多个聊天软件里？拆解消息网关机制',
+    },
+    file: 'hermes-agent/07-message-gateway.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'See how a messaging gateway turns channel-specific events into a shared Agent conversation while preserving routing, context, and replies.',
+      'zh-CN': '拆解消息网关如何把不同聊天软件的事件收敛到同一个 Agent，同时保留路由、上下文和回复出口。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/automation-scheduling',
+    title: {
+      'en-US': 'How Does Hermes Agent Reach You on Schedule?',
+      'zh-CN': 'Hermes Agent 如何按时主动找你？拆解自动化调度与定时任务机制',
+    },
+    file: 'hermes-agent/08-automation-scheduling.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Understand the event, schedule, execution, and delivery layers that let an Agent proactively complete recurring work.',
+      'zh-CN': '理解事件、调度、执行和投递如何协同，让 Agent 按计划主动完成重复工作。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/model-switching-memory',
+    title: {
+      'en-US': 'Will Switching Models Make an Agent Forget?',
+      'zh-CN': '切换模型会让 Agent“失忆”吗？模型、人格与记忆的解耦设计',
+    },
+    file: 'hermes-agent/09-model-switching-memory.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Learn how a decoupled model, persona, and memory design lets an Agent change its inference engine without losing its long-term context.',
+      'zh-CN': '理解模型、人格与记忆的解耦设计如何让 Agent 更换推理引擎后仍保留长期上下文。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/persona-user-memory',
+    title: {
+      'en-US': 'Where Does Hermes Agent\'s Personality Come From?',
+      'zh-CN': 'Hermes Agent 的性格从哪里来？Persona、用户偏好与长期记忆如何共同作用',
+    },
+    file: 'hermes-agent/10-persona-user-memory.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Explore how persona rules, user preferences, and long-term memory work together to produce a stable but adaptive Agent personality.',
+      'zh-CN': '探索 Persona 规则、用户偏好和长期记忆如何共同形成稳定且会适应的 Agent 性格。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/workspace-context-storage',
+    title: {
+      'en-US': 'Where Does Hermes Agent Put Files?',
+      'zh-CN': 'Hermes Agent 把文件放在哪里？工作目录、上下文文件与存储机制',
+    },
+    file: 'hermes-agent/11-workspace-context-storage.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'Learn the distinct roles of a working directory, context files, and persistent storage when an Agent creates and reuses work.',
+      'zh-CN': '了解工作目录、上下文文件和持久化存储的不同职责，以及 Agent 如何创建和复用工作成果。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'hermes-agent/skills-self-improvement',
+    title: {
+      'en-US': 'Why Does an Agent Get Better with Use?',
+      'zh-CN': 'Agent 为什么会越用越顺手？技能沉淀、自我改进与复用机制',
+    },
+    file: 'hermes-agent/12-skills-self-improvement.md',
+    group: { 'en-US': 'Hermes Agent Deep Dive', 'zh-CN': 'Hermes Agent 解读' },
+    description: {
+      'en-US': 'See how reusable Skills turn successful work patterns into durable instructions that make future Agent tasks more reliable.',
+      'zh-CN': '了解可复用 Skill 如何把成功的工作模式沉淀为长期指令，让 Agent 的后续任务更可靠。',
     },
     hideDescription: true,
   },

@@ -2,11 +2,16 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, Smartphone, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { PhoneLoginForm } from "@/components/auth/phone-login-form";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
-import { CN_PRIVACY_POLICY_URL } from "@/constants/legal";
+import {
+  CN_PRIVACY_POLICY_URL,
+  CN_TERMS_OF_SERVICE_URL,
+  getGlobalTermsOfServiceUrl,
+} from "@/constants/legal";
 import { useT } from "@/i18n/t";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
 import {
@@ -238,7 +243,9 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
   const repositories = useRepositories();
   const { session } = useSession();
   const t = useT();
+  const { i18n } = useTranslation();
   const showGitHubLogin = useGitHubLoginVisibility();
+  const globalTermsOfServiceUrl = getGlobalTermsOfServiceUrl(i18n.language);
 
   const [mounted, setMounted] = useState(false);
   const [agreed, setAgreed] = useState(false);
@@ -375,15 +382,27 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
         </div>
         <span className="text-xs leading-relaxed text-[var(--text-tertiary)]">
           {t("我已阅读并同意")}{" "}
-          <a
-            href="https://cloud.tencent.com/document/product/301/48034"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium hover:underline"
-            style={{ color: "var(--lw-accent)" }}
-          >
-            {t("《服务协议》")}
-          </a>{" "}
+          {isGlobal ? (
+            <a
+              href={globalTermsOfServiceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:underline"
+              style={{ color: "var(--lw-accent)" }}
+            >
+              {t("《服务协议》")}
+            </a>
+          ) : (
+            <a
+              href={CN_TERMS_OF_SERVICE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:underline"
+              style={{ color: "var(--lw-accent)" }}
+            >
+              {t("《服务协议》")}
+            </a>
+          )}{" "}
           {t("与")}{" "}
           {isGlobal ? (
             <a

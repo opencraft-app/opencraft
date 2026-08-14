@@ -187,11 +187,25 @@ PROMOTION_POLICIES: tuple[PromotionPolicy, ...] = (
 
 
 def _playground_policy_for_branch(source_branch: str) -> PromotionPolicy | None:
-    match = re.match(r"^promote-(sandbox-(bj|kr)-\d+)-", source_branch)
+    match = re.match(r"^promote-(sandbox-(bj|kr|jp)-\d+)-", source_branch)
     if not match:
         return None
     env = match.group(1)
-    region_name = {"bj": "北京", "kr": "韩国"}[match.group(2)]
+    region = match.group(2)
+    region_name = {"bj": "北京", "kr": "韩国", "jp": "东京"}[region]
+    if region == "jp":
+        return PromotionPolicy(
+            env=env,
+            branch_prefix=f"promote-{env}-",
+            display_name=f"{region_name} Playground {env}",
+            auto_merge=True,
+            auto_sync=False,
+            cleanup_source_branch=True,
+            verify_mode=VerifyMode.MERGE_ONLY,
+            kustomize_mode=KustomizeMode.CHANGED_ONLY,
+            gate_denied_behavior=GateDeniedBehavior.FAIL,
+            required_argo_sync="manual",
+        )
     return PromotionPolicy(
         env=env,
         branch_prefix=f"promote-{env}-",
@@ -225,6 +239,7 @@ def require_policy_for_branch(source_branch: str) -> PromotionPolicy:
                 *(policy.branch_prefix + "*" for policy in PROMOTION_POLICIES),
                 "promote-sandbox-bj-<N>-*",
                 "promote-sandbox-kr-<N>-*",
+                "promote-sandbox-jp-<N>-*",
             ]
         )
         raise ValueError(f"unsupported promote branch {source_branch!r}; supported patterns: {supported}")

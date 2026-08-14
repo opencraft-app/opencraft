@@ -21,3 +21,4 @@ bundles:
     build_context: .
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/staticpages
+      sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/staticpages

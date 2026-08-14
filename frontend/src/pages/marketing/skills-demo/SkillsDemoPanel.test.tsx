@@ -1,8 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SkillsDataLayer } from "./skill-registries";
 import { SkillsDemoPanel } from "./SkillsDemoPanel";
+
+configure({ asyncUtilTimeout: 3_000 });
+vi.setConfig({ testTimeout: 10_000 });
 
 const mocks = vi.hoisted(() => ({
   createSkillsDataLayer: vi.fn(),
@@ -653,7 +656,7 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
     expect(batchButton).toHaveTextContent(/^安装$/);
   });
 
-  it("keeps international sources by the search field and moves the domestic source below results", async () => {
+  it("renders each marketplace source in the shared search-results footer", async () => {
     renderPanel(mode);
     const tabs = screen.getByRole("tablist", { name: "技能市场页面切换" });
     const tabRule = tabs.parentElement as HTMLElement;
@@ -676,15 +679,75 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
       expect(sourceLink).toHaveClass("h-8", "col-start-3", "justify-self-end", "text-[#2563EB]", "hover:text-[#1D4ED8]", "hover:underline");
       expect(sourceLink).toHaveTextContent("源自 SkillHub↗");
     } else {
-      const sourceLine = searchRow.lastElementChild as HTMLElement;
-      expect(tabRule).not.toContainElement(sourceLine);
-      expect(sourceLine).toHaveClass("shrink-0", "text-right");
-      expect(sourceLine).toHaveTextContent("技能来源于 Skills.sh 与 ClawHub");
-      expect(sourceLine).not.toHaveClass("border");
+      expect(within(searchRow).queryByRole("link", { name: "Skills.sh" })).not.toBeInTheDocument();
+      expect(within(searchRow).queryByRole("link", { name: "ClawHub" })).not.toBeInTheDocument();
+      expect(searchRow.lastElementChild).toContainElement(within(searchRow).getByRole("combobox", { name: "来源" }));
+      expect(searchRow.children).toHaveLength(2);
+      fireEvent.change(searchInput, { target: { value: "tools" } });
+      const firstResult = await screen.findByText("First");
+      const resultsList = firstResult.closest("ul") as HTMLElement;
+      const sourceFooter = resultsList.nextElementSibling as HTMLElement;
+      const sourceLine = sourceFooter.lastElementChild as HTMLElement;
+      expect(sourceFooter).toHaveClass("grid", "grid-cols-[1fr_auto_1fr]", "items-center");
+      expect(within(sourceFooter).getByRole("button", { name: "查看更多" })).toHaveClass("h-8", "col-start-2");
+      expect(sourceLine).toHaveClass("h-8", "col-start-3", "justify-self-end", "text-[#2563EB]", "hover:text-[#1D4ED8]");
+      expect(sourceLine).toHaveTextContent("源自 Skills.sh 和 ClawHub↗");
       expect(within(sourceLine).getByRole("link", { name: "Skills.sh" })).toHaveAttribute("href", "https://skills.sh");
       expect(within(sourceLine).getByRole("link", { name: "ClawHub" })).toHaveAttribute("href", "https://clawhub.ai/");
     }
   });
+});
+
+it("shows a fixed Source link for ClawHub search results and keeps skills.sh Source links", async () => {
+  const dataLayer = renderPanel("global");
+  vi.mocked(dataLayer.search).mockResolvedValue({
+    clawhub: [{
+      registry: "clawhub",
+      rawId: "first",
+      slug: "first",
+      name: "First",
+      author: "owner",
+    }],
+    skillssh: [{
+      registry: "skills-sh",
+      rawId: "team/repository/second",
+      slug: "second",
+      name: "Second",
+    }],
+    skillhub: [],
+    failedSources: [],
+  });
+
+  fireEvent.change(screen.getByRole("textbox", { name: "搜索技能" }), { target: { value: "first" } });
+
+  const clawhubRow = (await screen.findByText("First")).closest("li") as HTMLElement;
+  const skillsshRow = screen.getByText("Second").closest("li") as HTMLElement;
+  expect(within(clawhubRow).getByRole("link", { name: "来源" })).toHaveAttribute(
+    "href",
+    "https://clawhub.ai/",
+  );
+  expect(within(clawhubRow).queryByText("@owner")).not.toBeInTheDocument();
+  expect(within(skillsshRow).getByRole("link", { name: "来源" })).toHaveAttribute(
+    "href",
+    "https://skills.sh/team/repository/second",
+  );
+});
+
+it("shows the international source link in a curated skill details dialog", async () => {
+  renderPanel("global");
+
+  fireEvent.click(screen.getByRole("button", { name: "查看Stock Analysis详情" }));
+
+  const dialog = await screen.findByRole("dialog");
+  const sourceLink = within(dialog).getByRole("link", { name: "来源" });
+  expect(sourceLink).toHaveAttribute(
+    "href",
+    "https://skills.sh/gracefullight/stock-checker/stock-analysis",
+  );
+  expect(sourceLink).toHaveAttribute("target", "_blank");
+  expect(sourceLink).toHaveClass("text-[#2563EB]", "hover:underline");
+  expect(sourceLink.parentElement).toHaveClass("mt-1", "text-[11px]");
+  expect(sourceLink).not.toHaveClass("h-8", "border", "bg-[#F5F9FF]");
 });
 
 describe("SkillsDemoPanel installed identity boundaries", () => {
@@ -692,6 +755,45 @@ describe("SkillsDemoPanel installed identity boundaries", () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("renders one installed row with both marketplace source badges", async () => {
+    const dataLayer = makeDataLayer("global");
+    vi.mocked(dataLayer.listInstalled).mockResolvedValue({
+      failedSources: [],
+      skills: [{
+        registry: "clawhub",
+        rawId: "shared-skill",
+        slug: "shared-skill",
+        name: "Shared Skill",
+        sourceUrls: {
+          clawhub: "https://clawhub.ai/example-owner/skills/shared-skill",
+          "skills-sh": "https://skills.sh/team/repository/shared-skill",
+        },
+        registries: ["clawhub", "skills-sh", "hermes"],
+        sourceLabel: "ClawHub / skills.sh / Hermes",
+        uninstallTargets: [
+          { registry: "clawhub", rawId: "shared-skill" },
+          { registry: "skills-sh", rawId: "team/repository/shared-skill" },
+        ],
+      }],
+    });
+    mocks.createSkillsDataLayer.mockReturnValue(dataLayer);
+
+    render(<SkillsDemoPanel botId="bot-1" execDebugCommand={vi.fn()} mode="global" initialTab="installed" />);
+
+    const skillName = await screen.findByText("Shared Skill");
+    const installedRow = skillName.closest("li");
+    expect(installedRow).not.toBeNull();
+    expect(within(installedRow as HTMLElement).getByRole("link", { name: "ClawHub" })).toHaveAttribute(
+      "href",
+      "https://clawhub.ai/example-owner/skills/shared-skill",
+    );
+    expect(within(installedRow as HTMLElement).getByRole("link", { name: "skills.sh" })).toHaveAttribute(
+      "href",
+      "https://skills.sh/team/repository/shared-skill",
+    );
+    expect(screen.getAllByText("Shared Skill")).toHaveLength(1);
   });
 
   it("does not keep a ClawHub result installed when only a skills.sh skill has the same slug", async () => {

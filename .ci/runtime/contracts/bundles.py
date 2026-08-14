@@ -14,11 +14,12 @@ import yaml
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST_PATH = RUNTIME_DIR / "release-bundles.manifest"
-PLAYGROUND_ENV_RE = re.compile(r"^sandbox-(?:bj|kr)-\d+$")
+PLAYGROUND_ENV_RE = re.compile(r"^sandbox-(?:bj|kr|jp)-\d+$")
 PLAYGROUND_TEMPLATE_ENVS = ("beijing-sandbox-2", "beijing-sandbox")
 PLAYGROUND_CATALOG_ROOTS = {
     "bj": "argocd/catalogs/playground/beijing-playground",
     "kr": "argocd/catalogs/playground/seoul-playground",
+    "jp": "argocd/catalogs/playground/tokyo-playground",
 }
 
 
@@ -140,7 +141,7 @@ def is_playground_env(env: str) -> bool:
 
 
 def playground_region(env: str) -> str | None:
-    match = re.fullmatch(r"sandbox-(bj|kr)-\d+", env)
+    match = re.fullmatch(r"sandbox-(bj|kr|jp)-\d+", env)
     if not match:
         return None
     return match.group(1)
@@ -190,10 +191,16 @@ def _resolve_publish_paths(bundle: dict[str, Any], env: str) -> list[str]:
         path = str(raw).format(env=env)
         if is_playground_env(env) and source_env != env:
             path = _rewrite_playground_publish_path(path, source_env, env)
+        if is_playground_env(env) and _is_shared_playground_gitops_path(path):
+            continue
         if path not in seen:
             seen.add(path)
             resolved.append(path)
     return resolved
+
+
+def _is_shared_playground_gitops_path(path: str) -> bool:
+    return path.startswith("argocd/apps/") and path.endswith("/sandbox-family-appset.yaml")
 
 
 def _rewrite_playground_publish_path(path: str, source_env: str, env: str) -> str:

@@ -226,6 +226,18 @@ backends:
       timeout: 10s
       allowed_methods: ["POST"]
 
+  - alias: tcapi-billing-intl-test
+    upstream:
+      base_url: "https://billing.test.tencentcloudapi.com"
+      timeout: 15s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-billing-trade-intl-test
+    upstream:
+      base_url: "https://billing.test.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
   - alias: tcapi-account-cn-test
     upstream:
       base_url: "https://account.test.tencentcloudapi.com"
@@ -271,6 +283,15 @@ backends:
       headers_from_env:
         X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
 
+  - alias: lightclaw-auth-krsbx
+    env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_KRSBX
+    upstream:
+      base_url: "https://api-sandbox-kr-1.lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers_from_env:
+        X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN
+
   - alias: lightclaw-auth-shprod
     env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_SHPROD
     upstream:
@@ -304,13 +325,17 @@ auth:
     - billing-trade-intl-prod
     - jifei-test
     - tencentcloud-account-callback-bjsbx
+    - tencentcloud-account-callback-krsbx
     - tencentcloud-account-callback-shprod
+    - lightvela-cloudapi-bj
+    - lightvela-cloudapi-sh
   callers:
     - id: shadow
       secret_env: CLOUDLADDER_SHADOW_HMAC_SECRET
       routes:
         - tcapi-account-cn-dev
         - tcapi-billing-cn-dev
+        - tcapi-billing-intl-test
         - tcapi-account-cn-test
         - tcapi-cam-cn-test
         - tcapi-sts-cn-test
@@ -324,6 +349,16 @@ auth:
         - shadow-cam-prod
         - shadow-sts-prod
         - shadow-billing-api-test
+    - id: lightvela-trade
+      secret_env: CLOUDLADDER_TRADE_HMAC_SECRET
+      routes:
+        - jifei-test
+        - jifei-prod
+        - jifei-billing-apigw-test
+        - jifei-billing-apigw-prod
+        - dianshi-price
+        - dianshi-order
+        - tcapi-billing-trade-intl-test
 
 audit:
   service_name: cloudladdergateway
@@ -343,6 +378,8 @@ external_routes:
     auth_code_routes:
       - prefix: "bjsbx."
         route_id: tencentcloud-account-callback-bjsbx
+      - prefix: "krsbx."
+        route_id: tencentcloud-account-callback-krsbx
       - prefix: "shprod."
         route_id: tencentcloud-account-callback-shprod
     user_id_routes:
@@ -351,6 +388,19 @@ external_routes:
     user_id_prefix_routes:
       - prefix: "bjsbx_"
         route_id: tencentcloud-account-callback-bjsbx
+      - prefix: "krsbx_"
+        route_id: tencentcloud-account-callback-krsbx
+  - path: /cloudapi
+    methods: ["POST"]
+    route_id: lightvela-cloudapi-sh
+    upstream_path: /cloudapi
+    header_routes:
+      - name: X-TC-Region
+        value: ap-beijing
+        route_id: lightvela-cloudapi-bj
+      - name: X-TC-Region
+        value: ap-shanghai
+        route_id: lightvela-cloudapi-sh
 
 routes:
   - id: sandbox-cn
@@ -632,6 +682,57 @@ routes:
       base_url: "https://lightclaw.tech"
       timeout: 10s
       allowed_methods: ["POST"]
+    # 按影子账号 uin 把回调改派到各开发者的测试环境。
+    #
+    # 背景：jifei 侧只能配一个固定回调地址，但测试期有多个开发者环境需要各自收到自己
+    # 订单的回调。计费把回调统一打到本 route，网关按 interface.para.uin 分派；表里没有
+    # 的 uin（现网 / 预发布的真实用户）走上面的 base_url 兜底。
+    #
+    # 前提：每个开发者环境必须持有**不同的**影子账号 uin。共用同一个 jifei 测试账号时
+    # 无法区分，这一步必须先落实，否则本机制无效。
+    #
+    # 改派目标不存在时网关返 404 而不是回落到兜底 —— 静默回落会让回调发货到别人的环境，
+    # 那是 2026-08-05 跨环境脏数据事故的成因。
+    #
+    # 新增开发者不需要重新构建镜像：在工作负载上加
+    #   CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_UIN_ROUTES=<uin>=<route_id>,<uin>=<route_id>
+    # 即可整表覆盖；对应的 <route_id> route 也可以用 _BASE_URL 覆盖指向该开发者环境。
+    uin_routes: []
+
+  # 开发者个人测试环境的回调落点池。
+  #
+  # 这里只占位，base_url 是黑洞（127.0.0.1:9），必须由工作负载上的
+  #   CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_DEV_<N>_BASE_URL
+  # 覆盖成该开发者环境的可达地址，再配合上面 jifei-callback 的 uin_routes 生效。
+  #
+  # 预留成池子是为了「新增开发者只改 gitops 的环境变量、不用重建镜像」——
+  # 加人时挑一个空位改两个 env（uin 映射 + base_url）即可。
+  - id: jifei-callback-dev-1
+    description: "开发者个人测试环境回调落点 1（base_url 必须由 env 覆盖）"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "http://127.0.0.1:9"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-dev-2
+    description: "开发者个人测试环境回调落点 2（base_url 必须由 env 覆盖）"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "http://127.0.0.1:9"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-dev-3
+    description: "开发者个人测试环境回调落点 3（base_url 必须由 env 覆盖）"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "http://127.0.0.1:9"
+      timeout: 10s
+      allowed_methods: ["POST"]
 
   # ===========================================================================
   # jifei → clgateway → trade 入向回调地域路由（方案一：routeId 区分地域）
@@ -663,6 +764,24 @@ routes:
   - id: jifei-callback-sh
     description: "国内站上海地域 jifei 回调入口，路由到上海正式集群"
     callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://api.lightvela.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: lightvela-cloudapi-bj
+    description: "LightVela 通用云 API 入向入口，北京地域按 X-TC-Region=ap-beijing 路由"
+    callers: ["tencentcloud"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: lightvela-cloudapi-sh
+    description: "LightVela 通用云 API 入向入口，上海地域按 X-TC-Region=ap-shanghai 路由"
+    callers: ["tencentcloud"]
     condition: 'request.method == "POST"'
     upstream:
       base_url: "https://api.lightvela.com"
@@ -765,6 +884,22 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: tcapi-billing-cn-dev
+
+  - id: tcapi-billing-intl-test
+    description: "Signed tunnel for TencentCloud international billing account API test endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-intl-test
+
+  - id: tcapi-billing-trade-intl-test
+    description: "Signed tunnel for LightVela trade intl CreatePayUrl test endpoint."
+    mode: signed_http_tunnel
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-trade-intl-test
 
   - id: tcapi-account-cn-test
     description: "Signed tunnel for TencentCloud account API test endpoint from shadow script defaults."
@@ -875,6 +1010,12 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: lightclaw-auth-bjsbx
+
+  - id: tencentcloud-account-callback-krsbx
+    description: "TencentCloud SaaS account callback route for Korea sandbox."
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: lightclaw-auth-krsbx
 
   - id: tencentcloud-account-callback-shprod
     description: "TencentCloud SaaS account callback route for Shanghai production."

@@ -24,6 +24,7 @@ export interface SandboxPool {
   base_image: string;
   desired_capacity: number;
   instance_type: string;
+  system_disk_size: number;
   status: SandboxPoolStatus;
   pause_reason?: string;
   consecutive_refill_failures?: number;
@@ -44,8 +45,8 @@ export interface SandboxPool {
   created_at: string;
 }
 
-export type SandboxPoolResponse = Omit<SandboxPool, "template_class_id" | "sku_id"> &
-  Partial<Pick<SandboxPool, "template_class_id" | "sku_id">>;
+export type SandboxPoolResponse = Omit<SandboxPool, "template_class_id" | "sku_id" | "system_disk_size"> &
+  Partial<Pick<SandboxPool, "template_class_id" | "sku_id" | "system_disk_size">>;
 
 export interface SandboxPoolInstance {
   id: string;
@@ -62,6 +63,7 @@ export function normalizeSandboxPool(pool: SandboxPoolResponse): SandboxPool {
     ...pool,
     template_class_id: pool.template_class_id?.trim() ?? "",
     sku_id: pool.sku_id?.trim() ?? "",
+    system_disk_size: pool.system_disk_size ?? 0,
   };
 }
 

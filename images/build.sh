@@ -1694,15 +1694,31 @@ install_hermes_acli() {
     run_as_runtime_user "acli doctor" || true
     return 1
   fi
-  if ! run_as_runtime_user "acli backend --help >/dev/null 2>&1"; then
-    log_info "acli backend command unavailable for ${RUNTIME_USER}; attempting bundle-update"
+  local required_acli_commands=(
+    "acli backend --help"
+    "acli skills batch-install --help"
+    "acli skills-sh batch-install --help"
+    "acli clawhub batch-install --help"
+  )
+  local acli_bundle_update_required="false"
+  local required_acli_command
+  for required_acli_command in "${required_acli_commands[@]}"; do
+    if ! run_as_runtime_user "${required_acli_command} >/dev/null 2>&1"; then
+      log_info "required ACLI capability unavailable for ${RUNTIME_USER}: ${required_acli_command}"
+      acli_bundle_update_required="true"
+    fi
+  done
+  if [ "${acli_bundle_update_required}" = "true" ]; then
+    log_info "attempting ACLI bundle-update for required Hermes capabilities"
     run_as_runtime_user "acli bundle-update >/dev/null 2>&1" || true
   fi
-  if ! run_as_runtime_user "acli backend --help >/dev/null 2>&1"; then
-    log_error "acli backend command is unavailable for ${RUNTIME_USER}"
-    run_as_runtime_user "acli --help" || true
-    return 1
-  fi
+  for required_acli_command in "${required_acli_commands[@]}"; do
+    if ! run_as_runtime_user "${required_acli_command} >/dev/null 2>&1"; then
+      log_error "required ACLI capability is unavailable for ${RUNTIME_USER}: ${required_acli_command}"
+      run_as_runtime_user "acli --help" || true
+      return 1
+    fi
+  done
   ensure_global_bin_links
 }
 

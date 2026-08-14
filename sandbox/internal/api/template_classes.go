@@ -61,6 +61,27 @@ func (a *API) handleSKUs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (a *API) handleSKUSubroutes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	skuID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/skus/"), "/")
+	var req struct {
+		SystemDiskSize *int `json:"system_disk_size"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.SystemDiskSize == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "system_disk_size is required"})
+		return
+	}
+	item, err := a.svc.UpdateSKUSystemDiskSize(r.Context(), skuID, *req.SystemDiskSize)
+	if err != nil {
+		writeControlPlaneError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
 func (a *API) handleTemplateClassSubroutes(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/template-classes/")
 	parts := strings.Split(path, "/")

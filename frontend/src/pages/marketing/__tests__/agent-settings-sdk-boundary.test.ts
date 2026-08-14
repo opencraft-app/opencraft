@@ -13,7 +13,9 @@ describe("agent settings TEA SDK boundary", () => {
     expect(page).toMatch(/const sdkFeatureFlags = useMemo<TeaSdkFeatureFlags>/);
     expect(page).toMatch(/const sdkProductConfigArgs = useMemo/);
     expect(page).toMatch(/const productConfig = useMemo/);
-    expect(page).toMatch(/commandLifecycle: automationModelCommandLifecycle/);
+    expect(page).toMatch(/composeDebugExecCommandLifecycles/);
+    expect(page).toMatch(/createQqbotGroupPolicyCommandLifecycle/);
+    expect(page).toMatch(/commandLifecycle: sdkCommandLifecycle/);
     expect(page).toMatch(/\{automationModelSwitchDialog\}/);
     expect(page).not.toMatch(/productConfig=\{runtime\.createProductConfig\(productConfigArgs\)\}/);
     expect(page).not.toMatch(/const sdkInstance: TeaSdkInstanceInfo =/);

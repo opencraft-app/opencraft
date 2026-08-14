@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -120,6 +121,26 @@ def dependency_changed(manifest: dict[str, Any], dependencies: Sequence[str], ch
     )
 
 
+def release_dependencies_for_env(manifest: dict[str, Any], service: str, env: str) -> list[str]:
+    bundle = (manifest.get("bundles") or {}).get(service, {})
+    dependencies_by_env = bundle.get("release_dependencies_by_env") or {}
+    if isinstance(dependencies_by_env, dict):
+        override = _env_mapping_value(dependencies_by_env, env)
+        if override is not None:
+            return [str(item) for item in (override or [])]
+    return [str(item) for item in (bundle.get("release_dependencies") or [])]
+
+
+def _env_mapping_value(mapping: dict[str, Any], env: str) -> Any:
+    if env in mapping:
+        return mapping[env]
+    for key, value in mapping.items():
+        key_text = str(key)
+        if key_text.endswith("*") and env.startswith(key_text[:-1]):
+            return value
+    return None
+
+
 def plan_release_gates(
     *,
     repo_root: Path,
@@ -146,10 +167,10 @@ def plan_release_gates(
     db_job_service = str(contract.get("db_job_service") or service)
     db_job_operation = str(contract.get("migration_operation") or "")
     db_job_image_override = resolve_image_override(image, str(contract.get("migration_image_key") or ""))
-    dependencies = [str(item) for item in ((manifest.get("bundles") or {}).get(service, {}).get("release_dependencies") or [])]
+    dependencies = release_dependencies_for_env(manifest, service, env)
     release_dependency_changed = dependency_changed(manifest, dependencies, changed_files)
 
-    argo_sync = "manual" if env in PROD_MANUAL_SYNC_ENVS else "auto" if is_preprod_auto_sync_env(env) else "manual"
+    argo_sync = "manual" if is_manual_sync_env(env) else "auto" if is_preprod_auto_sync_env(env) else "manual"
     db_gate_satisfied = not requires_db_readiness or (readiness_supported and db_status == "passed")
     dependency_gate_satisfied = not release_dependency_changed
     gate_satisfied = db_gate_satisfied and dependency_gate_satisfied
@@ -181,7 +202,7 @@ def plan_release_gates(
             )
         else:
             manual_actions.append(f"manual DB readiness confirmation required for {service}/{env}")
-    if env in PROD_MANUAL_SYNC_ENVS:
+    if is_manual_sync_env(env):
         manual_actions.append("manual Argo sync required after GitOps MR merge")
     if service == "sandbox" and requires_db_readiness and db_status != "passed":
         manual_actions.append(
@@ -214,6 +235,10 @@ def plan_release_gates(
 
 def is_preprod_auto_sync_env(env: str) -> bool:
     return env in PREPROD_AUTO_SYNC_ENVS or is_playground_env(env)
+
+
+def is_manual_sync_env(env: str) -> bool:
+    return env in PROD_MANUAL_SYNC_ENVS or re.fullmatch(r"sandbox-jp-\d+", env) is not None
 
 
 def emit_dotenv(plan: GatePlan) -> str:

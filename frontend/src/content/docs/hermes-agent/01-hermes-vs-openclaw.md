@@ -152,11 +152,11 @@ Hermes Agent 最强的三件事——长期记忆、Skill 自进化、多平台�
 
 这意味着理想的部署形态其实是一台 **7×24 小时不掉线的云端实例**：笔记本合盖不打盹、`nudge_interval` 能稳定触发、多个终端唤起来都是同一份 `~/.hermes/`。
 
-而这恰好就是 [**LightVela**](https://lightvela.ai/) 做的事情。LightVela 是**云托管的 Hermes Agent 服务**，把上面"需要自己搞定"的部分都提前搞定了：
+而这恰好就是 **LightVela** 做的事情。LightVela 是**云托管的 Hermes Agent 服务**，把上面"需要自己搞定"的部分都提前搞定了：
 
 - 一键开通独立云实例，不占本地电量与内存；
 - 内置正宗 Hermes Agent，`MEMORY.md`/`USER.md`/Skill 都是官方原版机制；
-- 24×7 在线，手机、笔记本、Telegram、飞书……多渠道进来都是同一个"认识你的 Agent"；
+- 24×7 在线，手机、笔记本、微信、飞书……多渠道进来都是同一个"认识你的 Agent"；
 - 对话数据仅存于你的专属服务器，不与第三方共享。
 
 **如果你被前面这些"自进化能力"打动，但不想花一个周末去搞 Ollama、SSH、systemd、备份策略，那 LightVela 大概率是你最短的一条路径。**

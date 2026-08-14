@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -12,11 +13,11 @@ import (
 // API wires HTTP handlers onto the service layer.
 type API struct {
 	svc    *service.Service
-	verify service.AddressVerifier
+	verify service.InstanceVerifier
 }
 
 // New builds an API instance.
-func New(svc *service.Service, verify service.AddressVerifier) *API {
+func New(svc *service.Service, verify service.InstanceVerifier) *API {
 	return &API{svc: svc, verify: verify}
 }
 
@@ -31,6 +32,7 @@ func (a *API) Routes() http.Handler {
 	mux.HandleFunc("/template-classes", a.handleTemplateClasses)
 	mux.HandleFunc("/template-classes/", a.handleTemplateClassSubroutes)
 	mux.HandleFunc("/skus", a.handleSKUs)
+	mux.HandleFunc("/skus/", a.handleSKUSubroutes)
 	mux.HandleFunc("/capacity-bundles", a.handleCapacityBundles)
 	mux.HandleFunc("/instances/", a.handleInstanceSubroutes)
 	return mux
@@ -47,37 +49,31 @@ func (a *API) handlePools(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, pools)
 	case http.MethodPost:
 		var req struct {
-			Name           string          `json:"name"`
-			Description    string          `json:"description"`
-			BaseImage      string          `json:"base_image"`
-			DesiredCapcity int             `json:"desired_capacity"`
-			InstanceType   string          `json:"instance_type"`
-			Status         core.PoolStatus `json:"status"`
-			PauseReason    string          `json:"pause_reason"`
-			VpcID          string          `json:"vpc_id"`
-			SubnetID       string          `json:"subnet_id"`
-			Zone           string          `json:"zone"`
-			SecurityGroups []string        `json:"security_groups"`
+			Name           string   `json:"name"`
+			Description    string   `json:"description"`
+			BaseImage      string   `json:"base_image"`
+			InstanceType   string   `json:"instance_type"`
+			VpcID          string   `json:"vpc_id"`
+			SubnetID       string   `json:"subnet_id"`
+			Zone           string   `json:"zone"`
+			SecurityGroups []string `json:"security_groups"`
+			SKUID          string   `json:"sku_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
 			return
 		}
-		pool, err := a.svc.CreatePool(r.Context(), req.Name, req.Description, req.BaseImage, req.DesiredCapcity, req.VpcID, req.SubnetID, req.Zone, req.SecurityGroups)
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-		if req.InstanceType != "" {
-			pool.InstanceType = req.InstanceType
-		}
-		if req.Status != "" {
-			pool.Status = req.Status
-		}
-		if req.PauseReason != "" {
-			pool.PauseReason = req.PauseReason
-		}
-		pool, err = a.svc.UpdatePool(r.Context(), pool)
+		pool, err := a.svc.CreateBoundPool(r.Context(), service.CreateBoundPoolInput{
+			Name:           req.Name,
+			Description:    req.Description,
+			BaseImage:      req.BaseImage,
+			InstanceType:   req.InstanceType,
+			SKUID:          req.SKUID,
+			VpcID:          req.VpcID,
+			SubnetID:       req.SubnetID,
+			Zone:           req.Zone,
+			SecurityGroups: req.SecurityGroups,
+		})
 		if err != nil {
 			writeError(w, err)
 			return
@@ -108,12 +104,14 @@ func (a *API) handlePoolSubroutes(w http.ResponseWriter, r *http.Request) {
 			MarkCleanAsDry bool             `json:"mark_clean_as_dry"`
 			DesiredCapcity *int             `json:"desired_capacity"`
 			InstanceType   *string          `json:"instance_type"`
+			SystemDiskSize *int             `json:"system_disk_size"`
 			Status         *core.PoolStatus `json:"status"`
 			PauseReason    *string          `json:"pause_reason"`
 			VpcID          *string          `json:"vpc_id"`
 			SubnetID       *string          `json:"subnet_id"`
 			Zone           *string          `json:"zone"`
 			SecurityGroups *[]string        `json:"security_groups"`
+			SKUID          *string          `json:"sku_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
@@ -141,6 +139,9 @@ func (a *API) handlePoolSubroutes(w http.ResponseWriter, r *http.Request) {
 		if req.InstanceType != nil {
 			pool.InstanceType = *req.InstanceType
 		}
+		if req.SystemDiskSize != nil {
+			pool.SystemDiskSize = *req.SystemDiskSize
+		}
 		if req.Status != nil {
 			pool.Status = *req.Status
 		}
@@ -158,6 +159,13 @@ func (a *API) handlePoolSubroutes(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.SecurityGroups != nil {
 			pool.SecurityGroups = *req.SecurityGroups
+		}
+		if req.SKUID != nil {
+			pool, err = a.svc.BindPoolSKU(r.Context(), pool, *req.SKUID)
+			if err != nil {
+				writeError(w, err)
+				return
+			}
 		}
 		pool, err = a.svc.UpdatePool(r.Context(), pool)
 		if err != nil {
@@ -285,6 +293,10 @@ func (a *API) handleInstanceSubroutes(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeError(w http.ResponseWriter, err error) {
+	if errors.Is(err, core.ErrInvalidPoolSKUBinding) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	switch err {
 	case core.ErrPoolNotFound, core.ErrInstanceNotFound, core.ErrTemplateClassNotFound, core.ErrPoolAutoscalePolicyNotFound, core.ErrCapacityBundleNotFound:
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})

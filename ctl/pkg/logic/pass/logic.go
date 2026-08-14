@@ -258,6 +258,15 @@ type Logic interface {
 	//   - passIDs：1..100（caller 已校验非空 + 上限）
 	ListPassesByResourceIDs(appID int64, passIDs []string) ([]*PassDetail, error)
 
+	// DescribePassByCloudAccount 供云 API DescribePass 按影子账号 + pass_id 精确反查 pass。
+	//
+	// 入参：
+	//   - uin / appID：影子账号归属，必须与 pass 表记录一致
+	//   - passID：pass 业务主键
+	//
+	// 归属不匹配按 ErrPassNotFound 处理，避免对外暴露 pass 是否存在。
+	DescribePassByCloudAccount(uin, appID int64, passID string) (*PassDetail, error)
+
 	// IsolatePass 受 trade 反向调用，把 pass 推入 isolating 状态并派发后台 task 完成实际隔离。
 	//
 	// 设计稿：.tmp/trade-pass-isolate-design.md §10 Q22-I-E / Q23 / Q35
@@ -1941,6 +1950,32 @@ func (l *logic) ListPassesByResourceIDs(appID int64, passIDs []string) ([]*PassD
 		return nil, fmt.Errorf("list passes by resource ids: %w", err)
 	}
 	return entitiesToDetails(entities), nil
+}
+
+// DescribePassByCloudAccount 详见 Logic 接口注释。
+func (l *logic) DescribePassByCloudAccount(uin, appID int64, passID string) (*PassDetail, error) {
+	if uin <= 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "uin must be > 0")
+	}
+	if appID <= 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "app_id must be > 0")
+	}
+	passID = strings.TrimSpace(passID)
+	if passID == "" {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "pass_id is required")
+	}
+	dao := modelfactory.DefaultDaoFactory.PassDao(nil)
+	entity, err := dao.GetByPassID(passID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, errcode.ErrPassNotFound) {
+			return nil, errcode.ErrPassNotFound
+		}
+		return nil, errcode.Wrap(errcode.ErrPassNotFound, "get pass: %v", err)
+	}
+	if entity.Uin != uin || entity.AppID != appID {
+		return nil, errcode.ErrPassNotFound
+	}
+	return entityToDetail(entity), nil
 }
 
 // === trade-pass-renew RenewPassOrderUrl 实现（设计稿 §3.3 / §4.4 / R-D-5）===

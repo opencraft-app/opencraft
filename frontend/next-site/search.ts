@@ -1,30 +1,25 @@
 import { createFromSource } from 'fumadocs-core/search/server';
 
 import { source } from './source';
-import { createLightVelaSearchTokenizer } from './search-tokenizer';
+import { createDocsSearchTokenizer } from './search-tokenizer';
+import type { DocsSearchLocale } from './search-routing';
 
-const searchSource = new Proxy(source, {
-  get(target, prop, receiver) {
-    if (prop !== 'getPages') {
-      return Reflect.get(target, prop, receiver);
-    }
+function createLocaleSource(locale: DocsSearchLocale): typeof source {
+  return new Proxy(source, {
+    get(target, prop, receiver) {
+      if (prop === '_i18n') return undefined;
+      if (prop !== 'getPages') return Reflect.get(target, prop, receiver);
 
-    return () =>
-      target
-        .getPages()
-        .filter((page) => !page.locale || page.path.startsWith(`${page.locale}/`));
-  },
-});
+      return () =>
+        target
+          .getPages()
+          .filter((page) => page.locale === locale && page.path.startsWith(`${locale}/`));
+    },
+  });
+}
 
-export const search = createFromSource(searchSource, {
-  localeMap: {
-    'en-us': {},
-    'zh-cn': {},
-    'zh-sg': {},
-    // 与 `source.ts` 的 `docsI18n.languages` 保持一致；缺失该条目时 fumadocs 会退回
-    // 到把 language 字符串传给 orama 的 create()，与自定义 tokenizer 冲突并触发
-    // `NO_LANGUAGE_WITH_CUSTOM_TOKENIZER` 构建报错。
-    'zh-hant': {},
-  },
-  tokenizer: createLightVelaSearchTokenizer(),
-});
+export function createLocaleSearch(locale: DocsSearchLocale) {
+  return createFromSource(createLocaleSource(locale), {
+    tokenizer: createDocsSearchTokenizer(locale),
+  });
+}

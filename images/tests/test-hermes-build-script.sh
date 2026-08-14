@@ -339,6 +339,9 @@ acli() {
   if [[ "${1:-}" == "backend" && "${2:-}" == "--help" && ! -f "${ACLI_BACKEND_MARKER}" ]]; then
     return 1
   fi
+  if [[ "${2:-}" == "batch-install" && "${3:-}" == "--help" && ! -f "${ACLI_BACKEND_MARKER}" ]]; then
+    return 1
+  fi
   if [[ "${1:-}" == "bundle-update" ]]; then
     touch "${ACLI_BACKEND_MARKER}"
   fi
@@ -463,6 +466,9 @@ grep -q "run_as_runtime_user acli --help" "${LOG_FILE}"
 grep -q "acli doctor" "${LOG_FILE}"
 grep -q "acli backend --help" "${LOG_FILE}"
 grep -q "acli bundle-update" "${LOG_FILE}"
+grep -q "acli skills batch-install --help" "${LOG_FILE}"
+grep -q "acli skills-sh batch-install --help" "${LOG_FILE}"
+grep -q "acli clawhub batch-install --help" "${LOG_FILE}"
 grep -q "acli backend upgrade-start --blueprint-id lhbp-lyx28qje --wait=true --force=true" "${LOG_FILE}"
 grep -q '\$HOME/.hermes/hermes-agent/venv/bin' "${PROFILE_FILE}"
 grep -q '\$HOME/.local/bin:\$PATH' "${PROFILE_FILE}"

@@ -63,6 +63,54 @@ routes:
 	}
 }
 
+func TestExampleConfigRoutesIntlBillingAccountAPIToTestHost(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	for _, route := range cfg.Routes {
+		if route.ID != "tcapi-billing-intl-test" {
+			continue
+		}
+		upstream, err := cfg.ResolveUpstream(route.ID, route.Upstream)
+		if err != nil {
+			t.Fatalf("resolve international billing upstream: %v", err)
+		}
+		if got := upstream.BaseURL; got != "https://billing.test.tencentcloudapi.com" {
+			t.Fatalf("international billing base_url = %q", got)
+		}
+		return
+	}
+	t.Fatal("tcapi-billing-intl-test route is missing")
+}
+
+func TestExampleConfigRoutesTradeIntlBillingCreatePayURLToTestHost(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	for _, route := range cfg.Routes {
+		if route.ID != "tcapi-billing-trade-intl-test" {
+			continue
+		}
+		if route.Mode != RouteModeSignedHTTPTunnel {
+			t.Fatalf("route mode = %q", route.Mode)
+		}
+		if len(route.Callers) != 1 || route.Callers[0] != "lightvela-trade" {
+			t.Fatalf("route callers = %#v", route.Callers)
+		}
+		upstream, err := cfg.ResolveUpstream(route.ID, route.Upstream)
+		if err != nil {
+			t.Fatalf("resolve trade international billing upstream: %v", err)
+		}
+		if got := upstream.BaseURL; got != "https://billing.test.tencentcloudapi.com" {
+			t.Fatalf("trade international billing base_url = %q", got)
+		}
+		return
+	}
+	t.Fatal("tcapi-billing-trade-intl-test route is missing")
+}
+
 func TestLoadAppliesRouteHostHeaderOverride(t *testing.T) {
 	t.Setenv("CLOUDLADDERGATEWAY_ROUTE_JIFEI_TEST_HOST_HEADER", "test.trade-intl.billing.tencentyun.com")
 	path := filepath.Join(t.TempDir(), "config.yaml")
@@ -143,6 +191,7 @@ func TestExampleConfigLoads(t *testing.T) {
 		"billing-trade-intl-prod":              false,
 		"tcapi-account-cn-dev":                 false,
 		"tcapi-billing-cn-dev":                 false,
+		"tcapi-billing-trade-intl-test":        false,
 		"tcapi-account-cn-test":                false,
 		"tcapi-cam-cn-test":                    false,
 		"tcapi-sts-cn-test":                    false,
@@ -158,6 +207,7 @@ func TestExampleConfigLoads(t *testing.T) {
 		"shadow-sts-prod":                      false,
 		"shadow-billing-api-test":              false,
 		"tencentcloud-account-callback-bjsbx":  false,
+		"tencentcloud-account-callback-krsbx":  false,
 		"tencentcloud-account-callback-shprod": false,
 	}
 	for _, route := range cfg.Routes {
@@ -181,6 +231,8 @@ func TestExampleConfigLoads(t *testing.T) {
 				wantBackend = "tcapi-billing-cn-dev"
 			case "tencentcloud-account-callback-bjsbx":
 				wantBackend = "lightclaw-auth-bjsbx"
+			case "tencentcloud-account-callback-krsbx":
+				wantBackend = "lightclaw-auth-krsbx"
 			case "tencentcloud-account-callback-shprod":
 				wantBackend = "lightclaw-auth-shprod"
 			}
@@ -197,18 +249,64 @@ func TestExampleConfigLoads(t *testing.T) {
 			t.Fatalf("example config missing route %q", routeID)
 		}
 	}
-	if len(cfg.External) != 1 || cfg.External[0].Path != "/internal/tencentcloud/account" {
+	for backendAlias, wantTokenEnv := range map[string]string{
+		"lightclaw-auth-bjsbx":  "CLOUDLADDER_TENCENT_CALLBACK_TOKEN",
+		"lightclaw-auth-krsbx":  "CLOUDLADDER_TENCENT_CALLBACK_KRSBX_TOKEN",
+		"lightclaw-auth-shprod": "CLOUDLADDER_TENCENT_CALLBACK_TOKEN",
+	} {
+		backend := findBackendForTest(cfg.Backends, backendAlias)
+		if backend == nil {
+			t.Fatalf("example config missing backend %q", backendAlias)
+		}
+		if got := backend.Upstream.HeadersFromEnv["X-Shadow-Callback-Token"]; got != wantTokenEnv {
+			t.Fatalf("backend %q callback token env = %q, want %q", backendAlias, got, wantTokenEnv)
+		}
+	}
+	tencentCallback := findExternalRouteForTest(cfg.External, "/internal/tencentcloud/account")
+	if tencentCallback == nil {
 		t.Fatalf("example config missing TencentCloud callback external route: %+v", cfg.External)
 	}
-	if got := cfg.External[0].AuthCodeRoutes; len(got) != 2 || got[0].Prefix != "bjsbx." || got[1].Prefix != "shprod." {
+	if got := tencentCallback.AuthCodeRoutes; len(got) != 3 ||
+		got[0].Prefix != "bjsbx." || got[0].RouteID != "tencentcloud-account-callback-bjsbx" ||
+		got[1].Prefix != "krsbx." || got[1].RouteID != "tencentcloud-account-callback-krsbx" ||
+		got[2].Prefix != "shprod." || got[2].RouteID != "tencentcloud-account-callback-shprod" {
 		t.Fatalf("example config missing auth-code callback routes: %+v", got)
 	}
-	if got := cfg.External[0].UserIDRoutes; len(got) != 1 || got[0].UserID != "u4912323654" || got[0].RouteID != "tencentcloud-account-callback-bjsbx" {
+	if got := tencentCallback.UserIDRoutes; len(got) != 1 || got[0].UserID != "u4912323654" || got[0].RouteID != "tencentcloud-account-callback-bjsbx" {
 		t.Fatalf("example config missing legacy user-id callback route: %+v", got)
 	}
-	if got := cfg.External[0].UserIDPrefixRoutes; len(got) != 1 || got[0].Prefix != "bjsbx_" || got[0].RouteID != "tencentcloud-account-callback-bjsbx" {
+	if got := tencentCallback.UserIDPrefixRoutes; len(got) != 2 ||
+		got[0].Prefix != "bjsbx_" || got[0].RouteID != "tencentcloud-account-callback-bjsbx" ||
+		got[1].Prefix != "krsbx_" || got[1].RouteID != "tencentcloud-account-callback-krsbx" {
 		t.Fatalf("example config missing user-id prefix callback route: %+v", got)
 	}
+	cloudapi := findExternalRouteForTest(cfg.External, "/cloudapi")
+	if cloudapi == nil || cloudapi.RouteID != "lightvela-cloudapi-sh" || cloudapi.UpstreamPath != "/cloudapi" {
+		t.Fatalf("example config missing LightVela cloud api external route: %+v", cfg.External)
+	}
+	if got := cloudapi.HeaderRoutes; len(got) != 2 ||
+		got[0].Name != "X-TC-Region" || got[0].Value != "ap-beijing" || got[0].RouteID != "lightvela-cloudapi-bj" ||
+		got[1].Name != "X-TC-Region" || got[1].Value != "ap-shanghai" || got[1].RouteID != "lightvela-cloudapi-sh" {
+		t.Fatalf("example config missing cloud api region header routes: %+v", got)
+	}
+}
+
+func findBackendForTest(backends []BackendConfig, alias string) *BackendConfig {
+	for i := range backends {
+		if backends[i].Alias == alias {
+			return &backends[i]
+		}
+	}
+	return nil
+}
+
+func findExternalRouteForTest(routes []ExternalRoute, path string) *ExternalRoute {
+	for i := range routes {
+		if routes[i].Path == path {
+			return &routes[i]
+		}
+	}
+	return nil
 }
 
 func TestExampleConfigIncludesRegionalJifeiCallbacks(t *testing.T) {

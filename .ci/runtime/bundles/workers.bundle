@@ -11,6 +11,8 @@ bundles:
     - workers/k8s/base
     - workers/k8s/overlays/beijing-sandbox
     - workers/k8s/overlays/shanghai-workers
+    - workers/k8s/overlays/shprod
+    - workers/k8s/overlays/sgprod
     - argocd/apps/shanghai-workers/workers-runtime.yaml
     - argocd/apps/shanghai-workers/workers-rescue-exporter.yaml
     - argocd/apps/shanghai-workers/workers-hermes-importer.yaml
@@ -21,6 +23,14 @@ bundles:
     - argocd/services/workers-runtime/shanghai-workers
     - argocd/services/workers-rescue-exporter/shanghai-workers
     - argocd/services/workers-hermes-importer/shanghai-workers
+    - argocd/apps/shprod/workers-website-deployer.yaml
+    - argocd/apps/sgprod/workers-website-deployer.yaml
+    - argocd/projects/shprod-workers-website-deployer.yaml
+    - argocd/projects/sgprod-workers-website-deployer.yaml
+    - argocd/secrets/shprod/website-deployer-secrets.sops.yaml
+    - argocd/secrets/sgprod/website-deployer-secrets.sops.yaml
+    - argocd/services/workers-website-deployer/shprod
+    - argocd/services/workers-website-deployer/sgprod
     exit_condition: Can be removed only after workers move to a shared deployable worker package contract.
     publish_paths:
     - workers/k8s/base/**
@@ -38,6 +48,18 @@ bundles:
       - argocd/services/workers-rescue-exporter/shanghai-workers/**
       - argocd/services/workers-hermes-importer/shanghai-workers/**
       - workers/k8s/overlays/shanghai-workers/**
+      shprod:
+      - argocd/apps/shprod/workers-website-deployer.yaml
+      - argocd/projects/shprod-workers-website-deployer.yaml
+      - argocd/secrets/shprod/website-deployer-secrets.sops.yaml
+      - argocd/services/workers-website-deployer/shprod/**
+      - workers/k8s/overlays/shprod/**
+      sgprod:
+      - argocd/apps/sgprod/workers-website-deployer.yaml
+      - argocd/projects/sgprod-workers-website-deployer.yaml
+      - argocd/secrets/sgprod/website-deployer-secrets.sops.yaml
+      - argocd/services/workers-website-deployer/sgprod/**
+      - workers/k8s/overlays/sgprod/**
     dockerfile: workers/Dockerfile
     build_context: workers
     image_repo:
@@ -47,3 +69,4 @@ bundles:
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/workers
       sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/workers
       sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/workers
+      sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/workers
