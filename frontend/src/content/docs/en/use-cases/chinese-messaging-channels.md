@@ -6,6 +6,10 @@ LightVela lets one cloud-hosted Hermes Agent serve through supported messaging c
 
 ![LightVela messaging platform connections](../images/use-case-messaging-platforms.webp)
 
+## Summary
+
+**Connecting a Hermes Agent to messaging platforms rests on one idea: channels are entry points, and the Agent is the thing that works. One cloud Agent shares the same model, skills, and memory across every connected channel, so there is no need for a separate bot per platform.** The flow has four steps: confirm the channel is available in your region (the global region supports Telegram, WhatsApp, Discord, WeChat, QQ, WeCom, and Lark; the China region targets WeChat, Lark, and QQ); complete authorisation on the platform side to obtain credentials; connect in the console and confirm the channel shows as connected; then send a test message and verify the reply lands in the same conversation you messaged from. Credentials are sensitive — never write them into long-term context or paste them into chat.
+
 ## Who this is for
 
 This guide is for anyone who wants to talk to Hermes from a messaging app rather than only from the web console. It also helps if you want one assistant available in more than one place—for example, Telegram for personal use and Discord for a community.

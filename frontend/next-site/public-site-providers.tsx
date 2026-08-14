@@ -1,18 +1,20 @@
 'use client';
 
 import { Suspense, type ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
 
 import { OpenClawProvider } from '@/contexts/agent-context';
 import { RepositoryProvider } from '@/contexts/repository-context';
 import { RuntimeConfigProvider } from '@/contexts/runtime-config-context';
 import { SessionProvider } from '@/contexts/session-context';
 import { LocaleOverrideProvider, type I18nLocale } from '@/i18n/t';
+import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
 import { DatongPageEffect } from '@/observability/datong-page-effect';
 import { DatongTrackerBridge } from '@/observability/datong-tracker-bridge';
 import { ProductAnalyticsBridge } from '@/observability/product-analytics-bridge';
 import { RumUserBridge } from '@/observability/rum-user-bridge';
 import { CookieConsentBanner } from '@/components/site/cookie-consent-banner';
-import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
+import { DEFAULT_LOCALE, readLocaleFromPath } from '@/lib/region';
 import { PUBLIC_SITE_LOCALES } from '@/lib/public-site-routing';
 
 import type { PublicRouteLocale } from './public-locale';
@@ -40,6 +42,17 @@ export function PublicSiteLocaleBridge({ locale, children }: { locale: Locale; c
   return <LocaleOverrideProvider locale={targetLocale}>{children}</LocaleOverrideProvider>;
 }
 
+function PublicSiteAnnouncementBanner() {
+  const pathname = usePathname() || '/';
+  const bannerLocale: I18nLocale = readLocaleFromPath(pathname) ?? DEFAULT_LOCALE;
+
+  return (
+    <LocaleOverrideProvider locale={bannerLocale}>
+      <MaintenanceAnnouncementBanner />
+    </LocaleOverrideProvider>
+  );
+}
+
 export function PublicSiteAppProviders({ children }: { children: ReactNode }) {
   return (
     <RepositoryProvider>
@@ -52,7 +65,7 @@ export function PublicSiteAppProviders({ children }: { children: ReactNode }) {
             <DatongPageEffect />
           </Suspense>
           <OpenClawProvider>
-            <MaintenanceAnnouncementBanner />
+            <PublicSiteAnnouncementBanner />
             <CookieConsentBanner />
             {children}
           </OpenClawProvider>

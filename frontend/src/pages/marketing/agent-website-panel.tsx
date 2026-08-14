@@ -74,7 +74,7 @@ interface ApiResponse<T> {
 }
 
 /**
- * 删除是异步的：DELETE 只登记 operation，真正清理由 website-deployer 执行。
+ * 删除是异步的：DELETE 只登记 operation，真正清理 COS 由 website-deployer 执行。
  * 前端轮询 operation 状态收敛 UI，2s 起步指数退避到 5s，60s 未收敛就停止轮询
  * （实测通常几秒完成），避免无限轮询。
  */
@@ -493,6 +493,14 @@ export const AgentWebsitePanel = () => {
     return (
       <div className="flex min-h-[320px] items-center justify-center">
         <Loader2 className="h-5 w-5 animate-spin text-black/30" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-black/[0.06] bg-white p-6 text-sm text-black/60">
+        <p>{error === "unauthorized" ? t("请先登录") : error}</p>
       </div>
     );
   }

@@ -5,5 +5,6 @@ DROP TABLE IF EXISTS `website_usage_daily`;
 DROP TABLE IF EXISTS `website_operations`;
 DROP TABLE IF EXISTS `website_releases`;
 DROP TABLE IF EXISTS `website_sites`;
+DROP TABLE IF EXISTS `website_custom_domains`;
 
 ALTER TABLE `bundle` DROP COLUMN `static_site_quota`;

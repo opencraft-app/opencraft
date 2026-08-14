@@ -44,8 +44,7 @@ export interface DocGroup {
 
 /**
  * 国内站 sidebar：按用户任务组织（GEO 导航方案）。
- * 分组：产品入门 / 账号、套餐与开通 / 功能与配置 / 场景方案 / 对比与选型 /
- *       问题排查 / 安全、隐私与数据 / 进阶用法 / 联系与支持。
+ * 分组：产品入门 / 账号、套餐与开通 / 功能与配置 / 问题排查 / 联系与支持。
  * 通道具体项（微信 / 飞书 / QQ）挂在「配置通道」表头下作为二级项。
  * 注：部分新增页面为占位（仅标题骨架），正文内容后续逐步补齐。
  */
@@ -63,7 +62,7 @@ const CN_SIDEBAR: DocGroup[] = [
     title: "账号、套餐与开通",
     items: [
       { slug: "account", title: "账号与实名认证" },
-      { slug: "announcements/public-beta", title: "公测公告" },
+      { slug: "announcements/public-beta", title: "LightVela 付费版本公告" },
       { slug: "plans", title: "套餐说明" },
       { slug: "credits", title: "体验积分说明" },
       { slug: "create-first-hermes", title: "如何开通第一个 Hermes 智能体伙伴？" },
@@ -80,6 +79,31 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "configuration/channel-feishu", title: "飞书", indent: true },
       { slug: "configuration/channel-qq", title: "QQ", indent: true },
       { slug: "configuration/skill", title: "配置技能" },
+    ],
+  },
+  {
+    title: "对比与选型",
+    items: [
+      { slug: "compare/lightvela-vs-manus", title: "LightVela vs Manus" },
+      { slug: "compare/lightvela-vs-localhost-ai-agent", title: "LightVela vs 本地部署 Agent" },
+      { slug: "compare/lightvela-vs-ai-chatbot", title: "LightVela vs AI Chatbot" },
+    ],
+  },
+  {
+    title: "Hermes Agent 解读",
+    items: [
+      { slug: "hermes-agent/hermes-vs-openclaw", title: "Hermes Agent 与 OpenClaw 有什么不同？" },
+      { slug: "hermes-agent/why-hermes-remembers-you", title: "Hermes Agent 为什么能记住你？" },
+      { slug: "hermes-agent/user-md-vs-memory-md", title: "为什么 Hermes Agent 要把记忆分成两类？" },
+      { slug: "hermes-agent/hermes-memory-curation", title: "记忆不是越多越好" },
+      { slug: "hermes-agent/memory-vs-skill", title: "Memory 不是 Skill" },
+      { slug: "hermes-agent/model-vs-agent-layer", title: "模型层与 Agent 层如何分工" },
+      { slug: "hermes-agent/message-gateway", title: "一个 Agent 如何同时出现在多个聊天软件里？" },
+      { slug: "hermes-agent/automation-scheduling", title: "Hermes Agent 如何按时主动找你？" },
+      { slug: "hermes-agent/model-switching-memory", title: "切换模型会让 Agent 失忆吗？" },
+      { slug: "hermes-agent/persona-user-memory", title: "Hermes Agent 的性格从哪里来？" },
+      { slug: "hermes-agent/workspace-context-storage", title: "Hermes Agent 把文件放在哪里？" },
+      { slug: "hermes-agent/skills-self-improvement", title: "Agent 为什么会越用越顺手？" },
     ],
   },
   {
@@ -116,6 +140,11 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
     titleEn: "Plans & Activation",
     items: [
       { slug: "plans", title: "套餐说明", titleEn: "Plans" },
+      {
+        slug: "announcements/public-beta",
+        title: "LightVela 付费版本公告",
+        titleEn: "LightVela Paid Version Announcement",
+      },
       { slug: "credits", title: "体验积分说明", titleEn: "Credits" },
       {
         slug: "create-first-hermes",
@@ -138,7 +167,6 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/channel-qq", title: "QQ", titleEn: "QQ", indent: true },
       { slug: "configuration/channel-wecom", title: "企业微信", titleEn: "WeCom", indent: true },
       { slug: "configuration/channel-feishu", title: "飞书", titleEn: "Lark", indent: true },
-      { slug: "configuration/channel-slack", title: "Slack", titleEn: "Slack", indent: true },
       { slug: "configuration/skill", title: "配置技能", titleEn: "Configure Skills" },
       { slug: "configuration/memory", title: "记忆管理", titleEn: "Memory Management" },
       { slug: "configuration/automation", title: "自动任务", titleEn: "Automations" },
@@ -165,6 +193,51 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         slug: "use-cases/chinese-messaging-channels",
         title: "如何把 AI Agent 接入消息平台？",
         titleEn: "How to Connect an AI Agent to Messaging Platforms",
+      },
+      {
+        slug: "use-cases/telegram-persona-agent",
+        title: "如何在 Telegram 中配置一个具有独立人格的 Hermes Agent？",
+        titleEn: "How to Configure a Hermes Agent with a Distinct Personality in Telegram",
+      },
+      {
+        slug: "use-cases/whatsapp-persona-agent",
+        title: "如何在 WhatsApp 中配置一个具有独立人格的 Hermes Agent？",
+        titleEn: "How to Configure a Hermes Agent with a Distinct Personality in WhatsApp",
+      },
+      {
+        slug: "use-cases/im-agent-persona-soul-md",
+        title: "如何通过 SOUL.md 设定 IM Agent 的角色、性格与说话方式？",
+        titleEn: "How to Define an IM Agent's Role, Personality, and Voice with SOUL.md",
+      },
+      {
+        slug: "use-cases/im-agent-skill-scenarios",
+        title: "如何通过 Skill 把 IM Agent 变成客服、社群助手或 AI 伴侣？",
+        titleEn: "How to Turn an IM Agent into a Customer-Service, Community, or Companion Assistant with Skills",
+      },
+      {
+        slug: "use-cases/multi-channel-personality-memory",
+        title: "如何让一个 Agent 同时接入 Telegram 和 WhatsApp，并保持统一人格与长期记忆？",
+        titleEn: "How to Connect One Agent to Telegram and WhatsApp While Keeping One Personality and Long-Term Memory",
+      },
+      {
+        slug: "use-cases/telegram-group-community-assistant",
+        title: "如何在 Telegram 群组中配置 AI 社群助手：入群欢迎、FAQ、摘要与提醒？",
+        titleEn: "How to Configure a Telegram Group AI Community Assistant: Welcome Messages, FAQs, Summaries, and Reminders",
+      },
+      {
+        slug: "use-cases/whatsapp-24-7-customer-service",
+        title: "如何在 WhatsApp 中配置 24/7 AI 客服：人格、知识、技能与自动化？",
+        titleEn: "How to Configure 24/7 AI Customer Service in WhatsApp: Personality, Knowledge, Skills, and Automations",
+      },
+      {
+        slug: "use-cases/lifelike-im-agent-rhythm-social-memory",
+        title: "如何设计更像真人的 IM Agent：对话节奏、群体规范与长期社交记忆？",
+        titleEn: "How to Design a More Natural IM Agent: Conversation Rhythm, Group Norms, and Long-Term Social Memory",
+      },
+      {
+        slug: "use-cases/telegram-whatsapp-safety-boundaries",
+        title: "如何为 Telegram 和 WhatsApp Agent 设计安全边界：授权、群聊规则与敏感操作？",
+        titleEn: "How to Design Safety Boundaries for Telegram and WhatsApp Agents: Authorization, Group Rules, and Sensitive Actions",
       },
       {
         slug: "use-cases/daily-summary",
@@ -213,17 +286,6 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
     ],
   },
   {
-    title: "安全、隐私与数据",
-    titleEn: "Security, Privacy & Data",
-    items: [
-      {
-        slug: "faq/using-lightvela-safely",
-        title: "安全使用 LightVela",
-        titleEn: "Using LightVela Safely",
-      },
-    ],
-  },
-  {
     title: "联系与支持",
     titleEn: "Support",
     items: [
@@ -256,13 +318,29 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "configuration/model": "configuration/model.md",
   "configuration/channel-wechat": "configuration/channel-wechat.md",
   "configuration/channel-feishu": "configuration/channel-feishu.md",
-  "configuration/channel-slack": "configuration/channel-slack.md",
   "configuration/channel-qq": "configuration/channel-qq.md",
   "configuration/skill": "configuration/skill.md",
   // 问题排查
   faq: "07-faq.md",
   // 联系与支持
   "contact-us": "contact-us.md",
+  // 对比与选型
+  "compare/lightvela-vs-manus": "compare/lightvela-vs-manus.md",
+  "compare/lightvela-vs-localhost-ai-agent": "compare/lightvela-vs-localhost-ai-agent.md",
+  "compare/lightvela-vs-ai-chatbot": "compare/lightvela-vs-ai-chatbot.md",
+  // Hermes Agent 解读
+  "hermes-agent/hermes-vs-openclaw": "hermes-agent/01-hermes-vs-openclaw.md",
+  "hermes-agent/why-hermes-remembers-you": "hermes-agent/02-why-hermes-remembers-you.md",
+  "hermes-agent/user-md-vs-memory-md": "hermes-agent/03-user-md-vs-memory-md.md",
+  "hermes-agent/hermes-memory-curation": "hermes-agent/04-hermes-memory-curation.md",
+  "hermes-agent/memory-vs-skill": "hermes-agent/05-memory-vs-skill.md",
+  "hermes-agent/model-vs-agent-layer": "hermes-agent/06-model-vs-agent-layer.md",
+  "hermes-agent/message-gateway": "hermes-agent/07-message-gateway.md",
+  "hermes-agent/automation-scheduling": "hermes-agent/08-automation-scheduling.md",
+  "hermes-agent/model-switching-memory": "hermes-agent/09-model-switching-memory.md",
+  "hermes-agent/persona-user-memory": "hermes-agent/10-persona-user-memory.md",
+  "hermes-agent/workspace-context-storage": "hermes-agent/11-workspace-context-storage.md",
+  "hermes-agent/skills-self-improvement": "hermes-agent/12-skills-self-improvement.md",
 };
 
 const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
@@ -271,6 +349,7 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "core-concepts": "04-core-concepts.md",
   "who-is-lightvela-for": "who-is-lightvela-for.md",
   plans: "plans.md",
+  "announcements/public-beta": "announcements/public-beta.md",
   credits: "credits.md",
   "create-first-hermes": "create-first-hermes.md",
   configuration: "05-configuration.md",
@@ -291,6 +370,15 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/agent-chat": "configuration/agent-chat.md",
   "use-cases/personal-ai-assistant": "use-cases/personal-ai-assistant.md",
   "use-cases/chinese-messaging-channels": "use-cases/chinese-messaging-channels.md",
+  "use-cases/telegram-persona-agent": "use-cases/telegram-persona-agent.md",
+  "use-cases/whatsapp-persona-agent": "use-cases/whatsapp-persona-agent.md",
+  "use-cases/im-agent-persona-soul-md": "use-cases/im-agent-persona-soul-md.md",
+  "use-cases/im-agent-skill-scenarios": "use-cases/im-agent-skill-scenarios.md",
+  "use-cases/multi-channel-personality-memory": "use-cases/multi-channel-personality-memory.md",
+  "use-cases/telegram-group-community-assistant": "use-cases/telegram-group-community-assistant.md",
+  "use-cases/whatsapp-24-7-customer-service": "use-cases/whatsapp-24-7-customer-service.md",
+  "use-cases/lifelike-im-agent-rhythm-social-memory": "use-cases/lifelike-im-agent-rhythm-social-memory.md",
+  "use-cases/telegram-whatsapp-safety-boundaries": "use-cases/telegram-whatsapp-safety-boundaries.md",
   "use-cases/daily-summary": "use-cases/daily-summary.md",
   "use-cases/hermes-agent-24-7": "use-cases/hermes-agent-24-7.md",
   "use-cases/memory-and-knowledge": "use-cases/memory-and-knowledge.md",
@@ -306,7 +394,6 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "hermes-agent/persona-user-memory": "hermes-agent/10-persona-user-memory.md",
   "hermes-agent/workspace-context-storage": "hermes-agent/11-workspace-context-storage.md",
   "hermes-agent/skills-self-improvement": "hermes-agent/12-skills-self-improvement.md",
-  "faq/using-lightvela-safely": "faq/using-lightvela-safely.md",
   "compare/lightvela-vs-manus": "compare/lightvela-vs-manus.md",
   "compare/lightvela-vs-hostinger": "compare/lightvela-vs-hostinger.md",
   "compare/lightvela-vs-localhost-ai-agent": "compare/lightvela-vs-localhost-ai-agent.md",

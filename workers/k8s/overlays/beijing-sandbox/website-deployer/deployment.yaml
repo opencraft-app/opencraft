@@ -54,7 +54,7 @@ spec:
           value: "10"
         # 制品 zip 流式写临时文件，峰值内存仅几 KB/部署，不随并发线性增长。
         - name: MAX_CONCURRENCY
-          value: "16"
+          value: "200"
         - name: WEBSITE_REQUIRE_REDIS_LIMITER
           value: "true"
         - name: WEBSITE_COS_UPLOADS_PER_MINUTE

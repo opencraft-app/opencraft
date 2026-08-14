@@ -289,6 +289,25 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         self.assertTrue(plan.auto_merge_allowed)
         self.assertTrue(plan.auto_sync_allowed)
 
+    def test_trade_korea_playground_ignores_dependency_source_changes(self) -> None:
+        with self._repo_with_commit("ctl/main/api/bundle_handler.go") as (repo_root, source_sha):
+            plan = plan_release_gates(
+                repo_root=repo_root,
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
+                service="trade",
+                env="sandbox-kr-1",
+                source_sha=source_sha,
+                image="example.com/trade:test",
+                pin_targets="trade",
+                db_status="passed",
+            )
+
+        self.assertEqual(plan.argo_sync, "auto")
+        self.assertEqual(plan.release_dependencies, [])
+        self.assertFalse(plan.release_dependency_changed)
+        self.assertTrue(plan.auto_merge_allowed)
+        self.assertTrue(plan.auto_sync_allowed)
+
     def _repo_with_commit(self, changed_path: str):
         return TempGitRepo(changed_path)
 

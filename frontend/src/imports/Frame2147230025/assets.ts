@@ -67,7 +67,6 @@ import imgEllipse111566Asset58 from "./4b8bf0d8d777e3a37e35d773fdfeb31181c2a7d0.
 import imgVector919Asset59 from "./73139a4b5ed8465c63f2f4c10665c42b7803117e.webp";
 import imgImage4588Asset60 from "./4bc1720f6735994e159ef375639d751c0ac378c1.webp";
 import imgImage614591606Asset61 from "./6b40f06e1e593230cf07bd8b88c2acc1fb5dc911.webp";
-import imgHeroBgNewAsset62 from "./hero-bg-new.jpg";
 import imgHeroElement01Asset63 from "./hero-element-01.webp";
 import imgHeroElement02Asset64 from "./hero-element-02.webp";
 import imgHeroElement03Asset65 from "./hero-element-03.webp";
@@ -138,7 +137,6 @@ export const imgEllipse111566 = assetUrl(imgEllipse111566Asset58);
 export const imgVector919 = assetUrl(imgVector919Asset59);
 export const imgImage4588 = assetUrl(imgImage4588Asset60);
 export const imgImage614591606 = assetUrl(imgImage614591606Asset61);
-export const imgHeroBgNew = assetUrl(imgHeroBgNewAsset62);
 export const imgHeroElement01 = assetUrl(imgHeroElement01Asset63);
 export const imgHeroElement02 = assetUrl(imgHeroElement02Asset64);
 export const imgHeroElement03 = assetUrl(imgHeroElement03Asset65);

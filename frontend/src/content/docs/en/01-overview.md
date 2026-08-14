@@ -2,13 +2,13 @@
 
 > A cloud-hosted Hermes Agent that understands you better over time.
 
-> ℹ️ **Beta notice**
+> ℹ️ **Public beta and billing notice**
 >
-> LightVela is currently in beta. Documentation and product capabilities are still evolving, and some descriptions may change as new versions are released.
+> LightVela is entering public beta and starting billing. Documentation and product capabilities are still evolving, and some descriptions may change as new versions are released.
 >
-> * **Free for a limited time**: During the beta period, the Launch plan is available for free to approved users. The free period is subject to future official announcements and may later become paid.
+> * **Public beta and billing**: LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month. See [LightVela Paid Version Announcement](./announcements/public-beta.md).
 >
-> * **Limited availability**: Quotas are released according to official rules.
+> * **New-user benefit after public beta and billing start**: New users can try the Launch plan free for 14 days.
 
 LightVela is a cloud Agent hosting product from the Tencent Lighthouse team. It is designed to let everyone own an **AI companion that truly belongs to them**—not a tool that asks you to introduce yourself every time, but a long-term presence that **knows you, remembers you, and understands you better over time**.
 
@@ -94,15 +94,14 @@ Currently available plans:
 
 | Plan | Original price | Current status |
 | --------- | ------- | ---- |
-| Launch | $7.5 / month | Free for a limited time |
-| Cruise | $15 / month | Coming soon |
-| Voyage | $42 / month | Coming soon |
+| Launch | $7.5 / month | 14-day free trial for new users after public beta and billing start |
+| Cruise | $15 / month | Paid plan |
 
 The Launch plan includes: 1 Hermes Agent instance, 2-core 4G isolated runtime environment, 50G dedicated cloud storage, 100 trial credits, 24/7 availability, and console access.
 
 > ℹ️ **Beta plan notice**
 >
-> During the beta period, the Launch plan is **free in limited quantity for a limited time**. Quotas are released in application order and may be adjusted or closed at any time. After the free period ends, the plan will be billed at the original price. You will be notified in advance through in-site notifications and email before paid billing officially starts.
+> LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month, and new users can try Launch free for 14 days. See [LightVela Paid Version Announcement](./announcements/public-beta.md).
 
 ***
 

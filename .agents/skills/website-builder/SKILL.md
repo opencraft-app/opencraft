@@ -413,7 +413,7 @@ GET {API_BASE}/v1/websites/{siteId}
 
 只用一句自然语言告知用户站点地址，不要输出任何技术细节：
 
-> ✅ 网站已上线！访问地址：http://ws-xxx.sites.lightclaw.tech/
+> ✅ 网站已上线！访问地址：https://ws-xxx.lightvela.site/
 
 ## 列出已有站点（内部）
 
@@ -432,7 +432,7 @@ GET {API_BASE}/v1/websites?page=1&page_size=20
       "SiteID": "ws-a1b2c3d4",
       "Name": "我的个人主页",
       "Status": "active",
-      "PublicURL": "http://ws-xxx.sites.lightclaw.tech/",
+      "PublicURL": "https://ws-xxx.lightvela.site/",
       "CloudPath": "sites/ws-xxx/",
       "StorageBytes": 45678
     }
@@ -458,7 +458,7 @@ GET {API_BASE}/v1/websites/{siteId}
   "SiteID": "ws-a1b2c3d4",
   "Name": "我的个人主页",
   "Status": "active",
-  "PublicURL": "http://ws-xxx.sites.lightclaw.tech/",
+  "PublicURL": "https://ws-xxx.lightvela.site/",
   "CloudPath": "sites/ws-xxx/",
   "StorageBytes": 45678
 }

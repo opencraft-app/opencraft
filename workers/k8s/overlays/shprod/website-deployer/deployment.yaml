@@ -32,7 +32,7 @@ spec:
           value: "http://ctl-api.ctl.svc.cluster.local"
         # 制品 zip 流式写临时文件，峰值内存仅几 KB/部署，不随并发线性增长。
         - name: MAX_CONCURRENCY
-          value: "16"
+          value: "200"
         - name: POLL_INTERVAL_SECONDS
           value: "10"
         # fail-closed：Redis 同时承担跨 Pod 的 COS 上传令牌桶，不允许降级。

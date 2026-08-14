@@ -26,7 +26,7 @@ type Service struct {
 	shuffle   func(n int, swap func(i, j int))
 }
 
-type AddressVerifier func(ctx context.Context, address string) error
+type InstanceVerifier func(ctx context.Context, cloudID string) error
 
 type AllocationResolution struct {
 	Pool             core.Pool
@@ -465,7 +465,7 @@ func normalizeCapacityBundle(bundle core.CapacityBundle) (core.CapacityBundle, e
 
 // RefillVerified records instances as CREATING then finalizes them into CLEAN only after verifier passes.
 // This is the only supported path for transitioning CREATING -> CLEAN for refilled instances.
-func (s *Service) RefillVerified(ctx context.Context, poolID string, count int, addresses []string, cloudIDs []string, verify AddressVerifier) ([]core.Instance, error) {
+func (s *Service) RefillVerified(ctx context.Context, poolID string, count int, addresses []string, cloudIDs []string, verify InstanceVerifier) ([]core.Instance, error) {
 	if verify == nil {
 		return nil, fmt.Errorf("missing verifier")
 	}
@@ -493,7 +493,7 @@ func (s *Service) RefillVerified(ctx context.Context, poolID string, count int, 
 			cloudID = cloudIDs[i]
 		}
 		target := core.StateClean
-		if err := verify(ctx, addr); err != nil {
+		if err := verify(ctx, cloudID); err != nil {
 			target = core.StateFailed
 		}
 		inst, ferr := s.FinalizeCreating(ctx, ph.ID, target, addr, cloudID)
@@ -784,6 +784,12 @@ func (s *Service) AdvanceState(ctx context.Context, instanceID string, target co
 		return core.Instance{}, core.ErrInvalidTransition
 	}
 	return s.store.UpdateInstanceState(ctx, instanceID, inst.State, target)
+}
+
+// RefreshInstanceStateTimestamp persists a lifecycle generation boundary while
+// keeping the instance in its current state.
+func (s *Service) RefreshInstanceStateTimestamp(ctx context.Context, instanceID string, expected core.InstanceState) (core.Instance, error) {
+	return s.store.UpdateInstanceState(ctx, instanceID, expected, expected)
 }
 
 // GetInstance fetches a single instance.

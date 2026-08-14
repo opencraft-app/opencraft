@@ -180,6 +180,20 @@ func newRouterWithWebsiteAuth(
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		writeSuccess(w, r, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("/v1/frontend/runtime-config", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"features": map[string]bool{
+				"paidBillingEnabled":               true,
+				"realnamePhoneVerificationEnabled": true,
+			},
+		})
+	})
 	mux.HandleFunc("/internal/bots", handler.handleInternalBots)
 	mux.HandleFunc("/internal/bots/", handler.handleInternalBotSubresource)
 	mux.HandleFunc("/internal/instances/", handler.handleInternalInstanceSubresource)

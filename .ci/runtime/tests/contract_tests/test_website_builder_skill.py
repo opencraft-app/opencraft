@@ -7,6 +7,12 @@ SKILL_PATH = REPO_ROOT / ".agents" / "skills" / "website-builder" / "SKILL.md"
 
 
 class WebsiteBuilderSkillContractTests(unittest.TestCase):
+    def test_public_url_examples_use_the_international_https_domain(self) -> None:
+        skill = SKILL_PATH.read_text()
+
+        self.assertIn("https://ws-xxx.lightvela.site/", skill)
+        self.assertNotIn("sites.lightclaw.tech", skill)
+
     def test_publish_consumes_the_server_signed_upload_headers(self) -> None:
         skill = SKILL_PATH.read_text()
 

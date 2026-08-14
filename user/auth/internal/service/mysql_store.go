@@ -2481,6 +2481,10 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 		}
 	}
 
+	if err := enforceOAuthNewUserRegistrationEmailPolicy(input); err != nil {
+		return User{}, false, err
+	}
+
 	userID, err := newPrefixedID("usr")
 	if err != nil {
 		return User{}, false, fmt.Errorf("generate oauth user id: %w", err)

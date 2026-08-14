@@ -14,7 +14,7 @@ Most people's first reaction is three questions:
 
 - **"Aren't they both long-term memory? Why split them?"**
 - **"They're both Markdown, so why not put them together?"**
-- **"Remembering 'the agent-demo frontend runs on port 5174' and remembering 'summarize first, then list changes when writing a PR description' — isn't that the same thing?"**
+- **"Remembering 'the agent-demo frontend runs on a local dev port' and remembering 'summarize first, then list changes when writing a PR description' — isn't that the same thing?"**
 
 The short answer: **because the human brain splits them too.**
 
@@ -44,7 +44,7 @@ The memory system stores **facts, events, conclusions, and preferences**:
 
 - "Jasmin is working on the global site for agent-demo."
 - "Last week the hero section was changed to an animated gradient."
-- "The project runs on Next.js, with the frontend dev server on port 5174."
+- "The project runs on Next.js, with the frontend dev server on a local dev port."
 
 Its characteristics:
 
@@ -104,7 +104,7 @@ Merged, the agent would lose track of whether it is citing a fact or following a
 
 ### Constraint 2: different forms
 
-- Memory is **short sentences, facts, entries** ("[2026-07-30] agent-demo frontend port 5174").
+- Memory is **short sentences, facts, entries** ("[2026-07-30] agent-demo frontend local dev port").
 - Skill is **procedure, template, constraint**, usually with YAML frontmatter plus "step 1 / 2 / 3" ordering.
 
 Packed together, the agent cannot tell "is this background, or something I should be executing right now?"
@@ -122,17 +122,17 @@ Putting them together lets high-frequency factual entries wash away the stable S
 
 Suppose you tell the agent:
 
-> "From now on our team writes PR descriptions in this format: one-sentence summary, list of changes, blast radius, testing status. Also, remember that this project is called agent-demo and the frontend runs on port 5174."
+> "From now on our team writes PR descriptions in this format: one-sentence summary, list of changes, blast radius, testing status. Also, remember that this project is called agent-demo and the frontend runs on a local dev port."
 
 A well-trained Hermes Agent handles that as follows:
 
 - **First half** → the `/learn` path, writing a new **Skill**: `pr-description-format.md`, triggered by `user asks to write a PR description`.
-- **Second half** → the `add` atomic operation, writing one **Memory** entry: `- [2026-07-30] agent-demo: frontend dev server on port 5174`.
+- **Second half** → the `add` atomic operation, writing one **Memory** entry: `- [2026-07-30] agent-demo: frontend dev server on a local dev port`.
 
 Next time you say "write me a PR description", the agent will:
 
 1. **Match the scenario and load the Skill**: `pr-description-format.md` enters the high-priority prompt.
-2. **Match Memory by query**: it knows the current project is agent-demo, running on 5174.
+2. **Match Memory by query**: it knows the current project is agent-demo, running on a local dev port.
 3. **Combine both**: producing a PR description that follows the team standard and fits the specific project.
 
 **Remembering facts plus remembering procedures is what makes the result better than the sum of its parts.**

@@ -16,8 +16,17 @@ const ACTIVE_SHARED_FILES = [
   "use-cases/chinese-messaging-channels.md",
   "use-cases/daily-summary.md",
   "use-cases/hermes-agent-24-7.md",
+  "use-cases/im-agent-persona-soul-md.md",
+  "use-cases/im-agent-skill-scenarios.md",
   "use-cases/memory-and-knowledge.md",
+  "use-cases/multi-channel-personality-memory.md",
   "use-cases/personal-ai-assistant.md",
+  "use-cases/telegram-persona-agent.md",
+  "use-cases/telegram-group-community-assistant.md",
+  "use-cases/whatsapp-24-7-customer-service.md",
+  "use-cases/whatsapp-persona-agent.md",
+  "use-cases/lifelike-im-agent-rhythm-social-memory.md",
+  "use-cases/telegram-whatsapp-safety-boundaries.md",
   "who-is-lightvela-for.md",
 ] as const;
 
@@ -25,7 +34,16 @@ const LOCALE_SENSITIVE_USE_CASE_FILES = [
   "use-cases/chinese-messaging-channels.md",
   "use-cases/daily-summary.md",
   "use-cases/hermes-agent-24-7.md",
+  "use-cases/im-agent-persona-soul-md.md",
+  "use-cases/im-agent-skill-scenarios.md",
   "use-cases/memory-and-knowledge.md",
+  "use-cases/multi-channel-personality-memory.md",
+  "use-cases/telegram-persona-agent.md",
+  "use-cases/telegram-group-community-assistant.md",
+  "use-cases/whatsapp-24-7-customer-service.md",
+  "use-cases/whatsapp-persona-agent.md",
+  "use-cases/lifelike-im-agent-rhythm-social-memory.md",
+  "use-cases/telegram-whatsapp-safety-boundaries.md",
 ] as const;
 
 const HERMES_DEEP_DIVE_FILES = [

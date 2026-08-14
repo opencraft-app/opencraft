@@ -8,6 +8,7 @@ import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, WEBSITES_PATH, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
+import { isGlobal } from "@/lib/region";
 
 type RevealWorkbenchHost = Window & {
   show?: (...args: unknown[]) => unknown;
@@ -175,14 +176,16 @@ export const UserAvatarMenu = () => {
                 <User className={menuIconClass} />
                 {t("账号管理")}
               </Link>
-              <Link
-                href={WEBSITES_PATH}
-                onClick={() => setOpen(false)}
-                className={menuItemClass}
-              >
-                <Globe className={menuIconClass} />
-                {t("我的工作台")}
-              </Link>
+              {isGlobal ? (
+                <Link
+                  href={WEBSITES_PATH}
+                  onClick={() => setOpen(false)}
+                  className={menuItemClass}
+                >
+                  <Globe className={menuIconClass} />
+                  {t("我的工作台")}
+                </Link>
+              ) : null}
               {workbenchRevealed ? (
                 <Link
                   href="/support"

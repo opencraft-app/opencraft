@@ -72,7 +72,7 @@ func main() {
 	// 不再随 WEBSITE_MAX_ARTIFACT_BYTES 或并发数线性增长。
 	// 默认 16 并发：内存已不是瓶颈，主要受 COS 上传配额和磁盘临时空间约束。
 	// 环境变量 MAX_CONCURRENCY 可覆盖此默认值。
-	concurrency := 16
+	concurrency := 200
 	if v := os.Getenv("MAX_CONCURRENCY"); v != "" {
 		if n, err := parseInt(v); err == nil && n > 0 {
 			concurrency = n

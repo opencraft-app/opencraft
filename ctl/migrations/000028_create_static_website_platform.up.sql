@@ -10,10 +10,26 @@ ALTER TABLE `bundle`
         COMMENT 'static website quota template: max_sites, monthly_traffic_bytes, storage_bytes, max_artifact_size, max_files'
         AFTER `features`;
 
--- Product-owned bundle quota values are intentionally not seeded yet. Before
--- the first production execution, add the final free/general/ai UPDATEs here
--- so schema creation and final quota templates still land in this one migration.
--- Do not reuse the temporary 10 GiB / 25 GiB values from test validation.
+-- Seed static site quota for all existing bundles (general + AI variants).
+--   launch (启航 / 启航 AI):  1 site, 5 GB storage, 10 GB monthly traffic
+--   cruise (巡游 / 巡游 AI):  5 sites, 40 GB storage, 20 GB monthly traffic
+-- Voyage tier is "敬请期待" and not seeded — will be added when the tier opens.
+
+UPDATE `bundle` SET `static_site_quota` = JSON_OBJECT(
+    'max_sites', 1,
+    'monthly_traffic_bytes', 10737418240,
+    'storage_bytes', 5368709120,
+    'max_artifact_size', 52428800,
+    'max_files', 500
+) WHERE `bundle_id` LIKE 'bundle_launch%';
+
+UPDATE `bundle` SET `static_site_quota` = JSON_OBJECT(
+    'max_sites', 5,
+    'monthly_traffic_bytes', 21474836480,
+    'storage_bytes', 42949672960,
+    'max_artifact_size', 52428800,
+    'max_files', 500
+) WHERE `bundle_id` LIKE 'bundle_cruise%';
 
 CREATE TABLE `website_sites` (
     `id`                   BIGINT       NOT NULL AUTO_INCREMENT,
@@ -98,4 +114,28 @@ CREATE TABLE `website_usage_daily` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_site_date` (`site_id`, `usage_date`),
     KEY `idx_user_date` (`user_id`, `usage_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Custom domain binding for static websites.
+--
+-- Random subdomains (e.g. ws-abc.lightvela.site) are resolved by string
+-- truncation in site-gateway's hostroute — no DB lookup needed. Custom
+-- domains (e.g. blog.example.com) cannot be derived from the host string,
+-- so a mapping table is required.
+--
+-- The table maps a globally-unique domain to a site_id. site-gateway
+-- queries this table when the root-domain resolver misses; on a hit it
+-- reuses the same site status / quota / blockage check path as random
+-- subdomains — no special-casing downstream.
+
+CREATE TABLE `website_custom_domains` (
+    `id`           BIGINT       NOT NULL AUTO_INCREMENT,
+    `domain`       VARCHAR(253) NOT NULL COMMENT 'normalized: lowercase, no trailing dot, no port',
+    `site_id`      VARCHAR(64)  NOT NULL COMMENT 'bound site: ws-xxxxxxxx',
+    `user_id`      VARCHAR(64)  NOT NULL,
+    `created_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_domain` (`domain`),
+    KEY `idx_site_id` (`site_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

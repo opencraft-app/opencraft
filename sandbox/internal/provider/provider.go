@@ -21,7 +21,9 @@ type CloudProvider interface {
 	ReinstallInstance(ctx context.Context, cloudID string, imageID string) error
 	DescribeInstance(ctx context.Context, cloudID string) (status string, err error)
 	TerminateInstance(ctx context.Context, cloudID string) error
-	VerifyInstance(ctx context.Context, address string) error
+	// VerifyInstance confirms that the cloud instance is ready for control-plane
+	// delivery. The identifier is the cloud instance ID, never an IP address.
+	VerifyInstance(ctx context.Context, cloudID string) error
 	// StopInstance shuts down the instance while preserving system disk data.
 	// Used by trade pass isolation flow (Q26-D 修订版 / Q33=a 拍板 2026-05-14 22:37).
 	// On Tencent Cloud this maps to StopInstances with StoppedMode=STOP_CHARGING
@@ -236,6 +238,24 @@ type CommandRunner interface {
 	GetCommandInvocation(ctx context.Context, region, invocationID, instanceID string) (CommandResult, error)
 }
 
+// InstanceDeliveryVerifier can reject a stale TAT agent heartbeat from a
+// previous OS generation after a create or reinstall operation.
+type InstanceDeliveryVerifier interface {
+	VerifyInstanceDelivery(ctx context.Context, cloudID string, notBefore time.Time) error
+}
+
+// VerifyInstanceDelivery uses generation-aware verification when the provider
+// supports it and falls back to the CloudProvider contract for other providers.
+func VerifyInstanceDelivery(ctx context.Context, cp CloudProvider, cloudID string, notBefore time.Time) error {
+	if cp == nil {
+		return errors.New("provider: missing cloud provider")
+	}
+	if verifier, ok := cp.(InstanceDeliveryVerifier); ok {
+		return verifier.VerifyInstanceDelivery(ctx, cloudID, notBefore)
+	}
+	return cp.VerifyInstance(ctx, cloudID)
+}
+
 type TerminalSession struct {
 	SessionID      string `json:"sessionId"`
 	Region         string `json:"region"`
@@ -303,25 +323,6 @@ func (e *TerminalCommandStreamError) Error() string {
 // capability. Implementations invoke emit after PtyReady and for ordered output.
 type TerminalCommandStreamer interface {
 	StreamTerminalCommand(ctx context.Context, req TerminalCommandStreamRequest, emit func(TerminalCommandStreamEvent) error) (TerminalCommandResult, error)
-}
-
-// EnvdHupper is an optional capability for providers that can signal envd inside the instance.
-// It's intentionally not part of CloudProvider to keep the core interface minimal.
-type EnvdHupper interface {
-	HupEnvd(ctx context.Context, address string) error
-}
-
-// BestEffortHupEnvd triggers envd SIGHUP if the provider supports it.
-// This is used as a pre-reset step to reduce false-positive /health probes during reset.
-func BestEffortHupEnvd(ctx context.Context, cp CloudProvider, address string) error {
-	if address == "" || cp == nil {
-		return nil
-	}
-	h, ok := cp.(EnvdHupper)
-	if !ok {
-		return nil
-	}
-	return h.HupEnvd(ctx, address)
 }
 
 // MockCloudProvider simulates a provider with sleeps.

@@ -100,6 +100,13 @@ routes:
     methods: [POST, OPTIONS]
     upstream: http://lightclaw-auth.user-auth.svc.cluster.local
     access: public
+  - name: ctl-frontend
+    prefix: /v1/frontend
+    methods: [GET, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: public
+    response_header_timeout: 10s
+
   - name: ctl-websites
     prefix: /v1/websites
     methods: [GET, POST, DELETE, OPTIONS]

@@ -1,21 +1,507 @@
-# 2026-08-07 建站用量展示修复
+# 即将到期 Tooltip 视觉修正 Implementation Plan
 
-**Status:** 已部署到 `lightclaw.pages.dev`，待用户验收。
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 建站权益中的月流量和存储空间均展示“已用 / 总量”，消费后端已有的 `used_traffic_bytes` 与 `used_storage_bytes`。
+**Status:** 增量实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
 
-**Scope:** 仅修改两个建站前端入口及其组件测试；不修改后端接口、网关、套餐额度或实例 token。
+**Goal:** 将 `/agents` 左侧“即将到期”标签的浏览器原生灰色提示框替换为符合 `DESIGN.md` 的自定义 hover/focus Tooltip。
+
+**Architecture:** 在续费提醒按钮外增加无布局副作用的 `group relative inline-flex` 包装层，Tooltip 作为同级绝对定位元素显示在按钮上方。该位置没有裁剪祖先，因此采用 `DESIGN.md` 推荐的内联方案，不引入 Portal 定位状态；按钮点击续费逻辑保持不变。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS v4、Vitest 4、Testing Library。
+
+## Global Constraints
+
+- 移除续费提醒按钮的原生 `title`，避免系统灰色提示框。
+- Tooltip 使用白底深色字、细边框、6px 圆角（Tailwind 默认 `rounded-md` 的视觉值）、`px-3 py-1.5`、`text-[11px] font-medium` 与 `0 8px 24px rgba(15,23,42,0.12)` 轻阴影。
+- Tooltip 位于触发器上方居中，带白底小三角，支持 hover、focus、鼠标进入与文本选择。
+- 不修改“即将到期”标签本身、剩余时间计算、点击续费逻辑、文案或 i18n 资源。
+- 国内站和国际站共用同一实现，不增加区域条件分支。
+
+---
+
+### Task 1: 用自定义 Tooltip 替换原生 title 并验证
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx:4989-5008`
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx:180-195`
+
+**Interfaces:**
+- Consumes: `passExpiryReminder.tooltip` 现有剩余时间文案与续费提醒按钮。
+- Produces: `role="tooltip"` 的可选择自定义浮层；不新增导出或公共接口。
+
+- [x] **Step 1 — 增加失败回归测试**
+
+  更新现有续费提醒用例，断言按钮不再包含 `title`，页面存在对应 `role="tooltip"`，并锁定白底、细边框、6px 圆角、11px 字号、轻阴影、可交互和可选择样式。
+
+- [x] **Step 2 — 运行测试并确认 RED**
+
+  Run: `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
+
+  Expected: FAIL，旧实现仍有原生 `title` 且没有自定义 Tooltip。
+
+- [x] **Step 3 — 实现最小 Tooltip 调整**
+
+  用 `group relative inline-flex` 包裹提醒按钮，删除 `title`，增加位于上方居中的自定义 Tooltip 与小三角；通过透明 `pb-2` hover 桥接按钮和气泡。
+
+- [x] **Step 4 — 运行定向测试并确认 GREEN**
+
+  Run: `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
+
+  Expected: 该测试文件全部通过。
+
+- [x] **Step 5 — 运行质量门禁并本地预览**
+
+  Run: `cd frontend && pnpm check && pnpm i18n:check && cd .. && git diff --check`
+
+  Expected: 全部以退出码 `0` 完成；在已登录本地预览中 hover/focus “即将到期”时显示新 Tooltip，点击仍打开续费弹窗。
+
+- [x] **Step 6 — 验收门禁**
+
+  展示改动与验证结果；仅在用户明确确认后提交、推送或创建 MR。
+
+---
+
+### Task 2: 在 Tooltip 内增加续费入口并验证
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx:5007-5024`
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx:187-220`
+
+**Interfaces:**
+- Consumes: `passExpiryReminder.tooltip` 与现有 `setRenewPassModalOpen(true)`。
+- Produces: Tooltip 内原生文字按钮“续费套餐”；不新增状态、组件、导出或公共接口。
+
+- [x] **Step 1 — 增加失败回归测试**
+
+  在现有 Tooltip 用例中查询 Tooltip 内的“续费套餐”按钮，断言其可聚焦，并点击后出现续费弹窗；原提醒标签打开续费弹窗的行为继续由实名认证用例覆盖。
+
+- [x] **Step 2 — 运行测试并确认 RED**
+
+  Run: `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
+
+  Expected: FAIL，Tooltip 内尚不存在“续费套餐”按钮。
+
+- [x] **Step 3 — 实现最小文字按钮**
+
+  在剩余时间文案后增加原生 `<button type="button">续费套餐</button>`，使用当前提醒橙色、hover 下划线和可见焦点样式；点击时阻止冒泡并复用 `setRenewPassModalOpen(true)`。
+
+- [x] **Step 4 — 运行定向测试并确认 GREEN**
+
+  Run: `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
+
+  Expected: 该测试文件全部通过。
+
+- [x] **Step 5 — 运行质量门禁并本地交互回验**
+
+  Run: `cd frontend && pnpm check && pnpm i18n:check && cd .. && git diff --check`
+
+  Expected: 全部以退出码 `0` 完成；本地 hover 后点击“续费套餐”能打开续费弹窗，Tooltip 在按钮 hover/focus 时保持可见。
+
+- [x] **Step 6 — 验收门禁**
+
+  展示本地效果与验证结果；仅在用户明确确认后提交、推送或创建 MR。
+
+- [x] **Step 7 — 补充可点击鼠标样式并回验**
+
+  为 Tooltip 内“续费套餐”文字按钮增加 `cursor-pointer`，扩展现有测试断言，并在本地预览确认计算样式为 `cursor: pointer`。
+
+- [x] **Step 8 — 补充提醒标签可点击鼠标样式并回验**
+
+  为外层“即将到期 / 临近到期”按钮增加 `cursor-pointer`，扩展现有测试断言，并在本地预览确认计算样式为 `cursor: pointer`；不改变 hover 颜色、焦点样式或点击逻辑。
+
+- [x] **Step 9 — 更新 Tooltip 续费入口文案**
+
+  将 Tooltip 内入口从“续费套餐”调整为“立即续费”，保留弹窗标题“续费套餐”和现有点击、焦点、cursor 行为；更新定向测试并回验。
+
+---
+
+# 自动任务最近执行空状态去灰底 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** 实现与验证完成，等待用户验收；不自动提交实现、推送或创建 MR。
+
+**Goal:** 去掉 `/agents/automations/` 最近执行空状态行的浅灰色背景与圆角，同时保留外层白色卡片和其余视觉属性。
+
+**Architecture:** 沿用 `RecentCronRunsPanel` 的现有结构，只删除空状态行上的两个 Tailwind class。扩展现有组件测试直接渲染空记录状态，锁定内层背景/圆角移除且外层卡片仍存在，不新增组件、导出或依赖。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS v4、Vitest 4、Testing Library。
+
+## Global Constraints
+
+- 仅调整空状态行，不修改有记录列表、加载态、错误态、页签、刷新交互或 Hermes Cron 逻辑。
+- 删除 `bg-black/[0.02]` 和 `rounded-lg`，保留空状态行的间距、图标、字号和颜色。
+- 保留外层白色卡片的边框、阴影和 `rounded-md`。
+- 国内站和国际站共用同一组件，不增加区域条件分支。
+- 不新增依赖、文案或 i18n 生成文件。
+
+---
+
+### Task 1: 移除最近执行空状态灰底并验证
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx:1109-1115`
+- Test: `frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts:45-105`
+- Design: `frontend/openspec/changes/2026-08-13-frontsandbox-automation-empty-state-transparent-design.md`
+
+**Interfaces:**
+- Consumes: `RecentCronRunsPanel` 现有 `runs` 与 `skillLoadState` props。
+- Produces: 不新增导出；国内站和国际站继续渲染同一空状态 JSX。
+
+- [x] **Step 1 — 增加失败回归测试**
+
+  在 `recent run limit hint` 测试组中增加空状态用例：
+
+  ```tsx
+  it("renders the empty recent-runs message without a nested gray container", () => {
+    const { container } = render(createElement(RecentCronRunsPanel, {
+      runs: [],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+    const message = screen.getByText("暂无执行记录");
+    const emptyState = message.closest("div");
+    const panel = container.querySelector("section");
+
+    expect(emptyState).not.toBeNull();
+    expect(emptyState).toHaveClass("m-4", "px-3", "py-2", "text-xs", "text-black/45");
+    expect(emptyState).not.toHaveClass("bg-black/[0.02]", "rounded-lg");
+    expect(panel).toHaveClass("rounded-md", "bg-white");
+    expect(panel).toHaveStyle({ background: "#ffffff" });
+  });
+  ```
+
+- [x] **Step 2 — 运行测试并确认 RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run src/pages/marketing/__tests__/agent-automations-panel.test.ts
+  ```
+
+  Expected: FAIL，空状态行仍包含 `bg-black/[0.02]` 和 `rounded-lg`。
+
+- [x] **Step 3 — 实现最小样式调整**
+
+  将空状态行改为：
+
+  ```tsx
+  <div className="m-4 flex items-center gap-2 px-3 py-2 text-xs text-black/45">
+  ```
+
+- [x] **Step 4 — 运行定向测试并确认 GREEN**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run src/pages/marketing/__tests__/agent-automations-panel.test.ts
+  ```
+
+  Expected: 该测试文件全部通过，现有最近执行详情测试保持不变。
+
+- [x] **Step 5 — 运行质量门禁**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm check
+  pnpm i18n:check
+  cd ..
+  git diff --check
+  ```
+
+  Expected: TypeScript、i18n 和 diff 检查均以退出码 `0` 完成；不产生生成资源变更。
+
+- [x] **Step 6 — 验收门禁**
+
+  展示 diff 与验证结果；只有用户明确确认后才执行实现提交、推送或创建 MR。
+
+---
+
+# 2026-08-12 首页 Hero 浅色化
+
+**Status:** 前端实现与基础检查已完成，待用户视觉验收后再提交 / MR。
+
+**Goal:** 参考 `lightvela-next.zip` 的浅色首屏方向，重做首页 Hero 视觉层，去掉视频背景，提升整体轻盈感和顶部导航可读性。
+
+**Scope:** 仅调整首页 Hero 区视觉实现；保留现有首页业务链路、CTA 跳转、i18n 文案、Header 组件和后续内容区。
 
 ## Tasks
 
-- [x] **Developer:** 更新 `agent-website-panel.tsx`、`website-page.tsx` 和对应组件测试；两个入口均展示格式化后的“已用 / 总量”，通过相关 Vitest、i18n、构建和线上 smoke 后部署测试环境。
+- [x] 移除首页 Hero 的视频背景和对应加载状态。
+- [x] 用浅色静态背景与现有装饰素材重组 Hero 首屏。
+- [x] 完成 TypeScript / i18n / diff 检查，并用本地预览截图验证桌面与移动端可读性。
+- [x] 移除 Hero 外层最大/最小高度限制，确保常见浏览器缩放 25%～125% 下 Hero 仍占满首屏。
 
-## Verification
+---
 
-- `pnpm exec vitest run src/pages/__tests__/website-usage-display.test.tsx`
-- `pnpm i18n:check`
-- `pnpm i18n:zh-hant:check`
-- `pnpm build`
+# 更新日志左侧日期样式 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** 实现与验证完成，用户已确认 commit / push / MR。
+
+**Goal:** 参考 Viktor Changelog，将 `/changelog` 左侧月份改成带日历勾选图标的紫色日期标签，同时保持页面其他部分不变。
+
+**Architecture:** 继续使用 `ChangelogMonthGroup` 和现有双列网格，只在月份标签的 JSX 中复用 `lucide-react` 的 `CalendarCheck` 并替换局部样式。通过现有国内站 Changelog 渲染测试锁定图标、尺寸、间距和颜色，不新增组件、数据字段或依赖。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS v4、Lucide React、Vitest 4、Testing Library。
+
+## Global Constraints
+
+- 仅修改左侧月份标签及其回归测试，不修改日期数据、正文、配图、右侧时间线、页头、页脚或滚动行为。
+- 使用 `#6E47FF` 前景色，不增加背景、边框、圆角或额外水平内边距。
+- 标签固定 `48px` 高，图文间距 `16px`，图标 `20px`。
+- 不新增依赖、组件、翻译文案或 i18n 生成文件。
+
+---
+
+### Task 1: 更新月份标签并验证
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/changelog-page.tsx:8-12,404-421`
+- Test: `frontend/src/pages/marketing/__tests__/channel-copy.test.tsx:69-99`
+- Design: `frontend/openspec/changes/2026-08-12-frontsandbox-changelog-date-style-design.md`
+
+**Interfaces:**
+- Consumes: `ChangelogMonthGroup.month` 现有本地化月份字符串；`lucide-react` 的 `CalendarCheck`。
+- Produces: 不新增导出；所有月份分组共用同一日期标签 JSX。
+
+- [x] **Step 1 — 增加失败回归断言**
+
+  在现有 `announces reliable Skill invocation for automations in the July changelog` 用例中，把月份存在性断言扩展为：
+
+  ```tsx
+  const monthText = screen.getByText("2026 年 7 月");
+  const monthLabel = monthText.closest("p");
+
+  expect(monthLabel).not.toBeNull();
+  expect(monthLabel).toHaveClass(
+    "inline-flex",
+    "h-12",
+    "items-center",
+    "gap-4",
+  );
+  expect(monthLabel).not.toHaveClass("rounded-full", "px-6");
+  expect(monthLabel).toHaveStyle({ color: "#6E47FF" });
+  expect(monthLabel).not.toHaveStyle({
+    backgroundColor: "rgba(110, 71, 255, 0.16)",
+  });
+  expect(monthLabel?.querySelector(".lucide-calendar-check")).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
+  ```
+
+- [x] **Step 2 — 运行测试并确认 RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run src/pages/marketing/__tests__/channel-copy.test.tsx
+  ```
+
+  Expected: FAIL，现有月份 `<p>` 仍带有 `rounded-full px-6` 和淡紫色背景。
+
+- [x] **Step 3 — 实现最小日期标签样式**
+
+  在 `changelog-page.tsx` 导入图标：
+
+  ```tsx
+  import { CalendarCheck } from "lucide-react";
+  ```
+
+  将左列月份 JSX 替换为：
+
+  ```tsx
+  <div className="pt-1">
+    <p
+      className="inline-flex h-12 items-center gap-4"
+      style={{
+        color: "#6E47FF",
+        fontSize: "16px",
+        fontWeight: 400,
+        lineHeight: 1.5,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <CalendarCheck className="size-5 shrink-0" aria-hidden="true" />
+      <span>{group.month}</span>
+    </p>
+  </div>
+  ```
+
+- [x] **Step 4 — 运行定向测试并确认 GREEN**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm exec vitest run src/pages/marketing/__tests__/channel-copy.test.tsx src/pages/marketing/__tests__/global-changelog.test.tsx
+  ```
+
+  Expected: 两个测试文件全部通过，国内站和国际站现有 Changelog 内容断言保持不变。
+
+- [x] **Step 5 — 运行质量门禁**
+
+  Run:
+
+  ```bash
+  cd frontend
+  pnpm check
+  pnpm i18n:check
+  cd ..
+  git diff --check
+  ```
+
+  Expected: TypeScript、i18n 和 diff 检查均以退出码 `0` 完成；不产生 i18n 文件变更。
+
+- [x] **Step 6 — 浏览器验证**
+
+  启动本地前端并检查 `/changelog`：
+
+  ```bash
+  cd frontend
+  pnpm dev:cn
+  ```
+
+  Expected:
+
+  - 桌面端：月份标签位于左列，图标和文字垂直居中，不显示底框。
+  - 移动端：月份标签按内容宽度左对齐，标签自身不增加横向溢出。
+  - 右侧标题、描述、配图和点线时间轴与修改前一致。
+
+  Verification evidence:
+
+  - 用户标注的 `888 × 933` 视口：标签 `131.14 × 48px`，计算样式为透明背景、`0px` 边框、`0px` 圆角、`0px` 左右内边距。
+  - 移动端：日期标签位于单列内容区内；页面既有页头说明文本使用 `white-space: nowrap`，会产生原有横向溢出，本次遵循范围约束未修改。
+  - 浏览器控制台无 error。
+  - 完整 `pnpm test` 仍有 1 条既有失败：`scripts/docs-image-assets.test.ts` 检出 9 个超出 `512 KiB` 的文档 PNG（被中英文文档重复引用为 18 条）；本分支未修改这些图片、文档或测试。
+
+- [x] **Step 7 — 等待提交确认**
+
+  展示 diff、测试结果和浏览器验证截图；只有用户明确确认后才执行 `git commit`、`git push` 或创建 MR。
+
+---
+
+# 2026-08-11 国际站首页默认英文一致性修复
+
+**Status:** 实现中；确认前不 commit / push / MR。
+
+**Goal:** `lightvela.ai/` 裸首页在浏览器残留中文语言偏好时仍默认全页英文，只有访问中文 locale 路径或用户显式切换中文时展示中文。
+
+**Scope:** 仅收敛公开首页 locale 判定、公告条 locale 注入、首页导入区翻译调用和回归测试；不改视觉布局、路由 SEO 输出、后端接口或订阅/登录逻辑。
+
+## Tasks
+
+- [x] 修复国际站裸 `/` 的 i18n 初始语言，避免被 `localStorage.lw-locale=zh-CN` 覆盖。
+- [x] 修复首页公告条与 FeatureSection 对全局 i18n 单例的依赖，统一跟随公开路由 locale。
+- [x] 补充回归测试并运行定向测试、i18n 检查、类型检查和 diff 检查。
+
+---
+
+# 国际站 Skills 搜索结果来源链接 Implementation Plan
+
+**Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
+
+**Goal:** 国际站所有 Skills 搜索结果都在技能标题和 slug 下方单独展示文字型 `Source` 链接；ClawHub 统一链接到 `https://clawhub.ai/`。
+
+**Architecture:** `SearchSkillRow` 继续使用 skills.sh 的技能详情链接，但对 ClawHub 直接使用固定官网地址。
+链接只由前端渲染，不查询 ClawHub 作者或技能详情，因此不会新增 ClawHub 请求或增加限流风险。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS、Vitest 4、React Testing Library。
+
+## Global Constraints
+
+- 仅影响国际站的 ClawHub 与 skills.sh 搜索结果。
+- 国内 SkillHub 搜索结果不展示新来源行。
+- 所有 ClawHub 搜索结果都显示来源链接，固定 URL 为 `https://clawhub.ai/`。
+- 标签通过现有 i18n `t("来源")` 渲染，样式与 skills.sh 的文字型来源链接一致。
+- 不新增依赖、动画或新的交互原语。
+
+## Tasks
+
+- [x] **Task 1: 固定 ClawHub 搜索结果来源链接。**
+  - 修改 `src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`，先断言 ClawHub 搜索结果的 `来源` 链接固定为 `https://clawhub.ai/`。
+  - 修改 `src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`，仅在 global mode 的 `SearchSkillRow` 中为 ClawHub 使用固定官网链接，skills.sh 与国内站逻辑保持不变。
+  - 运行 `pnpm exec vitest run src/pages/marketing/skills-demo/skill-registries.test.ts src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`。
+
+- [x] **Task 2: 运行质量门禁并记录验证。**
+  - 运行 `pnpm i18n:check`。
+  - 运行 `pnpm check`。
+  - 检查 `git diff --check` 与最终 diff，确认未修改国内站分支逻辑。
+
+---
+# Agents 左侧导航顺序调整 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** 实现与验证完成，用户已确认提交、推送与创建 MR。
+
+**Goal:** 将 `/agents` 左侧导航中的“自动任务”移动到“人设”上方，并保持其余导航行为不变。
+
+**Architecture:** 沿用 `AgentSettingsPage` 内现有 `settingsSections` 数组作为唯一顺序来源，只交换两个相邻配置项。用独立静态回归测试锁定两项顺序，避免为了单一展示顺序抽离新公共接口。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4。
+
+## Global Constraints
+
+- 仅修改导航顺序及其回归测试，不修改路由、图标、文案、权限或页面内容。
+- 桌面和移动端继续共用同一导航配置。
+- 不新增依赖或配置抽象。
+
+## Tasks
+
+- [x] **Task 1 — Developer / Reviewer：交换导航项并验证**
+  - **Files:**
+    - Create: `frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`
+    - Modify: `frontend/src/pages/marketing/agent-settings-page.tsx:4909-4915`
+  - **Interfaces:** 不新增导出；测试只读取页面源码中的 `settingsSections` 配置片段。
+  - **Step 1 — 写失败测试：** 新测试读取 `agent-settings-page.tsx`，截取 `const settingsSections` 到 `const isRestartDisabled` 之间的文本，并断言 `id: "automations"` 的索引小于 `id: "buddy"`：
+
+    ```ts
+    import { readFileSync } from "node:fs";
+    import { join } from "node:path";
+    import { describe, expect, it } from "vitest";
+
+    describe("Agent settings navigation order", () => {
+      it("places automations before persona", () => {
+        const page = readFileSync(
+          join(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"),
+          "utf8",
+        );
+        const settingsSectionsStart = page.indexOf("const settingsSections");
+        const settingsSectionsEnd = page.indexOf("const isRestartDisabled");
+
+        expect(settingsSectionsStart).toBeGreaterThanOrEqual(0);
+        expect(settingsSectionsEnd).toBeGreaterThan(settingsSectionsStart);
+
+        const settingsSections = page.slice(settingsSectionsStart, settingsSectionsEnd);
+        const automationsIndex = settingsSections.indexOf('id: "automations"');
+        const personaIndex = settingsSections.indexOf('id: "buddy"');
+
+        expect(automationsIndex).toBeGreaterThanOrEqual(0);
+        expect(personaIndex).toBeGreaterThanOrEqual(0);
+        expect(automationsIndex).toBeLessThan(personaIndex);
+      });
+    });
+    ```
+  - **Step 2 — 确认 RED：** 在 `frontend/` 运行 `pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`；预期当前顺序下断言失败。
+  - **Step 3 — 最小实现：** 在 `settingsSections` 中把完整的 `automations` 配置项移动到完整的 `buddy` 配置项之前，不改动两项内容：
+
+    ```tsx
+    { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
+    { id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy },
+    ```
+  - **Step 4 — 确认 GREEN：** 重新运行同一定向 Vitest，预期 1 个测试通过。
+  - **Step 5 — 完整验证：** 在 `frontend/` 运行 `pnpm check`，再在仓库根运行 `git diff --check`；检查 diff 仅包含计划、测试和两项顺序调整。
+  - **Step 6 — 验收门禁：** 展示改动与验证结果，等待用户确认后才允许提交实现、推送或创建 MR。
+
+---
 
 # 2026-08-07 批量安装汇总结果对齐修复
 
@@ -118,6 +604,8 @@
 - [x] 增加文档大图格式与体积回归测试，并确认现有资源会触发失败。
 - [x] 将超预算文档图片转换为 WebP，更新中英文 Markdown 引用和公开资源副本。
 - [x] 运行定向测试、类型检查和 global 预览构建，核验压缩包体积为 43.50 MiB。
+
+---
 
 # 2026-08-04 QQ Bot 群聊策略自动开启
 

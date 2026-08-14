@@ -104,15 +104,9 @@ func TestListAutomationSchedulesBackfillsGatewayAuthMaterialForRunningInstance(t
 	})
 
 	sandbox := &commandSandboxAdapterStub{
-		processBatches: [][]psandbox.ProcessStreamEvent{
-			{
-				{Stdout: "ok", Status: "running"},
-				{ExitCode: 0, Status: "exited", Ended: true},
-			},
-			{
-				{Stdout: "patched", Status: "running"},
-				{ExitCode: 0, Status: "exited", Ended: true},
-			},
+		ptyEvents: []psandbox.PtyExecStreamEvent{
+			{Type: "started", ExecutionID: "pty:automation-backfill"},
+			{Type: "finished", ExecutionID: "pty:automation-backfill", Status: "SUCCESS", ExitCode: 0},
 		},
 	}
 	aiGateway := &automationLLMGatewayAdapterStub{
@@ -165,8 +159,8 @@ func TestListAutomationSchedulesBackfillsGatewayAuthMaterialForRunningInstance(t
 	if len(adapter.methods) != 1 || adapter.methods[0] != "cron.list" {
 		t.Fatalf("expected cron.list after backfill, got %+v", adapter.methods)
 	}
-	if len(sandbox.processCalls) != 2 {
-		t.Fatalf("expected onboard and gateway patch commands to run, got %d", len(sandbox.processCalls))
+	if len(sandbox.processCalls) != 0 || len(sandbox.ptyCalls) != 2 {
+		t.Fatalf("expected onboard TAT commands to run, process=%d pty=%d", len(sandbox.processCalls), len(sandbox.ptyCalls))
 	}
 	if aiGateway.revokedKeyID != "" {
 		t.Fatalf("LLMGateway user key must survive automation backfill, got revoked key %s", aiGateway.revokedKeyID)

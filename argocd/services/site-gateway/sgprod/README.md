@@ -26,10 +26,18 @@ all public reads go through site-gateway.
 
 ## Domain and TLS gate
 
-Do not sync while `REPLACE_SITE_ROOT_DOMAIN`, `REPLACE_SITE_WILDCARD_HOST`,
-`REPLACE_WEBSITE_COS_BUCKET`, or `REPLACE_SITE_GATEWAY_QCLOUD_CERT_ID` remains.
+The root domain, wildcard host, and Singapore COS bucket are already set to their production values.
 The wildcard certificate must cover the exact wildcard host and must be imported into Tencent
-Cloud SSL. The ingress secret contains the resulting `qcloud_cert_id`, not PEM data.
+Cloud SSL.
+
+TLS lifecycle is platform-owned. The normal site-gateway Kustomize render only references the
+stable `site-gateway-wildcard-tls` Secret name; it does not create, update, or rotate that Secret.
+Before the first Argo CD sync, the platform owner must provision the Secret in namespace `ctl`
+with the Tencent Cloud SSL `qcloud_cert_id`. Certificate renewal and rotation must update that
+existing Secret through the platform TLS workflow, independently of site-gateway releases.
+
+Do not sync while the release-managed image tag placeholder remains. Before syncing a newly
+created environment, also verify that the platform-owned TLS Secret already exists.
 
 ## Release ownership
 
