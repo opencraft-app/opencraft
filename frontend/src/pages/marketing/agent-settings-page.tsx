@@ -66,6 +66,9 @@ import {
 import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
 import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
 import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
+import { AgentModelConfigPanel } from "@/pages/marketing/agent-model-config/agent-model-config-panel";
+import type { HermesModelConfigExecDebugCommand } from "@/pages/marketing/agent-model-config/model-config-client";
+import { resolveProductModelProviderOptions } from "@/pages/marketing/agent-model-config/product-provider-adapter";
 import { createQqbotGroupPolicyCommandLifecycle } from "@/pages/marketing/agent-qqbot-group-policy";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
@@ -174,6 +177,8 @@ type TeaSdkProductConfig = {
   acliProduct: "lightvela";
   runCommand: unknown;
   getInvocationTask: unknown;
+  modelProviders?: IModelProvider[];
+  getFilteredModelProviders?: (region?: string, regionId?: number) => IModelProvider[];
   [key: string]: unknown;
 };
 
@@ -185,7 +190,6 @@ type TeaSdkPanelProps = {
 
 type TeaSdkRuntime = {
   ChannelPanel: ComponentType<TeaSdkPanelProps>;
-  ModelPanel: ComponentType<TeaSdkPanelProps>;
   /** SDK 的 useModelProviders hook（动态 import 获取，避免静态 import 破坏 SSG） */
   useModelProviders: (params?: {
     isI18n?: boolean;
@@ -239,7 +243,6 @@ function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
 
       const runtime: TeaSdkRuntime = {
         ChannelPanel: sdk.ChannelPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        ModelPanel: sdk.ModelPanel as unknown as ComponentType<TeaSdkPanelProps>,
         useModelProviders,
         createProductConfig: ({ runCommand, getInvocationTask, modelProviders }) => {
           const config = sdk.createLighthouseConfig({
@@ -307,6 +310,8 @@ function TeaSdkSettingsPanel({
   featureFlags,
   productConfigArgs,
   useEnglish,
+  botId,
+  execDebugCommand,
 }: {
   kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
@@ -317,6 +322,8 @@ function TeaSdkSettingsPanel({
   };
   /** 是否取英文文案（语言维度），传给 SDK useModelProviders */
   useEnglish: boolean;
+  botId?: string;
+  execDebugCommand?: HermesModelConfigExecDebugCommand;
 }) {
   const t = useT();
   const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
@@ -361,6 +368,8 @@ function TeaSdkSettingsPanel({
       featureFlags={featureFlags}
       productConfigArgs={productConfigArgs}
       useEnglish={useEnglish}
+      botId={botId}
+      execDebugCommand={execDebugCommand}
     />
   );
 }
@@ -373,6 +382,8 @@ function TeaSdkSettingsPanelReady({
   featureFlags,
   productConfigArgs,
   useEnglish,
+  botId,
+  execDebugCommand,
 }: {
   runtime: TeaSdkRuntime;
   kind: "channel" | "model";
@@ -383,6 +394,8 @@ function TeaSdkSettingsPanelReady({
     getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
   };
   useEnglish: boolean;
+  botId?: string;
+  execDebugCommand?: HermesModelConfigExecDebugCommand;
 }) {
   const modelProviders = runtime.useModelProviders({ isI18n: isGlobal, useEnglish });
   const productConfig = useMemo(
@@ -390,11 +403,28 @@ function TeaSdkSettingsPanelReady({
     [runtime, productConfigArgs, modelProviders],
   );
 
-  const Panel = kind === "channel" ? runtime.ChannelPanel : runtime.ModelPanel;
+  if (kind === "model") {
+    if (!botId || !execDebugCommand) {
+      return (
+        <div className="rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {rawT("未找到当前 Hermes Agent 实例。")}
+        </div>
+      );
+    }
+    return (
+      <AgentModelConfigPanel
+        botId={botId}
+        execDebugCommand={execDebugCommand}
+        providers={resolveProductModelProviderOptions(productConfig, modelProviders, {
+          regionId: instance.RegionId,
+        })}
+      />
+    );
+  }
 
   return (
     <StableTeaSdkPanelHost>
-      <Panel
+      <runtime.ChannelPanel
         instance={instance}
         featureFlags={featureFlags}
         productConfig={productConfig}
@@ -5240,6 +5270,8 @@ export const AgentSettingsPage = ({
                               featureFlags={sdkFeatureFlags}
                               productConfigArgs={sdkProductConfigArgs}
                               useEnglish={useEnglish}
+                              botId={activeBot.id}
+                              execDebugCommand={repositories.bots.execDebugCommand}
                             />
                           )}
                           {activeSection === "skill" && (

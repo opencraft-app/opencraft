@@ -1,0 +1,136 @@
+import type { IModelProvider } from "@tencent/tea-sdk-lightclaw";
+import { describe, expect, it } from "vitest";
+
+import { adaptProductModelProviders, resolveProductModelProviderOptions } from "../product-provider-adapter";
+
+const provider = (value: string): IModelProvider => ({
+  value,
+  category: "api",
+  provider: value,
+  provider_name: value,
+  description: "",
+  api_key_url: "",
+  base_url: `https://${value}.example.com/v1`,
+  api: "openai-completions",
+  models: [],
+});
+
+describe("adaptProductModelProviders", () => {
+  it("preserves the product catalog shape and maps SDK protocols to Hermes modes", () => {
+    const providers = adaptProductModelProviders([
+      {
+        value: "alpha-plan",
+        category: "coding_plan",
+        provider: "alpha",
+        provider_name: "Alpha <strong>Plan</strong>",
+        description: "<p>Fast coding plan</p>",
+        api_key_url: "https://alpha.example.com/keys",
+        base_url: "https://alpha.example.com/v1",
+        api: "openai-completions",
+        models: [{ id: "alpha-code", name: "Alpha Code" }],
+      },
+      {
+        value: "claude-api",
+        category: "api",
+        provider: "anthropic",
+        provider_name: "Claude API",
+        description: "Native messages API",
+        api_key_url: "https://console.anthropic.com/settings/keys",
+        base_url: "https://api.anthropic.com/v1",
+        api: "anthropic-messages",
+        models: [{ id: "claude-sonnet", name: "Claude Sonnet" }],
+      },
+    ]);
+
+    expect(providers).toEqual([
+      {
+        providerKey: "alpha-plan",
+        providerName: "Alpha Plan",
+        category: "coding_plan",
+        description: "Fast coding plan",
+        apiKeyUrl: "https://alpha.example.com/keys",
+        baseUrl: "https://alpha.example.com/v1",
+        apiMode: "chat_completions",
+        catalogModels: [{ id: "alpha-code", name: "Alpha Code" }],
+      },
+      expect.objectContaining({
+        providerKey: "claude-api",
+        category: "api",
+        apiMode: "anthropic_messages",
+      }),
+    ]);
+  });
+
+  it("filters OAuth-only and non-probeable entries without changing source order", () => {
+    const providers = adaptProductModelProviders([
+      {
+        value: "oauth-only",
+        category: "api",
+        provider: "codex",
+        provider_name: "OAuth only",
+        description: "",
+        api_key_url: "",
+        base_url: "https://oauth.example.com/v1",
+        api: "openai-responses",
+        models: [],
+        oauth: { provider: "codex", openclawProvider: "openai-codex", exclusive: true },
+      },
+      {
+        value: "missing-endpoint",
+        category: "api",
+        provider: "missing",
+        provider_name: "Missing endpoint",
+        description: "",
+        api_key_url: "",
+        base_url: "",
+        api: "openai-completions",
+        models: [],
+      },
+      {
+        value: "first",
+        category: "api",
+        provider: "first",
+        provider_name: "First",
+        description: "",
+        api_key_url: "",
+        base_url: "https://first.example.com/v1",
+        api: "openai-codex-responses",
+        models: [],
+      },
+      {
+        value: "second",
+        category: "api",
+        provider: "second",
+        provider_name: "Second",
+        description: "",
+        api_key_url: "",
+        base_url: "https://second.example.com/v1",
+        api: "unknown-mode",
+        models: [],
+      },
+    ]);
+
+    expect(providers.map((provider) => provider.providerKey)).toEqual(["first"]);
+    expect(providers.map((provider) => provider.apiMode)).toEqual(["codex_responses"]);
+  });
+
+  it("honors the product filter before config and live-catalog fallbacks", () => {
+    const live = [provider("live")];
+    const configured = [provider("configured")];
+    const filtered = [provider("filtered")];
+
+    let filterArgs: [string | undefined, number | undefined] | null = null;
+    expect(resolveProductModelProviderOptions({
+      modelProviders: configured,
+      getFilteredModelProviders: (region, regionId) => {
+        filterArgs = [region, regionId];
+        return filtered;
+      },
+    }, live, { regionId: 5 }).map((item) => item.providerKey)).toEqual(["filtered"]);
+    expect(filterArgs).toEqual(["ap-hongkong", 5]);
+    expect(resolveProductModelProviderOptions({ modelProviders: configured }, live)
+      .map((item) => item.providerKey)).toEqual(["configured"]);
+    expect(resolveProductModelProviderOptions({}, live)
+      .map((item) => item.providerKey)).toEqual(["live"]);
+  });
+});

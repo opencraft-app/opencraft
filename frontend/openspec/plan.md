@@ -1,3 +1,304 @@
+# Hermes 模型配置页真实化 Implementation Plan
+
+> **For agentic workers:** 按 `test-driven-development` 执行每个任务的 RED / GREEN / REFACTOR；实现和验证完成后停在用户验收点，不自动 commit、push、创建 MR 或归档。
+
+**Status:** 真实配置能力和 Hermes 原生多级备用链已实现；正在根据用户验收反馈收敛添加表单与操作列交互。全量测试仍有一个与本需求无关的文档大图基线失败，见 Task 3。
+
+**Size:** L（新页面真实化、远端配置协议与完整交互测试；当前 workflow 仍按 single-agent 事实源管理，并在实现/Review 环节按需派发子代理）。
+
+**Design Source:** `/Users/junweicao/Documents/zhihu/sources/hermes-agent/docs/design/hermes-agent-model-config-page-design.md`、Hermes `fallback_config.get_fallback_chain`、现网 SDK `ModelPanel` 表单结构、用户提供的模型设置截图，以及本轮确认的“顶部列表样式不重做、备用模型不限数量、主动探测、三种用途”增量约束；现有 `openspec/proposal.md` / `spec.md` 属于尚未归档的登录弹窗需求，不覆盖或改写。
+
+**Goal:** 用直接页面替换 `/agents/models/` 的 mock 模型配置体验，让用户通过现有产品 Provider 列表、API Key 和主动探测完成模型添加，并真实写入 Hermes 主模型、有序多级备用模型和已添加模型配置。
+
+**Architecture:** 页面继续消费现有产品侧 Provider 清单以保持线上选项和国内/国际过滤一致，但不再使用 SDK 的模型配置命令。所有读写经 `BotRepository.execDebugCommand` 调用一个嵌入式 Hermes Python helper：实例先生成 10 分钟有效的一次性 RSA 公钥，浏览器用 Web Crypto RSA-OAEP/SHA-256 分块加密 API Key，后续 debug/exec 只携带 token 与密文，实例解密后无论成功失败都立即删除私钥。新版 Hermes 优先走 credential lifecycle / fallback / model-list probe helper；仍使用 `providers` schema 的早期 helper 版本可回退到 `save_env_value` / `remove_env_value` / `fetch_api_models` 和 legacy fallback 解析，不支持 `providers` schema 的更早运行时拒绝写入。密钥只写入 `~/.hermes/.env`，Provider/模型/主备关系写入 `~/.hermes/config.yaml`。`lightvela.model_config.configured_models` 只保存无密钥的“仅添加”元数据。主模型映射到 `model`，备用模型按加入顺序映射到 `fallback_providers[]`；新增时去重追加，取消、设主或删除时只移除目标项，并在首次写入时把 legacy `fallback_model` 迁移到标准链。UI 将 API Key 和探测结果绑定到 Provider+endpoint+protocol 指纹，目录异步更新或 Provider 变化时清空旧 Key 并丢弃迟到结果；“模型检测”独立调用现网同语义的 `acli model probe`，验证当前未保存表单中的 Provider、模型、端点、协议与凭据组合。
+
+**Tech Stack:** React 19、TypeScript 5.9、Radix/shadcn UI、Tailwind CSS v4、Vitest 4、Testing Library、Hermes Python 配置 API、debug/exec(TAT)。
+
+## Global Constraints
+
+- 上方纵向展示已配置模型，只提供设为主模型、设为备用模型、取消备用和删除，不提供上移/下移。
+- 备用模型不设数量上限；主模型不得同时出现在备用链中，新增备用按加入顺序去重追加。
+- 取消备用、设为主模型或删除模型时只移除目标备用项，不得清空其他备用模型。
+- 下方沿用现有 Provider 分类与选项；只额外增加“获取可用模型”步骤，不透传 Hermes 全量 Provider 清单。
+- 添加用途固定为“设为主模型 / 设为备用模型 / 仅添加”。
+- API Key 不进入 React 持久化、Hermes `config.yaml`、debug/exec 命令参数、命令输出、错误文案或最终结果；只在浏览器内存中加密，并在实例 Python 进程内解密后写入 `.env`；成功添加后清空输入。
+- “获取可用模型”只做实时探测，不提前保存密钥；探测成功后才能选择并添加。
+- Provider/端点/协议变化必须立即使现有 Key 和探测结果失效，不得把旧 Provider 的 Key 发往新端点。
+- 配置变更影响 Hermes 新会话；本需求不自动重启 Gateway，也不热切换当前对话。
+- 删除使用可访问的确认 Dialog；当前主模型不可直接删除，必须先切换主模型。
+- 页面必须覆盖 loading / error / empty / success，错误就近展示并提供重试。
+- 不新增 npm 依赖，不修改后端接口，不提交外部 Hermes 仓库。
+- 顶部“已配置模型”结构、样式和操作保持不变；本轮只调整下方添加模型区。
+- 下方沿用现网纵向单列表单：下划线 Tabs，字段顺序为 Provider / API Key / 模型；模型下拉始终显示，主动探测前禁用并提示“请先获取可用模型”，探测结果回填后才能选择。
+- “获取可用模型”属于模型表单项：首次位于下拉框下方，探测成功后与下拉框并列；底部操作区固定为“模型检测 / 添加模型”，移动端纵向排列、桌面端靠右并排。
+
+---
+
+### Task 1: Hermes 配置协议、命令与真实客户端
+
+**Owner:** developer
+
+**Files:**
+- Create: `frontend/src/pages/marketing/agent-model-config/model-config-client.ts`
+- Create: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+
+**Interfaces:**
+- Produces: `HermesConfiguredModel`, `HermesModelConfigSnapshot`, `ModelProviderOption`, `HermesModelConfigAction`。
+- Produces: `buildHermesModelConfigCommand(action)`, `parseHermesModelConfigResponse(output)`, `createHermesModelConfigClient(execDebugCommand, botId)`。
+- Remote actions: `prepareCredentialEnvelope`, `read`, `probe`, `add`, `assign`, `clearFallback`, `remove`。
+
+- [x] **Step 1 — RED：先锁定协议和安全边界**
+  - 命令包含 `HERMES_HOME` fallback、Hermes venv、固定 JSON markers 和 base64 action payload。
+  - API Key 使用实例一次性 RSA 公钥和 Web Crypto RSA-OAEP/SHA-256 分块加密；原始值不出现在命令字符串、进程参数或解析错误中，私钥消费后立即删除。
+  - parser 可忽略 transport noise，并拒绝 marker 缺失、非法 JSON、字段缺失和结构化远端错误。
+  - client 为 read/probe/mutation 使用有限 timeout，命令失败时保留可理解错误。
+
+- [x] **Step 2 — 运行定向测试并确认 RED**
+  - Run: `cd frontend && pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+  - Expected: FAIL，目标模块尚不存在。
+
+- [x] **Step 3 — GREEN：实现最小真实协议**
+  - `read` 合并 `model`、有效 fallback 第一项和 `lightvela.model_config.configured_models`，兼容 UI 外已有配置。
+  - `probe` 调用 Hermes `probe_api_models`，对 ID 去空、去重；失败不落盘。
+  - `add` 通过可用的 Hermes credential writer 写 `.env`，再重新读取配置、upsert `providers.lightvela-*` 与无密钥元数据，并按 purpose 更新主/备；配置保存或验证失败时回滚配置与凭据。
+  - `assign` 只切换已保存模型；`fallback` 与主模型相同时由远端再次拒绝。
+  - `clear_fallback` 同时清空 `fallback_providers` 和 legacy `fallback_model`。
+  - `remove` 禁止删除当前主模型；删除备用时先清空 fallback；Provider 无其他模型时移除受管 Provider 和凭据；凭据删除失败时回滚配置。
+  - 旧 helper API 只有在运行时确认支持 `providers` schema 时才兼容；pre-provider-schema Hermes 必须在写凭据前 fail closed。
+
+- [x] **Step 4 — GREEN：运行定向测试**
+  - Run: `cd frontend && pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts`
+  - Expected: PASS。
+
+---
+
+### Task 2: 真实状态控制器与模型设置交互
+
+**Owner:** developer
+
+**Files:**
+- Create: `frontend/src/pages/marketing/agent-model-config/use-model-config.ts`
+- Create: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+
+**Interfaces:**
+- Consumes: Task 1 client 与产品侧 `ModelProviderOption[]`。
+- Produces: `AgentModelConfigPanel({ botId, execDebugCommand, providers })`。
+
+- [x] **Step 1 — RED：覆盖状态机和关键交互**
+  - 初次读取的 loading skeleton、读取失败+重试、空列表+聚焦添加区、成功列表四态。
+  - 主/备徽标正确；主模型不能设为备用或删除；多个备用模型可以同时保留。
+  - Provider/API Key 未完整时不能探测；探测 loading 期间禁用关联控件。
+  - 探测成功填充模型下拉；Provider、Key、Base URL 或协议变化会清空过期探测结果。
+  - Provider 目录异步替换时清空旧 Key，延迟完成的旧探测结果不得回填新 Provider。
+  - 三种用途参数准确传给 add；备用用途遇主模型同项时禁用并有可访问说明。
+  - add/assign/clear/remove 的成功刷新、失败就近展示；成功添加后清空 API Key；同步触发的并发 mutation 只能有一个进入远端。
+  - 删除必须二次确认；取消不调用远端；确认后才执行 remove。
+
+- [x] **Step 2 — 运行定向测试并确认 RED**
+  - Run: `cd frontend && pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+  - Expected: FAIL，真实 Panel/Hook 尚不存在。
+
+- [x] **Step 3 — GREEN：实现页面与控制器**
+  - 沿用当前两段式结构、Provider tabs、Radix Select、现有 Button/Input/Badge/Dialog。
+  - 保持工具型页面的 `rounded-md`、统一卡片阴影、稳定控件高度、移动端不溢出。
+  - 所有 input/select/button 有可访问名称，错误通过 `aria-describedby`/`aria-live` 就近关联，忙碌态使用 `aria-busy`。
+
+- [x] **Step 4 — GREEN：运行组件测试**
+  - Run: `cd frontend && pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+  - Expected: PASS。
+
+---
+
+### Task 3: 接入现有 Provider 清单、综合验证与验收
+
+**Owner:** developer
+
+**Files:**
+- Create: `frontend/src/pages/marketing/agent-model-config/product-provider-adapter.ts`
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx`
+- Generated: `frontend/src/i18n/generated/{zh-CN,zh-Hant,en-US,zh-to-key}.json`（仅由脚本同步）
+- Test: Task 1 / Task 2 测试与现有 settings 边界测试。
+
+**Interfaces:**
+- Consumes: SDK 现有 `IModelProvider[]` 作为产品清单，不调用 SDK model save/switch/probe command。
+- Produces: 按当前站点/地域过滤后的 `ModelProviderOption[]`；自定义模型仍由页面本地入口提供。
+
+- [x] **Step 1 — RED：锁定产品目录边界**
+  - Adapter 保留当前 `value/category/provider_name/base_url/api/models`，过滤 OAuth-only 项和无 API Key 流程项。
+  - `openai-completions` / `anthropic-messages` 映射到 Hermes `chat_completions` / `anthropic_messages`。
+  - `openai-codex-responses` 映射到 `codex_responses`；未知协议必须过滤，不能静默按 OpenAI Chat 写入。
+  - settings 页面向 Panel 传入 active bot、真实 `execDebugCommand` 和现有地域过滤 Provider 清单，不再渲染 mock 初始数据或 SDK ModelPanel。
+
+- [x] **Step 2 — 实现目录 Adapter 与宿主接入，并跑 RED→GREEN**
+  - Run: `cd frontend && pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx src/pages/marketing/__tests__/agent-settings-sdk-boundary.test.ts`
+  - Expected: 全部 PASS。
+
+- [x] **Step 3 — Hermes helper 隔离烟测**
+  - 使用临时 `HERMES_HOME` 和本地 Hermes source 执行 read/add/assign/fallback/remove，验证一次性密钥封装被消费、debug/exec action 无明文 key、`config.yaml` 无明文 key、`.env` 有受管 key、多个 fallback 按序保存且可定向移除；不得读取或修改用户真实 `~/.hermes`。
+
+- [ ] **Step 4 — 质量门禁与浏览器验收**
+  - Run: `cd frontend && pnpm i18n:extract && pnpm i18n:zh-hant && pnpm i18n:check && pnpm check && pnpm test && cd .. && git diff --check`
+  - Browser: 已登录真实后端预览中检查桌面/移动端、探测错误、主备互斥、删除确认和刷新持久化；不使用 mock 登录态。
+  - Evidence: 模型配置及接入聚焦 32 tests（含真实 Hermes source smoke 1 test）、`pnpm check`、i18n check、`git diff --check` 均通过；登录态桌面重新读取真实 `MiniMax-M3`、现网 Coding Plan/API Provider，console 无 warning/error。
+  - Remaining gate: 本轮 `pnpm test` 为 142 files / 1390 tests 通过；2 个重型构建用例在并发套件中超时，单独复跑 15/15 通过；`scripts/docs-image-assets.test.ts` 仍因 9 个既有文档图片（中英文重复共 18 条）超过 512 KiB 失败，与本次 diff 无关。后续已通过 Chrome viewport capability 补齐 390px 已登录截图并确认无横向溢出。
+
+- [ ] **Step 5 — 验收确认点**
+  - 输出改动、测试、浏览器证据、风险和未处理项；等待用户确认，不自动提交/推送/MR/归档。
+
+---
+
+### Task 4: 下方添加模型区对齐现网视觉与字段顺序
+
+**Owner:** developer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Modify: `frontend/src/pages/marketing/agent-model-config/model-config-client.ts`
+- Modify: `frontend/src/pages/marketing/agent-model-config/use-model-config.ts`
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/{model-config-client,model-config-panel,use-model-config}.test.*`
+- Generated only if copy changes: `frontend/src/i18n/generated/{zh-CN,zh-Hant,en-US,zh-to-key}.json`
+
+**Interfaces:**
+- Consumes: Task 2 已有 Provider 分类、凭据指纹、probe/add 状态机与 Radix Tabs/Select。
+- Produces: 不新增导出；只调整 `AgentModelConfigPanel` 下方添加模型区的 DOM 顺序和 Tailwind 样式。
+
+- [x] **Step 1 — RED：锁定现网式表单结构**
+  - 顶部列表现有主/备/删除行为测试继续通过。
+  - 下方 Tabs 使用横向文字与底部选中线，不显示“推荐”徽标或胶囊选中块。
+  - 非自定义模式字段 DOM 顺序固定为 Provider、模型、API Key；模型探测前禁用并显示“请先获取可用模型”。
+  - “获取可用模型”和“添加模型”处于同一个底部操作区，移动端全宽纵排，桌面端靠右并排。
+
+- [x] **Step 2 — 运行定向测试并确认 RED**
+  - Run: `cd frontend && pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+  - Expected: 新视觉结构断言失败；既有真实配置行为测试仍可执行。
+
+- [x] **Step 3 — GREEN：最小调整下方 JSX 与样式**
+  - 删除下方重复的“添加模型”标题和说明，让独立卡片从 Tabs 开始。
+  - Tabs 改为截图中的下划线样式；表单内容使用浅灰底、白色控件、`rounded-md` 与稳定高度。
+  - 将模型选择移到 API Key 之前；API Key 恢复整行输入，探测按钮移至底部操作区。
+  - 保留自定义 Provider 字段、三种用途、就近错误、Key 显隐、Provider 描述和 Key 获取链接。
+
+- [x] **Step 4 — GREEN：运行组件测试与静态门禁**
+  - Run: `cd frontend && pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx && pnpm check && pnpm i18n:check && cd .. && git diff --check`
+  - Expected: 全部以退出码 `0` 完成。
+
+- [x] **Step 5 — 浏览器视觉回验**
+  - 在已登录真实后端预览中确认顶部列表无变化；下方桌面端与截图的信息结构一致，探测后模型下拉可选，窄屏无横向溢出。
+  - 截图留存桌面端与可用时的移动端证据；不执行真实写入，避免修改用户实例模型配置。
+
+- [ ] **Step 6 — 验收确认点**
+  - 汇报改动、测试、截图和已知限制；等待用户确认，不自动 commit、push、MR 或归档。
+
+---
+
+### Task 5: 解除备用模型数量限制并映射 Hermes 多级备用链
+
+**Owner:** developer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`
+- Modify: `frontend/src/pages/marketing/agent-model-config/model-config-client.ts`
+- Modify: `frontend/src/pages/marketing/agent-model-config/use-model-config.ts`
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/{model-config-client,model-config-panel,use-model-config,hermes-model-config-real-smoke}.test.*`
+- Generated: `frontend/src/i18n/generated/{zh-CN,zh-Hant,en-US,zh-to-key}.json`（仅由 i18n 脚本同步）
+
+**Interfaces:**
+- Replaces: `HermesModelConfigSnapshot.fallback` with ordered `fallbacks: HermesConfiguredModel[]`。
+- Replaces: global `clearFallback()` with targeted `removeFallback(model)` / `{ type: "removeFallback", providerKey, modelId }`。
+- Preserves: `assign(..., "fallback")` and add purpose `fallback`，语义从替换改为去重追加。
+
+- [x] **Step 1 — RED：锁定多级备用协议与状态行为**
+  - 读取多个 `fallback_providers` 并按顺序返回 `fallbacks[]`，同时把所有备用路由纳入已配置模型。
+  - 连续添加或设置两个备用模型时保留两项；重复设置同一模型不产生重复项。
+  - `removeFallback` 只移除目标备用；设为主模型、设为未启用或删除时也只定向移除该模型。
+  - legacy `fallback_model` 继续可读，首次备用链写操作迁移到 `fallback_providers` 并删除 legacy 字段。
+  - 主模型不能加入备用链；事务失败继续回滚配置和凭据。
+
+- [x] **Step 2 — 运行协议、Hook、Panel 测试并确认 RED**
+  - Run: `cd frontend && pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-client.test.ts src/pages/marketing/agent-model-config/__tests__/use-model-config.test.tsx src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+  - Expected: FAIL，当前快照仍只有 `fallback`，设置新备用会覆盖旧项。
+
+- [x] **Step 3 — GREEN：实现 Hermes 有序备用链协议**
+  - `read_snapshot` 解析并去重整条链；`apply_fallback` 规范化现有链后按目标身份去重追加。
+  - 新增定向 `remove_fallback`；所有角色切换和删除路径只移除目标路由。
+  - `expect_role` 按备用成员关系验证，`idle` 要求目标既非主模型也不在备用链。
+  - TypeScript parser/client 改为 `fallbacks[]` 与 `removeFallback(model)`，继续拒绝非法远端结构。
+
+- [x] **Step 4 — GREEN：更新控制器与列表交互**
+  - Hook 暴露 `removeFallback(model)`；错误操作类型改为 `remove-fallback`。
+  - 顶部每个备用模型独立显示徽标和“取消备用”；新增备用不改变其他备用模型状态。
+  - 标题说明改为“选择一个主模型，并可设置多个备用模型”；下方添加表单结构与视觉保持不变。
+
+- [x] **Step 5 — 运行聚焦回归与真实 Hermes 烟测**
+  - Run focused: 六个模型配置相关测试文件，Expected: 全部 PASS。
+  - Run smoke: 设置两个备用、移除第一个并确认第二个保留；`config.yaml` 无密钥且 legacy 字段已清理。
+
+- [x] **Step 6 — 静态与浏览器验收**
+  - Run: `pnpm check`、`pnpm i18n:check`、`git diff --check`。
+  - Browser: 已登录桌面与 390px 页面可展示多个备用状态；只做只读回验，不修改用户真实实例配置。
+
+- [ ] **Step 7 — 验收确认点**
+  - 汇报多备用行为、测试与残余风险；等待用户确认，不自动 commit、push、MR 或归档。
+
+### Task 6: 收敛模型添加表单与操作列交互
+
+**Owner:** developer
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/agent-model-config/agent-model-config-panel.tsx`
+- Test: `frontend/src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+- Generated: `frontend/src/i18n/generated/{zh-CN,zh-Hant,en-US,zh-to-key}.json`（仅在新增文案时由 i18n 脚本同步）
+
+**Interfaces:**
+- Preserves: `assign(model, "primary" | "fallback")`、`removeFallback(model)`、`remove(model)` 和现有 Hermes 协议。
+- Changes: 已配置模型每行固定三个操作；备用操作在“设为备用模型 / 取消备用”之间切换。
+- Adds: 与列表获取分离的 `connectivityProbe`，通过 `acli model probe` 检测用户当前选中的表单配置并返回成功、耗时或失败原因。
+
+- [x] **Step 1 — RED：锁定表单顺序和探测前后布局**
+  - 字段顺序固定为 Provider、API Key、模型；模型下拉始终渲染，探测前禁用并显示“请先获取可用模型”。
+  - 首次“获取可用模型”位于模型下拉下方，探测成功后与下拉并列；底部操作区为“模型检测 / 添加模型”。
+  - Input 与 Select Trigger 使用 Skills 搜索框同款蓝色聚焦边框；Select Content 宽度绑定 Trigger 且限制高度后内部滚动；所有 label/control 间距统一为 8px。
+
+- [x] **Step 2 — RED：锁定三按钮与 Tooltip 行为**
+  - 每个已配置模型固定显示“设为主模型 / 设为备用模型或取消备用 / 删除”三个按钮。
+  - 当前主模型的主按钮禁用并提供自定义 hover/focus Tooltip；当前备用模型显示可点击的“取消备用”。
+  - 主模型的备用按钮和删除按钮保持禁用，并用自定义 Tooltip 解释原因；不得使用浏览器原生 `title`。
+
+- [x] **Step 3 — 运行组件测试并确认 RED**
+  - Run: `cd frontend && pnpm exec vitest run src/pages/marketing/agent-model-config/__tests__/model-config-panel.test.tsx`
+  - Expected: FAIL，当前页面仍按 Provider、模型、API Key 排列，探测按钮仍在底部，操作列仍包含独立“取消备用”。
+
+- [x] **Step 4 — GREEN：实现状态驱动表单和操作列**
+  - 在 Panel 内复用现有 Radix Select、Button 和项目内联 Tooltip 样式，不新增依赖、不修改全局 UI primitive。
+  - 桌面端底部模型检测与添加按钮并列，移动端纵向排列；Provider 长列表使用与 Trigger 等宽且有最大高度的浮层。
+  - 按 Skills 搜索框完整表面样式覆盖模型页控件：`border-black/10`、无内阴影、无 focus ring、聚焦边框 `#2F6BFF`；Select Content 同时用 Radix Trigger 宽度变量约束 `width/min-width`。
+  - 根据最终增量验收将“获取可用模型”放回模型表单项；模型下拉始终保留，探测成功前禁用，成功后与获取按钮并列。
+  - 底部新增与模型列表获取相互独立的“模型检测”，使用一次性凭据密文调用 `acli model probe`，结果通过可访问 Dialog 展示。
+  - “选择用途”继续使用 `fieldset/legend`，选项容器显式增加 `mt-2`，保证标题与三个选项实际间距为 8px。
+  - 模型 Panel 根节点增加 `pb-12 md:pb-16`，让最后一张卡片与页面 Footer 保持稳定间距。
+
+- [x] **Step 5 — 运行聚焦回归与静态门禁**
+  - Run: 模型配置目录全部 Vitest、`pnpm check`、`pnpm i18n:check`、`git diff --check`。
+
+- [x] **Step 6 — 浏览器验收**
+  - 在已登录预览中验证桌面与 390px 布局、Tooltip、Select 宽度和控制台；不输入真实 API Key，不修改用户实例模型配置。
+  - 实测 Provider、API Key、模型三组 label/control 间距均为 8px；Provider Trigger 与展开浮层均为 911px，浮层最大高度 320px 且内部可滚动。
+  - 实测最后一张模型卡片到 Footer 的距离为桌面 64px、移动端 48px；底部“模型检测 / 添加模型”桌面并排、移动端纵向铺满，无横向溢出。
+
+- [x] **Step 7 — 修正模型选择、连通性检测与用途间距回归**
+  - RED 锁定模型下拉永久可见、“获取可用模型”归属模型项、底部“模型检测”以及用途选项 `mt-2`。
+  - 命令、Client、Hook、Panel 相关 34 个测试通过；浏览器只做无真实 Key 的静态与布局回验。
+  - 两个大卡片内部统一为白底：主模型行不再单独铺灰，模型选择表单内容区不再使用浅灰背景，继续由卡片外框、标签栏底线和列表分隔线表达层级。
+
+- [ ] **Step 8 — 验收确认点**
+  - 汇报结果并等待用户确认；不自动 commit、push、MR 或归档。
+
+---
+
 # 即将到期 Tooltip 视觉修正 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
