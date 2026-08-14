@@ -13,8 +13,19 @@ data:
     enable_inner_sign = false
 
     [api.instance]
+    default_template_class_id = "openclaw-default"
     default_template_id = "pool-c3"
+    default_sku_id = "sku-hermes-2c4g"
     candidate_template_ids = ["pool-c0", "pool-c1", "pool-c2", "pool-c3", "pool-c4", "pool-c5"]
+
+    # migration 022 backfills existing bundles to spec-2c4g50g. A non-empty
+    # instance_spec_id must have an explicit per-spec pool mapping or ctl fails
+    # closed with BUNDLE_INSTANCE_SPEC_NO_POOL before calling sandbox.
+    [[api.instance.spec_pools]]
+    spec_id                = "spec-2c4g50g"
+    sku_id                 = "sku-hermes-2c4g"
+    default_template_id    = "pool-kr-2c4g-01"
+    candidate_template_ids = ["pool-kr-2c4g-01"]
 
     [db]
     host = "10.47.192.15"
