@@ -1,6 +1,6 @@
 import React, { type ReactNode } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/site/public-site-header", () => ({
   PublicSiteHeader: ({ authControls }: { authControls?: ReactNode }) => (
@@ -84,8 +84,14 @@ const getCreditTab = (credit: string) => {
 };
 
 describe("SubscribePage", () => {
-  it("shows low credit tiers first and selects them by default", async () => {
+  beforeEach(() => {
+    cleanup();
+    vi.resetModules();
+    vi.unstubAllEnvs();
     (globalThis as { React?: typeof React }).React = React;
+  });
+
+  it("shows low credit tiers first and selects them by default", async () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
 
     render(<SubscribePage />);
@@ -105,5 +111,9 @@ describe("SubscribePage", () => {
     expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
     expect(getCreditTab("200")).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByText("14天免费体验")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "退款规则" })).toHaveAttribute(
+      "href",
+      "/docs/plans/#%E9%80%80%E6%AC%BE%E8%A7%84%E5%88%99",
+    );
   });
 });

@@ -299,6 +299,68 @@
 
 ---
 
+# 已安装技能实例展开 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
+
+**Goal:** 修复 `/agents/skills` 已安装列表在 SkillHub 返回同名聚合技能时漏展示 `instances[]` 子实例的问题。
+
+**Architecture:** SkillHub installed parser 将 `skills[].instances[]` 展开为独立 `InstalledSkill` 行；实例 `rawId` 保持为命令目标，`slug` 优先使用 `relative_path` 供展示和搜索；已安装列表搜索纳入 `slug` 与 `nativeAliases`。
+
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4、Testing Library。
+
+## Global Constraints
+
+- 仅调整 `/agents/skills` 已安装清单的数据解析、展示标识和搜索匹配。
+- 不修改安装、卸载命令格式；SkillHub 实例卸载仍使用实例 `id/rawId` 作为命令目标。
+- 不新增 API、依赖、区域分支、视觉结构或 i18n 资源。
+
+---
+
+### Task 1: 展开 SkillHub installed instances 并验证
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Test: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+- Test: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+
+**Interfaces:**
+- Consumes: `acli skills list` JSON 中的 `skills[].instances[]`、`id`、`name`、`display_name`、`relative_path`、`version`。
+- Produces: 每个 instance 对应一条 `InstalledSkill`；`rawId` 用于命令，`slug/nativeAliases` 用于展示、搜索和合并匹配。
+
+- [x] **Step 1 — 增加失败回归测试**
+  - 解析器测试覆盖 `humanizer.instances[]`，断言 `unclecheng-reduce-ai-perception-v2` 被展开为独立行。
+  - UI 测试覆盖已安装搜索可按 instance `relative_path` 命中，列表展示路径但卸载仍携带实例 `rawId`。
+
+- [x] **Step 2 — 运行测试并确认 RED**
+  - Run: `cd frontend && pnpm exec vitest run src/pages/marketing/skills-demo/skill-registries.test.ts src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+  - Expected: FAIL，旧实现只展示 top-level `humanizer` 且搜索不到 `unclecheng-reduce-ai-perception-v2`。
+
+- [x] **Step 3 — 实现最小修复**
+  - 展开 SkillHub `instances[]`，保留父级分类/展示名兜底。
+  - 让已安装列表展示 `skill.slug`，搜索匹配 `slug/nativeAliases`。
+
+- [x] **Step 4 — 运行定向测试与质量门禁**
+  - Run: `cd frontend && pnpm exec vitest run src/pages/marketing/skills-demo/skill-registries.test.ts src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+  - Run: `cd frontend && pnpm check && cd .. && git diff --check`
+
+- [x] **Step 5 — 修复已安装搜索框双清除按钮**
+  - 在已安装搜索框有值时保留自定义清除按钮，禁用 Chromium/WebKit 原生 search cancel 和 decoration。
+  - Run: `cd frontend && pnpm exec vitest run src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+
+- [x] **Step 6 — 统一三个 Tab 搜索框聚焦样式**
+  - 技能、技能包、已安装搜索框统一使用 `lv-agent-search-box`、`lv-agent-search-box-icon`、`lv-agent-search-box-input`。
+  - 已安装搜索框保留自定义清除按钮和原生 search cancel 禁用，外层固定宽度不受共享 `width: 100%` 影响。
+  - Run: `cd frontend && pnpm exec vitest run src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx --testNamePattern "uses the skill package search field styling|suppresses the native search clear"`
+
+- [ ] **Step 7 — 验收确认**
+  - 汇总 diff、验证结果和剩余风险；等待用户确认后再提交、推送或 MR。
+
+---
+
 # 即将到期 Tooltip 视觉修正 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
