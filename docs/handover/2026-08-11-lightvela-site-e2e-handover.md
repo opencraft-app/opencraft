@@ -223,8 +223,8 @@ ctl → LPUSH Redis key="website:deploy:queue" operation_id
 | 证书类型 | **付费泛域名证书**（不能复用测试 Let's Encrypt 免费证书） |
 | 状态 | ❌ 未申请 — 生产发布前必须完成 |
 | 申请方式 | 通过腾讯云 SSL 证书控制台申请付费泛域名证书 |
-| 部署方式 | 替换 `argocd/services/site-gateway/sgprod/tls-secrets.yaml` 中的 `REPLACE_SITE_GATEWAY_QCLOUD_CERT_ID` |
-| K8s Secret | `site-gateway-lightvela-tls`（Opaque，key=`qcloud_cert_id`） |
+| 部署方式 | 平台 TLS 流程在 sgprod `ctl` namespace 创建或轮换稳定 Secret，不随 site-gateway 日常发布下发 |
+| K8s Secret | `site-gateway-wildcard-tls`（Opaque，key=`qcloud_cert_id`） |
 
 ### 4.3 Ingress 规则
 
@@ -665,7 +665,7 @@ Skill 的分发渠道：
 
 | 占位符 / 待办 | 文件 | 期望值 / 操作 |
 |---|---|---|
-| `REPLACE_SITE_GATEWAY_QCLOUD_CERT_ID` | `argocd/services/site-gateway/sgprod/tls-secrets.yaml` | 生产 TLS 证书 ID（需重新申请，不能复用测试证书） |
+| 平台 TLS Secret | sgprod `ctl/site-gateway-wildcard-tls` | 平台侧预置生产 TLS 证书 ID，并独立完成续期和轮换 |
 | `REPLACE_BOOTSTRAP_TAG`（镜像） | `sgprod/*-platform.env` | CI 流水线自动填充 |
 | DB 迁移 000028 | sgprod MySQL | CTL 流水线生产门禁执行一次（含 5 张表和配额 seed） |
 | `/v1/frontend/runtime-config` 路由 | sgprod config | 本地已补充，需提交当前功能分支后随生产发布 |
@@ -682,9 +682,9 @@ Skill 的分发渠道：
 - [ ] **2. TLS 证书配置到生产**
   - **不能复用测试证书**（测试用 Let’s Encrypt 免费证书，不便于生产管理和续期）
   - 需重新申请生产专用 `*.lightvela.site` 泛域名证书
-  - sgprod GitOps 中已有 TLS Secret 占位：`argocd/services/site-gateway/sgprod/tls-secrets.yaml`
-  - 占位符 `REPLACE_SITE_GATEWAY_QCLOUD_CERT_ID` 需替换为生产证书 ID
-  - 证书部署方式：通过 qcloud ingress annotation `qcloud_cert_id` 自动关联
+  - 平台 TLS 流程在 sgprod `ctl` namespace 预置 `site-gateway-wildcard-tls`
+  - Secret 使用 `qcloud_cert_id` 关联腾讯云 SSL 证书，并由平台独立续期和轮换
+  - site-gateway 日常 Kustomize 只引用稳定 Secret 名称，不创建或覆盖证书绑定
 
 - [x] **3. COS Bucket ✅ 已创建已配置**
   - 新加坡生产 COS bucket `lightvela-user-sites-1388575217`（`ap-singapore`）**已创建**
