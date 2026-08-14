@@ -368,13 +368,12 @@ func buildPaymentMethodClient(logger *slog.Logger, siteKind string) paymentmetho
 		return nil
 	}
 	client, err := paymentmethod.NewTencentCloudClient(paymentmethod.Config{
-		Endpoint:          endpoint,
-		Region:            envOrDefault("SHADOW_BILLING_REGION", "ap-guangzhou"),
-		Platform:          platform,
-		Source:            envOrDefault("LIGHTCLAW_PAYMENT_METHOD_SOURCE", "REGISTER"),
-		ChannelMerchantID: envOrDefault("LIGHTCLAW_PAYMENT_METHOD_CHANNEL_MERCHANT_ID", ""),
-		RequestTimeout:    parseDurationEnv("LIGHTCLAW_PAYMENT_METHOD_REQUEST_TIMEOUT", 15*time.Second),
-		HTTPTransport:     transport,
+		Endpoint:       endpoint,
+		Region:         envOrDefault("SHADOW_BILLING_REGION", "ap-guangzhou"),
+		Platform:       platform,
+		Source:         envOrDefault("LIGHTCLAW_PAYMENT_METHOD_SOURCE", "REGISTER"),
+		RequestTimeout: parseDurationEnv("LIGHTCLAW_PAYMENT_METHOD_REQUEST_TIMEOUT", 15*time.Second),
+		HTTPTransport:  transport,
 	})
 	if err != nil {
 		logger.Warn("payment method client disabled due to invalid config", "err", err)

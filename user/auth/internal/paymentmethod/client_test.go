@@ -92,11 +92,10 @@ func TestCreateSignOrderReturnsPaymentLink(t *testing.T) {
 	t.Parallel()
 
 	client, err := NewTencentCloudClient(Config{
-		Endpoint:          "billing.test.tencentcloudapi.com",
-		Region:            "ap-guangzhou",
-		Platform:          "intlSaaSLightvela",
-		Source:            "REGISTER",
-		ChannelMerchantID: "76317828081018416",
+		Endpoint: "billing.test.tencentcloudapi.com",
+		Region:   "ap-guangzhou",
+		Platform: "intlSaaSLightvela",
+		Source:   "REGISTER",
 		HTTPTransport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			var body map[string]any
 			if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -105,7 +104,7 @@ func TestCreateSignOrderReturnsPaymentLink(t *testing.T) {
 			if got := exactHeader(req.Header, "X-TC-Action"); got != "CreateSignOrder" {
 				t.Fatalf("X-TC-Action = %q", got)
 			}
-			if body["Source"] != "REGISTER" || body["Platform"] != "intlSaaSLightvela" || body["ChannelMerchantId"] != "76317828081018416" {
+			if body["Source"] != "REGISTER" || body["Platform"] != "intlSaaSLightvela" {
 				t.Fatalf("unexpected server parameters: %+v", body)
 			}
 			if body["ReturnUrl"] != "https://lightvela.ai/account/?payment-method=success" {
