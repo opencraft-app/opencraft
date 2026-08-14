@@ -270,14 +270,14 @@ func TestFaceIDCallbackIsPublicInDomesticEnvironments(t *testing.T) {
 	}
 }
 
-func TestTencentCloudAccountCallbackIsPublicInDomesticEnvironments(t *testing.T) {
+func TestTencentCloudAccountCallbackIsPublicInRequiredEnvironments(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve current file")
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
 
-	for _, env := range []string{"beijing-sandbox", "shprod"} {
+	for _, env := range []string{"beijing-sandbox", "sandbox-kr-1", "shprod"} {
 		t.Run(env, func(t *testing.T) {
 			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd", "services", "service-gateway", env, "config.yaml"))
 			if err != nil {
