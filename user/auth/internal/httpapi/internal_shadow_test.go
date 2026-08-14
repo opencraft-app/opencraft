@@ -337,6 +337,10 @@ func TestInternalShadowRoutesRejectWhenTokensAreUnset(t *testing.T) {
 	if binding.Code != http.StatusUnauthorized {
 		t.Fatalf("expected missing internal token to deny binding lookup, got %d: %s", binding.Code, binding.Body.String())
 	}
+	paymentContext := performJSONRequest(t, router, http.MethodPost, "/internal/payment-methods/context", map[string]any{"external_user_id": "user-1"})
+	if paymentContext.Code != http.StatusUnauthorized {
+		t.Fatalf("expected missing internal token to deny payment context lookup, got %d: %s", paymentContext.Code, paymentContext.Body.String())
+	}
 
 	callback := performJSONRequest(t, router, http.MethodPost, "/internal/tencentcloud/account", map[string]any{
 		"interface": map[string]any{"interfaceName": "qcloud.saas.checkSaaSAccountExist", "para": map[string]any{"user_id": "user-1"}},

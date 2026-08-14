@@ -105,6 +105,41 @@ func TestListPaymentMethodsReturnsFrontendContract(t *testing.T) {
 	}
 }
 
+func TestInternalPaymentContextRequiresTokenAndReturnsBindingStateAndCredentials(t *testing.T) {
+	t.Parallel()
+
+	client := &paymentMethodHTTPClient{listResult: paymentmethod.ListResult{
+		Total: 1,
+		Items: []paymentmethod.PaymentMethod{{ContractCode: "contract-1"}},
+	}}
+	router, authService, _ := newPaymentMethodHTTPTestRouter(client)
+	_, userID := completePhone3FAHTTPFlow(t, router, authService)
+	path := "/internal/payment-methods/context"
+	body := map[string]any{"external_user_id": userID, "client_ua": "lightvela-trade"}
+
+	unauthorized := performJSONRequest(t, router, http.MethodPost, path, body)
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", unauthorized.Code, unauthorized.Body.String())
+	}
+
+	req := newJSONRequest(t, http.MethodPost, path, body)
+	req.Header.Set("Authorization", "Bearer shadow-internal-token")
+	response := performRequest(router, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	for _, want := range []string{
+		`"has_payment_method":true`,
+		`"uin":300000000053`,
+		`"tmp_secret_id":"tmp-id"`,
+		`"token":"tmp-token"`,
+	} {
+		if !strings.Contains(response.Body.String(), want) {
+			t.Fatalf("response missing %s: %s", want, response.Body.String())
+		}
+	}
+}
+
 func TestCreatePaymentMethodSignOrderUsesServerCallbacks(t *testing.T) {
 	t.Parallel()
 
@@ -202,11 +237,12 @@ func newPaymentMethodHTTPTestRouter(client paymentmethod.Client) (*gin.Engine, *
 		PaymentMethods:             client,
 	})
 	router := NewRouter(authService, ServerConfig{
-		CookieSecure:    true,
-		CookieSameSite:  http.SameSiteNoneMode,
-		SessionTTL:      30 * 24 * time.Hour,
-		PublicBaseURL:   "https://api.lightvela.ai",
-		FrontendBaseURL: "https://lightvela.ai",
+		CookieSecure:               true,
+		CookieSameSite:             http.SameSiteNoneMode,
+		SessionTTL:                 30 * 24 * time.Hour,
+		PublicBaseURL:              "https://api.lightvela.ai",
+		FrontendBaseURL:            "https://lightvela.ai",
+		ShadowBindingInternalToken: "shadow-internal-token",
 	})
 	return router, authService, shadowService
 }

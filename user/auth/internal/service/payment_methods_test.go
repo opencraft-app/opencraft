@@ -23,6 +23,7 @@ func (c *paymentMethodShadowClient) GetTemporaryCredentialsForSaaS(context.Conte
 
 type recordingPaymentMethodClient struct {
 	listResult   paymentmethod.ListResult
+	listErr      error
 	deleteErr    error
 	lastList     paymentmethod.ListInput
 	lastContract string
@@ -33,7 +34,26 @@ type recordingPaymentMethodClient struct {
 func (c *recordingPaymentMethodClient) List(_ context.Context, credentials paymentmethod.TemporaryCredentials, input paymentmethod.ListInput) (paymentmethod.ListResult, error) {
 	c.credentials = credentials
 	c.lastList = input
-	return c.listResult, nil
+	return c.listResult, c.listErr
+}
+
+func TestInternalPaymentContextTreatsCardLookupFailureAsUnbound(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 14, 11, 0, 0, 0, time.UTC)
+	cardClient := &recordingPaymentMethodClient{listErr: errors.New("billing unavailable")}
+	service, session := newPaymentMethodService(t, now, cardClient)
+
+	got, err := service.InternalPaymentContext(context.Background(), session.User.ID, "192.0.2.1", "lightvela-trade")
+	if err != nil {
+		t.Fatalf("InternalPaymentContext: %v", err)
+	}
+	if got.HasPaymentMethod {
+		t.Fatal("HasPaymentMethod = true, want false after lookup failure")
+	}
+	if got.Credentials.TmpSecretID != "tmp-id" || got.Credentials.Token != "tmp-token" {
+		t.Fatalf("unexpected credentials: %+v", got.Credentials)
+	}
 }
 
 func (c *recordingPaymentMethodClient) CreateSignOrder(context.Context, paymentmethod.TemporaryCredentials, paymentmethod.CreateSignOrderInput) (paymentmethod.CreateSignOrderResult, error) {
@@ -79,6 +99,47 @@ func TestListPaymentMethodsUsesCurrentUsersShadowCredentials(t *testing.T) {
 	}
 	if cardClient.credentials.SecretID != "tmp-id" || cardClient.credentials.Token != "tmp-token" {
 		t.Fatalf("unexpected credentials: %+v", cardClient.credentials)
+	}
+}
+
+func TestInternalPaymentContextUsesExternalUserIDWithoutSession(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		listResult paymentmethod.ListResult
+		want       bool
+	}{
+		{
+			name: "bound",
+			listResult: paymentmethod.ListResult{
+				Total: 1,
+				Items: []paymentmethod.PaymentMethod{{ContractCode: "contract-1"}},
+			},
+			want: true,
+		},
+		{name: "unbound", listResult: paymentmethod.ListResult{}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Date(2026, 8, 14, 11, 0, 0, 0, time.UTC)
+			cardClient := &recordingPaymentMethodClient{listResult: tt.listResult}
+			service, session := newPaymentMethodService(t, now, cardClient)
+
+			got, err := service.InternalPaymentContext(context.Background(), session.User.ID, "192.0.2.1", "lightvela-trade")
+			if err != nil {
+				t.Fatalf("InternalPaymentContext: %v", err)
+			}
+			if got.HasPaymentMethod != tt.want {
+				t.Fatalf("HasPaymentMethod = %v, want %v", got.HasPaymentMethod, tt.want)
+			}
+			if got.Credentials.TmpSecretID != "tmp-id" || got.Credentials.Token != "tmp-token" {
+				t.Fatalf("unexpected credentials: %+v", got.Credentials)
+			}
+			if cardClient.lastList.Page != 1 || cardClient.lastList.PageSize != 1 {
+				t.Fatalf("unexpected pagination: %+v", cardClient.lastList)
+			}
+		})
 	}
 }
 

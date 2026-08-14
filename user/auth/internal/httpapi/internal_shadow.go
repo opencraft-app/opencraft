@@ -53,6 +53,11 @@ type internalShadowCredentials struct {
 	ExpiredAt    string `json:"expired_at"`
 }
 
+type internalPaymentContext struct {
+	internalShadowCredentials
+	HasPaymentMethod bool `json:"has_payment_method"`
+}
+
 type tencentCloudCallbackEnvelope struct {
 	Version       string `json:"version"`
 	Caller        string `json:"caller"`
@@ -76,6 +81,7 @@ func registerInternalShadowRoutes(router gin.IRoutes, authService *service.Servi
 	}
 	router.GET("/internal/shadow/binding", internal.handleGetShadowBinding)
 	router.POST("/internal/shadow/credentials", internal.handleIssueShadowCredentials)
+	router.POST("/internal/payment-methods/context", internal.handlePaymentContext)
 	router.POST("/internal/tencentcloud/account", internal.handleTencentCloudCallback)
 	router.POST("/auth/internal/tencentcloud/account", internal.handleTencentCloudCallback)
 }
@@ -119,6 +125,57 @@ func (a *internalAPI) handleIssueShadowCredentials(ctx *gin.Context) {
 			TmpSecretKey: credentials.TmpSecretKey,
 			Token:        credentials.Token,
 			ExpiredAt:    credentials.ExpiredTime.UTC().Format(time.RFC3339),
+		},
+	})
+}
+
+func (a *internalAPI) handlePaymentContext(ctx *gin.Context) {
+	if !isAuthorizedInternalToken(ctx, a.shadowBindingInternalToken) {
+		ctx.JSON(http.StatusUnauthorized, internalEnvelope{Code: "unauthorized", Message: "unauthorized"})
+		return
+	}
+	var req internalShadowCredentialsRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, internalEnvelope{Code: "invalid_request", Message: "invalid request body"})
+		return
+	}
+	userID := strings.TrimSpace(req.ExternalUserID)
+	if userID == "" {
+		ctx.JSON(http.StatusBadRequest, internalEnvelope{Code: "invalid_request", Message: "external_user_id is required"})
+		return
+	}
+	clientIP := strings.TrimSpace(req.ClientIP)
+	if clientIP == "" {
+		clientIP = ctx.ClientIP()
+	}
+	clientUA := strings.TrimSpace(req.ClientUA)
+	if clientUA == "" {
+		clientUA = ctx.Request.UserAgent()
+	}
+	paymentContext, err := a.service.InternalPaymentContext(
+		ctx.Request.Context(),
+		userID,
+		clientIP,
+		clientUA,
+	)
+	if err != nil {
+		body, status := toErrorBody(err)
+		ctx.JSON(status, internalEnvelope{Code: body.Code, Message: body.Message})
+		return
+	}
+	ctx.JSON(http.StatusOK, internalEnvelope{
+		Code:    "OK",
+		Message: "ok",
+		Data: internalPaymentContext{
+			internalShadowCredentials: internalShadowCredentials{
+				Uin:          paymentContext.Credentials.Uin,
+				OwnerUin:     paymentContext.Credentials.OwnerUin,
+				TmpSecretID:  paymentContext.Credentials.TmpSecretID,
+				TmpSecretKey: paymentContext.Credentials.TmpSecretKey,
+				Token:        paymentContext.Credentials.Token,
+				ExpiredAt:    paymentContext.Credentials.ExpiredTime.UTC().Format(time.RFC3339),
+			},
+			HasPaymentMethod: paymentContext.HasPaymentMethod,
 		},
 	})
 }

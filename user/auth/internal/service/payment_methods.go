@@ -33,6 +33,45 @@ func (s *Service) ListPaymentMethods(ctx context.Context, token string, page, pa
 	return result, nil
 }
 
+type InternalPaymentContext struct {
+	Credentials      shadowbinding.CloudTemporaryCredentials
+	HasPaymentMethod bool
+}
+
+// InternalPaymentContext returns everything trade needs to create an
+// international payment URL. Internal callers authenticate at the HTTP layer,
+// so this path resolves the user directly instead of requiring a browser
+// session.
+func (s *Service) InternalPaymentContext(ctx context.Context, userID, clientIP, clientUA string) (InternalPaymentContext, error) {
+	if s == nil || s.siteKind != shadowbinding.SiteKindIntl || s.paymentMethods == nil {
+		return InternalPaymentContext{}, newError("payment_methods_unavailable", "签约卡管理暂未开放。", http.StatusServiceUnavailable)
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return InternalPaymentContext{}, newError("invalid_payment_method_user", "用户标识不能为空。", http.StatusBadRequest)
+	}
+	credentials, err := s.InternalShadowCredentials(ctx, userID, clientIP, clientUA)
+	if err != nil {
+		return InternalPaymentContext{}, err
+	}
+	result, err := s.paymentMethods.List(ctx, paymentmethod.TemporaryCredentials{
+		SecretID:  credentials.TmpSecretID,
+		SecretKey: credentials.TmpSecretKey,
+		Token:     credentials.Token,
+		ExpiresAt: credentials.ExpiredTime,
+	}, paymentmethod.ListInput{Page: 1, PageSize: 1})
+	if err != nil {
+		// A failed card lookup must not block checkout. The caller will treat the
+		// user as unbound and open the sign-and-pay flow with these credentials.
+		_ = paymentMethodProviderError(ctx, "DescribeSignInfo", err)
+		return InternalPaymentContext{Credentials: credentials}, nil
+	}
+	return InternalPaymentContext{
+		Credentials:      credentials,
+		HasPaymentMethod: result.Total > 0 || len(result.Items) > 0,
+	}, nil
+}
+
 func (s *Service) CreatePaymentMethodSignOrder(ctx context.Context, token string, input paymentmethod.CreateSignOrderInput, clientIP, clientUA string) (paymentmethod.CreateSignOrderResult, error) {
 	session, err := s.paymentMethodSession(ctx, token)
 	if err != nil {
