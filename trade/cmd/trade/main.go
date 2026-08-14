@@ -155,6 +155,7 @@ func main() {
 		CloudBillingClient:     cloudBillingClient,
 		ShadowCredentialClient: shadowCredentialClient,
 		PaymentContextClient:   shadowResolverClient,
+		BillingPayRedirectURL:  cfg.BillingCloudAPIPayRedirectURL,
 		OrderWriter:            mysqlStore,
 		OrderStore:             mysqlStore,
 		ShadowClient:           shadowClient,

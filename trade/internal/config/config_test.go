@@ -264,6 +264,7 @@ func TestLoad_BillingCloudAPIUsesTradeRoutingConfig(t *testing.T) {
 	t.Setenv("TRADE_BILLING_CLOUDLADDER_GATEWAY_BASE_URL", "http://trade-clgateway.test")
 	t.Setenv("TRADE_BILLING_CLOUDLADDER_ROUTE_ID", "tcapi-billing-intl-dev")
 	t.Setenv("TRADE_BILLING_CLOUDLADDER_CALLER", "lightvela-trade")
+	t.Setenv("TRADE_BILLING_PAY_REDIRECT_URL", "  https://sandbox-kr-1.lightclaw.tech/subscribe  ")
 	t.Setenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", "trade-hmac")
 	t.Setenv("TRADE_BILLING_X_QCLOUD_USER_ID", "")
 	t.Setenv("JIFEI_CGW_X_QCLOUD_USER_ID", "800000294207")
@@ -289,6 +290,9 @@ func TestLoad_BillingCloudAPIUsesTradeRoutingConfig(t *testing.T) {
 	}
 	if cfg.BillingCloudAPICloudLadderCaller != "lightvela-trade" {
 		t.Fatalf("BillingCloudAPICloudLadderCaller = %q", cfg.BillingCloudAPICloudLadderCaller)
+	}
+	if cfg.BillingCloudAPIPayRedirectURL != "https://sandbox-kr-1.lightclaw.tech/subscribe" {
+		t.Fatalf("BillingCloudAPIPayRedirectURL = %q", cfg.BillingCloudAPIPayRedirectURL)
 	}
 	if cfg.BillingCloudAPICloudLadderHMACSecret != "trade-hmac" {
 		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)

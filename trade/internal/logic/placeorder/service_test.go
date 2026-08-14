@@ -1078,6 +1078,7 @@ func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testin
 		OrderWriter:            d.writer,
 		OrderStore:             d.store,
 		SiteKind:               "intl",
+		BillingPayRedirectURL:  "https://sandbox-kr-1.lightclaw.tech/subscribe",
 	})
 	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
 		return &store.TradeOrder{
@@ -1104,6 +1105,12 @@ func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testin
 		if req.Application != "intlSaaSLightvela" {
 			t.Errorf("Application = %q, want intlSaaSLightvela", req.Application)
 		}
+		if req.CancelURL != "https://sandbox-kr-1.lightclaw.tech/subscribe" {
+			t.Errorf("CancelURL = %q, want KR fallback", req.CancelURL)
+		}
+		if req.ReturnURL != "https://sandbox-kr-1.lightclaw.tech/subscribe" {
+			t.Errorf("ReturnURL = %q, want KR fallback", req.ReturnURL)
+		}
 		return &cloudbillingclient.CreatePayURLResponse{URL: "https://buy.cloud.tencent.com/midas/manual?dealName=deal-1"}, nil
 	}
 
@@ -1118,6 +1125,48 @@ func TestGeneratePayURL_IntlManualRenewUsesCreatePayURLWithoutContract(t *testin
 	}
 	if d.paymentContext.calls.Load() != 0 {
 		t.Errorf("payment context queries = %d, want 0 for renew", d.paymentContext.calls.Load())
+	}
+}
+
+func TestResolvePayRedirectURLs(t *testing.T) {
+	const fallback = "https://sandbox-kr-1.lightclaw.tech/subscribe"
+	tests := []struct {
+		name       string
+		opts       *GeneratePayURLOptions
+		wantCancel string
+		wantReturn string
+	}{
+		{
+			name:       "fills both missing values",
+			wantCancel: fallback,
+			wantReturn: fallback,
+		},
+		{
+			name: "keeps caller values",
+			opts: &GeneratePayURLOptions{
+				CancelURL: "https://client.example/cancel",
+				ReturnURL: "https://client.example/return",
+			},
+			wantCancel: "https://client.example/cancel",
+			wantReturn: "https://client.example/return",
+		},
+		{
+			name: "fills only missing return value",
+			opts: &GeneratePayURLOptions{
+				CancelURL: "https://client.example/cancel",
+			},
+			wantCancel: "https://client.example/cancel",
+			wantReturn: fallback,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cancelURL, returnURL := resolvePayRedirectURLs(tt.opts, fallback)
+			if cancelURL != tt.wantCancel || returnURL != tt.wantReturn {
+				t.Fatalf("redirect URLs = %q/%q, want %q/%q", cancelURL, returnURL, tt.wantCancel, tt.wantReturn)
+			}
+		})
 	}
 }
 

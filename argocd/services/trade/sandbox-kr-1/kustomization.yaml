@@ -83,6 +83,18 @@ replacements:
           name: trade-config
         fieldPaths:
           - data.TRADE_BILLING_CLOUDLADDER_CALLER
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_BILLING_PAY_REDIRECT_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_BILLING_PAY_REDIRECT_URL
+        options:
+          create: true
 patches:
   - path: delete-shared-namespace.yaml
   - path: delete-shared-serviceaccount.yaml

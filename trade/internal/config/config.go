@@ -81,6 +81,7 @@ type Config struct {
 	BillingCloudAPICloudLadderCaller     string
 	BillingCloudAPICloudLadderHMACSecret string
 	BillingCloudAPIXQCloudUserID         string
+	BillingCloudAPIPayRedirectURL        string
 
 	// Q58 出口 framework 双层结构必填项；Q60 dispatcher 入参三段式校验前缀。
 	JifeiComponentName      string
@@ -183,6 +184,7 @@ func Load() (Config, error) {
 			os.Getenv("TRADE_BILLING_X_QCLOUD_USER_ID"),
 			os.Getenv("JIFEI_CGW_X_QCLOUD_USER_ID"),
 		),
+		BillingCloudAPIPayRedirectURL: strings.TrimSpace(os.Getenv("TRADE_BILLING_PAY_REDIRECT_URL")),
 
 		// Q58 / Q60 dispatcher + builder 默认值（联调期按 jifei align 后再 override）
 		JifeiComponentName:      envOrDefault("TRADE_JIFEI_COMPONENT_NAME", "trade"),

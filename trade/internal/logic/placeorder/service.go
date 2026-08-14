@@ -185,10 +185,13 @@ type Deps struct {
 	// PaymentContextClient resolves card binding state and short-lived
 	// credentials in one auth call for international create-order pay URLs.
 	PaymentContextClient shadowclient.PaymentContextClient
-	OrderWriter          store.OrderWriter
-	OrderStore           store.OrderStore    // GeneratePayURL 反查 trade_order.pay_url 用
-	ShadowClient         shadowclient.Client // 可选，nil 表示由调用方传 Uin/AppID
-	SiteKind             string              // 可选，v1.7.x 国际站接入；"cn" / "intl"，缺省 cn 兜底
+	// BillingPayRedirectURL fills missing CancelUrl/ReturnUrl for international
+	// CreatePayUrl calls. Callers can still override either field explicitly.
+	BillingPayRedirectURL string
+	OrderWriter           store.OrderWriter
+	OrderStore            store.OrderStore    // GeneratePayURL 反查 trade_order.pay_url 用
+	ShadowClient          shadowclient.Client // 可选，nil 表示由调用方传 Uin/AppID
+	SiteKind              string              // 可选，v1.7.x 国际站接入；"cn" / "intl"，缺省 cn 兜底
 
 	// RegionOverride 是腾讯云 region 字面量 override（北京 2 预发布接入新增）。
 	// 合法性已由 config.Load 在启动期 fail-fast 校验；本处只负责透透到 region.Resolve。
@@ -1420,13 +1423,14 @@ func (s *Service) generatePayURLByCloudAPI(
 	if err != nil {
 		return nil, err
 	}
+	cancelURL, returnURL := resolvePayRedirectURLs(opts, s.deps.BillingPayRedirectURL)
 	req := &cloudbillingclient.CreatePayURLRequest{
 		OrderIDs:      []string{dealName},
 		ChargeAmount:  chargeAmount,
 		Platform:      optsPlatform(opts),
 		ContractOrder: contractOrder,
-		CancelURL:     optsCancelURL(opts),
-		ReturnURL:     optsReturnURL(opts),
+		CancelURL:     cancelURL,
+		ReturnURL:     returnURL,
 		PayScene:      "credit_card",
 		PayOption:     intlPayURLPayOption,
 		Application:   intlPayURLApplication,
@@ -1799,6 +1803,19 @@ func optsReturnURL(opts *GeneratePayURLOptions) string {
 		return ""
 	}
 	return opts.ReturnURL
+}
+
+func resolvePayRedirectURLs(opts *GeneratePayURLOptions, fallback string) (string, string) {
+	cancelURL := strings.TrimSpace(optsCancelURL(opts))
+	returnURL := strings.TrimSpace(optsReturnURL(opts))
+	fallback = strings.TrimSpace(fallback)
+	if cancelURL == "" {
+		cancelURL = fallback
+	}
+	if returnURL == "" {
+		returnURL = fallback
+	}
+	return cancelURL, returnURL
 }
 
 func isIntlSite(siteKind string) bool {
