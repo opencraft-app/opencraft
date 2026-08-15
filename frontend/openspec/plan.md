@@ -1,4 +1,24 @@
-# 国内站登录弹窗交互优化 Implementation Plan
+# Current Change: 韩国国际站签约卡管理前端接入
+
+**Status:** 实现完成，待提交与韩国环境发布。
+
+**Goal:** 使用真实 Auth 签约卡 API 替换国际站账号页的演示卡和本地卡号表单。
+
+详细方案与执行计划：
+
+- `openspec/changes/2026-08-15-kr-payment-methods-proposal.md`
+- `openspec/changes/2026-08-15-kr-payment-methods-spec.md`
+- `openspec/changes/2026-08-15-kr-payment-methods-plan.md`
+
+## Tasks
+
+- [x] Repository 类型、HTTP/Fake 实现及测试。
+- [x] 真实卡列表、托管绑卡、设默认、解绑及组件测试。
+- [x] 回跳、i18n、类型检查和国际站构建验证。
+
+---
+
+# Previous Change: 国内站登录弹窗交互优化 Implementation Plan
 
 **Status:** 前端实现已完成，待用户验收后再提交 / MR / 归档。
 

@@ -103,6 +103,26 @@ export interface TencentCloudRedirectResult {
   expiresAt: string;
 }
 
+export type PaymentMethodLanguageCode = "en" | "zh" | "hk";
+
+export interface PaymentMethod {
+  contractCode: string;
+  maskedNumber: string;
+  payerName: string;
+  type: string;
+  isDefault: boolean;
+}
+
+export interface PaymentMethodList {
+  total: number;
+  items: PaymentMethod[];
+}
+
+export interface PaymentMethodSignOrder {
+  contractCode: string;
+  redirectUrl: string;
+}
+
 export interface AuthRepository {
   signInWithCode(input: { phone: string; code?: string; inviteCode?: string }): Promise<AuthSessionSnapshot>;
   prepareInviteCode(code: string): Promise<void>;
@@ -136,6 +156,10 @@ export interface AuthRepository {
   requestEmailBind(input: { email: string }): Promise<{ cooldownSeconds: number }>;
   createTatDeviceBind(input: { callbackUrl: string; deviceName?: string }): Promise<TatDeviceBindResult>;
   createTencentCloudRedirect(targetPath?: string): Promise<TencentCloudRedirectResult>;
+  listPaymentMethods(): Promise<PaymentMethodList>;
+  createPaymentMethodSignOrder(languageCode: PaymentMethodLanguageCode): Promise<PaymentMethodSignOrder>;
+  setDefaultPaymentMethod(contractCode: string): Promise<void>;
+  deletePaymentMethod(contractCode: string): Promise<void>;
   getOAuthStartUrl(provider: OAuthProvider, options?: OAuthStartOptions): string | null;
   signInAsGuest(): Promise<AuthSessionSnapshot>;
   signOut(): Promise<void>;

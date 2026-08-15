@@ -24,6 +24,7 @@ import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 import type {
   BotRepository,
   DashboardSnapshot,
+  PaymentMethod,
   RealnameFaceIdAttempt,
   RealnameFaceIdAttemptState,
   Repositories,
@@ -435,6 +436,8 @@ const computeExpiredIso = (bundle: Bundle): string => {
 };
 
 export const createFakeRepositories = (): Repositories => {
+  let paymentMethods: PaymentMethod[] = [];
+
   return {
     auth: {
       async signInWithCode({ phone }) {
@@ -830,6 +833,30 @@ export const createFakeRepositories = (): Repositories => {
           redirectUrl: redirectUrl.toString(),
           expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
         };
+      },
+      async listPaymentMethods() {
+        await wait(NETWORK_DELAY_MS / 2);
+        return { total: paymentMethods.length, items: paymentMethods };
+      },
+      async createPaymentMethodSignOrder(languageCode) {
+        await wait(NETWORK_DELAY_MS / 2);
+        const redirectUrl = new URL("https://sandbox-card.centauriglobal.com/sign/fake-contract");
+        redirectUrl.searchParams.set("language_code", languageCode);
+        return {
+          contractCode: "fake-contract",
+          redirectUrl: redirectUrl.toString(),
+        };
+      },
+      async setDefaultPaymentMethod(contractCode) {
+        await wait(NETWORK_DELAY_MS / 2);
+        paymentMethods = paymentMethods.map((method) => ({
+          ...method,
+          isDefault: method.contractCode === contractCode,
+        }));
+      },
+      async deletePaymentMethod(contractCode) {
+        await wait(NETWORK_DELAY_MS / 2);
+        paymentMethods = paymentMethods.filter((method) => method.contractCode !== contractCode);
       },
       getOAuthStartUrl(provider: OAuthProvider, options) {
         return fakeOAuthStartURL(provider, options?.wechatMode);

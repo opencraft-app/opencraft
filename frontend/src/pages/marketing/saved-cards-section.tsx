@@ -1,344 +1,450 @@
-import { useState, type ReactElement } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Trash2 } from "lucide-react";
-import { useT, t as rawT } from "@/i18n/t";
+import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
+import { CreditCard, LoaderCircle, Plus, RefreshCw, Trash2 } from "lucide-react";
 
-export interface SavedCard {
-  id: string;
-  brand: "visa" | "mastercard" | "amex";
-  last4: string;
-  expiry: string;
-  holderName: string;
-  isDefault: boolean;
-}
+import { useRepositories } from "@/contexts/repository-context";
+import { useT } from "@/i18n/t";
+import { useAppSearchParams } from "@/lib/app-navigation";
+import { RepositoryError } from "@/repositories/http-repositories";
+import type {
+  PaymentMethod,
+  PaymentMethodLanguageCode,
+  PaymentMethodList,
+} from "@/repositories/types";
 
-/** 格式化有效期输入：纯数字串 → MM/YY */
-export const formatExpiry = (v: string): string => {
-  const d = v.replace(/\D/g, "").slice(0, 4);
-  return d.length >= 3 ? `${d.slice(0, 2)}/${d.slice(2)}` : d;
+const PENDING_SIGN_ORDER_KEY = "lightvela-payment-method-sign-order-v1";
+const SIGN_ORDER_SYNC_WINDOW_MS = 5_000;
+const SIGN_ORDER_POLL_INTERVAL_MS = 750;
+
+type PendingSignOrder = {
+  contractCode: string;
+  deadlineAt: number;
 };
 
-/** 按卡号前缀识别品牌 */
-export const detectBrand = (cardNumber: string): "visa" | "mastercard" | "amex" => {
-  const d = cardNumber.replace(/\D/g, "");
-  if (d.startsWith("4")) return "visa";
-  if (d.startsWith("5")) return "mastercard";
-  if (d.startsWith("3")) return "amex";
-  return "visa";
+type Notice = {
+  tone: "error" | "info" | "success";
+  text: string;
 };
 
-/** 校验绑卡表单输入，返回错误文案 key 或 null（无错误） */
-export const validateCardInput = (
-  cardNumber: string,
-  expiry: string,
-  cvc: string,
-  holder: string,
-): string | null => {
-  const digits = cardNumber.replace(/\D/g, "");
-  if (digits.length < 13) return "请输入有效的卡号。";
-  if (!/^\d{2}\/\d{2}$/.test(expiry)) return "有效期格式应为 MM/YY。";
-  const [mm] = expiry.split("/");
-  if (Number(mm) < 1 || Number(mm) > 12) return "有效期月份应在 01-12 之间。";
-  if (cvc.replace(/\D/g, "").length < 3) return "安全码无效。";
-  if (!holder.trim()) return "请输入持卡人姓名。";
-  return null;
+type SavedCardsSectionProps = {
+  navigateToHostedPage?: (url: string) => void;
 };
 
-/**
- * i18n 注册：validateCardInput 返回的中文源文案通过 rawT() 注册，
- * 使 i18n-extract 脚本能扫描到并生成 hash key。
- * 运行时 rawT 在模块加载时执行一次，结果不使用（仅用于注册）。
- */
-void [
-  rawT("请输入有效的卡号。"),
-  rawT("有效期格式应为 MM/YY。"),
-  rawT("有效期月份应在 01-12 之间。"),
-  rawT("安全码无效。"),
-  rawT("请输入持卡人姓名。"),
-];
+const defaultNavigateToHostedPage = (url: string): void => {
+  window.location.assign(url);
+};
 
-/** 预置 3 张演示卡（含 1 张默认） */
-export const buildInitialCards = (): SavedCard[] => [
-  { id: "demo-1", brand: "visa", last4: "4242", expiry: "12/27", holderName: "John Doe", isDefault: true },
-  { id: "demo-2", brand: "mastercard", last4: "5555", expiry: "08/26", holderName: "John Doe", isDefault: false },
-  { id: "demo-3", brand: "amex", last4: "3782", expiry: "03/28", holderName: "John Doe", isDefault: false },
-];
+const currentPaymentLanguage = (): PaymentMethodLanguageCode => {
+  const language = typeof document === "undefined" ? "en" : document.documentElement.lang.toLowerCase();
+  if (language === "zh-hant" || language.startsWith("zh-hk") || language.startsWith("zh-tw")) return "hk";
+  return language.startsWith("zh") ? "zh" : "en";
+};
 
-// ─── SavedCardsSection 组件 ───
+export const isAllowedPaymentRedirect = (value: string): boolean => {
+  try {
+    const redirect = new URL(value);
+    return redirect.protocol === "https:"
+      && (redirect.hostname === "centauriglobal.com" || redirect.hostname.endsWith(".centauriglobal.com"));
+  } catch {
+    return false;
+  }
+};
 
-let _cardIdCounter = 100;
-const nextCardId = () => `card-${++_cardIdCounter}`;
+const readPendingSignOrder = (): PendingSignOrder | null => {
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_SIGN_ORDER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PendingSignOrder>;
+    if (typeof parsed.contractCode !== "string" || !parsed.contractCode.trim()) return null;
+    if (typeof parsed.deadlineAt !== "number" || !Number.isFinite(parsed.deadlineAt)) return null;
+    return { contractCode: parsed.contractCode, deadlineAt: parsed.deadlineAt };
+  } catch {
+    return null;
+  }
+};
 
-const brandLabel = (brand: SavedCard["brand"]): string =>
-  brand === "visa" ? "Visa" : brand === "mastercard" ? "Mastercard" : "Amex";
+const writePendingSignOrder = (pending: PendingSignOrder): void => {
+  try {
+    window.sessionStorage.setItem(PENDING_SIGN_ORDER_KEY, JSON.stringify(pending));
+  } catch {
+    // The callback still refreshes once when sessionStorage is unavailable.
+  }
+};
 
-/**
- * 卡管理组件：卡列表 + 绑卡 + 设为默认 + 解绑。
- * 纯前端占位实现：数据仅存 useState，不发起后端请求。
- * CVC 不存入 SavedCard（PCI 口径）。
- */
-export const SavedCardsSection = (): ReactElement => {
-  const t = useT();
-  const [cards, setCards] = useState<SavedCard[]>(() => buildInitialCards());
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+const clearPendingSignOrder = (): void => {
+  try {
+    window.sessionStorage.removeItem(PENDING_SIGN_ORDER_KEY);
+  } catch {
+    // Ignore storage restrictions; the callback query is still consumed.
+  }
+};
 
-  // 绑卡表单状态
-  const [cardNumber, setCardNumber] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [cvc, setCvc] = useState("");
-  const [holder, setHolder] = useState("");
-  const [formError, setFormError] = useState<string | null>(null);
+const paymentMethodTypeLabel = (method: PaymentMethod, t: (text: string) => string): string => (
+  method.type === "CREDIT_CARD" ? t("信用卡") : method.type
+);
 
-  const resetForm = (): void => {
-    setCardNumber("");
-    setExpiry("");
-    setCvc("");
-    setHolder("");
-    setFormError(null);
-  };
-
-  const handleSaveCard = (): void => {
-    // validateCardInput 返回中文源文案，通过 t() 解析为当前 locale 翻译
-    const errMsg = validateCardInput(cardNumber, expiry, cvc, holder);
-    if (errMsg) {
-      setFormError(t(errMsg));
-      return;
+const mutationErrorMessage = (
+  error: unknown,
+  t: (text: string, options?: Record<string, unknown>) => string,
+): string => {
+  if (error instanceof RepositoryError) {
+    if (error.code === "default_payment_method_cannot_delete") {
+      return t("默认卡不能解绑，请先设置其他默认卡。");
     }
-    const digits = cardNumber.replace(/\D/g, "");
-    const newCard: SavedCard = {
-      id: nextCardId(),
-      brand: detectBrand(cardNumber),
-      last4: digits.slice(-4),
-      expiry,
-      holderName: holder.trim(),
-      isDefault: cards.length === 0, // 首张卡自动默认
-    };
-    setCards((prev) => [...prev, newCard]);
-    resetForm();
-    setShowAddForm(false);
-  };
+    if (error.status === 429) {
+      return error.retryAfterSeconds
+        ? t("操作过于频繁，请在 {{seconds}} 秒后重试。", { seconds: error.retryAfterSeconds })
+        : t("操作过于频繁，请稍后重试。");
+    }
+  }
+  return t("支付卡操作失败，请稍后重试。");
+};
 
-  const handleSetDefault = (id: string): void => {
-    setCards((prev) => prev.map((c) => ({ ...c, isDefault: c.id === id })));
-  };
+export const SavedCardsSection = ({
+  navigateToHostedPage = defaultNavigateToHostedPage,
+}: SavedCardsSectionProps = {}): ReactElement | null => {
+  const t = useT();
+  const { auth } = useRepositories();
+  const [searchParams, setSearchParams] = useAppSearchParams();
+  const [initialSearch] = useState(() => searchParams.toString());
+  const [callbackResult] = useState<"cancelled" | "success" | null>(() => {
+    const value = searchParams.get("payment-method");
+    return value === "cancelled" || value === "success" ? value : null;
+  });
 
-  const handleConfirmRemove = (id: string): void => {
-    setCards((prev) => {
-      // 防御性拦截：默认卡不允许解绑；仅剩一张时不允许解绑
-      const target = prev.find((c) => c.id === id);
-      if (!target || target.isDefault || prev.length <= 1) {
-        return prev;
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUnavailable, setIsUnavailable] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<PaymentMethod | null>(null);
+  const pendingSignOrderRef = useRef<PendingSignOrder | null>(null);
+  const isMountedRef = useRef(true);
+  const listRequestIdRef = useRef(0);
+
+  const {
+    createPaymentMethodSignOrder,
+    deletePaymentMethod,
+    listPaymentMethods,
+    setDefaultPaymentMethod,
+  } = auth;
+
+  const loadMethods = useCallback(async (showLoading = true): Promise<PaymentMethodList> => {
+    const requestId = ++listRequestIdRef.current;
+    if (showLoading && isMountedRef.current) setIsLoading(true);
+    if (isMountedRef.current) setLoadError(null);
+    try {
+      const result = await listPaymentMethods();
+      if (isMountedRef.current && requestId === listRequestIdRef.current) {
+        setMethods(result.items);
+        setIsUnavailable(false);
       }
-      return prev.filter((c) => c.id !== id);
-    });
-    setConfirmRemoveId(null);
+      return result;
+    } catch (error) {
+      if (isMountedRef.current && requestId === listRequestIdRef.current) {
+        if (error instanceof RepositoryError
+          && error.status === 503
+          && error.code === "payment_methods_unavailable") {
+          setIsUnavailable(true);
+        } else {
+          setLoadError(t("支付卡加载失败，请稍后重试。"));
+        }
+      }
+      throw error;
+    } finally {
+      if (isMountedRef.current && requestId === listRequestIdRef.current) setIsLoading(false);
+    }
+  }, [listPaymentMethods, t]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!callbackResult) return;
+    const next = new URLSearchParams(initialSearch);
+    next.delete("payment-method");
+    setSearchParams(next, { replace: true });
+  }, [callbackResult, initialSearch, setSearchParams]);
+
+  useEffect(() => {
+    let stopped = false;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const syncReturnedSignOrder = async (
+      pending: PendingSignOrder | null,
+      showLoading: boolean,
+    ): Promise<void> => {
+      try {
+        const result = await loadMethods(showLoading);
+        if (stopped) return;
+        if (!pending) {
+          setNotice({ tone: "info", text: t("签约结果已刷新。") });
+          return;
+        }
+        if (result.items.some((method) => method.contractCode === pending.contractCode)) {
+          pendingSignOrderRef.current = null;
+          clearPendingSignOrder();
+          setNotice({ tone: "success", text: t("支付卡已绑定。") });
+          return;
+        }
+        if (Date.now() >= pending.deadlineAt) {
+          setNotice({ tone: "info", text: t("签约结果仍在同步，请稍后重新加载。") });
+          return;
+        }
+        setNotice({ tone: "info", text: t("正在同步支付卡…") });
+        pollTimer = setTimeout(() => {
+          void syncReturnedSignOrder(pending, false);
+        }, Math.min(SIGN_ORDER_POLL_INTERVAL_MS, pending.deadlineAt - Date.now()));
+      } catch {
+        if (!stopped && !isUnavailable) {
+          setNotice({ tone: "error", text: t("签约结果刷新失败，请重新加载。") });
+        }
+      }
+    };
+
+    if (callbackResult === "cancelled") {
+      clearPendingSignOrder();
+      setNotice({ tone: "info", text: t("已取消添加支付卡。") });
+      void loadMethods().catch(() => undefined);
+    } else if (callbackResult === "success") {
+      const pending = readPendingSignOrder();
+      pendingSignOrderRef.current = pending;
+      setNotice({ tone: "info", text: t("正在同步支付卡…") });
+      void syncReturnedSignOrder(pending, true);
+    } else {
+      void loadMethods().catch(() => undefined);
+    }
+
+    return () => {
+      stopped = true;
+      if (pollTimer) clearTimeout(pollTimer);
+    };
+  }, [callbackResult, loadMethods, t]);
+
+  const handleReload = async (): Promise<void> => {
+    setActionError(null);
+    try {
+      const result = await loadMethods();
+      const pending = pendingSignOrderRef.current;
+      if (pending && result.items.some((method) => method.contractCode === pending.contractCode)) {
+        pendingSignOrderRef.current = null;
+        clearPendingSignOrder();
+        setNotice({ tone: "success", text: t("支付卡已绑定。") });
+      }
+    } catch {
+      // loadMethods owns the visible error state.
+    }
   };
 
-  const inputClassName =
-    "h-11 w-full rounded-md border px-3 text-sm outline-none transition-shadow duration-150 focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklab,var(--lw-accent)_25%,transparent)]";
+  const handleAdd = async (): Promise<void> => {
+    setBusyKey("create");
+    setActionError(null);
+    try {
+      const result = await createPaymentMethodSignOrder(currentPaymentLanguage());
+      if (!isAllowedPaymentRedirect(result.redirectUrl)) {
+        setActionError(t("签约页面地址无效，请稍后重试。"));
+        return;
+      }
+      writePendingSignOrder({
+        contractCode: result.contractCode,
+        deadlineAt: Date.now() + SIGN_ORDER_SYNC_WINDOW_MS,
+      });
+      navigateToHostedPage(result.redirectUrl);
+    } catch (error) {
+      setActionError(mutationErrorMessage(error, t));
+    } finally {
+      if (isMountedRef.current) setBusyKey(null);
+    }
+  };
 
-  // 待确认解绑的卡对象（驱动弹窗展示）
-  const confirmCard = confirmRemoveId ? cards.find((c) => c.id === confirmRemoveId) ?? null : null;
+  const runMutation = async (
+    key: string,
+    operation: () => Promise<void>,
+    successText: string,
+  ): Promise<void> => {
+    setBusyKey(key);
+    setActionError(null);
+    try {
+      await operation();
+      await loadMethods(false);
+      setNotice({ tone: "success", text: successText });
+    } catch (error) {
+      setActionError(mutationErrorMessage(error, t));
+    } finally {
+      if (isMountedRef.current) setBusyKey(null);
+    }
+  };
+
+  if (isUnavailable) return null;
 
   return (
-    <div
-      className="overflow-hidden bg-white"
-      style={{ border: "1px solid #E6E9EF", borderRadius: 16 }}
-    >
-      {/* Header — 与订阅套餐区块一致 */}
-      <div
-        className="flex items-center justify-between px-5 py-5 md:px-8 md:py-8"
-        style={{ borderBottom: "1px solid #E6E9EF" }}
-      >
-        <h3 className="text-[18px] md:text-[20px]" style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}>
-          {t("签约卡管理")}
-        </h3>
-        {!showAddForm && (
-          <button
-            type="button"
-            onClick={() => setShowAddForm(true)}
-            className="text-sm font-semibold transition-colors"
-            style={{ color: "var(--lw-accent)" }}
-          >
-            {t("添加卡片")}
-          </button>
-        )}
+    <section className="overflow-hidden rounded-2xl border border-[#E6E9EF] bg-white">
+      <div className="flex items-center justify-between border-b border-[#E6E9EF] px-5 py-5 md:px-8 md:py-7">
+        <div>
+          <h3 className="text-[18px] font-medium leading-7 text-black/90 md:text-[20px]">
+            {t("支付方式")}
+          </h3>
+          <p className="mt-1 text-sm text-black/50">
+            {t("支付卡由腾讯支付页面安全管理，LightVela 不保存完整卡号。")}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void handleAdd()}
+          disabled={busyKey !== null}
+          className="inline-flex min-h-10 items-center gap-2 rounded-md px-3 text-sm font-semibold text-[var(--lw-accent)] transition-colors hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busyKey === "create" ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          {t("添加支付卡")}
+        </button>
       </div>
 
-      {/* 内容区 */}
-      <div className="px-5 py-6 md:px-8 md:py-8">
-        {/* 卡列表 */}
-        {cards.length === 0 && !showAddForm ? (
-          <p className="py-8 text-center text-sm" style={{ color: "#999" }}>{t("还没有绑定卡片")}</p>
-        ) : (
-          <div className="space-y-5">
-            {cards.map((card, idx) => (
-              <div key={card.id}>
-                {idx > 0 && <div className="mb-5" style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-sm font-bold" style={{ color: "#333" }}>{brandLabel(card.brand)}</span>
-                      <span style={{ color: "#999" }}>•••• {card.last4}</span>
-                      {card.isDefault && (
-                        <span
-                          className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold"
-                          style={{ background: "rgba(230,111,98,0.06)", color: "var(--lw-accent)", borderRadius: "6px" }}
-                        >
-                          {t("默认")}
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-1.5 text-xs" style={{ color: "#999" }}>{card.expiry} · {card.holderName}</p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    {!card.isDefault && (
-                      <button type="button" onClick={() => handleSetDefault(card.id)} className="text-sm font-medium" style={{ color: "#666" }}>
-                        {t("设为默认")}
-                      </button>
-                    )}
-                    {/* 默认卡不允许解绑；仅剩一张卡时不允许解绑 */}
-                    {!card.isDefault && cards.length > 1 && (
-                      <button type="button" onClick={() => setConfirmRemoveId(card.id)} className="text-sm font-medium" style={{ color: "#cf3d4c" }}>{t("解绑")}</button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
+      <div className="min-h-36 px-5 py-6 md:px-8 md:py-7">
+        {notice && (
+          <div
+            role={notice.tone === "error" ? "alert" : "status"}
+            className={notice.tone === "error"
+              ? "mb-5 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700"
+              : notice.tone === "success"
+                ? "mb-5 rounded-md bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
+                : "mb-5 rounded-md bg-blue-50 px-4 py-3 text-sm text-blue-700"}
+          >
+            {notice.text}
           </div>
         )}
 
-        {/* 绑卡表单（内联展开） */}
-        {showAddForm && (
-          <div className={cards.length > 0 ? "mt-6 pt-6" : ""} style={cards.length > 0 ? { borderTop: "1px solid rgba(0,0,0,0.06)" } : undefined}>
-            <div className="space-y-3">
-              <div>
-                <label className="mb-1 block text-sm font-medium" style={{ color: "#333" }}>{t("卡号")}</label>
-                <input
-                  value={cardNumber}
-                  onChange={(e) => setCardNumber(e.target.value)}
-                  placeholder={t("卡号")}
-                  className={inputClassName}
-                  style={{ borderColor: "#E6E9EF" }}
-                />
-              </div>
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="mb-1 block text-sm font-medium" style={{ color: "#333" }}>{t("有效期")}</label>
-                  <input
-                    value={expiry}
-                    onChange={(e) => setExpiry(formatExpiry(e.target.value))}
-                    placeholder="MM/YY"
-                    className={inputClassName}
-                    style={{ borderColor: "#E6E9EF" }}
-                  />
+        {actionError && (
+          <div role="alert" className="mb-5 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
+            {actionError}
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="flex min-h-24 items-center justify-center gap-2 text-sm text-black/45">
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+            {t("正在加载签约卡…")}
+          </div>
+        ) : loadError ? (
+          <div className="flex min-h-24 flex-col items-center justify-center gap-3 text-center">
+            <p role="alert" className="text-sm text-red-700">{loadError}</p>
+            <button
+              type="button"
+              onClick={() => void handleReload()}
+              className="inline-flex items-center gap-2 rounded-md border border-black/10 px-3 py-2 text-sm font-medium text-black/70 hover:bg-black/[0.03]"
+            >
+              <RefreshCw className="h-4 w-4" />
+              {t("重新加载")}
+            </button>
+          </div>
+        ) : methods.length === 0 ? (
+          <div className="flex min-h-24 flex-col items-center justify-center gap-2 text-center">
+            <CreditCard className="h-6 w-6 text-black/25" />
+            <p className="text-sm text-black/50">{t("还没有绑定支付卡")}</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-black/[0.06]">
+            {methods.map((method) => {
+              const isBusy = busyKey === method.contractCode;
+              return (
+                <div key={method.contractCode} className="flex min-h-20 flex-col justify-between gap-4 py-4 sm:flex-row sm:items-center">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-black/[0.04] text-black/55">
+                      <CreditCard className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-black/85">{method.maskedNumber}</span>
+                        {method.isDefault && (
+                          <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                            {t("默认卡")}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 truncate text-sm text-black/45">
+                        {paymentMethodTypeLabel(method, t)} · {method.payerName || t("持卡人信息未提供")}
+                      </p>
+                    </div>
+                  </div>
+                  {!method.isDefault && (
+                    <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
+                      <button
+                        type="button"
+                        disabled={busyKey !== null}
+                        onClick={() => void runMutation(
+                          method.contractCode,
+                          () => setDefaultPaymentMethod(method.contractCode),
+                          t("默认支付卡已更新。"),
+                        )}
+                        className="rounded-md px-3 py-2 text-sm font-medium text-black/65 hover:bg-black/[0.04] disabled:opacity-50"
+                      >
+                        {isBusy ? t("处理中…") : t("设为默认卡")}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyKey !== null}
+                        onClick={() => setConfirmRemove(method)}
+                        className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        {t("解绑支付卡")}
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <div className="flex-1">
-                  <label className="mb-1 block text-sm font-medium" style={{ color: "#333" }}>{t("安全码")}</label>
-                  <input
-                    value={cvc}
-                    onChange={(e) => setCvc(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                    placeholder="CVC"
-                    className={inputClassName}
-                    style={{ borderColor: "#E6E9EF" }}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium" style={{ color: "#333" }}>{t("持卡人姓名")}</label>
-                <input
-                  value={holder}
-                  onChange={(e) => setHolder(e.target.value)}
-                  placeholder={t("持卡人姓名")}
-                  className={inputClassName}
-                  style={{ borderColor: "#E6E9EF" }}
-                />
-              </div>
-              {/* formError 已通过 t() 翻译为当前 locale 文案 */}
-              {formError && <p className="text-sm" style={{ color: "#cf3d4c" }}>{formError}</p>}
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => { resetForm(); setShowAddForm(false); }}
-                  className="rounded-full px-5 py-2.5 text-sm font-medium transition-colors"
-                  style={{ color: "#666" }}
-                >
-                  {t("取消")}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveCard}
-                  className="inline-flex items-center justify-center rounded-full bg-[#202020] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-black"
-                >
-                  {t("保存")}
-                </button>
-              </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {confirmRemove && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/45 px-4" onClick={() => setConfirmRemove(null)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("解绑支付卡")}
+            className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-black/90">{t("解绑支付卡")}</h3>
+            <p className="mt-3 text-sm leading-6 text-black/60">
+              {t("确认解绑 {{number}} 吗？解绑后该卡将无法继续用于支付。", {
+                number: confirmRemove.maskedNumber,
+              })}
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmRemove(null)}
+                className="rounded-md border border-black/10 px-4 py-2 text-sm font-medium text-black/70 hover:bg-black/[0.03]"
+              >
+                {t("取消")}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = confirmRemove;
+                  setConfirmRemove(null);
+                  void runMutation(
+                    target.contractCode,
+                    () => deletePaymentMethod(target.contractCode),
+                    t("支付卡已解绑。"),
+                  );
+                }}
+                className="rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800"
+              >
+                {t("确认解绑")}
+              </button>
             </div>
           </div>
-        )}
-      </div>
-
-      {/* 解绑确认弹窗 */}
-      <AnimatePresence>
-        {confirmCard && (
-          <motion.div
-            className="fixed inset-0 z-[100] flex items-center justify-center"
-            style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={() => setConfirmRemoveId(null)}
-          >
-            <motion.div
-              className="relative mx-4 w-full max-w-[420px] overflow-hidden rounded-2xl bg-white"
-              style={{ boxShadow: "0 20px 60px -10px rgba(0,0,0,0.2)" }}
-              initial={{ opacity: 0, scale: 0.96, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 10 }}
-              transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="px-7 pb-6 pt-7">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "rgba(207,61,76,0.08)" }}>
-                    <Trash2 className="h-[18px] w-[18px]" style={{ color: "#cf3d4c" }} />
-                  </div>
-                  <h3 className="m-0 text-[16px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
-                    {t("解绑卡片")}
-                  </h3>
-                </div>
-                <p className="text-sm leading-relaxed" style={{ margin: "12px 0 24px 0", color: "#666" }}>
-                  {t("确认解绑 {{brand}} •••• {{last4}} 吗？解绑后该卡将从你的账户移除。", {
-                    brand: brandLabel(confirmCard.brand),
-                    last4: confirmCard.last4,
-                  })}
-                </p>
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setConfirmRemoveId(null)}
-                    className="flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)]"
-                    style={{ borderColor: "rgba(0,0,0,0.1)", color: "#333" }}
-                  >
-                    {t("取消")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleConfirmRemove(confirmCard.id)}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors"
-                    style={{ background: "#cf3d4c" }}
-                  >
-                    {t("确认解绑")}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+        </div>
+      )}
+    </section>
   );
 };
 
