@@ -176,10 +176,11 @@ func renderInstaller(
 		return nil, errors.New("Computer release Ed25519 公钥无效")
 	}
 	verifySHA256 := `/usr/bin/printf '%s  %s\n' "$expected" "$file" | /usr/bin/shasum -a 256 -c - >/dev/null`
-	programSizeCheck := `[ "$(/usr/bin/stat -f %z "$work/vela-computer")" = '@@PROGRAM_SIZE@@' ]`
+	programSize := fmtInt64(program.Size)
+	programSizeCheck := `[ "$(/usr/bin/stat -f %z "$work/vela-computer")" = '` + programSize + `' ]`
 	if config.OSType == "linux" {
 		verifySHA256 = `/usr/bin/printf '%s  %s\n' "$expected" "$file" | /usr/bin/sha256sum -c - >/dev/null`
-		programSizeCheck = `[ "$(/usr/bin/stat -c %s "$work/vela-computer")" = '@@PROGRAM_SIZE@@' ]`
+		programSizeCheck = `[ "$(/usr/bin/stat -c %s "$work/vela-computer")" = '` + programSize + `' ]`
 	}
 	replacements := strings.NewReplacer(
 		"@@VERSION@@", config.Version,

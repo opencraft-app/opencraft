@@ -140,6 +140,9 @@ func TestBuildRendersLinuxChecksumAndSizeToolsForLinuxTarget(t *testing.T) {
 			t.Fatalf("Linux installer missing %q:\n%s", required, installer)
 		}
 	}
+	if bytes.Contains(installer, []byte("@@PROGRAM_SIZE@@")) {
+		t.Fatalf("Linux installer retained an unresolved size placeholder:\n%s", installer)
+	}
 	if bytes.Contains(installer, []byte("/usr/bin/stat -f %z")) {
 		t.Fatalf("Linux installer retained macOS stat:\n%s", installer)
 	}
