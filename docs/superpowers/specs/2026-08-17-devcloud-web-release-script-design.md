@@ -3,7 +3,9 @@
 ## 背景与目标
 
 VelaChat Web 当前可以通过 Expo 导出、Nginx 静态镜像和 DevCloud 中的
-`dep/raft-web-static` 工作负载运行，但发布步骤仍依赖临时命令。目标是把本地预览、
+`dep/raft-web-static` 工作负载运行。2026-08-17 的 live 核验确认 Deployment 与
+LoadBalancer Service 均名为 `raft-web-static`，容器名为 `static`，当前为单副本 Ready、
+零重启。发布步骤仍依赖临时命令。目标是把本地预览、
 不可变镜像构建、TCR 推送、Kubernetes 切换和真实运行验证收敛到一个可审计脚本，
 并新增仓库根 `AGENTS.md` 固化唯一用法。现有 `backend/AGENTS.md` 继续约束 Backend；
 根文件负责跨目录发布入口和凭据边界，不复制 Backend 的领域规则。
@@ -56,8 +58,9 @@ web/deploy/devcloud/release.sh
 1. 强制 Git 工作区无已修改、已暂存或未跟踪文件；
 2. 读取当前分支的 upstream，执行 fetch，并要求 `HEAD` 与 upstream 完全相等；
 3. 要求 `--kubeconfig` 是存在的绝对路径，所有 `kubectl` 命令显式携带该路径；
-4. 使用仓库 Bun 命令执行 Web 类型检查、全量测试、凭据扫描、生产静态导出和 SPA
-   fallback 验证，不把当前测试套件数量写成稳定合同；
+4. 依次执行 `bun run --cwd web typecheck`、`bun run --cwd web test`、
+   `bun run --cwd web security:scan`、`bun run --cwd web build:web` 和
+   `bun run --cwd web/apps/client verify:web-fallback`，不把当前测试套件数量写成稳定合同；
 5. 以完整 Git SHA 的前 12 位作为不可变 TCR tag；若远端 tag 已存在则拒绝覆盖；
 6. 在 `web/` 目录以 `.` 为 context、以 `deploy/devcloud/Dockerfile` 为 Dockerfile，
    通过 `docker buildx build --platform linux/amd64 --push` 构建镜像；
@@ -79,10 +82,10 @@ web/deploy/devcloud/release.sh
 这些值允许用显式参数覆盖，便于环境迁移，但脚本不读取或切换用户的默认 kube
 context。
 
-当前仓库 `web/deploy/devcloud/static.yaml` 仍使用旧名 `vela-web-static`，而最近一次 live
-核验得到的工作负载是 `raft-web-static`。实现必须先恢复 `kubectl` 后重新读取 live 对象；
-若 live 仍为 `raft-web-static`，同步清单的 Deployment、Service、selector 和 label，消除
-仓库与 live 漂移。若 live 已变化，则以显式 live 证据修订默认值，不能盲目套用任一名称。
+当前仓库 `web/deploy/devcloud/static.yaml` 仍使用旧名 `vela-web-static`，与 2026-08-17
+live 证据不一致。实现必须同步清单的 Deployment、Service、selector 和 label 为
+`raft-web-static`，消除仓库与 live 漂移。每次发布仍必须重新读取显式 kubeconfig 下的
+live 对象；若对象不存在或容器/selector 不符合合同，发布前失败，不自动创建或猜测名称。
 
 ## 凭据边界
 
