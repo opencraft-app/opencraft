@@ -297,6 +297,7 @@ func TestComputerCanary发布脚本构建验签发布并安全切换Catalog(t *t
 	for _, required := range []string{
 		"--kubeconfig",
 		"--agent-source",
+		"--web-source",
 		"--version",
 		"--signing-key-id",
 		"--signing-private-key",
@@ -318,6 +319,11 @@ func TestComputerCanary发布脚本构建验签发布并安全切换Catalog(t *t
 		"trap cleanup",
 		"sha256:",
 		"go test -p 1",
+		"bun run check:tui",
+		"bun run test:tui",
+		"rev-parse --show-toplevel",
+		"rev-parse HEAD",
+		"human-client.bundle.manifest.json",
 	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("deploy-computer-canary.sh 缺少安全合同 %q", required)
@@ -342,6 +348,33 @@ func TestComputerCanary发布脚本构建验签发布并安全切换Catalog(t *t
 	output, err := command.CombinedOutput()
 	if err != nil || !strings.Contains(string(output), "--signing-private-key") {
 		t.Fatalf("deploy-computer-canary.sh 帮助入口无效：err=%v output=%s", err, output)
+	}
+}
+
+func TestComputerCanary发布脚本拒绝缺失或相对WebSource(t *testing.T) {
+	t.Parallel()
+
+	path := scriptPath(t, "deploy-computer-canary.sh")
+	baseArgs := []string{
+		"--kubeconfig", "/missing/kubeconfig",
+		"--agent-source", "/missing/agent",
+		"--version", "v1.2.3",
+		"--signing-key-id", "test-key",
+		"--signing-private-key", "/missing/private",
+		"--signing-public-key", "/missing/public",
+		"--release-output", "/missing/release",
+	}
+	command := exec.Command(path, baseArgs...)
+	output, err := command.CombinedOutput()
+	if err == nil || !strings.Contains(string(output), "必须提供 --web-source") {
+		t.Fatalf("缺失 web-source 应在文件或工具检查前失败：err=%v output=%s", err, output)
+	}
+
+	withRelativeWeb := append(append([]string{}, baseArgs...), "--web-source", "../web")
+	command = exec.Command(path, withRelativeWeb...)
+	output, err = command.CombinedOutput()
+	if err == nil || !strings.Contains(string(output), "web_source 必须是绝对路径") {
+		t.Fatalf("相对 web-source 应被拒绝：err=%v output=%s", err, output)
 	}
 }
 

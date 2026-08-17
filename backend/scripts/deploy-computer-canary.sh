@@ -10,6 +10,7 @@ bucket=an-computer-1388575217
 region=ap-beijing
 kubeconfig=
 agent_source=
+web_source=
 version=
 signing_key_id=
 signing_private_key=
@@ -28,6 +29,7 @@ usage() {
 用法：scripts/deploy-computer-canary.sh \
   --kubeconfig /absolute/path/to/kubeconfig \
   --agent-source /absolute/path/to/go-client \
+  --web-source /absolute/path/to/velachat/web \
   --version v0.1.31 \
   --signing-key-id computer-release-2026-08-04-v31 \
   --signing-private-key /secure/path/release.private \
@@ -96,6 +98,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --kubeconfig) [ "$#" -ge 2 ] || fail "--kubeconfig 缺少值"; kubeconfig=$2; shift 2 ;;
     --agent-source) [ "$#" -ge 2 ] || fail "--agent-source 缺少值"; agent_source=$2; shift 2 ;;
+    --web-source) [ "$#" -ge 2 ] || fail "--web-source 缺少值"; web_source=$2; shift 2 ;;
     --version) [ "$#" -ge 2 ] || fail "--version 缺少值"; version=$2; shift 2 ;;
     --signing-key-id) [ "$#" -ge 2 ] || fail "--signing-key-id 缺少值"; signing_key_id=$2; shift 2 ;;
     --signing-private-key) [ "$#" -ge 2 ] || fail "--signing-private-key 缺少值"; signing_private_key=$2; shift 2 ;;
@@ -113,13 +116,14 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-for value_name in kubeconfig agent_source signing_private_key signing_public_key release_output; do
+for value_name in kubeconfig agent_source web_source signing_private_key signing_public_key release_output; do
   eval "value=\${$value_name}"
   [ -n "$value" ] || fail "必须提供 --$(printf '%s' "$value_name" | tr '_' '-')"
   case "$value" in /*) ;; *) fail "$value_name 必须是绝对路径" ;; esac
 done
 [ -f "$kubeconfig" ] || fail "kubeconfig 不存在"
 [ -d "$agent_source" ] || fail "Agent 源码目录不存在"
+[ -d "$web_source/apps/client" ] || fail "Web 源码目录不存在"
 [ -x "$agent_source/scripts/build-vela-macos-arm64.sh" ] || fail "Agent canonical 构建入口不存在"
 [ -x "$agent_source/scripts/build-vela-linux-amd64-buildx.sh" ] || fail "Agent Linux Buildx 构建入口不存在"
 [ -f "$signing_private_key" ] && [ ! -L "$signing_private_key" ] || fail "签名私钥不是受限普通文件"
@@ -134,15 +138,44 @@ case "$linux_builder_host" in *[!A-Za-z0-9._@:-]*|'') fail "linux-builder-host �
 printf '%s\n' "$linux_builder_port" | grep -Eq '^[1-9][0-9]{0,4}$' || fail "linux-builder-port 无效"
 [ ! -e "$release_output" ] || fail "release-output 已存在；拒绝覆盖发布证据"
 
-for command_name in kubectl jq go cargo base64 curl shasum stat ssh scp tar file; do
+for command_name in kubectl jq go cargo bun git base64 curl shasum stat ssh scp tar file; do
   command -v "$command_name" >/dev/null 2>&1 || fail "缺少命令 $command_name"
 done
+
+agent_source=$(CDPATH= cd -- "$agent_source" && pwd -P)
+web_source=$(CDPATH= cd -- "$web_source" && pwd -P)
+repository_root=$(CDPATH= cd -- "$repository_root" && pwd -P)
+agent_git_root=$(git -C "$agent_source" rev-parse --show-toplevel 2>/dev/null) || fail "Agent 源码不属于 Git 工作树"
+web_git_root=$(git -C "$web_source" rev-parse --show-toplevel 2>/dev/null) || fail "Web 源码不属于 Git 工作树"
+backend_git_root=$(git -C "$repository_root" rev-parse --show-toplevel 2>/dev/null) || fail "Backend 源码不属于 Git 工作树"
+agent_git_root=$(CDPATH= cd -- "$agent_git_root" && pwd -P)
+web_git_root=$(CDPATH= cd -- "$web_git_root" && pwd -P)
+backend_git_root=$(CDPATH= cd -- "$backend_git_root" && pwd -P)
+[ "$agent_git_root" = "$web_git_root" ] && [ "$agent_git_root" = "$backend_git_root" ] ||
+  fail "Agent、Web 与 Backend 必须来自同一个 Git 工作树"
+[ "$agent_source" = "$backend_git_root/agent" ] || fail "agent-source 必须是当前工作树的 agent 目录"
+[ "$web_source" = "$backend_git_root/web" ] || fail "web-source 必须是当前工作树的 web 目录"
+[ "$repository_root" = "$backend_git_root/backend" ] || fail "发布脚本必须从当前工作树的 backend 目录运行"
+agent_head=$(git -C "$agent_source" rev-parse HEAD)
+web_head=$(git -C "$web_source" rev-parse HEAD)
+backend_head=$(git -C "$repository_root" rev-parse HEAD)
+[ "$agent_head" = "$web_head" ] && [ "$agent_head" = "$backend_head" ] ||
+  fail "Agent、Web 与 Backend 的 Git HEAD 不一致"
 
 temporary_root=$(mktemp -d "${TMPDIR:-/tmp}/computer-canary.XXXXXX")
 secret_directory="$temporary_root/secrets"
 mkdir -m 0700 "$secret_directory"
 
-echo "[1/7] 运行 Agent/Computer 与发布器门禁……"
+echo "[1/8] 校验 Human TUI 可复现构建……"
+(
+  cd "$web_source/apps/client"
+  umask 022
+  bun run check:tui
+  bun run test:tui
+  bun run test:tui-build
+)
+
+echo "[2/8] 运行 Agent/Computer 与发布器门禁……"
 (
   cd "$agent_source"
   umask 022
@@ -156,7 +189,7 @@ echo "[1/7] 运行 Agent/Computer 与发布器门禁……"
   go test ./cmd/computer-release ./internal/computerrelease ./internal/adapters/tencent/cos -count=1
 )
 
-echo "[2/7] 校验 live Canary 与不可变版本……"
+echo "[3/8] 校验 live Canary 与不可变版本……"
 deployment_json="$temporary_root/deployment.json"
 kubectl --kubeconfig "$kubeconfig" -n "$namespace" get deployment "$deployment" -o json >"$deployment_json"
 [ "$(jq -r '.spec.replicas // 0' "$deployment_json")" = 3 ] || fail "Canary 必须固定为 3 副本"
@@ -185,7 +218,7 @@ for key in tencent-cloud-secret-id tencent-cloud-secret-key; do
 done
 unset encoded
 
-echo "[3/7] 构建 macOS ARM64 与 Linux AMD64 双目标二进制……"
+echo "[4/8] 构建 macOS ARM64 与 Linux AMD64 双目标二进制……"
 mac_agent_binary="$temporary_root/vela-computer-darwin-arm64"
 linux_agent_binary="$temporary_root/vela-computer-linux-amd64"
 linux_build_metadata="$temporary_root/linux-buildx-metadata.json"
@@ -207,7 +240,7 @@ mac_program_hash=$(shasum -a 256 "$mac_agent_binary" | awk '{print $1}')
 linux_program_hash=$(shasum -a 256 "$linux_agent_binary" | awk '{print $1}')
 [ "${#mac_program_hash}" -eq 64 ] && [ "${#linux_program_hash}" -eq 64 ] || fail "Agent SHA-256 无效"
 
-echo "[4/7] 生成并独立验签双 target Release Set……"
+echo "[5/8] 生成并独立验签双 target Release Set……"
 release_directory="$temporary_root/release"
 (
   cd "$repository_root"
@@ -227,8 +260,12 @@ catalog_linux_hash=$(jq -r '.targets[] | select(.target == "linux-amd64") | .pro
 [ "$catalog_mac_hash" = "$mac_program_hash" ] || fail "catalog 与 macOS Agent 摘要不一致"
 [ "$catalog_linux_hash" = "$linux_program_hash" ] || fail "catalog 与 Linux Agent 摘要不一致"
 cp "$linux_build_metadata" "$release_directory/linux-buildx-metadata.json"
+cp "$agent_source/internal/vela/humantui/assets/human-client.bundle.manifest.json" \
+  "$release_directory/human-client.bundle.manifest.json"
+cp "$agent_source/internal/vela/humantui/assets/human-client.bundle.sha256" \
+  "$release_directory/human-client.bundle.sha256"
 
-echo "[5/7] 禁止覆盖发布 COS 并保留验签证据……"
+echo "[6/8] 禁止覆盖发布 COS 并保留验签证据……"
 (
   cd "$repository_root"
   go run ./cmd/computer-release publish-set \
@@ -245,7 +282,7 @@ if [ ! -d "$release_parent" ]; then
 fi
 mv "$release_directory" "$release_output"
 
-echo "[6/7] 创建 create-only catalog 并切换 Canary……"
+echo "[7/8] 创建 create-only catalog 并切换 Canary……"
 catalog_json="$temporary_root/catalog-configmap.json"
 kubectl create configmap "$target_configmap" \
   --kubeconfig "$kubeconfig" -n "$namespace" \
@@ -278,7 +315,7 @@ kubectl --kubeconfig "$kubeconfig" -n "$namespace" patch deployment "$deployment
 live_patched=true
 wait_deployment_ready 600 || fail "Deployment 未在 600 秒内收敛"
 
-echo "[7/7] 验收 3 副本、catalog 与健康端点……"
+echo "[8/8] 验收 3 副本、catalog 与健康端点……"
 pods_json="$temporary_root/pods.json"
 kubectl --kubeconfig "$kubeconfig" -n "$namespace" get pods -l "$selector" -o json >"$pods_json"
 jq -e '

@@ -63,6 +63,7 @@ Computer release 的正式入口：
 backend/scripts/deploy-computer-canary.sh \
   --kubeconfig /absolute/path/to/dep.conf \
   --agent-source /absolute/path/to/velachat/agent \
+  --web-source /absolute/path/to/velachat/web \
   --version vX.Y.Z \
   --signing-key-id UNIQUE_KEY_ID \
   --signing-private-key /secure/path/release.private \
@@ -72,6 +73,10 @@ backend/scripts/deploy-computer-canary.sh \
 
 脚本在 Mac 原生构建 `darwin-arm64`，通过 `root@9.134.208.109:36000` 的独立、固定
 BuildKit image Buildx builder 构建 Rust TAT + Go CGO `linux-amd64`；不依赖 Mac Docker daemon。
+`agent-source`、`web-source` 与 Backend 发布器必须来自同一个物理 Git 工作树。Human TUI 是
+Computer 的必选内嵌产物；正式发布会先执行 `bun run check:tui`、TUI 源码测试与确定性构建测试，
+仅当源码可重建出与已提交 bundle 完全相同的字节和 manifest 时才继续，并把 TUI manifest 与
+摘要保存在 release evidence。
 两个 target 缺一不可发布。脚本生成 target-local manifest/signature，独立验签，create-only 发布
 COS，保存 Buildx metadata，再创建不可变 Release Set ConfigMap 并切换 3 副本 Canary。
 
