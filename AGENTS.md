@@ -16,6 +16,16 @@
 - 旧共享前端环境已退役。禁止再向旧集群、旧 LoadBalancer 或旧静态站点发布，也不要在代码审查、文档
   和对用户的回复中引用其地址。
 
+## Git、Worktree 与并行协作
+
+- 主工作区存在未提交改动时，独立功能、发布准备和审查默认使用新的 Git worktree；不要等到实现结束才隔离。
+- Worktree 必须从已确认的 commit/branch 创建。合入前重新 fetch，并把功能分支重放到最新已提交基线。
+- `git status` 干净只证明当前 worktree 干净，不证明另一个 worktree、远端 `master` 或运行中的预览使用相同源码。
+- 调试运行中页面、TUI 或 daemon 前，先把 PID/命令行映射到真实 worktree 和 commit；禁止默认归因到主目录。
+- 只提交自己拥有的文件。与其他 Agent 发生文件重叠时，先等对方提交或使用独立 worktree 重放，不能 checkout、
+  reset 或重写对方内容。
+- 发布提交必须 fast-forward 到 `origin/master`；禁止 force-push 发布分支。推送成功后仍需重新读取远端 HEAD。
+
 ## 产品与运行时心智模型
 
 产品对象语义：Server 管“谁一起工作”，Project 管“做什么”，Computer 管“在哪里运行”，Codex TUI
@@ -64,6 +74,33 @@ Expo route / screen
 - 腾讯 IM 适配：`web/apps/client/src/im/`
 - 共享客户端契约：`web/packages/client-core/src/`
 
+## 变更路由表
+
+先判断变更属于哪条权威链，再开始编辑：
+
+| 需求 | 起点 | 必须同步 | 主要门禁 |
+| --- | --- | --- | --- |
+| Platform HTTP/API | Backend OpenAPI | Backend 生成代码、client-core contract/generated/lock、PlatformApi、Store/Screen | OpenAPI compatibility、generated check、core/app tests |
+| 腾讯消息行为 | `MessagingPort` 语义 | Human IM adapter、Agent `gojaim`/Gateway、projection 与错误码 | IM adapter tests、真实历史/发送 smoke |
+| 页面视觉/交互 | Tokens 或 shared primitive | Pattern、Component、Screen、Style Lab | token/style/ownership locks、pointer/touch browser evidence |
+| TUI 行为 | shared presentation 或 `src/tui/` | TUI renderer、native modules、内嵌 bundle 三件套 | `check:tui`、`test:tui`、确定性 build test |
+| Agent Runtime | `agent/internal/runtimeapi` | Runtime driver、assignment/capability、Computer controller、TUI 可见能力 | Go/race tests、真实 Runtime probe |
+| Computer 发布 | Agent + TUI 已提交源码 | macOS/Linux target、manifest/signature、COS catalog、安装/升级 | 双 target 验签、digest、rollback、live heartbeat |
+
+如果一个需求跨两行以上，必须在设计或计划中写清长期事实、可替换行为和发布顺序，不能靠一次“大提交”隐式耦合。
+
+## 身份与凭据边界
+
+| 身份 | 用途 | 可持久化内容 | 禁止事项 |
+| --- | --- | --- | --- |
+| Human | 登录、管理 Server/Project、聊天 UI | 安全存储中的 refresh token；必要的非敏感本地偏好 | 不持久化 access token 明文，不冒用 Computer/Runtime API |
+| Computer | Assignment、Heartbeat、TAT 与本机 Agent 编排 | 受限权限的 Computer credential、安装 journal、非敏感状态 | 不作为 Human 或 Agent Runtime；凭据不进入 Web/TUI bundle |
+| Agent Runtime | 执行 Agent turn、调用受限 `vela` capability | Profile/Runtime 自有状态与轮换凭据元数据 | 不读取 Human refresh token、Computer credential 或其他 Agent identity |
+| 腾讯 IM identity | SDK 登录、消息/群组/Topic 数据面 | SDK 所需短期会话状态；平台只存稳定 mapping/引用 | UserSig 不进日志、源码、fixture 或普通产品 DTO |
+
+Human access token、refresh token、Computer credential、Runtime credential 和 IM UserSig 不能互换。日志只允许输出
+身份类型、资源 ID、版本、存在性、长度、hash/digest 等安全元数据；禁止输出 token、签名、presigned URL query。
+
 ## 腾讯云 IM 的职责边界
 
 腾讯云 IM 是聊天数据面和聊天历史的唯一权威来源：
@@ -88,6 +125,21 @@ Thread/Task 等跨域关联使用腾讯消息 reference，不以本地消息副�
 3. Conversation address 是否指向正确 Group/Topic/DirectConversation；
 4. 腾讯历史/事件是否真实存在；
 5. 最后才检查 UI projection。不要用平台数据库“补一份消息”规避问题。
+
+## 异步 Operation 与补偿语义
+
+- HTTP `202 Accepted`、创建了 Operation 或进入 polling 都不等于业务完成。只有稳定 terminal state 和对应资源
+  投影都成立，UI 才能显示成功。
+- UI 通过共享 Operation 状态组件展示 pending、retry wait、timed out、rate limited、failed、uncertain 和
+  succeeded；Screen 不自行发明第二套 loading/error 文案状态机。
+- `pollOperation` 必须保留最后一次可信状态，尊重 `Retry-After`，支持取消，并在暂时错误后继续；超时不能伪造失败
+  或成功。
+- “继续查询”是恢复 polling，不是重新提交 mutation。不可安全重放的腾讯 IM 发送、Reaction、撤回等操作失败后
+  必须显式报告，不能自动重复。
+- JIT 补偿只修复可重建 projection/membership，例如当前账号缺失的 Channel membership；它不能创造不存在的
+  权威资源，也不能替代后台一致性扫描。
+- Backend 权威资源、腾讯 IM 状态和客户端 projection 发生短暂不一致时，错误提示应短暂、可恢复且不闪烁；不要
+  在初始异步读取尚未完成时展示最终错误。
 
 ## UI 组件与所有权
 
@@ -213,6 +265,20 @@ bun run --cwd web/apps/client test:tui-build
 `check:tui` 失败表示提交的 bundle 与源码不一致；不能只改 hash 或 manifest，也不能把 stale bundle 描述为
 “Web 已通过所以没问题”。
 
+## 生成物与提交归属
+
+| 产物 | 权威源 | 是否提交 | 校验方式 |
+| --- | --- | --- | --- |
+| client-core OpenAPI types/lock | `contracts/platform-v1.openapi.yaml` | 提交 generated types、lock 与对应测试 | core build/typecheck、hash lock test |
+| Backend OpenAPI/Ent 生成代码 | Backend machine contract/schema | 按 Backend 规则提交 | `check-generated.sh`、compatibility/migration gates |
+| Human TUI bundle/manifest/hash | Web/TUI TypeScript 源码 | 三件套一起提交 | `build:tui` 后 `check:tui` 与确定性测试 |
+| Expo Web `dist/` | `web/apps/client` 源码与 Expo 配置 | 不提交 | 每次发布重新 `build:web`，验证 SPA fallback |
+| `node_modules`、构建 cache | lockfile | 不提交 | `bun install --frozen-lockfile` 可重建 |
+| OCI image/COS Release Set | 已推送 commit + 发布配置 | 不提交二进制到 Git；保存仓库外 evidence | registry/COS digest、签名、manifest 验真 |
+| kubeconfig、Secret、SSH key、presigned URL | 运维凭据系统 | 严禁提交 | 凭据扫描与人工检查 |
+
+禁止手改 generated 文件掩盖源契约错误。若生成物变化超出预期，先找出其输入链；不要只接受“大量自动 diff”。
+
 ## 提交前前端门禁
 
 推荐唯一顺序：
@@ -232,43 +298,29 @@ bun run --cwd apps/client verify:web-fallback
 `typecheck` 必须先 build client-core；直接从 stale workspace 输出运行 app `tsc` 会产生假错误。测试、类型、
 TUI、Web export、浏览器视觉验收是不同证据，不能互相代替。
 
-## 当前 Web 发布目标
+## 发布事实与运行手册
 
-唯一活跃前端环境是独立单节点 k3s：
-
-- 主机：`root@21.91.75.85:36000`（仅使用已配置 SSH key）；
-- k3s：`v1.34.10+k3s1`，内置 containerd；
-- Namespace：`dep`；
-- Web Deployment：`raft-web-static`，单副本；
-- Backend Deployment：`chatserver-canary`，单副本；
-- Web 对外端口：主机 80；Backend 只使用 ClusterIP；
-- 用户入口：`http://21.91.75.85`。
-
-发布必须来自干净、已推送到 `origin/master` 的 commit。Mac 原生完成 Bun/Expo 导出；OCI 镜像通过授权的
-Linux builder 构建并推送 `lightclaw-bj8.tencentcloudcr.com/lightclaw/vela-platform-web`。部署只能使用
-不可变 `@sha256:` digest，禁止使用 mutable tag 作为 live image。
-
-切换 k3s 后至少证明：
+发布结论必须按以下事实层级逐层证明：
 
 ```text
-Deployment desired=updated=ready=available=1
-Pod Running + Ready + restartCount=0
-Pod imageID == 目标 TCR digest
-GET / == 200 text/html
-GET /healthz-web == 200
-GET /healthz == 200
-GET /readyz == 200
-GET /install == 200
-GET /v1/me == 401（未登录鉴权面正常）
-/stylelab 在 pointer/touch 与关键宽度下无 Header/内容重叠
+origin/master commit
+-> 生成物及其 hash/manifest
+-> Web/TUI/Computer 构建产物
+-> TCR/COS 不可变 digest 或签名
+-> k3s Deployment spec
+-> Running Pod imageID / Computer 实际版本
+-> HTTP、浏览器、TUI 与 Runtime 的真实行为
 ```
 
-构建/推送成功不等于发布成功。若 rollout 或验收失败，恢复原 digest 并重新验证原 Pod；不要通过扩副本、
-加宽 toleration 或绕过 readiness 掩盖问题。
+任一层通过都不能替代下一层。尤其禁止把测试通过描述成已发布、把镜像 push 描述成已部署、把 Deployment
+spec 更新描述成 Pod 已运行，或把健康端点 200 描述成完整业务验收。
 
-当前仓库尚未沉淀独立 k3s 的一键发布脚本。后续 Agent 在再次发布前，应先把上述 build/push、digest patch、
-rollback 和验收流程收敛成 `web/deploy/k3s/release.sh` 并补脚本测试；在此之前不得复用任何已退役环境的发布
-入口，也不得把手工 patch 描述成长期正式流程。
+当前唯一活跃 Web 目标、SSH/k3s 信息、构建、digest 切换、回滚和验收命令位于：
+
+- `docs/runbooks/k3s-release.md`
+
+环境地址、版本和当前 digest 属于易变运行事实，只在 runbook/发布证据中维护，不复制到长期架构章节。发布前
+必须重新读取 runbook、远端 `master` 和 live k3s 状态，不能依赖历史聊天结论。
 
 ## Computer 与 TUI 发布边界
 
