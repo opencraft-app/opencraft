@@ -99,14 +99,19 @@ ConfigMap 仍只挂载一个名为 `release.catalog.json` 的 key，`serve` 仍�
 }
 ```
 
-Loader 使用 `DisallowUnknownFields`，要求 targets 按 target 字典序排列、不得重复、版本完全一致，且
-正式目录必须恰好包含上述两个受支持组合。对象键必须精确位于
+新 schema loader 使用 `DisallowUnknownFields`，要求 targets 按 target 字典序排列、不得重复、版本
+完全一致，且正式目录必须恰好包含上述两个受支持组合。对象键必须精确位于
 `computer/releases/<version>/<target>/`，hash 为小写 64 位十六进制，size 为正数。每个 target
 的 manifest 内容只列出本 target 的 program，并由该 target 记录的 key 签名。
 
 `computerrelease.LoadCatalog` 替换为返回 `ReleaseSet` 的 `LoadReleaseSet`；`serve` 启动时一次性
 加载并校验整个集合，把它注入 enrollment API。发布脚本为两个 target 分别构建、验签和发布后，
 再生成这一个索引；COS 对象继续 create-only，ConfigMap 继续使用不可变版本名并回读校验内容。
+
+为完成 live 迁移，`LoadReleaseSet` 还提供一个严格、只读的 legacy 分支：当 JSON 没有 `schema`
+字段时，按现有单 target catalog 的精确字段和旧对象键规则解析，并转换为内存中的单 target
+Release Set；只允许 `darwin-arm64/macos/arm64`。该分支只用于读取和回滚，不允许 build/publish
+再次生成旧格式。新 schema 则必须恰好包含两个正式 target，不能借 legacy 分支放宽校验。
 
 macOS 产物继续在 Mac 原生构建。Linux 产物通过 Docker Buildx 构建 `linux/amd64`：Mac 只发起
 发布和验收，构建发生在已经配置好的远端 Linux Docker builder/BuildKit，产出 Rust TAT staticlib
@@ -182,8 +187,9 @@ macOS 文件位置和 launchd 行为保持不变。
 
 OpenAPI 先行修改：
 
-- `CreateComputerRequest.osType` 成为必填的 UI 提示，只允许 `macos`、`linux`；Handler 不再硬编码
-  macOS。该值在 provisioning 阶段允许被真实兑换 target 覆盖，claim 后恢复为不可变实际属性；
+- `CreateComputerRequest.osType` 成为必填，只允许 `macos`、`linux`；Handler 不再硬编码 macOS。
+  API description 和模型注释必须明确其生命周期语义：provisioning 且 target 未绑定时是用户选择的
+  hint；首次绑定后同一个字段被实际检测 OS 覆盖；claim/active 后是不可变的实际属性；
 - installation options 返回同一版本下 `macos/arm64` 和 `linux/amd64`；
 - artifact target enum 为 `darwin-arm64`、`linux-amd64`；
 - setup-code redemption 必须携带 header `X-Vela-Computer-Target`，enum 为
@@ -223,8 +229,7 @@ OpenAPI 先行修改：
    target 重试，repository 必须能从 bound release 重建 `SetupCodeRelease`。
 
 这是现有 authority 行上的一次 enrollment 状态迁移，不新增业务实体。迁移只追加，数据库没有需要
-兼容的存量 enrollment，但新旧 Backend 滚动期间由发布顺序保证：先应用可空列 migration，再发布
-只写新状态机的 Backend，最后发布双 target catalog。
+兼容的存量 enrollment。
 
 ### Replacement 绑定
 
@@ -294,5 +299,17 @@ Go 与 Rust 全量测试，以及 Web client-core 生成、测试、类型检查
 双 target 是一个发布单元：缺少任一 target、任一签名失败或任一平台门禁失败都不得切换 live
 Release Set。发布脚本先发布不可覆盖 COS 对象，再创建唯一 ConfigMap，最后切换 Canary。
 
-切换后的 Backend 健康检查或 catalog 验收失败时恢复原 ConfigMap。已经完成 target 绑定的 enrollment
-继续引用其固化对象，不依赖“latest”指针；因此回滚后台目录不会把正在安装的机器切换到另一二进制。
+live 迁移使用以下兼容顺序：
+
+1. 先应用新增可空列 migration，并部署包含双格式 `LoadReleaseSet`、新状态机和新 API 的 Backend；
+   它读取旧单 target catalog 时只继续提供 macOS，不宣称 Linux 已发布。
+2. 验收新 Backend 在旧 catalog 上 3/3 Ready 后，发布双 target COS 对象和新 schema ConfigMap，
+   再用现有 Recreate 策略把同一 Backend image 切到新 ConfigMap。
+3. 验收双 target installation options、catalog 和公开 bootstrap 后，Linux 才标记正式可用。
+
+新 Backend 对旧 catalog 的兼容读取也是 catalog 回滚路径。若需要同时回滚 Backend image，必须先把
+ConfigMap 恢复为旧 catalog，确认当前新 Backend 能读取并恢复 Ready，再回滚到旧 image；禁止让旧
+Backend 读取新 schema。切换后的健康检查或 catalog 验收失败时，发布脚本只需先恢复原 ConfigMap。
+
+已经完成 target 绑定的 enrollment 继续引用其固化对象，不依赖“latest”指针；因此回滚后台目录
+不会把正在安装的机器切换到另一二进制。
