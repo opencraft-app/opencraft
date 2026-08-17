@@ -76,8 +76,11 @@ func (r *inboundAttachmentRegistry) Remember(
 	if id := r.byKey[key]; id != "" {
 		current, ok := r.byID[id]
 		if ok {
+			r.sequence++
 			current.Attachment = attachment
 			current.View = attachmentCapabilityView(id, attachment)
+			current.ExpiresAt = r.now().Add(r.ttl)
+			current.sequence = r.sequence
 			r.byID[id] = current
 			return current, nil
 		}

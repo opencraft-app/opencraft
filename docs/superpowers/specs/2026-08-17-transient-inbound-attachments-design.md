@@ -94,7 +94,7 @@ Properties:
 - within one Gateway/runtime epoch, idempotently reuse the same handle for the tuple
   `(route ID, visible target, Tencent message reference, provider attachment identity)`;
 - maximum 512 entries per Gateway;
-- two-hour absolute TTL;
+- two-hour idle TTL, refreshed when the same attachment is observed again in the same runtime epoch;
 - target/route/runtime-epoch authorization on every download;
 - zero attachment bytes cached by the registry;
 - expired and oldest entries evicted in memory;

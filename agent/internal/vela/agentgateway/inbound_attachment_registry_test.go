@@ -36,6 +36,21 @@ func TestInboundAttachmentRegistryReusesHandlesAndBoundsLifetime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	secondRef, err := im.NewMessageRef(conversation, "message-2", 2, now.Add(time.Second).UnixMilli())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := registry.Remember(
+		"channel-1", "#general", secondRef,
+		im.Attachment{
+			ID: "provider-image-2", Filename: "image-2.png", MIMEType: "image/png",
+			SizeBytes: 3, URL: "https://image.rich.my-imcloud.com/two.png",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(30 * time.Minute)
 	rotated, err := registry.Remember(
 		"channel-1", "#general", firstRef,
 		im.Attachment{
@@ -49,6 +64,9 @@ func TestInboundAttachmentRegistryReusesHandlesAndBoundsLifetime(t *testing.T) {
 	if first.View.ID == "" || first.View.ID[:5] != "attc_" || rotated.View.ID != first.View.ID {
 		t.Fatalf("same attachment handles = %#v %#v", first.View, rotated.View)
 	}
+	if want := now.Add(time.Hour); !rotated.ExpiresAt.Equal(want) {
+		t.Fatalf("refreshed capability expiry = %v, want %v", rotated.ExpiresAt, want)
+	}
 	resolved, ok := registry.Lookup(first.View.ID, "launch-1")
 	if !ok || resolved.Attachment.URL != "https://image.rich.my-imcloud.com/one.png?token=new" {
 		t.Fatalf("rotated capability = (%#v, %v)", resolved, ok)
@@ -57,25 +75,24 @@ func TestInboundAttachmentRegistryReusesHandlesAndBoundsLifetime(t *testing.T) {
 		t.Fatal("capability crossed runtime epoch")
 	}
 
-	for index, messageID := range []string{"message-2", "message-3"} {
-		reference, refErr := im.NewMessageRef(
-			conversation, messageID, int64(index+2), now.Add(time.Duration(index+1)*time.Second).UnixMilli(),
-		)
-		if refErr != nil {
-			t.Fatal(refErr)
-		}
-		if _, rememberErr := registry.Remember(
-			"channel-1", "#general", reference,
-			im.Attachment{
-				ID: messageID, Filename: messageID + ".png", MIMEType: "image/png",
-				SizeBytes: 3, URL: "https://image.rich.my-imcloud.com/" + messageID + ".png",
-			},
-		); rememberErr != nil {
-			t.Fatal(rememberErr)
-		}
+	thirdRef, err := im.NewMessageRef(conversation, "message-3", 3, now.Add(2*time.Second).UnixMilli())
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, ok := registry.Lookup(first.View.ID, "launch-1"); ok {
-		t.Fatal("oldest capability survived capacity eviction")
+	if _, err := registry.Remember(
+		"channel-1", "#general", thirdRef,
+		im.Attachment{
+			ID: "provider-image-3", Filename: "image-3.png", MIMEType: "image/png",
+			SizeBytes: 3, URL: "https://image.rich.my-imcloud.com/three.png",
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := registry.Lookup(second.View.ID, "launch-1"); ok {
+		t.Fatal("least recently observed capability survived capacity eviction")
+	}
+	if _, ok := registry.Lookup(first.View.ID, "launch-1"); !ok {
+		t.Fatal("refreshed capability was evicted as stale")
 	}
 	now = now.Add(2 * time.Hour)
 	if registry.Len() != 0 {
