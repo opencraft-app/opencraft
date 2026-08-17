@@ -113,6 +113,9 @@ deployment_is_ready() {
   state=$(deployment_state "$name") || return 1
   # shellcheck disable=SC2086
   set -- $state
+  if [ "$#" -eq 6 ]; then
+    set -- "$@" 0
+  fi
   [ "$#" -eq 7 ] || return 1
   generation=$1
   observed=$2

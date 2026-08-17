@@ -76,6 +76,29 @@ describe("independent k3s release contract", () => {
     expect(source).not.toMatch(/(?:password|secret)[-_]?argument/iu);
   });
 
+  it("treats an omitted unavailableReplicas field as zero", () => {
+    const source = readFileSync(releaseScript, "utf8");
+    const start = source.indexOf("deployment_is_ready() {");
+    const end = source.indexOf("wait_for_rollout() {", start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const deploymentIsReady = source.slice(start, end);
+    expect(() =>
+      execFileSync(
+        "/bin/sh",
+        [
+          "-c",
+          `deployment_state() { printf '4 4 1 1 1 1 \\n'; }
+target_kubectl() { printf '%s' 'registry.example/web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; }
+container=static
+${deploymentIsReady}
+deployment_is_ready raft-web-static 'registry.example/web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'`,
+        ],
+        {stdio: "pipe"},
+      ),
+    ).not.toThrow();
+  });
+
   it("routes Web and Backend through separate runbooks", () => {
     for (const path of [runbookIndex, webRunbook, backendRunbook]) {
       expect(existsSync(path)).toBe(true);
