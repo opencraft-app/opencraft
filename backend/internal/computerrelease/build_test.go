@@ -271,14 +271,15 @@ func exitCode(err error) int {
 }
 
 type recordingPublisher struct {
-	keys []string
+	keys         []string
+	contentTypes []string
 }
 
 func (publisher *recordingPublisher) PublishFile(
 	_ context.Context,
 	key string,
 	filename string,
-	_ string,
+	contentType string,
 	hash [32]byte,
 	size int64,
 ) error {
@@ -290,7 +291,49 @@ func (publisher *recordingPublisher) PublishFile(
 		return os.ErrInvalid
 	}
 	publisher.keys = append(publisher.keys, key)
+	publisher.contentTypes = append(publisher.contentTypes, contentType)
 	return nil
+}
+
+func TestPublishReleaseSetPublishesCatalogAfterEveryTargetArtifact(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	macProgram := filepath.Join(root, "mac")
+	linuxProgram := filepath.Join(root, "linux")
+	if err := os.WriteFile(macProgram, []byte("mac-program"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(linuxProgram, []byte("linux-program"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := BuildReleaseSet(ReleaseSetBuildConfig{
+		Version: "0.4.0", SigningKeyID: "key-4", PrivateKey: privateKey,
+		OutputDirectory: filepath.Join(root, "set"),
+		Targets: []ReleaseTargetBuildConfig{
+			{Target: "darwin-arm64", OSType: "macos", Architecture: "arm64", ProgramPath: macProgram},
+			{Target: "linux-amd64", OSType: "linux", Architecture: "amd64", ProgramPath: linuxProgram},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	publisher := &recordingPublisher{}
+	if err := PublishReleaseSet(context.Background(), publisher, bundle); err != nil {
+		t.Fatal(err)
+	}
+	if len(publisher.keys) != 9 {
+		t.Fatalf("published keys = %v, want 8 target artifacts plus catalog", publisher.keys)
+	}
+	last := len(publisher.keys) - 1
+	if want := "computer/releases/0.4.0/release.catalog.json"; publisher.keys[last] != want {
+		t.Fatalf("last published key = %q, want %q", publisher.keys[last], want)
+	}
+	if publisher.contentTypes[last] != "application/json" {
+		t.Fatalf("catalog content type = %q", publisher.contentTypes[last])
+	}
 }
 
 func TestPublishUploadsDataBeforeManifestAndSignature(t *testing.T) {

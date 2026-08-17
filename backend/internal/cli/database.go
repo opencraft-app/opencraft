@@ -28,6 +28,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "serve" {
 		return runServeCommand(ctx, args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "computer-update" {
+		return runComputerUpdateCommand(ctx, args[1:], stdout, stderr)
+	}
 	if len(args) < 2 || args[0] != "database" {
 		writeUsage(stderr)
 		return 2
@@ -292,6 +295,7 @@ func writeUsage(output io.Writer) {
 			"--im-admin-user-id UserID --im-secret-key-file 文件 "+
 			"--im-identity-key-file 文件 [--database 绝对路径] [--listen 地址]",
 	)
+	fmt.Fprintln(output, "  chatserver computer-update serve --state-dir 绝对路径 --release-root 绝对路径 [安全配置]")
 }
 
 func writeCommandError(output io.Writer, err error) {

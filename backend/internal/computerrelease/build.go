@@ -319,7 +319,7 @@ func Publish(ctx context.Context, publisher ObjectPublisher, bundle Bundle) erro
 }
 
 func PublishReleaseSet(ctx context.Context, publisher ObjectPublisher, bundle ReleaseSetBundle) error {
-	if len(bundle.Bundles) != 2 {
+	if len(bundle.Bundles) != 2 || !validComponent(bundle.ReleaseSet.Version) {
 		return errors.New("Computer release set publisher 无效")
 	}
 	for _, target := range bundle.Bundles {
@@ -327,7 +327,16 @@ func PublishReleaseSet(ctx context.Context, publisher ObjectPublisher, bundle Re
 			return err
 		}
 	}
-	return nil
+	catalog, err := artifactFor(
+		bundle.CatalogPath,
+		"computer/releases/"+bundle.ReleaseSet.Version+"/release.catalog.json",
+	)
+	if err != nil {
+		return err
+	}
+	return publisher.PublishFile(
+		ctx, catalog.ObjectKey, bundle.CatalogPath, "application/json", catalog.SHA256, catalog.Size,
+	)
 }
 
 func catalogFromRelease(release computerport.ReleaseBinding) catalogDocument {
