@@ -62,8 +62,14 @@ method, request, response and authorization domain do not change.
 
 ## Stable client error
 
-The Tencent messaging adapter owns provider error normalization. A Topic history request rejected because the
-current IM user is not a member must surface as `PlatformError` code `IM_NOT_MEMBER`.
+The Tencent messaging adapter owns provider error normalization. The pinned `@tencentcloud/chat@3.6.6` SDK rejects
+group/Topic membership failures with an Error-like object whose numeric `code` is `10007`. Only while executing a
+group/Topic history operation, the adapter maps provider code `10007` to `PlatformError` code `IM_NOT_MEMBER` and
+retains `platformCode=tencent_10007` for diagnostics. The same numeric code must not be interpreted without the
+operation context.
+
+`IM_NOT_MEMBER` is added to `StableErrorCode` in `web/packages/client-core/src/platform/errors.ts` with a focused
+type/constructor test. It is a shared in-process client contract, not an OpenAPI error code.
 
 The application store must react only to this stable code. It must not match provider message text, HTTP wording,
 or localized copy. Other IM, authentication, network, and permission errors must retain their existing behavior and
@@ -73,14 +79,16 @@ must never trigger membership mutation.
 
 When an explicitly joined ordinary Channel is selected:
 
-1. wait for the messaging connection and list platform Channel members;
-2. commit the successful platform member list independently of history loading;
-3. request Tencent Topic history;
+1. start messaging readiness and platform Channel-member reads concurrently;
+2. await and commit the platform member list independently; a later readiness or history failure must not clear it;
+3. await messaging readiness, then request Tencent Topic history;
 4. if history succeeds, render normally;
 5. if history fails with `IM_NOT_MEMBER`, automatically call the existing membership ensure route for the current
    Human Member with a fresh idempotency key;
-6. track and poll the returned Operation, while presenting “正在重新连接频道” and disabling message actions;
-7. after success, refresh Channels and messaging scope, then retry the selected Channel once;
+6. track and poll the returned Operation through a compensation-specific continuation, while presenting
+   “正在重新连接频道” and disabling message actions;
+7. after success, refresh Channels and messaging scope, then retry the selected Channel once; do not depend on the
+   generic membership completion hook, which only reopens when `joined` changes from false to true;
 8. if ensure fails, or the single retry again returns `IM_NOT_MEMBER`, stop and show an actionable error.
 
 Compensation is limited to one automatic attempt per Server/Channel selection generation. Navigation to another
@@ -120,9 +128,11 @@ Backend RED tests must prove:
 
 Web RED tests must prove:
 
-- the Tencent adapter maps the provider not-member failure to `IM_NOT_MEMBER`;
+- client-core accepts `IM_NOT_MEMBER` as a stable error code;
+- the Tencent Topic-history adapter maps provider code `10007` to `IM_NOT_MEMBER`, preserves the provider code, and
+  does not map unrelated codes or operations;
 - selecting a locally joined Channel that returns `IM_NOT_MEMBER` invokes the existing ensure route exactly once;
-- successful platform members remain visible while history fails;
+- successful platform members remain visible when messaging readiness or history subsequently fails;
 - successful compensation refreshes the Channel and retries history once;
 - a second `IM_NOT_MEMBER` and all unrelated errors do not loop or mutate membership;
 - navigating away fences a late compensation result.
