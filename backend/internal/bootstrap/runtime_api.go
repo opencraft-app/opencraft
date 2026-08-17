@@ -183,6 +183,7 @@ func NewRuntimeAPIHandler(config RuntimeAPIConfig) (http.Handler, error) {
 		[]httptransport.ImplementedRoute{
 			{Method: http.MethodGet, Path: "/v1/runtime/me"},
 			{Method: http.MethodGet, Path: "/v1/runtime/directory"},
+			{Method: http.MethodGet, Path: "/v1/runtime/directory-v2"},
 			{
 				Method: http.MethodGet,
 				Path:   "/v1/runtime/channels/{channelId}/members",

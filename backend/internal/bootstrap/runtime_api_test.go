@@ -81,6 +81,22 @@ func TestRuntimeAPIAcceptsLaunchBoundRuntimeBearer(t *testing.T) {
 		t.Fatalf("runtime identity = %#v", identity)
 	}
 	assertRuntimeCapabilities(t, meResponse.Body.Bytes(), false)
+	directoryV2Response := performRuntimeRequest(
+		handler,
+		http.MethodGet,
+		"/v1/runtime/directory-v2",
+		"Bearer "+accessToken,
+	)
+	if directoryV2Response.Code != http.StatusNotFound {
+		t.Fatalf("runtime directory v2 status = %d body=%s", directoryV2Response.Code, directoryV2Response.Body)
+	}
+	var directoryError openapi.ErrorEnvelope
+	if err := json.Unmarshal(directoryV2Response.Body.Bytes(), &directoryError); err != nil {
+		t.Fatal(err)
+	}
+	if directoryError.Error.Code != "runtime_directory_not_found" {
+		t.Fatalf("runtime directory v2 error = %#v", directoryError)
+	}
 	now := time.Now().UTC()
 	if _, err := handle.Client().Task.Create().
 		SetID(runtimeAPITaskID).
