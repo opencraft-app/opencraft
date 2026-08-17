@@ -494,6 +494,10 @@ func newHumanRoutes(
 	}
 	if inviteWrapper != nil {
 		mux.HandleFunc(
+			"POST /v1/join-links/accept",
+			inviteWrapper.AcceptJoinLink,
+		)
+		mux.HandleFunc(
 			"POST /v1/invites/accept",
 			inviteWrapper.AcceptInvite,
 		)

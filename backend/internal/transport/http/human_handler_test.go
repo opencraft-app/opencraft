@@ -142,6 +142,44 @@ func TestHumanRoutesExposeAuthAndMeButNotFutureOperations(t *testing.T) {
 	}
 }
 
+func TestHumanPlatformRoutesExposeJoinLinkAcceptance(t *testing.T) {
+	authService := &fakeAccountAuthService{loginResult: handlerAuthResult()}
+	meService := &fakeHumanAccountService{}
+	encoder := NewErrorEncoder(fixedRequestIDGenerator{value: "request-1"})
+	handler, err := NewHumanPlatformRoutes(
+		authService,
+		meService,
+		nil,
+		nil,
+		&fakeInviteService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		encoder,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/join-links/accept",
+		nil,
+	)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code == http.StatusNotFound {
+		t.Fatal("POST /v1/join-links/accept was not registered")
+	}
+}
+
 func currentHumanContext(t *testing.T) context.Context {
 	t.Helper()
 	principal, err := authnport.NewCurrentHumanPrincipal(
