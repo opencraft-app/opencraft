@@ -1,6 +1,6 @@
 # Agent Profile 运行能力设计
 
-日期：2026-08-17  
+日期：2026-08-17
 状态：产品设计已确认，待规格审查
 
 ## 目标
@@ -164,6 +164,12 @@ POST /servers/{serverId}/agents/{agentId}/profile-capabilities/refresh
     "workspacePath": "/var/lib/vela/computer/workspaces/...",
     "contextGeneration": 12
   },
+  "source": {
+    "protocol": "hermes_acp",
+    "runtimeVersion": "...",
+    "discoveryMode": "active_session",
+    "forceReload": true
+  },
   "snapshotState": "stale",
   "staleReasons": ["runtime_reported_change"],
   "models": {
@@ -181,7 +187,7 @@ POST /servers/{serverId}/agents/{agentId}/profile-capabilities/refresh
     "warnings": []
   },
   "observedAt": "2026-08-17T18:42:00Z",
-  "lastRefreshOperation": null
+  "refreshOperation": null
 }
 ```
 
@@ -190,6 +196,18 @@ POST /servers/{serverId}/agents/{agentId}/profile-capabilities/refresh
 不能用伪造空目录表示成功发现。
 
 Backend 根据当前 Agent authority 与快照 subject 计算 `current/stale`，不把陈旧状态写回 JSON。
+`contextGeneration` 使用发起刷新时的 Agent `revision`。Computer/Runtime/model 等 Human 配置变化都会
+推进 revision，因此旧结果会被保守地 supersede。Profile、workspace 或 Runtime 本机内容变化由分发
+Agent 通过独立 invalidation observation 标记快照；该 observation 不发起刷新。
+
+`source` 是稳定 schema：`protocol` 为
+`codex_app_server | hermes_acp | hermes_gateway`，`discoveryMode` 为
+`active_session | short_lived_process`。Backend 只验证 enum 和长度，不根据它执行 Runtime 分支。
+
+`selectionMode`、`configuredModelId` 和 `selectedAvailability` 不写入持久快照，也不允许 Computer
+提交；它们由 Human GET 使用当前 Agent authority、已保存 model items 和 effective default 即时计算。
+这样模型 PATCH 后不会读到旧 selection projection。
+
 稳定 `staleReasons` 至少包含：
 
 - `computer_changed`；
@@ -246,36 +264,46 @@ profile_capabilities_json
 - observedAt 合法；
 - 不允许敏感字段或原始 Runtime payload 透传。
 
+快照 envelope 还包含 Backend 接受的去重 invalidation reasons/observedAt。它们只表达“最近成功快照
+之后本机上下文可能变化”，不包含新目录，也不触发刷新。GET 用当前 Agent authority mismatch 与这些
+invalidation 合并计算 stale reasons。
+
 超出 Runtime 目录上限时，Computer 在 section 设置 `truncated = true` 并加入结构化 warning；不能静默
 截断。超过整个 wire/persistence 硬上限时拒绝结果，以 `result_too_large` 完成失败 Operation，并保留旧
 快照。
 
 Capability 写入不增加 Human Agent `revision`。Agent PATCH 的 Revision CAS 与 Computer observation
-更新使用独立字段集。Agent 列表 repository 必须显式排除 `profile_capabilities_json`；只有单 Agent
-capability 路径选择并解码该大字段。
+更新使用独立字段集。Agent 列表、Assignment 和其他批量/hot-path repository 必须显式排除
+`profile_capabilities_json`；只有单 Agent capability 路径选择并解码该大字段。
 
-迁移只追加 SQLite/TDSQL 列，并同步 Ent、物理规格、模型契约、durable field registry 和 migration
-release lock。没有存量快照需要回填；`NULL` 表示 `absent`。
+`profile_capability_refresh_id` 只保存当前 outstanding Operation ID；已完成 Operation 的 request/result
+和 result digest 长期由 Operation ledger 保存，因此清空 pointer 后仍能完成 PUT 重放和审计。
+
+迁移只追加 SQLite/TDSQL 列，并同步 Ent、物理规格、模型契约、durable field registry、逻辑引用扫描
+和 migration release lock。没有存量快照需要回填；`NULL` 表示 `absent`。
 
 ## 刷新 Operation 与 Assignment
 
 POST refresh 在 Agent shard 的事务中：
 
 1. 验证 Human owner/admin、Agent 存在且绑定 Computer；
-2. 验证目标 Computer 声明支持 Profile capability protocol v1；
-3. 通过 Idempotency-Key 创建或重放 Operation；
-4. 生成唯一 refresh ID，写入 `profile_capability_refresh_id`；
-5. 推进 Assignment revision，唤醒目标 Computer 长轮询。
+2. 验证目标 Computer 最近声明并使用 Assignment protocol v2；
+3. 通过 Idempotency-Key 创建或重放 Operation；Operation ID 同时就是 refresh ID；
+4. 用 `agent.profile-capability-refresh-request/v1` request snapshot 固化 server、Agent、Computer、
+   runtime kind、Agent revision/context generation、forceReload、trigger 和 requestedAt；
+5. 在锁定 Agent 行后把 Operation ID 写入 `profile_capability_refresh_id`，并推进 Computer Assignment
+   revision，唤醒目标 Computer 已有长轮询。
 
 同一个 Idempotency-Key 始终返回同一个 Operation。新的 refresh 可以 supersede 旧 pending refresh；旧
 Operation 进入 `superseded`，旧 refresh ID 的结果不能覆盖快照。
 
-`ComputerAssignment` 增加 optional `profileCapabilityRefresh`：
+不修改 Assignment v1 payload 或 canonical hash。新增协商后的 Assignment v2；它在 Agent item 中增加
+optional `profileCapabilityRefresh`：
 
 ```json
 {
   "schemaVersion": 1,
-  "refreshId": "...",
+  "refreshId": "operation-id",
   "contextGeneration": 12,
   "runtimeKind": "hermes-acp",
   "forceReload": true,
@@ -283,29 +311,82 @@ Operation 进入 `superseded`，旧 refresh ID 的结果不能覆盖快照。
 }
 ```
 
-字段为 optional，以保持旧 Computer 对 Assignment v1 的向后读取能力。新版 Computer 在 heartbeat 或
-注册能力中声明 `profileCapabilityVersions: [1]`；Backend 不向未声明的 Computer 创建刷新 Operation，
-Human API 返回稳定 `profile_capabilities_unsupported`。
+Backend 先发布 Assignment v2，同时继续按 `X-Vela-Assignment-Version: 1` 生成字节级不变的 v1
+snapshot/hash。新版分发 Agent 选择 v2，并在 heartbeat 报告当前使用的 assignment version 与
+`profileCapabilityVersions: [1]`；旧 Agent 继续只请求 v1，永远看不到新字段。Backend 仅在最近接受的
+heartbeat 证明目标 Computer 使用 v2 且支持 capability v1 时创建刷新；否则返回
+`profile_capabilities_unsupported`。这避免旧 Computer 因丢弃新字段而产生 canonical hash 不一致。
+
+Operation 明确使用 `service = platform`、`kind = agent.profile.capabilities.refresh`；registry composite key 为
+`platform/agent.profile.capabilities.refresh`。Idempotency scope
+`agent.profile-capabilities.refresh`、request/result snapshot Codec 都必须进入 `persistedjson` registry。
+`profile_capability_refresh_id` 是指向同 Server shard Operation 的逻辑引用，进入 model contract 和
+一致性扫描。Operation request snapshot 是 Assignment command 的唯一恢复来源；Backend 重启后不得从
+当前 UI 状态重新拼接 requestedAt、forceReload 或 subject。
 
 Computer 结果使用独立 Computer 身份域：
 
 ```http
-PUT /computer/agents/{agentId}/profile-capability-results/{refreshId}
+PUT /computer/agents/{agentId}/profile-capability-results/{operationId}
 ```
 
-Body 回显 schema version、context generation、runtime kind、Profile fingerprint、workspace path、
-models、skills、warnings 和 observedAt。PUT 幂等；相同 refresh/result digest 重放返回相同结果。
+Body 是显式 terminal union：
+
+```json
+{
+  "schemaVersion": 1,
+  "status": "succeeded",
+  "contextGeneration": 12,
+  "runtimeKind": "hermes-acp",
+  "subject": {},
+  "source": {},
+  "models": {"status": "succeeded", "items": [], "warnings": []},
+  "skills": {"status": "failed", "items": [], "errorCode": "skill_discovery_failed"},
+  "observedAt": "..."
+}
+```
+
+整体 `status` 为 `succeeded | failed`。每个 section 也有独立 `succeeded | failed`，从而区分合法空目录、
+局部失败和未执行。至少一个 section 成功时整体可以 succeeded 并带 warning；两个 section 都失败或
+发生 `runtime_busy`、`profile_not_ready` 等前置错误时整体 failed，并携带一个静态 failure code。
+
+PUT 幂等以 Operation result snapshot 为准：已完成 Operation 收到相同 canonical result digest 时重放
+原响应；不同 digest 返回稳定 conflict，既不改 Operation，也不改 Agent。Operation 成功或失败后即使
+Agent 当前 refresh pointer 已清空，仍可通过 Operation ID 找到 request/result snapshot 完成重放。
 
 Backend 仅在以下条件全部成立时接受：
 
 - Computer bearer 对应 Agent 当前绑定 Computer；
-- refresh ID 等于 Agent 当前 `profile_capability_refresh_id`；
-- context generation 与当前 Assignment 一致；
+- Operation ID 等于 Agent 当前 `profile_capability_refresh_id`；
+- Operation request snapshot 的 Computer、runtime kind 和 context generation 与当前 Agent 一致；
 - runtime kind 与当前 Agent 一致；
 - payload 通过 Codec 和大小验证。
 
-接受后写入快照、清空 refresh ID，并把 Operation 完成为 succeeded。绑定或上下文已变化时返回
-`accepted = false, reason = superseded`，清理或保留当前新 refresh 由 ID 是否匹配决定，绝不覆盖快照。
+Repository 必须在同一数据库事务中锁定 Agent 与 Operation，CAS 检查
+`operationId + computerId + runtimeKind + contextGeneration`，然后才允许写快照、清理 refresh pointer
+和完成 Operation。Agent PATCH 或新 refresh 也在锁定同一 Agent 行的事务中 supersede 当前 Operation；
+不得把检查与写入拆成两个事务。
+
+成功结果写入快照；整体 failed 结果保留旧快照。两种结果都写 Operation result snapshot、清理仍匹配
+自己的 refresh pointer，并完成 Operation。绑定或上下文已变化时在同一事务中把旧 Operation 标记
+`superseded`，返回 `accepted = false, reason = superseded`，绝不覆盖快照或清理一个更新的 pointer。
+
+Computer 领取 v2 command 时可把 Operation 从 pending 转为 running；同一 Operation 可在分发 Agent
+崩溃后重新投递，分发 Agent 以 Operation ID 做本地 single-flight/幂等。创建时设置固定 deadline。
+专用 `profilecapability` Operation reconciler 只处理已经创建的该 kind：到期后在事务中把 Operation
+标记 failed，并仅在 Agent pointer 仍等于该 Operation ID 时清理 pointer。它不创建新 refresh、不重试
+成新 Operation，因此不构成定时刷新。
+
+Computer 本机上下文发生变化时使用另一个幂等 Computer identity endpoint：
+
+```http
+PUT /computer/agents/{agentId}/profile-capability-invalidations/{eventId}
+```
+
+Body 包含当前 Agent revision、reason
+`profile_changed | workspace_changed | runtime_reported_change` 和 observedAt。Backend 验证当前绑定、
+revision 和 Computer 后，只在已有快照 JSON 中追加去重后的 invalidation reason/time；不存在快照则
+幂等 no-op。该 endpoint 不创建 refresh、不改变 Agent revision，也不接受 Runtime 原始 payload。
 
 ## 发现执行
 
@@ -341,16 +422,26 @@ Hermes surface；Hermes Gateway 使用同一 Profile 的 `model.options` 与命�
 
 没有任何时间驱动触发。允许且仅允许：
 
-- 首次成功部署或启动后创建一次能力请求；
-- Computer、Runtime 或 managed Profile 结构变化后使旧快照失效，并在下一次成功启动事件创建请求；
-- Human 点击“刷新能力”；
+- Human 点击“刷新能力”，使用请求的 Idempotency-Key；
+- Backend 接受 Computer Agent observation 从非 running 推进到 running 时，以
+  `system:agent-profile-capabilities:<agentId>:<agentRevision>` 作为确定性 Idempotency-Key 创建至多一次
+  自动请求；重复 observation、Backend 重启和同 revision 的再次启动只重放同一 Operation；
+- Computer、Runtime 或 model authority 改变后 Agent revision 推进，旧快照立即因 context generation
+  mismatch 变 stale；只有该新 revision 第一次成功 running observation 才产生新的确定性自动请求；
+- managed Profile、workspace 或 Runtime 本机内容变化时，分发 Agent 只提交 invalidation observation，
+  不创建 Operation；下一次 Human refresh 或新的 Agent revision/running 事件才发现新目录；
 - Runtime 启动过程中自然得到的当前能力可完成已存在的请求。
 
 Codex `skills/changed` 等原生变化通知只把当前快照呈现为 `runtime_reported_change`，不创建 Operation。
 打开页面、读取 GET、heartbeat、快照年龄和后台 cron 都不得创建刷新。
 
-Operation 本身可以使用现有 worker 的有限超时和恢复机制；这属于已发起操作的完成保障，不是定时
-刷新。
+自动 key 与 Agent revision 绑定，所以失败或超时不会自动生成替代 Operation；只有 Human 新请求或
+未来新 revision 才能再次刷新。专用 Operation deadline reconciler 只终结已创建 Operation，属于完成
+保障，不是刷新触发器。
+
+running observation 的接受与自动 Operation/pointer ensure 必须在同 Server shard 的同一事务中完成，
+或由 observation 的每次幂等重放无条件执行同一 ensure；不能存在“running 已提交但自动请求永久丢失”
+的崩溃窗口。Human refresh 使用 `forceReload = true`；结构事件的自动请求使用 `forceReload = false`。
 
 ## UI
 
@@ -405,16 +496,20 @@ Computer、Operation、Runtime kind、条目数、digest 和稳定错误码。
 
 ## 兼容与发布顺序
 
-外部 API 只增加新路径、optional Assignment 字段和新 schema，不修改已发布 response 的 required 字段。
-生成物必须由 OpenAPI 重新生成，不能手改。
+外部 API 增加 Human/Computer 路径、Assignment v2 和新 schema，不修改 Assignment v1 的 payload、
+canonical hash 或已发布 response required 字段。Human 与 Computer operationId 必须分别进入 auth-domain
+registry；生成物必须由 OpenAPI 重新生成，不能手改。
 
 发布顺序：
 
-1. Backend 增加存储、API、Computer result 接收和对旧 Computer 的 unsupported 处理；
-2. 发布声明 capability protocol v1 的新版 Computer；
-3. 验证单 Profile Codex、两个独立 Hermes Profile 和 stopped/running 探测；
-4. 发布 Web Profile controls；
-5. 升级中的旧 Computer 只显示 unsupported，不出现悬挂刷新 Operation。
+1. Backend 同时支持字节级不变的 Assignment v1 和新增 v2，增加存储、API、result/invalidation 接收、
+   Operation reconciler 和对旧 Computer 的 unsupported 处理；
+2. 发布选择 Assignment v2、声明 capability protocol v1 的新版分发 Agent；新版 heartbeat 让 Backend
+   记录已协商版本；
+3. 只有 Backend 观察到目标 Computer 已使用 v2 后才开放 refresh/自动创建 Operation；
+4. 验证单 Profile Codex、两个独立 Hermes Profile 和 stopped/running 探测；
+5. 发布 Web Profile controls；升级中的旧 Computer 继续消费 v1，只显示 unsupported，不会收到命令或
+   出现悬挂刷新 Operation。
 
 本项目无存量 capability 数据需要迁移或回填，但仍保持已发布 OpenAPI 和 migration 追加兼容。
 
@@ -422,23 +517,31 @@ Computer、Operation、Runtime kind、条目数、digest 和稳定错误码。
 
 ### Contract 与持久化
 
-- OpenAPI 新路径、身份域、幂等参数、静态错误码和 optional Assignment 字段测试；
-- `agent.profile-capabilities/v1` Codec round-trip、未知字段/版本、排序、重复 ID、长度、数量和总大小测试；
+- OpenAPI Human/Computer 新路径、身份域、幂等参数、静态错误码和 Assignment v2 测试；
+- Assignment v1 canonical bytes/hash 固定 fixture 与 v2 negotiation/heartbeat capability 测试；
+- capability、Operation request 和 Operation result 三个 v1 Codec 的 round-trip、未知字段/版本、排序、
+  重复 ID、长度、数量和总大小测试；
 - SQLite/TDSQL migration、Ent、physical schema、model contract 和 durable-field registry 一致性；
+- refresh Operation kind、Idempotency scope、Agent-to-Operation logical-ref scan；
 - Agent list 明确不选择 capability JSON 的 repository 测试；
 - capability result 更新不推进 Human Agent revision 的并发测试。
 
 ### Backend 与 Computer
 
 - refresh Idempotency-Key 重放；
+- system running-observation deterministic key 去重且失败后不自动重建；
 - 新 refresh supersede 旧 refresh；
 - Computer、Runtime、context generation、refresh ID 各自失配的 fencing 测试；
-- 接受结果后快照、refresh ID 和 Operation 原子收敛；
-- 失败保留旧快照；models/skills 局部失败；
+- CAS race：Agent PATCH/new refresh 插入 result check/write 之间仍不能被旧结果覆盖；
+- 接受结果后快照、refresh ID 和 Operation 在同一事务原子收敛；
+- 相同/不同 result digest PUT 重放；terminal failed、合法空目录、models/skills 局部失败；
+- invalidation observation 去重、只标 stale 且不创建 refresh；
+- deadline reconciler 只终结/清理匹配 pointer，不创建新 Operation；
 - old Computer unsupported；offline、not-ready、busy；
 - 两个 Hermes Agent 在同一 Computer 使用不同 Profile、Skill 和模型目录的隔离回归；
 - Codex 不同 `CODEX_HOME`/workspace `cwd` 的隔离回归；
-- source gate 证明没有 timer、cron、heartbeat 或 GET-path refresh。
+- source gate 证明 timer、cron、heartbeat、GET 和 invalidation path 都不会创建 refresh Operation；deadline
+  reconciler 只能终结已存在的 Operation。
 
 ### Web
 
