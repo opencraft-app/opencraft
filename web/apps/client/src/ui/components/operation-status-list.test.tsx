@@ -1,7 +1,7 @@
 import type {Operation} from "@vela/client-core";
 import {fireEvent, render} from "@testing-library/react-native";
 
-import {OperationStatusList} from "@/ui";
+import {OperationStatusList} from "./operation-status-list";
 
 const operation: Operation = {
   createdAt: "2026-08-01T03:00:00.000Z",

@@ -221,6 +221,7 @@ export const styles = StyleSheet.create((theme) => ({
   detailScrollContent: {
     flexGrow: 1,
     paddingHorizontal: theme.recipes.managementWorkspace.desktopPadding,
+    position: "relative",
   },
   detailScrollContentCompact: {
     paddingHorizontal: theme.recipes.managementWorkspace.compactPadding,

@@ -1136,13 +1136,20 @@ describe("WorkspaceShell", () => {
       />,
     );
 
+    expect(screen.getByTestId("conversation-operation-status-island")).toBeVisible();
+    expect(screen.getByText("后台操作 · 等待继续查询 · 0/1")).toBeVisible();
+    expect(screen.queryByText("等待重试")).toBeNull();
+    await fireEvent.press(screen.getByRole("button", {
+      name: "后台操作 · 等待继续查询 · 0/1",
+    }));
     expect(screen.getByText("等待重试")).toBeVisible();
-    fireEvent.press(
+    await fireEvent.press(
       screen.getByRole("button", {
         name: "继续查询操作 operation-channel-1",
       }),
     );
     expect(onContinueOperation).toHaveBeenCalledWith(channelOperation.id);
+    expect(screen.getByTestId("message-stage")).toHaveStyle({position: "relative"});
   });
 
   it("renders a Server 内私信 group under Channels and hides Channel-only actions", async () => {

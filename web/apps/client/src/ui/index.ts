@@ -26,14 +26,10 @@ export {
   type ThreadPanelProps,
 } from "./components/thread-panel";
 export {
-  OperationStatusList,
-  type OperationStatusItem,
-  type OperationStatusListProps,
-  type OperationPollingViewState,
-} from "./components/operation-status-list";
-export {
   deriveOperationStatusIsland,
   OperationStatusIsland,
+  type OperationPollingViewState,
+  type OperationStatusItem,
   type OperationStatusIslandPresentation,
   type OperationStatusIslandProps,
 } from "./components/operation-status-island";

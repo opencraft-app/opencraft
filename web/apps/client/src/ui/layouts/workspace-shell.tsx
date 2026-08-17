@@ -64,10 +64,8 @@ import type {
   ConversationSurfaceMode,
   MessageParticipant,
 } from "../components/message-presentation";
-import {
-  OperationStatusList,
-  type OperationStatusItem,
-} from "../components/operation-status-list";
+import type {OperationStatusItem} from "../components/operation-status-list";
+import {OperationStatusIsland} from "../components/operation-status-island";
 import { ThreadPanel } from "../components/thread-panel";
 import {
   ClearableSearchField,
@@ -1684,12 +1682,11 @@ function MessageStage({
         <ChatActionErrorToast compact={compact} message={error} />
       ) : null}
       {!direct && operations.length > 0 ? (
-        <View style={styles.operationStatus}>
-          <OperationStatusList
-            items={operations}
-            onContinue={onContinueOperation}
-          />
-        </View>
+        <OperationStatusIsland
+          items={operations}
+          onContinue={onContinueOperation}
+          testID="conversation-operation-status-island"
+        />
       ) : null}
       {isRecoverableImStatus(imStatus) && onReconnect ? (
         <View accessibilityRole="alert" style={styles.reconnectNotice}>

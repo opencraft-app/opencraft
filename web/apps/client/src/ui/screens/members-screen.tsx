@@ -58,9 +58,9 @@ import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 import {SystemDialog} from "../primitives/system-dialog";
 import {
-  OperationStatusList,
   type OperationStatusItem,
 } from "../components/operation-status-list";
+import {OperationStatusIsland} from "../components/operation-status-island";
 import { ManagementScreenFrame } from "../layouts/management-screen-frame";
 import type { PlatformFrameProps } from "../layouts/app-frame";
 import type { WorkspaceSection } from "../layouts/workspace-section";
@@ -545,14 +545,11 @@ export function MembersScreen(props: MembersScreenProps) {
         title={pageModel.header.title}
         titleTestID="member-stage-title"
       >
-          {operations.length > 0 ? (
-            <View style={styles.operationStatus}>
-              <OperationStatusList
-                items={operations}
-                onContinue={onContinueOperation}
-              />
-            </View>
-          ) : null}
+          <OperationStatusIsland
+            items={operations}
+            onContinue={onContinueOperation}
+            testID="member-operation-status-island"
+          />
           {creatingInvite ? (
             <InviteForm
               form={pageModel.form!}
@@ -919,10 +916,6 @@ const styles = StyleSheet.create((theme) => ({
   mono: {
     color: theme.semantic.color.textMuted,
     ...theme.semantic.typography.meta,
-  },
-  operationStatus: {
-    paddingHorizontal: theme.spacing.xl,
-    paddingTop: theme.spacing.xl,
   },
   rowCopy: {
     flex: 1,

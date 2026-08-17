@@ -525,11 +525,6 @@ export const styles = StyleSheet.create((theme) => ({
   onlineAgentsTextEmpty: {
     color: theme.semantic.color.textMuted,
   },
-  operationStatus: {
-    borderBottomColor: theme.semantic.color.separator,
-    borderBottomWidth: theme.semantic.stroke.hairline,
-    padding: theme.spacing.sm,
-  },
   messageTitle: {
     ...theme.semantic.typography.sectionTitle,
   },

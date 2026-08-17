@@ -659,10 +659,19 @@ describe("MembersScreen", () => {
       />,
     );
 
+    expect(screen.getByTestId("member-operation-status-island")).toBeVisible();
+    expect(screen.getByText("后台操作 · 等待继续查询 · 0/1")).toBeVisible();
+    expect(screen.queryByText("执行中")).toBeNull();
+    await fireEvent.press(screen.getByRole("button", {
+      name: "后台操作 · 等待继续查询 · 0/1",
+    }));
     expect(screen.getByText("执行中")).toBeVisible();
-    fireEvent.press(screen.getByRole("button", {
+    await fireEvent.press(screen.getByRole("button", {
       name: "继续查询操作 operation-member-remove",
     }));
     expect(onContinueOperation).toHaveBeenCalledWith(memberRemovalOperation.id);
+    expect(screen.getByTestId("member-detail-scroll-content")).toHaveStyle({
+      position: "relative",
+    });
   });
 });

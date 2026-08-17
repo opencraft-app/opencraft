@@ -11,6 +11,11 @@ import {
   type SystemStatusIslandTone,
 } from "../primitives/system-status-island";
 
+export type {
+  OperationPollingViewState,
+  OperationStatusItem,
+} from "./operation-status-list";
+
 export interface OperationStatusIslandProps {
   items: OperationStatusItem[];
   lifecycleHint?: string | null;

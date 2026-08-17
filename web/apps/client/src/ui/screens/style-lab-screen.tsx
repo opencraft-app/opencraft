@@ -729,6 +729,19 @@ export function StyleLabScreen({
                 onSelectServer={() => undefined}
                 onSend={() => undefined}
                 onToggleReaction={() => undefined}
+                operations={[
+                  {
+                    operation: {
+                      createdAt: "2026-08-17T15:55:21.000Z",
+                      id: "stylelab-channel-operation",
+                      kind: "tencent.im.topic.create",
+                      service: "im",
+                      state: "retry_wait",
+                    },
+                    pollingState: "timed_out",
+                    resourceId: channels[0]!.id,
+                  },
+                ]}
                 searchQuery="Agent"
                 searchResults={[messages[1]!, messages[4]!]}
                 serverAgents={reviewAgents}
@@ -866,6 +879,18 @@ export function StyleLabScreen({
                 onRevokeInvite={() => undefined}
                 onSelectServer={() => undefined}
                 onUpdateMember={() => undefined}
+                operations={[
+                  {
+                    operation: {
+                      createdAt: "2026-08-17T15:56:00.000Z",
+                      id: "stylelab-member-operation",
+                      kind: "im.membership.remove",
+                      service: "im",
+                      state: "running",
+                    },
+                    pollingState: "timed_out",
+                  },
+                ]}
                 pendingAction={null}
                 servers={[server]}
                 viewportWidth={previewWidth}
