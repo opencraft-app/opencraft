@@ -53,8 +53,13 @@
 - `retryable`：网络、限流或未知临时错误；停止自动循环，保留 token并显示人工重试。
 
 Join Route 在同一次挂载期间最多运行一个接受流程。遇到 `identity_pending` 时使用有上限的退避
-重试；建议间隔为 500ms、1s、2s，之后保持 2s，最长约 30 秒。组件卸载、用户退出或 token
-变化时必须取消等待，禁止后台遗留请求。
+重试；建议间隔为 500ms、1s、2s，之后保持 2s，最长约 30 秒。
+
+Route 为每个自动等待窗口分配递增 generation，并绑定窗口开始时读取的唯一 token。组件卸载、
+用户退出或人工开启新窗口时，必须递增 generation、取消尚未触发的 timer，并忽略旧 generation
+中已经发出的 HTTP 完成结果。现有 HTTP 接口没有 `AbortSignal`，本轮不伪称能够中止已发请求；
+安全合同是陈旧结果不得导航、清 token 或启动下一次重试。当前 route 只在挂载时捕获一次 hash，
+本轮不监听运行中的 hash/token 替换。
 
 超过自动等待窗口后显示“账号仍在准备中”，保留 token 和人工重试按钮。人工重试会开启新的
 有界等待窗口，不重新注册，也不丢失邀请。
@@ -62,8 +67,18 @@ Join Route 在同一次挂载期间最多运行一个接受流程。遇到 `iden
 ## 成功后的 IM 收敛
 
 `acceptJoinLink` 成功后保持现有顺序加载 Server Context。若 `imState` 不是 `ready`，在选择
-落地 Channel 前调用现有 `reconnectIm()`。只有重连完成且状态为 ready 时才进入聊天；重连失败
-保留已经完成的 Server membership，并显示聊天连接错误，不能再次消费邀请或伪装加入失败。
+落地 Channel 前调用现有 single-flight `reconnectIm()`。
+
+`acceptJoinLink` 的非空 `JoinResult` 只表示 membership 已经接受；它不能因为随后的 IM 重连失败
+退化为 `null`。Route 一收到非空结果就清除邀请 token，并检查最终 `imState`：
+
+- ready：进入返回的落地 Channel；
+- 非 ready：进入本地 `accepted_chat_unavailable` 状态，保留已加载的 Server Context，显示
+  “已加入协作空间，但聊天尚未连接”，提供只调用 `reconnectIm()` 的按钮；不得再次调用
+  `acceptJoinLink`。重连成功后才进入原 landing Channel。
+
+这不要求修改公开 Platform DTO；`JoinResult` 加当前 store `imState` 足以区分 membership 结果与
+聊天可用性。
 
 这条边界把长期事实和可替换投影分开：Server membership 一旦成功就是权威事实；IM 重连失败
 只影响聊天可用性，不回滚成员关系。
@@ -73,7 +88,8 @@ Join Route 在同一次挂载期间最多运行一个接受流程。遇到 `iden
 - token 继续只保存在 sessionStorage，TTL 保持 30 分钟，不进入 query、日志或持久数据库明文；
 - 每次 HTTP 尝试仍携带 Idempotency-Key；网络结果不确定时，join-link 的 existing-member 语义
   返回相同落点，因此不会创建重复成员；
-- `pendingAction` 与 Route 单飞共同防止并发接受；
+- Route generation/single-flight 是自动加入的权威并发控制；全局 `pendingAction` 只保留为其他
+  action 重叠时的防护，`pendingAction` 导致的空结果不得解释为 membership 终态；
 - 终态错误清除 token，临时错误保留 token。
 
 ## 测试
@@ -82,11 +98,12 @@ Join Route 在同一次挂载期间最多运行一个接受流程。遇到 `iden
 
 1. Join Route 第一次收到 `identity_pending` 后自动重试，第二次成功并进入落地 Channel；
 2. 自动重试期间不会并发调用 accept；
-3. 卸载后取消计时器，不再发请求；
-4. 达到等待上限后保留 token并显示人工重试；
+3. 卸载或 generation 变化后取消计时器，已发请求的陈旧结果不能导航或清 token；
+4. 达到等待上限后保留 token并显示人工重试，人工重试取消旧 timer 并创建新 generation；
 5. `invite_invalid` 仍清除 token；
 6. App Store 将 `im_identity_not_ready` 精确分类为 `identity_pending`；
-7. 接受成功但 IM 未连接时调用 `reconnectIm()`，且不重复创建 membership；
+7. 接受成功但 IM 重连失败时清 token、保留 membership、不再次 accept、不进入聊天，并允许
+   只重试 IM；
 8. 原有登录、注册 returnTo、已有成员幂等与普通加入测试继续通过。
 
 完成门禁为客户端类型检查、相关 Jest、全量 Jest、Web 构建、凭据扫描和
