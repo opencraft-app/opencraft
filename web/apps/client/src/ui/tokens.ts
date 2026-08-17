@@ -568,6 +568,7 @@ export const velaLight = {
       blur: "saturate(180%) blur(20px)",
       composerFill: withAlpha(palette.white, 0.82),
       navigationFill: withAlpha(palette.white, 0.58),
+      navigationInactiveFill: withAlpha(palette.white, 0.42),
       sidebarFill: withAlpha(palette.white, 0.66),
     },
     interaction: {
@@ -1218,6 +1219,7 @@ export const velaDark = {
       ...velaLight.semantic.material,
       composerFill: withAlpha(palette.neutral990, 0.86),
       navigationFill: withAlpha(palette.black, 0.74),
+      navigationInactiveFill: withAlpha(palette.black, 0.56),
       sidebarFill: withAlpha(palette.neutral990, 0.82),
     },
   },

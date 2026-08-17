@@ -4,6 +4,7 @@ import {Dialog} from "react-aria-components/Dialog";
 import {Modal, ModalOverlay} from "react-aria-components/Modal";
 import {useUnistyles} from "react-native-unistyles";
 
+import {SystemButton} from "./system-button.web";
 import type {
   DialogCloseReason,
   SystemDialogAction,
@@ -190,38 +191,18 @@ export function SystemDialog({
               const unavailable = Boolean(
                 action.disabled || locked || (busy && action.kind === "action"),
               );
-              const destructive = action.intent === "destructive";
               return (
-                <button
-                  aria-busy={busy && action.kind === "action"}
-                  disabled={unavailable}
-                  id={`${dialogId}-action-${action.id}`}
-                  key={action.id}
-                  onClick={() => activate(action)}
-                  style={{
-                    ...webTypography(theme.semantic.typography.button),
-                    background: destructive
-                      ? theme.semantic.color.actionDangerEmphasisSurface
-                      : theme.semantic.color.actionSecondarySurface,
-                    border: `${theme.semantic.stroke.hairline}px solid ${
-                      destructive
-                        ? theme.semantic.color.actionDangerEmphasisSurface
-                        : theme.semantic.color.borderControl
-                    }`,
-                    borderRadius: theme.semantic.radius.control,
-                    color: destructive
-                      ? theme.semantic.color.actionDangerEmphasisText
-                      : theme.semantic.color.actionSecondaryText,
-                    cursor: unavailable ? "not-allowed" : "default",
-                    height: theme.recipes.control.height,
-                    minWidth: 76,
-                    opacity: unavailable ? theme.semantic.interaction.disabledOpacity : 1,
-                    padding: `0 ${theme.spacing.md}px`,
-                  }}
-                  type="button"
-                >
-                  {action.label}
-                </button>
+                <div key={action.id} style={{minWidth: 76}}>
+                  <SystemButton
+                    align="stretch"
+                    busy={busy && action.kind === "action"}
+                    disabled={unavailable}
+                    label={action.label}
+                    nativeID={`${dialogId}-action-${action.id}`}
+                    onPress={() => activate(action)}
+                    variant={action.intent === "destructive" ? "destructive" : "standard"}
+                  />
+                </div>
               );
             })}
           </div>

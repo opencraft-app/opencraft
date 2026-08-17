@@ -19,25 +19,23 @@ import {ManagementEmptyState} from "../components/management-empty-state";
 import {
   CodeBlock,
   CollectionIdentityMark,
-  CollectionRow,
   CollectionRowCopy,
-  DetailSection,
   ManagementDetailCanvas,
-  ManagementDetailScroll,
-  ManagementStageFill,
   ManagementField,
-  ManagementForm,
   ManagementFormFooter,
-  ManagementHeader,
   ManagementHeaderActions,
   NoticeBanner,
   ResourceIdentityHeader,
   ManagementResourceDirectory,
   ManagementResourceSelect,
-  ManagementStage,
   ManagementTextInput,
-  ResourceActionRow,
 } from "../components/management-workspace";
+import {
+  SystemForm,
+  SystemPage,
+  SystemRow,
+  SystemSection,
+} from "../patterns/system-page";
 import {SystemButton, SystemIconButton} from "../primitives/system-button";
 import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemDialog} from "../primitives/system-dialog";
@@ -208,25 +206,25 @@ export function ComputersScreen(props: ComputersScreenProps) {
     >
       {computerItems.map(({resource: computer, view}) => {
         return (
-          <CollectionRow
+          <SystemRow
             accessibilityLabel={view.accessibilityLabel}
+            description={view.meta}
             key={view.id}
+            leading={(
+              <CollectionIdentityMark
+                icon={Monitor}
+                presence={{
+                  label: view.status,
+                  tone: view.tone,
+                }}
+              />
+            )}
             onPress={() => selectListedComputer(computer.id)}
             orientation={stackedCollection ? "horizontal" : "vertical"}
             selected={view.selected}
-          >
-            <CollectionIdentityMark
-              icon={Monitor}
-              presence={{
-                label: view.status,
-                tone: view.tone,
-              }}
-            />
-            <CollectionRowCopy
-              meta={view.meta}
-              title={view.title}
-            />
-          </CollectionRow>
+            testID={`computer-row-${view.id}`}
+            title={view.title}
+          />
         );
       })}
     </ManagementResourceDirectory>
@@ -467,9 +465,8 @@ export function ComputersScreen(props: ComputersScreenProps) {
   });
 
   const renderStage = (pageModel: ManagementPageModel) => (
-      <ManagementStage testID="computer-stage">
-        <ManagementHeader
-          actions={(
+      <SystemPage
+        actions={(
             <ManagementHeaderActions
               createAccessibilityLabel="纳管 Computer"
               createIconTestID="computer-create-icon"
@@ -481,11 +478,13 @@ export function ComputersScreen(props: ComputersScreenProps) {
               refreshDisabled={loading}
               refreshTestID="computer-refresh-icon"
             />
-          )}
-          title={pageModel.header.title}
-          titleTestID="computer-stage-title"
-        />
-        {pageModel.error ? (
+        )}
+        contentMode={terminal && selected ? "fill" : "scroll"}
+        contentTestID={terminal && selected
+          ? "computer-terminal-host"
+          : "computer-detail-scroll"}
+        density={density}
+        feedback={pageModel.error ? (
           <SystemFeedback
             kind="inline"
             message={pageModel.error}
@@ -493,26 +492,25 @@ export function ComputersScreen(props: ComputersScreenProps) {
             tone={pageModel.error.includes("已完成连接") ? "positive" : "danger"}
           />
         ) : null}
-        {!hideCollection && computers.length > 1
+        navigation={!hideCollection && computers.length > 1
           ? phone
             ? mobileNavigation
             : showStackedCollection
               ? desktopNavigation
               : null
           : null}
+        testID="computer-stage"
+        title={pageModel.header.title}
+        titleTestID="computer-stage-title"
+      >
         {terminal && selected ? (
-          <ManagementStageFill density={density} testID="computer-terminal-host">
-            <TerminalPanel
-              controller={terminal}
-              name={selected.name}
-              onClose={() => setTerminal(null)}
-            />
-          </ManagementStageFill>
+          <TerminalPanel
+            controller={terminal}
+            name={selected.name}
+            onClose={() => setTerminal(null)}
+          />
         ) : (
-        <ManagementDetailScroll
-          density={density}
-          testID="computer-detail-scroll"
-        >
+        <>
           {creating ? (
             <ComputerCreateForm
               form={pageModel.form!}
@@ -544,7 +542,7 @@ export function ComputersScreen(props: ComputersScreenProps) {
                 titleTestID="computer-detail-title"
               />
               <View style={styles.supportGrid} testID="computer-support-grid">
-                <DetailSection
+                <SystemSection
                   testID="computer-binding-panel"
                   title="绑定的 Agent"
                 >
@@ -563,12 +561,12 @@ export function ComputersScreen(props: ComputersScreenProps) {
                       </View>
                     ))
                   )}
-                </DetailSection>
-                <DetailSection
+                </SystemSection>
+                <SystemSection
                   testID="computer-management-panel"
                   title="管理"
                 >
-                  <ResourceActionRow
+                  <SystemRow
                     action={(
                       <SystemButton
                         accessibilityLabel={`生成${selected.name}的一键安装命令`}
@@ -584,7 +582,6 @@ export function ComputersScreen(props: ComputersScreenProps) {
                       />
                     )}
                     description="生成一次性安装脚本，连接这台机器。"
-                    showSeparator={false}
                     testID="computer-install-action-row"
                     title="安装与重新连接"
                   />
@@ -592,7 +589,7 @@ export function ComputersScreen(props: ComputersScreenProps) {
                     selected.lifecycleState === "active" &&
                     selected.connectionState === "online" &&
                     onCreateTerminalController ? (
-                      <ResourceActionRow
+                      <SystemRow
                         action={(
                           <SystemButton
                             accessibilityLabel={`打开${selected.name}终端`}
@@ -619,13 +616,13 @@ export function ComputersScreen(props: ComputersScreenProps) {
                       {terminalUnavailableReason}
                     </Text>
                   ) : null}
-                </DetailSection>
+                </SystemSection>
                 {canManage && onRemoveComputer ? (
-                  <DetailSection
+                  <SystemSection
                     testID="computer-release-section"
                     title="危险操作"
                   >
-                    <ResourceActionRow
+                    <SystemRow
                       action={(
                         <SystemButton
                           accessibilityLabel={`解除纳管${selected.name}`}
@@ -642,11 +639,10 @@ export function ComputersScreen(props: ComputersScreenProps) {
                           ? `请先迁移或解绑 ${boundAgents.length} 个 Agent`
                           : "从当前 Server 移除记录，不操作真实机器。"
                       }
-                      showSeparator={false}
                       testID="computer-release-action-row"
                       title="解除纳管"
                     />
-                  </DetailSection>
+                  </SystemSection>
                 ) : null}
               </View>
             </ManagementDetailCanvas>
@@ -674,9 +670,9 @@ export function ComputersScreen(props: ComputersScreenProps) {
               title={computerEmptyCopy.title}
             />
           )}
-        </ManagementDetailScroll>
+        </>
         )}
-      </ManagementStage>
+      </SystemPage>
   );
 
   return (
@@ -739,7 +735,7 @@ function ComputerCreateForm({
   const cancel = form.actions.find(action => action.id === "cancel-create-computer")!;
   const submit = form.actions.find(action => action.id === "submit-create-computer")!;
   return (
-    <ManagementForm testID="computer-create-form">
+    <SystemForm testID="computer-create-form">
       <ManagementField error={name.error} hint={name.hint} label={name.label}>
         <ManagementTextInput
           accessibilityLabel={name.accessibilityLabel ?? name.label}
@@ -762,7 +758,7 @@ function ComputerCreateForm({
           onPress: submit.run,
         }}
       />
-    </ManagementForm>
+    </SystemForm>
   );
 }
 

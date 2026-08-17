@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import {
   NavigationLinkProvider,
+  SystemWindowStateProvider,
   useAppActive,
   useVelaFonts,
 } from "@/ui";
@@ -19,15 +20,17 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      <AppRuntimeProvider store={store}>
-        <NavigationLinkProvider component={ExpoNavigationLink}>
-          <Bootstrap>
-            <Stack screenOptions={{ headerShown: false }} />
-          </Bootstrap>
-        </NavigationLinkProvider>
-      </AppRuntimeProvider>
-    </SafeAreaProvider>
+    <SystemWindowStateProvider>
+      <SafeAreaProvider>
+        <AppRuntimeProvider store={store}>
+          <NavigationLinkProvider component={ExpoNavigationLink}>
+            <Bootstrap>
+              <Stack screenOptions={{ headerShown: false }} />
+            </Bootstrap>
+          </NavigationLinkProvider>
+        </AppRuntimeProvider>
+      </SafeAreaProvider>
+    </SystemWindowStateProvider>
   );
 }
 

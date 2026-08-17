@@ -120,6 +120,18 @@ export {
   type SystemMaterialSurfaceProps,
 } from "./primitives/system-material-surface";
 export {
+  SystemForm,
+  SystemPage,
+  SystemRow,
+  SystemSection,
+  type SystemFormAction,
+  type SystemFormProps,
+  type SystemPageDensity,
+  type SystemPageProps,
+  type SystemRowProps,
+  type SystemSectionProps,
+} from "./patterns/system-page";
+export {
   UserPicker,
   type UserPickerProps,
   type UserPickerSection,
@@ -240,6 +252,11 @@ export {
 export {StyleLabScreen} from "./screens/style-lab-screen";
 export { velaFontAssets, useVelaFonts } from "./font-assets";
 export { useAppActive } from "./use-app-active";
+export {
+  SystemWindowStateProvider,
+  useSystemWindowActive,
+  type SystemWindowStateProviderProps,
+} from "./system-window-state";
 export { AuthScreen } from "./screens/auth-screen";
 export {
   graphicalPresenter,

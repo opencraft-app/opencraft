@@ -1,50 +1,37 @@
-import type {LucideIcon} from "lucide-react-native";
 import {useState} from "react";
 import {ActivityIndicator, Pressable, Text, View} from "react-native";
 import {StyleSheet, useUnistyles} from "react-native-unistyles";
+import {densityScale} from "../tokens";
+import {useSystemWindowActive} from "../system-window-state";
 
-export type SystemButtonVariant =
-  | "destructive"
-  | "standard"
-  | "toolbar";
+import type {
+  SystemButtonProps,
+  SystemIconButtonProps,
+} from "./system-button.types";
 
-export interface SystemButtonProps {
-  accessibilityLabel?: string;
-  align?: "center" | "start" | "stretch";
-  busy?: boolean;
-  disabled?: boolean;
-  icon?: LucideIcon;
-  iconTestID?: string;
-  label: string;
-  onPress(): void;
-  testID?: string;
-  variant?: SystemButtonVariant;
-}
-
-export interface SystemIconButtonProps {
-  accessibilityLabel: string;
-  busy?: boolean;
-  disabled?: boolean;
-  icon: LucideIcon;
-  iconTestID?: string;
-  onPress(): void;
-  testID?: string;
-  variant?: "destructive" | "standard" | "toolbar";
-}
+export type {
+  SystemButtonProps,
+  SystemButtonVariant,
+  SystemIconButtonProps,
+} from "./system-button.types";
 
 export function SystemButton({
   accessibilityLabel,
   align = "start",
   busy = false,
+  density,
   disabled = false,
   icon: Icon,
   iconTestID,
   label,
+  nativeID,
   onPress,
   testID,
   variant = "standard",
+  visualState,
 }: SystemButtonProps) {
   const {theme} = useUnistyles();
+  const windowActive = useSystemWindowActive();
   const [hovered, setHovered] = useState(false);
   const unavailable = disabled || busy;
   const iconColor = variant === "destructive"
@@ -60,17 +47,23 @@ export function SystemButton({
       accessibilityState={{busy, disabled: unavailable}}
       aria-busy={busy}
       disabled={unavailable}
+      nativeID={nativeID}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
       onPress={onPress}
       style={({pressed}) => [
         styles.button,
+        density ? {height: densityScale[density].controlHeight} : null,
         align === "center" && styles.alignCenter,
         align === "stretch" && styles.alignStretch,
         variant === "toolbar" && styles.toolbar,
         variant === "destructive" && styles.destructive,
-        hovered && !unavailable && styles.hovered,
-        pressed && !unavailable && styles.pressed,
+        (visualState === "hovered" || (!visualState && hovered)) &&
+          !unavailable && styles.hovered,
+        (visualState === "pressed" || (!visualState && pressed)) &&
+          !unavailable && styles.pressed,
+        visualState === "focused" && !unavailable && styles.focused,
+        !windowActive && styles.inactive,
         unavailable && styles.unavailable,
       ]}
       testID={testID}
@@ -101,14 +94,18 @@ export function SystemButton({
 export function SystemIconButton({
   accessibilityLabel,
   busy = false,
+  density,
   disabled = false,
   icon: Icon,
   iconTestID,
+  nativeID,
   onPress,
   testID,
   variant = "toolbar",
+  visualState,
 }: SystemIconButtonProps) {
   const {theme} = useUnistyles();
+  const windowActive = useSystemWindowActive();
   const [hovered, setHovered] = useState(false);
   const unavailable = disabled || busy;
   const color = variant === "destructive"
@@ -124,15 +121,24 @@ export function SystemIconButton({
       accessibilityState={{busy, disabled: unavailable}}
       aria-busy={busy}
       disabled={unavailable}
+      nativeID={nativeID}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
       onPress={onPress}
       style={({pressed}) => [
         styles.iconButton,
+        density ? {
+          height: densityScale[density].headerActionHeight,
+          width: densityScale[density].headerActionHeight,
+        } : null,
         variant === "standard" && styles.iconStandard,
         variant === "destructive" && styles.iconDestructive,
-        hovered && !unavailable && styles.hovered,
-        pressed && !unavailable && styles.pressed,
+        (visualState === "hovered" || (!visualState && hovered)) &&
+          !unavailable && styles.hovered,
+        (visualState === "pressed" || (!visualState && pressed)) &&
+          !unavailable && styles.pressed,
+        visualState === "focused" && !unavailable && styles.focused,
+        !windowActive && styles.inactive,
         unavailable && styles.unavailable,
       ]}
       testID={testID}
@@ -175,6 +181,11 @@ const styles = StyleSheet.create((theme) => ({
   },
   hovered: {
     backgroundColor: theme.semantic.color.interactiveHoverSurface,
+    transform: [{translateY: -1}],
+  },
+  focused: {
+    borderColor: theme.semantic.color.borderFocus,
+    boxShadow: `0 0 0 ${theme.semantic.interaction.focusRingWidth}px ${theme.semantic.color.fieldFocusGlow}`,
   },
   iconButton: {
     alignItems: "center",
@@ -186,6 +197,9 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     width: theme.recipes.managementWorkspace.headerActionHeight,
     ...theme.semantic.motion.transition.control,
+  },
+  inactive: {
+    opacity: theme.semantic.opacity.inactive,
   },
   iconDestructive: {
     backgroundColor: theme.semantic.color.actionDangerSurface,
@@ -201,6 +215,7 @@ const styles = StyleSheet.create((theme) => ({
   labelDanger: {color: theme.semantic.color.actionDangerText},
   pressed: {
     backgroundColor: theme.semantic.color.interactivePressedSurface,
+    transform: [{scale: theme.semantic.interaction.pressedScaleSubtle}],
   },
   toolbar: {
     backgroundColor: theme.semantic.color.surfaceTransparent,

@@ -4,6 +4,7 @@ import {join} from "node:path";
 import {Text} from "react-native";
 
 import {velaTheme} from "../tokens";
+import {SystemWindowStateProvider} from "../system-window-state";
 
 const sharedPath = join(__dirname, "system-material-surface.tsx");
 const webPath = join(__dirname, "system-material-surface.web.tsx");
@@ -39,6 +40,29 @@ describe("Tahoe material surfaces", () => {
     });
     expect(screen.getByTestId("navigation-material").props.dataSet).toEqual({
       velaMaterial: "navigationChrome",
+    });
+  });
+
+  it("dims chrome, but not document content, when the host window is inactive", async () => {
+    const {SystemMaterialSurface} = require(
+      "./system-material-surface.web"
+    ) as typeof import("./system-material-surface.web");
+    const screen = await render(
+      <SystemWindowStateProvider forcedActive={false}>
+        <SystemMaterialSurface materialRole="navigationChrome" testID="inactive-navigation">
+          <Text>navigation</Text>
+        </SystemMaterialSurface>
+        <SystemMaterialSurface materialRole="content" testID="inactive-content">
+          <Text>content</Text>
+        </SystemMaterialSurface>
+      </SystemWindowStateProvider>,
+    );
+
+    expect(screen.getByTestId("inactive-navigation")).toHaveStyle({
+      backgroundColor: velaTheme.semantic.material.navigationInactiveFill,
+    });
+    expect(screen.getByTestId("inactive-content")).not.toHaveStyle({
+      backgroundColor: velaTheme.semantic.material.navigationInactiveFill,
     });
   });
 

@@ -36,24 +36,23 @@ import {
 } from "../presentation";
 import {
   CollectionIdentityMark,
-  CollectionRow,
   CollectionRowCopy,
-  DetailSection,
   ManagementDetailCanvas,
-  ManagementDetailScroll,
   ManagementField,
-  ManagementForm,
   ManagementFormFooter,
-  ManagementHeader,
   ManagementHeaderActions,
   ManagementResourceDirectory,
   ManagementResourceSelect,
-  ManagementStage,
   ManagementTextInput,
-  ResourceActionRow,
   ResourceIdentityHeader,
   ResourceMetadataList,
 } from "../components/management-workspace";
+import {
+  SystemForm,
+  SystemPage,
+  SystemRow,
+  SystemSection,
+} from "../patterns/system-page";
 import {SystemButton, SystemIconButton} from "../primitives/system-button";
 import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemSegmentedControl} from "../primitives/system-segmented-control";
@@ -227,22 +226,22 @@ export function MembersScreen(props: MembersScreenProps) {
     >
       {memberItems.map(({resource: member, view}) => {
         return (
-          <CollectionRow
+          <SystemRow
             accessibilityLabel={view.accessibilityLabel}
+            description={view.meta}
             key={view.id}
+            leading={(
+              <CollectionIdentityMark
+                identityKind={member.kind}
+                monogram={member.displayName.slice(0, 1)}
+              />
+            )}
             onPress={() => setSelectedMemberId(member.id)}
             orientation={stackedCollection ? "horizontal" : "vertical"}
             selected={view.selected}
-          >
-            <CollectionIdentityMark
-              identityKind={member.kind}
-              monogram={member.displayName.slice(0, 1)}
-            />
-            <CollectionRowCopy
-              meta={view.meta}
-              title={view.title}
-            />
-          </CollectionRow>
+            testID={`member-row-${view.id}`}
+            title={view.title}
+          />
         );
       })}
     </ManagementResourceDirectory>
@@ -517,9 +516,8 @@ export function MembersScreen(props: MembersScreenProps) {
 
   const navigation = stackedCollection ? null : desktopNavigation;
   const renderStage = (pageModel: ManagementPageModel) => (
-      <ManagementStage>
-        <ManagementHeader
-          actions={(
+      <SystemPage
+        actions={(
             <ManagementHeaderActions
               createAccessibilityLabel="创建邀请"
               createIconTestID="member-create-icon"
@@ -531,24 +529,22 @@ export function MembersScreen(props: MembersScreenProps) {
               refreshDisabled={loading}
               refreshTestID="member-refresh-icon"
             />
-          )}
-          title={pageModel.header.title}
-          titleTestID="member-stage-title"
-        />
-        {pageModel.error ? (
+        )}
+        contentTestID="member-detail-scroll"
+        density={density}
+        feedback={pageModel.error ? (
           <SystemFeedback kind="inline" message={pageModel.error} tone="danger" />
         ) : null}
-        {members.length > 1 && !creatingInvite && !acceptingInvite
+        navigation={members.length > 1 && !creatingInvite && !acceptingInvite
           ? phone
             ? mobileNavigation
             : showStackedCollection
               ? desktopNavigation
               : null
           : null}
-        <ManagementDetailScroll
-          density={density}
-          testID="member-detail-scroll"
-        >
+        title={pageModel.header.title}
+        titleTestID="member-stage-title"
+      >
           {operations.length > 0 ? (
             <View style={styles.operationStatus}>
               <OperationStatusList
@@ -641,7 +637,7 @@ export function MembersScreen(props: MembersScreenProps) {
                 </>
               ) : null}
               {canManage && invites.length > 0 ? (
-                <DetailSection testID="member-invite-list" title="邀请记录">
+                <SystemSection testID="member-invite-list" title="邀请记录">
                   {invites.map((invite) => (
                     <View key={invite.id} style={styles.inviteRow}>
                       <View style={styles.rowCopy}>
@@ -661,9 +657,9 @@ export function MembersScreen(props: MembersScreenProps) {
                       />
                     </View>
                   ))}
-                </DetailSection>
+                </SystemSection>
               ) : null}
-              <ResourceActionRow
+              <SystemRow
                 action={(
                   <SystemButton
                     accessibilityLabel="接受其他 Server 邀请"
@@ -681,7 +677,7 @@ export function MembersScreen(props: MembersScreenProps) {
           ) : null}
           {acceptingInvite ? (
             <ManagementDetailCanvas>
-              <DetailSection
+              <SystemSection
                 description="粘贴其他 Server 发来的一次性邀请 token。"
                 testID="member-accept-invite"
                 title="接受邀请"
@@ -718,11 +714,10 @@ export function MembersScreen(props: MembersScreenProps) {
                   label="取消"
                   onPress={() => setAcceptingInvite(false)}
                 />
-              </DetailSection>
+              </SystemSection>
             </ManagementDetailCanvas>
           ) : null}
-        </ManagementDetailScroll>
-      </ManagementStage>
+      </SystemPage>
   );
 
   return (
@@ -789,7 +784,7 @@ function InviteForm({
   const cancel = form.actions.find(action => action.id === "cancel-create-invite")!;
   const submit = form.actions.find(action => action.id === "submit-create-invite")!;
   return (
-    <ManagementForm testID="member-invite-form">
+    <SystemForm testID="member-invite-form">
       <ManagementField label={role.label}>
         <SystemSegmentedControl
           accessibilityLabel={role.label}
@@ -835,7 +830,7 @@ function InviteForm({
           onPress: submit.run,
         }}
       />
-    </ManagementForm>
+    </SystemForm>
   );
 }
 

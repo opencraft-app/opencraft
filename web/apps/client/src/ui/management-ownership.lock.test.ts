@@ -90,6 +90,36 @@ describe("management ownership behavior locks", () => {
     }
   });
 
+  it("keeps management screens on the four-part system page grammar", () => {
+    for (const name of managementScreens) {
+      const source = readFileSync(join(screensRoot, name), "utf8");
+      expect(source).toContain("<SystemPage");
+      expect(source).not.toMatch(/<ManagementStage(?:\s|>)/u);
+      expect(source).not.toMatch(/<ManagementHeader(?:\s|>)/u);
+      expect(source).not.toMatch(/<ManagementDetailScroll(?:\s|>)/u);
+    }
+
+    for (const name of collectionScreens) {
+      const source = readFileSync(join(screensRoot, name), "utf8");
+      expect(source).toContain("<SystemRow");
+      expect(source).not.toMatch(/<CollectionRow(?:\s|>)/u);
+      expect(source).not.toMatch(/<ResourceActionRow(?:\s|>)/u);
+      expect(source).toContain("<SystemForm");
+      expect(source).not.toMatch(/<ManagementForm(?:\s|>)/u);
+    }
+
+    for (const name of [
+      "agents-screen.tsx",
+      "computers-screen.tsx",
+      "members-screen.tsx",
+      "tasks-screen.tsx",
+    ]) {
+      const source = readFileSync(join(screensRoot, name), "utf8");
+      expect(source).not.toContain("<DetailSection");
+      if (source.includes("-section")) expect(source).toContain("<SystemSection");
+    }
+  });
+
   it("puts the collection in the frame nav slot when chrome is wide", () => {
     for (const name of collectionScreens) {
       const source = readFileSync(join(screensRoot, name), "utf8");

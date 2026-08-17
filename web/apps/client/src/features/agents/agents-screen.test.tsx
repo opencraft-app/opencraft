@@ -908,13 +908,14 @@ describe("AgentsScreen", () => {
       borderRadius: velaTheme.semantic.radius.control,
       borderWidth: 1,
     });
-    expect(screen.getByTestId("agent-credential-section")).toHaveStyle({
-      borderTopWidth: 1,
+    expect(screen.getByTestId("agent-credential-section-content")).toHaveStyle({
       minHeight: velaTheme.recipes.managementWorkspace.resourceActionMinHeight,
     });
-    expect(screen.getByTestId("agent-delete-section")).toHaveStyle({
-      borderTopWidth: 1,
+    expect(screen.getByTestId("agent-delete-section-content")).toHaveStyle({
       minHeight: velaTheme.recipes.managementWorkspace.resourceActionMinHeight,
+    });
+    expect(screen.getByTestId("agent-security-section-separator-1")).toHaveStyle({
+      height: velaTheme.semantic.stroke.hairline,
     });
   });
 

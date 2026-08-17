@@ -4,6 +4,7 @@ import {StyleSheet} from "react-native-unistyles";
 import type {
   SystemMaterialSurfaceProps,
 } from "./system-material-surface.types";
+import {useSystemWindowActive} from "../system-window-state";
 
 export function SystemMaterialSurface({
   children,
@@ -11,6 +12,9 @@ export function SystemMaterialSurface({
   style,
   testID,
 }: SystemMaterialSurfaceProps) {
+  const active = useSystemWindowActive();
+  const navigation = materialRole === "navigationChrome" ||
+    materialRole === "compactNavigation";
   return (
     <View
       {...({dataSet: {velaMaterial: materialRole}} as object)}
@@ -24,6 +28,7 @@ export function SystemMaterialSurface({
         materialRole === "dialog" && styles.dialog,
         materialRole === "floatingControl" && styles.floatingControl,
         materialRole === "composer" && styles.composer,
+        !active && navigation && styles.inactiveNavigation,
         style,
       ]}
       testID={testID}
@@ -65,6 +70,9 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.semantic.radius.overlay,
     borderWidth: theme.semantic.stroke.hairline,
     WebkitBackdropFilter: theme.semantic.material.blur,
+  },
+  inactiveNavigation: {
+    backgroundColor: theme.semantic.material.navigationInactiveFill,
   },
   navigationChrome: {
     backdropFilter: theme.semantic.material.blur,

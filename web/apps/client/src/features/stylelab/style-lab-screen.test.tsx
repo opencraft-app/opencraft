@@ -69,6 +69,24 @@ describe("StyleLabScreen", () => {
     expect(screen.getByText("首次协作闭环验收")).toBeVisible();
     expect(screen.getAllByText("Atlas Agent").length).toBeGreaterThan(0);
     expect(screen.getByPlaceholderText("发消息")).toBeVisible();
+    expect(screen.getByTestId("style-lab-review-matrix")).toBeVisible();
+    for (const state of ["idle", "hovered", "focused", "pressed", "disabled"]) {
+      expect(screen.getByTestId(`style-lab-state-${state}`)).toBeVisible();
+    }
+  });
+
+  it("reviews both appearances and both input densities without ad-hoc controls", async () => {
+    const screen = await render(<StyleLabScreen viewportWidth={1_180} />);
+
+    await fireEvent.press(screen.getByRole("radio", {name: "使用深色外观"}));
+    expect(screen.getByRole("radio", {name: "使用深色外观"})).toHaveProp(
+      "accessibilityState",
+      {checked: true, disabled: false},
+    );
+
+    await fireEvent.press(screen.getByRole("radio", {name: "使用触控密度"}));
+    expect(screen.getByTestId("style-lab-state-idle")).toHaveStyle({height: 44});
+    expect(screen.getByTestId("style-lab-state-disabled")).toBeDisabled();
   });
 
   it("previews a DM without changing the Server-level Agent count", async () => {

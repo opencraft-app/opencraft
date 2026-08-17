@@ -4,6 +4,7 @@ import {StyleSheet} from "react-native-unistyles";
 import type {
   SystemMaterialSurfaceProps,
 } from "./system-material-surface.types";
+import {useSystemWindowActive} from "../system-window-state";
 
 export function SystemMaterialSurface({
   children,
@@ -11,6 +12,7 @@ export function SystemMaterialSurface({
   style,
   testID,
 }: SystemMaterialSurfaceProps) {
+  const active = useSystemWindowActive();
   const overlay = materialRole === "dialog" ||
     materialRole === "popover" ||
     materialRole === "floatingControl" ||
@@ -25,6 +27,7 @@ export function SystemMaterialSurface({
         navigation && styles.navigation,
         overlay && styles.overlay,
         materialRole === "toolbar" && styles.toolbar,
+        !active && navigation && styles.inactiveNavigation,
         style,
       ]}
       testID={testID}
@@ -37,6 +40,9 @@ export function SystemMaterialSurface({
 const styles = StyleSheet.create((theme) => ({
   base: {position: "relative"},
   content: {backgroundColor: theme.semantic.color.paneSurface},
+  inactiveNavigation: {
+    backgroundColor: theme.semantic.color.sidebarSurface,
+  },
   navigation: {backgroundColor: theme.semantic.color.navigationSurface},
   overlay: {
     backgroundColor: theme.semantic.color.overlaySurface,

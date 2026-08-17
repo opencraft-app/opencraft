@@ -7,16 +7,14 @@ import {useEffect, useState} from "react";
 import {useWindowDimensions} from "react-native";
 
 import {
-  ManagementDetailScroll,
-  ManagementHeader,
   ManagementPreferenceBody,
   ManagementPreferenceFooter,
   ManagementPreferenceMetadataRow,
   ManagementPreferenceRow,
   ManagementPreferenceSection,
-  ManagementStage,
   ManagementTextInput,
 } from "../components/management-workspace";
+import {SystemPage} from "../patterns/system-page";
 import {SystemFeedback} from "../primitives/system-feedback";
 import type { PlatformFrameProps } from "../layouts/app-frame";
 import { ManagementScreenFrame } from "../layouts/management-screen-frame";
@@ -175,21 +173,25 @@ export function ServerSettingsScreen({
   const [nameField, descriptionField] = fields;
 
   const stage = (
-    <ManagementStage testID="server-settings-stage">
-      <ManagementHeader title={pageModel.header.title} />
-      {error ? (
-        <SystemFeedback kind="inline" message={error} tone="danger" />
-      ) : null}
-      {!canManage ? (
-        <SystemFeedback
-          kind="inline"
-          message="只有 Server Owner 或管理员可以修改这些设置"
-        />
-      ) : null}
-      <ManagementDetailScroll
-        density={density}
-        testID="server-settings-detail-scroll"
-      >
+    <SystemPage
+      contentTestID="server-settings-detail-scroll"
+      density={density}
+      feedback={(
+        <>
+          {error ? (
+            <SystemFeedback kind="inline" message={error} tone="danger" />
+          ) : null}
+          {!canManage ? (
+            <SystemFeedback
+              kind="inline"
+              message="只有 Server Owner 或管理员可以修改这些设置"
+            />
+          ) : null}
+        </>
+      )}
+      testID="server-settings-stage"
+      title={pageModel.header.title}
+    >
         <ManagementPreferenceBody testID="server-settings-content">
           <ManagementPreferenceSection
             description="修改成员看到的 Server 名称和简介。"
@@ -253,8 +255,7 @@ export function ServerSettingsScreen({
             <ManagementPreferenceMetadataRow label="Server ID" value={server.id} />
           </ManagementPreferenceSection>
         </ManagementPreferenceBody>
-      </ManagementDetailScroll>
-    </ManagementStage>
+    </SystemPage>
   );
 
   return (

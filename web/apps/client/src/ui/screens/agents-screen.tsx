@@ -21,24 +21,23 @@ import Plus from "lucide-react-native/icons/plus";
 import {ManagementEmptyState} from "../components/management-empty-state";
 import {
   CollectionIdentityMark,
-  CollectionRow,
   CollectionRowCopy,
-  DetailSection,
   ManagementDetailCanvas,
-      ManagementDetailScroll,
       ManagementField,
-      ManagementForm,
       ManagementFormFooter,
-  ManagementHeader,
   ManagementHeaderActions,
   ResourceIdentityHeader,
   ManagementResourceDirectory,
   ManagementResourceSelect,
-  ManagementStage,
   ManagementTextInput,
-  ResourceActionRow,
   ManagementCollectionFooterAction,
 } from "../components/management-workspace";
+import {
+  SystemForm,
+  SystemPage,
+  SystemRow,
+  SystemSection,
+} from "../patterns/system-page";
 import {SystemButton} from "../primitives/system-button";
 import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemDialog} from "../primitives/system-dialog";
@@ -255,26 +254,26 @@ export function AgentsScreen(props: AgentsScreenProps) {
     >
       {agentItems.map(({resource: agent, view}) => {
         return (
-          <CollectionRow
+          <SystemRow
             accessibilityLabel={view.accessibilityLabel}
+            description={view.meta}
             key={view.id}
+            leading={(
+              <CollectionIdentityMark
+                identityKind="agent"
+                monogram={view.monogram}
+                presence={{
+                  label: view.status,
+                  tone: view.tone,
+                }}
+              />
+            )}
             onPress={() => setSelectedAgentId(agent.id)}
             orientation={stackedCollection ? "horizontal" : "vertical"}
             selected={view.selected}
-          >
-            <CollectionIdentityMark
-              identityKind="agent"
-              monogram={view.monogram}
-              presence={{
-                label: view.status,
-                tone: view.tone,
-              }}
-            />
-            <CollectionRowCopy
-              meta={view.meta}
-              title={view.title}
-            />
-          </CollectionRow>
+            testID={`agent-row-${view.id}`}
+            title={view.title}
+          />
         );
       })}
     </ManagementResourceDirectory>
@@ -707,9 +706,8 @@ export function AgentsScreen(props: AgentsScreenProps) {
 
   const navigation = stackedCollection ? null : desktopNavigation;
   const renderStage = (pageModel: ManagementPageModel) => (
-    <ManagementStage>
-      <ManagementHeader
-        actions={(
+    <SystemPage
+      actions={(
           <ManagementHeaderActions
             createAccessibilityLabel="新建 Agent"
             createIconTestID="agent-create-icon"
@@ -721,24 +719,22 @@ export function AgentsScreen(props: AgentsScreenProps) {
             refreshDisabled={loading}
             refreshTestID="agent-refresh-icon"
           />
-        )}
-        title={pageModel.header.title}
-        titleTestID="agent-stage-title"
-      />
-      {pageModel.error ? (
+      )}
+      contentTestID="agent-detail-scroll"
+      density={density}
+      feedback={pageModel.error ? (
         <SystemFeedback kind="inline" message={pageModel.error} tone="danger" />
       ) : null}
-      {agents.length > 1 && !creating
+      navigation={agents.length > 1 && !creating
         ? phone
           ? mobileNavigation
           : showStackedCollection
             ? desktopNavigation
             : null
         : null}
-      <ManagementDetailScroll
-        density={density}
-        testID="agent-detail-scroll"
-      >
+      title={pageModel.header.title}
+      titleTestID="agent-stage-title"
+    >
         {creating ? (
           <AgentCreateForm
             computerId={createComputerId}
@@ -802,8 +798,7 @@ export function AgentsScreen(props: AgentsScreenProps) {
             title={pageModel.empty?.title ?? agentEmptyCopy.title}
           />
         )}
-      </ManagementDetailScroll>
-    </ManagementStage>
+    </SystemPage>
   );
 
   return (
@@ -886,7 +881,7 @@ function AgentCreateForm({
   } as const;
 
   return (
-    <ManagementForm testID="agent-create-form">
+    <SystemForm testID="agent-create-form">
       <View style={styles.wizardSteps} testID="agent-create-steps">
         {(["身份", "运行环境", "启动"] as const).map((label, index) => {
           const value = (index + 1) as 1 | 2 | 3;
@@ -1088,7 +1083,7 @@ function AgentCreateForm({
           </View>
         </>
       ) : null}
-    </ManagementForm>
+    </SystemForm>
   );
 }
 
@@ -1221,7 +1216,7 @@ function AgentDetail({
         items={operations}
         onContinue={onContinueOperation ?? (() => undefined)}
       />
-      <DetailSection testID="agent-settings-section" title="Agent 设置">
+      <SystemSection testID="agent-settings-section" title="Agent 设置">
         <ManagementField label="显示名称">
           <ManagementTextInput
             accessibilityLabel="编辑 Agent 显示名"
@@ -1288,10 +1283,10 @@ function AgentDetail({
             });
           }}
         />
-      </DetailSection>
+      </SystemSection>
       {canManage ? (
-        <DetailSection testID="agent-security-section" title="安全与身份">
-          <ResourceActionRow
+        <SystemSection testID="agent-security-section" title="安全与身份">
+          <SystemRow
             action={(
               <SystemButton
                 accessibilityLabel={`轮换 Agent ${agent.handle} 的运行凭证`}
@@ -1308,7 +1303,7 @@ function AgentDetail({
             title="运行凭证"
           />
           {onDeleteAgent ? (
-            <ResourceActionRow
+            <SystemRow
               action={(
                 <SystemButton
                   accessibilityLabel={`删除 Agent ${agent.handle}`}
@@ -1323,7 +1318,7 @@ function AgentDetail({
               title="危险操作"
             />
           ) : null}
-        </DetailSection>
+        </SystemSection>
       ) : null}
       {confirmingRotation ? (
         <SystemDialog

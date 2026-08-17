@@ -12,7 +12,7 @@ import type {
   Server,
   Task,
 } from "@vela/client-core";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -20,7 +20,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet, UnistylesRuntime } from "react-native-unistyles";
 
 import { AgentsScreen } from "./agents-screen";
 import { ComputersScreen } from "./computers-screen";
@@ -35,6 +35,13 @@ import {
 import type { TerminalSurfaceController } from "../components/terminal-panel";
 import { workspaceLayoutMode } from "../workspace-layout-mode";
 import { velaTheme } from "../tokens";
+import {SystemButton} from "../primitives/system-button";
+import {SystemSegmentedControl} from "../primitives/system-segmented-control";
+import {
+  STYLE_LAB_INTERACTION_STATES,
+  type StyleLabDensity,
+  type StyleLabTheme,
+} from "../style-lab-model";
 
 const server: Server = {
   description: "Human 与 Agent 的产品协作空间",
@@ -412,6 +419,8 @@ export function StyleLabScreen({
   const canvasHeight = Math.max(640, window.height - (compact ? 194 : 114));
   const [preview, setPreview] = useState<Preview>("chat");
   const [scenario, setScenario] = useState<ReviewScenario>("normal");
+  const [reviewDensity, setReviewDensity] = useState<StyleLabDensity>("pointer");
+  const [reviewTheme, setReviewTheme] = useState<StyleLabTheme>("light");
   const [activeConversation, setActiveConversation] =
     useState<ActiveConversation>({
       channelId: channels[0]!.id,
@@ -434,6 +443,13 @@ export function StyleLabScreen({
           index === 0 ? { ...channel, joined: false } : channel,
         )
       : channels;
+  useEffect(() => {
+    UnistylesRuntime.setAdaptiveThemes(false);
+    return () => UnistylesRuntime.setAdaptiveThemes(true);
+  }, []);
+  useEffect(() => {
+    UnistylesRuntime.setTheme(reviewTheme);
+  }, [reviewTheme]);
   const activeChannelMembers =
     activeConversation.kind === "channel"
       ? reviewMembers.filter((member) =>
@@ -567,6 +583,44 @@ export function StyleLabScreen({
             </Pressable>
           ))}
         </ScrollView>
+        <View style={styles.reviewMatrix} testID="style-lab-review-matrix">
+          <View style={styles.reviewSelectors}>
+            <SystemSegmentedControl
+              accessibilityLabel="Style Lab 外观"
+              onChange={(value) => setReviewTheme(value as StyleLabTheme)}
+              options={[
+                {accessibilityLabel: "使用浅色外观", label: "浅色", value: "light"},
+                {accessibilityLabel: "使用深色外观", label: "深色", value: "dark"},
+              ]}
+              value={reviewTheme}
+            />
+            <SystemSegmentedControl
+              accessibilityLabel="Style Lab 输入密度"
+              onChange={(value) => setReviewDensity(value as StyleLabDensity)}
+              options={[
+                {accessibilityLabel: "使用指针密度", label: "指针", value: "pointer"},
+                {accessibilityLabel: "使用触控密度", label: "触控", value: "touch"},
+              ]}
+              value={reviewDensity}
+            />
+          </View>
+          <View style={styles.stateSpecimens}>
+            {STYLE_LAB_INTERACTION_STATES.map((state) => (
+              <View key={state} style={styles.stateSpecimen}>
+                <Text style={styles.stateLabel}>{interactionStateLabel[state]}</Text>
+                <SystemButton
+                  accessibilityLabel={`${interactionStateLabel[state]}按钮样本`}
+                  density={reviewDensity}
+                  disabled={state === "disabled"}
+                  label="操作"
+                  onPress={() => undefined}
+                  testID={`style-lab-state-${state}`}
+                  visualState={state === "disabled" ? "idle" : state}
+                />
+              </View>
+            ))}
+          </View>
+        </View>
       </View>
       <ScrollView
         contentContainerStyle={styles.previewContent}
@@ -805,6 +859,14 @@ export function StyleLabScreen({
 type Preview = Exclude<WorkspaceSection, "settings">;
 type ReviewScenario = "disconnected" | "empty" | "normal" | "unjoined";
 
+const interactionStateLabel = {
+  disabled: "禁用",
+  focused: "聚焦",
+  hovered: "悬停",
+  idle: "默认",
+  pressed: "按下",
+} as const;
+
 const previewAccessibilityLabel: Record<Preview, string> = {
   agents: "预览 Agent 界面",
   chat: "预览聊天界面",
@@ -1025,6 +1087,33 @@ const styles = StyleSheet.create((theme) => ({
   labTitle: {
     color: theme.semantic.color.textPrimary,
     ...theme.semantic.typography.messageSender,
+  },
+  reviewMatrix: {
+    borderTopColor: theme.semantic.color.separator,
+    borderTopWidth: theme.semantic.stroke.hairline,
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+  },
+  reviewSelectors: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing.sm,
+  },
+  stateLabel: {
+    color: theme.semantic.color.textMuted,
+    ...theme.semantic.typography.caption,
+  },
+  stateSpecimen: {
+    alignItems: "center",
+    gap: theme.spacing.xs,
+  },
+  stateSpecimens: {
+    alignItems: "flex-end",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing.lg,
   },
   preview: {
     flex: 1,

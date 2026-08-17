@@ -24,22 +24,22 @@ import RefreshCw from "lucide-react-native/icons/refresh-cw";
 
 import {ManagementEmptyState} from "../components/management-empty-state";
 import {
-  CollectionRow,
   DetailHeading,
-  DetailSection,
   ManagementCollectionFooterAction,
   ManagementResourceDirectory,
   ManagementDateTimeInput,
   ManagementDetailCanvas,
-  ManagementDetailScroll,
   ManagementField,
-  ManagementForm,
   ManagementFormFooter,
-  ManagementHeader,
   ManagementHeaderActions,
-  ManagementStage,
   ManagementTextInput,
 } from "../components/management-workspace";
+import {
+  SystemForm,
+  SystemPage,
+  SystemRow,
+  SystemSection,
+} from "../patterns/system-page";
 import {SystemButton, SystemIconButton} from "../primitives/system-button";
 import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemTabs} from "../primitives/system-tabs";
@@ -581,9 +581,8 @@ export function TasksScreen(props: TasksScreenProps) {
 
   const navigation = stackedCollection ? null : sidebar;
   const renderStage = (pageModel: ManagementPageModel) => (
-    <ManagementStage testID="task-stage">
-      <ManagementHeader
-        actions={(
+    <SystemPage
+      actions={(
           <ManagementHeaderActions
             createAccessibilityLabel={reminderMode ? "新建提醒" : "新建任务"}
             createIconTestID="task-create-icon"
@@ -594,15 +593,14 @@ export function TasksScreen(props: TasksScreenProps) {
               ? setCreatingReminder(true)
               : setCreating(true)}
           />
-        )}
-        copyTestID="task-stage-header-copy"
-        title={pageModel.header.title}
-        titleTestID="task-stage-title"
-      />
-      {pageModel.error ? (
+      )}
+      contentTestID="task-detail-scroll"
+      density={density}
+      feedback={pageModel.error ? (
         <SystemFeedback kind="inline" message={pageModel.error} tone="danger" />
       ) : null}
-      {stackedCollection && !activeCreation ? (
+      headerCopyTestID="task-stage-header-copy"
+      navigation={stackedCollection && !activeCreation ? (
         <View
           style={styles.compactListBlock}
           testID="task-collection-shelf"
@@ -632,10 +630,10 @@ export function TasksScreen(props: TasksScreenProps) {
           </TaskCollectionPanel>
         </View>
       ) : null}
-      <ManagementDetailScroll
-        density={density}
-        testID="task-detail-scroll"
-      >
+      testID="task-stage"
+      title={pageModel.header.title}
+      titleTestID="task-stage-title"
+    >
         {!reminderMode && creating ? (
           <TaskCreateForm
             form={pageModel.form!}
@@ -682,8 +680,7 @@ export function TasksScreen(props: TasksScreenProps) {
             title={pageModel.empty?.title ?? taskEmptyCopy.title}
           />
         )}
-      </ManagementDetailScroll>
-    </ManagementStage>
+    </SystemPage>
   );
 
   return (
@@ -796,23 +793,17 @@ function TaskList({
     >
       {items.map(({resource, view}) => {
         return (
-          <CollectionRow
+          <SystemRow
             accessibilityLabel={view.accessibilityLabel}
+            description={view.status}
             key={view.id}
+            metadata={view.meta}
             onPress={() => onSelect(resource.id)}
             orientation={horizontal ? "horizontal" : "vertical"}
             selected={view.selected}
-          >
-            <Text style={styles.taskReference}>{view.meta}</Text>
-            <View style={styles.taskCopy}>
-              <Text numberOfLines={2} style={styles.taskTitle}>
-                {view.title}
-              </Text>
-              <Text style={styles.taskStatus}>
-                {view.status}
-              </Text>
-            </View>
-          </CollectionRow>
+            testID={`task-row-${view.id}`}
+            title={view.title}
+          />
         );
       })}
     </ScrollView>
@@ -839,23 +830,17 @@ function ReminderList({
     >
       {items.map(({resource, view}) => {
         return (
-          <CollectionRow
+          <SystemRow
             accessibilityLabel={view.accessibilityLabel}
+            description={view.subtitle}
             key={view.id}
+            metadata="提醒"
             onPress={() => onSelect(resource.id)}
             orientation={horizontal ? "horizontal" : "vertical"}
             selected={view.selected}
-          >
-            <Text style={styles.taskReference}>提醒</Text>
-            <View style={styles.taskCopy}>
-              <Text numberOfLines={2} style={styles.taskTitle}>
-                {view.title}
-              </Text>
-              <Text style={styles.taskStatus}>
-                {view.subtitle}
-              </Text>
-            </View>
-          </CollectionRow>
+            testID={`reminder-row-${view.id}`}
+            title={view.title}
+          />
         );
       })}
     </ScrollView>
@@ -871,7 +856,7 @@ function ReminderCreateForm({form}: {form: PresentationForm}) {
   const cancel = form.actions.find(action => action.id === "cancel-create-reminder")!;
   const submit = form.actions.find(action => action.id === "submit-create-reminder")!;
   return (
-    <ManagementForm>
+    <SystemForm>
       <Text style={styles.formTitle}>{form.title}</Text>
       <ManagementField label={kind.label}>
         <SystemSegmentedControl
@@ -961,7 +946,7 @@ function ReminderCreateForm({form}: {form: PresentationForm}) {
           onPress: submit.run,
         }}
       />
-    </ManagementForm>
+    </SystemForm>
   );
 }
 
@@ -1063,7 +1048,7 @@ function TaskCreateForm({form}: {form: PresentationForm}) {
   const cancel = form.actions.find(action => action.id === "cancel-create-task")!;
   const submit = form.actions.find(action => action.id === "submit-create-task")!;
   return (
-    <ManagementForm testID="task-create-form">
+    <SystemForm testID="task-create-form">
       <Text style={styles.formTitle}>{form.title}</Text>
       <ManagementField error={title.error} hint={title.hint} label={title.label}>
         <ManagementTextInput
@@ -1116,7 +1101,7 @@ function TaskCreateForm({form}: {form: PresentationForm}) {
           onPress: submit.run,
         }}
       />
-    </ManagementForm>
+    </SystemForm>
   );
 }
 
@@ -1146,7 +1131,7 @@ function TaskDetail({
         testID="task-identity"
         title={task.title}
       />
-      <DetailSection>
+      <SystemSection>
       <Text style={styles.detailDescription}>
         {task.description || "暂无描述。"}
       </Text>
@@ -1187,7 +1172,7 @@ function TaskDetail({
           </>
         ) : null}
       </View>
-      </DetailSection>
+      </SystemSection>
     </ManagementDetailCanvas>
   );
 }

@@ -72,10 +72,12 @@ describe("management workspace adoption", () => {
     const source = readFileSync(join(__dirname, "..", "screens", file), "utf8");
 
     expect(source).toContain("<ManagementResourceDirectory");
-    expect(source).toContain("<ManagementStage");
-    expect(source).toContain("<ManagementHeader");
-    expect(source).toContain("<CollectionRow");
-    expect(source).toContain("<DetailSection");
+    expect(source).toContain("<SystemPage");
+    expect(source).toContain("<SystemRow");
+    expect(source).toContain("<SystemSection");
+    expect(source).not.toMatch(/<Management(?:Stage|Header|DetailScroll)(?:\s|>)/u);
+    expect(source).not.toMatch(/<CollectionRow(?:\s|>)/u);
+    expect(source).not.toMatch(/<DetailSection(?:\s|>)/u);
     expect(source).toContain("<SystemButton");
   });
 
@@ -212,7 +214,7 @@ describe("management workspace adoption", () => {
     (file) => {
       const source = readFileSync(join(__dirname, "..", "screens", file), "utf8");
 
-      expect(source).toContain("<ManagementForm");
+      expect(source).toContain("<SystemForm");
       expect(source).toContain("<ManagementFormFooter");
       expect(source).toContain("<ManagementField");
       expect(source).toContain("<ManagementTextInput");
@@ -244,7 +246,8 @@ describe("management workspace adoption", () => {
     (file) => {
       const source = readFileSync(join(__dirname, "..", "screens", file), "utf8");
 
-      expect(source).toContain("<ManagementDetailScroll");
+      expect(source).toContain("<SystemPage");
+      expect(source).toContain("contentTestID=");
       expect(source).toContain("<ManagementDetailCanvas");
       expect(source).not.toMatch(/\n  (?:contentCompact|detailCompact|detailMedium|detailScrollerCompact|detailScrollerMedium|memberDetail): \{/u);
     },
@@ -256,9 +259,9 @@ describe("management workspace adoption", () => {
       "utf8",
     );
 
-    expect(source).toContain("<ManagementStageFill");
+    expect(source).toContain('contentMode={terminal && selected ? "fill" : "scroll"}');
     expect(source).toMatch(
-      /terminal && selected \?[\s\S]*?<ManagementStageFill[\s\S]*?<TerminalPanel/u,
+      /terminal && selected \?[\s\S]*?<TerminalPanel/u,
     );
   });
 

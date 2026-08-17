@@ -1,6 +1,7 @@
 import {Modal, Pressable, Text, View} from "react-native";
 import {StyleSheet} from "react-native-unistyles";
 
+import {SystemButton} from "./system-button";
 import {SystemMaterialSurface} from "./system-material-surface.native";
 import type {
   DialogCloseReason,
@@ -73,27 +74,17 @@ export function SystemDialog({
                   action.disabled || locked || (busy && action.kind === "action"),
                 );
                 return (
-                  <Pressable
-                    accessibilityLabel={action.label}
-                    accessibilityRole="button"
-                    accessibilityState={{busy: busy && action.kind === "action", disabled: unavailable}}
-                    aria-busy={busy && action.kind === "action"}
-                    disabled={unavailable}
-                    key={action.id}
-                    nativeID={`${dialogId}-action-${action.id}`}
-                    onPress={() => activate(action)}
-                    style={({pressed}) => [
-                      styles.action,
-                      action.intent === "destructive" && styles.actionDestructive,
-                      pressed && styles.actionPressed,
-                      unavailable && styles.actionUnavailable,
-                    ]}
-                  >
-                    <Text style={[
-                      styles.actionLabel,
-                      action.intent === "destructive" && styles.actionLabelInverse,
-                    ]}>{action.label}</Text>
-                  </Pressable>
+                  <View key={action.id} style={styles.actionSlot}>
+                    <SystemButton
+                      align="stretch"
+                      busy={busy && action.kind === "action"}
+                      disabled={unavailable}
+                      label={action.label}
+                      nativeID={`${dialogId}-action-${action.id}`}
+                      onPress={() => activate(action)}
+                      variant={action.intent === "destructive" ? "destructive" : "standard"}
+                    />
+                  </View>
                 );
               })}
             </View>
@@ -105,28 +96,10 @@ export function SystemDialog({
 }
 
 const styles = StyleSheet.create(theme => ({
-  action: {
-    alignItems: "center",
-    backgroundColor: theme.semantic.color.actionSecondarySurface,
-    borderColor: theme.semantic.color.borderControl,
-    borderRadius: theme.semantic.radius.control,
-    borderWidth: theme.semantic.stroke.hairline,
+  actionSlot: {
     flex: 1,
-    height: theme.recipes.control.height,
-    justifyContent: "center",
-    paddingHorizontal: theme.spacing.md,
+    minWidth: 0,
   },
-  actionDestructive: {
-    backgroundColor: theme.semantic.color.actionDangerEmphasisSurface,
-    borderColor: theme.semantic.color.actionDangerEmphasisSurface,
-  },
-  actionLabel: {
-    color: theme.semantic.color.actionSecondaryText,
-    ...theme.semantic.typography.button,
-  },
-  actionLabelInverse: {color: theme.semantic.color.actionDangerEmphasisText},
-  actionPressed: {opacity: theme.semantic.opacity.inactive},
-  actionUnavailable: {opacity: theme.semantic.interaction.disabledOpacity},
   actions: {
     flexDirection: "row",
     gap: theme.spacing.sm,

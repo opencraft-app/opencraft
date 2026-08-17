@@ -101,7 +101,27 @@ describe("Vela token usage", () => {
 
     for (const adapter of ["system-dialog.web.tsx", "system-dialog.native.tsx"]) {
       const dialog = readFileSync(join(uiRoot, "primitives", adapter), "utf8");
+      expect(dialog).toContain("<SystemButton");
+      expect(dialog).not.toMatch(/<(?:button|Pressable)\b[\s\S]{0,500}?action\.label/u);
       expect(dialog).not.toMatch(/actionPrimary(?:Surface|Text)/u);
+    }
+
+    const formFooter = readFileSync(
+      join(uiRoot, "components", "management-workspace-form.tsx"),
+      "utf8",
+    );
+    expect(formFooter).toContain("<SystemButton");
+    expect(formFooter).not.toContain("<Pressable");
+
+    for (const adapter of [
+      "system-popover.web.tsx",
+      "system-popover.native.tsx",
+      "system-action-menu.web.tsx",
+      "system-action-menu.native.tsx",
+    ]) {
+      const overlay = readFileSync(join(uiRoot, "primitives", adapter), "utf8");
+      expect(overlay).not.toContain("<button");
+      expect(overlay).not.toContain('accessibilityRole="button"');
     }
 
     const routeStatus = readFileSync(
@@ -127,6 +147,27 @@ describe("Vela token usage", () => {
     expect(terminal).not.toContain("<Pressable");
     expect(messages).not.toMatch(/styles\.(?:loadOlderButton|retryButton)\b/u);
     expect(workspace).not.toMatch(/styles\.channelMember(?:Add|Remove)\b/u);
+  });
+
+  it("exposes one semantic page grammar instead of screen-owned chrome", () => {
+    const patternPath = join(
+      process.cwd(),
+      "src",
+      "ui",
+      "patterns",
+      "system-page.tsx",
+    );
+    expect(existsSync(patternPath)).toBe(true);
+    if (!existsSync(patternPath)) return;
+    const pattern = readFileSync(patternPath, "utf8");
+    const barrel = readFileSync(join(process.cwd(), "src", "ui", "index.ts"), "utf8");
+
+    for (const name of ["SystemPage", "SystemSection", "SystemRow", "SystemForm"]) {
+      expect(pattern).toMatch(new RegExp(`export function ${name}\\b`, "u"));
+      expect(barrel).toContain(name);
+    }
+    expect(pattern).toContain("<SystemButton");
+    expect(pattern).not.toContain("<Pressable");
   });
 
   it("lays every detail section out the one way", () => {
@@ -525,7 +566,6 @@ describe("Vela token usage", () => {
       ["layouts/workspace-shell.tsx", "reconnectNotice", ["statusInfoSurface", "statusInfoDivider"]],
       ["layouts/workspace-shell.tsx", "unreadBadge", ["statusInfoSurface"]],
       ["layouts/workspace-shell.tsx", "compactServerInitial", ["avatarServerSurface"]],
-      ["primitives/system-dialog.native.tsx", "actionDestructive", ["actionDangerEmphasisSurface"]],
     ];
     const offenders = requiredRoles.flatMap(([relativePath, styleName, roles]) => {
       const source = readUiSource(relativePath);
