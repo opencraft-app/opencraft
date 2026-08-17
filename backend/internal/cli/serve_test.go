@@ -450,6 +450,18 @@ func TestServeCLICreatesTencentCommunityAndReturnsReadyServer(t *testing.T) {
 				`{"ActionStatus":"OK","ErrorCode":0,"ErrorInfo":"","GroupId":"`+
 					body.GroupID+`"}`,
 			)
+		case "/v4/million_group_open_http_svc/create_topic":
+			var body struct {
+				TopicID string `json:"TopicId"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatalf("decode create_topic: %v", err)
+			}
+			_, _ = io.WriteString(
+				writer,
+				`{"ActionStatus":"OK","ErrorCode":0,"ErrorInfo":"","TopicId":"`+
+					body.TopicID+`"}`,
+			)
 		default:
 			t.Fatalf("Tencent path = %s", request.URL.Path)
 		}
