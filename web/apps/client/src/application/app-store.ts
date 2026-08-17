@@ -539,6 +539,7 @@ export function createAppStore(
     serverId: string;
   } | null = null;
   let conversationSelection = 0;
+  const channelMembershipRepairs = new Set<string>();
   let imConnection = 0;
   let directConversationEpoch = 0;
   let directConversationActive = false;
@@ -1887,10 +1888,20 @@ export function createAppStore(
         return;
       }
       try {
-        const [, channelMembers] = await Promise.all([
-          dependencies.messaging.waitUntilReady(15_000),
-          dependencies.platform.listChannelMembers(serverId, channelId),
-        ]);
+        const messagingReadiness = dependencies.messaging
+          .waitUntilReady(15_000)
+          .then(
+            () => ({ready: true as const}),
+            (error: unknown) => ({error, ready: false as const}),
+          );
+        const channelMembers =
+          await dependencies.platform.listChannelMembers(serverId, channelId);
+        if (selection !== conversationSelection) {
+          return;
+        }
+        set({channelMembers});
+        const readiness = await messagingReadiness;
+        if (!readiness.ready) throw readiness.error;
         if (selection !== conversationSelection) {
           return;
         }
@@ -1899,7 +1910,6 @@ export function createAppStore(
           return;
         }
         set({
-          channelMembers,
           historyCompleted: page.completed,
           historyCursor: page.nextCursor ?? null,
           loadingChannel: false,
@@ -1927,6 +1937,17 @@ export function createAppStore(
         }
       } catch (error) {
         if (selection === conversationSelection) {
+          if (
+            isImNotMember(error) &&
+            !isEveryoneChannel(channel) &&
+            (await compensateChannelMembership(
+              serverId,
+              channelId,
+              selection,
+            ))
+          ) {
+            return;
+          }
           set({
             error: errorMessage(error),
             loadingChannel: false,
@@ -4109,14 +4130,15 @@ export function createAppStore(
   async function changeCurrentChannelMember(
     memberId: string,
     operation: "add" | "remove",
-  ): Promise<void> {
+    keepPending = false,
+  ): Promise<AcceptedResource | null> {
     const state = store.getState();
-    if (state.pendingAction) return;
+    if (state.pendingAction) return null;
     const serverId = state.currentServerId;
     const channelId = state.currentChannelId;
     if (!serverId || !channelId) {
       store.setState({ error: "请先选择 Channel" });
-      return;
+      return null;
     }
     const action = `channel:${channelId}:member:${memberId}:${operation}`;
     store.setState({ error: null, pendingAction: action });
@@ -4140,12 +4162,72 @@ export function createAppStore(
         serverId,
         channelId,
       );
-      store.setState({ channelMembers, pendingAction: null });
+      store.setState({
+        channelMembers,
+        ...(keepPending ? {} : {pendingAction: null}),
+      });
+      return accepted;
     } catch (error) {
       store.setState({
         error: errorMessage(error),
         pendingAction: null,
       });
+      return null;
+    }
+  }
+
+  async function compensateChannelMembership(
+    serverId: string,
+    channelId: string,
+    selection: number,
+  ): Promise<boolean> {
+    const repairKey = `${serverId}:${channelId}`;
+    if (channelMembershipRepairs.has(repairKey)) return false;
+    const state = store.getState();
+    const currentAccount = state.account;
+    const currentMember = currentAccount
+      ? state.members.find((member) => isSelfMember(member, currentAccount))
+      : undefined;
+    if (!currentMember) return false;
+
+    const repairAction = `channel:${channelId}:member:${currentMember.id}:add`;
+    channelMembershipRepairs.add(repairKey);
+    try {
+      const accepted = await changeCurrentChannelMember(
+        currentMember.id,
+        "add",
+        true,
+      );
+      if (!accepted) return true;
+      const operation = accepted.operations.find(
+        (candidate) => candidate.kind === "im.membership.ensure",
+      );
+      if (!operation) {
+        store.setState({error: "频道成员同步没有返回可跟踪的操作"});
+        return true;
+      }
+      await startOperationPoll(operation.id);
+      const current = store.getState();
+      if (
+        selection !== conversationSelection ||
+        current.currentServerId !== serverId ||
+        current.activeConversation?.kind !== "channel" ||
+        current.activeConversation.channelId !== channelId
+      ) {
+        return true;
+      }
+      const tracked = current.operationsById[operation.id];
+      if (tracked?.operation.state !== "succeeded") {
+        store.setState({error: "频道成员同步没有完成，请稍后重试"});
+        return true;
+      }
+      await current.selectChannel(channelId);
+      return true;
+    } finally {
+      channelMembershipRepairs.delete(repairKey);
+      store.setState((current) =>
+        current.pendingAction === repairAction ? {pendingAction: null} : {},
+      );
     }
   }
 
@@ -5095,6 +5177,10 @@ function isUserSigExpired(error: unknown): boolean {
     error.code === "IM_KICKED_OUT" &&
     error.details?.cause === "user_sig_expired"
   );
+}
+
+function isImNotMember(error: unknown): boolean {
+  return error instanceof PlatformError && error.code === "IM_NOT_MEMBER";
 }
 
 function isForbidden(error: unknown): boolean {

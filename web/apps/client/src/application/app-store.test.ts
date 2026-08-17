@@ -718,6 +718,148 @@ describe("app store", () => {
     );
   });
 
+  it("keeps Channel members when Tencent history fails", async () => {
+    const deps = dependencies();
+    deps.platform.listChannelMembers = jest.fn(async () => [ownerMember]);
+    deps.messaging.loadHistory = jest.fn(async () => {
+      throw new Error("history unavailable");
+    });
+    const store = createAppStore(deps);
+    await initializeServerContext(store);
+
+    await store.getState().selectChannel(channel.id);
+
+    expect(store.getState()).toMatchObject({
+      channelMembers: [ownerMember],
+      error: "history unavailable",
+      loadingChannel: false,
+    });
+  });
+
+  it("repairs a drifted Channel membership before retrying history once", async () => {
+    const deps = dependencies();
+    deps.operationPollSleep = jest.fn(async () => undefined);
+    deps.messaging.loadHistory = jest
+      .fn()
+      .mockRejectedValueOnce(
+        new PlatformError(
+          "IM_NOT_MEMBER",
+          "当前账号不在 Channel Topic 中",
+          {platformCode: "tencent_10007"},
+        ),
+      )
+      .mockResolvedValueOnce({
+        completed: true,
+        messages: [message("history-after-repair", "2026-08-17T11:00:00Z")],
+      });
+    const store = createAppStore(deps);
+    await initializeServerContext(store);
+
+    await store.getState().selectChannel(channel.id);
+
+    expect(deps.platform.addChannelMember).toHaveBeenCalledTimes(1);
+    expect(deps.platform.addChannelMember).toHaveBeenCalledWith(
+      server.id,
+      channel.id,
+      ownerMember.id,
+      expect.any(String),
+    );
+    expect(deps.messaging.loadHistory).toHaveBeenCalledTimes(2);
+    expect(store.getState()).toMatchObject({
+      error: null,
+      loadingChannel: false,
+      messages: [expect.objectContaining({id: "history-after-repair"})],
+      pendingAction: null,
+    });
+  });
+
+  it("stops after one Channel membership repair attempt", async () => {
+    const deps = dependencies();
+    const notMember = new PlatformError(
+      "IM_NOT_MEMBER",
+      "当前账号不在 Channel Topic 中",
+      {platformCode: "tencent_10007"},
+    );
+    deps.operationPollSleep = jest.fn(async () => undefined);
+    deps.messaging.loadHistory = jest
+      .fn()
+      .mockRejectedValueOnce(notMember)
+      .mockRejectedValueOnce(notMember)
+      .mockResolvedValue({completed: true, messages: []});
+    const store = createAppStore(deps);
+    await initializeServerContext(store);
+
+    await store.getState().selectChannel(channel.id);
+
+    expect(deps.platform.addChannelMember).toHaveBeenCalledTimes(1);
+    expect(deps.messaging.loadHistory).toHaveBeenCalledTimes(2);
+    expect(store.getState()).toMatchObject({
+      error: "消息服务暂时不可用，请稍后重试",
+      loadingChannel: false,
+    });
+  });
+
+  it("does not reopen a repaired Channel after navigation", async () => {
+    const otherChannel: Channel = {
+      ...channel,
+      id: "channel-2",
+      imTopicId: "topic-2",
+      joined: false,
+      name: "random",
+    };
+    const deps = dependencies();
+    let finishOperation: ((operation: Operation) => void) | undefined;
+    deps.platform.listChannels = jest.fn(async () => [channel, otherChannel]);
+    deps.operationPollSleep = jest.fn(async () => undefined);
+    deps.platform.getOperation = jest.fn(
+      () =>
+        new Promise<Operation>((resolve) => {
+          finishOperation = resolve;
+        }),
+    );
+    deps.messaging.loadHistory = jest
+      .fn()
+      .mockRejectedValueOnce(
+        new PlatformError("IM_NOT_MEMBER", "当前账号不在 Channel Topic 中"),
+      )
+      .mockResolvedValue({completed: true, messages: []});
+    const store = createAppStore(deps);
+    await initializeServerContext(store);
+
+    const repairing = store.getState().selectChannel(channel.id);
+    await eventually(() => expect(finishOperation).toBeDefined());
+    await store.getState().selectChannel(otherChannel.id);
+    finishOperation?.({
+      createdAt: "2026-08-17T11:30:00Z",
+      id: "operation-channel-member-add",
+      kind: "im.membership.ensure",
+      service: "im",
+      state: "succeeded",
+    });
+    await repairing;
+
+    expect(store.getState()).toMatchObject({
+      activeConversation: {channelId: otherChannel.id, kind: "channel"},
+      currentChannelId: otherChannel.id,
+    });
+    expect(deps.messaging.loadHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not run ordinary Channel compensation for the all-members root", async () => {
+    const deps = dependencies();
+    deps.platform.listChannels = jest.fn(async () => [allMembersChannel]);
+    deps.messaging.loadHistory = jest.fn(async () => {
+      throw new PlatformError("IM_NOT_MEMBER", "当前账号不在 Channel Topic 中");
+    });
+    const store = createAppStore(deps);
+    await initializeServerContext(store);
+
+    await store.getState().selectChannel(allMembersChannel.id);
+
+    expect(deps.platform.addChannelMember).not.toHaveBeenCalled();
+    expect(store.getState().error).toBe("消息服务暂时不可用，请稍后重试");
+  });
+
   it("keeps same-target Server loading single-flight", async () => {
     const deps = dependencies();
     let releaseChannels: ((value: Channel[]) => void) | undefined;

@@ -105,13 +105,6 @@ func (repository *EntRepository) Change(
 			}
 			isManager := actor.Role == "owner" || actor.Role == "admin"
 			isSelf := actor.MemberID == target.ID
-			if command.Action == "ensure" && !isManager &&
-				!(isSelf && channelEntity.Visibility == "public") {
-				return channelmembershipport.ErrPermissionDenied
-			}
-			if command.Action == "remove" && !isManager && !isSelf {
-				return channelmembershipport.ErrPermissionDenied
-			}
 			existing, err := tx.ChannelMember.Query().
 				Where(
 					channelmember.ServerIDEQ(command.ServerID),
@@ -121,6 +114,16 @@ func (repository *EntRepository) Change(
 				Only(ctx)
 			if err != nil && !ent.IsNotFound(err) {
 				return err
+			}
+			hasActiveMembership := existing != nil && existing.State == "active"
+			if command.Action == "ensure" && !isManager &&
+				!(isSelf &&
+					(channelEntity.Visibility == "public" ||
+						hasActiveMembership)) {
+				return channelmembershipport.ErrPermissionDenied
+			}
+			if command.Action == "remove" && !isManager && !isSelf {
+				return channelmembershipport.ErrPermissionDenied
 			}
 			now := command.ChangedAt.UTC()
 			membershipID := command.ChannelMemberID

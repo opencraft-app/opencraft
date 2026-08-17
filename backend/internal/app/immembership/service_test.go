@@ -105,7 +105,7 @@ func TestServiceEnsuresCommunityMemberAndCompletes(t *testing.T) {
 	}
 }
 
-func TestServiceCompletesPublicChannelMembershipWithoutTencentMutation(
+func TestServiceRejectsChannelMembershipWithoutTopic(
 	t *testing.T,
 ) {
 	for _, kind := range []string{
@@ -151,7 +151,8 @@ func TestServiceCompletesPublicChannelMembershipWithoutTencentMutation(
 			}
 			if provisioner.ensureCalls != 0 || provisioner.removeCalls != 0 ||
 				repository.completion.Status !=
-					immembershipport.CompletionSucceeded {
+					immembershipport.CompletionFailed ||
+				repository.completion.ErrorCode != "invalid_channel_topic" {
 				t.Fatalf(
 					"calls/completion = (%d, %d, %#v)",
 					provisioner.ensureCalls,

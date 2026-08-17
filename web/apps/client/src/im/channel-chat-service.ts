@@ -11,7 +11,11 @@ import type {
   SendTaskInput,
   SendTextInput,
 } from "@vela/client-core";
-import {mergeMessages, MessagingSendError} from "@vela/client-core";
+import {
+  mergeMessages,
+  MessagingSendError,
+  PlatformError,
+} from "@vela/client-core";
 import {
   defaultTencentMessageTypes,
   normalizeTencentMessage,
@@ -86,10 +90,25 @@ export class ChannelChatService {
     channel: ConversationAddress,
     cursor?: string,
   ): Promise<MessagePage> {
-    const result = await this.sdk.getMessageList({
-      conversationID: this.conversationId(channel),
-      ...(cursor ? { nextReqMessageID: cursor } : {}),
-    });
+    let result: unknown;
+    try {
+      result = await this.sdk.getMessageList({
+        conversationID: this.conversationId(channel),
+        ...(cursor ? { nextReqMessageID: cursor } : {}),
+      });
+    } catch (error) {
+      if (
+        !isDirectConversation(channel) &&
+        providerErrorCode(error) === 10007
+      ) {
+        throw new PlatformError(
+          "IM_NOT_MEMBER",
+          "当前账号不在 Channel Topic 中",
+          {platformCode: "tencent_10007"},
+        );
+      }
+      throw error;
+    }
     const data = resultData(result);
     const messageList = Array.isArray(data.messageList)
       ? data.messageList.filter(isSdkMessage)
@@ -643,6 +662,18 @@ function uploadProgress(value: unknown): number | undefined {
         : undefined;
   if (raw === undefined || !Number.isFinite(raw)) return undefined;
   return Math.min(1, Math.max(0, raw > 1 ? raw / 100 : raw));
+}
+
+function providerErrorCode(error: unknown): number | undefined {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("code" in error) ||
+    typeof error.code !== "number"
+  ) {
+    return undefined;
+  }
+  return error.code;
 }
 
 function targetId(channel: ConversationAddress): string {

@@ -76,7 +76,8 @@ func (service *Service) ProcessOne(ctx context.Context) (bool, error) {
 		return true, service.complete(ctx, completion)
 	}
 	if work.ResourceType == "channel_member" && work.TopicID == "" {
-		completion.Status = immembershipport.CompletionSucceeded
+		completion.Status = immembershipport.CompletionFailed
+		completion.ErrorCode = "invalid_channel_topic"
 		return true, service.complete(ctx, completion)
 	}
 	value := tencentimport.Membership{

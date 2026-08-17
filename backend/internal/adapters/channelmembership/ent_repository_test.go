@@ -25,6 +25,8 @@ const (
 	channelMemberID      = "0198f4c2-7a36-7c91-a6d2-7d76f9188c41"
 	channelEnsureOp      = "0198f4c2-7a38-7e45-913c-6baf30401a84"
 	channelRemoveOp      = "0198f4c2-7a3a-7e45-913c-6baf30401a85"
+	channelRepairMember  = "0198f4c2-7a3d-7e45-913c-6baf30401a88"
+	channelRepairOp      = "0198f4c2-7a3e-7e45-913c-6baf30401a89"
 )
 
 func TestEntRepositoryAddsAndRemovesPrivateChannelMember(t *testing.T) {
@@ -131,6 +133,78 @@ func TestEntRepositoryLetsMemberJoinSelfOnlyInPublicChannel(t *testing.T) {
 	}
 	if _, err := repository.Change(ctx, command); !errors.Is(err, channelmembershipport.ErrPermissionDenied) {
 		t.Fatalf("Change(private self join) error = %v", err)
+	}
+}
+
+func TestEntRepositoryLetsMemberReassertOwnActivePrivateMembership(
+	t *testing.T,
+) {
+	repository, handle := openChannelMembershipRepository(t)
+	now := time.Date(2026, 8, 17, 11, 30, 0, 0, time.UTC)
+	seedChannelMembership(t, handle, now)
+	ctx := context.Background()
+	actor, err := handle.Client().AccountServerMembership.Query().
+		Where(
+			accountservermembership.AccountIDEQ(channelActorAccount),
+			accountservermembership.ServerIDEQ(channelServerID),
+		).
+		Only(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.Client().AccountServerMembership.UpdateOne(actor).
+		SetRole("member").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.Client().Channel.UpdateOneID(channelID).
+		SetVisibility("private").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.Client().ChannelMember.Create().
+		SetID(channelRepairMember).
+		SetServerID(channelServerID).
+		SetChannelID(channelID).
+		SetMemberID(channelActorMember).
+		SetState("active").
+		SetImState("ready").
+		SetMembershipVersion(3).
+		SetCreatedAt(now).
+		SetUpdatedAt(now).
+		Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := repository.Change(
+		ctx,
+		channelmembershipport.Command{
+			AccountID: channelActorAccount, ServerID: channelServerID,
+			ChannelID: channelID, MemberID: channelActorMember,
+			ChannelMemberID: "0198f4c2-7a3f-7e45-913c-6baf30401a8a",
+			OperationID:     channelRepairOp,
+			IdempotencyKey:  "channel-private-self-repair-0001",
+			RequestHash:     sha256.Sum256([]byte("private self repair")),
+			Action:          "ensure", ChangedAt: now.Add(time.Minute),
+		},
+	)
+
+	if err != nil || result.ChannelMemberID != channelRepairMember ||
+		result.OperationID != channelRepairOp {
+		t.Fatalf("Change(private self repair) = (%#v, %v)", result, err)
+	}
+	membership, err := handle.Client().ChannelMember.Get(
+		ctx,
+		channelRepairMember,
+	)
+	if err != nil || membership.State != "active" ||
+		membership.ImState != "provisioning" ||
+		membership.MembershipVersion != 4 {
+		t.Fatalf("repaired membership = (%#v, %v)", membership, err)
+	}
+	operation, err := handle.Client().TencentOperation.Get(ctx, channelRepairOp)
+	if err != nil || operation.Kind != "im.membership.ensure" ||
+		operation.DesiredRevision == nil || *operation.DesiredRevision != 4 ||
+		operation.State != "pending" {
+		t.Fatalf("repair operation = (%#v, %v)", operation, err)
 	}
 }
 

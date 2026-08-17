@@ -3198,4 +3198,32 @@ describe("WorkspaceShell", () => {
     );
     expect(onAddChannelMember).toHaveBeenCalledWith(ownerMember.id);
   });
+
+  it("blocks the message surface while repairing an existing membership", async () => {
+    const screen = await render(
+      <WorkspaceShell
+        account={account}
+        agents={[agent]}
+        channelMembers={[ownerMember]}
+        channels={[channel]}
+        currentChannelId={channel.id}
+        currentImUserId={ownerMember.imUserId ?? undefined}
+        currentServerId={server.id}
+        imStatus="ready"
+        members={[ownerMember, agentMember]}
+        messages={[]}
+        onAddChannelMember={jest.fn()}
+        onSelectChannel={jest.fn()}
+        onSelectServer={jest.fn()}
+        onSend={jest.fn()}
+        pendingAction={`channel:${channel.id}:member:${ownerMember.id}:add`}
+        servers={[server]}
+        viewportWidth={1_280}
+      />,
+    );
+
+    expect(screen.getByText("正在重新连接 #general")).toBeVisible();
+    expect(screen.getByTestId("channel-membership-repair-state")).toBeVisible();
+    expect(screen.queryByLabelText("消息内容")).toBeNull();
+  });
 });

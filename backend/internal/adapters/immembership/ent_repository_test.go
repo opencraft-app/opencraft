@@ -204,7 +204,7 @@ func TestEntRepositoryClaimsAgentCommunityMembership(t *testing.T) {
 	}
 }
 
-func TestEntRepositoryClaimsPublicChannelAsCommunityMembership(t *testing.T) {
+func TestEntRepositoryClaimsPublicChannelWithTopicMembership(t *testing.T) {
 	repository, handle := openMembershipRepository(t)
 	now := time.Date(2026, 8, 4, 3, 33, 13, 0, time.UTC)
 	seedPublicChannelMembershipWork(t, handle, now)
@@ -224,7 +224,7 @@ func TestEntRepositoryClaimsPublicChannelAsCommunityMembership(t *testing.T) {
 	if work.OperationID != membershipChannelOpID ||
 		work.ResourceType != "channel_member" ||
 		work.GroupID != "@TGS#_C_PUBLIC" ||
-		work.TopicID != "" ||
+		work.TopicID != "@TGS#_C_PUBLIC@TOPIC#_T_GENERAL" ||
 		work.IMUserID != "u_MEMBER" {
 		t.Fatalf("work = %#v", work)
 	}

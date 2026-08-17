@@ -10,6 +10,7 @@ export type StableErrorCode =
   | "RATE_LIMITED"
   | "REMOTE_UNAVAILABLE"
   | "IM_NOT_READY"
+  | "IM_NOT_MEMBER"
   | "IM_KICKED_OUT"
   | "IM_TIMEOUT"
   | "IM_REJECTED"

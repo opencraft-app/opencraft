@@ -69,6 +69,58 @@ describe("ChannelChatService", () => {
     ]);
   });
 
+  it("maps Tencent Topic membership rejection to IM_NOT_MEMBER", async () => {
+    const providerError = Object.assign(new Error("not member"), {code: 10007});
+    const service = new ChannelChatService({
+      conversationGroup: "GROUP",
+      sdk: {
+        createTextAtMessage: jest.fn(),
+        createTextMessage: jest.fn(),
+        getMessageList: jest.fn(async () => {
+          throw providerError;
+        }),
+        sendMessage: jest.fn(),
+      },
+    });
+
+    await expect(
+      service.loadHistory({
+        channelId: "channel-1",
+        conversationId: "GROUPtopic-1",
+        imGroupId: "community-1",
+        imTopicId: "topic-1",
+        targetId: "topic-1",
+      }),
+    ).rejects.toMatchObject({
+      code: "IM_NOT_MEMBER",
+      platformCode: "tencent_10007",
+    });
+  });
+
+  it("keeps provider code 10007 unchanged outside Topic history", async () => {
+    const providerError = Object.assign(new Error("not member"), {code: 10007});
+    const service = new ChannelChatService({
+      conversationGroup: "GROUP",
+      sdk: {
+        createTextAtMessage: jest.fn(),
+        createTextMessage: jest.fn(),
+        getMessageList: jest.fn(async () => {
+          throw providerError;
+        }),
+        sendMessage: jest.fn(),
+      },
+    });
+
+    await expect(
+      service.loadHistory({
+        conversationId: "GROUPdirect-1",
+        directConversationId: "direct-1",
+        imGroupId: "direct-1",
+        targetId: "direct-1",
+      }),
+    ).rejects.toBe(providerError);
+  });
+
   it("sends a real Tencent @ message to Agent imUserIds", async () => {
     const draft = textMessage({
       ID: "local-message-1",

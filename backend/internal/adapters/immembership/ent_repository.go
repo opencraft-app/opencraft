@@ -196,16 +196,13 @@ func loadChannelMemberWork(
 	if operation.DesiredRevision != nil {
 		desiredRevision = *operation.DesiredRevision
 	}
-	topicID := ""
-	if channelEntity.Visibility == "private" {
-		topicID = *channelEntity.ImTopicID
-	}
 	return immembershipport.Work{
 		OperationID: operation.ID, LeaseOwner: leaseOwner,
 		Kind: operation.Kind, ResourceType: operation.ResourceType,
 		ServerID: membership.ServerID,
 		MemberID: membership.MemberID, GroupID: channelEntity.ImGroupID,
-		TopicID: topicID, IMUserID: imUserID,
+		TopicID:         strings.TrimSpace(*channelEntity.ImTopicID),
+		IMUserID:        imUserID,
 		IMState:         membership.ImState,
 		MemberRevision:  membership.MembershipVersion,
 		DesiredRevision: desiredRevision,

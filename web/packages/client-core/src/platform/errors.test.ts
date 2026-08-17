@@ -3,6 +3,15 @@ import test from "node:test";
 
 import {PlatformError, responseError} from "./errors.js";
 
+test("PlatformError exposes IM_NOT_MEMBER as a stable client code", () => {
+  const error = new PlatformError("IM_NOT_MEMBER", "当前账号不在 Topic 中", {
+    platformCode: "tencent_10007",
+  });
+
+  assert.equal(error.code, "IM_NOT_MEMBER");
+  assert.equal(error.platformCode, "tencent_10007");
+});
+
 test("responseError preserves the platform request ID and Retry-After", async () => {
   const response = new Response(
     JSON.stringify({

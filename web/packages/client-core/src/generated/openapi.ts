@@ -452,7 +452,7 @@ export interface paths {
         get?: never;
         /**
          * 加入 Channel
-         * @description Owner/Admin 可添加任意 Server Member；普通成员只能把自己加入 Public Channel。
+         * @description Owner/Admin 可添加任意 Server Member；普通成员可把自己加入 Public Channel，也可重新同步自己已有的 active Private Channel membership。
          */
         put: operations["addChannelMember"];
         post?: never;

@@ -1529,6 +1529,8 @@ function MessageStage({
     channel !== undefined &&
     !channel.joined &&
     !isEveryoneChannel(channel);
+  const repairingMembership =
+    !direct && channel !== undefined && channel.joined && joiningChannel;
   const hasConversation = direct || channel !== undefined;
   const conversationTitle = direct
     ? directConversation.peerDisplayName
@@ -1646,7 +1648,9 @@ function MessageStage({
             <Pressable
               accessibilityLabel={direct ? "搜索当前私信" : "搜索当前 Channel"}
               accessibilityRole="button"
-              disabled={!hasConversation || needsMembership}
+              disabled={
+                !hasConversation || needsMembership || repairingMembership
+              }
               onPress={() => onSearchOpenChange(!searchOpen)}
               style={styles.headerActionButton}
             >
@@ -1701,7 +1705,18 @@ function MessageStage({
           />
         </View>
       ) : null}
-      {needsMembership ? (
+      {repairingMembership ? (
+        <View
+          style={styles.channelJoinStage}
+          testID="channel-membership-repair-state"
+        >
+          <InlineEmptyState
+            description="正在重新同步当前账号的频道成员资格，完成后会自动恢复消息。"
+            icon={Hash}
+            title={`正在重新连接 #${channel.name}`}
+          />
+        </View>
+      ) : needsMembership ? (
         <View style={styles.channelJoinStage}>
           <InlineEmptyState
             actionAccessibilityLabel={`加入 #${channel.name}`}
