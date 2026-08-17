@@ -486,8 +486,11 @@ interface SkillhubListItem {
   displayName?: string;
   id?: string;
   iconUrl?: string;
+  instances?: SkillhubListItem[];
   name?: string;
   rawId?: string;
+  relative_path?: string;
+  relativePath?: string;
   slug?: string;
   source?: string;
   status?: string;
@@ -516,38 +519,100 @@ function parseSkillhubListTable(raw: string): SkillhubListItem[] {
     }));
 }
 
+function cleanSkillhubString(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
+function compactSkillhubAliases(values: Array<string | undefined>): string[] {
+  const aliases: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const alias = cleanSkillhubString(value);
+    if (!alias) continue;
+    const key = alias.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    aliases.push(alias);
+  }
+  return aliases;
+}
+
+function pickSkillhubRawId(item: SkillhubListItem, isInstance: boolean): string | undefined {
+  const explicitId = cleanSkillhubString(isInstance
+    ? (item.id ?? item.rawId ?? item.slug)
+    : (item.slug ?? item.rawId ?? item.id));
+  if (explicitId) return /^\d+$/.test(explicitId) ? undefined : explicitId;
+  return cleanSkillhubString(item.relative_path)
+    ?? cleanSkillhubString(item.relativePath)
+    ?? cleanSkillhubString(item.name);
+}
+
+function mapSkillhubInstalledItem(item: SkillhubListItem, parent?: SkillhubListItem): InstalledSkill | null {
+  const rawId = pickSkillhubRawId(item, parent !== undefined);
+  if (!rawId) return null;
+  const slug = cleanSkillhubString(item.relative_path)
+    ?? cleanSkillhubString(item.relativePath)
+    ?? cleanSkillhubString(item.slug)
+    ?? cleanSkillhubString(parent?.relative_path)
+    ?? cleanSkillhubString(parent?.relativePath)
+    ?? cleanSkillhubString(parent?.slug)
+    ?? rawId;
+  const name = cleanSkillhubString(item.display_name)
+    ?? cleanSkillhubString(item.displayName)
+    ?? cleanSkillhubString(item.name)
+    ?? cleanSkillhubString(parent?.display_name)
+    ?? cleanSkillhubString(parent?.displayName)
+    ?? cleanSkillhubString(parent?.name)
+    ?? slug;
+  const nativeAliases = compactSkillhubAliases([
+    rawId,
+    slug,
+    item.id,
+    item.rawId,
+    item.slug,
+    item.relative_path,
+    item.relativePath,
+    item.name,
+    item.display_name,
+    item.displayName,
+    parent?.id,
+    parent?.rawId,
+    parent?.slug,
+    parent?.relative_path,
+    parent?.relativePath,
+    parent?.name,
+    parent?.display_name,
+    parent?.displayName,
+  ]);
+  return {
+    registry: "skillhub" as const,
+    rawId,
+    slug,
+    name,
+    category: cleanSkillhubString(item.category) ?? cleanSkillhubString(parent?.category),
+    iconUrl: cleanSkillhubString(item.iconUrl) ?? cleanSkillhubString(parent?.iconUrl),
+    status: cleanSkillhubString(item.status) ?? cleanSkillhubString(parent?.status),
+    version: cleanSkillhubString(item.version) ?? cleanSkillhubString(parent?.version),
+    nativeAliases: nativeAliases.length > 0 ? nativeAliases : undefined,
+    registries: ["skillhub" as Registry],
+    sourceLabel: REGISTRY_LABEL.skillhub,
+  } satisfies InstalledSkill;
+}
+
 export function parseSkillhubList(raw: string): InstalledSkill[] {
   const parsed = dataEnvelope(extractJsonObject(raw));
   const items = isRecord(parsed) && Array.isArray(parsed.skills)
     ? parsed.skills as SkillhubListItem[]
     : parseSkillhubListTable(raw);
 
-  return items.map((item) => {
-    const explicitId = item.slug ?? item.rawId ?? item.id;
-    const listedName = (item.name ?? "").trim();
-    const nativeAliases = Array.from(new Set(
-      [explicitId ? listedName : "", item.display_name, item.displayName]
-        .map((value) => value?.trim() ?? "")
-        .filter(Boolean),
-    ));
-    const rawId = explicitId
-      ? (/^\d+$/.test(explicitId.trim()) ? "" : explicitId.trim())
-      : listedName;
-    if (!rawId) return null;
-    const name = (item.display_name ?? item.displayName ?? item.name ?? rawId).trim();
-    return {
-      registry: "skillhub" as const,
-      rawId,
-      slug: rawId,
-      name,
-      category: item.category?.trim() || undefined,
-      iconUrl: item.iconUrl?.trim() || undefined,
-      status: item.status?.trim() || undefined,
-      version: item.version?.trim() || undefined,
-      nativeAliases: nativeAliases.length > 0 ? nativeAliases : undefined,
-      registries: ["skillhub" as Registry],
-      sourceLabel: REGISTRY_LABEL.skillhub,
-    } satisfies InstalledSkill;
+  return items.flatMap((item) => {
+    const instances = Array.isArray(item.instances)
+      ? (item.instances.filter(isRecord) as SkillhubListItem[])
+      : [];
+    return instances.length > 0
+      ? instances.map((instance) => mapSkillhubInstalledItem(instance, item))
+      : [mapSkillhubInstalledItem(item)];
   }).filter((skill): skill is InstalledSkill => skill !== null);
 }
 
