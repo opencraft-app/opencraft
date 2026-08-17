@@ -1,4 +1,4 @@
-// Package openapirelease promotes the two live OpenAPI documents into an
+// Package openapirelease promotes the live OpenAPI documents into an
 // immutable, digest-locked release baseline.
 package openapirelease
 
@@ -31,11 +31,34 @@ type sourceSpec struct {
 	} `yaml:"info"`
 }
 
+type releaseSource struct {
+	source string
+	target string
+}
+
 // Promote creates one immutable release. Re-running the same promotion is
 // idempotent; changing any already released byte is rejected.
 func Promote(root, version string) error {
+	return promoteSources(root, version, []releaseSource{
+		{"platform/v1/openapi.yaml", "platform/v1/releases/" + version + ".openapi.yaml"},
+		{"platform/v1/computer-bootstrap.openapi.yaml", "platform/v1/releases/" + version + ".computer-bootstrap.openapi.yaml"},
+	})
+}
+
+// PromoteComputerUpdate independently freezes the Computer Update surface.
+func PromoteComputerUpdate(root, version string) error {
+	return promoteSources(root, version, []releaseSource{{
+		source: "platform/v1/computer-update.openapi.yaml",
+		target: "platform/v1/releases/" + version + ".computer-update.openapi.yaml",
+	}})
+}
+
+func promoteSources(root, version string, sources []releaseSource) error {
 	if root == "" || !versionPattern.MatchString(version) {
 		return errors.New("OpenAPI release 参数无效")
+	}
+	if len(sources) == 0 {
+		return errors.New("OpenAPI release source 为空")
 	}
 	lockPath := filepath.Join(root, lockRelativePath)
 	lock, err := readLock(lockPath)
@@ -44,10 +67,6 @@ func Promote(root, version string) error {
 	}
 	if err := Verify(root, lock); err != nil {
 		return err
-	}
-	sources := []struct{ source, target string }{
-		{"platform/v1/openapi.yaml", "platform/v1/releases/" + version + ".openapi.yaml"},
-		{"platform/v1/computer-bootstrap.openapi.yaml", "platform/v1/releases/" + version + ".computer-bootstrap.openapi.yaml"},
 	}
 	type artifact struct {
 		path   string

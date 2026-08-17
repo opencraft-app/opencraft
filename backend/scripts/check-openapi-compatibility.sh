@@ -8,7 +8,7 @@ cd "$source_root"
 
 # oasdiff v1.10.29 是最后一个支持本项目 Go 1.25 工具链的官方版本。
 # 该版本没有 validate 子命令，因此结构验证由 kin-openapi 契约测试完成。
-go test ./internal/api/openapi ./internal/api/computerbootstrap ./internal/api/openapirelease
+go test ./internal/api/openapi ./internal/api/computerbootstrap ./internal/api/computerupdate ./internal/api/openapirelease
 if [ -n "${CHATSERVER_OPENAPI_TRUSTED_RELEASE_LOCK:-}" ]; then
   go run ./cmd/openapi-release --verify \
     --root "$source_root" \
@@ -27,6 +27,13 @@ go tool oasdiff breaking \
 go tool oasdiff breaking \
   platform/v1/releases/5.0.0.computer-bootstrap.openapi.yaml \
   platform/v1/computer-bootstrap.openapi.yaml \
+  --severity-levels "$levels" \
+  --fail-on WARN \
+  --format text
+
+go tool oasdiff breaking \
+  platform/v1/releases/1.0.0.computer-update.openapi.yaml \
+  platform/v1/computer-update.openapi.yaml \
   --severity-levels "$levels" \
   --fail-on WARN \
   --format text

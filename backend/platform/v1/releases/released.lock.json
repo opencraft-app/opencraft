@@ -2,6 +2,7 @@
   "formatVersion": 1,
   "files": {
     "platform/v1/releases/1.0.0.computer-bootstrap.openapi.yaml": "f8fb6d5293f8433b598d445fd925d94b3b3cd7cf9a7ba00542f9013059b9be96",
+    "platform/v1/releases/1.0.0.computer-update.openapi.yaml": "6decc1cf53b0f7b2b372dd9a43bf0411591e535efbd98fe53c2f0559f9211644",
     "platform/v1/releases/1.0.0.openapi.yaml": "313a6b7ee203e50026fccdf614ea666b01ca6537b287d863fd4f3fad1f5d3636",
     "platform/v1/releases/2.0.0.computer-bootstrap.openapi.yaml": "98fbac83a2655b2407732890f53defb8d803b6c146cb3b66e2c89a5e47d363e9",
     "platform/v1/releases/2.0.0.openapi.yaml": "57d0a08d832285663603c2ed56382aecf531c70e0b24dae6280c46d3ed3d6c3e",

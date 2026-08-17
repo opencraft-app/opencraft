@@ -2,7 +2,7 @@
 set -eu
 
 source_root=${1:-"$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"}
-generated_paths=${CHATSERVER_GENERATED_PATHS:-"internal/ent internal/api/openapi/server.gen.go internal/api/openapi/client.gen.go internal/api/computerbootstrap/server.gen.go internal/api/computerbootstrap/client.gen.go"}
+generated_paths=${CHATSERVER_GENERATED_PATHS:-"internal/ent internal/api/openapi/server.gen.go internal/api/openapi/client.gen.go internal/api/computerbootstrap/server.gen.go internal/api/computerbootstrap/client.gen.go internal/api/computerupdate/server.gen.go internal/api/computerupdate/client.gen.go"}
 temporary_root=$(mktemp -d "${TMPDIR:-/tmp}/chatserver-generated.XXXXXX")
 work_root="$temporary_root/work"
 before_file="$temporary_root/before"

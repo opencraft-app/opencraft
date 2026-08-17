@@ -21,8 +21,19 @@ func TestPromoteIsImmutableAndIdempotent(t *testing.T) {
 	}
 	write("platform/v1/openapi.yaml", "openapi: 3.0.3\ninfo:\n  version: 1.0.0\n")
 	write("platform/v1/computer-bootstrap.openapi.yaml", "openapi: 3.0.3\ninfo:\n  version: 1.0.0\n")
+	write("platform/v1/computer-update.openapi.yaml", "openapi: 3.0.3\ninfo:\n  version: 1.0.0\n")
 	if err := Promote(root, "1.0.0"); err != nil {
 		t.Fatal(err)
+	}
+	if err := PromoteComputerUpdate(root, "1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	updateRelease := filepath.Join(
+		root,
+		"platform/v1/releases/1.0.0.computer-update.openapi.yaml",
+	)
+	if _, err := os.Stat(updateRelease); err != nil {
+		t.Fatalf("Computer Update release missing: %v", err)
 	}
 	if err := Promote(root, "1.0.0"); err != nil {
 		t.Fatalf("重复 promote 不幂等: %v", err)
@@ -49,6 +60,7 @@ func TestTrustedBaseRejectsRewrittenSnapshotAndLock(t *testing.T) {
 	}
 	write("platform/v1/openapi.yaml", "openapi: 3.0.3\ninfo:\n  version: 1.0.0\n")
 	write("platform/v1/computer-bootstrap.openapi.yaml", "openapi: 3.0.3\ninfo:\n  version: 1.0.0\n")
+	write("platform/v1/computer-update.openapi.yaml", "openapi: 3.0.3\ninfo:\n  version: 1.0.0\n")
 	if err := Promote(root, "1.0.0"); err != nil {
 		t.Fatal(err)
 	}

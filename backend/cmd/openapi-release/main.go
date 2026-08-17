@@ -11,6 +11,7 @@ import (
 func main() {
 	root := flag.String("root", ".", "仓库根目录")
 	version := flag.String("version", "", "待冻结的 OpenAPI 版本")
+	surface := flag.String("surface", "platform", "待冻结 surface：platform|computer-update")
 	verify := flag.Bool("verify", false, "只验证 release lock")
 	trustedBase := flag.String("trusted-base", "", "可信默认分支的 release lock")
 	flag.Parse()
@@ -28,7 +29,16 @@ func main() {
 		fmt.Println("OpenAPI release lock 验证通过")
 		return
 	}
-	if err := openapirelease.Promote(*root, *version); err != nil {
+	var err error
+	switch *surface {
+	case "platform":
+		err = openapirelease.Promote(*root, *version)
+	case "computer-update":
+		err = openapirelease.PromoteComputerUpdate(*root, *version)
+	default:
+		err = fmt.Errorf("未知 OpenAPI surface %q", *surface)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "OpenAPI 发布失败："+err.Error())
 		os.Exit(1)
 	}

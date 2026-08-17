@@ -68,6 +68,8 @@ func TestGeneratedCheck包含可信Migration发布锁门禁(t *testing.T) {
 	for _, required := range []string{
 		"check-migration-release.sh",
 		"CHATSERVER_MIGRATION_TRUSTED_RELEASE_LOCK",
+		"internal/api/computerupdate/server.gen.go",
+		"internal/api/computerupdate/client.gen.go",
 	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("check-generated.sh 缺少 %q", required)
@@ -84,6 +86,9 @@ func TestOpenAPI兼容门禁使用当前主版本基线(t *testing.T) {
 	for _, required := range []string{
 		"5.0.0.openapi.yaml",
 		"5.0.0.computer-bootstrap.openapi.yaml",
+		"internal/api/computerupdate",
+		"1.0.0.computer-update.openapi.yaml",
+		"computer-update.openapi.yaml",
 	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("check-openapi-compatibility.sh 缺少 %q", required)
