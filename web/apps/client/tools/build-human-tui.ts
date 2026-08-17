@@ -48,6 +48,19 @@ export async function buildHumanTui(
     format: "iife",
     metafile: true,
     minify: true,
+    plugins: [
+      {
+        name: "vela-client-core-source",
+        setup(build) {
+          build.onResolve({filter: /^@vela\/client-core$/u}, () => ({
+            path: resolve(
+              repositoryRoot,
+              "web/packages/client-core/src/index.ts",
+            ),
+          }));
+        },
+      },
+    ],
     sourcemap: "none",
     target: "browser",
   });

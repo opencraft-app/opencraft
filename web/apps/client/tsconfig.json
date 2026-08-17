@@ -4,9 +4,6 @@
     "allowJs": false,
     "noUncheckedIndexedAccess": true,
     "paths": {
-      "@vela/client-core": [
-        "../../packages/client-core/src/index.ts"
-      ],
       "@/*": [
         "./src/*"
       ]

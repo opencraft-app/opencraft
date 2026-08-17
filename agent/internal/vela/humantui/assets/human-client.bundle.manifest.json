@@ -6,7 +6,7 @@
     "path": "human-client.bundle.js",
     "sha256": "51b204dfeb38be7c5e265746f1ed4bbb096ffc12aa361bed797f2f1154af4645"
   },
-  "sourceDigest": "6f06d7e0aa5be9c4e1fa3a4a500e6da510ad4d43ee41a02913d2ddbb85156ea9",
+  "sourceDigest": "04405be44d89a56bf6b9adc53429b324f9f97bf943260c26482c3edcfada2e58",
   "sourceInputs": [
     {
       "path": "web/apps/client/package.json",
@@ -94,11 +94,11 @@
     },
     {
       "path": "web/apps/client/tools/build-human-tui.ts",
-      "sha256": "4cb5c5bf56a82142dfd97e0f06bfa480ac56f21dcfc9e2b82d5ac995defa6141"
+      "sha256": "c14a51bad3c9e57646af301152c5c3fd68a0717ec1c968db7a8ec098fdd2e53f"
     },
     {
       "path": "web/apps/client/tsconfig.json",
-      "sha256": "d9742e4a2df26767a7df6bae7f49fac9f16f90ffa5ab04bea6c888da9b015b1d"
+      "sha256": "5e1a067a179285bd9ca987cdb289c68e4b9d10088d97c75a8b3f4c8571a5577b"
     },
     {
       "path": "web/bun.lock",
