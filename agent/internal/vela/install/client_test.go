@@ -104,6 +104,28 @@ func TestClientClaimsCredentialAndReplaysProviderBootstrap(t *testing.T) {
 	}
 }
 
+func TestValidClaimRequestAcceptsOnlyReleasedPlatformPairs(t *testing.T) {
+	base := ClaimRequest{
+		Token:            "cen1.0198f4c2-7a31-7c91-a6d2-7d76f9188c38.0198f4c2-7a35-7af3-a01e-0fcb31e9d84c.1.signature",
+		SecretPart:       base64.RawURLEncoding.EncodeToString([]byte("01234567890123456789012345678901")),
+		InstallerVersion: "v0.1.46",
+	}
+	for _, platform := range [][2]string{{"macos", "arm64"}, {"linux", "amd64"}} {
+		request := base
+		request.OSType, request.Architecture = platform[0], platform[1]
+		if !validClaimRequest(request) {
+			t.Errorf("released platform rejected: %s/%s", platform[0], platform[1])
+		}
+	}
+	for _, platform := range [][2]string{{"macos", "amd64"}, {"linux", "arm64"}} {
+		request := base
+		request.OSType, request.Architecture = platform[0], platform[1]
+		if validClaimRequest(request) {
+			t.Errorf("cross-paired platform accepted: %s/%s", platform[0], platform[1])
+		}
+	}
+}
+
 func TestClientPreflightsRemovedComputerAndClaimsWithReplacementGrant(t *testing.T) {
 	t.Parallel()
 

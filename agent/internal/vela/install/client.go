@@ -361,11 +361,16 @@ func normalizeInstallBaseURL(raw string, allowInsecure bool) (string, bool) {
 
 func validClaimRequest(request ClaimRequest) bool {
 	if !validEnrollmentToken(request.Token) || !validComponent(request.InstallerVersion) ||
-		request.OSType != "macos" || request.Architecture != "arm64" {
+		!validClaimPlatform(request.OSType, request.Architecture) {
 		return false
 	}
 	secret, err := base64.RawURLEncoding.Strict().DecodeString(request.SecretPart)
 	return err == nil && len(secret) == 32
+}
+
+func validClaimPlatform(osType string, architecture string) bool {
+	return osType == "macos" && architecture == "arm64" ||
+		osType == "linux" && architecture == "amd64"
 }
 
 func validEnrollmentToken(value string) bool {
