@@ -58,8 +58,8 @@ func TestEveryOperationHasRouteCaseAndValidSuccessResponse(t *testing.T) {
 	sort.Slice(cases, func(left int, right int) bool {
 		return cases[left].operation < cases[right].operation
 	})
-	if len(cases) != 103 {
-		t.Fatalf("contract cases = %d, want 103", len(cases))
+	if len(cases) != 104 {
+		t.Fatalf("contract cases = %d, want 104", len(cases))
 	}
 
 	for _, test := range cases {

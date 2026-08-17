@@ -421,7 +421,7 @@ func (handler *ComputerControlHandler) GetComputerAssignments(
 		)
 	}
 	query := appcomputercontrol.AssignmentQuery{
-		SchemaVersion: int(request.Params.XVelaAssignmentVersion),
+		SchemaVersion: 1,
 		SinceRevision: request.Params.SinceRevision,
 		WaitSeconds:   25,
 	}
@@ -453,28 +453,63 @@ func (handler *ComputerControlHandler) GetComputerAssignments(
 	if result.Snapshot == nil {
 		return nil, invalidComputerControlData(nil)
 	}
-	var response openapi.ComputerAssignmentSnapshotResponse
-	switch result.Snapshot.SchemaVersion {
-	case 1:
-		body, err := assignmentSnapshotDTO(*result.Snapshot)
-		if err != nil {
-			return nil, err
-		}
-		if err := response.FromComputerAssignmentSnapshot(body); err != nil {
-			return nil, invalidComputerControlData(err)
-		}
-	case 2:
-		body, err := assignmentSnapshotV2DTO(*result.Snapshot)
-		if err != nil {
-			return nil, err
-		}
-		if err := response.FromComputerAssignmentSnapshotV2(body); err != nil {
-			return nil, invalidComputerControlData(err)
-		}
-	default:
+	body, err := assignmentSnapshotDTO(*result.Snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.GetComputerAssignments200JSONResponse(body), nil
+}
+
+func (handler *ComputerControlHandler) GetComputerAssignmentsV2(
+	ctx context.Context,
+	request openapi.GetComputerAssignmentsV2RequestObject,
+) (openapi.GetComputerAssignmentsV2ResponseObject, error) {
+	principal, ok := CurrentComputerPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New(
+			"computer_credential_invalid",
+			"Computer credential 无效",
+			nil,
+		)
+	}
+	query := appcomputercontrol.AssignmentQuery{
+		SchemaVersion: 2,
+		SinceRevision: request.Params.SinceRevision,
+		WaitSeconds:   25,
+	}
+	if request.Params.SinceEpoch != nil {
+		query.SinceEpoch = request.Params.SinceEpoch.String()
+	}
+	if request.Params.ForceFull != nil {
+		query.ForceFull = *request.Params.ForceFull
+	}
+	if request.Params.WaitSeconds != nil {
+		query.WaitSeconds = *request.Params.WaitSeconds
+	}
+	result, err := handler.assignments.Get(
+		ctx,
+		principal.ServerID(),
+		principal.ComputerID(),
+		query,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if result.NoChange {
+		return openapi.GetComputerAssignmentsV2204Response{
+			Headers: openapi.GetComputerAssignmentsV2204ResponseHeaders{
+				XAssignmentRevision: result.Revision,
+			},
+		}, nil
+	}
+	if result.Snapshot == nil {
 		return nil, invalidComputerControlData(nil)
 	}
-	return openapi.GetComputerAssignments200JSONResponse(response), nil
+	body, err := assignmentSnapshotV2DTO(*result.Snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.GetComputerAssignmentsV2200JSONResponse(body), nil
 }
 
 // NewComputerControlRoutes registers only operations implemented by the
@@ -512,6 +547,7 @@ func NewComputerControlRoutes(
 		wrapper.RotateComputerCredential,
 	)
 	mux.HandleFunc("GET /v1/computer/assignments", wrapper.GetComputerAssignments)
+	mux.HandleFunc("GET /v1/computer/assignments-v2", wrapper.GetComputerAssignmentsV2)
 	mux.HandleFunc(
 		"POST /v1/computer/agents/{agentId}/launches",
 		wrapper.CreateComputerAgentLaunch,

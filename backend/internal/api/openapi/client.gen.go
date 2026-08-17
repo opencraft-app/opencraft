@@ -149,6 +149,9 @@ type ClientInterface interface {
 	// GetComputerAssignments request
 	GetComputerAssignments(ctx context.Context, params *GetComputerAssignmentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetComputerAssignmentsV2 request
+	GetComputerAssignmentsV2(ctx context.Context, params *GetComputerAssignmentsV2Params, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// RotateComputerCredential request
 	RotateComputerCredential(ctx context.Context, params *RotateComputerCredentialParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -747,6 +750,18 @@ func (c *Client) PutComputerAgentProfileCapabilityResult(ctx context.Context, ag
 
 func (c *Client) GetComputerAssignments(ctx context.Context, params *GetComputerAssignmentsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetComputerAssignmentsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetComputerAssignmentsV2(ctx context.Context, params *GetComputerAssignmentsV2Params, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetComputerAssignmentsV2Request(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2928,6 +2943,99 @@ func NewGetComputerAssignmentsRequest(server string, params *GetComputerAssignme
 
 		req.Header.Set("X-Vela-Assignment-Version", headerParam0)
 
+	}
+
+	return req, nil
+}
+
+// NewGetComputerAssignmentsV2Request generates requests for GetComputerAssignmentsV2
+func NewGetComputerAssignmentsV2Request(server string, params *GetComputerAssignmentsV2Params) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/computer/assignments-v2")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.SinceEpoch != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sinceEpoch", *params.SinceEpoch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sinceRevision", params.SinceRevision, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		if params.WaitSeconds != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "waitSeconds", *params.WaitSeconds, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.ForceFull != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "forceFull", *params.ForceFull, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
 	}
 
 	return req, nil
@@ -7722,6 +7830,9 @@ type ClientWithResponsesInterface interface {
 	// GetComputerAssignmentsWithResponse request
 	GetComputerAssignmentsWithResponse(ctx context.Context, params *GetComputerAssignmentsParams, reqEditors ...RequestEditorFn) (*GetComputerAssignmentsResponse, error)
 
+	// GetComputerAssignmentsV2WithResponse request
+	GetComputerAssignmentsV2WithResponse(ctx context.Context, params *GetComputerAssignmentsV2Params, reqEditors ...RequestEditorFn) (*GetComputerAssignmentsV2Response, error)
+
 	// RotateComputerCredentialWithResponse request
 	RotateComputerCredentialWithResponse(ctx context.Context, params *RotateComputerCredentialParams, reqEditors ...RequestEditorFn) (*RotateComputerCredentialResponse, error)
 
@@ -8354,7 +8465,7 @@ func (r PutComputerAgentProfileCapabilityResultResponse) StatusCode() int {
 type GetComputerAssignmentsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *ComputerAssignmentSnapshotResponse
+	JSON200      *ComputerAssignmentSnapshot
 	JSONDefault  *Error
 }
 
@@ -8368,6 +8479,29 @@ func (r GetComputerAssignmentsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetComputerAssignmentsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetComputerAssignmentsV2Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ComputerAssignmentSnapshotV2
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetComputerAssignmentsV2Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetComputerAssignmentsV2Response) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -10614,6 +10748,15 @@ func (c *ClientWithResponses) GetComputerAssignmentsWithResponse(ctx context.Con
 	return ParseGetComputerAssignmentsResponse(rsp)
 }
 
+// GetComputerAssignmentsV2WithResponse request returning *GetComputerAssignmentsV2Response
+func (c *ClientWithResponses) GetComputerAssignmentsV2WithResponse(ctx context.Context, params *GetComputerAssignmentsV2Params, reqEditors ...RequestEditorFn) (*GetComputerAssignmentsV2Response, error) {
+	rsp, err := c.GetComputerAssignmentsV2(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetComputerAssignmentsV2Response(rsp)
+}
+
 // RotateComputerCredentialWithResponse request returning *RotateComputerCredentialResponse
 func (c *ClientWithResponses) RotateComputerCredentialWithResponse(ctx context.Context, params *RotateComputerCredentialParams, reqEditors ...RequestEditorFn) (*RotateComputerCredentialResponse, error) {
 	rsp, err := c.RotateComputerCredential(ctx, params, reqEditors...)
@@ -12101,7 +12244,40 @@ func ParseGetComputerAssignmentsResponse(rsp *http.Response) (*GetComputerAssign
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ComputerAssignmentSnapshotResponse
+		var dest ComputerAssignmentSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetComputerAssignmentsV2Response parses an HTTP response from a GetComputerAssignmentsV2WithResponse call
+func ParseGetComputerAssignmentsV2Response(rsp *http.Response) (*GetComputerAssignmentsV2Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetComputerAssignmentsV2Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ComputerAssignmentSnapshotV2
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

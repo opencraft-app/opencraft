@@ -226,6 +226,9 @@ func TestGeneratedAgentProfileCapabilityContract(t *testing.T) {
 		"/computer/agents/{agentId}/profile-capability-invalidations/{eventId}": {
 			method: "PUT", operationID: "PutComputerAgentProfileCapabilityInvalidation",
 		},
+		"/computer/assignments-v2": {
+			method: "GET", operationID: "GetComputerAssignmentsV2",
+		},
 	} {
 		item := spec.Paths.Map()[path]
 		if item == nil {

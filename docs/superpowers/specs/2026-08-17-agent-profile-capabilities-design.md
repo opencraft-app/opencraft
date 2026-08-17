@@ -328,8 +328,9 @@ supersede 旧 pending refresh；旧 Operation 进入 `superseded`，旧 refresh 
   不会在已有 Human refresh 完成或失败后补建自动请求；
 - Human refresh 失败后是否重试只由 Human 新请求决定，系统不会隐式接管。
 
-不修改 Assignment v1 payload 或 canonical hash。新增协商后的 Assignment v2；它在 Agent item 中增加
-optional `profileCapabilityRefresh`：
+不修改已发布 `/computer/assignments` 的请求、响应、payload 或 canonical hash。新增独立
+`GET /computer/assignments-v2`；它返回 Assignment schema v2，并在 Agent item 中增加 optional
+`profileCapabilityRefresh`：
 
 ```json
 {
@@ -344,11 +345,13 @@ optional `profileCapabilityRefresh`：
 }
 ```
 
-Backend 先发布 Assignment v2，同时继续按 `X-Vela-Assignment-Version: 1` 生成字节级不变的 v1
-snapshot/hash。新版分发 Agent 选择 v2，并在 heartbeat 报告当前使用的 assignment version 与
-`profileCapabilityVersions: [1]`；旧 Agent 继续只请求 v1，永远看不到新字段。Backend 仅在最近接受的
-heartbeat 证明目标 Computer 使用 v2 且支持 capability v1 时创建刷新；否则返回
-`profile_capabilities_unsupported`。这避免旧 Computer 因丢弃新字段而产生 canonical hash 不一致。
+Backend 先发布新路径，同时继续为旧路径生成字节级不变的 v1 snapshot/hash；Computer Session 的
+`assignmentVersions` 响应也保持已发布的 `[1]` 闭合 enum。新版分发 Agent 仍通过旧 Session 换取 token，
+随后改用 `/computer/assignments-v2`，并在 heartbeat 报告当前使用的 assignment version 与
+`profileCapabilityVersions: [1]`；旧 Agent 永远只调用旧路径。Backend 仅在最近接受的 heartbeat 证明
+目标 Computer 使用 v2 且支持 capability v1 时创建刷新；否则返回
+`profile_capabilities_unsupported`。这同时避免旧 Computer canonical hash 不一致和已发布 response enum
+扩展。
 
 Operation 明确使用 `service = platform`、`kind = agent.profile.capabilities.refresh`；registry composite key 为
 `platform/agent.profile.capabilities.refresh`。Idempotency scope
@@ -555,15 +558,15 @@ Computer、Operation、Runtime kind、条目数、digest 和稳定错误码。
 
 ## 兼容与发布顺序
 
-外部 API 增加 Human/Computer 路径、Assignment v2 和新 schema，不修改 Assignment v1 的 payload、
-canonical hash 或已发布 response required 字段。Human 与 Computer operationId 必须分别进入 auth-domain
+外部 API 增加 Human/Computer 路径、独立 Assignment v2 路径和新 schema，不修改 Assignment v1 的路径、
+header enum、response、payload、canonical hash 或已发布 required 字段。Human 与 Computer operationId 必须分别进入 auth-domain
 registry；生成物必须由 OpenAPI 重新生成，不能手改。
 
 发布顺序：
 
-1. Backend 同时支持字节级不变的 Assignment v1 和新增 v2，增加存储、API、result/invalidation 接收、
+1. Backend 同时支持字节级不变的 Assignment v1 路径和新增 v2 路径，增加存储、API、result/invalidation 接收、
    Operation reconciler 和对旧 Computer 的 unsupported 处理；
-2. 发布选择 Assignment v2、声明 capability protocol v1 的新版分发 Agent；新版 heartbeat 让 Backend
+2. 发布调用 Assignment v2 路径、声明 capability protocol v1 的新版分发 Agent；新版 heartbeat 让 Backend
    记录已协商版本；
 3. 只有 Backend 观察到目标 Computer 已使用 v2 后才开放 refresh/自动创建 Operation；
 4. 验证单 Profile Codex、两个独立 Hermes Profile 和 stopped/running 探测；
@@ -576,8 +579,8 @@ registry；生成物必须由 OpenAPI 重新生成，不能手改。
 
 ### Contract 与持久化
 
-- OpenAPI Human/Computer 新路径、身份域、幂等参数、静态错误码和 Assignment v2 测试；
-- Assignment v1 canonical bytes/hash 固定 fixture 与 v2 negotiation/heartbeat capability 测试；
+- OpenAPI Human/Computer 新路径、身份域、幂等参数、静态错误码和独立 Assignment v2 路径测试；
+- Assignment v1 path/response/canonical bytes/hash 固定 fixture 与 v2 path/heartbeat capability 测试；
 - capability、Operation request 和 Operation result 三个 v1 Codec 的 round-trip、未知字段/版本、排序、
   重复 ID、长度、数量和总大小测试；
 - SQLite/TDSQL migration、Ent、physical schema、model contract 和 durable-field registry 一致性；
