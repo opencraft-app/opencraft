@@ -276,14 +276,13 @@ func (c *Client) GetComputerAssignments(
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodGet,
-		c.baseURL+"/computer/assignments?"+parameters.Encode(),
+		c.baseURL+"/computer/assignments-v2?"+parameters.Encode(),
 		nil,
 	)
 	if err != nil {
 		return ComputerAssignmentResult{}, ErrInvalidAssignmentQuery
 	}
 	request.Header.Set("Authorization", "Bearer "+token.Reveal())
-	request.Header.Set("X-Vela-Assignment-Version", "1")
 	request.Header.Set("Accept", "application/json")
 	response, err := c.httpClient.Do(request)
 	if err != nil {

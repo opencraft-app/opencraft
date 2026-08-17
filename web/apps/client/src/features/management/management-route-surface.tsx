@@ -181,6 +181,7 @@ export function ManagementRouteSurface({
         framed={false}
         imStatus={state.imState.status}
         loading={state.loadingAgents || state.loadingComputers}
+        profileCapabilitiesById={state.agentProfileCapabilitiesById}
         onCreateAgent={(input, options) =>
           store.getState().createAgent(input, options)
         }
@@ -195,6 +196,9 @@ export function ManagementRouteSurface({
             store.getState().refreshAgents({force: true}),
             store.getState().refreshComputers({force: true}),
           ]).then(() => undefined)
+        }
+        onRefreshProfileCapabilities={agentId =>
+          store.getState().refreshAgentProfileCapabilities(agentId)
         }
         onRotateCredential={agentId =>
           store.getState().rotateAgentCredential(agentId)

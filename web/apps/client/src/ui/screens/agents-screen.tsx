@@ -1,6 +1,7 @@
 import type {
   AcceptedResource,
   Agent,
+  AgentProfileCapabilities,
   Computer,
   CreateAgentInput,
   Operation,
@@ -82,6 +83,7 @@ export interface AgentsScreenProps {
   framed?: boolean;
   imStatus?: PlatformFrameProps["imStatus"];
   loading: boolean;
+  profileCapabilitiesById?: Record<string, AgentProfileCapabilities>;
   onCreateAgent(
     input: CreateAgentInput,
     options: {deployAndStart: boolean},
@@ -93,6 +95,9 @@ export interface AgentsScreenProps {
   onLogout?: PlatformFrameProps["onLogout"];
   onNavigateSection(section: WorkspaceSection): void;
   onRefresh(): void | Promise<void>;
+  onRefreshProfileCapabilities?(
+    agentId: string,
+  ): Operation | null | Promise<Operation | null>;
   onRotateCredential?(
     agentId: string,
   ): Operation | null | Promise<Operation | null>;
@@ -124,12 +129,14 @@ export function AgentsScreen(props: AgentsScreenProps) {
     framed = true,
     imStatus,
     loading,
+    profileCapabilitiesById = {},
     onCreateAgent,
     onDeleteAgent,
     onContinueOperation,
     onLogout,
     onNavigateSection,
     onRefresh,
+    onRefreshProfileCapabilities,
     onRotateCredential,
     onRunAgentAction,
     onSelectServer,
@@ -175,6 +182,9 @@ export function AgentsScreen(props: AgentsScreenProps) {
   const [editRuntime, setEditRuntime] = useState<Agent["runtime"]["kind"]>(
     agents[0]?.runtime.kind ?? "codex",
   );
+  const [editModel, setEditModel] = useState<string | null>(
+    agents[0]?.runtime.model ?? null,
+  );
   const selected = useMemo(
     () =>
       agents.find((item) => item.id === selectedAgentId) ??
@@ -187,6 +197,7 @@ export function AgentsScreen(props: AgentsScreenProps) {
     setEditDisplayName(selected?.displayName ?? "");
     setEditReplyPolicy(selected?.replyPolicy ?? "mention_and_dm");
     setEditRuntime(selected?.runtime.kind ?? "codex");
+    setEditModel(selected?.runtime.model ?? null);
     setEditing(false);
     setConfirmingDeletion(false);
     setConfirmingRotation(false);
@@ -196,6 +207,7 @@ export function AgentsScreen(props: AgentsScreenProps) {
     selected?.id,
     selected?.replyPolicy,
     selected?.runtime.kind,
+    selected?.runtime.model,
   ]);
   const resetCreateForm = () => {
     setCreateComputerId(undefined);
@@ -350,10 +362,7 @@ export function AgentsScreen(props: AgentsScreenProps) {
       replyPolicy: editReplyPolicy,
       runtime: {
         kind: editRuntime,
-        model:
-          editRuntime === selected.runtime.kind
-            ? selected.runtime.model ?? null
-            : null,
+        model: editModel,
       },
     });
     setEditing(false);
@@ -769,7 +778,11 @@ export function AgentsScreen(props: AgentsScreenProps) {
             onChangeComputerId={setEditComputerId}
             onChangeDisplayName={setEditDisplayName}
             onChangeReplyPolicy={setEditReplyPolicy}
-            onChangeRuntime={setEditRuntime}
+            onChangeRuntime={(value) => {
+              setEditRuntime(value);
+              setEditModel(null);
+            }}
+            onChangeModel={setEditModel}
             onConfirmDeletion={deleteAgent}
             onConfirmRotation={rotateCredential}
             onContinueOperation={onContinueOperation}
@@ -786,7 +799,11 @@ export function AgentsScreen(props: AgentsScreenProps) {
             )}
             replyPolicy={editReplyPolicy}
             runtime={editRuntime}
-            runtimeModel={selected.runtime.model}
+            runtimeModel={editModel}
+            capabilities={profileCapabilitiesById[selected.id]}
+            onRefreshCapabilities={onRefreshProfileCapabilities
+              ? () => onRefreshProfileCapabilities(selected.id)
+              : undefined}
           />
         ) : (
           <ManagementEmptyState
@@ -1094,6 +1111,7 @@ function AgentCreateForm({
 
 function AgentDetail({
   agent,
+  capabilities,
   canManage,
   computerId,
   computers,
@@ -1105,6 +1123,7 @@ function AgentDetail({
   onCancelRotation,
   onChangeComputerId,
   onChangeDisplayName,
+  onChangeModel,
   onChangeReplyPolicy,
   onChangeRuntime,
   onConfirmDeletion,
@@ -1112,6 +1131,7 @@ function AgentDetail({
   onContinueOperation,
   onDeleteAgent,
   onRotateCredential,
+  onRefreshCapabilities,
   onRun,
   onSave,
   onStartDeletion,
@@ -1122,6 +1142,7 @@ function AgentDetail({
   runtimeModel,
 }: {
   agent: Agent;
+  capabilities?: AgentProfileCapabilities;
   canManage: boolean;
   computerId: string | undefined;
   computers: Computer[];
@@ -1133,6 +1154,7 @@ function AgentDetail({
   onCancelRotation(): void;
   onChangeComputerId(value: string | undefined): void;
   onChangeDisplayName(value: string): void;
+  onChangeModel(value: string | null): void;
   onChangeReplyPolicy(value: Agent["replyPolicy"]): void;
   onChangeRuntime(value: Agent["runtime"]["kind"]): void;
   onConfirmDeletion(): void | Promise<void>;
@@ -1144,6 +1166,7 @@ function AgentDetail({
   onRotateCredential?(
     agentId: string,
   ): Operation | null | Promise<Operation | null>;
+  onRefreshCapabilities?(): Operation | null | Promise<Operation | null>;
   onRun(
     action: "deploy" | "restart" | "start" | "stop",
   ): Operation | null | Promise<Operation | null>;
@@ -1246,6 +1269,30 @@ function AgentDetail({
             value={runtime}
           />
         </ManagementField>
+        <ManagementField label="模型">
+          <SystemSelectField
+            accessibilityLabel="Agent 模型"
+            disabled={disabled || !capabilities?.models}
+            onChange={(value) => onChangeModel(value || null)}
+            options={[
+              {
+                accessibilityLabel: "跟随 Runtime 默认模型",
+                label: capabilities?.models?.effectiveDefaultModelId
+                  ? `跟随默认 · ${capabilities.models.effectiveDefaultModelId}`
+                  : "跟随 Runtime 默认",
+                value: "",
+              },
+              ...(capabilities?.models?.items ?? []).map((item) => ({
+                accessibilityLabel: `选择模型 ${item.label}`,
+                label: item.label,
+                value: item.id,
+              })),
+            ]}
+            overlayId={`agent-${agent.id}-model-listbox`}
+            placeholder="由 Runtime 决定"
+            value={runtimeModel ?? ""}
+          />
+        </ManagementField>
         <ManagementField label="回复策略">
           <SystemSegmentedControl
             accessibilityLabel="回复策略"
@@ -1287,15 +1334,44 @@ function AgentDetail({
               replyPolicy,
               runtime: {
                 kind: runtime,
-                model:
-                  runtime === agent.runtime.kind
-                    ? runtimeModel ?? null
-                    : null,
+                model: runtimeModel ?? null,
               },
             });
           }}
         />
       </SystemSection>
+      {canManage ? (
+        <SystemSection testID="agent-capabilities-section" title="运行能力">
+          <SystemRow
+            action={(
+              <SystemButton
+                accessibilityLabel={`刷新 Agent ${agent.handle} 运行能力`}
+                disabled={disabled || !onRefreshCapabilities}
+                label="刷新能力"
+                onPress={onRefreshCapabilities ?? (() => undefined)}
+                variant="standard"
+              />
+            )}
+            description={capabilities?.observedAt
+              ? `上次发现 ${capabilities.observedAt}${capabilities.snapshotState === "stale" ? " · 可能已变化" : ""}`
+              : "尚未发现模型与 Skill；不会自动定时刷新。"}
+            title="能力状态"
+          />
+          {capabilities?.subject ? (
+            <SystemRow
+              description={capabilities.subject.workspacePath}
+              title="运行位置"
+            />
+          ) : null}
+          {(capabilities?.skills?.items ?? []).map((skill) => (
+            <SystemRow
+              description={`${skill.description}${skill.availability === "unavailable" ? " · 当前不可用" : ""}`}
+              key={skill.id}
+              title={skill.displayName ?? skill.name}
+            />
+          ))}
+        </SystemSection>
+      ) : null}
       {canManage ? (
         <SystemSection testID="agent-security-section" title="安全与身份">
           <SystemRow

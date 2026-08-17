@@ -1,5 +1,6 @@
 import type {
   Agent,
+  AgentProfileCapabilities,
   Computer,
   Server,
 } from "@vela/client-core";
@@ -517,6 +518,89 @@ describe("AgentsScreen", () => {
         runtime: {kind: "codex", model: "gpt-5.6-sol"},
       }),
     );
+  });
+
+  it("renders Profile models, workspace and effective Skills", async () => {
+    const capabilities: AgentProfileCapabilities = {
+      agentId: agent.id,
+      models: {
+        configuredModelId: null,
+        effectiveDefaultModelId: "gpt-5.6-sol",
+        items: [{
+          id: "gpt-5.6-sol",
+          label: "GPT-5.6 Sol",
+          serviceTiers: [],
+          supportedReasoningEfforts: ["medium", "high"],
+        }],
+        selectedAvailability: "unknown",
+        selectionMode: "follow_runtime_default",
+        truncated: false,
+        warnings: [],
+      },
+      observedAt: "2026-08-18T00:00:00Z",
+      refreshOperation: null,
+      skills: {
+        items: [{
+          availability: "available",
+          description: "Review pull requests",
+          enabled: true,
+          id: "github-review",
+          missingDependencyCount: 0,
+          missingDependencyTypes: [],
+          name: "github-review",
+          scope: "project",
+        }],
+        truncated: false,
+        warnings: [],
+      },
+      snapshotState: "current",
+      source: {
+        discoveryMode: "active_session",
+        forceReload: false,
+        protocol: "codex_app_server",
+        runtimeVersion: "1.0.0",
+      },
+      staleReasons: [],
+      subject: {
+        authorityContextKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        computerId: computer.id,
+        contextGeneration: 1,
+        observedThroughSequence: 1,
+        profileFingerprint: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        profileKind: "codex_home",
+        runtimeContextGeneration: 1,
+        runtimeKind: "codex",
+        workspacePath: "/workspaces/agent-1",
+      },
+    };
+    const onRefreshProfileCapabilities = jest.fn(async () => null);
+    const screen = await render(
+      <AgentsScreen
+        agents={[agent]}
+        canManage
+        computers={[computer]}
+        currentServerId={server.id}
+        error={null}
+        loading={false}
+        onCreateAgent={jest.fn()}
+        onNavigateSection={jest.fn()}
+        onRefresh={jest.fn()}
+        onRefreshProfileCapabilities={onRefreshProfileCapabilities}
+        onRunAgentAction={jest.fn()}
+        onSelectServer={jest.fn()}
+        onUpdateAgent={jest.fn()}
+        pendingAction={null}
+        profileCapabilitiesById={{[agent.id]: capabilities}}
+        servers={[server]}
+        viewportWidth={1_280}
+      />,
+    );
+
+    expect(screen.getByRole("combobox", {name: "Agent 模型"})).toBeVisible();
+    expect(screen.getByText("/workspaces/agent-1")).toBeVisible();
+    expect(screen.getByText("github-review")).toBeVisible();
+    await fireEvent.press(screen.getByRole("button", {name: "刷新 Agent research 运行能力"}));
+    expect(onRefreshProfileCapabilities).toHaveBeenCalledTimes(1);
   });
 
   it("offers Agent creation directly from a semantic empty state", async () => {

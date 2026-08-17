@@ -706,6 +706,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/servers/{serverId}/agents/{agentId}/profile-capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                agentId: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 读取 Agent Profile 最近一次运行能力快照
+         * @description 只允许 Server owner/admin；读取不会触发 Computer 探测或刷新。
+         */
+        get: operations["getAgentProfileCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/agents/{agentId}/profile-capabilities/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                agentId: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 显式刷新 Agent Profile 运行能力
+         * @description 只允许 Server owner/admin；创建异步 Operation，不等待 Computer 探测完成。
+         */
+        post: operations["refreshAgentProfileCapabilities"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runtime/me": {
         parameters: {
             query?: never;
@@ -735,6 +781,27 @@ export interface paths {
          * @description 返回 Server、当前 Agent、可见 Channel 与同 Server active 成员；不返回任何腾讯云凭据。
          */
         get: operations["getRuntimeDirectory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runtime/directory-v2": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 获取包含平台私信路由的当前 Agent 协作目录
+         * @description 返回 Server、当前 Agent、可见 Channel、同 Server active 成员，以及当前 Agent 参与的
+         *     Direct Conversation 授权路由；不返回腾讯云凭据或消息正文。
+         */
+        get: operations["getRuntimeDirectoryV2"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1178,6 +1245,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/computer/assignments-v2": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 拉取支持 Agent Profile capability command 的 Assignment v2 Snapshot */
+        get: operations["getComputerAssignmentsV2"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/computer/agents/{agentId}/launches": {
         parameters: {
             query?: never;
@@ -1230,6 +1314,49 @@ export interface paths {
         get?: never;
         /** 幂等提交 Agent launch 的观测状态 */
         put: operations["putComputerAgentObservation"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/computer/agents/{agentId}/profile-capability-results/{operationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: components["parameters"]["AgentId"];
+                operationId: components["parameters"]["OperationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 幂等提交 Agent Profile capability refresh 终态结果 */
+        put: operations["putComputerAgentProfileCapabilityResult"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/computer/agents/{agentId}/profile-capability-invalidations/{eventId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: components["parameters"]["AgentId"];
+                eventId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 幂等标记 Agent Profile 本机运行能力可能变化
+         * @description 该操作只标记 stale，不创建 refresh Operation。
+         */
+        put: operations["putComputerAgentProfileCapabilityInvalidation"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1710,6 +1837,89 @@ export interface components {
             kind: "codex" | "hermes-acp" | "hermes-gateway";
             model?: string | null;
         };
+        ProfileCapabilityAuthorityContextKey: string;
+        ProfileCapabilityWarning: {
+            /** @enum {string} */
+            code: "catalog_truncated" | "partial_discovery" | "dependencies_missing";
+            message?: string;
+        };
+        AgentProfileCapabilitySubject: {
+            computerId: components["schemas"]["Id"];
+            /** @enum {string} */
+            runtimeKind: "codex" | "hermes-acp" | "hermes-gateway";
+            /** @enum {string} */
+            profileKind: "codex_home" | "hermes_managed";
+            profileFingerprint: string;
+            workspacePath: string;
+            /** Format: int64 */
+            contextGeneration: number;
+            authorityContextKey: components["schemas"]["ProfileCapabilityAuthorityContextKey"];
+            /** Format: int64 */
+            runtimeContextGeneration: number;
+            /** Format: int64 */
+            observedThroughSequence: number;
+        };
+        AgentProfileCapabilitySource: {
+            /** @enum {string} */
+            protocol: "codex_app_server" | "hermes_acp" | "hermes_gateway";
+            runtimeVersion: string;
+            /** @enum {string} */
+            discoveryMode: "active_session" | "short_lived_process";
+            forceReload: boolean;
+        };
+        AgentProfileModelCapability: {
+            id: string;
+            label: string;
+            provider?: string | null;
+            description?: string | null;
+            verified?: string | null;
+            supportedReasoningEfforts: string[];
+            defaultReasoningEffort?: string | null;
+            serviceTiers: string[];
+            defaultServiceTier?: string | null;
+        };
+        AgentProfileSkillCapability: {
+            id: string;
+            name: string;
+            description: string;
+            displayName?: string | null;
+            shortDescription?: string | null;
+            enabled: boolean;
+            /** @enum {string} */
+            availability: "available" | "unavailable";
+            /** @enum {string} */
+            scope: "project" | "user" | "admin" | "system" | "profile" | "external" | "unknown";
+            missingDependencyCount: number;
+            missingDependencyTypes: ("env_var" | "executable" | "mcp" | "other")[];
+        };
+        AgentProfileModelCapabilities: {
+            /** @enum {string} */
+            selectionMode: "follow_runtime_default" | "fixed";
+            configuredModelId: string | null;
+            effectiveDefaultModelId: string | null;
+            /** @enum {string} */
+            selectedAvailability: "available" | "unavailable" | "unknown";
+            items: components["schemas"]["AgentProfileModelCapability"][];
+            truncated: boolean;
+            warnings: components["schemas"]["ProfileCapabilityWarning"][];
+        };
+        AgentProfileSkillCapabilities: {
+            items: components["schemas"]["AgentProfileSkillCapability"][];
+            truncated: boolean;
+            warnings: components["schemas"]["ProfileCapabilityWarning"][];
+        };
+        AgentProfileCapabilities: {
+            agentId: components["schemas"]["Id"];
+            /** @enum {string} */
+            snapshotState: "absent" | "current" | "stale";
+            staleReasons: ("computer_changed" | "runtime_changed" | "profile_changed" | "workspace_changed" | "runtime_reported_change")[];
+            subject: components["schemas"]["AgentProfileCapabilitySubject"] | null;
+            source: components["schemas"]["AgentProfileCapabilitySource"] | null;
+            models: components["schemas"]["AgentProfileModelCapabilities"] | null;
+            skills: components["schemas"]["AgentProfileSkillCapabilities"] | null;
+            observedAt: components["schemas"]["NullableTimestamp"];
+            refreshOperation: components["schemas"]["Operation"] | null;
+        };
         Agent: {
             id: components["schemas"]["Id"];
             serverId: components["schemas"]["Id"];
@@ -1851,6 +2061,45 @@ export interface components {
             snapshotHash: string;
             agents: components["schemas"]["ComputerAssignment"][];
         };
+        ComputerProfileCapabilityRefresh: {
+            /** @enum {integer} */
+            schemaVersion: 1;
+            refreshId: components["schemas"]["Id"];
+            /** Format: int64 */
+            contextGeneration: number;
+            authorityContextKey: components["schemas"]["ProfileCapabilityAuthorityContextKey"];
+            /** @enum {string} */
+            runtimeKind: "codex" | "hermes-acp" | "hermes-gateway";
+            /** Format: int64 */
+            invalidationWatermark: number;
+            forceReload: boolean;
+            requestedAt: components["schemas"]["Timestamp"];
+        };
+        ComputerAssignmentV2: {
+            agentId: components["schemas"]["Id"];
+            serverId: components["schemas"]["Id"];
+            /** @enum {string} */
+            desiredState: "running" | "stopped";
+            /** Format: int64 */
+            configGeneration: number;
+            /** Format: int64 */
+            credentialVersion: number;
+            currentLaunch: components["schemas"]["ComputerAssignmentLaunchFence"] | null;
+            runtime: components["schemas"]["RuntimeConfig"];
+            /** @enum {string} */
+            replyPolicy: "mention_and_dm" | "all_channel_messages" | "dm_only";
+            profileCapabilityRefresh: components["schemas"]["ComputerProfileCapabilityRefresh"] | null;
+        };
+        ComputerAssignmentSnapshotV2: {
+            /** @enum {integer} */
+            schemaVersion: 2;
+            computerId: components["schemas"]["Id"];
+            epoch: components["schemas"]["Id"];
+            /** Format: int64 */
+            revision: number;
+            snapshotHash: string;
+            agents: components["schemas"]["ComputerAssignmentV2"][];
+        };
         ComputerAgentLaunchRequest: {
             launchId: components["schemas"]["Id"];
             predecessorLaunchId: components["schemas"]["NullableId"];
@@ -1891,6 +2140,66 @@ export interface components {
             credentialVersion: number;
             /** Format: int64 */
             attempt: number;
+        };
+        ComputerProfileCapabilityModelSection: {
+            /** @enum {string} */
+            status: "succeeded" | "failed";
+            effectiveDefaultModelId: string | null;
+            items: components["schemas"]["AgentProfileModelCapability"][];
+            truncated: boolean;
+            warnings: components["schemas"]["ProfileCapabilityWarning"][];
+            /** @enum {string|null} */
+            errorCode: "model_discovery_failed" | "runtime_unavailable" | null;
+        };
+        ComputerProfileCapabilitySkillSection: {
+            /** @enum {string} */
+            status: "succeeded" | "failed";
+            items: components["schemas"]["AgentProfileSkillCapability"][];
+            truncated: boolean;
+            warnings: components["schemas"]["ProfileCapabilityWarning"][];
+            /** @enum {string|null} */
+            errorCode: "skill_discovery_failed" | "runtime_unavailable" | null;
+        };
+        ComputerAgentProfileCapabilityResult: {
+            /** @enum {integer} */
+            schemaVersion: 1;
+            /** @enum {string} */
+            status: "succeeded" | "failed";
+            /** Format: int64 */
+            contextGeneration: number;
+            authorityContextKey: components["schemas"]["ProfileCapabilityAuthorityContextKey"];
+            /** @enum {string} */
+            runtimeKind: "codex" | "hermes-acp" | "hermes-gateway";
+            /** Format: int64 */
+            runtimeContextGeneration: number;
+            /** Format: int64 */
+            observedThroughSequence: number;
+            subject: components["schemas"]["AgentProfileCapabilitySubject"] | null;
+            source: components["schemas"]["AgentProfileCapabilitySource"] | null;
+            models: components["schemas"]["ComputerProfileCapabilityModelSection"];
+            skills: components["schemas"]["ComputerProfileCapabilitySkillSection"];
+            /** @enum {string|null} */
+            errorCode: "runtime_busy" | "profile_not_ready" | "runtime_unavailable" | "discovery_failed" | "result_too_large" | null;
+            observedAt: components["schemas"]["Timestamp"];
+        };
+        ComputerAgentProfileCapabilityInvalidation: {
+            /** @enum {integer} */
+            schemaVersion: 1;
+            /** Format: int64 */
+            contextGeneration: number;
+            authorityContextKey: components["schemas"]["ProfileCapabilityAuthorityContextKey"];
+            /** Format: int64 */
+            runtimeContextGeneration: number;
+            /** Format: int64 */
+            eventSequence: number;
+            /** @enum {string} */
+            reason: "profile_changed" | "workspace_changed" | "runtime_reported_change";
+            observedAt: components["schemas"]["Timestamp"];
+        };
+        ComputerProfileCapabilitySubmissionResult: {
+            accepted: boolean;
+            /** @enum {string} */
+            reason: "accepted" | "duplicate" | "superseded";
         };
         ComputerAgentObservation: {
             assignmentEpoch: components["schemas"]["Id"];
@@ -1948,6 +2257,9 @@ export interface components {
             assignmentEpoch: components["schemas"]["Id"];
             /** Format: int64 */
             assignmentRevision: number;
+            /** @enum {integer} */
+            assignmentVersion?: 1 | 2;
+            profileCapabilityVersions?: 1[];
             /** @enum {string} */
             tatState: "online" | "offline" | "error";
             reconcile: components["schemas"]["ComputerHeartbeatReconcile"];
@@ -2197,11 +2509,27 @@ export interface components {
             displayName: string;
             imUserId: string;
         };
+        RuntimeDirectoryDirectConversation: {
+            id: components["schemas"]["Id"];
+            peerMemberId: components["schemas"]["Id"];
+            imGroupId: string;
+            imState: components["schemas"]["DirectConversationIMState"];
+            revision: components["schemas"]["Revision"];
+        };
         RuntimeDirectory: {
             server: components["schemas"]["RuntimeDirectoryServer"];
             self: components["schemas"]["RuntimeDirectorySelf"];
             channels: components["schemas"]["RuntimeDirectoryChannel"][];
             members: components["schemas"]["RuntimeDirectoryMember"][];
+            revision: string;
+            expiresAt: components["schemas"]["Timestamp"];
+        };
+        RuntimeDirectoryV2: {
+            server: components["schemas"]["RuntimeDirectoryServer"];
+            self: components["schemas"]["RuntimeDirectorySelf"];
+            channels: components["schemas"]["RuntimeDirectoryChannel"][];
+            members: components["schemas"]["RuntimeDirectoryMember"][];
+            directConversations: components["schemas"]["RuntimeDirectoryDirectConversation"][];
             revision: string;
             expiresAt: components["schemas"]["Timestamp"];
         };
@@ -3665,6 +3993,56 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    getAgentProfileCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                agentId: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent Profile 能力 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfileCapabilities"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    refreshAgentProfileCapabilities: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                agentId: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已创建或重放 Profile capability refresh Operation */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Operation"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     getRuntimeMe: {
         parameters: {
             query?: never;
@@ -3702,6 +4080,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RuntimeDirectory"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getRuntimeDirectoryV2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前 Runtime 的完整 V2 授权目录 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeDirectoryV2"];
                 };
             };
             default: components["responses"]["Error"];
@@ -4387,6 +4786,40 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    getComputerAssignmentsV2: {
+        parameters: {
+            query: {
+                sinceEpoch?: components["schemas"]["Id"];
+                sinceRevision: number;
+                waitSeconds?: number;
+                forceFull?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 完整 Assignment v2 Snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputerAssignmentSnapshotV2"];
+                };
+            };
+            /** @description 当前 epoch/revision 没有变化 */
+            204: {
+                headers: {
+                    "X-Assignment-Revision": number;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     createComputerAgentLaunch: {
         parameters: {
             query?: never;
@@ -4480,6 +4913,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ComputerObservationResult"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    putComputerAgentProfileCapabilityResult: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: components["parameters"]["AgentId"];
+                operationId: components["parameters"]["OperationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComputerAgentProfileCapabilityResult"];
+            };
+        };
+        responses: {
+            /** @description 已处理；accepted/reason 表达是否推进快照 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputerProfileCapabilitySubmissionResult"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    putComputerAgentProfileCapabilityInvalidation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: components["parameters"]["AgentId"];
+                eventId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComputerAgentProfileCapabilityInvalidation"];
+            };
+        };
+        responses: {
+            /** @description 已处理；旧 authority context/event sequence 被幂等忽略 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputerProfileCapabilitySubmissionResult"];
                 };
             };
             default: components["responses"]["Error"];

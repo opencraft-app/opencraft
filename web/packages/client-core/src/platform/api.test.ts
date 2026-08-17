@@ -1065,6 +1065,58 @@ test("removeComputer releases only the platform mapping with an idempotent DELET
   );
 });
 
+test("reads and explicitly refreshes Agent Profile capabilities", async () => {
+  const calls: Array<{headers: Headers; method: string; url: string}> = [];
+  const operation = {
+    createdAt: "2026-08-18T00:00:00.000Z",
+    id: "operation-1",
+    kind: "agent.profile.capabilities.refresh",
+    service: "platform",
+    state: "pending",
+  };
+  const api = new PlatformApi({
+    baseUrl: "https://api.example.test",
+    credentials: credentialStore(null),
+    fetcher: async (input, init) => {
+      if (String(input).endsWith("/auth/login")) {
+        return json(200, authResult("access-1", "refresh-1"));
+      }
+      calls.push({
+        headers: new Headers(init?.headers),
+        method: init?.method ?? "GET",
+        url: String(input),
+      });
+      if ((init?.method ?? "GET") === "POST") return json(202, operation);
+      return json(200, {
+        agentId: "agent-1",
+        models: null,
+        observedAt: null,
+        refreshOperation: null,
+        skills: null,
+        snapshotState: "absent",
+        source: null,
+        staleReasons: [],
+        subject: null,
+      });
+    },
+    now: () => new Date("2026-07-30T17:00:00.000Z"),
+  });
+
+  await api.login("skip@example.test", "password");
+
+  const capabilities = await api.getAgentProfileCapabilities("server-1", "agent-1");
+  const refreshed = await api.refreshAgentProfileCapabilities(
+    "server-1",
+    "agent-1",
+    "profile-refresh-0001",
+  );
+
+  assert.equal(capabilities.snapshotState, "absent");
+  assert.equal(refreshed.kind, "agent.profile.capabilities.refresh");
+  assert.deepEqual(calls.map((call) => call.method), ["GET", "POST"]);
+  assert.equal(calls[1]?.headers.get("Idempotency-Key"), "profile-refresh-0001");
+});
+
 test("createTerminalSession returns complete one-time PTY bootstrap", async () => {
   const api = new PlatformApi({
     baseUrl: "https://api.example.test",

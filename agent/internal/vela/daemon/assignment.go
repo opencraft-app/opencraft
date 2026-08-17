@@ -10,14 +10,17 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
 
 const (
-	AssignmentSchemaVersion = 1
-	DefaultMaximumAgents    = 5
+	AssignmentSchemaVersionV1 = 1
+	AssignmentSchemaVersionV2 = 2
+	AssignmentSchemaVersion   = AssignmentSchemaVersionV2
+	DefaultMaximumAgents      = 5
 
 	DesiredRunning = "running"
 	DesiredStopped = "stopped"
@@ -42,14 +45,26 @@ type Snapshot struct {
 }
 
 type AgentAssignment struct {
-	AgentID           string                 `json:"agentId"`
-	ServerID          string                 `json:"serverId"`
-	DesiredState      string                 `json:"desiredState"`
-	ConfigGeneration  int64                  `json:"configGeneration"`
-	CredentialVersion int64                  `json:"credentialVersion"`
-	CurrentLaunch     *AssignmentLaunchFence `json:"currentLaunch"`
-	Runtime           RuntimeConfig          `json:"runtime"`
-	ReplyPolicy       string                 `json:"replyPolicy"`
+	AgentID                  string                    `json:"agentId"`
+	ServerID                 string                    `json:"serverId"`
+	DesiredState             string                    `json:"desiredState"`
+	ConfigGeneration         int64                     `json:"configGeneration"`
+	CredentialVersion        int64                     `json:"credentialVersion"`
+	CurrentLaunch            *AssignmentLaunchFence    `json:"currentLaunch"`
+	Runtime                  RuntimeConfig             `json:"runtime"`
+	ReplyPolicy              string                    `json:"replyPolicy"`
+	ProfileCapabilityRefresh *ProfileCapabilityRefresh `json:"profileCapabilityRefresh"`
+}
+
+type ProfileCapabilityRefresh struct {
+	SchemaVersion         int       `json:"schemaVersion"`
+	RefreshID             string    `json:"refreshId"`
+	ContextGeneration     int64     `json:"contextGeneration"`
+	AuthorityContextKey   string    `json:"authorityContextKey"`
+	RuntimeKind           string    `json:"runtimeKind"`
+	InvalidationWatermark int64     `json:"invalidationWatermark"`
+	ForceReload           bool      `json:"forceReload"`
+	RequestedAt           time.Time `json:"requestedAt"`
 }
 
 type AssignmentLaunchFence struct {
@@ -66,7 +81,8 @@ type RuntimeConfig struct {
 }
 
 func ValidateSnapshot(snapshot Snapshot, expectedComputerID string) error {
-	if snapshot.SchemaVersion != AssignmentSchemaVersion ||
+	if (snapshot.SchemaVersion != AssignmentSchemaVersionV1 &&
+		snapshot.SchemaVersion != AssignmentSchemaVersionV2) ||
 		!isUUIDv7(snapshot.ComputerID) ||
 		snapshot.ComputerID != expectedComputerID ||
 		!isUUIDv7(snapshot.Epoch) ||
@@ -93,6 +109,18 @@ func ValidateSnapshot(snapshot Snapshot, expectedComputerID string) error {
 				assignment.CurrentLaunch.ConfigGeneration < 1 ||
 				assignment.CurrentLaunch.CredentialVersion < 1 ||
 				assignment.CurrentLaunch.Attempt < 1) {
+			return ErrInvalidSnapshot
+		}
+		if snapshot.SchemaVersion == AssignmentSchemaVersionV2 {
+			refresh := assignment.ProfileCapabilityRefresh
+			if refresh != nil &&
+				(refresh.SchemaVersion != 1 || !isUUIDv7(refresh.RefreshID) ||
+					refresh.ContextGeneration < 1 || len(refresh.AuthorityContextKey) != 43 ||
+					refresh.RuntimeKind != assignment.Runtime.Kind ||
+					refresh.InvalidationWatermark < 0 || refresh.RequestedAt.IsZero()) {
+				return ErrInvalidSnapshot
+			}
+		} else if assignment.ProfileCapabilityRefresh != nil {
 			return ErrInvalidSnapshot
 		}
 		seen[assignment.AgentID] = struct{}{}
@@ -130,7 +158,7 @@ func CanonicalSnapshot(snapshot Snapshot) ([]byte, [sha256.Size]byte, error) {
 		if index > 0 {
 			output.WriteByte(',')
 		}
-		if err := appendCanonicalAgent(&output, assignment); err != nil {
+		if err := appendCanonicalAgent(&output, assignment, snapshot.SchemaVersion); err != nil {
 			return nil, [sha256.Size]byte{}, err
 		}
 	}
@@ -154,6 +182,7 @@ func CanonicalSnapshot(snapshot Snapshot) ([]byte, [sha256.Size]byte, error) {
 func appendCanonicalAgent(
 	output *bytes.Buffer,
 	assignment AgentAssignment,
+	schemaVersion int,
 ) error {
 	output.WriteString(`{"agentId":`)
 	if err := appendJSONString(output, assignment.AgentID); err != nil {
@@ -186,6 +215,40 @@ func appendCanonicalAgent(
 	output.WriteString(`,"desiredState":`)
 	if err := appendJSONString(output, assignment.DesiredState); err != nil {
 		return err
+	}
+	if schemaVersion == AssignmentSchemaVersionV2 {
+		output.WriteString(`,"profileCapabilityRefresh":`)
+		if assignment.ProfileCapabilityRefresh == nil {
+			output.WriteString("null")
+		} else {
+			refresh := assignment.ProfileCapabilityRefresh
+			output.WriteString(`{"authorityContextKey":`)
+			if err := appendJSONString(output, refresh.AuthorityContextKey); err != nil {
+				return err
+			}
+			output.WriteString(`,"contextGeneration":`)
+			output.WriteString(strconv.FormatInt(refresh.ContextGeneration, 10))
+			output.WriteString(`,"forceReload":`)
+			output.WriteString(strconv.FormatBool(refresh.ForceReload))
+			output.WriteString(`,"invalidationWatermark":`)
+			output.WriteString(strconv.FormatInt(refresh.InvalidationWatermark, 10))
+			output.WriteString(`,"refreshId":`)
+			if err := appendJSONString(output, refresh.RefreshID); err != nil {
+				return err
+			}
+			output.WriteString(`,"requestedAt":`)
+			if err := appendJSONString(
+				output,
+				refresh.RequestedAt.UTC().Format(time.RFC3339Nano),
+			); err != nil {
+				return err
+			}
+			output.WriteString(`,"runtimeKind":`)
+			if err := appendJSONString(output, refresh.RuntimeKind); err != nil {
+				return err
+			}
+			output.WriteString(`,"schemaVersion":1}`)
+		}
 	}
 	output.WriteString(`,"replyPolicy":`)
 	if err := appendJSONString(output, assignment.ReplyPolicy); err != nil {

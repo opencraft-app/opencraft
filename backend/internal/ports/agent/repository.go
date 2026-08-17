@@ -192,6 +192,7 @@ type ProfileCapabilityRefreshCommand struct {
 
 type ProfileCapabilities struct {
 	AgentID          string
+	Runtime          Runtime
 	SnapshotJSON     *string
 	RefreshOperation *Operation
 }

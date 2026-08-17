@@ -9,6 +9,7 @@ import (
 	"chatserver/internal/api/openapi"
 	appagent "chatserver/internal/app/agentmanagement"
 	"chatserver/internal/apperror"
+	"chatserver/internal/persistedjson"
 	agentport "chatserver/internal/ports/agent"
 )
 
@@ -89,11 +90,57 @@ func (handler *AgentHandler) GetAgentProfileCapabilities(
 		body.RefreshOperation = &operation
 	}
 	if value.SnapshotJSON != nil {
-		return nil, apperror.New(
-			"internal_error",
-			"Profile capability snapshot decoding 尚未实现",
-			nil,
-		)
+		var snapshot openapi.ComputerAgentProfileCapabilityResult
+		if _, err := persistedjson.DecodeProfileCapabilities(
+			*value.SnapshotJSON,
+			&snapshot,
+		); err != nil {
+			return nil, apperror.New(
+				"internal_error",
+				"Profile capability snapshot 无效",
+				err,
+			)
+		}
+		body.SnapshotState = openapi.AgentProfileSnapshotCurrent
+		body.Subject = snapshot.Subject
+		body.Source = snapshot.Source
+		observedAt := snapshot.ObservedAt.UTC()
+		body.ObservedAt = &observedAt
+		if string(snapshot.Models.Status) == "succeeded" {
+			selectionMode := openapi.AgentProfileModelCapabilitiesSelectionMode(
+				"follow_runtime_default",
+			)
+			availability := openapi.AgentProfileModelCapabilitiesSelectedAvailability(
+				"unknown",
+			)
+			configured := value.Runtime.Model
+			if configured != nil {
+				selectionMode = openapi.AgentProfileModelCapabilitiesSelectionMode("fixed")
+				availability = openapi.AgentProfileModelCapabilitiesSelectedAvailability(
+					"unavailable",
+				)
+				for _, item := range snapshot.Models.Items {
+					if item.Id == *configured {
+						availability = openapi.AgentProfileModelCapabilitiesSelectedAvailability(
+							"available",
+						)
+						break
+					}
+				}
+			}
+			body.Models = &openapi.AgentProfileModelCapabilities{
+				SelectionMode: selectionMode, ConfiguredModelId: configured,
+				EffectiveDefaultModelId: snapshot.Models.EffectiveDefaultModelId,
+				SelectedAvailability:    availability, Items: snapshot.Models.Items,
+				Truncated: snapshot.Models.Truncated, Warnings: snapshot.Models.Warnings,
+			}
+		}
+		if string(snapshot.Skills.Status) == "succeeded" {
+			body.Skills = &openapi.AgentProfileSkillCapabilities{
+				Items: snapshot.Skills.Items, Truncated: snapshot.Skills.Truncated,
+				Warnings: snapshot.Skills.Warnings,
+			}
+		}
 	}
 	return openapi.GetAgentProfileCapabilities200JSONResponse(body), nil
 }

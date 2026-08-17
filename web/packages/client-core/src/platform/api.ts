@@ -17,6 +17,8 @@ import type {
 export type Account = components["schemas"]["Account"];
 export type AcceptedResource = components["schemas"]["AcceptedResource"];
 export type Agent = components["schemas"]["Agent"];
+export type AgentProfileCapabilities =
+  components["schemas"]["AgentProfileCapabilities"];
 type AuthResult = components["schemas"]["AuthResult"];
 export type Channel = components["schemas"]["Channel"];
 export type Computer = components["schemas"]["Computer"];
@@ -674,6 +676,41 @@ export class PlatformApi {
     );
     if (!isAgent(value)) {
       throw protocolError("Agent 更新响应结构不合法");
+    }
+    return value;
+  }
+
+  public async getAgentProfileCapabilities(
+    serverId: string,
+    agentId: string,
+  ): Promise<AgentProfileCapabilities> {
+    const value = await this.authorizedJson<unknown>(
+      `/servers/${encodeURIComponent(serverId)}/agents/${encodeURIComponent(
+        agentId,
+      )}/profile-capabilities`,
+    );
+    if (!isAgentProfileCapabilities(value)) {
+      throw protocolError("Agent Profile 能力响应结构不合法");
+    }
+    return value;
+  }
+
+  public async refreshAgentProfileCapabilities(
+    serverId: string,
+    agentId: string,
+    idempotencyKey: string,
+  ): Promise<Operation> {
+    const value = await this.authorizedJson<unknown>(
+      `/servers/${encodeURIComponent(serverId)}/agents/${encodeURIComponent(
+        agentId,
+      )}/profile-capabilities/refresh`,
+      {
+        headers: mutationHeaders(idempotencyKey),
+        method: "POST",
+      },
+    );
+    if (!isOperation(value)) {
+      throw protocolError("Agent Profile 能力刷新响应结构不合法");
     }
     return value;
   }
@@ -1339,6 +1376,21 @@ function isAgent(value: unknown): value is Agent {
     typeof value.imState === "string" &&
     typeof value.observedState === "string"
   );
+}
+
+function isAgentProfileCapabilities(
+  value: unknown,
+): value is AgentProfileCapabilities {
+  return isRecord(value) &&
+    typeof value.agentId === "string" &&
+    ["absent", "current", "stale"].includes(String(value.snapshotState)) &&
+    Array.isArray(value.staleReasons) &&
+    (value.observedAt === null || typeof value.observedAt === "string") &&
+    (value.subject === null || isRecord(value.subject)) &&
+    (value.source === null || isRecord(value.source)) &&
+    (value.models === null || isRecord(value.models)) &&
+    (value.skills === null || isRecord(value.skills)) &&
+    (value.refreshOperation === null || isOperation(value.refreshOperation));
 }
 
 function isComputer(value: unknown): value is Computer {

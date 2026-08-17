@@ -525,7 +525,10 @@ func (repository *EntRepository) GetProfileCapabilities(
 		return agentport.ProfileCapabilities{}, err
 	}
 	result := agentport.ProfileCapabilities{
-		AgentID:      entity.ID,
+		AgentID: entity.ID,
+		Runtime: agentport.Runtime{
+			Kind: entity.RuntimeKind, Model: entity.RuntimeModel,
+		},
 		SnapshotJSON: entity.ProfileCapabilitiesJSON,
 	}
 	if entity.ProfileCapabilityRefreshID != nil {

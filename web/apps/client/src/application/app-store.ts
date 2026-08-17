@@ -14,6 +14,7 @@ import {
   type Account,
   type ActiveConversation,
   type Agent,
+  type AgentProfileCapabilities,
   type Channel,
   type Computer,
   type ComposerDraft,
@@ -188,6 +189,15 @@ export interface PlatformPort {
     idempotencyKey: string,
   ): Promise<Task>;
   listAgents(serverId: string): Promise<Agent[]>;
+  getAgentProfileCapabilities(
+    serverId: string,
+    agentId: string,
+  ): Promise<AgentProfileCapabilities>;
+  refreshAgentProfileCapabilities(
+    serverId: string,
+    agentId: string,
+    idempotencyKey: string,
+  ): Promise<Operation>;
   listChannelMembers(serverId: string, channelId: string): Promise<Member[]>;
   listChannels(serverId: string): Promise<Channel[]>;
   listComputers(serverId: string): Promise<Computer[]>;
@@ -387,6 +397,7 @@ export interface AppStoreState {
   activeConversation: ActiveConversation | null;
   activeThread: MessageThread | null;
   agents: Agent[];
+  agentProfileCapabilitiesById: Record<string, AgentProfileCapabilities>;
   authStatus: AuthStatus;
   channelMembers: Member[];
   channels: Channel[];
@@ -470,6 +481,7 @@ export interface AppStoreState {
   retryServers(): Promise<void>;
   refreshWork(options?: RefreshOptions): Promise<void>;
   refreshAgents(options?: RefreshOptions): Promise<void>;
+  refreshAgentProfileCapabilities(agentId: string): Promise<Operation | null>;
   refreshComputers(options?: RefreshOptions): Promise<void>;
   refreshDirectConversations(): Promise<void>;
   refreshOrganization(options?: RefreshOptions): Promise<void>;
@@ -605,6 +617,7 @@ export function createAppStore(
     activeConversation: null,
     activeThread: null,
     agents: [],
+    agentProfileCapabilitiesById: {},
     authStatus: "checking",
     channelMembers: [],
     channels: [],
@@ -1457,15 +1470,69 @@ export function createAppStore(
         set({ error: null, loadingAgents: true });
         try {
           const agents = await dependencies.platform.listAgents(serverId);
+          const capabilityEntries = await Promise.all(
+            agents.map(async (agent) => {
+              try {
+                return [
+                  agent.id,
+                  await dependencies.platform.getAgentProfileCapabilities(
+                    serverId,
+                    agent.id,
+                  ),
+                ] as const;
+              } catch {
+                return null;
+              }
+            }),
+          );
           if (get().currentServerId !== serverId) return;
           markResourceFresh(key);
-          set({ agents, loadingAgents: false });
+          set({
+            agents,
+            agentProfileCapabilitiesById: Object.fromEntries(
+              capabilityEntries.filter(
+                (entry): entry is readonly [string, AgentProfileCapabilities] =>
+                  entry !== null,
+              ),
+            ),
+            loadingAgents: false,
+          });
         } catch (error) {
           if (get().currentServerId === serverId) {
             set({ error: errorMessage(error), loadingAgents: false });
           }
         }
       });
+    },
+
+    async refreshAgentProfileCapabilities(agentId) {
+      const state = get();
+      const serverId = state.currentServerId;
+      if (!serverId || state.pendingAction) return null;
+      const action = `agent:${agentId}:profile-capabilities:refresh`;
+      set({error: null, pendingAction: action});
+      try {
+        const operation = await dependencies.platform.refreshAgentProfileCapabilities(
+          serverId,
+          agentId,
+          `${requestId()}:agent:profile-capabilities:refresh`,
+        );
+        const capabilities = await dependencies.platform.getAgentProfileCapabilities(
+          serverId,
+          agentId,
+        );
+        set((current) => ({
+          agentProfileCapabilitiesById: {
+            ...current.agentProfileCapabilitiesById,
+            [agentId]: capabilities,
+          },
+          pendingAction: null,
+        }));
+        return operation;
+      } catch (error) {
+        set({error: errorMessage(error), pendingAction: null});
+        return null;
+      }
     },
 
     async refreshComputers(options) {

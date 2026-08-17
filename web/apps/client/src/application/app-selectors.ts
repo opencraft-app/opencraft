@@ -60,6 +60,7 @@ export type ManagementStateSection =
   | "tasks";
 
 const emptyAgents: AppStoreState["agents"] = [];
+const emptyAgentProfileCapabilities: AppStoreState["agentProfileCapabilitiesById"] = {};
 const emptyChannels: AppStoreState["channels"] = [];
 const emptyComputers: AppStoreState["computers"] = [];
 const emptyInbox: AppStoreState["inbox"] = [];
@@ -84,6 +85,10 @@ export function selectManagementState(
   return {
     account: state.account,
     agents: usesAgents ? state.agents : emptyAgents,
+    agentProfileCapabilitiesById:
+      section === "agents"
+        ? state.agentProfileCapabilitiesById
+        : emptyAgentProfileCapabilities,
     channels:
       section === "agents" || usesOrganization
         ? state.channels
