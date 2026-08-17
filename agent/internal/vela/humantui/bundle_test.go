@@ -624,7 +624,10 @@ func TestHumanClientRepairsDriftedTopicMembershipJustInTime(t *testing.T) {
 	if err := os.WriteFile(sessionPath, []byte(`{"refreshToken":"refresh-old"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	transport := &repairHistoryTransport{productFakeTransport: productFakeTransport{events: make(chan im.Event)}}
+	transport := &repairHistoryTransport{
+		failures:             1,
+		productFakeTransport: productFakeTransport{events: make(chan im.Event)},
+	}
 	application, err := New(Config{
 		PlatformURL: server.URL,
 		StateRoot:   stateRoot,
@@ -663,6 +666,183 @@ func TestHumanClientRepairsDriftedTopicMembershipJustInTime(t *testing.T) {
 	t.Fatalf("JIT repair did not converge: ensures=%d history=%d repairing=%v text=%q", ensureCalls, transport.HistoryCalls(), sawRepairing, last)
 }
 
+func TestHumanClientStopsAfterOneDriftRepairAttempt(t *testing.T) {
+	account := `{"id":"account-1","email":"human@example.com","displayName":"测试用户","imUserId":"human-im-1","imState":"ready","revision":1}`
+	var ensureCalls int
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/v1/auth/refresh":
+			_, _ = writer.Write([]byte(`{"accessToken":"access-next","refreshToken":"refresh-next","expiresAt":"2099-01-01T00:00:00Z","account":` + account + `}`))
+		case "/v1/me":
+			_, _ = writer.Write([]byte(account))
+		case "/v1/me/im/session":
+			_, _ = writer.Write([]byte(`{"sdkAppId":1600000000,"userId":"human-im-1","userSig":"test-usersig","expiresAt":"2099-01-01T00:00:00Z"}`))
+		case "/v1/servers":
+			_, _ = writer.Write([]byte(`{"items":[{"id":"server-1","slug":"test-space","name":"测试空间","ownerMemberId":"member-1","imState":"ready","revision":1}],"nextCursor":null}`))
+		case "/v1/servers/server-1/channels":
+			_, _ = writer.Write([]byte(`[{"id":"channel-1","serverId":"server-1","name":"general","visibility":"public","joined":true,"imGroupId":"group-1","imTopicId":"topic-1","imState":"ready","revision":1}]`))
+		case "/v1/servers/server-1/direct-conversations":
+			_, _ = writer.Write([]byte(`{"items":[],"nextCursor":null}`))
+		case "/v1/servers/server-1/agents", "/v1/servers/server-1/computers":
+			_, _ = writer.Write([]byte(`[]`))
+		case "/v1/servers/server-1/members":
+			_, _ = writer.Write([]byte(`{"items":[{"id":"member-1","serverId":"server-1","kind":"human","accountId":"account-1","role":"owner","displayName":"测试用户","handle":"human","status":"active","imUserId":"human-im-1","imState":"ready","revision":1}],"nextCursor":null}`))
+		case "/v1/servers/server-1/channels/channel-1/members":
+			_, _ = writer.Write([]byte(`[]`))
+		case "/v1/servers/server-1/channels/channel-1/members/member-1":
+			mu.Lock()
+			ensureCalls++
+			mu.Unlock()
+			_, _ = writer.Write([]byte(`{"resourceId":"membership-1","operations":[{"id":"operation-1","service":"im","kind":"im.membership.ensure","state":"pending","createdAt":"2026-08-17T12:00:00Z"}]}`))
+		case "/v1/servers/server-1/operations/operation-1":
+			_, _ = writer.Write([]byte(`{"id":"operation-1","service":"im","kind":"im.membership.ensure","state":"succeeded","createdAt":"2026-08-17T12:00:00Z","completedAt":"2026-08-17T12:00:01Z"}`))
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	stateRoot := t.TempDir()
+	writeHumanSession(t, stateRoot)
+	transport := &repairHistoryTransport{
+		failures:             2,
+		productFakeTransport: productFakeTransport{events: make(chan im.Event)},
+	}
+	application, err := New(Config{
+		PlatformURL: server.URL,
+		StateRoot:   stateRoot,
+		NewTransport: func() (im.Transport, error) {
+			return transport, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer application.Close()
+
+	tree := waitForHumanTree(t, application, 5*time.Second, func(tree *reactvaxis.NativeNode) bool {
+		mu.Lock()
+		ensured := ensureCalls
+		mu.Unlock()
+		return ensured == 1 && transport.HistoryCalls() == 2 &&
+			strings.Contains(tree.TextContent(), "消息服务暂时不可用")
+	})
+	tree = settleHumanTree(application, tree, 500*time.Millisecond, func(tree *reactvaxis.NativeNode) bool {
+		return strings.Contains(tree.TextContent(), "# general")
+	})
+	mu.Lock()
+	defer mu.Unlock()
+	if ensureCalls != 1 || transport.HistoryCalls() != 2 {
+		t.Fatalf("repair looped: ensures=%d history=%d text=%q", ensureCalls, transport.HistoryCalls(), tree.TextContent())
+	}
+}
+
+func TestHumanClientDoesNotReopenChannelAfterNavigatingDuringRepair(t *testing.T) {
+	account := `{"id":"account-1","email":"human@example.com","displayName":"测试用户","imUserId":"human-im-1","imState":"ready","revision":1}`
+	var ensureCalls int
+	var ensureMu sync.Mutex
+	repairStarted := make(chan struct{})
+	releaseOperation := make(chan struct{})
+	var startedOnce sync.Once
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseOperation) }) }
+	defer release()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/v1/auth/refresh":
+			_, _ = writer.Write([]byte(`{"accessToken":"access-next","refreshToken":"refresh-next","expiresAt":"2099-01-01T00:00:00Z","account":` + account + `}`))
+		case "/v1/me":
+			_, _ = writer.Write([]byte(account))
+		case "/v1/me/im/session":
+			_, _ = writer.Write([]byte(`{"sdkAppId":1600000000,"userId":"human-im-1","userSig":"test-usersig","expiresAt":"2099-01-01T00:00:00Z"}`))
+		case "/v1/servers":
+			_, _ = writer.Write([]byte(`{"items":[{"id":"server-1","slug":"test-space","name":"测试空间","ownerMemberId":"member-1","imState":"ready","revision":1}],"nextCursor":null}`))
+		case "/v1/servers/server-1/channels":
+			_, _ = writer.Write([]byte(`[{"id":"channel-1","serverId":"server-1","name":"general","visibility":"public","joined":true,"imGroupId":"group-1","imTopicId":"topic-1","imState":"ready","revision":1},{"id":"channel-2","serverId":"server-1","name":"random","visibility":"public","joined":true,"imGroupId":"group-1","imTopicId":"topic-2","imState":"ready","revision":1}]`))
+		case "/v1/servers/server-1/direct-conversations":
+			_, _ = writer.Write([]byte(`{"items":[],"nextCursor":null}`))
+		case "/v1/servers/server-1/agents", "/v1/servers/server-1/computers":
+			_, _ = writer.Write([]byte(`[]`))
+		case "/v1/servers/server-1/members":
+			_, _ = writer.Write([]byte(`{"items":[{"id":"member-1","serverId":"server-1","kind":"human","accountId":"account-1","role":"owner","displayName":"测试用户","handle":"human","status":"active","imUserId":"human-im-1","imState":"ready","revision":1}],"nextCursor":null}`))
+		case "/v1/servers/server-1/channels/channel-1/members", "/v1/servers/server-1/channels/channel-2/members":
+			_, _ = writer.Write([]byte(`[]`))
+		case "/v1/servers/server-1/channels/channel-1/members/member-1":
+			ensureMu.Lock()
+			ensureCalls++
+			ensureMu.Unlock()
+			startedOnce.Do(func() { close(repairStarted) })
+			_, _ = writer.Write([]byte(`{"resourceId":"membership-1","operations":[{"id":"operation-1","service":"im","kind":"im.membership.ensure","state":"pending","createdAt":"2026-08-17T12:00:00Z"}]}`))
+		case "/v1/servers/server-1/operations/operation-1":
+			select {
+			case <-releaseOperation:
+				_, _ = writer.Write([]byte(`{"id":"operation-1","service":"im","kind":"im.membership.ensure","state":"succeeded","createdAt":"2026-08-17T12:00:00Z","completedAt":"2026-08-17T12:00:01Z"}`))
+			case <-request.Context().Done():
+			}
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	stateRoot := t.TempDir()
+	writeHumanSession(t, stateRoot)
+	transport := &navigationRepairTransport{
+		productFakeTransport: productFakeTransport{events: make(chan im.Event)},
+	}
+	application, err := New(Config{
+		PlatformURL: server.URL,
+		StateRoot:   stateRoot,
+		NewTransport: func() (im.Transport, error) {
+			return transport, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer application.Close()
+
+	select {
+	case <-repairStarted:
+	case <-time.After(4 * time.Second):
+		t.Fatal("membership repair did not start")
+	}
+	repairing := waitForHumanTree(t, application, 3*time.Second, func(tree *reactvaxis.NativeNode) bool {
+		return strings.Contains(tree.TextContent(), "正在重新连接") &&
+			tree.Find("terminal-conversation-item-channel-2") != nil
+	})
+	repairing = settleHumanTree(application, repairing, 200*time.Millisecond, func(tree *reactvaxis.NativeNode) bool {
+		return strings.Contains(tree.TextContent(), "正在重新连接") &&
+			tree.Find("terminal-conversation-item-channel-2") != nil
+	})
+	application.runtime.Dispatch(
+		repairing.MustFind("terminal-conversation-item-channel-2").OnPress,
+		map[string]any{"source": "keyboard"},
+	)
+	random := waitForHumanTree(t, application, 3*time.Second, func(tree *reactvaxis.NativeNode) bool {
+		return strings.Contains(tree.TextContent(), "# random") &&
+			!strings.Contains(tree.TextContent(), "正在重新连接 #general")
+	})
+	release()
+	random = settleHumanTree(application, random, 700*time.Millisecond, func(tree *reactvaxis.NativeNode) bool {
+		return strings.Contains(tree.TextContent(), "# random")
+	})
+	ensureMu.Lock()
+	defer ensureMu.Unlock()
+	if ensureCalls != 1 || transport.TopicHistoryCalls("topic-1") != 1 ||
+		transport.TopicHistoryCalls("topic-2") != 1 ||
+		!strings.Contains(random.TextContent(), "# random") {
+		t.Fatalf(
+			"stale repair reopened conversation: ensures=%d topic1=%d topic2=%d text=%q",
+			ensureCalls,
+			transport.TopicHistoryCalls("topic-1"),
+			transport.TopicHistoryCalls("topic-2"),
+			random.TextContent(),
+		)
+	}
+}
+
 type safeHistoryError struct{}
 
 func (safeHistoryError) Error() string    { return "must-not-cross" }
@@ -671,6 +851,7 @@ func (safeHistoryError) SafeCode() string { return "sdk_10007" }
 type repairHistoryTransport struct {
 	productFakeTransport
 	mu           sync.Mutex
+	failures     int
 	historyCalls int
 }
 
@@ -678,7 +859,7 @@ func (t *repairHistoryTransport) History(context.Context, im.HistoryRequest) (im
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.historyCalls++
-	if t.historyCalls == 1 {
+	if t.historyCalls <= t.failures {
 		return im.HistoryPage{}, safeHistoryError{}
 	}
 	return im.HistoryPage{Completed: true}, nil
@@ -694,6 +875,39 @@ func (t *repairHistoryTransport) HistoryCalls() int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.historyCalls
+}
+
+type navigationRepairTransport struct {
+	productFakeTransport
+	mu      sync.Mutex
+	byTopic map[string]int
+}
+
+func (t *navigationRepairTransport) History(_ context.Context, request im.HistoryRequest) (im.HistoryPage, error) {
+	t.mu.Lock()
+	if t.byTopic == nil {
+		t.byTopic = make(map[string]int)
+	}
+	topicID := request.Conversation.TopicID()
+	t.byTopic[topicID]++
+	call := t.byTopic[topicID]
+	t.mu.Unlock()
+	if topicID == "topic-1" && call == 1 {
+		return im.HistoryPage{}, safeHistoryError{}
+	}
+	return im.HistoryPage{Completed: true}, nil
+}
+
+func (*navigationRepairTransport) UnreadConversations(context.Context) ([]im.UnreadConversation, error) {
+	return nil, nil
+}
+
+func (*navigationRepairTransport) MarkRead(context.Context, im.Conversation) error { return nil }
+
+func (t *navigationRepairTransport) TopicHistoryCalls(topicID string) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.byTopic[topicID]
 }
 
 type productFakeTransport struct {
@@ -732,6 +946,17 @@ func waitForHumanTree(
 	}
 	t.Fatalf("Human TUI tree did not reach expected state: error=%v text=%q", lastErr, lastText)
 	return nil
+}
+
+func writeHumanSession(t *testing.T, stateRoot string) {
+	t.Helper()
+	sessionPath := filepath.Join(stateRoot, "human", "session.json")
+	if err := os.MkdirAll(filepath.Dir(sessionPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sessionPath, []byte(`{"refreshToken":"refresh-old"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func settleHumanTree(
