@@ -1398,6 +1398,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow_text=workflow_text,
         )
 
+    def test_frontend_checkouts_disable_virtual_merge(self) -> None:
+        for workflow_path in (".ci/frontend.yml", ".ci/frontend-preview.yml"):
+            with self.subTest(workflow=workflow_path):
+                workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
+                steps = workflow["stages"][0]["jobs"][next(iter(workflow["stages"][0]["jobs"]))]["steps"]
+                checkout = next(step for step in steps if step.get("checkout") == "self")
+
+                self.assertIs(checkout["with"].get("enableVirtualMergeBranch"), False)
+
     def test_frontend_workflow_uses_native_edgeone_subpipeline_fanout(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
         workflow = yaml.safe_load(workflow_text) or {}
