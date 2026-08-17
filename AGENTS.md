@@ -281,7 +281,13 @@ bun run --cwd web/apps/client test:tui-build
 
 ## 提交前前端门禁
 
-推荐唯一顺序：
+门禁按变更风险分级，禁止把全量发布门禁机械套到普通小改：
+
+- 普通 UI、文案、局部行为、测试或脚本修改，只运行受影响模块的 focused tests、必要的 typecheck 和直接相关生成物校验；
+- 只有涉及**真实发布**、**数据库/Schema Migration**，或 **Channel/Release key、凭据、签名、信任根等信任链变更**时，才开启下列全量门禁；
+- 未运行全量门禁时必须如实列出已运行的 focused gates，不能描述为完整发布认证；受影响的 TUI、OpenAPI、生成代码或静态产物仍须执行各自直接门禁。
+
+全量门禁的唯一顺序：
 
 ```bash
 cd web
