@@ -55,6 +55,7 @@ export function conversationPageModel(
     currentMember,
     currentServer,
     directCandidates,
+    joiningCurrentChannel,
   } = scope;
   const threadActive = Boolean(
     activeConversation?.kind === "channel" &&
@@ -198,11 +199,17 @@ export function conversationPageModel(
     (agent) =>
       agent.availability === "online" || agent.observedState === "running",
   ).length;
+  const repairingMembership = Boolean(
+    joiningCurrentChannel &&
+      currentChannel?.joined &&
+      !isEveryoneChannel(currentChannel),
+  );
   const composerDisabled = Boolean(
     props.sending ||
       props.sendingThreadReply ||
       props.imStatus !== "ready" ||
       !activeConversation ||
+      repairingMembership ||
       (activeConversation.kind === "channel" && !currentChannel?.joined),
   );
   const composerActions: PresentationAction[] = [];
@@ -454,6 +461,12 @@ export function conversationPageModel(
           description: props.searchError ?? "换一个关键词再试。",
           title: props.searchingMessages ? "正在搜索" : "没有找到消息",
         }
+      : repairingMembership
+        ? {
+            description:
+              "正在重新同步当前账号的频道成员资格，完成后会自动恢复消息。",
+            title: `正在重新连接 #${currentChannel?.name ?? "Channel"}`,
+          }
       : activeConversation
         ? {
             description: "从这里和 Human、Agent 开始协作。",

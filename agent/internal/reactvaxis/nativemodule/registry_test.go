@@ -14,6 +14,16 @@ import (
 	"velachat/agent/internal/reactvaxis/nativemodule"
 )
 
+type safeProviderError struct {
+	code string
+}
+
+func (e safeProviderError) Error() string {
+	return "provider token=must-not-cross https://secret.invalid"
+}
+
+func (e safeProviderError) SafeCode() string { return e.code }
+
 func TestCallResolvesOnOwningRuntimeLoop(t *testing.T) {
 	registry := nativemodule.NewRegistry()
 	registry.RegisterCall("platform.v1", "echo", func(_ context.Context, payload any) (any, error) {
@@ -103,6 +113,35 @@ globalThis.__velaTui = {
 		t.Fatal(err)
 	}
 	if tree.Text != "NATIVE_DEADLINE_EXCEEDED:r-deadline" {
+		t.Fatalf("error = %q", tree.Text)
+	}
+}
+
+func TestCallPreservesOnlySafeProviderCodeAndRedactsMessage(t *testing.T) {
+	registry := nativemodule.NewRegistry()
+	registry.RegisterCall("messaging.v1", "history", func(context.Context, any) (any, error) {
+		return nil, safeProviderError{code: "sdk_10007"}
+	})
+	source := `
+globalThis.__velaTui = {
+  start() {
+    __velaNativeModules.call("messaging.v1", "history", {}, {requestId: "r-provider"})
+      .catch(error => __velaNative.commit({
+        type: "Text", testId: "error",
+        text: error.code + ":" + error.providerCode + ":" + error.message
+      }));
+  }, dispatch() {}, resize() {}
+};`
+	runtime := newRuntime(t, source, registry)
+	defer runtime.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	tree, err := runtime.NextCommit(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree.Text != "NATIVE_CALL_FAILED:sdk_10007:消息服务请求失败" {
 		t.Fatalf("error = %q", tree.Text)
 	}
 }

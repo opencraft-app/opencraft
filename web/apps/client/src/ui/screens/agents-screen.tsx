@@ -350,7 +350,13 @@ export function AgentsScreen(props: AgentsScreenProps) {
       computerId: editComputerId,
       displayName: editDisplayName.trim(),
       replyPolicy: editReplyPolicy,
-      runtime: {kind: editRuntime},
+      runtime: {
+        kind: editRuntime,
+        model:
+          editRuntime === selected.runtime.kind
+            ? selected.runtime.model ?? null
+            : null,
+      },
     });
     setEditing(false);
   };
@@ -782,6 +788,7 @@ export function AgentsScreen(props: AgentsScreenProps) {
             )}
             replyPolicy={editReplyPolicy}
             runtime={editRuntime}
+            runtimeModel={selected.runtime.model}
           />
         ) : (
           <ManagementEmptyState
@@ -1114,6 +1121,7 @@ function AgentDetail({
   operations,
   replyPolicy,
   runtime,
+  runtimeModel,
 }: {
   agent: Agent;
   canManage: boolean;
@@ -1147,6 +1155,7 @@ function AgentDetail({
   operations: OperationStatusItem[];
   replyPolicy: Agent["replyPolicy"];
   runtime: Agent["runtime"]["kind"];
+  runtimeModel: Agent["runtime"]["model"];
 }) {
   const computer = computers.find((item) => item.id === agent.computerId);
   const computerReady =
@@ -1279,7 +1288,13 @@ function AgentDetail({
               computerId,
               displayName: displayName.trim(),
               replyPolicy,
-              runtime: {kind: runtime},
+              runtime: {
+                kind: runtime,
+                model:
+                  runtime === agent.runtime.kind
+                    ? runtimeModel ?? null
+                    : null,
+              },
             });
           }}
         />

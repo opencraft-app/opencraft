@@ -203,3 +203,56 @@ func TestGeneratedAssignmentExposesCurrentLaunchFence(t *testing.T) {
 		t.Fatal("Computer Assignment currentLaunch fence is missing")
 	}
 }
+
+func TestGeneratedAgentProfileCapabilityContract(t *testing.T) {
+	t.Parallel()
+	spec, err := GetSwagger()
+	if err != nil {
+		t.Fatalf("load embedded OpenAPI: %v", err)
+	}
+	for path, expected := range map[string]struct {
+		method      string
+		operationID string
+	}{
+		"/servers/{serverId}/agents/{agentId}/profile-capabilities": {
+			method: "GET", operationID: "GetAgentProfileCapabilities",
+		},
+		"/servers/{serverId}/agents/{agentId}/profile-capabilities/refresh": {
+			method: "POST", operationID: "RefreshAgentProfileCapabilities",
+		},
+		"/computer/agents/{agentId}/profile-capability-results/{operationId}": {
+			method: "PUT", operationID: "PutComputerAgentProfileCapabilityResult",
+		},
+		"/computer/agents/{agentId}/profile-capability-invalidations/{eventId}": {
+			method: "PUT", operationID: "PutComputerAgentProfileCapabilityInvalidation",
+		},
+	} {
+		item := spec.Paths.Map()[path]
+		if item == nil {
+			t.Errorf("embedded OpenAPI is missing %q", path)
+			continue
+		}
+		operation := item.GetOperation(expected.method)
+		if operation == nil || operation.OperationID != expected.operationID {
+			t.Errorf(
+				"%s %s operation = %#v, want %q",
+				expected.method,
+				path,
+				operation,
+				expected.operationID,
+			)
+		}
+	}
+	for _, name := range []string{
+		"AgentProfileCapabilities",
+		"ComputerAgentProfileCapabilityResult",
+		"ComputerAgentProfileCapabilityInvalidation",
+		"ComputerAssignmentSnapshotV2",
+		"ComputerProfileCapabilityRefresh",
+	} {
+		reference := spec.Components.Schemas[name]
+		if reference == nil || reference.Value == nil {
+			t.Errorf("embedded OpenAPI is missing schema %q", name)
+		}
+	}
+}

@@ -478,6 +478,47 @@ describe("AgentsScreen", () => {
     expect(onRunAgentAction).toHaveBeenCalledWith(agent.id, "start");
   });
 
+  it("preserves a configured model when saving unrelated Agent settings", async () => {
+    const configuredAgent: Agent = {
+      ...agent,
+      runtime: {kind: "codex", model: "gpt-5.6-sol"},
+    };
+    const onUpdateAgent = jest.fn(async () => undefined);
+    const screen = await render(
+      <AgentsScreen
+        agents={[configuredAgent]}
+        canManage
+        computers={[computer]}
+        currentServerId={server.id}
+        error={null}
+        loading={false}
+        onCreateAgent={jest.fn()}
+        onNavigateSection={jest.fn()}
+        onRefresh={jest.fn()}
+        onRunAgentAction={jest.fn()}
+        onSelectServer={jest.fn()}
+        onUpdateAgent={onUpdateAgent}
+        pendingAction={null}
+        servers={[server]}
+        viewportWidth={1_280}
+      />,
+    );
+
+    await fireEvent.changeText(
+      screen.getByLabelText("编辑 Agent 显示名"),
+      "新的显示名",
+    );
+    await fireEvent.press(screen.getByRole("button", {name: "保存 Agent"}));
+
+    expect(onUpdateAgent).toHaveBeenCalledWith(
+      configuredAgent.id,
+      expect.objectContaining({
+        displayName: "新的显示名",
+        runtime: {kind: "codex", model: "gpt-5.6-sol"},
+      }),
+    );
+  });
+
   it("offers Agent creation directly from a semantic empty state", async () => {
     const screen = await render(
       <AgentsScreen

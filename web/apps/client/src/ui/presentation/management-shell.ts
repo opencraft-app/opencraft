@@ -1,9 +1,9 @@
 import type {Server} from "@vela/client-core";
 
 import {
-  visibleSectionNavigation,
+  visibleSectionPresentationItems,
   type WorkspaceSection,
-} from "../layouts/workspace-section";
+} from "./section-navigation-model";
 import type {ManagementShellModel, PresentationAction} from "./index";
 
 /**
@@ -15,7 +15,7 @@ export function buildSectionPresentationNavigation(
   onNavigateSection: (section: WorkspaceSection) => void,
   canManageServer = false,
 ): PresentationAction[] {
-  return visibleSectionNavigation(canManageServer).map(item => ({
+  return visibleSectionPresentationItems(canManageServer).map(item => ({
     id: `navigate-${item.id}`,
     label: item.label,
     run: () => onNavigateSection(item.id),

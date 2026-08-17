@@ -104,6 +104,7 @@ describe("UI framework boundary", () => {
   it("exposes UI to application code only through the @/ui outlet", () => {
     const offenders = sourceFiles(sourceRoot)
       .filter((path) => !sourcePath(path).startsWith("ui/"))
+      .filter((path) => !sourcePath(path).startsWith("tui/"))
       .filter((path) => {
         const source = readFileSync(path, "utf8");
         return [
@@ -112,6 +113,25 @@ describe("UI framework boundary", () => {
         ].some((pattern) => pattern.test(source));
       })
       .map(sourcePath);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("lets the alternate terminal renderer reach only terminal-safe UI models", () => {
+    const allowed = new Set([
+      "ui/layouts/conversation-scope.ts",
+      "ui/layouts/workspace-shell-model.ts",
+      "ui/presentation/index.tsx",
+      "ui/presentation/section-navigation-model.ts",
+    ]);
+    const offenders = sourceFiles(join(sourceRoot, "tui"))
+      .filter((path) => !/\.test\.tsx?$/u.test(path))
+      .flatMap((path) =>
+        relativeImports(path)
+          .filter((target) => sourcePath(target).startsWith("ui/"))
+          .filter((target) => !allowed.has(sourcePath(target)))
+          .map((target) => `${sourcePath(path)} -> ${sourcePath(target)}`),
+      );
 
     expect(offenders).toEqual([]);
   });

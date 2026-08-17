@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,6 +12,8 @@ import (
 	"github.com/dop251/goja"
 	"velachat/agent/internal/common"
 )
+
+var safeProviderCodePattern = regexp.MustCompile(`^sdk_[0-9]{1,10}$`)
 
 const ProtocolV1 = "reactvaxis-native-module/v1"
 
@@ -219,6 +222,7 @@ func (r *Registry) call(vm *goja.Runtime, call goja.FunctionCall) goja.Value {
 	go func() {
 		defer cancel()
 		result, err := handler(handlerContext, payload)
+		var wireResult any
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = codedError{cause: ErrDeadlineExceeded, code: "NATIVE_DEADLINE_EXCEEDED"}
 		} else if errors.Is(err, context.Canceled) {
@@ -230,6 +234,8 @@ func (r *Registry) call(vm *goja.Runtime, call goja.FunctionCall) goja.Value {
 				err = codedError{cause: encodeErr, code: "NATIVE_INVALID_RESULT"}
 			} else if len(encoded) > maxPayloadBytes {
 				err = codedError{cause: ErrPayloadTooLarge, code: "NATIVE_RESULT_TOO_LARGE"}
+			} else if decodeErr := common.Unmarshal(encoded, &wireResult); decodeErr != nil {
+				err = codedError{cause: decodeErr, code: "NATIVE_INVALID_RESULT"}
 			}
 		}
 		r.scheduleOnLoop(func(vm *goja.Runtime) {
@@ -237,7 +243,7 @@ func (r *Registry) call(vm *goja.Runtime, call goja.FunctionCall) goja.Value {
 				_ = reject(nativeError(vm, err, options.RequestID, true))
 				return
 			}
-			_ = resolve(result)
+			_ = resolve(wireResult)
 		})
 	}()
 	return vm.ToValue(promise)
@@ -448,8 +454,19 @@ func nativeError(vm *goja.Runtime, err error, requestID string, retryable bool) 
 	if coded, ok := err.(interface{ NativeCode() string }); ok && coded.NativeCode() != "" {
 		code = coded.NativeCode()
 	}
-	return vm.ToValue(map[string]any{
-		"code": code, "message": err.Error(),
+	message := err.Error()
+	providerCode := ""
+	var provider interface{ SafeCode() string }
+	if errors.As(err, &provider) && safeProviderCodePattern.MatchString(provider.SafeCode()) {
+		providerCode = provider.SafeCode()
+		message = "消息服务请求失败"
+	}
+	value := map[string]any{
+		"code": code, "message": message,
 		"retryable": retryable, "requestId": requestID,
-	})
+	}
+	if providerCode != "" {
+		value["providerCode"] = providerCode
+	}
+	return vm.ToValue(value)
 }
