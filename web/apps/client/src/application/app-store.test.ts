@@ -3079,6 +3079,122 @@ describe("app store", () => {
     ]);
   });
 
+  it("replaces a Composer image placeholder with the confirmed Tencent projection", async () => {
+    const deps = dependencies();
+    deps.messaging.sendAttachment = jest.fn(async (input) => {
+      input.onProgress?.(0.6);
+      return {
+        ...message("remote-composer-image-1", "2026-07-30T04:00:00.000Z"),
+        clientRequestId: input.clientRequestId,
+        content: {
+          height: 480,
+          kind: "image" as const,
+          name: "diagram.png",
+          thumbnailUrl: "https://example.invalid/diagram-thumb.png",
+          url: "https://example.invalid/diagram.png",
+          width: 640,
+        },
+        kind: "image" as const,
+        text: "[图片]",
+      };
+    });
+    const store = createAppStore(deps);
+    await initializeChannel(store);
+    deps.emitLifecycle({type: "ready"});
+
+    await store.getState().sendComposerDraft({
+      attachments: [
+        {
+          id: "attachment-image-1",
+          kind: "image",
+          name: "diagram.png",
+          previewUri: "blob:https://example.invalid/local-diagram",
+          source: {
+            file: {name: "diagram.png"},
+            height: 480,
+            kind: "platform-file",
+            mimeType: "image/png",
+            name: "diagram.png",
+            previewUri: "blob:https://example.invalid/local-diagram",
+            size: 456_789,
+            width: 640,
+          },
+        },
+      ],
+      document: createComposerDocument([]),
+    });
+
+    await eventually(() => {
+      expect(store.getState().submissions).toEqual({});
+    });
+    const images = store
+      .getState()
+      .messages.filter((item) => item.kind === "image");
+    expect(images).toEqual([
+      expect.objectContaining({
+        content: expect.objectContaining({
+          height: 480,
+          thumbnailUrl: "https://example.invalid/diagram-thumb.png",
+          url: "https://example.invalid/diagram.png",
+          width: 640,
+        }),
+        delivery: {state: "sent"},
+        id: "remote-composer-image-1",
+      }),
+    ]);
+  });
+
+  it("keeps the local preview when Tencent confirms an image without media metadata", async () => {
+    const deps = dependencies();
+    deps.messaging.sendAttachment = jest.fn(async (input) => ({
+      ...message("remote-composer-image-partial", "2026-07-30T04:00:00.000Z"),
+      clientRequestId: input.clientRequestId,
+      content: {kind: "image" as const, name: "diagram.png"},
+      kind: "image" as const,
+      text: "[图片]",
+    }));
+    const store = createAppStore(deps);
+    await initializeChannel(store);
+    deps.emitLifecycle({type: "ready"});
+
+    await store.getState().sendComposerDraft({
+      attachments: [
+        {
+          id: "attachment-image-partial",
+          kind: "image",
+          name: "diagram.png",
+          previewUri: "blob:https://example.invalid/local-diagram",
+          source: {
+            file: {name: "diagram.png"},
+            height: 480,
+            kind: "platform-file",
+            name: "diagram.png",
+            previewUri: "blob:https://example.invalid/local-diagram",
+            width: 640,
+          },
+        },
+      ],
+      document: createComposerDocument([]),
+    });
+
+    await eventually(() => {
+      expect(store.getState().submissions).toEqual({});
+    });
+    expect(
+      store.getState().messages.find(
+        (item) => item.id === "remote-composer-image-partial",
+      ),
+    ).toMatchObject({
+      content: {
+        height: 480,
+        kind: "image",
+        url: "blob:https://example.invalid/local-diagram",
+        width: 640,
+      },
+      delivery: {state: "sent"},
+    });
+  });
+
   it("offers only active ready Agents that belong to the selected Channel", async () => {
     const deps = dependencies();
     const outsider = {

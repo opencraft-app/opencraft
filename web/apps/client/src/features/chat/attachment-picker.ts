@@ -2,10 +2,12 @@ import type { AttachmentSource } from "@vela/client-core";
 
 interface PickedAttachmentAsset {
   file?: unknown;
+  height?: number;
   mimeType?: string | null;
   name: string;
   size?: number;
   uri: string;
+  width?: number;
 }
 
 export function attachmentSourceFromAsset(
@@ -14,18 +16,23 @@ export function attachmentSourceFromAsset(
   if (asset.file !== undefined) {
     return {
       file: asset.file,
+      ...(asset.height !== undefined ? {height: asset.height} : {}),
       kind: "platform-file",
       ...(asset.mimeType ? {mimeType: asset.mimeType} : {}),
       name: asset.name,
+      previewUri: asset.uri,
       ...(asset.size !== undefined ? {size: asset.size} : {}),
+      ...(asset.width !== undefined ? {width: asset.width} : {}),
     };
   }
   return {
+    ...(asset.height !== undefined ? {height: asset.height} : {}),
     kind: "uri",
     ...(asset.mimeType ? {mimeType: asset.mimeType} : {}),
     name: asset.name,
     ...(asset.size !== undefined ? {size: asset.size} : {}),
     uri: asset.uri,
+    ...(asset.width !== undefined ? {width: asset.width} : {}),
   };
 }
 
@@ -42,9 +49,11 @@ export async function pickImageAttachment(): Promise<AttachmentSource | null> {
   return attachmentSourceFromAsset({
     ...(asset.file !== undefined ? {file: asset.file} : {}),
     ...(asset.mimeType ? {mimeType: asset.mimeType} : {}),
+    height: asset.height,
     name: asset.fileName ?? fileNameFromUri(asset.uri, "图片"),
     ...(asset.fileSize !== undefined ? {size: asset.fileSize} : {}),
     uri: asset.uri,
+    width: asset.width,
   });
 }
 

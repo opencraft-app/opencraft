@@ -121,6 +121,39 @@ describe("SubmissionCoordinator", () => {
     expect(states.at(-1)?.phase).toBe("committed");
   });
 
+  it("publishes attachment progress and the confirmed message projection", async () => {
+    const value = submission("019fce06");
+    const confirmed = sentMessage(value.parts[0]?.clientRequestId ?? "missing");
+    const messages: Message[] = [];
+    const progress: Array<{clientRequestId: string; progress: number}> = [];
+    const port = messaging({
+      sendAttachment: jest.fn(async (input) => {
+        input.onProgress?.(0.45);
+        return confirmed;
+      }),
+    });
+    const coordinator = new SubmissionCoordinator({
+      messaging: port,
+      onMessage: (message: Message) => messages.push(message),
+      onProgress: (clientRequestId: string, value: number) =>
+        progress.push({clientRequestId, progress: value}),
+    });
+
+    coordinator.enqueue(value);
+    await coordinator.whenIdle("channel:channel-1");
+
+    expect(progress).toEqual([
+      {
+        clientRequestId: value.parts[0]?.clientRequestId,
+        progress: 0.45,
+      },
+    ]);
+    expect(messages).toContainEqual({
+      ...confirmed,
+      submission: value.parts[0]?.submission,
+    });
+  });
+
   it("blocks the same conversation after an attachment failure and resumes by SDK retry", async () => {
     const first = submission("019fce01");
     const second = submission("019fce02");

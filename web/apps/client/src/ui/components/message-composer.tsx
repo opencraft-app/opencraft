@@ -563,12 +563,18 @@ function attachmentDraft(
   kind: "file" | "image",
   source: AttachmentSource,
 ): ComposerAttachmentDraft {
+  const previewUri =
+    kind === "image"
+      ? source.kind === "uri"
+        ? source.uri
+        : source.previewUri
+      : undefined;
   return {
     id: attachmentId(),
     kind,
     ...(source.mimeType ? {mimeType: source.mimeType} : {}),
     name: source.name,
-    ...(source.kind === "uri" && kind === "image" ? {previewUri: source.uri} : {}),
+    ...(previewUri ? {previewUri} : {}),
     ...(source.size !== undefined ? {size: source.size} : {}),
     source,
   };

@@ -37,18 +37,23 @@ export interface SendTextInput {
 
 export type AttachmentSource =
   | {
+      height?: number;
       kind: "uri";
       mimeType?: string;
       name: string;
       size?: number;
       uri: string;
+      width?: number;
     }
   | {
       file: unknown;
+      height?: number;
       kind: "platform-file";
       mimeType?: string;
       name: string;
+      previewUri?: string;
       size?: number;
+      width?: number;
     };
 
 export interface SendAttachmentInput {

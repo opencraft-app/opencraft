@@ -12,11 +12,18 @@ interface SubmissionCoordinatorOptions {
     "reconcileMessage" | "retryMessage" | "sendAttachment" | "sendText"
   >;
   onChange?(submission: ComposerSubmission): void;
+  onMessage?(message: Message): void;
+  onProgress?(clientRequestId: string, progress: number): void;
 }
 
 export class SubmissionCoordinator {
   private readonly messaging: SubmissionCoordinatorOptions["messaging"];
   private readonly onChange: (submission: ComposerSubmission) => void;
+  private readonly onMessage: (message: Message) => void;
+  private readonly onProgress: (
+    clientRequestId: string,
+    progress: number,
+  ) => void;
   private readonly queues = new Map<string, string[]>();
   private readonly records = new Map<string, ComposerSubmission>();
   private readonly workers = new Map<string, Promise<void>>();
@@ -24,6 +31,8 @@ export class SubmissionCoordinator {
   public constructor(options: SubmissionCoordinatorOptions) {
     this.messaging = options.messaging;
     this.onChange = options.onChange ?? (() => undefined);
+    this.onMessage = options.onMessage ?? (() => undefined);
+    this.onProgress = options.onProgress ?? (() => undefined);
   }
 
   public enqueue(submission: ComposerSubmission): void {
@@ -85,6 +94,7 @@ export class SubmissionCoordinator {
     this.publish(submission);
     try {
       const sent = await this.messaging.retryMessage(part.clientRequestId);
+      this.onMessage(confirmedMessage(part, sent));
       submission.parts[index] = sentPart(part, sent);
       submission.phase = "queued";
       this.publish(submission);
@@ -134,6 +144,7 @@ export class SubmissionCoordinator {
       this.publish(submission);
       try {
         const sent = await this.sendPart(submission, part);
+        this.onMessage(confirmedMessage(part, sent));
         submission.parts[index] = sentPart(part, sent);
         this.publish(submission);
       } catch (error) {
@@ -154,6 +165,8 @@ export class SubmissionCoordinator {
         channel: submission.channel,
         clientRequestId: part.clientRequestId,
         kind: part.attachment.kind,
+        onProgress: (progress) =>
+          this.onProgress(part.clientRequestId, progress),
         ...(part.quote ? {quote: part.quote} : {}),
         source: part.attachment.source,
         submission: part.submission,
@@ -196,6 +209,7 @@ export class SubmissionCoordinator {
         clientRequestId: part.clientRequestId,
       });
       if (result.state === "sent") {
+        this.onMessage(confirmedMessage(part, result.message));
         submission.parts[index] = sentPart(part, result.message);
         submission.phase = "queued";
         this.publish(submission);
@@ -242,6 +256,17 @@ function sentPart(
     ...sent,
     messageId: message.id,
     status: "sent",
+  };
+}
+
+function confirmedMessage(
+  part: ComposerSubmissionPart,
+  message: Message,
+): Message {
+  return {
+    ...message,
+    clientRequestId: message.clientRequestId ?? part.clientRequestId,
+    submission: message.submission ?? part.submission,
   };
 }
 

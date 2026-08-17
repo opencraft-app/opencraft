@@ -7,17 +7,22 @@ describe("attachmentSourceFromAsset", () => {
     expect(
       attachmentSourceFromAsset({
         file,
+        height: 480,
         mimeType: "image/png",
         name: "diagram.png",
         size: 456,
         uri: "blob:https://example.invalid/diagram",
+        width: 640,
       }),
     ).toEqual({
       file,
+      height: 480,
       kind: "platform-file",
       mimeType: "image/png",
       name: "diagram.png",
+      previewUri: "blob:https://example.invalid/diagram",
       size: 456,
+      width: 640,
     });
     expect(
       attachmentSourceFromAsset({

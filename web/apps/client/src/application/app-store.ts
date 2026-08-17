@@ -2532,7 +2532,7 @@ export function createAppStore(
           source: input.source,
         });
         set((current) => ({
-          messages: mergeMessages(current.messages, [sent]),
+          messages: mergeConfirmedMessage(current.messages, sent),
           sendingMessage: false,
         }));
       } catch (error) {
@@ -4540,6 +4540,23 @@ export function createAppStore(
 
   submissionCoordinator = new SubmissionCoordinator({
     messaging: dependencies.messaging,
+    onMessage(message) {
+      store.setState((current) => ({
+        messages: mergeConfirmedMessage(current.messages, message),
+      }));
+    },
+    onProgress(clientRequestId, progress) {
+      store.setState((current) => ({
+        messages: current.messages.map((message) =>
+          message.clientRequestId === clientRequestId
+            ? {
+                ...message,
+                delivery: {progress, state: "uploading" as const},
+              }
+            : message,
+        ),
+      }));
+    },
     onChange(submission) {
       store.setState((current) => {
         const submissions = {...current.submissions};
@@ -4937,13 +4954,23 @@ function optimisticAttachmentMessage(input: {
     ...(input.submission ? {submission: input.submission} : {}),
   };
   if (input.kind === "image") {
+    const previewUri =
+      input.source.kind === "uri"
+        ? input.source.uri
+        : input.source.previewUri;
     return {
       ...common,
       content: {
         kind: "image",
+        ...(input.source.height !== undefined
+          ? {height: input.source.height}
+          : {}),
         name: input.source.name,
         ...(input.source.size !== undefined ? { size: input.source.size } : {}),
-        ...(input.source.kind === "uri" ? { url: input.source.uri } : {}),
+        ...(previewUri ? {url: previewUri} : {}),
+        ...(input.source.width !== undefined
+          ? {width: input.source.width}
+          : {}),
       },
       kind: "image",
       text: "[图片]",
@@ -4960,6 +4987,32 @@ function optimisticAttachmentMessage(input: {
     kind: "file",
     text: input.source.name,
   };
+}
+
+function mergeConfirmedMessage(
+  existing: Message[],
+  confirmed: Message,
+): Message[] {
+  const optimistic = confirmed.clientRequestId
+    ? existing.find(
+        (message) => message.clientRequestId === confirmed.clientRequestId,
+      )
+    : undefined;
+  if (
+    optimistic?.content.kind !== "image" ||
+    confirmed.content.kind !== "image"
+  ) {
+    return mergeMessages(existing, [confirmed]);
+  }
+  return mergeMessages(existing, [
+    {
+      ...confirmed,
+      content: {
+        ...optimistic.content,
+        ...confirmed.content,
+      },
+    },
+  ]);
 }
 
 function optimisticTextMessage(input: {
