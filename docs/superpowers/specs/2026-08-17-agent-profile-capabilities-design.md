@@ -1,7 +1,7 @@
 # Agent Profile 运行能力设计
 
 日期：2026-08-17
-状态：产品设计已确认，待规格审查
+状态：产品设计已确认，规格审查通过，待实施计划
 
 ## 目标
 
@@ -203,6 +203,11 @@ Backend 根据当前 Agent authority 与快照 subject 计算 `current/stale`，
 runtime kind 和该 revision 生成不可逆 opaque `authorityContextKey`。Computer/Runtime/model 等 Human 配置变化都会
 推进 revision，因此旧结果会被保守地 supersede。Profile、workspace 或 Runtime 本机内容变化由分发
 Agent 通过独立 invalidation observation 标记快照；该 observation 不发起刷新。
+
+key 的 canonical 输入固定为 v1 domain separator 加长度前缀字段：规范化小写 UUID server ID、Agent ID、
+Computer ID，Runtime enum 和十进制 Agent revision。输出为 SHA-256 的 43 字符无 padding base64url；
+Backend 生成并使用现有 digest equality helper 比较。Assignment v2 canonical fixture 必须同时固定该 key
+和 invalidation watermark，禁止客户端自行重算不同格式。
 
 分发 Agent 的 runtime-context generation/sequence 只在同一个 `authorityContextKey` 内有序，绝不跨
 Computer 或 Agent revision 比较。Agent 从 Computer A 移到 B 后，即使 A 的本地 generation 为 100、B
