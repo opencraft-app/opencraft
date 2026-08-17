@@ -163,6 +163,7 @@ POST /servers/{serverId}/agents/{agentId}/profile-capabilities/refresh
     "profileFingerprint": "opaque-value",
     "workspacePath": "/var/lib/vela/computer/workspaces/...",
     "contextGeneration": 12,
+    "authorityContextKey": "opaque-backend-context-key",
     "runtimeContextGeneration": 4,
     "observedThroughSequence": 27
   },
@@ -198,9 +199,14 @@ POST /servers/{serverId}/agents/{agentId}/profile-capabilities/refresh
 不能用伪造空目录表示成功发现。
 
 Backend 根据当前 Agent authority 与快照 subject 计算 `current/stale`，不把陈旧状态写回 JSON。
-`contextGeneration` 使用发起刷新时的 Agent `revision`。Computer/Runtime/model 等 Human 配置变化都会
+`contextGeneration` 使用发起刷新时的 Agent `revision`。Backend 还从 Server、Agent、Computer、
+runtime kind 和该 revision 生成不可逆 opaque `authorityContextKey`。Computer/Runtime/model 等 Human 配置变化都会
 推进 revision，因此旧结果会被保守地 supersede。Profile、workspace 或 Runtime 本机内容变化由分发
 Agent 通过独立 invalidation observation 标记快照；该 observation 不发起刷新。
+
+分发 Agent 的 runtime-context generation/sequence 只在同一个 `authorityContextKey` 内有序，绝不跨
+Computer 或 Agent revision 比较。Agent 从 Computer A 移到 B 后，即使 A 的本地 generation 为 100、B
+从 1 开始，B 的新 key 仍是独立有效上下文；A 的迟到 result/invalidation 因 key 和绑定不匹配被忽略。
 
 `source` 是稳定 schema：`protocol` 为
 `codex_app_server | hermes_acp | hermes_gateway`，`discoveryMode` 为
@@ -298,8 +304,8 @@ POST refresh 在 Agent shard 的事务中：
 2. 验证目标 Computer 最近声明并使用 Assignment protocol v2；
 3. 通过 Idempotency-Key 创建或重放 Operation；Operation ID 同时就是 refresh ID；
 4. 用 `agent.profile-capability-refresh-request/v1` request snapshot 固化 server、Agent、Computer、
-   runtime kind、Agent revision/context generation、当前 Backend invalidation generation watermark、
-   forceReload、trigger 和 requestedAt；
+   runtime kind、Agent revision/context generation、authority context key、当前 Backend invalidation
+   generation watermark、forceReload、trigger 和 requestedAt；
 5. 在锁定 Agent 行后把 Operation ID 写入 `profile_capability_refresh_id`，并推进 Computer Assignment
    revision，唤醒目标 Computer 已有长轮询。
 
@@ -325,6 +331,7 @@ optional `profileCapabilityRefresh`：
   "schemaVersion": 1,
   "refreshId": "operation-id",
   "contextGeneration": 12,
+  "authorityContextKey": "opaque-backend-context-key",
   "runtimeKind": "hermes-acp",
   "invalidationWatermark": 8,
   "forceReload": true,
@@ -358,6 +365,7 @@ Body 是显式 terminal union：
   "schemaVersion": 1,
   "status": "succeeded",
   "contextGeneration": 12,
+  "authorityContextKey": "opaque-backend-context-key",
   "runtimeKind": "hermes-acp",
   "runtimeContextGeneration": 4,
   "observedThroughSequence": 27,
@@ -381,21 +389,25 @@ Backend 仅在以下条件全部成立时接受：
 
 - Computer bearer 对应 Agent 当前绑定 Computer；
 - Operation ID 等于 Agent 当前 `profile_capability_refresh_id`；
-- Operation request snapshot 的 Computer、runtime kind 和 context generation 与当前 Agent 一致；
+- Operation request snapshot 的 Computer、runtime kind、context generation 和 authority context key 与当前
+  Agent 一致；
 - runtime kind 与当前 Agent 一致；
 - payload 通过 Codec 和大小验证。
 
 Repository 必须在同一数据库事务中锁定 Agent 与 Operation，CAS 检查
-`operationId + computerId + runtimeKind + contextGeneration`，然后才允许写快照、清理 refresh pointer
-和完成 Operation。Agent PATCH 或新 refresh 也在锁定同一 Agent 行的事务中 supersede 当前 Operation；
+`operationId + computerId + runtimeKind + contextGeneration + authorityContextKey`，然后才允许写快照、
+清理 refresh pointer 和完成 Operation。Agent PATCH 或新 refresh 也在锁定同一 Agent 行的事务中
+supersede 当前 Operation；
 不得把检查与写入拆成两个事务。
 
-分发 Agent 为每个 Agent 在本地 state 中持久维护单调 `runtimeContextGeneration` 和
+分发 Agent 为每个 `authorityContextKey` 在本地 state 中持久维护单调 `runtimeContextGeneration` 和
 `capabilityEventSequence`。managed Profile/workspace 身份变化推进 generation；同一 generation 内的
-Skill/Runtime invalidation 推进 sequence。discovery result 声明自己观察到的 generation 和
-`observedThroughSequence`。Backend 同时使用 Operation request 的 invalidation watermark 与该本机 cursor
-合并结果：
+Skill/Runtime invalidation 推进 sequence。discovery result 回显 authority context key，并声明自己观察到
+的 generation 和 `observedThroughSequence`。Backend 同时使用 Operation request 的 invalidation
+watermark 与该本机 cursor 合并结果：
 
+- authority context key 不同：cursor 永不互相比较；只有匹配当前 Agent authority/Operation 的 key 才能
+  写入，新成功 snapshot 丢弃其他 key 的 control records；
 - result 的 runtime-context generation 小于 Backend 已知 generation：结果 superseded；
 - generation 相同但 result sequence 落后：接受能安全更新的目录时仍保留较新的 invalidation，页面保持
   stale；
@@ -423,7 +435,7 @@ Computer 本机上下文发生变化时使用另一个幂等 Computer identity e
 PUT /computer/agents/{agentId}/profile-capability-invalidations/{eventId}
 ```
 
-Body 包含当前 Agent revision、reason
+Body 包含当前 Agent revision、authority context key、reason
 `profile_changed | workspace_changed | runtime_reported_change`、runtime-context generation、event
 sequence 和 observedAt。Backend 验证当前绑定、revision 和 Computer，在锁定 Agent 后分配单调 Backend
 invalidation generation，并把 record 合并进已有快照；不存在快照则只更新空 envelope 的 watermark/
@@ -582,6 +594,8 @@ registry；生成物必须由 OpenAPI 重新生成，不能手改。
 - invalidation observation 去重、只标 stale 且不创建 refresh；
 - invalidation-before-result、result-before-invalidation、旧 epoch/sequence 迟到和并发新 invalidation watermark
   的顺序测试；
+- Computer A 高 local generation 迁移到 Computer B 低 generation 后，authority context namespace 隔离且
+  B 的结果可接受；A 的迟到 result/invalidation 被拒绝；
 - deadline reconciler 只终结/清理匹配 pointer，不创建新 Operation；
 - old Computer unsupported；offline、not-ready、busy；
 - 两个 Hermes Agent 在同一 Computer 使用不同 Profile、Skill 和模型目录的隔离回归；
