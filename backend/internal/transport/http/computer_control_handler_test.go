@@ -273,8 +273,13 @@ func TestComputerControlHandlerReturnsAssignmentSnapshotAndNoChange(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	full, ok := response.(openapi.GetComputerAssignments200JSONResponse)
-	if !ok || full.ComputerId.String() != hookTestComputerID ||
+	fullResponse, ok := response.(openapi.GetComputerAssignments200JSONResponse)
+	if !ok {
+		t.Fatalf("GetComputerAssignments() = %#v", response)
+	}
+	full, err := openapi.ComputerAssignmentSnapshotResponse(fullResponse).
+		AsComputerAssignmentSnapshot()
+	if err != nil || full.ComputerId.String() != hookTestComputerID ||
 		full.Epoch.String() != hookTestAgentID || full.Revision != 9 ||
 		full.SnapshotHash != "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ||
 		len(full.Agents) != 1 || full.Agents[0].AgentId.String() != agentID ||
@@ -282,6 +287,29 @@ func TestComputerControlHandlerReturnsAssignmentSnapshotAndNoChange(t *testing.T
 		full.Agents[0].CurrentLaunch.Attempt != 4 {
 		t.Fatalf("GetComputerAssignments() = %#v", response)
 	}
+	assignmentService.result.Snapshot.SchemaVersion = 2
+	response, err = handler.GetComputerAssignments(
+		currentComputerContext(t, 4),
+		openapi.GetComputerAssignmentsRequestObject{Params: openapi.GetComputerAssignmentsParams{
+			SinceRevision:          0,
+			ForceFull:              &forceFull,
+			XVelaAssignmentVersion: openapi.GetComputerAssignmentsParamsXVelaAssignmentVersionN2,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2Response, ok := response.(openapi.GetComputerAssignments200JSONResponse)
+	if !ok {
+		t.Fatalf("GetComputerAssignments(v2) = %#v", response)
+	}
+	v2, err := openapi.ComputerAssignmentSnapshotResponse(v2Response).
+		AsComputerAssignmentSnapshotV2()
+	if err != nil || v2.SchemaVersion != openapi.ComputerAssignmentSnapshotV2SchemaVersionN2 ||
+		len(v2.Agents) != 1 || v2.Agents[0].ProfileCapabilityRefresh != nil {
+		t.Fatalf("GetComputerAssignments(v2) = %#v decode=%v", response, err)
+	}
+	assignmentService.result.Snapshot.SchemaVersion = 1
 	assignmentService.result = appcomputercontrol.AssignmentResult{NoChange: true, Revision: 9}
 	response, err = handler.GetComputerAssignments(
 		currentComputerContext(t, 4),

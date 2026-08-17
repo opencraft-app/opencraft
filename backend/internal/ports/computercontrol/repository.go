@@ -48,15 +48,26 @@ type Repository interface {
 }
 
 type Assignment struct {
-	AgentID           string
-	ServerID          string
-	DesiredState      string
-	ConfigGeneration  int64
-	CredentialVersion int64
-	RuntimeKind       string
-	RuntimeModel      *string
-	ReplyPolicy       string
-	CurrentLaunch     *AssignmentLaunchFence
+	AgentID                  string
+	ServerID                 string
+	DesiredState             string
+	ConfigGeneration         int64
+	CredentialVersion        int64
+	RuntimeKind              string
+	RuntimeModel             *string
+	ReplyPolicy              string
+	CurrentLaunch            *AssignmentLaunchFence
+	ProfileCapabilityRefresh *ProfileCapabilityRefresh
+}
+
+type ProfileCapabilityRefresh struct {
+	RefreshID             string
+	ContextGeneration     int64
+	AuthorityContextKey   string
+	RuntimeKind           string
+	InvalidationWatermark int64
+	ForceReload           bool
+	RequestedAt           time.Time
 }
 
 type AssignmentLaunchFence struct {

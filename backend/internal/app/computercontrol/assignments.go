@@ -17,11 +17,13 @@ import (
 )
 
 const (
-	assignmentSchemaVersion = 1
-	maximumRunningAgents    = 5
+	assignmentSchemaVersionV1 = 1
+	assignmentSchemaVersionV2 = 2
+	maximumRunningAgents      = 5
 )
 
 type AssignmentQuery struct {
+	SchemaVersion int
 	SinceEpoch    string
 	SinceRevision int64
 	WaitSeconds   int
@@ -68,7 +70,12 @@ func (service *AssignmentService) Get(
 	computerID string,
 	query AssignmentQuery,
 ) (AssignmentResult, error) {
+	if query.SchemaVersion == 0 {
+		query.SchemaVersion = assignmentSchemaVersionV1
+	}
 	if !validV7(serverID) || !validV7(computerID) ||
+		(query.SchemaVersion != assignmentSchemaVersionV1 &&
+			query.SchemaVersion != assignmentSchemaVersionV2) ||
 		query.SinceRevision < 0 || query.WaitSeconds < 0 ||
 		query.WaitSeconds > 25 ||
 		(query.SinceEpoch == "" &&
@@ -147,7 +154,7 @@ func (service *AssignmentService) getOnce(
 		return agents[left].AgentID < agents[right].AgentID
 	})
 	snapshot := AssignmentSnapshot{
-		SchemaVersion: assignmentSchemaVersion,
+		SchemaVersion: query.SchemaVersion,
 		ComputerID:    value.ComputerID,
 		Epoch:         value.Epoch,
 		Revision:      value.Revision,
@@ -196,6 +203,15 @@ func validateAssignmentSnapshot(
 				item.CurrentLaunch.Attempt < 1) {
 			return errors.New("Agent Assignment current Launch 无效")
 		}
+		if item.ProfileCapabilityRefresh != nil &&
+			(!validV7(item.ProfileCapabilityRefresh.RefreshID) ||
+				item.ProfileCapabilityRefresh.ContextGeneration < 1 ||
+				!validCapabilityDigest(item.ProfileCapabilityRefresh.AuthorityContextKey) ||
+				item.ProfileCapabilityRefresh.RuntimeKind != item.RuntimeKind ||
+				item.ProfileCapabilityRefresh.InvalidationWatermark < 0 ||
+				item.ProfileCapabilityRefresh.RequestedAt.IsZero()) {
+			return errors.New("Agent Profile capability refresh 无效")
+		}
 		if _, ok := seen[item.AgentID]; ok {
 			return errors.New("Agent Assignment 重复")
 		}
@@ -223,6 +239,12 @@ func validAssignmentRuntime(value string) bool {
 }
 
 func canonicalAssignmentSnapshot(snapshot AssignmentSnapshot) ([]byte, error) {
+	if snapshot.SchemaVersion == assignmentSchemaVersionV2 {
+		return canonicalAssignmentSnapshotV2(snapshot)
+	}
+	if snapshot.SchemaVersion != assignmentSchemaVersionV1 {
+		return nil, errors.New("Assignment schema version 无效")
+	}
 	var output bytes.Buffer
 	output.WriteString(`{"agents":[`)
 	for index, item := range snapshot.Agents {
@@ -293,6 +315,119 @@ func canonicalAssignmentSnapshot(snapshot AssignmentSnapshot) ([]byte, error) {
 	output.WriteString(strconv.FormatInt(snapshot.Revision, 10))
 	output.WriteString(`,"schemaVersion":1}`)
 	return output.Bytes(), nil
+}
+
+func canonicalAssignmentSnapshotV2(snapshot AssignmentSnapshot) ([]byte, error) {
+	var output bytes.Buffer
+	output.WriteString(`{"agents":[`)
+	for index, item := range snapshot.Agents {
+		if index > 0 {
+			output.WriteByte(',')
+		}
+		output.WriteString(`{"agentId":`)
+		if err := appendAssignmentJSONString(&output, item.AgentID); err != nil {
+			return nil, err
+		}
+		output.WriteString(`,"configGeneration":`)
+		output.WriteString(strconv.FormatInt(item.ConfigGeneration, 10))
+		output.WriteString(`,"credentialVersion":`)
+		output.WriteString(strconv.FormatInt(item.CredentialVersion, 10))
+		output.WriteString(`,"currentLaunch":`)
+		if item.CurrentLaunch == nil {
+			output.WriteString("null")
+		} else {
+			output.WriteString(`{"assignmentEpoch":`)
+			if err := appendAssignmentJSONString(&output, item.CurrentLaunch.AssignmentEpoch); err != nil {
+				return nil, err
+			}
+			output.WriteString(`,"attempt":`)
+			output.WriteString(strconv.FormatInt(item.CurrentLaunch.Attempt, 10))
+			output.WriteString(`,"configGeneration":`)
+			output.WriteString(strconv.FormatInt(item.CurrentLaunch.ConfigGeneration, 10))
+			output.WriteString(`,"credentialVersion":`)
+			output.WriteString(strconv.FormatUint(item.CurrentLaunch.CredentialVersion, 10))
+			output.WriteString(`,"launchId":`)
+			if err := appendAssignmentJSONString(&output, item.CurrentLaunch.LaunchID); err != nil {
+				return nil, err
+			}
+			output.WriteByte('}')
+		}
+		output.WriteString(`,"desiredState":`)
+		if err := appendAssignmentJSONString(&output, item.DesiredState); err != nil {
+			return nil, err
+		}
+		output.WriteString(`,"profileCapabilityRefresh":`)
+		if item.ProfileCapabilityRefresh == nil {
+			output.WriteString("null")
+		} else {
+			refresh := item.ProfileCapabilityRefresh
+			output.WriteString(`{"authorityContextKey":`)
+			if err := appendAssignmentJSONString(&output, refresh.AuthorityContextKey); err != nil {
+				return nil, err
+			}
+			output.WriteString(`,"contextGeneration":`)
+			output.WriteString(strconv.FormatInt(refresh.ContextGeneration, 10))
+			output.WriteString(`,"forceReload":`)
+			output.WriteString(strconv.FormatBool(refresh.ForceReload))
+			output.WriteString(`,"invalidationWatermark":`)
+			output.WriteString(strconv.FormatInt(refresh.InvalidationWatermark, 10))
+			output.WriteString(`,"refreshId":`)
+			if err := appendAssignmentJSONString(&output, refresh.RefreshID); err != nil {
+				return nil, err
+			}
+			output.WriteString(`,"requestedAt":`)
+			if err := appendAssignmentJSONString(
+				&output,
+				refresh.RequestedAt.UTC().Format(time.RFC3339Nano),
+			); err != nil {
+				return nil, err
+			}
+			output.WriteString(`,"runtimeKind":`)
+			if err := appendAssignmentJSONString(&output, refresh.RuntimeKind); err != nil {
+				return nil, err
+			}
+			output.WriteString(`,"schemaVersion":1}`)
+		}
+		output.WriteString(`,"replyPolicy":`)
+		if err := appendAssignmentJSONString(&output, item.ReplyPolicy); err != nil {
+			return nil, err
+		}
+		output.WriteString(`,"runtime":{"kind":`)
+		if err := appendAssignmentJSONString(&output, item.RuntimeKind); err != nil {
+			return nil, err
+		}
+		output.WriteString(`,"model":`)
+		if item.RuntimeModel == nil {
+			output.WriteString("null")
+		} else if err := appendAssignmentJSONString(&output, *item.RuntimeModel); err != nil {
+			return nil, err
+		}
+		output.WriteString(`},"serverId":`)
+		if err := appendAssignmentJSONString(&output, item.ServerID); err != nil {
+			return nil, err
+		}
+		output.WriteByte('}')
+	}
+	output.WriteString(`],"computerId":`)
+	if err := appendAssignmentJSONString(&output, snapshot.ComputerID); err != nil {
+		return nil, err
+	}
+	output.WriteString(`,"epoch":`)
+	if err := appendAssignmentJSONString(&output, snapshot.Epoch); err != nil {
+		return nil, err
+	}
+	output.WriteString(`,"revision":`)
+	output.WriteString(strconv.FormatInt(snapshot.Revision, 10))
+	output.WriteString(`,"schemaVersion":2}`)
+	return output.Bytes(), nil
+}
+
+func validCapabilityDigest(value string) bool {
+	if len(value) != 43 {
+		return false
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size
 }
 
 func appendAssignmentJSONString(output *bytes.Buffer, value string) error {

@@ -82,7 +82,9 @@ x-auth-domain-registry:
   computer-credential: [createComputerSession, preflightComputer]
   computer-bearer:
     [rotateComputerCredential, getComputerAssignments, createComputerAgentLaunch,
-     refreshComputerAgentSession, putComputerAgentObservation, sendComputerHeartbeat]
+     refreshComputerAgentSession, putComputerAgentObservation,
+     putComputerAgentProfileCapabilityResult,
+     putComputerAgentProfileCapabilityInvalidation, sendComputerHeartbeat]
   enrollment: [claimComputerEnrollment, getComputerArtifact]
   human:
     [logout, getMe, createHumanImSession, listServers, createServer, getServer,
@@ -95,6 +97,7 @@ x-auth-domain-registry:
      listMessageThreadReplies, registerMessageThreadReply, markMessageThreadRead,
      listAgents, createAgent, getAgent, updateAgent, deleteAgent, deployAgent,
      startAgent, stopAgent, restartAgent, rotateAgentRuntimeCredential,
+     getAgentProfileCapabilities, refreshAgentProfileCapabilities,
      listComputers, createComputer, getComputer, updateComputer, removeComputer,
      getComputerInstallationOptions, getComputerInstallationTargets, createComputerSetupCommand,
      createComputerRuntimeCredential, refreshComputer, createTerminalSession,
@@ -157,6 +160,11 @@ x-error-code-registry:
   agent_not_ready: {status: 409}
   agent_must_be_stopped: {status: 409}
   runtime_unavailable: {status: 503}
+  profile_capabilities_unsupported: {status: 409}
+  profile_not_ready: {status: 409}
+  profile_capability_discovery_failed: {status: 503}
+  profile_capability_result_too_large: {status: 413}
+  profile_capability_result_conflict: {status: 409}
   runtime_config_invalid: {status: 422}
   runtime_directory_not_found: {status: 404}
   runtime_channel_not_found: {status: 404}
@@ -1082,6 +1090,42 @@ paths:
               schema: {$ref: '#/components/schemas/Operation'}
         default: {$ref: '#/components/responses/Error'}
 
+  /servers/{serverId}/agents/{agentId}/profile-capabilities:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/AgentId'}
+    get:
+      tags: [Agents]
+      operationId: getAgentProfileCapabilities
+      summary: 读取 Agent Profile 最近一次运行能力快照
+      description: 只允许 Server owner/admin；读取不会触发 Computer 探测或刷新。
+      responses:
+        '200':
+          description: Agent Profile 能力
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgentProfileCapabilities'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/agents/{agentId}/profile-capabilities/refresh:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/AgentId'}
+    post:
+      tags: [Agents]
+      operationId: refreshAgentProfileCapabilities
+      summary: 显式刷新 Agent Profile 运行能力
+      description: 只允许 Server owner/admin；创建异步 Operation，不等待 Computer 探测完成。
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已创建或重放 Profile capability refresh Operation
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        default: {$ref: '#/components/responses/Error'}
+
   /runtime/me:
     get:
       tags: [Runtime]
@@ -1648,7 +1692,7 @@ paths:
         - name: X-Vela-Assignment-Version
           in: header
           required: true
-          schema: {type: integer, enum: [1]}
+          schema: {type: integer, enum: [1, 2]}
       responses:
         '201':
           description: 15 分钟 Computer Session
@@ -1695,7 +1739,7 @@ paths:
         - name: X-Vela-Assignment-Version
           in: header
           required: true
-          schema: {type: integer, enum: [1]}
+          schema: {type: integer, enum: [1, 2]}
         - name: sinceEpoch
           in: query
           required: false
@@ -1717,7 +1761,7 @@ paths:
           description: 完整 Assignment Snapshot
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/ComputerAssignmentSnapshot'}
+              schema: {$ref: '#/components/schemas/ComputerAssignmentSnapshotResponse'}
         '204':
           description: 当前 epoch/revision 没有变化
           headers:
@@ -1818,6 +1862,56 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ComputerObservationResult'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/agents/{agentId}/profile-capability-results/{operationId}:
+    parameters:
+      - {$ref: '#/components/parameters/AgentId'}
+      - {$ref: '#/components/parameters/OperationId'}
+    put:
+      tags: [Computers]
+      operationId: putComputerAgentProfileCapabilityResult
+      summary: 幂等提交 Agent Profile capability refresh 终态结果
+      security:
+        - ComputerBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerAgentProfileCapabilityResult'}
+      responses:
+        '200':
+          description: 已处理；accepted/reason 表达是否推进快照
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerProfileCapabilitySubmissionResult'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/agents/{agentId}/profile-capability-invalidations/{eventId}:
+    parameters:
+      - {$ref: '#/components/parameters/AgentId'}
+      - name: eventId
+        in: path
+        required: true
+        schema: {$ref: '#/components/schemas/Id'}
+    put:
+      tags: [Computers]
+      operationId: putComputerAgentProfileCapabilityInvalidation
+      summary: 幂等标记 Agent Profile 本机运行能力可能变化
+      description: 该操作只标记 stale，不创建 refresh Operation。
+      security:
+        - ComputerBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerAgentProfileCapabilityInvalidation'}
+      responses:
+        '200':
+          description: 已处理；旧 authority context/event sequence 被幂等忽略
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerProfileCapabilitySubmissionResult'}
         default: {$ref: '#/components/responses/Error'}
 
   /computer/heartbeat:
@@ -2626,6 +2720,239 @@ components:
           type: string
           enum: [codex, hermes-acp, hermes-gateway]
         model: {type: string, nullable: true, maxLength: 100}
+
+    ProfileCapabilityAuthorityContextKey:
+      type: string
+      pattern: '^[A-Za-z0-9_-]{43}$'
+
+    ProfileCapabilityWarning:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          enum: [catalog_truncated, partial_discovery, dependencies_missing]
+          x-enum-varnames:
+            [ProfileCapabilityWarningCatalogTruncated,
+             ProfileCapabilityWarningPartialDiscovery,
+             ProfileCapabilityWarningDependenciesMissing]
+        message: {type: string, maxLength: 500}
+
+    AgentProfileCapabilitySubject:
+      type: object
+      additionalProperties: false
+      required:
+        [computerId, runtimeKind, profileKind, profileFingerprint,
+         workspacePath, contextGeneration, authorityContextKey,
+         runtimeContextGeneration, observedThroughSequence]
+      properties:
+        computerId: {$ref: '#/components/schemas/Id'}
+        runtimeKind:
+          type: string
+          enum: [codex, hermes-acp, hermes-gateway]
+          x-enum-varnames:
+            [ProfileCapabilityRefreshRuntimeCodex,
+             ProfileCapabilityRefreshRuntimeHermesACP,
+             ProfileCapabilityRefreshRuntimeHermesGateway]
+        profileKind:
+          type: string
+          enum: [codex_home, hermes_managed]
+          x-enum-varnames:
+            [AgentProfileCapabilityProfileCodexHome,
+             AgentProfileCapabilityProfileHermesManaged]
+        profileFingerprint:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        workspacePath: {type: string, minLength: 1, maxLength: 4096}
+        contextGeneration: {type: integer, format: int64, minimum: 1}
+        authorityContextKey: {$ref: '#/components/schemas/ProfileCapabilityAuthorityContextKey'}
+        runtimeContextGeneration: {type: integer, format: int64, minimum: 1}
+        observedThroughSequence: {type: integer, format: int64, minimum: 0}
+
+    AgentProfileCapabilitySource:
+      type: object
+      additionalProperties: false
+      required: [protocol, runtimeVersion, discoveryMode, forceReload]
+      properties:
+        protocol:
+          type: string
+          enum: [codex_app_server, hermes_acp, hermes_gateway]
+          x-enum-varnames:
+            [AgentProfileCapabilityProtocolCodexAppServer,
+             AgentProfileCapabilityProtocolHermesACP,
+             AgentProfileCapabilityProtocolHermesGateway]
+        runtimeVersion: {type: string, minLength: 1, maxLength: 100}
+        discoveryMode:
+          type: string
+          enum: [active_session, short_lived_process]
+          x-enum-varnames:
+            [AgentProfileCapabilityDiscoveryActiveSession,
+             AgentProfileCapabilityDiscoveryShortLivedProcess]
+        forceReload: {type: boolean}
+
+    AgentProfileModelCapability:
+      type: object
+      additionalProperties: false
+      required:
+        [id, label, supportedReasoningEfforts, serviceTiers]
+      properties:
+        id: {type: string, minLength: 1, maxLength: 200}
+        label: {type: string, minLength: 1, maxLength: 200}
+        provider: {type: string, nullable: true, maxLength: 100}
+        description: {type: string, nullable: true, maxLength: 500}
+        verified: {type: string, nullable: true, maxLength: 50}
+        supportedReasoningEfforts:
+          type: array
+          maxItems: 16
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 50}
+        defaultReasoningEffort: {type: string, nullable: true, maxLength: 50}
+        serviceTiers:
+          type: array
+          maxItems: 16
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 50}
+        defaultServiceTier: {type: string, nullable: true, maxLength: 50}
+
+    AgentProfileSkillCapability:
+      type: object
+      additionalProperties: false
+      required:
+        [id, name, description, enabled, availability, scope,
+         missingDependencyCount, missingDependencyTypes]
+      properties:
+        id: {type: string, minLength: 1, maxLength: 200}
+        name: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 500}
+        displayName: {type: string, nullable: true, maxLength: 200}
+        shortDescription: {type: string, nullable: true, maxLength: 300}
+        enabled: {type: boolean}
+        availability:
+          type: string
+          enum: [available, unavailable]
+          x-enum-varnames:
+            [AgentProfileSkillAvailabilityAvailable,
+             AgentProfileSkillAvailabilityUnavailable]
+        scope:
+          type: string
+          enum: [project, user, admin, system, profile, external, unknown]
+          x-enum-varnames:
+            [AgentProfileSkillScopeProject, AgentProfileSkillScopeUser,
+             AgentProfileSkillScopeAdmin, AgentProfileSkillScopeSystem,
+             AgentProfileSkillScopeProfile, AgentProfileSkillScopeExternal,
+             AgentProfileSkillScopeUnknown]
+        missingDependencyCount: {type: integer, minimum: 0, maximum: 100}
+        missingDependencyTypes:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items:
+            type: string
+            enum: [env_var, executable, mcp, other]
+            x-enum-varnames:
+              [AgentProfileSkillDependencyEnvVar,
+               AgentProfileSkillDependencyExecutable,
+               AgentProfileSkillDependencyMCP,
+               AgentProfileSkillDependencyOther]
+
+    AgentProfileModelCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        [selectionMode, configuredModelId, effectiveDefaultModelId,
+         selectedAvailability, items, truncated, warnings]
+      properties:
+        selectionMode:
+          type: string
+          enum: [follow_runtime_default, fixed]
+          x-enum-varnames:
+            [AgentProfileModelSelectionFollowRuntimeDefault,
+             AgentProfileModelSelectionFixed]
+        configuredModelId: {type: string, nullable: true, maxLength: 200}
+        effectiveDefaultModelId: {type: string, nullable: true, maxLength: 200}
+        selectedAvailability:
+          type: string
+          enum: [available, unavailable, unknown]
+          x-enum-varnames:
+            [AgentProfileModelAvailabilityAvailable,
+             AgentProfileModelAvailabilityUnavailable,
+             AgentProfileModelAvailabilityUnknown]
+        items:
+          type: array
+          maxItems: 2000
+          items: {$ref: '#/components/schemas/AgentProfileModelCapability'}
+        truncated: {type: boolean}
+        warnings:
+          type: array
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ProfileCapabilityWarning'}
+
+    AgentProfileSkillCapabilities:
+      type: object
+      additionalProperties: false
+      required: [items, truncated, warnings]
+      properties:
+        items:
+          type: array
+          maxItems: 2000
+          items: {$ref: '#/components/schemas/AgentProfileSkillCapability'}
+        truncated: {type: boolean}
+        warnings:
+          type: array
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ProfileCapabilityWarning'}
+
+    AgentProfileCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        [agentId, snapshotState, staleReasons, subject, source, models,
+         skills, observedAt, refreshOperation]
+      properties:
+        agentId: {$ref: '#/components/schemas/Id'}
+        snapshotState:
+          type: string
+          enum: [absent, current, stale]
+          x-enum-varnames:
+            [AgentProfileSnapshotAbsent, AgentProfileSnapshotCurrent,
+             AgentProfileSnapshotStale]
+        staleReasons:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              [computer_changed, runtime_changed, profile_changed,
+               workspace_changed, runtime_reported_change]
+            x-enum-varnames:
+              [AgentProfileStaleComputerChanged,
+               AgentProfileStaleRuntimeChanged,
+               AgentProfileStaleProfileChanged,
+               AgentProfileStaleWorkspaceChanged,
+               AgentProfileStaleRuntimeReportedChange]
+        subject:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/AgentProfileCapabilitySubject'}
+        source:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/AgentProfileCapabilitySource'}
+        models:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/AgentProfileModelCapabilities'}
+        skills:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/AgentProfileSkillCapabilities'}
+        observedAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        refreshOperation:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/Operation'}
     Agent:
       type: object
       additionalProperties: false
@@ -2783,7 +3110,7 @@ components:
           type: array
           minItems: 1
           uniqueItems: true
-          items: {type: integer, enum: [1]}
+          items: {type: integer, enum: [1, 2]}
 
     ComputerAssignmentLaunchFence:
       type: object
@@ -2806,7 +3133,12 @@ components:
       properties:
         agentId: {$ref: '#/components/schemas/Id'}
         serverId: {$ref: '#/components/schemas/Id'}
-        desiredState: {type: string, enum: [running, stopped]}
+        desiredState:
+          type: string
+          enum: [running, stopped]
+          x-enum-varnames:
+            [ComputerAssignmentV2DesiredRunning,
+             ComputerAssignmentV2DesiredStopped]
         configGeneration: {type: integer, format: int64, minimum: 1}
         credentialVersion: {type: integer, format: int64, minimum: 0}
         currentLaunch:
@@ -2817,6 +3149,10 @@ components:
         replyPolicy:
           type: string
           enum: [mention_and_dm, all_channel_messages, dm_only]
+          x-enum-varnames:
+            [ComputerAssignmentV2ReplyMentionAndDM,
+             ComputerAssignmentV2ReplyAllChannelMessages,
+             ComputerAssignmentV2ReplyDMOnly]
 
     ComputerAssignmentSnapshot:
       type: object
@@ -2835,6 +3171,73 @@ components:
           type: array
           maxItems: 100
           items: {$ref: '#/components/schemas/ComputerAssignment'}
+
+    ComputerProfileCapabilityRefresh:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, refreshId, contextGeneration, authorityContextKey,
+         runtimeKind, invalidationWatermark, forceReload, requestedAt]
+      properties:
+        schemaVersion: {type: integer, enum: [1]}
+        refreshId: {$ref: '#/components/schemas/Id'}
+        contextGeneration: {type: integer, format: int64, minimum: 1}
+        authorityContextKey: {$ref: '#/components/schemas/ProfileCapabilityAuthorityContextKey'}
+        runtimeKind:
+          type: string
+          enum: [codex, hermes-acp, hermes-gateway]
+        invalidationWatermark: {type: integer, format: int64, minimum: 0}
+        forceReload: {type: boolean}
+        requestedAt: {$ref: '#/components/schemas/Timestamp'}
+
+    ComputerAssignmentV2:
+      type: object
+      additionalProperties: false
+      required:
+        [agentId, serverId, desiredState, configGeneration,
+         credentialVersion, currentLaunch, runtime, replyPolicy,
+         profileCapabilityRefresh]
+      properties:
+        agentId: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        desiredState: {type: string, enum: [running, stopped]}
+        configGeneration: {type: integer, format: int64, minimum: 1}
+        credentialVersion: {type: integer, format: int64, minimum: 0}
+        currentLaunch:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/ComputerAssignmentLaunchFence'}
+        runtime: {$ref: '#/components/schemas/RuntimeConfig'}
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+        profileCapabilityRefresh:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/ComputerProfileCapabilityRefresh'}
+
+    ComputerAssignmentSnapshotV2:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, computerId, epoch, revision, snapshotHash, agents]
+      properties:
+        schemaVersion: {type: integer, enum: [2]}
+        computerId: {$ref: '#/components/schemas/Id'}
+        epoch: {$ref: '#/components/schemas/Id'}
+        revision: {type: integer, format: int64, minimum: 1}
+        snapshotHash:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        agents:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/ComputerAssignmentV2'}
+
+    ComputerAssignmentSnapshotResponse:
+      oneOf:
+        - {$ref: '#/components/schemas/ComputerAssignmentSnapshot'}
+        - {$ref: '#/components/schemas/ComputerAssignmentSnapshotV2'}
 
     ComputerAgentLaunchRequest:
       type: object
@@ -2892,6 +3295,149 @@ components:
         configGeneration: {type: integer, format: int64, minimum: 1}
         credentialVersion: {type: integer, format: int64, minimum: 1}
         attempt: {type: integer, format: int64, minimum: 1}
+
+    ComputerProfileCapabilityModelSection:
+      type: object
+      additionalProperties: false
+      required:
+        [status, effectiveDefaultModelId, items, truncated, warnings, errorCode]
+      properties:
+        status:
+          type: string
+          enum: [succeeded, failed]
+          x-enum-varnames:
+            [ComputerProfileModelSectionSucceeded,
+             ComputerProfileModelSectionFailed]
+        effectiveDefaultModelId: {type: string, nullable: true, maxLength: 200}
+        items:
+          type: array
+          maxItems: 2000
+          items: {$ref: '#/components/schemas/AgentProfileModelCapability'}
+        truncated: {type: boolean}
+        warnings:
+          type: array
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ProfileCapabilityWarning'}
+        errorCode:
+          type: string
+          nullable: true
+          enum: [model_discovery_failed, runtime_unavailable]
+          x-enum-varnames:
+            [ComputerProfileModelDiscoveryFailed,
+             ComputerProfileModelRuntimeUnavailable]
+
+    ComputerProfileCapabilitySkillSection:
+      type: object
+      additionalProperties: false
+      required: [status, items, truncated, warnings, errorCode]
+      properties:
+        status:
+          type: string
+          enum: [succeeded, failed]
+          x-enum-varnames:
+            [ComputerProfileSkillSectionSucceeded,
+             ComputerProfileSkillSectionFailed]
+        items:
+          type: array
+          maxItems: 2000
+          items: {$ref: '#/components/schemas/AgentProfileSkillCapability'}
+        truncated: {type: boolean}
+        warnings:
+          type: array
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ProfileCapabilityWarning'}
+        errorCode:
+          type: string
+          nullable: true
+          enum: [skill_discovery_failed, runtime_unavailable]
+          x-enum-varnames:
+            [ComputerProfileSkillDiscoveryFailed,
+             ComputerProfileSkillRuntimeUnavailable]
+
+    ComputerAgentProfileCapabilityResult:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, status, contextGeneration, authorityContextKey,
+         runtimeKind, runtimeContextGeneration, observedThroughSequence,
+         subject, source, models, skills, errorCode, observedAt]
+      properties:
+        schemaVersion: {type: integer, enum: [1]}
+        status:
+          type: string
+          enum: [succeeded, failed]
+          x-enum-varnames:
+            [ComputerProfileCapabilityResultSucceeded,
+             ComputerProfileCapabilityResultFailed]
+        contextGeneration: {type: integer, format: int64, minimum: 1}
+        authorityContextKey: {$ref: '#/components/schemas/ProfileCapabilityAuthorityContextKey'}
+        runtimeKind:
+          type: string
+          enum: [codex, hermes-acp, hermes-gateway]
+          x-enum-varnames:
+            [ComputerProfileCapabilityRuntimeCodex,
+             ComputerProfileCapabilityRuntimeHermesACP,
+             ComputerProfileCapabilityRuntimeHermesGateway]
+        runtimeContextGeneration: {type: integer, format: int64, minimum: 1}
+        observedThroughSequence: {type: integer, format: int64, minimum: 0}
+        subject:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/AgentProfileCapabilitySubject'}
+        source:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/AgentProfileCapabilitySource'}
+        models: {$ref: '#/components/schemas/ComputerProfileCapabilityModelSection'}
+        skills: {$ref: '#/components/schemas/ComputerProfileCapabilitySkillSection'}
+        errorCode:
+          type: string
+          nullable: true
+          enum:
+            [runtime_busy, profile_not_ready, runtime_unavailable,
+             discovery_failed, result_too_large]
+          x-enum-varnames:
+            [ComputerProfileCapabilityRuntimeBusy,
+             ComputerProfileCapabilityProfileNotReady,
+             ComputerProfileCapabilityRuntimeUnavailable,
+             ComputerProfileCapabilityDiscoveryFailed,
+             ComputerProfileCapabilityResultTooLarge]
+        observedAt: {$ref: '#/components/schemas/Timestamp'}
+
+    ComputerAgentProfileCapabilityInvalidation:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, contextGeneration, authorityContextKey,
+         runtimeContextGeneration, eventSequence, reason, observedAt]
+      properties:
+        schemaVersion: {type: integer, enum: [1]}
+        contextGeneration: {type: integer, format: int64, minimum: 1}
+        authorityContextKey: {$ref: '#/components/schemas/ProfileCapabilityAuthorityContextKey'}
+        runtimeContextGeneration: {type: integer, format: int64, minimum: 1}
+        eventSequence: {type: integer, format: int64, minimum: 1}
+        reason:
+          type: string
+          enum: [profile_changed, workspace_changed, runtime_reported_change]
+          x-enum-varnames:
+            [ComputerProfileInvalidationProfileChanged,
+             ComputerProfileInvalidationWorkspaceChanged,
+             ComputerProfileInvalidationRuntimeReportedChange]
+        observedAt: {$ref: '#/components/schemas/Timestamp'}
+
+    ComputerProfileCapabilitySubmissionResult:
+      type: object
+      additionalProperties: false
+      required: [accepted, reason]
+      properties:
+        accepted: {type: boolean}
+        reason:
+          type: string
+          enum: [accepted, duplicate, superseded]
+          x-enum-varnames:
+            [ComputerProfileSubmissionAccepted,
+             ComputerProfileSubmissionDuplicate,
+             ComputerProfileSubmissionSuperseded]
 
     ComputerAgentObservation:
       type: object
@@ -2970,6 +3516,12 @@ components:
         daemonBuildId: {type: string, minLength: 1, maxLength: 200}
         assignmentEpoch: {$ref: '#/components/schemas/Id'}
         assignmentRevision: {type: integer, format: int64, minimum: 1}
+        assignmentVersion: {type: integer, enum: [1, 2]}
+        profileCapabilityVersions:
+          type: array
+          uniqueItems: true
+          maxItems: 1
+          items: {type: integer, enum: [1]}
         tatState: {type: string, enum: [online, offline, error]}
         reconcile: {$ref: '#/components/schemas/ComputerHeartbeatReconcile'}
         agents:

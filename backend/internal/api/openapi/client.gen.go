@@ -136,6 +136,16 @@ type ClientInterface interface {
 
 	PutComputerAgentObservation(ctx context.Context, agentId AgentId, observationId Id, body PutComputerAgentObservationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PutComputerAgentProfileCapabilityInvalidationWithBody request with any body
+	PutComputerAgentProfileCapabilityInvalidationWithBody(ctx context.Context, agentId AgentId, eventId Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PutComputerAgentProfileCapabilityInvalidation(ctx context.Context, agentId AgentId, eventId Id, body PutComputerAgentProfileCapabilityInvalidationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutComputerAgentProfileCapabilityResultWithBody request with any body
+	PutComputerAgentProfileCapabilityResultWithBody(ctx context.Context, agentId AgentId, operationId OperationId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PutComputerAgentProfileCapabilityResult(ctx context.Context, agentId AgentId, operationId OperationId, body PutComputerAgentProfileCapabilityResultJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetComputerAssignments request
 	GetComputerAssignments(ctx context.Context, params *GetComputerAssignmentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -295,6 +305,12 @@ type ClientInterface interface {
 
 	// DeployAgent request
 	DeployAgent(ctx context.Context, serverId ServerId, agentId AgentId, params *DeployAgentParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetAgentProfileCapabilities request
+	GetAgentProfileCapabilities(ctx context.Context, serverId ServerId, agentId AgentId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RefreshAgentProfileCapabilities request
+	RefreshAgentProfileCapabilities(ctx context.Context, serverId ServerId, agentId AgentId, params *RefreshAgentProfileCapabilitiesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RestartAgent request
 	RestartAgent(ctx context.Context, serverId ServerId, agentId AgentId, params *RestartAgentParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -671,6 +687,54 @@ func (c *Client) PutComputerAgentObservationWithBody(ctx context.Context, agentI
 
 func (c *Client) PutComputerAgentObservation(ctx context.Context, agentId AgentId, observationId Id, body PutComputerAgentObservationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPutComputerAgentObservationRequest(c.Server, agentId, observationId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutComputerAgentProfileCapabilityInvalidationWithBody(ctx context.Context, agentId AgentId, eventId Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutComputerAgentProfileCapabilityInvalidationRequestWithBody(c.Server, agentId, eventId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutComputerAgentProfileCapabilityInvalidation(ctx context.Context, agentId AgentId, eventId Id, body PutComputerAgentProfileCapabilityInvalidationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutComputerAgentProfileCapabilityInvalidationRequest(c.Server, agentId, eventId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutComputerAgentProfileCapabilityResultWithBody(ctx context.Context, agentId AgentId, operationId OperationId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutComputerAgentProfileCapabilityResultRequestWithBody(c.Server, agentId, operationId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutComputerAgentProfileCapabilityResult(ctx context.Context, agentId AgentId, operationId OperationId, body PutComputerAgentProfileCapabilityResultJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutComputerAgentProfileCapabilityResultRequest(c.Server, agentId, operationId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1379,6 +1443,30 @@ func (c *Client) RotateAgentRuntimeCredential(ctx context.Context, serverId Serv
 
 func (c *Client) DeployAgent(ctx context.Context, serverId ServerId, agentId AgentId, params *DeployAgentParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDeployAgentRequest(c.Server, serverId, agentId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetAgentProfileCapabilities(ctx context.Context, serverId ServerId, agentId AgentId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAgentProfileCapabilitiesRequest(c.Server, serverId, agentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RefreshAgentProfileCapabilities(ctx context.Context, serverId ServerId, agentId AgentId, params *RefreshAgentProfileCapabilitiesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshAgentProfileCapabilitiesRequest(c.Server, serverId, agentId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2612,6 +2700,114 @@ func NewPutComputerAgentObservationRequestWithBody(server string, agentId AgentI
 	}
 
 	operationPath := fmt.Sprintf("/computer/agents/%s/observations/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPutComputerAgentProfileCapabilityInvalidationRequest calls the generic PutComputerAgentProfileCapabilityInvalidation builder with application/json body
+func NewPutComputerAgentProfileCapabilityInvalidationRequest(server string, agentId AgentId, eventId Id, body PutComputerAgentProfileCapabilityInvalidationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutComputerAgentProfileCapabilityInvalidationRequestWithBody(server, agentId, eventId, "application/json", bodyReader)
+}
+
+// NewPutComputerAgentProfileCapabilityInvalidationRequestWithBody generates requests for PutComputerAgentProfileCapabilityInvalidation with any type of body
+func NewPutComputerAgentProfileCapabilityInvalidationRequestWithBody(server string, agentId AgentId, eventId Id, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "agentId", agentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "eventId", eventId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/computer/agents/%s/profile-capability-invalidations/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPutComputerAgentProfileCapabilityResultRequest calls the generic PutComputerAgentProfileCapabilityResult builder with application/json body
+func NewPutComputerAgentProfileCapabilityResultRequest(server string, agentId AgentId, operationId OperationId, body PutComputerAgentProfileCapabilityResultJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutComputerAgentProfileCapabilityResultRequestWithBody(server, agentId, operationId, "application/json", bodyReader)
+}
+
+// NewPutComputerAgentProfileCapabilityResultRequestWithBody generates requests for PutComputerAgentProfileCapabilityResult with any type of body
+func NewPutComputerAgentProfileCapabilityResultRequestWithBody(server string, agentId AgentId, operationId OperationId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "agentId", agentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "operationId", operationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/computer/agents/%s/profile-capability-results/%s", pathParam0, pathParam1)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -4710,6 +4906,101 @@ func NewDeployAgentRequest(server string, serverId ServerId, agentId AgentId, pa
 	}
 
 	operationPath := fmt.Sprintf("/servers/%s/agents/%s/deploy", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetAgentProfileCapabilitiesRequest generates requests for GetAgentProfileCapabilities
+func NewGetAgentProfileCapabilitiesRequest(server string, serverId ServerId, agentId AgentId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "agentId", agentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/agents/%s/profile-capabilities", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRefreshAgentProfileCapabilitiesRequest generates requests for RefreshAgentProfileCapabilities
+func NewRefreshAgentProfileCapabilitiesRequest(server string, serverId ServerId, agentId AgentId, params *RefreshAgentProfileCapabilitiesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "agentId", agentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/agents/%s/profile-capabilities/refresh", pathParam0, pathParam1)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -7418,6 +7709,16 @@ type ClientWithResponsesInterface interface {
 
 	PutComputerAgentObservationWithResponse(ctx context.Context, agentId AgentId, observationId Id, body PutComputerAgentObservationJSONRequestBody, reqEditors ...RequestEditorFn) (*PutComputerAgentObservationResponse, error)
 
+	// PutComputerAgentProfileCapabilityInvalidationWithBodyWithResponse request with any body
+	PutComputerAgentProfileCapabilityInvalidationWithBodyWithResponse(ctx context.Context, agentId AgentId, eventId Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutComputerAgentProfileCapabilityInvalidationResponse, error)
+
+	PutComputerAgentProfileCapabilityInvalidationWithResponse(ctx context.Context, agentId AgentId, eventId Id, body PutComputerAgentProfileCapabilityInvalidationJSONRequestBody, reqEditors ...RequestEditorFn) (*PutComputerAgentProfileCapabilityInvalidationResponse, error)
+
+	// PutComputerAgentProfileCapabilityResultWithBodyWithResponse request with any body
+	PutComputerAgentProfileCapabilityResultWithBodyWithResponse(ctx context.Context, agentId AgentId, operationId OperationId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutComputerAgentProfileCapabilityResultResponse, error)
+
+	PutComputerAgentProfileCapabilityResultWithResponse(ctx context.Context, agentId AgentId, operationId OperationId, body PutComputerAgentProfileCapabilityResultJSONRequestBody, reqEditors ...RequestEditorFn) (*PutComputerAgentProfileCapabilityResultResponse, error)
+
 	// GetComputerAssignmentsWithResponse request
 	GetComputerAssignmentsWithResponse(ctx context.Context, params *GetComputerAssignmentsParams, reqEditors ...RequestEditorFn) (*GetComputerAssignmentsResponse, error)
 
@@ -7577,6 +7878,12 @@ type ClientWithResponsesInterface interface {
 
 	// DeployAgentWithResponse request
 	DeployAgentWithResponse(ctx context.Context, serverId ServerId, agentId AgentId, params *DeployAgentParams, reqEditors ...RequestEditorFn) (*DeployAgentResponse, error)
+
+	// GetAgentProfileCapabilitiesWithResponse request
+	GetAgentProfileCapabilitiesWithResponse(ctx context.Context, serverId ServerId, agentId AgentId, reqEditors ...RequestEditorFn) (*GetAgentProfileCapabilitiesResponse, error)
+
+	// RefreshAgentProfileCapabilitiesWithResponse request
+	RefreshAgentProfileCapabilitiesWithResponse(ctx context.Context, serverId ServerId, agentId AgentId, params *RefreshAgentProfileCapabilitiesParams, reqEditors ...RequestEditorFn) (*RefreshAgentProfileCapabilitiesResponse, error)
 
 	// RestartAgentWithResponse request
 	RestartAgentWithResponse(ctx context.Context, serverId ServerId, agentId AgentId, params *RestartAgentParams, reqEditors ...RequestEditorFn) (*RestartAgentResponse, error)
@@ -7998,10 +8305,56 @@ func (r PutComputerAgentObservationResponse) StatusCode() int {
 	return 0
 }
 
+type PutComputerAgentProfileCapabilityInvalidationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ComputerProfileCapabilitySubmissionResult
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r PutComputerAgentProfileCapabilityInvalidationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutComputerAgentProfileCapabilityInvalidationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PutComputerAgentProfileCapabilityResultResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ComputerProfileCapabilitySubmissionResult
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r PutComputerAgentProfileCapabilityResultResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutComputerAgentProfileCapabilityResultResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetComputerAssignmentsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *ComputerAssignmentSnapshot
+	JSON200      *ComputerAssignmentSnapshotResponse
 	JSONDefault  *Error
 }
 
@@ -8956,6 +9309,52 @@ func (r DeployAgentResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r DeployAgentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetAgentProfileCapabilitiesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *AgentProfileCapabilities
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetAgentProfileCapabilitiesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetAgentProfileCapabilitiesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RefreshAgentProfileCapabilitiesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *Operation
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r RefreshAgentProfileCapabilitiesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RefreshAgentProfileCapabilitiesResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -10172,6 +10571,40 @@ func (c *ClientWithResponses) PutComputerAgentObservationWithResponse(ctx contex
 	return ParsePutComputerAgentObservationResponse(rsp)
 }
 
+// PutComputerAgentProfileCapabilityInvalidationWithBodyWithResponse request with arbitrary body returning *PutComputerAgentProfileCapabilityInvalidationResponse
+func (c *ClientWithResponses) PutComputerAgentProfileCapabilityInvalidationWithBodyWithResponse(ctx context.Context, agentId AgentId, eventId Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutComputerAgentProfileCapabilityInvalidationResponse, error) {
+	rsp, err := c.PutComputerAgentProfileCapabilityInvalidationWithBody(ctx, agentId, eventId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutComputerAgentProfileCapabilityInvalidationResponse(rsp)
+}
+
+func (c *ClientWithResponses) PutComputerAgentProfileCapabilityInvalidationWithResponse(ctx context.Context, agentId AgentId, eventId Id, body PutComputerAgentProfileCapabilityInvalidationJSONRequestBody, reqEditors ...RequestEditorFn) (*PutComputerAgentProfileCapabilityInvalidationResponse, error) {
+	rsp, err := c.PutComputerAgentProfileCapabilityInvalidation(ctx, agentId, eventId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutComputerAgentProfileCapabilityInvalidationResponse(rsp)
+}
+
+// PutComputerAgentProfileCapabilityResultWithBodyWithResponse request with arbitrary body returning *PutComputerAgentProfileCapabilityResultResponse
+func (c *ClientWithResponses) PutComputerAgentProfileCapabilityResultWithBodyWithResponse(ctx context.Context, agentId AgentId, operationId OperationId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutComputerAgentProfileCapabilityResultResponse, error) {
+	rsp, err := c.PutComputerAgentProfileCapabilityResultWithBody(ctx, agentId, operationId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutComputerAgentProfileCapabilityResultResponse(rsp)
+}
+
+func (c *ClientWithResponses) PutComputerAgentProfileCapabilityResultWithResponse(ctx context.Context, agentId AgentId, operationId OperationId, body PutComputerAgentProfileCapabilityResultJSONRequestBody, reqEditors ...RequestEditorFn) (*PutComputerAgentProfileCapabilityResultResponse, error) {
+	rsp, err := c.PutComputerAgentProfileCapabilityResult(ctx, agentId, operationId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutComputerAgentProfileCapabilityResultResponse(rsp)
+}
+
 // GetComputerAssignmentsWithResponse request returning *GetComputerAssignmentsResponse
 func (c *ClientWithResponses) GetComputerAssignmentsWithResponse(ctx context.Context, params *GetComputerAssignmentsParams, reqEditors ...RequestEditorFn) (*GetComputerAssignmentsResponse, error) {
 	rsp, err := c.GetComputerAssignments(ctx, params, reqEditors...)
@@ -10684,6 +11117,24 @@ func (c *ClientWithResponses) DeployAgentWithResponse(ctx context.Context, serve
 		return nil, err
 	}
 	return ParseDeployAgentResponse(rsp)
+}
+
+// GetAgentProfileCapabilitiesWithResponse request returning *GetAgentProfileCapabilitiesResponse
+func (c *ClientWithResponses) GetAgentProfileCapabilitiesWithResponse(ctx context.Context, serverId ServerId, agentId AgentId, reqEditors ...RequestEditorFn) (*GetAgentProfileCapabilitiesResponse, error) {
+	rsp, err := c.GetAgentProfileCapabilities(ctx, serverId, agentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetAgentProfileCapabilitiesResponse(rsp)
+}
+
+// RefreshAgentProfileCapabilitiesWithResponse request returning *RefreshAgentProfileCapabilitiesResponse
+func (c *ClientWithResponses) RefreshAgentProfileCapabilitiesWithResponse(ctx context.Context, serverId ServerId, agentId AgentId, params *RefreshAgentProfileCapabilitiesParams, reqEditors ...RequestEditorFn) (*RefreshAgentProfileCapabilitiesResponse, error) {
+	rsp, err := c.RefreshAgentProfileCapabilities(ctx, serverId, agentId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshAgentProfileCapabilitiesResponse(rsp)
 }
 
 // RestartAgentWithResponse request returning *RestartAgentResponse
@@ -11569,6 +12020,72 @@ func ParsePutComputerAgentObservationResponse(rsp *http.Response) (*PutComputerA
 	return response, nil
 }
 
+// ParsePutComputerAgentProfileCapabilityInvalidationResponse parses an HTTP response from a PutComputerAgentProfileCapabilityInvalidationWithResponse call
+func ParsePutComputerAgentProfileCapabilityInvalidationResponse(rsp *http.Response) (*PutComputerAgentProfileCapabilityInvalidationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutComputerAgentProfileCapabilityInvalidationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ComputerProfileCapabilitySubmissionResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutComputerAgentProfileCapabilityResultResponse parses an HTTP response from a PutComputerAgentProfileCapabilityResultWithResponse call
+func ParsePutComputerAgentProfileCapabilityResultResponse(rsp *http.Response) (*PutComputerAgentProfileCapabilityResultResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutComputerAgentProfileCapabilityResultResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ComputerProfileCapabilitySubmissionResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetComputerAssignmentsResponse parses an HTTP response from a GetComputerAssignmentsWithResponse call
 func ParseGetComputerAssignmentsResponse(rsp *http.Response) (*GetComputerAssignmentsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -11584,7 +12101,7 @@ func ParseGetComputerAssignmentsResponse(rsp *http.Response) (*GetComputerAssign
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ComputerAssignmentSnapshot
+		var dest ComputerAssignmentSnapshotResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -12917,6 +13434,72 @@ func ParseDeployAgentResponse(rsp *http.Response) (*DeployAgentResponse, error) 
 	}
 
 	response := &DeployAgentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest Operation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetAgentProfileCapabilitiesResponse parses an HTTP response from a GetAgentProfileCapabilitiesWithResponse call
+func ParseGetAgentProfileCapabilitiesResponse(rsp *http.Response) (*GetAgentProfileCapabilitiesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetAgentProfileCapabilitiesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AgentProfileCapabilities
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRefreshAgentProfileCapabilitiesResponse parses an HTTP response from a RefreshAgentProfileCapabilitiesWithResponse call
+func ParseRefreshAgentProfileCapabilitiesResponse(rsp *http.Response) (*RefreshAgentProfileCapabilitiesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RefreshAgentProfileCapabilitiesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

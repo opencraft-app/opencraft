@@ -253,6 +253,246 @@ func (e AgentReplyPolicy) Valid() bool {
 	}
 }
 
+// Defines values for AgentProfileCapabilitiesSnapshotState.
+const (
+	AgentProfileSnapshotAbsent  AgentProfileCapabilitiesSnapshotState = "absent"
+	AgentProfileSnapshotCurrent AgentProfileCapabilitiesSnapshotState = "current"
+	AgentProfileSnapshotStale   AgentProfileCapabilitiesSnapshotState = "stale"
+)
+
+// Valid indicates whether the value is a known member of the AgentProfileCapabilitiesSnapshotState enum.
+func (e AgentProfileCapabilitiesSnapshotState) Valid() bool {
+	switch e {
+	case AgentProfileSnapshotAbsent:
+		return true
+	case AgentProfileSnapshotCurrent:
+		return true
+	case AgentProfileSnapshotStale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProfileCapabilitiesStaleReasons.
+const (
+	AgentProfileStaleComputerChanged       AgentProfileCapabilitiesStaleReasons = "computer_changed"
+	AgentProfileStaleProfileChanged        AgentProfileCapabilitiesStaleReasons = "profile_changed"
+	AgentProfileStaleRuntimeChanged        AgentProfileCapabilitiesStaleReasons = "runtime_changed"
+	AgentProfileStaleRuntimeReportedChange AgentProfileCapabilitiesStaleReasons = "runtime_reported_change"
+	AgentProfileStaleWorkspaceChanged      AgentProfileCapabilitiesStaleReasons = "workspace_changed"
+)
+
+// Valid indicates whether the value is a known member of the AgentProfileCapabilitiesStaleReasons enum.
+func (e AgentProfileCapabilitiesStaleReasons) Valid() bool {
+	switch e {
+	case AgentProfileStaleComputerChanged:
+		return true
+	case AgentProfileStaleProfileChanged:
+		return true
+	case AgentProfileStaleRuntimeChanged:
+		return true
+	case AgentProfileStaleRuntimeReportedChange:
+		return true
+	case AgentProfileStaleWorkspaceChanged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProfileCapabilitySourceDiscoveryMode.
+const (
+	AgentProfileCapabilityDiscoveryActiveSession     AgentProfileCapabilitySourceDiscoveryMode = "active_session"
+	AgentProfileCapabilityDiscoveryShortLivedProcess AgentProfileCapabilitySourceDiscoveryMode = "short_lived_process"
+)
+
+// Valid indicates whether the value is a known member of the AgentProfileCapabilitySourceDiscoveryMode enum.
+func (e AgentProfileCapabilitySourceDiscoveryMode) Valid() bool {
+	switch e {
+	case AgentProfileCapabilityDiscoveryActiveSession:
+		return true
+	case AgentProfileCapabilityDiscoveryShortLivedProcess:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProfileCapabilitySourceProtocol.
+const (
+	AgentProfileCapabilityProtocolCodexAppServer AgentProfileCapabilitySourceProtocol = "codex_app_server"
+	AgentProfileCapabilityProtocolHermesACP      AgentProfileCapabilitySourceProtocol = "hermes_acp"
+	AgentProfileCapabilityProtocolHermesGateway  AgentProfileCapabilitySourceProtocol = "hermes_gateway"
+)
+
+// Valid indicates whether the value is a known member of the AgentProfileCapabilitySourceProtocol enum.
+func (e AgentProfileCapabilitySourceProtocol) Valid() bool {
+	switch e {
+	case AgentProfileCapabilityProtocolCodexAppServer:
+		return true
+	case AgentProfileCapabilityProtocolHermesACP:
+		return true
+	case AgentProfileCapabilityProtocolHermesGateway:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProfileCapabilitySubjectProfileKind.
+const (
+	AgentProfileCapabilityProfileCodexHome     AgentProfileCapabilitySubjectProfileKind = "codex_home"
+	AgentProfileCapabilityProfileHermesManaged AgentProfileCapabilitySubjectProfileKind = "hermes_managed"
+)
+
+// Valid indicates whether the value is a known member of the AgentProfileCapabilitySubjectProfileKind enum.
+func (e AgentProfileCapabilitySubjectProfileKind) Valid() bool {
+	switch e {
+	case AgentProfileCapabilityProfileCodexHome:
+		return true
+	case AgentProfileCapabilityProfileHermesManaged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProfileCapabilitySubjectRuntimeKind.
+const (
+	ProfileCapabilityRefreshRuntimeCodex         AgentProfileCapabilitySubjectRuntimeKind = "codex"
+	ProfileCapabilityRefreshRuntimeHermesACP     AgentProfileCapabilitySubjectRuntimeKind = "hermes-acp"
+	ProfileCapabilityRefreshRuntimeHermesGateway AgentProfileCapabilitySubjectRuntimeKind = "hermes-gateway"
+)
+
+// Valid indicates whether the value is a known member of the AgentProfileCapabilitySubjectRuntimeKind enum.
+func (e AgentProfileCapabilitySubjectRuntimeKind) Valid() bool {
+	switch e {
+	case ProfileCapabilityRefreshRuntimeCodex:
+		return true
+	case ProfileCapabilityRefreshRuntimeHermesACP:
+		return true
+	case ProfileCapabilityRefreshRuntimeHermesGateway:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProfileModelCapabilitiesSelectedAvailability.
+const (
+	AgentProfileModelAvailabilityAvailable   AgentProfileModelCapabilitiesSelectedAvailability = "available"
+	AgentProfileModelAvailabilityUnavailable AgentProfileModelCapabilitiesSelectedAvailability = "unavailable"
+	AgentProfileModelAvailabilityUnknown     AgentProfileModelCapabilitiesSelectedAvailability = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AgentProfileModelCapabilitiesSelectedAvailability enum.
+func (e AgentProfileModelCapabilitiesSelectedAvailability) Valid() bool {
+	switch e {
+	case AgentProfileModelAvailabilityAvailable:
+		return true
+	case AgentProfileModelAvailabilityUnavailable:
+		return true
+	case AgentProfileModelAvailabilityUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProfileModelCapabilitiesSelectionMode.
+const (
+	AgentProfileModelSelectionFixed                AgentProfileModelCapabilitiesSelectionMode = "fixed"
+	AgentProfileModelSelectionFollowRuntimeDefault AgentProfileModelCapabilitiesSelectionMode = "follow_runtime_default"
+)
+
+// Valid indicates whether the value is a known member of the AgentProfileModelCapabilitiesSelectionMode enum.
+func (e AgentProfileModelCapabilitiesSelectionMode) Valid() bool {
+	switch e {
+	case AgentProfileModelSelectionFixed:
+		return true
+	case AgentProfileModelSelectionFollowRuntimeDefault:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProfileSkillCapabilityAvailability.
+const (
+	AgentProfileSkillAvailabilityAvailable   AgentProfileSkillCapabilityAvailability = "available"
+	AgentProfileSkillAvailabilityUnavailable AgentProfileSkillCapabilityAvailability = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the AgentProfileSkillCapabilityAvailability enum.
+func (e AgentProfileSkillCapabilityAvailability) Valid() bool {
+	switch e {
+	case AgentProfileSkillAvailabilityAvailable:
+		return true
+	case AgentProfileSkillAvailabilityUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProfileSkillCapabilityMissingDependencyTypes.
+const (
+	AgentProfileSkillDependencyEnvVar     AgentProfileSkillCapabilityMissingDependencyTypes = "env_var"
+	AgentProfileSkillDependencyExecutable AgentProfileSkillCapabilityMissingDependencyTypes = "executable"
+	AgentProfileSkillDependencyMCP        AgentProfileSkillCapabilityMissingDependencyTypes = "mcp"
+	AgentProfileSkillDependencyOther      AgentProfileSkillCapabilityMissingDependencyTypes = "other"
+)
+
+// Valid indicates whether the value is a known member of the AgentProfileSkillCapabilityMissingDependencyTypes enum.
+func (e AgentProfileSkillCapabilityMissingDependencyTypes) Valid() bool {
+	switch e {
+	case AgentProfileSkillDependencyEnvVar:
+		return true
+	case AgentProfileSkillDependencyExecutable:
+		return true
+	case AgentProfileSkillDependencyMCP:
+		return true
+	case AgentProfileSkillDependencyOther:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProfileSkillCapabilityScope.
+const (
+	AgentProfileSkillScopeAdmin    AgentProfileSkillCapabilityScope = "admin"
+	AgentProfileSkillScopeExternal AgentProfileSkillCapabilityScope = "external"
+	AgentProfileSkillScopeProfile  AgentProfileSkillCapabilityScope = "profile"
+	AgentProfileSkillScopeProject  AgentProfileSkillCapabilityScope = "project"
+	AgentProfileSkillScopeSystem   AgentProfileSkillCapabilityScope = "system"
+	AgentProfileSkillScopeUnknown  AgentProfileSkillCapabilityScope = "unknown"
+	AgentProfileSkillScopeUser     AgentProfileSkillCapabilityScope = "user"
+)
+
+// Valid indicates whether the value is a known member of the AgentProfileSkillCapabilityScope enum.
+func (e AgentProfileSkillCapabilityScope) Valid() bool {
+	switch e {
+	case AgentProfileSkillScopeAdmin:
+		return true
+	case AgentProfileSkillScopeExternal:
+		return true
+	case AgentProfileSkillScopeProfile:
+		return true
+	case AgentProfileSkillScopeProject:
+		return true
+	case AgentProfileSkillScopeSystem:
+		return true
+	case AgentProfileSkillScopeUnknown:
+		return true
+	case AgentProfileSkillScopeUser:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ChannelImState.
 const (
 	ChannelImStateError        ChannelImState = "error"
@@ -427,18 +667,135 @@ func (e ComputerAgentObservationState) Valid() bool {
 	}
 }
 
+// Defines values for ComputerAgentProfileCapabilityInvalidationReason.
+const (
+	ComputerProfileInvalidationProfileChanged        ComputerAgentProfileCapabilityInvalidationReason = "profile_changed"
+	ComputerProfileInvalidationRuntimeReportedChange ComputerAgentProfileCapabilityInvalidationReason = "runtime_reported_change"
+	ComputerProfileInvalidationWorkspaceChanged      ComputerAgentProfileCapabilityInvalidationReason = "workspace_changed"
+)
+
+// Valid indicates whether the value is a known member of the ComputerAgentProfileCapabilityInvalidationReason enum.
+func (e ComputerAgentProfileCapabilityInvalidationReason) Valid() bool {
+	switch e {
+	case ComputerProfileInvalidationProfileChanged:
+		return true
+	case ComputerProfileInvalidationRuntimeReportedChange:
+		return true
+	case ComputerProfileInvalidationWorkspaceChanged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerAgentProfileCapabilityInvalidationSchemaVersion.
+const (
+	ComputerAgentProfileCapabilityInvalidationSchemaVersionN1 ComputerAgentProfileCapabilityInvalidationSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the ComputerAgentProfileCapabilityInvalidationSchemaVersion enum.
+func (e ComputerAgentProfileCapabilityInvalidationSchemaVersion) Valid() bool {
+	switch e {
+	case ComputerAgentProfileCapabilityInvalidationSchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerAgentProfileCapabilityResultErrorCode.
+const (
+	ComputerProfileCapabilityDiscoveryFailed    ComputerAgentProfileCapabilityResultErrorCode = "discovery_failed"
+	ComputerProfileCapabilityProfileNotReady    ComputerAgentProfileCapabilityResultErrorCode = "profile_not_ready"
+	ComputerProfileCapabilityResultTooLarge     ComputerAgentProfileCapabilityResultErrorCode = "result_too_large"
+	ComputerProfileCapabilityRuntimeBusy        ComputerAgentProfileCapabilityResultErrorCode = "runtime_busy"
+	ComputerProfileCapabilityRuntimeUnavailable ComputerAgentProfileCapabilityResultErrorCode = "runtime_unavailable"
+)
+
+// Valid indicates whether the value is a known member of the ComputerAgentProfileCapabilityResultErrorCode enum.
+func (e ComputerAgentProfileCapabilityResultErrorCode) Valid() bool {
+	switch e {
+	case ComputerProfileCapabilityDiscoveryFailed:
+		return true
+	case ComputerProfileCapabilityProfileNotReady:
+		return true
+	case ComputerProfileCapabilityResultTooLarge:
+		return true
+	case ComputerProfileCapabilityRuntimeBusy:
+		return true
+	case ComputerProfileCapabilityRuntimeUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerAgentProfileCapabilityResultRuntimeKind.
+const (
+	ComputerProfileCapabilityRuntimeCodex         ComputerAgentProfileCapabilityResultRuntimeKind = "codex"
+	ComputerProfileCapabilityRuntimeHermesACP     ComputerAgentProfileCapabilityResultRuntimeKind = "hermes-acp"
+	ComputerProfileCapabilityRuntimeHermesGateway ComputerAgentProfileCapabilityResultRuntimeKind = "hermes-gateway"
+)
+
+// Valid indicates whether the value is a known member of the ComputerAgentProfileCapabilityResultRuntimeKind enum.
+func (e ComputerAgentProfileCapabilityResultRuntimeKind) Valid() bool {
+	switch e {
+	case ComputerProfileCapabilityRuntimeCodex:
+		return true
+	case ComputerProfileCapabilityRuntimeHermesACP:
+		return true
+	case ComputerProfileCapabilityRuntimeHermesGateway:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerAgentProfileCapabilityResultSchemaVersion.
+const (
+	ComputerAgentProfileCapabilityResultSchemaVersionN1 ComputerAgentProfileCapabilityResultSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the ComputerAgentProfileCapabilityResultSchemaVersion enum.
+func (e ComputerAgentProfileCapabilityResultSchemaVersion) Valid() bool {
+	switch e {
+	case ComputerAgentProfileCapabilityResultSchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerAgentProfileCapabilityResultStatus.
+const (
+	ComputerProfileCapabilityResultFailed    ComputerAgentProfileCapabilityResultStatus = "failed"
+	ComputerProfileCapabilityResultSucceeded ComputerAgentProfileCapabilityResultStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the ComputerAgentProfileCapabilityResultStatus enum.
+func (e ComputerAgentProfileCapabilityResultStatus) Valid() bool {
+	switch e {
+	case ComputerProfileCapabilityResultFailed:
+		return true
+	case ComputerProfileCapabilityResultSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ComputerAssignmentDesiredState.
 const (
-	ComputerAssignmentDesiredStateRunning ComputerAssignmentDesiredState = "running"
-	ComputerAssignmentDesiredStateStopped ComputerAssignmentDesiredState = "stopped"
+	ComputerAssignmentV2DesiredRunning ComputerAssignmentDesiredState = "running"
+	ComputerAssignmentV2DesiredStopped ComputerAssignmentDesiredState = "stopped"
 )
 
 // Valid indicates whether the value is a known member of the ComputerAssignmentDesiredState enum.
 func (e ComputerAssignmentDesiredState) Valid() bool {
 	switch e {
-	case ComputerAssignmentDesiredStateRunning:
+	case ComputerAssignmentV2DesiredRunning:
 		return true
-	case ComputerAssignmentDesiredStateStopped:
+	case ComputerAssignmentV2DesiredStopped:
 		return true
 	default:
 		return false
@@ -447,19 +804,19 @@ func (e ComputerAssignmentDesiredState) Valid() bool {
 
 // Defines values for ComputerAssignmentReplyPolicy.
 const (
-	ComputerAssignmentReplyPolicyAllChannelMessages ComputerAssignmentReplyPolicy = "all_channel_messages"
-	ComputerAssignmentReplyPolicyDmOnly             ComputerAssignmentReplyPolicy = "dm_only"
-	ComputerAssignmentReplyPolicyMentionAndDm       ComputerAssignmentReplyPolicy = "mention_and_dm"
+	ComputerAssignmentV2ReplyAllChannelMessages ComputerAssignmentReplyPolicy = "all_channel_messages"
+	ComputerAssignmentV2ReplyDMOnly             ComputerAssignmentReplyPolicy = "dm_only"
+	ComputerAssignmentV2ReplyMentionAndDM       ComputerAssignmentReplyPolicy = "mention_and_dm"
 )
 
 // Valid indicates whether the value is a known member of the ComputerAssignmentReplyPolicy enum.
 func (e ComputerAssignmentReplyPolicy) Valid() bool {
 	switch e {
-	case ComputerAssignmentReplyPolicyAllChannelMessages:
+	case ComputerAssignmentV2ReplyAllChannelMessages:
 		return true
-	case ComputerAssignmentReplyPolicyDmOnly:
+	case ComputerAssignmentV2ReplyDMOnly:
 		return true
-	case ComputerAssignmentReplyPolicyMentionAndDm:
+	case ComputerAssignmentV2ReplyMentionAndDM:
 		return true
 	default:
 		return false
@@ -475,6 +832,60 @@ const (
 func (e ComputerAssignmentSnapshotSchemaVersion) Valid() bool {
 	switch e {
 	case ComputerAssignmentSnapshotSchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerAssignmentSnapshotV2SchemaVersion.
+const (
+	ComputerAssignmentSnapshotV2SchemaVersionN2 ComputerAssignmentSnapshotV2SchemaVersion = 2
+)
+
+// Valid indicates whether the value is a known member of the ComputerAssignmentSnapshotV2SchemaVersion enum.
+func (e ComputerAssignmentSnapshotV2SchemaVersion) Valid() bool {
+	switch e {
+	case ComputerAssignmentSnapshotV2SchemaVersionN2:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerAssignmentV2DesiredState.
+const (
+	ComputerAssignmentV2DesiredStateRunning ComputerAssignmentV2DesiredState = "running"
+	ComputerAssignmentV2DesiredStateStopped ComputerAssignmentV2DesiredState = "stopped"
+)
+
+// Valid indicates whether the value is a known member of the ComputerAssignmentV2DesiredState enum.
+func (e ComputerAssignmentV2DesiredState) Valid() bool {
+	switch e {
+	case ComputerAssignmentV2DesiredStateRunning:
+		return true
+	case ComputerAssignmentV2DesiredStateStopped:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerAssignmentV2ReplyPolicy.
+const (
+	ComputerAssignmentV2ReplyPolicyAllChannelMessages ComputerAssignmentV2ReplyPolicy = "all_channel_messages"
+	ComputerAssignmentV2ReplyPolicyDmOnly             ComputerAssignmentV2ReplyPolicy = "dm_only"
+	ComputerAssignmentV2ReplyPolicyMentionAndDm       ComputerAssignmentV2ReplyPolicy = "mention_and_dm"
+)
+
+// Valid indicates whether the value is a known member of the ComputerAssignmentV2ReplyPolicy enum.
+func (e ComputerAssignmentV2ReplyPolicy) Valid() bool {
+	switch e {
+	case ComputerAssignmentV2ReplyPolicyAllChannelMessages:
+		return true
+	case ComputerAssignmentV2ReplyPolicyDmOnly:
+		return true
+	case ComputerAssignmentV2ReplyPolicyMentionAndDm:
 		return true
 	default:
 		return false
@@ -511,6 +922,39 @@ func (e ComputerEnrollmentClaimRequestOsType) Valid() bool {
 	case ComputerEnrollmentClaimRequestOsTypeLinux:
 		return true
 	case ComputerEnrollmentClaimRequestOsTypeMacos:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerHeartbeatAssignmentVersion.
+const (
+	ComputerHeartbeatAssignmentVersionN1 ComputerHeartbeatAssignmentVersion = 1
+	ComputerHeartbeatAssignmentVersionN2 ComputerHeartbeatAssignmentVersion = 2
+)
+
+// Valid indicates whether the value is a known member of the ComputerHeartbeatAssignmentVersion enum.
+func (e ComputerHeartbeatAssignmentVersion) Valid() bool {
+	switch e {
+	case ComputerHeartbeatAssignmentVersionN1:
+		return true
+	case ComputerHeartbeatAssignmentVersionN2:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerHeartbeatProfileCapabilityVersions.
+const (
+	ComputerHeartbeatProfileCapabilityVersionsN1 ComputerHeartbeatProfileCapabilityVersions = 1
+)
+
+// Valid indicates whether the value is a known member of the ComputerHeartbeatProfileCapabilityVersions enum.
+func (e ComputerHeartbeatProfileCapabilityVersions) Valid() bool {
+	switch e {
+	case ComputerHeartbeatProfileCapabilityVersionsN1:
 		return true
 	default:
 		return false
@@ -679,6 +1123,135 @@ func (e ComputerPreflightRemovedErrorCode) Valid() bool {
 	}
 }
 
+// Defines values for ComputerProfileCapabilityModelSectionErrorCode.
+const (
+	ComputerProfileModelDiscoveryFailed    ComputerProfileCapabilityModelSectionErrorCode = "model_discovery_failed"
+	ComputerProfileModelRuntimeUnavailable ComputerProfileCapabilityModelSectionErrorCode = "runtime_unavailable"
+)
+
+// Valid indicates whether the value is a known member of the ComputerProfileCapabilityModelSectionErrorCode enum.
+func (e ComputerProfileCapabilityModelSectionErrorCode) Valid() bool {
+	switch e {
+	case ComputerProfileModelDiscoveryFailed:
+		return true
+	case ComputerProfileModelRuntimeUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerProfileCapabilityModelSectionStatus.
+const (
+	ComputerProfileModelSectionFailed    ComputerProfileCapabilityModelSectionStatus = "failed"
+	ComputerProfileModelSectionSucceeded ComputerProfileCapabilityModelSectionStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the ComputerProfileCapabilityModelSectionStatus enum.
+func (e ComputerProfileCapabilityModelSectionStatus) Valid() bool {
+	switch e {
+	case ComputerProfileModelSectionFailed:
+		return true
+	case ComputerProfileModelSectionSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerProfileCapabilityRefreshRuntimeKind.
+const (
+	ComputerProfileCapabilityRefreshRuntimeKindCodex         ComputerProfileCapabilityRefreshRuntimeKind = "codex"
+	ComputerProfileCapabilityRefreshRuntimeKindHermesAcp     ComputerProfileCapabilityRefreshRuntimeKind = "hermes-acp"
+	ComputerProfileCapabilityRefreshRuntimeKindHermesGateway ComputerProfileCapabilityRefreshRuntimeKind = "hermes-gateway"
+)
+
+// Valid indicates whether the value is a known member of the ComputerProfileCapabilityRefreshRuntimeKind enum.
+func (e ComputerProfileCapabilityRefreshRuntimeKind) Valid() bool {
+	switch e {
+	case ComputerProfileCapabilityRefreshRuntimeKindCodex:
+		return true
+	case ComputerProfileCapabilityRefreshRuntimeKindHermesAcp:
+		return true
+	case ComputerProfileCapabilityRefreshRuntimeKindHermesGateway:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerProfileCapabilityRefreshSchemaVersion.
+const (
+	ComputerProfileCapabilityRefreshSchemaVersionN1 ComputerProfileCapabilityRefreshSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the ComputerProfileCapabilityRefreshSchemaVersion enum.
+func (e ComputerProfileCapabilityRefreshSchemaVersion) Valid() bool {
+	switch e {
+	case ComputerProfileCapabilityRefreshSchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerProfileCapabilitySkillSectionErrorCode.
+const (
+	ComputerProfileSkillDiscoveryFailed    ComputerProfileCapabilitySkillSectionErrorCode = "skill_discovery_failed"
+	ComputerProfileSkillRuntimeUnavailable ComputerProfileCapabilitySkillSectionErrorCode = "runtime_unavailable"
+)
+
+// Valid indicates whether the value is a known member of the ComputerProfileCapabilitySkillSectionErrorCode enum.
+func (e ComputerProfileCapabilitySkillSectionErrorCode) Valid() bool {
+	switch e {
+	case ComputerProfileSkillDiscoveryFailed:
+		return true
+	case ComputerProfileSkillRuntimeUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerProfileCapabilitySkillSectionStatus.
+const (
+	ComputerProfileSkillSectionFailed    ComputerProfileCapabilitySkillSectionStatus = "failed"
+	ComputerProfileSkillSectionSucceeded ComputerProfileCapabilitySkillSectionStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the ComputerProfileCapabilitySkillSectionStatus enum.
+func (e ComputerProfileCapabilitySkillSectionStatus) Valid() bool {
+	switch e {
+	case ComputerProfileSkillSectionFailed:
+		return true
+	case ComputerProfileSkillSectionSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerProfileCapabilitySubmissionResultReason.
+const (
+	ComputerProfileSubmissionAccepted   ComputerProfileCapabilitySubmissionResultReason = "accepted"
+	ComputerProfileSubmissionDuplicate  ComputerProfileCapabilitySubmissionResultReason = "duplicate"
+	ComputerProfileSubmissionSuperseded ComputerProfileCapabilitySubmissionResultReason = "superseded"
+)
+
+// Valid indicates whether the value is a known member of the ComputerProfileCapabilitySubmissionResultReason enum.
+func (e ComputerProfileCapabilitySubmissionResultReason) Valid() bool {
+	switch e {
+	case ComputerProfileSubmissionAccepted:
+		return true
+	case ComputerProfileSubmissionDuplicate:
+		return true
+	case ComputerProfileSubmissionSuperseded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ComputerRuntimeCredentialRequestMode.
 const (
 	Bootstrap ComputerRuntimeCredentialRequestMode = "bootstrap"
@@ -700,12 +1273,15 @@ func (e ComputerRuntimeCredentialRequestMode) Valid() bool {
 // Defines values for ComputerSessionAssignmentVersions.
 const (
 	ComputerSessionAssignmentVersionsN1 ComputerSessionAssignmentVersions = 1
+	ComputerSessionAssignmentVersionsN2 ComputerSessionAssignmentVersions = 2
 )
 
 // Valid indicates whether the value is a known member of the ComputerSessionAssignmentVersions enum.
 func (e ComputerSessionAssignmentVersions) Valid() bool {
 	switch e {
 	case ComputerSessionAssignmentVersionsN1:
+		return true
+	case ComputerSessionAssignmentVersionsN2:
 		return true
 	default:
 		return false
@@ -1075,6 +1651,27 @@ func (e OperationState) Valid() bool {
 	}
 }
 
+// Defines values for ProfileCapabilityWarningCode.
+const (
+	ProfileCapabilityWarningCatalogTruncated    ProfileCapabilityWarningCode = "catalog_truncated"
+	ProfileCapabilityWarningDependenciesMissing ProfileCapabilityWarningCode = "dependencies_missing"
+	ProfileCapabilityWarningPartialDiscovery    ProfileCapabilityWarningCode = "partial_discovery"
+)
+
+// Valid indicates whether the value is a known member of the ProfileCapabilityWarningCode enum.
+func (e ProfileCapabilityWarningCode) Valid() bool {
+	switch e {
+	case ProfileCapabilityWarningCatalogTruncated:
+		return true
+	case ProfileCapabilityWarningDependenciesMissing:
+		return true
+	case ProfileCapabilityWarningPartialDiscovery:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReminderScheduleKind.
 const (
 	ReminderScheduleKindCron ReminderScheduleKind = "cron"
@@ -1140,19 +1737,19 @@ func (e ReminderOccurrenceState) Valid() bool {
 
 // Defines values for RuntimeConfigKind.
 const (
-	Codex         RuntimeConfigKind = "codex"
-	HermesAcp     RuntimeConfigKind = "hermes-acp"
-	HermesGateway RuntimeConfigKind = "hermes-gateway"
+	RuntimeConfigKindCodex         RuntimeConfigKind = "codex"
+	RuntimeConfigKindHermesAcp     RuntimeConfigKind = "hermes-acp"
+	RuntimeConfigKindHermesGateway RuntimeConfigKind = "hermes-gateway"
 )
 
 // Valid indicates whether the value is a known member of the RuntimeConfigKind enum.
 func (e RuntimeConfigKind) Valid() bool {
 	switch e {
-	case Codex:
+	case RuntimeConfigKindCodex:
 		return true
-	case HermesAcp:
+	case RuntimeConfigKindHermesAcp:
 		return true
-	case HermesGateway:
+	case RuntimeConfigKindHermesGateway:
 		return true
 	default:
 		return false
@@ -1663,12 +2260,15 @@ func (e ObserveTencentIMStateParamsContenttype) Valid() bool {
 // Defines values for GetComputerAssignmentsParamsXVelaAssignmentVersion.
 const (
 	GetComputerAssignmentsParamsXVelaAssignmentVersionN1 GetComputerAssignmentsParamsXVelaAssignmentVersion = 1
+	GetComputerAssignmentsParamsXVelaAssignmentVersionN2 GetComputerAssignmentsParamsXVelaAssignmentVersion = 2
 )
 
 // Valid indicates whether the value is a known member of the GetComputerAssignmentsParamsXVelaAssignmentVersion enum.
 func (e GetComputerAssignmentsParamsXVelaAssignmentVersion) Valid() bool {
 	switch e {
 	case GetComputerAssignmentsParamsXVelaAssignmentVersionN1:
+		return true
+	case GetComputerAssignmentsParamsXVelaAssignmentVersionN2:
 		return true
 	default:
 		return false
@@ -1678,12 +2278,15 @@ func (e GetComputerAssignmentsParamsXVelaAssignmentVersion) Valid() bool {
 // Defines values for CreateComputerSessionParamsXVelaAssignmentVersion.
 const (
 	CreateComputerSessionParamsXVelaAssignmentVersionN1 CreateComputerSessionParamsXVelaAssignmentVersion = 1
+	CreateComputerSessionParamsXVelaAssignmentVersionN2 CreateComputerSessionParamsXVelaAssignmentVersion = 2
 )
 
 // Valid indicates whether the value is a known member of the CreateComputerSessionParamsXVelaAssignmentVersion enum.
 func (e CreateComputerSessionParamsXVelaAssignmentVersion) Valid() bool {
 	switch e {
 	case CreateComputerSessionParamsXVelaAssignmentVersionN1:
+		return true
+	case CreateComputerSessionParamsXVelaAssignmentVersionN2:
 		return true
 	default:
 		return false
@@ -1796,6 +2399,118 @@ type AgentObservedState string
 // AgentReplyPolicy defines model for Agent.ReplyPolicy.
 type AgentReplyPolicy string
 
+// AgentProfileCapabilities defines model for AgentProfileCapabilities.
+type AgentProfileCapabilities struct {
+	AgentId          Id                                     `json:"agentId"`
+	Models           *AgentProfileModelCapabilities         `json:"models"`
+	ObservedAt       *NullableTimestamp                     `json:"observedAt"`
+	RefreshOperation *Operation                             `json:"refreshOperation"`
+	Skills           *AgentProfileSkillCapabilities         `json:"skills"`
+	SnapshotState    AgentProfileCapabilitiesSnapshotState  `json:"snapshotState"`
+	Source           *AgentProfileCapabilitySource          `json:"source"`
+	StaleReasons     []AgentProfileCapabilitiesStaleReasons `json:"staleReasons"`
+	Subject          *AgentProfileCapabilitySubject         `json:"subject"`
+}
+
+// AgentProfileCapabilitiesSnapshotState defines model for AgentProfileCapabilities.SnapshotState.
+type AgentProfileCapabilitiesSnapshotState string
+
+// AgentProfileCapabilitiesStaleReasons defines model for AgentProfileCapabilities.StaleReasons.
+type AgentProfileCapabilitiesStaleReasons string
+
+// AgentProfileCapabilitySource defines model for AgentProfileCapabilitySource.
+type AgentProfileCapabilitySource struct {
+	DiscoveryMode  AgentProfileCapabilitySourceDiscoveryMode `json:"discoveryMode"`
+	ForceReload    bool                                      `json:"forceReload"`
+	Protocol       AgentProfileCapabilitySourceProtocol      `json:"protocol"`
+	RuntimeVersion string                                    `json:"runtimeVersion"`
+}
+
+// AgentProfileCapabilitySourceDiscoveryMode defines model for AgentProfileCapabilitySource.DiscoveryMode.
+type AgentProfileCapabilitySourceDiscoveryMode string
+
+// AgentProfileCapabilitySourceProtocol defines model for AgentProfileCapabilitySource.Protocol.
+type AgentProfileCapabilitySourceProtocol string
+
+// AgentProfileCapabilitySubject defines model for AgentProfileCapabilitySubject.
+type AgentProfileCapabilitySubject struct {
+	AuthorityContextKey      ProfileCapabilityAuthorityContextKey     `json:"authorityContextKey"`
+	ComputerId               Id                                       `json:"computerId"`
+	ContextGeneration        int64                                    `json:"contextGeneration"`
+	ObservedThroughSequence  int64                                    `json:"observedThroughSequence"`
+	ProfileFingerprint       string                                   `json:"profileFingerprint"`
+	ProfileKind              AgentProfileCapabilitySubjectProfileKind `json:"profileKind"`
+	RuntimeContextGeneration int64                                    `json:"runtimeContextGeneration"`
+	RuntimeKind              AgentProfileCapabilitySubjectRuntimeKind `json:"runtimeKind"`
+	WorkspacePath            string                                   `json:"workspacePath"`
+}
+
+// AgentProfileCapabilitySubjectProfileKind defines model for AgentProfileCapabilitySubject.ProfileKind.
+type AgentProfileCapabilitySubjectProfileKind string
+
+// AgentProfileCapabilitySubjectRuntimeKind defines model for AgentProfileCapabilitySubject.RuntimeKind.
+type AgentProfileCapabilitySubjectRuntimeKind string
+
+// AgentProfileModelCapabilities defines model for AgentProfileModelCapabilities.
+type AgentProfileModelCapabilities struct {
+	ConfiguredModelId       *string                                           `json:"configuredModelId"`
+	EffectiveDefaultModelId *string                                           `json:"effectiveDefaultModelId"`
+	Items                   []AgentProfileModelCapability                     `json:"items"`
+	SelectedAvailability    AgentProfileModelCapabilitiesSelectedAvailability `json:"selectedAvailability"`
+	SelectionMode           AgentProfileModelCapabilitiesSelectionMode        `json:"selectionMode"`
+	Truncated               bool                                              `json:"truncated"`
+	Warnings                []ProfileCapabilityWarning                        `json:"warnings"`
+}
+
+// AgentProfileModelCapabilitiesSelectedAvailability defines model for AgentProfileModelCapabilities.SelectedAvailability.
+type AgentProfileModelCapabilitiesSelectedAvailability string
+
+// AgentProfileModelCapabilitiesSelectionMode defines model for AgentProfileModelCapabilities.SelectionMode.
+type AgentProfileModelCapabilitiesSelectionMode string
+
+// AgentProfileModelCapability defines model for AgentProfileModelCapability.
+type AgentProfileModelCapability struct {
+	DefaultReasoningEffort    *string  `json:"defaultReasoningEffort,omitempty"`
+	DefaultServiceTier        *string  `json:"defaultServiceTier,omitempty"`
+	Description               *string  `json:"description,omitempty"`
+	Id                        string   `json:"id"`
+	Label                     string   `json:"label"`
+	Provider                  *string  `json:"provider,omitempty"`
+	ServiceTiers              []string `json:"serviceTiers"`
+	SupportedReasoningEfforts []string `json:"supportedReasoningEfforts"`
+	Verified                  *string  `json:"verified,omitempty"`
+}
+
+// AgentProfileSkillCapabilities defines model for AgentProfileSkillCapabilities.
+type AgentProfileSkillCapabilities struct {
+	Items     []AgentProfileSkillCapability `json:"items"`
+	Truncated bool                          `json:"truncated"`
+	Warnings  []ProfileCapabilityWarning    `json:"warnings"`
+}
+
+// AgentProfileSkillCapability defines model for AgentProfileSkillCapability.
+type AgentProfileSkillCapability struct {
+	Availability           AgentProfileSkillCapabilityAvailability             `json:"availability"`
+	Description            string                                              `json:"description"`
+	DisplayName            *string                                             `json:"displayName,omitempty"`
+	Enabled                bool                                                `json:"enabled"`
+	Id                     string                                              `json:"id"`
+	MissingDependencyCount int                                                 `json:"missingDependencyCount"`
+	MissingDependencyTypes []AgentProfileSkillCapabilityMissingDependencyTypes `json:"missingDependencyTypes"`
+	Name                   string                                              `json:"name"`
+	Scope                  AgentProfileSkillCapabilityScope                    `json:"scope"`
+	ShortDescription       *string                                             `json:"shortDescription,omitempty"`
+}
+
+// AgentProfileSkillCapabilityAvailability defines model for AgentProfileSkillCapability.Availability.
+type AgentProfileSkillCapabilityAvailability string
+
+// AgentProfileSkillCapabilityMissingDependencyTypes defines model for AgentProfileSkillCapability.MissingDependencyTypes.
+type AgentProfileSkillCapabilityMissingDependencyTypes string
+
+// AgentProfileSkillCapabilityScope defines model for AgentProfileSkillCapability.Scope.
+type AgentProfileSkillCapabilityScope string
+
 // AuthResult defines model for AuthResult.
 type AuthResult struct {
 	AccessToken  *string   `json:"accessToken,omitempty"`
@@ -1907,6 +2622,52 @@ type ComputerAgentObservationImTransportState string
 // ComputerAgentObservationState defines model for ComputerAgentObservation.State.
 type ComputerAgentObservationState string
 
+// ComputerAgentProfileCapabilityInvalidation defines model for ComputerAgentProfileCapabilityInvalidation.
+type ComputerAgentProfileCapabilityInvalidation struct {
+	AuthorityContextKey      ProfileCapabilityAuthorityContextKey                    `json:"authorityContextKey"`
+	ContextGeneration        int64                                                   `json:"contextGeneration"`
+	EventSequence            int64                                                   `json:"eventSequence"`
+	ObservedAt               Timestamp                                               `json:"observedAt"`
+	Reason                   ComputerAgentProfileCapabilityInvalidationReason        `json:"reason"`
+	RuntimeContextGeneration int64                                                   `json:"runtimeContextGeneration"`
+	SchemaVersion            ComputerAgentProfileCapabilityInvalidationSchemaVersion `json:"schemaVersion"`
+}
+
+// ComputerAgentProfileCapabilityInvalidationReason defines model for ComputerAgentProfileCapabilityInvalidation.Reason.
+type ComputerAgentProfileCapabilityInvalidationReason string
+
+// ComputerAgentProfileCapabilityInvalidationSchemaVersion defines model for ComputerAgentProfileCapabilityInvalidation.SchemaVersion.
+type ComputerAgentProfileCapabilityInvalidationSchemaVersion int
+
+// ComputerAgentProfileCapabilityResult defines model for ComputerAgentProfileCapabilityResult.
+type ComputerAgentProfileCapabilityResult struct {
+	AuthorityContextKey      ProfileCapabilityAuthorityContextKey              `json:"authorityContextKey"`
+	ContextGeneration        int64                                             `json:"contextGeneration"`
+	ErrorCode                *ComputerAgentProfileCapabilityResultErrorCode    `json:"errorCode"`
+	Models                   ComputerProfileCapabilityModelSection             `json:"models"`
+	ObservedAt               Timestamp                                         `json:"observedAt"`
+	ObservedThroughSequence  int64                                             `json:"observedThroughSequence"`
+	RuntimeContextGeneration int64                                             `json:"runtimeContextGeneration"`
+	RuntimeKind              ComputerAgentProfileCapabilityResultRuntimeKind   `json:"runtimeKind"`
+	SchemaVersion            ComputerAgentProfileCapabilityResultSchemaVersion `json:"schemaVersion"`
+	Skills                   ComputerProfileCapabilitySkillSection             `json:"skills"`
+	Source                   *AgentProfileCapabilitySource                     `json:"source"`
+	Status                   ComputerAgentProfileCapabilityResultStatus        `json:"status"`
+	Subject                  *AgentProfileCapabilitySubject                    `json:"subject"`
+}
+
+// ComputerAgentProfileCapabilityResultErrorCode defines model for ComputerAgentProfileCapabilityResult.ErrorCode.
+type ComputerAgentProfileCapabilityResultErrorCode string
+
+// ComputerAgentProfileCapabilityResultRuntimeKind defines model for ComputerAgentProfileCapabilityResult.RuntimeKind.
+type ComputerAgentProfileCapabilityResultRuntimeKind string
+
+// ComputerAgentProfileCapabilityResultSchemaVersion defines model for ComputerAgentProfileCapabilityResult.SchemaVersion.
+type ComputerAgentProfileCapabilityResultSchemaVersion int
+
+// ComputerAgentProfileCapabilityResultStatus defines model for ComputerAgentProfileCapabilityResult.Status.
+type ComputerAgentProfileCapabilityResultStatus string
+
 // ComputerAgentSessionRefreshRequest defines model for ComputerAgentSessionRefreshRequest.
 type ComputerAgentSessionRefreshRequest struct {
 	AssignmentEpoch   Id    `json:"assignmentEpoch"`
@@ -1955,6 +2716,43 @@ type ComputerAssignmentSnapshot struct {
 // ComputerAssignmentSnapshotSchemaVersion defines model for ComputerAssignmentSnapshot.SchemaVersion.
 type ComputerAssignmentSnapshotSchemaVersion int
 
+// ComputerAssignmentSnapshotResponse defines model for ComputerAssignmentSnapshotResponse.
+type ComputerAssignmentSnapshotResponse struct {
+	union json.RawMessage
+}
+
+// ComputerAssignmentSnapshotV2 defines model for ComputerAssignmentSnapshotV2.
+type ComputerAssignmentSnapshotV2 struct {
+	Agents        []ComputerAssignmentV2                    `json:"agents"`
+	ComputerId    Id                                        `json:"computerId"`
+	Epoch         Id                                        `json:"epoch"`
+	Revision      int64                                     `json:"revision"`
+	SchemaVersion ComputerAssignmentSnapshotV2SchemaVersion `json:"schemaVersion"`
+	SnapshotHash  string                                    `json:"snapshotHash"`
+}
+
+// ComputerAssignmentSnapshotV2SchemaVersion defines model for ComputerAssignmentSnapshotV2.SchemaVersion.
+type ComputerAssignmentSnapshotV2SchemaVersion int
+
+// ComputerAssignmentV2 defines model for ComputerAssignmentV2.
+type ComputerAssignmentV2 struct {
+	AgentId                  Id                                `json:"agentId"`
+	ConfigGeneration         int64                             `json:"configGeneration"`
+	CredentialVersion        int64                             `json:"credentialVersion"`
+	CurrentLaunch            *ComputerAssignmentLaunchFence    `json:"currentLaunch"`
+	DesiredState             ComputerAssignmentV2DesiredState  `json:"desiredState"`
+	ProfileCapabilityRefresh *ComputerProfileCapabilityRefresh `json:"profileCapabilityRefresh"`
+	ReplyPolicy              ComputerAssignmentV2ReplyPolicy   `json:"replyPolicy"`
+	Runtime                  RuntimeConfig                     `json:"runtime"`
+	ServerId                 Id                                `json:"serverId"`
+}
+
+// ComputerAssignmentV2DesiredState defines model for ComputerAssignmentV2.DesiredState.
+type ComputerAssignmentV2DesiredState string
+
+// ComputerAssignmentV2ReplyPolicy defines model for ComputerAssignmentV2.ReplyPolicy.
+type ComputerAssignmentV2ReplyPolicy string
+
 // ComputerEnrollmentClaim defines model for ComputerEnrollmentClaim.
 type ComputerEnrollmentClaim struct {
 	ComputerId        Id        `json:"computerId"`
@@ -1981,15 +2779,23 @@ type ComputerEnrollmentClaimRequestOsType string
 
 // ComputerHeartbeat defines model for ComputerHeartbeat.
 type ComputerHeartbeat struct {
-	Agents             []ComputerHeartbeatAgent   `json:"agents"`
-	AssignmentEpoch    Id                         `json:"assignmentEpoch"`
-	AssignmentRevision int64                      `json:"assignmentRevision"`
-	DaemonBuildId      string                     `json:"daemonBuildId"`
-	DaemonVersion      string                     `json:"daemonVersion"`
-	HeartbeatId        Id                         `json:"heartbeatId"`
-	Reconcile          ComputerHeartbeatReconcile `json:"reconcile"`
-	TatState           ComputerHeartbeatTatState  `json:"tatState"`
+	Agents                    []ComputerHeartbeatAgent                      `json:"agents"`
+	AssignmentEpoch           Id                                            `json:"assignmentEpoch"`
+	AssignmentRevision        int64                                         `json:"assignmentRevision"`
+	AssignmentVersion         *ComputerHeartbeatAssignmentVersion           `json:"assignmentVersion,omitempty"`
+	DaemonBuildId             string                                        `json:"daemonBuildId"`
+	DaemonVersion             string                                        `json:"daemonVersion"`
+	HeartbeatId               Id                                            `json:"heartbeatId"`
+	ProfileCapabilityVersions *[]ComputerHeartbeatProfileCapabilityVersions `json:"profileCapabilityVersions,omitempty"`
+	Reconcile                 ComputerHeartbeatReconcile                    `json:"reconcile"`
+	TatState                  ComputerHeartbeatTatState                     `json:"tatState"`
 }
+
+// ComputerHeartbeatAssignmentVersion defines model for ComputerHeartbeat.AssignmentVersion.
+type ComputerHeartbeatAssignmentVersion int
+
+// ComputerHeartbeatProfileCapabilityVersions defines model for ComputerHeartbeat.ProfileCapabilityVersions.
+type ComputerHeartbeatProfileCapabilityVersions int
 
 // ComputerHeartbeatTatState defines model for ComputerHeartbeat.TatState.
 type ComputerHeartbeatTatState string
@@ -2085,6 +2891,64 @@ type ComputerPreflightRequest struct {
 		TatRegion       string  `json:"tatRegion"`
 	} `json:"replacement,omitempty"`
 }
+
+// ComputerProfileCapabilityModelSection defines model for ComputerProfileCapabilityModelSection.
+type ComputerProfileCapabilityModelSection struct {
+	EffectiveDefaultModelId *string                                         `json:"effectiveDefaultModelId"`
+	ErrorCode               *ComputerProfileCapabilityModelSectionErrorCode `json:"errorCode"`
+	Items                   []AgentProfileModelCapability                   `json:"items"`
+	Status                  ComputerProfileCapabilityModelSectionStatus     `json:"status"`
+	Truncated               bool                                            `json:"truncated"`
+	Warnings                []ProfileCapabilityWarning                      `json:"warnings"`
+}
+
+// ComputerProfileCapabilityModelSectionErrorCode defines model for ComputerProfileCapabilityModelSection.ErrorCode.
+type ComputerProfileCapabilityModelSectionErrorCode string
+
+// ComputerProfileCapabilityModelSectionStatus defines model for ComputerProfileCapabilityModelSection.Status.
+type ComputerProfileCapabilityModelSectionStatus string
+
+// ComputerProfileCapabilityRefresh defines model for ComputerProfileCapabilityRefresh.
+type ComputerProfileCapabilityRefresh struct {
+	AuthorityContextKey   ProfileCapabilityAuthorityContextKey          `json:"authorityContextKey"`
+	ContextGeneration     int64                                         `json:"contextGeneration"`
+	ForceReload           bool                                          `json:"forceReload"`
+	InvalidationWatermark int64                                         `json:"invalidationWatermark"`
+	RefreshId             Id                                            `json:"refreshId"`
+	RequestedAt           Timestamp                                     `json:"requestedAt"`
+	RuntimeKind           ComputerProfileCapabilityRefreshRuntimeKind   `json:"runtimeKind"`
+	SchemaVersion         ComputerProfileCapabilityRefreshSchemaVersion `json:"schemaVersion"`
+}
+
+// ComputerProfileCapabilityRefreshRuntimeKind defines model for ComputerProfileCapabilityRefresh.RuntimeKind.
+type ComputerProfileCapabilityRefreshRuntimeKind string
+
+// ComputerProfileCapabilityRefreshSchemaVersion defines model for ComputerProfileCapabilityRefresh.SchemaVersion.
+type ComputerProfileCapabilityRefreshSchemaVersion int
+
+// ComputerProfileCapabilitySkillSection defines model for ComputerProfileCapabilitySkillSection.
+type ComputerProfileCapabilitySkillSection struct {
+	ErrorCode *ComputerProfileCapabilitySkillSectionErrorCode `json:"errorCode"`
+	Items     []AgentProfileSkillCapability                   `json:"items"`
+	Status    ComputerProfileCapabilitySkillSectionStatus     `json:"status"`
+	Truncated bool                                            `json:"truncated"`
+	Warnings  []ProfileCapabilityWarning                      `json:"warnings"`
+}
+
+// ComputerProfileCapabilitySkillSectionErrorCode defines model for ComputerProfileCapabilitySkillSection.ErrorCode.
+type ComputerProfileCapabilitySkillSectionErrorCode string
+
+// ComputerProfileCapabilitySkillSectionStatus defines model for ComputerProfileCapabilitySkillSection.Status.
+type ComputerProfileCapabilitySkillSectionStatus string
+
+// ComputerProfileCapabilitySubmissionResult defines model for ComputerProfileCapabilitySubmissionResult.
+type ComputerProfileCapabilitySubmissionResult struct {
+	Accepted bool                                            `json:"accepted"`
+	Reason   ComputerProfileCapabilitySubmissionResultReason `json:"reason"`
+}
+
+// ComputerProfileCapabilitySubmissionResultReason defines model for ComputerProfileCapabilitySubmissionResult.Reason.
+type ComputerProfileCapabilitySubmissionResultReason string
 
 // ComputerRuntimeCredential defines model for ComputerRuntimeCredential.
 type ComputerRuntimeCredential struct {
@@ -2422,6 +3286,18 @@ type OperationService string
 
 // OperationState defines model for Operation.State.
 type OperationState string
+
+// ProfileCapabilityAuthorityContextKey defines model for ProfileCapabilityAuthorityContextKey.
+type ProfileCapabilityAuthorityContextKey = string
+
+// ProfileCapabilityWarning defines model for ProfileCapabilityWarning.
+type ProfileCapabilityWarning struct {
+	Code    ProfileCapabilityWarningCode `json:"code"`
+	Message *string                      `json:"message,omitempty"`
+}
+
+// ProfileCapabilityWarningCode defines model for ProfileCapabilityWarning.Code.
+type ProfileCapabilityWarningCode string
 
 // RefreshRequest defines model for RefreshRequest.
 type RefreshRequest struct {
@@ -3096,6 +3972,11 @@ type DeployAgentParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// RefreshAgentProfileCapabilitiesParams defines parameters for RefreshAgentProfileCapabilities.
+type RefreshAgentProfileCapabilitiesParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // RestartAgentParams defines parameters for RestartAgent.
 type RestartAgentParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -3280,6 +4161,12 @@ type RefreshComputerAgentSessionJSONRequestBody = ComputerAgentSessionRefreshReq
 // PutComputerAgentObservationJSONRequestBody defines body for PutComputerAgentObservation for application/json ContentType.
 type PutComputerAgentObservationJSONRequestBody = ComputerAgentObservation
 
+// PutComputerAgentProfileCapabilityInvalidationJSONRequestBody defines body for PutComputerAgentProfileCapabilityInvalidation for application/json ContentType.
+type PutComputerAgentProfileCapabilityInvalidationJSONRequestBody = ComputerAgentProfileCapabilityInvalidation
+
+// PutComputerAgentProfileCapabilityResultJSONRequestBody defines body for PutComputerAgentProfileCapabilityResult for application/json ContentType.
+type PutComputerAgentProfileCapabilityResultJSONRequestBody = ComputerAgentProfileCapabilityResult
+
 // ClaimComputerEnrollmentJSONRequestBody defines body for ClaimComputerEnrollment for application/json ContentType.
 type ClaimComputerEnrollmentJSONRequestBody = ComputerEnrollmentClaimRequest
 
@@ -3376,6 +4263,68 @@ type CreateTaskJSONRequestBody = CreateTaskRequest
 // UpdateTaskJSONRequestBody defines body for UpdateTask for application/json ContentType.
 type UpdateTaskJSONRequestBody = UpdateTaskRequest
 
+// AsComputerAssignmentSnapshot returns the union data inside the ComputerAssignmentSnapshotResponse as a ComputerAssignmentSnapshot
+func (t ComputerAssignmentSnapshotResponse) AsComputerAssignmentSnapshot() (ComputerAssignmentSnapshot, error) {
+	var body ComputerAssignmentSnapshot
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromComputerAssignmentSnapshot overwrites any union data inside the ComputerAssignmentSnapshotResponse as the provided ComputerAssignmentSnapshot
+func (t *ComputerAssignmentSnapshotResponse) FromComputerAssignmentSnapshot(v ComputerAssignmentSnapshot) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeComputerAssignmentSnapshot performs a merge with any union data inside the ComputerAssignmentSnapshotResponse, using the provided ComputerAssignmentSnapshot
+func (t *ComputerAssignmentSnapshotResponse) MergeComputerAssignmentSnapshot(v ComputerAssignmentSnapshot) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsComputerAssignmentSnapshotV2 returns the union data inside the ComputerAssignmentSnapshotResponse as a ComputerAssignmentSnapshotV2
+func (t ComputerAssignmentSnapshotResponse) AsComputerAssignmentSnapshotV2() (ComputerAssignmentSnapshotV2, error) {
+	var body ComputerAssignmentSnapshotV2
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromComputerAssignmentSnapshotV2 overwrites any union data inside the ComputerAssignmentSnapshotResponse as the provided ComputerAssignmentSnapshotV2
+func (t *ComputerAssignmentSnapshotResponse) FromComputerAssignmentSnapshotV2(v ComputerAssignmentSnapshotV2) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeComputerAssignmentSnapshotV2 performs a merge with any union data inside the ComputerAssignmentSnapshotResponse, using the provided ComputerAssignmentSnapshotV2
+func (t *ComputerAssignmentSnapshotResponse) MergeComputerAssignmentSnapshotV2(v ComputerAssignmentSnapshotV2) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ComputerAssignmentSnapshotResponse) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *ComputerAssignmentSnapshotResponse) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// 登录
@@ -3411,6 +4360,12 @@ type ServerInterface interface {
 	// 幂等提交 Agent launch 的观测状态
 	// (PUT /computer/agents/{agentId}/observations/{observationId})
 	PutComputerAgentObservation(w http.ResponseWriter, r *http.Request, agentId AgentId, observationId Id)
+	// 幂等标记 Agent Profile 本机运行能力可能变化
+	// (PUT /computer/agents/{agentId}/profile-capability-invalidations/{eventId})
+	PutComputerAgentProfileCapabilityInvalidation(w http.ResponseWriter, r *http.Request, agentId AgentId, eventId Id)
+	// 幂等提交 Agent Profile capability refresh 终态结果
+	// (PUT /computer/agents/{agentId}/profile-capability-results/{operationId})
+	PutComputerAgentProfileCapabilityResult(w http.ResponseWriter, r *http.Request, agentId AgentId, operationId OperationId)
 	// 拉取当前 Computer 的权威 Agent Assignment Snapshot
 	// (GET /computer/assignments)
 	GetComputerAssignments(w http.ResponseWriter, r *http.Request, params GetComputerAssignmentsParams)
@@ -3537,6 +4492,12 @@ type ServerInterface interface {
 	// 将 Agent 部署目标写入 Vela Assignment
 	// (POST /servers/{serverId}/agents/{agentId}/deploy)
 	DeployAgent(w http.ResponseWriter, r *http.Request, serverId ServerId, agentId AgentId, params DeployAgentParams)
+	// 读取 Agent Profile 最近一次运行能力快照
+	// (GET /servers/{serverId}/agents/{agentId}/profile-capabilities)
+	GetAgentProfileCapabilities(w http.ResponseWriter, r *http.Request, serverId ServerId, agentId AgentId)
+	// 显式刷新 Agent Profile 运行能力
+	// (POST /servers/{serverId}/agents/{agentId}/profile-capabilities/refresh)
+	RefreshAgentProfileCapabilities(w http.ResponseWriter, r *http.Request, serverId ServerId, agentId AgentId, params RefreshAgentProfileCapabilitiesParams)
 	// 通过新配置代次重启 Agent
 	// (POST /servers/{serverId}/agents/{agentId}/restart)
 	RestartAgent(w http.ResponseWriter, r *http.Request, serverId ServerId, agentId AgentId, params RestartAgentParams)
@@ -4033,6 +4994,86 @@ func (siw *ServerInterfaceWrapper) PutComputerAgentObservation(w http.ResponseWr
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutComputerAgentObservation(w, r, agentId, observationId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutComputerAgentProfileCapabilityInvalidation operation middleware
+func (siw *ServerInterfaceWrapper) PutComputerAgentProfileCapabilityInvalidation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "agentId" -------------
+	var agentId AgentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "agentId", r.PathValue("agentId"), &agentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "agentId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", r.PathValue("eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, ComputerBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutComputerAgentProfileCapabilityInvalidation(w, r, agentId, eventId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutComputerAgentProfileCapabilityResult operation middleware
+func (siw *ServerInterfaceWrapper) PutComputerAgentProfileCapabilityResult(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "agentId" -------------
+	var agentId AgentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "agentId", r.PathValue("agentId"), &agentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "agentId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "operationId" -------------
+	var operationId OperationId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operationId", r.PathValue("operationId"), &operationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "operationId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, ComputerBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutComputerAgentProfileCapabilityResult(w, r, agentId, operationId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6040,6 +7081,114 @@ func (siw *ServerInterfaceWrapper) DeployAgent(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeployAgent(w, r, serverId, agentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAgentProfileCapabilities operation middleware
+func (siw *ServerInterfaceWrapper) GetAgentProfileCapabilities(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "agentId" -------------
+	var agentId AgentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "agentId", r.PathValue("agentId"), &agentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "agentId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAgentProfileCapabilities(w, r, serverId, agentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RefreshAgentProfileCapabilities operation middleware
+func (siw *ServerInterfaceWrapper) RefreshAgentProfileCapabilities(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "agentId" -------------
+	var agentId AgentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "agentId", r.PathValue("agentId"), &agentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "agentId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RefreshAgentProfileCapabilitiesParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RefreshAgentProfileCapabilities(w, r, serverId, agentId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8878,6 +10027,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/computer/agents/{agentId}/launches", wrapper.CreateComputerAgentLaunch)
 	m.HandleFunc("POST "+options.BaseURL+"/computer/agents/{agentId}/launches/{launchId}/session", wrapper.RefreshComputerAgentSession)
 	m.HandleFunc("PUT "+options.BaseURL+"/computer/agents/{agentId}/observations/{observationId}", wrapper.PutComputerAgentObservation)
+	m.HandleFunc("PUT "+options.BaseURL+"/computer/agents/{agentId}/profile-capability-invalidations/{eventId}", wrapper.PutComputerAgentProfileCapabilityInvalidation)
+	m.HandleFunc("PUT "+options.BaseURL+"/computer/agents/{agentId}/profile-capability-results/{operationId}", wrapper.PutComputerAgentProfileCapabilityResult)
 	m.HandleFunc("GET "+options.BaseURL+"/computer/assignments", wrapper.GetComputerAssignments)
 	m.HandleFunc("POST "+options.BaseURL+"/computer/credential:rotate", wrapper.RotateComputerCredential)
 	m.HandleFunc("POST "+options.BaseURL+"/computer/enrollments:claim", wrapper.ClaimComputerEnrollment)
@@ -8920,6 +10071,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("PATCH "+options.BaseURL+"/servers/{serverId}/agents/{agentId}", wrapper.UpdateAgent)
 	m.HandleFunc("POST "+options.BaseURL+"/servers/{serverId}/agents/{agentId}/credentials/rotate", wrapper.RotateAgentRuntimeCredential)
 	m.HandleFunc("POST "+options.BaseURL+"/servers/{serverId}/agents/{agentId}/deploy", wrapper.DeployAgent)
+	m.HandleFunc("GET "+options.BaseURL+"/servers/{serverId}/agents/{agentId}/profile-capabilities", wrapper.GetAgentProfileCapabilities)
+	m.HandleFunc("POST "+options.BaseURL+"/servers/{serverId}/agents/{agentId}/profile-capabilities/refresh", wrapper.RefreshAgentProfileCapabilities)
 	m.HandleFunc("POST "+options.BaseURL+"/servers/{serverId}/agents/{agentId}/restart", wrapper.RestartAgent)
 	m.HandleFunc("POST "+options.BaseURL+"/servers/{serverId}/agents/{agentId}/start", wrapper.StartAgent)
 	m.HandleFunc("POST "+options.BaseURL+"/servers/{serverId}/agents/{agentId}/stop", wrapper.StopAgent)
@@ -9412,6 +10565,72 @@ func (response PutComputerAgentObservationdefaultJSONResponse) VisitPutComputerA
 	return json.NewEncoder(w).Encode(response.Body)
 }
 
+type PutComputerAgentProfileCapabilityInvalidationRequestObject struct {
+	AgentId AgentId `json:"agentId"`
+	EventId Id      `json:"eventId"`
+	Body    *PutComputerAgentProfileCapabilityInvalidationJSONRequestBody
+}
+
+type PutComputerAgentProfileCapabilityInvalidationResponseObject interface {
+	VisitPutComputerAgentProfileCapabilityInvalidationResponse(w http.ResponseWriter) error
+}
+
+type PutComputerAgentProfileCapabilityInvalidation200JSONResponse ComputerProfileCapabilitySubmissionResult
+
+func (response PutComputerAgentProfileCapabilityInvalidation200JSONResponse) VisitPutComputerAgentProfileCapabilityInvalidationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PutComputerAgentProfileCapabilityInvalidationdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response PutComputerAgentProfileCapabilityInvalidationdefaultJSONResponse) VisitPutComputerAgentProfileCapabilityInvalidationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type PutComputerAgentProfileCapabilityResultRequestObject struct {
+	AgentId     AgentId     `json:"agentId"`
+	OperationId OperationId `json:"operationId"`
+	Body        *PutComputerAgentProfileCapabilityResultJSONRequestBody
+}
+
+type PutComputerAgentProfileCapabilityResultResponseObject interface {
+	VisitPutComputerAgentProfileCapabilityResultResponse(w http.ResponseWriter) error
+}
+
+type PutComputerAgentProfileCapabilityResult200JSONResponse ComputerProfileCapabilitySubmissionResult
+
+func (response PutComputerAgentProfileCapabilityResult200JSONResponse) VisitPutComputerAgentProfileCapabilityResultResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PutComputerAgentProfileCapabilityResultdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response PutComputerAgentProfileCapabilityResultdefaultJSONResponse) VisitPutComputerAgentProfileCapabilityResultResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
 type GetComputerAssignmentsRequestObject struct {
 	Params GetComputerAssignmentsParams
 }
@@ -9420,7 +10639,7 @@ type GetComputerAssignmentsResponseObject interface {
 	VisitGetComputerAssignmentsResponse(w http.ResponseWriter) error
 }
 
-type GetComputerAssignments200JSONResponse ComputerAssignmentSnapshot
+type GetComputerAssignments200JSONResponse ComputerAssignmentSnapshotResponse
 
 func (response GetComputerAssignments200JSONResponse) VisitGetComputerAssignmentsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
@@ -10872,6 +12091,71 @@ type DeployAgentdefaultJSONResponse struct {
 }
 
 func (response DeployAgentdefaultJSONResponse) VisitDeployAgentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type GetAgentProfileCapabilitiesRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+	AgentId  AgentId  `json:"agentId"`
+}
+
+type GetAgentProfileCapabilitiesResponseObject interface {
+	VisitGetAgentProfileCapabilitiesResponse(w http.ResponseWriter) error
+}
+
+type GetAgentProfileCapabilities200JSONResponse AgentProfileCapabilities
+
+func (response GetAgentProfileCapabilities200JSONResponse) VisitGetAgentProfileCapabilitiesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetAgentProfileCapabilitiesdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response GetAgentProfileCapabilitiesdefaultJSONResponse) VisitGetAgentProfileCapabilitiesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type RefreshAgentProfileCapabilitiesRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+	AgentId  AgentId  `json:"agentId"`
+	Params   RefreshAgentProfileCapabilitiesParams
+}
+
+type RefreshAgentProfileCapabilitiesResponseObject interface {
+	VisitRefreshAgentProfileCapabilitiesResponse(w http.ResponseWriter) error
+}
+
+type RefreshAgentProfileCapabilities202JSONResponse Operation
+
+func (response RefreshAgentProfileCapabilities202JSONResponse) VisitRefreshAgentProfileCapabilitiesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RefreshAgentProfileCapabilitiesdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response RefreshAgentProfileCapabilitiesdefaultJSONResponse) VisitRefreshAgentProfileCapabilitiesResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
 	w.WriteHeader(response.StatusCode)
@@ -12509,6 +13793,12 @@ type StrictServerInterface interface {
 	// 幂等提交 Agent launch 的观测状态
 	// (PUT /computer/agents/{agentId}/observations/{observationId})
 	PutComputerAgentObservation(ctx context.Context, request PutComputerAgentObservationRequestObject) (PutComputerAgentObservationResponseObject, error)
+	// 幂等标记 Agent Profile 本机运行能力可能变化
+	// (PUT /computer/agents/{agentId}/profile-capability-invalidations/{eventId})
+	PutComputerAgentProfileCapabilityInvalidation(ctx context.Context, request PutComputerAgentProfileCapabilityInvalidationRequestObject) (PutComputerAgentProfileCapabilityInvalidationResponseObject, error)
+	// 幂等提交 Agent Profile capability refresh 终态结果
+	// (PUT /computer/agents/{agentId}/profile-capability-results/{operationId})
+	PutComputerAgentProfileCapabilityResult(ctx context.Context, request PutComputerAgentProfileCapabilityResultRequestObject) (PutComputerAgentProfileCapabilityResultResponseObject, error)
 	// 拉取当前 Computer 的权威 Agent Assignment Snapshot
 	// (GET /computer/assignments)
 	GetComputerAssignments(ctx context.Context, request GetComputerAssignmentsRequestObject) (GetComputerAssignmentsResponseObject, error)
@@ -12635,6 +13925,12 @@ type StrictServerInterface interface {
 	// 将 Agent 部署目标写入 Vela Assignment
 	// (POST /servers/{serverId}/agents/{agentId}/deploy)
 	DeployAgent(ctx context.Context, request DeployAgentRequestObject) (DeployAgentResponseObject, error)
+	// 读取 Agent Profile 最近一次运行能力快照
+	// (GET /servers/{serverId}/agents/{agentId}/profile-capabilities)
+	GetAgentProfileCapabilities(ctx context.Context, request GetAgentProfileCapabilitiesRequestObject) (GetAgentProfileCapabilitiesResponseObject, error)
+	// 显式刷新 Agent Profile 运行能力
+	// (POST /servers/{serverId}/agents/{agentId}/profile-capabilities/refresh)
+	RefreshAgentProfileCapabilities(ctx context.Context, request RefreshAgentProfileCapabilitiesRequestObject) (RefreshAgentProfileCapabilitiesResponseObject, error)
 	// 通过新配置代次重启 Agent
 	// (POST /servers/{serverId}/agents/{agentId}/restart)
 	RestartAgent(ctx context.Context, request RestartAgentRequestObject) (RestartAgentResponseObject, error)
@@ -13124,6 +14420,74 @@ func (sh *strictHandler) PutComputerAgentObservation(w http.ResponseWriter, r *h
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(PutComputerAgentObservationResponseObject); ok {
 		if err := validResponse.VisitPutComputerAgentObservationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PutComputerAgentProfileCapabilityInvalidation operation middleware
+func (sh *strictHandler) PutComputerAgentProfileCapabilityInvalidation(w http.ResponseWriter, r *http.Request, agentId AgentId, eventId Id) {
+	var request PutComputerAgentProfileCapabilityInvalidationRequestObject
+
+	request.AgentId = agentId
+	request.EventId = eventId
+
+	var body PutComputerAgentProfileCapabilityInvalidationJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PutComputerAgentProfileCapabilityInvalidation(ctx, request.(PutComputerAgentProfileCapabilityInvalidationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PutComputerAgentProfileCapabilityInvalidation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PutComputerAgentProfileCapabilityInvalidationResponseObject); ok {
+		if err := validResponse.VisitPutComputerAgentProfileCapabilityInvalidationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PutComputerAgentProfileCapabilityResult operation middleware
+func (sh *strictHandler) PutComputerAgentProfileCapabilityResult(w http.ResponseWriter, r *http.Request, agentId AgentId, operationId OperationId) {
+	var request PutComputerAgentProfileCapabilityResultRequestObject
+
+	request.AgentId = agentId
+	request.OperationId = operationId
+
+	var body PutComputerAgentProfileCapabilityResultJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PutComputerAgentProfileCapabilityResult(ctx, request.(PutComputerAgentProfileCapabilityResultRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PutComputerAgentProfileCapabilityResult")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PutComputerAgentProfileCapabilityResultResponseObject); ok {
+		if err := validResponse.VisitPutComputerAgentProfileCapabilityResultResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -14343,6 +15707,61 @@ func (sh *strictHandler) DeployAgent(w http.ResponseWriter, r *http.Request, ser
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DeployAgentResponseObject); ok {
 		if err := validResponse.VisitDeployAgentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAgentProfileCapabilities operation middleware
+func (sh *strictHandler) GetAgentProfileCapabilities(w http.ResponseWriter, r *http.Request, serverId ServerId, agentId AgentId) {
+	var request GetAgentProfileCapabilitiesRequestObject
+
+	request.ServerId = serverId
+	request.AgentId = agentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAgentProfileCapabilities(ctx, request.(GetAgentProfileCapabilitiesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAgentProfileCapabilities")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAgentProfileCapabilitiesResponseObject); ok {
+		if err := validResponse.VisitGetAgentProfileCapabilitiesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RefreshAgentProfileCapabilities operation middleware
+func (sh *strictHandler) RefreshAgentProfileCapabilities(w http.ResponseWriter, r *http.Request, serverId ServerId, agentId AgentId, params RefreshAgentProfileCapabilitiesParams) {
+	var request RefreshAgentProfileCapabilitiesRequestObject
+
+	request.ServerId = serverId
+	request.AgentId = agentId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RefreshAgentProfileCapabilities(ctx, request.(RefreshAgentProfileCapabilitiesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RefreshAgentProfileCapabilities")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RefreshAgentProfileCapabilitiesResponseObject); ok {
+		if err := validResponse.VisitRefreshAgentProfileCapabilitiesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -15721,291 +17140,331 @@ func (sh *strictHandler) UpdateTask(w http.ResponseWriter, r *http.Request, serv
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
+	"AAAA///axOyQ/gQCAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

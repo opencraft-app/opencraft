@@ -89,6 +89,53 @@ func TestAssignmentServiceReturnsCanonicalFullSnapshotAndNoChange(t *testing.T) 
 	}
 }
 
+func TestAssignmentServiceReturnsCanonicalV2CapabilityCommand(t *testing.T) {
+	requestedAt := time.Date(2026, 8, 17, 20, 0, 0, 0, time.UTC)
+	repository := &fakeAssignmentRepository{snapshot: computercontrolport.AssignmentSnapshot{
+		ComputerID: "01989c24-7540-7f12-a27b-c83243215dd5",
+		Epoch:      "01989c24-7540-7f12-a27b-c83243215dd7",
+		Revision:   5,
+		Agents: []computercontrolport.Assignment{{
+			AgentID:           "01989c24-7540-7f12-a27b-c83243215dd8",
+			ServerID:          "01989c24-7540-7f12-a27b-c83243215dd3",
+			DesiredState:      "stopped",
+			ConfigGeneration:  7,
+			CredentialVersion: 2,
+			RuntimeKind:       "codex",
+			ReplyPolicy:       "mention_and_dm",
+			ProfileCapabilityRefresh: &computercontrolport.ProfileCapabilityRefresh{
+				RefreshID:             "01989c24-7540-7f12-a27b-c83243215dd9",
+				ContextGeneration:     7,
+				AuthorityContextKey:   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+				RuntimeKind:           "codex",
+				InvalidationWatermark: 3,
+				ForceReload:           true,
+				RequestedAt:           requestedAt,
+			},
+		}},
+	}}
+	service, err := NewAssignmentService(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Get(
+		context.Background(),
+		"01989c24-7540-7f12-a27b-c83243215dd3",
+		repository.snapshot.ComputerID,
+		AssignmentQuery{SchemaVersion: 2, ForceFull: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical := `{"agents":[{"agentId":"01989c24-7540-7f12-a27b-c83243215dd8","configGeneration":7,"credentialVersion":2,"currentLaunch":null,"desiredState":"stopped","profileCapabilityRefresh":{"authorityContextKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","contextGeneration":7,"forceReload":true,"invalidationWatermark":3,"refreshId":"01989c24-7540-7f12-a27b-c83243215dd9","requestedAt":"2026-08-17T20:00:00Z","runtimeKind":"codex","schemaVersion":1},"replyPolicy":"mention_and_dm","runtime":{"kind":"codex","model":null},"serverId":"01989c24-7540-7f12-a27b-c83243215dd3"}],"computerId":"01989c24-7540-7f12-a27b-c83243215dd5","epoch":"01989c24-7540-7f12-a27b-c83243215dd7","revision":5,"schemaVersion":2}`
+	digest := sha256.Sum256([]byte(canonical))
+	wantHash := base64.RawURLEncoding.EncodeToString(digest[:])
+	if result.Snapshot == nil || result.Snapshot.SchemaVersion != 2 ||
+		result.Snapshot.SnapshotHash != wantHash {
+		t.Fatalf("v2 snapshot = %#v, want hash %q", result.Snapshot, wantHash)
+	}
+}
+
 func TestAssignmentServiceLongPollReturnsChangedSnapshot(t *testing.T) {
 	first := computercontrolport.AssignmentSnapshot{
 		ComputerID: "01989c24-7540-7f12-a27b-c83243215dd5",

@@ -421,6 +421,7 @@ func (handler *ComputerControlHandler) GetComputerAssignments(
 		)
 	}
 	query := appcomputercontrol.AssignmentQuery{
+		SchemaVersion: int(request.Params.XVelaAssignmentVersion),
 		SinceRevision: request.Params.SinceRevision,
 		WaitSeconds:   25,
 	}
@@ -452,11 +453,28 @@ func (handler *ComputerControlHandler) GetComputerAssignments(
 	if result.Snapshot == nil {
 		return nil, invalidComputerControlData(nil)
 	}
-	body, err := assignmentSnapshotDTO(*result.Snapshot)
-	if err != nil {
-		return nil, err
+	var response openapi.ComputerAssignmentSnapshotResponse
+	switch result.Snapshot.SchemaVersion {
+	case 1:
+		body, err := assignmentSnapshotDTO(*result.Snapshot)
+		if err != nil {
+			return nil, err
+		}
+		if err := response.FromComputerAssignmentSnapshot(body); err != nil {
+			return nil, invalidComputerControlData(err)
+		}
+	case 2:
+		body, err := assignmentSnapshotV2DTO(*result.Snapshot)
+		if err != nil {
+			return nil, err
+		}
+		if err := response.FromComputerAssignmentSnapshotV2(body); err != nil {
+			return nil, invalidComputerControlData(err)
+		}
+	default:
+		return nil, invalidComputerControlData(nil)
 	}
-	return openapi.GetComputerAssignments200JSONResponse(body), nil
+	return openapi.GetComputerAssignments200JSONResponse(response), nil
 }
 
 // NewComputerControlRoutes registers only operations implemented by the
@@ -648,6 +666,69 @@ func assignmentSnapshotDTO(
 		Epoch:         epoch,
 		Revision:      value.Revision,
 		SnapshotHash:  value.SnapshotHash,
+		Agents:        agents,
+	}, nil
+}
+
+func assignmentSnapshotV2DTO(
+	value appcomputercontrol.AssignmentSnapshot,
+) (openapi.ComputerAssignmentSnapshotV2, error) {
+	baseValue := value
+	baseValue.SchemaVersion = 1
+	base, err := assignmentSnapshotDTO(baseValue)
+	if err != nil {
+		return openapi.ComputerAssignmentSnapshotV2{}, err
+	}
+	agents := make([]openapi.ComputerAssignmentV2, 0, len(base.Agents))
+	for index, item := range base.Agents {
+		desired := openapi.ComputerAssignmentV2DesiredState(item.DesiredState)
+		replyPolicy := openapi.ComputerAssignmentV2ReplyPolicy(item.ReplyPolicy)
+		if !desired.Valid() || !replyPolicy.Valid() {
+			return openapi.ComputerAssignmentSnapshotV2{}, invalidComputerControlData(nil)
+		}
+		assignment := openapi.ComputerAssignmentV2{
+			AgentId:           item.AgentId,
+			ServerId:          item.ServerId,
+			DesiredState:      desired,
+			ConfigGeneration:  item.ConfigGeneration,
+			CredentialVersion: item.CredentialVersion,
+			CurrentLaunch:     item.CurrentLaunch,
+			Runtime:           item.Runtime,
+			ReplyPolicy:       replyPolicy,
+		}
+		refresh := value.Agents[index].ProfileCapabilityRefresh
+		if refresh != nil {
+			refreshID, err := uuid.Parse(refresh.RefreshID)
+			if err != nil || refreshID == uuid.Nil {
+				return openapi.ComputerAssignmentSnapshotV2{}, invalidComputerControlData(err)
+			}
+			runtimeKind := openapi.ComputerProfileCapabilityRefreshRuntimeKind(
+				refresh.RuntimeKind,
+			)
+			if !runtimeKind.Valid() {
+				return openapi.ComputerAssignmentSnapshotV2{}, invalidComputerControlData(nil)
+			}
+			assignment.ProfileCapabilityRefresh = &openapi.ComputerProfileCapabilityRefresh{
+				SchemaVersion:     openapi.ComputerProfileCapabilityRefreshSchemaVersionN1,
+				RefreshId:         refreshID,
+				ContextGeneration: refresh.ContextGeneration,
+				AuthorityContextKey: openapi.ProfileCapabilityAuthorityContextKey(
+					refresh.AuthorityContextKey,
+				),
+				RuntimeKind:           runtimeKind,
+				InvalidationWatermark: refresh.InvalidationWatermark,
+				ForceReload:           refresh.ForceReload,
+				RequestedAt:           refresh.RequestedAt.UTC(),
+			}
+		}
+		agents = append(agents, assignment)
+	}
+	return openapi.ComputerAssignmentSnapshotV2{
+		SchemaVersion: openapi.ComputerAssignmentSnapshotV2SchemaVersionN2,
+		ComputerId:    base.ComputerId,
+		Epoch:         base.Epoch,
+		Revision:      base.Revision,
+		SnapshotHash:  base.SnapshotHash,
 		Agents:        agents,
 	}, nil
 }
