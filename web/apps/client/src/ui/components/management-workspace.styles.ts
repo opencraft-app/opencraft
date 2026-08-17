@@ -52,7 +52,7 @@ export const styles = StyleSheet.create((theme) => ({
     borderBottomWidth: theme.semantic.stroke.hairline,
     flexDirection: "row",
     gap: theme.spacing.sm,
-    minHeight: theme.recipes.managementWorkspace.headerHeight,
+    minHeight: theme.recipes.desktopWorkspace.headerHeight,
     paddingHorizontal: theme.spacing.md,
   },
   collectionHeaderCopy: {
@@ -255,14 +255,9 @@ export const styles = StyleSheet.create((theme) => ({
   },
   header: {
     alignItems: "center",
-    // Transparent so frosted stage material reads continuous with chat chrome.
-    backgroundColor: theme.semantic.color.surfaceTransparent,
-    borderBottomColor: theme.semantic.color.separator,
-    borderBottomWidth: theme.semantic.stroke.hairline,
     flexDirection: "row",
     gap: theme.spacing.lg,
-    minHeight: theme.recipes.managementWorkspace.headerHeight,
-    paddingHorizontal: theme.spacing.xl,
+    width: "100%",
     _web: {
       AppRegion: "drag",
     },

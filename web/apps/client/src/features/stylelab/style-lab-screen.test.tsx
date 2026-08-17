@@ -64,6 +64,7 @@ describe("StyleLabScreen", () => {
     expect(screen.getByTestId("conversation-sidebar")).toHaveStyle({
       width: 312,
     });
+    expect(screen.getByTestId("conversation-primary-header")).toBeVisible();
     expect(screen.getByText("产品实验室")).toBeVisible();
     expect(screen.getAllByText("general").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("首次协作闭环验收")).toBeVisible();
@@ -238,6 +239,7 @@ describe("StyleLabScreen", () => {
       screen.getByRole("button", {name: "预览 Computer 界面"}),
     );
 
+    expect(screen.getByTestId("management-primary-header")).toBeVisible();
     expect(screen.getByTestId("computer-sidebar")).toHaveStyle({
       height: "100%",
       width: 312,
@@ -337,6 +339,7 @@ describe("StyleLabScreen", () => {
       minHeight: 36,
       width: "100%",
     });
+    expect(screen.getByTestId("compact-primary-header")).toBeVisible();
     for (const label of [
       "预览聊天界面",
       "预览任务界面",
@@ -410,6 +413,7 @@ describe("StyleLabScreen", () => {
       screen.getByRole("button", {name: "切换到断线状态"}),
     );
     expect(screen.getByText("消息连接已中断，请重新连接")).toBeVisible();
+    expect(screen.getByTestId("chat-error-toast-layer")).toBeVisible();
 
     await fireEvent.press(
       screen.getByRole("button", {name: "切换到未加入状态"}),

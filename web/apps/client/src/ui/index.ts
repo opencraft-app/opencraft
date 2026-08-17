@@ -122,6 +122,11 @@ export {
   type SystemMaterialSurfaceProps,
 } from "./primitives/system-material-surface";
 export {
+  SystemFloatingHeader,
+  type SystemFloatingHeaderLayoutMode,
+  type SystemFloatingHeaderProps,
+} from "./primitives/system-floating-header";
+export {
   SystemStatusIsland,
   type SystemStatusIslandProps,
   type SystemStatusIslandTone,

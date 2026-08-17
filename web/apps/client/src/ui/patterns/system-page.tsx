@@ -12,6 +12,10 @@ import {
 import {styles as managementStyles} from "../components/management-workspace.styles";
 import {SystemButton} from "../primitives/system-button";
 import {SystemSourceListRow} from "../primitives/system-source-list-row";
+import {
+  SystemFloatingHeader,
+  type SystemFloatingHeaderLayoutMode,
+} from "../primitives/system-floating-header";
 
 export type SystemPageDensity = "comfortable" | "compact" | "medium";
 
@@ -24,6 +28,7 @@ export interface SystemPageProps {
   eyebrow?: string;
   feedback?: ReactNode;
   headerCopyTestID?: string;
+  layoutMode: SystemFloatingHeaderLayoutMode;
   navigation?: ReactNode;
   summary?: string;
   testID?: string;
@@ -41,6 +46,7 @@ export function SystemPage({
   eyebrow,
   feedback,
   headerCopyTestID,
+  layoutMode,
   navigation,
   summary,
   testID = "system-page",
@@ -58,14 +64,19 @@ export function SystemPage({
   );
   return (
     <ManagementStage testID={testID}>
-      <ManagementHeader
-        actions={actions}
-        copyTestID={headerCopyTestID}
-        eyebrow={eyebrow}
-        summary={summary}
-        title={title}
-        titleTestID={titleTestID}
-      />
+      <SystemFloatingHeader
+        layoutMode={layoutMode}
+        testID="management-primary-header"
+      >
+        <ManagementHeader
+          actions={actions}
+          copyTestID={headerCopyTestID}
+          eyebrow={eyebrow}
+          summary={summary}
+          title={title}
+          titleTestID={titleTestID}
+        />
+      </SystemFloatingHeader>
       {feedback}
       {navigation}
       {content}

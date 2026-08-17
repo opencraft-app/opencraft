@@ -516,7 +516,7 @@ export function MembersScreen(props: MembersScreenProps) {
 
   const navigation = stackedCollection ? null : desktopNavigation;
   const renderStage = (pageModel: ManagementPageModel) => (
-      <SystemPage
+    <SystemPage
         actions={(
             <ManagementHeaderActions
               createAccessibilityLabel="创建邀请"
@@ -531,7 +531,8 @@ export function MembersScreen(props: MembersScreenProps) {
             />
         )}
         contentTestID="member-detail-scroll"
-        density={density}
+      density={density}
+      layoutMode={surface.chromeMode}
         feedback={pageModel.error ? (
           <SystemFeedback kind="inline" message={pageModel.error} tone="danger" />
         ) : null}

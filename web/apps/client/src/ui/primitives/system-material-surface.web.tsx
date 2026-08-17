@@ -26,9 +26,11 @@ export function SystemMaterialSurface({
         materialRole === "toolbar" && styles.toolbar,
         materialRole === "popover" && styles.popover,
         materialRole === "dialog" && styles.dialog,
+        materialRole === "floatingHeader" && styles.floatingHeader,
         materialRole === "floatingControl" && styles.floatingControl,
         materialRole === "composer" && styles.composer,
         !active && navigation && styles.inactiveNavigation,
+        !active && materialRole === "floatingHeader" && styles.inactiveFloatingHeader,
         style,
       ]}
       testID={testID}
@@ -70,6 +72,17 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.semantic.radius.overlay,
     borderWidth: theme.semantic.stroke.hairline,
     WebkitBackdropFilter: theme.semantic.material.blur,
+  },
+  floatingHeader: {
+    backdropFilter: theme.semantic.material.blur,
+    backgroundColor: theme.semantic.material.floatingHeaderFill,
+    borderColor: theme.semantic.color.borderOverlay,
+    borderRadius: theme.semantic.radius.overlay,
+    borderWidth: theme.semantic.stroke.hairline,
+    WebkitBackdropFilter: theme.semantic.material.blur,
+  },
+  inactiveFloatingHeader: {
+    backgroundColor: theme.semantic.material.floatingHeaderInactiveFill,
   },
   inactiveNavigation: {
     backgroundColor: theme.semantic.material.navigationInactiveFill,

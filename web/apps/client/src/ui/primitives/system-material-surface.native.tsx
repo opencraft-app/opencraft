@@ -16,6 +16,7 @@ export function SystemMaterialSurface({
   const overlay = materialRole === "dialog" ||
     materialRole === "popover" ||
     materialRole === "floatingControl" ||
+    materialRole === "floatingHeader" ||
     materialRole === "composer";
   const navigation = materialRole === "navigationChrome" ||
     materialRole === "compactNavigation";
@@ -27,7 +28,9 @@ export function SystemMaterialSurface({
         navigation && styles.navigation,
         overlay && styles.overlay,
         materialRole === "toolbar" && styles.toolbar,
+        materialRole === "floatingHeader" && styles.floatingHeader,
         !active && navigation && styles.inactiveNavigation,
+        !active && materialRole === "floatingHeader" && styles.inactiveFloatingHeader,
         style,
       ]}
       testID={testID}
@@ -42,6 +45,12 @@ const styles = StyleSheet.create((theme) => ({
   content: {backgroundColor: theme.semantic.color.paneSurface},
   inactiveNavigation: {
     backgroundColor: theme.semantic.color.sidebarSurface,
+  },
+  floatingHeader: {
+    backgroundColor: theme.semantic.material.floatingHeaderFill,
+  },
+  inactiveFloatingHeader: {
+    backgroundColor: theme.semantic.material.floatingHeaderInactiveFill,
   },
   navigation: {backgroundColor: theme.semantic.color.navigationSurface},
   overlay: {

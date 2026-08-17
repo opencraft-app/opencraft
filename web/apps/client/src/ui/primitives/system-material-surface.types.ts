@@ -6,6 +6,7 @@ export type SystemMaterialRole =
   | "composer"
   | "content"
   | "dialog"
+  | "floatingHeader"
   | "floatingControl"
   | "navigationChrome"
   | "popover"

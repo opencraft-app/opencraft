@@ -663,6 +663,11 @@ export function StyleLabScreen({
                 currentServerId={server.id}
                 directConversations={directConversations}
                 directConversationSync="complete"
+                error={
+                  scenario === "disconnected"
+                    ? "无法加载最新消息，请检查连接后重试"
+                    : null
+                }
                 framed={false}
                 imStatus={reviewImStatus}
                 imStatusMessage={

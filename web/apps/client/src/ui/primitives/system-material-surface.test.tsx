@@ -28,6 +28,9 @@ describe("Tahoe material surfaces", () => {
         <SystemMaterialSurface materialRole="content" testID="content-material">
           <Text>content</Text>
         </SystemMaterialSurface>
+        <SystemMaterialSurface materialRole="floatingHeader" testID="floating-header-material">
+          <Text>header</Text>
+        </SystemMaterialSurface>
       </>,
     );
 
@@ -40,6 +43,13 @@ describe("Tahoe material surfaces", () => {
     expect(screen.getByTestId("content-material")).toHaveStyle({
       backgroundColor: velaTheme.semantic.color.paneSurface,
     });
+    expect(screen.getByTestId("floating-header-material")).toHaveStyle({
+      backdropFilter: velaTheme.semantic.material.blur,
+      backgroundColor: velaTheme.semantic.material.floatingHeaderFill,
+      borderColor: velaTheme.semantic.color.borderOverlay,
+      borderRadius: velaTheme.semantic.radius.overlay,
+      borderWidth: velaTheme.semantic.stroke.hairline,
+    } as never);
     expect(screen.getByTestId("navigation-material").props.dataSet).toEqual({
       velaMaterial: "navigationChrome",
     });
@@ -57,6 +67,9 @@ describe("Tahoe material surfaces", () => {
         <SystemMaterialSurface materialRole="content" testID="inactive-content">
           <Text>content</Text>
         </SystemMaterialSurface>
+        <SystemMaterialSurface materialRole="floatingHeader" testID="inactive-floating-header">
+          <Text>header</Text>
+        </SystemMaterialSurface>
       </SystemWindowStateProvider>,
     );
 
@@ -65,6 +78,9 @@ describe("Tahoe material surfaces", () => {
     });
     expect(screen.getByTestId("inactive-content")).not.toHaveStyle({
       backgroundColor: velaTheme.semantic.material.navigationInactiveFill,
+    });
+    expect(screen.getByTestId("inactive-floating-header")).toHaveStyle({
+      backgroundColor: velaTheme.semantic.material.floatingHeaderInactiveFill,
     });
   });
 

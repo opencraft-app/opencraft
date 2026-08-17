@@ -271,6 +271,13 @@ describe("Vela theme contract", () => {
     expect(leaves.length).toBeLessThanOrEqual(138);
   });
 
+  it("defines floating header materials without expanding recipe vocabulary", () => {
+    expect(velaTheme.semantic.material.floatingHeaderFill).toBeTruthy();
+    expect(velaTheme.semantic.material.floatingHeaderInactiveFill).toBeTruthy();
+    expect(velaTheme.recipes.managementWorkspace).not.toHaveProperty("headerHeight");
+    expect(velaTheme.recipes.desktopWorkspace.headerHeight).toBeGreaterThan(0);
+  });
+
   it("measures a column of content the same wherever it appears", () => {
     // Chat capped a message column at 760 while management kept its own
     // ceilings at 960 and 900, so a single-line name field stretched to 960px.

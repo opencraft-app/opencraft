@@ -722,6 +722,10 @@ describe("WorkspaceShell", () => {
     expect(screen.queryByText("▣")).toBeNull();
     expect(screen.getByTestId("conversation-sidebar")).toBeVisible();
     expect(screen.getByTestId("message-stage")).toBeVisible();
+    expect(screen.getByTestId("conversation-primary-header-slot")).toHaveStyle({
+      paddingHorizontal: velaTheme.spacing.lg,
+    });
+    expect(screen.getByTestId("conversation-primary-header")).toBeVisible();
     expect(screen.getByText("频道")).toBeVisible();
     expect(screen.queryByText("CHAT")).toBeNull();
     expect(screen.getByText("Atlas")).toBeVisible();
@@ -1137,6 +1141,9 @@ describe("WorkspaceShell", () => {
     );
 
     expect(screen.getByTestId("conversation-operation-status-island")).toBeVisible();
+    expect(screen.getByTestId("conversation-operation-status-island")).toHaveStyle({
+      top: velaTheme.recipes.conversationWorkspace.stageTopOverlayInset,
+    });
     expect(screen.getByText("后台操作 · 等待继续查询 · 0/1")).toBeVisible();
     expect(screen.queryByText("等待重试")).toBeNull();
     await fireEvent.press(screen.getByRole("button", {
@@ -1823,6 +1830,9 @@ describe("WorkspaceShell", () => {
     );
 
     const toast = screen.getByTestId("chat-error-toast");
+    expect(screen.getByTestId("chat-error-toast-layer")).toHaveStyle({
+      top: velaTheme.recipes.conversationWorkspace.stageTopOverlayInset,
+    });
     expect(toast).toBeVisible();
     expect(toast.props.accessibilityLiveRegion).toBe("polite");
     expect(
@@ -2615,6 +2625,10 @@ describe("WorkspaceShell", () => {
     );
 
     expect(screen.getByText("Atlas · 公开频道")).toBeVisible();
+    expect(screen.getByTestId("compact-primary-header-slot")).toHaveStyle({
+      paddingHorizontal: velaTheme.spacing.sm,
+    });
+    expect(screen.getByTestId("compact-primary-header")).toBeVisible();
     expect(screen.queryByText("Atlas · READY")).toBeNull();
   });
 

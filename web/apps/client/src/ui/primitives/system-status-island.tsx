@@ -25,6 +25,7 @@ export interface SystemStatusIslandProps {
   summary: string;
   testID?: string;
   tone: SystemStatusIslandTone;
+  topInset?: number;
 }
 
 export function SystemStatusIsland({
@@ -33,6 +34,7 @@ export function SystemStatusIsland({
   summary,
   testID = "system-status-island",
   tone,
+  topInset,
 }: SystemStatusIslandProps) {
   const {theme} = useUnistyles();
   const [expanded, setExpanded] = useState(false);
@@ -75,7 +77,11 @@ export function SystemStatusIsland({
   };
 
   return (
-    <View pointerEvents="box-none" style={styles.host} testID={testID}>
+    <View
+      pointerEvents="box-none"
+      style={[styles.host, topInset === undefined ? null : {top: topInset}]}
+      testID={testID}
+    >
       <SystemMaterialSurface
         materialRole="floatingControl"
         style={[styles.surface, expanded && styles.surfaceExpanded]}

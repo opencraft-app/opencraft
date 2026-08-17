@@ -21,6 +21,7 @@ export interface OperationStatusIslandProps {
   lifecycleHint?: string | null;
   onContinue(operationId: string): void | Promise<void>;
   testID?: string;
+  topInset?: number;
 }
 
 export interface OperationStatusIslandPresentation {
@@ -113,6 +114,7 @@ export function OperationStatusIsland({
   lifecycleHint,
   onContinue,
   testID = "operation-status-island",
+  topInset,
 }: OperationStatusIslandProps) {
   const presentation = deriveOperationStatusIsland(items, lifecycleHint);
   if (!presentation) return null;
@@ -125,6 +127,7 @@ export function OperationStatusIsland({
       summary={presentation.summary}
       testID={testID}
       tone={presentation.tone}
+      topInset={topInset}
     />
   );
 }

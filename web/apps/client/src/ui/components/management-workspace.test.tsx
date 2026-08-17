@@ -690,7 +690,7 @@ describe("management workspace primitives", () => {
 
     expect(screen.getByTestId("collection-header")).toHaveStyle({
       backgroundColor: velaTheme.semantic.color.surfaceTransparent,
-      minHeight: velaTheme.recipes.managementWorkspace.headerHeight,
+      minHeight: velaTheme.recipes.desktopWorkspace.headerHeight,
     });
     expect(screen.getByTestId("collection-header-mark")).toHaveStyle({
       height: velaTheme.semantic.icon.size.large,

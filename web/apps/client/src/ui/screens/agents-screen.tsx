@@ -735,6 +735,7 @@ export function AgentsScreen(props: AgentsScreenProps) {
       )}
       contentTestID="agent-detail-scroll"
       density={density}
+      layoutMode={surface.chromeMode}
       feedback={pageModel.error ? (
         <SystemFeedback kind="inline" message={pageModel.error} tone="danger" />
       ) : null}

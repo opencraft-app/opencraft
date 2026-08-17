@@ -83,6 +83,7 @@ import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 import {SystemSourceListRow} from "../primitives/system-source-list-row";
 import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemDialog} from "../primitives/system-dialog";
+import {SystemFloatingHeader} from "../primitives/system-floating-header";
 import {
   memberIdentityLabel,
   memberKindLabel,
@@ -1378,6 +1379,7 @@ function ChatActionErrorToast({
         styles.chatErrorToastLayer,
         compact && styles.chatErrorToastLayerCompact,
       ]}
+      testID="chat-error-toast-layer"
     >
       <SystemFeedback
         action={{
@@ -1589,91 +1591,96 @@ function MessageStage({
   return (
     <View style={styles.messageStage} testID="message-stage">
       {compact ? null : (
-        <View style={styles.messageHeader}>
-          <View style={styles.messageHeaderIdentity}>
-            <View style={styles.messageHeaderIcon}>
-              {direct ? (
-                <AtSign
-                  color={theme.semantic.color.iconSecondary}
-                  size={theme.semantic.icon.size.medium}
-                  strokeWidth={theme.semantic.icon.stroke.regular}
-                />
-              ) : (
-                <Hash
-                  color={theme.semantic.color.iconSecondary}
-                  size={theme.semantic.icon.size.medium}
-                  strokeWidth={theme.semantic.icon.stroke.regular}
-                />
-              )}
-            </View>
-            <View style={styles.messageHeaderCopy}>
-              <Text numberOfLines={1} style={styles.messageTitle}>
-                {conversationTitle}
-              </Text>
-              <Text numberOfLines={1} style={styles.messageSubtitle}>
-                {conversationDescription}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.messageHeaderActions}>
-            {!direct ? (
-              <View
-                style={[
-                  styles.onlineAgentsBadge,
-                  !hasOnlineAgents && styles.onlineAgentsBadgeEmpty,
-                ]}
-                testID="online-agents-badge"
-              >
-                <View
-                  style={[
-                    styles.onlineAgentsDot,
-                    !hasOnlineAgents && styles.onlineAgentsDotEmpty,
-                  ]}
-                  testID="online-agents-dot"
-                />
-                <Text
-                  style={[
-                    styles.onlineAgentsText,
-                    !hasOnlineAgents && styles.onlineAgentsTextEmpty,
-                  ]}
-                >
-                  {hasAgents
-                    ? `${onlineAgentCount} 个 Agent 在线`
-                    : "暂无在线 Agent"}
+        <SystemFloatingHeader
+          layoutMode="wide"
+          testID="conversation-primary-header"
+        >
+          <View style={styles.messageHeader}>
+            <View style={styles.messageHeaderIdentity}>
+              <View style={styles.messageHeaderIcon}>
+                {direct ? (
+                  <AtSign
+                    color={theme.semantic.color.iconSecondary}
+                    size={theme.semantic.icon.size.medium}
+                    strokeWidth={theme.semantic.icon.stroke.regular}
+                  />
+                ) : (
+                  <Hash
+                    color={theme.semantic.color.iconSecondary}
+                    size={theme.semantic.icon.size.medium}
+                    strokeWidth={theme.semantic.icon.stroke.regular}
+                  />
+                )}
+              </View>
+              <View style={styles.messageHeaderCopy}>
+                <Text numberOfLines={1} style={styles.messageTitle}>
+                  {conversationTitle}
+                </Text>
+                <Text numberOfLines={1} style={styles.messageSubtitle}>
+                  {conversationDescription}
                 </Text>
               </View>
-            ) : null}
-            <Pressable
-              accessibilityLabel={direct ? "搜索当前私信" : "搜索当前 Channel"}
-              accessibilityRole="button"
-              disabled={
-                !hasConversation || needsMembership || repairingMembership
-              }
-              onPress={() => onSearchOpenChange(!searchOpen)}
-              style={styles.headerActionButton}
-            >
-              <Search
-                color={theme.semantic.color.iconSecondary}
-                size={theme.semantic.icon.size.medium}
-                strokeWidth={theme.semantic.icon.stroke.regular}
-              />
-            </Pressable>
-            {!direct ? (
-              <SystemButton
-                accessibilityLabel={`查看 Channel ${channel?.name ?? ""} 的 ${channelMemberCount} 位成员`}
-                align="center"
-                disabled={!channel}
-                icon={UsersRound}
-                variant="toolbar"
-                label={`${channelMemberCount} 位成员`}
-                onPress={onOpenChannelMembers}
-              />
-            ) : null}
-            {imStatus === "ready" ? null : (
-              <ConnectionBadge status={imStatus} />
-            )}
+            </View>
+            <View style={styles.messageHeaderActions}>
+              {!direct ? (
+                <View
+                  style={[
+                    styles.onlineAgentsBadge,
+                    !hasOnlineAgents && styles.onlineAgentsBadgeEmpty,
+                  ]}
+                  testID="online-agents-badge"
+                >
+                  <View
+                    style={[
+                      styles.onlineAgentsDot,
+                      !hasOnlineAgents && styles.onlineAgentsDotEmpty,
+                    ]}
+                    testID="online-agents-dot"
+                  />
+                  <Text
+                    style={[
+                      styles.onlineAgentsText,
+                      !hasOnlineAgents && styles.onlineAgentsTextEmpty,
+                    ]}
+                  >
+                    {hasAgents
+                      ? `${onlineAgentCount} 个 Agent 在线`
+                      : "暂无在线 Agent"}
+                  </Text>
+                </View>
+              ) : null}
+              <Pressable
+                accessibilityLabel={direct ? "搜索当前私信" : "搜索当前 Channel"}
+                accessibilityRole="button"
+                disabled={
+                  !hasConversation || needsMembership || repairingMembership
+                }
+                onPress={() => onSearchOpenChange(!searchOpen)}
+                style={styles.headerActionButton}
+              >
+                <Search
+                  color={theme.semantic.color.iconSecondary}
+                  size={theme.semantic.icon.size.medium}
+                  strokeWidth={theme.semantic.icon.stroke.regular}
+                />
+              </Pressable>
+              {!direct ? (
+                <SystemButton
+                  accessibilityLabel={`查看 Channel ${channel?.name ?? ""} 的 ${channelMemberCount} 位成员`}
+                  align="center"
+                  disabled={!channel}
+                  icon={UsersRound}
+                  variant="toolbar"
+                  label={`${channelMemberCount} 位成员`}
+                  onPress={onOpenChannelMembers}
+                />
+              ) : null}
+              {imStatus === "ready" ? null : (
+                <ConnectionBadge status={imStatus} />
+              )}
+            </View>
           </View>
-        </View>
+        </SystemFloatingHeader>
       )}
 
       {messageSearchPanel}
@@ -1686,6 +1693,9 @@ function MessageStage({
           items={operations}
           onContinue={onContinueOperation}
           testID="conversation-operation-status-island"
+          topInset={compact
+            ? theme.spacing.md
+            : theme.recipes.conversationWorkspace.stageTopOverlayInset}
         />
       ) : null}
       {isRecoverableImStatus(imStatus) && onReconnect ? (
@@ -2052,80 +2062,85 @@ function CompactHeader({
   const {theme} = useUnistyles();
   const connectionLabel = connectionStatusLabel(imStatus);
   return (
-    <View style={styles.compactHeader}>
-      {searchOpen ? null : (
-        <Pressable
-          accessibilityLabel={
-            navigationOpen ? "关闭会话选择" : "打开 Server 与 Channel"
-          }
-          accessibilityRole="button"
-          aria-expanded={navigationOpen}
-          onPress={onOpenNavigation}
-          style={({ pressed }) => [
-            styles.compactPickerButton,
-            styles.compactHeaderNavigationButton,
-            pressed && styles.railItemPressed,
-          ]}
-        >
-          <View testID="compact-header-menu-icon">
-            {navigationOpen ? (
-              <X
-                color={theme.semantic.color.iconAccent}
-                size={theme.semantic.icon.size.large}
-                strokeWidth={theme.semantic.icon.stroke.emphasis}
-              />
-            ) : (
-              <Menu
-                color={theme.semantic.color.iconAccent}
-                size={theme.semantic.icon.size.large}
-                strokeWidth={theme.semantic.icon.stroke.emphasis}
-              />
-            )}
-          </View>
-        </Pressable>
-      )}
-      <View style={styles.compactHeaderCopy}>
-        <Text numberOfLines={1} style={styles.compactEyebrow}>
-          {activeDirectConversation
-            ? directConversationDescription(activeDirectMember)
-            : `${server?.name ?? "VELA"}${channel ? ` · ${channelKindLongLabel(channel)}` : ""}${connectionLabel ? ` · ${connectionLabel}` : ""}`}
-        </Text>
-        <Text numberOfLines={1} style={styles.compactTitle}>
-          {navigationOpen
-            ? "选择会话"
-            : activeDirectConversation
-              ? activeDirectConversation.peerDisplayName
-              : channel
-                ? `# ${channel.name}`
-                : "选择会话"}
-        </Text>
+    <SystemFloatingHeader
+      layoutMode="compact"
+      testID="compact-primary-header"
+    >
+      <View style={styles.compactHeader}>
+        {searchOpen ? null : (
+          <Pressable
+            accessibilityLabel={
+              navigationOpen ? "关闭会话选择" : "打开 Server 与 Channel"
+            }
+            accessibilityRole="button"
+            aria-expanded={navigationOpen}
+            onPress={onOpenNavigation}
+            style={({ pressed }) => [
+              styles.compactPickerButton,
+              styles.compactHeaderNavigationButton,
+              pressed && styles.railItemPressed,
+            ]}
+          >
+            <View testID="compact-header-menu-icon">
+              {navigationOpen ? (
+                <X
+                  color={theme.semantic.color.iconAccent}
+                  size={theme.semantic.icon.size.large}
+                  strokeWidth={theme.semantic.icon.stroke.emphasis}
+                />
+              ) : (
+                <Menu
+                  color={theme.semantic.color.iconAccent}
+                  size={theme.semantic.icon.size.large}
+                  strokeWidth={theme.semantic.icon.stroke.emphasis}
+                />
+              )}
+            </View>
+          </Pressable>
+        )}
+        <View style={styles.compactHeaderCopy}>
+          <Text numberOfLines={1} style={styles.compactEyebrow}>
+            {activeDirectConversation
+              ? directConversationDescription(activeDirectMember)
+              : `${server?.name ?? "VELA"}${channel ? ` · ${channelKindLongLabel(channel)}` : ""}${connectionLabel ? ` · ${connectionLabel}` : ""}`}
+          </Text>
+          <Text numberOfLines={1} style={styles.compactTitle}>
+            {navigationOpen
+              ? "选择会话"
+              : activeDirectConversation
+                ? activeDirectConversation.peerDisplayName
+                : channel
+                  ? `# ${channel.name}`
+                  : "选择会话"}
+          </Text>
+        </View>
+        {navigationOpen || searchOpen ? null : (
+          <SystemIconButton
+            accessibilityLabel={
+              activeDirectConversation ? "搜索当前私信" : "搜索当前 Channel"
+            }
+            disabled={!canSearch}
+            icon={Search}
+            iconTestID="compact-header-search-icon"
+            onPress={onSearch}
+          />
+        )}
+        {!activeDirectConversation &&
+        channel &&
+        !navigationOpen &&
+        !searchOpen ? (
+          <SystemButton
+            accessibilityLabel={`查看 Channel ${channel.name} 的 ${channelMemberCount} 位成员`}
+            align="center"
+            disabled={!channel}
+            icon={UsersRound}
+            variant="toolbar"
+            label={String(channelMemberCount)}
+            onPress={onOpenChannelMembers}
+          />
+        ) : null}
       </View>
-      {navigationOpen || searchOpen ? null : (
-        <SystemIconButton
-          accessibilityLabel={
-            activeDirectConversation ? "搜索当前私信" : "搜索当前 Channel"
-          }
-          disabled={!canSearch}
-          icon={Search}
-          iconTestID="compact-header-search-icon"
-          onPress={onSearch}
-        />
-      )}
-      {!activeDirectConversation &&
-      channel &&
-      !navigationOpen &&
-      !searchOpen ? (
-        <SystemButton
-          accessibilityLabel={`查看 Channel ${channel.name} 的 ${channelMemberCount} 位成员`}
-          align="center"
-          disabled={!channel}
-          icon={UsersRound}
-          variant="toolbar"
-          label={String(channelMemberCount)}
-          onPress={onOpenChannelMembers}
-        />
-      ) : null}
-    </View>
+    </SystemFloatingHeader>
   );
 }
 

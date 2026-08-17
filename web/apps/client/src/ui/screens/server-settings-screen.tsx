@@ -70,7 +70,7 @@ export function ServerSettingsScreen({
 }: ServerSettingsScreenProps) {
   const window = useWindowDimensions();
   const resolvedViewportWidth = viewportWidth ?? window.width;
-  const {density} = managementSurfaceLayout(resolvedViewportWidth);
+  const {chromeMode, density} = managementSurfaceLayout(resolvedViewportWidth);
   const [name, setName] = useState(server.name);
   const [description, setDescription] = useState(server.description ?? "");
   const [saved, setSaved] = useState(false);
@@ -176,6 +176,7 @@ export function ServerSettingsScreen({
     <SystemPage
       contentTestID="server-settings-detail-scroll"
       density={density}
+      layoutMode={chromeMode}
       feedback={(
         <>
           {error ? (

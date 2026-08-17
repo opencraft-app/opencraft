@@ -308,12 +308,8 @@ export const styles = StyleSheet.create((theme) => ({
   compactHeader: {
     alignItems: "center",
     gap: theme.spacing.sm,
-    backgroundColor: theme.semantic.color.paneSurface,
-    borderBottomColor: theme.semantic.color.separator,
-    borderBottomWidth: theme.semantic.stroke.hairline,
     flexDirection: "row",
-    height: theme.recipes.desktopWorkspace.headerHeight,
-    paddingHorizontal: theme.spacing.md,
+    width: "100%",
   },
   compactHeaderCopy: {
     flex: 1,
@@ -424,7 +420,7 @@ export const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing.md,
     position: "absolute",
     right: 0,
-    top: theme.recipes.conversationWorkspace.toastTopInset,
+    top: theme.recipes.conversationWorkspace.stageTopOverlayInset,
     zIndex: theme.semantic.layer.modal,
   },
   chatErrorToastLayerCompact: {
@@ -452,13 +448,9 @@ export const styles = StyleSheet.create((theme) => ({
   },
   messageHeader: {
     alignItems: "center",
-    borderBottomColor: theme.semantic.color.separator,
-    borderBottomWidth: theme.semantic.stroke.hairline,
-    backgroundColor: theme.semantic.color.surfaceTransparent,
     flexDirection: "row",
-    height: theme.recipes.desktopWorkspace.headerHeight,
     justifyContent: "space-between",
-    paddingHorizontal: theme.spacing.xl,
+    width: "100%",
   },
   messageHeaderActions: {
     alignItems: "center",

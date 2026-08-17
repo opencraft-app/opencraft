@@ -172,8 +172,8 @@ describe("density wiring", () => {
       density.controlHeight + density.spaceMd,
     );
     expect(overlay.accountPopoverLeftInset).toBe(density.railWidth + 6);
-    expect(velaTheme.recipes.conversationWorkspace.toastTopInset).toBe(
-      density.headerHeight + density.spaceMd,
+    expect(velaTheme.recipes.conversationWorkspace.stageTopOverlayInset).toBe(
+      density.headerHeight + density.spaceMd * 2,
     );
     expect(velaTheme.recipes.identity.avatarAccountSize).toBe(
       density.controlHeight,
@@ -284,9 +284,7 @@ describe("density wiring", () => {
     expect(velaTheme.recipes.desktopWorkspace.headerHeight).toBe(
       density.headerHeight,
     );
-    expect(velaTheme.recipes.managementWorkspace.headerHeight).toBe(
-      density.headerHeight,
-    );
+    expect(velaTheme.recipes.managementWorkspace).not.toHaveProperty("headerHeight");
   });
 
   it("sizes every list shelf row off one role", () => {

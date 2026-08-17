@@ -171,6 +171,7 @@ describe("Vela style lint", () => {
       "components/message-list.tsx:actionRowOpen",
       "components/message-viewport/message-viewport.tsx:newMessages",
       "layouts/app-frame.tsx:railTooltip",
+      "primitives/system-floating-header.tsx:surface",
       "primitives/system-status-island.tsx:surface",
       "primitives/system-status-island.tsx:surfaceExpanded",
       "primitives/system-tabs.tsx:tabSelected",

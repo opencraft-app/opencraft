@@ -567,6 +567,8 @@ export const velaLight = {
     material: {
       blur: "saturate(180%) blur(20px)",
       composerFill: withAlpha(palette.white, 0.82),
+      floatingHeaderFill: withAlpha(palette.white, 0.84),
+      floatingHeaderInactiveFill: withAlpha(palette.white, 0.68),
       navigationFill: withAlpha(palette.white, 0.58),
       navigationInactiveFill: withAlpha(palette.white, 0.42),
       sidebarFill: withAlpha(palette.white, 0.66),
@@ -917,8 +919,8 @@ export const velaLight = {
       messageActionHorizontalPadding: 6,
       messageIndent: density.messageIndent,
       messageRowGap: density.messageRowGap,
-      // Toast is absolutely placed inside messageStage (header + body).
-      toastTopInset: density.headerHeight + density.spaceMd,
+      // MessageStage owns every absolute top overlay below the floating header slot.
+      stageTopOverlayInset: density.headerHeight + density.spaceMd * 2,
     },
     control: {
       fieldHeight: density.fieldHeight,
@@ -1004,7 +1006,6 @@ export const velaLight = {
       formFieldMinWidth: 240,
       formMaxWidth: columnMaxWidth,
       headerActionHeight: density.headerActionHeight,
-      headerHeight: density.headerHeight,
       mediumPadding: 24,
       preferenceContentMaxWidth: 780,
       preferenceControlMinWidth: 280,
@@ -1218,6 +1219,8 @@ export const velaDark = {
     material: {
       ...velaLight.semantic.material,
       composerFill: withAlpha(palette.neutral990, 0.86),
+      floatingHeaderFill: withAlpha(palette.neutral990, 0.88),
+      floatingHeaderInactiveFill: withAlpha(palette.neutral990, 0.72),
       navigationFill: withAlpha(palette.black, 0.74),
       navigationInactiveFill: withAlpha(palette.black, 0.56),
       sidebarFill: withAlpha(palette.neutral990, 0.82),

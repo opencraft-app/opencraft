@@ -488,6 +488,7 @@ export function ComputersScreen(props: ComputersScreenProps) {
           ? "computer-terminal-host"
           : "computer-detail-scroll"}
         density={density}
+        layoutMode={surface.chromeMode}
         feedback={pageModel.error ? (
           <SystemFeedback
             kind="inline"

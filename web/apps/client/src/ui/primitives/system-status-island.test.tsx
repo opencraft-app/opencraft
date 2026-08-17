@@ -49,4 +49,17 @@ describe("SystemStatusIsland", () => {
     expect(screen.getByText("绑定的 Computer 当前不可用")).toBeVisible();
     expect(screen.queryByRole("button")).toBeNull();
   });
+
+  it("accepts a stage-owned top inset without learning conversation geometry", async () => {
+    const screen = await render(
+      <SystemStatusIsland
+        summary="正在部署"
+        testID="status-island"
+        tone="info"
+        topInset={72}
+      />,
+    );
+
+    expect(screen.getByTestId("status-island")).toHaveStyle({top: 72});
+  });
 });
