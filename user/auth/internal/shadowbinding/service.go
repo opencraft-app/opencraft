@@ -222,6 +222,22 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 	return s.openBillingAccount(ctx, registered)
 }
 
+func (s *Service) RetryBillingAccountOpening(ctx context.Context, userID string) (Binding, error) {
+	if s == nil || s.store == nil {
+		return Binding{}, errors.New("shadow binding is not configured")
+	}
+	binding, err := s.store.GetBindingByUserID(ctx, strings.TrimSpace(userID))
+	if err != nil {
+		return Binding{}, err
+	}
+	if binding.Status != StatusFailed ||
+		strings.TrimSpace(binding.LastErrorCode) != "billing_account_open_failed" ||
+		binding.Uin <= 0 || binding.AppID <= 0 {
+		return binding, nil
+	}
+	return s.openBillingAccount(ctx, binding)
+}
+
 func (s *Service) openBillingAccount(ctx context.Context, binding Binding) (Binding, error) {
 	if s.billingAccount == nil {
 		err := errors.New("billing account client is not configured")

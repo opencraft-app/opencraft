@@ -1554,6 +1554,34 @@ func (s *Service) InternalShadowBinding(ctx context.Context, userID string) (Sha
 	return s.activeShadowBindingByUserID(ctx, userID)
 }
 
+func (s *Service) InternalShadowBindingState(ctx context.Context, userID string) (ShadowBindingResult, error) {
+	if s.shadowBinding == nil {
+		return ShadowBindingResult{}, newError("shadow_binding_not_found", "影子账号绑定不存在。", http.StatusNotFound)
+	}
+	binding, err := s.shadowBinding.GetBindingByUserID(ctx, strings.TrimSpace(userID))
+	if err != nil {
+		if errors.Is(err, shadowbinding.ErrNotFound) {
+			return ShadowBindingResult{}, newError("shadow_binding_not_found", "影子账号绑定不存在。", http.StatusNotFound)
+		}
+		return ShadowBindingResult{}, err
+	}
+	return toShadowBindingResult(binding), nil
+}
+
+func (s *Service) RetryInternalShadowBilling(ctx context.Context, userID string) (ShadowBindingResult, error) {
+	if s.shadowBinding == nil {
+		return ShadowBindingResult{}, newError("shadow_binding_not_found", "影子账号绑定不存在。", http.StatusNotFound)
+	}
+	binding, err := s.shadowBinding.RetryBillingAccountOpening(ctx, strings.TrimSpace(userID))
+	if err != nil && binding.UserID == "" {
+		if errors.Is(err, shadowbinding.ErrNotFound) {
+			return ShadowBindingResult{}, newError("shadow_binding_not_found", "影子账号绑定不存在。", http.StatusNotFound)
+		}
+		return ShadowBindingResult{}, err
+	}
+	return toShadowBindingResult(binding), nil
+}
+
 func (s *Service) InternalShadowCredentials(ctx context.Context, userID, clientIP, clientUA string) (shadowbinding.CloudTemporaryCredentials, error) {
 	if _, err := s.activeShadowBindingByUserID(ctx, userID); err != nil {
 		return shadowbinding.CloudTemporaryCredentials{}, err

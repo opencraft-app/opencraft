@@ -1664,8 +1664,13 @@ func (l *logic) CreatePassOrder(userID string, req *transport.CreatePassOrderReq
 
 func mapTradePlaceOrderError(err error) error {
 	var tradeErr *tradeadapter.Error
-	if errors.As(err, &tradeErr) && tradeErr.Code == "BindingNotFound" {
-		return errcode.ErrPassShadowBindingRequired
+	if errors.As(err, &tradeErr) {
+		switch tradeErr.Code {
+		case "BindingNotFound":
+			return errcode.ErrPassShadowBindingRequired
+		case "BillingAccountOpenFailed":
+			return errcode.ErrPassBillingAccountOpenFailed
+		}
 	}
 	return nil
 }

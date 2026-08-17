@@ -587,9 +587,13 @@ func newSvcStub() *Service {
 
 // fakeShadow 是 inquiry 测试用的 shadowclient.Client mock。
 type fakeShadow struct {
-	getBindingFn   func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
-	calls          atomic.Int32
-	lastExternalID string
+	getBindingFn      func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
+	getBindingStateFn func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
+	retryBillingFn    func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
+	calls             atomic.Int32
+	stateCalls        atomic.Int32
+	retryCalls        atomic.Int32
+	lastExternalID    string
 }
 
 func (f *fakeShadow) GetBindingByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
@@ -599,6 +603,22 @@ func (f *fakeShadow) GetBindingByExternalUserID(ctx context.Context, externalUse
 		return f.getBindingFn(ctx, externalUserID)
 	}
 	return nil, errors.New("fakeShadow: GetBindingByExternalUserID not implemented")
+}
+
+func (f *fakeShadow) GetBindingStateByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
+	f.stateCalls.Add(1)
+	if f.getBindingStateFn != nil {
+		return f.getBindingStateFn(ctx, externalUserID)
+	}
+	return nil, errors.New("fakeShadow: GetBindingStateByExternalUserID not implemented")
+}
+
+func (f *fakeShadow) RetryBillingAccountByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
+	f.retryCalls.Add(1)
+	if f.retryBillingFn != nil {
+		return f.retryBillingFn(ctx, externalUserID)
+	}
+	return nil, errors.New("fakeShadow: RetryBillingAccountByExternalUserID not implemented")
 }
 
 // 当 ShadowClient 注入 + 调用方未传 Uin/AppID 时，service 应反查 shadow 回填这两个字段。
@@ -737,6 +757,47 @@ func TestQuote_ShadowClient_BindingNotFoundWithoutFallback(t *testing.T) {
 	}
 	if !errors.Is(err, ErrBindingNotFound) {
 		t.Errorf("err = %v, want ErrBindingNotFound", err)
+	}
+}
+
+func TestQuote_IntlBillingOpenRetryFailureUsesUserShadowIdentity(t *testing.T) {
+	failedBinding := &shadowclient.Binding{
+		UserID:        "user-1",
+		Uin:           "450860000003",
+		OwnerUin:      "450860000003",
+		AppID:         "1374211120",
+		Status:        "failed",
+		LastErrorCode: "billing_account_open_failed",
+	}
+	shadow := &fakeShadow{
+		getBindingFn: func(context.Context, string) (*shadowclient.Binding, error) {
+			return nil, shadowclient.ErrBindingNotFound
+		},
+		getBindingStateFn: func(context.Context, string) (*shadowclient.Binding, error) {
+			return failedBinding, nil
+		},
+		retryBillingFn: func(context.Context, string) (*shadowclient.Binding, error) {
+			return failedBinding, nil
+		},
+	}
+	jifei := &fakeJifei{getPriceFn: func(context.Context, *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+		return stdJifeiPriceResp(), nil
+	}}
+	svc := New(Deps{
+		CTLClient:    &fakeCTL{getBundleByIDFn: func(context.Context, string) (*ctlclient.BundleDetail, error) { return stdBundle(), nil }},
+		BundleStore:  &fakeBundleStore{def: stdDef()},
+		JifeiClient:  jifei,
+		ShadowClient: shadow,
+		SiteKind:     "intl",
+	})
+	req := stdQuoteReq()
+	req.Uin = ""
+	req.AppID = ""
+	if _, err := svc.Quote(context.Background(), req); err != nil {
+		t.Fatalf("quote with failed billing open: %v", err)
+	}
+	if shadow.retryCalls.Load() != 1 || jifei.lastGetPriceArgs == nil || jifei.lastGetPriceArgs.Uin != failedBinding.Uin {
+		t.Fatalf("retry_calls=%d get_price=%+v", shadow.retryCalls.Load(), jifei.lastGetPriceArgs)
 	}
 }
 

@@ -1570,9 +1570,13 @@ func TestNew_PanicsOnNilDeps(t *testing.T) {
 
 // fakeShadow 是 placeorder 测试用的 shadowclient.Client mock。
 type fakeShadow struct {
-	getBindingFn   func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
-	calls          atomic.Int32
-	lastExternalID string
+	getBindingFn      func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
+	getBindingStateFn func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
+	retryBillingFn    func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
+	calls             atomic.Int32
+	stateCalls        atomic.Int32
+	retryCalls        atomic.Int32
+	lastExternalID    string
 }
 
 func (f *fakeShadow) GetBindingByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
@@ -1582,6 +1586,22 @@ func (f *fakeShadow) GetBindingByExternalUserID(ctx context.Context, externalUse
 		return f.getBindingFn(ctx, externalUserID)
 	}
 	return nil, errors.New("fakeShadow: GetBindingByExternalUserID not implemented")
+}
+
+func (f *fakeShadow) GetBindingStateByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
+	f.stateCalls.Add(1)
+	if f.getBindingStateFn != nil {
+		return f.getBindingStateFn(ctx, externalUserID)
+	}
+	return nil, errors.New("fakeShadow: GetBindingStateByExternalUserID not implemented")
+}
+
+func (f *fakeShadow) RetryBillingAccountByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
+	f.retryCalls.Add(1)
+	if f.retryBillingFn != nil {
+		return f.retryBillingFn(ctx, externalUserID)
+	}
+	return nil, errors.New("fakeShadow: RetryBillingAccountByExternalUserID not implemented")
 }
 
 // 当 ShadowClient 注入 + 调用方未传 Uin/AppID 时，service 应反查 shadow 回填这两个字段。
@@ -1692,6 +1712,91 @@ func TestPlaceOrder_ShadowClient_BindingNotFound(t *testing.T) {
 	}
 	if d.writer.createOrderCalls.Load() != 0 {
 		t.Errorf("writer.createOrder called = %d, want 0", d.writer.createOrderCalls.Load())
+	}
+}
+
+func TestPlaceOrder_IntlBillingOpenRetryFailureFailsBeforeBillingOrder(t *testing.T) {
+	failedBinding := &shadowclient.Binding{
+		UserID:        "user-1",
+		Uin:           "450860000003",
+		OwnerUin:      "450860000003",
+		AppID:         "1374211120",
+		Status:        "failed",
+		LastErrorCode: "billing_account_open_failed",
+	}
+	shadow := &fakeShadow{
+		getBindingFn: func(context.Context, string) (*shadowclient.Binding, error) {
+			return nil, shadowclient.ErrBindingNotFound
+		},
+		getBindingStateFn: func(context.Context, string) (*shadowclient.Binding, error) {
+			return failedBinding, nil
+		},
+		retryBillingFn: func(context.Context, string) (*shadowclient.Binding, error) {
+			return failedBinding, nil
+		},
+	}
+	d := newStdDeps()
+	svc := New(Deps{
+		CTLClient:    d.ctl,
+		BundleStore:  d.bundle,
+		JifeiClient:  d.jifei,
+		OrderWriter:  d.writer,
+		OrderStore:   d.store,
+		ShadowClient: shadow,
+		SiteKind:     "intl",
+	})
+	req := stdPlaceOrderReq()
+	req.Uin = ""
+	req.AppID = ""
+	_, err := svc.PlaceOrder(context.Background(), req)
+	if !errors.Is(err, ErrBillingAccountOpenFailed) {
+		t.Fatalf("err=%v, want ErrBillingAccountOpenFailed", err)
+	}
+	if shadow.retryCalls.Load() != 1 || d.jifei.generateDealsCalls.Load() != 0 || d.writer.createOrderCalls.Load() != 0 {
+		t.Fatalf("retry=%d generate_deals=%d create_order=%d", shadow.retryCalls.Load(), d.jifei.generateDealsCalls.Load(), d.writer.createOrderCalls.Load())
+	}
+}
+
+func TestPlaceOrderAndPay_IntlBillingOpenRetryFailureFailsBeforeBillingOrder(t *testing.T) {
+	failedBinding := &shadowclient.Binding{
+		UserID:        "user-1",
+		Uin:           "450860000003",
+		OwnerUin:      "450860000003",
+		AppID:         "1374211120",
+		Status:        "failed",
+		LastErrorCode: "billing_account_open_failed",
+	}
+	shadow := &fakeShadow{
+		getBindingFn: func(context.Context, string) (*shadowclient.Binding, error) {
+			return nil, shadowclient.ErrBindingNotFound
+		},
+		getBindingStateFn: func(context.Context, string) (*shadowclient.Binding, error) {
+			return failedBinding, nil
+		},
+		retryBillingFn: func(context.Context, string) (*shadowclient.Binding, error) {
+			return failedBinding, nil
+		},
+	}
+	d := newStdDeps()
+	svc := New(Deps{
+		CTLClient:    d.ctl,
+		BundleStore:  d.bundle,
+		JifeiClient:  d.jifei,
+		OrderWriter:  d.writer,
+		OrderStore:   d.store,
+		ShadowClient: shadow,
+		SiteKind:     "intl",
+	})
+	req := stdPlaceOrderReq()
+	req.Uin = ""
+	req.AppID = ""
+	_, err := svc.PlaceOrderAndPay(context.Background(), req)
+	if !errors.Is(err, ErrBillingAccountOpenFailed) {
+		t.Fatalf("err=%v, want ErrBillingAccountOpenFailed", err)
+	}
+	if shadow.retryCalls.Load() != 1 || d.jifei.generateDealsAndPayCalls.Load() != 0 || d.writer.createOrderCalls.Load() != 0 {
+		t.Fatalf("retry=%d generateDealsAndPay=%d createOrder=%d, want 1/0/0",
+			shadow.retryCalls.Load(), d.jifei.generateDealsAndPayCalls.Load(), d.writer.createOrderCalls.Load())
 	}
 }
 

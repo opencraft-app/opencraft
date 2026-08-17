@@ -237,6 +237,80 @@ func TestGetBindingByExternalUserID_CustomHTTPClient(t *testing.T) {
 	}
 }
 
+func TestResolveBindingWithBillingRetryAllowsInquiryWithRegisteredIdentity(t *testing.T) {
+	var retryCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/internal/shadow/binding":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code":"shadow_binding_not_found","message":"not found"}`))
+		case "/internal/shadow/binding/state":
+			_, _ = w.Write([]byte(`{"code":"OK","data":{"user_id":"usr_1","uin":450860000003,"owner_uin":450860000003,"app_id":1374211120,"status":"failed","last_error_code":"billing_account_open_failed"}}`))
+		case "/internal/shadow/binding/retry":
+			retryCalls++
+			_, _ = w.Write([]byte(`{"code":"OK","data":{"user_id":"usr_1","uin":450860000003,"owner_uin":450860000003,"app_id":1374211120,"status":"failed","last_error_code":"billing_account_open_failed"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	binding, err := ResolveBindingWithBillingRetry(context.Background(), New(srv.URL, "token"), "usr_1", true)
+	if err != nil {
+		t.Fatalf("inquiry recovery: %v", err)
+	}
+	if binding.Uin != "450860000003" || binding.AppID != "1374211120" || retryCalls != 1 {
+		t.Fatalf("binding=%+v retry_calls=%d", binding, retryCalls)
+	}
+}
+
+func TestResolveBindingWithBillingRetryFailsClosedForOrder(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/internal/shadow/binding":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code":"shadow_binding_not_found","message":"not found"}`))
+		case "/internal/shadow/binding/state", "/internal/shadow/binding/retry":
+			_, _ = w.Write([]byte(`{"code":"OK","data":{"user_id":"usr_1","uin":450860000003,"owner_uin":450860000003,"app_id":1374211120,"status":"failed","last_error_code":"billing_account_open_failed"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	_, err := ResolveBindingWithBillingRetry(context.Background(), New(srv.URL, "token"), "usr_1", false)
+	if !errors.Is(err, ErrBillingAccountOpenFailed) {
+		t.Fatalf("err=%v, want ErrBillingAccountOpenFailed", err)
+	}
+}
+
+func TestResolveBindingWithBillingRetryDoesNotRetryOtherFailures(t *testing.T) {
+	var retryCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/internal/shadow/binding":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code":"shadow_binding_not_found","message":"not found"}`))
+		case "/internal/shadow/binding/state":
+			_, _ = w.Write([]byte(`{"code":"OK","data":{"user_id":"usr_1","status":"failed","last_error_code":"tencentcloud_register_failed"}}`))
+		case "/internal/shadow/binding/retry":
+			retryCalls++
+			_, _ = w.Write([]byte(`{"code":"OK"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	_, err := ResolveBindingWithBillingRetry(context.Background(), New(srv.URL, "token"), "usr_1", true)
+	if !errors.Is(err, ErrBindingNotFound) || retryCalls != 0 {
+		t.Fatalf("err=%v retry_calls=%d, want binding not found without retry", err, retryCalls)
+	}
+}
+
 func TestNewUsesSeparateCredentialExchangeTimeout(t *testing.T) {
 	client := New("http://shadow.test", "token")
 	httpClient, ok := client.(*httpClient)

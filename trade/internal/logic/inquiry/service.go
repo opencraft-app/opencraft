@@ -429,7 +429,13 @@ func (s *Service) resolveQuoteIdentity(ctx context.Context, req *QuoteRequest) e
 	if strings.TrimSpace(req.ExternalUserID) == "" {
 		return fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
 	}
-	binding, err := s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+	var binding *shadowclient.Binding
+	var err error
+	if strings.EqualFold(strings.TrimSpace(s.deps.SiteKind), "intl") {
+		binding, err = shadowclient.ResolveBindingWithBillingRetry(ctx, s.deps.ShadowClient, req.ExternalUserID, true)
+	} else {
+		binding, err = s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+	}
 	if err != nil {
 		if errors.Is(err, shadowclient.ErrBindingNotFound) {
 			if !s.applyInquiryFallbackIdentity(req, "shadow binding not found") {

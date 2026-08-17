@@ -52,6 +52,12 @@ type Client interface {
 	GetBindingByExternalUserID(ctx context.Context, externalUserID string) (*Binding, error)
 }
 
+type BillingRecoveryClient interface {
+	Client
+	GetBindingStateByExternalUserID(ctx context.Context, externalUserID string) (*Binding, error)
+	RetryBillingAccountByExternalUserID(ctx context.Context, externalUserID string) (*Binding, error)
+}
+
 // CredentialClient exchanges an external user binding for short-lived shadow
 // account credentials. Keep this separate from Client so binding-only callers
 // and their test fakes do not gain access to secrets.
@@ -97,10 +103,13 @@ type PaymentContext struct {
 // trade 内部统一 string 形态（与 jifei goodsDetail map / trade_order 列对齐），
 // 故本 client 在反序列化层做一次 int64 → string 转换。
 type Binding struct {
-	UserID   string `json:"user_id"`
-	Uin      string `json:"uin"`
-	OwnerUin string `json:"owner_uin"`
-	AppID    string `json:"app_id"`
+	UserID           string `json:"user_id"`
+	Uin              string `json:"uin"`
+	OwnerUin         string `json:"owner_uin"`
+	AppID            string `json:"app_id"`
+	Status           string `json:"status,omitempty"`
+	LastErrorCode    string `json:"last_error_code,omitempty"`
+	LastErrorMessage string `json:"last_error_message,omitempty"`
 }
 
 // ErrBindingNotFound 在 resolver 返回 404（externalUserId 未绑定）时返回。
@@ -108,6 +117,8 @@ type Binding struct {
 // trade 业务层应将其映射为"用户未绑定云账号，引导前往实名 / 绑定"流程，
 // 不应作为 5xx 上报。
 var ErrBindingNotFound = errors.New("shadowclient: binding not found")
+
+var ErrBillingAccountOpenFailed = errors.New("shadowclient: billing account open failed")
 
 // ErrUnauthorized 在 resolver 返回 401 时返回，通常意味着 internalServiceToken
 // 与服务端配置不一致 — 属于配置错而非业务错。
@@ -145,10 +156,13 @@ type envelope struct {
 //
 // 反序列化策略：先按 int64 解；任何字段失败时转 fallback 走 string 解。
 type rawBinding struct {
-	UserID   string `json:"user_id"`
-	Uin      int64  `json:"uin"`
-	OwnerUin int64  `json:"owner_uin"`
-	AppID    int64  `json:"app_id"`
+	UserID           string `json:"user_id"`
+	Uin              int64  `json:"uin"`
+	OwnerUin         int64  `json:"owner_uin"`
+	AppID            int64  `json:"app_id"`
+	Status           string `json:"status,omitempty"`
+	LastErrorCode    string `json:"last_error_code,omitempty"`
+	LastErrorMessage string `json:"last_error_message,omitempty"`
 }
 
 // httpClient 是 Client 的标准 HTTP 实现。
@@ -447,6 +461,132 @@ func (c *httpClient) GetBindingByExternalUserID(ctx context.Context, externalUse
 			truncate(env.Data, 256))
 	}
 	return &b, nil
+}
+
+func (c *httpClient) GetBindingStateByExternalUserID(ctx context.Context, externalUserID string) (*Binding, error) {
+	externalUserID = strings.TrimSpace(externalUserID)
+	if externalUserID == "" {
+		return nil, fmt.Errorf("shadowclient: externalUserID is required")
+	}
+	q := url.Values{}
+	q.Set("external_user_id", externalUserID)
+	return c.doBindingStateRequest(ctx, http.MethodGet, "/internal/shadow/binding/state?"+q.Encode(), nil)
+}
+
+func (c *httpClient) RetryBillingAccountByExternalUserID(ctx context.Context, externalUserID string) (*Binding, error) {
+	externalUserID = strings.TrimSpace(externalUserID)
+	if externalUserID == "" {
+		return nil, fmt.Errorf("shadowclient: externalUserID is required")
+	}
+	payload, err := json.Marshal(map[string]string{"external_user_id": externalUserID})
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: marshal billing retry request: %w", err)
+	}
+	return c.doBindingStateRequest(ctx, http.MethodPost, "/internal/shadow/binding/retry", payload)
+}
+
+func (c *httpClient) doBindingStateRequest(ctx context.Context, method, path string, payload []byte) (*Binding, error) {
+	if c.baseURL == "" {
+		return nil, fmt.Errorf("shadowclient: baseURL is empty")
+	}
+	var body io.Reader
+	if payload != nil {
+		body = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: build binding state request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: do binding state request: %w", err)
+	}
+	defer resp.Body.Close()
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("shadowclient: read binding state response: %w", err)
+	}
+	var env envelope
+	if err := json.Unmarshal(rawBody, &env); err != nil {
+		return nil, &Error{HTTPStatus: resp.StatusCode, Message: truncate(rawBody, 256)}
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("%w: status=%d code=%s message=%q request_id=%s",
+			ErrUnauthorized, resp.StatusCode, env.Code, env.Message, env.RequestID)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: code=%s message=%q request_id=%s",
+			ErrBindingNotFound, env.Code, env.Message, env.RequestID)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil, &Error{HTTPStatus: resp.StatusCode, Code: env.Code, Message: env.Message, RequestID: env.RequestID}
+	}
+	var raw rawBinding
+	if err := json.Unmarshal(env.Data, &raw); err != nil || strings.TrimSpace(raw.UserID) == "" {
+		return nil, fmt.Errorf("shadowclient: invalid binding state payload: body=%s", truncate(env.Data, 256))
+	}
+	return &Binding{
+		UserID:           raw.UserID,
+		Uin:              strconv.FormatInt(raw.Uin, 10),
+		OwnerUin:         strconv.FormatInt(raw.OwnerUin, 10),
+		AppID:            strconv.FormatInt(raw.AppID, 10),
+		Status:           raw.Status,
+		LastErrorCode:    raw.LastErrorCode,
+		LastErrorMessage: raw.LastErrorMessage,
+	}, nil
+}
+
+func ResolveBindingWithBillingRetry(ctx context.Context, client Client, externalUserID string, allowFailedBilling bool) (*Binding, error) {
+	binding, err := client.GetBindingByExternalUserID(ctx, externalUserID)
+	if err == nil {
+		return binding, nil
+	}
+	if !errors.Is(err, ErrBindingNotFound) {
+		return nil, err
+	}
+	recovery, ok := client.(BillingRecoveryClient)
+	if !ok {
+		return nil, err
+	}
+	state, stateErr := recovery.GetBindingStateByExternalUserID(ctx, externalUserID)
+	if stateErr != nil {
+		return nil, stateErr
+	}
+	if !isBillingAccountOpenFailure(state) || !hasRegisteredIdentity(state) {
+		return nil, err
+	}
+	retried, retryErr := recovery.RetryBillingAccountByExternalUserID(ctx, externalUserID)
+	if retryErr == nil && strings.EqualFold(strings.TrimSpace(retried.Status), "active") {
+		return retried, nil
+	}
+	if allowFailedBilling {
+		if retryErr == nil && hasRegisteredIdentity(retried) {
+			return retried, nil
+		}
+		return state, nil
+	}
+	if retryErr != nil {
+		return nil, fmt.Errorf("%w: %v", ErrBillingAccountOpenFailed, retryErr)
+	}
+	return nil, fmt.Errorf("%w: externalUserID=%s status=%s code=%s",
+		ErrBillingAccountOpenFailed, externalUserID, retried.Status, retried.LastErrorCode)
+}
+
+func isBillingAccountOpenFailure(binding *Binding) bool {
+	return binding != nil && strings.EqualFold(strings.TrimSpace(binding.Status), "failed") &&
+		strings.TrimSpace(binding.LastErrorCode) == "billing_account_open_failed"
+}
+
+func hasRegisteredIdentity(binding *Binding) bool {
+	return binding != nil && strings.TrimSpace(binding.Uin) != "" && binding.Uin != "0" &&
+		strings.TrimSpace(binding.AppID) != "" && binding.AppID != "0"
 }
 
 // truncate 截断 byte slice 用于 error 日志，避免巨型 body 干扰排障。

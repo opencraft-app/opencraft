@@ -512,6 +512,8 @@ func classifyPlaceOrderError(err error) (string, int) {
 	case errors.Is(err, placeorder.ErrBindingNotFound):
 		// 8B-1：externalUserId 在 shadow 没有绑定记录（用户未实名 / 未绑云账号）
 		return "BindingNotFound", http.StatusUnprocessableEntity
+	case errors.Is(err, placeorder.ErrBillingAccountOpenFailed):
+		return "BillingAccountOpenFailed", http.StatusConflict
 	default:
 		return "UpstreamError", http.StatusBadGateway
 	}

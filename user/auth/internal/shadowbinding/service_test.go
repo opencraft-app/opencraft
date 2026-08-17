@@ -323,6 +323,46 @@ func TestBindShadowAccountRetriesBillingWithoutRegisteringAgain(t *testing.T) {
 	}
 }
 
+func TestRetryBillingAccountOpeningRetriesOnlyBillingOpenFailure(t *testing.T) {
+	client := &recordingClient{result: CloudRegisterResult{Uin: 450860000002, OwnerUin: 450860000002, AppID: 1374210036}}
+	billing := &recordingBillingClient{err: errors.New("billing unavailable")}
+	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
+
+	failed, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
+	if err == nil || failed.LastErrorCode != "billing_account_open_failed" {
+		t.Fatalf("expected billing-open failure, binding=%+v err=%v", failed, err)
+	}
+	billing.err = nil
+	billing.result = BillingAccountResult{IsOpen: true, RequestID: "billing-request-retry"}
+
+	active, err := svc.RetryBillingAccountOpening(context.Background(), "usr_intl")
+	if err != nil {
+		t.Fatalf("retry billing account opening: %v", err)
+	}
+	if active.Status != StatusActive || billing.calls != 2 || client.calls != 1 {
+		t.Fatalf("expected billing-only retry, binding=%+v billing_calls=%d register_calls=%d", active, billing.calls, client.calls)
+	}
+}
+
+func TestRetryBillingAccountOpeningSkipsNonBillingFailure(t *testing.T) {
+	client := &recordingClient{err: errors.New("register unavailable")}
+	billing := &recordingBillingClient{result: BillingAccountResult{IsOpen: true}}
+	svc := New(NewMemoryStore(), client, Options{Enabled: true, SiteKind: SiteKindIntl, BillingAccount: billing})
+
+	failed, err := svc.BindShadowAccount(context.Background(), BindInput{UserID: "usr_intl", Email: "verified@example.com"})
+	if err == nil || failed.LastErrorCode != "tencentcloud_register_failed" {
+		t.Fatalf("expected registration failure, binding=%+v err=%v", failed, err)
+	}
+
+	unchanged, err := svc.RetryBillingAccountOpening(context.Background(), "usr_intl")
+	if err != nil {
+		t.Fatalf("non-billing failure should be returned unchanged: %v", err)
+	}
+	if unchanged.LastErrorCode != "tencentcloud_register_failed" || billing.calls != 0 || client.calls != 1 {
+		t.Fatalf("unexpected retry for non-billing failure, binding=%+v billing_calls=%d register_calls=%d", unchanged, billing.calls, client.calls)
+	}
+}
+
 func TestBindShadowAccountResumesRegisteredPendingBinding(t *testing.T) {
 	store := NewMemoryStore()
 	now := time.Date(2026, 8, 10, 1, 2, 3, 0, time.UTC)

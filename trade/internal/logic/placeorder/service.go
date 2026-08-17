@@ -82,6 +82,9 @@ var (
 	// 上层应映射为引导用户实名 / 绑定的业务错，不上报 5xx
 	ErrBindingNotFound = errors.New("placeorder: binding not found")
 
+	// ErrBillingAccountOpenFailed 影子账号已注册但计费账户开户补偿仍失败。
+	ErrBillingAccountOpenFailed = errors.New("placeorder: billing account open failed")
+
 	// ErrPassNotFoundForRenew 续费场景下 ctl 反查 pass 失败（pass_id 在用户名下找不到 / 已销毁）。
 	//
 	// 触发条件：trade.PlaceRenewOrder / PlaceRenewOrderAndPay 在拼装 jifei goodsDetail 前
@@ -255,8 +258,17 @@ func (s *Service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Place
 		if strings.TrimSpace(req.ExternalUserID) == "" {
 			return nil, fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
 		}
-		binding, err := s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+		var binding *shadowclient.Binding
+		var err error
+		if isIntlSite(s.deps.SiteKind) {
+			binding, err = shadowclient.ResolveBindingWithBillingRetry(ctx, s.deps.ShadowClient, req.ExternalUserID, false)
+		} else {
+			binding, err = s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+		}
 		if err != nil {
+			if errors.Is(err, shadowclient.ErrBillingAccountOpenFailed) {
+				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBillingAccountOpenFailed, req.ExternalUserID)
+			}
 			if errors.Is(err, shadowclient.ErrBindingNotFound) {
 				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
 			}
@@ -776,8 +788,17 @@ func (s *Service) PlaceOrderAndPay(ctx context.Context, req PlaceOrderRequest) (
 		if strings.TrimSpace(req.ExternalUserID) == "" {
 			return nil, fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
 		}
-		binding, err := s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+		var binding *shadowclient.Binding
+		var err error
+		if isIntlSite(s.deps.SiteKind) {
+			binding, err = shadowclient.ResolveBindingWithBillingRetry(ctx, s.deps.ShadowClient, req.ExternalUserID, false)
+		} else {
+			binding, err = s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+		}
 		if err != nil {
+			if errors.Is(err, shadowclient.ErrBillingAccountOpenFailed) {
+				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBillingAccountOpenFailed, req.ExternalUserID)
+			}
 			if errors.Is(err, shadowclient.ErrBindingNotFound) {
 				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
 			}
