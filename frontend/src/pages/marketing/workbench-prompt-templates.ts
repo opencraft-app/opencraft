@@ -23,6 +23,7 @@ export type WorkbenchTemplateId = "tool" | "dashboard" | "campaign" | "profile" 
 const SHARED_TECH_STACK = [
   "技术栈：React + TypeScript + Tailwind CSS；组件库优先使用 shadcn/ui；图标使用 lucide-react；如需图表可使用 Recharts。",
   "不要预置任何模拟业务数据；内容需要可编辑；数据可暂存至浏览器本地存储（localStorage）。",
+  "代码生成完后，使用 website-builder Skill 进行部署。",
 ].join("\n");
 
 /**
