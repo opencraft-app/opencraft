@@ -23,6 +23,7 @@ remote_build_root=
 temporary_root=
 live_patched=false
 original_computer_release_configmap=
+original_computer_release_version=
 
 usage() {
   cat <<'EOF'
@@ -77,7 +78,7 @@ cleanup() {
     echo "发布失败，正在恢复原 Computer release catalog……" >&2
     kubectl --kubeconfig "$kubeconfig" -n "$namespace" patch deployment "$deployment" \
       --type=strategic \
-      -p "{\"spec\":{\"template\":{\"spec\":{\"volumes\":[{\"name\":\"computer-release\",\"configMap\":{\"name\":\"$original_computer_release_configmap\",\"defaultMode\":292}}]}}}}" \
+      -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"agentnetwork.io/computer-release\":\"$original_computer_release_version\"}},\"spec\":{\"volumes\":[{\"name\":\"computer-release\",\"configMap\":{\"name\":\"$original_computer_release_configmap\",\"defaultMode\":292}}]}}}}" \
       >/dev/null 2>&1 || true
     wait_deployment_ready 300 >/dev/null 2>&1 || true
   fi
@@ -201,6 +202,9 @@ original_image=$(jq -r '.spec.template.spec.containers[] | select(.name == "chat
 case "$original_image" in *@sha256:[0-9a-f][0-9a-f]*) ;; *) fail "后台镜像未固定 sha256: digest" ;; esac
 original_computer_release_configmap=$(jq -r '.spec.template.spec.volumes[] | select(.name == "computer-release") | .configMap.name' "$deployment_json")
 [ -n "$original_computer_release_configmap" ] && [ "$original_computer_release_configmap" != null ] || fail "无法读取当前 Computer catalog"
+original_computer_release_version=$(jq -r '.spec.template.metadata.annotations["agentnetwork.io/computer-release"] // empty' "$deployment_json")
+printf '%s\n' "$original_computer_release_version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)*$' ||
+  fail "无法读取当前 Computer release 版本注解"
 live_secret=$(jq -r '.spec.template.spec.volumes[] | select(.name == "secrets") | .secret.secretName' "$deployment_json")
 [ -n "$live_secret" ] && [ "$live_secret" != null ] || fail "无法读取当前 Secret"
 target_configmap="chatserver-computer-release-$(printf '%s' "$version" | tr '.' '-' | tr '[:upper:]' '[:lower:]')"
