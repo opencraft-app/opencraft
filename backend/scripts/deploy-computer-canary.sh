@@ -47,6 +47,27 @@ fail() {
   exit 1
 }
 
+wait_deployment_ready() {
+  timeout_seconds=$1
+  attempts=$((timeout_seconds / 2))
+  [ "$attempts" -gt 0 ] || attempts=1
+  for _attempt in $(seq 1 "$attempts"); do
+    observed_json=$(kubectl --kubeconfig "$kubeconfig" -n "$namespace" get deployment "$deployment" -o json) || return 1
+    generation=$(printf '%s' "$observed_json" | jq -r '.metadata.generation')
+    observed=$(printf '%s' "$observed_json" | jq -r '.status.observedGeneration // 0')
+    ready=$(printf '%s' "$observed_json" | jq -r '.status.readyReplicas // 0')
+    updated=$(printf '%s' "$observed_json" | jq -r '.status.updatedReplicas // 0')
+    available=$(printf '%s' "$observed_json" | jq -r '.status.availableReplicas // 0')
+    unavailable=$(printf '%s' "$observed_json" | jq -r '.status.unavailableReplicas // 0')
+    if [ "$observed" = "$generation" ] && [ "$ready" = 3 ] && [ "$updated" = 3 ] &&
+       [ "$available" = 3 ] && [ "$unavailable" = 0 ]; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
 cleanup() {
   exit_code=$?
   trap - EXIT HUP INT TERM
@@ -56,8 +77,7 @@ cleanup() {
       --type=strategic \
       -p "{\"spec\":{\"template\":{\"spec\":{\"volumes\":[{\"name\":\"computer-release\",\"configMap\":{\"name\":\"$original_computer_release_configmap\",\"defaultMode\":292}}]}}}}" \
       >/dev/null 2>&1 || true
-    kubectl --kubeconfig "$kubeconfig" -n "$namespace" rollout status \
-      "deployment/$deployment" --timeout=300s >/dev/null 2>&1 || true
+    wait_deployment_ready 300 >/dev/null 2>&1 || true
   fi
   if [ -n "$temporary_root" ] && [ -d "$temporary_root" ]; then
     rm -rf -- "$temporary_root"
@@ -175,7 +195,7 @@ expected_version="{\"mode\":\"vela\",\"name\":\"vela-computer\",\"version\":\"$v
 remote_build_root=$(ssh -o BatchMode=yes -p "$linux_builder_port" "$linux_builder_host" \
   'mktemp -d /tmp/vela-computer-release.XXXXXX')
 case "$remote_build_root" in /tmp/vela-computer-release.*) ;; *) fail "远端构建目录无效" ;; esac
-COPYFILE_DISABLE=1 tar --exclude='./native/tat-agent/target' --exclude='./dist' --exclude='./._*' -czf - -C "$agent_source" . |
+COPYFILE_DISABLE=1 tar --no-xattrs --exclude='./native/tat-agent/target' --exclude='./dist' --exclude='./._*' -czf - -C "$agent_source" . |
   ssh -o BatchMode=yes -p "$linux_builder_port" "$linux_builder_host" \
     "tar -xzf - -C '$remote_build_root'"
 ssh -o BatchMode=yes -p "$linux_builder_port" "$linux_builder_host" \
@@ -256,8 +276,7 @@ kubectl --kubeconfig "$kubeconfig" -n "$namespace" patch deployment "$deployment
   -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"agentnetwork.io/computer-release\":\"$version\"}},\"spec\":{\"volumes\":[{\"name\":\"computer-release\",\"configMap\":{\"name\":\"$target_configmap\",\"defaultMode\":292}}]}}}}" \
   >/dev/null
 live_patched=true
-kubectl rollout status "deployment/$deployment" \
-  --kubeconfig "$kubeconfig" -n "$namespace" --timeout=600s
+wait_deployment_ready 600 || fail "Deployment 未在 600 秒内收敛"
 
 echo "[7/7] 验收 3 副本、catalog 与健康端点……"
 pods_json="$temporary_root/pods.json"
