@@ -1542,7 +1542,15 @@ func (s *Service) RetryShadowBinding(ctx context.Context, token string) (ShadowB
 	if s.shadowBinding == nil {
 		return ShadowBindingResult{UserID: session.User.ID, Status: "disabled"}, nil
 	}
-	binding, err := s.shadowBinding.BindShadowAccount(ctx, shadowbinding.BindInput{UserID: session.User.ID, Phone: session.User.Phone})
+	email := ""
+	if session.User.EmailVerified {
+		email = session.User.Email
+	}
+	binding, err := s.shadowBinding.BindShadowAccount(ctx, shadowbinding.BindInput{
+		UserID: session.User.ID,
+		Email:  email,
+		Phone:  session.User.Phone,
+	})
 	if err != nil && binding.UserID == "" {
 		return ShadowBindingResult{}, err
 	}

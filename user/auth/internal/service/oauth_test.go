@@ -150,6 +150,55 @@ func TestIntlOAuthSignInSurvivesProvisioningFailure(t *testing.T) {
 	}
 }
 
+func TestRetryShadowBindingUsesVerifiedSessionEmail(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	initialSvc := NewWithStore(store, Options{Now: fixedNow})
+	session, err := initialSvc.SignInWithOAuth(context.Background(), OAuthSignInInput{
+		Provider:        "github",
+		ProviderSubject: "github-existing-user",
+		Email:           "verified@example.com",
+		EmailVerified:   true,
+		Name:            "Existing Intl User",
+	})
+	if err != nil {
+		t.Fatalf("seed existing oauth user: %v", err)
+	}
+	store.mu.Lock()
+	verifiedUser := store.usersByID[session.User.ID]
+	verifiedUser.EmailVerified = true
+	store.usersByID[session.User.ID] = verifiedUser
+	store.mu.Unlock()
+
+	shadowStore := shadowbinding.NewMemoryStore()
+	cloud := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{
+		Uin:      450860000004,
+		OwnerUin: 450860000004,
+		AppID:    1374211121,
+	}}
+	billing := &oauthBillingClient{result: shadowbinding.BillingAccountResult{IsOpen: true}}
+	shadowSvc := shadowbinding.New(shadowStore, cloud, shadowbinding.Options{
+		Enabled:        true,
+		SiteKind:       shadowbinding.SiteKindIntl,
+		BillingAccount: billing,
+	})
+	retrySvc := NewWithStore(store, Options{
+		Now:           fixedNow,
+		SiteKind:      shadowbinding.SiteKindIntl,
+		ShadowBinding: shadowSvc,
+	})
+
+	binding, err := retrySvc.RetryShadowBinding(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("retry shadow binding: %v", err)
+	}
+	if binding.Status != shadowbinding.StatusActive {
+		t.Fatalf("binding=%+v, want active", binding)
+	}
+	if cloud.lastRegister.Email != "verified@example.com" {
+		t.Fatalf("registration email=%q, want verified session email", cloud.lastRegister.Email)
+	}
+}
+
 func TestOAuthSignInRejectsMissingProviderSubject(t *testing.T) {
 	t.Parallel()
 
