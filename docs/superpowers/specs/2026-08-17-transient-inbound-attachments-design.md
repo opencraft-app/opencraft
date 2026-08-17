@@ -74,8 +74,9 @@ type MessageRegistration struct {
   the image variant. Generate a safe display filename when Tencent supplies none.
 - Audio/video remain separate explicit projectors; they must not accidentally inherit the image schema.
 
-Projection failure retains the raw element for diagnostics but cannot silently claim that the attachment was
-registered.
+Projection failure retains only a redacted diagnostic shape in-process and cannot silently claim that the
+attachment was registered. Raw provider URLs, query strings, Tencent file identities, and opaque payload values
+must never be serialized to logs, prompts, Runtime JSON, or persisted state.
 
 ## In-memory capability registry
 
@@ -90,12 +91,18 @@ The Agent Gateway owns an `InboundAttachmentRegistry` containing metadata only:
 Properties:
 
 - random 128-bit-or-stronger IDs;
+- within one Gateway/runtime epoch, idempotently reuse the same handle for the tuple
+  `(route ID, visible target, Tencent message reference, provider attachment identity)`;
 - maximum 512 entries per Gateway;
 - two-hour absolute TTL;
 - target/route/runtime-epoch authorization on every download;
 - zero attachment bytes cached by the registry;
 - expired and oldest entries evicted in memory;
 - registry destroyed with the Gateway.
+
+History, search, resolve, and live ingress may all observe the same Tencent attachment. They must converge on the
+same handle inside one epoch rather than consuming registry capacity or changing CLI-visible IDs. A new epoch
+creates a new handle.
 
 The existing Tencent URL allowlist, redirect bound, TLS floor, private-network dial rejection, and 50 MiB size
 limit remain mandatory. Provider URLs never cross into Runtime JSON or prompts.
@@ -113,6 +120,10 @@ Both ingress paths consume the same `MessageRegistration`:
   IDs and an explicit `vela attachment view --id ... --output ...` instruction.
 - Warm Agent: `runtimeapi.Delivery.Attachments` is populated. Codex, Hermes ACP, and Hermes Gateway render the same
   safe attachment hint even if they do not yet support native multimodal resource blocks.
+
+Every attachment-bearing delivery also carries a non-empty, generated text hint before entering a Runtime driver.
+`Attachments` supplements `Text`; it does not replace it. This preserves the current Codex, Hermes ACP, and Hermes
+Gateway requirement that delivery text is non-empty while making image-only/file-only messages valid input.
 
 Image-only messages must never become empty delivery. A safe initial rendering is:
 
@@ -135,6 +146,11 @@ resource blocks are a later adapter enhancement, not a prerequisite for restorin
 
 Inbound and outbound IDs use distinct prefixes so authority and lifecycle cannot be confused.
 
+Compatibility is fail-closed: the download route accepts an inbound capability only from the live in-memory
+registry, and accepts a filesystem-backed record only when it is an outgoing attachment record. Persisted legacy
+`DirectionIncoming` records are rejected and may be garbage-collected separately; they never remain valid across
+the upgrade.
+
 No new Backend route, database table, COS object, or public download URL is introduced.
 
 ## Error behavior
@@ -153,12 +169,15 @@ Required regression coverage:
 2. File/audio/video schema handling stays explicit and unchanged.
 3. Image-only ingress creates a non-empty registration with an opaque capability ID.
 4. The inbound registry is in-memory, TTL-bounded, capacity-bounded, and runtime-epoch/target scoped.
-5. Provider URL and Tencent UUID never appear in wake JSON, Runtime delivery, prompt, or logs.
-6. Cold launch receives attachment metadata and download guidance.
-7. Warm delivery receives the same attachment metadata.
-8. `vela attachment view` streams the expected bytes through the authorized loopback route.
-9. Gateway replacement invalidates an old handle; Tencent history replay creates a new one.
-10. Existing outgoing attachment upload/send behavior remains green.
+5. Repeated live/history/search/resolve observation reuses one handle inside the same epoch.
+6. Provider URL, URL query, raw payload, and Tencent UUID never appear in wake JSON, Runtime delivery, prompt,
+   persisted state, or logs.
+7. Cold launch receives attachment metadata, non-empty text, and download guidance.
+8. Warm delivery receives the same attachment metadata and non-empty text.
+9. `vela attachment view` streams the expected bytes through the authorized loopback route.
+10. Gateway replacement invalidates an old handle; Tencent history replay creates a new one.
+11. Persisted legacy incoming records are rejected while outgoing records remain valid.
+12. Existing outgoing attachment upload/send behavior remains green.
 
 Add one end-to-end test from Tencent image payload through `gojaim`, Gateway registration, runtimehost cold/warm
 delivery, CLI download, and safe prompt rendering.
