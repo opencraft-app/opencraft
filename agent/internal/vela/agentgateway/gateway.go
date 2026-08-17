@@ -27,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	"velachat/agent/internal/agentapi"
 	"velachat/agent/internal/common"
+	"velachat/agent/internal/runtimeapi"
 	rootstate "velachat/agent/internal/state"
 	"velachat/agent/internal/vela/attachmentstore"
 	"velachat/agent/internal/vela/im"
@@ -93,25 +94,26 @@ type Gateway struct {
 	hub       *Hub
 	launchKey string
 
-	mu                sync.RWMutex
-	targets           map[string]im.Conversation
-	targetAliases     map[string]string
-	reverseTargets    map[im.Conversation]string
-	memberNames       map[string]string
-	messages          []storedMessage
-	capabilities      map[string]struct{}
-	platformClient    *platform.Client
-	accessToken       platform.AccessToken
-	directory         platform.RuntimeDirectory
-	directoryReady    bool
-	directoryRefresh  sync.Mutex
-	directoryCancel   context.CancelFunc
-	directoryDone     chan struct{}
-	messageIndex      *messageindex.Index
-	attachmentStore   *attachmentstore.Store
-	attachmentFetcher AttachmentFetcher
-	now               func() time.Time
-	pendingThreads    pendingThreadState
+	mu                 sync.RWMutex
+	targets            map[string]im.Conversation
+	targetAliases      map[string]string
+	reverseTargets     map[im.Conversation]string
+	memberNames        map[string]string
+	messages           []storedMessage
+	capabilities       map[string]struct{}
+	platformClient     *platform.Client
+	accessToken        platform.AccessToken
+	directory          platform.RuntimeDirectory
+	directoryReady     bool
+	directoryRefresh   sync.Mutex
+	directoryCancel    context.CancelFunc
+	directoryDone      chan struct{}
+	messageIndex       *messageindex.Index
+	attachmentStore    *attachmentstore.Store
+	inboundAttachments *inboundAttachmentRegistry
+	attachmentFetcher  AttachmentFetcher
+	now                func() time.Time
+	pendingThreads     pendingThreadState
 
 	closeOnce sync.Once
 	closeErr  error
@@ -250,22 +252,25 @@ func (h *Hub) Register(config Config) (*Gateway, error) {
 		return nil, err
 	}
 	gateway := &Gateway{
-		config:            config,
-		token:             token,
-		tokenFile:         filepath.Join(config.StateRoot, tokenRelative),
-		wrapper:           filepath.Join(config.StateRoot, wrapperRelative),
-		baseURL:           h.baseURL,
-		store:             store,
-		hub:               h,
-		launchKey:         launchKey,
-		targets:           make(map[string]im.Conversation),
-		targetAliases:     make(map[string]string),
-		reverseTargets:    make(map[im.Conversation]string),
-		memberNames:       make(map[string]string),
-		capabilities:      make(map[string]struct{}),
-		platformClient:    config.PlatformClient,
-		messageIndex:      messageIndex,
-		attachmentStore:   attachmentStore,
+		config:          config,
+		token:           token,
+		tokenFile:       filepath.Join(config.StateRoot, tokenRelative),
+		wrapper:         filepath.Join(config.StateRoot, wrapperRelative),
+		baseURL:         h.baseURL,
+		store:           store,
+		hub:             h,
+		launchKey:       launchKey,
+		targets:         make(map[string]im.Conversation),
+		targetAliases:   make(map[string]string),
+		reverseTargets:  make(map[im.Conversation]string),
+		memberNames:     make(map[string]string),
+		capabilities:    make(map[string]struct{}),
+		platformClient:  config.PlatformClient,
+		messageIndex:    messageIndex,
+		attachmentStore: attachmentStore,
+		inboundAttachments: newInboundAttachmentRegistry(
+			config.RuntimeEpoch, now, 2*time.Hour, 512, rand.Reader,
+		),
 		attachmentFetcher: attachmentFetcher,
 		now:               now,
 		pendingThreads:    pendingThreadState{items: pendingThreads},
@@ -648,23 +653,36 @@ func (g *Gateway) RuntimeEnvironment() map[string]string {
 func (g *Gateway) RegisterMessage(
 	message im.IncomingMessage,
 ) (string, error) {
+	registered, err := g.registerMessage(message)
+	return registered.Target, err
+}
+
+func (g *Gateway) RegisterRuntimeMessage(
+	message im.IncomingMessage,
+) (runtimeapi.MessageRegistration, error) {
+	return g.registerMessage(message)
+}
+
+func (g *Gateway) registerMessage(
+	message im.IncomingMessage,
+) (runtimeapi.MessageRegistration, error) {
 	if g == nil ||
 		strings.TrimSpace(message.Ref.MessageID()) == "" ||
 		strings.TrimSpace(message.SenderUserID) == "" {
-		return "", ErrInvalidMessage
+		return runtimeapi.MessageRegistration{}, ErrInvalidMessage
 	}
 	g.mu.Lock()
 	canonicalTarget, found := g.reverseTargets[message.Ref.Conversation()]
 	if !found {
 		if g.directoryReady {
 			g.mu.Unlock()
-			return "", ErrInvalidMessage
+			return runtimeapi.MessageRegistration{}, ErrInvalidMessage
 		}
 		var err error
 		canonicalTarget, err = conversationTarget(message.Ref.Conversation())
 		if err != nil {
 			g.mu.Unlock()
-			return "", err
+			return runtimeapi.MessageRegistration{}, err
 		}
 		g.targets[canonicalTarget] = message.Ref.Conversation()
 		g.targetAliases[strings.ToLower(canonicalTarget)] = canonicalTarget
@@ -672,32 +690,92 @@ func (g *Gateway) RegisterMessage(
 	}
 	g.mu.Unlock()
 	if err := g.messageIndex.Add(canonicalTarget, message.Ref); err != nil {
-		return "", err
+		return runtimeapi.MessageRegistration{}, err
 	}
 	if err := g.enrichPendingThreadRegistration(message.Ref); err != nil {
-		return "", err
+		return runtimeapi.MessageRegistration{}, err
 	}
 	target := g.messageTarget(canonicalTarget, message)
 	attachments, err := g.rememberAttachments(canonicalTarget, target, message)
 	if err != nil {
-		return "", err
+		return runtimeapi.MessageRegistration{}, err
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	for _, existing := range g.messages {
+	for index := range g.messages {
+		existing := &g.messages[index]
 		if existing.target == target &&
 			existing.message.Ref.MessageID() ==
 				message.Ref.MessageID() {
-			return target, nil
+			existing.attachments = attachments
+			return messageRegistration(existing.target, existing.content, existing.attachments), nil
 		}
 	}
-	g.messages = append(g.messages, storedMessage{
+	stored := storedMessage{
 		target:      target,
 		message:     message,
 		content:     messageText(message),
 		attachments: attachments,
-	})
-	return target, nil
+	}
+	g.messages = append(g.messages, stored)
+	return messageRegistration(stored.target, stored.content, stored.attachments), nil
+}
+
+func messageRegistration(
+	target string,
+	text string,
+	attachments []attachmentView,
+) runtimeapi.MessageRegistration {
+	refs := make([]runtimeapi.AttachmentRef, 0, len(attachments))
+	for _, attachment := range attachments {
+		refs = append(refs, runtimeapi.AttachmentRef{
+			ID: attachment.ID, Filename: attachment.Filename,
+			MIMEType: attachment.MIMEType, SizeBytes: attachment.SizeBytes,
+		})
+	}
+	return runtimeapi.MessageRegistration{
+		Target: target, Text: attachmentDeliveryText(text, refs), Attachments: refs,
+	}
+}
+
+func attachmentDeliveryText(text string, attachments []runtimeapi.AttachmentRef) string {
+	text = strings.TrimSpace(text)
+	if len(attachments) == 0 {
+		return text
+	}
+	parts := make([]string, 0, len(attachments))
+	for _, attachment := range attachments {
+		parts = append(parts, fmt.Sprintf(
+			"%s (id=%s, mime=%s, bytes=%d)",
+			safeAttachmentHintValue(attachment.Filename), attachment.ID,
+			safeAttachmentHintValue(attachment.MIMEType), attachment.SizeBytes,
+		))
+	}
+	hint := "[Attachments: " + strings.Join(parts, "; ") + "]\n" +
+		"Download and inspect content-dependent attachments before answering with " +
+		"`vela attachment view --id <id> --output .vela/tmp/<filename>`."
+	if text == "" {
+		return hint
+	}
+	return text + "\n" + hint
+}
+
+func safeAttachmentHintValue(value string) string {
+	value = strings.Map(func(character rune) rune {
+		if character < 0x20 || character == 0x7f ||
+			character == '`' || character == '[' || character == ']' {
+			return '_'
+		}
+		return character
+	}, strings.TrimSpace(value))
+	runes := []rune(value)
+	if len(runes) > 128 {
+		value = string(runes[:128])
+	}
+	if value == "" {
+		return "attachment"
+	}
+	return value
 }
 
 func (g *Gateway) rememberAttachments(
@@ -711,16 +789,13 @@ func (g *Gateway) rememberAttachments(
 		if element.Type != im.ElementAttachment || element.Attachment == nil {
 			continue
 		}
-		record, err := g.attachmentStore.Remember(
-			routeID, displayTarget, message.Ref.MessageID(), *element.Attachment,
+		capability, err := g.inboundAttachments.Remember(
+			routeID, displayTarget, message.Ref, *element.Attachment,
 		)
 		if err != nil {
 			return nil, err
 		}
-		views = append(views, attachmentView{
-			ID: record.ID, Filename: record.Filename, MIMEType: record.MIMEType,
-			SizeBytes: record.SizeBytes,
-		})
+		views = append(views, capability.View)
 	}
 	return views, nil
 }
@@ -1824,33 +1899,53 @@ func (g *Gateway) serveAttachmentDownload(
 	request *http.Request,
 ) {
 	id := strings.TrimPrefix(request.URL.Path, agentapi.BasePath+"/attachments/")
-	record, err := g.attachmentStore.Remote(id)
-	if err != nil {
-		g.writeError(response, http.StatusNotFound, "attachment_not_found", "附件引用不存在")
-		return
+	target := ""
+	routeID := ""
+	attachment := im.Attachment{}
+	if strings.HasPrefix(id, "attc_") {
+		capability, ok := g.inboundAttachments.Lookup(id, g.config.RuntimeEpoch)
+		if !ok {
+			g.writeError(response, http.StatusNotFound, "attachment_capability_expired", "附件能力已失效")
+			return
+		}
+		target = capability.Target
+		routeID = capability.RouteID
+		attachment = capability.Attachment
+	} else {
+		record, err := g.attachmentStore.Remote(id)
+		if err != nil || record.Direction != attachmentstore.DirectionOutgoing {
+			g.writeError(response, http.StatusNotFound, "attachment_not_found", "附件引用不存在")
+			return
+		}
+		target = record.Target
+		routeID = record.ChannelID
+		attachment = im.Attachment{
+			ID: record.TencentFileID, Filename: record.Filename,
+			MIMEType: record.MIMEType, SizeBytes: record.SizeBytes, URL: record.URL,
+		}
 	}
-	authorizationTarget := record.Target
-	if channelTarget, _, isThread := splitThreadTarget(record.Target); isThread {
+	authorizationTarget := target
+	if channelTarget, _, isThread := splitThreadTarget(target); isThread {
 		authorizationTarget = channelTarget
 	}
-	_, routeID, _, authorized := g.resolveAuthorizedTargetWithRefresh(
+	_, authorizedRouteID, _, authorized := g.resolveAuthorizedTargetWithRefresh(
 		request.Context(), authorizationTarget,
 	)
-	if !authorized || routeID != record.ChannelID {
+	if !authorized || authorizedRouteID != routeID {
 		g.writeError(response, http.StatusForbidden, "target_not_authorized", "附件所属会话已不在当前目录授权范围内")
 		return
 	}
-	data, contentType, err := g.attachmentFetcher(request.Context(), record.URL)
+	data, contentType, err := g.attachmentFetcher(request.Context(), attachment.URL)
 	if err != nil || len(data) > attachmentstore.MaxAttachmentBytes ||
-		int64(len(data)) != record.SizeBytes {
+		int64(len(data)) != attachment.SizeBytes {
 		g.writeError(response, http.StatusBadGateway, "attachment_download_failed", "腾讯 IM 附件下载失败")
 		return
 	}
 	if strings.TrimSpace(contentType) == "" {
-		contentType = record.MIMEType
+		contentType = attachment.MIMEType
 	}
 	response.Header().Set("Content-Type", contentType)
-	response.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(record.Filename))
+	response.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(attachment.Filename))
 	response.Header().Set("X-Content-Type-Options", "nosniff")
 	response.Header().Set("Cache-Control", "private, no-store")
 	response.WriteHeader(http.StatusOK)

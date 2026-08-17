@@ -3,13 +3,16 @@ package runtimehost
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"velachat/agent/internal/agentapi"
 	"velachat/agent/internal/runtimeapi"
 	"velachat/agent/internal/vela/agentgateway"
 	"velachat/agent/internal/vela/im"
@@ -73,6 +76,12 @@ func TestAdapterAcceptsDirectConversationGroupFromRealGateway(t *testing.T) {
 		AgentID: agentID, ServerID: serverID, RuntimeEpoch: "runtime-epoch-1",
 		StateRoot: t.TempDir(), Executable: executable,
 		Transport: agentgateway.NewTransportSlot(), PlatformClient: platformClient,
+		AttachmentFetcher: func(_ context.Context, rawURL string) ([]byte, string, error) {
+			if rawURL != "https://image.rich.my-imcloud.com/screenshot.png?token=provider-secret" {
+				t.Fatalf("attachment URL = %q", rawURL)
+			}
+			return []byte("PNG"), "image/png", nil
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +114,7 @@ func TestAdapterAcceptsDirectConversationGroupFromRealGateway(t *testing.T) {
 		Agent: platform.AgentIdentity{
 			ID: agentID, ServerID: serverID, UserID: "agent_builder",
 			ReplyPolicy: "dm_only", RuntimeKind: "codex",
-			Capabilities: []string{"read", "send", "server"},
+			Capabilities: []string{"read", "send", "server", "attachments"},
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -122,7 +131,17 @@ func TestAdapterAcceptsDirectConversationGroupFromRealGateway(t *testing.T) {
 	}
 	result, err := adapter.HandleIngressMessage(context.Background(), im.IncomingMessage{
 		Ref: reference, SenderUserID: "human_alice",
-		Elements: []im.Element{{Type: im.ElementText, Text: "hello"}},
+		Elements: []im.Element{
+			{Type: im.ElementText, Text: "please inspect"},
+			{
+				Type: im.ElementAttachment,
+				Attachment: &im.Attachment{
+					ID: "provider-secret", Filename: "screenshot.png", MIMEType: "image/png",
+					SizeBytes: 3,
+					URL:       "https://image.rich.my-imcloud.com/screenshot.png?token=provider-secret",
+				},
+			},
+		},
 	})
 	if err != nil || result.Disposition != ingress.RuntimeAccepted {
 		t.Fatalf("HandleIngressMessage() = %#v, %v", result, err)
@@ -135,5 +154,39 @@ func TestAdapterAcceptsDirectConversationGroupFromRealGateway(t *testing.T) {
 	}
 	if !strings.Contains(manager.starts[0].Prompt, `"target":"@alice"`) {
 		t.Fatalf("wake prompt did not preserve visible target: %s", manager.starts[0].Prompt)
+	}
+	if !strings.Contains(manager.starts[0].Prompt, `"filename":"screenshot.png"`) ||
+		strings.Contains(manager.starts[0].Prompt, "provider-secret") ||
+		strings.Contains(manager.starts[0].Prompt, "my-imcloud.com") {
+		t.Fatalf("wake prompt attachment = %s", manager.starts[0].Prompt)
+	}
+	attachmentID := regexp.MustCompile(`attc_[0-9a-f]{32}`).FindString(manager.starts[0].Prompt)
+	if attachmentID == "" {
+		t.Fatalf("wake prompt has no transient attachment ID: %s", manager.starts[0].Prompt)
+	}
+	tokenData, err := os.ReadFile(gateway.RuntimeEnvironment()["VELA_AGENT_PROXY_TOKEN_FILE"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequest(
+		http.MethodGet,
+		gateway.RuntimeEnvironment()["VELA_AGENT_PROXY_URL"]+agentapi.BasePath+"/attachments/"+attachmentID,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+string(tokenData))
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	data, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || string(data) != "PNG" {
+		t.Fatalf("attachment download = status %d body %q", response.StatusCode, data)
 	}
 }

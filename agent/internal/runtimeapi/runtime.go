@@ -42,9 +42,23 @@ type StartRequest struct {
 }
 
 type Delivery struct {
-	Text      string
-	Mode      string
-	Transient bool
+	Text        string
+	Attachments []AttachmentRef
+	Mode        string
+	Transient   bool
+}
+
+type AttachmentRef struct {
+	ID        string `json:"id"`
+	Filename  string `json:"filename"`
+	MIMEType  string `json:"mimeType"`
+	SizeBytes int64  `json:"sizeBytes"`
+}
+
+type MessageRegistration struct {
+	Target      string
+	Text        string
+	Attachments []AttachmentRef
 }
 
 type EventKind string

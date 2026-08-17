@@ -3,6 +3,7 @@ package gojaim
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -482,6 +483,69 @@ func TestProjectSDKFileMessageProducesTypedAttachment(t *testing.T) {
 		projected.Elements[0].Attachment.Filename != "需求.pdf" ||
 		projected.Elements[0].Attachment.SizeBytes != 2048 {
 		t.Fatalf("projected elements = %#v", projected.Elements)
+	}
+}
+
+func TestProjectSDKImageMessageProducesTypedAttachment(t *testing.T) {
+	t.Parallel()
+	message := sdkTextMessage(
+		"message-image-1", "human-1", "group-1", 22, "",
+	)
+	message["type"] = "TIMImageElem"
+	message["payload"] = map[string]any{
+		"imageInfoArray": []any{
+			map[string]any{
+				"height": int64(1080), "imageType": int64(0),
+				"size":  int64(456789),
+				"url":   "https://image.rich.my-imcloud.com/original.png?token=secret",
+				"width": int64(1920),
+			},
+			map[string]any{
+				"height": int64(180), "imageType": int64(3),
+				"size":  int64(12345),
+				"url":   "https://image.rich.my-imcloud.com/thumb.png?token=secret",
+				"width": int64(320),
+			},
+		},
+	}
+	projected, err := projectSDKMessage(message, "agent-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projected.Elements) != 1 || projected.Elements[0].Attachment == nil {
+		t.Fatalf("projected elements = %#v", projected.Elements)
+	}
+	attachment := projected.Elements[0].Attachment
+	if attachment.ID != "message-image-1:image:0" ||
+		attachment.Filename != "image-message-image-1.png" ||
+		attachment.MIMEType != "image/png" ||
+		attachment.SizeBytes != 456789 ||
+		attachment.URL != "https://image.rich.my-imcloud.com/original.png?token=secret" {
+		t.Fatalf("projected image attachment = %#v", attachment)
+	}
+}
+
+func TestProjectSDKInvalidImageKeepsOnlyRedactedDiagnostic(t *testing.T) {
+	t.Parallel()
+	message := sdkTextMessage("message-image-invalid", "human-1", "group-1", 23, "")
+	message["type"] = "TIMImageElem"
+	message["payload"] = map[string]any{
+		"imageInfoArray": []any{map[string]any{
+			"imageType": int64(0),
+			"url":       "https://image.rich.my-imcloud.com/image.png?token=must-not-cross",
+		}},
+	}
+	projected, err := projectSDKMessage(message, "agent-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projected.Elements) != 1 || projected.Elements[0].Attachment != nil {
+		t.Fatalf("projected invalid image = %#v", projected.Elements)
+	}
+	diagnostic := string(projected.Elements[0].Data)
+	if !strings.Contains(diagnostic, "invalid_attachment") ||
+		strings.Contains(diagnostic, "my-imcloud.com") || strings.Contains(diagnostic, "must-not-cross") {
+		t.Fatalf("image diagnostic = %q", diagnostic)
 	}
 }
 

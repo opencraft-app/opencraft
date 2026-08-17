@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -958,13 +960,27 @@ func projectMessageElements(message map[string]any) []im.Element {
 			CustomType: stringValue(payload["description"]),
 			Data:       rawJSONValue(payload["data"]),
 		})
-	case "TIMImageElem", "TIMSoundElem", "TIMVideoFileElem", "TIMFileElem":
+	case "TIMImageElem":
 		element := im.Element{
 			Type: im.ElementAttachment,
-			Data: rawJSONValue(payload),
 		}
+		if attachment, err := projectImageAttachment(
+			stringValue(message["ID"]),
+			payload,
+		); err == nil {
+			element.Attachment = &attachment
+		} else {
+			element.Data = attachmentProjectionDiagnostic("TIMImageElem")
+		}
+		elements = append(elements, element)
+	case "TIMSoundElem", "TIMVideoFileElem", "TIMFileElem":
+		element := im.Element{Type: im.ElementAttachment}
 		if attachment, err := projectAttachment(payload); err == nil {
 			element.Attachment = &attachment
+		} else {
+			element.Data = attachmentProjectionDiagnostic(
+				stringValue(message["type"]),
+			)
 		}
 		elements = append(elements, element)
 	default:
@@ -991,6 +1007,93 @@ func projectMessageElements(message map[string]any) []im.Element {
 		}
 	}
 	return elements
+}
+
+func projectImageAttachment(
+	messageID string,
+	value map[string]any,
+) (im.Attachment, error) {
+	images, ok := asSlice(value["imageInfoArray"])
+	if !ok || len(images) == 0 {
+		return im.Attachment{}, ErrInvalidSDKResult
+	}
+	selectedIndex := 0
+	selected, selectedOK := asMap(images[0])
+	for index, raw := range images {
+		candidate, candidateOK := asMap(raw)
+		if !candidateOK {
+			continue
+		}
+		if imageType, imageTypeOK := numberInt64(candidate["imageType"]); imageTypeOK && imageType == 0 {
+			selected = candidate
+			selectedIndex = index
+			selectedOK = true
+			break
+		}
+	}
+	if !selectedOK {
+		return im.Attachment{}, ErrInvalidSDKResult
+	}
+	rawURL := stringValue(selected["url"])
+	size, sizeOK := numberInt64(selected["size"])
+	if strings.TrimSpace(messageID) == "" || rawURL == "" || !sizeOK || size < 0 {
+		return im.Attachment{}, ErrInvalidSDKResult
+	}
+	imageType, imageTypeOK := numberInt64(selected["imageType"])
+	if !imageTypeOK {
+		imageType = int64(selectedIndex)
+	}
+	extension, mimeType := imageFileType(rawURL)
+	return im.Attachment{
+		ID:        messageID + ":image:" + strconv.FormatInt(imageType, 10),
+		Filename:  "image-" + safeAttachmentNamePart(messageID) + extension,
+		MIMEType:  mimeType,
+		SizeBytes: size,
+		URL:       rawURL,
+	}, nil
+}
+
+func imageFileType(rawURL string) (string, string) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ".img", "application/octet-stream"
+	}
+	extension := strings.ToLower(path.Ext(parsed.Path))
+	switch extension {
+	case ".png":
+		return extension, "image/png"
+	case ".jpg", ".jpeg":
+		return extension, "image/jpeg"
+	case ".gif":
+		return extension, "image/gif"
+	case ".webp":
+		return extension, "image/webp"
+	default:
+		return ".img", "application/octet-stream"
+	}
+}
+
+func safeAttachmentNamePart(value string) string {
+	value = strings.Map(func(character rune) rune {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '-' || character == '_' {
+			return character
+		}
+		return '_'
+	}, strings.TrimSpace(value))
+	if value == "" {
+		return "attachment"
+	}
+	return value
+}
+
+func attachmentProjectionDiagnostic(messageType string) json.RawMessage {
+	return rawJSONValue(map[string]any{
+		"projection": "invalid_attachment",
+		"sdk_type":   messageType,
+	})
 }
 
 func projectAttachment(value map[string]any) (im.Attachment, error) {

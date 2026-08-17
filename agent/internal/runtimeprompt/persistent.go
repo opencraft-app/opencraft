@@ -80,7 +80,11 @@ func (planner PersistentPlanner) PlanLaunch(
 			prompt = durableWakePromptBatch(rawMessages)
 		}
 		rebindDelivery = &runtimeapi.Delivery{
-			Text:      prompt,
+			Text: prompt,
+			Attachments: attachmentRefsFromRawMessages(append(
+				[]json.RawMessage{input.WakeMessage},
+				rawBufferedMessages(input.BufferedMessages)...,
+			)),
 			Transient: input.WakeMessageTransient,
 		}
 		messages := make(
@@ -152,10 +156,37 @@ func bufferedRuntimeDelivery(
 		allTransient = allTransient && message.Transient
 	}
 	return runtimeapi.Delivery{
-		Text:      durableWakePromptBatch(rawMessages),
-		Mode:      "idle",
-		Transient: allTransient,
+		Text:        durableWakePromptBatch(rawMessages),
+		Attachments: attachmentRefsFromRawMessages(rawMessages),
+		Mode:        "idle",
+		Transient:   allTransient,
 	}
+}
+
+func attachmentRefsFromRawMessages(
+	messages []json.RawMessage,
+) []runtimeapi.AttachmentRef {
+	seen := make(map[string]struct{})
+	result := make([]runtimeapi.AttachmentRef, 0)
+	for _, raw := range messages {
+		var value struct {
+			Attachments []runtimeapi.AttachmentRef `json:"attachments"`
+		}
+		if common.Unmarshal(raw, &value) != nil {
+			continue
+		}
+		for _, attachment := range value.Attachments {
+			if !validAttachmentCapabilityID(strings.TrimSpace(attachment.ID)) {
+				continue
+			}
+			if _, exists := seen[attachment.ID]; exists {
+				continue
+			}
+			seen[attachment.ID] = struct{}{}
+			result = append(result, attachment)
+		}
+	}
+	return result
 }
 
 func cloneBufferedMessages(
@@ -209,6 +240,7 @@ type inboxPromptMessage struct {
 	sequence      int64
 	flags         []string
 	attentionHint json.RawMessage
+	attachments   []runtimeapi.AttachmentRef
 }
 
 type inboxPromptRow struct {
@@ -220,21 +252,22 @@ func durableWakePromptBatch(rawMessages []json.RawMessage) string {
 	buckets := make(map[string][]inboxPromptMessage)
 	for _, raw := range rawMessages {
 		var message struct {
-			MessageID         string          `json:"message_id"`
-			ID                string          `json:"id"`
-			Sequence          float64         `json:"seq"`
-			ChannelType       string          `json:"channel_type"`
-			ChannelName       string          `json:"channel_name"`
-			ParentChannelName string          `json:"parent_channel_name"`
-			ParentChannelType string          `json:"parent_channel_type"`
-			Target            string          `json:"target"`
-			SenderName        string          `json:"sender_name"`
-			LegacySenderName  string          `json:"senderName"`
-			TaskNumber        json.RawMessage `json:"task_number"`
-			TaskStatus        json.RawMessage `json:"task_status"`
-			Mentioned         bool            `json:"mentioned"`
-			NonMemberMention  bool            `json:"non_member_mention"`
-			AttentionHint     json.RawMessage `json:"attention_hint"`
+			MessageID         string                     `json:"message_id"`
+			ID                string                     `json:"id"`
+			Sequence          float64                    `json:"seq"`
+			ChannelType       string                     `json:"channel_type"`
+			ChannelName       string                     `json:"channel_name"`
+			ParentChannelName string                     `json:"parent_channel_name"`
+			ParentChannelType string                     `json:"parent_channel_type"`
+			Target            string                     `json:"target"`
+			SenderName        string                     `json:"sender_name"`
+			LegacySenderName  string                     `json:"senderName"`
+			TaskNumber        json.RawMessage            `json:"task_number"`
+			TaskStatus        json.RawMessage            `json:"task_status"`
+			Mentioned         bool                       `json:"mentioned"`
+			NonMemberMention  bool                       `json:"non_member_mention"`
+			AttentionHint     json.RawMessage            `json:"attention_hint"`
+			Attachments       []runtimeapi.AttachmentRef `json:"attachments"`
 		}
 		if common.Unmarshal(raw, &message) != nil {
 			continue
@@ -285,6 +318,7 @@ func durableWakePromptBatch(rawMessages []json.RawMessage) string {
 			sequence:      sequence,
 			flags:         flags,
 			attentionHint: append(json.RawMessage(nil), message.AttentionHint...),
+			attachments:   append([]runtimeapi.AttachmentRef(nil), message.Attachments...),
 		})
 	}
 
@@ -363,6 +397,13 @@ func durableWakePromptBatch(rawMessages []json.RawMessage) string {
 			}
 		}
 		lines = append(lines, row.target+"  "+strings.Join(details, " · "))
+		for _, message := range row.messages {
+			for _, attachment := range message.attachments {
+				if rendered := formatAttachmentPrompt(attachment); rendered != "" {
+					lines = append(lines, rendered)
+				}
+			}
+		}
 		if latest.messageID != "" {
 			lines = append(lines, fmt.Sprintf(
 				"read: `vela message read --target %q --around %q`",
@@ -586,19 +627,20 @@ func unreadResumePrompt(raw json.RawMessage) (string, bool) {
 
 func formatWakeMessage(raw json.RawMessage) string {
 	var message struct {
-		MessageID         string `json:"message_id"`
-		ChannelType       string `json:"channel_type"`
-		ChannelName       string `json:"channel_name"`
-		ParentChannelName string `json:"parent_channel_name"`
-		ParentChannelType string `json:"parent_channel_type"`
-		Target            string `json:"target"`
-		SenderName        string `json:"sender_name"`
-		SenderDescription string `json:"sender_description"`
-		SenderType        string `json:"sender_type"`
-		Source            string `json:"source"`
-		Content           string `json:"content"`
-		Text              string `json:"text"`
-		Timestamp         string `json:"timestamp"`
+		MessageID         string                     `json:"message_id"`
+		ChannelType       string                     `json:"channel_type"`
+		ChannelName       string                     `json:"channel_name"`
+		ParentChannelName string                     `json:"parent_channel_name"`
+		ParentChannelType string                     `json:"parent_channel_type"`
+		Target            string                     `json:"target"`
+		SenderName        string                     `json:"sender_name"`
+		SenderDescription string                     `json:"sender_description"`
+		SenderType        string                     `json:"sender_type"`
+		Source            string                     `json:"source"`
+		Content           string                     `json:"content"`
+		Text              string                     `json:"text"`
+		Timestamp         string                     `json:"timestamp"`
+		Attachments       []runtimeapi.AttachmentRef `json:"attachments"`
 	}
 	if common.Unmarshal(raw, &message) != nil {
 		return ""
@@ -632,6 +674,11 @@ func formatWakeMessage(raw json.RawMessage) string {
 	if strings.TrimSpace(content) == "" {
 		content = message.Text
 	}
+	for _, attachment := range message.Attachments {
+		if rendered := formatAttachmentPrompt(attachment); rendered != "" {
+			content += "\n" + rendered
+		}
+	}
 	return fmt.Sprintf(
 		"[target=%s msg=%s time=%s type=%s] %s: %s",
 		target,
@@ -641,6 +688,55 @@ func formatWakeMessage(raw json.RawMessage) string {
 		sender,
 		content,
 	)
+}
+
+func formatAttachmentPrompt(attachment runtimeapi.AttachmentRef) string {
+	id := strings.TrimSpace(attachment.ID)
+	if !validAttachmentCapabilityID(id) {
+		return ""
+	}
+	filename := safeAttachmentPromptValue(attachment.Filename)
+	if filename == "" {
+		filename = "attachment"
+	}
+	mimeType := safeAttachmentPromptValue(attachment.MIMEType)
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	return fmt.Sprintf(
+		"attachment %s · id=%s · mime=%s · bytes=%d\nview: `vela attachment view --id %s --output .vela/tmp/%s`",
+		filename, id, mimeType, attachment.SizeBytes, id, id,
+	)
+}
+
+func validAttachmentCapabilityID(value string) bool {
+	if !strings.HasPrefix(value, "attc_") || len(value) != 37 {
+		return false
+	}
+	for _, character := range value[5:] {
+		if (character < '0' || character > '9') &&
+			(character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func safeAttachmentPromptValue(value string) string {
+	value = strings.Map(func(character rune) rune {
+		if character >= 0x20 && character <= 0x7e &&
+			character != '`' && character != '[' && character != ']' {
+			return character
+		}
+		if character > 0x7e && !strings.ContainsRune("\u2028\u2029", character) {
+			return character
+		}
+		return '_'
+	}, strings.TrimSpace(value))
+	if len([]rune(value)) > 128 {
+		value = string([]rune(value)[:128])
+	}
+	return value
 }
 
 func deliveryText(raw json.RawMessage) string {

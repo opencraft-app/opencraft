@@ -99,6 +99,56 @@ func TestShouldDispatchRoutesOnlyExplicitTargets(t *testing.T) {
 	}
 }
 
+func TestAdapterDeliversAttachmentMetadataColdAndWarm(t *testing.T) {
+	t.Parallel()
+	manager := &fakeManager{}
+	gateway := &fakeCapabilityGateway{registration: runtimeapi.MessageRegistration{
+		Target: "@human",
+		Text:   "[Image attachment: screenshot.png, id=attc_safe]",
+		Attachments: []runtimeapi.AttachmentRef{{
+			ID: "attc_safe", Filename: "screenshot.png", MIMEType: "image/png",
+			SizeBytes: 136000,
+		}},
+	}}
+	planner := runtimeapi.LaunchPlannerFunc(func(input runtimeapi.LaunchInput) (runtimeapi.LaunchPlan, error) {
+		return runtimeapi.LaunchPlan{Prompt: string(input.WakeMessage)}, nil
+	})
+	adapter := newTestAdapter(t, manager, gateway, planner)
+
+	for _, messageID := range []string{"image-cold", "image-warm"} {
+		message := incomingMessage(t, messageID, "")
+		message.Elements = []im.Element{{
+			Type: im.ElementAttachment,
+			Attachment: &im.Attachment{
+				ID: "provider-secret", Filename: "screenshot.png", MIMEType: "image/png",
+				SizeBytes: 136000,
+				URL:       "https://image.rich.my-imcloud.com/image.png?token=must-not-cross",
+			},
+		}}
+		if _, err := adapter.HandleIngressMessage(context.Background(), message); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if len(manager.starts) != 1 || len(manager.deliveries) != 1 {
+		t.Fatalf("starts=%d deliveries=%d", len(manager.starts), len(manager.deliveries))
+	}
+	cold := manager.starts[0].Prompt
+	if !strings.Contains(cold, `"id":"attc_safe"`) ||
+		!strings.Contains(cold, `"filename":"screenshot.png"`) ||
+		strings.Contains(cold, "provider-secret") || strings.Contains(cold, "must-not-cross") {
+		t.Fatalf("cold attachment prompt = %s", cold)
+	}
+	warm := manager.deliveries[0]
+	if strings.TrimSpace(warm.Text) == "" || len(warm.Attachments) != 1 ||
+		warm.Attachments[0].ID != "attc_safe" ||
+		strings.Contains(warm.Text, "provider-secret") || strings.Contains(warm.Text, "must-not-cross") {
+		t.Fatalf("warm attachment delivery = %#v", warm)
+	}
+}
+
 func newTestAdapter(
 	t *testing.T,
 	manager *fakeManager,
@@ -200,6 +250,7 @@ type fakeCapabilityGateway struct {
 	registered           int
 	authorizationUpdates int
 	registerErr          error
+	registration         runtimeapi.MessageRegistration
 }
 
 func (f *fakeCapabilityGateway) UpdateSession(platform.RuntimeSession) error {
@@ -207,12 +258,19 @@ func (f *fakeCapabilityGateway) UpdateSession(platform.RuntimeSession) error {
 	return nil
 }
 
-func (f *fakeCapabilityGateway) RegisterMessage(message im.IncomingMessage) (string, error) {
+func (f *fakeCapabilityGateway) RegisterRuntimeMessage(message im.IncomingMessage) (runtimeapi.MessageRegistration, error) {
 	f.registered++
 	if f.registerErr != nil {
-		return "", f.registerErr
+		return runtimeapi.MessageRegistration{}, f.registerErr
 	}
-	return conversationKeyFor(message.Ref.Conversation())
+	if f.registration.Target != "" {
+		return f.registration, nil
+	}
+	target, err := conversationKeyFor(message.Ref.Conversation())
+	return runtimeapi.MessageRegistration{
+		Target: target,
+		Text:   messageText(message),
+	}, err
 }
 
 func (*fakeCapabilityGateway) RuntimeEnvironment() map[string]string {

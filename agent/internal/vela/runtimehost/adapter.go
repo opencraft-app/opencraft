@@ -40,7 +40,7 @@ type RuntimeActor interface {
 
 type CapabilityGateway interface {
 	UpdateSession(platform.RuntimeSession) error
-	RegisterMessage(im.IncomingMessage) (string, error)
+	RegisterRuntimeMessage(im.IncomingMessage) (runtimeapi.MessageRegistration, error)
 	RuntimeEnvironment() map[string]string
 }
 
@@ -231,9 +231,12 @@ func (a *Adapter) HandleIngressMessage(
 			im.ErrInvalidMessageRef,
 		)
 	}
-	visibleTarget := conversationKey
+	registered := runtimeapi.MessageRegistration{
+		Target: conversationKey,
+		Text:   messageText(message),
+	}
 	if a.config.Gateway != nil {
-		visibleTarget, err = a.config.Gateway.RegisterMessage(message)
+		registered, err = a.config.Gateway.RegisterRuntimeMessage(message)
 		if err != nil {
 			return ingress.MessageResult{}, wrapMessageFailure(
 				host.FailureCodeGatewayRegisterFailed,
@@ -241,6 +244,7 @@ func (a *Adapter) HandleIngressMessage(
 			)
 		}
 	}
+	visibleTarget := registered.Target
 	if !shouldDispatchTarget(session.Agent, message, visibleTarget) {
 		return ingress.MessageResult{Disposition: ingress.Consumed}, nil
 	}
@@ -255,7 +259,7 @@ func (a *Adapter) HandleIngressMessage(
 		)
 	}
 	wakeMessage, err := encodeWakeMessage(
-		visibleTarget,
+		registered,
 		message,
 	)
 	if err != nil {
@@ -297,10 +301,17 @@ func (a *Adapter) HandleIngressMessage(
 		)
 	} else {
 		delivery := runtimeapi.Delivery{
-			Text: messageText(message),
+			Text:        registered.Text,
+			Attachments: cloneAttachmentRefs(registered.Attachments),
 		}
 		if plan.RebindDelivery != nil {
 			delivery = *plan.RebindDelivery
+			if len(delivery.Attachments) == 0 {
+				delivery.Attachments = cloneAttachmentRefs(registered.Attachments)
+			}
+			if strings.TrimSpace(delivery.Text) == "" {
+				delivery.Text = registered.Text
+			}
 		}
 		err = a.config.Actor.DeliverDirect(
 			ctx,
@@ -504,7 +515,7 @@ func topicConversationForKey(
 }
 
 func encodeWakeMessage(
-	target string,
+	registered runtimeapi.MessageRegistration,
 	message im.IncomingMessage,
 ) ([]byte, error) {
 	channelType := "channel"
@@ -519,11 +530,16 @@ func encodeWakeMessage(
 		"id":           message.Ref.MessageID(),
 		"seq":          message.Ref.Sequence(),
 		"channel_type": channelType,
-		"channel_name": target,
+		"channel_name": registered.Target,
 		"sender_name":  message.SenderUserID,
-		"target":       target,
-		"text":         messageText(message),
+		"target":       registered.Target,
+		"text":         registered.Text,
+		"attachments":  registered.Attachments,
 	})
+}
+
+func cloneAttachmentRefs(values []runtimeapi.AttachmentRef) []runtimeapi.AttachmentRef {
+	return append([]runtimeapi.AttachmentRef(nil), values...)
 }
 
 func messageText(message im.IncomingMessage) string {

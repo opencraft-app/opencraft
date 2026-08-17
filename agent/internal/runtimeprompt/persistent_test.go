@@ -83,3 +83,42 @@ func TestTransientWakePromptPreservesPlatformReminderPayload(t *testing.T) {
 		}
 	}
 }
+
+func TestPersistentPlannerRendersAttachmentWakeMessage(t *testing.T) {
+	t.Parallel()
+
+	plan, err := NewPersistentPlanner("codex").PlanLaunch(runtimeapi.LaunchInput{
+		AgentID: "agent_1",
+		Runtime: "codex",
+		WakeMessage: json.RawMessage(`{
+			"message_id":"image-1",
+			"channel_type":"channel",
+			"channel_name":"#general",
+			"target":"#general",
+			"sender_name":"human_1",
+			"text":"[Image attachment: screenshot.png, id=attc_11111111111111111111111111111111]",
+			"attachments":[{
+				"id":"attc_11111111111111111111111111111111",
+				"filename":"screenshot.png",
+				"mimeType":"image/png",
+				"sizeBytes":136000
+			}]
+		}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{
+		"attachment screenshot.png",
+		"id=attc_11111111111111111111111111111111",
+		"vela attachment view --id attc_11111111111111111111111111111111",
+	} {
+		if !strings.Contains(plan.Prompt, fragment) {
+			t.Fatalf("attachment wake prompt = %q, missing %q", plan.Prompt, fragment)
+		}
+	}
+	if plan.RebindDelivery == nil || len(plan.RebindDelivery.Attachments) != 1 ||
+		plan.RebindDelivery.Attachments[0].ID != "attc_11111111111111111111111111111111" {
+		t.Fatalf("attachment rebind delivery = %#v", plan.RebindDelivery)
+	}
+}
