@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	tokenPrefix         = "vwk"
+	tokenPrefix         = "vik"
 	credentialKeyPrefix = "website:{website-instance-keys}:credential:"
 	instanceIndexPrefix = "website:{website-instance-keys}:instance:"
 	keyIDBytes          = 16
