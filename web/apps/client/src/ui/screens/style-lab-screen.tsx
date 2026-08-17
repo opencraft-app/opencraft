@@ -786,6 +786,28 @@ export function StyleLabScreen({
                 onRunAgentAction={() => null}
                 onSelectServer={() => undefined}
                 onUpdateAgent={() => undefined}
+                operations={[
+                  {
+                    operation: {
+                      createdAt: "2026-08-17T15:14:44.000Z",
+                      id: "stylelab-agent-deploy",
+                      kind: "agent.deploy",
+                      service: "platform",
+                      state: "succeeded",
+                    },
+                    pollingState: "terminal",
+                  },
+                  {
+                    operation: {
+                      createdAt: "2026-08-17T15:14:45.000Z",
+                      id: "stylelab-agent-start",
+                      kind: "agent.start",
+                      service: "platform",
+                      state: "running",
+                    },
+                    pollingState: "polling",
+                  },
+                ]}
                 pendingAction={null}
                 servers={[server]}
                 viewportWidth={previewWidth}

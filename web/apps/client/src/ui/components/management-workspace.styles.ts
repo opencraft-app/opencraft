@@ -189,6 +189,7 @@ export const styles = StyleSheet.create((theme) => ({
     gap: theme.recipes.managementWorkspace.detailGap,
     maxWidth: theme.recipes.managementWorkspace.contentMaxWidth,
     paddingVertical: theme.recipes.managementWorkspace.mediumPadding,
+    position: "relative",
     width: "100%",
   },
   detailHeading: {

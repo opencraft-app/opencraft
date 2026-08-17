@@ -378,6 +378,15 @@ describe("StyleLabScreen", () => {
     });
   });
 
+  it("keeps the glass operation island visible in the Agent design review", async () => {
+    const screen = await render(<StyleLabScreen viewportWidth={1_180} />);
+
+    await fireEvent.press(screen.getByRole("button", {name: "预览 Agent 界面"}));
+
+    expect(screen.getByTestId("agent-status-island")).toBeVisible();
+    expect(screen.getByText("启动 Agent · 执行中 · 1/2")).toBeVisible();
+  });
+
   it("covers normal, empty, disconnected, and unjoined review states", async () => {
     const screen = await render(<StyleLabScreen viewportWidth={1_180} />);
 

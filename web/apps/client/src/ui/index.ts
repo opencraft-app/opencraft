@@ -32,6 +32,12 @@ export {
   type OperationPollingViewState,
 } from "./components/operation-status-list";
 export {
+  deriveOperationStatusIsland,
+  OperationStatusIsland,
+  type OperationStatusIslandPresentation,
+  type OperationStatusIslandProps,
+} from "./components/operation-status-island";
+export {
   TerminalPanel,
   type TerminalPanelProps,
   type TerminalSurfaceController,
@@ -119,6 +125,11 @@ export {
   type SystemMaterialRole,
   type SystemMaterialSurfaceProps,
 } from "./primitives/system-material-surface";
+export {
+  SystemStatusIsland,
+  type SystemStatusIslandProps,
+  type SystemStatusIslandTone,
+} from "./primitives/system-status-island";
 export {
   SystemForm,
   SystemPage,

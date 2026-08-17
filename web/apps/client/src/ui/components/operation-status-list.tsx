@@ -22,21 +22,23 @@ export interface OperationStatusItem {
 }
 
 export interface OperationStatusListProps {
+  embedded?: boolean;
   items: OperationStatusItem[];
   onContinue(operationId: string): void | Promise<void>;
 }
 
 export function OperationStatusList({
+  embedded = false,
   items,
   onContinue,
 }: OperationStatusListProps) {
   if (items.length === 0) return null;
   return (
-    <View style={styles.list}>
-      <Text style={styles.title}>后台执行状态</Text>
+    <View style={[styles.list, embedded && styles.listEmbedded]}>
+      {!embedded ? <Text style={styles.title}>后台执行状态</Text> : null}
       {items.map((item) => {
         const { operation } = item;
-        const terminal = terminalStates.has(operation.state);
+        const terminal = isTerminalOperationState(operation.state);
         const detail = productOperationMessage(
           operation.error?.message ??
             item.message ??
@@ -82,7 +84,11 @@ const terminalStates = new Set<Operation["state"]>([
   "superseded",
 ]);
 
-const operationStateLabel: Record<Operation["state"], string> = {
+export function isTerminalOperationState(state: Operation["state"]): boolean {
+  return terminalStates.has(state);
+}
+
+export const operationStateLabel: Record<Operation["state"], string> = {
   failed: "失败",
   pending: "等待执行",
   retry_wait: "等待重试",
@@ -92,7 +98,7 @@ const operationStateLabel: Record<Operation["state"], string> = {
   uncertain: "结果不确定",
 };
 
-const operationKindLabel: Record<string, string> = {
+export const operationKindLabel: Record<string, string> = {
   "agent.deploy": "部署 Agent",
   "agent.credential.rotate": "轮换运行凭证",
   "agent.restart": "重启 Agent",
@@ -130,6 +136,12 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing.xs,
     maxWidth: theme.recipes.contentMeasure.messageMaxWidth,
     padding: theme.spacing.md,
+  },
+  listEmbedded: {
+    backgroundColor: theme.semantic.color.surfaceTransparent,
+    borderWidth: 0,
+    maxWidth: "100%",
+    padding: 0,
   },
   message: {
     color: theme.semantic.color.statusDangerText,

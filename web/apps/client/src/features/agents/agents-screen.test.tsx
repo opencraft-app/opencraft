@@ -836,6 +836,42 @@ describe("AgentsScreen", () => {
     ).toBeDisabled();
   });
 
+  it("presents lifecycle progress through one collapsed glass status island", async () => {
+    const screen = await render(
+      <AgentsScreen
+        agents={[{...agent, desiredState: "running", observedState: "starting"}]}
+        computers={[computer]}
+        currentServerId={server.id}
+        error={null}
+        loading={false}
+        onCreateAgent={jest.fn()}
+        onNavigateSection={jest.fn()}
+        onRefresh={jest.fn()}
+        onRunAgentAction={jest.fn()}
+        onSelectServer={jest.fn()}
+        onUpdateAgent={jest.fn()}
+        operations={[{
+          operation: {
+            createdAt: "2026-08-17T15:14:45.000Z",
+            id: "operation-start",
+            kind: "agent.start",
+            service: "platform",
+            state: "running",
+          },
+          pollingState: "polling",
+        }]}
+        pendingAction={null}
+        servers={[server]}
+        viewportWidth={1_280}
+      />,
+    );
+
+    expect(screen.getByTestId("agent-status-island")).toBeVisible();
+    expect(screen.getByText("启动 Agent · 执行中 · 0/1")).toBeVisible();
+    expect(screen.queryByText("Agent 正在切换状态，请等待当前操作完成。")).toBeNull();
+    expect(screen.queryByText("后台执行状态")).toBeNull();
+  });
+
   it("explains an unknown runtime state from the Computer binding", async () => {
     const unknownAgent: Agent = {
       ...agent,
@@ -995,6 +1031,10 @@ describe("AgentsScreen", () => {
       />,
     );
 
+		expect(screen.getByText("操作已完成 · 1/1")).toBeVisible();
+		await act(async () => {
+			fireEvent.press(screen.getByRole("button", {name: "操作已完成 · 1/1"}));
+		});
 		expect(screen.getByText("成功")).toBeVisible();
 		expect(screen.getByText("轮换运行凭证")).toBeVisible();
 		expect(screen.queryByText("agent.credential.rotate")).toBeNull();

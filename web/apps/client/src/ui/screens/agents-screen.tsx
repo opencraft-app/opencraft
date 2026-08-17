@@ -62,10 +62,8 @@ import { ManagementScreenFrame } from "../layouts/management-screen-frame";
 import type { WorkspaceSection } from "../layouts/workspace-section";
 import {agentEmptyCopy} from "../management-empty-copy";
 import { managementSurfaceLayout } from "../management-surface-layout";
-import {
-  OperationStatusList,
-  type OperationStatusItem,
-} from "../components/operation-status-list";
+import type {OperationStatusItem} from "../components/operation-status-list";
+import {OperationStatusIsland} from "../components/operation-status-island";
 
 const agentHandlePattern = /^[a-z0-9][a-z0-9_-]{1,31}$/u;
 type AgentCreateStep = 1 | 2 | 3;
@@ -1218,12 +1216,11 @@ function AgentDetail({
           },
         )}
       </View>
-      {lifecycleHint ? (
-        <Text style={styles.lifecycleHint}>{lifecycleHint}</Text>
-      ) : null}
-      <OperationStatusList
+      <OperationStatusIsland
         items={operations}
+        lifecycleHint={lifecycleHint}
         onContinue={onContinueOperation ?? (() => undefined)}
+        testID="agent-status-island"
       />
       <SystemSection testID="agent-settings-section" title="Agent 设置">
         <ManagementField label="显示名称">
@@ -1419,10 +1416,6 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: theme.spacing.sm,
-  },
-  lifecycleHint: {
-    color: theme.semantic.color.textMuted,
-    ...theme.semantic.typography.bodyCompact,
   },
   wizardCheckTitle: {
     color: theme.semantic.color.textPrimary,

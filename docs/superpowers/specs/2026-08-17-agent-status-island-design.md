@@ -56,8 +56,9 @@ focus trap, dismissal backdrop or second window layer.
 
 ## Token model
 
-No component may invent colors, radii, shadows, z-indexes, spacing or durations. Add a
-`recipes.statusIsland` namespace containing only geometry:
+No component may invent colors, radii, shadows, z-indexes, spacing or durations. The island composes existing geometry
+from `recipes.status`, `recipes.contentMeasure`, `recipes.overlay`, `recipes.identity`, the spacing scale and semantic
+icon scale. It must not grow the recipe namespace or numeric-leaf budget. Those sources cover:
 
 - collapsed and expanded minimum heights;
 - collapsed, expanded and compact-screen widths;
@@ -118,7 +119,7 @@ Tests must prove:
 - disclosure expands/collapses the existing operation detail without losing continuation actions;
 - lifecycle-only, active, succeeded, superseded, failed/uncertain, `idle`, timed-out, rate-limited and query-error
   summaries follow the declared precedence and progress calculation;
-- geometry is sourced from `recipes.statusIsland` and light/dark token contracts stay isomorphic;
+- geometry is composed from existing recipe/semantic tokens and light/dark token contracts stay isomorphic;
 - the inline absolute implementation never renders through `SystemPopover`, `Modal` or a portal;
 - narrow width, long copy, renderer-neutral expanded accessibility state, keyboard activation, Web `Escape`, reachable
   expanded actions and reduced motion remain usable;

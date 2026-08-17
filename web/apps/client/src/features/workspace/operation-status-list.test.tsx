@@ -12,6 +12,18 @@ const operation: Operation = {
 };
 
 describe("OperationStatusList", () => {
+	it("renders content-only rows when embedded in floating chrome", async () => {
+		const screen = await render(
+			<OperationStatusList
+				embedded
+				items={[{operation, pollingState: "terminal"}]}
+				onContinue={jest.fn()}
+			/>,
+		);
+		expect(screen.queryByText("后台执行状态")).toBeNull();
+		expect(screen.getByText("结果不确定")).toBeVisible();
+	});
+
 	it("uses the platform credential rotation label", async () => {
 		const screen = await render(
 			<OperationStatusList
