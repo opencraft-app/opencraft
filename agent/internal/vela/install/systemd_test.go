@@ -60,7 +60,7 @@ func TestSystemdLauncherWritesExactUnitAndReloadsOnlyWhenDefinitionChanges(t *te
 	}
 	for _, required := range []string{
 		"[Service]", "ExecStart=" + program + " daemon run --state-dir " + state,
-		"Restart=always", "RestartSec=3", "UMask=0077",
+		"Environment=HOME=/root", "Restart=always", "RestartSec=3", "UMask=0077",
 	} {
 		if !strings.Contains(string(unit), required) {
 			t.Errorf("unit missing %q:\n%s", required, unit)

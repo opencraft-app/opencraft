@@ -88,6 +88,7 @@ func renderSystemdUnit(spec LaunchSpec) []byte {
 		"Type=simple\n" +
 		"ExecStart=" + spec.ProgramPath + " daemon run --state-dir " + spec.StateDirectory + "\n" +
 		"WorkingDirectory=" + spec.StateDirectory + "\n" +
+		"Environment=HOME=/root\n" +
 		"Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
 		"Restart=always\n" +
 		"RestartSec=3\n" +
