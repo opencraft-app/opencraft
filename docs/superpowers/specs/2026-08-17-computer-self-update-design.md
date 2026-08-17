@@ -6,9 +6,9 @@ Future Vela Computer releases upgrade without asking a Server user to generate a
 The remote update service only publishes the expected release for a channel. It does not identify Computers, own
 Computer credentials, schedule Agent work, or receive fleet status.
 
-The currently deployed v0.1.50 does not contain an updater and therefore requires one final manual bootstrap to the
-first self-updating baseline. The baseline is planned as v0.1.51. A later v0.1.52 release must prove the complete
-unattended N-to-N+1 path.
+The currently deployed v0.1.50 and the already published v0.1.51 artifact do not contain an updater. Both therefore
+require one final manual bootstrap to the first self-updating baseline, v0.1.52. A later v0.1.53 release must prove the
+complete unattended N-to-N+1 path.
 
 ## Service boundary
 
@@ -25,25 +25,49 @@ Ingress provides the hostname/TLS and routes only the update paths to this servi
 Initial internal routes:
 
 - `/computer-releases/**` — anonymous read-only Computer channel and artifact access;
-- `/ops/computer-updates/**` — internal operations page and mutation API.
+- `/ops/computer-updates/**` — deferred internal operations page and mutation API; disabled in the first DevCloud
+  deployment until the identity-header adapter and corrected revision contract are both ready.
+
+### Test-environment transport exception
+
+The current DevCloud test environment has no production DNS name or TLS endpoint. Its Computer baseline therefore
+uses the existing Backend base URL `http://9.135.236.64` for anonymous channel reads. This is an explicit build-time
+exception, not a general relaxation of channel transport:
+
+- HTTPS remains the default and the only accepted mode unless the release command explicitly enables insecure update
+  HTTP for that build;
+- the exact HTTP base URL is pinned into the binary together with the exception bit; it cannot be replaced by local
+  state, a channel response or a runtime environment variable;
+- the URL still rejects user info, query strings, fragments and non-root paths;
+- Computer sends no identity, credential, cookie, Server, Agent or workspace data to the channel endpoint;
+- the channel descriptor remains Ed25519-signed, monotonic and target-bound, while every downloaded Release Set is
+  independently authenticated by the offline release key and SHA-256;
+- artifact download URLs remain short-lived HTTPS COS URLs;
+- a future environment with a real domain and TLS must publish a new Computer baseline without the insecure HTTP bit.
+
+The release/build scripts expose this as a separately named opt-in flag and reject an HTTP update URL without it. The
+flag does not affect the platform API transport and does not allow redirects or unsigned update material.
 
 The first version has no login screen and no Human/Server role integration. Anonymous access applies only to the
-read-only Computer surface. The operations surface is protected by internal Ingress mTLS with a dedicated operator
-client certificate, an internal CIDR allowlist and a NetworkPolicy that accepts traffic only from the Ingress. Ingress
-strips any inbound identity header and injects a verified operator certificate fingerprint. The service accepts an
-operations mutation only from the Ingress source with that verified header, rejects cross-origin requests, exposes no
-CORS, validates Host/Origin and writes an audit record for every channel mutation. This is invisible network-layer
-authentication, not an application login. Server owners and admins have no upgrade controls. A later enterprise SSO
-layer can replace the mTLS operator identity without changing the channel or Computer protocol.
+read-only Computer surface. The first DevCloud deployment must not expose `/ops/computer-updates/**`. Enabling that
+surface requires all of the following as one reviewed deployment change:
 
-Implementation starts by adding a dedicated machine contract at
-`backend/platform/v1/computer-update.openapi.yaml`, before any handler, service or Computer client code. That new
-contract defines the anonymous Computer read surface, mTLS-proxied operations surface, stable error registry, request
-limits, cache headers and generated Go client/server types. The same first implementation wave adds
-`backend/internal/api/computerupdate/`, generation configuration, contract tests and an immutable OpenAPI release
-baseline plus compatibility gate. These artifacts do not exist before this feature is implemented; their creation is
-the OpenAPI-first prerequisite, not an assumption that they already exist. The existing platform and bootstrap OpenAPI
-files do not absorb these routes.
+- internal Ingress mTLS with a dedicated operator client certificate;
+- an internal CIDR allowlist and a NetworkPolicy that accepts operations traffic only from the adapter;
+- a verified identity-header adapter that strips every inbound `X-Vela-Operator-Fingerprint` value and injects the
+  SHA-256 fingerprint derived from the validated client certificate;
+- Host/Origin validation, no CORS, and an audit record for every mutation.
+
+The qcloud Ingress alone is not assumed to forward a verified client-certificate fingerprint. Without the adapter,
+only anonymous `/computer-releases/**` may be routed. This remains network-layer authentication, not an application
+login. Server owners and admins have no upgrade controls. A later enterprise SSO layer can replace the mTLS operator
+identity without changing the channel or Computer protocol.
+
+The dedicated contract, generated client/server types, contract tests and immutable v1.0.0 release baseline already
+exist under `backend/platform/v1/computer-update.openapi.yaml`, `backend/internal/api/computerupdate/` and
+`backend/platform/v1/releases/`. New work must evolve those artifacts through the generation, release-lock and
+compatibility gates; it must not recreate or overwrite the published baseline. The platform and bootstrap OpenAPI files
+do not absorb these routes.
 
 ## Minimal channel model
 
@@ -112,8 +136,10 @@ hosts from an explicit allowlist, contain no Computer identity and are returned 
 channel endpoint itself also uses `no-store` and an ETag equal to the descriptor digest. Computer authenticates every
 downloaded byte by digest and signature.
 
-Operations mutations use `If-Match` with the current channel sequence and return conflict on stale writes. Stable error
-codes include `invalid_channel`, `invalid_target`, `release_not_found`, `release_incomplete`, `revision_conflict`,
+The published v1.0.0 operations contract contains an obsolete numeric `If-Match` header and must not be exposed. Before
+operations are enabled, an additive v2 operation path must use `X-Resource-Revision` for compare-and-swap while the old
+path remains disabled and retained only for compatibility history. Stale revisions return conflict. Stable error codes
+include `invalid_channel`, `invalid_target`, `release_not_found`, `release_incomplete`, `revision_conflict`,
 `channel_signing_unavailable` and `update_storage_unavailable`. Promoting a release first runs the existing complete
 Release Set verification and requires exactly the formally supported target set before any channel file changes.
 
@@ -302,17 +328,22 @@ The internal page is deliberately small:
 It does not list Servers, Computers or Agents, and it does not offer per-Computer commands. Canary qualification is
 performed by configuring the selected Computer to poll the canary channel before stable promotion.
 
+This page and every mutation route remain disabled in the first DevCloud deployment. Anonymous channel state is seeded
+through a separate reviewed bootstrap procedure until the identity adapter and v2 revision operation are available.
+
 ## Bootstrap and delivery proof
 
-v0.1.50 is the last manually upgraded release and does not participate in unattended upgrade. Delivery proceeds:
+The published v0.1.51 artifact also predates the updater and does not participate in unattended upgrade. Delivery now
+proceeds:
 
-1. deploy the update service and internal operations page;
-2. publish v0.1.51 with the pinned trust roots, poller, activity gate, helper and recovery logic;
-3. manually upgrade one Linux and one macOS Computer to v0.1.51 using the existing signed install/manual bootstrap;
-4. publish v0.1.52 to canary and prove both Computers self-update without setup code or Human interaction;
+1. deploy the update service with only anonymous `/computer-releases/**`; keep `/ops/computer-updates/**` disabled
+   until the identity-header adapter and v2 revision operation are ready;
+2. publish v0.1.52 with the pinned trust roots, poller, activity gate, helper and recovery logic;
+3. manually upgrade one Linux and one macOS Computer to v0.1.52 using the existing signed install/manual bootstrap;
+4. publish v0.1.53 to canary and prove both Computers self-update without setup code or Human interaction;
 5. inject bad channel signatures, digest mismatch, wrong target, disk-full, helper crash, daemon health timeout and
    power-loss-at-each-phase faults; every unsafe case must keep or restore a healthy signed binary;
-6. promote v0.1.52 to stable only after the canary proof.
+6. promote v0.1.53 to stable only after the canary proof.
 
 Every live proof writes a credential-safe bundle under
 `~/.vela/self-update-evidence/<from>-to-<to>/<target>/<timestamp>/` containing:
@@ -333,6 +364,11 @@ Every live proof writes a credential-safe bundle under
 - Recreate/RWO/exclusive-writer-lock deployment and second-writer rejection tests;
 - dedicated Computer Update OpenAPI generation, release-lock, auth-domain and compatibility tests;
 - strict path/target validation, no CORS and Host/Origin rejection tests;
+- release/build rejection of any HTTP update URL unless the explicit insecure-update opt-in is present;
+- with that opt-in, acceptance of exactly `http://9.135.236.64` and rejection of every other HTTP host, plus rejection
+  of user info, ports, paths, query strings and fragments;
+- proof that the fixed HTTP exception cannot be enabled or replaced by local state or runtime environment variables,
+  and that a future TLS baseline builds with the exception bit absent;
 - channel-key and release-key separation tests;
 - Computer poll jitter/backoff/cache tests;
 - replay, downgrade, wrong-channel, wrong-target and bad-signature rejection tests;
@@ -341,7 +377,8 @@ Every live proof writes a credential-safe bundle under
 - updater journal crash matrix for every transition;
 - Linux systemd and macOS launchd N/N+1 success and rollback integration tests;
 - health-marker authenticity and stale/wrong-transaction marker rejection tests;
-- live v0.1.51 -> v0.1.52 canary with no setup command, preserved Computer identity/workspace and accepted heartbeat;
+- one-time manual v0.1.51 -> v0.1.52 bootstrap on Linux and macOS, followed by live v0.1.52 -> v0.1.53 canary with no
+  setup command, preserved Computer identity/workspace and accepted heartbeat;
 - full Backend, Agent, race, generated-contract, migration-lock and credential-scan gates.
 
 The feature is not complete merely because the channel page changes version or the program downloads. Completion
