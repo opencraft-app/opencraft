@@ -45,8 +45,12 @@ web/deploy/devcloud/release.sh deploy --kubeconfig /absolute/path/to/dep.conf
 
 脚本必须运行 Web 类型检查、全量测试、凭据扫描、生产导出和 SPA fallback 验证，使用
 Git commit 生成不可变 TCR tag，再按真实 digest 更新 `raft-web-static`。发布成功必须同时
-证明 rollout 完成、Pod Ready、零重启、运行 imageID 命中目标 digest，并且
-`/healthz-web` 和深链接返回正常。构建或推送成功不等于发布成功。
+证明 Deployment generation/副本收敛、Pod Ready、零重启、运行 imageID 命中目标 digest，
+通过 Service 验证 `/healthz-web`，并在目标 Pod 内验证深链接返回 HTML。Mac 直接访问内网
+LoadBalancer 深链接可能被 AIO 转发层拒绝，不能用它误判 Pod。构建或推送成功不等于发布成功。
+
+脚本顶层临时材料使用 `umask 077`，但 Expo/Bun 构建必须在 `umask 022` 子进程中运行，
+确保 Nginx 非 root 用户能够读取静态目录和文件。
 
 Deployment 切换后任一验收失败，脚本会恢复原镜像并重新验证原 Pod digest。不要绕开脚本
 手工执行 `kubectl set image`；若脚本失败，应先保留输出和当前 live 镜像再诊断。

@@ -61,8 +61,11 @@ validate_port() {
 
 build_web() {
   require_command bun
-  bun run --cwd web typecheck
-  bun run --cwd web build:web
+  (
+    umask 022
+    bun run --cwd web typecheck
+    bun run --cwd web build:web
+  )
 }
 
 stop_preview_process() {
@@ -156,6 +159,37 @@ verify_pods() {
       ' >/dev/null || return 1
 }
 
+wait_for_rollout() {
+  target_image=$1
+  timeout_seconds=$2
+  interval_seconds=2
+  max_attempts=$((timeout_seconds / interval_seconds))
+  attempt=0
+  while [ "$attempt" -lt "$max_attempts" ]; do
+    if kubectl --kubeconfig "$kubeconfig" -n "$namespace" get \
+      deployment "$deployment" -o json |
+      jq -e \
+        --arg container "$container" \
+        --arg image "$target_image" '
+          .metadata.generation as $generation |
+          (.spec.replicas // 0) as $replicas |
+          $replicas > 0 and
+          (.status.observedGeneration // 0) >= $generation and
+          (.status.updatedReplicas // 0) == $replicas and
+          (.status.readyReplicas // 0) == $replicas and
+          (.status.availableReplicas // 0) == $replicas and
+          (.status.unavailableReplicas // 0) == 0 and
+          ([.spec.template.spec.containers[] |
+            select(.name == $container) | .image] == [$image])
+        ' >/dev/null; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep "$interval_seconds"
+  done
+  return 1
+}
+
 remove_remote_root() {
   case "$remote_root" in
     /tmp/vela-web-release.*)
@@ -179,8 +213,7 @@ cleanup() {
     kubectl --kubeconfig "$kubeconfig" -n "$namespace" set image \
       "deployment/$deployment" "$container=$original_image" >/dev/null 2>&1 ||
       rollback_ok=false
-    kubectl --kubeconfig "$kubeconfig" -n "$namespace" rollout status \
-      "deployment/$deployment" --timeout=300s >/dev/null 2>&1 ||
+    wait_for_rollout "$original_image" 300 >/dev/null 2>&1 ||
       rollback_ok=false
     verify_pods "$original_runtime_digest" >/dev/null 2>&1 || rollback_ok=false
     if [ "$rollback_ok" = true ]; then
@@ -247,11 +280,14 @@ deploy() {
   release_tag=$(printf '%s' "$head_commit" | cut -c 1-12)
   image_tag="$registry:$release_tag"
 
-  bun run --cwd web typecheck
-  bun run --cwd web test
-  bun run --cwd web security:scan
-  bun run --cwd web build:web
-  bun run --cwd web/apps/client verify:web-fallback
+  (
+    umask 022
+    bun run --cwd web typecheck
+    bun run --cwd web test
+    bun run --cwd web security:scan
+    bun run --cwd web build:web
+    bun run --cwd web/apps/client verify:web-fallback
+  )
 
   echo "[deploy 2/8] 校验 live 工作负载……"
   live_name=$(kubectl --kubeconfig "$kubeconfig" -n "$namespace" get \
@@ -341,8 +377,7 @@ REMOTE_BUILD
   kubectl --kubeconfig "$kubeconfig" -n "$namespace" set image \
     "deployment/$deployment" "$container=$image" >/dev/null
   live_patched=true
-  kubectl --kubeconfig "$kubeconfig" -n "$namespace" rollout status \
-    "deployment/$deployment" --timeout=600s
+  wait_for_rollout "$image" 600 || fail "Deployment rollout 超时"
 
   echo "[deploy 7/8] 验证 Pod imageID、Ready 与零重启……"
   verify_pods "$digest" || fail "Pod digest、Ready 或重启次数验收失败"
@@ -351,9 +386,25 @@ REMOTE_BUILD
   service_ip=$(kubectl --kubeconfig "$kubeconfig" -n "$namespace" get \
     service "$service" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
   [ -n "$service_ip" ] || fail "Service 没有 LoadBalancer IP"
-  curl -fsS "http://$service_ip/healthz-web" >/dev/null
-  curl -fsS "http://$service_ip/join" | grep -qi '<html' ||
-    fail "Service SPA fallback 验证失败"
+  curl -fsS --connect-timeout 5 --max-time 10 \
+    "http://$service_ip/healthz-web" >/dev/null
+  pod_name=$(kubectl --kubeconfig "$kubeconfig" -n "$namespace" get pods \
+    -l "$selector" -o json |
+    jq -r \
+      --arg container "$container" \
+      --arg digest "$digest" '
+        [.items[] |
+          select(any(.status.containerStatuses[]?;
+            .name == $container and
+            .ready == true and
+            (.imageID | contains($digest)))) |
+          .metadata.name][0] // empty
+      ')
+  [ -n "$pod_name" ] || fail "无法定位新镜像 Ready Pod"
+  kubectl --kubeconfig "$kubeconfig" -n "$namespace" exec \
+    "$pod_name" -c "$container" -- sh -ec \
+    'wget -qO- http://127.0.0.1:8080/join | grep -qi "<html"' ||
+    fail "Pod SPA fallback 验证失败"
 
   live_patched=false
   echo "DevCloud Web 发布成功"

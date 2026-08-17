@@ -63,16 +63,20 @@ web/deploy/devcloud/release.sh
 4. 依次执行 `bun run --cwd web typecheck`、`bun run --cwd web test`、
    `bun run --cwd web security:scan`、`bun run --cwd web build:web` 和
    `bun run --cwd web/apps/client verify:web-fallback`，不把当前测试套件数量写成稳定合同；
+   发布脚本本身保持 `umask 077`，但这些构建命令必须在 `umask 022` 子进程中执行，保证
+   Nginx 非 root 用户可读取 `dist`；
 5. 以完整 Git SHA 的前 12 位作为不可变 TCR tag；若远端 tag 已存在则拒绝覆盖；
 6. Mac 只把 Dockerfile、Nginx 配置和已生成的 `dist` 组成最小 tar，通过 SSH/scp 发送给
    内网 Linux builder；builder 在临时目录中以 `deploy/devcloud/Dockerfile` 为 Dockerfile，
    通过 `docker buildx build --platform linux/amd64 --push` 构建镜像并在结束时删除上下文；
 7. 从 TCR 读取真实 `sha256` digest，后续只按 digest 发布；
 8. 读取 `dep/raft-web-static` 中 `static` 容器的原镜像并确认当前副本可用；
-9. 将 Deployment 精确切换到新 digest，等待 rollout；
+9. 将 Deployment 精确切换到新 digest，通过轮询 generation、updated/ready/available
+   replicas 和目标容器镜像等待收敛；不使用在当前 DevCloud API 上会卡住的 watch；
 10. 验证单副本 Ready、零重启、运行时 `imageID` 包含目标 digest；
-11. 通过 Service 入口请求 `/healthz-web`，并请求一个深链接确认返回 SPA HTML；成功后
-    输出 commit、tag 和 digest。
+11. 通过 Service 入口请求 `/healthz-web`，再在目标 Ready Pod 内请求一个深链接确认 Nginx
+    返回 SPA HTML；Mac 直连内网 LoadBalancer 深链接可能被 AIO 转发层返回 403，不能将该
+    代理行为误判为 Pod 失败。成功后输出 commit、tag 和 digest。
 
 脚本默认值为：
 
@@ -85,10 +89,10 @@ web/deploy/devcloud/release.sh
 这些值允许用显式参数覆盖，便于环境迁移，但脚本不读取或切换用户的默认 kube
 context。
 
-当前仓库 `web/deploy/devcloud/static.yaml` 仍使用旧名 `vela-web-static`，与 2026-08-17
-live 证据不一致。实现必须同步清单的 Deployment、Service、selector 和 label 为
-`raft-web-static`，消除仓库与 live 漂移。每次发布仍必须重新读取显式 kubeconfig 下的
-live 对象；若对象不存在或容器/selector 不符合合同，发布前失败，不自动创建或猜测名称。
+仓库 `web/deploy/devcloud/static.yaml` 已与 2026-08-17 live `raft-web-static` 的
+Deployment、Service、selector 和 label 对齐。每次发布仍必须重新读取显式 kubeconfig
+下的 live 对象；若对象不存在或容器/selector 不符合合同，发布前失败，不自动创建或
+猜测名称。
 
 ## 凭据边界
 
@@ -104,7 +108,7 @@ Docker credential store，Mac 不读取或传输 registry 凭据。脚本不得�
 ## 失败与回滚
 
 任何发布前门禁失败都不修改集群。Deployment 切换后若 rollout、Pod digest 或健康
-检查失败，退出 trap 必须恢复原镜像、等待恢复 rollout，并再次验证恢复 Pod Ready、
+检查失败，退出 trap 必须恢复原镜像、轮询恢复收敛，并再次验证恢复 Pod Ready、
 零重启且 `imageID` 对应原 digest。回滚本身失败时，需要同时报告发布错误与当前
 Deployment 镜像，不能声称已经恢复。
 

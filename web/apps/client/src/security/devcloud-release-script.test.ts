@@ -55,24 +55,28 @@ describe("DevCloud Web release contract", () => {
       "bun run --cwd web security:scan",
       "bun run --cwd web build:web",
       "bun run --cwd web/apps/client verify:web-fallback",
+      "umask 022",
       "bun web/deploy/devcloud/preview-server.ts",
       "ssh",
       "scp",
       "docker buildx imagetools inspect",
       "--platform linux/amd64",
       "deploy/devcloud/Dockerfile",
-      "rollout status",
+      "wait_for_rollout",
       "imageID",
       "select(.name == $container)",
       "healthz-web",
+      "wget -qO- http://127.0.0.1:8080/join",
       "trap cleanup",
     ]) {
       expect(source).toContain(required);
     }
     expect(source).not.toContain("kubectl config use-context");
+    expect(source).not.toMatch(/kubectl[\s\S]{0,180}?rollout status/u);
     expect(source).not.toContain("require_docker");
     expect(source).not.toContain("Docker daemon 未运行");
     expect(source).not.toContain("docker run");
+    expect(source).not.toMatch(/curl[\s\S]{0,120}?\$service_ip\/join/u);
     expect(source).not.toMatch(/(?:password|secret)[-_]?argument/iu);
   });
 
