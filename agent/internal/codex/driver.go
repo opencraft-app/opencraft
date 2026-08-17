@@ -24,10 +24,11 @@ import (
 )
 
 const (
-	desktopExecutable = "/Applications/Codex.app/Contents/Resources/codex"
-	maximumRPCLine    = 16 * 1024 * 1024
-	modelProbeTimeout = 5 * time.Second
-	maxModelPages     = 5
+	chatGPTDesktopExecutable = "/Applications/ChatGPT.app/Contents/Resources/codex"
+	codexDesktopExecutable   = "/Applications/Codex.app/Contents/Resources/codex"
+	maximumRPCLine           = 16 * 1024 * 1024
+	modelProbeTimeout        = 5 * time.Second
+	maxModelPages            = 5
 
 	missingResumeMessage = "Codex could not resume its previous thread; Vela started a fresh Codex thread."
 	missingResumeDetails = "Use Vela conversation history and local MEMORY.md/notes as the recovery point; do not assume prior Codex thread context is loaded."

@@ -114,18 +114,23 @@ func (d *Driver) executableCandidates() []executableCandidate {
 			Source:     "configured",
 		}}
 	}
-	candidates := make([]executableCandidate, 0, 2)
+	candidates := make([]executableCandidate, 0, 3)
 	if path, err := exec.LookPath("codex"); err == nil {
 		candidates = append(candidates, executableCandidate{
 			Path:   path,
 			Source: "PATH",
 		})
 	}
-	if info, err := os.Stat(desktopExecutable); err == nil && !info.IsDir() {
-		candidates = append(candidates, executableCandidate{
-			Path:   desktopExecutable,
-			Source: "macOS application",
-		})
+	for _, path := range []string{
+		chatGPTDesktopExecutable,
+		codexDesktopExecutable,
+	} {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			candidates = append(candidates, executableCandidate{
+				Path:   path,
+				Source: "macOS application",
+			})
+		}
 	}
 	return candidates
 }

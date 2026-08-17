@@ -765,6 +765,22 @@ func TestDriverExecutableCandidatesFallThroughDeduplicateAndStaySelected(
 	}
 }
 
+func TestDriverDiscoversCodexBundledWithChatGPT(t *testing.T) {
+	const bundledCodex = "/Applications/ChatGPT.app/Contents/Resources/codex"
+	if info, err := os.Stat(bundledCodex); err != nil || info.IsDir() {
+		t.Skip("ChatGPT bundled Codex is not installed")
+	}
+	t.Setenv("PATH", t.TempDir())
+
+	candidates := New(Options{}).executableCandidates()
+	for _, candidate := range candidates {
+		if candidate.Path == bundledCodex {
+			return
+		}
+	}
+	t.Fatalf("ChatGPT bundled Codex missing from candidates: %#v", candidates)
+}
+
 func TestDriverExecutableCandidatesReportEveryRejection(t *testing.T) {
 	first := filepath.Join(t.TempDir(), "first-codex")
 	second := filepath.Join(t.TempDir(), "second-codex")
