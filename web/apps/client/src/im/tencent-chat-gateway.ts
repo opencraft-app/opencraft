@@ -187,10 +187,18 @@ export class TencentChatGateway implements ChatSdk {
     }
     const results = await Promise.all(
       uniqueGroupIds.map(async (groupID) => {
-        const result = await sdk.getTopicList?.({
-          groupID,
-          topicIDList: undefined,
-        });
+        let result: unknown;
+        try {
+          result = await sdk.getTopicList?.({
+            groupID,
+            topicIDList: undefined,
+          });
+        } catch (error) {
+          if (isInvalidGroupError(error)) {
+            return {failed: true, items: []};
+          }
+          throw error;
+        }
         const data = resultData(result);
         if (!Array.isArray(data.successTopicList)) {
           throw new Error("腾讯云 IM Topic 列表响应结构不合法");
@@ -464,6 +472,10 @@ function kickedOutData(
 
 function isExpiredUserSigError(error: unknown): boolean {
   return isRecord(error) && error.code === 70001;
+}
+
+function isInvalidGroupError(error: unknown): boolean {
+  return isRecord(error) && error.code === 10015;
 }
 
 function messagesFromEvent(event: unknown): SdkMessage[] {

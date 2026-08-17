@@ -1449,7 +1449,7 @@ describe("app store", () => {
     expect(persisted.size).toBe(0);
   });
 
-  it("keeps group conversation previews as a Tencent-owned UI projection", async () => {
+  it("queries Topic summaries only for Channel Community groups", async () => {
     const deps = dependencies();
     const store = createAppStore(deps);
     await store.getState().initialize();
@@ -1460,7 +1460,6 @@ describe("app store", () => {
     ]);
     expect(deps.messaging.listConversations).toHaveBeenCalledWith([
       "community-1",
-      "an_dm_direct_1",
     ]);
 
     const liveMessage = {

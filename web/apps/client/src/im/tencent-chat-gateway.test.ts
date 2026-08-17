@@ -333,6 +333,61 @@ describe("TencentChatGateway", () => {
     ]);
   });
 
+  it("keeps valid Topic summaries when one Community Group is stale", async () => {
+    const handlers = new Map<string, (event?: unknown) => void>();
+    const rawSdk = rawSdkWithHandlers(handlers);
+    rawSdk.getTopicList = jest.fn(async ({groupID}) => {
+      if (groupID === "stale-community") {
+        throw Object.assign(new Error("GroupId is invalid"), {code: 10015});
+      }
+      return {
+        data: {
+          failureTopicList: [],
+          successTopicList: [
+            {
+              topicID: "community-1@TOPIC#topic-1",
+              topicName: "general",
+              unreadCount: 0,
+            },
+          ],
+        },
+      };
+    });
+    const gateway = new TencentChatGateway({
+      create: () => rawSdk,
+      EVENT: {
+        KICKED_OUT: "kicked",
+        MESSAGE_RECEIVED: "messages",
+        SDK_NOT_READY: "not-ready",
+        SDK_READY: "ready",
+      },
+      TYPES: {
+        CONV_GROUP: "GROUP",
+        CONV_TOPIC: "TOPIC",
+        KICKED_OUT_USERSIG_EXPIRED: "userSigExpired",
+        MSG_TEXT: "TEXT",
+      },
+    });
+    await gateway.login({
+      expiresAt: "2026-07-30T15:00:00Z",
+      sdkAppId: 1_600_000_000,
+      userId: "human_account-1",
+      userSig: "redacted-user-sig",
+    });
+
+    await expect(
+      gateway.listConversations(["community-1", "stale-community"]),
+    ).resolves.toMatchObject({
+      isSyncCompleted: false,
+      items: [
+        expect.objectContaining({
+          conversationId: "GROUPcommunity-1@TOPIC#topic-1",
+          title: "general",
+        }),
+      ],
+    });
+  });
+
   it("classifies an expired UserSig kick without auto-classifying ordinary kicks", async () => {
     const handlers = new Map<string, (event?: unknown) => void>();
     const rawSdk = rawSdkWithHandlers(handlers);

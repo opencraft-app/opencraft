@@ -3588,10 +3588,7 @@ export function createAppStore(
   ): Promise<boolean | null> {
     const stateBefore = store.getState();
     const contextGeneration = stateBefore.serverContextGeneration;
-    const groupIds = conversationGroupIds(
-      stateBefore.channels,
-      stateBefore.directConversations,
-    );
+    const groupIds = channelTopicGroupIds(stateBefore.channels);
     if (groupIds.length === 0) return true;
     const snapshot = await dependencies.messaging.listConversations(groupIds);
     if (generation !== imConnection) return null;
@@ -5118,18 +5115,11 @@ function updateConversationSummariesFromMessages(
   return next;
 }
 
-function conversationGroupIds(
-  channels: Channel[],
-  directConversations: DirectConversation[],
-): string[] {
+function channelTopicGroupIds(channels: Channel[]): string[] {
   return [
     ...new Set(
-      [
-        ...channels.map((channel) => channel.imGroupId?.trim()),
-        ...directConversations
-          .filter((conversation) => conversation.imState === "ready")
-          .map((conversation) => conversation.imGroupId.trim()),
-      ]
+      channels
+        .map((channel) => channel.imGroupId?.trim())
         .filter((groupId): groupId is string => Boolean(groupId)),
     ),
   ];
