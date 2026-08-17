@@ -773,6 +773,31 @@ func TestPlatformAPIExposesAuthenticatedServerCreateAndQueries(t *testing.T) {
 		acceptedMember.Operations[0].Kind != "im.membership.ensure" {
 		t.Fatalf("accepted member = %#v", acceptedMember)
 	}
+	joinLinkReplay := platformJSON(
+		t,
+		handler,
+		http.MethodPost,
+		"/v1/join-links/accept",
+		map[string]any{"token": *secondSecret.Token},
+		*joinerAuth.AccessToken,
+		"join-link-replay-0001",
+	)
+	if joinLinkReplay.Code != http.StatusOK {
+		t.Fatalf(
+			"join link replay = %d %s",
+			joinLinkReplay.Code,
+			joinLinkReplay.Body,
+		)
+	}
+	var joined openapi.JoinResult
+	if err := json.Unmarshal(joinLinkReplay.Body.Bytes(), &joined); err != nil {
+		t.Fatal(err)
+	}
+	if joined.ServerId != accepted.ResourceId ||
+		joined.MemberId != acceptedMember.ResourceId ||
+		joined.LandingChannelId.Version() != 7 {
+		t.Fatalf("join result = %#v", joined)
+	}
 	joinerServers := performJSON(
 		t,
 		handler,
