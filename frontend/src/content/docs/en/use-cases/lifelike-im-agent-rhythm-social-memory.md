@@ -1,18 +1,10 @@
 # How to Design a More Natural IM Agent: Conversation Rhythm, Group Norms, and Long-Term Social Memory
 
-Being more lifelike does not mean making the Agent impersonate a real person; it means giving it stable and understandable patterns for expression, response, and long-term collaboration.
-
-Conversation rhythm determines when it should answer briefly, when it should explain more, and when it should stop and wait for confirmation.
-
-Group norms determine how it speaks in shared spaces, uses context, and respects member boundaries.
-
-Long-term social memory determines whether it can retain confirmed relationship context without turning every conversation into a permanent record.
-
-![Designing a more natural IM Agent with conversation rhythm, group norms, and social memory](../images/use-case-10-lifelike-im-agent-rhythm-social-memory.png)
-
 ## Summary
 
 **"More lifelike" does not mean impersonating a real person. It means keeping stable, understandable behaviour in expression, response, and long-term collaboration, and it comes down to three things: conversational rhythm, group norms, and long-term social memory.** Rhythm decides when it answers briefly, when it elaborates, and when it should stop and wait for confirmation. Group norms decide how it speaks in shared spaces, how it cites context, and how it respects members' boundaries. Long-term social memory decides whether it retains confirmed relationship context without turning every message into a permanent record. Implement these in layers: rhythm and norms are stable persona-level rules, while memory keeps only confirmed, durable facts. Use the natural-conversation checklist in this guide to verify the design.
+
+![Designing a more natural IM Agent with conversation rhythm, group norms, and social memory](../images/use-case-10-lifelike-im-agent-rhythm-social-memory.png)
 
 ## Who this is for
 

@@ -1,14 +1,10 @@
 # How to Configure a Telegram Group AI Community Assistant: Welcome Messages, FAQs, Summaries, and Reminders
 
-An AI community assistant usually needs to handle four types of work: welcoming members, answering common questions, summarizing discussions, and sending scheduled reminders.
-
-However, the current LightVela international Telegram channel documentation says that Telegram currently supports only 1-to-1 conversations, so this page is not a live group-connection tutorial.
-
-This page records the design approach, pre-launch checks, and current alternatives until group support has a clearly documented product path.
-
 ## Summary
 
 **Start with the capability boundary: the Telegram channel page states plainly that group chats are not currently supported and only one-to-one conversations work, so the full flow of adding a bot to a Telegram group and auto-welcoming members cannot be completed on LightVela today.** Neither BotFather's privacy mode nor @-mentioning the bot in a group substitutes for channel-level group support in LightVela. The workable path right now: connect one-to-one conversations per the channel guide, mature all four content flows — welcome, FAQ, summaries, reminders — in direct messages, and complete the pre-launch checklist. That way, once group support ships, you only switch the trigger context; the content and persona need no rework. Treat this page as a design and preparation guide rather than an implementation walkthrough.
+
+![A Telegram group AI community assistant for welcome messages, FAQs, summaries, and reminders](../images/use-case-08-telegram-group-community-assistant.png)
 
 ## Current capability boundary
 
@@ -20,7 +16,6 @@ BotFather privacy mode or Telegram group @mention settings do not replace LightV
 
 If you need Telegram now, connect a 1-to-1 conversation through [Configure Channel - Telegram](../configuration/channel-telegram.md), then validate the FAQ, summary, and reminder workflows in private chat.
 
-![A Telegram group AI community assistant for welcome messages, FAQs, summaries, and reminders](../images/use-case-08-telegram-group-community-assistant.png)
 
 ## Who this is for
 

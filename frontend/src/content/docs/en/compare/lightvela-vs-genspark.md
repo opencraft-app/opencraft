@@ -1,10 +1,10 @@
 # LightVela vs Genspark: Which is best to host your AI Agent?
 
-![LightVela compared with Genspark for hosting an AI Agent](../images/lightvela-vs-genspark.webp)
-
 ## Summary
 
 **If you want to host a dedicated personal AI Agent that stays available and follows one consistent setup, LightVela is the more direct fit.** If you want an all-in-one AI workspace that can research, write, design, build slides, analyze data, and produce finished deliverables, Genspark is probably the stronger choice. They are both moving beyond the chatbot model, but they are solving different problems.
+
+![LightVela compared with Genspark for hosting an AI Agent](../images/lightvela-vs-genspark.webp)
 
 ## At a glance
 
