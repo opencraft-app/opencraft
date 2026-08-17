@@ -1,4 +1,4 @@
-import {Slot, useLocalSearchParams} from "expo-router";
+import {Slot, useGlobalSearchParams} from "expo-router";
 
 import {ExpoManagementRouteSurface} from "../../../../../features/management/expo-management-route-surface";
 import {routeParam} from "../../../../../features/workspace/section-navigation";
@@ -9,7 +9,10 @@ import {routeParam} from "../../../../../features/workspace/section-navigation";
  * restart polling / drop in-progress create + terminal state.
  */
 export default function ComputersLayout() {
-  const params = useLocalSearchParams<{computerId?: string | string[]}>();
+  // This retained parent layout observes a dynamic child route. Local params
+  // stay scoped to the previously matched child during sibling navigation;
+  // the current URL is the selection authority, so consume global params here.
+  const params = useGlobalSearchParams<{computerId?: string | string[]}>();
   const selectedComputerId = routeParam(params.computerId) || null;
 
   return (

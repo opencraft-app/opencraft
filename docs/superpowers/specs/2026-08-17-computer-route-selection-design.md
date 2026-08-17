@@ -13,8 +13,9 @@
 
 - URL 是路由环境中唯一的 Computer selection authority。
 - `computers/_layout.tsx` 是 URL param 到稳定管理 surface 的投影边界。
-- `ComputersScreen` 是受控/非受控双模式组件：提供 `selectedComputerId` 时只消费该值；没有该值时
-  才使用 `localSelectedComputerId` 供 Style Lab、isolated tests 和非路由宿主使用。
+- `ComputersScreen` 是受控/非受控双模式组件：非空 `selectedComputerId` 是稳定详情 URL 的强约束；
+  `undefined` 表示非路由宿主，`null` 表示路由 `/computers` 列表 URL，两者允许使用第一项/本地 fallback。
+  本地 fallback 供列表 URL、Style Lab、isolated tests 和非路由宿主使用，不能覆盖非空详情 route ID。
 - 点击列表项只调用 navigation adapter 推进 URL，不额外维护 optimistic route selection。
 - list/detail child route 继续只负责匹配，不能重新拥有详情 surface。
 
@@ -36,4 +37,3 @@
 
 发布前运行 focused Jest、全量 Web Jest、TypeScript、凭据扫描、Expo export，并在 live 页面验证
 点击两个 Computer 后 URL、选中行和详情标题在同一次导航中一致。
-
