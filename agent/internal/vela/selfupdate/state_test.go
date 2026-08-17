@@ -71,4 +71,14 @@ func TestTrustStateRejectsReplayAndDowngradeAcrossRestart(t *testing.T) {
 	if _, err := reopened.Accept(downgrade, now); !errors.Is(err, ErrUpdateDowngrade) {
 		t.Fatalf("restart downgrade error = %v", err)
 	}
+	beforeHealth, err := OpenTrustState(TrustStateConfig{
+		Root: root, Channel: "stable", Target: "linux-amd64",
+		CurrentVersion: "v0.1.53", Now: now.Add(3 * time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if beforeHealth.Snapshot().HighestHealthyVersion != "v0.1.52" {
+		t.Fatalf("process start promoted health floor without heartbeat: %#v", beforeHealth.Snapshot())
+	}
 }

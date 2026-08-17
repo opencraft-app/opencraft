@@ -15,6 +15,9 @@ version=
 signing_key_id=
 signing_private_key=
 signing_public_key=
+update_channel_url=
+channel_signing_key_id=
+channel_signing_public_key=
 release_output=
 health_base_url=
 linux_builder_host=root@9.134.208.109
@@ -35,6 +38,9 @@ usage() {
   --signing-key-id computer-release-2026-08-04-v31 \
   --signing-private-key /secure/path/release.private \
   --signing-public-key /secure/path/release.public \
+  --update-channel-url https://computer-update.internal.example \
+  --channel-signing-key-id computer-channel-2026-08 \
+  --channel-signing-public-key /secure/path/channel.public \
   --release-output /absolute/path/to/release-evidence \
   [--health-base-url http://9.135.236.64]
 
@@ -104,6 +110,9 @@ while [ "$#" -gt 0 ]; do
     --signing-key-id) [ "$#" -ge 2 ] || fail "--signing-key-id 缺少值"; signing_key_id=$2; shift 2 ;;
     --signing-private-key) [ "$#" -ge 2 ] || fail "--signing-private-key 缺少值"; signing_private_key=$2; shift 2 ;;
     --signing-public-key) [ "$#" -ge 2 ] || fail "--signing-public-key 缺少值"; signing_public_key=$2; shift 2 ;;
+    --update-channel-url) [ "$#" -ge 2 ] || fail "--update-channel-url 缺少值"; update_channel_url=$2; shift 2 ;;
+    --channel-signing-key-id) [ "$#" -ge 2 ] || fail "--channel-signing-key-id 缺少值"; channel_signing_key_id=$2; shift 2 ;;
+    --channel-signing-public-key) [ "$#" -ge 2 ] || fail "--channel-signing-public-key 缺少值"; channel_signing_public_key=$2; shift 2 ;;
     --release-output) [ "$#" -ge 2 ] || fail "--release-output 缺少值"; release_output=$2; shift 2 ;;
     --health-base-url) [ "$#" -ge 2 ] || fail "--health-base-url 缺少值"; health_base_url=$2; shift 2 ;;
     --namespace) [ "$#" -ge 2 ] || fail "--namespace 缺少值"; namespace=$2; shift 2 ;;
@@ -117,7 +126,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-for value_name in kubeconfig agent_source web_source signing_private_key signing_public_key release_output; do
+for value_name in kubeconfig agent_source web_source signing_private_key signing_public_key channel_signing_public_key release_output; do
   eval "value=\${$value_name}"
   [ -n "$value" ] || fail "必须提供 --$(printf '%s' "$value_name" | tr '_' '-')"
   case "$value" in /*) ;; *) fail "$value_name 必须是绝对路径" ;; esac
@@ -129,10 +138,14 @@ done
 [ -x "$agent_source/scripts/build-vela-linux-amd64-buildx.sh" ] || fail "Agent Linux Buildx 构建入口不存在"
 [ -f "$signing_private_key" ] && [ ! -L "$signing_private_key" ] || fail "签名私钥不是受限普通文件"
 [ -f "$signing_public_key" ] && [ ! -L "$signing_public_key" ] || fail "签名公钥不是普通文件"
+[ -f "$channel_signing_public_key" ] && [ ! -L "$channel_signing_public_key" ] || fail "Channel 签名公钥不是普通文件"
 [ "$(stat -f '%Lp' "$signing_private_key")" = 600 ] || fail "签名私钥权限必须为 0600"
 [ -n "$version" ] || fail "必须提供 --version"
 printf '%s\n' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)*$' || fail "version 必须是不可变语义版本"
 case "$signing_key_id" in *[!A-Za-z0-9._-]*|'') fail "signing-key-id 无效" ;; esac
+case "$channel_signing_key_id" in *[!A-Za-z0-9._-]*|'') fail "channel-signing-key-id 无效" ;; esac
+case "$update_channel_url" in https://[A-Za-z0-9]* ) ;; *) fail "update-channel-url 必须是 HTTPS" ;; esac
+case "$update_channel_url" in *[!A-Za-z0-9.:/_-]*|*'?'*|*'#'* ) fail "update-channel-url 无效" ;; esac
 case "$bucket" in *[!a-z0-9-]*|'') fail "bucket 无效" ;; esac
 case "$region" in *[!a-z0-9-]*|'') fail "region 无效" ;; esac
 case "$linux_builder_host" in *[!A-Za-z0-9._@:-]*|'') fail "linux-builder-host 无效" ;; esac
@@ -166,6 +179,11 @@ backend_head=$(git -C "$repository_root" rev-parse HEAD)
 temporary_root=$(mktemp -d "${TMPDIR:-/tmp}/computer-canary.XXXXXX")
 secret_directory="$temporary_root/secrets"
 mkdir -m 0700 "$secret_directory"
+release_public_key_value=$(tr -d '\r\n' <"$signing_public_key")
+channel_public_key_value=$(tr -d '\r\n' <"$channel_signing_public_key")
+for public_key_value in "$release_public_key_value" "$channel_public_key_value"; do
+  case "$public_key_value" in *[!A-Za-z0-9+/=_-]*|'') fail "签名公钥内容无效" ;; esac
+done
 
 echo "[1/8] 校验 Human TUI 可复现构建……"
 (
@@ -226,7 +244,13 @@ echo "[4/8] 构建 macOS ARM64 与 Linux AMD64 双目标二进制……"
 mac_agent_binary="$temporary_root/vela-computer-darwin-arm64"
 linux_agent_binary="$temporary_root/vela-computer-linux-amd64"
 linux_build_metadata="$temporary_root/linux-buildx-metadata.json"
-"$agent_source/scripts/build-vela-macos-arm64.sh" --version "$version" --output "$mac_agent_binary" >/dev/null
+"$agent_source/scripts/build-vela-macos-arm64.sh" \
+  --version "$version" --output "$mac_agent_binary" \
+  --update-channel-url "$update_channel_url" \
+  --channel-key-id "$channel_signing_key_id" \
+  --channel-public-key "$channel_public_key_value" \
+  --release-key-id "$signing_key_id" \
+  --release-public-key "$release_public_key_value" >/dev/null
 expected_version="{\"mode\":\"vela\",\"name\":\"vela-computer\",\"version\":\"$version\"}"
 [ "$("$mac_agent_binary" version --json)" = "$expected_version" ] || fail "macOS 构建产物版本不匹配"
 remote_build_root=$(ssh -o BatchMode=yes -p "$linux_builder_port" "$linux_builder_host" \
@@ -236,7 +260,7 @@ COPYFILE_DISABLE=1 tar --no-xattrs --exclude='./native/tat-agent/target' --exclu
   ssh -o BatchMode=yes -p "$linux_builder_port" "$linux_builder_host" \
     "tar -xzf - -C '$remote_build_root'"
 ssh -o BatchMode=yes -p "$linux_builder_port" "$linux_builder_host" \
-  "'$remote_build_root/scripts/build-vela-linux-amd64-buildx.sh' --version '$version' --output '$remote_build_root/vela-computer-linux-amd64' --metadata '$remote_build_root/buildx-metadata.json'"
+  "'$remote_build_root/scripts/build-vela-linux-amd64-buildx.sh' --version '$version' --output '$remote_build_root/vela-computer-linux-amd64' --metadata '$remote_build_root/buildx-metadata.json' --update-channel-url '$update_channel_url' --channel-key-id '$channel_signing_key_id' --channel-public-key '$channel_public_key_value' --release-key-id '$signing_key_id' --release-public-key '$release_public_key_value'"
 scp -P "$linux_builder_port" "$linux_builder_host:$remote_build_root/vela-computer-linux-amd64" "$linux_agent_binary" >/dev/null
 scp -P "$linux_builder_port" "$linux_builder_host:$remote_build_root/buildx-metadata.json" "$linux_build_metadata" >/dev/null
 file "$linux_agent_binary" | grep -Eq 'ELF 64-bit.*x86-64' || fail "Linux 构建产物目标错误"

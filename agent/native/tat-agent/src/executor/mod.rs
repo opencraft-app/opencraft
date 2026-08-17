@@ -9,6 +9,7 @@ use self::task::{EXIT_CODE_ERROR, TASK_RESULT_START_FAILED, Task};
 pub use self::unix::{User, kill_process_group};
 #[cfg(windows)]
 pub use self::windows::{User, kill_process_group};
+use crate::activity::{ActivityLease, TAT_TASK};
 use crate::common::guard::prevent_restart;
 use crate::common::{Stopper, evbus, get_now_secs};
 use crate::network::{EVENT_KICK, Invoke, InvokeAdapter};
@@ -63,6 +64,7 @@ impl Executor {
         self: Arc<Self>,
         task: InvocationNormalTask,
     ) -> Option<JoinHandle<()>> {
+        let activity_lease = ActivityLease::acquire(TAT_TASK)?;
         let id = task.invocation_task_id.clone();
         if self.cache.lock().await.replace(id.clone()).is_some() {
             return None;
@@ -70,6 +72,7 @@ impl Executor {
 
         let prevent_restart_guard = prevent_restart().await;
         let handle = tokio::spawn(async move {
+            let _activity_lease = activity_lease;
             info!("task `{id}` execute begin");
             let _guard = prevent_restart_guard; // Hold the restart lock for the entire duration of this task
             let stopper = Stopper::new();

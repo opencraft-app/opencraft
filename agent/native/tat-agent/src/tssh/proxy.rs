@@ -73,7 +73,12 @@ impl Handler for BsonHandler<ProxyNew> {
         let session = match Tssh::get_session(&session_id).await {
             Some(s) => s,
             None => {
-                let s = Arc::new(Session::new(&session_id).await);
+                let Some(session) = Session::new(&session_id).await else {
+                    return self
+                        .reply(PtyBinErrMsg::new("Computer update is waiting for idle"))
+                        .await;
+                };
+                let s = Arc::new(session);
                 let _ = Tssh::add_session(&session_id, s.clone()).await;
                 s
             }

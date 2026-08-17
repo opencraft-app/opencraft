@@ -11,17 +11,112 @@ package tat
 #cgo linux,amd64 LDFLAGS: -ldl -lpthread -lm -lrt -lutil
 #include <stdlib.h>
 #include "vela_tat.h"
+
+extern uint64_t velaGoTATActivityAcquire(uint32_t kind);
+extern void velaGoTATActivityRelease(uint64_t token);
+
+static uint64_t vela_activity_acquire_bridge(uint32_t kind) {
+    return velaGoTATActivityAcquire(kind);
+}
+
+static void vela_activity_release_bridge(uint64_t token) {
+    velaGoTATActivityRelease(token);
+}
+
+static int vela_configure_activity_callbacks(void) {
+    return vela_tat_set_activity_callbacks(
+        vela_activity_acquire_bridge,
+        vela_activity_release_bridge);
+}
 */
 import "C"
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	goruntime "runtime"
+	"sync"
+	"sync/atomic"
 	"unsafe"
+
+	"velachat/agent/internal/vela/activitygate"
 )
 
+var tatActivityCallbacks struct {
+	mu     sync.Mutex
+	gate   *activitygate.Gate
+	leases map[uint64]*activitygate.Lease
+	next   atomic.Uint64
+}
+
 type cgoBridge struct{}
+
+func (cgoBridge) configureActivityGate(gate *activitygate.Gate) error {
+	if gate == nil {
+		return ErrInvalidConfig
+	}
+	tatActivityCallbacks.mu.Lock()
+	if tatActivityCallbacks.gate != nil {
+		tatActivityCallbacks.mu.Unlock()
+		return ErrInvalidConfig
+	}
+	tatActivityCallbacks.gate = gate
+	tatActivityCallbacks.leases = make(map[uint64]*activitygate.Lease)
+	tatActivityCallbacks.mu.Unlock()
+	if code := C.vela_configure_activity_callbacks(); code != 0 {
+		tatActivityCallbacks.mu.Lock()
+		tatActivityCallbacks.gate = nil
+		tatActivityCallbacks.leases = nil
+		tatActivityCallbacks.mu.Unlock()
+		return nativeError("configure activity callbacks", int(code))
+	}
+	return nil
+}
+
+//export velaGoTATActivityAcquire
+func velaGoTATActivityAcquire(kind C.uint32_t) C.uint64_t {
+	activityKind := activitygate.TATTask
+	if uint32(kind) == 2 {
+		activityKind = activitygate.TerminalSession
+	} else if uint32(kind) != 1 {
+		return 0
+	}
+	tatActivityCallbacks.mu.Lock()
+	gate := tatActivityCallbacks.gate
+	tatActivityCallbacks.mu.Unlock()
+	if gate == nil {
+		return 0
+	}
+	lease, err := gate.Acquire(context.Background(), activityKind)
+	if err != nil {
+		return 0
+	}
+	token := tatActivityCallbacks.next.Add(1)
+	if token == 0 {
+		token = tatActivityCallbacks.next.Add(1)
+	}
+	tatActivityCallbacks.mu.Lock()
+	if tatActivityCallbacks.gate != gate {
+		tatActivityCallbacks.mu.Unlock()
+		lease.Release()
+		return 0
+	}
+	tatActivityCallbacks.leases[token] = lease
+	tatActivityCallbacks.mu.Unlock()
+	return C.uint64_t(token)
+}
+
+//export velaGoTATActivityRelease
+func velaGoTATActivityRelease(token C.uint64_t) {
+	tatActivityCallbacks.mu.Lock()
+	lease := tatActivityCallbacks.leases[uint64(token)]
+	delete(tatActivityCallbacks.leases, uint64(token))
+	tatActivityCallbacks.mu.Unlock()
+	if lease != nil {
+		lease.Release()
+	}
+}
 
 func defaultNativeBridge() nativeBridge {
 	return cgoBridge{}

@@ -1,4 +1,5 @@
 use super::{Tssh, proxy::Proxy, pty::Pty};
+use crate::activity::{ActivityLease, TERMINAL_SESSION};
 use crate::common::guard::{PreventRestartGuard, prevent_restart};
 use crate::common::{Stopper, Timer};
 use crate::executor::User;
@@ -20,17 +21,20 @@ pub struct Session {
     timer: Timer,
     stopper: Stopper,
     _guard: PreventRestartGuard, // Hold the restart lock for the entire duration of session
+    _activity_lease: ActivityLease,
 }
 
 impl Session {
-    pub async fn new(session_id: &str) -> Self {
-        Self {
+    pub async fn new(session_id: &str) -> Option<Self> {
+        let activity_lease = ActivityLease::acquire(TERMINAL_SESSION)?;
+        Some(Self {
             _guard: prevent_restart().await,
+            _activity_lease: activity_lease,
             session_id: session_id.to_owned(),
             channels: Default::default(),
             timer: Timer::new(SESSION_TTL),
             stopper: Stopper::new(),
-        }
+        })
     }
 
     pub async fn stop(&self) {

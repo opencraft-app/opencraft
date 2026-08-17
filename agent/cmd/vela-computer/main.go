@@ -15,9 +15,16 @@ import (
 	"velachat/agent/internal/state"
 	velaapp "velachat/agent/internal/vela/app"
 	velacli "velachat/agent/internal/vela/cli"
+	"velachat/agent/internal/vela/selfupdate"
 )
 
 var version = "0.1.0-dev"
+var updateChannelURL string
+var updateChannel string
+var updateChannelKeyID string
+var updateChannelPublicKey string
+var updateReleaseKeyID string
+var updateReleasePublicKey string
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -32,6 +39,12 @@ func main() {
 }
 
 func runVela(ctx context.Context, args []string) int {
+	if len(args) > 0 && args[0] == "upgrade" {
+		if err := selfupdate.RunApplyCommand(ctx, args[1:]); err != nil {
+			return printError(err)
+		}
+		return 0
+	}
 	allowInsecureLoopback := os.Getenv(
 		"VELA_ALLOW_INSECURE_LOOPBACK",
 	) == "1"
@@ -50,6 +63,11 @@ func runVela(ctx context.Context, args []string) int {
 		Stderr:                os.Stderr,
 		AllowInsecureLoopback: allowInsecureLoopback,
 		AllowInsecureHTTP:     allowInsecureHTTP,
+		SelfUpdate: selfupdate.BootstrapConfig{
+			ChannelURL: updateChannelURL, Channel: updateChannel,
+			ChannelKeyID: updateChannelKeyID, ChannelPublicKey: updateChannelPublicKey,
+			ReleaseKeyID: updateReleaseKeyID, ReleasePublicKey: updateReleasePublicKey,
+		},
 	})
 	if err != nil {
 		return printError(err)

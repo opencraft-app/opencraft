@@ -68,6 +68,9 @@ backend/scripts/deploy-computer-canary.sh \
   --signing-key-id UNIQUE_KEY_ID \
   --signing-private-key /secure/path/release.private \
   --signing-public-key /secure/path/release.public \
+  --update-channel-url https://computer-update.internal.example \
+  --channel-signing-key-id UNIQUE_CHANNEL_KEY_ID \
+  --channel-signing-public-key /secure/path/channel.public \
   --release-output /absolute/path/to/release-evidence
 ```
 
@@ -78,7 +81,9 @@ Computer 的必选内嵌产物；正式发布会先执行 `bun run check:tui`、
 仅当源码可重建出与已提交 bundle 完全相同的字节和 manifest 时才继续，并把 TUI manifest 与
 摘要保存在 release evidence。
 两个 target 缺一不可发布。脚本生成 target-local manifest/signature，独立验签，create-only 发布
-COS，保存 Buildx metadata，再创建不可变 Release Set ConfigMap 并切换 3 副本 Canary。
+COS，保存 Buildx metadata，再创建不可变 Release Set ConfigMap 并切换 3 副本 Canary。发布构建会把
+Channel 公钥与 Release 公钥分别固定进二进制；不得从在线 Channel 响应更新信任根，也不得把 Channel
+私钥或 Release 私钥编入 Computer。
 
 首次从单 target catalog 升级时，新增 schema migration 与兼容 Backend image 是一个只能向前完成的
 切换：migration Job 和 verify Job 成功后必须立即部署新版 Backend；旧进程可继续运行到 Recreate，

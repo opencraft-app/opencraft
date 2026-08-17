@@ -20,6 +20,7 @@ import (
 	"velachat/agent/internal/vela/humantui"
 	"velachat/agent/internal/vela/im"
 	velainstall "velachat/agent/internal/vela/install"
+	"velachat/agent/internal/vela/selfupdate"
 	"velachat/agent/internal/vela/tat"
 )
 
@@ -43,6 +44,7 @@ type Config struct {
 	CodexExecutable       string
 	Controller            ComputerController
 	InstallerFactory      InstallerFactory
+	SelfUpdate            selfupdate.BootstrapConfig
 	runtimeSnapshot       func(context.Context) *runtimecatalog.Snapshot
 }
 
@@ -93,6 +95,9 @@ func NewActions(config Config) (*Actions, error) {
 	if config.CodexExecutable != "" &&
 		(!filepath.IsAbs(config.CodexExecutable) ||
 			filepath.Clean(config.CodexExecutable) != config.CodexExecutable) {
+		return nil, ErrInvalidConfig
+	}
+	if _, _, err := selfupdate.ResolveBootstrap(config.SelfUpdate); err != nil {
 		return nil, ErrInvalidConfig
 	}
 	if config.Now == nil {

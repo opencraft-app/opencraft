@@ -12,6 +12,7 @@ import (
 
 	"velachat/agent/internal/runtimeactor"
 	"velachat/agent/internal/runtimecatalog"
+	"velachat/agent/internal/vela/activitygate"
 	"velachat/agent/internal/vela/agentgateway"
 	"velachat/agent/internal/vela/daemon"
 	"velachat/agent/internal/vela/host"
@@ -33,6 +34,7 @@ type managedAgentFactory struct {
 	client        *platform.Client
 	transports    host.TransportFactory
 	gatewayHub    *agentgateway.Hub
+	activityGate  *activitygate.Gate
 }
 
 func (f *managedAgentFactory) Start(
@@ -143,6 +145,16 @@ func (f *managedAgentFactory) Start(
 		_ = observer.FlushAndClose(context.Background())
 		return nil, err
 	}
+	actorForHost := runtimehost.RuntimeActor(runtimeActor)
+	if f.activityGate != nil {
+		actorForHost, err = newGatedRuntimeActor(runtimeActor, f.activityGate)
+		if err != nil {
+			_ = runtimeActor.Close(context.Background())
+			observer.Publish("error", stringPointer("agent_runtime_init_failed"))
+			_ = observer.FlushAndClose(context.Background())
+			return nil, err
+		}
+	}
 	transportSlot := agentgateway.NewTransportSlot()
 	gateway, err := f.registerGateway(assignment, fence, transportSlot)
 	if err != nil {
@@ -163,7 +175,7 @@ func (f *managedAgentFactory) Start(
 		AgentID:          assignment.AgentID,
 		StateDirectory:   agentDirectory,
 		WorkingDirectory: workspaceDirectory,
-		Actor:            runtimeActor,
+		Actor:            actorForHost,
 		Runtimes:         runtimeSnapshot,
 		Gateway:          gateway,
 		ReminderClient:   f.client,

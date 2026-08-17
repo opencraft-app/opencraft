@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"velachat/agent/internal/common"
+	"velachat/agent/internal/vela/activitygate"
 )
 
 var (
@@ -88,6 +89,22 @@ type nativeHandle interface {
 
 func New() Runtime {
 	return newRuntime(defaultNativeBridge())
+}
+
+type activityGateBridge interface {
+	configureActivityGate(*activitygate.Gate) error
+}
+
+func ConfigureActivityGate(value Runtime, gate *activitygate.Gate) error {
+	runtime, ok := value.(*runtime)
+	if !ok || runtime == nil || gate == nil {
+		return ErrInvalidConfig
+	}
+	bridge, ok := runtime.bridge.(activityGateBridge)
+	if !ok {
+		return ErrNativeUnavailable
+	}
+	return bridge.configureActivityGate(gate)
 }
 
 func newRuntime(bridge nativeBridge) Runtime {

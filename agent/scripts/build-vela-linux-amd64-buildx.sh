@@ -5,9 +5,14 @@ project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 version=
 output=
 metadata=
+update_channel_url=
+channel_key_id=
+channel_public_key=
+release_key_id=
+release_public_key=
 
 usage() {
-  echo "usage: build-vela-linux-amd64-buildx.sh --version vX.Y.Z --output ABSOLUTE_PATH [--metadata ABSOLUTE_PATH]" >&2
+  echo "usage: build-vela-linux-amd64-buildx.sh --version vX.Y.Z --output ABSOLUTE_PATH --update-channel-url URL --channel-key-id ID --channel-public-key BASE64 --release-key-id ID --release-public-key BASE64 [--metadata ABSOLUTE_PATH]" >&2
   exit 2
 }
 
@@ -16,6 +21,11 @@ while [ "$#" -gt 0 ]; do
     --version) [ "$#" -ge 2 ] || usage; version=$2; shift 2 ;;
     --output) [ "$#" -ge 2 ] || usage; output=$2; shift 2 ;;
     --metadata) [ "$#" -ge 2 ] || usage; metadata=$2; shift 2 ;;
+    --update-channel-url) [ "$#" -ge 2 ] || usage; update_channel_url=$2; shift 2 ;;
+    --channel-key-id) [ "$#" -ge 2 ] || usage; channel_key_id=$2; shift 2 ;;
+    --channel-public-key) [ "$#" -ge 2 ] || usage; channel_public_key=$2; shift 2 ;;
+    --release-key-id) [ "$#" -ge 2 ] || usage; release_key_id=$2; shift 2 ;;
+    --release-public-key) [ "$#" -ge 2 ] || usage; release_public_key=$2; shift 2 ;;
     *) usage ;;
   esac
 done
@@ -24,6 +34,14 @@ printf '%s\n' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)*
 case "$output" in /*) ;; *) usage ;; esac
 if [ -n "$metadata" ]; then case "$metadata" in /*) ;; *) usage ;; esac; fi
 [ ! -e "$output" ] || { echo "Linux build output already exists" >&2; exit 1; }
+case "$update_channel_url" in https://[A-Za-z0-9]* ) ;; *) usage ;; esac
+case "$update_channel_url" in *[!A-Za-z0-9.:/_-]*|*'?'*|*'#'* ) usage ;; esac
+for key_id in "$channel_key_id" "$release_key_id"; do
+  case "$key_id" in *[!A-Za-z0-9._-]*|'') usage ;; esac
+done
+for public_key in "$channel_public_key" "$release_public_key"; do
+  case "$public_key" in *[!A-Za-z0-9+/=_-]*|'') usage ;; esac
+done
 
 for command_name in docker file go; do
   command -v "$command_name" >/dev/null 2>&1 || { echo "missing command: $command_name" >&2; exit 1; }
@@ -55,6 +73,11 @@ docker buildx build \
   --platform linux/amd64 \
   --file "$project_dir/deploy/linux-amd64.Dockerfile" \
   --build-arg "VELA_VERSION=$version" \
+  --build-arg "VELA_UPDATE_CHANNEL_URL=$update_channel_url" \
+  --build-arg "VELA_CHANNEL_KEY_ID=$channel_key_id" \
+  --build-arg "VELA_CHANNEL_PUBLIC_KEY=$channel_public_key" \
+  --build-arg "VELA_RELEASE_KEY_ID=$release_key_id" \
+  --build-arg "VELA_RELEASE_PUBLIC_KEY=$release_public_key" \
   --provenance=mode=max \
   $metadata_arg \
   --output "type=local,dest=$stage/output" \

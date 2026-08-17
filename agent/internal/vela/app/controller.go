@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,10 +18,12 @@ import (
 	"velachat/agent/internal/runtimecatalog"
 	"velachat/agent/internal/runtimes"
 	rootstate "velachat/agent/internal/state"
+	"velachat/agent/internal/vela/activitygate"
 	"velachat/agent/internal/vela/agentgateway"
 	velacli "velachat/agent/internal/vela/cli"
 	"velachat/agent/internal/vela/daemon"
 	"velachat/agent/internal/vela/platform"
+	"velachat/agent/internal/vela/selfupdate"
 	"velachat/agent/internal/vela/tat"
 )
 
@@ -428,6 +431,16 @@ func (c *defaultComputerController) Run(
 	if err != nil {
 		return err
 	}
+	updateBootstrap, updateEnabled, err := selfupdate.ResolveBootstrap(c.config.SelfUpdate)
+	if err != nil {
+		return err
+	}
+	activityGate := activitygate.New()
+	if updateEnabled {
+		if err := tat.ConfigureActivityGate(c.config.TAT, activityGate); err != nil {
+			return err
+		}
+	}
 	sessions := &computerSessionManager{
 		client:     client,
 		credential: credential,
@@ -491,6 +504,7 @@ func (c *defaultComputerController) Run(
 		client:        client,
 		transports:    c.config.Transports,
 		gatewayHub:    gatewayHub,
+		activityGate:  activityGate,
 	}
 	registry, err := daemon.NewRegistry(daemon.RegistryConfig{
 		Factory:       factory,
@@ -498,6 +512,10 @@ func (c *defaultComputerController) Run(
 	})
 	if err != nil {
 		return err
+	}
+	heartbeatSink := &computerHeartbeatSink{
+		sessions: sessions,
+		client:   client,
 	}
 	runner, err := daemon.NewRunner(daemon.RunnerConfig{
 		StateRoot:  root,
@@ -514,17 +532,99 @@ func (c *defaultComputerController) Run(
 			runtime:   c.config.TAT,
 			stateRoot: filepath.Join(root, "tat"),
 		},
-		HeartbeatSink: &computerHeartbeatSink{
-			sessions: sessions,
-			client:   client,
-		},
+		HeartbeatSink:     heartbeatSink,
 		HeartbeatInterval: c.config.HeartbeatInterval,
 		Now:               c.config.Now,
 	})
 	if err != nil {
 		return err
 	}
-	return runner.Run(ctx)
+	if !updateEnabled {
+		return runner.Run(ctx)
+	}
+	return c.runSelfUpdatingComputer(
+		ctx, root, updateBootstrap, activityGate, runner, heartbeatSink,
+	)
+}
+
+func (c *defaultComputerController) runSelfUpdatingComputer(
+	ctx context.Context,
+	root string,
+	bootstrap selfupdate.ResolvedBootstrap,
+	gate *activitygate.Gate,
+	runner *daemon.Runner,
+	heartbeatSink *computerHeartbeatSink,
+) error {
+	target := selfupdate.CurrentTarget()
+	installationRoot := filepath.Dir(root)
+	program := filepath.Join(installationRoot, "bin", "vela-computer")
+	trust, err := selfupdate.OpenTrustState(selfupdate.TrustStateConfig{
+		Root: root, Channel: bootstrap.Channel, Target: target,
+		CurrentVersion: c.config.Version, Now: c.config.Now().UTC(),
+	})
+	if err != nil {
+		return err
+	}
+	channel, err := selfupdate.NewChannelClient(selfupdate.ChannelClientConfig{
+		BaseURL: bootstrap.ChannelURL, Channel: bootstrap.Channel, Target: target,
+		KeyID: bootstrap.ChannelKeyID, PublicKey: bootstrap.ChannelPublicKey,
+		Now: c.config.Now,
+	})
+	if err != nil {
+		return err
+	}
+	preparer, err := selfupdate.NewDownloadPreparer(selfupdate.DownloadPreparerConfig{
+		Root: root, HTTPClient: &http.Client{Timeout: 10 * time.Minute}, Now: c.config.Now,
+		ReleasePublicKeys: bootstrap.ReleasePublicKeys,
+	})
+	if err != nil {
+		return err
+	}
+	stager, err := selfupdate.NewStager(selfupdate.StagerConfig{
+		StateRoot: root, InstallationRoot: installationRoot,
+		CurrentVersion: c.config.Version, Target: target, CurrentProgram: program,
+		Now:   c.config.Now,
+		NewID: func() (string, error) { return newID() },
+	})
+	if err != nil {
+		return err
+	}
+	launcher, err := selfupdate.NewPlatformHelperLauncher()
+	if err != nil {
+		return err
+	}
+	runContext, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	coordinator, err := selfupdate.NewCoordinator(selfupdate.CoordinatorConfig{
+		Stager: stager, Gate: gate, Launcher: launcher, ParentPID: os.Getpid(),
+		Now: c.config.Now, Shutdown: cancelRun,
+	})
+	if err != nil {
+		return err
+	}
+	poller, err := selfupdate.NewPoller(selfupdate.PollerConfig{
+		Source: channel, Preparer: preparer, Sink: stager, Trust: trust,
+		Now: c.config.Now, Interval: 15 * time.Minute,
+	})
+	if err != nil {
+		return err
+	}
+	reporter, err := selfupdate.NewHealthReporter(selfupdate.HealthReporterConfig{
+		StateRoot: root, Version: c.config.Version, Program: program, Now: c.config.Now,
+		Trust: trust,
+	})
+	if err != nil {
+		return err
+	}
+	heartbeatSink.health = reporter
+	errorsChannel := make(chan error, 3)
+	go func() { errorsChannel <- runner.Run(runContext) }()
+	go func() { errorsChannel <- poller.Run(runContext) }()
+	go func() { errorsChannel <- coordinator.Run(runContext) }()
+	first := <-errorsChannel
+	cancelRun()
+	remaining := errors.Join(<-errorsChannel, <-errorsChannel)
+	return errors.Join(first, remaining)
 }
 
 func writeRuntimeCatalogStatus(
@@ -553,6 +653,7 @@ type tatDaemonComponent struct {
 type computerHeartbeatSink struct {
 	sessions *computerSessionManager
 	client   *platform.Client
+	health   interface{ Report() (bool, error) }
 }
 
 func (s *computerHeartbeatSink) Send(
@@ -599,18 +700,26 @@ func (s *computerHeartbeatSink) Send(
 		heartbeat,
 	)
 	if !errors.Is(err, platform.ErrCredentialRejected) {
-		return err
+		return s.afterHeartbeat(err)
 	}
 	s.sessions.Invalidate(session.AccessToken)
 	session, err = s.sessions.Current(ctx)
 	if err != nil {
 		return err
 	}
-	return s.client.SendComputerHeartbeat(
+	return s.afterHeartbeat(s.client.SendComputerHeartbeat(
 		ctx,
 		session.AccessToken,
 		heartbeat,
-	)
+	))
+}
+
+func (s *computerHeartbeatSink) afterHeartbeat(err error) error {
+	if err != nil || s.health == nil {
+		return err
+	}
+	_, reportErr := s.health.Report()
+	return reportErr
 }
 
 func (c tatDaemonComponent) Start(

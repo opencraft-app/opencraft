@@ -82,13 +82,6 @@ func OpenTrustState(config TrustStateConfig) (*TrustState, error) {
 		if err := validateTrustDocument(document, config.Channel, config.Target); err != nil {
 			return nil, err
 		}
-		if compareVersions(config.CurrentVersion, document.HighestHealthyVersion) > 0 {
-			document.HighestHealthyVersion = config.CurrentVersion
-			document.UpdatedAt = config.Now.UTC()
-			if err := store.Write(trustStatePath, document); err != nil {
-				return nil, ErrTrustStateInvalid
-			}
-		}
 	}
 	return &TrustState{store: store, document: document}, nil
 }

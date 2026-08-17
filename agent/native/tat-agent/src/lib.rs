@@ -4,6 +4,7 @@
 //! The Go daemon owns process lifetime; this library owns one Tokio runtime
 //! thread and supports a single start/close cycle per process.
 
+mod activity;
 mod common;
 mod executor;
 mod network;
@@ -26,6 +27,21 @@ const OK: i32 = 0;
 const INVALID_ARGUMENT: i32 = 2;
 const ALREADY_STARTED: i32 = 3;
 const OPERATION_FAILED: i32 = 4;
+
+#[unsafe(no_mangle)]
+pub extern "C" fn vela_tat_set_activity_callbacks(
+    acquire: Option<activity::ActivityAcquire>,
+    release: Option<activity::ActivityRelease>,
+) -> i32 {
+    clear_last_error();
+    match activity::configure(acquire, release) {
+        Ok(()) => OK,
+        Err(error) => {
+            set_last_error(&format!("{error:#}"));
+            INVALID_ARGUMENT
+        }
+    }
+}
 
 static STARTED: AtomicBool = AtomicBool::new(false);
 pub static EXE_DIR: LazyLock<PathBuf> = LazyLock::new(|| {

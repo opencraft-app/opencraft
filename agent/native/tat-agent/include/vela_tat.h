@@ -2,12 +2,19 @@
 #define VELA_TAT_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef struct VelaTatHandle VelaTatHandle;
+typedef uint64_t (*VelaTatActivityAcquire)(uint32_t kind);
+typedef void (*VelaTatActivityRelease)(uint64_t token);
+
+int vela_tat_set_activity_callbacks(
+    VelaTatActivityAcquire acquire,
+    VelaTatActivityRelease release);
 
 int vela_tat_register(
     const char *state_root,
