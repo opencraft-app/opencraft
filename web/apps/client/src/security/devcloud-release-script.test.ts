@@ -26,6 +26,10 @@ const devcloudManifest = resolve(
   repositoryRoot,
   "web/deploy/devcloud/static.yaml",
 );
+const devcloudDockerfile = resolve(
+  repositoryRoot,
+  "web/deploy/devcloud/Dockerfile",
+);
 
 describe("DevCloud Web release contract", () => {
   it("provides one shell entry for preview and immutable deployment", () => {
@@ -78,6 +82,14 @@ describe("DevCloud Web release contract", () => {
     expect(source).not.toContain("docker run");
     expect(source).not.toMatch(/curl[\s\S]{0,120}?\$service_ip\/join/u);
     expect(source).not.toMatch(/(?:password|secret)[-_]?argument/iu);
+  });
+
+  it("pins the Web runtime base to the Tencent mirror", () => {
+    const source = readFileSync(devcloudDockerfile, "utf8");
+    expect(source).toMatch(
+      /^FROM mirror\.ccs\.tencentyun\.com\/nginxinc\/nginx-unprivileged:1\.29-alpine@sha256:[0-9a-f]{64}$/mu,
+    );
+    expect(source).not.toContain("FROM nginxinc/nginx-unprivileged");
   });
 
   it("serves the native Mac build without a local container runtime", () => {
