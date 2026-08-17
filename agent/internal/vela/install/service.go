@@ -174,6 +174,14 @@ func (service *Service) Install(ctx context.Context, options Options) error {
 		}
 	} else if journal.Stage == "complete" {
 		return service.replaceComplete(ctx, options, release, store, journal)
+	} else if journal.Stage == "staged" && !journalMatches(journal, options, release) {
+		if !canRestageInstall(store, options, journal) {
+			return ErrInstallConflict
+		}
+		journal, err = service.stageInstall(store, options, release)
+		if err != nil {
+			return err
+		}
 	} else if !journalMatches(journal, options, release) {
 		if journal.Stage != "provider_registered" ||
 			journal.PlatformURL != options.PlatformURL ||
@@ -308,6 +316,38 @@ func (service *Service) Install(ctx context.Context, options Options) error {
 	}
 	_, err = io.WriteString(service.config.Stdout, "Computer installed and registered.\n")
 	return err
+}
+
+func canRestageInstall(store *rootstate.Store, options Options, journal installJournal) bool {
+	if store == nil || journal.Stage != "staged" || journal.PlatformURL != options.PlatformURL ||
+		journal.AllowInsecureHTTP != options.AllowInsecurePlatformHTTP || journal.Target != options.Target {
+		return false
+	}
+	oldToken, err := readPrivateString(filepath.Join(options.StateDirectory, installTokenName), 2048)
+	if err != nil {
+		return false
+	}
+	newToken, err := readPrivateString(options.TokenFile, 2048)
+	if err != nil {
+		return false
+	}
+	oldServer, oldComputer, oldGeneration, oldOK := enrollmentTokenRoute(oldToken)
+	newServer, newComputer, newGeneration, newOK := enrollmentTokenRoute(newToken)
+	return oldOK && newOK && oldServer == newServer && oldComputer == newComputer &&
+		newGeneration > oldGeneration
+}
+
+func enrollmentTokenRoute(value string) (string, string, uint64, bool) {
+	parts := strings.Split(value, ".")
+	if len(parts) != 5 || parts[0] != "cen1" || !uuidV7(parts[1]) || !uuidV7(parts[2]) {
+		return "", "", 0, false
+	}
+	generation, err := strconv.ParseUint(parts[3], 10, 64)
+	if err != nil || generation == 0 || strconv.FormatUint(generation, 10) != parts[3] ||
+		strings.TrimSpace(parts[4]) == "" {
+		return "", "", 0, false
+	}
+	return parts[1], parts[2], generation, true
 }
 
 func (service *Service) replaceComplete(

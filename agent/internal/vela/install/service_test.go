@@ -112,6 +112,66 @@ func TestValidOptionsUsesTheCompiledPlatformTarget(t *testing.T) {
 	}
 }
 
+func TestServiceRestagesNewGenerationAfterUnclaimedReleaseFailure(t *testing.T) {
+	root := t.TempDir()
+	program := filepath.Join(root, ProgramName)
+	content := []byte("first-linux-program")
+	if err := os.WriteFile(program, content, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tokenFile := filepath.Join(root, "token")
+	firstToken := "cen1." + testServerID + "." + testComputerID + ".1.signature"
+	if err := os.WriteFile(tokenFile, []byte(firstToken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := &recordingInstallClient{failFirstClaim: true}
+	verifiedContent := append([]byte(nil), content...)
+	version := "v0.1.46"
+	linux := Platform{OSType: "linux", Architecture: "amd64", Target: "linux-amd64", ServiceName: linuxSystemdUnit}
+	service, err := NewService(ServiceConfig{
+		Stdout: &bytes.Buffer{}, Random: bytes.NewReader(bytes.Repeat([]byte{0x5c}, 256)),
+		ClientFactory: func(ClientConfig) (InstallClient, error) { return client, nil },
+		Verify: func(VerifyConfig) (VerifiedRelease, error) {
+			digest := sha256.Sum256(verifiedContent)
+			return VerifiedRelease{Version: version, Target: "linux-amd64", ProgramSize: int64(len(verifiedContent)), ProgramSHA256: digest}, nil
+		},
+		TAT: &recordingTAT{}, Launcher: &recordingLauncher{}, Platform: &linux,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := Options{
+		PlatformURL: "http://192.0.2.10", AllowInsecurePlatformHTTP: true,
+		TokenFile: tokenFile, ManifestFile: filepath.Join(root, "manifest"),
+		SignatureFile: filepath.Join(root, "signature"), SigningPublicKey: "key",
+		ReleaseVersion: version, Target: "linux-amd64", ProgramFile: program,
+		InstallationRoot: filepath.Join(root, "computer"), StateDirectory: filepath.Join(root, "computer", "state"),
+	}
+	if err := service.Install(context.Background(), options); err == nil {
+		t.Fatal("first claim failure was not returned")
+	}
+	verifiedContent = []byte("second-linux-program")
+	version = "v0.1.48"
+	options.ReleaseVersion = version
+	if err := os.WriteFile(program, verifiedContent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	secondToken := "cen1." + testServerID + "." + testComputerID + ".2.signature"
+	if err := os.WriteFile(tokenFile, []byte(secondToken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Install(context.Background(), options); err != nil {
+		t.Fatalf("restaged install failed: %v", err)
+	}
+	var journal installJournal
+	if err := rootstate.New(options.StateDirectory).Read(installJournalName, &journal); err != nil {
+		t.Fatal(err)
+	}
+	if journal.Stage != "complete" || journal.Version != version {
+		t.Fatalf("restaged journal = %#v", journal)
+	}
+}
+
 func TestServiceUpgradesVerifiedReleaseWhileReplacingRemovedComputer(t *testing.T) {
 	t.Parallel()
 
