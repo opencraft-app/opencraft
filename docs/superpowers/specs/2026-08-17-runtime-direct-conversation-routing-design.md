@@ -42,7 +42,8 @@ Direct Conversation 时保留现有腾讯 C2C fallback。
 - `id`: 平台 Direct Conversation ID；
 - `peerMemberId`: 相对当前 Agent 的另一位参与者；
 - `imGroupId`: 腾讯 Work 群 ID；
-- `imState`: `provisioning | ready | error | deleting`；
+- `imState`: 复用现有 `DirectConversationIMState`，即
+  `provisioning | ready | error | deleted`；
 - `revision`: Direct Conversation revision。
 
 字段在当前协议版本中保持 optional：Backend 会始终输出数组，但旧 Backend 缺失该字段时，新
@@ -58,9 +59,11 @@ Runtime Directory Repository 从现有 `direct_conversations` authority 读取�
 - 当前 Agent 是 `member_a_id` 或 `member_b_id`；
 - peer 是同 Server active、IM-ready Member，且已存在于同一 Directory 的 `members` 集合。
 
-投影可携带非 ready 的 Direct Conversation 状态，但 Gateway 只注册 `imState=ready` 的 Group。Directory
-revision 必须纳入 Direct Conversation 的 ID、peer、Group、状态与 revision；状态变化或新建私信因此会
-使缓存失效并触发安全刷新。
+投影可携带非 ready 的 Direct Conversation 状态，但因 Repository 过滤 `status=active`，正常不会输出
+`deleted`；Gateway 只注册 `imState=ready` 的 Group。Directory revision 必须纳入 Direct Conversation 的
+ID、peer、Group、状态与 revision，也必须纳入会影响 alias/显示的 Member handle、displayName 和 IM identity。
+状态变化、新建私信或 peer handle 变化因此都会使缓存失效并触发安全刷新；不接受 TTL 内使用旧 alias
+作为正常语义。
 
 ### Computer client and Gateway
 
@@ -78,6 +81,11 @@ Gateway 构建索引时：
 附件继续复用现有 target/Conversation 管线，不增加第二套消息实现。Direct Conversation 不 ready 时不
 猜测或放行其 Group；没有 ready Direct Conversation 的 Member 保留现有 C2C 行为。
 
+`@peer` 的 route ID 继续是 `peerMemberId`，不切换为 Direct Conversation ID。现有附件存取、upload、
+message resolve 以及所有名为 `channelId` 但实际承载 Channel/Member route ID 的内部参数保持 member-scoped
+语义。Direct Conversation ID 只用于授权投影、去重和 revision；Gateway 必须增加回归测试证明 Group-backed
+`@peer` 的 `routeIDForTarget`/`targetForRouteID` 仍以 peer Member ID 双向解析。
+
 ## Recovery
 
 无需手工清理 cursor gap。新版 Computer 启动或 Directory 刷新后，历史恢复会重新处理第一条未消费
@@ -91,18 +99,23 @@ Gateway 构建索引时：
 2. Runtime 只能发现自己参与的 Direct Conversation，不得按 Group 前缀、发送者或全 Server 列表扩权。
 3. `@peer` 在 ready Direct Conversation 存在时唯一指向其 Group；不得同时暴露同 alias 的 C2C。
 4. Channel/Topic 路由、Thread 路由、没有平台私信的 C2C fallback 保持兼容。
-5. Directory revision 覆盖所有会影响授权路由的 Direct Conversation 字段。
+5. Directory revision 覆盖所有会影响授权路由的 Direct Conversation 字段，以及 Member handle、
+   displayName 和 IM identity；handle 改名必须产生新 revision。
 6. 新字段不得携带 token、UserSig、消息正文或其他参与者之外的成员信息。
 7. 现存 gap 必须通过正常 history recovery 重放，不直接修改或删除状态文件。
+8. Group-backed `@peer` 的 route ID 保持 peer Member ID；Direct Conversation ID 不进入既有附件或
+   member-scoped route API。
 
 ## TDD slices
 
-1. **OpenAPI-first:** 先增加 schema/生成物契约测试，证明字段可选且响应能输出显式数组。
+1. **OpenAPI-first:** 先增加 schema/生成物契约测试，证明字段可选、未进入 `required`、复用现有 IM state
+   enum 且响应能输出显式数组；运行 generated 与 OpenAPI compatibility 门禁。
 2. **Backend projection:** Repository RED 测试覆盖同 Server、参与者、active、peer ready、上限与 revision；
    Service/Handler RED 测试覆盖 DTO 和无越权数据。
-3. **Computer parsing:** platform client RED 测试覆盖合法目录、字段缺失兼容、重复/未知 peer 拒绝。
+3. **Computer parsing:** platform client RED 测试覆盖合法目录、旧 Backend 缺失字段等价于空数组，以及
+   重复 ID、重复 peer、self peer、未知 peer 拒绝。
 4. **Gateway routing:** RED 测试证明 Direct Conversation Group 入站映射为 `@peer`、发送回同一 Group、
-   ready Group 覆盖 C2C，以及未授权 `an_dm_*` 仍被拒绝。
+   ready Group 覆盖 C2C、route ID 保持 peer Member ID，以及未授权 `an_dm_*` 仍被拒绝。
 5. **Recovery integration:** RED 测试构造第一条 Group DM 失败形成 gap，目录就绪后 history recovery 顺序
    交付两条消息且不重复。
 
@@ -114,8 +127,9 @@ Gateway 构建索引时：
 3. 重启/升级目标 Computer 后验证原 gap 自动恢复，Codex 收到两条 prompt，并在同一 Direct
    Conversation Group 回复。
 4. 验证未知 `an_dm_*` Group 仍产生授权失败；验证 Channel、Topic、C2C fallback、附件和 Thread 回归。
-5. 运行 Backend 全部门禁、Agent `go test ./...`、`go test -race ./...`、`go vet ./...`、凭据扫描及正式
-   Computer 发布验收。
+5. 运行 Backend 全部门禁（明确包含 `./scripts/check-generated.sh` 与
+   `./scripts/check-openapi-compatibility.sh`）、Agent `go test ./...`、`go test -race ./...`、
+   `go vet ./...`、凭据扫描及正式 Computer 发布验收。
 
 Backend 与 Computer 的发布事实必须分别以 Git commit、镜像/Release Set digest、3/3 Ready、Computer
 目标版本和实际消息重放为证据；构建成功不等于功能已发布。
