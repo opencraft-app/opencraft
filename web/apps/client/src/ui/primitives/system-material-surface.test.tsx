@@ -31,10 +31,12 @@ describe("Tahoe material surfaces", () => {
       </>,
     );
 
-    expect(screen.getByTestId("navigation-material")).toHaveStyle({
-      backdropFilter: velaTheme.semantic.material.blur,
-      backgroundColor: velaTheme.semantic.material.navigationFill,
-    });
+    expect(screen.getByTestId("navigation-material")).toHaveStyle(
+      {
+        backdropFilter: velaTheme.semantic.material.blur,
+        backgroundColor: velaTheme.semantic.material.navigationFill,
+      } as never,
+    );
     expect(screen.getByTestId("content-material")).toHaveStyle({
       backgroundColor: velaTheme.semantic.color.paneSurface,
     });

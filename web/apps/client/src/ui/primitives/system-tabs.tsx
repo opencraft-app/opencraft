@@ -86,13 +86,18 @@ export function SystemTabs<T extends string>({
             disabled={disabled}
             key={option.value}
             onPress={() => onChange(option.value)}
-            style={({pressed, hovered}) => [
-              styles.tab,
-              isSelected && styles.tabSelected,
-              hovered && !disabled && !isSelected && styles.tabHovered,
-              pressed && !disabled && styles.tabPressed,
-              disabled && styles.tabDisabled,
-            ]}
+            style={(state) => {
+              const hovered = Boolean(
+                (state as typeof state & {hovered?: boolean}).hovered,
+              );
+              return [
+                styles.tab,
+                isSelected && styles.tabSelected,
+                hovered && !disabled && !isSelected && styles.tabHovered,
+                state.pressed && !disabled && styles.tabPressed,
+                disabled && styles.tabDisabled,
+              ];
+            }}
             {...({
               onKeyDown: (event: KeyEvent) => handleKeyDown(event, index),
               tabIndex: option.value === focusableValue && !disabled ? 0 : -1,

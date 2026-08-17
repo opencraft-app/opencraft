@@ -254,11 +254,16 @@ export function ServerRail({
                       setAccountOpen(false);
                       void onLogout();
                     }}
-                    style={({hovered, pressed}) => [
-                      styles.accountPopoverAction,
-                      hovered && styles.accountPopoverActionHovered,
-                      pressed && styles.accountPopoverActionPressed,
-                    ]}
+                    style={(state) => {
+                      const hovered = Boolean(
+                        (state as typeof state & {hovered?: boolean}).hovered,
+                      );
+                      return [
+                        styles.accountPopoverAction,
+                        hovered && styles.accountPopoverActionHovered,
+                        state.pressed && styles.accountPopoverActionPressed,
+                      ];
+                    }}
                   >
                     <LogOut
                       color={theme.semantic.color.statusDangerText}
