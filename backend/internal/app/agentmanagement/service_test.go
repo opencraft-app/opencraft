@@ -392,6 +392,52 @@ func TestServiceBootstrapsMissingCredentialOnFirstStart(t *testing.T) {
 	}
 }
 
+func TestServiceBootstrapsMissingCredentialOnFirstDeploy(t *testing.T) {
+	computerID := appAgentComputer
+	repository := &fakeAgentRepository{
+		agent: agentport.Agent{
+			ID: appAgentID, ServerID: appAgentServerID,
+			ComputerID: &computerID, CredentialVersion: 0,
+		},
+		operation: agentport.Operation{
+			ID: appAgentOperation, ServerID: appAgentServerID,
+			Service: "platform", Kind: "agent.deploy",
+			State: "succeeded", CreatedAt: appAgentNow,
+		},
+		lifecycleErrors: []error{agentport.ErrCredentialMissing},
+	}
+	service, err := NewService(
+		repository,
+		agentIdentityDeriver{},
+		&sequenceIDs{values: []string{
+			appAgentOperation, appAgentCredential, appAgentRotation,
+		}},
+		fixedClock{now: appAgentNow},
+		bytes.NewReader(bytes.Repeat([]byte{0x24}, 32)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation, err := service.Lifecycle(context.Background(), LifecycleCommand{
+		AccountID: appAgentAccountID, ServerID: appAgentServerID,
+		AgentID: appAgentID, Kind: "deploy",
+		IdempotencyKey: "agent-first-deploy-0001",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operation.Kind != "agent.deploy" || repository.lifecycleCalls != 2 ||
+		repository.credentialCommand.Version != 1 ||
+		repository.credentialCommand.SecretHash == [32]byte{} {
+		t.Fatalf(
+			"Lifecycle() = %#v calls=%d credential=%#v",
+			operation,
+			repository.lifecycleCalls,
+			repository.credentialCommand,
+		)
+	}
+}
+
 func TestServiceRotatesRuntimeCredentialWithoutTATVault(t *testing.T) {
 	computerID := appAgentComputer
 	repository := &fakeAgentRepository{

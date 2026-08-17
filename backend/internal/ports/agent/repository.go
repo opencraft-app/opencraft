@@ -136,6 +136,17 @@ type LifecycleCommand struct {
 	CreatedAt      time.Time
 }
 
+// RequiresActiveCredential 定义会把 Agent 写入可安装或可运行 Assignment 的生命周期动作。
+// Service 用它决定是否自动签发首次凭据，Repository 用它守住持久化不变量。
+func RequiresActiveCredential(kind string) bool {
+	switch kind {
+	case "agent.deploy", "agent.start", "agent.restart":
+		return true
+	default:
+		return false
+	}
+}
+
 type CredentialCommand struct {
 	AccountID      string
 	ServerID       string

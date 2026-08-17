@@ -314,7 +314,7 @@ func (service *Service) Lifecycle(
 	}
 	operation, err := service.repository.ApplyLifecycle(ctx, repositoryCommand)
 	if errors.Is(err, agentport.ErrCredentialMissing) &&
-		(kind == "agent.start" || kind == "agent.restart") {
+		agentport.RequiresActiveCredential(kind) {
 		if _, rotateErr := service.RotateCredential(ctx, CredentialCommand{
 			AccountID:      command.AccountID,
 			ServerID:       command.ServerID,

@@ -360,6 +360,32 @@ func TestEntRepositoryUpdatesAgentConfigurationIdempotently(t *testing.T) {
 	}
 }
 
+func TestEntRepositoryRejectsDeployWithoutActiveCredential(t *testing.T) {
+	repository, handle := openAgentRepository(t)
+	seedAgentServer(t, handle)
+	if _, err := repository.Create(
+		context.Background(),
+		createAgentCommand(),
+	); err != nil {
+		t.Fatal(err)
+	}
+	markAgentIMReady(t, handle)
+
+	_, err := repository.ApplyLifecycle(
+		context.Background(),
+		agentport.LifecycleCommand{
+			AccountID: repoAgentAccountID, ServerID: repoAgentServerID,
+			AgentID: repoAgentID, Kind: "agent.deploy",
+			IdempotencyKey: "agent-deploy-without-credential-0001",
+			RequestHash:    sha256.Sum256([]byte("deploy")),
+			OperationID:    repoAgentTATOperation, CreatedAt: repoAgentNow,
+		},
+	)
+	if !errors.Is(err, agentport.ErrCredentialMissing) {
+		t.Fatalf("ApplyLifecycle() error = %v", err)
+	}
+}
+
 func TestEntRepositoryAppliesVelaLifecycleSynchronously(t *testing.T) {
 	repository, handle := openAgentRepository(t)
 	seedAgentServer(t, handle)
@@ -370,6 +396,21 @@ func TestEntRepositoryAppliesVelaLifecycleSynchronously(t *testing.T) {
 		t.Fatal(err)
 	}
 	markAgentIMReady(t, handle)
+	if _, err := repository.RotateCredential(
+		context.Background(),
+		agentport.CredentialCommand{
+			AccountID: repoAgentAccountID, ServerID: repoAgentServerID,
+			AgentID: repoAgentID, Version: 1,
+			CredentialID:   repoAgentCredentialID,
+			SecretHash:     sha256.Sum256([]byte("deploy-agent-secret")),
+			IdempotencyKey: "agent-deploy-credential-0001",
+			RequestHash:    sha256.Sum256([]byte("1")),
+			OperationID:    "0198f4c2-7a50-7e45-913c-6baf30401a84",
+			CreatedAt:      repoAgentNow,
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
 	operation, err := repository.ApplyLifecycle(
 		context.Background(),
 		agentport.LifecycleCommand{
@@ -396,11 +437,12 @@ func TestEntRepositoryAppliesVelaLifecycleSynchronously(t *testing.T) {
 		operation.CompletedAt == nil ||
 		entity.DesiredState != "stopped" ||
 		entity.ObservedState != "stopped" ||
-		entity.Revision != 2 {
+		entity.CredentialVersion != 1 ||
+		entity.Revision != 3 {
 		t.Fatalf("operation=%#v agent=%#v", operation, entity)
 	}
 	machine, err := handle.Client().Computer.Get(context.Background(), repoAgentComputerID)
-	if err != nil || machine.AssignmentRevision != 3 {
+	if err != nil || machine.AssignmentRevision != 4 {
 		t.Fatalf("assignment revision after lifecycle = %v, %v", machine.AssignmentRevision, err)
 	}
 }

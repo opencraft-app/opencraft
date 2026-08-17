@@ -797,8 +797,7 @@ func (repository *EntRepository) ApplyLifecycle(
 			); err != nil {
 				return err
 			}
-			if command.Kind == "agent.start" ||
-				command.Kind == "agent.restart" {
+			if agentport.RequiresActiveCredential(command.Kind) {
 				if entity.CredentialVersion <= 0 {
 					return agentport.ErrCredentialMissing
 				}

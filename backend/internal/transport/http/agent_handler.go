@@ -3,6 +3,7 @@ package httptransport
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 
 	"chatserver/internal/api/openapi"
@@ -36,15 +37,23 @@ type agentService interface {
 type AgentHandler struct {
 	openapi.StrictServerInterface
 	service agentService
+	logger  *slog.Logger
 }
 
 var _ openapi.StrictServerInterface = (*AgentHandler)(nil)
 
-func NewAgentHandler(service agentService) (*AgentHandler, error) {
+func NewAgentHandler(
+	service agentService,
+	loggers ...*slog.Logger,
+) (*AgentHandler, error) {
 	if service == nil {
 		return nil, errors.New("Agent 应用服务不能为空")
 	}
-	return &AgentHandler{service: service}, nil
+	logger := slog.Default()
+	if len(loggers) > 0 && loggers[0] != nil {
+		logger = loggers[0]
+	}
+	return &AgentHandler{service: service, logger: logger}, nil
 }
 
 func (handler *AgentHandler) CreateAgent(
@@ -86,6 +95,15 @@ func (handler *AgentHandler) CreateAgent(
 	if err != nil {
 		return nil, err
 	}
+	handler.logger.Info(
+		"agent create accepted",
+		"request_id", RequestID(ctx),
+		"server_id", request.ServerId.String(),
+		"agent_id", result.Agent.ID,
+		"computer_id", computerIDValue,
+		"operation_id", result.Operation.ID,
+		"operation_state", result.Operation.State,
+	)
 	return openapi.CreateAgent202JSONResponse{
 		ResourceId: resourceID,
 		Operations: []openapi.Operation{operation},
@@ -338,7 +356,20 @@ func (handler *AgentHandler) lifecycle(
 	if err != nil {
 		return openapi.Operation{}, err
 	}
-	return agentOperationDTO(operation)
+	body, err := agentOperationDTO(operation)
+	if err != nil {
+		return openapi.Operation{}, err
+	}
+	handler.logger.Info(
+		"agent lifecycle accepted",
+		"request_id", RequestID(ctx),
+		"server_id", serverID,
+		"agent_id", agentID,
+		"action", kind,
+		"operation_id", operation.ID,
+		"operation_state", operation.State,
+	)
+	return body, nil
 }
 
 func agentDTO(value agentport.Agent) (openapi.Agent, error) {

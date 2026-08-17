@@ -1,7 +1,10 @@
 package httptransport
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -276,5 +279,119 @@ func TestAgentHandlerMapsCreateQueriesAndOperations(t *testing.T) {
 			deleteResponse,
 			service.deleteCommand,
 		)
+	}
+}
+
+func TestAgentHandlerLogsAcceptedLifecycleWithoutIdempotencyKey(t *testing.T) {
+	service := &fakeAgentService{}
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	handler, err := NewAgentHandler(service, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.WithValue(
+		currentHumanContext(t),
+		requestIDContextKey{},
+		"request-agent-deploy",
+	)
+	const idempotencyKey = "agent-deploy-secret-idempotency-key"
+	if _, err := handler.DeployAgent(
+		ctx,
+		openapi.DeployAgentRequestObject{
+			ServerId: uuid.MustParse(handlerServerID),
+			AgentId:  uuid.MustParse(handlerAgentID),
+			Params: openapi.DeployAgentParams{
+				IdempotencyKey: idempotencyKey,
+			},
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	logged := output.String()
+	for _, expected := range []string{
+		`"msg":"agent lifecycle accepted"`,
+		`"request_id":"request-agent-deploy"`,
+		`"server_id":"` + handlerServerID + `"`,
+		`"agent_id":"` + handlerAgentID + `"`,
+		`"action":"deploy"`,
+		`"operation_id":"` + handlerOperationID + `"`,
+		`"operation_state":"succeeded"`,
+	} {
+		if !strings.Contains(logged, expected) {
+			t.Errorf("log = %q, want field %q", logged, expected)
+		}
+	}
+	if strings.Contains(logged, idempotencyKey) {
+		t.Fatalf("log leaked idempotency key: %s", logged)
+	}
+}
+
+func TestAgentHandlerLogsAcceptedCreateWithoutIdempotencyKey(t *testing.T) {
+	computerID := handlerComputerID
+	service := &fakeAgentService{
+		result: agentport.CreateResult{
+			Agent: agentport.Agent{
+				ID: handlerAgentID, ServerID: handlerServerID,
+				ComputerID: &computerID,
+			},
+			Operation: agentport.Operation{
+				ID: handlerOperationID, ServerID: handlerServerID,
+				Service: "im", Kind: "im.identity.ensure",
+				State: "pending",
+				CreatedAt: time.Date(
+					2026, 7, 31, 0, 30, 0, 0, time.UTC,
+				),
+			},
+		},
+	}
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	handler, err := NewAgentHandler(service, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.WithValue(
+		currentHumanContext(t),
+		requestIDContextKey{},
+		"request-agent-create",
+	)
+	const idempotencyKey = "agent-create-secret-idempotency-key"
+	if _, err := handler.CreateAgent(
+		ctx,
+		openapi.CreateAgentRequestObject{
+			ServerId: uuid.MustParse(handlerServerID),
+			Params: openapi.CreateAgentParams{
+				IdempotencyKey: idempotencyKey,
+			},
+			Body: &openapi.CreateAgentRequest{
+				DisplayName: "小舟", Handle: "xiaozhou",
+				ComputerId: uuid.MustParse(handlerComputerID),
+				Runtime: openapi.RuntimeConfig{
+					Kind: openapi.RuntimeConfigKind("codex"),
+				},
+			},
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	logged := output.String()
+	for _, expected := range []string{
+		`"msg":"agent create accepted"`,
+		`"request_id":"request-agent-create"`,
+		`"server_id":"` + handlerServerID + `"`,
+		`"agent_id":"` + handlerAgentID + `"`,
+		`"computer_id":"` + handlerComputerID + `"`,
+		`"operation_id":"` + handlerOperationID + `"`,
+		`"operation_state":"pending"`,
+	} {
+		if !strings.Contains(logged, expected) {
+			t.Errorf("log = %q, want field %q", logged, expected)
+		}
+	}
+	if strings.Contains(logged, idempotencyKey) {
+		t.Fatalf("log leaked idempotency key: %s", logged)
 	}
 }
