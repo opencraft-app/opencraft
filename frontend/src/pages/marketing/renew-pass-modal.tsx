@@ -233,9 +233,16 @@ export const RenewPassModal = ({
         const payWindow = window.open("about:blank", "_blank");
         try {
           const order = await plans.createRenewOrder(pass.pass_id, selected);
+          /* 回跳地址用当前页面地址（去掉 query/hash）：续费入口在账号页，
+             不传时 trade 会用环境兜底 TRADE_BILLING_PAY_REDIRECT_URL（KR 写死 /subscribe），
+             会把用户从账号页扔到订阅页。见 codesign/ctl-frontend-billing-api.md 字段说明。 */
+          const payRedirectBase = typeof window !== "undefined"
+            ? window.location.href.split("#")[0]?.split("?")[0]
+            : undefined;
           const orderUrl = await plans.getRenewOrderUrl(pass.pass_id, {
             deal_names: order.deal_names,
             platform: "pc",
+            ...(payRedirectBase ? { cancel_url: payRedirectBase, return_url: payRedirectBase } : {}),
           });
           /* need_charge=0：零元订单已支付成功，关闭占位窗口直接接棒 onSuccess */
           if (orderUrl.need_charge === 0) {

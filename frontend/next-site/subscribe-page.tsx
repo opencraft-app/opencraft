@@ -3,7 +3,7 @@ import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard } from "lucide-react";
+import { ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
@@ -1962,7 +1962,6 @@ const CreditCardConfirmOrderModal = ({
 }) => {
   const t = useT();
   const [view, setView] = useState<"order" | "success">("order");
-  const [autoRenew, setAutoRenew] = useState(false);
 
   const subtotal = parseFloat(plan.price.replace(/[^0-9.]/g, "")) || 0;
   const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
@@ -1972,7 +1971,11 @@ const CreditCardConfirmOrderModal = ({
   const handlePayClick = () => {
     /* 纯前端演示：不调后端下单，直接展示支付成功 */
     if (demoMode) { setView("success"); return; }
-    onPay(autoRenew);
+    /* 国际站信用卡为订阅制，固定开启自动续费。
+       注意 auto_renew_flag 只影响新购订单的 goodsDetail.autoRenewFlag，
+       是否发起签约（ContractOrder）由后端查询用户绑卡状态决定，与此值解耦。
+       见 codesign/ctl-frontend-billing-api.md「国际站支付模式」。 */
+    onPay(true);
   };
 
   return (
@@ -2086,46 +2089,16 @@ const CreditCardConfirmOrderModal = ({
 
               <div style={{ height: 1, background: colors.border, margin: "16px 0" }} />
 
-              {/* Auto-renew toggle */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              {/* 自动续费说明：国际站信用卡为订阅制，不提供一次性购买，
+                  因此这里是只读告知而非开关——给一个点了会被拦的假开关只会浪费用户一次点击。 */}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                <RefreshCw style={{ width: 16, height: 16, flexShrink: 0, marginTop: 2, color: colors.primary }} />
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 600, color: colors.black }}>{t("自动续费")}</div>
-                  <div style={{ fontSize: 12, color: colors.warmGray500, marginTop: 2 }}>
-                    {t("每个计费周期结束时自动续费")}
+                  <div style={{ fontSize: 12, color: colors.warmGray500, marginTop: 2, lineHeight: 1.6 }}>
+                    {t("订阅将在每个计费周期结束时自动续费，可随时在账号管理页取消。")}
                   </div>
                 </div>
-                <button
-                  role="switch"
-                  aria-checked={autoRenew}
-                  aria-label={t("自动续费")}
-                  onClick={() => setAutoRenew((v) => !v)}
-                  style={{
-                    position: "relative",
-                    width: 40,
-                    height: 22,
-                    borderRadius: 999,
-                    border: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                    flexShrink: 0,
-                    background: autoRenew ? colors.primary : colors.border,
-                    transition: "background 0.2s",
-                  }}
-                >
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: 2,
-                      left: autoRenew ? 20 : 2,
-                      width: 18,
-                      height: 18,
-                      borderRadius: "50%",
-                      background: colors.white,
-                      boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
-                      transition: "left 0.2s",
-                    }}
-                  />
-                </button>
               </div>
             </div>
 
@@ -2183,6 +2156,7 @@ const PaymentPendingModal = ({
   onManualConfirm,
   onRefresh,
   refreshing,
+  timedOut = false,
   t,
 }: {
   /** 国内站：中转页绝对 URL，用作 QRCode value */
@@ -2195,6 +2169,8 @@ const PaymentPendingModal = ({
   onRefresh: () => void;
   /** 刷新进行中（重新下单的网络往返期间），用于禁用按钮防止重复请求 */
   refreshing: boolean;
+  /** 轮询已超时：后台发货延迟，改为提示用户稍后重试而不是一直转圈 */
+  timedOut?: boolean;
   t: (zh: string, opts?: Record<string, unknown>) => string;
 }) => {
   return (
@@ -2226,12 +2202,18 @@ const PaymentPendingModal = ({
 
         <div style={{ padding: "28px 28px 24px" }}>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: colors.black, margin: "0 0 6px", letterSpacing: "-0.25px" }}>
-            {t("请完成支付")}
+            {timedOut ? t("正在开通，请稍候") : t("请完成支付")}
           </h3>
           <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 24px" }}>
-            {bridgeUrl
-              ? t("请使用微信扫描下方二维码完成支付")
-              : t("信用卡支付页已在新窗口打开，完成支付后本页将自动跳转")}
+            {timedOut
+              ? t("已收到你的支付，套餐开通稍有延迟。可以点下方按钮重试，或稍后刷新页面。")
+              : bridgeUrl
+                ? t("请使用微信扫描下方二维码完成支付")
+                /* 支付回跳场景没有 redirectUrl（原窗口已被替换），此时是在等后台发货，
+                   不能再说「支付页已在新窗口打开」。 */
+                : redirectUrl
+                  ? t("信用卡支付页已在新窗口打开，完成支付后本页将自动跳转")
+                  : t("正在确认支付结果并开通套餐，完成后将自动跳转")}
           </p>
 
           {/* 国内站 bridge 模式：渲染中转页 URL 的二维码，用户在微信扫码后由中转页负责走 OAuth + wxSign */}
@@ -2270,8 +2252,31 @@ const PaymentPendingModal = ({
             </div>
           )}
 
+          {/* 支付回跳等发货：既没有二维码也没有 pay_url，用 loading 表达「正在开通」 */}
+          {!bridgeUrl && !redirectUrl && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 20,
+                padding: 24,
+                borderRadius: 12,
+                background: colors.warmWhite,
+              }}
+            >
+              {timedOut
+                ? <Clock style={{ width: 36, height: 36, color: colors.primary }} />
+                : <Loader2 className="animate-spin" style={{ width: 36, height: 36, color: colors.primary }} />}
+              <span style={{ fontSize: 13, color: colors.warmGray500 }}>
+                {timedOut ? t("开通中") : t("正在开通套餐")}
+              </span>
+            </div>
+          )}
+
           <p style={{ fontSize: 13, color: colors.warmGray500, textAlign: "center", margin: "0 0 20px" }}>
-            {t("支付完成后，需等待约15秒完成下单")}
+            {timedOut ? t("如长时间未开通，请联系客服") : t("支付完成后，需等待约15秒完成下单")}
           </p>
 
           {/* 底部按钮区：国内站「刷新」重新生成二维码；国际站「重新打开支付页」 */}
@@ -2303,10 +2308,10 @@ const PaymentPendingModal = ({
               >
                 {refreshing ? t("刷新中...") : t("刷新")}
               </button>
-            ) : (
+            ) : redirectUrl ? (
               <button
                 onClick={() => {
-                  if (redirectUrl) window.open(redirectUrl, "_blank", "noopener,noreferrer");
+                  window.open(redirectUrl, "_blank", "noopener,noreferrer");
                 }}
                 style={{
                   flex: 1,
@@ -2325,8 +2330,9 @@ const PaymentPendingModal = ({
               >
                 {t("重新打开支付页")}
               </button>
-            )}
-            {/* 「我已完成支付」：轮询超时兜底，手动触发 refreshPasses + finalizeBot */}
+            ) : null}
+            {/* 「我已完成支付」：轮询超时兜底，手动触发 refreshPasses + finalizeBot。
+                支付回跳场景没有支付页可重开，这里就是唯一的重试入口。 */}
             <button
               onClick={onManualConfirm}
               style={{
@@ -2386,6 +2392,15 @@ type SubscribePageProps = {
 /** v1.7.30 后端允许轮询 listMyPasses 检测支付是否完成，间隔 / 超时控制 */
 const PAY_POLL_INTERVAL_MS = 3000;
 const PAY_POLL_TIMEOUT_MS = 180_000;
+
+/**
+ * 支付回跳标记：国际站信用卡的占位窗口被弹窗拦截时，会用
+ * window.location.assign 替换当前页去支付，付款后 return_url 回到的是全新页面，
+ * 原窗口的 paying 轮询已经销毁。带上这两个 query 才能在回跳页重新接棒
+ * 「等后台发货 → 自动创建实例 → 跳实例管理页」。
+ */
+const PAY_RETURN_QUERY_KEY = "pay_return";
+const PAY_RETURN_PLAN_QUERY_KEY = "pay_plan";
 
 export const SubscribePage = ({
   authControls,
@@ -2646,6 +2661,17 @@ export const SubscribePage = ({
     redirectUrl?: string;
   } | null>(null);
 
+  /* 轮询超时标记：后台发货延迟超过 PAY_POLL_TIMEOUT_MS 时不静默停住，
+     改为在 PaymentPendingModal 提示「已收到支付、开通稍有延迟」并给手动重试入口。
+
+     重置时机放在「进入 paying」这一状态迁移处，而不是轮询 effect 体内：
+     该 effect 依赖 refreshPasses / t，它们引用变化会让 effect 重跑，
+     若在体内重置就会连同 startedAt 一起复位，导致超时提示永远不出现、轮询无限续命。 */
+  const [payPollTimedOut, setPayPollTimedOut] = useState(false);
+  useEffect(() => {
+    if (modalStep === "paying") setPayPollTimedOut(false);
+  }, [modalStep]);
+
   /* 引用快照供 useCallback 中读取最新 paymentContext，避免重复触发依赖 */
   const paymentContextRef = useRef(paymentContext);
   paymentContextRef.current = paymentContext;
@@ -2657,41 +2683,75 @@ export const SubscribePage = ({
   const isSubscribedRef = useRef(isSubscribed);
   isSubscribedRef.current = isSubscribed;
 
+  /* bots 的 ref 镜像 — 给 finalizeBot 的幂等保护用：
+     原窗口轮询与支付回跳页轮询可能同时命中同一个已发货 pass，
+     若不拦截会各建一个实例（用户还要为多余实例付费）。 */
+  const botsRef = useRef(bots);
+  botsRef.current = bots;
+
+  /* finalizeBot 的执行闸门：同一次支付只允许创建一个实例。
+     用 ref 而非 state：轮询回调里必须同步读到最新值，state 异步更新拦不住并发。 */
+  const finalizingRef = useRef(false);
+
   /* 重复使用的收尾逻辑：addBot + subscribe + navigate 。
-     供两个链路（免费试用 / 付费下单后）复用 */
+     供多个链路（免费试用 / 付费下单后 / 支付回跳）复用 */
   const finalizeBot = useCallback(async (plan: PlanInfo) => {
-    const createdBot = await addBot({
-      name: "我的Hermes",
-      personality: "默认设定",
-      personalityEmoji: "✨",
-      intro: "",
-      soulTemplateId: undefined,
-      status: "running",
-    });
-    captureProductEvent(PRODUCT_ANALYTICS_EVENTS.AGENT_CREATE_SUCCEEDED, {
-      plan_id: plan.id,
-      plan_name: plan.name,
-      bot_status: createdBot.status,
-    });
-    trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_PAY_SUCCESS, {
-      pgid: DATONG_PAGE_IDS.SUBSCRIBE,
-      params: {
-        plan: plan.id,
+    /* 幂等闸门①：拦并发。原窗口轮询与支付回跳页轮询可能同时命中同一个已发货 pass。
+       注意闸门只覆盖单次执行窗口，finally 里必须复位：
+       这是 SPA，用户从 /agents 返回订阅页时组件不会重新挂载、ref 会保留，
+       若成功后不复位，用户下次购买会在第一行被静默 return，付了钱却毫无反应。
+       防「重复创建」靠的是下面的闸门②，不是这个标志位。 */
+    if (finalizingRef.current) return;
+    finalizingRef.current = true;
+    try {
+      /* 幂等闸门②：账号下已有实例说明发货后实例已建好（如原窗口先完成、或用户重复回跳），
+         此时只做跳转，不再创建。 */
+      const existingBot = botsRef.current[0];
+      if (existingBot) {
+        subscribe();
+        setModalStep("closed");
+        setSelectedPlan(null);
+        setPaymentContext(null);
+        navigate(getAgentCreatingPath(existingBot.id));
+        return;
+      }
+      const createdBot = await addBot({
+        name: "我的Hermes",
+        personality: "默认设定",
+        personalityEmoji: "✨",
+        intro: "",
+        soulTemplateId: undefined,
+        status: "running",
+      });
+      captureProductEvent(PRODUCT_ANALYTICS_EVENTS.AGENT_CREATE_SUCCEEDED, {
+        plan_id: plan.id,
         plan_name: plan.name,
-      },
-    });
-    trackDatongEvent(DATONG_EVENTS.AGENT_CREATE_SUCCESS, {
-      pgid: DATONG_PAGE_IDS.SUBSCRIBE,
-      params: {
-        bot_id: createdBot.id,
-        plan: plan.id,
-      },
-    });
-    subscribe();
-    setModalStep("closed");
-    setSelectedPlan(null);
-    setPaymentContext(null);
-    navigate(getAgentCreatingPath(createdBot.id));
+        bot_status: createdBot.status,
+      });
+      trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_PAY_SUCCESS, {
+        pgid: DATONG_PAGE_IDS.SUBSCRIBE,
+        params: {
+          plan: plan.id,
+          plan_name: plan.name,
+        },
+      });
+      trackDatongEvent(DATONG_EVENTS.AGENT_CREATE_SUCCESS, {
+        pgid: DATONG_PAGE_IDS.SUBSCRIBE,
+        params: {
+          bot_id: createdBot.id,
+          plan: plan.id,
+        },
+      });
+      subscribe();
+      setModalStep("closed");
+      setSelectedPlan(null);
+      setPaymentContext(null);
+      navigate(getAgentCreatingPath(createdBot.id));
+    } finally {
+      /* 无论成功失败都复位：失败时用户要能点「我已完成支付」重试，
+         成功时用户可能返回本页再次购买（SPA 不重新挂载，ref 会保留）。 */
+      finalizingRef.current = false;
+    }
   }, [addBot, subscribe, navigate]);
 
   /**
@@ -2801,7 +2861,8 @@ export const SubscribePage = ({
        会被浏览器弹窗拦截。先开 about:blank 占位，拿到 pay_url 后再赋值 location 跳转。 */
     const payWindow = window.open("about:blank", "_blank");
     try {
-      /* 1. 下单拿 deal_names；auto_renew_flag 透传自动续费意愿（国际站支持） */
+      /* 1. 下单拿 deal_names。国际站为订阅制，auto_renew_flag 固定 auto_renew；
+         该字段只作用于新购订单的 goodsDetail.autoRenewFlag，是否签约由后端查绑卡状态决定。 */
       const order = await repositories.plans.createPassOrder({
         bundle_id: plan.raw.bundle_id,
         period: aiDuration.period,
@@ -2809,15 +2870,21 @@ export const SubscribePage = ({
         auto_renew_flag: autoRenew ? "auto_renew" : "notify_and_manual_renew",
       });
       /* 2. 拉信用卡支付页 URL（PC 端 Bearer 鉴权）。
-         国际站信用卡/签约支付必须传 cancel_url / return_url，否则计费订单中心可能返回
-         param cancelUrl invalid；用当前页面地址（去掉 query/hash）作回跳目标，
-         适配订阅页新购与账号页续费等不同入口。 */
+         cancel_url / return_url 协议上可选（不传时 trade 用环境兜底 TRADE_BILLING_PAY_REDIRECT_URL），
+         但这里显式传当前页面地址，避免被兜底地址带到别的页面；
+         按协议要求去掉 query/hash，防止把 OAuth code / 一次性 ticket 带进计费回跳地址。
+
+         return_url 额外带 pay_return / pay_plan 标记：占位窗口被弹窗拦截时会走
+         window.location.assign 替换掉当前页，付款后回跳到的是一个全新页面，
+         原窗口的 paying 轮询已随之销毁。有标记才能在回跳页重新接棒
+         「等发货 → 自动建实例 → 跳管理页」，否则用户会停在订阅页且实例没建。 */
       const payRedirectBase = window.location.href.split("#")[0].split("?")[0];
+      const payReturnUrl = `${payRedirectBase}?${PAY_RETURN_QUERY_KEY}=1&${PAY_RETURN_PLAN_QUERY_KEY}=${encodeURIComponent(plan.id)}`;
       const orderUrl = await repositories.plans.getPassOrderUrl({
         deal_names: order.deal_names,
         platform: "pc",
         cancel_url: payRedirectBase,
-        return_url: payRedirectBase,
+        return_url: payReturnUrl,
       });
       /* 3. need_charge=0：零元订单已支付成功，关闭占位窗口，直接接棒 finalize */
       if (orderUrl.need_charge === 0) {
@@ -2853,6 +2920,48 @@ export const SubscribePage = ({
   useEffect(() => {
     finalizeBotRef.current = finalizeBot;
   }, [finalizeBot]);
+
+  /* 支付回跳接管：识别 return_url 带回的 pay_return 标记，直接进入 paying 态，
+     复用下方已验证的轮询链路等后台发货，发货后自动 finalizeBot 建实例并跳管理页。
+     顺带解决「回跳后订阅页不显示当前订阅」——轮询本身会持续 refreshPasses。
+
+     只跑一次：立刻清掉 query，避免用户刷新页面又触发一遍轮询。 */
+  const payReturnHandledRef = useRef(false);
+  useEffect(() => {
+    if (payReturnHandledRef.current) return;
+    if (!isGlobal) return;
+    /* 必须等鉴权与套餐列表就绪：planList 为空时找不到 plan，无法 finalize。 */
+    if (!authReady || !isAuthenticated) return;
+    if (planList.length === 0) return;
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(PAY_RETURN_QUERY_KEY) !== "1") return;
+
+    const planId = params.get(PAY_RETURN_PLAN_QUERY_KEY);
+    const plan = planId ? planList.find((item) => item.id === planId) : undefined;
+
+    payReturnHandledRef.current = true;
+    /* 先清 query 再进流程：保留 pathname + hash，避免刷新重复触发。 */
+    params.delete(PAY_RETURN_QUERY_KEY);
+    params.delete(PAY_RETURN_PLAN_QUERY_KEY);
+    const nextSearch = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`,
+    );
+
+    if (!plan) {
+      /* 拿不到套餐（planList 变更 / 链接被改）：不静默失败，至少刷一次让当前订阅显示出来。 */
+      void refreshPasses();
+      return;
+    }
+    /* dealNames 留空：回跳页没有原订单号，轮询只依赖 pass 状态，不需要它。 */
+    setSelectedPlan(plan);
+    setPaymentContext({ plan, dealNames: [] });
+    setModalStep("paying");
+  }, [authReady, isAuthenticated, planList, refreshPasses]);
 
   /* paying 阶段轮询 listMyPasses：代替 SDK callback。
      轮询到有效 active pass 后自动 finalizeBot 接棒（用户无需再点「我已完成支付」）；
@@ -2892,6 +3001,9 @@ export const SubscribePage = ({
       }
       if (Date.now() - startedAt > PAY_POLL_TIMEOUT_MS) {
         window.clearInterval(timer);
+        /* 不静默停住：告知用户「已收到支付、开通稍有延迟」，并给一个手动重试入口，
+           否则界面会一直转圈，用户不知道该等还是该找客服。 */
+        if (!cancelled) setPayPollTimedOut(true);
       }
     }, PAY_POLL_INTERVAL_MS);
     return () => {
@@ -3399,6 +3511,7 @@ export const SubscribePage = ({
             onManualConfirm={handleManualConfirm}
             onRefresh={() => void handleRefreshPayment()}
             refreshing={paymentRefreshing}
+            timedOut={payPollTimedOut}
             t={t}
           />
         )}
