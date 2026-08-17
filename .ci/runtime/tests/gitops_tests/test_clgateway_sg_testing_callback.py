@@ -38,6 +38,47 @@ class CloudLadderSGCallbackTests(unittest.TestCase):
             {"https://api-sandbox-kr-1.lightclaw.tech"},
         )
 
+    def test_sg_prod_registers_in_china_polaris_with_encrypted_token(self) -> None:
+        prod_service = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd/secrets/tkexsg/cloudladdergateway-polaris-prod-service.sops.yaml"
+            ).read_text()
+        )
+        testing_service = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd/secrets/tkexsg/cloudladdergateway-polaris-testing-service.sops.yaml"
+            ).read_text()
+        )
+        prod_annotations = prod_service["metadata"]["annotations"]
+        testing_annotations = testing_service["metadata"]["annotations"]
+
+        self.assertEqual(
+            prod_annotations["polaris.tkex.cloud.tencentyun.com/service"],
+            "clgateway-intl",
+        )
+        self.assertEqual(
+            prod_annotations["polaris.tkex.cloud.tencentyun.com/polaris-site-zone"],
+            "china",
+        )
+        self.assertTrue(
+            prod_annotations["polaris.tkex.cloud.tencentyun.com/token"].startswith("ENC[")
+        )
+        self.assertEqual(
+            testing_annotations["polaris.tkex.cloud.tencentyun.com/polaris-site-zone"],
+            "singapore",
+        )
+
+        service_text = (
+            REPO_ROOT / "argocd/services/cloudladdergateway/tkexsg/service.yaml"
+        ).read_text()
+        kustomization_text = (
+            REPO_ROOT / "argocd/services/cloudladdergateway/tkexsg/kustomization.yaml"
+        ).read_text()
+        self.assertNotIn("lightvela-proxy-inner-service-prod-intl", service_text)
+        self.assertIn("ksops-polaris-prod-service-generator.yaml", kustomization_text)
+
 
 if __name__ == "__main__":
     unittest.main()
