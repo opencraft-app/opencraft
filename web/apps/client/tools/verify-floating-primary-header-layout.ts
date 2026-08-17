@@ -108,9 +108,23 @@ async function verifyWideTouchLayout() {
   });
   const evaluateCDP = async <T>(script: string): Promise<T> => {
     const response = await send<{
-      result: {value: string};
+      exceptionDetails?: unknown;
+      result: {value?: string};
     }>("Runtime.evaluate", {expression: script, returnByValue: true});
+    if (response.exceptionDetails || response.result.value === undefined) {
+      throw new Error(`CDP evaluation failed: ${JSON.stringify(response.exceptionDetails)}`);
+    }
     return JSON.parse(response.result.value) as T;
+  };
+  const waitForSelector = async (selector: string) => {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const ready = await evaluateCDP<boolean>(
+        `JSON.stringify(Boolean(document.querySelector(${JSON.stringify(selector)})))`,
+      );
+      if (ready) return;
+      await Bun.sleep(250);
+    }
+    throw new Error(`timed out waiting for ${selector}`);
   };
   const screenshot = async (name: string) => {
     const capture = await send<{data: string}>("Page.captureScreenshot", {format: "png"});
@@ -127,7 +141,7 @@ async function verifyWideTouchLayout() {
       width: 1280,
     });
     await send("Page.navigate", {url: `${baseURL!.replace(/\/$/u, "")}/stylelab`});
-    await Bun.sleep(1_000);
+    await waitForSelector('[data-testid="conversation-primary-header"]');
     const media = await evaluateCDP<{coarse: boolean; fine: boolean; touchPoints: number}>(
       `JSON.stringify({fine: matchMedia('(pointer: fine)').matches, coarse: matchMedia('(pointer: coarse)').matches, touchPoints: navigator.maxTouchPoints})`,
     );
@@ -145,7 +159,7 @@ async function verifyWideTouchLayout() {
       readBoxScript('[data-testid="conversation-operation-status-island"]'),
     );
     await send("Runtime.evaluate", {expression: clickButtonScript("切换到断线状态")});
-    await Bun.sleep(300);
+    await waitForSelector('[data-testid="chat-error-toast-layer"]');
     const disconnectedStage = await evaluateCDP<FloatingHeaderLayoutSample["stage"]>(
       readBoxScript('[data-testid="message-stage"]'),
     );
@@ -168,7 +182,7 @@ async function verifyWideTouchLayout() {
     await Bun.sleep(200);
     await screenshot("conversation-touch-1280.png");
     await send("Runtime.evaluate", {expression: clickButtonScript("预览 Agent 界面")});
-    await Bun.sleep(500);
+    await waitForSelector('[data-testid="management-primary-header"]');
     const management = await evaluateCDP<Omit<BrowserSample, "kind" | "placement" | "viewport">>(
       boxScript(
         '[data-testid="system-page"]',
