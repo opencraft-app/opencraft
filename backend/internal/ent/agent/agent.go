@@ -25,6 +25,10 @@ const (
 	FieldRuntimeKind = "runtime_kind"
 	// FieldRuntimeModel holds the string denoting the runtime_model field in the database.
 	FieldRuntimeModel = "runtime_model"
+	// FieldProfileCapabilityRefreshID holds the string denoting the profile_capability_refresh_id field in the database.
+	FieldProfileCapabilityRefreshID = "profile_capability_refresh_id"
+	// FieldProfileCapabilitiesJSON holds the string denoting the profile_capabilities_json field in the database.
+	FieldProfileCapabilitiesJSON = "profile_capabilities_json"
 	// FieldReplyPolicy holds the string denoting the reply_policy field in the database.
 	FieldReplyPolicy = "reply_policy"
 	// FieldDesiredState holds the string denoting the desired_state field in the database.
@@ -94,6 +98,8 @@ var Columns = []string{
 	FieldDescription,
 	FieldRuntimeKind,
 	FieldRuntimeModel,
+	FieldProfileCapabilityRefreshID,
+	FieldProfileCapabilitiesJSON,
 	FieldReplyPolicy,
 	FieldDesiredState,
 	FieldObservedState,
@@ -217,6 +223,16 @@ func ByRuntimeKind(opts ...sql.OrderTermOption) OrderOption {
 // ByRuntimeModel orders the results by the runtime_model field.
 func ByRuntimeModel(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRuntimeModel, opts...).ToFunc()
+}
+
+// ByProfileCapabilityRefreshID orders the results by the profile_capability_refresh_id field.
+func ByProfileCapabilityRefreshID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProfileCapabilityRefreshID, opts...).ToFunc()
+}
+
+// ByProfileCapabilitiesJSON orders the results by the profile_capabilities_json field.
+func ByProfileCapabilitiesJSON(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProfileCapabilitiesJSON, opts...).ToFunc()
 }
 
 // ByReplyPolicy orders the results by the reply_policy field.

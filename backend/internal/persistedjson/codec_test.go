@@ -55,3 +55,19 @@ func TestSnapshotAndScopeRegistriesFailClosed(t *testing.T) {
 		t.Fatal("unknown idempotency scope accepted")
 	}
 }
+
+func TestProfileCapabilitiesCodecRejectsOversizedEnvelope(t *testing.T) {
+	oversized := struct {
+		Value string `json:"value"`
+	}{Value: strings.Repeat("x", 2*1024*1024)}
+	if _, err := EncodeProfileCapabilities(oversized); err == nil {
+		t.Fatal("oversized Profile capability payload was encoded")
+	}
+	if _, err := DecodeProfileCapabilities(
+		`{"schemaVersion":1,"payload":{"value":"`+
+			strings.Repeat("x", 2*1024*1024)+`"}}`,
+		&oversized,
+	); err == nil {
+		t.Fatal("oversized Profile capability envelope was decoded")
+	}
+}

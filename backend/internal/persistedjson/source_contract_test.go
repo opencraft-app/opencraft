@@ -106,3 +106,19 @@ func TestDurableFieldRegistryMatchesEveryOpaqueJSONFieldInModelContract(t *testi
 		}
 	}
 }
+
+func TestAgentProfileCapabilityPersistenceIsRegistered(t *testing.T) {
+	if !KnownOperation("platform", "agent.profile.capabilities.refresh") {
+		t.Fatal("Profile capability refresh operation kind is not registered")
+	}
+	if !KnownScope("agent.profile-capabilities.refresh") {
+		t.Fatal("Profile capability refresh idempotency scope is not registered")
+	}
+	for _, field := range DurableFields() {
+		if field.Table == "agents" && field.Field == "profile_capabilities_json" &&
+			field.Codec == "EncodeProfileCapabilities" {
+			return
+		}
+	}
+	t.Fatal("Agent profile_capabilities_json durable field is not registered")
+}

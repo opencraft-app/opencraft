@@ -130,6 +130,46 @@ func (_u *AgentUpdate) ClearRuntimeModel() *AgentUpdate {
 	return _u
 }
 
+// SetProfileCapabilityRefreshID sets the "profile_capability_refresh_id" field.
+func (_u *AgentUpdate) SetProfileCapabilityRefreshID(v string) *AgentUpdate {
+	_u.mutation.SetProfileCapabilityRefreshID(v)
+	return _u
+}
+
+// SetNillableProfileCapabilityRefreshID sets the "profile_capability_refresh_id" field if the given value is not nil.
+func (_u *AgentUpdate) SetNillableProfileCapabilityRefreshID(v *string) *AgentUpdate {
+	if v != nil {
+		_u.SetProfileCapabilityRefreshID(*v)
+	}
+	return _u
+}
+
+// ClearProfileCapabilityRefreshID clears the value of the "profile_capability_refresh_id" field.
+func (_u *AgentUpdate) ClearProfileCapabilityRefreshID() *AgentUpdate {
+	_u.mutation.ClearProfileCapabilityRefreshID()
+	return _u
+}
+
+// SetProfileCapabilitiesJSON sets the "profile_capabilities_json" field.
+func (_u *AgentUpdate) SetProfileCapabilitiesJSON(v string) *AgentUpdate {
+	_u.mutation.SetProfileCapabilitiesJSON(v)
+	return _u
+}
+
+// SetNillableProfileCapabilitiesJSON sets the "profile_capabilities_json" field if the given value is not nil.
+func (_u *AgentUpdate) SetNillableProfileCapabilitiesJSON(v *string) *AgentUpdate {
+	if v != nil {
+		_u.SetProfileCapabilitiesJSON(*v)
+	}
+	return _u
+}
+
+// ClearProfileCapabilitiesJSON clears the value of the "profile_capabilities_json" field.
+func (_u *AgentUpdate) ClearProfileCapabilitiesJSON() *AgentUpdate {
+	_u.mutation.ClearProfileCapabilitiesJSON()
+	return _u
+}
+
 // SetReplyPolicy sets the "reply_policy" field.
 func (_u *AgentUpdate) SetReplyPolicy(v string) *AgentUpdate {
 	_u.mutation.SetReplyPolicy(v)
@@ -757,6 +797,18 @@ func (_u *AgentUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.RuntimeModelCleared() {
 		_spec.ClearField(agent.FieldRuntimeModel, field.TypeString)
 	}
+	if value, ok := _u.mutation.ProfileCapabilityRefreshID(); ok {
+		_spec.SetField(agent.FieldProfileCapabilityRefreshID, field.TypeString, value)
+	}
+	if _u.mutation.ProfileCapabilityRefreshIDCleared() {
+		_spec.ClearField(agent.FieldProfileCapabilityRefreshID, field.TypeString)
+	}
+	if value, ok := _u.mutation.ProfileCapabilitiesJSON(); ok {
+		_spec.SetField(agent.FieldProfileCapabilitiesJSON, field.TypeString, value)
+	}
+	if _u.mutation.ProfileCapabilitiesJSONCleared() {
+		_spec.ClearField(agent.FieldProfileCapabilitiesJSON, field.TypeString)
+	}
 	if value, ok := _u.mutation.ReplyPolicy(); ok {
 		_spec.SetField(agent.FieldReplyPolicy, field.TypeString, value)
 	}
@@ -1014,6 +1066,46 @@ func (_u *AgentUpdateOne) SetNillableRuntimeModel(v *string) *AgentUpdateOne {
 // ClearRuntimeModel clears the value of the "runtime_model" field.
 func (_u *AgentUpdateOne) ClearRuntimeModel() *AgentUpdateOne {
 	_u.mutation.ClearRuntimeModel()
+	return _u
+}
+
+// SetProfileCapabilityRefreshID sets the "profile_capability_refresh_id" field.
+func (_u *AgentUpdateOne) SetProfileCapabilityRefreshID(v string) *AgentUpdateOne {
+	_u.mutation.SetProfileCapabilityRefreshID(v)
+	return _u
+}
+
+// SetNillableProfileCapabilityRefreshID sets the "profile_capability_refresh_id" field if the given value is not nil.
+func (_u *AgentUpdateOne) SetNillableProfileCapabilityRefreshID(v *string) *AgentUpdateOne {
+	if v != nil {
+		_u.SetProfileCapabilityRefreshID(*v)
+	}
+	return _u
+}
+
+// ClearProfileCapabilityRefreshID clears the value of the "profile_capability_refresh_id" field.
+func (_u *AgentUpdateOne) ClearProfileCapabilityRefreshID() *AgentUpdateOne {
+	_u.mutation.ClearProfileCapabilityRefreshID()
+	return _u
+}
+
+// SetProfileCapabilitiesJSON sets the "profile_capabilities_json" field.
+func (_u *AgentUpdateOne) SetProfileCapabilitiesJSON(v string) *AgentUpdateOne {
+	_u.mutation.SetProfileCapabilitiesJSON(v)
+	return _u
+}
+
+// SetNillableProfileCapabilitiesJSON sets the "profile_capabilities_json" field if the given value is not nil.
+func (_u *AgentUpdateOne) SetNillableProfileCapabilitiesJSON(v *string) *AgentUpdateOne {
+	if v != nil {
+		_u.SetProfileCapabilitiesJSON(*v)
+	}
+	return _u
+}
+
+// ClearProfileCapabilitiesJSON clears the value of the "profile_capabilities_json" field.
+func (_u *AgentUpdateOne) ClearProfileCapabilitiesJSON() *AgentUpdateOne {
+	_u.mutation.ClearProfileCapabilitiesJSON()
 	return _u
 }
 
@@ -1673,6 +1765,18 @@ func (_u *AgentUpdateOne) sqlSave(ctx context.Context) (_node *Agent, err error)
 	}
 	if _u.mutation.RuntimeModelCleared() {
 		_spec.ClearField(agent.FieldRuntimeModel, field.TypeString)
+	}
+	if value, ok := _u.mutation.ProfileCapabilityRefreshID(); ok {
+		_spec.SetField(agent.FieldProfileCapabilityRefreshID, field.TypeString, value)
+	}
+	if _u.mutation.ProfileCapabilityRefreshIDCleared() {
+		_spec.ClearField(agent.FieldProfileCapabilityRefreshID, field.TypeString)
+	}
+	if value, ok := _u.mutation.ProfileCapabilitiesJSON(); ok {
+		_spec.SetField(agent.FieldProfileCapabilitiesJSON, field.TypeString, value)
+	}
+	if _u.mutation.ProfileCapabilitiesJSONCleared() {
+		_spec.ClearField(agent.FieldProfileCapabilitiesJSON, field.TypeString)
 	}
 	if value, ok := _u.mutation.ReplyPolicy(); ok {
 		_spec.SetField(agent.FieldReplyPolicy, field.TypeString, value)

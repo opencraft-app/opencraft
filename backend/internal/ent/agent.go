@@ -29,6 +29,10 @@ type Agent struct {
 	RuntimeKind string `json:"runtime_kind,omitempty"`
 	// RuntimeModel holds the value of the "runtime_model" field.
 	RuntimeModel *string `json:"runtime_model,omitempty"`
+	// ProfileCapabilityRefreshID holds the value of the "profile_capability_refresh_id" field.
+	ProfileCapabilityRefreshID *string `json:"profile_capability_refresh_id,omitempty"`
+	// ProfileCapabilitiesJSON holds the value of the "profile_capabilities_json" field.
+	ProfileCapabilitiesJSON *string `json:"profile_capabilities_json,omitempty"`
 	// ReplyPolicy holds the value of the "reply_policy" field.
 	ReplyPolicy string `json:"reply_policy,omitempty"`
 	// DesiredState holds the value of the "desired_state" field.
@@ -95,7 +99,7 @@ func (*Agent) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case agent.FieldCredentialVersion, agent.FieldObservedGeneration, agent.FieldObservedAttempt, agent.FieldObservedSequence, agent.FieldCurrentLaunchGeneration, agent.FieldCurrentLaunchCredentialVersion, agent.FieldCurrentLaunchAttempt, agent.FieldRevision:
 			values[i] = new(sql.NullInt64)
-		case agent.FieldID, agent.FieldServerID, agent.FieldImUserID, agent.FieldComputerID, agent.FieldDescription, agent.FieldRuntimeKind, agent.FieldRuntimeModel, agent.FieldReplyPolicy, agent.FieldDesiredState, agent.FieldObservedState, agent.FieldImState, agent.FieldImPresence, agent.FieldImTransportState, agent.FieldLastErrorCode, agent.FieldObservedAssignmentEpoch, agent.FieldObservedLaunchID, agent.FieldCurrentLaunchID, agent.FieldCurrentLaunchAssignmentEpoch, agent.FieldCreatedByMemberID:
+		case agent.FieldID, agent.FieldServerID, agent.FieldImUserID, agent.FieldComputerID, agent.FieldDescription, agent.FieldRuntimeKind, agent.FieldRuntimeModel, agent.FieldProfileCapabilityRefreshID, agent.FieldProfileCapabilitiesJSON, agent.FieldReplyPolicy, agent.FieldDesiredState, agent.FieldObservedState, agent.FieldImState, agent.FieldImPresence, agent.FieldImTransportState, agent.FieldLastErrorCode, agent.FieldObservedAssignmentEpoch, agent.FieldObservedLaunchID, agent.FieldCurrentLaunchID, agent.FieldCurrentLaunchAssignmentEpoch, agent.FieldCreatedByMemberID:
 			values[i] = new(sql.NullString)
 		case agent.FieldImPresenceUpdatedAt, agent.FieldImTransportUpdatedAt, agent.FieldHostLastSeenAt, agent.FieldLastObservedAt, agent.FieldCurrentLaunchUpdatedAt, agent.FieldDeletedAt, agent.FieldCreatedAt, agent.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -158,6 +162,20 @@ func (_m *Agent) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.RuntimeModel = new(string)
 				*_m.RuntimeModel = value.String
+			}
+		case agent.FieldProfileCapabilityRefreshID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field profile_capability_refresh_id", values[i])
+			} else if value.Valid {
+				_m.ProfileCapabilityRefreshID = new(string)
+				*_m.ProfileCapabilityRefreshID = value.String
+			}
+		case agent.FieldProfileCapabilitiesJSON:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field profile_capabilities_json", values[i])
+			} else if value.Valid {
+				_m.ProfileCapabilitiesJSON = new(string)
+				*_m.ProfileCapabilitiesJSON = value.String
 			}
 		case agent.FieldReplyPolicy:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -395,6 +413,16 @@ func (_m *Agent) String() string {
 	builder.WriteString(", ")
 	if v := _m.RuntimeModel; v != nil {
 		builder.WriteString("runtime_model=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.ProfileCapabilityRefreshID; v != nil {
+		builder.WriteString("profile_capability_refresh_id=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.ProfileCapabilitiesJSON; v != nil {
+		builder.WriteString("profile_capabilities_json=")
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")

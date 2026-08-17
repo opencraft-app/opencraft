@@ -80,6 +80,34 @@ func (_c *AgentCreate) SetNillableRuntimeModel(v *string) *AgentCreate {
 	return _c
 }
 
+// SetProfileCapabilityRefreshID sets the "profile_capability_refresh_id" field.
+func (_c *AgentCreate) SetProfileCapabilityRefreshID(v string) *AgentCreate {
+	_c.mutation.SetProfileCapabilityRefreshID(v)
+	return _c
+}
+
+// SetNillableProfileCapabilityRefreshID sets the "profile_capability_refresh_id" field if the given value is not nil.
+func (_c *AgentCreate) SetNillableProfileCapabilityRefreshID(v *string) *AgentCreate {
+	if v != nil {
+		_c.SetProfileCapabilityRefreshID(*v)
+	}
+	return _c
+}
+
+// SetProfileCapabilitiesJSON sets the "profile_capabilities_json" field.
+func (_c *AgentCreate) SetProfileCapabilitiesJSON(v string) *AgentCreate {
+	_c.mutation.SetProfileCapabilitiesJSON(v)
+	return _c
+}
+
+// SetNillableProfileCapabilitiesJSON sets the "profile_capabilities_json" field if the given value is not nil.
+func (_c *AgentCreate) SetNillableProfileCapabilitiesJSON(v *string) *AgentCreate {
+	if v != nil {
+		_c.SetProfileCapabilitiesJSON(*v)
+	}
+	return _c
+}
+
 // SetReplyPolicy sets the "reply_policy" field.
 func (_c *AgentCreate) SetReplyPolicy(v string) *AgentCreate {
 	_c.mutation.SetReplyPolicy(v)
@@ -681,6 +709,14 @@ func (_c *AgentCreate) createSpec() (*Agent, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.RuntimeModel(); ok {
 		_spec.SetField(agent.FieldRuntimeModel, field.TypeString, value)
 		_node.RuntimeModel = &value
+	}
+	if value, ok := _c.mutation.ProfileCapabilityRefreshID(); ok {
+		_spec.SetField(agent.FieldProfileCapabilityRefreshID, field.TypeString, value)
+		_node.ProfileCapabilityRefreshID = &value
+	}
+	if value, ok := _c.mutation.ProfileCapabilitiesJSON(); ok {
+		_spec.SetField(agent.FieldProfileCapabilitiesJSON, field.TypeString, value)
+		_node.ProfileCapabilitiesJSON = &value
 	}
 	if value, ok := _c.mutation.ReplyPolicy(); ok {
 		_spec.SetField(agent.FieldReplyPolicy, field.TypeString, value)

@@ -2510,6 +2510,8 @@ type AgentMutation struct {
 	description                          *string
 	runtime_kind                         *string
 	runtime_model                        *string
+	profile_capability_refresh_id        *string
+	profile_capabilities_json            *string
 	reply_policy                         *string
 	desired_state                        *string
 	observed_state                       *string
@@ -2909,6 +2911,104 @@ func (m *AgentMutation) RuntimeModelCleared() bool {
 func (m *AgentMutation) ResetRuntimeModel() {
 	m.runtime_model = nil
 	delete(m.clearedFields, agent.FieldRuntimeModel)
+}
+
+// SetProfileCapabilityRefreshID sets the "profile_capability_refresh_id" field.
+func (m *AgentMutation) SetProfileCapabilityRefreshID(s string) {
+	m.profile_capability_refresh_id = &s
+}
+
+// ProfileCapabilityRefreshID returns the value of the "profile_capability_refresh_id" field in the mutation.
+func (m *AgentMutation) ProfileCapabilityRefreshID() (r string, exists bool) {
+	v := m.profile_capability_refresh_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProfileCapabilityRefreshID returns the old "profile_capability_refresh_id" field's value of the Agent entity.
+// If the Agent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AgentMutation) OldProfileCapabilityRefreshID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProfileCapabilityRefreshID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProfileCapabilityRefreshID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProfileCapabilityRefreshID: %w", err)
+	}
+	return oldValue.ProfileCapabilityRefreshID, nil
+}
+
+// ClearProfileCapabilityRefreshID clears the value of the "profile_capability_refresh_id" field.
+func (m *AgentMutation) ClearProfileCapabilityRefreshID() {
+	m.profile_capability_refresh_id = nil
+	m.clearedFields[agent.FieldProfileCapabilityRefreshID] = struct{}{}
+}
+
+// ProfileCapabilityRefreshIDCleared returns if the "profile_capability_refresh_id" field was cleared in this mutation.
+func (m *AgentMutation) ProfileCapabilityRefreshIDCleared() bool {
+	_, ok := m.clearedFields[agent.FieldProfileCapabilityRefreshID]
+	return ok
+}
+
+// ResetProfileCapabilityRefreshID resets all changes to the "profile_capability_refresh_id" field.
+func (m *AgentMutation) ResetProfileCapabilityRefreshID() {
+	m.profile_capability_refresh_id = nil
+	delete(m.clearedFields, agent.FieldProfileCapabilityRefreshID)
+}
+
+// SetProfileCapabilitiesJSON sets the "profile_capabilities_json" field.
+func (m *AgentMutation) SetProfileCapabilitiesJSON(s string) {
+	m.profile_capabilities_json = &s
+}
+
+// ProfileCapabilitiesJSON returns the value of the "profile_capabilities_json" field in the mutation.
+func (m *AgentMutation) ProfileCapabilitiesJSON() (r string, exists bool) {
+	v := m.profile_capabilities_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProfileCapabilitiesJSON returns the old "profile_capabilities_json" field's value of the Agent entity.
+// If the Agent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AgentMutation) OldProfileCapabilitiesJSON(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProfileCapabilitiesJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProfileCapabilitiesJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProfileCapabilitiesJSON: %w", err)
+	}
+	return oldValue.ProfileCapabilitiesJSON, nil
+}
+
+// ClearProfileCapabilitiesJSON clears the value of the "profile_capabilities_json" field.
+func (m *AgentMutation) ClearProfileCapabilitiesJSON() {
+	m.profile_capabilities_json = nil
+	m.clearedFields[agent.FieldProfileCapabilitiesJSON] = struct{}{}
+}
+
+// ProfileCapabilitiesJSONCleared returns if the "profile_capabilities_json" field was cleared in this mutation.
+func (m *AgentMutation) ProfileCapabilitiesJSONCleared() bool {
+	_, ok := m.clearedFields[agent.FieldProfileCapabilitiesJSON]
+	return ok
+}
+
+// ResetProfileCapabilitiesJSON resets all changes to the "profile_capabilities_json" field.
+func (m *AgentMutation) ResetProfileCapabilitiesJSON() {
+	m.profile_capabilities_json = nil
+	delete(m.clearedFields, agent.FieldProfileCapabilitiesJSON)
 }
 
 // SetReplyPolicy sets the "reply_policy" field.
@@ -4256,7 +4356,7 @@ func (m *AgentMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AgentMutation) Fields() []string {
-	fields := make([]string, 0, 34)
+	fields := make([]string, 0, 36)
 	if m.server_id != nil {
 		fields = append(fields, agent.FieldServerID)
 	}
@@ -4274,6 +4374,12 @@ func (m *AgentMutation) Fields() []string {
 	}
 	if m.runtime_model != nil {
 		fields = append(fields, agent.FieldRuntimeModel)
+	}
+	if m.profile_capability_refresh_id != nil {
+		fields = append(fields, agent.FieldProfileCapabilityRefreshID)
+	}
+	if m.profile_capabilities_json != nil {
+		fields = append(fields, agent.FieldProfileCapabilitiesJSON)
 	}
 	if m.reply_policy != nil {
 		fields = append(fields, agent.FieldReplyPolicy)
@@ -4379,6 +4485,10 @@ func (m *AgentMutation) Field(name string) (ent.Value, bool) {
 		return m.RuntimeKind()
 	case agent.FieldRuntimeModel:
 		return m.RuntimeModel()
+	case agent.FieldProfileCapabilityRefreshID:
+		return m.ProfileCapabilityRefreshID()
+	case agent.FieldProfileCapabilitiesJSON:
+		return m.ProfileCapabilitiesJSON()
 	case agent.FieldReplyPolicy:
 		return m.ReplyPolicy()
 	case agent.FieldDesiredState:
@@ -4456,6 +4566,10 @@ func (m *AgentMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldRuntimeKind(ctx)
 	case agent.FieldRuntimeModel:
 		return m.OldRuntimeModel(ctx)
+	case agent.FieldProfileCapabilityRefreshID:
+		return m.OldProfileCapabilityRefreshID(ctx)
+	case agent.FieldProfileCapabilitiesJSON:
+		return m.OldProfileCapabilitiesJSON(ctx)
 	case agent.FieldReplyPolicy:
 		return m.OldReplyPolicy(ctx)
 	case agent.FieldDesiredState:
@@ -4562,6 +4676,20 @@ func (m *AgentMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRuntimeModel(v)
+		return nil
+	case agent.FieldProfileCapabilityRefreshID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProfileCapabilityRefreshID(v)
+		return nil
+	case agent.FieldProfileCapabilitiesJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProfileCapabilitiesJSON(v)
 		return nil
 	case agent.FieldReplyPolicy:
 		v, ok := value.(string)
@@ -4897,6 +5025,12 @@ func (m *AgentMutation) ClearedFields() []string {
 	if m.FieldCleared(agent.FieldRuntimeModel) {
 		fields = append(fields, agent.FieldRuntimeModel)
 	}
+	if m.FieldCleared(agent.FieldProfileCapabilityRefreshID) {
+		fields = append(fields, agent.FieldProfileCapabilityRefreshID)
+	}
+	if m.FieldCleared(agent.FieldProfileCapabilitiesJSON) {
+		fields = append(fields, agent.FieldProfileCapabilitiesJSON)
+	}
 	if m.FieldCleared(agent.FieldImPresenceUpdatedAt) {
 		fields = append(fields, agent.FieldImPresenceUpdatedAt)
 	}
@@ -4952,6 +5086,12 @@ func (m *AgentMutation) ClearField(name string) error {
 		return nil
 	case agent.FieldRuntimeModel:
 		m.ClearRuntimeModel()
+		return nil
+	case agent.FieldProfileCapabilityRefreshID:
+		m.ClearProfileCapabilityRefreshID()
+		return nil
+	case agent.FieldProfileCapabilitiesJSON:
+		m.ClearProfileCapabilitiesJSON()
 		return nil
 	case agent.FieldImPresenceUpdatedAt:
 		m.ClearImPresenceUpdatedAt()
@@ -5011,6 +5151,12 @@ func (m *AgentMutation) ResetField(name string) error {
 		return nil
 	case agent.FieldRuntimeModel:
 		m.ResetRuntimeModel()
+		return nil
+	case agent.FieldProfileCapabilityRefreshID:
+		m.ResetProfileCapabilityRefreshID()
+		return nil
+	case agent.FieldProfileCapabilitiesJSON:
+		m.ResetProfileCapabilitiesJSON()
 		return nil
 	case agent.FieldReplyPolicy:
 		m.ResetReplyPolicy()

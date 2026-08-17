@@ -109,7 +109,7 @@ func Baseline20260801000000() (*Catalog, error) {
 			if table.Name == "computers" && isComputerEnrollmentColumn(column.Name) {
 				continue
 			}
-			if table.Name == "agents" && column.Name == "deleted_at" {
+			if table.Name == "agents" && isAgentPostBaselineColumn(column.Name) {
 				continue
 			}
 			if table.Name == "members" && column.Name == "active_handle_key" {
@@ -131,6 +131,15 @@ func Baseline20260801000000() (*Catalog, error) {
 		}
 	}
 	return Build(baselineEntries, baselineDesired)
+}
+
+func isAgentPostBaselineColumn(name string) bool {
+	switch name {
+	case "deleted_at", "profile_capability_refresh_id", "profile_capabilities_json":
+		return true
+	default:
+		return false
+	}
 }
 
 func isReminderAnchorColumn(name string) bool {

@@ -106,6 +106,8 @@ var (
 		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "runtime_kind", Type: field.TypeString, Size: 32},
 		{Name: "runtime_model", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "profile_capability_refresh_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"mysql": "varchar(64)", "sqlite3": "text"}},
+		{Name: "profile_capabilities_json", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "reply_policy", Type: field.TypeString, Size: 32},
 		{Name: "desired_state", Type: field.TypeString, Size: 32},
 		{Name: "observed_state", Type: field.TypeString, Size: 32},
@@ -149,12 +151,12 @@ var (
 			{
 				Name:    "agent_server_id_computer_id_observed_state_id",
 				Unique:  false,
-				Columns: []*schema.Column{AgentsColumns[1], AgentsColumns[3], AgentsColumns[9], AgentsColumns[0]},
+				Columns: []*schema.Column{AgentsColumns[1], AgentsColumns[3], AgentsColumns[11], AgentsColumns[0]},
 			},
 			{
 				Name:    "agent_server_id_desired_state_observed_state_im_state_last_observed_at_id",
 				Unique:  false,
-				Columns: []*schema.Column{AgentsColumns[1], AgentsColumns[8], AgentsColumns[9], AgentsColumns[11], AgentsColumns[17], AgentsColumns[0]},
+				Columns: []*schema.Column{AgentsColumns[1], AgentsColumns[10], AgentsColumns[11], AgentsColumns[13], AgentsColumns[19], AgentsColumns[0]},
 			},
 		},
 	}

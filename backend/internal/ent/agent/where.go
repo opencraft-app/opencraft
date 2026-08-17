@@ -94,6 +94,16 @@ func RuntimeModel(v string) predicate.Agent {
 	return predicate.Agent(sql.FieldEQ(FieldRuntimeModel, v))
 }
 
+// ProfileCapabilityRefreshID applies equality check predicate on the "profile_capability_refresh_id" field. It's identical to ProfileCapabilityRefreshIDEQ.
+func ProfileCapabilityRefreshID(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldEQ(FieldProfileCapabilityRefreshID, v))
+}
+
+// ProfileCapabilitiesJSON applies equality check predicate on the "profile_capabilities_json" field. It's identical to ProfileCapabilitiesJSONEQ.
+func ProfileCapabilitiesJSON(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldEQ(FieldProfileCapabilitiesJSON, v))
+}
+
 // ReplyPolicy applies equality check predicate on the "reply_policy" field. It's identical to ReplyPolicyEQ.
 func ReplyPolicy(v string) predicate.Agent {
 	return predicate.Agent(sql.FieldEQ(FieldReplyPolicy, v))
@@ -652,6 +662,156 @@ func RuntimeModelEqualFold(v string) predicate.Agent {
 // RuntimeModelContainsFold applies the ContainsFold predicate on the "runtime_model" field.
 func RuntimeModelContainsFold(v string) predicate.Agent {
 	return predicate.Agent(sql.FieldContainsFold(FieldRuntimeModel, v))
+}
+
+// ProfileCapabilityRefreshIDEQ applies the EQ predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDEQ(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldEQ(FieldProfileCapabilityRefreshID, v))
+}
+
+// ProfileCapabilityRefreshIDNEQ applies the NEQ predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDNEQ(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldNEQ(FieldProfileCapabilityRefreshID, v))
+}
+
+// ProfileCapabilityRefreshIDIn applies the In predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDIn(vs ...string) predicate.Agent {
+	return predicate.Agent(sql.FieldIn(FieldProfileCapabilityRefreshID, vs...))
+}
+
+// ProfileCapabilityRefreshIDNotIn applies the NotIn predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDNotIn(vs ...string) predicate.Agent {
+	return predicate.Agent(sql.FieldNotIn(FieldProfileCapabilityRefreshID, vs...))
+}
+
+// ProfileCapabilityRefreshIDGT applies the GT predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDGT(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldGT(FieldProfileCapabilityRefreshID, v))
+}
+
+// ProfileCapabilityRefreshIDGTE applies the GTE predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDGTE(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldGTE(FieldProfileCapabilityRefreshID, v))
+}
+
+// ProfileCapabilityRefreshIDLT applies the LT predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDLT(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldLT(FieldProfileCapabilityRefreshID, v))
+}
+
+// ProfileCapabilityRefreshIDLTE applies the LTE predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDLTE(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldLTE(FieldProfileCapabilityRefreshID, v))
+}
+
+// ProfileCapabilityRefreshIDContains applies the Contains predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDContains(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldContains(FieldProfileCapabilityRefreshID, v))
+}
+
+// ProfileCapabilityRefreshIDHasPrefix applies the HasPrefix predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDHasPrefix(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldHasPrefix(FieldProfileCapabilityRefreshID, v))
+}
+
+// ProfileCapabilityRefreshIDHasSuffix applies the HasSuffix predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDHasSuffix(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldHasSuffix(FieldProfileCapabilityRefreshID, v))
+}
+
+// ProfileCapabilityRefreshIDIsNil applies the IsNil predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDIsNil() predicate.Agent {
+	return predicate.Agent(sql.FieldIsNull(FieldProfileCapabilityRefreshID))
+}
+
+// ProfileCapabilityRefreshIDNotNil applies the NotNil predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDNotNil() predicate.Agent {
+	return predicate.Agent(sql.FieldNotNull(FieldProfileCapabilityRefreshID))
+}
+
+// ProfileCapabilityRefreshIDEqualFold applies the EqualFold predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDEqualFold(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldEqualFold(FieldProfileCapabilityRefreshID, v))
+}
+
+// ProfileCapabilityRefreshIDContainsFold applies the ContainsFold predicate on the "profile_capability_refresh_id" field.
+func ProfileCapabilityRefreshIDContainsFold(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldContainsFold(FieldProfileCapabilityRefreshID, v))
+}
+
+// ProfileCapabilitiesJSONEQ applies the EQ predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONEQ(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldEQ(FieldProfileCapabilitiesJSON, v))
+}
+
+// ProfileCapabilitiesJSONNEQ applies the NEQ predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONNEQ(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldNEQ(FieldProfileCapabilitiesJSON, v))
+}
+
+// ProfileCapabilitiesJSONIn applies the In predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONIn(vs ...string) predicate.Agent {
+	return predicate.Agent(sql.FieldIn(FieldProfileCapabilitiesJSON, vs...))
+}
+
+// ProfileCapabilitiesJSONNotIn applies the NotIn predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONNotIn(vs ...string) predicate.Agent {
+	return predicate.Agent(sql.FieldNotIn(FieldProfileCapabilitiesJSON, vs...))
+}
+
+// ProfileCapabilitiesJSONGT applies the GT predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONGT(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldGT(FieldProfileCapabilitiesJSON, v))
+}
+
+// ProfileCapabilitiesJSONGTE applies the GTE predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONGTE(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldGTE(FieldProfileCapabilitiesJSON, v))
+}
+
+// ProfileCapabilitiesJSONLT applies the LT predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONLT(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldLT(FieldProfileCapabilitiesJSON, v))
+}
+
+// ProfileCapabilitiesJSONLTE applies the LTE predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONLTE(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldLTE(FieldProfileCapabilitiesJSON, v))
+}
+
+// ProfileCapabilitiesJSONContains applies the Contains predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONContains(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldContains(FieldProfileCapabilitiesJSON, v))
+}
+
+// ProfileCapabilitiesJSONHasPrefix applies the HasPrefix predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONHasPrefix(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldHasPrefix(FieldProfileCapabilitiesJSON, v))
+}
+
+// ProfileCapabilitiesJSONHasSuffix applies the HasSuffix predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONHasSuffix(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldHasSuffix(FieldProfileCapabilitiesJSON, v))
+}
+
+// ProfileCapabilitiesJSONIsNil applies the IsNil predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONIsNil() predicate.Agent {
+	return predicate.Agent(sql.FieldIsNull(FieldProfileCapabilitiesJSON))
+}
+
+// ProfileCapabilitiesJSONNotNil applies the NotNil predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONNotNil() predicate.Agent {
+	return predicate.Agent(sql.FieldNotNull(FieldProfileCapabilitiesJSON))
+}
+
+// ProfileCapabilitiesJSONEqualFold applies the EqualFold predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONEqualFold(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldEqualFold(FieldProfileCapabilitiesJSON, v))
+}
+
+// ProfileCapabilitiesJSONContainsFold applies the ContainsFold predicate on the "profile_capabilities_json" field.
+func ProfileCapabilitiesJSONContainsFold(v string) predicate.Agent {
+	return predicate.Agent(sql.FieldContainsFold(FieldProfileCapabilitiesJSON, v))
 }
 
 // ReplyPolicyEQ applies the EQ predicate on the "reply_policy" field.

@@ -24,6 +24,8 @@ func (Agent) Fields() []ent.Field {
 		optionalTextField("description"),
 		boundedStringField("runtime_kind", 32),
 		optionalBoundedStringField("runtime_model", 128),
+		optionalIDField("profile_capability_refresh_id"),
+		optionalTextField("profile_capabilities_json"),
 		boundedStringField("reply_policy", 32),
 		stateField("desired_state"),
 		stateField("observed_state"),

@@ -135,67 +135,67 @@ func init() {
 	// agent.RuntimeModelValidator is a validator for the "runtime_model" field. It is called by the builders before save.
 	agent.RuntimeModelValidator = agentDescRuntimeModel.Validators[0].(func(string) error)
 	// agentDescReplyPolicy is the schema descriptor for reply_policy field.
-	agentDescReplyPolicy := agentFields[6].Descriptor()
+	agentDescReplyPolicy := agentFields[8].Descriptor()
 	// agent.ReplyPolicyValidator is a validator for the "reply_policy" field. It is called by the builders before save.
 	agent.ReplyPolicyValidator = agentDescReplyPolicy.Validators[0].(func(string) error)
 	// agentDescDesiredState is the schema descriptor for desired_state field.
-	agentDescDesiredState := agentFields[7].Descriptor()
+	agentDescDesiredState := agentFields[9].Descriptor()
 	// agent.DesiredStateValidator is a validator for the "desired_state" field. It is called by the builders before save.
 	agent.DesiredStateValidator = agentDescDesiredState.Validators[0].(func(string) error)
 	// agentDescObservedState is the schema descriptor for observed_state field.
-	agentDescObservedState := agentFields[8].Descriptor()
+	agentDescObservedState := agentFields[10].Descriptor()
 	// agent.ObservedStateValidator is a validator for the "observed_state" field. It is called by the builders before save.
 	agent.ObservedStateValidator = agentDescObservedState.Validators[0].(func(string) error)
 	// agentDescImState is the schema descriptor for im_state field.
-	agentDescImState := agentFields[10].Descriptor()
+	agentDescImState := agentFields[12].Descriptor()
 	// agent.ImStateValidator is a validator for the "im_state" field. It is called by the builders before save.
 	agent.ImStateValidator = agentDescImState.Validators[0].(func(string) error)
 	// agentDescImPresence is the schema descriptor for im_presence field.
-	agentDescImPresence := agentFields[11].Descriptor()
+	agentDescImPresence := agentFields[13].Descriptor()
 	// agent.DefaultImPresence holds the default value on creation for the im_presence field.
 	agent.DefaultImPresence = agentDescImPresence.Default.(func() string)
 	// agent.ImPresenceValidator is a validator for the "im_presence" field. It is called by the builders before save.
 	agent.ImPresenceValidator = agentDescImPresence.Validators[0].(func(string) error)
 	// agentDescImTransportState is the schema descriptor for im_transport_state field.
-	agentDescImTransportState := agentFields[13].Descriptor()
+	agentDescImTransportState := agentFields[15].Descriptor()
 	// agent.DefaultImTransportState holds the default value on creation for the im_transport_state field.
 	agent.DefaultImTransportState = agentDescImTransportState.Default.(string)
 	// agent.ImTransportStateValidator is a validator for the "im_transport_state" field. It is called by the builders before save.
 	agent.ImTransportStateValidator = agentDescImTransportState.Validators[0].(func(string) error)
 	// agentDescLastErrorCode is the schema descriptor for last_error_code field.
-	agentDescLastErrorCode := agentFields[17].Descriptor()
+	agentDescLastErrorCode := agentFields[19].Descriptor()
 	// agent.LastErrorCodeValidator is a validator for the "last_error_code" field. It is called by the builders before save.
 	agent.LastErrorCodeValidator = agentDescLastErrorCode.Validators[0].(func(string) error)
 	// agentDescObservedGeneration is the schema descriptor for observed_generation field.
-	agentDescObservedGeneration := agentFields[19].Descriptor()
+	agentDescObservedGeneration := agentFields[21].Descriptor()
 	// agent.DefaultObservedGeneration holds the default value on creation for the observed_generation field.
 	agent.DefaultObservedGeneration = agentDescObservedGeneration.Default.(func() int64)
 	// agentDescObservedAttempt is the schema descriptor for observed_attempt field.
-	agentDescObservedAttempt := agentFields[20].Descriptor()
+	agentDescObservedAttempt := agentFields[22].Descriptor()
 	// agent.DefaultObservedAttempt holds the default value on creation for the observed_attempt field.
 	agent.DefaultObservedAttempt = agentDescObservedAttempt.Default.(func() int64)
 	// agentDescObservedSequence is the schema descriptor for observed_sequence field.
-	agentDescObservedSequence := agentFields[21].Descriptor()
+	agentDescObservedSequence := agentFields[23].Descriptor()
 	// agent.DefaultObservedSequence holds the default value on creation for the observed_sequence field.
 	agent.DefaultObservedSequence = agentDescObservedSequence.Default.(func() int64)
 	// agentDescCurrentLaunchGeneration is the schema descriptor for current_launch_generation field.
-	agentDescCurrentLaunchGeneration := agentFields[25].Descriptor()
+	agentDescCurrentLaunchGeneration := agentFields[27].Descriptor()
 	// agent.DefaultCurrentLaunchGeneration holds the default value on creation for the current_launch_generation field.
 	agent.DefaultCurrentLaunchGeneration = agentDescCurrentLaunchGeneration.Default.(int64)
 	// agentDescCurrentLaunchCredentialVersion is the schema descriptor for current_launch_credential_version field.
-	agentDescCurrentLaunchCredentialVersion := agentFields[26].Descriptor()
+	agentDescCurrentLaunchCredentialVersion := agentFields[28].Descriptor()
 	// agent.DefaultCurrentLaunchCredentialVersion holds the default value on creation for the current_launch_credential_version field.
 	agent.DefaultCurrentLaunchCredentialVersion = agentDescCurrentLaunchCredentialVersion.Default.(int64)
 	// agentDescCurrentLaunchAttempt is the schema descriptor for current_launch_attempt field.
-	agentDescCurrentLaunchAttempt := agentFields[27].Descriptor()
+	agentDescCurrentLaunchAttempt := agentFields[29].Descriptor()
 	// agent.DefaultCurrentLaunchAttempt holds the default value on creation for the current_launch_attempt field.
 	agent.DefaultCurrentLaunchAttempt = agentDescCurrentLaunchAttempt.Default.(int64)
 	// agentDescCreatedAt is the schema descriptor for created_at field.
-	agentDescCreatedAt := agentFields[32].Descriptor()
+	agentDescCreatedAt := agentFields[34].Descriptor()
 	// agent.DefaultCreatedAt holds the default value on creation for the created_at field.
 	agent.DefaultCreatedAt = agentDescCreatedAt.Default.(func() time.Time)
 	// agentDescUpdatedAt is the schema descriptor for updated_at field.
-	agentDescUpdatedAt := agentFields[33].Descriptor()
+	agentDescUpdatedAt := agentFields[35].Descriptor()
 	// agent.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	agent.DefaultUpdatedAt = agentDescUpdatedAt.Default.(func() time.Time)
 	// agent.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

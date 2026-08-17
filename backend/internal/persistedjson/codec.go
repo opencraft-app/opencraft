@@ -13,6 +13,8 @@ import (
 
 const SchemaVersion = 1
 
+const maximumProfileCapabilitiesJSONBytes = 2 * 1024 * 1024
+
 type envelope struct {
 	SchemaVersion int             `json:"schemaVersion"`
 	Payload       json.RawMessage `json:"payload"`
@@ -167,6 +169,27 @@ func EncodeScoped(scope string, payload any) (string, error) {
 func DecodeScoped(raw, scope string, destination any) (legacy bool, err error) {
 	if !KnownScope(scope) {
 		return false, fmt.Errorf("未注册的幂等 scope：%s", scope)
+	}
+	return Decode(raw, destination)
+}
+
+// EncodeProfileCapabilities writes the Agent-owned capability observation
+// envelope through the durable v1 codec. Callers still provide a strict DTO;
+// Runtime-native payloads are normalized before reaching this boundary.
+func EncodeProfileCapabilities(payload any) (string, error) {
+	encoded, err := Encode(payload)
+	if err != nil {
+		return "", err
+	}
+	if len(encoded) > maximumProfileCapabilitiesJSONBytes {
+		return "", errors.New("Agent Profile capability JSON 超过大小限制")
+	}
+	return encoded, nil
+}
+
+func DecodeProfileCapabilities(raw string, destination any) (legacy bool, err error) {
+	if len(raw) > maximumProfileCapabilitiesJSONBytes {
+		return false, errors.New("Agent Profile capability JSON 超过大小限制")
 	}
 	return Decode(raw, destination)
 }

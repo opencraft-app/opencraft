@@ -14,6 +14,7 @@ type DurableField struct {
 }
 
 var durableFields = []DurableField{
+	{Table: "agents", Field: "profile_capabilities_json", Setter: "SetNillableProfileCapabilitiesJSON", Codec: "EncodeProfileCapabilities"},
 	{Table: "computers", Field: "enrollment_release_set_json", Setter: "SetEnrollmentReleaseSetJSON", Codec: "Encode"},
 	{Table: "idempotency_records", Field: "response_body_json", Setter: "SetResponseBodyJSON", Codec: "EncodeScoped"},
 	{Table: "reminders", Field: "anchor_message_ref_json", Setter: "SetNillableAnchorMessageRefJSON", Codec: "Encode"},
@@ -42,6 +43,7 @@ var operationKinds = map[string]struct{}{
 	"platform/agent.restart":                                 {},
 	"platform/agent.start":                                   {},
 	"platform/agent.stop":                                    {},
+	"platform/agent.profile.capabilities.refresh":            {},
 	"maintenance/im.identity.ensure":                         {},
 }
 
@@ -53,8 +55,9 @@ var idempotencyScopes = map[string]struct{}{
 	"member.update": {}, "member.remove": {},
 	"agent.create": {}, "agent.update": {}, "agent.delete": {}, "agent.deploy": {},
 	"agent.start": {}, "agent.stop": {}, "agent.restart": {},
-	"agent.credential.rotate": {},
-	"computer.create":         {}, "computer.refresh": {},
+	"agent.credential.rotate":            {},
+	"agent.profile-capabilities.refresh": {},
+	"computer.create":                    {}, "computer.refresh": {},
 	"computer.runtime-credential.issue": {}, "computer.runtime-credential.rotate": {},
 	"task.create": {}, "task.update": {}, "task.claim": {},
 	"reminder.create": {}, "reminder.update": {}, "reminder.cancel": {},
