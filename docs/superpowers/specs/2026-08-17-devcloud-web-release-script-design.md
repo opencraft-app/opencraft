@@ -11,7 +11,8 @@ LoadBalancer Service 均名为 `raft-web-static`，容器名为 `static`，当�
 根文件负责跨目录发布入口和凭据边界，不复制 Backend 的领域规则。
 
 本轮只管理 Web 静态工作负载，不发布 Backend、Computer 或 Agent，也不建立集群内
-BuildKit。构建在本地 Mac 完成。
+BuildKit。Bun/Expo 编译在本地 Mac 原生完成；Mac 不依赖 Docker daemon。Linux 镜像包装
+与 TCR 推送由既有内网主机 `root@9.134.208.109:36000` 完成。
 
 ## 入口与命令
 
@@ -30,26 +31,27 @@ web/deploy/devcloud/release.sh
   --kubeconfig /absolute/path/to/dep.conf
 ```
 
-`preview` 与 `deploy` 必须使用同一份 `web/deploy/devcloud/Dockerfile` 和同一次 Expo
-静态导出规则。预览不是 Expo 开发服务器，而是本地 Nginx 容器中的生产静态产物。
+`preview` 与 `deploy` 必须使用同一次 Expo 静态导出规则。预览不是 Expo 开发服务器，
+而是 Bun 直接托管生产 `dist`；发布镜像再使用 `web/deploy/devcloud/Dockerfile` 包装同一
+份 `dist`。
 
 ## 本地预览
 
 `preview` 执行：
 
-1. 校验 `bun`、`docker` 和 `curl`；
+1. 校验 `bun` 和 `curl`；
 2. 执行客户端类型检查和 `bun run --cwd web build:web`；
-3. 使用 DevCloud Dockerfile 构建本机平台预览镜像；
-4. 只替换脚本拥有的固定预览容器 `vela-web-devcloud-preview`；
-5. 将容器 `8080` 映射到 `127.0.0.1:<port>`；
+3. 使用仓库内 Bun 静态预览服务器托管 `apps/client/dist`；
+4. 只替换脚本 PID 文件指向且命令匹配的预览进程；
+5. 监听 `127.0.0.1:<port>`；
 6. 轮询 `/healthz-web`，成功后打印预览 URL。
 
-`preview-stop` 只停止并删除该固定预览容器，不影响其他容器或镜像。重复执行
-`preview` 是幂等的；端口被其他进程占用时必须失败，不得杀死未知进程。
+`preview` 健康检查成功后以前台方式长驻。`preview-stop` 只停止 PID 文件指向且命令匹配的
+预览进程。重复执行 `preview` 是幂等的；端口被其他进程占用时必须失败，不得杀死未知进程。
 
-预览保证静态产物、Nginx 缓存规则、SPA fallback 和发布镜像一致。当前 DevCloud Nginx
-配置把 `/v1/` 指向集群内 DNS，因此本地预览不承诺 API 可用；它是发布前视觉与静态路由
-验收入口，不冒充完整本地联调环境。
+预览保证静态产物和 SPA fallback 与发布输入一致，不冒充 Nginx 运行时验收；Nginx 本身在
+远端构建后的镜像与 live Service 中验证。当前 DevCloud `/v1/` upstream 只在集群内可用，
+因此本地预览明确返回不可用，不冒充完整本地联调环境。
 
 ## DevCloud 发布
 
@@ -62,8 +64,9 @@ web/deploy/devcloud/release.sh
    `bun run --cwd web security:scan`、`bun run --cwd web build:web` 和
    `bun run --cwd web/apps/client verify:web-fallback`，不把当前测试套件数量写成稳定合同；
 5. 以完整 Git SHA 的前 12 位作为不可变 TCR tag；若远端 tag 已存在则拒绝覆盖；
-6. 在 `web/` 目录以 `.` 为 context、以 `deploy/devcloud/Dockerfile` 为 Dockerfile，
-   通过 `docker buildx build --platform linux/amd64 --push` 构建镜像；
+6. Mac 只把 Dockerfile、Nginx 配置和已生成的 `dist` 组成最小 tar，通过 SSH/scp 发送给
+   内网 Linux builder；builder 在临时目录中以 `deploy/devcloud/Dockerfile` 为 Dockerfile，
+   通过 `docker buildx build --platform linux/amd64 --push` 构建镜像并在结束时删除上下文；
 7. 从 TCR 读取真实 `sha256` digest，后续只按 digest 发布；
 8. 读取 `dep/raft-web-static` 中 `static` 容器的原镜像并确认当前副本可用；
 9. 将 Deployment 精确切换到新 digest，等待 rollout；
@@ -89,14 +92,14 @@ live 对象；若对象不存在或容器/selector 不符合合同，发布前�
 
 ## 凭据边界
 
-只有 Kubernetes 凭据通过 `--kubeconfig` 显式传入。TCR 使用 Mac 当前 Docker
-credential store / `~/.docker/config.json` 的既有登录状态。脚本不得：
+只有 Kubernetes 凭据通过 `--kubeconfig` 显式传入。TCR 使用内网 Linux builder 自己的
+Docker credential store，Mac 不读取或传输 registry 凭据。脚本不得：
 
 - 接收、打印、复制或提交 TCR 密码；
 - 从 Kubernetes Secret 提取 registry 凭据；
 - 将 kubeconfig 路径硬编码为个人目录；
 - 执行 `kubectl config use-context`；
-- 把凭据传输到远端构建机。
+- 从 Mac 把凭据传输到远端构建机。
 
 ## 失败与回滚
 
