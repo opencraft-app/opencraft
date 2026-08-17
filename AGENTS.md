@@ -317,7 +317,9 @@ spec 更新描述成 Pod 已运行，或把健康端点 200 描述成完整业�
 
 当前唯一活跃 Web 目标、SSH/k3s 信息、构建、digest 切换、回滚和验收命令位于：
 
-- `docs/runbooks/k3s-release.md`
+- `docs/runbooks/k3s-release.md`：当前目标与组件入口；
+- `docs/runbooks/k3s-web-release.md`：Web 正式流程，唯一脚本入口为 `web/deploy/k3s/release.sh deploy`；
+- `docs/runbooks/k3s-backend-release.md`：Backend migration、verify、rollout 与回滚边界。
 
 环境地址、版本和当前 digest 属于易变运行事实，只在 runbook/发布证据中维护，不复制到长期架构章节。发布前
 必须重新读取 runbook、远端 `master` 和 live k3s 状态，不能依赖历史聊天结论。

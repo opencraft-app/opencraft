@@ -23,6 +23,10 @@ const previewServer = resolve(
 );
 const rootAgents = resolve(repositoryRoot, "AGENTS.md");
 const k3sRunbook = resolve(repositoryRoot, "docs/runbooks/k3s-release.md");
+const k3sWebRunbook = resolve(
+  repositoryRoot,
+  "docs/runbooks/k3s-web-release.md",
+);
 const devcloudManifest = resolve(
   repositoryRoot,
   "web/deploy/devcloud/static.yaml",
@@ -136,6 +140,7 @@ describe("DevCloud Web release contract", () => {
     if (!existsSync(rootAgents) || !existsSync(k3sRunbook)) return;
     const source = readFileSync(rootAgents, "utf8");
     const runbook = readFileSync(k3sRunbook, "utf8");
+    const webRunbook = readFileSync(k3sWebRunbook, "utf8");
 
     expect(source).toContain("docs/runbooks/k3s-release.md");
     expect(source).toContain("旧共享前端环境已退役");
@@ -143,7 +148,7 @@ describe("DevCloud Web release contract", () => {
     expect(source).toContain("不使用默认 kube context");
     expect(source).toContain("Mac 不依赖 Docker daemon");
     expect(runbook).toContain("root@21.91.75.85:36000");
-    expect(runbook).toContain("lightclaw/vela-platform-web@sha256:");
+    expect(webRunbook).toContain("immutable registry digest");
   });
 
   it("keeps the checked-in DevCloud manifest aligned with the live workload", () => {
