@@ -597,6 +597,6 @@ Jest 只验证纯状态机、props、语义属性、主题 key 和源码守卫�
 - backdrop owner 数量与面积上限满足，真实浏览器 performance gate 通过或按规定启用不透明 fallback。
 - Web 与 Native 共享业务 API，`.web/.native` 实际 extension resolution、Web export 和 Native bundle/render smoke 通过。
 - 客户端完整 Jest、pointer/touch/reduced-motion、TypeScript、Web export、SPA fallback 全部通过。
-- `dep` 指 `http://9.135.236.23` 的部署环境；部署新构建后，在上述浏览器/viewport 矩阵逐项验收并保存截图、操作记录和镜像 digest。
+- 部署目标是当前独立 k3s Web 入口；部署新构建后，在上述浏览器/viewport 矩阵逐项验收并保存截图、操作记录和镜像 digest。
 
 Style lint 扫描 `web/apps/client/src/ui/**/*.{ts,tsx}` 的 runtime 文件，AST/源码守卫禁止页面级 raw color、硬编码 control radius/height、`backdropFilter`、未登记 direct Pressable。允许清单仅包含材料实现、Composer 专用几何、图片 viewer backdrop 和经注释说明的专用手势；新增例外必须在测试快照中显式审核。

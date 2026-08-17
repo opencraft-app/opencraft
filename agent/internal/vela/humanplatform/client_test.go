@@ -66,13 +66,13 @@ func TestLoginPersistsOnlyRefreshTokenAndAuthorizedRequestUsesAccessToken(t *tes
 func TestRemoteHTTPRequiresExplicitDevelopmentOverride(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "human", "session.json")
 	if _, err := NewClient(Config{
-		BaseURL:   "http://9.135.236.23",
+		BaseURL:   "http://192.0.2.10",
 		StatePath: statePath,
 	}); !errors.Is(err, ErrUnsafeBaseURL) {
 		t.Fatalf("default remote HTTP error = %v, want ErrUnsafeBaseURL", err)
 	}
 	if _, err := NewClient(Config{
-		BaseURL:           "http://9.135.236.23",
+		BaseURL:           "http://192.0.2.10",
 		StatePath:         statePath,
 		AllowInsecureHTTP: true,
 	}); err != nil {

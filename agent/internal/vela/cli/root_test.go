@@ -296,7 +296,7 @@ func TestSetupAllowsHTTPOnlyForExplicitLoopbackCanary(t *testing.T) {
 func TestTUIAllowsRemoteHTTPOnlyForExplicitDevelopmentOverride(t *testing.T) {
 	t.Parallel()
 
-	args := []string{"tui", "--platform-url", "http://9.135.236.23"}
+	args := []string{"tui", "--platform-url", "http://192.0.2.10"}
 	denied := &fakeActions{}
 	deniedRoot := newTestRoot(t, denied, &bytes.Buffer{})
 	deniedRoot.SetArgs(args)

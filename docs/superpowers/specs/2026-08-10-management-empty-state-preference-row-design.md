@@ -67,4 +67,4 @@ Automated coverage must prove:
 - The component stacks correctly in compact density.
 - No management screen introduces its own empty-state layout.
 
-Release verification uses the internal environment at `http://9.135.236.23`, with desktop and compact screenshots. The acceptance check is the absence of hero spacing, decorative icon tiles, and filled blue empty-state actions while existing creation behavior remains unchanged.
+Release verification uses the active independent k3s Web environment, with desktop and compact screenshots. The acceptance check is the absence of hero spacing, decorative icon tiles, and filled blue empty-state actions while existing creation behavior remains unchanged.
