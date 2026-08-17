@@ -9,7 +9,7 @@
     "build:core": "bun run --cwd packages/client-core build",
     "build:web": "bun run --cwd apps/client build:web",
     "security:scan": "bun run --cwd apps/client security:scan",
-    "test": "bun run --cwd packages/client-core test && bun run --cwd apps/client test",
+    "test": "bun run --cwd packages/client-core test && bun run --cwd apps/client test && bun run --cwd apps/client test:tui-build",
     "typecheck": "bun run build:core && bun run --cwd packages/client-core typecheck && bun run --cwd apps/client typecheck",
     "verify": "bun run typecheck && bun run test && bun run security:scan"
   }
