@@ -3254,6 +3254,34 @@ describe("app store", () => {
     expect(store.getState().joinLinkErrorKind).toBeNull();
   });
 
+  it("keeps an accepted membership when the required IM reconnect is unavailable", async () => {
+    const deps = dependencies();
+    deps.platform.listChannels = jest.fn(async () => [allMembersChannel]);
+    deps.platform.createHumanImSession = jest.fn(async () => {
+      throw new Error("IM 暂时无法连接");
+    });
+    const store = createAppStore(deps);
+    store.setState({
+      account,
+      authStatus: "signed_in",
+      imState: {message: "IM 身份尚未就绪", status: "error"},
+    });
+
+    const joined = await store
+      .getState()
+      .acceptJoinLink("rfi_join_link_after_registration");
+
+    expect(joined).toMatchObject({
+      landingChannelId: allMembersChannel.id,
+      serverId: server.id,
+    });
+    expect(deps.platform.acceptJoinLink).toHaveBeenCalledTimes(1);
+    expect(deps.platform.createHumanImSession).toHaveBeenCalledTimes(1);
+    expect(store.getState().currentServerId).toBe(server.id);
+    expect(store.getState().currentChannelId).toBeNull();
+    expect(store.getState().imState.status).toBe("error");
+  });
+
   it("classifies an invalid join link as terminal", async () => {
     const deps = dependencies();
     deps.platform.acceptJoinLink = jest.fn(async () => {
@@ -3269,6 +3297,23 @@ describe("app store", () => {
 
     expect(joined).toBeNull();
     expect(store.getState().joinLinkErrorKind).toBe("terminal");
+  });
+
+  it("classifies a newly registered account waiting for IM identity separately", async () => {
+    const deps = dependencies();
+    deps.platform.acceptJoinLink = jest.fn(async () => {
+      throw new PlatformError("CONFLICT", "账号 IM 身份尚未就绪", {
+        platformCode: "im_identity_not_ready",
+      });
+    });
+    const store = createAppStore(deps);
+
+    const joined = await store
+      .getState()
+      .acceptJoinLink("rfi_identity_pending_join_link_token");
+
+    expect(joined).toBeNull();
+    expect(store.getState().joinLinkErrorKind).toBe("identity_pending");
   });
 
   it("keeps transient join-link failures retryable", async () => {

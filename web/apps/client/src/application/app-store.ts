@@ -403,7 +403,7 @@ export interface AppStoreState {
   inbox: InboxItem[];
   invites: Invite[];
   imState: HumanImViewState;
-  joinLinkErrorKind: "retryable" | "terminal" | null;
+  joinLinkErrorKind: "identity_pending" | "retryable" | "terminal" | null;
   loadingChannel: boolean;
   loadingOlderMessages: boolean;
   loadingAgents: boolean;
@@ -731,22 +731,12 @@ export function createAppStore(
       const action = "join-link:accept";
       if (get().pendingAction) return null;
       set({error: null, joinLinkErrorKind: null, pendingAction: action});
+      let joined: JoinResult;
       try {
-        const joined = await dependencies.platform.acceptJoinLink(
+        joined = await dependencies.platform.acceptJoinLink(
           token.trim(),
           `${requestId()}:join-link:accept`,
         );
-        trackOperations(joined.operations, joined.memberId);
-        const servers = await dependencies.platform.listServers();
-        set({
-          joinLinkErrorKind: null,
-          pendingAction: null,
-          servers,
-          serversStatus: "ready",
-        });
-        await get().selectServer(joined.serverId);
-        await get().selectChannel(joined.landingChannelId);
-        return joined;
       } catch (error) {
         set({
           error: errorMessage(error),
@@ -754,11 +744,34 @@ export function createAppStore(
             error instanceof PlatformError &&
             error.platformCode === "invite_invalid"
               ? "terminal"
+              : error instanceof PlatformError &&
+                  error.platformCode === "im_identity_not_ready"
+                ? "identity_pending"
               : "retryable",
           pendingAction: null,
         });
         return null;
       }
+
+      trackOperations(joined.operations, joined.memberId);
+      set({joinLinkErrorKind: null, pendingAction: null});
+      try {
+        const servers = await dependencies.platform.listServers();
+        set({
+          servers,
+          serversStatus: "ready",
+        });
+        await get().selectServer(joined.serverId);
+        if (get().imState.status !== "ready") {
+          await get().reconnectIm();
+        }
+        if (get().imState.status === "ready") {
+          await get().selectChannel(joined.landingChannelId);
+        }
+      } catch (error) {
+        set({error: errorMessage(error)});
+      }
+      return joined;
     },
 
     async addChannelMember(memberId) {

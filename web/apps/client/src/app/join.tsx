@@ -2,8 +2,9 @@ import {Redirect, useRouter, type Href} from "expo-router";
 import {
   memberCanManageServer,
   selectCurrentHumanMember,
+  type JoinResult,
 } from "@vela/client-core";
-import {useEffect, useMemo, useState} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 
 import {LoadingScreen, RouteStatusScreen} from "@/ui";
 import {currentBrowserHref} from "../features/navigation/browser-navigation";
@@ -16,17 +17,49 @@ import {useAppRuntime, useAppState} from "../runtime/app-runtime";
 import {browserHostname} from "../runtime/browser-location";
 import {SessionJoinIntentStore} from "../storage/session-join-intent-store";
 
-type JoinStatus = "idle" | "processing" | "failed" | "missing";
+type JoinStatus =
+  | "accepted_chat_unavailable"
+  | "failed"
+  | "idle"
+  | "missing"
+  | "processing"
+  | "waiting_identity";
+
+const identityRetryDelaysMs = [500, 1_000, 2_000] as const;
+const identityRetryWindowMs = 30_000;
 
 export default function JoinRoute() {
   const router = useRouter();
   const {store} = useAppRuntime();
   const authStatus = useAppState((state) => state.authStatus);
   const error = useAppState((state) => state.error);
-  const joinLinkErrorKind = useAppState((state) => state.joinLinkErrorKind);
   const [prepared, setPrepared] = useState(false);
   const [status, setStatus] = useState<JoinStatus>("idle");
+  const [acceptedJoin, setAcceptedJoin] = useState<JoinResult | null>(null);
+  const [retryWindow, setRetryWindow] = useState(0);
+  const retryGeneration = useRef(0);
   const intentStore = useMemo(createBrowserJoinIntentStore, []);
+  const navigateToJoined = useCallback((joined: JoinResult) => {
+    const state = store.getState();
+    const currentMember = selectCurrentHumanMember(state.members, {
+      accountId: state.account?.id,
+      imUserId: state.account?.imUserId,
+    });
+    const needsAdministratorSetup =
+      memberCanManageServer(currentMember) &&
+      !state.agents.some((agent) => agent.observedState === "running");
+    router.replace(
+      currentBrowserHref(
+        needsAdministratorSetup
+          ? serverSetupHref(joined.serverSlug)
+          : workspaceSectionHref(
+              joined.serverSlug,
+              "chat",
+              joined.landingChannelId,
+            ),
+      ) as Href,
+    );
+  }, [router, store]);
 
   useEffect(() => {
     if (!intentStore) {
@@ -50,7 +83,6 @@ export default function JoinRoute() {
     if (
       !prepared ||
       authStatus !== "signed_in" ||
-      status !== "idle" ||
       !intentStore
     ) {
       return;
@@ -60,45 +92,68 @@ export default function JoinRoute() {
       setStatus("missing");
       return;
     }
-    setStatus("processing");
-    void store.getState().acceptJoinLink(token).then((joined) => {
-      if (!joined) {
-        if (store.getState().joinLinkErrorKind === "terminal") {
+    const generation = ++retryGeneration.current;
+    const startedAt = Date.now();
+    let retryIndex = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const current = () => retryGeneration.current === generation;
+    const wait = (delay: number) =>
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, delay);
+      });
+
+    void (async () => {
+      while (current()) {
+        setStatus("processing");
+        const joined = await store.getState().acceptJoinLink(token);
+        if (!current()) return;
+        if (joined) {
+          intentStore.clear();
+          if (store.getState().imState.status !== "ready") {
+            setAcceptedJoin(joined);
+            setStatus("accepted_chat_unavailable");
+            return;
+          }
+          navigateToJoined(joined);
+          return;
+        }
+        const errorKind = store.getState().joinLinkErrorKind;
+        if (errorKind === "terminal") {
           intentStore.clear();
           setStatus("missing");
-        } else {
-          setStatus("failed");
+          return;
         }
-        return;
+        if (
+          errorKind !== "identity_pending" ||
+          Date.now() - startedAt >= identityRetryWindowMs
+        ) {
+          setStatus("failed");
+          return;
+        }
+        setStatus("waiting_identity");
+        await wait(
+          identityRetryDelaysMs[
+            Math.min(retryIndex, identityRetryDelaysMs.length - 1)
+          ]!,
+        );
+        timer = null;
+        retryIndex += 1;
       }
-      intentStore.clear();
-      const state = store.getState();
-      const currentMember = selectCurrentHumanMember(state.members, {
-        accountId: state.account?.id,
-        imUserId: state.account?.imUserId,
-      });
-      const needsAdministratorSetup =
-        memberCanManageServer(currentMember) &&
-        !state.agents.some((agent) => agent.observedState === "running");
-      router.replace(
-        currentBrowserHref(
-          needsAdministratorSetup
-            ? serverSetupHref(joined.serverSlug)
-            : workspaceSectionHref(
-                joined.serverSlug,
-                "chat",
-                joined.landingChannelId,
-              ),
-        ) as Href,
-      );
-    });
+    })();
+
+    return () => {
+      if (retryGeneration.current === generation) {
+        retryGeneration.current += 1;
+      }
+      if (timer) clearTimeout(timer);
+    };
   }, [
     authStatus,
     intentStore,
-    joinLinkErrorKind,
+    navigateToJoined,
     prepared,
+    retryWindow,
     router,
-    status,
     store,
   ]);
 
@@ -127,8 +182,38 @@ export default function JoinRoute() {
       <RouteStatusScreen
         actionLabel="重试"
         description={error ?? "暂时无法加入 Server，请检查网络后重试。"}
-        onAction={() => setStatus("idle")}
+        onAction={() => {
+          setStatus("idle");
+          setRetryWindow((value) => value + 1);
+        }}
         title="暂时无法加入"
+      />
+    );
+  }
+  if (status === "accepted_chat_unavailable" && acceptedJoin) {
+    return (
+      <RouteStatusScreen
+        actionLabel="重新连接聊天"
+        description={error ?? "你已成功加入协作空间，可以重新连接聊天后继续。"}
+        onAction={() => {
+          const generation = retryGeneration.current;
+          setStatus("processing");
+          void store.getState().reconnectIm().then(async () => {
+            if (retryGeneration.current !== generation) return;
+            if (store.getState().imState.status !== "ready") {
+              setStatus("accepted_chat_unavailable");
+              return;
+            }
+            await store.getState().selectChannel(acceptedJoin.landingChannelId);
+            if (retryGeneration.current !== generation) return;
+            navigateToJoined(acceptedJoin);
+          }).catch(() => {
+            if (retryGeneration.current === generation) {
+              setStatus("accepted_chat_unavailable");
+            }
+          });
+        }}
+        title="已加入协作空间，但聊天尚未连接"
       />
     );
   }
