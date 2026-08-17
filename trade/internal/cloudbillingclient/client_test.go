@@ -15,11 +15,27 @@ func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
+func testCloudLadderConfig() CloudLadderConfig {
+	return CloudLadderConfig{
+		GatewayBaseURL: "http://cloudladdergateway.test",
+		RouteID:        "tcapi-billing-trade-intl-test",
+		Secret:         "cloudladder-hmac-secret",
+	}
+}
+
+func TestNewTencentCloudClientRequiresCloudLadderRouting(t *testing.T) {
+	_, err := NewTencentCloudClient(Config{})
+	if err == nil {
+		t.Fatal("NewTencentCloudClient() error = nil, want missing CloudLadder routing error")
+	}
+}
+
 func TestCreatePayURLSignsWithTemporaryCredentials(t *testing.T) {
 	var captured *http.Request
 	client, err := NewTencentCloudClient(Config{
 		Endpoint:      "billing.test.tencentcloudapi.com",
 		XQCloudUserID: "800000294207",
+		CloudLadder:   testCloudLadderConfig(),
 		HTTPTransport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			captured = req.Clone(req.Context())
 			return &http.Response{
@@ -52,6 +68,9 @@ func TestCreatePayURLSignsWithTemporaryCredentials(t *testing.T) {
 	}
 	if got := captured.Header.Get(headerXQCloudUserID); got != "800000294207" {
 		t.Fatalf("%s = %q", headerXQCloudUserID, got)
+	}
+	if got := captured.Header.Get(headerCloudLadderCaller); got != cloudLadderCaller {
+		t.Fatalf("%s = %q, want %q", headerCloudLadderCaller, got, cloudLadderCaller)
 	}
 	if resp.URL != "https://buy.cloud.tencent.com/v1/r/1450008583/qz_goods_info?token_id=E-1" {
 		t.Fatalf("URL = %q", resp.URL)
@@ -120,9 +139,13 @@ func TestDescribeOrderListDecodesNestedOrderInfos(t *testing.T) {
 	client, err := NewTencentCloudClient(Config{
 		Endpoint:      "billing.test.tencentcloudapi.com",
 		XQCloudUserID: "800000294207",
+		CloudLadder:   testCloudLadderConfig(),
 		HTTPTransport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			if got := req.URL.Host; got != "billing.test.tencentcloudapi.com" {
+			if got := req.URL.Host; got != "cloudladdergateway.test" {
 				t.Fatalf("host = %q", got)
+			}
+			if got := req.Header.Get(headerCloudLadderSignedHost); got != "billing.test.tencentcloudapi.com" {
+				t.Fatalf("signed host = %q", got)
 			}
 			if got := req.Header["X-TC-Action"]; len(got) != 1 || got[0] != "DescribeOrderList" {
 				t.Fatalf("X-TC-Action = %v", got)

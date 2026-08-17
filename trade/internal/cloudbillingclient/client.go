@@ -20,6 +20,7 @@ const (
 	defaultBillingRegion   = "ap-guangzhou"
 	defaultBillingEndpoint = "billing.tencentcloudapi.com"
 	defaultRequestTimeout  = 10 * time.Second
+	cloudLadderCaller      = "lightvela-trade"
 	headerXQCloudUserID    = "X-Qcloud-User-Id"
 )
 
@@ -30,26 +31,22 @@ type Client interface {
 }
 
 type Config struct {
-	XQCloudUserID  string
-	Region         string
-	Endpoint       string
-	RequestTimeout time.Duration
-	CloudLadder    CloudLadderConfig
-	HTTPTransport  http.RoundTripper
+	XQCloudUserID string
+	Region        string
+	Endpoint      string
+	CloudLadder   CloudLadderConfig
+	HTTPTransport http.RoundTripper
 }
 
 type CloudLadderConfig struct {
-	Enabled        bool
 	GatewayBaseURL string
 	RouteID        string
-	Caller         string
 	Secret         string
 }
 
 type TencentCloudClient struct {
 	region        string
 	endpoint      string
-	timeout       time.Duration
 	transport     http.RoundTripper
 	xQCloudUserID string
 }
@@ -69,11 +66,6 @@ func NewTencentCloudClient(cfg Config) (*TencentCloudClient, error) {
 	if endpoint == "" {
 		endpoint = defaultBillingEndpoint
 	}
-	timeout := cfg.RequestTimeout
-	if timeout <= 0 {
-		timeout = defaultRequestTimeout
-	}
-
 	baseTransport := cfg.HTTPTransport
 	if baseTransport == nil {
 		baseTransport = http.DefaultTransport
@@ -85,23 +77,16 @@ func NewTencentCloudClient(cfg Config) (*TencentCloudClient, error) {
 	return &TencentCloudClient{
 		region:        region,
 		endpoint:      endpoint,
-		timeout:       timeout,
 		transport:     transport,
 		xQCloudUserID: strings.TrimSpace(cfg.XQCloudUserID),
 	}, nil
 }
 
 func newCloudLadderTransport(cfg CloudLadderConfig, base http.RoundTripper) (http.RoundTripper, error) {
-	if !cfg.Enabled {
-		if base != nil {
-			return base, nil
-		}
-		return http.DefaultTransport, nil
-	}
 	return newCloudLadderRoundTripper(cloudLadderTransportOptions{
 		gatewayBaseURL: cfg.GatewayBaseURL,
 		routeID:        cfg.RouteID,
-		caller:         cfg.Caller,
+		caller:         cloudLadderCaller,
 		secret:         cfg.Secret,
 		base:           base,
 	})
@@ -141,10 +126,7 @@ func (c *TencentCloudClient) CreatePayURL(ctx context.Context, credentials Tempo
 	}
 	cpf := profile.NewClientProfile()
 	cpf.HttpProfile.Endpoint = c.endpoint
-	cpf.HttpProfile.ReqTimeout = int(c.timeout / time.Second)
-	if cpf.HttpProfile.ReqTimeout < 1 {
-		cpf.HttpProfile.ReqTimeout = 1
-	}
+	cpf.HttpProfile.ReqTimeout = int(defaultRequestTimeout / time.Second)
 	client := common.NewCommonClient(common.NewTokenCredential(secretID, secretKey, token), c.region, cpf)
 	client.WithHttpTransport(c.transport)
 	resp := tchttp.NewCommonResponse()

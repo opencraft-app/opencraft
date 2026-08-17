@@ -233,17 +233,11 @@ func TestLoad_BillingCloudAPIIgnoresShadowCredentialFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.BillingCloudAPICloudLadderEnabled {
-		t.Fatalf("BillingCloudAPICloudLadderEnabled = true, want false")
-	}
 	if cfg.BillingCloudAPICloudLadderGatewayURL != "" {
 		t.Fatalf("BillingCloudAPICloudLadderGatewayURL = %q", cfg.BillingCloudAPICloudLadderGatewayURL)
 	}
 	if cfg.BillingCloudAPICloudLadderRouteID != "tcapi-billing-trade-intl-test" {
 		t.Fatalf("BillingCloudAPICloudLadderRouteID default = %q", cfg.BillingCloudAPICloudLadderRouteID)
-	}
-	if cfg.BillingCloudAPICloudLadderCaller != "lightvela-trade" {
-		t.Fatalf("BillingCloudAPICloudLadderCaller default = %q", cfg.BillingCloudAPICloudLadderCaller)
 	}
 	if cfg.BillingCloudAPICloudLadderHMACSecret != "" {
 		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
@@ -259,11 +253,8 @@ func TestLoad_BillingCloudAPIUsesTradeRoutingConfig(t *testing.T) {
 	t.Setenv("TRADE_BILLING_SECRET_KEY", "trade-billing-secret-key")
 	t.Setenv("TRADE_BILLING_ENDPOINT", "billing.dev.tencentcloudapi.com")
 	t.Setenv("TRADE_BILLING_REGION", "ap-singapore")
-	t.Setenv("TRADE_BILLING_REQUEST_TIMEOUT", "3s")
-	t.Setenv("TRADE_BILLING_CLOUDLADDER_ENABLED", "true")
 	t.Setenv("TRADE_BILLING_CLOUDLADDER_GATEWAY_BASE_URL", "http://trade-clgateway.test")
 	t.Setenv("TRADE_BILLING_CLOUDLADDER_ROUTE_ID", "tcapi-billing-intl-dev")
-	t.Setenv("TRADE_BILLING_CLOUDLADDER_CALLER", "lightvela-trade")
 	t.Setenv("TRADE_BILLING_PAY_REDIRECT_URL", "  https://sandbox-kr-1.lightclaw.tech/subscribe  ")
 	t.Setenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", "trade-hmac")
 	t.Setenv("TRADE_BILLING_X_QCLOUD_USER_ID", "")
@@ -279,17 +270,11 @@ func TestLoad_BillingCloudAPIUsesTradeRoutingConfig(t *testing.T) {
 	if cfg.BillingCloudAPIRegion != "ap-singapore" {
 		t.Fatalf("BillingCloudAPIRegion = %q", cfg.BillingCloudAPIRegion)
 	}
-	if cfg.BillingCloudAPIRequestTimeout.String() != "3s" {
-		t.Fatalf("BillingCloudAPIRequestTimeout = %s", cfg.BillingCloudAPIRequestTimeout)
-	}
 	if cfg.BillingCloudAPICloudLadderGatewayURL != "http://trade-clgateway.test" {
 		t.Fatalf("BillingCloudAPICloudLadderGatewayURL = %q", cfg.BillingCloudAPICloudLadderGatewayURL)
 	}
 	if cfg.BillingCloudAPICloudLadderRouteID != "tcapi-billing-intl-dev" {
 		t.Fatalf("BillingCloudAPICloudLadderRouteID = %q", cfg.BillingCloudAPICloudLadderRouteID)
-	}
-	if cfg.BillingCloudAPICloudLadderCaller != "lightvela-trade" {
-		t.Fatalf("BillingCloudAPICloudLadderCaller = %q", cfg.BillingCloudAPICloudLadderCaller)
 	}
 	if cfg.BillingCloudAPIPayRedirectURL != "https://sandbox-kr-1.lightclaw.tech/subscribe" {
 		t.Fatalf("BillingCloudAPIPayRedirectURL = %q", cfg.BillingCloudAPIPayRedirectURL)

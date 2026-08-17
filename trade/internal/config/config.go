@@ -74,11 +74,8 @@ type Config struct {
 	// 按订单用户即时签发，这里只保留 Billing endpoint 与 CloudLadder 路由配置。
 	BillingCloudAPIRegion                string
 	BillingCloudAPIEndpoint              string
-	BillingCloudAPIRequestTimeout        time.Duration
-	BillingCloudAPICloudLadderEnabled    bool
 	BillingCloudAPICloudLadderGatewayURL string
 	BillingCloudAPICloudLadderRouteID    string
-	BillingCloudAPICloudLadderCaller     string
 	BillingCloudAPICloudLadderHMACSecret string
 	BillingCloudAPIXQCloudUserID         string
 	BillingCloudAPIPayRedirectURL        string
@@ -168,16 +165,10 @@ func Load() (Config, error) {
 			os.Getenv("TRADE_BILLING_ENDPOINT"),
 			"billing.tencentcloudapi.com",
 		),
-		BillingCloudAPIRequestTimeout:        parseDurationEnv("TRADE_BILLING_REQUEST_TIMEOUT", 10*time.Second),
-		BillingCloudAPICloudLadderEnabled:    parseBoolEnv("TRADE_BILLING_CLOUDLADDER_ENABLED"),
 		BillingCloudAPICloudLadderGatewayURL: strings.TrimSpace(os.Getenv("TRADE_BILLING_CLOUDLADDER_GATEWAY_BASE_URL")),
 		BillingCloudAPICloudLadderRouteID: firstNonEmpty(
 			os.Getenv("TRADE_BILLING_CLOUDLADDER_ROUTE_ID"),
 			"tcapi-billing-trade-intl-test",
-		),
-		BillingCloudAPICloudLadderCaller: firstNonEmpty(
-			os.Getenv("TRADE_BILLING_CLOUDLADDER_CALLER"),
-			"lightvela-trade",
 		),
 		BillingCloudAPICloudLadderHMACSecret: strings.TrimSpace(os.Getenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET")),
 		BillingCloudAPIXQCloudUserID: firstNonEmpty(

@@ -61,16 +61,12 @@ data:
   JIFEI_BILLING_APIGW_URL: ""
 
   # --- 国际站支付链接 CloudAPI（CreatePayUrl）---
-  # 非敏感项由 trade-platform.env 注入；密钥 TRADE_BILLING_SECRET_ID /
-  # TRADE_BILLING_SECRET_KEY / TRADE_BILLING_CLOUDLADDER_HMAC_SECRET 走
-  # trade-runtime-secrets。国内站环境保持空字符串，运行时不会装配该 client。
+  # 非敏感项由 trade-platform.env 注入；CloudLadder HMAC 密钥走
+  # trade-runtime-secrets。国际站 Billing client 固定经 CloudLadder 出向。
   TRADE_BILLING_ENDPOINT: ""
   TRADE_BILLING_REGION: ""
-  TRADE_BILLING_REQUEST_TIMEOUT: ""
-  TRADE_BILLING_CLOUDLADDER_ENABLED: ""
   TRADE_BILLING_CLOUDLADDER_GATEWAY_BASE_URL: ""
   TRADE_BILLING_CLOUDLADDER_ROUTE_ID: ""
-  TRADE_BILLING_CLOUDLADDER_CALLER: ""
 
   # TRADE_SHADOW_MOCK_ENABLED（v1.7.28 BUG-02 修复 / 新增）：仅联调测试环境启用
   # （"true"/"1"/"yes"/"on"，大小写不敏感），现网必须为 "false"/"0"/空字符串。

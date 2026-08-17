@@ -89,15 +89,12 @@ func main() {
 	var cloudBillingClient cloudbillingclient.Client
 	if cfg.SiteKind == "intl" {
 		billingClient, billingErr := cloudbillingclient.NewTencentCloudClient(cloudbillingclient.Config{
-			Region:         cfg.BillingCloudAPIRegion,
-			Endpoint:       cfg.BillingCloudAPIEndpoint,
-			RequestTimeout: cfg.BillingCloudAPIRequestTimeout,
-			XQCloudUserID:  cfg.BillingCloudAPIXQCloudUserID,
+			Region:        cfg.BillingCloudAPIRegion,
+			Endpoint:      cfg.BillingCloudAPIEndpoint,
+			XQCloudUserID: cfg.BillingCloudAPIXQCloudUserID,
 			CloudLadder: cloudbillingclient.CloudLadderConfig{
-				Enabled:        cfg.BillingCloudAPICloudLadderEnabled,
 				GatewayBaseURL: cfg.BillingCloudAPICloudLadderGatewayURL,
 				RouteID:        cfg.BillingCloudAPICloudLadderRouteID,
-				Caller:         cfg.BillingCloudAPICloudLadderCaller,
 				Secret:         cfg.BillingCloudAPICloudLadderHMACSecret,
 			},
 		})

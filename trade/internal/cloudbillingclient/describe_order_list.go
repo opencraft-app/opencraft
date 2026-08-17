@@ -47,10 +47,7 @@ func (c *TencentCloudClient) DescribeOrderList(ctx context.Context, credentials 
 	}
 	cpf := profile.NewClientProfile()
 	cpf.HttpProfile.Endpoint = c.endpoint
-	cpf.HttpProfile.ReqTimeout = int(c.timeout.Seconds())
-	if cpf.HttpProfile.ReqTimeout < 1 {
-		cpf.HttpProfile.ReqTimeout = 1
-	}
+	cpf.HttpProfile.ReqTimeout = int(defaultRequestTimeout.Seconds())
 	client := common.NewCommonClient(common.NewTokenCredential(secretID, secretKey, token), c.region, cpf)
 	client.WithHttpTransport(c.transport)
 	resp := tchttp.NewCommonResponse()

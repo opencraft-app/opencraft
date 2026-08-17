@@ -137,6 +137,48 @@ replacements:
           name: trade-config
         fieldPaths:
           - data.JIFEI_BILLING_APIGW_URL
+  # 国际站 Billing CloudAPI 固定通过 CloudLadder 出向。common 只负责字段投影，
+  # endpoint / region / gateway / route 的真实值仍由各环境 trade-platform.env 提供。
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_BILLING_ENDPOINT
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_BILLING_ENDPOINT
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_BILLING_REGION
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_BILLING_REGION
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_BILLING_CLOUDLADDER_GATEWAY_BASE_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_BILLING_CLOUDLADDER_GATEWAY_BASE_URL
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_BILLING_CLOUDLADDER_ROUTE_ID
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_BILLING_CLOUDLADDER_ROUTE_ID
   # TRADE_SHADOW_MOCK_ENABLED (v1.7.28 BUG-02 修复):
   #   仅联调测试环境启用 ("true" / "1" / "yes" / "on"); 现网部署必须为 "false" / "0" / 空字符串
   #   启用后 trade 启动时改注入 mockShadowClient (cmd/trade/shadow_mock.go), 任意 externalUserId
