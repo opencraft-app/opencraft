@@ -57,8 +57,8 @@ func TestStoreIssueAndValidate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	if !strings.HasPrefix(token, "vwk_") {
-		t.Fatalf("token = %q, want vwk_ prefix", token)
+	if !strings.HasPrefix(token, "vik_") {
+		t.Fatalf("token = %q, want vik_ prefix", token)
 	}
 	if issued.KeyID == "" || issued.UserID != "user-1" || issued.InstanceID != "ins-1" || issued.CreatedAt.IsZero() {
 		t.Fatalf("issued binding = %+v", issued)
@@ -120,9 +120,9 @@ func TestStoreRejectsMalformedAndWrongSecret(t *testing.T) {
 	cases := []string{
 		"",
 		"Bearer abc",
-		"vwk_too_few",
-		"vwk_***_***",
-		"vwk_" + binding.KeyID + "_" + strings.Repeat("A", base64.RawURLEncoding.EncodedLen(secretBytes)),
+		"vik_too_few",
+		"vik_***_***",
+		"vik_" + binding.KeyID + "_" + strings.Repeat("A", base64.RawURLEncoding.EncodedLen(secretBytes)),
 	}
 	for _, candidate := range cases {
 		if _, err := store.Validate(ctx, candidate); !errors.Is(err, ErrInvalidCredential) {
