@@ -27,19 +27,34 @@ Initial internal routes:
 - `/computer-releases/**` — anonymous read-only Computer channel and artifact access;
 - `/ops/computer-updates/**` — internal operations page and mutation API.
 
-The first version has no login screen and no Human/Server role integration. The operations surface is reachable only
-through an internal Ingress allowlist, rejects cross-origin requests, exposes no CORS, validates Host/Origin and writes
-an audit record for every channel mutation. Server owners and admins have no upgrade controls. A later enterprise SSO
-layer can authenticate platform operators without changing the channel or Computer protocol.
+The first version has no login screen and no Human/Server role integration. Anonymous access applies only to the
+read-only Computer surface. The operations surface is protected by internal Ingress mTLS with a dedicated operator
+client certificate, an internal CIDR allowlist and a NetworkPolicy that accepts traffic only from the Ingress. Ingress
+strips any inbound identity header and injects a verified operator certificate fingerprint. The service accepts an
+operations mutation only from the Ingress source with that verified header, rejects cross-origin requests, exposes no
+CORS, validates Host/Origin and writes an audit record for every channel mutation. This is invisible network-layer
+authentication, not an application login. Server owners and admins have no upgrade controls. A later enterprise SSO
+layer can replace the mTLS operator identity without changing the channel or Computer protocol.
+
+Implementation starts by adding a dedicated machine contract at
+`backend/platform/v1/computer-update.openapi.yaml`, before any handler, service or Computer client code. That new
+contract defines the anonymous Computer read surface, mTLS-proxied operations surface, stable error registry, request
+limits, cache headers and generated Go client/server types. The same first implementation wave adds
+`backend/internal/api/computerupdate/`, generation configuration, contract tests and an immutable OpenAPI release
+baseline plus compatibility gate. These artifacts do not exist before this feature is implemented; their creation is
+the OpenAPI-first prerequisite, not an assumption that they already exist. The existing platform and bootstrap OpenAPI
+files do not absorb these routes.
 
 ## Minimal channel model
 
 The service owns only two named pointers: `stable` and `canary`. Each channel/target record is a small canonical JSON
 document persisted under a private state directory using temporary-file write, fsync and atomic rename. A single
-replica with a retained PVC is sufficient for the first internal deployment; no new business database or shared
-chatserver tables are introduced.
+replica with a retained RWO PVC is sufficient for the first internal deployment; no new business database or shared
+chatserver tables are introduced. The Deployment uses `Recreate`, and the process holds an exclusive advisory lock on
+the channel state directory for its full lifetime. Every mutation also uses a generation compare-and-swap under that
+lock. A second writer fails startup instead of relying on PVC or file atomicity as a writer fence.
 
-The signed descriptor contains:
+The descriptor payload contains:
 
 ```json
 {
@@ -68,9 +83,39 @@ Computer reads one anonymous endpoint such as:
 
 `GET /computer-releases/stable/linux-amd64`
 
-The response contains the descriptor, its signature, and short-lived download URLs for the catalog/artifacts. URLs are
-transport locations, not trust anchors. They may be generic presigned COS URLs because the release artifacts are not
-secrets. The Computer authenticates all downloaded bytes by digest and signature.
+The exact response envelope is:
+
+```json
+{
+  "schemaVersion": 1,
+  "payload": "BASE64URL_EXACT_DESCRIPTOR_BYTES",
+  "signature": {
+    "algorithm": "ed25519",
+    "keyId": "computer-channel-2026-08",
+    "value": "BASE64URL_SIGNATURE"
+  },
+  "downloads": {
+    "catalogUrl": "https://...",
+    "manifestUrl": "https://...",
+    "manifestSignatureUrl": "https://...",
+    "programUrl": "https://...",
+    "expiresAt": "2026-08-17T14:10:00Z"
+  }
+}
+```
+
+The service signs the exact UTF-8 descriptor bytes and transports them as unpadded base64url, avoiding ambiguous JSON
+re-canonicalization in Computer. Decoded payload must be canonical compact JSON emitted from a fixed struct with the
+field order shown above, no unknown fields and no insignificant whitespace. The signature never covers temporary
+download URLs. URLs are transport locations, not trust anchors; they expire between 2 and 15 minutes, use HTTPS COS
+hosts from an explicit allowlist, contain no Computer identity and are returned with `Cache-Control: no-store`. The
+channel endpoint itself also uses `no-store` and an ETag equal to the descriptor digest. Computer authenticates every
+downloaded byte by digest and signature.
+
+Operations mutations use `If-Match` with the current channel sequence and return conflict on stale writes. Stable error
+codes include `invalid_channel`, `invalid_target`, `release_not_found`, `release_incomplete`, `revision_conflict`,
+`channel_signing_unavailable` and `update_storage_unavailable`. Promoting a release first runs the existing complete
+Release Set verification and requires exactly the formally supported target set before any channel file changes.
 
 ## Trust model
 
@@ -140,9 +185,22 @@ The bundled TAT source provides the useful concurrency model:
 - executing tasks and TSSH sessions hold a restart-prevention read guard;
 - a restart/updater obtains the exclusive write guard only after active work exits.
 
-Vela applies the same model to all process-owned activity. Agent Runtime work, secure terminal sessions and embedded
-TAT tasks hold activity leases. The updater marks `waiting_for_idle`, stops admitting new long-running work, then waits
-for the exclusive lease. Normal update never kills active work.
+Vela introduces one Go-owned `ActivityGate` as the cross-platform authority. A lease is held only for an active unit of
+work, not for an idle long-lived Runtime process or a passive Human TUI connection:
+
+- one Agent Runtime turn holds a lease from accepted prompt until terminal completion/error;
+- one secure terminal/TSSH session holds a lease for its session lifetime;
+- one embedded TAT task holds a lease from accepted task until its terminal report;
+- background reconciliation and idle app-server processes do not hold a lease.
+
+The embedded TAT library adds a narrow callback/ABI hook that asks the Go gate before accepting a task/TSSH session and
+releases the returned lease at completion. This replaces the platform-specific write side as Vela's update authority;
+the existing Rust read guards remain internal defense in depth. The same Go gate works on macOS, where the Rust
+`acquire_restart_lock` function is not compiled.
+
+The updater changes the gate to draining, so new long-running work is not admitted; IM messages remain durably
+recoverable from Tencent history and assignments remain authoritative. It then marks `waiting_for_idle` and waits for
+all leases to exit. Normal update never kills active work.
 
 The vendored TAT `CheckUpdate` transport and MD5 response are not reused. They are not wired into a complete updater
 and are weaker than Vela's signed Release Set.
@@ -151,11 +209,27 @@ and are weaker than Vela's signed Release Set.
 
 `vela-computer` remains the only installed binary. The daemon starts a temporary helper mode from the same executable:
 
-`vela-computer upgrade apply --journal ...`
+`vela-computer upgrade apply --state-dir ABSOLUTE_PATH --transaction-id UUIDV7 --parent-pid PID`
 
 The daemon first stages the verified program on the same filesystem and writes a versioned `upgrade.journal.json` with
 current/new version, hashes, paths and phase. After acquiring the activity gate it starts the helper and exits
 gracefully. The already-running helper can continue even while the on-disk executable is replaced.
+
+The internal CLI surface is explicit and not a general arbitrary-path tool. `upgrade apply` is hidden from normal help,
+requires an absolute canonical state root, validates that every path resolves beneath that root, rejects symlinks and
+requires the transaction directory, journal, helper and programs to be owned by the installed service user with modes
+0700/0600 as appropriate.
+
+`upgrade.journal.json` schema v1 contains:
+
+- `schemaVersion`, `transactionId`, `phase`, `attempt`, `startedAt`, `lastTransitionAt`;
+- `fromVersion`, `fromProgramSHA256`, `toVersion`, `toProgramSHA256`, `target`;
+- state-root-relative `stagedProgram`, `helperProgram`, `backupProgram`, `backupInstallJournal`;
+- optional stable `errorCode` only.
+
+Phases are `staged`, `waiting_for_idle`, `helper_started`, `daemon_stopped`, `program_swapped`, `service_started`,
+`healthy`, `rollback_started`, `rolled_back`, and `failed`. Each phase transition is fsynced before its side effect or,
+where necessary, immediately after an idempotently detectable atomic operation.
 
 Helper sequence:
 
@@ -164,15 +238,43 @@ Helper sequence:
 3. copy the currently running healthy binary/journal into a versioned backup directory;
 4. fsync staged files and atomically rename the program into the canonical path;
 5. update install journal version/hash without changing Computer identity or credentials;
-6. restart through a platform adapter: systemd on Linux, launchd on macOS;
-7. wait for a health marker written by the new daemon after local initialization, TAT startup, Assignment reconciliation
-   and one accepted platform heartbeat;
+6. restart through the platform-specific helper adapter;
+7. wait for `update/transactions/<id>/healthy.json`, written by the new daemon only when the running executable hash and
+   version match the journal, local initialization and TAT startup completed, an Assignment snapshot reconciled without
+   error, and `HeartbeatSink.Send` returned success once for the new version;
 8. on timeout or invalid health evidence, restore the previous binary/journal atomically and restart it;
 9. retain the last healthy backup and bounded failure evidence; remove older staging data.
 
-Power loss or process death at every journal phase must be recoverable on the next service-manager start. The main
-daemon performs startup recovery before starting Agent cells. At no time may the canonical path contain a partial
-binary.
+Power loss or process death at every journal phase must be recoverable on the next service-manager start. Before
+starting Agent cells, daemon startup reads the journal: pre-swap phases discard or resume safe staging; swapped/restart
+phases validate the canonical hash and resume health monitoring; rollback phases finish restoration. Unknown schema,
+unknown phase or inconsistent hashes fail closed without deleting the backup. At no time may the canonical path
+contain a partial binary.
+
+### Linux systemd
+
+The helper must not remain inside the main unit cgroup. The daemon copies its current healthy executable into the
+transaction directory and starts it using a root-owned transient systemd unit
+`vela-computer-upgrade-<transaction>.service`. That helper stops `vela-computer.service`, swaps files, starts the main
+unit and watches the health marker. If the new unit flaps or times out, it stops the main unit, restores the backup,
+runs `systemctl reset-failed`, starts the old unit and verifies its version/hash before exiting. The transient unit is
+collected only after healthy success or verified rollback.
+
+### macOS per-user LaunchAgent
+
+macOS uses exactly the existing per-user model; no LaunchDaemon or system domain is introduced. The installed main
+label remains `com.agentnetwork.vela.computer`, its definition remains
+`$HOME/Library/LaunchAgents/com.agentnetwork.vela.computer.plist`, and all launchctl operations use the current
+non-root user's `gui/<uid>` domain. The daemon and helper must have the same effective UID/GID and canonical home.
+
+The daemon writes a private transient LaunchAgent definition at
+`$HOME/Library/LaunchAgents/com.agentnetwork.vela.computer.upgrade.<transaction-id>.plist` for the copied healthy helper
+executable and runs `launchctl bootstrap gui/<uid> <plist>`. The helper addresses the main service as
+`gui/<uid>/com.agentnetwork.vela.computer`, bootouts it before swapping, then bootstraps the unchanged main plist and
+observes the loaded program identity plus the health marker. On failure it bootouts the new main job before restoring,
+then bootstraps and verifies the old job. After success or verified rollback it bootouts its own transaction-specific
+service, removes only its own plist/lock and exits. It never writes `/Library/LaunchDaemons`, never requires root and
+does not rely on orphan children surviving main-job teardown or on `EnsureLoaded` alone as a rollback transaction.
 
 ## Local durable state
 
@@ -212,10 +314,24 @@ v0.1.50 is the last manually upgraded release and does not participate in unatte
    power-loss-at-each-phase faults; every unsafe case must keep or restore a healthy signed binary;
 6. promote v0.1.52 to stable only after the canary proof.
 
+Every live proof writes a credential-safe bundle under
+`~/.vela/self-update-evidence/<from>-to-<to>/<target>/<timestamp>/` containing:
+
+- descriptor payload/signature digests and Release Set verification output;
+- before/after program version, SHA-256, file identity and service-manager state;
+- sanitized update journal transitions and helper/main PIDs;
+- accepted-heartbeat request ID plus Backend projection of the new daemon version;
+- stable hashes/counts proving Computer ID, credential metadata, Agent workspace, message cursor and Runtime Home were
+  preserved, without copying their secret contents;
+- injected-fault name, expected rollback phase, restored version/hash and final health evidence;
+- a summary JSON with commit, release versions, target, result and timestamps.
+
 ## Verification gates
 
 - canonical descriptor and signature golden tests;
 - channel sequence monotonicity, atomic persistence and concurrent mutation tests;
+- Recreate/RWO/exclusive-writer-lock deployment and second-writer rejection tests;
+- dedicated Computer Update OpenAPI generation, release-lock, auth-domain and compatibility tests;
 - strict path/target validation, no CORS and Host/Origin rejection tests;
 - channel-key and release-key separation tests;
 - Computer poll jitter/backoff/cache tests;
@@ -224,6 +340,7 @@ v0.1.50 is the last manually upgraded release and does not participate in unatte
 - activity-gate tests covering Agent Runtime, terminal and TAT task leases;
 - updater journal crash matrix for every transition;
 - Linux systemd and macOS launchd N/N+1 success and rollback integration tests;
+- health-marker authenticity and stale/wrong-transaction marker rejection tests;
 - live v0.1.51 -> v0.1.52 canary with no setup command, preserved Computer identity/workspace and accepted heartbeat;
 - full Backend, Agent, race, generated-contract, migration-lock and credential-scan gates.
 
