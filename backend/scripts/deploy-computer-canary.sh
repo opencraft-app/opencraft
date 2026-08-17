@@ -16,6 +16,7 @@ signing_key_id=
 signing_private_key=
 signing_public_key=
 update_channel_url=
+allow_insecure_update_http=false
 channel_signing_key_id=
 channel_signing_public_key=
 release_output=
@@ -39,6 +40,7 @@ usage() {
   --signing-private-key /secure/path/release.private \
   --signing-public-key /secure/path/release.public \
   --update-channel-url https://computer-update.internal.example \
+  [--allow-insecure-update-http] \
   --channel-signing-key-id computer-channel-2026-08 \
   --channel-signing-public-key /secure/path/channel.public \
   --release-output /absolute/path/to/release-evidence \
@@ -111,6 +113,7 @@ while [ "$#" -gt 0 ]; do
     --signing-private-key) [ "$#" -ge 2 ] || fail "--signing-private-key 缺少值"; signing_private_key=$2; shift 2 ;;
     --signing-public-key) [ "$#" -ge 2 ] || fail "--signing-public-key 缺少值"; signing_public_key=$2; shift 2 ;;
     --update-channel-url) [ "$#" -ge 2 ] || fail "--update-channel-url 缺少值"; update_channel_url=$2; shift 2 ;;
+    --allow-insecure-update-http) allow_insecure_update_http=true; shift ;;
     --channel-signing-key-id) [ "$#" -ge 2 ] || fail "--channel-signing-key-id 缺少值"; channel_signing_key_id=$2; shift 2 ;;
     --channel-signing-public-key) [ "$#" -ge 2 ] || fail "--channel-signing-public-key 缺少值"; channel_signing_public_key=$2; shift 2 ;;
     --release-output) [ "$#" -ge 2 ] || fail "--release-output 缺少值"; release_output=$2; shift 2 ;;
@@ -144,7 +147,11 @@ done
 printf '%s\n' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)*$' || fail "version 必须是不可变语义版本"
 case "$signing_key_id" in *[!A-Za-z0-9._-]*|'') fail "signing-key-id 无效" ;; esac
 case "$channel_signing_key_id" in *[!A-Za-z0-9._-]*|'') fail "channel-signing-key-id 无效" ;; esac
-case "$update_channel_url" in https://[A-Za-z0-9]* ) ;; *) fail "update-channel-url 必须是 HTTPS" ;; esac
+case "$update_channel_url" in
+  https://[A-Za-z0-9]*) [ "$allow_insecure_update_http" = false ] || fail "HTTPS update channel 不得保留 insecure HTTP 标记" ;;
+  http://9.135.236.64) [ "$allow_insecure_update_http" = true ] || fail "DevCloud HTTP update channel 必须显式启用" ;;
+  *) fail "update-channel-url 必须是 HTTPS 或获批的 DevCloud Backend URL" ;;
+esac
 case "$update_channel_url" in *[!A-Za-z0-9.:/_-]*|*'?'*|*'#'* ) fail "update-channel-url 无效" ;; esac
 case "$bucket" in *[!a-z0-9-]*|'') fail "bucket 无效" ;; esac
 case "$region" in *[!a-z0-9-]*|'') fail "region 无效" ;; esac
@@ -244,9 +251,16 @@ echo "[4/8] 构建 macOS ARM64 与 Linux AMD64 双目标二进制……"
 mac_agent_binary="$temporary_root/vela-computer-darwin-arm64"
 linux_agent_binary="$temporary_root/vela-computer-linux-amd64"
 linux_build_metadata="$temporary_root/linux-buildx-metadata.json"
+update_http_arg=
+if [ "$allow_insecure_update_http" = true ]; then
+  update_http_arg=--allow-insecure-update-http
+fi
+# update_http_arg is either empty or the constant flag above.
+# shellcheck disable=SC2086
 "$agent_source/scripts/build-vela-macos-arm64.sh" \
   --version "$version" --output "$mac_agent_binary" \
   --update-channel-url "$update_channel_url" \
+  $update_http_arg \
   --channel-key-id "$channel_signing_key_id" \
   --channel-public-key "$channel_public_key_value" \
   --release-key-id "$signing_key_id" \
@@ -260,7 +274,7 @@ COPYFILE_DISABLE=1 tar --no-xattrs --exclude='./native/tat-agent/target' --exclu
   ssh -o BatchMode=yes -p "$linux_builder_port" "$linux_builder_host" \
     "tar -xzf - -C '$remote_build_root'"
 ssh -o BatchMode=yes -p "$linux_builder_port" "$linux_builder_host" \
-  "'$remote_build_root/scripts/build-vela-linux-amd64-buildx.sh' --version '$version' --output '$remote_build_root/vela-computer-linux-amd64' --metadata '$remote_build_root/buildx-metadata.json' --update-channel-url '$update_channel_url' --channel-key-id '$channel_signing_key_id' --channel-public-key '$channel_public_key_value' --release-key-id '$signing_key_id' --release-public-key '$release_public_key_value'"
+  "'$remote_build_root/scripts/build-vela-linux-amd64-buildx.sh' --version '$version' --output '$remote_build_root/vela-computer-linux-amd64' --metadata '$remote_build_root/buildx-metadata.json' --update-channel-url '$update_channel_url' $update_http_arg --channel-key-id '$channel_signing_key_id' --channel-public-key '$channel_public_key_value' --release-key-id '$signing_key_id' --release-public-key '$release_public_key_value'"
 scp -P "$linux_builder_port" "$linux_builder_host:$remote_build_root/vela-computer-linux-amd64" "$linux_agent_binary" >/dev/null
 scp -P "$linux_builder_port" "$linux_builder_host:$remote_build_root/buildx-metadata.json" "$linux_build_metadata" >/dev/null
 file "$linux_agent_binary" | grep -Eq 'ELF 64-bit.*x86-64' || fail "Linux 构建产物目标错误"

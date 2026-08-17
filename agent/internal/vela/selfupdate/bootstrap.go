@@ -7,12 +7,13 @@ import (
 )
 
 type BootstrapConfig struct {
-	ChannelURL       string
-	Channel          string
-	ChannelKeyID     string
-	ChannelPublicKey string
-	ReleaseKeyID     string
-	ReleasePublicKey string
+	ChannelURL        string
+	Channel           string
+	ChannelKeyID      string
+	ChannelPublicKey  string
+	ReleaseKeyID      string
+	ReleasePublicKey  string
+	AllowInsecureHTTP bool
 }
 
 type ResolvedBootstrap struct {
@@ -21,6 +22,7 @@ type ResolvedBootstrap struct {
 	ChannelKeyID      string
 	ChannelPublicKey  ed25519.PublicKey
 	ReleasePublicKeys map[string]ed25519.PublicKey
+	AllowInsecureHTTP bool
 }
 
 func ResolveBootstrap(config BootstrapConfig) (ResolvedBootstrap, bool, error) {
@@ -35,13 +37,16 @@ func ResolveBootstrap(config BootstrapConfig) (ResolvedBootstrap, bool, error) {
 		}
 	}
 	if nonempty == 0 {
+		if config.AllowInsecureHTTP {
+			return ResolvedBootstrap{}, false, ErrPollerInvalid
+		}
 		return ResolvedBootstrap{}, false, nil
 	}
 	if nonempty != len(values) || (config.Channel != "stable" && config.Channel != "canary") ||
 		!keyIDPattern.MatchString(config.ChannelKeyID) || !keyIDPattern.MatchString(config.ReleaseKeyID) {
 		return ResolvedBootstrap{}, false, ErrPollerInvalid
 	}
-	baseURL, ok := normalizeChannelBaseURL(config.ChannelURL, false)
+	baseURL, ok := normalizeChannelBaseURL(config.ChannelURL, false, config.AllowInsecureHTTP)
 	if !ok {
 		return ResolvedBootstrap{}, false, ErrPollerInvalid
 	}
@@ -59,5 +64,6 @@ func ResolveBootstrap(config BootstrapConfig) (ResolvedBootstrap, bool, error) {
 		ReleasePublicKeys: map[string]ed25519.PublicKey{
 			config.ReleaseKeyID: append(ed25519.PublicKey(nil), releaseKey...),
 		},
+		AllowInsecureHTTP: config.AllowInsecureHTTP,
 	}, true, nil
 }

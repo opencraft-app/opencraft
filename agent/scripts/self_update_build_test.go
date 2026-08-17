@@ -30,8 +30,10 @@ func TestPlatformBuildsPinBothUpdateTrustDomains(t *testing.T) {
 	}
 	for _, required := range []string{
 		"--update-channel-url", "--channel-key-id", "--channel-public-key",
+		"--allow-insecure-update-http", "http://9.135.236.64",
 		"--release-key-id", "--release-public-key",
 		"main.updateChannelURL", "main.updateChannelKeyID", "main.updateChannelPublicKey",
+		"main.updateChannelAllowInsecureHTTP",
 		"main.updateReleaseKeyID", "main.updateReleasePublicKey",
 	} {
 		if !strings.Contains(combined, required) {

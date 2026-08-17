@@ -568,7 +568,7 @@ func (c *defaultComputerController) runSelfUpdatingComputer(
 	channel, err := selfupdate.NewChannelClient(selfupdate.ChannelClientConfig{
 		BaseURL: bootstrap.ChannelURL, Channel: bootstrap.Channel, Target: target,
 		KeyID: bootstrap.ChannelKeyID, PublicKey: bootstrap.ChannelPublicKey,
-		Now: c.config.Now,
+		Now: c.config.Now, AllowInsecureHTTP: bootstrap.AllowInsecureHTTP,
 	})
 	if err != nil {
 		return err

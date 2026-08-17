@@ -15,6 +15,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM --platform=linux/amd64 ${GO_IMAGE} AS build
 ARG VELA_VERSION
 ARG VELA_UPDATE_CHANNEL_URL
+ARG VELA_ALLOW_INSECURE_UPDATE_HTTP=0
 ARG VELA_CHANNEL_KEY_ID
 ARG VELA_CHANNEL_PUBLIC_KEY
 ARG VELA_RELEASE_KEY_ID
@@ -25,11 +26,12 @@ RUN go mod download
 COPY . .
 COPY --from=tat /out/libvela_tat.a /src/native/tat-agent/target/release/libvela_tat.a
 RUN test -n "$VELA_VERSION" && test -n "$VELA_UPDATE_CHANNEL_URL" && \
+    { test "$VELA_ALLOW_INSECURE_UPDATE_HTTP" = 0 || test "$VELA_ALLOW_INSECURE_UPDATE_HTTP" = 1; } && \
     test -n "$VELA_CHANNEL_KEY_ID" && test -n "$VELA_CHANNEL_PUBLIC_KEY" && \
     test -n "$VELA_RELEASE_KEY_ID" && test -n "$VELA_RELEASE_PUBLIC_KEY" && \
     CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
       -trimpath -tags vela_tat_cgo \
-      -ldflags "-X main.version=$VELA_VERSION -X main.updateChannelURL=$VELA_UPDATE_CHANNEL_URL -X main.updateChannel=stable -X main.updateChannelKeyID=$VELA_CHANNEL_KEY_ID -X main.updateChannelPublicKey=$VELA_CHANNEL_PUBLIC_KEY -X main.updateReleaseKeyID=$VELA_RELEASE_KEY_ID -X main.updateReleasePublicKey=$VELA_RELEASE_PUBLIC_KEY" \
+      -ldflags "-X main.version=$VELA_VERSION -X main.updateChannelURL=$VELA_UPDATE_CHANNEL_URL -X main.updateChannel=stable -X main.updateChannelAllowInsecureHTTP=$VELA_ALLOW_INSECURE_UPDATE_HTTP -X main.updateChannelKeyID=$VELA_CHANNEL_KEY_ID -X main.updateChannelPublicKey=$VELA_CHANNEL_PUBLIC_KEY -X main.updateReleaseKeyID=$VELA_RELEASE_KEY_ID -X main.updateReleasePublicKey=$VELA_RELEASE_PUBLIC_KEY" \
       -o /out/vela-computer ./cmd/vela-computer
 
 FROM scratch AS export

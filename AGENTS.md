@@ -74,6 +74,16 @@ backend/scripts/deploy-computer-canary.sh \
   --release-output /absolute/path/to/release-evidence
 ```
 
+DevCloud 当前没有正式域名/TLS，发布首个 updater 基线时使用已有 Backend URL，并显式声明唯一的内网
+HTTP 例外：
+
+```bash
+  --update-channel-url http://9.135.236.64 \
+  --allow-insecure-update-http
+```
+
+该标记只允许精确的 `http://9.135.236.64`，不能用于其他 HTTP 地址；有正式 TLS 域名后必须删除标记。
+
 脚本在 Mac 原生构建 `darwin-arm64`，通过 `root@9.134.208.109:36000` 的独立、固定
 BuildKit image Buildx builder 构建 Rust TAT + Go CGO `linux-amd64`；不依赖 Mac Docker daemon。
 `agent-source`、`web-source` 与 Backend 发布器必须来自同一个物理 Git 工作树。Human TUI 是

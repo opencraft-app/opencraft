@@ -21,6 +21,7 @@ import (
 var version = "0.1.0-dev"
 var updateChannelURL string
 var updateChannel string
+var updateChannelAllowInsecureHTTP string
 var updateChannelKeyID string
 var updateChannelPublicKey string
 var updateReleaseKeyID string
@@ -65,7 +66,8 @@ func runVela(ctx context.Context, args []string) int {
 		AllowInsecureHTTP:     allowInsecureHTTP,
 		SelfUpdate: selfupdate.BootstrapConfig{
 			ChannelURL: updateChannelURL, Channel: updateChannel,
-			ChannelKeyID: updateChannelKeyID, ChannelPublicKey: updateChannelPublicKey,
+			AllowInsecureHTTP: updateChannelAllowInsecureHTTP == "1",
+			ChannelKeyID:      updateChannelKeyID, ChannelPublicKey: updateChannelPublicKey,
 			ReleaseKeyID: updateReleaseKeyID, ReleasePublicKey: updateReleasePublicKey,
 		},
 	})

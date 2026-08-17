@@ -14,10 +14,13 @@ import (
 
 var ErrChannelRequest = errors.New("Computer Update channel 请求失败")
 
+const devcloudInsecureChannelBaseURL = "http://9.135.236.64"
+
 type ChannelClientConfig struct {
 	BaseURL               string
 	HTTPClient            *http.Client
 	AllowInsecureLoopback bool
+	AllowInsecureHTTP     bool
 	Channel               string
 	Target                string
 	KeyID                 string
@@ -36,7 +39,11 @@ type ChannelClient struct {
 }
 
 func NewChannelClient(config ChannelClientConfig) (*ChannelClient, error) {
-	baseURL, ok := normalizeChannelBaseURL(config.BaseURL, config.AllowInsecureLoopback)
+	baseURL, ok := normalizeChannelBaseURL(
+		config.BaseURL,
+		config.AllowInsecureLoopback,
+		config.AllowInsecureHTTP,
+	)
 	if !ok || config.Now == nil ||
 		(config.Channel != "stable" && config.Channel != "canary") ||
 		(config.Target != "darwin-arm64" && config.Target != "linux-amd64") ||
@@ -99,16 +106,25 @@ func (client *ChannelClient) Get(ctx context.Context) (VerifiedChannel, error) {
 	})
 }
 
-func normalizeChannelBaseURL(raw string, allowInsecureLoopback bool) (string, bool) {
+func normalizeChannelBaseURL(
+	raw string,
+	allowInsecureLoopback bool,
+	allowInsecureHTTP bool,
+) (string, bool) {
+	raw = strings.TrimSpace(raw)
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" ||
 		parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
 		return "", false
 	}
 	if parsed.Scheme != "https" {
-		if parsed.Scheme != "http" || !allowInsecureLoopback || !loopbackHost(parsed.Hostname()) {
+		loopbackAllowed := allowInsecureLoopback && loopbackHost(parsed.Hostname())
+		devcloudAllowed := allowInsecureHTTP && raw == devcloudInsecureChannelBaseURL
+		if parsed.Scheme != "http" || (!loopbackAllowed && !devcloudAllowed) {
 			return "", false
 		}
+	} else if allowInsecureHTTP {
+		return "", false
 	}
 	return strings.TrimSuffix(parsed.String(), "/"), true
 }

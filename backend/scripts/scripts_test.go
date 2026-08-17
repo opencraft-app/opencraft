@@ -308,6 +308,7 @@ func TestComputerCanary发布脚本构建验签发布并安全切换Catalog(t *t
 		"--signing-private-key",
 		"--signing-public-key",
 		"--update-channel-url",
+		"--allow-insecure-update-http",
 		"--channel-signing-key-id",
 		"--channel-signing-public-key",
 		"build-vela-macos-arm64.sh",
@@ -332,6 +333,7 @@ func TestComputerCanary发布脚本构建验签发布并安全切换Catalog(t *t
 		"rev-parse --show-toplevel",
 		"rev-parse HEAD",
 		"human-client.bundle.manifest.json",
+		"http://9.135.236.64",
 	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("deploy-computer-canary.sh 缺少安全合同 %q", required)
