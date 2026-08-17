@@ -30,6 +30,8 @@ var errorMappings = []ErrorMapping{
 	{Code: "enrollment_invalid", Status: http.StatusUnauthorized, Message: "Computer 接入凭证无效"},
 	{Code: "setup_expired", Status: http.StatusUnauthorized, Message: "Computer 安装命令已过期"},
 	{Code: "setup_code_invalid", Status: http.StatusUnauthorized, Message: "Computer 安装码无效或已过期"},
+	{Code: "computer_install_target_unsupported", Status: http.StatusUnprocessableEntity, Message: "当前机器平台暂不支持安装 Vela Computer"},
+	{Code: "setup_code_target_conflict", Status: http.StatusConflict, Message: "Computer 安装码已绑定到另一平台"},
 	{Code: "computer_already_claimed", Status: http.StatusConflict, Message: "Computer 已完成连接"},
 	{Code: "enrollment_claim_conflict", Status: http.StatusConflict, Message: "Computer 接入信息不一致"},
 	{Code: "assignment_query_invalid", Status: http.StatusBadRequest, Message: "Assignment 查询无效"},

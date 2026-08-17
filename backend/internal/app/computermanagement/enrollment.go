@@ -30,6 +30,7 @@ var releaseComponent = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 type EnrollmentConfig struct {
 	Release               computerport.ReleaseBinding
+	ReleaseSet            computerport.ReleaseSet
 	PlatformBaseURL       string
 	AllowInsecureHTTP     bool
 	TokenTTL              time.Duration
@@ -109,13 +110,19 @@ func NewEnrollmentService(
 	clock clockport.Clock,
 	config EnrollmentConfig,
 ) (*EnrollmentService, error) {
+	if !validReleaseSet(config.ReleaseSet) && validRelease(config.Release) {
+		config.ReleaseSet = computerport.ReleaseSet{
+			Version:  config.Release.Version,
+			Releases: []computerport.ReleaseBinding{config.Release},
+		}
+	}
 	platformBaseURL, urlErr := normalizeInstallBaseURL(
 		config.PlatformBaseURL,
 		config.AllowInsecureHTTP,
 	)
 	if repository == nil || ids == nil || clock == nil || config.Random == nil ||
 		config.TokenTTL <= 0 || config.TokenTTL > 24*time.Hour ||
-		config.CredentialTTL <= 0 || !validRelease(config.Release) ||
+		config.CredentialTTL <= 0 || !validReleaseSet(config.ReleaseSet) ||
 		urlErr != nil {
 		return nil, errors.New("Computer enrollment 服务配置无效")
 	}
@@ -127,15 +134,25 @@ func NewEnrollmentService(
 
 // InstallationOptions 返回与 setup/claim 共用的固定发布目录。
 func (service *EnrollmentService) InstallationOptions() InstallationOptions {
-	return InstallationOptions{
-		ReleaseVersion: service.config.Release.Version,
-		Platforms: []InstallationPlatform{{
-			OSType: service.config.Release.OSType,
-			Architectures: []string{
-				service.config.Release.Architecture,
-			},
-		}},
+	result := InstallationOptions{ReleaseVersion: service.config.ReleaseSet.Version}
+	for _, release := range service.config.ReleaseSet.Releases {
+		found := false
+		for index := range result.Platforms {
+			if result.Platforms[index].OSType == release.OSType {
+				result.Platforms[index].Architectures = append(
+					result.Platforms[index].Architectures, release.Architecture,
+				)
+				found = true
+				break
+			}
+		}
+		if !found {
+			result.Platforms = append(result.Platforms, InstallationPlatform{
+				OSType: release.OSType, Architectures: []string{release.Architecture},
+			})
+		}
 	}
+	return result
 }
 
 func (service *EnrollmentService) CreateSetupCommand(
@@ -166,7 +183,7 @@ func (service *EnrollmentService) CreateSetupCommand(
 			"computer_already_claimed", "Computer 已完成连接", computerport.ErrComputerAlreadyClaimed,
 		)
 	}
-	if computer.LifecycleState == "removed" || computer.OSType != service.config.Release.OSType ||
+	if computer.LifecycleState == "removed" ||
 		computer.EnrollmentGeneration >= math.MaxInt64 {
 		return SetupCommand{}, apperror.New("computer_not_ready", "Computer 当前不能生成安装命令", nil)
 	}
@@ -193,7 +210,7 @@ func (service *EnrollmentService) CreateSetupCommand(
 			ExpectedRevision:   expectedRevision,
 			ExpectedGeneration: computer.EnrollmentGeneration,
 			Generation:         generation, TokenHash: sha256.Sum256([]byte(token)),
-			ExpiresAt: expiresAt, Release: service.config.Release, CreatedAt: now,
+			ExpiresAt: expiresAt, ReleaseSet: service.config.ReleaseSet, CreatedAt: now,
 		},
 	)
 	if err != nil {
@@ -229,7 +246,13 @@ func (service *EnrollmentService) shortSetupCommand(displayCode string) string {
 func (service *EnrollmentService) RedeemSetupCode(
 	ctx context.Context,
 	code string,
+	target string,
 ) (SetupCodeScript, error) {
+	if !releaseSetHasTarget(service.config.ReleaseSet, target) {
+		return SetupCodeScript{}, apperror.New(
+			"computer_install_target_unsupported", "当前机器平台暂不支持安装 Vela Computer", nil,
+		)
+	}
 	canonicalCode, err := normalizeSetupCode(code)
 	if err != nil {
 		return SetupCodeScript{}, invalidSetupCode(err)
@@ -252,14 +275,24 @@ func (service *EnrollmentService) RedeemSetupCode(
 	if err != nil {
 		return SetupCodeScript{}, invalidSetupCode(err)
 	}
-	redemption, err := service.repository.ValidateSetupCode(
+	redemption, err := service.repository.BindEnrollmentTarget(
 		ctx,
-		computerport.ValidateSetupCodeCommand{
+		computerport.BindEnrollmentTargetCommand{
 			ServerID: route.ServerID, ComputerID: route.ComputerID,
 			Generation: route.Generation, TokenHash: sha256.Sum256([]byte(token)),
-			RequestedAt: now,
+			Target: target, RequestedAt: now,
 		},
 	)
+	if errors.Is(err, computerport.ErrSetupCodeTargetConflict) {
+		return SetupCodeScript{}, apperror.New(
+			"setup_code_target_conflict", "Computer 安装码已绑定到另一平台", err,
+		)
+	}
+	if errors.Is(err, computerport.ErrComputerInstallTargetUnsupported) {
+		return SetupCodeScript{}, apperror.New(
+			"computer_install_target_unsupported", "当前机器平台暂不支持安装 Vela Computer", err,
+		)
+	}
 	if err != nil || redemption.ServerID != route.ServerID ||
 		redemption.ComputerID != route.ComputerID ||
 		redemption.Generation != route.Generation ||
@@ -359,14 +392,13 @@ func (service *EnrollmentService) verifyReplacementGrant(
 	}
 	newTokenHash := sha256.Sum256([]byte(enrollmentToken))
 	newTokenHashHex := hex.EncodeToString(newTokenHash[:])
-	programHex := hex.EncodeToString(service.config.Release.Program.SHA256[:])
 	expiresAt := time.Unix(claims.ExpiresAt, 0).UTC()
 	issuedAt := time.Unix(claims.IssuedAt, 0).UTC()
 	if claims.Type != "computer-replacement" || claims.OldServerID != route.ServerID ||
 		claims.NewServerID != route.ServerID || claims.NewComputerID != route.ComputerID ||
 		claims.NewGeneration != route.Generation || claims.NewTokenHash != newTokenHashHex ||
-		claims.ReleaseVersion != service.config.Release.Version || claims.Target != service.config.Release.Target ||
-		claims.ProgramSHA256 != programHex || claims.OldComputerID == "" ||
+		!releaseComponent.MatchString(claims.ReleaseVersion) || !releaseComponent.MatchString(claims.Target) ||
+		len(claims.ProgramSHA256) != sha256.Size*2 || claims.OldComputerID == "" ||
 		claims.OldCredentialVersion == 0 || claims.OldComputerRevision < 1 ||
 		len(claims.BindingHash) != 64 || claims.TATRegion == "" ||
 		!strings.HasPrefix(claims.TATInstanceID, "rins-") ||
@@ -489,9 +521,7 @@ func (service *EnrollmentService) authorizeReplacement(
 		NewGeneration: newRoute.Generation,
 		NewTokenHash:  sha256.Sum256([]byte(replacement.EnrollmentToken)),
 		TATRegion:     replacement.TATRegion, TATInstanceID: replacement.TATInstanceID,
-		ReleaseVersion: service.config.Release.Version, Target: service.config.Release.Target,
-		ProgramSHA256: service.config.Release.Program.SHA256,
-		RequestedAt:   service.clock.Now().UTC(),
+		RequestedAt: service.clock.Now().UTC(),
 	}
 	authorization, err := service.repository.AuthorizeReplacement(ctx, command)
 	if errors.Is(err, computerport.ErrReplacementBindingMissing) {
@@ -517,7 +547,8 @@ func (service *EnrollmentService) authorizeReplacement(
 		return PreflightResult{}, apperror.New("internal_error", "暂时无法检查 Computer replacement", err)
 	}
 	if authorization.OldComputerRevision != inspection.ComputerRevision ||
-		len(authorization.BindingHash) != 64 {
+		len(authorization.BindingHash) != 64 || authorization.ReleaseVersion == "" ||
+		authorization.Target == "" || authorization.ProgramSHA256 == [32]byte{} {
 		return PreflightResult{}, apperror.New("internal_error", "Computer replacement 数据无效", nil)
 	}
 	grant, err := service.signReplacementGrant(command, authorization)
@@ -546,9 +577,7 @@ func (service *EnrollmentService) attestMissingReplacementBinding(
 		)
 	}
 	if !found || instance.InstanceID != command.TATInstanceID ||
-		!tencenttatport.ObservedOSCompatible(
-			tencenttatport.OS(service.config.Release.OSType), instance.OS,
-		) {
+		!tencenttatport.ObservedOSCompatible(tencenttatport.OS(authorization.OSType), instance.OS) {
 		return computerport.ReplacementAuthorization{},
 			computerport.ErrReplacementIdentityMismatch
 	}
@@ -589,8 +618,8 @@ func (service *EnrollmentService) signReplacementGrant(
 		NewServerID:         command.NewServerID, NewComputerID: command.NewComputerID,
 		NewGeneration: command.NewGeneration, NewTokenHash: hex.EncodeToString(command.NewTokenHash[:]),
 		BindingHash: authorization.BindingHash, TATRegion: command.TATRegion,
-		TATInstanceID: command.TATInstanceID, ReleaseVersion: command.ReleaseVersion,
-		Target: command.Target, ProgramSHA256: hex.EncodeToString(command.ProgramSHA256[:]),
+		TATInstanceID: command.TATInstanceID, ReleaseVersion: authorization.ReleaseVersion,
+		Target: authorization.Target, ProgramSHA256: hex.EncodeToString(authorization.ProgramSHA256[:]),
 		ProviderAttested: authorization.ProviderAttested,
 		IssuedAt:         issuedAt.Unix(), ExpiresAt: issuedAt.Add(service.config.ReplacementTTL).Unix(),
 	}
@@ -684,6 +713,38 @@ func validRelease(value computerport.ReleaseBinding) bool {
 		}
 	}
 	return true
+}
+
+func validReleaseSet(value computerport.ReleaseSet) bool {
+	if !releaseComponent.MatchString(value.Version) || len(value.Releases) == 0 || len(value.Releases) > 8 {
+		return false
+	}
+	seen := make(map[string]struct{}, len(value.Releases))
+	for _, release := range value.Releases {
+		if release.Version != value.Version || !validRelease(release) ||
+			!validPlatformRelease(release) {
+			return false
+		}
+		if _, exists := seen[release.Target]; exists {
+			return false
+		}
+		seen[release.Target] = struct{}{}
+	}
+	return true
+}
+
+func validPlatformRelease(release computerport.ReleaseBinding) bool {
+	return release.Target == "darwin-arm64" && release.OSType == "macos" && release.Architecture == "arm64" ||
+		release.Target == "linux-amd64" && release.OSType == "linux" && release.Architecture == "amd64"
+}
+
+func releaseSetHasTarget(value computerport.ReleaseSet, target string) bool {
+	for _, release := range value.Releases {
+		if release.Target == target {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeInstallBaseURL(value string, allowInsecureHTTP bool) (string, error) {

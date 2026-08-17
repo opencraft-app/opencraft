@@ -926,6 +926,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/computer-installation-targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 获取当前完整的签名 Computer target 目录
+         * @description 新版客户端使用；旧 computer-installation-options 保留 macOS 兼容投影。
+         */
+        get: operations["getComputerInstallationTargets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/servers/{serverId}/computers/{computerId}/setup-commands": {
         parameters: {
             query?: never;
@@ -1021,7 +1041,7 @@ export interface paths {
             header?: never;
             path: {
                 version: string;
-                target: "darwin-arm64";
+                target: "darwin-arm64" | "linux-amd64";
                 file: "manifest.json" | "manifest.sig" | "install.sh" | "vela-computer";
             };
             cookie?: never;
@@ -1955,6 +1975,17 @@ export interface components {
                 architectures: "arm64"[];
             }[];
         };
+        ComputerInstallationTargets: {
+            releaseVersion: string;
+            targets: {
+                /** @enum {string} */
+                target: "darwin-arm64" | "linux-amd64";
+                /** @enum {string} */
+                osType: "macos" | "linux";
+                /** @enum {string} */
+                architecture: "arm64" | "amd64";
+            }[];
+        };
         ComputerSetupCommand: {
             computerId: components["schemas"]["Id"];
             readonly command: string;
@@ -1963,9 +1994,9 @@ export interface components {
         };
         ComputerEnrollmentClaimRequest: {
             /** @enum {string} */
-            osType: "macos";
+            osType: "macos" | "linux";
             /** @enum {string} */
-            architecture: "arm64";
+            architecture: "arm64" | "amd64";
             credentialDigest: string;
             installerVersion: string;
             replacementGrant?: string;
@@ -1996,6 +2027,12 @@ export interface components {
         };
         CreateComputerRequest: {
             name: string;
+            /**
+             * @description provisioning 且安装 target 尚未绑定时是用户选择的提示；首次兑换后由实际检测平台
+             *     覆盖，Computer active 后表示不可变的实际 OS。省略仅兼容旧客户端并按 macOS 创建。
+             * @enum {string}
+             */
+            osType?: "macos" | "linux";
         };
         TerminalSession: {
             /** @enum {string} */
@@ -4008,6 +4045,27 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    getComputerInstallationTargets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前完整安装 target 目录 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputerInstallationTargets"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     createComputerSetupCommand: {
         parameters: {
             query?: never;
@@ -4103,7 +4161,13 @@ export interface operations {
     redeemComputerSetupCode: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description 第一阶段安装 shell 检测出的规范化 target。新版客户端始终发送；省略时仅为兼容
+                 *     已发布的 macOS bootstrap，并按 darwin-arm64 处理。
+                 */
+                "X-Vela-Computer-Target"?: "darwin-arm64" | "linux-amd64";
+            };
             path?: never;
             cookie?: never;
         };
@@ -4133,7 +4197,7 @@ export interface operations {
             header?: never;
             path: {
                 version: string;
-                target: "darwin-arm64";
+                target: "darwin-arm64" | "linux-amd64";
                 file: "manifest.json" | "manifest.sig" | "install.sh" | "vela-computer";
             };
             cookie?: never;

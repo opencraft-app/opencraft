@@ -54,6 +54,7 @@ type fakeComputerEnrollmentService struct {
 	preflight        appcomputer.PreflightCommand
 	preflightResult  appcomputer.PreflightResult
 	redeemedCode     string
+	redeemedTarget   string
 	script           appcomputer.SetupCodeScript
 	setup            appcomputer.SetupCommand
 	claimResult      appcomputer.ClaimResult
@@ -62,9 +63,10 @@ type fakeComputerEnrollmentService struct {
 func (service *fakeComputerEnrollmentService) InstallationOptions() appcomputer.InstallationOptions {
 	return appcomputer.InstallationOptions{
 		ReleaseVersion: "0.1.0",
-		Platforms: []appcomputer.InstallationPlatform{{
-			OSType: "macos", Architectures: []string{"arm64"},
-		}},
+		Platforms: []appcomputer.InstallationPlatform{
+			{OSType: "macos", Architectures: []string{"arm64"}},
+			{OSType: "linux", Architectures: []string{"amd64"}},
+		},
 	}
 }
 
@@ -101,8 +103,10 @@ func (service *fakeComputerEnrollmentService) Preflight(
 func (service *fakeComputerEnrollmentService) RedeemSetupCode(
 	_ context.Context,
 	code string,
+	target string,
 ) (appcomputer.SetupCodeScript, error) {
 	service.redeemedCode = code
+	service.redeemedTarget = target
 	return service.script, nil
 }
 
@@ -245,7 +249,8 @@ func TestComputerHandlerMapsCreateListGetRefreshAndRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := openapi.CreateComputerJSONRequestBody{Name: "北京执行机"}
+	linux := openapi.CreateComputerRequestOsType("linux")
+	body := openapi.CreateComputerJSONRequestBody{Name: "北京执行机", OsType: &linux}
 	createdResponse, err := handler.CreateComputer(
 		currentHumanContext(t),
 		openapi.CreateComputerRequestObject{
@@ -264,7 +269,7 @@ func TestComputerHandlerMapsCreateListGetRefreshAndRegistration(t *testing.T) {
 		service.createCommand.AccountID != handlerAccountID ||
 		service.createCommand.TATInstanceID != nil ||
 		service.createCommand.TATInstanceKind != "managed" ||
-		service.createCommand.OSType != "macos" {
+		service.createCommand.OSType != "linux" {
 		t.Fatalf("CreateComputer() = %#v command=%#v", createdResponse, service.createCommand)
 	}
 	listResponse, err := handler.ListComputers(
@@ -421,6 +426,14 @@ func TestComputerEnrollmentHandlerMapsSetupClaimAndArtifactWithoutCaching(t *tes
 	if err != nil || !ok || options.ReleaseVersion != "0.1.0" || len(options.Platforms) != 1 {
 		t.Fatalf("GetComputerInstallationOptions() = (%#v, %v)", optionsResponse, err)
 	}
+	targetsResponse, err := handler.GetComputerInstallationTargets(
+		currentHumanContext(t), openapi.GetComputerInstallationTargetsRequestObject{},
+	)
+	targets, ok := targetsResponse.(openapi.GetComputerInstallationTargets200JSONResponse)
+	if err != nil || !ok || targets.ReleaseVersion != "0.1.0" || len(targets.Targets) != 2 ||
+		targets.Targets[1].Target != "linux-amd64" {
+		t.Fatalf("GetComputerInstallationTargets() = (%#v, %v)", targetsResponse, err)
+	}
 	setupResponse, err := handler.CreateComputerSetupCommand(
 		currentHumanContext(t),
 		openapi.CreateComputerSetupCommandRequestObject{
@@ -436,15 +449,19 @@ func TestComputerEnrollmentHandlerMapsSetupClaimAndArtifactWithoutCaching(t *tes
 		t.Fatalf("CreateComputerSetupCommand() = (%#v, %v) service=%#v", setupResponse, err, enrollment)
 	}
 	shortCode := openapi.RedeemComputerSetupCodeTextRequestBody("60RK-4CSM-6MV3-EE1S")
+	linuxTarget := openapi.RedeemComputerSetupCodeParamsXVelaComputerTarget("linux-amd64")
 	redeemResponse, err := handler.RedeemComputerSetupCode(
 		context.Background(),
-		openapi.RedeemComputerSetupCodeRequestObject{Body: &shortCode},
+		openapi.RedeemComputerSetupCodeRequestObject{
+			Params: openapi.RedeemComputerSetupCodeParams{XVelaComputerTarget: &linuxTarget},
+			Body:   &shortCode,
+		},
 	)
 	redeemed, ok := redeemResponse.(openapi.RedeemComputerSetupCode200TextResponse)
 	if err != nil || !ok || redeemed.Body != "verified second stage" ||
 		redeemed.Headers.CacheControl != "no-store" ||
 		redeemed.Headers.Pragma != "no-cache" ||
-		enrollment.redeemedCode != string(shortCode) {
+		enrollment.redeemedCode != string(shortCode) || enrollment.redeemedTarget != "linux-amd64" {
 		t.Fatalf("RedeemComputerSetupCode() = (%#v, %v)", redeemResponse, err)
 	}
 	const token = "cen1." + handlerServerID + "." + handlerComputerID +

@@ -8,28 +8,30 @@ import (
 )
 
 var (
-	ErrServerNotFound               = errors.New("Server 不存在")
-	ErrComputerNotFound             = errors.New("Computer 不存在")
-	ErrComputerNameConflict         = errors.New("Computer 名称冲突")
-	ErrInstanceConflict             = errors.New("TAT 实例已绑定")
-	ErrIdempotencyConflict          = errors.New("幂等请求冲突")
-	ErrRegistrationActive           = errors.New("Computer 注册流程进行中")
-	ErrAdminRequired                = errors.New("需要 Server 管理权限")
-	ErrCredentialExists             = errors.New("Computer Runtime Credential 已存在")
-	ErrCredentialNotCurrent         = errors.New("Computer Runtime Credential 已失效")
-	ErrEnrollmentRevisionConflict   = errors.New("Computer enrollment revision 冲突")
-	ErrComputerAlreadyClaimed       = errors.New("Computer 已完成 claim")
-	ErrEnrollmentInvalid            = errors.New("Computer enrollment token 无效")
-	ErrEnrollmentExpired            = errors.New("Computer enrollment token 已过期")
-	ErrEnrollmentClaimConflict      = errors.New("Computer enrollment digest 冲突")
-	ErrSetupCodeInvalid             = errors.New("Computer setup code 无效")
-	ErrComputerHasBoundAgents       = errors.New("Computer 仍有绑定 Agent")
-	ErrTATBindingInconsistent       = errors.New("Computer TAT binding 状态不一致")
-	ErrCredentialInspectionNotFound = errors.New("Computer credential inspection 不存在")
-	ErrReplacementIdentityMismatch  = errors.New("Computer replacement identity 不匹配")
-	ErrReplacementBindingMissing    = errors.New("Computer replacement binding 缺失")
-	ErrProviderIdentityGone         = errors.New("Computer provider identity 已销毁")
-	ErrReplacementReleaseMismatch   = errors.New("Computer replacement release 不匹配")
+	ErrServerNotFound                   = errors.New("Server 不存在")
+	ErrComputerNotFound                 = errors.New("Computer 不存在")
+	ErrComputerNameConflict             = errors.New("Computer 名称冲突")
+	ErrInstanceConflict                 = errors.New("TAT 实例已绑定")
+	ErrIdempotencyConflict              = errors.New("幂等请求冲突")
+	ErrRegistrationActive               = errors.New("Computer 注册流程进行中")
+	ErrAdminRequired                    = errors.New("需要 Server 管理权限")
+	ErrCredentialExists                 = errors.New("Computer Runtime Credential 已存在")
+	ErrCredentialNotCurrent             = errors.New("Computer Runtime Credential 已失效")
+	ErrEnrollmentRevisionConflict       = errors.New("Computer enrollment revision 冲突")
+	ErrComputerAlreadyClaimed           = errors.New("Computer 已完成 claim")
+	ErrEnrollmentInvalid                = errors.New("Computer enrollment token 无效")
+	ErrEnrollmentExpired                = errors.New("Computer enrollment token 已过期")
+	ErrEnrollmentClaimConflict          = errors.New("Computer enrollment digest 冲突")
+	ErrSetupCodeInvalid                 = errors.New("Computer setup code 无效")
+	ErrComputerInstallTargetUnsupported = errors.New("Computer install target 不支持")
+	ErrSetupCodeTargetConflict          = errors.New("Computer setup code target 冲突")
+	ErrComputerHasBoundAgents           = errors.New("Computer 仍有绑定 Agent")
+	ErrTATBindingInconsistent           = errors.New("Computer TAT binding 状态不一致")
+	ErrCredentialInspectionNotFound     = errors.New("Computer credential inspection 不存在")
+	ErrReplacementIdentityMismatch      = errors.New("Computer replacement identity 不匹配")
+	ErrReplacementBindingMissing        = errors.New("Computer replacement binding 缺失")
+	ErrProviderIdentityGone             = errors.New("Computer provider identity 已销毁")
+	ErrReplacementReleaseMismatch       = errors.New("Computer replacement release 不匹配")
 )
 
 // Computer 是平台保存的 TAT 执行资源映射，不包含腾讯云凭据。
@@ -54,22 +56,28 @@ type Computer struct {
 
 // ArtifactBinding 是签发 setup generation 时固化的不可变对象描述。
 type ArtifactBinding struct {
-	ObjectKey string
-	SHA256    [32]byte
-	Size      int64
+	ObjectKey string   `json:"objectKey"`
+	SHA256    [32]byte `json:"sha256"`
+	Size      int64    `json:"size"`
 }
 
 // ReleaseBinding 是一次 enrollment 可访问的完整发布对象集合。
 type ReleaseBinding struct {
-	Version      string
-	Target       string
-	OSType       string
-	Architecture string
-	SigningKeyID string
-	Manifest     ArtifactBinding
-	Signature    ArtifactBinding
-	Installer    ArtifactBinding
-	Program      ArtifactBinding
+	Version      string          `json:"version"`
+	Target       string          `json:"target"`
+	OSType       string          `json:"osType"`
+	Architecture string          `json:"architecture"`
+	SigningKeyID string          `json:"signingKeyId"`
+	Manifest     ArtifactBinding `json:"manifest"`
+	Signature    ArtifactBinding `json:"signature"`
+	Installer    ArtifactBinding `json:"installer"`
+	Program      ArtifactBinding `json:"program"`
+}
+
+// ReleaseSet 是生成 setup generation 时固化的完整多目标发布快照。
+type ReleaseSet struct {
+	Version  string           `json:"version"`
+	Releases []ReleaseBinding `json:"releases"`
 }
 
 // BeginEnrollmentCommand 在现有 Computer 行上以 revision/generation 做单分片 CAS。
@@ -83,6 +91,7 @@ type BeginEnrollmentCommand struct {
 	TokenHash          [32]byte
 	ExpiresAt          time.Time
 	Release            ReleaseBinding
+	ReleaseSet         ReleaseSet
 	CreatedAt          time.Time
 }
 
@@ -172,6 +181,10 @@ type ReplacementAuthorization struct {
 	OldComputerRevision int64
 	BindingHash         string
 	ProviderAttested    bool
+	OSType              string
+	ReleaseVersion      string
+	Target              string
+	ProgramSHA256       [32]byte
 }
 
 // StoreSetupCodeCommand 只保存不可逆摘要和稳定路由，不保存短码明文。
@@ -199,11 +212,12 @@ type SetupCodeRoute struct {
 }
 
 // ValidateSetupCodeCommand 在 server_id 分片内验证当前 enrollment generation。
-type ValidateSetupCodeCommand struct {
+type BindEnrollmentTargetCommand struct {
 	ServerID    string
 	ComputerID  string
 	Generation  uint64
 	TokenHash   [32]byte
+	Target      string
 	RequestedAt time.Time
 }
 
@@ -227,7 +241,7 @@ type EnrollmentRepository interface {
 	BeginEnrollment(context.Context, BeginEnrollmentCommand) (Computer, error)
 	StoreSetupCode(context.Context, StoreSetupCodeCommand) error
 	ResolveSetupCode(context.Context, ResolveSetupCodeCommand) (SetupCodeRoute, error)
-	ValidateSetupCode(context.Context, ValidateSetupCodeCommand) (SetupCodeRedemption, error)
+	BindEnrollmentTarget(context.Context, BindEnrollmentTargetCommand) (SetupCodeRedemption, error)
 	InspectCredential(context.Context, InspectCredentialCommand) (CredentialInspection, error)
 	AuthorizeReplacement(context.Context, AuthorizeReplacementCommand) (ReplacementAuthorization, error)
 	ClaimEnrollment(context.Context, ClaimEnrollmentCommand) (EnrollmentClaim, error)

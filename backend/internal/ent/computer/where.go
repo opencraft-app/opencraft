@@ -184,6 +184,11 @@ func EnrollmentReleaseVersion(v string) predicate.Computer {
 	return predicate.Computer(sql.FieldEQ(FieldEnrollmentReleaseVersion, v))
 }
 
+// EnrollmentReleaseSetJSON applies equality check predicate on the "enrollment_release_set_json" field. It's identical to EnrollmentReleaseSetJSONEQ.
+func EnrollmentReleaseSetJSON(v string) predicate.Computer {
+	return predicate.Computer(sql.FieldEQ(FieldEnrollmentReleaseSetJSON, v))
+}
+
 // EnrollmentTarget applies equality check predicate on the "enrollment_target" field. It's identical to EnrollmentTargetEQ.
 func EnrollmentTarget(v string) predicate.Computer {
 	return predicate.Computer(sql.FieldEQ(FieldEnrollmentTarget, v))
@@ -1707,6 +1712,81 @@ func EnrollmentReleaseVersionEqualFold(v string) predicate.Computer {
 // EnrollmentReleaseVersionContainsFold applies the ContainsFold predicate on the "enrollment_release_version" field.
 func EnrollmentReleaseVersionContainsFold(v string) predicate.Computer {
 	return predicate.Computer(sql.FieldContainsFold(FieldEnrollmentReleaseVersion, v))
+}
+
+// EnrollmentReleaseSetJSONEQ applies the EQ predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONEQ(v string) predicate.Computer {
+	return predicate.Computer(sql.FieldEQ(FieldEnrollmentReleaseSetJSON, v))
+}
+
+// EnrollmentReleaseSetJSONNEQ applies the NEQ predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONNEQ(v string) predicate.Computer {
+	return predicate.Computer(sql.FieldNEQ(FieldEnrollmentReleaseSetJSON, v))
+}
+
+// EnrollmentReleaseSetJSONIn applies the In predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONIn(vs ...string) predicate.Computer {
+	return predicate.Computer(sql.FieldIn(FieldEnrollmentReleaseSetJSON, vs...))
+}
+
+// EnrollmentReleaseSetJSONNotIn applies the NotIn predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONNotIn(vs ...string) predicate.Computer {
+	return predicate.Computer(sql.FieldNotIn(FieldEnrollmentReleaseSetJSON, vs...))
+}
+
+// EnrollmentReleaseSetJSONGT applies the GT predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONGT(v string) predicate.Computer {
+	return predicate.Computer(sql.FieldGT(FieldEnrollmentReleaseSetJSON, v))
+}
+
+// EnrollmentReleaseSetJSONGTE applies the GTE predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONGTE(v string) predicate.Computer {
+	return predicate.Computer(sql.FieldGTE(FieldEnrollmentReleaseSetJSON, v))
+}
+
+// EnrollmentReleaseSetJSONLT applies the LT predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONLT(v string) predicate.Computer {
+	return predicate.Computer(sql.FieldLT(FieldEnrollmentReleaseSetJSON, v))
+}
+
+// EnrollmentReleaseSetJSONLTE applies the LTE predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONLTE(v string) predicate.Computer {
+	return predicate.Computer(sql.FieldLTE(FieldEnrollmentReleaseSetJSON, v))
+}
+
+// EnrollmentReleaseSetJSONContains applies the Contains predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONContains(v string) predicate.Computer {
+	return predicate.Computer(sql.FieldContains(FieldEnrollmentReleaseSetJSON, v))
+}
+
+// EnrollmentReleaseSetJSONHasPrefix applies the HasPrefix predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONHasPrefix(v string) predicate.Computer {
+	return predicate.Computer(sql.FieldHasPrefix(FieldEnrollmentReleaseSetJSON, v))
+}
+
+// EnrollmentReleaseSetJSONHasSuffix applies the HasSuffix predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONHasSuffix(v string) predicate.Computer {
+	return predicate.Computer(sql.FieldHasSuffix(FieldEnrollmentReleaseSetJSON, v))
+}
+
+// EnrollmentReleaseSetJSONIsNil applies the IsNil predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONIsNil() predicate.Computer {
+	return predicate.Computer(sql.FieldIsNull(FieldEnrollmentReleaseSetJSON))
+}
+
+// EnrollmentReleaseSetJSONNotNil applies the NotNil predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONNotNil() predicate.Computer {
+	return predicate.Computer(sql.FieldNotNull(FieldEnrollmentReleaseSetJSON))
+}
+
+// EnrollmentReleaseSetJSONEqualFold applies the EqualFold predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONEqualFold(v string) predicate.Computer {
+	return predicate.Computer(sql.FieldEqualFold(FieldEnrollmentReleaseSetJSON, v))
+}
+
+// EnrollmentReleaseSetJSONContainsFold applies the ContainsFold predicate on the "enrollment_release_set_json" field.
+func EnrollmentReleaseSetJSONContainsFold(v string) predicate.Computer {
+	return predicate.Computer(sql.FieldContainsFold(FieldEnrollmentReleaseSetJSON, v))
 }
 
 // EnrollmentTargetEQ applies the EQ predicate on the "enrollment_target" field.

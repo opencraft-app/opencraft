@@ -878,14 +878,14 @@ func TestEntRepositoryStoresResolvesAndValidatesSetupCodeRoute(t *testing.T) {
 		!route.ExpiresAt.Equal(expiresAt) {
 		t.Fatalf("ResolveSetupCode() = (%#v, %v)", route, err)
 	}
-	redemption, err := repository.ValidateSetupCode(ctx, computerport.ValidateSetupCodeCommand{
+	redemption, err := repository.BindEnrollmentTarget(ctx, computerport.BindEnrollmentTargetCommand{
 		ServerID: repositoryServerID, ComputerID: repositoryComputerID,
-		Generation: 1, TokenHash: tokenHash, RequestedAt: repositoryNow,
+		Generation: 1, TokenHash: tokenHash, Target: "darwin-arm64", RequestedAt: repositoryNow,
 	})
 	if err != nil || redemption.Release.Version != "0.1.0" ||
 		redemption.Release.Target != "darwin-arm64" ||
 		redemption.Release.InstallerSHA256 != repositoryEnrollmentRelease().Installer.SHA256 {
-		t.Fatalf("ValidateSetupCode() = (%#v, %v)", redemption, err)
+		t.Fatalf("BindEnrollmentTarget() = (%#v, %v)", redemption, err)
 	}
 	if _, err := repository.ResolveSetupCode(ctx, computerport.ResolveSetupCodeCommand{
 		CodeHash: codeHash, RequestedAt: expiresAt,
@@ -894,11 +894,79 @@ func TestEntRepositoryStoresResolvesAndValidatesSetupCodeRoute(t *testing.T) {
 	}
 	wrong := tokenHash
 	wrong[0] ^= 0xff
-	if _, err := repository.ValidateSetupCode(ctx, computerport.ValidateSetupCodeCommand{
+	if _, err := repository.BindEnrollmentTarget(ctx, computerport.BindEnrollmentTargetCommand{
 		ServerID: repositoryServerID, ComputerID: repositoryComputerID,
-		Generation: 1, TokenHash: wrong, RequestedAt: repositoryNow,
+		Generation: 1, TokenHash: wrong, Target: "darwin-arm64", RequestedAt: repositoryNow,
 	}); !errors.Is(err, computerport.ErrSetupCodeInvalid) {
-		t.Fatalf("wrong ValidateSetupCode() error = %v", err)
+		t.Fatalf("wrong BindEnrollmentTarget() error = %v", err)
+	}
+}
+
+func TestEntRepositoryBindsEnrollmentTargetOnceAndRetriesWithoutRevisionChange(t *testing.T) {
+	repository, handle := openComputerRepository(t)
+	seedComputerMembership(t, handle)
+	ctx := context.Background()
+	if _, err := repository.Create(ctx, computerport.CreateCommand{
+		AccountID: repositoryAccountID, ServerID: repositoryServerID,
+		IdempotencyKey: "computer-create-dynamic-target",
+		RequestHash:    sha256.Sum256([]byte("dynamic-target")),
+		CreatedAt:      repositoryNow,
+		Computer: computerport.Draft{
+			ID: repositoryComputerID, Name: "Dynamic Computer",
+			TATRegion: "ap-beijing", TATInstanceKind: "managed",
+			OSType: "macos", LifecycleState: "provisioning",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tokenHash := sha256.Sum256([]byte("dynamic-target-token"))
+	releases := repositoryReleaseSet()
+	if _, err := repository.BeginEnrollment(ctx, computerport.BeginEnrollmentCommand{
+		AccountID: repositoryAccountID, ServerID: repositoryServerID,
+		ComputerID: repositoryComputerID, ExpectedRevision: 1,
+		ExpectedGeneration: 0, Generation: 1, TokenHash: tokenHash,
+		ExpiresAt: repositoryNow.Add(15 * time.Minute), ReleaseSet: releases,
+		CreatedAt: repositoryNow,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := handle.Client().Computer.Get(ctx, repositoryComputerID)
+	if err != nil || before.EnrollmentReleaseSetJSON == nil || before.EnrollmentTarget != nil {
+		t.Fatalf("unbound enrollment = %#v err=%v", before, err)
+	}
+	if hasPartialEnrollmentRelease(before) {
+		t.Fatalf("unbound enrollment retained partial release = %#v", before)
+	}
+
+	command := computerport.BindEnrollmentTargetCommand{
+		ServerID: repositoryServerID, ComputerID: repositoryComputerID,
+		Generation: 1, TokenHash: tokenHash, Target: "linux-amd64",
+		RequestedAt: repositoryNow,
+	}
+	bound, err := repository.BindEnrollmentTarget(ctx, command)
+	if err != nil || bound.Release.Target != "linux-amd64" ||
+		bound.Release.Version != releases.Version {
+		t.Fatalf("BindEnrollmentTarget() = (%#v, %v; cause=%v)", bound, err, errors.Unwrap(err))
+	}
+	after, err := handle.Client().Computer.Get(ctx, repositoryComputerID)
+	if err != nil || after.OsType != "linux" || after.Revision != 3 ||
+		after.EnrollmentReleaseSetJSON != nil || after.EnrollmentTarget == nil ||
+		*after.EnrollmentTarget != "linux-amd64" {
+		t.Fatalf("bound enrollment = %#v err=%v", after, err)
+	}
+	retried, err := repository.BindEnrollmentTarget(ctx, command)
+	if err != nil || retried.Release.Target != "linux-amd64" {
+		t.Fatalf("retry BindEnrollmentTarget() = (%#v, %v)", retried, err)
+	}
+	retriedMachine, err := handle.Client().Computer.Get(ctx, repositoryComputerID)
+	if err != nil || retriedMachine.Revision != after.Revision {
+		t.Fatalf("retry revision = %#v err=%v", retriedMachine, err)
+	}
+	command.Target = "darwin-arm64"
+	if _, err := repository.BindEnrollmentTarget(ctx, command); !errors.Is(
+		err, computerport.ErrSetupCodeTargetConflict,
+	) {
+		t.Fatalf("cross-target bind error = %v", err)
 	}
 }
 
@@ -1088,6 +1156,19 @@ func repositoryEnrollmentRelease() computerport.ReleaseBinding {
 		Installer: computerport.ArtifactBinding{ObjectKey: "computer/releases/0.1.0/darwin-arm64/install.sh", SHA256: sha256.Sum256([]byte("installer")), Size: 1024},
 		Program:   computerport.ArtifactBinding{ObjectKey: "computer/releases/0.1.0/darwin-arm64/vela-computer", SHA256: sha256.Sum256([]byte("program")), Size: 8 << 20},
 	}
+}
+
+func repositoryReleaseSet() computerport.ReleaseSet {
+	mac := repositoryEnrollmentRelease()
+	linux := mac
+	linux.Target = "linux-amd64"
+	linux.OSType = "linux"
+	linux.Architecture = "amd64"
+	linux.Manifest.ObjectKey = "computer/releases/0.1.0/linux-amd64/manifest.json"
+	linux.Signature.ObjectKey = "computer/releases/0.1.0/linux-amd64/manifest.sig"
+	linux.Installer.ObjectKey = "computer/releases/0.1.0/linux-amd64/install.sh"
+	linux.Program.ObjectKey = "computer/releases/0.1.0/linux-amd64/vela-computer"
+	return computerport.ReleaseSet{Version: "0.1.0", Releases: []computerport.ReleaseBinding{mac, linux}}
 }
 
 func openComputerRepository(t *testing.T) (*EntRepository, *database.Handle) {

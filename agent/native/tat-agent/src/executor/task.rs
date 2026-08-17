@@ -434,7 +434,7 @@ impl TaskUploadConf {
         };
         let resp = match T::get_cos_credential(task_id).await {
             Ok(resp) => Ok(resp),
-            Err(e) => {
+            Err(_e) => {
                 #[cfg(not(target_os = "macos"))]
                 {
                     let metadata_adapter = MetadataAdapter::build(&get_meta_url());
@@ -442,7 +442,7 @@ impl TaskUploadConf {
                 }
                 #[cfg(target_os = "macos")]
                 {
-                    Err(e)
+                    Err(_e)
                 }
             }
         };

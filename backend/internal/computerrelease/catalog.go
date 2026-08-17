@@ -33,18 +33,96 @@ type catalogDocument struct {
 	Program      artifactDocument `json:"program"`
 }
 
+type releaseSetDocument struct {
+	Schema  string           `json:"schema"`
+	Version string           `json:"version"`
+	Targets []targetDocument `json:"targets"`
+}
+
+type targetDocument struct {
+	Target       string           `json:"target"`
+	OSType       string           `json:"osType"`
+	Architecture string           `json:"architecture"`
+	SigningKeyID string           `json:"signingKeyId"`
+	Manifest     artifactDocument `json:"manifest"`
+	Signature    artifactDocument `json:"signature"`
+	Installer    artifactDocument `json:"installer"`
+	Program      artifactDocument `json:"program"`
+}
+
 // LoadCatalog 只接受受限普通文件，并对象级绑定版本与 target。
 func LoadCatalog(filename string) (computerport.ReleaseBinding, error) {
+	raw, err := readCatalog(filename)
+	if err != nil {
+		return computerport.ReleaseBinding{}, err
+	}
+	return decodeLegacyCatalog(raw)
+}
+
+// LoadReleaseSet reads the formal two-target catalog and the strict read-only legacy macOS catalog.
+func LoadReleaseSet(filename string) (computerport.ReleaseSet, error) {
+	raw, err := readCatalog(filename)
+	if err != nil {
+		return computerport.ReleaseSet{}, err
+	}
+	var probe struct {
+		Schema *string `json:"schema"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return computerport.ReleaseSet{}, errors.New("Computer release catalog JSON 无效")
+	}
+	if probe.Schema == nil {
+		release, err := decodeLegacyCatalog(raw)
+		if err != nil || release.Target != "darwin-arm64" || release.OSType != "macos" ||
+			release.Architecture != "arm64" {
+			return computerport.ReleaseSet{}, errors.New("Computer legacy release catalog 无效")
+		}
+		return computerport.ReleaseSet{
+			Version: release.Version, Releases: []computerport.ReleaseBinding{release},
+		}, nil
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.DisallowUnknownFields()
+	var document releaseSetDocument
+	if err := decoder.Decode(&document); err != nil || decoder.Decode(&struct{}{}) != io.EOF ||
+		document.Schema != "agent-network-computer-release-set/v1" ||
+		!validComponent(document.Version) || len(document.Targets) != 2 {
+		return computerport.ReleaseSet{}, errors.New("Computer release set JSON 无效")
+	}
+	wantTargets := []string{"darwin-arm64", "linux-amd64"}
+	result := computerport.ReleaseSet{Version: document.Version}
+	for index, target := range document.Targets {
+		if target.Target != wantTargets[index] {
+			return computerport.ReleaseSet{}, errors.New("Computer release set target 顺序无效")
+		}
+		release, err := parseTargetDocument(document.Version, target)
+		if err != nil {
+			return computerport.ReleaseSet{}, err
+		}
+		result.Releases = append(result.Releases, release)
+	}
+	return result, nil
+}
+
+func readCatalog(filename string) ([]byte, error) {
 	info, err := os.Lstat(filename)
 	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxCatalogBytes {
-		return computerport.ReleaseBinding{}, errors.New("Computer release catalog 文件无效")
+		return nil, errors.New("Computer release catalog 文件无效")
 	}
 	file, err := os.Open(filename)
 	if err != nil {
-		return computerport.ReleaseBinding{}, errors.New("无法读取 Computer release catalog")
+		return nil, errors.New("无法读取 Computer release catalog")
 	}
 	defer file.Close()
-	decoder := json.NewDecoder(io.LimitReader(file, maxCatalogBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(file, maxCatalogBytes+1))
+	if err != nil || int64(len(raw)) != info.Size() {
+		return nil, errors.New("无法读取 Computer release catalog")
+	}
+	return raw, nil
+}
+
+func decodeLegacyCatalog(raw []byte) (computerport.ReleaseBinding, error) {
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
 	decoder.DisallowUnknownFields()
 	var document catalogDocument
 	if err := decoder.Decode(&document); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
@@ -84,6 +162,39 @@ func LoadCatalog(filename string) (computerport.ReleaseBinding, error) {
 		OSType: document.OSType, Architecture: document.Architecture,
 		SigningKeyID: document.SigningKeyID,
 		Manifest:     manifest, Signature: signature, Installer: installer, Program: program,
+	}, nil
+}
+
+func parseTargetDocument(version string, document targetDocument) (computerport.ReleaseBinding, error) {
+	root := "computer/releases/" + version + "/" + document.Target + "/"
+	manifest, err := parseArtifact(document.Manifest, root+"manifest.json")
+	if err != nil {
+		return computerport.ReleaseBinding{}, err
+	}
+	signature, err := parseArtifact(document.Signature, root+"manifest.sig")
+	if err != nil {
+		return computerport.ReleaseBinding{}, err
+	}
+	installer, err := parseArtifact(document.Installer, root+"install.sh")
+	if err != nil {
+		return computerport.ReleaseBinding{}, err
+	}
+	program, err := parseArtifact(document.Program, root+"vela-computer")
+	if err != nil {
+		return computerport.ReleaseBinding{}, err
+	}
+	probe := catalogDocument{
+		OSType: document.OSType, Architecture: document.Architecture,
+	}
+	if !validComponent(document.Target) || !validComponent(document.OSType) ||
+		!validComponent(document.Architecture) || !validComponent(document.SigningKeyID) ||
+		document.Target != probe.OSTypeTarget() {
+		return computerport.ReleaseBinding{}, errors.New("Computer release set 平台绑定无效")
+	}
+	return computerport.ReleaseBinding{
+		Version: version, Target: document.Target, OSType: document.OSType,
+		Architecture: document.Architecture, SigningKeyID: document.SigningKeyID,
+		Manifest: manifest, Signature: signature, Installer: installer, Program: program,
 	}, nil
 }
 

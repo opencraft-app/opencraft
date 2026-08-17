@@ -1,13 +1,14 @@
-//go:build vela_tat_cgo && darwin && arm64 && cgo
+//go:build vela_tat_cgo && cgo && ((darwin && arm64) || (linux && amd64))
 
 package tat
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../../native/tat-agent/include
 #cgo LDFLAGS: ${SRCDIR}/../../../native/tat-agent/target/release/libvela_tat.a
-#cgo LDFLAGS: -framework Security -framework CoreFoundation -framework IOKit
-#cgo LDFLAGS: -framework SystemConfiguration -framework Foundation
-#cgo LDFLAGS: -liconv
+#cgo darwin,arm64 LDFLAGS: -framework Security -framework CoreFoundation -framework IOKit
+#cgo darwin,arm64 LDFLAGS: -framework SystemConfiguration -framework Foundation
+#cgo darwin,arm64 LDFLAGS: -liconv
+#cgo linux,amd64 LDFLAGS: -ldl -lpthread -lm -lrt -lutil
 #include <stdlib.h>
 #include "vela_tat.h"
 */

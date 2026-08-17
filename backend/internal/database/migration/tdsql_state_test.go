@@ -17,7 +17,7 @@ func TestTDSQLRuntimeExpectation包含冻结Baseline和增量迁移(t *testing.T
 	if err != nil {
 		t.Fatalf("tdsqlRuntimeExpectationFromDir() error = %v", err)
 	}
-	if len(runtime.Migrations) != 8 ||
+	if len(runtime.Migrations) != 9 ||
 		runtime.Migrations[0].Version != "20260801000000" ||
 		runtime.Migrations[0].Hash != "EVq8iLGKqGF4ak8nxCZL94xTu4j4VAZWpwG3q0+m/Xk=" ||
 		runtime.Migrations[1].Version != "20260802100000" ||
@@ -27,6 +27,7 @@ func TestTDSQLRuntimeExpectation包含冻结Baseline和增量迁移(t *testing.T
 		runtime.Migrations[5].Version != "20260804110000" ||
 		runtime.Migrations[6].Version != "20260804120000" ||
 		runtime.Migrations[7].Version != "20260804130000" ||
+		runtime.Migrations[8].Version != "20260817090000" ||
 		len(runtime.UserTables) != 27 {
 		t.Fatalf("runtime expectation = %#v", runtime)
 	}
@@ -63,7 +64,7 @@ func TestClassifyTDSQLRuntime允许已完成Baseline后等待增量(t *testing.T
 		}
 		snapshot.Revisions = append(snapshot.Revisions, TDSQLRevision{
 			Version: incremental.Version, Hash: incremental.Hash,
-			ClaimID: strings.Repeat(string("abcdef0"[index]), 32),
+			ClaimID: strings.Repeat(string("abcdef01"[index]), 32),
 			Applied: incremental.Total, Total: incremental.Total,
 		})
 	}

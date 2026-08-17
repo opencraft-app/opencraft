@@ -16,6 +16,9 @@ signing_private_key=
 signing_public_key=
 release_output=
 health_base_url=
+linux_builder_host=root@9.134.208.109
+linux_builder_port=36000
+remote_build_root=
 temporary_root=
 live_patched=false
 original_computer_release_configmap=
@@ -32,7 +35,8 @@ usage() {
   --release-output /absolute/path/to/release-evidence \
   [--health-base-url http://9.135.236.64]
 
-脚本会测试并构建唯一 macOS ARM64 vela-computer，生成和独立验签 release，
+脚本会在 Mac 原生构建 macOS ARM64，并通过远端 Docker Buildx 构建 Linux AMD64，
+生成和独立验签双 target Release Set，
 禁止覆盖发布私有 COS，创建唯一 catalog ConfigMap，切换 3 副本 Canary 并验收。
 签名私钥和腾讯云凭据不会写入仓库、Kubernetes、Agent 或日志。
 EOF
@@ -58,6 +62,12 @@ cleanup() {
   if [ -n "$temporary_root" ] && [ -d "$temporary_root" ]; then
     rm -rf -- "$temporary_root"
   fi
+  case "$remote_build_root" in
+    /tmp/vela-computer-release.*)
+      ssh -o BatchMode=yes -p "$linux_builder_port" "$linux_builder_host" \
+        "rm -rf -- '$remote_build_root'" >/dev/null 2>&1 || true
+      ;;
+  esac
   exit "$exit_code"
 }
 trap cleanup EXIT HUP INT TERM
@@ -76,6 +86,8 @@ while [ "$#" -gt 0 ]; do
     --deployment) [ "$#" -ge 2 ] || fail "--deployment 缺少值"; deployment=$2; shift 2 ;;
     --bucket) [ "$#" -ge 2 ] || fail "--bucket 缺少值"; bucket=$2; shift 2 ;;
     --region) [ "$#" -ge 2 ] || fail "--region 缺少值"; region=$2; shift 2 ;;
+    --linux-builder-host) [ "$#" -ge 2 ] || fail "--linux-builder-host 缺少值"; linux_builder_host=$2; shift 2 ;;
+    --linux-builder-port) [ "$#" -ge 2 ] || fail "--linux-builder-port 缺少值"; linux_builder_port=$2; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) fail "未知参数 $1" ;;
   esac
@@ -89,6 +101,7 @@ done
 [ -f "$kubeconfig" ] || fail "kubeconfig 不存在"
 [ -d "$agent_source" ] || fail "Agent 源码目录不存在"
 [ -x "$agent_source/scripts/build-vela-macos-arm64.sh" ] || fail "Agent canonical 构建入口不存在"
+[ -x "$agent_source/scripts/build-vela-linux-amd64-buildx.sh" ] || fail "Agent Linux Buildx 构建入口不存在"
 [ -f "$signing_private_key" ] && [ ! -L "$signing_private_key" ] || fail "签名私钥不是受限普通文件"
 [ -f "$signing_public_key" ] && [ ! -L "$signing_public_key" ] || fail "签名公钥不是普通文件"
 [ "$(stat -f '%Lp' "$signing_private_key")" = 600 ] || fail "签名私钥权限必须为 0600"
@@ -97,9 +110,11 @@ printf '%s\n' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)*
 case "$signing_key_id" in *[!A-Za-z0-9._-]*|'') fail "signing-key-id 无效" ;; esac
 case "$bucket" in *[!a-z0-9-]*|'') fail "bucket 无效" ;; esac
 case "$region" in *[!a-z0-9-]*|'') fail "region 无效" ;; esac
+case "$linux_builder_host" in *[!A-Za-z0-9._@:-]*|'') fail "linux-builder-host 无效" ;; esac
+printf '%s\n' "$linux_builder_port" | grep -Eq '^[1-9][0-9]{0,4}$' || fail "linux-builder-port 无效"
 [ ! -e "$release_output" ] || fail "release-output 已存在；拒绝覆盖发布证据"
 
-for command_name in kubectl jq go cargo base64 curl shasum stat; do
+for command_name in kubectl jq go cargo base64 curl shasum stat ssh scp tar file; do
   command -v "$command_name" >/dev/null 2>&1 || fail "缺少命令 $command_name"
 done
 
@@ -150,38 +165,53 @@ for key in tencent-cloud-secret-id tencent-cloud-secret-key; do
 done
 unset encoded
 
-echo "[3/7] 构建唯一 macOS ARM64 单二进制……"
-agent_binary="$temporary_root/vela-computer"
-"$agent_source/scripts/build-vela-macos-arm64.sh" --version "$version" --output "$agent_binary" >/dev/null
+echo "[3/7] 构建 macOS ARM64 与 Linux AMD64 双目标二进制……"
+mac_agent_binary="$temporary_root/vela-computer-darwin-arm64"
+linux_agent_binary="$temporary_root/vela-computer-linux-amd64"
+linux_build_metadata="$temporary_root/linux-buildx-metadata.json"
+"$agent_source/scripts/build-vela-macos-arm64.sh" --version "$version" --output "$mac_agent_binary" >/dev/null
 expected_version="{\"mode\":\"vela\",\"name\":\"vela-computer\",\"version\":\"$version\"}"
-[ "$("$agent_binary" version --json)" = "$expected_version" ] || fail "构建产物版本不匹配"
-program_hash=$(shasum -a 256 "$agent_binary" | awk '{print $1}')
-[ "${#program_hash}" -eq 64 ] || fail "Agent SHA-256 无效"
+[ "$("$mac_agent_binary" version --json)" = "$expected_version" ] || fail "macOS 构建产物版本不匹配"
+remote_build_root=$(ssh -o BatchMode=yes -p "$linux_builder_port" "$linux_builder_host" \
+  'mktemp -d /tmp/vela-computer-release.XXXXXX')
+case "$remote_build_root" in /tmp/vela-computer-release.*) ;; *) fail "远端构建目录无效" ;; esac
+COPYFILE_DISABLE=1 tar --exclude='./native/tat-agent/target' --exclude='./dist' --exclude='./._*' -czf - -C "$agent_source" . |
+  ssh -o BatchMode=yes -p "$linux_builder_port" "$linux_builder_host" \
+    "tar -xzf - -C '$remote_build_root'"
+ssh -o BatchMode=yes -p "$linux_builder_port" "$linux_builder_host" \
+  "'$remote_build_root/scripts/build-vela-linux-amd64-buildx.sh' --version '$version' --output '$remote_build_root/vela-computer-linux-amd64' --metadata '$remote_build_root/buildx-metadata.json'"
+scp -P "$linux_builder_port" "$linux_builder_host:$remote_build_root/vela-computer-linux-amd64" "$linux_agent_binary" >/dev/null
+scp -P "$linux_builder_port" "$linux_builder_host:$remote_build_root/buildx-metadata.json" "$linux_build_metadata" >/dev/null
+file "$linux_agent_binary" | grep -Eq 'ELF 64-bit.*x86-64' || fail "Linux 构建产物目标错误"
+mac_program_hash=$(shasum -a 256 "$mac_agent_binary" | awk '{print $1}')
+linux_program_hash=$(shasum -a 256 "$linux_agent_binary" | awk '{print $1}')
+[ "${#mac_program_hash}" -eq 64 ] && [ "${#linux_program_hash}" -eq 64 ] || fail "Agent SHA-256 无效"
 
-echo "[4/7] 生成并独立验签 release……"
+echo "[4/7] 生成并独立验签双 target Release Set……"
 release_directory="$temporary_root/release"
 (
   cd "$repository_root"
-  go run ./cmd/computer-release \
+  go run ./cmd/computer-release build-set \
     --version "$version" \
-    --target darwin-arm64 \
-    --os-type macos \
-    --architecture arm64 \
     --signing-key-id "$signing_key_id" \
     --private-key-file "$signing_private_key" \
-    --program "$agent_binary" \
+    --macos-program "$mac_agent_binary" \
+    --linux-program "$linux_agent_binary" \
     --output "$release_directory" >/dev/null
-  go run ./cmd/computer-release verify \
+  go run ./cmd/computer-release verify-set \
     --release-directory "$release_directory" \
     --public-key-file "$signing_public_key" >/dev/null
 )
-catalog_hash=$(jq -r '.program.sha256' "$release_directory/release.catalog.json")
-[ "$catalog_hash" = "$program_hash" ] || fail "catalog 与 Agent 二进制摘要不一致"
+catalog_mac_hash=$(jq -r '.targets[] | select(.target == "darwin-arm64") | .program.sha256' "$release_directory/release.catalog.json")
+catalog_linux_hash=$(jq -r '.targets[] | select(.target == "linux-amd64") | .program.sha256' "$release_directory/release.catalog.json")
+[ "$catalog_mac_hash" = "$mac_program_hash" ] || fail "catalog 与 macOS Agent 摘要不一致"
+[ "$catalog_linux_hash" = "$linux_program_hash" ] || fail "catalog 与 Linux Agent 摘要不一致"
+cp "$linux_build_metadata" "$release_directory/linux-buildx-metadata.json"
 
 echo "[5/7] 禁止覆盖发布 COS 并保留验签证据……"
 (
   cd "$repository_root"
-  go run ./cmd/computer-release publish \
+  go run ./cmd/computer-release publish-set \
     --release-directory "$release_directory" \
     --public-key-file "$signing_public_key" \
     --bucket "$bucket" \
@@ -253,6 +283,7 @@ curl -fsS "$health_base_url/readyz" >/dev/null
 live_patched=false
 echo "Computer Canary 发布成功"
 echo "version=$version"
-echo "programSHA256=$program_hash"
+echo "darwinProgramSHA256=$mac_program_hash"
+echo "linuxProgramSHA256=$linux_program_hash"
 echo "catalog=$target_configmap"
 echo "releaseOutput=$release_output"

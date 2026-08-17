@@ -1,4 +1,4 @@
-//go:build !vela_tat_cgo || !darwin || !arm64
+//go:build !vela_tat_cgo || !cgo || ((!darwin || !arm64) && (!linux || !amd64))
 
 package tat
 

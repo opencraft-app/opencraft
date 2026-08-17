@@ -69,7 +69,7 @@ impl Pty {
             cmd.pre_exec(move || {
                 audit_setloginuid(uid)?;
                 if libc::geteuid() != uid {
-                    libc::setgroups(groups.len() as libc::c_int, groups.as_ptr());
+                    libc::setgroups(groups.len() as _, groups.as_ptr());
                     libc::setgid(gid);
                     libc::setuid(uid);
                 }

@@ -393,7 +393,7 @@ func (repository *EntRepository) BeginEnrollment(
 		if credentialExists {
 			return computerport.ErrComputerAlreadyClaimed
 		}
-		updated, err := tx.Computer.Update().
+		update := tx.Computer.Update().
 			Where(
 				computerentity.IDEQ(command.ComputerID),
 				computerentity.ServerIDEQ(command.ServerID),
@@ -405,20 +405,45 @@ func (repository *EntRepository) BeginEnrollment(
 			SetEnrollmentTokenHash(command.TokenHash[:]).
 			SetEnrollmentExpiresAt(command.ExpiresAt.UTC()).
 			ClearEnrollmentClaimedAt().
-			ClearEnrollmentCredentialVersion().
-			SetEnrollmentReleaseVersion(command.Release.Version).
-			SetEnrollmentTarget(command.Release.Target).
-			SetEnrollmentArchitecture(command.Release.Architecture).
-			SetEnrollmentManifestObject(command.Release.Manifest.ObjectKey).
-			SetEnrollmentManifestSha256(command.Release.Manifest.SHA256[:]).
-			SetEnrollmentSignatureObject(command.Release.Signature.ObjectKey).
-			SetEnrollmentSignatureSha256(command.Release.Signature.SHA256[:]).
-			SetEnrollmentInstallerObject(command.Release.Installer.ObjectKey).
-			SetEnrollmentInstallerSha256(command.Release.Installer.SHA256[:]).
-			SetEnrollmentSigningKeyID(command.Release.SigningKeyID).
-			SetEnrollmentProgramObject(command.Release.Program.ObjectKey).
-			SetEnrollmentProgramSha256(command.Release.Program.SHA256[:]).
-			SetEnrollmentProgramSize(command.Release.Program.Size).
+			ClearEnrollmentCredentialVersion()
+		if validReleaseSet(command.ReleaseSet) {
+			snapshot, encodeErr := persistedjson.Encode(command.ReleaseSet)
+			if encodeErr != nil {
+				return computerport.ErrEnrollmentRevisionConflict
+			}
+			update = update.
+				SetEnrollmentReleaseSetJSON(snapshot).
+				ClearEnrollmentReleaseVersion().
+				ClearEnrollmentTarget().
+				ClearEnrollmentArchitecture().
+				ClearEnrollmentManifestObject().
+				ClearEnrollmentManifestSha256().
+				ClearEnrollmentSignatureObject().
+				ClearEnrollmentSignatureSha256().
+				ClearEnrollmentInstallerObject().
+				ClearEnrollmentInstallerSha256().
+				ClearEnrollmentSigningKeyID().
+				ClearEnrollmentProgramObject().
+				ClearEnrollmentProgramSha256().
+				ClearEnrollmentProgramSize()
+		} else {
+			update = update.
+				ClearEnrollmentReleaseSetJSON().
+				SetEnrollmentReleaseVersion(command.Release.Version).
+				SetEnrollmentTarget(command.Release.Target).
+				SetEnrollmentArchitecture(command.Release.Architecture).
+				SetEnrollmentManifestObject(command.Release.Manifest.ObjectKey).
+				SetEnrollmentManifestSha256(command.Release.Manifest.SHA256[:]).
+				SetEnrollmentSignatureObject(command.Release.Signature.ObjectKey).
+				SetEnrollmentSignatureSha256(command.Release.Signature.SHA256[:]).
+				SetEnrollmentInstallerObject(command.Release.Installer.ObjectKey).
+				SetEnrollmentInstallerSha256(command.Release.Installer.SHA256[:]).
+				SetEnrollmentSigningKeyID(command.Release.SigningKeyID).
+				SetEnrollmentProgramObject(command.Release.Program.ObjectKey).
+				SetEnrollmentProgramSha256(command.Release.Program.SHA256[:]).
+				SetEnrollmentProgramSize(command.Release.Program.Size)
+		}
+		updated, err := update.
 			SetRevision(command.ExpectedRevision + 1).
 			SetUpdatedAt(command.CreatedAt.UTC()).
 			Save(ctx)
@@ -498,52 +523,162 @@ func (repository *EntRepository) ResolveSetupCode(
 	}, nil
 }
 
-// ValidateSetupCode 在 server_id 分片内验证当前、未 claim 的 enrollment。
-func (repository *EntRepository) ValidateSetupCode(
+// BindEnrollmentTarget 在 server_id 分片内首次绑定实际平台；同 target 重试不改 revision。
+func (repository *EntRepository) BindEnrollmentTarget(
 	ctx context.Context,
-	command computerport.ValidateSetupCodeCommand,
-) (computerport.SetupCodeRedemption, error) {
+	command computerport.BindEnrollmentTargetCommand,
+) (result computerport.SetupCodeRedemption, returnErr error) {
 	if command.ServerID == "" || command.ComputerID == "" ||
 		command.Generation == 0 || command.Generation > math.MaxInt64 ||
-		command.TokenHash == [32]byte{} || command.RequestedAt.IsZero() {
+		command.TokenHash == [32]byte{} || command.RequestedAt.IsZero() ||
+		(command.Target != "darwin-arm64" && command.Target != "linux-amd64") {
 		return computerport.SetupCodeRedemption{}, computerport.ErrSetupCodeInvalid
 	}
-	machine, err := repository.handle.Client().Computer.Query().
-		Where(
-			computerentity.ServerIDEQ(command.ServerID),
-			computerentity.IDEQ(command.ComputerID),
-			computerentity.EnrollmentGenerationEQ(int64(command.Generation)),
-			computerentity.LifecycleStateEQ("provisioning"),
-			computerentity.EnrollmentClaimedAtIsNil(),
-		).
-		Only(ctx)
-	if ent.IsNotFound(err) {
-		return computerport.SetupCodeRedemption{}, computerport.ErrSetupCodeInvalid
+	returnErr = repository.handle.WithTx(ctx, func(ctx context.Context, tx *ent.Tx) error {
+		machine, err := tx.Computer.Query().
+			Where(
+				computerentity.ServerIDEQ(command.ServerID),
+				computerentity.IDEQ(command.ComputerID),
+				computerentity.EnrollmentGenerationEQ(int64(command.Generation)),
+				computerentity.LifecycleStateEQ("provisioning"),
+				computerentity.EnrollmentClaimedAtIsNil(),
+			).
+			Only(ctx)
+		if ent.IsNotFound(err) {
+			return computerport.ErrSetupCodeInvalid
+		}
+		if err != nil {
+			return err
+		}
+		if machine.TatAgentState == "online" || machine.EnrollmentTokenHash == nil ||
+			len(*machine.EnrollmentTokenHash) != sha256.Size ||
+			subtle.ConstantTimeCompare(*machine.EnrollmentTokenHash, command.TokenHash[:]) != 1 ||
+			machine.EnrollmentExpiresAt == nil ||
+			!machine.EnrollmentExpiresAt.After(command.RequestedAt.UTC()) {
+			return computerport.ErrSetupCodeInvalid
+		}
+		if machine.EnrollmentTarget != nil {
+			if *machine.EnrollmentTarget != command.Target {
+				return computerport.ErrSetupCodeTargetConflict
+			}
+			var ok bool
+			result, ok = setupCodeRedemptionFromMachine(machine)
+			if !ok || machine.EnrollmentReleaseSetJSON != nil {
+				return computerport.ErrSetupCodeInvalid
+			}
+			return nil
+		}
+		if hasPartialEnrollmentRelease(machine) || machine.EnrollmentReleaseSetJSON == nil {
+			return computerport.ErrSetupCodeInvalid
+		}
+		var releaseSet computerport.ReleaseSet
+		if _, err := persistedjson.Decode(*machine.EnrollmentReleaseSetJSON, &releaseSet); err != nil ||
+			!validReleaseSet(releaseSet) {
+			return computerport.ErrSetupCodeInvalid
+		}
+		release, found := releaseSetTarget(releaseSet, command.Target)
+		if !found {
+			return computerport.ErrComputerInstallTargetUnsupported
+		}
+		updated, err := tx.Computer.Update().
+			Where(
+				computerentity.IDEQ(command.ComputerID),
+				computerentity.ServerIDEQ(command.ServerID),
+				computerentity.RevisionEQ(machine.Revision),
+				computerentity.EnrollmentGenerationEQ(int64(command.Generation)),
+				computerentity.EnrollmentTargetIsNil(),
+				computerentity.EnrollmentClaimedAtIsNil(),
+			).
+			SetOsType(release.OSType).
+			SetEnrollmentReleaseVersion(release.Version).
+			ClearEnrollmentReleaseSetJSON().
+			SetEnrollmentTarget(release.Target).
+			SetEnrollmentArchitecture(release.Architecture).
+			SetEnrollmentManifestObject(release.Manifest.ObjectKey).
+			SetEnrollmentManifestSha256(release.Manifest.SHA256[:]).
+			SetEnrollmentSignatureObject(release.Signature.ObjectKey).
+			SetEnrollmentSignatureSha256(release.Signature.SHA256[:]).
+			SetEnrollmentInstallerObject(release.Installer.ObjectKey).
+			SetEnrollmentInstallerSha256(release.Installer.SHA256[:]).
+			SetEnrollmentSigningKeyID(release.SigningKeyID).
+			SetEnrollmentProgramObject(release.Program.ObjectKey).
+			SetEnrollmentProgramSha256(release.Program.SHA256[:]).
+			SetEnrollmentProgramSize(release.Program.Size).
+			SetRevision(machine.Revision + 1).
+			SetUpdatedAt(command.RequestedAt.UTC()).
+			Save(ctx)
+		if err != nil {
+			return err
+		}
+		if updated != 1 {
+			return computerport.ErrSetupCodeTargetConflict
+		}
+		machine, err = tx.Computer.Query().
+			Where(
+				computerentity.ServerIDEQ(command.ServerID),
+				computerentity.IDEQ(command.ComputerID),
+			).
+			Only(ctx)
+		if err != nil {
+			return err
+		}
+		var ok bool
+		result, ok = setupCodeRedemptionFromMachine(machine)
+		if !ok {
+			return computerport.ErrSetupCodeInvalid
+		}
+		return nil
+	})
+	return result, returnErr
+}
+
+func releaseSetTarget(releaseSet computerport.ReleaseSet, target string) (computerport.ReleaseBinding, bool) {
+	for _, release := range releaseSet.Releases {
+		if release.Target == target {
+			return release, true
+		}
 	}
-	if err != nil {
-		return computerport.SetupCodeRedemption{}, err
-	}
-	if machine.TatAgentState == "online" || machine.EnrollmentTokenHash == nil ||
-		len(*machine.EnrollmentTokenHash) != sha256.Size ||
-		subtle.ConstantTimeCompare(*machine.EnrollmentTokenHash, command.TokenHash[:]) != 1 ||
-		machine.EnrollmentExpiresAt == nil ||
-		!machine.EnrollmentExpiresAt.After(command.RequestedAt.UTC()) ||
-		machine.EnrollmentReleaseVersion == nil || machine.EnrollmentTarget == nil ||
-		machine.EnrollmentInstallerSha256 == nil ||
-		len(*machine.EnrollmentInstallerSha256) != sha256.Size {
-		return computerport.SetupCodeRedemption{}, computerport.ErrSetupCodeInvalid
+	return computerport.ReleaseBinding{}, false
+}
+
+func hasPartialEnrollmentRelease(machine *ent.Computer) bool {
+	return machine.EnrollmentReleaseVersion != nil || machine.EnrollmentArchitecture != nil ||
+		machine.EnrollmentManifestObject != nil || bytePointerHasContent(machine.EnrollmentManifestSha256) ||
+		machine.EnrollmentSignatureObject != nil || bytePointerHasContent(machine.EnrollmentSignatureSha256) ||
+		machine.EnrollmentInstallerObject != nil || bytePointerHasContent(machine.EnrollmentInstallerSha256) ||
+		machine.EnrollmentSigningKeyID != nil || machine.EnrollmentProgramObject != nil ||
+		bytePointerHasContent(machine.EnrollmentProgramSha256) || machine.EnrollmentProgramSize != nil
+}
+
+func bytePointerHasContent(value *[]byte) bool { return value != nil && len(*value) != 0 }
+
+func setupCodeRedemptionFromMachine(machine *ent.Computer) (computerport.SetupCodeRedemption, bool) {
+	if machine.EnrollmentReleaseVersion == nil || machine.EnrollmentTarget == nil ||
+		machine.EnrollmentInstallerSha256 == nil || len(*machine.EnrollmentInstallerSha256) != sha256.Size ||
+		machine.EnrollmentExpiresAt == nil || machine.EnrollmentGeneration < 1 ||
+		hasIncompleteEnrollmentRelease(machine) {
+		return computerport.SetupCodeRedemption{}, false
 	}
 	var installerSHA256 [32]byte
 	copy(installerSHA256[:], *machine.EnrollmentInstallerSha256)
 	return computerport.SetupCodeRedemption{
 		ServerID: machine.ServerID, ComputerID: machine.ID,
-		Generation: uint64(machine.EnrollmentGeneration),
-		ExpiresAt:  machine.EnrollmentExpiresAt.UTC(),
+		Generation: uint64(machine.EnrollmentGeneration), ExpiresAt: machine.EnrollmentExpiresAt.UTC(),
 		Release: computerport.SetupCodeRelease{
 			Version: *machine.EnrollmentReleaseVersion, Target: *machine.EnrollmentTarget,
 			InstallerSHA256: installerSHA256,
 		},
-	}, nil
+	}, true
+}
+
+func hasIncompleteEnrollmentRelease(machine *ent.Computer) bool {
+	return machine.EnrollmentArchitecture == nil || machine.EnrollmentManifestObject == nil ||
+		machine.EnrollmentManifestSha256 == nil || len(*machine.EnrollmentManifestSha256) != sha256.Size ||
+		machine.EnrollmentSignatureObject == nil || machine.EnrollmentSignatureSha256 == nil ||
+		len(*machine.EnrollmentSignatureSha256) != sha256.Size || machine.EnrollmentInstallerObject == nil ||
+		machine.EnrollmentSigningKeyID == nil || machine.EnrollmentProgramObject == nil ||
+		machine.EnrollmentProgramSha256 == nil || len(*machine.EnrollmentProgramSha256) != sha256.Size ||
+		machine.EnrollmentProgramSize == nil
 }
 
 // ClaimEnrollment 使用客户端生成的 credential 摘要完成一次性认领。
@@ -730,8 +865,7 @@ func (repository *EntRepository) AuthorizeReplacement(
 		command.NewServerID != command.OldServerID || command.NewComputerID == "" ||
 		command.NewGeneration == 0 || command.NewGeneration > math.MaxInt64 ||
 		command.NewTokenHash == [32]byte{} || command.TATRegion == "" ||
-		!strings.HasPrefix(command.TATInstanceID, "rins-") || command.ReleaseVersion == "" ||
-		command.Target == "" || command.ProgramSHA256 == [32]byte{} || command.RequestedAt.IsZero() {
+		!strings.HasPrefix(command.TATInstanceID, "rins-") || command.RequestedAt.IsZero() {
 		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementIdentityMismatch
 	}
 	oldMachine, err := repository.handle.Client().Computer.Query().
@@ -784,23 +918,18 @@ func (repository *EntRepository) AuthorizeReplacement(
 		!newMachine.EnrollmentExpiresAt.After(command.RequestedAt.UTC()) {
 		return computerport.ReplacementAuthorization{}, computerport.ErrEnrollmentInvalid
 	}
-	if newMachine.EnrollmentReleaseVersion == nil ||
-		*newMachine.EnrollmentReleaseVersion != command.ReleaseVersion ||
-		newMachine.EnrollmentTarget == nil || *newMachine.EnrollmentTarget != command.Target ||
+	if newMachine.EnrollmentReleaseVersion == nil || newMachine.EnrollmentTarget == nil ||
 		newMachine.EnrollmentProgramSha256 == nil ||
-		len(*newMachine.EnrollmentProgramSha256) != sha256.Size ||
-		subtle.ConstantTimeCompare(*newMachine.EnrollmentProgramSha256, command.ProgramSHA256[:]) != 1 {
+		len(*newMachine.EnrollmentProgramSha256) != sha256.Size {
 		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementReleaseMismatch
 	}
 	hash := computerTATBindingHash(command.TATRegion, command.TATInstanceID)
+	authorization := replacementAuthorizationForMachine(oldMachine.Revision, hash, newMachine)
 	binding, err := repository.handle.Client().TATInstanceBinding.Query().
 		Where(tatinstancebinding.BindingHashEQ(hash)).
 		Only(ctx)
 	if ent.IsNotFound(err) {
-		return computerport.ReplacementAuthorization{
-			OldComputerRevision: oldMachine.Revision,
-			BindingHash:         hash,
-		}, computerport.ErrReplacementBindingMissing
+		return authorization, computerport.ErrReplacementBindingMissing
 	}
 	if err != nil {
 		return computerport.ReplacementAuthorization{}, err
@@ -815,9 +944,23 @@ func (repository *EntRepository) AuthorizeReplacement(
 	if binding.State != "retired" {
 		return computerport.ReplacementAuthorization{}, computerport.ErrReplacementIdentityMismatch
 	}
+	return authorization, nil
+}
+
+func replacementAuthorizationForMachine(
+	oldRevision int64,
+	bindingHash string,
+	machine *ent.Computer,
+) computerport.ReplacementAuthorization {
+	var programSHA256 [32]byte
+	if machine.EnrollmentProgramSha256 != nil {
+		copy(programSHA256[:], *machine.EnrollmentProgramSha256)
+	}
 	return computerport.ReplacementAuthorization{
-		OldComputerRevision: oldMachine.Revision, BindingHash: hash,
-	}, nil
+		OldComputerRevision: oldRevision, BindingHash: bindingHash,
+		OSType: machine.OsType, ReleaseVersion: stringValue(machine.EnrollmentReleaseVersion),
+		Target: stringValue(machine.EnrollmentTarget), ProgramSHA256: programSHA256,
+	}
 }
 
 // ResolveEnrollmentArtifact 只按 token 自带 server 分片和 generation 读取固化对象。
@@ -1112,7 +1255,24 @@ func validBeginEnrollmentCommand(command computerport.BeginEnrollmentCommand) bo
 		command.ExpectedGeneration < math.MaxInt64 && command.Generation < math.MaxInt64 &&
 		command.Generation == command.ExpectedGeneration+1 &&
 		command.TokenHash != [32]byte{} && command.ExpiresAt.After(command.CreatedAt) &&
-		validEnrollmentRelease(command.Release)
+		(validReleaseSet(command.ReleaseSet) || validEnrollmentRelease(command.Release))
+}
+
+func validReleaseSet(releaseSet computerport.ReleaseSet) bool {
+	if releaseSet.Version == "" || len(releaseSet.Releases) == 0 || len(releaseSet.Releases) > 8 {
+		return false
+	}
+	seen := make(map[string]struct{}, len(releaseSet.Releases))
+	for _, release := range releaseSet.Releases {
+		if release.Version != releaseSet.Version || !validEnrollmentRelease(release) {
+			return false
+		}
+		if _, exists := seen[release.Target]; exists {
+			return false
+		}
+		seen[release.Target] = struct{}{}
+	}
+	return true
 }
 
 func validClaimEnrollmentCommand(command computerport.ClaimEnrollmentCommand) bool {

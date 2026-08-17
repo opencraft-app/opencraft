@@ -23,6 +23,28 @@ type BundleVerificationConfig struct {
 	PublicKeyFile string
 }
 
+func OpenVerifiedReleaseSet(config BundleVerificationConfig) (ReleaseSetBundle, error) {
+	releaseSet, err := VerifyReleaseSetBundle(config)
+	if err != nil {
+		return ReleaseSetBundle{}, err
+	}
+	directory := filepath.Clean(config.Directory)
+	result := ReleaseSetBundle{
+		ReleaseSet: releaseSet, CatalogPath: filepath.Join(directory, "release.catalog.json"),
+		OutputDirectory: directory,
+	}
+	for _, release := range releaseSet.Releases {
+		targetDirectory := filepath.Join(directory, release.Target)
+		result.Bundles = append(result.Bundles, Bundle{
+			Release: release, ProgramPath: filepath.Join(targetDirectory, "vela-computer"),
+			InstallerPath: filepath.Join(targetDirectory, "install.sh"),
+			ManifestPath:  filepath.Join(targetDirectory, "manifest.json"),
+			SignaturePath: filepath.Join(targetDirectory, "manifest.sig"),
+		})
+	}
+	return result, nil
+}
+
 // OpenVerifiedBundle 从独立公钥验证现有发布目录，并只返回经过验证的固定发布路径。
 func OpenVerifiedBundle(config BundleVerificationConfig) (Bundle, error) {
 	release, err := VerifyBundle(config)
@@ -78,7 +100,51 @@ func VerifyBundle(config BundleVerificationConfig) (computerport.ReleaseBinding,
 	return release, nil
 }
 
+func VerifyReleaseSetBundle(config BundleVerificationConfig) (computerport.ReleaseSet, error) {
+	directory := filepath.Clean(config.Directory)
+	if !filepath.IsAbs(directory) || !filepath.IsAbs(config.PublicKeyFile) {
+		return computerport.ReleaseSet{}, errors.New("Computer release set verification 配置无效")
+	}
+	releaseSet, err := LoadReleaseSet(filepath.Join(directory, "release.catalog.json"))
+	if err != nil || len(releaseSet.Releases) != 2 {
+		return computerport.ReleaseSet{}, errors.New("Computer release set verification 目录无效")
+	}
+	publicKey, err := readPublicKey(config.PublicKeyFile)
+	if err != nil {
+		return computerport.ReleaseSet{}, err
+	}
+	for _, release := range releaseSet.Releases {
+		targetDirectory := filepath.Join(directory, release.Target)
+		paths := []struct {
+			binding computerport.ArtifactBinding
+			path    string
+		}{
+			{release.Program, filepath.Join(targetDirectory, "vela-computer")},
+			{release.Installer, filepath.Join(targetDirectory, "install.sh")},
+			{release.Manifest, filepath.Join(targetDirectory, "manifest.json")},
+			{release.Signature, filepath.Join(targetDirectory, "manifest.sig")},
+		}
+		for _, artifact := range paths {
+			if err := verifyBundleArtifact(artifact.path, artifact.binding); err != nil {
+				return computerport.ReleaseSet{}, err
+			}
+		}
+		if err := verifySignedManifestAt(targetDirectory, publicKey, release); err != nil {
+			return computerport.ReleaseSet{}, errors.New("Computer release set bundle 签名验证失败")
+		}
+	}
+	return releaseSet, nil
+}
+
 func verifySignedManifest(
+	directory string,
+	publicKey ed25519.PublicKey,
+	release computerport.ReleaseBinding,
+) error {
+	return verifySignedManifestAt(directory, publicKey, release)
+}
+
+func verifySignedManifestAt(
 	directory string,
 	publicKey ed25519.PublicKey,
 	release computerport.ReleaseBinding,

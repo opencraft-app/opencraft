@@ -176,6 +176,13 @@
       "logicalMigration": "20260804130000_server_scoped_direct_messages"
     },
     {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260817090000_computer_release_set.sql",
+      "sha256": "e9de27c7159c55791558f4e6c372f6e9529d1adfb442ef5802cb0a0441c52339",
+      "migrationId": "20260817090000_computer_release_set",
+      "logicalMigration": "20260817090000_computer_release_set"
+    },
+    {
       "dialect": "tdsql-runtime",
       "path": "migrations/tdsql/20260801000000_baseline.sql",
       "sha256": "82f5c1ae99f40185d02a72fb5e891488a753577470e3205f03e178514296fa7b",
@@ -230,6 +237,13 @@
       "sha256": "e9dae4439e0e4fcabd71c58838c7342d9314def1df4d3c0b1498c4c802f451a8",
       "migrationId": "20260804130000_server_scoped_direct_messages",
       "logicalMigration": "20260804130000_server_scoped_direct_messages"
+    },
+    {
+      "dialect": "tdsql-runtime",
+      "path": "migrations/tdsql/20260817090000_computer_release_set.sql",
+      "sha256": "e9a7f8649e78d72159e2e006a4feeadb792e75fedb76cb9af6cba5cbd428c1cd",
+      "migrationId": "20260817090000_computer_release_set",
+      "logicalMigration": "20260817090000_computer_release_set"
     }
   ]
 }

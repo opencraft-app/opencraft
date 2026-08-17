@@ -292,6 +292,20 @@ func (_c *ComputerCreate) SetNillableEnrollmentReleaseVersion(v *string) *Comput
 	return _c
 }
 
+// SetEnrollmentReleaseSetJSON sets the "enrollment_release_set_json" field.
+func (_c *ComputerCreate) SetEnrollmentReleaseSetJSON(v string) *ComputerCreate {
+	_c.mutation.SetEnrollmentReleaseSetJSON(v)
+	return _c
+}
+
+// SetNillableEnrollmentReleaseSetJSON sets the "enrollment_release_set_json" field if the given value is not nil.
+func (_c *ComputerCreate) SetNillableEnrollmentReleaseSetJSON(v *string) *ComputerCreate {
+	if v != nil {
+		_c.SetEnrollmentReleaseSetJSON(*v)
+	}
+	return _c
+}
+
 // SetEnrollmentTarget sets the "enrollment_target" field.
 func (_c *ComputerCreate) SetEnrollmentTarget(v string) *ComputerCreate {
 	_c.mutation.SetEnrollmentTarget(v)
@@ -773,6 +787,10 @@ func (_c *ComputerCreate) createSpec() (*Computer, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.EnrollmentReleaseVersion(); ok {
 		_spec.SetField(computer.FieldEnrollmentReleaseVersion, field.TypeString, value)
 		_node.EnrollmentReleaseVersion = &value
+	}
+	if value, ok := _c.mutation.EnrollmentReleaseSetJSON(); ok {
+		_spec.SetField(computer.FieldEnrollmentReleaseSetJSON, field.TypeString, value)
+		_node.EnrollmentReleaseSetJSON = &value
 	}
 	if value, ok := _c.mutation.EnrollmentTarget(); ok {
 		_spec.SetField(computer.FieldEnrollmentTarget, field.TypeString, value)

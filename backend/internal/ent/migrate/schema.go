@@ -361,6 +361,7 @@ var (
 		{Name: "enrollment_claimed_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"mysql": "datetime(3)", "sqlite3": "datetime"}},
 		{Name: "enrollment_credential_version", Type: field.TypeInt64, Nullable: true},
 		{Name: "enrollment_release_version", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "enrollment_release_set_json", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "enrollment_target", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "enrollment_architecture", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "enrollment_manifest_object", Type: field.TypeString, Nullable: true, Size: 512},

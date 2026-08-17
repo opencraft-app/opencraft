@@ -13,6 +13,7 @@ import {CodeBlock} from "../components/management-workspace";
 import {SystemButton} from "../primitives/system-button";
 import {SystemField, SystemTextInput} from "../primitives/system-field";
 import {SystemFeedback} from "../primitives/system-feedback";
+import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 
 const agentHandlePattern = /^[a-z0-9][a-z0-9_-]{1,31}$/u;
 
@@ -59,6 +60,7 @@ export function ServerSetupScreen({
   serverName,
 }: ServerSetupScreenProps) {
   const [computerName, setComputerName] = useState("");
+  const [computerOSType, setComputerOSType] = useState<"macos" | "linux">("macos");
   const [agentName, setAgentName] = useState("");
   const [agentHandle, setAgentHandle] = useState("");
   const [registration, setRegistration] =
@@ -84,7 +86,7 @@ export function ServerSetupScreen({
   const createComputerAndRegistration = async () => {
     const name = computerName.trim();
     if (!name) return;
-    const computer = await onCreateComputer({name});
+    const computer = await onCreateComputer({name, osType: computerOSType});
     if (!computer) return;
     const value = await onRequestRegistrationScript(computer.id);
     if (value) setRegistration(value);
@@ -162,6 +164,21 @@ export function ServerSetupScreen({
                   placeholder="例如：本地开发机"
                   value={computerName}
                 />
+              </SystemField>
+              <SystemField label="预期平台" labelTone="primary">
+                <SystemSegmentedControl<"macos" | "linux">
+                  accessibilityLabel="选择预期 Computer 平台"
+                  disabled={busy}
+                  onChange={setComputerOSType}
+                  options={[
+                    {label: "macOS", value: "macos"},
+                    {label: "Linux", value: "linux"},
+                  ]}
+                  value={computerOSType}
+                />
+                <Text style={styles.hint}>
+                  安装命令会自动检测实际机器，选择不一致也不会阻断。
+                </Text>
               </SystemField>
               <SystemButton
                 busy={busy}

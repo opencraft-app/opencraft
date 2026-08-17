@@ -54,3 +54,27 @@ LoadBalancer 深链接可能被 AIO 转发层拒绝，不能用它误判 Pod。�
 
 Deployment 切换后任一验收失败，脚本会恢复原镜像并重新验证原 Pod digest。不要绕开脚本
 手工执行 `kubectl set image`；若脚本失败，应先保留输出和当前 live 镜像再诊断。
+
+## Computer 双平台发布
+
+Computer release 的正式入口：
+
+```bash
+backend/scripts/deploy-computer-canary.sh \
+  --kubeconfig /absolute/path/to/dep.conf \
+  --agent-source /absolute/path/to/velachat/agent \
+  --version vX.Y.Z \
+  --signing-key-id UNIQUE_KEY_ID \
+  --signing-private-key /secure/path/release.private \
+  --signing-public-key /secure/path/release.public \
+  --release-output /absolute/path/to/release-evidence
+```
+
+脚本在 Mac 原生构建 `darwin-arm64`，通过 `root@9.134.208.109:36000` 的独立、固定
+BuildKit image Buildx builder 构建 Rust TAT + Go CGO `linux-amd64`；不依赖 Mac Docker daemon。
+两个 target 缺一不可发布。脚本生成 target-local manifest/signature，独立验签，create-only 发布
+COS，保存 Buildx metadata，再创建不可变 Release Set ConfigMap 并切换 3 副本 Canary。
+
+首次从单 target catalog 升级时，必须先部署能兼容读取旧 catalog 的新版 Backend、应用新增 migration，
+并在旧 ConfigMap 上证明 3/3 Ready；之后才运行上述脚本切双 target catalog。回滚顺序相反：先恢复旧
+ConfigMap并确认 Ready，再回滚旧 Backend image。不得让旧 Backend 读取新 Release Set schema。

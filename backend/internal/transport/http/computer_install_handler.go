@@ -11,6 +11,14 @@ import (
 type ComputerInstallHandler struct {
 	redeemURL string
 	protocol  string
+	commands  computerInstallCommands
+}
+
+type computerInstallCommands struct {
+	Uname                   string
+	ID                      string
+	Systemctl               string
+	SystemdRuntimeDirectory string
 }
 
 type ComputerInstallHandlerConfig struct {
@@ -40,6 +48,10 @@ func NewComputerInstallHandler(config ComputerInstallHandlerConfig) (*ComputerIn
 	return &ComputerInstallHandler{
 		redeemURL: parsed.String() + "/v1/computer/setup-codes:redeem",
 		protocol:  parsed.Scheme,
+		commands: computerInstallCommands{
+			Uname: "/usr/bin/uname", ID: "/usr/bin/id",
+			Systemctl: "/usr/bin/systemctl", SystemdRuntimeDirectory: "/run/systemd/system",
+		},
 	}, nil
 }
 
@@ -67,6 +79,27 @@ if [ -z "$code" ]; then
   /usr/bin/printf '%s\n' 'Missing the 16-character Computer setup code.' >&2
   exit 2
 fi
+kernel=$(` + shellSingleQuote(handler.commands.Uname) + ` -s 2>/dev/null || true)
+machine=$(` + shellSingleQuote(handler.commands.Uname) + ` -m 2>/dev/null || true)
+case "$kernel/$machine" in
+  Darwin/arm64) target=darwin-arm64 ;;
+  Linux/x86_64|Linux/amd64)
+    target=linux-amd64
+    if [ "$(` + shellSingleQuote(handler.commands.ID) + ` -u 2>/dev/null || true)" != 0 ]; then
+      /usr/bin/printf '%s\n' 'Linux installation requires root. Re-run this command as root.' >&2
+      exit 1
+    fi
+    if [ ! -x ` + shellSingleQuote(handler.commands.Systemctl) + ` ] ||
+       [ ! -d ` + shellSingleQuote(handler.commands.SystemdRuntimeDirectory) + ` ]; then
+      /usr/bin/printf '%s\n' 'This Linux environment is not running systemd and is not supported yet.' >&2
+      exit 1
+    fi
+    ;;
+  *)
+    /usr/bin/printf '%s\n' 'Unsupported platform. Vela Computer supports macOS ARM64 and Linux AMD64 with systemd.' >&2
+    exit 1
+    ;;
+esac
 umask 077
 tmp_root=${TMPDIR:-/tmp}
 tmp_root=${tmp_root%/}
@@ -76,15 +109,24 @@ trap '/bin/rm -rf "$d"' 0 HUP INT TERM
 if ! status=$(printf '%s' "$code" |
   /usr/bin/curl -q --silent \
     --proto '=` + protocol + `' --proto-redir '=https' --max-redirs 0 \
-    --request POST --header 'Content-Type: text/plain' --data-binary @- \
+    --request POST --header 'Content-Type: text/plain' \
+    --header "X-Vela-Computer-Target: $target" --data-binary @- \
     --output "$d/setup.sh" --write-out '%{http_code}' ` + shellSingleQuote(handler.redeemURL) + `); then
   /usr/bin/printf '%s\n' 'Unable to contact the Computer setup service. Check your network and try again.' >&2
   exit 1
 fi
 case "$status" in
   200) ;;
-  401|403|404|409|410)
+  401|403|404|410)
     /usr/bin/printf '%s\n' 'Computer setup code is invalid, expired, or already used. Generate a new setup code and try again.' >&2
+    exit 1
+    ;;
+  409)
+    /usr/bin/printf '%s\n' 'This Computer setup code is already bound to another platform. Generate a new setup code and try again.' >&2
+    exit 1
+    ;;
+  422)
+    /usr/bin/printf '%s\n' 'This platform is not supported by the current Vela Computer release.' >&2
     exit 1
     ;;
   *)

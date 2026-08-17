@@ -17,7 +17,7 @@ import (
 type computerEnrollmentService interface {
 	InstallationOptions() appcomputer.InstallationOptions
 	CreateSetupCommand(context.Context, string, string, string, int64) (appcomputer.SetupCommand, error)
-	RedeemSetupCode(context.Context, string) (appcomputer.SetupCodeScript, error)
+	RedeemSetupCode(context.Context, string, string) (appcomputer.SetupCodeScript, error)
 	Claim(context.Context, appcomputer.ClaimCommand) (appcomputer.ClaimResult, error)
 	Preflight(context.Context, appcomputer.PreflightCommand) (appcomputer.PreflightResult, error)
 }
@@ -29,7 +29,11 @@ func (handler *ComputerEnrollmentHandler) RedeemComputerSetupCode(
 	if request.Body == nil || *request.Body == "" {
 		return nil, apperror.New("setup_code_invalid", "安装码无效或已过期", nil)
 	}
-	value, err := handler.enrollment.RedeemSetupCode(ctx, string(*request.Body))
+	target := "darwin-arm64"
+	if request.Params.XVelaComputerTarget != nil {
+		target = string(*request.Params.XVelaComputerTarget)
+	}
+	value, err := handler.enrollment.RedeemSetupCode(ctx, string(*request.Body), target)
 	if err != nil {
 		return nil, err
 	}
@@ -83,19 +87,68 @@ func (handler *ComputerEnrollmentHandler) GetComputerInstallationOptions(
 		if platform.OSType == "" || len(platform.Architectures) == 0 {
 			return nil, invalidDomainData("Computer 安装平台数据无效", nil)
 		}
-		item := struct {
-			Architectures []openapi.ComputerInstallationOptionsPlatformsArchitectures `json:"architectures"`
-			OsType        openapi.ComputerInstallationOptionsPlatformsOsType          `json:"osType"`
-		}{OsType: openapi.ComputerInstallationOptionsPlatformsOsType(platform.OSType)}
 		for _, architecture := range platform.Architectures {
-			item.Architectures = append(
-				item.Architectures,
-				openapi.ComputerInstallationOptionsPlatformsArchitectures(architecture),
-			)
+			if platform.OSType == "macos" && architecture == "arm64" {
+				body.Platforms = append(body.Platforms, struct {
+					Architectures []openapi.ComputerInstallationOptionsPlatformsArchitectures `json:"architectures"`
+					OsType        openapi.ComputerInstallationOptionsPlatformsOsType          `json:"osType"`
+				}{
+					Architectures: []openapi.ComputerInstallationOptionsPlatformsArchitectures{"arm64"},
+					OsType:        "macos",
+				})
+			}
 		}
-		body.Platforms = append(body.Platforms, item)
+	}
+	if len(body.Platforms) == 0 {
+		return nil, invalidDomainData("Computer 安装平台数据无效", nil)
 	}
 	return openapi.GetComputerInstallationOptions200JSONResponse(body), nil
+}
+
+func (handler *ComputerEnrollmentHandler) GetComputerInstallationTargets(
+	ctx context.Context,
+	_ openapi.GetComputerInstallationTargetsRequestObject,
+) (openapi.GetComputerInstallationTargetsResponseObject, error) {
+	if _, ok := CurrentHumanPrincipal(ctx); !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	value := handler.enrollment.InstallationOptions()
+	if value.ReleaseVersion == "" || len(value.Platforms) == 0 {
+		return nil, invalidDomainData("Computer 安装平台数据无效", nil)
+	}
+	body := openapi.ComputerInstallationTargets{ReleaseVersion: value.ReleaseVersion}
+	for _, platform := range value.Platforms {
+		for _, architecture := range platform.Architectures {
+			target, ok := installationTarget(platform.OSType, architecture)
+			if !ok {
+				return nil, invalidDomainData("Computer 安装平台数据无效", nil)
+			}
+			body.Targets = append(body.Targets, struct {
+				Architecture openapi.ComputerInstallationTargetsTargetsArchitecture `json:"architecture"`
+				OsType       openapi.ComputerInstallationTargetsTargetsOsType       `json:"osType"`
+				Target       openapi.ComputerInstallationTargetsTargetsTarget       `json:"target"`
+			}{
+				Architecture: openapi.ComputerInstallationTargetsTargetsArchitecture(architecture),
+				OsType:       openapi.ComputerInstallationTargetsTargetsOsType(platform.OSType),
+				Target:       openapi.ComputerInstallationTargetsTargetsTarget(target),
+			})
+		}
+	}
+	if len(body.Targets) == 0 {
+		return nil, invalidDomainData("Computer 安装平台数据无效", nil)
+	}
+	return openapi.GetComputerInstallationTargets200JSONResponse(body), nil
+}
+
+func installationTarget(osType string, architecture string) (string, bool) {
+	switch osType + "/" + architecture {
+	case "macos/arm64":
+		return "darwin-arm64", true
+	case "linux/amd64":
+		return "linux-amd64", true
+	default:
+		return "", false
+	}
 }
 
 func (handler *ComputerEnrollmentHandler) CreateComputerSetupCommand(

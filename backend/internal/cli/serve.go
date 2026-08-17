@@ -553,7 +553,7 @@ func serveHumanPlatform(
 	clock := clockport.System{}
 	var computerEnrollmentConfig *bootstrap.ComputerEnrollmentAPIConfig
 	if cfg.computerReleaseFile != "" {
-		release, err := computerrelease.LoadCatalog(cfg.computerReleaseFile)
+		releaseSet, err := computerrelease.LoadReleaseSet(cfg.computerReleaseFile)
 		if err != nil {
 			return apperror.New("CONFIG_INVALID", "Computer 发布目录无效", err)
 		}
@@ -565,7 +565,7 @@ func serveHumanPlatform(
 			return apperror.New("CONFIG_INVALID", "Computer 私有制品下载配置无效", err)
 		}
 		computerEnrollmentConfig = &bootstrap.ComputerEnrollmentAPIConfig{
-			Release: release, PlatformBaseURL: cfg.computerInstallPublicURL,
+			ReleaseSet: releaseSet, PlatformBaseURL: cfg.computerInstallPublicURL,
 			AllowInsecureHTTP: cfg.allowInsecureComputerInstallHTTP,
 			TokenTTL:          15 * time.Minute, CredentialTTL: 365 * 24 * time.Hour,
 			ArtifactURLTTL: 5 * time.Minute, ArtifactSigner: signer,

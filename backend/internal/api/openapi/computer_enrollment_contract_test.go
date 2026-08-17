@@ -1,6 +1,9 @@
 package openapi
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestGeneratedComputerEnrollmentContract(t *testing.T) {
 	t.Parallel()
@@ -14,6 +17,9 @@ func TestGeneratedComputerEnrollmentContract(t *testing.T) {
 	}{
 		"/computer-installation-options": {
 			method: "GET", operationID: "GetComputerInstallationOptions",
+		},
+		"/computer-installation-targets": {
+			method: "GET", operationID: "GetComputerInstallationTargets",
 		},
 		"/servers/{serverId}/computers/{computerId}/setup-commands": {
 			method: "POST", operationID: "CreateComputerSetupCommand",
@@ -99,4 +105,78 @@ func TestGeneratedComputerEnrollmentContract(t *testing.T) {
 			t.Errorf("%s does not require EnrollmentAuth", path)
 		}
 	}
+}
+
+func TestComputerEnrollmentContractSupportsMacOSAndLinuxTargets(t *testing.T) {
+	t.Parallel()
+	spec, err := GetSwagger()
+	if err != nil {
+		t.Fatalf("load embedded OpenAPI: %v", err)
+	}
+
+	redeem := spec.Paths.Map()["/computer/setup-codes:redeem"].Post
+	var targetHeaderFound bool
+	for _, parameter := range redeem.Parameters {
+		if parameter.Value == nil || parameter.Value.Name != "X-Vela-Computer-Target" {
+			continue
+		}
+		targetHeaderFound = parameter.Value.In == "header" &&
+			reflect.DeepEqual(parameter.Value.Schema.Value.Enum, []any{"darwin-arm64", "linux-amd64"})
+	}
+	if !targetHeaderFound {
+		t.Fatal("setup-code redemption lacks required X-Vela-Computer-Target enum")
+	}
+
+	artifact := spec.Paths.Map()["/computer-artifacts/{version}/{target}/{file}"]
+	var artifactTargets []any
+	for _, parameter := range artifact.Parameters {
+		if parameter.Value != nil && parameter.Value.Name == "target" {
+			artifactTargets = parameter.Value.Schema.Value.Enum
+		}
+	}
+	if !reflect.DeepEqual(artifactTargets, []any{"darwin-arm64", "linux-amd64"}) {
+		t.Fatalf("artifact targets = %#v", artifactTargets)
+	}
+
+	create := spec.Components.Schemas["CreateComputerRequest"].Value
+	if containsString(create.Required, "osType") ||
+		!reflect.DeepEqual(create.Properties["osType"].Value.Enum, []any{"macos", "linux"}) ||
+		create.Properties["osType"].Value.Default != nil {
+		t.Fatalf("CreateComputerRequest osType = required %#v schema %#v", create.Required, create.Properties["osType"])
+	}
+	claim := spec.Components.Schemas["ComputerEnrollmentClaimRequest"].Value
+	if !reflect.DeepEqual(claim.Properties["osType"].Value.Enum, []any{"macos", "linux"}) ||
+		!reflect.DeepEqual(claim.Properties["architecture"].Value.Enum, []any{"arm64", "amd64"}) {
+		t.Fatalf("claim platform enums = os %#v arch %#v", claim.Properties["osType"].Value.Enum, claim.Properties["architecture"].Value.Enum)
+	}
+	options := spec.Components.Schemas["ComputerInstallationTargets"].Value
+	targets := options.Properties["targets"]
+	if targets == nil || targets.Value == nil || targets.Value.Items == nil ||
+		targets.Value.Items.Value == nil ||
+		!reflect.DeepEqual(targets.Value.Items.Value.Properties["target"].Value.Enum, []any{"darwin-arm64", "linux-amd64"}) {
+		t.Fatalf("installation target directory = %#v", targets)
+	}
+
+	registry, ok := spec.Extensions["x-error-code-registry"].(map[string]any)
+	if !ok {
+		t.Fatalf("error registry type = %T", spec.Extensions["x-error-code-registry"])
+	}
+	for code, status := range map[string]float64{
+		"computer_install_target_unsupported": 422,
+		"setup_code_target_conflict":          409,
+	} {
+		entry, ok := registry[code].(map[string]any)
+		if !ok || entry["status"] != status {
+			t.Errorf("error registry %s = %#v", code, registry[code])
+		}
+	}
+}
+
+func containsString(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }

@@ -243,6 +243,7 @@ tables:
       tat_agent_state: lifecycle
       enrollment_token_hash: credential
       enrollment_credential_version: lifecycle
+      enrollment_release_set_json: opaque-json
       enrollment_manifest_sha256: hash
       enrollment_signature_sha256: hash
       enrollment_installer_sha256: hash

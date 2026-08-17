@@ -118,6 +118,9 @@ type ClientInterface interface {
 	// GetComputerInstallationOptions request
 	GetComputerInstallationOptions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetComputerInstallationTargets request
+	GetComputerInstallationTargets(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateComputerAgentLaunchWithBody request with any body
 	CreateComputerAgentLaunchWithBody(ctx context.Context, agentId AgentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -158,9 +161,9 @@ type ClientInterface interface {
 	CreateComputerSession(ctx context.Context, params *CreateComputerSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RedeemComputerSetupCodeWithBody request with any body
-	RedeemComputerSetupCodeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	RedeemComputerSetupCodeWithBody(ctx context.Context, params *RedeemComputerSetupCodeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	RedeemComputerSetupCodeWithTextBody(ctx context.Context, body RedeemComputerSetupCodeTextRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	RedeemComputerSetupCodeWithTextBody(ctx context.Context, params *RedeemComputerSetupCodeParams, body RedeemComputerSetupCodeTextRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// AcceptInviteWithBody request with any body
 	AcceptInviteWithBody(ctx context.Context, params *AcceptInviteParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -591,6 +594,18 @@ func (c *Client) GetComputerInstallationOptions(ctx context.Context, reqEditors 
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetComputerInstallationTargets(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetComputerInstallationTargetsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) CreateComputerAgentLaunchWithBody(ctx context.Context, agentId AgentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateComputerAgentLaunchRequestWithBody(c.Server, agentId, contentType, body)
 	if err != nil {
@@ -771,8 +786,8 @@ func (c *Client) CreateComputerSession(ctx context.Context, params *CreateComput
 	return c.Client.Do(req)
 }
 
-func (c *Client) RedeemComputerSetupCodeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRedeemComputerSetupCodeRequestWithBody(c.Server, contentType, body)
+func (c *Client) RedeemComputerSetupCodeWithBody(ctx context.Context, params *RedeemComputerSetupCodeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRedeemComputerSetupCodeRequestWithBody(c.Server, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -783,8 +798,8 @@ func (c *Client) RedeemComputerSetupCodeWithBody(ctx context.Context, contentTyp
 	return c.Client.Do(req)
 }
 
-func (c *Client) RedeemComputerSetupCodeWithTextBody(ctx context.Context, body RedeemComputerSetupCodeTextRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRedeemComputerSetupCodeRequestWithTextBody(c.Server, body)
+func (c *Client) RedeemComputerSetupCodeWithTextBody(ctx context.Context, params *RedeemComputerSetupCodeParams, body RedeemComputerSetupCodeTextRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRedeemComputerSetupCodeRequestWithTextBody(c.Server, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2419,6 +2434,33 @@ func NewGetComputerInstallationOptionsRequest(server string) (*http.Request, err
 	return req, nil
 }
 
+// NewGetComputerInstallationTargetsRequest generates requests for GetComputerInstallationTargets
+func NewGetComputerInstallationTargetsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/computer-installation-targets")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewCreateComputerAgentLaunchRequest calls the generic CreateComputerAgentLaunch builder with application/json body
 func NewCreateComputerAgentLaunchRequest(server string, agentId AgentId, body CreateComputerAgentLaunchJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -2881,14 +2923,14 @@ func NewCreateComputerSessionRequest(server string, params *CreateComputerSessio
 }
 
 // NewRedeemComputerSetupCodeRequestWithTextBody calls the generic RedeemComputerSetupCode builder with text/plain body
-func NewRedeemComputerSetupCodeRequestWithTextBody(server string, body RedeemComputerSetupCodeTextRequestBody) (*http.Request, error) {
+func NewRedeemComputerSetupCodeRequestWithTextBody(server string, params *RedeemComputerSetupCodeParams, body RedeemComputerSetupCodeTextRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	bodyReader = strings.NewReader(string(body))
-	return NewRedeemComputerSetupCodeRequestWithBody(server, "text/plain", bodyReader)
+	return NewRedeemComputerSetupCodeRequestWithBody(server, params, "text/plain", bodyReader)
 }
 
 // NewRedeemComputerSetupCodeRequestWithBody generates requests for RedeemComputerSetupCode with any type of body
-func NewRedeemComputerSetupCodeRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+func NewRedeemComputerSetupCodeRequestWithBody(server string, params *RedeemComputerSetupCodeParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -2912,6 +2954,21 @@ func NewRedeemComputerSetupCodeRequestWithBody(server string, contentType string
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.XVelaComputerTarget != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Vela-Computer-Target", *params.XVelaComputerTarget, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Vela-Computer-Target", headerParam0)
+		}
+
+	}
 
 	return req, nil
 }
@@ -7301,6 +7358,9 @@ type ClientWithResponsesInterface interface {
 	// GetComputerInstallationOptionsWithResponse request
 	GetComputerInstallationOptionsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetComputerInstallationOptionsResponse, error)
 
+	// GetComputerInstallationTargetsWithResponse request
+	GetComputerInstallationTargetsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetComputerInstallationTargetsResponse, error)
+
 	// CreateComputerAgentLaunchWithBodyWithResponse request with any body
 	CreateComputerAgentLaunchWithBodyWithResponse(ctx context.Context, agentId AgentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateComputerAgentLaunchResponse, error)
 
@@ -7341,9 +7401,9 @@ type ClientWithResponsesInterface interface {
 	CreateComputerSessionWithResponse(ctx context.Context, params *CreateComputerSessionParams, reqEditors ...RequestEditorFn) (*CreateComputerSessionResponse, error)
 
 	// RedeemComputerSetupCodeWithBodyWithResponse request with any body
-	RedeemComputerSetupCodeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RedeemComputerSetupCodeResponse, error)
+	RedeemComputerSetupCodeWithBodyWithResponse(ctx context.Context, params *RedeemComputerSetupCodeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RedeemComputerSetupCodeResponse, error)
 
-	RedeemComputerSetupCodeWithTextBodyWithResponse(ctx context.Context, body RedeemComputerSetupCodeTextRequestBody, reqEditors ...RequestEditorFn) (*RedeemComputerSetupCodeResponse, error)
+	RedeemComputerSetupCodeWithTextBodyWithResponse(ctx context.Context, params *RedeemComputerSetupCodeParams, body RedeemComputerSetupCodeTextRequestBody, reqEditors ...RequestEditorFn) (*RedeemComputerSetupCodeResponse, error)
 
 	// AcceptInviteWithBodyWithResponse request with any body
 	AcceptInviteWithBodyWithResponse(ctx context.Context, params *AcceptInviteParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AcceptInviteResponse, error)
@@ -7794,6 +7854,29 @@ func (r GetComputerInstallationOptionsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetComputerInstallationOptionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetComputerInstallationTargetsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ComputerInstallationTargets
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetComputerInstallationTargetsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetComputerInstallationTargetsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -9961,6 +10044,15 @@ func (c *ClientWithResponses) GetComputerInstallationOptionsWithResponse(ctx con
 	return ParseGetComputerInstallationOptionsResponse(rsp)
 }
 
+// GetComputerInstallationTargetsWithResponse request returning *GetComputerInstallationTargetsResponse
+func (c *ClientWithResponses) GetComputerInstallationTargetsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetComputerInstallationTargetsResponse, error) {
+	rsp, err := c.GetComputerInstallationTargets(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetComputerInstallationTargetsResponse(rsp)
+}
+
 // CreateComputerAgentLaunchWithBodyWithResponse request with arbitrary body returning *CreateComputerAgentLaunchResponse
 func (c *ClientWithResponses) CreateComputerAgentLaunchWithBodyWithResponse(ctx context.Context, agentId AgentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateComputerAgentLaunchResponse, error) {
 	rsp, err := c.CreateComputerAgentLaunchWithBody(ctx, agentId, contentType, body, reqEditors...)
@@ -10091,16 +10183,16 @@ func (c *ClientWithResponses) CreateComputerSessionWithResponse(ctx context.Cont
 }
 
 // RedeemComputerSetupCodeWithBodyWithResponse request with arbitrary body returning *RedeemComputerSetupCodeResponse
-func (c *ClientWithResponses) RedeemComputerSetupCodeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RedeemComputerSetupCodeResponse, error) {
-	rsp, err := c.RedeemComputerSetupCodeWithBody(ctx, contentType, body, reqEditors...)
+func (c *ClientWithResponses) RedeemComputerSetupCodeWithBodyWithResponse(ctx context.Context, params *RedeemComputerSetupCodeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RedeemComputerSetupCodeResponse, error) {
+	rsp, err := c.RedeemComputerSetupCodeWithBody(ctx, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseRedeemComputerSetupCodeResponse(rsp)
 }
 
-func (c *ClientWithResponses) RedeemComputerSetupCodeWithTextBodyWithResponse(ctx context.Context, body RedeemComputerSetupCodeTextRequestBody, reqEditors ...RequestEditorFn) (*RedeemComputerSetupCodeResponse, error) {
-	rsp, err := c.RedeemComputerSetupCodeWithTextBody(ctx, body, reqEditors...)
+func (c *ClientWithResponses) RedeemComputerSetupCodeWithTextBodyWithResponse(ctx context.Context, params *RedeemComputerSetupCodeParams, body RedeemComputerSetupCodeTextRequestBody, reqEditors ...RequestEditorFn) (*RedeemComputerSetupCodeResponse, error) {
+	rsp, err := c.RedeemComputerSetupCodeWithTextBody(ctx, params, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -11244,6 +11336,39 @@ func ParseGetComputerInstallationOptionsResponse(rsp *http.Response) (*GetComput
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ComputerInstallationOptions
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetComputerInstallationTargetsResponse parses an HTTP response from a GetComputerInstallationTargetsWithResponse call
+func ParseGetComputerInstallationTargetsResponse(rsp *http.Response) (*GetComputerInstallationTargetsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetComputerInstallationTargetsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ComputerInstallationTargets
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

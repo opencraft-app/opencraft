@@ -461,6 +461,26 @@ func (_u *ComputerUpdate) ClearEnrollmentReleaseVersion() *ComputerUpdate {
 	return _u
 }
 
+// SetEnrollmentReleaseSetJSON sets the "enrollment_release_set_json" field.
+func (_u *ComputerUpdate) SetEnrollmentReleaseSetJSON(v string) *ComputerUpdate {
+	_u.mutation.SetEnrollmentReleaseSetJSON(v)
+	return _u
+}
+
+// SetNillableEnrollmentReleaseSetJSON sets the "enrollment_release_set_json" field if the given value is not nil.
+func (_u *ComputerUpdate) SetNillableEnrollmentReleaseSetJSON(v *string) *ComputerUpdate {
+	if v != nil {
+		_u.SetEnrollmentReleaseSetJSON(*v)
+	}
+	return _u
+}
+
+// ClearEnrollmentReleaseSetJSON clears the value of the "enrollment_release_set_json" field.
+func (_u *ComputerUpdate) ClearEnrollmentReleaseSetJSON() *ComputerUpdate {
+	_u.mutation.ClearEnrollmentReleaseSetJSON()
+	return _u
+}
+
 // SetEnrollmentTarget sets the "enrollment_target" field.
 func (_u *ComputerUpdate) SetEnrollmentTarget(v string) *ComputerUpdate {
 	_u.mutation.SetEnrollmentTarget(v)
@@ -948,6 +968,12 @@ func (_u *ComputerUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.EnrollmentReleaseVersionCleared() {
 		_spec.ClearField(computer.FieldEnrollmentReleaseVersion, field.TypeString)
+	}
+	if value, ok := _u.mutation.EnrollmentReleaseSetJSON(); ok {
+		_spec.SetField(computer.FieldEnrollmentReleaseSetJSON, field.TypeString, value)
+	}
+	if _u.mutation.EnrollmentReleaseSetJSONCleared() {
+		_spec.ClearField(computer.FieldEnrollmentReleaseSetJSON, field.TypeString)
 	}
 	if value, ok := _u.mutation.EnrollmentTarget(); ok {
 		_spec.SetField(computer.FieldEnrollmentTarget, field.TypeString, value)
@@ -1486,6 +1512,26 @@ func (_u *ComputerUpdateOne) ClearEnrollmentReleaseVersion() *ComputerUpdateOne 
 	return _u
 }
 
+// SetEnrollmentReleaseSetJSON sets the "enrollment_release_set_json" field.
+func (_u *ComputerUpdateOne) SetEnrollmentReleaseSetJSON(v string) *ComputerUpdateOne {
+	_u.mutation.SetEnrollmentReleaseSetJSON(v)
+	return _u
+}
+
+// SetNillableEnrollmentReleaseSetJSON sets the "enrollment_release_set_json" field if the given value is not nil.
+func (_u *ComputerUpdateOne) SetNillableEnrollmentReleaseSetJSON(v *string) *ComputerUpdateOne {
+	if v != nil {
+		_u.SetEnrollmentReleaseSetJSON(*v)
+	}
+	return _u
+}
+
+// ClearEnrollmentReleaseSetJSON clears the value of the "enrollment_release_set_json" field.
+func (_u *ComputerUpdateOne) ClearEnrollmentReleaseSetJSON() *ComputerUpdateOne {
+	_u.mutation.ClearEnrollmentReleaseSetJSON()
+	return _u
+}
+
 // SetEnrollmentTarget sets the "enrollment_target" field.
 func (_u *ComputerUpdateOne) SetEnrollmentTarget(v string) *ComputerUpdateOne {
 	_u.mutation.SetEnrollmentTarget(v)
@@ -2003,6 +2049,12 @@ func (_u *ComputerUpdateOne) sqlSave(ctx context.Context) (_node *Computer, err 
 	}
 	if _u.mutation.EnrollmentReleaseVersionCleared() {
 		_spec.ClearField(computer.FieldEnrollmentReleaseVersion, field.TypeString)
+	}
+	if value, ok := _u.mutation.EnrollmentReleaseSetJSON(); ok {
+		_spec.SetField(computer.FieldEnrollmentReleaseSetJSON, field.TypeString, value)
+	}
+	if _u.mutation.EnrollmentReleaseSetJSONCleared() {
+		_spec.ClearField(computer.FieldEnrollmentReleaseSetJSON, field.TypeString)
 	}
 	if value, ok := _u.mutation.EnrollmentTarget(); ok {
 		_spec.SetField(computer.FieldEnrollmentTarget, field.TypeString, value)

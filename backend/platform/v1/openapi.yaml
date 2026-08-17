@@ -95,7 +95,7 @@ x-auth-domain-registry:
      listAgents, createAgent, getAgent, updateAgent, deleteAgent, deployAgent,
      startAgent, stopAgent, restartAgent, rotateAgentRuntimeCredential,
      listComputers, createComputer, getComputer, updateComputer, removeComputer,
-     getComputerInstallationOptions, createComputerSetupCommand,
+     getComputerInstallationOptions, getComputerInstallationTargets, createComputerSetupCommand,
      createComputerRuntimeCredential, refreshComputer, createTerminalSession,
      listTasks, createTask, getTask, updateTask, listReminders,
      createReminder, getReminder, updateReminder, cancelReminder, listInbox,
@@ -121,6 +121,8 @@ x-error-code-registry:
   enrollment_invalid: {status: 401}
   setup_expired: {status: 401}
   setup_code_invalid: {status: 401}
+  computer_install_target_unsupported: {status: 422}
+  setup_code_target_conflict: {status: 409}
   computer_already_claimed: {status: 409}
   enrollment_claim_conflict: {status: 409}
   assignment_query_invalid: {status: 400}
@@ -1359,6 +1361,20 @@ paths:
               schema: {$ref: '#/components/schemas/ComputerInstallationOptions'}
         default: {$ref: '#/components/responses/Error'}
 
+  /computer-installation-targets:
+    get:
+      tags: [Computers]
+      operationId: getComputerInstallationTargets
+      summary: 获取当前完整的签名 Computer target 目录
+      description: 新版客户端使用；旧 computer-installation-options 保留 macOS 兼容投影。
+      responses:
+        '200':
+          description: 当前完整安装 target 目录
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerInstallationTargets'}
+        default: {$ref: '#/components/responses/Error'}
+
   /servers/{serverId}/computers/{computerId}/setup-commands:
     parameters:
       - {$ref: '#/components/parameters/ServerId'}
@@ -1460,6 +1476,17 @@ paths:
         请求正文只包含 16 位短码；响应是经过固化 release 约束的 POSIX shell。
         可在当前 enrollment 被认领、过期或重新签发前安全重试，响应不得缓存。
       security: []
+      parameters:
+        - name: X-Vela-Computer-Target
+          in: header
+          required: false
+          description: |
+            第一阶段安装 shell 检测出的规范化 target。新版客户端始终发送；省略时仅为兼容
+            已发布的 macOS bootstrap，并按 darwin-arm64 处理。
+          schema:
+            type: string
+            enum: [darwin-arm64, linux-amd64]
+            default: darwin-arm64
       requestBody:
         required: true
         content:
@@ -1489,7 +1516,7 @@ paths:
       - name: target
         in: path
         required: true
-        schema: {type: string, enum: [darwin-arm64]}
+        schema: {type: string, enum: [darwin-arm64, linux-amd64]}
       - name: file
         in: path
         required: true
@@ -2966,6 +2993,23 @@ components:
                 minItems: 1
                 uniqueItems: true
                 items: {type: string, enum: [arm64]}
+    ComputerInstallationTargets:
+      type: object
+      additionalProperties: false
+      required: [releaseVersion, targets]
+      properties:
+        releaseVersion: {type: string, minLength: 1, maxLength: 64}
+        targets:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [target, osType, architecture]
+            properties:
+              target: {type: string, enum: [darwin-arm64, linux-amd64]}
+              osType: {type: string, enum: [macos, linux]}
+              architecture: {type: string, enum: [arm64, amd64]}
     ComputerSetupCommand:
       type: object
       additionalProperties: false
@@ -2985,8 +3029,8 @@ components:
       additionalProperties: false
       required: [osType, architecture, credentialDigest, installerVersion]
       properties:
-        osType: {type: string, enum: [macos]}
-        architecture: {type: string, enum: [arm64]}
+        osType: {type: string, enum: [macos, linux]}
+        architecture: {type: string, enum: [arm64, amd64]}
         credentialDigest:
           type: string
           pattern: '^[0-9a-f]{64}$'
@@ -3053,6 +3097,12 @@ components:
       required: [name]
       properties:
         name: {type: string, minLength: 1, maxLength: 100}
+        osType:
+          type: string
+          enum: [macos, linux]
+          description: |
+            provisioning 且安装 target 尚未绑定时是用户选择的提示；首次兑换后由实际检测平台
+            覆盖，Computer active 后表示不可变的实际 OS。省略仅兼容旧客户端并按 macOS 创建。
     TerminalSession:
       type: object
       additionalProperties: false

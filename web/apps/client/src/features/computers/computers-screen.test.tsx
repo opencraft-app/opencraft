@@ -346,11 +346,13 @@ describe("ComputersScreen", () => {
       screen.getByLabelText("Computer 名称"),
       "测试机",
     );
+    await fireEvent.press(screen.getByRole("radio", {name: "Linux"}));
     await fireEvent.press(
       screen.getByRole("button", {name: "创建 Computer"}),
     );
     expect(onCreateComputer).toHaveBeenCalledWith({
       name: "测试机",
+      osType: "linux",
     });
 
     await fireEvent.press(

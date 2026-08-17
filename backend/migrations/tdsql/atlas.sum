@@ -1,4 +1,4 @@
-h1:5y8gV6Rui9ScTeklaAI0RYx3+xAbumYQ3iV0/Vi2P7w=
+h1:EohZNBVLu6+7cEa+SkcIhmH8S8ysBH/gk5CLzvKrLes=
 20260801000000_baseline.sql h1:EVq8iLGKqGF4ak8nxCZL94xTu4j4VAZWpwG3q0+m/Xk=
 20260802100000_computer_enrollment.sql h1:fgsAhBkRHsKyBfkr0gSRTTYq6yfIF+R0PTIYnmLu+I0=
 20260802170000_reminder_anchors.sql h1:gcBoQFBOWzB+oqTEbUb/FIWDz9LsVbB1jBorGyVDukM=
@@ -7,3 +7,4 @@ h1:5y8gV6Rui9ScTeklaAI0RYx3+xAbumYQ3iV0/Vi2P7w=
 20260804110000_computer_display_name.sql h1:Ftvbku3KqYU0RjakdzdU3mdhHK73OBeSDcLocTi+1xg=
 20260804120000_agent_handle_reuse.sql h1:mqeuMVgnG3WQQgdPcHwXY72+/bs0WH6zufhMjJVC2C8=
 20260804130000_server_scoped_direct_messages.sql h1:XTD9IbmhBOwj7x+D8xMtxZwqkzIHcD2Ac8HaTkhhYIU=
+20260817090000_computer_release_set.sql h1:aibVZAG80/YjaqO86t+uJ6R2n3yoYionPCn7jrWNSFc=

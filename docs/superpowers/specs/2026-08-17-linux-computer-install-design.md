@@ -187,13 +187,17 @@ macOS 文件位置和 launchd 行为保持不变。
 
 OpenAPI 先行修改：
 
-- `CreateComputerRequest.osType` 成为必填，只允许 `macos`、`linux`；Handler 不再硬编码 macOS。
-  API description 和模型注释必须明确其生命周期语义：provisioning 且 target 未绑定时是用户选择的
-  hint；首次绑定后同一个字段被实际检测 OS 覆盖；claim/active 后是不可变的实际属性；
-- installation options 返回同一版本下 `macos/arm64` 和 `linux/amd64`；
+- `CreateComputerRequest.osType` 只允许 `macos`、`linux`；新版 Web 显式发送，省略时为兼容已发布
+  客户端按 `macos` 处理，Handler 不再无条件硬编码。API description 和模型注释必须明确其生命周期
+  语义：provisioning 且 target 未绑定时是用户选择的 hint；首次绑定后同一个字段被实际检测 OS
+  覆盖；claim/active 后是不可变的实际属性；
+- 已发布 `computer-installation-options` 的闭合响应 enum 保持 macOS 兼容投影；新增
+  `GET /computer-installation-targets` 返回同一版本下完整的 `macos/arm64` 和 `linux/amd64`
+  目录，新版 Web 使用新接口。这避免在 `additionalProperties: false` 的已发布响应中扩 enum；
 - artifact target enum 为 `darwin-arm64`、`linux-amd64`；
-- setup-code redemption 必须携带 header `X-Vela-Computer-Target`，enum 为
-  `darwin-arm64`、`linux-amd64`；
+- 新版 setup-code bootstrap 必须携带 header `X-Vela-Computer-Target`，enum 为
+  `darwin-arm64`、`linux-amd64`；OpenAPI 保持 optional，仅为已发布的 macOS bootstrap 提供省略时
+  `darwin-arm64` 的兼容读取，新的 shell 和其他调用方不得依赖该默认值；
 - enrollment claim 的 `osType` enum 为 `macos`、`linux`，architecture enum 为
   `arm64`、`amd64`。应用层只接受两个合法配对，不接受交叉组合；
 - 新增 `computer_install_target_unsupported`（HTTP 422）和

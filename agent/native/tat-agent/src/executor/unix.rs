@@ -217,7 +217,7 @@ fn exec_as_user(user: &User) -> impl FnMut() -> io::Result<()> + use<> {
         // setgroups must come before setgid/setuid while the process is still root.
         // Always called even when groups is empty: setgroups(0, NULL) clears all supplementary
         // groups inherited from the parent (root daemon), which is required for a clean drop.
-        if unsafe { libc::setgroups(groups.len() as libc::c_int, groups.as_ptr()) } != 0 {
+        if unsafe { libc::setgroups(groups.len() as _, groups.as_ptr()) } != 0 {
             return Err(io::Error::last_os_error());
         }
         if unsafe { libc::setgid(gid) } != 0 {

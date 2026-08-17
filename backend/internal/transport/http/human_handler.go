@@ -472,6 +472,10 @@ func newHumanRoutes(
 			computerEnrollmentWrapper.GetComputerInstallationOptions,
 		)
 		mux.HandleFunc(
+			"GET /v1/computer-installation-targets",
+			computerEnrollmentWrapper.GetComputerInstallationTargets,
+		)
+		mux.HandleFunc(
 			"POST /v1/servers/{serverId}/computers/{computerId}/setup-commands",
 			computerEnrollmentWrapper.CreateComputerSetupCommand,
 		)

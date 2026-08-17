@@ -85,6 +85,7 @@ type PlatformAPIConfig struct {
 // ComputerEnrollmentAPIConfig 固定一个已签名 release，并为私有对象提供短期 URL。
 type ComputerEnrollmentAPIConfig struct {
 	Release           computerport.ReleaseBinding
+	ReleaseSet        computerport.ReleaseSet
 	PlatformBaseURL   string
 	AllowInsecureHTTP bool
 	TokenTTL          time.Duration
@@ -260,6 +261,7 @@ func NewPlatformAPIHandler(config PlatformAPIConfig) (http.Handler, error) {
 			clockport.System{},
 			appcomputer.EnrollmentConfig{
 				Release:               enrollmentConfig.Release,
+				ReleaseSet:            enrollmentConfig.ReleaseSet,
 				PlatformBaseURL:       enrollmentConfig.PlatformBaseURL,
 				AllowInsecureHTTP:     enrollmentConfig.AllowInsecureHTTP,
 				TokenTTL:              enrollmentConfig.TokenTTL,

@@ -39,6 +39,7 @@ import {
 import {SystemButton, SystemIconButton} from "../primitives/system-button";
 import {SystemFeedback} from "../primitives/system-feedback";
 import {SystemDialog} from "../primitives/system-dialog";
+import {SystemSegmentedControl} from "../primitives/system-segmented-control";
 import {formatReadableDateTime} from "../date-time";
 import {
   buildManagementShellModel,
@@ -138,6 +139,7 @@ export function ComputersScreen(props: ComputersScreenProps) {
   const showStackedCollection = stackedCollection && computers.length > 1;
   const [creating, setCreating] = useState(false);
   const [createName, setCreateName] = useState("");
+  const [createOSType, setCreateOSType] = useState<"macos" | "linux">("macos");
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [registration, setRegistration] =
     useState<RegistrationScript | null>(null);
@@ -176,10 +178,12 @@ export function ComputersScreen(props: ComputersScreenProps) {
     await onCreateComputer(input);
     setCreating(false);
     setCreateName("");
+    setCreateOSType("macos");
   };
   const cancelNewComputer = () => {
     setCreating(false);
     setCreateName("");
+    setCreateOSType("macos");
   };
 
   const selectListedComputer = (computerId: string) => {
@@ -362,7 +366,7 @@ export function ComputersScreen(props: ComputersScreenProps) {
                 id: "submit-create-computer",
                 kind: "primary" as const,
                 label: "创建 Computer",
-                run: () => submitNewComputer({name: createName.trim()}),
+                run: () => submitNewComputer({name: createName.trim(), osType: createOSType}),
               },
             ],
             fields: [
@@ -514,6 +518,8 @@ export function ComputersScreen(props: ComputersScreenProps) {
           {creating ? (
             <ComputerCreateForm
               form={pageModel.form!}
+              onChangeOSType={setCreateOSType}
+              osType={createOSType}
             />
           ) : registration ? (
             <RegistrationPanel
@@ -728,8 +734,12 @@ export function ComputersScreen(props: ComputersScreenProps) {
 
 function ComputerCreateForm({
   form,
+  onChangeOSType,
+  osType,
 }: {
   form: PresentationForm;
+  onChangeOSType(value: "macos" | "linux"): void;
+  osType: "macos" | "linux";
 }) {
   const name = form.fields.find(field => field.id === "computer-name")!;
   const cancel = form.actions.find(action => action.id === "cancel-create-computer")!;
@@ -743,6 +753,20 @@ function ComputerCreateForm({
           onChangeText={name.onChange}
           placeholder={name.placeholder}
           value={name.value}
+        />
+      </ManagementField>
+      <ManagementField
+        hint="安装命令仍会自动检测实际机器，并以检测结果完成连接。"
+        label="预期平台"
+      >
+        <SystemSegmentedControl
+          accessibilityLabel="选择预期 Computer 平台"
+          onChange={onChangeOSType}
+          options={[
+            {label: "macOS", value: "macos"},
+            {label: "Linux", value: "linux"},
+          ]}
+          value={osType}
         />
       </ManagementField>
       <ManagementFormFooter

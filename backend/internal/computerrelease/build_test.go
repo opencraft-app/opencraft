@@ -113,6 +113,84 @@ func TestBuildRendersTrustedInstallerWhenNoInstallerPathIsProvided(t *testing.T)
 	}
 }
 
+func TestBuildRendersLinuxChecksumAndSizeToolsForLinuxTarget(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	program := filepath.Join(root, "vela-computer")
+	if err := os.WriteFile(program, []byte("linux-program-bytes"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := Build(BuildConfig{
+		Version: "0.2.0", Target: "linux-amd64", OSType: "linux", Architecture: "amd64",
+		SigningKeyID: "computer-release-2026-02", PrivateKey: privateKey,
+		ProgramPath: program, OutputDirectory: filepath.Join(root, "output"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	installer, err := os.ReadFile(bundle.InstallerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"/usr/bin/sha256sum -c -", "/usr/bin/stat -c %s"} {
+		if !bytes.Contains(installer, []byte(required)) {
+			t.Fatalf("Linux installer missing %q:\n%s", required, installer)
+		}
+	}
+	if bytes.Contains(installer, []byte("/usr/bin/stat -f %z")) {
+		t.Fatalf("Linux installer retained macOS stat:\n%s", installer)
+	}
+}
+
+func TestBuildReleaseSetCreatesTwoTargetLocalSignedBundles(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	macProgram := filepath.Join(root, "mac")
+	linuxProgram := filepath.Join(root, "linux")
+	if err := os.WriteFile(macProgram, []byte("mac-program"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(linuxProgram, []byte("linux-program"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := BuildReleaseSet(ReleaseSetBuildConfig{
+		Version: "0.3.0", SigningKeyID: "key-3", PrivateKey: privateKey,
+		OutputDirectory: filepath.Join(root, "set"),
+		Targets: []ReleaseTargetBuildConfig{
+			{Target: "linux-amd64", OSType: "linux", Architecture: "amd64", ProgramPath: linuxProgram},
+			{Target: "darwin-arm64", OSType: "macos", Architecture: "arm64", ProgramPath: macProgram},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadReleaseSet(bundle.CatalogPath)
+	if err != nil || len(loaded.Releases) != 2 || loaded.Releases[1].Target != "linux-amd64" {
+		t.Fatalf("LoadReleaseSet() = (%#v, %v)", loaded, err)
+	}
+	for _, release := range loaded.Releases {
+		prefix := "computer/releases/0.3.0/" + release.Target + "/"
+		if release.Manifest.ObjectKey != prefix+"manifest.json" ||
+			release.Signature.ObjectKey != prefix+"manifest.sig" {
+			t.Fatalf("target-local release = %#v", release)
+		}
+		manifest := filepath.Join(bundle.OutputDirectory, release.Target, "manifest.json")
+		signature := filepath.Join(bundle.OutputDirectory, release.Target, "manifest.sig")
+		if _, err := os.Stat(manifest); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(signature); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestGeneratedInstallerRequiresExplicitHTTPOptIn(t *testing.T) {
 	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

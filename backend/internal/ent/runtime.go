@@ -387,19 +387,19 @@ func init() {
 	// computer.EnrollmentReleaseVersionValidator is a validator for the "enrollment_release_version" field. It is called by the builders before save.
 	computer.EnrollmentReleaseVersionValidator = computerDescEnrollmentReleaseVersion.Validators[0].(func(string) error)
 	// computerDescEnrollmentTarget is the schema descriptor for enrollment_target field.
-	computerDescEnrollmentTarget := computerFields[24].Descriptor()
+	computerDescEnrollmentTarget := computerFields[25].Descriptor()
 	// computer.EnrollmentTargetValidator is a validator for the "enrollment_target" field. It is called by the builders before save.
 	computer.EnrollmentTargetValidator = computerDescEnrollmentTarget.Validators[0].(func(string) error)
 	// computerDescEnrollmentArchitecture is the schema descriptor for enrollment_architecture field.
-	computerDescEnrollmentArchitecture := computerFields[25].Descriptor()
+	computerDescEnrollmentArchitecture := computerFields[26].Descriptor()
 	// computer.EnrollmentArchitectureValidator is a validator for the "enrollment_architecture" field. It is called by the builders before save.
 	computer.EnrollmentArchitectureValidator = computerDescEnrollmentArchitecture.Validators[0].(func(string) error)
 	// computerDescEnrollmentManifestObject is the schema descriptor for enrollment_manifest_object field.
-	computerDescEnrollmentManifestObject := computerFields[26].Descriptor()
+	computerDescEnrollmentManifestObject := computerFields[27].Descriptor()
 	// computer.EnrollmentManifestObjectValidator is a validator for the "enrollment_manifest_object" field. It is called by the builders before save.
 	computer.EnrollmentManifestObjectValidator = computerDescEnrollmentManifestObject.Validators[0].(func(string) error)
 	// computerDescEnrollmentManifestSha256 is the schema descriptor for enrollment_manifest_sha256 field.
-	computerDescEnrollmentManifestSha256 := computerFields[27].Descriptor()
+	computerDescEnrollmentManifestSha256 := computerFields[28].Descriptor()
 	// computer.EnrollmentManifestSha256Validator is a validator for the "enrollment_manifest_sha256" field. It is called by the builders before save.
 	computer.EnrollmentManifestSha256Validator = func() func([]byte) error {
 		validators := computerDescEnrollmentManifestSha256.Validators
@@ -417,11 +417,11 @@ func init() {
 		}
 	}()
 	// computerDescEnrollmentSignatureObject is the schema descriptor for enrollment_signature_object field.
-	computerDescEnrollmentSignatureObject := computerFields[28].Descriptor()
+	computerDescEnrollmentSignatureObject := computerFields[29].Descriptor()
 	// computer.EnrollmentSignatureObjectValidator is a validator for the "enrollment_signature_object" field. It is called by the builders before save.
 	computer.EnrollmentSignatureObjectValidator = computerDescEnrollmentSignatureObject.Validators[0].(func(string) error)
 	// computerDescEnrollmentSignatureSha256 is the schema descriptor for enrollment_signature_sha256 field.
-	computerDescEnrollmentSignatureSha256 := computerFields[29].Descriptor()
+	computerDescEnrollmentSignatureSha256 := computerFields[30].Descriptor()
 	// computer.EnrollmentSignatureSha256Validator is a validator for the "enrollment_signature_sha256" field. It is called by the builders before save.
 	computer.EnrollmentSignatureSha256Validator = func() func([]byte) error {
 		validators := computerDescEnrollmentSignatureSha256.Validators
@@ -439,11 +439,11 @@ func init() {
 		}
 	}()
 	// computerDescEnrollmentInstallerObject is the schema descriptor for enrollment_installer_object field.
-	computerDescEnrollmentInstallerObject := computerFields[30].Descriptor()
+	computerDescEnrollmentInstallerObject := computerFields[31].Descriptor()
 	// computer.EnrollmentInstallerObjectValidator is a validator for the "enrollment_installer_object" field. It is called by the builders before save.
 	computer.EnrollmentInstallerObjectValidator = computerDescEnrollmentInstallerObject.Validators[0].(func(string) error)
 	// computerDescEnrollmentInstallerSha256 is the schema descriptor for enrollment_installer_sha256 field.
-	computerDescEnrollmentInstallerSha256 := computerFields[31].Descriptor()
+	computerDescEnrollmentInstallerSha256 := computerFields[32].Descriptor()
 	// computer.EnrollmentInstallerSha256Validator is a validator for the "enrollment_installer_sha256" field. It is called by the builders before save.
 	computer.EnrollmentInstallerSha256Validator = func() func([]byte) error {
 		validators := computerDescEnrollmentInstallerSha256.Validators
@@ -461,15 +461,15 @@ func init() {
 		}
 	}()
 	// computerDescEnrollmentSigningKeyID is the schema descriptor for enrollment_signing_key_id field.
-	computerDescEnrollmentSigningKeyID := computerFields[32].Descriptor()
+	computerDescEnrollmentSigningKeyID := computerFields[33].Descriptor()
 	// computer.EnrollmentSigningKeyIDValidator is a validator for the "enrollment_signing_key_id" field. It is called by the builders before save.
 	computer.EnrollmentSigningKeyIDValidator = computerDescEnrollmentSigningKeyID.Validators[0].(func(string) error)
 	// computerDescEnrollmentProgramObject is the schema descriptor for enrollment_program_object field.
-	computerDescEnrollmentProgramObject := computerFields[33].Descriptor()
+	computerDescEnrollmentProgramObject := computerFields[34].Descriptor()
 	// computer.EnrollmentProgramObjectValidator is a validator for the "enrollment_program_object" field. It is called by the builders before save.
 	computer.EnrollmentProgramObjectValidator = computerDescEnrollmentProgramObject.Validators[0].(func(string) error)
 	// computerDescEnrollmentProgramSha256 is the schema descriptor for enrollment_program_sha256 field.
-	computerDescEnrollmentProgramSha256 := computerFields[34].Descriptor()
+	computerDescEnrollmentProgramSha256 := computerFields[35].Descriptor()
 	// computer.EnrollmentProgramSha256Validator is a validator for the "enrollment_program_sha256" field. It is called by the builders before save.
 	computer.EnrollmentProgramSha256Validator = func() func([]byte) error {
 		validators := computerDescEnrollmentProgramSha256.Validators
@@ -487,11 +487,11 @@ func init() {
 		}
 	}()
 	// computerDescCreatedAt is the schema descriptor for created_at field.
-	computerDescCreatedAt := computerFields[37].Descriptor()
+	computerDescCreatedAt := computerFields[38].Descriptor()
 	// computer.DefaultCreatedAt holds the default value on creation for the created_at field.
 	computer.DefaultCreatedAt = computerDescCreatedAt.Default.(func() time.Time)
 	// computerDescUpdatedAt is the schema descriptor for updated_at field.
-	computerDescUpdatedAt := computerFields[38].Descriptor()
+	computerDescUpdatedAt := computerFields[39].Descriptor()
 	// computer.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	computer.DefaultUpdatedAt = computerDescUpdatedAt.Default.(func() time.Time)
 	// computer.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

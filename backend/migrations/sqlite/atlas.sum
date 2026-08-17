@@ -1,4 +1,4 @@
-h1:fmgrAHzBsujox3DLMOrxGeLAp0w3hoM1J7KBPil25jI=
+h1:xSXb4nqij1SzLN07JiKHKyDFSAnS2cxUwcU09Piq2fo=
 20260730040159_baseline.sql h1:va9A487WcrBqc/OmVLdwyxdgZO9bsk8Zc129H6r7cwE=
 20260731031305_agent_presence.sql h1:sh7kjkREUckI+7n1uR2jCRt9f2ammYtpy5cGLnU9UEg=
 20260731071908_message_threads.sql h1:X/OrOn4YWQeqgkGuhgraaknKxdKKxpaRFIray9HZ/MM=
@@ -12,3 +12,4 @@ h1:fmgrAHzBsujox3DLMOrxGeLAp0w3hoM1J7KBPil25jI=
 20260804110000_computer_display_name.sql h1:DKZlar3igQqoZhNPEJS8lsz3aeR6y/TH/0yTybLu2yU=
 20260804120000_agent_handle_reuse.sql h1:1xnbmGoyLbS9AFeH5FfaauHCCYu+I9o6rmsvgwWckJQ=
 20260804130000_server_scoped_direct_messages.sql h1:4psTy0f6sO8Qnp0VHEMYLzWfYMKZR6OBRNwijI1fYRQ=
+20260817090000_computer_release_set.sql h1:eG47jW88S5MenHqZKlUCgSMpQZ0KJqpK2UnBb8OIcu8=

@@ -14,6 +14,7 @@ type DurableField struct {
 }
 
 var durableFields = []DurableField{
+	{Table: "computers", Field: "enrollment_release_set_json", Setter: "SetEnrollmentReleaseSetJSON", Codec: "Encode"},
 	{Table: "idempotency_records", Field: "response_body_json", Setter: "SetResponseBodyJSON", Codec: "EncodeScoped"},
 	{Table: "reminders", Field: "anchor_message_ref_json", Setter: "SetNillableAnchorMessageRefJSON", Codec: "Encode"},
 	{Table: "tasks", Field: "source_message_ref_json", Setter: "SetNillableSourceMessageRefJSON", Codec: "Encode"},

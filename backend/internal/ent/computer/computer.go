@@ -61,6 +61,8 @@ const (
 	FieldEnrollmentCredentialVersion = "enrollment_credential_version"
 	// FieldEnrollmentReleaseVersion holds the string denoting the enrollment_release_version field in the database.
 	FieldEnrollmentReleaseVersion = "enrollment_release_version"
+	// FieldEnrollmentReleaseSetJSON holds the string denoting the enrollment_release_set_json field in the database.
+	FieldEnrollmentReleaseSetJSON = "enrollment_release_set_json"
 	// FieldEnrollmentTarget holds the string denoting the enrollment_target field in the database.
 	FieldEnrollmentTarget = "enrollment_target"
 	// FieldEnrollmentArchitecture holds the string denoting the enrollment_architecture field in the database.
@@ -122,6 +124,7 @@ var Columns = []string{
 	FieldEnrollmentClaimedAt,
 	FieldEnrollmentCredentialVersion,
 	FieldEnrollmentReleaseVersion,
+	FieldEnrollmentReleaseSetJSON,
 	FieldEnrollmentTarget,
 	FieldEnrollmentArchitecture,
 	FieldEnrollmentManifestObject,
@@ -313,6 +316,11 @@ func ByEnrollmentCredentialVersion(opts ...sql.OrderTermOption) OrderOption {
 // ByEnrollmentReleaseVersion orders the results by the enrollment_release_version field.
 func ByEnrollmentReleaseVersion(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldEnrollmentReleaseVersion, opts...).ToFunc()
+}
+
+// ByEnrollmentReleaseSetJSON orders the results by the enrollment_release_set_json field.
+func ByEnrollmentReleaseSetJSON(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEnrollmentReleaseSetJSON, opts...).ToFunc()
 }
 
 // ByEnrollmentTarget orders the results by the enrollment_target field.

@@ -28,7 +28,7 @@ type enrollmentRepository struct {
 	artifact                 computerport.ArtifactAccess
 	setupCode                computerport.StoreSetupCodeCommand
 	resolveCode              computerport.ResolveSetupCodeCommand
-	validateCode             computerport.ValidateSetupCodeCommand
+	bindTarget               computerport.BindEnrollmentTargetCommand
 	setupCodeRoute           computerport.SetupCodeRoute
 	redemption               computerport.SetupCodeRedemption
 	inspection               computerport.CredentialInspection
@@ -87,11 +87,11 @@ func (repository *enrollmentRepository) ResolveSetupCode(
 	return repository.setupCodeRoute, repository.err
 }
 
-func (repository *enrollmentRepository) ValidateSetupCode(
+func (repository *enrollmentRepository) BindEnrollmentTarget(
 	_ context.Context,
-	command computerport.ValidateSetupCodeCommand,
+	command computerport.BindEnrollmentTargetCommand,
 ) (computerport.SetupCodeRedemption, error) {
-	repository.validateCode = command
+	repository.bindTarget = command
 	return repository.redemption, repository.err
 }
 
@@ -301,7 +301,9 @@ func TestEnrollmentServiceCreatesBoundNoStoreSetupCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	if repository.begin.Generation != 3 || repository.begin.ExpectedRevision != 4 ||
-		repository.begin.Release != enrollmentRelease() ||
+		repository.begin.ReleaseSet.Version != "0.1.0" ||
+		len(repository.begin.ReleaseSet.Releases) != 1 ||
+		repository.begin.ReleaseSet.Releases[0] != enrollmentRelease() ||
 		repository.begin.TokenHash != sha256.Sum256([]byte(token)) {
 		t.Fatalf("begin command = %#v", repository.begin)
 	}
@@ -369,7 +371,7 @@ func TestEnrollmentServiceGeneratesExplicitHTTPInstallFlow(t *testing.T) {
 			InstallerSHA256: enrollmentRelease().Installer.SHA256,
 		},
 	}
-	redeemed, err := service.RedeemSetupCode(context.Background(), canonicalCode)
+	redeemed, err := service.RedeemSetupCode(context.Background(), canonicalCode, "darwin-arm64")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,7 +446,7 @@ func TestEnrollmentServiceRedeemsSetupCodeWithoutPassingPlaintextToRepository(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := service.RedeemSetupCode(context.Background(), displayCode)
+	result, err := service.RedeemSetupCode(context.Background(), displayCode, "darwin-arm64")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,12 +459,13 @@ func TestEnrollmentServiceRedeemsSetupCodeWithoutPassingPlaintextToRepository(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if repository.validateCode.ServerID != testServerID ||
-		repository.validateCode.ComputerID != testComputerID ||
-		repository.validateCode.Generation != 3 ||
-		repository.validateCode.TokenHash != sha256.Sum256([]byte(token)) ||
-		!repository.validateCode.RequestedAt.Equal(now) {
-		t.Fatalf("validate command = %#v", repository.validateCode)
+	if repository.bindTarget.ServerID != testServerID ||
+		repository.bindTarget.ComputerID != testComputerID ||
+		repository.bindTarget.Generation != 3 ||
+		repository.bindTarget.Target != "darwin-arm64" ||
+		repository.bindTarget.TokenHash != sha256.Sum256([]byte(token)) ||
+		!repository.bindTarget.RequestedAt.Equal(now) {
+		t.Fatalf("bind command = %#v", repository.bindTarget)
 	}
 	if !result.ExpiresAt.Equal(now.Add(10*time.Minute)) ||
 		!strings.Contains(result.Script, token) ||
@@ -576,6 +579,10 @@ func TestEnrollmentServicePreflightSignsReplacementGrantForRetiredIdentity(t *te
 		replacementAuthorization: computerport.ReplacementAuthorization{
 			OldComputerRevision: 7,
 			BindingHash:         hex.EncodeToString(bindingHash[:]),
+			OSType:              "macos",
+			ReleaseVersion:      "0.1.0",
+			Target:              "darwin-arm64",
+			ProgramSHA256:       enrollmentRelease().Program.SHA256,
 		},
 		result: computerport.EnrollmentClaim{
 			ServerID: testServerID, ComputerID: replacementComputerID,
@@ -612,7 +619,7 @@ func TestEnrollmentServicePreflightSignsReplacementGrantForRetiredIdentity(t *te
 		repository.replacementCommand.NewComputerID != replacementComputerID ||
 		repository.replacementCommand.NewGeneration != 4 ||
 		repository.replacementCommand.TATInstanceID != "rins-old-mac" ||
-		repository.replacementCommand.ProgramSHA256 != enrollmentRelease().Program.SHA256 {
+		repository.replacementCommand.ProgramSHA256 != [32]byte{} {
 		t.Fatalf("replacement command/grant = (%#v, %q)", repository.replacementCommand, result.ReplacementGrant)
 	}
 	credentialDigest := sha256.Sum256([]byte("new-client-secret"))
@@ -651,6 +658,10 @@ func TestEnrollmentServiceRecoversMissingRetiredBindingFromProviderTag(t *testin
 		replacementAuthorization: computerport.ReplacementAuthorization{
 			OldComputerRevision: 7,
 			BindingHash:         hex.EncodeToString(bindingHash[:]),
+			OSType:              "macos",
+			ReleaseVersion:      "0.1.0",
+			Target:              "darwin-arm64",
+			ProgramSHA256:       enrollmentRelease().Program.SHA256,
 		},
 		replacementErrors: []error{computerport.ErrReplacementBindingMissing},
 		result: computerport.EnrollmentClaim{
@@ -726,6 +737,10 @@ func TestEnrollmentServiceDoesNotRecoverBindingForDifferentProviderInstance(t *t
 		replacementAuthorization: computerport.ReplacementAuthorization{
 			OldComputerRevision: 7,
 			BindingHash:         hex.EncodeToString(bindingHash[:]),
+			OSType:              "macos",
+			ReleaseVersion:      "0.1.0",
+			Target:              "darwin-arm64",
+			ProgramSHA256:       enrollmentRelease().Program.SHA256,
 		},
 	}
 	finder := &enrollmentManagedFinder{

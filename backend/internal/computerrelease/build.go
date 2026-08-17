@@ -175,6 +175,12 @@ func renderInstaller(
 	if !ok || len(publicKey) != ed25519.PublicKeySize {
 		return nil, errors.New("Computer release Ed25519 公钥无效")
 	}
+	verifySHA256 := `/usr/bin/printf '%s  %s\n' "$expected" "$file" | /usr/bin/shasum -a 256 -c - >/dev/null`
+	programSizeCheck := `[ "$(/usr/bin/stat -f %z "$work/vela-computer")" = '@@PROGRAM_SIZE@@' ]`
+	if config.OSType == "linux" {
+		verifySHA256 = `/usr/bin/printf '%s  %s\n' "$expected" "$file" | /usr/bin/sha256sum -c - >/dev/null`
+		programSizeCheck = `[ "$(/usr/bin/stat -c %s "$work/vela-computer")" = '@@PROGRAM_SIZE@@' ]`
+	}
 	replacements := strings.NewReplacer(
 		"@@VERSION@@", config.Version,
 		"@@TARGET@@", config.Target,
@@ -183,6 +189,8 @@ func renderInstaller(
 		"@@PROGRAM_SIZE@@", fmtInt64(program.Size),
 		"@@MANIFEST_HASH@@", hex.EncodeToString(manifest.SHA256[:]),
 		"@@SIGNATURE_HASH@@", hex.EncodeToString(signature.SHA256[:]),
+		"@@VERIFY_SHA256@@", verifySHA256,
+		"@@PROGRAM_SIZE_CHECK@@", programSizeCheck,
 	)
 	return []byte(replacements.Replace(installerTemplate)), nil
 }
@@ -255,7 +263,7 @@ fetch() {
 verify_sha256() {
   expected=$1
   file=$2
-  /usr/bin/printf '%s  %s\n' "$expected" "$file" | /usr/bin/shasum -a 256 -c - >/dev/null
+  @@VERIFY_SHA256@@
 }
 
 fetch manifest.json "$work/manifest.json"
@@ -264,7 +272,7 @@ fetch vela-computer "$work/vela-computer"
 verify_sha256 '@@MANIFEST_HASH@@' "$work/manifest.json"
 verify_sha256 '@@SIGNATURE_HASH@@' "$work/manifest.sig"
 verify_sha256 '@@PROGRAM_HASH@@' "$work/vela-computer"
-[ "$(/usr/bin/stat -f %z "$work/vela-computer")" = '@@PROGRAM_SIZE@@' ] || {
+@@PROGRAM_SIZE_CHECK@@ || {
   /usr/bin/printf '%s\n' '程序大小校验失败' >&2
   exit 65
 }
@@ -303,6 +311,18 @@ func Publish(ctx context.Context, publisher ObjectPublisher, bundle Bundle) erro
 			ctx, step.artifact.ObjectKey, step.path, step.typeName,
 			step.artifact.SHA256, step.artifact.Size,
 		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func PublishReleaseSet(ctx context.Context, publisher ObjectPublisher, bundle ReleaseSetBundle) error {
+	if len(bundle.Bundles) != 2 {
+		return errors.New("Computer release set publisher 无效")
+	}
+	for _, target := range bundle.Bundles {
+		if err := Publish(ctx, publisher, target); err != nil {
 			return err
 		}
 	}

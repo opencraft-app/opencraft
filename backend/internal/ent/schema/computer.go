@@ -44,6 +44,7 @@ func (Computer) Fields() []ent.Field {
 		optionalTimeField("enrollment_claimed_at"),
 		field.Int64("enrollment_credential_version").Optional().Nillable(),
 		optionalBoundedStringField("enrollment_release_version", 64),
+		optionalTextField("enrollment_release_set_json"),
 		optionalBoundedStringField("enrollment_target", 64),
 		optionalBoundedStringField("enrollment_architecture", 64),
 		optionalBoundedStringField("enrollment_manifest_object", 512),

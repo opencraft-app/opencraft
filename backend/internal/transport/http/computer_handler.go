@@ -267,8 +267,17 @@ func (handler *ComputerHandler) CreateTerminalSession(
 func computerCreateCommand(
 	body openapi.CreateComputerJSONRequestBody,
 ) (appcomputer.CreateCommand, error) {
+	osType := "macos"
+	if body.OsType != nil {
+		if !body.OsType.Valid() {
+			return appcomputer.CreateCommand{}, apperror.New(
+				"invalid_request", "Computer 平台无效", nil,
+			)
+		}
+		osType = string(*body.OsType)
+	}
 	return appcomputer.CreateCommand{
-		Name: body.Name, TATInstanceKind: "managed", OSType: "macos",
+		Name: body.Name, TATInstanceKind: "managed", OSType: osType,
 	}, nil
 }
 

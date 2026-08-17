@@ -150,6 +150,7 @@ func isComputerEnrollmentColumn(name string) bool {
 		"enrollment_claimed_at",
 		"enrollment_credential_version",
 		"enrollment_release_version",
+		"enrollment_release_set_json",
 		"enrollment_target",
 		"enrollment_architecture",
 		"enrollment_manifest_object",

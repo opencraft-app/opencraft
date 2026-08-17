@@ -32,6 +32,20 @@ func run(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "verify" {
 		return runVerify(args[1:], os.Stdout)
 	}
+	if len(args) > 0 && args[0] == "build-set" {
+		return runBuildSet(args[1:], os.Stdout)
+	}
+	if len(args) > 0 && args[0] == "verify-set" {
+		return runVerifySet(args[1:], os.Stdout)
+	}
+	if len(args) > 0 && args[0] == "publish-set" {
+		return runPublishSet(
+			ctx, args[1:], os.Stdout,
+			func(config cosadapter.Config) (computerrelease.ObjectPublisher, error) {
+				return cosadapter.NewPublisher(config)
+			},
+		)
+	}
 	if len(args) > 0 && args[0] == "publish" {
 		return runPublish(
 			ctx,
@@ -116,6 +130,118 @@ func run(ctx context.Context, args []string) error {
 		}
 	}
 	_, err = fmt.Fprintln(os.Stdout, bundle.CatalogPath)
+	return err
+}
+
+func runBuildSet(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("computer-release build-set", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	var version, keyID, privateKeyFile, macProgram, linuxProgram, output string
+	flags.StringVar(&version, "version", "", "不可变发布版本")
+	flags.StringVar(&keyID, "signing-key-id", "", "Ed25519 签名密钥 ID")
+	flags.StringVar(&privateKeyFile, "private-key-file", "", "0600 Ed25519 私钥文件")
+	flags.StringVar(&macProgram, "macos-program", "", "macOS ARM64 vela-computer")
+	flags.StringVar(&linuxProgram, "linux-program", "", "Linux AMD64 vela-computer")
+	flags.StringVar(&output, "output", "", "新发布目录绝对路径")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 || stdout == nil {
+		return errors.New("computer-release build-set 参数无效")
+	}
+	privateKeyBytes, err := securefile.Read(privateKeyFile, "Computer release Ed25519 私钥", 4096)
+	if err != nil {
+		return err
+	}
+	privateKey, err := decodePrivateKey(privateKeyBytes)
+	wipe(privateKeyBytes)
+	if err != nil {
+		return err
+	}
+	defer wipe(privateKey)
+	bundle, err := computerrelease.BuildReleaseSet(computerrelease.ReleaseSetBuildConfig{
+		Version: strings.TrimSpace(version), SigningKeyID: strings.TrimSpace(keyID),
+		PrivateKey: privateKey, OutputDirectory: output,
+		Targets: []computerrelease.ReleaseTargetBuildConfig{
+			{Target: "darwin-arm64", OSType: "macos", Architecture: "arm64", ProgramPath: macProgram},
+			{Target: "linux-amd64", OSType: "linux", Architecture: "amd64", ProgramPath: linuxProgram},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(stdout, bundle.CatalogPath)
+	return err
+}
+
+func runVerifySet(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("computer-release verify-set", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	var releaseDirectory, publicKeyFile string
+	flags.StringVar(&releaseDirectory, "release-directory", "", "待验证 Release Set 目录")
+	flags.StringVar(&publicKeyFile, "public-key-file", "", "Ed25519 公钥文件")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 || stdout == nil {
+		return errors.New("computer-release verify-set 参数无效")
+	}
+	releaseSet, err := computerrelease.VerifyReleaseSetBundle(computerrelease.BundleVerificationConfig{
+		Directory: releaseDirectory, PublicKeyFile: publicKeyFile,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(stdout, "version=%s\ntargets=%d\n", releaseSet.Version, len(releaseSet.Releases))
+	return err
+}
+
+func runPublishSet(
+	ctx context.Context,
+	args []string,
+	stdout io.Writer,
+	newPublisher publisherFactory,
+) error {
+	flags := flag.NewFlagSet("computer-release publish-set", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	var releaseDirectory, publicKeyFile, bucket, region, secretIDFile, secretKeyFile, tokenFile string
+	flags.StringVar(&releaseDirectory, "release-directory", "", "已验签 Release Set 目录")
+	flags.StringVar(&publicKeyFile, "public-key-file", "", "Ed25519 公钥文件")
+	flags.StringVar(&bucket, "bucket", "", "COS 私有制品桶")
+	flags.StringVar(&region, "region", "", "COS 地域")
+	flags.StringVar(&secretIDFile, "secret-id-file", "", "COS SecretId 文件")
+	flags.StringVar(&secretKeyFile, "secret-key-file", "", "COS SecretKey 文件")
+	flags.StringVar(&tokenFile, "security-token-file", "", "COS STS Token 文件（可选）")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 || ctx == nil ||
+		stdout == nil || newPublisher == nil {
+		return errors.New("computer-release publish-set 参数无效")
+	}
+	bundle, err := computerrelease.OpenVerifiedReleaseSet(computerrelease.BundleVerificationConfig{
+		Directory: releaseDirectory, PublicKeyFile: publicKeyFile,
+	})
+	if err != nil {
+		return err
+	}
+	secretID, err := readTextSecret(secretIDFile, "COS SecretId")
+	if err != nil {
+		return err
+	}
+	secretKey, err := readTextSecret(secretKeyFile, "COS SecretKey")
+	if err != nil {
+		return err
+	}
+	securityToken := ""
+	if strings.TrimSpace(tokenFile) != "" {
+		securityToken, err = readTextSecret(tokenFile, "COS STS Token")
+		if err != nil {
+			return err
+		}
+	}
+	publisher, err := newPublisher(cosadapter.Config{
+		Bucket: bucket, Region: region, SecretID: secretID,
+		SecretKey: secretKey, SecurityToken: securityToken,
+	})
+	if err != nil {
+		return err
+	}
+	if err := computerrelease.PublishReleaseSet(ctx, publisher, bundle); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(stdout, "published version=%s targets=%d\n", bundle.ReleaseSet.Version, len(bundle.Bundles))
 	return err
 }
 

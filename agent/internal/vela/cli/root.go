@@ -161,7 +161,7 @@ func newInstallCommand(actions Actions) *cobra.Command {
 				if err != nil {
 					return ErrInvalidArguments
 				}
-				options.InstallationRoot = filepath.Join(home, ".vela", "computer")
+				options.InstallationRoot = defaultInstallationRoot(home)
 			}
 			for _, value := range []*string{
 				&options.TokenFile,

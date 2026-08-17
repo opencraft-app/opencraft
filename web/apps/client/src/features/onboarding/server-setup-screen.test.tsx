@@ -45,6 +45,7 @@ describe("ServerSetupScreen", () => {
       screen.getByLabelText("Computer 名称"),
       "本地开发机",
     );
+    await fireEvent.press(screen.getByRole("radio", {name: "Linux"}));
     await waitFor(() => {
       expect(screen.getByRole("button", {name: "生成连接命令"})).toBeEnabled();
     });
@@ -53,7 +54,7 @@ describe("ServerSetupScreen", () => {
     );
     await Promise.resolve();
     await Promise.resolve();
-    expect(onCreateComputer).toHaveBeenCalledWith({name: "本地开发机"});
+    expect(onCreateComputer).toHaveBeenCalledWith({name: "本地开发机", osType: "linux"});
     expect(onRequestRegistrationScript).toHaveBeenCalledWith(created.id);
   });
 

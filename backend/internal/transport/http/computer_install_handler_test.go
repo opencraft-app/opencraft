@@ -5,7 +5,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -120,6 +122,60 @@ func TestComputerInstallBootstrapReportsTransportFailure(t *testing.T) {
 	if exitCode == 0 || stdout != "" || stderr != want {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
+}
+
+func TestComputerInstallBootstrapDetectsLinuxBeforeRedeemingCode(t *testing.T) {
+	const setupCode = "TEST-CODE-ONLY-0003"
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		if request.Header.Get("X-Vela-Computer-Target") != "linux-amd64" {
+			t.Errorf("target header = %q", request.Header.Get("X-Vela-Computer-Target"))
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil || string(body) != setupCode {
+			t.Errorf("request body = %q err=%v", body, err)
+		}
+		writer.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(writer, "#!/bin/sh\nexit 0\n")
+	}))
+	defer server.Close()
+
+	handler, err := NewComputerInstallHandler(ComputerInstallHandlerConfig{
+		BaseURL: server.URL, AllowInsecureHTTP: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	handler.commands = computerInstallCommands{
+		Uname: writeInstallTestCommand(t, root, "uname", `
+case "$1" in
+  -s) printf '%s\n' Linux ;;
+  -m) printf '%s\n' x86_64 ;;
+  *) exit 2 ;;
+esac
+`),
+		ID:                      writeInstallTestCommand(t, root, "id", `[ "$1" = -u ] && printf '%s\n' 0`),
+		Systemctl:               writeInstallTestCommand(t, root, "systemctl", `exit 0`),
+		SystemdRuntimeDirectory: filepath.Join(root, "systemd"),
+	}
+	if err := os.Mkdir(handler.commands.SystemdRuntimeDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	exitCode, stdout, stderr := runComputerInstallBootstrap(t, handler.script(), setupCode)
+	if exitCode != 0 || stdout != "" || stderr != "" || requests != 1 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q requests=%d", exitCode, stdout, stderr, requests)
+	}
+}
+
+func writeInstallTestCommand(t *testing.T, root string, name string, body string) string {
+	t.Helper()
+	path := filepath.Join(root, name)
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func runComputerInstallBootstrap(t *testing.T, script string, setupCode string) (int, string, string) {

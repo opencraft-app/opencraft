@@ -25,7 +25,8 @@ import (
 var (
 	ErrServiceInvalid             = errors.New("Computer 首次安装配置无效")
 	ErrInstallConflict            = errors.New("Computer 首次安装状态冲突")
-	ErrAlreadyInstalled           = errors.New("Vela Computer is already installed and active for this macOS user.")
+	ErrAlreadyInstalled           = errors.New("Vela Computer is already installed and active on this machine.")
+	ErrDifferentServer            = errors.New("This machine is already connected to another Server. Remove or migrate the existing Computer before installing this setup code.")
 	ErrReplacementReleaseMismatch = errors.New("Update Vela Computer before replacing this installation.")
 	ErrReplacementProviderGone    = errors.New("The previous Computer provider identity no longer exists. Nothing was changed.")
 )
@@ -86,9 +87,20 @@ type ServiceConfig struct {
 	Verify        VerifyFunc
 	TAT           tat.Runtime
 	Launcher      Launcher
+	Platform      *Platform
 }
 
-type Service struct{ config ServiceConfig }
+type Platform struct {
+	OSType       string
+	Architecture string
+	Target       string
+	ServiceName  string
+}
+
+type Service struct {
+	config   ServiceConfig
+	platform Platform
+}
 
 func NewService(config ServiceConfig) (*Service, error) {
 	if config.Stdout == nil {
@@ -115,11 +127,18 @@ func NewService(config ServiceConfig) (*Service, error) {
 		}
 		config.Launcher = launcher
 	}
-	return &Service{config: config}, nil
+	platform, err := currentPlatform()
+	if config.Platform != nil {
+		platform = *config.Platform
+	}
+	if (err != nil && config.Platform == nil) || !validPlatform(platform) {
+		return nil, ErrServiceInvalid
+	}
+	return &Service{config: config, platform: platform}, nil
 }
 
 func (service *Service) Install(ctx context.Context, options Options) error {
-	if service == nil || ctx == nil || !validOptions(options) {
+	if service == nil || ctx == nil || !validOptions(options, service.platform) {
 		return ErrServiceInvalid
 	}
 	if err := ensurePrivateDirectory(options.InstallationRoot); err != nil {
@@ -206,8 +225,8 @@ func (service *Service) Install(ctx context.Context, options Options) error {
 			return clientErr
 		}
 		claim, err = client.Claim(ctx, ClaimRequest{
-			Token: token, SecretPart: secretPart, OSType: "macos",
-			Architecture: "arm64", InstallerVersion: options.ReleaseVersion,
+			Token: token, SecretPart: secretPart, OSType: service.platform.OSType,
+			Architecture: service.platform.Architecture, InstallerVersion: options.ReleaseVersion,
 		})
 		if err != nil {
 			return err
@@ -273,7 +292,7 @@ func (service *Service) Install(ctx context.Context, options Options) error {
 			return err
 		}
 		if err := service.config.Launcher.Start(ctx, LaunchSpec{
-			Label:               launchAgentLabel,
+			Label:               service.platform.ServiceName,
 			ProgramPath:         programPath,
 			ProgramSHA256:       hex.EncodeToString(release.ProgramSHA256[:]),
 			RuntimeConfigDigest: runtimeDigest,
@@ -287,7 +306,7 @@ func (service *Service) Install(ctx context.Context, options Options) error {
 			return err
 		}
 	}
-	_, err = io.WriteString(service.config.Stdout, "Computer installed and registered with macOS.\n")
+	_, err = io.WriteString(service.config.Stdout, "Computer installed and registered.\n")
 	return err
 }
 
@@ -329,7 +348,7 @@ func (service *Service) replaceComplete(
 		}
 		if committed {
 			if replacementMatches(replacement, options, release, token, newServerID, newComputerID) {
-				_, writeErr := io.WriteString(service.config.Stdout, "Computer replaced and registered with macOS.\n")
+				_, writeErr := io.WriteString(service.config.Stdout, "Computer replaced and registered.\n")
 				return writeErr
 			}
 			exists = false
@@ -355,8 +374,11 @@ func (service *Service) replaceComplete(
 			return err
 		}
 		oldServerID, _, ok := credentialRoute(credential)
-		if !ok || oldServerID != newServerID {
+		if !ok {
 			return ErrInstallConflict
+		}
+		if oldServerID != newServerID {
+			return ErrDifferentServer
 		}
 		identity, err = service.config.TAT.Inspect(ctx, filepath.Join(options.StateDirectory, "tat"))
 		if err != nil {
@@ -400,7 +422,8 @@ func (service *Service) replaceComplete(
 		}
 	}
 	claim, err := client.Claim(ctx, ClaimRequest{
-		Token: token, SecretPart: secretPart, OSType: "macos", Architecture: "arm64",
+		Token: token, SecretPart: secretPart, OSType: service.platform.OSType,
+		Architecture:     service.platform.Architecture,
 		InstallerVersion: options.ReleaseVersion, ReplacementGrant: grant,
 	})
 	if err != nil {
@@ -438,7 +461,7 @@ func (service *Service) replaceComplete(
 		return err
 	}
 	if err := service.config.Launcher.Start(ctx, LaunchSpec{
-		Label:               launchAgentLabel,
+		Label:               service.platform.ServiceName,
 		ProgramPath:         filepath.Join(options.InstallationRoot, "bin", ProgramName),
 		ProgramSHA256:       hex.EncodeToString(release.ProgramSHA256[:]),
 		RuntimeConfigDigest: runtimeDigest,
@@ -450,7 +473,7 @@ func (service *Service) replaceComplete(
 	if err := removeReplacementSecrets(store); err != nil {
 		return err
 	}
-	_, err = io.WriteString(service.config.Stdout, "Computer replaced and registered with macOS.\n")
+	_, err = io.WriteString(service.config.Stdout, "Computer replaced and registered.\n")
 	return err
 }
 
@@ -559,7 +582,7 @@ func (service *Service) reconcileCommittedReplacement(
 		return true, err
 	}
 	if err := service.config.Launcher.Start(ctx, LaunchSpec{
-		Label:               launchAgentLabel,
+		Label:               service.platform.ServiceName,
 		ProgramPath:         filepath.Join(options.InstallationRoot, "bin", ProgramName),
 		ProgramSHA256:       journal.ProgramSHA256,
 		RuntimeConfigDigest: runtimeDigest,
@@ -826,9 +849,10 @@ func installProgram(source string, root string, release VerifiedRelease) (string
 	return target, syncDirectory(bin)
 }
 
-func validOptions(options Options) bool {
+func validOptions(options Options, platform Platform) bool {
 	if options.StateDirectory != filepath.Join(options.InstallationRoot, "state") ||
-		!validComponent(options.ReleaseVersion) || options.Target != "darwin-arm64" {
+		!validComponent(options.ReleaseVersion) || options.Target != platform.Target ||
+		!validPlatform(platform) {
 		return false
 	}
 	for _, value := range []string{
@@ -841,6 +865,19 @@ func validOptions(options Options) bool {
 	}
 	_, ok := normalizeInstallBaseURL(options.PlatformURL, options.AllowInsecurePlatformHTTP)
 	return ok
+}
+
+func validPlatform(platform Platform) bool {
+	switch platform.Target {
+	case "darwin-arm64":
+		return platform.OSType == "macos" && platform.Architecture == "arm64" &&
+			platform.ServiceName == launchAgentLabel
+	case "linux-amd64":
+		return platform.OSType == "linux" && platform.Architecture == "amd64" &&
+			platform.ServiceName == linuxSystemdUnit
+	default:
+		return false
+	}
 }
 
 func ensurePrivateDirectory(directory string) error {

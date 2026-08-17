@@ -62,7 +62,7 @@ func TestServiceReusesStagedSecretAndCompletesFirstInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := service.Install(context.Background(), options); err == nil ||
-		err.Error() != "Vela Computer is already installed and active for this macOS user." {
+		err.Error() != "Vela Computer is already installed and active on this machine." {
 		t.Fatalf("repeat install error = %v", err)
 	}
 	if len(client.claimSecrets) != 2 || client.claimSecrets[0] != client.claimSecrets[1] {
@@ -87,6 +87,28 @@ func TestServiceReusesStagedSecretAndCompletesFirstInstall(t *testing.T) {
 		if _, err := os.Lstat(filepath.Join(options.StateDirectory, transient)); !os.IsNotExist(err) {
 			t.Fatalf("transient install secret still exists: %s err=%v", transient, err)
 		}
+	}
+}
+
+func TestValidOptionsUsesTheCompiledPlatformTarget(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "computer")
+	options := Options{
+		PlatformURL: "http://192.0.2.10", AllowInsecurePlatformHTTP: true,
+		TokenFile: filepath.Join(root, "token"), ManifestFile: filepath.Join(root, "manifest"),
+		SignatureFile: filepath.Join(root, "signature"), ProgramFile: filepath.Join(root, ProgramName),
+		ReleaseVersion: "0.2.0", Target: "linux-amd64", InstallationRoot: root,
+		StateDirectory: filepath.Join(root, "state"),
+	}
+	linux := Platform{
+		OSType: "linux", Architecture: "amd64", Target: "linux-amd64",
+		ServiceName: linuxSystemdUnit,
+	}
+	if !validOptions(options, linux) {
+		t.Fatal("linux-amd64 options rejected for Linux platform")
+	}
+	options.Target = "darwin-arm64"
+	if validOptions(options, linux) {
+		t.Fatal("darwin target accepted for Linux platform")
 	}
 }
 

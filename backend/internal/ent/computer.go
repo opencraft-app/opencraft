@@ -65,6 +65,8 @@ type Computer struct {
 	EnrollmentCredentialVersion *int64 `json:"enrollment_credential_version,omitempty"`
 	// EnrollmentReleaseVersion holds the value of the "enrollment_release_version" field.
 	EnrollmentReleaseVersion *string `json:"enrollment_release_version,omitempty"`
+	// EnrollmentReleaseSetJSON holds the value of the "enrollment_release_set_json" field.
+	EnrollmentReleaseSetJSON *string `json:"enrollment_release_set_json,omitempty"`
 	// EnrollmentTarget holds the value of the "enrollment_target" field.
 	EnrollmentTarget *string `json:"enrollment_target,omitempty"`
 	// EnrollmentArchitecture holds the value of the "enrollment_architecture" field.
@@ -107,7 +109,7 @@ func (*Computer) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case computer.FieldAssignmentRevision, computer.FieldEnrollmentGeneration, computer.FieldEnrollmentCredentialVersion, computer.FieldEnrollmentProgramSize, computer.FieldRevision:
 			values[i] = new(sql.NullInt64)
-		case computer.FieldID, computer.FieldServerID, computer.FieldName, computer.FieldTatRegion, computer.FieldTatInstanceID, computer.FieldTatInstanceKind, computer.FieldOsType, computer.FieldLifecycleState, computer.FieldTatAgentState, computer.FieldLastErrorCode, computer.FieldAssignmentEpoch, computer.FieldDaemonVersion, computer.FieldDaemonBuildID, computer.FieldLastReconcileErrorCode, computer.FieldEnrollmentReleaseVersion, computer.FieldEnrollmentTarget, computer.FieldEnrollmentArchitecture, computer.FieldEnrollmentManifestObject, computer.FieldEnrollmentSignatureObject, computer.FieldEnrollmentInstallerObject, computer.FieldEnrollmentSigningKeyID, computer.FieldEnrollmentProgramObject:
+		case computer.FieldID, computer.FieldServerID, computer.FieldName, computer.FieldTatRegion, computer.FieldTatInstanceID, computer.FieldTatInstanceKind, computer.FieldOsType, computer.FieldLifecycleState, computer.FieldTatAgentState, computer.FieldLastErrorCode, computer.FieldAssignmentEpoch, computer.FieldDaemonVersion, computer.FieldDaemonBuildID, computer.FieldLastReconcileErrorCode, computer.FieldEnrollmentReleaseVersion, computer.FieldEnrollmentReleaseSetJSON, computer.FieldEnrollmentTarget, computer.FieldEnrollmentArchitecture, computer.FieldEnrollmentManifestObject, computer.FieldEnrollmentSignatureObject, computer.FieldEnrollmentInstallerObject, computer.FieldEnrollmentSigningKeyID, computer.FieldEnrollmentProgramObject:
 			values[i] = new(sql.NullString)
 		case computer.FieldRegistrationExpiresAt, computer.FieldLastObservedAt, computer.FieldHostLastSeenAt, computer.FieldDaemonVersionTokenIssuedAt, computer.FieldEnrollmentExpiresAt, computer.FieldEnrollmentClaimedAt, computer.FieldCreatedAt, computer.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -288,6 +290,13 @@ func (_m *Computer) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.EnrollmentReleaseVersion = new(string)
 				*_m.EnrollmentReleaseVersion = value.String
+			}
+		case computer.FieldEnrollmentReleaseSetJSON:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field enrollment_release_set_json", values[i])
+			} else if value.Valid {
+				_m.EnrollmentReleaseSetJSON = new(string)
+				*_m.EnrollmentReleaseSetJSON = value.String
 			}
 		case computer.FieldEnrollmentTarget:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -520,6 +529,11 @@ func (_m *Computer) String() string {
 	builder.WriteString(", ")
 	if v := _m.EnrollmentReleaseVersion; v != nil {
 		builder.WriteString("enrollment_release_version=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.EnrollmentReleaseSetJSON; v != nil {
+		builder.WriteString("enrollment_release_set_json=")
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")

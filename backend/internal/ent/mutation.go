@@ -9035,6 +9035,7 @@ type ComputerMutation struct {
 	enrollment_credential_version    *int64
 	addenrollment_credential_version *int64
 	enrollment_release_version       *string
+	enrollment_release_set_json      *string
 	enrollment_target                *string
 	enrollment_architecture          *string
 	enrollment_manifest_object       *string
@@ -10269,6 +10270,55 @@ func (m *ComputerMutation) ResetEnrollmentReleaseVersion() {
 	delete(m.clearedFields, computer.FieldEnrollmentReleaseVersion)
 }
 
+// SetEnrollmentReleaseSetJSON sets the "enrollment_release_set_json" field.
+func (m *ComputerMutation) SetEnrollmentReleaseSetJSON(s string) {
+	m.enrollment_release_set_json = &s
+}
+
+// EnrollmentReleaseSetJSON returns the value of the "enrollment_release_set_json" field in the mutation.
+func (m *ComputerMutation) EnrollmentReleaseSetJSON() (r string, exists bool) {
+	v := m.enrollment_release_set_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnrollmentReleaseSetJSON returns the old "enrollment_release_set_json" field's value of the Computer entity.
+// If the Computer object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ComputerMutation) OldEnrollmentReleaseSetJSON(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnrollmentReleaseSetJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnrollmentReleaseSetJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnrollmentReleaseSetJSON: %w", err)
+	}
+	return oldValue.EnrollmentReleaseSetJSON, nil
+}
+
+// ClearEnrollmentReleaseSetJSON clears the value of the "enrollment_release_set_json" field.
+func (m *ComputerMutation) ClearEnrollmentReleaseSetJSON() {
+	m.enrollment_release_set_json = nil
+	m.clearedFields[computer.FieldEnrollmentReleaseSetJSON] = struct{}{}
+}
+
+// EnrollmentReleaseSetJSONCleared returns if the "enrollment_release_set_json" field was cleared in this mutation.
+func (m *ComputerMutation) EnrollmentReleaseSetJSONCleared() bool {
+	_, ok := m.clearedFields[computer.FieldEnrollmentReleaseSetJSON]
+	return ok
+}
+
+// ResetEnrollmentReleaseSetJSON resets all changes to the "enrollment_release_set_json" field.
+func (m *ComputerMutation) ResetEnrollmentReleaseSetJSON() {
+	m.enrollment_release_set_json = nil
+	delete(m.clearedFields, computer.FieldEnrollmentReleaseSetJSON)
+}
+
 // SetEnrollmentTarget sets the "enrollment_target" field.
 func (m *ComputerMutation) SetEnrollmentTarget(s string) {
 	m.enrollment_target = &s
@@ -11040,7 +11090,7 @@ func (m *ComputerMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ComputerMutation) Fields() []string {
-	fields := make([]string, 0, 39)
+	fields := make([]string, 0, 40)
 	if m.server_id != nil {
 		fields = append(fields, computer.FieldServerID)
 	}
@@ -11112,6 +11162,9 @@ func (m *ComputerMutation) Fields() []string {
 	}
 	if m.enrollment_release_version != nil {
 		fields = append(fields, computer.FieldEnrollmentReleaseVersion)
+	}
+	if m.enrollment_release_set_json != nil {
+		fields = append(fields, computer.FieldEnrollmentReleaseSetJSON)
 	}
 	if m.enrollment_target != nil {
 		fields = append(fields, computer.FieldEnrollmentTarget)
@@ -11214,6 +11267,8 @@ func (m *ComputerMutation) Field(name string) (ent.Value, bool) {
 		return m.EnrollmentCredentialVersion()
 	case computer.FieldEnrollmentReleaseVersion:
 		return m.EnrollmentReleaseVersion()
+	case computer.FieldEnrollmentReleaseSetJSON:
+		return m.EnrollmentReleaseSetJSON()
 	case computer.FieldEnrollmentTarget:
 		return m.EnrollmentTarget()
 	case computer.FieldEnrollmentArchitecture:
@@ -11301,6 +11356,8 @@ func (m *ComputerMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldEnrollmentCredentialVersion(ctx)
 	case computer.FieldEnrollmentReleaseVersion:
 		return m.OldEnrollmentReleaseVersion(ctx)
+	case computer.FieldEnrollmentReleaseSetJSON:
+		return m.OldEnrollmentReleaseSetJSON(ctx)
 	case computer.FieldEnrollmentTarget:
 		return m.OldEnrollmentTarget(ctx)
 	case computer.FieldEnrollmentArchitecture:
@@ -11507,6 +11564,13 @@ func (m *ComputerMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetEnrollmentReleaseVersion(v)
+		return nil
+	case computer.FieldEnrollmentReleaseSetJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnrollmentReleaseSetJSON(v)
 		return nil
 	case computer.FieldEnrollmentTarget:
 		v, ok := value.(string)
@@ -11748,6 +11812,9 @@ func (m *ComputerMutation) ClearedFields() []string {
 	if m.FieldCleared(computer.FieldEnrollmentReleaseVersion) {
 		fields = append(fields, computer.FieldEnrollmentReleaseVersion)
 	}
+	if m.FieldCleared(computer.FieldEnrollmentReleaseSetJSON) {
+		fields = append(fields, computer.FieldEnrollmentReleaseSetJSON)
+	}
 	if m.FieldCleared(computer.FieldEnrollmentTarget) {
 		fields = append(fields, computer.FieldEnrollmentTarget)
 	}
@@ -11839,6 +11906,9 @@ func (m *ComputerMutation) ClearField(name string) error {
 		return nil
 	case computer.FieldEnrollmentReleaseVersion:
 		m.ClearEnrollmentReleaseVersion()
+		return nil
+	case computer.FieldEnrollmentReleaseSetJSON:
+		m.ClearEnrollmentReleaseSetJSON()
 		return nil
 	case computer.FieldEnrollmentTarget:
 		m.ClearEnrollmentTarget()
@@ -11955,6 +12025,9 @@ func (m *ComputerMutation) ResetField(name string) error {
 		return nil
 	case computer.FieldEnrollmentReleaseVersion:
 		m.ResetEnrollmentReleaseVersion()
+		return nil
+	case computer.FieldEnrollmentReleaseSetJSON:
+		m.ResetEnrollmentReleaseSetJSON()
 		return nil
 	case computer.FieldEnrollmentTarget:
 		m.ResetEnrollmentTarget()
