@@ -19,6 +19,7 @@ import (
 const (
 	repoInviteAccountID  = "0198f4c2-7a30-7c91-a6d2-7d76f9188c37"
 	repoAcceptAccountID  = "0198f4c2-7a39-7c91-a6d2-7d76f9188c39"
+	repoSecondAccountID  = "0198f4c2-7a45-7c91-a6d2-7d76f9188c45"
 	repoInviteServerID   = "0198f4c2-7a31-7c91-a6d2-7d76f9188c38"
 	repoInviteMemberID   = "0198f4c2-7a32-7d02-b8c1-3f6e15aa91b4"
 	repoInviteID         = "0198f4c2-7a36-7e45-913c-6baf30401a82"
@@ -27,6 +28,9 @@ const (
 	repoRootChannelID    = "0198f4c2-7a40-7e45-913c-6baf30401a85"
 	repoPrivateChannelID = "0198f4c2-7a43-7e45-913c-6baf30401a88"
 	repoChannelMemberID  = "0198f4c2-7a44-7e45-913c-6baf30401a89"
+	repoSecondMemberID   = "0198f4c2-7a46-7e45-913c-6baf30401a90"
+	repoSecondOperation  = "0198f4c2-7a47-7e45-913c-6baf30401a91"
+	repoMissingChannelID = "0198f4c2-7a48-7e45-913c-6baf30401a92"
 )
 
 var repoInviteNow = time.Date(2026, 7, 30, 23, 20, 0, 0, time.UTC)
@@ -262,6 +266,242 @@ func TestEntRepositoryAcceptsInviteAtomicallyAndIdempotently(t *testing.T) {
 	}
 }
 
+func TestEntRepositoryRejectsInactiveInvite(t *testing.T) {
+	tests := []struct {
+		name      string
+		wantUsage int64
+		mutate    func(t *testing.T, handle *database.Handle)
+	}{
+		{
+			name:      "expired",
+			wantUsage: 0,
+			mutate: func(t *testing.T, handle *database.Handle) {
+				t.Helper()
+				if _, err := handle.Client().ServerInvite.UpdateOneID(repoInviteID).
+					SetExpiresAt(repoInviteNow).
+					Save(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name:      "revoked",
+			wantUsage: 0,
+			mutate: func(t *testing.T, handle *database.Handle) {
+				t.Helper()
+				if _, err := handle.Client().ServerInvite.UpdateOneID(repoInviteID).
+					SetRevokedAt(repoInviteNow.Add(-time.Minute)).
+					Save(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name:      "exhausted",
+			wantUsage: 1,
+			mutate: func(t *testing.T, handle *database.Handle) {
+				t.Helper()
+				if _, err := handle.Client().ServerInvite.UpdateOneID(repoInviteID).
+					SetMaxUses(1).
+					SetUsedCount(1).
+					Save(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repository, handle := openInviteRepository(t)
+			seedAcceptInvite(t, handle)
+			test.mutate(t, handle)
+
+			_, err := repository.Accept(
+				context.Background(),
+				acceptInviteCommand(
+					repoAcceptAccountID,
+					repoAcceptMemberID,
+					repoAcceptOperation,
+					"invite-inactive-"+test.name,
+				),
+			)
+			if !errors.Is(err, inviteport.ErrInviteInvalid) {
+				t.Fatalf("Accept(%s) error = %v", test.name, err)
+			}
+			assertInviteUsage(t, handle, test.wantUsage)
+		})
+	}
+}
+
+func TestEntRepositoryRejectsAlreadyMemberWithoutConsumingInvite(t *testing.T) {
+	repository, handle := openInviteRepository(t)
+	seedAcceptInvite(t, handle)
+	first := acceptInviteCommand(
+		repoAcceptAccountID,
+		repoAcceptMemberID,
+		repoAcceptOperation,
+		"invite-first-membership",
+	)
+	if _, err := repository.Accept(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+
+	second := first
+	second.MemberID = repoSecondMemberID
+	second.OperationID = repoSecondOperation
+	second.IdempotencyKey = "invite-existing-membership"
+	_, err := repository.Accept(context.Background(), second)
+	if !errors.Is(err, inviteport.ErrAlreadyMember) {
+		t.Fatalf("Accept(existing member) error = %v", err)
+	}
+	assertInviteUsage(t, handle, 1)
+}
+
+func TestEntRepositoryRejectsAccountWithoutReadyIMIdentity(t *testing.T) {
+	repository, handle := openInviteRepository(t)
+	seedAcceptInvite(t, handle)
+	if _, err := handle.Client().Account.UpdateOneID(repoAcceptAccountID).
+		SetImState("provisioning").
+		Save(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := repository.Accept(
+		context.Background(),
+		acceptInviteCommand(
+			repoAcceptAccountID,
+			repoAcceptMemberID,
+			repoAcceptOperation,
+			"invite-account-not-ready",
+		),
+	)
+	if !errors.Is(err, inviteport.ErrAccountNotReady) {
+		t.Fatalf("Accept(account not ready) error = %v", err)
+	}
+	assertInviteUsage(t, handle, 0)
+}
+
+func TestEntRepositoryRejectsMissingLandingChannelOnCreate(t *testing.T) {
+	repository, handle := openInviteRepository(t)
+	seedInviteMembership(t, handle, "owner")
+	missing := repoMissingChannelID
+
+	_, err := repository.Create(
+		context.Background(),
+		inviteport.CreateCommand{
+			AccountID:        repoInviteAccountID,
+			ServerID:         repoInviteServerID,
+			InviteID:         repoInviteID,
+			TokenHash:        sha256.Sum256([]byte("rfi_missing_landing")),
+			Role:             "member",
+			MaxUses:          1,
+			LandingChannelID: &missing,
+			ExpiresAt:        repoInviteNow.Add(time.Hour),
+			CreatedAt:        repoInviteNow,
+		},
+	)
+	if !errors.Is(err, inviteport.ErrLandingNotFound) {
+		t.Fatalf("Create(missing landing channel) error = %v", err)
+	}
+}
+
+func TestEntRepositoryFallsBackToRootWhenLandingChannelIsMissing(t *testing.T) {
+	repository, handle := openInviteRepository(t)
+	seedAcceptInvite(t, handle)
+	if _, err := handle.Client().ServerInvite.UpdateOneID(repoInviteID).
+		SetLandingChannelID(repoMissingChannelID).
+		Save(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := repository.Accept(
+		context.Background(),
+		acceptInviteCommand(
+			repoAcceptAccountID,
+			repoAcceptMemberID,
+			repoAcceptOperation,
+			"invite-missing-landing",
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.LandingChannelID != repoRootChannelID {
+		t.Fatalf("Accept(missing landing channel) landing = %q", result.LandingChannelID)
+	}
+	assertInviteUsage(t, handle, 1)
+}
+
+func TestEntRepositoryAllowsOnlyOneConsumerForLastInviteUse(t *testing.T) {
+	repository, handle := openInviteRepository(t)
+	seedAcceptInvite(t, handle)
+	seedAcceptAccount(
+		t,
+		handle,
+		repoSecondAccountID,
+		"second-joiner@example.com",
+		"第二位加入者",
+		"u_SECOND_JOINER",
+	)
+	if _, err := handle.Client().ServerInvite.UpdateOneID(repoInviteID).
+		SetMaxUses(1).
+		Save(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	commands := []inviteport.AcceptCommand{
+		acceptInviteCommand(
+			repoAcceptAccountID,
+			repoAcceptMemberID,
+			repoAcceptOperation,
+			"invite-last-use-first",
+		),
+		acceptInviteCommand(
+			repoSecondAccountID,
+			repoSecondMemberID,
+			repoSecondOperation,
+			"invite-last-use-second",
+		),
+	}
+	start := make(chan struct{})
+	results := make(chan error, len(commands))
+	for _, command := range commands {
+		command := command
+		go func() {
+			<-start
+			_, err := repository.Accept(context.Background(), command)
+			results <- err
+		}()
+	}
+	close(start)
+
+	var succeeded, rejected int
+	for range commands {
+		switch err := <-results; {
+		case err == nil:
+			succeeded++
+		case errors.Is(err, inviteport.ErrInviteInvalid):
+			rejected++
+		default:
+			t.Fatalf("concurrent Accept() error = %v", err)
+		}
+	}
+	if succeeded != 1 || rejected != 1 {
+		t.Fatalf("concurrent Accept() = succeeded %d, rejected %d", succeeded, rejected)
+	}
+	assertInviteUsage(t, handle, 1)
+	memberships, err := handle.Client().AccountServerMembership.Query().
+		Where(accountservermembership.ServerIDEQ(repoInviteServerID)).
+		Count(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if memberships != 1 {
+		t.Fatalf("membership count = %d", memberships)
+	}
+}
+
 func openInviteRepository(
 	t *testing.T,
 ) (*EntRepository, *database.Handle) {
@@ -313,21 +553,14 @@ func seedInviteMembership(
 func seedAcceptInvite(t *testing.T, handle *database.Handle) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := handle.Client().Account.Create().
-		SetID(repoAcceptAccountID).
-		SetEmail("joiner@example.com").
-		SetEmailNormalized("joiner@example.com").
-		SetDisplayName("加入者").
-		SetPasswordHash("test-only").
-		SetTokenVersion(1).
-		SetImUserID("u_JOINER").
-		SetImState("ready").
-		SetRevision(1).
-		SetCreatedAt(repoInviteNow).
-		SetUpdatedAt(repoInviteNow).
-		Save(ctx); err != nil {
-		t.Fatal(err)
-	}
+	seedAcceptAccount(
+		t,
+		handle,
+		repoAcceptAccountID,
+		"joiner@example.com",
+		"加入者",
+		"u_JOINER",
+	)
 	if _, err := handle.Client().Server.Create().
 		SetID(repoInviteServerID).
 		SetSlug("invite-test").
@@ -370,5 +603,69 @@ func seedAcceptInvite(t *testing.T, handle *database.Handle) {
 		SetUpdatedAt(repoInviteNow.Add(-time.Minute)).
 		Save(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func seedAcceptAccount(
+	t *testing.T,
+	handle *database.Handle,
+	accountID string,
+	email string,
+	displayName string,
+	imUserID string,
+) {
+	t.Helper()
+	if _, err := handle.Client().Account.Create().
+		SetID(accountID).
+		SetEmail(email).
+		SetEmailNormalized(email).
+		SetDisplayName(displayName).
+		SetPasswordHash("test-only").
+		SetTokenVersion(1).
+		SetImUserID(imUserID).
+		SetImState("ready").
+		SetRevision(1).
+		SetCreatedAt(repoInviteNow).
+		SetUpdatedAt(repoInviteNow).
+		Save(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func acceptInviteCommand(
+	accountID string,
+	memberID string,
+	operationID string,
+	idempotencyKey string,
+) inviteport.AcceptCommand {
+	tokenHash := sha256.Sum256([]byte("rfi_routable_fixture"))
+	return inviteport.AcceptCommand{
+		AccountID:      accountID,
+		ServerID:       repoInviteServerID,
+		MemberID:       memberID,
+		OperationID:    operationID,
+		IdempotencyKey: idempotencyKey,
+		RequestHash:    tokenHash,
+		TokenHash:      tokenHash,
+		Handle:         "h_" + memberID[len(memberID)-8:],
+		AcceptedAt:     repoInviteNow,
+	}
+}
+
+func assertInviteUsage(
+	t *testing.T,
+	handle *database.Handle,
+	want int64,
+) {
+	t.Helper()
+	entity, err := handle.Client().ServerInvite.Get(
+		context.Background(),
+		repoInviteID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entity.UsedCount != want {
+		t.Fatalf("invite used count = %d, want %d", entity.UsedCount, want)
 	}
 }
