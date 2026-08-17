@@ -19,6 +19,17 @@ Vibe Coding 只适用于可替换、可验证的行为实现，不适用于不�
 
 下层实现可以重构或替换，但不得绕过上层契约。
 
+## 产品对象语义
+
+> Server 管“谁一起工作”，Project 管“做什么”，Computer 管“在哪里运行”，Codex TUI
+> 只是打开 Project 的方式。
+
+- `Server` 是成员、Agent、权限与聊天协作的共同边界。
+- `Project` 是稳定的工作对象；更换 Computer、目录或 Codex 进程不得改变 Project 身份。
+- `Computer` 是执行资源。Project 通过显式执行绑定选择 Computer 与项目目录，协作所有权与机器执行权必须分别授权。
+- Codex TUI、PTY、TAT Session 和 WebSocket 都是可替换或一次性的执行方式，不得成为 Project 的身份或平台长期事实。
+- 用户产品语言不得再引入一个与 Server、Project 竞争的 `Workspace` 实体。内部可以使用 workspace、root URI、execution binding 等实现术语，但普通 Human 界面只表达 Server、Project、Computer、运行位置与“打开 Codex”。
+
 ## 事实源
 
 当前机器可读事实源按以下优先级解释：
