@@ -17,12 +17,13 @@ import (
 	"velachat/agent/internal/vela/platform"
 )
 
-func TestAdapterAcceptsHumanReadableTargetFromRealGateway(t *testing.T) {
+func TestAdapterAcceptsDirectConversationGroupFromRealGateway(t *testing.T) {
 	t.Parallel()
 	const (
 		serverID = "0198fab7-e66f-70d4-982c-13d1abea2101"
 		agentID  = "0198fab7-e670-7d41-9d9d-da6a1bea2102"
 		humanID  = "0198fab7-e671-7171-9264-51081bea2103"
+		directID = "0198fab7-e672-783f-b952-42ba1bea2104"
 	)
 	now := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
 	platformServer := httptest.NewServer(http.HandlerFunc(func(
@@ -30,7 +31,7 @@ func TestAdapterAcceptsHumanReadableTargetFromRealGateway(t *testing.T) {
 		request *http.Request,
 	) {
 		if request.Method != http.MethodGet ||
-			request.URL.Path != "/v1/runtime/directory" ||
+			request.URL.Path != "/v1/runtime/directory-v2" ||
 			request.Header.Get("Authorization") != "Bearer runtime-token" {
 			http.NotFound(response, request)
 			return
@@ -44,9 +45,11 @@ func TestAdapterAcceptsHumanReadableTargetFromRealGateway(t *testing.T) {
             {"memberId":%q,"kind":"agent","agentId":%q,"handle":"builder","displayName":"Builder","imUserId":"agent_builder"},
             {"memberId":%q,"kind":"human","humanId":%q,"handle":"alice","displayName":"Alice","imUserId":"human_alice"}
           ],
+          "directConversations":[{"id":%q,"peerMemberId":%q,"imGroupId":"an_dm_authorized","imState":"ready","revision":1}],
           "revision":"sha256:delivery-integration","expiresAt":%q
         }`, serverID, agentID, agentID, agentID, agentID,
-			humanID, humanID, now.Add(5*time.Minute).Format(time.RFC3339))
+			humanID, humanID, directID, humanID,
+			now.Add(5*time.Minute).Format(time.RFC3339))
 	}))
 	t.Cleanup(platformServer.Close)
 	platformClient, err := platform.NewClient(platform.Config{
@@ -107,7 +110,7 @@ func TestAdapterAcceptsHumanReadableTargetFromRealGateway(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := im.NewC2CConversation("human_alice")
+	conversation, err := im.NewGroupConversation("an_dm_authorized")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,6 +15,7 @@ import (
 	agententity "chatserver/internal/ent/agent"
 	channelentity "chatserver/internal/ent/channel"
 	"chatserver/internal/ent/channelmember"
+	directentity "chatserver/internal/ent/directconversation"
 	"chatserver/internal/ent/member"
 	"chatserver/internal/ent/server"
 	directoryport "chatserver/internal/ports/runtimedirectory"
@@ -23,6 +24,7 @@ import (
 const (
 	directoryChannelLimit = 1000
 	directoryMemberLimit  = 10000
+	directoryDirectLimit  = 10000
 )
 
 type EntRepository struct{ handle *database.Handle }
@@ -83,6 +85,12 @@ func (repository *EntRepository) Get(
 	if err != nil {
 		return directoryport.Snapshot{}, err
 	}
+	directConversations, err := repository.listDirectConversations(
+		ctx, serverID, agentID, members,
+	)
+	if err != nil {
+		return directoryport.Snapshot{}, err
+	}
 	snapshot := directoryport.Snapshot{
 		Server: directoryport.Server{
 			ID: serverEntity.ID, Slug: serverEntity.Slug, Name: serverEntity.Name,
@@ -92,8 +100,9 @@ func (repository *EntRepository) Get(
 			Handle: selfMember.Handle, DisplayName: selfMember.DisplayName,
 			IMUserID: selfAgent.ImUserID,
 		},
-		Channels: channels,
-		Members:  members,
+		Channels:            channels,
+		Members:             members,
+		DirectConversations: directConversations,
 	}
 	snapshot.Revision = directoryRevision(serverEntity.Revision, snapshot)
 	return snapshot, nil
@@ -252,6 +261,55 @@ func (repository *EntRepository) listMembers(
 	return repository.listMembersByIDs(ctx, serverID, nil)
 }
 
+func (repository *EntRepository) listDirectConversations(
+	ctx context.Context,
+	serverID string,
+	agentID string,
+	members []directoryport.Member,
+) ([]directoryport.DirectConversation, error) {
+	visibleMembers := make(map[string]struct{}, len(members))
+	for _, value := range members {
+		visibleMembers[value.MemberID] = struct{}{}
+	}
+	entities, err := repository.handle.Client().DirectConversation.Query().
+		Where(
+			directentity.ServerIDEQ(serverID),
+			directentity.StatusEQ("active"),
+			directentity.Or(
+				directentity.MemberAIDEQ(agentID),
+				directentity.MemberBIDEQ(agentID),
+			),
+		).
+		Order(ent.Asc(directentity.FieldID)).
+		Limit(directoryDirectLimit + 1).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(entities) > directoryDirectLimit {
+		return nil, directoryport.ErrTooLarge
+	}
+	result := make([]directoryport.DirectConversation, 0, len(entities))
+	for _, value := range entities {
+		peerMemberID := value.MemberAID
+		if peerMemberID == agentID {
+			peerMemberID = value.MemberBID
+		}
+		if peerMemberID == agentID {
+			continue
+		}
+		if _, visible := visibleMembers[peerMemberID]; !visible {
+			continue
+		}
+		result = append(result, directoryport.DirectConversation{
+			ID: value.ID, PeerMemberID: peerMemberID,
+			IMGroupID: value.ImGroupID, IMState: value.ImState,
+			Revision: value.Revision,
+		})
+	}
+	return result, nil
+}
+
 func (repository *EntRepository) listMembersByIDs(
 	ctx context.Context,
 	serverID string,
@@ -373,8 +431,23 @@ func directoryRevision(serverRevision int64, value directoryport.Snapshot) strin
 	sort.Slice(members, func(i, j int) bool { return members[i].MemberID < members[j].MemberID })
 	for _, member := range members {
 		_, _ = fmt.Fprintf(
-			digest, "member\x00%s\x00%s\x00%s\x00",
-			member.MemberID, member.Kind, member.IMUserID,
+			digest, "member\x00%s\x00%s\x00%s\x00%s\x00%s\x00",
+			member.MemberID, member.Kind, member.Handle,
+			member.DisplayName, member.IMUserID,
+		)
+	}
+	directConversations := append(
+		[]directoryport.DirectConversation(nil),
+		value.DirectConversations...,
+	)
+	sort.Slice(directConversations, func(i, j int) bool {
+		return directConversations[i].ID < directConversations[j].ID
+	})
+	for _, direct := range directConversations {
+		_, _ = fmt.Fprintf(
+			digest, "direct\x00%s\x00%s\x00%s\x00%s\x00%d\x00",
+			direct.ID, direct.PeerMemberID, direct.IMGroupID,
+			direct.IMState, direct.Revision,
 		)
 	}
 	return "sha256:" + hex.EncodeToString(digest.Sum(nil))

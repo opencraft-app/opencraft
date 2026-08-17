@@ -17,6 +17,7 @@ import (
 const (
 	maximumDirectoryChannels = 1000
 	maximumDirectoryMembers  = 10000
+	maximumDirectoryDirects  = 10000
 )
 
 type Service struct {
@@ -76,10 +77,14 @@ func (service *Service) Get(
 		)
 	}
 	return directoryport.Directory{
-		Server:    snapshot.Server,
-		Self:      snapshot.Self,
-		Channels:  append([]directoryport.Channel(nil), snapshot.Channels...),
-		Members:   append([]directoryport.Member(nil), snapshot.Members...),
+		Server:   snapshot.Server,
+		Self:     snapshot.Self,
+		Channels: append([]directoryport.Channel(nil), snapshot.Channels...),
+		Members:  append([]directoryport.Member(nil), snapshot.Members...),
+		DirectConversations: append(
+			[]directoryport.DirectConversation(nil),
+			snapshot.DirectConversations...,
+		),
 		Revision:  snapshot.Revision,
 		ExpiresAt: service.clock.Now().UTC().Add(service.ttl),
 	}, nil
@@ -149,7 +154,8 @@ func validSnapshot(
 		strings.TrimSpace(value.Self.IMUserID) == "" ||
 		strings.TrimSpace(value.Revision) == "" ||
 		len(value.Channels) > maximumDirectoryChannels ||
-		len(value.Members) > maximumDirectoryMembers {
+		len(value.Members) > maximumDirectoryMembers ||
+		len(value.DirectConversations) > maximumDirectoryDirects {
 		return false
 	}
 	for _, channel := range value.Channels {
@@ -160,6 +166,7 @@ func validSnapshot(
 		}
 	}
 	selfFound := false
+	memberIDs := make(map[string]struct{}, len(value.Members))
 	for _, member := range value.Members {
 		if !validDirectoryMember(member) {
 			return false
@@ -168,8 +175,40 @@ func validSnapshot(
 			member.IMUserID == value.Self.IMUserID {
 			selfFound = true
 		}
+		memberIDs[member.MemberID] = struct{}{}
+	}
+	directIDs := make(map[string]struct{}, len(value.DirectConversations))
+	directPeers := make(map[string]struct{}, len(value.DirectConversations))
+	for _, direct := range value.DirectConversations {
+		if !isUUIDv7(direct.ID) || !isUUIDv7(direct.PeerMemberID) ||
+			direct.PeerMemberID == agentID ||
+			strings.TrimSpace(direct.IMGroupID) == "" ||
+			!validDirectConversationIMState(direct.IMState) ||
+			direct.Revision < 0 {
+			return false
+		}
+		if _, exists := memberIDs[direct.PeerMemberID]; !exists {
+			return false
+		}
+		if _, duplicate := directIDs[direct.ID]; duplicate {
+			return false
+		}
+		if _, duplicate := directPeers[direct.PeerMemberID]; duplicate {
+			return false
+		}
+		directIDs[direct.ID] = struct{}{}
+		directPeers[direct.PeerMemberID] = struct{}{}
 	}
 	return selfFound
+}
+
+func validDirectConversationIMState(value string) bool {
+	switch value {
+	case "provisioning", "ready", "error", "deleted":
+		return true
+	default:
+		return false
+	}
 }
 
 func validChannelMembersSnapshot(

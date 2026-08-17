@@ -15,6 +15,7 @@ const (
 	maxRuntimeDirectoryResponseBytes = 8 << 20
 	maxRuntimeDirectoryChannels      = 1000
 	maxRuntimeDirectoryMembers       = 10000
+	maxRuntimeDirectoryDirects       = 10000
 )
 
 var ErrInvalidRuntimeDirectory = errors.New("平台返回的 Runtime 目录无效")
@@ -54,13 +55,22 @@ type DirectoryMember struct {
 	IMUserID    string
 }
 
+type DirectoryDirectConversation struct {
+	ID           string
+	PeerMemberID string
+	IMGroupID    string
+	IMState      string
+	Revision     int64
+}
+
 type RuntimeDirectory struct {
-	Server    DirectoryServer
-	Self      DirectorySelf
-	Channels  []DirectoryChannel
-	Members   []DirectoryMember
-	Revision  string
-	ExpiresAt time.Time
+	Server              DirectoryServer
+	Self                DirectorySelf
+	Channels            []DirectoryChannel
+	Members             []DirectoryMember
+	DirectConversations []DirectoryDirectConversation
+	Revision            string
+	ExpiresAt           time.Time
 }
 
 type RuntimeChannelMembers struct {
@@ -91,6 +101,14 @@ type runtimeDirectoryMemberPayload struct {
 	IMUserID    string  `json:"imUserId"`
 }
 
+type runtimeDirectoryDirectConversationPayload struct {
+	ID           string `json:"id"`
+	PeerMemberID string `json:"peerMemberId"`
+	IMGroupID    string `json:"imGroupId"`
+	IMState      string `json:"imState"`
+	Revision     int64  `json:"revision"`
+}
+
 type runtimeDirectoryPayload struct {
 	Server struct {
 		ID   string `json:"id"`
@@ -104,10 +122,11 @@ type runtimeDirectoryPayload struct {
 		DisplayName string `json:"displayName"`
 		IMUserID    string `json:"imUserId"`
 	} `json:"self"`
-	Channels  []runtimeDirectoryChannelPayload `json:"channels"`
-	Members   []runtimeDirectoryMemberPayload  `json:"members"`
-	Revision  string                           `json:"revision"`
-	ExpiresAt time.Time                        `json:"expiresAt"`
+	Channels            []runtimeDirectoryChannelPayload             `json:"channels"`
+	Members             []runtimeDirectoryMemberPayload              `json:"members"`
+	DirectConversations *[]runtimeDirectoryDirectConversationPayload `json:"directConversations"`
+	Revision            string                                       `json:"revision"`
+	ExpiresAt           time.Time                                    `json:"expiresAt"`
 }
 
 type runtimeChannelMembersPayload struct {
@@ -130,15 +149,37 @@ func (c *Client) GetRuntimeDirectory(
 		ctx,
 		token,
 		http.MethodGet,
-		"/runtime/directory",
+		"/runtime/directory-v2",
 		nil,
 	)
 	if err != nil {
 		return RuntimeDirectory{}, err
 	}
-	response, err := c.doRuntimeTaskRequest(request)
+	response, err := c.doRuntimeRequest(
+		request,
+		http.StatusOK,
+		http.StatusNotFound,
+	)
 	if err != nil {
 		return RuntimeDirectory{}, err
+	}
+	legacy := response.StatusCode == http.StatusNotFound
+	if legacy {
+		response.Body.Close()
+		request, err = c.runtimeTaskRequest(
+			ctx,
+			token,
+			http.MethodGet,
+			"/runtime/directory",
+			nil,
+		)
+		if err != nil {
+			return RuntimeDirectory{}, err
+		}
+		response, err = c.doRuntimeTaskRequest(request)
+		if err != nil {
+			return RuntimeDirectory{}, err
+		}
 	}
 	defer response.Body.Close()
 	data, err := readBounded(response.Body, maxRuntimeDirectoryResponseBytes)
@@ -149,7 +190,7 @@ func (c *Client) GetRuntimeDirectory(
 	if err := common.Unmarshal(data, &payload); err != nil {
 		return RuntimeDirectory{}, ErrInvalidRuntimeDirectory
 	}
-	return c.validateRuntimeDirectory(payload, serverID, agentID)
+	return c.validateRuntimeDirectory(payload, serverID, agentID, !legacy)
 }
 
 func (c *Client) GetRuntimeChannelMembers(
@@ -208,7 +249,15 @@ func (c *Client) validateRuntimeDirectory(
 	payload runtimeDirectoryPayload,
 	serverID string,
 	agentID string,
+	requireDirectConversations bool,
 ) (RuntimeDirectory, error) {
+	if requireDirectConversations && payload.DirectConversations == nil {
+		return RuntimeDirectory{}, ErrInvalidRuntimeDirectory
+	}
+	directConversations := []runtimeDirectoryDirectConversationPayload(nil)
+	if payload.DirectConversations != nil {
+		directConversations = *payload.DirectConversations
+	}
 	if payload.Server.ID != serverID || payload.Self.AgentID != agentID ||
 		payload.Self.MemberID != agentID ||
 		strings.TrimSpace(payload.Server.Slug) == "" ||
@@ -219,6 +268,7 @@ func (c *Client) validateRuntimeDirectory(
 		strings.TrimSpace(payload.Revision) == "" || len(payload.Revision) > 512 ||
 		len(payload.Channels) > maxRuntimeDirectoryChannels ||
 		len(payload.Members) > maxRuntimeDirectoryMembers ||
+		len(directConversations) > maxRuntimeDirectoryDirects ||
 		!validExpiry(payload.ExpiresAt, c.now().UTC(), c.maxSessionTTL) {
 		return RuntimeDirectory{}, ErrInvalidRuntimeDirectory
 	}
@@ -233,6 +283,11 @@ func (c *Client) validateRuntimeDirectory(
 		},
 		Channels: make([]DirectoryChannel, 0, len(payload.Channels)),
 		Members:  make([]DirectoryMember, 0, len(payload.Members)),
+		DirectConversations: make(
+			[]DirectoryDirectConversation,
+			0,
+			len(directConversations),
+		),
 		Revision: payload.Revision, ExpiresAt: payload.ExpiresAt.UTC(),
 	}
 	channelNames := make(map[string]struct{}, len(payload.Channels))
@@ -258,7 +313,47 @@ func (c *Client) validateRuntimeDirectory(
 	if !selfFound {
 		return RuntimeDirectory{}, ErrInvalidRuntimeDirectory
 	}
+	membersByID := make(map[string]struct{}, len(result.Members))
+	for _, member := range result.Members {
+		membersByID[member.MemberID] = struct{}{}
+	}
+	directIDs := make(map[string]struct{}, len(directConversations))
+	directPeers := make(map[string]struct{}, len(directConversations))
+	for _, value := range directConversations {
+		direct, err := validateDirectoryDirectConversation(value)
+		if err != nil || direct.PeerMemberID == agentID {
+			return RuntimeDirectory{}, ErrInvalidRuntimeDirectory
+		}
+		if _, exists := membersByID[direct.PeerMemberID]; !exists {
+			return RuntimeDirectory{}, ErrInvalidRuntimeDirectory
+		}
+		if _, duplicate := directIDs[direct.ID]; duplicate {
+			return RuntimeDirectory{}, ErrInvalidRuntimeDirectory
+		}
+		if _, duplicate := directPeers[direct.PeerMemberID]; duplicate {
+			return RuntimeDirectory{}, ErrInvalidRuntimeDirectory
+		}
+		directIDs[direct.ID] = struct{}{}
+		directPeers[direct.PeerMemberID] = struct{}{}
+		result.DirectConversations = append(result.DirectConversations, direct)
+	}
 	return result, nil
+}
+
+func validateDirectoryDirectConversation(
+	value runtimeDirectoryDirectConversationPayload,
+) (DirectoryDirectConversation, error) {
+	groupID := strings.TrimSpace(value.IMGroupID)
+	if !validUUIDv7(value.ID) || !validUUIDv7(value.PeerMemberID) ||
+		groupID == "" || value.Revision < 0 ||
+		!validDirectConversationIMState(value.IMState) {
+		return DirectoryDirectConversation{}, ErrInvalidRuntimeDirectory
+	}
+	return DirectoryDirectConversation{
+		ID: value.ID, PeerMemberID: value.PeerMemberID,
+		IMGroupID: groupID, IMState: value.IMState,
+		Revision: value.Revision,
+	}, nil
 }
 
 func validateDirectoryChannel(
@@ -336,6 +431,15 @@ func validateDirectoryMembers(
 func validDirectoryIMState(value string) bool {
 	switch value {
 	case "provisioning", "ready", "error", "deleting":
+		return true
+	default:
+		return false
+	}
+}
+
+func validDirectConversationIMState(value string) bool {
+	switch value {
+	case "provisioning", "ready", "error", "deleted":
 		return true
 	default:
 		return false

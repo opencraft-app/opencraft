@@ -167,6 +167,25 @@ func (h *RuntimeHandler) GetRuntimeDirectory(
 	return openapi.GetRuntimeDirectory200JSONResponse(body), nil
 }
 
+func (h *RuntimeHandler) GetRuntimeDirectoryV2(
+	ctx context.Context,
+	_ openapi.GetRuntimeDirectoryV2RequestObject,
+) (openapi.GetRuntimeDirectoryV2ResponseObject, error) {
+	principal, err := currentRuntimePrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	value, err := h.directory.Get(ctx, principal.ServerID(), principal.AgentID())
+	if err != nil {
+		return nil, err
+	}
+	body, err := runtimeDirectoryV2DTO(value)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.GetRuntimeDirectoryV2200JSONResponse(body), nil
+}
+
 func (h *RuntimeHandler) GetRuntimeChannelMembers(
 	ctx context.Context,
 	request openapi.GetRuntimeChannelMembersRequestObject,
@@ -741,6 +760,7 @@ func NewRuntimeRoutes(
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/runtime/me", strict.GetRuntimeMe)
 	mux.HandleFunc("GET /v1/runtime/directory", strict.GetRuntimeDirectory)
+	mux.HandleFunc("GET /v1/runtime/directory-v2", strict.GetRuntimeDirectoryV2)
 	mux.HandleFunc(
 		"GET /v1/runtime/channels/{channelId}/members",
 		wrapper.GetRuntimeChannelMembers,
@@ -814,6 +834,46 @@ func runtimeDirectoryDTO(
 	result.Members, err = runtimeDirectoryMembersDTO(value.Members)
 	if err != nil {
 		return openapi.RuntimeDirectory{}, err
+	}
+	return result, nil
+}
+
+func runtimeDirectoryV2DTO(
+	value directoryport.Directory,
+) (openapi.RuntimeDirectoryV2, error) {
+	legacy, err := runtimeDirectoryDTO(value)
+	if err != nil {
+		return openapi.RuntimeDirectoryV2{}, err
+	}
+	result := openapi.RuntimeDirectoryV2{
+		Server: legacy.Server, Self: legacy.Self,
+		Channels: legacy.Channels, Members: legacy.Members,
+		DirectConversations: make(
+			[]openapi.RuntimeDirectoryDirectConversation,
+			0,
+			len(value.DirectConversations),
+		),
+		Revision: legacy.Revision, ExpiresAt: legacy.ExpiresAt,
+	}
+	for _, direct := range value.DirectConversations {
+		id, err := uuid.Parse(direct.ID)
+		if err != nil || id == uuid.Nil {
+			return openapi.RuntimeDirectoryV2{}, invalidRuntimeDirectory(err)
+		}
+		peerMemberID, err := uuid.Parse(direct.PeerMemberID)
+		state := openapi.DirectConversationIMState(direct.IMState)
+		if err != nil || peerMemberID == uuid.Nil || !state.Valid() ||
+			strings.TrimSpace(direct.IMGroupID) == "" || direct.Revision < 0 {
+			return openapi.RuntimeDirectoryV2{}, invalidRuntimeDirectory(err)
+		}
+		result.DirectConversations = append(
+			result.DirectConversations,
+			openapi.RuntimeDirectoryDirectConversation{
+				Id: id, PeerMemberId: peerMemberID,
+				ImGroupId: direct.IMGroupID, ImState: state,
+				Revision: direct.Revision,
+			},
+		)
 	}
 	return result, nil
 }

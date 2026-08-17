@@ -14,6 +14,8 @@ import (
 const (
 	directoryServerID = "0198f9f2-fc49-7f81-9cb6-929866d41741"
 	directoryAgentID  = "0198f9f2-fc4a-77f4-bd52-e20b699c21b1"
+	directoryPeerID   = "0198f9f2-fc4b-7473-99f0-046eed4cdd47"
+	directoryDirectID = "0198f9f2-fc4c-7473-99f0-046eed4cdd48"
 )
 
 type fakeDirectoryRepository struct {
@@ -58,9 +60,19 @@ func TestServiceReturnsShortLivedAuthorizedDirectory(t *testing.T) {
 			Visibility: "public", Joined: true, IMGroupID: "community-1",
 			IMState: "ready", Revision: 3,
 		}},
-		Members: []directoryport.Member{{
-			MemberID: directoryAgentID, Kind: "agent", AgentID: stringPointer(directoryAgentID),
-			Handle: "builder", DisplayName: "Builder", IMUserID: "agent_builder",
+		Members: []directoryport.Member{
+			{
+				MemberID: directoryAgentID, Kind: "agent", AgentID: stringPointer(directoryAgentID),
+				Handle: "builder", DisplayName: "Builder", IMUserID: "agent_builder",
+			},
+			{
+				MemberID: directoryPeerID, Kind: "human", HumanID: stringPointer(directoryPeerID),
+				Handle: "alice", DisplayName: "Alice", IMUserID: "human_alice",
+			},
+		},
+		DirectConversations: []directoryport.DirectConversation{{
+			ID: directoryDirectID, PeerMemberID: directoryPeerID,
+			IMGroupID: "an_dm_authorized", IMState: "ready", Revision: 2,
 		}},
 		Revision: "sha256:test-directory",
 	}}
@@ -75,8 +87,38 @@ func TestServiceReturnsShortLivedAuthorizedDirectory(t *testing.T) {
 	}
 	if got.Server.ID != directoryServerID || got.Self.AgentID != directoryAgentID ||
 		got.Revision != "sha256:test-directory" || len(got.Channels) != 1 ||
-		len(got.Members) != 1 || !got.ExpiresAt.Equal(now.Add(2*time.Minute)) {
+		len(got.Members) != 2 || len(got.DirectConversations) != 1 ||
+		got.DirectConversations[0].PeerMemberID != directoryPeerID ||
+		!got.ExpiresAt.Equal(now.Add(2*time.Minute)) {
 		t.Fatalf("Get() = %#v", got)
+	}
+}
+
+func TestServiceRejectsUnknownDirectConversationPeer(t *testing.T) {
+	repository := &fakeDirectoryRepository{snapshot: directoryport.Snapshot{
+		Server: directoryport.Server{ID: directoryServerID, Slug: "team", Name: "研发"},
+		Self: directoryport.Self{
+			AgentID: directoryAgentID, MemberID: directoryAgentID,
+			Handle: "builder", DisplayName: "Builder", IMUserID: "agent_builder",
+		},
+		Members: []directoryport.Member{{
+			MemberID: directoryAgentID, Kind: "agent", AgentID: stringPointer(directoryAgentID),
+			Handle: "builder", DisplayName: "Builder", IMUserID: "agent_builder",
+		}},
+		DirectConversations: []directoryport.DirectConversation{{
+			ID: directoryDirectID, PeerMemberID: directoryPeerID,
+			IMGroupID: "an_dm_unknown_peer", IMState: "ready", Revision: 1,
+		}},
+		Revision: "sha256:test-invalid-directory",
+	}}
+	service, err := NewService(repository, directoryClock{now: time.Now()}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = service.Get(context.Background(), directoryServerID, directoryAgentID)
+	if apperror.CodeOf(err) != "internal_error" {
+		t.Fatalf("Get() error = %#v", err)
 	}
 }
 

@@ -49,6 +49,82 @@ func TestThreadTargetKeepsCompleteTencentMessageID(t *testing.T) {
 	}
 }
 
+func TestGatewayDirectConversationOwnsPeerRoute(t *testing.T) {
+	t.Parallel()
+	const (
+		serverID = "0198fab7-e66f-70d4-982c-13d1abea2101"
+		agentID  = "0198fab7-e670-7d41-9d9d-da6a1bea2102"
+		humanID  = "0198fab7-e671-7171-9264-51081bea2103"
+		directID = "0198fab7-e672-783f-b952-42ba1bea2104"
+		groupID  = "an_dm_authorized"
+	)
+	directory := platform.RuntimeDirectory{
+		Self: platform.DirectorySelf{
+			AgentID: agentID, MemberID: agentID, Handle: "builder",
+			DisplayName: "Builder", IMUserID: "agent_builder",
+		},
+		Members: []platform.DirectoryMember{
+			{MemberID: agentID, Kind: "agent", AgentID: agentID,
+				Handle: "builder", DisplayName: "Builder", IMUserID: "agent_builder"},
+			{MemberID: humanID, Kind: "human", HumanID: humanID,
+				Handle: "alice", DisplayName: "Alice", IMUserID: "human_alice"},
+		},
+		DirectConversations: []platform.DirectoryDirectConversation{{
+			ID: directID, PeerMemberID: humanID,
+			IMGroupID: groupID, IMState: "ready", Revision: 1,
+		}},
+	}
+	targets, aliases, reverse, memberNames, err := buildDirectoryIndexes(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directConversation, ok := targets["@alice"]
+	if !ok || directConversation.Kind() != im.ConversationGroup ||
+		directConversation.GroupID() != groupID {
+		t.Fatalf("@alice conversation = %#v", directConversation)
+	}
+	if got := reverse[directConversation]; got != "@alice" {
+		t.Fatalf("reverse target = %q", got)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway, err := newTestGateway(t, Config{
+		AgentID: agentID, ServerID: serverID, RuntimeEpoch: "direct-runtime",
+		StateRoot: t.TempDir(), Executable: executable, Transport: NewTransportSlot(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway.mu.Lock()
+	gateway.directory = directory
+	gateway.targets = targets
+	gateway.targetAliases = aliases
+	gateway.reverseTargets = reverse
+	gateway.memberNames = memberNames
+	gateway.directoryReady = true
+	gateway.mu.Unlock()
+
+	if routeID := gateway.routeIDForTarget("@alice"); routeID != humanID {
+		t.Fatalf("route ID = %q, want peer Member ID %q", routeID, humanID)
+	}
+	if target, found := gateway.targetForRouteID(humanID); !found || target != "@alice" {
+		t.Fatalf("targetForRouteID() = %q, %t", target, found)
+	}
+	ref, err := im.NewMessageRef(directConversation, "direct-message-1", 1, time.Now().UnixMilli())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := gateway.RegisterMessage(im.IncomingMessage{
+		Ref: ref, SenderUserID: "human_alice",
+		Elements: []im.Element{{Type: im.ElementText, Text: "hello"}},
+	})
+	if err != nil || target != "@alice" {
+		t.Fatalf("RegisterMessage() = %q, %v", target, err)
+	}
+}
+
 func TestValidateTencentAttachmentURLAllowsOnlyKnownMediaDomains(t *testing.T) {
 	t.Parallel()
 

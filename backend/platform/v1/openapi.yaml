@@ -72,7 +72,8 @@ x-auth-domain-registry:
   callback: [observeTencentIMState]
   public: [register, login, refreshAuth, redeemComputerSetupCode]
   runtime:
-    [getRuntimeMe, getRuntimeDirectory, getRuntimeChannelMembers,
+    [getRuntimeMe, getRuntimeDirectory, getRuntimeDirectoryV2,
+     getRuntimeChannelMembers,
      resolveRuntimeThread, registerRuntimeThreadReply, listRuntimeTasks,
      getRuntimeTask, updateRuntimeTaskStatus, claimRuntimeTask,
      listRuntimeReminders, createRuntimeReminder, updateRuntimeReminder,
@@ -1110,6 +1111,24 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/RuntimeDirectory'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/directory-v2:
+    get:
+      tags: [Runtime, Servers]
+      operationId: getRuntimeDirectoryV2
+      summary: 获取包含平台私信路由的当前 Agent 协作目录
+      description: |
+        返回 Server、当前 Agent、可见 Channel、同 Server active 成员，以及当前 Agent 参与的
+        Direct Conversation 授权路由；不返回腾讯云凭据或消息正文。
+      security:
+        - RuntimeBearer: []
+      responses:
+        '200':
+          description: 当前 Runtime 的完整 V2 授权目录
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RuntimeDirectoryV2'}
         default: {$ref: '#/components/responses/Error'}
 
   /runtime/channels/{channelId}/members:
@@ -3355,6 +3374,16 @@ components:
         handle: {type: string, minLength: 1, maxLength: 100}
         displayName: {type: string, minLength: 1, maxLength: 200}
         imUserId: {type: string, minLength: 1, maxLength: 255}
+    RuntimeDirectoryDirectConversation:
+      type: object
+      additionalProperties: false
+      required: [id, peerMemberId, imGroupId, imState, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        peerMemberId: {$ref: '#/components/schemas/Id'}
+        imGroupId: {type: string, minLength: 1, maxLength: 255}
+        imState: {$ref: '#/components/schemas/DirectConversationIMState'}
+        revision: {$ref: '#/components/schemas/Revision'}
     RuntimeDirectory:
       type: object
       additionalProperties: false
@@ -3370,6 +3399,28 @@ components:
           type: array
           maxItems: 10000
           items: {$ref: '#/components/schemas/RuntimeDirectoryMember'}
+        revision: {type: string, minLength: 1, maxLength: 512}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+    RuntimeDirectoryV2:
+      type: object
+      additionalProperties: false
+      required:
+        [server, self, channels, members, directConversations, revision, expiresAt]
+      properties:
+        server: {$ref: '#/components/schemas/RuntimeDirectoryServer'}
+        self: {$ref: '#/components/schemas/RuntimeDirectorySelf'}
+        channels:
+          type: array
+          maxItems: 1000
+          items: {$ref: '#/components/schemas/RuntimeDirectoryChannel'}
+        members:
+          type: array
+          maxItems: 10000
+          items: {$ref: '#/components/schemas/RuntimeDirectoryMember'}
+        directConversations:
+          type: array
+          maxItems: 10000
+          items: {$ref: '#/components/schemas/RuntimeDirectoryDirectConversation'}
         revision: {type: string, minLength: 1, maxLength: 512}
         expiresAt: {$ref: '#/components/schemas/Timestamp'}
     RuntimeChannelMembers:

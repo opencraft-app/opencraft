@@ -24,6 +24,10 @@ const (
 	repoJoinedPrivate  = "0198fa3d-8d98-75c0-9363-bcb899c10108"
 	repoHiddenPrivate  = "0198fa3d-8d99-7fa1-a2cf-209773de0109"
 	repoOpenChannel    = "0198fa3d-8d9b-74b6-bbca-89aaf00f010b"
+	repoDirectID       = "0198fa3d-8d9c-7347-93a9-3f09d2b9010c"
+	repoUnrelatedDM    = "0198fa3d-8d9d-7347-93a9-3f09d2b9010d"
+	repoClosedDM       = "0198fa3d-8d9e-7347-93a9-3f09d2b9010e"
+	repoInactiveDM     = "0198fa3d-8d9f-7347-93a9-3f09d2b9010f"
 )
 
 var repoNow = time.Date(2026, 8, 2, 16, 0, 0, 0, time.UTC)
@@ -83,6 +87,78 @@ func TestEntRepositoryRejectsNonCurrentAgent(t *testing.T) {
 	)
 	if !errors.Is(err, directoryport.ErrNotFound) {
 		t.Fatalf("Get() error = %v", err)
+	}
+}
+
+func TestEntRepositoryProjectsOnlyAuthorizedDirectConversations(t *testing.T) {
+	repository, handle := openDirectoryRepository(t)
+	seedDirectoryFacts(t, handle)
+	ctx := context.Background()
+	createDirect := func(
+		id, memberAID, memberBID, status, imState, groupID string,
+		revision int64,
+	) {
+		if _, err := handle.Client().DirectConversation.Create().
+			SetID(id).SetServerID(repoServerID).
+			SetMemberAID(memberAID).SetMemberBID(memberBID).
+			SetImGroupID(groupID).SetStatus(status).SetImState(imState).
+			SetRevision(revision).SetCreatedAt(repoNow).SetUpdatedAt(repoNow).
+			Save(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	createDirect(
+		repoDirectID, repoSelfAgentID, repoHumanMemberID,
+		"active", "ready", "an_dm_authorized", 3,
+	)
+	createDirect(
+		repoUnrelatedDM, repoHumanMemberID, repoOtherAgentID,
+		"active", "ready", "an_dm_unrelated", 1,
+	)
+	createDirect(
+		repoClosedDM, repoSelfAgentID, repoOtherAgentID,
+		"closed", "deleted", "an_dm_closed", 2,
+	)
+	createDirect(
+		repoInactiveDM, repoSelfAgentID, repoInactiveID,
+		"active", "ready", "an_dm_inactive", 1,
+	)
+
+	got, err := repository.Get(ctx, repoServerID, repoSelfAgentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.DirectConversations) != 1 {
+		t.Fatalf("direct conversations = %#v", got.DirectConversations)
+	}
+	direct := got.DirectConversations[0]
+	if direct.ID != repoDirectID ||
+		direct.PeerMemberID != repoHumanMemberID ||
+		direct.IMGroupID != "an_dm_authorized" ||
+		direct.IMState != "ready" || direct.Revision != 3 {
+		t.Fatalf("direct conversation = %#v", direct)
+	}
+	baselineRevision := got.Revision
+
+	if _, err := handle.Client().DirectConversation.UpdateOneID(repoDirectID).
+		SetImState("error").AddRevision(1).SetUpdatedAt(repoNow.Add(time.Minute)).
+		Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := repository.Get(ctx, repoServerID, repoSelfAgentID)
+	if err != nil || changed.Revision == baselineRevision {
+		t.Fatalf("direct state revision = %q, %v; baseline %q", changed.Revision, err, baselineRevision)
+	}
+
+	beforeHandleRevision := changed.Revision
+	if _, err := handle.Client().Member.UpdateOneID(repoHumanMemberID).
+		SetHandle("alice-renamed").SetDisplayName("Alice Renamed").
+		AddRevision(1).SetUpdatedAt(repoNow.Add(2 * time.Minute)).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	renamed, err := repository.Get(ctx, repoServerID, repoSelfAgentID)
+	if err != nil || renamed.Revision == beforeHandleRevision {
+		t.Fatalf("peer rename revision = %q, %v; baseline %q", renamed.Revision, err, beforeHandleRevision)
 	}
 }
 

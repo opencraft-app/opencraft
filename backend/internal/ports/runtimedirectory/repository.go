@@ -47,13 +47,22 @@ type Member struct {
 	IMUserID    string
 }
 
+type DirectConversation struct {
+	ID           string
+	PeerMemberID string
+	IMGroupID    string
+	IMState      string
+	Revision     int64
+}
+
 type Directory struct {
-	Server    Server
-	Self      Self
-	Channels  []Channel
-	Members   []Member
-	Revision  string
-	ExpiresAt time.Time
+	Server              Server
+	Self                Self
+	Channels            []Channel
+	Members             []Member
+	DirectConversations []DirectConversation
+	Revision            string
+	ExpiresAt           time.Time
 }
 
 type ChannelMembers struct {
@@ -64,11 +73,12 @@ type ChannelMembers struct {
 }
 
 type Snapshot struct {
-	Server   Server
-	Self     Self
-	Channels []Channel
-	Members  []Member
-	Revision string
+	Server              Server
+	Self                Self
+	Channels            []Channel
+	Members             []Member
+	DirectConversations []DirectConversation
+	Revision            string
 }
 
 type ChannelMembersSnapshot struct {

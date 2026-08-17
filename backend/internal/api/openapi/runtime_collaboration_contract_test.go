@@ -32,14 +32,55 @@ func TestRuntimeDirectoryContractIsGenerated(t *testing.T) {
 
 	for _, name := range []string{
 		"RuntimeDirectory",
+		"RuntimeDirectoryV2",
 		"RuntimeDirectoryServer",
 		"RuntimeDirectorySelf",
 		"RuntimeDirectoryChannel",
+		"RuntimeDirectoryDirectConversation",
 		"RuntimeDirectoryMember",
 	} {
 		if schema := spec.Components.Schemas[name]; schema == nil || schema.Value == nil {
 			t.Errorf("schema %s is missing", name)
 		}
+	}
+
+	directory := spec.Components.Schemas["RuntimeDirectory"]
+	if direct := directory.Value.Properties["directConversations"]; direct != nil {
+		t.Fatalf("legacy RuntimeDirectory gained directConversations: %#v", direct)
+	}
+	v2Path := spec.Paths.Value("/runtime/directory-v2")
+	if v2Path == nil || v2Path.Get == nil ||
+		v2Path.Get.OperationID != "GetRuntimeDirectoryV2" {
+		t.Fatalf("GET /runtime/directory-v2 = %#v", v2Path)
+	}
+	v2Response := v2Path.Get.Responses.Value("200")
+	if v2Response == nil || v2Response.Value == nil ||
+		v2Response.Value.Content.Get("application/json") == nil ||
+		v2Response.Value.Content.Get("application/json").Schema.Ref !=
+			"#/components/schemas/RuntimeDirectoryV2" {
+		t.Fatalf("GET /runtime/directory-v2 200 = %#v", v2Response)
+	}
+	v2 := spec.Components.Schemas["RuntimeDirectoryV2"]
+	directs := v2.Value.Properties["directConversations"]
+	if directs == nil || directs.Value == nil || directs.Value.Items == nil ||
+		directs.Value.Items.Ref !=
+			"#/components/schemas/RuntimeDirectoryDirectConversation" {
+		t.Fatalf("RuntimeDirectory.directConversations = %#v", directs)
+	}
+	requiredDirects := false
+	for _, required := range v2.Value.Required {
+		if required == "directConversations" {
+			requiredDirects = true
+		}
+	}
+	if !requiredDirects {
+		t.Fatal("RuntimeDirectoryV2.directConversations must be required")
+	}
+	direct := spec.Components.Schemas["RuntimeDirectoryDirectConversation"]
+	imState := direct.Value.Properties["imState"]
+	if imState == nil || imState.Ref !=
+		"#/components/schemas/DirectConversationIMState" {
+		t.Fatalf("RuntimeDirectoryDirectConversation.imState = %#v", imState)
 	}
 }
 

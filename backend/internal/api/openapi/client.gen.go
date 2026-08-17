@@ -187,6 +187,9 @@ type ClientInterface interface {
 	// GetRuntimeDirectory request
 	GetRuntimeDirectory(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetRuntimeDirectoryV2 request
+	GetRuntimeDirectoryV2(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetRuntimeMe request
 	GetRuntimeMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -896,6 +899,18 @@ func (c *Client) GetRuntimeChannelMembers(ctx context.Context, channelId Channel
 
 func (c *Client) GetRuntimeDirectory(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetRuntimeDirectoryRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRuntimeDirectoryV2(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRuntimeDirectoryV2Request(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -3177,6 +3192,33 @@ func NewGetRuntimeDirectoryRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/runtime/directory")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRuntimeDirectoryV2Request generates requests for GetRuntimeDirectoryV2
+func NewGetRuntimeDirectoryV2Request(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runtime/directory-v2")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -7427,6 +7469,9 @@ type ClientWithResponsesInterface interface {
 	// GetRuntimeDirectoryWithResponse request
 	GetRuntimeDirectoryWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRuntimeDirectoryResponse, error)
 
+	// GetRuntimeDirectoryV2WithResponse request
+	GetRuntimeDirectoryV2WithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRuntimeDirectoryV2Response, error)
+
 	// GetRuntimeMeWithResponse request
 	GetRuntimeMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRuntimeMeResponse, error)
 
@@ -8244,6 +8289,29 @@ func (r GetRuntimeDirectoryResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetRuntimeDirectoryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRuntimeDirectoryV2Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RuntimeDirectoryV2
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRuntimeDirectoryV2Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRuntimeDirectoryV2Response) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -10269,6 +10337,15 @@ func (c *ClientWithResponses) GetRuntimeDirectoryWithResponse(ctx context.Contex
 	return ParseGetRuntimeDirectoryResponse(rsp)
 }
 
+// GetRuntimeDirectoryV2WithResponse request returning *GetRuntimeDirectoryV2Response
+func (c *ClientWithResponses) GetRuntimeDirectoryV2WithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRuntimeDirectoryV2Response, error) {
+	rsp, err := c.GetRuntimeDirectoryV2(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRuntimeDirectoryV2Response(rsp)
+}
+
 // GetRuntimeMeWithResponse request returning *GetRuntimeMeResponse
 func (c *ClientWithResponses) GetRuntimeMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRuntimeMeResponse, error) {
 	rsp, err := c.GetRuntimeMe(ctx, reqEditors...)
@@ -11890,6 +11967,39 @@ func ParseGetRuntimeDirectoryResponse(rsp *http.Response) (*GetRuntimeDirectoryR
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest RuntimeDirectory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRuntimeDirectoryV2Response parses an HTTP response from a GetRuntimeDirectoryV2WithResponse call
+func ParseGetRuntimeDirectoryV2Response(rsp *http.Response) (*GetRuntimeDirectoryV2Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRuntimeDirectoryV2Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RuntimeDirectoryV2
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

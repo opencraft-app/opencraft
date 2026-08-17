@@ -36,8 +36,9 @@ Direct Conversation 时保留现有腾讯 C2C fallback。
 
 ### OpenAPI
 
-`RuntimeDirectory` 增加兼容性可选字段 `directConversations`，元素类型
-`RuntimeDirectoryDirectConversation`：
+新增 `GET /runtime/directory-v2` 与 `RuntimeDirectoryV2`，旧 `GET /runtime/directory` 及其
+`RuntimeDirectory` 响应保持字节级契约不变。V2 在原有字段基础上增加 required
+`directConversations`，元素类型 `RuntimeDirectoryDirectConversation`：
 
 - `id`: 平台 Direct Conversation ID；
 - `peerMemberId`: 相对当前 Agent 的另一位参与者；
@@ -46,9 +47,10 @@ Direct Conversation 时保留现有腾讯 C2C fallback。
   `provisioning | ready | error | deleted`；
 - `revision`: Direct Conversation revision。
 
-字段在当前协议版本中保持 optional：Backend 会始终输出数组，但旧 Backend 缺失该字段时，新
-Computer 按空数组处理。这样允许 Backend 先发布、Computer 后升级，也允许 Computer 暂时回退到旧
-Backend 而不破坏 Channel/C2C 路由。该字段不包含腾讯凭据、消息正文或不属于当前 Agent 的会话。
+仓库发布基线中的旧响应使用 `additionalProperties: false`，即使增加 optional 响应属性也属于不兼容
+变更，因此不得修改旧 schema。新 Computer 优先请求 V2；旧 Backend 返回 404 时回退旧目录并把 Direct
+Conversation 集合视为空。这样允许 Backend 先发布、Computer 后升级，也允许 Computer 暂时回退到旧
+Backend 而不破坏 Channel/C2C 路由。新字段不包含腾讯凭据、消息正文或不属于当前 Agent 的会话。
 
 ### Backend authorization
 
@@ -108,11 +110,12 @@ message resolve 以及所有名为 `channelId` 但实际承载 Channel/Member ro
 
 ## TDD slices
 
-1. **OpenAPI-first:** 先增加 schema/生成物契约测试，证明字段可选、未进入 `required`、复用现有 IM state
-   enum 且响应能输出显式数组；运行 generated 与 OpenAPI compatibility 门禁。
+1. **OpenAPI-first:** 先增加新 endpoint/schema 的生成物契约测试，证明旧 RuntimeDirectory 完全不变、
+   V2 把 `directConversations` 设为 required 并复用现有 IM state enum；运行 generated 与 OpenAPI
+   compatibility 门禁。
 2. **Backend projection:** Repository RED 测试覆盖同 Server、参与者、active、peer ready、上限与 revision；
    Service/Handler RED 测试覆盖 DTO 和无越权数据。
-3. **Computer parsing:** platform client RED 测试覆盖合法目录、旧 Backend 缺失字段等价于空数组，以及
+3. **Computer parsing:** platform client RED 测试覆盖合法 V2 目录、V2 404 回退旧目录并得到空数组，以及
    重复 ID、重复 peer、self peer、未知 peer 拒绝。
 4. **Gateway routing:** RED 测试证明 Direct Conversation Group 入站映射为 `@peer`、发送回同一 Group、
    ready Group 覆盖 C2C、route ID 保持 peer Member ID，以及未授权 `an_dm_*` 仍被拒绝。

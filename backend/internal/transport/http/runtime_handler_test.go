@@ -653,6 +653,7 @@ func TestRuntimeHandlerProvidesReminderCRUDWithMessageAnchors(t *testing.T) {
 func TestRuntimeHandlerReturnsAuthorizedDirectory(t *testing.T) {
 	humanID := "0198fa61-bc96-7352-8f91-0d31d1338123"
 	channelID := "0198fa61-bc97-71f6-b248-296172c25124"
+	directID := "0198fa61-bc98-71f6-b248-296172c25125"
 	now := time.Date(2026, 8, 2, 17, 0, 0, 0, time.UTC)
 	directories := &fakeRuntimeDirectoryService{value: directoryport.Directory{
 		Server: directoryport.Server{ID: sessionServerID, Slug: "team", Name: "研发"},
@@ -667,6 +668,10 @@ func TestRuntimeHandlerReturnsAuthorizedDirectory(t *testing.T) {
 		Members: []directoryport.Member{{
 			MemberID: humanID, Kind: "human", HumanID: &humanID,
 			Handle: "alice", DisplayName: "Alice", IMUserID: "human_alice",
+		}},
+		DirectConversations: []directoryport.DirectConversation{{
+			ID: directID, PeerMemberID: humanID,
+			IMGroupID: "an_dm_authorized", IMState: "ready", Revision: 3,
 		}},
 		Revision: "sha256:test", ExpiresAt: now,
 	}}
@@ -692,6 +697,19 @@ func TestRuntimeHandlerReturnsAuthorizedDirectory(t *testing.T) {
 		!body.ExpiresAt.Equal(now) || len(directories.args) != 2 ||
 		directories.args[1] != sessionAgentID {
 		t.Fatalf("GetRuntimeDirectory() = (%#v, %v), args=%#v", response, err, directories.args)
+	}
+
+	v2Response, err := handler.GetRuntimeDirectoryV2(
+		currentRuntimeContext(t),
+		openapi.GetRuntimeDirectoryV2RequestObject{},
+	)
+	v2Body, ok := v2Response.(openapi.GetRuntimeDirectoryV2200JSONResponse)
+	if err != nil || !ok || len(v2Body.DirectConversations) != 1 ||
+		v2Body.DirectConversations[0].Id.String() != directID ||
+		v2Body.DirectConversations[0].PeerMemberId.String() != humanID ||
+		v2Body.DirectConversations[0].ImGroupId != "an_dm_authorized" ||
+		v2Body.DirectConversations[0].ImState != openapi.DirectConversationIMStateReady {
+		t.Fatalf("GetRuntimeDirectoryV2() = (%#v, %v)", v2Response, err)
 	}
 }
 

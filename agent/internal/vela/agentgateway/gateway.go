@@ -570,9 +570,34 @@ func buildDirectoryIndexes(
 			return nil, nil, nil, nil, platform.ErrInvalidRuntimeDirectory
 		}
 	}
+	membersByID := make(
+		map[string]platform.DirectoryMember,
+		len(directory.Members),
+	)
 	for _, member := range directory.Members {
 		memberNames[member.IMUserID] = member.Handle
+		membersByID[member.MemberID] = member
+	}
+	directPeers := make(map[string]struct{}, len(directory.DirectConversations))
+	for _, direct := range directory.DirectConversations {
+		if direct.IMState != "ready" {
+			continue
+		}
+		peer, found := membersByID[direct.PeerMemberID]
+		if !found || peer.MemberID == directory.Self.MemberID {
+			return nil, nil, nil, nil, platform.ErrInvalidRuntimeDirectory
+		}
+		conversation, err := im.NewGroupConversation(direct.IMGroupID)
+		if err != nil || addTarget("@"+peer.Handle, conversation) != nil {
+			return nil, nil, nil, nil, platform.ErrInvalidRuntimeDirectory
+		}
+		directPeers[peer.MemberID] = struct{}{}
+	}
+	for _, member := range directory.Members {
 		if member.MemberID == directory.Self.MemberID {
+			continue
+		}
+		if _, direct := directPeers[member.MemberID]; direct {
 			continue
 		}
 		conversation, err := im.NewC2CConversation(member.IMUserID)

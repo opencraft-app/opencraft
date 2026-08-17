@@ -24,7 +24,7 @@ func TestGeneratedSpecHasFrozenShape(t *testing.T) {
 	}
 
 	paths := spec.Paths.Map()
-	if got, want := len(paths), 74; got != want {
+	if got, want := len(paths), 75; got != want {
 		t.Fatalf("path count = %d, want %d", got, want)
 	}
 	for _, path := range []string{
@@ -40,6 +40,7 @@ func TestGeneratedSpecHasFrozenShape(t *testing.T) {
 		"/servers/{serverId}/channels/{channelId}/threads/{threadId}/read",
 		"/runtime/tasks",
 		"/runtime/directory",
+		"/runtime/directory-v2",
 		"/runtime/tasks/{taskId}",
 		"/runtime/tasks/{taskId}/claim",
 		"/runtime/channels/{channelId}/members",
@@ -124,7 +125,7 @@ func TestGeneratedStrictInterfaceCoversEveryOperation(t *testing.T) {
 		methods = iface.Methods.NumFields()
 		return false
 	})
-	if got, want := methods, 98; got != want {
+	if got, want := methods, 99; got != want {
 		t.Fatalf("strict method count = %d, want %d", got, want)
 	}
 }
@@ -154,6 +155,7 @@ func TestGeneratedClientCoversRuntimeAndLifecycleOperations(t *testing.T) {
 		"RegisterMessageThreadReplyWithResponse",
 		"ListRuntimeTasksWithResponse",
 		"GetRuntimeDirectoryWithResponse",
+		"GetRuntimeDirectoryV2WithResponse",
 		"ClaimRuntimeTaskWithResponse",
 		"UpdateRuntimeTaskStatusWithResponse",
 		"GetRuntimeChannelMembersWithResponse",

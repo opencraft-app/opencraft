@@ -232,9 +232,6 @@ func (a *Adapter) HandleIngressMessage(
 		)
 	}
 	visibleTarget := conversationKey
-	if !shouldDispatch(session.Agent, message) {
-		return ingress.MessageResult{Disposition: ingress.Consumed}, nil
-	}
 	if a.config.Gateway != nil {
 		visibleTarget, err = a.config.Gateway.RegisterMessage(message)
 		if err != nil {
@@ -243,6 +240,9 @@ func (a *Adapter) HandleIngressMessage(
 				err,
 			)
 		}
+	}
+	if !shouldDispatchTarget(session.Agent, message, visibleTarget) {
+		return ingress.MessageResult{Disposition: ingress.Consumed}, nil
 	}
 
 	resolved, ok := a.config.Runtimes.ResolveInternalRuntime(
@@ -444,6 +444,20 @@ func shouldDispatch(
 		}
 	}
 	return false
+}
+
+func shouldDispatchTarget(
+	agent platform.AgentIdentity,
+	message im.IncomingMessage,
+	visibleTarget string,
+) bool {
+	if message.SenderUserID == agent.UserID {
+		return false
+	}
+	if strings.HasPrefix(visibleTarget, "@") {
+		return true
+	}
+	return shouldDispatch(agent, message)
 }
 
 func conversationKeyFor(
