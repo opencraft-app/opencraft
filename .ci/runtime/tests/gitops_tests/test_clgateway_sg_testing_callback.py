@@ -8,27 +8,35 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 class CloudLadderSGCallbackTests(unittest.TestCase):
-    def test_jp_callback_targets_jp_staging_api(self) -> None:
-        for filename in ("statefulsetplus.yaml", "statefulsetplus-testing.yaml"):
-            with self.subTest(filename=filename):
-                manifest = yaml.safe_load(
-                    (
-                        REPO_ROOT
-                        / "argocd/services/cloudladdergateway/tkexsg"
-                        / filename
-                    ).read_text()
-                )
-                env = {
-                    item["name"]: item.get("value")
-                    for item in manifest["spec"]["template"]["spec"]["containers"][0][
-                        "env"
-                    ]
-                }
+    def callback_base_urls(self, filename: str) -> dict[str, str]:
+        manifest = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd/services/cloudladdergateway/tkexsg"
+                / filename
+            ).read_text()
+        )
+        env = {
+            item["name"]: item.get("value")
+            for item in manifest["spec"]["template"]["spec"]["containers"][0][
+                "env"
+            ]
+            if item["name"].startswith("CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK")
+        }
+        self.assertEqual(len(env), 7)
+        return env
 
-                self.assertEqual(
-                    env["CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_JP_BASE_URL"],
-                    "https://api-sandbox-jp-1.lightclaw.tech",
-                )
+    def test_sg_prod_callbacks_target_jp_api(self) -> None:
+        self.assertEqual(
+            set(self.callback_base_urls("statefulsetplus.yaml").values()),
+            {"https://api-sandbox-jp-1.lightclaw.tech"},
+        )
+
+    def test_sg_testing_callbacks_stay_on_kr_api(self) -> None:
+        self.assertEqual(
+            set(self.callback_base_urls("statefulsetplus-testing.yaml").values()),
+            {"https://api-sandbox-kr-1.lightclaw.tech"},
+        )
 
 
 if __name__ == "__main__":
