@@ -75,6 +75,8 @@ BuildKit image Buildx builder 构建 Rust TAT + Go CGO `linux-amd64`；不依赖
 两个 target 缺一不可发布。脚本生成 target-local manifest/signature，独立验签，create-only 发布
 COS，保存 Buildx metadata，再创建不可变 Release Set ConfigMap 并切换 3 副本 Canary。
 
-首次从单 target catalog 升级时，必须先部署能兼容读取旧 catalog 的新版 Backend、应用新增 migration，
-并在旧 ConfigMap 上证明 3/3 Ready；之后才运行上述脚本切双 target catalog。回滚顺序相反：先恢复旧
-ConfigMap并确认 Ready，再回滚旧 Backend image。不得让旧 Backend 读取新 Release Set schema。
+首次从单 target catalog 升级时，新增 schema migration 与兼容 Backend image 是一个只能向前完成的
+切换：migration Job 和 verify Job 成功后必须立即部署新版 Backend；旧进程可继续运行到 Recreate，
+但旧 image 不能在新 schema 上重新启动，因此不能作为 image rollback。新版 Backend 必须先在旧
+ConfigMap 上证明 3/3 Ready，之后才运行上述脚本切双 target catalog。catalog 仍可独立恢复为旧
+ConfigMap；不得让旧 Backend 读取新 Release Set schema。

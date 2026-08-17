@@ -680,6 +680,10 @@ func newAuthAndMeAPIHandler(
 				Path:   "/v1/computer-installation-options",
 			},
 			httptransport.ImplementedRoute{
+				Method: http.MethodGet,
+				Path:   "/v1/computer-installation-targets",
+			},
+			httptransport.ImplementedRoute{
 				Method: http.MethodPost,
 				Path: "/v1/servers/{serverId}/computers/" +
 					"{computerId}/setup-commands",

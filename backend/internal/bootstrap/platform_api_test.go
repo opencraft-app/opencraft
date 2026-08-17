@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,11 +13,29 @@ import (
 
 	credentialsadapter "chatserver/internal/adapters/credentials"
 	"chatserver/internal/api/openapi"
+	computerport "chatserver/internal/ports/computer"
 	tencentimport "chatserver/internal/ports/tencentim"
 	tencenttatport "chatserver/internal/ports/tencenttat"
 )
 
 type platformTATRegistrar struct{}
+
+type platformArtifactSigner struct{}
+
+func (platformArtifactSigner) PresignGet(context.Context, string, time.Duration) (string, error) {
+	return "https://artifact.example.test/signed", nil
+}
+
+func platformEnrollmentRelease() computerport.ReleaseBinding {
+	return computerport.ReleaseBinding{
+		Version: "0.1.0", Target: "darwin-arm64", OSType: "macos", Architecture: "arm64",
+		SigningKeyID: "test-key",
+		Manifest:     computerport.ArtifactBinding{ObjectKey: "computer/releases/0.1.0/manifest.json", SHA256: sha256.Sum256([]byte("manifest")), Size: 1},
+		Signature:    computerport.ArtifactBinding{ObjectKey: "computer/releases/0.1.0/manifest.sig", SHA256: sha256.Sum256([]byte("signature")), Size: 1},
+		Installer:    computerport.ArtifactBinding{ObjectKey: "computer/releases/0.1.0/darwin-arm64/install.sh", SHA256: sha256.Sum256([]byte("installer")), Size: 1},
+		Program:      computerport.ArtifactBinding{ObjectKey: "computer/releases/0.1.0/darwin-arm64/vela-computer", SHA256: sha256.Sum256([]byte("program")), Size: 1},
+	}
+}
 
 func (platformTATRegistrar) CreateRegistration(
 	context.Context,
@@ -42,6 +61,14 @@ func (platformTATRegistrar) Issue(
 	}, nil
 }
 
+func (platformTATRegistrar) FindManagedByComputerTag(
+	context.Context,
+	string,
+	string,
+) (tencenttatport.ManagedInstance, bool, error) {
+	return tencenttatport.ManagedInstance{}, false, nil
+}
+
 func TestPlatformAPIExposesAuthenticatedServerCreateAndQueries(t *testing.T) {
 	handle := openHumanAPIDatabase(t)
 	issuer := &recordingUserSigIssuer{result: tencentimport.UserSig{
@@ -63,10 +90,16 @@ func TestPlatformAPIExposesAuthenticatedServerCreateAndQueries(t *testing.T) {
 			UserSigTTL:    time.Hour,
 			UserSigIssuer: issuer,
 		},
-		IMResourceKey:      bytes.Repeat([]byte{0x53}, 32),
-		ServerCreationWait: time.Millisecond,
-		TATRegistrar:       platformTATRegistrar{},
-		TerminalIssuer:     platformTATRegistrar{},
+		IMResourceKey:            bytes.Repeat([]byte{0x53}, 32),
+		ServerCreationWait:       time.Millisecond,
+		TATRegistrar:             platformTATRegistrar{},
+		TATManagedInstanceFinder: platformTATRegistrar{},
+		TerminalIssuer:           platformTATRegistrar{},
+		ComputerEnrollment: &ComputerEnrollmentAPIConfig{
+			Release: platformEnrollmentRelease(), PlatformBaseURL: "https://platform.example.test",
+			TokenTTL: 15 * time.Minute, CredentialTTL: 24 * time.Hour,
+			ArtifactURLTTL: 5 * time.Minute, ArtifactSigner: platformArtifactSigner{},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -87,6 +120,12 @@ func TestPlatformAPIExposesAuthenticatedServerCreateAndQueries(t *testing.T) {
 		t.Fatalf("register = %d %s", registered.Code, registered.Body)
 	}
 	auth := decodeAuthResult(t, registered)
+	targets := performJSON(
+		t, handler, http.MethodGet, "/v1/computer-installation-targets", nil, *auth.AccessToken,
+	)
+	if targets.Code != http.StatusOK {
+		t.Fatalf("installation targets = %d %s", targets.Code, targets.Body)
+	}
 	if _, err := handle.Client().Account.UpdateOneID(auth.Account.Id.String()).
 		SetImUserID("u_OWNER").
 		SetImState("ready").

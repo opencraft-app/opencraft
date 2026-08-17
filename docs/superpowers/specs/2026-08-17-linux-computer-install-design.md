@@ -305,15 +305,17 @@ Release Set。发布脚本先发布不可覆盖 COS 对象，再创建唯一 Con
 
 live 迁移使用以下兼容顺序：
 
-1. 先应用新增可空列 migration，并部署包含双格式 `LoadReleaseSet`、新状态机和新 API 的 Backend；
-   它读取旧单 target catalog 时只继续提供 macOS，不宣称 Linux 已发布。
+1. 使用新版 image 执行新增可空列 migration 和 verify，随后立即部署包含双格式 `LoadReleaseSet`、
+   新状态机和新 API 的同一 Backend image；它读取旧单 target catalog 时只继续提供 macOS，不宣称
+   Linux 已发布。旧进程可运行到 Recreate，但严格 schema 校验意味着旧 image 不能在 migration 后
+   重新启动；此阶段只允许修复向前，不能回滚旧 image。
 2. 验收新 Backend 在旧 catalog 上 3/3 Ready 后，发布双 target COS 对象和新 schema ConfigMap，
    再用现有 Recreate 策略把同一 Backend image 切到新 ConfigMap。
 3. 验收双 target installation options、catalog 和公开 bootstrap 后，Linux 才标记正式可用。
 
-新 Backend 对旧 catalog 的兼容读取也是 catalog 回滚路径。若需要同时回滚 Backend image，必须先把
-ConfigMap 恢复为旧 catalog，确认当前新 Backend 能读取并恢复 Ready，再回滚到旧 image；禁止让旧
-Backend 读取新 schema。切换后的健康检查或 catalog 验收失败时，发布脚本只需先恢复原 ConfigMap。
+新 Backend 对旧 catalog 的兼容读取是 catalog 回滚路径。切换后的健康检查或 catalog 验收失败时，
+发布脚本恢复原 ConfigMap；禁止在新增 migration 后回滚不认识该 schema 的旧 Backend image，也禁止
+让旧 Backend 读取新 Release Set schema。
 
 已经完成 target 绑定的 enrollment 继续引用其固化对象，不依赖“latest”指针；因此回滚后台目录
 不会把正在安装的机器切换到另一二进制。
