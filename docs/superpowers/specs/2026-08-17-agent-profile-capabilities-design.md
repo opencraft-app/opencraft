@@ -162,7 +162,9 @@ POST /servers/{serverId}/agents/{agentId}/profile-capabilities/refresh
     "profileKind": "hermes-managed",
     "profileFingerprint": "opaque-value",
     "workspacePath": "/var/lib/vela/computer/workspaces/...",
-    "contextGeneration": 12
+    "contextGeneration": 12,
+    "runtimeContextGeneration": 4,
+    "observedThroughSequence": 27
   },
   "source": {
     "protocol": "hermes_acp",
@@ -251,7 +253,11 @@ profile_capability_refresh_id
 profile_capabilities_json
 ```
 
-`profile_capabilities_json` 使用 `internal/persistedjson` 注册的
+`profile_capabilities_json` 实际保存一个 capability envelope：最近成功 snapshot 为 optional，
+invalidation watermark/records 为 control metadata。没有成功 snapshot 时 Human 状态仍是 `absent`，
+即使 envelope 已因一个并发 invalidation 而存在。
+
+该字段使用 `internal/persistedjson` 注册的
 `agent.profile-capabilities/v1` Codec。分发 Agent 已负责原生数据规范化；Backend Codec 只接收生成的
 稳定 DTO，使用严格 struct、拒绝未知字段，并验证：
 
@@ -264,9 +270,10 @@ profile_capabilities_json
 - observedAt 合法；
 - 不允许敏感字段或原始 Runtime payload 透传。
 
-快照 envelope 还包含 Backend 接受的去重 invalidation reasons/observedAt。它们只表达“最近成功快照
-之后本机上下文可能变化”，不包含新目录，也不触发刷新。GET 用当前 Agent authority mismatch 与这些
-invalidation 合并计算 stale reasons。
+快照 envelope 还包含 Backend 接受的去重 invalidation records 和单调 `invalidationGeneration`。
+每条 record 保存 Backend generation、分发 Agent 的 runtime-context generation/sequence、reason 和
+observedAt。它们只表达“最近成功快照之后本机上下文可能变化”，不包含新目录，也不触发刷新。GET 用
+当前 Agent authority mismatch 与尚未被一次 discovery 明确覆盖的 invalidation 合并计算 stale reasons。
 
 超出 Runtime 目录上限时，Computer 在 section 设置 `truncated = true` 并加入结构化 warning；不能静默
 截断。超过整个 wire/persistence 硬上限时拒绝结果，以 `result_too_large` 完成失败 Operation，并保留旧
@@ -280,7 +287,8 @@ Capability 写入不增加 Human Agent `revision`。Agent PATCH 的 Revision CAS
 和 result digest 长期由 Operation ledger 保存，因此清空 pointer 后仍能完成 PUT 重放和审计。
 
 迁移只追加 SQLite/TDSQL 列，并同步 Ent、物理规格、模型契约、durable field registry、逻辑引用扫描
-和 migration release lock。没有存量快照需要回填；`NULL` 表示 `absent`。
+和 migration release lock。没有存量快照需要回填；`NULL` 表示从未保存 snapshot 或 control metadata，
+非 NULL 但 snapshot 为空也投影为 `absent`。
 
 ## 刷新 Operation 与 Assignment
 
@@ -290,12 +298,24 @@ POST refresh 在 Agent shard 的事务中：
 2. 验证目标 Computer 最近声明并使用 Assignment protocol v2；
 3. 通过 Idempotency-Key 创建或重放 Operation；Operation ID 同时就是 refresh ID；
 4. 用 `agent.profile-capability-refresh-request/v1` request snapshot 固化 server、Agent、Computer、
-   runtime kind、Agent revision/context generation、forceReload、trigger 和 requestedAt；
+   runtime kind、Agent revision/context generation、当前 Backend invalidation generation watermark、
+   forceReload、trigger 和 requestedAt；
 5. 在锁定 Agent 行后把 Operation ID 写入 `profile_capability_refresh_id`，并推进 Computer Assignment
    revision，唤醒目标 Computer 已有长轮询。
 
-同一个 Idempotency-Key 始终返回同一个 Operation。新的 refresh 可以 supersede 旧 pending refresh；旧
-Operation 进入 `superseded`，旧 refresh ID 的结果不能覆盖快照。
+同一个 Idempotency-Key 始终返回同一个 Operation。只有符合下述优先级的新 Human refresh 可以
+supersede 旧 pending refresh；旧 Operation 进入 `superseded`，旧 refresh ID 的结果不能覆盖快照。
+
+单 Agent 同时最多一个 outstanding refresh，触发优先级固定为 Human 高于 system：
+
+- 新 Human refresh 可以 supersede 当前 system refresh，也可以按新 Human Idempotency-Key supersede 旧
+  Human refresh；
+- system ensure 永远不 supersede 任何 outstanding refresh；
+- system ensure 发现已有 Human/system refresh 时，仍以自己的确定性 key 创建一个 terminal
+  `superseded` Operation，result snapshot 记录 `satisfiedByOperationId` 和原因，然后不改 Agent pointer；
+- 该 terminal Operation 永久消费此 Agent revision 的 system key。后续 running observation 只重放它，
+  不会在已有 Human refresh 完成或失败后补建自动请求；
+- Human refresh 失败后是否重试只由 Human 新请求决定，系统不会隐式接管。
 
 不修改 Assignment v1 payload 或 canonical hash。新增协商后的 Assignment v2；它在 Agent item 中增加
 optional `profileCapabilityRefresh`：
@@ -306,6 +326,7 @@ optional `profileCapabilityRefresh`：
   "refreshId": "operation-id",
   "contextGeneration": 12,
   "runtimeKind": "hermes-acp",
+  "invalidationWatermark": 8,
   "forceReload": true,
   "requestedAt": "..."
 }
@@ -338,6 +359,8 @@ Body 是显式 terminal union：
   "status": "succeeded",
   "contextGeneration": 12,
   "runtimeKind": "hermes-acp",
+  "runtimeContextGeneration": 4,
+  "observedThroughSequence": 27,
   "subject": {},
   "source": {},
   "models": {"status": "succeeded", "items": [], "warnings": []},
@@ -367,6 +390,23 @@ Repository 必须在同一数据库事务中锁定 Agent 与 Operation，CAS 检
 和完成 Operation。Agent PATCH 或新 refresh 也在锁定同一 Agent 行的事务中 supersede 当前 Operation；
 不得把检查与写入拆成两个事务。
 
+分发 Agent 为每个 Agent 在本地 state 中持久维护单调 `runtimeContextGeneration` 和
+`capabilityEventSequence`。managed Profile/workspace 身份变化推进 generation；同一 generation 内的
+Skill/Runtime invalidation 推进 sequence。discovery result 声明自己观察到的 generation 和
+`observedThroughSequence`。Backend 同时使用 Operation request 的 invalidation watermark 与该本机 cursor
+合并结果：
+
+- result 的 runtime-context generation 小于 Backend 已知 generation：结果 superseded；
+- generation 相同但 result sequence 落后：接受能安全更新的目录时仍保留较新的 invalidation，页面保持
+  stale；
+- result generation/sequence 已覆盖某条 invalidation，且该 invalidation 的 Backend generation 不晚于
+  Operation request watermark：该 invalidation 可以清除；
+- Operation 创建后才到达的 invalidation 默认保留，除非 result 的本机 cursor 明确证明已经观察到它；
+- 迟到的旧 invalidation 若 generation/sequence 不大于已保存 cursor，幂等忽略。
+
+因此 invalidation 与 result 的到达顺序、Computer/Backend 时钟偏差都不会把已知过期目录呈现为
+current。Backend 不依赖 observedAt 做并发仲裁。
+
 成功结果写入快照；整体 failed 结果保留旧快照。两种结果都写 Operation result snapshot、清理仍匹配
 自己的 refresh pointer，并完成 Operation。绑定或上下文已变化时在同一事务中把旧 Operation 标记
 `superseded`，返回 `accepted = false, reason = superseded`，绝不覆盖快照或清理一个更新的 pointer。
@@ -384,9 +424,11 @@ PUT /computer/agents/{agentId}/profile-capability-invalidations/{eventId}
 ```
 
 Body 包含当前 Agent revision、reason
-`profile_changed | workspace_changed | runtime_reported_change` 和 observedAt。Backend 验证当前绑定、
-revision 和 Computer 后，只在已有快照 JSON 中追加去重后的 invalidation reason/time；不存在快照则
-幂等 no-op。该 endpoint 不创建 refresh、不改变 Agent revision，也不接受 Runtime 原始 payload。
+`profile_changed | workspace_changed | runtime_reported_change`、runtime-context generation、event
+sequence 和 observedAt。Backend 验证当前绑定、revision 和 Computer，在锁定 Agent 后分配单调 Backend
+invalidation generation，并把 record 合并进已有快照；不存在快照则只更新空 envelope 的 watermark/
+cursor，不伪造成功目录。该 endpoint 不创建 refresh、不改变 Agent revision，也不接受 Runtime 原始
+payload。
 
 ## 发现执行
 
@@ -530,12 +572,16 @@ registry；生成物必须由 OpenAPI 重新生成，不能手改。
 
 - refresh Idempotency-Key 重放；
 - system running-observation deterministic key 去重且失败后不自动重建；
+- system ensure 遇到 Human/system outstanding refresh 时创建 terminal satisfied-by 记录且不抢占 pointer；
+- Human refresh supersede system refresh 的优先级测试；
 - 新 refresh supersede 旧 refresh；
 - Computer、Runtime、context generation、refresh ID 各自失配的 fencing 测试；
 - CAS race：Agent PATCH/new refresh 插入 result check/write 之间仍不能被旧结果覆盖；
 - 接受结果后快照、refresh ID 和 Operation 在同一事务原子收敛；
 - 相同/不同 result digest PUT 重放；terminal failed、合法空目录、models/skills 局部失败；
 - invalidation observation 去重、只标 stale 且不创建 refresh；
+- invalidation-before-result、result-before-invalidation、旧 epoch/sequence 迟到和并发新 invalidation watermark
+  的顺序测试；
 - deadline reconciler 只终结/清理匹配 pointer，不创建新 Operation；
 - old Computer unsupported；offline、not-ready、busy；
 - 两个 Hermes Agent 在同一 Computer 使用不同 Profile、Skill 和模型目录的隔离回归；
