@@ -4920,9 +4920,7 @@ export const AgentSettingsPage = ({
                 { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.memory },
                 { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.achievement },
                 { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
-                ...(isGlobal
-                  ? [{ id: "website" as const, label: t("工作台"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website }]
-                  : []),
+                { id: "website" as const, label: t("工作台"), icon: <Globe2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.website },
                 ...(SHOW_AGENTCHAT_ENTRY
                   ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
                   : []),
@@ -5318,7 +5316,7 @@ export const AgentSettingsPage = ({
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />
                           )}
-                          {isGlobal && activeSection === "website" && (
+                          {activeSection === "website" && (
                             <AgentWebsitePanel />
                           )}
                           {activeSection === "browser" && (
