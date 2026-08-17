@@ -1,6 +1,8 @@
 # LightVela vs ChatGPT: Which is best to build your personal AI assistant?
 
-![LightVela compared with ChatGPT for building a personal AI assistant](../images/lightvela-vs-chatgpt.png)
+![LightVela compared with ChatGPT for building a personal AI assistant](../images/lightvela-vs-chatgpt.webp)
+
+## Summary
 
 **If your goal is to host a personal AI Agent that stays available and belongs to your own workflow, LightVela is the more direct fit.** ChatGPT is better if you want a broad, polished AI workspace for conversations, files, research, writing, and many different kinds of tasks. They overlap in what they can help you do, but they are not really the same product underneath.
 

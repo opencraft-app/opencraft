@@ -19,6 +19,7 @@ output_shape: longform-article | thread | markdown-files
 attribution: social_<platform>
 placement: internal | external
 style: default
+storage_folder: <derived from platform>
 ```
 
 Read `references/publishing-contract.md` first. If `mode`, `platform`, or `subject` is missing, ask once for every missing item. Do not ask separately about language or form: use the platform default. Generic “social media”, “blog”, or “write an article” is not a platform.
@@ -46,13 +47,19 @@ Follow the resolved publishing contract even when the selected mode is `industry
 - `longform-article` is Markdown-formatted long prose with headings, emphasis, lists, links, and code blocks where useful. It is not a numbered thread.
 - Use `thread` / `1/n` only when the user explicitly asks for a thread, 串文, or content split into posts.
 - `text` means “return in chat”, not “remove Markdown formatting”.
-- `markdown-files` means create the required files and report their absolute paths.
+- `markdown-files` means create the required files in the resolved platform folder and report their absolute paths.
+- For social `text` output, create an MD file only when the user explicitly asks to save it or create an MD file, then use the same platform folder.
 
 All complete articles end with the language-matched Community Ending unless the user explicitly asks to omit the ending or QR codes. All `lightvela.ai` links must use the one resolved platform attribution. Use the SEO/GEO skill as the source of truth for real routes and URL construction.
 
+## Platform storage
+
+Resolve `storage_folder` from `references/publishing-contract.md` before writing files.
+Store every generated article MD beneath `product/longform-content/<storage_folder>/`, never directly at the content root.
+
 ## 4. Final check
 
-Check the applicable mode, publishing contract, link attribution, Community Ending, image policy, language, and output form before responding. For saved files, report mode, platform, form, languages, and paths.
+Check the applicable mode, publishing contract, storage folder, link attribution, Community Ending, image policy, language, and output form before responding. For saved files, report mode, platform, form, languages, and paths.
 
 ## Reference map
 

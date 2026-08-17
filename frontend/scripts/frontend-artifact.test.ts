@@ -1,10 +1,11 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
   ARCHIVE_FILE,
+  assertCloudflarePagesFileSizeLimit,
   assertArtifactManifestMatchesCombo,
   archiveFrontendArtifact,
   artifactIdentitiesMatch,
@@ -107,6 +108,24 @@ esac
 }
 
 describe("frontend artifact helpers", () => {
+  it("rejects files above the Cloudflare Pages single-file limit", () => {
+    const dist = createDist();
+    try {
+      const searchDir = join(dist, "api");
+      const searchFile = join(searchDir, "search");
+      mkdirSync(searchDir, { recursive: true });
+      writeFileSync(searchFile, "");
+      truncateSync(searchFile, 25 * 1024 * 1024 + 1);
+
+      expect(() => assertCloudflarePagesFileSizeLimit(dist)).toThrow("api/search");
+
+      truncateSync(searchFile, 25 * 1024 * 1024);
+      expect(() => assertCloudflarePagesFileSizeLimit(dist)).not.toThrow();
+    } finally {
+      rmSync(dist, { recursive: true, force: true });
+    }
+  });
+
   it("normalizes combo ids into stable tag segments", () => {
     expect(normalizeComboIdForTag("eo:global-lightvela-intl-prod-next")).toBe("eo-global-lightvela-intl-prod-next");
     expect(resolveArtifactTag(sourceSha, "eo:global-lightvela-intl-prod-next")).toBe("dfde008ca43a-eo-global-lightvela-intl-prod-next");

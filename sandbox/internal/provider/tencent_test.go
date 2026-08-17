@@ -2,96 +2,82 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"cvm-mock-e2b/internal/blueprint"
 	"cvm-mock-e2b/internal/core"
 )
 
-func TestBuildHealthTargetPrivateUsesDirectInstanceIP(t *testing.T) {
-	p := &TencentCloudProvider{
-		cfg: TencentConfig{
-			AddressType:         "private",
-			IngressProxyBaseURL: "http://ingressproxy-router",
+func TestVerifyInstanceDeliveryWithOpsUsesFreshTATAgentAndHandshake(t *testing.T) {
+	now := time.Date(2026, 8, 10, 20, 0, 0, 0, time.UTC)
+	var describedCloudID, agentCloudID, commandCloudID, commandScript string
+	ops := deliveryProbeOps{
+		describeInstance: func(_ context.Context, cloudID string) (string, error) {
+			describedCloudID = cloudID
+			return "RUNNING", nil
 		},
+		describeAgent: func(_ context.Context, cloudID string) (tatAgentStatus, error) {
+			agentCloudID = cloudID
+			return tatAgentStatus{Status: "Online", LastHeartbeatTime: now.Format(time.RFC3339)}, nil
+		},
+		runCommand: func(_ context.Context, cloudID, script string) (CommandInvocation, error) {
+			commandCloudID = cloudID
+			commandScript = script
+			return CommandInvocation{InvocationID: "inv-1", InstanceID: cloudID}, nil
+		},
+		getCommandInvocation: func(_ context.Context, invocationID, cloudID string) (CommandResult, error) {
+			if invocationID != "inv-1" || cloudID != "ins-1" {
+				t.Fatalf("unexpected invocation lookup: invocation=%q cloud=%q", invocationID, cloudID)
+			}
+			return CommandResult{CommandInvocation: CommandInvocation{Status: "SUCCESS"}, ExitCode: 0}, nil
+		},
+		now: func() time.Time { return now },
 	}
 
-	gotURL, gotHost, err := p.buildHealthTarget("10.15.224.144")
-	if err != nil {
-		t.Fatalf("buildHealthTarget returned error: %v", err)
+	if err := verifyInstanceDeliveryWithOps(context.Background(), "ins-1", now.Add(-time.Second), ops); err != nil {
+		t.Fatalf("verify delivery: %v", err)
 	}
-
-	wantURL := "http://10.15.224.144:49983/health"
-	if gotURL != wantURL {
-		t.Fatalf("verify url mismatch: got %q want %q", gotURL, wantURL)
+	if describedCloudID != "ins-1" || agentCloudID != "ins-1" || commandCloudID != "ins-1" {
+		t.Fatalf("expected cloud id throughout delivery probe, describe=%q agent=%q command=%q", describedCloudID, agentCloudID, commandCloudID)
 	}
-	if gotHost != "" {
-		t.Fatalf("host override mismatch: got %q want empty", gotHost)
+	if commandScript != deliveryProbeScript {
+		t.Fatalf("unexpected delivery probe script %q", commandScript)
 	}
 }
 
-func TestBuildHealthTargetPublicUsesDirectInstanceIP(t *testing.T) {
-	p := &TencentCloudProvider{
-		cfg: TencentConfig{
-			AddressType: "public",
-		},
-	}
-
-	gotURL, gotHost, err := p.buildHealthTarget("8.8.8.8")
-	if err != nil {
-		t.Fatalf("buildHealthTarget returned error: %v", err)
-	}
-
-	wantURL := "http://8.8.8.8:49983/health"
-	if gotURL != wantURL {
-		t.Fatalf("verify url mismatch: got %q want %q", gotURL, wantURL)
-	}
-	if gotHost != "" {
-		t.Fatalf("host override mismatch: got %q want empty", gotHost)
+func TestValidateTATAgentReadyRejectsHeartbeatBeforeDeliveryGeneration(t *testing.T) {
+	now := time.Date(2026, 8, 10, 20, 0, 0, 0, time.UTC)
+	err := validateTATAgentReady(tatAgentStatus{
+		Status:            "Online",
+		LastHeartbeatTime: now.Add(-time.Minute).Format(time.RFC3339),
+	}, now, now)
+	if err == nil || !strings.Contains(err.Error(), "predates delivery generation") {
+		t.Fatalf("expected stale-generation heartbeat error, got %v", err)
 	}
 }
 
-func TestBuildEnvdProcessTargetPrivateUsesDirectInstanceIP(t *testing.T) {
-	p := &TencentCloudProvider{
-		cfg: TencentConfig{
-			AddressType:         "private",
-			IngressProxyBaseURL: "http://ingressproxy-router",
+func TestVerifyInstanceDeliveryWithOpsRejectsFailedHandshake(t *testing.T) {
+	now := time.Date(2026, 8, 10, 20, 0, 0, 0, time.UTC)
+	ops := deliveryProbeOps{
+		describeInstance: func(context.Context, string) (string, error) { return "RUNNING", nil },
+		describeAgent: func(context.Context, string) (tatAgentStatus, error) {
+			return tatAgentStatus{Status: "Online", LastHeartbeatTime: now.Format(time.RFC3339)}, nil
 		},
-	}
-
-	gotURL, gotHost, err := p.buildEnvdProcessTarget("10.15.224.144")
-	if err != nil {
-		t.Fatalf("buildEnvdProcessTarget returned error: %v", err)
-	}
-
-	wantURL := "http://10.15.224.144:49983/process.Process/Start"
-	if gotURL != wantURL {
-		t.Fatalf("process url mismatch: got %q want %q", gotURL, wantURL)
-	}
-	if gotHost != "" {
-		t.Fatalf("host override mismatch: got %q want empty", gotHost)
-	}
-}
-
-func TestBuildEnvdProcessTargetPublicUsesDirectInstanceIP(t *testing.T) {
-	p := &TencentCloudProvider{
-		cfg: TencentConfig{
-			AddressType: "public",
+		runCommand: func(context.Context, string, string) (CommandInvocation, error) {
+			return CommandInvocation{InvocationID: "inv-failed"}, nil
 		},
+		getCommandInvocation: func(context.Context, string, string) (CommandResult, error) {
+			return CommandResult{CommandInvocation: CommandInvocation{Status: "FAILED"}, ExitCode: 1, ErrorInfo: "boom"}, nil
+		},
+		now: func() time.Time { return now },
 	}
 
-	gotURL, gotHost, err := p.buildEnvdProcessTarget("8.8.8.8")
-	if err != nil {
-		t.Fatalf("buildEnvdProcessTarget returned error: %v", err)
-	}
-
-	wantURL := "http://8.8.8.8:49983/process.Process/Start"
-	if gotURL != wantURL {
-		t.Fatalf("process url mismatch: got %q want %q", gotURL, wantURL)
-	}
-	if gotHost != "" {
-		t.Fatalf("host override mismatch: got %q want empty", gotHost)
+	err := verifyInstanceDeliveryWithOps(context.Background(), "ins-1", time.Time{}, ops)
+	if err == nil || !errors.Is(err, errDeliveryProbeCommandFailed) {
+		t.Fatalf("expected failed handshake error, got %v", err)
 	}
 }
 

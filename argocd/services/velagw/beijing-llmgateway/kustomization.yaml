@@ -88,3 +88,20 @@ replacements:
         fieldPaths:
           - spec.template.spec.containers.[name=provisioner].image
           - spec.template.spec.containers.[name=provisioner].env.[name=LLMGATEWAY_IMAGE].value
+  - source:
+      kind: ConfigMap
+      name: velagw-platform-values
+      fieldPath: data.VELAGW_SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT
+    targets:
+      - select:
+          kind: Deployment
+          name: velagwset-controller
+        fieldPaths:
+          - spec.template.spec.containers.[name=controller].env.[name=SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT].value
+      - select:
+          kind: ResourceGraphDefinition
+          name: llmfleets.llmgateway.io
+        fieldPaths:
+          - spec.resources.[id=newapiAdminMasterDeployments].template.spec.template.spec.containers.[name=newapi].env.[name=SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT].value
+          - spec.resources.[id=newapiVersionedTrafficDeployments].template.spec.template.spec.containers.[name=newapi].env.[name=SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT].value
+          - spec.resources.[id=newapiTrafficDeployments].template.spec.template.spec.containers.[name=newapi].env.[name=SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT].value

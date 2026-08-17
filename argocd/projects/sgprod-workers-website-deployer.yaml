@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: sgprod-workers-website-deployer
+  namespace: argocd
+spec:
+  description: Website deployer worker for Singapore production.
+  sourceRepos:
+    - git@git.woa.com:wisp/mono2.git
+  destinations:
+    - namespace: ctl
+      name: sgprod
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

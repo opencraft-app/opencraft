@@ -10,6 +10,7 @@ resources:
 patches:
   - path: delete-migration-job.yaml
   - path: delete-servicemonitor.yaml
+  # Keep the Johor Bahru VelaGW deployment warm without routing sgprod users to it.
   - target:
       kind: Deployment
       name: ctl-api
@@ -23,6 +24,26 @@ patches:
         value:
           secretRef:
             name: ctl-agentchat-secrets
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: ctl-website-runtime-secrets
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_BASE_URL
+          value: ""
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
+          value: ""
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
+          value: ""
   - target:
       kind: Deployment
       name: ctl-service
@@ -36,6 +57,26 @@ patches:
         value:
           secretRef:
             name: ctl-agentchat-secrets
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: ctl-website-runtime-secrets
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_BASE_URL
+          value: ""
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
+          value: ""
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
+          value: ""
   - target:
       kind: Deployment
       name: ctl-bypass
@@ -49,6 +90,26 @@ patches:
         value:
           secretRef:
             name: ctl-agentchat-secrets
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: ctl-website-runtime-secrets
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_BASE_URL
+          value: ""
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
+          value: ""
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
+          value: ""
 
 generators:
   - ksops-assets-generator.yaml

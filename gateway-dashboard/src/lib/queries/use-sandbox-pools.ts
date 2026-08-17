@@ -27,6 +27,7 @@ export interface SandboxPoolInput {
   base_image: string;
   desired_capacity: number;
   instance_type?: string;
+  sku_id: string;
   status?: SandboxPoolStatus;
   pause_reason?: string;
   vpc_id: string;
@@ -35,7 +36,9 @@ export interface SandboxPoolInput {
   security_groups: string[];
 }
 
-export interface SandboxPoolUpdateInput extends SandboxPoolInput {
+export interface SandboxPoolUpdateInput extends Omit<SandboxPoolInput, "sku_id"> {
+  sku_id?: string;
+  system_disk_size: number;
   mark_clean_as_dry?: boolean;
 }
 

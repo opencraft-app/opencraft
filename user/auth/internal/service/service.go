@@ -352,6 +352,12 @@ type OAuthSignInInput struct {
 	// RegistrationDisabled allows a provider to authenticate or link existing
 	// users without creating a new platform account.
 	RegistrationDisabled bool
+	// RegistrationEmailRequired is enforced only when a new platform account
+	// would be created for this OAuth identity.
+	RegistrationEmailRequired bool
+	// RegistrationEmailSuffixBlocked is enforced only when a new platform
+	// account would be created for this OAuth identity.
+	RegistrationEmailSuffixBlocked bool
 }
 
 type Service struct {
@@ -377,6 +383,7 @@ type Service struct {
 	passBillingMigrationNotifier PassBillingMigrationNotifier
 	shadowBasicAuthSyncEnabled   bool
 	emailBind                    EmailBindConfig
+	registrationEmailSuffixes    registrationEmailSuffixBlacklist
 }
 
 type smsChallenge struct {
@@ -414,6 +421,10 @@ func New(opts Options) *Service {
 }
 
 func NewWithStore(store Store, opts Options) *Service {
+	return newWithStoreAndRegistrationEmailSuffixBlacklist(store, opts, defaultRegistrationEmailSuffixBlacklist)
+}
+
+func newWithStoreAndRegistrationEmailSuffixBlacklist(store Store, opts Options, registrationEmailSuffixes registrationEmailSuffixBlacklist) *Service {
 	now := opts.Now
 	if now == nil {
 		now = time.Now
@@ -458,6 +469,7 @@ func NewWithStore(store Store, opts Options) *Service {
 		passBillingMigrationNotifier: opts.PassBillingMigration,
 		shadowBasicAuthSyncEnabled:   opts.ShadowBasicAuthSyncEnabled,
 		emailBind:                    opts.EmailBind,
+		registrationEmailSuffixes:    registrationEmailSuffixes,
 	}
 }
 
@@ -924,6 +936,9 @@ func (s *Service) SignUpWithPassword(ctx context.Context, input PasswordSignUpIn
 	if len(input.Password) < 8 {
 		return nil, newError("invalid_password", "密码至少需要 8 位。", 400)
 	}
+	if s.registrationEmailSuffixes.blocksEmail(input.Email) {
+		return nil, registrationEmailSuffixBlockedError()
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -985,6 +1000,8 @@ func (s *Service) signInOrBindOAuth(ctx context.Context, currentToken string, in
 	input.Email = normalizeEmail(input.Email)
 	input.Name = strings.TrimSpace(input.Name)
 	input.AvatarURL = strings.TrimSpace(input.AvatarURL)
+	input.RegistrationEmailRequired = strings.EqualFold(input.Provider, "github")
+	input.RegistrationEmailSuffixBlocked = s.registrationEmailSuffixes.blocksEmail(input.Email)
 
 	if input.Provider == "" || input.ProviderSubject == "" {
 		return nil, newError("invalid_oauth_identity", "第三方登录信息不完整。", 400)

@@ -38,6 +38,20 @@ export type SearchRegistry = Exclude<Registry, "hermes">;
 
 const SKILL_SEARCH_TIMEOUT_MS = 30_000;
 const SKILL_COMMAND_TIMEOUT_MS = 120_000;
+const SKILL_BATCH_COMMAND_TIMEOUT_MS = 650_000;
+const DEBUG_EXEC_STDERR_STREAM = "stderr";
+const ACLI_BATCH_EVENT = {
+  progress: "progress",
+  summary: "summary",
+} as const;
+const ACLI_BATCH_SUCCESS_STATUSES = new Set(["installed", "succeeded", "success"]);
+
+export type SkillsExecDebugCommandStream = (
+  botId: string,
+  command: string,
+  onChunk: (event: { stream: string; chunk: string }) => void,
+  options?: { timeoutMs?: number },
+) => Promise<{ status: string; exitCode: number; output: string }>;
 
 /** 面板内部统一的技能模型（合并两个 registry 的字段） */
 export interface Skill {
@@ -77,7 +91,9 @@ export interface InstalledSkill extends Skill {
   uninstallable?: boolean;
   /** 来源查询不完整，当前记录不能安全决定卸载命令。 */
   sourceUncertain?: boolean;
-  /** 合并展示时保留各 registry 的真实卸载标识，避免只卸载其中一个来源。 */
+  /** 各 marketplace registry 的具体详情页链接；合并来源时必须按 registry 分别保留。 */
+  sourceUrls?: Partial<Record<Registry, string>>;
+  /** 合并展示时保留可用的 registry 卸载候选，任一候选成功即可删除同一运行时技能。 */
   uninstallTargets?: Array<Pick<Skill, "registry" | "rawId">>;
 }
 
@@ -126,6 +142,9 @@ export function buildClawhubSearchCommand(keyword: string, sortBy = "installs"):
 export function buildClawhubInstallCommand(slug: string): string {
   return `acli clawhub install ${shellQuote(slug)}`;
 }
+export function buildClawhubBatchInstallCommand(slugs: string[]): string {
+  return `acli clawhub batch-install --wait=true ${shellQuote(slugs.join(" "))}`;
+}
 export function buildClawhubUninstallCommand(slug: string): string {
   return `acli clawhub uninstall ${shellQuote(slug)}`;
 }
@@ -152,6 +171,10 @@ export function buildSkillsshInstallCommand(id: string): string {
   // skills.sh install reads registry/download configuration from agentuser's login profile.
   return buildLoginShellCommand(`acli skills-sh install ${safeSkillsshId(id)}`);
 }
+export function buildSkillsshBatchInstallCommand(ids: string[]): string {
+  const safeIds = ids.map(safeSkillsshId);
+  return buildLoginShellCommand(`acli skills-sh batch-install --wait=true ${shellQuote(safeIds.join(" "))}`);
+}
 export function buildSkillsshUninstallCommand(id: string): string {
   // skills.sh uninstall 未在联调表中确认；按 install 的对称形态下发，
   // 若 acli 尚未支持该子命令，调用方会拿到非 0 退出码并在 UI 提示错误。
@@ -161,8 +184,49 @@ export function buildSkillsshListCommand(): string {
   return "acli skills-sh list";
 }
 
+function getCompleteSkillsshId(id: string): string | undefined {
+  try {
+    const normalized = safeSkillsshId(id);
+    const segments = normalized.split("/");
+    return segments.length >= 3 && segments.every(Boolean) ? normalized : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 返回市场中该技能的规范详情页。
+ * 仅使用 registry 搜索结果提供的稳定标识，避免从展示名称推测不可靠的外部 URL。
+ */
+export function getSkillSourceUrl(skill: Pick<Skill, "registry" | "rawId" | "slug" | "author">): string | undefined {
+  if (skill.registry === "skills-sh") {
+    const id = getCompleteSkillsshId(skill.rawId);
+    return id ? `https://skills.sh/${id}` : undefined;
+  }
+
+  if (skill.registry === "clawhub") {
+    const author = skill.author?.trim();
+    const slug = skill.slug.trim();
+    if (!author || !slug) return undefined;
+    return `https://clawhub.ai/${encodeURIComponent(author)}/skills/${encodeURIComponent(slug)}`;
+  }
+
+  return undefined;
+}
+
+function getInstalledSourceUrls(
+  skill: Pick<Skill, "registry" | "rawId" | "slug" | "author">,
+): Partial<Record<Registry, string>> | undefined {
+  const sourceUrl = getSkillSourceUrl(skill);
+  return sourceUrl ? { [skill.registry]: sourceUrl } : undefined;
+}
+
 export function buildSkillhubInstallCommand(slug: string): string {
   return `acli skills install ${shellQuote(slug)}`;
+}
+
+export function buildSkillhubBatchInstallCommand(slugs: string[]): string {
+  return `acli skills batch-install --wait=true ${shellQuote(slugs.join(" "))}`;
 }
 
 export function buildSkillhubUninstallCommand(slug: string): string {
@@ -230,6 +294,15 @@ interface ClawhubSearchItem {
   score?: number;
   slug?: string;
 }
+
+function normalizeClawhubDisplayName(displayName: string | undefined, slug: string): string {
+  const normalized = (displayName ?? slug)
+    .trim()
+    .replace(/\s+\(?\d[\d,.]*\s*[KMB]?\s+(?:downloads?|installs?)\)?\s*$/i, "")
+    .trim();
+  return normalized || slug;
+}
+
 function parseClawhubSearch(raw: string): Skill[] {
   const parsed = dataEnvelope(extractJsonObject(raw));
   if (!isRecord(parsed)) return [];
@@ -242,7 +315,7 @@ function parseClawhubSearch(raw: string): Skill[] {
         registry: "clawhub" as const,
         rawId: slug,
         slug,
-        name: (item?.displayName ?? slug).trim(),
+        name: normalizeClawhubDisplayName(item?.displayName, slug),
         installs: typeof item?.installs === "number" ? item.installs : undefined,
         score: typeof item?.score === "number" ? item.score : undefined,
         author: item?.author?.trim() || undefined,
@@ -282,6 +355,7 @@ function parseSkillsshSearch(raw: string): Skill[] {
 }
 
 interface ClawhubListItem {
+  author?: string;
   displayName?: string;
   slug?: string;
   status?: string;
@@ -295,15 +369,19 @@ function parseClawhubList(raw: string): InstalledSkill[] {
     .map((item) => {
       const slug = (item?.slug ?? "").trim();
       if (!slug) return null;
+      const author = item?.author?.trim() || undefined;
+      const name = (item?.displayName ?? slug).trim();
       return {
         registry: "clawhub" as const,
         rawId: slug,
         slug,
-        name: (item?.displayName ?? slug).trim(),
+        name,
+        author,
         status: item?.status?.trim() || undefined,
         version: item?.version?.trim() || undefined,
         registries: ["clawhub" as Registry],
         sourceLabel: REGISTRY_LABEL.clawhub,
+        sourceUrls: getInstalledSourceUrls({ registry: "clawhub", rawId: slug, slug, name, author }),
       } satisfies InstalledSkill;
     })
     .filter((s): s is InstalledSkill => s !== null);
@@ -326,15 +404,17 @@ function parseSkillsshList(raw: string): InstalledSkill[] {
       const rawId = (item?.id ?? item?.rawId ?? item?.slug ?? "").trim();
       if (!rawId) return null;
       const slug = (item?.slug ?? rawId.split("/").pop() ?? rawId).trim();
+      const name = (item?.displayName ?? slug).trim();
       return {
         registry: "skills-sh" as const,
         rawId,
         slug,
-        name: (item?.displayName ?? slug).trim(),
+        name,
         status: item?.status?.trim() || undefined,
         version: item?.version?.trim() || undefined,
         registries: ["skills-sh" as Registry],
         sourceLabel: REGISTRY_LABEL["skills-sh"],
+        sourceUrls: getInstalledSourceUrls({ registry: "skills-sh", rawId, slug, name }),
       } satisfies InstalledSkill;
     })
     .filter((s): s is InstalledSkill => s !== null);
@@ -406,8 +486,11 @@ interface SkillhubListItem {
   displayName?: string;
   id?: string;
   iconUrl?: string;
+  instances?: SkillhubListItem[];
   name?: string;
   rawId?: string;
+  relative_path?: string;
+  relativePath?: string;
   slug?: string;
   source?: string;
   status?: string;
@@ -436,38 +519,100 @@ function parseSkillhubListTable(raw: string): SkillhubListItem[] {
     }));
 }
 
+function cleanSkillhubString(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
+function compactSkillhubAliases(values: Array<string | undefined>): string[] {
+  const aliases: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const alias = cleanSkillhubString(value);
+    if (!alias) continue;
+    const key = alias.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    aliases.push(alias);
+  }
+  return aliases;
+}
+
+function pickSkillhubRawId(item: SkillhubListItem, isInstance: boolean): string | undefined {
+  const explicitId = cleanSkillhubString(isInstance
+    ? (item.id ?? item.rawId ?? item.slug)
+    : (item.slug ?? item.rawId ?? item.id));
+  if (explicitId) return /^\d+$/.test(explicitId) ? undefined : explicitId;
+  return cleanSkillhubString(item.relative_path)
+    ?? cleanSkillhubString(item.relativePath)
+    ?? cleanSkillhubString(item.name);
+}
+
+function mapSkillhubInstalledItem(item: SkillhubListItem, parent?: SkillhubListItem): InstalledSkill | null {
+  const rawId = pickSkillhubRawId(item, parent !== undefined);
+  if (!rawId) return null;
+  const slug = cleanSkillhubString(item.relative_path)
+    ?? cleanSkillhubString(item.relativePath)
+    ?? cleanSkillhubString(item.slug)
+    ?? cleanSkillhubString(parent?.relative_path)
+    ?? cleanSkillhubString(parent?.relativePath)
+    ?? cleanSkillhubString(parent?.slug)
+    ?? rawId;
+  const name = cleanSkillhubString(item.display_name)
+    ?? cleanSkillhubString(item.displayName)
+    ?? cleanSkillhubString(item.name)
+    ?? cleanSkillhubString(parent?.display_name)
+    ?? cleanSkillhubString(parent?.displayName)
+    ?? cleanSkillhubString(parent?.name)
+    ?? slug;
+  const nativeAliases = compactSkillhubAliases([
+    rawId,
+    slug,
+    item.id,
+    item.rawId,
+    item.slug,
+    item.relative_path,
+    item.relativePath,
+    item.name,
+    item.display_name,
+    item.displayName,
+    parent?.id,
+    parent?.rawId,
+    parent?.slug,
+    parent?.relative_path,
+    parent?.relativePath,
+    parent?.name,
+    parent?.display_name,
+    parent?.displayName,
+  ]);
+  return {
+    registry: "skillhub" as const,
+    rawId,
+    slug,
+    name,
+    category: cleanSkillhubString(item.category) ?? cleanSkillhubString(parent?.category),
+    iconUrl: cleanSkillhubString(item.iconUrl) ?? cleanSkillhubString(parent?.iconUrl),
+    status: cleanSkillhubString(item.status) ?? cleanSkillhubString(parent?.status),
+    version: cleanSkillhubString(item.version) ?? cleanSkillhubString(parent?.version),
+    nativeAliases: nativeAliases.length > 0 ? nativeAliases : undefined,
+    registries: ["skillhub" as Registry],
+    sourceLabel: REGISTRY_LABEL.skillhub,
+  } satisfies InstalledSkill;
+}
+
 export function parseSkillhubList(raw: string): InstalledSkill[] {
   const parsed = dataEnvelope(extractJsonObject(raw));
   const items = isRecord(parsed) && Array.isArray(parsed.skills)
     ? parsed.skills as SkillhubListItem[]
     : parseSkillhubListTable(raw);
 
-  return items.map((item) => {
-    const explicitId = item.slug ?? item.rawId ?? item.id;
-    const listedName = (item.name ?? "").trim();
-    const nativeAliases = Array.from(new Set(
-      [explicitId ? listedName : "", item.display_name, item.displayName]
-        .map((value) => value?.trim() ?? "")
-        .filter(Boolean),
-    ));
-    const rawId = explicitId
-      ? (/^\d+$/.test(explicitId.trim()) ? "" : explicitId.trim())
-      : listedName;
-    if (!rawId) return null;
-    const name = (item.display_name ?? item.displayName ?? item.name ?? rawId).trim();
-    return {
-      registry: "skillhub" as const,
-      rawId,
-      slug: rawId,
-      name,
-      category: item.category?.trim() || undefined,
-      iconUrl: item.iconUrl?.trim() || undefined,
-      status: item.status?.trim() || undefined,
-      version: item.version?.trim() || undefined,
-      nativeAliases: nativeAliases.length > 0 ? nativeAliases : undefined,
-      registries: ["skillhub" as Registry],
-      sourceLabel: REGISTRY_LABEL.skillhub,
-    } satisfies InstalledSkill;
+  return items.flatMap((item) => {
+    const instances = Array.isArray(item.instances)
+      ? (item.instances.filter(isRecord) as SkillhubListItem[])
+      : [];
+    return instances.length > 0
+      ? instances.map((instance) => mapSkillhubInstalledItem(instance, item))
+      : [mapSkillhubInstalledItem(item)];
   }).filter((skill): skill is InstalledSkill => skill !== null);
 }
 
@@ -524,6 +669,13 @@ export function parseUninstallOk(raw: string): boolean {
   return false;
 }
 
+function isUninstallTargetMissing(raw: string): boolean {
+  const envelope = extractJsonObject(raw);
+  if (!isRecord(envelope) || !isRecord(envelope.error)) return false;
+  const code = envelope.error.code;
+  return typeof code === "string" && code.trim().toUpperCase().endsWith("_NOT_INSTALLED");
+}
+
 // ─── 合并 / 排序 / 来源归属 ───────────────────────────────────────────────────
 
 export function mergeSkills(clawhub: Skill[], skillssh: Skill[], skillhub: Skill[] = []): Skill[] {
@@ -564,6 +716,7 @@ export function mergeInstalledSources(
         const registries = Array.from(set);
         existing.registries = registries;
         existing.sourceLabel = registries.map((r) => REGISTRY_LABEL[r]).join(" / ");
+        existing.sourceUrls = { ...existing.sourceUrls, ...skill.sourceUrls };
         existing.category = existing.category ?? skill.category;
         existing.version = existing.version ?? skill.version;
       }
@@ -587,13 +740,16 @@ export function mergeInstalledWithHermes(
 
   for (const hermesSkill of hermesInstalled) {
     const normalizedSlug = hermesSkill.slug.trim().toLowerCase();
-    const matches = merged.filter((skill) => (
+    const matchingIndexes = merged.flatMap((skill, index) => (
       skill.registry !== "hermes"
       && (
         skill.slug.trim().toLowerCase() === normalizedSlug
         || skill.nativeAliases?.some((alias) => alias.toLowerCase() === normalizedSlug)
       )
+        ? [index]
+        : []
     ));
+    const matches = matchingIndexes.map((index) => merged[index]).filter((skill) => skill !== undefined);
     if (matches.length === 1 && matches[0]) {
       if (!matches[0].registries.includes("hermes")) matches[0].registries.push("hermes");
       matches[0].category = matches[0].category ?? hermesSkill.category;
@@ -602,9 +758,40 @@ export function mergeInstalledWithHermes(
       continue;
     }
     if (matches.length > 1) {
-      // Hermes reports the runtime directory, not a third marketplace install.
-      // When more than one marketplace record shares the slug, keep those records
-      // separate and avoid rendering an unattributable Hermes duplicate.
+      const marketplaceRegistries = matches.map((skill) => skill.registry);
+      const hasOneMatchPerRegistry = new Set(marketplaceRegistries).size === matches.length;
+      if (hasOneMatchPerRegistry && matches[0] && matchingIndexes[0] !== undefined) {
+        const primary = matches[0];
+        const registries = Array.from(new Set<Registry>([
+          ...matches.flatMap((skill) => skill.registries),
+          "hermes",
+        ]));
+        const uninstallTargets = Array.from(new Map(
+          matches.flatMap((skill) => (
+            skill.uninstallTargets?.length
+              ? skill.uninstallTargets
+              : [{ registry: skill.registry, rawId: skill.rawId }]
+          )).map((target) => [skillIdentity(target), target]),
+        ).values());
+        const nativeAliases = Array.from(new Set(
+          matches.flatMap((skill) => [skill.rawId, skill.slug, ...(skill.nativeAliases ?? [])]),
+        ));
+        const combined: InstalledSkill = {
+          ...primary,
+          category: primary.category ?? matches.find((skill) => skill.category)?.category ?? hermesSkill.category,
+          version: primary.version ?? matches.find((skill) => skill.version)?.version ?? hermesSkill.version,
+          status: primary.status ?? matches.find((skill) => skill.status)?.status ?? hermesSkill.status,
+          nativeAliases,
+          registries,
+          sourceLabel: registries.map((registry) => REGISTRY_LABEL[registry]).join(" / "),
+          sourceUrls: Object.assign({}, ...matches.map((skill) => skill.sourceUrls)),
+          uninstallTargets,
+        };
+        const insertionIndex = matchingIndexes[0];
+        [...matchingIndexes].reverse().forEach((index) => merged.splice(index, 1));
+        merged.splice(insertionIndex, 0, combined);
+      }
+      // Multiple records from the same registry remain ambiguous and stay separate.
       continue;
     }
     merged.push({
@@ -669,6 +856,11 @@ export interface SkillsDataLayer {
   search(keyword: string, options?: SkillSearchOptions): Promise<SkillSearchResult>;
   listInstalled(): Promise<InstalledListResult>;
   install(skill: Skill): Promise<InstallResult>;
+  installBatch?(
+    skills: Skill[],
+    onProgress?: (progress: BatchInstallProgress) => void,
+    options?: { shouldCancel?: () => boolean },
+  ): Promise<BatchInstallResult>;
   /** 卸载已安装技能。ClawHub 走 acli clawhub uninstall；skills.sh 走对称子命令（未确认时调用会失败）。 */
   uninstall(skill: Skill): Promise<InstallResult>;
   /** 默认页（无搜索）的推荐位。mock 返回 fixtures；live 暂返回空，后续可接 trending。 */
@@ -731,6 +923,222 @@ export async function installSkillsSequentially(
     }
   }
   return { succeeded, failed, skipped };
+}
+
+export async function installSkillsInBatch(
+  dataLayer: Pick<SkillsDataLayer, "install" | "installBatch">,
+  skills: Skill[],
+  onProgress?: (progress: BatchInstallProgress) => void,
+  options?: { shouldCancel?: () => boolean },
+): Promise<BatchInstallResult> {
+  if (dataLayer.installBatch) {
+    return dataLayer.installBatch(skills, onProgress, options);
+  }
+  return installSkillsSequentially(dataLayer, skills, onProgress, options);
+}
+
+type AcliBatchResultItem = {
+  id?: string;
+  name?: string;
+  slug?: string;
+  status?: string;
+  error_code?: string;
+  message?: string;
+};
+
+type AcliBatchOutput = AcliBatchResultItem & {
+  event?: typeof ACLI_BATCH_EVENT[keyof typeof ACLI_BATCH_EVENT];
+  data?: { results?: AcliBatchResultItem[] };
+  results?: AcliBatchResultItem[];
+};
+
+function parseAcliBatchOutputLine(line: string): AcliBatchOutput | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as AcliBatchOutput;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isAcliBatchUnsupported(output: string): boolean {
+  return /(?:unknown|unrecognized|invalid)\s+(?:command|subcommand).*batch-install|batch-install.*(?:not found|unavailable)/i.test(output);
+}
+
+function buildRegistryBatchInstallCommand(registry: Registry, skills: Skill[]): string | null {
+  const ids = skills.map((skill) => skill.rawId);
+  if (registry === "clawhub") return buildClawhubBatchInstallCommand(ids);
+  if (registry === "skills-sh") return buildSkillsshBatchInstallCommand(ids);
+  if (registry === "skillhub") return buildSkillhubBatchInstallCommand(ids);
+  return null;
+}
+
+function findBatchResultSkill(
+  skills: Skill[],
+  completed: Set<string>,
+  item: AcliBatchResultItem,
+): Skill | undefined {
+  const identifier = (item.slug ?? item.name ?? item.id ?? "").trim().toLowerCase();
+  if (identifier) {
+    const exactMatches = skills.filter((skill) => (
+      [skill.rawId, skill.slug].some((value) => value.trim().toLowerCase() === identifier)
+    ));
+    const incompleteExact = exactMatches.find((skill) => !completed.has(skillIdentity(skill)));
+    if (incompleteExact) return incompleteExact;
+    if (exactMatches.length > 0) return undefined;
+  }
+  return skills.find((skill) => !completed.has(skillIdentity(skill)));
+}
+
+async function installSkillsWithNativeBatch(
+  botId: string,
+  execDebugCommandStream: SkillsExecDebugCommandStream,
+  install: (skill: Skill) => Promise<InstallResult>,
+  skills: Skill[],
+  onProgress?: (progress: BatchInstallProgress) => void,
+  options?: { shouldCancel?: () => boolean },
+): Promise<BatchInstallResult> {
+  const result: BatchInstallResult = { succeeded: [], failed: [], skipped: [] };
+  const runs: Array<{ registry: Registry; skills: Skill[]; startIndex: number }> = [];
+  for (const [offset, skill] of skills.entries()) {
+    const previous = runs[runs.length - 1];
+    if (previous?.registry === skill.registry) previous.skills.push(skill);
+    else runs.push({ registry: skill.registry, skills: [skill], startIndex: offset + 1 });
+  }
+
+  const markRemainingSkipped = (startIndex: number) => {
+    skills.slice(startIndex - 1).forEach((skill, offset) => {
+      result.skipped.push(skill);
+      onProgress?.({ index: startIndex + offset, total: skills.length, skill, status: "skipped" });
+    });
+  };
+
+  for (const run of runs) {
+    if (options?.shouldCancel?.()) {
+      markRemainingSkipped(run.startIndex);
+      break;
+    }
+    const command = buildRegistryBatchInstallCommand(run.registry, run.skills);
+    if (!command) {
+      const sequential = await installSkillsSequentially(
+        { install },
+        run.skills,
+        (progress) => onProgress?.({ ...progress, index: run.startIndex + progress.index - 1, total: skills.length }),
+        options,
+      );
+      result.succeeded.push(...sequential.succeeded);
+      result.failed.push(...sequential.failed);
+      result.skipped.push(...sequential.skipped);
+      continue;
+    }
+
+    const completed = new Set<string>();
+    const started = new Set<string>();
+    let buffer = "";
+    const markInstalling = (skill: Skill) => {
+      const identity = skillIdentity(skill);
+      if (started.has(identity)) return;
+      started.add(identity);
+      const index = run.startIndex + run.skills.indexOf(skill);
+      onProgress?.({ index, total: skills.length, skill, status: "installing" });
+    };
+    const consumeResultItem = (item: AcliBatchResultItem) => {
+      const skill = findBatchResultSkill(run.skills, completed, item);
+      if (!skill) return;
+      const identity = skillIdentity(skill);
+      markInstalling(skill);
+      completed.add(identity);
+      const index = run.startIndex + run.skills.indexOf(skill);
+      const status = item.status?.trim().toLowerCase();
+      if (status && ACLI_BATCH_SUCCESS_STATUSES.has(status)) {
+        result.succeeded.push(skill);
+        onProgress?.({ index, total: skills.length, skill, status: "succeeded" });
+      } else {
+        const message = item.message?.trim() || item.error_code?.trim() || undefined;
+        result.failed.push({ skill, message });
+        onProgress?.({ index, total: skills.length, skill, status: "failed", message });
+      }
+      const next = run.skills.find((candidate) => !completed.has(skillIdentity(candidate)));
+      if (next) markInstalling(next);
+    };
+    const consumeParsed = (parsed: AcliBatchOutput) => {
+      if (parsed.event === ACLI_BATCH_EVENT.progress) consumeResultItem(parsed);
+      const summaryResults = parsed.event === ACLI_BATCH_EVENT.summary ? parsed.results : parsed.data?.results;
+      summaryResults?.forEach(consumeResultItem);
+    };
+    const consumeText = (chunk: string, flush = false) => {
+      buffer += chunk;
+      const lines = buffer.split(/\r?\n/);
+      const trailing = lines.pop() ?? "";
+      buffer = flush ? "" : trailing;
+      if (flush && trailing) lines.push(trailing);
+      lines.forEach((line) => {
+        const parsed = parseAcliBatchOutputLine(line);
+        if (parsed) consumeParsed(parsed);
+      });
+    };
+
+    markInstalling(run.skills[0]);
+    let commandResult: Awaited<ReturnType<SkillsExecDebugCommandStream>>;
+    try {
+      commandResult = await execDebugCommandStream(
+        botId,
+        command,
+        ({ stream, chunk }) => {
+          if (stream !== DEBUG_EXEC_STDERR_STREAM) consumeText(chunk);
+        },
+        { timeoutMs: SKILL_BATCH_COMMAND_TIMEOUT_MS },
+      );
+      consumeText("", true);
+      if (completed.size === 0 && commandResult.output) consumeText(`${commandResult.output}\n`, true);
+    } catch (error) {
+      const message = error instanceof Error && error.message.startsWith("debug_exec_timeout:")
+        ? "技能批量安装超时，请重试"
+        : error instanceof Error ? error.message : String(error);
+      run.skills.filter((skill) => !completed.has(skillIdentity(skill))).forEach((skill) => {
+        markInstalling(skill);
+        result.failed.push({ skill, message });
+        onProgress?.({
+          index: run.startIndex + run.skills.indexOf(skill),
+          total: skills.length,
+          skill,
+          status: "failed",
+          message,
+        });
+      });
+      continue;
+    }
+
+    const errorOutput = commandResult.output.trim();
+    if (commandResult.exitCode !== 0 && completed.size === 0 && isAcliBatchUnsupported(errorOutput)) {
+      const sequential = await installSkillsSequentially(
+        { install },
+        run.skills,
+        (progress) => onProgress?.({ ...progress, index: run.startIndex + progress.index - 1, total: skills.length }),
+        options,
+      );
+      result.succeeded.push(...sequential.succeeded);
+      result.failed.push(...sequential.failed);
+      result.skipped.push(...sequential.skipped);
+      continue;
+    }
+
+    run.skills.filter((skill) => !completed.has(skillIdentity(skill))).forEach((skill) => {
+      markInstalling(skill);
+      const message = errorOutput || "未收到技能安装结果";
+      result.failed.push({ skill, message });
+      onProgress?.({
+        index: run.startIndex + run.skills.indexOf(skill),
+        total: skills.length,
+        skill,
+        status: "failed",
+        message,
+      });
+    });
+  }
+  return result;
 }
 
 // ─── Mock fixtures（来自联调样例 JSON） ───────────────────────────────────────
@@ -800,11 +1208,11 @@ function mockMatch(skill: Skill, keyword: string): boolean {
 const MOCK_INSTALLED_STORAGE_PREFIX = "lightvela-skills-demo-installed";
 
 /** 默认预置几个已安装技能，让「已安装」区能直接展示来源归属（ClawHub / skills.sh）。 */
-const MOCK_SEED_INSTALLED: Array<{ slug: string; registry: Registry; name: string; version?: string }> = [
-  { slug: "react", registry: "clawhub", name: "React", version: "1.0.4" },
-  { slug: "react-best-practices", registry: "clawhub", name: "React Best Practices" },
-  { slug: "frontend-design", registry: "skills-sh", name: "frontend-design" },
-  { slug: "lark-doc", registry: "skills-sh", name: "lark-doc" },
+const MOCK_SEED_INSTALLED: Array<{ slug: string; rawId?: string; registry: Registry; name: string; version?: string; author?: string }> = [
+  { slug: "react", registry: "clawhub", name: "React", version: "1.0.4", author: "ivangdavila" },
+  { slug: "react-best-practices", registry: "clawhub", name: "React Best Practices", author: "wpank" },
+  { slug: "frontend-design", rawId: "anthropics/skills/frontend-design", registry: "skills-sh", name: "frontend-design" },
+  { slug: "lark-doc", rawId: "larksuite/cli/lark-doc", registry: "skills-sh", name: "lark-doc" },
 ];
 
 interface MockInstalledRecord {
@@ -813,6 +1221,7 @@ interface MockInstalledRecord {
   registry: Registry;
   name: string;
   version?: string;
+  author?: string;
 }
 
 function readMockInstalled(): MockInstalledRecord[] {
@@ -878,9 +1287,17 @@ export function createMockDataLayer(): SkillsDataLayer {
           rawId: rec.rawId ?? rec.slug,
           slug: rec.slug,
           name: rec.name,
+          author: rec.author,
           version: rec.version,
           registries: [rec.registry],
           sourceLabel: REGISTRY_LABEL[rec.registry],
+          sourceUrls: getInstalledSourceUrls({
+            registry: rec.registry,
+            rawId: rec.rawId ?? rec.slug,
+            slug: rec.slug,
+            name: rec.name,
+            author: rec.author,
+          }),
         };
         if (rec.registry === "clawhub") clawhubInstalled.push(entry);
         else skillsshInstalled.push(entry);
@@ -895,7 +1312,13 @@ export function createMockDataLayer(): SkillsDataLayer {
         rawId: r.rawId ?? r.slug,
       }) === skillIdentity(skill));
       if (!exists) {
-        records.push({ rawId: skill.rawId, slug: skill.slug, registry: skill.registry, name: skill.name });
+        records.push({
+          rawId: skill.rawId,
+          slug: skill.slug,
+          registry: skill.registry,
+          name: skill.name,
+          author: skill.author,
+        });
         writeMockInstalled(records);
       }
       return { ok: true };
@@ -927,6 +1350,7 @@ export function createMockDataLayer(): SkillsDataLayer {
 export function createLiveDataLayer(
   botId: string,
   execDebugCommand: ExpertsExecDebugCommand,
+  execDebugCommandStream?: SkillsExecDebugCommandStream,
 ): SkillsDataLayer {
   const run = async (command: string, timeoutMs = SKILL_COMMAND_TIMEOUT_MS): Promise<string> => {
     let result;
@@ -972,7 +1396,7 @@ export function createLiveDataLayer(
     };
   };
 
-  return {
+  const dataLayer: SkillsDataLayer = {
     async search(keyword: string, options?: SkillSearchOptions) {
       const kw = keyword.trim();
       if (!kw || options?.signal?.aborted) {
@@ -1021,9 +1445,15 @@ export function createLiveDataLayer(
             : target.registry === "skills-sh"
               ? buildSkillsshUninstallCommand(target.rawId)
               : buildClawhubUninstallCommand(target.rawId);
-          const output = await run(command);
-          if (target.registry !== "hermes" && !parseUninstallOk(output)) {
+          try {
+            const output = await run(command);
+            if (target.registry === "hermes" || parseUninstallOk(output)) break;
+            if (isUninstallTargetMissing(output)) continue;
             return { ok: false, message: output.trim() || undefined };
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (isUninstallTargetMissing(message)) continue;
+            return { ok: false, message };
           }
         }
         const verification = await listInstalled();
@@ -1046,6 +1476,17 @@ export function createLiveDataLayer(
       return { clawhub: [], skillssh: [], skillhub: [] };
     },
   };
+  if (execDebugCommandStream) {
+    dataLayer.installBatch = (skills, onProgress, options) => installSkillsWithNativeBatch(
+      botId,
+      execDebugCommandStream,
+      (skill) => dataLayer.install(skill),
+      skills,
+      onProgress,
+      options,
+    );
+  }
+  return dataLayer;
 }
 
 // ─── 国内站数据层（SkillHub HTTP + acli skills） ───────────────────────────────
@@ -1077,6 +1518,7 @@ export function createDomesticDataLayer(
   botId: string,
   execDebugCommand: ExpertsExecDebugCommand,
   language: SkillhubLanguage = "zh",
+  execDebugCommandStream?: SkillsExecDebugCommandStream,
 ): SkillsDataLayer {
   const run = async (command: string, timeoutMs = SKILL_COMMAND_TIMEOUT_MS): Promise<string> => {
     let result;
@@ -1116,7 +1558,7 @@ export function createDomesticDataLayer(
     };
   };
 
-  return {
+  const dataLayer: SkillsDataLayer = {
     async search(keyword: string, options?: SkillSearchOptions) {
       try {
         // 热门时让 SkillHub 先按 downloads 排名，避免高下载 ClawHub 镜像被 score 结果挤掉。
@@ -1186,6 +1628,17 @@ export function createDomesticDataLayer(
       }
     },
   };
+  if (execDebugCommandStream) {
+    dataLayer.installBatch = (skills, onProgress, options) => installSkillsWithNativeBatch(
+      botId,
+      execDebugCommandStream,
+      (skill) => dataLayer.install(skill),
+      skills,
+      onProgress,
+      options,
+    );
+  }
+  return dataLayer;
 }
 
 export function createSkillsDataLayer(
@@ -1193,10 +1646,11 @@ export function createSkillsDataLayer(
   execDebugCommand: ExpertsExecDebugCommand,
   mode: "global" | "domestic" = "global",
   language: SkillhubLanguage = "zh",
+  execDebugCommandStream?: SkillsExecDebugCommandStream,
 ): SkillsDataLayer {
-  if (mode === "domestic") return createDomesticDataLayer(botId, execDebugCommand, language);
+  if (mode === "domestic") return createDomesticDataLayer(botId, execDebugCommand, language, execDebugCommandStream);
   return SKILLS_DEMO_LIVE
-    ? createLiveDataLayer(botId, execDebugCommand)
+    ? createLiveDataLayer(botId, execDebugCommand, execDebugCommandStream)
     : createMockDataLayer();
 }
 

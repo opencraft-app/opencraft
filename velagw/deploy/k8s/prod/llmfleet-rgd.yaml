@@ -210,6 +210,8 @@ spec:
                       value: "false"
                     - name: SEARCH_RATE_LIMIT_ENABLE
                       value: "false"
+                    - name: SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT
+                      value: "0"
                     - name: BATCH_UPDATE_ENABLED
                       value: "true"
                     - name: NODE_TYPE
@@ -313,6 +315,7 @@ spec:
                     - {name: GLOBAL_WEB_RATE_LIMIT_ENABLE, value: "false"}
                     - {name: CRITICAL_RATE_LIMIT_ENABLE, value: "false"}
                     - {name: SEARCH_RATE_LIMIT_ENABLE, value: "false"}
+                    - {name: SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT, value: "0"}
                     - {name: BATCH_UPDATE_ENABLED, value: "false"}
                     - {name: NODE_TYPE, value: slave}
                     - {name: NODE_NAME, value: '${schema.metadata.name + "-" + rt.setID + "-g" + string(rt.generation) + "-traffic"}'}
@@ -519,6 +522,8 @@ spec:
                       value: "false"
                     - name: SEARCH_RATE_LIMIT_ENABLE
                       value: "false"
+                    - name: SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT
+                      value: "0"
                     - name: BATCH_UPDATE_ENABLED
                       value: "false"
                     - name: NODE_TYPE

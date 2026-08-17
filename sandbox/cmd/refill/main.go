@@ -73,7 +73,7 @@ func main() {
 	time.Sleep(50 * time.Millisecond)
 }
 
-func consumeRefill(ctx context.Context, svc *service.Service, pool core.Pool, success int, addresses []string, cloudIDs []string, verify service.AddressVerifier) {
+func consumeRefill(ctx context.Context, svc *service.Service, pool core.Pool, success int, addresses []string, cloudIDs []string, verify service.InstanceVerifier) {
 	if success <= 0 {
 		log.Printf("no successful instances created, nothing to refill")
 		return

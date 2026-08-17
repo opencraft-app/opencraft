@@ -59,6 +59,8 @@ type createTaskSandboxAdapterStub struct {
 	pools          []psandbox.Pool
 	processBatches [][]psandbox.ProcessStreamEvent
 	processCalls   []psandbox.ProcessStartRequest
+	ptyBatches     [][]psandbox.PtyExecStreamEvent
+	ptyCalls       []psandbox.PtyExecStreamRequest
 	deletedIDs     []string
 }
 
@@ -82,6 +84,26 @@ func (s *createTaskSandboxAdapterStub) StartProcessStream(_ context.Context, _ s
 	if len(s.processBatches) > 0 {
 		events = s.processBatches[0]
 		s.processBatches = s.processBatches[1:]
+	}
+	for _, ev := range events {
+		if err := onEvent(ev); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (s *createTaskSandboxAdapterStub) StreamPtyCommand(_ context.Context, _ string, req *psandbox.PtyExecStreamRequest, onEvent func(psandbox.PtyExecStreamEvent) error) error {
+	if req != nil {
+		cloned := *req
+		s.ptyCalls = append(s.ptyCalls, cloned)
+	}
+	events := []psandbox.PtyExecStreamEvent{
+		{Type: "started", ExecutionID: "pty:create-onboard"},
+		{Type: "finished", ExecutionID: "pty:create-onboard", Status: "SUCCESS", ExitCode: 0},
+	}
+	if len(s.ptyBatches) > 0 {
+		events = s.ptyBatches[0]
+		s.ptyBatches = s.ptyBatches[1:]
 	}
 	for _, ev := range events {
 		if err := onEvent(ev); err != nil {
@@ -247,10 +269,6 @@ func TestRunCreateInstanceTaskProvisionsAiGatewayOnCreate(t *testing.T) {
 	sandboxAdapter := &createTaskSandboxAdapterStub{
 		createResp: &psandbox.Sandbox{SandboxID: "sbx-create-onboard", TemplateID: "tpl-create"},
 		pools:      []psandbox.Pool{{ID: "tpl-create", Status: "active", CapacityState: "active"}},
-		processBatches: [][]psandbox.ProcessStreamEvent{
-			{{Stdout: "install ok", Status: "running"}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
-			{{Stdout: "model set ok", Status: "running"}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
-		},
 	}
 	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{
 		createResp: &pllmgateway.CreateApiKeyResponse{KeyID: "key-create-1", APIKey: "api-create-1"},
@@ -286,37 +304,34 @@ func TestRunCreateInstanceTaskProvisionsAiGatewayOnCreate(t *testing.T) {
 	if len(aiGatewayAdapter.ensureCalls) != 1 || aiGatewayAdapter.ensureCalls[0].userID != "user-create-1" {
 		t.Fatalf("expected ensure user to run once before key creation, got %+v", aiGatewayAdapter.ensureCalls)
 	}
-	if len(sandboxAdapter.processCalls) != 2 {
-		t.Fatalf("expected model cli ensure + model set process calls, got %d", len(sandboxAdapter.processCalls))
+	if len(sandboxAdapter.processCalls) != 0 || len(sandboxAdapter.ptyCalls) != 2 {
+		t.Fatalf("expected two TAT PTY onboard calls, process=%d pty=%d", len(sandboxAdapter.processCalls), len(sandboxAdapter.ptyCalls))
 	}
-	if !strings.Contains(sandboxAdapter.processCalls[0].Args[2], "command -v acli") || !strings.Contains(sandboxAdapter.processCalls[0].Args[2], "curl -fsSL -z /usr/local/bin/harness") {
-		t.Fatalf("expected first process call to prefer acli and fall back to harness install, got %q", sandboxAdapter.processCalls[0].Args[2])
+	if !strings.Contains(sandboxAdapter.ptyCalls[0].Command, "command -v acli") || !strings.Contains(sandboxAdapter.ptyCalls[0].Command, "curl -fsSL -z /usr/local/bin/harness") {
+		t.Fatalf("expected first TAT call to prefer acli and fall back to harness install, got %q", sandboxAdapter.ptyCalls[0].Command)
 	}
-	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "target_user='agentuser'") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "acli provider save") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "harness model set") {
-		t.Fatalf("expected second process call to prefer acli provider save and fall back to harness model set as agentuser, got %q", sandboxAdapter.processCalls[1].Args[2])
+	if !strings.Contains(sandboxAdapter.ptyCalls[1].Command, "target_user='agentuser'") ||
+		!strings.Contains(sandboxAdapter.ptyCalls[1].Command, "acli provider save") ||
+		!strings.Contains(sandboxAdapter.ptyCalls[1].Command, "harness model set") {
+		t.Fatalf("expected second TAT call to prefer acli provider save and fall back to harness model set as agentuser, got %q", sandboxAdapter.ptyCalls[1].Command)
 	}
-	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--name") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "acli model switch --model") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model-name") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "kimi-k2.5") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "switch_model=") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "model_name") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model \"$switch_model\"") ||
-		strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--agent") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--api") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--api-key \"$ACLI_SECRET_API_KEY\"") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model-id") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model-name") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "custom") {
-		t.Fatalf("expected hermes provider name to stay fixed as custom, got %q", sandboxAdapter.processCalls[1].Args[2])
+	if !strings.Contains(sandboxAdapter.ptyCalls[1].Command, "--name") ||
+		!strings.Contains(sandboxAdapter.ptyCalls[1].Command, "acli model switch --model") ||
+		!strings.Contains(sandboxAdapter.ptyCalls[1].Command, "--model-name") ||
+		!strings.Contains(sandboxAdapter.ptyCalls[1].Command, "kimi-k2.5") ||
+		!strings.Contains(sandboxAdapter.ptyCalls[1].Command, "switch_model=") ||
+		!strings.Contains(sandboxAdapter.ptyCalls[1].Command, "model_name") ||
+		!strings.Contains(sandboxAdapter.ptyCalls[1].Command, "--model \"$switch_model\"") ||
+		strings.Contains(sandboxAdapter.ptyCalls[1].Command, "--agent") ||
+		!strings.Contains(sandboxAdapter.ptyCalls[1].Command, "--api") ||
+		!strings.Contains(sandboxAdapter.ptyCalls[1].Command, "--api-key \"$ACLI_SECRET_API_KEY\"") ||
+		!strings.Contains(sandboxAdapter.ptyCalls[1].Command, "--model-id") ||
+		!strings.Contains(sandboxAdapter.ptyCalls[1].Command, "--model-name") ||
+		!strings.Contains(sandboxAdapter.ptyCalls[1].Command, "custom") {
+		t.Fatalf("expected hermes provider name to stay fixed as custom, got %q", sandboxAdapter.ptyCalls[1].Command)
 	}
-	if sandboxAdapter.processCalls[1].Env["HOME"] != "/home/agentuser" {
-		t.Fatalf("expected HOME env for agentuser, got %+v", sandboxAdapter.processCalls[1].Env)
-	}
-	if !strings.Contains(sandboxAdapter.processCalls[1].Env["PATH"], "/home/agentuser/.local/bin") {
-		t.Fatalf("expected PATH env to include agentuser local bin, got %+v", sandboxAdapter.processCalls[1].Env)
+	if sandboxAdapter.ptyCalls[1].Username != hermesRuntimeUser || sandboxAdapter.ptyCalls[1].WorkingDirectory != "/home/agentuser" {
+		t.Fatalf("expected agentuser TAT identity, got %+v", sandboxAdapter.ptyCalls[1])
 	}
 }
 
@@ -334,9 +349,9 @@ func TestRunCreateInstanceTaskPreservesLLMGatewayKeyWhenOnboardFails(t *testing.
 	sandboxAdapter := &createTaskSandboxAdapterStub{
 		createResp: &psandbox.Sandbox{SandboxID: "sbx-create-onboard-fail", TemplateID: "tpl-create"},
 		pools:      []psandbox.Pool{{ID: "tpl-create", Status: "active", CapacityState: "active"}},
-		processBatches: [][]psandbox.ProcessStreamEvent{
-			{{Stdout: "install ok", Status: "running"}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
-			{{Stderr: "model set failed", Status: "running"}, {Ended: true, ExitCode: 1, Status: "FAILED", Error: "exit status 1"}},
+		ptyBatches: [][]psandbox.PtyExecStreamEvent{
+			{{Type: "started", ExecutionID: "pty:install"}, {Type: "finished", ExecutionID: "pty:install", Status: "SUCCESS", ExitCode: 0}},
+			{{Type: "started", ExecutionID: "pty:model"}, {Type: "error", ExecutionID: "pty:model", Status: "FAILED", Message: "exit status 1"}},
 		},
 	}
 	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{

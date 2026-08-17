@@ -76,7 +76,6 @@ spec:
       namespace: ns-prjqt8dd-867795-production
       jsonPointers:
         - /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration
-        - /metadata/annotations/polaris.tkex.cloud.tencentyun.com~1token
         - /metadata/annotations/service.cloud.tencent.com~1sync-begin-time
         - /metadata/annotations/service.cloud.tencent.com~1sync-end-time
     - kind: Service
@@ -84,6 +83,5 @@ spec:
       namespace: ns-prjqt8dd-867795-production
       jsonPointers:
         - /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration
-        - /metadata/annotations/polaris.tkex.cloud.tencentyun.com~1token
         - /metadata/annotations/service.cloud.tencent.com~1sync-begin-time
         - /metadata/annotations/service.cloud.tencent.com~1sync-end-time

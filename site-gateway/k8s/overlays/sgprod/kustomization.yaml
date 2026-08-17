@@ -1,0 +1,98 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ctl
+
+resources:
+  - ../../base
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: site-gateway-platform-values
+    envs:
+      - generated/platform.env
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: site-gateway
+        fieldPaths:
+          - spec.template.spec.containers.[name=site-gateway].image
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_DEPLOYED_AT
+    targets:
+      - select:
+          kind: Deployment
+          name: site-gateway
+        fieldPaths:
+          - spec.template.metadata.annotations.[site-gateway.lightclaw.dev/redeploy-at]
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_ROOT_DOMAINS
+    targets:
+      - select:
+          kind: ConfigMap
+          name: site-gateway-config
+        fieldPaths:
+          - data.SITE_GATEWAY_ROOT_DOMAINS
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_COS_BUCKET
+    targets:
+      - select:
+          kind: ConfigMap
+          name: site-gateway-config
+        fieldPaths:
+          - data.SITE_GATEWAY_COS_BUCKET
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_COS_REGION
+    targets:
+      - select:
+          kind: ConfigMap
+          name: site-gateway-config
+        fieldPaths:
+          - data.SITE_GATEWAY_COS_REGION
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_CTL_BASE_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: site-gateway-config
+        fieldPaths:
+          - data.SITE_GATEWAY_CTL_BASE_URL
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_WILDCARD_HOST
+    targets:
+      - select:
+          kind: Ingress
+          name: lightclaw-sites-public
+        fieldPaths:
+          - spec.rules.0.host
+          - spec.tls.0.hosts.0
+  - source:
+      kind: ConfigMap
+      name: site-gateway-platform-values
+      fieldPath: data.SITE_GATEWAY_TLS_SECRET_NAME
+    targets:
+      - select:
+          kind: Ingress
+          name: lightclaw-sites-public
+        fieldPaths:
+          - spec.tls.0.secretName

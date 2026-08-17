@@ -4,17 +4,24 @@ import { buildHermesSkillDeleteCommand } from "@/lib/hermes-skills-client";
 
 import {
   buildHermesSkillsListCommand,
+  buildClawhubBatchInstallCommand,
   buildClawhubListCommand,
+  buildClawhubSearchCommand,
+  buildClawhubUninstallCommand,
+  buildSkillhubBatchInstallCommand,
   buildSkillhubInstallCommand,
   buildSkillhubListCommand,
   buildSkillhubUninstallCommand,
   createDomesticDataLayer,
   createLiveDataLayer,
+  buildSkillsshBatchInstallCommand,
   buildSkillsshInstallCommand,
   buildSkillsshListCommand,
   buildSkillsshSearchCommand,
   buildSkillsshUninstallCommand,
+  getSkillSourceUrl,
   getPopularityTier,
+  installSkillsInBatch,
   installSkillsSequentially,
   mergeInstalledWithHermes,
   mergeInstalledSources,
@@ -29,6 +36,32 @@ import {
 import { parseSkillhubList, parseSkillhubSearch } from "./skill-registries";
 
 describe("skills.sh command builders", () => {
+  it("derives canonical marketplace detail links only from reliable result identity", () => {
+    const skillsShSkill: Skill = {
+      registry: "skills-sh",
+      rawId: "anthropics/skills/frontend-design",
+      slug: "frontend-design",
+      name: "Frontend Design",
+    };
+    const clawhubSkill: Skill = {
+      registry: "clawhub",
+      rawId: "akshare-stock",
+      slug: "akshare-stock",
+      name: "AkShare Stock",
+      author: "mbpz",
+    };
+    const clawhubSkillWithoutAuthor: Skill = {
+      ...clawhubSkill,
+      author: undefined,
+    };
+
+    expect(getSkillSourceUrl(skillsShSkill)).toBe("https://skills.sh/anthropics/skills/frontend-design");
+    expect(getSkillSourceUrl(clawhubSkill)).toBe("https://clawhub.ai/mbpz/skills/akshare-stock");
+    expect(getSkillSourceUrl(clawhubSkillWithoutAuthor)).toBeUndefined();
+    expect(getSkillSourceUrl({ ...skillsShSkill, rawId: "stock" })).toBeUndefined();
+    expect(getSkillSourceUrl({ ...skillsShSkill, rawId: "owner//stock" })).toBeUndefined();
+  });
+
   it("runs installs in agentuser's login-shell context", () => {
     const command = buildSkillsshInstallCommand("anthropics/skills/frontend-design");
 
@@ -71,7 +104,7 @@ describe("skills.sh command builders", () => {
     expect(mergeInstalledSources([], [first, second])).toHaveLength(2);
   });
 
-  it("keeps matching short slugs from different registries separate", () => {
+  it("merges matching marketplace records only when Hermes confirms one runtime skill", () => {
     const clawhubSkill: InstalledSkill = {
       registry: "clawhub",
       rawId: "okx-sentiment-tracker",
@@ -79,6 +112,9 @@ describe("skills.sh command builders", () => {
       name: "OKX Sentiment Tracker",
       registries: ["clawhub"],
       sourceLabel: "ClawHub",
+      sourceUrls: {
+        clawhub: "https://clawhub.ai/example-owner/skills/okx-sentiment-tracker",
+      },
     };
     const skillsshSkill: InstalledSkill = {
       registry: "skills-sh",
@@ -87,19 +123,32 @@ describe("skills.sh command builders", () => {
       name: "okx-sentiment-tracker",
       registries: ["skills-sh"],
       sourceLabel: "skills.sh",
+      sourceUrls: {
+        "skills-sh": "https://skills.sh/okx/agent-skills/okx-sentiment-tracker",
+      },
     };
     const hermesSkills = parseHermesInstalledSkills("okx-sentiment-tracker");
 
-    const installed = mergeInstalledWithHermes(
-      mergeInstalledSources([clawhubSkill], [skillsshSkill]),
-      hermesSkills,
-    );
+    const marketplaceInstalled = mergeInstalledSources([clawhubSkill], [skillsshSkill]);
+    expect(marketplaceInstalled).toHaveLength(2);
 
-    expect(installed).toHaveLength(2);
-    expect(installed).toEqual(expect.arrayContaining([
-      expect.objectContaining({ registry: "clawhub", rawId: "okx-sentiment-tracker" }),
-      expect.objectContaining({ registry: "skills-sh", rawId: "okx/agent-skills/okx-sentiment-tracker" }),
-    ]));
+    const installed = mergeInstalledWithHermes(marketplaceInstalled, hermesSkills);
+
+    expect(installed).toHaveLength(1);
+    expect(installed[0]).toEqual(expect.objectContaining({
+      registry: "clawhub",
+      rawId: "okx-sentiment-tracker",
+      registries: ["clawhub", "skills-sh", "hermes"],
+      sourceLabel: "ClawHub / skills.sh / Hermes",
+      uninstallTargets: [
+        { registry: "clawhub", rawId: "okx-sentiment-tracker" },
+        { registry: "skills-sh", rawId: "okx/agent-skills/okx-sentiment-tracker" },
+      ],
+      sourceUrls: {
+        clawhub: "https://clawhub.ai/example-owner/skills/okx-sentiment-tracker",
+        "skills-sh": "https://skills.sh/okx/agent-skills/okx-sentiment-tracker",
+      },
+    }));
   });
 
   it("uninstalls only the selected registry record and verifies that it disappeared", async () => {
@@ -129,6 +178,94 @@ describe("skills.sh command builders", () => {
     await expect(createLiveDataLayer("bot-1", execDebugCommand).uninstall(installedSkill)).resolves.toEqual({ ok: true });
     expect(commands).toEqual([
       buildSkillsshUninstallCommand("team/repo/shared-skill"),
+      buildClawhubListCommand(),
+      buildSkillsshListCommand(),
+      buildHermesSkillsListCommand(),
+    ]);
+  });
+
+  it("stops after the first uninstall candidate removes a merged runtime skill", async () => {
+    const commands: string[] = [];
+    const execDebugCommand = async (_botId: string, command: string) => {
+      commands.push(command);
+      const output = command === buildClawhubUninstallCommand("documentation-writer")
+        ? JSON.stringify({ success: true, data: { status: "uninstalled" } })
+        : command === buildSkillsshUninstallCommand("github/awesome-copilot/documentation-writer")
+          ? JSON.stringify({
+              success: false,
+              error: { code: "SKILLS_SH_NOT_INSTALLED", message: "未找到已安装的技能" },
+            })
+          : command === buildHermesSkillsListCommand()
+            ? ""
+            : JSON.stringify({ success: true, data: { skills: [] } });
+      return {
+        status: command.includes("skills-sh uninstall") ? "FAILED" : "SUCCESS",
+        exitCode: command.includes("skills-sh uninstall") ? 1 : 0,
+        output,
+      };
+    };
+    const installedSkill: InstalledSkill = {
+      registry: "clawhub",
+      rawId: "documentation-writer",
+      slug: "documentation-writer",
+      name: "Documentation Writer",
+      registries: ["clawhub", "skills-sh", "hermes"],
+      sourceLabel: "ClawHub / skills.sh / Hermes",
+      uninstallTargets: [
+        { registry: "clawhub", rawId: "documentation-writer" },
+        { registry: "skills-sh", rawId: "github/awesome-copilot/documentation-writer" },
+      ],
+    };
+
+    await expect(createLiveDataLayer("bot-1", execDebugCommand).uninstall(installedSkill)).resolves.toEqual({ ok: true });
+    expect(commands).toEqual([
+      buildClawhubUninstallCommand("documentation-writer"),
+      buildClawhubListCommand(),
+      buildSkillsshListCommand(),
+      buildHermesSkillsListCommand(),
+    ]);
+  });
+
+  it("tries the next uninstall candidate when the first source reports not installed", async () => {
+    const commands: string[] = [];
+    const execDebugCommand = async (_botId: string, command: string) => {
+      commands.push(command);
+      const isMissingSkillssh = command === buildSkillsshUninstallCommand(
+        "github/awesome-copilot/documentation-writer",
+      );
+      const output = isMissingSkillssh
+        ? JSON.stringify({
+            success: false,
+            error: { code: "SKILLS_SH_NOT_INSTALLED", message: "未找到已安装的技能" },
+          })
+        : command === buildClawhubUninstallCommand("documentation-writer")
+          ? JSON.stringify({ success: true, data: { status: "uninstalled" } })
+          : command === buildHermesSkillsListCommand()
+            ? ""
+            : JSON.stringify({ success: true, data: { skills: [] } });
+      return {
+        status: isMissingSkillssh ? "FAILED" : "SUCCESS",
+        exitCode: isMissingSkillssh ? 1 : 0,
+        output,
+      };
+    };
+    const installedSkill: InstalledSkill = {
+      registry: "skills-sh",
+      rawId: "github/awesome-copilot/documentation-writer",
+      slug: "documentation-writer",
+      name: "Documentation Writer",
+      registries: ["skills-sh", "clawhub", "hermes"],
+      sourceLabel: "skills.sh / ClawHub / Hermes",
+      uninstallTargets: [
+        { registry: "skills-sh", rawId: "github/awesome-copilot/documentation-writer" },
+        { registry: "clawhub", rawId: "documentation-writer" },
+      ],
+    };
+
+    await expect(createLiveDataLayer("bot-1", execDebugCommand).uninstall(installedSkill)).resolves.toEqual({ ok: true });
+    expect(commands).toEqual([
+      buildSkillsshUninstallCommand("github/awesome-copilot/documentation-writer"),
+      buildClawhubUninstallCommand("documentation-writer"),
       buildClawhubListCommand(),
       buildSkillsshListCommand(),
       buildHermesSkillsListCommand(),
@@ -186,6 +323,59 @@ describe("domestic SkillHub command and response handling", () => {
       iconUrl: "https://cdn.example.com/builder-radar.png",
       sourceLabel: "SkillHub",
     })]);
+
+    const groupedInstalled = parseSkillhubList(JSON.stringify({
+      success: true,
+      data: {
+        skills: [{
+          id: "skill_91fca7e4",
+          name: "humanizer",
+          display_name: "humanizer",
+          relative_path: "creative/humanizer",
+          category: "creative",
+          version: "2.5.1",
+          instances: [{
+            id: "skill_91fca7e4",
+            name: "humanizer",
+            display_name: "humanizer",
+            relative_path: "creative/humanizer",
+            source: "builtin",
+            version: "2.5.1",
+          }, {
+            id: "skill_e95600124c0d7729fa4d",
+            name: "humanizer",
+            display_name: "humanizer",
+            relative_path: "unclecheng-reduce-ai-perception-v2",
+            source: "builtin",
+            version: "4.1.0",
+          }],
+        }],
+      },
+    }));
+    expect(groupedInstalled).toHaveLength(2);
+    expect(groupedInstalled).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        rawId: "skill_91fca7e4",
+        slug: "creative/humanizer",
+        name: "humanizer",
+        category: "creative",
+        version: "2.5.1",
+      }),
+      expect.objectContaining({
+        rawId: "skill_e95600124c0d7729fa4d",
+        slug: "unclecheng-reduce-ai-perception-v2",
+        name: "humanizer",
+        category: "creative",
+        version: "4.1.0",
+      }),
+    ]));
+    expect(
+      groupedInstalled.find((skill) => skill.slug === "unclecheng-reduce-ai-perception-v2")?.nativeAliases,
+    ).toEqual(expect.arrayContaining([
+      "humanizer",
+      "skill_e95600124c0d7729fa4d",
+      "unclecheng-reduce-ai-perception-v2",
+    ]));
 
     const tableInstalled = parseSkillhubList([
       "┌───────────────┬──────────────┬─────────┐",
@@ -319,19 +509,19 @@ describe("Hermes native installed skills", () => {
     ]);
   });
 
-  it("keeps same-slug marketplace records separate without duplicating an ambiguous Hermes record", () => {
+  it("keeps same-slug records from one marketplace separate when Hermes cannot identify the owner", () => {
     const registrySkills: InstalledSkill[] = [{
-      registry: "clawhub",
-      rawId: "shared-skill",
+      registry: "skills-sh",
+      rawId: "team-a/repository/shared-skill",
       slug: "shared-skill",
-      name: "ClawHub Shared Skill",
-      registries: ["clawhub"],
-      sourceLabel: "ClawHub",
+      name: "Team A Shared Skill",
+      registries: ["skills-sh"],
+      sourceLabel: "skills.sh",
     }, {
       registry: "skills-sh",
-      rawId: "team/repository/shared-skill",
+      rawId: "team-b/repository/shared-skill",
       slug: "shared-skill",
-      name: "skills.sh Shared Skill",
+      name: "Team B Shared Skill",
       registries: ["skills-sh"],
       sourceLabel: "skills.sh",
     }];
@@ -339,13 +529,13 @@ describe("Hermes native installed skills", () => {
 
     expect(mergeInstalledWithHermes(registrySkills, hermesSkills)).toEqual([
       expect.objectContaining({
-        registry: "clawhub",
-        rawId: "shared-skill",
-        registries: ["clawhub"],
+        registry: "skills-sh",
+        rawId: "team-a/repository/shared-skill",
+        registries: ["skills-sh"],
       }),
       expect.objectContaining({
         registry: "skills-sh",
-        rawId: "team/repository/shared-skill",
+        rawId: "team-b/repository/shared-skill",
         registries: ["skills-sh"],
       }),
     ]);
@@ -528,6 +718,193 @@ describe("Hermes native installed skills", () => {
 });
 
 describe("batch skill installation", () => {
+  it("keeps summary results aligned after an earlier progress event", async () => {
+    const skills: Skill[] = [
+      { registry: "clawhub", rawId: "first", slug: "first", name: "First" },
+      { registry: "clawhub", rawId: "second", slug: "second", name: "Second" },
+    ];
+    const execDebugCommand = async () => ({ status: "SUCCESS", exitCode: 0, output: "" });
+    const execDebugCommandStream = async (
+      _botId: string,
+      _command: string,
+      onChunk: (event: { stream: string; chunk: string }) => void,
+    ) => {
+      onChunk({ stream: "stdout", chunk: '{"event":"progress","slug":"first","status":"installed"}\n' });
+      onChunk({
+        stream: "stdout",
+        chunk: '{"event":"summary","results":[{"slug":"first","status":"installed"},{"slug":"second","status":"failed","message":"download failed"}]}\n',
+      });
+      return { status: "SUCCESS", exitCode: 0, output: "" };
+    };
+    const dataLayer = createLiveDataLayer("bot-1", execDebugCommand, execDebugCommandStream);
+
+    const result = await installSkillsInBatch(dataLayer, skills);
+
+    expect(result.succeeded).toEqual([skills[0]]);
+    expect(result.failed).toEqual([{ skill: skills[1], message: "download failed" }]);
+  });
+
+  it("builds the three native ACLI batch commands from the backend contract", () => {
+    expect(buildClawhubBatchInstallCommand(["world-model", "hello-world-skill"]))
+      .toBe("acli clawhub batch-install --wait=true 'world-model hello-world-skill'");
+    expect(buildSkillsshBatchInstallCommand([
+      "kostja94/marketing-skills/masonry",
+      "sickn33/antigravity-awesome-skills/agent-squad",
+    ])).toBe(
+      "bash -lc 'cd \"$HOME\" && acli skills-sh batch-install --wait=true '\\''kostja94/marketing-skills/masonry sickn33/antigravity-awesome-skills/agent-squad'\\'''",
+    );
+    expect(buildSkillhubBatchInstallCommand(["react", "react-email-skills", "react-performance"]))
+      .toBe("acli skills batch-install --wait=true 'react react-email-skills react-performance'");
+  });
+
+  it("streams skills.sh progress in order and preserves backend partial-failure details", async () => {
+    const skills: Skill[] = [
+      {
+        registry: "skills-sh",
+        rawId: "kostja94/marketing-skills/masonry",
+        slug: "masonry",
+        name: "Masonry",
+      },
+      {
+        registry: "skills-sh",
+        rawId: "sickn33/antigravity-awesome-skills/agent-squad",
+        slug: "agent-squad",
+        name: "Agent Squad",
+      },
+    ];
+    const commands: string[] = [];
+    const execDebugCommand = async () => ({ status: "SUCCESS", exitCode: 0, output: "" });
+    const execDebugCommandStream = async (
+      _botId: string,
+      command: string,
+      onChunk: (event: { stream: string; chunk: string }) => void,
+    ) => {
+      commands.push(command);
+      onChunk({
+        stream: "stdout",
+        chunk: '{"event":"progress","index":1,"total":2,"slug":"kostja94/marketing-skills/masonry","status":"failed","error_code":"SKILLS_SH_SKILL_NOT_IN_REPO",',
+      });
+      onChunk({
+        stream: "stdout",
+        chunk: '"message":"技能已删除或改名"}\n{"event":"progress","index":2,"total":2,"slug":"sickn33/antigravity-awesome-skills/agent-squad","status":"installed","id":"sickn33/antigravity-awesome-skills/agent-squad"}\n',
+      });
+      onChunk({
+        stream: "stdout",
+        chunk: '{"event":"summary","total":2,"succeeded":1,"failed":1,"gateway_restarted":false}\n',
+      });
+      return { status: "SUCCESS", exitCode: 0, output: "" };
+    };
+    const progress: string[] = [];
+    const dataLayer = createLiveDataLayer("bot-1", execDebugCommand, execDebugCommandStream);
+
+    const result = await installSkillsInBatch(dataLayer, skills, ({ index, skill, status, message }) => {
+      progress.push(`${index}:${skill.rawId}:${status}:${message ?? ""}`);
+    });
+
+    expect(commands).toEqual([buildSkillsshBatchInstallCommand(skills.map((skill) => skill.rawId))]);
+    expect(progress).toEqual([
+      "1:kostja94/marketing-skills/masonry:installing:",
+      "1:kostja94/marketing-skills/masonry:failed:技能已删除或改名",
+      "2:sickn33/antigravity-awesome-skills/agent-squad:installing:",
+      "2:sickn33/antigravity-awesome-skills/agent-squad:succeeded:",
+    ]);
+    expect(result.succeeded).toEqual([skills[1]]);
+    expect(result.failed).toEqual([{ skill: skills[0], message: "技能已删除或改名" }]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("uses SkillHub native batch output when the stream is only available in the final response", async () => {
+    const skills: Skill[] = [
+      { registry: "skillhub", rawId: "react", slug: "react", name: "React" },
+      { registry: "skillhub", rawId: "react-performance", slug: "react-performance", name: "React Performance" },
+    ];
+    const commands: string[] = [];
+    const execDebugCommand = async () => ({ status: "SUCCESS", exitCode: 0, output: "" });
+    const execDebugCommandStream = async (_botId: string, command: string) => {
+      commands.push(command);
+      return {
+        status: "SUCCESS",
+        exitCode: 0,
+        output: [
+          '{"event":"progress","index":1,"total":2,"name":"react","status":"installed","id":"react"}',
+          '{"event":"progress","index":2,"total":2,"name":"react-performance","status":"installed","id":"react-performance"}',
+          '{"event":"summary","total":2,"succeeded":2,"failed":0,"gateway_restarted":false}',
+        ].join("\n"),
+      };
+    };
+    const dataLayer = createDomesticDataLayer("bot-1", execDebugCommand, "zh", execDebugCommandStream);
+
+    const result = await installSkillsInBatch(dataLayer, skills);
+
+    expect(commands).toEqual([buildSkillhubBatchInstallCommand(skills.map((skill) => skill.rawId))]);
+    expect(result.succeeded).toEqual(skills);
+    expect(result.failed).toEqual([]);
+  });
+
+  it("falls back to sequential installs when an older ACLI lacks batch-install", async () => {
+    const skills: Skill[] = [
+      { registry: "clawhub", rawId: "world-model", slug: "world-model", name: "World Model" },
+      { registry: "clawhub", rawId: "hello-world-skill", slug: "hello-world-skill", name: "Hello World" },
+    ];
+    const commands: string[] = [];
+    const execDebugCommand = async (_botId: string, command: string) => {
+      commands.push(command);
+      return {
+        status: "SUCCESS",
+        exitCode: 0,
+        output: JSON.stringify({ success: true, data: { status: "installed" } }),
+      };
+    };
+    const execDebugCommandStream = async (_botId: string, command: string) => {
+      commands.push(command);
+      return { status: "FAILED", exitCode: 1, output: 'unknown command "batch-install"' };
+    };
+    const dataLayer = createLiveDataLayer("bot-1", execDebugCommand, execDebugCommandStream);
+
+    const result = await installSkillsInBatch(dataLayer, skills);
+
+    expect(commands).toEqual([
+      buildClawhubBatchInstallCommand(skills.map((skill) => skill.rawId)),
+      "acli clawhub install 'world-model'",
+      "acli clawhub install 'hello-world-skill'",
+    ]);
+    expect(result.succeeded).toEqual(skills);
+    expect(result.failed).toEqual([]);
+  });
+
+  it("cancels remaining registry runs after the active native batch command completes", async () => {
+    const skills: Skill[] = [
+      { registry: "clawhub", rawId: "world-model", slug: "world-model", name: "World Model" },
+      { registry: "skillhub", rawId: "react", slug: "react", name: "React" },
+    ];
+    const commands: string[] = [];
+    let cancelled = false;
+    const execDebugCommand = async () => ({ status: "SUCCESS", exitCode: 0, output: "" });
+    const execDebugCommandStream = async (
+      _botId: string,
+      command: string,
+      onChunk: (event: { stream: string; chunk: string }) => void,
+    ) => {
+      commands.push(command);
+      onChunk({
+        stream: "stdout",
+        chunk: '{"event":"progress","index":1,"total":1,"slug":"world-model","status":"installed"}\n',
+      });
+      cancelled = true;
+      return { status: "SUCCESS", exitCode: 0, output: "" };
+    };
+    const dataLayer = createLiveDataLayer("bot-1", execDebugCommand, execDebugCommandStream);
+
+    const result = await installSkillsInBatch(dataLayer, skills, undefined, {
+      shouldCancel: () => cancelled,
+    });
+
+    expect(commands).toEqual([buildClawhubBatchInstallCommand(["world-model"])]);
+    expect(result.succeeded).toEqual([skills[0]]);
+    expect(result.failed).toEqual([]);
+    expect(result.skipped).toEqual([skills[1]]);
+  });
+
   it("installs selected skills sequentially and reports partial failures", async () => {
     const skills: Skill[] = [
       { registry: "clawhub", rawId: "first", slug: "first", name: "First" },
@@ -596,6 +973,72 @@ describe("batch skill installation", () => {
 });
 
 describe("registry search reliability", () => {
+  it("removes the trailing download count from ClawHub search result names", async () => {
+    const execDebugCommand = async (_botId: string, command: string) => {
+      if (command === buildClawhubSearchCommand("image")) {
+        return {
+          status: "SUCCESS",
+          exitCode: 0,
+          output: JSON.stringify({
+            results: [{
+              slug: "image-tools",
+              displayName: "Image Tools 1,000 downloads",
+              installs: 1_000,
+            }],
+          }),
+        };
+      }
+      if (command === buildSkillsshSearchCommand("image")) {
+        return {
+          status: "SUCCESS",
+          exitCode: 0,
+          output: JSON.stringify({ results: [] }),
+        };
+      }
+      throw new Error(`unexpected command: ${command}`);
+    };
+
+    const result = await createLiveDataLayer("bot-1", execDebugCommand).search("image");
+
+    expect(result.clawhub).toEqual([
+      expect.objectContaining({
+        name: "Image Tools",
+        installs: 1_000,
+      }),
+    ]);
+  });
+
+  it("does not run ClawHub searches while loading installed skills", async () => {
+    const calls: string[] = [];
+    const execDebugCommand = async (_botId: string, command: string) => {
+      calls.push(command);
+      if (command === buildClawhubListCommand()) {
+        return {
+          status: "SUCCESS",
+          exitCode: 0,
+          output: JSON.stringify({ skills: [{ slug: "react", displayName: "React" }] }),
+        };
+      }
+      if (command === buildSkillsshListCommand()) {
+        return { status: "SUCCESS", exitCode: 0, output: JSON.stringify({ skills: [] }) };
+      }
+      if (command === buildHermesSkillsListCommand()) {
+        return { status: "SUCCESS", exitCode: 0, output: "" };
+      }
+      throw new Error(`unexpected command: ${command}`);
+    };
+
+    const result = await createLiveDataLayer("bot-1", execDebugCommand).listInstalled();
+
+    expect(calls.some((command) => command.startsWith("acli clawhub search"))).toBe(false);
+    expect(result.skills).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        rawId: "react",
+      }),
+    ]));
+    expect(result.skills.find((skill) => skill.rawId === "react")?.sourceUrls?.clawhub).toBeUndefined();
+  });
+
   it("reports a failed international source and applies a finite search timeout", async () => {
     const calls: Array<{ command: string; timeoutMs?: number }> = [];
     const execDebugCommand = async (

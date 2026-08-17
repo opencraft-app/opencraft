@@ -180,6 +180,35 @@ def fetch_secret(region: str, secret_name: str, version_id: str) -> str:
     raise ValueError(f"{secret_name}: empty secret value")
 
 
+def resolve_version_id(region: str, secret_name: str, configured_version_id: str) -> str:
+    if configured_version_id != "latest":
+        return configured_version_id
+
+    response = run_tccli(
+        "ssm",
+        "ListSecretVersionIds",
+        region=region,
+        payload={"SecretName": secret_name},
+    )
+    payload = response.get("Response") or response
+    versions = [
+        version
+        for version in payload.get("Versions") or []
+        if isinstance(version, dict) and version.get("VersionId")
+    ]
+    if not versions:
+        raise ValueError(f"{secret_name}: no secret versions found")
+
+    def sort_key(version: dict[str, Any]) -> tuple[int, str]:
+        try:
+            create_time = int(version.get("CreateTime") or 0)
+        except (TypeError, ValueError):
+            create_time = 0
+        return create_time, str(version["VersionId"])
+
+    return str(max(versions, key=sort_key)["VersionId"])
+
+
 def normalize_string_data(raw: str, *, string_key: str | None) -> dict[str, str]:
     try:
         decoded = json.loads(raw)
@@ -245,6 +274,14 @@ def manifest_key_list(item: dict[str, Any], field: str) -> list[str]:
     ):
         raise ValueError(f"{field} must be a list of non-empty strings")
     return keys
+
+
+def validate_required_keys(item: dict[str, Any], string_data: dict[str, str]) -> None:
+    required_keys = manifest_key_list(item, "required_keys")
+    missing = sorted(set(required_keys) - set(string_data))
+    if missing:
+        item_id = item.get("id") or item.get("secret_name") or "manifest item"
+        raise ValueError(f"{item_id}: missing required keys: {', '.join(missing)}")
 
 
 def encryption_regex_for_item(
@@ -355,12 +392,14 @@ def main() -> int:
             get_resource_name(item)
 
             region = item.get("region") or defaults.get("region")
-            version_id = item.get("version_id") or defaults.get("version_id") or "SSM_Current"
+            configured_version_id = item.get("version_id") or defaults.get("version_id") or "SSM_Current"
             if not region:
                 raise ValueError(f"manifest item {item_id} missing region/defaults.region")
 
+            version_id = resolve_version_id(region, item["secret_name"], configured_version_id)
             raw_secret = fetch_secret(region, item["secret_name"], version_id)
             string_data = normalize_string_data(raw_secret, string_key=item.get("string_key"))
+            validate_required_keys(item, string_data)
             doc = build_k8s_resource_doc(item, string_data)
             plaintext = dump_yaml(doc)
             output_path = resolve_output_path(manifest_path, output_dir, item["output_path"])

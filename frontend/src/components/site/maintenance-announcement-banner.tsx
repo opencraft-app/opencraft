@@ -25,15 +25,29 @@ type AnnouncementItem = {
 };
 
 /** 公告顺序即轮播顺序。 */
-const HERMES_UPGRADE_ANNOUNCEMENT_ID = "0716-hermes-agent-upgrade";
-const ANNOUNCEMENT_IDS = [HERMES_UPGRADE_ANNOUNCEMENT_ID] as const;
+const HERMES_UPGRADE_ANNOUNCEMENT_ID = "0731-hermes-agent-upgrade";
+const GLOBAL_PUBLIC_BETA_BILLING_ANNOUNCEMENT_ID =
+  "0818-global-public-beta-billing-announcement";
+const ANNOUNCEMENT_IDS = [
+  HERMES_UPGRADE_ANNOUNCEMENT_ID,
+  GLOBAL_PUBLIC_BETA_BILLING_ANNOUNCEMENT_ID,
+] as const;
 
-/** 北京时间 / 新加坡时间 2026-07-17 02:00:00 = UTC 2026-07-16 18:00:00 */
+/** 北京时间 / 新加坡时间 2026-08-01 02:00:00 = UTC 2026-07-31 18:00:00 */
 const HERMES_UPGRADE_EXPIRES_AT = Date.UTC(
   2026,
   6 /* 0-indexed: July */,
-  16,
+  31,
   18,
+  0,
+  0,
+);
+/** 新加坡时间 2026-09-18 00:00:00 = UTC 2026-09-17 16:00:00 */
+const GLOBAL_PUBLIC_BETA_BILLING_EXPIRES_AT = Date.UTC(
+  2026,
+  8 /* 0-indexed: September */,
+  17,
+  16,
   0,
   0,
 );
@@ -59,12 +73,25 @@ export function MaintenanceAnnouncementBanner() {
       expiresAt: HERMES_UPGRADE_EXPIRES_AT,
       message: isGlobal
         ? t(
-            "LightVela 将于新加坡时间 2026 年 7 月 16 日 22:00-次日 02:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
+            "LightVela 将于新加坡时间 2026 年 7 月 31 日 22:00-次日 02:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
           )
         : t(
-            "LightVela 将于北京时间 2026 年 7 月 16 日 22:00-次日 02:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
+            "LightVela 将于北京时间 2026 年 7 月 31 日 22:00-次日 02:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
           ),
     },
+    ...(isGlobal
+      ? [
+          {
+            id: GLOBAL_PUBLIC_BETA_BILLING_ANNOUNCEMENT_ID,
+            expiresAt: GLOBAL_PUBLIC_BETA_BILLING_EXPIRES_AT,
+            message: t(
+              "LightVela 将于 2026 年 8 月 18 日（新加坡时间）公测并计费，内测用户套餐届时将延长 1 个月。",
+            ),
+            href: "/docs/announcements/public-beta",
+            actionLabel: t("查看详情"),
+          },
+        ]
+      : []),
   ];
   // 默认不显示，挂载时再读 localStorage —— 避免 SSR / 首屏 flash 不一致
   const [dismissedIds, setDismissedIds] = useState<Set<string> | null>(null);
@@ -90,9 +117,10 @@ export function MaintenanceAnnouncementBanner() {
   // 用户挂着浏览器跨过撤下时间的场景：不依赖刷新 / 切路由，到点强制隐藏最早过期的公告。
   // setTimeout 上限约 24 天；距离过期太久时跳过定时器，后续访问会重新计算过期状态。
   useEffect(() => {
-    const remainingTimes = [HERMES_UPGRADE_EXPIRES_AT - now].filter(
-      (remainingTime) => remainingTime > 0,
-    );
+    const remainingTimes = [
+      HERMES_UPGRADE_EXPIRES_AT - now,
+      GLOBAL_PUBLIC_BETA_BILLING_EXPIRES_AT - now,
+    ].filter((remainingTime) => remainingTime > 0);
     if (remainingTimes.length === 0) return;
     const remaining = Math.min(...remainingTimes);
     if (remaining > MAX_SAFE_TIMEOUT_MS) return;

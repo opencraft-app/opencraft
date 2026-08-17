@@ -37,7 +37,7 @@ type SeoPage = {
 type SeoSiteRegion = 'cn' | 'global';
 
 const SITE_NAME = 'LightVela';
-const DEFAULT_OG_IMAGE_PATH = '/lightvela-logo.jpg';
+const DEFAULT_OG_IMAGE_PATH = '/lightvela-social-preview.png';
 const BAIDU_SITE_VERIFICATION = 'codeva-ip0AdXURxG';
 const WECHAT_SITE_VERIFICATION = 'pKLUCg80PuWPBYLB';
 const DEFAULT_THEME_COLOR = '#f7f4ff';
@@ -289,7 +289,7 @@ export function SiteJsonLd() {
       url,
       logo,
       sameAs: [
-        'https://discord.com/invite/NDqtU3JQTc',
+        'https://discord.gg/Myh58xEMe2',
         'https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b',
         'https://x.com/agentlightvela',
         'https://www.youtube.com/@TencentLightVela',

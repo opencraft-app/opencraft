@@ -15,7 +15,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-from contracts.bundles import ImageTarget, is_playground_env, load_bundle, load_manifest, playground_region, require_build_metadata
+from contracts.bundles import (
+    ImageTarget,
+    is_playground_env,
+    load_bundle,
+    load_manifest,
+    playground_region,
+    require_build_metadata,
+)
 from contracts.image_existence import ImageCheckResult, verify_images
 
 
@@ -38,7 +45,7 @@ def playground_frontend_auth_api_base_url(env: str) -> str:
 
 
 def playground_frontend_region(env: str) -> str:
-    if playground_region(env) == "kr":
+    if playground_region(env) in {"kr", "jp"}:
         return "global"
     return "cn"
 
@@ -204,7 +211,7 @@ def encode_built_output(built: dict[str, str], has_explicit_targets: bool) -> st
 
 def all_target_images_exist(targets: list[ImageTarget], tag: str) -> tuple[bool, list[ImageCheckResult]]:
     images = [image_for_target(target, tag) for target in targets]
-    results = verify_images(images, log_missing_errors=False)
+    results = verify_images(images)
     return all(result.exists for result in results), results
 
 

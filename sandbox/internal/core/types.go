@@ -176,6 +176,7 @@ type SKU struct {
 	DesiredImageID              string          `json:"desired_image_id"`
 	StableImageID               string          `json:"stable_image_id,omitempty"`
 	InstanceType                string          `json:"instance_type"`
+	SystemDiskSize              int             `json:"system_disk_size,omitempty"`
 	NetworkTemplateID           string          `json:"network_template_id,omitempty"`
 	SecurityGroupRuleTemplateID string          `json:"security_group_rule_template_id,omitempty"`
 	AutoscalePolicyID           string          `json:"autoscale_policy_id,omitempty"`
@@ -359,6 +360,7 @@ var (
 	ErrSandboxNotFound                   = errors.New("sandbox not found")
 	ErrTemplateClassNotFound             = errors.New("template class not found")
 	ErrSKUNotFound                       = errors.New("sku not found")
+	ErrInvalidPoolSKUBinding             = errors.New("invalid pool sku binding")
 	ErrPoolAutoscalePolicyNotFound       = errors.New("pool autoscale policy not found")
 	ErrCapacityBundleNotFound            = errors.New("capacity bundle not found")
 	ErrVPCShardNotFound                  = errors.New("vpc shard not found")

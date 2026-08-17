@@ -195,6 +195,75 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 	}
 }
 
+func TestDeployConfigsScopeWebsiteInstanceRoutes(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	configPaths := []string{
+		"argocd/services/service-gateway/beijing-sandbox/config.yaml",
+		"argocd/services/service-gateway/shprod/config.yaml",
+		"argocd/services/service-gateway/sgprod/config.yaml",
+	}
+	wantInstancePaths := map[string]struct{}{
+		http.MethodGet + " /v1/instance/websites/capability":                          {},
+		http.MethodGet + " /v1/instance/websites":                                     {},
+		http.MethodPost + " /v1/instance/websites":                                    {},
+		http.MethodGet + " /v1/instance/websites/{site_id}":                           {},
+		http.MethodDelete + " /v1/instance/websites/{site_id}":                        {},
+		http.MethodGet + " /v1/instance/websites/{site_id}/releases":                  {},
+		http.MethodPost + " /v1/instance/websites/{site_id}/releases":                 {},
+		http.MethodGet + " /v1/instance/websites/{site_id}/operations/{operation_id}": {},
+	}
+
+	for _, configPath := range configPaths {
+		t.Run(configPath, func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, configPath))
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			var browserRoute, instanceRoute *Route
+			for i := range cfg.Routes {
+				route := &cfg.Routes[i]
+				switch route.Prefix {
+				case "/v1/websites":
+					browserRoute = route
+				case "/v1/instance/websites":
+					instanceRoute = route
+				}
+			}
+			if browserRoute == nil || browserRoute.Access != AccessAuthenticated {
+				t.Fatalf("authenticated browser website route is required: %+v", browserRoute)
+			}
+			if len(browserRoute.PublicAllow) != 0 {
+				t.Fatalf("browser website route must not contain public exceptions: %+v", browserRoute.PublicAllow)
+			}
+			if instanceRoute == nil {
+				t.Fatal("instance website route is required")
+			}
+			if instanceRoute.Access != AccessPublic || instanceRoute.PathPolicy != PathPolicyAllowlist {
+				t.Fatalf("instance website route must be public + allowlist: %+v", *instanceRoute)
+			}
+			if instanceRoute.RewritePrefix != "/v1/websites" {
+				t.Fatalf("rewrite_prefix = %q, want /v1/websites", instanceRoute.RewritePrefix)
+			}
+			got := make(map[string]struct{}, len(instanceRoute.PathAllow))
+			for _, rule := range instanceRoute.PathAllow {
+				got[rule.Method+" "+rule.Path] = struct{}{}
+			}
+			if len(got) != len(wantInstancePaths) {
+				t.Fatalf("instance website allowlist has %d rules, want %d: %+v", len(got), len(wantInstancePaths), got)
+			}
+			for key := range wantInstancePaths {
+				if _, ok := got[key]; !ok {
+					t.Fatalf("instance website allowlist missing %s", key)
+				}
+			}
+		})
+	}
+}
+
 func TestLegacySandboxProxyRoutesStayRestricted(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {

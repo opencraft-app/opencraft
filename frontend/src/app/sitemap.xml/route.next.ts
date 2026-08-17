@@ -55,7 +55,14 @@ function sameSlug(left: readonly string[], right: readonly string[]): boolean {
 
 export function GET() {
   const globalBuild = seoRegion() === 'global';
-  const publicPaths = ['/', '/about', '/changelog', '/privacy-policy', '/cookie-policy', '/open-source-licenses'];
+  const publicPaths = [
+    '/',
+    '/about',
+    '/changelog',
+    '/privacy-policy',
+    '/cookie-policy',
+    '/open-source-licenses',
+  ];
   const localizedPublicLangs = SEO_PUBLIC_URL_LANGS.filter((lang) => !globalBuild || lang !== 'en-us');
   const publicEntries: SitemapEntry[] = [
     ...publicPaths.map((path) => ({ path, alternates: buildPublicAlternates(path) })),

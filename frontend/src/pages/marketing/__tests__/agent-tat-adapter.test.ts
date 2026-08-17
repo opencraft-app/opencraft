@@ -70,6 +70,39 @@ describe("createMonoDebugExecAdapter command lifecycle", () => {
     })).rejects.toThrow("cancelled");
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("posts the transformed command when a lifecycle rewrites it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: { status: "SUCCESS", exit_code: 0, output: "done" },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = createMonoDebugExecAdapter({
+      baseUrl: "https://api.example.test",
+      commandLifecycle: {
+        transformCommand: ({ command }) => `${command}\nhermes config set platforms.qqbot.extra.group_policy open`,
+      },
+    });
+
+    const run = await adapter.runCommand({
+      RegionId: 1,
+      InstanceIds: ["bot-1"],
+      SaveCommand: false,
+      CommandType: "SHELL",
+      Content: encodeBase64("acli configure gateway qqbot --app-id '123' --client-secret 'secret'"),
+      Timeout: 60,
+    });
+    await adapter.getInvocationTask(1, run.InvocationId, undefined);
+
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { command?: string };
+    expect(requestBody.command).toBe(
+      "acli configure gateway qqbot --app-id '123' --client-secret 'secret'\n" +
+      "hermes config set platforms.qqbot.extra.group_policy open",
+    );
+  });
 });
 
 function encodeBase64(value: string): string {

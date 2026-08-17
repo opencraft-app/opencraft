@@ -50,7 +50,7 @@ describe("applyFullSeoToHtml", () => {
     );
     expect(html).toContain('<meta property="og:url" content="https://lightvela.com/about"');
     expect(html).toContain(
-      '<meta property="og:image" content="https://lightvela.com/lightvela-logo.jpg"',
+      '<meta property="og:image" content="https://lightvela.com/lightvela-social-preview.png"',
     );
 
     // Twitter Card
@@ -59,7 +59,7 @@ describe("applyFullSeoToHtml", () => {
       '<meta name="twitter:title" content="关于我们 | LightVela 云端专属个人 Agent"',
     );
     expect(html).toContain(
-      '<meta name="twitter:image" content="https://lightvela.com/lightvela-logo.jpg"',
+      '<meta name="twitter:image" content="https://lightvela.com/lightvela-social-preview.png"',
     );
   });
 
@@ -73,7 +73,7 @@ describe("applyFullSeoToHtml", () => {
     );
     expect(html).toContain('<link rel="canonical" href="https://lightvela.ai/about"');
     expect(html).toContain(
-      '<meta property="og:image" content="https://lightvela.ai/lightvela-logo.jpg"',
+      '<meta property="og:image" content="https://lightvela.ai/lightvela-social-preview.png"',
     );
   });
 
@@ -84,7 +84,7 @@ describe("applyFullSeoToHtml", () => {
     expect(html).toContain('<link rel="canonical" href="http://localhost:5174/docs/overview"');
     expect(html).toContain('<meta property="og:url" content="http://localhost:5174/docs/overview"');
     expect(html).toContain(
-      '<meta property="og:image" content="http://localhost:5174/lightvela-logo.jpg"',
+      '<meta property="og:image" content="http://localhost:5174/lightvela-social-preview.png"',
     );
   });
 

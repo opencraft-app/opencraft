@@ -1,6 +1,8 @@
 # LightVela vs Hostinger：哪个 VPS 更适合托管 Agent？
 
-![LightVela 云端托管与在 Hostinger VPS 上运行 Hermes 的对比](../images/lightvela-vs-hostinger.png)
+![LightVela 云端托管与在 Hostinger VPS 上运行 Hermes 的对比](../images/lightvela-vs-hostinger.webp)
+
+## 摘要
 
 **如果你想运行 Hermes Agent，但不希望维护 VPS 变成自己的长期任务，LightVela 更适合你。** 如果你需要 root 权限、自己的服务器环境，并希望围绕 Hermes 自由调整每一层设置，那么 Hostinger VPS 会更灵活。这不是简单的产品对产品比较：LightVela 提供托管好的 Hermes Agent，而 Hostinger 提供的是一台可以运行 Hermes 的 VPS。
 

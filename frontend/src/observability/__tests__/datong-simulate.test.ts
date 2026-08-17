@@ -307,7 +307,7 @@ describe("大同埋点全链路模拟上报", () => {
       await initDatong(PROD_ENV as never, "cn", "accepted" as CookieConsentValue);
     });
 
-    it("trackDatongClick: eid 在 pageParams.eid 中，不在顶层", () => {
+    it("trackDatongClick: eid 在 businessParams.eid 中，不在顶层", () => {
       trackDatongClick("header_create_now_btn", {
         pgid: DATONG_PAGE_IDS.HOME,
         params: { has_bots: false, target: "/agents" },
@@ -316,16 +316,16 @@ describe("大同埋点全链路模拟上报", () => {
       const call = mockReportEvent.mock.calls[0][0];
       expect(call.eventName).toBe("dt_clck");
       expect(call.pgid).toBe("home");
-      // 关键断言：eid 必须在 pageParams 中
-      expect(call.pageParams.eid).toBe("header_create_now_btn");
+      // 关键断言：eid 必须在 businessParams 中
+      expect(call.businessParams.eid).toBe("header_create_now_btn");
       // 顶层不应有 eid 字段
       expect(call.eid).toBeUndefined();
       // 其他参数也保留
-      expect(call.pageParams.has_bots).toBe(false);
-      expect(call.pageParams.target).toBe("/agents");
+      expect(call.businessParams.has_bots).toBe(false);
+      expect(call.businessParams.target).toBe("/agents");
     });
 
-    it("reportDatongPageEvent: dt_imp 事件的 eid 在 pageParams.eid", () => {
+    it("reportDatongPageEvent: dt_imp 事件的 eid 在 businessParams.eid", () => {
       reportDatongPageEvent(DATONG_PAGE_EVENTS.ELEMENT_IMPRESSION, {
         pgid: DATONG_PAGE_IDS.PLANS,
         eid: "plan_card",
@@ -335,12 +335,12 @@ describe("大同埋点全链路模拟上报", () => {
       const call = mockReportEvent.mock.calls[0][0];
       expect(call.eventName).toBe("dt_imp");
       expect(call.pgid).toBe("plans");
-      expect(call.pageParams.eid).toBe("plan_card");
+      expect(call.businessParams.eid).toBe("plan_card");
       expect(call.eid).toBeUndefined();
-      expect(call.pageParams.plan).toBe("pro");
+      expect(call.businessParams.plan).toBe("pro");
     });
 
-    it("reportDatongPageEvent: dt_clck 事件的 eid 在 pageParams.eid", () => {
+    it("reportDatongPageEvent: dt_clck 事件的 eid 在 businessParams.eid", () => {
       reportDatongPageEvent(DATONG_PAGE_EVENTS.ELEMENT_CLICK, {
         pgid: DATONG_PAGE_IDS.SUBSCRIBE,
         eid: "pay_now_btn",
@@ -349,7 +349,7 @@ describe("大同埋点全链路模拟上报", () => {
 
       const call = mockReportEvent.mock.calls[0][0];
       expect(call.eventName).toBe("dt_clck");
-      expect(call.pageParams.eid).toBe("pay_now_btn");
+      expect(call.businessParams.eid).toBe("pay_now_btn");
       expect(call.eid).toBeUndefined();
     });
   });

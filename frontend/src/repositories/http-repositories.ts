@@ -60,6 +60,35 @@ interface ApiErrorPayload {
   retryAfterSeconds?: number;
 }
 
+interface DebugExecStreamEvent {
+  type?: string;
+  stream?: string;
+  chunk?: string;
+  response?: {
+    status?: string;
+    exit_code?: number;
+    output?: string;
+  };
+}
+
+const DEBUG_EXEC_STREAM_EVENT = {
+  error: "error",
+  finished: "finished",
+  stderr: "stderr",
+  stdout: "stdout",
+} as const;
+
+function parseDebugExecSsePart(part: string): { eventType: string; data: string } | null {
+  let eventType = "";
+  const dataLines: string[] = [];
+  part.split("\n").forEach((rawLine) => {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+    if (line.startsWith("data: ")) dataLines.push(line.slice(6));
+  });
+  return dataLines.length > 0 ? { eventType, data: dataLines.join("\n") } : null;
+}
+
 interface CurrentSubscriptionPayload {
   hasSubscription: boolean;
   subscription?: {
@@ -1053,6 +1082,108 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         exitCode: data?.exit_code ?? -1,
         output: data?.output ?? "",
       };
+    },
+
+    async execDebugCommandStream(botId, command, onChunk, options) {
+      const path = `/v1/instances/${encodeURIComponent(botId)}/debug/exec`;
+      const headers = new Headers({
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+      });
+      const authToken = readStoredAuthToken();
+      if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
+
+      const abortController = new AbortController();
+      const timeoutMs = options?.timeoutMs;
+      const timeoutId = typeof timeoutMs === "number" && timeoutMs > 0
+        ? setTimeout(() => abortController.abort(), timeoutMs)
+        : undefined;
+      try {
+        const response = await fetch(buildUrl(baseUrl, path), {
+          method: "POST",
+          credentials: "include",
+          headers,
+          body: JSON.stringify(createDebugExecRequestBody(command)),
+          signal: abortController.signal,
+        });
+        if (!response.ok) {
+          if (response.status === 401) broadcastUnauthorized();
+          let message = `请求失败（${response.status}）`;
+          try {
+            const body = await response.json() as ApiErrorPayload;
+            message = body.message?.trim() || body.error?.trim() || message;
+          } catch {
+            // Keep the status-based fallback when the error body is not JSON.
+          }
+          throw new RepositoryError(message, response.status);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("Command output stream is not readable.");
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let output = "";
+        let finalResponse: DebugExecStreamEvent["response"];
+        let sawErrorEvent = false;
+
+        const consumePart = (part: string) => {
+          const parsed = parseDebugExecSsePart(part);
+          if (!parsed) return;
+          let event: DebugExecStreamEvent;
+          try {
+            event = JSON.parse(parsed.data) as DebugExecStreamEvent;
+          } catch {
+            return;
+          }
+          const eventType = event.type || parsed.eventType;
+          if ((eventType === DEBUG_EXEC_STREAM_EVENT.stdout || eventType === DEBUG_EXEC_STREAM_EVENT.stderr) && event.chunk) {
+            output += event.chunk;
+            onChunk({ stream: event.stream || eventType, chunk: event.chunk });
+          }
+          if ((eventType === DEBUG_EXEC_STREAM_EVENT.finished || eventType === DEBUG_EXEC_STREAM_EVENT.error) && event.response) {
+            finalResponse = event.response;
+          }
+          if (eventType === DEBUG_EXEC_STREAM_EVENT.error) sawErrorEvent = true;
+        };
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split(/\r?\n\r?\n/);
+            buffer = parts.pop() ?? "";
+            parts.forEach(consumePart);
+          }
+          buffer += decoder.decode();
+          if (buffer.trim()) consumePart(buffer);
+        } finally {
+          reader.releaseLock();
+        }
+
+        if (finalResponse) {
+          return {
+            status: finalResponse.status || "FAILED",
+            exitCode: typeof finalResponse.exit_code === "number" ? finalResponse.exit_code : -1,
+            output: finalResponse.output || output,
+          };
+        }
+        return {
+          status: output && !sawErrorEvent ? "SUCCESS" : "FAILED",
+          exitCode: output && !sawErrorEvent ? 0 : -1,
+          output,
+        };
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          throw new Error(`debug_exec_timeout:${timeoutMs ?? 0}`);
+        }
+        if (error instanceof RepositoryError || error instanceof Error && error.message === "Command output stream is not readable.") {
+          throw error;
+        }
+        throw createNetworkUnavailableError();
+      } finally {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+      }
     },
 
     async startRescueExport(botId: string) {

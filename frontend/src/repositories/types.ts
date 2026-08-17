@@ -377,6 +377,12 @@ export interface BotRepository {
     command: string,
     options?: { timeoutMs?: number },
   ): Promise<{ status: string; exitCode: number; output: string }>;
+  execDebugCommandStream(
+    botId: string,
+    command: string,
+    onChunk: (event: { stream: string; chunk: string }) => void,
+    options?: { timeoutMs?: number },
+  ): Promise<{ status: string; exitCode: number; output: string }>;
   startRescueExport(botId: string): Promise<WorkerActionStartResult>;
   getRescueExportStatus(botId: string): Promise<WorkerActionStatusResult | null>;
   importHermesWorkspace(botId: string, file: File): Promise<WorkerActionStartResult>;

@@ -1,0 +1,59 @@
+version: v2.0
+name: 构建 workers-website-deployer
+
+# 独立于「构建 workers」的发布通道。
+#
+# 为什么不复用 .ci/workers.yml：
+#   BUNDLE 参数的实际语义是 pin targets 列表，且是环境无关的扁平列表。
+#   .ci/runtime/gates/config.py 对列表里的每一个 pin target 强制要求
+#   argocd/services/<pin-target>/<env>/kustomization.yaml 存在。
+#   往现有 BUNDLE 追加 workers-website-deployer 会让 shanghai-workers 的 auto-pin
+#   找不到 argocd/services/workers-website-deployer/shanghai-workers/ 而失败；
+#   反之 shprod promote 又会找不到 argocd/services/workers-rescue-exporter/shprod/。
+#   另有两个契约测试把 .ci/workers.yml 的 BUNDLE 值写死。
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - workers/cmd/website-deployer/**
+      - workers/internal/website/**
+      - workers/go.mod
+      - workers/go.sum
+      - workers/Dockerfile
+      - workers/k8s/overlays/sgprod/**
+      - argocd/services/workers-website-deployer/**
+      - argocd/apps/sgprod/workers-website-deployer.yaml
+      - argocd/projects/sgprod-workers-website-deployer.yaml
+      - argocd/secrets/sgprod/website-deployer-secrets.sops.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  # 必须与 mono2-service-release-workers 不同，否则两条通道互相排队。
+  group: mono2-service-release-workers-website-deployer
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
+extends:
+  template: service-release.yml
+  # Refresh compiled Stream pipeline after service-release template changes.
+  parameters:
+    SERVICE: workers
+    BUNDLE: workers-website-deployer
+    DISPLAY_NAME: workers-website-deployer
+    DEFAULT_TARGET_ENV: sgprod
+    MASTER_BUILD_ENVS: sgprod
+    # none => sgprod 只走人工审批 + 人工 promote，不自动 pin。
+    MASTER_AUTO_PIN_ENVS: none
+    ENABLE_MASTER_PROD_PROMOTE: true
+    # 迁移归 ctl 的发布通道（.ci/ctl.yml / .ci/db-migration.yml），worker 通道不碰 DB。
+    ENABLE_MASTER_PROD_DB_MIGRATION: false
+    PLAYGROUND_BUILD_ENVS: none
+    PLAYGROUND_AUTO_PIN_ENVS: none
+    RUNNER_POOL_NAME: cn-pool
+    PRINT_RUNNER_DIAGNOSTICS: true

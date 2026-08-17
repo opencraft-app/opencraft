@@ -36,6 +36,7 @@
   "dependencies": {
     "@babel/runtime-corejs3": "7.29.7",
     "@orama/orama": "3.1.18",
+    "@orama/tokenizers": "3.1.18",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-scroll-area": "^1.2.10",
@@ -44,7 +45,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@rollup/rollup-darwin-arm64": "^4.60.0",
     "@tanstack/react-virtual": "^3.14.3",
-    "@tencent/agentchat-lightvela-panel": "0.3.1",
+    "@tencent/agentchat-lightvela-panel": "1.2.6",
     "@tencent/i18n": "^2.0.30",
     "@tencent/tcb-jssdk": "2.0.27",
     "@tencent/tea-sdk-lightclaw": "1.10.1",
@@ -111,9 +112,6 @@
     ],
     "overrides": {
       "xlsx": "0.18.5"
-    },
-    "patchedDependencies": {
-      "@tencent/agentchat-claw-components@0.3.1": "patches/@tencent__agentchat-claw-components@0.3.1.patch"
     }
   }
 }

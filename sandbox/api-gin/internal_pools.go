@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"cvm-mock-e2b/internal/core"
+	"cvm-mock-e2b/internal/service"
 )
 
 type patchPoolRequest struct {
@@ -16,26 +17,26 @@ type patchPoolRequest struct {
 	MarkCleanAsDry bool             `json:"mark_clean_as_dry"`
 	DesiredCapcity *int             `json:"desired_capacity"`
 	InstanceType   *string          `json:"instance_type"`
+	SystemDiskSize *int             `json:"system_disk_size"`
 	Status         *core.PoolStatus `json:"status"`
 	PauseReason    *string          `json:"pause_reason"`
 	VpcID          *string          `json:"vpc_id"`
 	SubnetID       *string          `json:"subnet_id"`
 	Zone           *string          `json:"zone"`
 	SecurityGroups *[]string        `json:"security_groups"`
+	SKUID          *string          `json:"sku_id"`
 }
 
 type createPoolRequest struct {
-	Name           string           `json:"name"`
-	Description    string           `json:"description"`
-	BaseImage      string           `json:"base_image"`
-	DesiredCapcity int              `json:"desired_capacity"`
-	InstanceType   string           `json:"instance_type"`
-	Status         core.PoolStatus  `json:"status"`
-	PauseReason    string           `json:"pause_reason"`
-	VpcID          string           `json:"vpc_id"`
-	SubnetID       string           `json:"subnet_id"`
-	Zone           string           `json:"zone"`
-	SecurityGroups []string         `json:"security_groups"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	BaseImage      string   `json:"base_image"`
+	InstanceType   string   `json:"instance_type"`
+	VpcID          string   `json:"vpc_id"`
+	SubnetID       string   `json:"subnet_id"`
+	Zone           string   `json:"zone"`
+	SecurityGroups []string `json:"security_groups"`
+	SKUID          string   `json:"sku_id"`
 }
 
 func registerPoolRoutes(r gin.IRouter, h *handler) {
@@ -75,41 +76,20 @@ func (h *handler) createPool(c *gin.Context) {
 		return
 	}
 
-	pool, err := h.svc.CreatePool(
-		c.Request.Context(),
-		strings.TrimSpace(req.Name),
-		strings.TrimSpace(req.Description),
-		strings.TrimSpace(req.BaseImage),
-		req.DesiredCapcity,
-		strings.TrimSpace(req.VpcID),
-		strings.TrimSpace(req.SubnetID),
-		strings.TrimSpace(req.Zone),
-		req.SecurityGroups,
-	)
+	pool, err := h.svc.CreateBoundPool(c.Request.Context(), service.CreateBoundPoolInput{
+		Name:           req.Name,
+		Description:    req.Description,
+		BaseImage:      req.BaseImage,
+		InstanceType:   req.InstanceType,
+		SKUID:          req.SKUID,
+		VpcID:          req.VpcID,
+		SubnetID:       req.SubnetID,
+		Zone:           req.Zone,
+		SecurityGroups: req.SecurityGroups,
+	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
-	}
-
-	needsUpdate := false
-	if trimmed := strings.TrimSpace(req.InstanceType); trimmed != "" {
-		pool.InstanceType = trimmed
-		needsUpdate = true
-	}
-	if req.Status != "" {
-		pool.Status = req.Status
-		needsUpdate = true
-	}
-	if trimmed := strings.TrimSpace(req.PauseReason); trimmed != "" {
-		pool.PauseReason = trimmed
-		needsUpdate = true
-	}
-	if needsUpdate {
-		pool, err = h.svc.UpdatePool(c.Request.Context(), pool)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
 	}
 
 	c.JSON(http.StatusCreated, pool)
@@ -150,6 +130,9 @@ func (h *handler) patchPool(c *gin.Context) {
 	if req.InstanceType != nil {
 		pool.InstanceType = *req.InstanceType
 	}
+	if req.SystemDiskSize != nil {
+		pool.SystemDiskSize = *req.SystemDiskSize
+	}
 	if req.Status != nil {
 		pool.Status = *req.Status
 	}
@@ -168,10 +151,17 @@ func (h *handler) patchPool(c *gin.Context) {
 	if req.SecurityGroups != nil {
 		pool.SecurityGroups = *req.SecurityGroups
 	}
+	if req.SKUID != nil {
+		pool, err = h.svc.BindPoolSKU(c.Request.Context(), pool, *req.SKUID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
 
 	pool, err = h.svc.UpdatePool(c.Request.Context(), pool)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	shouldMarkCleanDry := false

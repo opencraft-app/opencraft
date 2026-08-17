@@ -66,10 +66,46 @@ class BuildReleaseImageTests(unittest.TestCase):
             playground_frontend_auth_api_base_url("sandbox-kr-1"),
             "https://api-sandbox-kr-1.lightclaw.tech",
         )
+        self.assertEqual(
+            playground_frontend_auth_api_base_url("sandbox-jp-1"),
+            "https://api-sandbox-jp-1.lightclaw.tech",
+        )
+
+    def test_frontend_japan_playground_build_bakes_env_scoped_auth_api_base(self) -> None:
+        self.assertEqual(
+            resolve_docker_build_args("frontend", "sandbox-jp-1"),
+            {
+                "NEXT_PUBLIC_AUTH_API_BASE_URL": "https://api-sandbox-jp-1.lightclaw.tech",
+                "NEXT_PUBLIC_REGION": "global",
+                "VITE_AUTH_API_BASE_URL": "https://api-sandbox-jp-1.lightclaw.tech",
+                "VITE_REGION": "global",
+            },
+        )
+
+    def test_frontend_dockerfile_accepts_region_build_arguments(self) -> None:
+        dockerfile = (REPO_ROOT / "frontend/deploy/Dockerfile").read_text()
+
+        for name in ("VITE_REGION", "NEXT_PUBLIC_REGION"):
+            with self.subTest(name=name):
+                self.assertIn(f"ARG {name}=cn", dockerfile)
+                self.assertIn(f'ENV {name}="${{{name}}}"', dockerfile)
+
+    def test_frontend_dockerfile_includes_monorepo_file_dependency(self) -> None:
+        dockerfile = (REPO_ROOT / "frontend/deploy/Dockerfile").read_text()
+        dockerignore = (REPO_ROOT / "frontend/deploy/Dockerfile.dockerignore").read_text()
+
+        self.assertIn("COPY frontend/package.json frontend/pnpm-lock.yaml frontend/.npmrc ./", dockerfile)
+        self.assertIn("COPY velalink /velalink", dockerfile)
+        self.assertIn("COPY frontend/deploy/nginx.conf /etc/nginx/conf.d/default.conf", dockerfile)
+        self.assertEqual(
+            dockerignore.splitlines(),
+            ["**", "!frontend/", "!frontend/**", "!velalink/", "!velalink/**"],
+        )
 
     def test_playground_frontend_region_uses_cluster_region(self) -> None:
         self.assertEqual(playground_frontend_region("sandbox-bj-7"), "cn")
         self.assertEqual(playground_frontend_region("sandbox-kr-1"), "global")
+        self.assertEqual(playground_frontend_region("sandbox-jp-1"), "global")
 
     def test_frontend_non_playground_build_has_no_extra_build_args(self) -> None:
         self.assertEqual(resolve_docker_build_args("frontend", "shprod"), {})
@@ -320,7 +356,7 @@ class BuildReleaseImageTests(unittest.TestCase):
             mock.patch("contracts.build_release_image.build_target") as build:
             self.assertEqual(main(), 0)
 
-            verify.assert_called_once_with([expected_image], log_missing_errors=False)
+            verify.assert_called_once_with([expected_image])
             build.assert_not_called()
             self.assertEqual((Path(tmp) / "image.txt").read_text().strip(), expected_image)
 
@@ -361,7 +397,7 @@ class BuildReleaseImageTests(unittest.TestCase):
             mock.patch("contracts.build_release_image.build_target", return_value=expected_image) as build:
             self.assertEqual(main(), 0)
 
-            verify.assert_called_once_with([expected_image], log_missing_errors=False)
+            verify.assert_called_once_with([expected_image])
             build.assert_called_once_with(
                 ImageTarget(
                     name="user-auth",

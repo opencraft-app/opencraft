@@ -1,6 +1,8 @@
 # LightVela vs 本地部署 Agent：哪个更好？
 
-![LightVela 云端设置与本地运行 Hermes 的对比](../images/lightvela-vs-self-hosted-hermes.png)
+![LightVela 云端设置与本地运行 Hermes 的对比](../images/lightvela-vs-self-hosted-hermes.webp)
+
+## 摘要
 
 **如果你希望 Hermes Agent 始终在线，同时不想维护底层电脑，LightVela 更适合你。** 如果你希望亲自掌控运行环境、工具、更新和本地配置，那么在自己的电脑上运行 Hermes 会更合适。两者的区别，归根结底在于：你想负责运行这套环境，还是只想直接使用 Agent。
 

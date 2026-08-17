@@ -130,6 +130,7 @@ export interface DebugExecCommandResult {
 }
 
 export interface DebugExecCommandLifecycle {
+  transformCommand?: (context: DebugExecCommandContext) => Promise<string | undefined> | string | undefined;
   beforeExecute?: (context: DebugExecCommandContext) => Promise<unknown>;
   afterExecute?: (context: DebugExecCommandContext & {
     metadata: unknown;
@@ -333,7 +334,9 @@ export function createMonoDebugExecAdapter(
     }
 
     // SDK 把脚本 Base64 编码塞进 Content；后端 `command` 字段期望明文。
-    const command = b64.decode(data.Content ?? "");
+    const decodedCommand = b64.decode(data.Content ?? "");
+    const transformedCommand = await commandLifecycle?.transformCommand?.({ botId, command: decodedCommand });
+    const command = transformedCommand ?? decodedCommand;
     const metadata = await commandLifecycle?.beforeExecute?.({ botId, command });
 
     // 把 botId 和 command 缓存，供 getInvocationTask 使用

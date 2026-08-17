@@ -9,6 +9,7 @@ bundles:
     - frontend/k8s/overlays/shprod
     - frontend/k8s/overlays/sgprod
     - frontend/deploy/Dockerfile
+    - velalink
     exit_condition: Can be removed only after the deployable contract moves to an
       explicit imported package path.
     publish_paths:
@@ -23,4 +24,5 @@ bundles:
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend
       sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/frontend
       sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/frontend
+      sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/frontend
     publish_paths_by_env: {}

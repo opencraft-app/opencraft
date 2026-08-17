@@ -8,6 +8,9 @@ export const docs = defineDocs({
     schema: frontmatterSchema.extend({
       description: z.string().optional(),
       source_path: z.string().optional(),
+      // 正文已自带「摘要 / Summary」段时置为 true：页面顶部不再重复渲染
+      // description 段落，但 description 仍用于 SEO meta。
+      hide_description: z.boolean().optional(),
     }),
     postprocess: {
       includeProcessedMarkdown: true,

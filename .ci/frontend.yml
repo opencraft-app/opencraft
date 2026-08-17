@@ -59,6 +59,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 50
+              enableVirtualMergeBranch: false
           - name: 打印 frontend 构建上下文
             shell: bash
             run: |

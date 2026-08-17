@@ -135,13 +135,18 @@ const resetState = () => {
 };
 
 describe("SubscribePage", () => {
-  beforeEach(resetState);
+  beforeEach(() => {
+    cleanup();
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    resetState();
+    (globalThis as { React?: typeof React }).React = React;
+  });
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("defaults launch and cruise cards to their AI credit tiers", async () => {
-    (globalThis as { React?: typeof React }).React = React;
+  it("shows low credit tiers first and selects them by default", async () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
 
     render(<SubscribePage />);
@@ -150,17 +155,21 @@ describe("SubscribePage", () => {
 
     await waitFor(() => {
       expect(getCreditTabs().map(getCreditValue)).toEqual([
-        "4500",
         "100",
-        "10000",
+        "4500",
         "200",
+        "10000",
       ]);
     });
-    expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "true");
-    expect(getCreditTab("10000")).toHaveAttribute("aria-selected", "true");
-    expect(getCreditTab("100")).toHaveAttribute("aria-selected", "false");
-    expect(getCreditTab("200")).toHaveAttribute("aria-selected", "false");
+    expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "false");
+    expect(getCreditTab("10000")).toHaveAttribute("aria-selected", "false");
+    expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
+    expect(getCreditTab("200")).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByText("14天免费体验")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "退款规则" })).toHaveAttribute(
+      "href",
+      "/docs/plans/#%E9%80%80%E6%AC%BE%E8%A7%84%E5%88%99",
+    );
   });
 });
 

@@ -11,6 +11,15 @@
       ]
     },
     {
+      "id": "saved-x-markdown-uses-x-folder",
+      "prompt": "Write and save an English X feature-introduction article about LightVela Automations as an MD file.",
+      "expect": [
+        "Resolved brief uses platform=x, form=md, storage_folder=x, and attribution=social_x.",
+        "Saves the article to product/longform-content/x/<yyyy-mm-dd>-<slug>.en.md.",
+        "Does not save the article directly in product/longform-content/."
+      ]
+    },
+    {
       "id": "x-community-ending-is-required",
       "prompt": "Write a complete English feature-introduction article for X.",
       "expect": [
@@ -24,7 +33,7 @@
       "prompt": "Write a Techpedia tutorial about LightVela automations.",
       "expect": [
         "Resolved brief uses platform=techpedia, language=both, form=md, output_shape=markdown-files, attribution=social_techpedia.",
-        "A publication-ready .zh.md and .en.md file are created.",
+        "A publication-ready .zh.md and .en.md file are created in product/longform-content/techpedia/.",
         "Each file has language-localized LightVela links with from=social_techpedia and its own language-matched Community Ending."
       ]
     },

@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# shprod 只部署 website-deployer，不引入 workers/k8s/base
+# （base 里是 rescue-exporter 相关资源，属于 shanghai-workers 集群）。
+resources:
+- website-deployer

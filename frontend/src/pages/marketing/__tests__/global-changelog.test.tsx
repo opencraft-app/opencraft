@@ -53,6 +53,107 @@ afterEach(() => {
 });
 
 describe("global changelog skill package entry", () => {
+  it("shows the new global August updates in every global locale", async () => {
+    await i18n.changeLanguage("zh-CN");
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("2026 年 8 月")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "技能页面支持批量安装与来源查看" })).toBeInTheDocument();
+    expect(screen.getByText("安装多个 Skill 时可以查看实时进度，并从技能页面直接打开 ClawHub 或 skills.sh 的原始来源页面。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "自动任务模板" })).toBeInTheDocument();
+    expect(screen.getByText("选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "支持在 QQ 群聊中 @ 机器人" })).toBeInTheDocument();
+    expect(screen.getByText("将 Hermes Agent 添加到 QQ 群后，@ 机器人即可开始对话。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "支持繁体中文" })).toBeInTheDocument();
+    expect(screen.getByText("现在可以使用繁体中文浏览 LightVela 的公开页面、产品文档和账号流程。")).toBeInTheDocument();
+    expect(screen.getByAltText("技能页面支持批量安装与来源查看")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-zh.png"),
+    );
+    expect(screen.getByAltText("自动任务模板")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-zh.png"),
+    );
+    expect(screen.getByAltText("支持在 QQ 群聊中 @ 机器人")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-qq-group-mentions-global-zh.png"),
+    );
+    expect(screen.getByAltText("支持繁体中文")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.png"),
+    );
+    const zhHeadings = screen.getAllByRole("heading").map((heading) => heading.textContent);
+    expect(zhHeadings).not.toContain("定价支持更多套餐与订阅方式");
+
+    cleanup();
+    await i18n.changeLanguage("en-US");
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Skills Page Gets Faster Installs and Clearer Sources" })).toBeInTheDocument();
+    expect(screen.getByText("Install multiple Skills with live progress and open their original ClawHub or skills.sh source pages directly from the Skills page.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ready-Made Automation Templates" })).toBeInTheDocument();
+    expect(screen.getByText("Choose a ready-made automation template, run it once, and turn it into an ongoing task when it works for you.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "QQ Group @Mentions Are Now Supported" })).toBeInTheDocument();
+    expect(screen.getByText("Add your Hermes Agent to a QQ group and @mention it to start a conversation.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Traditional Chinese Is Now Available" })).toBeInTheDocument();
+    expect(screen.getByText("Browse LightVela's public pages, documentation, and account flows in Traditional Chinese.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Pricing Is Now Available with More Flexible Billing" })).not.toBeInTheDocument();
+    expect(screen.getByAltText("Skills Page Gets Faster Installs and Clearer Sources")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-en.png"),
+    );
+    expect(screen.getByAltText("Ready-Made Automation Templates")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-en.png"),
+    );
+    expect(screen.getByAltText("QQ Group @Mentions Are Now Supported")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-qq-group-mentions-global-en.png"),
+    );
+    expect(screen.getByAltText("Traditional Chinese Is Now Available")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.png"),
+    );
+
+    cleanup();
+    await i18n.changeLanguage("zh-Hant");
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("heading", { name: "技能頁面支持批量安裝與來源查看" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "自動任務模板" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "支持在 QQ 群聊中 @ 機器人" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "支持繁體中文" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "定價支持更多套餐與訂閲方式" })).not.toBeInTheDocument();
+    expect(screen.getByAltText("技能頁面支持批量安裝與來源查看")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-zh.png"),
+    );
+    expect(screen.getByAltText("自動任務模板")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-zh.png"),
+    );
+    expect(screen.getByAltText("支持在 QQ 群聊中 @ 機器人")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-qq-group-mentions-global-zh.png"),
+    );
+    expect(screen.getByAltText("支持繁體中文")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.png"),
+    );
+  });
+
   it("uses locale-specific skill package copy and screenshots", async () => {
     await i18n.changeLanguage("zh-CN");
     render(

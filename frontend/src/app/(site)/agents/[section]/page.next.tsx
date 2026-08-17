@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { AgentsPageClient } from '@next-site/agents-page-client';
 import { AGENT_SECTION_ID_BY_SLUG } from '@/lib/agent-routes';
+import { isGlobal } from '@/lib/region';
 
 export const metadata: Metadata = {
   title: '我的智能体伙伴',
@@ -13,12 +14,14 @@ export const metadata: Metadata = {
 };
 
 export function generateStaticParams(): Array<{ section: string }> {
-  return Object.keys(AGENT_SECTION_ID_BY_SLUG).map((section) => ({ section }));
+  return Object.keys(AGENT_SECTION_ID_BY_SLUG)
+    .filter((section) => isGlobal || section !== 'websites')
+    .map((section) => ({ section }));
 }
 
 export default async function AgentsSectionPage({ params }: { params: Promise<{ section: string }> }) {
   const { section } = await params;
   const sectionId = AGENT_SECTION_ID_BY_SLUG[section];
-  if (!sectionId) notFound();
+  if (!sectionId || (!isGlobal && sectionId === 'website')) notFound();
   return <AgentsPageClient initialSectionSlug={section} sectionId={sectionId} />;
 }

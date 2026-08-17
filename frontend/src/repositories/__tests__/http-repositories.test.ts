@@ -1459,6 +1459,41 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("streams debug command stdout and returns the final command response", async () => {
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: stdout\ndata: {"type":"stdout","stream":"stdout","chunk":"first\\n"}\n'));
+        controller.enqueue(encoder.encode('\nevent: stdout\ndata: {"type":"stdout","stream":"stdout","chunk":"second\\n"}\n\n'));
+        controller.enqueue(encoder.encode('event: finished\ndata: {"type":"finished","response":{"status":"SUCCESS","exit_code":0,"output":"first\\nsecond\\n"}}\n\n'));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(body, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const chunks: string[] = [];
+
+    const result = await repositories.bots.execDebugCommandStream(
+      "bot-1",
+      "acli skills batch-install --wait=true 'react'",
+      ({ stream, chunk }) => chunks.push(`${stream}:${chunk}`),
+      { timeoutMs: 650_000 },
+    );
+
+    expect(chunks).toEqual(["stdout:first\n", "stdout:second\n"]);
+    expect(result).toEqual({ status: "SUCCESS", exitCode: 0, output: "first\nsecond\n" });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).get("Accept")).toBe("text/event-stream");
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      command: "acli skills batch-install --wait=true 'react'",
+      run_as_user: "agentuser",
+    });
+  });
+
   it("aborts a debug command after the requested timeout", async () => {
     vi.useFakeTimers();
     try {

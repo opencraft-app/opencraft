@@ -68,6 +68,12 @@ export const oauthErrorMessage = (oauthError: string | null) => {
   if (oauthError === "github_registration_disabled") {
     return "GitHub registration is unavailable. Please sign in with Google.";
   }
+  if (oauthError === "github_email_suffix_blocked") {
+    return "This email domain is not supported for registration. Please use another email.";
+  }
+  if (oauthError === "github_email_required") {
+    return "GitHub needs a verified email to register. Please add or verify your primary email on GitHub, then try again.";
+  }
   if (oauthError === "qq_registration_disabled") {
     return "QQ 暂不开放新用户注册，请使用微信登录。";
   }

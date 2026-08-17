@@ -1,0 +1,308 @@
+# Tokyo is an independently credentialed environment. Beijing manifests define
+# only the resource shape and required key names; no Beijing value may be copied
+# into any SSM item declared here. Managed database administrator credentials
+# stay out of application SSM payloads and Kubernetes workloads.
+defaults:
+  region: ap-tokyo
+  version_id: SSM_Current
+  age_recipients:
+    - age1q4s9kt3h5n0fgmez4kyp7tsahgjhuxpyeteye8lp46kqkyvardusctl258
+
+items:
+  - id: admin-gateway-runtime-secrets
+    secret_name: mono-sandbox-jp-1-admin-gateway-runtime-secrets
+    required_keys:
+      - SERVICE_GATEWAY_ADMIN_BASIC_AUTH_PASSWORD
+      - SERVICE_GATEWAY_ADMIN_BASIC_AUTH_USER
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: admin-gateway-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-jp-1/admin-gateway-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: admin-gateway
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: ai-gateway-runtime-secrets
+    secret_name: mono-sandbox-jp-1-ai-gateway-runtime-secrets
+    required_keys:
+      - ADMIN_TOKEN
+      - AI_GATEWAY_DB_PASSWORD
+      - AI_GATEWAY_MIGRATE_DSN
+      - DATABASE_URL
+      - ENCRYPTION_KEY
+      - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+      - REDIS_PASSWORD
+      - REGISTRY_TOKEN
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: ai-gateway-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-jp-1/ai-gateway-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: ai-gateway
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: cloudladder-callback-secrets
+    secret_name: mono-sandbox-jp-1-cloudladder-callback-secrets
+    required_keys:
+      - SHADOW_TENCENT_CALLBACK_TOKEN
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: cloudladder-callback-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-jp-1/cloudladder-callback-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: lightclaw-auth
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: credit-runtime-secrets
+    secret_name: mono-sandbox-jp-1-credit-runtime-secrets
+    required_keys:
+      - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+      - CREDIT_DB_PASSWORD
+      - LLMGATEWAY_INTERNAL_SERVICE_TOKEN
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: credit-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-jp-1/credit-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: credit
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: ctl-conf-common
+    secret_name: mono-sandbox-jp-1-ctl-conf-common
+    required_keys:
+      - server_conf.toml
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: ctl-conf-common
+    kubernetes_resource_kind: ConfigMap
+    output_path: argocd/secrets/sandbox-jp-1/ctl-conf-common.sops.yaml
+    string_key: server_conf.toml
+    labels:
+      app.kubernetes.io/name: ctl
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: ctl-conf-rewrite
+    secret_name: mono-sandbox-jp-1-ctl-conf-rewrite
+    required_keys:
+      - server_conf_rewrite.toml
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: ctl-conf-rewrite
+    kubernetes_resource_kind: ConfigMap
+    output_path: argocd/secrets/sandbox-jp-1/ctl-conf-rewrite.sops.yaml
+    string_key: server_conf_rewrite.toml
+    labels:
+      app.kubernetes.io/name: ctl
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: ctl-runtime-secrets
+    secret_name: mono-sandbox-jp-1-ctl-runtime-secrets
+    required_keys:
+      - AGENTCHAT_LAUNCH_TOKEN_SECRET
+      - AGENTCHAT_SECRET_ID
+      - AGENTCHAT_SECRET_KEY
+      - CTL_AIGATEWAY_ADMIN_TOKEN
+      - CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN
+      - CTL_DB_PASSWORD
+      - CTL_INTERNAL_TOKEN
+      - CTL_MQ_STREAM_KEY
+      - CTL_REDIS_PASS
+      - CTL_TEST_AIGATEWAY_INTERNAL_TOKEN
+      - CTL_LLMGATEWAY_BASE_URL
+      - CTL_LLMGATEWAY_ADMIN_TOKEN
+      - CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN
+      - CTL_LLMGATEWAY_DEFAULT_BASE_URL
+      - CTL_LLMGATEWAY_DEFAULT_MODEL_ID
+      - CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
+      - CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: ctl-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-jp-1/ctl-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    plaintext_keys:
+      - CTL_LLMGATEWAY_BASE_URL
+      - CTL_LLMGATEWAY_DEFAULT_BASE_URL
+      - CTL_LLMGATEWAY_DEFAULT_MODEL_ID
+      - CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
+      - CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST
+    labels:
+      app.kubernetes.io/name: ctl
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: gateway-dashboard-runtime-secrets
+    secret_name: mono-sandbox-jp-1-gateway-dashboard-runtime-secrets
+    required_keys:
+      - ADMIN_TOKEN
+      - AUTH_ADMIN_TOKEN
+      - SUBSCRIPTION_ADMIN_TOKEN
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: gateway-dashboard-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-jp-1/gateway-dashboard-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: gateway-dashboard
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: nextgen-dashboard-runtime-secrets
+    secret_name: mono-sandbox-jp-1-nextgen-dashboard-runtime-secrets
+    required_keys:
+      - NEXTGEN_DASHBOARD_BASIC_AUTH_USER
+      - NEXTGEN_DASHBOARD_BASIC_AUTH_PASSWORD
+      - NEXTGEN_DASHBOARD_RUNNER_TOKEN
+      - NEXTGEN_DASHBOARD_PROXY_TOKEN_SECRET
+      - NEXTGEN_DASHBOARD_AUTH_MYSQL_DSN
+      - NEXTGEN_DASHBOARD_SANDBOX_MYSQL_DSN
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: nextgen-dashboard-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-jp-1/nextgen-dashboard-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: nextgen-dashboard
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: payment-runtime-secrets
+    secret_name: mono-sandbox-jp-1-payment-runtime-secrets
+    required_keys:
+      - AI_GATEWAY_ADMIN_TOKEN
+      - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+      - PAYMENT_DB_PASSWORD
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: payment-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-jp-1/payment-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: payment
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: sandbox-runtime-secrets
+    secret_name: mono-sandbox-jp-1-sandbox-runtime-secrets
+    required_keys:
+      - MYSQL_PASSWORD
+      - MYSQL_USER
+      - REDIS_PASSWORD
+      - TENCENT_SECRET_ID
+      - TENCENT_SECRET_KEY
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: sandbox-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-jp-1/sandbox-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: sandbox
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: service-gateway-runtime-secrets
+    secret_name: mono-sandbox-jp-1-service-gateway-runtime-secrets
+    required_keys:
+      - SERVICE_GATEWAY_ADMIN_BASIC_AUTH_PASSWORD
+      - SERVICE_GATEWAY_ADMIN_BASIC_AUTH_USER
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: service-gateway-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-jp-1/service-gateway-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: service-gateway
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: session-runtime-secrets
+    secret_name: mono-sandbox-jp-1-session-runtime-secrets
+    required_keys:
+      - SESSION_DB_PASSWORD
+      - SESSION_MYSQL_DSN
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: session-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-jp-1/session-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: session
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: shadow-runtime-secrets
+    secret_name: mono-sandbox-jp-1-shadow-runtime-secrets
+    required_keys:
+      - CLOUDLADDER_SHADOW_HMAC_SECRET
+      - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+      - SHADOW_SECRET_ID
+      - SHADOW_SECRET_KEY
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: shadow-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-jp-1/shadow-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: shadow
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: subscription-runtime-secrets
+    secret_name: mono-sandbox-jp-1-subscription-runtime-secrets
+    required_keys:
+      - AI_GATEWAY_ADMIN_TOKEN
+      - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+      - SUBSCRIPTION_ADMIN_TOKEN
+      - SUBSCRIPTION_DB_PASSWORD
+      - SUBSCRIPTION_MYSQL_DSN
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: subscription-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-jp-1/subscription-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: subscription
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: trade-runtime-secrets
+    secret_name: mono-sandbox-jp-1-trade-runtime-secrets
+    required_keys:
+      - TRADE_DB_PASSWORD
+      - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+      - TRADE_TENCENT_BILLING_SIGNATURE_KEY
+      - JIFEI_BILLING_APP_ID
+      - JIFEI_BILLING_APP_SECRET
+    namespace: lightvela-playground-sandbox-jp-1
+    kubernetes_resource_name: trade-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-jp-1/trade-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: trade
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py

@@ -81,6 +81,25 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         self.assertTrue(plan.auto_merge_allowed)
         self.assertTrue(plan.auto_sync_allowed)
 
+    def test_tokyo_onboarding_auto_merges_without_argo_sync(self) -> None:
+        for env in ("sandbox-jp-1", "sandbox-jp-2"):
+            with self.subTest(env=env):
+                with self._repo_with_commit("service-gateway/internal/api.go") as (repo_root, source_sha):
+                    plan = plan_release_gates(
+                        repo_root=repo_root,
+                        bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
+                        service="service-gateway",
+                        env=env,
+                        source_sha=source_sha,
+                        image="example.com/service-gateway:test",
+                        pin_targets="service-gateway",
+                    )
+
+                self.assertEqual(plan.argo_sync, "manual")
+                self.assertTrue(plan.auto_merge_allowed)
+                self.assertFalse(plan.auto_sync_allowed)
+                self.assertIn("manual Argo sync required", "\n".join(plan.manual_actions))
+
     def test_devcloud_dep_channelgateway_auto_merges_and_syncs(self) -> None:
         with self._repo_with_commit("cloudagent/channelgateway/README.md") as (repo_root, source_sha):
             plan = plan_release_gates(
@@ -287,6 +306,25 @@ class ReleaseGatePlannerTests(unittest.TestCase):
                 pin_targets="service-gateway",
             )
 
+        self.assertFalse(plan.release_dependency_changed)
+        self.assertTrue(plan.auto_merge_allowed)
+        self.assertTrue(plan.auto_sync_allowed)
+
+    def test_trade_korea_playground_ignores_dependency_source_changes(self) -> None:
+        with self._repo_with_commit("ctl/main/api/bundle_handler.go") as (repo_root, source_sha):
+            plan = plan_release_gates(
+                repo_root=repo_root,
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
+                service="trade",
+                env="sandbox-kr-1",
+                source_sha=source_sha,
+                image="example.com/trade:test",
+                pin_targets="trade",
+                db_status="passed",
+            )
+
+        self.assertEqual(plan.argo_sync, "auto")
+        self.assertEqual(plan.release_dependencies, [])
         self.assertFalse(plan.release_dependency_changed)
         self.assertTrue(plan.auto_merge_allowed)
         self.assertTrue(plan.auto_sync_allowed)

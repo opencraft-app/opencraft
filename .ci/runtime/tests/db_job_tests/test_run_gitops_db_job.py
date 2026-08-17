@@ -124,6 +124,41 @@ class RunGitopsDbJobTests(unittest.TestCase):
         self.assertEqual(cluster_name, "seoul-sandbox")
         self.assertEqual(namespace, "lightvela-playground-sandbox-kr-1")
 
+    def test_tokyo_playground_kubeconfig_uses_tokyo_catalog_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            catalog = Path(tmp) / "argocd/catalogs/playground/tokyo-playground/sandbox-jp-1/ctl.yaml"
+            catalog.parent.mkdir(parents=True)
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "service: ctl",
+                        "env: sandbox-jp-1",
+                        "destinationName: tokyo-playground",
+                        "namespace: lightvela-playground-sandbox-jp-1",
+                    ]
+                )
+                + "\n"
+            )
+
+            cluster_name = db_job.resolve_kubeconfig_cluster_name(
+                {"PULUMI_ENV_NAME": "sandbox-jp-1"},
+                Path(tmp),
+                "sandbox-jp-1",
+                "ctl",
+            )
+            namespace = db_job.resolve_job_namespace(Path(tmp), "sandbox-jp-1", "ctl", "")
+
+        self.assertEqual(cluster_name, "tokyo-playground")
+        self.assertEqual(namespace, "lightvela-playground-sandbox-jp-1")
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "/etc/lightclaw-ci/kubeconfig_tokyo_playground"):
+                db_job.resolve_kubeconfig(
+                    {"PULUMI_ENV_NAME": "sandbox-jp-1"},
+                    "DB_JOB_KUBECONFIG_B64",
+                    cluster_name,
+                    allow_ci_default_file=False,
+                )
+
     def test_main_uses_playground_catalog_cluster_for_kubeconfig(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             deploy_root = Path(tmp)
@@ -423,7 +458,7 @@ class RunGitopsDbJobTests(unittest.TestCase):
         self.assertIn("/ctl_sandbox_kr_1?multiStatements=true", resources[0]["stringData"]["CTL_MIGRATE_DSN"])
         self.assertEqual(dynamic["initContainers"][0]["env"][3]["value"], "ctl_sandbox_kr_1")
 
-    def test_ctl_playground_job_prefers_contract_secret_resolver(self) -> None:
+    def test_ctl_playground_job_reads_mysql_root_from_runtime_secret(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             migrations = Path(tmp) / "ctl" / "migrations"
             migrations.mkdir(parents=True)
@@ -458,43 +493,9 @@ class RunGitopsDbJobTests(unittest.TestCase):
                     "/tmp/kubeconfig",
                 )
 
-        self.assertEqual(resources[0]["stringData"]["MYSQL_ROOT_PASSWORD"], "business-password")
-        self.assertIn("business-password@", resources[0]["stringData"]["CTL_MIGRATE_DSN"])
-        self.assertNotIn("root-password", resources[0]["stringData"]["CTL_MIGRATE_DSN"])
-
-    def test_ctl_playground_job_falls_back_to_mysql_root_runtime_secret(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            migrations = Path(tmp) / "ctl" / "migrations"
-            migrations.mkdir(parents=True)
-            (migrations / "000001_init.up.sql").write_text("select 1;\n")
-            with mock.patch.object(db_job, "REPO_ROOT", Path(tmp)), \
-                mock.patch.object(db_job, "resolve_contract_secret_values", return_value={}), \
-                mock.patch.object(db_job, "kubectl_secret_value", return_value="root-password"), \
-                mock.patch.object(
-                    db_job,
-                    "build_configmap_manifest",
-                    return_value={
-                        "apiVersion": "v1",
-                        "kind": "ConfigMap",
-                        "metadata": {
-                            "name": "gitops-ctl-migration-test-migrations",
-                            "namespace": "lightvela-playground-sandbox-bj-7",
-                        },
-                    },
-                ):
-                _, resources = db_job.build_ctl_dynamic_resources(
-                    "gitops-ctl-migration-test",
-                    "lightvela-playground-sandbox-bj-7",
-                    "sandbox-bj-7",
-                    Path("/tmp/gitops"),
-                    {},
-                    {"CTL_TEST_MYSQL_HOST": "mysql.lightvela-playground-sandbox-bj-7.svc.cluster.local"},
-                    {"db_job_secret_resolver": "ctl_db_password"},
-                    "/tmp/kubeconfig",
-                )
-
         self.assertEqual(resources[0]["stringData"]["MYSQL_ROOT_PASSWORD"], "root-password")
         self.assertIn("root-password@", resources[0]["stringData"]["CTL_MIGRATE_DSN"])
+        self.assertNotIn("business-password", resources[0]["stringData"]["CTL_MIGRATE_DSN"])
 
 
 if __name__ == "__main__":

@@ -462,6 +462,31 @@ class DbContractVerifierTests(unittest.TestCase):
         self.assertEqual(cluster_name, "beijing-playground")
         self.assertEqual(namespace, "lightvela-playground-sandbox-bj-7")
 
+    def test_tokyo_playground_target_comes_from_tokyo_catalog(self) -> None:
+        verifier = {"namespace": "ctl"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            catalog = repo_root / "argocd/catalogs/playground/tokyo-playground/sandbox-jp-1/ctl.yaml"
+            catalog.parent.mkdir(parents=True)
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "service: ctl",
+                        "env: sandbox-jp-1",
+                        "destinationName: tokyo-playground",
+                        "namespace: lightvela-playground-sandbox-jp-1",
+                    ]
+                )
+                + "\n"
+            )
+
+            cluster_name = resolve_kubeconfig_cluster_name(repo_root, "sandbox-jp-1", "ctl")
+            namespace = resolve_verifier_namespace(repo_root, "sandbox-jp-1", "ctl", verifier)
+
+        self.assertEqual(cluster_name, "tokyo-playground")
+        self.assertEqual(namespace, "lightvela-playground-sandbox-jp-1")
+
     def test_db_job_service_alias_uses_catalog_service(self) -> None:
         verifier = {"namespace": "user-auth"}
 

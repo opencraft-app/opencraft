@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("fix-next-static-html-lang", () => {
-  it("writes EdgeOne routes for every static HTML page and Next flight sidecar", () => {
+  it("writes compact EdgeOne routes without intercepting ordinary text assets", () => {
     const root = mkdtempSync(join(tmpdir(), "next-edgeone-output-"));
     const out = join(root, "out");
     const script = resolve("scripts/fix-next-static-html-lang.mjs");
@@ -25,18 +25,63 @@ describe("fix-next-static-html-lang", () => {
         { src: "^/__releases/([^/]+)/_next/static/(.*)$", headers: { "cache-control": "public, max-age=31536000, immutable" }, continue: true },
         { src: "^/(.*)\\.html$", headers: { "cache-control": "no-cache" }, continue: true },
         { src: "^/(.*)\\.txt$", headers: { "cache-control": "no-cache" }, continue: true },
-        { src: "^/$", dest: "/index.html", headers: { "cache-control": "no-cache" } },
-        { src: "^/about/?$", dest: "/about/index.html", headers: { "cache-control": "no-cache" } },
-        { src: "^/docs/overview/?$", dest: "/docs/overview/index.html", headers: { "cache-control": "no-cache" } },
-        { src: "^/agents/diagnostics/?$", dest: "/agents/diagnostics/index.html", headers: { "cache-control": "no-cache" } },
         { src: "^/\\.txt$", dest: "/index.txt", headers: { "cache-control": "no-cache" } },
-        { src: "^/about\\.txt$", dest: "/about/index.txt", headers: { "cache-control": "no-cache" } },
-        { src: "^/docs/overview\\.txt$", dest: "/docs/overview/index.txt", headers: { "cache-control": "no-cache" } },
-        { src: "^/agents/diagnostics\\.txt$", dest: "/agents/diagnostics/index.txt", headers: { "cache-control": "no-cache" } },
+        { handle: "filesystem" },
+        { src: "^/([^.]+[^/.])/?$", dest: "/$1/index.html", headers: { "cache-control": "no-cache" } },
       ]));
-      expect(config.routes.indexOf(config.routes.find((route) => route.handle === "filesystem")))
-        .toBeGreaterThan(config.routes.findIndex((route) => route.src === "^/__releases/([^/]+)/_next/static/(.*)$"));
+      expect(config.routes).not.toContainEqual(expect.objectContaining({ src: "^/$" }));
+      expect(config.routes).not.toContainEqual(expect.objectContaining({ dest: "/index.html" }));
+
+      const flightRoutes = config.routes.filter((route) => route.dest === "/$1/index.txt");
+      for (const path of ["/about.txt", "/docs/overview.txt", "/agents/diagnostics.txt"]) {
+        expect(flightRoutes.some((route) => new RegExp(route.src).test(path))).toBe(true);
+      }
+      for (const path of ["/robots.txt", "/llms.txt", "/about/__next._tree.txt"]) {
+        expect(flightRoutes.some((route) => new RegExp(route.src).test(path))).toBe(false);
+      }
+
+      const textHeaderIndex = config.routes.findIndex((route) => route.src === "^/(.*)\\.txt$");
+      const filesystemIndex = config.routes.findIndex((route) => route.handle === "filesystem");
+      const htmlFallbackIndex = config.routes.findIndex((route) => route.dest === "/$1/index.html");
+      expect(Math.max(...flightRoutes.map((route) => config.routes.indexOf(route)))).toBeLessThan(textHeaderIndex);
+      expect(textHeaderIndex).toBeLessThan(filesystemIndex);
+      expect(filesystemIndex).toBeLessThan(htmlFallbackIndex);
+      expect(config.routes).toHaveLength(7);
+      expect(Buffer.byteLength(JSON.stringify(config))).toBeLessThan(16 * 1024);
+      expect(Math.max(...config.routes.filter((route) => route.src).map((route) => Buffer.byteLength(route.src)))).toBeLessThanOrEqual(480);
       expect(existsSync(join(out, ".edgeone", "assets", "docs", "overview", "index.txt"))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the EdgeOne route config bounded as localized pages grow", { timeout: 30_000 }, () => {
+    const root = mkdtempSync(join(tmpdir(), "next-edgeone-route-budget-"));
+    const out = join(root, "out");
+    const script = resolve("scripts/fix-next-static-html-lang.mjs");
+
+    try {
+      mkdirSync(out, { recursive: true });
+      writeFileSync(join(out, "index.html"), '<html lang="en"><body></body></html>');
+      writeFileSync(join(out, "index.txt"), "root flight");
+      for (const locale of ["en-us", "zh-hant", "zh-sg"]) {
+        for (let index = 0; index < 120; index += 1) {
+          const dir = join(out, locale, "docs", `page-${index.toString().padStart(3, "0")}`);
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(join(dir, "index.html"), '<html lang="en"><body></body></html>');
+          writeFileSync(join(dir, "index.txt"), "flight");
+        }
+      }
+
+      execFileSync(process.execPath, [script], { cwd: root, stdio: "pipe" });
+
+      const configPath = join(out, ".edgeone", "cloud-functions", "ssr-node", "config.json");
+      const config = JSON.parse(readFileSync(configPath, "utf8"));
+      const flightRoutes = config.routes.filter((route) => route.dest === "/$1/index.txt");
+      expect(config.routes.length).toBeLessThan(40);
+      expect(Buffer.byteLength(JSON.stringify(config))).toBeLessThan(16 * 1024);
+      expect(Math.max(...flightRoutes.map((route) => Buffer.byteLength(route.src)))).toBeLessThanOrEqual(480);
+      expect(flightRoutes.some((route) => new RegExp(route.src).test("/zh-hant/docs/page-119.txt"))).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

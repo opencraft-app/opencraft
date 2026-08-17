@@ -17,6 +17,7 @@
 - `ctl-conf-rewrite.yaml`
 - `../../../secrets/sgprod/ctl-conf-common.sops.yaml`
 - `../../../secrets/sgprod/ctl-runtime-secrets.sops.yaml`
+- `../../../secrets/sgprod/ctl-website-runtime-secrets.sops.yaml`
 
 ## Current Runtime Contract
 
@@ -33,6 +34,7 @@
 
 - `ConfigMap/ctl-conf-common`
 - `Secret/ctl-runtime-secrets`
+- `Secret/ctl-website-runtime-secrets`
 
 明文资源：
 
@@ -42,6 +44,13 @@
 `template_class_id` / `sku_id`、服务地址、超时和限额。DB password、Redis
 password、shadow token 等敏感值必须通过 `ctl-runtime-secrets` 注入，不要再写回
 rewrite TOML。
+
+建站能力单独使用 `ctl-website-runtime-secrets`，包含：
+
+- `CTL_INTERNAL_TOKEN`：签发实例级建站 key 的内部接口鉴权
+- `WEBSITE_INTERNAL_API_TOKEN`：CTL、site-gateway、website-deployer 之间的内部鉴权
+- `WEBSITE_COS_BUCKET` / `WEBSITE_COS_REGION`
+- `WEBSITE_COS_SECRET_ID` / `WEBSITE_COS_SECRET_KEY`
 
 ## Note
 

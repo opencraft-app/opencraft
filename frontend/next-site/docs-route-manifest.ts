@@ -21,6 +21,10 @@ export const DOCS_ROUTE_SLUGS = {
       "plans"
     ],
     [
+      "announcements",
+      "public-beta"
+    ],
+    [
       "credits"
     ],
     [
@@ -99,6 +103,42 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "use-cases",
+      "telegram-persona-agent"
+    ],
+    [
+      "use-cases",
+      "whatsapp-persona-agent"
+    ],
+    [
+      "use-cases",
+      "im-agent-persona-soul-md"
+    ],
+    [
+      "use-cases",
+      "im-agent-skill-scenarios"
+    ],
+    [
+      "use-cases",
+      "multi-channel-personality-memory"
+    ],
+    [
+      "use-cases",
+      "telegram-group-community-assistant"
+    ],
+    [
+      "use-cases",
+      "whatsapp-24-7-customer-service"
+    ],
+    [
+      "use-cases",
+      "lifelike-im-agent-rhythm-social-memory"
+    ],
+    [
+      "use-cases",
+      "telegram-whatsapp-safety-boundaries"
+    ],
+    [
+      "use-cases",
       "daily-summary"
     ],
     [
@@ -130,8 +170,52 @@ export const DOCS_ROUTE_SLUGS = {
       "lightvela-vs-genspark"
     ],
     [
-      "faq",
-      "using-lightvela-safely"
+      "hermes-agent",
+      "hermes-vs-openclaw"
+    ],
+    [
+      "hermes-agent",
+      "why-hermes-remembers-you"
+    ],
+    [
+      "hermes-agent",
+      "user-md-vs-memory-md"
+    ],
+    [
+      "hermes-agent",
+      "hermes-memory-curation"
+    ],
+    [
+      "hermes-agent",
+      "memory-vs-skill"
+    ],
+    [
+      "hermes-agent",
+      "model-vs-agent-layer"
+    ],
+    [
+      "hermes-agent",
+      "message-gateway"
+    ],
+    [
+      "hermes-agent",
+      "automation-scheduling"
+    ],
+    [
+      "hermes-agent",
+      "model-switching-memory"
+    ],
+    [
+      "hermes-agent",
+      "persona-user-memory"
+    ],
+    [
+      "hermes-agent",
+      "workspace-context-storage"
+    ],
+    [
+      "hermes-agent",
+      "skills-self-improvement"
     ],
     [
       "contact-us"
@@ -191,7 +275,70 @@ export const DOCS_ROUTE_SLUGS = {
       "skill"
     ],
     [
+      "hermes-agent",
+      "hermes-vs-openclaw"
+    ],
+    [
+      "hermes-agent",
+      "why-hermes-remembers-you"
+    ],
+    [
+      "hermes-agent",
+      "user-md-vs-memory-md"
+    ],
+    [
+      "hermes-agent",
+      "hermes-memory-curation"
+    ],
+    [
+      "hermes-agent",
+      "memory-vs-skill"
+    ],
+    [
+      "hermes-agent",
+      "model-vs-agent-layer"
+    ],
+    [
+      "hermes-agent",
+      "message-gateway"
+    ],
+    [
+      "hermes-agent",
+      "automation-scheduling"
+    ],
+    [
+      "hermes-agent",
+      "model-switching-memory"
+    ],
+    [
+      "hermes-agent",
+      "persona-user-memory"
+    ],
+    [
+      "hermes-agent",
+      "workspace-context-storage"
+    ],
+    [
+      "hermes-agent",
+      "skills-self-improvement"
+    ],
+    [
+      "compare",
+      "lightvela-vs-manus"
+    ],
+    [
+      "compare",
+      "lightvela-vs-localhost-ai-agent"
+    ],
+    [
+      "compare",
+      "lightvela-vs-ai-chatbot"
+    ],
+    [
       "faq"
+    ],
+    [
+      "contact-us"
     ]
   ],
   "zh-sg": [
@@ -210,6 +357,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "plans"
+    ],
+    [
+      "announcements",
+      "public-beta"
     ],
     [
       "credits"
@@ -285,6 +436,58 @@ export const DOCS_ROUTE_SLUGS = {
       "personal-ai-assistant"
     ],
     [
+      "use-cases",
+      "chinese-messaging-channels"
+    ],
+    [
+      "use-cases",
+      "telegram-persona-agent"
+    ],
+    [
+      "use-cases",
+      "whatsapp-persona-agent"
+    ],
+    [
+      "use-cases",
+      "im-agent-persona-soul-md"
+    ],
+    [
+      "use-cases",
+      "im-agent-skill-scenarios"
+    ],
+    [
+      "use-cases",
+      "multi-channel-personality-memory"
+    ],
+    [
+      "use-cases",
+      "telegram-group-community-assistant"
+    ],
+    [
+      "use-cases",
+      "whatsapp-24-7-customer-service"
+    ],
+    [
+      "use-cases",
+      "lifelike-im-agent-rhythm-social-memory"
+    ],
+    [
+      "use-cases",
+      "telegram-whatsapp-safety-boundaries"
+    ],
+    [
+      "use-cases",
+      "daily-summary"
+    ],
+    [
+      "use-cases",
+      "hermes-agent-24-7"
+    ],
+    [
+      "use-cases",
+      "memory-and-knowledge"
+    ],
+    [
       "compare",
       "lightvela-vs-localhost-ai-agent"
     ],
@@ -305,8 +508,52 @@ export const DOCS_ROUTE_SLUGS = {
       "lightvela-vs-genspark"
     ],
     [
-      "faq",
-      "using-lightvela-safely"
+      "hermes-agent",
+      "hermes-vs-openclaw"
+    ],
+    [
+      "hermes-agent",
+      "why-hermes-remembers-you"
+    ],
+    [
+      "hermes-agent",
+      "user-md-vs-memory-md"
+    ],
+    [
+      "hermes-agent",
+      "hermes-memory-curation"
+    ],
+    [
+      "hermes-agent",
+      "memory-vs-skill"
+    ],
+    [
+      "hermes-agent",
+      "model-vs-agent-layer"
+    ],
+    [
+      "hermes-agent",
+      "message-gateway"
+    ],
+    [
+      "hermes-agent",
+      "automation-scheduling"
+    ],
+    [
+      "hermes-agent",
+      "model-switching-memory"
+    ],
+    [
+      "hermes-agent",
+      "persona-user-memory"
+    ],
+    [
+      "hermes-agent",
+      "workspace-context-storage"
+    ],
+    [
+      "hermes-agent",
+      "skills-self-improvement"
     ],
     [
       "contact-us"
@@ -330,6 +577,10 @@ export const DOCS_ROUTE_SLUGS = {
       "plans"
     ],
     [
+      "announcements",
+      "public-beta"
+    ],
+    [
       "credits"
     ],
     [
@@ -403,6 +654,58 @@ export const DOCS_ROUTE_SLUGS = {
       "personal-ai-assistant"
     ],
     [
+      "use-cases",
+      "chinese-messaging-channels"
+    ],
+    [
+      "use-cases",
+      "telegram-persona-agent"
+    ],
+    [
+      "use-cases",
+      "whatsapp-persona-agent"
+    ],
+    [
+      "use-cases",
+      "im-agent-persona-soul-md"
+    ],
+    [
+      "use-cases",
+      "im-agent-skill-scenarios"
+    ],
+    [
+      "use-cases",
+      "multi-channel-personality-memory"
+    ],
+    [
+      "use-cases",
+      "telegram-group-community-assistant"
+    ],
+    [
+      "use-cases",
+      "whatsapp-24-7-customer-service"
+    ],
+    [
+      "use-cases",
+      "lifelike-im-agent-rhythm-social-memory"
+    ],
+    [
+      "use-cases",
+      "telegram-whatsapp-safety-boundaries"
+    ],
+    [
+      "use-cases",
+      "daily-summary"
+    ],
+    [
+      "use-cases",
+      "hermes-agent-24-7"
+    ],
+    [
+      "use-cases",
+      "memory-and-knowledge"
+    ],
+    [
       "compare",
       "lightvela-vs-localhost-ai-agent"
     ],
@@ -423,8 +726,52 @@ export const DOCS_ROUTE_SLUGS = {
       "lightvela-vs-genspark"
     ],
     [
-      "faq",
-      "using-lightvela-safely"
+      "hermes-agent",
+      "hermes-vs-openclaw"
+    ],
+    [
+      "hermes-agent",
+      "why-hermes-remembers-you"
+    ],
+    [
+      "hermes-agent",
+      "user-md-vs-memory-md"
+    ],
+    [
+      "hermes-agent",
+      "hermes-memory-curation"
+    ],
+    [
+      "hermes-agent",
+      "memory-vs-skill"
+    ],
+    [
+      "hermes-agent",
+      "model-vs-agent-layer"
+    ],
+    [
+      "hermes-agent",
+      "message-gateway"
+    ],
+    [
+      "hermes-agent",
+      "automation-scheduling"
+    ],
+    [
+      "hermes-agent",
+      "model-switching-memory"
+    ],
+    [
+      "hermes-agent",
+      "persona-user-memory"
+    ],
+    [
+      "hermes-agent",
+      "workspace-context-storage"
+    ],
+    [
+      "hermes-agent",
+      "skills-self-improvement"
     ],
     [
       "contact-us"
