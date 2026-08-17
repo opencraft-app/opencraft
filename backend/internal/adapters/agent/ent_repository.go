@@ -3,6 +3,7 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -492,10 +493,34 @@ type profileCapabilityRefreshSnapshot struct {
 }
 
 type profileCapabilityResultSnapshot struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	Status        string `json:"status"`
-	ResultDigest  string `json:"resultDigest"`
-	ErrorCode     string `json:"errorCode,omitempty"`
+	SchemaVersion          int    `json:"schemaVersion"`
+	Status                 string `json:"status"`
+	ResultDigest           string `json:"resultDigest"`
+	ErrorCode              string `json:"errorCode,omitempty"`
+	SatisfiedByOperationID string `json:"satisfiedByOperationId,omitempty"`
+}
+
+func (repository *EntRepository) SupportsProfileCapabilities(
+	ctx context.Context,
+	serverID string,
+	computerID string,
+) (bool, error) {
+	entity, err := repository.handle.Client().Computer.Query().
+		Where(
+			computer.IDEQ(computerID),
+			computer.ServerIDEQ(serverID),
+			computer.LifecycleStateEQ("active"),
+		).
+		Only(ctx)
+	if ent.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return entity.AssignmentProtocolVersion >= 2 &&
+		entity.ProfileCapabilityVersion != nil &&
+		*entity.ProfileCapabilityVersion == 1, nil
 }
 
 func (repository *EntRepository) GetProfileCapabilities(
@@ -525,7 +550,8 @@ func (repository *EntRepository) GetProfileCapabilities(
 		return agentport.ProfileCapabilities{}, err
 	}
 	result := agentport.ProfileCapabilities{
-		AgentID: entity.ID,
+		AgentID: entity.ID, ComputerID: entity.ComputerID,
+		ContextGeneration: entity.Revision,
 		Runtime: agentport.Runtime{
 			Kind: entity.RuntimeKind, Model: entity.RuntimeModel,
 		},
@@ -613,6 +639,44 @@ func (repository *EntRepository) BeginProfileCapabilityRefresh(
 				entity.Revision != command.ContextGeneration {
 				return agentport.ErrRevisionConflict
 			}
+			if entity.ProfileCapabilityRefreshID != nil &&
+				*entity.ProfileCapabilityRefreshID != command.OperationID {
+				previousID := *entity.ProfileCapabilityRefreshID
+				digest := sha256.Sum256([]byte(
+					"agent-profile-capability-superseded/v1\x00" +
+						previousID + "\x00" + command.OperationID,
+				))
+				previousResult, err := persistedjson.EncodeResultSnapshot(
+					"platform",
+					"agent.profile.capabilities.refresh",
+					profileCapabilityResultSnapshot{
+						SchemaVersion: 1, Status: "superseded",
+						ResultDigest:           base64.RawURLEncoding.EncodeToString(digest[:]),
+						ErrorCode:              "superseded",
+						SatisfiedByOperationID: command.OperationID,
+					},
+				)
+				if err != nil {
+					return err
+				}
+				if _, err := tx.TencentOperation.Update().
+					Where(
+						tencentoperation.IDEQ(previousID),
+						tencentoperation.PartitionKeyEQ(command.ServerID),
+						tencentoperation.StateIn(
+							"pending", "running", "retry_wait", "uncertain",
+						),
+					).
+					SetState("superseded").
+					SetResultJSON(previousResult).
+					SetLastErrorCode("superseded").
+					SetCompletedAt(command.CreatedAt.UTC()).
+					SetUpdatedAt(command.CreatedAt.UTC()).
+					ClearNextAttemptAt().ClearLeaseOwner().ClearLeaseExpiresAt().
+					Save(ctx); err != nil {
+					return err
+				}
+			}
 			snapshot, err := json.Marshal(profileCapabilityRefreshSnapshot{
 				SchemaVersion:         1,
 				ServerID:              command.ServerID,
@@ -694,6 +758,178 @@ func (repository *EntRepository) BeginProfileCapabilityRefresh(
 	return result, returnErr
 }
 
+func (repository *EntRepository) EnsureSystemProfileCapabilityRefresh(
+	ctx context.Context,
+	command agentport.SystemProfileCapabilityEnsureCommand,
+) (result agentport.Operation, returnErr error) {
+	returnErr = repository.handle.WithTx(
+		ctx,
+		func(ctx context.Context, tx *ent.Tx) error {
+			const scope = "agent.profile-capabilities.refresh"
+			idempotencyKey := "system:agent-profile-capabilities:" +
+				command.AgentID + ":" + strconv.FormatInt(command.ContextGeneration, 10)
+			requestHash := sha256.Sum256([]byte(
+				"agent.profile-capabilities.system-ensure/v1\x00" +
+					command.ServerID + "\x00" + command.AgentID + "\x00" +
+					strconv.FormatInt(command.ContextGeneration, 10),
+			))
+			stored, err := findIdempotency(
+				ctx, tx, command.ServerID, scope, command.AgentID, idempotencyKey,
+			)
+			if err == nil {
+				if !sameHash(stored.RequestHash, requestHash) {
+					return agentport.ErrIdempotencyConflict
+				}
+				_, operationID, err := decodeLocator(stored.ResponseBodyJSON, scope)
+				if err != nil {
+					return err
+				}
+				operation, err := tx.TencentOperation.Query().
+					Where(
+						tencentoperation.IDEQ(operationID),
+						tencentoperation.PartitionKeyEQ(command.ServerID),
+					).
+					Only(ctx)
+				if err != nil {
+					return err
+				}
+				result = mapOperation(operation)
+				return nil
+			}
+			if !ent.IsNotFound(err) {
+				return err
+			}
+			entity, err := tx.Agent.Query().
+				Where(
+					agententity.IDEQ(command.AgentID),
+					agententity.ServerIDEQ(command.ServerID),
+					agententity.ComputerIDEQ(command.ComputerID),
+					agententity.RevisionEQ(command.ContextGeneration),
+					agententity.DeletedAtIsNil(),
+				).
+				Only(ctx)
+			if ent.IsNotFound(err) {
+				return agentport.ErrRevisionConflict
+			}
+			if err != nil {
+				return err
+			}
+			machine, err := tx.Computer.Query().
+				Where(
+					computer.IDEQ(command.ComputerID),
+					computer.ServerIDEQ(command.ServerID),
+					computer.LifecycleStateEQ("active"),
+				).
+				Only(ctx)
+			if err != nil {
+				return err
+			}
+			if machine.AssignmentProtocolVersion < 2 ||
+				machine.ProfileCapabilityVersion == nil ||
+				*machine.ProfileCapabilityVersion != 1 {
+				return agentport.ErrProfileCapabilitiesUnsupported
+			}
+			invalidationWatermark := int64(0)
+			if entity.ProfileCapabilitiesJSON != nil {
+				var payload persistedjson.ProfileCapabilitiesPayload
+				if _, err := persistedjson.DecodeProfileCapabilities(
+					*entity.ProfileCapabilitiesJSON, &payload,
+				); err != nil {
+					return err
+				}
+				invalidationWatermark = payload.InvalidationGeneration
+			}
+			authorityKey := agentport.ProfileCapabilityAuthorityContextKey(
+				command.ServerID, command.AgentID, command.ComputerID,
+				entity.RuntimeKind, command.ContextGeneration,
+			)
+			requestSnapshot, err := json.Marshal(profileCapabilityRefreshSnapshot{
+				SchemaVersion: 1, ServerID: command.ServerID, AgentID: command.AgentID,
+				ComputerID: command.ComputerID, RuntimeKind: entity.RuntimeKind,
+				ContextGeneration:     command.ContextGeneration,
+				AuthorityContextKey:   authorityKey,
+				InvalidationWatermark: invalidationWatermark,
+				ForceReload:           false, Trigger: "system", RequestedAt: command.CreatedAt.UTC(),
+			})
+			if err != nil {
+				return err
+			}
+			deadline := command.DeadlineAt.UTC()
+			operation, err := createOperation(
+				ctx, tx, command.OperationID, command.ServerID, "platform",
+				"agent.profile.capabilities.refresh", command.AgentID,
+				command.ContextGeneration, idempotencyKey, requestSnapshot,
+				&deadline, command.CreatedAt.UTC(),
+			)
+			if err != nil {
+				return err
+			}
+			if entity.ProfileCapabilityRefreshID != nil {
+				digest := sha256.Sum256([]byte(
+					"agent-profile-capability-system-satisfied/v1\x00" +
+						*entity.ProfileCapabilityRefreshID,
+				))
+				terminal, err := persistedjson.EncodeResultSnapshot(
+					"platform", "agent.profile.capabilities.refresh",
+					profileCapabilityResultSnapshot{
+						SchemaVersion: 1, Status: "superseded",
+						ResultDigest:           base64.RawURLEncoding.EncodeToString(digest[:]),
+						ErrorCode:              "satisfied_by_outstanding_refresh",
+						SatisfiedByOperationID: *entity.ProfileCapabilityRefreshID,
+					},
+				)
+				if err != nil {
+					return err
+				}
+				if _, err := tx.TencentOperation.UpdateOneID(operation.ID).
+					SetState("superseded").SetResultJSON(terminal).
+					SetLastErrorCode("satisfied_by_outstanding_refresh").
+					SetCompletedAt(command.CreatedAt.UTC()).
+					SetUpdatedAt(command.CreatedAt.UTC()).Save(ctx); err != nil {
+					return err
+				}
+				operation, err = tx.TencentOperation.Get(ctx, operation.ID)
+				if err != nil {
+					return err
+				}
+			} else {
+				updated, err := tx.Agent.Update().
+					Where(
+						agententity.IDEQ(command.AgentID),
+						agententity.ServerIDEQ(command.ServerID),
+						agententity.ComputerIDEQ(command.ComputerID),
+						agententity.RevisionEQ(command.ContextGeneration),
+						agententity.ProfileCapabilityRefreshIDIsNil(),
+					).
+					SetProfileCapabilityRefreshID(operation.ID).
+					SetUpdatedAt(command.CreatedAt.UTC()).Save(ctx)
+				if err != nil {
+					return err
+				}
+				if updated != 1 {
+					return agentport.ErrRevisionConflict
+				}
+				if err := bumpComputerAssignments(
+					ctx, tx, command.ServerID, []*string{entity.ComputerID},
+					command.CreatedAt.UTC(),
+				); err != nil {
+					return err
+				}
+			}
+			if err := saveIdempotency(
+				ctx, tx, command.ServerID, scope, command.AgentID,
+				idempotencyKey, requestHash, command.AgentID, operation.ID,
+				command.CreatedAt.UTC(),
+			); err != nil {
+				return err
+			}
+			result = mapOperation(operation)
+			return nil
+		},
+	)
+	return result, returnErr
+}
+
 func (repository *EntRepository) CompleteProfileCapabilityRefresh(
 	ctx context.Context,
 	command agentport.ProfileCapabilityResultCommand,
@@ -726,6 +962,44 @@ func (repository *EntRepository) CompleteProfileCapabilityRefresh(
 				&request,
 			); err != nil {
 				return err
+			}
+			if request.ComputerID != command.ComputerID ||
+				request.ContextGeneration != command.ContextGeneration ||
+				request.AuthorityContextKey != command.AuthorityContextKey {
+				result = agentport.ProfileCapabilitySubmissionResult{
+					Accepted: false, Reason: "superseded",
+				}
+				return nil
+			}
+			if operation.State == "succeeded" || operation.State == "failed" {
+				if operation.ResultJSON == nil {
+					return errors.New("Profile capability Operation 缺少 result snapshot")
+				}
+				var completed profileCapabilityResultSnapshot
+				if _, err := persistedjson.DecodeResultSnapshot(
+					*operation.ResultJSON,
+					"platform",
+					"agent.profile.capabilities.refresh",
+					&completed,
+				); err != nil {
+					return err
+				}
+				status := "failed"
+				if command.Succeeded {
+					status = "succeeded"
+				}
+				digest := base64.RawURLEncoding.EncodeToString(command.ResultHash[:])
+				if completed.Status == status && completed.ResultDigest == digest &&
+					completed.ErrorCode == command.ErrorCode {
+					result = agentport.ProfileCapabilitySubmissionResult{
+						Accepted: false, Reason: "duplicate",
+					}
+				} else {
+					result = agentport.ProfileCapabilitySubmissionResult{
+						Accepted: false, Reason: "superseded",
+					}
+				}
+				return nil
 			}
 			entity, err := tx.Agent.Query().
 				Where(
@@ -777,8 +1051,36 @@ func (repository *EntRepository) CompleteProfileCapabilityRefresh(
 				ClearProfileCapabilityRefreshID().
 				SetUpdatedAt(command.CompletedAt.UTC())
 			if command.Succeeded {
+				payload := persistedjson.ProfileCapabilitiesPayload{
+					SchemaVersion: 1,
+					Snapshot:      append(json.RawMessage(nil), command.ResultJSON...),
+					Invalidations: []persistedjson.ProfileCapabilityInvalidation{},
+				}
+				if entity.ProfileCapabilitiesJSON != nil {
+					var previous persistedjson.ProfileCapabilitiesPayload
+					if _, err := persistedjson.DecodeProfileCapabilities(
+						*entity.ProfileCapabilitiesJSON, &previous,
+					); err == nil && previous.SchemaVersion == 1 {
+						payload.InvalidationGeneration = previous.InvalidationGeneration
+						var cursor struct {
+							RuntimeContextGeneration int64 `json:"runtimeContextGeneration"`
+							ObservedThroughSequence  int64 `json:"observedThroughSequence"`
+						}
+						if json.Unmarshal(command.ResultJSON, &cursor) == nil {
+							for _, invalidation := range previous.Invalidations {
+								covered := invalidation.Generation <= request.InvalidationWatermark &&
+									(invalidation.RuntimeContextGeneration < cursor.RuntimeContextGeneration ||
+										invalidation.RuntimeContextGeneration == cursor.RuntimeContextGeneration &&
+											invalidation.EventSequence <= cursor.ObservedThroughSequence)
+								if !covered {
+									payload.Invalidations = append(payload.Invalidations, invalidation)
+								}
+							}
+						}
+					}
+				}
 				encoded, err := persistedjson.EncodeProfileCapabilities(
-					json.RawMessage(command.ResultJSON),
+					payload,
 				)
 				if err != nil {
 					return err
@@ -833,6 +1135,184 @@ func (repository *EntRepository) CompleteProfileCapabilityRefresh(
 		},
 	)
 	return result, returnErr
+}
+
+func (repository *EntRepository) PutProfileCapabilityInvalidation(
+	ctx context.Context,
+	command agentport.ProfileCapabilityInvalidationCommand,
+) (result agentport.ProfileCapabilitySubmissionResult, returnErr error) {
+	returnErr = repository.handle.WithTx(
+		ctx,
+		func(ctx context.Context, tx *ent.Tx) error {
+			entity, err := tx.Agent.Query().
+				Where(
+					agententity.IDEQ(command.AgentID),
+					agententity.ServerIDEQ(command.ServerID),
+					agententity.DeletedAtIsNil(),
+				).
+				Only(ctx)
+			if err != nil {
+				return err
+			}
+			expectedKey := ""
+			if entity.ComputerID != nil {
+				expectedKey = agentport.ProfileCapabilityAuthorityContextKey(
+					command.ServerID, command.AgentID, *entity.ComputerID,
+					entity.RuntimeKind, entity.Revision,
+				)
+			}
+			if entity.ComputerID == nil || *entity.ComputerID != command.ComputerID ||
+				entity.Revision != command.ContextGeneration ||
+				expectedKey != command.AuthorityContextKey {
+				result = agentport.ProfileCapabilitySubmissionResult{
+					Accepted: false, Reason: "superseded",
+				}
+				return nil
+			}
+			payload := persistedjson.ProfileCapabilitiesPayload{
+				SchemaVersion: 1,
+				Invalidations: []persistedjson.ProfileCapabilityInvalidation{},
+			}
+			if entity.ProfileCapabilitiesJSON != nil {
+				if _, err := persistedjson.DecodeProfileCapabilities(
+					*entity.ProfileCapabilitiesJSON, &payload,
+				); err != nil {
+					return err
+				}
+			}
+			for _, invalidation := range payload.Invalidations {
+				if invalidation.EventID == command.EventID ||
+					invalidation.RuntimeContextGeneration > command.RuntimeContextGeneration ||
+					invalidation.RuntimeContextGeneration == command.RuntimeContextGeneration &&
+						invalidation.EventSequence >= command.EventSequence {
+					result = agentport.ProfileCapabilitySubmissionResult{
+						Accepted: false, Reason: "duplicate",
+					}
+					return nil
+				}
+			}
+			payload.InvalidationGeneration++
+			payload.Invalidations = append(
+				payload.Invalidations,
+				persistedjson.ProfileCapabilityInvalidation{
+					EventID:                  command.EventID,
+					Generation:               payload.InvalidationGeneration,
+					RuntimeContextGeneration: command.RuntimeContextGeneration,
+					EventSequence:            command.EventSequence,
+					Reason:                   command.Reason,
+					ObservedAt:               command.ObservedAt.UTC(),
+				},
+			)
+			encoded, err := persistedjson.EncodeProfileCapabilities(payload)
+			if err != nil {
+				return err
+			}
+			updated, err := tx.Agent.Update().
+				Where(
+					agententity.IDEQ(command.AgentID),
+					agententity.ServerIDEQ(command.ServerID),
+					agententity.RevisionEQ(command.ContextGeneration),
+					agententity.ComputerIDEQ(command.ComputerID),
+				).
+				SetProfileCapabilitiesJSON(encoded).
+				SetUpdatedAt(command.ObservedAt.UTC()).
+				Save(ctx)
+			if err != nil {
+				return err
+			}
+			if updated != 1 {
+				return agentport.ErrRevisionConflict
+			}
+			result = agentport.ProfileCapabilitySubmissionResult{
+				Accepted: true, Reason: "accepted",
+			}
+			return nil
+		},
+	)
+	return result, returnErr
+}
+
+func (repository *EntRepository) ExpireProfileCapabilityRefresh(
+	ctx context.Context,
+	now time.Time,
+) (expired bool, returnErr error) {
+	returnErr = repository.handle.WithTx(
+		ctx,
+		func(ctx context.Context, tx *ent.Tx) error {
+			operation, err := tx.TencentOperation.Query().
+				Where(
+					tencentoperation.ServiceEQ("platform"),
+					tencentoperation.KindEQ("agent.profile.capabilities.refresh"),
+					tencentoperation.StateIn("pending", "running", "retry_wait", "uncertain"),
+					tencentoperation.DeadlineAtNotNil(),
+					tencentoperation.DeadlineAtLTE(now.UTC()),
+				).
+				Order(ent.Asc(tencentoperation.FieldDeadlineAt), ent.Asc(tencentoperation.FieldID)).
+				First(ctx)
+			if ent.IsNotFound(err) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			digest := sha256.Sum256([]byte(
+				"agent-profile-capability-deadline/v1\x00" + operation.ID,
+			))
+			resultSnapshot, err := persistedjson.EncodeResultSnapshot(
+				"platform", "agent.profile.capabilities.refresh",
+				profileCapabilityResultSnapshot{
+					SchemaVersion: 1, Status: "failed",
+					ResultDigest: base64.RawURLEncoding.EncodeToString(digest[:]),
+					ErrorCode:    "profile_capability_deadline_exceeded",
+				},
+			)
+			if err != nil {
+				return err
+			}
+			updated, err := tx.TencentOperation.Update().
+				Where(
+					tencentoperation.IDEQ(operation.ID),
+					tencentoperation.PartitionKeyEQ(operation.PartitionKey),
+					tencentoperation.StateIn("pending", "running", "retry_wait", "uncertain"),
+					tencentoperation.DeadlineAtNotNil(),
+					tencentoperation.DeadlineAtLTE(now.UTC()),
+				).
+				SetState("failed").SetResultJSON(resultSnapshot).
+				SetLastErrorCode("profile_capability_deadline_exceeded").
+				SetCompletedAt(now.UTC()).SetUpdatedAt(now.UTC()).
+				ClearNextAttemptAt().ClearLeaseOwner().ClearLeaseExpiresAt().
+				Save(ctx)
+			if err != nil {
+				return err
+			}
+			if updated != 1 {
+				return nil
+			}
+			entity, err := tx.Agent.Query().
+				Where(
+					agententity.IDEQ(operation.ResourceID),
+					agententity.ServerIDEQ(operation.PartitionKey),
+					agententity.ProfileCapabilityRefreshIDEQ(operation.ID),
+				).
+				Only(ctx)
+			if err == nil {
+				if _, err := tx.Agent.UpdateOne(entity).
+					ClearProfileCapabilityRefreshID().SetUpdatedAt(now.UTC()).Save(ctx); err != nil {
+					return err
+				}
+				if err := bumpComputerAssignments(
+					ctx, tx, operation.PartitionKey, []*string{entity.ComputerID}, now.UTC(),
+				); err != nil {
+					return err
+				}
+			} else if !ent.IsNotFound(err) {
+				return err
+			}
+			expired = true
+			return nil
+		},
+	)
+	return expired, returnErr
 }
 
 // Delete 在业务事实层墓碑 Agent，并提交可靠的腾讯 IM account_delete 操作。

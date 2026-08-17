@@ -66,6 +66,13 @@
     },
     {
       "dialect": "tdsql-source",
+      "path": "internal/database/migrationsource/tdsql/20260818120000_computer_capability_negotiation.sql",
+      "sha256": "61fe2d71b9fe1d2d1e2fb40ff7af4865483074093e6d9ec9c8d96bf2bc5e3b60",
+      "migrationId": "20260818120000_computer_capability_negotiation",
+      "logicalMigration": "20260818120000_computer_capability_negotiation"
+    },
+    {
+      "dialect": "tdsql-source",
       "path": "internal/database/migrationsource/tdsql/compile.sum",
       "sha256": "1e8b756234e5d4a770a8a9954aa0f40669f5537b0a216c17ae6885475fa5d47e",
       "migrationId": "compile-sum",
@@ -197,6 +204,13 @@
       "logicalMigration": "20260817152840_agent_profile_capabilities"
     },
     {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20260818120000_computer_capability_negotiation.sql",
+      "sha256": "a906cef884ff0a06e14d6b8d2b773f96b5e4e6f38119cb24fcdfdda1bc329531",
+      "migrationId": "20260818120000_computer_capability_negotiation",
+      "logicalMigration": "20260818120000_computer_capability_negotiation"
+    },
+    {
       "dialect": "tdsql-runtime",
       "path": "migrations/tdsql/20260801000000_baseline.sql",
       "sha256": "82f5c1ae99f40185d02a72fb5e891488a753577470e3205f03e178514296fa7b",
@@ -265,6 +279,13 @@
       "sha256": "e86526943a187f8debb4aca4f95a9688788fe6393a388ecaa9c88186969c3789",
       "migrationId": "20260817152840_agent_profile_capabilities",
       "logicalMigration": "20260817152840_agent_profile_capabilities"
+    },
+    {
+      "dialect": "tdsql-runtime",
+      "path": "migrations/tdsql/20260818120000_computer_capability_negotiation.sql",
+      "sha256": "61fe2d71b9fe1d2d1e2fb40ff7af4865483074093e6d9ec9c8d96bf2bc5e3b60",
+      "migrationId": "20260818120000_computer_capability_negotiation",
+      "logicalMigration": "20260818120000_computer_capability_negotiation"
     }
   ]
 }

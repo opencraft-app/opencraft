@@ -99,12 +99,14 @@ func New(options Options) *Driver {
 	}
 }
 
-func (d *Driver) detectModelsFromAppServer(
+func (d *Driver) discoverProfileCapabilitiesFromAppServer(
 	ctx context.Context,
-) (runtimeapi.ModelResult, error) {
+	request runtimeapi.ProfileCapabilityRequest,
+	includeSkills bool,
+) (runtimeapi.ProfileCapabilityResult, error) {
 	selection, err := d.selectExecutable(ctx)
 	if err != nil {
-		return runtimeapi.ModelResult{}, err
+		return runtimeapi.ProfileCapabilityResult{}, err
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, modelProbeTimeout)
 	defer cancel()
@@ -116,17 +118,19 @@ func (d *Driver) detectModelsFromAppServer(
 		"stdio://",
 	)
 	command := exec.CommandContext(probeCtx, selection.Candidate.Path, args...)
+	command.Dir = request.WorkingDirectory
+	command.Env = mergedEnvironment(request.Environment)
 	stdin, err := command.StdinPipe()
 	if err != nil {
-		return runtimeapi.ModelResult{}, err
+		return runtimeapi.ProfileCapabilityResult{}, err
 	}
 	stdout, err := command.StdoutPipe()
 	if err != nil {
-		return runtimeapi.ModelResult{}, err
+		return runtimeapi.ProfileCapabilityResult{}, err
 	}
 	command.Stderr = io.Discard
 	if err := command.Start(); err != nil {
-		return runtimeapi.ModelResult{}, err
+		return runtimeapi.ProfileCapabilityResult{}, err
 	}
 	done := make(chan struct{})
 	go func() {
@@ -149,13 +153,14 @@ func (d *Driver) detectModelsFromAppServer(
 		"capabilities": map[string]bool{"experimentalApi": true},
 	})
 	if err != nil {
-		return runtimeapi.ModelResult{}, fmt.Errorf("initialize Codex model discovery: %w", err)
+		return runtimeapi.ProfileCapabilityResult{}, fmt.Errorf("initialize Codex profile discovery: %w", err)
 	}
-	if _, err := decodeCodexInitializeResult(initialize.Result); err != nil {
-		return runtimeapi.ModelResult{}, err
+	initialized, err := decodeCodexInitializeResult(initialize.Result)
+	if err != nil {
+		return runtimeapi.ProfileCapabilityResult{}, err
 	}
 	if err := client.notify("initialized", map[string]any{}); err != nil {
-		return runtimeapi.ModelResult{}, err
+		return runtimeapi.ProfileCapabilityResult{}, err
 	}
 
 	result := runtimeapi.ModelResult{Models: []runtimeapi.Model{}}
@@ -167,11 +172,11 @@ func (d *Driver) detectModelsFromAppServer(
 		}
 		response, err := client.request(probeCtx, "model/list", params)
 		if err != nil {
-			return runtimeapi.ModelResult{}, fmt.Errorf("list Codex models: %w", err)
+			return runtimeapi.ProfileCapabilityResult{}, fmt.Errorf("list Codex models: %w", err)
 		}
 		page, err := decodeModelPage(response.Result)
 		if err != nil {
-			return runtimeapi.ModelResult{}, err
+			return runtimeapi.ProfileCapabilityResult{}, err
 		}
 		for _, raw := range page.Entries {
 			model, isDefault, ok := decodeCodexModel(raw)
@@ -188,7 +193,65 @@ func (d *Driver) detectModelsFromAppServer(
 			break
 		}
 	}
-	return result, nil
+	skills := []runtimeapi.Skill{}
+	if includeSkills {
+		skillsResponse, err := client.request(probeCtx, "skills/list", map[string]any{
+			"cwds":        []string{request.WorkingDirectory},
+			"forceReload": request.ForceReload,
+		})
+		if err != nil {
+			return runtimeapi.ProfileCapabilityResult{}, fmt.Errorf("list Codex skills: %w", err)
+		}
+		skills, err = decodeCodexSkills(skillsResponse.Result)
+		if err != nil {
+			return runtimeapi.ProfileCapabilityResult{}, err
+		}
+	}
+	return runtimeapi.ProfileCapabilityResult{
+		Protocol:       "codex_app_server",
+		RuntimeVersion: d.version,
+		ProfileHome:    initialized.CodexHome,
+		ProfileKind:    "codex_home",
+		Models:         result,
+		Skills:         skills,
+	}, nil
+}
+
+func (d *Driver) detectModelsFromAppServer(
+	ctx context.Context,
+) (runtimeapi.ModelResult, error) {
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		workingDirectory = "."
+	}
+	result, err := d.discoverProfileCapabilitiesFromAppServer(
+		ctx,
+		runtimeapi.ProfileCapabilityRequest{
+			WorkingDirectory: workingDirectory,
+		},
+		false,
+	)
+	return result.Models, err
+}
+
+func (d *Driver) DiscoverProfileCapabilities(
+	ctx context.Context,
+	request runtimeapi.ProfileCapabilityRequest,
+) (runtimeapi.ProfileCapabilityResult, error) {
+	if strings.TrimSpace(request.AgentID) == "" ||
+		strings.TrimSpace(request.WorkingDirectory) == "" {
+		return runtimeapi.ProfileCapabilityResult{},
+			errors.New("Codex Profile discovery requires Agent and workspace")
+	}
+	workingDirectory, err := filepath.Abs(request.WorkingDirectory)
+	if err != nil {
+		return runtimeapi.ProfileCapabilityResult{}, err
+	}
+	if err := ensureDirectory(workingDirectory); err != nil {
+		return runtimeapi.ProfileCapabilityResult{}, err
+	}
+	request.WorkingDirectory = workingDirectory
+	return d.discoverProfileCapabilitiesFromAppServer(ctx, request, true)
 }
 
 type modelDiscoveryClient struct {
@@ -384,6 +447,72 @@ func decodeCodexModel(raw json.RawMessage) (runtimeapi.Model, bool, bool) {
 		ServiceTiers:              serviceTiers,
 		DefaultServiceTier:        strings.TrimSpace(entry.DefaultServiceTier),
 	}, entry.IsDefault, true
+}
+
+func decodeCodexSkills(raw json.RawMessage) ([]runtimeapi.Skill, error) {
+	var result struct {
+		Data []struct {
+			Skills []json.RawMessage `json:"skills"`
+		} `json:"data"`
+		Skills []json.RawMessage `json:"skills"`
+	}
+	if err := common.Unmarshal(raw, &result); err != nil {
+		return nil, err
+	}
+	entries := result.Skills
+	for _, group := range result.Data {
+		entries = append(entries, group.Skills...)
+	}
+	if entries == nil {
+		return nil, errors.New("Codex skills/list response is missing skills")
+	}
+	skills := make([]runtimeapi.Skill, 0, len(entries))
+	seen := make(map[string]struct{}, len(entries))
+	for _, rawSkill := range entries {
+		var entry struct {
+			ID               string   `json:"id"`
+			Name             string   `json:"name"`
+			Description      string   `json:"description"`
+			DisplayName      string   `json:"displayName"`
+			ShortDescription string   `json:"shortDescription"`
+			Path             string   `json:"path"`
+			Scope            string   `json:"scope"`
+			Enabled          *bool    `json:"enabled"`
+			Missing          []string `json:"missingDependencyTypes"`
+		}
+		if common.Unmarshal(rawSkill, &entry) != nil {
+			continue
+		}
+		name := strings.TrimSpace(entry.Name)
+		id := firstNonEmpty(entry.ID, name)
+		if id == "" || name == "" {
+			continue
+		}
+		if _, duplicate := seen[id]; duplicate {
+			continue
+		}
+		seen[id] = struct{}{}
+		enabled := entry.Enabled == nil || *entry.Enabled
+		availability := "available"
+		if !enabled || len(entry.Missing) > 0 {
+			availability = "unavailable"
+		}
+		scope := strings.TrimSpace(entry.Scope)
+		switch scope {
+		case "project", "user", "admin", "system", "profile", "external":
+		default:
+			scope = "unknown"
+		}
+		skills = append(skills, runtimeapi.Skill{
+			ID: id, Name: name, Description: strings.TrimSpace(entry.Description),
+			DisplayName:      strings.TrimSpace(entry.DisplayName),
+			ShortDescription: strings.TrimSpace(entry.ShortDescription),
+			Path:             strings.TrimSpace(entry.Path), Enabled: enabled,
+			Availability: availability, Scope: scope,
+			MissingDependencyTypes: append([]string(nil), entry.Missing...),
+		})
+	}
+	return skills, nil
 }
 
 func decodeModelStringList(

@@ -45,6 +45,10 @@ const (
 	FieldDaemonVersion = "daemon_version"
 	// FieldDaemonBuildID holds the string denoting the daemon_build_id field in the database.
 	FieldDaemonBuildID = "daemon_build_id"
+	// FieldAssignmentProtocolVersion holds the string denoting the assignment_protocol_version field in the database.
+	FieldAssignmentProtocolVersion = "assignment_protocol_version"
+	// FieldProfileCapabilityVersion holds the string denoting the profile_capability_version field in the database.
+	FieldProfileCapabilityVersion = "profile_capability_version"
 	// FieldDaemonVersionTokenIssuedAt holds the string denoting the daemon_version_token_issued_at field in the database.
 	FieldDaemonVersionTokenIssuedAt = "daemon_version_token_issued_at"
 	// FieldLastReconcileErrorCode holds the string denoting the last_reconcile_error_code field in the database.
@@ -116,6 +120,8 @@ var Columns = []string{
 	FieldHostLastSeenAt,
 	FieldDaemonVersion,
 	FieldDaemonBuildID,
+	FieldAssignmentProtocolVersion,
+	FieldProfileCapabilityVersion,
 	FieldDaemonVersionTokenIssuedAt,
 	FieldLastReconcileErrorCode,
 	FieldEnrollmentGeneration,
@@ -157,6 +163,8 @@ var (
 	DefaultAssignmentEpoch func() string
 	// DefaultAssignmentRevision holds the default value on creation for the "assignment_revision" field.
 	DefaultAssignmentRevision func() int64
+	// DefaultAssignmentProtocolVersion holds the default value on creation for the "assignment_protocol_version" field.
+	DefaultAssignmentProtocolVersion int
 	// DefaultEnrollmentGeneration holds the default value on creation for the "enrollment_generation" field.
 	DefaultEnrollmentGeneration int64
 	// EnrollmentTokenHashValidator is a validator for the "enrollment_token_hash" field. It is called by the builders before save.
@@ -281,6 +289,16 @@ func ByDaemonVersion(opts ...sql.OrderTermOption) OrderOption {
 // ByDaemonBuildID orders the results by the daemon_build_id field.
 func ByDaemonBuildID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDaemonBuildID, opts...).ToFunc()
+}
+
+// ByAssignmentProtocolVersion orders the results by the assignment_protocol_version field.
+func ByAssignmentProtocolVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAssignmentProtocolVersion, opts...).ToFunc()
+}
+
+// ByProfileCapabilityVersion orders the results by the profile_capability_version field.
+func ByProfileCapabilityVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProfileCapabilityVersion, opts...).ToFunc()
 }
 
 // ByDaemonVersionTokenIssuedAt orders the results by the daemon_version_token_issued_at field.

@@ -3,22 +3,49 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 )
 
+func ProfileCapabilityAuthorityContextKey(
+	serverID string,
+	agentID string,
+	computerID string,
+	runtimeKind string,
+	revision int64,
+) string {
+	var canonical strings.Builder
+	canonical.WriteString("agent-profile-capability-context/v1\x00")
+	for _, value := range []string{
+		strings.ToLower(serverID), strings.ToLower(agentID),
+		strings.ToLower(computerID), strings.TrimSpace(runtimeKind),
+		strconv.FormatInt(revision, 10),
+	} {
+		canonical.WriteString(strconv.Itoa(len(value)))
+		canonical.WriteByte(':')
+		canonical.WriteString(value)
+	}
+	digest := sha256.Sum256([]byte(canonical.String()))
+	return base64.RawURLEncoding.EncodeToString(digest[:])
+}
+
 var (
-	ErrServerNotFound      = errors.New("Server 不存在")
-	ErrAgentNotFound       = errors.New("Agent 不存在")
-	ErrAgentNotReady       = errors.New("Agent IM 尚未就绪")
-	ErrComputerNotReady    = errors.New("Computer 尚未就绪")
-	ErrPermissionDenied    = errors.New("没有管理 Agent 的权限")
-	ErrHandleConflict      = errors.New("Agent handle 冲突")
-	ErrRevisionConflict    = errors.New("Agent revision 冲突")
-	ErrAgentMustBeStopped  = errors.New("Agent 必须先停止")
-	ErrIdempotencyConflict = errors.New("幂等请求冲突")
-	ErrCredentialPending   = errors.New("Agent credential 正在安装")
-	ErrCredentialMissing   = errors.New("Agent credential 尚未安装")
+	ErrServerNotFound                 = errors.New("Server 不存在")
+	ErrAgentNotFound                  = errors.New("Agent 不存在")
+	ErrAgentNotReady                  = errors.New("Agent IM 尚未就绪")
+	ErrComputerNotReady               = errors.New("Computer 尚未就绪")
+	ErrPermissionDenied               = errors.New("没有管理 Agent 的权限")
+	ErrHandleConflict                 = errors.New("Agent handle 冲突")
+	ErrRevisionConflict               = errors.New("Agent revision 冲突")
+	ErrAgentMustBeStopped             = errors.New("Agent 必须先停止")
+	ErrIdempotencyConflict            = errors.New("幂等请求冲突")
+	ErrCredentialPending              = errors.New("Agent credential 正在安装")
+	ErrCredentialMissing              = errors.New("Agent credential 尚未安装")
+	ErrProfileCapabilitiesUnsupported = errors.New("Computer 不支持 Profile capability")
 )
 
 type ServerContext struct {
@@ -191,10 +218,12 @@ type ProfileCapabilityRefreshCommand struct {
 }
 
 type ProfileCapabilities struct {
-	AgentID          string
-	Runtime          Runtime
-	SnapshotJSON     *string
-	RefreshOperation *Operation
+	AgentID           string
+	ComputerID        *string
+	ContextGeneration int64
+	Runtime           Runtime
+	SnapshotJSON      *string
+	RefreshOperation  *Operation
 }
 
 type ProfileCapabilityResultCommand struct {
@@ -216,6 +245,29 @@ type ProfileCapabilitySubmissionResult struct {
 	Reason   string
 }
 
+type ProfileCapabilityInvalidationCommand struct {
+	ServerID                 string
+	ComputerID               string
+	AgentID                  string
+	EventID                  string
+	ContextGeneration        int64
+	AuthorityContextKey      string
+	RuntimeContextGeneration int64
+	EventSequence            int64
+	Reason                   string
+	ObservedAt               time.Time
+}
+
+type SystemProfileCapabilityEnsureCommand struct {
+	ServerID          string
+	ComputerID        string
+	AgentID           string
+	ContextGeneration int64
+	OperationID       string
+	CreatedAt         time.Time
+	DeadlineAt        time.Time
+}
+
 type CredentialResult struct {
 	Operation Operation
 	Created   bool
@@ -233,6 +285,11 @@ type Repository interface {
 }
 
 type ProfileCapabilityRepository interface {
+	SupportsProfileCapabilities(
+		context.Context,
+		string,
+		string,
+	) (bool, error)
 	GetProfileCapabilities(
 		context.Context,
 		string,
@@ -250,4 +307,19 @@ type ProfileCapabilityResultRepository interface {
 		context.Context,
 		ProfileCapabilityResultCommand,
 	) (ProfileCapabilitySubmissionResult, error)
+	PutProfileCapabilityInvalidation(
+		context.Context,
+		ProfileCapabilityInvalidationCommand,
+	) (ProfileCapabilitySubmissionResult, error)
+}
+
+type SystemProfileCapabilityRepository interface {
+	EnsureSystemProfileCapabilityRefresh(
+		context.Context,
+		SystemProfileCapabilityEnsureCommand,
+	) (Operation, error)
+}
+
+type ProfileCapabilityDeadlineRepository interface {
+	ExpireProfileCapabilityRefresh(context.Context, time.Time) (bool, error)
 }

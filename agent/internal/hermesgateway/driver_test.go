@@ -53,6 +53,42 @@ func TestDriverDetectModelsUsesGatewayInventory(t *testing.T) {
 	}
 }
 
+func TestDriverDiscoversGatewayModelsAndManagedProfileSkills(t *testing.T) {
+	driver := newGatewayTestDriver(t)
+	agentID := "agent-gateway-capabilities"
+	host, err := driver.hostDriver.PrepareManagedHost(
+		context.Background(), agentID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	skillDirectory := filepath.Join(host.ProfileHome, "skills", "gateway-skill")
+	if err := os.MkdirAll(skillDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(skillDirectory, "SKILL.md"),
+		[]byte("---\nname: gateway-skill\ndescription: Gateway skill\n---\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	result, err := driver.DiscoverProfileCapabilities(
+		context.Background(), runtimeapi.ProfileCapabilityRequest{
+			AgentID: agentID, WorkingDirectory: t.TempDir(), ForceReload: true,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Protocol != "hermes_gateway" ||
+		result.ProfileHome != host.ProfileHome ||
+		result.Models.Default != "default" || len(result.Models.Models) == 0 ||
+		len(result.Skills) != 1 || result.Skills[0].Name != "gateway-skill" {
+		t.Fatalf("Gateway Profile capabilities = %#v", result)
+	}
+}
+
 func TestDriverDoesNotFallBackToUnrelatedSystemPython(t *testing.T) {
 	trustedHome := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(trustedHome, ".hermes"), 0o700); err != nil {

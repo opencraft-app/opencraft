@@ -27,14 +27,16 @@ type ComputerHeartbeatAgent struct {
 }
 
 type ComputerHeartbeat struct {
-	HeartbeatID        string                     `json:"heartbeatId"`
-	DaemonVersion      string                     `json:"daemonVersion"`
-	DaemonBuildID      string                     `json:"daemonBuildId"`
-	AssignmentEpoch    string                     `json:"assignmentEpoch"`
-	AssignmentRevision int64                      `json:"assignmentRevision"`
-	TATState           string                     `json:"tatState"`
-	Reconcile          ComputerHeartbeatReconcile `json:"reconcile"`
-	Agents             []ComputerHeartbeatAgent   `json:"agents"`
+	HeartbeatID               string                     `json:"heartbeatId"`
+	DaemonVersion             string                     `json:"daemonVersion"`
+	DaemonBuildID             string                     `json:"daemonBuildId"`
+	AssignmentEpoch           string                     `json:"assignmentEpoch"`
+	AssignmentRevision        int64                      `json:"assignmentRevision"`
+	AssignmentVersion         int                        `json:"assignmentVersion,omitempty"`
+	ProfileCapabilityVersions []int                      `json:"profileCapabilityVersions,omitempty"`
+	TATState                  string                     `json:"tatState"`
+	Reconcile                 ComputerHeartbeatReconcile `json:"reconcile"`
+	Agents                    []ComputerHeartbeatAgent   `json:"agents"`
 }
 
 func (c *Client) SendComputerHeartbeat(
@@ -101,6 +103,15 @@ func validComputerHeartbeat(value ComputerHeartbeat) bool {
 		!validUUIDv7(value.AssignmentEpoch) ||
 		value.AssignmentRevision < 1 ||
 		len(value.Agents) > 5 {
+		return false
+	}
+	if value.AssignmentVersion != 0 && value.AssignmentVersion != 1 &&
+		value.AssignmentVersion != 2 {
+		return false
+	}
+	if len(value.ProfileCapabilityVersions) > 1 ||
+		len(value.ProfileCapabilityVersions) == 1 &&
+			value.ProfileCapabilityVersions[0] != 1 {
 		return false
 	}
 	switch value.TATState {

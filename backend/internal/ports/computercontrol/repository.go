@@ -183,18 +183,20 @@ type HeartbeatAgent struct {
 }
 
 type Heartbeat struct {
-	ID                 string
-	ServerID           string
-	ComputerID         string
-	AssignmentEpoch    string
-	AssignmentRevision int64
-	DaemonVersion      string
-	DaemonBuildID      string
-	TATState           string
-	ReconcileState     string
-	ReconcileErrorCode *string
-	Agents             []HeartbeatAgent
-	ReceivedAt         time.Time
+	ID                        string
+	ServerID                  string
+	ComputerID                string
+	AssignmentEpoch           string
+	AssignmentRevision        int64
+	AssignmentVersion         int
+	ProfileCapabilityVersions []int
+	DaemonVersion             string
+	DaemonBuildID             string
+	TATState                  string
+	ReconcileState            string
+	ReconcileErrorCode        *string
+	Agents                    []HeartbeatAgent
+	ReceivedAt                time.Time
 }
 
 type ObservationRepository interface {

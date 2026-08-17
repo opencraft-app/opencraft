@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	agentadapter "chatserver/internal/adapters/agent"
 	agentidentityadapter "chatserver/internal/adapters/agentidentity"
 	agentpresenceadapter "chatserver/internal/adapters/agentpresence"
 	credentialsadapter "chatserver/internal/adapters/credentials"
@@ -32,6 +33,7 @@ import (
 	tencentimadapter "chatserver/internal/adapters/tencentim"
 	tencentoperationadapter "chatserver/internal/adapters/tencentoperation"
 	appagentidentity "chatserver/internal/app/agentidentity"
+	appagent "chatserver/internal/app/agentmanagement"
 	appagentpresence "chatserver/internal/app/agentpresence"
 	appimcommunity "chatserver/internal/app/imcommunity"
 	appimdirectconversation "chatserver/internal/app/imdirectconversation"
@@ -1062,6 +1064,24 @@ func serveHumanPlatform(
 	if err != nil {
 		return apperror.New("CONFIG_INVALID", "无法组装 Computer bootstrap Worker", err)
 	}
+	profileCapabilityRepository, err := agentadapter.NewEntRepository(handle)
+	if err != nil {
+		return apperror.New("CONFIG_INVALID", "无法组装 Profile capability deadline Repository", err)
+	}
+	profileCapabilityDeadlineService, err := appagent.NewProfileCapabilityDeadlineService(
+		profileCapabilityRepository,
+		clock,
+	)
+	if err != nil {
+		return apperror.New("CONFIG_INVALID", "无法组装 Profile capability deadline Service", err)
+	}
+	profileCapabilityDeadlineWorker, err := imidentityworker.New(
+		profileCapabilityDeadlineService,
+		imidentityworker.Config{PollInterval: 500 * time.Millisecond},
+	)
+	if err != nil {
+		return apperror.New("CONFIG_INVALID", "无法组装 Profile capability deadline Worker", err)
+	}
 	rootHandler := http.NewServeMux()
 	readinessHandler, err := httptransport.NewReadinessHandler(
 		func(requestContext context.Context) error {
@@ -1149,6 +1169,7 @@ func serveHumanPlatform(
 		membershipWorker,
 		tatWorker,
 		computerBootstrapWorker,
+		profileCapabilityDeadlineWorker,
 		reminderWorker,
 		taskNotificationWorker,
 	}

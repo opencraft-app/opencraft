@@ -41,6 +41,76 @@ func TestDriverProbeValidatesHermesACP(t *testing.T) {
 	}
 }
 
+func TestDriverDiscoversCapabilitiesFromEachManagedProfile(t *testing.T) {
+	driver, first, _ := newManagedHermesTestDriver(t, "agent-profile-a")
+	if _, err := driver.PrepareManagedHost(context.Background(), "agent-profile-a"); err != nil {
+		t.Fatal(err)
+	}
+	writeHermesCapabilityFixture(t, first.Home, "model-a", "skill-a")
+	second, err := managedProfileSelection(driver.trustedHome, "agent-profile-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := driver.PrepareManagedHost(context.Background(), "agent-profile-b"); err != nil {
+		t.Fatal(err)
+	}
+	writeHermesCapabilityFixture(t, second.Home, "model-b", "skill-b")
+
+	firstResult, err := driver.DiscoverProfileCapabilities(
+		context.Background(), runtimeapi.ProfileCapabilityRequest{
+			AgentID: "agent-profile-a", WorkingDirectory: t.TempDir(),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondResult, err := driver.DiscoverProfileCapabilities(
+		context.Background(), runtimeapi.ProfileCapabilityRequest{
+			AgentID: "agent-profile-b", WorkingDirectory: t.TempDir(),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstResult.ProfileHome != first.Home ||
+		firstResult.Models.Default != "model-a" ||
+		len(firstResult.Skills) != 1 || firstResult.Skills[0].Name != "skill-a" {
+		t.Fatalf("first Profile capabilities = %#v", firstResult)
+	}
+	if secondResult.ProfileHome != second.Home ||
+		secondResult.Models.Default != "model-b" ||
+		len(secondResult.Skills) != 1 || secondResult.Skills[0].Name != "skill-b" {
+		t.Fatalf("second Profile capabilities = %#v", secondResult)
+	}
+}
+
+func writeHermesCapabilityFixture(
+	t *testing.T,
+	profileHome string,
+	model string,
+	skill string,
+) {
+	t.Helper()
+	if err := os.WriteFile(
+		filepath.Join(profileHome, "config.yaml"),
+		[]byte("model: "+model+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(profileHome, "skills", skill)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(directory, "SKILL.md"),
+		[]byte("---\nname: "+skill+"\ndescription: Profile skill\n---\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDriverDiscoversTrustedHomeLocalBinOutsidePATH(t *testing.T) {
 	trustedHome := t.TempDir()
 	hermesPath := filepath.Join(trustedHome, ".local", "bin", "hermes")

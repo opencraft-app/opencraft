@@ -1794,6 +1794,38 @@ describe("app store", () => {
     );
   });
 
+  it("tracks Profile capability refresh and reloads the snapshot at terminal state", async () => {
+    const deps = dependencies();
+	deps.platform.getOperation = jest.fn(async (_serverId, operationId) => ({
+		createdAt: "2026-08-18T00:00:00.000Z",
+		completedAt: "2026-08-18T00:00:01.000Z",
+		id: operationId,
+		kind: "agent.profile.capabilities.refresh",
+		service: "platform" as const,
+		state: "succeeded" as const,
+	}));
+    const store = createAppStore(deps);
+    await initializeServerContext(store);
+
+    const operation = await store
+      .getState()
+      .refreshAgentProfileCapabilities(agent.id);
+
+    expect(operation?.id).toBe("operation-profile-capability-default");
+    expect(
+      store.getState().operationsById["operation-profile-capability-default"],
+    ).toMatchObject({resourceId: agent.id, operation: {state: "pending"}});
+
+    await store
+      .getState()
+      .continueOperationPolling("operation-profile-capability-default");
+
+	expect(deps.platform.getAgentProfileCapabilities).toHaveBeenCalledTimes(2);
+    expect(
+      store.getState().operationsById["operation-profile-capability-default"],
+    ).toMatchObject({operation: {state: "succeeded"}, pollingState: "terminal"});
+  });
+
   it("sends consecutive all-members messages through its system Topic", async () => {
     const deps = dependencies();
     deps.platform.listChannels = jest.fn(async () => [

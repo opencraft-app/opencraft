@@ -4,13 +4,11 @@ package agentmanagement
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -99,6 +97,19 @@ type ProfileCapabilityResultCommand struct {
 	CompletedAt         time.Time
 }
 
+type ProfileCapabilityInvalidationCommand struct {
+	ServerID                 string
+	ComputerID               string
+	AgentID                  string
+	EventID                  string
+	ContextGeneration        int64
+	AuthorityContextKey      string
+	RuntimeContextGeneration int64
+	EventSequence            int64
+	Reason                   string
+	ObservedAt               time.Time
+}
+
 type Service struct {
 	repository agentport.Repository
 	identities identityDeriver
@@ -110,6 +121,84 @@ type Service struct {
 type ProfileCapabilityResultService struct {
 	repository agentport.ProfileCapabilityResultRepository
 	clock      clockport.Clock
+}
+
+type SystemProfileCapabilityEnsureService struct {
+	repository agentport.SystemProfileCapabilityRepository
+	ids        idport.Generator
+	clock      clockport.Clock
+}
+
+type ProfileCapabilityDeadlineService struct {
+	repository agentport.ProfileCapabilityDeadlineRepository
+	clock      clockport.Clock
+}
+
+func NewProfileCapabilityDeadlineService(
+	repository agentport.ProfileCapabilityDeadlineRepository,
+	clock clockport.Clock,
+) (*ProfileCapabilityDeadlineService, error) {
+	if repository == nil || clock == nil {
+		return nil, errors.New("Profile capability deadline service 配置无效")
+	}
+	return &ProfileCapabilityDeadlineService{repository: repository, clock: clock}, nil
+}
+
+func (service *ProfileCapabilityDeadlineService) ProcessOne(
+	ctx context.Context,
+) (bool, error) {
+	if ctx == nil {
+		return false, errors.New("Profile capability deadline 上下文无效")
+	}
+	return service.repository.ExpireProfileCapabilityRefresh(
+		ctx, service.clock.Now().UTC(),
+	)
+}
+
+func NewSystemProfileCapabilityEnsureService(
+	repository agentport.SystemProfileCapabilityRepository,
+	ids idport.Generator,
+	clock clockport.Clock,
+) (*SystemProfileCapabilityEnsureService, error) {
+	if repository == nil || ids == nil || clock == nil {
+		return nil, errors.New("System Profile capability ensure 配置无效")
+	}
+	return &SystemProfileCapabilityEnsureService{
+		repository: repository, ids: ids, clock: clock,
+	}, nil
+}
+
+func (service *SystemProfileCapabilityEnsureService) Ensure(
+	ctx context.Context,
+	serverID string,
+	computerID string,
+	agentID string,
+	contextGeneration int64,
+) error {
+	if !validUUIDv7(serverID) || !validUUIDv7(computerID) ||
+		!validUUIDv7(agentID) || contextGeneration < 1 {
+		return apperror.New("invalid_request", "System Profile capability ensure 参数无效", nil)
+	}
+	operationID, err := service.ids.New()
+	if err != nil {
+		return apperror.New("internal_error", "暂时无法创建 Profile capability refresh", err)
+	}
+	now := service.clock.Now().UTC()
+	_, err = service.repository.EnsureSystemProfileCapabilityRefresh(
+		ctx,
+		agentport.SystemProfileCapabilityEnsureCommand{
+			ServerID: serverID, ComputerID: computerID, AgentID: agentID,
+			ContextGeneration: contextGeneration, OperationID: operationID,
+			CreatedAt: now, DeadlineAt: now.Add(2 * time.Minute),
+		},
+	)
+	if errors.Is(err, agentport.ErrProfileCapabilitiesUnsupported) {
+		return nil
+	}
+	if err != nil {
+		return mapRepositoryError(err)
+	}
+	return nil
 }
 
 func NewProfileCapabilityResultService(
@@ -150,6 +239,41 @@ func (service *ProfileCapabilityResultService) CompleteProfileCapabilities(
 		return agentport.ProfileCapabilitySubmissionResult{}, mapRepositoryError(err)
 	}
 	return result, nil
+}
+
+func (service *ProfileCapabilityResultService) InvalidateProfileCapabilities(
+	ctx context.Context,
+	command ProfileCapabilityInvalidationCommand,
+) (agentport.ProfileCapabilitySubmissionResult, error) {
+	if !validUUIDv7(command.ServerID) || !validUUIDv7(command.ComputerID) ||
+		!validUUIDv7(command.AgentID) || !validUUIDv7(command.EventID) ||
+		command.ContextGeneration < 1 || len(command.AuthorityContextKey) != 43 ||
+		command.RuntimeContextGeneration < 1 || command.EventSequence < 1 ||
+		command.ObservedAt.IsZero() || !validProfileInvalidationReason(command.Reason) {
+		return agentport.ProfileCapabilitySubmissionResult{},
+			apperror.New("invalid_request", "Profile capability invalidation 参数无效", nil)
+	}
+	result, err := service.repository.PutProfileCapabilityInvalidation(
+		ctx,
+		agentport.ProfileCapabilityInvalidationCommand{
+			ServerID: command.ServerID, ComputerID: command.ComputerID,
+			AgentID: command.AgentID, EventID: command.EventID,
+			ContextGeneration:        command.ContextGeneration,
+			AuthorityContextKey:      command.AuthorityContextKey,
+			RuntimeContextGeneration: command.RuntimeContextGeneration,
+			EventSequence:            command.EventSequence, Reason: command.Reason,
+			ObservedAt: command.ObservedAt.UTC(),
+		},
+	)
+	if err != nil {
+		return agentport.ProfileCapabilitySubmissionResult{}, mapRepositoryError(err)
+	}
+	return result, nil
+}
+
+func validProfileInvalidationReason(value string) bool {
+	return value == "profile_changed" || value == "workspace_changed" ||
+		value == "runtime_reported_change"
 }
 
 func NewService(
@@ -275,6 +399,19 @@ func (service *Service) RefreshProfileCapabilities(
 		return agentport.Operation{},
 			apperror.New("profile_not_ready", "Agent Profile 尚未准备好", nil)
 	}
+	supported, err := repository.SupportsProfileCapabilities(
+		ctx, command.ServerID, *agent.ComputerID,
+	)
+	if err != nil {
+		return agentport.Operation{}, mapRepositoryError(err)
+	}
+	if !supported {
+		return agentport.Operation{}, apperror.New(
+			"profile_capabilities_unsupported",
+			"Computer 需要升级后才能发现 Agent Profile 能力",
+			nil,
+		)
+	}
 	operationID, err := service.ids.New()
 	if err != nil {
 		return agentport.Operation{},
@@ -384,21 +521,9 @@ func profileCapabilityAuthorityContextKey(
 	runtimeKind string,
 	revision int64,
 ) string {
-	var canonical strings.Builder
-	canonical.WriteString("agent-profile-capability-context/v1\x00")
-	for _, value := range []string{
-		strings.ToLower(serverID),
-		strings.ToLower(agentID),
-		strings.ToLower(computerID),
-		strings.TrimSpace(runtimeKind),
-		strconv.FormatInt(revision, 10),
-	} {
-		canonical.WriteString(strconv.Itoa(len(value)))
-		canonical.WriteByte(':')
-		canonical.WriteString(value)
-	}
-	digest := sha256.Sum256([]byte(canonical.String()))
-	return base64.RawURLEncoding.EncodeToString(digest[:])
+	return agentport.ProfileCapabilityAuthorityContextKey(
+		serverID, agentID, computerID, runtimeKind, revision,
+	)
 }
 
 func (service *Service) List(

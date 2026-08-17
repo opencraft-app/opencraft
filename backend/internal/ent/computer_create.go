@@ -188,6 +188,34 @@ func (_c *ComputerCreate) SetNillableDaemonBuildID(v *string) *ComputerCreate {
 	return _c
 }
 
+// SetAssignmentProtocolVersion sets the "assignment_protocol_version" field.
+func (_c *ComputerCreate) SetAssignmentProtocolVersion(v int) *ComputerCreate {
+	_c.mutation.SetAssignmentProtocolVersion(v)
+	return _c
+}
+
+// SetNillableAssignmentProtocolVersion sets the "assignment_protocol_version" field if the given value is not nil.
+func (_c *ComputerCreate) SetNillableAssignmentProtocolVersion(v *int) *ComputerCreate {
+	if v != nil {
+		_c.SetAssignmentProtocolVersion(*v)
+	}
+	return _c
+}
+
+// SetProfileCapabilityVersion sets the "profile_capability_version" field.
+func (_c *ComputerCreate) SetProfileCapabilityVersion(v int) *ComputerCreate {
+	_c.mutation.SetProfileCapabilityVersion(v)
+	return _c
+}
+
+// SetNillableProfileCapabilityVersion sets the "profile_capability_version" field if the given value is not nil.
+func (_c *ComputerCreate) SetNillableProfileCapabilityVersion(v *int) *ComputerCreate {
+	if v != nil {
+		_c.SetProfileCapabilityVersion(*v)
+	}
+	return _c
+}
+
 // SetDaemonVersionTokenIssuedAt sets the "daemon_version_token_issued_at" field.
 func (_c *ComputerCreate) SetDaemonVersionTokenIssuedAt(v time.Time) *ComputerCreate {
 	_c.mutation.SetDaemonVersionTokenIssuedAt(v)
@@ -533,6 +561,10 @@ func (_c *ComputerCreate) defaults() {
 		v := computer.DefaultAssignmentRevision()
 		_c.mutation.SetAssignmentRevision(v)
 	}
+	if _, ok := _c.mutation.AssignmentProtocolVersion(); !ok {
+		v := computer.DefaultAssignmentProtocolVersion
+		_c.mutation.SetAssignmentProtocolVersion(v)
+	}
 	if _, ok := _c.mutation.EnrollmentGeneration(); !ok {
 		v := computer.DefaultEnrollmentGeneration
 		_c.mutation.SetEnrollmentGeneration(v)
@@ -579,6 +611,9 @@ func (_c *ComputerCreate) check() error {
 	}
 	if _, ok := _c.mutation.AssignmentRevision(); !ok {
 		return &ValidationError{Name: "assignment_revision", err: errors.New(`ent: missing required field "Computer.assignment_revision"`)}
+	}
+	if _, ok := _c.mutation.AssignmentProtocolVersion(); !ok {
+		return &ValidationError{Name: "assignment_protocol_version", err: errors.New(`ent: missing required field "Computer.assignment_protocol_version"`)}
 	}
 	if _, ok := _c.mutation.EnrollmentGeneration(); !ok {
 		return &ValidationError{Name: "enrollment_generation", err: errors.New(`ent: missing required field "Computer.enrollment_generation"`)}
@@ -755,6 +790,14 @@ func (_c *ComputerCreate) createSpec() (*Computer, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.DaemonBuildID(); ok {
 		_spec.SetField(computer.FieldDaemonBuildID, field.TypeString, value)
 		_node.DaemonBuildID = &value
+	}
+	if value, ok := _c.mutation.AssignmentProtocolVersion(); ok {
+		_spec.SetField(computer.FieldAssignmentProtocolVersion, field.TypeInt, value)
+		_node.AssignmentProtocolVersion = value
+	}
+	if value, ok := _c.mutation.ProfileCapabilityVersion(); ok {
+		_spec.SetField(computer.FieldProfileCapabilityVersion, field.TypeInt, value)
+		_node.ProfileCapabilityVersion = &value
 	}
 	if value, ok := _c.mutation.DaemonVersionTokenIssuedAt(); ok {
 		_spec.SetField(computer.FieldDaemonVersionTokenIssuedAt, field.TypeTime, value)

@@ -1517,6 +1517,7 @@ export function createAppStore(
           agentId,
           `${requestId()}:agent:profile-capabilities:refresh`,
         );
+		trackOperations([operation], agentId);
         const capabilities = await dependencies.platform.getAgentProfileCapabilities(
           serverId,
           agentId,
@@ -4423,6 +4424,31 @@ export function createAppStore(
             patch,
           ),
         }));
+        if (
+          result.kind === "terminal" &&
+          result.operation.kind === "agent.profile.capabilities.refresh" &&
+          tracked.resourceId
+        ) {
+          const capabilities = await dependencies.platform.getAgentProfileCapabilities(
+            serverId,
+            tracked.resourceId,
+          );
+          if (
+            operationPollIsCurrent(
+              operationId,
+              generation,
+              serverId,
+              contextGeneration,
+            )
+          ) {
+            store.setState((current) => ({
+              agentProfileCapabilitiesById: {
+                ...current.agentProfileCapabilitiesById,
+                [tracked.resourceId as string]: capabilities,
+              },
+            }));
+          }
+        }
         if (
           result.kind === "terminal" &&
           result.operation.kind.startsWith("im.membership.")

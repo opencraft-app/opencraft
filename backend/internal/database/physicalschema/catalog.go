@@ -106,7 +106,9 @@ func Baseline20260801000000() (*Catalog, error) {
 			if table.Name == "server_invites" && column.Name == "landing_channel_id" {
 				continue
 			}
-			if table.Name == "computers" && isComputerEnrollmentColumn(column.Name) {
+			if table.Name == "computers" &&
+				(isComputerEnrollmentColumn(column.Name) ||
+					isComputerPostBaselineColumn(column.Name)) {
 				continue
 			}
 			if table.Name == "agents" && isAgentPostBaselineColumn(column.Name) {
@@ -131,6 +133,15 @@ func Baseline20260801000000() (*Catalog, error) {
 		}
 	}
 	return Build(baselineEntries, baselineDesired)
+}
+
+func isComputerPostBaselineColumn(name string) bool {
+	switch name {
+	case "assignment_protocol_version", "profile_capability_version":
+		return true
+	default:
+		return false
+	}
 }
 
 func isAgentPostBaselineColumn(name string) bool {

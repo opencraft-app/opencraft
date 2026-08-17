@@ -6,9 +6,11 @@ import (
 	"time"
 
 	"chatserver/internal/api/openapi"
+	appagent "chatserver/internal/app/agentmanagement"
 	appcomputercontrol "chatserver/internal/app/computercontrol"
 	appcomputer "chatserver/internal/app/computermanagement"
 	appruntimesession "chatserver/internal/app/runtimesession"
+	agentport "chatserver/internal/ports/agent"
 	authnport "chatserver/internal/ports/authn"
 	computercontrolport "chatserver/internal/ports/computercontrol"
 
@@ -81,6 +83,27 @@ type fakeComputerObservationService struct {
 	heartbeatArgs []any
 	result        computercontrolport.ObservationResult
 	err           error
+}
+
+type fakeComputerProfileCapabilityService struct {
+	invalidation appagent.ProfileCapabilityInvalidationCommand
+}
+
+func (*fakeComputerProfileCapabilityService) CompleteProfileCapabilities(
+	context.Context,
+	appagent.ProfileCapabilityResultCommand,
+) (agentport.ProfileCapabilitySubmissionResult, error) {
+	return agentport.ProfileCapabilitySubmissionResult{}, nil
+}
+
+func (service *fakeComputerProfileCapabilityService) InvalidateProfileCapabilities(
+	_ context.Context,
+	command appagent.ProfileCapabilityInvalidationCommand,
+) (agentport.ProfileCapabilitySubmissionResult, error) {
+	service.invalidation = command
+	return agentport.ProfileCapabilitySubmissionResult{
+		Accepted: true, Reason: "accepted",
+	}, nil
 }
 
 func (service *fakeComputerObservationService) Put(
@@ -541,13 +564,16 @@ func TestComputerControlHandlerAcceptsObservationAndHeartbeat(t *testing.T) {
 		t.Fatalf("stale observation response = %#v", response)
 	}
 	heartbeatID := uuid.MustParse("01989c24-7540-7f12-a27b-c83243215dd1")
+	assignmentVersion := openapi.ComputerHeartbeatAssignmentVersion(2)
 	heartbeatResponse, err := handler.SendComputerHeartbeat(
 		currentComputerContext(t, 4),
 		openapi.SendComputerHeartbeatRequestObject{Body: &openapi.ComputerHeartbeat{
 			HeartbeatId: heartbeatID, DaemonVersion: "1.0.0", DaemonBuildId: "build-test",
 			AssignmentEpoch: agentUUID, AssignmentRevision: 9,
-			TatState:  "online",
-			Reconcile: openapi.ComputerHeartbeatReconcile{State: "healthy"},
+			AssignmentVersion:         &assignmentVersion,
+			ProfileCapabilityVersions: &[]openapi.ComputerHeartbeatProfileCapabilityVersions{1},
+			TatState:                  "online",
+			Reconcile:                 openapi.ComputerHeartbeatReconcile{State: "healthy"},
 			Agents: []openapi.ComputerHeartbeatAgent{{
 				AgentId: agentUUID, AssignmentEpoch: agentUUID,
 				ConfigGeneration: 3, CredentialVersion: 2,
@@ -563,6 +589,50 @@ func TestComputerControlHandlerAcceptsObservationAndHeartbeat(t *testing.T) {
 	}
 	if len(observationService.putArgs) != 5 || len(observationService.heartbeatArgs) != 3 {
 		t.Fatalf("observation calls = %#v %#v", observationService.putArgs, observationService.heartbeatArgs)
+	}
+	heartbeatCommand := observationService.heartbeatArgs[2].(appcomputercontrol.HeartbeatRequest)
+	if heartbeatCommand.AssignmentVersion != 2 ||
+		len(heartbeatCommand.ProfileCapabilityVersions) != 1 ||
+		heartbeatCommand.ProfileCapabilityVersions[0] != 1 {
+		t.Fatalf("heartbeat capabilities = %#v", heartbeatCommand)
+	}
+}
+
+func TestComputerControlHandlerAcceptsProfileCapabilityInvalidation(t *testing.T) {
+	capabilities := &fakeComputerProfileCapabilityService{}
+	handler, err := NewComputerControlHandler(
+		&fakeComputerControlSessionService{},
+		&fakeComputerCredentialRotationService{},
+		&fakeComputerAssignmentService{},
+		&fakeComputerAgentLaunchService{},
+		&fakeComputerObservationService{},
+		capabilities,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventID := uuid.MustParse("01989c24-7540-7f12-a27b-c83243215dde")
+	response, err := handler.PutComputerAgentProfileCapabilityInvalidation(
+		currentComputerContext(t, 4),
+		openapi.PutComputerAgentProfileCapabilityInvalidationRequestObject{
+			AgentId: uuid.MustParse(hookTestAgentID), EventId: eventID,
+			Body: &openapi.ComputerAgentProfileCapabilityInvalidation{
+				SchemaVersion: 1, ContextGeneration: 3,
+				AuthorityContextKey:      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+				RuntimeContextGeneration: 2, EventSequence: 4,
+				Reason:     openapi.ComputerProfileInvalidationRuntimeReportedChange,
+				ObservedAt: time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC),
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, ok := response.(openapi.PutComputerAgentProfileCapabilityInvalidation200JSONResponse)
+	if !ok || !body.Accepted || body.Reason != openapi.ComputerProfileSubmissionAccepted ||
+		capabilities.invalidation.EventID != eventID.String() ||
+		capabilities.invalidation.EventSequence != 4 {
+		t.Fatalf("invalidation response = %#v command=%#v", response, capabilities.invalidation)
 	}
 }
 

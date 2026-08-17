@@ -2,6 +2,7 @@ package httptransport
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"strings"
@@ -90,11 +91,19 @@ func (handler *AgentHandler) GetAgentProfileCapabilities(
 		body.RefreshOperation = &operation
 	}
 	if value.SnapshotJSON != nil {
-		var snapshot openapi.ComputerAgentProfileCapabilityResult
+		var payload persistedjson.ProfileCapabilitiesPayload
 		if _, err := persistedjson.DecodeProfileCapabilities(
 			*value.SnapshotJSON,
-			&snapshot,
-		); err != nil {
+			&payload,
+		); err != nil || payload.SchemaVersion != 1 || len(payload.Snapshot) == 0 {
+			return nil, apperror.New(
+				"internal_error",
+				"Profile capability envelope 无效",
+				err,
+			)
+		}
+		var snapshot openapi.ComputerAgentProfileCapabilityResult
+		if err := json.Unmarshal(payload.Snapshot, &snapshot); err != nil {
 			return nil, apperror.New(
 				"internal_error",
 				"Profile capability snapshot 无效",
@@ -106,6 +115,38 @@ func (handler *AgentHandler) GetAgentProfileCapabilities(
 		body.Source = snapshot.Source
 		observedAt := snapshot.ObservedAt.UTC()
 		body.ObservedAt = &observedAt
+		if snapshot.Subject != nil {
+			if value.ComputerID == nil ||
+				snapshot.Subject.ComputerId.String() != *value.ComputerID {
+				body.StaleReasons = append(
+					body.StaleReasons,
+					openapi.AgentProfileStaleComputerChanged,
+				)
+			}
+			if string(snapshot.Subject.RuntimeKind) != value.Runtime.Kind {
+				body.StaleReasons = append(
+					body.StaleReasons,
+					openapi.AgentProfileStaleRuntimeChanged,
+				)
+			}
+			if snapshot.Subject.ContextGeneration != value.ContextGeneration {
+				body.StaleReasons = append(
+					body.StaleReasons,
+					openapi.AgentProfileStaleProfileChanged,
+				)
+			}
+			if len(body.StaleReasons) > 0 {
+				body.SnapshotState = openapi.AgentProfileSnapshotStale
+			}
+		}
+		for _, invalidation := range payload.Invalidations {
+			reason := openapi.AgentProfileCapabilitiesStaleReasons(invalidation.Reason)
+			if !reason.Valid() || containsProfileStaleReason(body.StaleReasons, reason) {
+				continue
+			}
+			body.StaleReasons = append(body.StaleReasons, reason)
+			body.SnapshotState = openapi.AgentProfileSnapshotStale
+		}
 		if string(snapshot.Models.Status) == "succeeded" {
 			selectionMode := openapi.AgentProfileModelCapabilitiesSelectionMode(
 				"follow_runtime_default",
@@ -143,6 +184,18 @@ func (handler *AgentHandler) GetAgentProfileCapabilities(
 		}
 	}
 	return openapi.GetAgentProfileCapabilities200JSONResponse(body), nil
+}
+
+func containsProfileStaleReason(
+	values []openapi.AgentProfileCapabilitiesStaleReasons,
+	want openapi.AgentProfileCapabilitiesStaleReasons,
+) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 type AgentHandler struct {

@@ -144,6 +144,16 @@ func DaemonBuildID(v string) predicate.Computer {
 	return predicate.Computer(sql.FieldEQ(FieldDaemonBuildID, v))
 }
 
+// AssignmentProtocolVersion applies equality check predicate on the "assignment_protocol_version" field. It's identical to AssignmentProtocolVersionEQ.
+func AssignmentProtocolVersion(v int) predicate.Computer {
+	return predicate.Computer(sql.FieldEQ(FieldAssignmentProtocolVersion, v))
+}
+
+// ProfileCapabilityVersion applies equality check predicate on the "profile_capability_version" field. It's identical to ProfileCapabilityVersionEQ.
+func ProfileCapabilityVersion(v int) predicate.Computer {
+	return predicate.Computer(sql.FieldEQ(FieldProfileCapabilityVersion, v))
+}
+
 // DaemonVersionTokenIssuedAt applies equality check predicate on the "daemon_version_token_issued_at" field. It's identical to DaemonVersionTokenIssuedAtEQ.
 func DaemonVersionTokenIssuedAt(v time.Time) predicate.Computer {
 	return predicate.Computer(sql.FieldEQ(FieldDaemonVersionTokenIssuedAt, v))
@@ -1272,6 +1282,96 @@ func DaemonBuildIDEqualFold(v string) predicate.Computer {
 // DaemonBuildIDContainsFold applies the ContainsFold predicate on the "daemon_build_id" field.
 func DaemonBuildIDContainsFold(v string) predicate.Computer {
 	return predicate.Computer(sql.FieldContainsFold(FieldDaemonBuildID, v))
+}
+
+// AssignmentProtocolVersionEQ applies the EQ predicate on the "assignment_protocol_version" field.
+func AssignmentProtocolVersionEQ(v int) predicate.Computer {
+	return predicate.Computer(sql.FieldEQ(FieldAssignmentProtocolVersion, v))
+}
+
+// AssignmentProtocolVersionNEQ applies the NEQ predicate on the "assignment_protocol_version" field.
+func AssignmentProtocolVersionNEQ(v int) predicate.Computer {
+	return predicate.Computer(sql.FieldNEQ(FieldAssignmentProtocolVersion, v))
+}
+
+// AssignmentProtocolVersionIn applies the In predicate on the "assignment_protocol_version" field.
+func AssignmentProtocolVersionIn(vs ...int) predicate.Computer {
+	return predicate.Computer(sql.FieldIn(FieldAssignmentProtocolVersion, vs...))
+}
+
+// AssignmentProtocolVersionNotIn applies the NotIn predicate on the "assignment_protocol_version" field.
+func AssignmentProtocolVersionNotIn(vs ...int) predicate.Computer {
+	return predicate.Computer(sql.FieldNotIn(FieldAssignmentProtocolVersion, vs...))
+}
+
+// AssignmentProtocolVersionGT applies the GT predicate on the "assignment_protocol_version" field.
+func AssignmentProtocolVersionGT(v int) predicate.Computer {
+	return predicate.Computer(sql.FieldGT(FieldAssignmentProtocolVersion, v))
+}
+
+// AssignmentProtocolVersionGTE applies the GTE predicate on the "assignment_protocol_version" field.
+func AssignmentProtocolVersionGTE(v int) predicate.Computer {
+	return predicate.Computer(sql.FieldGTE(FieldAssignmentProtocolVersion, v))
+}
+
+// AssignmentProtocolVersionLT applies the LT predicate on the "assignment_protocol_version" field.
+func AssignmentProtocolVersionLT(v int) predicate.Computer {
+	return predicate.Computer(sql.FieldLT(FieldAssignmentProtocolVersion, v))
+}
+
+// AssignmentProtocolVersionLTE applies the LTE predicate on the "assignment_protocol_version" field.
+func AssignmentProtocolVersionLTE(v int) predicate.Computer {
+	return predicate.Computer(sql.FieldLTE(FieldAssignmentProtocolVersion, v))
+}
+
+// ProfileCapabilityVersionEQ applies the EQ predicate on the "profile_capability_version" field.
+func ProfileCapabilityVersionEQ(v int) predicate.Computer {
+	return predicate.Computer(sql.FieldEQ(FieldProfileCapabilityVersion, v))
+}
+
+// ProfileCapabilityVersionNEQ applies the NEQ predicate on the "profile_capability_version" field.
+func ProfileCapabilityVersionNEQ(v int) predicate.Computer {
+	return predicate.Computer(sql.FieldNEQ(FieldProfileCapabilityVersion, v))
+}
+
+// ProfileCapabilityVersionIn applies the In predicate on the "profile_capability_version" field.
+func ProfileCapabilityVersionIn(vs ...int) predicate.Computer {
+	return predicate.Computer(sql.FieldIn(FieldProfileCapabilityVersion, vs...))
+}
+
+// ProfileCapabilityVersionNotIn applies the NotIn predicate on the "profile_capability_version" field.
+func ProfileCapabilityVersionNotIn(vs ...int) predicate.Computer {
+	return predicate.Computer(sql.FieldNotIn(FieldProfileCapabilityVersion, vs...))
+}
+
+// ProfileCapabilityVersionGT applies the GT predicate on the "profile_capability_version" field.
+func ProfileCapabilityVersionGT(v int) predicate.Computer {
+	return predicate.Computer(sql.FieldGT(FieldProfileCapabilityVersion, v))
+}
+
+// ProfileCapabilityVersionGTE applies the GTE predicate on the "profile_capability_version" field.
+func ProfileCapabilityVersionGTE(v int) predicate.Computer {
+	return predicate.Computer(sql.FieldGTE(FieldProfileCapabilityVersion, v))
+}
+
+// ProfileCapabilityVersionLT applies the LT predicate on the "profile_capability_version" field.
+func ProfileCapabilityVersionLT(v int) predicate.Computer {
+	return predicate.Computer(sql.FieldLT(FieldProfileCapabilityVersion, v))
+}
+
+// ProfileCapabilityVersionLTE applies the LTE predicate on the "profile_capability_version" field.
+func ProfileCapabilityVersionLTE(v int) predicate.Computer {
+	return predicate.Computer(sql.FieldLTE(FieldProfileCapabilityVersion, v))
+}
+
+// ProfileCapabilityVersionIsNil applies the IsNil predicate on the "profile_capability_version" field.
+func ProfileCapabilityVersionIsNil() predicate.Computer {
+	return predicate.Computer(sql.FieldIsNull(FieldProfileCapabilityVersion))
+}
+
+// ProfileCapabilityVersionNotNil applies the NotNil predicate on the "profile_capability_version" field.
+func ProfileCapabilityVersionNotNil() predicate.Computer {
+	return predicate.Computer(sql.FieldNotNull(FieldProfileCapabilityVersion))
 }
 
 // DaemonVersionTokenIssuedAtEQ applies the EQ predicate on the "daemon_version_token_issued_at" field.

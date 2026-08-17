@@ -517,6 +517,18 @@ func (c *defaultComputerController) Run(
 		sessions: sessions,
 		client:   client,
 	}
+	capabilitySink := &computerProfileCapabilitySink{
+		computerID:         config.ComputerID,
+		stateRoot:          root,
+		runtimeFuture:      runtimeFuture,
+		workspaceDirectory: factory.workspaceDirectory,
+		submitter: &platformProfileCapabilitySubmitter{
+			sessions: sessions,
+			client:   client,
+		},
+		now:    c.config.Now,
+		active: make(map[string]struct{}),
+	}
 	runner, err := daemon.NewRunner(daemon.RunnerConfig{
 		StateRoot:  root,
 		Version:    c.config.Version,
@@ -533,6 +545,7 @@ func (c *defaultComputerController) Run(
 			stateRoot: filepath.Join(root, "tat"),
 		},
 		HeartbeatSink:     heartbeatSink,
+		CapabilitySink:    capabilitySink,
 		HeartbeatInterval: c.config.HeartbeatInterval,
 		Now:               c.config.Now,
 	})
@@ -665,12 +678,14 @@ func (s *computerHeartbeatSink) Send(
 		return err
 	}
 	heartbeat := platform.ComputerHeartbeat{
-		HeartbeatID:        value.HeartbeatID,
-		DaemonVersion:      value.DaemonVersion,
-		DaemonBuildID:      value.DaemonBuildID,
-		AssignmentEpoch:    value.AssignmentEpoch,
-		AssignmentRevision: value.AssignmentRevision,
-		TATState:           value.TATState,
+		HeartbeatID:               value.HeartbeatID,
+		DaemonVersion:             value.DaemonVersion,
+		DaemonBuildID:             value.DaemonBuildID,
+		AssignmentEpoch:           value.AssignmentEpoch,
+		AssignmentRevision:        value.AssignmentRevision,
+		AssignmentVersion:         2,
+		ProfileCapabilityVersions: []int{1},
+		TATState:                  value.TATState,
 		Reconcile: platform.ComputerHeartbeatReconcile{
 			State:     value.ReconcileState,
 			ErrorCode: value.ErrorCode,

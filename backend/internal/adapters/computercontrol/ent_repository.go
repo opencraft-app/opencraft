@@ -785,6 +785,17 @@ func (repository *EntRepository) ApplyHeartbeat(
 			SetDaemonBuildID(value.DaemonBuildID).
 			SetTatAgentState(value.TATState).
 			SetLastObservedAt(value.ReceivedAt.UTC())
+		assignmentVersion := value.AssignmentVersion
+		if assignmentVersion == 0 {
+			assignmentVersion = 1
+		}
+		update.SetAssignmentProtocolVersion(assignmentVersion)
+		if len(value.ProfileCapabilityVersions) == 1 &&
+			value.ProfileCapabilityVersions[0] == 1 {
+			update.SetProfileCapabilityVersion(1)
+		} else {
+			update.ClearProfileCapabilityVersion()
+		}
 		if value.ReconcileErrorCode == nil {
 			update.ClearLastReconcileErrorCode()
 		} else {
@@ -886,6 +897,13 @@ func validHeartbeat(value computercontrolport.Heartbeat) bool {
 		value.AssignmentRevision < 1 || value.DaemonVersion == "" ||
 		value.DaemonBuildID == "" ||
 		value.ReceivedAt.IsZero() {
+		return false
+	}
+	if value.AssignmentVersion != 0 && value.AssignmentVersion != 1 &&
+		value.AssignmentVersion != 2 ||
+		len(value.ProfileCapabilityVersions) > 1 ||
+		len(value.ProfileCapabilityVersions) == 1 &&
+			value.ProfileCapabilityVersions[0] != 1 {
 		return false
 	}
 	for _, item := range value.Agents {

@@ -1,8 +1,10 @@
 package persistedjson
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fixture struct {
@@ -69,5 +71,31 @@ func TestProfileCapabilitiesCodecRejectsOversizedEnvelope(t *testing.T) {
 		&oversized,
 	); err == nil {
 		t.Fatal("oversized Profile capability envelope was decoded")
+	}
+}
+
+func TestProfileCapabilitiesPayloadRoundTripsSnapshotAndInvalidation(t *testing.T) {
+	payload := ProfileCapabilitiesPayload{
+		SchemaVersion:          1,
+		Snapshot:               json.RawMessage(`{"schemaVersion":1,"status":"succeeded"}`),
+		InvalidationGeneration: 2,
+		Invalidations: []ProfileCapabilityInvalidation{{
+			EventID:    "01989c24-7540-7f12-a27b-c83243215dd9",
+			Generation: 2, RuntimeContextGeneration: 3, EventSequence: 4,
+			Reason:     "runtime_reported_change",
+			ObservedAt: time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC),
+		}},
+	}
+	encoded, err := EncodeProfileCapabilities(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded ProfileCapabilitiesPayload
+	if _, err := DecodeProfileCapabilities(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.SchemaVersion != 1 || decoded.InvalidationGeneration != 2 ||
+		len(decoded.Invalidations) != 1 || decoded.Invalidations[0].EventSequence != 4 {
+		t.Fatalf("decoded payload = %#v", decoded)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 )
 
 const SchemaVersion = 1
@@ -25,6 +26,25 @@ type snapshotEnvelope struct {
 	Service       string          `json:"service"`
 	Kind          string          `json:"kind"`
 	Payload       json.RawMessage `json:"payload"`
+}
+
+// ProfileCapabilitiesPayload is the durable Agent-owned 1:1 observation.
+// Snapshot is the last successful normalized Computer result; invalidations
+// are control metadata that arrived after or were not covered by that result.
+type ProfileCapabilitiesPayload struct {
+	SchemaVersion          int                             `json:"schemaVersion"`
+	Snapshot               json.RawMessage                 `json:"snapshot"`
+	InvalidationGeneration int64                           `json:"invalidationGeneration"`
+	Invalidations          []ProfileCapabilityInvalidation `json:"invalidations"`
+}
+
+type ProfileCapabilityInvalidation struct {
+	EventID                  string    `json:"eventId"`
+	Generation               int64     `json:"generation"`
+	RuntimeContextGeneration int64     `json:"runtimeContextGeneration"`
+	EventSequence            int64     `json:"eventSequence"`
+	Reason                   string    `json:"reason"`
+	ObservedAt               time.Time `json:"observedAt"`
 }
 
 // Encode writes the canonical v1 envelope used by message references.

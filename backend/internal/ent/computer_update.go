@@ -301,6 +301,54 @@ func (_u *ComputerUpdate) ClearDaemonBuildID() *ComputerUpdate {
 	return _u
 }
 
+// SetAssignmentProtocolVersion sets the "assignment_protocol_version" field.
+func (_u *ComputerUpdate) SetAssignmentProtocolVersion(v int) *ComputerUpdate {
+	_u.mutation.ResetAssignmentProtocolVersion()
+	_u.mutation.SetAssignmentProtocolVersion(v)
+	return _u
+}
+
+// SetNillableAssignmentProtocolVersion sets the "assignment_protocol_version" field if the given value is not nil.
+func (_u *ComputerUpdate) SetNillableAssignmentProtocolVersion(v *int) *ComputerUpdate {
+	if v != nil {
+		_u.SetAssignmentProtocolVersion(*v)
+	}
+	return _u
+}
+
+// AddAssignmentProtocolVersion adds value to the "assignment_protocol_version" field.
+func (_u *ComputerUpdate) AddAssignmentProtocolVersion(v int) *ComputerUpdate {
+	_u.mutation.AddAssignmentProtocolVersion(v)
+	return _u
+}
+
+// SetProfileCapabilityVersion sets the "profile_capability_version" field.
+func (_u *ComputerUpdate) SetProfileCapabilityVersion(v int) *ComputerUpdate {
+	_u.mutation.ResetProfileCapabilityVersion()
+	_u.mutation.SetProfileCapabilityVersion(v)
+	return _u
+}
+
+// SetNillableProfileCapabilityVersion sets the "profile_capability_version" field if the given value is not nil.
+func (_u *ComputerUpdate) SetNillableProfileCapabilityVersion(v *int) *ComputerUpdate {
+	if v != nil {
+		_u.SetProfileCapabilityVersion(*v)
+	}
+	return _u
+}
+
+// AddProfileCapabilityVersion adds value to the "profile_capability_version" field.
+func (_u *ComputerUpdate) AddProfileCapabilityVersion(v int) *ComputerUpdate {
+	_u.mutation.AddProfileCapabilityVersion(v)
+	return _u
+}
+
+// ClearProfileCapabilityVersion clears the value of the "profile_capability_version" field.
+func (_u *ComputerUpdate) ClearProfileCapabilityVersion() *ComputerUpdate {
+	_u.mutation.ClearProfileCapabilityVersion()
+	return _u
+}
+
 // SetDaemonVersionTokenIssuedAt sets the "daemon_version_token_issued_at" field.
 func (_u *ComputerUpdate) SetDaemonVersionTokenIssuedAt(v time.Time) *ComputerUpdate {
 	_u.mutation.SetDaemonVersionTokenIssuedAt(v)
@@ -918,6 +966,21 @@ func (_u *ComputerUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.DaemonBuildIDCleared() {
 		_spec.ClearField(computer.FieldDaemonBuildID, field.TypeString)
 	}
+	if value, ok := _u.mutation.AssignmentProtocolVersion(); ok {
+		_spec.SetField(computer.FieldAssignmentProtocolVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedAssignmentProtocolVersion(); ok {
+		_spec.AddField(computer.FieldAssignmentProtocolVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.ProfileCapabilityVersion(); ok {
+		_spec.SetField(computer.FieldProfileCapabilityVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedProfileCapabilityVersion(); ok {
+		_spec.AddField(computer.FieldProfileCapabilityVersion, field.TypeInt, value)
+	}
+	if _u.mutation.ProfileCapabilityVersionCleared() {
+		_spec.ClearField(computer.FieldProfileCapabilityVersion, field.TypeInt)
+	}
 	if value, ok := _u.mutation.DaemonVersionTokenIssuedAt(); ok {
 		_spec.SetField(computer.FieldDaemonVersionTokenIssuedAt, field.TypeTime, value)
 	}
@@ -1349,6 +1412,54 @@ func (_u *ComputerUpdateOne) SetNillableDaemonBuildID(v *string) *ComputerUpdate
 // ClearDaemonBuildID clears the value of the "daemon_build_id" field.
 func (_u *ComputerUpdateOne) ClearDaemonBuildID() *ComputerUpdateOne {
 	_u.mutation.ClearDaemonBuildID()
+	return _u
+}
+
+// SetAssignmentProtocolVersion sets the "assignment_protocol_version" field.
+func (_u *ComputerUpdateOne) SetAssignmentProtocolVersion(v int) *ComputerUpdateOne {
+	_u.mutation.ResetAssignmentProtocolVersion()
+	_u.mutation.SetAssignmentProtocolVersion(v)
+	return _u
+}
+
+// SetNillableAssignmentProtocolVersion sets the "assignment_protocol_version" field if the given value is not nil.
+func (_u *ComputerUpdateOne) SetNillableAssignmentProtocolVersion(v *int) *ComputerUpdateOne {
+	if v != nil {
+		_u.SetAssignmentProtocolVersion(*v)
+	}
+	return _u
+}
+
+// AddAssignmentProtocolVersion adds value to the "assignment_protocol_version" field.
+func (_u *ComputerUpdateOne) AddAssignmentProtocolVersion(v int) *ComputerUpdateOne {
+	_u.mutation.AddAssignmentProtocolVersion(v)
+	return _u
+}
+
+// SetProfileCapabilityVersion sets the "profile_capability_version" field.
+func (_u *ComputerUpdateOne) SetProfileCapabilityVersion(v int) *ComputerUpdateOne {
+	_u.mutation.ResetProfileCapabilityVersion()
+	_u.mutation.SetProfileCapabilityVersion(v)
+	return _u
+}
+
+// SetNillableProfileCapabilityVersion sets the "profile_capability_version" field if the given value is not nil.
+func (_u *ComputerUpdateOne) SetNillableProfileCapabilityVersion(v *int) *ComputerUpdateOne {
+	if v != nil {
+		_u.SetProfileCapabilityVersion(*v)
+	}
+	return _u
+}
+
+// AddProfileCapabilityVersion adds value to the "profile_capability_version" field.
+func (_u *ComputerUpdateOne) AddProfileCapabilityVersion(v int) *ComputerUpdateOne {
+	_u.mutation.AddProfileCapabilityVersion(v)
+	return _u
+}
+
+// ClearProfileCapabilityVersion clears the value of the "profile_capability_version" field.
+func (_u *ComputerUpdateOne) ClearProfileCapabilityVersion() *ComputerUpdateOne {
+	_u.mutation.ClearProfileCapabilityVersion()
 	return _u
 }
 
@@ -1998,6 +2109,21 @@ func (_u *ComputerUpdateOne) sqlSave(ctx context.Context) (_node *Computer, err 
 	}
 	if _u.mutation.DaemonBuildIDCleared() {
 		_spec.ClearField(computer.FieldDaemonBuildID, field.TypeString)
+	}
+	if value, ok := _u.mutation.AssignmentProtocolVersion(); ok {
+		_spec.SetField(computer.FieldAssignmentProtocolVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedAssignmentProtocolVersion(); ok {
+		_spec.AddField(computer.FieldAssignmentProtocolVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.ProfileCapabilityVersion(); ok {
+		_spec.SetField(computer.FieldProfileCapabilityVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedProfileCapabilityVersion(); ok {
+		_spec.AddField(computer.FieldProfileCapabilityVersion, field.TypeInt, value)
+	}
+	if _u.mutation.ProfileCapabilityVersionCleared() {
+		_spec.ClearField(computer.FieldProfileCapabilityVersion, field.TypeInt)
 	}
 	if value, ok := _u.mutation.DaemonVersionTokenIssuedAt(); ok {
 		_spec.SetField(computer.FieldDaemonVersionTokenIssuedAt, field.TypeTime, value)

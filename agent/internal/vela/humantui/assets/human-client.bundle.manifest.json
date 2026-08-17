@@ -2,11 +2,11 @@
   "schema": "vela-human-tui-build/v1",
   "protocol": "reactvaxis/v2",
   "bundle": {
-    "bytes": 287373,
+    "bytes": 287667,
     "path": "human-client.bundle.js",
-    "sha256": "255fb84cc64a5bf8ca851d7f75cb780656df93accd7fd4b51cbba3fbdf6ef950"
+    "sha256": "673ca1a55d936e07eb24321245efd197fa9c58099f08f062168e8bd229a7c4f1"
   },
-  "sourceDigest": "f8c9911b02bfdd8daf94500c3ee7b435d02c01c9a542013c703bdbc5a417b14f",
+  "sourceDigest": "7b9db95bafed8b281c75e2948ad03a83c445925920beb96a3f50205715f44437",
   "sourceInputs": [
     {
       "path": "web/apps/client/package.json",
@@ -14,7 +14,7 @@
     },
     {
       "path": "web/apps/client/src/application/app-store.ts",
-      "sha256": "0bd04907020b7b367d564c7223de52ad101e87800031d215b88cf9c9050a7a4e"
+      "sha256": "7e8d0c0b8f19277e8267d0701f42f595043b5a1d4c7a9d886415cacd4da49a29"
     },
     {
       "path": "web/apps/client/src/application/product-language.ts",

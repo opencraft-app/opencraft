@@ -15,6 +15,27 @@ type fakeObservationRepository struct {
 	err         error
 }
 
+type fakeProfileCapabilityEnsurer struct {
+	serverID   string
+	computerID string
+	agentID    string
+	generation int64
+}
+
+func (ensurer *fakeProfileCapabilityEnsurer) Ensure(
+	_ context.Context,
+	serverID string,
+	computerID string,
+	agentID string,
+	generation int64,
+) error {
+	ensurer.serverID = serverID
+	ensurer.computerID = computerID
+	ensurer.agentID = agentID
+	ensurer.generation = generation
+	return nil
+}
+
 func (repository *fakeObservationRepository) PutObservation(
 	_ context.Context,
 	value computercontrolport.Observation,
@@ -90,5 +111,39 @@ func TestObservationServiceHashesReceiptAndAppliesHeartbeat(t *testing.T) {
 		repository.heartbeat.ReceivedAt != controlNow ||
 		len(repository.heartbeat.Agents) != 1 {
 		t.Fatalf("heartbeat = %#v", repository.heartbeat)
+	}
+}
+
+func TestObservationServiceEnsuresCapabilitiesAfterAcceptedRunningObservation(t *testing.T) {
+	repository := &fakeObservationRepository{result: computercontrolport.ObservationResult{
+		Accepted: true, Reason: "accepted",
+	}}
+	ensurer := &fakeProfileCapabilityEnsurer{}
+	service, err := NewObservationService(
+		repository, fixedClock{now: controlNow},
+		ObservationConfig{MaximumClockSkew: 5 * time.Minute},
+		ensurer,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentID := "01989c24-7540-7f12-a27b-c83243215dd8"
+	_, err = service.Put(
+		context.Background(), controlServerID, controlComputerID,
+		agentID, "01989c24-7540-7f12-a27b-c83243215dd9",
+		ObservationRequest{
+			AssignmentEpoch: controlEpoch, AssignmentRevision: 7,
+			ConfigGeneration: 6, CredentialVersion: 2, Attempt: 3, Sequence: 9,
+			LaunchID: "01989c24-7540-7f12-a27b-c83243215dda",
+			State:    "running", IMTransportState: "connected",
+			ObservedAt: controlNow.Add(-time.Second),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ensurer.serverID != controlServerID || ensurer.computerID != controlComputerID ||
+		ensurer.agentID != agentID || ensurer.generation != 6 {
+		t.Fatalf("capability ensure = %#v", ensurer)
 	}
 }

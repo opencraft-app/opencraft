@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
@@ -108,6 +109,77 @@ func TestRunnerAppliesAssignmentsAndServesManagementStatus(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "daemon.sock")); !os.IsNotExist(err) {
 		t.Fatalf("socket remains after stop: %v", err)
+	}
+}
+
+func TestRunnerDispatchesAcceptedProfileCapabilityRefresh(t *testing.T) {
+	t.Parallel()
+
+	agent := runningAgent(
+		"018f0c9e-7b14-7abc-8def-0123456789ab",
+		1,
+	)
+	agent.ProfileCapabilityRefresh = &ProfileCapabilityRefresh{
+		SchemaVersion:         1,
+		RefreshID:             "019fdb62-966b-7c88-a38f-d8a33d77eb70",
+		ContextGeneration:     1,
+		AuthorityContextKey:   "9-IO_89H4x2KmxY6eGj2NdgUqWLJv0eBqbxbQn3RCN0",
+		RuntimeKind:           "codex",
+		InvalidationWatermark: 0,
+		ForceReload:           true,
+		RequestedAt:           time.Now().UTC(),
+	}
+	snapshot := newSnapshot(t, 1, []AgentAssignment{agent})
+	snapshot.SchemaVersion = AssignmentSchemaVersionV2
+	_, snapshotDigest, err := CanonicalSnapshot(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot.SnapshotHash = base64.RawURLEncoding.EncodeToString(
+		snapshotDigest[:],
+	)
+	if err := ValidateSnapshot(snapshot, testComputerID); err != nil {
+		t.Fatalf("capability snapshot is invalid: %v", err)
+	}
+	source := &fakeAssignmentSource{
+		results: []PollResult{{Snapshot: &snapshot}},
+	}
+	registry, err := NewRegistry(RegistryConfig{
+		Factory: &fakeFactory{}, MaxConcurrent: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &fakeCapabilitySink{calls: make(chan AgentAssignment, 1)}
+	runner, err := NewRunner(RunnerConfig{
+		StateRoot: shortDaemonRoot(t), Version: "test-version",
+		ComputerID: testComputerID, Source: source, Registry: registry,
+		CapabilitySink: sink,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runner.Run(ctx) }()
+
+	select {
+	case got := <-sink.calls:
+		if got.AgentID != agent.AgentID ||
+			got.ProfileCapabilityRefresh == nil ||
+			got.ProfileCapabilityRefresh.RefreshID !=
+				agent.ProfileCapabilityRefresh.RefreshID {
+			t.Fatalf("capability assignment = %#v", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf(
+			"accepted capability refresh was not dispatched: %#v",
+			runner.Status(),
+		)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -732,6 +804,17 @@ type fakeAssignmentSource struct {
 type fakeHeartbeatSink struct {
 	mu     sync.Mutex
 	values []Heartbeat
+}
+
+type fakeCapabilitySink struct {
+	calls chan AgentAssignment
+}
+
+func (s *fakeCapabilitySink) Refresh(
+	_ context.Context,
+	assignment AgentAssignment,
+) {
+	s.calls <- assignment
 }
 
 type scriptedHeartbeatSink struct {

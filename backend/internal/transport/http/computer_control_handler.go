@@ -87,6 +87,10 @@ type computerProfileCapabilityService interface {
 		context.Context,
 		appagent.ProfileCapabilityResultCommand,
 	) (agentport.ProfileCapabilitySubmissionResult, error)
+	InvalidateProfileCapabilities(
+		context.Context,
+		appagent.ProfileCapabilityInvalidationCommand,
+	) (agentport.ProfileCapabilitySubmissionResult, error)
 }
 
 // ComputerControlHandler serves requests made by the Vela daemon. It is kept
@@ -333,20 +337,32 @@ func (handler *ComputerControlHandler) SendComputerHeartbeat(
 			Attempt:           item.Attempt, LaunchID: item.LaunchId.String(),
 		})
 	}
+	assignmentVersion := 0
+	if request.Body.AssignmentVersion != nil {
+		assignmentVersion = int(*request.Body.AssignmentVersion)
+	}
+	profileCapabilityVersions := []int{}
+	if request.Body.ProfileCapabilityVersions != nil {
+		for _, version := range *request.Body.ProfileCapabilityVersions {
+			profileCapabilityVersions = append(profileCapabilityVersions, int(version))
+		}
+	}
 	if err := handler.observations.Heartbeat(
 		ctx,
 		principal.ServerID(),
 		principal.ComputerID(),
 		appcomputercontrol.HeartbeatRequest{
-			ID:                 request.Body.HeartbeatId.String(),
-			DaemonVersion:      request.Body.DaemonVersion,
-			DaemonBuildID:      request.Body.DaemonBuildId,
-			AssignmentEpoch:    request.Body.AssignmentEpoch.String(),
-			AssignmentRevision: request.Body.AssignmentRevision,
-			TATState:           string(request.Body.TatState),
-			ReconcileState:     string(request.Body.Reconcile.State),
-			ReconcileErrorCode: request.Body.Reconcile.ErrorCode,
-			Agents:             agents,
+			ID:                        request.Body.HeartbeatId.String(),
+			DaemonVersion:             request.Body.DaemonVersion,
+			DaemonBuildID:             request.Body.DaemonBuildId,
+			AssignmentEpoch:           request.Body.AssignmentEpoch.String(),
+			AssignmentRevision:        request.Body.AssignmentRevision,
+			AssignmentVersion:         assignmentVersion,
+			ProfileCapabilityVersions: profileCapabilityVersions,
+			TATState:                  string(request.Body.TatState),
+			ReconcileState:            string(request.Body.Reconcile.State),
+			ReconcileErrorCode:        request.Body.Reconcile.ErrorCode,
+			Agents:                    agents,
 		},
 	); err != nil {
 		return nil, err
@@ -581,6 +597,46 @@ func (handler *ComputerControlHandler) PutComputerAgentProfileCapabilityResult(
 	}, nil
 }
 
+func (handler *ComputerControlHandler) PutComputerAgentProfileCapabilityInvalidation(
+	ctx context.Context,
+	request openapi.PutComputerAgentProfileCapabilityInvalidationRequestObject,
+) (openapi.PutComputerAgentProfileCapabilityInvalidationResponseObject, error) {
+	principal, ok := CurrentComputerPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New(
+			"computer_credential_invalid", "Computer credential 无效", nil,
+		)
+	}
+	if handler.profileCapabilities == nil || request.Body == nil {
+		return nil, apperror.New(
+			"internal_error", "Profile capability invalidation service 未配置", nil,
+		)
+	}
+	result, err := handler.profileCapabilities.InvalidateProfileCapabilities(
+		ctx,
+		appagent.ProfileCapabilityInvalidationCommand{
+			ServerID: principal.ServerID(), ComputerID: principal.ComputerID(),
+			AgentID: request.AgentId.String(), EventID: request.EventId.String(),
+			ContextGeneration:        request.Body.ContextGeneration,
+			AuthorityContextKey:      string(request.Body.AuthorityContextKey),
+			RuntimeContextGeneration: request.Body.RuntimeContextGeneration,
+			EventSequence:            request.Body.EventSequence,
+			Reason:                   string(request.Body.Reason),
+			ObservedAt:               request.Body.ObservedAt.UTC(),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	reason := openapi.ComputerProfileCapabilitySubmissionResultReason(result.Reason)
+	if !reason.Valid() {
+		return nil, invalidComputerControlData(nil)
+	}
+	return openapi.PutComputerAgentProfileCapabilityInvalidation200JSONResponse{
+		Accepted: result.Accepted, Reason: reason,
+	}, nil
+}
+
 // NewComputerControlRoutes registers only operations implemented by the
 // daemon-facing vertical slice.
 func NewComputerControlRoutes(
@@ -622,6 +678,10 @@ func NewComputerControlRoutes(
 	mux.HandleFunc(
 		"PUT /v1/computer/agents/{agentId}/profile-capability-results/{operationId}",
 		wrapper.PutComputerAgentProfileCapabilityResult,
+	)
+	mux.HandleFunc(
+		"PUT /v1/computer/agents/{agentId}/profile-capability-invalidations/{eventId}",
+		wrapper.PutComputerAgentProfileCapabilityInvalidation,
 	)
 	mux.HandleFunc(
 		"POST /v1/computer/agents/{agentId}/launches",

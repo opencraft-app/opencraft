@@ -9171,6 +9171,10 @@ type ComputerMutation struct {
 	host_last_seen_at                *time.Time
 	daemon_version                   *string
 	daemon_build_id                  *string
+	assignment_protocol_version      *int
+	addassignment_protocol_version   *int
+	profile_capability_version       *int
+	addprofile_capability_version    *int
 	daemon_version_token_issued_at   *time.Time
 	last_reconcile_error_code        *string
 	enrollment_generation            *int64
@@ -9994,6 +9998,132 @@ func (m *ComputerMutation) DaemonBuildIDCleared() bool {
 func (m *ComputerMutation) ResetDaemonBuildID() {
 	m.daemon_build_id = nil
 	delete(m.clearedFields, computer.FieldDaemonBuildID)
+}
+
+// SetAssignmentProtocolVersion sets the "assignment_protocol_version" field.
+func (m *ComputerMutation) SetAssignmentProtocolVersion(i int) {
+	m.assignment_protocol_version = &i
+	m.addassignment_protocol_version = nil
+}
+
+// AssignmentProtocolVersion returns the value of the "assignment_protocol_version" field in the mutation.
+func (m *ComputerMutation) AssignmentProtocolVersion() (r int, exists bool) {
+	v := m.assignment_protocol_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAssignmentProtocolVersion returns the old "assignment_protocol_version" field's value of the Computer entity.
+// If the Computer object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ComputerMutation) OldAssignmentProtocolVersion(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAssignmentProtocolVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAssignmentProtocolVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAssignmentProtocolVersion: %w", err)
+	}
+	return oldValue.AssignmentProtocolVersion, nil
+}
+
+// AddAssignmentProtocolVersion adds i to the "assignment_protocol_version" field.
+func (m *ComputerMutation) AddAssignmentProtocolVersion(i int) {
+	if m.addassignment_protocol_version != nil {
+		*m.addassignment_protocol_version += i
+	} else {
+		m.addassignment_protocol_version = &i
+	}
+}
+
+// AddedAssignmentProtocolVersion returns the value that was added to the "assignment_protocol_version" field in this mutation.
+func (m *ComputerMutation) AddedAssignmentProtocolVersion() (r int, exists bool) {
+	v := m.addassignment_protocol_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAssignmentProtocolVersion resets all changes to the "assignment_protocol_version" field.
+func (m *ComputerMutation) ResetAssignmentProtocolVersion() {
+	m.assignment_protocol_version = nil
+	m.addassignment_protocol_version = nil
+}
+
+// SetProfileCapabilityVersion sets the "profile_capability_version" field.
+func (m *ComputerMutation) SetProfileCapabilityVersion(i int) {
+	m.profile_capability_version = &i
+	m.addprofile_capability_version = nil
+}
+
+// ProfileCapabilityVersion returns the value of the "profile_capability_version" field in the mutation.
+func (m *ComputerMutation) ProfileCapabilityVersion() (r int, exists bool) {
+	v := m.profile_capability_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProfileCapabilityVersion returns the old "profile_capability_version" field's value of the Computer entity.
+// If the Computer object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ComputerMutation) OldProfileCapabilityVersion(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProfileCapabilityVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProfileCapabilityVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProfileCapabilityVersion: %w", err)
+	}
+	return oldValue.ProfileCapabilityVersion, nil
+}
+
+// AddProfileCapabilityVersion adds i to the "profile_capability_version" field.
+func (m *ComputerMutation) AddProfileCapabilityVersion(i int) {
+	if m.addprofile_capability_version != nil {
+		*m.addprofile_capability_version += i
+	} else {
+		m.addprofile_capability_version = &i
+	}
+}
+
+// AddedProfileCapabilityVersion returns the value that was added to the "profile_capability_version" field in this mutation.
+func (m *ComputerMutation) AddedProfileCapabilityVersion() (r int, exists bool) {
+	v := m.addprofile_capability_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearProfileCapabilityVersion clears the value of the "profile_capability_version" field.
+func (m *ComputerMutation) ClearProfileCapabilityVersion() {
+	m.profile_capability_version = nil
+	m.addprofile_capability_version = nil
+	m.clearedFields[computer.FieldProfileCapabilityVersion] = struct{}{}
+}
+
+// ProfileCapabilityVersionCleared returns if the "profile_capability_version" field was cleared in this mutation.
+func (m *ComputerMutation) ProfileCapabilityVersionCleared() bool {
+	_, ok := m.clearedFields[computer.FieldProfileCapabilityVersion]
+	return ok
+}
+
+// ResetProfileCapabilityVersion resets all changes to the "profile_capability_version" field.
+func (m *ComputerMutation) ResetProfileCapabilityVersion() {
+	m.profile_capability_version = nil
+	m.addprofile_capability_version = nil
+	delete(m.clearedFields, computer.FieldProfileCapabilityVersion)
 }
 
 // SetDaemonVersionTokenIssuedAt sets the "daemon_version_token_issued_at" field.
@@ -11236,7 +11366,7 @@ func (m *ComputerMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ComputerMutation) Fields() []string {
-	fields := make([]string, 0, 40)
+	fields := make([]string, 0, 42)
 	if m.server_id != nil {
 		fields = append(fields, computer.FieldServerID)
 	}
@@ -11284,6 +11414,12 @@ func (m *ComputerMutation) Fields() []string {
 	}
 	if m.daemon_build_id != nil {
 		fields = append(fields, computer.FieldDaemonBuildID)
+	}
+	if m.assignment_protocol_version != nil {
+		fields = append(fields, computer.FieldAssignmentProtocolVersion)
+	}
+	if m.profile_capability_version != nil {
+		fields = append(fields, computer.FieldProfileCapabilityVersion)
 	}
 	if m.daemon_version_token_issued_at != nil {
 		fields = append(fields, computer.FieldDaemonVersionTokenIssuedAt)
@@ -11397,6 +11533,10 @@ func (m *ComputerMutation) Field(name string) (ent.Value, bool) {
 		return m.DaemonVersion()
 	case computer.FieldDaemonBuildID:
 		return m.DaemonBuildID()
+	case computer.FieldAssignmentProtocolVersion:
+		return m.AssignmentProtocolVersion()
+	case computer.FieldProfileCapabilityVersion:
+		return m.ProfileCapabilityVersion()
 	case computer.FieldDaemonVersionTokenIssuedAt:
 		return m.DaemonVersionTokenIssuedAt()
 	case computer.FieldLastReconcileErrorCode:
@@ -11486,6 +11626,10 @@ func (m *ComputerMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldDaemonVersion(ctx)
 	case computer.FieldDaemonBuildID:
 		return m.OldDaemonBuildID(ctx)
+	case computer.FieldAssignmentProtocolVersion:
+		return m.OldAssignmentProtocolVersion(ctx)
+	case computer.FieldProfileCapabilityVersion:
+		return m.OldProfileCapabilityVersion(ctx)
 	case computer.FieldDaemonVersionTokenIssuedAt:
 		return m.OldDaemonVersionTokenIssuedAt(ctx)
 	case computer.FieldLastReconcileErrorCode:
@@ -11654,6 +11798,20 @@ func (m *ComputerMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetDaemonBuildID(v)
+		return nil
+	case computer.FieldAssignmentProtocolVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAssignmentProtocolVersion(v)
+		return nil
+	case computer.FieldProfileCapabilityVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProfileCapabilityVersion(v)
 		return nil
 	case computer.FieldDaemonVersionTokenIssuedAt:
 		v, ok := value.(time.Time)
@@ -11834,6 +11992,12 @@ func (m *ComputerMutation) AddedFields() []string {
 	if m.addassignment_revision != nil {
 		fields = append(fields, computer.FieldAssignmentRevision)
 	}
+	if m.addassignment_protocol_version != nil {
+		fields = append(fields, computer.FieldAssignmentProtocolVersion)
+	}
+	if m.addprofile_capability_version != nil {
+		fields = append(fields, computer.FieldProfileCapabilityVersion)
+	}
 	if m.addenrollment_generation != nil {
 		fields = append(fields, computer.FieldEnrollmentGeneration)
 	}
@@ -11856,6 +12020,10 @@ func (m *ComputerMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case computer.FieldAssignmentRevision:
 		return m.AddedAssignmentRevision()
+	case computer.FieldAssignmentProtocolVersion:
+		return m.AddedAssignmentProtocolVersion()
+	case computer.FieldProfileCapabilityVersion:
+		return m.AddedProfileCapabilityVersion()
 	case computer.FieldEnrollmentGeneration:
 		return m.AddedEnrollmentGeneration()
 	case computer.FieldEnrollmentCredentialVersion:
@@ -11879,6 +12047,20 @@ func (m *ComputerMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddAssignmentRevision(v)
+		return nil
+	case computer.FieldAssignmentProtocolVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAssignmentProtocolVersion(v)
+		return nil
+	case computer.FieldProfileCapabilityVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProfileCapabilityVersion(v)
 		return nil
 	case computer.FieldEnrollmentGeneration:
 		v, ok := value.(int64)
@@ -11936,6 +12118,9 @@ func (m *ComputerMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(computer.FieldDaemonBuildID) {
 		fields = append(fields, computer.FieldDaemonBuildID)
+	}
+	if m.FieldCleared(computer.FieldProfileCapabilityVersion) {
+		fields = append(fields, computer.FieldProfileCapabilityVersion)
 	}
 	if m.FieldCleared(computer.FieldDaemonVersionTokenIssuedAt) {
 		fields = append(fields, computer.FieldDaemonVersionTokenIssuedAt)
@@ -12031,6 +12216,9 @@ func (m *ComputerMutation) ClearField(name string) error {
 		return nil
 	case computer.FieldDaemonBuildID:
 		m.ClearDaemonBuildID()
+		return nil
+	case computer.FieldProfileCapabilityVersion:
+		m.ClearProfileCapabilityVersion()
 		return nil
 	case computer.FieldDaemonVersionTokenIssuedAt:
 		m.ClearDaemonVersionTokenIssuedAt()
@@ -12147,6 +12335,12 @@ func (m *ComputerMutation) ResetField(name string) error {
 		return nil
 	case computer.FieldDaemonBuildID:
 		m.ResetDaemonBuildID()
+		return nil
+	case computer.FieldAssignmentProtocolVersion:
+		m.ResetAssignmentProtocolVersion()
+		return nil
+	case computer.FieldProfileCapabilityVersion:
+		m.ResetProfileCapabilityVersion()
 		return nil
 	case computer.FieldDaemonVersionTokenIssuedAt:
 		m.ResetDaemonVersionTokenIssuedAt()

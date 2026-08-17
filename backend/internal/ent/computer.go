@@ -49,6 +49,10 @@ type Computer struct {
 	DaemonVersion *string `json:"daemon_version,omitempty"`
 	// DaemonBuildID holds the value of the "daemon_build_id" field.
 	DaemonBuildID *string `json:"daemon_build_id,omitempty"`
+	// AssignmentProtocolVersion holds the value of the "assignment_protocol_version" field.
+	AssignmentProtocolVersion int `json:"assignment_protocol_version,omitempty"`
+	// ProfileCapabilityVersion holds the value of the "profile_capability_version" field.
+	ProfileCapabilityVersion *int `json:"profile_capability_version,omitempty"`
 	// DaemonVersionTokenIssuedAt holds the value of the "daemon_version_token_issued_at" field.
 	DaemonVersionTokenIssuedAt *time.Time `json:"daemon_version_token_issued_at,omitempty"`
 	// LastReconcileErrorCode holds the value of the "last_reconcile_error_code" field.
@@ -107,7 +111,7 @@ func (*Computer) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case computer.FieldEnrollmentTokenHash, computer.FieldEnrollmentManifestSha256, computer.FieldEnrollmentSignatureSha256, computer.FieldEnrollmentInstallerSha256, computer.FieldEnrollmentProgramSha256:
 			values[i] = new([]byte)
-		case computer.FieldAssignmentRevision, computer.FieldEnrollmentGeneration, computer.FieldEnrollmentCredentialVersion, computer.FieldEnrollmentProgramSize, computer.FieldRevision:
+		case computer.FieldAssignmentRevision, computer.FieldAssignmentProtocolVersion, computer.FieldProfileCapabilityVersion, computer.FieldEnrollmentGeneration, computer.FieldEnrollmentCredentialVersion, computer.FieldEnrollmentProgramSize, computer.FieldRevision:
 			values[i] = new(sql.NullInt64)
 		case computer.FieldID, computer.FieldServerID, computer.FieldName, computer.FieldTatRegion, computer.FieldTatInstanceID, computer.FieldTatInstanceKind, computer.FieldOsType, computer.FieldLifecycleState, computer.FieldTatAgentState, computer.FieldLastErrorCode, computer.FieldAssignmentEpoch, computer.FieldDaemonVersion, computer.FieldDaemonBuildID, computer.FieldLastReconcileErrorCode, computer.FieldEnrollmentReleaseVersion, computer.FieldEnrollmentReleaseSetJSON, computer.FieldEnrollmentTarget, computer.FieldEnrollmentArchitecture, computer.FieldEnrollmentManifestObject, computer.FieldEnrollmentSignatureObject, computer.FieldEnrollmentInstallerObject, computer.FieldEnrollmentSigningKeyID, computer.FieldEnrollmentProgramObject:
 			values[i] = new(sql.NullString)
@@ -236,6 +240,19 @@ func (_m *Computer) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.DaemonBuildID = new(string)
 				*_m.DaemonBuildID = value.String
+			}
+		case computer.FieldAssignmentProtocolVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field assignment_protocol_version", values[i])
+			} else if value.Valid {
+				_m.AssignmentProtocolVersion = int(value.Int64)
+			}
+		case computer.FieldProfileCapabilityVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field profile_capability_version", values[i])
+			} else if value.Valid {
+				_m.ProfileCapabilityVersion = new(int)
+				*_m.ProfileCapabilityVersion = int(value.Int64)
 			}
 		case computer.FieldDaemonVersionTokenIssuedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -492,6 +509,14 @@ func (_m *Computer) String() string {
 	if v := _m.DaemonBuildID; v != nil {
 		builder.WriteString("daemon_build_id=")
 		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	builder.WriteString("assignment_protocol_version=")
+	builder.WriteString(fmt.Sprintf("%v", _m.AssignmentProtocolVersion))
+	builder.WriteString(", ")
+	if v := _m.ProfileCapabilityVersion; v != nil {
+		builder.WriteString("profile_capability_version=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
 	if v := _m.DaemonVersionTokenIssuedAt; v != nil {

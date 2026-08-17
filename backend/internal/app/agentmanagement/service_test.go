@@ -23,17 +23,44 @@ const (
 var appAgentNow = time.Date(2026, 7, 30, 23, 45, 0, 0, time.UTC)
 
 type fakeAgentRepository struct {
-	context                  agentport.ServerContext
-	createCommand            agentport.CreateCommand
-	updateCommand            agentport.UpdateCommand
-	lifecycleCommand         agentport.LifecycleCommand
-	credentialCommand        agentport.CredentialCommand
-	deleteCommand            agentport.DeleteCommand
-	agent                    agentport.Agent
-	operation                agentport.Operation
-	lifecycleErrors          []error
-	lifecycleCalls           int
-	profileCapabilityCommand agentport.ProfileCapabilityRefreshCommand
+	context                      agentport.ServerContext
+	createCommand                agentport.CreateCommand
+	updateCommand                agentport.UpdateCommand
+	lifecycleCommand             agentport.LifecycleCommand
+	credentialCommand            agentport.CredentialCommand
+	deleteCommand                agentport.DeleteCommand
+	agent                        agentport.Agent
+	operation                    agentport.Operation
+	lifecycleErrors              []error
+	lifecycleCalls               int
+	profileCapabilityCommand     agentport.ProfileCapabilityRefreshCommand
+	profileCapabilitiesSupported bool
+	systemEnsureCommand          agentport.SystemProfileCapabilityEnsureCommand
+	expireAt                     time.Time
+}
+
+func (repository *fakeAgentRepository) SupportsProfileCapabilities(
+	context.Context,
+	string,
+	string,
+) (bool, error) {
+	return repository.profileCapabilitiesSupported, nil
+}
+
+func (repository *fakeAgentRepository) EnsureSystemProfileCapabilityRefresh(
+	_ context.Context,
+	command agentport.SystemProfileCapabilityEnsureCommand,
+) (agentport.Operation, error) {
+	repository.systemEnsureCommand = command
+	return repository.operation, nil
+}
+
+func (repository *fakeAgentRepository) ExpireProfileCapabilityRefresh(
+	_ context.Context,
+	now time.Time,
+) (bool, error) {
+	repository.expireAt = now
+	return true, nil
 }
 
 func (repository *fakeAgentRepository) BeginProfileCapabilityRefresh(
@@ -224,10 +251,82 @@ func TestServiceCreatesAgentAndEnqueuesLifecycle(t *testing.T) {
 	}
 }
 
-func TestServiceStartsProfileCapabilityRefreshFromCurrentAgentContext(t *testing.T) {
+func TestServiceRejectsProfileRefreshForUnnegotiatedComputer(t *testing.T) {
 	computerID := appAgentComputer
 	repository := &fakeAgentRepository{
 		context: agentport.ServerContext{Role: "owner", IMState: "ready"},
+		agent: agentport.Agent{
+			ID: appAgentID, ServerID: appAgentServerID, ComputerID: &computerID,
+			Runtime: agentport.Runtime{Kind: "codex"}, Revision: 7,
+		},
+	}
+	service, err := NewService(
+		repository, agentIdentityDeriver{},
+		&sequenceIDs{values: []string{appAgentOperation}},
+		fixedClock{now: appAgentNow},
+		bytes.NewReader(bytes.Repeat([]byte{0x42}, 32)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.RefreshProfileCapabilities(
+		context.Background(),
+		ProfileCapabilityRefreshCommand{
+			AccountID: appAgentAccountID, ServerID: appAgentServerID,
+			AgentID: appAgentID, IdempotencyKey: "profile-refresh-unsupported",
+		},
+	)
+	if apperror.CodeOf(err) != "profile_capabilities_unsupported" {
+		t.Fatalf("unsupported refresh error = %v", err)
+	}
+}
+
+func TestSystemProfileCapabilityEnsureUsesObservedAgentRevision(t *testing.T) {
+	repository := &fakeAgentRepository{operation: agentport.Operation{
+		ID: appAgentOperation, Kind: "agent.profile.capabilities.refresh",
+	}}
+	service, err := NewSystemProfileCapabilityEnsureService(
+		repository,
+		&sequenceIDs{values: []string{appAgentOperation}},
+		fixedClock{now: appAgentNow},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Ensure(
+		context.Background(), appAgentServerID, appAgentComputer,
+		appAgentID, 7,
+	); err != nil {
+		t.Fatal(err)
+	}
+	command := repository.systemEnsureCommand
+	if command.OperationID != appAgentOperation || command.ContextGeneration != 7 ||
+		!command.CreatedAt.Equal(appAgentNow) ||
+		!command.DeadlineAt.Equal(appAgentNow.Add(2*time.Minute)) {
+		t.Fatalf("system ensure command = %#v", command)
+	}
+}
+
+func TestProfileCapabilityDeadlineServiceProcessesOnlyExistingOperations(t *testing.T) {
+	repository := &fakeAgentRepository{}
+	service, err := NewProfileCapabilityDeadlineService(
+		repository, fixedClock{now: appAgentNow},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	processed, err := service.ProcessOne(context.Background())
+	if err != nil || !processed || !repository.expireAt.Equal(appAgentNow) ||
+		repository.systemEnsureCommand.OperationID != "" {
+		t.Fatalf("deadline service = (%t, %v) repository=%#v", processed, err, repository)
+	}
+}
+
+func TestServiceStartsProfileCapabilityRefreshFromCurrentAgentContext(t *testing.T) {
+	computerID := appAgentComputer
+	repository := &fakeAgentRepository{
+		profileCapabilitiesSupported: true,
+		context:                      agentport.ServerContext{Role: "owner", IMState: "ready"},
 		agent: agentport.Agent{
 			ID: appAgentID, ServerID: appAgentServerID, ComputerID: &computerID,
 			Runtime: agentport.Runtime{Kind: "codex"}, Revision: 7,

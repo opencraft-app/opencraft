@@ -105,6 +105,7 @@ func TestEntRepositoryAppliesMonotonicObservationAndHeartbeat(t *testing.T) {
 		ID: controlHeartbeatID, ServerID: controlRepoServerID,
 		ComputerID: controlRepoComputerID, AssignmentEpoch: controlRepoEpoch,
 		AssignmentRevision: 4, DaemonVersion: "1.0.0", DaemonBuildID: "build-test",
+		AssignmentVersion: 2, ProfileCapabilityVersions: []int{1},
 		TATState:       "online",
 		ReconcileState: "healthy", Agents: []computercontrolport.HeartbeatAgent{{
 			AgentID: controlRepoAgentID, AssignmentEpoch: controlRepoEpoch,
@@ -121,6 +122,8 @@ func TestEntRepositoryAppliesMonotonicObservationAndHeartbeat(t *testing.T) {
 	machine, err := handle.Client().Computer.Get(context.Background(), controlRepoComputerID)
 	if err != nil || machine.HostLastSeenAt == nil ||
 		machine.DaemonVersion == nil || *machine.DaemonVersion != "1.0.0" ||
+		machine.AssignmentProtocolVersion != 2 ||
+		machine.ProfileCapabilityVersion == nil || *machine.ProfileCapabilityVersion != 1 ||
 		machine.TatAgentState != "online" {
 		t.Fatalf("heartbeat Computer = %#v, %v", machine, err)
 	}

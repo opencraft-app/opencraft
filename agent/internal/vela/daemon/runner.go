@@ -77,6 +77,13 @@ type HeartbeatSink interface {
 	Send(context.Context, Heartbeat) error
 }
 
+// CapabilitySink executes a Profile capability refresh carried by an accepted
+// Assignment. Implementations own refresh-id idempotency and terminal result
+// submission so the Assignment polling loop never blocks on Runtime discovery.
+type CapabilitySink interface {
+	Refresh(context.Context, AgentAssignment)
+}
+
 type RunnerConfig struct {
 	StateRoot         string
 	Version           string
@@ -86,6 +93,7 @@ type RunnerConfig struct {
 	Registry          *Registry
 	Component         Component
 	HeartbeatSink     HeartbeatSink
+	CapabilitySink    CapabilitySink
 	HeartbeatInterval time.Duration
 	HeartbeatJitter   func(time.Duration) time.Duration
 	Now               func() time.Time
@@ -329,6 +337,14 @@ func (r *Runner) Run(ctx context.Context) error {
 		r.setStatus(status)
 		if err := store.Write(daemonStatePath, status); err != nil {
 			return err
+		}
+		if r.config.CapabilitySink != nil {
+			for _, assignment := range result.Snapshot.Agents {
+				if assignment.ProfileCapabilityRefresh == nil {
+					continue
+				}
+				go r.config.CapabilitySink.Refresh(ctx, assignment)
+			}
 		}
 		r.signalHeartbeat()
 	}

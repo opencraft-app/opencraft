@@ -22,6 +22,7 @@ const previewServer = resolve(
   "web/deploy/devcloud/preview-server.ts",
 );
 const rootAgents = resolve(repositoryRoot, "AGENTS.md");
+const k3sRunbook = resolve(repositoryRoot, "docs/runbooks/k3s-release.md");
 const devcloudManifest = resolve(
   repositoryRoot,
   "web/deploy/devcloud/static.yaml",
@@ -129,20 +130,20 @@ describe("DevCloud Web release contract", () => {
     }
   });
 
-  it("documents the only supported commands in the repository instructions", () => {
+  it("routes live publishing to the independent k3s runbook", () => {
     expect(existsSync(rootAgents)).toBe(true);
-    if (!existsSync(rootAgents)) return;
+    expect(existsSync(k3sRunbook)).toBe(true);
+    if (!existsSync(rootAgents) || !existsSync(k3sRunbook)) return;
     const source = readFileSync(rootAgents, "utf8");
+    const runbook = readFileSync(k3sRunbook, "utf8");
 
-    expect(source).toContain("web/deploy/devcloud/release.sh preview");
-    expect(source).toContain("web/deploy/devcloud/release.sh preview-stop");
-    expect(source).toContain(
-      "web/deploy/devcloud/release.sh deploy --kubeconfig",
-    );
-    expect(source).toContain("raft-web-static");
-    expect(source).toContain("不要使用默认 kube context");
+    expect(source).toContain("docs/runbooks/k3s-release.md");
+    expect(source).toContain("旧共享前端环境已退役");
+    expect(runbook).toContain("raft-web-static");
+    expect(source).toContain("不使用默认 kube context");
     expect(source).toContain("Mac 不依赖 Docker daemon");
-    expect(source).toContain("9.134.208.109");
+    expect(runbook).toContain("root@21.91.75.85:36000");
+    expect(runbook).toContain("lightclaw/vela-platform-web@sha256:");
   });
 
   it("keeps the checked-in DevCloud manifest aligned with the live workload", () => {

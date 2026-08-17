@@ -3,6 +3,7 @@ package httptransport
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"chatserver/internal/api/openapi"
 	appagent "chatserver/internal/app/agentmanagement"
+	"chatserver/internal/persistedjson"
 	agentport "chatserver/internal/ports/agent"
 
 	"github.com/google/uuid"
@@ -362,6 +364,75 @@ func TestAgentHandlerReturnsAbsentProfileCapabilitiesWithoutRefreshing(t *testin
 	}
 	if service.profileCapabilityCommand.AgentID != "" {
 		t.Fatalf("GET triggered refresh: %#v", service.profileCapabilityCommand)
+	}
+}
+
+func TestAgentHandlerMarksSnapshotStaleWhenAuthorityContextChanges(t *testing.T) {
+	observedAt := time.Date(2026, 8, 18, 11, 0, 0, 0, time.UTC)
+	snapshot, err := json.Marshal(openapi.ComputerAgentProfileCapabilityResult{
+		SchemaVersion: 1, Status: openapi.ComputerProfileCapabilityResultSucceeded,
+		ContextGeneration:        1,
+		AuthorityContextKey:      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		RuntimeKind:              openapi.ComputerProfileCapabilityRuntimeCodex,
+		RuntimeContextGeneration: 1, ObservedThroughSequence: 0,
+		Subject: &openapi.AgentProfileCapabilitySubject{
+			ComputerId:         uuid.MustParse("01989c24-7540-7f12-a27b-c83243215dd5"),
+			RuntimeKind:        openapi.ProfileCapabilityRefreshRuntimeCodex,
+			ProfileKind:        openapi.AgentProfileCapabilityProfileCodexHome,
+			ProfileFingerprint: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+			WorkspacePath:      "/workspace", ContextGeneration: 1,
+			AuthorityContextKey:      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			RuntimeContextGeneration: 1, ObservedThroughSequence: 0,
+		},
+		Models: openapi.ComputerProfileCapabilityModelSection{
+			Status:   openapi.ComputerProfileModelSectionSucceeded,
+			Items:    []openapi.AgentProfileModelCapability{},
+			Warnings: []openapi.ProfileCapabilityWarning{},
+		},
+		Skills: openapi.ComputerProfileCapabilitySkillSection{
+			Status:   openapi.ComputerProfileSkillSectionSucceeded,
+			Items:    []openapi.AgentProfileSkillCapability{},
+			Warnings: []openapi.ProfileCapabilityWarning{},
+		},
+		ObservedAt: observedAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := persistedjson.EncodeProfileCapabilities(
+		persistedjson.ProfileCapabilitiesPayload{
+			SchemaVersion: 1, Snapshot: json.RawMessage(snapshot),
+			Invalidations: []persistedjson.ProfileCapabilityInvalidation{},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentComputer := "01989c24-7540-7f12-a27b-c83243215dd6"
+	service := &fakeAgentService{profileCapabilities: agentport.ProfileCapabilities{
+		AgentID: handlerAgentID, ComputerID: &currentComputer, ContextGeneration: 2,
+		Runtime: agentport.Runtime{Kind: "codex"}, SnapshotJSON: &encoded,
+	}}
+	handler, err := NewAgentHandler(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := handler.GetAgentProfileCapabilities(
+		currentHumanContext(t),
+		openapi.GetAgentProfileCapabilitiesRequestObject{
+			ServerId: uuid.MustParse(handlerServerID),
+			AgentId:  uuid.MustParse(handlerAgentID),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := response.(openapi.GetAgentProfileCapabilities200JSONResponse)
+	if body.SnapshotState != openapi.AgentProfileSnapshotStale ||
+		len(body.StaleReasons) != 2 ||
+		body.StaleReasons[0] != openapi.AgentProfileStaleComputerChanged ||
+		body.StaleReasons[1] != openapi.AgentProfileStaleProfileChanged {
+		t.Fatalf("stale capability projection = %#v", body)
 	}
 }
 

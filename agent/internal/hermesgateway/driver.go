@@ -74,6 +74,57 @@ func (driver *Driver) DetectModels(
 	return driver.queryDefaultModelOptions(ctx)
 }
 
+func (driver *Driver) DiscoverProfileCapabilities(
+	ctx context.Context,
+	request runtimeapi.ProfileCapabilityRequest,
+) (runtimeapi.ProfileCapabilityResult, error) {
+	if strings.TrimSpace(request.AgentID) == "" ||
+		strings.TrimSpace(request.WorkingDirectory) == "" {
+		return runtimeapi.ProfileCapabilityResult{},
+			errors.New("Hermes Gateway Profile discovery requires Agent and workspace")
+	}
+	workingDirectory, err := filepath.Abs(request.WorkingDirectory)
+	if err != nil {
+		return runtimeapi.ProfileCapabilityResult{}, err
+	}
+	info, err := os.Stat(workingDirectory)
+	if err != nil || !info.IsDir() {
+		return runtimeapi.ProfileCapabilityResult{},
+			errors.New("Hermes Gateway Profile workspace is unavailable")
+	}
+	capabilities, err := driver.hostDriver.DiscoverProfileCapabilities(
+		ctx,
+		runtimeapi.ProfileCapabilityRequest{
+			AgentID: request.AgentID, WorkingDirectory: workingDirectory,
+			Environment: request.Environment, ForceReload: request.ForceReload,
+		},
+	)
+	if err != nil {
+		return runtimeapi.ProfileCapabilityResult{}, err
+	}
+	host, err := driver.hostDriver.PrepareManagedHost(ctx, request.AgentID)
+	if err != nil {
+		return runtimeapi.ProfileCapabilityResult{}, err
+	}
+	lease, err := hermes.AcquireManagedProfileRuntimeLease(
+		ctx, host, driver.runtimeLeaseWait,
+	)
+	if err != nil {
+		return runtimeapi.ProfileCapabilityResult{}, err
+	}
+	defer lease.Release()
+	models, err := driver.queryModelOptions(
+		ctx, capabilities.ProfileHome, workingDirectory,
+	)
+	if err != nil {
+		return runtimeapi.ProfileCapabilityResult{}, err
+	}
+	capabilities.Protocol = "hermes_gateway"
+	capabilities.RuntimeVersion = driver.version
+	capabilities.Models = models
+	return capabilities, nil
+}
+
 func (driver *Driver) probePythonGateway(
 	ctx context.Context,
 ) (pythonCandidate, string, error) {
@@ -309,6 +360,14 @@ func isExecutableFile(path string) bool {
 func (driver *Driver) queryDefaultModelOptions(
 	ctx context.Context,
 ) (runtimeapi.ModelResult, error) {
+	return driver.queryModelOptions(ctx, "", "")
+}
+
+func (driver *Driver) queryModelOptions(
+	ctx context.Context,
+	profileHome string,
+	workingDirectory string,
+) (runtimeapi.ModelResult, error) {
 	if driver.homeErr != nil {
 		return runtimeapi.ModelResult{}, driver.homeErr
 	}
@@ -323,11 +382,17 @@ func (driver *Driver) queryDefaultModelOptions(
 	delete(environment, "HERMES_PROFILE")
 	delete(environment, "VELA_PROFILE")
 	delete(environment, "VELA_PROFILE")
+	if profileHome != "" {
+		environment["HERMES_HOME"] = profileHome
+	}
 
 	args := append([]string(nil), candidate.ArgsPrefix...)
 	args = append(args, "-u", "-m", "tui_gateway.entry")
 	command := exec.Command(candidate.Path, args...)
 	command.Env = environmentList(environment)
+	if workingDirectory != "" {
+		command.Dir = workingDirectory
+	}
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		return runtimeapi.ModelResult{}, err

@@ -42,33 +42,45 @@ type HeartbeatAgent struct {
 }
 
 type HeartbeatRequest struct {
-	ID                 string
-	DaemonVersion      string
-	DaemonBuildID      string
-	AssignmentEpoch    string
-	AssignmentRevision int64
-	TATState           string
-	ReconcileState     string
-	ReconcileErrorCode *string
-	Agents             []HeartbeatAgent
+	ID                        string
+	DaemonVersion             string
+	DaemonBuildID             string
+	AssignmentEpoch           string
+	AssignmentRevision        int64
+	AssignmentVersion         int
+	ProfileCapabilityVersions []int
+	TATState                  string
+	ReconcileState            string
+	ReconcileErrorCode        *string
+	Agents                    []HeartbeatAgent
 }
 
 type ObservationService struct {
-	repository computercontrolport.ObservationRepository
-	clock      clockport.Clock
-	config     ObservationConfig
+	repository          computercontrolport.ObservationRepository
+	clock               clockport.Clock
+	config              ObservationConfig
+	profileCapabilities profileCapabilityEnsurer
+}
+
+type profileCapabilityEnsurer interface {
+	Ensure(context.Context, string, string, string, int64) error
 }
 
 func NewObservationService(
 	repository computercontrolport.ObservationRepository,
 	clock clockport.Clock,
 	config ObservationConfig,
+	profileCapabilities ...profileCapabilityEnsurer,
 ) (*ObservationService, error) {
 	if repository == nil || clock == nil || config.MaximumClockSkew <= 0 ||
-		config.MaximumClockSkew > time.Hour {
+		config.MaximumClockSkew > time.Hour || len(profileCapabilities) > 1 {
 		return nil, errors.New("Computer Observation 服务配置无效")
 	}
-	return &ObservationService{repository: repository, clock: clock, config: config}, nil
+	service := &ObservationService{repository: repository, clock: clock, config: config}
+	if len(profileCapabilities) == 1 {
+		service.profileCapabilities = profileCapabilities[0]
+	}
+	return service, nil
 }
 
 func (service *ObservationService) Put(
@@ -130,6 +142,16 @@ func (service *ObservationService) Put(
 			"internal_error", "暂时无法保存 Agent Observation", err,
 		)
 	default:
+		if result.Accepted && request.State == "running" &&
+			service.profileCapabilities != nil {
+			if err := service.profileCapabilities.Ensure(
+				ctx, serverID, computerID, agentID, request.ConfigGeneration,
+			); err != nil {
+				return computercontrolport.ObservationResult{}, apperror.New(
+					"internal_error", "暂时无法确保 Agent Profile capability refresh", err,
+				)
+			}
+		}
 		return result, nil
 	}
 }
@@ -148,6 +170,13 @@ func (service *ObservationService) Heartbeat(
 		request.DaemonBuildID == "" || len(request.DaemonBuildID) > 200 ||
 		!validTATState(request.TATState) || !validReconcileState(request.ReconcileState) ||
 		!validErrorCode(request.ReconcileErrorCode) || len(request.Agents) > 5 {
+		return invalidHeartbeat()
+	}
+	if request.AssignmentVersion != 0 && request.AssignmentVersion != 1 &&
+		request.AssignmentVersion != 2 ||
+		len(request.ProfileCapabilityVersions) > 1 ||
+		len(request.ProfileCapabilityVersions) == 1 &&
+			request.ProfileCapabilityVersions[0] != 1 {
 		return invalidHeartbeat()
 	}
 	seen := make(map[string]struct{}, len(request.Agents))
@@ -172,9 +201,11 @@ func (service *ObservationService) Heartbeat(
 	}
 	err := service.repository.ApplyHeartbeat(ctx, computercontrolport.Heartbeat{
 		ID: request.ID, ServerID: serverID, ComputerID: computerID,
-		AssignmentEpoch:    request.AssignmentEpoch,
-		AssignmentRevision: request.AssignmentRevision,
-		DaemonVersion:      request.DaemonVersion, DaemonBuildID: request.DaemonBuildID,
+		AssignmentEpoch:           request.AssignmentEpoch,
+		AssignmentRevision:        request.AssignmentRevision,
+		AssignmentVersion:         request.AssignmentVersion,
+		ProfileCapabilityVersions: append([]int(nil), request.ProfileCapabilityVersions...),
+		DaemonVersion:             request.DaemonVersion, DaemonBuildID: request.DaemonBuildID,
 		TATState:           request.TATState,
 		ReconcileState:     request.ReconcileState,
 		ReconcileErrorCode: request.ReconcileErrorCode,

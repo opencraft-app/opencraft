@@ -146,15 +146,24 @@ func NewComputerAPIHandler(config ComputerAPIConfig) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	observationService, err := appcomputercontrol.NewObservationService(
-		repository,
+	agentRepository, err := agentadapter.NewEntRepository(config.Database)
+	if err != nil {
+		return nil, err
+	}
+	systemCapabilityEnsure, err := appagent.NewSystemProfileCapabilityEnsureService(
+		agentRepository,
+		idport.UUIDv7{},
 		clock,
-		appcomputercontrol.ObservationConfig{MaximumClockSkew: 5 * time.Minute},
 	)
 	if err != nil {
 		return nil, err
 	}
-	agentRepository, err := agentadapter.NewEntRepository(config.Database)
+	observationService, err := appcomputercontrol.NewObservationService(
+		repository,
+		clock,
+		appcomputercontrol.ObservationConfig{MaximumClockSkew: 5 * time.Minute},
+		systemCapabilityEnsure,
+	)
 	if err != nil {
 		return nil, err
 	}

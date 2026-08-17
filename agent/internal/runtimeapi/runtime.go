@@ -28,6 +28,45 @@ type ModelResult struct {
 	Unsupported bool    `json:"-"`
 }
 
+type Skill struct {
+	ID                     string   `json:"id"`
+	Name                   string   `json:"name"`
+	Description            string   `json:"description,omitempty"`
+	DisplayName            string   `json:"displayName,omitempty"`
+	ShortDescription       string   `json:"shortDescription,omitempty"`
+	Path                   string   `json:"-"`
+	Enabled                bool     `json:"enabled"`
+	Availability           string   `json:"availability"`
+	Scope                  string   `json:"scope"`
+	MissingDependencyTypes []string `json:"missingDependencyTypes,omitempty"`
+}
+
+type ProfileCapabilityRequest struct {
+	AgentID          string
+	WorkingDirectory string
+	Environment      map[string]string
+	ForceReload      bool
+}
+
+type ProfileCapabilityResult struct {
+	Protocol       string
+	RuntimeVersion string
+	ProfileHome    string
+	ProfileKind    string
+	Models         ModelResult
+	Skills         []Skill
+}
+
+// ProfileCapabilityDiscoverer is an optional Runtime Driver capability. It is
+// deliberately Profile-scoped; callers must not substitute DetectModels,
+// which has no Agent/workspace/Profile authority context.
+type ProfileCapabilityDiscoverer interface {
+	DiscoverProfileCapabilities(
+		context.Context,
+		ProfileCapabilityRequest,
+	) (ProfileCapabilityResult, error)
+}
+
 type StartRequest struct {
 	AgentID          string
 	LaunchID         string

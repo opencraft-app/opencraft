@@ -18,6 +18,7 @@ import (
 	"chatserver/internal/ent/outboxevent"
 	"chatserver/internal/ent/reminderoccurrence"
 	"chatserver/internal/ent/tencentoperation"
+	"chatserver/internal/persistedjson"
 	agentport "chatserver/internal/ports/agent"
 )
 
@@ -182,6 +183,158 @@ func TestEntRepositoryBeginsProfileCapabilityRefreshAtomically(t *testing.T) {
 		storedAgent.ProfileCapabilitiesJSON == nil || storedOperation.State != "succeeded" ||
 		storedOperation.ResultJSON == nil {
 		t.Fatalf("completed Agent/Operation = (%#v, %#v)", storedAgent, storedOperation)
+	}
+	duplicateResult, err := repository.CompleteProfileCapabilityRefresh(
+		context.Background(),
+		agentport.ProfileCapabilityResultCommand{
+			ServerID: repoAgentServerID, ComputerID: repoAgentComputerID,
+			AgentID: repoAgentID, OperationID: repoAgentProfileOp,
+			ContextGeneration:   1,
+			AuthorityContextKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Succeeded:           true, ResultJSON: []byte(`{"models":[],"skills":[]}`),
+			ResultHash:  sha256.Sum256([]byte(`{"models":[],"skills":[]}`)),
+			CompletedAt: repoAgentNow.Add(2*time.Minute + time.Second),
+		},
+	)
+	if err != nil || duplicateResult.Accepted || duplicateResult.Reason != "duplicate" {
+		t.Fatalf("duplicate result = (%#v, %v)", duplicateResult, err)
+	}
+	invalidation, err := repository.PutProfileCapabilityInvalidation(
+		context.Background(),
+		agentport.ProfileCapabilityInvalidationCommand{
+			ServerID: repoAgentServerID, ComputerID: repoAgentComputerID,
+			AgentID:           repoAgentID,
+			EventID:           "0198f4c2-7a48-7e45-913c-6baf30401a8f",
+			ContextGeneration: 1,
+			AuthorityContextKey: agentport.ProfileCapabilityAuthorityContextKey(
+				repoAgentServerID, repoAgentID, repoAgentComputerID, "codex", 1,
+			),
+			RuntimeContextGeneration: 1, EventSequence: 1,
+			Reason:     "runtime_reported_change",
+			ObservedAt: repoAgentNow.Add(3 * time.Minute),
+		},
+	)
+	if err != nil || !invalidation.Accepted || invalidation.Reason != "accepted" {
+		t.Fatalf("invalidation = (%#v, %v)", invalidation, err)
+	}
+	storedAgent, _ = handle.Client().Agent.Get(context.Background(), repoAgentID)
+	var payload persistedjson.ProfileCapabilitiesPayload
+	if _, err := persistedjson.DecodeProfileCapabilities(
+		*storedAgent.ProfileCapabilitiesJSON, &payload,
+	); err != nil || len(payload.Invalidations) != 1 ||
+		payload.Invalidations[0].Reason != "runtime_reported_change" {
+		t.Fatalf("stored invalidation payload = (%#v, %v)", payload, err)
+	}
+}
+
+func TestEntRepositoryHumanRefreshSupersedesOutstandingRefresh(t *testing.T) {
+	repository, handle := openAgentRepository(t)
+	seedAgentServer(t, handle)
+	if _, err := repository.Create(context.Background(), createAgentCommand()); err != nil {
+		t.Fatal(err)
+	}
+	first := agentport.ProfileCapabilityRefreshCommand{
+		AccountID: repoAgentAccountID, ServerID: repoAgentServerID,
+		AgentID: repoAgentID, ComputerID: repoAgentComputerID,
+		RuntimeKind: "codex", ContextGeneration: 1,
+		AuthorityContextKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		ForceReload:         true, Trigger: "human", IdempotencyKey: "human-refresh-one",
+		RequestHash: sha256.Sum256([]byte("human one")),
+		OperationID: repoAgentProfileOp, CreatedAt: repoAgentNow,
+		DeadlineAt: repoAgentNow.Add(2 * time.Minute),
+	}
+	if _, err := repository.BeginProfileCapabilityRefresh(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+	second := first
+	second.IdempotencyKey = "human-refresh-two"
+	second.RequestHash = sha256.Sum256([]byte("human two"))
+	second.OperationID = "0198f4c2-7a48-7e45-913c-6baf30401a90"
+	second.CreatedAt = repoAgentNow.Add(time.Second)
+	second.DeadlineAt = second.CreatedAt.Add(2 * time.Minute)
+	if _, err := repository.BeginProfileCapabilityRefresh(context.Background(), second); err != nil {
+		t.Fatal(err)
+	}
+	oldOperation, _ := handle.Client().TencentOperation.Get(context.Background(), first.OperationID)
+	agentEntity, _ := handle.Client().Agent.Get(context.Background(), repoAgentID)
+	if oldOperation.State != "superseded" || oldOperation.CompletedAt == nil ||
+		agentEntity.ProfileCapabilityRefreshID == nil ||
+		*agentEntity.ProfileCapabilityRefreshID != second.OperationID {
+		t.Fatalf("old operation / Agent pointer = %#v / %#v", oldOperation, agentEntity)
+	}
+}
+
+func TestEntRepositorySystemEnsureIsDeterministicPerAgentRevision(t *testing.T) {
+	repository, handle := openAgentRepository(t)
+	seedAgentServer(t, handle)
+	if _, err := repository.Create(context.Background(), createAgentCommand()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.Client().Computer.UpdateOneID(repoAgentComputerID).
+		SetAssignmentProtocolVersion(2).
+		SetProfileCapabilityVersion(1).
+		Save(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	command := agentport.SystemProfileCapabilityEnsureCommand{
+		ServerID: repoAgentServerID, ComputerID: repoAgentComputerID,
+		AgentID: repoAgentID, ContextGeneration: 1,
+		OperationID: repoAgentProfileOp, CreatedAt: repoAgentNow,
+		DeadlineAt: repoAgentNow.Add(2 * time.Minute),
+	}
+	first, err := repository.EnsureSystemProfileCapabilityRefresh(
+		context.Background(), command,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay := command
+	replay.OperationID = "0198f4c2-7a48-7e45-913c-6baf30401a90"
+	second, err := repository.EnsureSystemProfileCapabilityRefresh(
+		context.Background(), replay,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentEntity, _ := handle.Client().Agent.Get(context.Background(), repoAgentID)
+	if first.ID != command.OperationID || second.ID != first.ID ||
+		agentEntity.ProfileCapabilityRefreshID == nil ||
+		*agentEntity.ProfileCapabilityRefreshID != first.ID {
+		t.Fatalf("system ensure = %#v replay=%#v Agent=%#v", first, second, agentEntity)
+	}
+}
+
+func TestEntRepositoryExpiresRefreshAndClearsOnlyMatchingPointer(t *testing.T) {
+	repository, handle := openAgentRepository(t)
+	seedAgentServer(t, handle)
+	if _, err := repository.Create(context.Background(), createAgentCommand()); err != nil {
+		t.Fatal(err)
+	}
+	command := agentport.ProfileCapabilityRefreshCommand{
+		AccountID: repoAgentAccountID, ServerID: repoAgentServerID,
+		AgentID: repoAgentID, ComputerID: repoAgentComputerID,
+		RuntimeKind: "codex", ContextGeneration: 1,
+		AuthorityContextKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		ForceReload:         true, Trigger: "human", IdempotencyKey: "deadline-refresh",
+		RequestHash: sha256.Sum256([]byte("deadline refresh")),
+		OperationID: repoAgentProfileOp, CreatedAt: repoAgentNow,
+		DeadlineAt: repoAgentNow.Add(time.Minute),
+	}
+	if _, err := repository.BeginProfileCapabilityRefresh(context.Background(), command); err != nil {
+		t.Fatal(err)
+	}
+	expired, err := repository.ExpireProfileCapabilityRefresh(
+		context.Background(), repoAgentNow.Add(2*time.Minute),
+	)
+	if err != nil || !expired {
+		t.Fatalf("ExpireProfileCapabilityRefresh() = (%t, %v)", expired, err)
+	}
+	operation, _ := handle.Client().TencentOperation.Get(context.Background(), command.OperationID)
+	agentEntity, _ := handle.Client().Agent.Get(context.Background(), repoAgentID)
+	if operation.State != "failed" || operation.LastErrorCode == nil ||
+		*operation.LastErrorCode != "profile_capability_deadline_exceeded" ||
+		agentEntity.ProfileCapabilityRefreshID != nil {
+		t.Fatalf("expired Operation / Agent = %#v / %#v", operation, agentEntity)
 	}
 }
 

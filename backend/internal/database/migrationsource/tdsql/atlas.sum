@@ -1,4 +1,4 @@
-h1:ZqbbCPj2fcz4vTQljyE4nRZeOmlDc2+sDZATo8uc/7w=
+h1:PdAl+jCPZUtNarDlsaHmEMqJ2M5LQ5zTOtOWYVtab58=
 20260801000000_baseline.sql h1:/AQBkOinoGWFa1+BSuAPTjenQo/pZefRLzadxFMOXlA=
 20260802100000_computer_enrollment.sql h1:9JJrHG97mZCUgvkcdY+XgplAUnOznuFUDhTbEghmF2I=
 20260802170000_reminder_anchors.sql h1:x5L9lfx8IrdidoFN0McOrKH+udUX6Fv+GjDk6Bc9yOk=
@@ -8,3 +8,4 @@ h1:ZqbbCPj2fcz4vTQljyE4nRZeOmlDc2+sDZATo8uc/7w=
 20260804120000_agent_handle_reuse.sql h1:15qhn3PV6m0iNS52COcPxAEBXx/svqRvJizWGj9HhjU=
 20260804130000_server_scoped_direct_messages.sql h1:Rwe7GxIR0WOzfuGBQB8IrvW/+C6xUoYfscXE7qEiJUI=
 20260817152840_agent_profile_capabilities.sql h1:lwaZNAHQ+1NF7Y/+gmKAcLPzqWiOqCcvApF7Y911UKw=
+20260818120000_computer_capability_negotiation.sql h1:rtZiWUhM6nhqlWj60J5Q2fBDFHknlG+g3Xp55rFTUOM=

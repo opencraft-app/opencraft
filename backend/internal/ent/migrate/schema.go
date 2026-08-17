@@ -355,6 +355,8 @@ var (
 		{Name: "host_last_seen_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"mysql": "datetime(3)", "sqlite3": "datetime"}},
 		{Name: "daemon_version", Type: field.TypeString, Nullable: true},
 		{Name: "daemon_build_id", Type: field.TypeString, Nullable: true},
+		{Name: "assignment_protocol_version", Type: field.TypeInt, Default: 1},
+		{Name: "profile_capability_version", Type: field.TypeInt, Nullable: true},
 		{Name: "daemon_version_token_issued_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"mysql": "datetime(3)", "sqlite3": "datetime"}},
 		{Name: "last_reconcile_error_code", Type: field.TypeString, Nullable: true},
 		{Name: "enrollment_generation", Type: field.TypeInt64, Default: 0},

@@ -36,6 +36,8 @@ func (Computer) Fields() []ent.Field {
 		optionalTimeField("host_last_seen_at"),
 		optionalStringField("daemon_version"),
 		optionalStringField("daemon_build_id"),
+		field.Int("assignment_protocol_version").Default(1),
+		field.Int("profile_capability_version").Optional().Nillable(),
 		optionalTimeField("daemon_version_token_issued_at"),
 		optionalStringField("last_reconcile_error_code"),
 		field.Int64("enrollment_generation").Default(0),

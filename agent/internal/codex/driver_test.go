@@ -688,9 +688,53 @@ func TestCodexAppServerHelper(t *testing.T) {
 					},
 				},
 			})
+		case "skills/list":
+			helperWrite(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      request.ID,
+				"result": map[string]any{
+					"data": []map[string]any{{
+						"cwd": request.Params["cwds"].([]any)[0],
+						"skills": []map[string]any{{
+							"name": "review", "description": "Review code",
+							"path":  "/profile/skills/review/SKILL.md",
+							"scope": "user", "enabled": true,
+						}},
+					}},
+				},
+			})
 		}
 	}
 	os.Exit(0)
+}
+
+func TestDriverDiscoversProfileCapabilitiesInRequestedWorkspace(t *testing.T) {
+	t.Setenv("VELA_CODEX_HELPER", "1")
+	t.Setenv("VELA_CODEX_HELPER_MODE", "models")
+	workspace := t.TempDir()
+	driver := New(Options{
+		Executable: os.Args[0],
+		ArgsPrefix: []string{"-test.run=TestCodexAppServerHelper", "--"},
+		Version:    "test-version",
+	})
+
+	result, err := driver.DiscoverProfileCapabilities(
+		context.Background(),
+		runtimeapi.ProfileCapabilityRequest{
+			AgentID: "agent-1", WorkingDirectory: workspace, ForceReload: true,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Protocol != "codex_app_server" ||
+		result.RuntimeVersion != "test-version" ||
+		result.Models.Default != "gpt-codex-default" ||
+		len(result.Models.Models) != 2 || len(result.Skills) != 1 ||
+		result.Skills[0].Name != "review" ||
+		result.Skills[0].Scope != "user" {
+		t.Fatalf("profile capabilities = %#v", result)
+	}
 }
 
 func TestDriverExecutableCandidatesFallThroughDeduplicateAndStaySelected(
