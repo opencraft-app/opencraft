@@ -619,6 +619,14 @@ func newHumanRoutes(
 			"POST /v1/servers/{serverId}/agents/{agentId}/credentials/rotate",
 			agentWrapper.RotateAgentRuntimeCredential,
 		)
+		mux.HandleFunc(
+			"GET /v1/servers/{serverId}/agents/{agentId}/profile-capabilities",
+			agentWrapper.GetAgentProfileCapabilities,
+		)
+		mux.HandleFunc(
+			"POST /v1/servers/{serverId}/agents/{agentId}/profile-capabilities/refresh",
+			agentWrapper.RefreshAgentProfileCapabilities,
+		)
 	}
 	if operationWrapper != nil {
 		mux.HandleFunc(

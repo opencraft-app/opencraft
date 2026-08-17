@@ -18,13 +18,36 @@ import (
 const handlerAgentID = "0198f4c2-7a36-7af3-a01e-0fcb31e9d84e"
 
 type fakeAgentService struct {
-	createCommand     appagent.CreateCommand
-	updateCommand     appagent.UpdateCommand
-	lifecycleCommands []appagent.LifecycleCommand
-	credentialCommand appagent.CredentialCommand
-	deleteCommand     appagent.DeleteCommand
-	result            agentport.CreateResult
-	agents            []agentport.Agent
+	createCommand            appagent.CreateCommand
+	updateCommand            appagent.UpdateCommand
+	lifecycleCommands        []appagent.LifecycleCommand
+	credentialCommand        appagent.CredentialCommand
+	deleteCommand            appagent.DeleteCommand
+	profileCapabilityCommand appagent.ProfileCapabilityRefreshCommand
+	profileCapabilities      agentport.ProfileCapabilities
+	result                   agentport.CreateResult
+	agents                   []agentport.Agent
+}
+
+func (service *fakeAgentService) GetProfileCapabilities(
+	context.Context,
+	string,
+	string,
+	string,
+) (agentport.ProfileCapabilities, error) {
+	return service.profileCapabilities, nil
+}
+
+func (service *fakeAgentService) RefreshProfileCapabilities(
+	_ context.Context,
+	command appagent.ProfileCapabilityRefreshCommand,
+) (agentport.Operation, error) {
+	service.profileCapabilityCommand = command
+	return agentport.Operation{
+		ID: handlerOperationID, ServerID: command.ServerID,
+		Service: "platform", Kind: "agent.profile.capabilities.refresh",
+		State: "pending", CreatedAt: time.Date(2026, 7, 31, 0, 30, 0, 0, time.UTC),
+	}, nil
 }
 
 func (service *fakeAgentService) Create(
@@ -279,6 +302,66 @@ func TestAgentHandlerMapsCreateQueriesAndOperations(t *testing.T) {
 			deleteResponse,
 			service.deleteCommand,
 		)
+	}
+}
+
+func TestAgentHandlerStartsProfileCapabilityRefresh(t *testing.T) {
+	computerID := handlerComputerID
+	service := &fakeAgentService{agents: []agentport.Agent{{
+		ID: handlerAgentID, ServerID: handlerServerID, ComputerID: &computerID,
+		Runtime: agentport.Runtime{Kind: "codex"}, Revision: 1,
+	}}}
+	handler, err := NewAgentHandler(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := handler.RefreshAgentProfileCapabilities(
+		currentHumanContext(t),
+		openapi.RefreshAgentProfileCapabilitiesRequestObject{
+			ServerId: uuid.MustParse(handlerServerID),
+			AgentId:  uuid.MustParse(handlerAgentID),
+			Params: openapi.RefreshAgentProfileCapabilitiesParams{
+				IdempotencyKey: "profile-refresh-0001",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, ok := response.(openapi.RefreshAgentProfileCapabilities202JSONResponse)
+	if !ok || accepted.Kind != "agent.profile.capabilities.refresh" ||
+		service.profileCapabilityCommand.AgentID != handlerAgentID ||
+		service.profileCapabilityCommand.IdempotencyKey != "profile-refresh-0001" {
+		t.Fatalf("RefreshAgentProfileCapabilities() = %#v command=%#v", response, service.profileCapabilityCommand)
+	}
+}
+
+func TestAgentHandlerReturnsAbsentProfileCapabilitiesWithoutRefreshing(t *testing.T) {
+	service := &fakeAgentService{profileCapabilities: agentport.ProfileCapabilities{
+		AgentID: handlerAgentID,
+	}}
+	handler, err := NewAgentHandler(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := handler.GetAgentProfileCapabilities(
+		currentHumanContext(t),
+		openapi.GetAgentProfileCapabilitiesRequestObject{
+			ServerId: uuid.MustParse(handlerServerID),
+			AgentId:  uuid.MustParse(handlerAgentID),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, ok := response.(openapi.GetAgentProfileCapabilities200JSONResponse)
+	if !ok || body.SnapshotState != openapi.AgentProfileSnapshotAbsent ||
+		body.Subject != nil || body.Models != nil || body.Skills != nil ||
+		body.RefreshOperation != nil {
+		t.Fatalf("GetAgentProfileCapabilities() = %#v", response)
+	}
+	if service.profileCapabilityCommand.AgentID != "" {
+		t.Fatalf("GET triggered refresh: %#v", service.profileCapabilityCommand)
 	}
 }
 

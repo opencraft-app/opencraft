@@ -14,6 +14,8 @@ import (
 	"chatserver/internal/ent/computer"
 	"chatserver/internal/ent/computeragentobservation"
 	"chatserver/internal/ent/computerruntimecredential"
+	"chatserver/internal/ent/tencentoperation"
+	"chatserver/internal/persistedjson"
 	computerauthport "chatserver/internal/ports/computerauth"
 	computercontrolport "chatserver/internal/ports/computercontrol"
 
@@ -25,6 +27,20 @@ import (
 // without re-checking the current credential row.
 type EntRepository struct {
 	handle *database.Handle
+}
+
+type profileCapabilityRefreshSnapshot struct {
+	SchemaVersion         int       `json:"schemaVersion"`
+	ServerID              string    `json:"serverId"`
+	AgentID               string    `json:"agentId"`
+	ComputerID            string    `json:"computerId"`
+	RuntimeKind           string    `json:"runtimeKind"`
+	ContextGeneration     int64     `json:"contextGeneration"`
+	AuthorityContextKey   string    `json:"authorityContextKey"`
+	InvalidationWatermark int64     `json:"invalidationWatermark"`
+	ForceReload           bool      `json:"forceReload"`
+	Trigger               string    `json:"trigger"`
+	RequestedAt           time.Time `json:"requestedAt"`
 }
 
 // NewEntRepository creates the Computer control-plane repository.
@@ -226,6 +242,54 @@ func (repository *EntRepository) GetAssignmentSnapshot(
 				ConfigGeneration:  entity.CurrentLaunchGeneration,
 				CredentialVersion: uint64(entity.CurrentLaunchCredentialVersion),
 				Attempt:           entity.CurrentLaunchAttempt,
+			}
+		}
+		if entity.ProfileCapabilityRefreshID != nil {
+			operation, err := repository.handle.Client().TencentOperation.Query().
+				Where(
+					tencentoperation.IDEQ(*entity.ProfileCapabilityRefreshID),
+					tencentoperation.PartitionKeyEQ(serverID),
+					tencentoperation.ServerIDEQ(serverID),
+					tencentoperation.ServiceEQ("platform"),
+					tencentoperation.KindEQ("agent.profile.capabilities.refresh"),
+					tencentoperation.ResourceTypeEQ("agent"),
+					tencentoperation.ResourceIDEQ(entity.ID),
+					tencentoperation.StateIn("pending", "running", "retry_wait", "uncertain"),
+				).
+				Only(ctx)
+			if err != nil {
+				return computercontrolport.AssignmentSnapshot{}, err
+			}
+			if operation.RequestSnapshotJSON == nil {
+				return computercontrolport.AssignmentSnapshot{}, errors.New(
+					"Profile capability refresh 缺少 request snapshot",
+				)
+			}
+			var snapshot profileCapabilityRefreshSnapshot
+			if _, err := persistedjson.DecodeSnapshot(
+				*operation.RequestSnapshotJSON,
+				"platform",
+				"agent.profile.capabilities.refresh",
+				&snapshot,
+			); err != nil {
+				return computercontrolport.AssignmentSnapshot{}, err
+			}
+			if snapshot.SchemaVersion != 1 || snapshot.ServerID != serverID ||
+				snapshot.AgentID != entity.ID || snapshot.ComputerID != computerID ||
+				snapshot.RuntimeKind != entity.RuntimeKind ||
+				snapshot.ContextGeneration != entity.Revision {
+				return computercontrolport.AssignmentSnapshot{}, errors.New(
+					"Profile capability refresh context 无效",
+				)
+			}
+			assignment.ProfileCapabilityRefresh = &computercontrolport.ProfileCapabilityRefresh{
+				RefreshID:             operation.ID,
+				ContextGeneration:     snapshot.ContextGeneration,
+				AuthorityContextKey:   snapshot.AuthorityContextKey,
+				RuntimeKind:           snapshot.RuntimeKind,
+				InvalidationWatermark: snapshot.InvalidationWatermark,
+				ForceReload:           snapshot.ForceReload,
+				RequestedAt:           snapshot.RequestedAt.UTC(),
 			}
 		}
 		assignments = append(assignments, assignment)

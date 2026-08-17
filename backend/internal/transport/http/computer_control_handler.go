@@ -2,14 +2,18 @@ package httptransport
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"net/http"
 
 	"chatserver/internal/api/openapi"
+	appagent "chatserver/internal/app/agentmanagement"
 	appcomputercontrol "chatserver/internal/app/computercontrol"
 	appcomputer "chatserver/internal/app/computermanagement"
 	appruntimesession "chatserver/internal/app/runtimesession"
 	"chatserver/internal/apperror"
+	agentport "chatserver/internal/ports/agent"
 	computercontrolport "chatserver/internal/ports/computercontrol"
 
 	"github.com/google/uuid"
@@ -78,16 +82,24 @@ type computerObservationService interface {
 	) error
 }
 
+type computerProfileCapabilityService interface {
+	CompleteProfileCapabilities(
+		context.Context,
+		appagent.ProfileCapabilityResultCommand,
+	) (agentport.ProfileCapabilitySubmissionResult, error)
+}
+
 // ComputerControlHandler serves requests made by the Vela daemon. It is kept
 // separate from the human-facing Computer management handler so the two trust
 // boundaries cannot accidentally share authorization rules.
 type ComputerControlHandler struct {
 	openapi.StrictServerInterface
-	sessions     computerControlSessionService
-	credentials  computerCredentialRotationService
-	assignments  computerAssignmentService
-	launches     computerAgentLaunchService
-	observations computerObservationService
+	sessions            computerControlSessionService
+	credentials         computerCredentialRotationService
+	assignments         computerAssignmentService
+	launches            computerAgentLaunchService
+	observations        computerObservationService
+	profileCapabilities computerProfileCapabilityService
 }
 
 var _ openapi.StrictServerInterface = (*ComputerControlHandler)(nil)
@@ -99,16 +111,21 @@ func NewComputerControlHandler(
 	assignments computerAssignmentService,
 	launches computerAgentLaunchService,
 	observations computerObservationService,
+	profileCapabilities ...computerProfileCapabilityService,
 ) (*ComputerControlHandler, error) {
 	if sessions == nil || credentials == nil || assignments == nil || launches == nil ||
 		observations == nil {
 		return nil, errors.New("Computer 控制应用服务不能为空")
 	}
-	return &ComputerControlHandler{
+	handler := &ComputerControlHandler{
 		sessions: sessions, credentials: credentials,
 		assignments: assignments, launches: launches,
 		observations: observations,
-	}, nil
+	}
+	if len(profileCapabilities) > 0 {
+		handler.profileCapabilities = profileCapabilities[0]
+	}
+	return handler, nil
 }
 
 // CreateComputerAgentLaunch atomically allocates the server-issued launch
@@ -512,6 +529,58 @@ func (handler *ComputerControlHandler) GetComputerAssignmentsV2(
 	return openapi.GetComputerAssignmentsV2200JSONResponse(body), nil
 }
 
+func (handler *ComputerControlHandler) PutComputerAgentProfileCapabilityResult(
+	ctx context.Context,
+	request openapi.PutComputerAgentProfileCapabilityResultRequestObject,
+) (openapi.PutComputerAgentProfileCapabilityResultResponseObject, error) {
+	principal, ok := CurrentComputerPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New(
+			"computer_credential_invalid",
+			"Computer credential 无效",
+			nil,
+		)
+	}
+	if handler.profileCapabilities == nil || request.Body == nil {
+		return nil, apperror.New(
+			"internal_error",
+			"Profile capability result service 未配置",
+			nil,
+		)
+	}
+	raw, err := json.Marshal(request.Body)
+	if err != nil {
+		return nil, apperror.New("invalid_request", "Profile capability result 无效", err)
+	}
+	errorCode := ""
+	if request.Body.ErrorCode != nil {
+		errorCode = string(*request.Body.ErrorCode)
+	}
+	result, err := handler.profileCapabilities.CompleteProfileCapabilities(
+		ctx,
+		appagent.ProfileCapabilityResultCommand{
+			ServerID: principal.ServerID(), ComputerID: principal.ComputerID(),
+			AgentID: request.AgentId.String(), OperationID: request.OperationId.String(),
+			ContextGeneration:   request.Body.ContextGeneration,
+			AuthorityContextKey: string(request.Body.AuthorityContextKey),
+			Succeeded:           string(request.Body.Status) == "succeeded",
+			ErrorCode:           errorCode, ResultJSON: raw, ResultHash: sha256.Sum256(raw),
+			CompletedAt: request.Body.ObservedAt.UTC(),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	reason := openapi.ComputerProfileCapabilitySubmissionResultReason(result.Reason)
+	if !reason.Valid() {
+		return nil, invalidComputerControlData(nil)
+	}
+	return openapi.PutComputerAgentProfileCapabilityResult200JSONResponse{
+		Accepted: result.Accepted,
+		Reason:   reason,
+	}, nil
+}
+
 // NewComputerControlRoutes registers only operations implemented by the
 // daemon-facing vertical slice.
 func NewComputerControlRoutes(
@@ -521,12 +590,14 @@ func NewComputerControlRoutes(
 	launches computerAgentLaunchService,
 	observations computerObservationService,
 	encoder *ErrorEncoder,
+	profileCapabilities ...computerProfileCapabilityService,
 ) (http.Handler, error) {
 	if encoder == nil {
 		return nil, ErrValidatorEncoderRequired
 	}
 	handler, err := NewComputerControlHandler(
 		sessions, credentials, assignments, launches, observations,
+		profileCapabilities...,
 	)
 	if err != nil {
 		return nil, err
@@ -548,6 +619,10 @@ func NewComputerControlRoutes(
 	)
 	mux.HandleFunc("GET /v1/computer/assignments", wrapper.GetComputerAssignments)
 	mux.HandleFunc("GET /v1/computer/assignments-v2", wrapper.GetComputerAssignmentsV2)
+	mux.HandleFunc(
+		"PUT /v1/computer/agents/{agentId}/profile-capability-results/{operationId}",
+		wrapper.PutComputerAgentProfileCapabilityResult,
+	)
 	mux.HandleFunc(
 		"POST /v1/computer/agents/{agentId}/launches",
 		wrapper.CreateComputerAgentLaunch,

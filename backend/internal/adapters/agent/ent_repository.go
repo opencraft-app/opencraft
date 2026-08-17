@@ -4,6 +4,7 @@ package agent
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -471,6 +472,361 @@ func (repository *EntRepository) Update(
 				result,
 				now,
 			)
+		},
+	)
+	return result, returnErr
+}
+
+type profileCapabilityRefreshSnapshot struct {
+	SchemaVersion         int       `json:"schemaVersion"`
+	ServerID              string    `json:"serverId"`
+	AgentID               string    `json:"agentId"`
+	ComputerID            string    `json:"computerId"`
+	RuntimeKind           string    `json:"runtimeKind"`
+	ContextGeneration     int64     `json:"contextGeneration"`
+	AuthorityContextKey   string    `json:"authorityContextKey"`
+	InvalidationWatermark int64     `json:"invalidationWatermark"`
+	ForceReload           bool      `json:"forceReload"`
+	Trigger               string    `json:"trigger"`
+	RequestedAt           time.Time `json:"requestedAt"`
+}
+
+type profileCapabilityResultSnapshot struct {
+	SchemaVersion int    `json:"schemaVersion"`
+	Status        string `json:"status"`
+	ResultDigest  string `json:"resultDigest"`
+	ErrorCode     string `json:"errorCode,omitempty"`
+}
+
+func (repository *EntRepository) GetProfileCapabilities(
+	ctx context.Context,
+	accountID string,
+	serverID string,
+	agentID string,
+) (agentport.ProfileCapabilities, error) {
+	membership, err := repository.activeMembership(ctx, accountID, serverID)
+	if err != nil {
+		return agentport.ProfileCapabilities{}, err
+	}
+	if !canManage(membership.Role) {
+		return agentport.ProfileCapabilities{}, agentport.ErrPermissionDenied
+	}
+	entity, err := repository.handle.Client().Agent.Query().
+		Where(
+			agententity.IDEQ(agentID),
+			agententity.ServerIDEQ(serverID),
+			agententity.DeletedAtIsNil(),
+		).
+		Only(ctx)
+	if ent.IsNotFound(err) {
+		return agentport.ProfileCapabilities{}, agentport.ErrAgentNotFound
+	}
+	if err != nil {
+		return agentport.ProfileCapabilities{}, err
+	}
+	result := agentport.ProfileCapabilities{
+		AgentID:      entity.ID,
+		SnapshotJSON: entity.ProfileCapabilitiesJSON,
+	}
+	if entity.ProfileCapabilityRefreshID != nil {
+		operation, err := repository.handle.Client().TencentOperation.Query().
+			Where(
+				tencentoperation.IDEQ(*entity.ProfileCapabilityRefreshID),
+				tencentoperation.PartitionKeyEQ(serverID),
+			).
+			Only(ctx)
+		if err != nil {
+			return agentport.ProfileCapabilities{}, err
+		}
+		mapped := mapOperation(operation)
+		result.RefreshOperation = &mapped
+	}
+	return result, nil
+}
+
+func (repository *EntRepository) BeginProfileCapabilityRefresh(
+	ctx context.Context,
+	command agentport.ProfileCapabilityRefreshCommand,
+) (result agentport.Operation, returnErr error) {
+	returnErr = repository.handle.WithTx(
+		ctx,
+		func(ctx context.Context, tx *ent.Tx) error {
+			membership, err := requireMembership(
+				ctx, tx, command.AccountID, command.ServerID,
+			)
+			if err != nil {
+				return err
+			}
+			if !canManage(membership.Role) {
+				return agentport.ErrPermissionDenied
+			}
+			const scope = "agent.profile-capabilities.refresh"
+			stored, err := findIdempotency(
+				ctx,
+				tx,
+				command.ServerID,
+				scope,
+				command.AgentID,
+				command.IdempotencyKey,
+			)
+			if err == nil {
+				if !sameHash(stored.RequestHash, command.RequestHash) {
+					return agentport.ErrIdempotencyConflict
+				}
+				_, operationID, err := decodeLocator(stored.ResponseBodyJSON, scope)
+				if err != nil {
+					return err
+				}
+				operation, err := tx.TencentOperation.Query().
+					Where(
+						tencentoperation.IDEQ(operationID),
+						tencentoperation.PartitionKeyEQ(command.ServerID),
+					).
+					Only(ctx)
+				if err != nil {
+					return err
+				}
+				result = mapOperation(operation)
+				return nil
+			}
+			if !ent.IsNotFound(err) {
+				return err
+			}
+			entity, err := tx.Agent.Query().
+				Where(
+					agententity.IDEQ(command.AgentID),
+					agententity.ServerIDEQ(command.ServerID),
+					agententity.DeletedAtIsNil(),
+				).
+				Only(ctx)
+			if ent.IsNotFound(err) {
+				return agentport.ErrAgentNotFound
+			}
+			if err != nil {
+				return err
+			}
+			if entity.ComputerID == nil || *entity.ComputerID != command.ComputerID ||
+				entity.RuntimeKind != command.RuntimeKind ||
+				entity.Revision != command.ContextGeneration {
+				return agentport.ErrRevisionConflict
+			}
+			snapshot, err := json.Marshal(profileCapabilityRefreshSnapshot{
+				SchemaVersion:         1,
+				ServerID:              command.ServerID,
+				AgentID:               command.AgentID,
+				ComputerID:            command.ComputerID,
+				RuntimeKind:           command.RuntimeKind,
+				ContextGeneration:     command.ContextGeneration,
+				AuthorityContextKey:   command.AuthorityContextKey,
+				InvalidationWatermark: command.InvalidationWatermark,
+				ForceReload:           command.ForceReload,
+				Trigger:               command.Trigger,
+				RequestedAt:           command.CreatedAt.UTC(),
+			})
+			if err != nil {
+				return err
+			}
+			deadline := command.DeadlineAt.UTC()
+			operation, err := createOperation(
+				ctx,
+				tx,
+				command.OperationID,
+				command.ServerID,
+				"platform",
+				"agent.profile.capabilities.refresh",
+				command.AgentID,
+				command.ContextGeneration,
+				command.IdempotencyKey,
+				snapshot,
+				&deadline,
+				command.CreatedAt.UTC(),
+			)
+			if err != nil {
+				return err
+			}
+			updated, err := tx.Agent.Update().
+				Where(
+					agententity.IDEQ(command.AgentID),
+					agententity.ServerIDEQ(command.ServerID),
+					agententity.RevisionEQ(command.ContextGeneration),
+					agententity.ComputerIDEQ(command.ComputerID),
+					agententity.RuntimeKindEQ(command.RuntimeKind),
+				).
+				SetProfileCapabilityRefreshID(operation.ID).
+				SetUpdatedAt(command.CreatedAt.UTC()).
+				Save(ctx)
+			if err != nil {
+				return err
+			}
+			if updated != 1 {
+				return agentport.ErrRevisionConflict
+			}
+			if err := bumpComputerAssignments(
+				ctx,
+				tx,
+				command.ServerID,
+				[]*string{entity.ComputerID},
+				command.CreatedAt.UTC(),
+			); err != nil {
+				return err
+			}
+			if err := saveIdempotency(
+				ctx,
+				tx,
+				command.ServerID,
+				scope,
+				command.AgentID,
+				command.IdempotencyKey,
+				command.RequestHash,
+				command.AgentID,
+				operation.ID,
+				command.CreatedAt.UTC(),
+			); err != nil {
+				return err
+			}
+			result = mapOperation(operation)
+			return nil
+		},
+	)
+	return result, returnErr
+}
+
+func (repository *EntRepository) CompleteProfileCapabilityRefresh(
+	ctx context.Context,
+	command agentport.ProfileCapabilityResultCommand,
+) (result agentport.ProfileCapabilitySubmissionResult, returnErr error) {
+	returnErr = repository.handle.WithTx(
+		ctx,
+		func(ctx context.Context, tx *ent.Tx) error {
+			operation, err := tx.TencentOperation.Query().
+				Where(
+					tencentoperation.IDEQ(command.OperationID),
+					tencentoperation.PartitionKeyEQ(command.ServerID),
+					tencentoperation.ServerIDEQ(command.ServerID),
+					tencentoperation.ServiceEQ("platform"),
+					tencentoperation.KindEQ("agent.profile.capabilities.refresh"),
+					tencentoperation.ResourceTypeEQ("agent"),
+					tencentoperation.ResourceIDEQ(command.AgentID),
+				).
+				Only(ctx)
+			if err != nil {
+				return err
+			}
+			if operation.RequestSnapshotJSON == nil {
+				return errors.New("Profile capability Operation 缺少 request snapshot")
+			}
+			var request profileCapabilityRefreshSnapshot
+			if _, err := persistedjson.DecodeSnapshot(
+				*operation.RequestSnapshotJSON,
+				"platform",
+				"agent.profile.capabilities.refresh",
+				&request,
+			); err != nil {
+				return err
+			}
+			entity, err := tx.Agent.Query().
+				Where(
+					agententity.IDEQ(command.AgentID),
+					agententity.ServerIDEQ(command.ServerID),
+					agententity.DeletedAtIsNil(),
+				).
+				Only(ctx)
+			if err != nil {
+				return err
+			}
+			if entity.ProfileCapabilityRefreshID == nil ||
+				*entity.ProfileCapabilityRefreshID != command.OperationID ||
+				entity.ComputerID == nil || *entity.ComputerID != command.ComputerID ||
+				entity.Revision != command.ContextGeneration ||
+				request.ContextGeneration != command.ContextGeneration ||
+				request.AuthorityContextKey != command.AuthorityContextKey {
+				result = agentport.ProfileCapabilitySubmissionResult{
+					Accepted: false, Reason: "superseded",
+				}
+				return nil
+			}
+			status := "failed"
+			if command.Succeeded {
+				status = "succeeded"
+			}
+			resultSnapshot, err := persistedjson.EncodeResultSnapshot(
+				"platform",
+				"agent.profile.capabilities.refresh",
+				profileCapabilityResultSnapshot{
+					SchemaVersion: 1,
+					Status:        status,
+					ResultDigest: base64.RawURLEncoding.EncodeToString(
+						command.ResultHash[:],
+					),
+					ErrorCode: command.ErrorCode,
+				},
+			)
+			if err != nil {
+				return err
+			}
+			agentUpdate := tx.Agent.Update().
+				Where(
+					agententity.IDEQ(command.AgentID),
+					agententity.ServerIDEQ(command.ServerID),
+					agententity.ProfileCapabilityRefreshIDEQ(command.OperationID),
+					agententity.RevisionEQ(command.ContextGeneration),
+				).
+				ClearProfileCapabilityRefreshID().
+				SetUpdatedAt(command.CompletedAt.UTC())
+			if command.Succeeded {
+				encoded, err := persistedjson.EncodeProfileCapabilities(
+					json.RawMessage(command.ResultJSON),
+				)
+				if err != nil {
+					return err
+				}
+				agentUpdate.SetProfileCapabilitiesJSON(encoded)
+			}
+			updated, err := agentUpdate.Save(ctx)
+			if err != nil {
+				return err
+			}
+			if updated != 1 {
+				return agentport.ErrRevisionConflict
+			}
+			operationUpdate := tx.TencentOperation.Update().
+				Where(
+					tencentoperation.IDEQ(command.OperationID),
+					tencentoperation.PartitionKeyEQ(command.ServerID),
+					tencentoperation.StateIn("pending", "running", "retry_wait", "uncertain"),
+				).
+				SetState(status).
+				SetResultJSON(resultSnapshot).
+				SetCompletedAt(command.CompletedAt.UTC()).
+				SetUpdatedAt(command.CompletedAt.UTC()).
+				ClearNextAttemptAt().
+				ClearLeaseOwner().
+				ClearLeaseExpiresAt()
+			if command.ErrorCode == "" {
+				operationUpdate.ClearLastErrorCode()
+			} else {
+				operationUpdate.SetLastErrorCode(command.ErrorCode)
+			}
+			operationUpdated, err := operationUpdate.Save(ctx)
+			if err != nil {
+				return err
+			}
+			if operationUpdated != 1 {
+				return agentport.ErrRevisionConflict
+			}
+			if err := bumpComputerAssignments(
+				ctx,
+				tx,
+				command.ServerID,
+				[]*string{entity.ComputerID},
+				command.CompletedAt.UTC(),
+			); err != nil {
+				return err
+			}
+			result = agentport.ProfileCapabilitySubmissionResult{
+				Accepted: true, Reason: "accepted",
+			}
+			return nil
 		},
 	)
 	return result, returnErr

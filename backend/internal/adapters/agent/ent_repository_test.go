@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	computercontroladapter "chatserver/internal/adapters/computercontrol"
 	"chatserver/internal/config"
 	"chatserver/internal/database"
 	"chatserver/internal/database/migration"
@@ -36,6 +37,7 @@ const (
 	repoAgentDoneTaskID   = "0198f4c2-7a44-7e45-913c-6baf30401a8a"
 	repoAgentReminderID   = "0198f4c2-7a45-7e45-913c-6baf30401a8b"
 	repoAgentOccurrenceID = "0198f4c2-7a46-7e45-913c-6baf30401a8c"
+	repoAgentProfileOp    = "0198f4c2-7a47-7e45-913c-6baf30401a8d"
 )
 
 var repoAgentNow = time.Date(2026, 7, 31, 0, 0, 0, 0, time.UTC)
@@ -94,6 +96,92 @@ func TestEntRepositoryCreatesListsAndGetsAgent(t *testing.T) {
 	)
 	if err != nil || value.DisplayName != "小舟" {
 		t.Fatalf("Get() = (%#v, %v)", value, err)
+	}
+}
+
+func TestEntRepositoryBeginsProfileCapabilityRefreshAtomically(t *testing.T) {
+	repository, handle := openAgentRepository(t)
+	seedAgentServer(t, handle)
+	if _, err := repository.Create(context.Background(), createAgentCommand()); err != nil {
+		t.Fatal(err)
+	}
+	command := agentport.ProfileCapabilityRefreshCommand{
+		AccountID: repoAgentAccountID, ServerID: repoAgentServerID,
+		AgentID: repoAgentID, ComputerID: repoAgentComputerID,
+		RuntimeKind: "codex", ContextGeneration: 1,
+		AuthorityContextKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		ForceReload:         true, Trigger: "human",
+		IdempotencyKey: "profile-refresh-0001",
+		RequestHash:    sha256.Sum256([]byte("profile-refresh")),
+		OperationID:    repoAgentProfileOp, CreatedAt: repoAgentNow.Add(time.Minute),
+		DeadlineAt: repoAgentNow.Add(3 * time.Minute),
+	}
+	operation, err := repository.BeginProfileCapabilityRefresh(context.Background(), command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedAgent, err := handle.Client().Agent.Get(context.Background(), repoAgentID)
+	if err != nil || storedAgent.ProfileCapabilityRefreshID == nil ||
+		*storedAgent.ProfileCapabilityRefreshID != repoAgentProfileOp {
+		t.Fatalf("stored Agent = (%#v, %v)", storedAgent, err)
+	}
+	storedOperation, err := handle.Client().TencentOperation.Get(
+		context.Background(), repoAgentProfileOp,
+	)
+	if err != nil || operation.Kind != "agent.profile.capabilities.refresh" ||
+		storedOperation.RequestSnapshotJSON == nil || storedOperation.DeadlineAt == nil {
+		t.Fatalf("operation = (%#v, %#v, %v)", operation, storedOperation, err)
+	}
+	machine, err := handle.Client().Computer.Get(context.Background(), repoAgentComputerID)
+	if err != nil || machine.AssignmentRevision != 3 {
+		t.Fatalf("assignment revision = (%d, %v)", machine.AssignmentRevision, err)
+	}
+	computerRepository, err := computercontroladapter.NewEntRepository(handle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := computerRepository.GetAssignmentSnapshot(
+		context.Background(), repoAgentServerID, repoAgentComputerID,
+	)
+	if err != nil || len(snapshot.Agents) != 1 ||
+		snapshot.Agents[0].ProfileCapabilityRefresh == nil ||
+		snapshot.Agents[0].ProfileCapabilityRefresh.RefreshID != repoAgentProfileOp ||
+		snapshot.Agents[0].ProfileCapabilityRefresh.ContextGeneration != 1 {
+		t.Fatalf("Assignment Profile refresh = (%#v, %v)", snapshot, err)
+	}
+	replay := command
+	replay.OperationID = "0198f4c2-7a48-7e45-913c-6baf30401a8e"
+	replayed, err := repository.BeginProfileCapabilityRefresh(context.Background(), replay)
+	if err != nil || replayed.ID != repoAgentProfileOp {
+		t.Fatalf("replay = (%#v, %v)", replayed, err)
+	}
+	machine, _ = handle.Client().Computer.Get(context.Background(), repoAgentComputerID)
+	if machine.AssignmentRevision != 3 {
+		t.Fatalf("replay assignment revision = %d", machine.AssignmentRevision)
+	}
+	completed, err := repository.CompleteProfileCapabilityRefresh(
+		context.Background(),
+		agentport.ProfileCapabilityResultCommand{
+			ServerID: repoAgentServerID, ComputerID: repoAgentComputerID,
+			AgentID: repoAgentID, OperationID: repoAgentProfileOp,
+			ContextGeneration:   1,
+			AuthorityContextKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Succeeded:           true, ResultJSON: []byte(`{"models":[],"skills":[]}`),
+			ResultHash:  sha256.Sum256([]byte(`{"models":[],"skills":[]}`)),
+			CompletedAt: repoAgentNow.Add(2 * time.Minute),
+		},
+	)
+	if err != nil || !completed.Accepted || completed.Reason != "accepted" {
+		t.Fatalf("CompleteProfileCapabilityRefresh() = (%#v, %v)", completed, err)
+	}
+	storedAgent, _ = handle.Client().Agent.Get(context.Background(), repoAgentID)
+	storedOperation, _ = handle.Client().TencentOperation.Get(
+		context.Background(), repoAgentProfileOp,
+	)
+	if storedAgent.ProfileCapabilityRefreshID != nil ||
+		storedAgent.ProfileCapabilitiesJSON == nil || storedOperation.State != "succeeded" ||
+		storedOperation.ResultJSON == nil {
+		t.Fatalf("completed Agent/Operation = (%#v, %#v)", storedAgent, storedOperation)
 	}
 }
 

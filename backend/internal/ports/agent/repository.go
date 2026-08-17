@@ -172,6 +172,49 @@ type DeleteCommand struct {
 	DeletedAt      time.Time
 }
 
+type ProfileCapabilityRefreshCommand struct {
+	AccountID             string
+	ServerID              string
+	AgentID               string
+	ComputerID            string
+	RuntimeKind           string
+	ContextGeneration     int64
+	AuthorityContextKey   string
+	InvalidationWatermark int64
+	ForceReload           bool
+	Trigger               string
+	IdempotencyKey        string
+	RequestHash           [32]byte
+	OperationID           string
+	CreatedAt             time.Time
+	DeadlineAt            time.Time
+}
+
+type ProfileCapabilities struct {
+	AgentID          string
+	SnapshotJSON     *string
+	RefreshOperation *Operation
+}
+
+type ProfileCapabilityResultCommand struct {
+	ServerID            string
+	ComputerID          string
+	AgentID             string
+	OperationID         string
+	ContextGeneration   int64
+	AuthorityContextKey string
+	Succeeded           bool
+	ErrorCode           string
+	ResultJSON          []byte
+	ResultHash          [32]byte
+	CompletedAt         time.Time
+}
+
+type ProfileCapabilitySubmissionResult struct {
+	Accepted bool
+	Reason   string
+}
+
 type CredentialResult struct {
 	Operation Operation
 	Created   bool
@@ -186,4 +229,24 @@ type Repository interface {
 	Delete(context.Context, DeleteCommand) (Operation, error)
 	ApplyLifecycle(context.Context, LifecycleCommand) (Operation, error)
 	RotateCredential(context.Context, CredentialCommand) (CredentialResult, error)
+}
+
+type ProfileCapabilityRepository interface {
+	GetProfileCapabilities(
+		context.Context,
+		string,
+		string,
+		string,
+	) (ProfileCapabilities, error)
+	BeginProfileCapabilityRefresh(
+		context.Context,
+		ProfileCapabilityRefreshCommand,
+	) (Operation, error)
+}
+
+type ProfileCapabilityResultRepository interface {
+	CompleteProfileCapabilityRefresh(
+		context.Context,
+		ProfileCapabilityResultCommand,
+	) (ProfileCapabilitySubmissionResult, error)
 }

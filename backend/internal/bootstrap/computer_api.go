@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	agentadapter "chatserver/internal/adapters/agent"
 	authnadapter "chatserver/internal/adapters/authn"
 	computeradapter "chatserver/internal/adapters/computer"
 	computerauthadapter "chatserver/internal/adapters/computerauth"
@@ -12,6 +13,7 @@ import (
 	runtimesessionadapter "chatserver/internal/adapters/runtimesession"
 	tokenadapter "chatserver/internal/adapters/token"
 	"chatserver/internal/api/openapi"
+	appagent "chatserver/internal/app/agentmanagement"
 	appauthn "chatserver/internal/app/authn"
 	appcomputercontrol "chatserver/internal/app/computercontrol"
 	appcomputer "chatserver/internal/app/computermanagement"
@@ -152,6 +154,17 @@ func NewComputerAPIHandler(config ComputerAPIConfig) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	agentRepository, err := agentadapter.NewEntRepository(config.Database)
+	if err != nil {
+		return nil, err
+	}
+	profileCapabilityService, err := appagent.NewProfileCapabilityResultService(
+		agentRepository,
+		clock,
+	)
+	if err != nil {
+		return nil, err
+	}
 	encoder := httptransport.NewErrorEncoder(idport.UUIDv7{})
 	routes, err := httptransport.NewComputerControlRoutes(
 		service,
@@ -160,6 +173,7 @@ func NewComputerAPIHandler(config ComputerAPIConfig) (http.Handler, error) {
 		agentLaunchService,
 		observationService,
 		encoder,
+		profileCapabilityService,
 	)
 	if err != nil {
 		return nil, err

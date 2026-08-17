@@ -23,16 +23,34 @@ const (
 var appAgentNow = time.Date(2026, 7, 30, 23, 45, 0, 0, time.UTC)
 
 type fakeAgentRepository struct {
-	context           agentport.ServerContext
-	createCommand     agentport.CreateCommand
-	updateCommand     agentport.UpdateCommand
-	lifecycleCommand  agentport.LifecycleCommand
-	credentialCommand agentport.CredentialCommand
-	deleteCommand     agentport.DeleteCommand
-	agent             agentport.Agent
-	operation         agentport.Operation
-	lifecycleErrors   []error
-	lifecycleCalls    int
+	context                  agentport.ServerContext
+	createCommand            agentport.CreateCommand
+	updateCommand            agentport.UpdateCommand
+	lifecycleCommand         agentport.LifecycleCommand
+	credentialCommand        agentport.CredentialCommand
+	deleteCommand            agentport.DeleteCommand
+	agent                    agentport.Agent
+	operation                agentport.Operation
+	lifecycleErrors          []error
+	lifecycleCalls           int
+	profileCapabilityCommand agentport.ProfileCapabilityRefreshCommand
+}
+
+func (repository *fakeAgentRepository) BeginProfileCapabilityRefresh(
+	_ context.Context,
+	command agentport.ProfileCapabilityRefreshCommand,
+) (agentport.Operation, error) {
+	repository.profileCapabilityCommand = command
+	return repository.operation, nil
+}
+
+func (repository *fakeAgentRepository) GetProfileCapabilities(
+	context.Context,
+	string,
+	string,
+	string,
+) (agentport.ProfileCapabilities, error) {
+	return agentport.ProfileCapabilities{AgentID: repository.agent.ID}, nil
 }
 
 func (repository *fakeAgentRepository) GetServerContext(
@@ -203,6 +221,50 @@ func TestServiceCreatesAgentAndEnqueuesLifecycle(t *testing.T) {
 			operation,
 			repository.lifecycleCommand,
 		)
+	}
+}
+
+func TestServiceStartsProfileCapabilityRefreshFromCurrentAgentContext(t *testing.T) {
+	computerID := appAgentComputer
+	repository := &fakeAgentRepository{
+		context: agentport.ServerContext{Role: "owner", IMState: "ready"},
+		agent: agentport.Agent{
+			ID: appAgentID, ServerID: appAgentServerID, ComputerID: &computerID,
+			Runtime: agentport.Runtime{Kind: "codex"}, Revision: 7,
+		},
+		operation: agentport.Operation{
+			ID: appAgentOperation, ServerID: appAgentServerID,
+			Service: "platform", Kind: "agent.profile.capabilities.refresh",
+			State: "pending", CreatedAt: appAgentNow,
+		},
+	}
+	service, err := NewService(
+		repository,
+		agentIdentityDeriver{},
+		&sequenceIDs{values: []string{appAgentOperation}},
+		fixedClock{now: appAgentNow},
+		bytes.NewReader(bytes.Repeat([]byte{0x42}, 32)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation, err := service.RefreshProfileCapabilities(
+		context.Background(),
+		ProfileCapabilityRefreshCommand{
+			AccountID: appAgentAccountID, ServerID: appAgentServerID,
+			AgentID: appAgentID, IdempotencyKey: "profile-refresh-0001",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := repository.profileCapabilityCommand
+	if operation.ID != appAgentOperation || command.OperationID != appAgentOperation ||
+		command.ContextGeneration != 7 || command.ComputerID != computerID ||
+		command.RuntimeKind != "codex" || len(command.AuthorityContextKey) != 43 ||
+		command.RequestHash == [32]byte{} || !command.ForceReload ||
+		command.Trigger != "human" || !command.CreatedAt.Equal(appAgentNow) {
+		t.Fatalf("RefreshProfileCapabilities() = %#v command=%#v", operation, command)
 	}
 }
 

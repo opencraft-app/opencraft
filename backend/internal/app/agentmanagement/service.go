@@ -4,12 +4,15 @@ package agentmanagement
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"chatserver/internal/apperror"
@@ -75,12 +78,78 @@ type DeleteCommand struct {
 	IdempotencyKey string
 }
 
+type ProfileCapabilityRefreshCommand struct {
+	AccountID      string
+	ServerID       string
+	AgentID        string
+	IdempotencyKey string
+}
+
+type ProfileCapabilityResultCommand struct {
+	ServerID            string
+	ComputerID          string
+	AgentID             string
+	OperationID         string
+	ContextGeneration   int64
+	AuthorityContextKey string
+	Succeeded           bool
+	ErrorCode           string
+	ResultJSON          []byte
+	ResultHash          [32]byte
+	CompletedAt         time.Time
+}
+
 type Service struct {
 	repository agentport.Repository
 	identities identityDeriver
 	ids        idport.Generator
 	clock      clockport.Clock
 	random     io.Reader
+}
+
+type ProfileCapabilityResultService struct {
+	repository agentport.ProfileCapabilityResultRepository
+	clock      clockport.Clock
+}
+
+func NewProfileCapabilityResultService(
+	repository agentport.ProfileCapabilityResultRepository,
+	clock clockport.Clock,
+) (*ProfileCapabilityResultService, error) {
+	if repository == nil || clock == nil {
+		return nil, errors.New("Profile capability result service 配置无效")
+	}
+	return &ProfileCapabilityResultService{repository: repository, clock: clock}, nil
+}
+
+func (service *ProfileCapabilityResultService) CompleteProfileCapabilities(
+	ctx context.Context,
+	command ProfileCapabilityResultCommand,
+) (agentport.ProfileCapabilitySubmissionResult, error) {
+	command.CompletedAt = service.clock.Now().UTC()
+	if !validUUIDv7(command.ServerID) || !validUUIDv7(command.ComputerID) ||
+		!validUUIDv7(command.AgentID) || !validUUIDv7(command.OperationID) ||
+		command.ContextGeneration < 1 || len(command.AuthorityContextKey) != 43 ||
+		len(command.ResultJSON) == 0 {
+		return agentport.ProfileCapabilitySubmissionResult{},
+			apperror.New("invalid_request", "Profile capability result 参数无效", nil)
+	}
+	result, err := service.repository.CompleteProfileCapabilityRefresh(
+		ctx,
+		agentport.ProfileCapabilityResultCommand{
+			ServerID: command.ServerID, ComputerID: command.ComputerID,
+			AgentID: command.AgentID, OperationID: command.OperationID,
+			ContextGeneration:   command.ContextGeneration,
+			AuthorityContextKey: command.AuthorityContextKey,
+			Succeeded:           command.Succeeded, ErrorCode: command.ErrorCode,
+			ResultJSON: command.ResultJSON, ResultHash: command.ResultHash,
+			CompletedAt: command.CompletedAt,
+		},
+	)
+	if err != nil {
+		return agentport.ProfileCapabilitySubmissionResult{}, mapRepositoryError(err)
+	}
+	return result, nil
 }
 
 func NewService(
@@ -169,6 +238,167 @@ func (service *Service) Create(
 	}
 	result.Agent = service.projectAgentAvailability(result.Agent)
 	return result, nil
+}
+
+func (service *Service) RefreshProfileCapabilities(
+	ctx context.Context,
+	command ProfileCapabilityRefreshCommand,
+) (agentport.Operation, error) {
+	if !validUUIDv7(command.AccountID) || !validUUIDv7(command.ServerID) ||
+		!validUUIDv7(command.AgentID) || strings.TrimSpace(command.IdempotencyKey) == "" {
+		return agentport.Operation{},
+			apperror.New("invalid_request", "Profile capability refresh 参数无效", nil)
+	}
+	repository, ok := service.repository.(agentport.ProfileCapabilityRepository)
+	if !ok {
+		return agentport.Operation{},
+			apperror.New("internal_error", "Profile capability repository 未配置", nil)
+	}
+	serverContext, err := service.repository.GetServerContext(
+		ctx, command.AccountID, command.ServerID,
+	)
+	if err != nil {
+		return agentport.Operation{}, mapRepositoryError(err)
+	}
+	if !canManage(serverContext.Role) {
+		return agentport.Operation{},
+			apperror.New("permission_denied", "没有管理 Agent 的权限", nil)
+	}
+	agent, err := service.repository.Get(
+		ctx, command.AccountID, command.ServerID, command.AgentID,
+	)
+	if err != nil {
+		return agentport.Operation{}, mapRepositoryError(err)
+	}
+	if agent.ComputerID == nil || !validUUIDv7(*agent.ComputerID) ||
+		agent.Revision < 1 || !validRuntime(agent.Runtime) {
+		return agentport.Operation{},
+			apperror.New("profile_not_ready", "Agent Profile 尚未准备好", nil)
+	}
+	operationID, err := service.ids.New()
+	if err != nil {
+		return agentport.Operation{},
+			apperror.New("internal_error", "暂时无法创建 Profile capability refresh", err)
+	}
+	now := service.clock.Now().UTC()
+	repositoryCommand := agentport.ProfileCapabilityRefreshCommand{
+		AccountID:         command.AccountID,
+		ServerID:          command.ServerID,
+		AgentID:           command.AgentID,
+		ComputerID:        *agent.ComputerID,
+		RuntimeKind:       agent.Runtime.Kind,
+		ContextGeneration: agent.Revision,
+		AuthorityContextKey: profileCapabilityAuthorityContextKey(
+			command.ServerID,
+			command.AgentID,
+			*agent.ComputerID,
+			agent.Runtime.Kind,
+			agent.Revision,
+		),
+		ForceReload:    true,
+		Trigger:        "human",
+		IdempotencyKey: strings.TrimSpace(command.IdempotencyKey),
+		RequestHash: sha256.Sum256([]byte(
+			"agent.profile-capabilities.refresh/v1\x00" +
+				command.ServerID + "\x00" + command.AgentID,
+		)),
+		OperationID: operationID,
+		CreatedAt:   now,
+		DeadlineAt:  now.Add(2 * time.Minute),
+	}
+	operation, err := repository.BeginProfileCapabilityRefresh(ctx, repositoryCommand)
+	if err != nil {
+		return agentport.Operation{}, mapRepositoryError(err)
+	}
+	return operation, nil
+}
+
+func (service *Service) GetProfileCapabilities(
+	ctx context.Context,
+	accountID string,
+	serverID string,
+	agentID string,
+) (agentport.ProfileCapabilities, error) {
+	if !validUUIDv7(accountID) || !validUUIDv7(serverID) || !validUUIDv7(agentID) {
+		return agentport.ProfileCapabilities{},
+			apperror.New("invalid_request", "Profile capability 查询参数无效", nil)
+	}
+	repository, ok := service.repository.(agentport.ProfileCapabilityRepository)
+	if !ok {
+		return agentport.ProfileCapabilities{},
+			apperror.New("internal_error", "Profile capability repository 未配置", nil)
+	}
+	serverContext, err := service.repository.GetServerContext(ctx, accountID, serverID)
+	if err != nil {
+		return agentport.ProfileCapabilities{}, mapRepositoryError(err)
+	}
+	if !canManage(serverContext.Role) {
+		return agentport.ProfileCapabilities{},
+			apperror.New("permission_denied", "没有管理 Agent 的权限", nil)
+	}
+	result, err := repository.GetProfileCapabilities(ctx, accountID, serverID, agentID)
+	if err != nil {
+		return agentport.ProfileCapabilities{}, mapRepositoryError(err)
+	}
+	return result, nil
+}
+
+func (service *Service) CompleteProfileCapabilities(
+	ctx context.Context,
+	command ProfileCapabilityResultCommand,
+) (agentport.ProfileCapabilitySubmissionResult, error) {
+	repository, ok := service.repository.(agentport.ProfileCapabilityResultRepository)
+	if !ok {
+		return agentport.ProfileCapabilitySubmissionResult{},
+			apperror.New("internal_error", "Profile capability result repository 未配置", nil)
+	}
+	if !validUUIDv7(command.ServerID) || !validUUIDv7(command.ComputerID) ||
+		!validUUIDv7(command.AgentID) || !validUUIDv7(command.OperationID) ||
+		command.ContextGeneration < 1 || len(command.AuthorityContextKey) != 43 ||
+		command.CompletedAt.IsZero() || len(command.ResultJSON) == 0 {
+		return agentport.ProfileCapabilitySubmissionResult{},
+			apperror.New("invalid_request", "Profile capability result 参数无效", nil)
+	}
+	result, err := repository.CompleteProfileCapabilityRefresh(
+		ctx,
+		agentport.ProfileCapabilityResultCommand{
+			ServerID: command.ServerID, ComputerID: command.ComputerID,
+			AgentID: command.AgentID, OperationID: command.OperationID,
+			ContextGeneration:   command.ContextGeneration,
+			AuthorityContextKey: command.AuthorityContextKey,
+			Succeeded:           command.Succeeded, ErrorCode: command.ErrorCode,
+			ResultJSON: command.ResultJSON, ResultHash: command.ResultHash,
+			CompletedAt: command.CompletedAt.UTC(),
+		},
+	)
+	if err != nil {
+		return agentport.ProfileCapabilitySubmissionResult{}, mapRepositoryError(err)
+	}
+	return result, nil
+}
+
+func profileCapabilityAuthorityContextKey(
+	serverID string,
+	agentID string,
+	computerID string,
+	runtimeKind string,
+	revision int64,
+) string {
+	var canonical strings.Builder
+	canonical.WriteString("agent-profile-capability-context/v1\x00")
+	for _, value := range []string{
+		strings.ToLower(serverID),
+		strings.ToLower(agentID),
+		strings.ToLower(computerID),
+		strings.TrimSpace(runtimeKind),
+		strconv.FormatInt(revision, 10),
+	} {
+		canonical.WriteString(strconv.Itoa(len(value)))
+		canonical.WriteByte(':')
+		canonical.WriteString(value)
+	}
+	digest := sha256.Sum256([]byte(canonical.String()))
+	return base64.RawURLEncoding.EncodeToString(digest[:])
 }
 
 func (service *Service) List(

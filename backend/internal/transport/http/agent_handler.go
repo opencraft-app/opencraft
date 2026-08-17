@@ -34,6 +34,70 @@ type agentService interface {
 	) (agentport.Operation, error)
 }
 
+type agentProfileCapabilityService interface {
+	GetProfileCapabilities(
+		context.Context,
+		string,
+		string,
+		string,
+	) (agentport.ProfileCapabilities, error)
+	RefreshProfileCapabilities(
+		context.Context,
+		appagent.ProfileCapabilityRefreshCommand,
+	) (agentport.Operation, error)
+}
+
+func (handler *AgentHandler) GetAgentProfileCapabilities(
+	ctx context.Context,
+	request openapi.GetAgentProfileCapabilitiesRequestObject,
+) (openapi.GetAgentProfileCapabilitiesResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	service, ok := handler.service.(agentProfileCapabilityService)
+	if !ok {
+		return nil, apperror.New(
+			"internal_error",
+			"Profile capability service 未配置",
+			nil,
+		)
+	}
+	value, err := service.GetProfileCapabilities(
+		ctx,
+		principal.AccountID(),
+		request.ServerId.String(),
+		request.AgentId.String(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	agentID, err := parseDomainID(value.AgentID, "Agent")
+	if err != nil {
+		return nil, err
+	}
+	body := openapi.AgentProfileCapabilities{
+		AgentId:       agentID,
+		SnapshotState: openapi.AgentProfileSnapshotAbsent,
+		StaleReasons:  []openapi.AgentProfileCapabilitiesStaleReasons{},
+	}
+	if value.RefreshOperation != nil {
+		operation, err := agentOperationDTO(*value.RefreshOperation)
+		if err != nil {
+			return nil, err
+		}
+		body.RefreshOperation = &operation
+	}
+	if value.SnapshotJSON != nil {
+		return nil, apperror.New(
+			"internal_error",
+			"Profile capability snapshot decoding 尚未实现",
+			nil,
+		)
+	}
+	return openapi.GetAgentProfileCapabilities200JSONResponse(body), nil
+}
+
 type AgentHandler struct {
 	openapi.StrictServerInterface
 	service agentService
@@ -329,6 +393,41 @@ func (handler *AgentHandler) RotateAgentRuntimeCredential(
 		return nil, err
 	}
 	return openapi.RotateAgentRuntimeCredential202JSONResponse(body), nil
+}
+
+func (handler *AgentHandler) RefreshAgentProfileCapabilities(
+	ctx context.Context,
+	request openapi.RefreshAgentProfileCapabilitiesRequestObject,
+) (openapi.RefreshAgentProfileCapabilitiesResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	service, ok := handler.service.(agentProfileCapabilityService)
+	if !ok {
+		return nil, apperror.New(
+			"internal_error",
+			"Profile capability service 未配置",
+			nil,
+		)
+	}
+	operation, err := service.RefreshProfileCapabilities(
+		ctx,
+		appagent.ProfileCapabilityRefreshCommand{
+			AccountID:      principal.AccountID(),
+			ServerID:       request.ServerId.String(),
+			AgentID:        request.AgentId.String(),
+			IdempotencyKey: request.Params.IdempotencyKey,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	body, err := agentOperationDTO(operation)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.RefreshAgentProfileCapabilities202JSONResponse(body), nil
 }
 
 func (handler *AgentHandler) lifecycle(
