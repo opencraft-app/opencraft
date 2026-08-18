@@ -180,7 +180,7 @@ describe("SavedCardsSection", () => {
     mocks.search = "?payment-method=success&from=account";
     window.sessionStorage.setItem("lightvela-payment-method-sign-order-v1", JSON.stringify({
       contractCode: "contract-new",
-      deadlineAt: Date.now() + 5_000,
+      startedAt: Date.now(),
     }));
     mocks.listPaymentMethods.mockResolvedValue({
       total: 1,
@@ -201,7 +201,7 @@ describe("SavedCardsSection", () => {
     mocks.search = "?payment-method=success";
     window.sessionStorage.setItem("lightvela-payment-method-sign-order-v1", JSON.stringify({
       contractCode: "contract-new",
-      deadlineAt: Date.now() + 5_000,
+      startedAt: Date.now(),
     }));
     mocks.listPaymentMethods
       .mockResolvedValueOnce({ total: 1, items: [defaultMethod] })
@@ -217,18 +217,68 @@ describe("SavedCardsSection", () => {
     expect(mocks.listPaymentMethods).toHaveBeenCalledTimes(2);
   });
 
-  it("stops polling at the client deadline without reporting a false failure", async () => {
+  /* 回归：deadline 必须在「回跳时刻」计算，而不是跳转前就写进 sessionStorage。
+     用户在 hosted page 填卡通常 20–60 秒，远超 5s 同步窗口；
+     若沿用跳转前的 deadline，回跳时必然已过期，轮询会一次都不执行。 */
+  it("still polls after a long stay on the hosted page", async () => {
     mocks.search = "?payment-method=success";
     window.sessionStorage.setItem("lightvela-payment-method-sign-order-v1", JSON.stringify({
       contractCode: "contract-new",
-      deadlineAt: Date.now() - 1,
+      /* 模拟用户在 hosted page 停留 60 秒后才回跳 */
+      startedAt: Date.now() - 60_000,
+    }));
+    mocks.listPaymentMethods
+      .mockResolvedValueOnce({ total: 1, items: [defaultMethod] })
+      .mockResolvedValueOnce({
+        total: 2,
+        items: [defaultMethod, { ...secondaryMethod, contractCode: "contract-new" }],
+      });
+
+    render(<SavedCardsSection />);
+
+    expect(await screen.findByText("支付卡已绑定。", {}, { timeout: 2_000 })).toBeInTheDocument();
+    expect(mocks.listPaymentMethods).toHaveBeenCalledTimes(2);
+  });
+
+  /* 过于陈旧的记录（用户放弃绑卡、未走 cancel 回跳）必须丢弃，
+     否则会拿旧 contractCode 比对新卡而一直提示「仍在同步」。 */
+  it("discards a stale pending sign order", async () => {
+    mocks.search = "?payment-method=success";
+    window.sessionStorage.setItem("lightvela-payment-method-sign-order-v1", JSON.stringify({
+      contractCode: "contract-new",
+      startedAt: Date.now() - 31 * 60_000,
     }));
     mocks.listPaymentMethods.mockResolvedValue({ total: 1, items: [defaultMethod] });
 
     render(<SavedCardsSection />);
 
-    expect(await screen.findByText("签约结果仍在同步，请稍后重新加载。")).toBeInTheDocument();
+    /* 无 pending 可比对：只刷新一次，不进入轮询，也不误报「仍在同步」 */
+    expect(await screen.findByText("签约结果已刷新。")).toBeInTheDocument();
     expect(mocks.listPaymentMethods).toHaveBeenCalledTimes(1);
+    expect(window.sessionStorage.getItem("lightvela-payment-method-sign-order-v1")).toBeNull();
+  });
+
+  it("stops polling at the client deadline without reporting a false failure", async () => {
+    mocks.search = "?payment-method=success";
+    window.sessionStorage.setItem("lightvela-payment-method-sign-order-v1", JSON.stringify({
+      contractCode: "contract-new",
+      startedAt: Date.now(),
+    }));
+    /* 目标卡始终不出现：轮询应在 5s 窗口耗尽后停止，而不是无限重试 */
+    mocks.listPaymentMethods.mockResolvedValue({ total: 1, items: [defaultMethod] });
+
+    vi.useFakeTimers();
+    render(<SavedCardsSection />);
+    /* 推进超过同步窗口，flush 掉全部轮询定时器与 microtask */
+    await vi.advanceTimersByTimeAsync(6_000);
+    vi.useRealTimers();
+
+    expect(await screen.findByText("签约结果仍在同步，请稍后重新加载。")).toBeInTheDocument();
+    /* 首次 + 若干次轮询：证明确实轮询过，且已停止（不再增长） */
+    const callsAfterDeadline = mocks.listPaymentMethods.mock.calls.length;
+    expect(callsAfterDeadline).toBeGreaterThan(1);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(mocks.listPaymentMethods).toHaveBeenCalledTimes(callsAfterDeadline);
     expect(screen.queryByText("支付卡已绑定。")).not.toBeInTheDocument();
   });
 
@@ -236,7 +286,7 @@ describe("SavedCardsSection", () => {
     mocks.search = "?payment-method=cancelled";
     window.sessionStorage.setItem("lightvela-payment-method-sign-order-v1", JSON.stringify({
       contractCode: "contract-new",
-      deadlineAt: Date.now() + 5_000,
+      startedAt: Date.now(),
     }));
 
     render(<SavedCardsSection />);

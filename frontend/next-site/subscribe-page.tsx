@@ -1933,7 +1933,15 @@ const CreditCardConfirmOrderModal = ({
   const subtotal = parseFloat(plan.price.replace(/[^0-9.]/g, "")) || 0;
   const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
   const total = Math.round((subtotal + tax) * 100) / 100;
-  const fmt = (n: number) => `$${n.toFixed(2)}`;
+  /* 币种符号必须跟随 plan.price，不能硬编码 "$"：
+     plan.price 由 formatYuan(displayPriceYuan, bundle.price.currency) 产出，
+     而 currency 走 `bundle.price?.currency ?? "CNY"` 兜底。
+     国际站正常路径后端下发 currency=USD（trade 按 LIGHTVELA_SITE_KIND 分流，intl=USD / cn=CNY），
+     但一旦该字段缺失或为其他币种，formatYuan 会输出「¥45.00」/「7500 KRW」，
+     此处 parseFloat 剥离符号后若再用固定 "$" 重排，就会把非美元价展示成美元价（金额误导）。
+     判定方式与本文件 PlanCard 的 currencySymbol 保持一致。 */
+  const currencySymbol = plan.price.trim().startsWith("$") ? "$" : "¥";
+  const fmt = (n: number) => `${currencySymbol}${n.toFixed(2)}`;
 
   const handlePayClick = () => {
     /* 纯前端演示：不调后端下单，直接展示支付成功 */

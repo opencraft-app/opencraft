@@ -12,12 +12,19 @@ import type {
 } from "@/repositories/types";
 
 const PENDING_SIGN_ORDER_KEY = "lightvela-payment-method-sign-order-v1";
+/** 回跳后等待后端同步签约结果的轮询窗口。计时起点必须是「回跳时刻」而不是「跳转时刻」：
+ *  用户在 hosted page 填卡通常 20–60 秒，远超本窗口，若在跳转前就把 deadline 存下来，
+ *  回跳时必然已过期，轮询会一次都不执行。 */
 const SIGN_ORDER_SYNC_WINDOW_MS = 5_000;
 const SIGN_ORDER_POLL_INTERVAL_MS = 750;
+/** 丢弃过于陈旧的 pending：用户中途放弃绑卡（未走 cancel 回跳）时记录会留在 sessionStorage，
+ *  下次成功回跳若读到它，会拿旧 contractCode 去比对新卡而一直提示「仍在同步」。 */
+const PENDING_SIGN_ORDER_MAX_AGE_MS = 30 * 60_000;
 
 type PendingSignOrder = {
   contractCode: string;
-  deadlineAt: number;
+  /** 跳转到 hosted page 的时刻，仅用于丢弃陈旧记录，不参与轮询窗口计算 */
+  startedAt: number;
 };
 
 type Notice = {
@@ -55,8 +62,17 @@ const readPendingSignOrder = (): PendingSignOrder | null => {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PendingSignOrder>;
     if (typeof parsed.contractCode !== "string" || !parsed.contractCode.trim()) return null;
-    if (typeof parsed.deadlineAt !== "number" || !Number.isFinite(parsed.deadlineAt)) return null;
-    return { contractCode: parsed.contractCode, deadlineAt: parsed.deadlineAt };
+    /* startedAt 缺失/非法时不丢弃记录：contractCode 才是比对签约结果的关键，
+       此处退化为「不做陈旧判定」，按本次回跳处理。 */
+    const startedAt =
+      typeof parsed.startedAt === "number" && Number.isFinite(parsed.startedAt)
+        ? parsed.startedAt
+        : Date.now();
+    if (Date.now() - startedAt > PENDING_SIGN_ORDER_MAX_AGE_MS) {
+      clearPendingSignOrder();
+      return null;
+    }
+    return { contractCode: parsed.contractCode, startedAt };
   } catch {
     return null;
   }
@@ -178,6 +194,8 @@ export const SavedCardsSection = ({
     const syncReturnedSignOrder = async (
       pending: PendingSignOrder | null,
       showLoading: boolean,
+      /** 轮询截止时刻，由回跳时（首次调用处）计算并在递归中透传 */
+      deadlineAt: number,
     ): Promise<void> => {
       try {
         const result = await loadMethods(showLoading);
@@ -192,14 +210,14 @@ export const SavedCardsSection = ({
           setNotice({ tone: "success", text: t("支付卡已绑定。") });
           return;
         }
-        if (Date.now() >= pending.deadlineAt) {
+        if (Date.now() >= deadlineAt) {
           setNotice({ tone: "info", text: t("签约结果仍在同步，请稍后重新加载。") });
           return;
         }
         setNotice({ tone: "info", text: t("正在同步支付卡…") });
         pollTimer = setTimeout(() => {
-          void syncReturnedSignOrder(pending, false);
-        }, Math.min(SIGN_ORDER_POLL_INTERVAL_MS, pending.deadlineAt - Date.now()));
+          void syncReturnedSignOrder(pending, false, deadlineAt);
+        }, Math.min(SIGN_ORDER_POLL_INTERVAL_MS, deadlineAt - Date.now()));
       } catch {
         if (!stopped && !isUnavailable) {
           setNotice({ tone: "error", text: t("签约结果刷新失败，请重新加载。") });
@@ -215,7 +233,8 @@ export const SavedCardsSection = ({
       const pending = readPendingSignOrder();
       pendingSignOrderRef.current = pending;
       setNotice({ tone: "info", text: t("正在同步支付卡…") });
-      void syncReturnedSignOrder(pending, true);
+      /* deadline 在这里（回跳时刻）才计算，保证轮询窗口真实可用 */
+      void syncReturnedSignOrder(pending, true, Date.now() + SIGN_ORDER_SYNC_WINDOW_MS);
     } else {
       void loadMethods().catch(() => undefined);
     }
@@ -252,7 +271,7 @@ export const SavedCardsSection = ({
       }
       writePendingSignOrder({
         contractCode: result.contractCode,
-        deadlineAt: Date.now() + SIGN_ORDER_SYNC_WINDOW_MS,
+        startedAt: Date.now(),
       });
       navigateToHostedPage(result.redirectUrl);
     } catch (error) {
