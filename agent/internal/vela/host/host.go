@@ -1119,6 +1119,7 @@ func messageFailure(
 		Retryable:        failure.Retryable,
 		MessageID:        message.Ref.MessageID(),
 		ConversationKind: message.Ref.Conversation().Kind(),
+		Diagnostic:       failure.Diagnostic,
 	})
 }
 

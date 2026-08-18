@@ -20,12 +20,14 @@ func TestAdapterClassifiesGatewayAndRuntimeFailures(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		gateway  *fakeCapabilityGateway
-		manager  *fakeManager
-		planner  runtimeapi.LaunchPlanner
-		wantCode host.FailureCode
-		cause    error
+		name           string
+		gateway        *fakeCapabilityGateway
+		manager        *fakeManager
+		planner        runtimeapi.LaunchPlanner
+		wantCode       host.FailureCode
+		wantDiagnostic host.FailureDiagnosticCode
+		cause          error
+		started        bool
 	}{
 		{
 			name: "gateway", cause: errors.New("private gateway"),
@@ -47,12 +49,22 @@ func TestAdapterClassifiesGatewayAndRuntimeFailures(t *testing.T) {
 			planner:  runtimeapi.LaunchPlannerFunc(noopPlan),
 			wantCode: host.FailureCodeRuntimeStartFailed,
 		},
+		{
+			name: "deliver", cause: runtimeactor.ErrDirectDeliveryUnavailable,
+			gateway:        &fakeCapabilityGateway{},
+			manager:        &fakeManager{deliverErr: runtimeactor.ErrDirectDeliveryUnavailable},
+			planner:        runtimeapi.LaunchPlannerFunc(noopPlan),
+			wantCode:       host.FailureCodeRuntimeDeliverFailed,
+			wantDiagnostic: host.FailureDiagnosticRuntimeDirectUnavailable,
+			started:        true,
+		},
 	}
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			adapter := newTestAdapter(t, test.manager, test.gateway, test.planner)
+			adapter.started = test.started
 			_, err := adapter.HandleIngressMessage(context.Background(), incomingMessage(t, "message-"+test.name, "不要泄漏"))
 			if err == nil {
 				t.Fatal("expected failure")
@@ -60,6 +72,9 @@ func TestAdapterClassifiesGatewayAndRuntimeFailures(t *testing.T) {
 			failure, ok := host.DescribeFailure(err)
 			if !ok || failure.Code != test.wantCode || failure.Scope != host.FailureScopeMessage || !failure.Retryable {
 				t.Fatalf("failure = %#v, %v", failure, ok)
+			}
+			if failure.Diagnostic.Code != test.wantDiagnostic {
+				t.Fatalf("diagnostic = %#v, want %q", failure.Diagnostic, test.wantDiagnostic)
 			}
 			if strings.Contains(err.Error(), "private") || strings.Contains(err.Error(), "不要泄漏") {
 				t.Fatalf("unsafe error = %q", err.Error())

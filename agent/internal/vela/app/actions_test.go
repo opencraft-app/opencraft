@@ -25,10 +25,15 @@ func TestWriteHostFailureUsesOnlySafeAllowlistedFields(t *testing.T) {
 		Retryable:        true,
 		MessageID:        "message_1",
 		ConversationKind: im.ConversationC2C,
+		Diagnostic: host.FailureDiagnostic{
+			AgentID:     "018f0c9e-7b14-7abc-8def-0123456789ab",
+			RuntimeKind: "hermes-gateway",
+			Code:        host.FailureDiagnosticRuntimeDirectUnavailable,
+		},
 	})
 
 	if got, want := output.String(),
-		"Vela Agent Host failure: scope=message stage=serving code=runtime_deliver_failed retryable=true attempt=1 message_id=message_1 conversation_kind=c2c\n"; got != want {
+		"Vela Agent Host failure: scope=message stage=serving code=runtime_deliver_failed retryable=true attempt=1 message_id=message_1 conversation_kind=c2c agent_id=018f0c9e-7b14-7abc-8def-0123456789ab runtime_kind=hermes-gateway diagnostic=runtime_direct_unavailable\n"; got != want {
 		t.Fatalf("output = %q, want %q", got, want)
 	}
 }
@@ -45,6 +50,11 @@ func TestWriteHostFailureSanitizesUntrustedFields(t *testing.T) {
 		Attempt:          7,
 		MessageID:        "message\nAuthorization: secret",
 		ConversationKind: im.ConversationType("c2c\nsecret"),
+		Diagnostic: host.FailureDiagnostic{
+			AgentID:     "agent\nAuthorization: secret",
+			RuntimeKind: "raw secret",
+			Code:        host.FailureDiagnosticCode("https://private.example"),
+		},
 	})
 
 	got := output.String()

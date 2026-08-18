@@ -48,6 +48,7 @@ type RuntimeAdapter interface {
 type FailureStage string
 type FailureCode string
 type FailureScope string
+type FailureDiagnosticCode string
 type StartupStage string
 
 const (
@@ -109,10 +110,27 @@ const (
 	FailureCodeServingUnknown            FailureCode = "serving_unknown"
 )
 
+const (
+	FailureDiagnosticRuntimeDirectUnavailable FailureDiagnosticCode = "runtime_direct_unavailable"
+	FailureDiagnosticRuntimeStaleLaunch       FailureDiagnosticCode = "runtime_stale_launch"
+	FailureDiagnosticRuntimeAgentIdle         FailureDiagnosticCode = "runtime_agent_idle"
+	FailureDiagnosticRuntimeDelayedIdle       FailureDiagnosticCode = "runtime_delayed_idle"
+	FailureDiagnosticRuntimeTurnBoundary      FailureDiagnosticCode = "runtime_turn_boundary"
+	FailureDiagnosticRuntimeTimeout           FailureDiagnosticCode = "runtime_timeout"
+	FailureDiagnosticRuntimeRejected          FailureDiagnosticCode = "runtime_rejected"
+)
+
+type FailureDiagnostic struct {
+	AgentID     string
+	RuntimeKind string
+	Code        FailureDiagnosticCode
+}
+
 type Failure struct {
-	Scope     FailureScope
-	Code      FailureCode
-	Retryable bool
+	Scope      FailureScope
+	Code       FailureCode
+	Retryable  bool
+	Diagnostic FailureDiagnostic
 }
 
 type failureError struct {
@@ -144,6 +162,27 @@ func NewFailureError(
 			Scope:     scope,
 			Code:      code,
 			Retryable: retryable,
+		},
+		cause: cause,
+	}
+}
+
+func NewFailureErrorWithDiagnostic(
+	scope FailureScope,
+	code FailureCode,
+	retryable bool,
+	diagnostic FailureDiagnostic,
+	cause error,
+) error {
+	if !knownFailureScope(scope) || !knownFailureCode(code) {
+		scope = FailureScopeMessage
+		code = FailureCodeMessageHandlerFailed
+		retryable = true
+	}
+	return &failureError{
+		failure: Failure{
+			Scope: scope, Code: code, Retryable: retryable,
+			Diagnostic: safeFailureDiagnostic(diagnostic),
 		},
 		cause: cause,
 	}
@@ -213,6 +252,7 @@ type FailureReport struct {
 	Attempt          int
 	MessageID        string
 	ConversationKind im.ConversationType
+	Diagnostic       FailureDiagnostic
 }
 
 func (f FailureReport) String() string {
@@ -237,6 +277,15 @@ func (f FailureReport) String() string {
 			f.ConversationKind,
 		)
 	}
+	if f.Diagnostic.Code != "" {
+		fmt.Fprintf(
+			&result,
+			" agent_id=%s runtime_kind=%s diagnostic=%s",
+			f.Diagnostic.AgentID,
+			f.Diagnostic.RuntimeKind,
+			f.Diagnostic.Code,
+		)
+	}
 	return result.String()
 }
 
@@ -259,7 +308,39 @@ func safeFailureReport(report FailureReport) FailureReport {
 	default:
 		report.ConversationKind = ""
 	}
+	report.Diagnostic = safeFailureDiagnostic(report.Diagnostic)
 	return report
+}
+
+func safeFailureDiagnostic(value FailureDiagnostic) FailureDiagnostic {
+	if !knownFailureDiagnosticCode(value.Code) {
+		return FailureDiagnostic{}
+	}
+	value.AgentID = safeMessageID(value.AgentID)
+	switch value.RuntimeKind {
+	case "codex", "hermes-acp", "hermes-gateway":
+	default:
+		return FailureDiagnostic{}
+	}
+	if value.AgentID == "" {
+		return FailureDiagnostic{}
+	}
+	return value
+}
+
+func knownFailureDiagnosticCode(code FailureDiagnosticCode) bool {
+	switch code {
+	case FailureDiagnosticRuntimeDirectUnavailable,
+		FailureDiagnosticRuntimeStaleLaunch,
+		FailureDiagnosticRuntimeAgentIdle,
+		FailureDiagnosticRuntimeDelayedIdle,
+		FailureDiagnosticRuntimeTurnBoundary,
+		FailureDiagnosticRuntimeTimeout,
+		FailureDiagnosticRuntimeRejected:
+		return true
+	default:
+		return false
+	}
 }
 
 func knownFailureStage(stage FailureStage) bool {

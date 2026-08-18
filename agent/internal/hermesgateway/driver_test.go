@@ -2,6 +2,7 @@ package hermesgateway
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,37 @@ import (
 	"velachat/agent/internal/hermes"
 	"velachat/agent/internal/runtimeapi"
 )
+
+func TestGatewayTurnDiagnosticReportsPresenceWithoutContent(t *testing.T) {
+	t.Parallel()
+
+	var diagnostics bytes.Buffer
+	session := &gatewaySession{
+		agentID:     "018f0c9e-7b14-7abc-8def-0123456789ab",
+		diagnostics: &diagnostics,
+		events:      make(chan runtimeapi.Event, 2),
+		launchID:    "launch-safe",
+		active:      true,
+	}
+	session.setIdentity("live-safe", "stored-safe")
+	payload, err := json.Marshal(map[string]any{
+		"text":   "private assistant reply",
+		"status": "complete",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.handleGatewayEvent(gatewayEvent{
+		Type: "message.complete", SessionID: "live-safe", Payload: payload,
+	})
+	if got, want := diagnostics.String(),
+		"Hermes Gateway turn: agent_id=018f0c9e-7b14-7abc-8def-0123456789ab status=complete assistant_text_present=true error_present=false\n"; got != want {
+		t.Fatalf("diagnostic = %q, want %q", got, want)
+	}
+	if strings.Contains(diagnostics.String(), "private assistant reply") {
+		t.Fatalf("diagnostic leaked assistant text: %q", diagnostics.String())
+	}
+}
 
 func TestDriverProbeValidatesPythonGatewayModuleAndHermesProfiles(t *testing.T) {
 	driver := newGatewayTestDriver(t)

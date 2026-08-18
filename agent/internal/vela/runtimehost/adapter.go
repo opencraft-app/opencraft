@@ -320,12 +320,55 @@ func (a *Adapter) HandleIngressMessage(
 		)
 	}
 	if err != nil {
+		if operationCode == host.FailureCodeRuntimeDeliverFailed {
+			return ingress.MessageResult{}, host.NewFailureErrorWithDiagnostic(
+				host.FailureScopeMessage,
+				operationCode,
+				true,
+				runtimeDeliveryDiagnostic(
+					a.config.AgentID,
+					session.Agent.RuntimeKind,
+					err,
+				),
+				err,
+			)
+		}
 		return ingress.MessageResult{}, wrapMessageFailure(operationCode, err)
 	}
 	a.mu.Lock()
 	a.started = true
 	a.mu.Unlock()
 	return ingress.MessageResult{Disposition: ingress.RuntimeAccepted}, nil
+}
+
+func runtimeDeliveryDiagnostic(
+	agentID string,
+	runtimeKind string,
+	cause error,
+) host.FailureDiagnostic {
+	code := host.FailureDiagnosticRuntimeRejected
+	switch {
+	case errors.Is(cause, context.DeadlineExceeded):
+		code = host.FailureDiagnosticRuntimeTimeout
+	case errors.Is(cause, runtimeactor.ErrDirectDeliveryUnavailable):
+		code = host.FailureDiagnosticRuntimeDirectUnavailable
+	case errors.Is(cause, runtimeactor.ErrStaleLaunch):
+		code = host.FailureDiagnosticRuntimeStaleLaunch
+	case errors.Is(cause, runtimeactor.ErrAgentIdle):
+		code = host.FailureDiagnosticRuntimeAgentIdle
+	default:
+		if disposition, ok := runtimeapi.DeliveryRetryDisposition(cause); ok {
+			switch disposition {
+			case runtimeapi.RetryDelayedIdle:
+				code = host.FailureDiagnosticRuntimeDelayedIdle
+			case runtimeapi.RetryTurnBoundary:
+				code = host.FailureDiagnosticRuntimeTurnBoundary
+			}
+		}
+	}
+	return host.FailureDiagnostic{
+		AgentID: agentID, RuntimeKind: runtimeKind, Code: code,
+	}
 }
 
 func wrapMessageFailure(code host.FailureCode, cause error) error {

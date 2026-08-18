@@ -535,7 +535,9 @@ func (driver *Driver) Start(
 		return nil, err
 	}
 	session := &gatewaySession{
+		agentID:          request.AgentID,
 		command:          command,
+		diagnostics:      os.Stderr,
 		stdin:            stdin,
 		transport:        newTransport(stdout, stdin, transportOptions{}),
 		events:           make(chan runtimeapi.Event, 256),
@@ -616,13 +618,15 @@ func (driver *Driver) Start(
 }
 
 type gatewaySession struct {
-	command   *exec.Cmd
-	stdin     io.WriteCloser
-	transport *transport
-	events    chan runtimeapi.Event
-	ready     chan struct{}
-	eventDone chan struct{}
-	done      chan struct{}
+	agentID     string
+	command     *exec.Cmd
+	diagnostics io.Writer
+	stdin       io.WriteCloser
+	transport   *transport
+	events      chan runtimeapi.Event
+	ready       chan struct{}
+	eventDone   chan struct{}
+	done        chan struct{}
 
 	mu               sync.Mutex
 	liveID           string
@@ -1068,6 +1072,9 @@ func (session *gatewaySession) handleGatewayEvent(event gatewayEvent) {
 			Usage     json.RawMessage `json:"usage"`
 			Error     string          `json:"error"`
 		}
+		status := "malformed"
+		assistantTextPresent := false
+		errorPresent := false
 		if common.Unmarshal(event.Payload, &payload) != nil {
 			session.emit(runtimeapi.Event{
 				Kind:     runtimeapi.EventError,
@@ -1075,7 +1082,13 @@ func (session *gatewaySession) handleGatewayEvent(event gatewayEvent) {
 				LaunchID: session.launchID,
 			})
 		} else {
-			if strings.TrimSpace(payload.Status) == "error" {
+			status = strings.TrimSpace(payload.Status)
+			if status != "complete" && status != "error" {
+				status = "unknown"
+			}
+			assistantTextPresent = strings.TrimSpace(payload.Text) != ""
+			errorPresent = strings.TrimSpace(payload.Error) != ""
+			if status == "error" {
 				session.emit(runtimeapi.Event{
 					Kind:     runtimeapi.EventError,
 					Text:     strings.TrimSpace(payload.Error),
@@ -1096,6 +1109,11 @@ func (session *gatewaySession) handleGatewayEvent(event gatewayEvent) {
 				})
 			}
 		}
+		session.reportTurnDiagnostic(
+			status,
+			assistantTextPresent,
+			errorPresent,
+		)
 		session.emit(runtimeapi.Event{
 			Kind:     runtimeapi.EventTurnCompletion,
 			LaunchID: session.launchID,
@@ -1125,6 +1143,41 @@ func (session *gatewaySession) handleGatewayEvent(event gatewayEvent) {
 		"terminal.read.request":
 		session.resolveInteraction(event)
 	}
+}
+
+func (session *gatewaySession) reportTurnDiagnostic(
+	status string,
+	assistantTextPresent bool,
+	errorPresent bool,
+) {
+	if session == nil || session.diagnostics == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(
+		session.diagnostics,
+		"Hermes Gateway turn: agent_id=%s status=%s assistant_text_present=%t error_present=%t\n",
+		safeGatewayDiagnosticID(session.agentID),
+		status,
+		assistantTextPresent,
+		errorPresent,
+	)
+}
+
+func safeGatewayDiagnosticID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 100 {
+		return "invalid"
+	}
+	for _, character := range value {
+		if character >= 'a' && character <= 'z' ||
+			character >= 'A' && character <= 'Z' ||
+			character >= '0' && character <= '9' ||
+			strings.ContainsRune("._:-", character) {
+			continue
+		}
+		return "invalid"
+	}
+	return value
 }
 
 func (session *gatewaySession) traceGatewayEvent(
