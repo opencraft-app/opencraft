@@ -645,6 +645,10 @@ func newAuthAndMeAPIHandler(
 				Path:   "/v1/servers/{serverId}/computers",
 			},
 			httptransport.ImplementedRoute{
+				Method: http.MethodGet,
+				Path:   "/v1/servers/{serverId}/computer-runtime-capabilities",
+			},
+			httptransport.ImplementedRoute{
 				Method: http.MethodPost,
 				Path:   "/v1/servers/{serverId}/computers",
 			},
@@ -778,6 +782,26 @@ func newAuthAndMeAPIHandler(
 			httptransport.ImplementedRoute{
 				Method: http.MethodDelete,
 				Path:   "/v1/servers/{serverId}/agents/{agentId}",
+			},
+			httptransport.ImplementedRoute{
+				Method: http.MethodGet,
+				Path:   "/v1/servers/{serverId}/agents-v2",
+			},
+			httptransport.ImplementedRoute{
+				Method: http.MethodPost,
+				Path:   "/v1/servers/{serverId}/agents-v2",
+			},
+			httptransport.ImplementedRoute{
+				Method: http.MethodGet,
+				Path:   "/v1/servers/{serverId}/agents-v2/{agentId}",
+			},
+			httptransport.ImplementedRoute{
+				Method: http.MethodPatch,
+				Path:   "/v1/servers/{serverId}/agents-v2/{agentId}",
+			},
+			httptransport.ImplementedRoute{
+				Method: http.MethodDelete,
+				Path:   "/v1/servers/{serverId}/agents-v2/{agentId}",
 			},
 			httptransport.ImplementedRoute{
 				Method: http.MethodPost,
