@@ -232,6 +232,7 @@ def docker_build_command(target: ImageTarget, image: str, platform: str, build_a
     cmd = [
         "docker",
         "build",
+        "--force-rm",
         "--platform",
         platform,
         "-f",
@@ -243,6 +244,18 @@ def docker_build_command(target: ImageTarget, image: str, platform: str, build_a
         cmd.extend(["--build-arg", f"{key}={value}"])
     cmd.append(target.build_context)
     return cmd
+
+
+def remove_local_image(image: str) -> None:
+    try:
+        result = run_command(["docker", "image", "rm", image], check=False)
+    except OSError as exc:
+        print(f"failed to remove local release image: image={image} error={exc}", file=sys.stderr)
+        return
+    if result.returncode != 0:
+        print(f"failed to remove local release image: image={image} returncode={result.returncode}", file=sys.stderr)
+        return
+    print(f"removed local release image after push verification: {image}")
 
 
 def env_flag(name: str) -> bool:
@@ -340,17 +353,20 @@ def build_target(
         raise RuntimeError("docker daemon unavailable")
     run_command(cmd, cwd=REPO_ROOT, check=True)
     if push:
-        push_image_with_retry(
-            target.image_repo,
-            image,
-            max_attempts=push_max_attempts,
-            retry_interval_seconds=push_retry_interval_seconds,
-        )
-        wait_for_remote_image(
-            image,
-            timeout_seconds=push_verify_timeout_seconds,
-            interval_seconds=push_verify_interval_seconds,
-        )
+        try:
+            push_image_with_retry(
+                target.image_repo,
+                image,
+                max_attempts=push_max_attempts,
+                retry_interval_seconds=push_retry_interval_seconds,
+            )
+            wait_for_remote_image(
+                image,
+                timeout_seconds=push_verify_timeout_seconds,
+                interval_seconds=push_verify_interval_seconds,
+            )
+        finally:
+            remove_local_image(image)
     return image
 
 
