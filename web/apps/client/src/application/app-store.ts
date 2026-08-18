@@ -1,6 +1,7 @@
 import {
   agentMentionEligibility,
   channelAddress,
+  conversationCapabilities,
   composerDocumentHasContent,
   createComposerDocument,
   directAddress,
@@ -2475,21 +2476,18 @@ export function createAppStore(
         return;
       }
       const clientRequestId = requestId();
-      let address = activeConversationAddress(state);
-      if (!address && state.activeConversation?.kind === "direct") {
-        set({error: null, sendingMessage: true});
-        try {
-          address = await ensureDirectConversationReady(
-            state.activeConversation,
-            clientRequestId,
-          );
-        } catch (error) {
-          set({error: errorMessage(error), sendingMessage: false});
-          return;
-        }
+      let address: ConversationAddress | null;
+      try {
+        address = await resolveConversationAddressForSend(
+          state,
+          clientRequestId,
+        );
+      } catch (error) {
+        set({error: errorMessage(error), sendingMessage: false});
+        return;
       }
       if (!address) {
-        set({ error: "当前会话尚未同步到消息服务" });
+        set({ error: "当前会话尚未同步到消息服务", sendingMessage: false });
         return;
       }
       const localId = `local:${clientRequestId}`;
@@ -2578,27 +2576,22 @@ export function createAppStore(
         return;
       }
 
-      let address = activeConversationAddress(state);
-      if (!address && state.activeConversation?.kind === "direct") {
-        try {
-          address = await ensureDirectConversationReady(
-            state.activeConversation,
-            uuidV7(),
-          );
-        } catch (error) {
-          set((current) => ({
-            ...(draftKey
-              ? {
-                  conversationDrafts: {
-                    ...current.conversationDrafts,
-                    [draftKey]: cloneComposerDraft(draft),
-                  },
-                }
-              : {}),
-            error: errorMessage(error),
-          }));
-          return;
-        }
+      let address: ConversationAddress | null;
+      try {
+        address = await resolveConversationAddressForSend(state, uuidV7());
+      } catch (error) {
+        set((current) => ({
+          ...(draftKey
+            ? {
+                conversationDrafts: {
+                  ...current.conversationDrafts,
+                  [draftKey]: cloneComposerDraft(draft),
+                },
+              }
+            : {}),
+          error: errorMessage(error),
+        }));
+        return;
       }
       if (!address) {
         if (draftKey) {
@@ -2690,50 +2683,46 @@ export function createAppStore(
           return;
         }
       }
-      let address = activeConversationAddress(state);
-      if (!address && state.activeConversation?.kind === "direct") {
-        set({error: null, sendingMessage: true});
-        try {
-          address = await ensureDirectConversationReady(
-            state.activeConversation,
-            directIntent?.idempotencyKey ?? clientRequestId,
-          );
-          if (directIntent) {
-            const activeConversation = store.getState().activeConversation;
-            directIntent = {
-              ...directIntent,
-              directConversationId:
-                activeConversation?.kind === "direct"
-                  ? activeConversation.directConversationId
-                  : directIntent.directConversationId,
-              updatedAt: new Date().toISOString(),
-            };
-            await saveDirectSendIntent(directIntent);
-          }
-        } catch (error) {
-          set({error: errorMessage(error), sendingMessage: false});
-          return;
-        }
+      let address: ConversationAddress | null;
+      try {
+        address = await resolveConversationAddressForSend(
+          state,
+          directIntent?.idempotencyKey ?? clientRequestId,
+        );
+      } catch (error) {
+        set({error: errorMessage(error), sendingMessage: false});
+        return;
+      }
+      if (directIntent) {
+        const activeConversation = store.getState().activeConversation;
+        directIntent = {
+          ...directIntent,
+          directConversationId:
+            activeConversation?.kind === "direct"
+              ? activeConversation.directConversationId
+              : directIntent.directConversationId,
+          updatedAt: new Date().toISOString(),
+        };
+        await saveDirectSendIntent(directIntent);
       }
       if (!address) {
         set({ error: "当前会话尚未同步到消息服务" });
         return;
       }
       const mentionIds = new Set(input.mentionedUserIds);
-      const mentions =
-        state.activeConversation?.kind === "direct"
-          ? []
-          : mentionableAgents(state)
-              .filter((agent) => mentionIds.has(agent.imUserId))
-              .map((agent) => ({
-                displayName: agent.displayName,
-                imUserId: agent.imUserId,
-                memberId:
-                  state.members.find(
-                    (member) => member.imUserId === agent.imUserId,
-                  )?.id ?? agent.id,
-                memberKind: "agent" as const,
-              }));
+      const mentions = conversationCapabilities(address).mentions
+        ? mentionableAgents(state)
+            .filter((agent) => mentionIds.has(agent.imUserId))
+            .map((agent) => ({
+              displayName: agent.displayName,
+              imUserId: agent.imUserId,
+              memberId:
+                state.members.find(
+                  (member) => member.imUserId === agent.imUserId,
+                )?.id ?? agent.id,
+              memberKind: "agent" as const,
+            }))
+        : [];
       const localId = `local:${clientRequestId}`;
       const draftKey = conversationDraftKey(state.activeConversation);
       const optimistic = optimisticTextMessage({
@@ -3841,6 +3830,17 @@ export function createAppStore(
       throw new Error("私信群尚未就绪，请稍后重试");
     }
     return address;
+  }
+
+  async function resolveConversationAddressForSend(
+    state: AppStoreState,
+    idempotencyKey: string,
+  ): Promise<ConversationAddress | null> {
+    const address = activeConversationAddress(state);
+    if (address) return address;
+    const active = state.activeConversation;
+    if (!active || active.kind !== "direct") return null;
+    return ensureDirectConversationReady(active, idempotencyKey);
   }
 
   async function loadOrCreateDirectTextIntent(

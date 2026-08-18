@@ -402,6 +402,7 @@ function GraphicalWorkspaceShell({
     activeDirectMember,
     activeDraft,
     canJoinCurrentChannel,
+    capabilities,
     currentChannel,
     currentMember,
     currentServer,
@@ -453,10 +454,7 @@ function GraphicalWorkspaceShell({
             channel={currentChannel}
             imStatus={imStatus}
             navigationOpen={conversationPickerOpen}
-            canSearch={
-              activeConversation?.kind === "direct" ||
-              currentChannel !== undefined
-            }
+            canSearch={capabilities.search}
             onOpenChannelMembers={async () => {
               await onOpenChannelManagement();
               setConversationPickerOpen(false);
@@ -576,7 +574,7 @@ function GraphicalWorkspaceShell({
           />
         ) : (
           <MessageStage
-            agents={activeConversation?.kind === "direct" ? [] : agents}
+            agents={capabilities.mentions ? agents : []}
             channel={currentChannel}
             compact
             currentUserId={currentImUserId}
@@ -591,7 +589,7 @@ function GraphicalWorkspaceShell({
             loadingOlder={loadingOlder}
             messages={messages}
             mentionMembers={
-              activeConversation?.kind === "direct" ? [] : mentionMembers
+              capabilities.mentions ? mentionMembers : []
             }
             messageFocusRequest={messageFocusRequest}
             onAttachFile={onAttachFile}
@@ -599,9 +597,7 @@ function GraphicalWorkspaceShell({
             onClearQuote={onClearQuote}
             onDraftChange={onDraftChange}
             onCreateTaskFromMessage={
-              activeConversation?.kind === "direct"
-                ? undefined
-                : onCreateTaskFromMessage
+              capabilities.tasks ? onCreateTaskFromMessage : undefined
             }
             onContinueOperation={onContinueOperation}
             onLoadMoreSearchResults={onLoadMoreSearchResults}
@@ -615,7 +611,7 @@ function GraphicalWorkspaceShell({
               setChannelManagementMode("members");
             }}
             onOpenThread={
-              activeConversation?.kind === "direct" ? undefined : onOpenThread
+              capabilities.threads ? onOpenThread : undefined
             }
             onQuoteMessage={onQuoteMessage}
             onReconnect={onReconnect}
@@ -716,7 +712,7 @@ function GraphicalWorkspaceShell({
   const desktopStage = (
       <>
       <MessageStage
-        agents={activeConversation?.kind === "direct" ? [] : agents}
+        agents={capabilities.mentions ? agents : []}
         channel={currentChannel}
         currentUserId={currentImUserId}
         directConversation={activeDirectConversation}
@@ -730,7 +726,7 @@ function GraphicalWorkspaceShell({
         loadingOlder={loadingOlder}
         messages={messages}
         mentionMembers={
-          activeConversation?.kind === "direct" ? [] : mentionMembers
+          capabilities.mentions ? mentionMembers : []
         }
         messageFocusRequest={messageFocusRequest}
         onAttachFile={onAttachFile}
@@ -738,9 +734,7 @@ function GraphicalWorkspaceShell({
         onClearQuote={onClearQuote}
         onDraftChange={onDraftChange}
         onCreateTaskFromMessage={
-          activeConversation?.kind === "direct"
-            ? undefined
-            : onCreateTaskFromMessage
+          capabilities.tasks ? onCreateTaskFromMessage : undefined
         }
         onContinueOperation={onContinueOperation}
         onLoadMoreSearchResults={onLoadMoreSearchResults}
@@ -754,7 +748,7 @@ function GraphicalWorkspaceShell({
           setChannelManagementMode("members");
         }}
         onOpenThread={
-          activeConversation?.kind === "direct" ? undefined : onOpenThread
+          capabilities.threads ? onOpenThread : undefined
         }
         onQuoteMessage={onQuoteMessage}
         onReconnect={onReconnect}

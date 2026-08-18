@@ -759,6 +759,21 @@ describe("ChannelChatService", () => {
         message: {
           ...draft,
           ID: draft.ID.replace("local-", "remote-"),
+          ...(draft.type === "TIMImageElem"
+            ? {
+                payload: {
+                  imageInfoArray: [
+                    {
+                      height: 480,
+                      imageType: 0,
+                      size: 456_789,
+                      url: "https://example.invalid/diagram.png",
+                      width: 640,
+                    },
+                  ],
+                },
+              }
+            : {}),
           status: "success",
         },
       },
@@ -855,6 +870,79 @@ describe("ChannelChatService", () => {
       delivery: { state: "sent" },
       id: "remote-file-1",
       kind: "file",
+    });
+  });
+
+  it("reconciles an uploaded image before exposing it as sent", async () => {
+    const metadata = JSON.stringify({
+      clientRequestId: "request-image-ack",
+      schema: "vela.client-message/v2",
+    });
+    let reportProgress: ((value: unknown) => void) | undefined;
+    const draft = textMessage({
+      cloudCustomData: metadata,
+      flow: "out",
+      ID: "local-image-ack",
+      payload: {imageInfoArray: []},
+      status: "unSend",
+      type: "TIMImageElem",
+    });
+    const confirmed = textMessage({
+      cloudCustomData: metadata,
+      flow: "out",
+      ID: "remote-image-ack",
+      payload: {
+        imageInfoArray: [
+          {
+            height: 480,
+            imageType: 0,
+            size: 8_192,
+            url: "https://example.invalid/image.jpg",
+            width: 640,
+          },
+        ],
+      },
+      status: "success",
+      type: "TIMImageElem",
+    });
+    const service = new ChannelChatService({
+      attachmentAckTimeoutMs: 0,
+      conversationGroup: "GROUP",
+      sdk: {
+        createImageMessage: jest.fn((options) => {
+          reportProgress = options.onProgress as (value: unknown) => void;
+          return draft;
+        }),
+        createTextAtMessage: jest.fn(),
+        createTextMessage: jest.fn(),
+        getMessageList: jest.fn(async () => ({
+          data: {isCompleted: true, messageList: [confirmed]},
+        })),
+        sendMessage: jest.fn(async () => ({
+          data: {...draft, status: "success"},
+        })),
+      },
+      wait: async () => undefined,
+    });
+
+    const sending = service.sendAttachment({
+      channel: {
+        channelId: "channel-1",
+        conversationId: "GROUPtopic-1",
+        imGroupId: "community-1",
+        imTopicId: "topic-1",
+        targetId: "topic-1",
+      },
+      clientRequestId: "request-image-ack",
+      kind: "image",
+      source: {kind: "uri", name: "image.jpg", uri: "file:///image.jpg"},
+    });
+    reportProgress?.(100);
+
+    await expect(sending).resolves.toMatchObject({
+      content: {url: "https://example.invalid/image.jpg"},
+      delivery: {state: "sent"},
+      id: "remote-image-ack",
     });
   });
 

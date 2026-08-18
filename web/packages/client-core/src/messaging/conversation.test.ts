@@ -4,6 +4,7 @@ import test from "node:test";
 import type {Channel} from "../platform/api.js";
 import {
   channelAddress,
+  conversationCapabilities,
   directAddress,
   isDirectAddress,
 } from "./conversation.js";
@@ -62,4 +63,29 @@ test("ChannelAddress rejects resources without a ready IM mapping", () => {
 
 test("ChannelAddress rejects discoverable channels before the member joins", () => {
   assert.equal(channelAddress(channel({joined: false})), null);
+});
+
+test("Conversation capabilities hide the provider address variant", () => {
+  const group = channelAddress(channel());
+  const direct = directAddress({
+    directConversationId: "direct-1",
+    imGroupId: "an_dm_direct",
+    imState: "ready",
+  });
+  assert.deepEqual(group && conversationCapabilities(group), {
+    historyCursor: "sequence",
+    mentions: true,
+    readReceipts: false,
+    tasks: true,
+    threads: true,
+    topic: true,
+  });
+  assert.deepEqual(direct && conversationCapabilities(direct), {
+    historyCursor: "timestamp",
+    mentions: false,
+    readReceipts: true,
+    tasks: false,
+    threads: false,
+    topic: false,
+  });
 });

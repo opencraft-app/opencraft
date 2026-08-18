@@ -68,6 +68,7 @@ export interface ConversationScope {
   activeDirectMember: Member | undefined;
   activeDraft: ComposerDraft;
   activeDraftKey: string | null;
+  capabilities: ConversationSurfaceCapabilities;
   canJoinCurrentChannel: boolean;
   currentChannel: Channel | undefined;
   currentMember: Member | undefined;
@@ -76,6 +77,13 @@ export interface ConversationScope {
   joiningCurrentChannel: boolean;
   /** The IM identity the viewer is speaking as, if IM has issued one. */
   viewerImUserId: string | undefined;
+}
+
+export interface ConversationSurfaceCapabilities {
+  mentions: boolean;
+  search: boolean;
+  tasks: boolean;
+  threads: boolean;
 }
 
 export function conversationScope(
@@ -134,6 +142,12 @@ export function conversationScope(
   const activeDraft = activeDraftKey
     ? (input.conversationDrafts?.[activeDraftKey] ?? emptyComposerDraft())
     : emptyComposerDraft();
+  const capabilities: ConversationSurfaceCapabilities =
+    activeConversation === null
+      ? {mentions: false, search: false, tasks: false, threads: false}
+      : activeConversation.kind === "direct"
+        ? {mentions: false, search: true, tasks: false, threads: false}
+        : {mentions: true, search: true, tasks: true, threads: true};
 
   const existingDirectPeers = new Set(
     directConversations.map((item) => item.peerUserId),
@@ -167,6 +181,7 @@ export function conversationScope(
     activeDirectMember,
     activeDraft,
     activeDraftKey,
+    capabilities,
     canJoinCurrentChannel,
     currentChannel,
     currentMember,

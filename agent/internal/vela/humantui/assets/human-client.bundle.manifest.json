@@ -2,11 +2,11 @@
   "schema": "vela-human-tui-build/v1",
   "protocol": "reactvaxis/v2",
   "bundle": {
-    "bytes": 288597,
+    "bytes": 288911,
     "path": "human-client.bundle.js",
-    "sha256": "a5edcd409a9a3082d17c0777259c6aafcb2d87b99bca7205314477ae147683f8"
+    "sha256": "95efbcb2aa2182798f3dd63d3683136c5ba1a771f48cdea7694c9e794ad5fe95"
   },
-  "sourceDigest": "fe793dd7076561867916c214e1ec49965df1e16554aed482e42a91de841c0f89",
+  "sourceDigest": "84fff521f03cfa8149f3ba7242ce5f6a8098c9069860a483f8edaa4167134bbb",
   "sourceInputs": [
     {
       "path": "web/apps/client/package.json",
@@ -14,7 +14,7 @@
     },
     {
       "path": "web/apps/client/src/application/app-store.ts",
-      "sha256": "20f49b663a2b685f03d2f4b93a1d7a1a3c22fed14585230f3877b5139d02c762"
+      "sha256": "075c923be8ed92af4e3b8b18ebfa9f59bb6f9d1e14b483ee9274e0fef3b7a65c"
     },
     {
       "path": "web/apps/client/src/application/product-language.ts",
@@ -70,7 +70,7 @@
     },
     {
       "path": "web/apps/client/src/ui/layouts/conversation-scope.ts",
-      "sha256": "93d154ccd86612e749e5223c1fce9bcfa1a46b9ec802f99a32f148cefcf81b28"
+      "sha256": "7d5049b6fcc1fa3637866575954f490a57d3318dc5698510a016835db6a89912"
     },
     {
       "path": "web/apps/client/src/ui/layouts/workspace-shell-model.ts",
@@ -126,7 +126,7 @@
     },
     {
       "path": "web/packages/client-core/src/messaging/conversation.ts",
-      "sha256": "655ef111ea56ed425e39efbcd332396ca3d2d7741861e92668339149db07dd45"
+      "sha256": "3369f548f7f67e7c2cae59dea9b86f3324672b4e342f950ae2859f5c41890260"
     },
     {
       "path": "web/packages/client-core/src/messaging/direct-conversation.ts",

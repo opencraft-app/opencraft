@@ -12,6 +12,7 @@ import type {
   SendTextInput,
 } from "@vela/client-core";
 import {
+  conversationCapabilities,
   mergeMessages,
   MessagingSendError,
   PlatformError,
@@ -62,21 +63,29 @@ export interface ChatSdk {
 }
 
 interface ChannelChatServiceOptions {
+  attachmentAckTimeoutMs?: number;
   conversationGroup: string;
   messageText?: string;
   messageTypes?: Partial<TencentMessageTypes>;
   sdk: ChatSdk;
+  wait?(milliseconds: number): Promise<void>;
 }
 
 export class ChannelChatService {
+  private readonly attachmentAckTimeoutMs: number;
   private readonly conversationGroup: string;
   private readonly messageTypes: TencentMessageTypes;
   private readonly sdk: ChatSdk;
   private readonly drafts = new Map<string, SdkMessage>();
   private readonly rawMessages = new Map<string, SdkMessage>();
   private readonly sentReadReceipts = new Set<string>();
+  private readonly wait: (milliseconds: number) => Promise<void>;
 
   public constructor(options: ChannelChatServiceOptions) {
+    this.attachmentAckTimeoutMs = Math.max(
+      0,
+      options.attachmentAckTimeoutMs ?? 3_000,
+    );
     this.conversationGroup = options.conversationGroup;
     this.messageTypes = {
       ...defaultTencentMessageTypes,
@@ -84,6 +93,7 @@ export class ChannelChatService {
       ...options.messageTypes,
     };
     this.sdk = options.sdk;
+    this.wait = options.wait ?? waitFor;
   }
 
   public async loadHistory(
@@ -98,7 +108,7 @@ export class ChannelChatService {
       });
     } catch (error) {
       if (
-        !isDirectConversation(channel) &&
+        conversationCapabilities(channel).topic &&
         providerErrorCode(error) === 10007
       ) {
         throw new PlatformError(
@@ -125,9 +135,9 @@ export class ChannelChatService {
   }
 
   public async sendText(input: SendTextInput): Promise<Message> {
-    const mentionedUserIds = isDirectConversation(input.channel)
-      ? []
-      : input.mentions.map((mention) => mention.imUserId);
+    const mentionedUserIds = conversationCapabilities(input.channel).mentions
+      ? input.mentions.map((mention) => mention.imUserId)
+      : [];
     const options = {
       cloudCustomData: messageMetadata(input),
       conversationType: this.conversationType(input.channel),
@@ -162,10 +172,15 @@ export class ChannelChatService {
   public async sendAttachment(
     input: SendAttachmentInput,
   ): Promise<Message> {
+    let finishUpload: (() => void) | undefined;
+    const uploadFinished = new Promise<void>((resolve) => {
+      finishUpload = resolve;
+    });
     const onProgress = (value: unknown) => {
       const progress = uploadProgress(value);
       if (progress !== undefined) {
         input.onProgress?.(progress);
+        if (progress >= 1) finishUpload?.();
       }
     };
     const options = {
@@ -193,9 +208,11 @@ export class ChannelChatService {
       draft = this.sdk.createFileMessage(options);
     }
     this.drafts.set(input.clientRequestId, draft);
-    const result = await this.sendDraft(draft);
-    const data = resultData(result);
-    const confirmed = isSdkMessage(data.message) ? data.message : draft;
+    const confirmed = await this.awaitAttachmentConfirmation(
+      input,
+      draft,
+      uploadFinished,
+    );
     this.drafts.delete(input.clientRequestId);
     return this.normalizeSentMessage(confirmed, input.clientRequestId);
   }
@@ -337,7 +354,8 @@ export class ChannelChatService {
       throw new Error("当前腾讯云 IM SDK 不支持消息定位");
     }
 
-    const position = isDirectConversation(channel)
+    const capabilities = conversationCapabilities(channel);
+    const position = capabilities.historyCursor === "timestamp"
       ? reference.timestamp ?? cached?.time
       : reference.sequence ?? cached?.sequence;
     if (!Number.isSafeInteger(position) || (position as number) <= 0) {
@@ -346,7 +364,7 @@ export class ChannelChatService {
     const base = {
       conversationID: this.conversationId(channel),
       count: 15,
-      ...(isDirectConversation(channel)
+      ...(capabilities.historyCursor === "timestamp"
         ? {time: position as number}
         : {sequence: position as number}),
     };
@@ -367,7 +385,7 @@ export class ChannelChatService {
   }
 
   public async sendTask(input: SendTaskInput): Promise<Message> {
-    if (isDirectConversation(input.channel)) {
+    if (!conversationCapabilities(input.channel).tasks) {
       throw new Error("私信不支持 Task 消息");
     }
     if (!this.sdk.createCustomMessage) {
@@ -426,8 +444,7 @@ export class ChannelChatService {
   ): Promise<MessageSearchPage> {
     if (
       input.channel &&
-      "imTopicId" in input.channel &&
-      input.channel.imTopicId
+      conversationCapabilities(input.channel).topic
     ) {
       return this.searchTopicHistory(input);
     }
@@ -593,6 +610,42 @@ export class ChannelChatService {
     }
   }
 
+  private async awaitAttachmentConfirmation(
+    input: SendAttachmentInput,
+    draft: SdkMessage,
+    uploadFinished: Promise<void>,
+  ): Promise<SdkMessage> {
+    const sent = this.sendDraft(draft);
+    const outcome = await Promise.race([
+      sent.then((result) => ({kind: "ack" as const, result})),
+      uploadFinished.then(async () => {
+        await this.wait(this.attachmentAckTimeoutMs);
+        return {kind: "reconcile" as const};
+      }),
+    ]);
+    if (outcome.kind === "ack") {
+      const data = resultData(outcome.result);
+      const confirmed = isSdkMessage(data.message) ? data.message : draft;
+      if (input.kind !== "image" || isRenderableImage(this.normalizeMessage(confirmed))) {
+        return confirmed;
+      }
+    }
+    const reconciled = await this.reconcileMessage({
+      channel: input.channel,
+      clientRequestId: input.clientRequestId,
+    });
+    if (
+      reconciled.state === "sent" &&
+      (input.kind !== "image" || isRenderableImage(reconciled.message))
+    ) {
+      return this.rawMessages.get(reconciled.message.id) ?? draft;
+    }
+    throw new MessagingSendError("图片已上传，正在等待腾讯云 IM 确认", {
+      outcome: "uncertain",
+      retryable: false,
+    });
+  }
+
   private findByClientRequestId(
     conversationId: string,
     clientRequestId: string,
@@ -664,6 +717,17 @@ function uploadProgress(value: unknown): number | undefined {
   return Math.min(1, Math.max(0, raw > 1 ? raw / 100 : raw));
 }
 
+function waitFor(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function isRenderableImage(message: Message): boolean {
+  return (
+    message.content.kind === "image" &&
+    Boolean(message.content.url ?? message.content.thumbnailUrl)
+  );
+}
+
 function providerErrorCode(error: unknown): number | undefined {
   if (
     typeof error !== "object" ||
@@ -681,13 +745,7 @@ function targetId(channel: ConversationAddress): string {
 }
 
 function supportsReadReceipt(channel: ConversationAddress): boolean {
-  return !("imTopicId" in channel) || !channel.imTopicId;
-}
-
-function isDirectConversation(
-  channel: ConversationAddress,
-): boolean {
-  return "directConversationId" in channel;
+  return conversationCapabilities(channel).readReceipts;
 }
 
 function resultData(value: unknown): Record<string, unknown> {

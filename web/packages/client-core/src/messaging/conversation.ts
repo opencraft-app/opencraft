@@ -17,6 +17,39 @@ export interface DirectAddress {
 
 export type ConversationAddress = ChannelAddress | DirectAddress;
 
+export interface ConversationCapabilities {
+  historyCursor: "sequence" | "timestamp";
+  mentions: boolean;
+  readReceipts: boolean;
+  tasks: boolean;
+  threads: boolean;
+  topic: boolean;
+}
+
+export function conversationCapabilities(
+  address: ConversationAddress,
+): ConversationCapabilities {
+  if (isDirectAddress(address)) {
+    return {
+      historyCursor: "timestamp",
+      mentions: false,
+      readReceipts: true,
+      tasks: false,
+      threads: false,
+      topic: false,
+    };
+  }
+  const topic = address.imTopicId !== null && address.imTopicId !== undefined;
+  return {
+    historyCursor: "sequence",
+    mentions: true,
+    readReceipts: !topic,
+    tasks: true,
+    threads: true,
+    topic,
+  };
+}
+
 export function channelAddress(channel: Channel): ChannelAddress | null {
   if (!channel.joined) return null;
   if (channel.imState !== "ready") return null;
