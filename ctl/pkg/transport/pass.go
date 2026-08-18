@@ -26,7 +26,7 @@ type CompletePassRequest struct {
 	Uin       int64  `json:"uin"`                  // 腾讯云主账号 uin（必填）
 	AppID     int64  `json:"app_id"`               // 腾讯云 appId（必填）
 	DealName  string `json:"deal_name"`            // jifei 订单号（必填，用于生成 ai-gateway 订阅幂等键；pass 表不持久化）
-	RenewFlag string `json:"renew_flag,omitempty"` // 续费标记，v4 收敛：协议层预留字段，本期 logic 内部写死 MANUAL_RENEW，trade 透传值暂不生效
+	RenewFlag string `json:"renew_flag,omitempty"` // 续费标记；AUTO_RENEW 生效，缺失或其它值按 MANUAL_RENEW 处理
 }
 
 // PassBillingMigrationRequest 通知 ctl 尝试把存量免费 pass 迁移到计费资源。
@@ -107,7 +107,7 @@ type PassResponse struct {
 
 	// RenewFlag 续费标记（billing-integration B11A 新增；§11 Q10 拍板 2026-05-11）
 	//   - "MANUAL_RENEW"（手动续费，默认）
-	//   - "AUTO_RENEW"（自动续费，本期未启用）
+	//   - "AUTO_RENEW"（自动续费）
 	// 反查侧透传 pass.renew_flag 真值，trade 端按映射规则转换为 jifei renewFlag (0/1)
 	RenewFlag string `json:"renew_flag"`
 }
@@ -126,7 +126,7 @@ type ListPassesResponse struct {
 //   - uin / app_id：腾讯云主账号 / 应用 ID，用户不感知（lightclaw 内部 SaaS 用户与
 //     腾讯云账号的映射只在服务端审计 / jifei 反查链路中使用）
 //   - deleted_time：DB 字段后期会删除（pass 销毁后会迁到 history_pass 表）
-//   - renew_flag：本期未启用自动续费（§11 Q5 拍板，待支持自动续费时再加回）
+//   - renew_flag：内部计费状态，不在用户面响应中暴露
 //
 // 保留：pass_id / user_id / bundle_id / bundle_name / 时间字段（除 deleted_time）/
 // agent_quota_total / agent_quota_available / credit_total / credit_available

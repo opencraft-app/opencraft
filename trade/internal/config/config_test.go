@@ -11,6 +11,40 @@ func setRequiredLoadEnv(t *testing.T) {
 	t.Setenv("CTL_INTERNAL_BASE_URL", "http://ctl.local")
 }
 
+func TestLoad_DianshiPreview(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    int
+		wantErr bool
+	}{
+		{name: "unset defaults to zero", value: "", want: 0},
+		{name: "explicit zero", value: "0", want: 0},
+		{name: "preview enabled", value: "1", want: 1},
+		{name: "invalid value", value: "true", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setRequiredLoadEnv(t)
+			t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.local")
+			t.Setenv("DIANSHI_PREVIEW", tt.value)
+			cfg, err := Load()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("Load() expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if cfg.DianshiPreview != tt.want {
+				t.Fatalf("DianshiPreview = %d, want %d", cfg.DianshiPreview, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadUsesAccountBindingInternalBaseURL(t *testing.T) {
 	setRequiredLoadEnv(t)
 	t.Setenv("ACCOUNT_BINDING_INTERNAL_BASE_URL", "http://auth.local")
@@ -129,7 +163,7 @@ func TestLoad_ShadowMockBindingFromEnv(t *testing.T) {
 //
 // 关键不变量：
 //   - 未设 env / 空字符串 → cfg.RegionOverride = ""，trade 出向走 SiteKind 兜底
-//   - 已注册的 region 字面量（ap-guangzhou / ap-beijing / ap-shanghai / ap-singapore）→ 写入字面量原值
+//   - 已注册的 region 字面量（ap-guangzhou / ap-beijing / ap-shanghai / ap-singapore / ap-seoul）→ 写入字面量原值
 //   - 大小写 / 前后空白由 Load 直接 trim 但不 lower（lower 由 region.LookupByRegion 内部做）
 //   - 未注册的 region 字面量 → Load 返回 error（fail-fast）
 func TestLoad_RegionOverrideFromEnv(t *testing.T) {
@@ -144,6 +178,7 @@ func TestLoad_RegionOverrideFromEnv(t *testing.T) {
 		{"ap-shanghai override accepted", "ap-shanghai", "ap-shanghai", false},
 		{"ap-guangzhou override accepted", "ap-guangzhou", "ap-guangzhou", false},
 		{"ap-singapore override accepted", "ap-singapore", "ap-singapore", false},
+		{"ap-seoul override accepted", "ap-seoul", "ap-seoul", false},
 		{"surrounding whitespace trimmed", "  ap-beijing  ", "ap-beijing", false},
 		{"unknown region fails fast", "ap-tokyo", "", true},
 		{"typo fails fast", "bj", "", true},

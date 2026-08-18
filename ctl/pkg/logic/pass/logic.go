@@ -181,7 +181,7 @@ type Logic interface {
 	//   - 入参 time_span / time_unit 由 trade 透传（来源于下单时的 trade_order，而非 bundle 字段）
 	//   - 入参 uin / app_id 由 trade 透传，写入 ctl_pass 表（取代 CreateTrialPass 中的 TODO=0）
 	//   - 入参 deal_name 仅日志记录用于排障，ctl_pass 表不持久化（归 trade_order 反查）
-	//   - renew_flag 本期 logic 内部写死 MANUAL_RENEW（不读 req.RenewFlag，待 AUTO_RENEW 放开后再切换）
+	//   - renew_flag 仅接受 AUTO_RENEW；缺失或其它值兜底 MANUAL_RENEW
 	//   - 兜底防御：用户已有 active pass 直接报 ErrPassAlreadyExists（不做幂等，不依赖 pass_pending_order）
 	CompletePass(req *transport.CompletePassRequest) (*PassDetail, error)
 
@@ -1383,7 +1383,7 @@ func entitiesToDetails(entities []*passmodel.Entity) []*PassDetail {
 //  1. 入参从 (userID, bundleID) 升级为完整 *transport.CompletePassRequest（透传 jifei 协议字段）
 //  2. expired_time 计算用 req.TimeSpan/TimeUnit（trade 持有的下单参数），不再读 bundle.TimeSpan/TimeUnit
 //  3. entity.Uin / AppID 从 req 透传写入（不再 TODO=0）
-//  4. RenewFlag 强制写 MANUAL_RENEW（v4 收敛：本期不对外暴露，req.RenewFlag 仅协议预留）
+//  4. RenewFlag 接受 trade 映射后的 AUTO_RENEW；缺失或非法值兜底 MANUAL_RENEW
 //  5. deal_name 仅日志记录用于排障，pass 表不持久化
 //
 // 复用 CreateTrialPass 步骤 5-12 的核心逻辑（EnsureUser → DecrementAvailCount →
@@ -1521,7 +1521,7 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		}
 	}
 
-	// 步骤 10：事务写入 pass + quota（v4 收敛：uin/app_id 从 req 透传，renew_flag 写死 MANUAL_RENEW）
+	// 步骤 10：事务写入 pass + quota（uin/app_id 与 renew_flag 从 trade 透传）
 	entity := &passmodel.Entity{
 		PassID:      passID,
 		UserID:      req.UserID,
@@ -1529,8 +1529,8 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		Uin:         req.Uin,
 		AppID:       req.AppID,
 		ExpiredTime: expiredTime,
-		RenewFlag:   passmodel.RenewFlagManual, // v4 收敛：本期不对外暴露，logic 写死
-		Status:      passmodel.StatusActive,    // v1.7.28 BUG-17 修复：显式写 active，避免 gorm 用 Go zero value 覆盖 DB DEFAULT
+		RenewFlag:   normalizeCompletePassRenewFlag(req.RenewFlag),
+		Status:      passmodel.StatusActive, // v1.7.28 BUG-17 修复：显式写 active，避免 gorm 用 Go zero value 覆盖 DB DEFAULT
 	}
 	if err := passDao.CreatePassWithQuota(entity, req.UserID, agentQuota); err != nil {
 		return nil, compensateEnsuredEntitlement(
@@ -1558,10 +1558,19 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 	return detail, nil
 }
 
+// normalizeCompletePassRenewFlag 只放行内部自动续费枚举。trade 旧版本、国内站回调或异常
+// 调用没有传入合法值时统一回落手动续费，避免改变既有 pass 的续费语义。
+func normalizeCompletePassRenewFlag(flag string) string {
+	if flag == passmodel.RenewFlagAuto {
+		return passmodel.RenewFlagAuto
+	}
+	return passmodel.RenewFlagManual
+}
+
 // validateCompletePassRequest v4 收敛：CompletePass 入参强校验
 //
-// trade 反向调时所有字段必填，缺失即报 ErrPassInvalidParam（trade 侧应已校验，
-// ctl 侧仅做防御性校验避免脏数据进入业务流程）。
+// trade 反向调时除可选 RenewFlag 外的业务字段必填，缺失即报 ErrPassInvalidParam
+// （trade 侧应已校验，ctl 侧仅做防御性校验避免脏数据进入业务流程）。
 func validateCompletePassRequest(req *transport.CompletePassRequest) error {
 	if req == nil {
 		return errcode.Wrap(errcode.ErrPassInvalidParam, "request is nil")

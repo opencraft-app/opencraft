@@ -118,7 +118,11 @@ func main() {
 		activityResolver activity.Resolver
 	)
 	if cfg.DianshiPriceBaseURL != "" && cfg.DianshiOrderBaseURL != "" {
-		dianshiClient = dianshiclient.New(cfg.DianshiPriceBaseURL, cfg.DianshiOrderBaseURL)
+		dianshiClient = dianshiclient.New(
+			cfg.DianshiPriceBaseURL,
+			cfg.DianshiOrderBaseURL,
+			dianshiclient.Options{Preview: cfg.DianshiPreview},
+		)
 		activityResolver = activity.NewResolver(mysqlStore)
 		log.Printf("[dianshi] activated: priceBaseURL=%s orderBaseURL=%s",
 			cfg.DianshiPriceBaseURL, cfg.DianshiOrderBaseURL)

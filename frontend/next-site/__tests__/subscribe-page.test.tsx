@@ -140,6 +140,27 @@ const resetState = () => {
 };
 
 describe("SubscribePage", () => {
+  /**
+   * 源码契约：「我已完成支付」手动确认按钮已移除。
+   * 轮询是唯一自动接棒途径（超时后也持续轮询），用户无需手动确认。
+   * 用源码断言而非组件渲染：组件级用例曾在 7a6bf73ee 因测试站点语义冲突被重构移除。
+   */
+  it("no longer renders the manual pay-confirm button", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const source = readFileSync(
+      join(process.cwd(), "next-site/subscribe-page.tsx"),
+      "utf8",
+    );
+    expect(source).not.toContain("onManualConfirm");
+    expect(source).not.toContain('t("我已完成支付")');
+    /* 超时后不得停止轮询：按钮没了，轮询是唯一自动开通途径。 */
+    const timeoutBlock = source.match(
+      /Date\.now\(\) - startedAt > PAY_POLL_TIMEOUT_MS[\s\S]{0,400}?\n\s{6}\}/,
+    )?.[0] ?? "";
+    expect(timeoutBlock).not.toContain("clearInterval");
+  });
+
   beforeEach(() => {
     cleanup();
     vi.resetModules();

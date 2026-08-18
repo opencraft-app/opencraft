@@ -13,7 +13,98 @@ import (
 	"time"
 
 	pctx "ctl/pkg/context"
+	modelfactory "ctl/pkg/model/factory"
+	modeltask "ctl/pkg/model/task"
+	"ctl/pkg/mq"
+	"ctl/pkg/resource"
+	taskcommon "ctl/pkg/taskruntime/common"
+	"ctl/test/testutil"
 )
+
+type rollbackRecordingProducer struct {
+	sendCount int
+	err       error
+}
+
+func (p *rollbackRecordingProducer) Send(_ *mq.Message) error {
+	p.sendCount++
+	return p.err
+}
+
+func TestEnqueueRollbackRenewPassTaskIsIdempotentByParent(t *testing.T) {
+	originalDB := resource.GormDB
+	t.Cleanup(func() { resource.GormDB = originalDB })
+	db := testutil.NewSQLiteDB(t, &modeltask.Entity{})
+	producer := &rollbackRecordingProducer{}
+	logic := &logic{
+		taskDao:  modelfactory.DefaultDaoFactory.TaskDao(nil),
+		producer: producer,
+	}
+	ctx := testutil.NewContext(t, "user-renew-idempotent")
+	parentTaskID := "task-renew-parent-idempotent"
+	taskID := rollbackRenewPassTaskID(parentTaskID)
+	payload := &taskcommon.RollbackRenewPassTaskPayload{
+		PassID:               "pass-renew-idempotent",
+		UserID:               "user-renew-idempotent",
+		OriginalExpiredTime:  time.Date(2026, 8, 18, 0, 0, 0, 0, time.UTC),
+		OriginalParentTaskID: parentTaskID,
+	}
+
+	firstID, err := logic.enqueueTaskWithScheduleAndID(ctx, taskID, taskcommon.TaskNameRollbackRenewPass, payload, parentTaskID, 30, 1<<30)
+	if err != nil {
+		t.Fatalf("first enqueue: %v", err)
+	}
+	secondID, err := logic.enqueueTaskWithScheduleAndID(ctx, taskID, taskcommon.TaskNameRollbackRenewPass, payload, parentTaskID, 30, 1<<30)
+	if err != nil {
+		t.Fatalf("second enqueue: %v", err)
+	}
+	if firstID != secondID || firstID != taskID {
+		t.Fatalf("task ids = (%q, %q), want deterministic %q", firstID, secondID, taskID)
+	}
+
+	var count int64
+	if err := db.Model(&modeltask.Entity{}).Where("task_id = ?", taskID).Count(&count).Error; err != nil {
+		t.Fatalf("count rollback tasks: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("rollback task count = %d, want 1", count)
+	}
+}
+
+func TestStableRollbackTaskRemainsRetryableWhenMQSendFails(t *testing.T) {
+	originalDB := resource.GormDB
+	t.Cleanup(func() { resource.GormDB = originalDB })
+	db := testutil.NewSQLiteDB(t, &modeltask.Entity{})
+	producer := &rollbackRecordingProducer{err: errors.New("mq unavailable")}
+	logic := &logic{
+		taskDao:  modelfactory.DefaultDaoFactory.TaskDao(nil),
+		producer: producer,
+	}
+	ctx := testutil.NewContext(t, "user-renew-mq-failure")
+	parentTaskID := "task-renew-parent-mq-failure"
+	taskID := rollbackRenewPassTaskID(parentTaskID)
+	payload := &taskcommon.RollbackRenewPassTaskPayload{
+		PassID:               "pass-renew-mq-failure",
+		UserID:               "user-renew-mq-failure",
+		OriginalExpiredTime:  time.Date(2026, 8, 18, 0, 0, 0, 0, time.UTC),
+		OriginalParentTaskID: parentTaskID,
+	}
+
+	if _, err := logic.enqueueTaskWithScheduleAndID(ctx, taskID, taskcommon.TaskNameRollbackRenewPass, payload, parentTaskID, 30, 1<<30); err == nil {
+		t.Fatal("expected MQ send failure")
+	}
+
+	var got modeltask.Entity
+	if err := db.Where("task_id = ?", taskID).First(&got).Error; err != nil {
+		t.Fatalf("reload rollback task: %v", err)
+	}
+	if got.TaskState != modeltask.StateCreated {
+		t.Fatalf("task state = %q, want %q for checkTasks recovery", got.TaskState, modeltask.StateCreated)
+	}
+	if !strings.Contains(got.TaskMessage, "mq unavailable") {
+		t.Fatalf("task message = %q, want MQ error", got.TaskMessage)
+	}
+}
 
 func TestEnqueueRollbackRenewPassTask_ParamValidation(t *testing.T) {
 	validExpired := time.Date(2026, 7, 22, 7, 22, 50, 0, time.UTC)

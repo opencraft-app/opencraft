@@ -2,6 +2,7 @@ package instance
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -228,8 +229,8 @@ type RenewInstanceTaskPayload = common.RenewInstanceTaskPayload
 //     · originalExpiredTime：续费前的 pass.expired_time（active / isolated 续费均为 entity.ExpiredTime）
 //     · originalIsolatedTime：续费前的 pass.isolated_time（active 分支传 nil；isolated 分支传 entity.IsolatedTime
 //     的副本指针）；决定回滚目标状态：nil → active；非 nil → isolated
-//   - executeInterval / maxExecuteCount：默认 30s × 5 次（R-MR-5：父 task 失败有限重试 +
-//     失败后派发 RollbackRenewPassTask 回滚副作用）
+//   - executeInterval / maxExecuteCount：由 caller 显式传入；当前 RenewPass worker 使用
+//     30s + 1<<30，保证父 task 覆盖 RenewInstance 子 task 的完整重试窗口
 func EnqueueRenewPassTask(ctx pctx.Context, passID, userID, operationID string, tradeFlowID int64, timeSpan int, timeUnit string, originalExpiredTime time.Time, originalIsolatedTime *time.Time, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
 	if passID == "" {
 		return "", errors.New("passID is required")
@@ -283,8 +284,8 @@ func EnqueueRenewPassTask(ctx pctx.Context, passID, userID, operationID string, 
 // RollbackRenewPassTaskPayload 是回滚 task payload 的类型别名
 type RollbackRenewPassTaskPayload = common.RollbackRenewPassTaskPayload
 
-// EnqueueRollbackRenewPassTask 由 renewPassTask.finalizeFailure 在 max_execute_count
-// 用尽（=5）时调用，派发回滚父 task。
+// EnqueueRollbackRenewPassTask 由 renewPassTask.finalizeFailure 在确定性失败或最大次数
+// 兜底触发时调用，派发回滚父 task。
 //
 // 入参（payload 字段透传 + execute schedule 参数）：
 //   - passID / userID / operationID：业务标识（继承自原 RenewPass payload）
@@ -292,7 +293,8 @@ type RollbackRenewPassTaskPayload = common.RollbackRenewPassTaskPayload
 //   - originalExpiredTime / originalIsolatedTime：续费前基线，决定 RollbackRenewal 写回的目标值
 //   - failureReason：原父 task 最后一次 execute 错误（写入 trade.CompleteFlow message 字段）
 //   - originalParentTaskID：原 RenewPass 父 task 的 task_id（回滚 task 步骤 1 等子 task 终态时反查用）
-//   - executeInterval / maxExecuteCount：默认 30s × 5 次（与父 task 同节奏；失败即终态由人工介入）
+//   - executeInterval / maxExecuteCount：由 caller 显式传入；当前 rollback worker 使用
+//     30s + 1<<30，由 checkTasks 持续补偿
 func EnqueueRollbackRenewPassTask(ctx pctx.Context, passID, userID, operationID string, tradeFlowID int64, originalExpiredTime time.Time, originalIsolatedTime *time.Time, failureReason, originalParentTaskID string, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
 	if passID == "" {
 		return "", errors.New("passID is required")
@@ -326,14 +328,20 @@ func EnqueueRollbackRenewPassTask(ctx pctx.Context, passID, userID, operationID 
 		ctx = pctx.NewContext(nil)
 	}
 	ctx = ctx.WithUserID(userID)
-	return NewLogic().(*logic).enqueueTaskWithSchedule(
+	return NewLogic().(*logic).enqueueTaskWithScheduleAndID(
 		ctx,
+		rollbackRenewPassTaskID(originalParentTaskID),
 		common.TaskNameRollbackRenewPass,
 		payload,
-		"",
+		originalParentTaskID,
 		executeInterval,
 		maxExecuteCount,
 	)
+}
+
+func rollbackRenewPassTaskID(originalParentTaskID string) string {
+	sum := sha256.Sum256([]byte(common.TaskNameRollbackRenewPass + ":" + originalParentTaskID))
+	return fmt.Sprintf("task-rb-renew-%x", sum[:16])
 }
 
 // EnqueueRenewInstanceTask 由父 task RenewPassTask 调用，派发一个续费子 task
@@ -578,6 +586,13 @@ func (l *logic) enqueueTask(ctx pctx.Context, taskName string, payload interface
 //
 // 与 enqueueTask 共享其余 schema（task_id 自生成 / state=CREATED / params=json marshal / MQ.Send）
 func (l *logic) enqueueTaskWithSchedule(ctx pctx.Context, taskName string, payload interface{}, parentTaskID string, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
+	return l.enqueueTaskWithScheduleAndID(ctx, "", taskName, payload, parentTaskID, executeInterval, maxExecuteCount)
+}
+
+// enqueueTaskWithScheduleAndID allows workflows with a stable business identity to supply
+// their own task ID. A duplicate ID is an idempotent success: the existing CREATED task is
+// picked up by the regular checkTasks recovery loop if its original MQ send was interrupted.
+func (l *logic) enqueueTaskWithScheduleAndID(ctx pctx.Context, suppliedTaskID, taskName string, payload interface{}, parentTaskID string, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
 	ctx, span := tracing.StartTrace(ctx, "Instance.EnqueueTaskWithSchedule")
 	defer func() { span.EndWithError(err) }()
 
@@ -593,7 +608,10 @@ func (l *logic) enqueueTaskWithSchedule(ctx pctx.Context, taskName string, paylo
 		return "", fmt.Errorf("marshal task payload: %w", err)
 	}
 
-	taskID = l.generateTaskID()
+	taskID = suppliedTaskID
+	if taskID == "" {
+		taskID = l.generateTaskID()
+	}
 	taskEntity := &taskmodel.Entity{
 		TaskId:          taskID,
 		ParentTaskId:    parentTaskID,
@@ -610,22 +628,27 @@ func (l *logic) enqueueTaskWithSchedule(ctx pctx.Context, taskName string, paylo
 	taskEntity.UserID = ctx.GetUserID()
 
 	if err := l.taskDao.Insert(taskEntity); err != nil {
+		if suppliedTaskID != "" && isDuplicateKeyError(err) {
+			return taskID, nil
+		}
 		return "", fmt.Errorf("insert task: %w", err)
 	}
 
 	messageData, err := common.GenerateMessageData(ctx, taskName, taskID, payload)
 	if err != nil {
-		_ = l.taskDao.UpdateByKeyColumn(map[string]interface{}{
-			taskmodel.ColumnTaskState:   taskmodel.StateFailed,
-			taskmodel.ColumnTaskMessage: err.Error(),
-		}, taskID)
+		updates := map[string]interface{}{taskmodel.ColumnTaskMessage: err.Error()}
+		if suppliedTaskID == "" {
+			updates[taskmodel.ColumnTaskState] = taskmodel.StateFailed
+		}
+		_ = l.taskDao.UpdateByKeyColumn(updates, taskID)
 		return taskID, fmt.Errorf("generate task message: %w", err)
 	}
 	if err := l.producer.Send(&mq.Message{Data: messageData}); err != nil {
-		_ = l.taskDao.UpdateByKeyColumn(map[string]interface{}{
-			taskmodel.ColumnTaskState:   taskmodel.StateFailed,
-			taskmodel.ColumnTaskMessage: err.Error(),
-		}, taskID)
+		updates := map[string]interface{}{taskmodel.ColumnTaskMessage: err.Error()}
+		if suppliedTaskID == "" {
+			updates[taskmodel.ColumnTaskState] = taskmodel.StateFailed
+		}
+		_ = l.taskDao.UpdateByKeyColumn(updates, taskID)
 		return taskID, fmt.Errorf("send task message: %w", err)
 	}
 	return taskID, nil
@@ -1935,7 +1958,10 @@ func isDuplicateKeyError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "Duplicate entry") || strings.Contains(err.Error(), "1062")
+	return errors.Is(err, gorm.ErrDuplicatedKey) ||
+		strings.Contains(err.Error(), "Duplicate entry") ||
+		strings.Contains(err.Error(), "UNIQUE constraint failed") ||
+		strings.Contains(err.Error(), "1062")
 }
 
 func isAiGatewayKeyNotFound(err error) bool {

@@ -2118,17 +2118,14 @@ const CreditCardConfirmOrderModal = ({
 /* ─── Payment Pending Modal ─── */
 
 /**
- * 付费进行中弹窗——取代原来的 mock 微信二维码。该弹窗同时覆盖两个状态：
- *   - paying ：已跳转新窗口，后台轮询 listMyPasses 中
- *   - polling：用户点击「我已完成支付」，立即询问一次
- *
- * 表现上这两个状态只在 spinner / 文案上轻微区分，避免闪烁。
+ * 付费进行中弹窗——取代原来的 mock 微信二维码。
+ * 弹窗期间后台轮询 listMyPasses，轮询到有效 pass 后自动 finalizeBot 接棒，
+ * 用户无需任何手动确认按钮。
  */
 const PaymentPendingModal = ({
   bridgeUrl,
   redirectUrl,
   onCancel,
-  onManualConfirm,
   onRefresh,
   refreshing,
   timedOut = false,
@@ -2139,7 +2136,6 @@ const PaymentPendingModal = ({
   /** 国际站：信用卡 hosted page URL（pay_url），用于「重新打开支付页」 */
   redirectUrl?: string;
   onCancel: () => void;
-  onManualConfirm: () => void;
   /** 「刷新」按钮：重新生成二维码（重新下单换新 auth_code）— 仅国内站 bridge 模式 */
   onRefresh: () => void;
   /** 刷新进行中（重新下单的网络往返期间），用于禁用按钮防止重复请求 */
@@ -2181,7 +2177,7 @@ const PaymentPendingModal = ({
           </h3>
           <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 24px" }}>
             {timedOut
-              ? t("已收到你的支付，套餐开通稍有延迟。可以点下方按钮重试，或稍后刷新页面。")
+              ? t("已收到你的支付，套餐开通稍有延迟，本页会自动完成开通，请勿关闭。")
               : bridgeUrl
                 ? t("请使用微信扫描下方二维码完成支付")
                 /* 支付回跳场景没有 redirectUrl（原窗口已被替换），此时是在等后台发货，
@@ -2306,27 +2302,6 @@ const PaymentPendingModal = ({
                 {t("重新打开支付页")}
               </button>
             ) : null}
-            {/* 「我已完成支付」：轮询超时兜底，手动触发 refreshPasses + finalizeBot。
-                支付回跳场景没有支付页可重开，这里就是唯一的重试入口。 */}
-            <button
-              onClick={onManualConfirm}
-              style={{
-                flex: 1,
-                padding: "12px 16px",
-                borderRadius: 8,
-                border: "none",
-                background: colors.primary,
-                color: colors.white,
-                fontSize: 15,
-                fontWeight: 600,
-                cursor: "pointer",
-                transition: "opacity 0.15s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.9"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
-            >
-              {t("我已完成支付")}
-            </button>
           </div>
         </div>
       </motion.div>
@@ -2343,7 +2318,7 @@ const PaymentPendingModal = ({
  *   - paying   ：已通过 tcb-jssdk 拉起 Midas 收银台（页内二维码 / 兜底新窗口），等待用户支付完成
  *
  * 注：v1.7.30 后端联调文档明确「前端不需要轮询支付状态」——
- * SDK 自身会通过 callback 通知支付完成；用户使用兜底入口时手动点「我已完成支付」即可。
+ * 实际以 paying 阶段的 listMyPasses 轮询为准，自动 finalizeBot，无需用户手动确认。
  */
 type ModalStep = "closed" | "confirm" | "paying";
 
@@ -2706,7 +2681,7 @@ export const SubscribePage = ({
       setPaymentContext(null);
       navigate(getAgentCreatingPath(createdBot.id));
     } finally {
-      /* 无论成功失败都复位：失败时用户要能点「我已完成支付」重试，
+      /* 无论成功失败都复位：失败时后续轮询要能重试，
          成功时用户可能返回本页再次购买（SPA 不重新挂载，ref 会保留）。 */
       finalizingRef.current = false;
     }
@@ -2922,8 +2897,9 @@ export const SubscribePage = ({
   }, [authReady, isAuthenticated, planList, refreshPasses]);
 
   /* paying 阶段轮询 listMyPasses：代替 SDK callback。
-     轮询到有效 active pass 后自动 finalizeBot 接棒（用户无需再点「我已完成支付」）；
-     超时（PAY_POLL_TIMEOUT_MS）不主动报错，用户仍可手动点「我已完成支付」兜底。 */
+     轮询到有效 active pass 后自动 finalizeBot 接棒，用户无需任何手动确认。
+     超时（PAY_POLL_TIMEOUT_MS）只切换 UI 到「开通中」的耐心文案，不停止轮询——
+     手动确认按钮已移除，轮询是唯一的自动接棒途径，停了用户就只能刷新页面自救。 */
   useEffect(() => {
     if (modalStep !== "paying") return;
     const ctx = paymentContext;
@@ -2958,9 +2934,8 @@ export const SubscribePage = ({
         return;
       }
       if (Date.now() - startedAt > PAY_POLL_TIMEOUT_MS) {
-        window.clearInterval(timer);
-        /* 不静默停住：告知用户「已收到支付、开通稍有延迟」，并给一个手动重试入口，
-           否则界面会一直转圈，用户不知道该等还是该找客服。 */
+        /* 只切文案不停止轮询：手动确认按钮已移除，若停轮询，
+           发货慢的用户将永远等不到自动开通。轮询随弹窗关闭（cleanup）而终止。 */
         if (!cancelled) setPayPollTimedOut(true);
       }
     }, PAY_POLL_INTERVAL_MS);
@@ -2992,9 +2967,7 @@ export const SubscribePage = ({
           await startIntlCardPay(plan, autoRenew);
         } else {
           /* 国内站付费链路：startPaidPassOrder 只展示二维码并把弹窗切到 paying；
-             真正的 addBot + 跳转由两条接棒路径承接：
-               ① paying 阶段轮询到 active pass → 自动 finalizeBot
-               ② 用户点「我已完成支付」 → handleManualConfirm → finalizeBot
+             真正的 addBot + 跳转由 paying 阶段轮询接棒（轮询到 active pass → 自动 finalizeBot）。
              因此这里**不能**再继续往下做 addBot/navigate，否则用户还没付钱实例就建了 */
           await startPaidPassOrder(plan);
         }
@@ -3163,26 +3136,8 @@ export const SubscribePage = ({
     void executeCreateBot(selectedPlan, autoRenew);
   }, [selectedPlan, executeCreateBot]);
 
-  /**
-   * 用户在「付费进行中」弹窗点「我已完成支付」 → 直接刷新 pass 列表 + finalize。
-   * 仅在 fallback 模式（新窗口拉起、SDK 不可用）会出现此按钮；SDK 模式由 callback 驱动。
-   * 后端 v1.7.30 明确「前端不需要轮询支付状态」，只要刷一次 pass 即可。
-   */
-  const handleManualConfirm = useCallback(async () => {
-    const ctx = paymentContextRef.current;
-    if (!ctx) return;
-    try {
-      await refreshPasses();
-      await finalizeBot(ctx.plan);
-    } catch (err) {
-      const fallbackMsg = err instanceof Error ? err.message : t("创建实例失败，请稍后重试。");
-      console.error("[subscribe] manual confirm finalize failed", err);
-      setError({ code: getBillingErrorCode(err), message: resolveBillingErrorMessage(err, fallbackMsg) });
-      setModalStep("closed");
-      setSelectedPlan(null);
-      setPaymentContext(null);
-    }
-  }, [refreshPasses, finalizeBot, t]);
+  /* 「我已完成支付」手动确认入口已移除：轮询是唯一自动接棒途径，
+     超时后也持续轮询（见上方 paying 轮询 effect），用户无需手动确认。 */
 
   /* 「刷新」按钮：重新下单生成一份新的 deal_name + auth_code，重新生成二维码。
      主要场景：二维码接近/已过期、后台 auth_code 已被 Consume、用户重新扫码。
@@ -3485,7 +3440,6 @@ export const SubscribePage = ({
             bridgeUrl={paymentContext.bridgeUrl}
             redirectUrl={paymentContext.redirectUrl}
             onCancel={handleCloseModal}
-            onManualConfirm={handleManualConfirm}
             onRefresh={() => void handleRefreshPayment()}
             refreshing={paymentRefreshing}
             timedOut={payPollTimedOut}

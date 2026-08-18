@@ -41,18 +41,14 @@ const extendAiGatewayCallTimeout = 10 * time.Second
 //	pass.status=='isolating' → ErrPassIsolating （隔离进行中不能续费）
 //	pass.status 其他值 / pass 不存在 → ErrPassNotFound / ErrPassNotRenewable
 
-// 异步父 task RenewPass 自身重试节奏（R-MR-5 升级，2026-05-24 用户拍板）：
-//   - 30s × 5 次 = 2.5min 重试窗口
-//   - 与 isolate 父 task "永不放弃 + INT64_MAX 兜底" 不同 — 续费失败不能无限重投，
-//     否则会卡住 trade_flow（jifei 不会自动退款），且持续占着 pass.status='renewing' 让
-//     用户无法发起新订单。
-//   - max=5 用尽后由 finalizeFailure 派发 RollbackRenewPassTask 回滚副作用 +
-//     CompleteFlow(failed) 触发 jifei 退款（详见 .tmp/trade-pass-renew-design.md
-//     §3.4 失败回滚链路升级）。
+// 异步父 task RenewPass 自身重试节奏：
+//   - 父 task 需要覆盖 RenewInstance 子 task 的完整重试窗口，不能在子 task 仍可恢复时
+//     提前触发 RollbackRenewPass。
+//   - 使用与 worker 侧一致的 1<<30 兜底值；确定性的子 task 终态失败仍由
+//     finalizeFailure 立即派发回滚，不依赖耗尽重试次数。
 const (
 	renewPassParentExecuteIntervalSeconds = int64(30)
-	// R-MR-5 升级：1<<30 → 5（有限重试 + 失败回滚链路接管）。
-	renewPassParentMaxExecuteCount = 5
+	renewPassParentMaxExecuteCount        = 1 << 30
 )
 
 // RenewPass 详见 Logic 接口注释
