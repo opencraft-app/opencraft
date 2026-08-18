@@ -90,7 +90,7 @@ function getTokenChannelMeta(kind: 'telegram' | 'discord'): TokenChannelMeta {
 }
 
 export function ChannelPanel(props: ChannelPanelProps) {
-  const { className, onConnectSuccess, onDisconnectSuccess, renderChannelCard, renderModal, ...baseProps } = props;
+  const { className, ...baseProps } = props;
 
   const ops = useChannelOperations(baseProps);
 
@@ -188,11 +188,10 @@ export function ChannelPanel(props: ChannelPanelProps) {
       setQqModalVisible(false);
       setQqAppId('');
       setQqSecret('');
-      onConnectSuccess?.('qqbot');
     } else {
       message.error({ content: t('绑定失败') });
     }
-  }, [qqAppId, qqSecret, ops, onConnectSuccess]);
+  }, [qqAppId, qqSecret, ops]);
 
   // ── Token 类通道（Telegram / Discord）保存 ──
   const handleSaveToken = useCallback(async () => {
@@ -205,11 +204,10 @@ export function ChannelPanel(props: ChannelPanelProps) {
       message.success({ content: getTokenChannelMeta(tokenChannelKind).successMsg });
       setTokenChannelKind(null);
       setTokenInput('');
-      onConnectSuccess?.(tokenChannelKind);
     } else {
       message.error({ content: t('绑定失败') });
     }
-  }, [tokenChannelKind, tokenInput, ops, onConnectSuccess]);
+  }, [tokenChannelKind, tokenInput, ops]);
 
   // ── 断开确认弹窗 ──
   const [pendingDisconnect, setPendingDisconnect] = useState<{ value: string; name: string } | null>(null);
@@ -228,11 +226,10 @@ export function ChannelPanel(props: ChannelPanelProps) {
     setPendingDisconnect(null);
     if (success) {
       message.success({ content: t('已断开连接') });
-      onDisconnectSuccess?.(pendingDisconnect.value);
     } else {
       message.error({ content: t('断开失败') });
     }
-  }, [pendingDisconnect, ops, onDisconnectSuccess]);
+  }, [pendingDisconnect, ops]);
 
   if (ops.loading) {
     return (
@@ -258,15 +255,6 @@ export function ChannelPanel(props: ChannelPanelProps) {
           .filter((ch) => ch.primaryLabel) // 只展示有 primaryLabel 的通道
           .map((channel) => {
             const isBound = boundChannels.has(channel.value);
-            if (renderChannelCard) {
-              return renderChannelCard({
-                channel,
-                isBound,
-                onConnect: () => handleConnect(channel.value),
-                onDisconnect: () => handleDisconnect(channel.value),
-                loading: ops.deletingChannel === channel.value,
-              });
-            }
             return (
               <div key={channel.value} className={`${CLS}__card ${isBound ? `${CLS}__card--bound` : ''}`}>
                 <div className={`${CLS}__card-body`}>
@@ -517,7 +505,6 @@ export function ChannelPanel(props: ChannelPanelProps) {
         onSuccess={async () => {
           message.success({ content: t('扫码连接成功') });
           await ops.refresh();
-          onConnectSuccess?.(qrChannel);
         }}
       />
     </div>

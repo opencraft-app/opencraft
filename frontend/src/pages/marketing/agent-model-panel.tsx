@@ -7,7 +7,6 @@
  *  - 表单：Provider 选择 → 模型选择 → API Key → 保存
  *
  * 不依赖 TEA Component，只输出 HTML + BEM class name。
- * 业务侧通过 renderSelect / renderInput / renderButton 等 prop 注入自定义 UI。
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -82,17 +81,7 @@ const getProbeErrorMessage = (raw?: string | null, errorCode?: number): string =
 };
 
 export function ModelPanel(props: ModelPanelProps) {
-  const {
-    className,
-    onSaveSuccess,
-    onSaveError,
-    onDeleteSuccess,
-    renderSelect,
-    renderInput,
-    renderButton,
-    renderRegistryHeaderAction,
-    ...baseProps
-  } = props;
+  const { className, ...baseProps } = props;
 
   const ops = useModelOperations(baseProps);
 
@@ -258,15 +247,12 @@ export function ModelPanel(props: ModelPanelProps) {
       if (success) {
         await ops.refresh();
         message.success({ content: t('已保存') });
-        onSaveSuccess?.();
       } else {
         message.error({ content: t('保存失败') });
-        onSaveError?.(t('保存失败'));
       }
     } catch (err) {
       const msg = err?.message || t('保存失败');
       message.error({ content: msg });
-      onSaveError?.(msg);
     }
   }, [
     canSave,
@@ -286,8 +272,6 @@ export function ModelPanel(props: ModelPanelProps) {
     customApiKey,
     customApiMode,
     ops,
-    onSaveSuccess,
-    onSaveError,
   ]);
 
   // ── 已配置模型列表（从 ops 数据获取） ──
@@ -350,11 +334,10 @@ export function ModelPanel(props: ModelPanelProps) {
     if (success) {
       await ops.refresh();
       message.success({ content: t('已删除') });
-      onDeleteSuccess?.();
     } else {
       message.error({ content: t('删除失败') });
     }
-  }, [pendingDelete, configuredModels, ops, onDeleteSuccess]);
+  }, [pendingDelete, configuredModels, ops]);
 
   // ── Tabs 配置 ──
   const tabs: { id: ModelConfigKind; label: string; recommended?: boolean }[] = [
@@ -364,10 +347,9 @@ export function ModelPanel(props: ModelPanelProps) {
   ];
 
   // ── 渲染辅助 ──
-  const Select = renderSelect || DefaultSelect;
-  const Input = renderInput || DefaultInput;
-  const Button = renderButton || DefaultButton;
-  const registryBusy = !!ops.deleting || !!ops.switching || ops.saving;
+  const Select = DefaultSelect;
+  const Input = DefaultInput;
+  const Button = DefaultButton;
   const probeParams = useMemo<IHermesModelProbeParams | null>(() => {
     if (activeKind === 'coding_plan') {
       if (
@@ -474,15 +456,6 @@ export function ModelPanel(props: ModelPanelProps) {
               <span className={`${CLS}__registry-count`}>({configuredModels.length})</span>
             )}
           </span>
-          {renderRegistryHeaderAction && (
-            <div className={`${CLS}__registry-header-action`}>
-              {renderRegistryHeaderAction({
-                configuredCount: configuredModels.length,
-                loading: ops.loading,
-                busy: registryBusy,
-              })}
-            </div>
-          )}
         </div>
         {ops.loading ? (
           <div className={`${CLS}__loader`}>{t('加载中...')}</div>
