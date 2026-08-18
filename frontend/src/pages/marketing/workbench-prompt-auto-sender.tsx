@@ -149,11 +149,17 @@ export function WorkbenchPromptAutoSender() {
       }
 
       // 按钮已 enable：拦截 console.warn 判定 socket 是否未连。
+      // try/catch 保护：即使 click 抛错也要在回调里恢复 console.warn，避免永久劫持。
       let socketNotConnected = false;
+      let clickFailed = false;
       const restoreWarn = interceptWarn(SOCKET_NOT_CONNECTED_WARN, () => {
         socketNotConnected = true;
       });
-      button.click();
+      try {
+        button.click();
+      } catch {
+        clickFailed = true;
+      }
 
       window.setTimeout(() => {
         restoreWarn();
@@ -161,8 +167,8 @@ export function WorkbenchPromptAutoSender() {
           finishTimeout();
           return;
         }
-        if (socketNotConnected) {
-          // socket 未连、本次作废：重置输入，下一轮重新填入并重试。
+        if (clickFailed || socketNotConnected) {
+          // click 抛错或 socket 未连：本次作废，重置输入重试。
           inputFilled = false;
           setTimeout(attempt, SOCKET_RETRY_DELAY_MS);
           return;
