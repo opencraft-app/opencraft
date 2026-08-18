@@ -1934,6 +1934,7 @@ func mapComputer(entity *ent.Computer) computerport.Computer {
 		OSType:                entity.OsType,
 		LifecycleState:        entity.LifecycleState,
 		TATAgentState:         entity.TatAgentState,
+		AssignmentVersion:     entity.AssignmentProtocolVersion,
 		RegistrationExpiresAt: entity.RegistrationExpiresAt,
 		HostLastSeenAt:        entity.HostLastSeenAt,
 		LastObservedAt:        entity.LastObservedAt,

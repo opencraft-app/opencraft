@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -42,12 +43,14 @@ type ComputerIdentity struct {
 }
 
 type ComputerSession struct {
-	AccessToken ComputerAccessToken
-	ExpiresAt   time.Time
-	Computer    ComputerIdentity
+	AccessToken       ComputerAccessToken
+	ExpiresAt         time.Time
+	Computer          ComputerIdentity
+	AssignmentVersion int
 }
 
 type ComputerAssignmentQuery struct {
+	AssignmentVersion  int
 	ExpectedComputerID string
 	SinceEpoch         string
 	SinceRevision      int64
@@ -155,11 +158,17 @@ func (c *Client) CreateComputerSession(
 	if c == nil || ctx == nil || credential.value == "" {
 		return ComputerSession{}, ErrInvalidConfig
 	}
+	body, err := common.Marshal(map[string]any{
+		"assignmentVersions": []int{daemon.AssignmentSchemaVersionV3},
+	})
+	if err != nil {
+		return ComputerSession{}, ErrInvalidConfig
+	}
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		c.baseURL+"/computer/session",
-		nil,
+		c.baseURL+"/computer/session-v2",
+		bytes.NewReader(body),
 	)
 	if err != nil {
 		return ComputerSession{}, ErrInvalidConfig
@@ -168,7 +177,7 @@ func (c *Client) CreateComputerSession(
 		"Authorization",
 		"ComputerCredential "+credential.Reveal(),
 	)
-	request.Header.Set("X-Vela-Assignment-Version", "1")
+	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cache-Control", "no-store")
 	response, err := c.httpClient.Do(request)
@@ -177,6 +186,10 @@ func (c *Client) CreateComputerSession(
 			return ComputerSession{}, ctx.Err()
 		}
 		return ComputerSession{}, newRequestError(true, 0)
+	}
+	if response.StatusCode == http.StatusNotFound {
+		response.Body.Close()
+		return c.createLegacyComputerSession(ctx, credential)
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusUnauthorized ||
@@ -200,6 +213,44 @@ func (c *Client) CreateComputerSession(
 	return c.validateComputerSession(payload, credential)
 }
 
+func (c *Client) createLegacyComputerSession(
+	ctx context.Context,
+	credential ComputerCredential,
+) (ComputerSession, error) {
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.baseURL+"/computer/session", nil,
+	)
+	if err != nil {
+		return ComputerSession{}, ErrInvalidConfig
+	}
+	request.Header.Set("Authorization", "ComputerCredential "+credential.Reveal())
+	request.Header.Set("X-Vela-Assignment-Version", "1")
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cache-Control", "no-store")
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ComputerSession{}, ctx.Err()
+		}
+		return ComputerSession{}, newRequestError(true, 0)
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		return ComputerSession{}, ErrCredentialRejected
+	}
+	if response.StatusCode != http.StatusCreated {
+		return ComputerSession{}, newRequestError(
+			response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500,
+			parseRetryAfter(response.Header.Get("Retry-After"), c.now().UTC()),
+		)
+	}
+	var payload computerSessionPayload
+	if err := decodeLimited(response.Body, &payload); err != nil {
+		return ComputerSession{}, ErrInvalidComputerSession
+	}
+	return c.validateComputerSession(payload, credential)
+}
+
 type computerSessionPayload struct {
 	AccessToken string    `json:"accessToken"`
 	ExpiresAt   time.Time `json:"expiresAt"`
@@ -211,6 +262,7 @@ type computerSessionPayload struct {
 		AssignmentRevision int64  `json:"assignmentRevision"`
 	} `json:"computer"`
 	AssignmentVersions []int `json:"assignmentVersions"`
+	AssignmentVersion  int   `json:"assignmentVersion"`
 }
 
 func (c *Client) validateComputerSession(
@@ -223,8 +275,7 @@ func (c *Client) validateComputerSession(
 		payload.Computer.CredentialVersion != credential.Version() ||
 		!validUUIDv7(payload.Computer.AssignmentEpoch) ||
 		payload.Computer.AssignmentRevision < 1 ||
-		len(payload.AssignmentVersions) != 1 ||
-		payload.AssignmentVersions[0] != 1 ||
+		!validNegotiatedAssignmentVersion(payload) ||
 		!validExpiry(payload.ExpiresAt, now, c.maxSessionTTL) {
 		return ComputerSession{}, ErrInvalidComputerSession
 	}
@@ -242,7 +293,21 @@ func (c *Client) validateComputerSession(
 			AssignmentEpoch:    payload.Computer.AssignmentEpoch,
 			AssignmentRevision: payload.Computer.AssignmentRevision,
 		},
+		AssignmentVersion: negotiatedAssignmentVersion(payload),
 	}, nil
+}
+
+func validNegotiatedAssignmentVersion(payload computerSessionPayload) bool {
+	return payload.AssignmentVersion == daemon.AssignmentSchemaVersionV3 ||
+		(payload.AssignmentVersion == 0 && len(payload.AssignmentVersions) == 1 &&
+			payload.AssignmentVersions[0] == daemon.AssignmentSchemaVersionV1)
+}
+
+func negotiatedAssignmentVersion(payload computerSessionPayload) int {
+	if payload.AssignmentVersion != 0 {
+		return payload.AssignmentVersion
+	}
+	return daemon.AssignmentSchemaVersionV1
 }
 
 func (c *Client) GetComputerAssignments(
@@ -259,6 +324,9 @@ func (c *Client) GetComputerAssignments(
 		query.ExpectedComputerID != "" &&
 			!validUUIDv7(query.ExpectedComputerID) ||
 		query.SinceEpoch != "" && !validUUIDv7(query.SinceEpoch) ||
+		(query.AssignmentVersion != 0 &&
+			query.AssignmentVersion != daemon.AssignmentSchemaVersionV1 &&
+			query.AssignmentVersion != daemon.AssignmentSchemaVersionV3) ||
 		query.SinceEpoch == "" &&
 			(query.SinceRevision != 0 || !query.ForceFull) {
 		return ComputerAssignmentResult{}, ErrInvalidAssignmentQuery
@@ -273,20 +341,27 @@ func (c *Client) GetComputerAssignments(
 	)
 	parameters.Set("waitSeconds", strconv.Itoa(query.WaitSeconds))
 	parameters.Set("forceFull", strconv.FormatBool(query.ForceFull))
+	assignmentVersion := query.AssignmentVersion
+	if assignmentVersion == 0 {
+		assignmentVersion = daemon.AssignmentSchemaVersionV1
+	}
+	path := "/computer/assignments"
+	if assignmentVersion == daemon.AssignmentSchemaVersionV3 {
+		path = "/computer/assignments-v3"
+	}
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodGet,
-		c.baseURL+"/computer/assignments?"+parameters.Encode(),
+		c.baseURL+path+"?"+parameters.Encode(),
 		nil,
 	)
 	if err != nil {
 		return ComputerAssignmentResult{}, ErrInvalidAssignmentQuery
 	}
 	request.Header.Set("Authorization", "Bearer "+token.Reveal())
-	request.Header.Set(
-		"X-Vela-Assignment-Version",
-		strconv.Itoa(daemon.AssignmentSchemaVersionV1),
-	)
+	if assignmentVersion == daemon.AssignmentSchemaVersionV1 {
+		request.Header.Set("X-Vela-Assignment-Version", strconv.Itoa(assignmentVersion))
+	}
 	request.Header.Set("Accept", "application/json")
 	response, err := c.httpClient.Do(request)
 	if err != nil {

@@ -67,6 +67,7 @@ var errorMappings = []ErrorMapping{
 	{Code: "agent_not_ready", Status: http.StatusConflict, Message: "Agent 尚未就绪"},
 	{Code: "agent_must_be_stopped", Status: http.StatusConflict, Message: "需要先停止 Agent"},
 	{Code: "runtime_unavailable", Status: http.StatusServiceUnavailable, Message: "Agent Runtime 暂不可用"},
+	{Code: "runtime_unsupported_by_computer", Status: http.StatusConflict, Message: "Computer 需要升级后才能运行该 Runtime"},
 	{Code: "profile_capabilities_unsupported", Status: http.StatusConflict, Message: "Computer 尚不支持 Agent Profile 能力发现"},
 	{Code: "profile_not_ready", Status: http.StatusConflict, Message: "Agent Profile 尚未准备好"},
 	{Code: "profile_capability_discovery_failed", Status: http.StatusServiceUnavailable, Message: "Agent Profile 能力发现失败"},

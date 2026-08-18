@@ -137,6 +137,7 @@ func TestRegistryCoversEveryStableProductAndTransportCode(t *testing.T) {
 		"agent_not_ready",
 		"agent_must_be_stopped",
 		"runtime_unavailable",
+		"runtime_unsupported_by_computer",
 		"profile_capabilities_unsupported",
 		"profile_not_ready",
 		"profile_capability_discovery_failed",

@@ -102,6 +102,7 @@ func NewRuntimeAPIHandler(config RuntimeAPIConfig) (http.Handler, error) {
 				"codex",
 				"hermes-acp",
 				"hermes-gateway",
+				"openclaw",
 			},
 		},
 	)

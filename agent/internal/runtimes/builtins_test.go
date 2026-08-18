@@ -8,12 +8,12 @@ import (
 	"testing"
 )
 
-func TestBuiltinsContainsCodexHermesACPAndHermesGatewayInStableOrder(t *testing.T) {
+func TestBuiltinsContainsCodexHermesAndOpenClawInStableOrder(t *testing.T) {
 	t.Parallel()
 
 	registrations := Builtins(Options{Version: "v-test"})
-	if len(registrations) != 3 {
-		t.Fatalf("Builtins() count = %d, want 3", len(registrations))
+	if len(registrations) != 4 {
+		t.Fatalf("Builtins() count = %d, want 4", len(registrations))
 	}
 	if registrations[0].ID != "codex" {
 		t.Fatalf("Builtins()[0] = %#v", registrations[0])
@@ -22,7 +22,7 @@ func TestBuiltinsContainsCodexHermesACPAndHermesGatewayInStableOrder(t *testing.
 		t.Fatalf("Codex wire identity = %q, want implicit", registrations[0].WireID)
 	}
 	if registrations[1].ID != "hermes-acp" ||
-		registrations[1].WireID != "opencode" {
+		registrations[1].WireID != "" {
 		t.Fatalf("Builtins()[1] = %#v", registrations[1])
 	}
 	if registrations[1].Policy.BusyMode != "direct" ||
@@ -31,8 +31,13 @@ func TestBuiltinsContainsCodexHermesACPAndHermesGatewayInStableOrder(t *testing.
 		t.Fatalf("Hermes Runtime policy = %#v", registrations[1].Policy)
 	}
 	if registrations[2].ID != "hermes-gateway" ||
-		registrations[2].WireID != "pi" {
+		registrations[2].WireID != "" {
 		t.Fatalf("Builtins()[2] = %#v", registrations[2])
+	}
+	if registrations[3].ID != "openclaw" ||
+		registrations[3].WireID != "" ||
+		registrations[3].DisplayName != "OpenClaw" {
+		t.Fatalf("Builtins()[3] = %#v", registrations[3])
 	}
 }
 

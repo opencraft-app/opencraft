@@ -24,7 +24,7 @@ func TestGeneratedSpecHasFrozenShape(t *testing.T) {
 	}
 
 	paths := spec.Paths.Map()
-	if got, want := len(paths), 80; got != want {
+	if got, want := len(paths), 87; got != want {
 		t.Fatalf("path count = %d, want %d", got, want)
 	}
 	for _, path := range []string{
@@ -125,7 +125,7 @@ func TestGeneratedStrictInterfaceCoversEveryOperation(t *testing.T) {
 		methods = iface.Methods.NumFields()
 		return false
 	})
-	if got, want := methods, 104; got != want {
+	if got, want := methods, 114; got != want {
 		t.Fatalf("strict method count = %d, want %d", got, want)
 	}
 }

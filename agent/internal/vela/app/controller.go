@@ -683,7 +683,7 @@ func (s *computerHeartbeatSink) Send(
 		DaemonBuildID:      value.DaemonBuildID,
 		AssignmentEpoch:    value.AssignmentEpoch,
 		AssignmentRevision: value.AssignmentRevision,
-		AssignmentVersion:  daemon.AssignmentSchemaVersionV1,
+		AssignmentVersion:  effectiveAssignmentVersion(session),
 		TATState:           value.TATState,
 		Reconcile: platform.ComputerHeartbeatReconcile{
 			State:     value.ReconcileState,
@@ -802,6 +802,13 @@ type computerSessionManager struct {
 	session    platform.ComputerSession
 }
 
+func effectiveAssignmentVersion(session platform.ComputerSession) int {
+	if session.AssignmentVersion > 0 {
+		return session.AssignmentVersion
+	}
+	return daemon.AssignmentSchemaVersionV1
+}
+
 func (m *computerSessionManager) Current(
 	ctx context.Context,
 ) (platform.ComputerSession, error) {
@@ -847,6 +854,7 @@ func (s *computerAssignmentSource) Poll(
 		ctx,
 		session.AccessToken,
 		platform.ComputerAssignmentQuery{
+			AssignmentVersion:  effectiveAssignmentVersion(session),
 			ExpectedComputerID: s.computerID,
 			SinceEpoch:         request.SinceEpoch,
 			SinceRevision:      request.SinceRevision,
@@ -864,6 +872,7 @@ func (s *computerAssignmentSource) Poll(
 			ctx,
 			session.AccessToken,
 			platform.ComputerAssignmentQuery{
+				AssignmentVersion:  effectiveAssignmentVersion(session),
 				ExpectedComputerID: s.computerID,
 				SinceEpoch:         request.SinceEpoch,
 				SinceRevision:      request.SinceRevision,

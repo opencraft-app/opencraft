@@ -460,7 +460,7 @@ function ManagementRoute({
     "all_channel_messages" | "dm_only" | "mention_and_dm"
   >("mention_and_dm");
   const [agentRuntime, setAgentRuntime] = useState<
-    "codex" | "hermes-acp" | "hermes-gateway"
+    "codex" | "hermes-acp" | "hermes-gateway" | "openclaw"
   >("codex");
   const [computerName, setComputerName] = useState("");
   const [computerOS, setComputerOS] = useState<"linux" | "macos">("macos");
@@ -641,7 +641,7 @@ function managementForm(input: {
   agentDisplayName: string;
   agentHandle: string;
   agentReplyPolicy: "all_channel_messages" | "dm_only" | "mention_and_dm";
-  agentRuntime: "codex" | "hermes-acp" | "hermes-gateway";
+  agentRuntime: "codex" | "hermes-acp" | "hermes-gateway" | "openclaw";
   availableComputers: AppStoreState["computers"];
   computerName: string;
   computerOS: "linux" | "macos";
@@ -656,7 +656,9 @@ function managementForm(input: {
   setAgentReplyPolicy(
     value: "all_channel_messages" | "dm_only" | "mention_and_dm",
   ): void;
-  setAgentRuntime(value: "codex" | "hermes-acp" | "hermes-gateway"): void;
+  setAgentRuntime(
+    value: "codex" | "hermes-acp" | "hermes-gateway" | "openclaw",
+  ): void;
   setComputerName(value: string): void;
   setComputerOS(value: "linux" | "macos"): void;
   setFormMode(value: ManagementFormMode | null): void;
@@ -679,6 +681,10 @@ function managementForm(input: {
     const handleReady = /^[a-z0-9][a-z0-9_-]{1,31}$/u.test(
       input.agentHandle.trim(),
     );
+    const openClawSupported =
+      (input.availableComputers.find(
+        (computer) => computer.id === input.agentComputerID,
+      )?.assignmentVersion ?? 0) >= 3;
     return {
       actions: [
         cancel,
@@ -687,7 +693,8 @@ function managementForm(input: {
             input.pending ||
             !input.agentDisplayName.trim() ||
             !handleReady ||
-            !input.agentComputerID,
+            !input.agentComputerID ||
+            (input.agentRuntime === "openclaw" && !openClawSupported),
           id: "submit-agent",
           kind: "submit",
           label: input.pending ? "创建中" : "创建",
@@ -734,7 +741,9 @@ function managementForm(input: {
           label: "Runtime",
           onChange: (value) =>
             input.setAgentRuntime(
-              value === "hermes-acp" || value === "hermes-gateway"
+              value === "hermes-acp" ||
+              value === "hermes-gateway" ||
+              value === "openclaw"
                 ? value
                 : "codex",
             ),
@@ -742,6 +751,9 @@ function managementForm(input: {
             {label: "Codex", value: "codex"},
             {label: "Hermes ACP", value: "hermes-acp"},
             {label: "Hermes Gateway", value: "hermes-gateway"},
+            ...(openClawSupported
+              ? [{label: "OpenClaw", value: "openclaw" as const}]
+              : []),
           ],
           value: input.agentRuntime,
         },

@@ -274,6 +274,49 @@ func (handler *AgentHandler) CreateAgent(
 	}, nil
 }
 
+func (handler *AgentHandler) CreateAgentV2(
+	ctx context.Context,
+	request openapi.CreateAgentV2RequestObject,
+) (openapi.CreateAgentV2ResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	if request.Body == nil || !validRuntimeKindV2(request.Body.Runtime.Kind) {
+		return nil, apperror.New("invalid_request", "请求体或 Runtime 无效", nil)
+	}
+	computerIDValue := request.Body.ComputerId.String()
+	replyPolicy := ""
+	if request.Body.ReplyPolicy != nil {
+		replyPolicy = string(*request.Body.ReplyPolicy)
+	}
+	result, err := handler.service.Create(ctx, appagent.CreateCommand{
+		AccountID: principal.AccountID(), ServerID: request.ServerId.String(),
+		IdempotencyKey: request.Params.IdempotencyKey,
+		DisplayName:    request.Body.DisplayName, Handle: request.Body.Handle,
+		Description: request.Body.Description, ComputerID: &computerIDValue,
+		Runtime: agentport.Runtime{
+			Kind: request.Body.Runtime.Kind, Model: request.Body.Runtime.Model,
+		},
+		ReplyPolicy: replyPolicy,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resourceID, err := parseDomainID(result.Agent.ID, "Agent")
+	if err != nil {
+		return nil, err
+	}
+	operation, err := agentOperationDTO(result.Operation)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.CreateAgentV2202JSONResponse{
+		ResourceId: resourceID,
+		Operations: []openapi.Operation{operation},
+	}, nil
+}
+
 func (handler *AgentHandler) ListAgents(
 	ctx context.Context,
 	request openapi.ListAgentsRequestObject,
@@ -292,7 +335,41 @@ func (handler *AgentHandler) ListAgents(
 	}
 	body := make(openapi.ListAgents200JSONResponse, 0, len(values))
 	for _, value := range values {
+		if !legacyRuntimeKind(value.Runtime.Kind) {
+			continue
+		}
 		item, err := agentDTO(value)
+		if err != nil {
+			return nil, err
+		}
+		body = append(body, item)
+	}
+	return body, nil
+}
+
+func legacyRuntimeKind(value string) bool {
+	return value == "codex" || value == "hermes-acp" || value == "hermes-gateway"
+}
+
+func (handler *AgentHandler) ListAgentsV2(
+	ctx context.Context,
+	request openapi.ListAgentsV2RequestObject,
+) (openapi.ListAgentsV2ResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	values, err := handler.service.List(
+		ctx,
+		principal.AccountID(),
+		request.ServerId.String(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	body := make(openapi.ListAgentsV2200JSONResponse, 0, len(values))
+	for _, value := range values {
+		item, err := agentV2DTO(value)
 		if err != nil {
 			return nil, err
 		}
@@ -318,11 +395,35 @@ func (handler *AgentHandler) GetAgent(
 	if err != nil {
 		return nil, err
 	}
+	if !legacyRuntimeKind(value.Runtime.Kind) {
+		return nil, apperror.New("agent_not_found", "Agent 不存在", nil)
+	}
 	body, err := agentDTO(value)
 	if err != nil {
 		return nil, err
 	}
 	return openapi.GetAgent200JSONResponse(body), nil
+}
+
+func (handler *AgentHandler) GetAgentV2(
+	ctx context.Context,
+	request openapi.GetAgentV2RequestObject,
+) (openapi.GetAgentV2ResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	value, err := handler.service.Get(
+		ctx, principal.AccountID(), request.ServerId.String(), request.AgentId.String(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	body, err := agentV2DTO(value)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.GetAgentV2200JSONResponse(body), nil
 }
 
 func (handler *AgentHandler) UpdateAgent(
@@ -339,6 +440,15 @@ func (handler *AgentHandler) UpdateAgent(
 	revision, err := workRevision(request.Params.XResourceRevision)
 	if err != nil {
 		return nil, err
+	}
+	current, err := handler.service.Get(
+		ctx, principal.AccountID(), request.ServerId.String(), request.AgentId.String(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if !legacyRuntimeKind(current.Runtime.Kind) {
+		return nil, apperror.New("agent_not_found", "Agent 不存在", nil)
 	}
 	command := appagent.UpdateCommand{
 		AccountID:      principal.AccountID(),
@@ -381,6 +491,62 @@ func (handler *AgentHandler) UpdateAgent(
 	}, nil
 }
 
+func (handler *AgentHandler) UpdateAgentV2(
+	ctx context.Context,
+	request openapi.UpdateAgentV2RequestObject,
+) (openapi.UpdateAgentV2ResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	if request.Body == nil {
+		return nil, apperror.New("invalid_request", "请求体不能为空", nil)
+	}
+	revision, err := workRevision(request.Params.XResourceRevision)
+	if err != nil {
+		return nil, err
+	}
+	command := appagent.UpdateCommand{
+		AccountID: principal.AccountID(), ServerID: request.ServerId.String(),
+		AgentID: request.AgentId.String(), Revision: revision,
+		IdempotencyKey: request.Params.IdempotencyKey,
+		DisplayName:    request.Body.DisplayName,
+		DescriptionSet: request.Body.Description != nil,
+		Description:    request.Body.Description,
+		ComputerIDSet:  request.Body.ComputerId != nil,
+	}
+	if request.Body.ComputerId != nil {
+		value := request.Body.ComputerId.String()
+		command.ComputerID = &value
+	}
+	if request.Body.Runtime != nil {
+		if !validRuntimeKindV2(request.Body.Runtime.Kind) {
+			return nil, apperror.New("invalid_request", "Agent Runtime 无效", nil)
+		}
+		command.Runtime = &agentport.Runtime{
+			Kind: request.Body.Runtime.Kind, Model: request.Body.Runtime.Model,
+		}
+	}
+	if request.Body.ReplyPolicy != nil {
+		value := string(*request.Body.ReplyPolicy)
+		command.ReplyPolicy = &value
+	}
+	value, err := handler.service.Update(ctx, command)
+	if err != nil {
+		return nil, err
+	}
+	body, err := agentV2DTO(value)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.UpdateAgentV2200JSONResponse{
+		Body: body,
+		Headers: openapi.UpdateAgentV2200ResponseHeaders{
+			XResourceRevision: body.Revision,
+		},
+	}, nil
+}
+
 func (handler *AgentHandler) DeleteAgent(
 	ctx context.Context,
 	request openapi.DeleteAgentRequestObject,
@@ -409,6 +575,34 @@ func (handler *AgentHandler) DeleteAgent(
 	return openapi.DeleteAgent202JSONResponse{
 		ResourceId: resourceID,
 		Operations: []openapi.Operation{body},
+	}, nil
+}
+
+func (handler *AgentHandler) DeleteAgentV2(
+	ctx context.Context,
+	request openapi.DeleteAgentV2RequestObject,
+) (openapi.DeleteAgentV2ResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	operation, err := handler.service.Delete(ctx, appagent.DeleteCommand{
+		AccountID: principal.AccountID(), ServerID: request.ServerId.String(),
+		AgentID: request.AgentId.String(), IdempotencyKey: request.Params.IdempotencyKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resourceID, err := parseDomainID(request.AgentId.String(), "Agent")
+	if err != nil {
+		return nil, err
+	}
+	body, err := agentOperationDTO(operation)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.DeleteAgentV2202JSONResponse{
+		ResourceId: resourceID, Operations: []openapi.Operation{body},
 	}, nil
 }
 
@@ -630,6 +824,66 @@ func agentDTO(value agentport.Agent) (openapi.Agent, error) {
 		value.CredentialVersion < 0 ||
 		result.Revision < 1 {
 		return openapi.Agent{}, invalidDomainData("Agent 数据无效", nil)
+	}
+	return result, nil
+}
+
+func agentV2DTO(value agentport.Agent) (openapi.AgentV2, error) {
+	id, err := parseDomainID(value.ID, "Agent")
+	if err != nil {
+		return openapi.AgentV2{}, err
+	}
+	serverID, err := parseDomainID(value.ServerID, "Server")
+	if err != nil {
+		return openapi.AgentV2{}, err
+	}
+	if value.ComputerID == nil || !validRuntimeKindV2(value.Runtime.Kind) {
+		return openapi.AgentV2{}, invalidDomainData("Agent 数据无效", nil)
+	}
+	computerID, err := parseDomainID(*value.ComputerID, "Computer")
+	if err != nil {
+		return openapi.AgentV2{}, err
+	}
+	result := openapi.AgentV2{
+		Id: id, ServerId: serverID,
+		DisplayName: value.DisplayName, Handle: value.Handle,
+		Description: value.Description, ImUserId: value.IMUserID,
+		ImState: openapi.AgentV2ImState(value.IMState), ComputerId: computerID,
+		Runtime: openapi.RuntimeSelectorV2{
+			Kind: value.Runtime.Kind, Model: value.Runtime.Model,
+		},
+		ReplyPolicy:       openapi.AgentV2ReplyPolicy(value.ReplyPolicy),
+		DesiredState:      openapi.AgentV2DesiredState(value.DesiredState),
+		ObservedState:     openapi.AgentV2ObservedState(value.ObservedState),
+		Availability:      openapi.AgentV2Availability(value.Availability),
+		ImPresence:        openapi.AgentV2ImPresence(value.IMPresence),
+		ImTransportState:  openapi.AgentV2ImTransportState(value.IMTransportState),
+		CredentialVersion: int(value.CredentialVersion),
+		LastErrorCode:     normalizedOptionalString(value.LastErrorCode),
+		Revision:          value.Revision,
+	}
+	if value.LastObservedAt != nil {
+		observedAt := value.LastObservedAt.UTC()
+		result.LastObservedAt = &observedAt
+	}
+	if value.IMPresenceUpdatedAt != nil {
+		observedAt := value.IMPresenceUpdatedAt.UTC()
+		result.ImPresenceUpdatedAt = &observedAt
+	}
+	if value.IMTransportUpdatedAt != nil {
+		observedAt := value.IMTransportUpdatedAt.UTC()
+		result.ImTransportUpdatedAt = &observedAt
+	}
+	if value.HostLastSeenAt != nil {
+		seenAt := value.HostLastSeenAt.UTC()
+		result.HostLastSeenAt = &seenAt
+	}
+	if !result.ImState.Valid() || !result.ReplyPolicy.Valid() ||
+		!result.DesiredState.Valid() || !result.ObservedState.Valid() ||
+		!result.Availability.Valid() || !result.ImPresence.Valid() ||
+		!result.ImTransportState.Valid() || value.CredentialVersion < 0 ||
+		result.Revision < 1 {
+		return openapi.AgentV2{}, invalidDomainData("Agent 数据无效", nil)
 	}
 	return result, nil
 }

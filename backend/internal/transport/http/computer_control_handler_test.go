@@ -201,6 +201,50 @@ func TestComputerControlHandlerCreatesShortSession(t *testing.T) {
 	}
 }
 
+func TestComputerControlHandlerNegotiatesAssignmentV3(t *testing.T) {
+	expiresAt := time.Date(2026, 8, 1, 18, 15, 0, 0, time.UTC)
+	service := &fakeComputerControlSessionService{session: appcomputercontrol.Session{
+		AccessToken: "short-computer-token-v2",
+		ExpiresAt:   expiresAt,
+		Computer: computercontrolport.SessionIdentity{
+			ServerID:           hookTestServerID,
+			ComputerID:         hookTestComputerID,
+			CredentialVersion:  4,
+			AssignmentEpoch:    hookTestAgentID,
+			AssignmentRevision: 9,
+		},
+	}}
+	handler, err := NewComputerControlHandler(
+		service,
+		&fakeComputerCredentialRotationService{},
+		&fakeComputerAssignmentService{},
+		&fakeComputerAgentLaunchService{},
+		&fakeComputerObservationService{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := handler.CreateComputerSessionV2(
+		currentComputerContext(t, 4),
+		openapi.CreateComputerSessionV2RequestObject{
+			Body: &openapi.ComputerSessionNegotiationRequest{
+				AssignmentVersions: []int{1, 3, 2},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, ok := response.(openapi.CreateComputerSessionV2201JSONResponse)
+	if !ok || created.Body.AssignmentVersion != 3 ||
+		created.Body.AccessToken == nil ||
+		*created.Body.AccessToken != "short-computer-token-v2" ||
+		created.Headers.CacheControl != "no-store" ||
+		created.Headers.Pragma != "no-cache" {
+		t.Fatalf("CreateComputerSessionV2() = %#v", response)
+	}
+}
+
 func TestComputerControlHandlerRotatesCredential(t *testing.T) {
 	expiresAt := time.Date(2027, 8, 1, 18, 0, 0, 0, time.UTC)
 	graceExpiresAt := time.Date(2026, 8, 1, 19, 0, 0, 0, time.UTC)
@@ -329,7 +373,29 @@ func TestComputerControlHandlerReturnsAssignmentSnapshotAndNoChange(t *testing.T
 		len(v2.Agents) != 1 || v2.Agents[0].ProfileCapabilityRefresh != nil {
 		t.Fatalf("GetComputerAssignments(v2) = %#v", v2Result)
 	}
+	assignmentService.result.Snapshot.SchemaVersion = 3
+	assignmentService.result.Snapshot.Agents[0].RuntimeKind = "openclaw"
+	v3Result, err := handler.GetComputerAssignmentsV3(
+		currentComputerContext(t, 4),
+		openapi.GetComputerAssignmentsV3RequestObject{Params: openapi.GetComputerAssignmentsV3Params{
+			SinceRevision: 0,
+			ForceFull:     &forceFull,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v3Response, ok := v3Result.(openapi.GetComputerAssignmentsV3200JSONResponse)
+	if !ok {
+		t.Fatalf("GetComputerAssignments(v3) = %#v", v3Result)
+	}
+	v3 := openapi.ComputerAssignmentSnapshotV3(v3Response)
+	if v3.SchemaVersion != 3 || len(v3.Agents) != 1 ||
+		v3.Agents[0].Runtime.Kind != "openclaw" {
+		t.Fatalf("GetComputerAssignments(v3) = %#v", v3Result)
+	}
 	assignmentService.result.Snapshot.SchemaVersion = 1
+	assignmentService.result.Snapshot.Agents[0].RuntimeKind = "codex"
 	assignmentService.result = appcomputercontrol.AssignmentResult{NoChange: true, Revision: 9}
 	response, err = handler.GetComputerAssignments(
 		currentComputerContext(t, 4),
@@ -415,6 +481,25 @@ func TestComputerControlHandlerCreatesAgentLaunch(t *testing.T) {
 		launches.args[1] != hookTestComputerID ||
 		launches.args[2] != hookTestAgentID {
 		t.Fatalf("launch args = %#v", launches.args)
+	}
+	launches.result.Runtime.Agent.RuntimeKind = "openclaw"
+	v2Response, err := handler.CreateComputerAgentLaunchV2(
+		currentComputerContext(t, 4),
+		openapi.CreateComputerAgentLaunchV2RequestObject{
+			AgentId: uuid.MustParse(hookTestAgentID),
+			Body: &openapi.ComputerAgentLaunchRequest{
+				LaunchId: launchID, AssignmentEpoch: epoch,
+				AssignmentRevision: 9, ConfigGeneration: 3,
+				CredentialVersion: 2,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2Created, ok := v2Response.(openapi.CreateComputerAgentLaunchV2201JSONResponse)
+	if !ok || v2Created.Session.Agent.Runtime.Kind != "openclaw" {
+		t.Fatalf("CreateComputerAgentLaunchV2() = %#v", v2Response)
 	}
 }
 

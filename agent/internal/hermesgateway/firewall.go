@@ -7,18 +7,9 @@ import (
 	"velachat/agent/internal/runtimeapi"
 )
 
-// piControlledEnvironmentKeysV1 is the credential surface owned by the
-// temporary Pi wire contract. These values must never cross into Hermes.
-var piControlledEnvironmentKeysV1 = map[string]struct{}{
-	"DEEPSEEK_API_KEY": {},
-}
-
 func sanitizeProcessEnvironment(environment map[string]string) map[string]string {
 	sanitized := make(map[string]string, len(environment))
 	for key, value := range environment {
-		if _, controlled := piControlledEnvironmentKeysV1[key]; controlled {
-			continue
-		}
 		sanitized[key] = value
 	}
 	return sanitized

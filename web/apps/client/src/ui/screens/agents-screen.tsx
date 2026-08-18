@@ -221,7 +221,14 @@ export function AgentsScreen(props: AgentsScreenProps) {
   const createHandleValid = agentHandlePattern.test(createHandle.trim());
   const createIdentityReady =
     createDisplayName.trim().length > 0 && createHandleValid;
-  const createEnvironmentReady = Boolean(createComputerId);
+  const createEnvironmentReady = Boolean(createComputerId) &&
+    runtimeSupportedByComputer(createRuntime, createComputerId, computers);
+
+  const editRuntimeReady = runtimeSupportedByComputer(
+    editRuntime,
+    editComputerId,
+    computers,
+  );
   const submitNewAgent = async (
     input: CreateAgentInput,
     options: {deployAndStart: boolean},
@@ -487,7 +494,7 @@ export function AgentsScreen(props: AgentsScreenProps) {
                         onChange: value =>
                           setCreateRuntime(value as Agent["runtime"]["kind"]),
                         options: runtimeKinds.map(value => ({
-                          label: value,
+                          label: runtimeKindLabel(value),
                           value,
                         })),
                         value: createRuntime,
@@ -562,7 +569,7 @@ export function AgentsScreen(props: AgentsScreenProps) {
                     }]
                   : []),
               ],
-              description: `${selected.runtime.kind} · ${selectedComputer?.name ?? "未绑定 Computer"} · ${agentReplyPolicyLabel[selected.replyPolicy]}`,
+              description: `${runtimeKindLabel(selected.runtime.kind)} · ${selectedComputer?.name ?? "未绑定 Computer"} · ${agentReplyPolicyLabel[selected.replyPolicy]}`,
               meta: `@${selected.handle}`,
               status: agentRuntimeStateLabel(selected),
               title: selected.displayName,
@@ -588,7 +595,8 @@ export function AgentsScreen(props: AgentsScreenProps) {
                 disabled:
                   pendingAction !== null ||
                   !editDisplayName.trim() ||
-                  !editComputerId,
+                  !editComputerId ||
+                  !editRuntimeReady,
                 id: "submit-edit-agent",
                 kind: "primary" as const,
                 label: "保存 Agent",
@@ -608,7 +616,10 @@ export function AgentsScreen(props: AgentsScreenProps) {
                 id: "edit-agent-runtime",
                 label: "Runtime",
                 onChange: value => setEditRuntime(value as Agent["runtime"]["kind"]),
-                options: runtimeKinds.map(value => ({label: value, value})),
+                options: runtimeKinds.map(value => ({
+                  label: runtimeKindLabel(value),
+                  value,
+                })),
                 value: editRuntime,
               },
               {
@@ -802,7 +813,8 @@ export function AgentsScreen(props: AgentsScreenProps) {
             runtime={editRuntime}
             runtimeModel={editModel}
             capabilities={profileCapabilitiesById[selected.id]}
-            onRefreshCapabilities={onRefreshProfileCapabilities
+            onRefreshCapabilities={onRefreshProfileCapabilities &&
+              selected.runtime.kind !== "openclaw"
               ? () => onRefreshProfileCapabilities(selected.id)
               : undefined}
           />
@@ -1020,8 +1032,8 @@ function AgentCreateForm({
               accessibilityLabel="Runtime"
               onChange={field("agent-runtime")!.onChange}
               options={runtimeKinds.map((value) => ({
-                accessibilityLabel: `选择 ${value}`,
-                label: value,
+                accessibilityLabel: `选择 ${runtimeKindLabel(value)}`,
+                label: runtimeKindLabel(value),
                 value,
               }))}
               value={runtime}
@@ -1263,8 +1275,8 @@ function AgentDetail({
               onChangeRuntime(value as Agent["runtime"]["kind"])
             }
             options={runtimeKinds.map((value) => ({
-              accessibilityLabel: `编辑 Runtime ${value}`,
-              label: value,
+              accessibilityLabel: `编辑 Runtime ${runtimeKindLabel(value)}`,
+              label: runtimeKindLabel(value),
               value,
             }))}
             value={runtime}
@@ -1463,7 +1475,33 @@ const runtimeKinds = [
   "codex",
   "hermes-acp",
   "hermes-gateway",
+  "openclaw",
 ] as const;
+
+function runtimeSupportedByComputer(
+  runtime: Agent["runtime"]["kind"],
+  computerId: string | undefined,
+  computers: Computer[],
+): boolean {
+  if (runtime !== "openclaw") return true;
+  return (computers.find((computer) => computer.id === computerId)
+    ?.assignmentVersion ?? 0) >= 3;
+}
+
+function runtimeKindLabel(runtime: string): string {
+  switch (runtime) {
+    case "codex":
+      return "Codex";
+    case "hermes-acp":
+      return "Hermes ACP";
+    case "hermes-gateway":
+      return "Hermes Gateway";
+    case "openclaw":
+      return "OpenClaw";
+    default:
+      return runtime;
+  }
+}
 
 const replyPolicies = [
   {

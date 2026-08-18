@@ -126,6 +126,16 @@ type ClientInterface interface {
 
 	CreateComputerAgentLaunch(ctx context.Context, agentId AgentId, body CreateComputerAgentLaunchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// CreateComputerAgentLaunchV2WithBody request with any body
+	CreateComputerAgentLaunchV2WithBody(ctx context.Context, agentId AgentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateComputerAgentLaunchV2(ctx context.Context, agentId AgentId, body CreateComputerAgentLaunchV2JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RefreshComputerAgentSessionV2WithBody request with any body
+	RefreshComputerAgentSessionV2WithBody(ctx context.Context, agentId AgentId, launchId Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RefreshComputerAgentSessionV2(ctx context.Context, agentId AgentId, launchId Id, body RefreshComputerAgentSessionV2JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// RefreshComputerAgentSessionWithBody request with any body
 	RefreshComputerAgentSessionWithBody(ctx context.Context, agentId AgentId, launchId Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -152,6 +162,9 @@ type ClientInterface interface {
 	// GetComputerAssignmentsV2 request
 	GetComputerAssignmentsV2(ctx context.Context, params *GetComputerAssignmentsV2Params, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetComputerAssignmentsV3 request
+	GetComputerAssignmentsV3(ctx context.Context, params *GetComputerAssignmentsV3Params, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// RotateComputerCredential request
 	RotateComputerCredential(ctx context.Context, params *RotateComputerCredentialParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -172,6 +185,11 @@ type ClientInterface interface {
 
 	// CreateComputerSession request
 	CreateComputerSession(ctx context.Context, params *CreateComputerSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateComputerSessionV2WithBody request with any body
+	CreateComputerSessionV2WithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateComputerSessionV2(ctx context.Context, body CreateComputerSessionV2JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RedeemComputerSetupCodeWithBody request with any body
 	RedeemComputerSetupCodeWithBody(ctx context.Context, params *RedeemComputerSetupCodeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -292,6 +310,25 @@ type ClientInterface interface {
 
 	CreateAgent(ctx context.Context, serverId ServerId, params *CreateAgentParams, body CreateAgentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListAgentsV2 request
+	ListAgentsV2(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateAgentV2WithBody request with any body
+	CreateAgentV2WithBody(ctx context.Context, serverId ServerId, params *CreateAgentV2Params, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateAgentV2(ctx context.Context, serverId ServerId, params *CreateAgentV2Params, body CreateAgentV2JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteAgentV2 request
+	DeleteAgentV2(ctx context.Context, serverId ServerId, agentId AgentId, params *DeleteAgentV2Params, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetAgentV2 request
+	GetAgentV2(ctx context.Context, serverId ServerId, agentId AgentId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateAgentV2WithBody request with any body
+	UpdateAgentV2WithBody(ctx context.Context, serverId ServerId, agentId AgentId, params *UpdateAgentV2Params, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateAgentV2(ctx context.Context, serverId ServerId, agentId AgentId, params *UpdateAgentV2Params, body UpdateAgentV2JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// DeleteAgent request
 	DeleteAgent(ctx context.Context, serverId ServerId, agentId AgentId, params *DeleteAgentParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -369,6 +406,9 @@ type ClientInterface interface {
 	RegisterMessageThreadReplyWithBody(ctx context.Context, serverId ServerId, channelId ChannelId, threadId ThreadId, params *RegisterMessageThreadReplyParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	RegisterMessageThreadReply(ctx context.Context, serverId ServerId, channelId ChannelId, threadId ThreadId, params *RegisterMessageThreadReplyParams, body RegisterMessageThreadReplyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListComputerRuntimeCapabilities request
+	ListComputerRuntimeCapabilities(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListComputers request
 	ListComputers(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -652,6 +692,54 @@ func (c *Client) CreateComputerAgentLaunch(ctx context.Context, agentId AgentId,
 	return c.Client.Do(req)
 }
 
+func (c *Client) CreateComputerAgentLaunchV2WithBody(ctx context.Context, agentId AgentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateComputerAgentLaunchV2RequestWithBody(c.Server, agentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateComputerAgentLaunchV2(ctx context.Context, agentId AgentId, body CreateComputerAgentLaunchV2JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateComputerAgentLaunchV2Request(c.Server, agentId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RefreshComputerAgentSessionV2WithBody(ctx context.Context, agentId AgentId, launchId Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshComputerAgentSessionV2RequestWithBody(c.Server, agentId, launchId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RefreshComputerAgentSessionV2(ctx context.Context, agentId AgentId, launchId Id, body RefreshComputerAgentSessionV2JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshComputerAgentSessionV2Request(c.Server, agentId, launchId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) RefreshComputerAgentSessionWithBody(ctx context.Context, agentId AgentId, launchId Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRefreshComputerAgentSessionRequestWithBody(c.Server, agentId, launchId, contentType, body)
 	if err != nil {
@@ -772,6 +860,18 @@ func (c *Client) GetComputerAssignmentsV2(ctx context.Context, params *GetComput
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetComputerAssignmentsV3(ctx context.Context, params *GetComputerAssignmentsV3Params, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetComputerAssignmentsV3Request(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) RotateComputerCredential(ctx context.Context, params *RotateComputerCredentialParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRotateComputerCredentialRequest(c.Server, params)
 	if err != nil {
@@ -858,6 +958,30 @@ func (c *Client) PreflightComputer(ctx context.Context, body PreflightComputerJS
 
 func (c *Client) CreateComputerSession(ctx context.Context, params *CreateComputerSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateComputerSessionRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateComputerSessionV2WithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateComputerSessionV2RequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateComputerSessionV2(ctx context.Context, body CreateComputerSessionV2JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateComputerSessionV2Request(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1396,6 +1520,90 @@ func (c *Client) CreateAgent(ctx context.Context, serverId ServerId, params *Cre
 	return c.Client.Do(req)
 }
 
+func (c *Client) ListAgentsV2(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListAgentsV2Request(c.Server, serverId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateAgentV2WithBody(ctx context.Context, serverId ServerId, params *CreateAgentV2Params, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateAgentV2RequestWithBody(c.Server, serverId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateAgentV2(ctx context.Context, serverId ServerId, params *CreateAgentV2Params, body CreateAgentV2JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateAgentV2Request(c.Server, serverId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteAgentV2(ctx context.Context, serverId ServerId, agentId AgentId, params *DeleteAgentV2Params, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteAgentV2Request(c.Server, serverId, agentId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetAgentV2(ctx context.Context, serverId ServerId, agentId AgentId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAgentV2Request(c.Server, serverId, agentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateAgentV2WithBody(ctx context.Context, serverId ServerId, agentId AgentId, params *UpdateAgentV2Params, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateAgentV2RequestWithBody(c.Server, serverId, agentId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateAgentV2(ctx context.Context, serverId ServerId, agentId AgentId, params *UpdateAgentV2Params, body UpdateAgentV2JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateAgentV2Request(c.Server, serverId, agentId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) DeleteAgent(ctx context.Context, serverId ServerId, agentId AgentId, params *DeleteAgentParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDeleteAgentRequest(c.Server, serverId, agentId, params)
 	if err != nil {
@@ -1722,6 +1930,18 @@ func (c *Client) RegisterMessageThreadReplyWithBody(ctx context.Context, serverI
 
 func (c *Client) RegisterMessageThreadReply(ctx context.Context, serverId ServerId, channelId ChannelId, threadId ThreadId, params *RegisterMessageThreadReplyParams, body RegisterMessageThreadReplyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRegisterMessageThreadReplyRequest(c.Server, serverId, channelId, threadId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListComputerRuntimeCapabilities(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListComputerRuntimeCapabilitiesRequest(c.Server, serverId)
 	if err != nil {
 		return nil, err
 	}
@@ -2626,6 +2846,107 @@ func NewCreateComputerAgentLaunchRequestWithBody(server string, agentId AgentId,
 	return req, nil
 }
 
+// NewCreateComputerAgentLaunchV2Request calls the generic CreateComputerAgentLaunchV2 builder with application/json body
+func NewCreateComputerAgentLaunchV2Request(server string, agentId AgentId, body CreateComputerAgentLaunchV2JSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateComputerAgentLaunchV2RequestWithBody(server, agentId, "application/json", bodyReader)
+}
+
+// NewCreateComputerAgentLaunchV2RequestWithBody generates requests for CreateComputerAgentLaunchV2 with any type of body
+func NewCreateComputerAgentLaunchV2RequestWithBody(server string, agentId AgentId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "agentId", agentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/computer/agents/%s/launches-v2", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRefreshComputerAgentSessionV2Request calls the generic RefreshComputerAgentSessionV2 builder with application/json body
+func NewRefreshComputerAgentSessionV2Request(server string, agentId AgentId, launchId Id, body RefreshComputerAgentSessionV2JSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRefreshComputerAgentSessionV2RequestWithBody(server, agentId, launchId, "application/json", bodyReader)
+}
+
+// NewRefreshComputerAgentSessionV2RequestWithBody generates requests for RefreshComputerAgentSessionV2 with any type of body
+func NewRefreshComputerAgentSessionV2RequestWithBody(server string, agentId AgentId, launchId Id, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "agentId", agentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "launchId", launchId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/computer/agents/%s/launches-v2/%s/session", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewRefreshComputerAgentSessionRequest calls the generic RefreshComputerAgentSession builder with application/json body
 func NewRefreshComputerAgentSessionRequest(server string, agentId AgentId, launchId Id, body RefreshComputerAgentSessionJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -3041,6 +3362,99 @@ func NewGetComputerAssignmentsV2Request(server string, params *GetComputerAssign
 	return req, nil
 }
 
+// NewGetComputerAssignmentsV3Request generates requests for GetComputerAssignmentsV3
+func NewGetComputerAssignmentsV3Request(server string, params *GetComputerAssignmentsV3Params) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/computer/assignments-v3")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.SinceEpoch != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sinceEpoch", *params.SinceEpoch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sinceRevision", params.SinceRevision, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		if params.WaitSeconds != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "waitSeconds", *params.WaitSeconds, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.ForceFull != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "forceFull", *params.ForceFull, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewRotateComputerCredentialRequest generates requests for RotateComputerCredential
 func NewRotateComputerCredentialRequest(server string, params *RotateComputerCredentialParams) (*http.Request, error) {
 	var err error
@@ -3237,6 +3651,46 @@ func NewCreateComputerSessionRequest(server string, params *CreateComputerSessio
 		req.Header.Set("X-Vela-Assignment-Version", headerParam0)
 
 	}
+
+	return req, nil
+}
+
+// NewCreateComputerSessionV2Request calls the generic CreateComputerSessionV2 builder with application/json body
+func NewCreateComputerSessionV2Request(server string, body CreateComputerSessionV2JSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateComputerSessionV2RequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateComputerSessionV2RequestWithBody generates requests for CreateComputerSessionV2 with any type of body
+func NewCreateComputerSessionV2RequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/computer/session-v2")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -4765,6 +5219,271 @@ func NewCreateAgentRequestWithBody(server string, serverId ServerId, params *Cre
 	return req, nil
 }
 
+// NewListAgentsV2Request generates requests for ListAgentsV2
+func NewListAgentsV2Request(server string, serverId ServerId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/agents-v2", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateAgentV2Request calls the generic CreateAgentV2 builder with application/json body
+func NewCreateAgentV2Request(server string, serverId ServerId, params *CreateAgentV2Params, body CreateAgentV2JSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateAgentV2RequestWithBody(server, serverId, params, "application/json", bodyReader)
+}
+
+// NewCreateAgentV2RequestWithBody generates requests for CreateAgentV2 with any type of body
+func NewCreateAgentV2RequestWithBody(server string, serverId ServerId, params *CreateAgentV2Params, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/agents-v2", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewDeleteAgentV2Request generates requests for DeleteAgentV2
+func NewDeleteAgentV2Request(server string, serverId ServerId, agentId AgentId, params *DeleteAgentV2Params) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "agentId", agentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/agents-v2/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetAgentV2Request generates requests for GetAgentV2
+func NewGetAgentV2Request(server string, serverId ServerId, agentId AgentId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "agentId", agentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/agents-v2/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateAgentV2Request calls the generic UpdateAgentV2 builder with application/json body
+func NewUpdateAgentV2Request(server string, serverId ServerId, agentId AgentId, params *UpdateAgentV2Params, body UpdateAgentV2JSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateAgentV2RequestWithBody(server, serverId, agentId, params, "application/json", bodyReader)
+}
+
+// NewUpdateAgentV2RequestWithBody generates requests for UpdateAgentV2 with any type of body
+func NewUpdateAgentV2RequestWithBody(server string, serverId ServerId, agentId AgentId, params *UpdateAgentV2Params, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "agentId", agentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/agents-v2/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Resource-Revision", params.XResourceRevision, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: "int64"})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Resource-Revision", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam1)
+
+	}
+
+	return req, nil
+}
+
 // NewDeleteAgentRequest generates requests for DeleteAgent
 func NewDeleteAgentRequest(server string, serverId ServerId, agentId AgentId, params *DeleteAgentParams) (*http.Request, error) {
 	var err error
@@ -6019,6 +6738,40 @@ func NewRegisterMessageThreadReplyRequestWithBody(server string, serverId Server
 
 		req.Header.Set("Idempotency-Key", headerParam0)
 
+	}
+
+	return req, nil
+}
+
+// NewListComputerRuntimeCapabilitiesRequest generates requests for ListComputerRuntimeCapabilities
+func NewListComputerRuntimeCapabilitiesRequest(server string, serverId ServerId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/computer-runtime-capabilities", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
 	}
 
 	return req, nil
@@ -7807,6 +8560,16 @@ type ClientWithResponsesInterface interface {
 
 	CreateComputerAgentLaunchWithResponse(ctx context.Context, agentId AgentId, body CreateComputerAgentLaunchJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateComputerAgentLaunchResponse, error)
 
+	// CreateComputerAgentLaunchV2WithBodyWithResponse request with any body
+	CreateComputerAgentLaunchV2WithBodyWithResponse(ctx context.Context, agentId AgentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateComputerAgentLaunchV2Response, error)
+
+	CreateComputerAgentLaunchV2WithResponse(ctx context.Context, agentId AgentId, body CreateComputerAgentLaunchV2JSONRequestBody, reqEditors ...RequestEditorFn) (*CreateComputerAgentLaunchV2Response, error)
+
+	// RefreshComputerAgentSessionV2WithBodyWithResponse request with any body
+	RefreshComputerAgentSessionV2WithBodyWithResponse(ctx context.Context, agentId AgentId, launchId Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RefreshComputerAgentSessionV2Response, error)
+
+	RefreshComputerAgentSessionV2WithResponse(ctx context.Context, agentId AgentId, launchId Id, body RefreshComputerAgentSessionV2JSONRequestBody, reqEditors ...RequestEditorFn) (*RefreshComputerAgentSessionV2Response, error)
+
 	// RefreshComputerAgentSessionWithBodyWithResponse request with any body
 	RefreshComputerAgentSessionWithBodyWithResponse(ctx context.Context, agentId AgentId, launchId Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RefreshComputerAgentSessionResponse, error)
 
@@ -7833,6 +8596,9 @@ type ClientWithResponsesInterface interface {
 	// GetComputerAssignmentsV2WithResponse request
 	GetComputerAssignmentsV2WithResponse(ctx context.Context, params *GetComputerAssignmentsV2Params, reqEditors ...RequestEditorFn) (*GetComputerAssignmentsV2Response, error)
 
+	// GetComputerAssignmentsV3WithResponse request
+	GetComputerAssignmentsV3WithResponse(ctx context.Context, params *GetComputerAssignmentsV3Params, reqEditors ...RequestEditorFn) (*GetComputerAssignmentsV3Response, error)
+
 	// RotateComputerCredentialWithResponse request
 	RotateComputerCredentialWithResponse(ctx context.Context, params *RotateComputerCredentialParams, reqEditors ...RequestEditorFn) (*RotateComputerCredentialResponse, error)
 
@@ -7853,6 +8619,11 @@ type ClientWithResponsesInterface interface {
 
 	// CreateComputerSessionWithResponse request
 	CreateComputerSessionWithResponse(ctx context.Context, params *CreateComputerSessionParams, reqEditors ...RequestEditorFn) (*CreateComputerSessionResponse, error)
+
+	// CreateComputerSessionV2WithBodyWithResponse request with any body
+	CreateComputerSessionV2WithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateComputerSessionV2Response, error)
+
+	CreateComputerSessionV2WithResponse(ctx context.Context, body CreateComputerSessionV2JSONRequestBody, reqEditors ...RequestEditorFn) (*CreateComputerSessionV2Response, error)
 
 	// RedeemComputerSetupCodeWithBodyWithResponse request with any body
 	RedeemComputerSetupCodeWithBodyWithResponse(ctx context.Context, params *RedeemComputerSetupCodeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RedeemComputerSetupCodeResponse, error)
@@ -7973,6 +8744,25 @@ type ClientWithResponsesInterface interface {
 
 	CreateAgentWithResponse(ctx context.Context, serverId ServerId, params *CreateAgentParams, body CreateAgentJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAgentResponse, error)
 
+	// ListAgentsV2WithResponse request
+	ListAgentsV2WithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*ListAgentsV2Response, error)
+
+	// CreateAgentV2WithBodyWithResponse request with any body
+	CreateAgentV2WithBodyWithResponse(ctx context.Context, serverId ServerId, params *CreateAgentV2Params, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateAgentV2Response, error)
+
+	CreateAgentV2WithResponse(ctx context.Context, serverId ServerId, params *CreateAgentV2Params, body CreateAgentV2JSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAgentV2Response, error)
+
+	// DeleteAgentV2WithResponse request
+	DeleteAgentV2WithResponse(ctx context.Context, serverId ServerId, agentId AgentId, params *DeleteAgentV2Params, reqEditors ...RequestEditorFn) (*DeleteAgentV2Response, error)
+
+	// GetAgentV2WithResponse request
+	GetAgentV2WithResponse(ctx context.Context, serverId ServerId, agentId AgentId, reqEditors ...RequestEditorFn) (*GetAgentV2Response, error)
+
+	// UpdateAgentV2WithBodyWithResponse request with any body
+	UpdateAgentV2WithBodyWithResponse(ctx context.Context, serverId ServerId, agentId AgentId, params *UpdateAgentV2Params, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateAgentV2Response, error)
+
+	UpdateAgentV2WithResponse(ctx context.Context, serverId ServerId, agentId AgentId, params *UpdateAgentV2Params, body UpdateAgentV2JSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateAgentV2Response, error)
+
 	// DeleteAgentWithResponse request
 	DeleteAgentWithResponse(ctx context.Context, serverId ServerId, agentId AgentId, params *DeleteAgentParams, reqEditors ...RequestEditorFn) (*DeleteAgentResponse, error)
 
@@ -8050,6 +8840,9 @@ type ClientWithResponsesInterface interface {
 	RegisterMessageThreadReplyWithBodyWithResponse(ctx context.Context, serverId ServerId, channelId ChannelId, threadId ThreadId, params *RegisterMessageThreadReplyParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegisterMessageThreadReplyResponse, error)
 
 	RegisterMessageThreadReplyWithResponse(ctx context.Context, serverId ServerId, channelId ChannelId, threadId ThreadId, params *RegisterMessageThreadReplyParams, body RegisterMessageThreadReplyJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterMessageThreadReplyResponse, error)
+
+	// ListComputerRuntimeCapabilitiesWithResponse request
+	ListComputerRuntimeCapabilitiesWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*ListComputerRuntimeCapabilitiesResponse, error)
 
 	// ListComputersWithResponse request
 	ListComputersWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*ListComputersResponse, error)
@@ -8370,6 +9163,53 @@ func (r CreateComputerAgentLaunchResponse) StatusCode() int {
 	return 0
 }
 
+type CreateComputerAgentLaunchV2Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ComputerAgentLaunchV2
+	JSON201      *ComputerAgentLaunchV2
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateComputerAgentLaunchV2Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateComputerAgentLaunchV2Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RefreshComputerAgentSessionV2Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *ComputerAgentLaunchSessionV2
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r RefreshComputerAgentSessionV2Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RefreshComputerAgentSessionV2Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type RefreshComputerAgentSessionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8508,6 +9348,29 @@ func (r GetComputerAssignmentsV2Response) StatusCode() int {
 	return 0
 }
 
+type GetComputerAssignmentsV3Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ComputerAssignmentSnapshotV3
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetComputerAssignmentsV3Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetComputerAssignmentsV3Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type RotateComputerCredentialResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8616,6 +9479,29 @@ func (r CreateComputerSessionResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r CreateComputerSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateComputerSessionV2Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *ComputerSessionV2
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateComputerSessionV2Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateComputerSessionV2Response) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -9334,6 +10220,121 @@ func (r CreateAgentResponse) StatusCode() int {
 	return 0
 }
 
+type ListAgentsV2Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]AgentV2
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ListAgentsV2Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListAgentsV2Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateAgentV2Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *AcceptedResource
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateAgentV2Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateAgentV2Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteAgentV2Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *AcceptedResource
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteAgentV2Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteAgentV2Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetAgentV2Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *AgentV2
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetAgentV2Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetAgentV2Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateAgentV2Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *AgentV2
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateAgentV2Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateAgentV2Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type DeleteAgentResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9833,6 +10834,29 @@ func (r RegisterMessageThreadReplyResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r RegisterMessageThreadReplyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListComputerRuntimeCapabilitiesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]ComputerRuntimeCapability
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ListComputerRuntimeCapabilitiesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListComputerRuntimeCapabilitiesResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -10671,6 +11695,40 @@ func (c *ClientWithResponses) CreateComputerAgentLaunchWithResponse(ctx context.
 	return ParseCreateComputerAgentLaunchResponse(rsp)
 }
 
+// CreateComputerAgentLaunchV2WithBodyWithResponse request with arbitrary body returning *CreateComputerAgentLaunchV2Response
+func (c *ClientWithResponses) CreateComputerAgentLaunchV2WithBodyWithResponse(ctx context.Context, agentId AgentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateComputerAgentLaunchV2Response, error) {
+	rsp, err := c.CreateComputerAgentLaunchV2WithBody(ctx, agentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateComputerAgentLaunchV2Response(rsp)
+}
+
+func (c *ClientWithResponses) CreateComputerAgentLaunchV2WithResponse(ctx context.Context, agentId AgentId, body CreateComputerAgentLaunchV2JSONRequestBody, reqEditors ...RequestEditorFn) (*CreateComputerAgentLaunchV2Response, error) {
+	rsp, err := c.CreateComputerAgentLaunchV2(ctx, agentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateComputerAgentLaunchV2Response(rsp)
+}
+
+// RefreshComputerAgentSessionV2WithBodyWithResponse request with arbitrary body returning *RefreshComputerAgentSessionV2Response
+func (c *ClientWithResponses) RefreshComputerAgentSessionV2WithBodyWithResponse(ctx context.Context, agentId AgentId, launchId Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RefreshComputerAgentSessionV2Response, error) {
+	rsp, err := c.RefreshComputerAgentSessionV2WithBody(ctx, agentId, launchId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshComputerAgentSessionV2Response(rsp)
+}
+
+func (c *ClientWithResponses) RefreshComputerAgentSessionV2WithResponse(ctx context.Context, agentId AgentId, launchId Id, body RefreshComputerAgentSessionV2JSONRequestBody, reqEditors ...RequestEditorFn) (*RefreshComputerAgentSessionV2Response, error) {
+	rsp, err := c.RefreshComputerAgentSessionV2(ctx, agentId, launchId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshComputerAgentSessionV2Response(rsp)
+}
+
 // RefreshComputerAgentSessionWithBodyWithResponse request with arbitrary body returning *RefreshComputerAgentSessionResponse
 func (c *ClientWithResponses) RefreshComputerAgentSessionWithBodyWithResponse(ctx context.Context, agentId AgentId, launchId Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RefreshComputerAgentSessionResponse, error) {
 	rsp, err := c.RefreshComputerAgentSessionWithBody(ctx, agentId, launchId, contentType, body, reqEditors...)
@@ -10757,6 +11815,15 @@ func (c *ClientWithResponses) GetComputerAssignmentsV2WithResponse(ctx context.C
 	return ParseGetComputerAssignmentsV2Response(rsp)
 }
 
+// GetComputerAssignmentsV3WithResponse request returning *GetComputerAssignmentsV3Response
+func (c *ClientWithResponses) GetComputerAssignmentsV3WithResponse(ctx context.Context, params *GetComputerAssignmentsV3Params, reqEditors ...RequestEditorFn) (*GetComputerAssignmentsV3Response, error) {
+	rsp, err := c.GetComputerAssignmentsV3(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetComputerAssignmentsV3Response(rsp)
+}
+
 // RotateComputerCredentialWithResponse request returning *RotateComputerCredentialResponse
 func (c *ClientWithResponses) RotateComputerCredentialWithResponse(ctx context.Context, params *RotateComputerCredentialParams, reqEditors ...RequestEditorFn) (*RotateComputerCredentialResponse, error) {
 	rsp, err := c.RotateComputerCredential(ctx, params, reqEditors...)
@@ -10824,6 +11891,23 @@ func (c *ClientWithResponses) CreateComputerSessionWithResponse(ctx context.Cont
 		return nil, err
 	}
 	return ParseCreateComputerSessionResponse(rsp)
+}
+
+// CreateComputerSessionV2WithBodyWithResponse request with arbitrary body returning *CreateComputerSessionV2Response
+func (c *ClientWithResponses) CreateComputerSessionV2WithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateComputerSessionV2Response, error) {
+	rsp, err := c.CreateComputerSessionV2WithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateComputerSessionV2Response(rsp)
+}
+
+func (c *ClientWithResponses) CreateComputerSessionV2WithResponse(ctx context.Context, body CreateComputerSessionV2JSONRequestBody, reqEditors ...RequestEditorFn) (*CreateComputerSessionV2Response, error) {
+	rsp, err := c.CreateComputerSessionV2(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateComputerSessionV2Response(rsp)
 }
 
 // RedeemComputerSetupCodeWithBodyWithResponse request with arbitrary body returning *RedeemComputerSetupCodeResponse
@@ -11209,6 +12293,67 @@ func (c *ClientWithResponses) CreateAgentWithResponse(ctx context.Context, serve
 	return ParseCreateAgentResponse(rsp)
 }
 
+// ListAgentsV2WithResponse request returning *ListAgentsV2Response
+func (c *ClientWithResponses) ListAgentsV2WithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*ListAgentsV2Response, error) {
+	rsp, err := c.ListAgentsV2(ctx, serverId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListAgentsV2Response(rsp)
+}
+
+// CreateAgentV2WithBodyWithResponse request with arbitrary body returning *CreateAgentV2Response
+func (c *ClientWithResponses) CreateAgentV2WithBodyWithResponse(ctx context.Context, serverId ServerId, params *CreateAgentV2Params, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateAgentV2Response, error) {
+	rsp, err := c.CreateAgentV2WithBody(ctx, serverId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateAgentV2Response(rsp)
+}
+
+func (c *ClientWithResponses) CreateAgentV2WithResponse(ctx context.Context, serverId ServerId, params *CreateAgentV2Params, body CreateAgentV2JSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAgentV2Response, error) {
+	rsp, err := c.CreateAgentV2(ctx, serverId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateAgentV2Response(rsp)
+}
+
+// DeleteAgentV2WithResponse request returning *DeleteAgentV2Response
+func (c *ClientWithResponses) DeleteAgentV2WithResponse(ctx context.Context, serverId ServerId, agentId AgentId, params *DeleteAgentV2Params, reqEditors ...RequestEditorFn) (*DeleteAgentV2Response, error) {
+	rsp, err := c.DeleteAgentV2(ctx, serverId, agentId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteAgentV2Response(rsp)
+}
+
+// GetAgentV2WithResponse request returning *GetAgentV2Response
+func (c *ClientWithResponses) GetAgentV2WithResponse(ctx context.Context, serverId ServerId, agentId AgentId, reqEditors ...RequestEditorFn) (*GetAgentV2Response, error) {
+	rsp, err := c.GetAgentV2(ctx, serverId, agentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetAgentV2Response(rsp)
+}
+
+// UpdateAgentV2WithBodyWithResponse request with arbitrary body returning *UpdateAgentV2Response
+func (c *ClientWithResponses) UpdateAgentV2WithBodyWithResponse(ctx context.Context, serverId ServerId, agentId AgentId, params *UpdateAgentV2Params, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateAgentV2Response, error) {
+	rsp, err := c.UpdateAgentV2WithBody(ctx, serverId, agentId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateAgentV2Response(rsp)
+}
+
+func (c *ClientWithResponses) UpdateAgentV2WithResponse(ctx context.Context, serverId ServerId, agentId AgentId, params *UpdateAgentV2Params, body UpdateAgentV2JSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateAgentV2Response, error) {
+	rsp, err := c.UpdateAgentV2(ctx, serverId, agentId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateAgentV2Response(rsp)
+}
+
 // DeleteAgentWithResponse request returning *DeleteAgentResponse
 func (c *ClientWithResponses) DeleteAgentWithResponse(ctx context.Context, serverId ServerId, agentId AgentId, params *DeleteAgentParams, reqEditors ...RequestEditorFn) (*DeleteAgentResponse, error) {
 	rsp, err := c.DeleteAgent(ctx, serverId, agentId, params, reqEditors...)
@@ -11453,6 +12598,15 @@ func (c *ClientWithResponses) RegisterMessageThreadReplyWithResponse(ctx context
 		return nil, err
 	}
 	return ParseRegisterMessageThreadReplyResponse(rsp)
+}
+
+// ListComputerRuntimeCapabilitiesWithResponse request returning *ListComputerRuntimeCapabilitiesResponse
+func (c *ClientWithResponses) ListComputerRuntimeCapabilitiesWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*ListComputerRuntimeCapabilitiesResponse, error) {
+	rsp, err := c.ListComputerRuntimeCapabilities(ctx, serverId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListComputerRuntimeCapabilitiesResponse(rsp)
 }
 
 // ListComputersWithResponse request returning *ListComputersResponse
@@ -12097,6 +13251,79 @@ func ParseCreateComputerAgentLaunchResponse(rsp *http.Response) (*CreateComputer
 	return response, nil
 }
 
+// ParseCreateComputerAgentLaunchV2Response parses an HTTP response from a CreateComputerAgentLaunchV2WithResponse call
+func ParseCreateComputerAgentLaunchV2Response(rsp *http.Response) (*CreateComputerAgentLaunchV2Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateComputerAgentLaunchV2Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ComputerAgentLaunchV2
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ComputerAgentLaunchV2
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRefreshComputerAgentSessionV2Response parses an HTTP response from a RefreshComputerAgentSessionV2WithResponse call
+func ParseRefreshComputerAgentSessionV2Response(rsp *http.Response) (*RefreshComputerAgentSessionV2Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RefreshComputerAgentSessionV2Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ComputerAgentLaunchSessionV2
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseRefreshComputerAgentSessionResponse parses an HTTP response from a RefreshComputerAgentSessionWithResponse call
 func ParseRefreshComputerAgentSessionResponse(rsp *http.Response) (*RefreshComputerAgentSessionResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -12295,6 +13522,39 @@ func ParseGetComputerAssignmentsV2Response(rsp *http.Response) (*GetComputerAssi
 	return response, nil
 }
 
+// ParseGetComputerAssignmentsV3Response parses an HTTP response from a GetComputerAssignmentsV3WithResponse call
+func ParseGetComputerAssignmentsV3Response(rsp *http.Response) (*GetComputerAssignmentsV3Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetComputerAssignmentsV3Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ComputerAssignmentSnapshotV3
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseRotateComputerCredentialResponse parses an HTTP response from a RotateComputerCredentialWithResponse call
 func ParseRotateComputerCredentialResponse(rsp *http.Response) (*RotateComputerCredentialResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -12436,6 +13696,39 @@ func ParseCreateComputerSessionResponse(rsp *http.Response) (*CreateComputerSess
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
 		var dest ComputerSession
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateComputerSessionV2Response parses an HTTP response from a CreateComputerSessionV2WithResponse call
+func ParseCreateComputerSessionV2Response(rsp *http.Response) (*CreateComputerSessionV2Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateComputerSessionV2Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ComputerSessionV2
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -13469,6 +14762,171 @@ func ParseCreateAgentResponse(rsp *http.Response) (*CreateAgentResponse, error) 
 	return response, nil
 }
 
+// ParseListAgentsV2Response parses an HTTP response from a ListAgentsV2WithResponse call
+func ParseListAgentsV2Response(rsp *http.Response) (*ListAgentsV2Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListAgentsV2Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []AgentV2
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateAgentV2Response parses an HTTP response from a CreateAgentV2WithResponse call
+func ParseCreateAgentV2Response(rsp *http.Response) (*CreateAgentV2Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateAgentV2Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest AcceptedResource
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteAgentV2Response parses an HTTP response from a DeleteAgentV2WithResponse call
+func ParseDeleteAgentV2Response(rsp *http.Response) (*DeleteAgentV2Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteAgentV2Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest AcceptedResource
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetAgentV2Response parses an HTTP response from a GetAgentV2WithResponse call
+func ParseGetAgentV2Response(rsp *http.Response) (*GetAgentV2Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetAgentV2Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AgentV2
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateAgentV2Response parses an HTTP response from a UpdateAgentV2WithResponse call
+func ParseUpdateAgentV2Response(rsp *http.Response) (*UpdateAgentV2Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateAgentV2Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AgentV2
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseDeleteAgentResponse parses an HTTP response from a DeleteAgentWithResponse call
 func ParseDeleteAgentResponse(rsp *http.Response) (*DeleteAgentResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -14175,6 +15633,39 @@ func ParseRegisterMessageThreadReplyResponse(rsp *http.Response) (*RegisterMessa
 			return nil, err
 		}
 		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListComputerRuntimeCapabilitiesResponse parses an HTTP response from a ListComputerRuntimeCapabilitiesWithResponse call
+func ParseListComputerRuntimeCapabilitiesResponse(rsp *http.Response) (*ListComputerRuntimeCapabilitiesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListComputerRuntimeCapabilitiesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []ComputerRuntimeCapability
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

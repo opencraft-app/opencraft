@@ -45,6 +45,7 @@ type Computer struct {
 	OSType                string
 	LifecycleState        string
 	TATAgentState         string
+	AssignmentVersion     int
 	RegistrationExpiresAt *time.Time
 	HostLastSeenAt        *time.Time
 	LastObservedAt        *time.Time

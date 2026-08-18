@@ -338,6 +338,46 @@ func TestAgentHandlerStartsProfileCapabilityRefresh(t *testing.T) {
 	}
 }
 
+func TestAgentHandlerV2PreservesOpenRuntimeKind(t *testing.T) {
+	computerID := handlerComputerID
+	service := &fakeAgentService{agents: []agentport.Agent{{
+		ID: handlerAgentID, ServerID: handlerServerID,
+		DisplayName: "OpenClaw", Handle: "openclaw",
+		IMUserID: "a_OPENCLAW", IMState: "ready", ComputerID: &computerID,
+		Runtime:     agentport.Runtime{Kind: "openclaw"},
+		ReplyPolicy: "mention_and_dm", DesiredState: "running",
+		ObservedState: "running", Availability: "online",
+		IMPresence: "online", IMTransportState: "connected",
+		CredentialVersion: 1, Revision: 1,
+	}}}
+	handler, err := NewAgentHandler(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := handler.ListAgentsV2(
+		currentHumanContext(t),
+		openapi.ListAgentsV2RequestObject{ServerId: uuid.MustParse(handlerServerID)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, ok := response.(openapi.ListAgentsV2200JSONResponse)
+	if !ok || len(list) != 1 || list[0].Runtime.Kind != "openclaw" {
+		t.Fatalf("ListAgentsV2() = %#v", response)
+	}
+	legacyResponse, err := handler.ListAgents(
+		currentHumanContext(t),
+		openapi.ListAgentsRequestObject{ServerId: uuid.MustParse(handlerServerID)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, ok := legacyResponse.(openapi.ListAgents200JSONResponse)
+	if !ok || len(legacy) != 0 {
+		t.Fatalf("ListAgents() exposed v2-only Runtime: %#v", legacyResponse)
+	}
+}
+
 func TestAgentHandlerReturnsAbsentProfileCapabilitiesWithoutRefreshing(t *testing.T) {
 	service := &fakeAgentService{profileCapabilities: agentport.ProfileCapabilities{
 		AgentID: handlerAgentID,

@@ -103,7 +103,7 @@ func TestHumanClientBundleRestoresIntoCanonicalWorkspaceShell(t *testing.T) {
 			_, _ = writer.Write([]byte(`[{"id":"channel-1","serverId":"server-1","name":"general","visibility":"public","joined":true,"imGroupId":"group-1","imTopicId":"topic-1","imState":"ready","revision":1}]`))
 		case "/v1/servers/server-1/direct-conversations":
 			_, _ = writer.Write([]byte(`{"items":[],"nextCursor":null}`))
-		case "/v1/servers/server-1/agents", "/v1/servers/server-1/computers":
+		case "/v1/servers/server-1/agents-v2", "/v1/servers/server-1/computers", "/v1/servers/server-1/computer-runtime-capabilities":
 			_, _ = writer.Write([]byte(`[]`))
 		case "/v1/servers/server-1/members":
 			_, _ = writer.Write([]byte(`{"items":[{"id":"member-1","serverId":"server-1","kind":"human","accountId":"account-1","role":"owner","displayName":"测试用户","handle":"human","status":"active","imUserId":"human-im-1","imState":"ready","revision":1}],"nextCursor":null}`))
@@ -231,7 +231,7 @@ func TestHumanClientNavigatesAcrossCanonicalManagementPages(t *testing.T) {
 			_, _ = writer.Write([]byte(`[{"id":"channel-1","serverId":"server-1","name":"general","visibility":"public","joined":true,"imGroupId":"group-1","imTopicId":"topic-1","imState":"ready","revision":1}]`))
 		case "/v1/servers/server-1/direct-conversations":
 			_, _ = writer.Write([]byte(`{"items":[],"nextCursor":null}`))
-		case "/v1/servers/server-1/agents", "/v1/servers/server-1/computers", "/v1/servers/server-1/inbox", "/v1/servers/server-1/reminders", "/v1/servers/server-1/invites":
+		case "/v1/servers/server-1/agents-v2", "/v1/servers/server-1/computers", "/v1/servers/server-1/computer-runtime-capabilities", "/v1/servers/server-1/inbox", "/v1/servers/server-1/reminders", "/v1/servers/server-1/invites":
 			_, _ = writer.Write([]byte(`[]`))
 		case "/v1/servers/server-1/tasks":
 			_, _ = writer.Write([]byte(`{"items":[],"nextCursor":null}`))
@@ -454,7 +454,8 @@ func TestHumanClientSwitchesServerAndSubmitsComputerForm(t *testing.T) {
 			_, _ = writer.Write([]byte(`[]`))
 		case "/v1/servers/server-1/direct-conversations", "/v1/servers/server-2/direct-conversations":
 			_, _ = writer.Write([]byte(`{"items":[],"nextCursor":null}`))
-		case "/v1/servers/server-1/agents", "/v1/servers/server-2/agents":
+		case "/v1/servers/server-1/agents-v2", "/v1/servers/server-2/agents-v2",
+			"/v1/servers/server-1/computer-runtime-capabilities", "/v1/servers/server-2/computer-runtime-capabilities":
 			_, _ = writer.Write([]byte(`[]`))
 		case "/v1/servers/server-1/computers":
 			_, _ = writer.Write([]byte(`[]`))
@@ -589,7 +590,7 @@ func TestHumanClientRepairsDriftedTopicMembershipJustInTime(t *testing.T) {
 			_, _ = writer.Write([]byte(`[{"id":"channel-1","serverId":"server-1","name":"general","visibility":"public","joined":true,"imGroupId":"group-1","imTopicId":"topic-1","imState":"ready","revision":1}]`))
 		case "/v1/servers/server-1/direct-conversations":
 			_, _ = writer.Write([]byte(`{"items":[],"nextCursor":null}`))
-		case "/v1/servers/server-1/agents", "/v1/servers/server-1/computers":
+		case "/v1/servers/server-1/agents-v2", "/v1/servers/server-1/computers", "/v1/servers/server-1/computer-runtime-capabilities":
 			_, _ = writer.Write([]byte(`[]`))
 		case "/v1/servers/server-1/members":
 			_, _ = writer.Write([]byte(`{"items":[{"id":"member-1","serverId":"server-1","kind":"human","accountId":"account-1","role":"owner","displayName":"测试用户","handle":"human","status":"active","imUserId":"human-im-1","imState":"ready","revision":1}],"nextCursor":null}`))
@@ -685,7 +686,7 @@ func TestHumanClientStopsAfterOneDriftRepairAttempt(t *testing.T) {
 			_, _ = writer.Write([]byte(`[{"id":"channel-1","serverId":"server-1","name":"general","visibility":"public","joined":true,"imGroupId":"group-1","imTopicId":"topic-1","imState":"ready","revision":1}]`))
 		case "/v1/servers/server-1/direct-conversations":
 			_, _ = writer.Write([]byte(`{"items":[],"nextCursor":null}`))
-		case "/v1/servers/server-1/agents", "/v1/servers/server-1/computers":
+		case "/v1/servers/server-1/agents-v2", "/v1/servers/server-1/computers", "/v1/servers/server-1/computer-runtime-capabilities":
 			_, _ = writer.Write([]byte(`[]`))
 		case "/v1/servers/server-1/members":
 			_, _ = writer.Write([]byte(`{"items":[{"id":"member-1","serverId":"server-1","kind":"human","accountId":"account-1","role":"owner","displayName":"测试用户","handle":"human","status":"active","imUserId":"human-im-1","imState":"ready","revision":1}],"nextCursor":null}`))
@@ -763,7 +764,7 @@ func TestHumanClientDoesNotReopenChannelAfterNavigatingDuringRepair(t *testing.T
 			_, _ = writer.Write([]byte(`[{"id":"channel-1","serverId":"server-1","name":"general","visibility":"public","joined":true,"imGroupId":"group-1","imTopicId":"topic-1","imState":"ready","revision":1},{"id":"channel-2","serverId":"server-1","name":"random","visibility":"public","joined":true,"imGroupId":"group-1","imTopicId":"topic-2","imState":"ready","revision":1}]`))
 		case "/v1/servers/server-1/direct-conversations":
 			_, _ = writer.Write([]byte(`{"items":[],"nextCursor":null}`))
-		case "/v1/servers/server-1/agents", "/v1/servers/server-1/computers":
+		case "/v1/servers/server-1/agents-v2", "/v1/servers/server-1/computers", "/v1/servers/server-1/computer-runtime-capabilities":
 			_, _ = writer.Write([]byte(`[]`))
 		case "/v1/servers/server-1/members":
 			_, _ = writer.Write([]byte(`{"items":[{"id":"member-1","serverId":"server-1","kind":"human","accountId":"account-1","role":"owner","displayName":"测试用户","handle":"human","status":"active","imUserId":"human-im-1","imState":"ready","revision":1}],"nextCursor":null}`))

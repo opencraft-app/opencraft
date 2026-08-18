@@ -5,21 +5,16 @@ It is a managed Computer Runtime, not the external Vela CLI wake bridge.
 
 ## Platform configuration
 
-The internal Driver identity is `hermes-acp`. The current hosted Vela baseline
-does not expose arbitrary Runtime IDs in its Agent creator, so this build uses
-the otherwise unused `opencode` wire slot for compatibility. The Web UI will
-temporarily label the Runtime as OpenCode even though the Computer starts
-Hermes ACP.
-
-Select OpenCode on this specific Computer. The Computer derives and provisions
-the Hermes Profile; the cloud configuration does not select it:
+The Driver and platform Runtime identity are both `hermes-acp`. The Computer
+derives and provisions the Hermes Profile; the cloud configuration does not
+select it:
 
 ```json
 {
-  "runtime": "opencode",
+  "runtime": "hermes-acp",
   "runtimeConfig": {
     "version": 1,
-    "runtime": "opencode",
+    "runtime": "hermes-acp",
     "model": {
       "kind": "preset",
       "id": "default"
@@ -161,5 +156,3 @@ denied capability.
   descendant-held pipes, forced process reap, dispatcher backpressure, session
   recovery, and history replay suppression.
   A real-cloud Canary remains a separate acceptance gate.
-- When the hosted platform accepts `hermes-acp` directly, remove the Hermes
-  registration's `WireID`; no runner or ACP implementation change is needed.

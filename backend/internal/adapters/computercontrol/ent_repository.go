@@ -900,7 +900,7 @@ func validHeartbeat(value computercontrolport.Heartbeat) bool {
 		return false
 	}
 	if value.AssignmentVersion != 0 && value.AssignmentVersion != 1 &&
-		value.AssignmentVersion != 2 ||
+		value.AssignmentVersion != 2 && value.AssignmentVersion != 3 ||
 		len(value.ProfileCapabilityVersions) > 1 ||
 		len(value.ProfileCapabilityVersions) == 1 &&
 			value.ProfileCapabilityVersions[0] != 1 {

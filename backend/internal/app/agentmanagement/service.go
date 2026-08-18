@@ -319,6 +319,29 @@ func (service *Service) Create(
 		return agentport.CreateResult{},
 			apperror.New("permission_denied", "没有管理 Agent 的权限", nil)
 	}
+	if !legacyRuntimeKind(command.Runtime.Kind) {
+		repository, ok := service.repository.(agentport.AssignmentVersionRepository)
+		if !ok || command.ComputerID == nil {
+			return agentport.CreateResult{}, apperror.New(
+				"runtime_unsupported_by_computer",
+				"Computer 需要升级后才能运行该 Runtime",
+				nil,
+			)
+		}
+		supported, err := repository.SupportsAssignmentVersion(
+			ctx, command.ServerID, *command.ComputerID, 3,
+		)
+		if err != nil {
+			return agentport.CreateResult{}, mapRepositoryError(err)
+		}
+		if !supported {
+			return agentport.CreateResult{}, apperror.New(
+				"runtime_unsupported_by_computer",
+				"Computer 需要升级后才能运行该 Runtime",
+				nil,
+			)
+		}
+	}
 	agentID, err := service.ids.New()
 	if err != nil {
 		return agentport.CreateResult{},
@@ -398,6 +421,13 @@ func (service *Service) RefreshProfileCapabilities(
 		agent.Revision < 1 || !validRuntime(agent.Runtime) {
 		return agentport.Operation{},
 			apperror.New("profile_not_ready", "Agent Profile 尚未准备好", nil)
+	}
+	if !legacyRuntimeKind(agent.Runtime.Kind) {
+		return agentport.Operation{}, apperror.New(
+			"profile_capabilities_unsupported",
+			"该 Runtime 的 Profile 能力发现尚未开放",
+			nil,
+		)
 	}
 	supported, err := repository.SupportsProfileCapabilities(
 		ctx, command.ServerID, *agent.ComputerID,
@@ -568,6 +598,43 @@ func (service *Service) Update(
 ) (agentport.Agent, error) {
 	if err := validateUpdate(command); err != nil {
 		return agentport.Agent{}, err
+	}
+	if command.Runtime != nil && !legacyRuntimeKind(command.Runtime.Kind) {
+		computerID := ""
+		if command.ComputerIDSet && command.ComputerID != nil {
+			computerID = *command.ComputerID
+		} else {
+			current, err := service.repository.Get(
+				ctx, command.AccountID, command.ServerID, command.AgentID,
+			)
+			if err != nil {
+				return agentport.Agent{}, mapRepositoryError(err)
+			}
+			if current.ComputerID != nil {
+				computerID = *current.ComputerID
+			}
+		}
+		repository, ok := service.repository.(agentport.AssignmentVersionRepository)
+		if !ok || !validUUIDv7(computerID) {
+			return agentport.Agent{}, apperror.New(
+				"runtime_unsupported_by_computer",
+				"Computer 需要升级后才能运行该 Runtime",
+				nil,
+			)
+		}
+		supported, err := repository.SupportsAssignmentVersion(
+			ctx, command.ServerID, computerID, 3,
+		)
+		if err != nil {
+			return agentport.Agent{}, mapRepositoryError(err)
+		}
+		if !supported {
+			return agentport.Agent{}, apperror.New(
+				"runtime_unsupported_by_computer",
+				"Computer 需要升级后才能运行该 Runtime",
+				nil,
+			)
+		}
 	}
 	patch := agentport.UpdatePatch{
 		DescriptionSet: command.DescriptionSet,
@@ -818,14 +885,29 @@ func validateUpdate(command UpdateCommand) error {
 }
 
 func validRuntime(value agentport.Runtime) bool {
-	switch value.Kind {
-	case "codex", "hermes-acp", "hermes-gateway":
-	default:
+	if !validRuntimeKind(value.Kind) {
 		return false
 	}
 	return value.Model == nil ||
 		(utf8.ValidString(*value.Model) &&
 			len(strings.TrimSpace(*value.Model)) <= 100)
+}
+
+func validRuntimeKind(value string) bool {
+	if len(value) < 1 || len(value) > 64 || value[0] < 'a' || value[0] > 'z' {
+		return false
+	}
+	for _, character := range value[1:] {
+		if character != '-' && (character < 'a' || character > 'z') &&
+			(character < '0' || character > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func legacyRuntimeKind(value string) bool {
+	return value == "codex" || value == "hermes-acp" || value == "hermes-gateway"
 }
 
 func validReplyPolicy(value string) bool {

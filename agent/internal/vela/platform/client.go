@@ -307,7 +307,7 @@ func validReplyPolicy(value string) bool {
 
 func validRuntimeKind(value string) bool {
 	switch value {
-	case "codex", "hermes-acp", "hermes-gateway":
+	case "codex", "hermes-acp", "hermes-gateway", "openclaw":
 		return true
 	default:
 		return false

@@ -68,6 +68,7 @@ func (c *Client) CreateComputerAgentLaunch(
 	token ComputerAccessToken,
 	requestBody ComputerAgentLaunchRequest,
 	assignment daemon.AgentAssignment,
+	assignmentVersions ...int,
 ) (ComputerAgentLaunch, error) {
 	if c == nil || ctx == nil || token.Reveal() == "" ||
 		!validLaunchRequest(requestBody, assignment) {
@@ -77,10 +78,22 @@ func (c *Client) CreateComputerAgentLaunch(
 	if err != nil {
 		return ComputerAgentLaunch{}, err
 	}
+	assignmentVersion := daemon.AssignmentSchemaVersionV1
+	if len(assignmentVersions) > 0 {
+		assignmentVersion = assignmentVersions[0]
+	}
+	if assignmentVersion != daemon.AssignmentSchemaVersionV1 &&
+		assignmentVersion != daemon.AssignmentSchemaVersionV3 {
+		return ComputerAgentLaunch{}, ErrInvalidComputerAgentLaunch
+	}
+	launchPath := "/launches"
+	if assignmentVersion == daemon.AssignmentSchemaVersionV3 {
+		launchPath = "/launches-v2"
+	}
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		c.baseURL+"/computer/agents/"+url.PathEscape(assignment.AgentID)+"/launches",
+		c.baseURL+"/computer/agents/"+url.PathEscape(assignment.AgentID)+launchPath,
 		bytes.NewReader(encoded),
 	)
 	if err != nil {
@@ -110,6 +123,7 @@ func (c *Client) RefreshComputerAgentLaunchSession(
 	token ComputerAccessToken,
 	fence ComputerAgentLaunchFence,
 	assignment daemon.AgentAssignment,
+	assignmentVersions ...int,
 ) (RuntimeSession, error) {
 	if c == nil || ctx == nil || token.Reveal() == "" ||
 		!validLaunchFence(fence, assignment) {
@@ -123,11 +137,23 @@ func (c *Client) RefreshComputerAgentLaunchSession(
 	if err != nil {
 		return RuntimeSession{}, err
 	}
+	assignmentVersion := daemon.AssignmentSchemaVersionV1
+	if len(assignmentVersions) > 0 {
+		assignmentVersion = assignmentVersions[0]
+	}
+	if assignmentVersion != daemon.AssignmentSchemaVersionV1 &&
+		assignmentVersion != daemon.AssignmentSchemaVersionV3 {
+		return RuntimeSession{}, ErrInvalidComputerAgentLaunch
+	}
+	launchPath := "/launches/"
+	if assignmentVersion == daemon.AssignmentSchemaVersionV3 {
+		launchPath = "/launches-v2/"
+	}
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
 		c.baseURL+"/computer/agents/"+url.PathEscape(assignment.AgentID)+
-			"/launches/"+url.PathEscape(fence.LaunchID)+"/session",
+			launchPath+url.PathEscape(fence.LaunchID)+"/session",
 		bytes.NewReader(encoded),
 	)
 	if err != nil {
@@ -142,7 +168,11 @@ func (c *Client) RefreshComputerAgentLaunchSession(
 	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
 		return RuntimeSession{}, ErrCredentialRejected
 	}
-	if response.StatusCode != http.StatusOK {
+	wantStatus := http.StatusOK
+	if assignmentVersion == daemon.AssignmentSchemaVersionV3 {
+		wantStatus = http.StatusCreated
+	}
+	if response.StatusCode != wantStatus {
 		return RuntimeSession{}, launchStatusError(c, response)
 	}
 	var payload runtimeSessionPayload

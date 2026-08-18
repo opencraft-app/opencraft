@@ -217,6 +217,15 @@ type ProfileCapabilityRefreshCommand struct {
 	DeadlineAt            time.Time
 }
 
+type AssignmentVersionRepository interface {
+	SupportsAssignmentVersion(
+		context.Context,
+		string,
+		string,
+		int,
+	) (bool, error)
+}
+
 type ProfileCapabilities struct {
 	AgentID           string
 	ComputerID        *string

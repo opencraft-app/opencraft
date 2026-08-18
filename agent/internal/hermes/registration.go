@@ -8,7 +8,6 @@ import (
 func Registration(options Options) runtimeapi.Registration {
 	return runtimeapi.Registration{
 		ID:          "hermes-acp",
-		WireID:      "opencode",
 		DisplayName: "Hermes ACP",
 		NewDriver: func() (runtimeapi.RuntimeDriver, error) {
 			return New(options), nil

@@ -442,6 +442,10 @@ func newHumanRoutes(
 			computerWrapper.ListComputers,
 		)
 		mux.HandleFunc(
+			"GET /v1/servers/{serverId}/computer-runtime-capabilities",
+			computerWrapper.ListComputerRuntimeCapabilities,
+		)
+		mux.HandleFunc(
 			"POST /v1/servers/{serverId}/computers",
 			computerWrapper.CreateComputer,
 		)
@@ -598,6 +602,26 @@ func newHumanRoutes(
 		mux.HandleFunc(
 			"DELETE /v1/servers/{serverId}/agents/{agentId}",
 			agentWrapper.DeleteAgent,
+		)
+		mux.HandleFunc(
+			"GET /v1/servers/{serverId}/agents-v2",
+			agentWrapper.ListAgentsV2,
+		)
+		mux.HandleFunc(
+			"POST /v1/servers/{serverId}/agents-v2",
+			agentWrapper.CreateAgentV2,
+		)
+		mux.HandleFunc(
+			"GET /v1/servers/{serverId}/agents-v2/{agentId}",
+			agentWrapper.GetAgentV2,
+		)
+		mux.HandleFunc(
+			"PATCH /v1/servers/{serverId}/agents-v2/{agentId}",
+			agentWrapper.UpdateAgentV2,
+		)
+		mux.HandleFunc(
+			"DELETE /v1/servers/{serverId}/agents-v2/{agentId}",
+			agentWrapper.DeleteAgentV2,
 		)
 		mux.HandleFunc(
 			"POST /v1/servers/{serverId}/agents/{agentId}/deploy",

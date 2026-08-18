@@ -268,7 +268,7 @@ describe("StyleLabScreen", () => {
       "Runtime Agent",
     );
     expect(
-      screen.getByRole("radio", {name: "编辑 Runtime hermes-gateway"}),
+      screen.getByRole("radio", {name: "编辑 Runtime Hermes Gateway"}),
     ).toHaveProp("accessibilityState", {checked: true, disabled: false});
     expect(
       screen.getByRole("combobox", {name: "Computer"}),

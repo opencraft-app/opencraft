@@ -46,6 +46,10 @@ func TestManagedAgentObserverFlushCanRetryAfterEarlierDeadline(t *testing.T) {
 	var accept atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(
 		func(response http.ResponseWriter, request *http.Request) {
+			if request.URL.Path == "/v1/computer/session-v2" {
+				http.NotFound(response, request)
+				return
+			}
 			if request.URL.Path == "/v1/computer/session" {
 				response.WriteHeader(http.StatusCreated)
 				writeControllerJSON(t, response, map[string]any{
@@ -118,6 +122,8 @@ func TestManagedAgentObserverSurfacesStaleLaunchAsTerminal(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(
 		func(response http.ResponseWriter, request *http.Request) {
 			switch request.URL.Path {
+			case "/v1/computer/session-v2":
+				http.NotFound(response, request)
 			case "/v1/computer/session":
 				response.WriteHeader(http.StatusCreated)
 				writeControllerJSON(t, response, map[string]any{

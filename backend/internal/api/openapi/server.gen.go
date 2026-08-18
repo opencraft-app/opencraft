@@ -493,6 +493,168 @@ func (e AgentProfileSkillCapabilityScope) Valid() bool {
 	}
 }
 
+// Defines values for AgentV2Availability.
+const (
+	AgentV2AvailabilityOffline AgentV2Availability = "offline"
+	AgentV2AvailabilityOnline  AgentV2Availability = "online"
+	AgentV2AvailabilityUnknown AgentV2Availability = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AgentV2Availability enum.
+func (e AgentV2Availability) Valid() bool {
+	switch e {
+	case AgentV2AvailabilityOffline:
+		return true
+	case AgentV2AvailabilityOnline:
+		return true
+	case AgentV2AvailabilityUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentV2DesiredState.
+const (
+	AgentV2DesiredStateRunning AgentV2DesiredState = "running"
+	AgentV2DesiredStateStopped AgentV2DesiredState = "stopped"
+)
+
+// Valid indicates whether the value is a known member of the AgentV2DesiredState enum.
+func (e AgentV2DesiredState) Valid() bool {
+	switch e {
+	case AgentV2DesiredStateRunning:
+		return true
+	case AgentV2DesiredStateStopped:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentV2ImPresence.
+const (
+	AgentV2ImPresenceOffline AgentV2ImPresence = "offline"
+	AgentV2ImPresenceOnline  AgentV2ImPresence = "online"
+	AgentV2ImPresenceUnknown AgentV2ImPresence = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AgentV2ImPresence enum.
+func (e AgentV2ImPresence) Valid() bool {
+	switch e {
+	case AgentV2ImPresenceOffline:
+		return true
+	case AgentV2ImPresenceOnline:
+		return true
+	case AgentV2ImPresenceUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentV2ImState.
+const (
+	AgentV2ImStateError        AgentV2ImState = "error"
+	AgentV2ImStateProvisioning AgentV2ImState = "provisioning"
+	AgentV2ImStateReady        AgentV2ImState = "ready"
+)
+
+// Valid indicates whether the value is a known member of the AgentV2ImState enum.
+func (e AgentV2ImState) Valid() bool {
+	switch e {
+	case AgentV2ImStateError:
+		return true
+	case AgentV2ImStateProvisioning:
+		return true
+	case AgentV2ImStateReady:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentV2ImTransportState.
+const (
+	AgentV2ImTransportStateConnected    AgentV2ImTransportState = "connected"
+	AgentV2ImTransportStateConnecting   AgentV2ImTransportState = "connecting"
+	AgentV2ImTransportStateDisconnected AgentV2ImTransportState = "disconnected"
+	AgentV2ImTransportStateError        AgentV2ImTransportState = "error"
+	AgentV2ImTransportStateUnknown      AgentV2ImTransportState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AgentV2ImTransportState enum.
+func (e AgentV2ImTransportState) Valid() bool {
+	switch e {
+	case AgentV2ImTransportStateConnected:
+		return true
+	case AgentV2ImTransportStateConnecting:
+		return true
+	case AgentV2ImTransportStateDisconnected:
+		return true
+	case AgentV2ImTransportStateError:
+		return true
+	case AgentV2ImTransportStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentV2ObservedState.
+const (
+	AgentV2ObservedStateDeploying AgentV2ObservedState = "deploying"
+	AgentV2ObservedStateError     AgentV2ObservedState = "error"
+	AgentV2ObservedStateRunning   AgentV2ObservedState = "running"
+	AgentV2ObservedStateStarting  AgentV2ObservedState = "starting"
+	AgentV2ObservedStateStopped   AgentV2ObservedState = "stopped"
+	AgentV2ObservedStateStopping  AgentV2ObservedState = "stopping"
+	AgentV2ObservedStateUnknown   AgentV2ObservedState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AgentV2ObservedState enum.
+func (e AgentV2ObservedState) Valid() bool {
+	switch e {
+	case AgentV2ObservedStateDeploying:
+		return true
+	case AgentV2ObservedStateError:
+		return true
+	case AgentV2ObservedStateRunning:
+		return true
+	case AgentV2ObservedStateStarting:
+		return true
+	case AgentV2ObservedStateStopped:
+		return true
+	case AgentV2ObservedStateStopping:
+		return true
+	case AgentV2ObservedStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentV2ReplyPolicy.
+const (
+	AgentV2ReplyPolicyAllChannelMessages AgentV2ReplyPolicy = "all_channel_messages"
+	AgentV2ReplyPolicyDmOnly             AgentV2ReplyPolicy = "dm_only"
+	AgentV2ReplyPolicyMentionAndDm       AgentV2ReplyPolicy = "mention_and_dm"
+)
+
+// Valid indicates whether the value is a known member of the AgentV2ReplyPolicy enum.
+func (e AgentV2ReplyPolicy) Valid() bool {
+	switch e {
+	case AgentV2ReplyPolicyAllChannelMessages:
+		return true
+	case AgentV2ReplyPolicyDmOnly:
+		return true
+	case AgentV2ReplyPolicyMentionAndDm:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ChannelImState.
 const (
 	ChannelImStateError        ChannelImState = "error"
@@ -853,6 +1015,21 @@ func (e ComputerAssignmentSnapshotV2SchemaVersion) Valid() bool {
 	}
 }
 
+// Defines values for ComputerAssignmentSnapshotV3SchemaVersion.
+const (
+	ComputerAssignmentSnapshotV3SchemaVersionN3 ComputerAssignmentSnapshotV3SchemaVersion = 3
+)
+
+// Valid indicates whether the value is a known member of the ComputerAssignmentSnapshotV3SchemaVersion enum.
+func (e ComputerAssignmentSnapshotV3SchemaVersion) Valid() bool {
+	switch e {
+	case ComputerAssignmentSnapshotV3SchemaVersionN3:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ComputerAssignmentV2DesiredState.
 const (
 	ComputerAssignmentV2DesiredStateRunning ComputerAssignmentV2DesiredState = "running"
@@ -886,6 +1063,45 @@ func (e ComputerAssignmentV2ReplyPolicy) Valid() bool {
 	case ComputerAssignmentV2ReplyPolicyDmOnly:
 		return true
 	case ComputerAssignmentV2ReplyPolicyMentionAndDm:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerAssignmentV3DesiredState.
+const (
+	Running ComputerAssignmentV3DesiredState = "running"
+	Stopped ComputerAssignmentV3DesiredState = "stopped"
+)
+
+// Valid indicates whether the value is a known member of the ComputerAssignmentV3DesiredState enum.
+func (e ComputerAssignmentV3DesiredState) Valid() bool {
+	switch e {
+	case Running:
+		return true
+	case Stopped:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputerAssignmentV3ReplyPolicy.
+const (
+	ComputerAssignmentV3ReplyPolicyAllChannelMessages ComputerAssignmentV3ReplyPolicy = "all_channel_messages"
+	ComputerAssignmentV3ReplyPolicyDmOnly             ComputerAssignmentV3ReplyPolicy = "dm_only"
+	ComputerAssignmentV3ReplyPolicyMentionAndDm       ComputerAssignmentV3ReplyPolicy = "mention_and_dm"
+)
+
+// Valid indicates whether the value is a known member of the ComputerAssignmentV3ReplyPolicy enum.
+func (e ComputerAssignmentV3ReplyPolicy) Valid() bool {
+	switch e {
+	case ComputerAssignmentV3ReplyPolicyAllChannelMessages:
+		return true
+	case ComputerAssignmentV3ReplyPolicyDmOnly:
+		return true
+	case ComputerAssignmentV3ReplyPolicyMentionAndDm:
 		return true
 	default:
 		return false
@@ -932,6 +1148,7 @@ func (e ComputerEnrollmentClaimRequestOsType) Valid() bool {
 const (
 	ComputerHeartbeatAssignmentVersionN1 ComputerHeartbeatAssignmentVersion = 1
 	ComputerHeartbeatAssignmentVersionN2 ComputerHeartbeatAssignmentVersion = 2
+	ComputerHeartbeatAssignmentVersionN3 ComputerHeartbeatAssignmentVersion = 3
 )
 
 // Valid indicates whether the value is a known member of the ComputerHeartbeatAssignmentVersion enum.
@@ -940,6 +1157,8 @@ func (e ComputerHeartbeatAssignmentVersion) Valid() bool {
 	case ComputerHeartbeatAssignmentVersionN1:
 		return true
 	case ComputerHeartbeatAssignmentVersionN2:
+		return true
+	case ComputerHeartbeatAssignmentVersionN3:
 		return true
 	default:
 		return false
@@ -1195,6 +1414,21 @@ func (e ComputerProfileCapabilityRefreshSchemaVersion) Valid() bool {
 	}
 }
 
+// Defines values for ComputerProfileCapabilityRefreshV2SchemaVersion.
+const (
+	ComputerProfileCapabilityRefreshV2SchemaVersionN1 ComputerProfileCapabilityRefreshV2SchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the ComputerProfileCapabilityRefreshV2SchemaVersion enum.
+func (e ComputerProfileCapabilityRefreshV2SchemaVersion) Valid() bool {
+	switch e {
+	case ComputerProfileCapabilityRefreshV2SchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ComputerProfileCapabilitySkillSectionErrorCode.
 const (
 	ComputerProfileSkillDiscoveryFailed    ComputerProfileCapabilitySkillSectionErrorCode = "skill_discovery_failed"
@@ -1300,6 +1534,27 @@ func (e CreateAgentRequestReplyPolicy) Valid() bool {
 	case CreateAgentRequestReplyPolicyDmOnly:
 		return true
 	case CreateAgentRequestReplyPolicyMentionAndDm:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreateAgentRequestV2ReplyPolicy.
+const (
+	CreateAgentRequestV2ReplyPolicyAllChannelMessages CreateAgentRequestV2ReplyPolicy = "all_channel_messages"
+	CreateAgentRequestV2ReplyPolicyDmOnly             CreateAgentRequestV2ReplyPolicy = "dm_only"
+	CreateAgentRequestV2ReplyPolicyMentionAndDm       CreateAgentRequestV2ReplyPolicy = "mention_and_dm"
+)
+
+// Valid indicates whether the value is a known member of the CreateAgentRequestV2ReplyPolicy enum.
+func (e CreateAgentRequestV2ReplyPolicy) Valid() bool {
+	switch e {
+	case CreateAgentRequestV2ReplyPolicyAllChannelMessages:
+		return true
+	case CreateAgentRequestV2ReplyPolicyDmOnly:
+		return true
+	case CreateAgentRequestV2ReplyPolicyMentionAndDm:
 		return true
 	default:
 		return false
@@ -1873,6 +2128,66 @@ func (e RuntimeIdentityReplyPolicy) Valid() bool {
 	}
 }
 
+// Defines values for RuntimeIdentityV2Capabilities.
+const (
+	RuntimeIdentityV2CapabilitiesAttachments RuntimeIdentityV2Capabilities = "attachments"
+	RuntimeIdentityV2CapabilitiesChannels    RuntimeIdentityV2Capabilities = "channels"
+	RuntimeIdentityV2CapabilitiesReactions   RuntimeIdentityV2Capabilities = "reactions"
+	RuntimeIdentityV2CapabilitiesRead        RuntimeIdentityV2Capabilities = "read"
+	RuntimeIdentityV2CapabilitiesReminders   RuntimeIdentityV2Capabilities = "reminders"
+	RuntimeIdentityV2CapabilitiesSend        RuntimeIdentityV2Capabilities = "send"
+	RuntimeIdentityV2CapabilitiesServer      RuntimeIdentityV2Capabilities = "server"
+	RuntimeIdentityV2CapabilitiesTasks       RuntimeIdentityV2Capabilities = "tasks"
+	RuntimeIdentityV2CapabilitiesThreads     RuntimeIdentityV2Capabilities = "threads"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeIdentityV2Capabilities enum.
+func (e RuntimeIdentityV2Capabilities) Valid() bool {
+	switch e {
+	case RuntimeIdentityV2CapabilitiesAttachments:
+		return true
+	case RuntimeIdentityV2CapabilitiesChannels:
+		return true
+	case RuntimeIdentityV2CapabilitiesReactions:
+		return true
+	case RuntimeIdentityV2CapabilitiesRead:
+		return true
+	case RuntimeIdentityV2CapabilitiesReminders:
+		return true
+	case RuntimeIdentityV2CapabilitiesSend:
+		return true
+	case RuntimeIdentityV2CapabilitiesServer:
+		return true
+	case RuntimeIdentityV2CapabilitiesTasks:
+		return true
+	case RuntimeIdentityV2CapabilitiesThreads:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RuntimeIdentityV2ReplyPolicy.
+const (
+	RuntimeIdentityV2ReplyPolicyAllChannelMessages RuntimeIdentityV2ReplyPolicy = "all_channel_messages"
+	RuntimeIdentityV2ReplyPolicyDmOnly             RuntimeIdentityV2ReplyPolicy = "dm_only"
+	RuntimeIdentityV2ReplyPolicyMentionAndDm       RuntimeIdentityV2ReplyPolicy = "mention_and_dm"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeIdentityV2ReplyPolicy enum.
+func (e RuntimeIdentityV2ReplyPolicy) Valid() bool {
+	switch e {
+	case RuntimeIdentityV2ReplyPolicyAllChannelMessages:
+		return true
+	case RuntimeIdentityV2ReplyPolicyDmOnly:
+		return true
+	case RuntimeIdentityV2ReplyPolicyMentionAndDm:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RuntimeReminderScheduleKind.
 const (
 	RuntimeReminderScheduleKindCron RuntimeReminderScheduleKind = "cron"
@@ -2121,19 +2436,40 @@ func (e ThreadMessageRefKind) Valid() bool {
 
 // Defines values for UpdateAgentRequestReplyPolicy.
 const (
-	AllChannelMessages UpdateAgentRequestReplyPolicy = "all_channel_messages"
-	DmOnly             UpdateAgentRequestReplyPolicy = "dm_only"
-	MentionAndDm       UpdateAgentRequestReplyPolicy = "mention_and_dm"
+	UpdateAgentRequestReplyPolicyAllChannelMessages UpdateAgentRequestReplyPolicy = "all_channel_messages"
+	UpdateAgentRequestReplyPolicyDmOnly             UpdateAgentRequestReplyPolicy = "dm_only"
+	UpdateAgentRequestReplyPolicyMentionAndDm       UpdateAgentRequestReplyPolicy = "mention_and_dm"
 )
 
 // Valid indicates whether the value is a known member of the UpdateAgentRequestReplyPolicy enum.
 func (e UpdateAgentRequestReplyPolicy) Valid() bool {
 	switch e {
-	case AllChannelMessages:
+	case UpdateAgentRequestReplyPolicyAllChannelMessages:
 		return true
-	case DmOnly:
+	case UpdateAgentRequestReplyPolicyDmOnly:
 		return true
-	case MentionAndDm:
+	case UpdateAgentRequestReplyPolicyMentionAndDm:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UpdateAgentRequestV2ReplyPolicy.
+const (
+	UpdateAgentRequestV2ReplyPolicyAllChannelMessages UpdateAgentRequestV2ReplyPolicy = "all_channel_messages"
+	UpdateAgentRequestV2ReplyPolicyDmOnly             UpdateAgentRequestV2ReplyPolicy = "dm_only"
+	UpdateAgentRequestV2ReplyPolicyMentionAndDm       UpdateAgentRequestV2ReplyPolicy = "mention_and_dm"
+)
+
+// Valid indicates whether the value is a known member of the UpdateAgentRequestV2ReplyPolicy enum.
+func (e UpdateAgentRequestV2ReplyPolicy) Valid() bool {
+	switch e {
+	case UpdateAgentRequestV2ReplyPolicyAllChannelMessages:
+		return true
+	case UpdateAgentRequestV2ReplyPolicyDmOnly:
+		return true
+	case UpdateAgentRequestV2ReplyPolicyMentionAndDm:
 		return true
 	default:
 		return false
@@ -2502,6 +2838,53 @@ type AgentProfileSkillCapabilityMissingDependencyTypes string
 // AgentProfileSkillCapabilityScope defines model for AgentProfileSkillCapability.Scope.
 type AgentProfileSkillCapabilityScope string
 
+// AgentV2 defines model for AgentV2.
+type AgentV2 struct {
+	Availability         AgentV2Availability     `json:"availability"`
+	ComputerId           Id                      `json:"computerId"`
+	CredentialVersion    int                     `json:"credentialVersion"`
+	Description          *string                 `json:"description,omitempty"`
+	DesiredState         AgentV2DesiredState     `json:"desiredState"`
+	DisplayName          string                  `json:"displayName"`
+	Handle               string                  `json:"handle"`
+	HostLastSeenAt       *NullableTimestamp      `json:"hostLastSeenAt,omitempty"`
+	Id                   Id                      `json:"id"`
+	ImPresence           AgentV2ImPresence       `json:"imPresence"`
+	ImPresenceUpdatedAt  *NullableTimestamp      `json:"imPresenceUpdatedAt,omitempty"`
+	ImState              AgentV2ImState          `json:"imState"`
+	ImTransportState     AgentV2ImTransportState `json:"imTransportState"`
+	ImTransportUpdatedAt *NullableTimestamp      `json:"imTransportUpdatedAt,omitempty"`
+	ImUserId             string                  `json:"imUserId"`
+	LastErrorCode        *string                 `json:"lastErrorCode,omitempty"`
+	LastObservedAt       *NullableTimestamp      `json:"lastObservedAt,omitempty"`
+	ObservedState        AgentV2ObservedState    `json:"observedState"`
+	ReplyPolicy          AgentV2ReplyPolicy      `json:"replyPolicy"`
+	Revision             Revision                `json:"revision"`
+	Runtime              RuntimeSelectorV2       `json:"runtime"`
+	ServerId             Id                      `json:"serverId"`
+}
+
+// AgentV2Availability defines model for AgentV2.Availability.
+type AgentV2Availability string
+
+// AgentV2DesiredState defines model for AgentV2.DesiredState.
+type AgentV2DesiredState string
+
+// AgentV2ImPresence defines model for AgentV2.ImPresence.
+type AgentV2ImPresence string
+
+// AgentV2ImState defines model for AgentV2.ImState.
+type AgentV2ImState string
+
+// AgentV2ImTransportState defines model for AgentV2.ImTransportState.
+type AgentV2ImTransportState string
+
+// AgentV2ObservedState defines model for AgentV2.ObservedState.
+type AgentV2ObservedState string
+
+// AgentV2ReplyPolicy defines model for AgentV2.ReplyPolicy.
+type AgentV2ReplyPolicy string
+
 // AuthResult defines model for AuthResult.
 type AuthResult struct {
 	AccessToken  *string   `json:"accessToken,omitempty"`
@@ -2590,6 +2973,20 @@ type ComputerAgentLaunchSession struct {
 	Agent       RuntimeIdentity `json:"agent"`
 	ExpiresAt   Timestamp       `json:"expiresAt"`
 	Im          ImSession       `json:"im"`
+}
+
+// ComputerAgentLaunchSessionV2 defines model for ComputerAgentLaunchSessionV2.
+type ComputerAgentLaunchSessionV2 struct {
+	AccessToken *string           `json:"accessToken,omitempty"`
+	Agent       RuntimeIdentityV2 `json:"agent"`
+	ExpiresAt   Timestamp         `json:"expiresAt"`
+	Im          ImSession         `json:"im"`
+}
+
+// ComputerAgentLaunchV2 defines model for ComputerAgentLaunchV2.
+type ComputerAgentLaunchV2 struct {
+	Launch  ComputerAgentLaunchFence     `json:"launch"`
+	Session ComputerAgentLaunchSessionV2 `json:"session"`
 }
 
 // ComputerAgentObservation defines model for ComputerAgentObservation.
@@ -2720,6 +3117,19 @@ type ComputerAssignmentSnapshotV2 struct {
 // ComputerAssignmentSnapshotV2SchemaVersion defines model for ComputerAssignmentSnapshotV2.SchemaVersion.
 type ComputerAssignmentSnapshotV2SchemaVersion int
 
+// ComputerAssignmentSnapshotV3 defines model for ComputerAssignmentSnapshotV3.
+type ComputerAssignmentSnapshotV3 struct {
+	Agents        []ComputerAssignmentV3                    `json:"agents"`
+	ComputerId    Id                                        `json:"computerId"`
+	Epoch         Id                                        `json:"epoch"`
+	Revision      int64                                     `json:"revision"`
+	SchemaVersion ComputerAssignmentSnapshotV3SchemaVersion `json:"schemaVersion"`
+	SnapshotHash  string                                    `json:"snapshotHash"`
+}
+
+// ComputerAssignmentSnapshotV3SchemaVersion defines model for ComputerAssignmentSnapshotV3.SchemaVersion.
+type ComputerAssignmentSnapshotV3SchemaVersion int
+
 // ComputerAssignmentV2 defines model for ComputerAssignmentV2.
 type ComputerAssignmentV2 struct {
 	AgentId                  Id                                `json:"agentId"`
@@ -2738,6 +3148,25 @@ type ComputerAssignmentV2DesiredState string
 
 // ComputerAssignmentV2ReplyPolicy defines model for ComputerAssignmentV2.ReplyPolicy.
 type ComputerAssignmentV2ReplyPolicy string
+
+// ComputerAssignmentV3 defines model for ComputerAssignmentV3.
+type ComputerAssignmentV3 struct {
+	AgentId                  Id                                  `json:"agentId"`
+	ConfigGeneration         int64                               `json:"configGeneration"`
+	CredentialVersion        int64                               `json:"credentialVersion"`
+	CurrentLaunch            *ComputerAssignmentLaunchFence      `json:"currentLaunch"`
+	DesiredState             ComputerAssignmentV3DesiredState    `json:"desiredState"`
+	ProfileCapabilityRefresh *ComputerProfileCapabilityRefreshV2 `json:"profileCapabilityRefresh"`
+	ReplyPolicy              ComputerAssignmentV3ReplyPolicy     `json:"replyPolicy"`
+	Runtime                  RuntimeSelectorV2                   `json:"runtime"`
+	ServerId                 Id                                  `json:"serverId"`
+}
+
+// ComputerAssignmentV3DesiredState defines model for ComputerAssignmentV3.DesiredState.
+type ComputerAssignmentV3DesiredState string
+
+// ComputerAssignmentV3ReplyPolicy defines model for ComputerAssignmentV3.ReplyPolicy.
+type ComputerAssignmentV3ReplyPolicy string
 
 // ComputerEnrollmentClaim defines model for ComputerEnrollmentClaim.
 type ComputerEnrollmentClaim struct {
@@ -2912,6 +3341,21 @@ type ComputerProfileCapabilityRefreshRuntimeKind string
 // ComputerProfileCapabilityRefreshSchemaVersion defines model for ComputerProfileCapabilityRefresh.SchemaVersion.
 type ComputerProfileCapabilityRefreshSchemaVersion int
 
+// ComputerProfileCapabilityRefreshV2 defines model for ComputerProfileCapabilityRefreshV2.
+type ComputerProfileCapabilityRefreshV2 struct {
+	AuthorityContextKey   ProfileCapabilityAuthorityContextKey            `json:"authorityContextKey"`
+	ContextGeneration     int64                                           `json:"contextGeneration"`
+	ForceReload           bool                                            `json:"forceReload"`
+	InvalidationWatermark int64                                           `json:"invalidationWatermark"`
+	RefreshId             Id                                              `json:"refreshId"`
+	RequestedAt           Timestamp                                       `json:"requestedAt"`
+	RuntimeKind           string                                          `json:"runtimeKind"`
+	SchemaVersion         ComputerProfileCapabilityRefreshV2SchemaVersion `json:"schemaVersion"`
+}
+
+// ComputerProfileCapabilityRefreshV2SchemaVersion defines model for ComputerProfileCapabilityRefreshV2.SchemaVersion.
+type ComputerProfileCapabilityRefreshV2SchemaVersion int
+
 // ComputerProfileCapabilitySkillSection defines model for ComputerProfileCapabilitySkillSection.
 type ComputerProfileCapabilitySkillSection struct {
 	ErrorCode *ComputerProfileCapabilitySkillSectionErrorCode `json:"errorCode"`
@@ -2935,6 +3379,12 @@ type ComputerProfileCapabilitySubmissionResult struct {
 
 // ComputerProfileCapabilitySubmissionResultReason defines model for ComputerProfileCapabilitySubmissionResult.Reason.
 type ComputerProfileCapabilitySubmissionResultReason string
+
+// ComputerRuntimeCapability defines model for ComputerRuntimeCapability.
+type ComputerRuntimeCapability struct {
+	AssignmentVersion int `json:"assignmentVersion"`
+	ComputerId        Id  `json:"computerId"`
+}
 
 // ComputerRuntimeCredential defines model for ComputerRuntimeCredential.
 type ComputerRuntimeCredential struct {
@@ -2973,6 +3423,19 @@ type ComputerSessionIdentity struct {
 	ServerId           Id    `json:"serverId"`
 }
 
+// ComputerSessionNegotiationRequest defines model for ComputerSessionNegotiationRequest.
+type ComputerSessionNegotiationRequest struct {
+	AssignmentVersions []int `json:"assignmentVersions"`
+}
+
+// ComputerSessionV2 defines model for ComputerSessionV2.
+type ComputerSessionV2 struct {
+	AccessToken       *string                 `json:"accessToken,omitempty"`
+	AssignmentVersion int                     `json:"assignmentVersion"`
+	Computer          ComputerSessionIdentity `json:"computer"`
+	ExpiresAt         Timestamp               `json:"expiresAt"`
+}
+
 // ComputerSetupCommand defines model for ComputerSetupCommand.
 type ComputerSetupCommand struct {
 	Command    *string   `json:"command,omitempty"`
@@ -2993,6 +3456,19 @@ type CreateAgentRequest struct {
 
 // CreateAgentRequestReplyPolicy defines model for CreateAgentRequest.ReplyPolicy.
 type CreateAgentRequestReplyPolicy string
+
+// CreateAgentRequestV2 defines model for CreateAgentRequestV2.
+type CreateAgentRequestV2 struct {
+	ComputerId  Id                               `json:"computerId"`
+	Description *string                          `json:"description,omitempty"`
+	DisplayName string                           `json:"displayName"`
+	Handle      string                           `json:"handle"`
+	ReplyPolicy *CreateAgentRequestV2ReplyPolicy `json:"replyPolicy,omitempty"`
+	Runtime     RuntimeSelectorV2                `json:"runtime"`
+}
+
+// CreateAgentRequestV2ReplyPolicy defines model for CreateAgentRequestV2.ReplyPolicy.
+type CreateAgentRequestV2ReplyPolicy string
 
 // CreateChannelRequest defines model for CreateChannelRequest.
 type CreateChannelRequest struct {
@@ -3471,6 +3947,22 @@ type RuntimeIdentityCapabilities string
 // RuntimeIdentityReplyPolicy defines model for RuntimeIdentity.ReplyPolicy.
 type RuntimeIdentityReplyPolicy string
 
+// RuntimeIdentityV2 defines model for RuntimeIdentityV2.
+type RuntimeIdentityV2 struct {
+	Capabilities []RuntimeIdentityV2Capabilities `json:"capabilities"`
+	Id           Id                              `json:"id"`
+	ReplyPolicy  RuntimeIdentityV2ReplyPolicy    `json:"replyPolicy"`
+	Runtime      RuntimeSelectorV2               `json:"runtime"`
+	ServerId     Id                              `json:"serverId"`
+	UserId       string                          `json:"userId"`
+}
+
+// RuntimeIdentityV2Capabilities defines model for RuntimeIdentityV2.Capabilities.
+type RuntimeIdentityV2Capabilities string
+
+// RuntimeIdentityV2ReplyPolicy defines model for RuntimeIdentityV2.ReplyPolicy.
+type RuntimeIdentityV2ReplyPolicy string
+
 // RuntimeReminder defines model for RuntimeReminder.
 type RuntimeReminder struct {
 	AgentId      Id                          `json:"agentId"`
@@ -3506,6 +3998,12 @@ type RuntimeReminderAnchor struct {
 
 // RuntimeReminderAnchorKind defines model for RuntimeReminderAnchor.Kind.
 type RuntimeReminderAnchorKind string
+
+// RuntimeSelectorV2 defines model for RuntimeSelectorV2.
+type RuntimeSelectorV2 struct {
+	Kind  string  `json:"kind"`
+	Model *string `json:"model,omitempty"`
+}
 
 // RuntimeTaskStatusRequest defines model for RuntimeTaskStatusRequest.
 type RuntimeTaskStatusRequest struct {
@@ -3668,6 +4166,18 @@ type UpdateAgentRequest struct {
 // UpdateAgentRequestReplyPolicy defines model for UpdateAgentRequest.ReplyPolicy.
 type UpdateAgentRequestReplyPolicy string
 
+// UpdateAgentRequestV2 defines model for UpdateAgentRequestV2.
+type UpdateAgentRequestV2 struct {
+	ComputerId  *Id                              `json:"computerId,omitempty"`
+	Description *string                          `json:"description,omitempty"`
+	DisplayName *string                          `json:"displayName,omitempty"`
+	ReplyPolicy *UpdateAgentRequestV2ReplyPolicy `json:"replyPolicy,omitempty"`
+	Runtime     *RuntimeSelectorV2               `json:"runtime,omitempty"`
+}
+
+// UpdateAgentRequestV2ReplyPolicy defines model for UpdateAgentRequestV2.ReplyPolicy.
+type UpdateAgentRequestV2ReplyPolicy string
+
 // UpdateChannelRequest defines model for UpdateChannelRequest.
 type UpdateChannelRequest struct {
 	Description *string `json:"description,omitempty"`
@@ -3809,6 +4319,14 @@ type GetComputerAssignmentsV2Params struct {
 	ForceFull     *bool `form:"forceFull,omitempty" json:"forceFull,omitempty"`
 }
 
+// GetComputerAssignmentsV3Params defines parameters for GetComputerAssignmentsV3.
+type GetComputerAssignmentsV3Params struct {
+	SinceEpoch    *Id   `form:"sinceEpoch,omitempty" json:"sinceEpoch,omitempty"`
+	SinceRevision int64 `form:"sinceRevision" json:"sinceRevision"`
+	WaitSeconds   *int  `form:"waitSeconds,omitempty" json:"waitSeconds,omitempty"`
+	ForceFull     *bool `form:"forceFull,omitempty" json:"forceFull,omitempty"`
+}
+
 // RotateComputerCredentialParams defines parameters for RotateComputerCredential.
 type RotateComputerCredentialParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -3943,6 +4461,22 @@ type UpdateServerParams struct {
 // CreateAgentParams defines parameters for CreateAgent.
 type CreateAgentParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// CreateAgentV2Params defines parameters for CreateAgentV2.
+type CreateAgentV2Params struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// DeleteAgentV2Params defines parameters for DeleteAgentV2.
+type DeleteAgentV2Params struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// UpdateAgentV2Params defines parameters for UpdateAgentV2.
+type UpdateAgentV2Params struct {
+	XResourceRevision ResourceRevision `json:"X-Resource-Revision"`
+	IdempotencyKey    IdempotencyKey   `json:"Idempotency-Key"`
 }
 
 // DeleteAgentParams defines parameters for DeleteAgent.
@@ -4149,6 +4683,12 @@ type ObserveTencentIMStateJSONRequestBody = TencentIMStateCallback
 // CreateComputerAgentLaunchJSONRequestBody defines body for CreateComputerAgentLaunch for application/json ContentType.
 type CreateComputerAgentLaunchJSONRequestBody = ComputerAgentLaunchRequest
 
+// CreateComputerAgentLaunchV2JSONRequestBody defines body for CreateComputerAgentLaunchV2 for application/json ContentType.
+type CreateComputerAgentLaunchV2JSONRequestBody = ComputerAgentLaunchRequest
+
+// RefreshComputerAgentSessionV2JSONRequestBody defines body for RefreshComputerAgentSessionV2 for application/json ContentType.
+type RefreshComputerAgentSessionV2JSONRequestBody = ComputerAgentSessionRefreshRequest
+
 // RefreshComputerAgentSessionJSONRequestBody defines body for RefreshComputerAgentSession for application/json ContentType.
 type RefreshComputerAgentSessionJSONRequestBody = ComputerAgentSessionRefreshRequest
 
@@ -4169,6 +4709,9 @@ type SendComputerHeartbeatJSONRequestBody = ComputerHeartbeat
 
 // PreflightComputerJSONRequestBody defines body for PreflightComputer for application/json ContentType.
 type PreflightComputerJSONRequestBody = ComputerPreflightRequest
+
+// CreateComputerSessionV2JSONRequestBody defines body for CreateComputerSessionV2 for application/json ContentType.
+type CreateComputerSessionV2JSONRequestBody = ComputerSessionNegotiationRequest
 
 // RedeemComputerSetupCodeTextRequestBody defines body for RedeemComputerSetupCode for text/plain ContentType.
 type RedeemComputerSetupCodeTextRequestBody = RedeemComputerSetupCodeTextBody
@@ -4208,6 +4751,12 @@ type UpdateServerJSONRequestBody = UpdateServerRequest
 
 // CreateAgentJSONRequestBody defines body for CreateAgent for application/json ContentType.
 type CreateAgentJSONRequestBody = CreateAgentRequest
+
+// CreateAgentV2JSONRequestBody defines body for CreateAgentV2 for application/json ContentType.
+type CreateAgentV2JSONRequestBody = CreateAgentRequestV2
+
+// UpdateAgentV2JSONRequestBody defines body for UpdateAgentV2 for application/json ContentType.
+type UpdateAgentV2JSONRequestBody = UpdateAgentRequestV2
 
 // UpdateAgentJSONRequestBody defines body for UpdateAgent for application/json ContentType.
 type UpdateAgentJSONRequestBody = UpdateAgentRequest
@@ -4286,6 +4835,12 @@ type ServerInterface interface {
 	// 原子分配 Agent Launch Fence 并签发短期 Runtime 与 IM Session
 	// (POST /computer/agents/{agentId}/launches)
 	CreateComputerAgentLaunch(w http.ResponseWriter, r *http.Request, agentId AgentId)
+	// 为 Assignment v3 分配 Launch Fence 与可扩展 Runtime Session
+	// (POST /computer/agents/{agentId}/launches-v2)
+	CreateComputerAgentLaunchV2(w http.ResponseWriter, r *http.Request, agentId AgentId)
+	// 为 Assignment v3 的当前 Launch 刷新 Runtime 与 IM Session
+	// (POST /computer/agents/{agentId}/launches-v2/{launchId}/session)
+	RefreshComputerAgentSessionV2(w http.ResponseWriter, r *http.Request, agentId AgentId, launchId Id)
 	// 为当前 Launch Fence 刷新短期 Runtime 与 IM Session
 	// (POST /computer/agents/{agentId}/launches/{launchId}/session)
 	RefreshComputerAgentSession(w http.ResponseWriter, r *http.Request, agentId AgentId, launchId Id)
@@ -4304,6 +4859,9 @@ type ServerInterface interface {
 	// 拉取支持 Agent Profile capability command 的 Assignment v2 Snapshot
 	// (GET /computer/assignments-v2)
 	GetComputerAssignmentsV2(w http.ResponseWriter, r *http.Request, params GetComputerAssignmentsV2Params)
+	// 拉取使用可扩展 Runtime selector 的 Assignment v3 Snapshot
+	// (GET /computer/assignments-v3)
+	GetComputerAssignmentsV3(w http.ResponseWriter, r *http.Request, params GetComputerAssignmentsV3Params)
 	// 轮换当前 Computer Runtime Credential
 	// (POST /computer/credential:rotate)
 	RotateComputerCredential(w http.ResponseWriter, r *http.Request, params RotateComputerCredentialParams)
@@ -4319,6 +4877,9 @@ type ServerInterface interface {
 	// 长期 Computer Credential 换取短期平台 Session
 	// (POST /computer/session)
 	CreateComputerSession(w http.ResponseWriter, r *http.Request, params CreateComputerSessionParams)
+	// 协商可扩展 Assignment 协议并签发 Computer Session
+	// (POST /computer/session-v2)
+	CreateComputerSessionV2(w http.ResponseWriter, r *http.Request)
 	// 将短安装码兑换为一次安装脚本
 	// (POST /computer/setup-codes:redeem)
 	RedeemComputerSetupCode(w http.ResponseWriter, r *http.Request, params RedeemComputerSetupCodeParams)
@@ -4412,6 +4973,21 @@ type ServerInterface interface {
 	// 创建普通 IM Agent 身份
 	// (POST /servers/{serverId}/agents)
 	CreateAgent(w http.ResponseWriter, r *http.Request, serverId ServerId, params CreateAgentParams)
+	// 以可扩展 Runtime selector 列出 Agent
+	// (GET /servers/{serverId}/agents-v2)
+	ListAgentsV2(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// 使用可扩展 Runtime selector 创建 Agent
+	// (POST /servers/{serverId}/agents-v2)
+	CreateAgentV2(w http.ResponseWriter, r *http.Request, serverId ServerId, params CreateAgentV2Params)
+	// 删除 Agent v2
+	// (DELETE /servers/{serverId}/agents-v2/{agentId})
+	DeleteAgentV2(w http.ResponseWriter, r *http.Request, serverId ServerId, agentId AgentId, params DeleteAgentV2Params)
+	// 获取 Agent v2
+	// (GET /servers/{serverId}/agents-v2/{agentId})
+	GetAgentV2(w http.ResponseWriter, r *http.Request, serverId ServerId, agentId AgentId)
+	// 修改 Agent v2
+	// (PATCH /servers/{serverId}/agents-v2/{agentId})
+	UpdateAgentV2(w http.ResponseWriter, r *http.Request, serverId ServerId, agentId AgentId, params UpdateAgentV2Params)
 	// 墓碑 Agent、撤销 Runtime credential 并异步删除 IM 账号
 	// (DELETE /servers/{serverId}/agents/{agentId})
 	DeleteAgent(w http.ResponseWriter, r *http.Request, serverId ServerId, agentId AgentId, params DeleteAgentParams)
@@ -4478,6 +5054,9 @@ type ServerInterface interface {
 	// 登记一条已经由腾讯 IM 发出的 Thread 回复
 	// (POST /servers/{serverId}/channels/{channelId}/threads/{threadId}/replies)
 	RegisterMessageThreadReply(w http.ResponseWriter, r *http.Request, serverId ServerId, channelId ChannelId, threadId ThreadId, params RegisterMessageThreadReplyParams)
+	// 列出 Computer 已协商的 Runtime 协议能力
+	// (GET /servers/{serverId}/computer-runtime-capabilities)
+	ListComputerRuntimeCapabilities(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// 列出 Computer
 	// (GET /servers/{serverId}/computers)
 	ListComputers(w http.ResponseWriter, r *http.Request, serverId ServerId)
@@ -4858,6 +5437,77 @@ func (siw *ServerInterfaceWrapper) CreateComputerAgentLaunch(w http.ResponseWrit
 	handler.ServeHTTP(w, r)
 }
 
+// CreateComputerAgentLaunchV2 operation middleware
+func (siw *ServerInterfaceWrapper) CreateComputerAgentLaunchV2(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "agentId" -------------
+	var agentId AgentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "agentId", r.PathValue("agentId"), &agentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "agentId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, ComputerBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateComputerAgentLaunchV2(w, r, agentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RefreshComputerAgentSessionV2 operation middleware
+func (siw *ServerInterfaceWrapper) RefreshComputerAgentSessionV2(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "agentId" -------------
+	var agentId AgentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "agentId", r.PathValue("agentId"), &agentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "agentId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "launchId" -------------
+	var launchId Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "launchId", r.PathValue("launchId"), &launchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "launchId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, ComputerBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RefreshComputerAgentSessionV2(w, r, agentId, launchId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RefreshComputerAgentSession operation middleware
 func (siw *ServerInterfaceWrapper) RefreshComputerAgentSession(w http.ResponseWriter, r *http.Request) {
 
@@ -5171,6 +5821,70 @@ func (siw *ServerInterfaceWrapper) GetComputerAssignmentsV2(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
+// GetComputerAssignmentsV3 operation middleware
+func (siw *ServerInterfaceWrapper) GetComputerAssignmentsV3(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, ComputerBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetComputerAssignmentsV3Params
+
+	// ------------- Optional query parameter "sinceEpoch" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sinceEpoch", r.URL.Query(), &params.SinceEpoch, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sinceEpoch", Err: err})
+		return
+	}
+
+	// ------------- Required query parameter "sinceRevision" -------------
+
+	if paramValue := r.URL.Query().Get("sinceRevision"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sinceRevision"})
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "sinceRevision", r.URL.Query(), &params.SinceRevision, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sinceRevision", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "waitSeconds" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "waitSeconds", r.URL.Query(), &params.WaitSeconds, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "waitSeconds", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "forceFull" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "forceFull", r.URL.Query(), &params.ForceFull, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "forceFull", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetComputerAssignmentsV3(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RotateComputerCredential operation middleware
 func (siw *ServerInterfaceWrapper) RotateComputerCredential(w http.ResponseWriter, r *http.Request) {
 
@@ -5322,6 +6036,26 @@ func (siw *ServerInterfaceWrapper) CreateComputerSession(w http.ResponseWriter, 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateComputerSession(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateComputerSessionV2 operation middleware
+func (siw *ServerInterfaceWrapper) CreateComputerSessionV2(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, ComputerCredentialAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateComputerSessionV2(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6754,6 +7488,295 @@ func (siw *ServerInterfaceWrapper) CreateAgent(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// ListAgentsV2 operation middleware
+func (siw *ServerInterfaceWrapper) ListAgentsV2(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAgentsV2(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAgentV2 operation middleware
+func (siw *ServerInterfaceWrapper) CreateAgentV2(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateAgentV2Params
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAgentV2(w, r, serverId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteAgentV2 operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAgentV2(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "agentId" -------------
+	var agentId AgentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "agentId", r.PathValue("agentId"), &agentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "agentId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteAgentV2Params
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteAgentV2(w, r, serverId, agentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAgentV2 operation middleware
+func (siw *ServerInterfaceWrapper) GetAgentV2(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "agentId" -------------
+	var agentId AgentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "agentId", r.PathValue("agentId"), &agentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "agentId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAgentV2(w, r, serverId, agentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateAgentV2 operation middleware
+func (siw *ServerInterfaceWrapper) UpdateAgentV2(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "agentId" -------------
+	var agentId AgentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "agentId", r.PathValue("agentId"), &agentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "agentId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateAgentV2Params
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Resource-Revision" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Resource-Revision")]; found {
+		var XResourceRevision ResourceRevision
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Resource-Revision", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Resource-Revision", valueList[0], &XResourceRevision, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "integer", Format: "int64"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Resource-Revision", Err: err})
+			return
+		}
+
+		params.XResourceRevision = XResourceRevision
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Resource-Revision is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Resource-Revision", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateAgentV2(w, r, serverId, agentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteAgent operation middleware
 func (siw *ServerInterfaceWrapper) DeleteAgent(w http.ResponseWriter, r *http.Request) {
 
@@ -8146,6 +9169,37 @@ func (siw *ServerInterfaceWrapper) RegisterMessageThreadReply(w http.ResponseWri
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RegisterMessageThreadReply(w, r, serverId, channelId, threadId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListComputerRuntimeCapabilities operation middleware
+func (siw *ServerInterfaceWrapper) ListComputerRuntimeCapabilities(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListComputerRuntimeCapabilities(w, r, serverId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10024,17 +11078,21 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/computer-installation-options", wrapper.GetComputerInstallationOptions)
 	m.HandleFunc("GET "+options.BaseURL+"/computer-installation-targets", wrapper.GetComputerInstallationTargets)
 	m.HandleFunc("POST "+options.BaseURL+"/computer/agents/{agentId}/launches", wrapper.CreateComputerAgentLaunch)
+	m.HandleFunc("POST "+options.BaseURL+"/computer/agents/{agentId}/launches-v2", wrapper.CreateComputerAgentLaunchV2)
+	m.HandleFunc("POST "+options.BaseURL+"/computer/agents/{agentId}/launches-v2/{launchId}/session", wrapper.RefreshComputerAgentSessionV2)
 	m.HandleFunc("POST "+options.BaseURL+"/computer/agents/{agentId}/launches/{launchId}/session", wrapper.RefreshComputerAgentSession)
 	m.HandleFunc("PUT "+options.BaseURL+"/computer/agents/{agentId}/observations/{observationId}", wrapper.PutComputerAgentObservation)
 	m.HandleFunc("PUT "+options.BaseURL+"/computer/agents/{agentId}/profile-capability-invalidations/{eventId}", wrapper.PutComputerAgentProfileCapabilityInvalidation)
 	m.HandleFunc("PUT "+options.BaseURL+"/computer/agents/{agentId}/profile-capability-results/{operationId}", wrapper.PutComputerAgentProfileCapabilityResult)
 	m.HandleFunc("GET "+options.BaseURL+"/computer/assignments", wrapper.GetComputerAssignments)
 	m.HandleFunc("GET "+options.BaseURL+"/computer/assignments-v2", wrapper.GetComputerAssignmentsV2)
+	m.HandleFunc("GET "+options.BaseURL+"/computer/assignments-v3", wrapper.GetComputerAssignmentsV3)
 	m.HandleFunc("POST "+options.BaseURL+"/computer/credential:rotate", wrapper.RotateComputerCredential)
 	m.HandleFunc("POST "+options.BaseURL+"/computer/enrollments:claim", wrapper.ClaimComputerEnrollment)
 	m.HandleFunc("POST "+options.BaseURL+"/computer/heartbeat", wrapper.SendComputerHeartbeat)
 	m.HandleFunc("POST "+options.BaseURL+"/computer/preflight", wrapper.PreflightComputer)
 	m.HandleFunc("POST "+options.BaseURL+"/computer/session", wrapper.CreateComputerSession)
+	m.HandleFunc("POST "+options.BaseURL+"/computer/session-v2", wrapper.CreateComputerSessionV2)
 	m.HandleFunc("POST "+options.BaseURL+"/computer/setup-codes:redeem", wrapper.RedeemComputerSetupCode)
 	m.HandleFunc("POST "+options.BaseURL+"/invites/accept", wrapper.AcceptInvite)
 	m.HandleFunc("POST "+options.BaseURL+"/join-links/accept", wrapper.AcceptJoinLink)
@@ -10066,6 +11124,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/servers/{serverId}/activity", wrapper.ListActivity)
 	m.HandleFunc("GET "+options.BaseURL+"/servers/{serverId}/agents", wrapper.ListAgents)
 	m.HandleFunc("POST "+options.BaseURL+"/servers/{serverId}/agents", wrapper.CreateAgent)
+	m.HandleFunc("GET "+options.BaseURL+"/servers/{serverId}/agents-v2", wrapper.ListAgentsV2)
+	m.HandleFunc("POST "+options.BaseURL+"/servers/{serverId}/agents-v2", wrapper.CreateAgentV2)
+	m.HandleFunc("DELETE "+options.BaseURL+"/servers/{serverId}/agents-v2/{agentId}", wrapper.DeleteAgentV2)
+	m.HandleFunc("GET "+options.BaseURL+"/servers/{serverId}/agents-v2/{agentId}", wrapper.GetAgentV2)
+	m.HandleFunc("PATCH "+options.BaseURL+"/servers/{serverId}/agents-v2/{agentId}", wrapper.UpdateAgentV2)
 	m.HandleFunc("DELETE "+options.BaseURL+"/servers/{serverId}/agents/{agentId}", wrapper.DeleteAgent)
 	m.HandleFunc("GET "+options.BaseURL+"/servers/{serverId}/agents/{agentId}", wrapper.GetAgent)
 	m.HandleFunc("PATCH "+options.BaseURL+"/servers/{serverId}/agents/{agentId}", wrapper.UpdateAgent)
@@ -10088,6 +11151,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("PUT "+options.BaseURL+"/servers/{serverId}/channels/{channelId}/threads/{threadId}/read", wrapper.MarkMessageThreadRead)
 	m.HandleFunc("GET "+options.BaseURL+"/servers/{serverId}/channels/{channelId}/threads/{threadId}/replies", wrapper.ListMessageThreadReplies)
 	m.HandleFunc("POST "+options.BaseURL+"/servers/{serverId}/channels/{channelId}/threads/{threadId}/replies", wrapper.RegisterMessageThreadReply)
+	m.HandleFunc("GET "+options.BaseURL+"/servers/{serverId}/computer-runtime-capabilities", wrapper.ListComputerRuntimeCapabilities)
 	m.HandleFunc("GET "+options.BaseURL+"/servers/{serverId}/computers", wrapper.ListComputers)
 	m.HandleFunc("POST "+options.BaseURL+"/servers/{serverId}/computers", wrapper.CreateComputer)
 	m.HandleFunc("DELETE "+options.BaseURL+"/servers/{serverId}/computers/{computerId}", wrapper.RemoveComputer)
@@ -10489,6 +11553,80 @@ func (response CreateComputerAgentLaunchdefaultJSONResponse) VisitCreateComputer
 	return json.NewEncoder(w).Encode(response.Body)
 }
 
+type CreateComputerAgentLaunchV2RequestObject struct {
+	AgentId AgentId `json:"agentId"`
+	Body    *CreateComputerAgentLaunchV2JSONRequestBody
+}
+
+type CreateComputerAgentLaunchV2ResponseObject interface {
+	VisitCreateComputerAgentLaunchV2Response(w http.ResponseWriter) error
+}
+
+type CreateComputerAgentLaunchV2200JSONResponse ComputerAgentLaunchV2
+
+func (response CreateComputerAgentLaunchV2200JSONResponse) VisitCreateComputerAgentLaunchV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateComputerAgentLaunchV2201JSONResponse ComputerAgentLaunchV2
+
+func (response CreateComputerAgentLaunchV2201JSONResponse) VisitCreateComputerAgentLaunchV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateComputerAgentLaunchV2defaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response CreateComputerAgentLaunchV2defaultJSONResponse) VisitCreateComputerAgentLaunchV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type RefreshComputerAgentSessionV2RequestObject struct {
+	AgentId  AgentId `json:"agentId"`
+	LaunchId Id      `json:"launchId"`
+	Body     *RefreshComputerAgentSessionV2JSONRequestBody
+}
+
+type RefreshComputerAgentSessionV2ResponseObject interface {
+	VisitRefreshComputerAgentSessionV2Response(w http.ResponseWriter) error
+}
+
+type RefreshComputerAgentSessionV2201JSONResponse ComputerAgentLaunchSessionV2
+
+func (response RefreshComputerAgentSessionV2201JSONResponse) VisitRefreshComputerAgentSessionV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RefreshComputerAgentSessionV2defaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response RefreshComputerAgentSessionV2defaultJSONResponse) VisitRefreshComputerAgentSessionV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
 type RefreshComputerAgentSessionRequestObject struct {
 	AgentId  AgentId `json:"agentId"`
 	LaunchId Id      `json:"launchId"`
@@ -10721,6 +11859,51 @@ func (response GetComputerAssignmentsV2defaultJSONResponse) VisitGetComputerAssi
 	return json.NewEncoder(w).Encode(response.Body)
 }
 
+type GetComputerAssignmentsV3RequestObject struct {
+	Params GetComputerAssignmentsV3Params
+}
+
+type GetComputerAssignmentsV3ResponseObject interface {
+	VisitGetComputerAssignmentsV3Response(w http.ResponseWriter) error
+}
+
+type GetComputerAssignmentsV3200JSONResponse ComputerAssignmentSnapshotV3
+
+func (response GetComputerAssignmentsV3200JSONResponse) VisitGetComputerAssignmentsV3Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetComputerAssignmentsV3204ResponseHeaders struct {
+	XAssignmentRevision int64
+}
+
+type GetComputerAssignmentsV3204Response struct {
+	Headers GetComputerAssignmentsV3204ResponseHeaders
+}
+
+func (response GetComputerAssignmentsV3204Response) VisitGetComputerAssignmentsV3Response(w http.ResponseWriter) error {
+	w.Header().Set("X-Assignment-Revision", fmt.Sprint(response.Headers.XAssignmentRevision))
+	w.WriteHeader(204)
+	return nil
+}
+
+type GetComputerAssignmentsV3defaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response GetComputerAssignmentsV3defaultJSONResponse) VisitGetComputerAssignmentsV3Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
 type RotateComputerCredentialRequestObject struct {
 	Params RotateComputerCredentialParams
 }
@@ -10924,6 +12107,47 @@ type CreateComputerSessiondefaultJSONResponse struct {
 }
 
 func (response CreateComputerSessiondefaultJSONResponse) VisitCreateComputerSessionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type CreateComputerSessionV2RequestObject struct {
+	Body *CreateComputerSessionV2JSONRequestBody
+}
+
+type CreateComputerSessionV2ResponseObject interface {
+	VisitCreateComputerSessionV2Response(w http.ResponseWriter) error
+}
+
+type CreateComputerSessionV2201ResponseHeaders struct {
+	CacheControl string
+	Pragma       string
+}
+
+type CreateComputerSessionV2201JSONResponse struct {
+	Body    ComputerSessionV2
+	Headers CreateComputerSessionV2201ResponseHeaders
+}
+
+func (response CreateComputerSessionV2201JSONResponse) VisitCreateComputerSessionV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", fmt.Sprint(response.Headers.CacheControl))
+	w.Header().Set("Pragma", fmt.Sprint(response.Headers.Pragma))
+	w.WriteHeader(201)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type CreateComputerSessionV2defaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response CreateComputerSessionV2defaultJSONResponse) VisitCreateComputerSessionV2Response(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
 	w.WriteHeader(response.StatusCode)
@@ -11970,6 +13194,177 @@ func (response CreateAgentdefaultJSONResponse) VisitCreateAgentResponse(w http.R
 	return json.NewEncoder(w).Encode(response.Body)
 }
 
+type ListAgentsV2RequestObject struct {
+	ServerId ServerId `json:"serverId"`
+}
+
+type ListAgentsV2ResponseObject interface {
+	VisitListAgentsV2Response(w http.ResponseWriter) error
+}
+
+type ListAgentsV2200JSONResponse []AgentV2
+
+func (response ListAgentsV2200JSONResponse) VisitListAgentsV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListAgentsV2defaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response ListAgentsV2defaultJSONResponse) VisitListAgentsV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type CreateAgentV2RequestObject struct {
+	ServerId ServerId `json:"serverId"`
+	Params   CreateAgentV2Params
+	Body     *CreateAgentV2JSONRequestBody
+}
+
+type CreateAgentV2ResponseObject interface {
+	VisitCreateAgentV2Response(w http.ResponseWriter) error
+}
+
+type CreateAgentV2202JSONResponse AcceptedResource
+
+func (response CreateAgentV2202JSONResponse) VisitCreateAgentV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateAgentV2defaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response CreateAgentV2defaultJSONResponse) VisitCreateAgentV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type DeleteAgentV2RequestObject struct {
+	ServerId ServerId `json:"serverId"`
+	AgentId  AgentId  `json:"agentId"`
+	Params   DeleteAgentV2Params
+}
+
+type DeleteAgentV2ResponseObject interface {
+	VisitDeleteAgentV2Response(w http.ResponseWriter) error
+}
+
+type DeleteAgentV2202JSONResponse AcceptedResource
+
+func (response DeleteAgentV2202JSONResponse) VisitDeleteAgentV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeleteAgentV2defaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response DeleteAgentV2defaultJSONResponse) VisitDeleteAgentV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type GetAgentV2RequestObject struct {
+	ServerId ServerId `json:"serverId"`
+	AgentId  AgentId  `json:"agentId"`
+}
+
+type GetAgentV2ResponseObject interface {
+	VisitGetAgentV2Response(w http.ResponseWriter) error
+}
+
+type GetAgentV2200JSONResponse AgentV2
+
+func (response GetAgentV2200JSONResponse) VisitGetAgentV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetAgentV2defaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response GetAgentV2defaultJSONResponse) VisitGetAgentV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type UpdateAgentV2RequestObject struct {
+	ServerId ServerId `json:"serverId"`
+	AgentId  AgentId  `json:"agentId"`
+	Params   UpdateAgentV2Params
+	Body     *UpdateAgentV2JSONRequestBody
+}
+
+type UpdateAgentV2ResponseObject interface {
+	VisitUpdateAgentV2Response(w http.ResponseWriter) error
+}
+
+type UpdateAgentV2200ResponseHeaders struct {
+	XResourceRevision int64
+}
+
+type UpdateAgentV2200JSONResponse struct {
+	Body    AgentV2
+	Headers UpdateAgentV2200ResponseHeaders
+}
+
+func (response UpdateAgentV2200JSONResponse) VisitUpdateAgentV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Resource-Revision", fmt.Sprint(response.Headers.XResourceRevision))
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type UpdateAgentV2defaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response UpdateAgentV2defaultJSONResponse) VisitUpdateAgentV2Response(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
 type DeleteAgentRequestObject struct {
 	ServerId ServerId `json:"serverId"`
 	AgentId  AgentId  `json:"agentId"`
@@ -12708,6 +14103,37 @@ type RegisterMessageThreadReplydefaultJSONResponse struct {
 }
 
 func (response RegisterMessageThreadReplydefaultJSONResponse) VisitRegisterMessageThreadReplyResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type ListComputerRuntimeCapabilitiesRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+}
+
+type ListComputerRuntimeCapabilitiesResponseObject interface {
+	VisitListComputerRuntimeCapabilitiesResponse(w http.ResponseWriter) error
+}
+
+type ListComputerRuntimeCapabilities200JSONResponse []ComputerRuntimeCapability
+
+func (response ListComputerRuntimeCapabilities200JSONResponse) VisitListComputerRuntimeCapabilitiesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListComputerRuntimeCapabilitiesdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response ListComputerRuntimeCapabilitiesdefaultJSONResponse) VisitListComputerRuntimeCapabilitiesResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
 	w.WriteHeader(response.StatusCode)
@@ -13832,6 +15258,12 @@ type StrictServerInterface interface {
 	// 原子分配 Agent Launch Fence 并签发短期 Runtime 与 IM Session
 	// (POST /computer/agents/{agentId}/launches)
 	CreateComputerAgentLaunch(ctx context.Context, request CreateComputerAgentLaunchRequestObject) (CreateComputerAgentLaunchResponseObject, error)
+	// 为 Assignment v3 分配 Launch Fence 与可扩展 Runtime Session
+	// (POST /computer/agents/{agentId}/launches-v2)
+	CreateComputerAgentLaunchV2(ctx context.Context, request CreateComputerAgentLaunchV2RequestObject) (CreateComputerAgentLaunchV2ResponseObject, error)
+	// 为 Assignment v3 的当前 Launch 刷新 Runtime 与 IM Session
+	// (POST /computer/agents/{agentId}/launches-v2/{launchId}/session)
+	RefreshComputerAgentSessionV2(ctx context.Context, request RefreshComputerAgentSessionV2RequestObject) (RefreshComputerAgentSessionV2ResponseObject, error)
 	// 为当前 Launch Fence 刷新短期 Runtime 与 IM Session
 	// (POST /computer/agents/{agentId}/launches/{launchId}/session)
 	RefreshComputerAgentSession(ctx context.Context, request RefreshComputerAgentSessionRequestObject) (RefreshComputerAgentSessionResponseObject, error)
@@ -13850,6 +15282,9 @@ type StrictServerInterface interface {
 	// 拉取支持 Agent Profile capability command 的 Assignment v2 Snapshot
 	// (GET /computer/assignments-v2)
 	GetComputerAssignmentsV2(ctx context.Context, request GetComputerAssignmentsV2RequestObject) (GetComputerAssignmentsV2ResponseObject, error)
+	// 拉取使用可扩展 Runtime selector 的 Assignment v3 Snapshot
+	// (GET /computer/assignments-v3)
+	GetComputerAssignmentsV3(ctx context.Context, request GetComputerAssignmentsV3RequestObject) (GetComputerAssignmentsV3ResponseObject, error)
 	// 轮换当前 Computer Runtime Credential
 	// (POST /computer/credential:rotate)
 	RotateComputerCredential(ctx context.Context, request RotateComputerCredentialRequestObject) (RotateComputerCredentialResponseObject, error)
@@ -13865,6 +15300,9 @@ type StrictServerInterface interface {
 	// 长期 Computer Credential 换取短期平台 Session
 	// (POST /computer/session)
 	CreateComputerSession(ctx context.Context, request CreateComputerSessionRequestObject) (CreateComputerSessionResponseObject, error)
+	// 协商可扩展 Assignment 协议并签发 Computer Session
+	// (POST /computer/session-v2)
+	CreateComputerSessionV2(ctx context.Context, request CreateComputerSessionV2RequestObject) (CreateComputerSessionV2ResponseObject, error)
 	// 将短安装码兑换为一次安装脚本
 	// (POST /computer/setup-codes:redeem)
 	RedeemComputerSetupCode(ctx context.Context, request RedeemComputerSetupCodeRequestObject) (RedeemComputerSetupCodeResponseObject, error)
@@ -13958,6 +15396,21 @@ type StrictServerInterface interface {
 	// 创建普通 IM Agent 身份
 	// (POST /servers/{serverId}/agents)
 	CreateAgent(ctx context.Context, request CreateAgentRequestObject) (CreateAgentResponseObject, error)
+	// 以可扩展 Runtime selector 列出 Agent
+	// (GET /servers/{serverId}/agents-v2)
+	ListAgentsV2(ctx context.Context, request ListAgentsV2RequestObject) (ListAgentsV2ResponseObject, error)
+	// 使用可扩展 Runtime selector 创建 Agent
+	// (POST /servers/{serverId}/agents-v2)
+	CreateAgentV2(ctx context.Context, request CreateAgentV2RequestObject) (CreateAgentV2ResponseObject, error)
+	// 删除 Agent v2
+	// (DELETE /servers/{serverId}/agents-v2/{agentId})
+	DeleteAgentV2(ctx context.Context, request DeleteAgentV2RequestObject) (DeleteAgentV2ResponseObject, error)
+	// 获取 Agent v2
+	// (GET /servers/{serverId}/agents-v2/{agentId})
+	GetAgentV2(ctx context.Context, request GetAgentV2RequestObject) (GetAgentV2ResponseObject, error)
+	// 修改 Agent v2
+	// (PATCH /servers/{serverId}/agents-v2/{agentId})
+	UpdateAgentV2(ctx context.Context, request UpdateAgentV2RequestObject) (UpdateAgentV2ResponseObject, error)
 	// 墓碑 Agent、撤销 Runtime credential 并异步删除 IM 账号
 	// (DELETE /servers/{serverId}/agents/{agentId})
 	DeleteAgent(ctx context.Context, request DeleteAgentRequestObject) (DeleteAgentResponseObject, error)
@@ -14024,6 +15477,9 @@ type StrictServerInterface interface {
 	// 登记一条已经由腾讯 IM 发出的 Thread 回复
 	// (POST /servers/{serverId}/channels/{channelId}/threads/{threadId}/replies)
 	RegisterMessageThreadReply(ctx context.Context, request RegisterMessageThreadReplyRequestObject) (RegisterMessageThreadReplyResponseObject, error)
+	// 列出 Computer 已协商的 Runtime 协议能力
+	// (GET /servers/{serverId}/computer-runtime-capabilities)
+	ListComputerRuntimeCapabilities(ctx context.Context, request ListComputerRuntimeCapabilitiesRequestObject) (ListComputerRuntimeCapabilitiesResponseObject, error)
 	// 列出 Computer
 	// (GET /servers/{serverId}/computers)
 	ListComputers(ctx context.Context, request ListComputersRequestObject) (ListComputersResponseObject, error)
@@ -14407,6 +15863,73 @@ func (sh *strictHandler) CreateComputerAgentLaunch(w http.ResponseWriter, r *htt
 	}
 }
 
+// CreateComputerAgentLaunchV2 operation middleware
+func (sh *strictHandler) CreateComputerAgentLaunchV2(w http.ResponseWriter, r *http.Request, agentId AgentId) {
+	var request CreateComputerAgentLaunchV2RequestObject
+
+	request.AgentId = agentId
+
+	var body CreateComputerAgentLaunchV2JSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateComputerAgentLaunchV2(ctx, request.(CreateComputerAgentLaunchV2RequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateComputerAgentLaunchV2")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateComputerAgentLaunchV2ResponseObject); ok {
+		if err := validResponse.VisitCreateComputerAgentLaunchV2Response(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RefreshComputerAgentSessionV2 operation middleware
+func (sh *strictHandler) RefreshComputerAgentSessionV2(w http.ResponseWriter, r *http.Request, agentId AgentId, launchId Id) {
+	var request RefreshComputerAgentSessionV2RequestObject
+
+	request.AgentId = agentId
+	request.LaunchId = launchId
+
+	var body RefreshComputerAgentSessionV2JSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RefreshComputerAgentSessionV2(ctx, request.(RefreshComputerAgentSessionV2RequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RefreshComputerAgentSessionV2")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RefreshComputerAgentSessionV2ResponseObject); ok {
+		if err := validResponse.VisitRefreshComputerAgentSessionV2Response(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // RefreshComputerAgentSession operation middleware
 func (sh *strictHandler) RefreshComputerAgentSession(w http.ResponseWriter, r *http.Request, agentId AgentId, launchId Id) {
 	var request RefreshComputerAgentSessionRequestObject
@@ -14595,6 +16118,32 @@ func (sh *strictHandler) GetComputerAssignmentsV2(w http.ResponseWriter, r *http
 	}
 }
 
+// GetComputerAssignmentsV3 operation middleware
+func (sh *strictHandler) GetComputerAssignmentsV3(w http.ResponseWriter, r *http.Request, params GetComputerAssignmentsV3Params) {
+	var request GetComputerAssignmentsV3RequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetComputerAssignmentsV3(ctx, request.(GetComputerAssignmentsV3RequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetComputerAssignmentsV3")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetComputerAssignmentsV3ResponseObject); ok {
+		if err := validResponse.VisitGetComputerAssignmentsV3Response(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // RotateComputerCredential operation middleware
 func (sh *strictHandler) RotateComputerCredential(w http.ResponseWriter, r *http.Request, params RotateComputerCredentialParams) {
 	var request RotateComputerCredentialRequestObject
@@ -14736,6 +16285,37 @@ func (sh *strictHandler) CreateComputerSession(w http.ResponseWriter, r *http.Re
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CreateComputerSessionResponseObject); ok {
 		if err := validResponse.VisitCreateComputerSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateComputerSessionV2 operation middleware
+func (sh *strictHandler) CreateComputerSessionV2(w http.ResponseWriter, r *http.Request) {
+	var request CreateComputerSessionV2RequestObject
+
+	var body CreateComputerSessionV2JSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateComputerSessionV2(ctx, request.(CreateComputerSessionV2RequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateComputerSessionV2")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateComputerSessionV2ResponseObject); ok {
+		if err := validResponse.VisitCreateComputerSessionV2Response(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -15642,6 +17222,156 @@ func (sh *strictHandler) CreateAgent(w http.ResponseWriter, r *http.Request, ser
 	}
 }
 
+// ListAgentsV2 operation middleware
+func (sh *strictHandler) ListAgentsV2(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request ListAgentsV2RequestObject
+
+	request.ServerId = serverId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAgentsV2(ctx, request.(ListAgentsV2RequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAgentsV2")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAgentsV2ResponseObject); ok {
+		if err := validResponse.VisitListAgentsV2Response(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAgentV2 operation middleware
+func (sh *strictHandler) CreateAgentV2(w http.ResponseWriter, r *http.Request, serverId ServerId, params CreateAgentV2Params) {
+	var request CreateAgentV2RequestObject
+
+	request.ServerId = serverId
+	request.Params = params
+
+	var body CreateAgentV2JSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAgentV2(ctx, request.(CreateAgentV2RequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAgentV2")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateAgentV2ResponseObject); ok {
+		if err := validResponse.VisitCreateAgentV2Response(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteAgentV2 operation middleware
+func (sh *strictHandler) DeleteAgentV2(w http.ResponseWriter, r *http.Request, serverId ServerId, agentId AgentId, params DeleteAgentV2Params) {
+	var request DeleteAgentV2RequestObject
+
+	request.ServerId = serverId
+	request.AgentId = agentId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteAgentV2(ctx, request.(DeleteAgentV2RequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteAgentV2")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteAgentV2ResponseObject); ok {
+		if err := validResponse.VisitDeleteAgentV2Response(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAgentV2 operation middleware
+func (sh *strictHandler) GetAgentV2(w http.ResponseWriter, r *http.Request, serverId ServerId, agentId AgentId) {
+	var request GetAgentV2RequestObject
+
+	request.ServerId = serverId
+	request.AgentId = agentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAgentV2(ctx, request.(GetAgentV2RequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAgentV2")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAgentV2ResponseObject); ok {
+		if err := validResponse.VisitGetAgentV2Response(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateAgentV2 operation middleware
+func (sh *strictHandler) UpdateAgentV2(w http.ResponseWriter, r *http.Request, serverId ServerId, agentId AgentId, params UpdateAgentV2Params) {
+	var request UpdateAgentV2RequestObject
+
+	request.ServerId = serverId
+	request.AgentId = agentId
+	request.Params = params
+
+	var body UpdateAgentV2JSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateAgentV2(ctx, request.(UpdateAgentV2RequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateAgentV2")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateAgentV2ResponseObject); ok {
+		if err := validResponse.VisitUpdateAgentV2Response(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // DeleteAgent operation middleware
 func (sh *strictHandler) DeleteAgent(w http.ResponseWriter, r *http.Request, serverId ServerId, agentId AgentId, params DeleteAgentParams) {
 	var request DeleteAgentRequestObject
@@ -16291,6 +18021,32 @@ func (sh *strictHandler) RegisterMessageThreadReply(w http.ResponseWriter, r *ht
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RegisterMessageThreadReplyResponseObject); ok {
 		if err := validResponse.VisitRegisterMessageThreadReplyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListComputerRuntimeCapabilities operation middleware
+func (sh *strictHandler) ListComputerRuntimeCapabilities(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request ListComputerRuntimeCapabilitiesRequestObject
+
+	request.ServerId = serverId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListComputerRuntimeCapabilities(ctx, request.(ListComputerRuntimeCapabilitiesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListComputerRuntimeCapabilities")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListComputerRuntimeCapabilitiesResponseObject); ok {
+		if err := validResponse.VisitListComputerRuntimeCapabilitiesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -17214,333 +18970,347 @@ func (sh *strictHandler) UpdateTask(w http.ResponseWriter, r *http.Request, serv
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"WyDqpnYKAgA=",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

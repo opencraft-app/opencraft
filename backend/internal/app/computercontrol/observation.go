@@ -173,7 +173,7 @@ func (service *ObservationService) Heartbeat(
 		return invalidHeartbeat()
 	}
 	if request.AssignmentVersion != 0 && request.AssignmentVersion != 1 &&
-		request.AssignmentVersion != 2 ||
+		request.AssignmentVersion != 2 && request.AssignmentVersion != 3 ||
 		len(request.ProfileCapabilityVersions) > 1 ||
 		len(request.ProfileCapabilityVersions) == 1 &&
 			request.ProfileCapabilityVersions[0] != 1 {

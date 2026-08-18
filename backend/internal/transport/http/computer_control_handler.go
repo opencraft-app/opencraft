@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"chatserver/internal/api/openapi"
 	appagent "chatserver/internal/app/agentmanagement"
@@ -190,6 +191,47 @@ func (handler *ComputerControlHandler) CreateComputerAgentLaunch(
 	}, nil
 }
 
+func (handler *ComputerControlHandler) CreateComputerAgentLaunchV2(
+	ctx context.Context,
+	request openapi.CreateComputerAgentLaunchV2RequestObject,
+) (openapi.CreateComputerAgentLaunchV2ResponseObject, error) {
+	principal, ok := CurrentComputerPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("computer_credential_invalid", "Computer credential 无效", nil)
+	}
+	if request.Body == nil || request.Body.CredentialVersion < 1 {
+		return nil, apperror.New("assignment_stale", "Agent Assignment 已变化", nil)
+	}
+	var predecessor *string
+	if request.Body.PredecessorLaunchId != nil {
+		value := request.Body.PredecessorLaunchId.String()
+		predecessor = &value
+	}
+	result, err := handler.launches.Create(
+		ctx, principal.ServerID(), principal.ComputerID(), request.AgentId.String(),
+		appcomputercontrol.AgentLaunchRequest{
+			ComputerCredentialVersion: principal.CredentialVersion(),
+			LaunchID:                  request.Body.LaunchId.String(),
+			PredecessorLaunchID:       predecessor,
+			AssignmentEpoch:           request.Body.AssignmentEpoch.String(),
+			AssignmentRevision:        request.Body.AssignmentRevision,
+			ConfigGeneration:          request.Body.ConfigGeneration,
+			CredentialVersion:         uint64(request.Body.CredentialVersion),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	body, err := agentLaunchV2DTO(result)
+	if err != nil {
+		return nil, err
+	}
+	if result.Created {
+		return openapi.CreateComputerAgentLaunchV2201JSONResponse(body), nil
+	}
+	return openapi.CreateComputerAgentLaunchV2200JSONResponse(body), nil
+}
+
 // RefreshComputerAgentSession mints new short-lived material only while the
 // complete Launch Fence is still the Agent's current server-issued fence.
 func (handler *ComputerControlHandler) RefreshComputerAgentSession(
@@ -230,6 +272,37 @@ func (handler *ComputerControlHandler) RefreshComputerAgentSession(
 			Pragma:       "no-cache",
 		},
 	}, nil
+}
+
+func (handler *ComputerControlHandler) RefreshComputerAgentSessionV2(
+	ctx context.Context,
+	request openapi.RefreshComputerAgentSessionV2RequestObject,
+) (openapi.RefreshComputerAgentSessionV2ResponseObject, error) {
+	principal, ok := CurrentComputerPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("computer_credential_invalid", "Computer credential 无效", nil)
+	}
+	if request.Body == nil || request.Body.CredentialVersion < 1 || request.Body.Attempt < 1 {
+		return nil, apperror.New("stale_launch", "Agent Launch 已失效", nil)
+	}
+	result, err := handler.launches.Refresh(
+		ctx, principal.ServerID(), principal.ComputerID(),
+		request.AgentId.String(), request.LaunchId.String(),
+		appcomputercontrol.AgentSessionRefreshRequest{
+			AssignmentEpoch:   request.Body.AssignmentEpoch.String(),
+			ConfigGeneration:  request.Body.ConfigGeneration,
+			CredentialVersion: uint64(request.Body.CredentialVersion),
+			Attempt:           request.Body.Attempt,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	body, err := agentLaunchSessionV2DTO(result)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.RefreshComputerAgentSessionV2201JSONResponse(body), nil
 }
 
 // RotateComputerCredential rotates only the active version represented by the
@@ -439,6 +512,70 @@ func (handler *ComputerControlHandler) CreateComputerSession(
 	}, nil
 }
 
+func (handler *ComputerControlHandler) CreateComputerSessionV2(
+	ctx context.Context,
+	request openapi.CreateComputerSessionV2RequestObject,
+) (openapi.CreateComputerSessionV2ResponseObject, error) {
+	principal, ok := CurrentComputerPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New(
+			"computer_credential_invalid",
+			"Computer credential 无效",
+			nil,
+		)
+	}
+	if request.Body == nil {
+		return nil, apperror.New("invalid_request", "Assignment 协商请求无效", nil)
+	}
+	assignmentVersion, err := appcomputercontrol.NegotiateAssignmentVersion(
+		request.Body.AssignmentVersions,
+		[]int{3},
+	)
+	if err != nil {
+		return nil, err
+	}
+	session, err := handler.sessions.CreateSession(
+		ctx,
+		principal.ServerID(),
+		principal.ComputerID(),
+		principal.CredentialVersion(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	serverID, err := uuid.Parse(session.Computer.ServerID)
+	if err != nil || serverID == uuid.Nil {
+		return nil, invalidComputerControlData(err)
+	}
+	computerID, err := uuid.Parse(session.Computer.ComputerID)
+	if err != nil || computerID == uuid.Nil {
+		return nil, invalidComputerControlData(err)
+	}
+	epoch, err := uuid.Parse(session.Computer.AssignmentEpoch)
+	if err != nil || epoch == uuid.Nil {
+		return nil, invalidComputerControlData(err)
+	}
+	accessToken := session.AccessToken
+	return openapi.CreateComputerSessionV2201JSONResponse{
+		Body: openapi.ComputerSessionV2{
+			AccessToken:       &accessToken,
+			ExpiresAt:         session.ExpiresAt.UTC(),
+			AssignmentVersion: assignmentVersion,
+			Computer: openapi.ComputerSessionIdentity{
+				Id:                 computerID,
+				ServerId:           serverID,
+				CredentialVersion:  int64(session.Computer.CredentialVersion),
+				AssignmentEpoch:    epoch,
+				AssignmentRevision: session.Computer.AssignmentRevision,
+			},
+		},
+		Headers: openapi.CreateComputerSessionV2201ResponseHeaders{
+			CacheControl: "no-store",
+			Pragma:       "no-cache",
+		},
+	}, nil
+}
+
 // GetComputerAssignments returns either a complete, hash-fenced snapshot or
 // an explicit 204 carrying the current revision.
 func (handler *ComputerControlHandler) GetComputerAssignments(
@@ -543,6 +680,58 @@ func (handler *ComputerControlHandler) GetComputerAssignmentsV2(
 		return nil, err
 	}
 	return openapi.GetComputerAssignmentsV2200JSONResponse(body), nil
+}
+
+func (handler *ComputerControlHandler) GetComputerAssignmentsV3(
+	ctx context.Context,
+	request openapi.GetComputerAssignmentsV3RequestObject,
+) (openapi.GetComputerAssignmentsV3ResponseObject, error) {
+	principal, ok := CurrentComputerPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New(
+			"computer_credential_invalid",
+			"Computer credential 无效",
+			nil,
+		)
+	}
+	query := appcomputercontrol.AssignmentQuery{
+		SchemaVersion: 3,
+		SinceRevision: request.Params.SinceRevision,
+		WaitSeconds:   25,
+	}
+	if request.Params.SinceEpoch != nil {
+		query.SinceEpoch = request.Params.SinceEpoch.String()
+	}
+	if request.Params.ForceFull != nil {
+		query.ForceFull = *request.Params.ForceFull
+	}
+	if request.Params.WaitSeconds != nil {
+		query.WaitSeconds = *request.Params.WaitSeconds
+	}
+	result, err := handler.assignments.Get(
+		ctx,
+		principal.ServerID(),
+		principal.ComputerID(),
+		query,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if result.NoChange {
+		return openapi.GetComputerAssignmentsV3204Response{
+			Headers: openapi.GetComputerAssignmentsV3204ResponseHeaders{
+				XAssignmentRevision: result.Revision,
+			},
+		}, nil
+	}
+	if result.Snapshot == nil {
+		return nil, invalidComputerControlData(nil)
+	}
+	body, err := assignmentSnapshotV3DTO(*result.Snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.GetComputerAssignmentsV3200JSONResponse(body), nil
 }
 
 func (handler *ComputerControlHandler) PutComputerAgentProfileCapabilityResult(
@@ -669,12 +858,14 @@ func NewComputerControlRoutes(
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/computer/session", wrapper.CreateComputerSession)
+	mux.HandleFunc("POST /v1/computer/session-v2", wrapper.CreateComputerSessionV2)
 	mux.HandleFunc(
 		"POST /v1/computer/credential:rotate",
 		wrapper.RotateComputerCredential,
 	)
 	mux.HandleFunc("GET /v1/computer/assignments", wrapper.GetComputerAssignments)
 	mux.HandleFunc("GET /v1/computer/assignments-v2", wrapper.GetComputerAssignmentsV2)
+	mux.HandleFunc("GET /v1/computer/assignments-v3", wrapper.GetComputerAssignmentsV3)
 	mux.HandleFunc(
 		"PUT /v1/computer/agents/{agentId}/profile-capability-results/{operationId}",
 		wrapper.PutComputerAgentProfileCapabilityResult,
@@ -688,8 +879,16 @@ func NewComputerControlRoutes(
 		wrapper.CreateComputerAgentLaunch,
 	)
 	mux.HandleFunc(
+		"POST /v1/computer/agents/{agentId}/launches-v2",
+		wrapper.CreateComputerAgentLaunchV2,
+	)
+	mux.HandleFunc(
 		"POST /v1/computer/agents/{agentId}/launches/{launchId}/session",
 		wrapper.RefreshComputerAgentSession,
+	)
+	mux.HandleFunc(
+		"POST /v1/computer/agents/{agentId}/launches-v2/{launchId}/session",
+		wrapper.RefreshComputerAgentSessionV2,
 	)
 	mux.HandleFunc(
 		"PUT /v1/computer/agents/{agentId}/observations/{observationId}",
@@ -725,6 +924,32 @@ func agentLaunchDTO(
 	}, nil
 }
 
+func agentLaunchV2DTO(
+	value appcomputercontrol.AgentLaunch,
+) (openapi.ComputerAgentLaunchV2, error) {
+	launchID, err := uuid.Parse(value.Fence.LaunchID)
+	if err != nil || launchID == uuid.Nil {
+		return openapi.ComputerAgentLaunchV2{}, invalidComputerControlData(err)
+	}
+	epoch, err := uuid.Parse(value.Fence.AssignmentEpoch)
+	if err != nil || epoch == uuid.Nil {
+		return openapi.ComputerAgentLaunchV2{}, invalidComputerControlData(err)
+	}
+	session, err := agentLaunchSessionV2DTO(value.Runtime)
+	if err != nil {
+		return openapi.ComputerAgentLaunchV2{}, err
+	}
+	return openapi.ComputerAgentLaunchV2{
+		Launch: openapi.ComputerAgentLaunchFence{
+			LaunchId: launchID, AssignmentEpoch: epoch,
+			ConfigGeneration:  value.Fence.ConfigGeneration,
+			CredentialVersion: int64(value.Fence.CredentialVersion),
+			Attempt:           value.Fence.Attempt, IssuedAt: value.Fence.IssuedAt.UTC(),
+		},
+		Session: session,
+	}, nil
+}
+
 func agentLaunchSessionDTO(
 	value appruntimesession.Session,
 ) (openapi.ComputerAgentLaunchSession, error) {
@@ -743,6 +968,62 @@ func agentLaunchSessionDTO(
 			UserSig: &userSig, ExpiresAt: value.IM.ExpiresAt.UTC(),
 		},
 	}, nil
+}
+
+func agentLaunchSessionV2DTO(
+	value appruntimesession.Session,
+) (openapi.ComputerAgentLaunchSessionV2, error) {
+	agent, err := runtimeIdentityV2DTO(value.Agent)
+	if err != nil {
+		return openapi.ComputerAgentLaunchSessionV2{}, err
+	}
+	accessToken := value.AccessToken
+	userSig := value.IM.UserSig
+	return openapi.ComputerAgentLaunchSessionV2{
+		AccessToken: &accessToken, ExpiresAt: value.ExpiresAt.UTC(), Agent: agent,
+		Im: openapi.ImSession{
+			SdkAppId: value.IM.SDKAppID, UserId: value.IM.UserID,
+			UserSig: &userSig, ExpiresAt: value.IM.ExpiresAt.UTC(),
+		},
+	}, nil
+}
+
+func runtimeIdentityV2DTO(
+	value appruntimesession.Identity,
+) (openapi.RuntimeIdentityV2, error) {
+	id, err := uuid.Parse(value.ID)
+	if err != nil || id == uuid.Nil {
+		return openapi.RuntimeIdentityV2{}, invalidComputerControlData(err)
+	}
+	serverID, err := uuid.Parse(value.ServerID)
+	if err != nil || serverID == uuid.Nil || !validRuntimeKindV2(value.RuntimeKind) {
+		return openapi.RuntimeIdentityV2{}, invalidComputerControlData(err)
+	}
+	capabilities := make(
+		[]openapi.RuntimeIdentityV2Capabilities,
+		0,
+		len(value.Capabilities),
+	)
+	for _, capability := range value.Capabilities {
+		typed := openapi.RuntimeIdentityV2Capabilities(capability)
+		if !typed.Valid() {
+			return openapi.RuntimeIdentityV2{}, invalidComputerControlData(nil)
+		}
+		capabilities = append(capabilities, typed)
+	}
+	replyPolicy := openapi.RuntimeIdentityV2ReplyPolicy(value.ReplyPolicy)
+	if !replyPolicy.Valid() || len(capabilities) == 0 {
+		return openapi.RuntimeIdentityV2{}, invalidComputerControlData(nil)
+	}
+	result := openapi.RuntimeIdentityV2{
+		Id: id, ServerId: serverID, UserId: value.UserID,
+		Capabilities: capabilities, ReplyPolicy: replyPolicy,
+		Runtime: openapi.RuntimeSelectorV2{Kind: value.RuntimeKind},
+	}
+	if model := strings.TrimSpace(value.RuntimeModel); model != "" {
+		result.Runtime.Model = &model
+	}
+	return result, nil
 }
 
 func observationResultDTO(
@@ -902,6 +1183,99 @@ func assignmentSnapshotV2DTO(
 		SnapshotHash:  base.SnapshotHash,
 		Agents:        agents,
 	}, nil
+}
+
+func assignmentSnapshotV3DTO(
+	value appcomputercontrol.AssignmentSnapshot,
+) (openapi.ComputerAssignmentSnapshotV3, error) {
+	computerID, err := uuid.Parse(value.ComputerID)
+	if err != nil || computerID == uuid.Nil {
+		return openapi.ComputerAssignmentSnapshotV3{}, invalidComputerControlData(err)
+	}
+	epoch, err := uuid.Parse(value.Epoch)
+	if err != nil || epoch == uuid.Nil || value.SchemaVersion != 3 ||
+		value.Revision < 1 || value.SnapshotHash == "" {
+		return openapi.ComputerAssignmentSnapshotV3{}, invalidComputerControlData(err)
+	}
+	agents := make([]openapi.ComputerAssignmentV3, 0, len(value.Agents))
+	for _, item := range value.Agents {
+		agentID, err := uuid.Parse(item.AgentID)
+		if err != nil || agentID == uuid.Nil {
+			return openapi.ComputerAssignmentSnapshotV3{}, invalidComputerControlData(err)
+		}
+		serverID, err := uuid.Parse(item.ServerID)
+		if err != nil || serverID == uuid.Nil {
+			return openapi.ComputerAssignmentSnapshotV3{}, invalidComputerControlData(err)
+		}
+		desired := openapi.ComputerAssignmentV3DesiredState(item.DesiredState)
+		replyPolicy := openapi.ComputerAssignmentV3ReplyPolicy(item.ReplyPolicy)
+		if !desired.Valid() || !replyPolicy.Valid() ||
+			!validRuntimeKindV2(item.RuntimeKind) {
+			return openapi.ComputerAssignmentSnapshotV3{}, invalidComputerControlData(nil)
+		}
+		assignment := openapi.ComputerAssignmentV3{
+			AgentId: agentID, ServerId: serverID,
+			DesiredState: desired, ConfigGeneration: item.ConfigGeneration,
+			CredentialVersion: item.CredentialVersion,
+			Runtime: openapi.RuntimeSelectorV2{
+				Kind: item.RuntimeKind, Model: item.RuntimeModel,
+			},
+			ReplyPolicy: replyPolicy,
+		}
+		if item.CurrentLaunch != nil {
+			launchID, err := uuid.Parse(item.CurrentLaunch.LaunchID)
+			if err != nil || launchID == uuid.Nil {
+				return openapi.ComputerAssignmentSnapshotV3{}, invalidComputerControlData(err)
+			}
+			launchEpoch, err := uuid.Parse(item.CurrentLaunch.AssignmentEpoch)
+			if err != nil || launchEpoch == uuid.Nil {
+				return openapi.ComputerAssignmentSnapshotV3{}, invalidComputerControlData(err)
+			}
+			assignment.CurrentLaunch = &openapi.ComputerAssignmentLaunchFence{
+				LaunchId: launchID, AssignmentEpoch: launchEpoch,
+				ConfigGeneration:  item.CurrentLaunch.ConfigGeneration,
+				CredentialVersion: int64(item.CurrentLaunch.CredentialVersion),
+				Attempt:           item.CurrentLaunch.Attempt,
+			}
+		}
+		if refresh := item.ProfileCapabilityRefresh; refresh != nil {
+			refreshID, err := uuid.Parse(refresh.RefreshID)
+			if err != nil || refreshID == uuid.Nil ||
+				!validRuntimeKindV2(refresh.RuntimeKind) {
+				return openapi.ComputerAssignmentSnapshotV3{}, invalidComputerControlData(err)
+			}
+			assignment.ProfileCapabilityRefresh = &openapi.ComputerProfileCapabilityRefreshV2{
+				SchemaVersion: 1, RefreshId: refreshID,
+				ContextGeneration: refresh.ContextGeneration,
+				AuthorityContextKey: openapi.ProfileCapabilityAuthorityContextKey(
+					refresh.AuthorityContextKey,
+				),
+				RuntimeKind:           refresh.RuntimeKind,
+				InvalidationWatermark: refresh.InvalidationWatermark,
+				ForceReload:           refresh.ForceReload,
+				RequestedAt:           refresh.RequestedAt.UTC(),
+			}
+		}
+		agents = append(agents, assignment)
+	}
+	return openapi.ComputerAssignmentSnapshotV3{
+		SchemaVersion: 3, ComputerId: computerID, Epoch: epoch,
+		Revision: value.Revision, SnapshotHash: value.SnapshotHash,
+		Agents: agents,
+	}, nil
+}
+
+func validRuntimeKindV2(value string) bool {
+	if len(value) < 1 || len(value) > 64 || value[0] < 'a' || value[0] > 'z' {
+		return false
+	}
+	for _, character := range value[1:] {
+		if character != '-' && (character < 'a' || character > 'z') &&
+			(character < '0' || character > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func invalidComputerControlData(err error) error {

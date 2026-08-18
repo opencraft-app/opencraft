@@ -20,7 +20,7 @@ func TestComputerClientAllocatesAndRefreshesServerFencedLaunch(t *testing.T) {
 	assignment := daemon.AgentAssignment{
 		AgentID: computerTestAgentID, ServerID: computerTestServerID,
 		DesiredState: daemon.DesiredRunning, ConfigGeneration: 3,
-		CredentialVersion: 2, Runtime: daemon.RuntimeConfig{Kind: "codex"},
+		CredentialVersion: 2, Runtime: daemon.RuntimeConfig{Kind: "openclaw"},
 		ReplyPolicy: "mention_and_dm",
 	}
 	requests := 0
@@ -30,7 +30,7 @@ func TestComputerClientAllocatesAndRefreshesServerFencedLaunch(t *testing.T) {
 			t.Fatalf("authorization = %q", request.Header.Get("Authorization"))
 		}
 		switch request.URL.Path {
-		case "/v1/computer/agents/" + computerTestAgentID + "/launches":
+		case "/v1/computer/agents/" + computerTestAgentID + "/launches-v2":
 			var body ComputerAgentLaunchRequest
 			if err := common.DecodeJson(request.Body, &body); err != nil {
 				t.Fatal(err)
@@ -49,9 +49,9 @@ func TestComputerClientAllocatesAndRefreshesServerFencedLaunch(t *testing.T) {
 					"configGeneration": 3, "credentialVersion": 2,
 					"attempt": 7, "issuedAt": now,
 				},
-				"session": launchSessionPayload(now),
+				"session": launchSessionPayload(now, "openclaw"),
 			})
-		case "/v1/computer/agents/" + computerTestAgentID + "/launches/" + launchID + "/session":
+		case "/v1/computer/agents/" + computerTestAgentID + "/launches-v2/" + launchID + "/session":
 			var body ComputerAgentSessionRefreshRequest
 			if err := common.DecodeJson(request.Body, &body); err != nil {
 				t.Fatal(err)
@@ -61,7 +61,8 @@ func TestComputerClientAllocatesAndRefreshesServerFencedLaunch(t *testing.T) {
 				body.Attempt != 7 {
 				t.Fatalf("refresh request = %#v", body)
 			}
-			writeComputerJSON(t, response, launchSessionPayload(now))
+			response.WriteHeader(http.StatusCreated)
+			writeComputerJSON(t, response, launchSessionPayload(now, "openclaw"))
 		default:
 			http.NotFound(response, request)
 		}
@@ -86,7 +87,7 @@ func TestComputerClientAllocatesAndRefreshesServerFencedLaunch(t *testing.T) {
 			AssignmentEpoch: computerTestEpoch, AssignmentRevision: 9,
 			ConfigGeneration: 3, CredentialVersion: 2,
 		},
-		assignment,
+		assignment, 3,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +97,7 @@ func TestComputerClientAllocatesAndRefreshesServerFencedLaunch(t *testing.T) {
 		t.Fatalf("allocated = %#v", allocated)
 	}
 	refreshed, err := client.RefreshComputerAgentLaunchSession(
-		context.Background(), token, allocated.Fence, assignment,
+		context.Background(), token, allocated.Fence, assignment, 3,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +107,11 @@ func TestComputerClientAllocatesAndRefreshesServerFencedLaunch(t *testing.T) {
 	}
 }
 
-func launchSessionPayload(now time.Time) map[string]any {
+func launchSessionPayload(now time.Time, runtimeKind ...string) map[string]any {
+	kind := "codex"
+	if len(runtimeKind) > 0 {
+		kind = runtimeKind[0]
+	}
 	return map[string]any{
 		"accessToken": "agent-short-token", "expiresAt": now.Add(15 * time.Minute),
 		"agent": map[string]any{
@@ -114,7 +119,7 @@ func launchSessionPayload(now time.Time) map[string]any {
 			"userId":       "im_agent_fixture",
 			"capabilities": []string{"read", "send", "server", "tasks"},
 			"replyPolicy":  "mention_and_dm",
-			"runtime":      map[string]any{"kind": "codex", "model": nil},
+			"runtime":      map[string]any{"kind": kind, "model": nil},
 		},
 		"im": map[string]any{
 			"sdkAppId": 1600000000, "userId": "im_agent_fixture",

@@ -119,3 +119,29 @@ func validV7(value string) bool {
 	parsed, err := uuid.Parse(value)
 	return err == nil && parsed != uuid.Nil && parsed.Version() == 7
 }
+
+func NegotiateAssignmentVersion(client []int, server []int) (int, error) {
+	serverVersions := make(map[int]struct{}, len(server))
+	for _, version := range server {
+		if version > 0 {
+			serverVersions[version] = struct{}{}
+		}
+	}
+	selected := 0
+	for _, version := range client {
+		if version <= selected {
+			continue
+		}
+		if _, ok := serverVersions[version]; ok {
+			selected = version
+		}
+	}
+	if selected == 0 {
+		return 0, apperror.New(
+			"invalid_request",
+			"Computer 不支持服务端可用的 Assignment 协议",
+			nil,
+		)
+	}
+	return selected, nil
+}

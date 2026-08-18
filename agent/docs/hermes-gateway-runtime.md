@@ -4,26 +4,11 @@
 Hermes TUI Gateway JSON-RPC server. It does not scrape the visual TUI and it
 does not replace Hermes ACP.
 
-## Temporary cloud identity
+## Runtime identity
 
-The internal Runtime identity is `hermes-gateway`. The current hosted Vela
-baseline has no first-class Hermes Gateway value, so the registration
-temporarily uses wire identity `pi`:
-
-```text
-opencode -> hermes-acp
-pi       -> hermes-gateway
-```
-
-This is compatibility debt, not a claim that Hermes is Pi. The hosted UI may
-label the selection as Pi. A real Pi Driver must not be registered until this
-alias is removed or the platform provides a distinct Hermes wire identity.
-
-The compatibility firewall strips Pi-owned provider credential keys from the
-child process environment. The current frozen deny-set includes
-`DEEPSEEK_API_KEY`. The Driver never edits the managed Hermes Profile to
-translate Pi configuration. `default` preserves the Profile's configured
-model; any non-default model must exactly match the live Gateway
+The Driver and platform Runtime identity are both `hermes-gateway`. No
+third-party Runtime wire identity is reused. `default` preserves the Profile's
+configured model; any non-default model must exactly match the live Gateway
 `model.options` inventory or startup fails.
 
 ## Process and Profile model

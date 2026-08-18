@@ -368,7 +368,7 @@ test("listServers exhausts cursors while Channel and Agent lists stay arrays", a
         });
       }
       if (url.endsWith("/channels")) return json(200, []);
-      if (url.endsWith("/agents")) return json(200, []);
+      if (url.endsWith("/agents-v2")) return json(200, []);
       throw new Error(`unexpected request: ${url}`);
     },
     now: () => new Date("2026-07-30T17:00:00.000Z"),
@@ -924,6 +924,9 @@ test("Agent and Computer management methods follow platform control routes", asy
         method: init?.method ?? "GET",
         url,
       });
+      if (url.endsWith("/computer-runtime-capabilities")) {
+        return json(200, [{computerId: "computer-1", assignmentVersion: 3}]);
+      }
       if (
         url.endsWith("/computers") &&
         (init?.method ?? "GET") === "GET"
@@ -949,7 +952,7 @@ test("Agent and Computer management methods follow platform control routes", asy
 		  revision: 2,
         });
       }
-      if (url.endsWith("/agents")) {
+      if (url.endsWith("/agents-v2")) {
         return json(202, {
           operations: [operation],
           resourceId: "agent-1",
@@ -1013,15 +1016,15 @@ test("Agent and Computer management methods follow platform control routes", asy
   );
 
 	assert.equal(script.script, "fixture-install-script");
-	assert.equal(calls[2]?.headers.get("X-Resource-Revision"), "1");
+	assert.equal(calls[3]?.headers.get("X-Resource-Revision"), "1");
 	assert.equal(updated.revision, 2);
-	assert.equal("tatRegion" in (calls[1]?.body as object), false);
+	assert.equal("tatRegion" in (calls[2]?.body as object), false);
   assert.deepEqual(calls.map((call) => call.method), [
-    "GET", "POST", "POST", "POST", "PATCH", "POST",
+    "GET", "GET", "POST", "POST", "POST", "PATCH", "POST",
   ]);
-  assert.equal(calls[4]?.headers.get("X-Resource-Revision"), "1");
+  assert.equal(calls[5]?.headers.get("X-Resource-Revision"), "1");
   assert.equal(
-    calls[4]?.headers.get("Idempotency-Key"),
+    calls[5]?.headers.get("Idempotency-Key"),
     "agent-update-0001",
   );
 });
@@ -1277,7 +1280,7 @@ test("deleteAgent preserves idempotency and accepts asynchronous IM identity del
   assert.equal(calls[0]?.method, "DELETE");
   assert.equal(
     calls[0]?.url,
-    "https://api.example.test/v1/servers/server-1/agents/agent-1",
+    "https://api.example.test/v1/servers/server-1/agents-v2/agent-1",
   );
   assert.equal(calls[0]?.headers.get("Idempotency-Key"), "agent-delete-1");
 });

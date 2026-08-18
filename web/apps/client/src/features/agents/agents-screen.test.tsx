@@ -420,7 +420,7 @@ describe("AgentsScreen", () => {
 
     expect(screen.getByText("跑在哪台 Computer")).toBeVisible();
     expect(
-      screen.getByRole("radio", {name: "选择 codex"}),
+      screen.getByRole("radio", {name: "选择 Codex"}),
     ).toHaveStyle({
       minHeight: velaTheme.recipes.managementWorkspace.headerActionHeight,
       minWidth: velaTheme.recipes.control.height,
@@ -431,7 +431,7 @@ describe("AgentsScreen", () => {
       height: velaTheme.recipes.control.fieldHeight,
     });
     await fireEvent.press(
-      screen.getByRole("radio", {name: "选择 hermes-gateway"}),
+      screen.getByRole("radio", {name: "选择 Hermes Gateway"}),
     );
     await fireEvent.press(screen.getByRole("combobox", {name: "Computer"}));
     await fireEvent.press(

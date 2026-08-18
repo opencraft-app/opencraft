@@ -134,6 +134,21 @@ func TestAssignmentServiceReturnsCanonicalV2CapabilityCommand(t *testing.T) {
 		result.Snapshot.SnapshotHash != wantHash {
 		t.Fatalf("v2 snapshot = %#v, want hash %q", result.Snapshot, wantHash)
 	}
+	repository.snapshot.Agents[0].RuntimeKind = "openclaw"
+	repository.snapshot.Agents[0].ProfileCapabilityRefresh.RuntimeKind = "openclaw"
+	v3, err := service.Get(
+		context.Background(),
+		"01989c24-7540-7f12-a27b-c83243215dd3",
+		repository.snapshot.ComputerID,
+		AssignmentQuery{SchemaVersion: 3, ForceFull: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v3.Snapshot == nil || v3.Snapshot.SchemaVersion != 3 ||
+		v3.Snapshot.Agents[0].RuntimeKind != "openclaw" {
+		t.Fatalf("v3 snapshot = %#v", v3.Snapshot)
+	}
 }
 
 func TestAssignmentServiceLongPollReturnsChangedSnapshot(t *testing.T) {

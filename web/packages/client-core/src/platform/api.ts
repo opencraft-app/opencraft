@@ -16,13 +16,17 @@ import type {
 
 export type Account = components["schemas"]["Account"];
 export type AcceptedResource = components["schemas"]["AcceptedResource"];
-export type Agent = components["schemas"]["Agent"];
+export type Agent = components["schemas"]["AgentV2"];
 export type AgentProfileCapabilities =
   components["schemas"]["AgentProfileCapabilities"];
 type AuthResult = components["schemas"]["AuthResult"];
 export type Channel = components["schemas"]["Channel"];
-export type Computer = components["schemas"]["Computer"];
-export type CreateAgentInput = components["schemas"]["CreateAgentRequest"];
+export type Computer = components["schemas"]["Computer"] & {
+  assignmentVersion?: number;
+};
+type ComputerRuntimeCapability =
+  components["schemas"]["ComputerRuntimeCapability"];
+export type CreateAgentInput = components["schemas"]["CreateAgentRequestV2"];
 export type CreateChannelInput = components["schemas"]["CreateChannelRequest"];
 export type CreateComputerInput =
   components["schemas"]["CreateComputerRequest"];
@@ -55,7 +59,7 @@ export type Task = components["schemas"]["Task"];
 export type TerminalSession = components["schemas"]["TerminalSession"];
 export type ActivityItem = components["schemas"]["ActivityItem"];
 export type UpdateMemberInput = components["schemas"]["UpdateMemberRequest"];
-export type UpdateAgentInput = components["schemas"]["UpdateAgentRequest"];
+export type UpdateAgentInput = components["schemas"]["UpdateAgentRequestV2"];
 export type UpdateChannelInput =
   components["schemas"]["UpdateChannelRequest"];
 export type UpdateReminderInput =
@@ -626,7 +630,7 @@ export class PlatformApi {
 
   public async listAgents(serverId: string): Promise<Agent[]> {
     const value = await this.authorizedJson<unknown>(
-      `/servers/${encodeURIComponent(serverId)}/agents`,
+      `/servers/${encodeURIComponent(serverId)}/agents-v2`,
     );
     if (!Array.isArray(value) || !value.every(isAgent)) {
       throw protocolError("Agent 列表响应结构不合法");
@@ -640,7 +644,7 @@ export class PlatformApi {
     idempotencyKey: string,
   ): Promise<AcceptedResource> {
     const value = await this.authorizedJson<unknown>(
-      `/servers/${encodeURIComponent(serverId)}/agents`,
+      `/servers/${encodeURIComponent(serverId)}/agents-v2`,
       {
         body: JSON.stringify(input),
         headers: mutationHeaders(idempotencyKey),
@@ -662,7 +666,7 @@ export class PlatformApi {
   ): Promise<Agent> {
     assertRevision(revision, "Agent");
     const value = await this.authorizedJson<unknown>(
-      `/servers/${encodeURIComponent(serverId)}/agents/${encodeURIComponent(
+      `/servers/${encodeURIComponent(serverId)}/agents-v2/${encodeURIComponent(
         agentId,
       )}`,
       {
@@ -756,7 +760,7 @@ export class PlatformApi {
     idempotencyKey: string,
   ): Promise<AcceptedResource> {
     const value = await this.authorizedJson<unknown>(
-      `/servers/${encodeURIComponent(serverId)}/agents/${encodeURIComponent(
+      `/servers/${encodeURIComponent(serverId)}/agents-v2/${encodeURIComponent(
         agentId,
       )}`,
       {headers: mutationHeaders(idempotencyKey), method: "DELETE"},
@@ -789,7 +793,22 @@ export class PlatformApi {
     if (!Array.isArray(value) || !value.every(isComputer)) {
       throw protocolError("Computer 列表响应结构不合法");
     }
-    return value;
+    const capabilities = await this.authorizedJson<unknown>(
+      `/servers/${encodeURIComponent(serverId)}/computer-runtime-capabilities`,
+    );
+    if (!Array.isArray(capabilities) ||
+      !capabilities.every(isComputerRuntimeCapability)) {
+      throw protocolError("Computer Runtime 能力响应结构不合法");
+    }
+    const byComputerId = new Map(
+      capabilities.map((capability) => [capability.computerId, capability]),
+    );
+    return value.map((computer) => {
+      const capability = byComputerId.get(computer.id);
+      return capability
+        ? {...computer, assignmentVersion: capability.assignmentVersion}
+        : computer;
+    });
   }
 
   public async createComputer(
@@ -1376,6 +1395,15 @@ function isAgent(value: unknown): value is Agent {
     typeof value.imState === "string" &&
     typeof value.observedState === "string"
   );
+}
+
+function isComputerRuntimeCapability(
+  value: unknown,
+): value is ComputerRuntimeCapability {
+  return isRecord(value) &&
+    typeof value.computerId === "string" &&
+    typeof value.assignmentVersion === "number" &&
+    value.assignmentVersion >= 1;
 }
 
 function isAgentProfileCapabilities(

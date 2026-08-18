@@ -391,7 +391,7 @@ func TestDriverForwardsStandingPolicyAndCurrentInputSeparately(t *testing.T) {
 	_ = collectGatewayTurn(t, session.Events())
 }
 
-func TestDriverRejectsUnknownPiModelWithoutFallback(t *testing.T) {
+func TestDriverRejectsUnknownModelWithoutFallback(t *testing.T) {
 	driver := newGatewayTestDriver(t)
 	session, err := driver.Start(
 		context.Background(),
@@ -407,7 +407,7 @@ func TestDriverRejectsUnknownPiModelWithoutFallback(t *testing.T) {
 	)
 	if err == nil {
 		_ = session.Stop(context.Background())
-		t.Fatal("unknown Pi model reached Hermes Gateway")
+		t.Fatal("unknown model reached Hermes Gateway")
 	}
 	if !strings.Contains(err.Error(), "model") ||
 		strings.Contains(err.Error(), "must-not-cross") {
@@ -721,9 +721,6 @@ func TestHermesGatewayHelperProcess(t *testing.T) {
 }
 
 func runGatewayHelper() {
-	if os.Getenv("DEEPSEEK_API_KEY") != "" {
-		os.Exit(41)
-	}
 	if hermesHome := os.Getenv("HERMES_HOME"); hermesHome != "" &&
 		!strings.Contains(
 			filepath.ToSlash(hermesHome),

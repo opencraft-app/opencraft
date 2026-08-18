@@ -97,6 +97,7 @@ func (f *managedAgentFactory) Start(
 		computerSession.AccessToken,
 		launchRequest,
 		assignment,
+		effectiveAssignmentVersion(computerSession),
 	)
 	if errors.Is(err, platform.ErrCredentialRejected) {
 		f.sessions.Invalidate(computerSession.AccessToken)
@@ -316,11 +317,12 @@ func (f *managedAgentFactory) allocateLaunch(
 	token platform.ComputerAccessToken,
 	request platform.ComputerAgentLaunchRequest,
 	assignment daemon.AgentAssignment,
+	assignmentVersion int,
 ) (platform.ComputerAgentLaunch, error) {
 	delay := time.Second
 	for {
 		launch, err := f.client.CreateComputerAgentLaunch(
-			ctx, token, request, assignment,
+			ctx, token, request, assignment, assignmentVersion,
 		)
 		if err == nil || !platform.IsRetryable(err) {
 			return launch, err
@@ -404,6 +406,7 @@ func (s *managedAgentSessions) CreateRuntimeSession(
 		computerSession.AccessToken,
 		s.fence,
 		lease.Assignment,
+		effectiveAssignmentVersion(computerSession),
 	)
 	if errors.Is(err, platform.ErrCredentialRejected) {
 		s.sessions.Invalidate(computerSession.AccessToken)
@@ -416,6 +419,7 @@ func (s *managedAgentSessions) CreateRuntimeSession(
 			computerSession.AccessToken,
 			s.fence,
 			lease.Assignment,
+			effectiveAssignmentVersion(computerSession),
 		)
 	}
 	return agentSession, err

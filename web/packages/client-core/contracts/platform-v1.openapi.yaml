@@ -79,11 +79,11 @@ x-auth-domain-registry:
      listRuntimeReminders, createRuntimeReminder, updateRuntimeReminder,
      cancelRuntimeReminder, snoozeRuntimeReminder, listRuntimeReminderLog,
      listRuntimeReminderOccurrences, acknowledgeRuntimeReminderOccurrence]
-  computer-credential: [createComputerSession, preflightComputer]
+  computer-credential: [createComputerSession, createComputerSessionV2, preflightComputer]
   computer-bearer:
     [rotateComputerCredential, getComputerAssignments, getComputerAssignmentsV2,
-     createComputerAgentLaunch,
-     refreshComputerAgentSession, putComputerAgentObservation,
+     getComputerAssignmentsV3, createComputerAgentLaunch, createComputerAgentLaunchV2,
+     refreshComputerAgentSession, refreshComputerAgentSessionV2, putComputerAgentObservation,
      putComputerAgentProfileCapabilityResult,
      putComputerAgentProfileCapabilityInvalidation, sendComputerHeartbeat]
   enrollment: [claimComputerEnrollment, getComputerArtifact]
@@ -96,10 +96,12 @@ x-auth-domain-registry:
      listDirectConversations, createDirectConversation, getDirectConversation,
      retryDirectConversation,
      listMessageThreadReplies, registerMessageThreadReply, markMessageThreadRead,
-     listAgents, createAgent, getAgent, updateAgent, deleteAgent, deployAgent,
+     listAgents, createAgent, getAgent, updateAgent, deleteAgent,
+     listAgentsV2, createAgentV2, getAgentV2, updateAgentV2, deleteAgentV2, deployAgent,
      startAgent, stopAgent, restartAgent, rotateAgentRuntimeCredential,
      getAgentProfileCapabilities, refreshAgentProfileCapabilities,
      listComputers, createComputer, getComputer, updateComputer, removeComputer,
+     listComputerRuntimeCapabilities,
      getComputerInstallationOptions, getComputerInstallationTargets, createComputerSetupCommand,
      createComputerRuntimeCredential, refreshComputer, createTerminalSession,
      listTasks, createTask, getTask, updateTask, listReminders,
@@ -161,6 +163,7 @@ x-error-code-registry:
   agent_not_ready: {status: 409}
   agent_must_be_stopped: {status: 409}
   runtime_unavailable: {status: 503}
+  runtime_unsupported_by_computer: {status: 409}
   profile_capabilities_unsupported: {status: 409}
   profile_not_ready: {status: 409}
   profile_capability_discovery_failed: {status: 503}
@@ -961,6 +964,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Agent'}
         default: {$ref: '#/components/responses/Error'}
+
     patch:
       tags: [Agents]
       operationId: updateAgent
@@ -1000,6 +1004,90 @@ paths:
               schema: {$ref: '#/components/schemas/AcceptedResource'}
         default: {$ref: '#/components/responses/Error'}
 
+  /servers/{serverId}/agents-v2:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [Agents]
+      operationId: listAgentsV2
+      summary: 以可扩展 Runtime selector 列出 Agent
+      responses:
+        '200':
+          description: Agent v2 列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AgentV2'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Agents]
+      operationId: createAgentV2
+      summary: 使用可扩展 Runtime selector 创建 Agent
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateAgentRequestV2'}
+      responses:
+        '202':
+          description: 已创建业务对象并开始同步 IM
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AcceptedResource'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/agents-v2/{agentId}:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/AgentId'}
+    get:
+      tags: [Agents]
+      operationId: getAgentV2
+      summary: 获取 Agent v2
+      responses:
+        '200':
+          description: Agent v2
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgentV2'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Agents]
+      operationId: updateAgentV2
+      summary: 修改 Agent v2
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateAgentRequestV2'}
+      responses:
+        '200':
+          description: 已修改
+          headers:
+            X-Resource-Revision: {$ref: '#/components/headers/ResourceRevision'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgentV2'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [Agents]
+      operationId: deleteAgentV2
+      summary: 删除 Agent v2
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已提交删除
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AcceptedResource'}
+        default: {$ref: '#/components/responses/Error'}
   /servers/{serverId}/agents/{agentId}/deploy:
     parameters:
       - {$ref: '#/components/parameters/ServerId'}
@@ -1375,6 +1463,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Computer'}
         default: {$ref: '#/components/responses/Error'}
+
     patch:
       tags: [Computers]
       operationId: updateComputer
@@ -1411,6 +1500,22 @@ paths:
         '204': {description: 已解除}
         default: {$ref: '#/components/responses/Error'}
 
+  /servers/{serverId}/computer-runtime-capabilities:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [Computers]
+      operationId: listComputerRuntimeCapabilities
+      summary: 列出 Computer 已协商的 Runtime 协议能力
+      responses:
+        '200':
+          description: Computer Runtime 协议能力
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ComputerRuntimeCapability'}
+        default: {$ref: '#/components/responses/Error'}
   /computer-installation-options:
     get:
       tags: [Computers]
@@ -1732,6 +1837,31 @@ paths:
               schema: {$ref: '#/components/schemas/ComputerRuntimeCredential'}
         default: {$ref: '#/components/responses/Error'}
 
+  /computer/session-v2:
+    post:
+      tags: [Computers]
+      operationId: createComputerSessionV2
+      summary: 协商可扩展 Assignment 协议并签发 Computer Session
+      security:
+        - ComputerCredentialAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerSessionNegotiationRequest'}
+      responses:
+        '201':
+          description: 已选择双方支持的最高 Assignment 版本
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerSessionV2'}
+        default: {$ref: '#/components/responses/Error'}
+
   /computer/assignments:
     get:
       tags: [Computers]
@@ -1815,6 +1945,44 @@ paths:
               schema: {type: integer, format: int64, minimum: 1}
         default: {$ref: '#/components/responses/Error'}
 
+  /computer/assignments-v3:
+    get:
+      tags: [Computers]
+      operationId: getComputerAssignmentsV3
+      summary: 拉取使用可扩展 Runtime selector 的 Assignment v3 Snapshot
+      security:
+        - ComputerBearer: []
+      parameters:
+        - name: sinceEpoch
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/Id'}
+        - name: sinceRevision
+          in: query
+          required: true
+          schema: {type: integer, format: int64, minimum: 0}
+        - name: waitSeconds
+          in: query
+          required: false
+          schema: {type: integer, minimum: 0, maximum: 25, default: 25}
+        - name: forceFull
+          in: query
+          required: false
+          schema: {type: boolean, default: false}
+      responses:
+        '200':
+          description: 完整 Assignment v3 Snapshot
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerAssignmentSnapshotV3'}
+        '204':
+          description: 当前 epoch/revision 没有变化
+          headers:
+            X-Assignment-Revision:
+              required: true
+              schema: {type: integer, format: int64, minimum: 1}
+        default: {$ref: '#/components/responses/Error'}
+
   /computer/agents/{agentId}/launches:
     parameters:
       - {$ref: '#/components/parameters/AgentId'}
@@ -1850,6 +2018,59 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ComputerAgentLaunch'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/agents/{agentId}/launches-v2:
+    parameters:
+      - {$ref: '#/components/parameters/AgentId'}
+    post:
+      tags: [Computers]
+      operationId: createComputerAgentLaunchV2
+      summary: 为 Assignment v3 分配 Launch Fence 与可扩展 Runtime Session
+      security:
+        - ComputerBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerAgentLaunchRequest'}
+      responses:
+        '201':
+          description: 已分配新的 Launch Fence
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerAgentLaunchV2'}
+        '200':
+          description: 相同 launchId 的幂等重试
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerAgentLaunchV2'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/agents/{agentId}/launches-v2/{launchId}/session:
+    parameters:
+      - {$ref: '#/components/parameters/AgentId'}
+      - name: launchId
+        in: path
+        required: true
+        schema: {$ref: '#/components/schemas/Id'}
+    post:
+      tags: [Computers]
+      operationId: refreshComputerAgentSessionV2
+      summary: 为 Assignment v3 的当前 Launch 刷新 Runtime 与 IM Session
+      security:
+        - ComputerBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerAgentSessionRefreshRequest'}
+      responses:
+        '201':
+          description: 已刷新短期 Session
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerAgentLaunchSessionV2'}
         default: {$ref: '#/components/responses/Error'}
 
   /computer/agents/{agentId}/launches/{launchId}/session:
@@ -1958,6 +2179,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ComputerProfileCapabilitySubmissionResult'}
         default: {$ref: '#/components/responses/Error'}
+
 
   /computer/heartbeat:
     post:
@@ -2766,6 +2988,19 @@ components:
           enum: [codex, hermes-acp, hermes-gateway]
         model: {type: string, nullable: true, maxLength: 100}
 
+    RuntimeSelectorV2:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9-]{0,63}$'
+          x-known-values: [codex, hermes-acp, hermes-gateway, openclaw]
+        model: {type: string, nullable: true, maxLength: 100}
+
     ProfileCapabilityAuthorityContextKey:
       type: string
       pattern: '^[A-Za-z0-9_-]{43}$'
@@ -3085,6 +3320,71 @@ components:
           type: string
           enum: [mention_and_dm, all_channel_messages, dm_only]
 
+    AgentV2:
+      type: object
+      additionalProperties: false
+      required:
+        [id, serverId, displayName, handle, imUserId, imState, computerId, runtime,
+         replyPolicy, desiredState, observedState, availability, imPresence,
+         imTransportState, credentialVersion, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        displayName: {type: string}
+        handle: {type: string}
+        description: {type: string, nullable: true}
+        imUserId: {type: string}
+        imState: {type: string, enum: [provisioning, ready, error]}
+        computerId: {$ref: '#/components/schemas/Id'}
+        runtime: {$ref: '#/components/schemas/RuntimeSelectorV2'}
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+        desiredState: {type: string, enum: [stopped, running]}
+        observedState:
+          type: string
+          enum: [unknown, deploying, stopped, starting, running, stopping, error]
+        availability: {type: string, enum: [unknown, online, offline]}
+        imPresence: {type: string, enum: [unknown, online, offline]}
+        imPresenceUpdatedAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        imTransportState:
+          type: string
+          enum: [unknown, connecting, connected, disconnected, error]
+        imTransportUpdatedAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        hostLastSeenAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        credentialVersion: {type: integer, minimum: 0}
+        lastObservedAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        lastErrorCode: {type: string, nullable: true}
+        revision: {$ref: '#/components/schemas/Revision'}
+
+    CreateAgentRequestV2:
+      type: object
+      additionalProperties: false
+      required: [displayName, handle, computerId, runtime]
+      properties:
+        displayName: {type: string, minLength: 1, maxLength: 100}
+        handle: {type: string, pattern: '^[a-z0-9][a-z0-9_-]{1,31}$'}
+        description: {type: string, nullable: true, maxLength: 1000}
+        computerId: {$ref: '#/components/schemas/Id'}
+        runtime: {$ref: '#/components/schemas/RuntimeSelectorV2'}
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+          default: mention_and_dm
+
+    UpdateAgentRequestV2:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        displayName: {type: string, minLength: 1, maxLength: 100}
+        description: {type: string, nullable: true, maxLength: 1000}
+        computerId: {$ref: '#/components/schemas/Id'}
+        runtime: {$ref: '#/components/schemas/RuntimeSelectorV2'}
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+
     RuntimeIdentity:
       type: object
       additionalProperties: false
@@ -3106,6 +3406,28 @@ components:
           type: string
           enum: [mention_and_dm, all_channel_messages, dm_only]
         runtime: {$ref: '#/components/schemas/RuntimeConfig'}
+
+    RuntimeIdentityV2:
+      type: object
+      additionalProperties: false
+      required: [id, serverId, userId, capabilities, replyPolicy, runtime]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        userId: {type: string}
+        capabilities:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              [read, send, server, channels, threads, tasks, reactions,
+               attachments, reminders]
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+        runtime: {$ref: '#/components/schemas/RuntimeSelectorV2'}
     ComputerRuntimeCredentialRequest:
       type: object
       additionalProperties: false
@@ -3159,6 +3481,28 @@ components:
             type: integer
             enum: [1]
             x-enum-varnames: [ComputerSessionAssignmentVersionsN1]
+
+    ComputerSessionNegotiationRequest:
+      type: object
+      additionalProperties: false
+      required: [assignmentVersions]
+      properties:
+        assignmentVersions:
+          type: array
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          items: {type: integer, minimum: 1}
+
+    ComputerSessionV2:
+      type: object
+      additionalProperties: false
+      required: [accessToken, expiresAt, computer, assignmentVersion]
+      properties:
+        accessToken: {type: string, readOnly: true, x-sensitive: true}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        computer: {$ref: '#/components/schemas/ComputerSessionIdentity'}
+        assignmentVersion: {type: integer, minimum: 1}
 
     ComputerAssignmentLaunchFence:
       type: object
@@ -3291,6 +3635,70 @@ components:
           maxItems: 100
           items: {$ref: '#/components/schemas/ComputerAssignmentV2'}
 
+    ComputerProfileCapabilityRefreshV2:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, refreshId, contextGeneration, authorityContextKey,
+         runtimeKind, invalidationWatermark, forceReload, requestedAt]
+      properties:
+        schemaVersion: {type: integer, enum: [1]}
+        refreshId: {$ref: '#/components/schemas/Id'}
+        contextGeneration: {type: integer, format: int64, minimum: 1}
+        authorityContextKey: {$ref: '#/components/schemas/ProfileCapabilityAuthorityContextKey'}
+        runtimeKind:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9-]{0,63}$'
+        invalidationWatermark: {type: integer, format: int64, minimum: 0}
+        forceReload: {type: boolean}
+        requestedAt: {$ref: '#/components/schemas/Timestamp'}
+
+    ComputerAssignmentV3:
+      type: object
+      additionalProperties: false
+      required:
+        [agentId, serverId, desiredState, configGeneration,
+         credentialVersion, currentLaunch, runtime, replyPolicy,
+         profileCapabilityRefresh]
+      properties:
+        agentId: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        desiredState: {type: string, enum: [running, stopped]}
+        configGeneration: {type: integer, format: int64, minimum: 1}
+        credentialVersion: {type: integer, format: int64, minimum: 0}
+        currentLaunch:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/ComputerAssignmentLaunchFence'}
+        runtime: {$ref: '#/components/schemas/RuntimeSelectorV2'}
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+        profileCapabilityRefresh:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/ComputerProfileCapabilityRefreshV2'}
+
+    ComputerAssignmentSnapshotV3:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, computerId, epoch, revision, snapshotHash, agents]
+      properties:
+        schemaVersion: {type: integer, enum: [3]}
+        computerId: {$ref: '#/components/schemas/Id'}
+        epoch: {$ref: '#/components/schemas/Id'}
+        revision: {type: integer, format: int64, minimum: 1}
+        snapshotHash:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        agents:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/ComputerAssignmentV3'}
+
     ComputerAgentLaunchRequest:
       type: object
       additionalProperties: false
@@ -3336,6 +3744,24 @@ components:
       properties:
         launch: {$ref: '#/components/schemas/ComputerAgentLaunchFence'}
         session: {$ref: '#/components/schemas/ComputerAgentLaunchSession'}
+
+    ComputerAgentLaunchSessionV2:
+      type: object
+      additionalProperties: false
+      required: [accessToken, expiresAt, agent, im]
+      properties:
+        accessToken: {type: string, readOnly: true, x-sensitive: true}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        agent: {$ref: '#/components/schemas/RuntimeIdentityV2'}
+        im: {$ref: '#/components/schemas/ImSession'}
+
+    ComputerAgentLaunchV2:
+      type: object
+      additionalProperties: false
+      required: [launch, session]
+      properties:
+        launch: {$ref: '#/components/schemas/ComputerAgentLaunchFence'}
+        session: {$ref: '#/components/schemas/ComputerAgentLaunchSessionV2'}
 
     ComputerAgentSessionRefreshRequest:
       type: object
@@ -3574,7 +4000,7 @@ components:
         daemonBuildId: {type: string, minLength: 1, maxLength: 200}
         assignmentEpoch: {$ref: '#/components/schemas/Id'}
         assignmentRevision: {type: integer, format: int64, minimum: 1}
-        assignmentVersion: {type: integer, enum: [1, 2]}
+        assignmentVersion: {type: integer, enum: [1, 2, 3]}
         profileCapabilityVersions:
           type: array
           uniqueItems: true
@@ -3602,6 +4028,13 @@ components:
         lastObservedAt: {$ref: '#/components/schemas/NullableTimestamp'}
         lastErrorCode: {type: string, nullable: true}
         revision: {$ref: '#/components/schemas/Revision'}
+    ComputerRuntimeCapability:
+      type: object
+      additionalProperties: false
+      required: [computerId, assignmentVersion]
+      properties:
+        computerId: {$ref: '#/components/schemas/Id'}
+        assignmentVersion: {type: integer, minimum: 1}
     ComputerInstallationOptions:
       type: object
       additionalProperties: false

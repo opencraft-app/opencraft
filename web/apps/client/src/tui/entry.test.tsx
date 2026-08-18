@@ -177,7 +177,10 @@ describe("Human TUI entry", () => {
           if (path === "/servers/server-1/direct-conversations") {
             return {items: [], nextCursor: null};
           }
-          if (path === "/servers/server-1/agents") {
+          if (path === "/servers/server-1/agents-v2") {
+            return [];
+          }
+          if (path === "/servers/server-1/computer-runtime-capabilities") {
             return [];
           }
           if (path === "/servers/server-1/computers") {

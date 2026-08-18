@@ -19,7 +19,8 @@ import (
 const (
 	AssignmentSchemaVersionV1 = 1
 	AssignmentSchemaVersionV2 = 2
-	AssignmentSchemaVersion   = AssignmentSchemaVersionV2
+	AssignmentSchemaVersionV3 = 3
+	AssignmentSchemaVersion   = AssignmentSchemaVersionV3
 	DefaultMaximumAgents      = 5
 
 	DesiredRunning = "running"
@@ -82,7 +83,8 @@ type RuntimeConfig struct {
 
 func ValidateSnapshot(snapshot Snapshot, expectedComputerID string) error {
 	if (snapshot.SchemaVersion != AssignmentSchemaVersionV1 &&
-		snapshot.SchemaVersion != AssignmentSchemaVersionV2) ||
+		snapshot.SchemaVersion != AssignmentSchemaVersionV2 &&
+		snapshot.SchemaVersion != AssignmentSchemaVersionV3) ||
 		!isUUIDv7(snapshot.ComputerID) ||
 		snapshot.ComputerID != expectedComputerID ||
 		!isUUIDv7(snapshot.Epoch) ||
@@ -97,6 +99,8 @@ func ValidateSnapshot(snapshot Snapshot, expectedComputerID string) error {
 			assignment.ConfigGeneration < 1 ||
 			!validDesiredState(assignment.DesiredState) ||
 			!validRuntime(assignment.Runtime) ||
+			(snapshot.SchemaVersion < AssignmentSchemaVersionV3 &&
+				!legacyRuntimeKind(assignment.Runtime.Kind)) ||
 			!validReplyPolicy(assignment.ReplyPolicy) {
 			return ErrInvalidSnapshot
 		}
@@ -111,7 +115,7 @@ func ValidateSnapshot(snapshot Snapshot, expectedComputerID string) error {
 				assignment.CurrentLaunch.Attempt < 1) {
 			return ErrInvalidSnapshot
 		}
-		if snapshot.SchemaVersion == AssignmentSchemaVersionV2 {
+		if snapshot.SchemaVersion >= AssignmentSchemaVersionV2 {
 			refresh := assignment.ProfileCapabilityRefresh
 			if refresh != nil &&
 				(refresh.SchemaVersion != 1 || !isUUIDv7(refresh.RefreshID) ||
@@ -216,7 +220,7 @@ func appendCanonicalAgent(
 	if err := appendJSONString(output, assignment.DesiredState); err != nil {
 		return err
 	}
-	if schemaVersion == AssignmentSchemaVersionV2 {
+	if schemaVersion >= AssignmentSchemaVersionV2 {
 		output.WriteString(`,"profileCapabilityRefresh":`)
 		if assignment.ProfileCapabilityRefresh == nil {
 			output.WriteString("null")
@@ -312,13 +316,22 @@ func validDesiredState(value string) bool {
 }
 
 func validRuntime(value RuntimeConfig) bool {
-	switch value.Kind {
-	case "codex", "hermes-acp", "hermes-gateway":
-	default:
+	if len(value.Kind) < 1 || len(value.Kind) > 64 ||
+		value.Kind[0] < 'a' || value.Kind[0] > 'z' {
 		return false
+	}
+	for _, character := range value.Kind[1:] {
+		if character != '-' && (character < 'a' || character > 'z') &&
+			(character < '0' || character > '9') {
+			return false
+		}
 	}
 	return value.Model == nil ||
 		strings.TrimSpace(*value.Model) == *value.Model
+}
+
+func legacyRuntimeKind(value string) bool {
+	return value == "codex" || value == "hermes-acp" || value == "hermes-gateway"
 }
 
 func validReplyPolicy(value string) bool {

@@ -47,7 +47,7 @@ func TestValidateSnapshotRejectsWholeInvalidSnapshot(t *testing.T) {
 		name   string
 		mutate func(*Snapshot)
 	}{
-		{"wrong schema", func(s *Snapshot) { s.SchemaVersion = 2 }},
+		{"wrong schema", func(s *Snapshot) { s.SchemaVersion = 99 }},
 		{"wrong computer", func(s *Snapshot) { s.ComputerID = testServerID }},
 		{"hash mismatch", func(s *Snapshot) { s.SnapshotHash = "bad" }},
 		{"duplicate agent", func(s *Snapshot) { s.Agents = append(s.Agents, s.Agents[0]) }},
@@ -79,10 +79,16 @@ func TestValidateSnapshotAcceptsPlatformRuntimeKindsAndReplyPolicies(t *testing.
 		{kind: "codex", policy: "mention_and_dm"},
 		{kind: "hermes-acp", policy: "dm_only"},
 		{kind: "hermes-gateway", policy: "all_channel_messages"},
+		{kind: "openclaw", policy: "mention_and_dm"},
 	} {
+		schemaVersion := 1
+		if test.kind == "openclaw" {
+			schemaVersion = 3
+		}
 		snapshot := newSnapshot(t, 1, []AgentAssignment{
 			runningAgent("018f0c9e-7b14-7abc-8def-0123456789ab", 1),
 		})
+		snapshot.SchemaVersion = schemaVersion
 		snapshot.Agents[0].Runtime.Kind = test.kind
 		snapshot.Agents[0].ReplyPolicy = test.policy
 		_, digest, err := CanonicalSnapshot(snapshot)

@@ -523,6 +523,26 @@ func (repository *EntRepository) SupportsProfileCapabilities(
 		*entity.ProfileCapabilityVersion == 1, nil
 }
 
+func (repository *EntRepository) SupportsAssignmentVersion(
+	ctx context.Context,
+	serverID string,
+	computerID string,
+	version int,
+) (bool, error) {
+	if version < 1 {
+		return false, nil
+	}
+	exists, err := repository.handle.Client().Computer.Query().
+		Where(
+			computer.IDEQ(computerID),
+			computer.ServerIDEQ(serverID),
+			computer.LifecycleStateEQ("active"),
+			computer.AssignmentProtocolVersionGTE(version),
+		).
+		Exist(ctx)
+	return exists, err
+}
+
 func (repository *EntRepository) GetProfileCapabilities(
 	ctx context.Context,
 	accountID string,
@@ -813,6 +833,10 @@ func (repository *EntRepository) EnsureSystemProfileCapabilityRefresh(
 			}
 			if err != nil {
 				return err
+			}
+			if entity.RuntimeKind != "codex" && entity.RuntimeKind != "hermes-acp" &&
+				entity.RuntimeKind != "hermes-gateway" {
+				return agentport.ErrProfileCapabilitiesUnsupported
 			}
 			machine, err := tx.Computer.Query().
 				Where(

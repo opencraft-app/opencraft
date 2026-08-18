@@ -603,6 +603,48 @@ export interface paths {
         patch: operations["updateAgent"];
         trace?: never;
     };
+    "/servers/{serverId}/agents-v2": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** 以可扩展 Runtime selector 列出 Agent */
+        get: operations["listAgentsV2"];
+        put?: never;
+        /** 使用可扩展 Runtime selector 创建 Agent */
+        post: operations["createAgentV2"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/agents-v2/{agentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                agentId: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        /** 获取 Agent v2 */
+        get: operations["getAgentV2"];
+        put?: never;
+        post?: never;
+        /** 删除 Agent v2 */
+        delete: operations["deleteAgentV2"];
+        options?: never;
+        head?: never;
+        /** 修改 Agent v2 */
+        patch: operations["updateAgentV2"];
+        trace?: never;
+    };
     "/servers/{serverId}/agents/{agentId}/deploy": {
         parameters: {
             query?: never;
@@ -973,6 +1015,25 @@ export interface paths {
         patch: operations["updateComputer"];
         trace?: never;
     };
+    "/servers/{serverId}/computer-runtime-capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** 列出 Computer 已协商的 Runtime 协议能力 */
+        get: operations["listComputerRuntimeCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/computer-installation-options": {
         parameters: {
             query?: never;
@@ -1228,6 +1289,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/computer/session-v2": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 协商可扩展 Assignment 协议并签发 Computer Session */
+        post: operations["createComputerSessionV2"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/computer/assignments": {
         parameters: {
             query?: never;
@@ -1262,6 +1340,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/computer/assignments-v3": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 拉取使用可扩展 Runtime selector 的 Assignment v3 Snapshot */
+        get: operations["getComputerAssignmentsV3"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/computer/agents/{agentId}/launches": {
         parameters: {
             query?: never;
@@ -1275,6 +1370,45 @@ export interface paths {
         put?: never;
         /** 原子分配 Agent Launch Fence 并签发短期 Runtime 与 IM Session */
         post: operations["createComputerAgentLaunch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/computer/agents/{agentId}/launches-v2": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 为 Assignment v3 分配 Launch Fence 与可扩展 Runtime Session */
+        post: operations["createComputerAgentLaunchV2"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/computer/agents/{agentId}/launches-v2/{launchId}/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: components["parameters"]["AgentId"];
+                launchId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 为 Assignment v3 的当前 Launch 刷新 Runtime 与 IM Session */
+        post: operations["refreshComputerAgentSessionV2"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1837,6 +1971,10 @@ export interface components {
             kind: "codex" | "hermes-acp" | "hermes-gateway";
             model?: string | null;
         };
+        RuntimeSelectorV2: {
+            kind: string;
+            model?: string | null;
+        };
         ProfileCapabilityAuthorityContextKey: string;
         ProfileCapabilityWarning: {
             /** @enum {string} */
@@ -1991,6 +2129,57 @@ export interface components {
             /** @enum {string} */
             replyPolicy?: "mention_and_dm" | "all_channel_messages" | "dm_only";
         };
+        AgentV2: {
+            id: components["schemas"]["Id"];
+            serverId: components["schemas"]["Id"];
+            displayName: string;
+            handle: string;
+            description?: string | null;
+            imUserId: string;
+            /** @enum {string} */
+            imState: "provisioning" | "ready" | "error";
+            computerId: components["schemas"]["Id"];
+            runtime: components["schemas"]["RuntimeSelectorV2"];
+            /** @enum {string} */
+            replyPolicy: "mention_and_dm" | "all_channel_messages" | "dm_only";
+            /** @enum {string} */
+            desiredState: "stopped" | "running";
+            /** @enum {string} */
+            observedState: "unknown" | "deploying" | "stopped" | "starting" | "running" | "stopping" | "error";
+            /** @enum {string} */
+            availability: "unknown" | "online" | "offline";
+            /** @enum {string} */
+            imPresence: "unknown" | "online" | "offline";
+            imPresenceUpdatedAt?: components["schemas"]["NullableTimestamp"];
+            /** @enum {string} */
+            imTransportState: "unknown" | "connecting" | "connected" | "disconnected" | "error";
+            imTransportUpdatedAt?: components["schemas"]["NullableTimestamp"];
+            hostLastSeenAt?: components["schemas"]["NullableTimestamp"];
+            credentialVersion: number;
+            lastObservedAt?: components["schemas"]["NullableTimestamp"];
+            lastErrorCode?: string | null;
+            revision: components["schemas"]["Revision"];
+        };
+        CreateAgentRequestV2: {
+            displayName: string;
+            handle: string;
+            description?: string | null;
+            computerId: components["schemas"]["Id"];
+            runtime: components["schemas"]["RuntimeSelectorV2"];
+            /**
+             * @default mention_and_dm
+             * @enum {string}
+             */
+            replyPolicy: "mention_and_dm" | "all_channel_messages" | "dm_only";
+        };
+        UpdateAgentRequestV2: {
+            displayName?: string;
+            description?: string | null;
+            computerId?: components["schemas"]["Id"];
+            runtime?: components["schemas"]["RuntimeSelectorV2"];
+            /** @enum {string} */
+            replyPolicy?: "mention_and_dm" | "all_channel_messages" | "dm_only";
+        };
         RuntimeIdentity: {
             id: components["schemas"]["Id"];
             serverId: components["schemas"]["Id"];
@@ -1999,6 +2188,15 @@ export interface components {
             /** @enum {string} */
             replyPolicy: "mention_and_dm" | "all_channel_messages" | "dm_only";
             runtime: components["schemas"]["RuntimeConfig"];
+        };
+        RuntimeIdentityV2: {
+            id: components["schemas"]["Id"];
+            serverId: components["schemas"]["Id"];
+            userId: string;
+            capabilities: ("read" | "send" | "server" | "channels" | "threads" | "tasks" | "reactions" | "attachments" | "reminders")[];
+            /** @enum {string} */
+            replyPolicy: "mention_and_dm" | "all_channel_messages" | "dm_only";
+            runtime: components["schemas"]["RuntimeSelectorV2"];
         };
         ComputerRuntimeCredentialRequest: {
             /** @enum {string} */
@@ -2026,6 +2224,15 @@ export interface components {
             expiresAt: components["schemas"]["Timestamp"];
             computer: components["schemas"]["ComputerSessionIdentity"];
             assignmentVersions: 1[];
+        };
+        ComputerSessionNegotiationRequest: {
+            assignmentVersions: number[];
+        };
+        ComputerSessionV2: {
+            readonly accessToken: string;
+            expiresAt: components["schemas"]["Timestamp"];
+            computer: components["schemas"]["ComputerSessionIdentity"];
+            assignmentVersion: number;
         };
         ComputerAssignmentLaunchFence: {
             launchId: components["schemas"]["Id"];
@@ -2100,6 +2307,44 @@ export interface components {
             snapshotHash: string;
             agents: components["schemas"]["ComputerAssignmentV2"][];
         };
+        ComputerProfileCapabilityRefreshV2: {
+            /** @enum {integer} */
+            schemaVersion: 1;
+            refreshId: components["schemas"]["Id"];
+            /** Format: int64 */
+            contextGeneration: number;
+            authorityContextKey: components["schemas"]["ProfileCapabilityAuthorityContextKey"];
+            runtimeKind: string;
+            /** Format: int64 */
+            invalidationWatermark: number;
+            forceReload: boolean;
+            requestedAt: components["schemas"]["Timestamp"];
+        };
+        ComputerAssignmentV3: {
+            agentId: components["schemas"]["Id"];
+            serverId: components["schemas"]["Id"];
+            /** @enum {string} */
+            desiredState: "running" | "stopped";
+            /** Format: int64 */
+            configGeneration: number;
+            /** Format: int64 */
+            credentialVersion: number;
+            currentLaunch: components["schemas"]["ComputerAssignmentLaunchFence"] | null;
+            runtime: components["schemas"]["RuntimeSelectorV2"];
+            /** @enum {string} */
+            replyPolicy: "mention_and_dm" | "all_channel_messages" | "dm_only";
+            profileCapabilityRefresh: components["schemas"]["ComputerProfileCapabilityRefreshV2"] | null;
+        };
+        ComputerAssignmentSnapshotV3: {
+            /** @enum {integer} */
+            schemaVersion: 3;
+            computerId: components["schemas"]["Id"];
+            epoch: components["schemas"]["Id"];
+            /** Format: int64 */
+            revision: number;
+            snapshotHash: string;
+            agents: components["schemas"]["ComputerAssignmentV3"][];
+        };
         ComputerAgentLaunchRequest: {
             launchId: components["schemas"]["Id"];
             predecessorLaunchId: components["schemas"]["NullableId"];
@@ -2131,6 +2376,16 @@ export interface components {
         ComputerAgentLaunch: {
             launch: components["schemas"]["ComputerAgentLaunchFence"];
             session: components["schemas"]["ComputerAgentLaunchSession"];
+        };
+        ComputerAgentLaunchSessionV2: {
+            readonly accessToken: string;
+            expiresAt: components["schemas"]["Timestamp"];
+            agent: components["schemas"]["RuntimeIdentityV2"];
+            im: components["schemas"]["ImSession"];
+        };
+        ComputerAgentLaunchV2: {
+            launch: components["schemas"]["ComputerAgentLaunchFence"];
+            session: components["schemas"]["ComputerAgentLaunchSessionV2"];
         };
         ComputerAgentSessionRefreshRequest: {
             assignmentEpoch: components["schemas"]["Id"];
@@ -2258,7 +2513,7 @@ export interface components {
             /** Format: int64 */
             assignmentRevision: number;
             /** @enum {integer} */
-            assignmentVersion?: 1 | 2;
+            assignmentVersion?: 1 | 2 | 3;
             profileCapabilityVersions?: 1[];
             /** @enum {string} */
             tatState: "online" | "offline" | "error";
@@ -2278,6 +2533,10 @@ export interface components {
             lastObservedAt?: components["schemas"]["NullableTimestamp"];
             lastErrorCode?: string | null;
             revision: components["schemas"]["Revision"];
+        };
+        ComputerRuntimeCapability: {
+            computerId: components["schemas"]["Id"];
+            assignmentVersion: number;
         };
         ComputerInstallationOptions: {
             releaseVersion: string;
@@ -3863,6 +4122,140 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    listAgentsV2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent v2 列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentV2"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createAgentV2: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAgentRequestV2"];
+            };
+        };
+        responses: {
+            /** @description 已创建业务对象并开始同步 IM */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptedResource"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getAgentV2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                agentId: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent v2 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentV2"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteAgentV2: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                agentId: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已提交删除 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptedResource"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    updateAgentV2: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Resource-Revision": components["parameters"]["ResourceRevision"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                agentId: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAgentRequestV2"];
+            };
+        };
+        responses: {
+            /** @description 已修改 */
+            200: {
+                headers: {
+                    "X-Resource-Revision": components["headers"]["ResourceRevision"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentV2"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     deployAgent: {
         parameters: {
             query?: never;
@@ -4423,6 +4816,29 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    listComputerRuntimeCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Computer Runtime 协议能力 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputerRuntimeCapability"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     getComputerInstallationOptions: {
         parameters: {
             query?: never;
@@ -4750,6 +5166,33 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    createComputerSessionV2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComputerSessionNegotiationRequest"];
+            };
+        };
+        responses: {
+            /** @description 已选择双方支持的最高 Assignment 版本 */
+            201: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    Pragma?: "no-cache";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputerSessionV2"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     getComputerAssignments: {
         parameters: {
             query: {
@@ -4820,6 +5263,40 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    getComputerAssignmentsV3: {
+        parameters: {
+            query: {
+                sinceEpoch?: components["schemas"]["Id"];
+                sinceRevision: number;
+                waitSeconds?: number;
+                forceFull?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 完整 Assignment v3 Snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputerAssignmentSnapshotV3"];
+                };
+            };
+            /** @description 当前 epoch/revision 没有变化 */
+            204: {
+                headers: {
+                    "X-Assignment-Revision": number;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     createComputerAgentLaunch: {
         parameters: {
             query?: never;
@@ -4855,6 +5332,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ComputerAgentLaunch"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createComputerAgentLaunchV2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComputerAgentLaunchRequest"];
+            };
+        };
+        responses: {
+            /** @description 相同 launchId 的幂等重试 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputerAgentLaunchV2"];
+                };
+            };
+            /** @description 已分配新的 Launch Fence */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputerAgentLaunchV2"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    refreshComputerAgentSessionV2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: components["parameters"]["AgentId"];
+                launchId: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComputerAgentSessionRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description 已刷新短期 Session */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputerAgentLaunchSessionV2"];
                 };
             };
             default: components["responses"]["Error"];

@@ -7,12 +7,12 @@ import (
 	"velachat/agent/internal/runtimeapi"
 )
 
-func TestRegistrationUsesDedicatedInternalIdentityAndPiWireAlias(t *testing.T) {
+func TestRegistrationUsesCanonicalHermesGatewayIdentity(t *testing.T) {
 	t.Parallel()
 
 	registration := Registration(Options{Version: "v-test"})
 	if registration.ID != "hermes-gateway" ||
-		registration.WireID != "pi" ||
+		registration.WireID != "" ||
 		registration.DisplayName != "Hermes Gateway" {
 		t.Fatalf("Registration() = %#v", registration)
 	}
@@ -26,7 +26,7 @@ func TestRegistrationUsesDedicatedInternalIdentityAndPiWireAlias(t *testing.T) {
 	}
 }
 
-func TestProcessEnvironmentFirewallStripsPiControlledCredentials(t *testing.T) {
+func TestCanonicalHermesEnvironmentPreservesProviderConfiguration(t *testing.T) {
 	t.Parallel()
 
 	input := map[string]string{
@@ -35,8 +35,8 @@ func TestProcessEnvironmentFirewallStripsPiControlledCredentials(t *testing.T) {
 		"VELA_AGENT_ID":    "agent-1",
 	}
 	sanitized := sanitizeProcessEnvironment(input)
-	if _, ok := sanitized["DEEPSEEK_API_KEY"]; ok {
-		t.Fatal("Pi-controlled DEEPSEEK_API_KEY crossed the Gateway boundary")
+	if sanitized["DEEPSEEK_API_KEY"] != input["DEEPSEEK_API_KEY"] {
+		t.Fatal("Hermes provider configuration was stripped")
 	}
 	if sanitized["PATH"] != input["PATH"] ||
 		sanitized["VELA_AGENT_ID"] != input["VELA_AGENT_ID"] {

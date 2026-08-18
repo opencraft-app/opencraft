@@ -136,6 +136,37 @@ func (handler *ComputerHandler) ListComputers(
 	return body, nil
 }
 
+func (handler *ComputerHandler) ListComputerRuntimeCapabilities(
+	ctx context.Context,
+	request openapi.ListComputerRuntimeCapabilitiesRequestObject,
+) (openapi.ListComputerRuntimeCapabilitiesResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	values, err := handler.service.List(
+		ctx, principal.AccountID(), request.ServerId.String(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	body := make(openapi.ListComputerRuntimeCapabilities200JSONResponse, 0, len(values))
+	for _, value := range values {
+		computerID, err := parseDomainID(value.ID, "Computer")
+		if err != nil {
+			return nil, err
+		}
+		version := value.AssignmentVersion
+		if version < 1 {
+			version = 1
+		}
+		body = append(body, openapi.ComputerRuntimeCapability{
+			ComputerId: computerID, AssignmentVersion: version,
+		})
+	}
+	return body, nil
+}
+
 func (handler *ComputerHandler) GetComputer(
 	ctx context.Context,
 	request openapi.GetComputerRequestObject,

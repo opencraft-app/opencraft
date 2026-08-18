@@ -35,8 +35,18 @@ type fakeAgentRepository struct {
 	lifecycleCalls               int
 	profileCapabilityCommand     agentport.ProfileCapabilityRefreshCommand
 	profileCapabilitiesSupported bool
+	assignmentVersion            int
 	systemEnsureCommand          agentport.SystemProfileCapabilityEnsureCommand
 	expireAt                     time.Time
+}
+
+func (repository *fakeAgentRepository) SupportsAssignmentVersion(
+	_ context.Context,
+	_ string,
+	_ string,
+	version int,
+) (bool, error) {
+	return repository.assignmentVersion >= version, nil
 }
 
 func (repository *fakeAgentRepository) SupportsProfileCapabilities(
@@ -248,6 +258,51 @@ func TestServiceCreatesAgentAndEnqueuesLifecycle(t *testing.T) {
 			operation,
 			repository.lifecycleCommand,
 		)
+	}
+}
+
+func TestServiceRequiresAssignmentV3ForExtensibleRuntime(t *testing.T) {
+	computerID := appAgentComputer
+	repository := &fakeAgentRepository{context: agentport.ServerContext{
+		Role: "owner", IMState: "ready", CreatorMemberID: appAgentAccountID,
+	}}
+	service, err := NewService(
+		repository, agentIdentityDeriver{},
+		&sequenceIDs{values: []string{appAgentID, appAgentOperation}},
+		fixedClock{now: appAgentNow}, bytes.NewReader(bytes.Repeat([]byte{0x42}, 32)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := CreateCommand{
+		AccountID: appAgentAccountID, ServerID: appAgentServerID,
+		IdempotencyKey: "agent-openclaw-create", DisplayName: "OpenClaw",
+		Handle: "openclaw", ComputerID: &computerID,
+		Runtime: agentport.Runtime{Kind: "openclaw"},
+	}
+	if _, err := service.Create(context.Background(), command); err == nil ||
+		apperror.CodeOf(err) != "runtime_unsupported_by_computer" {
+		t.Fatalf("Create() without assignment v3 error = %v", err)
+	}
+	repository.assignmentVersion = 3
+	repository.agent = agentport.Agent{
+		ID: appAgentID, ServerID: appAgentServerID, ComputerID: &computerID,
+		Runtime: agentport.Runtime{Kind: "openclaw"}, Revision: 1,
+	}
+	repository.operation = agentport.Operation{
+		ID: appAgentOperation, ServerID: appAgentServerID,
+		Service: "im", Kind: "im.identity.ensure", State: "pending", CreatedAt: appAgentNow,
+	}
+	if _, err := service.Create(context.Background(), command); err != nil {
+		t.Fatal(err)
+	}
+	repository.assignmentVersion = 0
+	if _, err := service.Update(context.Background(), UpdateCommand{
+		AccountID: appAgentAccountID, ServerID: appAgentServerID,
+		AgentID: appAgentID, Revision: 1, IdempotencyKey: "agent-openclaw-update",
+		Runtime: &agentport.Runtime{Kind: "openclaw"},
+	}); err == nil || apperror.CodeOf(err) != "runtime_unsupported_by_computer" {
+		t.Fatalf("Update() without assignment v3 error = %v", err)
 	}
 }
 

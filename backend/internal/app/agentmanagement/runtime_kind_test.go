@@ -6,20 +6,20 @@ import (
 	agentport "chatserver/internal/ports/agent"
 )
 
-func TestValidRuntimeAcceptsExplicitHermesKinds(t *testing.T) {
+func TestValidRuntimeAcceptsExtensibleCanonicalKinds(t *testing.T) {
 	t.Parallel()
 
-	for _, kind := range []string{"hermes-acp", "hermes-gateway"} {
+	for _, kind := range []string{"hermes-acp", "hermes-gateway", "openclaw", "future-runtime-2"} {
 		if !validRuntime(agentport.Runtime{Kind: kind}) {
 			t.Errorf("validRuntime(%q) = false", kind)
 		}
 	}
 }
 
-func TestValidRuntimeRejectsKindsMissingFromCanonicalVelaHost(t *testing.T) {
+func TestValidRuntimeRejectsMalformedKinds(t *testing.T) {
 	t.Parallel()
 
-	for _, kind := range []string{"claude", "kimi", "pi"} {
+	for _, kind := range []string{"", "OpenClaw", "-openclaw", "open_claw"} {
 		if validRuntime(agentport.Runtime{Kind: kind}) {
 			t.Errorf("validRuntime(%q) = true", kind)
 		}

@@ -12,7 +12,7 @@ func TestRegistrationDeclaresPersistentDirectDelivery(t *testing.T) {
 
 	registration := Registration(Options{Version: "test"})
 	if registration.ID != "hermes-acp" ||
-		registration.WireID != "opencode" ||
+		registration.WireID != "" ||
 		registration.DisplayName != "Hermes ACP" {
 		t.Fatalf("registration = %#v", registration)
 	}

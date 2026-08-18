@@ -318,7 +318,7 @@ func safeFailureDiagnostic(value FailureDiagnostic) FailureDiagnostic {
 	}
 	value.AgentID = safeMessageID(value.AgentID)
 	switch value.RuntimeKind {
-	case "codex", "hermes-acp", "hermes-gateway":
+	case "codex", "hermes-acp", "hermes-gateway", "openclaw":
 	default:
 		return FailureDiagnostic{}
 	}

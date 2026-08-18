@@ -1,7 +1,7 @@
 # Adding a built-in Runtime
 
 The client uses compile-time Runtime registration. Codex app-server, Hermes
-ACP, and Hermes Gateway are the current built-in Runtimes. A new Runtime is
+ACP, Hermes Gateway, and OpenClaw Gateway are the current built-in Runtimes. A new Runtime is
 source-reviewed and shipped in the same binary; there is no dynamic plugin or
 manifest loader.
 

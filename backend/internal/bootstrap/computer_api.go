@@ -131,7 +131,7 @@ func NewComputerAPIHandler(config ComputerAPIConfig) (http.Handler, error) {
 			AccessTTL:  config.AccessTTL,
 			UserSigTTL: config.UserSigTTL,
 			AllowedRuntime: []string{
-				"codex", "hermes-acp", "hermes-gateway",
+				"codex", "hermes-acp", "hermes-gateway", "openclaw",
 			},
 		},
 	)
@@ -206,10 +206,17 @@ func NewComputerAPIHandler(config ComputerAPIConfig) (http.Handler, error) {
 	implemented, err := httptransport.ImplementedRoutesMiddleware(
 		[]httptransport.ImplementedRoute{
 			{Method: http.MethodPost, Path: "/v1/computer/session"},
+			{Method: http.MethodPost, Path: "/v1/computer/session-v2"},
 			{Method: http.MethodPost, Path: "/v1/computer/credential:rotate"},
 			{Method: http.MethodGet, Path: "/v1/computer/assignments"},
+			{Method: http.MethodGet, Path: "/v1/computer/assignments-v2"},
+			{Method: http.MethodGet, Path: "/v1/computer/assignments-v3"},
 			{Method: http.MethodPost, Path: "/v1/computer/agents/{agentId}/launches"},
+			{Method: http.MethodPost, Path: "/v1/computer/agents/{agentId}/launches-v2"},
 			{Method: http.MethodPost, Path: "/v1/computer/agents/{agentId}/launches/{launchId}/session"},
+			{Method: http.MethodPost, Path: "/v1/computer/agents/{agentId}/launches-v2/{launchId}/session"},
+			{Method: http.MethodPut, Path: "/v1/computer/agents/{agentId}/profile-capability-results/{operationId}"},
+			{Method: http.MethodPut, Path: "/v1/computer/agents/{agentId}/profile-capability-invalidations/{eventId}"},
 			{Method: http.MethodPut, Path: "/v1/computer/agents/{agentId}/observations/{observationId}"},
 			{Method: http.MethodPost, Path: "/v1/computer/heartbeat"},
 		},

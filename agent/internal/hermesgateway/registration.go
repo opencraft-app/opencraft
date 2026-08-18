@@ -75,7 +75,6 @@ func New(options Options) *Driver {
 func Registration(options Options) runtimeapi.Registration {
 	return runtimeapi.Registration{
 		ID:          "hermes-gateway",
-		WireID:      "pi",
 		DisplayName: "Hermes Gateway",
 		NewDriver: func() (runtimeapi.RuntimeDriver, error) {
 			return New(options), nil

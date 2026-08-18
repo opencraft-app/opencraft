@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -24,7 +25,7 @@ func TestComputerClientSessionAndAssignment(t *testing.T) {
 
 	now := time.Date(2026, time.July, 31, 0, 0, 0, 0, time.UTC)
 	snapshot := daemon.Snapshot{
-		SchemaVersion: 1,
+		SchemaVersion: 3,
 		ComputerID:    computerTestID,
 		Epoch:         computerTestEpoch,
 		Revision:      2,
@@ -35,7 +36,7 @@ func TestComputerClientSessionAndAssignment(t *testing.T) {
 			ConfigGeneration:  3,
 			CredentialVersion: 1,
 			Runtime: daemon.RuntimeConfig{
-				Kind: "codex",
+				Kind: "openclaw",
 			},
 			ReplyPolicy: "mention_and_dm",
 		}},
@@ -51,12 +52,19 @@ func TestComputerClientSessionAndAssignment(t *testing.T) {
 			calls++
 			response.Header().Set("Content-Type", "application/json")
 			switch request.URL.Path {
-			case "/v1/computer/session":
+			case "/v1/computer/session-v2":
 				if request.Method != http.MethodPost ||
 					request.Header.Get("Authorization") !=
-						"ComputerCredential "+computerCredentialFixture() ||
-					request.Header.Get("X-Vela-Assignment-Version") != "1" {
+						"ComputerCredential "+computerCredentialFixture() {
 					http.Error(response, "bad computer session", http.StatusBadRequest)
+					return
+				}
+				var negotiation struct {
+					AssignmentVersions []int `json:"assignmentVersions"`
+				}
+				if err := json.NewDecoder(request.Body).Decode(&negotiation); err != nil ||
+					len(negotiation.AssignmentVersions) != 1 || negotiation.AssignmentVersions[0] != 3 {
+					http.Error(response, "bad assignment negotiation", http.StatusBadRequest)
 					return
 				}
 				response.WriteHeader(http.StatusCreated)
@@ -70,13 +78,12 @@ func TestComputerClientSessionAndAssignment(t *testing.T) {
 						"assignmentEpoch":    computerTestEpoch,
 						"assignmentRevision": 2,
 					},
-					"assignmentVersions": []int{1},
+					"assignmentVersion": 3,
 				})
-			case "/v1/computer/assignments":
+			case "/v1/computer/assignments-v3":
 				if request.Method != http.MethodGet ||
 					request.Header.Get("Authorization") !=
-						"Bearer computer-short-token" ||
-					request.Header.Get("X-Vela-Assignment-Version") != "1" {
+						"Bearer computer-short-token" {
 					http.Error(response, "bad assignment auth", http.StatusBadRequest)
 					return
 				}
@@ -109,16 +116,18 @@ func TestComputerClientSessionAndAssignment(t *testing.T) {
 		t.Fatal(err)
 	}
 	if computerSession.Computer.ID != computerTestID ||
-		computerSession.AccessToken.Reveal() != "computer-short-token" {
+		computerSession.AccessToken.Reveal() != "computer-short-token" ||
+		computerSession.AssignmentVersion != 3 {
 		t.Fatalf("computer session = %#v", computerSession)
 	}
 	result, err := client.GetComputerAssignments(
 		context.Background(),
 		computerSession.AccessToken,
 		ComputerAssignmentQuery{
-			SinceEpoch:    computerTestEpoch,
-			SinceRevision: 1,
-			WaitSeconds:   25,
+			AssignmentVersion: 3,
+			SinceEpoch:        computerTestEpoch,
+			SinceRevision:     1,
+			WaitSeconds:       25,
 		},
 	)
 	if err != nil {

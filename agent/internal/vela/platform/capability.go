@@ -195,7 +195,7 @@ func validCapabilitySection(status string, errorCode *string) bool {
 
 func validCapabilityRuntime(value string) bool {
 	return value == "codex" || value == "hermes-acp" ||
-		value == "hermes-gateway"
+		value == "hermes-gateway" || value == "openclaw"
 }
 
 func validProfileCapabilitySubmission(value ProfileCapabilitySubmissionResult) bool {

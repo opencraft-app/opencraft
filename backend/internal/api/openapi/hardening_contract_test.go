@@ -107,7 +107,8 @@ func TestRevisionHeaderIsExplicitAndNeverPretendsToBeETag(t *testing.T) {
 	spec := loadYAMLBytes(t, raw)
 	withResponse := map[string]bool{
 		"updateServer": true, "updateMember": true, "updateChannel": true,
-		"updateAgent": true, "updateRuntimeTaskStatus": true, "updateComputer": true,
+		"updateAgent": true, "updateAgentV2": true,
+		"updateRuntimeTaskStatus": true, "updateComputer": true,
 		"createComputerSetupCommand": true, "updateTask": true, "updateReminder": true,
 		"updateRuntimeReminder": true, "snoozeRuntimeReminder": true,
 	}

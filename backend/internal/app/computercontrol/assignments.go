@@ -19,6 +19,7 @@ import (
 const (
 	assignmentSchemaVersionV1 = 1
 	assignmentSchemaVersionV2 = 2
+	assignmentSchemaVersionV3 = 3
 	maximumRunningAgents      = 5
 )
 
@@ -75,7 +76,8 @@ func (service *AssignmentService) Get(
 	}
 	if !validV7(serverID) || !validV7(computerID) ||
 		(query.SchemaVersion != assignmentSchemaVersionV1 &&
-			query.SchemaVersion != assignmentSchemaVersionV2) ||
+			query.SchemaVersion != assignmentSchemaVersionV2 &&
+			query.SchemaVersion != assignmentSchemaVersionV3) ||
 		query.SinceRevision < 0 || query.WaitSeconds < 0 ||
 		query.WaitSeconds > 25 ||
 		(query.SinceEpoch == "" &&
@@ -230,16 +232,21 @@ func validateAssignmentSnapshot(
 }
 
 func validAssignmentRuntime(value string) bool {
-	switch value {
-	case "codex", "hermes-acp", "hermes-gateway":
-		return true
-	default:
+	if len(value) < 1 || len(value) > 64 || value[0] < 'a' || value[0] > 'z' {
 		return false
 	}
+	for _, character := range value[1:] {
+		if character != '-' && (character < 'a' || character > 'z') &&
+			(character < '0' || character > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func canonicalAssignmentSnapshot(snapshot AssignmentSnapshot) ([]byte, error) {
-	if snapshot.SchemaVersion == assignmentSchemaVersionV2 {
+	if snapshot.SchemaVersion == assignmentSchemaVersionV2 ||
+		snapshot.SchemaVersion == assignmentSchemaVersionV3 {
 		return canonicalAssignmentSnapshotV2(snapshot)
 	}
 	if snapshot.SchemaVersion != assignmentSchemaVersionV1 {
@@ -418,7 +425,9 @@ func canonicalAssignmentSnapshotV2(snapshot AssignmentSnapshot) ([]byte, error) 
 	}
 	output.WriteString(`,"revision":`)
 	output.WriteString(strconv.FormatInt(snapshot.Revision, 10))
-	output.WriteString(`,"schemaVersion":2}`)
+	output.WriteString(`,"schemaVersion":`)
+	output.WriteString(strconv.Itoa(snapshot.SchemaVersion))
+	output.WriteByte('}')
 	return output.Bytes(), nil
 }
 

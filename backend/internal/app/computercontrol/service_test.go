@@ -146,6 +146,21 @@ func TestServiceDoesNotRefreshSessionLeaseWhenTokenSigningFails(t *testing.T) {
 	}
 }
 
+func TestNegotiateAssignmentVersionChoosesHighestCommonVersion(t *testing.T) {
+	t.Parallel()
+
+	version, err := NegotiateAssignmentVersion([]int{1, 3, 2}, []int{3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != 3 {
+		t.Fatalf("version = %d, want 3", version)
+	}
+	if _, err := NegotiateAssignmentVersion([]int{1, 2}, []int{3}); err == nil {
+		t.Fatal("negotiation without a common version succeeded")
+	}
+}
+
 func TestServiceRejectsRotatedComputerCredential(t *testing.T) {
 	repository := &fakeControlRepository{err: computercontrolport.ErrCredentialNotCurrent}
 	service, err := NewService(
