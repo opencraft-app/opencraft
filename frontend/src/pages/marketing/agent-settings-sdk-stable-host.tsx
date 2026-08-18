@@ -23,7 +23,32 @@ export function hasTeaSdkReadyContent(root: ParentNode): boolean {
   return text.length > 0;
 }
 
-export function StableTeaSdkPanelHost({ children }: { children: ReactNode }) {
+function replaceTextNodeContent(root: ParentNode, replacements: Record<string, string>): void {
+  const entries = Object.entries(replacements);
+  if (entries.length === 0) return;
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    const original = node.nodeValue ?? "";
+    const next = entries.reduce(
+      (value, [source, replacement]) => value.replaceAll(source, replacement),
+      original,
+    );
+    if (next !== original) {
+      node.nodeValue = next;
+    }
+    node = walker.nextNode();
+  }
+}
+
+export function StableTeaSdkPanelHost({
+  children,
+  textReplacements,
+}: {
+  children: ReactNode;
+  textReplacements?: Record<string, string>;
+}) {
   const liveRef = useRef<HTMLDivElement | null>(null);
   const snapshotRef = useRef<string | null>(null);
   const [snapshotHtml, setSnapshotHtml] = useState<string | null>(null);
@@ -38,6 +63,10 @@ export function StableTeaSdkPanelHost({ children }: { children: ReactNode }) {
     if (!live) return;
 
     const syncSnapshot = () => {
+      if (textReplacements) {
+        replaceTextNodeContent(live, textReplacements);
+      }
+
       if (hasTeaSdkReadyContent(live)) {
         const html = live.innerHTML;
         snapshotRef.current = html;
@@ -60,7 +89,7 @@ export function StableTeaSdkPanelHost({ children }: { children: ReactNode }) {
     });
 
     return () => observer.disconnect();
-  });
+  }, [textReplacements]);
 
   return (
     <div className="relative" data-tea-sdk-stable-host>

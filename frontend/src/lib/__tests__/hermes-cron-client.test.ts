@@ -1355,6 +1355,19 @@ describe("pickFallbackChannelFromStatusOutput", () => {
     expect(pickFallbackChannelFromStatusOutput(buildStatus([
       { name: "openclaw-wecom", status: "ready" },
     ]))).toBe("wecom");
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "openclaw-slack", status: "connected" },
+    ]))).toBe("slack");
+  });
+
+  it("falls back to Slack after Telegram, WhatsApp, and Discord", () => {
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "slack", status: "connected" },
+      { name: "discord", status: "connected" },
+    ]))).toBe("discord");
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "slack", status: "connected" },
+    ]))).toBe("slack");
   });
 
   it("returns null when no channel is connected", () => {

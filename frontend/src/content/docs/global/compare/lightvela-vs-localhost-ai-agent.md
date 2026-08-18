@@ -42,7 +42,7 @@ Hermes 可以运行在 macOS、Windows、Linux、WSL2 等环境中。官方安�
 
 LightVela 会在云端运行独立的 Hermes Agent 实例。Agent 不依赖你的本地设备持续在线，而你可以通过管理台配置实际使用的部分，例如[模型](https://lightvela.ai/zh-sg/docs/configuration/model)、[通道](https://lightvela.ai/zh-sg/docs/configuration) 和[技能](https://lightvela.ai/zh-sg/docs/configuration/skill)。[LightVela 概览](https://lightvela.ai/zh-sg/docs/overview) 介绍了这种云端模式，包括隔离的运行环境和多通道访问。
 
-这会改变你使用 Hermes 的方式。你可以把 Agent 连接到自己平时使用的消息通道，例如 [Telegram](https://lightvela.ai/zh-sg/docs/configuration/channel-telegram)、[WhatsApp](https://lightvela.ai/zh-sg/docs/configuration/channel-whatsapp) 或 [Discord](https://lightvela.ai/zh-sg/docs/configuration/channel-discord)，即使合上笔记本也可以继续使用。重要的选择仍然由你做出，只是不用再把个人电脑变成负责维持在线状态的地方。
+这会改变你使用 Hermes 的方式。你可以把 Agent 连接到自己平时使用的消息通道，例如 [Telegram](https://lightvela.ai/zh-sg/docs/configuration/channel-telegram)、[WhatsApp](https://lightvela.ai/zh-sg/docs/configuration/channel-whatsapp)、[Discord](https://lightvela.ai/zh-sg/docs/configuration/channel-discord) 或 [Slack](https://lightvela.ai/zh-sg/docs/configuration/channel-slack)，即使合上笔记本也可以继续使用。重要的选择仍然由你做出，只是不用再把个人电脑变成负责维持在线状态的地方。
 
 对很多人来说，区别可以概括为一句话：
 

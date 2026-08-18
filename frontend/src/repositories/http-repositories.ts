@@ -287,13 +287,11 @@ const mapSession = (payload: SessionPayload): AuthSessionSnapshot => ({
 });
 
 const buildUrl = (baseUrl: string, path: string) => `${baseUrl}${path}`;
-const DEFAULT_OAUTH_START_BASE_URL = "https://lightclaw.tech";
 
 const resolveOAuthStartBaseURL = (baseUrl: string) => {
-  // API calls may use a local dev proxy, but OAuth is a browser redirect flow.
-  // The start URL must live on the same host as the configured callback so the
-  // state cookie is available when QQ/WeChat redirects back to the auth service.
-  return baseUrl === "" ? DEFAULT_OAUTH_START_BASE_URL : baseUrl;
+  // local-proxy keeps OAuth start/callback on the dev server origin so the
+  // state cookie and returned session token survive the browser redirect flow.
+  return baseUrl === "" ? "" : baseUrl;
 };
 
 const configuredOAuthRelayIssuerBaseURL = (): string | null => {

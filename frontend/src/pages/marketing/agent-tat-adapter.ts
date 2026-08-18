@@ -61,6 +61,8 @@ const b64 = {
   },
 };
 
+const MOCK_CONNECTED_CHANNELS_STORAGE_KEY = "lightclaw-mock-connected-channels-v1";
+
 /** SDK 的 runCommand 入参形状（与 IRunCommandParams 同形） */
 type RunCommandRequest = {
   RegionId: number;
@@ -429,6 +431,115 @@ export function createMonoDebugExecAdapter(
     throw new Error(
       `[debug-exec-adapter] invocationId=${invocationId} 未在本次会话下发，结果已不可用`,
     );
+  };
+
+  return { runCommand, getInvocationTask };
+}
+
+export function createMockDebugExecAdapter(
+  options: Pick<CreateMonoDebugExecAdapterOptions, "commandLifecycle"> = {},
+): Pick<Required<IProductConfig>, "runCommand" | "getInvocationTask"> {
+  const pendingCommands = new Map<string, {
+    botId: string;
+    command: string;
+    metadata: unknown;
+  }>();
+  const readConnectedChannels = () => {
+    if (typeof window === "undefined") return new Set<string>();
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(MOCK_CONNECTED_CHANNELS_STORAGE_KEY) || "[]");
+      return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []);
+    } catch {
+      return new Set<string>();
+    }
+  };
+  const writeConnectedChannels = (channels: Set<string>) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(MOCK_CONNECTED_CHANNELS_STORAGE_KEY, JSON.stringify(Array.from(channels)));
+  };
+  const connectedChannels = readConnectedChannels();
+
+  const channelStatusOutput = () => JSON.stringify({
+    success: true,
+    data: {
+      platforms: Array.from(connectedChannels).map((name) => ({
+        name,
+        status: "connected",
+      })),
+    },
+    error: null,
+  });
+
+  const applyMockChannelCommand = (command: string) => {
+    if (command.includes("strip_slack_env") && command.includes("SLACK_BOT_TOKEN")) {
+      connectedChannels.delete("slack");
+      writeConnectedChannels(connectedChannels);
+      return;
+    }
+
+    if (command.includes("SLACK_BOT_TOKEN") && command.includes("SLACK_APP_TOKEN")) {
+      connectedChannels.add("slack");
+      writeConnectedChannels(connectedChannels);
+    }
+  };
+
+  const runCommand: IProductConfig["runCommand"] = async (data: RunCommandRequest) => {
+    const botId = data.InstanceIds?.[0]?.trim();
+    if (!botId) {
+      throw new Error(
+        "[debug-exec-adapter] instance.InstanceId 为空，请在构造 SDK instance 时传入 activeBot.id",
+      );
+    }
+
+    const command = b64.decode(data.Content ?? "");
+    const metadata = await options.commandLifecycle?.beforeExecute?.({ botId, command });
+    const invocationId = `mock-debug-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    pendingCommands.set(invocationId, { botId, command, metadata });
+
+    return { InvocationId: invocationId };
+  };
+
+  const getInvocationTask: IProductConfig["getInvocationTask"] = async (
+    _regionId,
+    invocationId,
+    pollingOptions,
+  ) => {
+    if (!invocationId) {
+      throw new Error("[debug-exec-adapter] getInvocationTask: invocationId is empty");
+    }
+
+    const pending = pendingCommands.get(invocationId);
+    if (!pending) {
+      throw new Error(
+        `[debug-exec-adapter] invocationId=${invocationId} 未在本次会话下发，结果已不可用`,
+      );
+    }
+
+    pendingCommands.delete(invocationId);
+    applyMockChannelCommand(pending.command);
+    const output = pending.command.includes("acli channel status")
+      ? channelStatusOutput()
+      : `mock executed: ${pending.command}`;
+    const base64Output = b64.encode(output);
+    if (pollingOptions?.onProgress) {
+      pollingOptions.onProgress(base64Output);
+    }
+
+    await options.commandLifecycle?.afterExecute?.({
+      botId: pending.botId,
+      command: pending.command,
+      metadata: pending.metadata,
+      result: {
+        status: "SUCCESS",
+        exitCode: 0,
+        output,
+      },
+    });
+
+    return {
+      TaskStatus: "SUCCESS",
+      TaskResult: { Output: base64Output },
+    };
   };
 
   return { runCommand, getInvocationTask };

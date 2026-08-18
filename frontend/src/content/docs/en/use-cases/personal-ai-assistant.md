@@ -20,7 +20,7 @@ It is especially useful when you find yourself repeating context such as your ti
 
 - A LightVela account and a running Hermes Agent. If you have not created one yet, start with the [Quickstart](https://lightvela.ai/docs/quickstart).
 
-- One conversation channel. Telegram, WhatsApp, Discord, and WeChat are common starting points; choose the one you are most likely to open every day.
+- One conversation channel. Telegram, WhatsApp, Discord, Slack, and WeChat are common starting points; choose the one you are most likely to open every day.
 
 - A working model configuration or available trial credits. See [Configure Models](https://lightvela.ai/docs/configuration/model) if Hermes cannot reply yet.
 
@@ -30,7 +30,7 @@ It is especially useful when you find yourself repeating context such as your ti
 
 ### 1. Give Hermes a place in your daily routine
 
-Connect one messaging channel, then send the first few messages from the same place you normally organize your day. The channel is not just a delivery method—it is the habit that makes the assistant easy to return to. Follow the setup page for [Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), [Discord](https://lightvela.ai/docs/configuration/channel-discord), or [WeChat](https://lightvela.ai/docs/configuration/channel-wechat).
+Connect one messaging channel, then send the first few messages from the same place you normally organize your day. The channel is not just a delivery method—it is the habit that makes the assistant easy to return to. Follow the setup page for [Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), [Discord](https://lightvela.ai/docs/configuration/channel-discord), [Slack](https://lightvela.ai/docs/configuration/channel-slack), or [WeChat](https://lightvela.ai/docs/configuration/channel-wechat).
 
 ![The Channel page in the LightVela console](../images/personal-ai-assistant-channel.webp)
 

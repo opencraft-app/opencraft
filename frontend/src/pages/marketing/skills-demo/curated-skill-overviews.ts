@@ -1,4 +1,5 @@
 import { CURATED_SKILL_OVERVIEWS_ZH } from "./curated-skill-overviews.zh";
+import { CURATED_SKILL_OVERVIEWS_ID } from "./curated-skill-overviews.id";
 
 export type CuratedSkillBullet = {
   title: string;
@@ -14,7 +15,7 @@ export type CuratedSkillOverview = {
   examplePrompt: string;
 };
 
-export type CuratedSkillOverviewLocale = "en-US" | "zh-CN";
+export type CuratedSkillOverviewLocale = "en-US" | "zh-CN" | "id-ID";
 
 function overview(
   firstParagraph: string,
@@ -499,9 +500,13 @@ export function getCuratedSkillOverview(
   rawId: string,
   locale: CuratedSkillOverviewLocale = "en-US",
 ): CuratedSkillOverview {
+  // 印尼语增量落地：已翻译的走印尼语，未翻译的回退英文，
+  // 英文也缺失时抛出，由调用方降级为通用描述（与英文站现有行为一致）。
   const result = locale === "zh-CN"
     ? CURATED_SKILL_OVERVIEWS_ZH[rawId] ?? CURATED_SKILL_OVERVIEWS[rawId]
-    : CURATED_SKILL_OVERVIEWS[rawId];
+    : locale === "id-ID"
+      ? CURATED_SKILL_OVERVIEWS_ID[rawId] ?? CURATED_SKILL_OVERVIEWS[rawId]
+      : CURATED_SKILL_OVERVIEWS[rawId];
   if (!result) {
     throw new Error(`Missing curated skill overview: ${rawId}`);
   }

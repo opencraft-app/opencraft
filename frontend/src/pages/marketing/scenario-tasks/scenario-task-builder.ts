@@ -119,7 +119,13 @@ export function buildScenarioTaskDraft({
     recurringDailyTimes,
     effectiveStartAt: null,
     effectiveEndAt,
-    oneShotJobName: `${generatedName} · ${pack.quickPromptLocale === "en-US" ? "one-time run" : "单次执行"}`,
+    oneShotJobName: `${generatedName} · ${
+      pack.quickPromptLocale === "en-US"
+        ? "one-time run"
+        : pack.quickPromptLocale === "id-ID"
+          ? "sekali jalan"
+          : "单次执行"
+    }`,
     skillIds,
     promptScheduleIssue: parsedPrompt?.issue ?? null,
   };
@@ -458,6 +464,9 @@ function buildUserFacingScenarioPrompt(
   if (pack.quickPromptLocale === "en-US") {
     return buildEnglishUserFacingScenarioPrompt(pack, values, userPrompt);
   }
+  if (pack.quickPromptLocale === "id-ID") {
+    return buildIndonesianUserFacingScenarioPrompt(pack, values, userPrompt);
+  }
   const scenarioPrompt = pack.promptBuilder(values);
   return [
     "你正在执行一个 LightVela 场景任务。请把输出写成可以直接发送给用户的最终消息。",
@@ -483,7 +492,7 @@ function buildEnglishUserFacingScenarioPrompt(
   values: Record<string, string>,
   userPrompt: string,
 ): string {
-  const valueLines = buildEnglishScenarioValueLines(pack, values);
+  const valueLines = buildIndonesianScenarioValueLines(pack, values);
   return [
     "You are running a LightVela automation. Write the final result as a message that can be sent directly to the user.",
     [
@@ -509,6 +518,42 @@ function buildEnglishUserFacingScenarioPrompt(
         ].join("\n")
       : null,
     pack.safetyNote ? `Safety note: ${pack.safetyNote}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function buildIndonesianUserFacingScenarioPrompt(
+  pack: ScenarioTaskPack,
+  values: Record<string, string>,
+  userPrompt: string,
+): string {
+  const valueLines = buildEnglishScenarioValueLines(pack, values);
+  return [
+    "Anda sedang menjalankan otomatisasi LightVela. Tulis hasil akhir sebagai pesan yang bisa langsung dikirim ke pengguna.",
+    [
+      `Nama tugas: ${pack.name}`,
+      "Ketentuan output:",
+      "1. Mulai dengan satu kalimat jelas yang merangkum hasil atau pengingat utama.",
+      "2. Buat pesan singkat: maksimal 6 baris, hanya berisi kesimpulan, fakta penting, dan langkah berikutnya.",
+      "3. Jangan tampilkan job_id, Cronjob, kode status HTTP, stack trace, log debug, atau langkah internal.",
+      "4. Jika informasi eksternal belum lengkap, sebutkan singkat apa yang belum bisa dikonfirmasi dan apa yang perlu dicek pengguna.",
+      "5. Jika model, alat, atau layanan upstream tidak tersedia, jelaskan dengan bahasa sederhana bahwa tugas kali ini belum selesai dan sarankan mencoba lagi nanti atau memeriksa pengaturan model.",
+      "6. Perlakukan ini sebagai workflow otomatisasi: cek kondisi pemicu dan status saat ini lebih dulu, lalu keluarkan hasil, risiko, dan tindakan berikutnya. Jangan meminta Agent lain mengirim pesan; cron deliver akan mengirim respons akhir.",
+      "7. Untuk tugas berbasis waktu, pemicu harus berjalan prediktif. Jangan menambahkan jeda acak. Jika waktu pemicu terlihat salah, cek timestamp cron list seperti lastRunAtMs, nextRunAtMs, dan createdAtMs sebelum menjelaskannya.",
+    ].join("\n"),
+    "Permintaan skenario:",
+    `Permintaan pengguna: ${userPrompt}`,
+    valueLines.length ? ["Detail dari pengguna:", ...valueLines].join("\n") : null,
+    pack.needsRealtime
+      ? [
+          "Aturan lookup realtime:",
+          "Gunakan web_search, web_fetch, dan pemeriksaan waktu secara terbatas saat data terbaru dibutuhkan.",
+          "Gunakan maksimal 3 query pencarian terfokus dan maksimal 4 halaman sumber kecuali pengguna meminta lebih.",
+          "Cantumkan nama sumber atau tautan saat penting untuk keandalan.",
+        ].join("\n")
+      : null,
+    pack.safetyNote ? `Catatan keamanan: ${pack.safetyNote}` : null,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -544,6 +589,36 @@ const ENGLISH_SCENARIO_FIELD_LABELS: Record<string, string> = {
   triggerAt: "trigger time",
 };
 
+const INDONESIAN_SCENARIO_FIELD_LABELS: Record<string, string> = {
+  actionMode: "mode",
+  advanceDays: "pengingat lebih awal",
+  alertLevel: "level peringatan",
+  checkinTime: "waktu check-in",
+  courseEndDate: "tanggal akhir",
+  customRequest: "catatan",
+  dueDate: "tanggal jatuh tempo",
+  fitnessGoal: "target",
+  foodLog: "isi catatan",
+  fromCurrency: "mata uang asal",
+  holidayCountries: "negara atau wilayah",
+  holidayScope: "cakupan hari libur",
+  holidayWeatherPlan: "pemantauan cuaca dan peringatan",
+  includeDueDay: "pengingat hari jatuh tempo",
+  medicine: "instruksi obat",
+  recurringTimes: "waktu pengingat",
+  reminderMode: "mode pengingat",
+  reminderTime: "waktu pengingat",
+  reminderWindow: "jendela pengingat",
+  rentInfo: "detail tagihan",
+  reportStyle: "gaya masukan",
+  stockFocus: "fokus",
+  stockList: "saham",
+  thresholdMode: "kondisi pemicu",
+  thresholdValue: "ambang",
+  toCurrency: "mata uang tujuan",
+  triggerAt: "waktu pemicu",
+};
+
 function buildEnglishScenarioValueLines(
   pack: ScenarioTaskPack,
   values: Record<string, string>,
@@ -554,6 +629,21 @@ function buildEnglishScenarioValueLines(
       const value = getScenarioFieldValueForPrompt(field, values);
       if (!value) return "";
       const label = ENGLISH_SCENARIO_FIELD_LABELS[field.key] ?? englishizeFieldKey(field.key);
+      return `${label}: ${formatEnglishScenarioFieldValue(field, value)}.`;
+    })
+    .filter((line): line is string => Boolean(line));
+}
+
+function buildIndonesianScenarioValueLines(
+  pack: ScenarioTaskPack,
+  values: Record<string, string>,
+): string[] {
+  return pack.fields
+    .map((field) => {
+      if (!isScenarioTaskFieldVisible(field, values)) return "";
+      const value = getScenarioFieldValueForPrompt(field, values);
+      if (!value) return "";
+      const label = INDONESIAN_SCENARIO_FIELD_LABELS[field.key] ?? englishizeFieldKey(field.key);
       return `${label}: ${formatEnglishScenarioFieldValue(field, value)}.`;
     })
     .filter((line): line is string => Boolean(line));

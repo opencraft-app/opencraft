@@ -74,7 +74,7 @@ const AUTOMATION_PROMPT_MAX_LENGTH = 1000;
 const CHAT_ID_MAX_LENGTH = 60;
 const CHINESE_TEXT_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
 const CHINESE_TEXT_RE_GLOBAL = /[\u3400-\u9fff\uf900-\ufaff]/g;
-type AutomationDisplayLocale = "zh-CN" | "zh-SG" | "en-US";
+type AutomationDisplayLocale = "zh-CN" | "zh-SG" | "en-US" | "id-ID";
 type ScenarioMutationStatus = "creating" | "enabling";
 type ScenarioReminderNotice = {
   draft: ScenarioTaskDraft;
@@ -83,6 +83,7 @@ type ScenarioReminderNotice = {
 
 function getAutomationDisplayLocale(language: string | undefined): AutomationDisplayLocale {
   if (language?.startsWith("en")) return "en-US";
+  if (language === "id-ID") return "id-ID";
   if (language === "zh-SG") return "zh-SG";
   return "zh-CN";
 }
@@ -1734,6 +1735,7 @@ function getDeliverPlatformLabel(platform: string, t: ReturnType<typeof useT>): 
   if (platform === "telegram") return "Telegram";
   if (platform === "whatsapp") return "WhatsApp";
   if (platform === "discord") return "Discord";
+  if (platform === "slack") return "Slack";
   if (platform === "origin") return t("原对话（创建任务的聊天通道）");
   return platform;
 }
@@ -2172,6 +2174,7 @@ const GLOBAL_NOTIFICATION_CHANNELS = [
   { key: "telegram", label: "Telegram", comingSoon: false },
   { key: "whatsapp", label: "WhatsApp", comingSoon: false },
   { key: "discord", label: "Discord", comingSoon: false },
+  { key: "slack", label: "Slack", comingSoon: false },
   { key: "weixin", label: "WeChat", comingSoon: false },
   { key: "qqbot", label: "QQ", comingSoon: false },
   { key: "wecom", labelKey: "企业微信", comingSoon: false },
@@ -3016,7 +3019,7 @@ export function AutomationFormModal({
          *
          * 区域可见性：
          *   - 国内站（isCN）：weixin / qqbot / feishu
-         *   - 国际站（isGlobal）：telegram / whatsapp / discord / weixin / qqbot / wecom / feishu
+         *   - 国际站（isGlobal）：telegram / whatsapp / discord / slack / weixin / qqbot / wecom / feishu
          */}
         <div className="mt-4">
           <label className="block text-sm font-medium text-black/80">
@@ -3125,7 +3128,7 @@ export function AutomationFormModal({
                     {selected && key === "wecom" && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("通过默认的 home 对话发送通知")}</span>
                     )}
-                    {selected && (key === "telegram" || key === "discord") && (
+                    {selected && (key === "telegram" || key === "discord" || key === "slack") && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("请先在")}
                         {label}
@@ -4349,5 +4352,6 @@ function normalizeHermesChannelKey(channel: string): string {
   if (["telegram", "tg", "openclaw-telegram", "openclaw-tg"].includes(normalized)) return "telegram";
   if (["whatsapp", "whats-app", "whatsapp-business", "whatsapp_business", "openclaw-whatsapp"].includes(normalized)) return "whatsapp";
   if (["discord", "openclaw-discord"].includes(normalized)) return "discord";
+  if (["slack", "openclaw-slack"].includes(normalized)) return "slack";
   return normalized;
 }

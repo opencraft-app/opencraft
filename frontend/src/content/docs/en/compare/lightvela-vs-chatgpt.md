@@ -13,7 +13,7 @@
 | **Main job** | Host a dedicated Hermes Agent | General-purpose AI workspace |
 | **Runtime** | Dedicated cloud Agent available 24/7 | ChatGPT account, chats, Projects, and GPTs |
 | **Personalization** | Model, tools, persona, Skills, Channels | Memory, instructions, Projects, custom GPTs |
-| **Interaction** | Messaging channels such as Telegram, WhatsApp, Discord, and WeChat | ChatGPT web, mobile, desktop, voice, files, and Canvas |
+| **Interaction** | Messaging channels such as Telegram, WhatsApp, Discord, Slack, and WeChat | ChatGPT web, mobile, desktop, voice, files, and Canvas |
 | **Best fit** | A persistent Agent you configure and return to | A flexible assistant for many different tasks |
 
 ## The important distinction: workspace or Agent?

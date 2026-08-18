@@ -15,7 +15,7 @@ import {
   DISCORD_INVITE_URL,
   DISCORD_QR_IMAGE,
 } from "@/constants/community";
-import { useT, t as rawT } from "@/i18n/t";
+import { useT } from "@/i18n/t";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { isGlobal } from "@/lib/region";
 
@@ -142,28 +142,28 @@ function HeroSection() {
  * 实际取值时机为模块加载时——在 i18next 初始化后，语言切换会触发整页刷新，
  * 所以这里取一次值即可（与 `getBotStatusLabel` 的处理方式一致）。
  */
-const getStoryParagraphs = () => [
+const getStoryParagraphs = (t: ReturnType<typeof useT>) => [
   {
     id: "origin",
-    tag: rawT("起源"),
-    text: rawT("2026 年 3 月 6 日，我们在深圳腾讯大厦楼下举办了第一场 OpenClaw 公益装机活动，没想到直接引爆了全国装虾热潮，也得到了 OpenClaw 创始人 Peter 的点赞转发。于是，在践行 AI 普惠的路上，我们决定再走一步，在全国各地开展线下公益装机活动，深圳龙岗的千人装机节成为中国最大规模的单场 AI 工具安装活动。再后来，Hermes Agent 的出现，我们也快速迭代跟进，旨在帮助用户能快速拥抱 AI Agent 前沿技术。"),
+    tag: t("起源"),
+    text: t("2026 年 3 月 6 日，我们在深圳腾讯大厦楼下举办了第一场 OpenClaw 公益装机活动，没想到直接引爆了全国装虾热潮，也得到了 OpenClaw 创始人 Peter 的点赞转发。于是，在践行 AI 普惠的路上，我们决定再走一步，在全国各地开展线下公益装机活动，深圳龙岗的千人装机节成为中国最大规模的单场 AI 工具安装活动。再后来，Hermes Agent 的出现，我们也快速迭代跟进，旨在帮助用户能快速拥抱 AI Agent 前沿技术。"),
   },
   {
     id: "insight",
-    tag: rawT("洞察"),
-    text: rawT("40+ 个城市，456 场活动，7 万人。这场运动让我们意识到：人们需要的不只是一次安装，而是持续、稳定、无门槛的 AI 服务。LightVela 因此诞生——将 AI Agent 的完整能力搬上云端，7×24 小时待命，数据完全归你。"),
+    tag: t("洞察"),
+    text: t("40+ 个城市，456 场活动，7 万人。这场运动让我们意识到：人们需要的不只是一次安装，而是持续、稳定、无门槛的 AI 服务。LightVela 因此诞生——将 AI Agent 的完整能力搬上云端，7×24 小时待命，数据完全归你。"),
   },
   {
     id: "promise",
-    tag: rawT("承诺"),
-    text: rawT("从装虾到全民拥抱 AI Agent，我们一直在。"),
+    tag: t("承诺"),
+    text: t("从装虾到全民拥抱 AI Agent，我们一直在。"),
     isClosing: true,
   },
 ];
 
 function StorySection() {
   const t = useT();
-  const storyParagraphs = getStoryParagraphs();
+  const storyParagraphs = getStoryParagraphs(t);
   return (
     <section
       style={{

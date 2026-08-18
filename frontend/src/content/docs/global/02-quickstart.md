@@ -8,7 +8,7 @@
 
 - 开通启航套餐并创建 Hermes 实例
 
-- 接入 WeChat / Telegram / WhatsApp / Discord 通道
+- 接入 Telegram / WhatsApp / Discord / Slack / WeChat 通道
 
 - 在 WeChat 中发送消息并接收回复
 

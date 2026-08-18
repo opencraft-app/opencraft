@@ -47,6 +47,15 @@ const LOCALE_STORAGE_KEY = "lw-locale";
  * 注意：`zh-Hant`（繁体）与 `zh-SG`（新加坡中文）都视为「中文源」——SDK 依旧
  * 以空词条初始化输出简体源文案，繁体字形由 `tea-sdk-zh-hant-observer` 在渲染后
  * 用 OpenCC `cn→hk` 就地转换。
+ * `id-ID` 按英文源处理，避免 SDK 回落成中文。
+ *
+ * 这是**已知且有意接受**的限制，不是遗漏：SDK 只随包提供 `i18n/translation/{en,zh}`
+ * 两套词条，没有印尼语；而繁体那条捷径（走中文源 + OpenCC 转字形）在印尼语上不成立，
+ * 因为印尼语与中文之间没有字形映射关系。
+ * 若要补齐，唯一合规路径是在 SDK 仓库新增 `id` 词条并发版，前端升版本号后把
+ * `id-ID` 从英文源改到 `id` 源；**不要**在宿主页 patch SDK 或做 DOM 替换绕过
+ * （见 AGENTS.md「SDK 变更必须在 SDK 仓库发版」）。
+ * 影响面：仅 SDK 渲染的模型配置面板等区域显示英文，mono2 自身文案已全量印尼语化。
  */
 type StoredLocale = PublicSiteLocaleCode;
 // 校验用的可迭代 whitelist；派生自 PUBLIC_SITE_LOCALES 常量，避免手写 4 个字面量。
@@ -70,14 +79,14 @@ function readStoredLocale(): StoredLocale | null {
  * 决策表：
  *   | lw-locale         | isGlobal | isEnglishEnv |
  *   | ----------------- | -------- | ------------ |
- *   | en-US             | -        | true         |
+ *   | en-US/id-ID       | -        | true         |
  *   | zh-CN/zh-SG/zh-Hant| -       | false        |
  *   | (未设置)           | true     | true         |
  *   | (未设置)           | false    | false        |
  */
 export const isEnglishEnv: boolean = (() => {
   const stored = readStoredLocale();
-  if (stored === PUBLIC_SITE_LOCALES.EN_US) return true;
+  if (stored === PUBLIC_SITE_LOCALES.EN_US || stored === PUBLIC_SITE_LOCALES.ID_ID) return true;
   if (stored !== null) return false;
   return isGlobal;
 })();

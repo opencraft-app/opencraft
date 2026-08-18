@@ -22,6 +22,7 @@ import type { PublicRouteLocale } from './public-locale';
 type Locale = PublicRouteLocale['locale'];
 
 function i18nLocaleForPublicLocale(locale: Locale): I18nLocale {
+  if (locale === PUBLIC_SITE_LOCALES.ID_ID) return PUBLIC_SITE_LOCALES.ID_ID;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return PUBLIC_SITE_LOCALES.ZH_HANT;
   return locale.startsWith('zh') ? PUBLIC_SITE_LOCALES.ZH_CN : PUBLIC_SITE_LOCALES.EN_US;
 }

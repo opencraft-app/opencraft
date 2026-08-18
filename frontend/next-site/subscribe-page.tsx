@@ -201,9 +201,9 @@ const getBillingPriceUnit = (
   t: (zh: string, opts?: Record<string, unknown>) => string,
 ): string => {
   if (durationKey === "quarterly") {
-    return isGlobal ? "/ quarter" : t("/ 季");
+    return t("/ 季");
   }
-  return isGlobal ? "/ month" : t("/ 月");
+  return t("/ 月");
 };
 
 const getBillingDurationLabel = (
@@ -956,7 +956,7 @@ const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) =
     id: def.id,
     name: t(def.name),
     price: isGlobal ? def.priceGlobal : def.price,
-    priceUnit: isGlobal ? def.priceUnitGlobal : t(def.priceUnit),
+    priceUnit: isGlobal ? t(def.priceUnit) : t(def.priceUnit),
     description: t(def.description),
     features: def.features.map((f) => ({
       icon: iconMap[f.iconKey],
@@ -2139,7 +2139,10 @@ export const SubscribePage = ({
         }
       } catch (err) {
         if (!cancelled) {
-          setBundlesError(err instanceof Error ? err.message : t("套餐列表加载失败"));
+          const code = getBillingErrorCode(err);
+          const rawMessage = err instanceof Error ? err.message : "";
+          const isUnauthorized = code === "unauthorized" || /unauthorized/i.test(rawMessage);
+          setBundlesError(isUnauthorized ? t("请先登录") : rawMessage || t("套餐列表加载失败"));
         }
       } finally {
         if (!cancelled) {

@@ -23,6 +23,7 @@ describe("LanguageSwitcher", () => {
             "International Site - English",
             "International Site - 简体中文",
             "International Site - 繁體中文",
+            "International Site - Bahasa Indonesia",
             "中国站",
           ]
         : ["中国站", "国际站 - 简体中文", "国际站 - English"],

@@ -42,7 +42,7 @@ LightVela makes more sense when your goal is to have a Hermes Agent working for 
 
 LightVela runs a dedicated Hermes Agent instance in the cloud. The agent stays online independently of your local device, while you manage the practical parts—[models](https://lightvela.ai/docs/configuration/model), [channels](https://lightvela.ai/docs/configuration), and [skills](https://lightvela.ai/docs/configuration/skill)—from the console. The [LightVela overview](https://lightvela.ai/docs/overview) explains the hosted model, including isolated runtimes and multi-channel access.
 
-That changes the feeling of using Hermes. You can connect the agent to the channel where you already talk—such as [Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), or [Discord](https://lightvela.ai/docs/configuration/channel-discord)—then keep using it even when your laptop is closed. You still make the meaningful choices, but you do not need to turn your personal computer into the place where availability is maintained.
+That changes the feeling of using Hermes. You can connect the agent to the channel where you already talk—such as [Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), [Discord](https://lightvela.ai/docs/configuration/channel-discord), or [Slack](https://lightvela.ai/docs/configuration/channel-slack)—then keep using it even when your laptop is closed. You still make the meaningful choices, but you do not need to turn your personal computer into the place where availability is maintained.
 
 For many people, the helpful distinction is simple:
 

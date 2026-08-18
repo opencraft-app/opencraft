@@ -19,6 +19,10 @@ vi.mock("@/lib/region", () => ({
   isGlobal: true,
   DEFAULT_LOCALE: "en-US",
   readLocaleFromPath: vi.fn(() => "en-US"),
+  // 简化版：与真实实现一致地让默认语言（en-US）不带前缀，其余语言加前缀。
+  // 本用例只覆盖英文场景，因此无需复刻 zh-CN → zh-sg 等 SEO 别名映射。
+  localizedPath: (path: string, locale: string) =>
+    locale === "en-US" ? path : `/${locale.toLowerCase()}${path}`,
 }));
 
 const repositories = {
@@ -75,12 +79,12 @@ describe("LoginModal (国际站 isGlobal=true)", () => {
     expect(screen.queryByRole("button", { name: /Sign in with WeChat/ })).not.toBeInTheDocument();
   });
 
-  it("国际站服务协议跳转腾讯云国际站英文文档", () => {
+  it("国际站服务协议跳转站内服务条款", () => {
     renderLoginModal();
 
     expect(screen.getByRole("link", { name: "Terms of Service" })).toHaveAttribute(
       "href",
-      "https://www.tencentcloud.com/document/product/301/12905?lang=en&pg=",
+      "/terms-of-service",
     );
   });
 

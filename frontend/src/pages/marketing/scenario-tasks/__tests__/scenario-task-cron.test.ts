@@ -31,15 +31,16 @@ describe("scenario task cron helpers", () => {
         channels: {
           "openclaw-whatsapp": { enabled: true },
           "openclaw-discord": "connected",
-          slack: { enabled: false },
+          "openclaw-slack": { enabled: true },
         },
       },
     });
 
-    expect(parseEnabledScenarioChannels(output)).toEqual(new Set(["whatsapp", "discord"]));
+    expect(parseEnabledScenarioChannels(output)).toEqual(new Set(["whatsapp", "discord", "slack"]));
     expect(formatScenarioChannelLabel("weixin")).toBe("微信");
     expect(formatScenarioChannelLabel("qqbot")).toBe("QQ");
     expect(formatScenarioChannelLabel("telegram")).toBe("Telegram");
+    expect(formatScenarioChannelLabel("slack")).toBe("Slack");
   });
 
   it("does not treat array value channel names as connected statuses", () => {

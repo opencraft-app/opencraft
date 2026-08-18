@@ -43,7 +43,7 @@ You might use Hermes to:
 - Keep a persistent memory of your preferences and ongoing work.
 - Send reminders and recurring updates.
 - Track information over time.
-- Answer questions from Telegram, WhatsApp, Discord, or WeChat.
+- Answer questions from Telegram, WhatsApp, Discord, Slack, or WeChat.
 - Use Skills to extend what it can do.
 - Run [automations](https://lightvela.ai/docs/configuration/automation) on a schedule.
 

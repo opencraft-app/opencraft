@@ -11,6 +11,7 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_HANT]: '隱私政策',
   [PUBLIC_SITE_LOCALES.ZH_CN]: '隐私政策',
   [PUBLIC_SITE_LOCALES.ZH_SG]: '隐私政策',
+  [PUBLIC_SITE_LOCALES.ID_ID]: 'Kebijakan Privasi',
 };
 
 const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
@@ -18,6 +19,7 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_HANT]: 'LightVela 隱私政策，說明個人信息的處理、存儲、共享和用戶權利。',
   [PUBLIC_SITE_LOCALES.ZH_CN]: 'LightVela 隐私政策，说明个人信息的处理、存储、共享和用户权利。',
   [PUBLIC_SITE_LOCALES.ZH_SG]: 'LightVela 隐私政策，说明个人信息的处理、存储、共享和用户权利。',
+  [PUBLIC_SITE_LOCALES.ID_ID]: 'Kebijakan Privasi LightVela, termasuk pemrosesan, penyimpanan, pembagian informasi pribadi, dan hak pengguna.',
 };
 
 export function generateStaticParams(): { lang: PublicUrlLang }[] {

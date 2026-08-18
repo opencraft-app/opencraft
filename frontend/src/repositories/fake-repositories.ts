@@ -1091,6 +1091,30 @@ export const createFakeRepositories = (): Repositories => {
 };
 
 const createBotRepository = (): BotRepository => {
+  const fakeConnectedChannels = new Set<string>();
+
+  const fakeChannelStatusOutput = () => JSON.stringify({
+    success: true,
+    data: {
+      platforms: Array.from(fakeConnectedChannels).map((name) => ({
+        name,
+        status: "connected",
+      })),
+    },
+    error: null,
+  });
+
+  const maybeApplyFakeChannelCommand = (command: string) => {
+    if (command.includes("strip_slack_env") && command.includes("SLACK_BOT_TOKEN")) {
+      fakeConnectedChannels.delete("slack");
+      return;
+    }
+
+    if (command.includes("SLACK_BOT_TOKEN") && command.includes("SLACK_APP_TOKEN")) {
+      fakeConnectedChannels.add("slack");
+    }
+  };
+
   return {
     async getDashboardSnapshot(mode = "live") {
       await assertMode(mode);
@@ -1457,14 +1481,21 @@ const createBotRepository = (): BotRepository => {
           output: JSON.stringify({ models: {}, channels: {}, gateway: {} }),
         };
       }
+      maybeApplyFakeChannelCommand(command);
+      if (command.includes("acli channel status")) {
+        return { status: "Succeeded", exitCode: 0, output: fakeChannelStatusOutput() };
+      }
       return { status: "Succeeded", exitCode: 0, output: "" };
     },
 
     async execDebugCommandStream(_botId, command, onChunk) {
       await wait(NETWORK_DELAY_MS);
+      maybeApplyFakeChannelCommand(command);
       const result = command === DEBUG_EXEC_OPENCLAW_CONFIG_COMMAND
         ? { status: "Succeeded", exitCode: 0, output: JSON.stringify({ models: {}, channels: {}, gateway: {} }) }
-        : { status: "Succeeded", exitCode: 0, output: "" };
+        : command.includes("acli channel status")
+          ? { status: "Succeeded", exitCode: 0, output: fakeChannelStatusOutput() }
+          : { status: "Succeeded", exitCode: 0, output: "" };
       if (result.output) onChunk({ stream: DEBUG_EXEC_STDOUT_STREAM, chunk: result.output });
       return result;
     },

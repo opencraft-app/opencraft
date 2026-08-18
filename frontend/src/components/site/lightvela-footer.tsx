@@ -4,10 +4,9 @@ import { useTranslation } from "react-i18next";
 import {
   CN_PRIVACY_POLICY_URL,
   CN_TERMS_OF_SERVICE_URL,
-  getGlobalTermsOfServiceUrl,
 } from "@/constants/legal";
 import { DISCORD_INVITE_URL } from "@/constants/community";
-import { useT } from "@/i18n/t";
+import { useLocaleOverride, useT } from "@/i18n/t";
 import { isGlobal, localizedPath } from "@/lib/region";
 import type { PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { PUBLIC_SITE_LOCALES } from "@/lib/public-site-routing";
@@ -41,9 +40,9 @@ export type RenderFooterLink = (props: {
 }) => ReactNode;
 
 const footerLinkClassName =
-  "inline-flex w-fit appearance-none rounded-md border-0 bg-transparent p-0 text-left text-sm font-normal leading-6 text-black/55 no-underline transition-colors duration-200 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black/40";
+  "inline-flex w-fit appearance-none rounded-md border-0 bg-transparent p-0 text-center text-sm font-normal leading-6 text-black/55 no-underline transition-colors duration-200 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black/40";
 
-const getFooterSections = (t: (zh: string) => string, globalTermsOfServiceUrl: string): FooterSection[] => [
+const getFooterSections = (t: (zh: string) => string): FooterSection[] => [
   {
     title: t("公司"),
     links: [
@@ -64,7 +63,7 @@ const getFooterSections = (t: (zh: string) => string, globalTermsOfServiceUrl: s
         ? { label: t("隐私政策"), to: "/privacy-policy" }
         : { label: t("隐私政策"), href: CN_PRIVACY_POLICY_URL, external: true },
       isGlobal
-        ? { label: t("服务条款"), href: globalTermsOfServiceUrl, external: true }
+        ? { label: t("服务条款"), to: "/terms-of-service" }
         : { label: t("服务条款"), href: CN_TERMS_OF_SERVICE_URL, external: true },
       {
         label: t("开源声明"),
@@ -121,12 +120,14 @@ function LightVelaFooterLogo({ renderLink }: { renderLink: RenderFooterLink }) {
 
 function FooterTextLink({ link, className, renderLink }: { link: FooterLink; className?: string; renderLink: RenderFooterLink }) {
   const { i18n } = useTranslation();
+  const localeOverride = useLocaleOverride();
   // 将当前 i18n 语言映射到公开站点合法 locale，繁体保留 zh-Hant 以生成 /zh-hant 前缀
-  const lang = i18n.language;
+  const lang = localeOverride ?? i18n.language;
   const locale: PublicSiteLocaleCode =
     lang === PUBLIC_SITE_LOCALES.ZH_CN
       || lang === PUBLIC_SITE_LOCALES.ZH_SG
       || lang === PUBLIC_SITE_LOCALES.ZH_HANT
+      || lang === PUBLIC_SITE_LOCALES.ID_ID
       ? lang
       : PUBLIC_SITE_LOCALES.EN_US;
   const linkClassName = cn(footerLinkClassName, className);
@@ -154,8 +155,7 @@ function FooterTextLink({ link, className, renderLink }: { link: FooterLink; cla
 
 export function LightVelaFooter({ renderLink = DefaultFooterLink }: { renderLink?: RenderFooterLink }) {
   const t = useT();
-  const { i18n } = useTranslation();
-  const sections = getFooterSections(t, getGlobalTermsOfServiceUrl(i18n.language));
+  const sections = getFooterSections(t);
 
   return (
     <footer className="w-full border-b border-black/8 bg-[#fbfbfd]" aria-labelledby="lightvela-footer-heading">
