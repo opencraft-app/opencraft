@@ -13,6 +13,7 @@ on:
       - argocd/projects/shprod-trade.yaml
       - argocd/catalogs/sandbox/beijing-sandbox/trade.yaml
       - argocd/catalogs/playground/beijing-playground/*/trade.yaml
+      - argocd/catalogs/playground/seoul-playground/*/trade.yaml
       - argocd/secrets/*/trade-runtime-secrets.sops.yaml
     paths-ignore:
       - OWNERS

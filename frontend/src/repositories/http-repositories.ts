@@ -1499,6 +1499,27 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       body: targetPath ? { targetPath } : {},
     });
   },
+  async listPaymentMethods() {
+    return request(baseUrl, "/auth/payment-methods?page=1&pageSize=100", {
+      method: "GET",
+    });
+  },
+  async createPaymentMethodSignOrder(languageCode) {
+    return request(baseUrl, "/auth/payment-methods/sign-orders", {
+      method: "POST",
+      body: { languageCode },
+    });
+  },
+  async setDefaultPaymentMethod(contractCode) {
+    await request<void>(baseUrl, `/auth/payment-methods/${encodeURIComponent(contractCode)}/default`, {
+      method: "PUT",
+    });
+  },
+  async deletePaymentMethod(contractCode) {
+    await request<void>(baseUrl, `/auth/payment-methods/${encodeURIComponent(contractCode)}`, {
+      method: "DELETE",
+    });
+  },
   getOAuthStartUrl(provider, options) {
     const base = typeof window !== "undefined" ? window.location.origin : "https://lightclaw.tech";
     const oauthStartBaseURL = resolveOAuthStartBaseURL(baseUrl);

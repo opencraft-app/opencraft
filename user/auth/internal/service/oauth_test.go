@@ -2,8 +2,22 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/shadowbinding"
 )
+
+type oauthBillingClient struct {
+	calls  int
+	result shadowbinding.BillingAccountResult
+	err    error
+}
+
+func (c *oauthBillingClient) EnsureBillingAccount(context.Context, int64) (shadowbinding.BillingAccountResult, error) {
+	c.calls++
+	return c.result, c.err
+}
 
 func TestOAuthSignInCreatesUserAndKeepsSubscriptionOutOfSession(t *testing.T) {
 	t.Parallel()
@@ -55,6 +69,133 @@ func TestOAuthSignInCreatesUserAndKeepsSubscriptionOutOfSession(t *testing.T) {
 	}
 	if secondSession.PlanSelection != nil {
 		t.Fatal("expected oauth session to omit subscription details")
+	}
+}
+
+func TestIntlOAuthSignInProvisionsShadowAccountAndBilling(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	shadowStore := shadowbinding.NewMemoryStore()
+	cloud := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{
+		Uin:      450860000002,
+		OwnerUin: 450860000002,
+		AppID:    1374210036,
+	}}
+	billing := &oauthBillingClient{result: shadowbinding.BillingAccountResult{IsOpen: true}}
+	shadowSvc := shadowbinding.New(shadowStore, cloud, shadowbinding.Options{
+		Enabled:        true,
+		SiteKind:       shadowbinding.SiteKindIntl,
+		BillingAccount: billing,
+	})
+	svc := NewWithStore(store, Options{
+		Now:           fixedNow,
+		SiteKind:      shadowbinding.SiteKindIntl,
+		ShadowBinding: shadowSvc,
+	})
+
+	session, err := svc.SignInWithOAuth(context.Background(), OAuthSignInInput{
+		Provider:        "google",
+		ProviderSubject: "google-intl-user",
+		Email:           "verified@example.com",
+		EmailVerified:   true,
+		Name:            "Intl User",
+	})
+	if err != nil {
+		t.Fatalf("international oauth sign-in: %v", err)
+	}
+	binding, err := shadowStore.GetBindingByUserID(context.Background(), session.User.ID)
+	if err != nil {
+		t.Fatalf("get international shadow binding: %v", err)
+	}
+	if binding.Status != shadowbinding.StatusActive || cloud.calls != 1 || billing.calls != 1 {
+		t.Fatalf("expected active international binding, binding=%+v cloud_calls=%d billing_calls=%d", binding, cloud.calls, billing.calls)
+	}
+	if cloud.lastRegister.Email != "verified@example.com" {
+		t.Fatalf("expected oauth email to be used for registration, got %+v", cloud.lastRegister)
+	}
+}
+
+func TestIntlOAuthSignInSurvivesProvisioningFailure(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	shadowStore := shadowbinding.NewMemoryStore()
+	cloud := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{
+		Uin:      450860000002,
+		OwnerUin: 450860000002,
+		AppID:    1374210036,
+	}}
+	billing := &oauthBillingClient{err: errors.New("billing unavailable")}
+	shadowSvc := shadowbinding.New(shadowStore, cloud, shadowbinding.Options{
+		Enabled:        true,
+		SiteKind:       shadowbinding.SiteKindIntl,
+		BillingAccount: billing,
+	})
+	svc := NewWithStore(store, Options{
+		Now:           fixedNow,
+		SiteKind:      shadowbinding.SiteKindIntl,
+		ShadowBinding: shadowSvc,
+	})
+
+	session, err := svc.SignInWithOAuth(context.Background(), OAuthSignInInput{
+		Provider:        "google",
+		ProviderSubject: "google-intl-failure",
+		Email:           "failure@example.com",
+		EmailVerified:   true,
+		Name:            "Intl User",
+	})
+	if err != nil || session == nil {
+		t.Fatalf("oauth login must not fail with provisioning: session=%+v err=%v", session, err)
+	}
+	binding, err := shadowStore.GetBindingByUserID(context.Background(), session.User.ID)
+	if err != nil || binding.Status != shadowbinding.StatusFailed || binding.Uin != 450860000002 {
+		t.Fatalf("expected recoverable failed provisioning state, binding=%+v err=%v", binding, err)
+	}
+}
+
+func TestRetryShadowBindingUsesVerifiedSessionEmail(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	initialSvc := NewWithStore(store, Options{Now: fixedNow})
+	session, err := initialSvc.SignInWithOAuth(context.Background(), OAuthSignInInput{
+		Provider:        "github",
+		ProviderSubject: "github-existing-user",
+		Email:           "verified@example.com",
+		EmailVerified:   true,
+		Name:            "Existing Intl User",
+	})
+	if err != nil {
+		t.Fatalf("seed existing oauth user: %v", err)
+	}
+	store.mu.Lock()
+	verifiedUser := store.usersByID[session.User.ID]
+	verifiedUser.EmailVerified = true
+	store.usersByID[session.User.ID] = verifiedUser
+	store.mu.Unlock()
+
+	shadowStore := shadowbinding.NewMemoryStore()
+	cloud := &stubShadowRegisterClient{result: shadowbinding.CloudRegisterResult{
+		Uin:      450860000004,
+		OwnerUin: 450860000004,
+		AppID:    1374211121,
+	}}
+	billing := &oauthBillingClient{result: shadowbinding.BillingAccountResult{IsOpen: true}}
+	shadowSvc := shadowbinding.New(shadowStore, cloud, shadowbinding.Options{
+		Enabled:        true,
+		SiteKind:       shadowbinding.SiteKindIntl,
+		BillingAccount: billing,
+	})
+	retrySvc := NewWithStore(store, Options{
+		Now:           fixedNow,
+		SiteKind:      shadowbinding.SiteKindIntl,
+		ShadowBinding: shadowSvc,
+	})
+
+	binding, err := retrySvc.RetryShadowBinding(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("retry shadow binding: %v", err)
+	}
+	if binding.Status != shadowbinding.StatusActive {
+		t.Fatalf("binding=%+v, want active", binding)
+	}
+	if cloud.lastRegister.Email != "verified@example.com" {
+		t.Fatalf("registration email=%q, want verified session email", cloud.lastRegister.Email)
 	}
 }
 

@@ -38,7 +38,13 @@ func tradeSubscriptionIdempotencyKey(dealName string) string {
 	return "trade:" + strings.TrimSpace(dealName)
 }
 
-const freeCreditSubscriptionNamePrefix = "free-credit:"
+const (
+	freeCreditSubscriptionNamePrefix = "free-credit:"
+	// International payment URL generation can include auth credential
+	// exchange, card lookup, order lookup, and CreatePayUrl. Keep the budget
+	// below the common 60-second edge timeout while leaving room for fallback.
+	payURLRequestTimeout = 50 * time.Second
+)
 
 func packageSubscriptionName(userID, passID string) string {
 	return "package:" + strings.TrimSpace(userID) + ":" + strings.TrimSpace(passID)
@@ -1667,8 +1673,13 @@ func (l *logic) CreatePassOrder(userID string, req *transport.CreatePassOrderReq
 
 func mapTradePlaceOrderError(err error) error {
 	var tradeErr *tradeadapter.Error
-	if errors.As(err, &tradeErr) && tradeErr.Code == "BindingNotFound" {
-		return errcode.ErrPassShadowBindingRequired
+	if errors.As(err, &tradeErr) {
+		switch tradeErr.Code {
+		case "BindingNotFound":
+			return errcode.ErrPassShadowBindingRequired
+		case "BillingAccountOpenFailed":
+			return errcode.ErrPassBillingAccountOpenFailed
+		}
 	}
 	return nil
 }
@@ -1678,7 +1689,7 @@ func mapTradePlaceOrderError(err error) error {
 // 流程概览：
 //
 //  1. 入参校验（userID / deal_names 非空）
-//  2. 调 trade.GeneratePayURL（透传 platform / wx_open_id / wx_app_id）
+//  2. 调 trade.GeneratePayURL（透传 platform / wx_open_id / wx_app_id / cancel_url / return_url）
 //  3. 返回支付 URL + 协议外字段
 //
 // **不写本地 pass 表**。
@@ -1700,10 +1711,12 @@ func (l *logic) CreatePassOrderUrl(userID string, req *transport.CreatePassOrder
 	// 当前单元素，遍历 deal_names[0]
 	dealName := req.DealNames[0]
 	var opts *tradeadapter.GeneratePayURLOptions
-	if req.Platform != "" || req.WxOpenID != "" {
+	if req.Platform != "" || req.WxOpenID != "" || req.CancelURL != "" || req.ReturnURL != "" {
 		opts = &tradeadapter.GeneratePayURLOptions{
-			Platform: req.Platform,
-			WxOpenID: req.WxOpenID,
+			Platform:  req.Platform,
+			WxOpenID:  req.WxOpenID,
+			CancelURL: req.CancelURL,
+			ReturnURL: req.ReturnURL,
 		}
 		// wx_app_id：当 wx_open_id 非空（微信公众号 / 小程序场景）时透传给 trade
 		// → jifei.getMidasEarmarking.wxAppId。
@@ -1716,7 +1729,7 @@ func (l *logic) CreatePassOrderUrl(userID string, req *transport.CreatePassOrder
 		}
 	}
 
-	urlCtx, urlCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	urlCtx, urlCancel := context.WithTimeout(context.Background(), payURLRequestTimeout)
 	urlResp, urlErr := adapterfactory.DefaultAdapterFactory.TradeAdapter().GeneratePayURL(urlCtx, dealName, opts)
 	urlCancel()
 	if urlErr != nil {
@@ -1880,6 +1893,7 @@ func (l *logic) prepareCreatePassOrder(
 		TimeUnit:       req.TimeUnit,
 		GoodsNum:       lighthousePassGoodsNum,
 		PayMode:        lighthousePassPayMode,
+		AutoRenewFlag:  req.AutoRenewFlag,
 		// Q41 修订 2026-05-11：RegionID 不再透传，trade 内部固定 1（广州）
 		// Q30 拍板：Uin / AppID 不在 ctl 端反查，由 trade 内部 ShadowClient 反查
 	}, logger, nil
@@ -2027,10 +2041,12 @@ func (l *logic) RenewPassOrderUrl(userID, passID string, req *transport.RenewPas
 	// 步骤 3：调 trade.GeneratePayURL（当前单元素，遍历 deal_names[0]）
 	dealName := req.DealNames[0]
 	var opts *tradeadapter.GeneratePayURLOptions
-	if req.Platform != "" || req.WxOpenID != "" {
+	if req.Platform != "" || req.WxOpenID != "" || req.CancelURL != "" || req.ReturnURL != "" {
 		opts = &tradeadapter.GeneratePayURLOptions{
-			Platform: req.Platform,
-			WxOpenID: req.WxOpenID,
+			Platform:  req.Platform,
+			WxOpenID:  req.WxOpenID,
+			CancelURL: req.CancelURL,
+			ReturnURL: req.ReturnURL,
 		}
 		// wx_app_id：当 wx_open_id 非空（微信公众号 / 小程序场景）时透传给 trade
 		// → jifei.getMidasEarmarking.wxAppId。
@@ -2042,7 +2058,7 @@ func (l *logic) RenewPassOrderUrl(userID, passID string, req *transport.RenewPas
 			opts.WxAppID = "wxf95ea3ae45d5304f"
 		}
 	}
-	urlCtx, urlCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	urlCtx, urlCancel := context.WithTimeout(context.Background(), payURLRequestTimeout)
 	urlResp, urlErr := adapterfactory.DefaultAdapterFactory.TradeAdapter().GeneratePayURL(urlCtx, dealName, opts)
 	urlCancel()
 	if urlErr != nil {

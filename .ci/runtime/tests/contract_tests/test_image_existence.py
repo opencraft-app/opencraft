@@ -88,6 +88,24 @@ class ImageExistenceTests(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertFalse(results[0].exists)
 
+    def test_can_suppress_expected_missing_image_stderr(self) -> None:
+        def fake_run(command, **kwargs):
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="manifest unknown")
+
+        stderr = StringIO()
+        with redirect_stderr(stderr):
+            results = verify_images(
+                ["registry.example.com/app/missing:v1"],
+                docker_bin="docker",
+                skip_login=True,
+                run=fake_run,
+                log_missing_errors=False,
+            )
+
+        self.assertEqual(len(results), 1)
+        self.assertFalse(results[0].exists)
+        self.assertEqual(stderr.getvalue(), "")
+
     def test_verify_images_with_retry_waits_for_missing_image(self) -> None:
         calls = 0
 

@@ -1,0 +1,8 @@
+service: nextgen-dashboard
+env: sandbox-kr-1
+project: seoul-sandbox
+destinationName: seoul-sandbox
+namespace: lightvela-playground-sandbox-kr-1
+sourcePath: argocd/services/nextgen-dashboard/sandbox-kr-1
+environmentModel: playground
+playgroundCluster: seoul-sandbox

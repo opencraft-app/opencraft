@@ -114,7 +114,14 @@ def docker_login(registry: str, docker_bin: str, run: RunCommand = subprocess.ru
     return True
 
 
-def inspect_image(image: str, docker_bin: str, run: RunCommand = subprocess.run, *, key: str = "") -> ImageCheckResult:
+def inspect_image(
+    image: str,
+    docker_bin: str,
+    run: RunCommand = subprocess.run,
+    *,
+    key: str = "",
+    log_missing_errors: bool = True,
+) -> ImageCheckResult:
     result = run(
         [docker_bin, "manifest", "inspect", "--verbose", image],
         text=True,
@@ -123,7 +130,7 @@ def inspect_image(image: str, docker_bin: str, run: RunCommand = subprocess.run,
     )
     if result.returncode != 0:
         stderr = (result.stderr or "").strip()
-        if stderr:
+        if stderr and log_missing_errors:
             print(stderr, file=sys.stderr)
         return ImageCheckResult(image=image, exists=False, key=key)
 
@@ -157,6 +164,7 @@ def verify_images(
     docker_bin: str = "docker",
     skip_login: bool = False,
     run: RunCommand = subprocess.run,
+    log_missing_errors: bool = True,
 ) -> list[ImageCheckResult]:
     if not images:
         raise ValueError("no image references provided")
@@ -169,7 +177,7 @@ def verify_images(
         if not skip_login and registry not in logged_in:
             docker_login(registry, docker_bin, run=run)
             logged_in.add(registry)
-        results.append(inspect_image(entry.image, docker_bin, run=run, key=entry.key))
+        results.append(inspect_image(entry.image, docker_bin, run=run, key=entry.key, log_missing_errors=log_missing_errors))
     return results
 
 

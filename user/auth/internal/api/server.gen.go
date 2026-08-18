@@ -58,6 +58,27 @@ func (e InviteValidationState) Valid() bool {
 	}
 }
 
+// Defines values for PaymentMethodSignOrderRequestLanguageCode.
+const (
+	En PaymentMethodSignOrderRequestLanguageCode = "en"
+	Hk PaymentMethodSignOrderRequestLanguageCode = "hk"
+	Zh PaymentMethodSignOrderRequestLanguageCode = "zh"
+)
+
+// Valid indicates whether the value is a known member of the PaymentMethodSignOrderRequestLanguageCode enum.
+func (e PaymentMethodSignOrderRequestLanguageCode) Valid() bool {
+	switch e {
+	case En:
+		return true
+	case Hk:
+		return true
+	case Zh:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RealnameFaceIDAttemptResponseState.
 const (
 	RealnameFaceIDAttemptResponseStateExpired       RealnameFaceIDAttemptResponseState = "expired"
@@ -299,6 +320,37 @@ type PasswordSignUpRequest struct {
 	Password   string  `json:"password"`
 }
 
+// PaymentMethod defines model for PaymentMethod.
+type PaymentMethod struct {
+	ContractCode string `json:"contractCode"`
+	IsDefault    bool   `json:"isDefault"`
+
+	// MaskedNumber Masked card number returned by Tencent Billing.
+	MaskedNumber string `json:"maskedNumber"`
+	PayerName    string `json:"payerName"`
+	Type         string `json:"type"`
+}
+
+// PaymentMethodListResponse defines model for PaymentMethodListResponse.
+type PaymentMethodListResponse struct {
+	Items []PaymentMethod `json:"items"`
+	Total int             `json:"total"`
+}
+
+// PaymentMethodSignOrderRequest defines model for PaymentMethodSignOrderRequest.
+type PaymentMethodSignOrderRequest struct {
+	LanguageCode *PaymentMethodSignOrderRequestLanguageCode `json:"languageCode,omitempty"`
+}
+
+// PaymentMethodSignOrderRequestLanguageCode defines model for PaymentMethodSignOrderRequest.LanguageCode.
+type PaymentMethodSignOrderRequestLanguageCode string
+
+// PaymentMethodSignOrderResponse defines model for PaymentMethodSignOrderResponse.
+type PaymentMethodSignOrderResponse struct {
+	ContractCode string `json:"contractCode"`
+	RedirectUrl  string `json:"redirectUrl"`
+}
+
 // ProfileResponse defines model for ProfileResponse.
 type ProfileResponse struct {
 	User User `json:"user"`
@@ -490,6 +542,15 @@ type VerifySmsRequest struct {
 	Phone      string  `json:"phone"`
 }
 
+// PaymentMethodContractCode defines model for PaymentMethodContractCode.
+type PaymentMethodContractCode = string
+
+// ListPaymentMethodsParams defines parameters for ListPaymentMethods.
+type ListPaymentMethodsParams struct {
+	Page     *int `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
 // UpdateProfileAvatarMultipartBody defines parameters for UpdateProfileAvatar.
 type UpdateProfileAvatarMultipartBody struct {
 	File openapi_types.File `json:"file"`
@@ -517,6 +578,9 @@ type SignInWithPasswordJSONRequestBody = PasswordSignInRequest
 
 // SignUpWithPasswordJSONRequestBody defines body for SignUpWithPassword for application/json ContentType.
 type SignUpWithPasswordJSONRequestBody = PasswordSignUpRequest
+
+// CreatePaymentMethodSignOrderJSONRequestBody defines body for CreatePaymentMethodSignOrder for application/json ContentType.
+type CreatePaymentMethodSignOrderJSONRequestBody = PaymentMethodSignOrderRequest
 
 // UpdateProfileJSONRequestBody defines body for UpdateProfile for application/json ContentType.
 type UpdateProfileJSONRequestBody = UpdateProfileRequest
@@ -568,6 +632,18 @@ type ServerInterface interface {
 	// Register with email and password
 	// (POST /auth/password/sign-up)
 	SignUpWithPassword(c *gin.Context)
+	// List the current user's signed payment cards
+	// (GET /auth/payment-methods)
+	ListPaymentMethods(c *gin.Context, params ListPaymentMethodsParams)
+	// Create a hosted card signing order for the current user
+	// (POST /auth/payment-methods/sign-orders)
+	CreatePaymentMethodSignOrder(c *gin.Context)
+	// Delete one of the current user's non-default signed cards
+	// (DELETE /auth/payment-methods/{contractCode})
+	DeletePaymentMethod(c *gin.Context, contractCode PaymentMethodContractCode)
+	// Set one of the current user's signed cards as default
+	// (PUT /auth/payment-methods/{contractCode}/default)
+	SetDefaultPaymentMethod(c *gin.Context, contractCode PaymentMethodContractCode)
 	// Get the current user profile
 	// (GET /auth/profile)
 	GetProfile(c *gin.Context)
@@ -726,6 +802,117 @@ func (siw *ServerInterfaceWrapper) SignUpWithPassword(c *gin.Context) {
 	}
 
 	siw.Handler.SignUpWithPassword(c)
+}
+
+// ListPaymentMethods operation middleware
+func (siw *ServerInterfaceWrapper) ListPaymentMethods(c *gin.Context) {
+
+	var err error
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPaymentMethodsParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", c.Request.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "pageSize" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "pageSize", c.Request.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter pageSize: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListPaymentMethods(c, params)
+}
+
+// CreatePaymentMethodSignOrder operation middleware
+func (siw *ServerInterfaceWrapper) CreatePaymentMethodSignOrder(c *gin.Context) {
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreatePaymentMethodSignOrder(c)
+}
+
+// DeletePaymentMethod operation middleware
+func (siw *ServerInterfaceWrapper) DeletePaymentMethod(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "contractCode" -------------
+	var contractCode PaymentMethodContractCode
+
+	err = runtime.BindStyledParameterWithOptions("simple", "contractCode", c.Param("contractCode"), &contractCode, runtime.BindStyledParameterOptions{Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter contractCode: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeletePaymentMethod(c, contractCode)
+}
+
+// SetDefaultPaymentMethod operation middleware
+func (siw *ServerInterfaceWrapper) SetDefaultPaymentMethod(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "contractCode" -------------
+	var contractCode PaymentMethodContractCode
+
+	err = runtime.BindStyledParameterWithOptions("simple", "contractCode", c.Param("contractCode"), &contractCode, runtime.BindStyledParameterOptions{Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter contractCode: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SetDefaultPaymentMethod(c, contractCode)
 }
 
 // GetProfile operation middleware
@@ -1170,6 +1357,10 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/auth/password/forgot", wrapper.ForgotPassword)
 	router.POST(options.BaseURL+"/auth/password/sign-in", wrapper.SignInWithPassword)
 	router.POST(options.BaseURL+"/auth/password/sign-up", wrapper.SignUpWithPassword)
+	router.GET(options.BaseURL+"/auth/payment-methods", wrapper.ListPaymentMethods)
+	router.POST(options.BaseURL+"/auth/payment-methods/sign-orders", wrapper.CreatePaymentMethodSignOrder)
+	router.DELETE(options.BaseURL+"/auth/payment-methods/:contractCode", wrapper.DeletePaymentMethod)
+	router.PUT(options.BaseURL+"/auth/payment-methods/:contractCode/default", wrapper.SetDefaultPaymentMethod)
 	router.GET(options.BaseURL+"/auth/profile", wrapper.GetProfile)
 	router.PUT(options.BaseURL+"/auth/profile", wrapper.UpdateProfile)
 	router.GET(options.BaseURL+"/auth/profile/avatar", wrapper.GetProfileAvatar)
@@ -1427,6 +1618,261 @@ type SignUpWithPassword502JSONResponse ErrorResponse
 func (response SignUpWithPassword502JSONResponse) VisitSignUpWithPasswordResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListPaymentMethodsRequestObject struct {
+	Params ListPaymentMethodsParams
+}
+
+type ListPaymentMethodsResponseObject interface {
+	VisitListPaymentMethodsResponse(w http.ResponseWriter) error
+}
+
+type ListPaymentMethods200JSONResponse PaymentMethodListResponse
+
+func (response ListPaymentMethods200JSONResponse) VisitListPaymentMethodsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListPaymentMethods400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response ListPaymentMethods400JSONResponse) VisitListPaymentMethodsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListPaymentMethods401JSONResponse ErrorResponse
+
+func (response ListPaymentMethods401JSONResponse) VisitListPaymentMethodsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListPaymentMethods409JSONResponse ErrorResponse
+
+func (response ListPaymentMethods409JSONResponse) VisitListPaymentMethodsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListPaymentMethods502JSONResponse ErrorResponse
+
+func (response ListPaymentMethods502JSONResponse) VisitListPaymentMethodsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListPaymentMethods503JSONResponse ErrorResponse
+
+func (response ListPaymentMethods503JSONResponse) VisitListPaymentMethodsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreatePaymentMethodSignOrderRequestObject struct {
+	Body *CreatePaymentMethodSignOrderJSONRequestBody
+}
+
+type CreatePaymentMethodSignOrderResponseObject interface {
+	VisitCreatePaymentMethodSignOrderResponse(w http.ResponseWriter) error
+}
+
+type CreatePaymentMethodSignOrder200JSONResponse PaymentMethodSignOrderResponse
+
+func (response CreatePaymentMethodSignOrder200JSONResponse) VisitCreatePaymentMethodSignOrderResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreatePaymentMethodSignOrder400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response CreatePaymentMethodSignOrder400JSONResponse) VisitCreatePaymentMethodSignOrderResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreatePaymentMethodSignOrder401JSONResponse ErrorResponse
+
+func (response CreatePaymentMethodSignOrder401JSONResponse) VisitCreatePaymentMethodSignOrderResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreatePaymentMethodSignOrder409JSONResponse ErrorResponse
+
+func (response CreatePaymentMethodSignOrder409JSONResponse) VisitCreatePaymentMethodSignOrderResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreatePaymentMethodSignOrder429JSONResponse ErrorResponse
+
+func (response CreatePaymentMethodSignOrder429JSONResponse) VisitCreatePaymentMethodSignOrderResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(429)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreatePaymentMethodSignOrder502JSONResponse ErrorResponse
+
+func (response CreatePaymentMethodSignOrder502JSONResponse) VisitCreatePaymentMethodSignOrderResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreatePaymentMethodSignOrder503JSONResponse ErrorResponse
+
+func (response CreatePaymentMethodSignOrder503JSONResponse) VisitCreatePaymentMethodSignOrderResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeletePaymentMethodRequestObject struct {
+	ContractCode PaymentMethodContractCode `json:"contractCode"`
+}
+
+type DeletePaymentMethodResponseObject interface {
+	VisitDeletePaymentMethodResponse(w http.ResponseWriter) error
+}
+
+type DeletePaymentMethod204Response struct {
+}
+
+func (response DeletePaymentMethod204Response) VisitDeletePaymentMethodResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeletePaymentMethod400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response DeletePaymentMethod400JSONResponse) VisitDeletePaymentMethodResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeletePaymentMethod401JSONResponse ErrorResponse
+
+func (response DeletePaymentMethod401JSONResponse) VisitDeletePaymentMethodResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeletePaymentMethod409JSONResponse ErrorResponse
+
+func (response DeletePaymentMethod409JSONResponse) VisitDeletePaymentMethodResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeletePaymentMethod502JSONResponse ErrorResponse
+
+func (response DeletePaymentMethod502JSONResponse) VisitDeletePaymentMethodResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeletePaymentMethod503JSONResponse ErrorResponse
+
+func (response DeletePaymentMethod503JSONResponse) VisitDeletePaymentMethodResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SetDefaultPaymentMethodRequestObject struct {
+	ContractCode PaymentMethodContractCode `json:"contractCode"`
+}
+
+type SetDefaultPaymentMethodResponseObject interface {
+	VisitSetDefaultPaymentMethodResponse(w http.ResponseWriter) error
+}
+
+type SetDefaultPaymentMethod204Response struct {
+}
+
+func (response SetDefaultPaymentMethod204Response) VisitSetDefaultPaymentMethodResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SetDefaultPaymentMethod400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response SetDefaultPaymentMethod400JSONResponse) VisitSetDefaultPaymentMethodResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SetDefaultPaymentMethod401JSONResponse ErrorResponse
+
+func (response SetDefaultPaymentMethod401JSONResponse) VisitSetDefaultPaymentMethodResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SetDefaultPaymentMethod409JSONResponse ErrorResponse
+
+func (response SetDefaultPaymentMethod409JSONResponse) VisitSetDefaultPaymentMethodResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SetDefaultPaymentMethod502JSONResponse ErrorResponse
+
+func (response SetDefaultPaymentMethod502JSONResponse) VisitSetDefaultPaymentMethodResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SetDefaultPaymentMethod503JSONResponse ErrorResponse
+
+func (response SetDefaultPaymentMethod503JSONResponse) VisitSetDefaultPaymentMethodResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -2521,6 +2967,18 @@ type StrictServerInterface interface {
 	// Register with email and password
 	// (POST /auth/password/sign-up)
 	SignUpWithPassword(ctx context.Context, request SignUpWithPasswordRequestObject) (SignUpWithPasswordResponseObject, error)
+	// List the current user's signed payment cards
+	// (GET /auth/payment-methods)
+	ListPaymentMethods(ctx context.Context, request ListPaymentMethodsRequestObject) (ListPaymentMethodsResponseObject, error)
+	// Create a hosted card signing order for the current user
+	// (POST /auth/payment-methods/sign-orders)
+	CreatePaymentMethodSignOrder(ctx context.Context, request CreatePaymentMethodSignOrderRequestObject) (CreatePaymentMethodSignOrderResponseObject, error)
+	// Delete one of the current user's non-default signed cards
+	// (DELETE /auth/payment-methods/{contractCode})
+	DeletePaymentMethod(ctx context.Context, request DeletePaymentMethodRequestObject) (DeletePaymentMethodResponseObject, error)
+	// Set one of the current user's signed cards as default
+	// (PUT /auth/payment-methods/{contractCode}/default)
+	SetDefaultPaymentMethod(ctx context.Context, request SetDefaultPaymentMethodRequestObject) (SetDefaultPaymentMethodResponseObject, error)
 	// Get the current user profile
 	// (GET /auth/profile)
 	GetProfile(ctx context.Context, request GetProfileRequestObject) (GetProfileResponseObject, error)
@@ -2789,6 +3247,120 @@ func (sh *strictHandler) SignUpWithPassword(ctx *gin.Context) {
 		ctx.Status(http.StatusInternalServerError)
 	} else if validResponse, ok := response.(SignUpWithPasswordResponseObject); ok {
 		if err := validResponse.VisitSignUpWithPasswordResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPaymentMethods operation middleware
+func (sh *strictHandler) ListPaymentMethods(ctx *gin.Context, params ListPaymentMethodsParams) {
+	var request ListPaymentMethodsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPaymentMethods(ctx, request.(ListPaymentMethodsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPaymentMethods")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(ListPaymentMethodsResponseObject); ok {
+		if err := validResponse.VisitListPaymentMethodsResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreatePaymentMethodSignOrder operation middleware
+func (sh *strictHandler) CreatePaymentMethodSignOrder(ctx *gin.Context) {
+	var request CreatePaymentMethodSignOrderRequestObject
+
+	var body CreatePaymentMethodSignOrderJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreatePaymentMethodSignOrder(ctx, request.(CreatePaymentMethodSignOrderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreatePaymentMethodSignOrder")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(CreatePaymentMethodSignOrderResponseObject); ok {
+		if err := validResponse.VisitCreatePaymentMethodSignOrderResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeletePaymentMethod operation middleware
+func (sh *strictHandler) DeletePaymentMethod(ctx *gin.Context, contractCode PaymentMethodContractCode) {
+	var request DeletePaymentMethodRequestObject
+
+	request.ContractCode = contractCode
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.DeletePaymentMethod(ctx, request.(DeletePaymentMethodRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeletePaymentMethod")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(DeletePaymentMethodResponseObject); ok {
+		if err := validResponse.VisitDeletePaymentMethodResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetDefaultPaymentMethod operation middleware
+func (sh *strictHandler) SetDefaultPaymentMethod(ctx *gin.Context, contractCode PaymentMethodContractCode) {
+	var request SetDefaultPaymentMethodRequestObject
+
+	request.ContractCode = contractCode
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.SetDefaultPaymentMethod(ctx, request.(SetDefaultPaymentMethodRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetDefaultPaymentMethod")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(SetDefaultPaymentMethodResponseObject); ok {
+		if err := validResponse.VisitSetDefaultPaymentMethodResponse(ctx.Writer); err != nil {
 			ctx.Error(err)
 		}
 	} else if response != nil {
@@ -3419,60 +3991,68 @@ func (sh *strictHandler) CreateTencentCloudRedirect(ctx *gin.Context) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/+xcW3PbtvL/Khj+/zPnRbacJj3T+M1xmh7PSdqMFbcPGU8HAlciahBgAFCuktF3P4Ob",
-	"xAtIU4olO42f4oggsNj97WJv4JeEiLwQHLhWyemXRIIqBFdg//OzlEJe+l/MD0RwDVybP3FRMEqwpoKP",
-	"/1KCm98UySDH5q//lzBLTpP/G29mH7unalyfdbVajZIUFJG0MJMlp8klfCpBaTTDlEGamAH+XTP1Wamz",
-	"CShF3ZqFFAVITR3FuNQZcG0Ig/TMEjoTMsc6OU1SrOFI0xySUaKXBSSnidKS8nmyGiU0L0Aqwc175i0/",
-	"YCoEA8zNCOXW/CBuwC5cp/m3An8qAflBSJtRaCYk4oIfESFuKCDCqGHEcWz9UoG8i3FXZozhhoRPJZWG",
-	"0I/uxVFr440dXa+XFNO/gGiz5M85puwV5annd5ubYEbUeOh+adHfoMmNGrJmFVz1tYkQLBW3fAJE8FRV",
-	"ZEK5hnmEE803ous3Ed1cNIXKShvx5KAUnsefSdByeTbTICu05pTTvMyT05PR3XSnBpJhiRjZb4ScC/0e",
-	"K3Ur5AB57SqeC76gGn7HjKZYRxVsJw4pjbV9Atyw5GNCU2a2vDALGajy8Bf8XVgqrUJUYduxFc87t0A/",
-	"D5t76+RixxZjK8fWCVKa0Dm/4FvLapQUfoKhgqy8cRc9V8UO9FDLuPMuwXOcw1fuw04xGrgdKWaUQbcO",
-	"f50ljS15CZgZEt9gAhevz7SGvOixXNgNuEijXHEIV9ucTS31KYCn5tkomWECf6qSEIDUqk2RCQ5/bgao",
-	"DKfitvpDZbA/YDdqdx1ZfQGSzvxJfyUHmJfN/gPpdzP1vSHbQKwTn3Zj8cWHzL2tto/6FhxkB+pETDSW",
-	"uocIrrxf1XY8aHqOZbqN7sXVy88zWq/WR7Vl2u9G9Mt9GcroUl1KJW7izJF+krewANZxPLsRkyUnE411",
-	"qbpUySvDRkNi6uAUyrgwlM838/XzQNwkTVLjM/XxyWzg0vgau3PpoDz4CqfW8st7thHat+fdHUi+ZxUb",
-	"QkmXCN0U77C6gW6Ceh53QaBYa5m35Zdr8puxzB8Z6Awk0lmIWVBeKo2M9BhosA/sfGjyboKUhgJh4/+i",
-	"i9eIYJmi6plRCXf6yJnc0KKIUfNBloBuM+B22SkmN8DTNS2pJ6S6IioV5XNHfimlod/QycSc8hChxaka",
-	"Yk0shDoO96GK4aiNR5oxVViPr4l/VAdLlbg+ecfQOQGeTnK1y+lbJdYN611gi3hvqxjq7tjPJw26SVCb",
-	"rEKfxaomIJp0hCmi61fBEXEbi8Khau0UUq7//SJp732UTLGixNDxFittY9pO97w99F1PpLYe3T4lBp4N",
-	"mxmWnGyXgyEStk3bsDv3z4ZsW9xykFeUD2S/U3Nzcv3aFfyonlNx8DplkW7LEHNoXgwIuVT3mVnDabe2",
-	"TDdA7tOWOuqbZIRJYnR8AE6A63MmyvQSUiqBdHvQGss56PdYZ+0T5BIY1nQBqMA6Q5QrmgIyTrBgcEzM",
-	"9MfarXVMRH6MXsMMl0wrpIU9RDAhouQaEcwJMObOmALP4TiaCRu4kS6+7hAgSj+pD8/WL5WS3pmrq75b",
-	"jU5jErmyeFxH4B2i2MJjii7incaGdVxgjeVZmVK9MU11MZ/ZIcjnqJHCM9BL5IBuJNV2dwusVDUQjtkz",
-	"t3A88N3JZHUnWuyT33tcA3Pg96Roqh5d+9XOPI150MvYXym5MYPum7V+9FmVw/WV37sRyAkBXV2+RQuq",
-	"6JQBEpwtg4IGL88YP3SbUQboFlNt3pyJFiJwUUixwCyah/c0BbseJ4cHhuy8Soc7tfFAz5QqpbE37/zB",
-	"FljMYI7J0qd+GCgTDYmpArmAkA+SbU+vvcC2AXOdE+53JGZILTkJ3nZwU5GZ4shyiKbANdXLpi1VS6Uh",
-	"j2NnoKchqxHVMGeaBg86aelMZL6mRlbVPWa5XGjX50Z3Jpt2zrFu45ePunIxtrpFSkn1cmKObUes93Ff",
-	"AZbOIk/tX2+ClRO25HUUXF5fpLPsd6+s18m0Lioe+Lkth9lg12DJVceCYE4TRv7czOlnwAX9LyxdsZDy",
-	"mYggMsMSUoRLnSGjDZSAVUsDurd0nmnC8C26hSkqpNDCzIswT9Gs1KWs1+aoZmbNzVvGnUVn7y9cJOZi",
-	"hOTk+NnxiXUeC+C4oMlp8vz45Pi5NX46sywcG3LGFkVj4+qMZQUZwv1r8GFdCuO2hdrnuk62iepeiXR5",
-	"fzXYZu1vVYeMliXYHyrV4B9OTva2fl85+B2eU3LEKL9BlpPGhkBhQn8j3xQYXYBcGkm8cBTGFl7vpFl+",
-	"Nm892+mtl7u89cMub/24075+PPlhp7eeb/1WxX4kpx+/NPX84/Vq1DInH69X18bC5zmWS6O/wFOEUd4U",
-	"thbIaA7CHOE0laBU7NS3NDhtc6Z0jImmC183iavamR9xsbG9+1G2rsrjgXWuWTmLqFpgSWqMpBl8WK26",
-	"DxyFLdQgUuuO8G4i1ZkBlYMLsidjC0QLJ7MeEHmpfjcganUIRFC0eYokqJJ5D2MtosCzbvaHCvB4Zhsf",
-	"utlfb4zYE+vj3ReDGP8iEqb602tX1aqx8oOk8zlI5Ph0FPiGZkzcooJhAplgac0+rnmr6JwfuVxUnLmu",
-	"g+EPqrM9MzjeMnFgZDfTwxFgG/ogRZQf3ixuzkk6N1rj7Jf3h3iK1j0TXYIui35BXxUHFvSmF+XxCfoS",
-	"5lRpsAEFT5G6D7m/PJALV0NL2MgQuPgT//RLMocISH4B7T2I5GGdlHN/qNdclIdxNn4B3U5AVegqyggj",
-	"a1nUPSlaNFP7+PxNR+Y37G26DfRgoKleY5fKHKBlLi3a1LXnziI0zZXL4ZvIyNuqTcb0a0LcFw/C1Op2",
-	"mpz9lwpbw0qBHqZkFVZ2qVpeMk0LLLVxOfOjFGtcR3o9kRcs5TrlP6XcEH9XtcW+F0nAPSnmo0hCXBVM",
-	"YHfmS7DuczcAK7odMsfjGSZA07HvgFQ9HpdrB4z0le7pQOjpRjww+vq7aWNJCTcE+eQ7EhJJsO3hh075",
-	"PSXvupJ3Bk8IIyfTSvmn1pbl1WKA4oy9xvUdk94N7Faix4Lf4K9KIGIBEk8ZbFhxyLN59yjk5ICxy9d7",
-	"DzitWe0q3z1APfvXBaJ2fnAISL+sO91XfUDtQmiBJc5Bg1R2r7YWVmCdbSph1U76uoEeVcDa9DiuHyP4",
-	"A8fdhYAn2O8B9kRwQhl478W6MUjcmmCgjvotoT2eUY4Z/dyTBH/jR3zXSLdMaBx4oZzyBPhH46ksOcmk",
-	"4PSzLT8Es6QFco2KVnuC3NCsJdNtlUcBT49s+8VRaP7oiAiApx13ovatQfuONlqXu1Y+5Nhbgrfeax47",
-	"lkQKiCpVPkAUsQPyD2sHnuKcO5oUvKmo2Xqj3c2ElbuaYpxM/JVnsF1qebRu9+ooRvu7RS3l+0dYkG8l",
-	"X2GJRYUUYmZjD5k+GZnv01w4fYyYBJ1JUc6zYEj8LYhtLQXBjE0xuekMPv+DecoaXvl5eCluEj6VYNPY",
-	"3ia8op/dB0/u1y3X8LceZzpndTVsTtQuwOMZoKkUtwpkuAIYLmPcSz/FJRCgC0AY+UsbQRph0XBdIiYW",
-	"teRkbL8G0tffaS/wbjqsD5Gqat8cjta8Q9LO7APZfaBNB/Y3YsBe/uONyqUTjG+7b5Qmtu7Aj+HYORtV",
-	"DDeRcqTKaU61vfvgbv7W79/a6pFqZOFaBJlQ6wagUK4RTIM00RbJMJ8DyqjSQi6Pk1Gvk7Pnckn93vgD",
-	"eR6NK+O9uluTwwNq78vv5XBvKGAb5t0atp07Hxz5fcI98tWPB8J87KMgnb72YwH905G1jao4Vxi7Y0Jn",
-	"VFZPrRkmWlSrMJXL+SkwcD3Z7TbG38pI8S/ShetbOUWp72eLr2H9ZYywzUDxanRXDXOyvu70kE2P5226",
-	"H0tfnap8bsHDwUZO48ol9C4e1y+g75PF0XvzPYwOYZ+/i//A/G5op739tgCGkaoHqYHaDlEMCoCeZDLU",
-	"z29IxV2N7RROVSq5ssWH/orDJFd7vLPS+KrMwfu8D1UGeH6gJPuqnYvm9tNGrUx0AwjtiC7mae4XDK3b",
-	"0Y+v7T/c9L6/pv9n3w6evJNm4GRrGYYHruUO4cgB7L+YcmS/nzJep8U6IXZup4p9CmVPeOv7fMyeC5C9",
-	"H3yJ4O437j4Xsk462jfDJ2r8h8s2mcdvI5Z/mFDjPCBWbMPTdSNY406xpUguQoa8lMx/zeB0PGaCYJYJ",
-	"pU9/OvnpWbK6Xv0vAAD//51SEDRMXQAA",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

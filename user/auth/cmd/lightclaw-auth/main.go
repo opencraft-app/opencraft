@@ -14,6 +14,7 @@ import (
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/dbconfig"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/httpapi"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/logging"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/paymentmethod"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/realname"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/ses"
@@ -33,7 +34,13 @@ func main() {
 	contentAuditConfig := buildContentAuditConfig(logger)
 	contentAuditClient := buildContentAuditClient(logger, contentAuditConfig)
 	stores := newStores(contentAuditConfig.Enabled)
-	shadowBinding := buildShadowBindingService(stores.shadow, logger)
+	siteKind, err := shadowbinding.ParseSiteKind(envOrDefault("LIGHTVELA_SITE_KIND", shadowbinding.SiteKindCN))
+	if err != nil {
+		logger.Error("invalid site kind", "err", err)
+		os.Exit(1)
+	}
+	shadowBinding := buildShadowBindingService(stores.shadow, logger, siteKind)
+	paymentMethods := buildPaymentMethodClient(logger, siteKind)
 	phoneAuthEnabled := envOrDefault("LIGHTCLAW_PHONE_AUTH_ENABLED", "false") == "true"
 	phoneAuthSMSSender := buildPhoneAuthSMSSender(logger)
 	realnameClient := buildRealnameClient(logger)
@@ -49,6 +56,7 @@ func main() {
 	frontendBaseURL := envOrDefault("LIGHTCLAW_FRONTEND_BASE_URL", publicBaseURL)
 	authService := service.NewWithStore(stores.auth, service.Options{
 		SessionTTL: sessionTTL,
+		SiteKind:   siteKind,
 		PhoneAuth: service.PhoneAuthConfig{
 			Enabled:   phoneAuthEnabled,
 			SMSSender: phoneAuthSMSSender,
@@ -60,6 +68,15 @@ func main() {
 		ContentAudit:           contentAuditConfig,
 		ContentAuditClient:     contentAuditClient,
 		ShadowBinding:          shadowBinding,
+		PaymentMethods:         paymentMethods,
+		PaymentMethodSignOrderLimit: int(envInt64OrDefault(
+			"LIGHTCLAW_PAYMENT_METHOD_SIGN_ORDER_LIMIT",
+			5,
+		)),
+		PaymentMethodSignOrderWindow: parseDurationEnv(
+			"LIGHTCLAW_PAYMENT_METHOD_SIGN_ORDER_WINDOW",
+			10*time.Minute,
+		),
 		PassBillingMigration: service.NewHTTPPassBillingMigrationNotifier(service.PassBillingMigrationNotifierConfig{
 			BaseURL: envOrDefault("CTL_INTERNAL_BASE_URL", ""),
 			Token:   envOrDefault("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", ""),
@@ -259,7 +276,7 @@ func parseSameSite(value string) http.SameSite {
 	}
 }
 
-func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger) *shadowbinding.Service {
+func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger, siteKind string) *shadowbinding.Service {
 	if envOrDefault("SHADOW_BINDING_ENABLED", "false") != "true" {
 		return nil
 	}
@@ -276,6 +293,7 @@ func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger) *
 		CAMEndpoint:     envOrDefault("SHADOW_CAM_ENDPOINT", "cam.tencentcloudapi.com"),
 		STSEndpoint:     envOrDefault("SHADOW_STS_ENDPOINT", "sts.tencentcloudapi.com"),
 		Platform:        envOrDefault("SHADOW_PLATFORM", "lightvela"),
+		SiteKind:        siteKind,
 		RequestTimeout:  parseDurationEnv("SHADOW_REQUEST_TIMEOUT", 10*time.Second),
 		CloudLadder: shadowbinding.CloudLadderConfig{
 			Enabled:        envOrDefault("SHADOW_CLOUDLADDER_ENABLED", "false") == "true",
@@ -293,12 +311,76 @@ func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger) *
 	} else {
 		client = tencentClient
 	}
+	var billingAccount shadowbinding.BillingAccountClient
+	if siteKind == shadowbinding.SiteKindIntl {
+		billingClient, billingErr := shadowbinding.NewTencentCloudBillingClient(shadowbinding.TencentCloudBillingConfig{
+			SecretID:       envOrDefault("SHADOW_BILLING_SECRET_ID", ""),
+			SecretKey:      envOrDefault("SHADOW_BILLING_SECRET_KEY", ""),
+			Region:         envOrDefault("SHADOW_BILLING_REGION", "ap-guangzhou"),
+			Endpoint:       envOrDefault("SHADOW_BILLING_ENDPOINT", "billing.tencentcloudapi.com"),
+			RequestTimeout: parseDurationEnv("SHADOW_BILLING_REQUEST_TIMEOUT", 10*time.Second),
+			CloudLadder: shadowbinding.CloudLadderConfig{
+				Enabled:        envOrDefault("SHADOW_CLOUDLADDER_ENABLED", "false") == "true",
+				GatewayBaseURL: envOrDefault("SHADOW_CLOUDLADDER_GATEWAY_BASE_URL", ""),
+				RouteID:        envOrDefault("SHADOW_BILLING_CLOUDLADDER_ROUTE_ID", "tcapi-billing-intl-test"),
+				Caller:         envOrDefault("SHADOW_CLOUDLADDER_CALLER", "shadow"),
+				Secret:         envOrDefault("SHADOW_CLOUDLADDER_HMAC_SECRET", envOrDefault("CLOUDLADDER_SHADOW_HMAC_SECRET", "")),
+			},
+		})
+		if billingErr != nil {
+			logger.Warn("international shadow billing client unavailable", "err", billingErr)
+		} else {
+			billingAccount = billingClient
+		}
+	}
 	return shadowbinding.New(store, client, shadowbinding.Options{
-		Enabled:        true,
-		AuthCodeTTL:    parseDurationEnv("SHADOW_AUTH_CODE_TTL", 10*time.Minute),
-		AuthCodePrefix: envOrDefault("SHADOW_AUTH_CODE_PREFIX", ""),
-		UserNamePrefix: envOrDefault("SHADOW_USER_NAME_PREFIX", ""),
+		Enabled:             true,
+		AuthCodeTTL:         parseDurationEnv("SHADOW_AUTH_CODE_TTL", 10*time.Minute),
+		AuthCodePrefix:      envOrDefault("SHADOW_AUTH_CODE_PREFIX", ""),
+		UserNamePrefix:      envOrDefault("SHADOW_USER_NAME_PREFIX", ""),
+		SiteKind:            siteKind,
+		BillingAccount:      billingAccount,
+		BillingOpenTimeout:  parseDurationEnv("SHADOW_BILLING_OPEN_TIMEOUT", 15*time.Second),
+		BillingPollInterval: parseDurationEnv("SHADOW_BILLING_POLL_INTERVAL", time.Second),
 	})
+}
+
+func buildPaymentMethodClient(logger *slog.Logger, siteKind string) paymentmethod.Client {
+	if siteKind != shadowbinding.SiteKindIntl || envOrDefault("LIGHTCLAW_PAYMENT_METHODS_ENABLED", "false") != "true" {
+		return nil
+	}
+	endpoint := strings.TrimSpace(os.Getenv("SHADOW_BILLING_ENDPOINT"))
+	platform := strings.TrimSpace(os.Getenv("SHADOW_PLATFORM"))
+	if endpoint == "" || platform == "" {
+		logger.Warn("payment method client disabled due to incomplete billing config")
+		return nil
+	}
+	cloudLadder := shadowbinding.CloudLadderConfig{
+		Enabled:        envOrDefault("SHADOW_CLOUDLADDER_ENABLED", "false") == "true",
+		GatewayBaseURL: envOrDefault("SHADOW_CLOUDLADDER_GATEWAY_BASE_URL", ""),
+		RouteID:        envOrDefault("SHADOW_BILLING_CLOUDLADDER_ROUTE_ID", "tcapi-billing-intl-test"),
+		Caller:         envOrDefault("SHADOW_CLOUDLADDER_CALLER", "shadow"),
+		Secret:         envOrDefault("SHADOW_CLOUDLADDER_HMAC_SECRET", envOrDefault("CLOUDLADDER_SHADOW_HMAC_SECRET", "")),
+	}
+	transport, err := shadowbinding.NewCloudLadderTransportForRoute(cloudLadder, cloudLadder.RouteID, http.DefaultTransport)
+	if err != nil {
+		logger.Warn("payment method client disabled due to invalid CloudLadder config", "err", err)
+		return nil
+	}
+	client, err := paymentmethod.NewTencentCloudClient(paymentmethod.Config{
+		Endpoint:       endpoint,
+		Region:         envOrDefault("SHADOW_BILLING_REGION", "ap-guangzhou"),
+		Platform:       platform,
+		Source:         envOrDefault("LIGHTCLAW_PAYMENT_METHOD_SOURCE", "REGISTER"),
+		RequestTimeout: parseDurationEnv("LIGHTCLAW_PAYMENT_METHOD_REQUEST_TIMEOUT", 15*time.Second),
+		HTTPTransport:  transport,
+	})
+	if err != nil {
+		logger.Warn("payment method client disabled due to invalid config", "err", err)
+		return nil
+	}
+	logger.Info("payment method client enabled")
+	return client
 }
 
 func buildPhoneAuthSMSSender(logger *slog.Logger) service.PhoneAuthSMSSender {

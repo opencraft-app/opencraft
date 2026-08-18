@@ -14,21 +14,29 @@ import (
 )
 
 type Options struct {
-	Enabled        bool
-	Now            func() time.Time
-	AuthCodeTTL    time.Duration
-	AuthCodePrefix string
-	UserNamePrefix string
+	Enabled             bool
+	Now                 func() time.Time
+	AuthCodeTTL         time.Duration
+	AuthCodePrefix      string
+	UserNamePrefix      string
+	SiteKind            string
+	BillingAccount      BillingAccountClient
+	BillingOpenTimeout  time.Duration
+	BillingPollInterval time.Duration
 }
 
 type Service struct {
-	store          Store
-	client         TencentCloudClient
-	enabled        bool
-	now            func() time.Time
-	authCodeTTL    time.Duration
-	authCodePrefix string
-	userNamePrefix string
+	store               Store
+	client              TencentCloudClient
+	billingAccount      BillingAccountClient
+	billingOpenTimeout  time.Duration
+	billingPollInterval time.Duration
+	enabled             bool
+	now                 func() time.Time
+	authCodeTTL         time.Duration
+	authCodePrefix      string
+	userNamePrefix      string
+	siteKind            string
 }
 
 func New(store Store, client TencentCloudClient, opts Options) *Service {
@@ -40,7 +48,31 @@ func New(store Store, client TencentCloudClient, opts Options) *Service {
 	if ttl <= 0 {
 		ttl = 10 * time.Minute
 	}
-	return &Service{store: store, client: client, enabled: opts.Enabled, now: now, authCodeTTL: ttl, authCodePrefix: strings.Trim(strings.TrimSpace(opts.AuthCodePrefix), "."), userNamePrefix: strings.TrimSpace(opts.UserNamePrefix)}
+	billingOpenTimeout := opts.BillingOpenTimeout
+	if billingOpenTimeout <= 0 {
+		billingOpenTimeout = 15 * time.Second
+	}
+	billingPollInterval := opts.BillingPollInterval
+	if billingPollInterval <= 0 {
+		billingPollInterval = time.Second
+	}
+	siteKind, err := ParseSiteKind(opts.SiteKind)
+	if err != nil {
+		siteKind = SiteKindCN
+	}
+	return &Service{
+		store:               store,
+		client:              client,
+		billingAccount:      opts.BillingAccount,
+		billingOpenTimeout:  billingOpenTimeout,
+		billingPollInterval: billingPollInterval,
+		enabled:             opts.Enabled,
+		now:                 now,
+		authCodeTTL:         ttl,
+		authCodePrefix:      strings.Trim(strings.TrimSpace(opts.AuthCodePrefix), "."),
+		userNamePrefix:      strings.TrimSpace(opts.UserNamePrefix),
+		siteKind:            siteKind,
+	}
 }
 
 func (s *Service) Enabled() bool { return s != nil && s.enabled }
@@ -50,6 +82,14 @@ func (s *Service) Ready() bool {
 		return false
 	}
 	if reporter, ok := s.client.(interface{ Available() bool }); ok {
+		if !reporter.Available() {
+			return false
+		}
+	}
+	if s.siteKind == SiteKindIntl && s.billingAccount == nil {
+		return false
+	}
+	if reporter, ok := s.billingAccount.(interface{ Available() bool }); ok {
 		return reporter.Available()
 	}
 	return true
@@ -131,6 +171,10 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 		return Binding{}, err
 	}
 	if err == nil && !in.Force {
+		if s.siteKind == SiteKindIntl && existing.Uin > 0 &&
+			(existing.Status == StatusPending || existing.Status == StatusFailed) {
+			return s.openBillingAccount(ctx, existing)
+		}
 		switch existing.Status {
 		case StatusActive, StatusPending, StatusDisabled:
 			return existing, nil
@@ -142,11 +186,20 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 	if err != nil {
 		return Binding{}, err
 	}
+	if s.siteKind == SiteKindIntl && s.billingAccount == nil {
+		err := errors.New("billing account client is not configured")
+		failed, markErr := s.store.MarkBindingFailed(ctx, userID, "shadow_binding_unavailable", err.Error(), now)
+		if markErr != nil {
+			return binding, fmt.Errorf("%w; mark failed: %v", err, markErr)
+		}
+		return failed, err
+	}
 	if !s.enabled || s.client == nil {
 		return s.store.MarkBindingFailed(ctx, userID, "shadow_binding_unavailable", "shadow binding client is not configured", now)
 	}
 	result, err := s.client.RegisterShadowAccount(ctx, CloudRegisterInput{
 		UserName:   shadowUserName,
+		Email:      strings.TrimSpace(in.Email),
 		Phone:      strings.TrimSpace(in.Phone),
 		ClientIP:   strings.TrimSpace(in.ClientIP),
 		ClientUA:   strings.TrimSpace(in.ClientUA),
@@ -159,7 +212,70 @@ func (s *Service) BindShadowAccount(ctx context.Context, in BindInput) (Binding,
 		}
 		return failed, err
 	}
-	return s.store.MarkBindingActive(ctx, userID, result.Uin, result.OwnerUin, result.AppID, now)
+	if s.siteKind != SiteKindIntl {
+		return s.store.MarkBindingActive(ctx, userID, result.Uin, result.OwnerUin, result.AppID, now)
+	}
+	registered, err := s.store.MarkBindingRegistered(ctx, userID, result.Uin, result.OwnerUin, result.AppID, now)
+	if err != nil {
+		return binding, err
+	}
+	return s.openBillingAccount(ctx, registered)
+}
+
+func (s *Service) RetryBillingAccountOpening(ctx context.Context, userID string) (Binding, error) {
+	if s == nil || s.store == nil {
+		return Binding{}, errors.New("shadow binding is not configured")
+	}
+	binding, err := s.store.GetBindingByUserID(ctx, strings.TrimSpace(userID))
+	if err != nil {
+		return Binding{}, err
+	}
+	if binding.Status != StatusFailed ||
+		strings.TrimSpace(binding.LastErrorCode) != "billing_account_open_failed" ||
+		binding.Uin <= 0 || binding.AppID <= 0 {
+		return binding, nil
+	}
+	return s.openBillingAccount(ctx, binding)
+}
+
+func (s *Service) openBillingAccount(ctx context.Context, binding Binding) (Binding, error) {
+	if s.billingAccount == nil {
+		err := errors.New("billing account client is not configured")
+		failed, markErr := s.store.MarkBindingFailed(ctx, binding.UserID, "billing_account_open_failed", err.Error(), s.now())
+		if markErr != nil {
+			return binding, fmt.Errorf("%w; mark failed: %v", err, markErr)
+		}
+		return failed, err
+	}
+	openCtx, cancel := context.WithTimeout(ctx, s.billingOpenTimeout)
+	defer cancel()
+	var err error
+	for {
+		var result BillingAccountResult
+		result, err = s.billingAccount.EnsureBillingAccount(openCtx, binding.Uin)
+		if err != nil || result.IsOpen {
+			break
+		}
+		timer := time.NewTimer(s.billingPollInterval)
+		select {
+		case <-openCtx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			err = fmt.Errorf("billing account did not open within %s: %w", s.billingOpenTimeout, openCtx.Err())
+		case <-timer.C:
+			continue
+		}
+		break
+	}
+	if err != nil {
+		failed, markErr := s.store.MarkBindingFailed(ctx, binding.UserID, "billing_account_open_failed", err.Error(), s.now())
+		if markErr != nil {
+			return binding, fmt.Errorf("open billing account: %w; mark failed: %v", err, markErr)
+		}
+		return failed, err
+	}
+	return s.store.MarkBindingActive(ctx, binding.UserID, binding.Uin, binding.OwnerUin, binding.AppID, s.now())
 }
 
 func (s *Service) SyncPhoneChange(ctx context.Context, in PhoneChangeInput) (Binding, error) {
@@ -375,6 +491,50 @@ func (s *Service) IssueExternalAuthCode(ctx context.Context, userID string, purp
 	}
 	code.Code = s.externalAuthCode(code.Code)
 	return code, nil
+}
+
+func (s *Service) IssueTemporaryCredentials(ctx context.Context, userID, clientIP, clientUA string) (CloudTemporaryCredentials, error) {
+	if s == nil || s.store == nil || !s.enabled || s.client == nil {
+		return CloudTemporaryCredentials{}, errors.New("shadow binding is not configured")
+	}
+	credentialsClient, ok := s.client.(TemporaryCredentialsClient)
+	if !ok {
+		return CloudTemporaryCredentials{}, errors.New("shadow temporary credential client is not configured")
+	}
+	binding, err := s.store.GetBindingByUserID(ctx, strings.TrimSpace(userID))
+	if err != nil {
+		return CloudTemporaryCredentials{}, err
+	}
+	if binding.Status != StatusActive {
+		return CloudTemporaryCredentials{}, errors.New("shadow binding is not active")
+	}
+	authCode, err := s.IssueExternalAuthCode(ctx, binding.UserID, AuthCodePurposeSaaSCallback)
+	if err != nil {
+		return CloudTemporaryCredentials{}, err
+	}
+	credentials, err := credentialsClient.GetTemporaryCredentialsForSaaS(ctx, CloudTemporaryCredentialsInput{
+		AuthCode: authCode.Code,
+		ClientIP: strings.TrimSpace(clientIP),
+		ClientUA: strings.TrimSpace(clientUA),
+	})
+	if err != nil {
+		return CloudTemporaryCredentials{}, err
+	}
+	if credentials.Uin != binding.Uin || credentials.OwnerUin != binding.OwnerUin {
+		return CloudTemporaryCredentials{}, fmt.Errorf(
+			"shadow temporary credential uin mismatch: binding_uin=%d binding_owner_uin=%d credential_uin=%d credential_owner_uin=%d",
+			binding.Uin, binding.OwnerUin, credentials.Uin, credentials.OwnerUin,
+		)
+	}
+	if strings.TrimSpace(credentials.TmpSecretID) == "" ||
+		strings.TrimSpace(credentials.TmpSecretKey) == "" ||
+		strings.TrimSpace(credentials.Token) == "" {
+		return CloudTemporaryCredentials{}, errors.New("shadow temporary credentials are incomplete")
+	}
+	if credentials.ExpiredTime.IsZero() || !credentials.ExpiredTime.After(s.now()) {
+		return CloudTemporaryCredentials{}, errors.New("shadow temporary credentials are expired")
+	}
+	return credentials, nil
 }
 
 // externalAuthCode decorates the opaque code only while it travels through

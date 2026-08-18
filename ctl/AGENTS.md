@@ -105,3 +105,4 @@
 - 2026-07-09 trigger note：ticket sandbox profile 修复合入后，重跑 ctl gate 以恢复 shprod promote 链路。
 - 2026-07-09 trigger note：ticket release bundle contract 临时下线后，重跑 ctl gate 以解除 ticket closure 阻塞。
 - 2026-07-10 trigger note：删除 ticket sandbox catalog 后，重跑 ctl gate 以匹配 gitops 投影状态。
+- 2026-08-03 trigger note：KR 套餐询价超时修复已合入，重跑 ctl gate 以触发 sandbox-kr-1 GitOps 投影。

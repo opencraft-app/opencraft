@@ -40,10 +40,10 @@ describe("runtime config normalization", () => {
     ).toBe(false);
   });
 
-  it("requires both cn site and runtime flag before paid billing is effective", () => {
+  it("enables paid billing from the runtime flag on any site", () => {
     const enabledConfig = normalizeRuntimeConfig({ features: { paidBillingEnabled: true } });
     expect(resolvePaidBillingEnabled(enabledConfig, true)).toBe(true);
-    expect(resolvePaidBillingEnabled(enabledConfig, false)).toBe(false);
+    expect(resolvePaidBillingEnabled(enabledConfig, false)).toBe(true);
     expect(resolvePaidBillingEnabled(normalizeRuntimeConfig(null), true)).toBe(true);
   });
 

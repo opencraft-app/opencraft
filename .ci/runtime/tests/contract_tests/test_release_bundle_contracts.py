@@ -1917,6 +1917,66 @@ class ReleaseBundleContractTests(unittest.TestCase):
             expected_playground_auto_pin_envs="auto",
         )
 
+    def test_korea_trade_uses_international_billing_test_route(self) -> None:
+        env_path = (
+            REPO_ROOT
+            / "argocd/services/trade"
+            / KOREA_PLAYGROUND_ENV
+            / "trade-platform.env"
+        )
+        values = {
+            key: value
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+
+        self.assertEqual(
+            values["TRADE_BILLING_ENDPOINT"],
+            "billing.test.tencentcloudapi.com",
+        )
+        self.assertEqual(
+            values["TRADE_BILLING_CLOUDLADDER_ROUTE_ID"],
+            "tcapi-billing-trade-intl-test",
+        )
+        self.assertNotIn("TRADE_BILLING_CLOUDLADDER_CALLER", values)
+        billing_client_source = (
+            REPO_ROOT / "trade/internal/cloudbillingclient/client.go"
+        ).read_text()
+        self.assertIn('cloudLadderCaller      = "lightvela-trade"', billing_client_source)
+        self.assertEqual(
+            values["JIFEI_CGW_X_QCLOUD_USER_ID"],
+            "450860000002",
+        )
+
+        common = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd/services/trade/common/kustomization.yaml"
+            ).read_text()
+        )
+        redeploy_replacement = next(
+            replacement
+            for replacement in common["replacements"]
+            if replacement["source"].get("fieldPath") == "data.TRADE_DEPLOYED_AT"
+        )
+        self.assertEqual(
+            redeploy_replacement["targets"][0]["fieldPaths"],
+            ["spec.template.metadata.annotations.[trade.clawhub.dev/redeploy-at]"],
+        )
+
+        manifests = list(
+            yaml.safe_load_all((REPO_ROOT / "trade/k8s/base/manifests.yaml").read_text())
+        )
+        deployment = next(doc for doc in manifests if doc and doc.get("kind") == "Deployment")
+        self.assertEqual(
+            deployment["spec"]["template"]["metadata"]["annotations"][
+                "trade.clawhub.dev/redeploy-at"
+            ],
+            "REPLACE_TRADE_DEPLOYED_AT",
+        )
+
     def test_standard_service_extends_stays_on_v2_local_template_contract(self) -> None:
         for workflow_path in sorted(BUSINESS_WORKFLOWS - {".ci/frontend.yml"}):
             workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())

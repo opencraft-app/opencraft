@@ -623,6 +623,120 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '503':
           $ref: '#/components/responses/ErrorResponse'
+  /auth/payment-methods:
+    get:
+      operationId: listPaymentMethods
+      summary: List the current user's signed payment cards
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Current signed payment cards
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentMethodListResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/payment-methods/sign-orders:
+    post:
+      operationId: createPaymentMethodSignOrder
+      summary: Create a hosted card signing order for the current user
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentMethodSignOrderRequest'
+      responses:
+        '200':
+          description: Hosted card signing order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentMethodSignOrderResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/payment-methods/{contractCode}/default:
+    put:
+      operationId: setDefaultPaymentMethod
+      summary: Set one of the current user's signed cards as default
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentMethodContractCode'
+      responses:
+        '204':
+          description: Default payment card updated
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/payment-methods/{contractCode}:
+    delete:
+      operationId: deletePaymentMethod
+      summary: Delete one of the current user's non-default signed cards
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentMethodContractCode'
+      responses:
+        '204':
+          description: Payment card deleted
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
   /auth/profile/avatar:
     get:
       operationId: getProfileAvatar
@@ -669,6 +783,15 @@ paths:
         '503':
           $ref: '#/components/responses/ErrorResponse'
 components:
+  parameters:
+    PaymentMethodContractCode:
+      name: contractCode
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
   securitySchemes:
     SessionCookie:
       type: apiKey
@@ -1089,6 +1212,58 @@ components:
           enum: [idle, valid, invalid, expired, used]
         message:
           type: string
+    PaymentMethod:
+      type: object
+      required:
+        - contractCode
+        - maskedNumber
+        - payerName
+        - type
+        - isDefault
+      properties:
+        contractCode:
+          type: string
+        maskedNumber:
+          type: string
+          description: Masked card number returned by Tencent Billing.
+        payerName:
+          type: string
+        type:
+          type: string
+          example: CREDIT_CARD
+        isDefault:
+          type: boolean
+    PaymentMethodListResponse:
+      type: object
+      required:
+        - total
+        - items
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentMethod'
+    PaymentMethodSignOrderRequest:
+      type: object
+      properties:
+        languageCode:
+          type: string
+          enum: [en, zh, hk]
+          default: en
+    PaymentMethodSignOrderResponse:
+      type: object
+      required:
+        - contractCode
+        - redirectUrl
+      properties:
+        contractCode:
+          type: string
+        redirectUrl:
+          type: string
+          format: uri
     ErrorResponse:
       type: object
       required:

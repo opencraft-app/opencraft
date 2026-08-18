@@ -79,6 +79,24 @@ func (s *MemoryStore) MarkBindingActive(_ context.Context, userID string, uin, o
 	return binding, nil
 }
 
+func (s *MemoryStore) MarkBindingRegistered(_ context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	binding, ok := s.bindings[userID]
+	if !ok {
+		return Binding{}, ErrNotFound
+	}
+	binding.Uin = uin
+	binding.OwnerUin = ownerUin
+	binding.AppID = appID
+	binding.Status = StatusPending
+	binding.LastErrorCode = ""
+	binding.LastErrorMessage = ""
+	binding.UpdatedAt = now
+	s.bindings[userID] = binding
+	return binding, nil
+}
+
 func (s *MemoryStore) MarkBindingFailed(_ context.Context, userID string, code string, message string, now time.Time) (Binding, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

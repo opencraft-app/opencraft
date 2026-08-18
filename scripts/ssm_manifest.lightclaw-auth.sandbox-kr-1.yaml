@@ -1,0 +1,25 @@
+defaults:
+  region: ap-seoul
+  version_id: codex-20260810083731-intl-shadow
+  age_recipients:
+    - age1q4s9kt3h5n0fgmez4kyp7tsahgjhuxpyeteye8lp46kqkyvardusctl258
+
+items:
+  - id: lightclaw-auth-secrets
+    secret_name: mono-seoul-sandbox-lightclaw-auth-secrets
+    # International shadow provisioning uses separate credentials for SaaS
+    # registration and billing account activation.
+    # Required keys:
+    # SHADOW_SECRET_ID, SHADOW_SECRET_KEY,
+    # SHADOW_BILLING_SECRET_ID, SHADOW_BILLING_SECRET_KEY,
+    # CLOUDLADDER_SHADOW_HMAC_SECRET.
+    namespace: lightvela-playground-sandbox-kr-1
+    kubernetes_resource_name: lightclaw-auth-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-kr-1/lightclaw-auth-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: lightclaw-auth
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
