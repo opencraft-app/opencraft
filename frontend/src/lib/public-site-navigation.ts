@@ -34,7 +34,7 @@ const label = (
 });
 
 export const PUBLIC_SITE_NAV_ITEMS: readonly PublicSiteNavItem[] = [
-  { section: "overview", href: "/", label: label("概览", "概览", "概覽", "Overview", "Ikhtisar") },
+  { section: "overview", href: "/", label: label("首页", "首页", "首頁", "Home", "Beranda") },
   // 「定价」入口国内站与国际站均展示：指向订阅套餐页 /subscribe，未登录可浏览静态价格。
   { section: "pricing", href: "/subscribe", label: label("定价", "定价", "定價", "Pricing", "Harga") },
   { section: "changelog", href: "/changelog", label: label("更新日志", "更新日志", "更新日誌", "Changelog", "Catatan Rilis") },
