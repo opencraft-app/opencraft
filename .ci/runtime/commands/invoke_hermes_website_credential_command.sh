@@ -11,14 +11,14 @@
 #
 # Usage:
 #   HERMES_TAT_COMMAND_ID=cmd-xxx \
-#   HERMES_TAT_REGION=ap-shanghai \
+#   HERMES_TAT_REGION=ap-singapore \
 #   HERMES_TAT_API_BASE=https://api.lightvela.com \
 #   HERMES_TAT_INPUT_FILE=/tmp/instances.jsonl \
 #     bash .ci/runtime/commands/invoke_hermes_website_credential_command.sh
 #
 # Environment:
 #   HERMES_TAT_COMMAND_ID   Required. TAT CommandId.
-#   HERMES_TAT_REGION        Default: ap-shanghai.
+#   HERMES_TAT_REGION        Default: ap-singapore.
 #   HERMES_TAT_API_BASE      Required. API base URL for the environment.
 #   HERMES_TAT_INPUT_FILE    JSONL file. If unset, reads stdin.
 #   HERMES_TAT_OUTPUT_DIR    Default: /tmp/hermes-website-credential-results.
@@ -28,7 +28,7 @@
 
 set -euo pipefail
 
-REGION="${HERMES_TAT_REGION:-ap-shanghai}"
+REGION="${HERMES_TAT_REGION:-ap-singapore}"
 COMMAND_ID="${HERMES_TAT_COMMAND_ID:-}"
 API_BASE="${HERMES_TAT_API_BASE:-}"
 INPUT_FILE="${HERMES_TAT_INPUT_FILE:-}"
@@ -56,7 +56,7 @@ Environment:
   HERMES_TAT_API_BASE
       Required. API base URL for the target environment.
   HERMES_TAT_REGION
-      Default: ap-shanghai.
+      Default: ap-singapore.
   HERMES_TAT_INPUT_FILE
       JSONL file. If unset, reads stdin.
   HERMES_TAT_OUTPUT_DIR

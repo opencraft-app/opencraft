@@ -41,11 +41,11 @@
 
 | 状态 | 事项 | 完成证据 |
 |---|---|---|
-| [ ] | 在生产地域创建 TAT command | `ap-singapore` command 创建成功并记录 CommandId（不把凭据写入文档） |
+| [ ] | 在生产地域创建 TAT command | `ap-singapore` command 创建成功并记录 CommandId（不把凭据写入文档）。脚本默认区域已改为 `ap-singapore` ✅ |
 | [ ] | CTL 为真实 CVM 逐台签发实例凭据 | 每台实例得到独立 `vik_` token；只记录实例 ID、结果和错误摘要 |
 | [ ] | 通过 TAT 逐台下发凭据 | `/etc/vela/website-credential.env` 存在且权限正确，token 不出现在日志 |
 | [ ] | 验证 Hermes 进程重新读取凭据 | 目标机器上的 Hermes gateway 为 active，调用 capability API 返回成功 |
-| [ ] | 分发 `website-builder` Skill | Skill 文件版本与后端 API 契约一致，机器侧可发现并调用 |
+| [ ] | 分发 `website-builder` Skill | Skill 文件版本与后端 API 契约一致，机器侧可发现并调用。已加入 `images/build.sh` `curate_hermes_skills` keep list ✅；SKILL.md 使用稳定机器入口 `/v1/websites` |
 
 ## 四、真实机器与前端验收
 

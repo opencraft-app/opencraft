@@ -13,11 +13,11 @@
 # Each invocation supplies its own Parameters JSON with the instance's key.
 #
 # Usage:
-#   HERMES_TAT_REGION=ap-shanghai \
+#   HERMES_TAT_REGION=ap-singapore \
 #     bash .ci/runtime/commands/create_hermes_website_credential_command.sh
 #
 # Environment:
-#   HERMES_TAT_REGION        Default: ap-shanghai
+#   HERMES_TAT_REGION        Default: ap-singapore
 #   HERMES_TAT_SCRIPT_FILE   Default: images/helpers/install-hermes-website-credential.sh
 #   HERMES_TAT_COMMAND_NAME_PREFIX  Default: hermes-website-credential
 #   HERMES_TAT_COMMAND_TIMEOUT      Default: 300
@@ -27,7 +27,7 @@
 
 set -euo pipefail
 
-REGION="${HERMES_TAT_REGION:-ap-shanghai}"
+REGION="${HERMES_TAT_REGION:-ap-singapore}"
 SCRIPT_FILE="${HERMES_TAT_SCRIPT_FILE:-images/helpers/install-hermes-website-credential.sh}"
 COMMAND_NAME_PREFIX="${HERMES_TAT_COMMAND_NAME_PREFIX:-hermes-website-credential}"
 COMMAND_TIMEOUT="${HERMES_TAT_COMMAND_TIMEOUT:-300}"
@@ -38,7 +38,7 @@ OUTPUT_ENV_FILE="${HERMES_TAT_COMMAND_ENV_FILE:-}"
 usage() {
   cat <<'EOF'
 Usage:
-  HERMES_TAT_REGION=ap-shanghai \
+  HERMES_TAT_REGION=ap-singapore \
     bash .ci/runtime/commands/create_hermes_website_credential_command.sh
 
 Create a reusable, parameterized Tencent Cloud TAT command for
@@ -52,7 +52,7 @@ No secret is stored in the command itself.
 
 Environment:
   HERMES_TAT_REGION
-      Default: ap-shanghai.
+      Default: ap-singapore.
   HERMES_TAT_SCRIPT_FILE
       Default: images/helpers/install-hermes-website-credential.sh.
   HERMES_TAT_COMMAND_NAME_PREFIX

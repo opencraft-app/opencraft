@@ -1129,6 +1129,7 @@ curate_hermes_skills() {
     "productivity/maps"
     "creative/architecture-diagram"
     "creative/humanizer"
+    "website-builder"
   )
   local skill=""
   local skill_dir=""

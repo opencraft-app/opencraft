@@ -98,8 +98,8 @@ COS Bucket（7869-xiamitcb-db-lab-d5fofz8t62c5140d-1251810746 / ap-shanghai）
   │  通过 website-builder Skill
   │  Authorization: Vela-Instance-Key vik_xxx_yyy
   ▼
-service-gateway（路由：ctl-instance-websites）
-  │  allowlist 过滤
+service-gateway（路由：ctl-websites）
+  │  Vela-Instance-Key 路径 allowlist 过滤
   ▼
 ctl-api-websites（Go，端口 9590）
   │  1. websiteInstanceAuthMiddleware 校验 Vela-Instance-Key
@@ -565,10 +565,11 @@ Skill 的分发渠道：
 2. **SkillHub 安装**：`images/build.sh` 通过 `SKILLHUB_INSTALL_URL` 安装 SkillHub CLI（`/usr/local/bin/skillhub`），用户/平台可以通过 `skillhub install` 命令安装额外 Skill
 3. **手动部署**：通过 SSH 或通用 TAT 命令（`.ci/runtime/commands/create_hermes_tat_command.sh`）将 SKILL.md 复制到机器的 `${RUNTIME_HOME}/.hermes/skills/` 或 `${RUNTIME_HOME}/.agents/skills/` 目录
 
-**当前状态**：website-builder Skill 尚未集成到 Hermes 镜像的 `curate_hermes_skills` keep_list 中。生产发布前需要：
-- 将 website-builder 加入 Hermes 镜像的预装 Skill 列表，或
+**当前状态**：website-builder Skill 已加入 Hermes 镜像的 `curate_hermes_skills` keep_list（`images/build.sh`）。生产发布前仍需确认：
+- ~~将 website-builder 加入 Hermes 镜像的预装 Skill 列表~~ ✅ 已完成
 - 通过 SkillHub 发布后让用户 `skillhub install website-builder`，或
 - 通过通用 TAT 命令批量部署到所有用户机器
+- 确认镜像构建流程中 website-builder Skill 文件会被正确复制到 `${RUNTIME_HOME}/.hermes/skills/` 目录
 
 **仓库中与 TAT 相关的完整脚本清单**：
 
@@ -714,8 +715,8 @@ Skill 的分发渠道：
   - 替换生产镜像 tag 等发布期占位符后再合入 `gitops`；生产证书 ID 不进入 GitOps
 
 - [x] **6. service-gateway 建站路由配置**
-  - sgprod 已包含 `ctl-websites` 和 `ctl-instance-websites` 路由
-  - `ctl-instance-websites` 已配置 8 条 allowlist 精确匹配建站 API 路径
+  - sgprod 的 `ctl-websites` 路由已启用 `allow_vela_instance_key`
+  - `vela_instance_key_allow` 已配置 8 条 allowlist 精确匹配建站 API 路径
   - `/v1/frontend/runtime-config` 已在最新 `master`，是计费/实名的后端运行时配置接口，不是建站 UI 开关，也不属于本 MR 差异
 
 - [ ] **7. 镜像构建**
@@ -724,7 +725,7 @@ Skill 的分发渠道：
   - 更新 GitOps 中的 image tag
 
 - [ ] **8. TAT 命令创建**
-  - 在生产区域（ap-shanghai）创建 TAT 命令
+  - 在生产区域（ap-singapore）创建 TAT 命令
   - 使用 `create_hermes_website_credential_command.sh`
   - 记录 CommandId
 

@@ -39,6 +39,8 @@ type Route struct {
 	PathAllow              []PublicRule `yaml:"path_allow"`
 	PublicAllow            []PublicRule `yaml:"public_allow"`
 	OptionalAuthAllow      []PublicRule `yaml:"optional_auth_allow"`
+	AllowVelaInstanceKey   bool         `yaml:"allow_vela_instance_key"`
+	VelaInstanceKeyAllow   []PublicRule `yaml:"vela_instance_key_allow"`
 	RequireRealname        bool         `yaml:"require_realname"`
 	ResponseHeaderTimeout  string       `yaml:"response_header_timeout"`
 }
