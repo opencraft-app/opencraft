@@ -187,9 +187,9 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/account":
       "了解 LightVela 的账号体系、登录方式（QQ / 微信）、实名认证流程、账号信息页结构，以及退出登录与注销说明。",
     "/docs/plans":
-      "LightVela 启航 Launch、巡游 Cruise 两档套餐说明：各含独立云端环境、专属存储与每月模型积分。本页讲各档定位、规格、权益与计费，帮你按需选择。",
+      "LightVela 套餐管理文档：查看启航 Launch、巡游 Cruise、启航 Launch AI、巡游 Cruise AI 的权益与标准原价，了解续费流程、套餐生命周期和腾讯云智能客服退款规则。",
     "/docs/credits":
-      "LightVela 模型积分（Credits）是计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 token 消耗。本页说明积分定义、换算、发放、消耗方式及与套餐、模型的关系。",
+      "LightVela AI 积分（Credits）是计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 Token 消耗。本页说明积分定义、换算、发放、消耗方式及与套餐的关系。",
     "/docs/create-first-hermes":
       "开通第一个 Hermes 实例的完整流程：登录账号、完成实名认证、选择并开通套餐、平台自动创建实例，再配置模型与通道，让你的云端 AI Agent 7×24 小时在线运行。",
     "/docs/core-concepts":
@@ -389,6 +389,7 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/channel-feishu": "飞书",
     "/docs/configuration/channel-qq": "QQ",
     "/docs/configuration/skill": "配置技能",
+    "/docs/plans": "套餐管理",
     "/docs/announcements/public-beta": "LightVela 付费版本公告",
     "/docs/faq": "常见问题 FAQ",
   },

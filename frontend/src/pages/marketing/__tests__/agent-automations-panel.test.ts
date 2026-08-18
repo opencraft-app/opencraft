@@ -52,6 +52,22 @@ describe("recent run limit hint", () => {
     expect(shouldShowRecentRunsLimitHint(11)).toBe(true);
   });
 
+  it("renders the empty recent-runs message without a nested gray container", () => {
+    const { container } = render(createElement(RecentCronRunsPanel, {
+      runs: [],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+    const message = screen.getByText("暂无执行记录");
+    const emptyState = message.closest("div");
+    const panel = container.querySelector("section");
+
+    expect(emptyState).not.toBeNull();
+    expect(emptyState).toHaveClass("m-4", "px-3", "py-2", "text-xs", "text-black/45");
+    expect(emptyState).not.toHaveClass("bg-black/[0.02]", "rounded-lg");
+    expect(panel).toHaveClass("rounded-md", "bg-white");
+    expect(panel).toHaveStyle({ background: "#ffffff" });
+  });
+
   it("shows model drift as an unexecuted run with a concise reason", () => {
     render(createElement(RecentCronRunsPanel, {
       runs: [makeCronRun({

@@ -18,7 +18,7 @@ import type { Bundle, BundlePrice, BundleDescriptionEntry } from "@/domain/types
 import { REALNAME_LEVEL } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
-import { isGlobal } from "@/lib/region";
+import { isCN, isGlobal } from "@/lib/region";
 import { isPaidBillingEnabled, formatYuan, centsToYuan } from "@/lib/billing-flow";
 import {
   resolveBillingErrorMessage,
@@ -59,6 +59,7 @@ const LAUNCH_BUNDLE_NAME_KEYWORDS = {
 } as const;
 /** AI 增强版套餐类型标识（首月折扣付费，不在免费试用范围内） */
 const BUNDLE_TYPE_AI = "ai";
+const CN_REFUND_RULES_PATH = "/docs/plans/#%E9%80%80%E6%AC%BE%E8%A7%84%E5%88%99";
 
 const shadows = {
   card: "rgba(0,0,0,0.04) 0px 4px 18px, rgba(0,0,0,0.027) 0px 2.025px 7.85px, rgba(0,0,0,0.02) 0px 0.8px 2.93px, rgba(0,0,0,0.01) 0px 0.175px 1.04px",
@@ -2849,32 +2850,51 @@ export const SubscribePage = ({
               <p style={{ fontSize: 14, color: colors.warmGray300 }}>{t("暂无在售套餐，敬请期待")}</p>
             </div>
           ) : (
-            <motion.div
-              variants={staggerContainer}
-              initial="hidden"
-              animate="visible"
-              style={{
-                display: "grid",
-                gridTemplateColumns: planTiers.length >= 3 ? "repeat(3, 1fr)" : `repeat(${planTiers.length}, 1fr)`,
-                gap: 24,
-                maxWidth: 1080,
-                margin: "0 auto",
-              }}
-            >
-              {planTiers.map((tier, idx) => (
-                <PlanCard
-                  key={tier.key}
-                  variants={tier.variants}
-                  index={idx}
-                  onSubscribe={(planId) => void handleSubscribe(planId)}
-                  subscribingPlanId={subscribingPlanId}
-                  currentBots={bots.length}
-                  reserveCreditTabSpace={planTiers.some((tt) => tt.variants.length > 1)}
-                  /* 已有生效订阅或有智能体：暂不支持升级/更换套餐，所有卡按钮禁用（当前套餐卡文案为「当前订阅」）。 */
-                  subscriptionLocked={isSubscribed || bots.length > 0}
-                />
-              ))}
-            </motion.div>
+            <>
+              <motion.div
+                variants={staggerContainer}
+                initial="hidden"
+                animate="visible"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: planTiers.length >= 3 ? "repeat(3, 1fr)" : `repeat(${planTiers.length}, 1fr)`,
+                  gap: 24,
+                  maxWidth: 1080,
+                  margin: "0 auto",
+                }}
+              >
+                {planTiers.map((tier, idx) => (
+                  <PlanCard
+                    key={tier.key}
+                    variants={tier.variants}
+                    index={idx}
+                    onSubscribe={(planId) => void handleSubscribe(planId)}
+                    subscribingPlanId={subscribingPlanId}
+                    currentBots={bots.length}
+                    reserveCreditTabSpace={planTiers.some((tt) => tt.variants.length > 1)}
+                    /* 已有生效订阅或有智能体：暂不支持升级/更换套餐，所有卡按钮禁用（当前套餐卡文案为「当前订阅」）。 */
+                    subscriptionLocked={isSubscribed || bots.length > 0}
+                  />
+                ))}
+              </motion.div>
+              {isCN && (
+                <div style={{ display: "flex", justifyContent: "center", marginTop: 18 }}>
+                  <AppLink
+                    to={CN_REFUND_RULES_PATH}
+                    style={{
+                      color: colors.warmGray500,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      lineHeight: 1.5,
+                      textDecoration: "underline",
+                      textUnderlineOffset: 3,
+                    }}
+                  >
+                    {t("退款规则")}
+                  </AppLink>
+                </div>
+              )}
+            </>
           )}
         </section>
       </main>

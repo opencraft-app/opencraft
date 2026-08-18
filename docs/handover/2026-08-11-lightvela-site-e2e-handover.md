@@ -225,7 +225,7 @@ ctl → LPUSH Redis key="website:deploy:queue" operation_id
 | 证书类型 | **付费泛域名证书**（不能复用测试 Let's Encrypt 免费证书） |
 | 状态 | ❌ 未申请 — 生产发布前必须完成 |
 | 申请方式 | 通过腾讯云 SSL 证书控制台申请付费泛域名证书 |
-| 部署方式 | 平台证书自动化创建/更新 live Secret；GitOps 不保存证书 ID |
+| 部署方式 | 平台证书自动化在 sgprod `ctl` namespace 创建/轮换稳定 live Secret；不随 site-gateway 日常发布下发，GitOps 不保存证书 ID |
 | K8s Secret | `site-gateway-wildcard-tls`（Opaque，key=`qcloud_cert_id`） |
 
 ### 4.3 Ingress 规则
@@ -667,7 +667,7 @@ Skill 的分发渠道：
 
 | 占位符 / 待办 | 文件 | 期望值 / 操作 |
 |---|---|---|
-| 生产 TLS Secret | 平台证书自动化 | 创建/更新 `site-gateway-wildcard-tls`，证书 ID 只存在于 live Secret，不写入 `argocd/**` |
+| 生产 TLS Secret | 平台证书自动化 | 在 sgprod `ctl` 预置/更新 `site-gateway-wildcard-tls`；证书 ID 只存在于 live Secret，不写入 `argocd/**`，并独立完成续期和轮换 |
 | `REPLACE_BOOTSTRAP_TAG`（镜像） | `sgprod/*-platform.env` | CI 流水线自动填充 |
 | DB 迁移 000028 | sgprod MySQL | CTL 流水线生产门禁执行一次（含 5 张表和配额 seed） |
 | DNS `*.lightvela.site` | DNS 控制台 | 当前指向测试 CLB，需切到 sgprod CLB |
@@ -686,6 +686,7 @@ Skill 的分发渠道：
   - sgprod GitOps 只配置稳定 Secret 名：`site-gateway-wildcard-tls`
   - 平台证书自动化负责申请/续期、上传腾讯云 SSL，并更新 `ctl` 命名空间 live Secret 的 `qcloud_cert_id`
   - 证书 ID 轮换不修改 GitOps；更新后验证 qcloud Ingress controller 和公网 HTTPS 已切到新证书
+  - site-gateway 日常 Kustomize 只引用稳定 Secret 名称，不创建或覆盖证书绑定
 
 - [x] **3. COS Bucket ✅ 已创建已配置**
   - 新加坡生产 COS bucket `lightvela-user-sites-1388575217`（`ap-singapore`）**已创建**

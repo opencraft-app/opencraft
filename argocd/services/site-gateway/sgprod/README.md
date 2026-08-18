@@ -37,6 +37,10 @@ The wildcard certificate must cover the exact wildcard host. Before production s
 the platform automation has created `site-gateway-wildcard-tls` and that the qcloud Ingress
 controller can read it. Certificate rotation may change the Tencent Cloud certificate ID without
 any GitOps or application change.
+The normal site-gateway Kustomize render only references the stable Secret name; it does not
+create, update, or rotate that Secret. Before the first Argo CD sync, the platform owner must
+provision the Secret in namespace `ctl` through the platform TLS workflow. Certificate renewal
+and rotation update that existing Secret independently of site-gateway releases.
 
 ## Release ownership
 
