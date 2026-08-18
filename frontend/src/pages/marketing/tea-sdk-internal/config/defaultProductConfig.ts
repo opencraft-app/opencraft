@@ -141,10 +141,15 @@ export function createLighthouseConfig(options: ICreateLighthouseConfigOptions =
     getFilteredModelProviders: (region?: string, regionId?: number) => {
       // 复用 getFilteredModelProviderList 的过滤逻辑,但只保留 hermes 范围的 provider
       const allowedValues = new Set(hermesModelProviders.map((p) => p.value));
+      const useOversea = resolveUseOverseaAiAssets(regionId, region);
       return getFilteredModelProviderList(
         region,
         baseModelProviders,
-        resolveUseOverseaAiAssets(regionId, region),
+        useOversea,
+        // useOverseaTokenhubUrl 不单独传，默认跟随集合（tokenhub 按机器地域切换，与 mono2 现状一致）
+        undefined,
+        // 站点维度显式透传（规则 1/2 依赖），避免依赖 moltbot 内部 IS_I18N 与本地 isI18n 恰好相等
+        isI18n,
       ).filter((p) => allowedValues.has(p.value));
     },
     isTencentProvider: supportsTencentCloudApi ? _isTencentProvider : () => false,

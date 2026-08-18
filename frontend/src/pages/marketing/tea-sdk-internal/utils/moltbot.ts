@@ -52,6 +52,20 @@ export const DOMESTIC_HIDDEN_PROVIDERS = [
   'zaicode',
 ];
 
+/**
+ * 国际站专属 provider 列表（仅国际站展示，国内站屏蔽）
+ *
+ * 2026-08 新增：国际站版 Token Plan 套餐。条目由宿主通过七彩石 sourceList 下发
+ * （SDK 内置列表暂无），国内站一律屏蔽，国际站全地域展示。
+ * 注意与 DOMESTIC_HIDDEN_PROVIDERS 的维度差异：本名单按站点（IS_I18N）过滤，
+ * DOMESTIC_HIDDEN_PROVIDERS 按机器地域（useOversea）过滤，原因见 getFilteredModelProviderList。
+ */
+export const INTL_ONLY_PROVIDERS = [
+  'tencent_token_plan_intl',
+  'tencent_token_plan_enterprise_lite_intl',
+  'tencent_token_plan_enterprise_pro_intl',
+];
+
 /** 香港地域屏蔽的 provider 列表（这些服务商在香港地区未提供官方 API 服务或存在访问限制） */
 export const HK_REGION_HIDDEN_PROVIDERS = ['openai', 'openai_codex', 'anthropic'];
 
@@ -68,33 +82,52 @@ export const TOKENHUB_BASE_URL = {
 };
 
 /**
- * 根据实例地域过滤模型提供商列表（OpenClaw 用）
+ * 根据站点与实例地域过滤模型提供商列表（OpenClaw 用，Hermes 复用同一套规则）
  *
- * 过滤规则：
- *  1. 按国内/海外 AI 资产集合过滤专属 provider（OpenClaw/Hermes 共用）
- *  2. 香港地域额外隐藏 OpenAI/Anthropic 等国际服务商
+ * 过滤规则按「屏蔽原因」区分维度，共四条：
+ *  1. 国际站（IS_I18N）：不分地域屏蔽 I18N_HIDDEN_PROVIDERS——这些 provider 的
+ *     一键配置强依赖国内站 hunyuan CAPI（仅 ap-guangzhou），国际站登录态下调用必报错
+ *  2. 国内站（!IS_I18N）：屏蔽 INTL_ONLY_PROVIDERS（国际站专属 Token Plan 套餐）
+ *  3. 国内集合（!useOverseaModelProviders）：屏蔽 DOMESTIC_HIDDEN_PROVIDERS——
+ *     openai 等海外 API 从国内地域机器网络不可达，按机器地域而非站点过滤
+ *  4. 香港地域（region === 'ap-hongkong'）：叠加屏蔽 OpenAI/Anthropic 等
+ *
+ * 另：tokenhub 为国内+海外共展示 provider，base_url 按机器地域切换海外域名。
  *
  * @param region 实例地域英文名，仅用于 `ap-hongkong` 的附加屏蔽，不负责判断国内/海外模型集合
  * @param sourceList 待过滤的完整模型列表，通常来自 `useModelProviders()`
- * @param useOverseaModelProviders 是否使用海外模型集合。该值是调用方结合站点和实例地域计算后的最终结果：
- * `true` 使用海外集合，`false` 使用国内集合
+ * @param useOverseaModelProviders 是否使用海外模型集合。调用方结合站点和实例地域计算的最终结果：
+ * `true` 使用海外集合，`false` 使用国内集合。默认 IS_I18N
+ * @param useOverseaTokenhubUrl tokenhub 是否使用海外域名。按机器地域判断，与集合切换解耦，
+ * 默认跟随 useOverseaModelProviders
+ * @param isI18n 站点是否国际站。默认取 SDK 内部 IS_I18N（@tencent/tea-app 的 site）；
+ * 宿主有自己的站点判断或需要在单测中 mock 站点行为时可显式传入
  */
-export function getFilteredModelProviderList(
+export function getFilteredModelProviderList<T extends IModelProvider>(
   region?: string,
-  sourceList: IModelProvider[] = MODEL_PROVIDER_LIST,
-  useOverseaModelProviders: boolean = IS_I18N,
-): IModelProvider[] {
-  const base = sourceList.filter((item) => {
-    // 海外集合隐藏国内专属 provider
-    if (useOverseaModelProviders && I18N_HIDDEN_PROVIDERS.includes(item.value)) return false;
-    // 国内集合隐藏海外专属 provider
-    if (!useOverseaModelProviders && DOMESTIC_HIDDEN_PROVIDERS.includes(item.value)) return false;
-    return true;
-  });
-  if (region === 'ap-hongkong') {
-    return base.filter((item) => !HK_REGION_HIDDEN_PROVIDERS.includes(item.value));
-  }
-  return base;
+  sourceList?: T[],
+  useOverseaModelProviders?: boolean,
+  useOverseaTokenhubUrl?: boolean,
+  isI18n: boolean = IS_I18N,
+): T[] {
+  const list = sourceList ?? (MODEL_PROVIDER_LIST as unknown as T[]);
+  const oversea = useOverseaModelProviders ?? isI18n;
+  const tokenhubIntl = useOverseaTokenhubUrl ?? oversea;
+  return list
+    .filter((item) => {
+      // 1. 国际站：屏蔽依赖国内 CAPI 一键配置的国内专属 provider（不分地域）
+      if (isI18n && I18N_HIDDEN_PROVIDERS.includes(item.value)) return false;
+      // 2. 国内站：屏蔽国际站专属 TokenPlan 套餐
+      if (!isI18n && INTL_ONLY_PROVIDERS.includes(item.value)) return false;
+      // 3. 国内集合：屏蔽海外专属 provider（国内地域机器网络不可达）
+      if (!oversea && DOMESTIC_HIDDEN_PROVIDERS.includes(item.value)) return false;
+      // 4. 香港叠加：官方未提供香港 API 服务或存在访问限制的服务商
+      if (region === 'ap-hongkong' && HK_REGION_HIDDEN_PROVIDERS.includes(item.value)) return false;
+      return true;
+    })
+    .map((item) =>
+      item.value === 'tokenhub' && tokenhubIntl ? { ...item, base_url: TOKENHUB_BASE_URL.oversea } : item,
+    );
 }
 
 /** 判断是否为腾讯系 provider */
