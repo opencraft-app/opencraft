@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"velachat/agent/internal/common"
 	rootstate "velachat/agent/internal/state"
 	"velachat/agent/internal/vela/managementipc"
 )
@@ -245,8 +247,12 @@ func TestRunnerColdStartForcesFullSnapshotWithPersistedCursor(t *testing.T) {
 func TestColdStartSnapshotCannotRegressPersistedCursor(t *testing.T) {
 	t.Parallel()
 
-	cursor := assignmentCursorState{
-		Epoch: testEpoch, Revision: 3, SnapshotHash: "stable-hash",
+	var cursor assignmentCursorState
+	if err := common.Unmarshal([]byte(fmt.Sprintf(
+		`{"schemaVersion":2,"assignmentSchemaVersion":3,"epoch":%q,"revision":3,"snapshotHash":"stable-hash","appliedAt":"2026-08-18T00:00:00Z"}`,
+		testEpoch,
+	)), &cursor); err != nil {
+		t.Fatal(err)
 	}
 	if err := validateSnapshotAgainstCursor(cursor, Snapshot{
 		Epoch: testEpoch, Revision: 2, SnapshotHash: "older-hash",
@@ -254,14 +260,29 @@ func TestColdStartSnapshotCannotRegressPersistedCursor(t *testing.T) {
 		t.Fatalf("regressed snapshot error = %v", err)
 	}
 	if err := validateSnapshotAgainstCursor(cursor, Snapshot{
-		Epoch: testEpoch, Revision: 3, SnapshotHash: "other-hash",
+		SchemaVersion: AssignmentSchemaVersionV3,
+		Epoch:         testEpoch, Revision: 3, SnapshotHash: "other-hash",
 	}); !errors.Is(err, ErrRevisionCollision) {
 		t.Fatalf("colliding snapshot error = %v", err)
 	}
 	if err := validateSnapshotAgainstCursor(cursor, Snapshot{
-		Epoch: testEpoch, Revision: 3, SnapshotHash: "stable-hash",
+		SchemaVersion: AssignmentSchemaVersionV3,
+		Epoch:         testEpoch, Revision: 3, SnapshotHash: "stable-hash",
 	}); err != nil {
 		t.Fatalf("same snapshot error = %v", err)
+	}
+	var previousProtocolCursor assignmentCursorState
+	if err := common.Unmarshal([]byte(fmt.Sprintf(
+		`{"schemaVersion":2,"assignmentSchemaVersion":2,"epoch":%q,"revision":3,"snapshotHash":"v2-hash","appliedAt":"2026-08-18T00:00:00Z"}`,
+		testEpoch,
+	)), &previousProtocolCursor); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSnapshotAgainstCursor(previousProtocolCursor, Snapshot{
+		SchemaVersion: AssignmentSchemaVersionV3,
+		Epoch:         testEpoch, Revision: 3, SnapshotHash: "v3-hash",
+	}); err != nil {
+		t.Fatalf("protocol transition error = %v", err)
 	}
 	if err := validateSnapshotAgainstCursor(cursor, Snapshot{
 		Epoch:    "01900000-0000-7000-8000-000000000099",

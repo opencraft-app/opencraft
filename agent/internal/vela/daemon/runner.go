@@ -120,11 +120,12 @@ type Status struct {
 }
 
 type assignmentCursorState struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	Epoch         string    `json:"epoch"`
-	Revision      int64     `json:"revision"`
-	SnapshotHash  string    `json:"snapshotHash"`
-	AppliedAt     time.Time `json:"appliedAt"`
+	SchemaVersion           int       `json:"schemaVersion"`
+	AssignmentSchemaVersion int       `json:"assignmentSchemaVersion,omitempty"`
+	Epoch                   string    `json:"epoch"`
+	Revision                int64     `json:"revision"`
+	SnapshotHash            string    `json:"snapshotHash"`
+	AppliedAt               time.Time `json:"appliedAt"`
 }
 
 type Runner struct {
@@ -312,11 +313,12 @@ func (r *Runner) Run(ctx context.Context) error {
 			continue
 		}
 		cursor = assignmentCursorState{
-			SchemaVersion: 1,
-			Epoch:         result.Snapshot.Epoch,
-			Revision:      result.Snapshot.Revision,
-			SnapshotHash:  result.Snapshot.SnapshotHash,
-			AppliedAt:     r.config.Now().UTC(),
+			SchemaVersion:           2,
+			AssignmentSchemaVersion: result.Snapshot.SchemaVersion,
+			Epoch:                   result.Snapshot.Epoch,
+			Revision:                result.Snapshot.Revision,
+			SnapshotHash:            result.Snapshot.SnapshotHash,
+			AppliedAt:               r.config.Now().UTC(),
 		}
 		if err := store.Write(assignmentCursor, cursor); err != nil {
 			return err
@@ -361,7 +363,8 @@ func validateSnapshotAgainstCursor(
 	case snapshot.Revision < cursor.Revision:
 		return ErrRevisionRegressed
 	case snapshot.Revision == cursor.Revision &&
-		snapshot.SnapshotHash != cursor.SnapshotHash:
+		snapshot.SnapshotHash != cursor.SnapshotHash &&
+		cursor.AssignmentSchemaVersion == snapshot.SchemaVersion:
 		return ErrRevisionCollision
 	default:
 		return nil
@@ -653,7 +656,10 @@ func loadAssignmentCursor(
 	}
 	var cursor assignmentCursorState
 	if common.Unmarshal(data, &cursor) != nil ||
-		cursor.SchemaVersion != 1 ||
+		(cursor.SchemaVersion != 1 && cursor.SchemaVersion != 2) ||
+		(cursor.SchemaVersion == 2 &&
+			(cursor.AssignmentSchemaVersion < AssignmentSchemaVersionV1 ||
+				cursor.AssignmentSchemaVersion > AssignmentSchemaVersion)) ||
 		!isUUIDv7(cursor.Epoch) ||
 		cursor.Revision < 1 ||
 		cursor.SnapshotHash == "" {
