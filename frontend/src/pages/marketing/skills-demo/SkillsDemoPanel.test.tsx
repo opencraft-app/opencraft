@@ -201,6 +201,93 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
     expect(screen.getByText("finance-news")).toBeInTheDocument();
   });
 
+  it("suppresses the native search clear control when the custom clear button is shown", async () => {
+    renderPanel(mode, "installed");
+    await screen.findByText("finance-news");
+
+    const search = screen.getByRole("searchbox", { name: "搜索已安装技能" });
+    fireEvent.change(search, { target: { value: "builder" } });
+
+    expect(search).toHaveClass(
+      "[&::-webkit-search-cancel-button]:appearance-none",
+      "[&::-webkit-search-decoration]:appearance-none",
+    );
+    expect(screen.getByRole("button", { name: "清除已安装技能搜索" })).toBeInTheDocument();
+  });
+
+  it("uses the skill package search field styling for discover and installed tabs", async () => {
+    renderPanel(mode);
+
+    const discoverSearch = screen.getByPlaceholderText(
+      mode === "domestic" ? "搜索 SkillHub 中的技能" : "搜索 Skills.sh / Clawhub 中的技能",
+    );
+    expect(discoverSearch).toHaveClass("lv-skills-search-input", "lv-agent-search-box-input");
+    expect(discoverSearch.parentElement).toHaveClass("lv-agent-search-box");
+    expect(discoverSearch.parentElement?.querySelector(".lv-agent-search-box-icon")).toBeInTheDocument();
+
+    cleanup();
+    renderPanel(mode, "installed");
+    await screen.findByText("finance-news");
+
+    const installedSearch = screen.getByRole("searchbox", { name: "搜索已安装技能" });
+    expect(installedSearch).toHaveClass("lv-skills-search-input", "lv-agent-search-box-input");
+    expect(installedSearch.parentElement).toHaveClass("lv-agent-search-box");
+    expect(installedSearch.parentElement?.querySelector(".lv-agent-search-box-icon")).toBeInTheDocument();
+  });
+
+  it("filters installed SkillHub instances by relative path while keeping the instance id for uninstall", async () => {
+    const dataLayer = makeDataLayer(mode);
+    dataLayer.listInstalled = vi.fn(async () => ({
+      failedSources: [],
+      skills: [{
+        registry: "skillhub" as const,
+        rawId: "skill_91fca7e4",
+        slug: "creative/humanizer",
+        name: "humanizer",
+        category: "creative",
+        version: "2.5.1",
+        registries: ["skillhub" as const],
+        sourceLabel: "SkillHub",
+        uninstallable: true,
+        nativeAliases: ["humanizer", "skill_91fca7e4", "creative/humanizer"],
+      }, {
+        registry: "skillhub" as const,
+        rawId: "skill_e95600124c0d7729fa4d",
+        slug: "unclecheng-reduce-ai-perception-v2",
+        name: "humanizer",
+        category: "creative",
+        version: "4.1.0",
+        registries: ["skillhub" as const],
+        sourceLabel: "SkillHub",
+        uninstallable: true,
+        nativeAliases: ["humanizer", "skill_e95600124c0d7729fa4d", "unclecheng-reduce-ai-perception-v2"],
+      }],
+    }));
+    mocks.createSkillsDataLayer.mockReturnValue(dataLayer);
+    render(<SkillsDemoPanel botId="bot-1" execDebugCommand={vi.fn()} mode={mode} initialTab="installed" />);
+
+    await screen.findByText("creative/humanizer");
+    const search = screen.getByRole("searchbox", { name: "搜索已安装技能" });
+    fireEvent.change(search, { target: { value: "unclecheng-reduce-ai-perception-v2" } });
+
+    const instancePath = screen.getByText("unclecheng-reduce-ai-perception-v2");
+    const row = instancePath.closest("li") as HTMLElement;
+    expect(row).toHaveTextContent("humanizer");
+    expect(row).toHaveTextContent("v4.1.0");
+    expect(row).not.toHaveTextContent("skill_e95600124c0d7729fa4d");
+    expect(screen.getByText("(1/2)")).toBeInTheDocument();
+    expect(screen.queryByText("creative/humanizer")).not.toBeInTheDocument();
+
+    fireEvent.click(within(row).getByRole("button", { name: /删除技能/ }));
+    expect(dataLayer.uninstall).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认删除 humanizer" }));
+    await waitFor(() => expect(dataLayer.uninstall).toHaveBeenCalledWith(expect.objectContaining({
+      registry: "skillhub",
+      rawId: "skill_e95600124c0d7729fa4d",
+      slug: "unclecheng-reduce-ai-perception-v2",
+    })));
+  });
+
   it("orders installed source filters by product priority", async () => {
     const dataLayer = makeDataLayer(mode);
     dataLayer.listInstalled = vi.fn(async () => ({

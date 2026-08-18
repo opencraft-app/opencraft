@@ -44,6 +44,12 @@ def playground_frontend_auth_api_base_url(env: str) -> str:
     return f"https://api-{env}.lightclaw.tech"
 
 
+def playground_frontend_region(env: str) -> str:
+    if playground_region(env) in {"kr", "jp"}:
+        return "global"
+    return "cn"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a release image from .ci/runtime/release-bundles.manifest")
     parser.add_argument("--service", required=True, help="Bundle id, e.g. payment")
@@ -211,15 +217,14 @@ def all_target_images_exist(targets: list[ImageTarget], tag: str) -> tuple[bool,
 
 def resolve_docker_build_args(service: str, env: str) -> dict[str, str]:
     if service == "frontend" and is_playground_env(env):
-        build_args = {"VITE_AUTH_API_BASE_URL": playground_frontend_auth_api_base_url(env)}
-        if playground_region(env) == "jp":
-            build_args.update(
-                {
-                    "NEXT_PUBLIC_REGION": "global",
-                    "VITE_REGION": "global",
-                }
-            )
-        return build_args
+        auth_api_base_url = playground_frontend_auth_api_base_url(env)
+        region = playground_frontend_region(env)
+        return {
+            "NEXT_PUBLIC_AUTH_API_BASE_URL": auth_api_base_url,
+            "NEXT_PUBLIC_REGION": region,
+            "VITE_AUTH_API_BASE_URL": auth_api_base_url,
+            "VITE_REGION": region,
+        }
     return {}
 
 

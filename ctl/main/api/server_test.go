@@ -1790,6 +1790,31 @@ func TestInternalListPassesUnauthorizedWithBearerMismatch(t *testing.T) {
 	}
 }
 
+// TestInternalBearerPrefersLightclawToken verifies ctl's internal endpoints
+// accept the same token used by trade when both legacy and shared tokens exist.
+func TestInternalBearerPrefersLightclawToken(t *testing.T) {
+	t.Setenv("CTL_INTERNAL_TOKEN", "legacy-secret")
+	t.Setenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "shared-secret")
+
+	router := newRouter(&instanceHandler{logic: &stubLogic{}}, &bundleHandler{}, &passHandler{})
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/ctl/passes", nil)
+	req.Header.Set("Authorization", "Bearer shared-secret")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected shared token to pass auth and reach validation, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/internal/ctl/passes", nil)
+	req.Header.Set("Authorization", "Bearer legacy-secret")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected legacy token to be rejected when shared token is set, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 // TestInternalListPassesMissingExternalUserID 验证：缺少 external_user_id 参数时
 // 返回 ErrInvalidParam，不会触达 logic 层。
 func TestInternalListPassesMissingExternalUserID(t *testing.T) {

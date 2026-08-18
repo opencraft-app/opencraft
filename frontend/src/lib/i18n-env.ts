@@ -7,8 +7,8 @@
  *
  * 与 mono2 自身 i18n（`src/i18n/index.ts`）共用 `localStorage('lw-locale')`：
  *
- *   - **优先级**：`lw-locale`（用户主动切换）> `isGlobal`（编译期默认）
- *   - 国内站默认中文，国际站默认英文；任何站点都允许通过 LanguageSwitcher 切换
+ *   - **优先级**：国际站 `lw-locale`（用户主动切换）> `isGlobal`（编译期默认）
+ *   - 国内站固定中文，忽略跨站点遗留的语言覆盖；国际站默认英文并允许切换
  *   - SDK 端的 tea-app i18n 是 init-once 设计（hasInited 锁定后 lng 无法热切换），
  *     因此**切换 SDK 语言必须刷新页面**
  *
@@ -77,14 +77,15 @@ function readStoredLocale(): StoredLocale | null {
  * 是否英文环境。
  *
  * 决策表：
- *   | lw-locale         | isGlobal | isEnglishEnv |
- *   | ----------------- | -------- | ------------ |
- *   | en-US/id-ID       | -        | true         |
- *   | zh-CN/zh-SG/zh-Hant| -       | false        |
- *   | (未设置)           | true     | true         |
- *   | (未设置)           | false    | false        |
+ *   | isGlobal | lw-locale          | isEnglishEnv |
+ *   | -------- | ------------------ | ------------ |
+ *   | false    | 任意 / 未设置       | false        |
+ *   | true     | en-US/id-ID        | true         |
+ *   | true     | zh-CN/zh-SG/zh-Hant | false        |
+ *   | true     | 未设置             | true         |
  */
 export const isEnglishEnv: boolean = (() => {
+  if (!isGlobal) return false;
   const stored = readStoredLocale();
   if (stored === PUBLIC_SITE_LOCALES.EN_US || stored === PUBLIC_SITE_LOCALES.ID_ID) return true;
   if (stored !== null) return false;

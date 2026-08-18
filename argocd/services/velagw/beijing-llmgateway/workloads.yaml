@@ -45,7 +45,7 @@ spec:
         - name: LLMGATEWAY_ENVIRONMENT
           value: prod
         - name: OTEL_SERVICE_VERSION
-          value: 348b446
+          value: 174aaac
         envFrom:
         - secretRef:
             name: llmgateway-control-runtime
@@ -147,7 +147,7 @@ spec:
         - name: LLMGATEWAY_SHUTDOWN_TIMEOUT
           value: 240s
         - name: OTEL_SERVICE_VERSION
-          value: 348b446
+          value: 174aaac
         envFrom:
         - secretRef:
             name: llmgateway-traffic-runtime
@@ -250,7 +250,7 @@ spec:
         - name: LLMGATEWAY_SQL_CONN_MAX_IDLE_TIME
           value: 2m
         - name: OTEL_SERVICE_VERSION
-          value: 348b446
+          value: 174aaac
         envFrom:
         - secretRef:
             name: llmgateway-worker-runtime
@@ -361,7 +361,7 @@ spec:
         - name: LLMGATEWAY_SET_AUTOSCALER_REDIS_DB_LIMIT
           value: '256'
         - name: OTEL_SERVICE_VERSION
-          value: 348b446
+          value: 174aaac
         envFrom:
         - secretRef:
             name: llmgateway-worker-runtime
@@ -430,7 +430,7 @@ spec:
         - name: LLMGATEWAY_ENVIRONMENT
           value: prod
         - name: OTEL_SERVICE_VERSION
-          value: 348b446
+          value: 174aaac
         envFrom:
         - secretRef:
             name: llmgateway-worker-runtime
@@ -513,7 +513,7 @@ spec:
         - name: LLMGATEWAY_SQL_CONN_MAX_IDLE_TIME
           value: 2m
         - name: OTEL_SERVICE_VERSION
-          value: 348b446
+          value: 174aaac
         envFrom:
         - secretRef:
             name: llmgateway-worker-runtime
@@ -602,7 +602,7 @@ spec:
         - name: LLMGATEWAY_SQL_CONN_MAX_IDLE_TIME
           value: 2m
         - name: OTEL_SERVICE_VERSION
-          value: 348b446
+          value: 174aaac
         envFrom:
         - secretRef:
             name: llmgateway-worker-runtime

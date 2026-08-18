@@ -28,18 +28,27 @@ import (
 // 测试 uin / appId 一致 (PDF §国内站测试环境-业务提测 提供的测试凭据)。任何 externalUserId
 // 入参都返回这对值, 让任意 user 都能跑通联调 (后续切真实 user 时只需关闭 ShadowMockEnabled)。
 const (
-	mockShadowUin   = "700000164995"
-	mockShadowAppID = "251202221"
+	defaultMockShadowUin   = "700000164995"
+	defaultMockShadowAppID = "251202221"
 )
 
 // mockShadowClient 是 shadowclient.Client 的 in-process mock 实现。
 //
-// 构造: newMockShadowClient() 即可, 无需任何参数 (mock binding 是包级常量)。
-type mockShadowClient struct{}
+// 构造: newMockShadowClient(uin, appID)。参数为空时使用国内联调默认值。
+type mockShadowClient struct {
+	uin   string
+	appID string
+}
 
-// newMockShadowClient 构造 mock client 实例 (零开销, 无配置)。
-func newMockShadowClient() shadowclient.Client {
-	return &mockShadowClient{}
+// newMockShadowClient 构造 mock client 实例。
+func newMockShadowClient(uin, appID string) shadowclient.Client {
+	if uin == "" {
+		uin = defaultMockShadowUin
+	}
+	if appID == "" {
+		appID = defaultMockShadowAppID
+	}
+	return &mockShadowClient{uin: uin, appID: appID}
 }
 
 // GetBindingByExternalUserID 实现 shadowclient.Client 接口。
@@ -48,8 +57,8 @@ func newMockShadowClient() shadowclient.Client {
 func (m *mockShadowClient) GetBindingByExternalUserID(_ context.Context, externalUserID string) (*shadowclient.Binding, error) {
 	return &shadowclient.Binding{
 		UserID:   externalUserID,
-		Uin:      mockShadowUin,
-		OwnerUin: mockShadowUin, // 测试场景 OwnerUin 与 Uin 同值
-		AppID:    mockShadowAppID,
+		Uin:      m.uin,
+		OwnerUin: m.uin, // 测试场景 OwnerUin 与 Uin 同值
+		AppID:    m.appID,
 	}, nil
 }

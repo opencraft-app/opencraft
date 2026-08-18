@@ -109,3 +109,109 @@ func TestResolveCurrency(t *testing.T) {
 		}
 	}
 }
+
+func TestQuote_IntlHighPrecisionPriceUsesCentsContract(t *testing.T) {
+	ctl := &fakeCTL{getBundleByIDFn: func(_ context.Context, _ string) (*ctlclient.BundleDetail, error) {
+		return stdBundle(), nil
+	}}
+	bs := &fakeBundleStore{def: stdRenewDef()}
+	jc := &fakeJifei{getPriceFn: func(_ context.Context, _ *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+		return &jifeiclient.GetPriceResponse{
+			Data: []jifeiclient.GetPriceData{
+				{
+					Price:         "999999",
+					TotalCost:     "999999",
+					RealTotalCost: "999999",
+					Currency:      "USD",
+					HighPrecisionPrice: &jifeiclient.HighPrecisionPrice{
+						PriceHigh:         "650000000",
+						TotalCostHigh:     "1400000000",
+						RealTotalCostHigh: "1200000000",
+					},
+				},
+			},
+		}, nil
+	}}
+	svc := New(Deps{
+		CTLClient:   ctl,
+		BundleStore: bs,
+		JifeiClient: jc,
+		SiteKind:    "intl",
+	})
+
+	got, err := svc.Quote(context.Background(), stdQuoteReq())
+	if err != nil {
+		t.Fatalf("Quote: %v", err)
+	}
+	if got.Price != "650" || got.TotalCost != "1400" || got.RealTotalCost != "1200" {
+		t.Fatalf("Quote amounts = price:%s total:%s real:%s, want 650/1400/1200",
+			got.Price, got.TotalCost, got.RealTotalCost)
+	}
+
+	renewGot, err := svc.QuoteRenew(context.Background(), stdQuoteRenewReq())
+	if err != nil {
+		t.Fatalf("QuoteRenew: %v", err)
+	}
+	if renewGot.Price != "650" || renewGot.TotalCost != "1400" || renewGot.RealTotalCost != "1200" {
+		t.Fatalf("QuoteRenew amounts = price:%s total:%s real:%s, want 650/1400/1200",
+			renewGot.Price, renewGot.TotalCost, renewGot.RealTotalCost)
+	}
+}
+
+func TestQuote_CNHighPrecisionPriceIgnored(t *testing.T) {
+	ctl := &fakeCTL{getBundleByIDFn: func(_ context.Context, _ string) (*ctlclient.BundleDetail, error) {
+		return stdBundle(), nil
+	}}
+	bs := &fakeBundleStore{def: stdDef()}
+	jc := &fakeJifei{getPriceFn: func(_ context.Context, _ *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+		return &jifeiclient.GetPriceResponse{
+			Data: []jifeiclient.GetPriceData{
+				{
+					Price:         "3900",
+					TotalCost:     "3900",
+					RealTotalCost: "3510",
+					Currency:      "CNY",
+					HighPrecisionPrice: &jifeiclient.HighPrecisionPrice{
+						PriceHigh:         "650000000",
+						TotalCostHigh:     "1400000000",
+						RealTotalCostHigh: "1200000000",
+					},
+				},
+			},
+		}, nil
+	}}
+	svc := New(Deps{
+		CTLClient:   ctl,
+		BundleStore: bs,
+		JifeiClient: jc,
+	})
+
+	got, err := svc.Quote(context.Background(), stdQuoteReq())
+	if err != nil {
+		t.Fatalf("Quote: %v", err)
+	}
+	if got.Price != "3900" || got.TotalCost != "3900" || got.RealTotalCost != "3510" {
+		t.Fatalf("Quote amounts = price:%s total:%s real:%s, want original 3900/3900/3510",
+			got.Price, got.TotalCost, got.RealTotalCost)
+	}
+}
+
+func TestHighPrecisionAmountToCents(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"650000000", "650"},
+		{"1400000000", "1400"},
+		{"1200000000", "1200"},
+		{"750000000.0", "750"},
+		{"1", "0.000001"},
+		{"", ""},
+		{"bad", ""},
+	}
+	for _, tc := range cases {
+		if got := highPrecisionAmountToCents(tc.in); got != tc.want {
+			t.Errorf("highPrecisionAmountToCents(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

@@ -77,11 +77,15 @@ class ProdDbMigrationTests(unittest.TestCase):
             "example.com/sandbox-migrate:tag",
         )
 
-    def test_diff_hint_does_not_gate_when_source_sha_does_not_touch_migration_paths(self) -> None:
+    def test_diff_hint_keeps_production_migration_contract_when_source_sha_does_not_touch_migration_paths(self) -> None:
         with mock.patch.object(
             prod_db_migration,
             "plan_release_gates",
-            return_value=SimpleNamespace(db_mode="migration", requires_db_job=True, migration_changed=False),
+            return_value=SimpleNamespace(db_mode="migration", requires_db_job=False, migration_changed=False),
+        ), mock.patch.object(
+            prod_db_migration,
+            "load_db_contract",
+            return_value={"migration_operation": "migration"},
         ):
             hint = prod_db_migration.migration_diff_hint(
                 "payment",

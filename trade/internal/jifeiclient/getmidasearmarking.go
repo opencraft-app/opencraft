@@ -6,7 +6,7 @@ import "context"
 // 接口入参（para 内层）。
 //
 // **协议参考**：`/root/project/mono/.tmp/专款专用获取支付参数+-+qcloud.margin.getMidasEarmarking.pdf`
-// （5 页 / 2026-05-11 投放）；云 API 别名 CreatePayUrl；componentName = "MC"（PDF 第 4 页 curl）。
+// （5 页 / 2026-05-11 投放）；componentName = "MC"（PDF 第 4 页 curl）。
 //
 // **字段集（PDF 第 3 页）**：
 //
@@ -18,13 +18,16 @@ import "context"
 //	platform           string   否   "mobile" / "pc"，默认 pc（对应 midas pf 参数）
 //	wxOpenId           string   否   微信公众号/小程序场景必填
 //	wxAppId            string   否   微信侧 appid
+//	cancelUrl          string   否   用户取消支付后的前端回跳地址
+//	returnUrl          string   否   用户完成支付后的前端回跳地址
 //	contractOrder      int      否   1=支付中签约 / 0=非签约
 //	channel            string   否   "remitPay"=对公打款 / "wechatClawbot"=微信 Clawbot
 //	remitpayPayerName  string   否   channel=remitPay 时必传
 //
 // **Lightclaw 本期场景约束（Q-PAY-1 ~ Q-PAY-5 拍板 2026-05-11）**：
-//   - 仅传 OwnerUin / Uin / DealNames 三个必填字段（Q-PAY-4：不传 platform，jifei 默认 pc）
-//   - 不传 VoucherIds / WxOpenID / WxAppID / ContractOrder / Channel / RemitpayPayerName
+//   - 国内站仅传 OwnerUin / Uin / DealNames 三个必填字段（Q-PAY-4：不传 platform，jifei 默认 pc）
+//   - 国际站获取支付链接已切到计费 CloudAPI CreatePayUrl，本接口仅保留给国内站路径使用。
+//   - 不传 VoucherIds / WxOpenID / WxAppID / Channel / RemitpayPayerName
 //     （与 Q48 协议表面最小化原则一致 — Lightclaw 控制台没有这些 UI 入口）
 //
 // **PascalCase 命名一致性**：与 GenerateDeals / GenerateDealsAndPay 保持 PascalCase
@@ -34,9 +37,14 @@ type GetMidasEarmarkingRequest struct {
 	Uin       string   `json:"uin"`
 	DealNames []string `json:"dealNames"`
 	// v1.7.31 接口拆分新增：可选字段，空值时不序列化（omitempty），兼容现有行为。
-	Platform string `json:"platform,omitempty"` // "pc" / "mobile"，默认 pc
-	WxOpenID string `json:"wxOpenId,omitempty"` // 微信场景必填
-	WxAppID  string `json:"wxAppId,omitempty"`  // 微信场景必填
+	Platform  string `json:"platform,omitempty"`  // "pc" / "mobile"，默认 pc
+	WxOpenID  string `json:"wxOpenId,omitempty"`  // 微信场景必填
+	WxAppID   string `json:"wxAppId,omitempty"`   // 微信场景必填
+	CancelURL string `json:"cancelUrl,omitempty"` // 取消支付后的前端回跳地址
+	ReturnURL string `json:"returnUrl,omitempty"` // 完成支付后的前端回跳地址
+
+	ContractOrder int    `json:"contractOrder,omitempty"` // 1=支付中签约 / 0=非签约
+	PayScene      string `json:"payScene,omitempty"`      // 国际站信用卡签约支付：credit_card
 }
 
 // GetMidasEarmarkingResponse 是 CGW returnValue 反序列化目标。

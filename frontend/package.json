@@ -8,6 +8,7 @@
     "dev:cn": "NEXT_PUBLIC_REGION=cn VITE_REGION=cn sh -c \"node scripts/clean-next-build-state.mjs && node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next dev -p 5174\"",
     "dev:global": "NEXT_PUBLIC_REGION=global VITE_REGION=global NEXT_PUBLIC_AUTH_API_BASE_URL=https://api.lightvela.ai sh -c \"node scripts/clean-next-build-state.mjs && node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next dev -p 5174\"",
     "dev:global:proxy": "NEXT_PUBLIC_REGION=global VITE_REGION=global NEXT_PUBLIC_AUTH_API_BASE_URL=local-proxy VITE_AUTH_API_BASE_URL=local-proxy sh -c \"node scripts/clean-next-build-state.mjs && node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next dev -p 5174\"",
+    "dev:global:kr": "NEXT_PUBLIC_REGION=global VITE_REGION=global NEXT_PUBLIC_AUTH_API_BASE_URL=https://api-sandbox-kr-1.lightclaw.tech sh -c \"node scripts/clean-next-build-state.mjs && node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next dev -p 5174\"",
     "dev:global:cn-api": "NEXT_PUBLIC_REGION=global VITE_REGION=global NEXT_PUBLIC_AUTH_API_BASE_URL=https://api.lightclaw.cn sh -c \"node scripts/clean-next-build-state.mjs && node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next dev -p 5174\"",
     "i18n:extract": "node scripts/i18n-extract.mjs",
     "i18n:check": "node scripts/i18n-extract.mjs --check",

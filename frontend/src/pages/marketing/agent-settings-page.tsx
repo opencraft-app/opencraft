@@ -3373,16 +3373,71 @@ export const AgentSettingsPage = ({
   /**
    * AgentChat（LightVela）启动 token：
    * - 接口：`POST /v1/instances/:instanceId/agentchat/launch-token`，需带 LightClaw Bearer 登录态
-   * - TTL：300 秒；过期前 60 秒自动续期
-   * - 仅在用户进入 chat tab 且 activeBot 存在时拉取，避免无意义请求
-   * - 401 / 网络错误：状态置为 error，由 chat tab UI 提示并提供重试
+   * - TTL 由后端 `expires_at` 决定（默认 24h）；本页不再维护 setTimeout 续期
+   * - 续期改由 SDK 热更新机制驱动，经 refreshLaunchToken 拉新 token，不写本页 state（不重渲染 / 重连）
+   * - 首帧仅拉取一次写 state 供面板挂载；仅在 chat tab 且 activeBot 存在时拉取
+   * - 401 / 网络错误：状态置为 error，由 UI 提示并重试
    */
   const [launchToken, setLaunchToken] = useState<string | null>(null);
+  // 首帧 token 过期时刻（Unix 秒；后端未下发为 null），下传给面板判断复用。
+  const [launchTokenExpiresAt, setLaunchTokenExpiresAt] = useState<number | null>(null);
   const [launchTokenStatus, setLaunchTokenStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [launchTokenError, setLaunchTokenError] = useState<string | null>(null);
   const [launchTokenRefreshTick, setLaunchTokenRefreshTick] = useState(0);
 
   const activeBotId = activeBot?.id;
+
+  /**
+   * 拉取一个 launch token（纯请求，不碰 state），供首帧拉取与 SDK 续期回调共用。
+   * 返回 token 及过期时刻（expiresAt，Unix 秒；后端未返回为 undefined），失败抛错。
+   */
+  const fetchLaunchTokenValue = useCallback(
+    async (botId: string, signal?: AbortSignal): Promise<{ token: string; expiresAt?: number }> => {
+      const baseUrl = resolveConfiguredAuthApiBaseUrl();
+      if (!baseUrl) {
+        throw new Error(AUTH_SERVICE_UNAVAILABLE_MESSAGE);
+      }
+      const authToken = readStoredAuthToken();
+      if (!authToken) {
+        throw new Error("未登录，无法获取 AgentChat 启动 token");
+      }
+
+      const url = `${baseUrl.replace(/\/$/, "")}/v1/instances/${encodeURIComponent(botId)}/agentchat/launch-token`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: "{}",
+        signal,
+      });
+
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
+        try {
+          const body = await response.json() as { code?: string; message?: string };
+          if (body?.message) detail = `${body.code ?? response.status}: ${body.message}`;
+        } catch {
+          // 忽略响应体解析错误
+        }
+        throw new Error(detail);
+      }
+
+      const json = await response.json() as {
+        code?: string;
+        data?: { launch_token?: string; expires_at?: number };
+        message?: string;
+      };
+      const token = json?.data?.launch_token;
+      if (!token) {
+        throw new Error(json?.message || "返回数据缺少 launch_token");
+      }
+      const expiresAt = typeof json?.data?.expires_at === "number" ? json.data.expires_at : undefined;
+      return { token, expiresAt };
+    },
+    [],
+  );
 
   useEffect(() => {
     // 仅在 chat tab 激活、activeBot 已就位、用户已登录（拿到账号 id）时拉取
@@ -3395,82 +3450,18 @@ export const AgentSettingsPage = ({
       return;
     }
 
-    const baseUrl = resolveConfiguredAuthApiBaseUrl();
-    if (!baseUrl) {
-      setLaunchTokenStatus("error");
-      setLaunchTokenError(AUTH_SERVICE_UNAVAILABLE_MESSAGE);
-      return;
-    }
-
-    const authToken = readStoredAuthToken();
-    if (!authToken) {
-      setLaunchTokenStatus("error");
-      setLaunchTokenError("未登录，无法获取 AgentChat 启动 token");
-      return;
-    }
-
     const controller = new AbortController();
     let cancelled = false;
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const fetchLaunchToken = async () => {
+    const loadInitialToken = async () => {
       setLaunchTokenStatus("loading");
       setLaunchTokenError(null);
       try {
-        const url = `${baseUrl.replace(/\/$/, "")}/v1/instances/${encodeURIComponent(activeBotId)}/agentchat/launch-token`;
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${authToken}`,
-          },
-          body: "{}",
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          if (cancelled) return;
-          let detail = `HTTP ${response.status}`;
-          try {
-            const body = await response.json() as { code?: string; message?: string };
-            if (body?.message) detail = `${body.code ?? response.status}: ${body.message}`;
-          } catch {
-            // 忽略响应体解析错误
-          }
-          setLaunchTokenStatus("error");
-          setLaunchTokenError(detail);
-          return;
-        }
-
-        const json = await response.json() as {
-          code?: string;
-          data?: { launch_token?: string; expires_at?: number };
-          message?: string;
-        };
+        const { token, expiresAt } = await fetchLaunchTokenValue(activeBotId, controller.signal);
         if (cancelled) return;
-
-        const token = json?.data?.launch_token;
-        const expiresAt = json?.data?.expires_at;
-        if (!token) {
-          setLaunchTokenStatus("error");
-          setLaunchTokenError(json?.message || "返回数据缺少 launch_token");
-          return;
-        }
-
         setLaunchToken(token);
+        setLaunchTokenExpiresAt(typeof expiresAt === "number" ? expiresAt : null);
         setLaunchTokenStatus("ready");
-
-        // 过期前 60s 触发续期；若返回的 expires_at 不可信则按 4 分钟兜底
-        const now = Math.floor(Date.now() / 1000);
-        const ttlSeconds = typeof expiresAt === "number" && expiresAt > now
-          ? expiresAt - now
-          : 300;
-        const refreshAfterMs = Math.max(30, ttlSeconds - 60) * 1000;
-        refreshTimer = setTimeout(() => {
-          if (!cancelled) {
-            setLaunchTokenRefreshTick((tick) => tick + 1);
-          }
-        }, refreshAfterMs);
       } catch (e) {
         if (cancelled || (e as Error)?.name === "AbortError") return;
         setLaunchTokenStatus("error");
@@ -3478,19 +3469,30 @@ export const AgentSettingsPage = ({
       }
     };
 
-    fetchLaunchToken();
+    void loadInitialToken();
 
     return () => {
       cancelled = true;
       controller.abort();
-      if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [activeSection, activeBotId, accountId, launchTokenRefreshTick]);
+  }, [activeSection, activeBotId, accountId, launchTokenRefreshTick, fetchLaunchTokenValue]);
+
+  /**
+   * SDK 续期入口：token 将过期时调用，拿新 token 返回给面板。不写 state，故不触发
+   * 重渲染 / 重连（保活不断连的关键）。expiresAt 为 Unix 秒，供面板判断复用。
+   */
+  const refreshLaunchToken = useCallback(async (): Promise<{ token: string; expiresAt?: number }> => {
+    if (!activeBotId) {
+      throw new Error("无有效实例，无法续期 AgentChat token");
+    }
+    return fetchLaunchTokenValue(activeBotId);
+  }, [activeBotId, fetchLaunchTokenValue]);
 
   // 切到非 chat tab 或换 bot 时，清空已缓存的 token，避免泄露给下个 bot
   useEffect(() => {
     if (activeSection !== "chat") {
       setLaunchToken(null);
+      setLaunchTokenExpiresAt(null);
       setLaunchTokenStatus("idle");
       setLaunchTokenError(null);
     }
@@ -5527,9 +5529,11 @@ export const AgentSettingsPage = ({
                               commandExecutor={lightvelaCommandExecutor}
                               instanceId={sdkInstance.InstanceId}
                               launchToken={launchToken}
+                              launchTokenExpiresAt={launchTokenExpiresAt}
                               launchTokenError={launchTokenError}
                               launchTokenStatus={launchTokenStatus}
                               onRetryLaunchToken={retryLaunchToken}
+                              onRefreshLaunchToken={refreshLaunchToken}
                             />
                           )}
                           {activeSection === "memory" && (

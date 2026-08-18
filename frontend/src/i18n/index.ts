@@ -13,7 +13,8 @@
  *
  * 设计要点：
  *   - 默认语言由 `src/lib/region.ts` 根据 `VITE_REGION` 编译期决定
- *   - 浏览器侧可通过 `localStorage.setItem('lw-locale', 'en-US')` 覆盖
+ *   - 国际站浏览器侧可通过 `localStorage.setItem('lw-locale', 'en-US')` 覆盖
+ *   - 国内站固定中文，忽略跨站点遗留的语言覆盖
  *
  * 不做的事（保持简单）：
  *   - 不接 `i18next-browser-languagedetector`
@@ -23,7 +24,7 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 
-import { DEFAULT_LOCALE, readLocaleFromPath } from "@/lib/region";
+import { DEFAULT_LOCALE, isGlobal, readLocaleFromPath } from "@/lib/region";
 import enUS from "./generated/en-US.json";
 import idID from "./generated/id-ID.json";
 import zhCN from "./generated/zh-CN.json";
@@ -64,14 +65,12 @@ const readOverride = (): string | null => {
 };
 
 /**
- * 初始语言优先级（仅国际站涉及多语言）：
+ * 初始语言优先级（仅国际站涉及多语言；国内站固定中文）：
  *   1. URL 路径前缀（/en-us/...、/zh-cn/...、/zh-sg/...、/id-id/...；兼容旧 /en、/zh）
  *      —— 给搜索引擎跳转 / 直接外链使用
  *   2. 国际站裸 / 固定使用区域默认英文，避免陈旧 localStorage 把首页首屏改成中文
  *   3. localStorage 用户手动覆盖
  *   4. 区域默认（国际站默认英文，国内站默认中文）
- *
- * 在国内站，readLocaleFromPath() 始终返回 null，等价于回退到原有逻辑。
  */
 const pathnameForInitialLocale =
   typeof window !== "undefined" ? window.location.pathname : null;
@@ -83,8 +82,10 @@ const shouldUseDefaultLocaleForBarePublicRoot =
   pathnameForInitialLocale === "/" && DEFAULT_LOCALE === SUPPORTED_LOCALES.EN_US;
 
 const initialLocale =
-  initialLocaleFromPath ??
-  (shouldUseDefaultLocaleForBarePublicRoot ? DEFAULT_LOCALE : readOverride()) ??
+  (isGlobal
+    ? initialLocaleFromPath ??
+      (shouldUseDefaultLocaleForBarePublicRoot ? DEFAULT_LOCALE : readOverride())
+    : null) ??
   DEFAULT_LOCALE;
 
 /**

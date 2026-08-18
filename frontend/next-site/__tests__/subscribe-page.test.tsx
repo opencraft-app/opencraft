@@ -1,6 +1,6 @@
 import React, { type ReactNode } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/site/public-site-header", () => ({
   PublicSiteHeader: ({ authControls }: { authControls?: ReactNode }) => (
@@ -12,35 +12,46 @@ vi.mock("@/components/site/legal-footer", () => ({
   LegalFooter: () => <footer />,
 }));
 
+/* 可变的 agent-context 桩：支付回跳用例需要「已登录 + 未发货 → 发货」的状态迁移。 */
+const openClawState = {
+  isLoggedIn: false,
+  isSubscribed: false,
+  subscribe: vi.fn(),
+  addBot: vi.fn(),
+  bots: [] as { id: string; status: string }[],
+  user: null as unknown,
+  refreshPasses: vi.fn(),
+  activePass: null as unknown,
+  latestPass: null as unknown,
+};
+
 vi.mock("@/contexts/agent-context", () => ({
-  useOpenClaw: () => ({
-    isLoggedIn: false,
-    isSubscribed: false,
-    subscribe: vi.fn(),
-    addBot: vi.fn(),
-    bots: [],
-    user: null,
-    refreshPasses: vi.fn(),
-    activePass: null,
-    latestPass: null,
-  }),
+  useOpenClaw: () => openClawState,
 }));
+
+const sessionState = {
+  authReady: true,
+  isAuthenticated: false,
+};
 
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => ({
-    authReady: true,
-    isAuthenticated: false,
+    authReady: sessionState.authReady,
+    isAuthenticated: sessionState.isAuthenticated,
     session: {
-      stage: "anonymous",
+      stage: sessionState.isAuthenticated ? "authenticated" : "anonymous",
       user: null,
     },
   }),
 }));
 
+/* 登录态会走 listBundles 拉真实套餐；回跳用例要靠它拿到 planList 才能解析 pay_plan。 */
+const listBundlesMock = vi.fn();
+
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
     plans: {
-      listBundles: vi.fn(),
+      listBundles: listBundlesMock,
     },
   }),
 }));
@@ -57,14 +68,22 @@ vi.mock("@/i18n/t", () => ({
   useLocaleOverride: () => null,
 }));
 
+const navigateMock = vi.fn();
+
 vi.mock("@/lib/app-navigation", () => ({
   AppLink: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
     <a href={to} {...props}>
       {children}
     </a>
   ),
-  useAppNavigate: () => vi.fn(),
+  useAppNavigate: () => navigateMock,
 }));
+
+/* 本文件保持国内站语义（不 mock @/lib/region，沿用真实 REGION 默认 "cn"）：
+   下方用例断言「退款规则」链接，而该链接由 subscribe-page 的 `{isCN && ...}` 条件渲染。
+   国际站（isGlobal）专属用例请放到 subscribe-page.global.test.tsx，
+   参照 login-modal.test.tsx / login-modal.global.test.tsx 的拆分约定 ——
+   vi.mock 是模块级全局的，同一文件无法让两种站点语义并存。 */
 
 const getCreditValue = (tab: HTMLElement) => {
   const text = tab.textContent?.trim() ?? "";
@@ -86,9 +105,53 @@ const getCreditTab = (credit: string) => {
   return tab;
 };
 
+const buildBundle = (bundleId: string, bundleName: string) => ({
+  bundle_id: bundleId,
+  bundle_name: bundleName,
+  bundle_state: "ONLINE" as const,
+  bundle_type: "ai",
+  time_unit: "m" as const,
+  time_span: 1,
+  price: 4900,
+  total_cost: 4900,
+  real_total_cost: 4900,
+  currency: "USD",
+  credit: 10000,
+  bundle_sales_available_count: 100,
+  bundle_sales_total_count: 100,
+});
+
+const resetState = () => {
+  openClawState.isLoggedIn = false;
+  openClawState.isSubscribed = false;
+  openClawState.subscribe = vi.fn();
+  openClawState.addBot = vi.fn();
+  openClawState.bots = [];
+  openClawState.refreshPasses = vi.fn().mockResolvedValue(undefined);
+  openClawState.activePass = null;
+  openClawState.latestPass = null;
+  sessionState.authReady = true;
+  sessionState.isAuthenticated = false;
+  listBundlesMock.mockReset();
+  /* listBundles 直接返回 Bundle[]，不是 { bundles } 包装。 */
+  listBundlesMock.mockResolvedValue([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
+  navigateMock.mockReset();
+  window.history.replaceState({}, "", "/subscribe");
+};
+
 describe("SubscribePage", () => {
-  it("shows low credit tiers first and selects them by default", async () => {
+  beforeEach(() => {
+    cleanup();
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    resetState();
     (globalThis as { React?: typeof React }).React = React;
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows low credit tiers first and selects them by default", async () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
 
     render(<SubscribePage />);
@@ -108,5 +171,9 @@ describe("SubscribePage", () => {
     expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
     expect(getCreditTab("200")).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByText("14天免费体验")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "退款规则" })).toHaveAttribute(
+      "href",
+      "/docs/plans/#%E9%80%80%E6%AC%BE%E8%A7%84%E5%88%99",
+    );
   });
 });

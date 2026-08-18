@@ -191,6 +191,16 @@ func parseAdapterConf() {
 		ServerConf.AdapterConfig.Shadow.Timeout = 10
 	}
 
+	if ServerConf.AdapterConfig.Trade == nil {
+		ServerConf.AdapterConfig.Trade = &TradeConfig{}
+	}
+	if value := firstNonEmptyEnv("CTL_TRADE_TOKEN", "LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "CTL_INTERNAL_TOKEN"); value != "" {
+		ServerConf.AdapterConfig.Trade.Token = value
+	}
+	if ServerConf.AdapterConfig.Trade.Timeout <= 0 {
+		ServerConf.AdapterConfig.Trade.Timeout = 10
+	}
+
 	if ServerConf.AdapterConfig.AiGateway == nil {
 		ServerConf.AdapterConfig.AiGateway = &AiGatewayConfig{}
 	}

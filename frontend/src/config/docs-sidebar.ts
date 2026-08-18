@@ -63,8 +63,8 @@ const CN_SIDEBAR: DocGroup[] = [
     items: [
       { slug: "account", title: "账号与实名认证" },
       { slug: "announcements/public-beta", title: "LightVela 付费版本公告" },
-      { slug: "plans", title: "套餐说明" },
-      { slug: "credits", title: "体验积分说明" },
+      { slug: "plans", title: "套餐管理" },
+      { slug: "credits", title: "AI 积分说明" },
       { slug: "create-first-hermes", title: "如何开通第一个 Hermes 智能体伙伴？" },
     ],
   },

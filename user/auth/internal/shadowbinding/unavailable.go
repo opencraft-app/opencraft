@@ -41,3 +41,10 @@ func (c *UnavailableClient) SaveBasicAuthForSaaS(context.Context, CloudSaveBasic
 	}
 	return errors.New(c.reason)
 }
+
+func (c *UnavailableClient) GetTemporaryCredentialsForSaaS(context.Context, CloudTemporaryCredentialsInput) (CloudTemporaryCredentials, error) {
+	if c == nil || c.reason == "" {
+		return CloudTemporaryCredentials{}, errors.New("shadow binding client unavailable")
+	}
+	return CloudTemporaryCredentials{}, errors.New(c.reason)
+}

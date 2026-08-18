@@ -14,13 +14,36 @@ if str(RUNTIME_DIR) not in sys.path:
 from gates.db import run_db_gate  # noqa: E402
 
 
+def db_gate_plan(*, env: str, db_status: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        service="payment",
+        env=env,
+        source_sha="abc123",
+        db_status=db_status,
+        db_mode="migration",
+        migration_changed=True,
+        requires_db_job=True,
+        requires_db_readiness=True,
+        readiness_supported=True,
+        db_job_service="payment",
+        db_job_operation="migration",
+        db_job_image_override="",
+        release_dependency_changed=False,
+        release_dependencies=[],
+        auto_merge_allowed=True,
+        auto_sync_allowed=env != "shprod",
+        argo_sync="manual" if env == "shprod" else "auto",
+        manual_actions=[],
+    )
+
+
 class DbGateExecutionTests(unittest.TestCase):
     def test_shprod_readiness_never_runs_controlled_db_job(self) -> None:
         command_calls: list[tuple[list[str], Path]] = []
         repo_root = Path("/tmp/source-root")
         gitops_worktree = Path("/tmp/projected-gitops")
-        initial = self.plan(env="shprod", db_status="unknown")
-        passed = self.plan(env="shprod", db_status="passed")
+        initial = db_gate_plan(env="shprod", db_status="unknown")
+        passed = db_gate_plan(env="shprod", db_status="passed")
 
         with mock.patch("gates.db.load_plan", side_effect=[initial, passed]), \
             mock.patch("gates.db.run_logged", side_effect=lambda command, cwd: command_calls.append((command, cwd))), \
@@ -52,12 +75,12 @@ class DbGateExecutionTests(unittest.TestCase):
         self.assertIn("set -euo pipefail", verify_command[2])
         self.assertIn((verify_command, gitops_worktree), command_calls)
 
-    def test_beijing_readiness_runs_controlled_db_job_when_required(self) -> None:
+    def test_beijing_readiness_runs_controlled_db_job_when_migration_changed(self) -> None:
         command_calls: list[tuple[list[str], Path]] = []
         repo_root = Path("/tmp/source-root")
         gitops_worktree = Path("/tmp/projected-gitops")
-        initial = self.plan(env="beijing-sandbox", db_status="unknown")
-        passed = self.plan(env="beijing-sandbox", db_status="passed")
+        initial = db_gate_plan(env="beijing-sandbox", db_status="unknown")
+        passed = db_gate_plan(env="beijing-sandbox", db_status="passed")
 
         with mock.patch("gates.db.load_plan", side_effect=[initial, passed]), \
             mock.patch("gates.db.run_logged", side_effect=lambda command, cwd: command_calls.append((command, cwd))), \
@@ -102,27 +125,39 @@ class DbGateExecutionTests(unittest.TestCase):
         self.assertIn("run_gitops_db_job.py --service payment --operation migration --env beijing-sandbox --revision abc123 --apply --wait", output)
         self.assertIn("verify_db_contract.py --service payment --env beijing-sandbox --apply --wait", output)
 
-    def plan(self, *, env: str, db_status: str) -> SimpleNamespace:
-        return SimpleNamespace(
-            service="payment",
-            env=env,
-            source_sha="abc123",
-            db_status=db_status,
-            db_mode="migration",
-            migration_changed=False,
-            requires_db_job=True,
-            requires_db_readiness=True,
-            readiness_supported=True,
-            db_job_service="payment",
-            db_job_operation="migration",
-            db_job_image_override="",
-            release_dependency_changed=False,
-            release_dependencies=[],
-            auto_merge_allowed=True,
-            auto_sync_allowed=env != "shprod",
-            argo_sync="manual" if env == "shprod" else "auto",
-            manual_actions=[],
-        )
+class DbGateNoMigrationTests(unittest.TestCase):
+    def test_beijing_non_migration_change_skips_db_flow(self) -> None:
+        command_calls: list[tuple[list[str], Path]] = []
+        repo_root = Path("/tmp/source-root")
+        gitops_worktree = Path("/tmp/projected-gitops")
+        initial = db_gate_plan(env="beijing-sandbox", db_status="unknown")
+        initial.migration_changed = False
+        initial.requires_db_job = False
+        initial.requires_db_readiness = False
+
+        with mock.patch("gates.db.load_plan", return_value=initial), \
+            mock.patch("gates.db.run_logged", side_effect=lambda command, cwd: command_calls.append((command, cwd))), \
+            redirect_stderr(StringIO()) as stderr:
+            status, plan = run_db_gate(
+                repo_root=repo_root,
+                gitops_worktree=gitops_worktree,
+                runtime_repo_root=RUNTIME_DIR.parent.parent,
+                runtime_command_dir=RUNTIME_DIR / "commands",
+                bundle_manifest=RUNTIME_DIR / "release-bundles.manifest",
+                service="payment",
+                env="beijing-sandbox",
+                source_ref="abc123",
+                image="example.com/payment:test",
+                pin_targets="payment",
+            )
+
+        self.assertEqual(status, "passed")
+        self.assertIs(plan, initial)
+        self.assertEqual(command_calls, [])
+        output = stderr.getvalue()
+        self.assertIn("migration 文件变更：false", output)
+        self.assertIn("受控 DB job：will_run=false", output)
+        self.assertIn("DB readiness：will_run=false", output)
 
 
 if __name__ == "__main__":

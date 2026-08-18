@@ -327,6 +327,10 @@ function getSkillOverview(
 }
 
 const CLS = "lv-skills-demo";
+const SKILLS_SEARCH_BOX_CLASS = "lv-agent-search-box";
+const SKILLS_SEARCH_ICON_CLASS = "lv-agent-search-box-icon";
+const SKILLS_SEARCH_INPUT_CLASS = "lv-skills-search-input lv-agent-search-box-input";
+const SEARCH_INPUT_NATIVE_CLEAR_CLASS = "[&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none";
 
 type CreateSkillCategoryId = "quick-learn" | "workplace" | "research" | "learning" | "creative" | "personal" | "leisure";
 
@@ -856,6 +860,10 @@ function getInstalledStatusLabel(t: Translate, status?: string): string | null {
   return status?.trim() || null;
 }
 
+function getInstalledDisplayId(skill: InstalledSkill): string {
+  return skill.slug.trim() || skill.rawId;
+}
+
 function SkillIcon({
   skill,
   className,
@@ -1383,6 +1391,7 @@ function InstalledSkillRow({
   const t = useT();
   const sources = getInstalledSources(skill);
   const statusLabel = getInstalledStatusLabel(t, skill.status);
+  const displayId = getInstalledDisplayId(skill);
   const canUninstall = skill.uninstallable !== false && !skill.sourceUncertain;
   return (
     <li className="grid grid-cols-[minmax(0,1fr)_2.25rem] items-center gap-x-3 gap-y-2 bg-white px-3.5 py-3 transition-colors hover:bg-black/[0.025] md:grid-cols-[minmax(0,1.3fr)_minmax(110px,0.65fr)_minmax(120px,0.7fr)_minmax(64px,0.35fr)_2.25rem]">
@@ -1395,7 +1404,7 @@ function InstalledSkillRow({
             </span>
           ) : null}
         </div>
-        <div className="mt-1 truncate font-mono text-[11px] text-black/45">{skill.rawId}</div>
+        <div className="mt-1 truncate font-mono text-[11px] text-black/45">{displayId}</div>
       </div>
       <div className="col-start-1 row-start-2 min-w-0 truncate text-xs text-black/55 md:col-start-2 md:row-start-1">
         <span className="mr-1 text-[11px] text-black/40 md:hidden">{t("分类")}</span>
@@ -2057,9 +2066,11 @@ export function SkillsDemoPanel({
       return [
         skill.name,
         skill.rawId,
+        skill.slug,
         skill.category ?? "",
         getInstalledCategoryLabel(t, skill.category),
         skill.version ?? "",
+        ...(skill.nativeAliases ?? []),
         ...sources.flatMap((source) => [source.label, translateInstalledSourceLabel(t, source.label)]),
       ].some((value) => value.toLocaleLowerCase().includes(keyword));
     });
@@ -2462,8 +2473,8 @@ export function SkillsDemoPanel({
         <TabsContent value="discover" className="mt-0">
           <div className="space-y-6">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-black/35" aria-hidden="true" />
+              <div className={cn(SKILLS_SEARCH_BOX_CLASS, "min-w-0 flex-1")}>
+                <Search className={SKILLS_SEARCH_ICON_CLASS} aria-hidden="true" />
                 <input
                   type="text"
                   aria-label={t("搜索技能")}
@@ -2474,7 +2485,7 @@ export function SkillsDemoPanel({
                     setKeyword(e.target.value);
                   }}
                   placeholder={isDomestic ? "搜索 SkillHub 中的技能" : t("搜索 Skills.sh / Clawhub 中的技能")}
-                  className="lv-skills-search-input h-10 w-full rounded-md border border-black/10 bg-white pl-9 pr-9 text-sm text-black/90 outline-none transition-colors placeholder:text-black/35 focus:border-[#2F6BFF]"
+                  className={SKILLS_SEARCH_INPUT_CLASS}
                 />
                 {keyword ? (
                   <button
@@ -2862,26 +2873,28 @@ export function SkillsDemoPanel({
             </SectionTitle>
             {!installedLoading && installed.length > 0 ? (
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-                <div className="relative min-w-0 sm:w-60">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-black/35" aria-hidden="true" />
-                  <Input
-                    type="search"
-                    value={installedSearchQuery}
-                    onChange={(event) => setInstalledSearchQuery(event.target.value)}
-                    aria-label={t("搜索已安装技能")}
-                    placeholder={t("搜索已安装技能")}
-                    className="h-9 rounded-[12px] border-black/10 bg-white pl-9 pr-9 text-xs shadow-none placeholder:text-black/35 focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  />
-                  {installedSearchQuery ? (
-                    <button
-                      type="button"
-                      onClick={() => setInstalledSearchQuery("")}
-                      aria-label={t("清除已安装技能搜索")}
-                      className="absolute right-2 top-1/2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-black/35 transition-colors hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    >
-                      <X className="size-3.5" aria-hidden="true" />
-                    </button>
-                  ) : null}
+                <div className="min-w-0 sm:w-60">
+                  <div className={SKILLS_SEARCH_BOX_CLASS}>
+                    <Search className={SKILLS_SEARCH_ICON_CLASS} aria-hidden="true" />
+                    <input
+                      type="search"
+                      value={installedSearchQuery}
+                      onChange={(event) => setInstalledSearchQuery(event.target.value)}
+                      aria-label={t("搜索已安装技能")}
+                      placeholder={t("搜索已安装技能")}
+                      className={cn(SKILLS_SEARCH_INPUT_CLASS, SEARCH_INPUT_NATIVE_CLEAR_CLASS)}
+                    />
+                    {installedSearchQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setInstalledSearchQuery("")}
+                        aria-label={t("清除已安装技能搜索")}
+                        className="absolute right-2 top-1/2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-black/35 transition-colors hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                      >
+                        <X className="size-3.5" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 <Select
                   value={installedCategoryFilter}

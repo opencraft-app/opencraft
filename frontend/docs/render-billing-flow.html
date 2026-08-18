@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>国内站计费流程图 · 渲染 & 导出 PNG</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --border:#e3e6ea; --primary:#2f6feb; --text:#1f2328; --muted:#6b7280; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background:var(--bg); color:var(--text); padding:24px; }
+  .wrap { max-width:1100px; margin:0 auto; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin:0 0 16px; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px; }
+  button { border:1px solid var(--border); background:var(--card); color:var(--text); border-radius:8px;
+           padding:8px 14px; font-size:14px; cursor:pointer; transition:.15s; }
+  button:hover { border-color:var(--primary); color:var(--primary); }
+  button.primary { background:var(--primary); color:#fff; border-color:var(--primary); }
+  button.primary:hover { background:#245cd0; color:#fff; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; overflow:auto; }
+  #diagram { display:flex; justify-content:center; }
+  #diagram svg { max-width:100%; height:auto; }
+  .status { font-size:13px; color:var(--muted); margin-left:auto; }
+  .tip { margin-top:14px; font-size:12px; color:var(--muted); line-height:1.7; }
+  code { background:#eef1f4; padding:1px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>国内站计费流程图</h1>
+  <p class="sub">浏览器打开即渲染。需要图片时点「下载 PNG」。文档正文用的是同一份 mermaid 源，GitLab / 多数 Markdown 预览可直接显示。</p>
+
+  <div class="toolbar">
+    <button class="primary" onclick="downloadPng(2)">下载 PNG（2x 高清）</button>
+    <button onclick="downloadPng(3)">下载 PNG（3x）</button>
+    <button onclick="downloadPng(1)">下载 PNG（1x）</button>
+    <button onclick="downloadSvg()">下载 SVG（矢量）</button>
+    <span class="status" id="status">加载中…</span>
+  </div>
+
+  <div class="card">
+    <div id="diagram">
+      <pre class="mermaid">
+sequenceDiagram
+    participant U as 用户(PC 浏览器)
+    participant FE as 订阅页(subscribe-page)
+    participant BE as 后端(ctl/jifei)
+    participant WX as 微信 + 中转页
+
+    U->>FE: 打开订阅页
+    FE->>BE: GET /v1/bundles 拉套餐(登录后带时长询价)
+    BE-->>FE: 返回套餐 + 真实价格
+    U->>FE: 选套餐、点「立即订阅」
+    alt 未登录
+        FE->>U: 弹登录引导
+    else 已登录(国内站)
+        FE->>BE: 阶段一 POST /v1/passes/order
+        BE-->>FE: { deal_names, auth_code }
+        FE->>FE: buildPayPlan → 生成二维码 URL
+        FE->>U: 弹窗展示二维码(paying)
+        U->>WX: 微信扫码打开中转页
+        WX->>BE: 阶段二 POST /v1/passes/order-url<br/>(wx_code + auth_code)
+        BE-->>WX: { pay_url, ... }
+        WX->>WX: 阶段三 tcb-jssdk wxSign 拉起委托划扣
+        U->>WX: 完成支付
+        loop 每 3s，最多 180s
+            FE->>BE: GET /v1/passes 轮询
+        end
+        BE-->>FE: 命中有效 pass
+        FE->>BE: finalizeBot → 创建实例
+        FE->>U: 跳转到实例创建页
+    end
+      </pre>
+    </div>
+  </div>
+
+  <p class="tip">
+    · 若图未显示（内网无法访问 CDN），把 &lt;script&gt; 里的
+    <code>cdn.jsdelivr.net</code> 换成公司内网可达的 mermaid 源即可。<br />
+    · PNG 为白底，直接贴 IM / 文档；SVG 为矢量，可无损缩放。<br />
+    · 修改流程：直接编辑本文件里 <code>&lt;pre class="mermaid"&gt;</code> 中的文本，同时同步更新 <code>frontend-domestic-billing-flow.md</code> 第三节。
+  </p>
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  const statusEl = document.getElementById('status');
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'default' });
+  try {
+    await mermaid.run({ querySelector: '.mermaid' });
+    statusEl.textContent = '渲染完成 ✓';
+  } catch (e) {
+    statusEl.textContent = '渲染失败（可能是 CDN 不可达）';
+    console.error(e);
+  }
+
+  function getSvg() {
+    const svg = document.querySelector('#diagram svg');
+    if (!svg) { alert('流程图尚未渲染完成，请稍候或检查 CDN 是否可达。'); return null; }
+    return svg;
+  }
+
+  function svgSizeOf(svg) {
+    const vb = svg.viewBox && svg.viewBox.baseVal;
+    if (vb && vb.width && vb.height) return { w: vb.width, h: vb.height };
+    const r = svg.getBoundingClientRect();
+    return { w: r.width, h: r.height };
+  }
+
+  function serializeSvg(svg) {
+    const clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    return new XMLSerializer().serializeToString(clone);
+  }
+
+  function triggerDownload(href, filename) {
+    const a = document.createElement('a');
+    a.href = href; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  window.downloadSvg = function () {
+    const svg = getSvg(); if (!svg) return;
+    const xml = serializeSvg(svg);
+    const blob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    triggerDownload(url, 'domestic-billing-flow.svg');
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  window.downloadPng = function (scale) {
+    const svg = getSvg(); if (!svg) return;
+    const { w, h } = svgSizeOf(svg);
+    const xml = serializeSvg(svg);
+    const svg64 = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+    const img = new Image();
+    img.onload = function () {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(w * scale);
+      canvas.height = Math.ceil(h * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob(function (blob) {
+        const url = URL.createObjectURL(blob);
+        triggerDownload(url, 'domestic-billing-flow@' + scale + 'x.png');
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }, 'image/png');
+    };
+    img.onerror = function () { alert('SVG 转 PNG 失败，可改用「下载 SVG」。'); };
+    img.src = svg64;
+  };
+</script>
+</body>
+</html>

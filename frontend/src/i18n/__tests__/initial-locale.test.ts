@@ -39,12 +39,12 @@ describe("i18n initial locale", () => {
     expect(i18n.language).toBe("id-ID");
   });
 
-  it("keeps the previous override behavior outside the global bare root", async () => {
+  it("keeps the domestic site in Chinese when localStorage has stale English", async () => {
     window.localStorage.setItem("lw-locale", "en-US");
 
     const { default: i18n } = await loadI18n("cn", "/");
 
-    expect(i18n.language).toBe("en-US");
+    expect(i18n.language).toBe("zh-CN");
   });
 
   /**

@@ -324,6 +324,59 @@ describe("domestic SkillHub command and response handling", () => {
       sourceLabel: "SkillHub",
     })]);
 
+    const groupedInstalled = parseSkillhubList(JSON.stringify({
+      success: true,
+      data: {
+        skills: [{
+          id: "skill_91fca7e4",
+          name: "humanizer",
+          display_name: "humanizer",
+          relative_path: "creative/humanizer",
+          category: "creative",
+          version: "2.5.1",
+          instances: [{
+            id: "skill_91fca7e4",
+            name: "humanizer",
+            display_name: "humanizer",
+            relative_path: "creative/humanizer",
+            source: "builtin",
+            version: "2.5.1",
+          }, {
+            id: "skill_e95600124c0d7729fa4d",
+            name: "humanizer",
+            display_name: "humanizer",
+            relative_path: "unclecheng-reduce-ai-perception-v2",
+            source: "builtin",
+            version: "4.1.0",
+          }],
+        }],
+      },
+    }));
+    expect(groupedInstalled).toHaveLength(2);
+    expect(groupedInstalled).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        rawId: "skill_91fca7e4",
+        slug: "creative/humanizer",
+        name: "humanizer",
+        category: "creative",
+        version: "2.5.1",
+      }),
+      expect.objectContaining({
+        rawId: "skill_e95600124c0d7729fa4d",
+        slug: "unclecheng-reduce-ai-perception-v2",
+        name: "humanizer",
+        category: "creative",
+        version: "4.1.0",
+      }),
+    ]));
+    expect(
+      groupedInstalled.find((skill) => skill.slug === "unclecheng-reduce-ai-perception-v2")?.nativeAliases,
+    ).toEqual(expect.arrayContaining([
+      "humanizer",
+      "skill_e95600124c0d7729fa4d",
+      "unclecheng-reduce-ai-perception-v2",
+    ]));
+
     const tableInstalled = parseSkillhubList([
       "┌───────────────┬──────────────┬─────────┐",
       "│ 名称          │ 分类         │ 版本    │",
