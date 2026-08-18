@@ -1,14 +1,10 @@
 # How to Build a Personal AI Assistant with LightVela
 
-Most AI chats are useful for a single answer, then disappear into the next tab. A personal assistant becomes useful when it can stay available in the places you already message, remember the way you work, and take on a few repeatable tasks.
-
-LightVela is a cloud-hosted personal AI agent platform: a Hermes Agent can keep working with the model, channel, memory, skills, and automations you choose. This guide shows how to turn that set of building blocks into an assistant that feels useful from the first week, without trying to automate everything at once.
-
-![A personal AI assistant with LightVela across channels](../images/use-case-personal-ai-assistant.webp)
-
 ## Summary
 
 **The right order for building a personal AI assistant is not automating everything at once. Start by making a cloud Hermes Agent reachable in the chat app you already use, then layer on memory, skills, and automations.** Five building blocks each solve one problem: the model determines reasoning quality, the channel determines where you reach it, memory lets it retain how you work, skills give it reusable methods, and automations let it complete agreed work while you are absent. For the first week, do only three things: configure one model, connect one channel, and verify memory genuinely persists across sessions. Once that path is reliable, add skills and automations — this way, when something breaks, you can tell which layer caused it.
+
+![A personal AI assistant with LightVela across channels](../images/use-case-personal-ai-assistant.webp)
 
 ## Who this is for
 

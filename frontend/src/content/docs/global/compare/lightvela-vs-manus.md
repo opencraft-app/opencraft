@@ -1,10 +1,10 @@
 # LightVela vs Manus：哪个更适合托管你的 AI Agent？
 
-![LightVela 与 Manus 在 AI Agent 托管和使用方式上的对比](../images/lightvela-vs-manus.webp)
-
 ## 摘要
 
 **如果你想要一个长期在线、记得你的设置，并存在于日常消息通道中的个人 Hermes Agent，可以选择 LightVela。** 如果你希望把一个明确的任务——研究、浏览器操作、报告或工作流——交给 Agent，并让它朝着可交付结果执行，可以选择 Manus。两者都被称为“Agent”，但在日常使用中，它们的出发点完全不同。
+
+![LightVela 与 Manus 在 AI Agent 托管和使用方式上的对比](../images/lightvela-vs-manus.webp)
 
 ## 快速对比
 
