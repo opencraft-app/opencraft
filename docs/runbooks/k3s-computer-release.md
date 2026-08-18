@@ -48,6 +48,10 @@ clean pushed commit
 Mac 不运行 Docker。Linux builder、k3s target 和测试 Computer 是三个显式 SSH 信任边界，全部强制
 `BatchMode=yes`、`IdentitiesOnly=yes` 和独立 identity。
 
+脚本会在第 1 步、任何 COS 或 catalog mutation 前验证三台主机的运行依赖。k3s target 缺少 `jq` 时，脚本会
+尝试使用该 root 主机已有的 `dnf`、`apt-get` 或 `apk` 安装；没有受支持包管理器则预检失败，不会开始发布。
+不要手工绕过该预检或在已开始 catalog 切换后补依赖。
+
 ## Catalog 与 Computer 事务
 
 脚本先保存 Backend 当前 catalog，再创建唯一版本名的 immutable ConfigMap，回读并切换 Backend。
@@ -71,6 +75,9 @@ Catalog 切换后任何步骤失败，脚本先恢复 Computer，再恢复原 ca
 Channel store、专用在线私钥、匿名读取路由和 operator promotion 尚需单独部署；在完成之前不能把本脚本
 描述成全量 Computer 后台自动升级平台。
 
+Release key 使用仓库外的长期离线 key。普通发布复用 active key；只有明确执行信任迁移时才生成/切换 key。
+旧 Computer 不会因为 catalog 指向新 key 就自动信任它，因此 key 轮换不能与普通版本发布混为一谈。
+
 ## 发布证据
 
 成功 evidence 至少包含：
@@ -81,4 +88,3 @@ Channel store、专用在线私钥、匿名读取路由和 operator promotion �
 - TUI bundle manifest/hash；
 - 切换后的 Backend Deployment；
 - 测试 Computer 的安全状态投影。
-

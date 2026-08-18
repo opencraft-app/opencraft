@@ -345,3 +345,18 @@ digest、Computer release version 和 TUI bundle hash 是三个不同版本事�
 独立 k3s Computer 发布只使用 `agent/deploy/k3s/release.sh deploy`，并保持 create-only、双 target、自动
 rollback、真实 digest 和指定 Agent 健康验收语义。该脚本当前负责测试 Computer 的显式 SSH rollout；
 不得把它描述成尚未部署完成的全平台后台 Update Channel。
+
+Computer 发布的操作边界：
+
+- 不要手工上传 COS、手工 patch catalog 或直接替换远端二进制；一律从已推送、干净的 `master` 调用上述脚本。
+  脚本会在任何 catalog/COS mutation 前校验 builder、k3s target 与 Computer 所需命令，并可在受控的 k3s
+  root 主机缺少 `jq` 时通过其本机包管理器补齐；无法补齐必须在预检阶段失败。
+- Release key 是长期离线信任根，不是每个版本临时生成的构建参数。用 `computer-release keygen` 创建一次并把
+  私钥保存在仓库外、`0600` 的受限目录；普通发布复用 active key。轮换 key 必须是显式信任迁移，不能假设旧
+  Computer 已自动信任新 key，也不能从 Backend、COS、Computer 或日志中恢复私钥。
+- Computer 必须严格按 `/computer/session` 返回的 `assignmentVersions` 选择 assignment endpoint 和 heartbeat
+  capability；不得因本地代码已实现 v2 就越过服务端宣告。启用新的 Agent/Profile capability 协议前，先发布能
+  声明该版本的 Backend，再发布对应 Computer；否则保持已协商的旧版本。
+- 发生 catalog/Computer rollback 后，已发布 COS 对象和 immutable ConfigMap 都是保留的诊断证据。不得删除、
+  覆盖或“复用”它们；修复原因、使用新的显式版本重新运行脚本，并以 evidence 的 `published`/`rolled_back`
+  状态作为唯一结论。

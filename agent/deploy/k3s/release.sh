@@ -86,6 +86,38 @@ ssh_builder() { ssh -o BatchMode=yes -o IdentitiesOnly=yes -i "$builder_identity
 ssh_target() { ssh -o BatchMode=yes -o IdentitiesOnly=yes -i "$target_identity" -p "$target_port" "$target" "$@"; }
 ssh_computer() { ssh -o BatchMode=yes -o IdentitiesOnly=yes -i "$computer_identity" -p "$computer_port" "$computer" "$@"; }
 
+ensure_builder_prerequisites() {
+  ssh_builder 'set -eu; command -v docker >/dev/null; command -v tar >/dev/null; command -v sh >/dev/null'
+}
+
+# jq is a release-runner dependency on the trusted k3s control host: it
+# validates the immutable catalog and is also needed by rollback. Bootstrap it
+# before any external release mutation so a fresh target does not fail midway.
+ensure_target_prerequisites() {
+  ssh_target sh -s <<'REMOTE_PREREQUISITES'
+set -eu
+command -v k3s >/dev/null
+if ! command -v jq >/dev/null 2>&1; then
+  if command -v dnf >/dev/null 2>&1; then
+    dnf install -y jq
+  elif command -v apt-get >/dev/null 2>&1; then
+    apt-get update
+    apt-get install -y jq
+  elif command -v apk >/dev/null 2>&1; then
+    apk add --no-cache jq
+  else
+    echo "无法自动安装 jq：目标主机没有受支持的包管理器" >&2
+    exit 1
+  fi
+fi
+for command in k3s jq base64 sh; do command -v "$command" >/dev/null; done
+REMOTE_PREREQUISITES
+}
+
+ensure_computer_prerequisites() {
+  ssh_computer 'set -eu; for command in systemctl jq sha256sum awk cp mv mktemp sh; do command -v "$command" >/dev/null; done'
+}
+
 quote_remote() { printf "'"; printf '%s' "$1" | sed "s/'/'\\''/g"; printf "'"; }
 target_kubectl() {
   command="k3s kubectl -n $(quote_remote "$namespace")"
@@ -239,6 +271,9 @@ temporary_root=$(mktemp -d "${TMPDIR:-/tmp}/vela-computer-k3s.XXXXXX")
 
 echo "[1/8] 预检 builder、k3s、Computer 与当前 catalog……"
 ssh_builder true; ssh_target true; ssh_computer true
+ensure_builder_prerequisites
+ensure_target_prerequisites
+ensure_computer_prerequisites
 backend_ready || fail "Backend 当前不是 1/1 Ready"
 target_kubectl get configmap "$target_catalog" >/dev/null 2>&1 && fail "目标 catalog 已存在"
 original_catalog=$(target_kubectl get deployment "$backend_deployment" -o 'jsonpath={.spec.template.spec.volumes[?(@.name=="computer-release")].configMap.name}')
