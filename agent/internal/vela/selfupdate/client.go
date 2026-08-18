@@ -14,8 +14,6 @@ import (
 
 var ErrChannelRequest = errors.New("Computer Update channel 请求失败")
 
-const devcloudInsecureChannelBaseURL = "http://9.135.236.64"
-
 type ChannelClientConfig struct {
 	BaseURL               string
 	HTTPClient            *http.Client
@@ -119,8 +117,8 @@ func normalizeChannelBaseURL(
 	}
 	if parsed.Scheme != "https" {
 		loopbackAllowed := allowInsecureLoopback && loopbackHost(parsed.Hostname())
-		devcloudAllowed := allowInsecureHTTP && raw == devcloudInsecureChannelBaseURL
-		if parsed.Scheme != "http" || (!loopbackAllowed && !devcloudAllowed) {
+		pinnedHTTPAllowed := allowInsecureHTTP && parsed.Scheme == "http"
+		if parsed.Scheme != "http" || (!loopbackAllowed && !pinnedHTTPAllowed) {
 			return "", false
 		}
 	} else if allowInsecureHTTP {

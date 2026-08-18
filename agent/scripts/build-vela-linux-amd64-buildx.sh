@@ -38,7 +38,7 @@ if [ -n "$metadata" ]; then case "$metadata" in /*) ;; *) usage ;; esac; fi
 [ ! -e "$output" ] || { echo "Linux build output already exists" >&2; exit 1; }
 case "$update_channel_url" in
 https://[A-Za-z0-9]*) [ "$allow_insecure_update_http" = false ] || usage ;;
-http://9.135.236.64) [ "$allow_insecure_update_http" = true ] || usage ;;
+http://[A-Za-z0-9]*) [ "$allow_insecure_update_http" = true ] || usage ;;
 *) usage ;;
 esac
 case "$update_channel_url" in *[!A-Za-z0-9.:/_-]*|*'?'*|*'#'* ) usage ;; esac

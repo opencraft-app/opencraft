@@ -326,6 +326,8 @@ spec 更新描述成 Pod 已运行，或把健康端点 200 描述成完整业�
 - `docs/runbooks/k3s-release.md`：当前目标与组件入口；
 - `docs/runbooks/k3s-web-release.md`：Web 正式流程，唯一脚本入口为 `web/deploy/k3s/release.sh deploy`；
 - `docs/runbooks/k3s-backend-release.md`：Backend migration、verify、rollout 与回滚边界。
+- `docs/runbooks/k3s-computer-release.md`：Computer 双 target Release Set、COS、catalog 与指定测试 Computer
+  rollout，唯一脚本入口为 `agent/deploy/k3s/release.sh deploy`。
 
 环境地址、版本和当前 digest 属于易变运行事实，只在 runbook/发布证据中维护，不复制到长期架构章节。发布前
 必须重新读取 runbook、远端 `master` 和 live k3s 状态，不能依赖历史聊天结论。
@@ -340,5 +342,6 @@ TUI 是 Computer 二进制的必选内嵌产物，所以 Computer release 必须
 digest、Computer release version 和 TUI bundle hash 是三个不同版本事实，交付时分别报告。
 
 现有 Computer Canary 脚本仍带有退役共享集群的副本和 catalog 切换假设，不得再作为 live 发布入口。
-下一次 Computer 版本发布前，必须先实现并审查独立 k3s 的 release/catalog 切换脚本，并保持 create-only、
-双 target、自动 rollback、真实 digest 和健康验收语义。
+独立 k3s Computer 发布只使用 `agent/deploy/k3s/release.sh deploy`，并保持 create-only、双 target、自动
+rollback、真实 digest 和指定 Agent 健康验收语义。该脚本当前负责测试 Computer 的显式 SSH rollout；
+不得把它描述成尚未部署完成的全平台后台 Update Channel。

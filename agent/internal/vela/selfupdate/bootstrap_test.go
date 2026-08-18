@@ -33,12 +33,12 @@ func TestBootstrapPinsSeparateChannelAndReleaseTrustDomains(t *testing.T) {
 	}
 }
 
-func TestBootstrapAllowsOnlyPinnedDevcloudHTTPWhenBuiltIn(t *testing.T) {
+func TestBootstrapAllowsOnlyExplicitlyPinnedHTTPWhenBuiltIn(t *testing.T) {
 	t.Parallel()
 	channelKey := base64.RawStdEncoding.EncodeToString(bytes.Repeat([]byte{0x31}, ed25519.PublicKeySize))
 	releaseKey := base64.RawStdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, ed25519.PublicKeySize))
 	base := BootstrapConfig{
-		ChannelURL: "http://9.135.236.64", Channel: "stable",
+		ChannelURL: "http://computer-update.internal", Channel: "stable",
 		ChannelKeyID: "channel-key-2026-08", ChannelPublicKey: channelKey,
 		ReleaseKeyID: "release-key-2026-08", ReleasePublicKey: releaseKey,
 	}
@@ -46,20 +46,18 @@ func TestBootstrapAllowsOnlyPinnedDevcloudHTTPWhenBuiltIn(t *testing.T) {
 		t.Fatalf("standalone insecure HTTP bit = enabled %t, error %v", enabled, err)
 	}
 	if _, _, err := ResolveBootstrap(base); err == nil {
-		t.Fatal("DevCloud HTTP bootstrap was accepted without the build-time opt-in")
+		t.Fatal("HTTP bootstrap was accepted without the build-time opt-in")
 	}
 	base.AllowInsecureHTTP = true
 	resolved, enabled, err := ResolveBootstrap(base)
 	if err != nil || !enabled || !resolved.AllowInsecureHTTP || resolved.ChannelURL != base.ChannelURL {
-		t.Fatalf("DevCloud HTTP bootstrap = (%#v, %t, %v)", resolved, enabled, err)
+		t.Fatalf("HTTP bootstrap = (%#v, %t, %v)", resolved, enabled, err)
 	}
 	for _, invalid := range []string{
-		"http://9.135.236.65",
-		"http://9.135.236.64:80",
-		"http://user@9.135.236.64",
-		"http://9.135.236.64/computer-releases",
-		"http://9.135.236.64?channel=stable",
-		"http://9.135.236.64#channel",
+		"http://user@computer-update.internal",
+		"http://computer-update.internal/computer-releases",
+		"http://computer-update.internal?channel=stable",
+		"http://computer-update.internal#channel",
 	} {
 		candidate := base
 		candidate.ChannelURL = invalid

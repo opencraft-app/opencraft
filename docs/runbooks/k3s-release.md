@@ -19,7 +19,8 @@
 
 - Web：[`k3s-web-release.md`](./k3s-web-release.md)
 - Backend：[`k3s-backend-release.md`](./k3s-backend-release.md)
-- Computer/TUI：尚无独立 k3s 正式发布手册；现有退役共享集群 Canary 脚本不得用于 live 发布。
+- Computer/TUI：[`k3s-computer-release.md`](./k3s-computer-release.md)，正式脚本入口为
+  `agent/deploy/k3s/release.sh deploy`。现有退役共享集群 Canary 脚本不得用于 live 发布。
 
 Web、Backend 和 Computer 是三条不同发布链：Web digest 切换不会升级 Backend；Web/TUI 源码变化也不会升级已经安装的 `vela-computer`。交付时必须分别报告它们的 commit、digest/version 与 live 证据。
 
