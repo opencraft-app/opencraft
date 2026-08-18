@@ -19,7 +19,7 @@ be issued by CTL because CTL also creates its server-side Redis binding.
 Token format:
 
 ```text
-vwk_<key_id>_<secret>
+vik_<key_id>_<secret>
 ```
 
 Generation and storage performed by CTL:
@@ -29,7 +29,7 @@ key_id = base64url_no_padding(random(16 bytes))
 secret = random(32 bytes)
 salt   = random(32 bytes)
 hash   = SHA-256(salt || secret_raw_bytes)
-token  = "vwk_" + key_id + "_" + base64url_no_padding(secret)
+token  = "vik_" + key_id + "_" + base64url_no_padding(secret)
 ```
 
 Redis stores only:
@@ -84,7 +84,7 @@ The standard response body contains:
 ```json
 {
   "data": {
-    "token": "vwk_<key_id>_<secret>",
+    "token": "vik_<key_id>_<secret>",
     "key_id": "<key_id>",
     "user_id": "<derived by CTL>",
     "instance_id": "<vela_instance_id>",
@@ -97,7 +97,7 @@ Required checks before delivery:
 
 1. HTTP status is 201.
 2. `data.instance_id` equals the requested Vela instance ID.
-3. `data.token` matches the fixed `vwk_` format.
+3. `data.token` matches the fixed `vik_` format.
 4. Do not print or log `data.token`.
 
 Issue each instance separately. Never reuse one machine's token for another machine.
@@ -122,7 +122,7 @@ per token.
 For each issued token, pass exactly one JSONL row to the existing invocation script:
 
 ```jsonl
-{"cloud_id":"ins-xxx","website_key":"vwk_<key_id>_<secret>"}
+{"cloud_id":"ins-xxx","website_key":"vik_<key_id>_<secret>"}
 ```
 
 Invocation contract:

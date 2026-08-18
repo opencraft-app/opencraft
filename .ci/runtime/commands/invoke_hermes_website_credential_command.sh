@@ -7,7 +7,7 @@
 # in one invocation — and each instance has a unique key.
 #
 # Input: JSONL file with one object per line:
-#   {"cloud_id":"ins-xxx","website_key":"vwk_xxx_yyy"}
+#   {"cloud_id":"ins-xxx","website_key":"vik_xxx_yyy"}
 #
 # Usage:
 #   HERMES_TAT_COMMAND_ID=cmd-xxx \
@@ -238,7 +238,7 @@ with open(sys.argv[1], "w") as f:
 import json, sys
 try:
     data = json.load(sys.stdin)
-    print(data.get("Response", {}).get("InvocationId", ""))
+    print(data.get("Response", data).get("InvocationId", ""))
 except Exception:
     print("")
 ' <"$invoke_stdout" 2>/dev/null || true)"
@@ -272,7 +272,7 @@ except Exception:
     print("INVALID_RESPONSE")
     raise SystemExit
 
-tasks = data.get("Response", {}).get("InvocationTaskSet", [])
+tasks = data.get("Response", data).get("InvocationTaskSet", [])
 matches = [
     task for task in tasks
     if task.get("InstanceId") == sys.argv[2]

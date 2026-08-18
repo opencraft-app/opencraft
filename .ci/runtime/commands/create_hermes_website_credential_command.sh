@@ -136,8 +136,8 @@ response="$(
     --Timeout "$COMMAND_TIMEOUT"
 )"
 
-command_id="$(printf '%s' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("Response", {}).get("CommandId", ""))')"
-[[ -n "$command_id" ]] || fail "CreateCommand response missing Response.CommandId"
+command_id="$(printf '%s' "$response" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(data.get("Response", data).get("CommandId", ""))')"
+[[ -n "$command_id" ]] || fail "CreateCommand response missing CommandId"
 
 printf 'HERMES_TAT_COMMAND_ID=%s\n' "$command_id"
 if [[ -n "$OUTPUT_ENV_FILE" ]]; then

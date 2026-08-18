@@ -127,13 +127,12 @@ spec:
   # beijing-sandbox 用的是 ACME（Let's Encrypt）+ DNSPod DNS-01 签发的
   # *.sites.lightclaw.tech 通配符证书，再导入腾讯云 SSL 供 CLB 引用。
   #
-  # ⚠️ 到期风险：Let's Encrypt 证书有效期只有 90 天。当前这张的到期时间是
-  # 2026-11-04（UTC），到期前必须重新签发并更新腾讯云 SSL 里的证书，否则站点
-  # 公网 HTTPS 会整体失效。续期后 secret 里的 qcloud_cert_id 也要跟着换成新的
-  # 证书 ID（或用同一 ID 做证书更新），仅重签不更新引用是不生效的。
+  # ⚠️ 到期风险：证书必须由平台证书自动化负责续期、导入腾讯云 SSL，并更新 live
+  # Secret 的 qcloud_cert_id，否则站点公网 HTTPS 会整体失效。证书轮换可以产生新的
+  # 腾讯云证书 ID，但 GitOps 和业务配置只依赖稳定的 Secret 名，不保存证书 ID。
   #
-  # secretName 指向的必须是带 qcloud_cert_id 的 Opaque secret（见
-  # argocd/services/staticpages/*/tls-secrets.yaml），值是腾讯云 SSL 的证书 ID。
+  # secretName 指向的必须是平台维护、带 qcloud_cert_id 的 Opaque Secret，值是腾讯云
+  # SSL 的证书 ID。该 Secret 不由本应用的 GitOps manifest 管理。
   # CLB ingress controller 不认 kubernetes.io/tls 类型的 secret：直接塞
   # tls.crt / tls.key 会报 E4011 invalid tls secret content，并且连带 E4204
   # 让整条 ingress 同步失败（实测于 beijing-sandbox）。也就是说证书必须先进

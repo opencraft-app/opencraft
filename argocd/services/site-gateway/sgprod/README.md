@@ -27,9 +27,16 @@ all public reads go through site-gateway.
 ## Domain and TLS gate
 
 The root domain, wildcard host, and Singapore COS bucket are already set to their production values.
-Do not sync while `REPLACE_SITE_GATEWAY_QCLOUD_CERT_ID` or the release-managed image tag placeholder remains.
-The wildcard certificate must cover the exact wildcard host and must be imported into Tencent
-Cloud SSL. The ingress secret contains the resulting `qcloud_cert_id`, not PEM data.
+Do not sync while the release-managed image tag placeholder remains in `site-gateway-platform.env`.
+`SITE_GATEWAY_TLS_SECRET_NAME` is the stable Secret name used by the Ingress. The platform
+certificate automation owns the live `Opaque` Secret in the `ctl` namespace: it obtains/renews
+the wildcard certificate, imports it into Tencent Cloud SSL, and updates the live Secret's
+`qcloud_cert_id`. Certificate IDs must not be written to `argocd/**`.
+
+The wildcard certificate must cover the exact wildcard host. Before production sync, verify that
+the platform automation has created `site-gateway-wildcard-tls` and that the qcloud Ingress
+controller can read it. Certificate rotation may change the Tencent Cloud certificate ID without
+any GitOps or application change.
 
 ## Release ownership
 

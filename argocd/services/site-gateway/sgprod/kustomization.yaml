@@ -5,7 +5,6 @@ namespace: ctl
 
 resources:
   - ../../../../site-gateway/k8s/base
-  - tls-secrets.yaml
 
 generators:
   - ksops-secret-generator.yaml
