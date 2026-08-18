@@ -14,6 +14,12 @@ Platform values in `site-gateway-platform.env`:
 - `SITE_GATEWAY_COS_BUCKET`
 - `SITE_GATEWAY_COS_REGION=ap-singapore`
 - `SITE_GATEWAY_CTL_BASE_URL=http://ctl-api.ctl.svc.cluster.local`
+- `SITE_GATEWAY_AUTH_MODE=public`
+- `SITE_GATEWAY_AUTH_ISSUER`
+- `SITE_GATEWAY_AUTH_AUDIENCE`
+- `SITE_GATEWAY_AUTH_START_URL`
+- `SITE_GATEWAY_AUTH_PUBLIC_KEYS`
+- `SITE_GATEWAY_AUTH_SESSION_TTL=5m`
 
 Secret values in `site-gateway-secrets`:
 
@@ -25,6 +31,9 @@ The COS credentials must be scoped to the dedicated website bucket. The bucket s
 all public reads go through site-gateway.
 
 ## Domain and TLS gate
+
+TLS lifecycle is platform-owned.
+The application does not create, update, or rotate that Secret.
 
 The root domain, wildcard host, and Singapore COS bucket are already set to their production values.
 Do not sync while the release-managed image tag placeholder remains in `site-gateway-platform.env`.
@@ -41,6 +50,11 @@ The normal site-gateway Kustomize render only references the stable Secret name;
 create, update, or rotate that Secret. Before the first Argo CD sync, the platform owner must
 provision the Secret in namespace `ctl` through the platform TLS workflow. Certificate renewal
 and rotation update that existing Secret independently of site-gateway releases.
+
+The Singapore deployment is intentionally `SITE_GATEWAY_AUTH_MODE=public` and serves
+`*.lightvela.site` anonymously. A future domestic deployment for `*.lightvela.tech` must use
+`required` mode, a trusted Auth start URL, and public Ed25519 keys only; signing private keys
+stay in the Auth control plane.
 
 ## Release ownership
 
