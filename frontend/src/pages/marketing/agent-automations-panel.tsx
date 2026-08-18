@@ -492,6 +492,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const installedSkillSlugsRef = useRef<string[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [loadingRecentRuns, setLoadingRecentRuns] = useState(false);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   const [recentRuns, setRecentRuns] = useState<CronRunRecord[]>([]);
   const [activeView, setActiveView] = useState<"created" | "recent">("created");
   const [creating, setCreating] = useState(false);
@@ -695,6 +696,15 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       setLoadingRecentRuns(false);
     }
   }, [botId, refreshCreatedJobs, refreshRecentRuns]);
+
+  const handleManualRefresh = useCallback(async () => {
+    setManualRefreshing(true);
+    try {
+      await refreshAll();
+    } finally {
+      setManualRefreshing(false);
+    }
+  }, [refreshAll]);
 
   useEffect(() => {
     void refreshAll();
@@ -1025,13 +1035,13 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
         </div>
         <button
           type="button"
-          onClick={() => void refreshAll()}
-          disabled={loadingJobs || loadingRecentRuns}
+          onClick={() => void handleManualRefresh()}
+          disabled={loadingJobs || loadingRecentRuns || manualRefreshing}
           className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"
           aria-label={t("刷新")}
           title={t("刷新")}
         >
-          <RefreshCw className={`h-4 w-4 ${loadingJobs || loadingRecentRuns ? "animate-spin" : ""}`} />
+          <RefreshCw className={`h-4 w-4 ${manualRefreshing ? "animate-spin" : ""}`} />
         </button>
       </div>
 
