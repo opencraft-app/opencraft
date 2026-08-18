@@ -1,6 +1,33 @@
 import { createElement } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const cronClientMocks = vi.hoisted(() => ({
+  createCronJobWithContextAndScriptRollback: vi.fn(),
+  createCronJobWithScriptRollback: vi.fn(),
+  detectCronContextFromCapability: vi.fn(),
+  editCronJob: vi.fn(),
+  editCronJobWithContext: vi.fn(),
+  execCommand: vi.fn(),
+  listCronJobs: vi.fn(),
+  listRecentCronRuns: vi.fn(),
+  removeCronJob: vi.fn(),
+  removeCronJobWithDependentRollback: vi.fn(),
+}));
+
+const skillsClientMocks = vi.hoisted(() => ({
+  listInstalledSkillSlugs: vi.fn(),
+}));
+
+vi.mock("@/lib/hermes-cron-client", async () => ({
+  ...await vi.importActual<typeof import("@/lib/hermes-cron-client")>("@/lib/hermes-cron-client"),
+  ...cronClientMocks,
+}));
+
+vi.mock("@/lib/hermes-skills-client", async () => ({
+  ...await vi.importActual<typeof import("@/lib/hermes-skills-client")>("@/lib/hermes-skills-client"),
+  ...skillsClientMocks,
+}));
 
 import {
   AutomationFormModal,
@@ -16,6 +43,7 @@ import {
   formatScheduleTooltip,
   formatTestSendError,
   getAutomationSkillSelectionIssue,
+  getEligibleCronUpstreams,
   getTestSendFailureFallback,
   getLastAgentRunForJob,
   getEffectiveWindowStatus,
@@ -30,15 +58,37 @@ import {
   parseInitialDeliver,
   parseInitialSchedule,
   parseOnceScheduleDate,
+  HermesAgentAutomationsPanel,
   RecentCronRunsPanel,
   sanitizeClockTimeDraft,
   shouldShowRecentRunsLimitHint,
   shouldRejectPastOnceSchedule,
   toCreateCronSkills,
+  toCronContextPatch,
   toEditCronSkills,
+  wouldCreateCronContextCycle,
 } from "../agent-automations-panel";
-import type { CronJob, CronRunRecord } from "@/lib/hermes-cron-client";
+import { CronCommandError, type CronJob, type CronRunRecord } from "@/lib/hermes-cron-client";
 import { isGlobal } from "@/lib/region";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  cronClientMocks.createCronJobWithContextAndScriptRollback.mockResolvedValue("created-job");
+  cronClientMocks.createCronJobWithScriptRollback.mockResolvedValue(undefined);
+  cronClientMocks.detectCronContextFromCapability.mockResolvedValue("supported");
+  cronClientMocks.editCronJob.mockResolvedValue(undefined);
+  cronClientMocks.editCronJobWithContext.mockResolvedValue(undefined);
+  cronClientMocks.execCommand.mockResolvedValue({
+    status: "SUCCESS",
+    exit_code: 0,
+    output: JSON.stringify({ success: true, data: { platforms: [] } }),
+  });
+  cronClientMocks.listCronJobs.mockResolvedValue([]);
+  cronClientMocks.listRecentCronRuns.mockResolvedValue([]);
+  cronClientMocks.removeCronJob.mockResolvedValue(undefined);
+  cronClientMocks.removeCronJobWithDependentRollback.mockResolvedValue(undefined);
+  skillsClientMocks.listInstalledSkillSlugs.mockResolvedValue([]);
+});
 
 afterEach(() => {
   cleanup();
@@ -184,6 +234,703 @@ describe("automation Skill form mapping", () => {
       verificationState: { status: "ready", slugs: [], error: null },
     })).toBe("unavailable");
   });
+});
+
+describe("cron context relationship helpers", () => {
+  it("detects cycles using downstream-to-upstream edges", () => {
+    const jobs = [
+      makeCronJob({ id: "a", context_from: null }),
+      makeCronJob({ id: "b", context_from: ["a"] }),
+      makeCronJob({ id: "c", context_from: ["b"] }),
+    ];
+
+    expect(wouldCreateCronContextCycle(jobs, "a", "c")).toBe(true);
+    expect(wouldCreateCronContextCycle(jobs, "c", "a")).toBe(false);
+  });
+
+  it("preserves the unchanged state and only patches explicit relationship changes", () => {
+    expect(toCronContextPatch(["a"], "a", false)).toBeUndefined();
+    expect(toCronContextPatch(["a"], "", true)).toEqual([]);
+    expect(toCronContextPatch(["a", "x"], "", false)).toBeUndefined();
+    expect(toCronContextPatch(["a", "x"], "a", true)).toEqual(["a"]);
+  });
+
+  it("excludes unsafe or inactive upstream candidates while preserving eligible jobs", () => {
+    const now = new Date("2026-08-14T12:00:00+08:00").getTime();
+    const jobs = [
+      makeCronJob({ id: "current", name: "当前任务" }),
+      makeCronJob({ id: "eligible", name: "可选任务" }),
+      makeCronJob({ id: "paused", name: "暂停任务", enabled: false }),
+      makeCronJob({ id: "expired", name: "过期任务", next_run_at: "2026-08-14T11:00:00+08:00" }),
+      makeCronJob({ id: "test", name: "临时测试运行\u2063\u2063" }),
+      makeCronJob({ id: "trial", name: "试跑 - 场景任务" }),
+      makeCronJob({ id: "cycle", name: "成环任务", context_from: ["current"] }),
+    ];
+
+    expect(getEligibleCronUpstreams(jobs, "current", now).map((job) => job.id)).toEqual(["eligible"]);
+  });
+
+  it("allows all otherwise eligible jobs when creating without a current job id", () => {
+    const jobs = [
+      makeCronJob({ id: "a" }),
+      makeCronJob({ id: "b", context_from: ["a"] }),
+    ];
+
+    expect(getEligibleCronUpstreams(jobs, null, Date.now()).map((job) => job.id)).toEqual(["a", "b"]);
+  });
+
+  it("excludes ended effective windows while keeping pending upstreams eligible", () => {
+    const now = new Date("2026-08-14T12:00:00+08:00").getTime();
+    const recurringSchedule = { kind: "cron", expr: "0 9 * * *", display: "每天 09:00" };
+    const jobs = [
+      makeCronJob({
+        id: "ended",
+        schedule: recurringSchedule,
+        effective_window: { start_at: null, end_at: "2026-08-14T11:59:00+08:00" },
+      }),
+      makeCronJob({
+        id: "pending",
+        schedule: recurringSchedule,
+        effective_window: { start_at: "2026-08-14T13:00:00+08:00", end_at: null },
+      }),
+    ];
+
+    expect(getEligibleCronUpstreams(jobs, null, now).map((job) => job.id)).toEqual(["pending"]);
+  });
+
+  it("excludes completed jobs without relying on next_run_at", () => {
+    const completed = makeCronJob({
+      id: "completed",
+      state: "completed",
+      enabled: true,
+      next_run_at: null,
+    });
+
+    expect(getEligibleCronUpstreams([completed], null, Date.now())).toEqual([]);
+  });
+});
+
+describe("cron context panel integration", () => {
+  it("renders the Skill picker before the upstream task picker", async () => {
+    cronClientMocks.listCronJobs.mockResolvedValue([]);
+
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledWith("bot-1");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    const skillLabel = await screen.findByText("调用技能");
+    const upstreamLabel = screen.getByText("上游任务");
+    expect(
+      skillLabel.compareDocumentPosition(upstreamLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("detects capability for the current bot and keeps its upstream explanation inside the picker", async () => {
+    cronClientMocks.listCronJobs.mockResolvedValue([makeCronJob({ id: "upstream", name: "上游任务 A" })]);
+
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledWith("bot-1");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    const upstreamLabel = (await screen.findByText("上游任务")).closest("label");
+    expect(upstreamLabel).not.toBeNull();
+    expect(within(upstreamLabel!).getByText("（可选）")).toHaveClass(
+      "ml-1",
+      "text-xs",
+      "font-normal",
+      "text-black/40",
+    );
+    expect(screen.queryByText("本任务执行时，将使用该任务最近一次完成输出作为上下文；不会等待上游当前运行完成。")).toBeNull();
+    expect(screen.getByRole("combobox", { name: "上游任务" })).toHaveTextContent(
+      "本任务执行时，将使用上游任务最近的输出作为上下文",
+    );
+    expect(screen.getByRole("combobox", { name: "上游任务" })).not.toHaveTextContent(
+      "使用上游任务最近一次的输出来作为本任务执行的上下文",
+    );
+  });
+
+  it("retries an unknown capability check without closing or clearing the create form", async () => {
+    cronClientMocks.detectCronContextFromCapability
+      .mockResolvedValueOnce("unknown")
+      .mockResolvedValueOnce("supported");
+    cronClientMocks.listCronJobs.mockResolvedValue([makeCronJob({ id: "upstream", name: "上游任务 A" })]);
+
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+    await waitFor(() => {
+      expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledTimes(1);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "保留中的草稿" } });
+
+    fireEvent.click(await screen.findByRole("button", { name: "重试" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole("combobox", { name: "上游任务" })).toBeEnabled();
+    });
+    expect(screen.getByDisplayValue("保留中的草稿")).toBeTruthy();
+  });
+
+  it("ignores a stale capability response after the bot changes", async () => {
+    let resolveFirst: ((value: "unknown") => void) | undefined;
+    let resolveSecond: ((value: "supported") => void) | undefined;
+    cronClientMocks.detectCronContextFromCapability
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve; }));
+    cronClientMocks.listCronJobs.mockResolvedValue([makeCronJob({ id: "upstream", name: "上游任务 A" })]);
+
+    const { rerender } = render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+    await waitFor(() => {
+      expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledWith("bot-1");
+    });
+    rerender(createElement(HermesAgentAutomationsPanel, { botId: "bot-2" }));
+    await waitFor(() => {
+      expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledWith("bot-2");
+    });
+
+    resolveSecond?.("supported");
+    await waitFor(() => {
+      expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledTimes(2);
+    });
+    resolveFirst?.("unknown");
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    expect(await screen.findByRole("combobox", { name: "上游任务" })).toBeEnabled();
+  });
+
+  it.each([
+    { contextCapability: "unsupported", mode: "create" },
+    { contextCapability: "unknown", mode: "create" },
+    { contextCapability: "unsupported", mode: "edit" },
+    { contextCapability: "unknown", mode: "edit" },
+  ] as const)(
+    "keeps ordinary $mode saves on the legacy path when context capability is $contextCapability",
+    async ({ contextCapability, mode }) => {
+      const initialJob = mode === "edit"
+        ? makeCronJob({ id: "ordinary", name: "普通任务" })
+        : undefined;
+      renderAutomationForm({ mode, initialJob, contextCapability });
+
+      if (mode === "create") {
+        fillCreateFields();
+      } else {
+        fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "普通任务已更新" } });
+      }
+      fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "添加" : "保存" }));
+
+      if (mode === "create") {
+        await waitFor(() => {
+          expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledTimes(1);
+        });
+      } else {
+        await waitFor(() => {
+          expect(cronClientMocks.editCronJob).toHaveBeenCalledWith("bot-1", "ordinary", { name: "普通任务已更新" });
+        });
+      }
+      expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
+      expect(cronClientMocks.editCronJobWithContext).not.toHaveBeenCalled();
+    },
+  );
+
+  it("uses structured create when an upstream is explicitly selected", async () => {
+    const upstream = makeCronJob({ id: "upstream", name: "上游任务 A" });
+    const onRefreshJobs = vi.fn().mockResolvedValue([upstream]);
+    renderAutomationForm({ jobs: [upstream], onRefreshJobs });
+
+    fillCreateFields();
+    chooseUpstream("上游任务 A");
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.createCronJobWithContextAndScriptRollback).toHaveBeenCalledWith(
+        "bot-1",
+        expect.objectContaining({ name: "下游任务", prompt: "整理上游结果" }),
+        "upstream",
+        undefined,
+      );
+    });
+    expect(onRefreshJobs).toHaveBeenCalledTimes(1);
+    expect(cronClientMocks.createCronJobWithScriptRollback).not.toHaveBeenCalled();
+  });
+
+  it.each(["create", "edit"] as const)(
+    "fails closed when a $mode relationship addition sees an untrusted latest relationship snapshot",
+    async (mode) => {
+      const upstream = makeCronJob({ id: "upstream", name: "上游任务 A" });
+      const unrelated = makeCronJob({ id: "untrusted", name: "关系未知任务", context_from_hydrated: false });
+      const downstream = makeCronJob({ id: "downstream", name: "下游任务" });
+      const initialJobs = mode === "edit" ? [downstream, upstream] : [upstream];
+      const onRefreshJobs = vi.fn().mockResolvedValue([
+        ...initialJobs,
+        unrelated,
+      ]);
+      renderAutomationForm({
+        mode,
+        initialJob: mode === "edit" ? downstream : undefined,
+        jobs: initialJobs,
+        onRefreshJobs,
+      });
+
+      if (mode === "create") fillCreateFields();
+      chooseUpstream("上游任务 A");
+      fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "添加" : "保存" }));
+
+      expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent(
+        "暂时无法确认最新依赖关系，请重试",
+      );
+      expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
+      expect(cronClientMocks.editCronJobWithContext).not.toHaveBeenCalled();
+    },
+  );
+
+  it("allows clearing a relationship without requiring a trusted graph snapshot", async () => {
+    const upstream = makeCronJob({ id: "upstream", name: "上游任务 A" });
+    const downstream = makeCronJob({ id: "downstream", name: "下游任务", context_from: ["upstream"] });
+    const onRefreshJobs = vi.fn().mockResolvedValue([
+      { ...downstream, context_from_hydrated: false },
+      { ...upstream, context_from_hydrated: false },
+    ]);
+    renderAutomationForm({
+      mode: "edit",
+      initialJob: downstream,
+      jobs: [downstream, upstream],
+      onRefreshJobs,
+    });
+
+    clearUpstream();
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.editCronJobWithContext).toHaveBeenCalledWith("bot-1", "downstream", {}, []);
+    });
+    expect(onRefreshJobs).not.toHaveBeenCalled();
+  });
+
+  it("keeps the legacy edit path when the relationship is unchanged", async () => {
+    const upstream = makeCronJob({ id: "upstream", name: "上游任务 A" });
+    const downstream = makeCronJob({ id: "downstream", name: "下游任务", context_from: ["upstream"] });
+    renderAutomationForm({
+      mode: "edit",
+      initialJob: downstream,
+      jobs: [downstream, upstream],
+      onRefreshJobs: vi.fn().mockResolvedValue([downstream, upstream]),
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "下游任务已更新" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.editCronJob).toHaveBeenCalledWith("bot-1", "downstream", { name: "下游任务已更新" });
+    });
+    expect(cronClientMocks.editCronJobWithContext).not.toHaveBeenCalled();
+  });
+
+  it("allows ordinary edits to preserve an unchanged paused upstream", async () => {
+    const pausedUpstream = makeCronJob({ id: "upstream", name: "暂停上游", enabled: false, state: "paused" });
+    const downstream = makeCronJob({ id: "downstream", name: "下游任务", context_from: ["upstream"] });
+    const onRefreshJobs = vi.fn();
+    renderAutomationForm({
+      mode: "edit",
+      initialJob: downstream,
+      jobs: [downstream, pausedUpstream],
+      onRefreshJobs,
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "下游任务已更新" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.editCronJob).toHaveBeenCalledWith("bot-1", "downstream", { name: "下游任务已更新" });
+    });
+    expect(onRefreshJobs).not.toHaveBeenCalled();
+    expect(cronClientMocks.editCronJobWithContext).not.toHaveBeenCalled();
+  });
+
+  it("shows a missing single upstream and allows clearing it", async () => {
+    const downstream = makeCronJob({ id: "downstream", name: "下游任务", context_from: ["deleted-upstream"] });
+    renderAutomationForm({ mode: "edit", initialJob: downstream, jobs: [downstream] });
+
+    expect(screen.getByRole("combobox", { name: "上游任务" })).toHaveTextContent("上游任务已不可用");
+    clearUpstream();
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.editCronJobWithContext).toHaveBeenCalledWith("bot-1", "downstream", {}, []);
+    });
+  });
+
+  it.each([
+    { actionName: "选择其他上游任务", optionName: "上游任务 B", expectedContext: ["upstream-b"] },
+    { actionName: "清除上游任务", optionName: null, expectedContext: [] },
+  ])("uses one structured update when the user $actionName", async ({ optionName, expectedContext }) => {
+    const upstreamA = makeCronJob({ id: "upstream-a", name: "上游任务 A" });
+    const upstreamB = makeCronJob({ id: "upstream-b", name: "上游任务 B" });
+    const downstream = makeCronJob({ id: "downstream", name: "下游任务", context_from: ["upstream-a"] });
+    const jobs = [downstream, upstreamA, upstreamB];
+    renderAutomationForm({
+      mode: "edit",
+      initialJob: downstream,
+      jobs,
+      onRefreshJobs: vi.fn().mockResolvedValue(jobs),
+    });
+
+    fireEvent.change(screen.getByPlaceholderText(/请用提示词的形式描述/), { target: { value: "更新后的说明" } });
+    if (optionName) {
+      chooseUpstream(optionName);
+    } else {
+      clearUpstream();
+    }
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.editCronJobWithContext).toHaveBeenCalledWith(
+        "bot-1",
+        "downstream",
+        expect.objectContaining({ prompt: "更新后的说明" }),
+        expectedContext,
+      );
+    });
+    expect(cronClientMocks.editCronJobWithContext).toHaveBeenCalledTimes(1);
+    expect(cronClientMocks.editCronJob).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: "paused",
+      latestJobs: [makeCronJob({ id: "upstream", name: "上游任务 A", enabled: false })],
+      message: "所选上游任务已暂停，请重新选择或解除关联",
+    },
+    {
+      label: "deleted",
+      latestJobs: [],
+      message: "所选上游任务已删除或过期，请重新选择或解除关联",
+    },
+  ])("keeps the form open when the selected upstream becomes $label", async ({ latestJobs, message }) => {
+    const upstream = makeCronJob({ id: "upstream", name: "上游任务 A" });
+    renderAutomationForm({ jobs: [upstream], onRefreshJobs: vi.fn().mockResolvedValue(latestJobs) });
+
+    fillCreateFields();
+    chooseUpstream("上游任务 A");
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(message);
+    expect(within(dialog).getByText("添加自动任务")).toBeTruthy();
+    expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
+  });
+
+  it.each(["create", "edit"] as const)(
+    "keeps the $mode form open when the selected upstream effective window ends before save",
+    async (mode) => {
+      const recurringSchedule = { kind: "cron", expr: "0 9 * * *", display: "每天 09:00" };
+      const upstream = makeCronJob({ id: "upstream", name: "上游任务 A", schedule: recurringSchedule });
+      const endedUpstream = makeCronJob({
+        ...upstream,
+        effective_window: { start_at: null, end_at: "2020-01-01T00:00:00+08:00" },
+      });
+      const downstream = makeCronJob({ id: "downstream", name: "下游任务" });
+      const initialJobs = mode === "edit" ? [downstream, upstream] : [upstream];
+      const latestJobs = mode === "edit" ? [downstream, endedUpstream] : [endedUpstream];
+      const onSaved = vi.fn();
+      renderAutomationForm({
+        mode,
+        initialJob: mode === "edit" ? downstream : undefined,
+        jobs: initialJobs,
+        onRefreshJobs: vi.fn().mockResolvedValue(latestJobs),
+        onSaved,
+      });
+
+      if (mode === "create") fillCreateFields();
+      chooseUpstream("上游任务 A");
+      fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "添加" : "保存" }));
+
+      const dialog = screen.getByRole("dialog");
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+        "所选上游任务已删除或过期，请重新选择或解除关联",
+      );
+      expect(within(dialog).getByText(mode === "create" ? "添加自动任务" : "编辑自动任务")).toBeTruthy();
+      expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
+      expect(cronClientMocks.editCronJobWithContext).not.toHaveBeenCalled();
+      expect(onSaved).not.toHaveBeenCalled();
+    },
+  );
+
+  it("renders external multi-upstream relationships read-only and preserves them on ordinary saves", async () => {
+    const upstreamA = makeCronJob({ id: "upstream-a", name: "上游任务 A" });
+    const downstream = makeCronJob({
+      id: "downstream",
+      name: "下游任务",
+      context_from: ["missing-upstream", "upstream-a"],
+    });
+    const jobs = [downstream, upstreamA];
+    renderAutomationForm({
+      mode: "edit",
+      initialJob: downstream,
+      jobs,
+      onRefreshJobs: vi.fn().mockResolvedValue(jobs),
+    });
+
+    expect(screen.getByText("当前任务配置了多个上游，暂不支持在 LightVela 中编辑")).toBeTruthy();
+    expect(screen.getByText("上游任务 A")).toBeTruthy();
+    expect(screen.getByText("上游任务已不可用")).toBeTruthy();
+    expect(screen.queryByText("missing-upstream")).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "上游任务" })).toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "外部任务已更新" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.editCronJob).toHaveBeenCalledWith("bot-1", "downstream", { name: "外部任务已更新" });
+    });
+    expect(cronClientMocks.editCronJobWithContext).not.toHaveBeenCalled();
+  });
+
+  it("shows the current upstream on cards, task details and recent-run details", async () => {
+    const upstream = makeCronJob({
+      id: "upstream",
+      name: "上游任务 A",
+      last_run_at: "2026-08-14T09:00:00+08:00",
+      last_status: "ok",
+      created_at: "2026-08-13T09:00:00+08:00",
+    });
+    const downstream = makeCronJob({
+      id: "downstream",
+      name: "下游任务",
+      context_from: ["upstream"],
+      created_at: "2026-08-14T09:00:00+08:00",
+    });
+    cronClientMocks.listCronJobs.mockResolvedValue([downstream, upstream]);
+    cronClientMocks.listRecentCronRuns.mockResolvedValue([makeCronRun({ job_id: "downstream", job_name: "下游任务" })]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    expect(await screen.findByText("来自：上游任务 A")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "查看" })[0]!);
+    expect(screen.getByText(/最近完成时间/)).toBeTruthy();
+    expect(screen.getByText("本任务执行时，将使用上游任务最近一次的输出作为上下文。")).toBeTruthy();
+    expect(screen.queryByText("本任务执行时，将使用该任务最近一次完成输出作为上下文；不会等待上游当前运行完成。")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "最近执行" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "查看任务详情" }))[0]!);
+    expect(screen.getByText("当前关联上游")).toBeTruthy();
+    expect(screen.queryByText("本次已使用")).toBeNull();
+  });
+
+  it("shows an unconfigured upstream task in task details", async () => {
+    const ordinary = makeCronJob({ id: "ordinary", name: "普通任务" });
+    cronClientMocks.listCronJobs.mockResolvedValue([ordinary]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(within(await getCronJobCard("普通任务")).getByRole("button", { name: "查看" }));
+
+    const dialog = screen.getByRole("dialog");
+    const upstreamLabel = within(dialog).getByText("上游任务");
+    const upstreamRow = upstreamLabel.closest("div");
+    expect(upstreamRow).not.toBeNull();
+    expect(within(upstreamRow!).getByText("未配置")).toBeTruthy();
+  });
+
+  it("explains paused upstream history and no-history fallback in task details", async () => {
+    const pausedWithHistory = makeCronJob({
+      id: "paused-history",
+      name: "暂停但有历史",
+      enabled: false,
+      state: "paused",
+      last_run_at: "2026-08-14T09:00:00+08:00",
+    });
+    const noHistory = makeCronJob({ id: "no-history", name: "暂无历史", last_run_at: null });
+    const firstDownstream = makeCronJob({ id: "downstream-a", name: "下游 A", context_from: ["paused-history"] });
+    const secondDownstream = makeCronJob({ id: "downstream-b", name: "下游 B", context_from: ["no-history"] });
+    cronClientMocks.listCronJobs.mockResolvedValue([firstDownstream, secondDownstream, pausedWithHistory, noHistory]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(within(await getCronJobCard("下游 A")).getByRole("button", { name: "查看" }));
+    expect(screen.getByText("任务已暂停，但仍可能使用最近一次完成输出")).toBeTruthy();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "关闭" }));
+
+    fireEvent.click(within(await getCronJobCard("下游 B")).getByRole("button", { name: "查看" }));
+    expect(screen.getByText("暂无完成记录，下游任务会在无上游上下文的情况下继续执行")).toBeTruthy();
+  });
+});
+
+describe("cron context dependent deletion", () => {
+  it("fails closed when the latest relationship hydration is unavailable", async () => {
+    const upstream = makeCronJob({ id: "job-a", name: "上游 A" });
+    cronClientMocks.listCronJobs
+      .mockResolvedValueOnce([upstream])
+      .mockResolvedValueOnce([{ ...upstream, context_from_hydrated: false }]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(within(await getCronJobCard("上游 A")).getByRole("button", { name: "删除" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "删除" }));
+
+    expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent("暂时无法确认最新依赖关系，请重试");
+    expect(cronClientMocks.removeCronJob).not.toHaveBeenCalled();
+    expect(cronClientMocks.removeCronJobWithDependentRollback).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when refreshing relationships before deletion fails", async () => {
+    const upstream = makeCronJob({ id: "job-a", name: "上游 A" });
+    cronClientMocks.listCronJobs
+      .mockResolvedValueOnce([upstream])
+      .mockRejectedValueOnce(new Error("refresh failed"));
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(within(await getCronJobCard("上游 A")).getByRole("button", { name: "删除" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "删除" }));
+
+    expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent("暂时无法确认最新依赖关系，请重试");
+    expect(cronClientMocks.removeCronJob).not.toHaveBeenCalled();
+  });
+
+  it("updates a changed dependent preview and requires a second confirmation", async () => {
+    const upstream = makeCronJob({ id: "job-a", name: "上游 A" });
+    const newDependent = makeCronJob({ id: "job-b", name: "新下游 B", context_from: ["job-a"] });
+    cronClientMocks.listCronJobs
+      .mockResolvedValueOnce([upstream])
+      .mockResolvedValueOnce([upstream, newDependent])
+      .mockResolvedValueOnce([upstream, newDependent])
+      .mockResolvedValueOnce([{ ...newDependent, context_from: null }]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(within(await getCronJobCard("上游 A")).getByRole("button", { name: "删除" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("任务依赖关系已变化，请确认最新受影响任务后再次删除");
+    expect(within(dialog).getByText("新下游 B")).toBeTruthy();
+    expect(cronClientMocks.removeCronJobWithDependentRollback).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
+    await waitFor(() => {
+      expect(cronClientMocks.removeCronJobWithDependentRollback).toHaveBeenCalledWith("bot-1", "job-a", [{
+        id: "job-b",
+        name: "新下游 B",
+        contextFrom: ["job-a"],
+      }]);
+    });
+  });
+
+  it("previews only direct dependents and deletes through the compensation path", async () => {
+    const upstream = makeCronJob({ id: "job-a", name: "上游 A", created_at: "2026-08-14T10:00:00+08:00" });
+    const directDependent = makeCronJob({
+      id: "job-b",
+      name: "直接下游 B",
+      context_from: ["job-a"],
+      created_at: "2026-08-14T09:00:00+08:00",
+    });
+    const indirectDependent = makeCronJob({
+      id: "job-c",
+      name: "间接下游 C",
+      context_from: ["job-b"],
+      created_at: "2026-08-14T08:00:00+08:00",
+    });
+    cronClientMocks.listCronJobs
+      .mockResolvedValueOnce([upstream, directDependent, indirectDependent])
+      .mockResolvedValueOnce([upstream, directDependent, indirectDependent])
+      .mockResolvedValueOnce([
+        { ...directDependent, context_from: null },
+        indirectDependent,
+      ]);
+
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(within(await getCronJobCard("上游 A")).getByRole("button", { name: "删除" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("直接下游 B")).toBeTruthy();
+    expect(within(dialog).queryByText("间接下游 C")).toBeNull();
+    expect(within(dialog).getByText("删除后将解除上游绑定并继续独立执行")).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.removeCronJobWithDependentRollback).toHaveBeenCalledWith("bot-1", "job-a", [{
+        id: "job-b",
+        name: "直接下游 B",
+        contextFrom: ["job-a"],
+      }]);
+    });
+    expect(cronClientMocks.removeCronJob).not.toHaveBeenCalled();
+    expect(await getCronJobCard("直接下游 B")).toBeTruthy();
+    expect(await getCronJobCard("间接下游 C")).toHaveTextContent("来自：直接下游 B");
+    expect(screen.queryByText("上游 A")).toBeNull();
+  });
+
+  it("keeps the target and shows mapped task names beside the delete action when detaching fails", async () => {
+    const upstream = makeCronJob({ id: "job-a", name: "上游 A", prompt: "PRIVATE PROMPT" });
+    const firstDependent = makeCronJob({ id: "job-b", name: "下游 B", context_from: ["job-a"] });
+    const failedDependent = makeCronJob({ id: "job-c", name: "下游 C", context_from: ["job-a"] });
+    cronClientMocks.listCronJobs.mockResolvedValue([upstream, firstDependent, failedDependent]);
+    cronClientMocks.removeCronJobWithDependentRollback.mockRejectedValue(new CronCommandError({
+      command: "cronjob dependent removal",
+      output: "update_failed:job-c;rollback_failed:job-b",
+      status: "CRON_DEPENDENT_MUTATION_FAILED",
+      exitCode: 1,
+    }));
+
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(within(await getCronJobCard("上游 A")).getByRole("button", { name: "删除" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "删除" }));
+
+    const dialog = await screen.findByRole("dialog");
+    const error = await within(dialog).findByRole("alert");
+    expect(error).toHaveTextContent("下游 B");
+    expect(error).toHaveTextContent("下游 C");
+    expect(error).not.toHaveTextContent("job-b");
+    expect(error).not.toHaveTextContent("job-c");
+    expect(error).not.toHaveTextContent("PRIVATE PROMPT");
+    expect(await getCronJobCard("上游 A")).toBeTruthy();
+    expect(cronClientMocks.removeCronJob).not.toHaveBeenCalled();
+  });
+
+  it("keeps ordinary deletion on the legacy remove path", async () => {
+    const ordinary = makeCronJob({ id: "ordinary", name: "普通任务" });
+    cronClientMocks.listCronJobs
+      .mockResolvedValueOnce([ordinary])
+      .mockResolvedValueOnce([ordinary])
+      .mockResolvedValueOnce([]);
+
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(within(await getCronJobCard("普通任务")).getByRole("button", { name: "删除" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "删除" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.removeCronJob).toHaveBeenCalledWith("bot-1", "ordinary");
+    });
+    expect(cronClientMocks.removeCronJobWithDependentRollback).not.toHaveBeenCalled();
+  });
+});
+
+describe("terminal cron card actions", () => {
+  it.each(["completed", "done", "expired", "cancelled", "disabled"])(
+    "does not present the %s terminal state as paused or recoverable",
+    async (state) => {
+      const terminal = makeCronJob({
+        id: `terminal-${state}`,
+        name: `终态任务 ${state}`,
+        schedule: { kind: "cron", expr: "0 9 * * *", display: "每天 09:00" },
+        state,
+        enabled: false,
+        next_run_at: null,
+      });
+      cronClientMocks.listCronJobs.mockResolvedValue([terminal]);
+      render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+      const card = await getCronJobCard(`终态任务 ${state}`);
+      expect(card).not.toHaveTextContent("已暂停");
+      expect(within(card).queryByRole("button", { name: "恢复" })).toBeNull();
+      expect(within(card).queryByRole("button", { name: "暂停" })).toBeNull();
+      expect(within(card).getByRole("button", { name: "查看" })).toBeTruthy();
+    },
+  );
 });
 
 describe("buildScheduleString and parseInitialSchedule", () => {
@@ -515,17 +1262,10 @@ describe("isHermesNotificationChannelConfigured", () => {
 describe("automation notification channel options", () => {
   it("keeps unconfigured domestic channels visible and disables their checkboxes", () => {
     if (isGlobal) return;
-    render(createElement(AutomationFormModal, {
-      botId: "bot-1",
-      mode: "create",
+    renderAutomationForm({
       enabledChannels: new Set(),
       channelStatus: "ready",
-      skillLoadState: { status: "ready", slugs: [], error: null },
-      onRefreshSkills: vi.fn().mockResolvedValue({ status: "ready", slugs: [], error: null }),
-      onClose: vi.fn(),
-      onSaved: vi.fn(),
-      onError: vi.fn(),
-    }));
+    });
 
     for (const channelName of ["微信", "QQ", "企业微信", "飞书"]) {
       expect(screen.getByRole("checkbox", { name: new RegExp(`^${channelName}.*未配置`) })).toBeDisabled();
@@ -536,17 +1276,10 @@ describe("automation notification channel options", () => {
 
   it("keeps the global empty state when no notification channel is configured", () => {
     if (!isGlobal) return;
-    render(createElement(AutomationFormModal, {
-      botId: "bot-1",
-      mode: "create",
+    renderAutomationForm({
       enabledChannels: new Set(),
       channelStatus: "ready",
-      skillLoadState: { status: "ready", slugs: [], error: null },
-      onRefreshSkills: vi.fn().mockResolvedValue({ status: "ready", slugs: [], error: null }),
-      onClose: vi.fn(),
-      onSaved: vi.fn(),
-      onError: vi.fn(),
-    }));
+    });
 
     expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
     expect(screen.getByText("No notification channels are configured yet.")).toBeTruthy();
@@ -835,6 +1568,60 @@ describe("once schedule validation", () => {
   });
 });
 
+function renderAutomationForm(overrides: Partial<Parameters<typeof AutomationFormModal>[0]> = {}) {
+  const defaultJobs = [makeCronJob({ id: "upstream", name: "上游任务 A" })];
+  const props: Parameters<typeof AutomationFormModal>[0] = {
+    botId: "bot-1",
+    mode: "create",
+    jobs: defaultJobs,
+    contextCapability: "supported",
+    onRetryContextCapability: vi.fn(),
+    enabledChannels: new Set(),
+    channelStatus: "ready",
+    skillLoadState: { status: "ready", slugs: [], error: null },
+    onRefreshJobs: vi.fn().mockResolvedValue(defaultJobs),
+    onRefreshSkills: vi.fn().mockResolvedValue({ status: "ready", slugs: [], error: null }),
+    onClose: vi.fn(),
+    onSaved: vi.fn(),
+    onError: vi.fn(),
+    ...overrides,
+  };
+  return render(createElement(AutomationFormModal, props));
+}
+
+describe("automation notification channel options", () => {
+  it("keeps unconfigured channels visible and disables their checkboxes", () => {
+    renderAutomationForm({ enabledChannels: new Set(), channelStatus: "ready" });
+
+    for (const channelName of ["微信", "QQ", "企业微信", "飞书"]) {
+      expect(screen.getByRole("checkbox", { name: new RegExp(`^${channelName}.*未配置`) })).toBeDisabled();
+    }
+    expect(screen.queryByText("暂无已配置的通知通道。")).toBeNull();
+    expect(screen.queryByRole("link", { name: "去通道配置" })).toBeNull();
+  });
+});
+
+function fillCreateFields() {
+  fireEvent.change(screen.getByPlaceholderText("请输入自动任务名称"), { target: { value: "下游任务" } });
+  fireEvent.change(screen.getByPlaceholderText(/请用提示词的形式描述/), { target: { value: "整理上游结果" } });
+}
+
+function chooseUpstream(optionName: string) {
+  fireEvent.click(screen.getByRole("combobox", { name: "上游任务" }));
+  fireEvent.click(screen.getByRole("option", { name: new RegExp(optionName) }));
+}
+
+function clearUpstream() {
+  fireEvent.click(screen.getByRole("button", { name: "取消选择" }));
+}
+
+async function getCronJobCard(jobName: string): Promise<HTMLElement> {
+  const name = await screen.findByText(jobName);
+  const card = name.closest("div.flex.flex-col.rounded-md");
+  if (!(card instanceof HTMLElement)) throw new Error(`Cron job card not found: ${jobName}`);
+  return card;
+}
+
 function makeScheduleCheck(overrides: Partial<Parameters<typeof shouldRejectPastOnceSchedule>[0]>): Parameters<typeof shouldRejectPastOnceSchedule>[0] {
   return {
     mode: "edit",
@@ -866,6 +1653,9 @@ function makeCronJob(overrides: Partial<CronJob>): CronJob {
     script: "",
     effective_window: null,
     lightvela_schedule: null,
+    context_from: null,
+    context_from_hydrated: true,
+    inference_config: null,
     ...overrides,
   };
 }
