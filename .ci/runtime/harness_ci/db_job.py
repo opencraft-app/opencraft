@@ -515,13 +515,13 @@ def build_ctl_dynamic_resources(
     mysql_password = platform_env.get("CTL_TEST_MYSQL_PASSWORD", "").strip() or runtime_secret_value(
         "CTL_TEST_MYSQL_PASSWORD", env_name
     )
-    if kubeconfig and namespace.startswith("lightvela-playground-"):
+    if resolver_name:
+        mysql_password = resolved_secrets.get(resolver_name, "").strip() or mysql_password
+    if not mysql_password and kubeconfig and namespace.startswith("lightvela-playground-"):
         mysql_password = (
             kubectl_secret_value(kubeconfig, namespace, "playground-runtime-secrets", "MYSQL_ROOT_PASSWORD").strip()
             or mysql_password
         )
-    elif resolver_name:
-        mysql_password = resolved_secrets.get(resolver_name, "").strip() or mysql_password
     if not mysql_host:
         raise ValueError("missing CTL_TEST_MYSQL_HOST in ctl platform env")
     if not mysql_password:
