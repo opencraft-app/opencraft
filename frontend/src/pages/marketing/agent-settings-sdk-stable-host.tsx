@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
 import { useLayoutEffect, useRef, useState } from "react";
 
-import { useTeaSdkZhHantObserver } from "./tea-sdk-zh-hant-observer";
-
 const SDK_LOADING_SELECTORS = [
   ".lh-std-channel-panel--loading",
   ".lh-std-channel-panel__loader",
@@ -29,10 +27,9 @@ export function StableTeaSdkPanelHost({ children }: { children: ReactNode }) {
   const [snapshotHtml, setSnapshotHtml] = useState<string | null>(null);
   const [showSnapshot, setShowSnapshot] = useState(false);
 
-  // zh-Hant 环境下把 SDK 渲染出的简体文案就地转成繁体字形，
-  // 并把 SDK 硬编码的 docs 链接加上 /zh-hant/ 前缀。
-  useTeaSdkZhHantObserver(liveRef);
-
+  // 面板文案已本地化为 mono2 自身 i18n（`@/i18n/t`），繁体由 `zh-Hant.json`
+  // 词条覆盖，与其他页面一致，无需运行时转换。本 host 仅负责在 SDK 内容
+  // 短暂回到加载态时用上一帧快照防止闪烁。
   useLayoutEffect(() => {
     const live = liveRef.current;
     if (!live) return;
