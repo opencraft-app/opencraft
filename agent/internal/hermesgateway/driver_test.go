@@ -113,11 +113,20 @@ func TestDriverDiscoversGatewayModelsAndManagedProfileSkills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	skills := make(map[string]struct{}, len(result.Skills))
+	for _, skill := range result.Skills {
+		skills[skill.Name] = struct{}{}
+	}
 	if result.Protocol != "hermes_gateway" ||
 		result.ProfileHome != host.ProfileHome ||
 		result.Models.Default != "default" || len(result.Models.Models) == 0 ||
-		len(result.Skills) != 1 || result.Skills[0].Name != "gateway-skill" {
+		len(result.Skills) != 2 {
 		t.Fatalf("Gateway Profile capabilities = %#v", result)
+	}
+	for _, required := range []string{"gateway-skill", "vela"} {
+		if _, ok := skills[required]; !ok {
+			t.Fatalf("Gateway Profile missing %q: %#v", required, result.Skills)
+		}
 	}
 }
 

@@ -72,15 +72,35 @@ func TestDriverDiscoversCapabilitiesFromEachManagedProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	firstSkills := make(map[string]struct{}, len(firstResult.Skills))
+	for _, skill := range firstResult.Skills {
+		firstSkills[skill.Name] = struct{}{}
+	}
+	secondSkills := make(map[string]struct{}, len(secondResult.Skills))
+	for _, skill := range secondResult.Skills {
+		secondSkills[skill.Name] = struct{}{}
+	}
 	if firstResult.ProfileHome != first.Home ||
 		firstResult.Models.Default != "model-a" ||
-		len(firstResult.Skills) != 1 || firstResult.Skills[0].Name != "skill-a" {
+		len(firstResult.Skills) != 2 {
 		t.Fatalf("first Profile capabilities = %#v", firstResult)
+	}
+	if _, ok := firstSkills["skill-a"]; !ok {
+		t.Fatalf("first Profile missing skill-a: %#v", firstResult.Skills)
+	}
+	if _, ok := firstSkills["vela"]; !ok {
+		t.Fatalf("first Profile missing managed Vela Skill: %#v", firstResult.Skills)
 	}
 	if secondResult.ProfileHome != second.Home ||
 		secondResult.Models.Default != "model-b" ||
-		len(secondResult.Skills) != 1 || secondResult.Skills[0].Name != "skill-b" {
+		len(secondResult.Skills) != 2 {
 		t.Fatalf("second Profile capabilities = %#v", secondResult)
+	}
+	if _, ok := secondSkills["skill-b"]; !ok {
+		t.Fatalf("second Profile missing skill-b: %#v", secondResult.Skills)
+	}
+	if _, ok := secondSkills["vela"]; !ok {
+		t.Fatalf("second Profile missing managed Vela Skill: %#v", secondResult.Skills)
 	}
 }
 

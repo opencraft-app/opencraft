@@ -153,6 +153,12 @@ func (p *nativeProfileProvisioner) Ensure(
 					return profileSelection{}, err
 				}
 			}
+			if err := ensureManagedVelaSkill(selection.Home); err != nil {
+				return profileSelection{}, fmt.Errorf(
+					"ensure Hermes managed Vela Skill: %w",
+					err,
+				)
+			}
 			return selection, nil
 		}
 		if !errors.Is(markerErr, os.ErrNotExist) {
@@ -305,6 +311,12 @@ func (p *nativeProfileProvisioner) finishProvisioning(
 	if err := enforceManagedProfilePostconditions(selection.Home); err != nil {
 		return profileSelection{}, fmt.Errorf(
 			"validate Hermes managed Profile: %w",
+			err,
+		)
+	}
+	if err := ensureManagedVelaSkill(selection.Home); err != nil {
+		return profileSelection{}, fmt.Errorf(
+			"ensure Hermes managed Vela Skill: %w",
 			err,
 		)
 	}

@@ -114,6 +114,29 @@ func TestNativeProfileProvisionerCreatesAndReusesManagedProfile(t *testing.T) {
 	); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("legacy cloned identity was not scrubbed: %v", err)
 	}
+	skillPath := filepath.Join(selection.Home, "skills", "vela", "SKILL.md")
+	skill, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("managed Vela Skill was not injected: %v", err)
+	}
+	for _, required := range []string{
+		"name: vela",
+		"vela inbox check",
+		"vela message read",
+		"vela message send",
+		"exact target",
+	} {
+		if !strings.Contains(string(skill), required) {
+			t.Fatalf("managed Vela Skill missing %q:\n%s", required, skill)
+		}
+	}
+	if info, statErr := os.Stat(skillPath); statErr != nil ||
+		info.Mode().Perm() != 0o600 {
+		t.Fatalf("managed Vela Skill mode = %v, %v", info, statErr)
+	}
+	if err := os.Remove(skillPath); err != nil {
+		t.Fatal(err)
+	}
 
 	reused, err := provisioner.Ensure(context.Background(), "agent-1")
 	if err != nil {
@@ -127,6 +150,24 @@ func TestNativeProfileProvisionerCreatesAndReusesManagedProfile(t *testing.T) {
 	}
 	if calls.Load() != 1 {
 		t.Fatalf("restart recloned managed Profile: calls = %d", calls.Load())
+	}
+	if restored, readErr := os.ReadFile(skillPath); readErr != nil ||
+		!strings.Contains(string(restored), "name: vela") {
+		t.Fatalf("managed Vela Skill was not restored: %q, %v", restored, readErr)
+	}
+	customSkill := []byte("---\nname: vela\ndescription: operator-owned\n---\n")
+	if err := os.WriteFile(skillPath, customSkill, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provisioner.Ensure(
+		context.Background(),
+		"agent-1",
+	); err == nil || !strings.Contains(err.Error(), "collides") {
+		t.Fatalf("unmanaged Vela Skill collision error = %v", err)
+	}
+	if preserved, readErr := os.ReadFile(skillPath); readErr != nil ||
+		!reflect.DeepEqual(preserved, customSkill) {
+		t.Fatalf("operator-owned Vela Skill was overwritten: %q, %v", preserved, readErr)
 	}
 }
 

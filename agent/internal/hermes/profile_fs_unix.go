@@ -3,6 +3,7 @@
 package hermes
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -15,6 +16,7 @@ import (
 )
 
 const managedProfileMarkerMaximum = 64 * 1024
+const managedSkillMaximum = 64 * 1024
 
 var managedProfileRuntimeStatePaths = []string{
 	"state.db",
@@ -68,6 +70,183 @@ func enforceManagedProfilePostconditions(profileHome string) error {
 		return err
 	}
 	return scrubLegacyIdentity(rootFD)
+}
+
+func ensureManagedVelaSkill(profileHome string) error {
+	rootFD, err := unix.Open(
+		profileHome,
+		unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW,
+		0,
+	)
+	if err != nil {
+		return fmt.Errorf("open Hermes managed Profile for Vela Skill: %w", err)
+	}
+	defer unix.Close(rootFD)
+
+	skillsFD, err := openOrCreateManagedDirectory(rootFD, "skills")
+	if err != nil {
+		return err
+	}
+	defer unix.Close(skillsFD)
+	velaFD, err := openOrCreateManagedDirectory(
+		skillsFD,
+		managedVelaSkillDirectory,
+	)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(velaFD)
+
+	existing, exists, err := readOptionalManagedFile(
+		velaFD,
+		managedVelaSkillFilename,
+		managedSkillMaximum,
+	)
+	if err != nil {
+		return err
+	}
+	want := []byte(managedVelaSkillContent)
+	if exists && bytes.Equal(existing, want) {
+		return chmodManagedFile(velaFD, managedVelaSkillFilename, 0o600)
+	}
+	if exists && !bytes.Contains(existing, []byte(managedVelaSkillMarker)) {
+		return errors.New("Hermes Profile Vela Skill collides with an unmanaged Skill")
+	}
+	return writeManagedFileAtomic(
+		velaFD,
+		managedVelaSkillFilename,
+		want,
+		0o600,
+	)
+}
+
+func openOrCreateManagedDirectory(parentFD int, name string) (int, error) {
+	directoryFD, err := unix.Openat(
+		parentFD,
+		name,
+		unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW,
+		0,
+	)
+	if errors.Is(err, unix.ENOENT) {
+		if err := unix.Mkdirat(parentFD, name, 0o700); err != nil &&
+			!errors.Is(err, unix.EEXIST) {
+			return -1, fmt.Errorf("create Hermes managed directory %s: %w", name, err)
+		}
+		directoryFD, err = unix.Openat(
+			parentFD,
+			name,
+			unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW,
+			0,
+		)
+	}
+	if err != nil {
+		return -1, fmt.Errorf("open Hermes managed directory %s: %w", name, err)
+	}
+	if err := unix.Fchmod(directoryFD, 0o700); err != nil {
+		unix.Close(directoryFD)
+		return -1, fmt.Errorf("restrict Hermes managed directory %s: %w", name, err)
+	}
+	return directoryFD, nil
+}
+
+func readOptionalManagedFile(
+	parentFD int,
+	name string,
+	maximum int64,
+) ([]byte, bool, error) {
+	fileFD, err := unix.Openat(
+		parentFD,
+		name,
+		unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW,
+		0,
+	)
+	if errors.Is(err, unix.ENOENT) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("open Hermes managed file %s: %w", name, err)
+	}
+	file := os.NewFile(uintptr(fileFD), name)
+	if file == nil {
+		unix.Close(fileFD)
+		return nil, false, fmt.Errorf("open Hermes managed file %s", name)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maximum {
+		return nil, false, fmt.Errorf("Hermes managed file %s is invalid", name)
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maximum+1))
+	if err != nil {
+		return nil, false, fmt.Errorf("read Hermes managed file %s: %w", name, err)
+	}
+	if int64(len(data)) > maximum {
+		return nil, false, fmt.Errorf("Hermes managed file %s is too large", name)
+	}
+	return data, true, nil
+}
+
+func chmodManagedFile(parentFD int, name string, mode uint32) error {
+	fileFD, err := unix.Openat(
+		parentFD,
+		name,
+		unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW,
+		0,
+	)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(fileFD)
+	return unix.Fchmod(fileFD, mode)
+}
+
+func writeManagedFileAtomic(
+	parentFD int,
+	name string,
+	content []byte,
+	mode uint32,
+) error {
+	random := make([]byte, 12)
+	if _, err := rand.Read(random); err != nil {
+		return err
+	}
+	tempName := ".vela-skill-" + hex.EncodeToString(random) + ".tmp"
+	tempFD, err := unix.Openat(
+		parentFD,
+		tempName,
+		unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_CLOEXEC|unix.O_NOFOLLOW,
+		mode,
+	)
+	if err != nil {
+		return fmt.Errorf("create Hermes managed Vela Skill: %w", err)
+	}
+	removeTemp := true
+	defer func() {
+		if removeTemp {
+			_ = unix.Unlinkat(parentFD, tempName, 0)
+		}
+	}()
+	temp := os.NewFile(uintptr(tempFD), tempName)
+	if temp == nil {
+		unix.Close(tempFD)
+		return errors.New("open Hermes managed Vela Skill temporary file")
+	}
+	if _, err := temp.Write(content); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := unix.Renameat(parentFD, tempName, parentFD, name); err != nil {
+		return fmt.Errorf("commit Hermes managed Vela Skill: %w", err)
+	}
+	removeTemp = false
+	return unix.Fsync(parentFD)
 }
 
 func rejectManagedRuntimeState(rootFD int) error {

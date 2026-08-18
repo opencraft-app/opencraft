@@ -107,6 +107,13 @@ including the generated `vela`/`Vela` wrapper and loopback gateway. Inherited
 `VELA_PROFILE` and `VELA_PROFILE` are removed before Hermes starts so an
 external wake-bridge login cannot override launch-scoped Computer identity.
 
+Each Computer-managed Hermes Profile also owns a reserved
+`skills/vela/SKILL.md`. The provisioner creates or repairs that Skill before
+Runtime startup so Hermes can discover the launch-scoped inbox/read/send
+workflow instead of relying only on standing-prompt hints. The file contains
+no credentials or host paths. A non-managed Skill already occupying the
+reserved `vela` name is treated as a collision and is never overwritten.
+
 ## Permission policy
 
 `HERMES_ACP_PERMISSION_POLICY` controls ACP permission requests:
