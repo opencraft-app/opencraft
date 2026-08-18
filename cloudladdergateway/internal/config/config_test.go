@@ -84,6 +84,39 @@ func TestExampleConfigRoutesIntlBillingAccountAPIToTestHost(t *testing.T) {
 	t.Fatal("tcapi-billing-intl-test route is missing")
 }
 
+func TestExampleConfigRoutesIntlBillingAccountAPIToProductionPolaris(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	for _, route := range cfg.Routes {
+		if route.ID != "tcapi-billing-intl-prod" {
+			continue
+		}
+		if route.Mode != RouteModeSignedHTTPTunnel {
+			t.Fatalf("route mode = %q", route.Mode)
+		}
+		if len(route.Callers) != 1 || route.Callers[0] != "shadow" {
+			t.Fatalf("route callers = %#v", route.Callers)
+		}
+		upstream, err := cfg.ResolveUpstream(route.ID, route.Upstream)
+		if err != nil {
+			t.Fatalf("resolve production international billing upstream: %v", err)
+		}
+		if upstream.Scheme != "http" {
+			t.Fatalf("upstream scheme = %q", upstream.Scheme)
+		}
+		if upstream.Polaris.Service != "billing.service" || upstream.Polaris.Namespace != "Production" {
+			t.Fatalf("upstream Polaris = %+v", upstream.Polaris)
+		}
+		if got := upstream.Headers["Host"]; got != "billing.tencentcloudapi.com" {
+			t.Fatalf("trusted Host = %q", got)
+		}
+		return
+	}
+	t.Fatal("tcapi-billing-intl-prod route is missing")
+}
+
 func TestExampleConfigRoutesTradeIntlBillingCreatePayURLToTestHost(t *testing.T) {
 	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
 	if err != nil {
@@ -191,6 +224,7 @@ func TestExampleConfigLoads(t *testing.T) {
 		"billing-trade-intl-prod":              false,
 		"tcapi-account-cn-dev":                 false,
 		"tcapi-billing-cn-dev":                 false,
+		"tcapi-billing-intl-prod":              false,
 		"tcapi-billing-trade-intl-test":        false,
 		"tcapi-account-cn-test":                false,
 		"tcapi-cam-cn-test":                    false,

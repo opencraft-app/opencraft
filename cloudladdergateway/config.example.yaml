@@ -232,6 +232,17 @@ backends:
       timeout: 15s
       allowed_methods: ["POST"]
 
+  - alias: tcapi-billing-intl-prod
+    upstream:
+      scheme: http
+      polaris:
+        service: "billing.service"
+        namespace: "Production"
+      timeout: 15s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "billing.tencentcloudapi.com"
+
   - alias: tcapi-billing-trade-intl-test
     upstream:
       base_url: "https://billing.test.tencentcloudapi.com"
@@ -336,6 +347,7 @@ auth:
         - tcapi-account-cn-dev
         - tcapi-billing-cn-dev
         - tcapi-billing-intl-test
+        - tcapi-billing-intl-prod
         - tcapi-account-cn-test
         - tcapi-cam-cn-test
         - tcapi-sts-cn-test
@@ -892,6 +904,14 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: tcapi-billing-intl-test
+
+  - id: tcapi-billing-intl-prod
+    description: "Signed tunnel for TencentCloud international billing account API production endpoint via domestic Polaris."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-intl-prod
 
   - id: tcapi-billing-trade-intl-test
     description: "Signed tunnel for LightVela trade intl CreatePayUrl test endpoint."
