@@ -24,7 +24,7 @@ func TestComputerClientSessionAndAssignment(t *testing.T) {
 
 	now := time.Date(2026, time.July, 31, 0, 0, 0, 0, time.UTC)
 	snapshot := daemon.Snapshot{
-		SchemaVersion: 2,
+		SchemaVersion: 1,
 		ComputerID:    computerTestID,
 		Epoch:         computerTestEpoch,
 		Revision:      2,
@@ -72,11 +72,11 @@ func TestComputerClientSessionAndAssignment(t *testing.T) {
 					},
 					"assignmentVersions": []int{1},
 				})
-			case "/v1/computer/assignments-v2":
+			case "/v1/computer/assignments":
 				if request.Method != http.MethodGet ||
 					request.Header.Get("Authorization") !=
 						"Bearer computer-short-token" ||
-					request.Header.Get("X-Vela-Assignment-Version") != "" {
+					request.Header.Get("X-Vela-Assignment-Version") != "1" {
 					http.Error(response, "bad assignment auth", http.StatusBadRequest)
 					return
 				}

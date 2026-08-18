@@ -77,7 +77,7 @@ func TestDefaultControllerRunsComputerSessionAndAssignmentLoop(
 
 	now := time.Now().UTC()
 	snapshot := daemon.Snapshot{
-		SchemaVersion: 2,
+		SchemaVersion: 1,
 		ComputerID:    computerControllerID,
 		Epoch:         computerControllerEpoch,
 		Revision:      1,
@@ -114,7 +114,7 @@ func TestDefaultControllerRunsComputerSessionAndAssignmentLoop(
 					},
 					"assignmentVersions": []int{1},
 				})
-			case "/v1/computer/assignments-v2":
+			case "/v1/computer/assignments":
 				call := assignmentCalls.Add(1)
 				if request.Header.Get("Authorization") !=
 					"Bearer computer-access-test" {
@@ -273,7 +273,7 @@ func TestDefaultControllerStartsTatBeforeFirstComputerSession(t *testing.T) {
 
 	now := time.Now().UTC()
 	snapshot := daemon.Snapshot{
-		SchemaVersion: 2,
+		SchemaVersion: 1,
 		ComputerID:    computerControllerID,
 		Epoch:         computerControllerEpoch,
 		Revision:      1,
@@ -308,7 +308,7 @@ func TestDefaultControllerStartsTatBeforeFirstComputerSession(t *testing.T) {
 					},
 					"assignmentVersions": []int{1},
 				})
-			case "/v1/computer/assignments-v2":
+			case "/v1/computer/assignments":
 				writeControllerJSON(t, response, snapshot)
 			case "/v1/computer/heartbeat":
 				response.WriteHeader(http.StatusNoContent)
@@ -538,7 +538,7 @@ func TestAssignmentSourceRefreshesRejectedComputerSession(t *testing.T) {
 
 	now := time.Now().UTC()
 	snapshot := daemon.Snapshot{
-		SchemaVersion: 2,
+		SchemaVersion: 1,
 		ComputerID:    computerControllerID,
 		Epoch:         computerControllerEpoch,
 		Revision:      1,
@@ -570,7 +570,7 @@ func TestAssignmentSourceRefreshesRejectedComputerSession(t *testing.T) {
 					},
 					"assignmentVersions": []int{1},
 				})
-			case "/v1/computer/assignments-v2":
+			case "/v1/computer/assignments":
 				assignmentCalls.Add(1)
 				if request.Header.Get("Authorization") ==
 					"Bearer computer-access-1" {

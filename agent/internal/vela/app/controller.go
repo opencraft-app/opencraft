@@ -678,14 +678,13 @@ func (s *computerHeartbeatSink) Send(
 		return err
 	}
 	heartbeat := platform.ComputerHeartbeat{
-		HeartbeatID:               value.HeartbeatID,
-		DaemonVersion:             value.DaemonVersion,
-		DaemonBuildID:             value.DaemonBuildID,
-		AssignmentEpoch:           value.AssignmentEpoch,
-		AssignmentRevision:        value.AssignmentRevision,
-		AssignmentVersion:         2,
-		ProfileCapabilityVersions: []int{1},
-		TATState:                  value.TATState,
+		HeartbeatID:        value.HeartbeatID,
+		DaemonVersion:      value.DaemonVersion,
+		DaemonBuildID:      value.DaemonBuildID,
+		AssignmentEpoch:    value.AssignmentEpoch,
+		AssignmentRevision: value.AssignmentRevision,
+		AssignmentVersion:  daemon.AssignmentSchemaVersionV1,
+		TATState:           value.TATState,
 		Reconcile: platform.ComputerHeartbeatReconcile{
 			State:     value.ReconcileState,
 			ErrorCode: value.ErrorCode,

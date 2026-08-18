@@ -28,9 +28,8 @@ func TestSendComputerHeartbeat(t *testing.T) {
 				return
 			}
 			if heartbeat.TATState != "online" ||
-				heartbeat.AssignmentVersion != 2 ||
-				len(heartbeat.ProfileCapabilityVersions) != 1 ||
-				heartbeat.ProfileCapabilityVersions[0] != 1 ||
+				heartbeat.AssignmentVersion != 1 ||
+				len(heartbeat.ProfileCapabilityVersions) != 0 ||
 				heartbeat.DaemonBuildID != "sha256:test-build" ||
 				len(heartbeat.Agents) != 1 ||
 				heartbeat.Agents[0].Attempt != 2 ||
@@ -61,14 +60,13 @@ func TestSendComputerHeartbeat(t *testing.T) {
 		context.Background(),
 		token,
 		ComputerHeartbeat{
-			HeartbeatID:               "018f0c9e-7b18-7abc-8def-0123456789ab",
-			DaemonVersion:             "test-version",
-			DaemonBuildID:             "sha256:test-build",
-			AssignmentEpoch:           "018f0c9e-7b13-7abc-8def-0123456789ab",
-			AssignmentRevision:        3,
-			AssignmentVersion:         2,
-			ProfileCapabilityVersions: []int{1},
-			TATState:                  "online",
+			HeartbeatID:        "018f0c9e-7b18-7abc-8def-0123456789ab",
+			DaemonVersion:      "test-version",
+			DaemonBuildID:      "sha256:test-build",
+			AssignmentEpoch:    "018f0c9e-7b13-7abc-8def-0123456789ab",
+			AssignmentRevision: 3,
+			AssignmentVersion:  1,
+			TATState:           "online",
 			Reconcile: ComputerHeartbeatReconcile{
 				State: "healthy",
 			},
