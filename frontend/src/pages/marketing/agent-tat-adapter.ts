@@ -62,6 +62,10 @@ const b64 = {
 };
 
 const MOCK_CONNECTED_CHANNELS_STORAGE_KEY = "lightclaw-mock-connected-channels-v1";
+const SLACK_PLATFORM = "slack";
+const STRIP_SLACK_ENV_COMMAND = "strip_slack_env";
+const SLACK_BOT_TOKEN_ENV = "SLACK_BOT_TOKEN";
+const SLACK_APP_TOKEN_ENV = "SLACK_APP_TOKEN";
 
 /** SDK 的 runCommand 入参形状（与 IRunCommandParams 同形） */
 type RunCommandRequest = {
@@ -471,19 +475,20 @@ export function createMockDebugExecAdapter(
   });
 
   const applyMockChannelCommand = (command: string) => {
-    if (command.includes("strip_slack_env") && command.includes("SLACK_BOT_TOKEN")) {
-      connectedChannels.delete("slack");
+    if (command.includes(STRIP_SLACK_ENV_COMMAND) && command.includes(SLACK_BOT_TOKEN_ENV)) {
+      connectedChannels.delete(SLACK_PLATFORM);
       writeConnectedChannels(connectedChannels);
       return;
     }
 
-    if (command.includes("SLACK_BOT_TOKEN") && command.includes("SLACK_APP_TOKEN")) {
-      connectedChannels.add("slack");
+    if (command.includes(SLACK_BOT_TOKEN_ENV) && command.includes(SLACK_APP_TOKEN_ENV)) {
+      connectedChannels.add(SLACK_PLATFORM);
       writeConnectedChannels(connectedChannels);
     }
   };
 
   const runCommand: IProductConfig["runCommand"] = async (data: RunCommandRequest) => {
+    // 业务约定：当前一次命令只面向一个 Agent 实例，SDK 入参里取第一个 InstanceId 作为 botId。
     const botId = data.InstanceIds?.[0]?.trim();
     if (!botId) {
       throw new Error(

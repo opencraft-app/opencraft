@@ -101,6 +101,11 @@ type InstalledSourceDescriptor = {
 
 type Translate = ReturnType<typeof useT>;
 type SortMode = "popular" | "name";
+type SkillCategoryLabel = {
+  zh: string;
+  en: string;
+  id?: string;
+};
 type SearchInstallRowStatus = {
   status: "pending" | "installing" | "retrying" | "done" | "failed" | "skipped";
   message?: string;
@@ -324,6 +329,16 @@ function getSkillOverview(
       examplePrompt: t("请使用“{{name}}”完成这项任务，并先说明需要哪些输入。", { name: skill.name }),
     };
   }
+}
+
+function getCategoryLabel(label: SkillCategoryLabel, overviewLocale: CuratedSkillOverviewLocale): string {
+  const labelByLocale: Partial<Record<CuratedSkillOverviewLocale, string>> = {
+    "zh-CN": label.zh,
+    "id-ID": label.id,
+    "en-US": label.en,
+  };
+
+  return labelByLocale[overviewLocale] ?? label.en;
 }
 
 const CLS = "lv-skills-demo";
@@ -2819,11 +2834,7 @@ export function SkillsDemoPanel({
               {skillCategories.map((category) => (
                 <section key={category.id}>
                   <SectionTitle className="mb-2 text-base">
-                    {isChinese
-                      ? category.label.zh
-                      : overviewLocale === "id-ID"
-                        ? category.label.id
-                        : category.label.en}
+                    {getCategoryLabel(category.label, overviewLocale)}
                   </SectionTitle>
                   <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
                     {category.skills.map((entry) => {
