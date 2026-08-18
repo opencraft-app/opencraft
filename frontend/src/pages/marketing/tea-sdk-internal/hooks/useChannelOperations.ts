@@ -8,15 +8,15 @@
  */
 
 import { useCallback, useState } from 'react';
-import { useOpenClawConfig } from './useOpenClawConfig';
-import { useOpenClawInternals } from './useOpenClawInternals';
-import type { IOpenClawComponentBaseProps } from './useOpenClawInternals';
-import type { IConfigData } from '../openclaw-panel/types';
+import { useAgentConfig } from './useAgentConfig';
+import { useAgentInternals } from './useAgentInternals';
+import type { IAgentComponentBaseProps } from './useAgentInternals';
+import type { IConfigData } from '../hermes-panel/types';
 import type { IChannelConfig, IProductConfig } from '../config/types';
 
 // ─── 类型定义 ───
 
-export interface IUseChannelOperationsParams extends IOpenClawComponentBaseProps {
+export interface IUseChannelOperationsParams extends IAgentComponentBaseProps {
   isDataReady?: boolean;
   operationDisabledTip?: string;
 }
@@ -66,7 +66,7 @@ export interface IUseChannelOperationsResult {
 
 export function useChannelOperations(params: IUseChannelOperationsParams): IUseChannelOperationsResult {
   const { configData, loading, restartAndRefresh, currentAction, setCurrentAction, refresh, currentChannelList } =
-    useOpenClawConfig({
+    useAgentConfig({
       instance: params.instance,
       scriptCommands: params.scriptCommands,
       featureFlags: params.featureFlags,
@@ -76,7 +76,7 @@ export function useChannelOperations(params: IUseChannelOperationsParams): IUseC
       operationDisabledTip: params.operationDisabledTip,
     });
 
-  const { scriptCommands, executor, productConfig } = useOpenClawInternals({
+  const { scriptCommands, executor, productConfig } = useAgentInternals({
     instance: params.instance,
     scriptCommands: params.scriptCommands,
     featureFlags: params.featureFlags,

@@ -5,12 +5,12 @@
  * Standard 面板不依赖 TEA Component，只输出 HTML + BEM class name。
  */
 
-import type { IOpenClawComponentBaseProps } from './hooks/useOpenClawInternals';
+import type { IAgentComponentBaseProps } from './hooks/useAgentInternals';
 import type { IChannelConfig } from './config/types';
 
 // ─── 公共 Props 基类 ───
 
-export interface IStandardPanelBaseProps extends IOpenClawComponentBaseProps {
+export interface IStandardPanelBaseProps extends IAgentComponentBaseProps {
   /** 数据是否准备就绪 */
   isDataReady?: boolean;
   /** 操作禁用提示（有值时禁用所有操作） */

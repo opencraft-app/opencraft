@@ -9,10 +9,10 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { t } from "@/i18n/t";
-import { useOpenClawConfig } from './useOpenClawConfig';
-import { useOpenClawInternals } from './useOpenClawInternals';
-import type { IOpenClawComponentBaseProps } from './useOpenClawInternals';
-import type { IConfigData } from '../openclaw-panel/types';
+import { useAgentConfig } from './useAgentConfig';
+import { useAgentInternals } from './useAgentInternals';
+import type { IAgentComponentBaseProps } from './useAgentInternals';
+import type { IConfigData } from '../hermes-panel/types';
 import type { IModelProvider } from '../config/types';
 import { normalizeCustomProvider } from '../utils/moltbot';
 import { isHermesModelProbeSuccessful, normalizeHermesApi, parseHermesModelProbe } from "../utils/hermesParsers";
@@ -26,7 +26,7 @@ export interface IProviderGroup {
   providers: IModelProvider[];
 }
 
-export interface IUseModelOperationsParams extends IOpenClawComponentBaseProps {
+export interface IUseModelOperationsParams extends IAgentComponentBaseProps {
   /** 数据是否准备就绪（可选，默认 true） */
   isDataReady?: boolean;
   /** 操作禁用提示 */
@@ -163,7 +163,7 @@ function parseCustomModelJson(configStr: string): ISaveCustomModelParams | null 
 
 export function useModelOperations(params: IUseModelOperationsParams): IUseModelOperationsResult {
   // ── 底层 hooks ──
-  const { configData, loading, restartAndRefresh, currentAction, setCurrentAction, refresh } = useOpenClawConfig({
+  const { configData, loading, restartAndRefresh, currentAction, setCurrentAction, refresh } = useAgentConfig({
     instance: params.instance,
     scriptCommands: params.scriptCommands,
     featureFlags: params.featureFlags,
@@ -173,7 +173,7 @@ export function useModelOperations(params: IUseModelOperationsParams): IUseModel
     operationDisabledTip: params.operationDisabledTip,
   });
 
-  const { scriptCommands, executor, productConfig } = useOpenClawInternals({
+  const { scriptCommands, executor, productConfig } = useAgentInternals({
     instance: params.instance,
     scriptCommands: params.scriptCommands,
     featureFlags: params.featureFlags,

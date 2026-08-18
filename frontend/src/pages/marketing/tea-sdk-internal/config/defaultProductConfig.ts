@@ -155,7 +155,7 @@ export function createLighthouseConfig(options: ICreateLighthouseConfigOptions =
     // Hermes 默认通道列表 = 国内站 5 个(微信/QQ/企微/元宝/飞书) + 国际站 7 个
     // (微信/QQ/企微/飞书/Telegram/Discord/WhatsApp,过滤元宝),由 isI18n 自动切换。
     // 业务方在顶层 productConfig 上设置 acliProduct: 'lightvela',会在调用时由
-    // useOpenClawConfig.computeChannelList 透传到 opts.acliProduct,从而屏蔽元宝。
+    // useAgentConfig.computeChannelList 透传到 opts.acliProduct,从而屏蔽元宝。
     // 数据源:`scripts/commands/hermes.HERMES_CHANNEL_LIST`(SDK 内置)。
     // 消费方如有定制需求(如 LH 按地域过滤),可在 createLighthouseConfig 后覆盖此字段。
     getChannelList: (opts) =>

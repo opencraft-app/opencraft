@@ -7,7 +7,7 @@ import { createLighthouseConfig } from '../config';
 import { useGatewayCommand } from './useGatewayCommand';
 import type { ICommandExecutor } from '../local-command-executor';
 import type { IProductConfig } from '../config/types';
-import type { IFeatureFlags, IInstanceInfo, IExecuteCommandOptions } from '../openclaw-panel/types';
+import type { IFeatureFlags, IInstanceInfo, IExecuteCommandOptions } from '../hermes-panel/types';
 
 // ============================================================
 // 独立组件公共 Props 基类
@@ -21,7 +21,7 @@ import type { IFeatureFlags, IInstanceInfo, IExecuteCommandOptions } from '../op
  *
  * 也可通过 scriptCommands 直接注入（适用于需要扩展命令的产品定制场景）。
  */
-export interface IOpenClawComponentBaseProps {
+export interface IAgentComponentBaseProps {
   /** 实例信息（必传） */
   instance: IInstanceInfo;
   /** 外部注入的 scriptCommands 实例（可选；不传则 SDK 内部使用默认值创建） */
@@ -46,7 +46,7 @@ export interface IOpenClawComponentBaseProps {
 // Hook 返回值类型
 // ============================================================
 
-export interface IOpenClawInternalsResult {
+export interface IAgentInternalsResult {
   /** 解析后的 scriptCommands 实例 */
   scriptCommands: LightClawScriptsSDK;
   /** 命令执行器 */
@@ -81,10 +81,9 @@ export interface IOpenClawInternalsResult {
  * 3. 调用 useGatewayCommand 获得命令执行能力
  * 4. 解析 productConfig（不传使用 lighthouse 默认值）
  *
- * 等价于 OpenClawPanel/index.tsx 中 44-61 行的初始化逻辑，
- * 抽成可复用 hook 避免各组件重复实现。
+ * 抽成可复用 hook，避免各组件重复实现初始化逻辑。
  */
-export function useOpenClawInternals(props: IOpenClawComponentBaseProps): IOpenClawInternalsResult {
+export function useAgentInternals(props: IAgentComponentBaseProps): IAgentInternalsResult {
   const { featureFlags: _featureFlags } = props;
 
   // 1. 解析 productConfig
@@ -105,10 +104,10 @@ export function useOpenClawInternals(props: IOpenClawComponentBaseProps): IOpenC
     () =>
       props.commandExecutor ?? {
         run: async () => {
-          throw new Error("[useOpenClawInternals] commandExecutor 未注入");
+          throw new Error("[useAgentInternals] commandExecutor 未注入");
         },
         runWithProgress: async () => {
-          throw new Error("[useOpenClawInternals] commandExecutor 未注入");
+          throw new Error("[useAgentInternals] commandExecutor 未注入");
         },
       },
     [props.commandExecutor],

@@ -1,8 +1,8 @@
 /**
- * @fileoverview useOpenClawConfig — 独立的 configData 请求 hook
+ * @fileoverview useAgentConfig — 独立的 configData 请求 hook
  *
  * 封装 configData 的请求（getOpenclawConfig）和解析（parseConfigResult）逻辑，
- * 无需依赖 OpenClawPanel 或 OpenClawContext。
+ * 可独立使用，无需外部 Context。
  *
  * **Hermes 兼容**：当 `productConfig.agentType === 'hermes'` 时，
  * hook 内部自动切换为 acli 数据通路（provider list / channel status），
@@ -10,10 +10,10 @@
  *
  * @example
  * ```tsx
- * import { useOpenClawConfig } from '@tencent/tea-sdk-lightclaw';
+ * import { useAgentConfig } from '@tencent/tea-sdk-lightclaw';
  *
  * function ModelCard(props) {
- *   const { configData, loading, refresh, restartAndRefresh } = useOpenClawConfig({
+ *   const { configData, loading, refresh, restartAndRefresh } = useAgentConfig({
  *     instance: props.instance,
 
  *     featureFlags: props.featureFlags,
@@ -30,13 +30,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { t } from "@/i18n/t";
 import { CHANNEL_LIST } from '../utils/moltbot';
 import type { IProductConfig } from '../config/types';
-import type { IConfigData, IFeatureFlags } from '../openclaw-panel/types';
-import { useOpenClawInternals } from './useOpenClawInternals';
-import type { IOpenClawComponentBaseProps } from './useOpenClawInternals';
+import type { IConfigData, IFeatureFlags } from '../hermes-panel/types';
+import { useAgentInternals } from './useAgentInternals';
+import type { IAgentComponentBaseProps } from './useAgentInternals';
 
 // ─── 入参类型 ───
 
-export interface IUseOpenClawConfigParams extends IOpenClawComponentBaseProps {
+export interface IUseAgentConfigParams extends IAgentComponentBaseProps {
   /** 数据是否准备就绪（可选，默认 true） */
   isDataReady?: boolean;
   /** 操作禁用提示（有值时跳过请求） */
@@ -45,7 +45,7 @@ export interface IUseOpenClawConfigParams extends IOpenClawComponentBaseProps {
 
 // ─── 返回值类型 ───
 
-export interface IUseOpenClawConfigResult {
+export interface IUseAgentConfigResult {
   /** 解析后的配置数据 */
   configData: IConfigData;
   /** 是否正在加载 */
@@ -81,7 +81,7 @@ const EMPTY_CONFIG: IConfigData = {
 /**
  * 解析远端 openclaw.json 配置为 IConfigData
  *
- * 从 OpenClawPanel/index.tsx 中抽离的纯函数，不依赖任何 React 状态。
+ * 纯函数，不依赖任何 React 状态。
  */
 export function parseConfigResult(
   configResult: string,
@@ -208,7 +208,7 @@ export function parseConfigResult(
 
     return { channels, providers, webUI };
   } catch (error) {
-    console.error('[useOpenClawConfig] parseConfigResult failed:', error);
+    console.error('[useAgentConfig] parseConfigResult failed:', error);
     return { channels: [], providers: [], webUI: undefined };
   }
 }
@@ -246,12 +246,12 @@ function computeChannelList(featureFlags: IFeatureFlags, productConfig: IProduct
  * 独立的 configData 请求 hook
  *
  * 将 configData 的请求（getOpenclawConfig）和解析（parseConfigResult）逻辑
- * 封装为可独立使用的 hook，无需依赖 OpenClawPanel 或 OpenClawContext。
+ * 封装为可独立使用的 hook。
  *
  * 内部自动创建 scriptCommands / executor / useGatewayCommand，
  * 消费方只需传最小参数集。
  */
-export function useOpenClawConfig(params: IUseOpenClawConfigParams): IUseOpenClawConfigResult {
+export function useAgentConfig(params: IUseAgentConfigParams): IUseAgentConfigResult {
   const { featureFlags, isDataReady = true, operationDisabledTip = '' } = params;
 
   // 内部自动创建 scriptCommands / executor / useGatewayCommand
@@ -263,7 +263,7 @@ export function useOpenClawConfig(params: IUseOpenClawConfigParams): IUseOpenCla
     currentAction,
     setCurrentAction,
     restartGateway,
-  } = useOpenClawInternals(params);
+  } = useAgentInternals(params);
 
   const { instance } = params;
   const isHermes = productConfig.agentType === 'hermes';
@@ -312,7 +312,7 @@ export function useOpenClawConfig(params: IUseOpenClawConfigParams): IUseOpenCla
       setConfigData(next);
       return next;
     } catch (error) {
-      console.error('[useOpenClawConfig] fetchHermesConfig failed:', error);
+      console.error('[useAgentConfig] fetchHermesConfig failed:', error);
     } finally {
       if (!silent) setLoading(false);
     }

@@ -20,7 +20,7 @@
  *   runWithProgress(opts) → execDebugCommandStream(botId, command, onChunk) → { success, output }
  *
  * 上游 6 个 hook（useGatewayCommand / useModelOperations / useChannelOperations /
- * useOpenClawConfig …）与 HermesQrCodeModal 只消费 `executor.run` /
+ * useAgentConfig …）与 HermesQrCodeModal 只消费 `executor.run` /
  * `executor.runWithProgress` 的形状，故**零改动**即可复用本 executor。
  */
 import type { Repositories } from "@/repositories/types";

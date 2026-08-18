@@ -14,7 +14,7 @@ import { t } from "@/i18n/t";
 import { Info, Eye, EyeOff } from 'lucide-react';
 import { useChannelOperations } from './tea-sdk-internal/hooks/useChannelOperations';
 import { message } from './tea-sdk-internal/utils/message';
-import HermesQrCodeModal, { IHermesQrCodeModalHandle } from './tea-sdk-internal/openclaw-panel/HermesQrCodeModal';
+import HermesQrCodeModal, { IHermesQrCodeModalHandle } from './tea-sdk-internal/hermes-panel/HermesQrCodeModal';
 import { FeishuIcon } from './tea-sdk-internal/icons/FeishuIcon';
 import { WecomIcon } from './tea-sdk-internal/icons/WecomIcon';
 import type { ChannelPanelProps } from './tea-sdk-internal/standard-panel-types';
