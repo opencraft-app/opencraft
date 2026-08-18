@@ -13,7 +13,7 @@
 | **主要作用** | 托管一个独立的 Hermes Agent | 通用 AI 工作空间 |
 | **运行方式** | 7×24 小时在线的独立云端 Agent | ChatGPT 账号、对话、Projects 和 GPTs |
 | **个性化方式** | 模型、工具、人设、技能和通道 | 记忆、指令、Projects 和自定义 GPTs |
-| **交互方式** | Telegram、WhatsApp、Discord 和 WeChat 等消息通道 | ChatGPT 网页端、移动端、桌面端、语音、文件和 Canvas |
+| **交互方式** | Telegram、WhatsApp、Discord、Slack 和 WeChat 等消息通道 | ChatGPT 网页端、移动端、桌面端、语音、文件和 Canvas |
 | **适合场景** | 你可以持续配置并反复使用的个人 Agent | 适合多种不同任务的灵活助手 |
 
 ## 关键区别：工作空间还是 Agent？

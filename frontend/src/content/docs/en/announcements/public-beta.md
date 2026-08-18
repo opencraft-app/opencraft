@@ -20,7 +20,7 @@ Since beta access opened, we have received many suggestions and real usage repor
 - Automations: run reminders, summaries, notifications, and other tasks on a schedule or interval.
 - Memory and context: review and manage the memories and context accumulated by your Agent.
 - Cloud storage and files: view and manage cloud files used by your Agent.
-- Web chat and messaging channels: chat on the web and connect channels such as Telegram, WhatsApp, Discord, WeChat, QQ, WeCom, and Lark.
+- Web chat and messaging channels: chat on the web and connect channels such as Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, and Lark.
 - Skills, tools, and plugin extensions: SkillHub integration supports browsing, information lookup, daily reports, image generation, and other capabilities.
 - Diagnostics and recovery: diagnose and recover issues related to channels, models, or Agent runtime.
 

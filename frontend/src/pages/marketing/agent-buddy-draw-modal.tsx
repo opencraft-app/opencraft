@@ -20,6 +20,7 @@ import { useT } from "@/i18n/t";
 import { fetchSoulDetail, type SkillHubSoul } from "@/lib/skillhub-api";
 import { getSoulSpec } from "@/lib/soul-interpretations";
 import { getEnglishSoulDetail, getEnglishSoulSpec } from "@/lib/soul-english-data";
+import { getIndonesianSoulDetail, getIndonesianSoulSpec } from "@/lib/soul-indonesian-data";
 import {
   getGlobalChineseSoulDetail,
   getGlobalChineseSoulSpec,
@@ -79,6 +80,8 @@ interface DrawSoulModalProps {
   drawnSlugs?: string[];
   useEnglishSoulData?: boolean;
   useGlobalChineseSoulData?: boolean;
+  /** 印尼语：在英文体系内替换展示文案，未覆盖的条目回退英文 */
+  useIndonesianSoulData?: boolean;
   onClose: () => void;
   /** 抽中并点击 "使用此人设" 时回调 */
   onPick: (soul: SkillHubSoul) => void;
@@ -90,6 +93,7 @@ export function DrawSoulModal({
   drawnSlugs,
   useEnglishSoulData = false,
   useGlobalChineseSoulData = false,
+  useIndonesianSoulData = false,
   onClose,
   onPick,
 }: DrawSoulModalProps) {
@@ -281,6 +285,7 @@ export function DrawSoulModal({
               onConfirm={handleConfirm}
               useEnglishSoulData={useEnglishSoulData}
               useGlobalChineseSoulData={useGlobalChineseSoulData}
+              useIndonesianSoulData={useIndonesianSoulData}
             />
           )}
         </AnimatePresence>
@@ -436,11 +441,13 @@ function RevealPanel({
   onConfirm,
   useEnglishSoulData,
   useGlobalChineseSoulData,
+  useIndonesianSoulData = false,
 }: {
   soul: SkillHubSoul;
   onConfirm: () => void;
   useEnglishSoulData: boolean;
   useGlobalChineseSoulData: boolean;
+  useIndonesianSoulData?: boolean;
 }) {
   const t = useT();
   const [interpretOpen, setInterpretOpen] = useState(false);
@@ -498,6 +505,7 @@ function RevealPanel({
             soul={soul}
             useEnglishSoulData={useEnglishSoulData}
             useGlobalChineseSoulData={useGlobalChineseSoulData}
+            useIndonesianSoulData={useIndonesianSoulData}
             onClose={() => setInterpretOpen(false)}
           />
         )}
@@ -510,17 +518,21 @@ function SoulInterpretModal({
   soul,
   useEnglishSoulData,
   useGlobalChineseSoulData,
+  useIndonesianSoulData = false,
   onClose,
 }: {
   soul: SkillHubSoul;
   useEnglishSoulData: boolean;
   useGlobalChineseSoulData: boolean;
+  useIndonesianSoulData?: boolean;
   onClose: () => void;
 }) {
   const t = useT();
   const fetcher = useCallback(() => {
     if (useEnglishSoulData) {
-      const detail = getEnglishSoulDetail(soul.slug);
+      const detail = useIndonesianSoulData
+        ? getIndonesianSoulDetail(soul.slug)
+        : getEnglishSoulDetail(soul.slug);
       if (!detail) throw new Error("Soul detail not found");
       return Promise.resolve(detail);
     }
@@ -530,8 +542,8 @@ function SoulInterpretModal({
       return Promise.resolve(detail);
     }
     return fetchSoulDetail(soul.slug);
-  }, [soul.slug, useEnglishSoulData, useGlobalChineseSoulData]);
-  const { data, loading, error } = useAsyncResource(fetcher, [soul.slug, useEnglishSoulData, useGlobalChineseSoulData]);
+  }, [soul.slug, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData]);
+  const { data, loading, error } = useAsyncResource(fetcher, [soul.slug, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData]);
 
   // 用 Portal 挂到 body，避开 reveal panel 的 padding/高度裁切，
   // 同时 fixed 相对视口居中，不被祖先 transform/filter 影响。
@@ -579,7 +591,9 @@ function SoulInterpretModal({
           {data && (() => {
             // 优先使用本地 SkillHub 同款"人设解读 + 5 维度"；缺失时回退到 OpenSpec
             const spec = useEnglishSoulData
-              ? getEnglishSoulSpec(soul.slug)
+              ? (useIndonesianSoulData
+                  ? getIndonesianSoulSpec(soul.slug)
+                  : getEnglishSoulSpec(soul.slug))
               : useGlobalChineseSoulData
                 ? getGlobalChineseSoulSpec(soul.slug)
                 : getSoulSpec(soul.slug);

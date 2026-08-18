@@ -22,7 +22,7 @@
 - 已经配置好的模型或可用的体验积分。
   Hermes 需要模型才能生成回复。
 
-- 至少一个已连接的通道，例如 Telegram、WhatsApp、Discord 或 WeChat，这样你才有实际联系它的方式。
+- 至少一个已连接的通道，例如 Telegram、WhatsApp、Discord、Slack 或 WeChat，这样你才有实际联系它的方式。
 
 - 如果你希望 Hermes 不只是等待消息，还能主动执行工作，则需要一个可选的重复任务。
 
@@ -34,7 +34,7 @@
 对于个人使用，通常应选择你每天已经会查看多次的应用。
 先完成连接，发送一条简短的测试消息，并确认 Hermes 能够回复，再进行更多配置。
 
-你可以查看 [Telegram](../configuration/channel-telegram.md)、[WhatsApp](../configuration/channel-whatsapp.md)、[Discord](../configuration/channel-discord.md) 和 [WeChat](../configuration/channel-wechat.md) 的详细说明。
+你可以查看 [Telegram](../configuration/channel-telegram.md)、[WhatsApp](../configuration/channel-whatsapp.md)、[Discord](../configuration/channel-discord.md)、[Slack](../configuration/channel-slack.md) 和 [WeChat](../configuration/channel-wechat.md) 的详细说明。
 
 ![运行中的 Hermes Agent 与已连接通道](../images/use-case-hermes-online-channel.png)
 

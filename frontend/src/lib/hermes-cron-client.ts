@@ -1447,6 +1447,7 @@ function normalizeChannelKeyForDeliver(channel: string): string {
   if (["telegram", "tg", "openclaw-telegram", "openclaw-tg"].includes(normalized)) return "telegram";
   if (["whatsapp", "whats-app", "whatsapp-business", "whatsapp_business", "openclaw-whatsapp"].includes(normalized)) return "whatsapp";
   if (["discord", "openclaw-discord"].includes(normalized)) return "discord";
+  if (["slack", "openclaw-slack"].includes(normalized)) return "slack";
   return normalized;
 }
 
@@ -1462,6 +1463,7 @@ const DELIVER_FALLBACK_CHANNEL_PRIORITY = [
   "telegram",
   "whatsapp",
   "discord",
+  "slack",
 ] as const;
 
 /**

@@ -16,7 +16,7 @@
 
 - 一个 LightVela 账号和正在运行的 Hermes Agent。若尚未创建，请先完成[快速上手](https://lightvela.ai/zh-sg/docs/quickstart)。
 
-- 一个对话通道。Telegram、WhatsApp、Discord 和微信都是常见起点；优先选择你最常打开的那个。
+- 一个对话通道。Telegram、WhatsApp、Discord、Slack 和微信都是常见起点；优先选择你最常打开的那个。
 
 - 已配置可用模型，或仍有可用的试用额度。若 Hermes 还不能回复，可查看[配置模型](https://lightvela.ai/zh-sg/docs/configuration/model)。
 
@@ -26,7 +26,7 @@
 
 ### 1. 让 Hermes 进入你的日常习惯
 
-先连接一个消息通道，再从你平时整理一天安排的地方发送前几条消息。通道不只是消息投递方式，更是让你愿意持续回到这个助手的使用习惯。可以按说明配置 [Telegram](https://lightvela.ai/zh-sg/docs/configuration/channel-telegram)、[WhatsApp](https://lightvela.ai/zh-sg/docs/configuration/channel-whatsapp)、[Discord](https://lightvela.ai/zh-sg/docs/configuration/channel-discord) 或[微信](https://lightvela.ai/zh-sg/docs/configuration/channel-wechat)。
+先连接一个消息通道，再从你平时整理一天安排的地方发送前几条消息。通道不只是消息投递方式，更是让你愿意持续回到这个助手的使用习惯。可以按说明配置 [Telegram](https://lightvela.ai/zh-sg/docs/configuration/channel-telegram)、[WhatsApp](https://lightvela.ai/zh-sg/docs/configuration/channel-whatsapp)、[Discord](https://lightvela.ai/zh-sg/docs/configuration/channel-discord)、[Slack](https://lightvela.ai/zh-sg/docs/configuration/channel-slack) 或[微信](https://lightvela.ai/zh-sg/docs/configuration/channel-wechat)。
 
 ![LightVela 控制台中的通道页面](../images/personal-ai-assistant-channel.webp)
 

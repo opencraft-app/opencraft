@@ -43,7 +43,7 @@ LightVela 更聚焦。如果你想要的是一个 Agent，而不是一个 AI 工
 - 持续记住你的偏好和正在进行的工作。
 - 发送提醒和周期性更新。
 - 随时间跟踪信息。
-- 通过 Telegram、WhatsApp、Discord 或 WeChat 回答问题。
+- 通过 Telegram、WhatsApp、Discord、Slack 或 WeChat 回答问题。
 - 使用技能扩展它能完成的事情。
 - 按计划运行[自动任务](https://lightvela.ai/zh-sg/docs/configuration/automation)。
 

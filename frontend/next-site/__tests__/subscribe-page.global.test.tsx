@@ -69,6 +69,7 @@ vi.mock("@/contexts/runtime-config-context", () => ({
 }));
 
 vi.mock("@/i18n/t", () => ({
+  useLocaleOverride: () => null,
   useT: () => (zh: string) => zh,
 }));
 

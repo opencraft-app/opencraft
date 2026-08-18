@@ -10,7 +10,7 @@ import { UserAvatarMenu } from '@/components/site/user-avatar-menu';
 import { useOpenClaw } from '@/contexts/agent-context';
 import { useSession } from '@/contexts/session-context';
 import { oauthErrorMessage } from '@/lib/oauth';
-import type { PublicSiteLocale } from '@/lib/public-site-navigation';
+import { publicSiteHref, type PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
 import { cn } from '@/lib/utils';
 import { AGENTS_HOME_PATH, getAgentCreatingPath } from '@/lib/agent-routes';
@@ -18,29 +18,38 @@ import { DATONG_PAGE_IDS } from '@/observability/datong';
 import { trackDatongClick } from '@/observability/datong-tracker';
 
 import { renderNextLanguageSwitcher } from './language-switcher';
-import { EN_US_LOCALE, ZH_CN_LOCALE, ZH_HANT_LOCALE, ZH_SG_LOCALE } from './public-locale';
+import { EN_US_LOCALE, ID_ID_LOCALE, ZH_CN_LOCALE, ZH_HANT_LOCALE, ZH_SG_LOCALE } from './public-locale';
 
 const secondaryButtonClass: Record<HeaderAppearance, string> = {
   immersive: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
   solid: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
 };
 
-const copyByLocale: Record<PublicSiteLocale, { createNow: string; login: string }> = {
+const copyByLocale: Record<PublicSiteLocale, { createNow: string; freeTrial: string; login: string }> = {
   [EN_US_LOCALE]: {
     createNow: 'Create Now',
+    freeTrial: 'Free trial',
     login: 'Sign In',
   },
   [ZH_CN_LOCALE]: {
     createNow: '立即创建',
+    freeTrial: '免费试用',
     login: '登录',
   },
   [ZH_SG_LOCALE]: {
     createNow: '立即创建',
+    freeTrial: '免费试用',
     login: '登录',
   },
   [ZH_HANT_LOCALE]: {
     createNow: '立即創建',
+    freeTrial: '免費試用',
     login: '登入',
+  },
+  [ID_ID_LOCALE]: {
+    createNow: 'Buat Sekarang',
+    freeTrial: 'Coba Gratis',
+    login: 'Masuk',
   },
 };
 
@@ -52,6 +61,7 @@ const copyByLocale: Record<PublicSiteLocale, { createNow: string; login: string 
  * 而非「立即創建/登入」）。
  */
 function inferLocaleFromI18n(language: string | undefined): PublicSiteLocale {
+  if (language === ID_ID_LOCALE || language?.startsWith('id')) return ID_ID_LOCALE;
   if (language === ZH_HANT_LOCALE || language?.startsWith('zh-Hant')) return ZH_HANT_LOCALE;
   if (language?.startsWith('zh')) return ZH_SG_LOCALE;
   return EN_US_LOCALE;
@@ -84,14 +94,9 @@ function PublicHeaderAuthControls({
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
   const activeLocale: PublicSiteLocale = locale ?? inferLocaleFromI18n(i18n.language);
   const copy = copyByLocale[activeLocale] || copyByLocale[EN_US_LOCALE];
-  // 未登录转化引导：主按钮文案改为「免费试用」（英文站为 Free trial、繁体为「免費試用」）
-  const createLabel = promoteFreeTrial
-    ? activeLocale === ZH_HANT_LOCALE
-      ? '免費試用'
-      : activeLocale.startsWith('zh')
-        ? '免费试用'
-        : 'Free trial'
-    : copy.createNow;
+  // 未登录转化引导：主按钮文案改为当前 locale 的「免费试用」。
+  const createLabel = promoteFreeTrial ? copy.freeTrial : copy.createNow;
+  const subscribePath = publicSiteHref('/subscribe', activeLocale, { localized: isGlobal });
 
   useEffect(() => {
     if (oauthError) {
@@ -102,13 +107,13 @@ function PublicHeaderAuthControls({
   const goToCreate = () => {
     const target = !isAuthenticated
       ? promoteFreeTrial
-        ? '/subscribe'
+        ? subscribePath
         : 'login_modal'
       : isSubscribed
         ? bots.length > 0
           ? AGENTS_HOME_PATH
           : getAgentCreatingPath(true)
-        : '/subscribe';
+        : subscribePath;
     trackDatongClick('header_create_now_btn', {
       pgid: DATONG_PAGE_IDS.HOME,
       params: {
@@ -120,7 +125,7 @@ function PublicHeaderAuthControls({
       // 首页转化引导：未登录点击「免费试用」直接进入订阅套餐页；
       // 其它页面维持原有「弹出登录框」行为。
       if (promoteFreeTrial) {
-        router.push('/subscribe');
+        router.push(subscribePath);
         return;
       }
       setShowLogin(true);
@@ -130,7 +135,7 @@ function PublicHeaderAuthControls({
       router.push(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
       return;
     }
-    router.push('/subscribe');
+    router.push(subscribePath);
   };
 
   if (!authReady) {

@@ -16,6 +16,8 @@ import { DOCS_ROUTE_SLUGS, type DocsRouteLocale } from './docs-route-manifest';
 import {
   EN_US_LOCALE,
   EN_US_URL_LANG,
+  ID_ID_LOCALE,
+  ID_ID_URL_LANG,
   ZH_CN_LOCALE,
   ZH_CN_URL_LANG,
   ZH_HANT_LOCALE,
@@ -24,7 +26,13 @@ import {
   ZH_SG_URL_LANG,
 } from './public-locale';
 
-export type DocsLocalePrefix = typeof EN_US_URL_LANG | typeof ZH_CN_URL_LANG | typeof ZH_SG_URL_LANG | typeof ZH_HANT_URL_LANG | undefined;
+export type DocsLocalePrefix =
+  | typeof EN_US_URL_LANG
+  | typeof ZH_CN_URL_LANG
+  | typeof ZH_SG_URL_LANG
+  | typeof ZH_HANT_URL_LANG
+  | typeof ID_ID_URL_LANG
+  | undefined;
 
 export function docsSlug(_prefix: DocsLocalePrefix, slug?: string[]) {
   const pageSlug = slug && slug.length > 0 ? slug : ['overview'];
@@ -41,6 +49,7 @@ export function LightVelaDocsPage({ prefix, slug }: { prefix?: DocsLocalePrefix;
   const page = getDocsPage(prefix, slug);
   const MDX = page.data.body;
   const breadcrumbRoutePath = canonicalDocsPath(prefix ?? 'default', docsSlug(prefix, slug));
+  const docsBreadcrumbName = prefix === ID_ID_URL_LANG ? 'Dokumentasi' : 'Docs';
 
   return (
     <>
@@ -66,7 +75,7 @@ export function LightVelaDocsPage({ prefix, slug }: { prefix?: DocsLocalePrefix;
       <BreadcrumbJsonLd
         items={[
           { name: 'LightVela', path: '/' },
-          { name: 'Docs', path: canonicalDocsPath(prefix ?? 'default', []) },
+          { name: docsBreadcrumbName, path: canonicalDocsPath(prefix ?? 'default', []) },
           { name: page.data.title, path: breadcrumbRoutePath },
         ]}
       />
@@ -96,6 +105,7 @@ function docsSeoLocale(prefix: DocsLocalePrefix): SeoLocale {
     [ZH_CN_URL_LANG]: ZH_CN_LOCALE,
     [ZH_SG_URL_LANG]: ZH_SG_LOCALE,
     [ZH_HANT_URL_LANG]: ZH_HANT_LOCALE,
+    [ID_ID_URL_LANG]: ID_ID_LOCALE,
   } as const satisfies Record<Exclude<DocsLocalePrefix, undefined>, SeoLocale>;
   return prefix ? PREFIX_TO_SEO_LOCALE[prefix] : ZH_CN_LOCALE;
 }

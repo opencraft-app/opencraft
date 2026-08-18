@@ -41,7 +41,7 @@
 
 积分会在以下场景中消耗，本质上都是 Hermes Agent 调用了大模型：
 
-- **和 Agent 对话** — 通过 Telegram、WhatsApp、Discord 或 WeChat 等通道与 Agent 交流
+- **和 Agent 对话** — 通过 Telegram、WhatsApp、Discord、Slack 或 WeChat 等通道与 Agent 交流
 
 - **执行自动任务** — Agent 按计划运行[定时任务](./configuration/automation.md)
 
