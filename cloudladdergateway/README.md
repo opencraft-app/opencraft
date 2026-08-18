@@ -232,7 +232,7 @@ client.WithHttpTransport(transport)
 | `tcapi-account-cn-dev` | `account.dev.tencentcloudapi.com` | SaaS 注册开发联调文档 |
 | `tcapi-billing-cn-dev` | `billing.dev.tencentcloudapi.com` | `shadow` 默认 billing API endpoint |
 | `tcapi-billing-intl-test` | `billing.test.tencentcloudapi.com` | 国际站影子账号自动开户测试通道 |
-| `tcapi-billing-intl-prod` | `billing.tencentcloudapi.com` | 国际站影子账号自动开户生产通道，经 `billing.service/Production` 北极星解析 |
+| `tcapi-billing-intl-prod` | `billing.ap-singapore.tencentcloudapi.woa.com` | 国际站影子账号自动开户生产内网通道 |
 | `tcapi-billing-trade-intl-test` | `billing.test.tencentcloudapi.com` | 国际站 trade 获取支付链接 `CreatePayUrl` 测试通道 |
 | `tcapi-account-cn-test` | `account.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
 | `tcapi-cam-cn-test` | `cam.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |

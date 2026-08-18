@@ -84,7 +84,7 @@ func TestExampleConfigRoutesIntlBillingAccountAPIToTestHost(t *testing.T) {
 	t.Fatal("tcapi-billing-intl-test route is missing")
 }
 
-func TestExampleConfigRoutesIntlBillingAccountAPIToProductionPolaris(t *testing.T) {
+func TestExampleConfigRoutesIntlBillingAccountAPIToProductionInternalHost(t *testing.T) {
 	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
 	if err != nil {
 		t.Fatalf("load example config: %v", err)
@@ -103,14 +103,11 @@ func TestExampleConfigRoutesIntlBillingAccountAPIToProductionPolaris(t *testing.
 		if err != nil {
 			t.Fatalf("resolve production international billing upstream: %v", err)
 		}
-		if upstream.Scheme != "http" {
-			t.Fatalf("upstream scheme = %q", upstream.Scheme)
+		if got := upstream.BaseURL; got != "http://billing.ap-singapore.tencentcloudapi.woa.com" {
+			t.Fatalf("production international billing base_url = %q", got)
 		}
-		if upstream.Polaris.Service != "billing.service" || upstream.Polaris.Namespace != "Production" {
-			t.Fatalf("upstream Polaris = %+v", upstream.Polaris)
-		}
-		if got := upstream.Headers["Host"]; got != "billing.tencentcloudapi.com" {
-			t.Fatalf("trusted Host = %q", got)
+		if upstream.Polaris.Service != "" || upstream.Polaris.Namespace != "" {
+			t.Fatalf("production international billing must not use Polaris: %+v", upstream.Polaris)
 		}
 		return
 	}

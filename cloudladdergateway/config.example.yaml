@@ -234,14 +234,9 @@ backends:
 
   - alias: tcapi-billing-intl-prod
     upstream:
-      scheme: http
-      polaris:
-        service: "billing.service"
-        namespace: "Production"
+      base_url: "http://billing.ap-singapore.tencentcloudapi.woa.com"
       timeout: 15s
       allowed_methods: ["POST"]
-      headers:
-        Host: "billing.tencentcloudapi.com"
 
   - alias: tcapi-billing-trade-intl-test
     upstream:
@@ -906,7 +901,7 @@ routes:
       backend: tcapi-billing-intl-test
 
   - id: tcapi-billing-intl-prod
-    description: "Signed tunnel for TencentCloud international billing account API production endpoint via domestic Polaris."
+    description: "Signed tunnel for TencentCloud international billing account API production internal endpoint."
     mode: signed_http_tunnel
     callers: ["shadow"]
     condition: 'request.method == "POST"'
