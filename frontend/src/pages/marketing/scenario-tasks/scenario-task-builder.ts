@@ -492,7 +492,7 @@ function buildEnglishUserFacingScenarioPrompt(
   values: Record<string, string>,
   userPrompt: string,
 ): string {
-  const valueLines = buildIndonesianScenarioValueLines(pack, values);
+  const valueLines = buildEnglishScenarioValueLines(pack, values);
   return [
     "You are running a LightVela automation. Write the final result as a message that can be sent directly to the user.",
     [
@@ -528,7 +528,7 @@ function buildIndonesianUserFacingScenarioPrompt(
   values: Record<string, string>,
   userPrompt: string,
 ): string {
-  const valueLines = buildEnglishScenarioValueLines(pack, values);
+  const valueLines = buildIndonesianScenarioValueLines(pack, values);
   return [
     "Anda sedang menjalankan otomatisasi LightVela. Tulis hasil akhir sebagai pesan yang bisa langsung dikirim ke pengguna.",
     [
