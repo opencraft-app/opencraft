@@ -10,6 +10,17 @@ import (
 	passmodel "ctl/pkg/model/pass"
 )
 
+func TestRenewPassParentRetryBudget(t *testing.T) {
+	const renewInstanceRetryWindowSeconds = int64(60 * 60)
+
+	if renewPassParentMaxExecuteCount != 1<<30 {
+		t.Fatalf("renew parent max execute count = %d, want %d", renewPassParentMaxExecuteCount, 1<<30)
+	}
+	if retryWindow := renewPassParentExecuteIntervalSeconds * int64(renewPassParentMaxExecuteCount); retryWindow <= renewInstanceRetryWindowSeconds {
+		t.Fatalf("renew parent retry window = %ds, must exceed child retry window %ds", retryWindow, renewInstanceRetryWindowSeconds)
+	}
+}
+
 // TestCalcExpiredTime 表驱动覆盖 m/d/y 三个 time_unit 分支 + 边界
 //
 // trade-pass-renew §12 Q19=b 关闭后（2026-05-15 v3.8），CalcExpiredTime 必须支持 'y' 单位；

@@ -101,6 +101,7 @@ type Config struct {
 	//   - "ap-beijing"   → 8 / 800001 / "北京"
 	//   - "ap-shanghai"  → 4 / 400001 / "上海"
 	//   - "ap-singapore" → 9 / 900001 / "Singapore"
+	//   - "ap-seoul"     → 18 / 1800001 / "Seoul"
 	//
 	// 取值优先级：override 非空且命中 region.regionTable 时优先于 SiteKind 兑底；空字符串
 	// 时按 SiteKind 走（cn → 广州 / intl → 新加坡）。注册表唯一来源在 trade/internal/region
@@ -125,6 +126,7 @@ type Config struct {
 	// 两者部分缺失（只配一个）会被 Load 期列为配置错误（避免只能询价却不能下单的跳脚状态）。
 	DianshiPriceBaseURL string
 	DianshiOrderBaseURL string
+	DianshiPreview      int
 }
 
 // Load 从环境变量构建 Config，未设必填项时返回 error。
@@ -200,6 +202,14 @@ func Load() (Config, error) {
 		DianshiPriceBaseURL: strings.TrimSpace(os.Getenv("DIANSHI_PRICE_BASE_URL")),
 		DianshiOrderBaseURL: strings.TrimSpace(os.Getenv("DIANSHI_ORDER_BASE_URL")),
 	}
+	switch raw := strings.TrimSpace(os.Getenv("DIANSHI_PREVIEW")); raw {
+	case "", "0":
+		cfg.DianshiPreview = 0
+	case "1":
+		cfg.DianshiPreview = 1
+	default:
+		return Config{}, fmt.Errorf("DIANSHI_PREVIEW must be 0 or 1, got %q", raw)
+	}
 	if cfg.MySQLDSN == "" {
 		return Config{}, fmt.Errorf("TRADE_MYSQL_DSN is required")
 	}
@@ -220,7 +230,7 @@ func Load() (Config, error) {
 		if _, ok := region.LookupByRegion(cfg.RegionOverride); !ok {
 			return Config{}, fmt.Errorf(
 				"LIGHTVELA_TRADE_REGION=%q is not a registered region; "+
-					"supported: ap-guangzhou / ap-beijing / ap-shanghai / ap-singapore",
+					"supported: ap-guangzhou / ap-beijing / ap-shanghai / ap-singapore / ap-seoul",
 				cfg.RegionOverride)
 		}
 	}
