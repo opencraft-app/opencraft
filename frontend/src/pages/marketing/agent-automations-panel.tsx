@@ -3029,37 +3029,20 @@ export function AutomationFormModal({
             </div>
           ) : (
             <div className="mt-2 space-y-1">
-              {(() => {
-                const channels = (
-                  isGlobal
-                    ? GLOBAL_NOTIFICATION_CHANNELS.map((channel) => ({
-                      key: channel.key,
-                      label: "label" in channel ? channel.label : t(channel.labelKey),
-                      comingSoon: channel.comingSoon,
-                    }))
-                    : ([
-                      { key: "weixin", label: t("微信"), comingSoon: false },
-                      { key: "qqbot", label: "QQ", comingSoon: false },
-                      { key: "wecom", label: t("企业微信"), comingSoon: false },
-                      { key: "feishu", label: t("飞书"), comingSoon: false },
-                    ] as const)
-                ).filter(({ key, comingSoon }) => isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon));
-
-                if (channels.length === 0) {
-                  return (
-                    <div className="flex flex-wrap items-center gap-2 text-sm text-black/45" style={MODAL_HELP_TEXT_STYLE}>
-                      <span>{t("暂无已配置的通知通道。")}</span>
-                      <a
-                        href="/agents/channels/"
-                        className="inline-flex items-center rounded-md border border-black/10 px-2 py-1 text-[12px] font-medium text-black/70 transition hover:bg-black/[0.04]"
-                      >
-                        {t("去通道配置")}
-                      </a>
-                    </div>
-                  );
-                }
-
-                return channels.map(({ key, label, comingSoon }) => {
+              {(
+                isGlobal
+                  ? GLOBAL_NOTIFICATION_CHANNELS.map((channel) => ({
+                    key: channel.key,
+                    label: "label" in channel ? channel.label : t(channel.labelKey),
+                    comingSoon: channel.comingSoon,
+                  }))
+                  : ([
+                    { key: "weixin", label: t("微信"), comingSoon: false },
+                    { key: "qqbot", label: "QQ", comingSoon: false },
+                    { key: "wecom", label: t("企业微信"), comingSoon: false },
+                    { key: "feishu", label: t("飞书"), comingSoon: false },
+                  ] as const)
+              ).map(({ key, label, comingSoon }) => {
               // comingSoon 通道一律强制为「不可配置」，无论 acli channel status 怎么报
               const configured = isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon);
               const blockedByFrequency = key === "weixin" && weixinBlockedByFrequency;
@@ -3218,8 +3201,7 @@ export function AutomationFormModal({
 
                 </div>
               );
-            });
-              })()}
+            })}
             </div>
           )}
           {/* 间距用 div 显式 spacer 拉开，避免 mt-* 被 layout 影响 */}
