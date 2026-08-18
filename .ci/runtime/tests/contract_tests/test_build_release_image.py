@@ -139,6 +139,7 @@ class BuildReleaseImageTests(unittest.TestCase):
         self.assertIn("NEXT_PUBLIC_REGION=cn", command)
         self.assertIn("VITE_AUTH_API_BASE_URL=https://api-sandbox-bj-7.lightclaw.tech", command)
         self.assertIn("VITE_REGION=cn", command)
+        self.assertIn("--force-rm", command)
         self.assertEqual(command[-1], ".")
 
     def test_image_for_target_matches_docker_build_image_ref(self) -> None:
@@ -189,6 +190,7 @@ class BuildReleaseImageTests(unittest.TestCase):
         with mock.patch("contracts.build_release_image.docker_daemon_available", return_value=True), \
             mock.patch("contracts.build_release_image.push_image_with_retry") as push_image, \
             mock.patch("contracts.build_release_image.wait_for_remote_image") as wait, \
+            mock.patch("contracts.build_release_image.remove_local_image") as remove, \
             mock.patch("contracts.build_release_image.subprocess.run") as run:
             image = build_target(
                 target,
@@ -212,7 +214,45 @@ class BuildReleaseImageTests(unittest.TestCase):
             timeout_seconds=17,
             interval_seconds=3,
         )
+        remove.assert_called_once_with(image)
         self.assertEqual(run.call_args_list[-1].args[0][0:2], ["docker", "build"])
+
+    def test_build_target_removes_local_image_when_push_fails(self) -> None:
+        target = ImageTarget(
+            name="workers",
+            image_key=None,
+            dockerfile="workers/Dockerfile",
+            build_context="workers",
+            image_repo="registry.example.com/lightclaw/workers",
+        )
+        image = "registry.example.com/lightclaw/workers:workers-test"
+
+        with mock.patch("contracts.build_release_image.docker_daemon_available", return_value=True), \
+            mock.patch(
+                "contracts.build_release_image.push_image_with_retry",
+                side_effect=RuntimeError("push failed"),
+            ), mock.patch("contracts.build_release_image.remove_local_image") as remove, \
+            mock.patch("contracts.build_release_image.run_command"):
+            with self.assertRaisesRegex(RuntimeError, "push failed"):
+                build_target(target, "workers-test", "linux/amd64", True, {})
+
+        remove.assert_called_once_with(image)
+
+    def test_build_target_keeps_local_image_without_push(self) -> None:
+        target = ImageTarget(
+            name="workers",
+            image_key=None,
+            dockerfile="workers/Dockerfile",
+            build_context="workers",
+            image_repo="registry.example.com/lightclaw/workers",
+        )
+
+        with mock.patch("contracts.build_release_image.docker_daemon_available", return_value=True), \
+            mock.patch("contracts.build_release_image.remove_local_image") as remove, \
+            mock.patch("contracts.build_release_image.run_command"):
+            build_target(target, "workers-test", "linux/amd64", False, {})
+
+        remove.assert_not_called()
 
     def test_push_image_retries_after_connection_failure(self) -> None:
         image = "registry.example.com/lightclaw/workers:workers-test"
