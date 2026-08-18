@@ -671,24 +671,10 @@ func (g *Gateway) registerMessage(
 		strings.TrimSpace(message.SenderUserID) == "" {
 		return runtimeapi.MessageRegistration{}, ErrInvalidMessage
 	}
-	g.mu.Lock()
-	canonicalTarget, found := g.reverseTargets[message.Ref.Conversation()]
-	if !found {
-		if g.directoryReady {
-			g.mu.Unlock()
-			return runtimeapi.MessageRegistration{}, ErrInvalidMessage
-		}
-		var err error
-		canonicalTarget, err = conversationTarget(message.Ref.Conversation())
-		if err != nil {
-			g.mu.Unlock()
-			return runtimeapi.MessageRegistration{}, err
-		}
-		g.targets[canonicalTarget] = message.Ref.Conversation()
-		g.targetAliases[strings.ToLower(canonicalTarget)] = canonicalTarget
-		g.reverseTargets[message.Ref.Conversation()] = canonicalTarget
+	canonicalTarget, err := g.resolveIncomingTarget(message.Ref.Conversation())
+	if err != nil {
+		return runtimeapi.MessageRegistration{}, err
 	}
-	g.mu.Unlock()
 	if err := g.messageIndex.Add(canonicalTarget, message.Ref); err != nil {
 		return runtimeapi.MessageRegistration{}, err
 	}
@@ -719,6 +705,61 @@ func (g *Gateway) registerMessage(
 	}
 	g.messages = append(g.messages, stored)
 	return messageRegistration(stored.target, stored.content, stored.attachments), nil
+}
+
+// resolveIncomingTarget makes the Runtime Directory authoritative for inbound
+// routing. In particular, Server private messages are Tencent groups, so their
+// IM conversation type alone cannot distinguish a two-member direct message
+// from a Channel. A target miss can occur briefly after a direct conversation
+// is created; refresh once before rejecting it or deriving an opaque fallback.
+func (g *Gateway) resolveIncomingTarget(
+	conversation im.Conversation,
+) (string, error) {
+	g.mu.RLock()
+	canonicalTarget, found := g.reverseTargets[conversation]
+	directoryReady := g.directoryReady
+	canRefresh := g.platformClient != nil &&
+		strings.TrimSpace(g.accessToken.Reveal()) != ""
+	g.mu.RUnlock()
+	if found {
+		return canonicalTarget, nil
+	}
+	if canRefresh {
+		refreshContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err := g.refreshDirectory(refreshContext, true)
+		cancel()
+		if err != nil {
+			return "", err
+		}
+		g.mu.RLock()
+		canonicalTarget, found = g.reverseTargets[conversation]
+		directoryReady = g.directoryReady
+		g.mu.RUnlock()
+		if found {
+			return canonicalTarget, nil
+		}
+	}
+
+	// Without a Runtime Directory (for example in an offline test harness),
+	// retain the legacy opaque route. Never derive that route once an
+	// authoritative directory has rejected the conversation: doing so would
+	// make an arbitrary group appear eligible for a direct-message policy.
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if canonicalTarget, found = g.reverseTargets[conversation]; found {
+		return canonicalTarget, nil
+	}
+	if directoryReady || g.directoryReady {
+		return "", ErrInvalidMessage
+	}
+	canonicalTarget, err := conversationTarget(conversation)
+	if err != nil {
+		return "", err
+	}
+	g.targets[canonicalTarget] = conversation
+	g.targetAliases[strings.ToLower(canonicalTarget)] = canonicalTarget
+	g.reverseTargets[conversation] = canonicalTarget
+	return canonicalTarget, nil
 }
 
 func messageRegistration(
