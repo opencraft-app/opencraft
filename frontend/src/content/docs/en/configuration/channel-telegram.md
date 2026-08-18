@@ -137,6 +137,8 @@ After access succeeds, the Telegram bot can receive and reply to basic text mess
 
 - [Configure Channel - Discord](./channel-discord.md) — Community operations and developer communities
 
+- [Configure Channel - Slack](./channel-slack.md) — Team collaboration, workspace notifications, and channel workflows
+
 - [Configure Channel - QQ](./channel-qq.md) — Bot created manually, integrated via AppID/AppSecret
 
 - [Configure Skills](./skill.md) — Extend Hermes Agent capabilities

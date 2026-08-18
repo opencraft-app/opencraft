@@ -59,7 +59,7 @@ export type CronjobToolPayload = Record<string, unknown> & {
   action: "create" | "update" | "remove";
 };
 
-export interface CronjobToolResult {
+interface CronjobToolResult {
   success: true;
   job_id?: string;
   job?: Record<string, unknown>;
@@ -71,7 +71,7 @@ export interface CronDependentBinding {
   contextFrom: string[];
 }
 
-export interface CronDependentMutationSummary {
+interface CronDependentMutationSummary {
   success: boolean;
   updated: string[];
   rollback_failed: string[];
@@ -237,7 +237,7 @@ export function buildDetectCronContextFromCapabilityCommand(): string {
     'supported = "context_from" in inspect.signature(cronjob).parameters',
     `print("${CRON_CONTEXT_CAPABILITY_MARKER}" + json.dumps({"supported": supported}))`,
   ].join("\n");
-  return `~/.hermes/hermes-agent/venv/bin/python -c ${shellQuote(script)}`;
+  return `cd "$HOME/.hermes/hermes-agent" && ./venv/bin/python -c ${shellQuote(script)}`;
 }
 
 export function parseCronContextCapabilityOutput(output: string): CronContextCapability {
@@ -1537,7 +1537,7 @@ export function buildTestRunMarker(jobId: string, originName?: string): string {
 }
 
 /** 判断是否为「测试运行」创建的用完即焚临时任务，供 `listCronJobs` 过滤 */
-function isTestRunMarkerName(name: string): boolean {
+export function isTestRunMarkerName(name: string): boolean {
   return ZW_MARKER_RE.test(name);
 }
 
@@ -1651,6 +1651,7 @@ function normalizeChannelKeyForDeliver(channel: string): string {
   if (["telegram", "tg", "openclaw-telegram", "openclaw-tg"].includes(normalized)) return "telegram";
   if (["whatsapp", "whats-app", "whatsapp-business", "whatsapp_business", "openclaw-whatsapp"].includes(normalized)) return "whatsapp";
   if (["discord", "openclaw-discord"].includes(normalized)) return "discord";
+  if (["slack", "openclaw-slack"].includes(normalized)) return "slack";
   return normalized;
 }
 
@@ -1666,6 +1667,7 @@ const DELIVER_FALLBACK_CHANNEL_PRIORITY = [
   "telegram",
   "whatsapp",
   "discord",
+  "slack",
 ] as const;
 
 /**

@@ -16,7 +16,7 @@ Hermes 实例是运行在 LightVela 云端的 Agent 运行环境——你的专�
 
 - 在[订阅页](/subscribe)选择一个当前可用的套餐；国际站不要求完成中国实名认证
 
-- 至少一个准备接入的聊天通道，例如 Telegram、WhatsApp、Discord 或 WeChat
+- 至少一个准备接入的聊天通道，例如 Telegram、WhatsApp、Discord、Slack 或 WeChat
 
 ---
 
@@ -46,7 +46,7 @@ LightVela 计划将于 2026 年 8 月 18 日（新加坡时间）起转入公测
 
 1. **配置模型** — 选择底层大模型，见[模型配置](./configuration/model.md)
 
-2. **连接通道** — 接入 Telegram、WhatsApp、Discord、WeChat 或其他支持的聊天通道，之后即可在聊天软件中直接与 Agent 对话
+2. **连接通道** — 接入 Telegram、WhatsApp、Discord、Slack、WeChat 或其他支持的聊天通道，之后即可在聊天软件中直接与 Agent 对话
 
 3. **（可选）安装技能与设置自动任务** — 为 Agent 扩展能力，见[自动任务配置](./configuration/automation.md)
 

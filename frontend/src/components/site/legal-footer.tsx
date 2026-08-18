@@ -5,7 +5,6 @@ import {
   BEIAN_URL,
   CN_PRIVACY_POLICY_URL,
   CN_TERMS_OF_SERVICE_URL,
-  getGlobalTermsOfServiceUrl,
   ICP_LICENSE,
   shouldShowICP,
 } from "@/constants/legal";
@@ -15,8 +14,9 @@ import {
   DISCORD_INVITE_URL,
   DISCORD_QR_IMAGE,
 } from "@/constants/community";
-import { useT } from "@/i18n/t";
-import { isCN, isGlobal } from "@/lib/region";
+import { useLocaleOverride, useT } from "@/i18n/t";
+import { isCN, isGlobal, localizedPath } from "@/lib/region";
+import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 
 interface LegalFooterProps {
   icpPlacement?: "inline" | "right";
@@ -26,9 +26,20 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
   const currentYear = new Date().getFullYear();
   const t = useT();
   const { i18n } = useTranslation();
+  const localeOverride = useLocaleOverride();
+  const currentLocale: PublicSiteLocaleCode =
+    localeOverride === PUBLIC_SITE_LOCALES.ID_ID || i18n.language === PUBLIC_SITE_LOCALES.ID_ID
+      ? PUBLIC_SITE_LOCALES.ID_ID
+      : localeOverride === PUBLIC_SITE_LOCALES.ZH_HANT || i18n.language === PUBLIC_SITE_LOCALES.ZH_HANT
+        ? PUBLIC_SITE_LOCALES.ZH_HANT
+        : localeOverride?.startsWith("zh") || i18n.language?.startsWith("zh")
+          ? PUBLIC_SITE_LOCALES.ZH_SG
+          : PUBLIC_SITE_LOCALES.EN_US;
   const showICP = shouldShowICP();
   const [showQR, setShowQR] = useState(false);
-  const globalTermsOfServiceUrl = getGlobalTermsOfServiceUrl(i18n.language);
+  const privacyPolicyPath = localizedPath("/privacy-policy", currentLocale);
+  const termsOfServicePath = localizedPath("/terms-of-service", currentLocale);
+  const openSourceLicensesPath = localizedPath("/open-source-licenses", currentLocale);
   const footerLinkClass = "lw-site-link lw-site-link--muted transition-colors";
   const showInlineICP = showICP && icpPlacement === "inline";
   const showRightICP = showICP && icpPlacement === "right";
@@ -58,7 +69,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
           </span>
           <span>
             {isGlobal ? (
-              <a href="/privacy-policy" className={footerLinkClass}>
+              <a href={privacyPolicyPath} className={footerLinkClass}>
                 {t("隐私政策")}
               </a>
             ) : (
@@ -73,12 +84,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
             )}
             ·
             {isGlobal ? (
-              <a
-                href={globalTermsOfServiceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={footerLinkClass}
-              >
+              <a href={termsOfServicePath} className={footerLinkClass}>
                 {t("服务条款")}
               </a>
             ) : (
@@ -105,7 +111,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
             {isGlobal ? (
               <>
                 ·
-                <a href="/open-source-licenses" className={footerLinkClass}>
+                <a href={openSourceLicensesPath} className={footerLinkClass}>
                   {t("开源声明")}
                 </a>
               </>

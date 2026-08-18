@@ -206,6 +206,8 @@ When this happens, check the model configuration again.
 
 - [Configure Channel - Discord](./channel-discord.md)
 
+- [Configure Channel - Slack](./channel-slack.md)
+
 - [Configure Channel - QQ](./channel-qq.md)
 
 - [Configure Channel - WeCom](./channel-wecom.md)

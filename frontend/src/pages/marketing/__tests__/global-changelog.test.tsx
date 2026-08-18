@@ -185,7 +185,7 @@ describe("global changelog skill package entry", () => {
     );
     expect(
       screen.getByText(
-        "支持一键创建云端 Hermes Agent，支持快速接入 Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。",
+        "支持一键创建云端 Hermes Agent，支持快速接入 Telegram、WhatsApp、Discord、Slack 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。",
       ),
     ).toBeInTheDocument();
 

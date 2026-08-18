@@ -14,6 +14,10 @@ import { ThemeStyleInjector } from '@/theme/theme-style';
 
 import { NextAppNavigationProvider } from './next-app-navigation';
 
+const LOCAL_PREVIEW_AUTH_ENABLED =
+  process.env.NEXT_PUBLIC_LOCAL_PREVIEW_AUTH === '1'
+  || process.env.VITE_LOCAL_PREVIEW_AUTH === '1';
+
 function SkeletonBlock({ className }: { className: string }) {
   return <span className={`block animate-pulse bg-black/[0.045] ${className}`} />;
 }
@@ -243,7 +247,7 @@ function NextMarketingAuthGate({ children, loadingFallback }: { children: ReactN
     return <>{loadingFallback}</>;
   }
 
-  if (isAuthenticated) {
+  if (isAuthenticated || LOCAL_PREVIEW_AUTH_ENABLED) {
     return <>{children}</>;
   }
 

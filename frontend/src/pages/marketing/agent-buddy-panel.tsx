@@ -40,6 +40,11 @@ import {
 import { getSoulSpec, buildSoulMd } from "@/lib/soul-interpretations";
 import { ENGLISH_SOULS, getEnglishSoulDetail, getEnglishSoulSpec } from "@/lib/soul-english-data";
 import {
+  INDONESIAN_SOULS,
+  getIndonesianSoulDetail,
+  getIndonesianSoulSpec,
+} from "@/lib/soul-indonesian-data";
+import {
   GLOBAL_CHINESE_SOULS,
   getGlobalChineseSoulDetail,
   getGlobalChineseSoulSpec,
@@ -88,12 +93,15 @@ function localizeDrawnSouls(
   availableSouls: SkillHubSoul[],
   useEnglishSoulData: boolean,
   useGlobalChineseSoulData: boolean,
+  useIndonesianSoulData = false,
 ): SkillHubSoul[] {
-  // 国际站 EN：持久化 slug → westernized slug，在 ENGLISH_SOULS 里解析。
+  // 国际站 EN / ID：持久化 slug → westernized slug，在对应语言的池里解析。
+  // 印尼语沿用英文 slug，因此只需切换查表用的池。
   if (useEnglishSoulData) {
+    const pool = useIndonesianSoulData ? INDONESIAN_SOULS : ENGLISH_SOULS;
     return drawnSouls.map((soul) => {
       const enSlug = toEnglishSlug(soul.slug);
-      return ENGLISH_SOULS.find((item) => item.slug === enSlug) ?? soul;
+      return pool.find((item) => item.slug === enSlug) ?? soul;
     });
   }
   // 国际站 ZH：持久化 slug → westernized slug，在 GLOBAL_CHINESE_SOULS 里解析。
@@ -163,6 +171,10 @@ export function BuddyPanel({
   const useEnglishSoulData = isGlobal && !i18n.language.startsWith("zh");
   // 国际站中文：用独立的 global-CN 人设体系（GOAT·大神…），与国内站（YYDS·神人…）分开。
   const useGlobalChineseSoulData = isGlobal && i18n.language.startsWith("zh");
+  // 印尼语：复用英文体系的 slug 命名空间，仅替换展示文案。
+  // 刻意不从 useEnglishSoulData 中排除 id-ID —— 它作为印尼语分支的兜底，
+  // 任何未覆盖到的取数路径都会安全回退英文，而不会误落到国内站 SkillHub 池。
+  const useIndonesianSoulData = isGlobal && i18n.language.startsWith("id");
 
   // 持久化：状态走 Vibebase（用户级 KV，跨设备一致）。
   // 加载流程：mount / 切 botId → 异步拉取 → 期间显示 loading 占位（空抽卡盘 + 转圈）。
@@ -211,18 +223,29 @@ export function BuddyPanel({
   // 避免 SoulSlotGrid 内部 fetch 一次、DrawModal 再单独 fetch 一次。
   const soulsFetcher = useCallback(() => {
     if (useEnglishSoulData) {
-      return Promise.resolve({ total: ENGLISH_SOULS.length, souls: ENGLISH_SOULS });
+      const pool = useIndonesianSoulData ? INDONESIAN_SOULS : ENGLISH_SOULS;
+      return Promise.resolve({ total: pool.length, souls: pool });
     }
     if (useGlobalChineseSoulData) {
       return Promise.resolve({ total: GLOBAL_CHINESE_SOULS.length, souls: GLOBAL_CHINESE_SOULS });
     }
     return fetchSouls({ page: 1, pageSize: 30 });
-  }, [useEnglishSoulData, useGlobalChineseSoulData]);
-  const soulsResource = useAsyncResource(soulsFetcher, [useEnglishSoulData, useGlobalChineseSoulData]);
+  }, [useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData]);
+  const soulsResource = useAsyncResource(soulsFetcher, [
+    useEnglishSoulData,
+    useGlobalChineseSoulData,
+    useIndonesianSoulData,
+  ]);
   const souls = soulsResource.data?.souls ?? [];
   const localizedDrawnSouls = useMemo(
-    () => localizeDrawnSouls(drawnSouls, souls, useEnglishSoulData, useGlobalChineseSoulData),
-    [drawnSouls, souls, useEnglishSoulData, useGlobalChineseSoulData],
+    () => localizeDrawnSouls(
+      drawnSouls,
+      souls,
+      useEnglishSoulData,
+      useGlobalChineseSoulData,
+      useIndonesianSoulData,
+    ),
+    [drawnSouls, souls, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData],
   );
 
   const drawnSlugs = drawnSouls.map((s) => s.slug);
@@ -522,7 +545,9 @@ export function BuddyPanel({
     let md: string;
     try {
       const detail = useEnglishSoulData
-        ? getEnglishSoulDetail(soul.slug)
+        ? (useIndonesianSoulData
+            ? getIndonesianSoulDetail(soul.slug)
+            : getEnglishSoulDetail(soul.slug))
         : useGlobalChineseSoulData
           ? getGlobalChineseSoulDetail(soul.slug)
           : await fetchSoulDetail(soul.slug);
@@ -609,7 +634,7 @@ export function BuddyPanel({
         ? t("无法写入 Agent 沙箱，已下载 soul.md 到本地")
         : t("当前未选中 Agent，已下载 soul.md 到本地"),
     });
-  }, [selectedSlug, localizedDrawnSouls, botId, repositories, toast.kind, showToast, t, useEnglishSoulData, useGlobalChineseSoulData]);
+  }, [selectedSlug, localizedDrawnSouls, botId, repositories, toast.kind, showToast, t, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData]);
 
   /**
    * 清除 Bot 沙箱里当前的 SOUL.md（让 hermes-agent 回到无人设状态）。
@@ -956,6 +981,7 @@ export function BuddyPanel({
         onPick={handlePickFromDraw}
         useEnglishSoulData={useEnglishSoulData}
         useGlobalChineseSoulData={useGlobalChineseSoulData}
+        useIndonesianSoulData={useIndonesianSoulData}
       />
 
       <SoulTestModal
@@ -972,6 +998,7 @@ export function BuddyPanel({
         onUseSoul={handleUseTestSoul}
         useEnglishSoulData={useEnglishSoulData}
         useGlobalChineseSoulData={useGlobalChineseSoulData}
+        useIndonesianSoulData={useIndonesianSoulData}
       />
 
       {previewSoulSlug && (
@@ -979,6 +1006,7 @@ export function BuddyPanel({
           slug={previewSoulSlug}
           useEnglishSoulData={useEnglishSoulData}
           useGlobalChineseSoulData={useGlobalChineseSoulData}
+          useIndonesianSoulData={useIndonesianSoulData}
           onClose={() => setPreviewSoulSlug(null)}
         />
       )}
@@ -1353,16 +1381,20 @@ function SoulPreviewModal({
   slug,
   useEnglishSoulData,
   useGlobalChineseSoulData,
+  useIndonesianSoulData = false,
   onClose,
 }: {
   slug: string;
   useEnglishSoulData: boolean;
   useGlobalChineseSoulData: boolean;
+  useIndonesianSoulData?: boolean;
   onClose: () => void;
 }) {
   const fetcher = useCallback(() => {
     if (useEnglishSoulData) {
-      const detail = getEnglishSoulDetail(toEnglishSlug(slug));
+      const detail = useIndonesianSoulData
+        ? getIndonesianSoulDetail(toEnglishSlug(slug))
+        : getEnglishSoulDetail(toEnglishSlug(slug));
       if (!detail) throw new Error("Soul detail not found");
       return Promise.resolve(detail);
     }
@@ -1372,13 +1404,15 @@ function SoulPreviewModal({
       return Promise.resolve(detail);
     }
     return fetchSoulDetail(toCanonicalSlug(slug));
-  }, [slug, useEnglishSoulData, useGlobalChineseSoulData]);
+  }, [slug, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData]);
   const { data, loading, error, reload } = useAsyncResource(
     fetcher,
-    [slug, useEnglishSoulData, useGlobalChineseSoulData],
+    [slug, useEnglishSoulData, useGlobalChineseSoulData, useIndonesianSoulData],
   );
   const spec = useEnglishSoulData
-    ? getEnglishSoulSpec(toEnglishSlug(slug))
+    ? (useIndonesianSoulData
+        ? getIndonesianSoulSpec(toEnglishSlug(slug))
+        : getEnglishSoulSpec(toEnglishSlug(slug)))
     : useGlobalChineseSoulData
       ? getGlobalChineseSoulSpec(toEnglishSlug(slug))
       : getSoulSpec(toCanonicalSlug(slug));

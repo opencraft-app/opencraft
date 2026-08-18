@@ -1130,7 +1130,7 @@ describe("parseInitialDeliver", () => {
   });
 
   it("round-trips chat ids for every supported platform", () => {
-    const deliver = "weixin:wx_123,qqbot:qq_123,feishu:oc_123,origin:oc_origin";
+    const deliver = "weixin:wx_123,qqbot:qq_123,feishu:oc_123,slack:C123,origin:oc_origin";
     const parsed = parseInitialDeliver(deliver);
 
     expect(buildDeliverString(parsed.platforms, parsed.chatIds)).toBe(deliver);
@@ -1146,8 +1146,12 @@ describe("parseInitialDeliver", () => {
 describe("buildHermesSendTestCommand", () => {
   it("uses the platform home target when chat id is empty", () => {
     expect(buildHermesSendTarget("feishu", "")).toBe("feishu");
+    expect(buildHermesSendTarget("slack", "")).toBe("slack");
     expect(buildHermesSendTestCommand("feishu", "", "deploy finished")).toContain(
       "hermes send --to 'feishu' 'deploy finished'",
+    );
+    expect(buildHermesSendTestCommand("slack", "", "deploy finished")).toContain(
+      "hermes send --to 'slack' 'deploy finished'",
     );
   });
 
@@ -1214,6 +1218,7 @@ describe("parseEnabledHermesChannels", () => {
           { name: "openclaw-telegram", status: "connected" },
           { name: "whatsapp-business", status: "ready" },
           { name: "openclaw-discord", status: "enabled" },
+          { name: "openclaw-slack", status: "connected" },
           { name: "openclaw-wecom", status: "connected" },
           { name: "openclaw-lark", status: "running" },
           { name: "openclaw-qq", status: "connected" },
@@ -1222,7 +1227,7 @@ describe("parseEnabledHermesChannels", () => {
       error: null,
     });
 
-    expect(parseEnabledHermesChannels(output)).toEqual(new Set(["telegram", "whatsapp", "discord", "wecom", "feishu", "qqbot"]));
+    expect(parseEnabledHermesChannels(output)).toEqual(new Set(["telegram", "whatsapp", "discord", "slack", "wecom", "feishu", "qqbot"]));
   });
 
   it("parses object-shaped channel status payloads", () => {

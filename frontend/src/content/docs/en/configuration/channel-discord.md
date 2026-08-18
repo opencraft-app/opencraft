@@ -167,6 +167,8 @@ After access succeeds, the Discord bot can receive and reply to basic text messa
 
 ## Next steps
 
+- [Configure Channel - Slack](./channel-slack.md) — Team collaboration, workspace notifications, and channel workflows
+
 - [Configure Channel - QQ](./channel-qq.md) — Bot created manually, integrated via AppID/AppSecret
 
 - [Configure Channel - WeCom](./channel-wecom.md) — Enterprise internal collaboration and office scenarios

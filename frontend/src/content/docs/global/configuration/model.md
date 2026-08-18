@@ -206,6 +206,8 @@
 
 - [配置通道 - Discord](./channel-discord.md)
 
+- [配置通道 - Slack](./channel-slack.md)
+
 - [配置通道 - QQ](./channel-qq.md)
 
 - [配置通道 - 企业微信](./channel-wecom.md)

@@ -8,7 +8,7 @@ import {
   stripPublicSiteLocalePrefix,
 } from "@/lib/public-site-routing";
 
-export type PublicSiteLocale = "zh-CN" | "zh-SG" | "zh-Hant" | "en-US";
+export type PublicSiteLocale = "zh-CN" | "zh-SG" | "zh-Hant" | "en-US" | "id-ID";
 export type PublicSiteSection = "overview" | "pricing" | "changelog" | "docs" | "about" | "support";
 
 export type PublicSiteNavItem = {
@@ -19,20 +19,27 @@ export type PublicSiteNavItem = {
 };
 
 // 用一个工厂快捷构造多语言 label，避免对象字面量里再出现 4 个 locale 魔法字符串键。
-const label = (zhCN: string, zhSG: string, zhHant: string, enUS: string): Record<PublicSiteLocale, string> => ({
+const label = (
+  zhCN: string,
+  zhSG: string,
+  zhHant: string,
+  enUS: string,
+  idID: string,
+): Record<PublicSiteLocale, string> => ({
   [PUBLIC_SITE_LOCALES.ZH_CN]: zhCN,
   [PUBLIC_SITE_LOCALES.ZH_SG]: zhSG,
   [PUBLIC_SITE_LOCALES.ZH_HANT]: zhHant,
   [PUBLIC_SITE_LOCALES.EN_US]: enUS,
+  [PUBLIC_SITE_LOCALES.ID_ID]: idID,
 });
 
 export const PUBLIC_SITE_NAV_ITEMS: readonly PublicSiteNavItem[] = [
-  { section: "overview", href: "/", label: label("概览", "概览", "概覽", "Overview") },
+  { section: "overview", href: "/", label: label("首页", "首页", "首頁", "Home", "Beranda") },
   // 「定价」入口国内站与国际站均展示：指向订阅套餐页 /subscribe，未登录可浏览静态价格。
-  { section: "pricing", href: "/subscribe", label: label("定价", "定价", "定價", "Pricing") },
-  { section: "changelog", href: "/changelog", label: label("更新日志", "更新日志", "更新日誌", "Changelog") },
-  { section: "docs", href: "/docs/overview", label: label("产品文档", "产品文档", "產品文檔", "Docs") },
-  { section: "about", href: "/about", label: label("关于我们", "关于我们", "關於我們", "About") },
+  { section: "pricing", href: "/subscribe", label: label("定价", "定价", "定價", "Pricing", "Harga") },
+  { section: "changelog", href: "/changelog", label: label("更新日志", "更新日志", "更新日誌", "Changelog", "Catatan Rilis") },
+  { section: "docs", href: "/docs/overview", label: label("产品文档", "产品文档", "產品文檔", "Docs", "Dokumentasi") },
+  { section: "about", href: "/about", label: label("关于我们", "关于我们", "關於我們", "About", "Tentang") },
   // 「产品反馈」不再作为顶部导航项，改为从用户头像菜单入口进入 /support。
   // 页面本身与 legal-footer 链接保留；section 类型继续保留 "support"，
   // 以兼容 /support 路径的 nav 高亮判定与其它引用。
@@ -41,6 +48,7 @@ export const PUBLIC_SITE_NAV_ITEMS: readonly PublicSiteNavItem[] = [
 const DEFAULT_PUBLIC_URL_LOCALE = defaultPublicUrlLang(DEFAULT_LOCALE);
 
 function publicUrlLangForSiteLocale(locale: PublicSiteLocale): string {
+  if (isGlobal && locale === PUBLIC_SITE_LOCALES.ID_ID) return PUBLIC_URL_LANGS.ID_ID;
   if (isGlobal && locale === PUBLIC_SITE_LOCALES.ZH_HANT) return PUBLIC_URL_LANGS.ZH_HANT;
   if (isGlobal && locale.startsWith("zh")) return PUBLIC_URL_LANGS.ZH_SG;
   return publicUrlLangForLocale(locale);

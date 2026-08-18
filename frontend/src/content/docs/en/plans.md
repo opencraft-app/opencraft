@@ -62,7 +62,7 @@ Every Hermes Agent has the same core capabilities; tiers differ only in runtime 
 
 - **Simple configuration console** — Configure [models](./configuration/model.md), channels, and skills from the web
 
-- **Supported messaging channels** — Connect Telegram, WhatsApp, Discord, WeChat, QQ, WeCom, and Lark
+- **Supported messaging channels** — Connect Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, and Lark
 
 - **Mainstream model APIs** — Choose the foundation model that fits your needs
 

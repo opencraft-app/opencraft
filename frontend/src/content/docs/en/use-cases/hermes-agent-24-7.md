@@ -18,7 +18,7 @@ Being online is not the same as being unattended. You should still choose truste
 
 - A working model configuration or available trial credits. Hermes needs a model before it can generate replies.
 
-- At least one connected channel, such as Telegram, WhatsApp, Discord, or WeChat, so you have a practical way to reach it.
+- At least one connected channel, such as Telegram, WhatsApp, Discord, Slack, or WeChat, so you have a practical way to reach it.
 
 - An optional recurring task if you want Hermes to do more than wait for messages.
 
@@ -28,7 +28,7 @@ Being online is not the same as being unattended. You should still choose truste
 
 Choose one channel as your default way to contact Hermes. For personal use, the best choice is usually the app you already check several times a day. Connect it, send a short test message, and make sure Hermes replies before adding more setup.
 
-Detailed instructions are available for [Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), and [WeChat](../configuration/channel-wechat.md).
+Detailed instructions are available for [Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), [Slack](../configuration/channel-slack.md), and [WeChat](../configuration/channel-wechat.md).
 
 ![A running Hermes Agent with connected channels](../images/use-case-hermes-online-channel.png)
 

@@ -1,7 +1,7 @@
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
 
-export type PublicUrlLang = 'en-us' | 'zh-cn' | 'zh-sg' | 'zh-hant';
+export type PublicUrlLang = 'en-us' | 'zh-cn' | 'zh-sg' | 'zh-hant' | 'id-id';
 
 export type PublicRouteLocale = {
   locale: PublicSiteLocale;
@@ -17,11 +17,13 @@ export const EN_US_LOCALE: PublicSiteLocale = 'en-US';
 export const ZH_CN_LOCALE: PublicSiteLocale = 'zh-CN';
 export const ZH_SG_LOCALE: PublicSiteLocale = 'zh-SG';
 export const ZH_HANT_LOCALE: PublicSiteLocale = 'zh-Hant';
+export const ID_ID_LOCALE: PublicSiteLocale = 'id-ID';
 
 export const EN_US_URL_LANG = 'en-us' satisfies PublicUrlLang;
 export const ZH_CN_URL_LANG = 'zh-cn' satisfies PublicUrlLang;
 export const ZH_SG_URL_LANG = 'zh-sg' satisfies PublicUrlLang;
 export const ZH_HANT_URL_LANG = 'zh-hant' satisfies PublicUrlLang;
+export const ID_ID_URL_LANG = 'id-id' satisfies PublicUrlLang;
 
 export const DEFAULT_PUBLIC_URL_LANG: PublicUrlLang = isGlobal ? EN_US_URL_LANG : ZH_CN_URL_LANG;
 export const DEFAULT_PUBLIC_SITE_LOCALE: PublicSiteLocale = isGlobal ? EN_US_LOCALE : ZH_CN_LOCALE;
@@ -37,6 +39,7 @@ export const PUBLIC_URL_LANGS = [
   ZH_CN_URL_LANG,
   ZH_SG_URL_LANG,
   ZH_HANT_URL_LANG,
+  ID_ID_URL_LANG,
 ] as const satisfies readonly PublicUrlLang[];
 
 const LANG_TO_LOCALE: Record<PublicUrlLang, PublicSiteLocale> = {
@@ -44,6 +47,7 @@ const LANG_TO_LOCALE: Record<PublicUrlLang, PublicSiteLocale> = {
   [ZH_CN_URL_LANG]: ZH_CN_LOCALE,
   [ZH_SG_URL_LANG]: ZH_SG_LOCALE,
   [ZH_HANT_URL_LANG]: ZH_HANT_LOCALE,
+  [ID_ID_URL_LANG]: ID_ID_LOCALE,
 };
 
 export function publicRouteLocaleFromLang(lang: string): PublicRouteLocale | null {

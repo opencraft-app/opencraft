@@ -60,798 +60,761 @@
 
 ---
 
-# 自动任务支持获取上游任务的 Context Implementation Plan
+# 即将到期 Tooltip 视觉修正 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development`（推荐）或 `executing-plans` 按任务执行；每批最多 3 个任务，每批结束后运行 quick review。所有步骤使用 `- [ ]` 跟踪。
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在 LightVela 自动任务中安全暴露 Hermes 原生 `context_from`，支持单上游配置、关系展示、防环和删除联动，同时保持普通任务兼容。
+**Status:** 增量实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
 
-**Architecture:** 列表仍通过 `hermes cron list --all` 加载，并从 `jobs.json` 补齐 `context_from`。普通任务继续走现有 CLI；涉及上游关系的创建、更新和删除通过 Hermes 官方 Python `cronjob` 工具执行。UI 使用独立可搜索选择器，关系和循环计算保持为纯函数。
+**Goal:** 将 `/agents` 左侧“即将到期”标签的浏览器原生灰色提示框替换为符合 `DESIGN.md` 的自定义 hover/focus Tooltip。
 
-**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS、Radix UI、Vitest、Testing Library、Hermes `tools.cronjob_tools.cronjob`、现有 `debug/exec`。
+**Architecture:** 在续费提醒按钮外增加无布局副作用的 `group relative inline-flex` 包装层，Tooltip 作为同级绝对定位元素显示在按钮上方。该位置没有裁剪祖先，因此采用 `DESIGN.md` 推荐的内联方案，不引入 Portal 定位状态；按钮点击续费逻辑保持不变。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS v4、Vitest 4、Testing Library。
 
 ## Global Constraints
 
-- 产品输入：`wiki/prd-docs/2026-08-13-自动任务支持获取上游任务的Context.md`。
-- 目标站点：仅国内站 `lightvela.com` 启用；国际站 `lightvela.ai` 保持原有自动任务体验，不新增路由。
-- 每个 LightVela 任务最多写入一个上游 ID；读取时兼容 Hermes 原生多上游数组。
-- Hermes 原生读取最近完成的非空输出，不按成功状态筛选，不回退旧成功输出，不等待同 tick 上游。
-- Hermes 原生最多注入 8,000 个字符；LightVela 不读取或展示输出正文。
-- 不直接修改 `jobs.json`，不臆造 `--context-from` CLI 参数。
-- Hermes 未提供执行级来源 metadata；不得声称某次运行实际使用了某个输出文件。
-- 不新增重型依赖；选择器基于 React 和现有 UI 基础组件实现。
-- TypeScript 禁止 `any`，外部 JSON 先按 `unknown` 解析。
-- 不自动 commit、push 或创建 MR；每个任务只准备可审查 checkpoint，最终由用户单独授权提交。
+- 移除续费提醒按钮的原生 `title`，避免系统灰色提示框。
+- Tooltip 使用白底深色字、细边框、6px 圆角（Tailwind 默认 `rounded-md` 的视觉值）、`px-3 py-1.5`、`text-[11px] font-medium` 与 `0 8px 24px rgba(15,23,42,0.12)` 轻阴影。
+- Tooltip 位于触发器上方居中，带白底小三角，支持 hover、focus、鼠标进入与文本选择。
+- 不修改“即将到期”标签本身、剩余时间计算、点击续费逻辑、文案或 i18n 资源。
+- 国内站和国际站共用同一实现，不增加区域条件分支。
 
 ---
 
-## 文件结构
-
-- Modify: `frontend/src/lib/hermes-cron-client.ts` — `context_from` 读取、能力检测和官方结构化变更适配。
-- Modify: `frontend/src/lib/__tests__/hermes-cron-client.test.ts` — Cron 数据与结构化命令单测。
-- Create: `frontend/src/pages/marketing/automation-upstream-picker.tsx` — 可搜索、可访问的单上游选择器。
-- Create: `frontend/src/pages/marketing/__tests__/automation-upstream-picker.test.tsx` — 选择器交互和无障碍测试。
-- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx` — 候选、防环、表单、卡片、详情、最近执行和删除联动。
-- Modify: `frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts` — 关系纯函数与页面状态测试。
-- Modify: `frontend/src/i18n/generated/en-US.json` — 新增英文翻译。
-- Modify: `frontend/src/i18n/generated/zh-CN.json` — i18n 提取生成结果。
-- Modify: `frontend/src/i18n/generated/zh-Hant.json` — 新文案繁体结果。
-- Modify: `frontend/src/i18n/generated/zh-to-key.json` — 中文 key 映射。
-
----
-
-### Task 1: 读取 `context_from` 并检测 Hermes 能力
-
-**角色：** developer
+### Task 1: 用自定义 Tooltip 替换原生 title 并验证
 
 **Files:**
-
-- Modify: `frontend/src/lib/hermes-cron-client.ts`
-- Test: `frontend/src/lib/__tests__/hermes-cron-client.test.ts`
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx:4989-5008`
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx:180-195`
 
 **Interfaces:**
+- Consumes: `passExpiryReminder.tooltip` 现有剩余时间文案与续费提醒按钮。
+- Produces: `role="tooltip"` 的可选择自定义浮层；不新增导出或公共接口。
 
-- Produces: `CronJob.context_from: string[] | null`
-- Produces: `CronContextCapability = "supported" | "unsupported" | "unknown"`
-- Produces: `normalizeCronContextFrom(value: unknown): string[] | null`
-- Produces: `buildDetectCronContextFromCapabilityCommand(): string`
-- Produces: `parseCronContextCapabilityOutput(output: string): CronContextCapability`
-- Produces: `detectCronContextFromCapability(botId: string): Promise<CronContextCapability>`
+- [x] **Step 1 — 增加失败回归测试**
 
-- [x] **Step 1: 为 `context_from` 归一化和列表补齐编写失败测试**
+  更新现有续费提醒用例，断言按钮不再包含 `title`，页面存在对应 `role="tooltip"`，并锁定白底、细边框、6px 圆角、11px 字号、轻阴影、可交互和可选择样式。
 
-在 `hermes-cron-client.test.ts` 增加明确用例：
+- [x] **Step 2 — 运行测试并确认 RED**
 
-```ts
-expect(normalizeCronContextFrom(" job-a ")).toEqual(["job-a"]);
-expect(normalizeCronContextFrom(["job-a", "", "job-a", "job-b"])).toEqual(["job-a", "job-b"]);
-expect(normalizeCronContextFrom([])).toBeNull();
-expect(normalizeCronContextFrom({ job: "job-a" })).toBeNull();
-```
+  Run: `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
 
-扩展现有 `listCronJobs` mock，使 `jobs.json` 中的 `context_from: ["job-a"]` 最终出现在对应 `CronJob` 上；缺失字段返回 `null`。
+  Expected: FAIL，旧实现仍有原生 `title` 且没有自定义 Tooltip。
 
-- [x] **Step 2: 运行定向测试，确认 RED**
+- [x] **Step 3 — 实现最小 Tooltip 调整**
 
-Run:
+  用 `group relative inline-flex` 包裹提醒按钮，删除 `title`，增加位于上方居中的自定义 Tooltip 与小三角；通过透明 `pb-2` hover 桥接按钮和气泡。
 
-```bash
-cd frontend && pnpm exec vitest run src/lib/__tests__/hermes-cron-client.test.ts
-```
+- [x] **Step 4 — 运行定向测试并确认 GREEN**
 
-Expected: FAIL，提示 `normalizeCronContextFrom` 未导出或 `CronJob.context_from` 缺失。
+  Run: `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
 
-- [x] **Step 3: 实现最小数据模型与 hydration**
+  Expected: 该测试文件全部通过。
 
-在 `CronJob` 增加字段，并在 `parseCronListOutput` 的默认对象中写入 `context_from: null`。在 `listCronJobs` 读取 `jobs.json` 时复用以下归一化函数：
+- [x] **Step 5 — 运行质量门禁并本地预览**
 
-```ts
-export function normalizeCronContextFrom(value: unknown): string[] | null {
-  const values = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
-  const normalized = [...new Set(values
-    .filter((item): item is string => typeof item === "string")
-    .map((item) => item.trim())
-    .filter(Boolean))];
-  return normalized.length > 0 ? normalized : null;
-}
-```
+  Run: `cd frontend && pnpm check && pnpm i18n:check && cd .. && git diff --check`
 
-不得把外部多上游裁剪为一个。
+  Expected: 全部以退出码 `0` 完成；在已登录本地预览中 hover/focus “即将到期”时显示新 Tooltip，点击仍打开续费弹窗。
 
-- [x] **Step 4: 为能力检测编写失败测试**
+- [x] **Step 6 — 验收门禁**
 
-覆盖固定 marker 的三种结果：
-
-```ts
-expect(parseCronContextCapabilityOutput('LIGHTVELA_CRON_CONTEXT_CAPABILITY={"supported":true}')).toBe("supported");
-expect(parseCronContextCapabilityOutput('LIGHTVELA_CRON_CONTEXT_CAPABILITY={"supported":false}')).toBe("unsupported");
-expect(parseCronContextCapabilityOutput("noise")).toBe("unknown");
-```
-
-同时断言构造命令包含 `inspect.signature(cronjob)`、`context_from` 和 Hermes venv 路径。
-
-- [x] **Step 5: 实现能力检测并跑 GREEN**
-
-命令核心必须等价于：
-
-```py
-import inspect, json
-from tools.cronjob_tools import cronjob
-supported = "context_from" in inspect.signature(cronjob).parameters
-print("LIGHTVELA_CRON_CONTEXT_CAPABILITY=" + json.dumps({"supported": supported}))
-```
-
-`detectCronContextFromCapability` 捕获 import、执行和解析异常并返回 `unknown`，不得阻断普通任务列表。
-
-Run:
-
-```bash
-cd frontend && pnpm exec vitest run src/lib/__tests__/hermes-cron-client.test.ts
-```
-
-Expected: PASS。
-
-- [x] **Step 6: 准备 Task 1 checkpoint**
-
-Run:
-
-```bash
-git diff --check
-git diff -- frontend/src/lib/hermes-cron-client.ts frontend/src/lib/__tests__/hermes-cron-client.test.ts
-```
-
-Expected: 无空白错误；diff 只包含数据读取、能力检测和对应测试。不要执行 commit，等待最终用户授权。
+  展示改动与验证结果；仅在用户明确确认后提交、推送或创建 MR。
 
 ---
 
-### Task 2: 实现官方 `cronjob` 结构化关系变更
-
-**角色：** developer
+### Task 2: 在 Tooltip 内增加续费入口并验证
 
 **Files:**
-
-- Modify: `frontend/src/lib/hermes-cron-client.ts`
-- Test: `frontend/src/lib/__tests__/hermes-cron-client.test.ts`
+- Modify: `frontend/src/pages/marketing/agent-settings-page.tsx:5007-5024`
+- Test: `frontend/src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx:187-220`
 
 **Interfaces:**
+- Consumes: `passExpiryReminder.tooltip` 与现有 `setRenewPassModalOpen(true)`。
+- Produces: Tooltip 内原生文字按钮“续费套餐”；不新增状态、组件、导出或公共接口。
 
-- Consumes: `CronJob.context_from`、`normalizeCronContextFrom`
-- Produces: `CronContextPatch = undefined | string[]`
-- Produces: `CronjobToolPayload = Record<string, unknown> & { action: "create" | "update" | "remove" }`
-- Produces: `CronjobToolResult = { success: true; job?: Record<string, unknown> }`
-- Produces: `CronDependentBinding = { id: string; name: string; contextFrom: string[] }`
-- Produces: `buildCronjobToolCommand(payload: CronjobToolPayload): string`
-- Produces: `parseCronjobToolOutput(output: string): CronjobToolResult`
-- Produces: `createCronJobWithContextAndScriptRollback(botId, input, upstreamId, rollbackScript?): Promise<string>`
-- Produces: `editCronJobWithContext(botId: string, id: string, patch: EditCronJobPatch, contextFrom: string[]): Promise<void>`
-- Produces: `removeCronJobWithDependentRollback(botId: string, targetId: string, dependents: readonly CronDependentBinding[]): Promise<void>`
+- [x] **Step 1 — 增加失败回归测试**
 
-- [x] **Step 1: 为结构化命令和结果解析编写失败测试**
+  在现有 Tooltip 用例中查询 Tooltip 内的“续费套餐”按钮，断言其可聚焦，并点击后出现续费弹窗；原提醒标签打开续费弹窗的行为继续由实名认证用例覆盖。
 
-测试载荷必须保持数组与清空语义：
+- [x] **Step 2 — 运行测试并确认 RED**
 
-```ts
-const command = buildCronjobToolCommand({
-  action: "update",
-  job_id: "job-b",
-  context_from: ["job-a"],
-});
-expect(command).toContain("from tools.cronjob_tools import cronjob");
-expect(command).toContain("LIGHTVELA_CRON_CONTEXT_RESULT=");
-expect(command).toContain("context_from");
+  Run: `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
 
-expect(parseCronjobToolOutput(
-  'LIGHTVELA_CRON_CONTEXT_RESULT={"success":true,"job":{"id":"job-b"}}',
-)).toMatchObject({ success: true });
-```
+  Expected: FAIL，Tooltip 内尚不存在“续费套餐”按钮。
 
-补充 `success: false`、缺 marker 和非法 JSON 均抛错的用例。
+- [x] **Step 3 — 实现最小文字按钮**
 
-- [x] **Step 2: 运行定向测试，确认 RED**
+  在剩余时间文案后增加原生 `<button type="button">续费套餐</button>`，使用当前提醒橙色、hover 下划线和可见焦点样式；点击时阻止冒泡并复用 `setRenewPassModalOpen(true)`。
 
-Run:
+- [x] **Step 4 — 运行定向测试并确认 GREEN**
 
-```bash
-cd frontend && pnpm exec vitest run src/lib/__tests__/hermes-cron-client.test.ts
-```
+  Run: `cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
 
-Expected: FAIL，提示结构化 helper 未定义。
+  Expected: 该测试文件全部通过。
 
-- [x] **Step 3: 实现安全的官方工具封装**
+- [x] **Step 5 — 运行质量门禁并本地交互回验**
 
-`buildCronjobToolCommand` 把整个 payload 先 `JSON.stringify`，Python 再 `json.loads`，不得逐字段插值：
+  Run: `cd frontend && pnpm check && pnpm i18n:check && cd .. && git diff --check`
 
-```py
-payload = json.loads(<json string literal>)
-result = cronjob(**payload)
-parsed = json.loads(result)
-print("LIGHTVELA_CRON_CONTEXT_RESULT=" + json.dumps(parsed, ensure_ascii=False))
-```
+  Expected: 全部以退出码 `0` 完成；本地 hover 后点击“续费套餐”能打开续费弹窗，Tooltip 在按钮 hover/focus 时保持可见。
 
-命令从 `"$HOME/.hermes/hermes-agent"` 运行 `./venv/bin/python`。解析器使用输出中最后一个 marker，只有 `success === true` 才返回。
+- [x] **Step 6 — 验收门禁**
 
-- [x] **Step 4: 为带关系创建和三态编辑编写失败测试**
+  展示本地效果与验证结果；仅在用户明确确认后提交、推送或创建 MR。
 
-通过 mock `fetch` 捕获 `debug/exec` command，断言：
+- [x] **Step 7 — 补充可点击鼠标样式并回验**
 
-```ts
-await createCronJobWithContextAndScriptRollback("bot-1", {
-  schedule: "0 8 * * *",
-  prompt: "write digest",
-  name: "daily digest",
-  skills: ["news"],
-  deliver: "local",
-  pinCurrentModel: true,
-}, "job-a");
-```
+  为 Tooltip 内“续费套餐”文字按钮增加 `cursor-pointer`，扩展现有测试断言，并在本地预览确认计算样式为 `cursor: pointer`。
 
-create payload 包含 `context_from: ["job-a"]` 并返回新 job ID。编辑分别验证：
+- [x] **Step 8 — 补充提醒标签可点击鼠标样式并回验**
 
-- `undefined` 不进入结构化关系路径。
-- `["job-a"]` 替换关系。
-- `[]` 清空关系。
-- 关系变更时，同次 update 包含本次表单其他 patch 字段。
+  为外层“即将到期 / 临近到期”按钮增加 `cursor-pointer`，扩展现有测试断言，并在本地预览确认计算样式为 `cursor: pointer`；不改变 hover 颜色、焦点样式或点击逻辑。
 
-- [x] **Step 5: 实现 create/update 并保持现有模型与脚本语义**
+- [x] **Step 9 — 更新 Tooltip 续费入口文案**
 
-结构化 create 输入只映射 Hermes 支持字段，不传 `pinCurrentModel`。解析新任务 ID 后，将现有模型钉住 helper 改为按 ID 工作：
-
-```ts
-async function pinCronJobModelByIdBestEffort(botId: string, jobId: string): Promise<void> {
-  const raw = await readRawCronJobRecordById(botId, jobId);
-  const model = resolvePinnedModelFromRawCronRecord(raw);
-  if (model) await editCronJob(botId, jobId, { model });
-}
-```
-
-create 失败时删除已写入的 LightVela 生效窗口脚本；普通无上游 create 保持原函数不变。
-
-- [x] **Step 6: 为删除解绑和失败回滚编写失败测试**
-
-测试输入包含单上游和外部多上游：
-
-```ts
-const dependents = [
-  { id: "job-b", name: "B", contextFrom: ["job-a"] },
-  { id: "job-c", name: "C", contextFrom: ["job-x", "job-a"] },
-];
-```
-
-断言 B 更新为 `[]`、C 更新为 `["job-x"]`，全部成功后才 remove A。第二个 update 失败时必须恢复 B 为 `["job-a"]` 且不 remove A；remove A 失败时恢复 B/C 原关系。
-
-- [x] **Step 7: 实现删除事务补偿并跑 GREEN**
-
-结构化 Python 命令保存每个下游的原数组，失败时反向调用 update 恢复。结果结构至少包含：
-
-```ts
-interface CronDependentMutationSummary {
-  success: boolean;
-  updated: string[];
-  rollback_failed: string[];
-  error?: string;
-}
-```
-
-任何 `rollback_failed` 非空都抛出带任务 ID 的错误供上层映射名称，但不包含 Prompt 或输出正文。
-
-Run:
-
-```bash
-cd frontend && pnpm exec vitest run src/lib/__tests__/hermes-cron-client.test.ts
-```
-
-Expected: PASS。
-
-- [x] **Step 8: 准备 Task 2 checkpoint**
-
-Run:
-
-```bash
-git diff --check
-git diff -- frontend/src/lib/hermes-cron-client.ts frontend/src/lib/__tests__/hermes-cron-client.test.ts
-```
-
-Expected: 无直接 `jobs.json` 写入、无未知 CLI flag、无 `any`。不要执行 commit。
+  将 Tooltip 内入口从“续费套餐”调整为“立即续费”，保留弹窗标题“续费套餐”和现有点击、焦点、cursor 行为；更新定向测试并回验。
 
 ---
 
-### Task 3: 实现关系纯函数和可搜索上游选择器
+# 自动任务最近执行空状态去灰底 Implementation Plan
 
-**角色：** implementer + developer
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** 实现与验证完成，等待用户验收；不自动提交实现、推送或创建 MR。
+
+**Goal:** 去掉 `/agents/automations/` 最近执行空状态行的浅灰色背景与圆角，同时保留外层白色卡片和其余视觉属性。
+
+**Architecture:** 沿用 `RecentCronRunsPanel` 的现有结构，只删除空状态行上的两个 Tailwind class。扩展现有组件测试直接渲染空记录状态，锁定内层背景/圆角移除且外层卡片仍存在，不新增组件、导出或依赖。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS v4、Vitest 4、Testing Library。
+
+## Global Constraints
+
+- 仅调整空状态行，不修改有记录列表、加载态、错误态、页签、刷新交互或 Hermes Cron 逻辑。
+- 删除 `bg-black/[0.02]` 和 `rounded-lg`，保留空状态行的间距、图标、字号和颜色。
+- 保留外层白色卡片的边框、阴影和 `rounded-md`。
+- 国内站和国际站共用同一组件，不增加区域条件分支。
+- 不新增依赖、文案或 i18n 生成文件。
+
+---
+
+### Task 1: 移除最近执行空状态灰底并验证
 
 **Files:**
-
-- Create: `frontend/src/pages/marketing/automation-upstream-picker.tsx`
-- Create: `frontend/src/pages/marketing/__tests__/automation-upstream-picker.test.tsx`
-- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx`
-- Test: `frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts`
+- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx:1109-1115`
+- Test: `frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts:45-105`
+- Design: `frontend/openspec/changes/2026-08-13-frontsandbox-automation-empty-state-transparent-design.md`
 
 **Interfaces:**
+- Consumes: `RecentCronRunsPanel` 现有 `runs` 与 `skillLoadState` props。
+- Produces: 不新增导出；国内站和国际站继续渲染同一空状态 JSX。
 
-- Consumes: `CronJob.context_from`
-- Produces: `wouldCreateCronContextCycle(jobs, downstreamId, upstreamId): boolean`
-- Produces: `getEligibleCronUpstreams(jobs, currentJobId, now): CronJob[]`，其中 `currentJobId` 创建态为 `null`
-- Produces: `toCronContextPatch(initial, selected, changed): undefined | string[]`
-- Produces: `AutomationUpstreamPicker(props)`
+- [x] **Step 1 — 增加失败回归测试**
 
-- [x] **Step 1: 为循环、候选和三态 patch 编写失败测试**
+  在 `recent run limit hint` 测试组中增加空状态用例：
 
-在 `agent-automations-panel.test.ts` 添加：
+  ```tsx
+  it("renders the empty recent-runs message without a nested gray container", () => {
+    const { container } = render(createElement(RecentCronRunsPanel, {
+      runs: [],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+    const message = screen.getByText("暂无执行记录");
+    const emptyState = message.closest("div");
+    const panel = container.querySelector("section");
 
-```ts
-const jobs = [
-  makeCronJob({ id: "a", context_from: null }),
-  makeCronJob({ id: "b", context_from: ["a"] }),
-  makeCronJob({ id: "c", context_from: ["b"] }),
-];
-expect(wouldCreateCronContextCycle(jobs, "a", "c")).toBe(true);
-expect(wouldCreateCronContextCycle(jobs, "c", "a")).toBe(false);
-expect(toCronContextPatch(["a"], "a", false)).toBeUndefined();
-expect(toCronContextPatch(["a"], "", true)).toEqual([]);
-expect(toCronContextPatch(["a", "x"], "", false)).toBeUndefined();
-expect(toCronContextPatch(["a", "x"], "a", true)).toEqual(["a"]);
-```
+    expect(emptyState).not.toBeNull();
+    expect(emptyState).toHaveClass("m-4", "px-3", "py-2", "text-xs", "text-black/45");
+    expect(emptyState).not.toHaveClass("bg-black/[0.02]", "rounded-lg");
+    expect(panel).toHaveClass("rounded-md", "bg-white");
+    expect(panel).toHaveStyle({ background: "#ffffff" });
+  });
+  ```
 
-候选测试覆盖自身、暂停、过期、`isTestRunMarkerName`、场景试跑和成环任务。
+- [x] **Step 2 — 运行测试并确认 RED**
 
-- [x] **Step 2: 运行面板测试，确认 RED**
+  Run:
 
-Run:
+  ```bash
+  cd frontend
+  pnpm exec vitest run src/pages/marketing/__tests__/agent-automations-panel.test.ts
+  ```
 
-```bash
-cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-automations-panel.test.ts
-```
+  Expected: FAIL，空状态行仍包含 `bg-black/[0.02]` 和 `rounded-lg`。
 
-Expected: FAIL，提示关系纯函数未定义。
+- [x] **Step 3 — 实现最小样式调整**
 
-- [x] **Step 3: 实现关系纯函数**
+  将空状态行改为：
 
-循环算法以“下游 → 上游”为边，使用迭代 DFS 和 visited：
+  ```tsx
+  <div className="m-4 flex items-center gap-2 px-3 py-2 text-xs text-black/45">
+  ```
 
-```ts
-export function wouldCreateCronContextCycle(
-  jobs: readonly CronJob[],
-  downstreamId: string,
-  upstreamId: string,
-): boolean {
-  if (downstreamId === upstreamId) return true;
-  const upstreamsByJob = new Map(jobs.map((job) => [job.id, job.context_from ?? []]));
-  const stack = [upstreamId];
-  const visited = new Set<string>();
-  while (stack.length > 0) {
-    const id = stack.pop()!;
-    if (id === downstreamId) return true;
-    if (visited.has(id)) continue;
-    visited.add(id);
-    stack.push(...(upstreamsByJob.get(id) ?? []));
-  }
-  return false;
-}
-```
+- [x] **Step 4 — 运行定向测试并确认 GREEN**
 
-`toCronContextPatch` 在 `changed === false` 时始终返回 `undefined`；只有用户明确选择或清空后才返回 patch，避免外部多上游被打开表单这一动作覆盖。
+  Run:
 
-- [x] **Step 4: 为选择器编写失败组件测试**
+  ```bash
+  cd frontend
+  pnpm exec vitest run src/pages/marketing/__tests__/agent-automations-panel.test.ts
+  ```
 
-测试必须覆盖：
+  Expected: 该测试文件全部通过，现有最近执行详情测试保持不变。
 
-```ts
-render(<AutomationUpstreamPicker
-  value=""
-  options={[makeCronJob({ id: "a", name: "每日新闻收集" })]}
-  state="supported"
-  onChange={onChange}
-/>);
-```
+- [x] **Step 5 — 运行质量门禁**
 
-- 打开后输入“新闻”只显示匹配项。
-- 选择 A 调用 `onChange("a")`。
-- 当前已选项悬停或聚焦时勾转叉，点击后调用 `onChange("")`；下拉中不展示“不关联”选项。
-- `unsupported`、`unknown`、无候选和外部多上游显示对应文字。
-- 键盘 Enter / ArrowDown / Escape 工作，combobox 的 `aria-expanded` 正确变化。
+  Run:
 
-- [x] **Step 5: 实现最小选择器并跑 GREEN**
+  ```bash
+  cd frontend
+  pnpm check
+  pnpm i18n:check
+  cd ..
+  git diff --check
+  ```
 
-组件 props 固定为：
+  Expected: TypeScript、i18n 和 diff 检查均以退出码 `0` 完成；不产生生成资源变更。
 
-```ts
-export interface AutomationUpstreamPickerProps {
-  value: string;
-  options: readonly CronJob[];
-  state: "loading" | CronContextCapability;
-  existingMultipleUpstreams?: readonly CronJob[];
-  onChange: (jobId: string) => void;
-  onRetry?: () => void;
-}
-```
+- [x] **Step 6 — 验收门禁**
 
-使用按钮 + 搜索 input + `role="listbox"`，点击弹层外或 Escape 关闭。不得新增第三方 combobox 依赖。
-
-Run:
-
-```bash
-cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/automation-upstream-picker.test.tsx src/pages/marketing/__tests__/agent-automations-panel.test.ts
-```
-
-Expected: PASS。
-
-- [x] **Step 6: 准备 Task 3 checkpoint**
-
-Run:
-
-```bash
-git diff --check
-git diff -- frontend/src/pages/marketing/automation-upstream-picker.tsx frontend/src/pages/marketing/__tests__/automation-upstream-picker.test.tsx frontend/src/pages/marketing/agent-automations-panel.tsx frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts
-```
-
-Expected: 选择器职责独立、纯函数可单测、无无关样式重构。不要执行 commit。
+  展示 diff 与验证结果；只有用户明确确认后才执行实现提交、推送或创建 MR。
 
 ---
 
-### Task 4: 接入创建编辑、关系展示和运行详情
+# 2026-08-12 首页 Hero 浅色化
 
-**角色：** developer
+**Status:** 前端实现与基础检查已完成，待用户视觉验收后再提交 / MR。
+
+**Goal:** 参考 `lightvela-next.zip` 的浅色首屏方向，重做首页 Hero 视觉层，去掉视频背景，提升整体轻盈感和顶部导航可读性。
+
+**Scope:** 仅调整首页 Hero 区视觉实现；保留现有首页业务链路、CTA 跳转、i18n 文案、Header 组件和后续内容区。
+
+## Tasks
+
+- [x] 移除首页 Hero 的视频背景和对应加载状态。
+- [x] 用浅色静态背景与现有装饰素材重组 Hero 首屏。
+- [x] 完成 TypeScript / i18n / diff 检查，并用本地预览截图验证桌面与移动端可读性。
+- [x] 移除 Hero 外层最大/最小高度限制，确保常见浏览器缩放 25%～125% 下 Hero 仍占满首屏。
+
+---
+
+# 更新日志左侧日期样式 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** 实现与验证完成，用户已确认 commit / push / MR。
+
+**Goal:** 参考 Viktor Changelog，将 `/changelog` 左侧月份改成带日历勾选图标的紫色日期标签，同时保持页面其他部分不变。
+
+**Architecture:** 继续使用 `ChangelogMonthGroup` 和现有双列网格，只在月份标签的 JSX 中复用 `lucide-react` 的 `CalendarCheck` 并替换局部样式。通过现有国内站 Changelog 渲染测试锁定图标、尺寸、间距和颜色，不新增组件、数据字段或依赖。
+
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS v4、Lucide React、Vitest 4、Testing Library。
+
+## Global Constraints
+
+- 仅修改左侧月份标签及其回归测试，不修改日期数据、正文、配图、右侧时间线、页头、页脚或滚动行为。
+- 使用 `#6E47FF` 前景色，不增加背景、边框、圆角或额外水平内边距。
+- 标签固定 `48px` 高，图文间距 `16px`，图标 `20px`。
+- 不新增依赖、组件、翻译文案或 i18n 生成文件。
+
+---
+
+### Task 1: 更新月份标签并验证
 
 **Files:**
-
-- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx`
-- Modify: `frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts`
-- Modify: `frontend/src/i18n/generated/en-US.json`
-- Modify: `frontend/src/i18n/generated/zh-CN.json`
-- Modify: `frontend/src/i18n/generated/zh-Hant.json`
-- Modify: `frontend/src/i18n/generated/zh-to-key.json`
+- Modify: `frontend/src/pages/marketing/changelog-page.tsx:8-12,404-421`
+- Test: `frontend/src/pages/marketing/__tests__/channel-copy.test.tsx:69-99`
+- Design: `frontend/openspec/changes/2026-08-12-frontsandbox-changelog-date-style-design.md`
 
 **Interfaces:**
+- Consumes: `ChangelogMonthGroup.month` 现有本地化月份字符串；`lucide-react` 的 `CalendarCheck`。
+- Produces: 不新增导出；所有月份分组共用同一日期标签 JSX。
 
-- Consumes: Task 1 capability与 `CronJob.context_from`
-- Consumes: Task 2 structured create/update
-- Consumes: Task 3 picker与关系纯函数
-- Produces: 创建、编辑、卡片、详情和最近执行的完整用户路径
+- [x] **Step 1 — 增加失败回归断言**
 
-- [x] **Step 1: 为 Panel 接入编写失败测试**
+  在现有 `announces reliable Skill invocation for automations in the July changelog` 用例中，把月份存在性断言扩展为：
 
-扩展组件测试，至少断言：
+  ```tsx
+  const monthText = screen.getByText("2026 年 7 月");
+  const monthLabel = monthText.closest("p");
 
-- 能力检测成功时表单显示“上游任务（可选）”。
-- 创建选择 A 后调用带 `context_from: [A]` 的结构化 create。
-- 编辑不改关系时不传 context patch。
-- 编辑替换/解除时调用一次结构化 update。
-- 保存前刷新后若上游已暂停或删除，保留表单并显示错误。
-- 外部多上游打开后编辑普通字段不会缩减关系。
+  expect(monthLabel).not.toBeNull();
+  expect(monthLabel).toHaveClass(
+    "inline-flex",
+    "h-12",
+    "items-center",
+    "gap-4",
+  );
+  expect(monthLabel).not.toHaveClass("rounded-full", "px-6");
+  expect(monthLabel).toHaveStyle({ color: "#6E47FF" });
+  expect(monthLabel).not.toHaveStyle({
+    backgroundColor: "rgba(110, 71, 255, 0.16)",
+  });
+  expect(monthLabel?.querySelector(".lucide-calendar-check")).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
+  ```
 
-用语义断言，不绑定 Tailwind class：
+- [x] **Step 2 — 运行测试并确认 RED**
 
-```ts
-expect(screen.getByText("本任务执行时，将使用上游任务最近的输出作为上下文")).toBeTruthy();
-```
+  Run:
 
-- [x] **Step 2: 运行测试，确认 RED**
+  ```bash
+  cd frontend
+  pnpm exec vitest run src/pages/marketing/__tests__/channel-copy.test.tsx
+  ```
 
-Run:
+  Expected: FAIL，现有月份 `<p>` 仍带有 `rounded-full px-6` 和淡紫色背景。
 
-```bash
-cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-automations-panel.test.ts src/pages/marketing/__tests__/automation-upstream-picker.test.tsx
-```
+- [x] **Step 3 — 实现最小日期标签样式**
 
-Expected: FAIL，表单尚未接入 picker 或 structured mutation。
+  在 `changelog-page.tsx` 导入图标：
 
-- [x] **Step 3: 接入 capability、表单和保存前校验**
+  ```tsx
+  import { CalendarCheck } from "lucide-react";
+  ```
 
-Panel 按 `botId` 维护：
+  将左列月份 JSX 替换为：
 
-```ts
-const [contextCapability, setContextCapability] = useState<"loading" | CronContextCapability>("loading");
-```
+  ```tsx
+  <div className="pt-1">
+    <p
+      className="inline-flex h-12 items-center gap-4"
+      style={{
+        color: "#6E47FF",
+        fontSize: "16px",
+        fontWeight: 400,
+        lineHeight: 1.5,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <CalendarCheck className="size-5 shrink-0" aria-hidden="true" />
+      <span>{group.month}</span>
+    </p>
+  </div>
+  ```
 
-向三个 `AutomationFormModal` 调用点传入 `jobs={jobs}`、`contextCapability` 和 `onRefreshJobs={refreshCreatedJobs}`。表单初始值保留完整 `initialJob.context_from`，只有用户明确修改时才生成 patch。
+- [x] **Step 4 — 运行定向测试并确认 GREEN**
 
-- [x] **Step 4: 接入卡片、详情和最近执行当前关系展示**
+  Run:
 
-以 `Map<string, CronJob>` 解析上游：
+  ```bash
+  cd frontend
+  pnpm exec vitest run src/pages/marketing/__tests__/channel-copy.test.tsx src/pages/marketing/__tests__/global-changelog.test.tsx
+  ```
 
-```ts
-const jobsById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
-```
+  Expected: 两个测试文件全部通过，国内站和国际站现有 Changelog 内容断言保持不变。
 
-- 卡片：`来自：{name}`；暂停或缺失用文字补充。
-- 详情：名称、当前状态和“本任务执行时，将使用上游任务最近一次的输出作为上下文。”说明。
-- 最近执行详情：字段名固定为“当前关联上游”，不使用“本次已使用”。任务已删除或关系不可可靠解析时省略。
+- [x] **Step 5 — 运行质量门禁**
 
-- [x] **Step 5: 生成并补齐 i18n**
+  Run:
 
-Run:
+  ```bash
+  cd frontend
+  pnpm check
+  pnpm i18n:check
+  cd ..
+  git diff --check
+  ```
 
-```bash
-cd frontend && pnpm i18n:extract
-pnpm i18n:zh-hant
-```
+  Expected: TypeScript、i18n 和 diff 检查均以退出码 `0` 完成；不产生 i18n 文件变更。
 
-在 `src/i18n/generated/en-US.json` 为脚本新增的 key 填写以下确定映射：
+- [x] **Step 6 — 浏览器验证**
 
-- `上游任务（可选）` → `Upstream task (optional)`
-- `本任务执行时，将使用上游任务最近的输出作为上下文` → `This task uses the upstream task's latest output as context.`
-- `本任务执行时，将使用上游任务最近一次的输出作为上下文。` → `When this task runs, it will use the most recent output from the upstream task as context.`
-- `当前关联上游` → `Currently linked upstream task`
-- `最近完成状态为失败，Hermes 不会回退到更早的成功输出` → `The latest completed run failed. Hermes does not fall back to an earlier successful output.`
+  启动本地前端并检查 `/changelog`：
 
-不得手写猜测 hash；以脚本生成的 key 为准。检查繁体用词，保持“上游任務”“最近完成輸出”。
+  ```bash
+  cd frontend
+  pnpm dev:cn
+  ```
 
-- [x] **Step 6: 跑定向测试和 i18n 门禁**
+  Expected:
 
-Run:
+  - 桌面端：月份标签位于左列，图标和文字垂直居中，不显示底框。
+  - 移动端：月份标签按内容宽度左对齐，标签自身不增加横向溢出。
+  - 右侧标题、描述、配图和点线时间轴与修改前一致。
 
-```bash
-cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/automation-upstream-picker.test.tsx src/pages/marketing/__tests__/agent-automations-panel.test.ts
-pnpm i18n:check
-pnpm i18n:zh-hant:check
-```
+  Verification evidence:
 
-Expected: 全部 PASS，无缺失英文翻译或繁体漂移。
+  - 用户标注的 `888 × 933` 视口：标签 `131.14 × 48px`，计算样式为透明背景、`0px` 边框、`0px` 圆角、`0px` 左右内边距。
+  - 移动端：日期标签位于单列内容区内；页面既有页头说明文本使用 `white-space: nowrap`，会产生原有横向溢出，本次遵循范围约束未修改。
+  - 浏览器控制台无 error。
+  - 完整 `pnpm test` 仍有 1 条既有失败：`scripts/docs-image-assets.test.ts` 检出 9 个超出 `512 KiB` 的文档 PNG（被中英文文档重复引用为 18 条）；本分支未修改这些图片、文档或测试。
 
-- [x] **Step 7: 准备 Task 4 checkpoint**
+- [x] **Step 7 — 等待提交确认**
 
-Run:
-
-```bash
-git diff --check
-git diff -- frontend/src/pages/marketing/agent-automations-panel.tsx frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts frontend/src/i18n/generated
-```
-
-Expected: 当前阶段验证共享实现，不展示上游输出正文；最终发布范围由 Task 8 收敛为仅国内站启用。不要执行 commit。
+  展示 diff、测试结果和浏览器验证截图；只有用户明确确认后才执行 `git commit`、`git push` 或创建 MR。
 
 ---
 
-### Task 5: 接入删除联动并完成端到端验证
+# 2026-08-11 国际站首页默认英文一致性修复
 
-**角色：** developer + reviewer
+**Status:** 实现中；确认前不 commit / push / MR。
 
-**Files:**
+**Goal:** `lightvela.ai/` 裸首页在浏览器残留中文语言偏好时仍默认全页英文，只有访问中文 locale 路径或用户显式切换中文时展示中文。
 
-- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx`
-- Modify: `frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts`
-- Modify: `frontend/src/lib/hermes-cron-client.ts`（仅修复集成测试暴露的契约问题）
-- Modify: `frontend/src/lib/__tests__/hermes-cron-client.test.ts`（对应回归测试）
-- Modify: `frontend/src/i18n/generated/en-US.json`（仅删除确认新增文案）
-- Modify: `frontend/src/i18n/generated/zh-CN.json`（仅删除确认新增文案）
-- Modify: `frontend/src/i18n/generated/zh-Hant.json`（仅删除确认新增文案）
-- Modify: `frontend/src/i18n/generated/zh-to-key.json`（仅删除确认新增文案）
+**Scope:** 仅收敛公开首页 locale 判定、公告条 locale 注入、首页导入区翻译调用和回归测试；不改视觉布局、路由 SEO 输出、后端接口或订阅/登录逻辑。
 
-**Interfaces:**
+## Tasks
 
-- Consumes: `removeCronJobWithDependentRollback`
-- Produces: 删除确认中的直接下游预览和安全删除流程
-- Produces: 完整质量门禁证据
-
-- [x] **Step 1: 为删除确认与阻断编写失败测试**
-
-覆盖：
-
-- 删除 A 时确认弹窗列出直接下游 B，不列出只通过 B 间接关联的 C。
-- 确认后调用 `removeCronJobWithDependentRollback`，而不是直接 `removeCronJob`。
-- 解绑失败时 A 仍在列表，错误提示包含需检查的任务名称。
-- A → B → C 删除 A 后，B 解除，C 仍引用 B。
-- 删除没有下游的普通任务继续走现有直接删除路径。
-
-- [x] **Step 2: 运行面板测试，确认 RED**
-
-Run:
-
-```bash
-cd frontend && pnpm exec vitest run src/pages/marketing/__tests__/agent-automations-panel.test.ts
-```
-
-Expected: FAIL，当前确认弹窗只接收 `jobName` 且直接删除。
-
-- [x] **Step 3: 实现删除预览和结构化删除接入**
-
-Panel 从最新 `jobsRef.current` 派生直接下游：
-
-```ts
-const dependents = jobsRef.current
-  .filter((job) => job.context_from?.includes(target.id))
-  .map((job) => ({
-    id: job.id,
-    name: job.name,
-    contextFrom: job.context_from ?? [],
-  }));
-```
-
-确认弹窗显示名称列表和“删除后将解除上游绑定并继续独立执行”。有下游时走补偿式删除，无下游时保留现有路径。
-
-- [x] **Step 4: 运行全部相关测试**
-
-Run:
-
-```bash
-cd frontend && pnpm exec vitest run \
-  src/lib/__tests__/hermes-cron-client.test.ts \
-  src/pages/marketing/__tests__/automation-upstream-picker.test.tsx \
-  src/pages/marketing/__tests__/agent-automations-panel.test.ts \
-  src/pages/marketing/__tests__/agent-model-switch-automation-sync.test.ts
-```
-
-Expected: 全部 PASS；模型切换自动任务同步未回归。
-
-- [x] **Step 5: 运行前端质量门禁**
-
-Run:
-
-```bash
-cd frontend && pnpm i18n:check
-pnpm i18n:zh-hant:check
-pnpm check
-cd .. && git diff --check
-```
-
-Expected: 所有命令 exit 0。若遇到与本次无关的既有失败，记录完整命令、首个错误和与 `origin/master` 的对比证据，不擅自修改无关模块。
-
-- [ ] **Step 6: 在真实 Hermes 实例验证原生语义**
-
-执行记录（2026-08-14）：已在真实 Hermes 实例完成 A → B → C 正常串联、无上游完成记录时下游继续成功执行、暂停上游保留关系、删除 A 仅解除直接下游 B 且保留 B → C。测试任务均已清理。真实实例暂未稳定制造“最新一次完成状态为失败但仍产生非空输出”的样本，因此第 2 项仅由契约测试覆盖，本步骤保持未完成状态。
-
-使用测试 Agent 创建错峰 A → B → C：
-
-1. A 先产生正常完成输出，确认 B/C 按各自计划运行。
-2. 让 A 最新一次输出对应失败状态，确认 B 使用最新完成输出而不回退旧成功输出。
-3. 创建尚无输出的上游，确认下游仍执行。
-4. 暂停上游，确认关系保留并展示历史输出提示。
-5. 删除 A，确认只解除 A → B，B → C 保留。
-
-记录任务 ID、计划时间、状态和页面截图；不得把 Prompt 或输出正文写入仓库。
-
-- [ ] **Step 7: 国内站浏览器回归与国际站未启用验证**
-
-执行记录（2026-08-14）：曾按双站范围验证创建、搜索选择、关系展示、详情/最近执行文案、暂停、无输出、过期候选过滤、成环候选过滤、删除直接下游确认与英文翻译。2026-08-18 发布范围调整为仅国内站；国际站后续只验证该能力未启用。`unsupported/unknown`、外部多上游只读和部分键盘交互由组件/面板测试覆盖，尚未在真实实例构造对应数据，因此本步骤保持未完成状态。
-
-国内站验证功能主路径；国际站验证无上游任务入口且普通自动任务保持原行为：
-
-- 创建、搜索并选择上游。
-- 编辑保持、更换和解除。
-- 卡片、详情、最近执行的关系文案。
-- unsupported/unknown、暂停、缺失、成环和删除确认。
-- 键盘完成打开、搜索、选择、关闭。
-
-Expected: 国内站功能主路径成立；国际站无上游任务入口且普通自动任务保持原行为；状态不只靠颜色表达。
-
-- [x] **Step 8: 最终 full review 与用户验收门禁**
-
-执行记录（2026-08-14）：最终整体验收 Review 经两轮问题修复与复审后结论为 `Ready to merge: Yes`，无 Critical / Important 遗留；主 Agent 新鲜门禁为 217/217 测试通过、i18n 2023/2023、繁体一致性、TypeScript/MDX 与 `git diff --check` 全通过。用户已明确验收通过；尚未执行 commit、push、MR 或归档，后续操作仍遵循各自确认门禁。
-
-Run:
-
-```bash
-git status --short
-git diff --stat
-git diff --check
-```
-
-输出变更摘要、真实测试结果、浏览器/实例证据、风险和未处理项。等待用户明确验收；验收前禁止 commit、push、MR 和归档。
+- [x] 修复国际站裸 `/` 的 i18n 初始语言，避免被 `localStorage.lw-locale=zh-CN` 覆盖。
+- [x] 修复首页公告条与 FeatureSection 对全局 i18n 单例的依赖，统一跟随公开路由 locale。
+- [x] 补充回归测试并运行定向测试、i18n 检查、类型检查和 diff 检查。
 
 ---
 
-### Task 6: 将上游上下文说明收进选择框
+# 国际站 Skills 搜索结果来源链接 Implementation Plan
 
-**Files:**
+**Status:** 实现与验证完成，等待用户验收；不自动提交、推送或创建 MR。
 
-- Modify: `frontend/src/pages/marketing/automation-upstream-picker.tsx`
-- Modify: `frontend/src/pages/marketing/__tests__/automation-upstream-picker.test.tsx`
-- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx`
-- Modify: `frontend/src/pages/marketing/__tests__/agent-automations-panel.test.ts`
-- Modify: `frontend/src/i18n/generated/{en-US,zh-CN,zh-Hant,zh-to-key}.json`
+**Goal:** 国际站所有 Skills 搜索结果都在技能标题和 slug 下方单独展示文字型 `Source` 链接；ClawHub 统一链接到 `https://clawhub.ai/`。
 
-**目标：** 表单不再用独立段落解释上游语义；未选择上游时，选择框内显示“本任务执行时，将使用上游任务最近的输出作为上下文”。选择后显示任务名称；无候选时仍保留选择框，展开后显示空状态。详情页使用完整说明“本任务执行时，将使用上游任务最近一次的输出作为上下文。”。
+**Architecture:** `SearchSkillRow` 继续使用 skills.sh 的技能详情链接，但对 ClawHub 直接使用固定官网地址。
+链接只由前端渲染，不查询 ClawHub 作者或技能详情，因此不会新增 ClawHub 请求或增加限流风险。
 
-- [x] **Step 1: 先写失败测试**
+**Tech Stack:** React 19、TypeScript 5.9、Tailwind CSS、Vitest 4、React Testing Library。
 
-断言表单不存在旧独立文案，空选择框显示新提示；无候选时选择框仍存在，展开后显示“暂无可关联的上游任务”；详情页不再展示旧文案。
+## Global Constraints
 
-- [x] **Step 2: 运行定向测试确认 RED**
+- 仅影响国际站的 ClawHub 与 skills.sh 搜索结果。
+- 国内 SkillHub 搜索结果不展示新来源行。
+- 所有 ClawHub 搜索结果都显示来源链接，固定 URL 为 `https://clawhub.ai/`。
+- 标签通过现有 i18n `t("来源")` 渲染，样式与 skills.sh 的文字型来源链接一致。
+- 不新增依赖、动画或新的交互原语。
 
-```bash
-cd frontend && pnpm exec vitest run \
-  src/pages/marketing/__tests__/automation-upstream-picker.test.tsx \
-  src/pages/marketing/__tests__/agent-automations-panel.test.ts
-```
+## Tasks
 
-Expected: 新断言因旧独立文案、旧空态和旧选择框提示而失败。
+- [x] **Task 1: 固定 ClawHub 搜索结果来源链接。**
+  - 修改 `src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`，先断言 ClawHub 搜索结果的 `来源` 链接固定为 `https://clawhub.ai/`。
+  - 修改 `src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`，仅在 global mode 的 `SearchSkillRow` 中为 ClawHub 使用固定官网链接，skills.sh 与国内站逻辑保持不变。
+  - 运行 `pnpm exec vitest run src/pages/marketing/skills-demo/skill-registries.test.ts src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`。
 
-- [x] **Step 3: 最小实现并更新 i18n**
+- [x] **Task 2: 运行质量门禁并记录验证。**
+  - 运行 `pnpm i18n:check`。
+  - 运行 `pnpm check`。
+  - 检查 `git diff --check` 与最终 diff，确认未修改国内站分支逻辑。
 
-删除表单独立说明段落；将新文案作为 Picker 的空值提示；移除“无候选即返回静态状态”的分支，使控件仍可打开并在列表内显示空态；详情页同步新文案。运行 `pnpm i18n:extract` 和 `pnpm i18n:zh-hant` 更新生成资源。
+---
+# Agents 左侧导航顺序调整 Implementation Plan
 
-- [x] **Step 4: 运行 GREEN 与质量门禁**
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-```bash
-cd frontend && pnpm exec vitest run \
-  src/pages/marketing/__tests__/automation-upstream-picker.test.tsx \
-  src/pages/marketing/__tests__/agent-automations-panel.test.ts
-pnpm i18n:check
-pnpm i18n:zh-hant:check
-pnpm check
-cd .. && git diff --check
-```
+**Status:** 实现与验证完成，用户已确认提交、推送与创建 MR。
 
-Expected: 全部 exit 0；英文和繁体无缺失。
+**Goal:** 将 `/agents` 左侧导航中的“自动任务”移动到“人设”上方，并保持其余导航行为不变。
 
-- [x] **Step 5: 本地浏览器回验**
+**Architecture:** 沿用 `AgentSettingsPage` 内现有 `settingsSections` 数组作为唯一顺序来源，只交换两个相邻配置项。用独立静态回归测试锁定两项顺序，避免为了单一展示顺序抽离新公共接口。
 
-打开“添加自动任务”，确认选择框内显示新提示、上方无独立说明，且无候选时可展开看到空状态；不创建真实任务。
+**Tech Stack:** React 19、TypeScript 5.9、Vitest 4。
 
-执行记录（2026-08-15）：已将说明收进空 Picker，并将“上游任务”的“（可选）”拆为与“调用技能”“通知方式”一致的浅灰 12px/400 样式。定向测试 119/119、i18n 两项检查、TypeScript/MDX 与 `git diff --check` 通过；独立 Task review 无 Critical / Important。浏览器刷新后确认三处主标题均为 14px/500/80% 黑色，“（可选）”均为 12px/400/40% 黑色且间距 4px；无候选时 Picker 可展开显示“暂无可关联的上游任务”，未创建真实任务，刷新后的新日志无 warning/error。
+## Global Constraints
 
-补充执行记录（2026-08-17）：按验收反馈将“调用技能”移动到“上游任务”之前，仅调整表单渲染顺序。新增 DOM 顺序回归测试并完成 RED → GREEN；相关测试更新为 120/120。浏览器刷新后确认顺序为“调用技能 → 上游任务 → 通知方式”，新日志无 warning/error，未创建真实任务。
+- 仅修改导航顺序及其回归测试，不修改路由、图标、文案、权限或页面内容。
+- 桌面和移动端继续共用同一导航配置。
+- 不新增依赖或配置抽象。
 
-补充执行记录（2026-08-17）：选择框提示文案去掉末尾句号，详情页完整说明保留句号；简体、繁体和英文资源已同步，选择框测试覆盖无句号约束。
+## Tasks
+
+- [x] **Task 1 — Developer / Reviewer：交换导航项并验证**
+  - **Files:**
+    - Create: `frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`
+    - Modify: `frontend/src/pages/marketing/agent-settings-page.tsx:4909-4915`
+  - **Interfaces:** 不新增导出；测试只读取页面源码中的 `settingsSections` 配置片段。
+  - **Step 1 — 写失败测试：** 新测试读取 `agent-settings-page.tsx`，截取 `const settingsSections` 到 `const isRestartDisabled` 之间的文本，并断言 `id: "automations"` 的索引小于 `id: "buddy"`：
+
+    ```ts
+    import { readFileSync } from "node:fs";
+    import { join } from "node:path";
+    import { describe, expect, it } from "vitest";
+
+    describe("Agent settings navigation order", () => {
+      it("places automations before persona", () => {
+        const page = readFileSync(
+          join(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"),
+          "utf8",
+        );
+        const settingsSectionsStart = page.indexOf("const settingsSections");
+        const settingsSectionsEnd = page.indexOf("const isRestartDisabled");
+
+        expect(settingsSectionsStart).toBeGreaterThanOrEqual(0);
+        expect(settingsSectionsEnd).toBeGreaterThan(settingsSectionsStart);
+
+        const settingsSections = page.slice(settingsSectionsStart, settingsSectionsEnd);
+        const automationsIndex = settingsSections.indexOf('id: "automations"');
+        const personaIndex = settingsSections.indexOf('id: "buddy"');
+
+        expect(automationsIndex).toBeGreaterThanOrEqual(0);
+        expect(personaIndex).toBeGreaterThanOrEqual(0);
+        expect(automationsIndex).toBeLessThan(personaIndex);
+      });
+    });
+    ```
+  - **Step 2 — 确认 RED：** 在 `frontend/` 运行 `pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-nav-order.test.ts`；预期当前顺序下断言失败。
+  - **Step 3 — 最小实现：** 在 `settingsSections` 中把完整的 `automations` 配置项移动到完整的 `buddy` 配置项之前，不改动两项内容：
+
+    ```tsx
+    { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
+    { id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy },
+    ```
+  - **Step 4 — 确认 GREEN：** 重新运行同一定向 Vitest，预期 1 个测试通过。
+  - **Step 5 — 完整验证：** 在 `frontend/` 运行 `pnpm check`，再在仓库根运行 `git diff --check`；检查 diff 仅包含计划、测试和两项顺序调整。
+  - **Step 6 — 验收门禁：** 展示改动与验证结果，等待用户确认后才允许提交实现、推送或创建 MR。
 
 ---
 
-### Task 7: 调用技能下拉支持取消当前选择
+# 2026-08-07 批量安装汇总结果对齐修复
 
-**Files:**
+**Status:** 实现与验证完成；等待用户确认后再 commit / push / MR。
 
-- Modify: `frontend/src/pages/marketing/automation-skill-picker.tsx`
-- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+**Goal:** ACLI 同时返回逐项 `progress` 和完整 `summary.results` 时，避免重复汇总结果错配到下一个未完成技能，确保部分失败状态准确展示。
 
-**目标：** 仅国内站的“调用技能”下拉中，当前已选技能默认显示勾；鼠标悬停或键盘聚焦时切换为叉；点击当前已选技能后清除选择并关闭下拉。国际站保持原有已选项交互。
+**Scope:** 仅修正 Skills 批量安装结果匹配逻辑并补回归测试；不改变 ACLI 命令、SSE 协议、取消粒度或页面交互。
 
-- [x] **Step 1: 先写失败测试并确认 RED**
+## Tasks
 
-- [x] **Step 2: 最小实现勾叉切换与点击清除**
-
-- [x] **Step 3: 运行定向测试和前端质量门禁**
-
-执行记录（2026-08-18）：新增国内站当前已选 Skill 下拉项的勾/叉透明度切换，覆盖鼠标悬停和键盘聚焦；点击该项清空选择并关闭下拉。随后按发布范围补充国际站专属回归，国际站继续显示勾并保持原有选择行为。先运行新增用例确认 RED，再完成最小区域隔离。相关测试、类型、i18n 与双构建结果统一记录在 Task 8。
+- [x] 增加“progress 后返回完整 summary.results”的失败回归测试并确认 RED。
+- [x] 修正已完成结果的去重与无标识结果的顺序降级逻辑。
+- [x] 运行 Skills 定向测试、类型检查、i18n 检查和 diff 检查。
 
 ---
 
-## 执行顺序与批次
+# 2026-08-09 EdgeOne Pages 裸根路径 404 修复
 
-- Batch 1：Task 1 → Task 2 → quick review。
-- Batch 2：Task 3 → quick review。
-- Batch 3：Task 4 → quick review。
-- Batch 4：Task 5 → full review → 用户验收。
-- Batch 5：Task 6 文案与布局微调 → 定向 review → 本地预览回验。
-- Batch 6：Task 7 调用技能下拉交互对齐 → 定向测试 → 本地预览回验。
-- Batch 7：Task 8 国内站能力隔离 → 国内/国际区域测试 → 双构建质量门禁。
+**Status:** 实现与 Preview 验证完成，用户已确认提交、推送并创建 MR。
 
-任务存在顺序依赖，不并行修改共享文件 `hermes-cron-client.ts` 和 `agent-automations-panel.tsx`。实现阶段每轮只加载当前 Task 的 active slice。
+**Goal:** 让 EdgeOne Pages 的裸根路径 `/` 直接由 Build Output 的 filesystem 路由提供静态首页，避免显式重写 `/index.html` 触发 Pages 路由缓存分裂和概率性平台 404。
 
-### Task 8: 仅在国内站启用上游任务 Context
+**Scope:** 仅调整 EdgeOne Build Output 路由生成及其回归测试；不修改页面运行时代码、外层加速域名配置或生产发布配置。
 
-**角色：** Developer → Reviewer
+## Tasks
 
-**影响文件：**
+- [x] 先补充失败测试，禁止生成 `^/$ -> /index.html` 显式根路由。
+- [x] 删除显式根路由，保留 filesystem 与普通目录 HTML fallback 的顺序。
+- [x] 运行定向测试、frontend 检查并验证生成配置。
+- [x] 发布 Preview，连续验证不带查询参数的裸 `/`。
+- [x] 用户确认后提交、推送并创建 MR。
 
-- Modify: `frontend/src/lib/hermes-cron-client.ts`
-- Modify: `frontend/src/lib/__tests__/hermes-cron-client.test.ts`
-- Modify: `frontend/src/pages/marketing/agent-automations-panel.tsx`
-- Create: `frontend/src/pages/marketing/__tests__/agent-automations-panel.global.test.ts`
-- Modify: `frontend/src/pages/marketing/automation-skill-picker.tsx`
-- Create: `frontend/src/pages/marketing/__tests__/automation-skill-picker.global.test.tsx`
-- Modify: `frontend/openspec/{proposal,spec,plan}.md`
-- Modify: `wiki/prd-docs/2026-08-13-自动任务支持获取上游任务的Context.md`
+## Verification
 
-**验收：** 国内站现有 Context 功能不变；国际站不探测能力、不水合或展示关系、不调用关系 CRUD，普通自动任务仍走原有路径。
+- `pnpm exec vitest run scripts/fix-next-static-html-lang.test.ts`
+- `pnpm check`
+- `git diff --check`
 
-- [x] **Step 1: 先写国际站隔离失败测试并确认 RED**
+---
 
-新增国际站专属测试，顶层 mock `isGlobal: true`，断言面板加载不调用 `detectCronContextFromCapability`、列表请求关闭 `context_from` 水合、创建/编辑继续使用原有 CRUD、创建/详情无“上游任务”，删除直接调用原有 `removeCronJob`。在 Cron 客户端测试中断言关闭水合后保留其他 `jobs.json` 元数据但忽略 `context_from`；技能下拉断言国际站保持原交互。
+# 2026-08-07 国际站 Skills 来源说明对齐国内站
 
-- [x] **Step 2: 使用编译期区域分支完成最小隔离实现**
+**Status:** 实现与验证完成，等待用户手动验收；不自动 commit / push / MR。
 
-为 `listCronJobs` 增加默认开启的 `hydrateContextFrom` 选项；面板在国际构建传 `false`。用 `isGlobal` 短路能力探测、候选/删除关系计算、关系 UI 和结构化关系 CRUD，国内站调用方式和行为不变。技能下拉的已选项勾转叉及点击清除同样仅在国内站启用。
+**Goal:** 将国际站搜索来源说明从搜索栏移到搜索结果底部，复用国内站“查看更多居中、来源说明靠右”的蓝色布局，并恢复搜索框宽度及来源筛选器右对齐。
 
-- [x] **Step 3: 运行国内/国际定向测试与双构建门禁**
+**Scope:** 仅调整国际站 Skills 搜索区域布局和对应组件测试；保留 Skills.sh、ClawHub 链接、搜索过滤与展开逻辑，不改变国内站行为。
 
-运行 Cron 客户端、国内面板、国际面板、两个 Picker 的 Vitest；运行 `pnpm check`、两项 i18n 检查、`pnpm build:cn`、`pnpm build:global` 与 `git diff --check`。确认国际构建无上游任务入口，国内构建保留现有功能。
+## Tasks
 
-执行记录（2026-08-18）：国际站专属用例先检出能力探测、关系水合和展示未隔离，完成编译期区域分支后转绿；随后补充普通 create/edit/delete 旧路径、Skill 已选项原交互及终态任务卡片原行为回归。最终 6 个相关测试文件 238/238、`pnpm check`、2100/2100 i18n、简繁一致性、`build:cn` 112 个静态页面、`build:global` 287 个静态页面及 `git diff --check` 全部通过。全量测试另有仓库既存的文档图片体积、测试 mock、依赖缺失、超时及进程 OOM，不涉及本次改动；相关定向测试均通过。
+- [x] **Developer / Test:** 修改 `src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`，断言国际站搜索栏不再包含来源说明、结果底栏展示蓝色 Skills.sh 与 ClawHub 链接，并确认测试按预期失败。
+- [x] **Developer / UI:** 修改 `src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`，复用国内站三列结果底栏，删除搜索栏旧说明；验收时搜索框占满剩余宽度、来源筛选器靠右。
+- [x] **Reviewer / Verification:** 运行 Skills 定向测试、`pnpm i18n:check`、`pnpm check` 和 `git diff --check`，确认国内站布局断言保持通过且无新增依赖或生成资源。
 
-## 明确排除的文件与改动
+---
 
-- 不修改 `cloudagent/`、网关服务或数据库。
-- 不修改 Hermes 上游源码。
-- 不重新开放 `scenario-tasks` 用户入口。
-- 不修改普通任务的 pause/resume/test-run 行为。
-- 不修改帮助文档站、更新日志或 TAPD。
-- 不提交 `graphify-out/`、测试 Agent 输出或本地截图中的敏感内容。
+# 2026-08-07 国际站合并技能卸载降级
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit / push / MR。
+
+**Goal:** 删除同时标记为 ClawHub 与 skills.sh 的单个运行时技能时，不重复执行两个卸载命令导致 `SKILLS_SH_NOT_INSTALLED`。
+
+**Scope:** 合并行的来源标识作为候选卸载命令；任一候选成功后停止，明确未安装时尝试下一候选，其他错误继续正常失败。
+
+## Tasks
+
+- [x] 增加“首个来源成功即停止”和“首个来源未安装则降级”的失败回归测试。
+- [x] 调整国际站卸载候选执行与错误处理逻辑。
+- [x] 运行 Skills 定向测试、i18n、类型检查和 diff 检查。
+
+---
+
+# 2026-08-07 国际站已安装技能跨来源去重
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit / push / MR。
+
+**Goal:** 国际站同一 Hermes 运行时技能同时出现在 ClawHub 与 skills.sh 已安装清单时，仅展示一行，并同时展示两个来源标签。
+
+**Scope:** 仅调整国际站已安装技能归并逻辑与回归测试；保留各 registry 的真实卸载目标，不按短 slug 盲目合并无 Hermes 证据的记录。
+
+## Tasks
+
+- [x] 增加跨来源重复安装记录的回归测试，并确认当前实现失败。
+- [x] 以 Hermes 运行时记录为归并证据，合并 ClawHub 与 skills.sh 展示记录并保留双来源卸载目标。
+- [x] 运行定向测试、类型检查和 diff 检查。
+
+---
+
+# 2026-08-06 前端预览图片体积优化
+
+**Status:** 实现与验证完成，等待用户验收；不自动 commit / push / MR。
+
+**Goal:** 将分支预览压缩包从约 60 MiB 降到 45-50 MiB，避免接近 StaticPages 上传链路的疑似 64 MiB 边界。
+
+**Scope:** 仅优化文档中超过 512 KiB 的 PNG/JPEG 源图及其 Markdown 引用，并增加资源体积回归测试；不调整页面布局、搜索、视频或生产发布逻辑。
+
+## Tasks
+
+- [x] 增加文档大图格式与体积回归测试，并确认现有资源会触发失败。
+- [x] 将超预算文档图片转换为 WebP，更新中英文 Markdown 引用和公开资源副本。
+- [x] 运行定向测试、类型检查和 global 预览构建，核验压缩包体积为 43.50 MiB。
+
+---
+
+# 2026-08-04 QQ Bot 群聊策略自动开启
+
+**Status:** 实现与验证完成，待用户验收；确认前不 commit / push / MR。
+
+**Goal:** 在 LightVela 通道配置 SDK 的 QQ 卡片中，用户通过扫码或 AppID / Secret 绑定 QQ Bot 时，自动在同一次 debug/exec 命令里先执行 `hermes config set platforms.qqbot.extra.group_policy open`，再执行 SDK 原始 QQ 绑定命令，避免额外触发第二次 gateway restart。
+
+**Scope:** 仅修改前端 SDK debug/exec 适配链路、QQ group policy helper、相关单测和 QQ 通道文档；不修改 SDK 包版本、不修改后端接口、不提交远端代码。
+
+## Tasks
+
+- [x] 新增 QQ group policy 命令识别与包装 helper，覆盖 AppID / Secret 与扫码两条 QQ 绑定命令。
+- [x] 扩展 debug/exec lifecycle 支持 `transformCommand`，并提供 lifecycle 组合 helper，保证模型切换自动任务同步不被覆盖。
+- [x] 在 `/agents` 设置页接入 QQ lifecycle，使 SDK QQ 配置卡片下发命令前完成 group_policy 注入。
+- [x] 更新 QQ 通道中英文文档，说明绑定后默认开启群聊 @ 对话及 `open` 权限边界。
+- [x] 运行相关 Vitest、类型检查和 diff 检查，停在用户验收确认点。
+
+## Verification
+
+- `pnpm exec vitest run src/pages/marketing/__tests__/agent-qqbot-group-policy.test.ts src/pages/marketing/__tests__/agent-debug-exec-lifecycle.test.ts src/pages/marketing/__tests__/agent-tat-adapter.test.ts src/pages/marketing/__tests__/agent-settings-sdk-boundary.test.ts`
+- `pnpm check`
+- `git diff --check`
+
+---
+
+# 2026-07-31 Hermes 版本升级公告
+
+**Status:** 前端实现完成，待用户验收后再提交 / MR；关联 Vitest 受当前 jsdom 依赖链阻塞。
+
+**Goal:** 基于最新 `master` 在首页公告条挂今晚 Hermes 版本升级提醒，国内站与国际站均展示对应时区文案。
+
+**Scope:** 仅更新首页公告条、对应中英文 i18n 字典和本计划；不调整公告视觉结构、路由、登录态、后端接口或其他公告轮播逻辑。
+
+## Tasks
+
+- [x] 将 Hermes 升级公告切换到 2026-07-31 22:00 至 2026-08-01 02:00。
+  - 国内站文案使用北京时间。
+  - 国际站文案使用新加坡时间。
+  - 公告 ID 更新，避免复用上一次关闭记忆。
+  - 过期时间为 UTC 2026-07-31 18:00。
+- [x] 更新 i18n 生成字典并补齐英文翻译。
+- [x] 完成基础验证：`pnpm i18n:check`、`pnpm check`、global 环境 `pnpm check`、`git diff --check`、公告静态 smoke。
+- [ ] 关联 Vitest 复跑：当前 `vitest related src/components/site/maintenance-announcement-banner.tsx` 被 `jsdom@28.1.0 -> html-encoding-sniffer@6.0.0 -> @exodus/bytes` 的 `ERR_REQUIRE_ESM` 阻塞，未进入业务断言。
+
+---
+
+# 国内站登录弹窗交互优化 Implementation Plan
+
+**Status:** 前端实现已完成，待用户验收后再提交 / MR / 归档。
+
+**Goal:** 国内站登录弹窗默认微信登录，手机号与 QQ 作为底部其他登录方式；手机号登录成为正式入口；不引入后端改动。
+
+## Constraints
+
+- 仅国内站生效，国际站登录方式保持不变。
+- 不新增后端接口。
+- 不修改 `user/auth`。
+- 不修改 `service-gateway`。
+- 微信和 QQ 均复用现有 OAuth start URL 跳转；不调用不存在的 `modal-config` 接口。
+- 手机号登录复用现有 `PhoneLoginForm`。
+
+## Current Implementation
+
+### 国内站弹窗
+
+- `LoginModal` 维护 `DomesticLoginMethod = "wechat" | "phone" | "qq"`。
+- 弹窗打开时默认重置为微信登录。
+- 当前选中的登录方式展示在主体区域；另外两种登录方式展示在底部“其他登录方式”。
+- 国际站仍走原有 Google / GitHub 登录逻辑，不进入国内站三方式状态机。
+
+### 微信 / QQ
+
+- 微信主体展示“微信账号登录”按钮，QQ 主体展示“QQ账号登录”按钮。
+- 两者均复用 `repositories.auth.getOAuthStartUrl(...)` 和 `redirectToOAuthStart(...)`。
+- 微信按 user agent 选择现有 OAuth target：
+  - 桌面浏览器：`website`
+  - 微信内浏览器：`official_account`
+  - 普通移动浏览器：提示“请在微信中打开当前页面后继续登录。”
+- 不嵌入二维码、不加载微信 JS、不新增后端配置接口；如果后端不支持扫码弹窗，按 QQ 的按钮跳转方式回退。
+
+### 手机登录
+
+- 手机主体复用 `PhoneLoginForm` 的 `variant="modal"`。
+- 手机登录标题保留为“手机登录”，副标题“使用手机号和短信验证码登录”已删除。
+- 表单可访问 label 保留，但视觉上使用 `sr-only` 隐藏，不再显示“手机号 / 短信验证码”字段标题。
+- 输入框文字使用普通字重；输入框、验证码按钮使用 `rounded-md` 和轻边框，聚焦态保持浅色 1px ring。
+- 未输入手机号或验证码时，登录按钮禁用。
+- 手机号 / 验证码校验错误分别显示在对应输入框下方，并同步将对应输入框边框置为红色。
+- 手机登录的协议勾选放在登录按钮上方；微信 / QQ 的协议勾选位于主体按钮下方、“其他登录方式”上方。
+
+### 其他登录方式
+
+- 底部按钮为 logo + 文案，无按钮框线。
+- 微信、QQ、手机 icon 使用固定 icon slot，统一视觉大小；两个其他登录方式之间使用竖线分隔。
+- 国内站内容容器底部保留 `pb-6`，避免底部登录选项贴近弹窗下边框。
+
+## Tasks
+
+- [x] 更新登录弹窗国内站状态机：`wechat | phone | qq`。
+- [x] 默认方式设置为微信，弹窗打开时重置到微信。
+- [x] 微信主体改为 OAuth 跳转按钮，保留微信 logo。
+- [x] 手机主体展示手机号验证码登录表单。
+- [x] QQ 主体展示 OAuth 跳转按钮，保留 QQ logo。
+- [x] 协议勾选移动到“其他登录方式”上方。
+- [x] 底部其他方式按钮改为无边框、logo + 文案、竖线分隔。
+- [x] 回退微信扫码 / 快捷登录嵌入方案，不新增 `modal-config` 后端接口。
+- [x] 统一底部微信 / QQ / 手机 icon 视觉尺寸。
+- [x] 手机登录删除副标题和视觉字段标题，改为轻量表单结构。
+- [x] 手机登录协议勾选移动到登录按钮上方。
+- [x] 手机登录输入框样式按 `DESIGN.md` 调整为轻边框、`rounded-md`、普通字重、浅聚焦态。
+- [x] 手机登录错误提示改为字段下方红字，并同步红色边框。
+- [x] 手机登录未填手机号或验证码时禁用登录按钮。
+- [x] 增加弹窗底部空间，避免其他登录方式贴近下边框。
+- [x] 更新国内站登录弹窗单测。
+- [x] 更新手机号登录表单单测。
+- [x] 更新 i18n 文案。
+- [x] 修复 review 发现的动态创建失败文案 i18n 字典回退问题。
+- [x] 补充微信移动端 fallback 与手机登录协议 gate 的 LoginModal 回归测试。
+- [x] 更新认证模块长期规格，区分 `/auth/sign-in` 手机主路径和共享登录弹窗微信默认状态机。
+- [ ] 用户验收后再进入提交 / MR / 归档流程。
+
+## Verification
+
+- `pnpm --dir frontend exec vitest run src/components/site/__tests__/login-modal.test.tsx src/components/site/__tests__/login-modal.global.test.tsx src/components/auth/__tests__/phone-login-form.test.tsx src/pages/marketing/__tests__/agent-create-error.test.ts`
+- `pnpm --dir frontend i18n:check`
+- `pnpm --dir frontend check`
+# 2026-08-06 Frontend release Docker monorepo context fix
+
+**Status:** 实现与验证完成，等待用户确认提交。
+
+**Goal:** 修复 frontend 正式镜像构建无法解析仓库内 `file:../velalink` 依赖的问题，同时保持 Docker build context 最小化。
+
+**Scope:** 仅调整 frontend release bundle、Dockerfile、Dockerfile 专属 ignore 和构建契约测试；不修改 frontend 或 velalink 运行时代码。
+
+## Tasks
+
+- [x] 将 frontend release bundle 的 build context 切换为仓库根，并把 `velalink` 纳入变更触发范围。
+- [x] 更新 Dockerfile 的根目录相对 COPY 路径，显式复制 `/velalink`。
+- [x] 用 Dockerfile 专属 ignore 仅放行 `frontend/` 与 `velalink/`。
+- [x] 运行契约测试、diff 检查和真实 Tokyo `linux/amd64` 构建推送验证。
+
+## Verification
+
+- `python3 .ci/runtime/tests/contract_tests/test_build_release_image.py`
+- `python3 .ci/runtime/tests/contract_tests/test_release_bundle_contracts.py ReleaseBundleContractTests.test_frontend_playground_release_uses_beijing_registry`
+- 国内构建机真实执行 `build_release_image.py --service frontend --env sandbox-jp-1 --platform linux/amd64 --push --reuse-existing`
+- JP TCR manifest：`frontend-6cf545e930d2`，`linux/amd64`
+- `git diff --check`
+
+---

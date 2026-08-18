@@ -63,6 +63,9 @@ vi.mock("@/contexts/runtime-config-context", () => ({
 
 vi.mock("@/i18n/t", () => ({
   useT: () => (zh: string) => zh,
+  // LoginModal 等组件用 `useLocaleOverride() ?? i18n.language` 判定语言，
+  // 返回 null 表示无路由级覆盖，保持用例原有语言行为。
+  useLocaleOverride: () => null,
 }));
 
 const navigateMock = vi.fn();

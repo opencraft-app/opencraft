@@ -13,7 +13,7 @@
  *     --out ../docs-export.md
  *
  * 参数：
- *   --locale  产物目录名：en-us | zh-cn | zh-sg | zh-hant（默认 zh-sg）
+ *   --locale  产物目录名：en-us | zh-cn | zh-sg | zh-hant | id-id（默认 zh-sg）
  *   --groups  逗号分隔的分组名，需与 meta.json 中 `---分组名---` 一致
  *   --out     输出文件路径（相对本脚本所在目录解析；默认打印到 stdout）
  */
