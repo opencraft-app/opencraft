@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  AutomationFormModal,
   buildEffectiveWindowFromInputs,
   buildDeliverString,
   buildHermesSendCommand,
@@ -37,6 +38,7 @@ import {
   toEditCronSkills,
 } from "../agent-automations-panel";
 import type { CronJob, CronRunRecord } from "@/lib/hermes-cron-client";
+import { isGlobal } from "@/lib/region";
 
 afterEach(() => {
   cleanup();
@@ -507,6 +509,48 @@ describe("isHermesNotificationChannelConfigured", () => {
 
   it("keeps coming-soon channels disabled even when status is unknown", () => {
     expect(isHermesNotificationChannelConfigured(null, "telegram", true)).toBe(false);
+  });
+});
+
+describe("automation notification channel options", () => {
+  it("keeps unconfigured domestic channels visible and disables their checkboxes", () => {
+    if (isGlobal) return;
+    render(createElement(AutomationFormModal, {
+      botId: "bot-1",
+      mode: "create",
+      enabledChannels: new Set(),
+      channelStatus: "ready",
+      skillLoadState: { status: "ready", slugs: [], error: null },
+      onRefreshSkills: vi.fn().mockResolvedValue({ status: "ready", slugs: [], error: null }),
+      onClose: vi.fn(),
+      onSaved: vi.fn(),
+      onError: vi.fn(),
+    }));
+
+    for (const channelName of ["微信", "QQ", "企业微信", "飞书"]) {
+      expect(screen.getByRole("checkbox", { name: new RegExp(`^${channelName}.*未配置`) })).toBeDisabled();
+    }
+    expect(screen.queryByText("暂无已配置的通知通道。")).toBeNull();
+    expect(screen.queryByRole("link", { name: "去通道配置" })).toBeNull();
+  });
+
+  it("keeps the global empty state when no notification channel is configured", () => {
+    if (!isGlobal) return;
+    render(createElement(AutomationFormModal, {
+      botId: "bot-1",
+      mode: "create",
+      enabledChannels: new Set(),
+      channelStatus: "ready",
+      skillLoadState: { status: "ready", slugs: [], error: null },
+      onRefreshSkills: vi.fn().mockResolvedValue({ status: "ready", slugs: [], error: null }),
+      onClose: vi.fn(),
+      onSaved: vi.fn(),
+      onError: vi.fn(),
+    }));
+
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(screen.getByText("No notification channels are configured yet.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Configure channels" })).toHaveAttribute("href", "/agents/channels/");
   });
 });
 

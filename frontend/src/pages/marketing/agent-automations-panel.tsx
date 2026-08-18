@@ -3030,22 +3030,22 @@ export function AutomationFormModal({
           ) : (
             <div className="mt-2 space-y-1">
               {(() => {
-                const channels = (
-                  isGlobal
-                    ? GLOBAL_NOTIFICATION_CHANNELS.map((channel) => ({
-                      key: channel.key,
-                      label: "label" in channel ? channel.label : t(channel.labelKey),
-                      comingSoon: channel.comingSoon,
-                    }))
-                    : ([
-                      { key: "weixin", label: t("微信"), comingSoon: false },
-                      { key: "qqbot", label: "QQ", comingSoon: false },
-                      { key: "wecom", label: t("企业微信"), comingSoon: false },
-                      { key: "feishu", label: t("飞书"), comingSoon: false },
-                    ] as const)
-                ).filter(({ key, comingSoon }) => isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon));
+                const channels = isGlobal
+                  ? GLOBAL_NOTIFICATION_CHANNELS.map((channel) => ({
+                    key: channel.key,
+                    label: "label" in channel ? channel.label : t(channel.labelKey),
+                    comingSoon: channel.comingSoon,
+                  })).filter(({ key, comingSoon }) => (
+                    isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon)
+                  ))
+                  : ([
+                    { key: "weixin", label: t("微信"), comingSoon: false },
+                    { key: "qqbot", label: "QQ", comingSoon: false },
+                    { key: "wecom", label: t("企业微信"), comingSoon: false },
+                    { key: "feishu", label: t("飞书"), comingSoon: false },
+                  ] as const);
 
-                if (channels.length === 0) {
+                if (isGlobal && channels.length === 0) {
                   return (
                     <div className="flex flex-wrap items-center gap-2 text-sm text-black/45" style={MODAL_HELP_TEXT_STYLE}>
                       <span>{t("暂无已配置的通知通道。")}</span>
