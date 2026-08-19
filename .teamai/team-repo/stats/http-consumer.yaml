@@ -1,8 +1,9 @@
 username: http-consumer
-updatedAt: 2026-08-19T03:23:53.366Z
+updatedAt: 2026-08-19T03:45:27.058Z
 skills: {}
-interventions:
-  sessions: 2
-  interrupt: 0
-  toolReject: 0
-  correction: 0
+prompts: 640
+tokens:
+  input: 597796499
+  output: 2462454
+  cacheRead: 0
+  cacheCreation: 0
