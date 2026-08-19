@@ -66,7 +66,7 @@ class CloudLadderSGCallbackTests(unittest.TestCase):
         )
         self.assertEqual(self.backend_base_urls("statefulsetplus.yaml"), expected)
 
-    def test_sg_prod_registers_in_singapore_polaris_with_encrypted_token(self) -> None:
+    def test_sg_prod_registers_in_china_polaris_with_encrypted_token(self) -> None:
         prod_service = yaml.safe_load(
             (
                 REPO_ROOT
@@ -88,7 +88,7 @@ class CloudLadderSGCallbackTests(unittest.TestCase):
         )
         self.assertEqual(
             prod_annotations["polaris.tkex.cloud.tencentyun.com/polaris-site-zone"],
-            "singapore",
+            "china",
         )
         self.assertTrue(
             prod_annotations["polaris.tkex.cloud.tencentyun.com/token"].startswith("ENC[")
